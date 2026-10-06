@@ -1,12 +1,9 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsDirectoryIndexStream_h__
-#define nsDirectoryIndexStream_h__
-
-#include "mozilla/Attributes.h"
+#ifndef nsDirectoryIndexStream_h_
+#define nsDirectoryIndexStream_h_
 
 #include "nsString.h"
 #include "nsIInputStream.h"
@@ -43,4 +40,4 @@ class nsDirectoryIndexStream final : public nsIInputStream {
   NS_DECL_NSIINPUTSTREAM
 };
 
-#endif  // nsDirectoryIndexStream_h__
+#endif  // nsDirectoryIndexStream_h_

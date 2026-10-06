@@ -3,6 +3,10 @@
 
 "use strict";
 
+const { getMozRemoteImageURL } = ChromeUtils.importESModule(
+  "moz-src:///toolkit/modules/FaviconUtils.sys.mjs"
+);
+
 add_task(async function test_policy_managedbookmarks() {
   let managedBookmarksMenu =
     window.document.getElementById("managed-bookmarks");
@@ -101,6 +105,71 @@ add_task(async function test_policy_managedbookmarks() {
 
   managedBookmarksMenu.open = false;
   await popupHiddenPromise;
+});
+
+add_task(async function test_managedbookmark_entry_types() {
+  let managedBookmarksMenu =
+    window.document.getElementById("managed-bookmarks");
+
+  await BrowserTestUtils.withNewTab(
+    "https://example.com/",
+    async function (browser) {
+      let popupShown = BrowserTestUtils.waitForEvent(
+        managedBookmarksMenu.menupopup,
+        "popupshown",
+        false
+      );
+      managedBookmarksMenu.open = true;
+      await popupShown;
+
+      let bookmark7 = managedBookmarksMenu.menupopup.children[4];
+      let expectedFavicon = getMozRemoteImageURL(
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIABQAABjE+ibYAAAAASUVORK5CYII=",
+        { size: 16 }
+      );
+      is(
+        bookmark7.getAttribute("image"),
+        expectedFavicon,
+        "Bookmark with explicit favicon should use a moz-remote-image: wrapping it"
+      );
+
+      let schemeless = managedBookmarksMenu.menupopup.querySelector(
+        'menuitem[label="Schemeless"]'
+      );
+      ok(schemeless, "Scheme-less bookmark menuitem should exist");
+      is(
+        schemeless.link,
+        "https://schemeless.example.com/",
+        "Scheme-less URL should be prefixed with https://"
+      );
+
+      let invalid = managedBookmarksMenu.menupopup.querySelector(
+        'menuitem[label="Invalid"]'
+      );
+      ok(!invalid, "Bookmark with invalid URL should be skipped");
+
+      let bookmarklet = managedBookmarksMenu.menupopup.querySelector(
+        'menuitem[label="Bookmarklet"]'
+      );
+      ok(bookmarklet, "Bookmarklet menuitem should exist");
+      is(
+        bookmarklet.link,
+        "javascript:document.title='bookmarklet ran';void(0)",
+        "Bookmarklet link should preserve javascript: URL unchanged"
+      );
+
+      let popupHidden = BrowserTestUtils.waitForEvent(
+        managedBookmarksMenu.menupopup,
+        "popuphidden"
+      );
+      managedBookmarksMenu.menupopup.activateItem(bookmarklet);
+      await popupHidden;
+      await TestUtils.waitForCondition(
+        () => browser.contentTitle == "bookmarklet ran",
+        "Bookmarklet should have executed and set the title"
+      );
+    }
+  );
 });
 
 add_task(async function test_open_managedbookmark() {

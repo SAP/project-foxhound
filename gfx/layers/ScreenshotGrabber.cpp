@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -103,12 +101,11 @@ namespace profiler_screenshots {
 ScreenshotGrabberImpl::ScreenshotGrabberImpl(const IntSize& aBufferSize)
     : mBufferSize(aBufferSize) {}
 
-ScreenshotGrabberImpl::~ScreenshotGrabberImpl() {
-  // Any queue items in mQueue or mCurrentFrameQueueItem will be lost.
-  // That's ok: Either the profiler has stopped and we don't care about these
-  // screenshots, or the window is closing and we don't really need the last
-  // few frames from the window.
-}
+// Any queue items in mQueue or mCurrentFrameQueueItem will be lost.
+// That's ok: Either the profiler has stopped and we don't care about these
+// screenshots, or the window is closing and we don't really need the last
+// few frames from the window.
+ScreenshotGrabberImpl::~ScreenshotGrabberImpl() = default;
 
 // Scale down aWindowRenderSource into a RenderSource of size
 // mBufferSize * (1 << aLevel) and return that RenderSource.
@@ -154,10 +151,14 @@ void ScreenshotGrabberImpl::GrabScreenshot(Window& aWindow,
     return;
   }
 
+  if (aWindowSize.IsEmpty() || mBufferSize.IsEmpty()) {
+    return;
+  }
+
   Size windowSize(aWindowSize);
   float scale = std::min(mBufferSize.width / windowSize.width,
                          mBufferSize.height / windowSize.height);
-  IntSize scaledSize = IntSize::Round(windowSize * scale);
+  IntSize scaledSize = Max(IntSize::Round(windowSize * scale), IntSize(1, 1));
   RefPtr<RenderSource> scaledTarget = ScaleDownWindowRenderSourceToSize(
       aWindow, scaledSize, windowRenderSource, 0);
 

@@ -400,7 +400,7 @@ add_task(
               { key: "alpn", value: "h2" },
               { key: "ipv4hint", value: ["1.2.3.4", "5.6.7.8"] },
               { key: "echconfig", value: "abc..." },
-              { key: "ipv6hint", value: ["::1", "fe80::794f:6d2c:3d5e:7836"] },
+              { key: "ipv6hint", value: ["::1", "2001:db8::1"] },
               { key: "odoh", value: "def..." },
             ],
           },
@@ -513,7 +513,7 @@ add_task(
     Assert.equal(
       answer[1].values[3].QueryInterface(Ci.nsISVCParamIPv6Hint).ipv6Hint[1]
         .address,
-      "fe80::794f:6d2c:3d5e:7836",
+      "2001:db8::1",
       "got correct answer"
     );
     Assert.equal(

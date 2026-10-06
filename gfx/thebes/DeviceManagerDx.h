@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -7,7 +6,7 @@
 #define mozilla_gfx_thebes_DeviceManagerDx_h
 
 #include <set>
-#include <vector>
+#include <unordered_map>
 
 #include "gfxPlatform.h"
 #include "gfxTelemetry.h"
@@ -81,6 +80,7 @@ class DeviceManagerDx final {
   bool CanUseP010();
   bool CanUseP016();
   bool CanUseDComp();
+  bool CanUseDCompositionTexture();
 
   // Returns true if we can create a texture with
   // D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX and also
@@ -94,13 +94,15 @@ class DeviceManagerDx final {
 
   // find the IDXGIOutput with a description.Monitor matching
   // 'monitor'; returns false if not found or some error occurred.
-  bool GetOutputFromMonitor(HMONITOR monitor, RefPtr<IDXGIOutput>* aOutOutput);
+  bool GetOutputFromMonitor(HMONITOR aMonitor, RefPtr<IDXGIOutput>* aOutOutput);
 
   void PostUpdateMonitorInfo();
   void UpdateMonitorInfo();
   bool SystemHDREnabled();
   bool WindowHDREnabled(HWND aWindow);
   bool MonitorHDREnabled(HMONITOR aMonitor);
+  Maybe<DXGI_HDR_METADATA_HDR10> WindowHDRMetadata(HWND aWindow);
+  Maybe<DXGI_HDR_METADATA_HDR10> MonitorHDRMetadata(HMONITOR aMonitor);
 
   // Check if the current adapter supports hardware stretching
   void CheckHardwareStretchingSupport(HwStretchingSupport& aRv);
@@ -146,6 +148,8 @@ class DeviceManagerDx final {
   // we attempt to create a compositor.
   static void PreloadAttachmentsOnCompositorThread();
 
+  bool EnsureFactoryLocked() MOZ_REQUIRES(mDeviceLock);
+
   already_AddRefed<IDXGIAdapter1> GetDXGIAdapter();
   IDXGIAdapter1* GetDXGIAdapterLocked() MOZ_REQUIRES(mDeviceLock);
 
@@ -185,6 +189,10 @@ class DeviceManagerDx final {
   bool GetAnyDeviceRemovedReason(DeviceResetReason* aOutReason)
       MOZ_REQUIRES(mDeviceLock);
 
+  void EnsureMonitorInfo();
+  static DXGI_HDR_METADATA_HDR10 OutputDESC1ToDXGI(
+      const DXGI_OUTPUT_DESC1& aDesc);
+
  private:
   static StaticAutoPtr<DeviceManagerDx> sInstance;
 
@@ -210,11 +218,14 @@ class DeviceManagerDx final {
   RefPtr<layers::DeviceAttachmentsD3D11> mCompositorAttachments
       MOZ_GUARDED_BY(mDeviceLock);
   bool mCompositorDeviceSupportsVideo MOZ_GUARDED_BY(mDeviceLock);
+  bool mSupportsDCompositionTexture MOZ_GUARDED_BY(mDeviceLock);
   Maybe<D3D11DeviceStatus> mDeviceStatus MOZ_GUARDED_BY(mDeviceLock);
   Maybe<DeviceResetReason> mDeviceResetReason MOZ_GUARDED_BY(mDeviceLock);
   RefPtr<Runnable> mUpdateMonitorInfoRunnable MOZ_GUARDED_BY(mDeviceLock);
   Maybe<bool> mSystemHdrEnabled MOZ_GUARDED_BY(mDeviceLock);
   std::set<HMONITOR> mHdrMonitors MOZ_GUARDED_BY(mDeviceLock);
+  std::unordered_map<HMONITOR, DXGI_HDR_METADATA_HDR10> mHdrMetadatas
+      MOZ_GUARDED_BY(mDeviceLock);
 };
 
 }  // namespace gfx

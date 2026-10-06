@@ -165,7 +165,7 @@ html[dir="rtl"] .sources-list .tree .node > div {
   margin-right: 10px;
 }
 
-.sources-list .img {
+.sources-list .dbg-img {
   margin-inline-end: 4px;
 }
 
@@ -173,6 +173,14 @@ html[dir="rtl"] .sources-list .tree .node > div {
   font-style: italic;
   font-size: 0.9em;
   color: var(--theme-comment);
+}
+
+.sources-list .tree .tree-node.focused {
+  /* Make folder/file icons white on dark focused background */
+  .dbg-img {
+    background-color: var(--theme-selection-color);
+    fill: var(--theme-selection-color);
+  }
 }
 
 .sources-list .tree .focused .label .suffix {
@@ -183,7 +191,7 @@ html[dir="rtl"] .sources-list .tree .node > div {
   color: #806414;
 }
 
-.sources-list .img.blackBox {
+.sources-list .dbg-img.dbg-img-blackBox {
   mask-size: 13px;
   background-color: #806414;
 }

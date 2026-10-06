@@ -17,7 +17,7 @@ const TEST_URI = `
 add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view: ruleView } = await openRuleView();
-  const { document: doc, store } = selectChangesView(inspector);
+  const { document: doc, store } = await selectChangesView(inspector);
 
   await selectNode("div", inspector);
   const prop = getTextProperty(ruleView, 1, { color: "red" });

@@ -1,10 +1,7 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <stdio.h>
 #include <windows.h>
 #include <commctrl.h>
 #include <process.h>
@@ -42,7 +39,7 @@
 static float sProgress;  // between 0 and 100
 static BOOL sQuit = FALSE;
 static BOOL sIndeterminate = FALSE;
-MOZ_RUNINIT static StringTable sUIStrings;
+constinit static StringTable sUIStrings;
 
 static BOOL GetStringsFile(WCHAR filename[MAX_PATH]) {
   if (!GetModuleFileNameW(nullptr, filename, MAX_PATH)) {

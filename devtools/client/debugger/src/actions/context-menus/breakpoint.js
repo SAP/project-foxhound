@@ -6,7 +6,9 @@ import { buildMenu, showMenu } from "../../context-menu/menu";
 import { getSelectedLocation } from "../../utils/selected-location";
 import { isLineBlackboxed } from "../../utils/source";
 import { features } from "../../utils/prefs";
-import { formatKeyShortcut } from "../../utils/text";
+const {
+  stringifyFromElectronKey,
+} = require("resource://devtools/client/shared/key-shortcuts.js");
 
 import {
   getBreakpointsList,
@@ -255,7 +257,7 @@ export function showBreakpointContextMenu(event, breakpoint, source) {
         await dispatch(selectSpecificLocation(selectedLocation));
         await dispatch(openConditionalPanel(selectedLocation));
       },
-      accelerator: formatKeyShortcut(
+      accelerator: stringifyFromElectronKey(
         L10N.getStr("toggleCondPanel.breakpoint.key")
       ),
     };
@@ -268,7 +270,7 @@ export function showBreakpointContextMenu(event, breakpoint, source) {
         await dispatch(selectSpecificLocation(selectedLocation));
         await dispatch(openConditionalPanel(selectedLocation));
       },
-      accelerator: formatKeyShortcut(
+      accelerator: stringifyFromElectronKey(
         L10N.getStr("toggleCondPanel.breakpoint.key")
       ),
     };
@@ -282,7 +284,7 @@ export function showBreakpointContextMenu(event, breakpoint, source) {
         await dispatch(selectSpecificLocation(selectedLocation));
         await dispatch(openConditionalPanel(selectedLocation, true));
       },
-      accelerator: formatKeyShortcut(
+      accelerator: stringifyFromElectronKey(
         L10N.getStr("toggleCondPanel.logPoint.key")
       ),
     };
@@ -296,7 +298,7 @@ export function showBreakpointContextMenu(event, breakpoint, source) {
         await dispatch(selectSpecificLocation(selectedLocation));
         await dispatch(openConditionalPanel(selectedLocation, true));
       },
-      accelerator: formatKeyShortcut(
+      accelerator: stringifyFromElectronKey(
         L10N.getStr("toggleCondPanel.logPoint.key")
       ),
     };

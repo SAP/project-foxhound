@@ -14,10 +14,10 @@ includes: [testTypedArray.js, detachArrayBuffer.js]
 features: [TypedArray]
 ---*/
 
-testWithTypedArrayConstructors(function(TA) {
-  var sample = new TA(1);
+testWithTypedArrayConstructors(function(TA, makeCtorArg) {
+  var sample = new TA(makeCtorArg(1));
   $DETACHBUFFER(sample.buffer);
   assert.sameValue(sample.byteLength, 0);
-});
+}, null, null, ["immutable"]);
 
 reportCompare(0, 0);

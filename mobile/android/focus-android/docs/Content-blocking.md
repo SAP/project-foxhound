@@ -1,7 +1,8 @@
 # Content blocking
 
-## Outdated Content.
-Focus is using the same technology as Firefox for desktop, all the content blocking is happening inside of the Gecko engine web engine. content blocking list can be seen here https://github.com/mozilla-services/shavar-prod-lists.
+## Outdated Content
+
+Focus is using the same technology as Firefox for desktop, all the content blocking is happening inside of the Gecko engine web engine. content blocking list can be seen here <https://github.com/mozilla-services/shavar-prod-lists>.
 
 ## Tracking protection: lists and general overview
 
@@ -39,7 +40,7 @@ can perform content blocking on Android. (See [BlockListProcessor.java](../app/s
 
 We then just need to verify every resource URL to determine whether it can be loaded in that callback: we use a custom trie-based domain matching implementation for
 Focus for Android. This is different from Focus iOS: Focus for iOS was originally a content blocking safari plugin, and used the iOS content blocking API
-( https://developer.apple.com/library/content/documentation/Extensions/Conceptual/ContentBlockingRules/Introduction/Introduction.html ).
+( <https://developer.apple.com/library/content/documentation/Extensions/Conceptual/ContentBlockingRules/Introduction/Introduction.html> ).
 That API uses a specific blocklist format, therefore firefox-ios converts the disconnect lists into the iOS format at build-time.
 
 Focus-ios browser was implemented later, and reuses the iOS content blocking list format (iOS webview was unable to make use of the content blocking API
@@ -51,8 +52,8 @@ format, but it also permits for ~140x faster domain lookup when compared to a po
 and we use extended versions of the same Trie for the domain overrides. See [UrlMatcher](../app/src/webkit/java/org/mozilla/focus/webkit/matcher/UrlMatcher.java) for
 the actual matcher implementation.
 
-
 ## Miscellaneous notes
+
 - We do not make any internet connection because every blocklist is built into Firefox Focus. When you enable a blocklsit in settings, our app will load the selected blocklist from disk. We will provide updated lists as an "App update".
 - We discard the site owners and names when parsing the blocklists, that makes it harder to keep track of which trackers have been blocked for a given site. That data would probably have to be added to the blocklist trie if we want a better breakdown of trackers.
 - Our Trie search is recursive, and uses a slightly silly "TrieString" to take care of string reversal and substrings. An iterative implementation would probably be better, and would avoid substrings. Such an implementation would be slightly more complex since we would have to keep track of string indexes, but reduces overhead. Given that current performance is acceptable, there isn't huge value in actually working on this.

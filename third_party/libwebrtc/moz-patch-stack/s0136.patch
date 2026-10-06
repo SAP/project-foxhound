@@ -1,0 +1,28 @@
+From: Landry Breuil <landry@openbsd.org>
+Date: Wed, 15 Apr 2026 13:31:00 +0000
+Subject: Bug 2030612 - define AOM_EFLAG_FREEZE_INTERNAL_STATE if not defined
+ r=mjf
+
+fixes build with system-av1/aom after bug 2029247
+
+Differential Revision: https://phabricator.services.mozilla.com/D293051
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/70d2379819582d44092dee15e1e45ddbc9cd3f22
+---
+ modules/video_coding/codecs/av1/libaom_av1_encoder.cc | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/modules/video_coding/codecs/av1/libaom_av1_encoder.cc b/modules/video_coding/codecs/av1/libaom_av1_encoder.cc
+index dc27b1f170..6e369c1c09 100644
+--- a/modules/video_coding/codecs/av1/libaom_av1_encoder.cc
++++ b/modules/video_coding/codecs/av1/libaom_av1_encoder.cc
+@@ -67,6 +67,10 @@
+ #define AOM_EFLAG_CALCULATE_PSNR (1 << 3)
+ #endif
+ 
++#ifndef AOM_EFLAG_FREEZE_INTERNAL_STATE
++#define AOM_EFLAG_FREEZE_INTERNAL_STATE (1 << 2)
++#endif
++
+ #if defined(WEBRTC_ENCODER_PSNR_STATS)
+ constexpr bool kEnablePsnrStats = true;
+ #else

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,26 +8,22 @@
  * include anywhere without running into include hell like we do with
  * BindingUtils.h
  */
-#ifndef mozilla_dom_BindingDeclarations_h__
-#define mozilla_dom_BindingDeclarations_h__
-
-#include "js/RootingAPI.h"
-#include "js/TypeDecls.h"
-
-#include "mozilla/Maybe.h"
-
-#include "mozilla/dom/DOMString.h"
-
-#include "nsCOMPtr.h"
-#include "nsString.h"
-#include "nsTArray.h"
+#ifndef mozilla_dom_BindingDeclarations_h_
+#define mozilla_dom_BindingDeclarations_h_
 
 #include <type_traits>
 
+#include "js/RootingAPI.h"
+#include "js/TypeDecls.h"
 #include "js/Value.h"
 #include "mozilla/CycleCollectedUniquePtr.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/RootedOwningNonNull.h"
 #include "mozilla/RootedRefPtr.h"
+#include "mozilla/dom/DOMString.h"
+#include "nsCOMPtr.h"
+#include "nsString.h"
+#include "nsTArray.h"
 
 class nsIPrincipal;
 class nsWrapperCache;
@@ -50,26 +44,26 @@ struct DictionaryBase {
  protected:
   bool ParseJSON(JSContext* aCx, const nsAString& aJSON,
                  JS::MutableHandle<JS::Value> aVal);
+  bool ParseJSON(JSContext* aCx, const nsACString& aJSON,
+                 JS::MutableHandle<JS::Value> aVal);
 
   bool StringifyToJSON(JSContext* aCx, JS::Handle<JSObject*> aObj,
                        nsAString& aJSON) const;
+  bool StringifyToJSON(JSContext* aCx, JS::Handle<JSObject*> aObj,
+                       nsACString& aJSON) const;
 
   // Struct used as a way to force a dictionary constructor to not init the
   // dictionary (via constructing from a pointer to this class).  We're putting
   // it here so that all the dictionaries will have access to it, but outside
   // code will not.
   struct FastDictionaryInitializer {};
+};
 
-  bool mIsAnyMemberPresent = false;
-
- private:
-  // aString is expected to actually be an nsAString*.  Should only be
-  // called from StringifyToJSON.
-  static bool AppendJSONToString(const char16_t* aJSONData,
-                                 uint32_t aDataLength, void* aString);
-
- public:
+struct MaybeEmptyDictionaryBase : DictionaryBase {
   bool IsAnyMemberPresent() const { return mIsAnyMemberPresent; }
+
+ protected:
+  bool mIsAnyMemberPresent = false;
 };
 
 template <class T>
@@ -88,17 +82,6 @@ inline std::enable_if_t<is_dom_dictionary<T>, void> ImplCycleCollectionTraverse(
   aDictionary.TraverseForCC(aCallback, aFlags);
 }
 
-template <typename T>
-inline std::enable_if_t<is_dom_dictionary<T>, void> ImplCycleCollectionTraverse(
-    nsCycleCollectionTraversalCallback& aCallback, UniquePtr<T>& aDictionary,
-    const char* aName, uint32_t aFlags = 0) {
-  if (aDictionary) {
-    ImplCycleCollectionTraverse(aCallback, *aDictionary, aName, aFlags);
-  }
-}
-// Struct that serves as a base class for all typed arrays and array buffers and
-// array buffer views.  Particularly useful so we can use std::is_base_of to
-// detect typed array/buffer/view template arguments.
 struct AllTypedArraysBase {};
 
 template <class T>
@@ -317,15 +300,6 @@ class Optional<OwningNonNull<T>> : public Optional_base<T, OwningNonNull<T>> {
 };
 
 // Specialization for strings.
-// XXXbz we can't pull in FakeString here, because it depends on internal
-// strings.  So we just have to forward-declare it and reimplement its
-// ToAStringPtr.
-
-namespace binding_detail {
-template <typename CharT>
-struct FakeString;
-}  // namespace binding_detail
-
 template <typename CharT>
 class Optional<nsTSubstring<CharT>> {
   using AString = nsTSubstring<CharT>;
@@ -338,13 +312,6 @@ class Optional<nsTSubstring<CharT>> {
   void operator=(const AString* str) {
     MOZ_ASSERT(str);
     mStr = str;
-  }
-
-  // If this code ever goes away, remove the comment pointing to it in the
-  // FakeString class in BindingUtils.h.
-  void operator=(const binding_detail::FakeString<CharT>* str) {
-    MOZ_ASSERT(str);
-    mStr = reinterpret_cast<const nsTString<CharT>*>(str);
   }
 
   const AString& Value() const {
@@ -584,4 +551,4 @@ class ReflectedHTMLAttributeSlots;
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_BindingDeclarations_h__
+#endif  // mozilla_dom_BindingDeclarations_h_

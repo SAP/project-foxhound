@@ -1,0 +1,156 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:host {
+  --multiline-editor-border-color: var(--border-color-interactive);
+  --multiline-editor-border-radius: var(--border-radius-medium);
+  --multiline-editor-border: var(--border-width) solid var(--multiline-editor-border-color);
+  --multiline-editor-color: var(--text-color);
+  --multiline-editor-focus-outline: var(--focus-outline);
+  --multiline-editor-selection-color: var(--color-accent-primary);
+  --multiline-editor-mention-placeholder-border-color: var(--color-violet-0);
+  --multiline-editor-mention-placeholder-background-color: transparent;
+  --multiline-editor-mention-placeholder-border-radius: var(--border-radius-medium);
+
+  display: inline-flex;
+  width: 100%;
+}
+
+@media -moz-pref("browser.nova.enabled") {
+  /* TODO: Bug 2033070 -  Nova tokens were implemented as the default value for the custom properties, and the fallbacks (and lint exceptions) will need to be removed after launch */
+  :host {
+    --multiline-editor-mention-placeholder-background-color: light-dark(var(--color-violet-desaturated-10), var(--color-violet-desaturated-60));
+    --multiline-editor-mention-placeholder-border-color: light-dark(var(--color-violet-desaturated-10), var(--color-violet-desaturated-60));
+    /* TODO: Bug 2030460 - Replace with token when available */
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    --multiline-editor-mention-placeholder-border-radius: 12px;
+    --text-color-deemphasized: light-dark(color-mix(to srgb, var(--color-violet-desaturated-90) 70%, transparent), var(--color-violet-desaturated-0));
+  }
+}
+
+.multiline-editor {
+  border-radius: var(--multiline-editor-border-radius);
+  border: var(--multiline-editor-border);
+  color: var(--multiline-editor-color);
+  flex: 1;
+  max-height: var(--multiline-editor-max-height, none);
+  overflow-y: auto;
+  scrollbar-width: var(--multiline-editor-scrollbar-width, auto);
+  padding: var(--space-small) var(--space-medium);
+}
+
+.multiline-editor:focus-within {
+  outline: var(--multiline-editor-focus-outline);
+}
+
+.multiline-editor .ProseMirror {
+  height: 100%;
+  overflow-wrap: anywhere;
+}
+
+.multiline-editor .ProseMirror:focus {
+  outline: none;
+}
+
+.multiline-editor .ProseMirror p {
+  margin: 0;
+  padding: 0;
+}
+
+.multiline-editor .ProseMirror ::selection {
+  background-color: var(--multiline-editor-selection-color);
+}
+
+/* Force empty paragraphs to not collapse */
+.multiline-editor .ProseMirror p BR.ProseMirror-trailingBreak,
+.multiline-editor .ProseMirror p br.ProseMirror-trailingBreak {
+  display: inline-flex;
+}
+
+.multiline-editor .ProseMirror p.placeholder::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  pointer-events: none;
+  color: var(--text-color-deemphasized);
+  inset-inline-start: var(--space-xxsmall);
+  user-select: none;
+}
+
+.multiline-editor .ProseMirror .placeholder-hints {
+  --multiline-editor-placeholder-animation-duration: 3000ms;
+
+  color: var(--text-color-deemphasized);
+  height: 100%;
+  inset-inline-start: 0;
+  list-style: none;
+  margin: 0;
+  overflow: clip;
+  padding: 0;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  user-select: none;
+  width: 100%;
+
+  li {
+    animation: multiline-editor-placeholder-animation calc(var(--multiline-editor-placeholder-count) * var(--multiline-editor-placeholder-animation-duration))
+      infinite;
+    animation-delay: calc(
+      (var(--multiline-editor-placeholder-index) - var(--multiline-editor-placeholder-count)) * var(--multiline-editor-placeholder-animation-duration)
+    );
+    inset-inline-start: 0;
+    max-width: 100%;
+    opacity: 0;
+    overflow: hidden;
+    position: absolute;
+    text-overflow: ellipsis;
+    top: 0;
+    visibility: hidden;
+    white-space: nowrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .multiline-editor .ProseMirror .placeholder-hints li {
+    animation: none;
+
+    &:first-child {
+      opacity: 1;
+      visibility: visible;
+    }
+  }
+}
+
+:host(:not([show-placeholder-animation])) .multiline-editor .ProseMirror .placeholder-hints li {
+  animation: none;
+
+  &:first-child {
+    opacity: 1;
+    visibility: visible;
+  }
+}
+
+:host([data-mention-placeholder]) .ProseMirror .ProseMirror-suggestion {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  background-color: var(--multiline-editor-mention-placeholder-background-color);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  border: var(--border-width) solid var(--multiline-editor-mention-placeholder-border-color);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  border-radius: var(--multiline-editor-mention-placeholder-border-radius);
+  color: var(--text-color-deemphasized);
+  padding: var(--space-xsmall);
+}
+
+:host([data-mention-placeholder]) .ProseMirror .ProseMirror-suggestion::after {
+  content: var(--multiline-editor-mention-placeholder, "");
+  pointer-events: none;
+  user-select: none;
+}
+
+.multiline-editor .ProseMirror .mention {
+  cursor: default;
+  display: inline-flex;
+  line-height: inherit;
+  user-select: all;
+}

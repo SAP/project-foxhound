@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,6 +19,9 @@ class nsIFrame;
 struct nsPoint;
 struct nsRect;
 struct nsSize;
+
+// zipstruct.h defines this and causes issues if in the same translation unit.
+#undef UNSUPPORTED
 
 enum class WrFiltersStatus {
   // Image will be rendered unftilered - the filter graph contains invalid refs
@@ -252,17 +253,18 @@ class SVGIntegrationUtils final {
    * background-repeat:no-repeat and background-size:auto. For normal background
    * images, this would be the intrinsic size of the image; for gradients and
    * patterns this would be the whole target frame fill area.
-   * @param aFlags pass FLAG_SYNC_DECODE_IMAGES and any images in the paint
+   * @param aFlags pass SyncDecodeImages and any images in the paint
    * server will be decoding synchronously if they are not decoded already.
    */
-  enum {
-    FLAG_SYNC_DECODE_IMAGES = 0x01,
+  enum class DecodeFlag {
+    SyncDecodeImages,
   };
+  using DecodeFlags = EnumSet<DecodeFlag>;
 
   static already_AddRefed<gfxDrawable> DrawableFromPaintServer(
       nsIFrame* aFrame, nsIFrame* aTarget, const nsSize& aPaintServerSize,
       const gfx::IntSize& aRenderSize, const DrawTarget* aDrawTarget,
-      const gfxMatrix& aContextMatrix, uint32_t aFlags);
+      const gfxMatrix& aContextMatrix, DecodeFlags aFlags);
 
   /**
    * For non-SVG frames, this gives the offset to the frame's "user space".

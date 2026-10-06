@@ -1,0 +1,19 @@
+<!DOCTYPE HTML>
+<html>
+<!--
+This page is opened as a popup in xorigin mode by test_sessionStorageTargetBlank.html.
+It embeds file_targetBlankChild.html in an iframe from the test origin so it
+runs in the same storage partition as the test.
+-->
+<body>
+<script>
+  let params = new URLSearchParams(location.search);
+  let origin = params.get("origin");
+  let iframe = document.createElement("iframe");
+  let path = location.pathname.replace(
+    "file_targetBlankChild_xorigin_wrapper.html",
+    "file_targetBlankChild.html");
+  iframe.src = origin + path;
+  document.body.appendChild(iframe);
+</script>
+</html>

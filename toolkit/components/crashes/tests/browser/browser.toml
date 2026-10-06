@@ -1,7 +1,9 @@
 [DEFAULT]
 prefs = [
-  "browser.crashReports.crashPull=true",
-  "browser.crashReports.unsubmittedCheck.enabled=true"
+  "browser.crashReports.onDemand=true",
+# RemoteSettingsCrashPull should function when the UnsubmittedCrashHandler is
+# disabled. See bug 2023717.
+  "browser.crashReports.unsubmittedCheck.enabled=false"
 ]
 
 ["browser_RemoteSettingsCrashPull_notification.js"]

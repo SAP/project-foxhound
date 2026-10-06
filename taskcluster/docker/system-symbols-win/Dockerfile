@@ -11,7 +11,7 @@ WORKDIR /builds/worker
 VOLUME /builds/worker/checkouts
 
 RUN apt-get update && \
-    apt-get install --no-install-recommends -y 7zip jq python3-pip wget && \
+    apt-get install --no-install-recommends -y jq python3-pip wget && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/*
 RUN pip3 install --progress-bar off --break-system-packages crashstats-tools==2.0.0

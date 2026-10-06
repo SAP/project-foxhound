@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<link rel="match" href="./svg-dynamic-ref.html">
+<html>
+<style type="text/css">
+  img {
+    link-parameters: param(--color, blue);
+  }
+</style>
+<div>
+    <img src="svg-color.svg" width="100" height="100" />
+</div>
+<script>
+  onload = function() {
+    var i = document.querySelector("img");
+    i.style.linkParameters = "param(--color, green)";
+    document.documentElement.className = "";
+  }
+</script>
+</html>

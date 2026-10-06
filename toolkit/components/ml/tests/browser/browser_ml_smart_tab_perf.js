@@ -41,7 +41,7 @@ const perfMetadata = {
   },
 };
 
-requestLongerTimeout(250);
+requestLongerTimeout(10);
 
 // Topic model tests
 add_task(async function test_ml_smart_tab_topic() {

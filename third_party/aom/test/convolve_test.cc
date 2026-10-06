@@ -40,11 +40,11 @@ static const int16_t kInvalidFilter[8] = {};
 static const int kNumFilterBanks = SWITCHABLE_FILTERS;
 static const int kNumFilters = 16;
 
-typedef void (*ConvolveFunc)(const uint8_t *src, ptrdiff_t src_stride,
-                             uint8_t *dst, ptrdiff_t dst_stride,
-                             const int16_t *filter_x, int filter_x_stride,
-                             const int16_t *filter_y, int filter_y_stride,
-                             int w, int h);
+using ConvolveFunc = void (*)(const uint8_t *src, ptrdiff_t src_stride,
+                              uint8_t *dst, ptrdiff_t dst_stride,
+                              const int16_t *filter_x, int filter_x_stride,
+                              const int16_t *filter_y, int filter_y_stride,
+                              int w, int h);
 
 struct ConvolveFunctions {
   ConvolveFunctions(ConvolveFunc h8, ConvolveFunc v8, int bd)
@@ -55,7 +55,7 @@ struct ConvolveFunctions {
   int use_highbd_;  // 0 if high bitdepth not used, else the actual bit depth.
 };
 
-typedef std::tuple<int, int, const ConvolveFunctions *> ConvolveParam;
+using ConvolveParam = std::tuple<int, int, const ConvolveFunctions *>;
 
 #define ALL_SIZES_64(convolve_fn)                                         \
   make_tuple(4, 4, &convolve_fn), make_tuple(8, 4, &convolve_fn),         \
@@ -875,7 +875,27 @@ const ConvolveParam kArray_Convolve8_avx2[] = { ALL_SIZES(convolve8_avx2) };
 
 INSTANTIATE_TEST_SUITE_P(AVX2, LowbdConvolveTest,
                          ::testing::ValuesIn(kArray_Convolve8_avx2));
+
 #endif  // HAVE_AVX2
+
+#if HAVE_AVX512 && CONFIG_HIGHWAY
+extern "C" void aom_convolve8_horiz_avx512(
+    const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst,
+    ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4,
+    const int16_t *filter_y, int y_step_q4, int w, int h);
+
+extern "C" void aom_convolve8_vert_avx512(
+    const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst,
+    ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4,
+    const int16_t *filter_y, int y_step_q4, int w, int h);
+
+const ConvolveFunctions convolve8_avx512(aom_convolve8_horiz_avx512,
+                                         aom_convolve8_vert_avx512, 0);
+const ConvolveParam kArray_Convolve8_avx512[] = { ALL_SIZES(convolve8_avx512) };
+
+INSTANTIATE_TEST_SUITE_P(AVX512, LowbdConvolveTest,
+                         ::testing::ValuesIn(kArray_Convolve8_avx512));
+#endif  // HAVE_AVX512
 
 #if HAVE_NEON
 #if CONFIG_AV1_HIGHBITDEPTH
@@ -940,13 +960,13 @@ INSTANTIATE_TEST_SUITE_P(SVE, HighbdConvolveTest,
 #endif
 #endif  // HAVE_SVE
 
-typedef void (*ConvolveScale2DFunc)(const uint8_t *src, ptrdiff_t src_stride,
-                                    uint8_t *dst, ptrdiff_t dst_stride,
-                                    const InterpKernel *filter, int x0_q4,
-                                    int x_step_q4, int y0_q4, int y_step_q4,
-                                    int w, int h);
+using ConvolveScale2DFunc = void (*)(const uint8_t *src, ptrdiff_t src_stride,
+                                     uint8_t *dst, ptrdiff_t dst_stride,
+                                     const InterpKernel *filter, int x0_q4,
+                                     int x_step_q4, int y0_q4, int y_step_q4,
+                                     int w, int h);
 
-typedef std::tuple<int, int, ConvolveScale2DFunc> ConvolveScale2DParam;
+using ConvolveScale2DParam = std::tuple<int, int, ConvolveScale2DFunc>;
 
 class ConvolveScale2DTest
     : public ::testing::TestWithParam<ConvolveScale2DParam> {

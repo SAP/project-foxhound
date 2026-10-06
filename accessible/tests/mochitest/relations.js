@@ -31,6 +31,8 @@ const RELATION_DETAILS_FOR = nsIAccessibleRelation.RELATION_DETAILS_FOR;
 const RELATION_ERRORMSG = nsIAccessibleRelation.RELATION_ERRORMSG;
 const RELATION_ERRORMSG_FOR = nsIAccessibleRelation.RELATION_ERRORMSG_FOR;
 const RELATION_LINKS_TO = nsIAccessibleRelation.RELATION_LINKS_TO;
+const RELATION_ACTION = nsIAccessibleRelation.RELATION_ACTION;
+const RELATION_ACTION_FOR = nsIAccessibleRelation.RELATION_ACTION_FOR;
 
 // //////////////////////////////////////////////////////////////////////////////
 // General

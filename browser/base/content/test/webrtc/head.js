@@ -66,7 +66,7 @@ function whenDelayedStartupFinished(aWindow) {
 }
 
 function promiseIndicatorWindow() {
-  let startTime = performance.now();
+  let startTime = ChromeUtils.now();
 
   return new Promise(resolve => {
     Services.obs.addObserver(function obs(win) {
@@ -232,7 +232,7 @@ async function assertWebRTCIndicatorStatus(expected) {
 }
 
 function promiseNotificationShown(notification) {
-  let win = notification.browser.ownerGlobal;
+  let win = notification.browser.documentGlobal;
   if (win.PopupNotifications.panel.state == "open") {
     return Promise.resolve();
   }
@@ -344,7 +344,9 @@ function promiseMessage(
   aCount = 1,
   browser = gBrowser.selectedBrowser
 ) {
-  let startTime = performance.now();
+  let startTime = ChromeUtils.now();
+  // TODO: Switch to SpecialPowers.spawn
+  // eslint-disable-next-line mozilla/reject-contenttask-spawn
   let promise = ContentTask.spawn(
     browser,
     [aMessage, aCount],
@@ -377,7 +379,7 @@ function promiseMessage(
 }
 
 function promisePopupNotificationShown(aName, aAction, aWindow = window) {
-  let startTime = performance.now();
+  let startTime = ChromeUtils.now();
   return new Promise(resolve => {
     aWindow.PopupNotifications.panel.addEventListener(
       "popupshown",
@@ -434,11 +436,18 @@ async function activateSecondaryAction(aAction) {
     case kActionNever:
       if (notification.notification.secondaryActions.length > 1) {
         // "Always Block" is the first (and only) item in the menupopup.
+        await notification.secondaryButton.updateComplete;
         await Promise.all([
           BrowserTestUtils.waitForEvent(notification.menupopup, "popupshown"),
-          notification.menubutton.click(),
+          EventUtils.synthesizeMouseAtCenter(
+            notification.secondaryButton.chevronButtonEl,
+            {}
+          ),
         ]);
         notification.menupopup.querySelector("menuitem").click();
+        // menuitem.click() doesn't trigger XUL's auto-close. Hide explicitly so
+        // the reused menupopup is in a clean state if this panel is shown again.
+        notification.menupopup.hidePopup();
         return;
       }
       if (!notification.checkbox.checked) {
@@ -446,6 +455,7 @@ async function activateSecondaryAction(aAction) {
       }
     // fallthrough
     case kActionDeny:
+      await notification.secondaryButton.updateComplete;
       notification.secondaryButton.click();
       break;
     case kActionAlways:
@@ -458,7 +468,7 @@ async function activateSecondaryAction(aAction) {
 }
 
 async function getMediaCaptureState() {
-  let startTime = performance.now();
+  let startTime = ChromeUtils.now();
 
   function gatherBrowsingContexts(aBrowsingContext) {
     let list = [aBrowsingContext];
@@ -665,18 +675,54 @@ async function getBrowsingContextsAndFrameIdsForSubFrames(
   return browsingContextsAndFrames;
 }
 
+/**
+ * Test helper for getUserMedia calls.
+ *
+ * @param {boolean} aRequestAudio - Whether to request audio
+ * @param {boolean} aRequestVideo - Whether to request video
+ * @param {string} aFrameId - The ID of the frame
+ * @param {string} aType - The type of screen sharing.
+ * @param {BrowsingContext} aBrowsingContext - The browsing context
+ * @param {boolean} [aBadDevice=false] - Whether to use a bad device
+ * @param {boolean} [viaButtonClick=false] - Whether to call gUM directly or to
+ *   request via simulated button click.
+ * @returns {Promise} - Resolves when the gUM request has been made.
+ */
 async function promiseRequestDevice(
   aRequestAudio,
   aRequestVideo,
   aFrameId,
   aType,
   aBrowsingContext,
-  aBadDevice = false
+  aBadDevice = false,
+  viaButtonClick = false
 ) {
   info("requesting devices");
   let bc =
     aBrowsingContext ??
     (await getBrowsingContextForFrame(gBrowser.selectedBrowser, aFrameId));
+
+  if (viaButtonClick) {
+    return SpecialPowers.spawn(
+      bc,
+      [{ aRequestAudio, aRequestVideo, aType, aBadDevice }],
+      async function (args) {
+        let global = content.wrappedJSObject;
+        global.queueRequestDeviceViaBtn(
+          args.aRequestAudio,
+          args.aRequestVideo,
+          args.aType,
+          args.aBadDevice
+        );
+        EventUtils.synthesizeMouseAtCenter(
+          global.document.getElementById("gum"),
+          {},
+          content
+        );
+      }
+    );
+  }
+
   return SpecialPowers.spawn(
     bc,
     [{ aRequestAudio, aRequestVideo, aType, aBadDevice }],
@@ -686,7 +732,8 @@ async function promiseRequestDevice(
         args.aRequestAudio,
         args.aRequestVideo,
         args.aType,
-        args.aBadDevice
+        args.aBadDevice,
+        args.withUserActivation
       );
     }
   );
@@ -822,7 +869,7 @@ async function reloadFromContent() {
   await disableObserverVerification();
 
   let loadedPromise = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-  await ContentTask.spawn(gBrowser.selectedBrowser, null, () =>
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () =>
     content.location.reload()
   );
 
@@ -898,10 +945,11 @@ function checkDeviceSelectors(aExpectedTypes, aWindow = window) {
 /**
  * Tests the siteIdentity icons, the permission panel and the global indicator
  * UI state.
- * @param {Object} aExpected - Expected state for the current tab.
+ *
+ * @param {object} aExpected - Expected state for the current tab.
  * @param {window} [aWin] - Top level chrome window to test state of.
- * @param {Object} [aExpectedGlobal] - Expected state for all tabs.
- * @param {Object} [aExpectedPerm] - Expected permission states keyed by device
+ * @param {object} [aExpectedGlobal] - Expected state for all tabs.
+ * @param {object} [aExpectedPerm] - Expected permission states keyed by device
  * type.
  */
 async function checkSharingUI(
@@ -1231,7 +1279,7 @@ async function runTests(tests, options = {}) {
   gObserveSubFrames = SpecialPowers.useRemoteSubframes ? options.subFrames : {};
 
   for (let testCase of tests) {
-    let startTime = performance.now();
+    let startTime = ChromeUtils.now();
     info(testCase.desc);
     if (
       !testCase.skipObserverVerification &&
@@ -1267,13 +1315,13 @@ async function runTests(tests, options = {}) {
  * @param {<xul:browser} browser - The browser to share devices with.
  * @param {boolean} camera - True to share a camera device.
  * @param {boolean} mic - True to share a microphone device.
- * @param {Number} [screenOrWin] - One of either SHARE_WINDOW or SHARE_SCREEN
+ * @param {number} [screenOrWin] - One of either SHARE_WINDOW or SHARE_SCREEN
  *   to share a window or screen. Defaults to neither.
  * @param {boolean} remember - True to persist the permission to the
  *   SitePermissions database as SitePermissions.SCOPE_PERSISTENT. Note that
  *   callers are responsible for clearing this persistent permission.
- * @return {Promise}
- * @resolves {undefined} - Once the sharing is complete.
+ * @returns {Promise<void>}
+ *   Resolves once sharing is complete.
  */
 async function shareDevices(
   browser,

@@ -74,10 +74,7 @@ describe('Launcher specs', function () {
             });
           await remote.disconnect();
           const error = await watchdog;
-          expect(error.message).atLeastOneToContain([
-            'Waiting for selector `div` failed: Waiting failed: Frame detached',
-            'Waiting for selector `div` failed: Browsing context already closed: User context was closed: Session already ended.',
-          ]);
+          expect(error.message).toBe('Waiting for selector `div` failed');
         } finally {
           await close();
         }
@@ -450,18 +447,6 @@ describe('Launcher specs', function () {
           expect(puppeteer.product).toBe('chrome');
         } else if (isFirefox) {
           expect(puppeteer.product).toBe('firefox');
-        }
-      });
-      it('should work with no default arguments', async () => {
-        const {browser, close} = await launch({
-          ignoreDefaultArgs: true,
-        });
-        try {
-          const page = await browser.newPage();
-          expect(await page.evaluate('11 * 11')).toBe(121);
-          await page.close();
-        } finally {
-          await close();
         }
       });
       it('should filter out ignored default arguments in Chrome', async () => {

@@ -74,45 +74,6 @@ class MappersKtTest {
     }
 
     @Test
-    fun `GIVEN a spoc downloaded from Internet WHEN it is converted to a local spoc THEN a one to one mapping is made`() {
-        val apiStory = PocketTestResources.apiExpectedPocketSpocs[0]
-
-        val result = apiStory.toLocalSpoc()
-
-        assertEquals(apiStory.id, result.id)
-        assertSame(apiStory.title, result.title)
-        assertSame(apiStory.url, result.url)
-        assertSame(apiStory.imageSrc, result.imageUrl)
-        assertSame(apiStory.sponsor, result.sponsor)
-        assertSame(apiStory.shim.click, result.clickShim)
-        assertSame(apiStory.shim.impression, result.impressionShim)
-        assertEquals(apiStory.priority, result.priority)
-        assertEquals(apiStory.caps.lifetimeCount, result.lifetimeCapCount)
-        assertEquals(apiStory.caps.flightCount, result.flightCapCount)
-        assertEquals(apiStory.caps.flightPeriod, result.flightCapPeriod)
-    }
-
-    @Test
-    fun `GIVEN a local spoc WHEN it is converted to be exposed to clients THEN a one to one mapping is made`() {
-        val localStory = PocketTestResources.dbExpectedPocketSpoc
-
-        val result = localStory.toPocketSponsoredStory()
-
-        assertEquals(localStory.id, result.id)
-        assertSame(localStory.title, result.title)
-        assertSame(localStory.url, result.url)
-        assertSame(localStory.imageUrl, result.imageUrl)
-        assertSame(localStory.sponsor, result.sponsor)
-        assertSame(localStory.clickShim, result.shim.click)
-        assertSame(localStory.impressionShim, result.shim.impression)
-        assertEquals(localStory.priority, result.priority)
-        assertEquals(localStory.lifetimeCapCount, result.caps.lifetimeCount)
-        assertEquals(localStory.flightCapCount, result.caps.flightCount)
-        assertEquals(localStory.flightCapPeriod, result.caps.flightPeriod)
-        assertTrue(result.caps.currentImpressions.isEmpty())
-    }
-
-    @Test
     fun `GIVEN a ContentRecommendationEntity WHEN it is converted to be exposed to clients THEN a one to one mapping is made`() {
         val recommendation = PocketTestResources.contentRecommendationEntity
 

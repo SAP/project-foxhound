@@ -50,8 +50,8 @@ var o2 = {
   }
 };
 
-testWithTypedArrayConstructors(function(TA) {
-  var sample = new TA(2);
+testWithTypedArrayConstructors(function(TA, makeCtorArg) {
+  var sample = new TA(makeCtorArg(2));
   begin = false;
   end = false;
 
@@ -62,6 +62,6 @@ testWithTypedArrayConstructors(function(TA) {
 
   assert(begin, "observable ToInteger(begin)");
   assert(end, "observable ToInteger(end)");
-});
+}, null, null, ["immutable"]);
 
 reportCompare(0, 0);

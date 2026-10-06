@@ -1,9 +1,11 @@
 /* clang-format off */
-/* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#ifndef ACCESSIBLE_MAC_MOXACCESSIBLEBASE_H_
+#define ACCESSIBLE_MAC_MOXACCESSIBLEBASE_H_
 
 #import <Cocoa/Cocoa.h>
 
@@ -79,10 +81,17 @@ inline id<mozAccessible> GetObjectOrRepresentedView(id<mozAccessible> aObject) {
 - (id)accessibilityFocusedUIElement;
 
 // override, final
+- (NSArray*)accessibilityCustomActions;
+
+// override, final
 - (BOOL)isAccessibilityElement;
 
 // final
 - (BOOL)accessibilityNotifiesWhenDestroyed;
+
+#pragma mark - AXCustomContentProvider protocol
+
+- (NSArray*)accessibilityCustomContent;
 
 #pragma mark - MOXAccessible protocol
 
@@ -91,6 +100,9 @@ inline id<mozAccessible> GetObjectOrRepresentedView(id<mozAccessible> aObject) {
 
 // override
 - (id)moxFocusedUIElement;
+
+// override
+- (NSArray*)moxCustomActions;
 
 // override
 - (void)moxPostNotification:(NSString*)notification;
@@ -127,8 +139,14 @@ inline id<mozAccessible> GetObjectOrRepresentedView(id<mozAccessible> aObject) {
 - (BOOL)moxIsLiveRegion;
 
 // override
+- (BOOL)moxIsTextField;
+
+// override
 - (id<MOXAccessible>)moxFindAncestor:(BOOL (^)(id<MOXAccessible> moxAcc,
                                                BOOL* stop))findBlock;
+
+// override
+- (NSArray*)moxCustomContent;
 
 #pragma mark -
 
@@ -141,3 +159,5 @@ inline id<mozAccessible> GetObjectOrRepresentedView(id<mozAccessible> aObject) {
 - (void)expire;
 
 @end
+
+#endif  // ACCESSIBLE_MAC_MOXACCESSIBLEBASE_H_

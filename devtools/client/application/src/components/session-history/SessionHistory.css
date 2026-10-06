@@ -1,0 +1,109 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+#current {
+  text-decoration: underline;
+  color: var(--theme-selection-color);
+  background-color: var(--theme-selection-background);
+}
+
+#diagram-container-table {
+  --col-width: 95px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+#diagram-container-table thead th:not([aria-hidden]) {
+  border: 1px solid var(--theme-body-color);
+  cursor: default;
+  width: var(--col-width);
+}
+
+#diagram-container-table tbody td:not([aria-hidden]) {
+  --cell-padding: 4px;
+  --cell-border: 1px;
+  border: var(--cell-border) solid;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: var(--cell-padding);
+}
+
+#diagram-container-table tbody td.diagram-padding {
+  border: none;
+}
+
+#diagram-container-table .diagram-spacer {
+  width: 5px;
+}
+
+#diagram-container-table tbody td.same-document-nav {
+  border-inline-start-style: dotted;
+}
+
+#diagram-container-table tbody td:has(+ td.same-document-nav) {
+  border-inline-end-style: dotted;
+}
+
+#diagram-container-table tbody td button {
+  border: none;
+  text-align: start;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  /* Make the button as wide as the cell, especially when the td spans multiple columns */
+  /* prettier-ignore */
+  width: calc(
+    /* multiply base column width with the colspan (--age) */
+    var(--col-width) * var(--age, 1)
+    /* removing the cell inline padding and border */
+    - (2 * var(--cell-padding))
+    - (2 * var(--cell-border))
+  );
+}
+
+#diagram-container-table td:has(:popover-open) button {
+  background-color: var(--theme-selection-background);
+  color: var(--theme-selection-color);
+}
+
+#diagram-container-table td:has(:popover-open) {
+  anchor-name: --selected-session-history-entry-info;
+}
+
+#diagram-container-table td div[popover] {
+  position: absolute;
+  position-anchor: --selected-session-history-entry-info;
+  background-color: var(--theme-body-alternate-emphasized-background);
+  inset-block-start: anchor(end);
+  inset-inline-start: anchor(start);
+  position-try: --session-history-entry-bottom-end;
+  /* override the default auto margin */
+  margin: 0;
+  border-width: 1px;
+
+  dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: 10px;
+    padding: 0 5px;
+    margin: 0;
+    user-select: text;
+
+    dt {
+      font-weight: bold;
+      cursor: default;
+    }
+
+    dd {
+      margin: 0;
+    }
+  }
+}
+
+@position-try --session-history-entry-bottom-end {
+  inset: auto;
+  inset-block-start: anchor(end);
+  inset-inline-end: anchor(end);
+}

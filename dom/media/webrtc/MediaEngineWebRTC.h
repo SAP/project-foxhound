@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,13 +5,13 @@
 #ifndef MEDIAENGINEWEBRTC_H_
 #define MEDIAENGINEWEBRTC_H_
 
-#include "MediaEngine.h"
-#include "MediaEventSource.h"
-#include "MediaEngineSource.h"
-#include "nsTArray.h"
 #include "CubebDeviceEnumerator.h"
+#include "MediaEngine.h"
+#include "MediaEngineSource.h"
+#include "MediaEventSource.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/MediaStreamTrackBinding.h"
+#include "nsTArray.h"
 
 namespace mozilla {
 
@@ -27,6 +26,8 @@ class MediaEngineWebRTC : public MediaEngine {
   void EnumerateDevices(dom::MediaSourceEnum, MediaSinkEnum,
                         nsTArray<RefPtr<MediaDevice>>*) override;
   RefPtr<MediaEngineSource> CreateSource(const MediaDevice* aDevice) override;
+  RefPtr<MediaEngineSource> CreateSourceFrom(const MediaEngineSource* aSource,
+                                             const MediaDevice*) override;
 
   MediaEventSource<void>& DeviceListChangeEvent() override {
     return mDeviceListChangeEvent;

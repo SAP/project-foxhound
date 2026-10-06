@@ -5,7 +5,7 @@
 from setuptools import setup
 
 PACKAGE_NAME = "mozleak"
-PACKAGE_VERSION = "1.0.0"
+PACKAGE_VERSION = "2.0.0"
 
 
 setup(

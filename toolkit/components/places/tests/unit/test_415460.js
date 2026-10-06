@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,9 +9,10 @@ var hs = Cc["@mozilla.org/browser/nav-history-service;1"].getService(
 /**
  * Checks to see that a search has exactly one result in the database.
  *
- * @param aTerms
- *        The terms to search for.
- * @returns true if the search returns one result, false otherwise.
+ * @param {string} aTerms
+ *   The terms to search for.
+ * @returns {boolean}
+ *   true if the search returns one result, false otherwise.
  */
 function search_has_result(aTerms) {
   var options = hs.getNewQueryOptions();

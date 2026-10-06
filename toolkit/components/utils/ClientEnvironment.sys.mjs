@@ -8,13 +8,16 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
-  AttributionCode: "resource:///modules/AttributionCode.sys.mjs",
+  AttributionCode:
+    "moz-src:///browser/components/attribution/AttributionCode.sys.mjs",
   NormandyUtils: "resource://normandy/lib/NormandyUtils.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
-  ShellService: "resource:///modules/ShellService.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
+  ShellService: "moz-src:///browser/components/shell/ShellService.sys.mjs",
   TelemetryArchive: "resource://gre/modules/TelemetryArchive.sys.mjs",
   TelemetryController: "resource://gre/modules/TelemetryController.sys.mjs",
   UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
+  WindowsRegistry: "resource://gre/modules/WindowsRegistry.sys.mjs",
   WindowsVersionInfo:
     "resource://gre/modules/components-utils/WindowsVersionInfo.sys.mjs",
 });
@@ -144,7 +147,7 @@ export class ClientEnvironmentBase {
 
   static get searchEngine() {
     return (async () => {
-      const defaultEngineInfo = await Services.search.getDefault();
+      const defaultEngineInfo = await lazy.SearchService.getDefault();
       return defaultEngineInfo.telemetryId;
     })();
   }
@@ -242,6 +245,7 @@ export class ClientEnvironmentBase {
       /**
        * Gets the windows build number by querying the OS directly. The initial
        * version was copied from toolkit/components/telemetry/app/TelemetryEnvironment.sys.mjs
+       *
        * @returns {number | null} The build number, or null on non-Windows platform or if there is an error.
        */
       get windowsBuildNumber() {
@@ -250,6 +254,28 @@ export class ClientEnvironmentBase {
         }
 
         return lazy.WindowsVersionInfo.get({ throwOnError: false }).buildNumber;
+      },
+
+      /**
+       * Gets the Windows Update Build Revision (UBR), the minor build number
+       * shown alongside the build number (eg. the `3693` in `19045.3693`). Only
+       * present on Windows 10 and later.
+       *
+       * @returns {number | null} The UBR, or null on non-Windows platforms,
+       *    older Windows versions, or if there is an error.
+       */
+      get windowsUBR() {
+        if (!osInfo.isWindows) {
+          return null;
+        }
+
+        const ubr = lazy.WindowsRegistry.readRegKey(
+          Ci.nsIWindowsRegKey.ROOT_KEY_LOCAL_MACHINE,
+          "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+          "UBR",
+          Ci.nsIWindowsRegKey.WOW64_64
+        );
+        return Number.isInteger(ubr) ? ubr : null;
       },
 
       get macVersion() {

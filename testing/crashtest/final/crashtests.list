@@ -5,4 +5,4 @@
 # ticks from happening.
 
 skip-if(AddressSanitizer) skip-if(ThreadSanitizer) pref(dom.disable_open_during_load,false) load 1419902.html # skip Bug 1419902. Bug 1573281 asan # this comes from dom/base/crashtests/
-skip-if(Android) load 1758199-1.html # printPreview doesn't work on android # this comes from layout/printing/crashtests
+skip-if(Android) skip-if(ThreadSanitizer) load 1758199-1.html # printPreview doesn't work on android # this comes from layout/printing/crashtests

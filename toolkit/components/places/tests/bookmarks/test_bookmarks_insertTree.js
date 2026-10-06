@@ -147,7 +147,7 @@ add_task(async function invalid_input_rejects() {
     children: [
       {
         type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
-        url: NetUtil.newURI(longurl),
+        url: Services.io.newURI(longurl),
       },
     ],
     guid: PlacesUtils.bookmarks.unfiledGuid,

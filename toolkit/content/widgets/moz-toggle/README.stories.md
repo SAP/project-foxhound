@@ -28,10 +28,10 @@ corresponding with "on" and "off" states.
 ## Code
 
 The source for `moz-toggle` can be found under
-[toolkit/content/widgets/moz-toggle](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/moz-toggle/moz-toggle.mjs).
+[toolkit/content/widgets/moz-toggle](https://searchfox.org/firefox-main/source/toolkit/content/widgets/moz-toggle/moz-toggle.mjs).
 You can find an examples of `moz-toggle` in use in the Firefox codebase in both
-[about:preferences](https://searchfox.org/mozilla-central/source/browser/components/preferences/privacy.inc.xhtml#696)
-and [about:addons](https://searchfox.org/mozilla-central/source/toolkit/mozapps/extensions/content/aboutaddons.html#182).
+[about:preferences](https://searchfox.org/firefox-main/source/browser/components/preferences/privacy.inc.xhtml#696)
+and [about:addons](https://searchfox.org/firefox-main/source/toolkit/mozapps/extensions/content/aboutaddons.html#182).
 
 `moz-toggle` can be imported into `.html`/`.xhtml` files:
 

@@ -1,7 +1,12 @@
-// |reftest| skip-if(winWidget&&!xulRuntime.shell) -- Windows browser in automation doesn't pick up new time zones correctly
+// |reftest| skip-if((winWidget&&!xulRuntime.shell)||!this.hasOwnProperty("Intl")) -- Windows browser in automation doesn't pick up new time zones correctly; Requires ICU time zone support
 
 // Repeats the test from "time-zones.js", but uses POSIX instead of IANA names
 // for the time zones. This allows to run these tests on Windows, too.
+//
+// Requires ICU support because time zones like "PST8PDT" may use different
+// time zone rules when compared to "America/Los_Angeles". PST8PDT is a link
+// to America/Los_Angeles since tzdata 2024b, but system libraries may apply
+// different time zone rules.
 
 // From bug 1330149:
 //

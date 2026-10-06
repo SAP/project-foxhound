@@ -25,11 +25,12 @@ function waitForBrowserPaint() {
           return;
         }
         Services.obs.removeObserver(observer, "document-element-inserted");
-        doc.ownerGlobal.addEventListener(
+        doc.documentGlobal.addEventListener(
           "MozAfterPaint",
           evt => {
             resolve(
-              doc.ownerGlobal.performance.timing.fetchStart + evt.paintTimeStamp
+              doc.documentGlobal.performance.timing.fetchStart +
+                evt.paintTimeStamp
             );
           },
           { once: true }

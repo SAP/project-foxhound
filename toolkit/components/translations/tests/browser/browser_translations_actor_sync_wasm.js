@@ -16,14 +16,14 @@ add_task(async function test_translations_actor_sync_update_wasm() {
   });
 
   const decoder = new TextDecoder();
-  const { bergamotWasmArrayBuffer } =
+  const { bergamotWasmBlob } =
     await TranslationsParent.getTranslationsEnginePayload({
       sourceLanguage: "en",
       targetLanguage: "es",
     });
 
   is(
-    decoder.decode(bergamotWasmArrayBuffer),
+    decoder.decode(await bergamotWasmBlob.arrayBuffer()),
     `Mocked download: test-translation-wasm bergamot-translator ${TranslationsParent.BERGAMOT_MAJOR_VERSION}.0`,
     `The version ${TranslationsParent.BERGAMOT_MAJOR_VERSION}.0 model is downloaded.`
   );
@@ -47,14 +47,14 @@ add_task(async function test_translations_actor_sync_update_wasm() {
     expectedUpdatedRecordsCount: 1,
   });
 
-  const { bergamotWasmArrayBuffer: updatedBergamotWasmArrayBuffer } =
+  const { bergamotWasmBlob: updatedBergamotWasmBlob } =
     await TranslationsParent.getTranslationsEnginePayload({
       sourceLanguage: "en",
       targetLanguage: "es",
     });
 
   is(
-    decoder.decode(updatedBergamotWasmArrayBuffer),
+    decoder.decode(await updatedBergamotWasmBlob.arrayBuffer()),
     `Mocked download: test-translation-wasm bergamot-translator ${TranslationsParent.BERGAMOT_MAJOR_VERSION}.1`,
     `The version ${TranslationsParent.BERGAMOT_MAJOR_VERSION}.1 model is downloaded.`
   );
@@ -72,14 +72,14 @@ add_task(async function test_translations_actor_sync_delete_wasm() {
   });
 
   const decoder = new TextDecoder();
-  const { bergamotWasmArrayBuffer } =
+  const { bergamotWasmBlob } =
     await TranslationsParent.getTranslationsEnginePayload({
       sourceLanguage: "en",
       targetLanguage: "es",
     });
 
   is(
-    decoder.decode(bergamotWasmArrayBuffer),
+    decoder.decode(await bergamotWasmBlob.arrayBuffer()),
     `Mocked download: test-translation-wasm bergamot-translator ${TranslationsParent.BERGAMOT_MAJOR_VERSION}.0`,
     `The version ${TranslationsParent.BERGAMOT_MAJOR_VERSION}.0 model is downloaded.`
   );
@@ -129,14 +129,14 @@ add_task(
     });
 
     const decoder = new TextDecoder();
-    const { bergamotWasmArrayBuffer } =
+    const { bergamotWasmBlob } =
       await TranslationsParent.getTranslationsEnginePayload({
         sourceLanguage: "en",
         targetLanguage: "es",
       });
 
     is(
-      decoder.decode(bergamotWasmArrayBuffer),
+      decoder.decode(await bergamotWasmBlob.arrayBuffer()),
       `Mocked download: test-translation-wasm bergamot-translator ${TranslationsParent.BERGAMOT_MAJOR_VERSION}.0`,
       `The version ${TranslationsParent.BERGAMOT_MAJOR_VERSION}.0 model is downloaded.`
     );
@@ -149,14 +149,14 @@ add_task(
       expectedCreatedRecordsCount: 1,
     });
 
-    const { bergamotWasmArrayBuffer: updatedBergamotWasmArrayBuffer } =
+    const { bergamotWasmBlob: updatedBergamotWasmBlob } =
       await TranslationsParent.getTranslationsEnginePayload({
         sourceLanguage: "en",
         targetLanguage: "es",
       });
 
     is(
-      decoder.decode(updatedBergamotWasmArrayBuffer),
+      decoder.decode(await updatedBergamotWasmBlob.arrayBuffer()),
       `Mocked download: test-translation-wasm bergamot-translator ${TranslationsParent.BERGAMOT_MAJOR_VERSION}.1`,
       `The version ${TranslationsParent.BERGAMOT_MAJOR_VERSION}.1 model is downloaded.`
     );
@@ -176,14 +176,14 @@ add_task(
     });
 
     const decoder = new TextDecoder();
-    const { bergamotWasmArrayBuffer } =
+    const { bergamotWasmBlob } =
       await TranslationsParent.getTranslationsEnginePayload({
         sourceLanguage: "en",
         targetLanguage: "es",
       });
 
     is(
-      decoder.decode(bergamotWasmArrayBuffer),
+      decoder.decode(await bergamotWasmBlob.arrayBuffer()),
       `Mocked download: test-translation-wasm bergamot-translator ${TranslationsParent.BERGAMOT_MAJOR_VERSION}.0`,
       `The version ${TranslationsParent.BERGAMOT_MAJOR_VERSION}.0 model is downloaded.`
     );
@@ -198,14 +198,14 @@ add_task(
       expectedCreatedRecordsCount: 1,
     });
 
-    const { bergamotWasmArrayBuffer: updatedBergamotWasmArrayBuffer } =
+    const { bergamotWasmBlob: updatedBergamotWasmBlob } =
       await TranslationsParent.getTranslationsEnginePayload({
         sourceLanguage: "en",
         targetLanguage: "es",
       });
 
     is(
-      decoder.decode(updatedBergamotWasmArrayBuffer),
+      decoder.decode(await updatedBergamotWasmBlob.arrayBuffer()),
       `Mocked download: test-translation-wasm bergamot-translator ${TranslationsParent.BERGAMOT_MAJOR_VERSION}.0`,
       `The version ${TranslationsParent.BERGAMOT_MAJOR_VERSION}.0 model is still downloaded.`
     );
@@ -225,14 +225,14 @@ add_task(async function test_translations_actor_sync_rollback_wasm() {
   });
 
   const decoder = new TextDecoder();
-  const { bergamotWasmArrayBuffer } =
+  const { bergamotWasmBlob } =
     await TranslationsParent.getTranslationsEnginePayload({
       sourceLanguage: "en",
       targetLanguage: "es",
     });
 
   is(
-    decoder.decode(bergamotWasmArrayBuffer),
+    decoder.decode(await bergamotWasmBlob.arrayBuffer()),
     `Mocked download: test-translation-wasm bergamot-translator ${TranslationsParent.BERGAMOT_MAJOR_VERSION}.0`,
     `The version ${TranslationsParent.BERGAMOT_MAJOR_VERSION}.0 model is downloaded.`
   );
@@ -245,14 +245,14 @@ add_task(async function test_translations_actor_sync_rollback_wasm() {
     expectedCreatedRecordsCount: 1,
   });
 
-  const { bergamotWasmArrayBuffer: updatedBergamotWasmArrayBuffer } =
+  const { bergamotWasmBlob: updatedBergamotWasmBlob } =
     await TranslationsParent.getTranslationsEnginePayload({
       sourceLanguage: "en",
       targetLanguage: "es",
     });
 
   is(
-    decoder.decode(updatedBergamotWasmArrayBuffer),
+    decoder.decode(await updatedBergamotWasmBlob.arrayBuffer()),
     `Mocked download: test-translation-wasm bergamot-translator ${TranslationsParent.BERGAMOT_MAJOR_VERSION}.1`,
     `The version ${TranslationsParent.BERGAMOT_MAJOR_VERSION}.1 model is downloaded.`
   );
@@ -262,14 +262,14 @@ add_task(async function test_translations_actor_sync_rollback_wasm() {
     expectedDeletedRecordsCount: 1,
   });
 
-  const { bergamotWasmArrayBuffer: rolledBackBergamotWasmArrayBuffer } =
+  const { bergamotWasmBlob: rolledBackBergamotWasmBlob } =
     await TranslationsParent.getTranslationsEnginePayload({
       sourceLanguage: "en",
       targetLanguage: "es",
     });
 
   is(
-    decoder.decode(rolledBackBergamotWasmArrayBuffer),
+    decoder.decode(await rolledBackBergamotWasmBlob.arrayBuffer()),
     `Mocked download: test-translation-wasm bergamot-translator ${TranslationsParent.BERGAMOT_MAJOR_VERSION}.0`,
     `The version ${TranslationsParent.BERGAMOT_MAJOR_VERSION}.0 model is downloaded.`
   );

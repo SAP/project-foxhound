@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,14 +17,13 @@
 #include "LulCommonExt.h"
 #include "LulElfExt.h"
 #include "LulMainInt.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/MemoryChecking.h"
+#include "mozilla/PodOperations.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 
 // Set this to 1 for verbose logging
 #define DEBUG_MAIN 0
@@ -36,7 +33,6 @@ namespace lul {
 using mozilla::CheckedInt;
 using mozilla::DebugOnly;
 using mozilla::MallocSizeOf;
-using mozilla::Unused;
 using std::pair;
 using std::string;
 using std::vector;
@@ -207,9 +203,8 @@ LExpr* RuleSet::ExprForRegno(DW_REG_NUMBER aRegno) {
   }
 }
 
-RuleSet::RuleSet() {
-  // All fields are of type LExpr and so are initialised by LExpr::LExpr().
-}
+// All fields are of type LExpr and so are initialised by LExpr::LExpr().
+RuleSet::RuleSet() = default;
 
 ////////////////////////////////////////////////////////////////
 // SecMap                                                     //
@@ -1073,8 +1068,8 @@ TaggedUWord EvaluatePfxExpr(int32_t start, const UnwindRegs* aOldRegs,
   // the highest numbered in-use element.
   const int N_STACK = 10;
   TaggedUWord stack[N_STACK];
+  std::fill(std::begin(stack), std::end(stack), TaggedUWord());
   int stackPointer = -1;
-  for (int i = 0; i < N_STACK; i++) stack[i] = TaggedUWord();
 
 #define PUSH(_tuw)                                             \
   do {                                                         \
@@ -1689,7 +1684,7 @@ static __attribute__((noinline)) bool GetAndCheckStackTrace(
   memset(&startRegs, 0, sizeof(startRegs));
 #if defined(GP_ARCH_amd64)
   volatile uintptr_t block[3];
-  MOZ_ASSERT(sizeof(block) == 24);
+  static_assert(sizeof(block) == 24);
   __asm__ __volatile__(
       "leaq 0(%%rip), %%r15"
       "\n\t"
@@ -1709,7 +1704,7 @@ static __attribute__((noinline)) bool GetAndCheckStackTrace(
   uintptr_t start = block[1] - REDZONE_SIZE;
 #elif defined(GP_PLAT_x86_linux) || defined(GP_PLAT_x86_android)
   volatile uintptr_t block[3];
-  MOZ_ASSERT(sizeof(block) == 12);
+  static_assert(sizeof(block) == 12);
   __asm__ __volatile__(
       ".byte 0xE8,0x00,0x00,0x00,0x00" /*call next insn*/
       "\n\t"
@@ -1731,7 +1726,7 @@ static __attribute__((noinline)) bool GetAndCheckStackTrace(
   uintptr_t start = block[1] - REDZONE_SIZE;
 #elif defined(GP_PLAT_arm_linux) || defined(GP_PLAT_arm_android)
   volatile uintptr_t block[6];
-  MOZ_ASSERT(sizeof(block) == 24);
+  static_assert(sizeof(block) == 24);
   __asm__ __volatile__(
       "mov r0, r15"
       "\n\t"
@@ -1760,7 +1755,7 @@ static __attribute__((noinline)) bool GetAndCheckStackTrace(
   uintptr_t start = block[1] - REDZONE_SIZE;
 #elif defined(GP_ARCH_arm64)
   volatile uintptr_t block[4];
-  MOZ_ASSERT(sizeof(block) == 32);
+  static_assert(sizeof(block) == 32);
   __asm__ __volatile__(
       "adr x0, . \n\t"
       "str x0, [%0, #0] \n\t"
@@ -1779,7 +1774,7 @@ static __attribute__((noinline)) bool GetAndCheckStackTrace(
   uintptr_t start = block[1] - REDZONE_SIZE;
 #elif defined(GP_ARCH_mips64)
   volatile uintptr_t block[3];
-  MOZ_ASSERT(sizeof(block) == 24);
+  static_assert(sizeof(block) == 24);
   __asm__ __volatile__(
       "sd $29, 8(%0)     \n"
       "sd $30, 16(%0)    \n"
@@ -1925,74 +1920,75 @@ static __attribute__((noinline)) bool GetAndCheckStackTrace(
 #define DECL_TEST_FN(NAME) \
   bool NAME(LUL* aLUL, const char* strPorig, const char* strP);
 
-#define GEN_TEST_FN(NAME, FRAMESIZE)                                          \
-  bool NAME(LUL* aLUL, const char* strPorig, const char* strP) {              \
-    /* Create a frame of size (at least) FRAMESIZE, so that the */            \
-    /* 8 functions created by this macro offer some variation in frame */     \
-    /* sizes.  This isn't as simple as it might seem, since a clever */       \
-    /* optimizing compiler (eg, clang-5) detects that the array is unused */  \
-    /* and removes it.  We try to defeat this by passing it to a function */  \
-    /* in a different compilation unit, and hoping that clang does not */     \
-    /* notice that the call is a no-op. */                                    \
-    char space[FRAMESIZE];                                                    \
-    Unused << write(1, space, 0); /* write zero bytes of |space| to stdout */ \
-                                                                              \
-    if (*strP == '\0') {                                                      \
-      /* We've come to the end of the director string. */                     \
-      /* Take a stack snapshot. */                                            \
-      /* We purposefully use a negation to avoid tail-call optimization */    \
-      return !GetAndCheckStackTrace(aLUL, strPorig);                          \
-    } else {                                                                  \
-      /* Recurse onwards.  This is a bit subtle.  The obvious */              \
-      /* thing to do here is call onwards directly, from within the */        \
-      /* arms of the case statement.  That gives a problem in that */         \
-      /* there will be multiple return points inside each function when */    \
-      /* unwinding, so it will be difficult to check for consistency */       \
-      /* against the director string.  Instead, we make an indirect */        \
-      /* call, so as to guarantee that there is only one call site */         \
-      /* within each function.  This does assume that the compiler */         \
-      /* won't transform it back to the simple direct-call form. */           \
-      /* To discourage it from doing so, the call is bracketed with */        \
-      /* __asm__ __volatile__ sections so as to make it not-movable. */       \
-      bool (*nextFn)(LUL*, const char*, const char*) = NULL;                  \
-      switch (*strP) {                                                        \
-        case '1':                                                             \
-          nextFn = TestFn1;                                                   \
-          break;                                                              \
-        case '2':                                                             \
-          nextFn = TestFn2;                                                   \
-          break;                                                              \
-        case '3':                                                             \
-          nextFn = TestFn3;                                                   \
-          break;                                                              \
-        case '4':                                                             \
-          nextFn = TestFn4;                                                   \
-          break;                                                              \
-        case '5':                                                             \
-          nextFn = TestFn5;                                                   \
-          break;                                                              \
-        case '6':                                                             \
-          nextFn = TestFn6;                                                   \
-          break;                                                              \
-        case '7':                                                             \
-          nextFn = TestFn7;                                                   \
-          break;                                                              \
-        case '8':                                                             \
-          nextFn = TestFn8;                                                   \
-          break;                                                              \
-        default:                                                              \
-          nextFn = TestFn8;                                                   \
-          break;                                                              \
-      }                                                                       \
-      /* "use" |space| immediately after the recursive call, */               \
-      /* so as to dissuade clang from deallocating the space while */         \
-      /* the call is active, or otherwise messing with the stack frame. */    \
-      __asm__ __volatile__("" ::: "cc", "memory");                            \
-      bool passed = nextFn(aLUL, strPorig, strP + 1);                         \
-      Unused << write(1, space, 0);                                           \
-      __asm__ __volatile__("" ::: "cc", "memory");                            \
-      return passed;                                                          \
-    }                                                                         \
+#define GEN_TEST_FN(NAME, FRAMESIZE)                                         \
+  bool NAME(LUL* aLUL, const char* strPorig, const char* strP) {             \
+    /* Create a frame of size (at least) FRAMESIZE, so that the */           \
+    /* 8 functions created by this macro offer some variation in frame */    \
+    /* sizes.  This isn't as simple as it might seem, since a clever */      \
+    /* optimizing compiler (eg, clang-5) detects that the array is unused */ \
+    /* and removes it.  We try to defeat this by passing it to a function */ \
+    /* in a different compilation unit, and hoping that clang does not */    \
+    /* notice that the call is a no-op. */                                   \
+    char space[FRAMESIZE];                                                   \
+    [[maybe_unused]] ssize_t r =                                             \
+        write(1, space, 0); /* write zero bytes of |space| to stdout */      \
+                                                                             \
+    if (*strP == '\0') {                                                     \
+      /* We've come to the end of the director string. */                    \
+      /* Take a stack snapshot. */                                           \
+      /* We purposefully use a negation to avoid tail-call optimization */   \
+      return !GetAndCheckStackTrace(aLUL, strPorig);                         \
+    } else {                                                                 \
+      /* Recurse onwards.  This is a bit subtle.  The obvious */             \
+      /* thing to do here is call onwards directly, from within the */       \
+      /* arms of the case statement.  That gives a problem in that */        \
+      /* there will be multiple return points inside each function when */   \
+      /* unwinding, so it will be difficult to check for consistency */      \
+      /* against the director string.  Instead, we make an indirect */       \
+      /* call, so as to guarantee that there is only one call site */        \
+      /* within each function.  This does assume that the compiler */        \
+      /* won't transform it back to the simple direct-call form. */          \
+      /* To discourage it from doing so, the call is bracketed with */       \
+      /* __asm__ __volatile__ sections so as to make it not-movable. */      \
+      bool (*nextFn)(LUL*, const char*, const char*) = NULL;                 \
+      switch (*strP) {                                                       \
+        case '1':                                                            \
+          nextFn = TestFn1;                                                  \
+          break;                                                             \
+        case '2':                                                            \
+          nextFn = TestFn2;                                                  \
+          break;                                                             \
+        case '3':                                                            \
+          nextFn = TestFn3;                                                  \
+          break;                                                             \
+        case '4':                                                            \
+          nextFn = TestFn4;                                                  \
+          break;                                                             \
+        case '5':                                                            \
+          nextFn = TestFn5;                                                  \
+          break;                                                             \
+        case '6':                                                            \
+          nextFn = TestFn6;                                                  \
+          break;                                                             \
+        case '7':                                                            \
+          nextFn = TestFn7;                                                  \
+          break;                                                             \
+        case '8':                                                            \
+          nextFn = TestFn8;                                                  \
+          break;                                                             \
+        default:                                                             \
+          nextFn = TestFn8;                                                  \
+          break;                                                             \
+      }                                                                      \
+      /* "use" |space| immediately after the recursive call, */              \
+      /* so as to dissuade clang from deallocating the space while */        \
+      /* the call is active, or otherwise messing with the stack frame. */   \
+      __asm__ __volatile__("" ::: "cc", "memory");                           \
+      bool passed = nextFn(aLUL, strPorig, strP + 1);                        \
+      [[maybe_unused]] ssize_t _ = write(1, space, 0);                       \
+      __asm__ __volatile__("" ::: "cc", "memory");                           \
+      return passed;                                                         \
+    }                                                                        \
   }
 
 // The test functions are mutually recursive, so it is necessary to

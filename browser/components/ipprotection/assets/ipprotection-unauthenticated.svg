@@ -1,0 +1,65 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" fill="none" viewBox="0 0 128 128">
+  <path fill="url(#a)" d="M63.924 17.031c2.706-.01 3.839 1.675 5.787 3.276 4.325 3.553 9.128 6.027 14.484 7.937 2.965 1.058 6.592 2.016 9.703 2.495 2.285.352 4.611.475 6.913.591.455.023.839-.026 1.303.057 1.765.313 3.304 1.769 3.766 3.49.25.933.185 2.083.213 3.053.144 5.13-.036 10.268-.451 15.373-1.179 14.495-4.849 28.878-14.011 40.387-3.259 4.093-6.948 7.576-11.697 10.838-4.91 3.373-10.386 6.037-16.01 8.016v-5.546l-.004.002V23h.004z"/>
+  <path fill="url(#b)" d="M63.923 26.4h-.003v76.788l.003.001v9.355c-5.624-1.979-11.1-4.643-16.01-8.016-4.749-3.262-8.438-6.746-11.697-10.839-9.161-11.508-12.831-25.891-14.01-40.386-.415-5.105-.596-10.242-.452-15.373.028-.97-.037-2.12.213-3.053.462-1.721 2.002-3.177 3.766-3.49.464-.083.848-.034 1.304-.057 2.301-.116 4.627-.239 6.912-.59 3.111-.48 6.738-1.438 9.703-2.496 5.356-1.91 10.16-4.384 14.485-7.937 1.948-1.6 3.08-3.285 5.786-3.276z"/>
+  <path fill="url(#c)" d="M63.923 103.189c-4.488-1.578-8.964-3.756-12.885-6.45-13.853-9.516-19.298-24.306-20.67-41.188-.335-4.105-.48-8.236-.363-12.361.021-.78-.03-1.705.17-2.455.372-1.384 1.61-2.553 3.029-2.806.373-.066.681-.027 1.048-.045 1.85-.094 3.72-.193 5.558-.476 2.502-.385 5.418-1.155 7.801-2.005 4.313-1.538 8.173-3.53 11.647-6.383.557-.458 1.078-.985 1.637-1.445a5.22 5.22 0 0 1 3.028-1.176z"/>
+  <path fill="url(#d)" d="M63.924 26.4a5.22 5.22 0 0 1 3.028 1.175c.56.46 1.08.987 1.637 1.445 3.474 2.854 7.335 4.845 11.647 6.383 2.384.85 5.3 1.62 7.801 2.005 1.838.283 3.708.382 5.559.476.366.018.674-.02 1.048.045 1.418.252 2.656 1.422 3.027 2.806.202.75.15 1.675.172 2.455.116 4.125-.03 8.256-.363 12.36-1.373 16.883-6.818 31.673-20.67 41.19-3.922 2.693-8.398 4.871-12.886 6.449z"/>
+  <path fill="url(#e)" d="M117.011 16.556c.305-.085.531.294.3.507-3.54 3.258-16.403 15.567-24.263 29.313-6.193 10.83-7.05 15.425-13.418 29.387-7.367 16.154-11.301 17.998-15.321 17.363-3.042-.482-7.6-10.578-10.873-15.444-12.375-18.39-20.398-24.74-20.432-24.766.626-1.54 10.716-1.708 26.43 9.166l.054.04c1.388.962 2.819 2.008 4.291 3.148.204.158 2.348-5.974 7.529-14.071 1.144 1.33 1.959 2.698 2.178 4.024 1.031 6.234-4.708 14.639-4.787 14.753l.001.001s5.825-8.478 4.787-14.755c-.219-1.326-1.032-2.693-2.177-4.024 7.583-11.853 21.671-27.92 45.701-34.642"/>
+  <path fill="url(#f)" d="M68.699 69.977s5.825-8.478 4.787-14.754c-.22-1.327-1.033-2.694-2.178-4.025-5.18 8.098-7.325 14.23-7.529 14.072a100 100 0 0 0-4.347-3.188 418 418 0 0 1 3.127 2.337c3.323 2.505 6.14 5.558 6.14 5.558"/>
+  <path fill="url(#g)" d="M68.699 69.977s5.825-8.478 4.787-14.754c-.22-1.327-1.033-2.694-2.178-4.025-5.18 8.098-7.325 14.23-7.529 14.072a100 100 0 0 0-4.347-3.188 418 418 0 0 1 3.127 2.337c3.323 2.505 6.14 5.558 6.14 5.558"/>
+  <defs>
+    <linearGradient id="a" x1="74.591" x2="97.034" y1="8.636" y2="150.164" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ea00e1"/>
+      <stop offset=".052" stop-color="#d303e5"/>
+      <stop offset=".177" stop-color="#9f0aed"/>
+      <stop offset=".301" stop-color="#750ff3"/>
+      <stop offset=".42" stop-color="#5413f8"/>
+      <stop offset=".534" stop-color="#3c17fc"/>
+      <stop offset=".639" stop-color="#2e18fe"/>
+      <stop offset=".729" stop-color="#2919ff"/>
+    </linearGradient>
+    <linearGradient id="b" x1="30.689" x2="96.772" y1="21.17" y2="140.386" gradientUnits="userSpaceOnUse">
+      <stop offset=".067" stop-color="#f942ff"/>
+      <stop offset=".217" stop-color="#d03aff"/>
+      <stop offset=".496" stop-color="#892cff"/>
+      <stop offset=".729" stop-color="#52f"/>
+      <stop offset=".904" stop-color="#351bff"/>
+      <stop offset="1" stop-color="#2919ff"/>
+    </linearGradient>
+    <linearGradient id="c" x1="44.329" x2="62.381" y1="24.088" y2="137.913" gradientUnits="userSpaceOnUse">
+      <stop offset=".139" stop-color="#f942ff"/>
+      <stop offset="1" stop-color="#2919ff"/>
+    </linearGradient>
+    <linearGradient id="d" x1="71.582" x2="91.53" y1="19.66" y2="132.788" gradientUnits="userSpaceOnUse">
+      <stop offset=".046" stop-color="#f057f9"/>
+      <stop offset=".209" stop-color="#b846fb"/>
+      <stop offset=".381" stop-color="#8636fc"/>
+      <stop offset=".542" stop-color="#5d29fd"/>
+      <stop offset=".688" stop-color="#4120fe"/>
+      <stop offset=".815" stop-color="#2f1bff"/>
+      <stop offset=".908" stop-color="#2919ff"/>
+    </linearGradient>
+    <linearGradient id="e" x1="55.475" x2="120.818" y1="78.487" y2="-15.948" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffe900"/>
+      <stop offset=".568" stop-color="#ff5700"/>
+      <stop offset=".615" stop-color="#ff5009"/>
+      <stop offset=".692" stop-color="#ff3c23"/>
+      <stop offset=".791" stop-color="#ff1c4c"/>
+      <stop offset=".868" stop-color="#ff0071"/>
+    </linearGradient>
+    <linearGradient id="f" x1="55.475" x2="120.818" y1="78.487" y2="-15.948" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffe900"/>
+      <stop offset=".568" stop-color="#ff5700"/>
+      <stop offset=".615" stop-color="#ff5009"/>
+      <stop offset=".692" stop-color="#ff3c23"/>
+      <stop offset=".791" stop-color="#ff1c4c"/>
+      <stop offset=".868" stop-color="#ff0071"/>
+    </linearGradient>
+    <linearGradient id="g" x1="68.031" x2="54.637" y1="61.221" y2="65.542" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ff2a32" stop-opacity="0"/>
+      <stop offset=".999" stop-color="#ff0074"/>
+    </linearGradient>
+  </defs>
+</svg>

@@ -49,13 +49,13 @@ function RuntimesState() {
  * Update the runtime matching the provided runtimeId with the content of updatedRuntime,
  * and return the new state.
  *
- * @param  {String} runtimeId
+ * @param  {string} runtimeId
  *         The id of the runtime to update
- * @param  {Object} updatedRuntime
+ * @param  {object} updatedRuntime
  *         Object used to update the runtime matching the idea using Object.assign.
- * @param  {Object} state
+ * @param  {object} state
  *         Current runtimes state.
- * @return {Object} The updated state
+ * @return {object} The updated state
  */
 function _updateRuntimeById(runtimeId, updatedRuntime, state) {
   // Find the array of runtimes that contains the updated runtime.

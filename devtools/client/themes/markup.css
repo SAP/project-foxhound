@@ -44,7 +44,8 @@ body {
  * This allows long overflows of text or input fields to still be styled with
  * the container, rather than the background disappearing when scrolling */
 #root {
-  float: left; /* The markup view should always be LTR */
+  float: left;
+  /* The markup view should always be LTR */
   min-width: 100%;
   box-sizing: border-box;
 
@@ -221,7 +222,7 @@ ul.children + .tag-line::before {
   margin-left: -8px;
   height: 12px;
   width: 12px;
-  background-image: url(chrome://devtools/content/debugger/images/markup-breakpoint.svg);
+  background-image: url(chrome://devtools/content/shared/components/images/markup-breakpoint.svg);
   background-repeat: no-repeat;
   background-size: 12px 12px;
   background-position: right center;
@@ -524,12 +525,15 @@ ul.children + .tag-line::before {
   .tag {
     color: var(--theme-highlight-blue);
   }
+
   .attr-name {
     color: var(--theme-highlight-red);
   }
+
   .attr-value {
     color: var(--theme-highlight-purple);
   }
+
   .pseudo {
     color: var(--theme-highlight-blue);
   }
@@ -553,11 +557,9 @@ ul.children + .tag-line::before {
 }
 
 /* Make focusable elements stand out a bit more when they're focused */
-.tag-line :is(
-  [editable],
+.tag-line :is([editable],
   /* tag is not always editable (e.g. for `html`, `DOCTYPE`, …), but is always focusable */
-  .tag
-):focus-visible {
+  .tag):focus-visible {
   border-radius: 2px;
   outline: var(--theme-focus-outline);
   outline-offset: var(--theme-outline-offset);
@@ -586,6 +588,7 @@ ul.children + .tag-line::before {
     /* Better style for attributes spanning multiple lines */
     box-decoration-break: clone;
     mix-blend-mode: lighten;
+
     .theme-dark & {
       mix-blend-mode: darken;
     }

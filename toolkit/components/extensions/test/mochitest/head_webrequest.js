@@ -139,12 +139,16 @@ function background(events) {
     );
 
     let deletedAny = false;
+    dump(`*** headers = ${JSON.stringify(headers)}\n`);
     for (let j = headers.length; j-- > 0; ) {
       if (remove.includes(headers[j].name.toLowerCase())) {
         headers.splice(j, 1);
         deletedAny = true;
       }
     }
+    dump(
+      `*** headers(after) = ${JSON.stringify(headers)}, deletedAny=${deletedAny}\n`
+    );
     browser.test.assertTrue(
       deletedAny,
       `at least one ${phase}Headers element to delete`
@@ -403,22 +407,7 @@ function background(events) {
 
   for (let [name, args] of Object.entries(events)) {
     browser.test.log(`adding listener for ${name}`);
-    try {
-      browser.webRequest[name].addListener(getListener(name), ...args);
-    } catch (e) {
-      browser.test.assertTrue(
-        /\brequestBody\b/.test(e.message),
-        "Request body is unsupported"
-      );
-
-      // RequestBody is disabled in release builds.
-      if (!/\brequestBody\b/.test(e.message)) {
-        throw e;
-      }
-
-      args.splice(args.indexOf("requestBody"), 1);
-      browser.webRequest[name].addListener(getListener(name), ...args);
-    }
+    browser.webRequest[name].addListener(getListener(name), ...args);
   }
 }
 

@@ -11,9 +11,7 @@ const calendars = {
   gregory: "0001-01-01",
   hebrew: "-003760-09-07",
   indian: "0079-03-22",
-  islamic: "0622-07-19",
   "islamic-civil": "0622-07-19",
-  "islamic-rgsa": "0622-07-19",
   "islamic-tbla": "0622-07-18",
   "islamic-umalqura": "0622-07-19",
   japanese: "0001-01-01",
@@ -28,8 +26,6 @@ assertEqArray(
 
 // See bug 1950425.
 const calendarsNotEnabledInRelease = [
-  "islamic",
-  "islamic-rgsa",
   "islamic-umalqura",
 ];
 assertEq(calendarsNotEnabledInRelease.every(c => c in calendars), true);

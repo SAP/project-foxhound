@@ -3,6 +3,8 @@ package org.mozilla.fenix.ui
 import android.os.Build
 import androidx.test.filters.SdkSuppress
 import mozilla.components.support.ktx.util.PromptAbuserDetector
+import org.junit.After
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
@@ -11,29 +13,37 @@ import org.mozilla.fenix.helpers.AppAndSystemHelper.closeSystemPhotoAndVideoPick
 import org.mozilla.fenix.helpers.AppAndSystemHelper.denyPermission
 import org.mozilla.fenix.helpers.AppAndSystemHelper.grantSystemPermission
 import org.mozilla.fenix.helpers.AppAndSystemHelper.verifySystemPhotoAndVideoPickerExists
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
-import org.mozilla.fenix.helpers.TestAssetHelper
-import org.mozilla.fenix.helpers.TestSetup
+import org.mozilla.fenix.helpers.TestAssetHelper.htmlControlsFormAsset
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.clickPageObject
 import org.mozilla.fenix.ui.robots.navigationToolbar
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
-class UploadPermissionsTest : TestSetup() {
+class UploadPermissionsTest {
 
-    @get:Rule
-    val activityTestRule = HomeActivityIntentTestRule()
+    @get:Rule(order = 0)
+    val fenixTestRule: FenixTestRule = FenixTestRule()
 
-    @get:Rule
-    val memoryLeaksRule = DetectMemoryLeaksRule()
+    private val mockWebServer get() = fenixTestRule.mockWebServer
 
-    override fun setUp() {
-        super.setUp()
+    @get:Rule(order = 1)
+    val composeTestRule = AndroidComposeTestRuleV2(
+        HomeActivityIntentTestRule.withDefaultSettingsOverrides(),
+    ) { it.activity }
+
+    @get:Rule(order = 2)
+    val memoryLeaksRule = DetectMemoryLeaksRule(composeTestRule = { composeTestRule })
+
+    @Before
+    fun setUp() {
         PromptAbuserDetector.validationsEnabled = false
     }
 
-    override fun tearDown() {
-        super.tearDown()
+    @After
+    fun tearDown() {
         PromptAbuserDetector.validationsEnabled = true
     }
 
@@ -41,11 +51,11 @@ class UploadPermissionsTest : TestSetup() {
     @SmokeTest
     @Test
     fun fileUploadPermissionTest() {
-        val testPage = TestAssetHelper.getHTMLControlsFormAsset(mockWebServer)
+        val testPage = mockWebServer.htmlControlsFormAsset
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(testPage.url) {
-            clickPageObject(itemWithResId("upload_file"))
+            clickPageObject(composeTestRule, itemWithResId("upload_file"))
             // Grant app permission to access storage
             grantSystemPermission()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -59,11 +69,11 @@ class UploadPermissionsTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2751914
     @Test
     fun uploadSelectedAudioFilesWhileNoPermissionGrantedTest() {
-        val testPage = TestAssetHelper.getHTMLControlsFormAsset(mockWebServer)
+        val testPage = mockWebServer.htmlControlsFormAsset
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(testPage.url) {
-            clickPageObject(itemWithResId("audioFileUpload"))
+            clickPageObject(composeTestRule, itemWithResId("audioFileUpload"))
             // Deny app access to voice recording
             denyPermission()
             // Deny app access to audio files storage
@@ -75,11 +85,11 @@ class UploadPermissionsTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2779525
     @Test
     fun uploadSelectedAudioFilesWhenStoragePermissionGrantedTest() {
-        val testPage = TestAssetHelper.getHTMLControlsFormAsset(mockWebServer)
+        val testPage = mockWebServer.htmlControlsFormAsset
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(testPage.url) {
-            clickPageObject(itemWithResId("audioFileUpload"))
+            clickPageObject(composeTestRule, itemWithResId("audioFileUpload"))
             // Deny app access to voice recording
             denyPermission()
             // Grant app access to audio files storage
@@ -93,11 +103,11 @@ class UploadPermissionsTest : TestSetup() {
     @SdkSuppress(minSdkVersion = 33)
     @Test
     fun uploadSelectedVideoOrImageFilesWhenStoragePermissionGrantedTest() {
-        val testPage = TestAssetHelper.getHTMLControlsFormAsset(mockWebServer)
+        val testPage = mockWebServer.htmlControlsFormAsset
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(testPage.url) {
-            clickPageObject(itemWithResId("photosUpload"))
+            clickPageObject(composeTestRule, itemWithResId("photosUpload"))
             // Deny app access to pictures and video recordings
             denyPermission()
             verifySystemPhotoAndVideoPickerExists()

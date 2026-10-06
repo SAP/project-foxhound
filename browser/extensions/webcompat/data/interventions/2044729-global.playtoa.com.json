@@ -1,0 +1,15 @@
+{
+  "label": "global.playtoa.com",
+  "bugs": {
+    "2044729": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://global.playtoa.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

@@ -39,7 +39,7 @@ export class LoginStorageDelegate {
   }
 
   promptToSavePassword(aBrowser, aLogin, dismissed = false) {
-    const prompt = new lazy.GeckoViewPrompter(aBrowser.ownerGlobal);
+    const prompt = new lazy.GeckoViewPrompter(aBrowser.documentGlobal);
     prompt.asyncShowPrompt(
       this._createMessage({ dismissed }, [
         lazy.LoginEntry.fromLoginInfo(aLogin),
@@ -80,7 +80,7 @@ export class LoginStorageDelegate {
     newLogin.password = aNewLogin.password;
     newLogin.username = aNewLogin.username;
 
-    const prompt = new lazy.GeckoViewPrompter(aBrowser.ownerGlobal);
+    const prompt = new lazy.GeckoViewPrompter(aBrowser.documentGlobal);
     prompt.asyncShowPrompt(
       this._createMessage({ dismissed, autoSavedLoginGuid }, [newLogin]),
       result => {

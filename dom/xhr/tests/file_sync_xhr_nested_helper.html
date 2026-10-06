@@ -13,7 +13,6 @@
         setTimeout(function() {
           input.focus();
           SpecialPowers.loadChromeScript(() => {
-            /* eslint-env mozilla/chrome-script */
             var win = Services.wm.getMostRecentBrowserWindow();
             EventUtils.synthesizeKey("a", {}, win);
           });

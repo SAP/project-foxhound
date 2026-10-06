@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+
+<script>
+// this is a crashtest, just getting to the end is a pass, fullscreen
+// doesn't work in crashtests though not sure why, also not working in
+// wpt crashtests -->
+SimpleTest.waitForExplicitFinish();
+
+SimpleTest.requestFlakyTimeout("crashtest sensitive to timing");
+
+function begin() {
+  SimpleTest.waitForFocus(begin2);
+}
+
+function begin2() {
+  SpecialPowers.pushPrefEnv({
+    "set":[["full-screen-api.allow-trusted-requests-only", false]]
+  }, startTest);
+}
+
+window.addEventListener("load", begin);
+
+async function startTest() {
+  b.requestFullscreen().catch(e => {})
+  c.useMap = "#a"
+  c.requestFullscreen().catch(e => {})
+
+  setTimeout(finishup, 400);
+}
+async function finishup() {
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  try {
+    await document.exitFullscreen();
+  } catch (ex) {
+  }
+  ok(true, "finished");
+  SimpleTest.finish();
+}
+</script>
+
+<map id="a">
+<area id="b"></area>
+</map>
+<image id="c"></image>
+<button onclick="req()">click</button>
+
+</html>

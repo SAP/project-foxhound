@@ -136,6 +136,7 @@ RequestBackoff.prototype.noteServerResponse = function (status) {
 
 /**
  * We consider 302, 303, 307, 4xx, and 5xx http responses to be errors.
+ *
  * @param status Number http status
  * @return Boolean true if we consider this http status an error
  */

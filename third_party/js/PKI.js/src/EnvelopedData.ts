@@ -1,9 +1,10 @@
 import * as asn1js from "asn1js";
 import * as pvutils from "pvutils";
+import { BufferSourceConverter } from "pvtsutils";
 import * as common from "./common";
 import { OriginatorInfo, OriginatorInfoJson } from "./OriginatorInfo";
 import { RecipientInfo, RecipientInfoJson } from "./RecipientInfo";
-import { EncryptedContentInfo, EncryptedContentInfoJson, EncryptedContentInfoSchema } from "./EncryptedContentInfo";
+import { EncryptedContentInfo, EncryptedContentInfoJson, EncryptedContentInfoSchema, EncryptedContentInfoSplit } from "./EncryptedContentInfo";
 import { Attribute, AttributeJson } from "./Attribute";
 import { AlgorithmIdentifier, AlgorithmIdentifierParameters } from "./AlgorithmIdentifier";
 import { RSAESOAEPParams } from "./RSAESOAEPParams";
@@ -107,12 +108,31 @@ export interface EnvelopedDataJson {
   unprotectedAttrs?: AttributeJson[];
 }
 
-export type EnvelopedDataParameters = PkiObjectParameters & Partial<IEnvelopedData>;
+export type EnvelopedDataParameters = PkiObjectParameters & Partial<IEnvelopedData> & EncryptedContentInfoSplit;
 
 export interface EnvelopedDataEncryptionParams {
   kekEncryptionLength: number;
   kdfAlgorithm: string;
 }
+
+export interface EnvelopedDataDecryptBaseParams {
+  preDefinedData?: BufferSource;
+  recipientCertificate?: Certificate;
+}
+
+export interface EnvelopedDataDecryptKeyParams extends EnvelopedDataDecryptBaseParams {
+  recipientPrivateKey: CryptoKey;
+  /**
+   * Crypto provider assigned to `recipientPrivateKey`. If the filed is empty uses default crypto provider.
+   */
+  crypto?: Crypto;
+}
+
+export interface EnvelopedDataDecryptBufferParams extends EnvelopedDataDecryptBaseParams {
+  recipientPrivateKey?: BufferSource;
+}
+
+export type EnvelopedDataDecryptParams = EnvelopedDataDecryptBufferParams | EnvelopedDataDecryptKeyParams;
 
 /**
  * Represents the EnvelopedData structure described in [RFC5652](https://datatracker.ietf.org/doc/html/rfc5652)
@@ -172,6 +192,8 @@ export class EnvelopedData extends PkiObject implements IEnvelopedData {
   public encryptedContentInfo!: EncryptedContentInfo;
   public unprotectedAttrs?: Attribute[];
 
+  public policy: Required<EncryptedContentInfoSplit>;
+
   /**
    * Initializes a new instance of the {@link EnvelopedData} class
    * @param parameters Initialization parameters
@@ -188,6 +210,9 @@ export class EnvelopedData extends PkiObject implements IEnvelopedData {
     if (UNPROTECTED_ATTRS in parameters) {
       this.unprotectedAttrs = pvutils.getParametersValue(parameters, UNPROTECTED_ATTRS, EnvelopedData.defaultValues(UNPROTECTED_ATTRS));
     }
+    this.policy = {
+      disableSplit: !!parameters.disableSplit,
+    };
 
     if (parameters.schema) {
       this.fromSchema(parameters.schema);
@@ -413,9 +438,7 @@ export class EnvelopedData extends PkiObject implements IEnvelopedData {
    * @param variant Variant = 1 is for "key transport", variant = 2 is for "key agreement". In fact the "variant" is unnecessary now because Google has no DH algorithm implementation. Thus key encryption scheme would be choosen by certificate type only: "key transport" for RSA and "key agreement" for ECC certificates.
    * @param crypto Crypto engine
    */
-  public addRecipientByCertificate(certificate: Certificate, parameters?: {
-    // empty
-  }, variant?: number, crypto = common.getCrypto(true)): boolean {
+  public addRecipientByCertificate(certificate: Certificate, parameters?: object, variant?: number, crypto = common.getCrypto(true)): boolean {
     //#region Initialize encryption parameters
     const encryptionParameters = Object.assign(
       { useOAEP: true, oaepHashAlgorithm: "SHA-512" },
@@ -803,6 +826,7 @@ export class EnvelopedData extends PkiObject implements IEnvelopedData {
     //#region Append common information to CMS_ENVELOPED_DATA
     this.version = 2;
     this.encryptedContentInfo = new EncryptedContentInfo({
+      disableSplit: this.policy.disableSplit,
       contentType: "1.2.840.113549.1.7.1", // "data"
       contentEncryptionAlgorithm: new AlgorithmIdentifier({
         algorithmId: contentEncryptionOID,
@@ -1027,7 +1051,7 @@ export class EnvelopedData extends PkiObject implements IEnvelopedData {
       try {
         pbkdf2Params = new PBKDF2Params({ schema: recipientInfo.keyDerivationAlgorithm.algorithmParams });
       }
-      catch (ex) {
+      catch {
         throw new Error("Incorrectly encoded \"keyDerivationAlgorithm\"");
       }
 
@@ -1120,11 +1144,7 @@ export class EnvelopedData extends PkiObject implements IEnvelopedData {
    * @param parameters Additional parameters
    * @param crypto Crypto engine
    */
-  async decrypt(recipientIndex: number, parameters: {
-    recipientCertificate?: Certificate;
-    recipientPrivateKey?: BufferSource;
-    preDefinedData?: BufferSource;
-  }, crypto = common.getCrypto(true)) {
+  async decrypt(recipientIndex: number, parameters: EnvelopedDataDecryptParams, crypto = common.getCrypto(true)) {
     //#region Initial variables
     const decryptionParameters = parameters || {};
     //#endregion
@@ -1184,15 +1204,24 @@ export class EnvelopedData extends PkiObject implements IEnvelopedData {
           throw new Error(`Incorrect curve OID for index ${index}`);
       }
 
-      const ecdhPrivateKey = await crypto.importKey("pkcs8",
-        decryptionParameters.recipientPrivateKey,
-        {
-          name: "ECDH",
-          namedCurve: recipientCurve
-        } as EcKeyImportParams,
-        true,
-        ["deriveBits"]
-      );
+      let ecdhPrivateKey: CryptoKey;
+      let keyCrypto: SubtleCrypto = crypto;
+      if (BufferSourceConverter.isBufferSource(decryptionParameters.recipientPrivateKey)) {
+        ecdhPrivateKey = await crypto.importKey("pkcs8",
+          decryptionParameters.recipientPrivateKey,
+          {
+            name: "ECDH",
+            namedCurve: recipientCurve
+          } as EcKeyImportParams,
+          true,
+          ["deriveBits"]
+        );
+      } else {
+        ecdhPrivateKey = decryptionParameters.recipientPrivateKey;
+        if ("crypto" in decryptionParameters && decryptionParameters.crypto) {
+          keyCrypto = decryptionParameters.crypto.subtle;
+        }
+      }
       //#endregion
       //#region Import sender's ephemeral public key
       //#region Change "OriginatorPublicKey" if "curve" parameter absent
@@ -1215,7 +1244,7 @@ export class EnvelopedData extends PkiObject implements IEnvelopedData {
 
       //#endregion
       //#region Create shared secret
-      const sharedSecret = await crypto.deriveBits({
+      const sharedSecret = await keyCrypto.deriveBits({
         name: "ECDH",
         public: ecdhPublicKey
       },
@@ -1293,7 +1322,7 @@ export class EnvelopedData extends PkiObject implements IEnvelopedData {
         //#endregion
 
         return crypto.unwrapKey("raw",
-          recipientInfo.recipientEncryptedKeys.encryptedKeys[0].encryptedKey.valueBlock.valueHexView,
+          recipientInfo.recipientEncryptedKeys.encryptedKeys[0].encryptedKey.valueBlock.valueHexView as BufferSource,
           aesKwKey,
           { name: "AES-KW" },
           contentEncryptionAlgorithm,
@@ -1330,18 +1359,27 @@ export class EnvelopedData extends PkiObject implements IEnvelopedData {
       }
       //#endregion
 
-      const privateKey = await crypto.importKey(
-        "pkcs8",
-        decryptionParameters.recipientPrivateKey,
-        algorithmParameters,
-        true,
-        ["decrypt"]
-      );
+      let privateKey: CryptoKey;
+      let keyCrypto: SubtleCrypto = crypto;
+      if (BufferSourceConverter.isBufferSource(decryptionParameters.recipientPrivateKey)) {
+        privateKey = await crypto.importKey(
+          "pkcs8",
+          decryptionParameters.recipientPrivateKey,
+          algorithmParameters,
+          true,
+          ["decrypt"]
+        );
+      } else {
+        privateKey = decryptionParameters.recipientPrivateKey;
+        if ("crypto" in decryptionParameters && decryptionParameters.crypto) {
+          keyCrypto = decryptionParameters.crypto.subtle;
+        }
+      }
 
-      const sessionKey = await crypto.decrypt(
+      const sessionKey = await keyCrypto.decrypt(
         privateKey.algorithm,
         privateKey,
-        recipientInfo.encryptedKey.valueBlock.valueHexView
+        recipientInfo.encryptedKey.valueBlock.valueHexView as BufferSource
       );
 
       //#region Get WebCrypto form of content encryption algorithm
@@ -1389,7 +1427,7 @@ export class EnvelopedData extends PkiObject implements IEnvelopedData {
       //#endregion
 
       return crypto.unwrapKey("raw",
-        recipientInfo.encryptedKey.valueBlock.valueHexView,
+        recipientInfo.encryptedKey.valueBlock.valueHexView as BufferSource,
         importedKey,
         kekAlgorithm,
         contentEncryptionAlgorithm,
@@ -1421,7 +1459,7 @@ export class EnvelopedData extends PkiObject implements IEnvelopedData {
       try {
         pbkdf2Params = new PBKDF2Params({ schema: recipientInfo.keyDerivationAlgorithm.algorithmParams });
       }
-      catch (ex) {
+      catch {
         throw new Error("Incorrectly encoded \"keyDerivationAlgorithm\"");
       }
 
@@ -1469,7 +1507,7 @@ export class EnvelopedData extends PkiObject implements IEnvelopedData {
       //#endregion
 
       return crypto.unwrapKey("raw",
-        recipientInfo.encryptedKey.valueBlock.valueHexView,
+        recipientInfo.encryptedKey.valueBlock.valueHexView as BufferSource,
         kekKey,
         kekAlgorithm,
         contentEncryptionAlgorithm,

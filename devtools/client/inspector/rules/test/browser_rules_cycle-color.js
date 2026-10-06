@@ -36,6 +36,7 @@ add_task(async function () {
   await checkAlphaColorCycling(inspector, view);
   await checkColorCyclingWithDifferentDefaultType(inspector, view);
   await checkColorCyclingWithColorPicker(inspector, view);
+  checkNoTextSelection(view);
 });
 
 async function checkColorCycling(view) {
@@ -178,7 +179,7 @@ async function checkColorCyclingWithColorPicker(inspector, view) {
   const cPicker = view.tooltips.getTooltip("colorPicker");
   const { spectrum } = cPicker;
   const onHidden = cPicker.tooltip.once("hidden");
-  const onModifications = view.once("ruleview-changed");
+  const onModifications = view.once("property-value-updated");
   EventUtils.sendKey("ESCAPE", spectrum.element.ownerDocument.defaultView);
   await onHidden;
   await onModifications;
@@ -222,4 +223,29 @@ async function checkSwatchShiftClick(view, valueSpan, expectedValue, comment) {
 function checkColorValue(valueSpan, expectedColorValue, comment) {
   const colorNode = valueSpan.querySelector(".ruleview-color");
   is(colorNode.textContent, expectedColorValue, comment);
+}
+
+function checkNoTextSelection(view) {
+  const valueSpan = getRuleViewProperty(view, "p", "color").valueSpan;
+  const swatchNode = valueSpan.querySelector(".inspector-colorswatch");
+  const selection = view.styleWindow.getSelection();
+
+  info(
+    "Double shift-click the color swatch and check that no text was selected"
+  );
+
+  EventUtils.synthesizeMouseAtCenter(
+    swatchNode,
+    {
+      type: "mousedown",
+      clickCount: 2,
+      shiftKey: true,
+    },
+    view.styleWindow
+  );
+
+  ok(
+    selection.isCollapsed,
+    "No text selected after double shift-clicking the swatch"
+  );
 }

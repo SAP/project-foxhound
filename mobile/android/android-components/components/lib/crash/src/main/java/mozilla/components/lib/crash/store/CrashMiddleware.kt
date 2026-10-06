@@ -6,6 +6,7 @@ package mozilla.components.lib.crash.store
 
 import android.text.format.DateUtils
 import androidx.annotation.StringRes
+import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -119,7 +120,7 @@ class CrashMiddleware(
      * @param next The next middleware in the chain.
      * @param action The current [CrashAction] to process in the middleware.
      */
-    @Suppress("CyclomaticComplexMethod", "LongMethod")
+    @Suppress("CyclomaticComplexMethod", "LongMethod", "CognitiveComplexMethod")
     fun invoke(
         middlewareContext: Pair<() -> CrashState, (CrashAction) -> Unit>,
         next: (CrashAction) -> Unit,
@@ -215,7 +216,9 @@ class CrashMiddleware(
                     sendUnsentCrashReports()
                 }
             }
-            is CrashAction.ShowPrompt -> {} // noop
+            is CrashAction.PromptShown,
+            is CrashAction.ShowPrompt,
+            -> {} // noop
         }
     }
 
@@ -231,7 +234,8 @@ class CrashMiddleware(
         }
     }
 
-    private suspend fun sendCrashReports(crashIDs: List<String>) {
+    @VisibleForTesting
+    internal suspend fun sendCrashReports(crashIDs: List<String>) {
         crashReporter.findCrashReports(crashIDs.toTypedArray()).forEach {
             crashReporter.submitReport(it)
         }

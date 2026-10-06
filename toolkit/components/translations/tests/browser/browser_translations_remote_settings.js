@@ -157,14 +157,6 @@ add_task(async function test_get_records_with_multiple_versions() {
   const versionOneRecords = [
     {
       id: crypto.randomUUID(),
-      name: "qualityModel.enes.bin",
-      fromLang: "en",
-      toLang: "es",
-      fileType: "qualityModel",
-      version: "1.0",
-    },
-    {
-      id: crypto.randomUUID(),
       name: "vocab.esen.spm",
       fromLang: "en",
       toLang: "es",
@@ -232,22 +224,6 @@ add_task(async function test_get_records_with_multiple_versions() {
   const higherVersionRecords = [
     {
       id: crypto.randomUUID(),
-      name: "qualityModel.enes.bin",
-      fromLang: "en",
-      toLang: "es",
-      fileType: "qualityModel",
-      version: "1.1",
-    },
-    {
-      id: crypto.randomUUID(),
-      name: "qualityModel.enes.bin",
-      fromLang: "en",
-      toLang: "es",
-      fileType: "qualityModel",
-      version: "1.2",
-    },
-    {
-      id: crypto.randomUUID(),
       name: "vocab.esen.spm",
       fromLang: "en",
       toLang: "es",
@@ -268,8 +244,12 @@ add_task(async function test_get_records_with_multiple_versions() {
 
   TranslationsParent.applyTestingMocks({
     translationModelsRemoteClient: client,
-    translationsWasmRemoteClient: (await createTranslationsWasmRemoteClient())
-      .client,
+    translationsWasmRemoteClient: (
+      await createTranslationsWasmRemoteClient({
+        collectionName: "test-translation-wasm",
+        uniquePerTestRun: true,
+      })
+    ).client,
   });
 
   const retrievedRecords =

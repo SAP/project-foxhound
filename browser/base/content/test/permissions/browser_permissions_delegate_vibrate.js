@@ -22,7 +22,7 @@ add_task(async function testNoPermissionPrompt() {
       );
     });
 
-    await ContentTask.spawn(browser, null, async function () {
+    await SpecialPowers.spawn(browser, [], async function () {
       let frame = content.document.createElement("iframe");
       // Cross origin src
       frame.src =

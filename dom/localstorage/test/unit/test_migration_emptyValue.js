@@ -19,7 +19,7 @@ add_task(async function testSteps() {
   // The profile contains storage.sqlite and webappsstore.sqlite.
   // The archive migration_emptyValue_profile.zip was created by running
   // make_migration_emptyValue.js locally, specifically the special test was
-  // temporarily activated in xpcshell.ini and then it was run as:
+  // temporarily activated in xpcshell.toml and then it was run as:
   // mach test --interactive dom/localstorage/test/unit/make_migration_emptyValue.js
   // Before packaging, additional manual steps are needed:
   // 1. Folder "cache2" is removed.

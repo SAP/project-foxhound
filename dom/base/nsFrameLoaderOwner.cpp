@@ -1,30 +1,29 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsFrameLoaderOwner.h"
-#include "mozilla/dom/BrowserParent.h"
-#include "nsFrameLoader.h"
-#include "nsFocusManager.h"
-#include "nsNetUtil.h"
-#include "nsSubDocumentFrame.h"
-#include "nsQueryObject.h"
+
 #include "mozilla/AsyncEventDispatcher.h"
+#include "mozilla/EventStateManager.h"
 #include "mozilla/Logging.h"
-#include "mozilla/dom/CanonicalBrowsingContext.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_fission.h"
+#include "mozilla/dom/BrowserBridgeChild.h"
+#include "mozilla/dom/BrowserBridgeHost.h"
+#include "mozilla/dom/BrowserHost.h"
+#include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/FrameLoaderBinding.h"
 #include "mozilla/dom/HTMLIFrameElement.h"
 #include "mozilla/dom/MozFrameLoaderOwnerBinding.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/dom/BrowserBridgeChild.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/BrowserBridgeHost.h"
-#include "mozilla/dom/BrowserHost.h"
-#include "mozilla/StaticPrefs_fission.h"
-#include "mozilla/EventStateManager.h"
+#include "nsFocusManager.h"
+#include "nsFrameLoader.h"
+#include "nsNetUtil.h"
+#include "nsQueryObject.h"
+#include "nsSubDocumentFrame.h"
 
 extern mozilla::LazyLogModule gSHIPBFCacheLog;
 
@@ -105,7 +104,7 @@ void nsFrameLoaderOwner::ChangeRemotenessCommon(
   // no other blockers. Since we're going to be adding a new blocker as soon as
   // we recreate the frame loader, this is not what we want, so add our own
   // blocker until the process is complete.
-  Document* doc = owner->OwnerDoc();
+  RefPtr<Document> doc = owner->OwnerDoc();
   doc->BlockOnload();
   auto cleanup = MakeScopeExit([&]() { doc->UnblockOnload(false); });
 
@@ -145,7 +144,7 @@ void nsFrameLoaderOwner::ChangeRemotenessCommon(
           MOZ_LOG(gSHIPBFCacheLog, LogLevel::Debug,
                   ("nsFrameLoaderOwner::ChangeRemotenessCommon: store the old "
                    "page in bfcache"));
-          Unused << bc->SetIsInBFCache(true);
+          bc->Canonical()->DeactivateDocuments();
           bfcacheEntry->SetFrameLoader(mFrameLoader);
           // Session history owns now the frameloader.
           mFrameLoader = nullptr;
@@ -253,7 +252,10 @@ void nsFrameLoaderOwner::ChangeRemoteness(
     const mozilla::dom::RemotenessOptions& aOptions, mozilla::ErrorResult& rv) {
   bool isRemote = !aOptions.mRemoteType.IsEmpty();
 
+  MOZ_RELEASE_ASSERT(mFrameLoader, "Expecting to have mFrameLoader here.");
   std::function<void()> frameLoaderInit = [&] {
+    MOZ_RELEASE_ASSERT(mFrameLoader,
+                       "Expecting still to have mFrameLoader here.");
     if (isRemote) {
       mFrameLoader->ConfigRemoteProcess(aOptions.mRemoteType, nullptr);
     }

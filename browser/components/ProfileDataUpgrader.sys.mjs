@@ -13,7 +13,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource:///modules/FirefoxBridgeExtensionUtils.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
   PlacesUIUtils: "moz-src:///browser/components/places/PlacesUIUtils.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   UsageReporting: "resource://gre/modules/UsageReporting.sys.mjs",
 });
 
@@ -263,7 +262,7 @@ export let ProfileDataUpgrader = {
       // from default placement. This is done early enough that it doesn't
       // impact adding new managed bookmarks.
       const { CustomizableUI } = ChromeUtils.importESModule(
-        "resource:///modules/CustomizableUI.sys.mjs"
+        "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs"
       );
       CustomizableUI.removeWidgetFromArea("managed-bookmarks");
     }
@@ -316,11 +315,6 @@ export let ProfileDataUpgrader = {
         !oldPrefValue
       );
       Services.prefs.clearUserPref(oldPrefName);
-    }
-
-    // Initialize the new browser.urlbar.showSuggestionsBeforeGeneral pref.
-    if (existingDataVersion < 106) {
-      lazy.UrlbarPrefs.initializeShowSearchSuggestionsFirstPref();
     }
 
     if (existingDataVersion < 107) {
@@ -903,6 +897,129 @@ export let ProfileDataUpgrader = {
     if (AppConstants.NIGHTLY_BUILD && existingDataVersion === 158) {
       lazy.LoginHelper.setOSAuthEnabled(false);
       lazy.FormAutofillUtils.setOSAuthEnabled(false);
+    }
+
+    if (existingDataVersion < 159) {
+      // Bug 1979014 / bug 1980398 - autohide attribute becomes a real boolean attribute.
+      let menubarWasEnabled =
+        Services.xulStore.getValue(
+          BROWSER_DOCURL,
+          "toolbar-menubar",
+          "autohide"
+        ) == "false";
+      if (menubarWasEnabled) {
+        Services.xulStore.setValue(
+          BROWSER_DOCURL,
+          "toolbar-menubar",
+          "autohide",
+          "-moz-missing\n"
+        );
+      }
+    }
+
+    if (existingDataVersion < 160) {
+      // Force all logins to be re-encrypted to make use of more modern crypto.
+      // This pref is checked in the initialization of the LoginManagerStorage.
+      Services.prefs.setBoolPref("signon.reencryptionNeeded", true);
+    }
+
+    if (existingDataVersion < 164) {
+      const { PREF_BOOL, PREF_INT, PREF_STRING } = Services.prefs;
+      const METHODS = {
+        [PREF_BOOL]: ["getBoolPref", "setBoolPref"],
+        [PREF_INT]: ["getIntPref", "setIntPref"],
+        [PREF_STRING]: ["getStringPref", "setStringPref"],
+      };
+      const OLD_PREFIX = "browser.aiwindow.";
+      for (let oldPref of Services.prefs.getChildList(OLD_PREFIX)) {
+        let prefType = Services.prefs.getPrefType(oldPref);
+        if (
+          !Services.prefs.prefHasUserValue(oldPref) ||
+          !Object.hasOwn(METHODS, prefType)
+        ) {
+          continue;
+        }
+        let newPref =
+          "browser.smartwindow." + oldPref.substring(OLD_PREFIX.length);
+        let [getter, setter] = METHODS[prefType];
+        Services.prefs[setter](newPref, Services.prefs[getter](oldPref));
+        Services.prefs.clearUserPref(oldPref);
+      }
+    }
+
+    if (existingDataVersion < 166) {
+      // Bug 1978550: Migrate Local Network Access permissions from old
+      // "localhost" type to new "loopback-network" type.
+      try {
+        Services.perms.getAllByTypes(["localhost"]).forEach(permission => {
+          Services.perms.removePermission(permission);
+          Services.perms.addFromPrincipal(
+            permission.principal,
+            "loopback-network",
+            permission.capability,
+            permission.expireType,
+            permission.expireTime
+          );
+        });
+      } catch (e) {
+        console.error("Error migrating localhost permission", e);
+      }
+
+      // Migrate permissions.default.localhost preference to
+      // permissions.default.loopback-network
+      try {
+        const oldValue = Services.prefs.getIntPref(
+          "permissions.default.localhost"
+        );
+        Services.prefs.setIntPref(
+          "permissions.default.loopback-network",
+          oldValue
+        );
+        Services.prefs.clearUserPref("permissions.default.localhost");
+      } catch (e) {}
+    }
+
+    if (existingDataVersion < 169) {
+      // Clear prefs removed by bug 2018089 and bug 2018516.
+      Services.prefs.clearUserPref("widget.macos.native-anchored-menulists");
+      Services.prefs.clearUserPref("widget.macos.native-anchored-select");
+    }
+
+    if (existingDataVersion < 172) {
+      if (Services.prefs.getBoolPref("browser.smartwindow.enabled", false)) {
+        Services.prefs.setBoolPref(
+          "places.semanticHistory.smartwindow.featureGate",
+          true
+        );
+      }
+    }
+
+    // The migration for 173 was applied in Nightly but was removed
+    // for causing failures Bug 2043185
+
+    if (existingDataVersion < 174) {
+      // Remove same-site (ABA) 3rdPartyFrameStorage permissions that were
+      // unnecessarily saved when a same-site-to-top iframe called
+      // requestStorageAccess().
+      for (let perm of Services.perms.getAllWithTypePrefix(
+        "3rdPartyFrameStorage^"
+      )) {
+        let typeSite = perm.type.substring("3rdPartyFrameStorage^".length);
+        try {
+          let originSite = Services.eTLD.getSite(perm.principal.URI);
+          if (typeSite === originSite) {
+            Services.perms.removePermission(perm);
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+    }
+
+    // 170 and 171 were updated to 175 to retrigger the migrations of the Rusts store.
+    if (existingDataVersion < 175) {
+      // Force all logins to be re-migrated to the rust store.
+      Services.prefs.setBoolPref("signon.rustMirror.migrationNeeded", true);
     }
 
     // Update the migration version.

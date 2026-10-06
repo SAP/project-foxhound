@@ -31,8 +31,8 @@ internal class Lexer(private val grammar: Grammar) {
     /**
      * Splits the JEXL expression string into a list of tokens.
      */
-    @Suppress("ComplexMethod", "LongMethod")
     @Throws(LexerException::class)
+    @Suppress("CyclomaticComplexMethod")
     fun tokenize(raw: String): List<Token> {
         val input = LexerInput(raw)
         val tokens = mutableListOf<Token>()
@@ -188,7 +188,6 @@ internal class Lexer(private val grammar: Grammar) {
         return Token(Token.Type.IDENTIFIER, raw, raw)
     }
 
-    @Suppress("ComplexMethod")
     private fun readDigit(input: LexerInput, negate: Boolean): Token {
         input.mark()
 

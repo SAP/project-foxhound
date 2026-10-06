@@ -36,7 +36,7 @@ button {
     outline: auto;
   }
 
-  &:where([disabled="true"]) {
+  &:where([disabled]) {
     color: GrayText;
     border-color: -moz-buttondisabledborder;
     background-color: -moz-buttondisabledface;

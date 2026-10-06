@@ -1,9 +1,10 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Attributes.h"
+#ifndef TOOLKIT_COMPONENTS_CTYPES_TESTS_JSCTYPES_TEST_ERRNO_H_
+#define TOOLKIT_COMPONENTS_CTYPES_TESTS_JSCTYPES_TEST_ERRNO_H_
+
 #include "mozilla/Types.h"
 
 #define EXPORT_CDECL(type) MOZ_EXPORT type
@@ -19,3 +20,5 @@ EXPORT_CDECL(int) get_last_error();
 #endif  // defined(XP_WIN)
 
 MOZ_END_EXTERN_C
+
+#endif  // TOOLKIT_COMPONENTS_CTYPES_TESTS_JSCTYPES_TEST_ERRNO_H_

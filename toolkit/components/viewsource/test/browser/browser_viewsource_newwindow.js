@@ -3,8 +3,8 @@
  * URL.
  *
  * @param {string} expectedURL The view-source: URL that's expected.
- * @resolves {DOM Window} The window that was opened.
  * @returns {Promise}
+ *   Resolves to the window that was opened.
  */
 async function waitForNewViewSourceWindow(expectedURL) {
   let win = await BrowserTestUtils.domWindowOpened();

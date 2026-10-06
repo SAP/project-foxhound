@@ -1,7 +1,9 @@
 [DEFAULT]
 prefs = ["gfx.font_loader.delay=0"]
 
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 support-files = [
   "en-GB/en_GB.dic",
   "en-GB/en_GB.aff",
@@ -28,8 +30,8 @@ support-files = [
 
 ["test_bug678842.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 support-files = ["bug678842_subframe.html"]
 
@@ -37,8 +39,8 @@ support-files = ["bug678842_subframe.html"]
 
 ["test_bug717433.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 support-files = ["bug717433_subframe.html"]
 
@@ -48,15 +50,15 @@ support-files = ["bug717433_subframe.html"]
 
 ["test_bug1200533.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 support-files = ["bug1200533_subframe.html"]
 
 ["test_bug1204147.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 support-files = [
   "bug1204147_subframe.html",
@@ -68,7 +70,9 @@ support-files = [
 ["test_bug1209414.html"]
 
 ["test_bug1219928.html"]
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["test_bug1365383.html"]
 
@@ -90,8 +94,8 @@ skip-if = ["true"]
 
 ["test_multiple_content_languages.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 support-files = ["multiple_content_languages_subframe.html"]
 

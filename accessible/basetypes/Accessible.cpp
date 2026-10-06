@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,22 +24,32 @@ using namespace mozilla;
 using namespace mozilla::a11y;
 
 Accessible::Accessible()
-    : mType(static_cast<uint32_t>(0)),
+    : mType(eNoType),
       mGenericTypes(static_cast<uint32_t>(0)),
       mRoleMapEntryIndex(aria::NO_ROLE_MAP_ENTRY_INDEX) {}
 
 Accessible::Accessible(AccType aType, AccGenericType aGenericTypes,
                        uint8_t aRoleMapEntryIndex)
-    : mType(static_cast<uint32_t>(aType)),
+    : mType(aType),
       mGenericTypes(static_cast<uint32_t>(aGenericTypes)),
       mRoleMapEntryIndex(aRoleMapEntryIndex) {}
 
 void Accessible::StaticAsserts() const {
-  static_assert(eLastAccType <= (1 << kTypeBits) - 1,
+  static_assert(kHighestAccType <= (1 << kTypeBits) - 1,
                 "Accessible::mType was oversized by eLastAccType!");
   static_assert(
       eLastAccGenericType <= (1 << kGenericTypesBits) - 1,
       "Accessible::mGenericType was oversized by eLastAccGenericType!");
+}
+
+mozilla::a11y::role Accessible::Role() const {
+  const nsRoleMapEntry* roleMapEntry = ARIARoleMap();
+  mozilla::a11y::role r =
+      (!roleMapEntry || roleMapEntry->roleRule != kUseMapRole)
+          ? NativeRole()
+          : roleMapEntry->role;
+  r = ARIATransformRole(r);
+  return GetMinimumRole(r);
 }
 
 bool Accessible::IsBefore(const Accessible* aAcc) const {
@@ -139,6 +148,19 @@ bool Accessible::HasStrongARIARole() const {
   return roleMapEntry && roleMapEntry->roleRule == kUseMapRole;
 }
 
+role Accessible::GetMinimumRole(role aRole) const {
+  if (aRole != roles::TEXT && aRole != roles::TEXT_CONTAINER &&
+      aRole != roles::SECTION) {
+    // This isn't a generic role, so aRole is specific enough.
+    return aRole;
+  }
+
+  if (IsPopover()) {
+    return roles::GROUPING;
+  }
+  return aRole;
+}
+
 bool Accessible::HasGenericType(AccGenericType aType) const {
   const nsRoleMapEntry* roleMapEntry = ARIARoleMap();
   return (mGenericTypes & aType) ||
@@ -174,6 +196,35 @@ bool Accessible::IsTextRole() {
   }
 
   return true;
+}
+
+bool Accessible::IsEditableRoot() const {
+  if (IsTextField()) {
+    // A text field is always an editable root.
+    return true;
+  }
+
+  const nsRoleMapEntry* roleMapEntry = ARIARoleMap();
+  if (roleMapEntry && (roleMapEntry->role == roles::ENTRY ||
+                       roleMapEntry->role == roles::SEARCHBOX)) {
+    // An aria text field is always an editable root.
+    return true;
+  }
+
+  if (!IsEditable()) {
+    return false;
+  }
+
+  if (IsDoc()) {
+    return true;
+  }
+
+  Accessible* parent = Parent();
+  if (parent && !parent->IsEditable()) {
+    return true;
+  }
+
+  return false;
 }
 
 uint32_t Accessible::StartOffset() {
@@ -340,24 +391,10 @@ int32_t Accessible::GetLevel(bool aFast) const {
       }
     }
   } else if (role == roles::HEADING) {
-    nsAtom* tagName = TagName();
-    if (tagName == nsGkAtoms::h1) {
-      return 1;
-    }
-    if (tagName == nsGkAtoms::h2) {
-      return 2;
-    }
-    if (tagName == nsGkAtoms::h3) {
-      return 3;
-    }
-    if (tagName == nsGkAtoms::h4) {
-      return 4;
-    }
-    if (tagName == nsGkAtoms::h5) {
-      return 5;
-    }
-    if (tagName == nsGkAtoms::h6) {
-      return 6;
+    const uint8_t level = HeadingLevel();
+    if (level) {
+      MOZ_ASSERT(level > 0 && level <= 9);
+      return level;
     }
 
     const nsRoleMapEntry* ariaRole = this->ARIARoleMap();
@@ -637,7 +674,7 @@ nsStaticAtom* Accessible::ComputedARIARole() const {
   case roles::_geckoRole:                                                    \
     return ariaRole;
   switch (geckoRole) {
-#include "RoleMap.h"
+#include "RoleMap.inc"
   }
 #undef ROLE
   MOZ_ASSERT_UNREACHABLE("Unknown role");
@@ -662,20 +699,15 @@ void Accessible::ApplyImplicitState(uint64_t& aState) const {
        roleMapEntry->Is(nsGkAtoms::tab) ||
        roleMapEntry->Is(nsGkAtoms::treeitem)) &&
       !(aState & states::SELECTED) && ARIASelected().valueOr(true)) {
-    // Special case for tabs: focused tab or focus inside related tab panel
-    // implies selected state.
-    if (roleMapEntry->role == roles::PAGETAB) {
-      if (aState & states::FOCUSED) {
-        aState |= states::SELECTED;
-      } else {
-        // If focus is in a child of the tab panel surely the tab is selected!
-        Relation rel = RelationByType(RelationType::LABEL_FOR);
-        Accessible* relTarget = nullptr;
-        while ((relTarget = rel.Next())) {
-          if (relTarget->Role() == roles::PROPERTYPAGE &&
-              FocusMgr()->IsFocusWithin(relTarget)) {
-            aState |= states::SELECTED;
-          }
+    if (roleMapEntry->role == roles::PAGETAB && !(aState & states::FOCUSED)) {
+      // If focus is within the tab panel, this should mean the tab is selected.
+      // Note that we handle focus on the tab itself below.
+      Relation rel = RelationByType(RelationType::LABEL_FOR);
+      Accessible* relTarget = nullptr;
+      while ((relTarget = rel.Next())) {
+        if (relTarget->Role() == roles::PROPERTYPAGE &&
+            FocusMgr()->IsFocusWithin(relTarget)) {
+          aState |= states::SELECTED;
         }
       }
     } else if (aState & states::FOCUSED) {
@@ -805,4 +837,109 @@ void KeyBinding::ToAtkFormat(nsAString& aValue) const {
   if (mModifierMask & kMeta) aValue.AppendLiteral("<Meta>");
 
   aValue.Append(mKey);
+}
+
+role Accessible::FindNextValidARIARole(
+    std::initializer_list<nsStaticAtom*> aRolesToSkip) const {
+  const nsRoleMapEntry* roleMapEntry = ARIARoleMap();
+  if (roleMapEntry) {
+    if (!ARIAAttrValueIs(nsGkAtoms::role, roleMapEntry->roleAtom)) {
+      nsAutoString roles;
+      GetStringARIAAttr(nsGkAtoms::role, roles);
+      // Get the next valid token that isn't in the list of roles to skip.
+      uint8_t roleMapIndex =
+          aria::GetFirstValidRoleMapIndexExcluding(roles, aRolesToSkip);
+      // If we don't find a valid token, fall back to the minimum role.
+      if (roleMapIndex == aria::NO_ROLE_MAP_ENTRY_INDEX ||
+          roleMapIndex == aria::LANDMARK_ROLE_MAP_ENTRY_INDEX) {
+        return NativeRole();
+      }
+      const nsRoleMapEntry* fallbackRoleMapEntry =
+          aria::GetRoleMapFromIndex(roleMapIndex);
+      if (!fallbackRoleMapEntry) {
+        return NativeRole();
+      }
+      // Return the next valid role, but validate that first, too.
+      return ARIATransformRole(fallbackRoleMapEntry->role);
+    }
+  }
+  // Fall back to the minimum role.
+  return NativeRole();
+}
+
+role Accessible::ARIATransformRole(role aRole) const {
+  // Beginning with ARIA 1.1, user agents are expected to use the native host
+  // language role of the element when the form or region roles are used without
+  // a name. Says the spec, "the user agent MUST treat such elements as if no
+  // role had been provided."
+  // https://w3c.github.io/aria/#document-handling_author-errors_roles
+  //
+  // XXX: While the name computation algorithm can be non-trivial in the general
+  // case, it should not be especially bad here: If the author hasn't used the
+  // region role, this calculation won't occur. And the region role's name
+  // calculation rule excludes name from content. That said, this use case is
+  // another example of why we should consider caching the accessible name. See:
+  // https://bugzilla.mozilla.org/show_bug.cgi?id=1378235.
+  if (aRole == roles::REGION || aRole == roles::FORM) {
+    if (NameIsEmpty()) {
+      // If we have a "form" or "region" role, but no accessible name, we need
+      // to search for the next valid role. First, we search through the role
+      // attribute value string - there might be a valid fallback there. Skip
+      // all "form" or "region" attributes; we know they're not valid since
+      // there's no accessible name. If we find a valid role that's not "form"
+      // or "region", fall back to it (but run it through ARIATransformRole
+      // first). Otherwise, fall back to the element's native role.
+      return FindNextValidARIARole({nsGkAtoms::region, nsGkAtoms::form});
+    }
+    return aRole;
+  }
+
+  // XXX: these unfortunate exceptions don't fit into the ARIA table. This is
+  // where the accessible role depends on both the role and ARIA state.
+  if (aRole == roles::PUSHBUTTON) {
+    if (HasARIAAttr(nsGkAtoms::aria_pressed)) {
+      // For simplicity, any existing pressed attribute except "" or "undefined"
+      // indicates a toggle.
+      return roles::TOGGLE_BUTTON;
+    }
+
+    if (ARIAAttrValueIs(nsGkAtoms::aria_haspopup, nsGkAtoms::_true)) {
+      // For button with aria-haspopup="true".
+      return roles::BUTTONMENU;
+    }
+
+  } else if (aRole == roles::LISTBOX) {
+    // A listbox inside of a combobox needs a special role because of ATK
+    // mapping to menu.
+    if (Parent() && Parent()->IsCombobox()) {
+      return roles::COMBOBOX_LIST;
+    }
+
+  } else if (aRole == roles::OPTION) {
+    const Accessible* listbox = FindAncestorIf([](const Accessible& aAcc) {
+      const role accRole = aAcc.Role();
+      return (accRole == roles::LISTBOX || accRole == roles::COMBOBOX_LIST)
+                 ? AncestorSearchOption::Found
+             : accRole == roles::GROUPING ? AncestorSearchOption::Continue
+                                          : AncestorSearchOption::NotFound;
+    });
+    if (listbox && listbox->Role() == roles::COMBOBOX_LIST) {
+      return roles::COMBOBOX_OPTION;
+    }
+  } else if (aRole == roles::MENUITEM) {
+    // Menuitem has a submenu.
+    if (ARIAAttrValueIs(nsGkAtoms::aria_haspopup, nsGkAtoms::_true)) {
+      return roles::PARENT_MENUITEM;
+    }
+  } else if (aRole == roles::CELL) {
+    // A cell inside an ancestor table element that has a grid role needs a
+    // gridcell role
+    // (https://www.w3.org/TR/html-aam-1.0/#html-element-role-mappings).
+    const Accessible* table = nsAccUtils::TableFor(this);
+    if (table && table->IsARIARole(nsGkAtoms::grid)) {
+      return roles::GRID_CELL;
+    }
+  }
+
+  return aRole;
 }

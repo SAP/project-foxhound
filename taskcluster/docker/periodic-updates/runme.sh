@@ -47,6 +47,11 @@ then
   PARAMS="${PARAMS} --mobile-experiments"
 fi
 
+if [ -n "${DO_MOBILE_MERINO_MANIFEST}" ]
+then
+  PARAMS="${PARAMS} --mobile-merino-manifest"
+fi
+
 if [ -n "${DO_CT_LOGS}" ]
 then
   PARAMS="${PARAMS} --ct-logs"
@@ -57,6 +62,9 @@ then
   PARAMS="${PARAMS} -d"
 fi
 
+if [ "${BRANCH}" = try ]; then
+  PARAMS="${PARAMS} --skip-push"
+fi
 
 export ARTIFACTS_DIR="/home/worker/artifacts"
 mkdir -p "$ARTIFACTS_DIR"
@@ -100,4 +108,4 @@ fi
 export HGPLAIN=1
 
 # shellcheck disable=SC2086
-/home/worker/scripts/periodic_file_updates.sh -p "${PRODUCT}" -b "${BRANCH}" -a ${PARAMS}
+/home/worker/scripts/periodic_file_updates.sh -p "${PRODUCT}" -b "${BRANCH}" -a ${PARAMS} -t "${GECKO_PATH}" --skip-clone

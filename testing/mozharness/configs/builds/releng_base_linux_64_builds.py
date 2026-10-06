@@ -9,8 +9,7 @@ config = {
     ######## LINUX GENERIC CONFIG KEYS/VAlUES
     # if you are updating this with custom 64 bit keys/values please add them
     # below under the '64 bit specific' code block otherwise, update in this
-    # code block and also make sure this is synced with
-    # releng_base_linux_32_builds.py
+    # code block.
     # note: overridden by MOZHARNESS_ACTIONS in TaskCluster tasks
     "default_actions": [
         "clobber",

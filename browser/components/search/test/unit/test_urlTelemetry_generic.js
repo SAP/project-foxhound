@@ -13,6 +13,21 @@ ChromeUtils.defineESModuleGetters(this, {
   sinon: "resource://testing-common/Sinon.sys.mjs",
 });
 
+function makeImpression(overrides = {}) {
+  return {
+    provider: "example",
+    tagged: "true",
+    partner_code: "ff",
+    source: "unknown",
+    is_shopping_page: "false",
+    is_private: "false",
+    shopping_tab_displayed: "false",
+    is_signed_in: "false",
+    has_ai_summary: "false",
+    ...overrides,
+  };
+}
+
 const TEST_PROVIDER_INFO = [
   {
     telemetryId: "example",
@@ -24,13 +39,21 @@ const TEST_PROVIDER_INFO = [
     organicCodes: ["foo"],
     followOnParamNames: ["a"],
     extraAdServersRegexps: [/^https:\/\/www\.example\.com\/ad2/],
-    shoppingTab: {
-      regexp: "&site=shop",
+    searchMode: {
+      mode: "image_search",
     },
     components: [
       {
         type: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
         default: true,
+      },
+    ],
+    impressionAttributes: [
+      {
+        key: "is_shopping_page",
+        url: {
+          regexp: "&site=shop",
+        },
       },
     ],
   },
@@ -140,16 +163,7 @@ const TESTS = [
     expectedAdKey: "example:tagged",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
-    impression: {
-      provider: "example",
-      tagged: "true",
-      partner_code: "ff",
-      source: "unknown",
-      is_shopping_page: "false",
-      is_private: "false",
-      shopping_tab_displayed: "false",
-      is_signed_in: "false",
-    },
+    impression: makeImpression(),
   },
   {
     title: "Tagged search with shopping",
@@ -158,16 +172,18 @@ const TESTS = [
     expectedAdKey: "example:tagged",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
-    impression: {
-      provider: "example",
-      tagged: "true",
-      partner_code: "ff",
-      source: "unknown",
+    impression: makeImpression({
       is_shopping_page: "true",
-      is_private: "false",
-      shopping_tab_displayed: "false",
-      is_signed_in: "false",
-    },
+    }),
+  },
+  {
+    title: "Tagged image search",
+    trackingUrl: "https://www.example.com/search?q=test&abc=ff&mode=image",
+    expectedSearchCountEntry: "example:tagged:ff",
+    expectedAdKey: "example:tagged",
+    adUrls: ["https://www.example.com/ad2"],
+    nonAdUrls: ["https://www.example.com/ad3"],
+    impression: makeImpression({ search_mode: "image_search" }),
   },
   {
     title: "Tagged follow-on",
@@ -176,16 +192,7 @@ const TESTS = [
     expectedAdKey: "example:tagged-follow-on",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
-    impression: {
-      provider: "example",
-      tagged: "true",
-      partner_code: "tb",
-      source: "unknown",
-      is_shopping_page: "false",
-      is_private: "false",
-      shopping_tab_displayed: "false",
-      is_signed_in: "false",
-    },
+    impression: makeImpression({ partner_code: "tb" }),
   },
   {
     setUp() {
@@ -215,16 +222,7 @@ const TESTS = [
     expectedAdKey: "example3:tagged-follow-on",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
-    impression: {
-      provider: "example3",
-      tagged: "true",
-      partner_code: "tb",
-      source: "unknown",
-      is_shopping_page: "false",
-      is_private: "false",
-      shopping_tab_displayed: "false",
-      is_signed_in: "false",
-    },
+    impression: makeImpression({ provider: "example3", partner_code: "tb" }),
   },
   {
     setUp() {
@@ -255,16 +253,7 @@ const TESTS = [
     expectedAdKey: "example4:tagged-follow-on",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
-    impression: {
-      provider: "example4",
-      tagged: "true",
-      partner_code: "tb",
-      source: "unknown",
-      is_shopping_page: "false",
-      is_private: "false",
-      shopping_tab_displayed: "false",
-      is_signed_in: "false",
-    },
+    impression: makeImpression({ provider: "example4", partner_code: "tb" }),
   },
   {
     setUp() {
@@ -292,16 +281,7 @@ const TESTS = [
     expectedAdKey: "example5:tagged-follow-on",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
-    impression: {
-      provider: "example5",
-      tagged: "true",
-      partner_code: "tb",
-      source: "unknown",
-      is_shopping_page: "false",
-      is_private: "false",
-      shopping_tab_displayed: "false",
-      is_signed_in: "false",
-    },
+    impression: makeImpression({ provider: "example5", partner_code: "tb" }),
   },
   {
     title: "Organic search matched code",
@@ -310,16 +290,7 @@ const TESTS = [
     expectedAdKey: "example:organic",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
-    impression: {
-      provider: "example",
-      tagged: "false",
-      partner_code: "foo",
-      source: "unknown",
-      is_shopping_page: "false",
-      is_private: "false",
-      shopping_tab_displayed: "false",
-      is_signed_in: "false",
-    },
+    impression: makeImpression({ partner_code: "foo", tagged: "false" }),
   },
   {
     title: "Organic search non-matched code",
@@ -328,16 +299,10 @@ const TESTS = [
     expectedAdKey: "example:organic",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
-    impression: {
-      provider: "example",
+    impression: makeImpression({
       tagged: "false",
       partner_code: "other",
-      source: "unknown",
-      is_shopping_page: "false",
-      is_private: "false",
-      shopping_tab_displayed: "false",
-      is_signed_in: "false",
-    },
+    }),
   },
   {
     title: "Organic search non-matched code 2",
@@ -346,16 +311,10 @@ const TESTS = [
     expectedAdKey: "example:organic",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
-    impression: {
-      provider: "example",
+    impression: makeImpression({
       tagged: "false",
       partner_code: "other",
-      source: "unknown",
-      is_shopping_page: "false",
-      is_private: "false",
-      shopping_tab_displayed: "false",
-      is_signed_in: "false",
-    },
+    }),
   },
   {
     title: "Organic search expected organic matched code",
@@ -364,16 +323,10 @@ const TESTS = [
     expectedAdKey: "example:organic",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
-    impression: {
-      provider: "example",
+    impression: makeImpression({
       tagged: "false",
       partner_code: "",
-      source: "unknown",
-      is_shopping_page: "false",
-      is_private: "false",
-      shopping_tab_displayed: "false",
-      is_signed_in: "false",
-    },
+    }),
   },
   {
     title: "Organic search no codes",
@@ -382,16 +335,10 @@ const TESTS = [
     expectedAdKey: "example:organic",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
-    impression: {
-      provider: "example",
+    impression: makeImpression({
       tagged: "false",
       partner_code: "",
-      source: "unknown",
-      is_shopping_page: "false",
-      is_private: "false",
-      shopping_tab_displayed: "false",
-      is_signed_in: "false",
-    },
+    }),
   },
   {
     title: "Different engines using the same adUrl",
@@ -400,16 +347,11 @@ const TESTS = [
     expectedAdKey: "example2:organic",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
-    impression: {
+    impression: makeImpression({
       provider: "example2",
       tagged: "false",
       partner_code: "",
-      source: "unknown",
-      is_shopping_page: "false",
-      is_private: "false",
-      shopping_tab_displayed: "false",
-      is_signed_in: "false",
-    },
+    }),
   },
 ];
 
@@ -425,8 +367,10 @@ const TESTS = [
  * @param {string} [expectedAdKey]
  *   The expected key to be logged for the scalar. Omit if no scalar should be
  *   logged.
+ * @param {object} browser
+ *   The browser object for the request.
  */
-async function testAdUrlClicked(serpUrl, adUrl, expectedAdKey) {
+async function testAdUrlClicked(serpUrl, adUrl, expectedAdKey, browser) {
   info(`Testing Ad URL: ${adUrl}`);
   let channel = NetUtil.newChannel({
     uri: NetUtil.newURI(adUrl),
@@ -435,6 +379,15 @@ async function testAdUrlClicked(serpUrl, adUrl, expectedAdKey) {
       {}
     ),
     loadUsingSystemPrincipal: true,
+  });
+  // ChannelWrapper.get returns a C++ backed object whose browserElement
+  // getter resolves via the channel's load context. In xpcshell there is
+  // no real browsing context, so browserElement is null. Override the
+  // getter on this specific wrapper instance to return our mock browser.
+  let wrapper = ChannelWrapper.get(channel);
+  Object.defineProperty(wrapper, "browserElement", {
+    get: () => browser,
+    configurable: true,
   });
   SearchSERPTelemetry._contentHandler.observeActivity(
     channel,
@@ -491,7 +444,10 @@ add_task(async function test_parsing_search_urls() {
         },
       },
     };
-    SearchSERPTelemetry.updateTrackingStatus(browser, test.trackingUrl);
+    SearchSERPTelemetry.updateTrackingStatus(
+      browser,
+      Services.io.newURI(test.trackingUrl)
+    );
     SearchSERPTelemetry.reportPageImpression(
       {
         url: test.trackingUrl,
@@ -509,10 +465,15 @@ add_task(async function test_parsing_search_urls() {
 
     if ("adUrls" in test) {
       for (const adUrl of test.adUrls) {
-        await testAdUrlClicked(test.trackingUrl, adUrl, test.expectedAdKey);
+        await testAdUrlClicked(
+          test.trackingUrl,
+          adUrl,
+          test.expectedAdKey,
+          browser
+        );
       }
       for (const nonAdUrls of test.nonAdUrls) {
-        await testAdUrlClicked(test.trackingUrl, nonAdUrls);
+        await testAdUrlClicked(test.trackingUrl, nonAdUrls, null, browser);
       }
     }
 

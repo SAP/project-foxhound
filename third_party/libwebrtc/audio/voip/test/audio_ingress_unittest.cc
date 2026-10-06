@@ -10,28 +10,40 @@
 
 #include "audio/voip/audio_ingress.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <span>
+
+#include "api/audio/audio_frame.h"
+#include "api/audio/audio_mixer.h"
+#include "api/audio_codecs/audio_decoder_factory.h"
+#include "api/audio_codecs/audio_encoder_factory.h"
+#include "api/audio_codecs/audio_format.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
-#include "api/call/transport.h"
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
-#include "api/task_queue/default_task_queue_factory.h"
+#include "api/neteq/neteq.h"
+#include "api/rtp_headers.h"
+#include "api/scoped_refptr.h"
 #include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
 #include "audio/voip/audio_egress.h"
 #include "modules/audio_mixer/sine_wave_generator.h"
+#include "modules/rtp_rtcp/include/receive_statistics.h"
 #include "modules/rtp_rtcp/source/rtp_rtcp_impl2.h"
+#include "modules/rtp_rtcp/source/rtp_rtcp_interface.h"
 #include "rtc_base/event.h"
-#include "rtc_base/logging.h"
+#include "test/create_test_environment.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/mock_transport.h"
-#include "test/run_loop.h"
 #include "test/time_controller/simulated_time_controller.h"
 
 namespace webrtc {
 namespace {
 
-using ::testing::Invoke;
 using ::testing::NiceMock;
 using ::testing::Unused;
 
@@ -51,7 +63,7 @@ class AudioIngressTest : public ::testing::Test {
     rtp_config.rtcp_report_interval_ms = 5000;
     rtp_config.outgoing_transport = &transport_;
     rtp_config.local_media_ssrc = 0xdeadc0de;
-    rtp_rtcp_ = std::make_unique<ModuleRtpRtcpImpl2>(env_, rtp_config);
+    rtp_rtcp_ = ModuleRtpRtcpImpl2::CreateSendModule(env_, rtp_config);
 
     rtp_rtcp_->SetSendingMediaStatus(false);
     rtp_rtcp_->SetRTCPStatus(RtcpMode::kCompound);
@@ -101,8 +113,8 @@ class AudioIngressTest : public ::testing::Test {
   NiceMock<MockTransport> transport_;
   std::unique_ptr<ReceiveStatistics> receive_statistics_;
   std::unique_ptr<ModuleRtpRtcpImpl2> rtp_rtcp_;
-  rtc::scoped_refptr<AudioEncoderFactory> encoder_factory_;
-  rtc::scoped_refptr<AudioDecoderFactory> decoder_factory_;
+  scoped_refptr<AudioEncoderFactory> encoder_factory_;
+  scoped_refptr<AudioDecoderFactory> decoder_factory_;
   std::unique_ptr<AudioIngress> ingress_;
   std::unique_ptr<AudioEgress> egress_;
 };
@@ -115,12 +127,12 @@ TEST_F(AudioIngressTest, PlayingAfterStartAndStop) {
 
 TEST_F(AudioIngressTest, GetAudioFrameAfterRtpReceived) {
   Event event;
-  auto handle_rtp = [&](rtc::ArrayView<const uint8_t> packet, Unused) {
+  auto handle_rtp = [&](std::span<const uint8_t> packet, Unused) {
     ingress_->ReceivedRTPPacket(packet);
     event.Set();
     return true;
   };
-  EXPECT_CALL(transport_, SendRtp).WillRepeatedly(Invoke(handle_rtp));
+  EXPECT_CALL(transport_, SendRtp).WillRepeatedly(handle_rtp);
   egress_->SendAudioData(GetAudioFrame(0));
   egress_->SendAudioData(GetAudioFrame(1));
   time_controller_.AdvanceTime(TimeDelta::Zero());
@@ -145,14 +157,14 @@ TEST_F(AudioIngressTest, TestSpeechOutputLevelAndEnergyDuration) {
   constexpr int kNumRtp = 6;
   int rtp_count = 0;
   Event event;
-  auto handle_rtp = [&](rtc::ArrayView<const uint8_t> packet, Unused) {
+  auto handle_rtp = [&](std::span<const uint8_t> packet, Unused) {
     ingress_->ReceivedRTPPacket(packet);
     if (++rtp_count == kNumRtp) {
       event.Set();
     }
     return true;
   };
-  EXPECT_CALL(transport_, SendRtp).WillRepeatedly(Invoke(handle_rtp));
+  EXPECT_CALL(transport_, SendRtp).WillRepeatedly(handle_rtp);
   for (int i = 0; i < kNumRtp * 2; i++) {
     egress_->SendAudioData(GetAudioFrame(i));
     time_controller_.AdvanceTime(TimeDelta::Millis(10));
@@ -176,12 +188,12 @@ TEST_F(AudioIngressTest, TestSpeechOutputLevelAndEnergyDuration) {
 
 TEST_F(AudioIngressTest, PreferredSampleRate) {
   Event event;
-  auto handle_rtp = [&](rtc::ArrayView<const uint8_t> packet, Unused) {
+  auto handle_rtp = [&](std::span<const uint8_t> packet, Unused) {
     ingress_->ReceivedRTPPacket(packet);
     event.Set();
     return true;
   };
-  EXPECT_CALL(transport_, SendRtp).WillRepeatedly(Invoke(handle_rtp));
+  EXPECT_CALL(transport_, SendRtp).WillRepeatedly(handle_rtp);
   egress_->SendAudioData(GetAudioFrame(0));
   egress_->SendAudioData(GetAudioFrame(1));
   time_controller_.AdvanceTime(TimeDelta::Zero());
@@ -205,14 +217,14 @@ TEST_F(AudioIngressTest, GetMutedAudioFrameAfterRtpReceivedAndStopPlay) {
   constexpr int kNumRtp = 6;
   int rtp_count = 0;
   Event event;
-  auto handle_rtp = [&](rtc::ArrayView<const uint8_t> packet, Unused) {
+  auto handle_rtp = [&](std::span<const uint8_t> packet, Unused) {
     ingress_->ReceivedRTPPacket(packet);
     if (++rtp_count == kNumRtp) {
       event.Set();
     }
     return true;
   };
-  EXPECT_CALL(transport_, SendRtp).WillRepeatedly(Invoke(handle_rtp));
+  EXPECT_CALL(transport_, SendRtp).WillRepeatedly(handle_rtp);
   for (int i = 0; i < kNumRtp * 2; i++) {
     egress_->SendAudioData(GetAudioFrame(i));
     time_controller_.AdvanceTime(TimeDelta::Millis(10));
@@ -235,6 +247,25 @@ TEST_F(AudioIngressTest, GetMutedAudioFrameAfterRtpReceivedAndStopPlay) {
   // Now we should still see valid speech output level as StopPlay won't affect
   // the measurement.
   EXPECT_EQ(ingress_->GetOutputAudioLevel(), kAudioLevel);
+}
+
+TEST(AudioIngressConfigTest, UsesFieldTrialConfig) {
+  GlobalSimulatedTimeController time_controller(Timestamp::Micros(123456789));
+  // Create environment with custom NetEqConfig covering all fields.
+  const Environment env =
+      CreateTestEnvironment({.field_trials = "WebRTC-VoIP-NetEqConfig/"
+                                             "max_packets_in_buffer:123,"
+                                             "max_delay_ms:1000,"
+                                             "min_delay_ms:500,"
+                                             "enable_fast_accelerate:true/",
+                             .time = &time_controller});
+
+  NetEq::Config config = CreateNetEqConfigForTesting(env);
+
+  EXPECT_EQ(config.max_packets_in_buffer, 123u);
+  EXPECT_EQ(config.max_delay_ms, 1000);
+  EXPECT_EQ(config.min_delay_ms, 500);
+  EXPECT_TRUE(config.enable_fast_accelerate);
 }
 
 }  // namespace

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +7,6 @@
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/MacIOSurface.h"
 #include "mozilla/layers/GpuFenceMTLSharedEvent.h"
-#include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/webgpu/WebGPUParent.h"
 
 namespace mozilla::webgpu {
@@ -31,8 +29,8 @@ UniquePtr<SharedTextureMacIOSurface> SharedTextureMacIOSurface::Create(
     return nullptr;
   }
 
-  RefPtr<MacIOSurface> surface =
-      MacIOSurface::CreateIOSurface(aWidth, aHeight, true);
+  RefPtr<MacIOSurface> surface = MacIOSurface::CreateIOSurface(
+      aWidth, aHeight, MacIOSurface::AllowAlpha::Yes);
   if (!surface) {
     gfxCriticalNoteOnce << "Failed to create MacIOSurface: (" << aWidth << ", "
                         << aHeight << ")";
@@ -76,28 +74,32 @@ SharedTextureMacIOSurface::ToSurfaceDescriptor() {
 
   return Some(layers::SurfaceDescriptorMacIOSurface(
       mSurface->GetIOSurfaceID(), !mSurface->HasAlpha(),
-      mSurface->GetYUVColorSpace(), std::move(gpuFence)));
+      mSurface->GetYUVColorSpace(), mSurface->GetTransferFunction(),
+      std::move(gpuFence)));
 }
 
 void SharedTextureMacIOSurface::GetSnapshot(const ipc::Shmem& aDestShmem,
-                                            const gfx::IntSize& aSize) {
+                                            size_t aDestStride) {
   if (!mSurface->Lock()) {
     gfxCriticalNoteOnce << "Failed to lock MacIOSurface";
     return;
   }
 
-  const size_t bytesPerRow = mSurface->GetBytesPerRow();
-  const uint32_t stride = layers::ImageDataSerializer::ComputeRGBStride(
-      gfx::SurfaceFormat::B8G8R8A8, aSize.width);
+  const size_t src_stride = mSurface->GetBytesPerRow();
   uint8_t* src = (uint8_t*)mSurface->GetBaseAddress();
   uint8_t* dst = aDestShmem.get<uint8_t>();
 
-  MOZ_ASSERT(stride * aSize.height <= aDestShmem.Size<uint8_t>());
+  const size_t bytesPerRow = static_cast<size_t>(mWidth) * 4;
+  MOZ_RELEASE_ASSERT(src_stride >= bytesPerRow);
+  MOZ_RELEASE_ASSERT(aDestStride >= bytesPerRow);
 
-  for (int y = 0; y < aSize.height; y++) {
-    memcpy(dst, src, stride);
-    src += bytesPerRow;
-    dst += stride;
+  for (uint32_t y = 0; y < mHeight; y++) {
+    memcpy(dst, src, bytesPerRow);
+    if (bytesPerRow < aDestStride) {
+      memset(dst + bytesPerRow, 0, aDestStride - bytesPerRow);
+    }
+    src += src_stride;
+    dst += aDestStride;
   }
 
   mSurface->Unlock();

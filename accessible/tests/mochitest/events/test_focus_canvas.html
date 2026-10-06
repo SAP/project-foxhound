@@ -19,16 +19,19 @@
           src="../states.js"></script>
 
   <script type="application/javascript">
-    // gA11yEventDumpToConsole = true;
 
-    var gQueue = null;
-    function doTests() {
-      gQueue = new eventQueue();
+    async function doTests() {
+      let focused = waitForEvent(EVENT_FOCUS, "button");
+      selectAllTextAndFocus("button");
+      await focused;
+      testStates(getAccessible("button"), STATE_FOCUSED);
 
-      gQueue.push(new synthFocus("button"));
-      gQueue.push(new synthTab("button", new focusChecker("textbox")));
+      focused = waitForEvent(EVENT_FOCUS, "textbox");
+      synthesizeKey("KEY_Tab", { shiftKey: false });
+      await focused;
+      testStates(getAccessible("textbox"), STATE_FOCUSED);
 
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

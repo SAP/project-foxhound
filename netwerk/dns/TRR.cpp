@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,7 +32,6 @@
 #include "TRRLoadInfo.h"
 
 #include "mozilla/Base64.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Preferences.h"
@@ -50,7 +47,18 @@
 namespace mozilla {
 namespace net {
 
-NS_IMPL_ISUPPORTS_INHERITED(TRR, Runnable, nsIStreamListener, nsITimerCallback)
+NS_IMPL_ISUPPORTS_INHERITED(TRR, Runnable, nsIStreamListener, nsITimerCallback,
+                            nsIRunnablePriority)
+
+NS_IMETHODIMP
+TRR::GetPriority(uint32_t* aPriority) {
+  if (StaticPrefs::network_trr_high_priority_events()) {
+    *aPriority = nsIRunnablePriority::PRIORITY_MEDIUMHIGH;
+  } else {
+    *aPriority = nsIRunnablePriority::PRIORITY_NORMAL;
+  }
+  return NS_OK;
+}
 
 // when firing off a normal A or AAAA query
 TRR::TRR(AHostResolver* aResolver, nsHostRecord* aRec, enum TrrType aType)
@@ -181,7 +189,7 @@ bool TRR::MaybeBlockRequest() {
       return true;
     }
 
-    if (TRRService::Get()->IsExcludedFromTRR(mHost)) {
+    if (TRRService::Get()->IsExcludedFromTRR(mHost, mRec->mEffectiveTRRMode)) {
       RecordReason(TRRSkippedReason::TRR_EXCLUDED);
       return true;
     }
@@ -330,7 +338,10 @@ nsresult TRR::SendHTTPRequest() {
   rv = internalChannel->SetIsTRRServiceChannel(true);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (UseDefaultServer() && StaticPrefs::network_trr_async_connInfo()) {
+  // When using OHTTP, the we can't use cached connection info, since we
+  // need to connect to the relay, not the TRR server.
+  if (UseDefaultServer() && !useOHTTP &&
+      StaticPrefs::network_trr_async_connInfo()) {
     RefPtr<nsHttpConnectionInfo> trrConnInfo =
         TRRService::Get()->TRRConnectionInfo();
     if (trrConnInfo) {
@@ -341,7 +352,10 @@ nsresult TRR::SendHTTPRequest() {
         LOG(("TRR::SendHTTPRequest use conn info:%s\n",
              trrConnInfo->HashKey().get()));
       } else {
-        MOZ_DIAGNOSTIC_CRASH("host not equal to trrConnInfo origin");
+        // The connection info is inconsistent. Avoid using it and generate a
+        // new one.
+        TRRService::Get()->SetDefaultTRRConnectionInfo(nullptr);
+        TRRService::Get()->InitTRRConnectionInfo(true);
       }
     } else {
       TRRService::Get()->InitTRRConnectionInfo();
@@ -388,7 +402,7 @@ nsresult TRR::SendHTTPRequest() {
       mTimeoutMs ? mTimeoutMs : TRRService::Get()->GetRequestTimeout(),
       nsITimer::TYPE_ONE_SHOT);
 
-  mChannel = channel;
+  mChannel = std::move(channel);
   return NS_OK;
 }
 
@@ -503,7 +517,7 @@ void TRR::SaveAdditionalRecords(
         mRec->originSuffix, getter_AddRefs(hostRecord));
     if (NS_FAILED(rv)) {
       LOG(("Failed to get host record for additional record %s",
-           nsCString(recordEntry.GetKey()).get()));
+           PromiseFlatCString(recordEntry.GetKey()).get()));
       continue;
     }
     RefPtr<AddrInfo> ai(
@@ -520,7 +534,7 @@ void TRR::SaveAdditionalRecords(
     hostRecord->mEffectiveTRRMode =
         static_cast<nsIRequest::TRRMode>(mRec->mEffectiveTRRMode);
     LOG(("Completing lookup for additional: %s",
-         nsCString(recordEntry.GetKey()).get()));
+         PromiseFlatCString(recordEntry.GetKey()).get()));
     (void)mHostResolver->CompleteLookup(hostRecord, NS_OK, ai, mPB,
                                         mOriginSuffix, TRRSkippedReason::TRR_OK,
                                         this);
@@ -616,28 +630,6 @@ nsresult TRR::ReturnData(nsIChannel* aChannel) {
                                               mTRRSkippedReason, mTTL, mPB);
   }
 
-  nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aChannel);
-  if (httpChannel) {
-    nsAutoCString version;
-    if (NS_SUCCEEDED(httpChannel->GetProtocolVersion(version))) {
-      nsAutoCString key("h1"_ns);
-      if (version.Equals("h3"_ns)) {
-        key.Assign("h3"_ns);
-      } else if (version.Equals("h2"_ns)) {
-        key.Assign("h2"_ns);
-      }
-
-      if (trrFetchDuration) {
-        glean::networking::trr_fetch_duration.Get(key).AccumulateRawDuration(
-            *trrFetchDuration);
-      }
-      if (trrFetchDurationNetworkOnly) {
-        key.Append("_network_only"_ns);
-        glean::networking::trr_fetch_duration.Get(key).AccumulateRawDuration(
-            *trrFetchDurationNetworkOnly);
-      }
-    }
-  }
   return NS_OK;
 }
 

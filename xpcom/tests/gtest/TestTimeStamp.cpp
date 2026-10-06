@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -62,9 +60,28 @@ TEST(TimeStamp, Main)
   EXPECT_TRUE(td.ToSeconds() < -1.0);
   EXPECT_TRUE(td.ToSeconds() > -20.0);
 
-  double resolution = TimeDuration::Resolution().ToSecondsSigDigits();
-  printf(" (platform timer resolution is ~%g s)\n", resolution);
-  EXPECT_TRUE(1e-10 < resolution);
-  // Don't upper-bound sanity check ... although NSPR reports 1ms
-  // resolution, it might be lying, so we shouldn't compare with it
+  // Now() is trying to ensure the best possible precision on each platform,
+  // but guarantees at least one millisecond resolution. Given the huge
+  // difference between the assumed resolution of the clock on modern CPUs
+  // (< 100ns, often close to 1ns as of 2025) and that guarantee, we can safely
+  // test for 1ms without fearing intermittents caused by jitter.
+  TimeStamp start = TimeStamp::Now();
+  TimeStamp last = start;
+  int updated = 0;
+  int same = 0;
+  while ((last - start).ToMilliseconds() < 1.0) {
+    TimeStamp next = TimeStamp::Now();
+    if ((next - last).ToMicroseconds() > 0.0) {
+      // Only count if we saw progress in the ticks.
+      ++updated;
+      last = next;
+    } else {
+      ++same;
+    }
+  }
+  printf("  Poll saw updated iterations in 1ms: %d\n", updated);
+  printf("  Poll saw same iterations in 1ms: %d\n", same);
+  // If we saw 2 updates, we can be pretty sure to be able to guarantee at
+  // least 1ms resolution. In practice we see much higher numbers here (>>1K).
+  EXPECT_GE(updated, 2);
 }

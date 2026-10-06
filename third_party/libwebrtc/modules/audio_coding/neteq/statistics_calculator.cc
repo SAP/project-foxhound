@@ -10,12 +10,13 @@
 
 #include "modules/audio_coding/neteq/statistics_calculator.h"
 
-#include <string.h>  // memset
-
 #include <algorithm>
+#include <cstdint>
+#include <cstring>  // memset
 
 #include "absl/strings/string_view.h"
-#include "modules/audio_coding/neteq/delay_manager.h"
+#include "api/neteq/neteq.h"
+#include "api/neteq/tick_timer.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/numerics/safe_conversions.h"
 #include "system_wrappers/include/metrics.h"
@@ -286,7 +287,7 @@ void StatisticsCalculator::IncreaseCounter(size_t num_samples, int fs_hz) {
     return;
   }
   const int time_step_ms =
-      rtc::CheckedDivExact(static_cast<int>(1000 * num_samples), fs_hz);
+      CheckedDivExact(static_cast<int>(1000 * num_samples), fs_hz);
   delayed_packet_outage_counter_.AdvanceClock(time_step_ms);
   excess_buffer_delay_.AdvanceClock(time_step_ms);
   buffer_full_counter_.AdvanceClock(time_step_ms);
@@ -389,7 +390,7 @@ void StatisticsCalculator::GetNetworkStatistics(size_t samples_per_packet,
                         static_cast<uint32_t>(discarded_secondary_samples +
                                               secondary_decoded_samples_));
 
-  if (waiting_times_.size() == 0) {
+  if (waiting_times_.empty()) {
     stats->mean_waiting_time_ms = -1;
     stats->median_waiting_time_ms = -1;
     stats->min_waiting_time_ms = -1;

@@ -5,18 +5,10 @@
 #ifndef CDM_CONTENT_DECRYPTION_MODULE_H_
 #define CDM_CONTENT_DECRYPTION_MODULE_H_
 
+#include <cstdint>
 #include <type_traits>
 
 #include "content_decryption_module_export.h"
-
-#if defined(_MSC_VER)
-typedef unsigned char uint8_t;
-typedef unsigned int uint32_t;
-typedef int int32_t;
-typedef __int64 int64_t;
-#else
-#include <stdint.h>
-#endif
 
 #include "mozilla/DefineEnum.h"
 
@@ -366,6 +358,23 @@ enum KeyStatus : uint32_t {
 };
 CHECK_TYPE(KeyStatus, 4, 4);
 
+// The current status of the associated key. The valid types are defined in the
+// spec: https://w3c.github.io/encrypted-media/#dom-mediakeystatus
+// Note: For forward compatibility, Host implementations must gracefully handle
+// unexpected (new) enum values, e.g. no-op. This is used by the CDM Interfaces
+// starting from CDM_12.
+enum class KeyStatus_2 : uint32_t {
+  kUsable = 0,
+  kInternalError = 1,
+  kExpired = 2,
+  kOutputRestricted = 3,
+  kOutputDownscaled = 4,
+  kStatusPending = 5,
+  kReleased = 6,
+  kUsableInFuture = 7
+};
+CHECK_TYPE(KeyStatus_2, 4, 4);
+
 // Used when passing arrays of key information. Does not own the referenced
 // data. |system_code| is an additional error code for unusable keys and
 // should be 0 when |status| == kUsable.
@@ -376,6 +385,17 @@ struct KeyInformation {
   uint32_t system_code;
 };
 CHECK_TYPE(KeyInformation, 16, 24);
+
+// Used when passing arrays of key information. Does not own the referenced
+// data. |system_code| is an additional error code for unusable keys and
+// should be 0 when |status| == kUsable. Used by CDM12 and beyond.
+struct KeyInformation_2 {
+  const uint8_t* key_id;
+  uint32_t key_id_size;
+  KeyStatus_2 status;
+  uint32_t system_code;
+};
+CHECK_TYPE(KeyInformation_2, 16, 24);
 
 // Supported output protection methods for use with EnableOutputProtection() and
 // returned by OnQueryOutputProtectionStatus().
@@ -411,8 +431,7 @@ CHECK_TYPE(InitDataType, 4, 4);
 // https://w3c.github.io/encrypted-media/#dom-mediakeysessiontype
 enum SessionType : uint32_t {
   kTemporary = 0,
-  kPersistentLicense = 1,
-  kPersistentUsageRecord = 2
+  kPersistentLicense = 1
 };
 CHECK_TYPE(SessionType, 4, 4);
 
@@ -646,12 +665,20 @@ class CDM_CLASS_API FileIOClient {
 // Metrics that will be reported from the CDM through the ReportMetrics()
 // function. To add a new metric, please add it to the end of this enum list
 // without changing any existing enum values.
+// Metric names that use generic naming like `Time1` are key system specific.
 // Note: For forward compatibility, Host implementations must gracefully handle
 // unexpected (new) enum values, e.g. no-op.
 enum MetricName : uint32_t {
   kSdkVersion,
   kCertificateSerialNumber,
   kDecoderBypassBlockCount,
+  kDecoderCheck1SuccessCount,
+  kDecoderCheck1WarningCount,
+  kDecoderCheck1ErrorCount,
+  kKeySystemDataTime1,
+  kKeySystemDataTime2,
+  kKeySystemDataTime3,
+  kKeySystemDataBool1,
 };
 CHECK_TYPE(MetricName, 4, 4);
 
@@ -966,8 +993,12 @@ class CDM_CLASS_API ContentDecryptionModule_11 {
                             const char* session_id,
                             uint32_t session_id_size) = 0;
 
-  // Removes any stored session data associated with this session. Will only be
-  // called for persistent sessions. The CDM must respond by calling either
+  // Removes any stored session data associated with this session. Removes all
+  // license(s) and key(s) associated with the session, whether they are in
+  // memory, persistent store, or both. For persistent session types, other
+  // session data (e.g. record of license destruction) will be cleared as
+  // defined for each session type once a release message acknowledgment is
+  // processed by UpdateSession(). The CDM must respond by calling either
   // Host::OnResolvePromise() or Host::OnRejectPromise() when the request has
   // been processed.
   virtual void RemoveSession(uint32_t promise_id,
@@ -1625,7 +1656,7 @@ class CDM_CLASS_API Host_12 {
   // Called by the CDM when a key status is available in response to
   // GetStatusForPolicy().
   virtual void OnResolveKeyStatusPromise(uint32_t promise_id,
-                                         KeyStatus key_status) = 0;
+                                         KeyStatus_2 key_status) = 0;
 
   // Called by the CDM when a session is created or loaded and the value for the
   // MediaKeySession's sessionId attribute is available (|session_id|).
@@ -1670,7 +1701,7 @@ class CDM_CLASS_API Host_12 {
   virtual void OnSessionKeysChange(const char* session_id,
                                    uint32_t session_id_size,
                                    bool has_additional_usable_key,
-                                   const KeyInformation* keys_info,
+                                   const KeyInformation_2* keys_info,
                                    uint32_t keys_info_count) = 0;
 
   // Called by the CDM when there has been a change in the expiration time for

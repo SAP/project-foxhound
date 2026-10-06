@@ -7,7 +7,7 @@ package org.mozilla.focus.locale.screen
 import android.app.Activity
 import androidx.annotation.VisibleForTesting
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import mozilla.components.support.locale.LocaleManager
 import mozilla.components.support.locale.LocaleUseCases
 import org.mozilla.focus.locale.Locales
@@ -37,7 +37,7 @@ class LanguageMiddleware(
 ) : Middleware<LanguageScreenState, LanguageScreenAction> {
 
     override fun invoke(
-        context: MiddlewareContext<LanguageScreenState, LanguageScreenAction>,
+        store: Store<LanguageScreenState, LanguageScreenAction>,
         next: (LanguageScreenAction) -> Unit,
         action: LanguageScreenAction,
     ) {
@@ -48,10 +48,8 @@ class LanguageMiddleware(
                 next(action)
             }
             is LanguageScreenAction.InitLanguages -> {
-                /**
-                 * The initial LanguageScreenState when the user enters first in the screen
-                 */
-                context.dispatch(
+                // The initial LanguageScreenState when the user enters first in the screen
+                store.dispatch(
                     LanguageScreenAction.UpdateLanguages(
                         storage.languages,
                         storage.selectedLanguage,

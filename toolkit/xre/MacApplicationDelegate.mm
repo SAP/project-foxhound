@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -56,10 +55,19 @@ class AutoAutoreleasePool {
 @interface MacApplicationDelegate : NSObject <NSApplicationDelegate> {
 }
 
-// This is used as a workaround for bug 1478347 in order to make OS-provided
-// menu items such as the emoji picker available in the Edit menu, especially
-// in multi-language environments.
+// Standard Edit menu selectors. Setting these as the action on our Edit
+// menu items lets native text fields (e.g. an NSSavePanel sheet's
+// filename field, bug 2036608) handle Cmd+C/V/X/Z/A natively via the
+// responder chain. When no responder handles them, these forwarders
+// route to [nsMenuBarX::sNativeEventTarget menuItemHit:] so the
+// command still reaches Gecko via the normal menu path.
+- (IBAction)undo:(id)aSender;
+- (IBAction)redo:(id)aSender;
+- (IBAction)cut:(id)aSender;
 - (IBAction)copy:(id)aSender;
+- (IBAction)paste:(id)aSender;
+- (IBAction)delete:(id)aSender;
+- (IBAction)selectAll:(id)aSender;
 
 @end
 
@@ -67,7 +75,10 @@ enum class LaunchStatus {
   Initial,
   DelegateIsSetup,
   CollectingURLs,
-  CollectedURLs
+  CollectedURLs,
+  // The main browser event loop is running. URLs received after this point
+  // are handled immediately via nsICommandLineRunner.
+  Running
 };
 
 static LaunchStatus sLaunchStatus = LaunchStatus::Initial;
@@ -152,9 +163,43 @@ void InitializeMacApp() {
 
 nsTArray<nsCString> TakeStartupURLs() { return std::move(StartupURLs()); }
 
+void StartupURLCollectionComplete() {
+  MOZ_ASSERT(sLaunchStatus == LaunchStatus::CollectedURLs,
+             "Expected CollectedURLs state when completing startup URL "
+             "collection");
+  if (sLaunchStatus != LaunchStatus::CollectedURLs) {
+    return;
+  }
+  sLaunchStatus = LaunchStatus::Running;
+}
+
 @implementation MacApplicationDelegate
 
+- (IBAction)undo:(id)aSender {
+  [nsMenuBarX::sNativeEventTarget menuItemHit:aSender];
+}
+
+- (IBAction)redo:(id)aSender {
+  [nsMenuBarX::sNativeEventTarget menuItemHit:aSender];
+}
+
+- (IBAction)cut:(id)aSender {
+  [nsMenuBarX::sNativeEventTarget menuItemHit:aSender];
+}
+
 - (IBAction)copy:(id)aSender {
+  [nsMenuBarX::sNativeEventTarget menuItemHit:aSender];
+}
+
+- (IBAction)paste:(id)aSender {
+  [nsMenuBarX::sNativeEventTarget menuItemHit:aSender];
+}
+
+- (IBAction)delete:(id)aSender {
+  [nsMenuBarX::sNativeEventTarget menuItemHit:aSender];
+}
+
+- (IBAction)selectAll:(id)aSender {
   [nsMenuBarX::sNativeEventTarget menuItemHit:aSender];
 }
 
@@ -352,6 +397,7 @@ nsTArray<nsCString> TakeStartupURLs() { return std::move(StartupURLs()); }
   nsTArray<const char*> args([urls count] * 2 + 2);
   // Placeholder for unused program name.
   args.AppendElement(nullptr);
+  bool bufferedURLs = false;
 
   for (NSURL* url in urls) {
     if (!url || !url.scheme ||
@@ -360,8 +406,9 @@ nsTArray<nsCString> TakeStartupURLs() { return std::move(StartupURLs()); }
     }
 
     const char* const urlString = [[url absoluteString] UTF8String];
-    if (sLaunchStatus == LaunchStatus::CollectingURLs) {
+    if (sLaunchStatus != LaunchStatus::Running) {
       StartupURLs().AppendElement(urlString);
+      bufferedURLs = true;
       continue;
     }
 
@@ -370,8 +417,9 @@ nsTArray<nsCString> TakeStartupURLs() { return std::move(StartupURLs()); }
   }
 
   if (args.Length() <= 1) {
-    // No URLs were added to the command line.
-    return NO;
+    // No URLs were added to the command line for immediate dispatch.
+    // Return YES if URLs were buffered for startup processing.
+    return bufferedURLs ? YES : NO;
   }
 
   nsCOMPtr<nsICommandLineRunner> cmdLine(new nsCommandLine());

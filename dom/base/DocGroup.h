@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,14 +5,14 @@
 #ifndef DocGroup_h
 #define DocGroup_h
 
-#include "nsISupportsImpl.h"
-#include "nsIPrincipal.h"
-#include "nsThreadUtils.h"
-#include "nsTHashSet.h"
-#include "nsString.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/BrowsingContextGroup.h"
 #include "mozilla/dom/HTMLSlotElement.h"
+#include "nsIPrincipal.h"
+#include "nsISupportsImpl.h"
+#include "nsString.h"
+#include "nsTHashSet.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla {
 class AbstractThread;
@@ -22,6 +20,7 @@ namespace dom {
 
 class CustomElementReactionsStack;
 class JSExecutionManager;
+class MediaSource;
 
 // DocGroup is the Gecko object for a "Similar-origin Window Agent" (the
 // window-global component of an "Agent Cluster").
@@ -43,8 +42,6 @@ class JSExecutionManager;
 // however, align with web-visible synchronous script access boundaries.
 class DocGroup final {
  public:
-  typedef nsTArray<Document*>::iterator Iterator;
-
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(DocGroup)
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(DocGroup)
 
@@ -78,16 +75,6 @@ class DocGroup final {
   // DocGroup::RemoveDocument).
   void RemoveDocument(Document* aDocument);
 
-  // Iterators for iterating over every document within the DocGroup
-  Iterator begin() {
-    MOZ_ASSERT(NS_IsMainThread());
-    return mDocuments.begin();
-  }
-  Iterator end() {
-    MOZ_ASSERT(NS_IsMainThread());
-    return mDocuments.end();
-  }
-
   // Return a pointer that can be continually checked to see if access to this
   // DocGroup is valid. This pointer should live at least as long as the
   // DocGroup.
@@ -98,6 +85,13 @@ class DocGroup final {
   void SignalSlotChange(HTMLSlotElement& aSlot);
 
   nsTArray<RefPtr<HTMLSlotElement>> MoveSignalSlotList();
+
+  // Methods for interacting with MediaSource URLs.
+  nsresult RegisterMediaSourceURL(nsGlobalWindowInner* aWindow,
+                                  MediaSource* aMediaSource, nsACString& aURL);
+  bool UnregisterMediaSourceURL(const nsACString& aURL,
+                                bool aNotifyWindow = true);
+  already_AddRefed<MediaSource> LookupMediaSourceURL(nsIURI* aURI);
 
   // List of DocGroups that has non-empty signal slot list.
   static AutoTArray<RefPtr<DocGroup>, 2>* sPendingDocGroups;
@@ -121,6 +115,18 @@ class DocGroup final {
   RefPtr<mozilla::dom::CustomElementReactionsStack> mReactionsStack;
   nsTArray<RefPtr<HTMLSlotElement>> mSignalSlotList;
   RefPtr<BrowsingContextGroup> mBrowsingContextGroup;
+
+  // MediaSource URLs (with the `blob:` scheme) which have been created by
+  // documents in this DocGroup.
+  //
+  // These URLs are registered here, rather than in BlobURLProtocolHandler, as
+  // they are only valid within the Agent this DocGroup corresponds to, and need
+  // to be cycle-collected.
+  struct MediaSourceURLEntry {
+    RefPtr<MediaSource> mMediaSource;
+    RefPtr<nsGlobalWindowInner> mOwner;
+  };
+  nsTHashMap<nsCString, MediaSourceURLEntry> mMediaSourceURLs;
 
   // non-null if the JS execution for this docgroup is regulated with regards
   // to worker threads. This should only be used when we are forcing serialized

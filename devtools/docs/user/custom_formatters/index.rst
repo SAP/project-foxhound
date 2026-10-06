@@ -50,7 +50,7 @@ Each HTML template is encoded in a format based on the `JsonML <http://www.jsonm
 
 .. code-block:: javascript
 
-    [tagName, {"style": "name: value; ..."}, child1, …]
+    [tagName, {"style": "name: value; ..."}, child1, ...]
 
 The following HTML tags are allowed:
 

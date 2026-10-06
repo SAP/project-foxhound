@@ -26,7 +26,7 @@ add_task(async function () {
       visibleOnNewEvent: true,
       visibleOnSecurityInfo: true,
       visibleOnceComplete: true,
-      securityState: "secure",
+      securityState: "secure-custom-root",
     },
     {
       desc: "broken https request",

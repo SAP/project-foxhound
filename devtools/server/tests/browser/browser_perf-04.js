@@ -18,7 +18,7 @@ add_task(async function () {
   is(await front.isActive(), false, "The profiler is not active yet.");
 
   // Getting the active Browser ID to assert in the "profiler-started" event.
-  const win = Services.wm.getMostRecentWindow("navigator:browser");
+  const win = Services.wm.getMostRecentBrowserWindow();
   const activeTabID = win.gBrowser.selectedBrowser.browsingContext.browserId;
 
   front.once(

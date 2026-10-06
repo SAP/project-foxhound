@@ -13,10 +13,10 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
-#include "api/array_view.h"
 #include "api/field_trials_view.h"
 #include "api/transport/network_types.h"
 #include "api/units/data_rate.h"
@@ -72,11 +72,9 @@ class LossBasedBweV2 {
 
   void SetAcknowledgedBitrate(DataRate acknowledged_bitrate);
   void SetMinMaxBitrate(DataRate min_bitrate, DataRate max_bitrate);
-  void UpdateBandwidthEstimate(
-      rtc::ArrayView<const PacketResult> packet_results,
-      DataRate delay_based_estimate,
-      bool in_alr);
-  bool PaceAtLossBasedEstimate() const;
+  void UpdateBandwidthEstimate(std::span<const PacketResult> packet_results,
+                               DataRate delay_based_estimate,
+                               bool in_alr);
 
   // For unit testing only.
   void SetBandwidthEstimate(DataRate bandwidth_estimate);
@@ -195,7 +193,7 @@ class LossBasedBweV2 {
   void NewtonsMethodUpdate(ChannelParameters& channel_parameters) const;
 
   // Returns false if no observation was created.
-  bool PushBackObservation(rtc::ArrayView<const PacketResult> packet_results);
+  bool PushBackObservation(std::span<const PacketResult> packet_results);
   bool IsEstimateIncreasingWhenLossLimited(DataRate old_estimate,
                                            DataRate new_estimate);
   bool IsInLossLimitedState() const;

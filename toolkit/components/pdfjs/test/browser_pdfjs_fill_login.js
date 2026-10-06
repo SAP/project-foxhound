@@ -55,11 +55,11 @@ async function openContextMenuForSelector(browser, selector) {
   // both events because formfill code relies on this event happening before the contextmenu
   // (which it does for real user input) in order to not show the password autocomplete.
   let eventDetails = { type: "mousedown", button: 2 };
-  await EventUtils.synthesizeMouseAtPoint(offsetX, offsetY, eventDetails);
+  EventUtils.synthesizeMouseAtPoint(offsetX, offsetY, eventDetails);
 
   // Synthesize a contextmenu event to actually open the context menu.
   eventDetails = { type: "contextmenu", button: 2 };
-  await EventUtils.synthesizeMouseAtPoint(offsetX, offsetY, eventDetails);
+  EventUtils.synthesizeMouseAtPoint(offsetX, offsetY, eventDetails);
 
   await SpecialPowers.spawn(browser, [], async () => {
     await content.contextmenuPromise;

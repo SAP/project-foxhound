@@ -20,7 +20,9 @@ add_task(async function testContentProcesses() {
     gBrowser.selectedBrowser,
     "about:blank"
   );
-  await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+  await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, {
+    wantLoad: "about:blank",
+  });
 
   info("Sanity checks against all returned elements of getAllDOMProcesses");
   const processes = ChromeUtils.getAllDOMProcesses();

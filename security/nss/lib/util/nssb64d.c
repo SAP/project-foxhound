@@ -357,6 +357,9 @@ pl_base64_decode_flush(PLBase64Decoder *data)
     if (data->token_size == 0 || data->token[0] == B64_PAD)
         return PR_SUCCESS;
 
+    if (!data->output_buffer)
+        return PR_FAILURE;
+
     /*
      * Assume we have all the interesting input except for some expected
      * padding characters.  Add them and decode the resulting token.
@@ -399,7 +402,7 @@ pl_base64_decode_flush(PLBase64Decoder *data)
 static PRUint32
 PL_Base64MaxDecodedLength(PRUint32 size)
 {
-    return size * 0.75;
+    return (((PRUint64)size) * 3) / 4;
 }
 
 /*
@@ -457,7 +460,13 @@ PL_UpdateBase64Decoder(PLBase64Decoder *data, const char *buffer,
 
     /*
      * How much space could this update need for decoding?
+     * Guard against integer overflow: both size and token_size are PRUint32,
+     * so their sum can wrap if size is near PR_UINT32_MAX.
      */
+    if (size > PR_UINT32_MAX - data->token_size) {
+        PR_SetError(PR_INVALID_ARGUMENT_ERROR, 0);
+        return PR_FAILURE;
+    }
     need_length = PL_Base64MaxDecodedLength(size + data->token_size);
 
     /*
@@ -491,6 +500,7 @@ PL_UpdateBase64Decoder(PLBase64Decoder *data, const char *buffer,
         PRInt32 output_result;
 
         PR_ASSERT(data->output_fn != NULL);
+        PR_ASSERT(data->output_length <= PR_INT32_MAX);
         output_result = data->output_fn(data->output_arg,
                                         data->output_buffer,
                                         (PRInt32)data->output_length);

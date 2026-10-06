@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <vector>
+#ifndef GFX_TESTS_GTEST_TEXTUREHELPER_H_
+#define GFX_TESTS_GTEST_TEXTUREHELPER_H_
 
 #include "Types.h"
 #include "gfxImageSurface.h"
@@ -65,8 +64,8 @@ static already_AddRefed<TextureClient> CreateYCbCrTextureClientWithBackend(
         nullptr, clientData.mPictureRect, clientData.YDataSize(),
         clientData.mYStride, clientData.CbCrDataSize(), clientData.mCbCrStride,
         StereoMode::MONO, gfx::ColorDepth::COLOR_8, gfx::YUVColorSpace::BT601,
-        gfx::ColorRange::LIMITED, clientData.mChromaSubsampling,
-        TextureFlags::DEALLOCATE_CLIENT);
+        gfx::ColorRange::LIMITED, gfx::TransferFunction::BT709,
+        clientData.mChromaSubsampling, TextureFlags::DEALLOCATE_CLIENT);
   }
 
   if (data) {
@@ -132,3 +131,5 @@ already_AddRefed<TextureHost> CreateTextureHostWithBackend(
 
 }  // namespace layers
 }  // namespace mozilla
+
+#endif  // GFX_TESTS_GTEST_TEXTUREHELPER_H_

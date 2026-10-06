@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,23 +5,22 @@
 #ifndef DOM_QUOTA_CACHINGDATABASECONNECTION_H_
 #define DOM_QUOTA_CACHINGDATABASECONNECTION_H_
 
-#include "mozilla/dom/quota/Config.h"
-
 #include "mozStorageHelper.h"
-#include "nsCOMPtr.h"
-#include "nscore.h"
-#include "nsHashKeys.h"
-#include "nsInterfaceHashtable.h"
-#include "nsISupportsImpl.h"
-#include "nsString.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/InitializedOnce.h"
 #include "mozilla/NotNull.h"
+#include "mozilla/dom/quota/Config.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozilla/dom/quota/ScopedLogExtraInfo.h"
+#include "nsCOMPtr.h"
+#include "nsHashKeys.h"
+#include "nsISupportsImpl.h"
+#include "nsInterfaceHashtable.h"
+#include "nsString.h"
+#include "nscore.h"
 
 namespace mozilla::dom::quota {
 

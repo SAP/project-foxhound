@@ -72,6 +72,9 @@ async function openFirefoxViewTab(win) {
     : TestUtils.topicObserved("firefoxview-entered");
 
   if (!fxviewTab?.selected) {
+    testScope.info(
+      "Navigating to about:firefoxview by clicking firefox-view-button"
+    );
     await BrowserTestUtils.synthesizeMouseAtCenter(
       "#firefox-view-button",
       { type: "mousedown" },
@@ -90,16 +93,14 @@ async function openFirefoxViewTab(win) {
   testScope.info(
     "openFirefoxViewTab, waiting for complete readyState, visible and firefoxview-entered"
   );
-  await Promise.all([
-    TestUtils.waitForCondition(() => {
-      const document = fxviewTab.linkedBrowser.contentDocument;
-      return (
-        document.readyState == "complete" &&
-        document.visibilityState == "visible"
-      );
-    }),
-    enteredPromise,
-  ]);
+  await enteredPromise;
+  await TestUtils.waitForCondition(() => {
+    const document = fxviewTab.linkedBrowser.contentDocument;
+    return (
+      document.readyState == "complete" && document.visibilityState == "visible"
+    );
+  }, "Waiting for the Firefox View tab document to be complete and visible");
+
   testScope.info("openFirefoxViewTab, ready resolved");
   return fxviewTab;
 }
@@ -153,9 +154,9 @@ async function withFirefoxView(
     set: [["accessibility.tabfocus", 7]],
   });
   let tab = await openFirefoxViewTab(win);
-  let originalWindow = tab.ownerGlobal;
+  let originalWindow = tab.documentGlobal;
   let result = await taskFn(tab.linkedBrowser);
-  let finalWindow = tab.ownerGlobal;
+  let finalWindow = tab.documentGlobal;
   if (originalWindow == finalWindow && !tab.closing && tab.linkedBrowser) {
     // taskFn may resolve within a tick after opening a new tab.
     // We shouldn't remove the newly opened tab in the same tick.

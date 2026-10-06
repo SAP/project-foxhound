@@ -7,11 +7,6 @@
 "use strict";
 
 add_task(async function () {
-  // This test fails with server side target switching disabled
-  if (!isFissionEnabled() && !isEveryFrameTargetEnabled()) {
-    return;
-  }
-
   const dbg = await initDebugger(
     "doc_dbg-same-source-distinct-threads.html",
     "same-script.js"

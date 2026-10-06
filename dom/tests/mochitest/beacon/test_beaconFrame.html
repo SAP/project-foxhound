@@ -22,9 +22,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=936340
 SimpleTest.waitForExplicitFinish();
 SpecialPowers.pushPrefEnv({'set': [["beacon.enabled", true]]}, runNextTest);
 
-function getBeaconServerStatus(callback) {
+function getBeaconServerStatus(id, callback) {
     var request = new XMLHttpRequest();
-    request.open("GET", "http://mochi.test:8888/tests/dom/tests/mochitest/beacon/beacon-handler.sjs?getLastBeacon", true);
+    let getBeaconUri = "http://mochi.test:8888/tests/dom/tests/mochitest/beacon/beacon-handler.sjs?getBeacon=" + id;
+    request.open("GET", getBeaconUri, true);
     request.onload = function() {
         if (request.readyState === request.DONE) {
             callback(request.responseText);
@@ -48,24 +49,23 @@ function createIframeWithData(data, mimetype, convert) {
 function beaconSent(result) {
     // This function gets called from beacon-frame.html in the inner frame
     // Check that the beacon was actually sent
-    ok(result, "Beacon was not sent")
-    
+    ok(result, "Beacon should be sent");
+  
     // remove the frame.
     var frame = document.getElementById("frame");
+    var id = frame.getAttribute("data");
     var data = frame.getAttribute("data");
     var mimetype = frame.getAttribute("mimetype");
 
     var c = document.getElementById("content");
     c.removeChild(frame);
 
-    getBeaconServerStatus( function(response) {
+    getBeaconServerStatus(id, function(response) {
       console.log(response);
-        var result = JSON.parse(response);
-        
-        is(result.data, data, "Beacon status should match expected.  is: " + result.data + " should be: " + data);
-        is(result.mimetype, mimetype, "Beacon mimetype should match expected.  is: " + result.mimetype + " should be: " + mimetype);
-
-        runNextTest();
+      var result = JSON.parse(response);
+      is(result.data, data, "Beacon status should match expected.  is: " + result.data + " should be: " + data);
+      is(result.mimetype, mimetype, "Beacon mimetype should match expected.  is: " + result.mimetype + " should be: " + mimetype);
+      runNextTest();
     });
 }
 
@@ -104,6 +104,7 @@ function identity(data) {
 }
 
 var tests = [
+    // "data" is used as an id, so should be unique for each call to createIframeWithData
     function() { createIframeWithData("hi!", "text/plain;charset=UTF-8", identity); },
     function() { createIframeWithData("123", "", stringToArrayBuffer); },
     function() { createIframeWithData("abc", "text/html", stringToBlob); },

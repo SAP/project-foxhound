@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,6 +16,7 @@
 #include "mozilla/Queue.h"
 #include "mozilla/DataMutex.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/WeakPtr.h"
 
 #ifdef FUZZING_SNAPSHOT
 #  include "mozilla/fuzzing/IPCFuzzController.h"
@@ -47,7 +46,6 @@ class NodeChannel final : public IPC::Channel::Listener {
   struct Introduction {
     NodeName mName;
     IPC::Channel::ChannelHandle mHandle;
-    IPC::Channel::Mode mMode;
     base::ProcessId mMyPid = base::kInvalidProcessId;
     base::ProcessId mOtherPid = base::kInvalidProcessId;
   };
@@ -72,7 +70,7 @@ class NodeChannel final : public IPC::Channel::Listener {
     virtual void OnChannelError(const NodeName& aFromNode) = 0;
   };
 
-  NodeChannel(const NodeName& aName, UniquePtr<IPC::Channel> aChannel,
+  NodeChannel(const NodeName& aName, IPC::Channel* aChannel,
               Listener* aListener,
               base::ProcessId aPid = base::kInvalidProcessId,
               GeckoChildProcessHost* aChildProcessHost = nullptr);
@@ -154,9 +152,9 @@ class NodeChannel final : public IPC::Channel::Listener {
   std::atomic<base::ProcessId> mOtherPid;
 
   // WARNING: Most methods on the IPC::Channel are only safe to call on the IO
-  // thread, however it is safe to call `Send()` and `IsClosed()` from other
-  // threads. See IPC::Channel's documentation for details.
-  const mozilla::UniquePtr<IPC::Channel> mChannel;
+  // thread, however it is safe to call `Send()` from other threads. See
+  // IPC::Channel's documentation for details.
+  const RefPtr<IPC::Channel> mChannel;
 
   // The state will start out as `State::Active`, and will only transition to
   // `State::Closed` on the IO thread. If a Send fails, the state will

@@ -1,0 +1,51 @@
+<html class="reftest-wait">
+<script>
+document.addEventListener("DOMContentLoaded", async () => {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: {
+        resizeMode: "crop-and-scale",
+        width: 1,
+        height: 1,
+      },
+    });
+    const localVideo = document.createElement("video");
+    document.body.appendChild(localVideo);
+    localVideo.srcObject = stream;
+    localVideo.style = "width:320px;height:240px;background-color:#000;";
+    localVideo.play();
+
+    const pc1 = new RTCPeerConnection();
+    const pc2 = new RTCPeerConnection();
+    for (const track of stream.getTracks()) {
+      pc1.addTrack(track);
+    }
+    pc1.onicecandidate = e => pc2.addIceCandidate(e.candidate);
+    pc2.onicecandidate = e => pc1.addIceCandidate(e.candidate);
+    const trackPromise = new Promise(r => pc2.ontrack = r);
+    await pc1.setLocalDescription();
+    await pc2.setRemoteDescription(pc1.localDescription);
+    await pc2.setLocalDescription();
+    await pc1.setRemoteDescription(pc2.localDescription);
+    const {track: remoteTrack} = await trackPromise;
+    const remoteVideo = document.createElement("video");
+    document.body.appendChild(remoteVideo);
+    remoteVideo.srcObject = new MediaStream([remoteTrack]);
+    remoteVideo.style = "width:320px;height:240px;background-color:#AAA;";
+    remoteVideo.play();
+    await new Promise(r => remoteVideo.onloadeddata = r);
+  } catch(e) {
+    dump(`##### ERROR ${e.name}: ${e.message}\n${e.stack}\n`);
+  } finally {
+    if (stream) {
+      for (const track of stream.getTracks()) {
+        track.stop();
+      }
+    }
+    document.documentElement.removeAttribute("class");
+  }
+});
+</script>
+</html>

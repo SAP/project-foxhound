@@ -22,7 +22,7 @@ add_task(async function () {
   const { inspector, view } = await openRuleView();
   await selectNode("#testid", inspector);
 
-  const elementRuleEditor = getRuleViewRuleEditor(view, 0);
+  const elementRuleEditor = getRuleViewRuleEditorAt(view, 0);
   const editor = await focusNewRuleViewProperty(elementRuleEditor);
   is(
     inplaceEditor(elementRuleEditor.newPropSpan),

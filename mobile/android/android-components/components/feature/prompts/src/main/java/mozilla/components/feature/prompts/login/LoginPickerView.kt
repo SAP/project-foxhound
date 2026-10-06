@@ -48,9 +48,6 @@ import mozilla.components.feature.prompts.R
 import mozilla.components.support.ktx.android.content.getColorFromAttr
 import mozilla.components.ui.icons.R as iconsR
 
-private val Login.passwordDisplay: String
-    get() = "•".repeat(password.length)
-
 private val Context.primrayColor: Color
     get() = Color(getColorFromAttr(android.R.attr.textColorPrimary))
 
@@ -109,13 +106,13 @@ private fun LoginListItem(
             .clickable { onListItemClicked() },
     ) {
         Text(
-            text = login.username,
+            text = login.origin,
             color = loginPickerColors.primary,
             style = MaterialTheme.typography.bodyLarge,
         )
 
         Text(
-            text = login.passwordDisplay,
+            text = login.username,
             color = loginPickerColors.primary,
             style = MaterialTheme.typography.bodyMedium,
         )
@@ -177,7 +174,6 @@ private fun LoginPickerHeader(
             painter = painterResource(id = chevronResourceId),
             contentDescription = null,
             tint = loginPickerColors.header,
-
         )
     }
 }
@@ -295,11 +291,11 @@ private fun LoginPreview() {
         Box(modifier = Modifier.background(color = MaterialTheme.colorScheme.surface)) {
             LoginPicker(
                 logins = listOf(
-                    Login("1", "foxy-1@mozilla.com", "foxy@mozilla.com", "1"),
-                    Login("2", "foxy-2@mozilla.com", "foxy@mozilla.com", "1"),
-                    Login("3", "foxy-3@mozilla.com", "foxy@mozilla.com", "1"),
-                    Login("4", "foxy-4@mozilla.com", "foxy@mozilla.com", "1"),
-                    Login("5", "foxy-5@mozilla.com", "foxy@mozilla.com", "1"),
+                    Login("1", "foxy-1@mozilla.com", "foxy@mozilla.com", "https://website.com"),
+                    Login("2", "foxy-2@mozilla.com", "foxy@mozilla.com", "https://website.com"),
+                    Login("3", "foxy-3@mozilla.com", "foxy@mozilla.com", "https://website.com"),
+                    Login("4", "foxy-4@mozilla.com", "foxy@mozilla.com", "https://website.com"),
+                    Login("5", "foxy-5@mozilla.com", "foxy@mozilla.com", "https://website.com"),
                 ),
                 isExpanded = isExpanded,
                 onExpandToggleClick = { isExpanded = it },

@@ -9,11 +9,11 @@ That {doc}`viaduct` must be initialized during application startup.
 ## Async
 
 The Suggest API is synchronous, which means calling it directly will block the current
-thread.  To deal with this, all current consumers wrap the API in order to make it async.  For
+thread. To deal with this, all current consumers wrap the API in order to make it async. For
 details on this wrapping, see the consumer code itself.
 
-On JS, this wrapping is handled automatically by UniFFI.  See
-https://searchfox.org/mozilla-central/source/toolkit/components/uniffi-bindgen-gecko-js/config.toml
+On JS, this wrapping is handled automatically by UniFFI. See
+<https://searchfox.org/firefox-main/source/toolkit/components/uniffi-bindgen-gecko-js/config.toml>
 for details on which functions/methods are wrapped to be async.
 
 ## Setting up the store
@@ -54,6 +54,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 Create a `SuggestStore` as a singleton. You do this via the `SuggestStoreBuilder`, which returns a `SuggestStore`. No I/O or network requests are performed during construction, which makes this safe to do at any point in the application startup:
 
 :::{tab-set-code}
+
 ```kotlin
 internal val store: SuggestStore = {
     SuggestStoreBuilder()
@@ -70,7 +71,6 @@ let store: SuggestStore = {
     return storeBuilder.build()
 }
 ```
-
 
 ```js
 const store: SuggestStore = SuggestStoreBuilder()
@@ -125,6 +125,7 @@ store.ingest(SuggestIngestionConstraints(
 Ingest with `SuggestIngestionConstraints(emptyOnly=false)` on a regular schedule (like once a day).
 
 :::{tab-set-code}
+
 ```kotlin
 store.ingest(SuggestIngestionConstraints(
     emptyOnly = false,
@@ -139,13 +140,13 @@ store.ingest(SuggestIngestionConstraints(
 ))
 ```
 
-
 ```js
 store.ingest(SuggestIngestionConstraints(
     emptyOnly: false,
     providers: [SuggestionProvider.AMP_MOBILE, SuggestionProvider.WIKIPEDIA, SuggestionProvider.WEATHER]
 ))
 ```
+
 :::
 
 ## Querying Suggestions
@@ -153,6 +154,7 @@ store.ingest(SuggestIngestionConstraints(
 Call `SuggestStore::query` to fetch suggestions for the suggest bar. The `providers` parameter should be the same value that got passed to `ingest()`.
 
 :::{tab-set-code}
+
 ```kotlin
 store.query(
     SuggestionQuery(
@@ -182,6 +184,7 @@ store.query(
     ),
 )
 ```
+
 :::
 
 ## Interrupt querying
@@ -189,6 +192,7 @@ store.query(
 Call `interrupt()` with `InterruptKind::Read` to interrupt any in-progress queries when the user cancels a query and before running the next query.
 
 :::{tab-set-code}
+
 ```kotlin
 store.interrupt(InterruptKind.READ)
 ```
@@ -200,6 +204,7 @@ store.interrupt(kind: InterruptKind.READ)
 ```js
 store.interrupt(InterruptKind.READ)
 ```
+
 :::
 
 ## Shutdown the store
@@ -207,6 +212,7 @@ store.interrupt(InterruptKind.READ)
 On shutdown, call `interrupt()` with `InterruptKind::ReadWrite` to interrupt any in-progress ingestion in addition to queries.
 
 :::{tab-set-code}
+
 ```kotlin
 store.interrupt(InterruptKind.READ_WRITE)
 ```
@@ -218,4 +224,5 @@ store.interrupt(kind: InterruptKind.READ_WRITE)
 ```js
 store.interrupt(InterruptKind.READ_WRITE)
 ```
+
 :::

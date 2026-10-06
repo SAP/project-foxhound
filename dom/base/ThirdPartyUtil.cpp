@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,25 +5,22 @@
 #include "ThirdPartyUtil.h"
 
 #include <cstdint>
+
 #include "MainThreadUtils.h"
 #include "mozIDOMWindow.h"
-#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/Components.h"
 #include "mozilla/ContentBlockingNotifier.h"
 #include "mozilla/Logging.h"
-#include "mozilla/MacroForEach.h"
 #include "mozilla/NullPrincipal.h"
-#include "mozilla/Components.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/StorageAccess.h"
-#include "mozilla/TextUtils.h"
-#include "mozilla/Unused.h"
+#include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "nsCOMPtr.h"
@@ -58,7 +53,6 @@ NS_IMPL_ISUPPORTS(ThirdPartyUtil, mozIThirdPartyUtil)
 // MOZ_LOG=thirdPartyUtil:5
 //
 static mozilla::LazyLogModule gThirdPartyLog("thirdPartyUtil");
-#undef LOG
 #define LOG(args) MOZ_LOG(gThirdPartyLog, mozilla::LogLevel::Debug, args)
 
 static mozilla::StaticRefPtr<ThirdPartyUtil> gService;
@@ -294,7 +288,7 @@ ThirdPartyUtil::IsThirdPartyChannel(nsIChannel* aChannel, nsIURI* aURI,
     uint32_t flags = 0;
     // Avoid checking the return value here since some channel implementations
     // may return NS_ERROR_NOT_IMPLEMENTED.
-    mozilla::Unused << httpChannelInternal->GetThirdPartyFlags(&flags);
+    (void)httpChannelInternal->GetThirdPartyFlags(&flags);
 
     doForce = (flags & nsIHttpChannelInternal::THIRD_PARTY_FORCE_ALLOW);
 
@@ -410,11 +404,10 @@ ThirdPartyUtil::GetTopWindowForChannel(nsIChannel* aChannel,
 // "bbc.co.uk". Only properly-formed URI's are tolerated, though a trailing
 // dot may be present. If aHostURI is an IP address, an alias such as
 // 'localhost', an eTLD such as 'co.uk', or the empty string, aBaseDomain will
-// be the exact host. Blob URIs will incur a lookup for their blob URL entry,
-// and will perform the same construction from their principal's base domain.
-// The result of this function should only be used in exact
-// string comparisons, since substring comparisons will not be valid for the
-// special cases elided above.
+// be the exact host. Blob URIs will perform the same construction from their
+// principal's base domain. The result of this function should only be used in
+// exact string comparisons, since substring comparisons will not be valid for
+// the special cases listed above.
 NS_IMETHODIMP
 ThirdPartyUtil::GetBaseDomain(nsIURI* aHostURI, nsACString& aBaseDomain) {
   if (!aHostURI) {
@@ -425,14 +418,15 @@ ThirdPartyUtil::GetBaseDomain(nsIURI* aHostURI, nsACString& aBaseDomain) {
   // direct. For blob URLs we get this from the blob url's entry in the blob url
   // store.
   nsresult rv;
-  nsCOMPtr<nsIPrincipal> blobPrincipal;
   if (aHostURI->SchemeIs("blob")) {
+    // NOTE: OriginAttributes will be discarded by GetBaseDomain, so it's OK to
+    // pass in a default-constructed value here.
+    nsCOMPtr<nsIPrincipal> blobPrincipal;
     if (BlobURLProtocolHandler::GetBlobURLPrincipal(
-            aHostURI, getter_AddRefs(blobPrincipal))) {
-      // If the blob URL is expired, this will be the uuid of a NullPrincipal
+            aHostURI, OriginAttributes(), getter_AddRefs(blobPrincipal))) {
       rv = blobPrincipal->GetBaseDomain(aBaseDomain);
     } else {
-      // If the blob is expired and no longer has a map entry, we fail
+      // If the blob URI isn't the correct form, we fail.
       rv = nsresult::NS_ERROR_DOM_BAD_URI;
     }
   } else {
@@ -458,7 +452,9 @@ ThirdPartyUtil::GetBaseDomain(nsIURI* aHostURI, nsACString& aBaseDomain) {
     if (aHostURI->SchemeIs("view-source")) {
       rv = NS_GetInnermostURIHost(aHostURI, aBaseDomain);
     } else {
-      rv = aHostURI->GetAsciiHost(aBaseDomain);
+      // Apply IPV6 fixup to work around Bug 1603199.
+      rv =
+          nsContentUtils::GetAsciiHostOrIPv6WithBrackets(aHostURI, aBaseDomain);
     }
   }
 
@@ -540,3 +536,4 @@ ThirdPartyUtil::AnalyzeChannel(nsIChannel* aChannel, bool aNotify, nsIURI* aURI,
 
   return result;
 }
+#undef LOG

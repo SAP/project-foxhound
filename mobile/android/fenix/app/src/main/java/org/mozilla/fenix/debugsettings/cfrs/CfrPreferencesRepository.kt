@@ -16,8 +16,8 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import org.mozilla.fenix.R
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.settings.registerOnSharedPreferenceChangeListener
+import org.mozilla.fenix.utils.Settings
 
 /**
  * Cache for accessing any settings related to CFR visibility.
@@ -30,7 +30,6 @@ interface CfrPreferencesRepository {
     enum class CfrPreference(
         @param:StringRes val preferenceKey: Int,
     ) {
-        HomepageSearchBar(preferenceKey = R.string.pref_key_should_searchbar_cfr),
         TabAutoCloseBanner(preferenceKey = R.string.pref_key_should_show_auto_close_tabs_banner),
         InactiveTabs(preferenceKey = R.string.pref_key_should_show_inactive_tabs_popup),
         OpenInApp(preferenceKey = R.string.pref_key_should_show_open_in_app_banner),
@@ -69,15 +68,16 @@ interface CfrPreferencesRepository {
  * The default implementation of [CfrPreferencesRepository].
  *
  * @param context The Android context.
+ * @param settings The [Settings] instance for accessing and modifying preferences.
  * @param lifecycleOwner The lifecycle owner used for the SharedPreferences API.
  * @param coroutineScope The coroutine scope used for emitting flows.
  */
 class DefaultCfrPreferencesRepository(
     private val context: Context,
+    private val settings: Settings,
     private val lifecycleOwner: LifecycleOwner,
     private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Main),
 ) : CfrPreferencesRepository {
-    private val settings = context.settings()
     private val _cfrPreferenceUpdates = MutableSharedFlow<CfrPreferencesRepository.CfrPreferenceUpdate>()
 
     @VisibleForTesting
@@ -93,8 +93,6 @@ class DefaultCfrPreferencesRepository(
     override fun init() {
         CfrPreferencesRepository.CfrPreference.entries.forEach { preference ->
             val initialPreferenceValue = when (preference) {
-                CfrPreferencesRepository.CfrPreference.HomepageSearchBar ->
-                    settings.shouldShowSearchBarCFR
                 CfrPreferencesRepository.CfrPreference.TabAutoCloseBanner ->
                     settings.shouldShowAutoCloseTabsBanner
                 CfrPreferencesRepository.CfrPreference.InactiveTabs ->
@@ -148,8 +146,6 @@ class DefaultCfrPreferencesRepository(
         // will require toggling more than 1 pref value or has inverted logic.
         // See https://bugzilla.mozilla.org/show_bug.cgi?id=1916992 for more details.
         when (preferenceUpdate.preferenceType) {
-            CfrPreferencesRepository.CfrPreference.HomepageSearchBar ->
-                settings.shouldShowSearchBarCFR = !preferenceUpdate.value
             CfrPreferencesRepository.CfrPreference.TabAutoCloseBanner ->
                 settings.shouldShowAutoCloseTabsBanner = !preferenceUpdate.value
             CfrPreferencesRepository.CfrPreference.InactiveTabs ->

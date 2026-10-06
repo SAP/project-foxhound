@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -40,25 +39,22 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
 #include "mozilla/gfx/Tools.h"
-#include "mozilla/Logging.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_widget.h"
+#include "mozilla/widget/WidgetLogging.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
 using namespace mozilla::widget;
 
-extern mozilla::LazyLogModule sWidgetDragServiceLog;
-#define __DRAGSERVICE_LOG__(logLevel, ...) \
-  MOZ_LOG(sWidgetDragServiceLog, logLevel, __VA_ARGS__)
-#define LOGD(...) __DRAGSERVICE_LOG__(mozilla::LogLevel::Debug, (__VA_ARGS__))
-#define LOGI(...) __DRAGSERVICE_LOG__(mozilla::LogLevel::Info, (__VA_ARGS__))
-#define LOGE(...) __DRAGSERVICE_LOG__(mozilla::LogLevel::Error, (__VA_ARGS__))
+#define LOGD DRAGSERVICE_LOGD
+#define LOGI DRAGSERVICE_LOGI
+#define LOGE DRAGSERVICE_LOGE
 
 nsDragSession::~nsDragSession() { NS_IF_RELEASE(mDataObject); }
 
 already_AddRefed<nsIDragSession> nsDragService::CreateDragSession() {
-  RefPtr<nsIDragSession> session = new nsDragSession();
+  auto session = MakeRefPtr<nsDragSession>();
   return session.forget();
 }
 
@@ -266,8 +262,7 @@ nsresult nsDragSession::StartInvokingDragSession(nsIWidget* aWidget,
 
   // To do the drag we need to create an object that
   // implements the IDataObject interface (for OLE)
-  RefPtr<nsNativeDragSource> nativeDragSrc =
-      new nsNativeDragSource(mDataTransfer);
+  auto nativeDragSrc = MakeRefPtr<nsNativeDragSource>(mDataTransfer);
 
   // Now figure out what the native drag effect should be
   DWORD winDropRes;
@@ -359,9 +354,9 @@ nsresult nsDragSession::StartInvokingDragSession(nsIWidget* aWidget,
       "[%p] %s | mSentLocalDropEvent: %s | mDataTransfer->DropEffectInt: %d | "
       "mUserCancelled: %s | dragEndPoint: (%ld,%ld) | modifier-keys: %u | "
       "Exited nested drag event loop.  Ending Gecko-initiated drag session.",
-      this, __FUNCTION__, GetBoolName(mSentLocalDropEvent),
+      this, __FUNCTION__, TrueOrFalse(mSentLocalDropEvent),
       mDataTransfer ? mDataTransfer->DropEffectInt() : INT_MAX,
-      GetBoolName(mUserCancelled), cpos.x, cpos.y,
+      TrueOrFalse(mUserCancelled), cpos.x, cpos.y,
       modifierKeyState.GetModifiers());
   EndDragSession(true, modifierKeyState.GetModifiers());
 
@@ -711,3 +706,7 @@ nsDragSession::UpdateDragImage(nsINode* aImage, int32_t aImageX,
 
   return NS_OK;
 }
+
+#undef LOGD
+#undef LOGI
+#undef LOGE

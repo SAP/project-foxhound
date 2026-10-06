@@ -7,14 +7,14 @@
 
 #include <type_traits>
 
-#include "nsCOMPtr.h"
-#include "nsPIDOMWindow.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/JSActor.h"
 #include "mozilla/dom/JSActorManager.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/WindowGlobalChild.h"
+#include "nsCOMPtr.h"
+#include "nsPIDOMWindow.h"
 
 class nsIDOMProcessChild;
 class nsIDOMProcessParent;

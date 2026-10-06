@@ -1,5 +1,5 @@
 # META: timeout=long
-from tests.support.asserts import assert_success
+from tests.support.classic.asserts import assert_success
 
 
 def test_valid_content_type(new_session, configuration):

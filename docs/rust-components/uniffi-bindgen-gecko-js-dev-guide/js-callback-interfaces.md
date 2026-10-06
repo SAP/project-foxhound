@@ -38,7 +38,7 @@ It registers a vtable with the Rust code where each field points to a generated 
   * Note: sync calls are currently always wrapped to be "fire-and-forget" callbacks
 * For async calls:
   * Calls `UniFFICallbackHandler.callAsync()` with the lifted arguments getting back a Promise object.
-  * Appends a [PromiseNativeHandler](https://searchfox.org/mozilla-central/source/dom/promise/PromiseNativeHandler.h) to promise object.
+  * Appends a [PromiseNativeHandler](https://searchfox.org/firefox-main/source/dom/promise/PromiseNativeHandler.h) to promise object.
   * The `PromiseNativeHandler` completes the promise by calling the complete callback as described in the [UniFFI FFI internals doc](https://mozilla.github.io/uniffi-rs/latest/internals/async-ffi.html#completing-async-methods-with-complete_func).
   * The `PromiseNativeHandler` also has code to handle a rejected promise by calling the complete callback with `RustCallStatusCode::UnexpectedError`.
 

@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -9,9 +9,11 @@ includes: [compareArray.js, temporalHelpers.js]
 features: [Temporal]
 ---*/
 
-const expected = [
+const expectedOpsForPrimitiveOptions = [
   "get other.toString",
   "call other.toString",
+];
+const expected = expectedOpsForPrimitiveOptions.concat([
   "get options.largestUnit",
   "get options.largestUnit.toString",
   "call options.largestUnit.toString",
@@ -24,7 +26,7 @@ const expected = [
   "get options.smallestUnit",
   "get options.smallestUnit.toString",
   "call options.smallestUnit.toString",
-];
+]);
 const actual = [];
 
 const instance = new Temporal.Instant(1_000_000_000_000_000_000n);
@@ -44,6 +46,12 @@ actual.splice(0); // clear
 // short-circuit does not skip reading options
 instance.until(TemporalHelpers.toPrimitiveObserver(actual, "2001-09-09T01:46:40Z", "other"), options);
 assert.compareArray(actual, expected, "order of operations with identical instants");
+
+actual.splice(0); // clear
+
+assert.throws(TypeError, () => instance.until(TemporalHelpers.toPrimitiveObserver(actual, "1970-01-01T00:00Z", "other"), null));
+assert.compareArray(actual, expectedOpsForPrimitiveOptions,
+  "other instant is converted before TypeError is thrown for primitive options");
 
 actual.splice(0); // clear
 

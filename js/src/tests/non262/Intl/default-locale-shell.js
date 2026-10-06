@@ -1,4 +1,4 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl")||!xulRuntime.shell)
+// |reftest| skip-if(!xulRuntime.shell)
 
 // js/src/tests/lib/tests.py sets the default locale to "en-US" for shell tests.
 // Ensure it's correctly set in the runtime and for the Intl service constructors.

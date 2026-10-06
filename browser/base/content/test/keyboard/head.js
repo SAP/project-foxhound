@@ -22,6 +22,14 @@ async function focusAndActivateElement(elem, activateMethod) {
   }
 }
 
+/**
+ * @param {string} aKey
+ * @param {Element|string} aFocus
+ *   The element to expect focus on.
+ *   May be an Element, an ID string or a query selector string.
+ * @param {boolean} [aAncestorOk]
+ * @param {ChromeWindow} [aWindow]
+ */
 async function expectFocusAfterKey(
   aKey,
   aFocus,
@@ -39,7 +47,9 @@ async function expectFocusAfterKey(
   let expected;
   let friendlyExpected;
   if (typeof aFocus == "string") {
-    expected = aWindow.document.getElementById(aFocus);
+    expected =
+      aWindow.document.getElementById(aFocus) ??
+      aWindow.document.querySelector(aFocus);
     friendlyExpected = aFocus;
   } else {
     expected = aFocus;
@@ -75,5 +85,5 @@ async function expectFocusAfterKey(
 }
 
 registerCleanupFunction(async () => {
-  await SidebarController.initializeUIState({ command: "" });
+  await SidebarController.updateUIState({ command: "" });
 });

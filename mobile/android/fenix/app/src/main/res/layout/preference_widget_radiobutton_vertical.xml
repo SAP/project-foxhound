@@ -30,6 +30,8 @@
         android:id="@+id/radio_button"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:button="@null"
+        android:minWidth="0dp"
         android:focusable="false"
         android:clickable="false"
         android:layout_marginBottom="8dp"

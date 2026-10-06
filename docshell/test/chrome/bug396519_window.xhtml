@@ -28,12 +28,7 @@
 
     async function doTest(expected) {
       function check(testCount, expected) {
-        let history;
-        if (SpecialPowers.Services.appinfo.sessionHistoryInParent) {
-          history = this.browsingContext.sessionHistory;
-        } else {
-          history = this.content.browsingContext.childSessionHistory.legacySHistory;
-        }
+        let history = this.browsingContext.sessionHistory;
         if (history.count == expected.length) {
           for (let i = 0; i < history.count; i++) {
             var shEntry = history.getEntryAtIndex(i).
@@ -63,11 +58,7 @@
         }
       }
 
-      if (SpecialPowers.Services.appinfo.sessionHistoryInParent) {
-        check.call(TestWindow.getBrowser(), gTestCount, expected);
-      } else {
-        await SpecialPowers.spawn(TestWindow.getBrowser(), [gTestCount, expected], check);
-      }
+      check.call(TestWindow.getBrowser(), gTestCount, expected);
     }
 
     async function runTest() {

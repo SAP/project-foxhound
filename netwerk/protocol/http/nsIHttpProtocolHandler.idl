@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,13 +14,19 @@ class HSTSDataCallbackWrapper;
 
 native HSTSDataCallbackWrapperAlreadyAddRefed(RefPtr<mozilla::net::HSTSDataCallbackWrapper>);
 
-[scriptable, builtinclass, uuid(c48126d9-2ddd-485b-a51a-378e917e75f8)]
+[scriptable, builtinclass, uuid(7cdc0493-5f06-4206-8fd6-a08194b3fd75)]
 interface nsIHttpProtocolHandler : nsIProxiedProtocolHandler
 {
     /**
      * Get the HTTP advertised user agent string.
      */
     [must_use] readonly attribute ACString userAgent;
+
+    /**
+     * Get the default Accept header value for document requests.
+     * https://fetch.spec.whatwg.org/#document-accept-header-value
+     */
+    [must_use] readonly attribute ACString documentAcceptHeader;
 
     /**
      * Get the HTTP advertised user agent string.

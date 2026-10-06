@@ -1,4 +1,3 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 // Any copyright is dedicated to the Public Domain.
 // http://creativecommons.org/publicdomain/zero/1.0/
 "use strict";
@@ -52,9 +51,9 @@ function add_resume_non_ev_with_override_test() {
         "expired.example.com should not have succeededCertChain set"
       );
       equal(
-        transportSecurityInfo.failedCertChain.length,
+        transportSecurityInfo.handshakeCertificates.length,
         2,
-        "expired.example.com should have failedCertChain set"
+        "expired.example.com should have handshakeCertificates set"
       );
       equal(
         transportSecurityInfo.overridableErrorCategory,
@@ -106,9 +105,9 @@ function add_one_ev_test(resumed) {
         "ev-test.example.com should have succeededCertChain set"
       );
       equal(
-        transportSecurityInfo.failedCertChain.length,
-        0,
-        "ev-test.example.com should not have failedCertChain set"
+        transportSecurityInfo.handshakeCertificates.length,
+        2,
+        "ev-test.example.com should have handshakeCertificates set"
       );
       equal(
         transportSecurityInfo.overridableErrorCategory,
@@ -281,9 +280,11 @@ function run_test() {
   add_resumption_tests();
   // Enable external session cache and reset the status.
   add_test(function () {
-    Services.prefs.setBoolPref("network.ssl_tokens_cache_enabled", true);
-    certdb.clearOCSPCache();
-    run_next_test();
+    do_timeout(3000, function () {
+      Services.prefs.setBoolPref("network.ssl_tokens_cache_enabled", true);
+      certdb.clearOCSPCache();
+      run_next_test();
+    });
   });
   // Do tests again.
   add_resumption_tests();

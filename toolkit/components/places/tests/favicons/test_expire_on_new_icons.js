@@ -83,11 +83,11 @@ add_task(async function test_expire_root() {
 
   Assert.equal(await countEntries("moz_icons"), 0, "There should be no icons");
 
-  let pageURI = NetUtil.newURI("http://root.mozilla.com/");
+  let pageURI = Services.io.newURI("http://root.mozilla.com/");
   await PlacesTestUtils.addVisits(pageURI);
 
   // Insert an expired icon.
-  let iconURI = NetUtil.newURI(pageURI.spec + "favicon-normal16.png");
+  let iconURI = Services.io.newURI(pageURI.spec + "favicon-normal16.png");
   await PlacesTestUtils.setFaviconForPage(pageURI, iconURI, SMALLPNG_DATA_URI);
   Assert.equal(
     await countEntries("moz_icons_to_pages"),
@@ -98,7 +98,7 @@ add_task(async function test_expire_root() {
   await expireIconRelationsForPage(pageURI.spec);
 
   // Now insert a new root icon.
-  let rootIconURI = NetUtil.newURI(pageURI.spec + "favicon.ico");
+  let rootIconURI = Services.io.newURI(pageURI.spec + "favicon.ico");
   await PlacesTestUtils.setFaviconForPage(
     pageURI,
     rootIconURI,

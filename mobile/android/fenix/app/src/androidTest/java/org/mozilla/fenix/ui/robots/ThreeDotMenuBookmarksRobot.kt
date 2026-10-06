@@ -7,7 +7,6 @@ import androidx.compose.ui.test.performClick
 import org.mozilla.fenix.R
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
-import org.mozilla.fenix.helpers.HomeActivityComposeTestRule
 
 class ThreeDotMenuBookmarksRobot {
     class Transition(private val composeTestRule: ComposeTestRule) {
@@ -57,16 +56,17 @@ class ThreeDotMenuBookmarksRobot {
             return BookmarksRobot.Transition(composeTestRule)
         }
 
-        fun clickCopy(interact: BookmarksRobot.() -> Unit): BookmarksRobot.Transition {
-            Log.i(TAG, "clickCopy: Trying to click the \"Copy\" button")
-            composeTestRule.copyButton().performClick()
-            Log.i(TAG, "clickCopy: Clicked the \"Copy\" button")
+        fun clickMove(interact: BookmarksRobot.() -> Unit): BookmarksRobot.Transition {
+            Log.i(TAG, "clickMove: Trying to click the \"Move\" button")
+            composeTestRule.moveButton().performClick()
+            Log.i(TAG, "clickMove: Clicked the \"Move\" button")
+            composeTestRule.waitForIdle()
 
             BookmarksRobot(composeTestRule).interact()
             return BookmarksRobot.Transition(composeTestRule)
         }
 
-        fun clickOpenAllInTabs(composeTestRule: HomeActivityComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
+        fun clickOpenAllInTabs(composeTestRule: ComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
             Log.i(TAG, "clickOpenAllInTabs: Trying to click the \"Open all in new tabs\" button")
             composeTestRule.openAllInTabsButton().performClick()
             Log.i(TAG, "clickOpenAllInTabs: Clicked the \"Open all in new tabs\" button")
@@ -75,7 +75,7 @@ class ThreeDotMenuBookmarksRobot {
             return TabDrawerRobot.Transition(composeTestRule)
         }
 
-        fun clickOpenAllInPrivateTabs(composeTestRule: HomeActivityComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
+        fun clickOpenAllInPrivateTabs(composeTestRule: ComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
             Log.i(TAG, "clickOpenAllInPrivateTabs: Trying to click the \"Open all in private tabs\" button")
             composeTestRule.openAllInPrivateTabsButton().performClick()
             Log.i(TAG, "clickOpenAllInPrivateTabs: Clicked the \"Open all in private tabs\" button")
@@ -95,7 +95,7 @@ private fun ComposeTestRule.shareButton() = onNodeWithText(getStringResource(R.s
 
 private fun ComposeTestRule.deleteButton() = onNodeWithText(getStringResource(R.string.bookmark_menu_delete_button))
 
-private fun ComposeTestRule.copyButton() = onNodeWithText(getStringResource(R.string.bookmark_menu_copy_button))
+private fun ComposeTestRule.moveButton() = onNodeWithText(getStringResource(R.string.bookmark_menu_move_button))
 
 private fun ComposeTestRule.openAllInTabsButton() = onNodeWithText("Open all in new tabs")
 

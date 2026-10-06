@@ -1,5 +1,5 @@
 ;
-; jcgray.asm - grayscale colorspace conversion (SSE2)
+; Grayscale colorspace conversion (32-bit SSE2)
 ;
 ; Copyright (C) 2011, 2016, 2024, D. R. Commander.
 ;

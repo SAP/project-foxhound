@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,7 +40,8 @@ using namespace mozilla::layers;
 using namespace mozilla::media;
 
 static LazyLogModule gMediaStreamLog("MediaStream");
-#define LOG(type, msg) MOZ_LOG(gMediaStreamLog, type, msg)
+#define LOG(type, ...) \
+  MOZ_LOG_FMT(gMediaStreamLog, type, MOZ_LOG_EXPAND_ARGS __VA_ARGS__)
 
 static bool ContainsLiveTracks(
     const nsTArray<RefPtr<MediaStreamTrack>>& aTracks) {
@@ -146,7 +146,7 @@ DOMMediaStream::DOMMediaStream(nsPIDOMWindowInner* aWindow)
 DOMMediaStream::~DOMMediaStream() { Destroy(); }
 
 void DOMMediaStream::Destroy() {
-  LOG(LogLevel::Debug, ("DOMMediaStream %p Being destroyed.", this));
+  LOG(LogLevel::Debug, ("DOMMediaStream {} Being destroyed.", fmt::ptr(this)));
   for (const auto& track : mTracks) {
     // We must remove ourselves from each track's principal change observer list
     // before we die.
@@ -326,12 +326,18 @@ void DOMMediaStream::GetTracks(
 }
 
 void DOMMediaStream::AddTrack(MediaStreamTrack& aTrack) {
-  LOG(LogLevel::Info, ("DOMMediaStream %p Adding track %p (from track %p)",
-                       this, &aTrack, aTrack.GetTrack()));
+  const char* trackType =
+      aTrack.AsAudioStreamTrack()
+          ? "Audio"
+          : (aTrack.AsVideoStreamTrack() ? "Video" : "Other");
+  LOG(LogLevel::Info,
+      ("DOMMediaStream {} Adding track {} (type={}, from track {})",
+       fmt::ptr(this), fmt::ptr(&aTrack), trackType,
+       fmt::ptr(aTrack.GetTrack())));
 
   if (HasTrack(aTrack)) {
-    LOG(LogLevel::Debug,
-        ("DOMMediaStream %p already contains track %p", this, &aTrack));
+    LOG(LogLevel::Debug, ("DOMMediaStream {} already contains track {}",
+                          fmt::ptr(this), fmt::ptr(&aTrack)));
     return;
   }
 
@@ -345,18 +351,18 @@ void DOMMediaStream::AddTrack(MediaStreamTrack& aTrack) {
 void DOMMediaStream::RemoveTrack(MediaStreamTrack& aTrack) {
   if (static_cast<LogModule*>(gMediaStreamLog)->ShouldLog(LogLevel::Info)) {
     if (aTrack.Ended()) {
-      LOG(LogLevel::Info,
-          ("DOMMediaStream %p Removing (ended) track %p", this, &aTrack));
+      LOG(LogLevel::Info, ("DOMMediaStream {} Removing (ended) track {}",
+                           fmt::ptr(this), fmt::ptr(&aTrack)));
     } else {
       LOG(LogLevel::Info,
-          ("DOMMediaStream %p Removing track %p (from track %p)", this, &aTrack,
-           aTrack.GetTrack()));
+          ("DOMMediaStream {} Removing track {} (from track {})",
+           fmt::ptr(this), fmt::ptr(&aTrack), fmt::ptr(aTrack.GetTrack())));
     }
   }
 
   if (!mTracks.RemoveElement(&aTrack)) {
-    LOG(LogLevel::Debug,
-        ("DOMMediaStream %p does not contain track %p", this, &aTrack));
+    LOG(LogLevel::Debug, ("DOMMediaStream {} does not contain track {}",
+                          fmt::ptr(this), fmt::ptr(&aTrack)));
     return;
   }
 
@@ -368,13 +374,13 @@ void DOMMediaStream::RemoveTrack(MediaStreamTrack& aTrack) {
 already_AddRefed<DOMMediaStream> DOMMediaStream::Clone() {
   auto newStream = MakeRefPtr<DOMMediaStream>(GetOwnerWindow());
 
-  LOG(LogLevel::Info,
-      ("DOMMediaStream %p created clone %p", this, newStream.get()));
+  LOG(LogLevel::Info, ("DOMMediaStream {} created clone {}", fmt::ptr(this),
+                       fmt::ptr(newStream.get())));
 
   for (const auto& track : mTracks) {
     LOG(LogLevel::Debug,
-        ("DOMMediaStream %p forwarding external track %p to clone %p", this,
-         track.get(), newStream.get()));
+        ("DOMMediaStream {} forwarding external track {} to clone {}",
+         fmt::ptr(this), fmt::ptr(track.get()), fmt::ptr(newStream.get())));
     RefPtr<MediaStreamTrack> clone = track->Clone();
     newStream->AddTrack(*clone);
   }
@@ -401,15 +407,15 @@ bool DOMMediaStream::HasTrack(const MediaStreamTrack& aTrack) const {
 }
 
 void DOMMediaStream::AddTrackInternal(MediaStreamTrack* aTrack) {
-  LOG(LogLevel::Debug,
-      ("DOMMediaStream %p Adding owned track %p", this, aTrack));
+  LOG(LogLevel::Debug, ("DOMMediaStream {} Adding owned track {}",
+                        fmt::ptr(this), fmt::ptr(aTrack)));
   AddTrack(*aTrack);
   DispatchTrackEvent(u"addtrack"_ns, aTrack);
 }
 
 void DOMMediaStream::RemoveTrackInternal(MediaStreamTrack* aTrack) {
-  LOG(LogLevel::Debug,
-      ("DOMMediaStream %p Removing owned track %p", this, aTrack));
+  LOG(LogLevel::Debug, ("DOMMediaStream {} Removing owned track {}",
+                        fmt::ptr(this), fmt::ptr(aTrack)));
   if (!HasTrack(*aTrack)) {
     return;
   }
@@ -433,7 +439,7 @@ already_AddRefed<nsIPrincipal> DOMMediaStream::GetPrincipal() {
 }
 
 void DOMMediaStream::NotifyActive() {
-  LOG(LogLevel::Info, ("DOMMediaStream %p NotifyActive(). ", this));
+  LOG(LogLevel::Info, ("DOMMediaStream {} NotifyActive(). ", fmt::ptr(this)));
 
   MOZ_ASSERT(mActive);
   for (int32_t i = mTrackListeners.Length() - 1; i >= 0; --i) {
@@ -442,7 +448,7 @@ void DOMMediaStream::NotifyActive() {
 }
 
 void DOMMediaStream::NotifyInactive() {
-  LOG(LogLevel::Info, ("DOMMediaStream %p NotifyInactive(). ", this));
+  LOG(LogLevel::Info, ("DOMMediaStream {} NotifyInactive(). ", fmt::ptr(this)));
 
   MOZ_ASSERT(!mActive);
   for (int32_t i = mTrackListeners.Length() - 1; i >= 0; --i) {
@@ -451,7 +457,7 @@ void DOMMediaStream::NotifyInactive() {
 }
 
 void DOMMediaStream::NotifyAudible() {
-  LOG(LogLevel::Info, ("DOMMediaStream %p NotifyAudible(). ", this));
+  LOG(LogLevel::Info, ("DOMMediaStream {} NotifyAudible(). ", fmt::ptr(this)));
 
   MOZ_ASSERT(mAudible);
   for (int32_t i = mTrackListeners.Length() - 1; i >= 0; --i) {
@@ -460,7 +466,8 @@ void DOMMediaStream::NotifyAudible() {
 }
 
 void DOMMediaStream::NotifyInaudible() {
-  LOG(LogLevel::Info, ("DOMMediaStream %p NotifyInaudible(). ", this));
+  LOG(LogLevel::Info,
+      ("DOMMediaStream {} NotifyInaudible(). ", fmt::ptr(this)));
 
   MOZ_ASSERT(!mAudible);
   for (int32_t i = mTrackListeners.Length() - 1; i >= 0; --i) {
@@ -549,6 +556,7 @@ nsresult DOMMediaStream::DispatchTrackEvent(
 
   RefPtr<MediaStreamTrackEvent> event =
       MediaStreamTrackEvent::Constructor(this, aName, init);
-
+  LOG(LogLevel::Info, ("DOMMediaStream {} dispatch '{}' event", fmt::ptr(this),
+                       NS_ConvertUTF16toUTF8(aName).get()));
   return DispatchTrustedEvent(event);
 }

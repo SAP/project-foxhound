@@ -9,12 +9,12 @@ import io.mockk.mockk
 import mozilla.components.feature.syncedtabs.view.SyncedTabsView
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.R
 import org.mozilla.fenix.tabstray.ext.toSyncedTabsListItem
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class SyncedTabsViewErrorTypeTest {
@@ -35,6 +35,6 @@ class SyncedTabsViewErrorTypeTest {
         assertEquals(testContext.getString(R.string.synced_tabs_no_tabs), noTabsAvailable.errorText)
         assertEquals(testContext.getString(R.string.synced_tabs_sign_in_message), syncUnavailable.errorText)
         assertNotNull(syncUnavailable.errorButton)
-        assertEquals(testContext.getString(R.string.synced_tabs_sign_in_button), syncUnavailable.errorButton!!.buttonText)
+        assertEquals(testContext.getString(R.string.synced_tabs_sign_in_button), syncUnavailable.errorButton.buttonText)
     }
 }

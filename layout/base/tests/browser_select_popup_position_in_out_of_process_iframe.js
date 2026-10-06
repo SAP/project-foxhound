@@ -27,6 +27,14 @@ function openSelectPopup(x, y, win) {
   return popupShownPromise;
 }
 
+add_setup(async () => {
+  if (AppConstants.platform == "macosx") {
+    await SpecialPowers.pushPrefEnv({
+      set: [["widget.macos.allow-native-select", false]],
+    });
+  }
+});
+
 add_task(async function () {
   const pageUrl = "data:text/html," + escape(PAGECONTENT_TRANSLATED);
 

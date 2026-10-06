@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,8 +10,9 @@
 
 #include <cstdint>
 #include <cstring>
+
+#include "ScopedNSSTypes.h"
 #include "js/StructuredClone.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/dom/CryptoBuffer.h"
 #include "mozilla/fallible.h"
@@ -27,7 +26,6 @@
 #include "secitem.h"
 #include "secoid.h"
 #include "secoidt.h"
-#include "ScopedNSSTypes.h"
 
 struct JSStructuredCloneReader;
 struct JSStructuredCloneWriter;
@@ -145,7 +143,9 @@ inline bool ReadBuffer(JSStructuredCloneReader* aReader,
                        CryptoBuffer& aBuffer) {
   uint32_t length, zero;
   bool ret = JS_ReadUint32Pair(aReader, &length, &zero);
-  if (!ret) {
+  // WriteBuffer always a zero to the second value, so sanity
+  // check zero is actually 0.
+  if (!ret || zero != 0) {
     return false;
   }
 

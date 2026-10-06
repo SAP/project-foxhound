@@ -12,5 +12,7 @@ import androidx.preference.PreferenceFragmentCompat
  * Find a preference with the corresponding key and throw if it does not exist.
  * @param preferenceId Resource ID from preference_keys
  */
-fun <T : Preference> PreferenceFragmentCompat.requirePreference(@StringRes preferenceId: Int) =
+fun <T : Preference> PreferenceFragmentCompat.requirePreference(
+    @StringRes preferenceId: Int,
+) =
     requireNotNull(findPreference<T>(getPreferenceKey(preferenceId)))

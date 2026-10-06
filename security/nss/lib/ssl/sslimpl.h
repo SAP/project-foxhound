@@ -22,7 +22,7 @@
 #include "sslexp.h"
 #include "ssl3prot.h"
 #include "hasht.h"
-#include "nssilock.h"
+#include "cryptohi.h"
 #include "pkcs11t.h"
 #if defined(XP_UNIX)
 #include "unistd.h"
@@ -46,6 +46,7 @@ typedef struct sslPskStr sslPsk;
 typedef struct sslDelegatedCredentialStr sslDelegatedCredential;
 typedef struct sslEphemeralKeyPairStr sslEphemeralKeyPair;
 typedef struct TLS13KeyShareEntryStr TLS13KeyShareEntry;
+typedef struct tlsSignOrVerifyContextStr tlsSignOrVerifyContext;
 
 #include "sslencode.h"
 #include "sslexp.h"
@@ -130,11 +131,27 @@ typedef enum { SSLAppOpRead = 0,
 #define DTLS_RETRANSMIT_FINISHED_MS 30000
 
 /* default number of entries in namedGroupPreferences */
-#define SSL_NAMED_GROUP_COUNT 33
+#define SSL_NAMED_GROUP_COUNT 35
 
 /* The maximum DH and RSA bit-length supported. */
 #define SSL_MAX_DH_KEY_BITS 8192
 #define SSL_MAX_RSA_KEY_BITS 8192
+
+/* are we signing or verifying */
+typedef enum {
+    sig_verify = 0,
+    sig_sign,
+} sslSignOrVerify;
+
+/* sign or verify context */
+struct tlsSignOrVerifyContextStr {
+    sslSignOrVerify type;
+    union {
+        SGNContext *sig;
+        VFYContext *vfy;
+        void *ptr;
+    } u;
+};
 
 /* Types and names of elliptic curves used in TLS */
 typedef enum {
@@ -760,6 +777,8 @@ typedef struct SSL3HandshakeStateStr {
                                            * on server.*/
     PRBool helloRetry;                    /* True if HelloRetryRequest has been sent
                                            * or received. */
+    PRBool dtlsReceivedHVR;               /* True if a DTLS HelloVerifyRequest was
+                                           * received. */
     PRBool receivedCcs;                   /* A server received ChangeCipherSpec
                                            * before the handshake started. */
     PRBool rejectCcs;                     /* Excessive ChangeCipherSpecs are rejected. */
@@ -1111,22 +1130,22 @@ struct sslSocketStr {
     PRIntervalTime wTimeout; /* timeout for NSPR I/O */
     PRIntervalTime cTimeout; /* timeout for NSPR I/O */
 
-    PZLock *recvLock; /* lock against multiple reader threads. */
-    PZLock *sendLock; /* lock against multiple sender threads. */
+    PRLock *recvLock; /* lock against multiple reader threads. */
+    PRLock *sendLock; /* lock against multiple sender threads. */
 
-    PZMonitor *recvBufLock; /* locks low level recv buffers. */
-    PZMonitor *xmitBufLock; /* locks low level xmit buffers. */
+    PRMonitor *recvBufLock; /* locks low level recv buffers. */
+    PRMonitor *xmitBufLock; /* locks low level xmit buffers. */
 
     /* Only one thread may operate on the socket until the initial handshake
     ** is complete.  This Monitor ensures that.  Since SSL2 handshake is
     ** only done once, this is also effectively the SSL2 handshake lock.
     */
-    PZMonitor *firstHandshakeLock;
+    PRMonitor *firstHandshakeLock;
 
     /* This monitor protects the ssl3 handshake state machine data.
     ** Only one thread (reader or writer) may be in the ssl3 handshake state
     ** machine at any time.  */
-    PZMonitor *ssl3HandshakeLock;
+    PRMonitor *ssl3HandshakeLock;
 
     /* reader/writer lock, protects the secret data needed to encrypt and MAC
     ** outgoing records, and to decrypt and MAC check incoming ciphertext
@@ -1208,7 +1227,7 @@ extern char ssl_debug;
 extern char ssl_trace;
 extern FILE *ssl_trace_iob;
 extern FILE *ssl_keylog_iob;
-extern PZLock *ssl_keylog_lock;
+extern PRLock *ssl_keylog_lock;
 static const PRUint32 ssl_ticket_lifetime = 2 * 24 * 60 * 60; // 2 days.
 
 extern const char *const ssl3_cipherName[];
@@ -1375,16 +1394,16 @@ void ssl_ClearPRCList(PRCList *list, void (*f)(void *));
 
 #define SSL_LOCK_READER(ss) \
     if (ss->recvLock)       \
-    PZ_Lock(ss->recvLock)
+    PR_Lock(ss->recvLock)
 #define SSL_UNLOCK_READER(ss) \
     if (ss->recvLock)         \
-    PZ_Unlock(ss->recvLock)
+    PR_Unlock(ss->recvLock)
 #define SSL_LOCK_WRITER(ss) \
     if (ss->sendLock)       \
-    PZ_Lock(ss->sendLock)
+    PR_Lock(ss->sendLock)
 #define SSL_UNLOCK_WRITER(ss) \
     if (ss->sendLock)         \
-    PZ_Unlock(ss->sendLock)
+    PR_Unlock(ss->sendLock)
 
 PRBool ssl_HaveRecvBufLock(sslSocket *ss);
 PRBool ssl_HaveXmitBufLock(sslSocket *ss);
@@ -1622,20 +1641,28 @@ extern SECStatus ssl_ParseSignatureSchemes(const sslSocket *ss, PLArenaPool *are
                                            unsigned int *len);
 extern SECStatus ssl_ConsumeSignatureScheme(
     sslSocket *ss, PRUint8 **b, PRUint32 *length, SSLSignatureScheme *out);
-extern SECStatus ssl3_SignHashesWithPrivKey(SSL3Hashes *hash,
-                                            SECKEYPrivateKey *key,
-                                            SSLSignatureScheme scheme,
-                                            PRBool isTls,
-                                            SECItem *buf);
 extern SECStatus ssl3_SignHashes(sslSocket *ss, SSL3Hashes *hash,
                                  SECKEYPrivateKey *key, SECItem *buf);
-extern SECStatus ssl_VerifySignedHashesWithPubKey(sslSocket *ss,
-                                                  SECKEYPublicKey *spki,
-                                                  SSLSignatureScheme scheme,
-                                                  SSL3Hashes *hash,
-                                                  SECItem *buf);
 extern SECStatus ssl3_VerifySignedHashes(sslSocket *ss, SSLSignatureScheme scheme,
                                          SSL3Hashes *hash, SECItem *buf);
+/* new signature algorithms don't really have a 'sign hashes' interface,
+ * TLS13 now supports proper signing, where, if we are signing hashes, we
+ * will sign them with a proper hash-and-sign signature. Provide
+ * an API for those places in TLS13 where we need to sign. This leverages
+ * the work in secsign and secvfy, so we don't need to add a lot of
+ * algorithm specific code. Once the sign/verify interfaces work, we can
+ * just add the oid in tls13con.c and the ssl_sig_xxxx value and we are
+ * good to go */
+extern tlsSignOrVerifyContext tls_CreateSignOrVerifyContext(
+    SECKEYPrivateKey *privKey,
+    SECKEYPublicKey *pubKey,
+    SSLSignatureScheme scheme, sslSignOrVerify type,
+    SECItem *signature, void *pwArg);
+SECStatus tls_SignOrVerifyUpdate(tlsSignOrVerifyContext ctx,
+                                 const unsigned char *buf, int len);
+SECStatus tls_SignOrVerifyEnd(tlsSignOrVerifyContext ctx, SECItem *sig);
+void tls_DestroySignOrVerifyContext(tlsSignOrVerifyContext *ctx);
+
 extern SECStatus ssl3_CacheWrappedSecret(sslSocket *ss, sslSessionID *sid,
                                          PK11SymKey *secret);
 extern void ssl3_FreeSniNameArray(TLSExtensionData *xtnData);
@@ -1828,6 +1855,9 @@ ssl3_TLSPRFWithMasterSecret(sslSocket *ss, ssl3CipherSpec *spec,
 
 extern void
 ssl3_RecordKeyLog(sslSocket *ss, const char *label, PK11SymKey *secret);
+
+extern void
+ssl3_WriteKeyLog(sslSocket *ss, const char *label, const SECItem *item);
 
 PRBool ssl_AlpnTagAllowed(const sslSocket *ss, const SECItem *tag);
 

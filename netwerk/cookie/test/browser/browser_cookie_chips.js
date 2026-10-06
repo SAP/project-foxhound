@@ -10,17 +10,14 @@ requestLongerTimeout(3);
 add_setup(() => {
   Services.prefs.setIntPref(
     "network.cookie.cookieBehavior",
-    Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN
+    Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN
   );
   Services.prefs.setBoolPref(
     "network.cookieJarSettings.unblocked_for_testing",
     true
   );
-  Services.prefs.setBoolPref(
-    "network.cookie.cookieBehavior.optInPartitioning",
-    true
-  );
   Services.prefs.setBoolPref("network.cookie.CHIPS.enabled", true);
+  Services.prefs.setBoolPref("network.cookie.CHIPS.affectsTCP", false);
   Services.prefs.setBoolPref("dom.storage_access.enabled", true);
   Services.prefs.setBoolPref("dom.storage_access.prompt.testing", true);
   Services.cookies.removeAll();
@@ -31,9 +28,6 @@ registerCleanupFunction(() => {
   Services.prefs.clearUserPref("network.cookie.cookieBehavior");
   Services.prefs.clearUserPref(
     "network.cookieJarSettings.unblocked_for_testing"
-  );
-  Services.prefs.clearUserPref(
-    "network.cookie.cookieBehavior.optInPartitioning"
   );
   Services.prefs.clearUserPref("network.cookie.CHIPS.enabled");
   Services.prefs.clearUserPref("dom.storage_access.enabled");
@@ -95,7 +89,7 @@ add_task(
       Ci.nsICookieService.BEHAVIOR_ACCEPT,
       Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN,
       Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
-      Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+      Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
     ];
 
     for (let behavior of TEST_COOKIE_BEHAVIORS) {
@@ -151,7 +145,7 @@ add_task(
     const TEST_COOKIE_BEHAVIORS = [
       Ci.nsICookieService.BEHAVIOR_ACCEPT,
       Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
-      Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+      Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
     ];
 
     for (let behavior of TEST_COOKIE_BEHAVIORS) {
@@ -230,7 +224,7 @@ add_task(async function test_chips_store_partitioned_http_first_party_parent() {
     Ci.nsICookieService.BEHAVIOR_ACCEPT,
     Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN,
     Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
-    Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+    Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
   ];
 
   for (let behavior of TEST_COOKIE_BEHAVIORS) {
@@ -275,7 +269,7 @@ add_task(
     const TEST_COOKIE_BEHAVIORS = [
       Ci.nsICookieService.BEHAVIOR_ACCEPT,
       Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
-      Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+      Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
     ];
 
     for (let behavior of TEST_COOKIE_BEHAVIORS) {
@@ -360,7 +354,7 @@ add_task(
       Ci.nsICookieService.BEHAVIOR_ACCEPT,
       Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN,
       Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
-      Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+      Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
     ];
 
     for (let behavior of TEST_COOKIE_BEHAVIORS) {
@@ -407,7 +401,7 @@ add_task(
     // access API. The other cookieBehaviors doesn't have the same behavior
     // on StorageAccess API, so the test doesn't apply.
     const TEST_COOKIE_BEHAVIORS = [
-      Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+      Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
     ];
 
     for (let behavior of TEST_COOKIE_BEHAVIORS) {
@@ -522,7 +516,7 @@ add_task(
       Ci.nsICookieService.BEHAVIOR_ACCEPT,
       Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN,
       Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
-      Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+      Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
     ];
 
     for (let behavior of TEST_COOKIE_BEHAVIORS) {
@@ -594,6 +588,150 @@ add_task(
   }
 );
 
+// Non-CHIPS cookies in the partitioned jar should be filtered out when both
+// jars are queried. This tests the filtering in Document::GetCookie (child)
+// and CookieService::GetCookiesForURI (parent).
+add_task(async function test_chips_filter_nonchips_from_partitioned_jar() {
+  Services.prefs.setIntPref(
+    "network.cookie.cookieBehavior",
+    Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN
+  );
+
+  // Step 1: Set a non-CHIPS cookie in a third-party context. Under
+  // cookieBehavior 5 it lands in the partitioned jar without the Partitioned
+  // attribute.
+  const tab = BrowserTestUtils.addTab(gBrowser, URL_DOCUMENT_FIRSTPARTY);
+  const browser = gBrowser.getBrowserForTab(tab);
+  await BrowserTestUtils.browserLoaded(browser);
+
+  await SpecialPowers.spawn(
+    browser,
+    [URL_DOCUMENT_THIRDPARTY, THIRD_PARTY_DOMAIN],
+    async (iframeUrl, thirdPartyDomain) => {
+      let ifr = content.document.createElement("iframe");
+      ifr.src = iframeUrl;
+      content.document.body.appendChild(ifr);
+      await ContentTaskUtils.waitForEvent(ifr, "load");
+
+      await SpecialPowers.spawn(
+        await ifr.browsingContext,
+        [thirdPartyDomain],
+        async thirdPartyDomain => {
+          // Set a non-CHIPS cookie via HTTP (goes to partitioned jar).
+          await content.fetch(
+            thirdPartyDomain +
+              "/browser/netwerk/cookie/test/browser/chips.sjs?setnonchips"
+          );
+          // Set a CHIPS cookie via document.cookie.
+          content.document.cookie =
+            "chips=yes; Partitioned; Secure; SameSite=None";
+        }
+      );
+    }
+  );
+
+  // Verify both cookies are in the partitioned jar.
+  let partitionedCookies = Services.cookies.getCookiesWithOriginAttributes(
+    partitionedOAs,
+    THIRD_PARTY
+  );
+  Assert.equal(partitionedCookies.length, 2, "Two cookies in partitioned jar");
+
+  // Step 2: Set an unpartitioned cookie for example.org as first-party.
+  await BrowserTestUtils.withNewTab(URL_DOCUMENT_THIRDPARTY, async browser => {
+    await SpecialPowers.spawn(browser, [], () => {
+      content.document.cookie = "firstparty=yes; Secure; SameSite=None";
+    });
+  });
+
+  let unpartitionedCookies = Services.cookies.getCookiesWithOriginAttributes(
+    unpartitionedOAs,
+    THIRD_PARTY
+  );
+  Assert.equal(
+    unpartitionedCookies.length,
+    1,
+    "One cookie in unpartitioned jar"
+  );
+
+  // Step 3: Load example.com with example.org iframe, grant storage access,
+  // read cookies. The non-CHIPS cookie should be filtered out.
+  const tab2 = BrowserTestUtils.addTab(gBrowser, URL_DOCUMENT_FIRSTPARTY);
+  const browser2 = gBrowser.getBrowserForTab(tab2);
+  await BrowserTestUtils.browserLoaded(browser2);
+
+  await SpecialPowers.spawn(
+    browser2,
+    [URL_DOCUMENT_THIRDPARTY, THIRD_PARTY_DOMAIN],
+    async (iframeUrl, thirdPartyDomain) => {
+      let ifr = content.document.createElement("iframe");
+      ifr.src = iframeUrl;
+      content.document.body.appendChild(ifr);
+      await ContentTaskUtils.waitForEvent(ifr, "load");
+
+      await SpecialPowers.spawn(
+        await ifr.browsingContext,
+        [thirdPartyDomain],
+        async thirdPartyDomain => {
+          SpecialPowers.wrap(content.document).notifyUserGestureActivation();
+          await SpecialPowers.addPermission(
+            "storageAccessAPI",
+            true,
+            content.location.href
+          );
+          await SpecialPowers.wrap(content.document).requestStorageAccess();
+
+          ok(
+            await content.document.hasStorageAccess(),
+            "example.org should have storageAccess"
+          );
+
+          // document.cookie should include the CHIPS cookie and the
+          // first-party cookie, but NOT the non-CHIPS partitioned cookie.
+          let cookies = content.document.cookie;
+          ok(
+            cookies.includes("chips=yes"),
+            "CHIPS cookie from partitioned jar is visible"
+          );
+          ok(
+            cookies.includes("firstparty=yes"),
+            "First-party cookie from unpartitioned jar is visible"
+          );
+          ok(
+            !cookies.includes("nonchips=foreign"),
+            "Non-CHIPS cookie from partitioned jar is filtered out"
+          );
+
+          // Also verify via HTTP fetch.
+          let response = await content.fetch(
+            thirdPartyDomain +
+              "/browser/netwerk/cookie/test/browser/chips.sjs?get"
+          );
+          let httpCookies = await response.text();
+          ok(
+            httpCookies.includes("chips=yes"),
+            "CHIPS cookie sent in HTTP request"
+          );
+          ok(
+            httpCookies.includes("firstparty=yes"),
+            "First-party cookie sent in HTTP request"
+          );
+          ok(
+            !httpCookies.includes("nonchips=foreign"),
+            "Non-CHIPS cookie NOT sent in HTTP request"
+          );
+        }
+      );
+    }
+  );
+
+  // Cleanup
+  BrowserTestUtils.removeTab(tab);
+  BrowserTestUtils.removeTab(tab2);
+  Services.cookies.removeAll();
+  Services.perms.removeAll();
+});
+
 // Set partitioned and unpartitioned cookies for URL_DOCUMENT_FIRSTPARTY, then
 // send http request, assure cookies are correctly send in "Cookie" header.
 // This tests CookieService::GetCookieStringFromHttp() internally.
@@ -603,7 +741,7 @@ add_task(
       Ci.nsICookieService.BEHAVIOR_ACCEPT,
       Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN,
       Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
-      Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+      Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
     ];
 
     for (let behavior of TEST_COOKIE_BEHAVIORS) {

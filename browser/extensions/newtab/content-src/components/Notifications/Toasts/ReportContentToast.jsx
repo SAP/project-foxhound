@@ -29,7 +29,7 @@ function ReportContentToast({ onDismissClick, onAnimationEnd }) {
   return (
     <moz-message-bar
       type="success"
-      class="notification-feed-item"
+      class="notification-feed-item newtab-toast-success"
       dismissable={true}
       data-l10n-id="newtab-toast-thanks-for-reporting"
       ref={mozMessageBarRef}

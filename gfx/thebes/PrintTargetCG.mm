@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -165,6 +164,7 @@ already_AddRefed<DrawTarget> PrintTargetCG::GetReferenceDrawTarget() {
 
 nsresult PrintTargetCG::BeginPrinting(const nsAString& aTitle,
                                       const nsAString& aPrintToFileName,
+                                      uint64_t aBrowsingContextId,
                                       int32_t aStartPage, int32_t aEndPage) {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
@@ -180,7 +180,7 @@ nsresult PrintTargetCG::BeginPrinting(const nsAString& aTitle,
 
   if (!adjustedTitle.IsEmpty()) {
     CFStringRef cfString = ::CFStringCreateWithCharacters(
-        NULL, reinterpret_cast<const UniChar*>(adjustedTitle.BeginReading()),
+        nullptr, reinterpret_cast<const UniChar*>(adjustedTitle.BeginReading()),
         adjustedTitle.Length());
     if (cfString) {
       ::PMPrintSettingsSetJobName(mPrintSettings, cfString);

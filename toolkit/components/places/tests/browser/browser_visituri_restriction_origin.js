@@ -25,7 +25,7 @@ add_setup(async function () {
         "places.history.floodingPrevention.maxSecondsFromLastUserInteraction",
         0,
       ],
-      // To enable UserActivation by EventUtils.synthesizeMouseAtCenter() in ContentTask.spawn() in synthesizeVisitByUser().
+      // To enable UserActivation by EventUtils.synthesizeMouseAtCenter() in SpecialPowers.spawn() in synthesizeVisitByUser().
       ["test.events.async.enabled", true],
     ],
   });

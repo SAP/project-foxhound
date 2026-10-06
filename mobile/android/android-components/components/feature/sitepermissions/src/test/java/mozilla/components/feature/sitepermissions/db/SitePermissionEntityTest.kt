@@ -28,6 +28,8 @@ class SitePermissionEntityTest {
             autoplayInaudible = AutoplayStatus.ALLOWED,
             autoplayAudible = AutoplayStatus.BLOCKED,
             mediaKeySystemAccess = NO_DECISION,
+            localDeviceAccess = NO_DECISION,
+            localNetworkAccess = NO_DECISION,
             savedAt = 0,
         )
 
@@ -45,6 +47,8 @@ class SitePermissionEntityTest {
             assertEquals(autoplayAudible, domainClass.autoplayAudible)
             assertEquals(autoplayInaudible, domainClass.autoplayInaudible)
             assertEquals(mediaKeySystemAccess, domainClass.mediaKeySystemAccess)
+            assertEquals(localDeviceAccess, domainClass.localDeviceAccess)
+            assertEquals(localNetworkAccess, domainClass.localNetworkAccess)
             assertEquals(savedAt, domainClass.savedAt)
         }
     }
@@ -80,6 +84,8 @@ class SitePermissionEntityTest {
             assertEquals(autoplayAudible, domainClass.autoplayAudible)
             assertEquals(autoplayInaudible, domainClass.autoplayInaudible)
             assertEquals(mediaKeySystemAccess, domainClass.mediaKeySystemAccess)
+            assertEquals(localDeviceAccess, domainClass.localDeviceAccess)
+            assertEquals(localNetworkAccess, domainClass.localNetworkAccess)
             assertEquals(savedAt, domainClass.savedAt)
         }
     }

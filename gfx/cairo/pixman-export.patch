@@ -1,3 +1,6 @@
+From: Jeff Muizelaar <jmuizelaar@mozilla.com>
+Subject: Adjust pixman export macros for Mozilla build
+
 diff --git a/gfx/cairo/libpixman/src/pixman-compiler.h b/gfx/cairo/libpixman/src/pixman-compiler.h
 --- a/gfx/cairo/libpixman/src/pixman-compiler.h
 +++ b/gfx/cairo/libpixman/src/pixman-compiler.h

@@ -10,10 +10,10 @@ import {
   span,
 } from "resource://devtools/client/shared/vendor/react-dom-factories.mjs";
 
-import { wrapRender } from "resource://devtools/client/shared/components/reps/reps/rep-utils.mjs";
-import { cleanFunctionName } from "resource://devtools/client/shared/components/reps/reps/function.mjs";
-import { isLongString } from "resource://devtools/client/shared/components/reps/reps/string.mjs";
-import { MODE } from "resource://devtools/client/shared/components/reps/reps/constants.mjs";
+import { wrapRender } from "./rep-utils.mjs";
+import { cleanFunctionName } from "./function.mjs";
+import { isLongString } from "./string.mjs";
+import { MODE } from "./constants.mjs";
 
 const IGNORED_SOURCE_URLS = ["debugger eval code"];
 
@@ -123,17 +123,22 @@ function getErrorName(props) {
  * Returns a React element reprensenting the Error stacktrace, i.e.
  * transform error.stack from:
  *
+ * ```
  * semicolon@debugger eval code:1:109
  * jkl@debugger eval code:1:63
  * asdf@debugger eval code:1:28
+ *
  * @debugger eval code:1:227
+ * ```
  *
  * Into a column layout:
  *
+ * ```
  * semicolon  (<anonymous>:8:10)
  * jkl        (<anonymous>:5:10)
  * asdf       (<anonymous>:2:10)
  *            (<anonymous>:11:1)
+ * ```
  */
 function getStacktraceElements(props, preview) {
   const stack = [];
@@ -222,7 +227,8 @@ function getCauseElement(props, preview) {
  * Parse a string that should represent a stack trace and returns an array of
  * the frames. The shape of the frames are extremely important as they can then
  * be processed here or in the toolbox by other components.
- * @param {String} stack
+ *
+ * @param {string} stack
  * @returns {Array} Array of frames, which are object with the following shape:
  *                  - {String} filename
  *                  - {String} functionName

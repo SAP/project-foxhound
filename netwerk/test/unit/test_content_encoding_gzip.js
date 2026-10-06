@@ -116,6 +116,14 @@ function startIter() {
 function completeIter(request, data) {
   if (!(tests[index].flags & CL_EXPECT_FAILURE)) {
     Assert.equal(data.length, tests[index].datalen, "test " + index);
+    if (tests[index].flags & CL_EXPECT_GZIP) {
+      let httpChannel = request.QueryInterface(Ci.nsIHttpChannel);
+      Assert.equal(
+        httpChannel.decodedBodySize,
+        tests[index].datalen,
+        "decodedBodySize matches fully decoded length for test " + index
+      );
+    }
   }
   if (++index < tests.length) {
     startIter();

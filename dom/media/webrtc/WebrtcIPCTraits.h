@@ -2,24 +2,27 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _WEBRTC_IPC_TRAITS_H_
-#define _WEBRTC_IPC_TRAITS_H_
+#ifndef WEBRTC_IPC_TRAITS_H_
+#define WEBRTC_IPC_TRAITS_H_
+
+#include <vector>
 
 #include "ipc/EnumSerializer.h"
 #include "ipc/IPCMessageUtils.h"
 #include "ipc/IPCMessageUtilsSpecializations.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/BindingIPCUtils.h"
-#include "mozilla/dom/RTCConfigurationBinding.h"
-#include "mozilla/media/webrtc/WebrtcGlobal.h"
 #include "mozilla/dom/CandidateInfo.h"
-#include "mozilla/MacroForEach.h"
+#include "mozilla/dom/RTCConfigurationBinding.h"
+#include "mozilla/dom/RTCIceTransportBinding.h"
+#include "mozilla/media/webrtc/WebrtcGlobal.h"
 #include "transport/dtlsidentity.h"
-#include <vector>
+#include "transport/transportlayer.h"
 
 namespace mozilla {
 typedef std::vector<std::string> StringVector;
-}
+using TransportLayerState = TransportLayer::State;
+}  // namespace mozilla
 
 namespace IPC {
 
@@ -64,6 +67,17 @@ struct ParamTraits<mozilla::dom::OwningStringOrStringSequence> {
 };
 
 template <>
+struct ParamTraits<mozilla::TransportLayer::State>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::TransportLayer::State, mozilla::TransportLayer::TS_NONE,
+          mozilla::TransportLayer::TS_ERROR> {};
+
+template <>
+struct ParamTraits<SSLKEAType>
+    : public ContiguousEnumSerializer<SSLKEAType, ssl_kea_null, ssl_kea_size> {
+};
+
+template <>
 struct ParamTraits<mozilla::dom::RTCIceCredentialType>
     : public mozilla::dom::WebIDLEnumSerializer<
           mozilla::dom::RTCIceCredentialType> {};
@@ -73,6 +87,16 @@ struct ParamTraits<mozilla::dom::RTCIceTransportPolicy>
     : public mozilla::dom::WebIDLEnumSerializer<
           mozilla::dom::RTCIceTransportPolicy> {};
 
+template <>
+struct ParamTraits<mozilla::dom::RTCIceGathererState>
+    : public mozilla::dom::WebIDLEnumSerializer<
+          mozilla::dom::RTCIceGathererState> {};
+
+template <>
+struct ParamTraits<mozilla::dom::RTCIceTransportState>
+    : public mozilla::dom::WebIDLEnumSerializer<
+          mozilla::dom::RTCIceTransportState> {};
+
 DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::dom::RTCIceServer, mCredential,
                                   mCredentialType, mUrl, mUrls, mUsername)
 
@@ -81,8 +105,11 @@ DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::CandidateInfo, mCandidate, mUfrag,
                                   mDefaultHostRtcp, mDefaultPortRtcp,
                                   mMDNSAddress, mActualAddress)
 
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::IceCandidateErrorInfo, mAddress,
+                                  mPort, mUrl, mErrorCode, mErrorText)
+
 DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::DtlsDigest, algorithm_, value_)
 
 }  // namespace IPC
 
-#endif  // _WEBRTC_IPC_TRAITS_H_
+#endif  // WEBRTC_IPC_TRAITS_H_

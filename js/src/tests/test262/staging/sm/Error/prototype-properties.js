@@ -2,21 +2,11 @@
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
-includes: [sm/non262.js, sm/non262-shell.js]
-flags:
-  - noStrict
 description: |
   pending
 esid: pending
+includes: [nativeErrors.js]
 ---*/
-const nativeErrors = [
-    EvalError,
-    RangeError,
-    ReferenceError,
-    SyntaxError,
-    TypeError,
-    URIError
-];
 
 const ownKeys = Reflect.ownKeys(Error.prototype);
 for (const expected of ["constructor", "message", "name", "toString"]) {

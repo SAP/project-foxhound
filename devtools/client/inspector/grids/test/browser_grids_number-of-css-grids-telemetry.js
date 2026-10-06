@@ -25,7 +25,7 @@ const TEST_URI2 = `
 add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI1));
 
-  startTelemetry();
+  Services.fog.testResetFOG();
 
   const { inspector } = await openLayoutView();
   const { store } = inspector;
@@ -47,10 +47,8 @@ add_task(async function () {
 function checkResults() {
   // Check for:
   //   - 1 CSS Grid Element
-  checkTelemetry(
-    "DEVTOOLS_NUMBER_OF_CSS_GRIDS_IN_A_PAGE",
-    "",
-    { 0: 0, 1: 1, 2: 0 },
-    "array"
+  Assert.equal(
+    1,
+    Glean.devtoolsInspector.numberOfCssGridsInAPage.testGetValue().sum
   );
 }

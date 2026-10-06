@@ -16,28 +16,28 @@ buildscript {
     }
 
     dependencies {
-        classpath libs.apilint
-        classpath libs.tools.androidgradle
-        classpath libs.commons.exec
-        classpath libs.spotless
+        classpath libs.android.gradle.plugin
         classpath libs.tomlj
 
         // Used in mobile/android/fenix/app/build.gradle
+        classpath libs.androidx.benchmark.gradle
         classpath libs.androidx.navigation.safeargs
         classpath libs.osslicenses.plugin
-        classpath libs.tools.benchmarkgradle
-        classpath libs.glean.gradle.plugin
-        classpath "${ApplicationServicesConfig.groupId}:tooling-nimbus-gradle:${ApplicationServicesConfig.version}"
+        classpath libs.mozilla.glean.gradle.plugin
     }
 }
 
 plugins {
     id 'ApkSizePlugin'
     id "mozac.ConfigPlugin"
+    id 'org.mozilla.conventions.mach-tasks'
+    alias(libs.plugins.android.library) apply false
+    alias(libs.plugins.dependency.analysis)
     alias(libs.plugins.detekt)
     alias(libs.plugins.kotlin.android) apply false
     alias(libs.plugins.kotlin.compose) apply false
     alias(libs.plugins.ksp)
+    alias(libs.plugins.spotless)
 }
 
 def tryInt = { string ->
@@ -57,8 +57,8 @@ abstract class VerifyGleanVersionTask extends DefaultTask {
     @Input
     String expectedVersion = project.ext.gleanVersion
 
-    @OutputFiles
-    FileCollection outputFiles = project.objects.fileCollection()
+    @OutputFile
+    final RegularFileProperty outputFile = project.objects.fileProperty()
 
     @TaskAction
     void verifyGleanVersion() {
@@ -69,6 +69,8 @@ abstract class VerifyGleanVersionTask extends DefaultTask {
         } else {
             logger.lifecycle("verifyGleanVersion> expected version matches found version '${foundVersion}'")
         }
+
+        outputFile.get().asFile.text = "glean-${foundVersion}"
     }
 
     // Parses the Cargo.lock and returns the version for the given package name.
@@ -89,7 +91,9 @@ abstract class VerifyGleanVersionTask extends DefaultTask {
     }
 }
 
-tasks.register("verifyGleanVersion", VerifyGleanVersionTask)
+tasks.register("verifyGleanVersion", VerifyGleanVersionTask) {
+    outputFile.convention(layout.buildDirectory.file("glean/verifyGleanVersion.marker"))
+}
 
 allprojects {
     // Expose the per-object-directory configuration to all projects.
@@ -98,7 +102,7 @@ allprojects {
         topsrcdir = gradle.mozconfig.topsrcdir
         topobjdir = gradle.mozconfig.topobjdir
 
-        gleanVersion = libs.versions.mozilla.glean.get() // Verification done in verifyGleanVersion task
+        gleanVersion = libs.versions.glean.get() // Verification done in verifyGleanVersion task
 
         artifactSuffix = getArtifactSuffix()
         versionName = getVersionName()
@@ -107,11 +111,11 @@ allprojects {
         buildId = getBuildId()
 
         buildToolsVersion = mozconfig.substs.ANDROID_BUILD_TOOLS_VERSION
-        compileSdkVersion = tryInt(mozconfig.substs.ANDROID_COMPILE_SDK)
-        targetSdkVersion = tryInt(mozconfig.substs.ANDROID_TARGET_SDK)
+        compileSdkMajorVersion = tryInt(mozconfig.substs.ANDROID_COMPILE_SDK_MAJOR)
+        compileSdkMinorVersion = tryInt(mozconfig.substs.ANDROID_COMPILE_SDK_MINOR)
         minSdkVersion = tryInt(mozconfig.substs.MOZ_ANDROID_MIN_SDK_VERSION)
+        targetSdkVersion = tryInt(mozconfig.substs.ANDROID_TARGET_SDK)
         manifestPlaceholders = [
-            ANDROID_PACKAGE_NAME: mozconfig.substs.ANDROID_PACKAGE_NAME,
             ANDROID_TARGET_SDK: mozconfig.substs.ANDROID_TARGET_SDK,
             MOZ_ANDROID_MIN_SDK_VERSION: mozconfig.substs.MOZ_ANDROID_MIN_SDK_VERSION,
         ]
@@ -123,17 +127,6 @@ allprojects {
                 buildToolsVersion gradle.mozconfig.substs.ANDROID_BUILD_TOOLS_VERSION
                 testOptions {
                     unitTests.includeAndroidResources = true
-                }
-            }
-        }
-    }
-
-    repositories {
-        gradle.mozconfig.substs.GRADLE_MAVEN_REPOSITORIES.each { repository ->
-            maven {
-                url = repository
-                if (gradle.mozconfig.substs.ALLOW_INSECURE_GRADLE_REPOSITORIES) {
-                    allowInsecureProtocol = true
                 }
             }
         }
@@ -169,48 +162,6 @@ allprojects {
                 "-P", "plugin:semanticdb-kotlinc:targetroot=${targetRoot}".toString(),
             ])
         }
-    }
-
-    task downloadDependencies() {
-        description = 'Download all dependencies to the Gradle cache'
-        doLast {
-            configurations.each { configuration ->
-                if (configuration.canBeResolved) {
-                    configuration.allDependencies.each { dependency ->
-                        try {
-                            configuration.files(dependency)
-                        } catch(e) {
-                            println("Could not resolve ${configuration.name} -> ${dependency.name}")
-                            if (project.hasProperty('displayErrorDetails') && project.property('displayErrorDetails') == 'true') {
-                                println(" > ${e.message}")
-                                if (e.cause) {
-                                    println(" >> ${e.cause}")
-                                    if (e.cause.cause) {
-                                        println(" >> ${e.cause.cause}")
-                                    }
-                                }
-                                println("")
-                            } else {
-                                println("\t >> Re-run with -PdisplayErrorDetails=true to see more details")
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-abstract class MozconfigService implements BuildService<MozconfigService.Params>, AutoCloseable {
-    interface Params extends BuildServiceParameters {
-        MapProperty<String, Object> getMozconfigParam()
-    }
-
-    void close() {
-    }
-
-    Object getMozconfig() {
-        return parameters.mozconfigParam.get()
     }
 }
 
@@ -257,7 +208,16 @@ def getVersionName() {
 
 // Mimic Python: open(os.path.join(buildconfig.topobjdir, 'buildid.h')).readline().split()[2]
 def getBuildId() {
-    return file("${topobjdir}/buildid.h").getText('utf-8').split()[2]
+    def buildidFile = file("${topobjdir}/buildid.h")
+    if (!buildidFile.exists()) {
+        throw new GradleException(
+            "A required build file is missing from the object directory:\n" +
+                "  - ${buildidFile}\n\n" +
+                "This file is produced by a full build, not by Gradle.\n" +
+                "Run `./mach build` from the source directory first, then retry your Gradle build."
+        )
+    }
+    return buildidFile.getText('utf-8').split()[2]
 }
 
 def getVersionNumber() {
@@ -284,104 +244,6 @@ def getArtifactSuffix() {
     return suffix
 }
 
-abstract class MachExec extends Exec {
-    def MachExec() {
-        // Bug 1543982: When invoking `mach build` recursively, the outer `mach
-        // build` itself modifies the environment, causing configure to run
-        // again.  This tries to restore the environment that the outer `mach
-        // build` was invoked in.  See the comment in
-        // $topsrcdir/settings.gradle.
-        project.ext.mozconfig.mozconfig.env.unmodified.each { k, v -> environment.remove(k) }
-        environment project.ext.mozconfig.orig_mozconfig.env.unmodified
-        environment 'MOZCONFIG', project.ext.mozconfig.substs.MOZCONFIG
-    }
-
-    static def geckoBinariesOnlyIf(task, mozconfig) {
-        // Never when Gradle was invoked within `mach build`.
-        if ('1' == System.env.GRADLE_INVOKED_WITHIN_MACH_BUILD) {
-            task.logger.lifecycle("Skipping task ${task.path} because: within `mach build`")
-            return false
-        }
-
-        // Never for official builds.
-        if (mozconfig.substs.MOZILLA_OFFICIAL) {
-            task.logger.lifecycle("Skipping task ${task.path} because: MOZILLA_OFFICIAL")
-            return false
-        }
-
-        // Multi-l10n builds set `AB_CD=multi`, which isn't a valid locale, and
-        // `MOZ_CHROME_MULTILOCALE`.  To avoid failures, if Gradle is invoked with
-        // either, we don't invoke Make at all; this allows a multi-locale omnijar
-        // to be consumed without modification.
-        if ('multi' == System.env.AB_CD || System.env.MOZ_CHROME_MULTILOCALE) {
-            task.logger.lifecycle("Skipping task ${task.path} because: AB_CD=multi")
-            return false
-        }
-
-        // Single-locale l10n repacks set `IS_LANGUAGE_REPACK=1` and handle resource
-        // and code generation themselves.
-        if ('1' == System.env.IS_LANGUAGE_REPACK) {
-            task.logger.lifecycle("Skipping task ${task.path} because: IS_LANGUAGE_REPACK")
-            return false
-        }
-
-        task.logger.lifecycle("Executing task ${task.path}")
-        return true
-    }
-}
-
-task machBuildFaster(type: MachExec) {
-    def mozconfigProvider = gradle.sharedServices.registerIfAbsent("mozconfig", MozconfigService) {
-        parameters.mozconfigParam.set(project.ext.mozconfig)
-    }
-    usesService(mozconfigProvider)
-    onlyIf { task -> MachExec.geckoBinariesOnlyIf(task, mozconfigProvider.get().getMozconfig()) }
-
-    workingDir "${topsrcdir}"
-
-    commandLine mozconfig.substs.PYTHON3
-    args "${topsrcdir}/mach"
-    args 'build'
-    args 'faster'
-
-    // Add `-v` if we're running under `--info` (or `--debug`).
-    if (project.logger.isEnabled(LogLevel.INFO)) {
-        args '-v'
-    }
-
-    standardOutput = System.out
-    errorOutput = System.err
-}
-
-task machStagePackage(type: MachExec) {
-    def mozconfigProvider = gradle.sharedServices.registerIfAbsent("mozconfig", MozconfigService) {
-        parameters.mozconfigParam.set(project.ext.mozconfig)
-    }
-    usesService(mozconfigProvider)
-    onlyIf { task -> MachExec.geckoBinariesOnlyIf(task, mozconfigProvider.get().getMozconfig()) }
-    dependsOn rootProject.machBuildFaster
-
-    workingDir "${topobjdir}"
-
-    // We'd prefer this to be a `mach` invocation, but `mach build
-    // mobile/android/installer/stage-package` doesn't work as expected.
-    commandLine mozconfig.substs.GMAKE
-    args '-C'
-    args "${topobjdir}/mobile/android/installer"
-    args 'stage-package'
-
-    outputs.file "${topobjdir}/dist/geckoview/assets/omni.ja"
-
-    outputs.file "${topobjdir}/dist/geckoview/assets/${mozconfig.substs.ANDROID_CPU_ARCH}/libxul.so"
-    outputs.file "${topobjdir}/dist/geckoview/lib/${mozconfig.substs.ANDROID_CPU_ARCH}/libmozglue.so"
-
-    // Force running `stage-package`.
-    outputs.upToDateWhen { false }
-
-    standardOutput = System.out
-    errorOutput = System.err
-}
-
 afterEvaluate {
     subprojects { project ->
         tasks.withType(JavaCompile) {
@@ -402,7 +264,6 @@ afterEvaluate {
             def projectName = project.getName()
             if (projectName.startsWith('geckoview')
                 || projectName == 'annotations'
-                || projectName == 'exoplayer2'
                 || projectName == 'messaging_example'
                 || projectName == 'port_messaging_example'
                 || projectName == 'test_runner'
@@ -419,13 +280,13 @@ afterEvaluate {
                 if (details.requested.group == 'org.mozilla.telemetry'
                         && details.requested.name.contains('glean') ) {
                     def requested = details.requested.version.tokenize(".")
-                        def defined = libs.versions.mozilla.glean.get().tokenize(".")
+                        def defined = project.ext.gleanVersion.tokenize(".")
                         // Check the major version
                         if (requested[0] != defined[0]) {
                             throw new AssertionError("Cannot resolve to a single Glean version. Requested: ${details.requested.version}, A-C uses: ${libs.mozilla.glean}")
                         } else {
                             // Enforce that all (transitive) dependencies are using the defined Glean version
-                            details.useVersion libs.versions.mozilla.glean.get()
+                            details.useVersion project.ext.gleanVersion
                         }
                 }
             }
@@ -441,42 +302,13 @@ afterEvaluate {
     }
 }
 
-apply plugin: 'idea'
-
-idea {
-    project {
-        languageLevel = '1.8'
-    }
-
-    module {
-        // Object directories take a huge amount of time for IntelliJ to index.
-        // Exclude them.  Convention is that object directories start with obj.
-        // IntelliJ is clever and will not exclude the parts of the object
-        // directory that are referenced, if there are any.  In practice,
-        // indexing the entirety of the tree is taking too long, so exclude all
-        // but mobile/.
-        def topsrcdirURI = file(topsrcdir).toURI()
-        excludeDirs += files(file(topsrcdir)
-            .listFiles({it.isDirectory()} as FileFilter)
-            .collect({topsrcdirURI.relativize(it.toURI()).toString()}) // Relative paths.
-            .findAll({!it.equals('mobile/')}))
-
-        // If topobjdir is below topsrcdir, hide only some portions of that tree.
-        def topobjdirURI = file(topobjdir).toURI()
-        if (!topsrcdirURI.relativize(topobjdirURI).isAbsolute()) {
-            excludeDirs -= file(topobjdir)
-            excludeDirs += files(file(topobjdir).listFiles())
-            excludeDirs -= file("${topobjdir}/gradle")
-        }
-    }
-}
 
 subprojects { project ->
     // Perform spotless lint in GeckoView projects only.
+    // Sync with spotless_projects in mobile/android/geckoview/gradle.configure.
     def projectName = project.getName()
     if (projectName.startsWith('geckoview')
             || projectName == 'annotations'
-            || projectName == 'exoplayer2'
             || projectName == 'messaging_example'
             || projectName == 'port_messaging_example'
             || projectName == 'test_runner'
@@ -484,39 +316,36 @@ subprojects { project ->
         apply plugin: "com.diffplug.spotless"
 
         spotless {
+            lineEndings = com.diffplug.spotless.LineEnding.UNIX
             java {
                 target project.fileTree(project.projectDir) {
                     include '**/*.java'
                     exclude '**/thirdparty/**'
                 }
-                googleJavaFormat('1.27.0')
+                googleJavaFormat(libs.versions.google.java.format.get())
             }
             kotlin {
                 target project.fileTree(project.projectDir) {
                     include '**/*.kt'
                     exclude '**/thirdparty/**'
                 }
-                ktlint("${libs.versions.ktlint.get()}").editorConfigOverride([
-                        // Disable some of the new ktlint rules for GV code.
-                        'ktlint_standard_annotation'                 : 'disabled',
-                        'ktlint_standard_argument-list-wrapping'     : 'disabled',
-                        'ktlint_standard_class-signature'            : 'disabled',
-                        'ktlint_standard_enum-wrapping'              : 'disabled',
-                        'ktlint_standard_expression-operand-wrapping': 'disabled',
-                        'ktlint_standard_function-expression-body'   : 'disabled',
-                        'ktlint_standard_function-signature'         : 'disabled',
-                        'ktlint_standard_max-line-length'            : 'disabled',
-                        'ktlint_standard_property-naming'            : 'disabled',
-                        'ktlint_standard_statement-wrapping'         : 'disabled',
-                ])
+                ktlint("${libs.versions.ktlint.get()}").setEditorConfigPath("${topsrcdir}/mobile/android/geckoview/.editorconfig")
             }
+        }
+
+        // Work around https://github.com/diffplug/spotless/issues/1958 by
+        // explicitly depending on Spotless plugin dependencies.
+        project.configurations {
+            googleJavaFormat
+        }
+
+        project.dependencies {
+            googleJavaFormat libs.google.java.format
         }
     }
 
     afterEvaluate {
-        // Our vendored copy of exoplayer2 hits build failures when targeting Java 17.
-        // Given our intent to remove it in the near future, just leave it alone here.
-        if (it.hasProperty('android') && projectName != 'exoplayer2') {
+        if (it.hasProperty('android')) {
             kotlin {
                 jvmToolchain(config.jvmTargetCompatibility)
             }
@@ -553,10 +382,31 @@ subprojects { project ->
     }
 }
 
+// These are convenience helpers to run lints over all the subprojects
+def mobileProjects = [":fenix", ":focus-android", ":android-components"]
+tasks.register("lint") {
+    group = "verification"
+    description = "Runs lint on all mobile projects."
+    mobileProjects.each { dependsOn "${it}:lint" }
+}
+tasks.named("ktlint").configure {
+    group = "verification"
+    description = "Runs ktlint on all mobile projects."
+    mobileProjects.each { dependsOn "${it}:ktlint" }
+}
+tasks.named("ktlintFormat").configure {
+    group = "formatting"
+    description = "Runs ktlintFormat on all mobile projects."
+    mobileProjects.each { dependsOn "${it}:ktlintFormat" }
+}
+tasks.named("detekt").configure {
+    // NOTE: We are replacing the default 'detekt' task.
+    description = "Runs detekt on all mobile projects."
+    mobileProjects.each { dependsOn "${it}:detekt" }
+}
+
 tasks.register("lint-a-c") {
-    subprojects.each{
-        if (it.tasks.findByName("lint") != null && it.projectDir.absolutePath.contains("android-components")) {
-            dependsOn it.tasks.named("lint")
-        }
-    }
+    group = "verification"
+    description = "(Deprecated) alias for :android-components:lint"
+    dependsOn ":android-components:lint"
 }

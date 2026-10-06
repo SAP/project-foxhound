@@ -25,9 +25,9 @@ show data on leaks.
 
 You can set these environment variables to any of the following values.
 
--   **1** - log to stdout.
--   **2** - log to stderr.
--   ***filename*** - write log to a file.
+- **1** - log to stdout.
+- **2** - log to stderr.
+- ***filename*** - write log to a file.
 
 ## Reading individual bloat logs
 
@@ -52,44 +52,44 @@ type of process.
 
 Here's how you interpret the columns.
 
--   The first, numerical column [is the index](https://searchfox.org/mozilla-central/source/xpcom/base/nsTraceRefcnt.cpp#365)
-    of the leaking class.
--   **Class** - The name of the class in question (truncated to 20
-    characters).
--   **Bytes Per-Inst** - The number of bytes returned if you were to
-    write `sizeof(Class)`. Note that this number does not reflect any
-    memory held onto by the class, such as internal buffers, etc. (E.g.
-    for `nsString` you'll see the size of the header struct, not the
-    size of the string contents!)
--   **Bytes Leaked** - The number of bytes per instance times the number
-    of objects leaked: (Bytes Per-Inst) x (Objects Rem). Use this number
-    to look for the worst offenders. (Should be zero!)
--   **Objects Total** - The total count of objects allocated of a given
-    class.
--   **Objects Rem** - The number of objects allocated of a given class
-    that weren't deleted. (Should be zero!)
+- The first, numerical column [is the index](https://searchfox.org/firefox-main/source/xpcom/base/nsTraceRefcnt.cpp#365)
+  of the leaking class.
+- **Class** - The name of the class in question (truncated to 20
+  characters).
+- **Bytes Per-Inst** - The number of bytes returned if you were to
+  write `sizeof(Class)`. Note that this number does not reflect any
+  memory held onto by the class, such as internal buffers, etc. (E.g.
+  for `nsString` you'll see the size of the header struct, not the
+  size of the string contents!)
+- **Bytes Leaked** - The number of bytes per instance times the number
+  of objects leaked: (Bytes Per-Inst) x (Objects Rem). Use this number
+  to look for the worst offenders. (Should be zero!)
+- **Objects Total** - The total count of objects allocated of a given
+  class.
+- **Objects Rem** - The number of objects allocated of a given class
+  that weren't deleted. (Should be zero!)
 
 Interesting things to look for:
 
--   **Are your classes in the list?** - Look! If they aren't, then
-    you're not using the `NS_IMPL_ADDREF` and `NS_IMPL_RELEASE` (or
-    `NS_IMPL_ISUPPORTS` which calls them) for xpcom objects, or
-    `MOZ_COUNT_CTOR` and `MOZ_COUNT_DTOR` for non-xpcom objects. Not
-    having your classes in the list is *not* ok. That means no one is
-    looking at them, and we won't be able to tell if someone introduces
-    a leak. (See
-    [below](#how-to-instrument-your-objects-for-bloatview)
-    for how to fix this.)
--   **The Bytes Leaked for your classes should be zero!** - Need I say
-    more? If it isn't, you should use the other tools to fix it.
--   **The number of objects remaining might not be equal to the total
-    number of objects.** This could indicate a hand-written Release
-    method (that doesn't use the `NS_LOG_RELEASE` macro from
-    nsTraceRefcnt.h), or perhaps you're just not freeing any of the
-    instances you've allocated. These sorts of leaks are easy to fix.
--   **The total number of objects might be 1.** This might indicate a
-    global variable or service. Usually this will have a large number of
-    refcounts.
+- **Are your classes in the list?** - Look! If they aren't, then
+  you're not using the `NS_IMPL_ADDREF` and `NS_IMPL_RELEASE` (or
+  `NS_IMPL_ISUPPORTS` which calls them) for xpcom objects, or
+  `MOZ_COUNT_CTOR` and `MOZ_COUNT_DTOR` for non-xpcom objects. Not
+  having your classes in the list is *not* ok. That means no one is
+  looking at them, and we won't be able to tell if someone introduces
+  a leak. (See
+  [below](#how-to-instrument-your-objects-for-bloatview)
+  for how to fix this.)
+- **The Bytes Leaked for your classes should be zero!** - Need I say
+  more? If it isn't, you should use the other tools to fix it.
+- **The number of objects remaining might not be equal to the total
+  number of objects.** This could indicate a hand-written Release
+  method (that doesn't use the `NS_LOG_RELEASE` macro from
+  nsTraceRefcnt.h), or perhaps you're just not freeing any of the
+  instances you've allocated. These sorts of leaks are easy to fix.
+- **The total number of objects might be 1.** This might indicate a
+  global variable or service. Usually this will have a large number of
+  refcounts.
 
 If you find leaks, you can use [refcount tracing and balancing](refcount_tracing_and_balancing.md)
 to discover the root cause.
@@ -217,10 +217,10 @@ interested in. Those configurations are located in
 `testing/mozharness/configs/`. The most likely configs you'll want to
 modify are listed below:
 
--   Linux: `unittests/linux_unittest.py`
--   Mac: `unittests/mac_unittest.py`
--   Windows: `unittests/win_unittest.py`
--   Android: `android/androidarm.py`
+- Linux: `unittests/linux_unittest.py`
+- Mac: `unittests/mac_unittest.py`
+- Windows: `unittests/win_unittest.py`
+- Android: `android/androidarm.py`
 
 ## How to instrument your objects for BloatView
 

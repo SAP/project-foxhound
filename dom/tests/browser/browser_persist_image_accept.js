@@ -9,7 +9,7 @@ const TEST_PATH = getRootDirectory(gTestPath).replace(
 );
 
 var MockFilePicker = SpecialPowers.MockFilePicker;
-MockFilePicker.init(window.browsingContext);
+MockFilePicker.init();
 
 registerCleanupFunction(async function () {
   info("Running the cleanup code");
@@ -48,11 +48,17 @@ function expectedImageAcceptHeader() {
     return Services.prefs.getCharPref("image.http.accept");
   }
 
-  return (
-    (Services.prefs.getBoolPref("image.avif.enabled") ? "image/avif," : "") +
-    (Services.prefs.getBoolPref("image.jxl.enabled") ? "image/jxl," : "") +
-    "image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5"
-  );
+  let header = "";
+
+  header += "image/avif,";
+
+  if (Services.prefs.getBoolPref("image.jxl.enabled", false)) {
+    header += "image/jxl,";
+  }
+
+  header += "image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5";
+
+  return header;
 }
 
 add_task(async function test_image_download() {

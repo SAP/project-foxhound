@@ -211,10 +211,10 @@ Firefox captures the security context using one of the following four types of P
   in Firefox Extensions.
 
 Whenever Firefox starts to load a resource (e.g. script, css, image) then security relevant meta
-information including `nsIPrincipal <https://searchfox.org/mozilla-central/source/caps/nsIPrincipal.idl>`_
-is attached to the `nsILoadInfo <https://searchfox.org/mozilla-central/source/netwerk/base/nsILoadInfo.idl>`_.
+information including :searchfox:`nsIPrincipal <caps/nsIPrincipal.idl>`
+is attached to the :searchfox:`nsILoadInfo <netwerk/base/nsILoadInfo.idl>`.
 This load context providing object remains attached to the resource load (
-`nsIChannel <https://searchfox.org/mozilla-central/source/netwerk/base/nsIChannel.idl>`_) throughout
+:searchfox:`nsIChannel <netwerk/base/nsIChannel.idl>`) throughout
 the entire loading life cycle of a resource and allows Firefox to provide the same security
 guarantees even if the resource load encounters a server side redirect.
 
@@ -254,8 +254,8 @@ The ``about`` protocol allows for binding short human-readable urls to internal 
 displayed in the content area. For the most part each about page is simply a simpler name for
 content in the chrome or resource protocols. For example the page ``about:processes`` simply loads
 ``chrome://global/content/aboutProcesses.html``. About pages are registered in the
-`global <https://searchfox.org/mozilla-central/source/docshell/base/nsAboutRedirector.cpp>`_ and
-`desktop <https://searchfox.org/mozilla-central/source/browser/components/about/AboutRedirector.cpp>`_
+:searchfox:`global <docshell/base/nsAboutRedirector.cpp>` and
+:searchfox:`desktop <browser/components/about/AboutRedirector.cpp>`
 redirector components.
 
 Toolkit

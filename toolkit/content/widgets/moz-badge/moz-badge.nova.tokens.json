@@ -1,0 +1,37 @@
+{
+  "text": {
+    "color": {
+      "@base": {
+        "value": "{text.color.@base}"
+      },
+      "filled": {
+        "value": "{button.text.color.primary.@base}"
+      }
+    }
+  },
+  "background": {
+    "color": {
+      "filled": {
+        "value": {
+          "light": "{color.green.50}",
+          "dark": "{color.green.20}",
+          "forcedColors": "AccentColor"
+        }
+      }
+    }
+  },
+  "border": {
+    "color": {
+      "@base": {
+        "value": {
+          "light": "rgba(21, 20, 26, 0.4)",
+          "dark": "rgba(251, 251, 254, 0.4)",
+          "forcedColors": "CanvasText"
+        }
+      }
+    },
+    "radius": {
+      "value": "{border.radius.circle}"
+    }
+  }
+}

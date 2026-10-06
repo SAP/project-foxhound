@@ -1,0 +1,15 @@
+[DEFAULT]
+dupe-manifest = true
+prefs = [
+  "browser.settings-redesign.enabled=false",
+]
+support-files = [
+  "head.js",
+]
+tags = "os_integration"
+
+["browser_security-1.js"]
+
+["browser_security-2.js"]
+
+["browser_security-3.js"]

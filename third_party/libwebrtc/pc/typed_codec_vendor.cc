@@ -10,8 +10,6 @@
 
 #include "pc/typed_codec_vendor.h"
 
-#include <stddef.h>
-
 #include <functional>
 #include <map>
 #include <vector>
@@ -24,15 +22,15 @@
 #include "media/base/codec_list.h"
 #include "media/base/media_constants.h"
 #include "media/base/media_engine.h"
-#include "rtc_base/logging.h"
+#include "rtc_base/checks.h"
 
-namespace cricket {
+namespace webrtc {
 
 namespace {
 
 // Create the voice codecs. Do not allocate payload types at this time.
 std::vector<Codec> CollectAudioCodecs(
-    const std::vector<webrtc::AudioCodecSpec>& specs) {
+    const std::vector<AudioCodecSpec>& specs) {
   std::vector<Codec> out;
 
   // Only generate CN payload types for these clockrates:
@@ -42,7 +40,7 @@ std::vector<Codec> CollectAudioCodecs(
                                                           {48000, false}};
 
   for (const auto& spec : specs) {
-    cricket::Codec codec = CreateAudioCodec(spec.format);
+    Codec codec = CreateAudioCodec(spec.format);
     if (spec.info.supports_network_adaption) {
       codec.AddFeedbackParam(
           FeedbackParam(kRtcpFbParamTransportCc, kParamValueEmpty));
@@ -70,7 +68,7 @@ std::vector<Codec> CollectAudioCodecs(
     if (codec.name == kOpusCodecName) {
       // We don't know the PT to put into the RED fmtp parameter yet.
       // Leave it out.
-      cricket::Codec red_codec = CreateAudioCodec({kRedCodecName, 48000, 2});
+      Codec red_codec = CreateAudioCodec({kRedCodecName, 48000, 2});
       out.push_back(red_codec);
     }
   }
@@ -78,7 +76,7 @@ std::vector<Codec> CollectAudioCodecs(
   // Add CN codecs after "proper" audio codecs.
   for (const auto& cn : generate_cn) {
     if (cn.second) {
-      cricket::Codec cn_codec = CreateAudioCodec({kCnCodecName, cn.first, 1});
+      Codec cn_codec = CreateAudioCodec({kCnCodecName, cn.first, 1});
       out.push_back(cn_codec);
     }
   }
@@ -86,72 +84,58 @@ std::vector<Codec> CollectAudioCodecs(
   // Add telephone-event codecs last.
   for (const auto& dtmf : generate_dtmf) {
     if (dtmf.second) {
-      cricket::Codec dtmf_codec =
-          CreateAudioCodec({kDtmfCodecName, dtmf.first, 1});
+      Codec dtmf_codec = CreateAudioCodec({kDtmfCodecName, dtmf.first, 1});
       out.push_back(dtmf_codec);
     }
   }
   return out;
 }
 
-}  // namespace
-
-TypedCodecVendor::TypedCodecVendor(MediaEngineInterface* media_engine,
-                                   webrtc::MediaType type,
-                                   bool is_sender,
-                                   bool rtx_enabled,
-                                   const webrtc::FieldTrialsView& trials) {
-  if (trials.IsEnabled("WebRTC-PayloadTypesInTransport")) {
-    // Get the capabilities from the factory and compute the codecs.
-    if (type == webrtc::MediaType::AUDIO) {
-      if (is_sender) {
-        if (media_engine->voice().encoder_factory()) {
-          codecs_ = CodecList::CreateFromTrustedData(CollectAudioCodecs(
-              media_engine->voice().encoder_factory()->GetSupportedEncoders()));
-        } else {
-          RTC_LOG(LS_WARNING)
-              << "No voice encoder factory. Should only happen in test.";
-        }
-      } else {
-        if (media_engine->voice().decoder_factory()) {
-          codecs_ = CodecList::CreateFromTrustedData(CollectAudioCodecs(
-              media_engine->voice().decoder_factory()->GetSupportedDecoders()));
-        } else {
-          RTC_LOG(LS_WARNING)
-              << "No voice decoder factory. Should only happen in test.";
-        }
-      }
-    } else {
-      // Use legacy mechanisms for getting codecs from video engine.
-      // TODO: https://issues.webrtc.org/360058654 - apply late assign to video.
-      if (is_sender) {
-        codecs_ = CodecList::CreateFromTrustedData(
-            media_engine->video().LegacySendCodecs(rtx_enabled));
-      } else {
-        codecs_ = CodecList::CreateFromTrustedData(
-            media_engine->video().LegacyRecvCodecs(rtx_enabled));
-      }
-    }
-  } else {
-    // Use current mechanisms for getting codecs from media engine.
-    if (type == webrtc::MediaType::AUDIO) {
-      if (is_sender) {
-        codecs_ = CodecList::CreateFromTrustedData(
-            media_engine->voice().LegacySendCodecs());
-      } else {
-        codecs_ = CodecList::CreateFromTrustedData(
-            media_engine->voice().LegacyRecvCodecs());
-      }
-    } else {
-      if (is_sender) {
-        codecs_ = CodecList::CreateFromTrustedData(
-            media_engine->video().LegacySendCodecs(rtx_enabled));
-      } else {
-        codecs_ = CodecList::CreateFromTrustedData(
-            media_engine->video().LegacyRecvCodecs(rtx_enabled));
-      }
-    }
-  }
+Codecs AudioCodecsFromFactory(const VoiceEngineInterface& voice,
+                              bool is_sender) {
+  RTC_DCHECK(!is_sender || voice.encoder_factory()) << "No encoder factory";
+  RTC_DCHECK(is_sender || voice.decoder_factory()) << "No decoder factory";
+  return CollectAudioCodecs(
+      is_sender ? voice.encoder_factory()->GetSupportedEncoders()
+                : voice.decoder_factory()->GetSupportedDecoders());
 }
 
-}  // namespace cricket
+Codecs GetLegacyVideoCodecs(const VideoEngineInterface& video,
+                            bool is_sender,
+                            bool rtx_enabled) {
+  return is_sender ? video.LegacySendCodecs(rtx_enabled)
+                   : video.LegacyRecvCodecs(rtx_enabled);
+}
+
+Codecs GetCodecs(const MediaEngineInterface* media_engine,
+                 MediaType type,
+                 bool is_sender,
+                 bool rtx_enabled,
+                 const FieldTrialsView& trials) {
+  const VoiceEngineInterface& voice = media_engine->voice();
+  const VideoEngineInterface& video = media_engine->video();
+  if (trials.IsEnabled("WebRTC-PayloadTypesInTransport")) {
+    // Use legacy mechanisms for getting codecs from video engine.
+    // TODO: https://issues.webrtc.org/360058654 - apply late assign to video.
+    return (type == MediaType::AUDIO)
+               ? AudioCodecsFromFactory(voice, is_sender)
+               : GetLegacyVideoCodecs(video, is_sender, rtx_enabled);
+  }
+
+  // Use current mechanisms for getting codecs from media engine.
+  return (type == MediaType::AUDIO)
+             ? (is_sender ? voice.LegacySendCodecs() : voice.LegacyRecvCodecs())
+             : GetLegacyVideoCodecs(video, is_sender, rtx_enabled);
+}
+
+}  // namespace
+
+TypedCodecVendor::TypedCodecVendor(const MediaEngineInterface* media_engine,
+                                   MediaType type,
+                                   bool is_sender,
+                                   bool rtx_enabled,
+                                   const FieldTrialsView& trials)
+    : codecs_(CodecList::CreateFromTrustedData(
+          GetCodecs(media_engine, type, is_sender, rtx_enabled, trials))) {}
+
+}  // namespace webrtc

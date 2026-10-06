@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,6 +21,7 @@
 
 #include "nsBinaryStream.h"
 
+#include "mozilla/CheckedInt.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/RefPtr.h"
@@ -734,6 +733,12 @@ nsBinaryInputStream::ReadString(nsAString& aString) {
     return NS_OK;
   }
 
+  mozilla::CheckedUint32 byteLength(length);
+  byteLength *= sizeof(char16_t);
+  if (!byteLength.isValid()) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+
   // pre-allocate output buffer, and get direct access to buffer...
   if (!aString.SetLength(length, mozilla::fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
@@ -743,13 +748,13 @@ nsBinaryInputStream::ReadString(nsAString& aString) {
   closure.mWriteCursor = aString.BeginWriting();
   closure.mHasCarryoverByte = false;
 
-  rv = ReadSegments(WriteSegmentToString, &closure, length * sizeof(char16_t),
+  rv = ReadSegments(WriteSegmentToString, &closure, byteLength.value(),
                     &bytesRead);
   if (NS_FAILED(rv)) {
     return rv;
   }
 
-  if (bytesRead != length * sizeof(char16_t)) {
+  if (bytesRead != byteLength.value()) {
     return NS_ERROR_FAILURE;
   }
 

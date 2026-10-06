@@ -1,0 +1,35 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this file,
+   - You can obtain one at http://mozilla.org/MPL/2.0/. -->
+
+<!doctype html>
+<html>
+  <head>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src chrome:; object-src 'none'"
+    />
+    <meta charset="utf-8" />
+    <link rel="localization" href="browser/customkeys.ftl" />
+    <link
+      rel="stylesheet"
+      href="chrome://browser/content/customkeys/customkeys.css"
+    />
+    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
+    <title data-l10n-id="customkeys-title"></title>
+  </head>
+  <body>
+    <p>
+      <em id="cautionMessage" data-l10n-id="customkeys-caution-message"></em>
+    </p>
+    <div>
+      <label for="search" data-l10n-id="customkeys-search"></label>
+      <input id="search" type="search" />
+    </div>
+    <table id="table"></table>
+    <div>
+      <button id="resetAll" data-l10n-id="customkeys-reset-all"></button>
+    </div>
+    <script src="chrome://browser/content/customkeys/customkeys.js"></script>
+  </body>
+</html>

@@ -5,11 +5,9 @@
 Add from parameters.yml into bouncer submission tasks.
 """
 
-
 import logging
 
 from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.schema import resolve_keyed_by
 
 from gecko_taskgraph.transforms.bouncer_submission import (
     CONFIG_PER_BOUNCER_PRODUCT as CONFIG_PER_BOUNCER_PRODUCT_VANILLA,
@@ -19,7 +17,6 @@ from gecko_taskgraph.transforms.bouncer_submission import (
     _craft_filename_product,
     _craft_ftp_product,
 )
-from gecko_taskgraph.util.attributes import release_level
 from gecko_taskgraph.util.partners import (
     check_if_partners_enabled,
     get_partners_to_be_published,
@@ -30,7 +27,6 @@ logger = logging.getLogger(__name__)
 
 
 PARTNER_PLATFORMS_TO_BOUNCER = {
-    "linux-shippable": "linux",
     "linux64-shippable": "linux64",
     "macosx64-shippable": "osx",
     "win32-shippable": "win",
@@ -39,8 +35,10 @@ PARTNER_PLATFORMS_TO_BOUNCER = {
 }
 
 # :lang is interpolated by bouncer at runtime
-RELEASES_PARTNERS_PATH_TEMPLATE = "/{ftp_product}/releases/partners/{partner}/{sub_config}/\
+RELEASES_PARTNERS_PATH_TEMPLATE = (
+    "/{ftp_product}/releases/partners/{partner}/{sub_config}/\
 {version}/{ftp_platform}/:lang/{file}"
+)
 
 CONFIG_PER_BOUNCER_PRODUCT = {
     "installer": {
@@ -68,25 +66,6 @@ transforms.add(check_if_partners_enabled)
 @transforms.add
 def make_task_worker(config, jobs):
     for job in jobs:
-        resolve_keyed_by(
-            job,
-            "worker-type",
-            item_name=job["name"],
-            **{"release-level": release_level(config.params["project"])},
-        )
-        resolve_keyed_by(
-            job,
-            "scopes",
-            item_name=job["name"],
-            **{"release-level": release_level(config.params["project"])},
-        )
-        resolve_keyed_by(
-            job,
-            "bouncer-products",
-            item_name=job["name"],
-            **{"release-type": config.params["release_type"]},
-        )
-
         # the schema requires at least one locale but this will not be used
         job["worker"]["locales"] = ["fake"]
         job["worker"]["entries"] = craft_bouncer_entries(config, job)
@@ -110,27 +89,25 @@ def craft_bouncer_entries(config, job):
     entries = {}
     for partner, sub_config_name, platforms in partners:
         platforms = [PARTNER_PLATFORMS_TO_BOUNCER[p] for p in platforms]
-        entries.update(
-            {
-                craft_partner_bouncer_product_name(
-                    product, bouncer_product, current_version, partner, sub_config_name
-                ): {
-                    "options": {
-                        "add_locales": False,  # partners may use different sets of locales
-                        "ssl_only": craft_ssl_only(bouncer_product),
-                    },
-                    "paths_per_bouncer_platform": craft_paths_per_bouncer_platform(
-                        product,
-                        bouncer_product,
-                        platforms,
-                        current_version,
-                        partner,
-                        sub_config_name,
-                    ),
-                }
-                for bouncer_product in bouncer_products
+        entries.update({
+            craft_partner_bouncer_product_name(
+                product, bouncer_product, current_version, partner, sub_config_name
+            ): {
+                "options": {
+                    "add_locales": False,  # partners may use different sets of locales
+                    "ssl_only": craft_ssl_only(bouncer_product),
+                },
+                "paths_per_bouncer_platform": craft_paths_per_bouncer_platform(
+                    product,
+                    bouncer_product,
+                    platforms,
+                    current_version,
+                    partner,
+                    sub_config_name,
+                ),
             }
-        )
+            for bouncer_product in bouncer_products
+        })
     return entries
 
 

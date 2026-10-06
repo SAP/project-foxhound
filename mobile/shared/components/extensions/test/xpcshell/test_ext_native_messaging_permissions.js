@@ -97,7 +97,7 @@ add_task(async function test_geckoViewAddons_missing() {
   const ERROR_NATIVE_MESSAGE_FROM_BACKGROUND =
     "Native manifests are not supported on android";
   const ERROR_NATIVE_MESSAGE_FROM_CONTENT =
-    /^Native messaging not allowed: \{.*"envType":"content_child","url":"http:\/\/example\.com\/dummy"\,"origin":"http:\/\/example\.com"}$/;
+    /^Native messaging not allowed: \{.*"envType":"content_child","url":"http:\/\/example\.com\/dummy".*\}$/;
 
   async function testBackground() {
     await browser.test.assertRejects(
@@ -136,7 +136,7 @@ add_task(async function test_geckoViewAddons_missing() {
 // without the nativeMessagingFromContent permission.
 add_task(async function test_nativeMessagingFromContent_missing() {
   const ERROR_NATIVE_MESSAGE_FROM_CONTENT_NO_PERM =
-    /^Unexpected messaging sender: \{.*"envType":"content_child","url":"http:\/\/example\.com\/dummy"\,"origin":"http:\/\/example\.com"}$/;
+    /^Unexpected messaging sender: \{.*"envType":"content_child","url":"http:\/\/example\.com\/dummy".*\}$/;
   function testBackground() {
     // sendNativeMessage / connectNative are expected to succeed, but we
     // are not testing that here because XpcshellTestRunnerService does not

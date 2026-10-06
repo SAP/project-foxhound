@@ -29,7 +29,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
  * };
  * ```
  *
- * @fires before-request-sent
+ * @fires NetworkListener#"before-request-sent"
  *    The NetworkListener emits "before-request-sent" events, with the
  *    following object as payload:
  *      - {number} browsingContextId - The browsing context id of the browsing
@@ -71,6 +71,8 @@ export class NetworkListener {
     }
 
     this.#devtoolsNetworkObserver = new lazy.NetworkObserver({
+      decodeResponseBodies: false,
+      responseBodyLimit: 0,
       ignoreChannelFunction: this.#ignoreChannelFunction,
       onNetworkEvent: this.#onNetworkEvent,
     });

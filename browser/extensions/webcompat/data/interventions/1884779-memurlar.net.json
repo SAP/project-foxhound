@@ -1,0 +1,15 @@
+{
+  "label": "memurlar.net",
+  "bugs": {
+    "1884779": {
+      "issue": "desktop-layout-not-mobile",
+      "matches": ["*://*.memurlar.net/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

@@ -12,15 +12,20 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <memory>
+#include <optional>
 
-#include "api/array_view.h"
+#include "api/audio/audio_processing.h"
+#include "api/field_trials_view.h"
+#include "modules/audio_processing/agc2/clipping_predictor.h"
 #include "modules/audio_processing/agc2/gain_map_internal.h"
 #include "modules/audio_processing/agc2/input_volume_stats_reporter.h"
+#include "modules/audio_processing/audio_buffer.h"
 #include "modules/audio_processing/include/audio_frame_view.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_minmax.h"
-#include "system_wrappers/include/field_trial.h"
 #include "system_wrappers/include/metrics.h"
 
 namespace webrtc {
@@ -128,7 +133,6 @@ int GetSpeechLevelRmsErrorDb(float speech_level_dbfs,
 
   return rms_error_db;
 }
-
 }  // namespace
 
 MonoInputVolumeController::MonoInputVolumeController(
@@ -351,8 +355,10 @@ void MonoInputVolumeController::UpdateInputVolume(int rms_error_db) {
       rms_error_db, last_recommended_input_volume_, min_input_volume_));
 }
 
-InputVolumeController::InputVolumeController(int num_capture_channels,
-                                             const Config& config)
+InputVolumeController::InputVolumeController(
+    int num_capture_channels,
+    const Config& config,
+    const FieldTrialsView& field_trials)
     : num_capture_channels_(num_capture_channels),
       min_input_volume_(config.min_input_volume),
       capture_output_used_(true),

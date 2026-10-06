@@ -146,7 +146,7 @@ class SummaryGraphPath extends Component {
    *
    * @param {Array} keyframes1
    * @param {Array} keyframes2
-   * @return {Boolean} true: equals
+   * @return {boolean} true: equals
    */
   isOffsetAndEasingKeyframesEqual(keyframes1, keyframes2) {
     if (keyframes1.length !== keyframes2.length) {
@@ -208,16 +208,16 @@ class SummaryGraphPath extends Component {
       return dom.svg();
     }
 
-    const { playbackRate } = animation.state;
+    const { playbackRate, playBackRateMultiplier } = animation.state;
     const { createdTime } = animation.state.absoluteValues;
-    const absPlaybackRate = Math.abs(playbackRate);
+    const multiplier = Math.abs(playbackRate) * playBackRateMultiplier;
 
     // Absorb the playbackRate in viewBox of SVG and offset of child path elements
     // in order to each graph path components can draw without considering to the
     // playbackRate.
-    const offset = createdTime * absPlaybackRate;
-    const startTime = timeScale.minStartTime * absPlaybackRate;
-    const totalDuration = timeScale.getDuration() * absPlaybackRate;
+    const offset = createdTime * multiplier;
+    const startTime = timeScale.minStartTime * multiplier;
+    const totalDuration = timeScale.getDuration() * multiplier;
     const opacity = Math.max(
       1 / keyframesList.length,
       MIN_KEYFRAMES_EASING_OPACITY

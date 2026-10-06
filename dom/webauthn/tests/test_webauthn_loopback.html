@@ -4,10 +4,6 @@
   <title>Full-run test for MakeCredential/GetAssertion for W3C Web Authentication</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="u2futil.js"></script>
-  <script type="text/javascript" src="pkijs/common.js"></script>
-  <script type="text/javascript" src="pkijs/asn1.js"></script>
-  <script type="text/javascript" src="pkijs/x509_schema.js"></script>
-  <script type="text/javascript" src="pkijs/x509_simpl.js"></script>
   <script type="text/javascript" src="cbor.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -22,7 +18,7 @@
 add_task(async function() {
   // This test intentionally compares items to themselves.
   /* eslint-disable no-self-compare */
-  await SpecialPowers.pushPrefEnv({"set": [["security.webauth.webauthn_testing_allow_direct_attestation", true]]});
+  await SpecialPowers.pushPrefEnv({"set": [["security.webauthn.always_allow_direct_attestation", true]]});
   await addVirtualAuthenticator();
   is(navigator.authentication, undefined, "navigator.authentication does not exist any longer");
   isnot(navigator.credentials, undefined, "Credential Management API endpoint must exist");

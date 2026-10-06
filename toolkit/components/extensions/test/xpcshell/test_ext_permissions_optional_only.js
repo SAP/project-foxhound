@@ -36,9 +36,6 @@ add_setup(async () => {
 
   await AddonTestUtils.promiseStartupManager();
   AddonTestUtils.usePrivilegedSignatures = false;
-
-  // "userScripts" can only be in optional_permissions when supported:
-  Services.prefs.setBoolPref("extensions.userScripts.mv3.enabled", true);
 });
 
 // Test that an optional-only permission in the "permissions" array is not

@@ -1,6 +1,5 @@
 [DEFAULT]
 prefs = [
-  "security.integrity_policy.enabled=true",
   "security.integrity_policy.stylesheet.enabled=true",
 ]
 

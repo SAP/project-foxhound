@@ -21,7 +21,7 @@ add_setup(async function () {
 /**
  * One-liner to create a basic tab group
  *
- * @param {Object} [options] options for addTabGroup
+ * @param {object} [options] options for addTabGroup
  * @param {Window} [options.targetWin] window to create the group in
  * @returns {MozTabbrowserTabGroup}
  */
@@ -44,6 +44,7 @@ function forgetSavedTabGroups() {
  * @returns {Promise<PanelView>}
  */
 async function openTabsMenu(win = window) {
+  await BrowserTestUtils.ensureWindowActivated(win);
   let viewShown = BrowserTestUtils.waitForEvent(
     win.document.getElementById("allTabsMenu-allTabsView"),
     "ViewShown"
@@ -301,7 +302,7 @@ add_task(async function test_groupsViewShowMore() {
     !subView.querySelector("#allTabsMenu-groupsViewShowMore"),
     "Show more button should not be shown in sub view"
   );
-  await EventUtils.synthesizeMouseAtCenter(subViewItems[1], {}, window);
+  EventUtils.synthesizeMouseAtCenter(subViewItems[1], {}, window);
   ok(
     groups.at(-1).tabs[0].selected,
     "last created group's tab is selected after clicking second item in groups sub view"

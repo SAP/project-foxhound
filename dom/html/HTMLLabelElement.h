@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,8 +17,7 @@ namespace dom {
 
 class HTMLLabelElement final : public nsGenericHTMLElement {
  public:
-  explicit HTMLLabelElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+  explicit HTMLLabelElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : nsGenericHTMLElement(std::move(aNodeInfo)), mHandlingEvent(false) {}
 
   NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLLabelElement, label)
@@ -31,14 +28,15 @@ class HTMLLabelElement final : public nsGenericHTMLElement {
   // Element
   virtual bool IsInteractiveHTMLContent() const override { return true; }
 
-  HTMLFormElement* GetForm() const;
+  Element* GetFormForBindings() const;
+  HTMLFormElement* GetFormInternal() const;
   void GetHtmlFor(nsString& aHtmlFor) {
     GetHTMLAttr(nsGkAtoms::_for, aHtmlFor);
   }
   void SetHtmlFor(const nsAString& aHtmlFor) {
     SetHTMLAttr(nsGkAtoms::_for, aHtmlFor);
   }
-  nsGenericHTMLElement* GetControl() const { return GetLabeledElement(); }
+  nsGenericHTMLElement* GetControlForBindings() const;
 
   using nsGenericHTMLElement::Focus;
   virtual void Focus(const FocusOptions& aOptions,
@@ -53,7 +51,7 @@ class HTMLLabelElement final : public nsGenericHTMLElement {
       bool aKeyCausesActivation, bool aIsTrustedEvent) override;
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  nsGenericHTMLElement* GetLabeledElement() const;
+  nsGenericHTMLElement* GetLabeledElementInternal() const;
 
  protected:
   virtual ~HTMLLabelElement();

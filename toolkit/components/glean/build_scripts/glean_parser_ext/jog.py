@@ -111,7 +111,7 @@ def load_monkeypatches():
 
 
 def sometimes_supports_noncommutative_operations(metric_type_name):
-    return metric_type_name in ("boolean", "labeled_boolean")
+    return metric_type_name in ("boolean", "labeled_boolean", "quantity")
 
 
 def output_factory(objs, output_fd, options={}):

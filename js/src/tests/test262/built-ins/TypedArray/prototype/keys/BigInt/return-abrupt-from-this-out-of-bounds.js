@@ -3,7 +3,7 @@
 /*---
 esid: sec-%typedarray%.prototype.keys
 description: Return abrupt when "this" value fails buffer boundary checks
-includes: [testBigIntTypedArray.js]
+includes: [testTypedArray.js]
 features: [ArrayBuffer, BigInt, TypedArray, arrow-function, resizable-arraybuffer]
 ---*/
 
@@ -56,6 +56,6 @@ testWithBigIntTypedArrayConstructors(TA => {
     array.keys();
     throw new Test262Error('keys completed successfully');
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

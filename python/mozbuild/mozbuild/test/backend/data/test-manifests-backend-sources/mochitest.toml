@@ -1,6 +1,6 @@
 [DEFAULT]
 prefs = "pref.in.ancestor=1"
 
-["include:mochitest-common.ini"]
+["include:mochitest-common.toml"]
 
 ["test_foo.js"]

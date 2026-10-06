@@ -1,7 +1,7 @@
 import pytest
 
 URL = "https://www.cmbchina.com/"
-DESKTOP_CSS = "#aspnetForm"
+DESKTOP_CSS = "#videodiv"
 MOBILE_CSS = "#ice-container"
 
 

@@ -6,27 +6,31 @@
 ChromeUtils.defineESModuleGetters(this, {
   actionTypes: "resource://newtab/common/Actions.mjs",
   SmartShortcutsFeed: "resource://newtab/lib/SmartShortcutsFeed.sys.mjs",
-  PersistentCache: "resource://newtab/lib/PersistentCache.sys.mjs",
 });
 
 const PREF_SYSTEM_SHORTCUTS_PERSONALIZATION =
   "discoverystream.shortcuts.personalization.enabled";
+const PREF_SYSTEM_SHORTCUTS_LOG = "discoverystream.shortcuts.force_log.enabled";
 
-add_task(async function test_construction() {
-  let feed = new SmartShortcutsFeed();
-
-  feed.store = {
+function makeStore(values) {
+  return {
     getState() {
       return this.state;
     },
     state: {
       Prefs: {
-        values: {
-          [PREF_SYSTEM_SHORTCUTS_PERSONALIZATION]: false,
-        },
+        values,
       },
     },
   };
+}
+
+add_task(async function test_construction() {
+  let feed = new SmartShortcutsFeed();
+
+  feed.store = makeStore({
+    [PREF_SYSTEM_SHORTCUTS_PERSONALIZATION]: false,
+  });
 
   info("SmartShortcutsFeed constructor should create initial values");
 
@@ -38,18 +42,9 @@ add_task(async function test_construction() {
 add_task(async function test_onAction_INIT() {
   let feed = new SmartShortcutsFeed();
 
-  feed.store = {
-    getState() {
-      return this.state;
-    },
-    state: {
-      Prefs: {
-        values: {
-          [PREF_SYSTEM_SHORTCUTS_PERSONALIZATION]: true,
-        },
-      },
-    },
-  };
+  feed.store = makeStore({
+    [PREF_SYSTEM_SHORTCUTS_PERSONALIZATION]: true,
+  });
 
   info("SmartShortcutsFeed.onAction INIT should set loaded");
 
@@ -63,79 +58,82 @@ add_task(async function test_onAction_INIT() {
 add_task(async function test_isEnabled() {
   let feed = new SmartShortcutsFeed();
 
-  feed.store = {
-    getState() {
-      return this.state;
-    },
-    state: {
-      Prefs: {
-        values: {
-          [PREF_SYSTEM_SHORTCUTS_PERSONALIZATION]: true,
-        },
-      },
-    },
-  };
+  feed.store = makeStore({
+    [PREF_SYSTEM_SHORTCUTS_PERSONALIZATION]: true,
+  });
 
   info("SmartShortcutsFeed should be enabled");
   Assert.ok(feed.isEnabled());
 });
 
-add_task(async function test_clampWeights() {
+add_task(async function test_isEnabled_pref_fallback_when_trainhop_missing() {
   let feed = new SmartShortcutsFeed();
 
-  let weights = { a: 0, b: 1000, bias: 0 };
-  let result = feed.clampWeights(weights, 100);
-  info("clampWeights clamps a big weight vector");
-  Assert.equal(result.a, 0);
-  Assert.equal(result.b, 100);
-  Assert.equal(result.bias, 0);
+  feed.store = makeStore({
+    [PREF_SYSTEM_SHORTCUTS_PERSONALIZATION]: true,
+  });
 
-  weights = { a: 1, b: 1, bias: 1 };
-  result = feed.clampWeights(weights, 100);
-  info("clampWeights ignores a small weight vector");
-  Assert.equal(result.a, 1);
-  Assert.equal(result.b, 1);
-  Assert.equal(result.bias, 1);
+  Assert.ok(
+    feed.isEnabled(),
+    "local pref enables feed without trainhop config"
+  );
 });
 
-add_task(async function test_updateShortcutRanker() {
+add_task(async function test_isEnabled_pref_fallback_when_trainhop_partial() {
   let feed = new SmartShortcutsFeed();
 
-  const eta = 1;
-  info("updated weight vector for a click");
-  let shortcutCache = new PersistentCache("test_shortcut_cache", true);
-  await shortcutCache.set("weights", { a: 0, b: 1, bias: 0.1 });
-  await shortcutCache.set("score_map", {
-    guid_A: { final: 1.1, a: 1, b: 1, bias: 1 },
+  feed.store = makeStore({
+    [PREF_SYSTEM_SHORTCUTS_PERSONALIZATION]: true,
+    trainhopConfig: { smartShortcuts: {} },
   });
-  let result = await feed.updateShortcutRanker(
-    { guid: "guid_A", val: 1, eta },
-    "test_shortcut_cache"
-  );
-  // ugly but we need to force a read
-  shortcutCache = new PersistentCache("test_shortcut_cache", true);
-  Assert.equal(result, 1);
-  let sc_cache = await shortcutCache.get();
-  const delta = feed.sigmoid(1.1) - 1;
-  Assert.equal(sc_cache.weights.a, 0 - Number(delta) * 1);
-  Assert.equal(sc_cache.weights.b, 1 - Number(delta) * 1);
-  Assert.equal(sc_cache.weights.bias, 0.1 - Number(delta) * 1);
 
-  info("nothing happens for a missing guid");
-  shortcutCache = new PersistentCache("test_shortcut_cache", true);
-  await shortcutCache.set("weights", { a: 0, b: 1000, bias: 0 });
-  await shortcutCache.set("score_map", {
-    guid_A: { final: 1, a: 1, b: 1e-3, bias: 1 },
-  });
-  result = await feed.updateShortcutRanker(
-    { guid: "guid_B", val: 1, eta },
-    "test_shortcut_cache"
+  Assert.ok(
+    feed.isEnabled(),
+    "partial trainhop config falls back to local pref"
   );
-  // ugly but we need to force a read
-  shortcutCache = new PersistentCache("test_shortcut_cache", true);
-  Assert.equal(result, 0);
-  sc_cache = await shortcutCache.get();
-  Assert.equal(sc_cache.weights.a, 0);
-  Assert.equal(sc_cache.weights.b, 1000);
-  Assert.equal(sc_cache.weights.bias, 0);
+});
+
+add_task(async function test_onAction_INIT_remote_false_disables_loaded() {
+  let feed = new SmartShortcutsFeed();
+
+  feed.store = makeStore({
+    [PREF_SYSTEM_SHORTCUTS_PERSONALIZATION]: true,
+    trainhopConfig: { smartShortcuts: { enabled: false } },
+  });
+
+  await feed.onAction({
+    type: actionTypes.INIT,
+  });
+
+  Assert.ok(!feed.loaded, "explicit remote false disables normal feed loading");
+});
+
+add_task(async function test_force_log_keeps_feed_enabled_when_remote_false() {
+  let feed = new SmartShortcutsFeed();
+
+  feed.store = makeStore({
+    [PREF_SYSTEM_SHORTCUTS_PERSONALIZATION]: true,
+    trainhopConfig: {
+      smartShortcuts: { enabled: false, force_log: true },
+    },
+  });
+
+  Assert.ok(feed.isEnabled(), "force_log overrides remote false for logging");
+
+  await feed.onAction({
+    type: actionTypes.INIT,
+  });
+
+  Assert.ok(feed.loaded, "force_log keeps the feed loaded");
+
+  feed.store = makeStore({
+    [PREF_SYSTEM_SHORTCUTS_PERSONALIZATION]: true,
+    [PREF_SYSTEM_SHORTCUTS_LOG]: true,
+    trainhopConfig: { smartShortcuts: { enabled: false } },
+  });
+
+  Assert.ok(
+    feed.isEnabled(),
+    "local force_log pref also keeps logging enabled"
+  );
 });

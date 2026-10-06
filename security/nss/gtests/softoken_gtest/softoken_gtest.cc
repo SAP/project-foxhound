@@ -7,6 +7,8 @@
 #include "secerr.h"
 
 #include "nss_scoped_ptrs.h"
+#include "secmodt.h"
+#include "secmodti.h"
 #include "util.h"
 
 #define GTEST_HAS_RTTI 0
@@ -455,6 +457,58 @@ TEST_F(SoftokenTest, CreateObjectReadBreakLine) {
   ASSERT_EQ(SECSuccess, NSS_Initialize(nssInitArg.c_str(), "", "", SECMOD_DB,
                                        NSS_INIT_NOROOTINIT));
   ASSERT_TRUE(NSS_IsInitialized());
+}
+
+// Key IDs used for CreateKeyUnique test below
+static unsigned char keyID1[16] = {0xF8, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                   0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                   0x00, 0x00, 0x00, 0x01};
+static SECItem keyID1Item = {SECItemType::siBuffer, keyID1, sizeof(keyID1)};
+static unsigned char keyID2[16] = {0xF8, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                   0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                   0x00, 0x00, 0x00, 0x02};
+static SECItem keyID2Item = {SECItemType::siBuffer, keyID2, sizeof(keyID2)};
+
+// Test that new keys added to the database are checked for uniqueness
+// correctly. Any attempt to create a new key with the same ID and type of an
+// existing key should just overwrite the existing key instead of creating a new
+// key.
+TEST_F(SoftokenTest, CreateKeyUnique) {
+  ScopedPK11SlotInfo slot(PK11_GetInternalKeySlot());
+  ASSERT_TRUE(slot);
+  EXPECT_EQ(SECSuccess, PK11_InitPin(slot.get(), nullptr, "password"));
+
+  int aesKeySize = PK11_GetBestKeyLength(slot.get(), CKM_AES_CBC);
+  int des3KeySize = PK11_GetBestKeyLength(slot.get(), CKM_DES3_CBC);
+
+  ScopedPK11SymKey key1(PK11_TokenKeyGen(slot.get(), CKM_AES_CBC, 0, aesKeySize,
+                                         &keyID1Item, true, nullptr));
+
+  // No new key should be generated here, as the ID and the type match.
+  ScopedPK11SymKey key2(PK11_TokenKeyGen(slot.get(), CKM_AES_CBC, 0, aesKeySize,
+                                         &keyID1Item, true, nullptr));
+  EXPECT_EQ(key1->objectID, key2->objectID);
+
+  // This should generate a new key, as the type differs.
+  ScopedPK11SymKey key3(PK11_TokenKeyGen(
+      slot.get(), CKM_DES3_CBC, 0, des3KeySize, &keyID1Item, true, nullptr));
+  EXPECT_NE(key1->objectID, key3->objectID);
+
+  // This should generate a new key, as the ID differs.
+  ScopedPK11SymKey key4(PK11_TokenKeyGen(slot.get(), CKM_AES_CBC, 0, aesKeySize,
+                                         &keyID2Item, true, nullptr));
+  EXPECT_NE(key1->objectID, key4->objectID);
+
+  // This should generate a new key, as no ID is specified.
+  ScopedPK11SymKey key5(PK11_TokenKeyGen(slot.get(), CKM_AES_CBC, 0, aesKeySize,
+                                         NULL, true, nullptr));
+  EXPECT_NE(key1->objectID, key5->objectID);
+
+  // The ID is not specified again. This should create a new key different from
+  // the previous one.
+  ScopedPK11SymKey key6(PK11_TokenKeyGen(slot.get(), CKM_AES_CBC, 0, aesKeySize,
+                                         NULL, true, nullptr));
+  EXPECT_NE(key5->objectID, key6->objectID);
 }
 
 // Disabled on MacOS because of Bug 1962505

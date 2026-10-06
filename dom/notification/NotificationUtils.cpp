@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,6 +15,7 @@
 #include "nsINotificationStorage.h"
 #include "nsIPermissionManager.h"
 #include "nsIPushService.h"
+#include "nsNetUtil.h"
 #include "nsServiceManagerUtils.h"
 
 static bool gTriedStorageCleanup = false;
@@ -43,6 +42,10 @@ static void ReportTelemetry(GleanLabel aLabel,
       return;
     case PermissionCheckPurpose::NotificationShow:
       glean::web_notification::show_origin.EnumGet(aLabel).Add();
+      return;
+    case PermissionCheckPurpose::LoadImageForShow:
+      // This will always be followed by a NotificationShow permissions check
+      // anyway.
       return;
     default:
       MOZ_CRASH("Unknown permission checker");
@@ -73,7 +76,7 @@ bool IsNotificationForbiddenFor(nsIPrincipal* aPrincipal,
       glean::web_notification::insecure_context_permission_request.Add();
       nsContentUtils::ReportToConsole(
           nsIScriptError::errorFlag, "DOM"_ns, aRequestorDoc,
-          nsContentUtils::eDOM_PROPERTIES,
+          PropertiesFile::DOM_PROPERTIES,
           "NotificationsInsecureRequestIsForbidden");
     }
     return true;
@@ -97,7 +100,8 @@ bool IsNotificationForbiddenFor(nsIPrincipal* aPrincipal,
   if (outForeignByAncestorContext) {
     // nested first party
     ReportTelemetry(GleanLabel::eNestedFirstParty, aPurpose);
-    return false;
+    return StaticPrefs::
+        dom_webnotifications_forbid_nested_first_party_enabled();
   }
 
   // third party
@@ -105,7 +109,7 @@ bool IsNotificationForbiddenFor(nsIPrincipal* aPrincipal,
   if (aRequestorDoc) {
     nsContentUtils::ReportToConsole(
         nsIScriptError::errorFlag, "DOM"_ns, aRequestorDoc,
-        nsContentUtils::eDOM_PROPERTIES,
+        PropertiesFile::DOM_PROPERTIES,
         "NotificationsCrossOriginIframeRequestIsForbidden");
   }
   return !StaticPrefs::dom_webnotifications_allowcrossoriginiframe();
@@ -303,10 +307,12 @@ nsresult ShowAlertWithCleanup(nsIAlertNotification* aAlert,
     // NotificationDB.
     // (This won't affect the following persist call by ShowAlert, as the DB
     // maintains a job queue)
+    // Note that we ignore the result of GetHistory - we still go ahead and
+    // clears notifications even if it fails, as the failure implies there's no
+    // history and thus we should clear everything.
     nsTArray<nsString> history;
-    if (NS_SUCCEEDED(alertService->GetHistory(history))) {
-      UnpersistAllNotificationsExcept(history);
-    }
+    (void)alertService->GetHistory(history);
+    UnpersistAllNotificationsExcept(history);
   }
 
   MOZ_TRY(alertService->ShowAlert(aAlert, aAlertListener));
@@ -406,8 +412,13 @@ NS_IMETHODIMP NotificationStorageEntry::GetTag(nsAString& aTag) {
   return NS_OK;
 }
 
-NS_IMETHODIMP NotificationStorageEntry::GetIcon(nsAString& aIcon) {
-  aIcon = mIPCNotification.options().icon();
+NS_IMETHODIMP NotificationStorageEntry::GetIcon(nsACString& aIcon) {
+  nsIURI* iconUri = mIPCNotification.options().icon();
+  if (!iconUri) {
+    aIcon.Truncate();
+    return NS_OK;
+  }
+  iconUri->GetSpec(aIcon);
   return NS_OK;
 }
 
@@ -466,7 +477,13 @@ Result<IPCNotification, nsresult> NotificationStorageEntry::ToIPC(
   MOZ_TRY(aEntry.GetLang(options.lang()));
   MOZ_TRY(aEntry.GetBody(options.body()));
   MOZ_TRY(aEntry.GetTag(options.tag()));
-  MOZ_TRY(aEntry.GetIcon(options.icon()));
+
+  nsAutoCString iconUrl;
+  MOZ_TRY(aEntry.GetIcon(iconUrl));
+  if (!iconUrl.IsEmpty()) {
+    MOZ_TRY(NS_NewURI(getter_AddRefs(notification.options().icon()), iconUrl));
+  }
+
   MOZ_TRY(aEntry.GetRequireInteraction(&options.requireInteraction()));
   MOZ_TRY(aEntry.GetSilent(&options.silent()));
   MOZ_TRY(aEntry.GetDataSerialized(options.dataSerialized()));
@@ -475,8 +492,8 @@ Result<IPCNotification, nsresult> NotificationStorageEntry::ToIPC(
   MOZ_TRY(aEntry.GetActions(actionEntries));
   nsTArray<IPCNotificationAction> actions(actionEntries.Length());
   for (const auto& actionEntry : actionEntries) {
-    IPCNotificationAction action;
-    MOZ_TRY_VAR(action, NotificationActionStorageEntry::ToIPC(*actionEntry));
+    IPCNotificationAction action =
+        MOZ_TRY(NotificationActionStorageEntry::ToIPC(*actionEntry));
     actions.AppendElement(std::move(action));
   }
   options.actions() = std::move(actions);

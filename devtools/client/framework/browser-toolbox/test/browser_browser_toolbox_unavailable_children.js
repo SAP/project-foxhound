@@ -43,7 +43,7 @@ add_task(async function () {
     const inspector = gToolbox.getPanel("inspector");
 
     info("Select the test browser element.");
-    await selectNode('browser[remote="true"][test-tab]', inspector);
+    await selectNode("browser[remote][test-tab]", inspector);
 
     info("Retrieve the node front for selected node.");
     const browserNodeFront = inspector.selection.nodeFront;

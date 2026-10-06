@@ -66,7 +66,7 @@ cfr-doorhanger-extension-total-users =
      *[other] { $total } users
   }
 
-## Firefox Accounts Message
+## Mozilla Account messages
 
 cfr-doorhanger-bookmark-fxa-header = Sync your bookmarks everywhere.
 cfr-doorhanger-bookmark-fxa-body-2 = Great find! Now don’t be left without this bookmark on your mobile devices. Get started with an account.
@@ -74,6 +74,15 @@ cfr-doorhanger-bookmark-fxa-link-text = Sync bookmarks now…
 cfr-doorhanger-bookmark-fxa-close-btn-tooltip =
   .aria-label = Close button
   .title = Close
+
+fxa-adoption-addresses-backup-title = Let’s back up your saved addresses
+fxa-adoption-addresses-backup-subtitle = Protect your saved addresses by syncing them to your devices with encryption.
+fxa-adoption-credit-cards-backup-title = Let’s back up your payment methods
+fxa-adoption-credit-cards-backup-subtitle = Protect your payment methods by syncing them to your devices with encryption.
+fxa-adoption-bookmarks-treatment-backup-title = Let’s back up your bookmarks
+fxa-adoption-bookmarks-treatment-backup-subtitle = Protect your bookmarks by syncing them to your devices with encryption.
+
+fxa-adoption-primary-button-label = Sign up
 
 ## What's New toolbar button and panel
 
@@ -195,6 +204,21 @@ fox-doodle-pin-secondary = Not now
 set-default-pdf-handler-headline = <strong>Your PDFs now open in { -brand-short-name }.</strong> Edit or sign forms directly in your browser. To change, search “PDF” in settings.
 set-default-pdf-handler-primary = Got it
 
+## PDF Annotations strings
+
+# “Sign on the dotted line” is an idiomatic English expression about
+# where to place your signature.
+# If this expression doesn’t have a direct translation, please
+# translate this alternative string: "Add your signature anywhere!"
+annotations-default-pdf-handler-headline = Sign on the dotted line — or anywhere!
+
+# “Go-to” is an idiomatic English expression referring to something that is used often.
+annotations-default-pdf-handler-body = Draw, type, or upload your signature, then place it exactly where you want. Save your go-to signatures for next time.
+annotations-make-default-pdf-handler-title = Make { -brand-short-name } your default PDF editor?
+annotations-make-default-pdf-handler-subtitle = You’ll have access to our tools every time you open a PDF.
+annotations-make-default-pdf-primary-cta-label = Set as default
+annotations-make-default-pdf-next-label = Next
+
 ## FxA sync CFR
 
 fxa-sync-cfr-header = New device in your future?
@@ -247,6 +271,20 @@ launch-on-login-infobar-final-message = <strong>Open { -brand-short-name } every
 launch-on-login-infobar-final-reject-button = No thanks
   .accesskey = N
 
+## Launch on login spotlight
+##
+## Shown as a spotlight message when the user closes the browser, offering to set
+## { -brand-short-name } to launch when the computer starts up.
+
+launch-on-login-spotlight-title = Open { -brand-short-name } next time your computer starts up?
+launch-on-login-spotlight-startup-checkbox = Launch { -brand-short-name } at startup
+launch-on-login-spotlight-pin-taskbar-checkbox = Pin to taskbar
+# This checkbox label intentionally matches “startup-restore-windows-and-tabs”
+# in the Settings (preferences.ftl). Localizers can reuse the existing
+# translation suggested by translation memory.
+launch-on-login-spotlight-restore-checkbox = Open previous windows and tabs
+launch-on-login-spotlight-primary-button = Save and close { -brand-short-name }
+
 ## Tail Fox Set Default Spotlight
 
 # This title is displayed together with the picture of a running fox with a long tail.
@@ -257,6 +295,12 @@ tail-fox-spotlight-title = Keep pesky trackers off your tail
 tail-fox-spotlight-subtitle = Say goodbye to annoying ad trackers and settle into a safer, speedy internet experience.
 tail-fox-spotlight-primary-button = Open my links with { -brand-short-name }
 tail-fox-spotlight-secondary-button = Not now
+
+## Welcome Back Spotlight and Import
+
+welcome-back-spotlight-title = Leap back into built-in privacy
+welcome-back-spotlight-subtitle = Welcome back to the only major browser backed by a non-profit. We take extra steps to protect your data wherever you roam.
+welcome-back-embedded-import-title = Import your data and make { -brand-short-name } feel like home
 
 ## Root Certificate Succession Infobar
 
@@ -284,9 +328,12 @@ fxa-menu-message-close-button =
     .aria-label = Close
 
 fxa-menu-message-sign-up-button = Sign up
+fxa-menu-message-sign-in-button = Sign in
+fxa-menu-message-sync-button = Start syncing
 
 fxa-menu-message-sync-devices-primary-text = Sync all your devices
 fxa-menu-message-sync-devices-secondary-text = Instantly get your info — like bookmarks and passwords — everywhere you use { -brand-short-name }.
+fxa-menu-message-sync-devices-secondary-text2 = Instantly get your bookmarks, passwords, and more — everywhere you’re signed in to { -brand-short-name }.
 fxa-menu-message-sync-devices-collapsed-text = Sync all your devices
 
 fxa-menu-message-backup-data-primary-text = Back up your browser data
@@ -333,3 +380,95 @@ windows-10-eos-sync-toast-title = Upgrading to Windows 11? Don’t lose bookmark
 windows-10-eos-sync-toast-subtitle = Back up your data so { -brand-short-name } is ready to go any time, on this PC or the next one.
 windows-10-eos-sync-toast-primary-label = Get started
 windows-10-eos-sync-toast-secondary-label = Remind me later
+
+## Windows 10 EoS sync messages group 2 feature callouts
+
+windows-10-eos-challenger-callout-title = { -brand-product-name } isn’t preloaded like other Big Tech browsers. That’s the point.
+windows-10-eos-challenger-sync-callout-subtitle = When you back up your { -brand-product-name } bookmarks and passwords, it’s easier to bring the browser you chose to your next device.
+windows-10-eos-challenger-pin-callout-subtitle = Pin { -brand-shorter-name } to your taskbar so the browser you chose is always there when you need it.
+windows-10-eos-challenger-sync-primary-button = Back up { -brand-shorter-name }
+windows-10-eos-challenger-pin-primary-button = Pin { -brand-shorter-name }
+
+windows-10-eos-sync-callout-privacy-screen-1-title = { -brand-product-name } blocks cryptominers, social media trackers, and fingerprinters.
+windows-10-eos-sync-callout-privacy-screen-1-subtitle = Trackers can’t ID your device or follow you across the web — because we don’t let them.
+windows-10-eos-sync-callout-privacy-screen-2-title = Secure your passwords and bookmarks for your next device.
+windows-10-eos-sync-callout-privacy-screen-2-subtitle = Backing up { -brand-shorter-name } makes it easy to bring your data and privacy settings with you.
+windows-10-eos-sync-callout-privacy-info-button = See what’s blocked
+
+windows-10-eos-callout-addons-title = Try add-ons: simple upgrades, big impacts
+windows-10-eos-callout-addons-subtitle = These extensions were chosen to help you stay productive, protected, and distraction-free.
+windows-10-eos-callout-addons-primary-button = See our picks
+
+windows-10-eos-sync-callout-addons-title = Don’t lose your add-ons when you upgrade from Windows 10.
+windows-10-eos-sync-callout-addons-subtitle = Sync now so your { -brand-product-name } add-ons are always available, even after a device change.
+
+windows-10-eos-sync-callout-next-button = Next
+windows-10-eos-sync-callout-get-started-button = Get started
+
+## Windows 10 EoS Sync messages group 2 toast notification
+
+windows-10-eos-feature-toast-title = Vertical tabs and tab groups are here!
+
+# In English, "dropped" is a colloquial form for released.
+windows-10-eos-feature-toast-subtitle = By popular request, { -brand-product-name } just dropped new features to keep your browsing streamlined and focused.
+windows-10-eos-feature-toast-whats-new-button = See what’s new
+windows-10-eos-feature-toast-dismiss-button = Dismiss
+
+## Windows 10 EoS Global Infobar
+
+windows-10-eos-global-infobar-title = <strong>Microsoft is no longer supporting Windows 10.</strong> Back up your info to get { -brand-product-name } ready for Windows 11.
+windows-10-eos-global-infobar-primary-button = Turn on backup
+  .accesskey = T
+windows-10-eos-global-infobar-learn-more-link = Learn more
+  .accessKey = L
+
+## ETP (Enhanced Tracking Protection) Strict exceptions infobar
+##
+## These strings are displayed in an infobar notification that appears when
+## Enhanced Tracking Protection's Strict mode is causing website functionality
+## issues. The infobar offers users the option to apply automatic exceptions
+## to fix common site breakage by unblocking essential elements.
+
+etp-strict-exceptions-infobar-message = <strong>Strict tracking protection can cause sites to break.</strong> Fix common issues by unblocking essential elements that could contain trackers.
+etp-strict-exceptions-infobar-learn-more = Learn more
+etp-strict-exceptions-infobar-button = Apply fixes
+  .accesskey = A
+etp-strict-exceptions-infobar-not-now = Not now
+  .accesskey = N
+
+## 'Set to default' messaging displayed within the App menu
+
+set-default-menu-message-simple-layout-title = { -brand-short-name } is not your default browser
+set-default-menu-message-simple-layout-title-variant = { -brand-short-name } is not your primary browser
+
+set-default-menu-message-row-layout-title = Make { -brand-short-name } your primary browser
+set-default-menu-message-row-layout-title-variant = Make { -brand-short-name } your default browser
+
+set-default-menu-message-row-layout-subtitle = Get speed, safety and privacy every time you browse.
+set-default-menu-message-row-layout-subtitle-variant = { PLATFORM() ->
+    [macos] Keep { -brand-short-name } at your fingertips — make it your default and keep it in your Dock.
+   *[other] Keep { -brand-short-name } at your fingertips — make it your default and keep it in your taskbar.
+}
+
+set-default-menu-message-primary-button = Set as default
+set-default-menu-message-primary-button-variant = Set as primary browser
+
+## Firefox Relay 50 Masks Announcement
+
+# "on us" in this context means "for free" or "at no cost"
+relay-50-masks-announcement-title = 50 email masks, on us
+relay-50-masks-announcement-subtitle = Now you get 50 free masks (up from 5). Use one for every account to keep your real email private.
+relay-50-masks-announcement-primary-button = Go to { -relay-brand-name }
+  .accesskey = G
+relay-50-masks-announcement-secondary-button = Dismiss
+  .accesskey = D
+
+## Nova Early Access Infobar
+
+nova-early-access-infobar-title = <strong>{ -brand-product-name } is getting a new look.</strong> You’re previewing an early, unpolished version before the launch later this year.
+
+nova-early-access-share-feedback-link = Share feedback
+  .accesskey = S
+
+nova-early-access-infobar-primary-button = Got it
+  .accesskey = G

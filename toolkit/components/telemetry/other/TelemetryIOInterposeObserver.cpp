@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +9,7 @@
 #include "js/PropertyDescriptor.h"  // JSPROP_ENUMERATE, JSPROP_READONLY
 #include "js/ValueArray.h"
 #include "nsIFile.h"
+#include "jsapi.h"
 
 namespace mozilla::Telemetry {
 
@@ -123,7 +122,7 @@ bool TelemetryIOInterposeObserver::ReflectFileStats(FileIOEntryType* entry,
 
     // Array we want to report
     JS::RootedValueArray<6> stats(cx);
-    stats[0].setNumber(fileStats.totalTime);
+    stats[0].set(JS_NumberValue(fileStats.totalTime));
     stats[1].setNumber(fileStats.creates);
     stats[2].setNumber(fileStats.reads);
     stats[3].setNumber(fileStats.writes);

@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-json-parse-with-source) skip-if(!JSON.hasOwnProperty('isRawJSON')||!xulRuntime.shell)
+// |reftest| skip-if(!JSON.hasOwnProperty('isRawJSON')||!xulRuntime.shell)
 
 // Changing Object.prototype should not change the behavior of JSON parsing.
 Object.defineProperty(Object.prototype, 1, {

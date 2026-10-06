@@ -12,7 +12,7 @@
  * For example, if the terms is ["background-color"],
  * this function returns compatNode["background-color"].__compat.
  *
- * @return {Object} compatibility table
+ * @return {object} compatibility table
  *   {
  *     description: {String} Description of this compatibility table.
  *     mdn_url: {String} Document in the MDN.

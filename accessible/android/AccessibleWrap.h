@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,7 +29,7 @@ class AccessibleWrap : public LocalAccessible {
   static Accessible* ExploreByTouch(Accessible* aAccessible, float aX,
                                     float aY);
 
-  static uint32_t GetFlags(role aRole, uint64_t aState, uint8_t aActionCount);
+  static uint32_t GetFlags(Accessible* aAccessible);
 
   static int32_t GetInputType(const nsString& aInputTypeAttr);
 

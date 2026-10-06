@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -127,7 +125,7 @@ FileSystemSyncAccessHandle::Create(
         if (result->IsOpen()) {
           // We don't need to use the result, we just need to begin the closing
           // process.
-          Unused << result->BeginClose();
+          (void)result->BeginClose();
         }
       });
   QM_TRY(MOZ_TO_RESULT(workerRef));
@@ -157,7 +155,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(FileSystemSyncAccessHandle)
   if (tmp->IsOpen()) {
     // We don't need to use the result, we just need to begin the closing
     // process.
-    Unused << tmp->BeginClose();
+    (void)tmp->BeginClose();
   }
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(FileSystemSyncAccessHandle)

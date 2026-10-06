@@ -1,8 +1,17 @@
 <!-- This Source Code Form is subject to the terms of the Mozilla Public
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none">
-  <g fill="context-fill" clip-path="url(#a)">
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"  fill="context-fill">
+<style>
+.nova { display: none; }
+
+@media -moz-pref("browser.nova.enabled") {
+  .proton { display: none; }
+  .nova { display: revert; }
+}
+</style>
+<g class="proton">
+  <g clip-path="url(#a)">
     <path d="M4 2a.5.5 0 0 0-.5.5H2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2h-1.5A.5.5 0 0 0 12 2H4Zm2 6h4v1.5H6V8Z"/>
     <path fill-rule="evenodd" d="M2 4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H2Zm-.5 2a.5.5 0 0 1 .5-.5h12a.5.5 0 0 1 .5.5v8a.5.5 0 0 1-.5.5H2a.5.5 0 0 1-.5-.5V6Z" clip-rule="evenodd"/>
   </g>
@@ -11,4 +20,10 @@
       <path fill="context-stroke" d="M0 0h16v16H0z"/>
     </clipPath>
   </defs>
+</g>
+<g class="nova">
+  <path d="M9.25 8a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1 0-1.5z" />
+  <path fill-rule="evenodd" d="M8 4c1.455 0 3.056.06 4.777.213l.746.073.258.039A2.76 2.76 0 0 1 16 7.025v5.95c0 1.4-1.049 2.59-2.454 2.737a53.6 53.6 0 0 1-11.068.003A2.76 2.76 0 0 1 0 12.975v-5.95a2.745 2.745 0 0 1 2.454-2.736A54 54 0 0 1 8 4m0 1.5c-1.945 0-3.75.11-5.39.28A1.247 1.247 0 0 0 1.5 7.026v5.949c0 .639.49 1.181 1.133 1.248a52 52 0 0 0 10.758-.003 1.246 1.246 0 0 0 1.109-1.245v-5.95c0-.638-.49-1.18-1.133-1.247A52 52 0 0 0 8 5.5" clip-rule="evenodd" />
+  <path d="M4.416 1.1c2.387-.301 4.825-.3 7.2.004a2.74 2.74 0 0 1 2.246 1.895h-1.677a1.22 1.22 0 0 0-.76-.406 27.2 27.2 0 0 0-6.821-.004 1.26 1.26 0 0 0-.78.41H2.14A2.76 2.76 0 0 1 4.416 1.1" />
+</g>
 </svg>

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -55,10 +54,10 @@ static already_AddRefed<Screen> MakeScreen(UIScreen* aScreen) {
            dpi));
 
   NSInteger fps = [aScreen maximumFramesPerSecond];
-  RefPtr<Screen> screen =
-      new Screen(rect, rect, pixelDepth, pixelDepth, fps, contentsScaleFactor,
-                 defaultCssScaleFactor, dpi, Screen::IsPseudoDisplay::No,
-                 Screen::IsHDR::No);
+  auto screen =
+      MakeRefPtr<Screen>(rect, rect, pixelDepth, pixelDepth, fps,
+                         contentsScaleFactor, defaultCssScaleFactor, dpi,
+                         Screen::IsPseudoDisplay::No, Screen::IsHDR::No);
   return screen.forget();
 
   NS_OBJC_END_TRY_BLOCK_RETURN(nullptr);

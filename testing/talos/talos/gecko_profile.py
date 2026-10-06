@@ -5,6 +5,7 @@
 """
 module to handle Gecko profiling.
 """
+
 import json
 import os
 import tempfile
@@ -61,7 +62,7 @@ class GeckoProfile:
         # the test name
         self.profile_arcname = os.path.join(
             self.upload_dir,
-            "profile_{0}.zip".format(test_config.get("suite", test_config["name"])),
+            "profile_{}.zip".format(test_config.get("suite", test_config["name"])),
         )
 
         # We delete the archive if the current test is the first in the suite
@@ -100,18 +101,16 @@ class GeckoProfile:
         # Set environment variables which will cause profiling to
         # start as early as possible. These are consumed by Gecko
         # itself, not by Talos JS code.
-        env.update(
-            {
-                "MOZ_PROFILER_STARTUP": "1",
-                # Temporary: Don't run Base Profiler, see bug 1630448.
-                # TODO: Remove when fix lands in bug 1648324 or bug 1648325.
-                "MOZ_PROFILER_STARTUP_NO_BASE": "1",
-                "MOZ_PROFILER_STARTUP_INTERVAL": str(self.option("interval")),
-                "MOZ_PROFILER_STARTUP_ENTRIES": str(self.option("entries")),
-                "MOZ_PROFILER_STARTUP_FEATURES": str(self.option("features")),
-                "MOZ_PROFILER_STARTUP_FILTERS": str(self.option("threads")),
-            }
-        )
+        env.update({
+            "MOZ_PROFILER_STARTUP": "1",
+            # Temporary: Don't run Base Profiler, see bug 1630448.
+            # TODO: Remove when fix lands in bug 1648324 or bug 1648325.
+            "MOZ_PROFILER_STARTUP_NO_BASE": "1",
+            "MOZ_PROFILER_STARTUP_INTERVAL": str(self.option("interval")),
+            "MOZ_PROFILER_STARTUP_ENTRIES": str(self.option("entries")),
+            "MOZ_PROFILER_STARTUP_FEATURES": str(self.option("features")),
+            "MOZ_PROFILER_STARTUP_FILTERS": str(self.option("threads")),
+        })
 
     def _save_gecko_profile(
         self, cycle, symbolicator, missing_symbols_zip, profile_path
@@ -143,32 +142,30 @@ class GeckoProfile:
 
         :param cycle: the number of the cycle of the test currently run.
         """
-        symbolicator = ProfileSymbolicator(
-            {
-                # Trace-level logging (verbose)
-                "enableTracing": 0,
-                # Fallback server if symbol is not found locally
-                "remoteSymbolServer": "https://symbolication.services.mozilla.com/symbolicate/v4",
-                # Maximum number of symbol files to keep in memory
-                "maxCacheEntries": 2000000,
-                # Frequency of checking for recent symbols to
-                # cache (in hours)
-                "prefetchInterval": 12,
-                # Oldest file age to prefetch (in hours)
-                "prefetchThreshold": 48,
-                # Maximum number of library versions to pre-fetch
-                # per library
-                "prefetchMaxSymbolsPerLib": 3,
-                # Default symbol lookup directories
-                "defaultApp": "FIREFOX",
-                "defaultOs": "WINDOWS",
-                # Paths to .SYM files, expressed internally as a
-                # mapping of app or platform names to directories
-                # Note: App & OS names from requests are converted
-                # to all-uppercase internally
-                "symbolPaths": self.symbol_paths,
-            }
-        )
+        symbolicator = ProfileSymbolicator({
+            # Trace-level logging (verbose)
+            "enableTracing": 0,
+            # Fallback server if symbol is not found locally
+            "remoteSymbolServer": "https://symbolication.services.mozilla.com/symbolicate/v4",
+            # Maximum number of symbol files to keep in memory
+            "maxCacheEntries": 2000000,
+            # Frequency of checking for recent symbols to
+            # cache (in hours)
+            "prefetchInterval": 12,
+            # Oldest file age to prefetch (in hours)
+            "prefetchThreshold": 48,
+            # Maximum number of library versions to pre-fetch
+            # per library
+            "prefetchMaxSymbolsPerLib": 3,
+            # Default symbol lookup directories
+            "defaultApp": "FIREFOX",
+            "defaultOs": "WINDOWS",
+            # Paths to .SYM files, expressed internally as a
+            # mapping of app or platform names to directories
+            # Note: App & OS names from requests are converted
+            # to all-uppercase internally
+            "symbolPaths": self.symbol_paths,
+        })
 
         if self.browser_config["symbols_path"]:
             if mozfile.is_url(self.browser_config["symbols_path"]):
@@ -214,7 +211,7 @@ class GeckoProfile:
                 # 'profile_tscrollx/iframe.svg/cycle_0.profile'.
                 cycle_name = f"cycle_{cycle}.profile"
                 path_in_zip = os.path.join(
-                    "profile_{0}".format(self.test_config["name"]), testname, cycle_name
+                    "profile_{}".format(self.test_config["name"]), testname, cycle_name
                 )
                 LOG.info(
                     f"Adding profile {path_in_zip} to archive {self.profile_arcname}"

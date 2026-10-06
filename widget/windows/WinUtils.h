@@ -1,17 +1,15 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_widget_WinUtils_h__
-#define mozilla_widget_WinUtils_h__
+#ifndef mozilla_widget_WinUtils_h_
+#define mozilla_widget_WinUtils_h_
 
 #include "nscore.h"
 #include <windows.h>
 #include <shobjidl.h>
 #include <uxtheme.h>
 #include <dwmapi.h>
-#include <unordered_map>
 #include <utility>
 
 // Undo the windows.h damage
@@ -35,7 +33,6 @@
 #include "nsIWidget.h"
 #include "nsWindowsHelpers.h"
 
-#include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/LazyIdleThread.h"
 #include "mozilla/UniquePtr.h"
@@ -217,7 +214,6 @@ class WinUtils {
    */
   static double SystemScaleFactor();
 
-  static bool IsPerMonitorDPIAware();
   /**
    * Get the DPI of the given monitor if it's per-monitor DPI aware, otherwise
    * return the system DPI.
@@ -272,8 +268,8 @@ class WinUtils {
    * Logging helpers that dump output to prlog module 'Widget', console, and
    * OutputDebugString. Note these output in both debug and release builds.
    */
-  static void Log(const char* fmt, ...);
-  static void LogW(const wchar_t* fmt, ...);
+  static void Log(const char* fmt, ...) MOZ_FORMAT_PRINTF(1, 2);
+  static void LogW(const wchar_t* fmt, ...) MOZ_FORMAT_WPRINTF(1, 2);
 
   /**
    * PeekMessage() and GetMessage() are wrapper methods for PeekMessageW(),
@@ -431,7 +427,8 @@ class WinUtils {
    * nsIWidget::SynthethizeNative*Event().
    */
   static void SetupKeyModifiersSequence(nsTArray<KeyPair>* aArray,
-                                        uint32_t aModifiers, UINT aMessage);
+                                        nsIWidget::NativeModifiers aModifiers,
+                                        UINT aMessage);
 
   /**
    * Does device have touch support
@@ -570,6 +567,8 @@ class WinUtils {
 
   static nsresult GetProcessImageName(DWORD aProcessId, nsAString& aName);
 
+  static void InvalidateWindowPreviews();
+
  private:
   static WhitelistVec BuildWhitelist();
 
@@ -679,4 +678,4 @@ class ScopedRtlShimWindow {
 }  // namespace widget
 }  // namespace mozilla
 
-#endif  // mozilla_widget_WinUtils_h__
+#endif  // mozilla_widget_WinUtils_h_

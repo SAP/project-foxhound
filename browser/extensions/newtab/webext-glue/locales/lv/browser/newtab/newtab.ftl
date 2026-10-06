@@ -21,6 +21,53 @@ newtab-personalize-dialog-label =
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Jaunas cilnes
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [zero] { $num } rindu
+            [one] { $num } rinda
+           *[other] { $num } rindas
+        }
+home-restore-defaults-srd =
+    .label = Atjaunot noklusējumus
+    .accesskey = n
+home-mode-choice-default-fx-srd =
+    .label = { -firefox-home-brand-name } (noklusējuma)
+home-mode-choice-custom-srd =
+    .label = Pielāgotas adreses...
+home-mode-choice-blank-srd =
+    .label = Tukša lapa
+home-prefs-shortcuts-header-srd =
+    .label = Saīsnes
+home-prefs-shortcuts-select =
+    .aria-label = Saīsnes
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = Sponsorētās saīsnes
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Sponsorētie stāsti
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Apmeklētās lapas
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Grāmatzīmes
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Nesenās lejupielādes
+home-prefs-recent-activity-header-srd =
+    .label = Nesenās aktivitātes
+home-prefs-recent-activity-select =
+    .aria-label = Nesenās aktivitātes
+home-prefs-weather-header-srd =
+    .label = Laikapstākļi
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -46,13 +93,16 @@ newtab-search-box-input =
     .placeholder = Meklēt tīmeklī
     .aria-label = Meklēt tīmeklī
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Pievienot meklētāju
 newtab-topsites-add-shortcut-header = Jauna saīsne
 newtab-topsites-edit-topsites-header = Rediģēt populārās vietnes
 newtab-topsites-edit-shortcut-header = Rediģēt saīsni
 newtab-topsites-add-shortcut-label = Pievienot saīsni
+newtab-topsites-add-shortcut-title =
+    .title = Pievienot saīsni
+    .aria-label = Pievienot saīsni
 newtab-topsites-title-label = Virsraksts
 newtab-topsites-title-input =
     .placeholder = Ievadīt nosaukumu
@@ -120,12 +170,11 @@ newtab-menu-about-fakespot = Par { -fakespot-brand-name }
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = Bloķēt
+# Context menu option to open a support page explaining the New Tab personalization features and privacy controls.
+newtab-menu-section-learn-more = Uzzināt vairāk
 # "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
 # e.g. Following the travel section of stories.
 newtab-menu-section-unfollow = Pārtraukt sekot tēmai
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -281,9 +330,22 @@ newtab-error-fallback-refresh-link = Pārlādējiet lapu, lai mēģinātu vēlre
 
 newtab-custom-shortcuts-title = Saīsnes
 newtab-custom-shortcuts-subtitle = Saglabātās vai apmeklētās vietnes
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = Saīsnes
     .description = Saglabātās vai apmeklētās vietnes
+newtab-custom-shortcuts-nova =
+    .label = Saīsnes
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [zero] { $num } rinda
+            [one] { $num } rindas
+           *[other] { $num } rindu
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =
@@ -295,16 +357,16 @@ newtab-custom-row-selector =
 newtab-custom-sponsored-sites = Sponsorētās saīsnes
 newtab-custom-pocket-title = Ieteica { -pocket-brand-name }
 newtab-custom-pocket-subtitle = Izcils saturs, ko atlasījis { -pocket-brand-name }, kas ir daļa no { -brand-product-name } saimes
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be having a description under "Recommended stories" anymore
 newtab-custom-stories-toggle =
     .label = Ieteiktie stāsti
     .description = Izcils saturs, ko atlasīja { -brand-product-name } saime
+newtab-recommended-stories-toggle =
+    .label = Ieteiktie stāsti
 newtab-custom-pocket-sponsored = Sponsorētie stāsti
 newtab-custom-pocket-show-recent-saves = Rādīt nesen saglabāto
 newtab-custom-recent-title = Nesenās aktivitātes
 newtab-custom-recent-subtitle = Neseno vietņu un satura izlase
-newtab-custom-recent-toggle =
-    .label = Nesenās aktivitātes
-    .description = Neseno vietņu un satura izlase
 newtab-custom-weather-toggle =
     .label = Laikapstākļi
     .description = Šodienas prognoze ātrā acu uzmetienā
@@ -315,6 +377,8 @@ newtab-custom-settings = Pārvaldīt vairāk iestatījumu
 
 newtab-wallpaper-title = Tapetes
 newtab-wallpaper-reset = Atiestatīt uz noklusējumu
+newtab-wallpaper-toggle-title =
+    .label = Tapetes
 newtab-wallpaper-light-red-panda = Sarkana panda
 newtab-wallpaper-light-mountain = Balts kalns
 newtab-wallpaper-light-sky = Debesis ar violetiem un rozā mākoņiem
@@ -332,6 +396,7 @@ newtab-wallpaper-light-fox-anniversary = Lapsa pļavā ar dūmakainu kalnu ainav
 
 ## Solid Colors
 
+#  (developer note): @nova-cleanup(remove-string): Remove old "Solid colors" string once Nova lands. The simplified "Colors" string will take over
 newtab-wallpaper-category-title-colors = Vienkrāsains
 newtab-wallpaper-blue = Zils
 newtab-wallpaper-light-blue = Gaiši zils
@@ -359,7 +424,7 @@ newtab-wallpaper-abstract-orange = Oranžas formas
 newtab-wallpaper-gradient-orange = Oranža un rozā krāsu pāreja
 newtab-wallpaper-abstract-blue-purple = Zilas un violetas formas
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotogrāfijas
 newtab-wallpaper-beach-at-sunrise = Pludmale saullēktā
@@ -383,9 +448,6 @@ feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
 
-## Celestial
-
-
 ## New Tab Weather
 
 # Variables:
@@ -399,7 +461,6 @@ newtab-weather-menu-change-location = Mainīt atrašanās vietu
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Meklēt atrašanās vietu
     .aria-label = Meklēt atrašanās vietu
-newtab-weather-change-location-search-input = Meklēt atrašanās vietu
 newtab-weather-menu-weather-display = Laikapstākļu attēlotājs
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -417,6 +478,11 @@ newtab-weather-menu-hide-weather = Paslēpt laikapstākļus jaunā cilnē
 newtab-weather-menu-learn-more = Uzzināt vairāk
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Laikapstākļu dati pašlaik nav pieejami.
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = Skatīt prognozi { $provider }
+    .aria-description = { $provider } ∙ sponsorēts
 
 ## Topic Labels
 
@@ -466,26 +532,6 @@ newtab-section-follow-button = Sekot
 newtab-section-following-button = Seko
 newtab-section-unfollow-button = Pārtraukt sekošanu
 
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
 ## Confirmation modal for blocking a section
 
 newtab-section-cancel-button = Ne tagad
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

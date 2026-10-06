@@ -25,7 +25,7 @@ add_task(async function () {
   info("Close the toolbox before reloading the tab.");
   await gDevTools.closeToolboxForTab(tab);
 
-  await reloadBrowser();
+  await reloadSelectedTab();
 
   info(
     "Check that the flexbox highlighter can be displayed after reloading the page."

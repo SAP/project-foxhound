@@ -3,6 +3,13 @@
 
 "use strict";
 
+const ABOUT_PREFERENCES_URL = Services.prefs.getBoolPref(
+  "browser.settings-redesign.enabled",
+  false
+)
+  ? "about:preferences#languages"
+  : "about:preferences#general";
+
 /**
  * This test case tests the scenario of clicking the settings menu item
  * that leads to the translations section of the about:preferences settings
@@ -28,7 +35,7 @@ add_task(async function test_select_translations_panel_open_settings_page() {
   SelectTranslationsTestUtils.clickTranslationsSettingsPageMenuItem();
 
   await waitForCondition(
-    () => gBrowser.currentURI.spec === "about:preferences#general",
+    () => gBrowser.currentURI.spec === ABOUT_PREFERENCES_URL,
     "Waiting for about:preferences to be opened."
   );
 
@@ -46,11 +53,7 @@ add_task(
   async function test_select_translations_panel_open_settings_menu_from_unsupported_language() {
     const { cleanup, runInPage } = await loadTestPage({
       page: SELECT_TEST_PAGE_URL,
-      languagePairs: [
-        // Do not include Spanish.
-        { fromLang: "fr", toLang: "en" },
-        { fromLang: "en", toLang: "fr" },
-      ],
+      languagePairs: LANGUAGE_PAIRS_WITHOUT_SPANISH,
       prefs: [["browser.translations.select.enable", true]],
     });
 

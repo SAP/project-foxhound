@@ -21,12 +21,14 @@ NullHttpChannel::NullHttpChannel() {
 }
 
 NullHttpChannel::NullHttpChannel(nsIHttpChannel* chan)
-    : mAllRedirectsSameOrigin(false), mAllRedirectsPassTimingAllowCheck(false) {
+    : mAllRedirectsSameOrigin(false),
+      mAllRedirectsSameOriginIgnoringInternal(false),
+      mAllRedirectsPassTimingAllowCheck(false) {
   nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
   ssm->GetChannelURIPrincipal(chan, getter_AddRefs(mResourcePrincipal));
 
-  Unused << chan->GetResponseHeader("Timing-Allow-Origin"_ns,
-                                    mTimingAllowOriginHeader);
+  (void)chan->GetResponseHeader("Timing-Allow-Origin"_ns,
+                                mTimingAllowOriginHeader);
   chan->GetURI(getter_AddRefs(mURI));
   chan->GetOriginalURI(getter_AddRefs(mOriginalURI));
 
@@ -234,11 +236,6 @@ NullHttpChannel::IsNoCacheResponse(bool* _retval) {
 }
 
 NS_IMETHODIMP
-NullHttpChannel::IsPrivateResponse(bool* _retval) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
 NullHttpChannel::RedirectTo(nsIURI* aNewURI) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -273,6 +270,16 @@ NullHttpChannel::GetProtocolVersion(nsACString& aProtocolVersion) {
 
 NS_IMETHODIMP
 NullHttpChannel::GetEncodedBodySize(uint64_t* aEncodedBodySize) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+NullHttpChannel::GetIsUserAgentHeaderOutdated(bool* aValue) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+NullHttpChannel::SetIsUserAgentHeaderOutdated(bool aValue) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -412,6 +419,18 @@ NullHttpChannel::GetLoadInfo(nsILoadInfo** aLoadInfo) {
 
 NS_IMETHODIMP
 NullHttpChannel::SetLoadInfo(nsILoadInfo* aLoadInfo) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+NullHttpChannel::GetParentProcessChannelHandle(
+    mozilla::dom::ParentProcessChannelHandle** aValue) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+NullHttpChannel::SetParentProcessChannelHandle(
+    mozilla::dom::ParentProcessChannelHandle* aValue) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -666,6 +685,20 @@ NullHttpChannel::GetResponseStart(mozilla::TimeStamp* aResponseStart) {
 }
 
 NS_IMETHODIMP
+NullHttpChannel::GetFirstInterimResponseStart(
+    mozilla::TimeStamp* aFirstInterimResponseStart) {
+  *aFirstInterimResponseStart = mozilla::TimeStamp();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+NullHttpChannel::GetFinalResponseHeadersStart(
+    mozilla::TimeStamp* aFinalResponseHeadersStart) {
+  *aFinalResponseHeadersStart = mAsyncOpenTime;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 NullHttpChannel::GetResponseEnd(mozilla::TimeStamp* aResponseEnd) {
   *aResponseEnd = mAsyncOpenTime;
   return NS_OK;
@@ -713,6 +746,20 @@ NullHttpChannel::GetAllRedirectsSameOrigin(bool* aAllRedirectsSameOrigin) {
 
 NS_IMETHODIMP
 NullHttpChannel::SetAllRedirectsSameOrigin(bool aAllRedirectsSameOrigin) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+NullHttpChannel::GetAllRedirectsSameOriginIgnoringInternal(
+    bool* aAllRedirectsSameOriginIgnoringInternal) {
+  *aAllRedirectsSameOriginIgnoringInternal =
+      mAllRedirectsSameOriginIgnoringInternal;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+NullHttpChannel::SetAllRedirectsSameOriginIgnoringInternal(
+    bool aAllRedirectsSameOriginIgnoringInternal) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -836,6 +883,19 @@ NullHttpChannel::GetRenderBlocking(bool* aRenderBlocking) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
+NS_IMETHODIMP
+NullHttpChannel::GetDecompressDictionary(
+    mozilla::net::DictionaryCacheEntry** aDictionary) {
+  *aDictionary = nullptr;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+NullHttpChannel::SetDecompressDictionary(
+    mozilla::net::DictionaryCacheEntry* aDictionary) {
+  return NS_OK;
+}
+
 #define IMPL_TIMING_ATTR(name)                                           \
   NS_IMETHODIMP                                                          \
   NullHttpChannel::Get##name##Time(PRTime* _retval) {                    \
@@ -867,6 +927,8 @@ IMPL_TIMING_ATTR(SecureConnectionStart)
 IMPL_TIMING_ATTR(ConnectEnd)
 IMPL_TIMING_ATTR(RequestStart)
 IMPL_TIMING_ATTR(ResponseStart)
+IMPL_TIMING_ATTR(FirstInterimResponseStart)
+IMPL_TIMING_ATTR(FinalResponseHeadersStart)
 IMPL_TIMING_ATTR(ResponseEnd)
 IMPL_TIMING_ATTR(CacheReadStart)
 IMPL_TIMING_ATTR(CacheReadEnd)

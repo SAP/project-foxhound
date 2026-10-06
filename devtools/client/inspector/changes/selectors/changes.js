@@ -22,16 +22,16 @@ const {
  * Keeping this interface updated allows the Redux state structure to change without
  * affecting the consumer components.
  *
- * @param {Object} state
+ * @param {object} state
  *        Redux slice for tracked changes.
- * @param {Object} filter
+ * @param {object} filter
  *        Object with optional filters to use. Has the following properties:
  *        - sourceIds: {Array}
  *          Use only subtrees of sources matching source ids from this array.
  *        - ruleIds: {Array}
  *          Use only rules matching rule ids from this array. If the array includes ids
  *          of ancestor rules (@media, @supports), their nested rules will be included.
- * @return {Object}
+ * @return {object}
  */
 function getChangesTree(state, filter = {}) {
   // Use or assign defaults of sourceId and ruleId arrays by which to filter the tree.
@@ -43,11 +43,11 @@ function getChangesTree(state, filter = {}) {
    *
    * Returns the rule object with expanded children or null if previously visited.
    *
-   * @param  {String} ruleId
-   * @param  {Object} rule
+   * @param  {string} ruleId
+   * @param  {object} rule
    * @param  {Array} rules
    * @param  {Set} visitedRules
-   * @return {Object|null}
+   * @return {object | null}
    */
   function expandRuleChildren(ruleId, rule, rules, visitedRules) {
     if (visitedRules.has(ruleId)) {
@@ -126,11 +126,11 @@ function getChangesTree(state, filter = {}) {
  * rules). Removed CSS declarations are written commented out. Added CSS declarations are
  * written as-is.
  *
- * @param  {Object} state
+ * @param  {object} state
  *         Redux slice for tracked changes.
- * @param  {Object} filter
+ * @param  {object} filter
  *         Object with optional source and rule filters. See getChangesTree()
- * @return {String}
+ * @return {string}
  *         CSS stylesheet text.
  */
 
@@ -177,9 +177,9 @@ function getChangesStylesheet(state, filter) {
    * @param  {Array} selectors
    *         History of selector versions if changed over time.
    *         Array with a single item (the original selector) if never changed.
-   * @param  {Number} level
+   * @param  {number} level
    *         Level of nesting within a CSS rule tree.
-   * @return {String}
+   * @return {string}
    */
   function writeSelector(selectors = [], level) {
     const indent = indentChar.repeat(level);

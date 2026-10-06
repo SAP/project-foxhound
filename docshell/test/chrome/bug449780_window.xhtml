@@ -17,10 +17,8 @@
       b.setAttribute("id", "content");
       b.setAttribute("width", width);
       b.setAttribute("height", height);
-      b.setAttribute("remote", SpecialPowers.Services.appinfo.sessionHistoryInParent);
-      if (SpecialPowers.Services.appinfo.sessionHistoryInParent) {
-        b.setAttribute("maychangeremoteness", "true");
-      }
+      b.toggleAttribute("remote", true);
+      b.setAttribute("maychangeremoteness", "true");
       document.getElementById("parent").appendChild(b);
       return b;
     }

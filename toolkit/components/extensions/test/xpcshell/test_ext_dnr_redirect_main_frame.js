@@ -51,27 +51,12 @@ add_task(async function test_navigate_main_frame() {
 
   // Regression test for bug 1940339 / bug 1826867: we should see the
   // moz-extension:-URL here, and not the underlying jar:file:-URL.
-  if (Services.appinfo.sessionHistoryInParent) {
-    let sh = contentPage.browsingContext.sessionHistory;
-    let she = sh.getEntryAtIndex(sh.index);
-    equal(she.URI.spec, expectedFinalUrl, "SessionHistoryEntry url is correct");
-    // Extra sanity check: when extensions trigger redirects, the history is
-    // not populated with pre-redirect URLs.
-    equal(sh.index, 0, "No pre-redirect history entries");
-  } else {
-    await contentPage.spawn([expectedFinalUrl], expectedFinalUrl => {
-      let sh = this.docShell.QueryInterface(Ci.nsIWebNavigation).sessionHistory;
-      let she = sh.legacySHistory.getEntryAtIndex(sh.index);
-      Assert.equal(
-        she.URI.spec,
-        expectedFinalUrl,
-        "SessionHistoryEntry url is correct (with SHIP disabled)"
-      );
-      // Extra sanity check: when extensions trigger redirects, the history is
-      // not populated with pre-redirect URLs.
-      Assert.equal(sh.index, 0, "No pre-redirect history entries");
-    });
-  }
+  let sh = contentPage.browsingContext.sessionHistory;
+  let she = sh.getEntryAtIndex(sh.index);
+  equal(she.URI.spec, expectedFinalUrl, "SessionHistoryEntry url is correct");
+  // Extra sanity check: when extensions trigger redirects, the history is
+  // not populated with pre-redirect URLs.
+  equal(sh.index, 0, "No pre-redirect history entries");
 
   await contentPage.close();
   await extension.unload();

@@ -4,9 +4,10 @@
 
 :host(.infobar) {
   --info-bar-background-color: light-dark(var(--color-white), rgb(66, 65, 77));
-  --info-bar-text-color: light-dark(var(--color-gray-100), var(--color-gray-05));
+  --info-bar-text-color: light-dark(var(--color-gray-100), var(--color-gray-0));
   --message-bar-border-color: color-mix(in srgb, currentColor 9%, transparent);
-
+  --message-bar-border-radius: var(--border-radius-small);
+  --message-bar-icon-container-margin-block-start: 0;
   position: relative;
 
   &::before {
@@ -17,8 +18,8 @@
     top: 0;
     inset-inline-start: 0;
     height: 100%;
-    border-start-start-radius: 4px;
-    border-end-start-radius: 4px;
+    border-start-start-radius: var(--message-bar-border-radius);
+    border-end-start-radius: var(--message-bar-border-radius);
   }
 
   .container {
@@ -29,7 +30,7 @@
   }
 
   .text-container {
-    padding-block: calc(1lh - var(--icon-size-default) / 2);
+    padding-block: calc(1lh - var(--icon-size) / 2);
   }
 
   .content {
@@ -63,6 +64,12 @@
   }
 }
 
+@media -moz-pref("browser.nova.enabled") {
+  :host(.infobar)::before {
+    background-image: none;
+  }
+}
+
 :host([message-bar-type="infobar"]:first-of-type) {
   margin-top: 4px;
 }
@@ -90,7 +97,7 @@ img.inline-icon {
 }
 
 strong {
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
 }
 
 /* type="system" infobar styles */

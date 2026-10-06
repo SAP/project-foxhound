@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -171,7 +170,7 @@ class mozInlineSpellChecker final : public nsIInlineSpellChecker,
   // so we can spell check the old word when the user clicks around the
   // document.
   nsCOMPtr<nsINode> mCurrentSelectionAnchorNode;
-  uint32_t mCurrentSelectionOffset;
+  uint32_t mCurrentSelectionOffset = 0;
 
   // Tracks the number of pending spell checks *and* async operations that may
   // lead to spell checks, like updating the current dictionary.  This is

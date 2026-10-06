@@ -1,0 +1,388 @@
+# User Bob Owen <bobowencode@gmail.com>
+This adds an option to force known dll loading back to the normal path. This can
+be used when access is blocked to KnownDlls list, but is granted back to one or
+more of the actual DLL files.
+
+diff --git a/sandbox/win/src/interceptors.h b/sandbox/win/src/interceptors.h
+--- a/sandbox/win/src/interceptors.h
++++ b/sandbox/win/src/interceptors.h
+@@ -12,16 +12,17 @@
+ namespace sandbox {
+ 
+ enum InterceptorId {
+   // Internal use:
+   MAP_VIEW_OF_SECTION_ID = 0,
+   UNMAP_VIEW_OF_SECTION_ID,
+   // Policy broker:
+   IMPERSONATE_ANONYMOUS_TOKEN_ID,
++  OPEN_SECTION_TOKEN_ID,
+   SET_INFORMATION_THREAD_ID,
+   OPEN_THREAD_TOKEN_ID,
+   OPEN_THREAD_TOKEN_EX_ID,
+   OPEN_THREAD_ID,
+   OPEN_PROCESS_ID,
+   OPEN_PROCESS_TOKEN_ID,
+   OPEN_PROCESS_TOKEN_EX_ID,
+   // Filesystem dispatcher:
+diff --git a/sandbox/win/src/interceptors_64.cc b/sandbox/win/src/interceptors_64.cc
+--- a/sandbox/win/src/interceptors_64.cc
++++ b/sandbox/win/src/interceptors_64.cc
+@@ -51,16 +51,26 @@ NTSTATUS WINAPI TargetNtUnmapViewOfSecti
+ NTSTATUS WINAPI
+ TargetNtImpersonateAnonymousToken64(HANDLE thread) {
+   NtImpersonateAnonymousTokenFunction orig_fn =
+       reinterpret_cast<NtImpersonateAnonymousTokenFunction>(
+           g_originals[IMPERSONATE_ANONYMOUS_TOKEN_ID]);
+   return TargetNtImpersonateAnonymousToken(orig_fn, thread);
+ }
+ 
++NTSTATUS WINAPI TargetNtOpenSection64(PHANDLE section_handle,
++                                      ACCESS_MASK desired_access,
++                                      POBJECT_ATTRIBUTES object_attributes) {
++  NtOpenSectionFunction orig_fn = reinterpret_cast<NtOpenSectionFunction>(
++      g_originals[OPEN_SECTION_TOKEN_ID]);
++
++  return TargetNtOpenSection(orig_fn, section_handle, desired_access,
++                             object_attributes);
++}
++
+ NTSTATUS WINAPI
+ TargetNtSetInformationThread64(HANDLE thread,
+                                THREADINFOCLASS thread_info_class,
+                                PVOID thread_information,
+                                ULONG thread_information_bytes) {
+   NtSetInformationThreadFunction orig_fn =
+       reinterpret_cast<NtSetInformationThreadFunction>(
+           g_originals[SET_INFORMATION_THREAD_ID]);
+diff --git a/sandbox/win/src/interceptors_64.h b/sandbox/win/src/interceptors_64.h
+--- a/sandbox/win/src/interceptors_64.h
++++ b/sandbox/win/src/interceptors_64.h
+@@ -35,16 +35,21 @@ SANDBOX_INTERCEPT NTSTATUS WINAPI Target
+ 
+ // -----------------------------------------------------------------------
+ // Interceptors without IPC.
+ 
+ // Interception of NtImpersonateAnonymousToken on the child process.
+ SANDBOX_INTERCEPT NTSTATUS WINAPI
+ TargetNtImpersonateAnonymousToken64(HANDLE thread);
+ 
++// Interception of NtOpenSection on the child process.
++SANDBOX_INTERCEPT NTSTATUS WINAPI
++TargetNtOpenSection64(PHANDLE section_handle, ACCESS_MASK desired_access,
++                      POBJECT_ATTRIBUTES object_attributes);
++
+ // Interception of NtSetInformationThread on the child process.
+ SANDBOX_INTERCEPT NTSTATUS WINAPI
+ TargetNtSetInformationThread64(HANDLE thread,
+                                THREADINFOCLASS thread_info_class,
+                                PVOID thread_information,
+                                ULONG thread_information_bytes);
+ 
+ // Interception of NtOpenThreadToken on the child process.
+diff --git a/sandbox/win/src/nt_internals.h b/sandbox/win/src/nt_internals.h
+--- a/sandbox/win/src/nt_internals.h
++++ b/sandbox/win/src/nt_internals.h
+@@ -154,16 +154,20 @@ typedef NTSTATUS(WINAPI* NtOpenProcessFu
+                                                 IN PCLIENT_ID ClientId);
+ 
+ // Provide ThreadImpersonationToken which is not in THREADINFOCLASS.
+ constexpr auto ThreadImpersonationToken = static_cast<THREADINFOCLASS>(5);
+ 
+ typedef NTSTATUS(WINAPI* NtImpersonateAnonymousTokenFunction)(
+     IN HANDLE ThreadHandle);
+ 
++typedef NTSTATUS(WINAPI* NtOpenSectionFunction)(
++    OUT PHANDLE SectionHandle, IN ACCESS_MASK DesiredAccess,
++    IN POBJECT_ATTRIBUTES ObjectAttributes);
++
+ typedef NTSTATUS(WINAPI* NtSetInformationThreadFunction)(
+     IN HANDLE ThreadHandle,
+     IN THREADINFOCLASS ThreadInformationClass,
+     IN PVOID ThreadInformation,
+     IN ULONG ThreadInformationLength);
+ 
+ // Partial definition only for values not in PROCESS_INFO_CLASS.
+ #pragma clang diagnostic push
+diff --git a/sandbox/win/src/policy_broker.cc b/sandbox/win/src/policy_broker.cc
+--- a/sandbox/win/src/policy_broker.cc
++++ b/sandbox/win/src/policy_broker.cc
+@@ -30,28 +30,31 @@ bool SetupNtdllImports(TargetProcess& ch
+   return (SBOX_ALL_OK ==
+           child.TransferVariable("g_nt", GetNtExports(), sizeof(NtExports)));
+ }
+ 
+ #undef INIT_GLOBAL_NT
+ #undef INIT_GLOBAL_RTL
+ 
+ bool SetupBasicInterceptions(InterceptionManager* manager,
++                             bool force_known_dll_loading_fallback,
+                              bool is_csrss_connected) {
+   // Interceptions provided by process_thread_policy, without actual policy.
+   if (!INTERCEPT_NT(manager, NtOpenThread, OPEN_THREAD_ID, 20) ||
+       !INTERCEPT_NT(manager, NtOpenProcess, OPEN_PROCESS_ID, 20) ||
+       !INTERCEPT_NT(manager, NtOpenProcessToken, OPEN_PROCESS_TOKEN_ID, 16))
+     return false;
+ 
+   // Interceptions with neither policy nor IPC.
+   if (!INTERCEPT_NT(manager, NtSetInformationThread, SET_INFORMATION_THREAD_ID,
+                     20) ||
+       !INTERCEPT_NT(manager, NtImpersonateAnonymousToken,
+                     IMPERSONATE_ANONYMOUS_TOKEN_ID, 8) ||
++      (force_known_dll_loading_fallback &&
++       !INTERCEPT_NT(manager, NtOpenSection, OPEN_SECTION_TOKEN_ID, 16)) ||
+       !INTERCEPT_NT(manager, NtOpenThreadToken, OPEN_THREAD_TOKEN_ID, 20))
+     return false;
+ 
+   // This one is also provided by process_thread_policy.
+   if (!INTERCEPT_NT(manager, NtOpenProcessTokenEx, OPEN_PROCESS_TOKEN_EX_ID,
+                     20))
+     return false;
+ 
+diff --git a/sandbox/win/src/policy_broker.h b/sandbox/win/src/policy_broker.h
+--- a/sandbox/win/src/policy_broker.h
++++ b/sandbox/win/src/policy_broker.h
+@@ -8,16 +8,17 @@
+ #include "sandbox/win/src/interception.h"
+ 
+ namespace sandbox {
+ 
+ class TargetProcess;
+ 
+ // Sets up interceptions not controlled by explicit policies.
+ bool SetupBasicInterceptions(InterceptionManager* manager,
++                             bool force_known_dll_loading_fallback,
+                              bool is_csrss_connected);
+ 
+ // Sets up imports from NTDLL for the given target process so the interceptions
+ // can work.
+ bool SetupNtdllImports(TargetProcess& child);
+ 
+ }  // namespace sandbox
+ 
+diff --git a/sandbox/win/src/policy_target.cc b/sandbox/win/src/policy_target.cc
+--- a/sandbox/win/src/policy_target.cc
++++ b/sandbox/win/src/policy_target.cc
+@@ -12,16 +12,18 @@
+ #include "sandbox/win/src/policy_engine_processor.h"
+ #include "sandbox/win/src/policy_low_level.h"
+ #include "sandbox/win/src/policy_params.h"
+ #include "sandbox/win/src/sandbox_factory.h"
+ #include "sandbox/win/src/sandbox_nt_util.h"
+ #include "sandbox/win/src/sharedmem_ipc_client.h"
+ #include "sandbox/win/src/target_services.h"
+ 
++using namespace std::literals;
++
+ namespace sandbox {
+ 
+ // Policy data.
+ extern void* volatile g_shared_policy_memory;
+ SANDBOX_INTERCEPT size_t g_shared_policy_size;
+ 
+ bool QueryBroker(IpcTag ipc_id, CountedParameterSetBase* params) {
+   DCHECK_NT(static_cast<size_t>(ipc_id) < kMaxServiceCount);
+@@ -80,16 +82,70 @@ NTSTATUS WINAPI TargetNtImpersonateAnony
+     HANDLE thread) {
+   if (!SandboxFactory::GetTargetServices()->GetState()->RevertedToSelf()) {
+     return STATUS_ACCESS_DENIED;
+   }
+ 
+   return orig_ImpersonateAnonymousToken(thread);
+ }
+ 
++// Split out so that it can use AddressSanitizer.
++NOINLINE bool IsKnownDlls(HANDLE handle) {
++  auto root_path = GetPathFromHandle(handle);
++  if (!root_path) {
++    return false;
++  }
++
++#if defined(_WIN64)
++  constexpr auto kKnownDllsDir = LR"(\KnownDlls)"sv;
++#else
++  constexpr auto kKnownDllsDir = LR"(\KnownDlls32)"sv;
++#endif
++  return root_path->length() == kKnownDllsDir.length() &&
++         _wcsnicmp(root_path->data(), kKnownDllsDir.data(),
++                   kKnownDllsDir.length()) == 0;
++}
++
++// Hooks NtOpenSection when directed by the config, so that we can detect calls
++// to open KnownDlls entries and always return not found. This will cause
++// fall-back to the normal loading path. This means that if a config blocks
++// access to the KnownDlls list, but allows read access to the actual DLLs then
++// they can continue to be loaded.
++// This is called too early to use AddressSanitizer.
++ABSL_ATTRIBUTE_NO_SANITIZE_ADDRESS
++SANDBOX_INTERCEPT NTSTATUS __stdcall TargetNtOpenSection(
++    NtOpenSectionFunction orig_NtOpenSection, PHANDLE section_handle,
++    ACCESS_MASK desired_access, POBJECT_ATTRIBUTES object_attributes) {
++
++  NTSTATUS open_status =
++      orig_NtOpenSection(section_handle, desired_access, object_attributes);
++  // We're only interested in failure that might be caused by the sandbox.
++  if (open_status != STATUS_ACCESS_DENIED) {
++    return open_status;
++  }
++
++  // Calls for KnownDlls use a RootDirectory.
++  if (!object_attributes->RootDirectory) {
++    return open_status;
++  }
++
++  // Make sure IsKnownDlls isn't called too early, so that everything it uses is
++  // loaded. We shouldn't get here before that for KnownDlls. 
++  if (!SandboxFactory::GetTargetServices()->GetState()->InitCalled()) {
++    return open_status;
++  }
++
++  if (!IsKnownDlls(object_attributes->RootDirectory)) {
++    return open_status;
++  }
++
++  // This is for a KnownDll, just return not found to trigger fall-back loading.
++  return STATUS_OBJECT_NAME_NOT_FOUND;
++}
++
+ // Hooks NtSetInformationThread to block RevertToSelf from being
+ // called before the actual call to LowerToken.
+ NTSTATUS WINAPI TargetNtSetInformationThread(
+     NtSetInformationThreadFunction orig_SetInformationThread,
+     HANDLE thread,
+     THREADINFOCLASS thread_info_class,
+     PVOID thread_information,
+     ULONG thread_information_bytes) {
+diff --git a/sandbox/win/src/policy_target.h b/sandbox/win/src/policy_target.h
+--- a/sandbox/win/src/policy_target.h
++++ b/sandbox/win/src/policy_target.h
+@@ -20,16 +20,22 @@ bool QueryBroker(IpcTag ipc_id, CountedP
+ extern "C" {
+ 
+ // Interception of NtImpersonateAnonymousToken on the child process.
+ // It should never be called directly.
+ SANDBOX_INTERCEPT NTSTATUS WINAPI TargetNtImpersonateAnonymousToken(
+     NtImpersonateAnonymousTokenFunction orig_ImpersonateAnonymousToken,
+     HANDLE thread);
+ 
++// Interception of NtOpenSection on the child process.
++// It should never be called directly
++SANDBOX_INTERCEPT NTSTATUS WINAPI TargetNtOpenSection(
++    NtOpenSectionFunction orig_NtOpenSection, PHANDLE section_handle,
++    ACCESS_MASK desired_access, POBJECT_ATTRIBUTES object_attributes);
++
+ // Interception of NtSetInformationThread on the child process.
+ // It should never be called directly.
+ SANDBOX_INTERCEPT NTSTATUS WINAPI TargetNtSetInformationThread(
+     NtSetInformationThreadFunction orig_SetInformationThread,
+     HANDLE thread,
+     THREADINFOCLASS thread_info_class,
+     PVOID thread_information,
+     ULONG thread_information_bytes);
+diff --git a/sandbox/win/src/sandbox_policy.h b/sandbox/win/src/sandbox_policy.h
+--- a/sandbox/win/src/sandbox_policy.h
++++ b/sandbox/win/src/sandbox_policy.h
+@@ -86,16 +86,20 @@ class [[clang::lto_visibility_public]] T
+   // Sets that we should not use restricting SIDs in the access tokens. We need
+   // to do this in some circumstances even though it weakens the sandbox.
+   // The default is to use them.
+   virtual void SetDoNotUseRestrictingSIDs() = 0;
+ 
+   // Returns whether we are using restricting SIDs.
+   virtual bool GetUseRestrictingSIDs() = 0;
+ 
++  // Force KnownDll loading to fall-back to the normal loading path. This can be
++  // used when access to the KnownDlls list will be blocked.
++  virtual void SetForceKnownDllLoadingFallback() = 0;
++
+   // Sets the security level of the Job Object to which the target process will
+   // belong. This setting is permanent and cannot be changed once the target
+   // process is spawned. The job controls the global security settings which
+   // can not be specified in the token security profile.
+   // job_level: the security level for the job. See the explanation of each
+   //   level in the JobLevel definition.
+   // ui_exceptions: specify what specific rights that are disabled in the
+   //   chosen job_level that need to be granted. Use this parameter to avoid
+diff --git a/sandbox/win/src/sandbox_policy_base.cc b/sandbox/win/src/sandbox_policy_base.cc
+--- a/sandbox/win/src/sandbox_policy_base.cc
++++ b/sandbox/win/src/sandbox_policy_base.cc
+@@ -424,16 +424,20 @@ bool ConfigBase::GetUseRestrictingSIDs()
+ void ConfigBase::SetDoNotUseRestrictingSIDs() {
+   use_restricting_sids_ = false;
+ }
+ 
+ bool ConfigBase::GetUseRestrictingSIDs() {
+   return use_restricting_sids_;
+ }
+ 
++void ConfigBase::SetForceKnownDllLoadingFallback() {
++  force_known_dll_loading_fallback_ = true;
++}
++
+ ResultCode ConfigBase::SetJobLevel(JobLevel job_level, uint32_t ui_exceptions) {
+   job_level_ = job_level;
+   ui_exceptions_ = ui_exceptions;
+   return SBOX_ALL_OK;
+ }
+ 
+ JobLevel ConfigBase::GetJobLevel() const {
+   return job_level_;
+@@ -762,17 +766,19 @@ ResultCode PolicyBase::SetupAllIntercept
+           !dispatcher_->SetupService(&manager, static_cast<IpcTag>(i)))
+         return SBOX_ERROR_SETUP_INTERCEPTION_SERVICE;
+     }
+   }
+ 
+   for (const std::wstring& dll : config()->blocklisted_dlls())
+     manager.AddToUnloadModules(dll.c_str());
+ 
+-  if (!SetupBasicInterceptions(&manager, config()->is_csrss_connected()))
++  if (!SetupBasicInterceptions(&manager,
++                               config()->force_known_dll_loading_fallback_,
++                               config()->is_csrss_connected()))
+     return SBOX_ERROR_SETUP_BASIC_INTERCEPTIONS;
+ 
+   ResultCode rc = manager.InitializeInterceptions();
+   if (rc != SBOX_ALL_OK)
+     return rc;
+ 
+   // Finally, setup imports on the target so the interceptions can work.
+   if (!SetupNtdllImports(target))
+diff --git a/sandbox/win/src/sandbox_policy_base.h b/sandbox/win/src/sandbox_policy_base.h
+--- a/sandbox/win/src/sandbox_policy_base.h
++++ b/sandbox/win/src/sandbox_policy_base.h
+@@ -55,16 +55,17 @@ class ConfigBase final : public TargetCo
+ 
+   bool IsConfigured() const override;
+ 
+   ResultCode SetTokenLevel(TokenLevel initial, TokenLevel lockdown) override;
+   TokenLevel GetInitialTokenLevel() const override;
+   TokenLevel GetLockdownTokenLevel() const override;
+   void SetDoNotUseRestrictingSIDs() final;
+   bool GetUseRestrictingSIDs() final;
++  void SetForceKnownDllLoadingFallback() final;
+   ResultCode SetJobLevel(JobLevel job_level, uint32_t ui_exceptions) override;
+   JobLevel GetJobLevel() const override;
+   void SetJobMemoryLimit(size_t memory_limit) override;
+   ResultCode AllowFileAccess(FileSemantics semantics,
+                              const wchar_t* pattern) override;
+   ResultCode AllowNamedPipes(const wchar_t* pattern) override;
+   ResultCode AllowRegistryRead(const wchar_t* pattern) final;
+   ResultCode AllowExtraDlls(const wchar_t* pattern) override;
+@@ -134,16 +135,17 @@ class ConfigBase final : public TargetCo
+   Desktop desktop() { return desktop_; }
+   // nullptr if no objects have been added via AddKernelObjectToClose().
+   HandleCloser* handle_closer() { return handle_closer_.get(); }
+   bool zero_appshim() { return zero_appshim_; }
+ 
+   TokenLevel lockdown_level_;
+   TokenLevel initial_level_;
+   bool use_restricting_sids_ = true;
++  bool force_known_dll_loading_fallback_ = false;
+   JobLevel job_level_;
+   IntegrityLevel integrity_level_;
+   IntegrityLevel delayed_integrity_level_;
+   MitigationFlags mitigations_;
+   MitigationFlags delayed_mitigations_;
+   bool add_restricting_random_sid_;
+   bool lockdown_default_dacl_;
+   bool is_csrss_connected_;

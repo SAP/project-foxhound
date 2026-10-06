@@ -13,6 +13,8 @@
 #include <memory>
 #include <utility>
 
+#include "modules/desktop_capture/desktop_frame.h"
+#include "modules/desktop_capture/desktop_geometry.h"
 #include "modules/desktop_capture/desktop_region.h"
 #include "rtc_base/checks.h"
 
@@ -54,6 +56,7 @@ CroppedDesktopFrame::CroppedDesktopFrame(std::unique_ptr<DesktopFrame> frame,
                                          const DesktopRect& rect)
     : DesktopFrame(rect.size(),
                    frame->stride(),
+                   frame->pixel_format(),
                    frame->GetFrameDataAtPos(rect.top_left()),
                    frame->shared_memory()),
       frame_(std::move(frame)) {

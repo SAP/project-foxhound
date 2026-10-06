@@ -34,7 +34,7 @@ add_task(async () => {
   let service = getProfileService();
 
   let newProfileDir = makeRandomProfileDir("newProfile");
-  service.createProfile(newProfileDir, "new");
+  service.createProfile(newProfileDir, "new", "tests");
 
   await service.asyncFlush();
   profileData = readProfilesIni();

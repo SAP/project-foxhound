@@ -7,6 +7,7 @@ package org.mozilla.fenix.ui.robots
 
 import android.util.Log
 import android.view.View
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers
@@ -36,14 +37,14 @@ class SettingsSubMenuAddonsManagerAddonDetailedMenuRobot {
         Log.i(TAG, "disableExtension: Clicked the enable/disable extension toggle")
     }
 
-    class Transition {
+    class Transition(private val composeTestRule: ComposeTestRule) {
         fun goBack(interact: SettingsSubMenuAddonsManagerRobot.() -> Unit): SettingsSubMenuAddonsManagerRobot.Transition {
             Log.i(TAG, "goBack: Trying to click the navigate up button")
             onView(allOf(withContentDescription("Navigate up"))).click()
             Log.i(TAG, "goBack: Clicked the navigate up button")
 
-            SettingsSubMenuAddonsManagerRobot().interact()
-            return SettingsSubMenuAddonsManagerRobot.Transition()
+            SettingsSubMenuAddonsManagerRobot(composeTestRule).interact()
+            return SettingsSubMenuAddonsManagerRobot.Transition(composeTestRule)
         }
 
         fun removeAddon(activityTestRule: ActivityTestRule<HomeActivity>, interact: SettingsSubMenuAddonsManagerRobot.() -> Unit): SettingsSubMenuAddonsManagerRobot.Transition {
@@ -61,8 +62,8 @@ class SettingsSubMenuAddonsManagerAddonDetailedMenuRobot {
                 Log.i(TAG, "removeAddon: Clicked the remove add-on button")
             }
 
-            SettingsSubMenuAddonsManagerRobot().interact()
-            return SettingsSubMenuAddonsManagerRobot.Transition()
+            SettingsSubMenuAddonsManagerRobot(composeTestRule).interact()
+            return SettingsSubMenuAddonsManagerRobot.Transition(composeTestRule)
         }
     }
 }

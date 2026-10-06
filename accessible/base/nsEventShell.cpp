@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -51,8 +50,7 @@ void nsEventShell::FireEvent(uint32_t aEventType, LocalAccessible* aAccessible,
                              EIsFromUserInput aIsFromUserInput) {
   NS_ENSURE_TRUE_VOID(aAccessible);
 
-  RefPtr<AccEvent> event =
-      new AccEvent(aEventType, aAccessible, aIsFromUserInput);
+  auto event = MakeRefPtr<AccEvent>(aEventType, aAccessible, aIsFromUserInput);
 
   FireEvent(event);
 }

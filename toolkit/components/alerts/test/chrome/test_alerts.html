@@ -50,6 +50,11 @@ var observer = {
 function runTest() {
   const Cc = SpecialPowers.Cc;
   const Ci = SpecialPowers.Ci;
+  const AlertNotification = Components.Constructor(
+    "@mozilla.org/alert-notification;1",
+    "nsIAlertNotification",
+    "initWithObject"
+  );
 
   if (!("@mozilla.org/alerts-service;1" in Cc)) {
     todo(false, "Alerts service does not exist in this application");
@@ -70,11 +75,15 @@ function runTest() {
 
   try {
     SimpleTest.waitForExplicitFinish();
-    notifier.showAlertNotification(null, "Notification test",
-                                   "Surprise! I'm here to test notifications!",
-                                   false, "foobarcookie", observer, alertName);
+    let alert = new AlertNotification({
+      title: "Notification test",
+      text: "Surprise! I'm here to test notifications!",
+      cookie: "foobarcookie",
+      name: alertName,
+    });
+    notifier.showAlert(alert, observer);
   } catch (ex) {
-    todo(false, "showAlertNotification() failed.", ex);
+    todo(false, "showAlert() failed.", ex);
     SimpleTest.finish();
   }
 }

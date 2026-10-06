@@ -8,12 +8,12 @@
 
 const TEST_URI = `
   <style type='text/css'>
-    @media all and (max-width: 500px) {
+    @media all and (max-width: 550px) {
       div {
         color: red;
       }
     }
-    @media all and (min-width: 500px) {
+    @media all and (min-width: 550px) {
       div {
         color: green;
       }
@@ -33,13 +33,13 @@ add_task(async function () {
   await selectNode("div", inspector);
 
   info("Resize window so the media query for small viewports applies");
-  hostWindow.resizeTo(400, 400);
+  hostWindow.resizeTo(500, 400);
 
   await waitForMediaRuleColor(ruleView, "red");
   ok(true, "Small viewport media query inspected");
 
   info("Reload the current page");
-  await reloadBrowser();
+  await reloadSelectedTab();
   await selectNode("div", inspector);
 
   info("Resize window so the media query for large viewports applies");

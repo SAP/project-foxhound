@@ -3,6 +3,17 @@
 
 "use strict";
 
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
+);
+
+// Closing the toolbox makes the performance panel try to stop the profiler;
+// when it's already running (MOZ_PROFILER_STARTUP=1) that request races the
+// connection teardown and rejects harmlessly. See bug 2044383.
+PromiseTestUtils.allowMatchingRejectionsGlobally(
+  /Connection closed, pending request to .*stopProfilerAndDiscardProfile/
+);
+
 requestLongerTimeout(5);
 
 async function performChecks(tab) {

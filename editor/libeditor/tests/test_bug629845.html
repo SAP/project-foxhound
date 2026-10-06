@@ -21,7 +21,7 @@ function initFrame(frame) {
   document.getElementsByTagName("button")[0].click();
 }
 
-function command(aName) {
+function handleCommand(aName) {
   var frame = document.getElementsByTagName("iframe")[0];
 
   is(frame.contentDocument.designMode, "on", "design mode should be on!");
@@ -42,13 +42,13 @@ function command(aName) {
 </script>
 
 <div id="content">
-  <button type="button" onclick="command('bold');">Bold</button>
+  <button type="button" onclick="handleCommand('bold');">Bold</button>
   <iframe onload="initFrame(this);"></iframe>
 </div>
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 629845 **/
+/** Test for Bug 629845 */
 
 SimpleTest.waitForExplicitFinish();
 

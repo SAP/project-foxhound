@@ -305,6 +305,10 @@ TEST(TestUDPSocket, TestUDPSocketMain)
   // Read response from server
   ASSERT_NS_SUCCEEDED(clientListener->mResult);
 
+  // On macOS 15+, Local Network Privacy blocks multicast traffic unless the
+  // process is granted local-network access. Headless CI workers cannot grant
+  // it, so the multicast checks below permafail. See bug 2044018.
+#if !defined(XP_MACOSX)
   // Setup timer to detect multicast failure
   nsCOMPtr<nsITimer> timer = NS_NewTimer();
   ASSERT_TRUE(timer);
@@ -397,6 +401,7 @@ TEST(TestUDPSocket, TestUDPSocketMain)
   waiter->Wait(1);
   ASSERT_FALSE(NS_SUCCEEDED(timerCb->mResult));
   timer->Cancel();
+#endif  // !defined(XP_MACOSX)
 
   goto close;  // suppress warning about unused label
 

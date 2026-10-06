@@ -3,4 +3,4 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 toolkit.jar:
-  content/global/defaultagent/fox-doodle-peek.png     (assets/fox-doodle-peek.png)
+  content/global/defaultagent/default-browser-notification-privacy-image.svg     (assets/default-browser-notification-privacy-image.svg)

@@ -108,13 +108,7 @@ void Finalize(JS::GCContext* gcx, JSObject* objSelf) {
 }
 
 static const JSClassOps sWitnessClassOps = {
-    nullptr /* addProperty */,
-    nullptr /* delProperty */,
-    nullptr /* enumerate */,
-    nullptr /* newEnumerate */,
-    nullptr /* resolve */,
-    nullptr /* mayResolve */,
-    Finalize /* finalize */
+    .finalize = Finalize,
 };
 
 static const JSClass sWitnessClass = {

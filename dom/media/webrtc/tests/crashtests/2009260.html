@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script>
+    const objects = []
+
+    async function callback(stream) {
+      objects.push(stream.clone())
+    }
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      for (let i = 0; i < 26; i++) {
+        self.navigator.mozGetUserMedia({
+          "audio": false,
+          "video": true
+        }, callback, callback)
+      }
+      try { self.navigator.canShare({}) } catch (e) {}
+      setTimeout(async () => {
+        window.close()
+      }, 400)
+    })
+  </script>
+</head>
+</html>

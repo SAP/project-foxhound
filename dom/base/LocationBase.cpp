@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,56 +6,43 @@
  */
 
 #include "mozilla/dom/LocationBase.h"
-#include "nsIScriptSecurityManager.h"
-#include "nsIScriptContext.h"
-#include "nsIClassifiedChannel.h"
-#include "nsDocShellLoadState.h"
-#include "nsIWebNavigation.h"
-#include "nsNetUtil.h"
-#include "nsCOMPtr.h"
-#include "nsError.h"
-#include "nsContentUtils.h"
-#include "nsGlobalWindowInner.h"
+
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/ReferrerInfo.h"
-#include "mozilla/dom/WindowContext.h"
 #include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/dom/WindowContext.h"
+#include "nsCOMPtr.h"
+#include "nsContentUtils.h"
+#include "nsDocLoader.h"
+#include "nsDocShellLoadState.h"
+#include "nsError.h"
+#include "nsGlobalWindowInner.h"
+#include "nsIClassifiedChannel.h"
+#include "nsIScriptContext.h"
+#include "nsIScriptSecurityManager.h"
+#include "nsIWebNavigation.h"
+#include "nsNetUtil.h"
 
 namespace mozilla::dom {
 
-already_AddRefed<nsDocShellLoadState> LocationBase::CheckURL(
-    nsIURI* aURI, nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
-  RefPtr<BrowsingContext> bc(GetBrowsingContext());
-  if (NS_WARN_IF(!bc)) {
-    aRv.Throw(NS_ERROR_NOT_AVAILABLE);
-    return nullptr;
+static bool IncumbentGlobalHasTransientActivation() {
+  nsGlobalWindowInner* window = nsContentUtils::IncumbentInnerWindow();
+  return window && window->GetWindowContext() && window->GetWindowContext() &&
+         window->GetWindowContext()->HasValidTransientUserGestureActivation();
+}
+
+// https://html.spec.whatwg.org/#location-object-navigate
+void LocationBase::Navigate(nsIURI* aURI, nsIPrincipal& aSubjectPrincipal,
+                            ErrorResult& aRv,
+                            NavigationHistoryBehavior aHistoryHandling) {
+  // Step 1
+  RefPtr<BrowsingContext> navigable = GetBrowsingContext();
+  if (!navigable || navigable->IsDiscarded()) {
+    return;
   }
 
-  nsCOMPtr<nsIPrincipal> triggeringPrincipal;
-  nsCOMPtr<nsIURI> sourceURI;
-  ReferrerPolicy referrerPolicy = ReferrerPolicy::_empty;
-  nsCOMPtr<nsIReferrerInfo> referrerInfo;
-
-  // Get security manager.
-  nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
-  if (NS_WARN_IF(!ssm)) {
-    aRv.Throw(NS_ERROR_UNEXPECTED);
-    return nullptr;
-  }
-
-  // Check to see if URI is allowed.  We're not going to worry about a
-  // window ID here because it's not 100% clear which window's id we
-  // would want, and we're throwing a content-visible exception
-  // anyway.
-  nsresult rv = ssm->CheckLoadURIWithPrincipal(
-      &aSubjectPrincipal, aURI, nsIScriptSecurityManager::STANDARD, 0);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    nsAutoCString spec;
-    aURI->GetSpec(spec);
-    aRv.ThrowTypeError<MSG_URL_NOT_LOADABLE>(spec);
-    return nullptr;
-  }
+  // Step 2-3, except the check for if document is completely loaded.
+  bool needsCompletelyLoadedDocument = !IncumbentGlobalHasTransientActivation();
 
   // Make the load's referrer reflect changes to the document's URI caused by
   // push/replaceState, if possible.  First, get the document corresponding to
@@ -78,121 +63,9 @@ already_AddRefed<nsDocShellLoadState> LocationBase::CheckURL(
       do_QueryInterface(mozilla::dom::GetIncumbentGlobal());
   nsCOMPtr<Document> doc = incumbent ? incumbent->GetDoc() : nullptr;
 
-  // Create load info
-  RefPtr<nsDocShellLoadState> loadState = new nsDocShellLoadState(aURI);
-
-  if (!doc) {
-    // No document; just use our subject principal as the triggering principal.
-    loadState->SetTriggeringPrincipal(&aSubjectPrincipal);
-    return loadState.forget();
-  }
-
-  nsCOMPtr<nsIURI> docOriginalURI, docCurrentURI, principalURI;
-  docOriginalURI = doc->GetOriginalURI();
-  docCurrentURI = doc->GetDocumentURI();
-  nsCOMPtr<nsIPrincipal> principal = doc->NodePrincipal();
-
-  triggeringPrincipal = doc->NodePrincipal();
-  referrerPolicy = doc->GetReferrerPolicy();
-
-  bool urisEqual = false;
-  if (docOriginalURI && docCurrentURI && principal) {
-    principal->EqualsURI(docOriginalURI, &urisEqual);
-  }
-  if (urisEqual) {
-    referrerInfo = new ReferrerInfo(docCurrentURI, referrerPolicy);
-  } else {
-    principal->CreateReferrerInfo(referrerPolicy, getter_AddRefs(referrerInfo));
-  }
-  loadState->SetTriggeringPrincipal(triggeringPrincipal);
-  loadState->SetTriggeringSandboxFlags(doc->GetSandboxFlags());
-  loadState->SetPolicyContainer(doc->GetPolicyContainer());
-  if (referrerInfo) {
-    loadState->SetReferrerInfo(referrerInfo);
-  }
-  loadState->SetHasValidUserGestureActivation(
-      doc->HasValidTransientUserGestureActivation());
-
-  loadState->SetTextDirectiveUserActivation(
-      doc->ConsumeTextDirectiveUserActivation() ||
-      loadState->HasValidUserGestureActivation());
-  loadState->SetTriggeringWindowId(doc->InnerWindowID());
-  loadState->SetTriggeringStorageAccess(doc->UsingStorageAccess());
-  loadState->SetTriggeringClassificationFlags(doc->GetScriptTrackingFlags());
-
-  return loadState.forget();
-}
-
-void LocationBase::SetURI(nsIURI* aURI, nsIPrincipal& aSubjectPrincipal,
-                          ErrorResult& aRv, bool aReplace) {
-  RefPtr<BrowsingContext> bc = GetBrowsingContext();
-  if (!bc || bc->IsDiscarded()) {
-    return;
-  }
-
-  CallerType callerType = aSubjectPrincipal.IsSystemPrincipal()
-                              ? CallerType::System
-                              : CallerType::NonSystem;
-
-  nsresult rv = bc->CheckNavigationRateLimit(callerType);
-  if (NS_FAILED(rv)) {
-    aRv.Throw(rv);
-    return;
-  }
-
-  RefPtr<nsDocShellLoadState> loadState =
-      CheckURL(aURI, aSubjectPrincipal, aRv);
-  if (aRv.Failed()) {
-    return;
-  }
-
-  if (aReplace) {
-    loadState->SetLoadType(LOAD_STOP_CONTENT_AND_REPLACE);
-  } else {
-    loadState->SetLoadType(LOAD_STOP_CONTENT);
-  }
-
-  // Get the incumbent script's browsing context to set as source.
-  nsCOMPtr<nsPIDOMWindowInner> sourceWindow =
-      nsContentUtils::IncumbentInnerWindow();
-  if (sourceWindow) {
-    WindowContext* context = sourceWindow->GetWindowContext();
-    loadState->SetSourceBrowsingContext(sourceWindow->GetBrowsingContext());
-    loadState->SetHasValidUserGestureActivation(
-        context && context->HasValidTransientUserGestureActivation());
-  }
-
-  loadState->SetLoadFlags(nsIWebNavigation::LOAD_FLAGS_NONE);
-  loadState->SetFirstParty(true);
-
-  rv = bc->LoadURI(loadState);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    if (rv == NS_ERROR_DOM_BAD_CROSS_ORIGIN_URI &&
-        loadState->URI()->SchemeIs("javascript")) {
-      // Per spec[1], attempting to load a javascript: URI into a cross-origin
-      // BrowsingContext is a no-op, and should not raise an exception.
-      // Technically, Location setters run with exceptions enabled should only
-      // throw an exception[2] when the caller is not allowed to navigate[3] the
-      // target browsing context due to sandboxing flags or not being
-      // closely-related enough, though in practice we currently throw for other
-      // reasons as well.
-      //
-      // [1]:
-      // https://html.spec.whatwg.org/multipage/browsing-the-web.html#javascript-protocol
-      // [2]:
-      // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
-      // [3]:
-      // https://html.spec.whatwg.org/multipage/browsers.html#allowed-to-navigate
-      return;
-    }
-    aRv.Throw(rv);
-    return;
-  }
-
-  Document* doc = bc->GetDocument();
-  if (doc && nsContentUtils::IsExternalProtocol(aURI)) {
-    doc->EnsureNotEnteringAndExitFullscreen();
-  }
+  // Step 4
+  navigable->Navigate(aURI, doc, aSubjectPrincipal, aRv, aHistoryHandling,
+                      needsCompletelyLoadedDocument);
 }
 
 void LocationBase::SetHref(const nsACString& aHref,
@@ -230,35 +103,12 @@ void LocationBase::SetHrefWithBase(const nsACString& aHref, nsIURI* aBase,
     return;
   }
 
-  /* Check with the scriptContext if it is currently processing a script tag.
-   * If so, this must be a <script> tag with a location.href in it.
-   * we want to do a replace load, in such a situation.
-   * In other cases, for example if a event handler or a JS timer
-   * had a location.href in it, we want to do a normal load,
-   * so that the new url will be appended to Session History.
-   * This solution is tricky. Hopefully it isn't going to bite
-   * anywhere else. This is part of solution for bug # 39938, 72197
-   */
-  bool inScriptTag = false;
-  nsIScriptContext* scriptContext = nullptr;
-  nsCOMPtr<nsPIDOMWindowInner> win = do_QueryInterface(GetEntryGlobal());
-  if (win) {
-    scriptContext = nsGlobalWindowInner::Cast(win)->GetContextInternal();
+  NavigationHistoryBehavior historyHandling = NavigationHistoryBehavior::Auto;
+  if (aReplace) {
+    historyHandling = NavigationHistoryBehavior::Replace;
   }
 
-  if (scriptContext) {
-    if (scriptContext->GetProcessingScriptTag()) {
-      // Now check to make sure that the script is running in our window,
-      // since we only want to replace if the location is set by a
-      // <script> tag in the same window.  See bug 178729.
-      nsCOMPtr<nsIDocShell> docShell(GetDocShell());
-      nsCOMPtr<nsIScriptGlobalObject> ourGlobal =
-          docShell ? docShell->GetScriptGlobalObject() : nullptr;
-      inScriptTag = (ourGlobal == scriptContext->GetGlobalObject());
-    }
-  }
-
-  SetURI(newUri, aSubjectPrincipal, aRv, aReplace || inScriptTag);
+  Navigate(newUri, aSubjectPrincipal, aRv, historyHandling);
 }
 
 void LocationBase::Replace(const nsACString& aUrl,

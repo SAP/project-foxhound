@@ -1,0 +1,73 @@
+schema: 1
+
+bugzilla:
+  product: Core
+  component: "General"
+
+origin:
+  name: jsoncpp
+  description: A C++ library for interacting with JSON
+
+  url: https://github.com/open-source-parsers/jsoncpp
+
+  release: 1.9.7 (2026-03-16T13:09:40-07:00).
+  revision: 1.9.7
+
+  license: MIT
+
+vendoring:
+  url: https://github.com/open-source-parsers/jsoncpp
+  source-hosting: github
+  vendor-directory: toolkit/components/jsoncpp
+  tracking: tag
+
+  exclude:
+    - ".**"
+    - .github
+    - BUILD.bazel
+    - CMakeLists.txt
+    - CONTRIBUTING.md
+    - CTestConfig.cmake
+    - MODULE.bazel
+    - SECURITY.md
+    - amalgamate.py
+    - appveyor.yml
+    - cmake
+    - dev.makefile
+    - devtools
+    - doc
+    - doxybuild.py
+    - example
+    - gcovr.cfg
+    - get_version.pl
+    - include
+    - jsoncpp-namespaced-targets.cmake
+    - jsoncppConfig.cmake.in
+    - jsoncppConfig.cmake.meson.in
+    - meson.build
+    - meson_options.txt
+    - pkg-config
+    - reformat.sh
+    - src
+    - test
+    - version.in
+
+  include:
+    - include/json/allocator.h
+    - include/json/assertions.h
+    - include/json/config.h
+    - include/json/forwards.h
+    - include/json/json.h
+    - include/json/json_features.h
+    - include/json/reader.h
+    - include/json/value.h
+    - include/json/version.h
+    - include/json/writer.h
+    - src/lib_json/json_reader.cpp
+    - src/lib_json/json_tool.h
+    - src/lib_json/json_value.cpp
+    - src/lib_json/json_valueiterator.inl
+    - src/lib_json/json_writer.cpp
+
+  keep:
+    - src/lib_json/moz.build

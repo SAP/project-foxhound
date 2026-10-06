@@ -6,8 +6,9 @@ use std::ffi::{c_void, OsString};
 use std::fs::OpenOptions;
 use std::os::windows::{ffi::OsStringExt, fs::OpenOptionsExt, io::AsRawHandle};
 use std::path::Path;
+use windows_sys::core::BOOL;
 use windows_sys::Win32::{
-    Foundation::{BOOL, HWND, INVALID_HANDLE_VALUE},
+    Foundation::{HWND, INVALID_HANDLE_VALUE},
     Security::Cryptography::*,
     Security::WinTrust::*,
     Storage::FileSystem::{
@@ -63,7 +64,7 @@ pub fn binary_org_name(binary: &Path) -> Option<String> {
                 .try_into()
                 .unwrap(),
             pcwszFilePath: binary_wide.pcwstr(),
-            hFile: 0,
+            hFile: std::ptr::null_mut(),
             pgKnownSubject: std::ptr::null_mut(),
         };
         verify_trust(|data| {
@@ -203,7 +204,7 @@ where
         dwUnionChoice: Default::default(),
         Anonymous: unsafe { std::mem::zeroed::<WINTRUST_DATA_0>() },
         dwStateAction: WTD_STATEACTION_VERIFY,
-        hWVTStateData: 0,
+        hWVTStateData: std::ptr::null_mut(),
         pwszURLReference: std::ptr::null_mut(),
         dwProvFlags: WTD_CACHE_ONLY_URL_RETRIEVAL,
         dwUIContext: 0,

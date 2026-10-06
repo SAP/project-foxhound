@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use std::any::Any;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::collections::{hash_map::Entry, HashMap};
@@ -15,8 +16,10 @@ use crate::error_recording::{record_error, test_get_num_recorded_errors, ErrorTy
 use crate::histogram::HistogramType;
 use crate::metrics::{
     BooleanMetric, CounterMetric, CustomDistributionMetric, MemoryDistributionMetric, MemoryUnit,
-    Metric, MetricType, QuantityMetric, StringMetric, TimeUnit, TimingDistributionMetric,
+    Metric, MetricType, QuantityMetric, StringMetric, TestGetValue, TimeUnit,
+    TimingDistributionMetric,
 };
+use crate::storage::StorageManager;
 use crate::Glean;
 
 const MAX_LABELS: usize = 16;
@@ -348,6 +351,37 @@ where
         crate::core::with_glean(|glean| {
             test_get_num_recorded_errors(glean, self.submetric.meta(), error).unwrap_or(0)
         })
+    }
+}
+
+impl<T, S> TestGetValue for LabeledMetric<T>
+where
+    T: AllowLabeled + TestGetValue<Output = S> + Clone,
+    S: Any,
+{
+    type Output = HashMap<String, S>;
+
+    fn test_get_value(&self, ping_name: Option<String>) -> Option<HashMap<String, S>> {
+        // We get the labels from the db because our in-memory cache is not guaranteed to be complete.
+        crate::block_on_dispatcher();
+        let labels = crate::core::with_glean(|glean| {
+            let queried_ping_name = ping_name
+                .as_ref()
+                .unwrap_or_else(|| &self.submetric.meta().inner.send_in_pings[0]);
+            StorageManager.snapshot_labels(
+                glean.storage(),
+                queried_ping_name,
+                &self.submetric.meta().identifier(glean),
+                self.submetric.meta().inner.lifetime,
+            )
+        });
+        let mut out = HashMap::new();
+        labels.iter().for_each(|label| {
+            if let Some(v) = self.get(label).test_get_value(ping_name.clone()) {
+                out.insert(label.to_owned(), v);
+            }
+        });
+        Some(out)
     }
 }
 

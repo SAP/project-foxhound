@@ -1,5 +1,6 @@
 av_add_q
 av_add_stable
+av_alpha_mode_name
 av_append_path_component
 av_asprintf
 av_basename
@@ -74,6 +75,7 @@ av_div_q
 #ifndef MOZ_FFVPX_AUDIOONLY
 av_dynamic_hdr_plus_from_t35
 av_dynamic_hdr_plus_create_side_data
+av_dynamic_hdr_plus_to_t35
 #endif
 av_dynarray2_add
 av_dynarray_add
@@ -109,6 +111,7 @@ av_frame_copy
 av_frame_copy_props
 av_frame_side_data_free
 av_frame_side_data_get_c
+av_frame_side_data_new
 av_frame_free
 av_frame_get_buffer
 av_frame_get_plane_buffer
@@ -308,7 +311,6 @@ avpriv_alloc_fixed_dsp
 avpriv_float_dsp_alloc
 avpriv_report_missing_feature
 avpriv_request_sample
-avpriv_scalarproduct_float_c
 avpriv_set_systematic_pal2
 #if defined(XP_WIN) && !defined(_ARM64_)
 avpriv_emms_asm

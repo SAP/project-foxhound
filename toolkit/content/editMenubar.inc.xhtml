@@ -1,0 +1,65 @@
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Shared menubar fragment with just an Edit menu, for top-level XUL windows
+# that need standard text-editing key equivalents (e.g. for native sheets
+# spawned from the window) but do not otherwise have their own menubar.
+#
+# Consumers must also load chrome://global/content/globalOverlay.js and
+# chrome://global/content/editMenuOverlay.js so that the cmd_* commands
+# referenced below are defined.
+
+#include editMenuKeys.inc.xhtml
+
+  <menubar id="main-menubar">
+    <menu id="edit-menu" data-l10n-id="profile-window-menu-edit">
+      <menupopup id="menu_EditPopup">
+        <menuitem
+          id="menu_undo"
+          key="key_undo"
+          command="cmd_undo"
+          data-l10n-id="text-action-undo"
+        />
+        <menuitem
+          id="menu_redo"
+          key="key_redo"
+          command="cmd_redo"
+          data-l10n-id="text-action-redo"
+        />
+        <menuseparator />
+        <menuitem
+          id="menu_cut"
+          key="key_cut"
+          command="cmd_cut"
+          data-l10n-id="text-action-cut"
+        />
+        <menuitem
+          id="menu_copy"
+          key="key_copy"
+          command="cmd_copy"
+          data-l10n-id="text-action-copy"
+        />
+        <menuitem
+          id="menu_paste"
+          key="key_paste"
+          command="cmd_paste"
+          data-l10n-id="text-action-paste"
+        />
+        <menuitem
+          id="menu_delete"
+          key="key_delete"
+          command="cmd_delete"
+          data-l10n-id="text-action-delete"
+        />
+        <menuseparator />
+        <menuitem
+          id="menu_selectAll"
+          key="key_selectAll"
+          command="cmd_selectAll"
+          data-l10n-id="text-action-select-all"
+        />
+      </menupopup>
+    </menu>
+  </menubar>

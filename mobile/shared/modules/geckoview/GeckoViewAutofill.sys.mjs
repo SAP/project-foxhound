@@ -2,7 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+const lazy = {};
+
 import { GeckoViewUtils } from "resource://gre/modules/GeckoViewUtils.sys.mjs";
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  FormAutofillUtils: "resource://gre/modules/shared/FormAutofillUtils.sys.mjs",
+});
 
 class Autofill {
   constructor(sessionId, eventDispatcher) {
@@ -11,44 +17,37 @@ class Autofill {
   }
 
   start() {
-    this.eventDispatcher.sendRequest({
-      type: "GeckoView:StartAutofill",
+    this.eventDispatcher.sendRequest("GeckoView:StartAutofill", {
       sessionId: this.sessionId,
     });
   }
 
   add(node) {
-    return this.eventDispatcher.sendRequestForResult({
-      type: "GeckoView:AddAutofill",
+    return this.eventDispatcher.sendRequestForResult("GeckoView:AddAutofill", {
       node,
     });
   }
 
   focus(node) {
-    this.eventDispatcher.sendRequest({
-      type: "GeckoView:OnAutofillFocus",
+    this.eventDispatcher.sendRequest("GeckoView:OnAutofillFocus", {
       node,
     });
   }
 
   update(node) {
-    this.eventDispatcher.sendRequest({
-      type: "GeckoView:UpdateAutofill",
+    this.eventDispatcher.sendRequest("GeckoView:UpdateAutofill", {
       node,
     });
   }
 
   commit(node) {
-    this.eventDispatcher.sendRequest({
-      type: "GeckoView:CommitAutofill",
+    this.eventDispatcher.sendRequest("GeckoView:CommitAutofill", {
       node,
     });
   }
 
   clear() {
-    this.eventDispatcher.sendRequest({
-      type: "GeckoView:ClearAutofill",
-    });
+    this.eventDispatcher.sendRequest("GeckoView:ClearAutofill");
   }
 }
 
@@ -92,5 +91,26 @@ class AutofillManager {
 }
 
 export var gAutofillManager = new AutofillManager();
+
+// Runtime functionality
+export const GeckoViewAutofillRuntime = {
+  async onEvent(aEvent, aData, aCallback) {
+    debug`onEvent: event=${aEvent}, data=${aData}`;
+
+    switch (aEvent) {
+      case "GeckoView:Autofill:GetAddressStructure": {
+        debug`onEvent: event=${aEvent}, data=${aData}`;
+        const country = aData.country ? aData.country : "US";
+        const layout = lazy.FormAutofillUtils.getFormLayout({
+          country: `${country}`,
+        });
+        aCallback.onSuccess({
+          fields: layout,
+        });
+        break;
+      }
+    }
+  },
+};
 
 const { debug, warn } = GeckoViewUtils.initLogging("Autofill");

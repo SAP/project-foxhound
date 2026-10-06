@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,7 +7,6 @@ package org.mozilla.gecko.util;
 import android.graphics.Point;
 import android.graphics.PointF;
 import android.graphics.RectF;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Parcel;
 import android.os.Parcelable;
@@ -960,25 +958,11 @@ public final class GeckoBundle implements Parcelable {
           jsonArray.put(element == null ? JSONObject.NULL : element.toJSONObject());
         }
         jsonValue = jsonArray;
-      } else if (Build.VERSION.SDK_INT >= 19) {
-        // gradle task (testWithGeckoBinariesDebugUnitTest) won't use this since that unit test
-        // runs on build task.
-        final Object wrapped = JSONObject.wrap(value);
-        jsonValue = wrapped != null ? wrapped : value.toString();
-      } else if (value == null) {
-        // This is used by UnitTest only
-        jsonValue = JSONObject.NULL;
-      } else if (value.getClass().isArray()) {
-        // This is used by UnitTest only
-        final JSONArray jsonArray = new JSONArray();
-        for (int j = 0; j < Array.getLength(value); j++) {
-          jsonArray.put(Array.get(value, j));
-        }
-        jsonValue = jsonArray;
       } else {
-        // This is used by UnitTest only
-        jsonValue = value;
+        final Object wrapped = JSONObject.wrap(value);
+        jsonValue = (wrapped != null) ? wrapped : String.valueOf(value);
       }
+
       out.put(mMap.keyAt(i), jsonValue);
     }
     return out;

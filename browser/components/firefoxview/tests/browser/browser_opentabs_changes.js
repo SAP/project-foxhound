@@ -89,7 +89,7 @@ async function setup(tabChangeEventName) {
   info("setup,waiting for both private and nonPrivateListener to be called");
   await TestUtils.waitForCondition(() => {
     return nonPrivateListener.called && privateListener.called;
-  });
+  }, "Wait for both the non-private and private listeners to be called");
   nonPrivateListener.resetHistory();
   privateListener.resetHistory();
 
@@ -139,11 +139,9 @@ add_task(async function test_TabChanges() {
     );
     const navigateUrl = "https://example.org/";
     BrowserTestUtils.startLoadingURIString(newTab.linkedBrowser, navigateUrl);
-    await BrowserTestUtils.browserLoaded(
-      newTab.linkedBrowser,
-      null,
-      navigateUrl
-    );
+    await BrowserTestUtils.browserLoaded(newTab.linkedBrowser, {
+      wantLoad: navigateUrl,
+    });
     // navigation in a tab changes the label which should produce a change event
     changeEvent = await tabChangeRaised;
     Assert.deepEqual(

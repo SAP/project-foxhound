@@ -12,7 +12,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 export const GeckoViewIdentityCredential = {
   async onShowProviderPrompt(aBrowser, providers, resolve, reject) {
-    const prompt = new lazy.GeckoViewPrompter(aBrowser.ownerGlobal);
+    const prompt = new lazy.GeckoViewPrompter(aBrowser.documentGlobal);
     debug`onShowProviderPrompt`;
 
     prompt.asyncShowPrompt(
@@ -32,7 +32,7 @@ export const GeckoViewIdentityCredential = {
     );
   },
   async onShowAccountsPrompt(aBrowser, accounts, resolve, reject) {
-    const prompt = new lazy.GeckoViewPrompter(aBrowser.ownerGlobal);
+    const prompt = new lazy.GeckoViewPrompter(aBrowser.documentGlobal);
     debug`onShowAccountsPrompt`;
 
     prompt.asyncShowPrompt(
@@ -61,7 +61,7 @@ export const GeckoViewIdentityCredential = {
     resolve,
     reject
   ) {
-    const prompt = new lazy.GeckoViewPrompter(aBrowser.ownerGlobal);
+    const prompt = new lazy.GeckoViewPrompter(aBrowser.documentGlobal);
     debug`onShowPolicyPrompt`;
 
     prompt.asyncShowPrompt(

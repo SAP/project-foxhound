@@ -1,0 +1,39 @@
+[DEFAULT]
+tags = "urlbar"
+support-files = [
+  "../head-common.js",
+  "head.js",
+]
+prefs = [
+  "browser.search.widget.new=true",
+]
+
+["browser_new_searchbar_init.js"]
+
+["browser_resultsMenu.js"]
+
+["browser_search.js"]
+
+["browser_searchModeSwitcher.js"]
+
+["browser_searchbarOverflow.js"]
+
+["browser_searchbar_a11y.js"]
+
+["browser_searchbar_addEngine.js"]
+
+["browser_searchbar_context.js"]
+
+["browser_searchbar_customizing_nobreakout.js"]
+
+["browser_searchbar_dragdrop.js"]
+
+["browser_searchbar_keyboard_navigation.js"]
+
+["browser_searchbar_mouseNavigation.js"]
+
+["browser_searchbar_telemetry.js"]
+
+["browser_searchbar_widths.js"]
+
+["browser_searchmode.js"]

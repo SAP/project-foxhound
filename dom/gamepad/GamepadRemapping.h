@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -88,6 +86,10 @@ enum class GamepadId : uint32_t {
   kSonyProduct09cc = 0x054c09cc,
   // Dualshock 4 USB receiver
   kSonyProduct0ba0 = 0x054c0ba0,
+  // DualSense
+  kSonyProduct0ce6 = 0x054c0ce6,
+  // DualSense Edge
+  kSonyProduct0df2 = 0x054c0df2,
   // Moga Pro Controller (HID mode)
   kVendor20d6Product6271 = 0x20d66271,
   // OnLive Controller (Bluetooth)
@@ -129,9 +131,16 @@ enum CanonicalAxisIndex {
   AXIS_INDEX_COUNT
 };
 
+const float BUTTON_THRESHOLD_VALUE = 0.1f;
+
 static inline bool AxisNegativeAsButton(double input) { return input < -0.5; }
 
 static inline bool AxisPositiveAsButton(double input) { return input > 0.5; }
+
+static inline double AxisToButtonValue(double aValue) {
+  // Mapping axis value range from (-1, +1) to (0, +1).
+  return (aValue + 1.0f) * 0.5f;
+}
 
 class GamepadRemapper {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GamepadRemapper)
@@ -152,7 +161,8 @@ class GamepadRemapper {
   virtual GamepadMappingType GetMappingType() const {
     return GamepadMappingType::Standard;
   }
-  virtual void ProcessTouchData(GamepadHandle aHandle, void* aInput) {}
+  virtual void ProcessTouchData(GamepadHandle aHandle, const uint8_t* aInput,
+                                size_t aInputLen) {}
   virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
                                   double aValue) const = 0;
   virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,

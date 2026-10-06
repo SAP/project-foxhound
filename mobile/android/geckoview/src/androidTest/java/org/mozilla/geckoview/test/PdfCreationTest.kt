@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * Any copyright is dedicated to the Public Domain.
+/* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 package org.mozilla.geckoview.test
@@ -19,7 +18,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.hamcrest.Matchers.equalTo
 import org.junit.After
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeThat
 import org.junit.Before
 import org.junit.Ignore
 import org.junit.Rule
@@ -186,8 +184,6 @@ class PdfCreationTest : BaseSessionTest() {
     @NullDelegate(Autofill.Delegate::class)
     @Test
     fun saveAContentPdfDocument() {
-        // Bug 1864622.
-        assumeThat(sessionRule.env.isIsolatedProcess, equalTo(false))
         activityRule.scenario.onActivity {
             val originalBytes = getTestBytes(HELLO_PDF_WORLD_PDF_PATH)
             TestContentProvider.setTestData(originalBytes, "application/pdf")

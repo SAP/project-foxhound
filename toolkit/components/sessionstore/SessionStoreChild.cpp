@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +7,6 @@
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/InProcessChild.h"
@@ -224,8 +221,8 @@ void SessionStoreChild::SessionStoreUpdate(
   // during actor teardown, and we're most likely in a final flush
   // which expects that not all content processes manage to respond.
   if (XRE_IsContentProcess() && CanSend()) {
-    Unused << SendSessionStoreUpdate(aDocShellCaps, aPrivatedMode, aZoom,
-                                     aNeedCollectSHistory, aEpoch);
+    (void)SendSessionStoreUpdate(aDocShellCaps, aPrivatedMode, aZoom,
+                                 aNeedCollectSHistory, aEpoch);
   } else if (SessionStoreParent* sessionStoreParent =
                  static_cast<SessionStoreParent*>(
                      InProcessChild::ParentActorFor(this))) {
@@ -242,8 +239,8 @@ void SessionStoreChild::IncrementalSessionStoreUpdate(
   // during actor teardown, and we're most likely in a final flush
   // which expects that not all content processes manage to respond.
   if (XRE_IsContentProcess() && CanSend()) {
-    Unused << SendIncrementalSessionStoreUpdate(aBrowsingContext, aFormData,
-                                                aScrollPosition, aEpoch);
+    (void)SendIncrementalSessionStoreUpdate(aBrowsingContext, aFormData,
+                                            aScrollPosition, aEpoch);
   } else if (SessionStoreParent* sessionStoreParent =
                  static_cast<SessionStoreParent*>(
                      InProcessChild::ParentActorFor(this))) {
@@ -255,7 +252,7 @@ void SessionStoreChild::IncrementalSessionStoreUpdate(
 void SessionStoreChild::ResetSessionStore(
     const MaybeDiscarded<BrowsingContext>& aBrowsingContext, uint32_t aEpoch) {
   if (XRE_IsContentProcess()) {
-    Unused << SendResetSessionStore(aBrowsingContext, aEpoch);
+    (void)SendResetSessionStore(aBrowsingContext, aEpoch);
   } else if (SessionStoreParent* sessionStoreParent =
                  static_cast<SessionStoreParent*>(
                      InProcessChild::ParentActorFor(this))) {

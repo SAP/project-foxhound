@@ -169,7 +169,7 @@ add_task(async function testSoftBlocked() {
 
   // Verify soft-block message on a softdisabled extension and theme.
   await testSoftBlockedAddon({
-    expectedFluentId: "details-notification-soft-blocked-extension-disabled",
+    expectedFluentId: "details-notification-soft-blocked-extension-disabled2",
     mockAddon: {
       id: "softblocked-extension@mochi.test",
       name: "Soft-Blocked Extension",
@@ -179,7 +179,7 @@ add_task(async function testSoftBlocked() {
     },
   });
   await testSoftBlockedAddon({
-    expectedFluentId: "details-notification-soft-blocked-other-disabled",
+    expectedFluentId: "details-notification-soft-blocked-other-disabled2",
     mockAddon: {
       id: "softblocked-theme@mochi.test",
       name: "Soft-Blocked Theme",
@@ -191,7 +191,7 @@ add_task(async function testSoftBlocked() {
 
   // Verify soft-block message on a re-enabled extension and theme.
   await testSoftBlockedAddon({
-    expectedFluentId: "details-notification-soft-blocked-extension-enabled",
+    expectedFluentId: "details-notification-soft-blocked-extension-enabled2",
     mockAddon: {
       id: "softblocked-extension@mochi.test",
       name: "Soft-Blocked Extension",
@@ -201,7 +201,7 @@ add_task(async function testSoftBlocked() {
     },
   });
   await testSoftBlockedAddon({
-    expectedFluentId: "details-notification-soft-blocked-other-enabled",
+    expectedFluentId: "details-notification-soft-blocked-other-enabled2",
     mockAddon: {
       id: "softblocked-theme@mochi.test",
       name: "Soft-Blocked Theme",
@@ -302,6 +302,11 @@ add_task(async function testIncompatible() {
 });
 
 add_task(async function testUnsignedEnabled() {
+  await SpecialPowers.pushPrefEnv({
+    // Ensure unsigned add-on warnings are enabled while running this
+    // test also on Thunderbird builds where it is set to true by default.
+    set: [["extensions.ui.disableUnsignedWarnings", false]],
+  });
   const id = "unsigned-allowed@mochi.test";
   const name = "Unsigned";
   gProvider.createAddons([
@@ -317,11 +322,17 @@ add_task(async function testUnsignedEnabled() {
     text: { id: "details-notification-unsigned2", args: { name } },
     type: "warning",
   });
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function testUnsignedLangpackEnabled() {
   await SpecialPowers.pushPrefEnv({
-    set: [["extensions.langpacks.signatures.required", false]],
+    set: [
+      ["extensions.langpacks.signatures.required", false],
+      // Ensure unsigned add-on warnings are enabled while running this
+      // test also on Thunderbird builds where it is set to true by default.
+      ["extensions.ui.disableUnsignedWarnings", false],
+    ],
   });
 
   const id = "unsigned-allowed-langpack@mochi.test";
@@ -490,7 +501,7 @@ add_task(async function testCardRefreshedOnBlocklistStateChanges() {
   await checkAddonCard(doc, id, {
     linkUrl,
     text: {
-      id: `details-notification-soft-blocked-extension-disabled`,
+      id: `details-notification-soft-blocked-extension-disabled2`,
       linkId: "details-notification-softblocked-link2",
     },
     type: "warning",
@@ -507,7 +518,7 @@ add_task(async function testCardRefreshedOnBlocklistStateChanges() {
   await checkAddonCard(doc, id, {
     linkUrl,
     text: {
-      id: `details-notification-soft-blocked-extension-enabled`,
+      id: `details-notification-soft-blocked-extension-enabled2`,
       linkId: "details-notification-softblocked-link2",
     },
     type: "warning",

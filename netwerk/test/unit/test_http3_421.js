@@ -110,8 +110,11 @@ WaitForHttp3Listener.prototype.onStopRequest = function testOnStopRequest(
   } else {
     dump("poll later for alt svc mapping\n");
     do_test_pending();
-    do_timeout(500, () => {
-      doTest(this.uri);
+    do_timeout(1000, () => {
+      Services.obs.notifyObservers(null, "net:cancel-all-connections");
+      do_timeout(500, () => {
+        doTest(this.uri);
+      });
     });
   }
 

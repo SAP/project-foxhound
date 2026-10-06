@@ -5,6 +5,7 @@ import android.view.MotionEvent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
 import org.hamcrest.Matchers.equalTo
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.geckoview.GeckoResult
@@ -413,6 +414,7 @@ class InputResultDetailTest : BaseSessionTest() {
         )
     }
 
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")
     @WithDisplay(width = 100, height = 100)
     @Test
     fun testPreventTouchMoveAfterLongTap() {
@@ -733,6 +735,159 @@ class InputResultDetailTest : BaseSessionTest() {
             value,
             PanZoomController.INPUT_RESULT_HANDLED,
             (PanZoomController.SCROLLABLE_FLAG_BOTTOM or PanZoomController.SCROLLABLE_FLAG_TOP),
+            (PanZoomController.OVERSCROLL_FLAG_HORIZONTAL or PanZoomController.OVERSCROLL_FLAG_VERTICAL),
+        )
+    }
+
+    @WithDisplay(width = 100, height = 100)
+    @Test
+    fun testDisallowPullToRefreshOnSubScroller() {
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf(
+                "apz.touch_start_tolerance" to "0", // To avoid touch events fall into slop state.
+                "apz.fling_min_velocity_threshold" to "10000", // Never trigger fling.
+            ),
+        )
+        setupDocument(BUG1985669_HTML_PATH)
+
+        // Try to scroll up to see whether pull-to-refresh can be triggered or not,
+        // i.e. either `INPUT_RESULT_UNHANDLED` is not set or.
+        // `OVERSCROLL_FLAG_VERTICAL` is not set.
+        var downTime = SystemClock.uptimeMillis()
+        var down = MotionEvent.obtain(
+            downTime,
+            SystemClock.uptimeMillis(),
+            MotionEvent.ACTION_DOWN,
+            50f,
+            50f,
+            0,
+        )
+        var result = mainSession.panZoomController.onTouchEventForDetailResult(down)
+
+        // Send two touch move events here since with "apz.touch_start_tolerance=0"
+        // a touch move event is not consumed by any APZC.
+        var move = MotionEvent.obtain(
+            downTime,
+            SystemClock.uptimeMillis(),
+            MotionEvent.ACTION_MOVE,
+            50f,
+            60f,
+            0,
+        )
+        mainSession.panZoomController.onTouchEvent(move)
+
+        move = MotionEvent.obtain(
+            downTime,
+            SystemClock.uptimeMillis(),
+            MotionEvent.ACTION_MOVE,
+            50f,
+            70f,
+            0,
+        )
+        mainSession.panZoomController.onTouchEvent(move)
+        var value = sessionRule.waitForResult(result)
+
+        assertResultDetail(
+            BUG1985669_HTML_PATH,
+            value,
+            // The upwards scrolling touch events was consumsed by the sub
+            // scroll container, thus pull-to-refresh will never be triggered.
+            PanZoomController.INPUT_RESULT_HANDLED_CONTENT,
+            PanZoomController.SCROLLABLE_FLAG_BOTTOM,
+            // The sub scroll container can be overscrolled in both directions.
+            (PanZoomController.OVERSCROLL_FLAG_HORIZONTAL or PanZoomController.OVERSCROLL_FLAG_VERTICAL),
+        )
+
+        // Lift up the finger once.
+        var up = MotionEvent.obtain(
+            downTime,
+            SystemClock.uptimeMillis(),
+            MotionEvent.ACTION_UP,
+            50f,
+            70f,
+            0,
+        )
+        mainSession.panZoomController.onTouchEvent(up)
+
+        // Try to scroll down once and then scroll up without lifting
+        // the finger.
+
+        // Setup a scroll event listener to detect scrolling.
+        val scrollPromise = mainSession.evaluatePromiseJS(
+            """
+            new Promise(resolve => {
+                document.querySelector("#subscroller").addEventListener('scroll', () => {
+                    resolve(true);
+                }, { once: true });
+            });
+            """.trimIndent(),
+        )
+        // Explicitly call `waitForRoundTrip()` and `flushApzRepaints()` to make sure
+        // the above event listener has been set up in the content.
+        mainSession.waitForRoundTrip()
+        mainSession.flushApzRepaints()
+
+        downTime = SystemClock.uptimeMillis()
+        down = MotionEvent.obtain(
+            downTime,
+            SystemClock.uptimeMillis(),
+            MotionEvent.ACTION_DOWN,
+            50f,
+            50f,
+            0,
+        )
+        result = mainSession.panZoomController.onTouchEventForDetailResult(down)
+
+        move = MotionEvent.obtain(
+            downTime,
+            SystemClock.uptimeMillis(),
+            MotionEvent.ACTION_MOVE,
+            50f,
+            40f,
+            0,
+        )
+        mainSession.panZoomController.onTouchEvent(move)
+        move = MotionEvent.obtain(
+            downTime,
+            SystemClock.uptimeMillis(),
+            MotionEvent.ACTION_MOVE,
+            50f,
+            30f,
+            0,
+        )
+        mainSession.panZoomController.onTouchEvent(move)
+
+        // Make sure the subscroller has scrolled down.
+        assertThat("scroll", scrollPromise.value as Boolean, equalTo(true))
+
+        // Now scroll up without lifting the finger.
+        move = MotionEvent.obtain(
+            downTime,
+            SystemClock.uptimeMillis(),
+            MotionEvent.ACTION_MOVE,
+            50f,
+            40f,
+            0,
+        )
+        mainSession.panZoomController.onTouchEvent(move)
+        move = MotionEvent.obtain(
+            downTime,
+            SystemClock.uptimeMillis(),
+            MotionEvent.ACTION_MOVE,
+            50f,
+            50f,
+            0,
+        )
+        mainSession.panZoomController.onTouchEvent(move)
+        value = sessionRule.waitForResult(result)
+
+        assertResultDetail(
+            BUG1985669_HTML_PATH,
+            value,
+            PanZoomController.INPUT_RESULT_HANDLED_CONTENT,
+            // The result is for the initial ACTION_DOWN so that
+            // at that moment the subscroller is not scrollable to top.
+            PanZoomController.SCROLLABLE_FLAG_BOTTOM,
             (PanZoomController.OVERSCROLL_FLAG_HORIZONTAL or PanZoomController.OVERSCROLL_FLAG_VERTICAL),
         )
     }

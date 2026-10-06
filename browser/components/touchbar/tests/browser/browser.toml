@@ -1,5 +1,7 @@
 [DEFAULT]
-run-if = ["os == 'mac'"] # Bug 1611300
+run-if = [
+  "os == 'mac'", # Bug 1611300
+]
 
 ["browser_touchbar_searchrestrictions.js"]
 https_first_disabled = true

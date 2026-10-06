@@ -1,4 +1,3 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -19,11 +18,12 @@ function run_test() {
   file.append("'÷1");
   Services.env.set("XPCSHELL_TEST_PROFILE_DIR", file.path);
 
-  let profile = do_get_profile(); // must be called before getting nsIX509CertDB
+  let profile = do_get_profile(); // must be called before initializing NSS
   Assert.ok(
     /[^\x20-\x7f]/.test(profile.path),
     "the profile path should contain a non-ASCII character"
   );
+  Services.fog.initializeFOG();
 
   let keyDBName = "key4.db";
   let keyDBFile = do_get_file(`test_broken_fips/${keyDBName}`);
@@ -33,10 +33,20 @@ function run_test() {
   let pkcs11modDBFile = do_get_file(`test_broken_fips/${pkcs11modDBName}`);
   pkcs11modDBFile.copyTo(profile, pkcs11modDBName);
 
-  let moduleDB = Cc["@mozilla.org/security/pkcs11moduledb;1"].getService(
-    Ci.nsIPKCS11ModuleDB
+  // Initialize NSS.
+  Cc["@mozilla.org/psm;1"].getService(Ci.nsINSSComponent);
+
+  ok(!Glean.nss.initializationFallbacks.READ_ONLY.testGetValue());
+  equal(Glean.nss.initializationFallbacks.RENAME_MODULE_DB.testGetValue(), 1);
+  ok(
+    !Glean.nss.initializationFallbacks.RENAME_MODULE_DB_READ_ONLY.testGetValue()
   );
-  ok(!moduleDB.isFIPSEnabled, "FIPS should not be enabled");
+  ok(!Glean.nss.initializationFallbacks.NO_DB_INIT.testGetValue());
+
+  const fipsUtils = Cc["@mozilla.org/security/fipsutils;1"].getService(
+    Ci.nsIFIPSUtils
+  );
+  ok(!fipsUtils.isFIPSEnabled, "FIPS should not be enabled");
 
   let sdr = Cc["@mozilla.org/security/sdr;1"].getService(
     Ci.nsISecretDecoderRing

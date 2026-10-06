@@ -185,12 +185,17 @@ add_task(async function test_default_content_deferred_message_load() {
     const infoContainer = content.document.querySelector(".info");
     ok(infoContainer && !infoContainer.hidden, "Info container is shown");
     const infoTitle = content.document.getElementById("info-title");
-    ok(infoTitle && infoTitle.hidden, "Info title is hidden");
+    ok(infoTitle && !infoTitle.hidden, "Info title is shown");
+    is(
+      infoTitle.getAttribute("data-l10n-id"),
+      "about-private-browsing-felt-privacy-v1-info-header",
+      "Info title has the correct Fluent id"
+    );
     const infoBody = content.document.getElementById("info-body");
     ok(infoBody, "Info body is shown");
     is(
       infoBody.getAttribute("data-l10n-id"),
-      "about-private-browsing-info-description-private-window",
+      "about-private-browsing-felt-privacy-v1-info-body",
       "Info body has the correct Fluent id"
     );
     await ContentTaskUtils.waitForCondition(
@@ -201,12 +206,12 @@ add_task(async function test_default_content_deferred_message_load() {
     ok(infoLink, "Info link is shown");
     is(
       infoLink.getAttribute("data-l10n-id"),
-      "about-private-browsing-learn-more-link",
+      "about-private-browsing-felt-privacy-v1-info-link",
       "Info link has the correct Fluent id"
     );
     await ContentTaskUtils.waitForCondition(
       () => infoLink.textContent && infoLink.href,
-      "Info body has been translated"
+      "Info link has been translated"
     );
   });
 

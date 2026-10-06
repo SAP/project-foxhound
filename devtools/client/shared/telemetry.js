@@ -25,8 +25,8 @@ const PENDING_EVENTS = new WeakMapMap();
 /**
  * Instantiate a new Telemetry helper class.
  *
- * @param {Object} options [optional]
- * @param {Boolean} options.useSessionId [optional]
+ * @param {object} options [optional]
+ * @param {boolean} options.useSessionId [optional]
  *        If true, this instance will automatically generate a unique "sessionId"
  *        and use it to aggregate all records against this unique session.
  *        This helps aggregate all data coming from a single toolbox instance for ex.
@@ -90,17 +90,17 @@ class Telemetry {
    * properties have been received. Once they have all been received we send the
    * telemetry event.
    *
-   * @param {Object} obj
+   * @param {object} obj
    *        The telemetry event or ping is associated with this object, meaning
    *        that multiple events or pings for the same histogram may be run
    *        concurrently, as long as they are associated with different objects.
-   * @param {String} method
+   * @param {string} method
    *        The telemetry event method (describes the type of event that
    *        occurred e.g. "open")
-   * @param {String} object
+   * @param {string} object
    *        The telemetry event object name (the name of the object the event
    *        occurred on) e.g. "tools" or "setting"
-   * @param {String|null} value
+   * @param {string | null} value
    *        The telemetry event value (a user defined value, providing context
    *        for the event) e.g. "console"
    * @param {Array} expected
@@ -143,22 +143,22 @@ class Telemetry {
    * This means that if preparePendingEvent() is called before or after sending
    * the event properties they will automatically added to the event.
    *
-   * @param {Object} obj
+   * @param {object} obj
    *        The telemetry event or ping is associated with this object, meaning
    *        that multiple events or pings for the same histogram may be run
    *        concurrently, as long as they are associated with different objects.
-   * @param {String} method
+   * @param {string} method
    *        The telemetry event method (describes the type of event that
    *        occurred e.g. "open")
-   * @param {String} object
+   * @param {string} object
    *        The telemetry event object name (the name of the object the event
    *        occurred on) e.g. "tools" or "setting"
-   * @param {String|null} value
+   * @param {string | null} value
    *        The telemetry event value (a user defined value, providing context
    *        for the event) e.g. "console"
-   * @param {String} pendingPropName
+   * @param {string} pendingPropName
    *        The pending property name
-   * @param {String} pendingPropValue
+   * @param {string} pendingPropValue
    *        The pending property value
    */
   addEventProperty(
@@ -211,20 +211,20 @@ class Telemetry {
    * This means that if preparePendingEvent() is called before or after sending
    * the event properties they will automatically added to the event.
    *
-   * @param {Object} obj
+   * @param {object} obj
    *        The telemetry event or ping is associated with this object, meaning
    *        that multiple events or pings for the same histogram may be run
    *        concurrently, as long as they are associated with different objects.
-   * @param {String} method
+   * @param {string} method
    *        The telemetry event method (describes the type of event that
    *        occurred e.g. "open")
-   * @param {String} object
+   * @param {string} object
    *        The telemetry event object name (the name of the object the event
    *        occurred on) e.g. "tools" or "setting"
-   * @param {String|null} value
+   * @param {string | null} value
    *        The telemetry event value (a user defined value, providing context
    *        for the event) e.g. "console"
-   * @param {String} pendingObject
+   * @param {string} pendingObject
    *        An object containing key, value pairs that should be added to the
    *        event as properties.
    */
@@ -239,17 +239,17 @@ class Telemetry {
    * prepare a pending telemetry event for sending and then send it via
    * recordEvent().
    *
-   * @param {Object} obj
+   * @param {object} obj
    *        The telemetry event or ping is associated with this object, meaning
    *        that multiple events or pings for the same histogram may be run
    *        concurrently, as long as they are associated with different objects.
-   * @param {String} method
+   * @param {string} method
    *        The telemetry event method (describes the type of event that
    *        occurred e.g. "open")
-   * @param {String} object
+   * @param {string} object
    *        The telemetry event object name (the name of the object the event
    *        occurred on) e.g. "tools" or "setting"
-   * @param {String|null} value
+   * @param {string | null} value
    *        The telemetry event value (a user defined value, providing context
    *        for the event) e.g. "console"
    */
@@ -265,16 +265,16 @@ class Telemetry {
   /**
    * Send a telemetry event.
    *
-   * @param {String} method
+   * @param {string} method
    *        The telemetry event method (describes the type of event that
    *        occurred e.g. "open")
-   * @param {String} object
+   * @param {string} object
    *        The telemetry event object name (the name of the object the event
    *        occurred on) e.g. "tools" or "setting"
-   * @param {String|null} [value]
+   * @param {string | null} [value]
    *        Optional telemetry event value (a user defined value, providing
    *        context for the event) e.g. "console"
-   * @param {Object} [extra]
+   * @param {object} [extra]
    *        Optional telemetry event extra object containing the properties that
    *        will be sent with the event e.g.
    *        {
@@ -283,54 +283,80 @@ class Telemetry {
    *        }
    */
   recordEvent(method, object, value = null, extra = null) {
-    // Only string values are allowed so cast all values to strings.
-    if (extra) {
-      for (let [name, val] of Object.entries(extra)) {
-        val = val + "";
-
-        if (val.length > 80) {
-          const sig = `${method},${object},${value}`;
-
-          dump(
-            `Warning: The property "${name}" was added to a telemetry ` +
-              `event with the signature ${sig} but it's value "${val}" is ` +
-              `longer than the maximum allowed length of 80 characters.\n` +
-              `The property value has been trimmed to 80 characters before ` +
-              `sending.\nCALLER: ${getCaller()}`
-          );
-
-          val = val.substring(0, 80);
-        }
-
-        extra[name] = val;
-      }
-    }
-    // Automatically flag the record with the session ID
-    // if the current Telemetry instance relates to a toolbox
-    // so that data can be aggregated per toolbox instance.
-    // Note that we also aggregate data per about:debugging instance.
-    if (!extra) {
-      extra = {};
-    }
-    extra.session_id = this.sessionId;
-    if (value !== null) {
-      extra.value = value;
-    }
-
     // Using the Glean API directly insteade of doing string manipulations
     // would be better. See bug 1921793.
     const eventName = `${method}_${object}`.replace(/(_[a-z])/g, c =>
       c[1].toUpperCase()
     );
+
+    if (extra) {
+      extra = Telemetry.sanitizeEventExtras(extra, `devtoolsMain.${eventName}`);
+    } else {
+      extra = {};
+    }
+
+    // Automatically flag the record with the session ID
+    // if the current Telemetry instance relates to a toolbox
+    // so that data can be aggregated per toolbox instance.
+    // Note that we also aggregate data per about:debugging instance.
+    extra.session_id = this.sessionId;
+
+    if (value !== null) {
+      extra.value = value;
+    }
+
     Glean.devtoolsMain[eventName]?.record(extra);
+  }
+
+  /**
+   * Sanitize all extra keys intended to be used with a Glean event.
+   * All values will be converted to string and capped to 80 characters by
+   * default. Will return a copy of the object with sanitized values.
+   *
+   * @param {object} extras
+   *        The extras object to sanitize.
+   * @param {string} eventName
+   *        The name of the Glean event (used for logging purposes).
+   * @param {object=} options
+   * @param {number} options.limit
+   *        Optional maximum size (in bytes) for each value. Defaults to 80.
+   * @returns {object}
+   *          The sanitized extras.
+   */
+  static sanitizeEventExtras(extras, eventName, options = {}) {
+    const { limit = 80 } = options;
+    if (limit > 500) {
+      // Glean event extra values can contain up to 500 bytes.
+      // https://mozilla.github.io/glean/book/reference/metrics/event.html?highlight=extra_keys#recorded-errors
+      throw new Error(
+        `Expected "options.limit" to be a number <= 500, got ${limit}`
+      );
+    }
+
+    const sanitized = {};
+    for (let [name, value] of Object.entries(extras)) {
+      // Only string values are allowed so cast all values to strings.
+      value = value + "";
+
+      if (value.length > limit) {
+        dump(
+          `Glean event "${eventName}" extra key "${name}" cropped to ${limit} characters\nCALLER: ${getCaller()}\n`
+        );
+        value = value.substring(0, limit);
+      }
+
+      sanitized[name] = value;
+    }
+
+    return sanitized;
   }
 
   /**
    * Sends telemetry pings to indicate that a tool has been opened.
    *
-   * @param {String} id
+   * @param {string} id
    *        The ID of the tool opened.
-   * @param {Object} obj
+   * @param {object} obj
    *        The telemetry event or ping is associated with this object, meaning
    *        that multiple events or pings for the same histogram may be run
    *        concurrently, as long as they are associated with different objects.
@@ -376,9 +402,9 @@ class Telemetry {
   /**
    * Sends telemetry pings to indicate that a tool has been closed.
    *
-   * @param {String} id
+   * @param {string} id
    *        The ID of the tool opened.
-   * @param {Object} obj
+   * @param {object} obj
    *        The telemetry event or ping is associated with this object, meaning
    *        that multiple events or pings for the same histogram may be run
    *        concurrently, as long as they are associated with different objects.
@@ -418,9 +444,8 @@ class Telemetry {
 /**
  * Returns the telemetry charts for a specific tool.
  *
- * @param {String} id
+ * @param {string} id
  *        The ID of the tool that has been opened.
- *
  */
 // eslint-disable-next-line complexity
 function getChartsFromToolId(id) {

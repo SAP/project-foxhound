@@ -24,8 +24,8 @@
 
 
   function executeTest() {
-    var bc1 = new BroadcastChannel("testUrl1_bfcache");
-    var bc2 = new BroadcastChannel("testUrl2_bfcache");
+    var bc1 = SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel("testUrl1_bfcache");
+    var bc2 = SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel("testUrl2_bfcache");
     bc1.onmessage = function(event) {
       if (event.data == "closed") {
         info("Closed");
@@ -38,7 +38,7 @@
 
     var counter = 0;
     var expectedPersisted = false;
-    var bc = new BroadcastChannel("a");
+    var bc = SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel("a");
 
     function page1Shown(e) {
       if (counter == 0) {
@@ -95,25 +95,7 @@
 
   }
 
-  if (isXOrigin) {
-    // Bug 1746646: Make mochitests work with TCP enabled (cookieBehavior = 5)
-    // Acquire storage access permission here so that the BroadcastChannel used to
-    // communicate with the opened windows works in xorigin tests. Otherwise,
-    // the iframe containing this page is isolated from first-party storage access,
-    // which isolates BroadcastChannel communication.
-    SpecialPowers.wrap(document).notifyUserGestureActivation();
-    SpecialPowers.addPermission("storageAccessAPI", true, window.location.href).then(() => {
-      SpecialPowers.wrap(document).requestStorageAccess().then(() => {
-        SpecialPowers.pushPrefEnv({
-          set: [["privacy.partition.always_partition_third_party_non_cookie_storage", false]]
-        }).then(() => {
-          executeTest();
-        });
-      });
-    });
-  } else {
-    executeTest();
-  }
+  executeTest();
 
   </script>
 </body>

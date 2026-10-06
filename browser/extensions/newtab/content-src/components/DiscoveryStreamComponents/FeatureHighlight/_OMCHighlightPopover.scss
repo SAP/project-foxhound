@@ -1,0 +1,67 @@
+.nova-enabled {
+  .omc-highlight-slot {
+    grid-column: 1 / -1;
+
+    // The popover floats up out of the widgets section toward the search bar,
+    // so it needs to sit above the search bar (z-index 3) to stay fully
+    // visible. Known edge case: on taller screens (height > 700px) the search
+    // bar becomes sticky, and the popover will render over it rather than
+    // tucking underneath as the page scrolls.
+    .feature-highlight {
+      z-index: 4;
+    }
+  }
+
+  .feature-highlight .widgets-callout {
+    @include nova-feature-highlight-border;
+
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    width: 360px;
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    max-width: calc(100vw - var(--space-large) * 2);
+    padding: calc(var(--space-large) + var(--space-xsmall));
+
+    .message-icon {
+      display: none;
+    }
+
+    .content-wrapper {
+      width: 100%;
+    }
+
+    > moz-button {
+      position: absolute;
+      inset-inline-end: var(--space-small);
+      inset-block-start: var(--space-small);
+    }
+
+    &::after {
+      background:
+        linear-gradient(
+          var(--background-color-box),
+          var(--background-color-box)
+        )
+        padding-box,
+        linear-gradient(
+          90deg,
+          var(--nova-highlight-border-gradient-start),
+          var(--nova-highlight-border-gradient-end)
+        )
+        border-box;
+      border: var(--border-width) solid var(--border-color-transparent);
+      border-end-end-radius: var(--border-radius-small);
+      box-shadow: none;
+      clip-path: polygon(100% 100%, 100% 2%, 2% 100%);
+      // Sub-pixel anti-aliasing nudge so the V's top overlaps the card's
+      // bottom gradient border without a hairline gap.
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens, declaration-property-value-disallowed-list */
+      inset-block-end: calc(var(--space-medium) * -1 + 0.125px);
+      inset-inline-start: 50%;
+      transform: translateX(-50%) rotate(45deg);
+    }
+  }
+
+  .highlight-popover-body .title {
+    font-size: var(--font-size-root);
+  }
+}

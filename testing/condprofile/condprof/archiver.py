@@ -1,8 +1,8 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-"""Helper to create tarballs.
-"""
+"""Helper to create tarballs."""
+
 import copy
 import glob
 import os
@@ -38,6 +38,21 @@ class Archiver:
         return os.path.join(self.archives_dir, archive), archive
 
     def create_archive(self, when, iterator=None):
+
+        def _filter(tarinfo):
+            name = tarinfo.name
+            if name.endswith((".dmp", ".extra")) and "minidumps" in name:
+                # Inore crash files such as:
+                # - minidumps/5b2d4a13-54e6-5ebb-9a6f-913a3451e56a.dmp
+                # - minidumps/5b2d4a13-54e6-5ebb-9a6f-913a3451e56a.extra
+                # ... because they can cause permafailing tests (bug 2007615).
+                #
+                # We are excluding them here instead of removing the crash dump
+                # from the filesystem before archival, in case anyone wants to
+                # inspect these files.
+                return None
+            return tarinfo
+
         if iterator is None:
 
             def _files(tar):
@@ -45,7 +60,7 @@ class Archiver:
                 yield len(files)
                 for filename in files:
                     try:
-                        tar.add(filename, os.path.basename(filename))
+                        tar.add(filename, os.path.basename(filename), filter=_filter)
                         yield filename
                     except FileNotFoundError:  # NOQA
                         # locks and such

@@ -1,0 +1,142 @@
+From 343bbe135e1fdada09de81e5714d3d8216b3087d Mon Sep 17 00:00:00 2001
+From: Jonathan Kew <jkew@mozilla.com>
+Date: Wed, 22 Apr 2026 13:00:22 -0700
+Subject: [PATCH 15/29] Guard FT_COLOR_H and related FreeType/fontconfig
+ symbols for builds targeting older FreeType
+
+---
+ src/cairo-ft-font.c    | 37 +++++++++++++++++++++++++++++++++++--
+ src/cairo-ft-private.h |  2 ++
+ 2 files changed, 37 insertions(+), 2 deletions(-)
+
+diff --git a/src/cairo-ft-font.c b/src/cairo-ft-font.c
+index 2b104c97a..d1a4f3339 100644
+--- a/src/cairo-ft-font.c
++++ b/src/cairo-ft-font.c
+@@ -60,9 +60,18 @@
+ #include FT_IMAGE_H
+ #include FT_BITMAP_H
+ #include FT_TRUETYPE_TABLES_H
++#ifndef FT_FONT_FORMATS_H
++#define FT_FONT_FORMATS_H FT_XFREE86_H
++#define FT_Get_Font_Format FT_Get_X11_Font_Format
++#endif
+ #include FT_FONT_FORMATS_H
+ #include FT_MULTIPLE_MASTERS_H
+ #include FT_SYNTHESIS_H
++
++#ifdef FT_COLOR_H
++#include FT_COLOR_H
++#endif
++
+ #include FT_LCD_FILTER_H
+ 
+ #if HAVE_FT_SVG_DOCUMENT
+@@ -1969,6 +1978,9 @@ _get_pattern_ft_options (FcPattern *pattern, cairo_ft_options_t *ret)
+     if (embolden)
+ 	ft_options.synth_flags |= CAIRO_FT_SYNTHESIZE_BOLD;
+ 
++#ifndef FC_FONT_VARIATIONS
++#define FC_FONT_VARIATIONS "fontvariations"
++#endif
+     if (FcPatternGetString (pattern, FC_FONT_VARIATIONS, 0, (FcChar8 **) &variations) == FcResultMatch) {
+       ft_options.base.variations = strdup (variations);
+     }
+@@ -2564,6 +2576,7 @@ _cairo_ft_glyph_fini (cairo_scaled_glyph_private_t *glyph_private,
+ }
+ 
+ 
++#ifdef FT_COLOR_H
+ static void
+ _cairo_ft_scaled_glyph_set_palette (cairo_ft_scaled_font_t  *scaled_font,
+ 				    FT_Face                  face,
+@@ -2602,6 +2615,20 @@ _cairo_ft_scaled_glyph_set_palette (cairo_ft_scaled_font_t  *scaled_font,
+     if (entries_ret)
+ 	*entries_ret = entries;
+ }
++#else
++static void
++_cairo_ft_scaled_glyph_set_palette (cairo_ft_scaled_font_t  *scaled_font,
++				    FT_Face                  face,
++				    unsigned int            *num_entries_ret,
++				    void                   **entries_ret)
++{
++    if (num_entries_ret)
++	*num_entries_ret = 0;
++
++    if (entries_ret)
++	*entries_ret = NULL;
++}
++#endif
+ 
+ /* returns TRUE if foreground color used */
+ static cairo_bool_t
+@@ -2611,6 +2638,7 @@ _cairo_ft_scaled_glyph_set_foreground_color (cairo_ft_scaled_font_t *scaled_font
+ 					     const cairo_color_t    *foreground_color)
+ {
+     cairo_bool_t uses_foreground_color = FALSE;
++#ifdef FT_COLOR_H
+     FT_LayerIterator  iterator;
+     FT_UInt layer_glyph_index;
+     FT_UInt layer_color_index;
+@@ -2636,7 +2664,7 @@ _cairo_ft_scaled_glyph_set_foreground_color (cairo_ft_scaled_font_t *scaled_font
+ 	color.alpha = (FT_Byte)(foreground_color->alpha * 0xFF);
+ 	FT_Palette_Set_Foreground_Color (face, color);
+     }
+-
++#endif
+     return uses_foreground_color;
+ }
+ 
+@@ -2749,6 +2777,7 @@ _cairo_ft_scaled_glyph_init_record_colr_v0_glyph (cairo_ft_scaled_font_t *scaled
+ 						  cairo_bool_t            vertical_layout,
+ 						  int                     load_flags)
+ {
++#ifdef FT_COLOR_H
+     cairo_surface_t *recording_surface;
+     cairo_t *cr;
+     cairo_status_t status;
+@@ -2833,6 +2862,9 @@ _cairo_ft_scaled_glyph_init_record_colr_v0_glyph (cairo_ft_scaled_font_t *scaled
+ 					       recording_surface,
+ 					       NULL);
+     return status;
++#else
++    return CAIRO_INT_STATUS_UNSUPPORTED;
++#endif
+ }
+ 
+ static cairo_int_status_t
+@@ -3260,6 +3292,7 @@ _cairo_ft_scaled_glyph_is_colr_v0 (cairo_ft_scaled_font_t *scaled_font,
+ 				   cairo_scaled_glyph_t   *scaled_glyph,
+ 				   FT_Face                 face)
+ {
++#ifdef FT_COLOR_H
+     FT_LayerIterator  iterator;
+     FT_UInt layer_glyph_index;
+     FT_UInt layer_color_index;
+@@ -3273,7 +3306,7 @@ _cairo_ft_scaled_glyph_is_colr_v0 (cairo_ft_scaled_font_t *scaled_font,
+     {
+ 	return TRUE;
+     }
+-
++#endif
+     return FALSE;
+ }
+ 
+diff --git a/src/cairo-ft-private.h b/src/cairo-ft-private.h
+index 6b0e30223..9b75c7b21 100644
+--- a/src/cairo-ft-private.h
++++ b/src/cairo-ft-private.h
+@@ -43,7 +43,9 @@
+ 
+ #if CAIRO_HAS_FT_FONT
+ 
++#ifdef FT_COLOR_H
+ #include FT_COLOR_H
++#endif
+ 
+ CAIRO_BEGIN_DECLS
+ 
+-- 
+2.53.0
+

@@ -8,10 +8,7 @@
 # Longer term we need a scriptable test environment..
 #
 . ../common/init.sh
-CURDIR=`pwd`
-if [ "${OS_ARCH}" = "WINNT" -a "$OS_NAME" = "CYGWIN_NT" ]; then
-	CURDIR=`cygpath -m ${CURDIR}`
-fi
+CURDIR=`native_path`
 
 CIPHERDIR=${HOSTDIR}/cipher
 SKTESTS=${CURDIR}/symmkey.txt
@@ -95,6 +92,7 @@ done < ${RSAPERFOUT}
 echo "</TABLE><BR>" >> ${PERFRESULTS}
 fi
 
+if [ -z "${NSS_DISABLE_DSA}" ]; then
 if [ $TESTSET = "all" -o $TESTSET = "dsa" ]; then
 
 while read mode keysize bufsize reps cxreps
@@ -123,6 +121,7 @@ do
 done < ${DSAPERFOUT} 
 
 echo "</TABLE><BR>" >> ${PERFRESULTS}
+fi
 fi
 
 if [ $TESTSET = "all" -o $TESTSET = "hash" ]; then

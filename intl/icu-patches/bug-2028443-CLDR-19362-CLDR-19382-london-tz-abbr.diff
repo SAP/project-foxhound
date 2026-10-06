@@ -1,0 +1,53 @@
+diff --git a/intl/icu/source/data/zone/en_GB.txt b/intl/icu/source/data/zone/en_GB.txt
+index aa9880b27d32..f2f22f1eaea9 100644
+--- a/intl/icu/source/data/zone/en_GB.txt
++++ b/intl/icu/source/data/zone/en_GB.txt
+@@ -4,9 +4,9 @@
+ en_GB{
+     %%Parent{"en_001"}
+     zoneStrings{
+-        "Europe:London"{
+-            sd{"BST"}
+-        }
++        // Europe/London rules implemented in code in smpdtfmt.cpp;
++        // see https://unicode-org.atlassian.net/browse/CLDR-19362 and
++        // https://unicode-org.atlassian.net/browse/CLDR-19382.
+         "meta:Europe_Central"{
+             sd{"CEST"}
+             sg{"CET"}
+diff --git a/intl/icu/source/i18n/smpdtfmt.cpp b/intl/icu/source/i18n/smpdtfmt.cpp
+index 38e4dedc33e0..1e443770520a 100644
+--- a/intl/icu/source/i18n/smpdtfmt.cpp
++++ b/intl/icu/source/i18n/smpdtfmt.cpp
+@@ -1919,7 +1919,30 @@ SimpleDateFormat::subFormat(UnicodeString &appendTo,
+                     UPRV_UNREACHABLE_EXIT;
+                 }
+             }
+-            appendTo += zoneString;
++            // CLDR analyzes abbreviations as attaching to "standard time" and "daylight-saving time".
++            // In en-GB, however, the abbreviations for Europe/London should attach to the offset:
++            // +0: "GMT"
++            // +1: "BST" either for British Summer Time or, in the turn of the 1960s and 1970s, British Standard Time
++            // +2: "BDST" for British Double Summer Time (in the 1940s only)
++            //
++            // Do "GMT+2" instead of "BDST" at least for now on the assumption that present-day users
++            // might not recognize the historical abbreviation.
++            UnicodeString id;
++            if (zoneString == u"GMT+0" && strcmp(fLocale.getBaseName(), "en_GB") == 0 && tz.getID(id) == u"Europe/London") {
++                // Previously in upstream, +0 was formatted as "GMT" regardless of year. However, upstream
++                // started doing "GMT+0" for +0 before 1970 while keeping "GMT" for +0 for newer dates, and that turned up
++                // a Web compat issue with a British bank, so restoring "GMT" even for older dates.
++                // https://unicode-org.atlassian.net/browse/CLDR-19362
++                appendTo += u"GMT";
++            } else if (zoneString == u"GMT+1" && strcmp(fLocale.getBaseName(), "en_GB") == 0 && tz.getID(id) == u"Europe/London") {
++                // Avoid formatting +2 as "BST". This is about formatting correctness, not Web compat.
++                // The same bank form that requires +0 to be formatted as "GMT" appears not
++                // to expect a specific formatting for cases other than +0.
++                // https://unicode-org.atlassian.net/browse/CLDR-19382
++                appendTo += u"BST";
++            } else {
++                appendTo += zoneString;
++            }
+         }
+         break;
+ 

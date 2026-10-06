@@ -5,32 +5,23 @@
 import taskgraph
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util import json
-from taskgraph.util.attributes import keymatch
 from taskgraph.util.copy import deepcopy
 from taskgraph.util.treeherder import join_symbol, split_symbol
 
-from gecko_taskgraph.util.attributes import is_try
 from gecko_taskgraph.util.chunking import (
     WPT_SUBSUITES,
-    DefaultLoader,
     chunk_manifests,
     get_manifest_loader,
     get_runtimes,
     get_test_tags,
     guess_mozinfo_from_task,
+    resolve_manifest_runtimes,
 )
 from gecko_taskgraph.util.perfile import perfile_number_of_chunks
 
 DYNAMIC_CHUNK_DURATION = 20 * 60  # seconds
 """The approximate time each test chunk should take to run."""
 
-
-DYNAMIC_CHUNK_MULTIPLIER = {
-    # Desktop xpcshell tests run in parallel. Reduce the total runtime to
-    # compensate.
-    "^(?!android).*-xpcshell.*": 0.2,
-}
-"""A multiplication factor to tweak the total duration per platform / suite."""
 
 transforms = TransformSequence()
 
@@ -43,7 +34,7 @@ def set_test_verify_chunks(config, tasks):
             env = config.params.get("try_task_config", {}) or {}
             env = env.get("templates", {}).get("env", {})
             task["chunks"] = perfile_number_of_chunks(
-                is_try(config.params),
+                config.params["try_mode"] is not None,
                 env.get("MOZHARNESS_TEST_PATHS", ""),
                 frozenset(config.params["files_changed"]),
                 task["test-name"],
@@ -54,8 +45,7 @@ def set_test_verify_chunks(config, tasks):
             # >30 tests changed, this is probably an import of external tests,
             # or a patch renaming/moving files in bulk
             maximum_number_verify_chunks = 3
-            if task["chunks"] > maximum_number_verify_chunks:
-                task["chunks"] = maximum_number_verify_chunks
+            task["chunks"] = min(task["chunks"], maximum_number_verify_chunks)
 
         yield task
 
@@ -80,7 +70,7 @@ def set_test_manifests(config, tasks):
             # manifests are required for dynamic chunking. Just set the number of
             # chunks to one in this case.
             if task["chunks"] == "dynamic":
-                task["chunks"] = 1
+                task["chunks"] = task.get("default-chunks", 1)
             yield task
             continue
 
@@ -127,6 +117,7 @@ def set_test_manifests(config, tasks):
             remaining_manifests = []
 
             # if we have web-platform tests incoming, just yield task
+            found_wpt = False
             for m in input_paths:
                 if m.startswith("testing/web-platform/tests/"):
                     found_subsuite = [
@@ -139,10 +130,11 @@ def set_test_manifests(config, tasks):
                         ):
                             yield task
                     else:
-                        if not isinstance(loader, DefaultLoader):
-                            task["chunks"] = "dynamic"
                         yield task
+                    found_wpt = True
                     break
+            if found_wpt:
+                continue
 
             # input paths can exist in other directories (i.e. [../../dir/test.js])
             # we need to look for all [active] manifests that include tests in the path
@@ -180,13 +172,6 @@ def set_test_manifests(config, tasks):
             # no MH_TEST_PATHS, but MH_TEST_TAG or other filters
             continue
 
-        # The default loader loads all manifests. If we use a non-default
-        # loader, we'll only run some subset of manifests and the hardcoded
-        # chunk numbers will no longer be valid. Dynamic chunking should yield
-        # better results.
-        if not isinstance(loader, DefaultLoader):
-            task["chunks"] = "dynamic"
-
         yield task
 
 
@@ -200,17 +185,21 @@ def resolve_dynamic_chunks(config, tasks):
             continue
 
         if not task.get("test-manifests"):
-            raise Exception(
-                "{} must define 'test-manifests' to use dynamic chunking!".format(
-                    task["test-name"]
-                )
-            )
+            task["chunks"] = task.get("default-chunks", 1)
+            yield task
+            continue
 
-        runtimes = {
-            m: r
-            for m, r in get_runtimes(task["test-platform"], task["suite"]).items()
-            if m in task["test-manifests"]["active"]
-        }
+        suite_name = task["test-name"] + task.get("variant-suffix", "")
+        all_runtimes = get_runtimes(task["test-platform"], suite_name)
+
+        runtimes = resolve_manifest_runtimes(
+            all_runtimes, task["test-manifests"]["active"]
+        )
+
+        if not all_runtimes:
+            task["chunks"] = task.get("default-chunks", 1)
+            yield task
+            continue
 
         # Truncate runtimes that are above the desired chunk duration. They
         # will be assigned to a chunk on their own and the excess duration
@@ -223,17 +212,6 @@ def resolve_dynamic_chunks(config, tasks):
         # with the average of all present manifests.
         missing = [m for m in task["test-manifests"]["active"] if m not in runtimes]
         total += avg * len(missing)
-
-        # Apply any chunk multipliers if found.
-        key = "{}-{}".format(task["test-platform"], task["test-name"])
-        matches = keymatch(DYNAMIC_CHUNK_MULTIPLIER, key)
-        if len(matches) > 1:
-            raise Exception(
-                f"Multiple matching values for {key} found while "
-                "determining dynamic chunk multiplier!"
-            )
-        elif matches:
-            total = total * matches[0]
 
         chunks = int(round(total / DYNAMIC_CHUNK_DURATION))
 
@@ -264,8 +242,9 @@ def split_chunks(config, tasks):
                 task["max-run-time"] = int(task["max-run-time"] * 2)
 
             manifests = task["test-manifests"]
+            suite_name = task["test-name"] + task.get("variant-suffix", "")
             chunked_manifests = chunk_manifests(
-                task["suite"],
+                suite_name,
                 task["test-platform"],
                 task["chunks"],
                 manifests["active"],
@@ -280,15 +259,15 @@ def split_chunks(config, tasks):
                 and manifests["active"]
                 and "skipped" in manifests
             ):
-                chunked_manifests[0].extend(
-                    [m for m in manifests["skipped"] if not m.endswith(".list")]
-                )
-
+                chunked_manifests[0].extend([
+                    m for m in manifests["skipped"] if not m.endswith(".list")
+                ])
+        last_chunk = task["chunks"]
         for i in range(task["chunks"]):
             this_chunk = i + 1
 
             # copy the test and update with the chunk number
-            chunked = deepcopy(task)
+            chunked = deepcopy(task) if this_chunk != last_chunk else task
             chunked["this-chunk"] = this_chunk
 
             if chunked_manifests is not None:

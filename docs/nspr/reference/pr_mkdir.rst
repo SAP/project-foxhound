@@ -33,15 +33,15 @@ platforms. It may be applicable to other platforms in the future.
 
 Possible values include the following:
 
- - :ref:`00400`. Read by owner.
- - :ref:`00200`. Write by owner.
- - :ref:`00100`. Search by owner.
- - :ref:`00040`. Read by group.
- - :ref:`00020`. Write by group.
- - :ref:`00010`. Search by group.
- - :ref:`00004`. Read by others.
- - :ref:`00002`. Write by others.
- - :ref:`00001`. Search by others.
+ - ``0x00400``. Read by owner.
+ - ``0x00200``. Write by owner.
+ - ``0x00100``. Search by owner.
+ - ``0x00040``. Read by group.
+ - ``0x00020``. Write by group.
+ - ``0x00010``. Search by group.
+ - ``0x00004``. Read by others.
+ - ``0x00002``. Write by others.
+ - ``0x00001``. Search by others.
 
 
 Returns

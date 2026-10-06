@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -56,7 +54,7 @@ NS_QUERYFRAME_TAIL_INHERITING(SVGPaintServerFrame)
 
 nsresult SVGPatternFrame::AttributeChanged(int32_t aNameSpaceID,
                                            nsAtom* aAttribute,
-                                           int32_t aModType) {
+                                           AttrModType aModType) {
   if (aNameSpaceID == kNameSpaceID_None &&
       (aAttribute == nsGkAtoms::patternUnits ||
        aAttribute == nsGkAtoms::patternContentUnits ||
@@ -189,8 +187,8 @@ static nsresult GetTargetGeometry(gfxRect* aBBox,
   *aBBox =
       aOverrideBounds
           ? *aOverrideBounds
-          : SVGUtils::GetBBox(aTarget, SVGUtils::eUseFrameBoundsForOuterSVG |
-                                           SVGUtils::eBBoxIncludeFillGeometry);
+          : SVGUtils::GetBBox(aTarget, {SVGBBoxFlag::UseFrameBoundsForOuterSVG,
+                                        SVGBBoxFlag::IncludeFillGeometry});
 
   // Sanity check
   if (IncludeBBoxScale(aViewBox, aPatternContentUnits, aPatternUnits) &&
@@ -239,7 +237,8 @@ void SVGPatternFrame::PaintChildren(DrawTarget* aDrawTarget,
       // The CTM of each frame referencing us can be different
       ISVGDisplayableFrame* SVGFrame = do_QueryFrame(kid);
       if (SVGFrame) {
-        SVGFrame->NotifySVGChanged(ISVGDisplayableFrame::TRANSFORM_CHANGED);
+        SVGFrame->NotifySVGChanged(
+            ISVGDisplayableFrame::ChangeFlag::TransformChanged);
         tm = SVGUtils::GetTransformMatrixInUserSpace(kid) * tm;
       }
 
@@ -318,7 +317,7 @@ already_AddRefed<SourceSurface> SVGPatternFrame::PaintPattern(
   if (patternWithChildren->mCTM) {
     *patternWithChildren->mCTM = ctm;
   } else {
-    patternWithChildren->mCTM = MakeUnique<gfxMatrix>(ctm);
+    patternWithChildren->mCTM = std::make_unique<gfxMatrix>(ctm);
   }
 
   // Get the bounding box of the pattern.  This will be used to determine
@@ -581,10 +580,11 @@ gfxRect SVGPatternFrame::GetPatternRect(uint16_t aPatternUnits,
   tmpWidth = GetLengthValue(SVGPatternElement::ATTR_WIDTH);
 
   if (aPatternUnits == SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {
-    x = SVGUtils::ObjectSpace(aTargetBBox, tmpX);
-    y = SVGUtils::ObjectSpace(aTargetBBox, tmpY);
-    width = SVGUtils::ObjectSpace(aTargetBBox, tmpWidth);
-    height = SVGUtils::ObjectSpace(aTargetBBox, tmpHeight);
+    SVGElementMetrics metrics(SVGElement::FromNode(GetContent()));
+    x = SVGUtils::ObjectSpace(aTargetBBox, metrics, tmpX);
+    y = SVGUtils::ObjectSpace(aTargetBBox, metrics, tmpY);
+    width = SVGUtils::ObjectSpace(aTargetBBox, metrics, tmpWidth);
+    height = SVGUtils::ObjectSpace(aTargetBBox, metrics, tmpHeight);
   } else {
     if (aTarget->IsTextFrame()) {
       aTarget = aTarget->GetParent();
@@ -629,7 +629,7 @@ gfxMatrix SVGPatternFrame::ConstructCTM(const SVGAnimatedViewBox& aViewBox,
   const SVGViewBox& viewBox =
       aViewBox.GetAnimValue() * Style()->EffectiveZoom().ToFloat();
 
-  if (viewBox.height <= 0.0f || viewBox.width <= 0.0f) {
+  if (!viewBox.IsValid()) {
     return gfxMatrix(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);  // singular
   }
 
@@ -669,7 +669,7 @@ already_AddRefed<gfxPattern> SVGPatternFrame::GetPaintServerPattern(
     float aGraphicOpacity, imgDrawingParams& aImgParams,
     const gfxRect* aOverrideBounds) {
   if (aGraphicOpacity == 0.0f) {
-    return do_AddRef(new gfxPattern(DeviceColor()));
+    return MakeAndAddRef<gfxPattern>(DeviceColor());
   }
 
   // Paint it!

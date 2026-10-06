@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,11 +11,11 @@
 #include "mozilla/layers/WebRenderLayerManager.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "mozilla/layers/CompositorManagerParent.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPrefs_image.h"
 #include "mozilla/PresShell.h"
 #include "nsRefreshDriver.h"
-#include "nsView.h"
 
 namespace mozilla {
 namespace layers {
@@ -70,7 +68,13 @@ SharedSurfacesChild::SharedUserData::~SharedUserData() {
     if (NS_IsMainThread()) {
       SharedSurfacesChild::Unshare(mId, mShared, mKeys);
     } else {
-      MOZ_ASSERT_UNREACHABLE("Shared resources not released!");
+      // Dispatching to the main thread can fail late in shutdown (past
+      // XPCOMShutdownThreads), in which case the runnable is released on
+      // the calling thread and we end up here off-main. Tolerate that
+      // case so it doesn't show up as orange; outside of shutdown this
+      // path is still a bug.
+      MOZ_ASSERT(AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMShutdownThreads),
+                 "Shared resources not released!");
     }
   }
 }
@@ -81,7 +85,10 @@ void SharedSurfacesChild::SharedUserData::Destroy(void* aClosure) {
   RefPtr<SharedUserData> data =
       dont_AddRef(static_cast<SharedUserData*>(aClosure));
   if (data->mShared || !data->mKeys.IsEmpty()) {
-    SchedulerGroup::Dispatch(data.forget());
+    // Use NS_DISPATCH_FALLIBLE so that if main thread dispatch fails late in
+    // shutdown the runnable is released on the calling thread rather than
+    // leaked. ~SharedUserData tolerates that case.
+    SchedulerGroup::Dispatch(data.forget(), NS_DISPATCH_FALLIBLE);
   }
 }
 
@@ -437,7 +444,10 @@ AnimationImageKeyData& AnimationImageKeyData::operator=(
 AnimationImageKeyData::~AnimationImageKeyData() = default;
 
 SharedSurfacesAnimation::~SharedSurfacesAnimation() {
-  MOZ_ASSERT(mKeys.IsEmpty());
+  // mKeys may still be non-empty if Destroy() failed to redispatch to the
+  // main thread late in shutdown, after the main thread is gone.
+  MOZ_ASSERT(mKeys.IsEmpty() ||
+             AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMShutdownThreads));
 }
 
 void SharedSurfacesAnimation::Destroy() {
@@ -445,7 +455,11 @@ void SharedSurfacesAnimation::Destroy() {
     nsCOMPtr<nsIRunnable> task =
         NewRunnableMethod("SharedSurfacesAnimation::Destroy", this,
                           &SharedSurfacesAnimation::Destroy);
-    NS_DispatchToMainThread(task.forget());
+    // Use NS_DISPATCH_FALLIBLE so that if main thread dispatch fails late in
+    // shutdown the runnable is released on the calling thread rather than
+    // leaked. ~SharedSurfacesAnimation tolerates the leftover mKeys in that
+    // case.
+    NS_DispatchToMainThread(task.forget(), NS_DISPATCH_FALLIBLE);
     return;
   }
 
@@ -472,25 +486,6 @@ void SharedSurfacesAnimation::HoldSurfaceForRecycling(
 
   MOZ_ASSERT(StaticPrefs::image_animated_decode_on_demand_recycle_AtStartup());
   aEntry.mPendingRelease.AppendElement(aSurface);
-}
-
-// This will get the widget listener that handles painting. Generally, this is
-// the attached widget listener (or previously attached if the attached is paint
-// suppressed). Otherwise it is the widget listener. There should be a function
-// in nsIWidget that does this for us but there isn't yet.
-static nsIWidgetListener* GetPaintWidgetListener(nsIWidget* aWidget) {
-  if (auto* attached = aWidget->GetAttachedWidgetListener()) {
-    if (attached->GetView() &&
-        attached->GetView()->IsPrimaryFramePaintSuppressed()) {
-      if (auto* previouslyAttached =
-              aWidget->GetPreviouslyAttachedWidgetListener()) {
-        return previouslyAttached;
-      }
-    }
-    return attached;
-  }
-
-  return aWidget->GetWidgetListener();
 }
 
 nsresult SharedSurfacesAnimation::SetCurrentFrame(
@@ -522,14 +517,9 @@ nsresult SharedSurfacesAnimation::SetCurrentFrame(
     // Only root compositor bridge childs record if they are paused, so check
     // the refresh driver.
     if (auto* widget = entry.mManager->LayerManager()->GetWidget()) {
-      nsIWidgetListener* wl = GetPaintWidgetListener(widget);
-      // Note call to wl->GetView() to make sure this is view type widget
-      // listener even though we don't use the view in this code.
-      if (wl && wl->GetView() && wl->GetPresShell()) {
-        if (auto* rd = wl->GetPresShell()->GetRefreshDriver()) {
-          if (rd->IsThrottled()) {
-            continue;
-          }
+      if (auto* ps = widget->GetPresShell()) {
+        if (auto* rd = ps->GetRefreshDriver(); rd && rd->IsThrottled()) {
+          continue;
         }
       }
     }

@@ -19,14 +19,16 @@ extensions_button:
       `exceptions.unifiedExtensions.button.always_visible` pref.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1966935
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010477
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1966935
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010477
     data_sensitivity:
       - technical
     notification_emails:
       - addons-dev-internal@mozilla.com
       - rwu@mozilla.com
-    expires: 150
+    expires: 160
 
   toggle_visibility:
     type: event
@@ -35,14 +37,16 @@ extensions_button:
       through the "Remove from Toolbar" or "Always Show in Toolbar" menu items.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1966935
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010477
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1966935
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010477
     data_sensitivity:
       - interaction
     notification_emails:
       - addons-dev-internal@mozilla.com
       - rwu@mozilla.com
-    expires: 150
+    expires: 160
     extra_keys:
       is_customizing:
         description: Whether the change was made in Customize Mode.
@@ -78,14 +82,16 @@ extensions_button:
       This event records when the user clicks on this "Extensions" menu item.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1966935
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010477
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1966935
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010477
     data_sensitivity:
       - interaction
     notification_emails:
       - addons-dev-internal@mozilla.com
       - rwu@mozilla.com
-    expires: 150
+    expires: 160
     extra_keys:
       is_extensions_panel_empty:
         description: |
@@ -155,14 +161,16 @@ extensions_button:
       by the user could trigger such an attention request on all websites.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1966935
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010477
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1966935
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010477
     data_sensitivity:
       - interaction
     notification_emails:
       - addons-dev-internal@mozilla.com
       - rwu@mozilla.com
-    expires: 150
+    expires: 160
     labels:
       - customize
       - addon_install_doorhanger

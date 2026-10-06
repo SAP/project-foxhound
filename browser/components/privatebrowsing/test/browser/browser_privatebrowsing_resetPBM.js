@@ -25,6 +25,7 @@ const SELECTOR_PANEL_COMPLETION_TOAST = "#confirmation-hint";
 /**
  * Wait for the reset pbm confirmation panel to open. May also be called if the
  * panel is already open.
+ *
  * @param {ChromeWindow} win - Chrome window in which the panel is embedded.
  * @returns {Promise} - Promise which resolves once the panel has been shown.
  * Resolves directly if the panel is already visible.
@@ -32,30 +33,21 @@ const SELECTOR_PANEL_COMPLETION_TOAST = "#confirmation-hint";
 async function waitForConfirmPanelShow(win) {
   // Check for the panel, if it's not present yet wait for it to be inserted.
   let panelview = win.document.querySelector(SELECTOR_PANELVIEW);
-  if (!panelview) {
-    let navToolbox = win.document.getElementById("navigator-toolbox");
-    await BrowserTestUtils.waitForMutationCondition(
-      navToolbox,
-      { childList: true, subtree: true },
-      () => {
-        panelview = win.document.querySelector(SELECTOR_PANELVIEW);
-        return !!panelview;
-      }
-    );
-  }
-
   // Panel already visible, we can exit early.
-  if (BrowserTestUtils.isVisible(panelview)) {
+  if (panelview && BrowserTestUtils.isVisible(panelview)) {
     return;
   }
 
   // Wait for panel shown event.
-  await BrowserTestUtils.waitForEvent(panelview.closest("panel"), "popupshown");
+  await BrowserTestUtils.waitForEvent(win, "popupshown", event => {
+    return event.target.querySelector(SELECTOR_PANELVIEW);
+  });
 }
 
 /**
  * Hides the completion toast which is shown after the reset action has been
  * completed.
+ *
  * @param {ChromeWindow} win - Chrome window the toast is shown in.
  */
 async function hideCompletionToast(win) {
@@ -72,6 +64,7 @@ async function hideCompletionToast(win) {
 /**
  * Trigger the reset pbm toolbar button which may open the confirm panel in the
  * given window.
+ *
  * @param {nsIDOMWindow} win - PBM window to trigger the button in.
  * @param {boolean} [expectPanelOpen] - After the button action: whether the
  * panel is expected to open (true) or remain closed (false).
@@ -101,6 +94,7 @@ async function triggerResetBtn(win, expectPanelOpen = true) {
 
 /**
  * Provides a promise that resolves once the reset confirmation panel has been hidden.
+ *
  * @param nsIDOMWindow win - Chrome window that has the panel.
  * @returns {Promise}
  */
@@ -113,6 +107,7 @@ function waitForConfirmPanelHidden(win) {
 
 /**
  * Provides a promise that resolves once the completion toast has been shown.
+ *
  * @param nsIDOMWindow win - Chrome window that has the panel.
  * @returns {Promise}
  */
@@ -130,6 +125,7 @@ function waitForCompletionToastShown(win) {
  * Clearing is not guaranteed to be done at this point. Bug 1846494 will add a
  * promise based mechanism and potentially a new triggering method for clearing,
  * at which point this helper should be updated.
+ *
  * @returns {Promise} Promise which resolves when the last-pb-context-exited
  * message has been dispatched.
  */
@@ -139,6 +135,7 @@ function waitForPBMDataClear() {
 
 /**
  * Test panel visibility.
+ *
  * @param {nsIDOMWindow} win - Chrome window which is the parent of the panel.
  * @param {string} selector - Query selector for the panel.
  * @param {boolean} expectVisible - Whether the panel should be visible (true) or invisible or not present (false).
@@ -621,7 +618,11 @@ add_task(async function test_tab_close_warning_suppressed() {
   );
   for (let i = 0; i < maxTabsUndo + 2; i++) {
     let tab = BrowserTestUtils.addTab(win.gBrowser, "about:blank");
-    loadPromises.push(BrowserTestUtils.browserLoaded(tab.linkedBrowser));
+    loadPromises.push(
+      BrowserTestUtils.browserLoaded(tab.linkedBrowser, {
+        wantLoad: "about:blank",
+      })
+    );
   }
   await Promise.all(loadPromises);
 
@@ -769,13 +770,13 @@ add_task(async function test_reset_action_closes_pinned_and_selected_tabs() {
 
   info("Load a list of tabs.");
   let loadPromises = [
-    "https://example.com",
-    "https://example.org",
-    "https://example.net",
+    "https://example.com/",
+    "https://example.org/",
+    "https://example.net/",
     "about:blank",
   ].map(async url => {
     let tab = BrowserTestUtils.addTab(win.gBrowser, url);
-    await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+    await BrowserTestUtils.browserLoaded(tab.linkedBrowser, { wantLoad: url });
     return tab;
   });
   let tabs = await Promise.all(loadPromises);

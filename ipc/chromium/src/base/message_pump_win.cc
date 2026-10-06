@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2009 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -505,12 +503,12 @@ bool MessagePumpForIO::GetIOItem(DWORD timeout, IOItem* item) {
   BOOL success;
   {
     AUTO_PROFILER_LABEL("MessagePumpForIO::GetIOItem::Wait", IDLE);
-#ifdef MOZ_GECKO_PROFILER
+
     mozilla::Maybe<mozilla::AutoProfilerThreadSleep> profilerThreadSleep;
     if (timeout != 0) {
       profilerThreadSleep.emplace();
     }
-#endif
+
     success = GetQueuedCompletionStatus(port_.Get(), &item->bytes_transfered,
                                         &key, &overlapped, timeout);
   }

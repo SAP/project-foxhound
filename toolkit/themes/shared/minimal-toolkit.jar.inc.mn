@@ -33,8 +33,6 @@ toolkit.jar:
   skin/classic/global/media/audio-muted.svg                (../../shared/media/audio-muted.svg)
   skin/classic/global/media/audioNoAudioButton.svg         (../../shared/media/audioNoAudioButton.svg)
   skin/classic/global/media/audio.svg                      (../../shared/media/audio.svg)
-  skin/classic/global/media/castingButton-ready.svg        (../../shared/media/castingButton-ready.svg)
-  skin/classic/global/media/castingButton-active.svg       (../../shared/media/castingButton-active.svg)
   skin/classic/global/media/closedCaptionButton-cc-off.svg (../../shared/media/closedCaptionButton-cc-off.svg)
   skin/classic/global/media/closedCaptionButton-cc-on.svg  (../../shared/media/closedCaptionButton-cc-on.svg)
   skin/classic/global/media/fullscreenEnterButton.svg      (../../shared/media/fullscreenEnterButton.svg)
@@ -50,3 +48,8 @@ toolkit.jar:
 
 # used in about:logging on Android
   skin/classic/global/icons/open-in-new.svg                (../../shared/icons/open-in-new.svg)
+  skin/classic/global/icons/more.svg                       (../../shared/icons/more.svg)
+
+# used in about:certificate on desktop/Android
+  skin/classic/global/icons/error.svg                       (../../shared/icons/error.svg)
+  skin/classic/global/illustrations/error-malformed-url.svg (../../shared/illustrations/error-malformed-url.svg)

@@ -22,6 +22,7 @@ class FxSuggestFacts {
         const val AMP_SUGGESTION_IMPRESSED = "amp_suggestion_impressed"
         const val WIKIPEDIA_SUGGESTION_CLICKED = "wikipedia_suggestion_clicked"
         const val WIKIPEDIA_SUGGESTION_IMPRESSED = "wikipedia_suggestion_impressed"
+        const val SUGGESTION_QUERY_COUNT = "suggestion_query_count"
     }
 
     /**
@@ -89,6 +90,18 @@ internal fun emitSuggestionImpressedFact(
             FxSuggestFacts.MetadataKeys.IS_CLICKED to isClicked,
             FxSuggestFacts.MetadataKeys.ENGAGEMENT_ABANDONED to engagementAbandoned,
             FxSuggestFacts.MetadataKeys.CLIENT_COUNTRY to clientCountry,
+        ),
+    )
+}
+
+internal fun emitSuggestionQueryCountFact(
+    queryCount: Int,
+) {
+    emitFxSuggestFact(
+        action = Action.INTERACTION,
+        item = FxSuggestFacts.Items.SUGGESTION_QUERY_COUNT,
+        metadata = mapOf(
+            "query_count" to queryCount.toLong(),
         ),
     )
 }

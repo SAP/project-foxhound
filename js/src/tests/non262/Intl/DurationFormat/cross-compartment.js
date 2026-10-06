@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl')||!Intl.hasOwnProperty("DurationFormat"))
-
 var g = newGlobal();
 
 var locale = "en";

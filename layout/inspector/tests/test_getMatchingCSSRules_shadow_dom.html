@@ -1,0 +1,52 @@
+<!DOCTYPE HTML>
+<title>Test for InspectorUtils.getMatchingCSSRules for starting style</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css">
+<pre id="log"></pre>
+<div id="host"></div>
+<script>
+  const sheet = new CSSStyleSheet();
+  sheet.replaceSync("unknowntagname { color: tomato; background-color: gold;}");
+  const shadow = host.attachShadow({ mode: "open" });
+  shadow.adoptedStyleSheets = [sheet];
+
+  const shadowEl = document.createElement("unknowntagname");
+  shadowEl.textContent = "Hello from the shadow DOM";
+  shadow.appendChild(shadowEl);
+</script>
+<script>
+/**
+ * This test checks that InspectorUtils.getMatchingCSSRules returns expected rules
+ * when passed a shadow dom element
+ * To avoid effects from UA sheets, we use an element with "unknowntagname".
+ */
+
+const InspectorUtils = SpecialPowers.InspectorUtils;
+
+add_task(async function() {
+  const shadowRoot = host.shadowRoot;
+  const shadowEl = shadowRoot.querySelector("unknowntagname")
+  const styleSheet = shadowRoot.adoptedStyleSheets[0]
+
+  let rules = InspectorUtils.getMatchingCSSRules(shadowEl);
+  is(rules.length, 1, "Got expected number of rule");
+
+  is(
+    rules[0].cssText,
+    styleSheet.cssRules[0].cssText,
+    "We're getting a CSSRule and it's the one from the adopted stylesheet"
+  );
+
+  info("Remove a property from the rule")
+  styleSheet.cssRules[0].style.removeProperty("color");
+
+  rules = InspectorUtils.getMatchingCSSRules(shadowEl);
+  is(rules.length, 1, "Got expected number of rule after removing a property from the rule");
+  is(
+    rules[0].cssText,
+    styleSheet.cssRules[0].cssText,
+    "We're still getting the adopted stylesheet CSSRule after removing a property"
+  );
+});
+
+</script>

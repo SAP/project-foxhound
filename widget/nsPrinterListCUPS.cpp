@@ -4,6 +4,8 @@
 
 #include "nsPrinterListCUPS.h"
 
+#include <cstdlib>
+
 #include "mozilla/IntegerRange.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/StaticPrefs_print.h"
@@ -20,6 +22,20 @@ static nsCUPSShim& CupsShim() {
 }
 
 using PrinterInfo = nsPrinterListBase::PrinterInfo;
+
+static bool IsAutoDiscoveredDest(const cups_dest_t& aDest) {
+  const char* const printerType = CupsShim().cupsGetOption(
+      "printer-type", aDest.num_options, aDest.options);
+  if (!printerType) {
+    return false;
+  }
+  char* end = nullptr;
+  const long type = std::strtol(printerType, &end, 10);
+  if (end == printerType) {
+    return false;
+  }
+  return (type & CUPS_PRINTER_DISCOVERED) != 0;
+}
 
 /**
  * Retrieves a human-readable name for the printer from CUPS.
@@ -80,7 +96,8 @@ static int CupsDestCallback(void* user_data, unsigned aFlags,
   nsString name;
   GetDisplayNameForPrinter(*aDest, name);
 
-  printerInfoList->AppendElement(PrinterInfo{std::move(name), ownedDest});
+  printerInfoList->AppendElement(
+      PrinterInfo{std::move(name), ownedDest, IsAutoDiscoveredDest(*aDest)});
 
   return aFlags == CUPS_DEST_FLAGS_MORE ? 1 : 0;
 }
@@ -110,15 +127,21 @@ nsTArray<PrinterInfo> nsPrinterListCUPS::Printers() const {
       MOZ_ASSERT(numCopied == 1);
 
       nsString name;
-      GetDisplayNameForPrinter(*(printers + i), name);
-      printerInfoList.AppendElement(PrinterInfo{std::move(name), ownedDest});
+      GetDisplayNameForPrinter(printers[i], name);
+      printerInfoList.AppendElement(PrinterInfo{
+          std::move(name), ownedDest, IsAutoDiscoveredDest(printers[i])});
     }
     CupsShim().cupsFreeDests(numPrinters, printers);
     return printerInfoList;
   }
 
-  // An error occurred - retry with CUPS_PRINTER_DISCOVERED masked out (since
-  // it looks like there are a lot of error cases for that in cupsEnumDests):
+  // An error occurred - retry with a 0 timeout and CUPS_PRINTER_DISCOVERED
+  // masked out. The two are coupled: 0 timeout returns immediately, which
+  // would yield no discovered printers anyway since mDNS responses take time,
+  // and cupsEnumDests is also known to have a lot of error cases with
+  // discovered printers. Auto-discovered printers are surfaced (and tagged
+  // via mSortAfterLocal) only via the cupsGetDests2 path above; don't
+  // re-enable them here without also picking a non-zero timeout.
   if (CupsShim().cupsEnumDests(
           CUPS_DEST_FLAGS_NONE,
           0 /* 0 timeout should be okay when masking CUPS_PRINTER_DISCOVERED */,
@@ -140,7 +163,7 @@ nsTArray<PrinterInfo> nsPrinterListCUPS::Printers() const {
 RefPtr<nsIPrinter> nsPrinterListCUPS::CreatePrinter(PrinterInfo aInfo) const {
   return mozilla::MakeRefPtr<nsPrinterCUPS>(
       mCommonPaperInfo, CupsShim(), std::move(aInfo.mName),
-      static_cast<cups_dest_t*>(aInfo.mCupsHandle));
+      static_cast<cups_dest_t*>(aInfo.mCupsHandle), aInfo.mSortAfterLocal);
 }
 
 mozilla::Maybe<PrinterInfo> nsPrinterListCUPS::PrinterByName(
@@ -188,7 +211,8 @@ mozilla::Maybe<PrinterInfo> nsPrinterListCUPS::PrinterByName(
   if (printer) {
     // Since the printer name had to be passed by-value, we can move the
     // name from that.
-    rv.emplace(PrinterInfo{std::move(aPrinterName), printer});
+    rv.emplace(PrinterInfo{std::move(aPrinterName), printer,
+                           IsAutoDiscoveredDest(*printer)});
   }
   return rv;
 }
@@ -203,7 +227,8 @@ mozilla::Maybe<PrinterInfo> nsPrinterListCUPS::PrinterBySystemName(
   const auto printerName = NS_ConvertUTF16toUTF8(aPrinterName);
   if (cups_dest_t* const printer = CupsShim().cupsGetNamedDest(
           CUPS_HTTP_DEFAULT, printerName.get(), nullptr)) {
-    rv.emplace(PrinterInfo{std::move(aPrinterName), printer});
+    rv.emplace(PrinterInfo{std::move(aPrinterName), printer,
+                           IsAutoDiscoveredDest(*printer)});
   }
   return rv;
 }

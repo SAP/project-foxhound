@@ -4,10 +4,13 @@
 
 import os
 import sys
+from pathlib import Path
+
+import yaml
 
 # Set up Python environment to load build system packages.
-OUR_DIR = os.path.dirname(__file__)
-topsrcdir = os.path.normpath(os.path.join(OUR_DIR, ".."))
+OUR_DIR = Path(__file__).parent
+topsrcdir = OUR_DIR.parent
 
 # Escapes $, [, ] and 3 dots in copy button
 copybutton_prompt_text = r">>> |\.\.\. |\$ |In \[\d*\]: | {2,5}\.\.\.: | {5,8}: "
@@ -28,9 +31,8 @@ EXTRA_PATHS = (
     "taskcluster/gecko_taskgraph/test",
 )
 
-sys.path[:0] = [os.path.join(topsrcdir, p) for p in EXTRA_PATHS]
-
-sys.path.insert(0, OUR_DIR)
+sys.path[:0] = [str(topsrcdir / p) for p in EXTRA_PATHS]
+sys.path.insert(0, str(OUR_DIR))
 
 extensions = [
     "myst_parser",
@@ -45,9 +47,9 @@ extensions = [
     "sphinxcontrib.jquery",
     "sphinxcontrib.mermaid",
     "sphinx_copybutton",
-    "sphinx_markdown_tables",
     "sphinx_design",
     "bzlink",
+    "etp_matrix",
 ]
 
 myst_enable_extensions = [
@@ -58,42 +60,12 @@ myst_enable_extensions = [
     "fieldlist",
 ]
 
-# JSDoc must run successfully for dirs specified, so running
-# tree-wide (the default) will not work currently.
-# When adding more paths to this list, please ensure that they are not
-# excluded from the valid-jsdoc and require-jsdoc sections in the top-level
-# eslint-rollouts.config.mjs.
-js_source_path = [
-    "../browser/components/backup",
-    "../browser/components/backup/actors",
-    "../browser/components/backup/resources",
-    "../browser/components/customizableui",
-    "../browser/components/extensions",
-    "../browser/components/migration",
-    "../browser/components/migration/content",
-    "../browser/components/mozcachedohttp",
-    "../browser/components/mozcachedohttp/actors",
-    "../browser/components/uitour",
-    "../browser/components/urlbar",
-    "../js/xpconnect/loader",
-    "../remote/marionette",
-    "../testing/mochitest/BrowserTestUtils",
-    "../testing/mochitest/tests/SimpleTest/SimpleTest.js",
-    "../testing/mochitest/tests/SimpleTest/EventUtils.js",
-    "../testing/modules/Assert.sys.mjs",
-    "../testing/modules/TestUtils.sys.mjs",
-    "../toolkit/actors",
-    "../toolkit/components/extensions",
-    "../toolkit/components/extensions/parent",
-    "../toolkit/components/ml/content/backends/ONNXPipeline.mjs",
-    "../toolkit/modules/BrowserUtils.sys.mjs",
-    "../toolkit/mozapps/extensions",
-    "../toolkit/components/prompts/src",
-    "../toolkit/components/pictureinpicture",
-    "../toolkit/components/pictureinpicture/content",
-    "../toolkit/components/search",
-    "../toolkit/components/uniffi-bindgen-gecko-js/components/generated",
-]
+# The paths are loaded from config.yml so they can be shared with a CI
+# optimization strategy that ensures the doc task runs when these files change.
+with open(OUR_DIR / "config.yml") as fh:
+    config = yaml.safe_load(fh)
+    js_source_path = [f"../{path}" for path in config["js_source_paths"]]
+
 root_for_relative_js_paths = ".."
 jsdoc_config_path = "jsdoc.json"
 
@@ -115,10 +87,8 @@ html_sidebars = {
         "searchbox.html",
     ]
 }
-html_logo = os.path.join(
-    topsrcdir, "browser/branding/nightly/content/firefox-wordmark.svg"
-)
-html_favicon = os.path.join(topsrcdir, "browser/branding/nightly/firefox.ico")
+html_logo = str(topsrcdir / "browser/branding/nightly/content/firefox-wordmark.svg")
+html_favicon = str(topsrcdir / "browser/branding/nightly/firefox.ico")
 
 exclude_patterns = ["_build", "_staging", "_venv", "**security/nss/legacy/**"]
 pygments_style = "sphinx"
@@ -153,6 +123,14 @@ moz_project_name = "main"
 
 html_show_copyright = False
 
+# GitHub integration for "View page source" links
+html_context = {
+    "display_github": True,
+    "github_user": "mozilla-firefox",
+    "github_repo": "firefox",
+    "github_version": "main",
+}
+
 # Only run autosection for the page title.
 # Otherwise, we have a huge number of duplicate links.
 # For example, the page https://firefox-source-docs.mozilla.org/code-quality/lint/
@@ -167,6 +145,38 @@ def install_sphinx_design(app, pagename, templatename, context, doctree):
         app.add_css_file("sphinx_design.css")
 
 
+def add_github_source_link(app, pagename, templatename, context, doctree):
+    """Add the original source file path to the context for GitHub links.
+
+    Docs are staged from various source locations (e.g. gfx/docs/, js/src/doc/)
+    into a flat structure (e.g. gfx/, js/) for building. We need to reverse this
+    mapping so GitHub links point to the actual source files in the repo.
+    """
+    from moztreedocs import manager
+
+    if not manager.trees:
+        return
+
+    source_suffix = context.get("page_source_suffix", "")
+    staging_relpath = pagename + source_suffix
+
+    # manager.trees maps staging prefixes to source prefixes,
+    # e.g. {"gfx": "gfx/docs", "js": "js/src/doc"}.
+    # Replace the staging prefix with the original source prefix to recover
+    # the real repo path, e.g. "gfx/Silk.rst" -> "gfx/docs/Silk.rst".
+    for staging_prefix, original_prefix in manager.trees.items():
+        if staging_relpath.startswith(staging_prefix + "/"):
+            # Strip the staging prefix and re-attach the original source prefix.
+            # e.g. "gfx/Silk.rst" -> strip "gfx" -> "Silk.rst" -> "gfx/docs/Silk.rst"
+            rel = staging_relpath[len(staging_prefix) + 1 :]
+            context["github_source_path"] = original_prefix + "/" + rel
+            return
+
+    # Files directly in docs/ don't go through SPHINX_TREES staging
+    context["github_source_path"] = "docs/" + staging_relpath
+
+
 def setup(app):
     app.add_css_file("custom_theme.css")
     app.connect("html-page-context", install_sphinx_design)
+    app.connect("html-page-context", add_github_source_link)

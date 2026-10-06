@@ -22,8 +22,10 @@ RedirectHttpsOnly.prototype = {
   QueryInterface: ChromeUtils.generateQI(["nsIChannelEventSink"]),
 };
 
-/** This class loads a resource into a single string. ResourceLoader.load() is
- * the entry point. */
+/**
+ * This class loads a resource into a single string. ResourceLoader.load() is
+ * the entry point.
+ */
 function ResourceLoader(res, rej) {
   this.resolve = res;
   this.reject = rej;

@@ -22,7 +22,6 @@
 #include "api/video/video_frame_type.h"
 #include "api/video/video_timing.h"
 #include "api/video_codecs/video_decoder.h"
-#include "rtc_base/checks.h"
 
 namespace webrtc {
 
@@ -60,7 +59,7 @@ class VCMReceiveCallback {
     TimeDelta decode_time;
     VideoContentType content_type;
     VideoFrameType frame_type;
-    std::optional<double> corruption_score;
+    TimingFrameInfo timing_frame_info;
   };
 
   virtual int32_t OnFrameToRender(const FrameToRender& arguments) = 0;

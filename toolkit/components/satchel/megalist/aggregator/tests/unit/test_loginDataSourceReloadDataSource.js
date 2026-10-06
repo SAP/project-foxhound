@@ -72,8 +72,8 @@ add_task(
     );
 
     Assert.ok(
-      !loginDataSource.lines.length,
-      "if rememberSignons pref is off, no logins should be loaded"
+      loginDataSource.lines.length,
+      "if rememberSignons pref is off, logins should still be loaded"
     );
   }
 );

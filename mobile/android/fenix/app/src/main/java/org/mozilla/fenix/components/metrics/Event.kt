@@ -4,6 +4,10 @@
 
 package org.mozilla.fenix.components.metrics
 
+/**
+ * See https://docs.google.com/spreadsheets/d/1wh1trriy7p8hf27-MPJprZ6jR0mSeKKUQfVfEbpxR9s
+ * for event descriptions.
+ */
 sealed class Event {
 
     // Interaction events with extras
@@ -18,40 +22,59 @@ sealed class Event {
      */
     sealed class GrowthData(val tokenName: String) : Event() {
         /**
-         * Event recording whether Firefox has been set as the default browser.
+         * Adjust conversion event 1
          */
-        object SetAsDefault : GrowthData("xgpcgt")
+        object ConversionEvent1 : GrowthData("xgpcgt")
 
         /**
-         * Event recording that an ad was clicked in a search engine results page.
+         * Adjust conversion event 2
          */
-        object SerpAdClicked : GrowthData("e2x17e")
+        object ConversionEvent2 : GrowthData("41hl22")
 
         /**
-         * Event recording the first time Firefox is used 3 days in a row in the first week of install.
+         * Adjust conversion event 3
          */
-        object FirstWeekSeriesActivity : GrowthData("20ay7u")
+        object ConversionEvent3 : GrowthData("ja86ek")
 
         /**
-         * Event recording that usage time has reached a threshold.
+         * Adjust conversion event 4
          */
-        object UsageThreshold : GrowthData("m66prt")
+        object ConversionEvent4 : GrowthData("20ay7u")
 
         /**
-         * Event recording the first time Firefox has been resumed in a 24 hour period.
+         * Adjust conversion event 5
          */
-        object FirstAppOpenForDay : GrowthData("41hl22")
+        object ConversionEvent5 : GrowthData("e2x17e")
 
         /**
-         * Event recording the first time a URI is loaded in Firefox in a 24 hour period.
+         * Adjust conversion event 6
          */
-        object FirstUriLoadForDay : GrowthData("ja86ek")
+        object ConversionEvent6 : GrowthData("m66prt")
 
         /**
-         * Event recording when User is "activated" in first week of usage.
-         * Activated = if the user is active 3 days in their first week and
-         * if they search once in the latter half of that week (days 4-7).
+         * Adjust conversion event 7
          */
-        data class UserActivated(val fromSearch: Boolean) : GrowthData("imgpmr")
+        data class ConversionEvent7(val fromSearch: Boolean) : GrowthData("imgpmr")
+    }
+
+    /**
+     * Events related to first week, post install data.
+     */
+    sealed class FirstWeekPostInstall(val tokenName: String) : Event() {
+        /**
+         *
+         * Adjust conversion event 8
+         */
+        object ConversionEvent8 : FirstWeekPostInstall("yzyixm")
+
+        /**
+         * Adjust conversion event 9
+         */
+        object ConversionEvent9 : FirstWeekPostInstall("v0g2bc")
+
+        /**
+         * Adjust conversion event 10
+         */
+        object ConversionEvent10 : FirstWeekPostInstall("89cbkw")
     }
 }

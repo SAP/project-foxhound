@@ -169,7 +169,7 @@ function getDisplayedSnapshotStatus(document) {
 /**
  * Get the index of the currently selected snapshot.
  *
- * @return {Number}
+ * @return {number}
  */
 function getSelectedSnapshotIndex(store) {
   const snapshots = store.getState().snapshots;
@@ -225,7 +225,7 @@ function waitUntilCensusState(store, getCensus, expected) {
 /**
  * Mock out the requestAnimationFrame.
  *
- * @return {Object}
+ * @return {object}
  * @function nextFrame
  *           Call the last queued function
  * @function raf
@@ -257,7 +257,7 @@ function createRAFMock() {
  *
  * @param {Float} a
  * @param {Float} b
- * @return {Boolean}
+ * @return {boolean}
  */
 function floatEquality(a, b) {
   const EPSILON = 0.00000000001;

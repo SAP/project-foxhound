@@ -1,0 +1,90 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Multiline editor input test</title>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <link
+      rel="stylesheet"
+      href="chrome://mochikit/content/tests/SimpleTest/test.css"
+    />
+    <link rel="stylesheet" href="chrome://global/skin/global.css" />
+    <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+    <script src="../../../../../toolkit/content/tests/widgets/lit-test-helpers.js"></script>
+    <script
+      type="module"
+      src="chrome://browser/content/multilineeditor/multiline-editor.mjs"
+    ></script>
+    <script>
+      let html;
+      let testHelpers;
+
+      add_setup(async function setup() {
+        testHelpers = new LitTestHelpers();
+        ({ html } = await testHelpers.setupLit());
+        testHelpers.setupTests({
+          templateFn: (attributes) => html`<moz-multiline-editor ${attributes}></moz-multiline-editor>`,
+        });
+      });
+
+      add_task(async function testInputEvent() {
+        const result = await testHelpers.renderTemplate();
+        const editor = result.querySelector("moz-multiline-editor");
+
+        let inputEventFired = false;
+        const inputPromise = BrowserTestUtils.waitForEvent(editor, "input");
+        editor.addEventListener("input", () => {
+          inputEventFired = true;
+        });
+
+        editor.focus();
+        sendString("a");
+        await inputPromise;
+
+        ok(inputEventFired, "Input event was fired");
+        ok(editor.value.includes("a"), "Value updated after input");
+      });
+
+      add_task(async function testFocus() {
+        const result = await testHelpers.renderTemplate();
+        const editor = result.querySelector("moz-multiline-editor");
+
+        editor.focus();
+        const shadowRoot = editor.shadowRoot;
+        const editorElement = shadowRoot.querySelector(".multiline-editor");
+        ok(editorElement, "Editor element exists in shadow DOM");
+
+        ok(shadowRoot.activeElement, "Shadow DOM has an active element after focus");
+        is(document.activeElement, editor, "Editor element is the active element in document");
+      });
+
+      add_task(async function testReadOnlyPreventsUserInput() {
+        const result = await testHelpers.renderTemplate(html`
+          <moz-multiline-editor readonly></moz-multiline-editor>
+        `);
+        const editor = result.querySelector("moz-multiline-editor");
+
+        is(editor.readOnly, true, "Editor is read-only");
+        is(editor.value, "", "Initial value is empty");
+
+        let inputEventFired = false;
+        editor.addEventListener("input", () => {
+          inputEventFired = true;
+        });
+
+        editor.focus();
+        sendString("test");
+
+        await new Promise(resolve => requestAnimationFrame(resolve));
+
+        ok(!inputEventFired, "Input event not fired");
+        is(editor.value, "", "Value remains empty");
+      });
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+</html>

@@ -1,4 +1,6 @@
 [DEFAULT]
+subsuite = "integration"
+tags = "os_integration"
 
 ["test_moved_origin_directory_cleanup.py"]
 

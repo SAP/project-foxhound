@@ -5,6 +5,7 @@
 import os
 import re
 import subprocess
+from importlib.metadata import version
 
 from mozfile import which
 from mozlint import result
@@ -26,17 +27,13 @@ RSTCHECK_NOT_FOUND = """
 Could not find rstcheck! Install rstcheck and try again.
 
     $ pip install -U --require-hashes -r {}
-""".strip().format(
-    rstcheck_requirements_file
-)
+""".strip().format(rstcheck_requirements_file)
 
 RSTCHECK_INSTALL_ERROR = """
 Unable to install required version of rstcheck
 Try to install it manually with:
     $ pip install -U --require-hashes -r {}
-""".strip().format(
-    rstcheck_requirements_file
-)
+""".strip().format(rstcheck_requirements_file)
 
 RSTCHECK_FORMAT_REGEX = re.compile(r"(.*):(.*): \(.*/([0-9]*)\) (.*)$")
 
@@ -62,6 +59,10 @@ def parse_with_split(errors):
     return filename, lineno, level, message
 
 
+def get_rstcheck_version():
+    return version("rstcheck")
+
+
 def lint(files, config, **lintargs):
     log = lintargs["log"]
     config["root"] = lintargs["root"]
@@ -69,6 +70,8 @@ def lint(files, config, **lintargs):
     paths = list(paths)
     chunk_size = 50
     binary = get_rstcheck_binary()
+
+    log.debug(f"Version: {get_rstcheck_version()}")
 
     while paths:
         # Config for rstcheck is stored in `/.rstcheck.cfg`.

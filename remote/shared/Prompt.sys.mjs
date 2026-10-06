@@ -146,6 +146,12 @@ modal.Dialog = class {
     return null;
   }
 
+  /**
+   * Sets the text of a prompt's input field.
+   *
+   * @param {string} inputText
+   *     The text to set for the input field.
+   */
   set text(inputText) {
     if (lazy.AppInfo.isAndroid) {
       this.window.setInputText(inputText);
@@ -156,6 +162,9 @@ modal.Dialog = class {
     }
   }
 
+  /**
+   * Accept the user prompt.
+   */
   accept() {
     if (lazy.AppInfo.isAndroid) {
       // GeckoView does not have a UI, so the methods are called directly
@@ -166,6 +175,9 @@ modal.Dialog = class {
     }
   }
 
+  /**
+   * Dismiss the user prompt.
+   */
   dismiss() {
     if (lazy.AppInfo.isAndroid) {
       // GeckoView does not have a UI, so the methods are called directly
@@ -179,28 +191,28 @@ modal.Dialog = class {
   /**
    * Returns text of the prompt.
    *
-   * @returns {string | Promise}
-   *     Returns string on desktop and Promise on Android.
+   * @returns {Promise<string>}
+   *     Returns a Promise resolving to the prompt text.
    */
-  async getText() {
+  getText() {
     if (lazy.AppInfo.isAndroid) {
-      const textPromise = await this.window.getPromptText();
-      return textPromise;
+      return this.window.getPromptText();
     }
-    return this.ui.infoBody.textContent;
+
+    return Promise.resolve(this.ui.infoBody.textContent);
   }
 
   /**
    * Returns text of the prompt input.
    *
-   * @returns {string}
-   *     Returns string on desktop and Promise on Android.
+   * @returns {Promise<string>}
+   *     Returns a Promise resolving to the input's text.
    */
-  async getInputText() {
+  getInputText() {
     if (lazy.AppInfo.isAndroid) {
-      const textPromise = await this.window.getInputText();
-      return textPromise;
+      return this.window.getInputText();
     }
-    return this.ui.loginTextbox.value;
+
+    return Promise.resolve(this.ui.loginTextbox.value);
   }
 };

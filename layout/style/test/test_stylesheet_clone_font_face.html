@@ -12,7 +12,11 @@
 <script>
   function runTest() {
     var links = document.getElementsByTagName("link");
-    links[0].sheet.cssRules[0].style.src = "../fonts/markB.ttf";
+    try {
+      links[0].sheet.cssRules[0].style.src = "../fonts/markB.ttf";
+    } catch(e) {
+      todo(false, "Shouldn't throw on set (bug 443978)");
+    }
 
     // Test that the cloned sheet is unaffected.
     isnot(links[1].sheet.cssRules[0].style.src, "../fonts/markB.ttf", "Cloned sheet left unchanged.");

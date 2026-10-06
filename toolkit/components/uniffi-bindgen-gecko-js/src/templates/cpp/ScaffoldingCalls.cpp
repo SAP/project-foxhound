@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -24,12 +22,14 @@ private:
 
 public:
   void LowerRustArgs(const dom::Sequence<dom::OwningUniFFIScaffoldingValue>& aArgs, ErrorResult& aError) override {
-    {%- for arg in scaffolding_call.arguments %}
-    {%- if arg.receiver %}
-    {{ arg.field_name }}.LowerReciever(aArgs[{{ loop.index0 }}], aError);
-    {%- else %}
-    {{ arg.field_name }}.Lower(aArgs[{{ loop.index0 }}], aError);
+    {%- if !scaffolding_call.arguments.is_empty() %}
+    if (aArgs.Length() < {{ scaffolding_call.arguments.len() }}) {
+      aError.ThrowUnknownError(nsPrintfCString("LowerRustArgs: Incorrect argument length for {{ scaffolding_call.ffi_func.name.0 }} (expected: {{ scaffolding_call.arguments.len() }}, actual: %zu)", aArgs.Length()));
+      return;
+    }
     {%- endif %}
+    {%- for arg in scaffolding_call.arguments %}
+    {{ arg.field_name }}.Lower(aArgs[{{ loop.index0 }}], aError);
     if (aError.Failed()) {
       return;
     }
@@ -88,11 +88,7 @@ protected:
   void LowerArgsAndMakeRustCall(const dom::Sequence<dom::OwningUniFFIScaffoldingValue>& aArgs, ErrorResult& aError) override {
     {%- for arg in scaffolding_call.arguments %}
     {{ arg.ffi_value_class }} {{ arg.field_name }}{};
-    {%- if arg.receiver %}
-    {{ arg.field_name }}.LowerReciever(aArgs[{{ loop.index0 }}], aError);
-    {%- else %}
     {{ arg.field_name }}.Lower(aArgs[{{ loop.index0 }}], aError);
-    {%- endif %}
     if (aError.Failed()) {
       return;
     }

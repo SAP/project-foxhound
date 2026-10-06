@@ -11,27 +11,6 @@ therefore does not cover that update mechanism.
 Definitions
 -----------
 
-MAR file
-''''''''
-
-An archive format containing update data. They are signed to prevent
-being tampered with.
-
-Partial MAR file
-''''''''''''''''
-
-A MAR file containing a binary diff between the installed and updated
-versions of Firefox. This is the preferred update mechanism because the
-file sizes are much smaller.
-
-Complete MAR file
-'''''''''''''''''
-
-A MAR file containing a full copy of the application. This is typically
-used if updating from a partial MAR has failed or if the user is
-updating from such an old version that no partial MAR exists to upgrade
-directly from that version to the current version.
-
 Update directory
 ''''''''''''''''
 
@@ -49,14 +28,14 @@ A file written to and read from, in part, to communicate between Firefox
 and the updater. The file will contain a short string indicating the
 current status. If that status is "failed", it will also contain an
 error code. A list of recognized status strings can be found
-`here <https://searchfox.org/mozilla-central/rev/7ccb618f45a1398e31a086a009f87c8fd3a790b6/toolkit/mozapps/update/nsIUpdateService.idl#177-190>`__.
+:searchfox:`here <mozilla-central/rev/7ccb618f45a1398e31a086a009f87c8fd3a790b6:toolkit/mozapps/update/nsIUpdateService.idl#177-190>`.
 The error codes used for failure status can be found
-`here <https://searchfox.org/mozilla-central/rev/3265b390bd5d08a5be520253ef71835bcb715f27/toolkit/mozapps/update/common/updatererrors.h>`__.
+:searchfox:`here <mozilla-central/rev/3265b390bd5d08a5be520253ef71835bcb715f27:toolkit/mozapps/update/common/updatererrors.h>`.
 
 Documentation
 -------------
 
-- `MAR files <https://wiki.mozilla.org/Software_Update:MAR>`__
+- `MAR files <MarFiles.md>`__
 - `Update
   pings <https://firefox-source-docs.mozilla.org/toolkit/components/telemetry/telemetry/data/update-ping.html>`__
 

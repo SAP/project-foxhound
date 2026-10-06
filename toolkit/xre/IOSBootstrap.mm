@@ -1,7 +1,3 @@
-/* clang-format off */
-/* -*- Mode: Objective-C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* clang-format on */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -110,6 +106,11 @@ static int ChildProcessInitImpl(int aArgc, char** aArgv) {
 
   mozilla::SetGeckoChildID(aArgv[aArgc - 2]);
 
+#if defined(MOZ_MEMORY)
+  jemalloc_reset_small_alloc_randomization(
+      /* aRandomizeSmall */ !XRE_IsContentProcess());
+#endif
+
   nsresult rv =
       bootstrap.inspect()->XRE_InitChildProcess(aArgc - 2, aArgv, &childData);
 
@@ -131,10 +132,9 @@ void HandleBootstrapMessage(xpc_object_t aEvent) {
     close(fd);
   }
 
-  // Immediately send a reply with our pid and mach task port.
+  // Immediately send a reply with our pid
   auto reply = mozilla::AdoptDarwinObject(xpc_dictionary_create_reply(aEvent));
   xpc_dictionary_set_int64(reply.get(), "pid", getpid());
-  xpc_dictionary_set_mach_send(reply.get(), "task", mach_task_self());
   xpc_connection_send_message(xpc_dictionary_get_remote_connection(aEvent),
                               reply.get());
 

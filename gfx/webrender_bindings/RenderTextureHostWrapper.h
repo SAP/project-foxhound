@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -61,9 +59,17 @@ class RenderTextureHostWrapper final : public RenderTextureHostSWGL {
   gfx::SurfaceFormat GetFormat() const override;
   gfx::ColorDepth GetColorDepth() const override;
   gfx::YUVRangedColorSpace GetYUVColorSpace() const override;
+  gfx::TransferFunction GetTransferFunction() const override;
   bool MapPlane(RenderCompositor* aCompositor, uint8_t aChannelIndex,
                 PlaneInfo& aPlaneInfo) override;
   void UnmapPlanes() override;
+
+  wr::WrExternalImage LockSWGL(uint8_t aChannelIndex, void* aContext,
+                               RenderCompositor* aCompositor) override;
+
+  void UnlockSWGL() override;
+  bool LockSWGLCompositeSurface(void* aContext,
+                                wr::SWGLCompositeSurfaceInfo* aInfo) override;
 
   // This is just a wrapper, so doesn't need to report the
   // size of the wrapped object (which reports itself).

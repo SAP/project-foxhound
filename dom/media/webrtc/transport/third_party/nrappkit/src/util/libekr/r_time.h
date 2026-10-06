@@ -92,7 +92,6 @@
 #endif
 
 int r_timeval_diff(struct timeval *t1,struct timeval *t0, struct timeval *diff);
-int r_timeval_add(struct timeval *t1,struct timeval *t2, struct timeval *sum);
 int r_timeval_cmp(struct timeval *t1,struct timeval *t2);
 
 UINT8 r_timeval2int(struct timeval *tv);

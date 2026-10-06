@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- The button that appears at the bottom of an error page. -->
   <string name="mozac_browser_errorpages_page_refresh">Tentar novamente</string>
@@ -9,15 +16,15 @@
   <!-- The document title and heading of the error page shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
   <string name="mozac_browser_errorpages_security_ssl_title">Falha na conexão segura</string>
   <!-- The error message shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[<ul> <li>A página que você está tentando ver não pode ser exibida porque a autenticidade dos dados recebidos não pôde ser comprovada.</li> <li>Entre em contato com os responsáveis pelo site para informar este problema.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[<ul>\n<li>A página que você está tentando ver não pode ser exibida porque a autenticidade dos dados recebidos não pôde ser comprovada.</li>\n<li>Entre em contato com os responsáveis pelo site para informar este problema.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website sends has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_title">Falha na conexão segura</string>
   <!-- The error message shown when a website sends has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[<ul> <li>Pode ser um problema com a configuração do servidor, ou alguém tentando se passar por ele.</li> <li>Caso já tenha conseguido se conectar com este servidor antes, talvez o erro seja temporário e você pode tentar novamente mais tarde.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[<ul>\n<li>Pode ser um problema com a configuração do servidor, ou alguém tentando se passar por ele.</li>\n<li>Caso já tenha conseguido se conectar com este servidor antes, talvez o erro seja temporário e você pode tentar novamente mais tarde.</li>\n</ul>]]></string>
   <!-- The text shown inside the advanced button used to expand the advanced options. It's only shown when a website has an invalid SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_advanced">Avançado…</string>
   <!-- The advanced certificate information shown when a website sends has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Alguém pode estar tentando se passar pelo site e você não deve continuar.</label> <br><br> <label>Os sites comprovam a própria identidade por meio de certificados. O %1$s não confia em <b>%2$s</b> porque o emissor do certificado é desconhecido, o certificado é autoassinado, ou o servidor não está enviando os certificados intermediários corretos.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Alguém pode estar tentando se passar pelo site e você não deve continuar.</label> <br><br>\n<label>Os sites comprovam a própria identidade por meio de certificados. O %1$s não confia em <b>%2$s</b> porque o emissor do certificado é desconhecido, o certificado é autoassinado, ou o servidor não está enviando os certificados intermediários corretos.</label>]]></string>
   <!-- The text shown inside the advanced options button used to go back. It's only shown if the user has expanded the advanced options. -->
   <string name="mozac_browser_errorpages_security_bad_cert_back">Voltar (recomendado)</string>
   <!-- The text shown inside the advanced options button used to bypass the invalid SSL certificate. It's only shown if the user has expanded the advanced options. -->
@@ -25,7 +32,7 @@
   <!-- The document title and heading of the error page shown when a website uses HSTS. -->
   <string name="mozac_browser_errorpages_security_bad_hsts_cert_title">Este site requer uma conexão segura.</string>
   <!-- The error message shown when a website uses HSTS. -->
-  <string name="mozac_browser_errorpages_security_bad_hsts_cert_message"><![CDATA[<ul> <li>A página que você está tentando ver não pode ser exibida porque este site requer uma conexão segura.</li> <li>O problema provavelmente está no site e não há nada que você possa fazer para resolver.</li> <li>Você pode notificar o administrador do site sobre o problema.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_hsts_cert_message"><![CDATA[<ul>\n<li>A página que você está tentando ver não pode ser exibida porque este site requer uma conexão segura.</li>\n<li>O problema provavelmente está no site e não há nada que você possa fazer para resolver.</li>\n<li>Você pode notificar o administrador do site sobre o problema.</li>\n</ul>]]></string>
   <!-- The text shown inside the advanced button used to expand the advanced options. It's only shown when a website uses HSTS. -->
   <string name="mozac_browser_errorpages_security_bad_hsts_cert_advanced">Avançado…</string>
   <!-- The advanced certificate information shown when a website uses HSTS. The %1$s will be replaced by the website URL and %2$s will be replaced by the app name. It's only shown when a website uses HSTS. -->
@@ -35,15 +42,15 @@
   <!-- The document title and heading of the error page shown when the user's network connection is interrupted while connecting to a website. -->
   <string name="mozac_browser_errorpages_net_interrupt_title">A conexão foi interrompida</string>
   <!-- The error message shown when the user's network connection is interrupted while connecting to a website. -->
-  <string name="mozac_browser_errorpages_net_interrupt_message"><![CDATA[<p>O navegador se conectou com sucesso, mas a conexão foi interrompida durante a transferência de informações. Tente novamente.</p> <ul> <li>O site pode estar temporariamente indisponível ou ocupado demais. Tente novamente daqui a pouco.</li> <li>Se não estiver conseguindo carregar nenhuma página, verifique a conexão de dados móveis ou WiFi do seu dispositivo.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_net_interrupt_message"><![CDATA[<p>O navegador se conectou com sucesso, mas a conexão foi interrompida durante a transferência de informações. Tente novamente.</p>\n<ul>\n<li>O site pode estar temporariamente indisponível ou ocupado demais. Tente novamente daqui a pouco.</li>\n<li>Se não estiver conseguindo carregar nenhuma página, verifique a conexão de dados móveis ou WiFi do seu dispositivo.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website takes too long to load. -->
   <string name="mozac_browser_errorpages_net_timeout_title">Atingiu o limite de tempo da conexão</string>
   <!-- The error message shown when a website took long to load. -->
-  <string name="mozac_browser_errorpages_net_timeout_message"><![CDATA[<p>O site solicitado não respondeu a um pedido de conexão e o navegador deixou de aguardar uma resposta.</p> <ul> <li>Será que o servidor está sobrecarregado ou temporariamente indisponível? Tente novamente mais tarde.</li> <li>Não consegue navegar em outros sites? Verifique a conexão de rede do dispositivo.</li> <li>Seu dispositivo ou a rede são protegidos por um firewall ou proxy? Configurações incorretas podem interferir na navegação.</li> <li>O problema persiste? Peça ajuda ao administrador de rede ou ao suporte do provedor de internet.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_net_timeout_message"><![CDATA[<p>O site solicitado não respondeu a um pedido de conexão e o navegador deixou de aguardar uma resposta.</p>\n<ul>\n<li>Será que o servidor está sobrecarregado ou temporariamente indisponível? Tente novamente mais tarde.</li>\n<li>Não consegue navegar em outros sites? Verifique a conexão de rede do dispositivo.</li>\n<li>Seu dispositivo ou a rede são protegidos por um firewall ou proxy? Configurações incorretas podem interferir na navegação.</li>\n<li>O problema persiste? Peça ajuda ao administrador de rede ou ao suporte do provedor de internet.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website could not be reached. -->
   <string name="mozac_browser_errorpages_connection_failure_title">Não foi possível conectar</string>
   <!-- The error message shown when a website could not be reached. -->
-  <string name="mozac_browser_errorpages_connection_failure_message"><![CDATA[<ul> <li>O site pode estar temporariamente indisponível ou ocupado demais. Tente novamente daqui a pouco.</li> <li>Se não estiver conseguindo carregar nenhuma página, verifique a conexão de dados móveis ou WiFi do seu dispositivo.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_connection_failure_message"><![CDATA[<ul>\n<li>O site pode estar temporariamente indisponível ou ocupado demais. Tente novamente daqui a pouco.</li>\n<li>Se não estiver conseguindo carregar nenhuma página, verifique a conexão de dados móveis ou WiFi do seu dispositivo.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website responds in an unexpected way and the browser cannot continue. -->
   <string name="mozac_browser_errorpages_unknown_socket_type_title">Resposta não esperada do servidor</string>
   <!-- The error message shown when a website responds in an unexpected way and the browser cannot continue. -->
@@ -51,37 +58,37 @@
   <!-- The document title and heading of the error page shown when the browser gets stuck in an infinite loop when loading a website. -->
   <string name="mozac_browser_errorpages_redirect_loop_title">A página não está redirecionando corretamente</string>
   <!-- The error message shown when the browser gets stuck in an infinite loop when loading a website. -->
-  <string name="mozac_browser_errorpages_redirect_loop_message"><![CDATA[<p>O navegador deixou de tentar obter o item solicitado. O site está redirecionando o pedido de uma forma que nunca será concluído.</p> <ul> <li>Você desativou ou bloqueou cookies exigidos por este site?</li> <li>Se aceitar cookies do site não resolver, é provavelmente um problema de configuração do servidor, não no seu dispositivo.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_redirect_loop_message"><![CDATA[<p>O navegador deixou de tentar obter o item solicitado. O site está redirecionando o pedido de uma forma que nunca será concluído.</p>\n<ul>\n<li>Você desativou ou bloqueou cookies exigidos por este site?</li>\n<li>Se aceitar cookies do site não resolver, é provavelmente um problema de configuração do servidor, não no seu dispositivo.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website cannot be loaded because the browser is in offline mode. -->
   <string name="mozac_browser_errorpages_offline_title">Modo offline</string>
   <!-- The error message shown when a website cannot be loaded because the browser is in offline mode. -->
-  <string name="mozac_browser_errorpages_offline_message"><![CDATA[<p>O navegador está operando em modo offline e não consegue se conectar com o item solicitado.</p> <ul> <li>O dispositivo está conectado a uma rede ativa?</li> <li>Pressione “Tentar novamente” para sair do modo offline e recarregar a página.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_offline_message"><![CDATA[<p>O navegador está operando em modo offline e não consegue se conectar com o item solicitado.</p>\n<ul>\n<li>O dispositivo está conectado a uma rede ativa?</li>\n<li>Pressione “Tentar novamente” para sair do modo offline e recarregar a página.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when the browser prevents loading a website on a restricted port. -->
-  <string name="mozac_browser_errorpages_port_blocked_title">Porta restringida por motivos de segurança</string>
+  <string name="mozac_browser_errorpages_port_blocked_title">Porta com restrição por motivos de segurança</string>
   <!-- The error message shown when the browser prevents loading a website on a restricted port. -->
   <string name="mozac_browser_errorpages_port_blocked_message"><![CDATA[<p>O endereço solicitado especifica uma porta (por exemplo, <q>mozilla.org:80</q> para a porta 80 em mozilla.org) normalmente usada para propósitos <em>diferentes</em> da navegação na web. O navegador cancelou a solicitação para sua proteção e segurança.</p>]]></string>
   <!-- The document title and heading of the error page shown when the Internet connection is disrupted while loading a website. -->
   <string name="mozac_browser_errorpages_net_reset_title">A conexão foi reiniciada</string>
   <!-- The error message shown when the Internet connection is disrupted while loading a website. -->
-  <string name="mozac_browser_errorpages_net_reset_message"><![CDATA[<p>O link de rede foi interrompido ao negociar uma conexão. Tente novamente.</p> <ul> <li>O site pode estar temporariamente indisponível ou ocupado demais. Tente novamente daqui a pouco.</li> <li>Se não estiver conseguindo carregar nenhuma página, verifique a conexão de dados móveis ou WiFi do seu dispositivo.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_net_reset_message"><![CDATA[<p>O link de rede foi interrompido ao negociar uma conexão. Tente novamente.</p>\n<ul>\n<li>O site pode estar temporariamente indisponível ou ocupado demais. Tente novamente daqui a pouco.</li>\n<li>Se não estiver conseguindo carregar nenhuma página, verifique a conexão de dados móveis ou WiFi do seu dispositivo.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when the browser refuses to load a type of file that is considered unsafe. -->
   <string name="mozac_browser_errorpages_unsafe_content_type_title">Tipo de arquivo não seguro</string>
   <!-- The error message shown when the browser refuses to load a type of file that is considered unsafe. -->
-  <string name="mozac_browser_errorpages_unsafe_content_type_message"><![CDATA[<ul> <li>Entre em contato com os responsáveis pelo site para informar o problema.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_unsafe_content_type_message"><![CDATA[<ul>\n<li>Entre em contato com os responsáveis pelo site para informar o problema.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a file cannot be loaded because of a detected data corruption. -->
   <string name="mozac_browser_errorpages_corrupted_content_title">Erro de conteúdo corrompido</string>
   <!-- The error message shown when shown when a file cannot be loaded because of a detected data corruption. -->
-  <string name="mozac_browser_errorpages_corrupted_content_message"><![CDATA[<p>A página que você está tentando ver não pode ser exibida porque foi detectado um erro na transmissão de dados.</p> <ul> <li>Entre em contato com os responsáveis pelo site para informar o problema.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_corrupted_content_message"><![CDATA[<p>A página que você está tentando ver não pode ser exibida porque foi detectado um erro na transmissão de dados.</p>\n<ul>\n<li>Entre em contato com os responsáveis pelo site para informar o problema.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_content_crashed_title">Conteúdo travado</string>
-  <string name="mozac_browser_errorpages_content_crashed_message"><![CDATA[<p>A página que você está tentando ver não pode ser exibida porque foi detectado um erro na transmissão de dados.</p> <ul> <li>Entre em contato com os responsáveis pelo site para informar o problema.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_content_crashed_message"><![CDATA[<p>A página que você está tentando ver não pode ser exibida porque foi detectado um erro na transmissão de dados.</p>\n<ul>\n<li>Entre em contato com os responsáveis pelo site para informar o problema.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_invalid_content_encoding_title">Erro na codificação do conteúdo</string>
-  <string name="mozac_browser_errorpages_invalid_content_encoding_message"><![CDATA[<p>A página que você está tentando ver não pode ser exibida porque ela usa uma forma de compressão inválida ou não suportada.</p> <ul> <li>Entre em contato com os responsáveis pelo site para informar o problema.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_invalid_content_encoding_message"><![CDATA[<p>A página que você está tentando ver não pode ser exibida porque ela usa uma forma de compressão inválida ou não suportada.</p>\n<ul>\n<li>Entre em contato com os responsáveis pelo site para informar o problema.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_unknown_host_title">Endereço não encontrado</string>
   <!-- In the example, the two URLs in markup do not need to be translated. -->
-  <string name="mozac_browser_errorpages_unknown_host_message"><![CDATA[<p>O navegador não conseguiu encontrar o servidor de hospedagem do endereço fornecido.</p> <ul> <li>Verifique se há erros de digitação no endereço, como <strong>ww</strong>.example.com em vez de <strong>www</strong>.example.com.</li> <li>Se não estiver conseguindo carregar nenhuma página, verifique a conexão de dados móveis ou WiFi do seu dispositivo.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_unknown_host_message"><![CDATA[<p>O navegador não conseguiu encontrar o servidor de hospedagem do endereço fornecido.</p>\n<ul>\n<li>Verifique se há erros de digitação no endereço, como <strong>ww</strong>.example.com em vez de <strong>www</strong>.example.com.</li>\n<li>Se não estiver conseguindo carregar nenhuma página, verifique a conexão de dados móveis ou WiFi do seu dispositivo.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_no_internet_title_2">Parece que há um problema na sua conexão com a internet</string>
   <!-- The main body text of this error page. It will be shown beneath the title -->
@@ -96,22 +103,22 @@
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_malformed_uri_title_alternative">O endereço não é válido</string>
   <!-- This string contains markup. The URL should not be localized. -->
-  <string name="mozac_browser_errorpages_malformed_uri_message_alternative"><![CDATA[<ul> <li>Endereços web geralmente são escritos como <strong>http://www.example.com/</strong></li> <li>Verifique se está usando barras comuns (ou seja, <strong>/</strong>).</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_malformed_uri_message_alternative"><![CDATA[<ul>\n<li>Endereços web geralmente são escritos como <strong>http://www.example.com/</strong></li>\n<li>Verifique se está usando barras comuns (ou seja, <strong>/</strong>).</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_unknown_protocol_title">Protocolo desconhecido</string>
-  <string name="mozac_browser_errorpages_unknown_protocol_message"><![CDATA[<p>O endereço especifica um protocolo (por exemplo, <q>wxyz://</q>) que o navegador não reconhece, assim ele não consegue se conectar corretamente com o site.</p> <ul> <li>Você está tentando acessar conteúdo multimídia ou outro serviço que não seja de texto? Verifique se o site exige requisitos adicionais.</li> <li>Alguns protocolos podem necessitar de softwares ou plugins de terceiros para que o navegador possa reconhecer.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_unknown_protocol_message"><![CDATA[<p>O endereço especifica um protocolo (por exemplo, <q>wxyz://</q>) que o navegador não reconhece, assim ele não consegue se conectar corretamente com o site.</p>\n<ul>\n<li>Você está tentando acessar conteúdo multimídia ou outro serviço que não seja de texto? Verifique se o site exige requisitos adicionais.</li>\n<li>Alguns protocolos podem necessitar de softwares ou plugins de terceiros para que o navegador possa reconhecer.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_file_not_found_title">Arquivo não encontrado</string>
-  <string name="mozac_browser_errorpages_file_not_found_message"><![CDATA[<ul> <li>O item pode ter sido renomeado, removido ou realocado?</li> <li>Há algum erro de grafia, maiúsculas/minúsculas, ou outro erro tipográfico no endereço?</li> <li>Você tem suficiente permissão de acesso ao item solicitado?</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_file_not_found_message"><![CDATA[<ul>\n<li>O item pode ter sido renomeado, removido ou realocado?</li>\n<li>Há algum erro de grafia, maiúsculas/minúsculas, ou outro erro tipográfico no endereço?</li>\n<li>Você tem suficiente permissão de acesso ao item solicitado?</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_file_access_denied_title">O acesso ao arquivo foi negado</string>
-  <string name="mozac_browser_errorpages_file_access_denied_message"><![CDATA[<ul> <li>Ele pode ter sido removido, movido, ou as permissões do arquivo podem estar impedindo o acesso.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_file_access_denied_message"><![CDATA[<ul>\n<li>Ele pode ter sido removido, movido, ou as permissões do arquivo podem estar impedindo o acesso.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_proxy_connection_refused_title">Servidor proxy recusou a conexão</string>
-  <string name="mozac_browser_errorpages_proxy_connection_refused_message"><![CDATA[<p>O navegador está configurado para usar um servidor proxy, mas o proxy recusou uma conexão.</p> <ul> <li>A configuração de proxy do navegador está correta? Verifique a configuração e tente novamente.</li> <li>O serviço proxy permite conexões a partir desta rede?</li> <li>O problema persiste? Peça ajuda ao administrador de rede ou ao suporte do provedor de internet.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_proxy_connection_refused_message"><![CDATA[<p>O navegador está configurado para usar um servidor proxy, mas o proxy recusou uma conexão.</p>\n<ul>\n<li>A configuração de proxy do navegador está correta? Verifique a configuração e tente novamente.</li>\n<li>O serviço proxy permite conexões a partir desta rede?</li>\n<li>O problema persiste? Peça ajuda ao administrador de rede ou ao suporte do provedor de internet.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_unknown_proxy_host_title">Servidor proxy não encontrado</string>
-  <string name="mozac_browser_errorpages_unknown_proxy_host_message"><![CDATA[<p>O navegador está configurado para usar um servidor proxy, mas o proxy não foi encontrado.</p> <ul> <li>A configuração de proxy do navegador está correta? Verifique a configuração e tente novamente.</li> <li>O dispositivo está conectado a uma rede ativa?</li> <li>O problema persiste? Peça ajuda ao administrador de rede ou ao suporte do provedor de internet.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_unknown_proxy_host_message"><![CDATA[<p>O navegador está configurado para usar um servidor proxy, mas o proxy não foi encontrado.</p>\n<ul>\n<li>A configuração de proxy do navegador está correta? Verifique a configuração e tente novamente.</li>\n<li>O dispositivo está conectado a uma rede ativa?</li>\n<li>O problema persiste? Peça ajuda ao administrador de rede ou ao suporte do provedor de internet.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_safe_browsing_malware_uri_title">Problema de site com software malicioso</string>
   <!-- The %1$s will be replaced by the malicious website URL -->
@@ -128,6 +135,10 @@
   <string name="mozac_browser_errorpages_safe_phishing_uri_title">Problema de site enganoso</string>
   <!-- The %1$s will be replaced by the malicious website URL -->
   <string name="mozac_browser_errorpages_safe_phishing_uri_message"><![CDATA[<p>Esta página web em %1$s foi denunciada como um site enganoso e foi bloqueada com base nas suas preferências de segurança.</p>]]></string>
+  <!-- The document title and heading of an error page. -->
+  <string name="mozac_browser_errorpages_harmful_addon_uri_title">Site bloqueado para sua segurança</string>
+  <!-- The %1$s will be replaced by the malicious website URL -->
+  <string name="mozac_browser_errorpages_harmful_addon_uri_message"><![CDATA[<p>Esta página web em %1$s foi bloqueada porque uma das suas extensões tentou abri-la. Este site pode ser usado para roubar suas informações, como senhas ou números de cartões de crédito.</p>]]></string>
   <!-- The title of the error page for websites that do not support HTTPS when HTTPS-Only is turned on -->
   <string name="mozac_browser_errorpages_httpsonly_title">Site seguro não disponível</string>
   <!-- The text of the error page for websites that do not support HTTPS when HTTPS-Only is turned on. %1$s will be replaced with the URL of the website. -->

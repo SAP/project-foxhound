@@ -1,0 +1,71 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>LoginDoorhangerUsernameField Tests</title>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
+    <link
+      rel="stylesheet"
+      href="chrome://mochikit/content/tests/SimpleTest/test.css"
+    />
+    <script
+      type="module"
+      src="chrome://browser/content/passwordmgr/login-doorhanger-username-field.mjs"
+    ></script>
+    <script class="testbody" type="application/javascript">
+      function createElement() {
+        let el = document.createElement("login-doorhanger-username-field");
+        el.label = "Username";
+        document.body.append(el);
+        return el;
+      }
+
+      add_task(async function testShowDropmarker() {
+        let input = createElement();
+        await input.updateComplete;
+
+        ok(!input.showDropmarker, "Dropmarker is hidden by default.");
+        ok(input.dropmarkerEl.hidden, "Dropmarker element is hidden by default.");
+
+        input.showDropmarker = true;
+        await input.updateComplete;
+
+        ok(input.showDropmarker, "showDropmarker property is true.");
+        ok(!input.dropmarkerEl.hidden, "Dropmarker element is visible.");
+
+        input.showDropmarker = false;
+        await input.updateComplete;
+
+        ok(!input.showDropmarker, "Dropmarker can be hidden again.");
+        ok(input.dropmarkerEl.hidden, "Dropmarker element is hidden again.");
+        input.remove();
+      });
+
+      add_task(async function testDropmarkerClick() {
+        let input = createElement();
+        input.showDropmarker = true;
+        await input.updateComplete;
+
+        let dropmarkerClicked = false;
+        input.addEventListener(
+          "dropmarker-click",
+          () => (dropmarkerClicked = true)
+        );
+
+        synthesizeMouseAtCenter(input.dropmarkerEl, {});
+        ok(
+          dropmarkerClicked,
+          "Clicking the dropmarker dispatches a dropmarker-click event."
+        );
+        input.remove();
+      });
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+</html>

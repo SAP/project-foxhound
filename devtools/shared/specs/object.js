@@ -40,6 +40,10 @@ types.addDictType("object.prototype", {
   prototype: "object.descriptor",
 });
 
+types.addDictType("object.global", {
+  global: "object.descriptor",
+});
+
 types.addDictType("object.property", {
   descriptor: "nullable:object.descriptor",
 });
@@ -179,6 +183,10 @@ const objectSpec = generateActorSpec({
     proxySlots: {
       request: {},
       response: RetVal("object.proxySlots"),
+    },
+    global: {
+      request: {},
+      response: RetVal("object.global"),
     },
     customFormatterBody: {
       request: {},

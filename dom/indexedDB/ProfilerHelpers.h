@@ -1,18 +1,18 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_indexeddb_profilerhelpers_h__
-#define mozilla_dom_indexeddb_profilerhelpers_h__
+#ifndef mozilla_dom_indexeddb_profilerhelpers_h_
+#define mozilla_dom_indexeddb_profilerhelpers_h_
 
 // This file is not exported and is only meant to be included in IndexedDB
 // source files.
 
 #include "IndexedDatabaseManager.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/IDBCursorBinding.h"
+#include "mozilla/dom/indexedDB/PBackgroundIDBSharedTypes.h"
 #include "nsID.h"
 #include "nsString.h"
 
@@ -44,13 +44,20 @@ class MOZ_STACK_CLASS LoggingString final : public nsAutoCString {
   explicit LoggingString(IDBObjectStore* aObjectStore);
   explicit LoggingString(IDBIndex* aIndex);
   explicit LoggingString(IDBKeyRange* aKeyRange);
+  explicit LoggingString(const Maybe<indexedDB::SerializedKeyRange>& aKeyRange);
   explicit LoggingString(const Key& aKey);
   explicit LoggingString(const IDBCursorDirection aDirection);
   explicit LoggingString(const Optional<uint64_t>& aVersion);
+  explicit LoggingString(uint32_t aLimit);
   explicit LoggingString(const Optional<uint32_t>& aLimit);
 
   LoggingString(IDBObjectStore* aObjectStore, const Key& aKey);
   LoggingString(Event* aEvent, const char16_t* aDefault);
+
+ private:
+  void AssignUndefined();
+  void AssignKeyRange(bool aIsOnly, const Key& aLower, const Key& aUpper,
+                      bool aLowerOpen, bool aUpperOpen);
 };
 
 // Both the aDetailedFmt and the aConciseFmt need to match the variable argument
@@ -142,4 +149,4 @@ void MOZ_FORMAT_PRINTF(1, 3) MOZ_FORMAT_PRINTF(2, 3)
                            _conciseFmt, IDB_LOG_ID_STRING(),          \
                            _transactionSerialNumber, ##__VA_ARGS__)
 
-#endif  // mozilla_dom_indexeddb_profilerhelpers_h__
+#endif  // mozilla_dom_indexeddb_profilerhelpers_h_

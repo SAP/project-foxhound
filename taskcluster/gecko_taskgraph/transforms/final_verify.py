@@ -5,8 +5,8 @@
 Transform the beetmover task into an actual task description.
 """
 
-
 from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.treeherder import inherit_treeherder_from_dep
 
 transforms = TransformSequence()
 
@@ -16,6 +16,13 @@ def add_command(config, tasks):
     for task in tasks:
         if not task["worker"].get("env"):
             task["worker"]["env"] = {}
+
+        upstream_task_label = task["dependencies"]["release-update-verify-config"]
+        dep_task = config.kind_dependencies_tasks[upstream_task_label]
+        task["treeherder"] = inherit_treeherder_from_dep(task, dep_task)
+
+        product = task["attributes"]["shipping_product"]
+        task["dependencies"]["bouncer-check"] = f"release-bouncer-check-{product}"
 
         final_verify_configs = []
         for upstream in sorted(task.get("dependencies", {}).keys()):

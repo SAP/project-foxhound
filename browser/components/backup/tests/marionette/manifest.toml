@@ -1,6 +1,48 @@
 [DEFAULT]
-run-if = ["buildapp == 'browser'"]
-prefs = ["browser.backup.enabled=true", "browser.backup.log=true"]
+subsuite = "integration"
+tags = "os_integration"
+run-if = [
+  "buildapp == 'browser'",
+]
+# test_compatibility.py restores pre-existing unencrypted backup fixture
+# archives; enabling SQLite-level obfsvfs encryption on the restoring
+# profile would make the compatibility assertions meaningless. The
+# marionette manifest schema requires manifest-wide prefs, so we apply it
+# to every test here -- harmless since the production default is already
+# false.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_backup.py"]
 support-files = ["http2-ca.pem"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # 1924781: Gnome keyring not unlocked
+]
+
+["test_backup_legacy_to_selectable.py"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # 1924781: Gnome keyring not unlocked
+]
+
+["test_backup_replace_current_profile.py"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # 1924781: Gnome keyring not unlocked
+]
+
+["test_backup_selectable_to_legacy.py"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # 1924781: Gnome keyring not unlocked
+]
+
+["test_backup_selectable_to_selectable.py"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # 1924781: Gnome keyring not unlocked
+]
+
+["test_compatibility.py"]
+support-files = [
+  "compat-files/backups/v1_backup.html",
+  "compat-files/backups/v2_legacy_backup.html",
+  "compat-files/backups/v2_selectable_backup.html"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # 1924781: Gnome keyring not unlocked
+]

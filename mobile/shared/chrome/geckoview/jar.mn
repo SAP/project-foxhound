@@ -9,6 +9,5 @@ geckoview.jar:
   content/config.js
   content/geckoview.xhtml
   content/geckoview.js
-  content/SessionStateAggregator.js
 
 % content branding %content/branding/

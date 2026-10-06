@@ -1,0 +1,15 @@
+{
+  "label": "rakuten.co.jp",
+  "bugs": {
+    "1385206": {
+      "issue": "desktop-layout-not-mobile",
+      "matches": ["*://*.rakuten.co.jp/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["change_Firefox_to_FireFox"]
+    }
+  ]
+}

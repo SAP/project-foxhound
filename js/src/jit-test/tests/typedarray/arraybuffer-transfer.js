@@ -1,9 +1,13 @@
+// |jit-test| skip-variant-if: --ion-eager, getBuildConfiguration("simulator")
+
+// Slow in simulators with --ion-eager.
+
 const byteLengths = [
   // Byte lengths applicable for inline storage
   0, 1, 4, 16, 32, 64, 96,
 
   // Too large for inline storage
-  128, 1024, 4096, 65536,
+  128, 1024,
 ];
 
 // Most values in |byteLengths| are powers-of-two. Add +1/-1 to test for

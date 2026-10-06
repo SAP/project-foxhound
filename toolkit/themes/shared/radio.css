@@ -19,7 +19,7 @@ radio {
     padding-inline: 4px 2px;
   }
 
-  &[disabled="true"] {
+  &[disabled] {
     color: GrayText;
   }
 }

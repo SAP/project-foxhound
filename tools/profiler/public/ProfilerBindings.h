@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,7 @@
 #define ProfilerBindings_h
 
 #include "mozilla/BaseProfilerMarkersPrerequisites.h"
+#include "mozilla/ProfilerThreadRegistrationData.h"
 
 #include <cstddef>
 #include <stdint.h>
@@ -32,12 +31,13 @@ namespace JS {
 enum class ProfilingCategoryPair : uint32_t;
 }  // namespace JS
 
-// Everything in here is safe to include unconditionally, implementations must
-// take !MOZ_GECKO_PROFILER into account.
 extern "C" {
 
 void gecko_profiler_register_thread(const char* aName);
 void gecko_profiler_unregister_thread();
+
+bool gecko_profiler_current_thread_is_registered(
+    ThreadProfilingFeatures aThreadProfilingFeatures);
 
 void gecko_profiler_construct_label(mozilla::AutoProfilerLabel* aAutoLabel,
                                     JS::ProfilingCategoryPair aCategoryPair);
@@ -92,6 +92,8 @@ void gecko_profiler_marker_schema_set_table_label(
 void gecko_profiler_marker_schema_set_all_labels(mozilla::MarkerSchema* aSchema,
                                                  const char* aLabel,
                                                  size_t aLabelLength);
+void gecko_profiler_marker_schema_set_stack_based(
+    mozilla::MarkerSchema* aSchema);
 
 // MarkerSchema methods for adding key/key-label values.
 void gecko_profiler_marker_schema_add_key_format(
@@ -101,15 +103,15 @@ void gecko_profiler_marker_schema_add_key_label_format(
     mozilla::MarkerSchema* aSchema, const char* aKey, size_t aKeyLength,
     const char* aLabel, size_t aLabelLength,
     mozilla::MarkerSchema::Format aFormat);
-void gecko_profiler_marker_schema_add_key_format_searchable(
+void gecko_profiler_marker_schema_add_key_format_with_flags(
     mozilla::MarkerSchema* aSchema, const char* aKey, size_t aKeyLength,
     mozilla::MarkerSchema::Format aFormat,
-    mozilla::MarkerSchema::Searchable aSearchable);
-void gecko_profiler_marker_schema_add_key_label_format_searchable(
+    mozilla::MarkerSchema::PayloadFlags aPayloadFlags);
+void gecko_profiler_marker_schema_add_key_label_format_with_flags(
     mozilla::MarkerSchema* aSchema, const char* aKey, size_t aKeyLength,
     const char* aLabel, size_t aLabelLength,
     mozilla::MarkerSchema::Format aFormat,
-    mozilla::MarkerSchema::Searchable aSearchable);
+    mozilla::MarkerSchema::PayloadFlags aPayloadFlags);
 void gecko_profiler_marker_schema_add_static_label_value(
     mozilla::MarkerSchema* aSchema, const char* aLabel, size_t aLabelLength,
     const char* aValue, size_t aValueLength);

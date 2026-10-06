@@ -9,13 +9,13 @@ Bug 1716024 p1: Add MITIGATION_CET_COMPAT_MODE to chromium sandbox code. r=handy
 diff --git a/sandbox/win/src/process_mitigations.cc b/sandbox/win/src/process_mitigations.cc
 --- a/sandbox/win/src/process_mitigations.cc
 +++ b/sandbox/win/src/process_mitigations.cc
-@@ -80,16 +80,37 @@ bool IsRunning32bitEmulatedOnArm64() {
-   if (!retval)
-     return false;
-   if (native_machine == IMAGE_FILE_MACHINE_ARM64)
-     return true;
- #endif  // defined(ARCH_CPU_X86)
+@@ -81,16 +81,37 @@ bool IsRunning32bitEmulatedOnArm64() {
+ bool IsRunning32bitEmulatedOnArm64() {
+ #if defined(ARCH_CPU_X86)
+   return base::win::OSInfo::IsRunningEmulatedOnArm64();
+ #else
    return false;
+ #endif  // defined(ARCH_CPU_X86)
  }
  
 +// Returns true if user-mode Hardware-enforced Stack Protection is available for
@@ -39,40 +39,36 @@ diff --git a/sandbox/win/src/process_mitigations.cc b/sandbox/win/src/process_mi
 +  return cetAvailable;
 +}
 +
- }  // namespace
+ bool SetProcessMitigationPolicyInternal(PROCESS_MITIGATION_POLICY policy,
+                                         PVOID lpBuffer,
+                                         SIZE_T dwLength) {
+   PCHECK(::SetProcessMitigationPolicy(policy, lpBuffer, dwLength))
+       << "SetProcessMitigationPolicy failed with Policy: " << policy;
  
- namespace sandbox {
- 
- bool ApplyProcessMitigationsToCurrentProcess(MitigationFlags flags) {
-   if (!CanSetProcessMitigationsPostStartup(flags))
-     return false;
- 
-@@ -487,16 +508,25 @@ void ConvertProcessMitigationsToPolicy(M
-     //       the underlying hardware does not support the implementation.
-     //       Windows just does its best under the hood for the given hardware.
-     if (flags & MITIGATION_RESTRICT_INDIRECT_BRANCH_PREDICTION) {
-       *policy_value_2 |=
-           PROCESS_CREATION_MITIGATION_POLICY2_RESTRICT_INDIRECT_BRANCH_PREDICTION_ALWAYS_ON;
+   return true;
+ }
+@@ -506,16 +527,21 @@ void ConvertProcessMitigationsToPolicy(M
      }
-   }
  
-+  // Mitigations >= Win10 20H1
-+  //----------------------------------------------------------------------------
-+  if (version >= base::win::Version::WIN10_20H1) {
+     if (flags & MITIGATION_CET_STRICT_MODE) {
+       DCHECK(!(flags & MITIGATION_CET_DISABLED))
+           << "Cannot enable CET strict mode if CET is disabled.";
+       *policy_value_2 |=
+           PROCESS_CREATION_MITIGATION_POLICY2_CET_USER_SHADOW_STACKS_STRICT_MODE;
+     }
++
 +    if (flags & MITIGATION_CET_COMPAT_MODE && IsUserCetWin32Available()) {
 +      *policy_value_2 |=
 +          PROCESS_CREATION_MITIGATION_POLICY2_CET_USER_SHADOW_STACKS_ALWAYS_ON;
 +    }
-+  }
-+
-   // When done setting policy flags, sanity check supported policies on this
-   // machine, and then update |size|.
  
-   const ULONG64* supported = GetSupportedMitigations();
- 
-   *policy_value_1 = *policy_value_1 & supported[0];
-   *policy_value_2 = *policy_value_2 & supported[1];
- 
+     if (flags & MITIGATION_CET_ALLOW_DYNAMIC_APIS) {
+       DCHECK(!(flags & MITIGATION_CET_DISABLED))
+           << "Cannot enable in-process CET apis if CET is disabled.";
+       DCHECK(!(flags & MITIGATION_DYNAMIC_CODE_DISABLE))
+           << "Cannot enable in-process CET apis if dynamic code is disabled.";
+       *policy_value_2 |=
+           PROCESS_CREATION_MITIGATION_POLICY2_CET_DYNAMIC_APIS_OUT_OF_PROC_ONLY_ALWAYS_OFF;
 diff --git a/sandbox/win/src/security_level.h b/sandbox/win/src/security_level.h
 --- a/sandbox/win/src/security_level.h
 +++ b/sandbox/win/src/security_level.h
@@ -91,4 +87,4 @@ diff --git a/sandbox/win/src/security_level.h b/sandbox/win/src/security_level.h
 +
  }  // namespace sandbox
  
- #endif  // SANDBOX_SRC_SECURITY_LEVEL_H_
+ #endif  // SANDBOX_WIN_SRC_SECURITY_LEVEL_H_

@@ -29,6 +29,8 @@
 
 #include <ffi.h>
 #include <ffi_common.h>
+#include "internal.h"
+#include <tramp.h>
 
 #include <stdlib.h>
 #include <stdint.h>
@@ -61,6 +63,7 @@ typedef struct call_builder
     int used_integer;
     int used_float;
     size_t *used_stack;
+    void *struct_stack;
 } call_builder;
 
 /* integer (not pointer) less than ABI XLEN */
@@ -227,7 +230,9 @@ static void marshal(call_builder *cb, ffi_type *type, int var, void *data) {
 #endif
 
     if (type->size > 2 * __SIZEOF_POINTER__) {
-        /* pass by reference */
+        /* copy to stack and pass by reference */
+        data = memcpy (cb->struct_stack, data, type->size);
+        cb->struct_stack = (size_t *) FFI_ALIGN ((char *) cb->struct_stack + type->size, __SIZEOF_POINTER__);
         marshal_atom(cb, FFI_TYPE_POINTER, &data);
     } else if (IS_INT(type->type) || type->type == FFI_TYPE_POINTER) {
         marshal_atom(cb, type->type, data);
@@ -335,10 +340,12 @@ ffi_call_int (ffi_cif *cif, void (*fn) (void), void *rvalue, void **avalue,
        that all remaining arguments are long long / __int128 */
     size_t arg_bytes = cif->nargs <= 3 ? 0 :
         FFI_ALIGN(2 * sizeof(size_t) * (cif->nargs - 3), STKALIGN);
+    /* Allocate space for copies of big structures.  */
+    size_t struct_bytes = FFI_ALIGN (cif->bytes, STKALIGN);
     size_t rval_bytes = 0;
     if (rvalue == NULL && cif->rtype->size > 2*__SIZEOF_POINTER__)
         rval_bytes = FFI_ALIGN(cif->rtype->size, STKALIGN);
-    size_t alloc_size = arg_bytes + rval_bytes + sizeof(call_context);
+    size_t alloc_size = arg_bytes + rval_bytes + struct_bytes + sizeof(call_context);
 
     /* the assembly code will deallocate all stack data at lower addresses
        than the argument region, so we need to allocate the frame and the
@@ -358,8 +365,9 @@ ffi_call_int (ffi_cif *cif, void (*fn) (void), void *rvalue, void **avalue,
 
     call_builder cb;
     cb.used_float = cb.used_integer = 0;
-    cb.aregs = (call_context*)(alloc_base + arg_bytes + rval_bytes);
+    cb.aregs = (call_context*)(alloc_base + arg_bytes + rval_bytes + struct_bytes);
     cb.used_stack = (void*)alloc_base;
+    cb.struct_stack = (void *) (alloc_base + arg_bytes + rval_bytes);
 
     int return_by_ref = passed_by_ref(&cb, cif->rtype, 0);
     if (return_by_ref)
@@ -373,7 +381,32 @@ ffi_call_int (ffi_cif *cif, void (*fn) (void), void *rvalue, void **avalue,
 
     cb.used_float = cb.used_integer = 0;
     if (!return_by_ref && rvalue)
-        unmarshal(&cb, cif->rtype, 0, rvalue);
+      {
+	if (IS_INT(cif->rtype->type)
+	    && cif->rtype->size < sizeof (ffi_arg))
+	  {
+	    /* Integer types smaller than ffi_arg need to be extended.  */
+	    switch (cif->rtype->type)
+	      {
+	      case FFI_TYPE_SINT8:
+	      case FFI_TYPE_SINT16:
+	      case FFI_TYPE_SINT32:
+		unmarshal_atom (&cb, (sizeof (ffi_arg) > 4
+				      ? FFI_TYPE_SINT64 : FFI_TYPE_SINT32),
+				rvalue);
+		break;
+	      case FFI_TYPE_UINT8:
+	      case FFI_TYPE_UINT16:
+	      case FFI_TYPE_UINT32:
+		unmarshal_atom (&cb, (sizeof (ffi_arg) > 4
+				      ? FFI_TYPE_UINT64 : FFI_TYPE_UINT32),
+				rvalue);
+		break;
+	      }
+	  }
+	else
+	  unmarshal(&cb, cif->rtype, 0, rvalue);
+      }
 }
 
 void
@@ -393,31 +426,43 @@ extern void ffi_closure_asm(void) FFI_HIDDEN;
 
 ffi_status ffi_prep_closure_loc(ffi_closure *closure, ffi_cif *cif, void (*fun)(ffi_cif*,void*,void**,void*), void *user_data, void *codeloc)
 {
-    uint32_t *tramp = (uint32_t *) &closure->tramp[0];
-    uint64_t fn = (uint64_t) (uintptr_t) ffi_closure_asm;
-
     if (cif->abi <= FFI_FIRST_ABI || cif->abi >= FFI_LAST_ABI)
         return FFI_BAD_ABI;
 
-    /* we will call ffi_closure_inner with codeloc, not closure, but as long
-       as the memory is readable it should work */
-
-    tramp[0] = 0x00000317; /* auipc t1, 0 (i.e. t0 <- codeloc) */
-#if __SIZEOF_POINTER__ == 8
-    tramp[1] = 0x01033383; /* ld t2, 16(t1) */
-#else
-    tramp[1] = 0x01032383; /* lw t2, 16(t1) */
+#ifdef FFI_EXEC_STATIC_TRAMP
+  if (ffi_tramp_is_present (closure))
+    {
+      /* Initialize the static trampoline's parameters. */
+      void (*dest)(void) = ffi_closure_asm;
+      ffi_tramp_set_parms (closure->ftramp, dest, closure);
+    }
+  else
 #endif
-    tramp[2] = 0x00038067; /* jr t2 */
-    tramp[3] = 0x00000013; /* nop */
-    tramp[4] = fn;
-    tramp[5] = fn >> 32;
+    {
+      uint32_t *tramp = (uint32_t *) &closure->tramp[0];
+      uint64_t fn = (uint64_t) (uintptr_t) ffi_closure_asm;
+
+      /* we will call ffi_closure_inner with codeloc, not closure, but as long
+	 as the memory is readable it should work */
+
+      tramp[0] = 0x00000317; /* auipc t1, 0 (i.e. t0 <- codeloc) */
+#if __SIZEOF_POINTER__ == 8
+      tramp[1] = 0x01033383; /* ld t2, 16(t1) */
+#else
+      tramp[1] = 0x01032383; /* lw t2, 16(t1) */
+#endif
+      tramp[2] = 0x00038067; /* jr t2 */
+      tramp[3] = 0x00000013; /* nop */
+      tramp[4] = fn;
+      tramp[5] = fn >> 32;
+#if !defined(__FreeBSD__)
+    __builtin___clear_cache(codeloc, codeloc + FFI_TRAMPOLINE_SIZE);
+#endif
+    }
 
     closure->cif = cif;
     closure->fun = fun;
     closure->user_data = user_data;
-
-    __builtin___clear_cache(codeloc, codeloc + FFI_TRAMPOLINE_SIZE);
 
     return FFI_OK;
 }
@@ -479,3 +524,14 @@ ffi_closure_inner (ffi_cif *cif,
         marshal(&cb, cif->rtype, 0, rvalue);
     }
 }
+
+#ifdef FFI_EXEC_STATIC_TRAMP
+void *
+ffi_tramp_arch (size_t *tramp_size, size_t *map_size)
+{
+  extern void *trampoline_code_table;
+  *tramp_size = RISCV_TRAMP_SIZE;
+  *map_size = RISCV_TRAMP_MAP_SIZE;
+  return &trampoline_code_table;
+}
+#endif

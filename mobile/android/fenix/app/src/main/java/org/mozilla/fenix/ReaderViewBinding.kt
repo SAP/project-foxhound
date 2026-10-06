@@ -4,6 +4,8 @@
 
 package org.mozilla.fenix
 
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -21,14 +23,17 @@ import org.mozilla.fenix.components.appstate.readerview.ReaderViewState.ShowCont
  * A binding for observing [AppState.readerViewState] in the [AppStore] and toggling the
  * reader view feature and controls.
  *
- * @param appStore The [AppStore] used to observe [AppState.isReaderViewActive].
+ * @param appStore The [AppStore] used to observe [AppState.readerViewState].
  * @param readerMenuController The [ReaderModeController] that will used for toggling the reader
  * view feature and controls.
+ * @param mainDispatcher The [CoroutineDispatcher] on which the state observation and updates will occur.
+ *                       Defaults to [Dispatchers.Main].
  */
 class ReaderViewBinding(
     private val appStore: AppStore,
     private val readerMenuController: ReaderModeController,
-) : AbstractBinding<AppState>(appStore) {
+    mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+) : AbstractBinding<AppState>(appStore, mainDispatcher) {
 
     override suspend fun onState(flow: Flow<AppState>) {
         flow.map { state -> state.readerViewState }

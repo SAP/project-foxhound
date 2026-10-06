@@ -16,7 +16,8 @@
   }
 }
 
-.empty-css-variable {
+.empty-css-variable,
+.property-value.empty {
   color: var(--theme-text-color-alt);
   font-style: italic;
 }

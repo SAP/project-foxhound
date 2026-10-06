@@ -1,0 +1,20 @@
+{
+  "label": "www.korg.com",
+  "bugs": {
+    "1841730": {
+      "issue": "page-fails-to-load",
+      "matches": ["*://www.korg.com/*/support/download/product/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["windows"],
+      "pref_check": {
+        "timer.auto_increase_timer_resolution": false
+      },
+      "content_scripts": {
+        "js": ["disable_PACE_eventLag.js"]
+      }
+    }
+  ]
+}

@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -21,6 +19,7 @@ EXTRA_JS_MODULES.asrouter += [
     "modules/ASRouterNewTabHook.sys.mjs",
     "modules/ASRouterParentProcessMessageHandler.sys.mjs",
     "modules/ASRouterPreferences.sys.mjs",
+    "modules/ASRouterScreenUtils.sys.mjs",
     "modules/ASRouterStorage.sys.mjs",
     "modules/ASRouterTargeting.sys.mjs",
     "modules/ASRouterTelemetry.sys.mjs",
@@ -39,6 +38,7 @@ EXTRA_JS_MODULES.asrouter += [
     "modules/PageEventManager.sys.mjs",
     "modules/PanelTestProvider.sys.mjs",
     "modules/RemoteL10n.sys.mjs",
+    "modules/SmartWindowNewTabPromo.sys.mjs",
     "modules/Spotlight.sys.mjs",
     "modules/ToastNotification.sys.mjs",
     "modules/ToolbarBadgeHub.sys.mjs",
@@ -63,6 +63,7 @@ TESTING_JS_MODULES += [
     "content-src/templates/OnboardingMessage/BookmarksBarButton.schema.json",
     "content-src/templates/OnboardingMessage/MenuMessage.schema.json",
     "content-src/templates/OnboardingMessage/NewtabMessage.schema.json",
+    "content-src/templates/OnboardingMessage/SmartWindowNewtabPromo.schema.json",
     "content-src/templates/OnboardingMessage/Spotlight.schema.json",
     "content-src/templates/OnboardingMessage/ToolbarBadgeMessage.schema.json",
     "content-src/templates/OnboardingMessage/UpdateAction.schema.json",

@@ -52,7 +52,7 @@ export let FormAutofillPrompter = {
       newRecord = { ...oldRecord, ...newRecord };
     }
 
-    const prompt = new lazy.GeckoViewPrompter(browser.ownerGlobal);
+    const prompt = new lazy.GeckoViewPrompter(browser.documentGlobal);
     prompt.asyncShowPrompt(
       this._createMessage([lazy.CreditCard.fromGecko(newRecord)]),
       result => {

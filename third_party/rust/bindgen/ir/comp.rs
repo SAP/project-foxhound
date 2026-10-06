@@ -12,7 +12,7 @@ use super::template::TemplateParameters;
 use super::traversal::{EdgeKind, Trace, Tracer};
 use super::ty::RUST_DERIVE_IN_ARRAY_LIMIT;
 use crate::clang;
-use crate::codegen::struct_layout::{align_to, bytes_from_bits_pow2};
+use crate::codegen::struct_layout::align_to;
 use crate::ir::derive::CanDeriveCopy;
 use crate::parse::ParseError;
 use crate::HashMap;
@@ -56,16 +56,16 @@ pub(crate) enum MethodKind {
 
 impl MethodKind {
     /// Is this a destructor method?
-    pub(crate) fn is_destructor(&self) -> bool {
+    pub(crate) fn is_destructor(self) -> bool {
         matches!(
-            *self,
+            self,
             MethodKind::Destructor | MethodKind::VirtualDestructor { .. }
         )
     }
 
     /// Is this a pure virtual method?
-    pub(crate) fn is_pure_virtual(&self) -> bool {
-        match *self {
+    pub(crate) fn is_pure_virtual(self) -> bool {
+        match self {
             MethodKind::Virtual { pure_virtual } |
             MethodKind::VirtualDestructor { pure_virtual } => pure_virtual,
             _ => false,
@@ -147,7 +147,7 @@ pub(crate) trait FieldMethods {
     /// If this is a bitfield, how many bits does it need?
     fn bitfield_width(&self) -> Option<u32>;
 
-    /// Is this feild declared public?
+    /// Is this field declared public?
     fn is_public(&self) -> bool;
 
     /// Get the annotations for this field.
@@ -361,7 +361,7 @@ impl Bitfield {
             "`Bitfield::getter_name` called on anonymous field"
         );
         self.getter_name.as_ref().expect(
-            "`Bitfield::getter_name` should only be called after\
+            "`Bitfield::getter_name` should only be called after \
              assigning bitfield accessor names",
         )
     }
@@ -376,7 +376,7 @@ impl Bitfield {
             "`Bitfield::setter_name` called on anonymous field"
         );
         self.setter_name.as_ref().expect(
-            "`Bitfield::setter_name` should only be called\
+            "`Bitfield::setter_name` should only be called \
              after assigning bitfield accessor names",
         )
     }
@@ -560,18 +560,12 @@ where
         fields: &mut E,
         bitfield_unit_count: &mut usize,
         unit_size_in_bits: usize,
-        unit_align_in_bits: usize,
         bitfields: Vec<Bitfield>,
-        packed: bool,
     ) where
         E: Extend<Field>,
     {
         *bitfield_unit_count += 1;
-        let align = if packed {
-            1
-        } else {
-            bytes_from_bits_pow2(unit_align_in_bits)
-        };
+        let align = 1;
         let size = align_to(unit_size_in_bits, 8) / 8;
         let layout = Layout::new(size, align);
         fields.extend(Some(Field::Bitfields(BitfieldUnit {
@@ -581,70 +575,45 @@ where
         })));
     }
 
+    // The offset we're in inside the struct, if we know it (we might not know it in presence of
+    // templates).
+    let mut start_offset_in_struct = 0;
     let mut max_align = 0;
-    let mut unfilled_bits_in_unit = 0;
     let mut unit_size_in_bits = 0;
-    let mut unit_align = 0;
     let mut bitfields_in_unit = vec![];
 
-    // TODO(emilio): Determine this from attributes or pragma ms_struct
-    // directives. Also, perhaps we should check if the target is MSVC?
-    const is_ms_struct: bool = false;
-
+    // TODO(emilio): Deal with ms_struct bitfield layout for MSVC?
     for bitfield in raw_bitfields {
         let bitfield_width = bitfield.bitfield_width().unwrap() as usize;
         let bitfield_layout =
             ctx.resolve_type(bitfield.ty()).layout(ctx).ok_or(())?;
-        let bitfield_size = bitfield_layout.size;
         let bitfield_align = bitfield_layout.align;
+        let bitfield_size = bitfield_layout.size;
 
-        let mut offset = unit_size_in_bits;
-        if !packed {
-            if is_ms_struct {
-                if unit_size_in_bits != 0 &&
-                    (bitfield_width == 0 ||
-                        bitfield_width > unfilled_bits_in_unit)
-                {
-                    // We've reached the end of this allocation unit, so flush it
-                    // and its bitfields.
-                    unit_size_in_bits =
-                        align_to(unit_size_in_bits, unit_align * 8);
-                    flush_allocation_unit(
-                        fields,
-                        bitfield_unit_count,
-                        unit_size_in_bits,
-                        unit_align,
-                        mem::take(&mut bitfields_in_unit),
-                        packed,
-                    );
-
-                    // Now we're working on a fresh bitfield allocation unit, so reset
-                    // the current unit size and alignment.
-                    offset = 0;
-                    unit_align = 0;
-                }
-            } else if offset != 0 &&
-                (bitfield_width == 0 ||
-                    (offset & (bitfield_align * 8 - 1)) + bitfield_width >
-                        bitfield_size * 8)
-            {
-                offset = align_to(offset, bitfield_align * 8);
-            }
+        if unit_size_in_bits == 0 {
+            start_offset_in_struct = bitfield.offset().unwrap_or(0);
         }
 
-        // According to the x86[-64] ABI spec: "Unnamed bit-fields’ types do not
-        // affect the alignment of a structure or union". This makes sense: such
-        // bit-fields are only used for padding, and we can't perform an
-        // un-aligned read of something we can't read because we can't even name
-        // it.
+        let mut offset_in_struct =
+            bitfield.offset().unwrap_or(unit_size_in_bits);
+
+        // A zero-width field serves as alignment / padding.
+        if !packed &&
+            offset_in_struct != 0 &&
+            (bitfield_width == 0 ||
+                (offset_in_struct & (bitfield_align * 8 - 1)) +
+                    bitfield_width >
+                    bitfield_size * 8)
+        {
+            offset_in_struct = align_to(offset_in_struct, bitfield_align * 8);
+        }
+
+        // According to the x86[-64] ABI spec: "Unnamed bit-fields’ types do not affect the
+        // alignment of a structure or union". This makes sense: such bit-fields are only used for
+        // padding, and we can't perform an un-aligned read of something we can't read because we
+        // can't even name it.
         if bitfield.name().is_some() {
             max_align = cmp::max(max_align, bitfield_align);
-
-            // NB: The `bitfield_width` here is completely, absolutely
-            // intentional.  Alignment of the allocation unit is based on the
-            // maximum bitfield width, not (directly) on the bitfields' types'
-            // alignment.
-            unit_align = cmp::max(unit_align, bitfield_width);
         }
 
         // Always keep all bitfields around. While unnamed bitifields are used
@@ -652,15 +621,12 @@ where
         // bitfields over their types size cause weird allocation size behavior from clang.
         // Therefore, all bitfields needed to be kept around in order to check for this
         // and make the struct opaque in this case
-        bitfields_in_unit.push(Bitfield::new(offset, bitfield));
-
-        unit_size_in_bits = offset + bitfield_width;
-
-        // Compute what the physical unit's final size would be given what we
-        // have seen so far, and use that to compute how many bits are still
-        // available in the unit.
-        let data_size = align_to(unit_size_in_bits, bitfield_align * 8);
-        unfilled_bits_in_unit = data_size - unit_size_in_bits;
+        bitfields_in_unit.push(Bitfield::new(
+            offset_in_struct - start_offset_in_struct,
+            bitfield,
+        ));
+        unit_size_in_bits =
+            offset_in_struct - start_offset_in_struct + bitfield_width;
     }
 
     if unit_size_in_bits != 0 {
@@ -669,9 +635,7 @@ where
             fields,
             bitfield_unit_count,
             unit_size_in_bits,
-            unit_align,
             bitfields_in_unit,
-            packed,
         );
     }
 
@@ -782,7 +746,7 @@ impl CompFields {
                     getter
                 };
                 let setter = {
-                    let setter = format!("set_{}", bitfield_name);
+                    let setter = format!("set_{bitfield_name}");
                     let mut setter = ctx.rust_mangle(&setter).to_string();
                     if has_method(methods, ctx, &setter) {
                         setter.push_str("_bindgen_bitfield");
@@ -803,9 +767,8 @@ impl CompFields {
 
                     anon_field_counter += 1;
                     *name = Some(format!(
-                        "{}{}",
+                        "{}{anon_field_counter}",
                         ctx.options().anon_fields_prefix,
-                        anon_field_counter
                     ));
                 }
                 Field::Bitfields(ref mut bu) => {
@@ -823,6 +786,23 @@ impl CompFields {
                     }
                 }
             }
+        }
+    }
+
+    /// Return the flex array member for the struct/class, if any.
+    fn flex_array_member(&self, ctx: &BindgenContext) -> Option<TypeId> {
+        let fields = match self {
+            CompFields::Before(_) => panic!("raw fields"),
+            CompFields::After { fields, .. } => fields,
+            CompFields::Error => return None, // panic?
+        };
+
+        match fields.last()? {
+            Field::Bitfields(..) => None,
+            Field::DataMember(FieldData { ty, .. }) => ctx
+                .resolve_type(*ty)
+                .is_incomplete_array(ctx)
+                .map(|item| item.expect_type_id(ctx)),
         }
     }
 }
@@ -931,7 +911,7 @@ pub(crate) struct Base {
     pub(crate) kind: BaseKind,
     /// Name of the field in which this base should be stored.
     pub(crate) field_name: String,
-    /// Whether this base is inherited from publically.
+    /// Whether this base is inherited from publicly.
     pub(crate) is_pub: bool,
 }
 
@@ -961,7 +941,7 @@ impl Base {
         true
     }
 
-    /// Whether this base is inherited from publically.
+    /// Whether this base is inherited from publicly.
     pub(crate) fn is_public(&self) -> bool {
         self.is_pub
     }
@@ -1001,6 +981,7 @@ pub(crate) struct CompInfo {
 
     /// The inner types that were declared inside this class, in something like:
     ///
+    /// ```c++
     /// class Foo {
     ///     typedef int FooTy;
     ///     struct Bar {
@@ -1009,6 +990,7 @@ pub(crate) struct CompInfo {
     /// }
     ///
     /// static Foo::Bar const = {3};
+    /// ```
     inner_types: Vec<TypeId>,
 
     /// Set of static constants declared inside this class.
@@ -1027,7 +1009,7 @@ pub(crate) struct CompInfo {
     has_nonempty_base: bool,
 
     /// If this type has a template parameter which is not a type (e.g.: a
-    /// size_t)
+    /// `size_t`)
     has_non_type_template_params: bool,
 
     /// Whether this type has a bit field member whose width couldn't be
@@ -1040,7 +1022,7 @@ pub(crate) struct CompInfo {
 
     /// Used to know if we've found an opaque attribute that could cause us to
     /// generate a type with invalid layout. This is explicitly used to avoid us
-    /// generating bad alignments when parsing types like max_align_t.
+    /// generating bad alignments when parsing types like `max_align_t`.
     ///
     /// It's not clear what the behavior should be here, if generating the item
     /// and pray, or behave as an opaque type.
@@ -1082,7 +1064,7 @@ impl CompInfo {
     ///
     /// If we're a union without known layout, we try to compute it from our
     /// members. This is not ideal, but clang fails to report the size for these
-    /// kind of unions, see test/headers/template_union.hpp
+    /// kind of unions, see `test/headers/template_union.hpp`
     pub(crate) fn layout(&self, ctx: &BindgenContext) -> Option<Layout> {
         // We can't do better than clang here, sorry.
         if self.kind == CompKind::Struct {
@@ -1122,6 +1104,14 @@ impl CompInfo {
         }
     }
 
+    /// Return the flex array member and its element type if any
+    pub(crate) fn flex_array_member(
+        &self,
+        ctx: &BindgenContext,
+    ) -> Option<TypeId> {
+        self.fields.flex_array_member(ctx)
+    }
+
     fn has_fields(&self) -> bool {
         match self.fields {
             CompFields::Error => false,
@@ -1138,14 +1128,14 @@ impl CompInfo {
         match self.fields {
             CompFields::Error => {}
             CompFields::After { ref fields, .. } => {
-                for field in fields.iter() {
+                for field in fields {
                     if let Some(layout) = field.layout(ctx) {
                         callback(layout);
                     }
                 }
             }
             CompFields::Before(ref raw_fields) => {
-                for field in raw_fields.iter() {
+                for field in raw_fields {
                     let field_ty = ctx.resolve_type(field.0.ty);
                     if let Some(layout) = field_ty.layout(ctx) {
                         callback(layout);
@@ -1155,7 +1145,8 @@ impl CompInfo {
         }
     }
 
-    fn has_bitfields(&self) -> bool {
+    /// Returns whether we have any bitfield within the struct.
+    pub(crate) fn has_bitfields(&self) -> bool {
         match self.fields {
             CompFields::Error => false,
             CompFields::After {
@@ -1189,7 +1180,7 @@ impl CompInfo {
     }
 
     /// Do we see a virtual function during parsing?
-    /// Get the has_own_virtual_method boolean.
+    /// Get the `has_own_virtual_method` boolean.
     pub(crate) fn has_own_virtual_method(&self) -> bool {
         self.has_own_virtual_method
     }
@@ -1253,7 +1244,7 @@ impl CompInfo {
 
         let kind = kind?;
 
-        debug!("CompInfo::from_ty({:?}, {:?})", kind, cursor);
+        debug!("CompInfo::from_ty({kind:?}, {cursor:?})");
 
         let mut ci = CompInfo::new(kind);
         ci.is_forward_declaration =
@@ -1424,7 +1415,7 @@ impl CompInfo {
                 }
                 CXCursor_TemplateTypeParameter => {
                     let param = Item::type_param(None, cur, ctx).expect(
-                        "Item::type_param should't fail when pointing \
+                        "Item::type_param shouldn't fail when pointing \
                          at a TemplateTypeParameter",
                     );
                     ci.template_params.push(param);
@@ -1441,7 +1432,7 @@ impl CompInfo {
 
                     let field_name = match ci.base_members.len() {
                         0 => "_base".into(),
-                        n => format!("_base_{}", n),
+                        n => format!("_base_{n}"),
                     };
                     let type_id =
                         Item::from_ty_or_ref(cur.cur_type(), cur, None, ctx);
@@ -1449,8 +1440,7 @@ impl CompInfo {
                         ty: type_id,
                         kind,
                         field_name,
-                        is_pub: cur.access_specifier() ==
-                            clang_sys::CX_CXXPublic,
+                        is_pub: cur.access_specifier() == CX_CXXPublic,
                     });
                 }
                 CXCursor_Constructor | CXCursor_Destructor |
@@ -1589,7 +1579,7 @@ impl CompInfo {
                 _ => CompKind::Struct,
             },
             _ => {
-                warn!("Unknown kind for comp type: {:?}", cursor);
+                warn!("Unknown kind for comp type: {cursor:?}");
                 return Err(ParseError::Continue);
             }
         })
@@ -1649,7 +1639,7 @@ impl CompInfo {
     pub(crate) fn already_packed(&self, ctx: &BindgenContext) -> Option<bool> {
         let mut total_size: usize = 0;
 
-        for field in self.fields().iter() {
+        for field in self.fields() {
             let layout = field.layout(ctx)?;
 
             if layout.align != 0 && total_size % layout.align != 0 {
@@ -1674,7 +1664,7 @@ impl CompInfo {
         layout: Option<&Layout>,
     ) {
         let packed = self.is_packed(ctx, layout);
-        self.fields.compute_bitfield_units(ctx, packed)
+        self.fields.compute_bitfield_units(ctx, packed);
     }
 
     /// Assign for each anonymous field a generated name.
@@ -1685,12 +1675,12 @@ impl CompInfo {
     /// Returns whether the current union can be represented as a Rust `union`
     ///
     /// Requirements:
-    ///     1. Current RustTarget allows for `untagged_union`
-    ///     2. Each field can derive `Copy` or we use ManuallyDrop.
+    ///     1. Current `RustTarget` allows for `untagged_union`
+    ///     2. Each field can derive `Copy` or we use `ManuallyDrop`.
     ///     3. It's not zero-sized.
     ///
     /// Second boolean returns whether all fields can be copied (and thus
-    /// ManuallyDrop is not needed).
+    /// `ManuallyDrop` is not needed).
     pub(crate) fn is_rust_union(
         &self,
         ctx: &BindgenContext,
@@ -1728,7 +1718,7 @@ impl CompInfo {
             return (false, false);
         }
 
-        if layout.map_or(false, |l| l.size == 0) {
+        if layout.is_some_and(|l| l.size == 0) {
             return (false, false);
         }
 
@@ -1792,7 +1782,11 @@ impl DotAttributes for CompInfo {
 impl IsOpaque for CompInfo {
     type Extra = Option<Layout>;
 
-    fn is_opaque(&self, ctx: &BindgenContext, layout: &Option<Layout>) -> bool {
+    fn is_opaque(
+        &self,
+        ctx: &BindgenContext,
+        _layout: &Option<Layout>,
+    ) -> bool {
         if self.has_non_type_template_params ||
             self.has_unevaluable_bit_field_width
         {
@@ -1821,23 +1815,6 @@ impl IsOpaque for CompInfo {
             }),
         }) {
             return true;
-        }
-
-        if !ctx.options().rust_features().repr_packed_n {
-            // If we don't have `#[repr(packed(N)]`, the best we can
-            // do is make this struct opaque.
-            //
-            // See https://github.com/rust-lang/rust-bindgen/issues/537 and
-            // https://github.com/rust-lang/rust/issues/33158
-            if self.is_packed(ctx, layout.as_ref()) &&
-                layout.map_or(false, |l| l.align > 1)
-            {
-                warn!("Found a type that is both packed and aligned to greater than \
-                       1; Rust before version 1.33 doesn't have `#[repr(packed(N))]`, so we \
-                       are treating it as opaque. You may wish to set bindgen's rust target \
-                       version to 1.33 or later to enable `#[repr(packed(N))]` support.");
-                return true;
-            }
         }
 
         false

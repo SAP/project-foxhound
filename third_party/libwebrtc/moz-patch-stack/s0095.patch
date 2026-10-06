@@ -1,0 +1,68 @@
+From: Michael Froman <mfroman@mozilla.com>
+Date: Thu, 10 Oct 2024 13:42:00 +0000
+Subject: Bug 1921707 - libwebrtc preprocessor, .json, .gni, and *.gn changes
+ r=ng,webrtc-reviewers
+
+Differential Revision: https://phabricator.services.mozilla.com/D224076
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/7017edc7cfc880bb19f94115d4f48a8c58920a9b
+---
+ .gn                           | 2 +-
+ media/BUILD.gn                | 2 +-
+ modules/video_coding/BUILD.gn | 2 +-
+ webrtc.gni                    | 4 ++--
+ 4 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/.gn b/.gn
+index 82164c084e..a97e2f18b4 100644
+--- a/.gn
++++ b/.gn
+@@ -18,7 +18,7 @@ script_executable = "python3"
+ # The secondary source root is a parallel directory tree where
+ # GN build files are placed when they can not be placed directly
+ # in the source tree, e.g. for third party source trees.
+-secondary_source = "//build/secondary/"
++secondary_source = "//libwebrtc/"
+ 
+ # These are the targets to skip header checking by default. The files in targets
+ # matching these patterns (see "gn help label_pattern" for format) will not have
+diff --git a/media/BUILD.gn b/media/BUILD.gn
+index 78542f7b60..f40a2a19b7 100644
+--- a/media/BUILD.gn
++++ b/media/BUILD.gn
+@@ -7,7 +7,7 @@
+ # be found in the AUTHORS file in the root of the source tree.
+ 
+ import("//build/config/linux/pkg_config.gni")
+-import("//third_party/libaom/options.gni")
++import("//libwebrtc/third_party/libaom/options.gni")
+ import("../webrtc.gni")
+ 
+ group("media") {
+diff --git a/modules/video_coding/BUILD.gn b/modules/video_coding/BUILD.gn
+index 6fb71ab0b9..b8f0a1fbee 100644
+--- a/modules/video_coding/BUILD.gn
++++ b/modules/video_coding/BUILD.gn
+@@ -7,7 +7,7 @@
+ # be found in the AUTHORS file in the root of the source tree.
+ 
+ import("//build/config/linux/pkg_config.gni")
+-import("//third_party/libaom/options.gni")
++import("//libwebrtc/third_party/libaom/options.gni")
+ import("../../webrtc.gni")
+ 
+ rtc_library("encoded_frame") {
+diff --git a/webrtc.gni b/webrtc.gni
+index 0b7d250351..316fe6c32e 100644
+--- a/webrtc.gni
++++ b/webrtc.gni
+@@ -482,8 +482,8 @@ all_poison_types = [
+   "default_neural_residual_echo_estimator",
+ ]
+ 
+-absl_include_config = "//third_party/abseil-cpp:absl_include_config"
+-absl_define_config = "//third_party/abseil-cpp:absl_define_config"
++absl_include_config = "//libwebrtc/third_party/abseil-cpp:absl_include_config"
++absl_define_config = "//libwebrtc/third_party/abseil-cpp:absl_define_config"
+ 
+ # Abseil Flags are testonly, so this config will only be applied to WebRTC targets
+ # that are testonly.

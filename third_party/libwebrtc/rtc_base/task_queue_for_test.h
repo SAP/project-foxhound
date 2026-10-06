@@ -11,13 +11,17 @@
 #ifndef RTC_BASE_TASK_QUEUE_FOR_TEST_H_
 #define RTC_BASE_TASK_QUEUE_FOR_TEST_H_
 
+#include <memory>
 #include <utility>
 
 #include "absl/cleanup/cleanup.h"
+#include "absl/functional/any_invocable.h"
 #include "absl/strings/string_view.h"
 #include "api/function_view.h"
+#include "api/location.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/task_queue/task_queue_factory.h"
+#include "api/units/time_delta.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/event.h"
 
@@ -40,9 +44,9 @@ class TaskQueueForTest {
  public:
   explicit TaskQueueForTest(
       std::unique_ptr<TaskQueueBase, TaskQueueDeleter> task_queue);
-  explicit TaskQueueForTest(
-      absl::string_view name = "TestQueue",
-      TaskQueueFactory::Priority priority = TaskQueueFactory::Priority::NORMAL);
+  explicit TaskQueueForTest(absl::string_view name = "TestQueue",
+                            TaskQueueFactory::Priority priority =
+                                TaskQueueFactory::Priority::kNormal);
   TaskQueueForTest(const TaskQueueForTest&) = delete;
   TaskQueueForTest& operator=(const TaskQueueForTest&) = delete;
   ~TaskQueueForTest();
@@ -52,21 +56,19 @@ class TaskQueueForTest {
   // Returns non-owning pointer to the task queue implementation.
   TaskQueueBase* Get() { return impl_.get(); }
 
-  void PostTask(
-      absl::AnyInvocable<void() &&> task,
-      const webrtc::Location& location = webrtc::Location::Current()) {
+  void PostTask(absl::AnyInvocable<void() &&> task,
+                const Location& location = Location::Current()) {
     impl_->PostTask(std::move(task), location);
   }
-  void PostDelayedTask(
-      absl::AnyInvocable<void() &&> task,
-      webrtc::TimeDelta delay,
-      const webrtc::Location& location = webrtc::Location::Current()) {
+  void PostDelayedTask(absl::AnyInvocable<void() &&> task,
+                       TimeDelta delay,
+                       const Location& location = Location::Current()) {
     impl_->PostDelayedTask(std::move(task), delay, location);
   }
   void PostDelayedHighPrecisionTask(
       absl::AnyInvocable<void() &&> task,
-      webrtc::TimeDelta delay,
-      const webrtc::Location& location = webrtc::Location::Current()) {
+      TimeDelta delay,
+      const Location& location = Location::Current()) {
     impl_->PostDelayedHighPrecisionTask(std::move(task), delay, location);
   }
 

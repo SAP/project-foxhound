@@ -8,8 +8,7 @@ import android.graphics.Rect
 import android.widget.RadioButton
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
-import androidx.preference.SwitchPreference
-import io.mockk.Called
+import androidx.preference.SwitchPreferenceCompat
 import io.mockk.MockKAnnotations
 import io.mockk.every
 import io.mockk.impl.annotations.MockK
@@ -19,13 +18,13 @@ import mozilla.components.support.ktx.android.view.putCompoundDrawablesRelative
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.R
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class ExtensionsTest {
@@ -65,41 +64,44 @@ class ExtensionsTest {
 
     @Test
     fun `set change listener with typed argument`() {
-        val callback = mockk<(Preference, String) -> Unit>(relaxed = true)
+        val callbackCalls = mutableListOf<Pair<Preference, String>>()
+        val callback: (Preference, String) -> Unit = { pref, value ->
+            callbackCalls.add(pref to value)
+        }
         preference.setOnPreferenceChangeListener<String> { pref, value ->
             callback(pref, value)
             true
         }
 
         assertFalse(preference.callChangeListener(10))
-        verify { callback wasNot Called }
+        assertTrue(callbackCalls.isEmpty())
 
         assertTrue(preference.callChangeListener("Hello"))
-        verify { callback(preference, "Hello") }
+        assertEquals(listOf(preference to "Hello"), callbackCalls)
     }
 
     @Test
     fun `requirePreference returns corresponding preference`() {
-        val switchPreference = mockk<SwitchPreference>()
+        val switchPreference = mockk<SwitchPreferenceCompat>()
         every {
-            fragment.findPreference<SwitchPreference>("pref_key_accessibility_auto_size")
+            fragment.findPreference<SwitchPreferenceCompat>("pref_key_accessibility_auto_size")
         } returns switchPreference
 
         assertEquals(
             switchPreference,
-            fragment.requirePreference<SwitchPreference>(R.string.pref_key_accessibility_auto_size),
+            fragment.requirePreference<SwitchPreferenceCompat>(R.string.pref_key_accessibility_auto_size),
         )
     }
 
     @Test
     fun `requirePreference throws if null preference is returned`() {
         every {
-            fragment.findPreference<SwitchPreference>("pref_key_accessibility_force_enable_zoom")
+            fragment.findPreference<SwitchPreferenceCompat>("pref_key_accessibility_force_enable_zoom")
         } returns null
 
         var exception: IllegalArgumentException? = null
         try {
-            fragment.requirePreference<SwitchPreference>(R.string.pref_key_accessibility_force_enable_zoom)
+            fragment.requirePreference<SwitchPreferenceCompat>(R.string.pref_key_accessibility_force_enable_zoom)
         } catch (e: IllegalArgumentException) {
             exception = e
         }

@@ -20,7 +20,7 @@
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
-/** Test for style struct copy constructors **/
+/** Test for style struct copy constructors */
 
 /**
  * XXX Why doesn't putting a bug in the nsStyleFont copy-constructor for
@@ -39,7 +39,7 @@ var gStyleSheet = document.getElementById("stylesheet").sheet;
 var gRule1 = gStyleSheet.cssRules[gStyleSheet.insertRule("#one, #two, #parent {}", gStyleSheet.cssRules.length)];
 var gRule2 = gStyleSheet.cssRules[gStyleSheet.insertRule("#two, #child {}", gStyleSheet.cssRules.length)];
 
-/** Test using aStartStruct **/
+/** Test using aStartStruct */
 
 for (var prop in gCSSProperties) {
   var info = gCSSProperties[prop];
@@ -63,7 +63,7 @@ for (var prop in gCSSProperties) {
   }
 }
 
-/** Test using inheritance **/
+/** Test using inheritance */
 
 // TODO(bug 1887221): Zoom right now doesn't apply to explicitly inherited
 // values, so remove it to get consistent results.

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,11 +5,14 @@
 #if !defined(CubebUtils_h_)
 #  define CubebUtils_h_
 
-#  include "cubeb/cubeb.h"
-
 #  include "AudioSampleFormat.h"
-#  include "nsString.h"
+#  include "cubeb/cubeb.h"
 #  include "nsISupportsImpl.h"
+#  include "nsString.h"
+
+#  ifdef ENABLE_SET_CUBEB_BACKEND
+#    include "MockCubeb.h"
+#  endif
 
 class AudioDeviceInfo;
 
@@ -122,8 +123,9 @@ int32_t AndroidGetAudioOutputSampleRate();
 int32_t AndroidGetAudioOutputFramesPerBuffer();
 #  endif
 
-#  ifdef ENABLE_SET_CUBEB_BACKEND
+#  if defined(ENABLE_TESTS) || defined(FUZZING)
 void ForceSetCubebContext(cubeb* aCubebContext);
+void ForceUnsetCubebContext();
 #  endif
 }  // namespace CubebUtils
 }  // namespace mozilla

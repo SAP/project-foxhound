@@ -1,5 +1,4 @@
-/* -*- Mode: IDL; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,7 +14,7 @@ interface nsIHttpHeaderVisitor;
  * use nsIHttpChannelInternal::setResponseOverride with an instance of
  * nsIReplacedHttpResponse as parameter.
  */
-[scriptable, uuid(067cb318-9b67-4442-9c1c-93e62dac8a7c)]
+[scriptable, builtinclass, uuid(067cb318-9b67-4442-9c1c-93e62dac8a7c)]
 interface nsIReplacedHttpResponse : nsISupports
 {
     [must_use] void init();

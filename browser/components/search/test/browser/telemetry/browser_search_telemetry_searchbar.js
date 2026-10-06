@@ -1,5 +1,10 @@
 "use strict";
 
+/**
+ * This tests the old searchbar. The new searchbar is tested in
+ * /browser/components/urlbar/tests/browser/searchbar/browser_searchbar_telemetry.js.
+ */
+
 const SCALAR_SEARCHBAR = "browser.engagement.navigation.searchbar";
 
 ChromeUtils.defineESModuleGetters(this, {
@@ -48,6 +53,10 @@ function clickSearchbarSuggestion(entryName, clickOptions = {}) {
 }
 
 add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.search.widget.new", false]],
+  });
+
   searchBar = await gCUITestUtils.addSearchBar();
   const url = getRootDirectory(gTestPath) + "telemetrySearchSuggestions.xml";
   suggestionEngine = await SearchTestUtils.installOpenSearchEngine({ url });
@@ -72,8 +81,8 @@ add_setup(async function () {
   });
 
   // Move the second engine at the beginning of the one-off list.
-  let engineOneOff = Services.search.getEngineByName("MozSearch2");
-  await Services.search.moveEngine(engineOneOff, 0);
+  let engineOneOff = SearchService.getEngineByName("MozSearch2");
+  await SearchService.moveEngine(engineOneOff, 0);
 
   // Enable local telemetry recording for the duration of the tests.
   let oldCanRecord = Services.telemetry.canRecordExtended;
@@ -205,10 +214,10 @@ add_task(async function test_oneOff_enterSelection() {
     "FX_SEARCHBAR_SELECTED_RESULT_METHOD"
   );
 
-  let previousEngine = await Services.search.getDefault();
-  await Services.search.setDefault(
+  let previousEngine = await SearchService.getDefault();
+  await SearchService.setDefault(
     suggestionEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    SearchService.CHANGE_REASON.UNKNOWN
   );
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
@@ -235,9 +244,9 @@ add_task(async function test_oneOff_enterSelection() {
     "FX_SEARCHBAR_SELECTED_RESULT_METHOD"
   );
 
-  await Services.search.setDefault(
+  await SearchService.setDefault(
     previousEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    SearchService.CHANGE_REASON.UNKNOWN
   );
   BrowserTestUtils.removeTab(tab);
 });
@@ -285,10 +294,10 @@ async function checkSuggestionClick(clickOptions, waitForActionFn) {
     "FX_SEARCHBAR_SELECTED_RESULT_METHOD"
   );
 
-  let previousEngine = await Services.search.getDefault();
-  await Services.search.setDefault(
+  let previousEngine = await SearchService.getDefault();
+  await SearchService.setDefault(
     suggestionEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    SearchService.CHANGE_REASON.UNKNOWN
   );
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
@@ -331,9 +340,9 @@ async function checkSuggestionClick(clickOptions, waitForActionFn) {
     "FX_SEARCHBAR_SELECTED_RESULT_METHOD"
   );
 
-  await Services.search.setDefault(
+  await SearchService.setDefault(
     previousEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    SearchService.CHANGE_REASON.UNKNOWN
   );
   BrowserTestUtils.removeTab(tab);
 }
@@ -368,10 +377,10 @@ add_task(async function test_suggestion_enterSelection() {
     "FX_SEARCHBAR_SELECTED_RESULT_METHOD"
   );
 
-  let previousEngine = await Services.search.getDefault();
-  await Services.search.setDefault(
+  let previousEngine = await SearchService.getDefault();
+  await SearchService.setDefault(
     suggestionEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    SearchService.CHANGE_REASON.UNKNOWN
   );
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
@@ -394,9 +403,9 @@ add_task(async function test_suggestion_enterSelection() {
     "FX_SEARCHBAR_SELECTED_RESULT_METHOD"
   );
 
-  await Services.search.setDefault(
+  await SearchService.setDefault(
     previousEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    SearchService.CHANGE_REASON.UNKNOWN
   );
   BrowserTestUtils.removeTab(tab);
 });

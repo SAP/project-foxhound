@@ -30,7 +30,6 @@ import reducers from "../reducers/index";
 import * as selectors from "../selectors/index";
 import App from "../components/App";
 import { asyncStore, prefs } from "./prefs";
-import { persistTabs } from "../utils/tabs";
 const {
   sanitizeBreakpoints,
 } = require("resource://devtools/client/shared/thread-utils.js");
@@ -45,9 +44,7 @@ export function bootstrapStore(client, workers, panel, initialState) {
   const createStore = configureStore({
     log: prefs.logging || flags.testing,
     timing: debugJsModules,
-    makeThunkArgs: args => {
-      return { ...args, client, ...workers, panel };
-    },
+    thunkArgs: { client, ...workers, panel },
   });
 
   let store = createStore(combineReducers(reducers), initialState);
@@ -86,7 +83,7 @@ export function teardownWorkers() {
  *
  * @param {ReduxStore} store
  * @param {ReduxStore} toolboxStore
- * @param {Object} appComponentAttributes
+ * @param {object} appComponentAttributes
  * @param {Array} appComponentAttributes.fluentBundles
  * @param {Document} appComponentAttributes.toolboxDoc
  */
@@ -136,8 +133,14 @@ function updatePrefs(state, oldState) {
     asyncStore.eventListenerBreakpoints = state.eventListenerBreakpoints;
   }
 
-  if (hasChanged(selectors.getTabs)) {
-    asyncStore.tabs = persistTabs(selectors.getTabs(state));
+  if (hasChanged(selectors.getOpenedURLs)) {
+    asyncStore.openedURLs = selectors.getOpenedURLs(state);
+  }
+  if (hasChanged(selectors.getPrettyPrintedURLs)) {
+    // Convert the Set into an Array
+    asyncStore.prettyPrintedURLs = Array.from(
+      selectors.getPrettyPrintedURLs(state)
+    );
   }
 
   if (hasChanged(selectors.getXHRBreakpoints)) {

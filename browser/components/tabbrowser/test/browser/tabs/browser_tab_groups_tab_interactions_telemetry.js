@@ -115,31 +115,47 @@ add_task(async function test_tabInteractionsBasic() {
   let initialTab = window.gBrowser.tabs[0];
   await resetTelemetry();
 
-  let tab = BrowserTestUtils.addTab(window.gBrowser, "https://example.com");
-  let group = window.gBrowser.addTabGroup([tab]);
+  let groupedTab = await addTab();
+  let group = window.gBrowser.addTabGroup([groupedTab]);
+  group.collapsed = true;
 
   info(
-    "Test that selecting a tab in a group records tab_interactions.activate"
+    "Test that selecting a tab in a collapsed group records tab_interactions.activate_collapsed"
   );
-  await assertMetricEmpty("activate");
-  const tabSelectEvent = BrowserTestUtils.waitForEvent(window, "TabSelect");
-  window.gBrowser.selectTabAtIndex(1);
+  await assertMetricEmpty("activate_collapsed");
+  let tabSelectEvent = BrowserTestUtils.waitForEvent(window, "TabSelect");
+  gBrowser.selectedTab = groupedTab;
   await tabSelectEvent;
-  await assertMetricFoundFor("activate");
+  await assertMetricFoundFor("activate_collapsed");
+
+  info(
+    "Test that selecting a tab in an expanded group records tab_interactions.activate_expanded"
+  );
+  tabSelectEvent = BrowserTestUtils.waitForEvent(window, "TabSelect");
+  gBrowser.selectedTab = initialTab;
+  await tabSelectEvent;
+  group.collapsed = false;
+  await assertMetricEmpty("activate_expanded");
+  tabSelectEvent = BrowserTestUtils.waitForEvent(window, "TabSelect");
+  gBrowser.selectedTab = groupedTab;
+  await tabSelectEvent;
+  await assertMetricFoundFor("activate_expanded");
 
   info(
     "Test that moving an existing tab into a tab group records tab_interactions.add"
   );
-  let tab1 = BrowserTestUtils.addTab(window.gBrowser, "https://example.com");
+  let tab1 = await addTab();
   await assertMetricEmpty("add");
-  window.gBrowser.moveTabToGroup(tab1, group, { isUserTriggered: true });
+  window.gBrowser.moveTabToExistingGroup(tab1, group, {
+    isUserTriggered: true,
+  });
   await assertMetricFoundFor("add");
 
   info(
     "Test that adding a new tab to a tab group records tab_interactions.new"
   );
   await assertMetricEmpty("new");
-  BrowserTestUtils.addTab(window.gBrowser, "https://example.com", {
+  await addTab(undefined, {
     tabGroup: group,
   });
   await assertMetricFoundFor("new");
@@ -156,7 +172,9 @@ add_task(async function test_tabInteractionsBasic() {
     "Test that duplicating a tab within a group calls tab_interactions.duplicate"
   );
   await assertMetricEmpty("duplicate");
+  let ssTabRestored = BrowserTestUtils.waitForEvent(window, "SSTabRestored");
   window.gBrowser.duplicateTab(group.tabs[0], true, { tabIndex: 2 });
+  await ssTabRestored;
   await assertMetricFoundFor("duplicate");
 
   window.gBrowser.removeAllTabsBut(initialTab);
@@ -168,11 +186,7 @@ add_task(async function test_tabInteractionsClose() {
   await resetTelemetry();
   FirefoxViewTestUtilsInit(this, window);
 
-  let tabs = Array.from({ length: 5 }, () => {
-    return BrowserTestUtils.addTab(window.gBrowser, "https://example.com", {
-      skipAnimation: true,
-    });
-  });
+  let tabs = await Promise.all(Array.from({ length: 5 }, () => addTab()));
   let group = window.gBrowser.addTabGroup(tabs);
 
   info(
@@ -223,11 +237,7 @@ add_task(async function test_tabInteractionsCloseViaAnotherTabContext() {
   let initialTab = window.gBrowser.tabs[0];
   await resetTelemetry();
 
-  window.gBrowser.addTabGroup([
-    BrowserTestUtils.addTab(window.gBrowser, "https://example.com", {
-      skipAnimation: true,
-    }),
-  ]);
+  window.gBrowser.addTabGroup([await addTab()]);
 
   await assertMetricEmpty("close_tab_other");
 
@@ -244,11 +254,7 @@ add_task(async function test_tabInteractionsCloseViaAnotherTabContext() {
   info(
     "Test that closing a tab via the tab context menu 'close tabs to left' command calls tab_interactions.close_tab_other"
   );
-  window.gBrowser.addTabGroup([
-    BrowserTestUtils.addTab(window.gBrowser, "https://example.com", {
-      skipAnimation: true,
-    }),
-  ]);
+  window.gBrowser.addTabGroup([await addTab()]);
   window.gBrowser.moveTabToEnd(initialTab);
   await activateTabContextMenuItem(
     initialTab,
@@ -260,11 +266,7 @@ add_task(async function test_tabInteractionsCloseViaAnotherTabContext() {
   info(
     "Test that closing a tab via the tab context menu 'close tabs to right' command calls tab_interactions.close_tab_other"
   );
-  window.gBrowser.addTabGroup([
-    BrowserTestUtils.addTab(window.gBrowser, "https://example.com", {
-      skipAnimation: true,
-    }),
-  ]);
+  window.gBrowser.addTabGroup([await addTab()]);
   await activateTabContextMenuItem(
     initialTab,
     "#context_closeTabsToTheEnd",
@@ -275,17 +277,7 @@ add_task(async function test_tabInteractionsCloseViaAnotherTabContext() {
   info(
     "Test that closing a tab via the tab context menu 'close duplicate tabs' command calls tab_interactions.close_tab_other"
   );
-  let duplicateTabs = [
-    BrowserTestUtils.addTab(window.gBrowser, "https://example.com", {
-      skipAnimation: true,
-    }),
-    BrowserTestUtils.addTab(window.gBrowser, "https://example.com", {
-      skipAnimation: true,
-    }),
-  ];
-  await Promise.all(
-    duplicateTabs.map(t => BrowserTestUtils.browserLoaded(t.linkedBrowser))
-  );
+  let duplicateTabs = await Promise.all([addTab(), addTab()]);
   window.gBrowser.addTabGroup([duplicateTabs[1]]);
 
   await activateTabContextMenuItem(
@@ -309,12 +301,8 @@ add_task(async function test_tabInteractionsCloseViaAnotherTabContext() {
 add_task(async function test_tabInteractionsCloseTabOverflowMenu() {
   let initialTab = window.gBrowser.tabs[0];
   await resetTelemetry();
-  FirefoxViewTestUtilsInit(this, window);
 
-  let tab = BrowserTestUtils.addTab(window.gBrowser, "https://example.com", {
-    skipAnimation: true,
-  });
-  window.gBrowser.addTabGroup([tab]);
+  window.gBrowser.addTabGroup([await addTab()]);
 
   info(
     "Test that closing a tab from the tab overflow menu calls tab_interactions.close_tabmenu"
@@ -328,7 +316,8 @@ add_task(async function test_tabInteractionsCloseTabOverflowMenu() {
 
   await assertMetricEmpty("close_tabmenu");
   window.document
-    .querySelector(".all-tabs-item.grouped .all-tabs-close-button")
+    .getElementById("allTabsMenu-allTabsView-tabs")
+    .querySelector(":scope .all-tabs-item.grouped .all-tabs-close-button")
     .click();
   await assertMetricFoundFor("close_tabmenu");
 
@@ -350,11 +339,7 @@ add_task(async function test_tabInteractionsRemoveFromGroup() {
   let initialTab = window.gBrowser.tabs[0];
   await resetTelemetry();
 
-  let tabs = Array.from({ length: 3 }, () => {
-    return BrowserTestUtils.addTab(window.gBrowser, "https://example.com", {
-      skipAnimation: true,
-    });
-  });
+  let tabs = await Promise.all(Array.from({ length: 3 }, () => addTab()));
   let group = window.gBrowser.addTabGroup(tabs);
 
   info(

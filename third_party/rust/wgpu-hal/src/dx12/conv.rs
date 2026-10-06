@@ -85,6 +85,13 @@ pub fn map_filter_mode(mode: wgt::FilterMode) -> Direct3D12::D3D12_FILTER_TYPE {
     }
 }
 
+pub fn map_mipmap_filter_mode(mode: wgt::MipmapFilterMode) -> Direct3D12::D3D12_FILTER_TYPE {
+    match mode {
+        wgt::MipmapFilterMode::Nearest => Direct3D12::D3D12_FILTER_TYPE_POINT,
+        wgt::MipmapFilterMode::Linear => Direct3D12::D3D12_FILTER_TYPE_LINEAR,
+    }
+}
+
 pub fn map_comparison(func: wgt::CompareFunction) -> Direct3D12::D3D12_COMPARISON_FUNC {
     use wgt::CompareFunction as Cf;
     match func {
@@ -135,7 +142,10 @@ pub fn map_binding_type(ty: &wgt::BindingType) -> Direct3D12::D3D12_DESCRIPTOR_R
         }
         | Bt::StorageTexture { .. } => Direct3D12::D3D12_DESCRIPTOR_RANGE_TYPE_UAV,
         Bt::AccelerationStructure { .. } => Direct3D12::D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
-        Bt::ExternalTexture => unimplemented!(),
+        // External textures require multiple bindings and therefore cannot
+        // be mapped to a single descriptor range type. They must be handled
+        // separately by the caller.
+        Bt::ExternalTexture => unreachable!("External textures must be handled separately"),
     }
 }
 
@@ -363,12 +373,12 @@ fn map_stencil_face(face: &wgt::StencilFaceState) -> Direct3D12::D3D12_DEPTH_STE
 pub fn map_depth_stencil(ds: &wgt::DepthStencilState) -> Direct3D12::D3D12_DEPTH_STENCIL_DESC {
     Direct3D12::D3D12_DEPTH_STENCIL_DESC {
         DepthEnable: ds.is_depth_enabled().into(),
-        DepthWriteMask: if ds.depth_write_enabled {
+        DepthWriteMask: if ds.depth_write_enabled.unwrap_or_default() {
             Direct3D12::D3D12_DEPTH_WRITE_MASK_ALL
         } else {
             Direct3D12::D3D12_DEPTH_WRITE_MASK_ZERO
         },
-        DepthFunc: map_comparison(ds.depth_compare),
+        DepthFunc: map_comparison(ds.depth_compare.unwrap_or_default()),
         StencilEnable: ds.stencil.is_enabled().into(),
         StencilReadMask: ds.stencil.read_mask as u8,
         StencilWriteMask: ds.stencil.write_mask as u8,
@@ -436,4 +446,22 @@ pub(crate) fn map_acceleration_structure_copy_mode(
             Direct3D12::D3D12_RAYTRACING_ACCELERATION_STRUCTURE_COPY_MODE_COMPACT
         }
     }
+}
+
+pub(crate) const fn make_shader_component_mapping(
+    src0: Direct3D12::D3D12_SHADER_COMPONENT_MAPPING,
+    src1: Direct3D12::D3D12_SHADER_COMPONENT_MAPPING,
+    src2: Direct3D12::D3D12_SHADER_COMPONENT_MAPPING,
+    src3: Direct3D12::D3D12_SHADER_COMPONENT_MAPPING,
+) -> Direct3D12::D3D12_SHADER_COMPONENT_MAPPING {
+    const M: i32 = Direct3D12::D3D12_SHADER_COMPONENT_MAPPING_MASK as i32;
+    const S: i32 = Direct3D12::D3D12_SHADER_COMPONENT_MAPPING_SHIFT as i32;
+    Direct3D12::D3D12_SHADER_COMPONENT_MAPPING(
+        (src0.0 & M)
+            | (src1.0 & M) << S
+            | (src2.0 & M) << (S * 2)
+            | (src3.0 & M) << (S * 3)
+            | Direct3D12::D3D12_SHADER_COMPONENT_MAPPING_ALWAYS_SET_BIT_AVOIDING_ZEROMEM_MISTAKES
+                as i32,
+    )
 }

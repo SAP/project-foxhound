@@ -65,7 +65,11 @@ function t3(id,c,o,s,pid,fuzzy) {
   test(id,'offset',o);
   test(id,'scroll',s,fuzzy);
   var p = document.getElementById(id).offsetParent;
-  is(p.id, pid, id+".offsetParent");
+  if (pid == null) {
+    is(p, null, id + ".offsetParent");
+  } else {
+    is(p.id, pid, id + ".offsetParent");
+  }
 }
 
 function run_test() {
@@ -82,7 +86,7 @@ function run_test() {
    t3('table1',[0,0,306,306],[10,170,306,306],[0,0,306,306],'body');
    t3('table2',[0,0,206,206],[0,0,206,206],[0,0,206,20],'table2parent');
    t3('table3',[0,0,228,228],[0,0,228,228],[0,0,228,228],'table3parent');
-   t3('table3parent',[0,0,228,228],[300,100,228,228],[0,0,228,228],'body');
+   t3('table3parent',[0,0,228,228],[300,100,228,228],[0,0,228,228], null);
 }
 </script>
 

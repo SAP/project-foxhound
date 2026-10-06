@@ -5,6 +5,7 @@
 package org.mozilla.fenix.settings.about.viewholders
 
 import android.view.View
+import androidx.annotation.LayoutRes
 import androidx.recyclerview.widget.RecyclerView
 import org.mozilla.fenix.R
 import org.mozilla.fenix.databinding.AboutListItemBinding
@@ -31,6 +32,7 @@ class AboutItemViewHolder(
     }
 
     companion object {
-        const val LAYOUT_ID = R.layout.about_list_item
+        @LayoutRes
+        val LAYOUT_ID = R.layout.about_list_item
     }
 }

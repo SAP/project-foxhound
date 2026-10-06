@@ -1,3 +1,7 @@
+PLHashEnumerator
+================
+
+.. _plhashenumerator-syntax:
 
 Syntax
 ------
@@ -15,6 +19,8 @@ Syntax
    #define HT_ENUMERATE_UNHASH   4   /* just unhash the current entry */
 
 
+.. _plhashenumerator-description:
+
 Description
 -----------
 
@@ -25,6 +31,8 @@ table entry, an integer index, and an arbitrary piece of user data as
 argument.
 
 
+.. _plhashenumerator-remark:
+
 Remark
 ------
 
@@ -34,6 +42,8 @@ The entries are unlinked from the table, they are not freed, but the
 entry count (the ``nentries`` field of the ``PLHashTable`` structure) is
 not decremented.
 
+
+.. _plhashenumerator-see-also:
 
 See Also
 --------

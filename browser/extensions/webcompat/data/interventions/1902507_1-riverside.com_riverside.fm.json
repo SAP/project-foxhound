@@ -1,0 +1,24 @@
+{
+  "label": "riverside.com/riverside.fm",
+  "bugs": {
+    "1902507": {
+      "issue": "broken-meetings",
+      "matches": ["https://riverside.fm/*", "https://riverside.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "only_channels": ["nightly"],
+      "content_scripts": {
+        "all_frames": true,
+        "js": [
+          "bug1994562-shim-mstp-mstg-on-window.js",
+          "bug1913599-shim-createencodedstreams.js",
+          "bug1902507-nofrozenicecandidatepairstats.js",
+          "bug1902507-ssrcmsid.js"
+        ]
+      }
+    }
+  ]
+}

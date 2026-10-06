@@ -70,6 +70,8 @@ def run(
                 webdriver_ws_port,
                 "--webdriver-log-level",
                 log_level,
+                "--capture=no",
+                "--show-capture=no",
             ]
 
             if debug:

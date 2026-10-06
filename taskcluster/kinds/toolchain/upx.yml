@@ -1,0 +1,30 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+task-defaults:
+    description: "UPX toolchain build"
+    attributes:
+        local-toolchain: true
+    worker:
+        max-run-time: 1800
+    run:
+        script: build-upx.sh
+        toolchain-artifact: public/build/upx.tar.zst
+    fetches:
+        fetch:
+            - upx
+
+linux64-upx:
+    treeherder:
+        symbol: TL(upx)
+    worker-type: b-linux-docker-amd
+
+win64-upx:
+    treeherder:
+        symbol: TW64(upx)
+    worker-type: b-win2022
+    fetches:
+        toolchain:
+            - win64-cmake
+            - vs-toolchain

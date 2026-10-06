@@ -54,7 +54,7 @@
 
 .downloadButton > .button-box {
   padding: 8px;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
 }
 
 .downloadButton > .button-box > .button-icon {

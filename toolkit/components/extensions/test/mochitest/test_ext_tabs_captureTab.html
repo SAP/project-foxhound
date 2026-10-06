@@ -43,6 +43,15 @@ async function runTest({ html, fullZoom, coords, rect, scale }) {
         browser.tabs[method](id, { rect, scale }),
       ]);
 
+      if (!tab.width) {
+        // We query the tab as soon as webNavigation.onCompleted is fired, but
+        // that does not guarantee that the tab dimensions are available.
+        // The tabs.captureVisibleTab and tabs.capture methods flush layout as
+        // needed, after which dimensions are expected to be available.
+        tab = await browser.tabs.get(tab.id);
+        browser.test.assertTrue(tab.width > 0, `Tab has dimensions`);
+      }
+
       browser.test.assertTrue(
         pngs.every(url => url == png),
         "All PNGs are identical"
@@ -155,10 +164,10 @@ async function runTest({ html, fullZoom, coords, rect, scale }) {
 
     await extension.startup();
 
-    let testWindow = window.open(url);
+    let tab = await AppTestDelegate.openNewForegroundTab(window, url);
     await extension.awaitFinish("captureTab");
 
-    testWindow.close();
+    await AppTestDelegate.removeTab(window, tab);
     await extension.unload();
   }
 }
@@ -278,10 +287,11 @@ add_task(async function testOOPiframeScale() {
   });
 });
 
-add_task(async function testCaptureTabPermissions() {
+async function do_test_without_all_urls_permission(manifest) {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       permissions: ["tabs"],
+      ...manifest,
     },
 
     background() {
@@ -290,33 +300,76 @@ add_task(async function testCaptureTabPermissions() {
         browser.tabs.captureTab,
         'Extension without "<all_urls>" permission should not have access to captureTab'
       );
-      browser.test.notifyPass("captureTabPermissions");
-    },
-  });
-
-  await extension.startup();
-  await extension.awaitFinish("captureTabPermissions");
-  await extension.unload();
-});
-
-add_task(async function testCaptureVisibleTabPermissions() {
-  let extension = ExtensionTestUtils.loadExtension({
-    manifest: {
-      permissions: ["tabs"],
-    },
-
-    background() {
       browser.test.assertEq(
         undefined,
         browser.tabs.captureVisibleTab,
         'Extension without "<all_urls>" permission should not have access to captureVisibleTab'
       );
-      browser.test.notifyPass("captureVisibleTabPermissions");
+      browser.test.notifyPass("withoutPermissions");
     },
   });
 
   await extension.startup();
-  await extension.awaitFinish("captureVisibleTabPermissions");
+  await extension.awaitFinish("withoutPermissions");
+  await extension.unload();
+}
+
+add_task(async function test_without_all_urls_permission_mv2() {
+  await do_test_without_all_urls_permission({
+    manifest_version: 2,
+  });
+});
+
+add_task(async function test_without_all_urls_permission_mv3() {
+  await do_test_without_all_urls_permission({
+    manifest_version: 3,
+  });
+});
+
+add_task(async function test_without_all_urls_permission_mv3_not_granted() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.originControls.grantByDefault", false]],
+  });
+  await do_test_without_all_urls_permission({
+    manifest_version: 3,
+    host_permissions: ["<all_urls>"],
+  });
+  await SpecialPowers.popPrefEnv();
+});
+
+// <all_urls> is internally treated as a host permission and an API permission;
+// this test verifies that the permission is available when granted at install
+// time in MV3 (other tests in this file already verifies MV2 behavior).
+// Regression test for https://bugzilla.mozilla.org/show_bug.cgi?id=2014047
+add_task(async function test_with_all_urls_permission_mv3() {
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      manifest_version: 3,
+      host_permissions: ["<all_urls>"],
+      permissions: ["tabs"],
+    },
+
+    async background() {
+      // captureTab and captureVisibleTab default to the current window's tab
+      // when tabId / windowId are not explicitly specified, which is expected
+      // to be this test's tab.
+      let dataUrl = await browser.tabs.captureVisibleTab();
+      browser.test.assertTrue(
+        dataUrl.startsWith("data:"),
+        "Got data:-URL from tabs.captureVisibleTab"
+      );
+
+      dataUrl = await browser.tabs.captureTab();
+      browser.test.assertTrue(
+        dataUrl.startsWith("data:"),
+        "Got data:-URL from tabs.captureTab"
+      );
+      browser.test.notifyPass("withPermissions");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitFinish("withPermissions");
   await extension.unload();
 });
 
@@ -359,12 +412,13 @@ add_task(async function testCaptureVisibleTabWithActiveTab() {
 
   await extension.startup();
 
-  let testWindow = window.open(`data:text/html,${encodeURIComponent(html)}#scroll`);
+  let url = `data:text/html,${encodeURIComponent(html)}#scroll`;
+  let tab = await AppTestDelegate.openNewForegroundTab(window, url);
   await extension.awaitMessage("ready");
-  await AppTestDelegate.clickBrowserAction(testWindow, extension);
+  await AppTestDelegate.clickBrowserAction(window, extension);
   await extension.awaitFinish("captureVisibleTabPermissions");
-  await AppTestDelegate.closeBrowserAction(testWindow, extension);
-  testWindow.close();
+  await AppTestDelegate.closeBrowserAction(window, extension);
+  await AppTestDelegate.removeTab(window, tab);
 
   await extension.unload();
 });
@@ -407,9 +461,10 @@ add_task(async function testCaptureVisibleTabWithActiveTabAndNotUserInteraction(
 
   await extension.startup();
 
-  let testWindow = window.open(`data:text/html,${encodeURIComponent(html)}#scroll`);
+  let url = `data:text/html,${encodeURIComponent(html)}#scroll`;
+  let tab = await AppTestDelegate.openNewForegroundTab(window, url);
   await extension.awaitFinish("captureVisibleTabPermissions");
-  testWindow.close();
+  await AppTestDelegate.removeTab(window, tab);
 
   await extension.unload();
 });
@@ -448,12 +503,95 @@ add_task(async function testCaptureVisibleTabWithActiveTabAndAllURLs() {
 
   await extension.startup();
 
-  let testWindow = window.open(`data:text/html,${encodeURIComponent(html)}#scroll`);
+  let url = `data:text/html,${encodeURIComponent(html)}#scroll`;
+  let tab = await AppTestDelegate.openNewForegroundTab(window, url);
   await extension.awaitFinish("captureVisibleTabPermissions");
-  testWindow.close();
+  await AppTestDelegate.removeTab(window, tab);
 
   await extension.unload();
 });
+
+add_task(async function test_captureTab_inactive_tab() {
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      permissions: ["tabs", "activeTab", "<all_urls>"],
+    },
+
+    async background() {
+      const tab = await browser.tabs.create({
+        url: "about:blank",
+        active: false,
+      });
+
+      let captureTabPromise = browser.tabs.captureTab(tab.id);
+      if (navigator.userAgent.includes("Android")) {
+        // On Android, capturing is only supported for the foreground tab.
+        // See https://bugzilla.mozilla.org/show_bug.cgi?id=2040023#c1
+        await browser.test.assertRejects(
+          captureTabPromise,
+          "Cannot capture invisible tab",
+          "On Android, only the foreground tab can be captured by captureTab"
+        );
+      } else {
+        browser.test.assertTrue(
+          await captureTabPromise,
+          "Got result from captureTab for background tab"
+        );
+      }
+
+      await browser.tabs.remove(tab.id);
+
+      browser.test.sendMessage("done");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
+add_task(async function test_captureTab_discarded_tab() {
+  if (navigator.userAgent.includes("Android")) {
+    // TODO bug 1402338: Remove skip if tabs.discard is supported.
+    todo(false, "tabs.discard not supported on Android (bug 1402338).");
+    return;
+  }
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      permissions: ["tabs", "activeTab", "<all_urls>"],
+    },
+
+    async background() {
+      const tab = await browser.tabs.create({
+        url: "https://example.com/?immediately_discarded",
+        discarded: true,
+      });
+
+      // Log message here is to help with discovering if it gets stuck.
+      browser.test.log("Calling captureTab and expecting it to reject");
+      await browser.test.assertRejects(
+        browser.tabs.captureTab(tab.id),
+        "Cannot capture invisible tab",
+        "captureTab should reject tab that starts out as discarded"
+      );
+
+      await browser.test.assertRejects(
+        browser.tabs.captureTab(tab.id),
+        "Cannot capture invisible tab",
+        "captureTab should reject tab that is still discarded, again"
+      );
+
+      await browser.tabs.remove(tab.id);
+
+      browser.test.sendMessage("done");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
 </script>
 </body>
 </html>

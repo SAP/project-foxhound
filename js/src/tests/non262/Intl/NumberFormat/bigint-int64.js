@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // Ensure the int64_t optimization when formatting a BigInt value works correctly by testing with
 // various integers around the (u)int[32,64] limits.
 

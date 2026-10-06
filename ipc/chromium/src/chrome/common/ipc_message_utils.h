@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -7,12 +5,22 @@
 #ifndef CHROME_COMMON_IPC_MESSAGE_UTILS_H_
 #define CHROME_COMMON_IPC_MESSAGE_UTILS_H_
 
+#include <array>
+#include <bitset>
 #include <cstdint>
 #include <iterator>
 #include <map>
+#include <optional>
+#include <set>
+#include <span>
 #include <string>
+#include <tuple>
 #include <type_traits>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
+#include <variant>
+#include <vector>
 #include "ErrorList.h"
 #include "base/logging.h"
 #include "base/pickle.h"
@@ -31,8 +39,6 @@ class nsCOMPtr;
 
 namespace mozilla::ipc {
 class IProtocol;
-template <typename P>
-struct IPDLParamTraits;
 namespace shared_memory {
 class Cursor;
 }
@@ -121,6 +127,10 @@ class MOZ_STACK_CLASS MessageWriter final {
 #if defined(XP_DARWIN)
   bool WriteMachSendRight(mozilla::UniqueMachSendRight port) {
     return message_.WriteMachSendRight(std::move(port));
+  }
+
+  bool WriteMachReceiveRight(mozilla::UniqueMachReceiveRight port) {
+    return message_.WriteMachReceiveRight(std::move(port));
   }
 #endif
 
@@ -215,6 +225,11 @@ class MOZ_STACK_CLASS MessageReader final {
 #if defined(XP_DARWIN)
   [[nodiscard]] bool ConsumeMachSendRight(mozilla::UniqueMachSendRight* port) {
     return message_.ConsumeMachSendRight(&iter_, port);
+  }
+
+  [[nodiscard]] bool ConsumeMachReceiveRight(
+      mozilla::UniqueMachReceiveRight* port) {
+    return message_.ConsumeMachReceiveRight(&iter_, port);
   }
 #endif
 
@@ -459,7 +474,7 @@ struct ParamTraits;
 
 template <typename P>
 inline void WriteParam(MessageWriter* writer, P&& p) {
-  ParamTraits<std::decay_t<P>>::Write(writer, std::forward<P>(p));
+  ParamTraits<std::remove_cvref_t<P>>::Write(writer, std::forward<P>(p));
 }
 
 namespace detail {
@@ -481,6 +496,9 @@ inline constexpr auto ParamTraitsReadUsesOutParam()
 
 template <typename P>
 [[nodiscard]] inline bool ReadParam(MessageReader* reader, P* p) {
+  static_assert(!std::is_const_v<P>,
+                "ReadParam may only be used with const types when returning a "
+                "ReadResult (call as ReadParam<T>(reader)).");
   if constexpr (!detail::ParamTraitsReadUsesOutParam<P>()) {
     auto maybe = ParamTraits<P>::Read(reader);
     if (maybe) {
@@ -494,12 +512,14 @@ template <typename P>
 }
 
 template <typename P>
-[[nodiscard]] inline ReadResult<P> ReadParam(MessageReader* reader) {
-  if constexpr (!detail::ParamTraitsReadUsesOutParam<P>()) {
-    return ParamTraits<P>::Read(reader);
+[[nodiscard]] inline ReadResult<std::remove_cv_t<P>> ReadParam(
+    MessageReader* reader) {
+  using ReadType = std::remove_cv_t<P>;
+  if constexpr (!detail::ParamTraitsReadUsesOutParam<ReadType>()) {
+    return ParamTraits<ReadType>::Read(reader);
   } else {
-    ReadResult<P> p;
-    p.SetOk(ParamTraits<P>::Read(reader, &p.GetStorage()));
+    ReadResult<ReadType> p;
+    p.SetOk(ParamTraits<ReadType>::Read(reader, &p.GetStorage()));
     return p;
   }
 }
@@ -694,34 +714,10 @@ template <typename P, typename F>
   return ReadSequenceParamImpl<P>(reader, allocator(length), length);
 }
 
-// Temporary fallback class to allow types to declare serialization using the
-// IPDLParamTraits type class. Will be removed once all remaining
-// IPDLParamTraits implementations are gone. (bug 1754009)
-
-template <class P>
-struct ParamTraitsIPDLFallback {
-  template <class R>
-  static auto Write(MessageWriter* writer, R&& p)
-      -> decltype(mozilla::ipc::IPDLParamTraits<P>::Write(writer,
-                                                          writer->GetActor(),
-                                                          std::forward<R>(p))) {
-    mozilla::ipc::IPDLParamTraits<P>::Write(writer, writer->GetActor(),
-                                            std::forward<R>(p));
-  }
-  template <class R>
-  static auto Read(MessageReader* reader, R* r)
-      -> decltype(mozilla::ipc::IPDLParamTraits<P>::Read(reader,
-                                                         reader->GetActor(),
-                                                         r)) {
-    return mozilla::ipc::IPDLParamTraits<P>::Read(reader, reader->GetActor(),
-                                                  r);
-  }
-};
-
 // Fundamental types.
 
 template <class P>
-struct ParamTraitsFundamental : ParamTraitsIPDLFallback<P> {};
+struct ParamTraitsFundamental;
 
 template <>
 struct ParamTraitsFundamental<bool> {
@@ -899,6 +895,39 @@ template <class P>
 struct ParamTraitsStd : ParamTraitsFixed<P> {};
 
 template <class T>
+struct ParamTraitsStd<std::unique_ptr<T>> {
+  using param_type = std::unique_ptr<T>;
+
+  static void Write(MessageWriter* writer, const param_type& p) {
+    bool isNull = p == nullptr;
+    WriteParam(writer, isNull);
+
+    if (!isNull) {
+      WriteParam(writer, *p.get());
+    }
+  }
+
+  static bool Read(IPC::MessageReader* reader, param_type* r) {
+    bool isNull = true;
+    if (!ReadParam(reader, &isNull)) {
+      return false;
+    }
+
+    if (isNull) {
+      r->reset();
+    } else {
+      // NOTE: We need to use outparam-style deserialization here, as unique_ptr
+      // is used to deserialize data structures without move constructors.
+      *r = std::make_unique<T>();
+      if (!ReadParam(reader, r->get())) {
+        return false;
+      }
+    }
+    return true;
+  }
+};
+
+template <class T>
 struct ParamTraitsStd<std::basic_string<T>> {
   typedef std::basic_string<T> param_type;
   static void Write(MessageWriter* writer, const param_type& p) {
@@ -912,25 +941,298 @@ struct ParamTraitsStd<std::basic_string<T>> {
   }
 };
 
-template <class K, class V>
-struct ParamTraitsStd<std::map<K, V>> {
-  typedef std::map<K, V> param_type;
+// Sending-only specialization for std::basic_string_view<T>. Uses an identical
+// serialization format as std::basic_string<T>.
+template <class T>
+struct ParamTraitsStd<std::basic_string_view<T>> {
+  using param_type = std::basic_string_view<T>;
   static void Write(MessageWriter* writer, const param_type& p) {
-    WriteParam(writer, static_cast<int>(p.size()));
-    typename param_type::const_iterator iter;
-    for (iter = p.begin(); iter != p.end(); ++iter) {
-      WriteParam(writer, iter->first);
-      WriteParam(writer, iter->second);
+    WriteSequenceParam<const T&>(writer, p.data(), p.size());
+  }
+};
+
+template <class T>
+  requires(!std::same_as<T, bool>)
+struct ParamTraitsStd<std::vector<T>> {
+  using param_type = std::vector<T>;
+  static void Write(MessageWriter* writer, const param_type& p) {
+    WriteSequenceParam<const T&>(writer, p.data(), p.size());
+  }
+  static void Write(MessageWriter* writer, param_type&& p) {
+    WriteSequenceParam<T&&>(writer, p.data(), p.size());
+  }
+  static bool Read(MessageReader* reader, param_type* r) {
+    return ReadSequenceParam<T>(reader, [&](uint32_t length) -> T* {
+      r->resize(length);
+      return r->data();
+    });
+  }
+};
+
+// Sending-only specialization for std::span<T const>. Uses an identical
+// serialization format as const std::vector<T>&.
+template <class T>
+struct ParamTraitsStd<std::span<const T>> {
+  using param_type = std::span<const T>;
+  static void Write(MessageWriter* writer, const param_type& p) {
+    WriteSequenceParam<const T&>(writer, p.data(), p.size());
+  }
+};
+
+template <class C, class E, size_t N>
+struct ParamTraitsFixedSizeCollectionHelper {
+  using param_type = C;
+  template <class P>
+    requires std::same_as<std::remove_cvref_t<P>, param_type>
+  static void Write(MessageWriter* writer, P&& p) {
+    if constexpr (kUseWriteBytes<E>) {
+      constexpr uint32_t byte_length = N * sizeof(E);
+      MessageBufferWriter buf_writer(writer, byte_length);
+      buf_writer.WriteBytes(std::data(p), byte_length);
+    } else {
+      WriteImpl(writer, std::forward<P>(p), std::make_index_sequence<N>{});
+    }
+  }
+
+  static bool Read(MessageReader* reader, param_type* r) {
+    if constexpr (kUseWriteBytes<E>) {
+      constexpr uint32_t byte_length = N * sizeof(E);
+      MessageBufferReader buf_reader(reader, byte_length);
+      if (!buf_reader.ReadBytesInto(std::data(*r), byte_length)) {
+        return false;
+      }
+      return true;
+    } else {
+      return ReadImpl(reader, r, std::make_index_sequence<N>{});
+    }
+  }
+
+ private:
+  template <class P, size_t... Is>
+  static void WriteImpl(MessageWriter* writer, P&& p,
+                        std::index_sequence<Is...>) {
+    (WriteParam(writer, std::get<Is>(std::forward<P>(p))), ...);
+  }
+
+  template <size_t... Is>
+  static bool ReadImpl(MessageReader* reader, param_type* r,
+                       std::index_sequence<Is...>) {
+    if ((!ReadParam(reader, &(*r)[Is]) || ...)) {
+      return false;
+    }
+    return true;
+  }
+};
+
+template <class T, size_t N>
+struct ParamTraitsStd<std::array<T, N>>
+    : ParamTraitsFixedSizeCollectionHelper<std::array<T, N>, T, N> {};
+
+template <class T, size_t N>
+struct ParamTraitsStd<T[N]> : ParamTraitsFixedSizeCollectionHelper<T[N], T, N> {
+};
+
+template <class T>
+struct ParamTraitsStd<std::optional<T>> {
+  using param_type = std::optional<T>;
+  template <class P>
+    requires std::same_as<std::remove_cvref_t<P>, param_type>
+  static void Write(MessageWriter* writer, P&& p) {
+    WriteParam(writer, p.has_value());
+    if (p.has_value()) {
+      WriteParam(writer, *std::forward<P>(p));
     }
   }
   static bool Read(MessageReader* reader, param_type* r) {
-    int size;
-    if (!ReadParam(reader, &size) || size < 0) return false;
-    for (int i = 0; i < size; ++i) {
-      K k;
-      if (!ReadParam(reader, &k)) return false;
-      V& value = (*r)[k];
-      if (!ReadParam(reader, &value)) return false;
+    bool has_value;
+    if (!ReadParam(reader, &has_value)) {
+      return false;
+    }
+    *r = std::nullopt;
+    if (has_value) {
+      auto result = ReadParam<T>(reader);
+      if (!result.isOk()) {
+        return false;
+      }
+      r->emplace(std::move(*result));
+    }
+    return true;
+  }
+};
+
+template <class T, class U>
+struct ParamTraitsStd<std::pair<T, U>> {
+  using param_type = std::pair<T, U>;
+  template <class P>
+    requires std::same_as<std::remove_cvref_t<P>, param_type>
+  static void Write(MessageWriter* writer, P&& p) {
+    WriteParam(writer, std::get<0>(std::forward<P>(p)));
+    WriteParam(writer, std::get<1>(std::forward<P>(p)));
+  }
+  static ReadResult<param_type> Read(MessageReader* reader) {
+    auto first = ReadParam<T>(reader);
+    if (!first) {
+      return {};
+    }
+    auto second = ReadParam<U>(reader);
+    if (!second) {
+      return {};
+    }
+    return ReadResult<param_type>{std::in_place, std::move(*first),
+                                  std::move(*second)};
+  }
+};
+
+template <class... Ts>
+struct ParamTraitsStd<std::tuple<Ts...>> {
+  using param_type = std::tuple<Ts...>;
+  template <class P>
+    requires std::same_as<std::remove_cvref_t<P>, param_type>
+  static void Write(MessageWriter* writer, P&& p) {
+    WriteImpl(writer, std::forward<P>(p), std::index_sequence_for<Ts...>{});
+  }
+  static ReadResult<param_type> Read(MessageReader* reader) {
+    return ReadImpl<Ts...>(reader);
+  }
+
+ private:
+  template <class P, size_t... Is>
+  static void WriteImpl(MessageWriter* writer, P&& p,
+                        std::index_sequence<Is...>) {
+    (WriteParam(writer, std::get<Is>(std::forward<P>(p))), ...);
+  }
+
+  template <class T, class... Rest>
+  static ReadResult<std::tuple<T, Rest...>> ReadImpl(MessageReader* reader) {
+    auto element = ReadParam<T>(reader);
+    if (!element) {
+      return {};
+    }
+    if constexpr (sizeof...(Rest) == 0) {
+      return ReadResult<std::tuple<T>>{std::in_place, std::move(*element)};
+    } else {
+      auto rest = ReadImpl<Rest...>(reader);
+      if (!rest) {
+        return {};
+      }
+      return ReadResult<std::tuple<T, Rest...>>{
+          std::in_place,
+          std::tuple_cat(std::tuple(std::move(*element)), std::move(*rest))};
+    }
+  }
+};
+
+template <class C>
+struct ParamTraitsStlCollectionHelper {
+  using param_type = C;
+  using value_type = typename C::value_type;
+
+  static void Write(MessageWriter* writer, const param_type& p) {
+    WriteParam(writer, static_cast<uint64_t>(p.size()));
+    for (const value_type& elt : p) {
+      WriteParam(writer, elt);
+    }
+  }
+
+  static bool Read(MessageReader* reader, param_type* r) {
+    uint64_t size;
+    if (!ReadParam(reader, &size)) {
+      return false;
+    }
+    for (uint64_t i = 0; i < size; ++i) {
+      auto elt = ReadParam<value_type>(reader);
+      if (!elt) {
+        return false;
+      }
+      r->emplace(std::move(*elt));
+    }
+    return true;
+  }
+};
+
+template <class K, class V, class C>
+struct ParamTraitsStd<std::map<K, V, C>>
+    : public ParamTraitsStlCollectionHelper<std::map<K, V, C>> {};
+
+template <class K, class V, class H, class P>
+struct ParamTraitsStd<std::unordered_map<K, V, H, P>>
+    : public ParamTraitsStlCollectionHelper<std::unordered_map<K, V, H, P>> {};
+
+template <class K, class C>
+struct ParamTraitsStd<std::set<K, C>>
+    : public ParamTraitsStlCollectionHelper<std::set<K, C>> {};
+
+template <class K, class H, class P>
+struct ParamTraitsStd<std::unordered_set<K, H, P>>
+    : public ParamTraitsStlCollectionHelper<std::unordered_set<K, H, P>> {};
+
+template <>
+struct ParamTraitsStd<std::monostate> {
+  using param_type = std::monostate;
+  static void Write(MessageWriter*, const param_type&) {}
+  static bool Read(MessageReader*, param_type*) { return true; }
+};
+
+template <class... Ts>
+struct ParamTraitsStd<std::variant<Ts...>> {
+  using param_type = std::variant<Ts...>;
+
+  template <class U>
+  static void Write(MessageWriter* writer, U&& p) {
+    WriteParam(writer, static_cast<uint64_t>(p.index()));
+    std::visit(
+        [&](auto&& param) {
+          WriteParam(writer, std::forward<decltype(param)>(param));
+        },
+        std::forward<U>(p));
+  }
+
+  static ReadResult<param_type> Read(MessageReader* reader) {
+    uint64_t index;
+    if (!ReadParam(reader, &index)) {
+      return {};
+    }
+    return ReadI<0>(reader, static_cast<size_t>(index));
+  }
+
+ private:
+  template <size_t I>
+  static ReadResult<param_type> ReadI(MessageReader* reader, size_t index) {
+    if constexpr (I >= std::variant_size_v<param_type>) {
+      return {};  // No matching variant index
+    } else {
+      if (index == I) {
+        using alt_type = std::variant_alternative_t<I, param_type>;
+        ReadResult<alt_type> alt = ReadParam<alt_type>(reader);
+        if (!alt) {
+          return {};
+        }
+        return ReadResult<param_type>{std::in_place, std::in_place_index<I>,
+                                      std::move(alt.get())};
+      }
+      return ReadI<I + 1>(reader, index);
+    }
+  }
+};
+
+template <size_t N>
+struct ParamTraitsStd<std::bitset<N>> {
+  using paramType = std::bitset<N>;
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    paramType mask(UINT64_MAX);
+    for (size_t i = 0; i < N; i += 64) {
+      uint64_t value = ((aParam >> i) & mask).to_ullong();
+      WriteParam(aWriter, value);
+    }
+  }
+
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    for (size_t i = 0; i < N; i += 64) {
+      uint64_t value = 0;
+      if (!ReadParam(aReader, &value)) {
+        return false;
+      }
+      *aResult |= std::bitset<N>(value) << i;
     }
     return true;
   }
@@ -1058,6 +1360,49 @@ struct ParamTraitsIPC<mozilla::UniqueMachSendRight> {
     return true;
   }
 };
+
+// `UniqueMachReceiveRight` may be serialized over IPC channels. On the
+// receiving side, the UniqueMachReceiveRight is the local name of the right
+// which was transmitted.
+//
+// When sending a UniqueMachReceiveRight, the right must be valid at the time of
+// transmission. As transmission is asynchronous, this requires passing
+// ownership of the handle to IPC.
+//
+// A UniqueMachReceiveRight may only be read once. After it has been read once,
+// it will be consumed, and future reads will return an invalid right.
+template <>
+struct ParamTraitsIPC<mozilla::UniqueMachReceiveRight> {
+  typedef mozilla::UniqueMachReceiveRight param_type;
+  static void Write(MessageWriter* writer, param_type&& p) {
+    const bool valid = p != nullptr;
+    WriteParam(writer, valid);
+    if (valid) {
+      if (!writer->WriteMachReceiveRight(std::move(p))) {
+        writer->FatalError("Too many mach receive rights for one message!");
+        NOTREACHED() << "Too many mach receive rights for one message!";
+      }
+    }
+  }
+  static bool Read(MessageReader* reader, param_type* r) {
+    bool valid;
+    if (!ReadParam(reader, &valid)) {
+      reader->FatalError("Error reading mach receive right validity");
+      return false;
+    }
+
+    if (!valid) {
+      *r = nullptr;
+      return true;
+    }
+
+    if (!reader->ConsumeMachReceiveRight(r)) {
+      reader->FatalError("Mach receive right not found in message!");
+      return false;
+    }
+    return true;
+  }
+};
 #endif
 
 // Mozilla-specific types.
@@ -1085,8 +1430,13 @@ struct ParamTraitsMozilla<nsresult> {
   }
 };
 
-// See comments for the IPDLParamTraits specializations for RefPtr<T> and
-// nsCOMPtr<T> for more details.
+// When being passed `RefPtr<T>` or `nsCOMPtr<T>`, forward to a specialization
+// for the underlying target type. The parameter type will be passed as `T*`,
+// and result as `RefPtr<T>*`.
+//
+// This is done explicitly to ensure that the deleted `&&` overload for
+// `operator T*` is not selected in generic contexts, and to support
+// deserializing into `nsCOMPtr<T>`.
 template <class T>
 struct ParamTraitsMozilla<RefPtr<T>> {
   static void Write(MessageWriter* writer, const RefPtr<T>& p) {
@@ -1130,6 +1480,58 @@ struct ParamTraitsMozilla<mozilla::NotNull<T>> {
       return {};
     }
     return mozilla::WrapNotNull(std::move(*ptr));
+  }
+};
+
+template <class T, size_t N>
+struct ParamTraitsMozilla<mozilla::Array<T, N>>
+    : ParamTraitsFixedSizeCollectionHelper<mozilla::Array<T, N>, T, N> {};
+
+template <class T>
+struct ParamTraitsMozilla<mozilla::Maybe<T>> {
+  typedef mozilla::Maybe<T> paramType;
+  static void Write(MessageWriter* writer, const mozilla::Maybe<T>& m) {
+    bool isSome = m.isSome();
+    WriteParam(writer, isSome);
+    if (isSome) {
+      WriteParam(writer, m.ref());
+    }
+  }
+
+  static bool Read(MessageReader* reader, mozilla::Maybe<T>* r) {
+    bool isSome;
+    if (!ReadParam(reader, &isSome)) {
+      return false;
+    }
+    if (isSome) {
+      r->emplace();
+      if (!ReadParam(reader, r->ptr())) {
+        return false;
+      }
+    }
+    return true;
+  }
+};
+
+template <>
+struct ParamTraits<mozilla::Nothing> {
+  // Serialize as if it is a mozilla::Maybe (though in practice this is used for
+  // a monostate Variant alternative type).
+
+  typedef mozilla::Nothing paramType;
+  static void Write(MessageWriter* writer, const paramType& aParam) {
+    bool isSome = false;
+    WriteParam(writer, isSome);
+  }
+
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    bool isSome;
+    if (!ReadParam(aReader, &isSome)) {
+      return false;
+    }
+    MOZ_ASSERT(!isSome, "attempt to read Nothing from a Some value");
+    *aResult = mozilla::Nothing();
+    return true;
   }
 };
 

@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<meta charset=utf-8>
+<title>Test a large module which imports a 404 file</title>
+<script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+<script>
+  SimpleTest.waitForExplicitFinish();
+
+  import("./large_module_import_404.mjs").catch((e) => {
+    ok(e instanceof TypeError, "Should be a TypeError");
+    SimpleTest.finish();
+  });
+</script>
+<body></body>

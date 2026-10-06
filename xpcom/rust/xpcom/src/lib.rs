@@ -10,6 +10,7 @@
 
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
+#![allow(unknown_lints, mismatched_lifetime_syntaxes)]
 
 // re-export the xpcom_macros macro
 pub use xpcom_macros::xpcom;

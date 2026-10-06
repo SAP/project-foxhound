@@ -46,8 +46,6 @@ activity_stream:
       "DRAG",
       "DROP",
       "IMPRESSION",
-      "FAKESPOT_CATEGORY",
-      "FAKESPOT_CLICK",
       "MIGRATION_CANCEL",
       "MIGRATION_START",
       "OPEN_NEWTAB_PREFS",
@@ -119,21 +117,6 @@ activity_stream:
       page: about:home or about_newtab - the page where the event occurred
       user_prefs: An integer representaing a user's A-S settings.
 
-aboutprivatebrowsing:
-  click:
-    objects: ["info_link", "promo_link", "dismiss_button"]
-    release_channel_collection: opt-out
-    record_in_processes: ["content"]
-    description: >
-      This is recorded when a user clicks a link on the private browsing newtab.
-    bug_numbers: [1709344, 1754635, 1781973, 1811146, 1841925, 1871197, 1922596, 1952111]
-    notification_emails:
-      - "emz@mozilla.com"
-      - "tihuang@mozilla.com"
-    expiry_version: "145"
-    products:
-      - "firefox"
-
 readermode:
   view:
     objects: ["on", "off"]
@@ -202,7 +185,7 @@ addonsManager:
         The method used by the source to install the add-on (included when the source can use more than one,
         e.g. install events with source "about:addons" may have "install-from-file" or "url" as method),
         one of "amWebAPI", "drag-and-drop", "installTrigger", "install-from-file", "link",
-        "management-webext-api", "sideload", "onboarding" "synthetic-install", "url", "product-updates".
+        "management-webext-api", "sideload", "onboarding", "rtamo", "synthetic-install", "url", "product-updates".
         e.g. install events with source "about:addons" may have "install-from-file" or "drag-and-drop" as method),
         one of "amWebAPI", "drag-and-drop", "installTrigger", "install-from-file", "link", "management-webext-api",
         "sideload", "synthetic-install", "url", "product-updates", "manager".
@@ -215,13 +198,13 @@ addonsManager:
           - site_warning, site_blocked, install_disabled_warning
           - download_started, download_completed, download_failed
     notification_emails: ["addons-dev-internal@mozilla.com"]
-    expiry_version: "147"
+    expiry_version: "161"
     products:
       - "firefox"
       - "fennec"
       - "thunderbird"
     record_in_processes: ["main"]
-    bug_numbers: [1433335, 1515697, 1523641, 1549770, 1590736, 1630596, 1672570, 1714251, 1749878, 1781974, 1817100, 1861295, 1912166, 1958151]
+    bug_numbers: [1433335, 1515697, 1523641, 1549770, 1590736, 1630596, 1672570, 1714251, 1749878, 1781974, 1817100, 1861295, 1912166, 1958151, 1994595, 2041166]
     release_channel_collection: opt-out
   install_stats:
     description: >
@@ -290,13 +273,13 @@ addonsManager:
         The add-on blocklistState (0 not-blocked, 1 soft-blocked, 2
         hard-blocked) at the time the manage event was being collected.
     notification_emails: ["addons-dev-internal@mozilla.com"]
-    expiry_version: "147"
+    expiry_version: "161"
     products:
       - "firefox"
       - "fennec"
       - "thunderbird"
     record_in_processes: ["main"]
-    bug_numbers: [1433335, 1515697, 1523641, 1549770, 1590736, 1630596, 1672570, 1714251, 1749878, 1781974, 1817100, 1861295, 1912166, 1917859, 1958149]
+    bug_numbers: [1433335, 1515697, 1523641, 1549770, 1590736, 1630596, 1672570, 1714251, 1749878, 1781974, 1817100, 1861295, 1912166, 1917859, 1958149, 1994595, 2041166]
     release_channel_collection: opt-out
 addonsSearchDetection:
   etld_change:
@@ -357,185 +340,6 @@ form_autocomplete:
     record_in_processes: ["main"]
     release_channel_collection: opt-out
 
-address:
-  doorhanger:
-    description: >-
-      User interactions for the browser address autofill doorhanger.
-    objects:
-      - "capture_doorhanger"
-      - "update_doorhanger"
-      - "edit_doorhanger"
-    methods:
-      - "show"
-      - "save"
-      - "update"
-      - "cancel"
-      - "disable"
-      - "pref"
-      - "learn_more"
-    bug_numbers: [1801039]
-    notification_emails: ["autofill@lists.mozilla.org", "passwords-dev@mozilla.org"]
-    expiry_version: never
-    products:
-      - "firefox"
-    record_in_processes: ["main"]
-    release_channel_collection: opt-out
-  manage:
-    description: >-
-      User interactions for address autofill preferences management UI.
-    objects:
-      - "manage"
-    methods:
-      - "show"
-      - "add"
-      - "delete"
-      - "show_entry"
-      - "edit"
-    bug_numbers: [1801039]
-    notification_emails: ["autofill@lists.mozilla.org", "passwords-dev@mozilla.org"]
-    expiry_version: never
-    products:
-      - "firefox"
-    record_in_processes: ["main"]
-    release_channel_collection: opt-out
-  address_form:
-    description: >-
-      User interactions for address autofill forms
-        'detected': Recorded when a form is recognized as a credit card form.
-                    The possible value of cc_* in extra_keys are "true", "false", or 0
-                    When the value is "true", the field is identified via autocomplete attribute
-                    When the value is "false", the field is not detected in the form
-                    When the value is an 0, then the field is identified by regexp-based heuristic
-        'popup_shown': Recorded when autofill popup is shown. Using field_name to record the field
-                       that triggers this event
-        'filled': Recorded when a form is autofiled. Possible values are
-                  `filled`, `not_filled`, `user_filled` or `unavailable`
-        'filled_modified': Recorded when a field is autofilled and then modified by the user.
-                           Using field_name to record the field that triggers this event.
-        'submitted': Recorded when a form is submitted. Possible values are `autofilled`, `not_filled`, `user_filled` or `unavailable`
-        'cleared' Recorded when a form is cleared . Using field_name to record the field that triggers this event
-    objects: ["address_form"]
-    methods: ["detected", "popup_shown", "filled", "filled_modified", "submitted", "cleared"]
-    bug_numbers: [1804901]
-    notification_emails: ["autofill@lists.mozilla.org", "passwords-dev@mozilla.org"]
-    expiry_version: never
-    products:
-      - "firefox"
-    record_in_processes: ["main"]
-    release_channel_collection: opt-out
-    extra_keys:
-      street_address: street address result, filled when method is `detected`, `filled`, or `filled_modified`
-      address_line1: address_line1 result, filled when method is `detected`, `filled`, or `filled_modified`.
-      address_line2: address_line2 result, filled when method is `detected`, `filled`, or `filled_modified`.
-      address_line3: address_line3 result, filled when method is `detected`, `filled`, or `filled_modified`.
-      address_level1: address_level1 result, filled when method is `detected`, `filled`, or `filled_modified`.
-      address_level2: address_level2 result, filled when method is `detected`, `filled`, or `filled_modified`.
-      postal_code: postal_code result, filled when method is `detected`, `filled`, or `filled_modified`.
-      country: country result, filled when method is `detected`, `filled`, or `filled_modified`.
-      field_name: Name of the field being affected by the method, filled when method is `popup_shown` or `filled_modified`.
-  address_form_ext:
-    description: >-
-      Address has too many fields so we cannot cover them all in the above `address_form` telemetry
-      This telemetry is used to record address fields that are not listed in `address_form`
-    objects: ["address_form_ext"]
-    methods: ["detected", "filled", "submitted"]
-    bug_numbers: [1804901]
-    notification_emails: ["autofill@lists.mozilla.org", "passwords-dev@mozilla.org"]
-    expiry_version: never
-    products:
-      - "firefox"
-    record_in_processes: ["main"]
-    release_channel_collection: opt-out
-    extra_keys:
-      name: name
-      given_name: give_name
-      additional_name: additional_name
-      family_name: family_name
-      email: email
-      organization: organization
-      tel: telephone
-
-creditcard:
-  doorhanger:
-    description: >-
-      User interactions for the browser credit card autofill doorhanger.
-    objects:
-      - "capture_doorhanger"
-      - "update_doorhanger"
-    methods:
-      - "show"
-      - "save"
-      - "update"
-      - "cancel"
-      - "disable"
-    bug_numbers: [1653073, 1653083, 1720608, 1767907]
-    notification_emails: ["autofill@lists.mozilla.org", "passwords-dev@mozilla.org"]
-    expiry_version: never
-    products:
-      - "firefox"
-    record_in_processes: ["main"]
-    release_channel_collection: opt-out
-  manage:
-    description: >-
-      User interactions for credit card autofill preferences management UI.
-    objects:
-      - "manage"
-    methods:
-      - "show"
-      - "add"
-      - "delete"
-      - "show_entry"
-      - "edit"
-    bug_numbers: [1653073, 1654167, 1720608, 1767907]
-    notification_emails: ["autofill@lists.mozilla.org", "passwords-dev@mozilla.org"]
-    expiry_version: never
-    products:
-      - "firefox"
-    record_in_processes: ["main"]
-    release_channel_collection: opt-out
-  cc_form_v2:
-    description: >-
-      User interactions for credit card autofill forms
-      Expected values are store in extra_keys and are varies depends on the methods
-        'detected': Recorded when a form is recognized as a credit card form.
-                    The possible value of cc_* in extra_keys are "true", "false", or an integer between 0-100
-                    When the value is "true", the field is identified via autocomplete attribute
-                    When the value is "false", the field is not detected in the form
-                    When the value is an integer greater than 0, the value indicates the confidence value from fathom (normalized to 0-100)
-                    When the value is an 0, then the field is identified by regexp-based heuristic
-        'popup_shown': Recorded when autofill popup is shown. Using field_name to record the field
-                       that triggers this event
-        'filled': Recorded when a form is autofiled. Possible values are
-                  `filled`, `not_filled`, `user_filled` or `unavailable`
-        'filled_modified': Recorded when a field is autofilled and then modified by the user.
-                           Using field_name to record the field that triggers this event.
-        'submitted': Recorded when a form is submitted. Possible values are `autofilled`, `user_filled` or `unavailable`
-        'cleared' Recorded when a form is cleared . Using field_name to record the field that triggers this event
-    objects:
-      - "cc_form_v2"
-    methods:
-      - "detected"
-      - "popup_shown"
-      - "filled"
-      - "filled_modified"
-      - "submitted"
-      - "cleared"
-    bug_numbers: [1757731]
-    notification_emails: ["autofill@lists.mozilla.org", "passwords-dev@mozilla.org"]
-    expiry_version: never
-    products:
-      - "firefox"
-    record_in_processes: ["main"]
-    release_channel_collection: opt-out
-    extra_keys:
-      cc_name: cardholder name field result. Used by `detected`, `filled`, and `filled_modified` methods.
-      cc_number: credit card number field result
-      cc_type: credit card type result
-      cc_exp: credit card expiration date
-      cc_exp_month: credit card expiration month
-      cc_exp_year: credit card expiration year
-      field_name: Name of the field being affected by the method. Used by `popup_shown` and `filled_modified` methods.
-
 homepage:
   preference:
     objects: ["ignore"]
@@ -587,6 +391,8 @@ aboutpreferences:
         "click" is used when a pane is shown when user clicks category name inside about:preferences.
         "hash" is used when a pane is shown via a hash change in url.
       The value field records identifier of pane shown
+    extra_keys:
+      session: The session ID for this tab.
     bug_numbers: [1738187]
     notification_emails:
       - "pdahiya@mozilla.com"
@@ -715,7 +521,7 @@ normandy:
     bug_numbers: [1443560, 1843126, 1896718, 1907649]
     notification_emails:
       - "normandy-notifications@mozilla.com"
-      - "nimbus-team@mozilla.com"
+      - "project-nimbus@mozilla.com"
     products:
       - "firefox"
       - "fennec"
@@ -776,7 +582,7 @@ normandy:
       This is different from enrollment or experiment activation because it
       registers when a user actually gets exposed to the experiment feature.
     bug_numbers: [1675104]
-    notification_emails: ["ujet@mozilla.com"]
+    notification_emails: ["omc-core@mozilla.com"]
     expiry_version: "never"
     extra_keys:
       branchSlug: The slug for the branch the user is enrolled in.
@@ -1209,36 +1015,6 @@ pwmgr:
     products:
       - "firefox"
     record_in_processes: [content, main]
-  doorhanger_submitted:
-    description: >
-      A login is saved or updated via the capture doorhanger. Carries information about whether
-      the username and password _that were saved/updated by the user_ were modified in the
-      doorhanger, selected from the suggestion autocomplete, or neither. `did_edit_X` and
-      `did_select_X` will never both be true in the same event.
-
-      The `object` describes the type of doorhanger when it was originally created. Note that user
-      updates to the doorhanger may change whether a login is actually saved or updated, but will
-      not impact the sent object.
-    objects: ["save", "update"]
-    bug_numbers: [1650929, 1650941, 1678200, 1714252, 1754637, 1850872, 1969169]
-    expiry_version: "148"
-    release_channel_collection: opt-out
-    products: ["firefox"]
-    record_in_processes: [main]
-    notification_emails: ["passwords-dev@mozilla.org"]
-    extra_keys:
-      did_edit_un: >
-        Whether or not the saved/updated username was modified by the user typing into the
-        username field.
-      did_select_un: >
-        Whether or not the saved/updated username was selected by the user choosing a suggested
-        value from the autocomplete popup.
-      did_edit_pw: >
-        Whether or not the saved/updated password was modified by the user typing into the
-        password field.
-      did_select_pw: >
-        Whether or not the saved/updated password was selected by the user choosing a suggested
-        value from the autocomplete popup.
 
 # Record telemetry based on individual Firefox relay UI (autocomplete popup, notification panel)
 relay_integration:
@@ -1367,6 +1143,12 @@ fxa_avatar_menu:
         "signedin" and "login_failed".
       fxa_avatar: Boolean for whether or not account has set an avatar
       fxa_sync_on: Boolean for whether or not sync was configured at the time the event fired
+      device_count: >
+        Number of connected devices available to send tabs to (optional, only populated for send_tab)
+      action: >
+        The action selected by the user (optional, only populated for send_tab). Possible values
+        are "device" (sent to specific device), "all_devices" (sent to all devices), or
+        "manage_devices" (opened device management).
 
 fxa_app_menu:
   click:
@@ -1403,6 +1185,12 @@ fxa_app_menu:
         "signedin" and "login_failed".
       fxa_avatar: Boolean for whether or not account has set an avatar
       fxa_sync_on: Boolean for whether or not sync was configured at the time the event fired.
+      device_count: >
+        Number of connected devices available to send tabs to (optional, only populated for send_tab)
+      action: >
+        The action selected by the user (optional, only populated for send_tab). Possible values
+        are "device" (sent to specific device), "all_devices" (sent to all devices), or
+        "manage_devices" (opened device management).
 
 messaging_experiments:
   reach:
@@ -1413,6 +1201,7 @@ messaging_experiments:
       "spotlight",
       "featureCallout",
       "fxms_bmb_button",
+      "fxms_message",
       "fxms_message_1",
       "fxms_message_2",
       "fxms_message_3",
@@ -1427,7 +1216,17 @@ messaging_experiments:
       "fxms_message_12",
       "fxms_message_13",
       "fxms_message_14",
-      "fxms_message_15"
+      "fxms_message_15",
+      "fxms_message_16",
+      "fxms_message_17",
+      "fxms_message_18",
+      "fxms_message_19",
+      "fxms_message_20",
+      "fxms_message_21",
+      "fxms_message_22",
+      "fxms_message_23",
+      "fxms_message_24",
+      "fxms_message_25"
     ]
     methods: ["reach"]
     release_channel_collection: opt-out
@@ -1439,12 +1238,11 @@ messaging_experiments:
       experiments. All qualified branch ID(s) will be recorded in the 'extra_keys'
       for each active experiment, and the event 'value' will be the experiment ID
     bug_numbers: [1471318]
-    notification_emails: ["ujet@mozilla.com"]
+    notification_emails: ["omc-core@mozilla.com"]
     expiry_version: "never"
     extra_keys:
-      branches: >
-        A semicolon separated string for all the qualified branch ID(s).
-        e.g. "control;variant_01;treatment_02".
+      branches: The slug for the branch the message came from.
+      message_id: The ID of the message that triggered this reach event.
   targeting:
     objects:
       - attribute_error
@@ -1465,7 +1263,7 @@ messaging_experiments:
     bug_numbers:
       - 1644743
     notification_emails:
-      - ujet@mozilla.com
+      - omc-core@mozilla.com
     expiry_version: never
 
 # This category contains event entries used for Telemetry tests.
@@ -1623,627 +1421,6 @@ telemetry.test.second:
     expiry_version: never
     extra_keys:
       key1: This is just a test description.
-
-devtools.main:
-  activate:
-    objects: ["responsive_design", "split_console"]
-    bug_numbers: [1455273]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User activates the responsive_design or split_console in the devtools toolbox.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      host: "Toolbox host (positioning): bottom, left, right, window, page or other."
-      width: Toolbox width rounded up to the nearest 50px.
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  add_breakpoint:
-    objects: ["debugger"]
-    bug_numbers: [1463123]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User has added a breakpoint to a script.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  blackbox:
-    objects: ["debugger"]
-    bug_numbers: [1463126]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User clicked the blackbox button to blackbox a script.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  close:
-    objects: ["tools"]
-    bug_numbers: [1453312]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User closes devtools toolbox.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      host: "Toolbox host (positioning): bottom, side, window or other."
-      width: Toolbox width rounded up to the nearest 50px.
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  close_adbg:
-    objects: ["aboutdebugging"]
-    bug_numbers: [1504173]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User closes about:debugging.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      width: Toolbox width rounded up to the nearest 50px.
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  connection_attempt:
-    objects: ["aboutdebugging"]
-    bug_numbers: [1549970]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User is trying to connect to a remote runtime.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      connection_id: Randomly generated id to keep to group various events related to the same connection attempt.
-      connection_type: Connection type
-      runtime_id: Random id generated to track events related to a single runtime
-      status: One of (cancelled, failed, not responding, start, success).
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  continue:
-    objects: ["debugger"]
-    bug_numbers: [1463122]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User has pressed the continue button on a paused script.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  deactivate:
-    objects: ["responsive_design", "split_console"]
-    bug_numbers: [1455275]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User deactivates the responsive_design or split_console in the devtools toolbox.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      host: "Toolbox host (positioning): bottom, side, window or other."
-      width: Toolbox width rounded up to the nearest 50px.
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  device_added:
-    objects: ["aboutdebugging"]
-    bug_numbers: [1521507]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: A new device was detected in about:debugging
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      connection_type: Connection type
-      device_name: Device name
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  device_removed:
-    objects: ["aboutdebugging"]
-    bug_numbers: [1521507]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: A previously listed device was removed in about:debugging
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      connection_type: Connection type
-      device_name: Device name
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  edit_html:
-    objects: ["inspector"]
-    bug_numbers: [1463080]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User is editing HTML via the context menu item in the markup view.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      made_changes: Indicates whether changes were made.
-      time_open: The amount of time in ms that the HTML editor was open.
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  edit_resend:
-    objects: ["netmonitor"]
-    bug_numbers: [1463171]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User has executed edit / resend in the netmonitor.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      session_id: The toolbox session start time e.g. 13963.
-  edit_rule:
-    objects: ["ruleview"]
-    bug_numbers: [1463081]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User is editing a CSS rule by clicking on or next to a CSS property, enabling / disabling a rule or creating a new property.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  enter:
-    objects: ["accessibility", "application", "dom", "inspector", "jsdebugger", "memory", "netmonitor", "options", "performance", "storage", "styleeditor", "webconsole", "whatsnew","other", "fakeTool4242", "testBlankPanel", "testTool", "testtool1", "testTool1072208", "testtool2"]
-    bug_numbers: [1441070]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User opens a tool in the devtools toolbox.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      host: "Toolbox host (positioning): bottom, side, window or other."
-      width: Toolbox width rounded up to the nearest 50px.
-      message_count: The number of cached console messages.
-      start_state: debuggerStatement, breakpoint, exception, tab_switch, toolbox_show, initial_panel, toggle_settings_off, toggle_settings_on, key_shortcut, select_next_key, select_prev_key, tool_unloaded, inspect_dom, unknown etc.
-      panel_name: The name of the panel opened or other
-      cold: Is this the first time the current panel has been opened in this toolbox?
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  execute_js:
-    objects: ["webconsole"]
-    bug_numbers: [1463083]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User has executed some JS in the Web Console.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      input: Indicates from which input the command was evaluated ("inline" for regular input, "multiline" for editor mode).
-      lines: The number of lines contained in the command.
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  reverse_search:
-    objects: ["webconsole"]
-    bug_numbers: [1489489]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User has toggled, navigated or evaluated expressions from reverse search .
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      functionality: Indicates functionality of reverse search being accessed.
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  exit:
-    objects: ["accessibility", "application", "dom", "inspector", "jsdebugger", "memory", "netmonitor", "options", "performance", "storage", "styleeditor", "webconsole", "whatsnew", "other", "fakeTool4242", "testBlankPanel", "testTool", "testtool1", "testTool1072208", "testtool2"]
-    bug_numbers: [1455270]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User closes a tool in the devtools toolbox.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      host: "Toolbox host (positioning): bottom, side, window or other."
-      width: Toolbox width rounded up to the nearest 50px.
-      next_panel: The name of the panel closed or other.
-      panel_name: The name of the panel opened or other
-      reason: debuggerStatement, breakpoint, exception, tab_switch, toolbox_show, initial_panel, toggle_settings_off, toggle_settings_on, key_shortcut, select_next_key, select_prev_key, tool_unloaded, inspect_dom, toolbox_closed, unknown etc.
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  filters_changed:
-    objects: ["netmonitor", "webconsole"]
-    bug_numbers: [1463144, 1463095]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User has changed filters in the web console.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      trigger: "The cause of the filter change: error, warn, log, info, debug, css, netxhr, net, text or reset and all, html, css, js, xhr, fonts, images, media, ws or other for netmonitor"
-      active: Comma separated list of active filters.
-      inactive: Comma separated list of inactive filters.
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  inspect:
-    objects: ["aboutdebugging"]
-    bug_numbers: [1504173]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User has clicked on the inspect button of one of the debug targets of aboutdebugging.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      runtime_type: The runtime type
-      target_type: The target type
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  jump_to_definition:
-    objects: ["webconsole"]
-    bug_numbers: [1463101]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User has clicked "Jump to definition" icon (next to logged functions) in the web console.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  jump_to_source:
-    objects: ["webconsole"]
-    bug_numbers: [1463092]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User has clicked a link to a source file in the web console.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  object_expanded:
-    objects: ["webconsole"]
-    bug_numbers: [1463104]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User has expanded an object in the web console.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  open:
-    objects: ["tools"]
-    bug_numbers: [1416024, 1456984]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User opens devtools toolbox.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      entrypoint: How was the toolbox opened? CommandLine, ContextMenu, HamburgerMenu, KeyShortcut, SessionRestore, SystemMenu or SlowScript
-      first_panel: The name of the first panel opened.
-      host: "Toolbox host (positioning): bottom, side, window or other."
-      splitconsole: Indicates whether the split console was open.
-      width: Toolbox width rounded up to the nearest 50px.
-      shortcut: The key combination pressed. Used only in the case that entrypoint === KeyShortcut.
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  open_adbg:
-    objects: ["aboutdebugging"]
-    bug_numbers: [1504173]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User opens about:debugging.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      width: Toolbox width rounded up to the nearest 50px.
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  pause_on_exceptions:
-    objects: ["debugger"]
-    bug_numbers: [1463117]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User has changed pausing behaviour in the debugger.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      exceptions: Pause on exceptions is checked.
-      caught_exceptio: Pause on caught exceptions is checked.
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  pause:
-    objects: ["debugger"]
-    bug_numbers: [1463118]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: Debugger has paused in a script due to a breakpoint or exception.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      reason: caught-exception, uncaught-exception, pausing, debugger-statement or breakpoint.
-      lib_stacks: Number of collapsed callstacks in the call tree. These are call stacks that are part of external libraries e.g. react, which are collapsed  by default.
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  persist_changed:
-    objects: ["netmonitor", "webconsole"]
-    bug_numbers: [1531395, 1542312]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User has changed log persist status.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  pretty_print:
-    objects: ["debugger"]
-    bug_numbers: [1463125]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User clicked the pretty print button to pretty print a script.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  remove_breakpoint:
-    objects: ["debugger"]
-    bug_numbers: [1463124]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User has removed a breakpoint from a script.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  runtime_added:
-    objects: ["aboutdebugging"]
-    bug_numbers: [1521507]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: A new remote runtime has been detected in about:debugging
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      connection_type: Connection type
-      device_name: Name of the device on which the runtime is running (optional)
-      runtime_id: Random id generated to track events related to a single runtime
-      runtime_name: Name of the runtime
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  runtime_connected:
-    objects: ["aboutdebugging"]
-    bug_numbers: [1521507, 1530997]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: Connection was established with a remote runtime in about:debugging
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      connection_type: Connection type
-      device_name: Name of the device on which the runtime is running (optional)
-      runtime_id: Random id generated to track events related to a single runtime
-      runtime_name: Name of the runtime
-      runtime_os: Operating system on which the runtime is running (eg Android or Linux)
-      runtime_version: Version of the runtime (eg 67.0a1)
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  runtime_disconnected:
-    objects: ["aboutdebugging"]
-    bug_numbers: [1521507]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: Connection was lost with a remote runtime in about debugging
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      connection_type: Connection type
-      device_name: Name of the device on which the runtime is running (optional)
-      runtime_id: Random id generated to track events related to a single runtime
-      runtime_name: Name of the runtime
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  runtime_removed:
-    objects: ["aboutdebugging"]
-    bug_numbers: [1521507]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: A previously listed runtime was removed in about:debugging
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      connection_type: Connection type
-      device_name: Name of the device on which the runtime is running (optional)
-      runtime_id: Random id generated to track events related to a single runtime
-      runtime_name: Name of the runtime
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  select_page:
-    objects: ["aboutdebugging", "application"]
-    bug_numbers: [1504173, 1643253]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User navigates to a new page of an application such as about:debugging
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      page_type: Type of page the user navigates to (this-firefox, connect, runtime)
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  show_profiler:
-    objects: ["aboutdebugging"]
-    bug_numbers: [1521511]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User has clicked on the "Open Profiler" button in a runtime page of about:debugging
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      runtime_id: Random id generated to track events related to a single runtime
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  select_ws_frame:
-    objects: ["netmonitor"]
-    bug_numbers: [1555638]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User has selected a WebSocket frame.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  sidepanel_changed:
-    objects: ["inspector", "netmonitor"]
-    bug_numbers: [1463083, 1463169]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User has switched sidepanel tabs.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      oldpanel: The panel the user is switching from
-      newpanel: The panel the user is switching to
-      os: The OS name and version e.g. "Linux 4.4.0-1014-aws", "Darwin 14.5.0", "Windows_NT 6.1.7601" or "Windows_NT 10.0.15063." This can be used to make sense of data when a feature is only available from a particular operating system build number.
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  start_worker:
-    objects: ["application"]
-    bug_numbers: [1643253]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-    record_in_processes: ["main"]
-    description: User manually starts a service worker
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  throttle_changed:
-    objects: ["netmonitor"]
-    bug_numbers: [1463147]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User has changed the throttle setting in the netmonitor.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      mode: No throttling, GPRS, Regular 2G, Good 2G, Regular 3G, Good 3G, Regular 4G / LTE, DSL, WI-FI, or Offline.
-      session_id: The toolbox session start time e.g. 13963.
-  tool_timer:
-    objects: ["animationinspector", "compatibilityview", "computedview", "changesview", "fontinspector", "layoutview", "ruleview"]
-    bug_numbers: [1483817, 1639454]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: The amount of time a tool was opened for.
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      time_open: Time open.
-      os: The OS name and version e.g. "Linux 4.4.0-1014-aws", "Darwin 14.5.0", "Windows_NT 6.1.7601" or "Windows_NT 10.0.15063." This can be used to make sense of data when a feature is only available from a particular operating system build number.
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  unregister_worker:
-    objects: ["application"]
-    bug_numbers: [1643253]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-    record_in_processes: ["main"]
-    description: User manually unregisters a service worker registration
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
-  update_conn_prompt:
-    objects: ["aboutdebugging"]
-    bug_numbers: [1521511]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org"]
-    products:
-      - "firefox"
-      - "fennec"
-    record_in_processes: ["main"]
-    description: User has clicked on the "Enable/Disable connection prompt" button in a runtime page of about:debugging
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      prompt_enabled: True if the user enables the prompt, false otherwise.
-      runtime_id: Random id generated to track events related to a single runtime
-      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
 
 security.ui.protections:
   show:
@@ -2407,48 +1584,6 @@ privacy.ui.fpp:
       checked: >
         The checked state of the fingerprinting protection checkbox.
 
-uptake.remotecontent.result:
-  uptake:
-    description: >
-      Was the remote content successfully pulled?
-      This uptake telemetry allows to monitor the behaviour of our clients when it comes
-      to fetching data from remote servers. This helps defect-detection and allow observation of
-      the proportion of success among clients and sources, the distribution of error causes, and
-      its evolution over time.
-    methods:
-      - uptake
-    objects:
-      - remotesettings
-      - normandy
-    extra_keys:
-      source: >
-        A label to distinguish what is being pulled or updated in the component (eg. recipe id,
-        settings collection name, ...).
-      trigger: >
-        A label to distinguish what triggered the polling/fetching of remote content (eg. "broadcast",
-        "timer", "forced", "manual")
-      age: >
-        The age of pulled data in seconds (ie. difference between publication time and fetch time).
-      duration: >
-        The duration of the synchronization process in milliseconds.
-      timestamp: >
-        The current timestamp, received during synchronization.
-      errorName: >
-        An optional string with the error name attribute in case of failure.
-    bug_numbers:
-      - 1517469
-      - 1617133
-    products:
-      - "firefox"
-      - "fennec"
-      - "thunderbird"
-    record_in_processes: ["main"]
-    release_channel_collection: opt-out
-    expiry_version: never
-    notification_emails:
-      - mleplatre@mozilla.com
-      - bens-directs@mozilla.com
-
 intl.ui.browserLanguage:
   action:
     description: >
@@ -2473,8 +1608,9 @@ intl.ui.browserLanguage:
       installId: The id for an install.
     products:
       - firefox
-    expiry_version: "148"
+    expiry_version: "161"
     notification_emails:
+      - bolsson@mozilla.com
       - earo@mozilla.com
       - flod@mozilla.com
       - mstriemer@mozilla.com
@@ -2490,48 +1626,7 @@ intl.ui.browserLanguage:
       - 1861299
       - 1911321
       - 1928262
-
-network.dns:
-  trrConfirmation:
-    objects: ["context"]
-    bug_numbers:
-      - 1691408
-      - 1694949
-    description: >
-      This telemetry records the status of the TRR confirmation across.
-      The value of the event is one of:
-        "ok"
-        "trying"
-    notification_emails:
-      - vgosu@mozilla.com
-      - necko@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - firefox
-    expiry_version: "never"
-    record_in_processes: ["main", "socket"]
-    extra_keys:
-      trigger: >
-        The reason why this confirmation was triggered.
-        Values: [cp-connectivity, pref-change, context-init, retry, failed-lookups]
-      contextReason: >
-        The cause of the current confirmation context.
-        Values: [success, pref-change, network-change, shutdown]
-      attemptCount: >
-        The number of NS requests that were issued for this confirmation.
-      results: >
-        String representation of the last 32 confirmation results.
-        Example: nnnnnnttttttttt indicates a number of network (n) failures
-        followed by timeouts (t).
-      failedLookups: >
-        When the trigger is failed-lookups, this contains the string
-        representation of the failures that triggered the confirmation.
-      networkID: >
-        The network ID for the recorded confirmation attempts
-      captivePortal: >
-        One of [unknown, not_captive, unlocked, locked]
-      time: >
-        Time from first confirmation attempt to event being recorded
+      - 1999880
 
 security:
   prefUsage:
@@ -2624,24 +1719,6 @@ security:
       - all
     extra_keys:
       fileinfo: Information about the file that triggered eval
-  javascriptLoad:
-    objects: ["parentProcess"]
-    bug_numbers:
-      - 1582512
-    description: >
-      The javascript engine requested to load a filename that was not allowed.
-      Expected values, and fileinfo key, are the same possible values as above in 'evalUsage'
-    notification_emails:
-      - tom@mozilla.com
-      - gijs@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - firefox
-    expiry_version: "never"
-    record_in_processes:
-      - main
-    extra_keys:
-      fileinfo: Information about the filename that was requested to be loaded
   unexpectedload:
     objects: ["systemprincipal"]
     bug_numbers:
@@ -2672,197 +1749,6 @@ security:
       filedetails: Information about the file that triggered the load
       redirects: Comma-separated string listing schemes for URLs that we redirected from
 
-pictureinpicture:
-  create:
-    objects: ["player"]
-    description: >
-      Recorded when the Picture-in-Picture player window is created.
-    extra_keys:
-      width: The width that the window was created at
-      height: The height that the window was created at
-      screenX: The screen X coordinate that the window was created at
-      screenY: The screen Y coordinate that the window was created at
-      ccEnabled: Are subtitles enabled for PiP
-      webVTTSubtitles: Are the subtitles WebVTT
-    notification_emails:
-      - mconley@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1560590
-      - 1678202
-      - 1730039
-      - 1756703
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  resize:
-    objects: ["player"]
-    description: >
-      Recorded when the Picture-in-Picture player window is resized.
-    extra_keys:
-      width: The width that the window was resized to
-      height: The height that the window was resize to
-    notification_emails:
-      - mconley@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1560590
-      - 1678202
-      - 1730039
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  saw_toggle:
-    objects: ["toggle"]
-    description: >
-      Recorded when the Picture-in-Picture toggle is shown
-    extra_keys:
-      firstTime: If the user has used Picture-in-Picture before
-    notification_emails:
-      - mconley@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes: ["main", "content"]
-    bug_numbers:
-      - 1749585
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  opened_method:
-    objects: ["toggle", "contextMenu", "urlBar", "shortcut", "autoPip"]
-    description: >
-      Records the method for opening the Picture-in-Picture window.
-    extra_keys:
-      firstTimeToggle: If the user has used Picture-in-Picture before
-      disableDialog: True when urlbar button opens the disable PiP dialog
-      callout: >
-        Boolean. True if PiP is being shown for the first time within 48 hours
-        of a feature callout message highlighting the urlbar toggle.
-    notification_emails:
-      - mconley@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes: ["main", "content"]
-    bug_numbers:
-      - 1749585
-      - 1834554
-      - 1858471
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  closed_method:
-    objects: ["closeButton", "unpip", "pagehide", "foregrounded", "fullscreen", "setupFailure", "closePlayerShortcut", "contextMenu", "videoElRemove", "videoElEmptied", "urlBar", "shortcut", "browserCrash"]
-    description: >
-      Records the method for closing the Picture-in-Picture window.
-    notification_emails:
-      - mconley@mozilla.com
-      - mtigley@mozilla.com
-      - mhowell@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - "main"
-    bug_numbers:
-      - 1756703
-      - 1834554
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  subtitles_shown:
-    objects: ["subtitles"]
-    description: >
-      Records if subtitles are shown in the Picture-in-Picture window.
-    extra_keys:
-      webVTTSubtitles: Will be true or false
-    notification_emails:
-      - mconley@mozilla.com
-      - mhowell@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - "content"
-    bug_numbers:
-      - 1772546
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  fullscreen:
-    objects: ["player"]
-    extra_keys:
-      enter: true if entering fullscreen, false if exiting fullscreen
-    description: >
-      Recorded when the user clicks the fullscreen button
-    notification_emails:
-      - mconley@mozilla.com
-      - mhowell@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - "main"
-    bug_numbers:
-      - 1822395
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  disrespect_disable:
-    objects: ["urlBar"]
-    description: >
-      Recorded when the user chooses to enable PiP anyway on a PiP disabled video
-    notification_emails:
-      - mconley@mozilla.com
-      - mhowell@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - "main"
-    bug_numbers:
-      - 1834554
-    expiry_version: "never"
-    release_channel_collection: opt-out
-
-pictureinpicture.settings:
-  enable:
-    objects: ["settings"]
-    description: Recorded when Picture-in-Picture is enabled.
-    notification_emails:
-      - mconley@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1639774
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  disable:
-    objects: ["player", "settings"]
-    description: >
-      Recorded with "settings" object when Picture-in-Picture is disabled via settings
-      Recorded with "player" object when Picture-in-Picture is disabled via PiP context menu
-    notification_emails:
-      - mconley@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1639774
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  enable_autotrigger:
-    objects: ["settings"]
-    description: Recorded when the Picture-in-Picture auto-trigger is enabled.
-    notification_emails:
-      - mconley@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1647800
-      - 1910505
-    expiry_version: "never"
-    release_channel_collection: opt-out
-
 launch_on_login:
   last_profile_disable:
     objects: ["startup"]
@@ -2879,68 +1765,6 @@ launch_on_login:
       - 1858223
     expiry_version: "never"
     release_channel_collection: opt-out
-
-doh:
-  evaluate_v2:
-    methods: ["evaluate_v2"]
-    objects: ["heuristics"]
-    bug_numbers:
-      - 1573840
-      - 1631609
-      - 1603779
-      - 1654714
-    description: >
-      Results of DoH heuristics at startup and after network changes.
-    expiry_version: never
-    record_in_processes:
-      - main
-    release_channel_collection: opt-out
-    notification_emails:
-      - nhnt11@mozilla.com
-      - ddamjanovic@mozilla.com
-      - seceng-telemetry@mozilla.com
-      - necko@mozilla.com
-    products:
-      - firefox
-    extra_keys:
-      canaries: Comma-separated list of canaries that were detected (canary,zscalerCanary)
-      filtering: Comma-separated list of detected parental controls/content filtering (browserParent,google,youtube)
-      enterprise: Comma-separated list of detected enterprise config (policy,modifiedRoots,thirdPartyRoots)
-      steeredProvider: Whether we detected a steering provider
-      evaluateReason: The reason for running heuristics - startup or netchange
-      networkID: An ID representing the network on which heuristics were run, unique to this client
-      captiveState: The Captive Portal Service state - unknown, not_captive, locked, or unlocked
-      platform: Comma-separated list of platform attributes that would cause split-horizon issues (vpn, proxy, nrpt)
-  state:
-    methods: ["state"]
-    objects: [
-      "enabled",
-      "disabled",
-      "manuallyDisabled",
-      "policyDisabled",
-      "uninstalled",
-      "UIOk",
-      "UIDisabled",
-      "rollback",
-      "shutdown",
-    ]
-    bug_numbers:
-      - 1573840
-      - 1631609
-      - 1603779
-    description: >
-      Results of DoH heuristics at startup and after network changes.
-    expiry_version: never
-    record_in_processes:
-      - main
-    release_channel_collection: opt-out
-    notification_emails:
-      - nhnt11@mozilla.com
-      - ddamjanovic@mozilla.com
-      - seceng-telemetry@mozilla.com
-      - necko@mozilla.com
-    products:
-      - firefox
 
 security.doh.trrPerformance:
   resolved:
@@ -2985,32 +1809,10 @@ security.doh.trrPerformance:
       - firefox
 
 security.doh.neterror:
-  load:
-    objects: ["dohwarning"]
-    bug_numbers:
-      - 1829342
-    description: >
-      The DoH warning page is loaded.
-    expiry_version: never
-    notification_emails:
-      - necko@mozilla.com
-      - kershaw@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - "firefox"
-    record_in_processes: ["content"]
-    extra_keys:
-      mode: Current TRR mode
-      provider_key: TRR provider
-      skip_reason: The reason why DoH request is failed
   click:
     objects: [
-      "try_again_button",
-      "add_exception_button",
-      "settings_button",
       "continue_button",
       "disable_warning",
-      "learn_more_link",
     ]
     bug_numbers:
       - 1829342
@@ -3029,40 +1831,6 @@ security.doh.neterror:
       provider_key: TRR provider
       skip_reason: The reason why DoH request is failed
 
-security.doh.settings:
-  mode_changed:
-    objects: ["button"]
-    bug_numbers:
-      - 1829905
-    description: >
-      User changed the TRR mode in about:preferences#privacy settings
-      Value is id of the clicked button.
-    expiry_version: never
-    record_in_processes:
-      - main
-    release_channel_collection: opt-out
-    notification_emails:
-      - vgosu@mozilla.com
-      - necko@mozilla.com
-    products:
-      - firefox
-  provider_choice:
-    objects: ["value"]
-    bug_numbers:
-      - 1829905
-    description: >
-      User changed their DoH provider. Recorded value is URL of one of the
-      existing providers or "custom".
-    expiry_version: never
-    record_in_processes:
-      - main
-    release_channel_collection: opt-out
-    notification_emails:
-      - vgosu@mozilla.com
-      - necko@mozilla.com
-    products:
-      - firefox
-
 security.ui.certerror:
   load:
     objects: ["aboutcerterror"]
@@ -3072,7 +1840,7 @@ security.ui.certerror:
       - 1553181
       - 1629826
     description: >
-      The about:certerror page is loaded, keyed by error code, see https://searchfox.org/mozilla-central/source/security/nss/lib/mozpkix/include/pkix/Result.h
+      The about:certerror page is loaded, keyed by error code, see https://searchfox.org/firefox-main/source/security/nss/lib/mozpkix/include/pkix/Result.h
     expiry_version: never
     notification_emails:
       - jhofmann@mozilla.com
@@ -3106,7 +1874,7 @@ security.ui.certerror:
       - 1553181
       - 1629826
     description: >
-      User interaction by click events on the cert error page. Keyed by error code, see https://searchfox.org/mozilla-central/source/security/nss/lib/mozpkix/include/pkix/Result.h
+      User interaction by click events on the cert error page. Keyed by error code, see https://searchfox.org/firefox-main/source/security/nss/lib/mozpkix/include/pkix/Result.h
     expiry_version: never
     notification_emails:
       - jhofmann@mozilla.com
@@ -3139,37 +1907,6 @@ security.ui.tlserror:
     extra_keys:
       is_frame: If the error page is loaded in an iframe.
       channel_status: The status of the failed channel, as an nsresult.
-
-slow_script_warning:
-  shown:
-    bug_numbers:
-      - 1652613
-      - 1667245
-      - 1672572
-    description: >
-      Recorded when a slow script hang is resolved.
-    products:
-      - "firefox"
-    record_in_processes: ["main"]
-    release_channel_collection: opt-out
-    expiry_version: "never"
-    notification_emails:
-      - dothayer@mozilla.com
-      - esmyth@mozilla.com
-      - gkruitbosch@mozilla.com
-      - perf-telemetry-alerts@mozilla.com
-    # Whether the hung script was for a content or browser process.
-    objects: [
-      "browser",
-      "content",
-    ]
-    extra_keys:
-      end_reason: Why the warning was hidden (user action, the process becoming responsive again, the browser quitting, etc.)
-      wait_count: How many times the user elected to wait.
-      hang_duration: How long we believe the hang continued (ms).
-      n_tab_deselect: How many times the user switched away from a tab affected by this hang.
-      uri_type: The kind of script URL that hung.
-      uptime: How long the notification was up (ms).
 
 ysod:
   shown:
@@ -3285,7 +2022,7 @@ avif:
 mfcdm:
   eme_playback:
     objects: ["gecko"]
-    bug_numbers: [1873394, 1902169]
+    bug_numbers: [1873394, 1902169, 1989168, 2026435]
     description:
       Record the information about the EME playback when using the media engine.
       The value of this event is the key system name.
@@ -3293,7 +2030,7 @@ mfcdm:
       - firefox
     record_in_processes: ["all"]
     release_channel_collection: opt-out
-    expiry_version: "146"
+    expiry_version: "158"
     notification_emails:
       - media-alerts@mozilla.com
     extra_keys:
@@ -3305,7 +2042,7 @@ mfcdm:
       dropped_frames: The amount of video frames don't get rendered but dropped
   error:
     objects: ["gecko"]
-    bug_numbers: [1873394, 1902169]
+    bug_numbers: [1873394, 1902169, 1989168, 2026435]
     description:
       Record the error or crash happened while using the media engine playback.
       The value of this event is the name of error.
@@ -3313,7 +2050,7 @@ mfcdm:
       - firefox
     record_in_processes: ["all"]
     release_channel_collection: opt-out
-    expiry_version: "146"
+    expiry_version: "158"
     notification_emails:
       - media-alerts@mozilla.com
     extra_keys:
@@ -3355,23 +2092,6 @@ installation:
       - rtestard@mozilla.com
     expiry_version: never
 
-memory_watcher:
-  on_high_memory:
-    description: >
-      This event is recorded when the memory situation is no longer low.
-      The "stats" object consists of three numbers comma-delimited:
-      1) how many times a tab was unloaded
-      2) how many memory-pressure events were dispatched
-      3) how long we were in the low-memory situation in seconds
-    objects: ["stats"]
-    release_channel_collection: opt-out
-    expiry_version: never
-    record_in_processes: ["main"]
-    products: ["firefox"]
-    bug_numbers: [1715858]
-    notification_emails:
-      - tkikuchi@mozilla.com
-
 service_request:
   bypass:
     description: >
@@ -3412,310 +2132,6 @@ synced_tabs:
     extra_keys:
       tab_pos: position of the tab clicked
       filter: was there a filter enabled
-
-firefoxview_next:
-  recently_closed:
-    objects: ["tabs"]
-    description: >
-      Recorded when a recently closed tab is clicked
-    extra_keys:
-      delta: Time since the tab was closed
-      position: The position of the tab in the recently closed tab list (starting at 1)
-      page: The short page name where the recently closed tab was clicked
-    notification_emails:
-      - firefoxview@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1842616
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  dismiss_closed_tab:
-    objects: ["tabs"]
-    description: >
-      Recorded when a recently closed tab is dismissed
-    extra_keys:
-      delta: Time since the tab was closed to when dismissed
-      position: The position of the tab in the recently closed tab list (starting at 1)
-      page: The short page name where the recently closed tab was dismissed
-    notification_emails:
-      - firefoxview@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1842616
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  card_collapsed:
-    objects: ["card_container"]
-    description: >
-      Recorded when a card-container is collapsed on the 'Recent browsing' page
-    extra_keys:
-      data_type: The type of data being collapsed in a card on the 'Recent browsing' page
-    notification_emails:
-      - firefoxview@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1842616
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  card_expanded:
-    objects: ["card_container"]
-    description: >
-      Recorded when a card-container is expanded on the 'Recent browsing' page
-    extra_keys:
-      data_type: The type of data being expanded in a card on the 'Recent browsing' page
-    notification_emails:
-      - firefoxview@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1842616
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  change_page:
-    objects: ["navigation"]
-    description: >
-      Recorded when the page/view is changed in Firefox View
-    extra_keys:
-      page: The short page name that the user is navigating to
-      source: Whether the page was changed via the side navigation vs the 'View all' link on cards on the Recent browsing page
-    notification_emails:
-      - firefoxview@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1842616
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  context_menu:
-    objects: ["tabs"]
-    description: >
-      Recorded when a context menu selection is made in Firefox View
-    extra_keys:
-      menu_action: The menu action the user has selected for a given tab
-      data_type: The type of data the user has used the context menu for
-    notification_emails:
-      - firefoxview@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1842616
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  close_open_tab:
-    objects: ["tabs"]
-    description: >
-      Recorded when a tab is closed via the close button on an open tab row.
-    notification_emails:
-      - firefoxview@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1857298
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  browser_context_menu:
-    objects: ["tabs"]
-    description: >
-      Recorded when a browser context menu selection is made in Firefox View
-    extra_keys:
-      menu_action: The menu action the user has selected for a given tab
-      page: The short page name used as the location hash when selecting the Firefox View tab
-    notification_emails:
-      - firefoxview@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1851197
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  entered:
-    objects: ["firefoxview"]
-    description: >
-      Recorded when the Firefox View tab is selected
-    extra_keys:
-      page: The short page name used as the location hash when selecting the Firefox View tab
-    notification_emails:
-      - firefoxview@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1852036
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  fxa_continue:
-    objects: ["sync"]
-    description: >
-      Recorded when button to sign in or sign up is clicked
-    notification_emails:
-      - firefoxview@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1833671
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  fxa_mobile:
-    objects: ["sync"]
-    description: >
-      Recorded when the 'Try Firefox for mobile' button is clicked
-    extra_keys:
-      has_devices: True if user has other devices signed into sync
-    notification_emails:
-      - firefoxview@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1833671
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  synced_tabs:
-    objects: ["tabs"]
-    description: >
-      Recorded when a synced tab is clicked
-    extra_keys:
-      page: The short page name where the synced tab was clicked
-    notification_emails:
-      - firefoxview@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1833671
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  history:
-    objects: ["visits"]
-    description: >
-      Recorded when a history tab is clicked
-    notification_emails:
-      - firefoxview@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1842616
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  sort_history:
-    objects: ["tabs"]
-    description: >
-      Recorded when the sort option is changed for History in Firefox View
-    extra_keys:
-      sort_type: The type of sort the user has switched to
-      search_start: Boolean for if the sort by click occured during search activity.
-    notification_emails:
-      - firefoxview@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1833674
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  show_all_history:
-    objects: ["tabs"]
-    description: >
-      Recorded when the 'Show all history' button is clicked on the History page in Firefox View
-    notification_emails:
-      - firefoxview@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1833674
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  open_tab:
-    objects: ["tabs"]
-    description: Recorded when an open tab is clicked
-    extra_keys:
-      page: The short page name where the open tab was clicked
-      window: The window the open tab belongs to
-    notification_emails:
-      - firefoxview@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1833669
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  tab_selected:
-    objects: ["toolbarbutton"]
-    description: >
-      Recorded when the Firefox View tab is clicked
-    notification_emails:
-      - firefoxview@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1852989
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  search_initiated:
-    objects: ["search"]
-    description: >
-      Recorded when search is initiated and from what page.
-    extra_keys:
-      page: The short page name used as the location hash when selecting the Firefox View tab.
-    notification_emails:
-      - firefoxview@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1869765
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  search_show_all:
-    objects: ["showallbutton"]
-    description: >
-      Recorded when the show all button is clicked to show more search results.
-    extra_keys:
-      section: Section within which show all is clicked.
-    notification_emails:
-      - firefoxview@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1869765
-    expiry_version: "never"
-    release_channel_collection: opt-out
 
 screenshots:
   download:
@@ -3858,118 +2274,6 @@ session_restore:
     expiry_version: "never"
     release_channel_collection: opt-out
 
-browser.backup:
-  toggle_on:
-    objects: ["BackupService"]
-    description: >
-      Dispatched when scheduled backups are enabled.
-    bug_numbers:
-      - 1908732
-    notification_emails:
-      - mconley@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes: [main]
-    release_channel_collection: opt-out
-    expiry_version: never
-  toggle_off:
-    objects: ["BackupService"]
-    description: >
-      Dispatched when scheduled backups are disabled.
-    bug_numbers:
-      - 1908732
-    notification_emails:
-      - mconley@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes: [main]
-    release_channel_collection: opt-out
-    expiry_version: never
-  created:
-    objects: ["BackupService"]
-    description: >
-      Dispatched when a backup is successfully created.
-    bug_numbers:
-      - 1908732
-    notification_emails:
-      - mconley@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes: [main]
-    release_channel_collection: opt-out
-    expiry_version: never
-  change_location:
-    objects: ["BackupService"]
-    description: >
-      Dispatched when the backup destination location is changed.
-    bug_numbers:
-      - 1908732
-    notification_emails:
-      - mconley@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes: [main]
-    release_channel_collection: opt-out
-    expiry_version: never
-  password_changed:
-    objects: ["BackupService"]
-    description: >
-      Dispatched when the backup encryption password is changed.
-    bug_numbers:
-      - 1908732
-    notification_emails:
-      - mconley@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes: [main]
-    release_channel_collection: opt-out
-    expiry_version: never
-  password_added:
-    objects: ["BackupService"]
-    description: >
-      Dispatched when the backup encryption is enabled.
-    bug_numbers:
-      - 1908732
-    notification_emails:
-      - mconley@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes: [main]
-    release_channel_collection: opt-out
-    expiry_version: never
-  password_removed:
-    objects: ["BackupService"]
-    description: >
-      Dispatched when the backup encryption is removed.
-    bug_numbers:
-      - 1908732
-    notification_emails:
-      - mconley@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes: [main]
-    release_channel_collection: opt-out
-    expiry_version: never
-  error:
-    objects: ["BackupService"]
-    description: >
-      Dispatched when a backup fails to be created. We encode the error code
-      as well as the stage the backup failed in in the extra data.
-    bug_numbers:
-      - 1908732
-    notification_emails:
-      - mconley@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes: [main]
-    release_channel_collection: opt-out
-    expiry_version: never
-    extra_keys:
-      error_code: The string representation of the error code.
-      backup_step: >
-        The string representation of the step that backup creation was in
-        when the error occurred.
-
 profiles:
   default:
     objects: ["updated"]
@@ -4015,7 +2319,7 @@ profiles:
     products:
       - "firefox"
   existing:
-    objects: ["alert", "avatar", "closed", "deleted", "displayed", "learn_more", "name", "theme"]
+    objects: ["alert", "avatar", "closed", "deleted", "displayed", "learn_more", "name", "shortcut", "theme"]
     release_channel_collection: opt-out
     record_in_processes:
       - main
@@ -4030,6 +2334,7 @@ profiles:
       - "nbaumgardner@mozilla.com"
     bug_numbers:
       - 1927607
+      - 1997471
     expiry_version: never
     products:
       - "firefox"

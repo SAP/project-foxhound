@@ -5,7 +5,7 @@
 
 const SEC_PER_MONTH = 60 * 60 * 24 * 30;
 
-async function testSteps() {
+async function testUnaccessedOrigins() {
   function getHostname(index) {
     return "www.example" + index + ".com";
   }
@@ -169,4 +169,18 @@ async function testSteps() {
 
   request = reset();
   await requestFinished(request);
+}
+
+async function testSteps() {
+  add_task(
+    {
+      pref_set: [
+        [
+          "dom.quotaManager.temporaryStorage.clearNonPersistedZeroUsageOrigins",
+          false,
+        ],
+      ],
+    },
+    testUnaccessedOrigins
+  );
 }

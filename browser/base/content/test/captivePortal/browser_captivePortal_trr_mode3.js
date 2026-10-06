@@ -103,7 +103,7 @@ async function openAndCheck() {
 
     Assert.ok(true, "openPortalLoginPageButton has focus");
     info("Clicking the Open Login Page button");
-    await EventUtils.synthesizeMouseAtCenter(loginButton, {}, content);
+    EventUtils.synthesizeMouseAtCenter(loginButton, {}, content);
   });
 
   let portalTab = await portalTabPromise;
@@ -134,7 +134,7 @@ async function openAndCheck() {
     let loginButton = content.document.getElementById(
       "openPortalLoginPageButton"
     );
-    await EventUtils.synthesizeMouseAtCenter(loginButton, {}, content);
+    EventUtils.synthesizeMouseAtCenter(loginButton, {}, content);
   });
 
   info("Opening captive portal login page");

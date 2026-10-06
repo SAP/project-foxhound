@@ -46,10 +46,10 @@ Testing instructions:
 The default values in the "Force Attribution" devtool point toward uBlock Origin; the demo addon can be changed by replacing the `content` value with the base64 encoded ID of any addon prefixed with `rta:` (ex. `rta:amlkMS1Nbm54Y3hpc0JQblNYUUBqZXRwYWNr`)
 
 ### General capabilities
-- Run experiments and roll-outs through Nimbus (see [FeatureManifests](https://searchfox.org/mozilla-central/source/toolkit/components/nimbus/FeatureManifest.yaml#678)), only windows is supported. FeatureConfig (from prefs or experiments) has higher precedence to defaults. See [Default experience variations](#default-experience-variations)
-- AboutWelcomeDefaults methods [getDefaults](https://searchfox.org/mozilla-central/source/browser/components/aboutwelcome/modules/AboutWelcomeDefaults.sys.mjs#862) and [prepareContentForReact](https://searchfox.org/mozilla-central/rev/f2df1ff64cb876e10c72ce7eed1fc9eac3f877bb/browser/components/aboutwelcome/modules/AboutWelcomeDefaults.sys.mjs#909) have dynamic rules which are applied to both experiments and default UI before content is shown to user.
+- Run experiments and roll-outs through Nimbus (see [FeatureManifests](https://searchfox.org/firefox-main/source/toolkit/components/nimbus/FeatureManifest.yaml#678)), only windows is supported. FeatureConfig (from prefs or experiments) has higher precedence to defaults. See [Default experience variations](#default-experience-variations)
+- AboutWelcomeDefaults methods [getDefaults](https://searchfox.org/firefox-main/source/browser/components/aboutwelcome/modules/AboutWelcomeDefaults.sys.mjs#862) and [prepareContentForReact](https://searchfox.org/firefox-main/source/browser/components/aboutwelcome/modules/AboutWelcomeDefaults.sys.mjs#909) have dynamic rules which are applied to both experiments and default UI before content is shown to user.
 - about:welcome only shows up for users who download Firefox Beta or release (currently not enabled on Nightly)
-- [Enterprise builds](https://searchfox.org/mozilla-central/rev/f2df1ff64cb876e10c72ce7eed1fc9eac3f877bb/browser/components/enterprisepolicies/Policies.sys.mjs#1710) can turn off about:welcome by setting the browser.aboutwelcome.enabled preference to false.
+- [Enterprise builds](https://searchfox.org/firefox-main/source/browser/components/enterprisepolicies/Policies.sys.mjs#1710) can turn off about:welcome by setting the browser.aboutwelcome.enabled preference to false.
 
 ### Default experience variations
 In order of precedence:
@@ -57,7 +57,7 @@ In order of precedence:
    - Return to AMO
 - Experiments (fetched from Nimbus)
 - Defaults
-  - [Proton default content](https://searchfox.org/mozilla-central/rev/964b8aa226c68bbf83c9ffc38984804734bb0de2/browser/components/aboutwelcome/modules/AboutWelcomeDefaults.sys.mjs#40) with screens chosen from the below options based on screen-level targeting:
+  - [Proton default content](https://searchfox.org/firefox-main/source/browser/components/aboutwelcome/modules/AboutWelcomeDefaults.sys.mjs#40) with screens chosen from the below options based on screen-level targeting:
     - "Welcome Back" device migration screen (shows when `isDeviceMigration` is true)
     - "Easy Setup" Screen with options to 'Pin Firefox', 'Set default' or 'Import from previous browser', depending on what actions are needed
     - "Language Mismatch" screen which shows when the users system language does not match the download language of Firefox, and offers to download the correct language

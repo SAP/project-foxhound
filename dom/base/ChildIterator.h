@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,9 +5,10 @@
 #ifndef ChildIterator_h
 #define ChildIterator_h
 
+#include <stdint.h>
+
 #include "nsIContent.h"
 #include "nsIContentInlines.h"
-#include <stdint.h>
 
 class nsIContent;
 
@@ -91,7 +90,7 @@ class AllChildrenIterator : private FlattenedChildIterator {
       : FlattenedChildIterator(aNode, aStartAtBeginning),
         mAnonKidsIdx(aStartAtBeginning ? UINT32_MAX : 0),
         mFlags(aFlags),
-        mPhase(aStartAtBeginning ? eAtBegin : eAtEnd) {}
+        mPhase(aStartAtBeginning ? Phase::AtBegin : Phase::AtEnd) {}
 
 #ifdef DEBUG
   AllChildrenIterator(AllChildrenIterator&&) = default;
@@ -119,18 +118,20 @@ class AllChildrenIterator : private FlattenedChildIterator {
   nsIContent* GetNextChild();
   nsIContent* GetPreviousChild();
 
-  enum IteratorPhase {
-    eAtBegin,
-    eAtMarkerKid,
-    eAtBeforeKid,
-    eAtFlatTreeKids,
-    eAtAnonKids,
-    eAtAfterKid,
-    eAtEnd
-  };
-  IteratorPhase Phase() const { return mPhase; }
-
  private:
+  enum class Phase : uint8_t {
+    AtBegin,
+    AtBackdropKid,
+    AtMarkerKid,
+    AtCheckmarkKid,
+    AtBeforeKid,
+    AtFlatTreeKids,
+    AtAnonKids,
+    AtAfterKid,
+    AtPickerIconKid,
+    AtEnd
+  };
+
   // Helpers.
   void AppendNativeAnonymousChildren();
 
@@ -144,7 +145,7 @@ class AllChildrenIterator : private FlattenedChildIterator {
   uint32_t mAnonKidsIdx;
 
   uint32_t mFlags;
-  IteratorPhase mPhase;
+  Phase mPhase;
 #ifdef DEBUG
   // XXX we should really assert there are no frame tree changes as well, but
   // there's no easy way to do that.

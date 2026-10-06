@@ -96,7 +96,8 @@ nsresult NewBufferFromStorageStream(nsIStorageStream* storageStream,
 
 static const char baseName[2][5] = {"gre/", "app/"};
 
-static inline bool canonicalizeBase(nsAutoCString& spec, nsACString& out) {
+static inline bool canonicalizeBase(nsAutoCString& spec, nsACString& out,
+                                    ResourceType& aResourceType) {
   nsAutoCString greBase, appBase;
   nsresult rv = mozilla::Omnijar::GetURIString(mozilla::Omnijar::GRE, greBase);
   if (NS_FAILED(rv) || !greBase.Length()) return false;
@@ -121,6 +122,8 @@ static inline bool canonicalizeBase(nsAutoCString& spec, nsACString& out) {
    */
   if (underGre && underApp && greBase.Length() < appBase.Length())
     underGre = false;
+
+  aResourceType = underGre ? ResourceType::Gre : ResourceType::App;
 
   out.AppendLiteral("/resource/");
   out.Append(
@@ -170,7 +173,8 @@ nsresult ResolveURI(nsIURI* in, nsIURI** out) {
   return NS_OK;
 }
 
-static nsresult PathifyURIImpl(nsIURI* in, nsACString& out) {
+static nsresult PathifyURIImpl(nsIURI* in, nsACString& out,
+                               ResourceType& aResourceType) {
   nsCOMPtr<nsIURI> uri;
   nsresult rv = ResolveURI(in, getter_AddRefs(uri));
   NS_ENSURE_SUCCESS(rv, rv);
@@ -179,8 +183,10 @@ static nsresult PathifyURIImpl(nsIURI* in, nsACString& out) {
   rv = uri->GetSpec(spec);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (!canonicalizeBase(spec, out)) {
+  if (!canonicalizeBase(spec, out, aResourceType)) {
     if (uri->SchemeIs("file")) {
+      aResourceType = ResourceType::File;
+
       nsCOMPtr<nsIFileURL> baseFileURL;
       baseFileURL = do_QueryInterface(uri, &rv);
       NS_ENSURE_SUCCESS(rv, rv);
@@ -191,6 +197,8 @@ static nsresult PathifyURIImpl(nsIURI* in, nsACString& out) {
 
       out.Append(path);
     } else if (uri->SchemeIs("jar")) {
+      aResourceType = ResourceType::Xpi;
+
       nsCOMPtr<nsIJARURI> jarURI = do_QueryInterface(uri, &rv);
       NS_ENSURE_SUCCESS(rv, rv);
 
@@ -198,7 +206,8 @@ static nsresult PathifyURIImpl(nsIURI* in, nsACString& out) {
       rv = jarURI->GetJARFile(getter_AddRefs(jarFileURI));
       NS_ENSURE_SUCCESS(rv, rv);
 
-      rv = PathifyURIImpl(jarFileURI, out);
+      ResourceType unused;
+      rv = PathifyURIImpl(jarFileURI, out, unused);
       NS_ENSURE_SUCCESS(rv, rv);
 
       nsAutoCString path;
@@ -207,6 +216,8 @@ static nsresult PathifyURIImpl(nsIURI* in, nsACString& out) {
       out.Append('/');
       out.Append(path);
     } else {  // Very unlikely
+      aResourceType = ResourceType::Other;
+
       rv = uri->GetSpec(spec);
       NS_ENSURE_SUCCESS(rv, rv);
 
@@ -218,10 +229,10 @@ static nsresult PathifyURIImpl(nsIURI* in, nsACString& out) {
 }
 
 nsresult PathifyURI(const char* loaderType, size_t loaderTypeLength, nsIURI* in,
-                    nsACString& out) {
+                    nsACString& out, ResourceType* aResourceType) {
   out.AssignASCII(loaderType, loaderTypeLength);
 
-  return PathifyURIImpl(in, out);
+  return PathifyURIImpl(in, out, *aResourceType);
 }
 
 }  // namespace scache

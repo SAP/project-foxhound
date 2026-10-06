@@ -16,7 +16,6 @@ mod time;
 
 pub use gecko_bindings::profiling_categories::*;
 pub use json_writer::*;
-#[cfg(feature = "enabled")]
 pub use label::*;
 pub use marker::options::*;
 pub use marker::schema::MarkerSchema;

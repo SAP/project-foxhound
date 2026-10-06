@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<link rel="help" href="https://bugzilla.mozilla.org/show_bug.cgi?id=2008688">
+<link rel="match" href="no-rtlm-mirror-ref.html">
+<meta name="assert" content="some operators should not be mirrored in RTL mode if there is no rtlm feature">
+<style>
+  @font-face {
+    font-family: no-rtlm-mirror;
+    src: url("../fonts/no-rtlm-mirror.otf");
+  }
+  math {
+    font-family: no-rtlm-mirror;
+  }
+</style>
+<div><math dir="rtl"><mo>∱</mo></math></div>
+<div><math dir="rtl"><mo>∲</mo></math></div>
+<div><math dir="rtl"><mo>∳</mo></math></div>
+<div><math dir="rtl"><mo>⨑</mo></math></div>
+<div><math dir="rtl"><mo>⨗</mo></math></div>

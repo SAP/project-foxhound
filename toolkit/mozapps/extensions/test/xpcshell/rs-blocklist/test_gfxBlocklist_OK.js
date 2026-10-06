@@ -49,7 +49,7 @@ async function run_test() {
   await promiseStartupManager();
 
   function checkBlocklist() {
-    var status = gfxInfo.getFeatureStatusStr("DIRECT2D");
+    var status = gfxInfo.getFeatureStatusStr("DX_NV12");
     Assert.equal(status, "BLOCKED_DRIVER_VERSION");
 
     // Make sure unrelated features aren't affected

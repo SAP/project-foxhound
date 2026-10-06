@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef TLSTransportLayer_h__
-#define TLSTransportLayer_h__
+#ifndef TLSTransportLayer_h_
+#define TLSTransportLayer_h_
 
 #include "nsSocketTransportService2.h"
 #include "nsIInterfaceRequestor.h"
@@ -153,6 +153,8 @@ class TLSTransportLayer final : public nsISocketTransport,
   nsCOMPtr<nsIOutputStreamCallback> mOutputCallback;
   PRFileDesc* mFD{nullptr};
   nsCOMPtr<nsIInputStreamCallback> mOwner;
+  nsresult mOutputStatus{NS_OK};
+  nsresult mInputStatus{NS_OK};
 };
 
 }  // namespace mozilla::net

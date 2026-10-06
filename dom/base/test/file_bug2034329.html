@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+  <head><meta charset="utf-8"><title>bug 2034329</title></head>
+  <body>
+    <div id="result">pending</div>
+    <script>
+      (function () {
+        try {
+          var len = location.ancestorOrigins.length;
+          document.getElementById("result").textContent = "ok:" + len;
+        } catch (e) {
+          document.getElementById("result").textContent =
+            "error:" + (e && e.name ? e.name : "unknown") +
+            ":" + (e && e.message ? e.message : String(e));
+        }
+      })();
+    </script>
+  </body>
+</html>

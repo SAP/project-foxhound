@@ -25,6 +25,7 @@ adding a space in front of the command, e.g.
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
 import pprint
@@ -40,9 +41,9 @@ import yaml
 # A minor version bump means that there is no breaking change. A major version
 # bump means that the upload is a breaking change. Firefox will only download
 # records that match the TranslationsParent.BERGAMOT_MAJOR_VERSION.
-REMOTE_SETTINGS_VERSION = "3.0"
+REMOTE_SETTINGS_VERSION = "4.0"
 
-COLLECTION_NAME = "translations-wasm"
+COLLECTION_NAME = "translations-wasm-v2"
 DEV_SERVER = "https://remote-settings-dev.allizom.org/v1"
 PROD_SERVER = "https://remote-settings.mozilla.org/v1"
 STAGE_SERVER = "https://remote-settings.allizom.org/v1"
@@ -53,7 +54,8 @@ THIRD_PARTY_PATH = os.path.join(DIR_PATH, "thirdparty")
 REPO_PATH = os.path.join(THIRD_PARTY_PATH, "translations")
 INFERENCE_PATH = os.path.join(REPO_PATH, "inference")
 BUILD_PATH = os.path.join(INFERENCE_PATH, "build-wasm")
-WASM_PATH = os.path.join(BUILD_PATH, "bergamot-translator.wasm")
+COMPRESSED_WASM_PATH = os.path.join(BUILD_PATH, "bergamot-translator.wasm.zst")
+DECOMPRESSED_WASM_PATH = os.path.join(BUILD_PATH, "bergamot-translator.wasm")
 ROOT_PATH = os.path.join(DIR_PATH, "../../../..")
 BROWSER_VERSION_PATH = os.path.join(ROOT_PATH, "browser/config/version.txt")
 RECORDS_PATH = "/admin/#/buckets/main-workspace/collections/translations-wasm/records"
@@ -188,9 +190,17 @@ class RemoteSettings:
         print("📦 Packages in the workspace:")
         for record in workspace_records["data"]:
             if record["name"] == "bergamot-translator":
-                print(f'   - bergamot-translator@{record["version"]}')
+                print(f"   - bergamot-translator@{record['version']}")
 
         print(f"✅ Version {self.version} does not conflict, ready for uploading.")
+
+    def compute_sha256(file_path):
+        """Computes the SHA-256 hash of a given file."""
+        sha256 = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                sha256.update(chunk)
+        return sha256.hexdigest()
 
     def create_record(self):
         name = self.moz_yaml["origin"]["name"]
@@ -198,6 +208,8 @@ class RemoteSettings:
         revision = self.moz_yaml["origin"]["revision"]
         license = self.moz_yaml["origin"]["license"]
         version = REMOTE_SETTINGS_VERSION
+        decompressedHash = RemoteSettings.compute_sha256(DECOMPRESSED_WASM_PATH)
+        decompressedSize = os.path.getsize(DECOMPRESSED_WASM_PATH)
 
         if not name or not release or not revision or not license or not version:
             print_error("Some of the required record data is not in the moz.yaml file.")
@@ -210,9 +222,9 @@ class RemoteSettings:
             (
                 "attachment",
                 (
-                    os.path.basename(WASM_PATH),  # filename
-                    open(WASM_PATH, "rb"),  # file handle
-                    "application/wasm",  # mimetype
+                    os.path.basename(COMPRESSED_WASM_PATH),  # filename
+                    open(COMPRESSED_WASM_PATH, "rb"),  # file handle
+                    "application/zstd",  # mimetype
                 ),
             )
         ]
@@ -226,10 +238,12 @@ class RemoteSettings:
             "fx_release": fx_release,
             # Default to nightly and local builds.
             "filter_expression": "env.channel == 'nightly' || env.channel == 'default'",
+            "decompressedHash": decompressedHash,
+            "decompressedSize": decompressedSize,
         }
 
         print("📬 Posting record")
-        print("✉️ Attachment: ", WASM_PATH)
+        print("✉️ Attachment: ", COMPRESSED_WASM_PATH)
         print("📀 Record: ", end="")
         pp.pprint(data)
 

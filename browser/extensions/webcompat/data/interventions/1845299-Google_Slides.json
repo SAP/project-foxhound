@@ -1,0 +1,18 @@
+{
+  "label": "Google Slides",
+  "bugs": {
+    "1845299": {
+      "issue": "extra-scrollbars",
+      "matches": ["*://docs.google.com/presentation/*"]
+    }
+  },
+  "css": {
+    "hide_extra_scrollbars": "#speakernotes { overflow-y: auto; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "css": ["hide_extra_scrollbars"]
+    }
+  ]
+}

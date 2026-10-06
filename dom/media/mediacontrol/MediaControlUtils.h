@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +5,9 @@
 #ifndef DOM_MEDIA_MEDIACONTROL_MEDIACONTROLUTILS_H_
 #define DOM_MEDIA_MEDIACONTROL_MEDIACONTROLUTILS_H_
 
+#include "ImageOps.h"
 #include "MediaController.h"
+#include "gfxDrawable.h"
 #include "imgIEncoder.h"
 #include "imgITools.h"
 #include "mozilla/Logging.h"
@@ -94,19 +94,22 @@ inline bool IsImageIn(const nsTArray<MediaImage>& aArtwork,
 
 // The image buffer would be allocated in aStream whose size is aSize and the
 // buffer head is aBuffer
-inline nsresult GetEncodedImageBuffer(imgIContainer* aImage,
+inline nsresult GetEncodedImageBuffer(gfx::DataSourceSurface* aSurface,
                                       const nsACString& aMimeType,
                                       nsIInputStream** aStream, uint32_t* aSize,
                                       char** aBuffer) {
-  MOZ_ASSERT(aImage);
+  MOZ_ASSERT(aSurface);
 
   nsCOMPtr<imgITools> imgTools = do_GetService("@mozilla.org/image/tools;1");
   if (!imgTools) {
     return NS_ERROR_FAILURE;
   }
 
+  auto drawable = MakeRefPtr<gfxSurfaceDrawable>(aSurface, aSurface->GetSize());
+  nsCOMPtr<imgIContainer> image = image::ImageOps::CreateFromDrawable(drawable);
+
   nsCOMPtr<nsIInputStream> inputStream;
-  nsresult rv = imgTools->EncodeImage(aImage, aMimeType, u""_ns,
+  nsresult rv = imgTools->EncodeImage(image, aMimeType, u""_ns,
                                       getter_AddRefs(inputStream));
   if (NS_FAILED(rv)) {
     return rv;

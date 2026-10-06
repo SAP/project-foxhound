@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,8 +8,7 @@
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/net/CookieJarSettings.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
+#include "mozilla/widget/WidgetLogging.h"
 #include "nsContentUtils.h"
 
 using mozilla::CSSIntRegion;
@@ -24,12 +22,9 @@ using mozilla::gfx::SourceSurface;
 using mozilla::gfx::SurfaceFormat;
 using mozilla::ipc::Shmem;
 
-extern mozilla::LazyLogModule sWidgetDragServiceLog;
-#define __DRAGSERVICE_LOG__(logLevel, ...) \
-  MOZ_LOG(sWidgetDragServiceLog, logLevel, __VA_ARGS__)
-#define LOGD(...) __DRAGSERVICE_LOG__(mozilla::LogLevel::Debug, (__VA_ARGS__))
-#define LOGI(...) __DRAGSERVICE_LOG__(mozilla::LogLevel::Info, (__VA_ARGS__))
-#define LOGE(...) __DRAGSERVICE_LOG__(mozilla::LogLevel::Error, (__VA_ARGS__))
+#define LOGD DRAGSERVICE_LOGD
+#define LOGI DRAGSERVICE_LOGI
+#define LOGE DRAGSERVICE_LOGE
 
 nsDragServiceProxy::nsDragServiceProxy() {
   LOGD("[%p] %s", this, __FUNCTION__);
@@ -48,7 +43,7 @@ nsDragSessionProxy::~nsDragSessionProxy() {
 }
 
 already_AddRefed<nsIDragSession> nsDragServiceProxy::CreateDragSession() {
-  RefPtr<nsIDragSession> session = new nsDragSessionProxy();
+  auto session = mozilla::MakeRefPtr<nsDragSessionProxy>();
   return session.forget();
 }
 
@@ -127,7 +122,7 @@ nsresult nsDragSessionProxy::InvokeDragSessionImpl(
 
         LOGI("[%p] %s | sending PBrowser::InvokeDragSession with image data",
              this, __FUNCTION__);
-        mozilla::Unused << child->SendInvokeDragSession(
+        (void)child->SendInvokeDragSession(
             std::move(transferables), aActionType, std::move(surfaceData),
             stride, dataSurface->GetFormat(), dragRect, principal,
             policyContainer, csArgs, mSourceWindowContext,
@@ -139,7 +134,7 @@ nsresult nsDragSessionProxy::InvokeDragSessionImpl(
 
   LOGI("[%p] %s | sending PBrowser::InvokeDragSession without image data", this,
        __FUNCTION__);
-  mozilla::Unused << child->SendInvokeDragSession(
+  (void)child->SendInvokeDragSession(
       std::move(transferables), aActionType, Nothing(), 0,
       static_cast<SurfaceFormat>(0), dragRect, principal, policyContainer,
       csArgs, mSourceWindowContext, mSourceTopWindowContext);

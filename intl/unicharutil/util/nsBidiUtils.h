@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsBidiUtils_h__
-#define nsBidiUtils_h__
+#ifndef nsBidiUtils_h_
+#define nsBidiUtils_h_
 
 #include "mozilla/intl/BidiClass.h"
 
@@ -81,10 +80,13 @@ nsresult HandleNumbers(char16_t* aBuffer, uint32_t aSize, uint32_t aNumFlag);
 #define PDI_CHAR 0x2069
 
 #define ALM_CHAR 0x061C
+
 inline bool IsBidiControl(uint32_t aChar) {
-  return ((LRE_CHAR <= aChar && aChar <= RLO_CHAR) ||
-          (LRI_CHAR <= aChar && aChar <= PDI_CHAR) || (aChar == ALM_CHAR) ||
-          (aChar & 0xfffffe) == LRM_CHAR);
+  return ((aChar & 0x0000ff00) == 0x00002000 &&
+          (aChar - LRE_CHAR <= RLO_CHAR - LRE_CHAR ||
+           aChar - LRI_CHAR <= PDI_CHAR - LRI_CHAR ||
+           (aChar & ~1) == LRM_CHAR)) ||
+         aChar == ALM_CHAR;
 }
 
 /**
@@ -240,4 +242,4 @@ inline bool HasRTLChars(mozilla::Span<const char16_t> aBuffer) {
 #define UTF32_CHAR_IS_BIDI(c)                                   \
   ((IS_IN_BMP_RTL_BLOCK(c)) || (IS_RTL_PRESENTATION_FORM(c)) || \
    (IS_IN_SMP_RTL_BLOCK(c)))
-#endif /* nsBidiUtils_h__ */
+#endif /* nsBidiUtils_h_ */

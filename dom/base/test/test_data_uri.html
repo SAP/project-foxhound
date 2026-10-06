@@ -14,11 +14,6 @@
 <script>
 SimpleTest.waitForExplicitFinish();
 
-SpecialPowers.setBoolPref("security.data_uri.block_toplevel_data_uri_navigations", false);
-SimpleTest.registerCleanupFunction(() => {
-  SpecialPowers.clearUserPref("security.data_uri.block_toplevel_data_uri_navigations");
-});
-
 function imgListener(img) {
   return new Promise((resolve, reject) => {
     img.addEventListener("load", () => resolve());
@@ -80,11 +75,14 @@ function runTests()
         reject();
       }});
   }).then(() => {
-    var win = window.open("data:text/html,<script>parent.opener.postMessage('ok', '*');<\/script>");
+    // Test that a data: URI document has null origin via postMessage
+    var iframe = document.createElement('iframe');
+    iframe.src = "data:text/html,<script>parent.postMessage('ok', '*');<\/script>";
+    document.body.appendChild(iframe);
     return new Promise(resolve => {
       window.onmessage = function (evt) {
         is(evt.origin, "null", "The origin of data:text/html should be null.");
-        win.close();
+        iframe.remove();
         resolve();
       }});
   });

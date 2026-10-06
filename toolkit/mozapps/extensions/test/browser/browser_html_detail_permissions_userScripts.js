@@ -13,10 +13,7 @@ AddonTestUtils.initMochitest(this);
 
 add_setup(async () => {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["extensions.userScripts.mv3.enabled", true],
-      ["extensions.dataCollectionPermissions.enabled", true],
-    ],
+    set: [["extensions.dataCollectionPermissions.enabled", true]],
   });
 });
 

@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -118,7 +116,7 @@ var gMenuBuilder = {
       ) {
         return false;
       } else if (
-        PrivateBrowsingUtils.isWindowPrivate(contextData.menu.ownerGlobal)
+        PrivateBrowsingUtils.isWindowPrivate(contextData.menu.documentGlobal)
       ) {
         return false;
       }
@@ -350,16 +348,10 @@ var gMenuBuilder = {
         }
 
         if (codePointsToRemove) {
-          let ellipsis = "\u2026";
-          try {
-            ellipsis = Services.prefs.getComplexValue(
-              "intl.ellipsis",
-              Ci.nsIPrefLocalizedString
-            ).data;
-          } catch (e) {}
           codePointsToRemove += 1;
           selection =
-            selectionArray.slice(0, -codePointsToRemove).join("") + ellipsis;
+            selectionArray.slice(0, -codePointsToRemove).join("") +
+            Services.locale.ellipsis;
         }
 
         label = label.replace(/%s/g, selection);
@@ -444,7 +436,7 @@ var gMenuBuilder = {
           _execute_sidebar_action: global.sidebarActionFor,
         }[item.command];
         if (actionFor) {
-          let win = event.target.ownerGlobal;
+          let win = event.target.documentGlobal;
           actionFor(item.extension).triggerAction(win);
           return;
         }
@@ -468,7 +460,7 @@ var gMenuBuilder = {
   },
 
   setMenuItemIcon(element, extension, contextData, icons) {
-    let parentWindow = contextData.menu.ownerGlobal;
+    let parentWindow = contextData.menu.documentGlobal;
 
     let { icon } = IconDetails.getPreferredIcon(
       icons,
@@ -487,7 +479,7 @@ var gMenuBuilder = {
       element.setAttribute("class", "menuitem-iconic");
     }
 
-    element.setAttribute("image", resolvedURL);
+    element.setAttribute("image", ChromeUtils.encodeURIForSrcset(resolvedURL));
   },
 
   // Undo changes from setMenuItemIcon.
@@ -973,7 +965,7 @@ const libraryTracker = {
     // See WindowTrackerBase#*browserWindows in ext-tabs-base.js for why we
     // can't use the enumerator's windowtype filter.
     for (let window of Services.wm.getEnumerator("")) {
-      if (window.document.readyState === "complete") {
+      if (windowTracker.isBrowserWindowInitialized(window)) {
         if (this.isLibraryWindow(window)) {
           this.notify(window);
         }
@@ -1027,7 +1019,12 @@ const libraryTracker = {
 // While any extensions are active, this Tracker registers to observe/listen
 // for menu events from both Tools and context menus, both content and chrome.
 const menuTracker = {
-  menuIds: ["placesContext", "menu_ToolsPopup", "tabContextMenu"],
+  menuIds: [
+    "placesContext",
+    "menu_ToolsPopup",
+    "tabContextMenu",
+    "sidebar-bookmarks-context-menu",
+  ],
 
   register() {
     Services.obs.addObserver(this, "on-build-contextmenu");
@@ -1087,16 +1084,22 @@ const menuTracker = {
     if (window.SidebarController.currentID === "viewBookmarksSidebar") {
       let sidebarBrowser = window.SidebarController.browser;
       sidebarBrowser.removeEventListener("load", this.onSidebarShown);
-      const menu =
-        sidebarBrowser.contentDocument.getElementById("placesContext");
-      menu.removeEventListener("popupshowing", this.onBookmarksContextMenu);
+      if (
+        !Services.prefs.getBoolPref("sidebar.updatedBookmarks.enabled", false)
+      ) {
+        // #placesContext only exists in sidebar document for legacy bookmarks.
+        // Otherwise, #sidebar-bookmarks-context-menu is used instead.
+        const menu =
+          sidebarBrowser.contentDocument.getElementById("placesContext");
+        menu.removeEventListener("popupshowing", this.onBookmarksContextMenu);
+      }
     }
   },
 
   onSidebarShown(event) {
     // The event target is an element in a browser window, so |window| will be
     // the browser window that contains the sidebar.
-    const window = event.currentTarget.ownerGlobal;
+    const window = event.currentTarget.documentGlobal;
     if (window.SidebarController.currentID === "viewBookmarksSidebar") {
       let sidebarBrowser = window.SidebarController.browser;
       if (sidebarBrowser.contentDocument.readyState !== "complete") {
@@ -1108,9 +1111,18 @@ const menuTracker = {
         });
         return;
       }
-      const menu =
-        sidebarBrowser.contentDocument.getElementById("placesContext");
-      menu.addEventListener("popupshowing", menuTracker.onBookmarksContextMenu);
+      if (
+        !Services.prefs.getBoolPref("sidebar.updatedBookmarks.enabled", false)
+      ) {
+        // #placesContext only exists in sidebar document for legacy bookmarks.
+        // Otherwise, #sidebar-bookmarks-context-menu is used instead.
+        const menu =
+          sidebarBrowser.contentDocument.getElementById("placesContext");
+        menu.addEventListener(
+          "popupshowing",
+          menuTracker.onBookmarksContextMenu
+        );
+      }
     }
   },
 
@@ -1142,13 +1154,25 @@ const menuTracker = {
         onBookmark: true,
       });
     }
+    if (menu.id === "sidebar-bookmarks-context-menu") {
+      const trigger = menu.triggerNode.triggerNode;
+      if (!trigger?.guid) {
+        return;
+      }
+
+      gMenuBuilder.build({
+        menu,
+        bookmarkId: trigger.guid,
+        onBookmark: true,
+      });
+    }
     if (menu.id === "menu_ToolsPopup") {
       const tab = tabTracker.activeTab;
       const pageUrl = tab.linkedBrowser.currentURI.spec;
       gMenuBuilder.build({ menu, tab, pageUrl, inToolsMenu: true });
     }
     if (menu.id === "tabContextMenu") {
-      const tab = menu.ownerGlobal.TabContextMenu.contextTab;
+      const tab = menu.documentGlobal.TabContextMenu.contextTab;
       const pageUrl = tab.linkedBrowser.currentURI.spec;
       gMenuBuilder.build({ menu, tab, pageUrl, onTab: true });
     }
@@ -1316,7 +1340,9 @@ this.menusInternal = class extends ExtensionAPIPersistent {
           await fire.wakeup();
           // If while waiting the tab disappeared we bail out.
           if (
-            !linkedBrowser.ownerGlobal.gBrowser.getTabForBrowser(linkedBrowser)
+            !linkedBrowser.documentGlobal.gBrowser.getTabForBrowser(
+              linkedBrowser
+            )
           ) {
             Cu.reportError(
               `menus.onClicked: target tab closed during background startup.`

@@ -4,8 +4,6 @@
 
 "use strict";
 
-/* eslint-env webextensions */
-
 browser.runtime.sendMessage({
   msg: "Hello from content script",
   url: location.href,

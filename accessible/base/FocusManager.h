@@ -30,6 +30,9 @@ class FocusManager {
  public:
   virtual ~FocusManager();
 
+  FocusManager(const FocusManager&) = delete;
+  FocusManager& operator=(const FocusManager&) = delete;
+
   /**
    * Return the currently focused LocalAccessible. If a remote document has
    * focus, this will return null.
@@ -144,10 +147,6 @@ class FocusManager {
 
  protected:
   FocusManager();
-
- private:
-  FocusManager(const FocusManager&);
-  FocusManager& operator=(const FocusManager&);
 
   /**
    * Return DOM document having DOM focus.

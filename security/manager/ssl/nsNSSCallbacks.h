@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +6,6 @@
 #ifndef nsNSSCallbacks_h
 #define nsNSSCallbacks_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Vector.h"
@@ -28,8 +26,6 @@ class nsILoadGroup;
 char* PK11PasswordPrompt(PK11SlotInfo* slot, PRBool retry, void* arg);
 
 void HandshakeCallback(PRFileDesc* fd, void* client_data);
-void SecretCallback(PRFileDesc* fd, PRUint16 epoch, SSLSecretDirection dir,
-                    PK11SymKey* secret, void* arg);
 SECStatus CanFalseStartCallback(PRFileDesc* fd, void* client_data,
                                 PRBool* canFalseStart);
 

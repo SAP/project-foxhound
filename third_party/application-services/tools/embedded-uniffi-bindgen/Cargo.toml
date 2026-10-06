@@ -1,0 +1,20 @@
+[package]
+name = "embedded-uniffi-bindgen"
+version = "0.1.0"
+authors = ["The Firefox Sync Developers <sync-team@mozilla.com>"]
+edition = "2021"
+license = "MPL-2.0"
+
+[[bin]]
+name = "embedded-uniffi-bindgen"
+
+[dependencies]
+anyhow = "1"
+camino = "1"
+glob = "0.3"
+toml = "0.5"
+clap = {version = "4.2", default-features = false, features = ["std", "derive"]}
+serde = { version = "1", features = ["derive"] }
+uniffi_bindgen = { version = "0.31" }
+uniffi_pipeline = { version = "0.31" }
+mozilla-central-workspace-hack = { version = "0.1", features = ["embedded-uniffi-bindgen"], optional = true }

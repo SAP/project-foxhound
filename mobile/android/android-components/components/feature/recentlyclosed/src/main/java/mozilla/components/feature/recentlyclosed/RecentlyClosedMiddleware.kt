@@ -7,7 +7,6 @@ package mozilla.components.feature.recentlyclosed
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import mozilla.components.browser.state.action.BrowserAction
 import mozilla.components.browser.state.action.InitAction
@@ -18,7 +17,6 @@ import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.recover.RecoverableTab
 import mozilla.components.browser.state.state.recover.TabState
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.lib.state.Store
 
 /**
@@ -31,32 +29,31 @@ class RecentlyClosedMiddleware(
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO),
 ) : Middleware<BrowserState, BrowserAction> {
 
-    @Suppress("ComplexMethod")
     override fun invoke(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         next: (BrowserAction) -> Unit,
         action: BrowserAction,
     ) {
         when (action) {
             is UndoAction.ClearRecoverableTabs -> {
-                if (action.tag == context.state.undoHistory.tag) {
+                if (action.tag == store.state.undoHistory.tag) {
                     // If the user has removed tabs and not invoked "undo" then let's save all non
                     // private tabs.
-                    context.store.dispatch(
+                    store.dispatch(
                         RecentlyClosedAction.AddClosedTabsAction(
-                            context.state.undoHistory.tabs.filter { tab -> !tab.state.private },
+                            store.state.undoHistory.tabs.filter { tab -> !tab.state.private },
                         ),
                     )
                 }
             }
             is UndoAction.AddRecoverableTabs -> {
-                if (context.state.undoHistory.tabs.isNotEmpty()) {
+                if (store.state.undoHistory.tabs.isNotEmpty()) {
                     // If new tabs get added to the undo history and there were some previously
                     // then add them to the list of closed tabs now since they will never go through
                     // the clear call above.
-                    context.store.dispatch(
+                    store.dispatch(
                         RecentlyClosedAction.AddClosedTabsAction(
-                            context.state.undoHistory.tabs.filter { tab -> !tab.state.private },
+                            store.state.undoHistory.tabs.filter { tab -> !tab.state.private },
                         ),
                     )
                 }
@@ -71,7 +68,7 @@ class RecentlyClosedMiddleware(
                 removeTab(action)
             }
             is InitAction -> {
-                initializeRecentlyClosed(context.store)
+                initializeRecentlyClosed(store)
             }
             else -> {
                 // no-op
@@ -80,7 +77,7 @@ class RecentlyClosedMiddleware(
 
         next(action)
 
-        pruneTabs(context.store)
+        pruneTabs(store)
     }
 
     private fun pruneTabs(store: Store<BrowserState, BrowserAction>) {

@@ -60,7 +60,7 @@ add_task(async function () {
 });
 
 async function runTestData(view, { value, commitKey, modifiers, expected }) {
-  const idRuleEditor = getRuleViewRuleEditor(view, 1);
+  const idRuleEditor = getRuleViewRuleEditorAt(view, 1);
   const propEditor = idRuleEditor.rule.textProps[0].editor;
 
   info("Focusing the inplace editor field");
@@ -73,17 +73,17 @@ async function runTestData(view, { value, commitKey, modifiers, expected }) {
   );
 
   info("Entering test data " + value);
-  let onRuleViewChanged = view.once("ruleview-changed");
+  const onRuleViewChanged = view.once("ruleview-changed");
   EventUtils.sendString(value, view.styleWindow);
   view.debounce.flush();
   await onRuleViewChanged;
 
   info("Entering the commit key " + commitKey + " " + modifiers);
-  onRuleViewChanged = view.once("ruleview-changed");
+  const onModifications = view.once("property-value-updated");
   const onBlur = once(editor.input, "blur");
   EventUtils.synthesizeKey(commitKey, modifiers);
   await onBlur;
-  await onRuleViewChanged;
+  await onModifications;
 
   if (commitKey === "VK_ESCAPE") {
     is(

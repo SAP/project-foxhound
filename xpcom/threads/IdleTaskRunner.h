@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +9,7 @@
 #include "nsIEventTarget.h"
 #include "nsISupports.h"
 #include "nsITimer.h"
+#include "nsString.h"
 #include <functional>
 
 namespace mozilla {
@@ -57,7 +56,7 @@ class IdleTaskRunner {
   // All durations are in milliseconds.
   //
   static already_AddRefed<IdleTaskRunner> Create(
-      const CallbackType& aCallback, const char* aRunnableName,
+      const CallbackType& aCallback, const nsACString& aRunnableName,
       TimeDuration aStartDelay, TimeDuration aMaxDelay,
       TimeDuration aMinimumUsefulBudget, bool aRepeating,
       const MayStopProcessingCallbackType& aMayStopProcessing,
@@ -81,11 +80,11 @@ class IdleTaskRunner {
 
   void Schedule(bool aAllowIdleDispatch);
 
-  const char* GetName() { return mName; }
+  const nsACString& GetName() { return mName; }
 
  private:
   explicit IdleTaskRunner(
-      const CallbackType& aCallback, const char* aRunnableName,
+      const CallbackType& aCallback, const nsACString& aRunnableName,
       TimeDuration aStartDelay, TimeDuration aMaxDelay,
       TimeDuration aMinimumUsefulBudget, bool aRepeating,
       const MayStopProcessingCallbackType& aMayStopProcessing,
@@ -93,6 +92,7 @@ class IdleTaskRunner {
   ~IdleTaskRunner();
   void CancelTimer();
   void SetTimerInternal(TimeDuration aDelay);
+  static void TimedOut(nsITimer* aTimer, void* aClosure);
 
   nsCOMPtr<nsITimer> mTimer;
   nsCOMPtr<nsITimer> mScheduleTimer;
@@ -116,7 +116,7 @@ class IdleTaskRunner {
   bool mTimerActive;
   MayStopProcessingCallbackType mMayStopProcessing;
   RequestInterruptCallbackType mRequestInterrupt;
-  const char* mName;
+  nsCString mName;
   RefPtr<IdleTaskRunnerTask> mTask;
 };
 

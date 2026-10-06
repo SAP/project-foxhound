@@ -1,11 +1,8 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Unused.h"
 #include "mozilla/Vector.h"
 #include "mozilla/fuzzing/Nyx.h"
 #include "prinrval.h"
@@ -85,7 +82,7 @@ void Nyx::start(void) {
       mRawReplayBuffer = new Vector<uint8_t>();
       is.seekg(0, is.end);
       int rawLength = is.tellg();
-      mozilla::Unused << mRawReplayBuffer->initLengthUninitialized(rawLength);
+      (void)mRawReplayBuffer->initLengthUninitialized(rawLength);
       is.seekg(0, is.beg);
       is.read(reinterpret_cast<char*>(mRawReplayBuffer->begin()), rawLength);
       is.seekg(0, is.beg);
@@ -103,7 +100,7 @@ void Nyx::start(void) {
 
       auto buffer = new Vector<uint8_t>();
 
-      mozilla::Unused << buffer->initLengthUninitialized(pktsize);
+      (void)buffer->initLengthUninitialized(pktsize);
       is.read(reinterpret_cast<char*>(buffer->begin()), buffer->length());
 
       MOZ_FUZZING_NYX_PRINTF("[Replay Mode] Read data packet of size %zu\n",
@@ -141,9 +138,10 @@ void Nyx::start(void) {
 
 bool Nyx::started(void) { return mInited; }
 
-bool Nyx::is_enabled(const char* identifier) {
+bool Nyx::is_enabled(const char* identifier, bool startswith) {
   static char* fuzzer = getenv("NYX_FUZZER");
-  if (!fuzzer || strcmp(fuzzer, identifier)) {
+  if (!fuzzer || (!startswith && strcmp(fuzzer, identifier)) ||
+      (startswith && strncmp(fuzzer, identifier, strlen(identifier)))) {
     return false;
   }
   return true;

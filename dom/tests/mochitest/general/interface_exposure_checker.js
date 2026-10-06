@@ -9,6 +9,7 @@ function entryDisabled(
     isMac,
     isLinux,
     isAndroid,
+    isAarch64,
     isInsecureContext,
     isFennec,
     isCrossOriginIsolated,
@@ -22,6 +23,7 @@ function entryDisabled(
     entry.mac === !isMac ||
     entry.linux === !isLinux ||
     (entry.android === !isAndroid && !entry.nightlyAndroid) ||
+    entry.aarch64 === !isAarch64 ||
     entry.fennecOrDesktop === (isAndroid && !isFennec) ||
     entry.fennec === !isFennec ||
     entry.release === !isRelease ||
@@ -130,6 +132,8 @@ if (typeof window !== "undefined") {
     const { AppConstants } = SpecialPowers.ChromeUtils.importESModule(
       "resource://gre/modules/AppConstants.sys.mjs"
     );
+    const sysinfo = SpecialPowers.Services.sysinfo;
+    const appinfo = SpecialPowers.Services.appinfo;
 
     return {
       isNightly: AppConstants.NIGHTLY_BUILD,
@@ -140,6 +144,7 @@ if (typeof window !== "undefined") {
       isWindows: AppConstants.platform == "win",
       isAndroid: AppConstants.platform == "android",
       isLinux: AppConstants.platform == "linux",
+      isAarch64: sysinfo.get("arch") === "aarch64",
       isInsecureContext: !window.isSecureContext,
       // Currently, MOZ_APP_NAME is always "fennec" for all mobile builds, so we can't use AppConstants for this
       isFennec:

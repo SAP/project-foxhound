@@ -53,10 +53,6 @@ var HarMenuUtils = {
    * Save all displayed requests in the network panel to a HAR file.
    */
   saveAllAsHar(requests, connector) {
-    // This will not work in launchpad
-    // document.execCommand(‘cut’/‘copy’) was denied because it was not called from
-    // inside a short running user-generated event handler.
-    // https://developer.mozilla.org/en-US/Add-ons/WebExtensions/Interact_with_the_clipboard
     return HarExporter.save(this.getDefaultHarOptions(requests, connector));
   },
 

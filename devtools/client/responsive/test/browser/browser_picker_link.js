@@ -73,7 +73,7 @@ async function hoverElement(inspector, ui, selector, x, y) {
   const onHovered = inspector.toolbox.nodePicker.once("picker-node-hovered");
   await spawnViewportTask(ui, { selector, x, y }, async options => {
     const target = content.document.querySelector(options.selector);
-    await EventUtils.synthesizeMouse(
+    EventUtils.synthesizeMouse(
       target,
       options.x,
       options.y,

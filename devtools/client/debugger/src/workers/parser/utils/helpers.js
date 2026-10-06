@@ -88,12 +88,12 @@ export function getVariables(dec) {
 /**
  * Add the identifiers for a given object pattern.
  *
- * @param {Array.<Object>} identifiers
+ * @param {Array.<object>} identifiers
  *        the current list of identifiers where to push the new identifiers
  *        related to this path.
- * @param {Set<String>} identifiersKeys
+ * @param {Set<string>} identifiersKeys
  *        List of currently registered identifier location key.
- * @param {Object} pattern
+ * @param {object} pattern
  */
 export function addPatternIdentifiers(identifiers, identifiersKeys, pattern) {
   let items;

@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // Nickel rounding.
 {
   let nf = new Intl.NumberFormat("en", {

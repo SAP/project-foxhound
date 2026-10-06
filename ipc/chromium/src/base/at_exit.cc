@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -13,9 +11,10 @@ namespace base {
 // recent, and we should never have more than one outside of testing, when we
 // use the shadow version of the constructor.  We don't protect this for
 // thread-safe access, since it will only be modified in testing.
-static AtExitManager* g_top_manager = NULL;
+static AtExitManager* g_top_manager = nullptr;
 
-AtExitManager::AtExitManager() : lock_("AtExitManager"), next_manager_(NULL) {
+AtExitManager::AtExitManager()
+    : lock_("AtExitManager"), next_manager_(nullptr) {
   DCHECK(!g_top_manager);
   g_top_manager = this;
 }

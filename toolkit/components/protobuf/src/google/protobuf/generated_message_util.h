@@ -1,32 +1,9 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 
 // Author: kenton@google.com (Kenton Varda)
 //  Based on original Protocol Buffers design by
@@ -40,25 +17,37 @@
 
 #include <assert.h>
 
+#include <algorithm>
 #include <atomic>
 #include <climits>
+#include <cstddef>
+#include <cstdint>
+#include <initializer_list>
+#include <memory>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
-#include <google/protobuf/stubs/common.h>
-#include <google/protobuf/stubs/once.h>  // Add direct dep on port for pb.cc
-#include <google/protobuf/port.h>
-#include <google/protobuf/stubs/strutil.h>
-#include <google/protobuf/any.h>
-#include <google/protobuf/has_bits.h>
-#include <google/protobuf/implicit_weak_message.h>
-#include <google/protobuf/message_lite.h>
-#include <google/protobuf/repeated_field.h>
-#include <google/protobuf/wire_format_lite.h>
-#include <google/protobuf/stubs/casts.h>
+#include "google/protobuf/stubs/common.h"
+#include "absl/base/call_once.h"
+#include "absl/base/casts.h"
+#include "absl/base/optimization.h"
+#include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
+#include "google/protobuf/any.h"
+#include "google/protobuf/has_bits.h"
+#include "google/protobuf/implicit_weak_message.h"
+#include "google/protobuf/internal_visibility.h"
+#include "google/protobuf/message_lite.h"
+#include "google/protobuf/port.h"
+#include "google/protobuf/repeated_field.h"
+#include "google/protobuf/repeated_ptr_field.h"
+#include "google/protobuf/wire_format_lite.h"
+
 
 // Must be included last.
-#include <google/protobuf/port_def.inc>
+#include "google/protobuf/port_def.inc"
 
 #ifdef SWIG
 #error "You cannot SWIG proto headers"
@@ -76,15 +65,8 @@ class CodedInputStream;
 
 namespace internal {
 
-template <typename To, typename From>
-inline To DownCast(From* f) {
-  return PROTOBUF_NAMESPACE_ID::internal::down_cast<To>(f);
-}
-template <typename To, typename From>
-inline To DownCast(From& f) {
-  return PROTOBUF_NAMESPACE_ID::internal::down_cast<To>(f);
-}
 
+class ExtensionSet;
 
 // This fastpath inlines a single branch instead of having to make the
 // InitProtobufDefaults function call.
@@ -92,18 +74,32 @@ inline To DownCast(From& f) {
 PROTOBUF_EXPORT extern std::atomic<bool> init_protobuf_defaults_state;
 PROTOBUF_EXPORT void InitProtobufDefaultsSlow();
 PROTOBUF_EXPORT inline void InitProtobufDefaults() {
-  if (PROTOBUF_PREDICT_FALSE(
+  if (ABSL_PREDICT_FALSE(
           !init_protobuf_defaults_state.load(std::memory_order_acquire))) {
     InitProtobufDefaultsSlow();
   }
 }
 
 // This used by proto1
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD
 PROTOBUF_EXPORT inline const std::string& GetEmptyString() {
   InitProtobufDefaults();
   return GetEmptyStringAlreadyInited();
 }
 
+// Default empty Cord object. Don't use directly. Instead, call
+// GetEmptyCordAlreadyInited() to get the reference.
+union EmptyCord {
+  constexpr EmptyCord() : value() {}
+  ~EmptyCord() {}
+  ::absl::Cord value;
+};
+PROTOBUF_EXPORT extern const EmptyCord empty_cord_;
+
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD
+constexpr const ::absl::Cord& GetEmptyCordAlreadyInited() {
+  return empty_cord_.value;
+}
 
 // True if IsInitialized() is true for all elements of t.  Type is expected
 // to be a RepeatedPtrField<some message type>.  It's useful to have this
@@ -111,7 +107,8 @@ PROTOBUF_EXPORT inline const std::string& GetEmptyString() {
 // IsInitialized() methods.  We want the C++ compiler to inline this or not
 // as it sees fit.
 template <typename Msg>
-bool AllAreInitialized(const RepeatedPtrField<Msg>& t) {
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool AllAreInitialized(
+    const RepeatedPtrField<Msg>& t) {
   for (int i = t.size(); --i >= 0;) {
     if (!t.Get(i).IsInitialized()) return false;
   }
@@ -122,7 +119,8 @@ bool AllAreInitialized(const RepeatedPtrField<Msg>& t) {
 // This version operates on MessageLite to avoid introducing a dependency on the
 // concrete message type.
 template <class T>
-bool AllAreInitializedWeak(const RepeatedPtrField<T>& t) {
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool AllAreInitializedWeak(
+    const RepeatedPtrField<T>& t) {
   for (int i = t.size(); --i >= 0;) {
     if (!reinterpret_cast<const RepeatedPtrFieldBase&>(t)
              .Get<ImplicitWeakTypeHandler<T> >(i)
@@ -133,11 +131,13 @@ bool AllAreInitializedWeak(const RepeatedPtrField<T>& t) {
   return true;
 }
 
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD
 inline bool IsPresent(const void* base, uint32_t hasbit) {
   const uint32_t* has_bits_array = static_cast<const uint32_t*>(base);
   return (has_bits_array[hasbit / 32] & (1u << (hasbit & 31))) != 0;
 }
 
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD
 inline bool IsOneofPresent(const void* base, uint32_t offset, uint32_t tag) {
   const uint32_t* oneof = reinterpret_cast<const uint32_t*>(
       static_cast<const uint8_t*>(base) + offset);
@@ -161,9 +161,9 @@ PROTOBUF_EXPORT MessageLite* DuplicateIfNonNullInternal(MessageLite* message);
 PROTOBUF_EXPORT MessageLite* GetOwnedMessageInternal(Arena* message_arena,
                                                      MessageLite* submessage,
                                                      Arena* submessage_arena);
-PROTOBUF_EXPORT void GenericSwap(MessageLite* m1, MessageLite* m2);
+PROTOBUF_EXPORT void GenericSwap(MessageLite* lhs, MessageLite* rhs);
 // We specialize GenericSwap for non-lite messages to benefit from reflection.
-PROTOBUF_EXPORT void GenericSwap(Message* m1, Message* m2);
+PROTOBUF_EXPORT void GenericSwap(Message* lhs, Message* rhs);
 
 template <typename T>
 T* DuplicateIfNonNull(T* message) {
@@ -183,17 +183,6 @@ T* GetOwnedMessage(Arena* message_arena, T* submessage,
       submessage_arena));
 }
 
-// Hide atomic from the public header and allow easy change to regular int
-// on platforms where the atomic might have a perf impact.
-class PROTOBUF_EXPORT CachedSize {
- public:
-  int Get() const { return size_.load(std::memory_order_relaxed); }
-  void Set(int size) { size_.store(size, std::memory_order_relaxed); }
-
- private:
-  std::atomic<int> size_{0};
-};
-
 PROTOBUF_EXPORT void DestroyMessage(const void* message);
 PROTOBUF_EXPORT void DestroyString(const void* s);
 // Destroy (not delete) the message
@@ -205,10 +194,248 @@ inline void OnShutdownDestroyString(const std::string* ptr) {
   OnShutdownRun(DestroyString, ptr);
 }
 
+// Helpers for deterministic serialization =============================
+
+// Iterator base for MapSorterFlat and MapSorterPtr.
+template <typename storage_type>
+struct MapSorterIt {
+  storage_type* ptr;
+  MapSorterIt(storage_type* ptr) : ptr(ptr) {}
+  bool operator==(const MapSorterIt& other) const { return ptr == other.ptr; }
+  bool operator!=(const MapSorterIt& other) const { return !(*this == other); }
+  MapSorterIt& operator++() {
+    ++ptr;
+    return *this;
+  }
+  MapSorterIt operator++(int) {
+    auto other = *this;
+    ++ptr;
+    return other;
+  }
+  MapSorterIt operator+(int v) { return MapSorterIt{ptr + v}; }
+};
+
+// Defined outside of MapSorterFlat to only be templatized on the key.
+template <typename KeyT>
+struct MapSorterLessThan {
+  using storage_type = std::pair<KeyT, const void*>;
+  bool operator()(const storage_type& a, const storage_type& b) const {
+    return a.first < b.first;
+  }
+};
+
+// MapSorterFlat stores keys inline with pointers to map entries, so that
+// keys can be compared without indirection. This type is used for maps with
+// keys that are not strings.
+template <typename MapT>
+class MapSorterFlat {
+ public:
+  using value_type = typename MapT::value_type;
+  // To avoid code bloat we don't put `value_type` in `storage_type`. It is not
+  // necessary for the call to sort, and avoiding it prevents unnecessary
+  // separate instantiations of sort.
+  using storage_type = std::pair<typename MapT::key_type, const void*>;
+
+  // This const_iterator dereferenes to the map entry stored in the sorting
+  // array pairs. This is the same interface as the Map::const_iterator type,
+  // and allows generated code to use the same loop body with either form:
+  //   for (const auto& entry : map) { ... }
+  //   for (const auto& entry : MapSorterFlat(map)) { ... }
+  struct const_iterator : public MapSorterIt<storage_type> {
+    using pointer = const typename MapT::value_type*;
+    using reference = const typename MapT::value_type&;
+    using MapSorterIt<storage_type>::MapSorterIt;
+
+    pointer operator->() const {
+      return static_cast<const value_type*>(this->ptr->second);
+    }
+    reference operator*() const { return *this->operator->(); }
+  };
+
+  explicit MapSorterFlat(const MapT& m)
+      : size_(m.size()), items_(size_ ? new storage_type[size_] : nullptr) {
+    if (!size_) return;
+    storage_type* it = &items_[0];
+    for (const auto& entry : m) {
+      *it++ = {entry.first, &entry};
+    }
+    std::sort(&items_[0], &items_[size_],
+              MapSorterLessThan<typename MapT::key_type>{});
+  }
+  size_t size() const { return size_; }
+  const_iterator begin() const { return {items_.get()}; }
+  const_iterator end() const { return {items_.get() + size_}; }
+
+ private:
+  size_t size_;
+  std::unique_ptr<storage_type[]> items_;
+};
+
+// Defined outside of MapSorterPtr to only be templatized on the key.
+template <typename KeyT>
+struct MapSorterPtrLessThan {
+  bool operator()(const void* a, const void* b) const {
+    // The pointers point to the `std::pair<const Key, Value>` object.
+    // We cast directly to the key to read it.
+    return *reinterpret_cast<const KeyT*>(a) <
+           *reinterpret_cast<const KeyT*>(b);
+  }
+};
+
+// MapSorterPtr stores and sorts pointers to map entries. This type is used for
+// maps with keys that are strings.
+template <typename MapT>
+class MapSorterPtr {
+ public:
+  using value_type = typename MapT::value_type;
+  // To avoid code bloat we don't put `value_type` in `storage_type`. It is not
+  // necessary for the call to sort, and avoiding it prevents unnecessary
+  // separate instantiations of sort.
+  using storage_type = const void*;
+
+  // This const_iterator dereferenes the map entry pointer stored in the sorting
+  // array. This is the same interface as the Map::const_iterator type, and
+  // allows generated code to use the same loop body with either form:
+  //   for (const auto& entry : map) { ... }
+  //   for (const auto& entry : MapSorterPtr(map)) { ... }
+  struct const_iterator : public MapSorterIt<storage_type> {
+    using pointer = const typename MapT::value_type*;
+    using reference = const typename MapT::value_type&;
+    using MapSorterIt<storage_type>::MapSorterIt;
+
+    pointer operator->() const {
+      return static_cast<const value_type*>(*this->ptr);
+    }
+    reference operator*() const { return *this->operator->(); }
+  };
+
+  explicit MapSorterPtr(const MapT& m)
+      : size_(m.size()), items_(size_ ? new storage_type[size_] : nullptr) {
+    if (!size_) return;
+    storage_type* it = &items_[0];
+    for (const auto& entry : m) {
+      *it++ = &entry;
+    }
+    static_assert(PROTOBUF_FIELD_OFFSET(typename MapT::value_type, first) == 0,
+                  "Must hold for MapSorterPtrLessThan to work.");
+    std::sort(&items_[0], &items_[size_],
+              MapSorterPtrLessThan<typename MapT::key_type>{});
+  }
+  size_t size() const { return size_; }
+  const_iterator begin() const { return {items_.get()}; }
+  const_iterator end() const { return {items_.get() + size_}; }
+
+ private:
+  size_t size_;
+  std::unique_ptr<storage_type[]> items_;
+};
+
+struct WeakDescriptorDefaultTail {
+  const MessageGlobalsBase** target;
+  size_t size;
+};
+
+// Tag to distinguish overloads below:
+//  - if last argument is `BytesTag tag = BytesTag{}` then the overload is
+//    available to both string and byte fields.
+//  - if last argument is `BytesTag tag` then the overload is only available to
+//    byte fields.
+//  - if there is no BytesTag argument, then the overload is only available to
+//    string fields.
+struct BytesTag {
+  explicit BytesTag() = default;
+};
+
+// Assigns to `dest` the content of `value`, optionally bounded by `size`.
+// This overload set is used to implement `set_xxx()` methods for repeated
+// string fields in generated code.
+inline void AssignToString(std::string& dest, const std::string& value,
+                           BytesTag /*tag*/ = BytesTag{}) {
+  dest.assign(value);
+}
+inline void AssignToString(std::string& dest, std::string&& value,
+                           BytesTag /*tag*/ = BytesTag{}) {
+  dest.assign(std::move(value));
+}
+inline void AssignToString(std::string& dest, const char* value,
+                           BytesTag /*tag*/ = BytesTag{}) {
+  dest.assign(value);
+}
+inline void AssignToString(std::string& dest, const char* value,
+                           std::size_t size) {
+  dest.assign(value, size);
+}
+inline void AssignToString(std::string& dest, const void* value,
+                           std::size_t size, BytesTag /*tag*/) {
+  dest.assign(reinterpret_cast<const char*>(value), size);
+}
+inline void AssignToString(std::string& dest, absl::string_view value,
+                           BytesTag /*tag*/ = BytesTag{}) {
+  dest.assign(value.data(), value.size());
+}
+
+// Adds `value`, optionally bounded by `size`, as the last element of `dest`.
+// This overload set is used to implement `add_xxx()` methods for repeated
+// string fields in generated code.
+template <typename Arg, typename... Args>
+void AddToRepeatedPtrField(InternalVisibility visibility, google::protobuf::Arena* arena,
+                           google::protobuf::RepeatedPtrField<std::string>& dest,
+                           Arg&& value, Args... args) {
+  AssignToString(*dest.InternalAddWithArena(visibility, arena),
+                 std::forward<Arg>(value), args...);
+}
+inline void AddToRepeatedPtrField(InternalVisibility visibility,
+                                  google::protobuf::Arena* arena,
+                                  google::protobuf::RepeatedPtrField<std::string>& dest,
+                                  std::string&& value,
+                                  BytesTag /*tag*/ = BytesTag{}) {
+  dest.InternalAddWithArena(visibility, arena, std::move(value));
+}
+
+// The struct PrivateAccess is used to provide access to private members of
+// message classes without making them public. This is useful for highly
+// optimized code paths that need to access internals.
+struct PrivateAccess {
+  template <typename T, int number>
+  static constexpr bool IsLazyField() {
+    constexpr auto l =
+        [](auto& msg) -> decltype(msg._lazy_internal_mutable(
+                          std::integral_constant<int, number>{})) {};
+    return std::is_invocable_v<decltype(l), T&>;
+  }
+
+  template <int number, typename T>
+  static auto& MutableLazy(T& msg) {
+    return msg._lazy_internal_mutable(std::integral_constant<int, number>{});
+  }
+
+  template <typename T>
+  static auto& GetExtensionSet(T& msg) {
+    return msg._impl_._extensions_;
+  }
+
+  template <typename T>
+  static void TrackerOnGetMetadata() {
+    T::Impl_::TrackerOnGetMetadata();
+  }
+
+  template <typename T>
+  static constexpr auto GenerateParseTable(
+      const ::google::protobuf::internal::ClassData* class_data) {
+    return T::InternalGenerateParseTable_(class_data);
+  }
+
+  static internal::ExtensionSet* GetExtensionSet(MessageLite* msg);
+  static const internal::ExtensionSet* GetExtensionSet(const MessageLite* msg);
+
+  template <typename T>
+  using ImplTForTesting = typename T::Impl_;
+};
+
 }  // namespace internal
 }  // namespace protobuf
 }  // namespace google
 
-#include <google/protobuf/port_undef.inc>
+#include "google/protobuf/port_undef.inc"
 
 #endif  // GOOGLE_PROTOBUF_GENERATED_MESSAGE_UTIL_H__

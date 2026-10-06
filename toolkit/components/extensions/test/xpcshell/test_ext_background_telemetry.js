@@ -1,9 +1,4 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
-
-const HISTOGRAM = "WEBEXT_BACKGROUND_PAGE_LOAD_MS";
-const HISTOGRAM_KEYED = "WEBEXT_BACKGROUND_PAGE_LOAD_MS_BY_ADDONID";
 
 add_task(async function test_telemetry() {
   const { GleanTimingDistribution } = globalThis;
@@ -20,48 +15,21 @@ add_task(async function test_telemetry() {
     },
   });
 
-  resetTelemetryData();
+  Services.fog.testResetFOG();
 
-  assertHistogramEmpty(HISTOGRAM);
-  assertKeyedHistogramEmpty(HISTOGRAM_KEYED);
   assertGleanMetricsNoSamples({
     metricId: "backgroundPageLoad",
     gleanMetric: Glean.extensionsTiming.backgroundPageLoad,
     gleanMetricConstructor: GleanTimingDistribution,
   });
+  assertGleanLabeledMetricEmpty({
+    metricId: "backgroundPageLoadByAddonid",
+    gleanMetric: Glean.extensionsTiming.backgroundPageLoadByAddonid,
+    gleanMetricLabels: [],
+  });
 
   await extension1.startup();
   await extension1.awaitMessage("loaded");
-
-  const processSnapshot = snapshot => {
-    return snapshot.sum > 0;
-  };
-
-  const processKeyedSnapshot = snapshot => {
-    let res = {};
-    for (let key of Object.keys(snapshot)) {
-      res[key] = snapshot[key].sum > 0;
-    }
-    return res;
-  };
-
-  assertHistogramSnapshot(
-    HISTOGRAM,
-    { processSnapshot, expectedValue: true },
-    `Data recorded for first extension for histogram: ${HISTOGRAM}.`
-  );
-
-  assertHistogramSnapshot(
-    HISTOGRAM_KEYED,
-    {
-      keyed: true,
-      processSnapshot: processKeyedSnapshot,
-      expectedValue: {
-        [extension1.extension.id]: true,
-      },
-    },
-    `Data recorded for first extension for histogram ${HISTOGRAM_KEYED}`
-  );
 
   assertGleanMetricsSamplesCount({
     metricId: "backgroundPageLoad",
@@ -70,42 +38,25 @@ add_task(async function test_telemetry() {
     expectedSamplesCount: 1,
   });
 
-  let histogram = Services.telemetry.getHistogramById(HISTOGRAM);
-  let histogramKeyed =
-    Services.telemetry.getKeyedHistogramById(HISTOGRAM_KEYED);
-  let histogramSum = histogram.snapshot().sum;
-  let histogramSumExt1 = histogramKeyed.snapshot()[extension1.extension.id].sum;
+  const allAddonsBackgroundPageLoadSum =
+    Glean.extensionsTiming.backgroundPageLoad.testGetValue()?.sum;
+  const ext1BackgroundPageLoadSum =
+    Glean.extensionsTiming.backgroundPageLoadByAddonid.testGetValue()?.[
+      extension1.id
+    ]?.sum;
+  Assert.greater(
+    allAddonsBackgroundPageLoadSum,
+    0,
+    `Expect stored values in the backgroundPageLoad Glean metric`
+  );
+  Assert.greater(
+    ext1BackgroundPageLoadSum,
+    0,
+    `Expect stored values in the backgroundPageLoadByAddonid Glean metric for extension1`
+  );
 
   await extension2.startup();
   await extension2.awaitMessage("loaded");
-
-  assertHistogramSnapshot(
-    HISTOGRAM,
-    {
-      processSnapshot: snapshot => snapshot.sum > histogramSum,
-      expectedValue: true,
-    },
-    `Data recorded for second extension for histogram: ${HISTOGRAM}.`
-  );
-
-  assertHistogramSnapshot(
-    HISTOGRAM_KEYED,
-    {
-      keyed: true,
-      processSnapshot: processKeyedSnapshot,
-      expectedValue: {
-        [extension1.extension.id]: true,
-        [extension2.extension.id]: true,
-      },
-    },
-    `Data recorded for second extension for histogram ${HISTOGRAM_KEYED}`
-  );
-
-  equal(
-    histogramKeyed.snapshot()[extension1.extension.id].sum,
-    histogramSumExt1,
-    `Data recorder for first extension is unchanged on the keyed histogram ${HISTOGRAM_KEYED}`
-  );
 
   assertGleanMetricsSamplesCount({
     metricId: "backgroundPageLoad",
@@ -113,6 +64,25 @@ add_task(async function test_telemetry() {
     gleanMetricConstructor: GleanTimingDistribution,
     expectedSamplesCount: 2,
   });
+  Assert.greater(
+    Glean.extensionsTiming.backgroundPageLoad.testGetValue()?.sum,
+    allAddonsBackgroundPageLoadSum,
+    `Expect backgroundPageLoad sum to increae after extension2 is started`
+  );
+  Assert.equal(
+    Glean.extensionsTiming.backgroundPageLoadByAddonid.testGetValue()?.[
+      extension1.id
+    ]?.sum,
+    ext1BackgroundPageLoadSum,
+    `Expect backgroundPageLoadByAddonid Glean for extension1 to not change after extension2 startup`
+  );
+  Assert.greater(
+    Glean.extensionsTiming.backgroundPageLoadByAddonid.testGetValue()?.[
+      extension2.id
+    ]?.sum,
+    0,
+    `Expect stored values in the backgroundPageLoadByAddonid Glean metric for extension2`
+  );
 
   await extension1.unload();
   await extension2.unload();

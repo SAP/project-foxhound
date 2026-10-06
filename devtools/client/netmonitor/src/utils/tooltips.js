@@ -6,6 +6,7 @@
 
 /**
  * Returns first 128 characters of value for use as a tooltip.
+ *
  * @param object
  * @returns {*}
  */

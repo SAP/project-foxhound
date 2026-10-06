@@ -6,6 +6,7 @@ import http.server
 import ipaddress
 import os
 import platform
+import selectors
 import socket
 import socketserver
 import ssl
@@ -182,6 +183,9 @@ class WebTestServer(http.server.ThreadingHTTPServer):
         :param latency: Delay in ms to wait before serving each response, or
                         callable that returns a delay in ms
         """
+        self._shutdown_event = threading.Event()
+        self._shutdown_write_sock = None
+
         self.router = router
         self.rewriter = rewriter
 
@@ -248,6 +252,51 @@ class WebTestServer(http.server.ThreadingHTTPServer):
             else:
                 self.server_name = socket.getfqdn(host)
             self.server_port = port
+
+    def serve_forever(self, poll_interval=0.5):
+        """Handle one request at a time until shutdown.
+
+        This overrides the superclass implementation to use a socket pair to process
+        shutdown requests, avoiding waiting the poll_interval before shutting down.
+        It does, however, still call service_actions() every poll_interval.
+
+        """
+        shutdown_read_sock, self._shutdown_write_sock = socket.socketpair()
+        self._shutdown_event.clear()
+
+        try:
+            with selectors.DefaultSelector() as selector:
+                selector.register(self, selectors.EVENT_READ)
+                selector.register(shutdown_read_sock, selectors.EVENT_READ)
+
+                while True:
+                    events = selector.select(timeout=poll_interval)
+
+                    # Handle shutdown requests before any request
+                    if any(
+                        key.fileobj == shutdown_read_sock and mask == selectors.EVENT_READ
+                        for key, mask in events
+                    ):
+                        shutdown_read_sock.recv(1)
+                        break
+
+                    for key, mask in events:
+                        if key.fileobj == self and mask == selectors.EVENT_READ:
+                            super()._handle_request_noblock()
+                        else:
+                            assert False, "unreachable"
+                    else:
+                        self.service_actions()
+
+        finally:
+            shutdown_read_sock.close()
+            self._shutdown_write_sock.close()
+            self._shutdown_event.set()
+
+    def shutdown(self):
+        """Stops the serve_forever loop and waits for it to finish."""
+        self._shutdown_write_sock.send(b'x')
+        self._shutdown_event.wait()
 
     def finish_request(self, request, client_address):
         if isinstance(self.socket, ssl.SSLSocket):
@@ -444,7 +493,7 @@ class Http2WebTestRequestHandler(BaseWebTestRequestHandler):
         try:
             while not self.close_connection:
                 data = self.request.recv(window_size)
-                if data == '':
+                if data == b'':
                     self.logger.debug('(%s) Socket Closed' % self.uid)
                     self.close_connection = True
                     continue
@@ -475,6 +524,10 @@ class Http2WebTestRequestHandler(BaseWebTestRequestHandler):
 
         except OSError as e:
             self.logger.error(f'({self.uid}) Closing Connection - \n{str(e)}')
+            if not self.close_connection:
+                self.close_connection = True
+        except ProtocolError as e:
+            self.logger.debug(f'H2 protocol error - {str(e)}')
             if not self.close_connection:
                 self.close_connection = True
         except Exception as e:
@@ -558,9 +611,9 @@ class Http2WebTestRequestHandler(BaseWebTestRequestHandler):
             # wire. Flush the headers here.
             try:
                 h2response.write_status_headers()
-            except StreamClosedError:
+            except (StreamClosedError, ProtocolError):
                 # work around https://github.com/web-platform-tests/wpt/issues/27786
-                # The stream was already closed.
+                # The stream or connection was already closed.
                 return
 
             request_wrapper._dispatcher = dispatcher
@@ -688,9 +741,12 @@ class Http2WebTestRequestHandler(BaseWebTestRequestHandler):
             if getattr(frame, "stream_ended", False):
                 try:
                     self.finish_handling(request, response, req_handler)
-                except StreamClosedError:
-                    self.logger.debug('(%s - %s) Unable to write response; stream closed' %
-                                    (self.uid, stream_id))
+                except (StreamClosedError, ProtocolError):
+                    # The stream or connection was closed before we could
+                    # finish writing the response.
+                    self.logger.debug(
+                        '(%s - %s) Unable to write response; stream or '
+                        'connection closed' % (self.uid, stream_id))
                 break
 
         cleanup()
@@ -709,11 +765,10 @@ class Http2WebTestRequestHandler(BaseWebTestRequestHandler):
 
 class H2ConnectionGuard:
     """H2Connection objects are not threadsafe, so this keeps thread safety"""
-    lock = threading.Lock()
-
     def __init__(self, obj):
         assert isinstance(obj, H2Connection)
         self.obj = obj
+        self.lock = threading.Lock()
 
     def __enter__(self):
         self.lock.acquire()

@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _NSDATAOBJCOLLECTION_H_
-#define _NSDATAOBJCOLLECTION_H_
+#ifndef NSDATAOBJCOLLECTION_H_
+#define NSDATAOBJCOLLECTION_H_
 
 #include <oleidl.h>
 
@@ -12,7 +11,6 @@
 #include "nsString.h"
 #include "nsTArray.h"
 #include "nsDataObj.h"
-#include "mozilla/Attributes.h"
 
 #define MULTI_MIME "Mozilla/IDataObjectCollectionFormat"
 
@@ -45,10 +43,13 @@ class nsDataObjCollection final : public nsIDataObjCollection,
 
  private:  // DataGet and DataSet helper methods
   HRESULT GetFile(LPFORMATETC pFE, LPSTGMEDIUM pSTM);
-  HRESULT GetText(LPFORMATETC pFE, LPSTGMEDIUM pSTM);
-  HRESULT GetFileDescriptors(LPFORMATETC pFE, LPSTGMEDIUM pSTM);
+  HRESULT GetFileDescriptors(LPFORMATETC pFE, LPSTGMEDIUM pSTM,
+                             bool aIsWideChar);
   HRESULT GetFileContents(LPFORMATETC pFE, LPSTGMEDIUM pSTM);
   HRESULT GetFirstSupporting(LPFORMATETC pFE, LPSTGMEDIUM pSTM);
+
+  template <typename CharT, typename StringT>
+  HRESULT GetText(LPFORMATETC pFE, LPSTGMEDIUM pSTM);
 
   using nsDataObj::GetFile;
   using nsDataObj::GetFileContents;

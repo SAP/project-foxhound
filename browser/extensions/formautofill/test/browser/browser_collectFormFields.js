@@ -163,7 +163,6 @@ add_heuristic_tests([
                </form>`,
     expectedResult: [
       {
-        invalid: true,
         default: {
           reason: "autocomplete",
         },
@@ -352,88 +351,6 @@ add_heuristic_tests([
   },
   {
     description:
-      "A credit card form is invalid when a fathom detected cc-number field is the only field in the form",
-    fixtureData: `<form><input id="cc-number" name="cc-number"></form>`,
-    expectedResult: [
-      {
-        invalid: true,
-        fields: [{ fieldName: "cc-number", reason: "fathom" }],
-      },
-    ],
-    prefs: [
-      [
-        "extensions.formautofill.creditCards.heuristics.fathom.highConfidenceThreshold",
-        "0.9",
-      ],
-      [
-        "extensions.formautofill.creditCards.heuristics.fathom.testConfidence",
-        "0.8",
-      ],
-    ],
-  },
-  {
-    description:
-      "A credit card form is invalid when a fathom detected cc-name field is the only field in the form",
-    fixtureData: `<form><input id="cc-name" name="cc-name"></form>`,
-    expectedResult: [
-      {
-        invalid: true,
-        fields: [{ fieldName: "cc-name", reason: "fathom" }],
-      },
-    ],
-    prefs: [
-      [
-        "extensions.formautofill.creditCards.heuristics.fathom.highConfidenceThreshold",
-        "0.9",
-      ],
-      [
-        "extensions.formautofill.creditCards.heuristics.fathom.testConfidence",
-        "0.8",
-      ],
-    ],
-  },
-  {
-    description:
-      "A cc-number only form is considered a valid credit card form when fathom is confident and there is no other <input> in the form",
-    fixtureData: `<form><input id="cc-number" name="cc-number"></form>`,
-    expectedResult: [
-      {
-        fields: [{ fieldName: "cc-number", reason: "fathom" }],
-      },
-    ],
-    prefs: [
-      [
-        "extensions.formautofill.creditCards.heuristics.fathom.highConfidenceThreshold",
-        "0.95",
-      ],
-      [
-        "extensions.formautofill.creditCards.heuristics.fathom.testConfidence",
-        "0.99",
-      ],
-    ],
-  },
-  {
-    description:
-      "A cc-name only form is considered a valid credit card form when fathom is confident and there is no other <input> in the form",
-    fixtureData: `<form><input id="cc-name" name="cc-name"></form>`,
-    expectedResult: [
-      {
-        fields: [{ fieldName: "cc-name", reason: "fathom" }],
-      },
-    ],
-    prefs: [
-      [
-        "extensions.formautofill.creditCards.heuristics.fathom.highConfidenceThreshold",
-        "0.95",
-      ],
-      [
-        "extensions.formautofill.creditCards.heuristics.fathom.testConfidence",
-        "0.99",
-      ],
-    ],
-  },
-  {
-    description:
       "A credit card form is invalid when none of the fields are identified by fathom or autocomplete",
     fixtureData: `<form>
                  <input id="cc-number" name="cc-number">
@@ -458,30 +375,6 @@ add_heuristic_tests([
     ],
   },
   //// Special Cases
-  {
-    description:
-      "A credit card form with a high-confidence cc-name field is still considered invalid when there is another <input> field",
-    fixtureData: `<form>
-               <input id="cc-name" name="cc-name">
-               <input id="password" type="password">
-               </form>`,
-    expectedResult: [
-      {
-        invalid: true,
-        fields: [{ fieldName: "cc-name", reason: "fathom" }],
-      },
-    ],
-    prefs: [
-      [
-        "extensions.formautofill.creditCards.heuristics.fathom.highConfidenceThreshold",
-        "0.95",
-      ],
-      [
-        "extensions.formautofill.creditCards.heuristics.fathom.testConfidence",
-        "0.96",
-      ],
-    ],
-  },
   {
     description: "A valid credit card form with multiple cc-number fields",
     fixtureData: `<form>

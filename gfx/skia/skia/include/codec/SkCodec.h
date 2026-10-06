@@ -18,6 +18,7 @@
 #include "include/core/SkTypes.h"
 #include "include/core/SkYUVAPixmaps.h"
 #include "include/private/SkEncodedInfo.h"
+#include "include/private/SkHdrMetadata.h"
 #include "include/private/base/SkNoncopyable.h"
 #include "modules/skcms/skcms.h"
 
@@ -121,6 +122,10 @@ public:
          *  FIXME: Perhaps this should be kUnsupported?
          */
         kUnimplemented,
+        /**
+         *  If the memory allocation exceeded the provided budget.
+         */
+        kOutOfMemory,
     };
 
     /**
@@ -211,11 +216,11 @@ public:
      *      If the PNG does not contain unknown chunks, the SkPngChunkReader
      *      will not be used or modified.
      */
-    static std::unique_ptr<SkCodec> MakeFromData(sk_sp<SkData>,
+    static std::unique_ptr<SkCodec> MakeFromData(sk_sp<const SkData>,
                                                  SkSpan<const SkCodecs::Decoder> decoders,
                                                  SkPngChunkReader* = nullptr);
     // deprecated
-    static std::unique_ptr<SkCodec> MakeFromData(sk_sp<SkData>, SkPngChunkReader* = nullptr);
+    static std::unique_ptr<SkCodec> MakeFromData(sk_sp<const SkData>, SkPngChunkReader* = nullptr);
 
     virtual ~SkCodec();
 
@@ -238,6 +243,12 @@ public:
     const skcms_ICCProfile* getICCProfile() const {
         return this->getEncodedInfo().profile();
     }
+
+    /**
+     * Return the HDR metadata associated with this image. Note that even SDR images can include
+     * HDR metadata (e.g, indicating how to inverse tone map when displayed on an HDR display).
+     */
+    const skhdr::Metadata& getHdrMetadata() const { return fEncodedInfo.getHdrMetadata(); }
 
     /**
      * Whether the encoded input uses 16 or more bits per component.
@@ -302,12 +313,6 @@ public:
     SkEncodedImageFormat getEncodedFormat() const { return this->onGetEncodedFormat(); }
 
     /**
-     *  Return the underlying encoded data stream. This may be nullptr if the original
-     *  stream could not be duplicated.
-     */
-    virtual std::unique_ptr<SkStream> getEncodedData() const;
-
-    /**
      *  Whether or not the memory passed to getPixels is zero initialized.
      */
     enum ZeroInitialized {
@@ -330,13 +335,13 @@ public:
      */
     struct Options {
         Options()
-            : fZeroInitialized(kNo_ZeroInitialized)
-            , fSubset(nullptr)
-            , fFrameIndex(0)
-            , fPriorFrame(kNoFrame)
-        {}
+                : fZeroInitialized(kNo_ZeroInitialized)
+                , fSubset(nullptr)
+                , fFrameIndex(0)
+                , fPriorFrame(kNoFrame)
+                , fMaxDecodeMemory(0) {}
 
-        ZeroInitialized            fZeroInitialized;
+        ZeroInitialized fZeroInitialized;
         /**
          *  If not NULL, represents a subset of the original image to decode.
          *  Must be within the bounds returned by getInfo().
@@ -354,14 +359,14 @@ public:
          *  subset left and subset width to decode partial scanlines on calls
          *  to getScanlines().
          */
-        const SkIRect*             fSubset;
+        const SkIRect* fSubset;
 
         /**
          *  The frame to decode.
          *
          *  Only meaningful for multi-frame images.
          */
-        int                        fFrameIndex;
+        int fFrameIndex;
 
         /**
          *  If not kNoFrame, the dst already contains the prior frame at this index.
@@ -376,7 +381,12 @@ public:
          *
          *  If set to kNoFrame, the codec will decode any necessary required frame(s) first.
          */
-        int                        fPriorFrame;
+        int fPriorFrame;
+
+        /**
+         * If non-zero, image decoding will fail if cumulative allocations exceed this many bytes.
+         */
+        size_t fMaxDecodeMemory;
     };
 
     /**
@@ -824,14 +834,6 @@ public:
     };
     IsAnimated isAnimated() { return this->onIsAnimated(); }
 
-    // Register a decoder at runtime by passing two function pointers:
-    //    - peek() to return true if the span of bytes appears to be your encoded format;
-    //    - make() to attempt to create an SkCodec from the given stream.
-    // Not thread safe.
-    static void Register(
-            bool                     (*peek)(const void*, size_t),
-            std::unique_ptr<SkCodec> (*make)(std::unique_ptr<SkStream>, SkCodec::Result*));
-
 protected:
     const SkEncodedInfo& getEncodedInfo() const { return fEncodedInfo; }
 
@@ -841,12 +843,6 @@ protected:
             XformFormat srcFormat,
             std::unique_ptr<SkStream>,
             SkEncodedOrigin = kTopLeft_SkEncodedOrigin);
-
-    void setSrcXformFormat(XformFormat pixelFormat);
-
-    XformFormat getSrcXformFormat() const {
-        return fSrcXformFormat;
-    }
 
     virtual bool onGetGainmapCodec(SkGainmapInfo*, std::unique_ptr<SkCodec>*) { return false; }
     virtual bool onGetGainmapInfo(SkGainmapInfo*) { return false; }
@@ -904,11 +900,20 @@ protected:
     [[nodiscard]] bool rewindIfNeeded();
 
     /**
+     *  Called by onRewind(), attempts to rewind fStream.
+     */
+    bool rewindStream();
+
+    /**
      *  Called by rewindIfNeeded, if the stream needed to be rewound.
      *
-     *  Subclasses should do any set up needed after a rewind.
+     *  Subclasses should call rewindStream() if they own one, and then
+     *  do any set up needed after.
      */
     virtual bool onRewind() {
+        if (!this->rewindStream()) {
+            return false;
+        }
         return true;
     }
 
@@ -975,6 +980,9 @@ protected:
         return IsAnimated::kNo;
     }
 
+    // Returns true if the requested amount keeps the current total under Options::fMaxDecodeMemory.
+    bool allocateFromBudget(size_t numBytes);
+
 private:
     const SkEncodedInfo                fEncodedInfo;
     XformFormat                        fSrcXformFormat;
@@ -992,11 +1000,19 @@ private:
     };
     XformTime                          fXformTime;
     XformFormat                        fDstXformFormat; // Based on fDstInfo.
-    skcms_ICCProfile                   fDstProfile;
+    skcms_ICCProfile                   fDstProfileStorage;
+    // This tracks either fDstProfileStorage or the ICC profile in fEncodedInfo.
+    // For the latter case it is important to not make a profile copy because skcms_Transform
+    // only performs a shallow pointer comparison to decide whether it can skip the color space
+    // transformation.
+    const skcms_ICCProfile*            fDstProfile = &fDstProfileStorage;
     skcms_AlphaFormat                  fDstXformAlphaFormat;
 
     // Only meaningful during scanline decodes.
     int fCurrScanline = -1;
+
+    // How many bytes we are allowed to use when decoding.
+    size_t fDecodeBudget = 0;
 
     bool fStartedIncrementalDecode = false;
 
@@ -1018,6 +1034,11 @@ private:
     bool dimensionsSupported(const SkISize& dim) {
         return dim == this->dimensions() || this->onDimensionsSupported(dim);
     }
+
+    Result getPixelsBudgeted(const SkImageInfo& info,
+                             void* pixels,
+                             size_t rowBytes,
+                             const Options*);
 
     /**
      *  For multi-framed images, return the object with information about the frames.
@@ -1049,6 +1070,13 @@ private:
             const Options& /*options*/) {
         return kUnimplemented;
     }
+
+    /**
+     *  Checks whether the implementation supports incremental decoding for the given info.
+     *
+     *  Note that onStartIncrementalDecode can stil fail regardless of this result.
+     */
+    virtual bool onSupportsIncrementalDecode(const SkImageInfo&) { return false; }
 
     virtual Result onStartIncrementalDecode(const SkImageInfo& /*dstInfo*/, void*, size_t,
             const Options&) {
@@ -1090,6 +1118,12 @@ private:
      *  Only valid during scanline decoding or incremental decoding.
      */
     virtual SkSampler* getSampler(bool /*createIfNecessary*/) { return nullptr; }
+
+    /**
+     *  Return the underlying encoded data. This may be nullptr if the original
+     *  stream could not be duplicated/read.
+     */
+    virtual sk_sp<const SkData> getEncodedData() const;
 
     friend class DM::CodecSrc;  // for fillIncompleteImage
     friend class PNGCodecGM;    // for fillIncompleteImage

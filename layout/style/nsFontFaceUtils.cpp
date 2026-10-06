@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,7 @@
 #include "gfxUserFontSet.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/RestyleManager.h"
+#include "mozilla/ServoStyleSet.h"
 #include "nsFontMetrics.h"
 #include "nsIFrame.h"
 #include "nsLayoutUtils.h"
@@ -48,8 +47,7 @@ static bool IsFontReferenced(const ComputedStyle& aStyle,
 static FontUsageKind StyleFontUsage(nsIFrame* aFrame, ComputedStyle* aStyle,
                                     nsPresContext* aPresContext,
                                     const gfxUserFontEntry* aFont,
-                                    const nsAString& aFamilyName,
-                                    bool aIsExtraStyle) {
+                                    const nsAString& aFamilyName) {
   MOZ_ASSERT(NS_ConvertUTF8toUTF16(aFont->FamilyName()) == aFamilyName);
 
   auto FontIsUsed = [&aFont, &aPresContext,
@@ -79,15 +77,9 @@ static FontUsageKind StyleFontUsage(nsIFrame* aFrame, ComputedStyle* aStyle,
 
   if (aStyle->DependsOnInheritedFontMetrics() &&
       !(usage & FontUsageKind::FontMetrics)) {
-    ComputedStyle* parentStyle = nullptr;
-    if (aIsExtraStyle) {
-      parentStyle = aFrame->Style();
-    } else {
-      nsIFrame* provider = nullptr;
-      parentStyle = aFrame->GetParentComputedStyle(&provider);
-    }
-
-    if (parentStyle && FontIsUsed(parentStyle)) {
+    nsIFrame* provider = nullptr;
+    if (auto* parentStyle = aFrame->GetParentComputedStyle(&provider);
+        parentStyle && FontIsUsed(parentStyle)) {
       usage |= FontUsageKind::FontMetrics;
     }
   }
@@ -100,25 +92,8 @@ static FontUsageKind FrameFontUsage(nsIFrame* aFrame,
                                     const gfxUserFontEntry* aFont,
                                     const nsAString& aFamilyName) {
   // check the style of the frame
-  FontUsageKind kind = StyleFontUsage(aFrame, aFrame->Style(), aPresContext,
-                                      aFont, aFamilyName, /* extra = */ false);
-  if (kind == FontUsageKind::Max) {
-    return kind;
-  }
-
-  // check additional styles
-  int32_t contextIndex = 0;
-  for (ComputedStyle* extraContext;
-       (extraContext = aFrame->GetAdditionalComputedStyle(contextIndex));
-       ++contextIndex) {
-    kind |= StyleFontUsage(aFrame, extraContext, aPresContext, aFont,
-                           aFamilyName, /* extra = */ true);
-    if (kind == FontUsageKind::Max) {
-      break;
-    }
-  }
-
-  return kind;
+  return StyleFontUsage(aFrame, aFrame->Style(), aPresContext, aFont,
+                        aFamilyName);
 }
 
 // TODO(emilio): Can we use the restyle-hint machinery instead of this?
@@ -172,6 +147,7 @@ void nsFontFaceUtils::MarkDirtyForFontChange(nsIFrame* aSubtreeRoot,
   PresShell* presShell = pc->PresShell();
 
   const bool usesMetricsFromStyle = pc->StyleSet()->UsesFontMetrics();
+  const bool usesRootMetricsFromStyle = pc->StyleSet()->UsesRootFontMetrics();
 
   // StyleSingleFontFamily::IsNamedFamily expects a UTF-16 string. Convert it
   // once here rather than on each call.
@@ -201,7 +177,18 @@ void nsFontFaceUtils::MarkDirtyForFontChange(nsIFrame* aSubtreeRoot,
           ScheduleReflow(presShell, f);
           alreadyScheduled = ReflowAlreadyScheduled::Yes;
         }
-        if (kind & FontUsageKind::FontMetrics) {
+
+        // If the updated font is used for font metrics, then styles need to be
+        // recomputed. This can occur if the current frame directly uses the
+        // font's metrics (ex/ch/...). However, if there are any elements in the
+        // document using root element relative font metrics (rex/rch/...) and
+        // the root element itself used the updated font, then the entire
+        // subtree needs to be restyled.
+        const bool shouldRestyleForFontMetrics =
+            (kind & FontUsageKind::FontMetrics) ||
+            (usesRootMetricsFromStyle && f->Style()->IsRootElementStyle());
+
+        if (shouldRestyleForFontMetrics) {
           MOZ_ASSERT(f->GetContent() && f->GetContent()->IsElement(),
                      "How could we target a non-element with selectors?");
           f->PresContext()->RestyleManager()->PostRestyleEvent(

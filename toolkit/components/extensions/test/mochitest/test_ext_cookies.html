@@ -309,14 +309,6 @@ add_task(async function test_cookies() {
     details = await browser.cookies.remove({url: TEST_URL, name: "dummy"});
     assertExpected({url: TEST_URL, name: "dummy", storeId: STORE_ID, firstPartyDomain: "", partitionKey: null}, details);
 
-    cookie = await browser.cookies.set({value: "dummy", url: TEST_URL});
-    browser.test.assertEq("", cookie.name, "default name set");
-    browser.test.assertEq("dummy", cookie.value, "dummy value set");
-    browser.test.assertEq(true, cookie.session, "no expiry date created session cookie");
-
-    details = await browser.cookies.remove({url: TEST_URL, name: ""});
-    assertExpected({url: TEST_URL, name: "", storeId: STORE_ID, firstPartyDomain: "", partitionKey: null}, details);
-
     // TODO bug 1372178: Opening private windows/tabs is not supported on Android
     if (browser.windows) {
       let {tabId, windowId} = await openPrivateWindowAndTab(TEST_URL);

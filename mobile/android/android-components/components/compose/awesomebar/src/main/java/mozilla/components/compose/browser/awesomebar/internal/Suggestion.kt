@@ -51,6 +51,7 @@ internal fun Suggestion(
     orientation: AwesomeBarOrientation,
     onSuggestionClicked: () -> Unit,
     onAutoComplete: () -> Unit,
+    onRemoveClicked: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -64,6 +65,7 @@ internal fun Suggestion(
             SuggestionIcon(
                 icon = icon,
                 indicator = suggestion.indicatorIcon,
+                modifier = Modifier.align(Alignment.CenterVertically),
             )
         }
         SuggestionTitleAndDescription(
@@ -78,6 +80,13 @@ internal fun Suggestion(
             AutocompleteButton(
                 onAutoComplete = onAutoComplete,
                 orientation = orientation,
+                colors = colors,
+                modifier = Modifier.align(Alignment.CenterVertically),
+            )
+        }
+        if (suggestion.isRemovalAllowed) {
+            RemoveButton(
+                onRemoveClicked = onRemoveClicked,
                 colors = colors,
                 modifier = Modifier.align(Alignment.CenterVertically),
             )
@@ -103,7 +112,7 @@ private fun SuggestionTitleAndDescription(
             },
             color = colors.title,
             fontSize = 15.sp,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .width(IntrinsicSize.Max)
@@ -128,9 +137,10 @@ private fun SuggestionTitleAndDescription(
 private fun SuggestionIcon(
     icon: Bitmap,
     indicator: Drawable?,
+    modifier: Modifier = Modifier,
 ) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .width(30.dp)
             .height(38.dp),
     ) {
@@ -179,6 +189,23 @@ private fun AutocompleteButton(
                 },
             )
             .clickable { onAutoComplete() }
+            .padding(12.dp),
+    )
+}
+
+@Composable
+private fun RemoveButton(
+    onRemoveClicked: () -> Unit,
+    colors: AwesomeBarColors,
+    modifier: Modifier,
+) {
+    Image(
+        painterResource(iconsR.drawable.mozac_ic_cross_24),
+        colorFilter = ColorFilter.tint(colors.autocompleteIcon),
+        contentDescription = stringResource(R.string.mozac_browser_awesomebar_remove_suggestion),
+        modifier = modifier
+            .size(48.dp)
+            .clickable { onRemoveClicked() }
             .padding(12.dp),
     )
 }

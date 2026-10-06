@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,7 +11,6 @@
 #include "nsIDNSRecord.h"
 #include "nsHostResolver.h"
 #include "mozilla/Components.h"
-#include "mozilla/Unused.h"
 #include "DNSAdditionalInfo.h"
 #include "nsServiceManagerUtils.h"
 
@@ -31,9 +28,9 @@ NS_IMPL_ISUPPORTS(DNSRequestHandler, nsIDNSListener)
 static void SendLookupCompletedHelper(DNSRequestActor* aActor,
                                       const DNSRequestResponse& aReply) {
   if (DNSRequestParent* parent = aActor->AsDNSRequestParent()) {
-    Unused << parent->SendLookupCompleted(aReply);
+    (void)parent->SendLookupCompleted(aReply);
   } else if (DNSRequestChild* child = aActor->AsDNSRequestChild()) {
-    Unused << child->SendLookupCompleted(aReply);
+    (void)child->SendLookupCompleted(aReply);
   }
 }
 

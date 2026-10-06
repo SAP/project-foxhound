@@ -3,8 +3,6 @@
 
 "use strict";
 
-const ALL_CHANNELS = Ci.nsITelemetry.DATASET_ALL_CHANNELS;
-
 /**
  * Test the throttle_change telemetry event.
  */
@@ -19,22 +17,13 @@ add_task(async function () {
   store.dispatch(Actions.batchEnable(false));
 
   // Remove all telemetry events.
-  Services.telemetry.clearEvents();
-
-  // Ensure no events have been logged
-  const snapshot = Services.telemetry.snapshotEvents(ALL_CHANNELS, true);
-  ok(!snapshot.parent, "No events have been logged for the main process");
+  Services.fog.testResetFOG();
 
   await selectThrottle(monitor, "GPRS");
   // Verify existence of the telemetry event.
-  checkTelemetryEvent(
-    {
-      mode: "GPRS",
-    },
-    {
-      method: "throttle_changed",
-    }
-  );
+  const events = Glean.devtoolsMain.throttleChangedNetmonitor.testGetValue();
+  is(1, events.length);
+  is("GPRS", events[0].extra.mode);
 
   return teardown(monitor);
 });

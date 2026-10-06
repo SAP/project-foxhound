@@ -24,7 +24,7 @@ async def test_disabled(client):
     # We will either get a static error page with the text, or
     # an UnknownErrorException from WebDriver.
     try:
-        await client.navigate(URL, wait="none")
+        await client.navigate(URL, wait="none", no_skip=True)
         desktop, mobile = client.await_first_element_of(
             [client.css(REDIR_FAILURE_CSS), client.text(REDIR_FAILURE_TEXT)],
             is_displayed=True,

@@ -45,7 +45,7 @@ const tests = [
           name: `"Accessibility Panel Test"`,
         },
         {
-          role: "heading",
+          role: "heading (level 1)",
           name: `"Top level header"`,
         },
         {

@@ -1,24 +1,24 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/ReportingHeader.h"
+
 #include <limits>
 
 #include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject
+#include "js/GCAPI.h"
 #include "js/JSON.h"
 #include "js/PropertyAndElement.h"  // JS_GetElement
-#include "mozilla/dom/ReportingBinding.h"
-#include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/dom/SimpleGlobalObject.h"
-#include "mozilla/ipc/BackgroundUtils.h"
-#include "mozilla/net/SFVService.h"
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/dom/ReportingBinding.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/SimpleGlobalObject.h"
+#include "mozilla/ipc/BackgroundUtils.h"
+#include "mozilla/net/SFV.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsIEffectiveTLDService.h"
@@ -191,7 +191,21 @@ void ReportingHeader::ReportingFromChannel(nsIHttpChannel* aChannel) {
 
   if (NS_SUCCEEDED(
           aChannel->GetResponseHeader("Reporting-Endpoints"_ns, header))) {
-    client = ParseReportingEndpointsHeader(header, uri);
+    client = MakeUnique<Client>();
+    size_t parsedItems = ParseReportingEndpointsHeader(
+        header, uri, [&](const nsAString& aKey, nsCOMPtr<nsIURI> aEndpointUrl) {
+          Group* group = client->mGroups.AppendElement();
+          group->mCreationTime = TimeStamp::Now();
+          group->mTTL = std::numeric_limits<int32_t>::max();
+          group->mName = aKey;
+
+          // Use data extracted from dictionary entry to create an endpoint
+          group->mEndpoints.AppendElement(
+              Endpoint::Create(aEndpointUrl.forget(), aKey));
+        });
+    if (parsedItems == 0) {
+      client = nullptr;
+    }
   } else if (NS_SUCCEEDED(
                  aChannel->GetResponseHeader("Report-To"_ns, header))) {
     client = ParseReportToHeader(aChannel, uri, header);
@@ -208,78 +222,98 @@ void ReportingHeader::ReportingFromChannel(nsIHttpChannel* aChannel) {
 }
 
 /* static */
-UniquePtr<ReportingHeader::Client>
-ReportingHeader::ParseReportingEndpointsHeader(const nsACString& aHeaderValue,
-                                               nsIURI* aURI) {
-  nsCOMPtr<nsISFVService> sfv = mozilla::net::GetSFVService();
+EndpointsList ReportingHeader::ProcessReportingEndpointsListFromResponse(
+    nsIHttpChannel* aChannel) {
+  if (!StaticPrefs::dom_reporting_enabled()) {
+    return {};
+  }
 
+  // We want to use the final URI to check if Report-To should be allowed or
+  // not.
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = aChannel->GetURI(getter_AddRefs(uri));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return {};
+  }
+
+  if (!IsSecureURI(uri)) {
+    return {};
+  }
+
+  if (NS_UsePrivateBrowsing(aChannel)) {
+    return {};
+  }
+
+  nsAutoCString header;
+  EndpointsList result;
+
+  // Note: Legacy Report-To header supported by very few browsers
+  // https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Report-To
+  if (NS_SUCCEEDED(
+          aChannel->GetResponseHeader("Reporting-Endpoints"_ns, header))) {
+    (void)ParseReportingEndpointsHeader(
+        header, uri, [&](const nsAString& aKey, nsCOMPtr<nsIURI> aEndpointURL) {
+          result.mData.EmplaceBack(
+              Endpoint::Create(aEndpointURL.forget(), aKey));
+        });
+  }
+  return result;
+}
+
+/* static */
+size_t ReportingHeader::ParseReportingEndpointsHeader(
+    const nsACString& aHeaderValue, nsIURI* aURI,
+    std::function<void(const nsAString&, nsCOMPtr<nsIURI>)>&&
+        aOnParsedItemCallback) {
   nsAutoCString uriSpec;
   aURI->GetSpec(uriSpec);
 
   nsCOMPtr<nsIURI> baseURL;
   if (NS_FAILED(NS_NewURI(getter_AddRefs(baseURL), uriSpec))) {
-    return nullptr;
+    return 0;
   }
 
-  nsCOMPtr<nsISFVDictionary> parsedHeader;
-  if (NS_FAILED(
-          sfv->ParseDictionary(aHeaderValue, getter_AddRefs(parsedHeader)))) {
-    return nullptr;
+  auto dict = mozilla::net::SFV::ParseDict(aHeaderValue);
+  if (!dict.IsValid()) {
+    return 0;
   }
 
   nsTArray<nsCString> keys;
-  if (NS_FAILED(parsedHeader->Keys(keys))) {
-    return nullptr;
+  if (NS_FAILED(dict.GetKeys(keys))) {
+    return 0;
   }
 
-  UniquePtr<Client> client = MakeUnique<Client>();
+  size_t itemsParsed = 0;
+
+  if (!IsSecureURI(aURI)) {
+    return 0;
+  }
 
   for (const auto& key : keys) {
-    // Extract an SFV data object from each dictionary entry
-    nsCOMPtr<nsISFVItemOrInnerList> iil;
-    if (NS_FAILED(parsedHeader->Get(key, getter_AddRefs(iil)))) {
-      continue;
-    }
-
-    // An item needs to be extracted from the ItemOrInnerList member-value
-    nsCOMPtr<nsISFVBareItem> value;
-    if (nsCOMPtr<nsISFVInnerList> innerList = do_QueryInterface(iil)) {
-      // Extract the first entry of each inner list, which should contain the
-      // endpoint's URL string
-      nsTArray<RefPtr<nsISFVItem>> items;
-
-      if (NS_FAILED(innerList->GetItems(items))) {
-        continue;
-      }
-
-      if (items.IsEmpty()) {
-        continue;
-      }
-
-      nsCOMPtr<nsISFVItem> firstItem(items[0]);
-
-      if (NS_FAILED(firstItem->GetValue(getter_AddRefs(value)))) {
-        continue;
-      }
-    } else if (nsCOMPtr<nsISFVItem> listItem = do_QueryInterface(iil)) {
-      if (NS_FAILED(listItem->GetValue(getter_AddRefs(value)))) {
-        continue;
-      }
-    }
-
-    // Ensure that the item's data type is a string, so the URL can be properly
-    // parsed
-    nsCOMPtr<nsISFVString> sfvString(do_QueryInterface(value));
-    if (!sfvString) {
-      continue;
-    }
-
     nsAutoCString endpointURLString;
-    if (NS_FAILED(sfvString->GetValue(endpointURLString))) {
-      continue;
+
+    // Try to get value as a direct string item
+    if (NS_SUCCEEDED(dict.GetItem<mozilla::net::SFV::SFVString>(
+            key, endpointURLString))) {
+      // Got a direct string item
+    } else {
+      // Try to get value as an inner list and extract first item
+      auto innerList = dict.GetInnerList(key);
+      if (!innerList.IsValid() || innerList.Length() == 0) {
+        continue;
+      }
+
+      auto firstItem = innerList.GetItemAt(0);
+      if (!firstItem.IsValid()) {
+        continue;
+      }
+
+      if (NS_FAILED(firstItem.GetValue<mozilla::net::SFV::SFVString>(
+              endpointURLString))) {
+        continue;
+      }
     }
 
-    // Convert the URL string into a URI
     nsCOMPtr<nsIURI> endpointURL;
     nsresult rv = NS_NewURI(getter_AddRefs(endpointURL),
                             endpointURLString.get(), baseURL);
@@ -291,25 +325,11 @@ ReportingHeader::ParseReportingEndpointsHeader(const nsACString& aHeaderValue,
       continue;
     }
 
-    Group* group = client->mGroups.AppendElement();
-    group->mCreationTime = TimeStamp::Now();
-    group->mTTL = std::numeric_limits<int32_t>::max();
-    group->mName = NS_ConvertUTF8toUTF16(key);
-
-    // Use data extracted from dictionary entry to create an endpoint
-    Endpoint* ep = group->mEndpoints.AppendElement();
-    ep->mUrl = endpointURL;
-    ep->mEndpointName = key;
-    ep->mFailures = 0;
-    ep->mPriority = 1;
-    ep->mWeight = 1;
+    ++itemsParsed;
+    aOnParsedItemCallback(NS_ConvertUTF8toUTF16(key), std::move(endpointURL));
   }
 
-  if (client->mGroups.IsEmpty()) {
-    return nullptr;
-  }
-
-  return client;
+  return itemsParsed;
 }
 
 /* static */ UniquePtr<ReportingHeader::Client>
@@ -341,12 +361,18 @@ ReportingHeader::ParseReportToHeader(nsIHttpChannel* aChannel, nsIURI* aURI,
   JS::Rooted<JS::Value> jsonValue(cx);
   bool ok = JS_ParseJSON(cx, json.BeginReading(), json.Length(), &jsonValue);
   if (!ok) {
+    // Drop error in favor of logging a generic message, because the error
+    // message's column numbers are confusing due to the prepended characters
+    // above, and a user cannot do much about it anyway (bug 2020662).
+    JS_ClearPendingException(cx);
     LogToConsoleInvalidJSON(aChannel, aURI);
     return nullptr;
   }
 
-  dom::ReportingHeaderValue data;
+  RootedDictionary<dom::ReportingHeaderValue> data(cx);
   if (!data.Init(cx, jsonValue)) {
+    // Ignore error in favor of generic message to avoid logspam (bug 2020662).
+    JS_ClearPendingException(cx);
     LogToConsoleInvalidJSON(aChannel, aURI);
     return nullptr;
   }
@@ -394,6 +420,7 @@ ReportingHeader::ParseReportToHeader(nsIHttpChannel* aChannel, nsIURI* aURI,
     uint32_t endpointsLength;
     if (!JS::GetArrayLength(cx, endpoints, &endpointsLength) ||
         endpointsLength == 0) {
+      // TODO: should this clear the endpoint instead?
       LogToConsoleIncompleteItem(aChannel, aURI, groupName);
       continue;
     }
@@ -571,7 +598,7 @@ void ReportingHeader::LogToConsoleInternal(nsIHttpChannel* aChannel,
 
   nsAutoString localizedMsg;
   rv = nsContentUtils::FormatLocalizedString(
-      nsContentUtils::eSECURITY_PROPERTIES, aMsg, aParams, localizedMsg);
+      PropertiesFile::SECURITY_PROPERTIES, aMsg, aParams, localizedMsg);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
   }
@@ -579,7 +606,7 @@ void ReportingHeader::LogToConsoleInternal(nsIHttpChannel* aChannel,
   rv = nsContentUtils::ReportToConsoleByWindowID(
       localizedMsg, nsIScriptError::infoFlag, "Reporting"_ns, windowID,
       SourceLocation(aURI));
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 }
 
 /* static */
@@ -600,30 +627,48 @@ void ReportingHeader::GetEndpointForReport(
 void ReportingHeader::GetEndpointForReport(const nsAString& aGroupName,
                                            nsIPrincipal* aPrincipal,
                                            nsACString& aEndpointURI) {
+  return GetEndpointForReportIncludeSubdomains(
+      aGroupName, aPrincipal, /* includeSubdomains */ false, aEndpointURI);
+}
+/* static */
+void ReportingHeader::GetEndpointForReportIncludeSubdomains(
+    const nsAString& aGroupName, nsIPrincipal* aPrincipal,
+    bool aIncludeSubdomains, nsACString& aEndpointURI) {
   MOZ_ASSERT(aEndpointURI.IsEmpty());
 
   if (!gReporting) {
     return;
   }
 
-  nsAutoCString origin;
-  nsresult rv = aPrincipal->GetOrigin(origin);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return;
-  }
+  nsCOMPtr<nsIPrincipal> principal = aPrincipal;
+  bool mustHaveIncludeSubdomains = false;
 
-  Client* client = gReporting->mOrigins.Get(origin);
-  if (!client) {
-    return;
-  }
+  do {
+    nsAutoCString origin;
+    nsresult rv = principal->GetOrigin(origin);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return;
+    }
 
-  auto [begin, end] = client->mGroups.NonObservingRange();
-  const auto foundIt = std::find_if(
-      begin, end,
-      [&aGroupName](const Group& group) { return group.mName == aGroupName; });
-  if (foundIt != end) {
-    GetEndpointForReportInternal(*foundIt, aEndpointURI);
-  }
+    Client* client = gReporting->mOrigins.Get(origin);
+    if (client) {
+      const auto [begin, end] = client->mGroups.NonObservingRange();
+      const auto foundIt = std::find_if(
+          begin, end,
+          [&aGroupName, mustHaveIncludeSubdomains](const Group& group) {
+            return group.mName == aGroupName &&
+                   (!mustHaveIncludeSubdomains || group.mIncludeSubdomains);
+          });
+      if (foundIt != end) {
+        GetEndpointForReportInternal(*foundIt, aEndpointURI);
+        return;
+      }
+    }
+
+    nsCOMPtr<nsIPrincipal> oldPrincipal = std::move(principal);
+    oldPrincipal->GetNextSubDomainPrincipal(getter_AddRefs(principal));
+    mustHaveIncludeSubdomains = true;
+  } while (principal && aIncludeSubdomains);
 
   // XXX More explicitly report an error if not found?
 }
@@ -675,15 +720,15 @@ void ReportingHeader::GetEndpointForReportInternal(
                totalWeight < endpoint.mWeight;
       });
   if (foundIt != end) {
-    Unused << NS_WARN_IF(NS_FAILED(foundIt->mUrl->GetSpec(aEndpointURI)));
+    (void)NS_WARN_IF(NS_FAILED(foundIt->mUrl->GetSpec(aEndpointURI)));
   }
   // XXX More explicitly report an error if not found?
 }
 
 /* static */
-void ReportingHeader::RemoveEndpoint(
-    const nsAString& aGroupName, const nsACString& aEndpointURL,
-    const mozilla::ipc::PrincipalInfo& aPrincipalInfo) {
+void ReportingHeader::RemoveEndpoint(const nsAString& aGroupName,
+                                     const nsACString& aEndpointURL,
+                                     nsIPrincipal* aPrincipal) {
   if (!gReporting) {
     return;
   }
@@ -694,13 +739,12 @@ void ReportingHeader::RemoveEndpoint(
     return;
   }
 
-  auto principalOrErr = PrincipalInfoToPrincipal(aPrincipalInfo);
-  if (NS_WARN_IF(principalOrErr.isErr())) {
+  if (NS_WARN_IF(!aPrincipal)) {
     return;
   }
 
   nsAutoCString origin;
-  rv = principalOrErr.unwrap()->GetOrigin(origin);
+  rv = aPrincipal->GetOrigin(origin);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
   }
@@ -822,6 +866,26 @@ void ReportingHeader::RemoveOriginsForTTL() {
   }
 }
 
+ReportingHeader::Endpoint* EndpointsList::GetEndpointWithName(
+    const nsAString& aEndpointName) {
+  for (auto& endpoint : mData) {
+    if (endpoint.mEndpointName == aEndpointName) {
+      return &endpoint;
+    }
+  }
+  return nullptr;
+}
+
+void EndpointsList::RemoveEndpoint(const nsAString& aEndpointName) {
+  const auto it = std::ranges::find_if(
+      mData, [&aEndpointName](const ReportingHeader::Endpoint& aEndpoint) {
+        return aEndpoint.mEndpointName == aEndpointName;
+      });
+  if (it != std::end(mData)) {
+    mData.RemoveElementAt(it);
+  }
+}
+
 /* static */
 bool ReportingHeader::HasReportingHeaderForOrigin(const nsACString& aOrigin) {
   if (!gReporting) {
@@ -860,7 +924,7 @@ void ReportingHeader::MaybeCreateCleanupTimer() {
   nsresult rv =
       NS_NewTimerWithCallback(getter_AddRefs(mCleanupTimer), this, timeout,
                               nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 }
 
 void ReportingHeader::MaybeCancelCleanupTimer() {

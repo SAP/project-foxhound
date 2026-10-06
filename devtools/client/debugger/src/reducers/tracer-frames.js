@@ -351,6 +351,13 @@ function update(state = initialState(), action) {
         highlightedDomEvents: eventNames,
       };
     }
+
+    case "SET_SELECTED_LOCACTION_TRACES": {
+      return {
+        ...state,
+        selectedLocationTraces: action.selectedLocationTraces,
+      };
+    }
   }
   return state;
 }
@@ -478,8 +485,8 @@ const UNCLASSIFIED_CATEGORY = { id: "unclassified", name: "Unclassified" };
 /**
  * Register this possibly new event type in data set used to display EventListener React component.
  *
- * @param {Object} state
- * @param {String} eventName
+ * @param {object} state
+ * @param {string} eventName
  */
 function registerDOMEvent(state, eventName) {
   if (state.mutableEventNames.has(eventName)) {
@@ -544,7 +551,7 @@ function locationMatchTrace(location, trace) {
 /**
  * Reports if a given trace matches the current searched argument value.
  *
- * @param {Object} trace
+ * @param {object} trace
  *        The trace object communicated by the backend.
  * @param {any primitive|ObjectActor's form} searchValueOrGrip
  *        Either a primitive value (string, number, boolean, …) to match directly,
@@ -573,10 +580,10 @@ function isTraceMatchingSearch(trace, searchValueOrGrip) {
 /**
  * Generate the previews object consumed by InlinePreviews React component.
  *
- * @param {Object} state
- * @param {Object} trace
+ * @param {object} state
+ * @param {object} trace
  *        Trace reducer object.
- * @return {Object}
+ * @return {object}
  *        Previews consumed by InlinePreviews.
  */
 function generatePreviewsForTrace(state, trace) {

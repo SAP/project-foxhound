@@ -12,6 +12,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -53,7 +54,7 @@ struct TestMetricsExporterFactory {
         : factory_(factory), export_result_(export_result) {}
     ~TestMetricsExporter() override = default;
 
-    bool Export(rtc::ArrayView<const Metric> metrics) override {
+    bool Export(std::span<const Metric> metrics) override {
       factory_->exported_metrics =
           std::vector<Metric>(metrics.begin(), metrics.end());
       return export_result_;

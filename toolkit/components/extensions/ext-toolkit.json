@@ -127,6 +127,11 @@
     "paths": [["proxy"]],
     "startupBlocking": true
   },
+  "publicSuffix": {
+    "schema": "chrome://extensions/content/schemas/public_suffix.json",
+    "scopes": ["addon_child"],
+    "paths": [["publicSuffix"]]
+  },
   "runtime": {
     "url": "chrome://extensions/content/parent/ext-runtime.js",
     "schema": "chrome://extensions/content/schemas/runtime.json",

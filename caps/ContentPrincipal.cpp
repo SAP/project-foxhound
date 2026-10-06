@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -35,7 +33,6 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ExtensionPolicyService.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/HashFunctions.h"
 
 #include "nsSerializationHelper.h"
 
@@ -164,15 +161,6 @@ nsresult ContentPrincipal::GenerateOriginNoSuffixFromURI(
     return NS_OK;
   }
 
-  // This URL can be a blobURL. In this case, we should use the 'parent'
-  // principal instead.
-  nsCOMPtr<nsIPrincipal> blobPrincipal;
-  if (dom::BlobURLProtocolHandler::GetBlobURLPrincipal(
-          origin, getter_AddRefs(blobPrincipal))) {
-    MOZ_ASSERT(blobPrincipal);
-    return blobPrincipal->GetOriginNoSuffix(aOriginNoSuffix);
-  }
-
   // If we reached this branch, we can only create an origin if we have a
   // nsIStandardURL.  So, we query to a nsIStandardURL, and fail if we aren't
   // an instance of an nsIStandardURL nsIStandardURLs have the good property
@@ -290,7 +278,7 @@ bool ContentPrincipal::MayLoadInternal(nsIURI* aURI) {
 
   nsCOMPtr<nsIPrincipal> blobPrincipal;
   if (dom::BlobURLProtocolHandler::GetBlobURLPrincipal(
-          aURI, getter_AddRefs(blobPrincipal))) {
+          aURI, OriginAttributesRef(), getter_AddRefs(blobPrincipal))) {
     MOZ_ASSERT(blobPrincipal);
     return nsIPrincipal::Subsumes(blobPrincipal);
   }
@@ -577,7 +565,7 @@ ContentPrincipal::Deserializer::Read(nsIObjectInputStream* aStream) {
   // Additionally, the format for serialized CSPs changed
   // within Bug 965637 which also can cause failures within
   // the CSP deserialization code.
-  Unused << NS_ReadOptionalObject(aStream, true, getter_AddRefs(supports));
+  (void)NS_ReadOptionalObject(aStream, true, getter_AddRefs(supports));
 
   nsAutoCString originNoSuffix;
   rv = GenerateOriginNoSuffixFromURI(principalURI, originNoSuffix);

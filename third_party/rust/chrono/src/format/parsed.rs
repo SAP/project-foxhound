@@ -93,7 +93,7 @@ use crate::{DateTime, Datelike, TimeDelta, Timelike, Weekday};
 /// # Ok::<(), chrono::ParseError>(())
 /// ```
 ///
-/// The same using chrono's build-in parser for RFC 2822 (the [RFC2822 formatting item]) and
+/// The same using chrono's built-in parser for RFC 2822 (the [RFC2822 formatting item]) and
 /// [`format::parse()`] showing how to inspect a field on failure.
 ///
 /// [RFC2822 formatting item]: crate::format::Fixed::RFC2822
@@ -832,7 +832,7 @@ impl Parsed {
 
             // reconstruct date and time fields from timestamp
             let ts = timestamp.checked_add(i64::from(offset)).ok_or(OUT_OF_RANGE)?;
-            let mut datetime = DateTime::from_timestamp(ts, 0).ok_or(OUT_OF_RANGE)?.naive_utc();
+            let mut datetime = DateTime::from_timestamp_secs(ts).ok_or(OUT_OF_RANGE)?.naive_utc();
 
             // fill year, ordinal, hour, minute and second fields from timestamp.
             // if existing fields are consistent, this will allow the full date/time reconstruction.

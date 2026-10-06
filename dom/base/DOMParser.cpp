@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,21 +7,10 @@
 
 #include "mozilla/dom/DOMParser.h"
 
-#include "nsNetUtil.h"
-#include "nsDOMString.h"
 #include "MainThreadUtils.h"
 #include "SystemPrincipal.h"
-#include "nsIScriptGlobalObject.h"
-#include "nsIStreamListener.h"
-#include "nsStringStream.h"
-#include "nsCRT.h"
-#include "nsStreamUtils.h"
-#include "nsContentUtils.h"
-#include "nsDOMJSUtils.h"
-#include "nsJSUtils.h"
-#include "nsError.h"
-#include "nsPIDOMWindow.h"
-#include "nsTaintingUtils.h"
+
+
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/NullPrincipal.h"
@@ -32,13 +19,26 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/TrustedTypeUtils.h"
 #include "mozilla/dom/TrustedTypesConstants.h"
+#include "nsCRT.h"
+#include "nsContentUtils.h"
+#include "nsDOMJSUtils.h"
+#include "nsDOMString.h"
+#include "nsError.h"
+#include "nsIScriptGlobalObject.h"
+#include "nsIStreamListener.h"
+#include "nsJSUtils.h"
+#include "nsNetUtil.h"
+#include "nsPIDOMWindow.h"
+#include "nsStreamUtils.h"
+#include "nsStringStream.h"
+#include "nsTaintingUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
 
-DOMParser::DOMParser(nsIGlobalObject* aOwner, nsIPrincipal* aDocPrincipal,
+DOMParser::DOMParser(nsIGlobalObject* aGlobal, nsIPrincipal* aDocPrincipal,
                      nsIURI* aDocumentURI)
-    : mOwner(aOwner),
+    : mGlobal(aGlobal),
       mPrincipal(aDocPrincipal),
       mDocumentURI(aDocumentURI),
       mForceEnableXULXBL(false),
@@ -55,7 +55,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMParser)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(DOMParser, mOwner)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(DOMParser, mGlobal)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(DOMParser)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(DOMParser)
@@ -124,12 +124,12 @@ already_AddRefed<Document> DOMParser::ParseFromString(
     nsIPrincipal* aSubjectPrincipal, ErrorResult& aRv) {
   constexpr nsLiteralString sink = u"DOMParser parseFromString"_ns;
 
-  MOZ_ASSERT(mOwner);
-  nsCOMPtr<nsIGlobalObject> pinnedOwner = mOwner;
+  MOZ_ASSERT(mGlobal);
+  nsCOMPtr<nsIGlobalObject> pinnedGlobal = mGlobal;
   Maybe<nsAutoString> compliantStringHolder;
   const nsAString* compliantString =
       TrustedTypeUtils::GetTrustedTypesCompliantString(
-          aStr, sink, kTrustedTypesOnlySinkGroup, *pinnedOwner,
+          aStr, sink, kTrustedTypesOnlySinkGroup, *pinnedGlobal,
           aSubjectPrincipal, compliantStringHolder, aRv);
   if (aRv.Failed()) {
     return nullptr;
@@ -141,17 +141,17 @@ already_AddRefed<Document> DOMParser::ParseFromString(
 already_AddRefed<Document> DOMParser::ParseFromSafeString(const nsAString& aStr,
                                                           SupportedType aType,
                                                           ErrorResult& aRv) {
-  // Create the new document with the same principal as `mOwner`, even if it is
-  // the system principal. This will ensure that nodes from the returned
+  // Create the new document with the same principal as `mGlobal`, even if it
+  // is the system principal. This will ensure that nodes from the returned
   // document are in the same DocGroup as the owner global's document, allowing
   // nodes to be adopted.
   nsCOMPtr<nsIPrincipal> docPrincipal = mPrincipal;
-  if (mOwner && mOwner->PrincipalOrNull()) {
-    mPrincipal = mOwner->PrincipalOrNull();
+  if (mGlobal && mGlobal->PrincipalOrNull()) {
+    mPrincipal = mGlobal->PrincipalOrNull();
   }
 
   RefPtr<Document> ret = ParseFromStringInternal(aStr, aType, aRv);
-  mPrincipal = docPrincipal;
+  mPrincipal = std::move(docPrincipal);
   return ret.forget();
 }
 
@@ -208,7 +208,7 @@ already_AddRefed<Document> DOMParser::ParseFromStream(nsIInputStream* aStream,
       return nullptr;
     }
 
-    stream = bufferedStream;
+    stream = std::move(bufferedStream);
   }
 
   nsCOMPtr<Document> document = SetUpDocument(
@@ -332,22 +332,22 @@ already_AddRefed<DOMParser> DOMParser::CreateWithoutGlobal(ErrorResult& aRv) {
 
 already_AddRefed<Document> DOMParser::SetUpDocument(DocumentFlavor aFlavor,
                                                     ErrorResult& aRv) {
-  // We should really just use mOwner here, but Document gets confused
+  // We should really just use mGlobal here, but Document gets confused
   // if we pass it a scriptHandlingObject that doesn't QI to
   // nsIScriptGlobalObject, and test_isequalnode.js (an xpcshell test without
   // a window global) breaks. The correct solution is just to wean Document off
   // of nsIScriptGlobalObject, but that's a yak to shave another day.
   nsCOMPtr<nsIScriptGlobalObject> scriptHandlingObject =
-      do_QueryInterface(mOwner);
+      do_QueryInterface(mGlobal);
 
   // Try to inherit a style backend.
   NS_ASSERTION(mPrincipal, "Must have principal by now");
   NS_ASSERTION(mDocumentURI, "Must have document URI by now");
 
   nsCOMPtr<Document> doc;
-  nsresult rv = NS_NewDOMDocument(getter_AddRefs(doc), u""_ns, u""_ns, nullptr,
-                                  mDocumentURI, mDocumentURI, mPrincipal, true,
-                                  scriptHandlingObject, aFlavor);
+  nsresult rv = NS_NewDOMDocument(
+      getter_AddRefs(doc), u""_ns, u""_ns, nullptr, mDocumentURI, mDocumentURI,
+      mPrincipal, LoadedAsData::AsData, scriptHandlingObject, aFlavor);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aRv.Throw(rv);
     return nullptr;

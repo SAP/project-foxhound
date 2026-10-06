@@ -1,17 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "ComputedStyle.h"
 #include "mozilla/dom/SVGEllipseElement.h"
+
+#include "ComputedStyle.h"
+#include "SVGGeometryProperty.h"
 #include "mozilla/dom/SVGEllipseElementBinding.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/PathHelpers.h"
-#include "mozilla/RefPtr.h"
-#include "SVGGeometryProperty.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Ellipse)
 
@@ -26,20 +24,20 @@ JSObject* SVGEllipseElement::WrapNode(JSContext* aCx,
 
 SVGElement::LengthInfo SVGEllipseElement::sLengthInfo[4] = {
     {nsGkAtoms::cx, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::cy, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
     {nsGkAtoms::rx, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::ry, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
 };
 
 //----------------------------------------------------------------------
 // Implementation
 
 SVGEllipseElement::SVGEllipseElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : SVGEllipseElementBase(std::move(aNodeInfo)) {}
 
 bool SVGEllipseElement::IsAttributeMapped(const nsAtom* aAttribute) const {
@@ -158,9 +156,29 @@ already_AddRefed<Path> SVGEllipseElement::BuildPath(PathBuilder* aBuilder) {
     return nullptr;
   }
 
-  EllipseToBezier(aBuilder, Point(x, y), Size(rx, ry));
+  if (rx == ry) {
+    aBuilder->Arc(Point(x, y), rx, 0, Float(2 * M_PI));
+  } else {
+    EllipseToBezier(aBuilder, Point(x, y), Size(rx, ry));
+  }
 
   return aBuilder->Finish();
+}
+
+Maybe<bool> SVGEllipseElement::HasCtxDependentLength() const {
+  bool hasCtxDependentLength = false;
+  if (SVGGeometryProperty::DoForComputedStyle(
+          this, [&](const ComputedStyle* style) {
+            const nsStyleSVGReset* styleSVGReset = style->StyleSVGReset();
+
+            hasCtxDependentLength = styleSVGReset->mCx.HasPercent() ||
+                                    styleSVGReset->mCy.HasPercent() ||
+                                    styleSVGReset->mRx.HasPercent() ||
+                                    styleSVGReset->mRy.HasPercent();
+          })) {
+    return Some(hasCtxDependentLength);
+  }
+  return Nothing();
 }
 
 bool SVGEllipseElement::IsLengthChangedViaCSS(const ComputedStyle& aNewStyle,
@@ -173,7 +191,7 @@ bool SVGEllipseElement::IsLengthChangedViaCSS(const ComputedStyle& aNewStyle,
          newSVGReset.mRy != oldSVGReset.mRy;
 }
 
-nsCSSPropertyID SVGEllipseElement::GetCSSPropertyIdForAttrEnum(
+NonCustomCSSPropertyId SVGEllipseElement::GetCSSPropertyIdForAttrEnum(
     uint8_t aAttrEnum) {
   switch (aAttrEnum) {
     case CX:

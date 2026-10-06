@@ -3,12 +3,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 use parsing::parse;
-use stylo_atoms::Atom;
 use style::parser::Parse;
 use style::properties::longhands::animation_name;
 use style::values::specified::AnimationIterationCount;
 use style::values::{CustomIdent, KeyframesName};
 use style_traits::ToCss;
+use stylo_atoms::Atom;
 
 #[test]
 fn test_animation_iteration() {

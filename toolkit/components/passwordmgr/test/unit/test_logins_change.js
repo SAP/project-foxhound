@@ -36,40 +36,39 @@ async function checkLoginInvalid(aLoginInfo, aExpectedError) {
   await Services.logins.addLoginAsync(testLogin);
 
   // Try to modify the existing login using nsILoginInfo and nsIPropertyBag.
-  Assert.throws(
-    () => Services.logins.modifyLogin(testLogin, aLoginInfo),
+  await Assert.rejects(
+    Services.logins.modifyLoginAsync(testLogin, aLoginInfo),
     aExpectedError
   );
-  Assert.throws(
-    () =>
-      Services.logins.modifyLogin(
-        testLogin,
-        newPropertyBag({
-          origin: aLoginInfo.origin,
-          formActionOrigin: aLoginInfo.formActionOrigin,
-          httpRealm: aLoginInfo.httpRealm,
-          username: aLoginInfo.username,
-          password: aLoginInfo.password,
-          usernameField: aLoginInfo.usernameField,
-          passwordField: aLoginInfo.passwordField,
-        })
-      ),
+  await Assert.rejects(
+    Services.logins.modifyLoginAsync(
+      testLogin,
+      newPropertyBag({
+        origin: aLoginInfo.origin,
+        formActionOrigin: aLoginInfo.formActionOrigin,
+        httpRealm: aLoginInfo.httpRealm,
+        username: aLoginInfo.username,
+        password: aLoginInfo.password,
+        usernameField: aLoginInfo.usernameField,
+        passwordField: aLoginInfo.passwordField,
+      })
+    ),
     aExpectedError
   );
 
   // Verify that no data was stored by the previous calls.
   await LoginTestUtils.checkLogins([testLogin]);
-  Services.logins.removeLogin(testLogin);
+  await Services.logins.removeLoginAsync(testLogin);
 }
 
 /**
  * Verifies that two objects are not the same instance
  * but have equal attributes.
  *
- * @param {Object} objectA
+ * @param {object} objectA
  *        An object to compare.
  *
- * @param {Object} objectB
+ * @param {object} objectB
  *        Another object to compare.
  *
  * @param {string[]} attributes
@@ -105,7 +104,7 @@ add_task(async function test_addLogin_removeLogin() {
 
   // Removing each login should succeed.
   for (let loginInfo of TestData.loginList()) {
-    Services.logins.removeLogin(loginInfo);
+    await Services.logins.removeLoginAsync(loginInfo);
   }
 
   await LoginTestUtils.checkLogins([]);
@@ -123,7 +122,7 @@ add_task(async function duplicated_logins_are_not_added() {
   await Services.logins.addLogins([login]);
   const result = await Services.logins.addLogins([login]);
   Assert.equal(result, 0, "no logins added");
-  Services.logins.removeAllUserFacingLogins();
+  await Services.logins.removeAllUserFacingLoginsAsync();
 });
 
 add_task(async function logins_containing_nul_in_username_are_not_added() {
@@ -146,7 +145,7 @@ add_task(
     const [result] = await Services.logins.addLogins([login]);
     Assert.equal(result.username, login.username, "plaintext username is set");
     Assert.equal(result.password, login.password, "plaintext password is set");
-    Services.logins.removeAllUserFacingLogins();
+    await Services.logins.removeAllUserFacingLoginsAsync();
   }
 );
 
@@ -175,7 +174,7 @@ add_task(async function event_data_includes_plaintext_username_and_password() {
   Services.obs.addObserver(TestObserver, "passwordmgr-storage-changed");
   await Services.logins.addLogins([login]);
   Services.obs.removeObserver(TestObserver, "passwordmgr-storage-changed");
-  Services.logins.removeAllUserFacingLogins();
+  await Services.logins.removeAllUserFacingLoginsAsync();
 });
 
 /**
@@ -272,9 +271,9 @@ add_task(async function test_invalid_characters() {
 /**
  * Tests removing a login that does not exists.
  */
-add_task(function test_removeLogin_nonexisting() {
-  Assert.throws(
-    () => Services.logins.removeLogin(TestData.formLogin()),
+add_task(async function test_removeLogin_nonexisting() {
+  await Assert.rejects(
+    Services.logins.removeLoginAsync(TestData.formLogin()),
     /No matching logins/
   );
 });
@@ -285,11 +284,11 @@ add_task(function test_removeLogin_nonexisting() {
 add_task(async function test_removeAllUserFacingLogins() {
   await Services.logins.addLogins(TestData.loginList());
 
-  Services.logins.removeAllUserFacingLogins();
+  await Services.logins.removeAllUserFacingLoginsAsync();
   await LoginTestUtils.checkLogins([]);
 
   // The function should also work when there are no logins to delete.
-  Services.logins.removeAllUserFacingLogins();
+  await Services.logins.removeAllUserFacingLoginsAsync();
 });
 
 /**
@@ -306,24 +305,24 @@ add_task(async function test_modifyLogin_nsILoginInfo() {
   let differentLoginInfo = TestData.authLogin();
 
   // Trying to modify a login that does not exist should throw.
-  Assert.throws(
-    () => Services.logins.modifyLogin(loginInfo, updatedLoginInfo),
+  await Assert.rejects(
+    Services.logins.modifyLoginAsync(loginInfo, updatedLoginInfo),
     /No matching logins/
   );
 
   // Add the first form login, then modify it to match the second.
   await Services.logins.addLoginAsync(loginInfo);
-  Services.logins.modifyLogin(loginInfo, updatedLoginInfo);
+  await Services.logins.modifyLoginAsync(loginInfo, updatedLoginInfo);
 
   // The data should now match the second login.
   await LoginTestUtils.checkLogins([updatedLoginInfo]);
-  Assert.throws(
-    () => Services.logins.modifyLogin(loginInfo, updatedLoginInfo),
+  await Assert.rejects(
+    Services.logins.modifyLoginAsync(loginInfo, updatedLoginInfo),
     /No matching logins/
   );
 
   // The login can be changed to have a different type and origin.
-  Services.logins.modifyLogin(updatedLoginInfo, differentLoginInfo);
+  await Services.logins.modifyLoginAsync(updatedLoginInfo, differentLoginInfo);
   await LoginTestUtils.checkLogins([differentLoginInfo]);
 
   // It is now possible to add a login with the old type and origin.
@@ -331,8 +330,8 @@ add_task(async function test_modifyLogin_nsILoginInfo() {
   await LoginTestUtils.checkLogins([loginInfo, differentLoginInfo]);
 
   // Modifying a login to match an existing one should not be possible.
-  Assert.throws(
-    () => Services.logins.modifyLogin(loginInfo, differentLoginInfo),
+  await Assert.rejects(
+    Services.logins.modifyLoginAsync(loginInfo, differentLoginInfo),
     /already exists/
   );
   await LoginTestUtils.checkLogins([loginInfo, differentLoginInfo]);
@@ -363,15 +362,15 @@ add_task(async function test_modifyLogin_nsIProperyBag() {
   });
 
   // Trying to modify a login that does not exist should throw.
-  Assert.throws(
-    () => Services.logins.modifyLogin(loginInfo, newPropertyBag()),
+  await Assert.rejects(
+    Services.logins.modifyLoginAsync(loginInfo, newPropertyBag()),
     /No matching logins/
   );
 
   // Add the first form login, then modify it to match the second, changing
   // only some of its properties and checking the behavior with an empty string.
   await Services.logins.addLoginAsync(loginInfo);
-  Services.logins.modifyLogin(
+  await Services.logins.modifyLoginAsync(
     loginInfo,
     newPropertyBag({
       username: "new username",
@@ -383,28 +382,30 @@ add_task(async function test_modifyLogin_nsIProperyBag() {
 
   // The data should now match the second login.
   await LoginTestUtils.checkLogins([updatedLoginInfo]);
-  Assert.throws(
-    () => Services.logins.modifyLogin(loginInfo, newPropertyBag()),
+  await Assert.rejects(
+    Services.logins.modifyLoginAsync(loginInfo, newPropertyBag()),
     /No matching logins/
   );
 
   // It is also possible to provide no properties to be modified.
-  Services.logins.modifyLogin(updatedLoginInfo, newPropertyBag());
+  await Services.logins.modifyLoginAsync(updatedLoginInfo, newPropertyBag());
 
   // Specifying a null property for a required value should throw.
-  Assert.throws(
-    () =>
-      Services.logins.modifyLogin(
-        loginInfo,
-        newPropertyBag({
-          usernameField: null,
-        })
-      ),
+  await Assert.rejects(
+    Services.logins.modifyLoginAsync(
+      loginInfo,
+      newPropertyBag({
+        usernameField: null,
+      })
+    ),
     /No matching logins/
   );
 
   // The login can be changed to have a different type and origin.
-  Services.logins.modifyLogin(updatedLoginInfo, differentLoginProperties);
+  await Services.logins.modifyLoginAsync(
+    updatedLoginInfo,
+    differentLoginProperties
+  );
   await LoginTestUtils.checkLogins([differentLoginInfo]);
 
   // It is now possible to add a login with the old type and origin.
@@ -412,8 +413,8 @@ add_task(async function test_modifyLogin_nsIProperyBag() {
   await LoginTestUtils.checkLogins([loginInfo, differentLoginInfo]);
 
   // Modifying a login to match an existing one should not be possible.
-  Assert.throws(
-    () => Services.logins.modifyLogin(loginInfo, differentLoginProperties),
+  await Assert.rejects(
+    Services.logins.modifyLoginAsync(loginInfo, differentLoginProperties),
     /already exists/
   );
   await LoginTestUtils.checkLogins([loginInfo, differentLoginInfo]);
@@ -532,7 +533,7 @@ add_task(async function test_addLogin_badDates() {
     !!(await Services.logins.addLoginAsync(defaultsLogin)),
     "Sanity check adding defaults formLogin"
   );
-  Services.logins.removeAllUserFacingLogins();
+  await Services.logins.removeAllUserFacingLoginsAsync();
 
   // 0 is a valid date in this context - new nsLoginInfo timestamps init to 0
   for (let pname of ["timeCreated", "timeLastUsed", "timePasswordChanged"]) {
@@ -545,7 +546,7 @@ add_task(async function test_addLogin_badDates() {
       !!(await Services.logins.addLoginAsync(loginInfo)),
       "Check 0 value for " + pname
     );
-    Services.logins.removeAllUserFacingLogins();
+    await Services.logins.removeAllUserFacingLoginsAsync();
   }
 
   // negative dates get clamped to 0 and are ok
@@ -559,7 +560,7 @@ add_task(async function test_addLogin_badDates() {
       !!(await Services.logins.addLoginAsync(loginInfo)),
       "Check -1 value for " + pname
     );
-    Services.logins.removeAllUserFacingLogins();
+    await Services.logins.removeAllUserFacingLoginsAsync();
   }
 
   // out-of-range dates will throw
@@ -618,5 +619,5 @@ add_task(async function test_addLogins_badDates() {
     /Can\'t add a login with invalid date properties./
   );
 
-  Services.logins.removeAllUserFacingLogins();
+  await Services.logins.removeAllUserFacingLoginsAsync();
 });

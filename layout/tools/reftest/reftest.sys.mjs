@@ -6,6 +6,8 @@ import { FileUtils } from "resource://gre/modules/FileUtils.sys.mjs";
 
 import { globals } from "resource://reftest/globals.sys.mjs";
 
+import { setTimeout } from "resource://gre/modules/Timer.sys.mjs";
+
 const {
   XHTML_NS,
   XUL_NS,
@@ -51,7 +53,7 @@ const lazy = {};
 XPCOMUtils.defineLazyServiceGetters(lazy, {
   proxyService: [
     "@mozilla.org/network/protocol-proxy-service;1",
-    "nsIProtocolProxyService",
+    Ci.nsIProtocolProxyService,
   ],
 });
 
@@ -186,7 +188,7 @@ export function OnRefTestLoad(win) {
   // sometimes the window is occluded / hidden, which causes some crashtests
   // to time out. Bug 1864255 might be able to help here.
   g.browser.setAttribute("manualactiveness", "true");
-  g.browser.setAttribute("remote", g.browserIsRemote ? "true" : "false");
+  g.browser.toggleAttribute("remote", g.browserIsRemote);
   // Make sure the browser element is exactly 800x1000, no matter
   // what size our window is
   g.browser.style.setProperty("padding", "0px");
@@ -456,8 +458,16 @@ function ReadTests() {
       var manifestURLs = Object.keys(manifests);
 
       // Ensure we read manifests from higher up the directory tree first so that we
-      // process includes before reading the included manifest again
+      // process includes before reading the included manifest again.
+      // Manifests in "final" directories must always run last since they open
+      // popup windows that cannot be closed, which would occlude the reftest
+      // window and stall all subsequent tests.
       manifestURLs.sort(function (a, b) {
+        const aFinal = a.includes("/final/") ? 1 : 0;
+        const bFinal = b.includes("/final/") ? 1 : 0;
+        if (aFinal !== bFinal) {
+          return aFinal - bFinal;
+        }
         return a.length - b.length;
       });
       manifestURLs.forEach(function (manifestURL) {
@@ -685,6 +695,7 @@ function Blur() {
 
 async function StartCurrentTest() {
   g.testLog = [];
+  g.currentTestStatus = "PASS";
 
   // make sure we don't run tests that are expected to kill the browser
   while (g.urls.length) {
@@ -741,15 +752,11 @@ async function StartCurrentTest() {
 
 // A simplified version of the function with the same name in tabbrowser.js.
 function updateBrowserRemotenessByURL(aBrowser, aURL) {
-  var oa = E10SUtils.predictOriginAttributes({ browser: aBrowser });
-  let remoteType = E10SUtils.getRemoteTypeForURI(
-    aURL,
-    aBrowser.ownerGlobal.docShell.nsILoadContext.useRemoteTabs,
-    aBrowser.ownerGlobal.docShell.nsILoadContext.useRemoteSubframes,
-    aBrowser.remoteType,
-    aBrowser.currentURI,
-    oa
-  );
+  let remoteType = ChromeUtils.predictRemoteTypeForURI(aURL, {
+    window: aBrowser.documentGlobal,
+    // NOTE: userContextId is always 0
+    preferredRemoteType: aBrowser.remoteType,
+  });
   // Things get confused if we switch to not-remote
   // for chrome:// URIs, so lets not for now.
   if (remoteType == E10SUtils.NOT_REMOTE && g.browserIsRemote) {
@@ -901,6 +908,28 @@ async function StartCurrentURI(aURLTargetType) {
     logger.warning(
       "g.windowUtils.isCompositorPaused " + g.windowUtils.isCompositorPaused
     );
+    // Give tests time to clean up opened windows before treating this as an error.
+    const startTime = Date.now();
+    while (
+      (g.windowUtils.isWindowFullyOccluded ||
+        g.windowUtils.isCompositorPaused) &&
+      Date.now() - startTime < g.loadTimeout
+    ) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    if (
+      g.windowUtils.isWindowFullyOccluded ||
+      g.windowUtils.isCompositorPaused
+    ) {
+      logger.error(
+        "persistent g.windowUtils.isWindowFullyOccluded " +
+          g.windowUtils.isWindowFullyOccluded
+      );
+      logger.error(
+        "persistent g.windowUtils.isCompositorPaused " +
+          g.windowUtils.isCompositorPaused
+      );
+    }
   }
 
   if (
@@ -1270,7 +1299,7 @@ function RecordResult(testRunTime, errorMsg, typeSpecificResults) {
               );
             });
           }
-          FinishTestItem();
+          FinishTestItem(true);
         });
         break;
       }
@@ -1300,6 +1329,7 @@ function RecordResult(testRunTime, errorMsg, typeSpecificResults) {
       output = outputs[expected].false;
       extra = { status_msg: output.n };
       ++g.testResults[output.n];
+      g.currentTestStatus = output.s[0];
       logger.testStatus(
         g.urls[0].identifier,
         errorMsg,
@@ -1316,6 +1346,8 @@ function RecordResult(testRunTime, errorMsg, typeSpecificResults) {
     var anyFailed = typeSpecificResults.some(function (result) {
       return !result.passed;
     });
+    g.currentTestStatus = anyFailed ? "FAIL" : "PASS";
+
     var outputPair;
     if (anyFailed && expected == EXPECTED_FAIL) {
       // If we're marked as expected to fail, and some (but not all) tests
@@ -1450,7 +1482,8 @@ function RecordResult(testRunTime, errorMsg, typeSpecificResults) {
         g.failedNoDisplayList ||
         g.failedDisplayList ||
         g.failedOpaqueLayer ||
-        g.failedAssignedLayer;
+        g.failedAssignedLayer ||
+        g.failedNoWRRaster;
 
       // whether the comparison result matches what is in the manifest
       var test_passed =
@@ -1511,7 +1544,11 @@ function RecordResult(testRunTime, errorMsg, typeSpecificResults) {
               g.failedAssignedLayerMessages.join(", ")
           );
         }
+        if (g.failedNoWRRaster) {
+          failures.push("failed reftest-no-wr-raster");
+        }
         var failureString = failures.join(", ");
+        g.currentTestStatus = output.s[0];
         logger.testStatus(
           g.urls[0].identifier,
           failureString,
@@ -1563,6 +1600,7 @@ function RecordResult(testRunTime, errorMsg, typeSpecificResults) {
         }
         extra.modifiers = g.urls[0].modifiers;
 
+        g.currentTestStatus = output.s[0];
         logger.testStatus(
           g.urls[0].identifier,
           message,
@@ -1615,6 +1653,7 @@ function LoadFailed(why) {
       "load failed with unknown reason (we should always have a reason!)"
     );
   }
+  g.currentTestStatus = why?.startsWith("timed out") ? "TIMEOUT" : "FAIL";
   logger.testStatus(
     g.urls[0].identifier,
     "load failed: " + why,
@@ -1657,6 +1696,7 @@ function FindUnexpectedCrashDumpFiles() {
         ++g.testResults.UnexpectedFail;
         foundCrashDumpFile = true;
         if (g.currentURL) {
+          g.currentTestStatus = "CRASH";
           logger.testStatus(
             g.urls[0].identifier,
             "crash-check",
@@ -1700,8 +1740,16 @@ function CleanUpCrashDumpFiles() {
   g.expectingProcessCrash = false;
 }
 
-function FinishTestItem() {
-  logger.testEnd(g.urls[0].identifier, "OK");
+function FinishTestItem(skipTestEndLogging = false) {
+  if (!skipTestEndLogging) {
+    let expectedStatus = "PASS";
+    if (g.urls[0].expected == EXPECTED_FAIL) {
+      expectedStatus = "FAIL";
+    } else if (g.urls[0].expected == EXPECTED_RANDOM) {
+      expectedStatus = g.currentTestStatus;
+    }
+    logger.testEnd(g.urls[0].identifier, g.currentTestStatus, expectedStatus);
+  }
 
   // Replace document with BLANK_URL_FOR_CLEARING in case there are
   // assertions when unloading.
@@ -1716,6 +1764,7 @@ function FinishTestItem() {
   g.failedOpaqueLayerMessages = [];
   g.failedAssignedLayer = false;
   g.failedAssignedLayerMessages = [];
+  g.failedNoWRRaster = false;
 }
 
 async function DoAssertionCheck(numAsserts) {
@@ -1763,10 +1812,19 @@ function ResetRenderingState() {
 }
 
 async function RestoreChangedPreferences() {
-  if (!g.prefsToRestore.length) {
+  // Restore any preferences set via SpecialPowers in a previous test.
+  // On Android, g.containingWindow typically doesn't doesn't have a
+  // SpecialPowers property because it was created before SpecialPowers was
+  // registered.
+  // Get a parent actor so that there is less waiting than with a child.
+  let { requiresRefresh } =
+    g.containingWindow.browsingContext.currentWindowGlobal
+      .getActor("SpecialPowers")
+      .flushPrefEnv();
+
+  if (!g.prefsToRestore.length && !requiresRefresh) {
     return;
   }
-  var requiresRefresh = false;
   g.prefsToRestore.reverse();
   g.prefsToRestore.forEach(function (ps) {
     requiresRefresh = requiresRefresh || ps.requiresRefresh;
@@ -1853,6 +1911,12 @@ function RegisterMessageListenersAndLoadContentScript(aReload) {
     }
   );
   g.browserMessageManager.addMessageListener(
+    "reftest:FailedNoWRRaster",
+    function () {
+      RecvFailedNoWRRaster();
+    }
+  );
+  g.browserMessageManager.addMessageListener(
     "reftest:InitCanvasWithSnapshot",
     function () {
       RecvInitCanvasWithSnapshot();
@@ -1935,8 +1999,13 @@ function RecvContentReady(info) {
     g.resolveContentReady();
     g.resolveContentReady = null;
   } else {
-    g.contentGfxInfo = info.gfx;
-    InitAndStartRefTests();
+    // Prevent a race with GeckoView:SetFocused, bug 1960620
+    // If about:blank loads synchronously, we'll RecvContentReady on the first tick,
+    // which is also the tick where GeckoViewContent processes messages from GeckoView.
+    setTimeout(() => {
+      g.contentGfxInfo = info.gfx;
+      InitAndStartRefTests();
+    }, 0);
   }
   return { remote: g.browserIsRemote };
 }
@@ -1944,6 +2013,7 @@ function RecvContentReady(info) {
 function RecvException(what) {
   logger.error(g.currentURL + " | " + what);
   ++g.testResults.Exception;
+  g.currentTestStatus = "FAIL";
 }
 
 function RecvFailedLoad(why) {
@@ -1972,6 +2042,10 @@ function RecvFailedAssignedLayer(why) {
   g.failedAssignedLayerMessages.push(why);
 }
 
+function RecvFailedNoWRRaster() {
+  g.failedNoWRRaster = true;
+}
+
 async function RecvInitCanvasWithSnapshot() {
   var painted = await InitCurrentCanvasWithSnapshot();
   SendUpdateCurrentCanvasWithSnapshotDone(painted);
@@ -1988,6 +2062,7 @@ function RecvLog(type, msg) {
       "REFTEST TEST-UNEXPECTED-FAIL | " + g.currentURL + " | " + msg + "\n"
     );
     ++g.testResults.Exception;
+    g.currentTestStatus = "FAIL";
   } else {
     logger.error(
       "REFTEST TEST-UNEXPECTED-FAIL | " +
@@ -1997,6 +2072,7 @@ function RecvLog(type, msg) {
         "\n"
     );
     ++g.testResults.Exception;
+    g.currentTestStatus = "FAIL";
   }
 }
 
@@ -2054,6 +2130,7 @@ function RecvPrintResult(runtimeMs, status, fileName) {
         " | error during printing\n"
     );
     ++g.testResults.Exception;
+    g.currentTestStatus = "FAIL";
   }
   RecordResult(runtimeMs, "", fileName);
 }

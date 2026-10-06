@@ -13,10 +13,6 @@ let gHits = 0;
 add_task(async function () {
   do_get_profile();
 
-  info("Disable predictor and accept all");
-  Services.prefs.setBoolPref("network.predictor.enabled", false);
-  Services.prefs.setBoolPref("network.predictor.enable-prefetch", false);
-  Services.prefs.setBoolPref("network.http.rcwn.enabled", false);
   Services.prefs.setIntPref("network.cookie.cookieBehavior", 0);
 
   const server = CookieXPCShellUtils.createServer({

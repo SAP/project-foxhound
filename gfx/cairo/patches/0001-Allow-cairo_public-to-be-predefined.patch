@@ -1,0 +1,26 @@
+From 56176079934ec1c69dc80af3552a3ea0582066a7 Mon Sep 17 00:00:00 2001
+From: Jonathan Kew <jkew@mozilla.com>
+Date: Wed, 22 Apr 2026 13:00:22 -0700
+Subject: [PATCH 01/29] Allow cairo_public to be predefined
+
+---
+ src/cairo.h | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/cairo.h b/src/cairo.h
+index 89e4a070e..97b9529bf 100644
+--- a/src/cairo.h
++++ b/src/cairo.h
+@@ -67,7 +67,9 @@
+ # define _cairo_api _cairo_import
+ #endif
+ 
++#ifndef cairo_public
+ #define cairo_public _cairo_api extern
++#endif
+ 
+ CAIRO_BEGIN_DECLS
+ 
+-- 
+2.53.0
+

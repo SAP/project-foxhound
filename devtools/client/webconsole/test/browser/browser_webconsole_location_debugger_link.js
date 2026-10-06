@@ -12,9 +12,11 @@ PromiseTestUtils.allowMatchingRejectionsGlobally(/this\.worker is null/);
 
 requestLongerTimeout(2);
 
-const TEST_URI =
-  "http://example.com/browser/devtools/client/webconsole/" +
-  "test/browser/test-location-debugger-link.html";
+const BASE_URI =
+  "https://example.com/browser/devtools/client/webconsole/test/browser/";
+const TEST_URI = BASE_URI + "test-location-debugger-link.html";
+const TEST_JS_URI = BASE_URI + "test-location-debugger-link-errors.js";
+const TEST_JS_LOG_URI = BASE_URI + "test-location-debugger-link-console-log.js";
 
 add_task(async function () {
   await pushPref("devtools.webconsole.filter.error", true);
@@ -32,6 +34,9 @@ add_task(async function () {
   await testOpenInDebugger(hud, {
     text: "document.bar",
     typeSelector: ".error",
+    url: TEST_JS_URI,
+    line: 7,
+    column: 12,
   });
 
   info("Selecting the console again");
@@ -39,14 +44,20 @@ add_task(async function () {
   await testOpenInDebugger(hud, {
     text: "Blah Blah",
     typeSelector: ".console-api",
+    url: TEST_JS_LOG_URI,
+    line: 7,
+    column: 11,
   });
 
-  // // check again the first node.
+  // check again the first node.
   info("Selecting the console again");
   await toolbox.selectTool("webconsole");
   await testOpenInDebugger(hud, {
     text: "document.bar",
     typeSelector: ".error",
+    url: TEST_JS_URI,
+    line: 7,
+    column: 12,
   });
 
   info("Check location of evaluation error");
@@ -62,6 +73,18 @@ add_task(async function () {
     typeSelector: ".error",
     // "debugger eval code" isn't an actual URL and is not stored as such in the Debugger
     // state, so don't check it.
-    expectUrl: false,
+    url: null,
+    line: 2,
+    column: 6,
+  });
+
+  await testOpenInDebugger(hud, {
+    text: "String contains an invalid character",
+    typeSelector: ".error",
+    // atob exception comes with no particular column
+    url: TEST_URI,
+    line: 13,
+    // Frame's column is undefined, but the debugger will open at first column
+    column: null,
   });
 });

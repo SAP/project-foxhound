@@ -6,9 +6,7 @@
   position: fixed;
   z-index: 1;
   inset: 0;
-  /* TODO: this color is used in the about:preferences overlay, but
-           why isn't it declared as a variable? */
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: var(--background-color-overlay);
   display: flex;
 }
 
@@ -21,10 +19,11 @@
   max-width: 660px;
   min-height: 200px;
   margin: auto;
-  background-color: var(--in-content-page-background);
-  color: var(--in-content-text-color);
+  background-color: var(--background-color-canvas);
+  color: var(--text-color);
   box-shadow: var(--logins-dialog-shadow);
   border: var(--logins-dialog-border);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   border-radius: var(--logins-dialog-border-radius);
   /* show a border in high contrast mode */
   outline: 1px solid transparent;
@@ -35,7 +34,7 @@
 }
 
 .message {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   grid-area: 2 / 2 / 3 / 8;
   font-size: 1.25em;
 }
@@ -99,6 +98,6 @@
 .buttons {
   padding-block: 16px 32px;
   padding-inline: 48px 0;
-  border-top: 1px solid var(--in-content-border-color);
+  border-top: 1px solid var(--border-color);
   margin-inline: 48px;
 }

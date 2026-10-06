@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl'))
-
 const defaultLocale = "en";
 const defaultNumberingSystem = new Intl.DateTimeFormat(defaultLocale).resolvedOptions().numberingSystem;
 

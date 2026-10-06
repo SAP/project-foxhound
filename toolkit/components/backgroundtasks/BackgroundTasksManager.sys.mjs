@@ -1,5 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -98,7 +97,7 @@ function locationsForBackgroundTaskNamed(name) {
  * which is registered at `resource://testing-common`, the standard
  * location for test-only modules.
  *
- * @return {Object} The imported module.
+ * @return {object} The imported module.
  * @throws NS_ERROR_NOT_AVAILABLE if a background task with the given `name` is
  * not found.
  */

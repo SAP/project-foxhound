@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,31 +8,31 @@
 #include "GeolocationSystem.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/CycleCollectedJSContext.h"  // for nsAutoMicroTask
-#include "mozilla/dom/BrowserChild.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/PermissionMessageUtils.h"
-#include "mozilla/dom/GeolocationPositionError.h"
-#include "mozilla/dom/GeolocationPositionErrorBinding.h"
-#include "mozilla/glean/DomGeolocationMetrics.h"
-#include "mozilla/ipc/MessageChannel.h"
+#include "mozilla/EventStateManager.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_geo.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include "mozilla/WeakPtr.h"
-#include "mozilla/EventStateManager.h"
+#include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/GeolocationPositionError.h"
+#include "mozilla/dom/GeolocationPositionErrorBinding.h"
+#include "mozilla/dom/PermissionMessageUtils.h"
+#include "mozilla/glean/DomGeolocationMetrics.h"
+#include "mozilla/ipc/MessageChannel.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentPermissionHelper.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
-#include "mozilla/dom/Document.h"
 #include "nsINamed.h"
 #include "nsIObserverService.h"
 #include "nsIPromptService.h"
 #include "nsIScriptError.h"
 #include "nsPIDOMWindow.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
@@ -46,9 +44,9 @@ class nsIPrincipal;
 #endif
 
 #ifdef MOZ_ENABLE_DBUS
-#  include "mozilla/WidgetUtilsGtk.h"
 #  include "GeoclueLocationProvider.h"
 #  include "PortalLocationProvider.h"
+#  include "mozilla/WidgetUtilsGtk.h"
 #endif
 
 #ifdef MOZ_WIDGET_COCOA
@@ -118,6 +116,13 @@ class nsGeolocationRequest final : public ContentPermissionRequestBase,
   void SetPromptBehavior(
       geolocation::SystemGeolocationPermissionBehavior aBehavior) {
     mBehavior = aBehavior;
+  }
+
+  NS_IMETHOD GetIgnoreAllowSitePermission(
+      bool* aIgnoreAllowSitePermission) override {
+    *aIgnoreAllowSitePermission =
+        mBehavior != geolocation::SystemGeolocationPermissionBehavior::NoPrompt;
+    return NS_OK;
   }
 
  private:
@@ -326,7 +331,7 @@ void Geolocation::ReallowWithSystemPermissionOrCancel(
   NS_ENSURE_SUCCESS_VOID(rv);
 
   nsAutoString brandName;
-  rv = nsContentUtils::GetLocalizedString(nsContentUtils::eBRAND_PROPERTIES,
+  rv = nsContentUtils::GetLocalizedString(PropertiesFile::BRAND_PROPERTIES,
                                           "brandShortName", brandName);
   NS_ENSURE_SUCCESS_VOID(rv);
   AutoTArray<nsString, 1> formatParams;
@@ -394,6 +399,17 @@ nsGeolocationRequest::Allow(JS::Handle<JS::Value> aChoices) {
     return NS_OK;
   }
 
+  auto onSystemPermissionResult =
+      [self = RefPtr{this}](GeolocationPermissionStatus
+                                aResult) MOZ_CAN_RUN_SCRIPT_BOUNDARY_LAMBDA {
+        if (aResult == GeolocationPermissionStatus::Granted ||
+            !StaticPrefs::dom_geolocation_require_system_permission_enabled()) {
+          self->Allow(JS::UndefinedHandleValue);
+          return;
+        }
+        self->Cancel();
+      };
+
   if (mBehavior != SystemGeolocationPermissionBehavior::NoPrompt) {
     // Asynchronously present the system dialog or open system preferences
     // (RequestGeolocationPermissionFromUser will know which to do), and wait
@@ -405,24 +421,16 @@ nsGeolocationRequest::Allow(JS::Handle<JS::Value> aChoices) {
     RefPtr<BrowsingContext> browsingContext = mWindow->GetBrowsingContext();
     if (ContentChild* cc = ContentChild::GetSingleton()) {
       cc->SendRequestGeolocationPermissionFromUser(
-          browsingContext,
-          [self = RefPtr{this}](GeolocationPermissionStatus aResult)
-              MOZ_CAN_RUN_SCRIPT_BOUNDARY_LAMBDA {
-                self->Allow(JS::UndefinedHandleValue);
-              },
-          [self = RefPtr{this}](mozilla::ipc::ResponseRejectReason aReason)
-              MOZ_CAN_RUN_SCRIPT_BOUNDARY_LAMBDA {
-                self->Allow(JS::UndefinedHandleValue);
-              });
+          browsingContext, onSystemPermissionResult,
+          [onSystemPermissionResult](
+              mozilla::ipc::ResponseRejectReason aReason) {
+            onSystemPermissionResult(GeolocationPermissionStatus::Canceled);
+          });
       return NS_OK;
     }
 
-    Geolocation::ReallowWithSystemPermissionOrCancel(
-        browsingContext,
-        [self = RefPtr{this}](GeolocationPermissionStatus aResult)
-            MOZ_CAN_RUN_SCRIPT_BOUNDARY_LAMBDA {
-              self->Allow(JS::UndefinedHandleValue);
-            });
+    Geolocation::ReallowWithSystemPermissionOrCancel(browsingContext,
+                                                     onSystemPermissionResult);
     return NS_OK;
   }
 
@@ -460,6 +468,11 @@ nsGeolocationRequest::Allow(JS::Handle<JS::Value> aChoices) {
   }
 
   if (canUseCache) {
+    glean::geolocation::geolocation_cache_hit
+        .EnumGet(
+            glean::geolocation::GeolocationCacheHitLabel::eNsgeolocationrequest)
+        .Add();
+
     // okay, we can return a cached position
     // getCurrentPosition requests serviced by the cache
     // will now be owned by the RequestSendLocationEvent
@@ -469,7 +482,6 @@ nsGeolocationRequest::Allow(JS::Handle<JS::Value> aChoices) {
     if (!mIsWatchPositionRequest) {
       return NS_OK;
     }
-
   } else {
     // if it is not a watch request and timeout is 0,
     // invoke the errorCallback (if present) with TIMEOUT code
@@ -786,7 +798,7 @@ nsresult nsGeolocationService::Init() {
         do_GetService(NS_GEOLOCATION_PROVIDER_CONTRACTID);
 
     if (geoTestProvider) {
-      mProvider = geoTestProvider;
+      mProvider = std::move(geoTestProvider);
     }
   }
 
@@ -1018,9 +1030,12 @@ void nsGeolocationService::RemoveLocator(Geolocation* aLocator) {
 }
 
 void nsGeolocationService::MoveLocators(nsGeolocationService* aService) {
-  for (uint32_t i = 0; i < mGeolocators.Length(); i++) {
-    aService->AddLocator(mGeolocators[i]);
+  for (Geolocation* loc : mGeolocators) {
+    aService->AddLocator(loc);
+    loc->SetService(aService);
   }
+
+  mGeolocators.Clear();
 }
 
 ////////////////////////////////////////////////////
@@ -1036,8 +1051,18 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(Geolocation)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(Geolocation)
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(Geolocation, mPendingCallbacks,
-                                      mWatchingCallbacks, mPendingRequests)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Geolocation)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Geolocation)
+  tmp->Shutdown();
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mPendingCallbacks, mWatchingCallbacks,
+                                  mBrowsingContext, mPendingRequests)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_PTR
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Geolocation)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPendingCallbacks, mWatchingCallbacks,
+                                    mBrowsingContext, mPendingRequests)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 Geolocation::Geolocation()
     : mProtocolType(ProtocolType::OTHER), mLastWatchId(1) {}
@@ -1146,7 +1171,7 @@ void Geolocation::RemoveRequest(nsGeolocationRequest* aRequest) {
   bool requestWasKnown = (mPendingCallbacks.RemoveElement(aRequest) !=
                           mWatchingCallbacks.RemoveElement(aRequest));
 
-  Unused << requestWasKnown;
+  (void)requestWasKnown;
 }
 
 NS_IMETHODIMP
@@ -1253,7 +1278,7 @@ bool Geolocation::ShouldBlockInsecureRequests() const {
 
   if (!nsGlobalWindowInner::Cast(win)->IsSecureContext()) {
     nsContentUtils::ReportToConsole(nsIScriptError::errorFlag, "DOM"_ns, doc,
-                                    nsContentUtils::eDOM_PROPERTIES,
+                                    PropertiesFile::DOM_PROPERTIES,
                                     "GeolocationInsecureRequestIsForbidden");
     return true;
   }

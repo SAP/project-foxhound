@@ -23,7 +23,7 @@ add_task(async () => {
 
   const requestsDone = waitForNetworkEvents(monitor, 1);
   const markersDone = waitForTimelineMarkers(monitor);
-  await reloadBrowser();
+  await reloadSelectedTab();
   await Promise.all([requestsDone, markersDone]);
 
   const statusBar = document.querySelector(".devtools-toolbar-bottom");

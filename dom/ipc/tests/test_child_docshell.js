@@ -43,7 +43,6 @@ add_task(async function test() {
 
     // Inject a frame script in the child process:
     page.loadFrameScript(async function () {
-      /* eslint-env mozilla/frame-script */
       var chromeEventHandler = docShell.chromeEventHandler;
       sendAsyncMessage("chromeEventHandler", {
         processType: Services.appinfo.processType,

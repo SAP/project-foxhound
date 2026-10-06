@@ -4,32 +4,34 @@
 
 
 import logging
-import os
 
 import taskcluster_urls as liburls
 from taskcluster import Hooks
 from taskgraph.util import taskcluster as tc_util
 from taskgraph.util.taskcluster import (
-    _do_request,
-    get_index_url,
     get_root_url,
     get_task_definition,
-    get_task_url,
+    get_taskcluster_client,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def insert_index(index_path, task_id, data=None, use_proxy=False):
-    index_url = get_index_url(index_path, use_proxy=use_proxy)
+def get_index_url(index_path, multiple=False, block_proxy=True):
+    index_tmpl = liburls.api(
+        get_root_url(block_proxy=block_proxy), "index", "v1", "task{}/{}"
+    )
+    return index_tmpl.format("s" if multiple else "", index_path)
 
+
+def insert_index(index_path, task_id, data=None):
     # Find task expiry.
-    expires = get_task_definition(task_id, use_proxy)["expires"]
+    expires = get_task_definition(task_id)["expires"]
 
-    response = _do_request(
-        index_url,
-        method="put",
-        json={
+    index = get_taskcluster_client("index")
+    response = index.insertTask(
+        index_path,
+        {
             "taskId": task_id,
             "rank": 0,
             "data": data or {},
@@ -39,14 +41,13 @@ def insert_index(index_path, task_id, data=None, use_proxy=False):
     return response
 
 
-def status_task(task_id, use_proxy=False):
+def status_task(task_id):
     """Gets the status of a task given a task_id.
 
     In testing mode, just logs that it would have retrieved status.
 
     Args:
         task_id (str): A task id.
-        use_proxy (bool): Whether to use taskcluster-proxy (default: False)
 
     Returns:
         dict: A dictionary object as defined here:
@@ -55,12 +56,13 @@ def status_task(task_id, use_proxy=False):
     if tc_util.testing:
         logger.info(f"Would have gotten status for {task_id}.")
     else:
-        resp = _do_request(get_task_url(task_id, use_proxy) + "/status")
-        status = resp.json().get("status", {})
-        return status
+        queue = get_taskcluster_client("queue")
+        response = queue.status(task_id)
+        if response:
+            return response.get("status", {})
 
 
-def state_task(task_id, use_proxy=False):
+def state_task(task_id):
     """Gets the state of a task given a task_id.
 
     In testing mode, just logs that it would have retrieved state. This is a subset of the
@@ -68,7 +70,6 @@ def state_task(task_id, use_proxy=False):
 
     Args:
         task_id (str): A task id.
-        use_proxy (bool): Whether to use taskcluster-proxy (default: False)
 
     Returns:
         str: The state of the task, one of
@@ -77,17 +78,17 @@ def state_task(task_id, use_proxy=False):
     if tc_util.testing:
         logger.info(f"Would have gotten state for {task_id}.")
     else:
-        status = status_task(task_id, use_proxy=use_proxy).get("state") or "unknown"
+        status = status_task(task_id).get("state") or "unknown"
         return status
 
 
 def trigger_hook(hook_group_id, hook_id, hook_payload):
-    hooks = Hooks({"rootUrl": get_root_url(True)})
+    hooks = Hooks({"rootUrl": get_root_url()})
     response = hooks.triggerHook(hook_group_id, hook_id, hook_payload)
 
     logger.info(
         "Task seen here: {}/tasks/{}".format(
-            get_root_url(os.environ.get("TASKCLUSTER_PROXY_URL")),
+            get_root_url(),
             response["status"]["taskId"],
         )
     )
@@ -95,20 +96,16 @@ def trigger_hook(hook_group_id, hook_id, hook_payload):
 
 def list_task_group_tasks(task_group_id):
     """Generate the tasks in a task group"""
-    params = {}
-    while True:
-        url = liburls.api(
-            get_root_url(False),
-            "queue",
-            "v1",
-            f"task-group/{task_group_id}/list",
-        )
-        resp = _do_request(url, method="get", params=params).json()
-        yield from resp["tasks"]
-        if resp.get("continuationToken"):
-            params = {"continuationToken": resp.get("continuationToken")}
-        else:
-            break
+    queue = get_taskcluster_client("queue")
+
+    tasks = []
+
+    def pagination_handler(response):
+        tasks.extend(response["tasks"])
+
+    queue.listTaskGroup(task_group_id, paginationHandler=pagination_handler)
+
+    return tasks
 
 
 def list_task_group_incomplete_task_ids(task_group_id):
@@ -128,6 +125,6 @@ def list_task_group_complete_tasks(task_group_id):
     return tasks
 
 
-def find_task(index_path, use_proxy=False):
-    response = _do_request(get_index_url(index_path, use_proxy))
-    return response.json()
+def find_task(index_path):
+    index = get_taskcluster_client("index")
+    return index.findTask(index_path)

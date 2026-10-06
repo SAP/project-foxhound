@@ -3,7 +3,7 @@ android-fenix:
     description: Android formatting lint for Fenix
     include: ['mobile/android/fenix']
     exclude: []
-    extensions: ['java', 'kt']
+    extensions: ['java', 'kt', 'xml']
     support-files:
         - 'mobile/android/**/Makefile.in'
         - 'mobile/android/config/**'

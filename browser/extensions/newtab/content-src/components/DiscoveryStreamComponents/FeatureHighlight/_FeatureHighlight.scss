@@ -3,7 +3,7 @@
   // This is needed because in 1 case this is positioned under a link
   // and in an element that's not clickable.
   pointer-events: auto;
-  z-index: 1;
+  z-index: 2;
 
   .feature-highlight-modal {
     position: absolute;
@@ -79,6 +79,15 @@
       }
     }
 
+    &.inset-inline-center {
+      transform: translateX(-50%);
+      inset-inline-start: 50%;
+
+      &:dir(rtl) {
+        transform: translateX(50%);
+      }
+    }
+
     &.inset-inline-end {
       inset-inline-start: calc(var(--space-xxlarge) * -1);
 
@@ -102,7 +111,7 @@
       }
     }
 
-    // Arrow is pointed on left side of box
+    // Arrow is pointed on right side of box
     &.arrow-inline-end {
       &::after {
         content: '';
@@ -114,6 +123,28 @@
         width: 16px;
         background: var(--newtab-background-color-secondary);
         box-shadow: 4px 4px 6px -2px rgba(0, 0, 0, 15%);
+      }
+    }
+
+    // arrow is on the top of the box centered
+    &.arrow-top-center {
+      &::after {
+        inset-block-start: calc(var(--space-small) * -1);
+        inset-inline-start: 50%;
+        transform: translateX(-50%) rotate(225deg);
+        height: 16px;
+        width: 16px;
+      }
+    }
+
+    // arrow is on the top of the box, positioned to the left
+    &.arrow-top-start {
+      &::after {
+        inset-block-start: calc(var(--space-small) * -1);
+        inset-inline-start: calc(var(--space-xlarge) * 2);
+        transform: translateX(-50%) rotate(225deg);
+        height: 16px;
+        width: 16px;
       }
     }
 

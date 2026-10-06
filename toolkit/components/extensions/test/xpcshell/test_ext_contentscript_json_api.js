@@ -1,7 +1,5 @@
 "use strict";
 
-Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
-
 const server = createHttpServer({ hosts: ["example.com"] });
 server.registerPathHandler("/dummy", (request, response) => {
   response.setStatusLine(request.httpVersion, 200, "OK");

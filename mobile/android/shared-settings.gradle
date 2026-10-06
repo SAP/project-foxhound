@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import java.time.format.DateTimeFormatter
+
 import org.yaml.snakeyaml.Yaml
 
 buildscript {
@@ -10,17 +10,11 @@ buildscript {
         apply from: file('./gradle/mozconfig.gradle')
     } else {
         gradle.ext.mozconfig = gradle.root.mozconfig
+        gradle.ext.configureMavenRepositories = gradle.root.ext.configureMavenRepositories
     }
 
     repositories {
-        gradle.mozconfig.substs.GRADLE_MAVEN_REPOSITORIES.each { repository ->
-            maven {
-                url = repository
-                if (gradle.mozconfig.substs.ALLOW_INSECURE_GRADLE_REPOSITORIES) {
-                    allowInsecureProtocol = true
-                }
-            }
-        }
+        gradle.configureMavenRepositories(delegate)
     }
 
     dependencies {
@@ -32,6 +26,7 @@ if (!gradle.root.hasProperty("mozconfig")){
     apply from: file('./gradle/mozconfig.gradle')
 } else {
     gradle.ext.mozconfig = gradle.root.mozconfig
+    gradle.ext.configureMavenRepositories = gradle.root.ext.configureMavenRepositories
 }
 
 // Synchronized library configuration for all modules
@@ -42,83 +37,31 @@ class Config {
     public final String componentsVersion
     public final String componentsGroupId
     public final Integer jvmTargetCompatibility
-    public final Integer compileSdkVersion
+    public final Integer compileSdkMajorVersion
+    public final Integer compileSdkMinorVersion
     public final Integer minSdkVersion
     public final Integer targetSdkVersion
+    public final String ndkVersion
+
 
     Config(
             String componentsVersion,
             String componentsGroupId,
             Integer jvmTargetCompatibility,
-            Integer compileSdkVersion,
+            Integer compileSdkMajorVersion,
+            Integer compileSdkMinorVersion,
             Integer minSdkVersion,
-            Integer targetSdkVersion
+            Integer targetSdkVersion,
+            String ndkVersion
     ) {
         this.componentsVersion = componentsVersion
         this.componentsGroupId = componentsGroupId
         this.jvmTargetCompatibility = jvmTargetCompatibility
-        this.compileSdkVersion = compileSdkVersion
+        this.compileSdkMajorVersion = compileSdkMajorVersion
+        this.compileSdkMinorVersion = compileSdkMinorVersion
         this.minSdkVersion = minSdkVersion
         this.targetSdkVersion = targetSdkVersion
-    }
-}
-
-def setupProject(name, path, description) {
-    settings.include(":$name")
-
-    project(":$name").projectDir = new File(gradle.mozconfig.topsrcdir, "mobile/android/android-components/${path}")
-
-    // project(...) gives us a skeleton project that we can't set ext.* on
-    gradle.beforeProject { project ->
-        // However, the "afterProject" listener iterates over every project and gives us the actual project
-        // So, once we filter for the project we care about, we can set whatever we want
-        if (project.path == ":$name") {
-            project.ext.description = description
-        }
-    }
-}
-
-
-// Mimic Python: open(os.path.join(buildconfig.topobjdir, 'buildid.h')).readline().split()[2]
-def getBuildId() {
-    if (System.env.MOZ_BUILD_DATE) {
-        if (System.env.MOZ_BUILD_DATE.length() == 14) {
-            return System.env.MOZ_BUILD_DATE
-        }
-        logger.warn("Ignoring invalid MOZ_BUILD_DATE: ${System.env.MOZ_BUILD_DATE}")
-    }
-    return file("${gradle.mozconfig.topobjdir}/buildid.h").getText('utf-8').split()[2]
-}
-
-// Return a manifest version string that respects the Firefox version format,
-// see: https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/version#version_format
-def getManifestVersionString(componentsVersion) {
-    // We assume that the `version.txt` file will always contain a version
-    // string with at least two parts separated with a dot. Below, we extract
-    // each part, and we make sure that there is no letter, e.g. `"0a2"` would
-    // become `"0"`.
-    String[] parts = componentsVersion.split("\\.").collect {
-        part -> part.split("a|b")[0]
-    };
-
-    // Per https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/version,
-    // each part can have up to 9 digits.  Note the single `H` when formatting the output avoid
-    // leading zeros, which are not allowed.
-    def buildDate = LocalDateTime.parse(getBuildId(), DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
-    def dateAndTime = buildDate.format(DateTimeFormatter.ofPattern("YYYYMMdd.Hmmss"));
-
-    return "${parts[0]}.${parts[1]}.${dateAndTime}";
-}
-
-def yaml = new Yaml()
-def buildConfigFile = new File(gradle.mozconfig.topsrcdir, "mobile/android/android-components/.buildconfig.yml")
-def buildconfig = yaml.load(buildConfigFile.newInputStream())
-
-buildconfig.projects.each { project ->
-    // If we're building A-C, set up all projects, otherwise exclude samples e.g., if we're building Fenix or Focus.
-    // The samples are not relevant for the Fenix and Focus builds.
-    if (rootDir.toString().contains("android-components") || !project.key.startsWith("samples")) {
-        setupProject(project.key, project.value.path, project.value.description)
+        this.ndkVersion = ndkVersion
     }
 }
 
@@ -126,6 +69,7 @@ gradle.projectsLoaded { ->
     def versionFile = new File(gradle.mozconfig.topsrcdir, "mobile/android/version.txt")
     String version = versionFile.text.stripTrailing()
 
+    def yaml = new Yaml()
     def configDataFile = new File(gradle.mozconfig.topsrcdir, "mobile/android/android-components/.config.yml")
     def configData = yaml.load(configDataFile.newInputStream())
 
@@ -137,6 +81,8 @@ gradle.projectsLoaded { ->
     } else if (gradle.hasProperty("localProperties.branchBuild.android-components.version")) {
         version = gradle.getProperty("localProperties.branchBuild.android-components.version")
     }
+    // get the ndk version from the external build environment.
+    def ndkVersion = "${gradle.mozconfig.substs.ANDROID_NDK_MAJOR_VERSION}.${gradle.mozconfig.substs.ANDROID_NDK_MINOR_VERSION}"
 
     // Wait until root project is "loaded" before we set "config"
     // Note that since this is set on "rootProject.ext", it will be "in scope" during the evaluation of all projects'
@@ -145,50 +91,10 @@ gradle.projectsLoaded { ->
             version,
             configData.componentsGroupId,
             configData.jvmTargetCompatibility,
-            configData.compileSdkVersion,
+            configData.compileSdkMajorVersion,
+            configData.compileSdkMinorVersion,
             configData.minSdkVersion,
-            configData.targetSdkVersion
+            configData.targetSdkVersion,
+            ndkVersion
     )
-
-    gradle.rootProject.ext.buildConfig = buildconfig
-
-    // Define a reusable task for updating the version in manifest.json for modules that package
-    // a web extension. We automate this to make sure we never forget to update the version, either
-    // in local development or for releases. In both cases, we want to make sure the latest version
-    // of all extensions (including their latest changes) are installed on first start-up.
-    gradle.rootProject.allprojects {
-        ext.updateExtensionVersion = { task, extDir ->
-            configure(task) {
-                from extDir
-                include 'manifest.template.json'
-                rename { 'manifest.json' }
-                into extDir
-
-                def values = ['version': getManifestVersionString(rootProject.ext.config.componentsVersion)]
-                inputs.properties(values)
-                expand(values)
-            }
-        }
-    }
-
-    // Initialize all project buildDirs to be in ${topobjdir} to follow
-    // conventions of mozilla-central build system.
-    gradle.rootProject.allprojects { project ->
-        def topSrcPath = file(gradle.mozconfig.topsrcdir).toPath()
-        def topObjPath = file(gradle.mozconfig.topobjdir).toPath()
-
-        def sourcePath = project.getBuildFile().toPath().getParent()
-        def relativePath = topSrcPath.relativize(sourcePath)
-
-        if (relativePath.startsWith("..")) {
-            // The project doesn't appear to be in topsrcdir so leave the
-            // buildDir alone.
-        } else {
-            // Transplant the project path into "${topobjdir}/gradle/build".
-            // This is consistent with existing gradle / taskcluster
-            // configurations but less consistent with the result of the
-            // non-gradle build system.
-            buildDir = topObjPath.resolve("gradle/build").resolve(relativePath)
-        }
-    }
 }

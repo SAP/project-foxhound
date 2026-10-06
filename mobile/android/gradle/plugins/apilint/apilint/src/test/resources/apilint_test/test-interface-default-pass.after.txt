@@ -1,0 +1,8 @@
+package test {
+  public interface TestClass {
+    method @android.support.annotation.UiThread public default void testMethod();
+    method @android.support.annotation.UiThread public default void testMethod2();
+    method @android.support.annotation.UiThread public static void testStaticMethodDoesNotNeedDefault();
+  }
+}
+

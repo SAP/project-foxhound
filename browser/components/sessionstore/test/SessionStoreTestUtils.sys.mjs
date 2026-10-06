@@ -13,7 +13,7 @@ export var SessionStoreTestUtils = {
    * Tests should call this init() before using the helpers which rely on properties assign here.
    *
    * @param {object} scope The global scope where tests are being run.
-   * @param {DOmWindow} scope The global window object, for acessing gBrowser etc.
+   * @param {DOMWindow} windowGlobal The global window object, for acessing gBrowser etc.
    */
   init(scope, windowGlobal) {
     if (!scope) {
@@ -24,9 +24,20 @@ export var SessionStoreTestUtils = {
     if (!windowGlobal) {
       throw new Error("this.windowGlobal must be defined when we init");
     }
-    this.info = scope.info;
-    this.registerCleanupFunction = scope.registerCleanupFunction;
-    this.windowGlobal = windowGlobal;
+    this._scopeRef = new WeakRef(scope);
+    this._windowGlobalRef = new WeakRef(windowGlobal);
+  },
+
+  get info() {
+    return this._scopeRef.deref()?.info;
+  },
+
+  get registerCleanupFunction() {
+    return this._scopeRef.deref()?.registerCleanupFunction;
+  },
+
+  get windowGlobal() {
+    return this._windowGlobalRef.deref();
   },
 
   async closeTab(tab) {

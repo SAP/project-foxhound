@@ -1,15 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/BarProps.h"
+
 #include "mozilla/dom/BarPropBinding.h"
 #include "nsContentUtils.h"
 #include "nsDocShell.h"
 #include "nsGlobalWindowInner.h"
 #include "nsIWebBrowserChrome.h"
+#include "nsPIDOMWindowInlines.h"
 
 namespace mozilla::dom {
 
@@ -57,7 +57,9 @@ bool BarProp::GetVisibleByFlag(uint32_t aChromeFlag, CallerType aCallerType,
   }
 
   nsCOMPtr<nsIWebBrowserChrome> browserChrome = GetBrowserChrome();
-  NS_ENSURE_TRUE(browserChrome, false);
+  if (!browserChrome) {
+    return false;
+  }
 
   uint32_t chromeFlags;
 

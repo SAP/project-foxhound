@@ -92,9 +92,7 @@ def mozpower_obj():
         MozPower, "_get_processor_info", return_value="GenuineIntel"
     ) as _, mock.patch.object(
         MacIntelPower, "get_ipg_path", return_value="/"
-    ) as _, mock.patch(
-        "subprocess.check_output"
-    ) as subprocess_mock, mock.patch(
+    ) as _, mock.patch("subprocess.check_output") as subprocess_mock, mock.patch(
         "os.path.exists"
     ) as os_mock:
         subprocess_mock.side_effect = subprocess_side_effect

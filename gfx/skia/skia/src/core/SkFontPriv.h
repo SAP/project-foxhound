@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -80,7 +80,7 @@ public:
     }
 
     // Returns the number of elements (characters or glyphs) in the array.
-    static int CountTextElements(const void* text, size_t byteLength, SkTextEncoding);
+    static size_t CountTextElements(const void* text, size_t byteLength, SkTextEncoding);
 
     static void GlyphsToUnichars(const SkFont&, const SkGlyphID glyphs[], int count, SkUnichar[]);
 
@@ -90,30 +90,29 @@ public:
     static inline uint8_t Flags(const SkFont& font) { return font.fFlags; }
 };
 
-class SkAutoToGlyphs {
+class [[nodiscard]] SkAutoToGlyphs {
 public:
     SkAutoToGlyphs(const SkFont& font, const void* text, size_t length, SkTextEncoding encoding) {
         if (encoding == SkTextEncoding::kGlyphID || length == 0) {
-            fGlyphs = reinterpret_cast<const uint16_t*>(text);
-            fCount = SkToInt(length >> 1);
+            fGlyphs = {reinterpret_cast<const uint16_t*>(text), length >> 1};
         } else {
-            fCount = font.countText(text, length, encoding);
-            if (fCount < 0) {
-                fCount = 0;
-            }
-            fStorage.reset(fCount);
-            font.textToGlyphs(text, length, encoding, fStorage.get(), fCount);
-            fGlyphs = fStorage.get();
+            const size_t count = font.countText(text, length, encoding);
+            fStorage.reset(count);
+            SkSpan<SkGlyphID> glyphs = {fStorage.get(), count};
+            (void)font.textToGlyphs(text, length, encoding, glyphs);
+            fGlyphs = glyphs;
         }
     }
 
-    int count() const { return fCount; }
-    const SkGlyphID* glyphs() const { return fGlyphs; }
+    size_t size() const { return fGlyphs.size(); }
+    const SkGlyphID* data() const { return fGlyphs.data(); }
+
+    size_t count() const { return fGlyphs.size(); }
+    SkSpan<const SkGlyphID> glyphs() const { return fGlyphs; }
 
 private:
     skia_private::AutoSTArray<32, SkGlyphID> fStorage;
-    const SkGlyphID* fGlyphs;
-    int             fCount;
+    SkSpan<const SkGlyphID> fGlyphs;
 };
 
 #endif

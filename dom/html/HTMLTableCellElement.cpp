@@ -1,17 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/HTMLTableCellElement.h"
+
+#include "celldata.h"
+#include "mozilla/MappedDeclarationsBuilder.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/HTMLTableCellElementBinding.h"
 #include "mozilla/dom/HTMLTableElement.h"
 #include "mozilla/dom/HTMLTableRowElement.h"
-#include "mozilla/MappedDeclarationsBuilder.h"
 #include "nsAttrValueInlines.h"
-#include "celldata.h"
-#include "mozilla/dom/HTMLTableCellElementBinding.h"
 
 namespace {
 enum class StyleCellScope : uint8_t { Row, Col, Rowgroup, Colgroup };
@@ -68,7 +67,7 @@ int32_t HTMLTableCellElement::CellIndex() const {
     return -1;
   }
 
-  nsIHTMLCollection* cells = row->Cells();
+  HTMLCollection* cells = row->Cells();
   if (!cells) {
     return -1;
   }
@@ -127,10 +126,6 @@ bool HTMLTableCellElement::ParseAttribute(int32_t aNamespaceID,
     }
     if (aAttribute == nsGkAtoms::rowspan) {
       aResult.ParseClampedNonNegativeInt(aValue, 1, 0, MAX_ROWSPAN);
-      // quirks mode does not honor the special html 4 value of 0
-      if (aResult.GetIntegerValue() == 0 && InNavQuirksMode(OwnerDoc())) {
-        aResult.SetTo(1, &aValue);
-      }
       return true;
     }
     if (aAttribute == nsGkAtoms::height) {
@@ -177,8 +172,8 @@ void HTMLTableCellElement::MapAttributesIntoRule(
     }
   }
 
-  nsGenericHTMLElement::MapDivAlignAttributeInto(aBuilder);
-  nsGenericHTMLElement::MapVAlignAttributeInto(aBuilder);
+  nsGenericHTMLElement::MapTableCellHAlignAttributeInto(aBuilder);
+  nsGenericHTMLElement::MapTableVAlignAttributeInto(aBuilder);
   nsGenericHTMLElement::MapBackgroundAttributesInto(aBuilder);
   nsGenericHTMLElement::MapCommonAttributesInto(aBuilder);
 }

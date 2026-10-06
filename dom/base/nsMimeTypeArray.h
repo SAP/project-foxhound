@@ -1,17 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsMimeTypeArray_h___
-#define nsMimeTypeArray_h___
+#ifndef nsMimeTypeArray_h_
+#define nsMimeTypeArray_h_
 
-#include "nsWrapperCache.h"
+#include "mozilla/dom/BindingDeclarations.h"
 #include "nsCOMPtr.h"
 #include "nsPIDOMWindow.h"
 #include "nsTArray.h"
-#include "mozilla/dom/BindingDeclarations.h"
+#include "nsWrapperCache.h"
 
 class nsMimeType;
 class nsPluginElement;
@@ -27,12 +25,12 @@ class nsMimeTypeArray final : public nsISupports, public nsWrapperCache {
   nsMimeTypeArray(nsPIDOMWindowInner* aWindow,
                   const mozilla::Array<RefPtr<nsMimeType>, 2>& aMimeTypes);
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(nsMimeTypeArray)
 
   nsPIDOMWindowInner* GetParentObject() const;
-  virtual JSObject* WrapObject(JSContext* aCx,
-                               JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
   // MimeTypeArray WebIDL methods
   uint32_t Length() { return ForceNoPlugins() ? 0 : std::size(mMimeTypes); }
@@ -54,7 +52,7 @@ class nsMimeTypeArray final : public nsISupports, public nsWrapperCache {
   void GetSupportedNames(nsTArray<nsString>& retval);
 
  protected:
-  virtual ~nsMimeTypeArray();
+  ~nsMimeTypeArray();
 
   bool ForceNoPlugins();
 
@@ -75,29 +73,25 @@ class nsMimeType final : public nsWrapperCache {
 
   nsPluginElement* GetParentObject() const { return mPluginElement; }
 
-  virtual JSObject* WrapObject(JSContext* aCx,
-                               JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
   // MimeType WebIDL methods
   void GetDescription(mozilla::dom::DOMString& retval) const {
-    retval.SetKnownLiveString(kMimeDescription);
+    retval.AssignLiteral(u"Portable Document Format");
   }
 
   already_AddRefed<nsPluginElement> EnabledPlugin() const;
 
   void GetSuffixes(mozilla::dom::DOMString& retval) const {
-    retval.SetKnownLiveString(kMimeSuffix);
+    retval.AssignLiteral(u"pdf");
   }
 
   void GetType(nsString& retval) const { retval = mName; }
   const nsString& Name() const { return mName; }
 
  protected:
-  virtual ~nsMimeType();
-
-  static constexpr nsLiteralString kMimeDescription =
-      u"Portable Document Format"_ns;
-  static constexpr nsLiteralString kMimeSuffix = u"pdf"_ns;
+  ~nsMimeType();
 
   // Note that this creates an explicit reference cycle:
   //
@@ -109,4 +103,4 @@ class nsMimeType final : public nsWrapperCache {
   nsString mName;
 };
 
-#endif /* nsMimeTypeArray_h___ */
+#endif /* nsMimeTypeArray_h_ */

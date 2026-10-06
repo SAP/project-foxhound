@@ -105,6 +105,8 @@
   flex: 1 1 auto;
   height: auto;
   overflow: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .network-monitor .http-custom-input-and-map-form :is(.http-custom-input, .map-add-new-inputs) {
@@ -133,7 +135,13 @@
   padding-bottom: 2px;
 }
 
+#http-custom-postdata {
+  flex-grow: 1;
+  flex-wrap: nowrap;
+}
+
 #http-custom-postdata-value.tabpanel-summary-input {
+  height: 100%;
   padding-inline-start: 14px;
 }
 

@@ -34,11 +34,14 @@ const ICONS = {
     "chrome://devtools/skin/images/application-manifest.svg",
   [PAGE_TYPES.SERVICE_WORKERS]:
     "chrome://devtools/skin/images/debugging-workers.svg",
+  [PAGE_TYPES.SESSION_HISTORY]:
+    "chrome://devtools/skin/images/application-session-history.svg",
 };
 
 const LOCALIZATION_IDS = {
   [PAGE_TYPES.MANIFEST]: "sidebar-item-manifest",
   [PAGE_TYPES.SERVICE_WORKERS]: "sidebar-item-service-workers",
+  [PAGE_TYPES.SESSION_HISTORY]: "sidebar-item-session-history",
 };
 
 class SidebarItem extends PureComponent {

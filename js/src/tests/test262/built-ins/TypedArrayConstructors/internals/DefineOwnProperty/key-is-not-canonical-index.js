@@ -95,6 +95,6 @@ testWithTypedArrayConstructors(function(TA) {
     );
     assert.sameValue(Object.getOwnPropertyDescriptor(sample4, key), undefined);
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

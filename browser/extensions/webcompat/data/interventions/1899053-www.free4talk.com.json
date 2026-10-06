@@ -1,0 +1,18 @@
+{
+  "label": "www.free4talk.com",
+  "bugs": {
+    "1899053": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://www.free4talk.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "content_scripts": {
+        "js": ["define_minimal_window_chrome.js"]
+      },
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

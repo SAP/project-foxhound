@@ -26,14 +26,14 @@ pub enum LabeledCounterMetric {
     Child { id: BaseMetricId, label: String },
 }
 
-crate::define_metric_metadata_getter!(
+define_metric_metadata_getter!(
     CounterMetric,
     LabeledCounterMetric,
     COUNTER_MAP,
     LABELED_COUNTER_MAP
 );
 
-crate::define_metric_namer!(LabeledCounterMetric, LABELED);
+define_metric_namer!(LabeledCounterMetric, LABELED);
 
 impl LabeledCounterMetric {
     /// Create a new labeled counter submetric.
@@ -70,7 +70,7 @@ impl Counter for LabeledCounterMetric {
             LabeledCounterMetric::Parent(p) => p.add(amount),
             LabeledCounterMetric::Child { id, label } => {
                 #[cfg(feature = "with_gecko")]
-                if gecko_profiler::can_accept_markers() {
+                if gecko_profiler::current_thread_is_being_profiled_for_markers() {
                     gecko_profiler::add_marker(
                         "LabeledCounter::add",
                         super::profiler_utils::TelemetryProfilerCategory,
@@ -101,27 +101,6 @@ impl Counter for LabeledCounterMetric {
 
     /// **Test-only API.**
     ///
-    /// Get the currently stored value as an integer.
-    /// This doesn't clear the stored value.
-    ///
-    /// ## Arguments
-    ///
-    /// * `ping_name` - the storage name to look into.
-    ///
-    /// ## Return value
-    ///
-    /// Returns the stored value or `None` if nothing stored.
-    pub fn test_get_value<'a, S: Into<Option<&'a str>>>(&self, ping_name: S) -> Option<i32> {
-        match self {
-            LabeledCounterMetric::Parent(p) => p.test_get_value(ping_name),
-            LabeledCounterMetric::Child { id, .. } => {
-                panic!("Cannot get test value for {:?} in non-parent process!", id)
-            }
-        }
-    }
-
-    /// **Test-only API.**
-    ///
     /// Gets the number of recorded errors for the given metric and error type.
     ///
     /// # Arguments
@@ -140,6 +119,32 @@ impl Counter for LabeledCounterMetric {
                 "Cannot get the number of recorded errors for {:?} in non-parent process!",
                 id
             ),
+        }
+    }
+}
+
+#[inherent]
+impl glean::TestGetValue for LabeledCounterMetric {
+    type Output = i32;
+
+    /// **Test-only API.**
+    ///
+    /// Get the currently stored value as an integer.
+    /// This doesn't clear the stored value.
+    ///
+    /// ## Arguments
+    ///
+    /// * `ping_name` - the storage name to look into.
+    ///
+    /// ## Return value
+    ///
+    /// Returns the stored value or `None` if nothing stored.
+    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<i32> {
+        match self {
+            LabeledCounterMetric::Parent(p) => p.test_get_value(ping_name),
+            LabeledCounterMetric::Child { id, .. } => {
+                panic!("Cannot get test value for {:?} in non-parent process!", id)
+            }
         }
     }
 }
@@ -171,7 +176,10 @@ mod test {
 
         assert_eq!(
             1,
-            metric.get("a_label").test_get_value("test-ping").unwrap()
+            metric
+                .get("a_label")
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap()
         );
     }
 
@@ -239,7 +247,7 @@ mod test {
             45,
             parent_metric
                 .get(label)
-                .test_get_value("test-ping")
+                .test_get_value(Some("test-ping".to_string()))
                 .unwrap(),
             "Values from the 'processes' should be summed"
         );

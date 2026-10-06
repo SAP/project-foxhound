@@ -1,16 +1,16 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ImageBitmapRenderingContext.h"
-#include "gfxPlatform.h"
+
+#include "ImageContainer.h"
 #include "gfx2DGlue.h"
+#include "gfxPlatform.h"
 #include "mozilla/dom/ImageBitmapRenderingContextBinding.h"
 #include "mozilla/gfx/Types.h"
 #include "nsComponentManagerUtils.h"
 #include "nsRegion.h"
-#include "ImageContainer.h"
 
 namespace mozilla::dom {
 
@@ -164,7 +164,8 @@ ImageBitmapRenderingContext::MatchWithIntrinsicSize() {
 }
 
 mozilla::UniquePtr<uint8_t[]> ImageBitmapRenderingContext::GetImageBuffer(
-    int32_t* aFormat, gfx::IntSize* aImageSize) {
+    mozilla::CanvasUtils::ImageExtraction aExtractionBehavior, int32_t* aFormat,
+    gfx::IntSize* aImageSize) {
   *aFormat = 0;
   *aImageSize = {};
 
@@ -193,20 +194,27 @@ mozilla::UniquePtr<uint8_t[]> ImageBitmapRenderingContext::GetImageBuffer(
 
   UniquePtr<uint8_t[]> ret = gfx::SurfaceToPackedBGRA(data);
 
-  if (ret && ShouldResistFingerprinting(RFPTarget::CanvasRandomization)) {
-    nsRFPService::RandomizePixels(
-        GetCookieJarSettings(), PrincipalOrNull(), ret.get(),
-        data->GetSize().width, data->GetSize().height,
-        data->GetSize().width * data->GetSize().height * 4,
-        gfx::SurfaceFormat::A8R8G8B8_UINT32);
+  if (ret) {
+    nsRFPService::PotentiallyDumpImage(
+        PrincipalOrNull(), ret.get(), data->GetSize().width,
+        data->GetSize().height,
+        data->GetSize().width * data->GetSize().height * 4);
+    if (aExtractionBehavior == CanvasUtils::ImageExtraction::Randomize) {
+      nsRFPService::RandomizePixels(
+          GetCookieJarSettings(), PrincipalOrNull(), ret.get(),
+          data->GetSize().width, data->GetSize().height,
+          data->GetSize().width * data->GetSize().height * 4,
+          gfx::SurfaceFormat::A8R8G8B8_UINT32);
+    }
   }
   return ret;
 }
 
 NS_IMETHODIMP
-ImageBitmapRenderingContext::GetInputStream(const char* aMimeType,
-                                            const nsAString& aEncoderOptions,
-                                            nsIInputStream** aStream) {
+ImageBitmapRenderingContext::GetInputStream(
+    const char* aMimeType, const nsAString& aEncoderOptions,
+    mozilla::CanvasUtils::ImageExtraction aExtractionBehavior,
+    const nsACString& aRandomizationKey, nsIInputStream** aStream) {
   nsCString enccid("@mozilla.org/image/encoder;2?type=");
   enccid += aMimeType;
   nsCOMPtr<imgIEncoder> encoder = do_CreateInstance(enccid.get());
@@ -216,14 +224,15 @@ ImageBitmapRenderingContext::GetInputStream(const char* aMimeType,
 
   int32_t format = 0;
   gfx::IntSize imageSize = {};
-  UniquePtr<uint8_t[]> imageBuffer = GetImageBuffer(&format, &imageSize);
+  UniquePtr<uint8_t[]> imageBuffer =
+      GetImageBuffer(aExtractionBehavior, &format, &imageSize);
   if (!imageBuffer) {
     return NS_ERROR_FAILURE;
   }
 
-  return ImageEncoder::GetInputStream(imageSize.width, imageSize.height,
-                                      imageBuffer.get(), format, encoder,
-                                      aEncoderOptions, aStream);
+  return ImageEncoder::GetInputStream(
+      imageSize.width, imageSize.height, imageBuffer.get(), format, encoder,
+      aEncoderOptions, aRandomizationKey, aStream);
 }
 
 already_AddRefed<mozilla::gfx::SourceSurface>

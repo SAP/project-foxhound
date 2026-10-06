@@ -80,25 +80,25 @@ MOZ_RUNINIT  static Mover<HasString> bad_mem; // expected-note {{instantiation o
 static Mover<std::pair<bool, int>> good;
 MOZ_RUNINIT static Mover<std::pair<bool, std::string>> not_good; // expected-note-re {{instantiation of 'Mover<std::pair<bool, std::basic_string<char>{{ ?}}>{{ ?}}>' requested here}}
 
-MOZ_RUNINIT  static Mover<std::has_nontrivial_dtor> nontrivial_dtor; // expected-note {{instantiation of 'Mover<std::has_nontrivial_dtor>' requested here}}
+static Mover<std::has_nontrivial_dtor> nontrivial_dtor; // expected-note {{instantiation of 'Mover<std::has_nontrivial_dtor>' requested here}}
 static Mover<std::has_nontrivial_copy> nontrivial_copy; // expected-note {{instantiation of 'Mover<std::has_nontrivial_copy>' requested here}}
 static Mover<std::has_nontrivial_move> nontrivial_move; // expected-note {{instantiation of 'Mover<std::has_nontrivial_move>' requested here}}
 static Mover<std::has_trivial_dtor> trivial_dtor;
 static Mover<std::has_trivial_copy> trivial_copy;
 static Mover<std::has_trivial_move> trivial_move;
 
-MOZ_RUNINIT  static Mover<std::pair<bool, std::has_nontrivial_dtor>> pair_nontrivial_dtor; // expected-note {{instantiation of 'Mover<std::pair<bool, std::has_nontrivial_dtor>>' requested here}}
+static Mover<std::pair<bool, std::has_nontrivial_dtor>> pair_nontrivial_dtor; // expected-note {{instantiation of 'Mover<std::pair<bool, std::has_nontrivial_dtor>>' requested here}}
 static Mover<std::pair<bool, std::has_nontrivial_copy>> pair_nontrivial_copy; // expected-note {{instantiation of 'Mover<std::pair<bool, std::has_nontrivial_copy>>' requested here}}
 static Mover<std::pair<bool, std::has_nontrivial_move>> pair_nontrivial_move; // expected-note {{instantiation of 'Mover<std::pair<bool, std::has_nontrivial_move>>' requested here}}
 static Mover<std::pair<bool, std::has_trivial_dtor>> pair_trivial_dtor;
 static Mover<std::pair<bool, std::has_trivial_copy>> pair_trivial_copy;
 static Mover<std::pair<bool, std::has_trivial_move>> pair_trivial_move;
 
-MOZ_RUNINIT static Mover<std::unique_ptr<int>> a_good_unique_ptr;
+static Mover<std::unique_ptr<int>> a_good_unique_ptr;
 
 // unique_ptr don't require memmove()able 1st template argument
-MOZ_RUNINIT static Mover<std::unique_ptr<std::string>> another_good_unique_ptr;
-MOZ_RUNINIT static Mover<std::unique_ptr<std::string, custom_deleter<std::string>>> bad_unique_ptr; // expected-note {{instantiation of 'Mover<std::unique_ptr<std::basic_string<char>, custom_deleter<std::basic_string<char>>>>' requested here}}
+static Mover<std::unique_ptr<std::string>> another_good_unique_ptr;
+static Mover<std::unique_ptr<std::string, custom_deleter<std::string>>> bad_unique_ptr; // expected-note {{instantiation of 'Mover<std::unique_ptr<std::basic_string<char>, custom_deleter<std::basic_string<char>>>>' requested here}}
 
 struct Fwd;
 // Not enough information to complain

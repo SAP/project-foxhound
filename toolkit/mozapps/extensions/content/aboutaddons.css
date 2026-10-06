@@ -5,16 +5,16 @@
 :root {
   --addon-icon-size: 32px;
   --main-margin-start: 28px;
-  --sidebar-width: var(--in-content-sidebar-width);
+  --sidebar-width: var(--size-sidebar);
   --z-index-sticky-container: 5;
   --z-index-popup: 10;
 }
 
-@media (max-width: 830px) {
+@media (max-width: 950px) {
   :root {
     --main-margin-start: 16px;
     /* Maintain a main margin so card shadows don't overlap the sidebar. */
-    --sidebar-width: calc(var(--in-content-sidebar-width) - var(--main-margin-start));
+    --sidebar-width: calc(var(--size-sidebar-narrow) - var(--main-margin-start));
   }
 }
 
@@ -25,7 +25,7 @@
 body {
   cursor: default;
   /* The page starts to look really bad lower than this. */
-  min-width: 500px;
+  min-width: var(--size-layout-xlarge);
 }
 
 h1 {
@@ -51,81 +51,20 @@ h2 {
   overflow: hidden auto;
 }
 
-@media (prefers-reduced-motion) {
-  /* Setting border-inline-end on #sidebar makes it a focusable element */
-  #sidebar::after {
-    content: "";
-    width: 1px;
-    height: 100%;
-    background-color: var(--in-content-border-color);
-    top: 0;
-    inset-inline-end: 0;
-    position: absolute;
-  }
-}
-
-#categories {
-  display: flex;
-  flex-direction: column;
-  padding-inline-end: 4px; /* Leave space for the button focus styles. */
-}
-
-.category {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  margin-block: 0;
-  align-items: center;
-  font-weight: normal;
-}
-
-.category[badge-count]::after {
-  display: inline-block;
-  min-width: 20px;
+.category-badge {
+  min-width: var(--dimension-20);
   background-color: var(--color-accent-primary);
-  color: var(--in-content-primary-button-text-color);
-  font-weight: bold;
+  color: var(--button-text-color-primary);
+  font-weight: var(--font-weight-bold);
   /* Use a large border-radius to get semi-circles on the sides. */
-  border-radius: 1000px;
-  padding: 2px 6px;
-  content: attr(badge-count);
+  border-radius: var(--border-radius-circle);
+  padding: var(--space-xxsmall) var(--space-small);
   text-align: center;
-  margin-inline-start: 8px;
-  grid-column: 2;
-}
-
-.category[name="discover"] {
-  background-image: url("chrome://global/skin/icons/trophy.svg");
-}
-.category[name="locale"] {
-  background-image: url("chrome://mozapps/skin/extensions/category-languages.svg");
-}
-.category[name="extension"] {
-  background-image: url("chrome://mozapps/skin/extensions/category-extensions.svg");
-}
-.category[name="theme"] {
-  background-image: url("chrome://mozapps/skin/extensions/category-themes.svg");
-}
-.category[name="plugin"] {
-  background-image: url("chrome://mozapps/skin/extensions/category-plugins.svg");
-}
-.category[name="dictionary"] {
-  background-image: url("chrome://mozapps/skin/extensions/category-dictionaries.svg");
-}
-.category[name="available-updates"] {
-  background-image: url("chrome://mozapps/skin/extensions/category-available.svg");
-}
-.category[name="recent-updates"] {
-  background-image: url("chrome://mozapps/skin/extensions/category-recent.svg");
-}
-.category[name="sitepermission"] {
-  background-image: url("chrome://mozapps/skin/extensions/category-sitepermission.svg");
-}
-.category[name="mlmodel"] {
-  background-image: url("chrome://global/skin/icons/highlights.svg");
+  margin-inline-start: auto;
 }
 
 .sticky-container {
-  background: var(--in-content-page-background);
+  background: var(--background-color-canvas);
   width: 100%;
   position: sticky;
   top: 0;
@@ -133,13 +72,13 @@ h2 {
 }
 
 .main-search {
-  background: var(--in-content-page-background);
+  background: var(--background-color-canvas);
   display: flex;
   justify-content: flex-end;
   align-items: center;
   padding-inline-start: 28px;
   padding-top: 20px;
-  padding-bottom: 30px;
+  padding-bottom: var(--space-small);
   max-width: var(--page-main-content-width);
 }
 
@@ -160,7 +99,7 @@ search-addons {
 }
 
 .main-heading {
-  background: var(--in-content-page-background);
+  background: var(--background-color-canvas);
   display: flex;
   margin-inline-start: var(--main-margin-start);
   padding-bottom: 16px;
@@ -211,7 +150,7 @@ message-bar-stack > * {
 
 .list-section-subheading {
   font-size: 0.9em;
-  font-weight: 400;
+  font-weight: normal;
   margin-block-start: 0.5em;
 }
 
@@ -238,11 +177,11 @@ addon-list:not([type="theme"]) addon-card:not([expanded]):not([panelopen]) > .ad
 }
 
 .addon.card:hover {
-  box-shadow: var(--box-shadow-card);
+  box-shadow: var(--card-box-shadow);
 }
 
 addon-card:not([expanded]) > .addon.card:hover {
-  box-shadow: var(--box-shadow-card-hover);
+  box-shadow: var(--card-box-shadow-hover);
   cursor: pointer;
 
   & .addon-name-link {
@@ -270,22 +209,20 @@ addon-list addon-card > .addon.card {
 }
 
 addon-card[expanded] .addon-card-message,
-addon-card[expanded] .update-postponed-bar {
+addon-card[expanded] .update-postponed-bar,
+.update-postponed-bar:has(+ .addon-card-message:not([hidden])) {
   border-radius: 0;
   margin-bottom: 0;
 }
 
-addon-card[expanded] .update-postponed-bar + .addon-card-message {
-  /* Remove margin between the two message bars when they are both
-   * visible in the detail view */
-  margin-top: 0;
+.update-postponed-bar:has(+ .addon-card-message:not([hidden])) {
+  border-bottom: none;
 }
 
-.update-postponed-bar + .addon-card-message:not([hidden]) {
-  /* Prevent the small overlapping between the two message bars
-   * when they are both visible at the same time one after the
-   * other on the same addon card */
-  margin-top: 12px;
+.update-postponed-bar:not([hidden]) + .addon-card-message {
+  /* Remove margin between the two message bars when they are both
+   * visible at the same time. */
+  margin-top: 0;
 }
 
 /* Theme preview image. */
@@ -324,7 +261,7 @@ addon-card[expanded] .update-postponed-bar + .addon-card-message {
 
 .addon-name {
   font-size: 16px;
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
   line-height: 22px;
   margin: 0;
   margin-inline-end: 8px;
@@ -332,7 +269,7 @@ addon-card[expanded] .update-postponed-bar + .addon-card-message {
 
 .addon-name-link,
 .addon-name-link:hover {
-  color: var(--in-content-text-color);
+  color: var(--text-color);
   text-decoration: none;
 }
 
@@ -374,7 +311,9 @@ addon-card[expanded] .update-postponed-bar + .addon-card-message {
 .addon-badge-recommended {
   background-image: url("chrome://global/skin/icons/trophy.svg");
   background-size: 14px;
-  fill: var(--orange-50);
+  /* This color will be removed once the icons are updated for Nova. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/no-base-design-tokens */
+  fill: #ff9400;
 }
 
 .addon-badge-line {
@@ -383,25 +322,20 @@ addon-card[expanded] .update-postponed-bar + .addon-card-message {
 }
 
 .addon-badge-verified {
-  background-color: var(--green-70);
+  background-color: var(--icon-color-success);
   background-image: url("chrome://global/skin/icons/check.svg");
+  fill: var(--background-color-canvas);
 }
 
 .theme-enable-button {
-  min-width: auto;
-  font-size: var(--font-size-small);
-  min-height: auto;
-  height: 24px;
-  margin: 0;
-  padding: 0 8px;
-  font-weight: normal;
+  padding-inline: var(--space-small);
 }
 
 .addon-description {
   font-size: 14px;
   line-height: 20px;
   color: var(--text-color-deemphasized);
-  font-weight: 400;
+  font-weight: normal;
 }
 
 /* Prevent the content from wrapping unless expanded. */
@@ -421,12 +355,6 @@ addon-card:not([expanded]) .addon-description {
 
 .page-options-menu {
   align-self: center;
-}
-
-.page-options-menu > .more-options-button {
-  background-image: url("chrome://global/skin/icons/settings.svg");
-  width: 32px;
-  height: 32px;
 }
 
 /* Recommended add-ons on list views */
@@ -537,8 +465,8 @@ button.addon-detail-description-toggle {
 .addon-detail-contribute {
   display: flex;
   padding: var(--card-padding);
-  border: 1px solid var(--in-content-box-border-color);
-  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-small);
   margin-bottom: var(--card-padding);
   flex-direction: column;
 }
@@ -568,10 +496,10 @@ button.addon-detail-description-toggle {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-top: 1px solid var(--in-content-border-color);
+  border-top: 1px solid var(--border-color);
   margin: 0 calc(var(--card-padding) * -1);
   padding: var(--card-padding);
-  color: var(--in-content-text-color);
+  color: var(--text-color);
 }
 
 .addon-detail-row.addon-detail-help-row {
@@ -607,31 +535,11 @@ button.addon-detail-description-toggle {
   margin-inline-start: 8px;
 }
 
-.more-options-button {
-  min-width: auto;
-  min-height: auto;
-  width: 24px;
-  height: 24px;
-  margin: 0;
-  margin-inline-start: 8px;
-  -moz-context-properties: fill;
-  fill: currentColor;
-  background-image: url("chrome://global/skin/icons/more.svg");
-  background-repeat: no-repeat;
-  background-position: center center;
-  /* Get the -badged ::after element in the right spot. */
-  padding: 1px;
-  display: flex;
-  justify-content: flex-end;
-}
-
-.more-options-button-badged::after {
-  content: "";
-  display: block;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background-color: var(--color-accent-primary);
+addon-card .more-options-button {
+  margin-inline-start: var(--space-small);
+  /* Override the attention badge color to match the one used by the
+   * "Available Updates" badge shown in the sidebar. */
+  --button-attention-dot-color: var(--color-accent-primary);
 }
 
 panel-item[action="remove"]::part(button) {
@@ -725,8 +633,26 @@ addon-permissions-list > .addon-detail-row {
   }
 }
 
-.permission-header {
+.permission-header,
+.permission-subheader {
   font-size: 1em;
+  margin: 0;
+}
+
+.addon-permissions-list-wrapper {
+  color: var(--text-color);
+  padding: var(--space-large) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-small);
+}
+
+.permission-subsection {
+  padding-bottom: var(--space-xsmall);
+}
+
+addon-permissions-list .addon-permissions-list-wrapper:not(:first-child) {
+  border-top: 1px solid var(--border-color);
 }
 
 .tab-group {
@@ -734,8 +660,8 @@ addon-permissions-list > .addon-detail-row {
   margin-top: 8px;
   /* Pull the buttons flush with the side of the card */
   margin-inline: calc(var(--card-padding) * -1);
-  border-bottom: 1px solid var(--in-content-border-color);
-  border-top: 1px solid var(--in-content-border-color);
+  border-bottom: 1px solid var(--border-color);
+  border-top: 1px solid var(--border-color);
   font-size: 0;
   line-height: 0;
 }
@@ -753,7 +679,7 @@ button.tab-button {
 }
 
 button.tab-button:hover {
-  border-top-color: var(--in-content-box-border-color);
+  border-top-color: var(--border-color);
 }
 
 button.tab-button[selected],
@@ -765,8 +691,8 @@ button.tab-button[selected]:hover {
 @media (prefers-contrast) {
   button.tab-button[selected],
   button.tab-button[selected]:hover {
-    color: var(--in-content-primary-button-text-color);
-    background-color: var(--in-content-primary-button-background);
+    color: var(--button-text-color-primary);
+    background-color: var(--button-background-color-primary);
   }
 }
 
@@ -783,20 +709,26 @@ section:not(:empty) ~ #empty-addons-message {
   display: none;
 }
 
-@media (max-width: 830px) {
-  .category[badge-count]::after {
+.permission-header > .addon-sitepermissions-host {
+  font-weight: var(--font-weight-bold);
+}
+
+/* Position the badged dot in the top-end (right in ltr, left in rtl)
+ * corner of the badged category icon. */
+@media (max-width: 950px) {
+  moz-page-nav-button {
+    position: relative;
+  }
+
+  moz-page-nav-button[badged-category]::after {
     content: "";
+    position: absolute;
+    top: var(--space-xsmall);
+    inset-inline-end: var(--space-xsmall);
     display: block;
     width: 5px;
     height: 5px;
-    border-radius: 50%;
-    min-width: auto;
-    padding: 0;
-    /* move the badged dot into the top-end (right in ltr, left in rtl) corner. */
-    margin-top: -20px;
+    border-radius: var(--border-radius-circle);
+    background-color: var(--color-accent-primary);
   }
-}
-
-.permission-header > .addon-sitepermissions-host {
-  font-weight: bolder;
 }

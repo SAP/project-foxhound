@@ -3,7 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 task-defaults:
-    worker-type: t-linux-docker
+    worker-type: t-linux-docker-amd
     attributes:
         code-review: true
     worker:
@@ -13,10 +13,14 @@ task-defaults:
             - type: file
               name: public/code-review/issues.json
               path: /builds/worker/issues.json
+            - type: file
+              name: public/code-review/vcs-diff.diff
+              path: /builds/worker/vcs-diff.diff
     treeherder:
         kind: test
         tier: 1
     platform: lint/opt
+    run-on-repo-type: [hg]
     run:
         using: run-task
 
@@ -30,7 +34,7 @@ rust:
     run:
         cwd: '{checkout}'
         command: >-
-            ./mach vendor rust --issues-json /builds/worker/issues.json
+            ./mach vendor rust --issues-json /builds/worker/issues.json --vcs-diff /builds/worker/vcs-diff.diff
     fetches:
         toolchain:
             - linux64-cargo-vet

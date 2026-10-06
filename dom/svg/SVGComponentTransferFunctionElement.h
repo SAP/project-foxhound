@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,7 +20,7 @@ class SVGComponentTransferFunctionElement
     : public SVGComponentTransferFunctionElementBase {
  protected:
   explicit SVGComponentTransferFunctionElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : SVGComponentTransferFunctionElementBase(std::move(aNodeInfo)) {}
 
   virtual ~SVGComponentTransferFunctionElement() = default;
@@ -76,18 +74,17 @@ class SVGComponentTransferFunctionElement
 }  // namespace mozilla::dom
 
 nsresult NS_NewSVGFEFuncRElement(
-    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
 namespace mozilla::dom {
 
 class SVGFEFuncRElement : public SVGComponentTransferFunctionElement {
   friend nsresult(::NS_NewSVGFEFuncRElement(
       nsIContent** aResult,
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo));
 
  protected:
-  explicit SVGFEFuncRElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+  explicit SVGFEFuncRElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : SVGComponentTransferFunctionElement(std::move(aNodeInfo)) {}
 
  public:
@@ -102,18 +99,17 @@ class SVGFEFuncRElement : public SVGComponentTransferFunctionElement {
 }  // namespace mozilla::dom
 
 nsresult NS_NewSVGFEFuncGElement(
-    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
 namespace mozilla::dom {
 
 class SVGFEFuncGElement : public SVGComponentTransferFunctionElement {
   friend nsresult(::NS_NewSVGFEFuncGElement(
       nsIContent** aResult,
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo));
 
  protected:
-  explicit SVGFEFuncGElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+  explicit SVGFEFuncGElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : SVGComponentTransferFunctionElement(std::move(aNodeInfo)) {}
 
  public:
@@ -128,18 +124,17 @@ class SVGFEFuncGElement : public SVGComponentTransferFunctionElement {
 }  // namespace mozilla::dom
 
 nsresult NS_NewSVGFEFuncBElement(
-    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
 namespace mozilla::dom {
 
 class SVGFEFuncBElement : public SVGComponentTransferFunctionElement {
   friend nsresult(::NS_NewSVGFEFuncBElement(
       nsIContent** aResult,
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo));
 
  protected:
-  explicit SVGFEFuncBElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+  explicit SVGFEFuncBElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : SVGComponentTransferFunctionElement(std::move(aNodeInfo)) {}
 
  public:
@@ -154,18 +149,17 @@ class SVGFEFuncBElement : public SVGComponentTransferFunctionElement {
 }  // namespace mozilla::dom
 
 nsresult NS_NewSVGFEFuncAElement(
-    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
 namespace mozilla::dom {
 
 class SVGFEFuncAElement : public SVGComponentTransferFunctionElement {
   friend nsresult(::NS_NewSVGFEFuncAElement(
       nsIContent** aResult,
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo));
 
  protected:
-  explicit SVGFEFuncAElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+  explicit SVGFEFuncAElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : SVGComponentTransferFunctionElement(std::move(aNodeInfo)) {}
 
  public:

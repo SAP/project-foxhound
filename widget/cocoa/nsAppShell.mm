@@ -1,5 +1,3 @@
-/* -*- tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -71,13 +69,24 @@ class MacWakeLockListener final : public nsIDOMMozWakeLockListener {
  private:
   ~MacWakeLockListener() {}
 
-  IOPMAssertionID mAssertionNoDisplaySleepID = kIOPMNullAssertionID;
-  IOPMAssertionID mAssertionNoIdleSleepID = kIOPMNullAssertionID;
+  struct TopicAssertion {
+    const CFStringRef type = nullptr;
+    IOPMAssertionID id = kIOPMNullAssertionID;
+  };
+
+  // For video and screen locks, we want to keep the display on. For the others,
+  // we just want to prevent system sleep.
+  TopicAssertion mScreenAssertion{kIOPMAssertionTypeNoDisplaySleep};
+  TopicAssertion mVideoAssertion{kIOPMAssertionTypeNoDisplaySleep};
+
+  TopicAssertion mAudioAssertion{kIOPMAssertionTypeNoIdleSleep};
+  TopicAssertion mDownloadAssertion{kIOPMAssertionTypeNoIdleSleep};
 
   NS_IMETHOD Callback(const nsAString& aTopic,
                       const nsAString& aState) override {
     if (!aTopic.EqualsASCII("screen") && !aTopic.EqualsASCII("audio-playing") &&
-        !aTopic.EqualsASCII("video-playing")) {
+        !aTopic.EqualsASCII("video-playing") &&
+        !aTopic.EqualsASCII("download-in-progress")) {
       return NS_OK;
     }
 
@@ -88,22 +97,25 @@ class MacWakeLockListener final : public nsIDOMMozWakeLockListener {
       return NS_OK;
     }
 
-    bool shouldKeepDisplayOn =
-        aTopic.EqualsASCII("screen") || aTopic.EqualsASCII("video-playing");
-    CFStringRef assertionType = shouldKeepDisplayOn
-                                    ? kIOPMAssertionTypeNoDisplaySleep
-                                    : kIOPMAssertionTypeNoIdleSleep;
-    IOPMAssertionID& assertionId = shouldKeepDisplayOn
-                                       ? mAssertionNoDisplaySleepID
-                                       : mAssertionNoIdleSleepID;
-    WAKE_LOCK_LOG("topic=%s, state=%s, shouldKeepDisplayOn=%d",
-                  NS_ConvertUTF16toUTF8(aTopic).get(),
-                  NS_ConvertUTF16toUTF8(aState).get(), shouldKeepDisplayOn);
+    // Each topic gets its own assertion ID so that one topic releasing its lock
+    // (e.g. audio stops) does not inadvertently drop the lock held by another
+    // (e.g. an active download).
+    TopicAssertion& assertion =
+        aTopic.EqualsASCII("screen")          ? mScreenAssertion
+        : aTopic.EqualsASCII("video-playing") ? mVideoAssertion
+        : aTopic.EqualsASCII("audio-playing") ? mAudioAssertion
+                                              : mDownloadAssertion;
+    WAKE_LOCK_LOG("topic=%s, state=%s", NS_ConvertUTF16toUTF8(aTopic).get(),
+                  NS_ConvertUTF16toUTF8(aState).get());
 
     // Note the wake lock code ensures that we're not sent duplicate
     // "locked-foreground" notifications when multiple wake locks are held.
-    if (aState.EqualsASCII("locked-foreground")) {
-      if (assertionId != kIOPMNullAssertionID) {
+    // Downloads are windowless and always report "locked-background", so hold
+    // the lock for them despite the state that would otherwise release it.
+    if (aState.EqualsASCII("locked-foreground") ||
+        (aState.EqualsASCII("locked-background") &&
+         aTopic.EqualsASCII("download-in-progress"))) {
+      if (assertion.id != kIOPMNullAssertionID) {
         WAKE_LOCK_LOG("already has a lock");
         return NS_OK;
       }
@@ -112,7 +124,7 @@ class MacWakeLockListener final : public nsIDOMMozWakeLockListener {
           kCFAllocatorDefault, reinterpret_cast<const UniChar*>(aTopic.Data()),
           aTopic.Length());
       IOReturn success = ::IOPMAssertionCreateWithName(
-          assertionType, kIOPMAssertionLevelOn, cf_topic, &assertionId);
+          assertion.type, kIOPMAssertionLevelOn, cf_topic, &assertion.id);
       CFRelease(cf_topic);
       if (success != kIOReturnSuccess) {
         WAKE_LOCK_LOG("failed to disable screensaver");
@@ -120,13 +132,13 @@ class MacWakeLockListener final : public nsIDOMMozWakeLockListener {
       WAKE_LOCK_LOG("create screensaver");
     } else {
       // Re-enable screen saver.
-      if (assertionId != kIOPMNullAssertionID) {
-        IOReturn result = ::IOPMAssertionRelease(assertionId);
+      if (assertion.id != kIOPMNullAssertionID) {
+        IOReturn result = ::IOPMAssertionRelease(assertion.id);
         if (result != kIOReturnSuccess) {
           WAKE_LOCK_LOG("failed to release screensaver");
         }
         WAKE_LOCK_LOG("Release screensaver");
-        assertionId = kIOPMNullAssertionID;
+        assertion.id = kIOPMNullAssertionID;
       }
     }
     return NS_OK;
@@ -228,8 +240,8 @@ nsAppShell::ResumeNative(void) {
 nsAppShell::nsAppShell()
     : mAutoreleasePools(nullptr),
       mDelegate(nullptr),
-      mCFRunLoop(NULL),
-      mCFRunLoopSource(NULL),
+      mCFRunLoop(nullptr),
+      mCFRunLoopSource(nullptr),
       mRunningEventLoop(false),
       mStarted(false),
       mTerminated(false),
@@ -337,13 +349,11 @@ void nsAppShell::OnRunLoopActivityChanged(CFRunLoopActivity aActivity) {
           profilingStack.pushLabelFrame("Native event loop idle", nullptr,
                                         &variableOnStack,
                                         JS::ProfilingCategoryPair::IDLE, 0);
-          profiler_thread_sleep();
         });
   } else {
     if (mProfilingStackWhileWaiting) {
       mProfilingStackWhileWaiting->pop();
       mProfilingStackWhileWaiting = nullptr;
-      profiler_thread_wake();
     }
   }
 }
@@ -373,7 +383,11 @@ nsresult nsAppShell::Init() {
   mAutoreleasePools = ::CFArrayCreateMutable(nullptr, 0, nullptr);
   NS_ENSURE_STATE(mAutoreleasePools);
 
+  // Don't call -[NSBundle loadNibNamed:owner:options:] for child process types
+  // that don't need graphics. The loadNibNamed call triggers some graphics-
+  // related initialization that is not needed for these process types.
   bool isNSApplicationProcessType =
+      (XRE_GetProcessType() != GeckoProcessType_Content) &&
       (XRE_GetProcessType() != GeckoProcessType_RDD) &&
       (XRE_GetProcessType() != GeckoProcessType_Socket);
 
@@ -498,7 +512,7 @@ void nsAppShell::ProcessGeckoEvents(void* aInfo) {
                                    modifierFlags:0
                                        timestamp:0
                                     windowNumber:0
-                                         context:NULL
+                                         context:nullptr
                                          subtype:kEventSubtypeNone
                                            data1:0
                                            data2:0]
@@ -522,7 +536,7 @@ void nsAppShell::ProcessGeckoEvents(void* aInfo) {
                                    modifierFlags:0
                                        timestamp:0
                                     windowNumber:0
-                                         context:NULL
+                                         context:nullptr
                                          subtype:kEventSubtypeNone
                                            data1:0
                                            data2:0]
@@ -544,7 +558,7 @@ void nsAppShell::ProcessGeckoEvents(void* aInfo) {
                                    modifierFlags:0
                                        timestamp:0
                                     windowNumber:0
-                                         context:NULL
+                                         context:nullptr
                                          subtype:kEventSubtypeNone
                                            data1:0
                                            data2:0]
@@ -650,7 +664,7 @@ void nsAppShell::ScheduleNativeEventCallback() {
 }
 
 // Undocumented Cocoa Event Manager function, present in the same form since
-// at least OS X 10.6.
+// at least macOS 10.6.
 extern "C" EventAttributes GetEventAttributes(EventRef inEvent);
 
 // ProcessNextNativeEvent
@@ -686,14 +700,12 @@ bool nsAppShell::ProcessNextNativeEvent(bool aMayWait) {
 
   NSRunLoop* currentRunLoop = [NSRunLoop currentRunLoop];
 
-  EventQueueRef currentEventQueue = GetCurrentEventQueue();
-
   if (aMayWait) {
     mozilla::BackgroundHangMonitor().NotifyWait();
   }
 
   // Only call -[NSApp sendEvent:] (and indirectly send user-input events to
-  // Gecko) if aMayWait is true.  Tbis ensures most calls to -[NSApp
+  // Gecko) if aMayWait is true.  This ensures most calls to -[NSApp
   // sendEvent:] happen under nsAppShell::Run(), at the lowest level of
   // recursion -- thereby making it less likely Gecko will process user-input
   // events in the wrong order or skip some of them.  It also avoids eating
@@ -783,9 +795,11 @@ bool nsAppShell::ProcessNextNativeEvent(bool aMayWait) {
   } while (mRunningEventLoop);
 
   if (eventProcessed) {
-    moreEvents =
-        (AcquireFirstMatchingEventInQueue(currentEventQueue, 0, NULL,
-                                          kEventQueueOptionsNone) != NULL);
+    NSEvent* nextEvent = [NSApp nextEventMatchingMask:NSEventMaskAny
+                                            untilDate:nil
+                                               inMode:currentMode
+                                              dequeue:NO];
+    moreEvents = !!nextEvent;
   }
 
   mRunningEventLoop = wasRunningEventLoop;
@@ -1130,7 +1144,7 @@ void nsAppShell::OnMemoryPressureChanged(
 
 // Called by the OS after [MacApplicationDelegate applicationShouldTerminate:]
 // has returned NSTerminateNow.  This method "subclasses" and replaces the
-// OS's original implementation.  The only thing the orginal method does which
+// OS's original implementation.  The only thing the original method does which
 // we need is that it posts NSApplicationWillTerminateNotification.  Everything
 // else is unneeded (because it's handled elsewhere), or actively interferes
 // with Gecko's shutdown sequence.  For example the original terminate: method

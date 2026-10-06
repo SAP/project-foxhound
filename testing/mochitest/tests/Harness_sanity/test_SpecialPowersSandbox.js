@@ -121,7 +121,6 @@ add_task(async function () {
     },
     "SpecialPowers.loadChromeScript": async () => {
       let script = SpecialPowers.loadChromeScript(() => {
-        /* eslint-env mozilla/chrome-script */
         const resultPromise = (async () => {
           Assert.equal(1, 2, "Thing");
           Assert.equal(1, 1, "Hmm");

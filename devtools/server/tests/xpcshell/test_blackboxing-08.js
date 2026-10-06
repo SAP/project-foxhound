@@ -35,7 +35,10 @@ function run_test() {
     await setBreakpoint(threadFront, { sourceUrl: sourceFront.url, line: 11 });
 
     // 1. lets blackbox function a, and assert that we pause in b
-    const range = { start: { line: 6, column: 0 }, end: { line: 8, colum: 1 } };
+    const range = {
+      start: { line: 6, column: 0 },
+      end: { line: 8, column: 1 },
+    };
     blackBox(sourceFront, range);
     const paused = await resumeAndWaitForPause(threadFront);
     equal(paused.frame.where.line, 11, "paused inside of b");

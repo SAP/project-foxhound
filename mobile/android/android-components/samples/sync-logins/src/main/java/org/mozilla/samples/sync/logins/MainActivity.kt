@@ -9,6 +9,7 @@ import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.ListView
 import android.widget.Toast
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,15 +31,18 @@ import mozilla.components.service.fxa.PeriodicSyncConfig
 import mozilla.components.service.fxa.SyncConfig
 import mozilla.components.service.fxa.SyncEngine
 import mozilla.components.service.fxa.manager.FxaAccountManager
+import mozilla.components.service.fxa.manager.SCOPE_SESSION
+import mozilla.components.service.fxa.manager.SCOPE_SYNC
 import mozilla.components.service.fxa.sync.GlobalSyncableStoreProvider
 import mozilla.components.service.fxa.sync.SyncReason
 import mozilla.components.service.fxa.sync.SyncStatusObserver
 import mozilla.components.service.fxa.toAuthType
 import mozilla.components.service.sync.logins.SyncableLoginsStorage
+import mozilla.components.support.AppServicesInitializer
 import mozilla.components.support.base.log.Log
 import mozilla.components.support.base.log.sink.AndroidLogSink
+import mozilla.components.support.ktx.android.view.setupPersistentInsets
 import mozilla.components.support.rusthttp.RustHttpConfig
-import mozilla.components.support.rustlog.RustLog
 import kotlin.coroutines.CoroutineContext
 
 const val CLIENT_ID = "3c49430b43dfba77"
@@ -61,6 +65,10 @@ class MainActivity : AppCompatActivity(), LoginFragment.OnLoginCompleteListener,
             FxaConfig(FxaServer.Release, CLIENT_ID, REDIRECT_URL),
             DeviceConfig("A-C Logins Sync Sample", DeviceType.MOBILE, setOf()),
             SyncConfig(setOf(SyncEngine.Passwords), PeriodicSyncConfig()),
+            setOf(
+                SCOPE_SYNC,
+                SCOPE_SESSION,
+            ),
         )
     }
 
@@ -70,13 +78,15 @@ class MainActivity : AppCompatActivity(), LoginFragment.OnLoginCompleteListener,
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+        enableEdgeToEdge()
+        window.setupPersistentInsets()
 
-        RustLog.enable()
+        AppServicesInitializer.init(AppServicesInitializer.Config(null))
         RustHttpConfig.setClient(lazy { HttpURLConnectionClient() })
 
         Log.addSink(AndroidLogSink())
 
-        setContentView(R.layout.activity_main)
         job = Job()
 
         // Observe sync state changes.
@@ -147,11 +157,10 @@ class MainActivity : AppCompatActivity(), LoginFragment.OnLoginCompleteListener,
         }
     }
 
-    override fun onLoginComplete(code: String, state: String, action: String, fragment: LoginFragment) {
+    override fun onLoginComplete(code: String, state: String, action: String?, fragment: LoginFragment) {
         launch {
-            accountManager.finishAuthentication(
-                FxaAuthData(action.toAuthType(), code = code, state = state),
-            )
+            val authType = action?.toAuthType() ?: AuthType.Signin
+            accountManager.finishAuthentication(FxaAuthData(authType, code = code, state = state))
             supportFragmentManager.popBackStack()
         }
     }

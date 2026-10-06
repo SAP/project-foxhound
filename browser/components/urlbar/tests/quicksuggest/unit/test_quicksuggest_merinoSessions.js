@@ -11,7 +11,8 @@ add_setup(async () => {
   await QuickSuggestTestUtils.ensureQuickSuggestInit({
     prefs: [
       ["suggest.quicksuggest.sponsored", true],
-      ["quicksuggest.dataCollection.enabled", true],
+      ["quicksuggest.online.available", true],
+      ["quicksuggest.online.enabled", true],
     ],
   });
 });
@@ -146,18 +147,22 @@ function endEngagement({ controller, context = null, state = "engagement" }) {
     isPrivate: false,
   });
   let details = { selIndex: -1, result: { payload: {} } };
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  let quickSuggestProviderInstance = providersManager.getProvider(
+    UrlbarProviderQuickSuggest.name
+  );
 
   switch (state) {
     case "engagement":
-      UrlbarProviderQuickSuggest.onEngagement(context, controller, details);
-      UrlbarProviderQuickSuggest.onSearchSessionEnd(
+      quickSuggestProviderInstance.onEngagement(context, controller, details);
+      quickSuggestProviderInstance.onSearchSessionEnd(
         context,
         controller,
         details
       );
       break;
     case "abandonment":
-      UrlbarProviderQuickSuggest.onSearchSessionEnd(
+      quickSuggestProviderInstance.onSearchSessionEnd(
         context,
         controller,
         details

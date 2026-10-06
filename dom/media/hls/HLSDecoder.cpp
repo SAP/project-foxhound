@@ -1,30 +1,41 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "HLSDecoder.h"
+
 #include "AndroidBridge.h"
-#include "base/process_util.h"
 #include "DecoderTraits.h"
+#include "GeckoViewStreamListener.h"
 #include "HLSDemuxer.h"
 #include "HLSUtils.h"
 #include "JavaBuiltins.h"
+#include "JavaExceptions.h"
 #include "MediaContainerType.h"
 #include "MediaDecoderStateMachine.h"
 #include "MediaFormatReader.h"
 #include "MediaShutdownManager.h"
+#include "base/process_util.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/ErrorNames.h"
+#include "mozilla/NullPrincipal.h"
+#include "mozilla/StaticPrefs_media.h"
+#include "mozilla/SyncRunnable.h"
+#include "mozilla/dom/HTMLMediaElement.h"
+#include "mozilla/glean/DomMediaHlsMetrics.h"
+#include "mozilla/java/GeckoAppShellWrappers.h"
 #include "mozilla/java/GeckoHLSResourceWrapperNatives.h"
+#include "mozilla/java/GeckoResultWrappers.h"
+#include "mozilla/java/WebMessageWrappers.h"
+#include "mozilla/java/WebRequestWrappers.h"
+#include "mozilla/widget/WebExecutorSupport.h"
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
+#include "nsIHttpChannel.h"
+#include "nsILoadInfo.h"
 #include "nsIURL.h"
 #include "nsNetUtil.h"
 #include "nsThreadUtils.h"
-#include "mozilla/dom/HTMLMediaElement.h"
-#include "mozilla/glean/DomMediaHlsMetrics.h"
-#include "mozilla/NullPrincipal.h"
-#include "mozilla/StaticPrefs_media.h"
 
 namespace mozilla {
 
@@ -44,11 +55,54 @@ class HLSResourceCallbacksSupport
   void OnLoad(jni::String::Param aUrl);
   void OnDataArrived();
   void OnError(int aErrorCode);
+  // Called by ExoPlayer on its loader thread to fetch HLS resource specified
+  // with a WebRequest. Returns a GeckoResult<WebResponse> that will be resolved
+  // on the Gecko main thread.
+  jni::Object::LocalRef OnOpenChannel(jni::Object::Param aRequest);
 
  private:
   ~HLSResourceCallbacksSupport() {}
+  void DoOpenChannel(java::WebRequest::Param aRequest,
+                     java::GeckoResult::Param aResult);
+
   Mutex mMutex MOZ_UNANNOTATED;
   HLSDecoder* mDecoder;
+
+  // Listener to bridge Necko HTTP channel response back to the
+  // GeckoResult<WebResponse> returned by OnOpenChannel().
+  class GeckoHttpChannelListener final : public GeckoViewStreamListener {
+   public:
+    NS_INLINE_DECL_REFCOUNTING_INHERITED(GeckoHttpChannelListener,
+                                         GeckoViewStreamListener)
+
+    explicit GeckoHttpChannelListener(java::GeckoResult::Param aResult)
+        : mResult(aResult) {
+      MOZ_ASSERT(NS_IsMainThread());
+      MOZ_ASSERT(mResult);
+    }
+
+   protected:
+    void SendWebResponse(java::WebResponse::Param aResponse) override {
+      MOZ_ASSERT(mResult);
+      HLS_DEBUG("GeckoHttpChannelListener", "Status code=%" PRIi32,
+                aResponse->StatusCode());
+      mResult->Complete(aResponse);
+      mResult = nullptr;
+    }
+
+    void CompleteWithError(nsresult aStatus, nsIChannel* aChannel) override {
+      MOZ_ASSERT(mResult);
+      HLS_DEBUG("GeckoHttpChannelListener", "error=%s",
+                format_as(aStatus).get());
+      widget::WebExecutorSupport::CompleteWithError(mResult, aStatus, aChannel);
+      mResult = nullptr;
+    }
+
+   private:
+    ~GeckoHttpChannelListener() = default;
+
+    java::GeckoResult::GlobalRef mResult;
+  };
 };
 
 HLSResourceCallbacksSupport::HLSResourceCallbacksSupport(HLSDecoder* aDecoder)
@@ -93,7 +147,7 @@ void HLSResourceCallbacksSupport::OnDataArrived() {
 }
 
 void HLSResourceCallbacksSupport::OnError(int aErrorCode) {
-  HLS_DEBUG("HLSResourceCallbacksSupport", "onError(%d)", aErrorCode);
+  HLS_DEBUG("HLSResourceCallbacksSupport", "onError({})", aErrorCode);
   MutexAutoLock lock(mMutex);
   if (!mDecoder) {
     return;
@@ -110,6 +164,116 @@ void HLSResourceCallbacksSupport::OnError(int aErrorCode) {
       }));
 }
 
+jni::Object::LocalRef HLSResourceCallbacksSupport::OnOpenChannel(
+    jni::Object::Param aRequest) {
+  MOZ_ASSERT(!NS_IsMainThread());
+
+  MutexAutoLock lock(mMutex);
+  if (!mDecoder) {
+    HLS_DEBUG("HLSResourceCallbacksSupport", "FAIL: already detached");
+    return nullptr;
+  }
+
+  auto result = java::GeckoResult::New();
+  NS_DispatchToMainThread(NS_NewRunnableFunction(
+      "HLSResourceCallbacksSupport::OnOpenChannel",
+      [self = RefPtr{this},
+       request =
+           java::WebRequest::GlobalRef{java::WebRequest::Ref::From(aRequest)},
+       result = java::GeckoResult::GlobalRef{result}]() {
+        self->DoOpenChannel(request, result);
+      }));
+
+  return jni::ToLocalRef(result);
+}
+
+void HLSResourceCallbacksSupport::DoOpenChannel(
+    java::WebRequest::Param aRequest, java::GeckoResult::Param aResult) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (!mDecoder) {
+    HLS_DEBUG("HLSResourceCallbacksSupport", "FAIL: already detached");
+    aResult->CompleteExceptionally(java::sdk::IllegalStateException::New(
+                                       jni::StringParam("already detached"_ns))
+                                       .Cast<jni::Throwable>());
+    return;
+  }
+  RefPtr<dom::HTMLMediaElement> element =
+      mDecoder->GetOwner()->GetMediaElement();
+  if (!element) {
+    HLS_DEBUG("HLSResourceCallbacksSupport", "FAIL: no media element");
+    aResult->CompleteExceptionally(java::sdk::IllegalStateException::New(
+                                       jni::StringParam("no media element"_ns))
+                                       .Cast<jni::Throwable>());
+    return;
+  }
+
+  const auto requestBase =
+      java::WebMessage::LocalRef(aRequest.Cast<java::WebMessage>());
+  const nsCString uriStr = requestBase->Uri()->ToCString();
+
+  HLS_DEBUG("HLSResourceCallbacksSupport", "URI=%s", uriStr.get());
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = NS_NewURI(getter_AddRefs(uri), uriStr);
+  if (NS_FAILED(rv)) {
+    HLS_DEBUG("HLSResourceCallbacksSupport",
+              "FAIL: cannot create URI, error=%s", format_as(rv).get());
+    widget::WebExecutorSupport::CompleteWithError(aResult, rv);
+    return;
+  }
+
+  nsCOMPtr<nsIChannel> newChannel;
+  nsCOMPtr<nsIPrincipal> triggeringPrincipal;
+  nsContentUtils::QueryTriggeringPrincipal(element,
+                                           getter_AddRefs(triggeringPrincipal));
+  nsSecurityFlags secFlags =
+      element->ShouldCheckAllowOrigin()
+          ? nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT
+          : nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT;
+  if (element->GetCORSMode() == CORS_USE_CREDENTIALS) {
+    secFlags |= nsILoadInfo::SEC_COOKIES_INCLUDE;
+  }
+  const auto contentType = element->IsHTMLElement(nsGkAtoms::audio)
+                               ? nsIContentPolicy::TYPE_INTERNAL_AUDIO
+                               : nsIContentPolicy::TYPE_INTERNAL_VIDEO;
+  rv = NS_NewChannelWithTriggeringPrincipal(getter_AddRefs(newChannel), uri,
+                                            element, triggeringPrincipal,
+                                            secFlags, contentType);
+  if (NS_FAILED(rv)) {
+    HLS_DEBUG("HLSResourceCallbacksSupport",
+              "FAIL: cannot create channel, error=%s", format_as(rv).get());
+    widget::WebExecutorSupport::CompleteWithError(aResult, rv);
+    return;
+  }
+
+  nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(newChannel);
+  if (httpChannel) {
+    const auto keys = requestBase->GetHeaderKeys();
+    const auto values = requestBase->GetHeaderValues();
+    for (size_t i = 0; i < keys->Length(); i++) {
+      nsAutoCString name{
+          jni::String::LocalRef(keys->GetElement(i))->ToCString()};
+      nsAutoCString value{
+          jni::String::LocalRef(values->GetElement(i))->ToCString()};
+      rv = httpChannel->SetRequestHeader(name, value, false);
+      if (NS_FAILED(rv)) {
+        HLS_DEBUG("HLSResourceCallbacksSupport",
+                  "WARN: cannot set header '%s: %s', error=%s", name.get(),
+                  value.get(), format_as(rv).get());
+      }
+    }
+  }
+
+  auto listener = MakeRefPtr<GeckoHttpChannelListener>(aResult);
+  newChannel->SetNotificationCallbacks(listener);
+  rv = newChannel->AsyncOpen(listener);
+  if (NS_FAILED(rv)) {
+    HLS_DEBUG("HLSResourceCallbacksSupport", "FAIL: cannot open, error=%s",
+              format_as(rv).get());
+    widget::WebExecutorSupport::CompleteWithError(aResult, rv, newChannel);
+  }
+}
+
 size_t HLSDecoder::sAllocatedInstances = 0;
 
 // static
@@ -124,17 +288,17 @@ RefPtr<HLSDecoder> HLSDecoder::Create(MediaDecoderInit& aInit) {
 HLSDecoder::HLSDecoder(MediaDecoderInit& aInit) : MediaDecoder(aInit) {
   MOZ_ASSERT(NS_IsMainThread());
   sAllocatedInstances++;
-  HLS_DEBUG("HLSDecoder", "HLSDecoder(): allocated=%zu", sAllocatedInstances);
+  HLS_DEBUG("HLSDecoder", "HLSDecoder(): allocated={}", sAllocatedInstances);
 }
 
 HLSDecoder::~HLSDecoder() {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(sAllocatedInstances > 0);
   sAllocatedInstances--;
-  HLS_DEBUG("HLSDecoder", "~HLSDecoder(): allocated=%zu", sAllocatedInstances);
+  HLS_DEBUG("HLSDecoder", "~HLSDecoder(): allocated={}", sAllocatedInstances);
 }
 
-MediaDecoderStateMachineBase* HLSDecoder::CreateStateMachine(
+already_AddRefed<MediaDecoderStateMachineBase> HLSDecoder::CreateStateMachine(
     bool aDisableExternalEngine) {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -151,10 +315,13 @@ MediaDecoderStateMachineBase* HLSDecoder::CreateStateMachine(
   mReader = new MediaFormatReader(
       init, new HLSDemuxer(mHLSResourceWrapper->GetPlayerId()));
 
-  return new MediaDecoderStateMachine(this, mReader);
+  return MakeAndAddRef<MediaDecoderStateMachine>(this, mReader);
 }
 
-bool HLSDecoder::IsEnabled() { return StaticPrefs::media_hls_enabled(); }
+bool HLSDecoder::IsEnabled() {
+  return StaticPrefs::media_hls_enabled() &&
+         !java::GeckoAppShell::IsIsolatedProcess();
+}
 
 bool HLSDecoder::IsSupportedType(const MediaContainerType& aContainerType) {
   return IsEnabled() && DecoderTraits::IsHttpLiveStreamingType(aContainerType);
@@ -170,10 +337,11 @@ nsresult HLSDecoder::Load(nsIChannel* aChannel) {
 
   mChannel = aChannel;
   nsCString spec;
-  Unused << mURI->GetSpec(spec);
+  (void)mURI->GetSpec(spec);
   mUsageRecorded = false;
 
   HLSResourceCallbacksSupport::Init();
+
   mJavaCallbacks = java::GeckoHLSResourceWrapper::Callbacks::New();
   mCallbackSupport = new HLSResourceCallbacksSupport(this);
   HLSResourceCallbacksSupport::AttachNative(mJavaCallbacks, mCallbackSupport);
@@ -276,7 +444,7 @@ void HLSDecoder::RecordMediaUsage(nsIURI* aMediaUri) {
 
   // TODO: get hostname. See bug 1887053.
   nsAutoCString mediaExt;
-  Unused << url->GetFileExtension(mediaExt);
+  (void)url->GetFileExtension(mediaExt);
   glean::hls::MediaLoadExtra extra = {.mediaExtension = Some(mediaExt.get())};
   glean::hls::media_load.Record(Some(extra));
   mUsageRecorded = true;
@@ -315,8 +483,7 @@ already_AddRefed<nsIPrincipal> HLSDecoder::GetContentPrincipal(
   if (element->GetCORSMode() == CORS_USE_CREDENTIALS) {
     securityFlags |= nsILoadInfo::SEC_COOKIES_INCLUDE;
   }
-  nsCOMPtr<nsIPrincipal> principal =
-      NullPrincipal::Create(OriginAttributes());
+  nsCOMPtr<nsIPrincipal> principal = NullPrincipal::Create(OriginAttributes());
   nsCOMPtr<nsIChannel> channel;
   nsresult rv = NS_NewChannel(
       getter_AddRefs(channel), aMediaUri, static_cast<dom::Element*>(element),

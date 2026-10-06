@@ -28,13 +28,13 @@ add_task(async function testBrowserSharingStateSetter() {
 
   await BrowserTestUtils.withNewTab("https://example.com", async browser => {
     let tab = gBrowser.selectedTab;
-    is(tab._sharingState, undefined, "No sharing state initially.");
+    is(browser._sharingState, undefined, "No sharing state initially.");
     ok(!tab.hasAttribute("sharing"), "No tab sharing attribute initially.");
 
     // Set an active sharing state for webrtc
     gBrowser.updateBrowserSharing(browser, { webRTC: WEBRTC_TEST_STATE });
     Assert.deepEqual(
-      tab._sharingState,
+      browser._sharingState,
       { webRTC: WEBRTC_TEST_STATE },
       "Should have correct webRTC sharing state."
     );
@@ -47,7 +47,7 @@ add_task(async function testBrowserSharingStateSetter() {
     // Set sharing state for geolocation
     gBrowser.updateBrowserSharing(browser, { geo: true });
     Assert.deepEqual(
-      tab._sharingState,
+      browser._sharingState,
       {
         webRTC: WEBRTC_TEST_STATE,
         geo: true,
@@ -63,7 +63,7 @@ add_task(async function testBrowserSharingStateSetter() {
     // Update webRTC sharing state
     gBrowser.updateBrowserSharing(browser, { webRTC: WEBRTC_TEST_STATE2 });
     Assert.deepEqual(
-      tab._sharingState,
+      browser._sharingState,
       { geo: true, webRTC: WEBRTC_TEST_STATE2 },
       "Should have updated webRTC sharing state while maintaining geolocation state."
     );
@@ -76,7 +76,7 @@ add_task(async function testBrowserSharingStateSetter() {
     // Clear webRTC sharing state
     gBrowser.updateBrowserSharing(browser, { webRTC: null });
     Assert.deepEqual(
-      tab._sharingState,
+      browser._sharingState,
       { geo: true, webRTC: null },
       "Should only have sharing state for geolocation."
     );
@@ -87,7 +87,7 @@ add_task(async function testBrowserSharingStateSetter() {
 
     // Clear geolocation sharing state
     gBrowser.updateBrowserSharing(browser, { geo: null });
-    Assert.deepEqual(tab._sharingState, { geo: null, webRTC: null });
+    Assert.deepEqual(browser._sharingState, { geo: null, webRTC: null });
     ok(
       !tab.hasAttribute("sharing"),
       "Tab sharing attribute should not be set."

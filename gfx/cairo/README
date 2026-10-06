@@ -1,58 +1,36 @@
 Snapshots of cairo and glitz for mozilla usage.
 
-We only include the relevant parts of each release (generally, src/*.[ch]),
-as we have Makefile.in's that integrate into the Mozilla build system.  For
-documentation and similar, please see the official tarballs at
-http://www.cairographics.org/.
+We only include the relevant parts of each release (generally, src/*.[ch]), as
+we have moz.build files used by the Mozilla build system. For documentation and
+similar, please see the official tarballs at http://www.cairographics.org/.
 
 VERSIONS:
 
-  cairo (1.18.0)
-  pixman (0.44.2)
+  cairo (1.18.4)
+  pixman (0.46.4)
 
-==== Local cairo patches ====
+==== Updating and Patching Cairo ====
 
-00-cairo_public.patch: allow cairo_public to be predefined
+To change Cairo in Mozilla Central:
 
-01-xlib-xrender-private.patch: xrender build fix
+- Make your changes to `gfx/cairo/cairo`, and test as necessary.
 
-02-cplusplus-no-register.patch: 'register' keyword not allowed when cairo.h is included by C++ code
+- Add an appropriate patch to `gfx/cairo/patches`, and edit the
+  `patches` list in `gfx/cairo/moz.yaml` to apply it at the
+  appropriate point in the list --- typically the end.
 
-03-expose-lcd-filter.patch: expose the LCD filter settings as public API
+- Test that UpdateBot can actually reconstruct the vendored Cairo
+  sources with the following command:
 
-04-subpixel-aa-api.patch: add API for setting subpixel-AA
+      mach vendor gfx/cairo/moz.yaml -r $REVISION --patch-mode check --force
 
-05-ft-font-synth-flags-api.patch: enable client to control whether FreeType synthetic styles are allowed
+  where `$REVISION` is the `revision` currently listed in `moz.yaml`.
+  UpdateBot should say that the "upstream hasn't modified files
+  locally", and `git status` should be clean.
 
-06-shared-ft-face.patch: integrate with Gecko SharedFTFace
-
-07-ft-variations-runtime-check.patch: runtime check for FreeType variation support
-
-09-quartz-surface-additions.patch: add cairo_quartz_surface_get_image
-
-11-quartz-surface-tags.patch: support for LINK tags in the quartz-surface backend
-
-12-quartz-named-destination.patch: support for named destinations in quartz-surface
-
-17-active-edges-crash.patch: avoid potential crash in active_edges
-
-18-quartz-granular-ifdefs.patch: build fixes for iOS
-
-19-ft-color-ifdef.patch: FT_COLOR build fix
-
-20-ios-colorspace.patch: iOS doesn't support per-display color spaces
-
-21-quartz-surface-leak.patch: fix DataSourceSurfaceRawData leak on quartz surface
-
-22-windows-build-fix.patch: build fix for Windows/non-mingw
-
-23-win32-api-additions.patch: Windows API additions for gecko
-
-cff-font-creation.patch: make cairo_cff_font_t allocation consistent
-
-27-windows-sdk-26100.patch: fix build bustage with Windows SDK 26100
-
-28-win32-vertical-glyph-advance-direction.patch: fix sign of glyph y-advance for ExtTextOut
+- Submit a patch for review that includes both the changes to
+  `gfx/cairo/cairo` as well as the changes to `moz.yaml` and the new
+  patch file in `gfx/cairo/patches`.
 
 ==== pixman patches ====
 

@@ -1,18 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsWrapperCacheInlines.h"
-
-#include "jsfriendapi.h"
 #include "js/Class.h"
 #include "js/Proxy.h"
+#include "jsfriendapi.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "nsCycleCollectionTraversalCallback.h"
 #include "nsCycleCollector.h"
+#include "nsWrapperCacheInlines.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -47,12 +44,32 @@ void nsWrapperCache::SetWrapperJSObject(JSObject* aNewWrapper) {
   }
 }
 
+void nsWrapperCache::ClearWrapperOnWrapFailure() {
+  if (IsNurseryWrapper(mWrapper)) {
+    CycleCollectedJSRuntime::Get()->NurseryWrapperRemovedSlow(this);
+  }
+  ClearWrapper();
+}
+
 void nsWrapperCache::ReleaseWrapper(void* aScriptObjectHolder) {
-  // If the behavior here changes in a substantive way, you may need
-  // to update css::Rule::UnlinkDeclarationWrapper as well.
+  MOZ_ASSERT(aScriptObjectHolder);
+  ReleaseWrapperAndMaybeDropHolder(aScriptObjectHolder);
+}
+
+void nsWrapperCache::ReleaseWrapperWithoutDrop() {
+  // Special case version of ReleaseWrapper for Rule::UnlinkDeclarationWrapper.
+  // This allows it to release two separate wrappers with the same CC
+  // participant correctly.
+  ReleaseWrapperAndMaybeDropHolder(nullptr);
+}
+
+void nsWrapperCache::ReleaseWrapperAndMaybeDropHolder(
+    void* aScriptObjectHolderToDrop) {
   if (PreservingWrapper()) {
     SetPreservingWrapper(false);
-    cyclecollector::DropJSObjectsImpl(aScriptObjectHolder);
+    if (aScriptObjectHolderToDrop) {
+      cyclecollector::DropJSObjectsImpl(aScriptObjectHolderToDrop);
+    }
     JS::HeapObjectPostWriteBarrier(&mWrapper, mWrapper, nullptr);
   }
 }

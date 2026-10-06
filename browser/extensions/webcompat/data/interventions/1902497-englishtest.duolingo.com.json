@@ -1,0 +1,15 @@
+{
+  "label": "englishtest.duolingo.com",
+  "bugs": {
+    "1902497": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://englishtest.duolingo.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

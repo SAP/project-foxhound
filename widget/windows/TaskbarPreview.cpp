@@ -1,6 +1,4 @@
-/* vim: se cin sw=2 ts=2 et : */
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,6 +14,7 @@
 
 #include "nsWindow.h"
 #include "nsAppShell.h"
+#include "nsComponentManagerUtils.h"
 #include "TaskbarPreviewButton.h"
 #include "WinUtils.h"
 
@@ -338,7 +337,7 @@ TaskbarPreviewCallback::Done(nsISupports* aCanvas, bool aDrawBorder) {
   if (!source) {
     return NS_ERROR_FAILURE;
   }
-  RefPtr<gfxWindowsSurface> target = new gfxWindowsSurface(
+  auto target = MakeRefPtr<gfxWindowsSurface>(
       source->GetSize(), gfx::SurfaceFormat::A8R8G8B8_UINT32);
   if (target->CairoStatus() != CAIRO_STATUS_SUCCESS) {
     return NS_ERROR_FAILURE;
@@ -376,7 +375,7 @@ TaskbarPreviewCallback::Done(nsISupports* aCanvas, bool aDrawBorder) {
     hr = DwmSetIconicThumbnail(mPreview->PreviewWindow(), hBitmap, flags);
   }
   MOZ_ASSERT(SUCCEEDED(hr));
-  mozilla::Unused << hr;
+  (void)hr;
   return NS_OK;
 }
 

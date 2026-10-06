@@ -6,6 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=582771
 <head>
   <title>Test for Bug 582771</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <style>
   .test {
@@ -25,7 +26,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=582771
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 582771 **/
+/** Test for Bug 582771 */
 
 SimpleTest.waitForExplicitFinish();
 var d1;
@@ -34,21 +35,15 @@ var d1mousemovecount = 0;
 var d2mousemovecount = 0;
 
 function sendMouseMove(el) {
-  var rect = el.getBoundingClientRect();
-  var utils = SpecialPowers.getDOMWindowUtils(window);
-  utils.sendMouseEvent('mousemove', rect.left + 5, rect.top + 5, 0, 0, 0);
+  synthesizeMouse(el, 5, 5, { type: "mousemove" });
 }
 
 function sendMouseDown(el) {
-  var rect = el.getBoundingClientRect();
-  var utils = SpecialPowers.getDOMWindowUtils(window);
-  utils.sendMouseEvent('mousedown', rect.left + 5, rect.top + 5, 0, 1, 0);
+  synthesizeMouse(el, 5, 5, { type: "mousedown" });
 }
 
 function sendMouseUp(el) {
-  var rect = el.getBoundingClientRect();
-  var utils = SpecialPowers.getDOMWindowUtils(window);
-  utils.sendMouseEvent('mouseup', rect.left + 5, rect.top + 5, 0, 1, 0);
+  synthesizeMouse(el, 5, 5, { type: "mouseup" });
 }
 
 function log(s) {

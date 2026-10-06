@@ -9,11 +9,17 @@ import requests
 LINTER = "condprof-addons"
 
 
+# Deferred until after conftest.py inserts tools/lint onto sys.path,
+# since this module is imported before that setup when running via mozunit.main().
+def _get_linter_module():
+    return importlib.import_module(LINTER)
+
+
 def linter_module_mocks(
     customizations_path=".", browsertime_fetches_path="browsertime.yml", **othermocks
 ):
     return mock.patch.multiple(
-        LINTER,
+        _get_linter_module(),
         CUSTOMIZATIONS_PATH=Path(customizations_path),
         BROWSERTIME_FETCHES_PATH=Path(browsertime_fetches_path),
         **othermocks,
@@ -22,18 +28,17 @@ def linter_module_mocks(
 
 def linter_class_mocks(**mocks):
     return mock.patch.multiple(
-        f"{LINTER}.CondprofAddonsLinter",
+        _get_linter_module().CondprofAddonsLinter,
         **mocks,
     )
 
 
 # Sanity check (make sure linter message includes the xpi filename).
 def test_get_missing_xpi_msg(lint, paths):
-    condprof_addons = importlib.import_module("condprof-addons")
     with linter_class_mocks(
         get_firefox_addons_tar_names=mock.Mock(return_value=list()),
     ):
-        instance = condprof_addons.CondprofAddonsLinter(
+        instance = _get_linter_module().CondprofAddonsLinter(
             topsrcdir=paths()[0], logger=mock.Mock()
         )
         assert instance.get_missing_xpi_msg("test.xpi").startswith(
@@ -52,7 +57,6 @@ def test_xpi_missing_from_firefox_addons_tar(lint, paths):
         assert Path(fixture_customizations[0]).samefile(
             logger_mock.lint_error.call_args.kwargs["path"]
         )
-        importlib.import_module("condprof-addons")
         assert "non-existing.xpi" in logger_mock.lint_error.call_args.args[0]
 
 
@@ -99,37 +103,37 @@ def test_lint_error_on_missing_or_invalid_firefoxaddons_fetch_task(
     ):
         logger_mock = mock.Mock()
         fixture_customizations = paths("fake-condprof-config.json")
-        condprof_addons = importlib.import_module("condprof-addons")
 
         def assert_linter_error(yaml_mock_value, expected_msg):
             logger_mock.reset_mock()
             read_yaml_mock.return_value = yaml_mock_value
             lint(fixture_customizations, logger=logger_mock)
             assert logger_mock.lint_error.call_count == 1
-            expected_path = condprof_addons.BROWSERTIME_FETCHES_PATH
+            expected_path = _get_linter_module().BROWSERTIME_FETCHES_PATH
             assert logger_mock.lint_error.call_args.kwargs["path"] == expected_path
             assert logger_mock.lint_error.call_args.args[0] == expected_msg
 
         # Mock a yaml file that is not including the expected firefox-addons fetch task.
         assert_linter_error(
-            yaml_mock_value=dict(), expected_msg=condprof_addons.ERR_FETCH_TASK_MISSING
+            yaml_mock_value=dict(),
+            expected_msg=_get_linter_module().ERR_FETCH_TASK_MISSING,
         )
         # Mock a yaml file where firefox-addons is missing the fetch attribute.
         assert_linter_error(
             yaml_mock_value={"firefox-addons": {}},
-            expected_msg=condprof_addons.ERR_FETCH_TASK_MISSING,
+            expected_msg=_get_linter_module().ERR_FETCH_TASK_MISSING,
         )
         # Mock a yaml file where firefox-addons add-prefix is missing.
         assert_linter_error(
             yaml_mock_value={"firefox-addons": {"fetch": {}}},
-            expected_msg=condprof_addons.ERR_FETCH_TASK_ADDPREFIX,
+            expected_msg=_get_linter_module().ERR_FETCH_TASK_ADDPREFIX,
         )
         # Mock a yaml file where firefox-addons add-prefix is invalid.
         assert_linter_error(
             yaml_mock_value={
                 "firefox-addons": {"fetch": {"add-prefix": "invalid-subdir-name/"}}
             },
-            expected_msg=condprof_addons.ERR_FETCH_TASK_ADDPREFIX,
+            expected_msg=_get_linter_module().ERR_FETCH_TASK_ADDPREFIX,
         )
 
 
@@ -140,11 +144,10 @@ def test_get_xpi_list_from_fetch_dir(lint, paths):
     with linter_module_mocks(
         MOZ_AUTOMATION=1, MOZ_FETCHES_DIR=paths("fake-fetches-dir")[0]
     ):
-        condprof_addons = importlib.import_module("condprof-addons")
         logger_mock = mock.Mock()
         Path(paths("browsertime.yml")[0])
 
-        linter = condprof_addons.CondprofAddonsLinter(
+        linter = _get_linter_module().CondprofAddonsLinter(
             topsrcdir=paths()[0], logger=logger_mock
         )
         results = linter.tar_xpi_filenames
@@ -168,11 +171,10 @@ def test_get_xpi_list_from_downloaded_tar(lint, paths):
     ), linter_class_mocks(
         download_firefox_addons_tar=download_firefox_addons_tar_mock,
     ):
-        condprof_addons = importlib.import_module("condprof-addons")
         logger_mock = mock.Mock()
         Path(paths("browsertime.yml")[0])
 
-        linter = condprof_addons.CondprofAddonsLinter(
+        linter = _get_linter_module().CondprofAddonsLinter(
             topsrcdir=paths()[0], logger=logger_mock
         )
         results = linter.tar_xpi_filenames
@@ -189,7 +191,6 @@ def test_error_on_downloading_tar(requests_get_mock, lint, paths):
     with tempfile.TemporaryDirectory() as tempdir, linter_module_mocks(
         MOZ_AUTOMATION=0, tempdir=tempdir
     ):
-        condprof_addons = importlib.import_module("condprof-addons")
         logger_mock = mock.Mock()
         response_mock = mock.Mock()
         response_mock.raise_for_status.side_effect = requests.exceptions.HTTPError(
@@ -198,17 +199,17 @@ def test_error_on_downloading_tar(requests_get_mock, lint, paths):
         requests_get_mock.return_value = response_mock
         Path(paths("browsertime.yml")[0])
 
-        linter = condprof_addons.CondprofAddonsLinter(
+        linter = _get_linter_module().CondprofAddonsLinter(
             topsrcdir=paths()[0], logger=logger_mock
         )
 
         assert (
             logger_mock.lint_error.call_args.kwargs["path"]
-            == condprof_addons.BROWSERTIME_FETCHES_PATH
+            == _get_linter_module().BROWSERTIME_FETCHES_PATH
         )
         assert (
             logger_mock.lint_error.call_args.args[0]
-            == f"{condprof_addons.ERR_FETCH_TASK_ARCHIVE}, MOCK_ERROR"
+            == f"{_get_linter_module().ERR_FETCH_TASK_ARCHIVE}, MOCK_ERROR"
         )
         assert requests_get_mock.call_count == 1
         assert len(linter.tar_xpi_filenames) == 0
@@ -221,7 +222,6 @@ def test_error_on_opening_tar(requests_get_mock, lint, paths):
     with tempfile.TemporaryDirectory() as tempdir, linter_module_mocks(
         MOZ_AUTOMATION=0, tempdir=tempdir
     ):
-        condprof_addons = importlib.import_module("condprof-addons")
         logger_mock = mock.Mock()
         response_mock = mock.Mock()
         response_mock.raise_for_status.return_value = None
@@ -234,18 +234,18 @@ def test_error_on_opening_tar(requests_get_mock, lint, paths):
         requests_get_mock.return_value = response_mock
         Path(paths("browsertime.yml")[0])
 
-        linter = condprof_addons.CondprofAddonsLinter(
+        linter = _get_linter_module().CondprofAddonsLinter(
             topsrcdir=paths()[0], logger=logger_mock
         )
 
         assert (
             logger_mock.lint_error.call_args.kwargs["path"]
-            == condprof_addons.BROWSERTIME_FETCHES_PATH
+            == _get_linter_module().BROWSERTIME_FETCHES_PATH
         )
         actual_msg = logger_mock.lint_error.call_args.args[0]
         print("Got linter error message:", actual_msg)
         assert actual_msg.startswith(
-            f"{condprof_addons.ERR_FETCH_TASK_ARCHIVE}, file could not be opened successfully"
+            f"{_get_linter_module().ERR_FETCH_TASK_ARCHIVE}, file could not be opened successfully"
         )
         assert requests_get_mock.call_count == 1
         assert len(linter.tar_xpi_filenames) == 0
@@ -268,7 +268,6 @@ def test_lint_all_customization_files_when_linting_browsertime_yml(
         read_json=read_json_mock,
     ):
         logger_mock = mock.Mock()
-        importlib.import_module("condprof-addons")
         # When mozlint detects a change to the ci fetch browser.yml support file,
         # condprof-addons linter is called for the entire customizations dir path
         # and we expect that to be expanded to the list of the json customizations

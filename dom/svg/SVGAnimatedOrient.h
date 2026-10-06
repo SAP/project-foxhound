@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,15 +5,15 @@
 #ifndef DOM_SVG_SVGANIMATEDORIENT_H_
 #define DOM_SVG_SVGANIMATEDORIENT_H_
 
+#include <memory>
+
 #include "DOMSVGAnimatedEnumeration.h"
-#include "nsError.h"
 #include "SVGAnimatedEnumeration.h"
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/SMILAttr.h"
 #include "mozilla/dom/SVGAngleBinding.h"
 #include "mozilla/dom/SVGMarkerElementBinding.h"
-#include "mozilla/UniquePtr.h"
+#include "nsError.h"
 
 class nsISupports;
 
@@ -60,15 +58,15 @@ class SVGAnimatedOrient {
   }
   SVGEnumValue GetAnimType() const { return mAnimType; }
 
-  void SetBaseValue(float aValue, uint8_t aUnit, SVGElement* aSVGElement,
+  void SetBaseValue(float aValue, uint16_t aUnit, SVGElement* aSVGElement,
                     bool aDoSetAttr);
   void SetBaseType(SVGEnumValue aValue, SVGElement* aSVGElement,
                    ErrorResult& aRv);
-  void SetAnimValue(float aValue, uint8_t aUnit, SVGElement* aSVGElement);
+  void SetAnimValue(float aValue, uint16_t aUnit, SVGElement* aSVGElement);
   void SetAnimType(SVGEnumValue aValue, SVGElement* aSVGElement);
 
-  uint8_t GetBaseValueUnit() const { return mBaseValUnit; }
-  uint8_t GetAnimValueUnit() const { return mAnimValUnit; }
+  uint16_t GetBaseValueUnit() const { return mBaseValUnit; }
+  uint16_t GetAnimValueUnit() const { return mAnimValUnit; }
   float GetBaseValInSpecifiedUnits() const { return mBaseVal; }
   float GetAnimValInSpecifiedUnits() const { return mAnimVal; }
 
@@ -77,19 +75,19 @@ class SVGAnimatedOrient {
       SVGElement* aSVGElement);
   already_AddRefed<dom::DOMSVGAnimatedEnumeration> ToDOMAnimatedEnum(
       SVGElement* aSVGElement);
-  UniquePtr<SMILAttr> ToSMILAttr(SVGElement* aSVGElement);
+  std::unique_ptr<SMILAttr> ToSMILAttr(SVGElement* aSVGElement);
 
   static bool IsValidUnitType(uint16_t aUnitType);
 
   static bool GetValueFromString(const nsAString& aString, float& aValue,
                                  uint16_t* aUnitType);
-  static float GetDegreesPerUnit(uint8_t aUnit);
+  static float GetDegreesPerUnit(uint16_t aUnit);
 
  private:
   float mAnimVal;
   float mBaseVal;
-  uint8_t mAnimType;
-  uint8_t mBaseType;
+  uint8_t mAnimType : 4;
+  uint8_t mBaseType : 4;
   uint8_t mAnimValUnit;
   uint8_t mBaseValUnit;
   bool mIsAnimated;

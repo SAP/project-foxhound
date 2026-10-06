@@ -1,0 +1,30 @@
+<!DOCTYPE HTML>
+<html class="reftest-wait">
+<meta charset="utf-8">
+<body>
+</body>
+<script>
+const blob = new Blob([`
+  self.onmessage = (evt) => {
+    let ctx = evt.data.canvas.getContext("2d");
+    ctx.font = "24px serif";
+    // Text that will cause CJK font fallback, which looks up
+    // the accept-language pref.
+    ctx.measureText("你好");
+    postMessage("Done");
+  }
+`], {
+  type: "application/typescript",
+});
+
+const url = URL.createObjectURL(blob);
+const worker = new Worker(url);
+
+worker.onmessage = (msg) => {
+  document.documentElement.classList.remove("reftest-wait");
+};
+
+let offscreen = new OffscreenCanvas(100, 100);
+worker.postMessage({ canvas: offscreen }, [offscreen]);
+</script>
+</html>

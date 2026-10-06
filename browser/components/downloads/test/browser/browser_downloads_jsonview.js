@@ -29,7 +29,7 @@ add_task(async function test_save_jsonview() {
 
   // Set up the download
   let MockFilePicker = SpecialPowers.MockFilePicker;
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
   let list = await Downloads.getList(Downloads.PUBLIC);
   let downloadFinishedPromise = promiseDownloadFinished(list);
   let saveFile = FileTestUtils.getTempFile("cookies.sjs");

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,11 +5,10 @@
 #ifndef mozilla_dom_HTMLLinkElement_h
 #define mozilla_dom_HTMLLinkElement_h
 
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/HTMLDNSPrefetch.h"
-#include "mozilla/dom/LinkStyle.h"
-#include "mozilla/dom/Link.h"
 #include "mozilla/WeakPtr.h"
+#include "mozilla/dom/HTMLDNSPrefetch.h"
+#include "mozilla/dom/Link.h"
+#include "mozilla/dom/LinkStyle.h"
 #include "nsDOMTokenList.h"
 #include "nsGenericHTMLElement.h"
 
@@ -26,8 +23,7 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
                               public LinkStyle,
                               public SupportsDNSPrefetch {
  public:
-  explicit HTMLLinkElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+  explicit HTMLLinkElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED

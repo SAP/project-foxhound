@@ -16,7 +16,7 @@
 
 ## Code
 
-The source for `moz-input-search` can be found under [toolkit/content/widgets/moz-input-search](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/moz-input-search)
+The source for `moz-input-search` can be found under [toolkit/content/widgets/moz-input-search](https://searchfox.org/firefox-main/source/toolkit/content/widgets/moz-input-search)
 
 ## How to use `moz-input-search`
 

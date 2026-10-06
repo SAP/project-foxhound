@@ -1,0 +1,247 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.sports-match-row {
+  --sports-flag-width: 60px;
+  --sports-flag-height: 40px;
+
+  display: grid;
+  grid-template-columns: 3fr 4fr 3fr;
+  text-decoration: none;
+  color: inherit;
+  padding: var(--space-small);
+  border-radius: var(--border-radius-medium);
+
+  // The row has no href (clicks go through a JS handler), so the browser
+  // doesn't apply the link cursor automatically. The component adds the
+  // .clickable class when a `query` is present on the match.
+  &.clickable {
+    cursor: pointer;
+  }
+
+  &:hover {
+    background: var(--button-background-color-hover);
+  }
+
+  // The placeholder row isn't interactive, so suppress the hover link styling.
+  &.sports-match-row-placeholder:hover {
+    background: none;
+  }
+
+  .sports-match-team {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-xsmall);
+
+    .sports-match-flag-wrapper {
+      position: relative;
+      display: inline-block;
+      line-height: 0;
+    }
+
+    // Flattened to a depth-3 selector so max-nesting-depth stays satisfied.
+    .sports-match-flag-wrapper.is-followed .sports-match-flag {
+      outline: 2px solid var(--color-accent-primary);
+      outline-offset: -2px;
+      // 6px matches the design spec for the followed-team flag corner; no
+      // design token sits between --border-radius-small (4px) and --medium (8px).
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens, declaration-property-value-disallowed-list */
+      border-radius: 6px;
+    }
+
+    .sports-match-flag {
+      width: var(--sports-flag-width); /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+      height: var(--sports-flag-height); /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+      display: block;
+    }
+
+    .sports-match-flag-tbd {
+      --sports-tbd-placeholder-color: light-dark(
+        var(--color-gray-15),
+        var(--color-gray-75)
+      );
+
+      box-sizing: border-box;
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+      background-color: var(--sports-tbd-placeholder-color);
+      border: var(--border-width) solid var(--border-color);
+      border-radius: var(--border-radius-small);
+    }
+
+    .sports-match-flag-check {
+      position: absolute;
+      inset-block-start: calc(var(--space-xsmall) * -1);
+      inset-inline-end: calc(var(--space-xsmall) * -1);
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+      width: 17px;
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+      height: 17px;
+      border-radius: var(--border-radius-circle);
+      background-color: var(--newtab-background-color-secondary);
+      background-image: url('chrome://global/skin/icons/check-filled.svg');
+      background-repeat: no-repeat;
+      background-position: right top;
+      -moz-context-properties: fill;
+      fill: var(--color-accent-primary);
+    }
+  }
+
+  .sports-match-upcoming,
+  .sports-match-result,
+  .sports-match-live {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+
+    .sports-match-time {
+      font-size: var(--font-size-xlarge);
+      font-weight: var(--font-weight-semibold);
+    }
+
+    .sports-match-date {
+      color: var(--text-color-deemphasized);
+    }
+
+    .sports-match-vs {
+      font-size: var(--font-size-xxlarge);
+    }
+  }
+
+  .sports-match-result,
+  .sports-match-live {
+    gap: var(--space-small);
+  }
+
+  .sports-score-pill {
+    display: flex;
+    align-items: center;
+    justify-self: center;
+    gap: var(--space-xsmall);
+    border-radius: var(--border-radius-circle);
+    padding: var(--space-xsmall) var(--space-large);
+    font-size: var(--font-size-xxlarge);
+    font-weight: var(--font-weight-semibold);
+
+    &.sports-score-pill-now {
+      align-self: start;
+      background: var(--button-background-color-hover);
+      margin-block-start: var(--space-xxsmall);
+    }
+
+    &.sports-score-pill-results {
+      background: var(--background-color-box-info);
+    }
+  }
+
+  .sports-match-live > .sports-score-pill-now {
+    align-self: center;
+  }
+
+  .sports-match-result-footer,
+  .sports-match-live-footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    column-gap: calc(var(--space-xsmall) + var(--space-xxsmall));
+    color: var(--text-color-deemphasized);
+
+    > span {
+      white-space: nowrap;
+    }
+  }
+
+  .sports-score-penalty {
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight);
+  }
+
+  &.sports-match-row-medium,
+  &.sports-match-row-list {
+    --sports-flag-width: 50px;
+    --sports-flag-height: 35px;
+
+    .sports-match-team {
+      flex-direction: row;
+      align-self: start;
+      gap: var(--space-small);
+    }
+
+    .sports-match-team:first-child .sports-match-code {
+      order: -1;
+    }
+
+    .sports-match-code {
+      width: 35px; /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+      text-align: center;
+    }
+
+    .sports-match-result-footer,
+    .sports-match-live-footer {
+      font-size: var(--font-size-small);
+      column-gap: var(--space-xsmall);
+    }
+  }
+
+  &.sports-match-row-medium {
+    padding: var(--space-xsmall);
+
+    .sports-match-upcoming {
+      .sports-match-time {
+        font-size: var(--font-size-root);
+      }
+
+      .sports-match-date {
+        font-size: var(--font-size-small);
+      }
+
+      .sports-match-vs {
+        font-size: var(--font-size-xlarge);
+      }
+    }
+
+    .sports-score-pill {
+      font-size: var(--font-size-xlarge);
+      margin-block-start: 0;
+
+      &:has(.sports-score-penalty) {
+        padding-inline: var(--space-small);
+      }
+    }
+
+    &:has(.sports-match-result) {
+      .sports-score-pill {
+        padding-block: var(--space-xxsmall);
+        font-size: var(--font-size-root);
+      }
+
+      .sports-match-result {
+        gap: 0;
+      }
+    }
+  }
+
+  &.sports-match-row-list {
+    margin-block: var(--space-xsmall);
+
+    .sports-score-pill {
+      font-size: var(--font-size-root);
+
+      &.sports-score-pill-results {
+        background: none;
+        padding: 0;
+      }
+    }
+
+    .sports-match-result {
+      gap: 0;
+    }
+
+    .sports-match-upcoming {
+      .sports-match-time {
+        font-size: var(--font-size-small);
+      }
+    }
+  }
+}

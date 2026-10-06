@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test for IME state with contenteditable=false (Bug 2031575)</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css">
+</head>
+<body>
+<div id="container">
+  <div tabindex="0" id="outer" data-description="contenteditable=inherit"
+       data-ime-enabled="inDesignMode">
+    contenteditable=inherit
+  </div>
+  <div contenteditable="true" id="editable" data-description="contenteditable"
+       data-ime-enabled="always">
+    contenteditable=true
+    <div tabindex="0" contenteditable="false" id="inner"
+      data-description="contenteditable=false"
+      data-ime-enabled="never">
+      contenteditable=false inside contenteditable=true
+    </div>
+  </div>
+  <input id="input" value="input" data-description="input"
+       data-ime-enabled="always">
+</div>
+<iframe srcdoc="<!DOCTYPE html>" id="iframe"></iframe>
+<script>
+"use strict";
+
+function checkIMEStatus(element, isEnabled, description) {
+  // eslint-disable-next-line mozilla/use-documentGlobal
+  let elementWindow = element.ownerDocument.defaultView;
+  let expected = isEnabled
+   ? SpecialPowers.Ci.nsIDOMWindowUtils.IME_STATUS_ENABLED
+   : SpecialPowers.Ci.nsIDOMWindowUtils.IME_STATUS_DISABLED;
+  let got = SpecialPowers.wrap(elementWindow).windowUtils.IMEStatus;
+  is(got, expected, `IME should be ${isEnabled ? "enabled" : "disabled"} when ${description} has focus`);
+}
+
+
+SimpleTest.waitForExplicitFinish();
+SimpleTest.waitForFocus(async () => {
+  let iframe = document.getElementById("iframe");
+  let iframeDoc = iframe.contentDocument;
+  // import test elements into iframe
+  let imported = iframeDoc.importNode(document.getElementById("container"), true);
+  iframeDoc.body.append(imported);
+
+  for (let iframeKind of ["none", "focused", "unfocused"]) {
+    let doc = iframeKind === "none" ? document : iframeDoc;
+    for (let designMode of ["on", "off"]) {
+      doc.designMode = designMode;
+      for (let element of doc.querySelectorAll("[data-ime-enabled]")) {
+        element.focus();
+        let imeEnabled = element.dataset.imeEnabled;
+        let expect = {
+          inDesignMode: designMode === "on",
+          always: true,
+          never: false,
+        }[imeEnabled];
+        isnot(expect, undefined, `Invalid test (data-ime-enabled=${imeEnabled} should be one of always, never, inDesignMode)`);
+        doc.defaultView.getSelection().collapse(element);
+        if (iframeKind === "unfocused") {
+          // IME should always be disabled if iframe is not focused
+          expect = false;
+          iframe.blur();
+        } else if (iframeKind === "focused") {
+          iframe.focus();
+        }
+        let description = element.dataset.description + " element";
+        if (designMode === "on") {
+          description += " in design mode";
+        }
+        if (iframeKind !== "none") {
+          description += ` in ${iframeKind} iframe`;
+        }
+        checkIMEStatus(element, expect, description);
+        element.blur();
+      }
+    }
+  }
+
+  SimpleTest.finish();
+});
+</script>

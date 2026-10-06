@@ -183,7 +183,7 @@ log ''
 # invalid config specified
 if [ "${BAD_FILE}" == 1 ]
 then
-    log "ERROR: Unable to download config file(s) or config files are missing from repo - see above"
+    log "TEST-UNEXPECTED-ERROR: Unable to download config file(s) or config files are missing from repo - see above"
     exit 67
 fi
 
@@ -285,7 +285,7 @@ done > "${update_xml_urls}"
 cat "${update_xml_urls}" | cut -f1-2 -d' ' | sort -u | xargs -n2 "-P${MAX_PROCS}" ../get-update-xml.sh
 if [ "$?" != 0 ]; then
     flush_logs
-    log "Error generating update requests"
+    log "TEST-UNEXPECTED-ERROR: Error generating update requests"
     exit 70
 fi
 
@@ -295,7 +295,7 @@ flush_logs
 find "${TMPDIR}" -name 'update_xml_to_mar.*' -type f | xargs cat | cut -f1-2 -d' ' | sort -u | xargs -n2 "-P${MAX_PROCS}" ../test-mar-url.sh
 if [ "$?" != 0 ]; then
     flush_logs
-    log "Error HEADing mar urls"
+    log "TEST-UNEXPECTED-ERROR: Error HEADing mar urls"
     exit 71
 fi
 
@@ -334,7 +334,7 @@ else
                     update_xml_headers="${entry3}"
                     update_xml_debug="${entry4}"
                     update_xml_curl_exit_code="${entry5}"
-                    log "FAILURE $((++failure)): Update xml file not available"
+                    log "TEST-UNEXPECTED-FAIL $((++failure)): Update xml file not available"
                     log ""
                     log "    Download url: ${update_xml_url}"
                     log "    Curl returned exit code: ${update_xml_curl_exit_code}"
@@ -361,7 +361,7 @@ else
                     update_xml_headers="${entry4}"
                     update_xml_debug="${entry5}"
                     update_xml_curl_exit_code="${entry6}"
-                    log "FAILURE $((++failure)): Update xml file not available at *redirected* location"
+                    log "TEST-UNEXPECTED-FAIL $((++failure)): Update xml file not available at *redirected* location"
                     log ""
                     log "    Download url: ${update_xml_url}"
                     log "    Redirected to: ${update_xml_actual_url}"
@@ -389,7 +389,7 @@ else
                     update_xml_headers="${entry4}"
                     update_xml_debug="${entry5}"
                     update_xml_actual_url="${entry6}"
-                    log "FAILURE $((++failure)): Patch type '${patch_type}' not present in the downloaded update.xml file."
+                    log "TEST-UNEXPECTED-FAIL $((++failure)): Patch type '${patch_type}' not present in the downloaded update.xml file."
                     log ""
                     log "    Update xml file downloaded from: ${update_xml_url}"
                     [ -n "${update_xml_actual_url}" ] && log "    This redirected to the download url: ${update_xml_actual_url}"
@@ -415,7 +415,7 @@ else
                     mar_headers_debug_file="${entry3}"
                     mar_file_curl_exit_code="${entry4}"
                     mar_actual_url="${entry5}"
-                    log "FAILURE $((++failure)): Could not retrieve mar file"
+                    log "TEST-UNEXPECTED-FAIL $((++failure)): Could not retrieve mar file"
                     log ""
                     log "    Mar file url: ${mar_url}"
                     [ -n "${mar_actual_url}" ] && log "    This redirected to: ${mar_actual_url}"
@@ -441,7 +441,7 @@ else
                     mar_headers_debug_file="${entry5}"
                     mar_file_curl_exit_code="${entry6}"
                     mar_actual_url="${entry7}"
-                    log "FAILURE $((++failure)): Mar file is wrong size"
+                    log "TEST-UNEXPECTED-FAIL $((++failure)): Mar file is wrong size"
                     log ""
                     log "    Mar file url: ${mar_url}"
                     [ -n "${mar_actual_url}" ] && log "    This redirected to: ${mar_actual_url}"
@@ -468,7 +468,7 @@ else
                     mar_file_curl_exit_code="${entry4}"
                     mar_actual_url="${entry5}"
                     http_response_code="$(sed -e "s/$(printf '\r')//" -n -e '/^HTTP\//p' "${mar_headers_file}" | tail -1)"
-                    log "FAILURE $((++failure)): '${http_response_code}' for mar file"
+                    log "TEST-UNEXPECTED-FAIL $((++failure)): '${http_response_code}' for mar file"
                     log ""
                     log "    Mar file url: ${mar_url}"
                     [ -n "${mar_actual_url}" ] && log "    This redirected to: ${mar_actual_url}"
@@ -487,7 +487,7 @@ else
                     ;;
 
                 *)
-                    log "ERROR: Unknown failure code - '${failure_code}'"
+                    log "TEST-UNEXPECTED-FAIL: Unknown failure code - '${failure_code}'"
                     log "ERROR: This is a serious bug in this script."
                     log "ERROR: Only known failure codes are: UPDATE_XML_UNAVAILABLE, UPDATE_XML_REDIRECT_FAILED, PATCH_TYPE_MISSING, NO_MAR_FILE, MAR_FILE_WRONG_SIZE, BAD_HTTP_RESPONSE_CODE_FOR_MAR"
                     log ""

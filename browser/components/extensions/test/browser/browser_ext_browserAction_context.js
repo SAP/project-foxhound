@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 // Prevent intermittent TV job failure hit due to the entire test file
@@ -55,6 +53,17 @@ async function runTests(options) {
         enabled,
         "expected value from isEnabled"
       );
+
+      // Test signature with (optional) tabId.
+      // An optional (undefined) tabId is equivalent to an empty object.
+      if (Object.keys(details).length === 0 || "tabId" in details) {
+        let enabledByTabId = await browser[action].isEnabled(details.tabId);
+        browser.test.assertEq(
+          expecting.enabled,
+          enabledByTabId,
+          "expected value from isEnabled with tabId argument type"
+        );
+      }
     }
 
     let tabs = [];
@@ -194,7 +203,7 @@ async function runTests(options) {
       "badge text is correct"
     );
     is(
-      button.getAttribute("disabled") == "true",
+      button.hasAttribute("disabled"),
       !details.enabled,
       "disabled state is correct"
     );
@@ -462,10 +471,6 @@ add_task(async function testTabSwitchContext() {
 });
 
 add_task(async function testTabSwitchActionContext() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.manifestV3.enabled", true]],
-  });
-
   await runTests({
     manifest: {
       manifest_version: 3,

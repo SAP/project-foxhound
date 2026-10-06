@@ -26,44 +26,36 @@
     ////////////////////////////////////////////////////////////////////////////
     // Tests
 
-    function getAnchorJumpInTabDocument(aTabIdx)
-    {
-      var tabDoc = aTabIdx ? tabDocumentAt(aTabIdx) : currentTabDocument();
+    function getAnchorJumpInTabDocument(aTabIdx) {
+      const tabDoc = aTabIdx ? tabDocumentAt(aTabIdx) : currentTabDocument();
       return tabDoc.querySelector("h1[id='heading_1']");
     }
 
-    function loadTab(aURL)
-    {
-      this.eventSeq = [
-        new asyncInvokerChecker(EVENT_DOCUMENT_LOAD_COMPLETE, currentTabDocument),
-        new asyncCaretMoveChecker(0, getAnchorJumpInTabDocument)
-      ];
+    async function doTest() {
+      const url = "http://mochi.test:8888/a11y/accessible/tests/mochitest/events/scroll.html#heading_1";
 
-      this.invoke = function loadTab_invoke()
-      {
-        tabBrowser().loadURI(Services.io.newURI(aURL), {
-          triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
-        });
-      }
+      let docLoadPromise = waitForEvent(
+        EVENT_DOCUMENT_LOAD_COMPLETE,
+        e => e.DOMNode == currentTabDocument()
+      );
+      let caretMovePromise = waitForEvent(
+        EVENT_TEXT_CARET_MOVED,
+        e => {
+          let caretEvent = e.QueryInterface(Ci.nsIAccessibleCaretMoveEvent);
+          return caretEvent.caretOffset === 0 &&
+            e.accessible === getAccessible(getAnchorJumpInTabDocument());
+        }
+      );
 
-      this.getID = function loadTab_getID()
-      {
-        return "load tab: " + aURL;
-      }
-    }
+      tabBrowser().loadURI(Services.io.newURI(url), {
+        triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      });
 
-    //gA11yEventDumpToConsole = true; // debug stuff
+      await docLoadPromise;
+      await caretMovePromise;
 
-    var gQueue = null;
-    function doTest()
-    {
-      gQueue = new eventQueue();
-
-      var url = "http://mochi.test:8888/a11y/accessible/tests/mochitest/events/scroll.html#heading_1";
-      gQueue.push(new loadTab(url));
-      gQueue.onFinish = function() { closeBrowserWindow(); }
-
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      closeBrowserWindow();
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

@@ -2,11 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const isEveryFrameTargetEnabled = Services.prefs.getBoolPref(
-  "devtools.every-frame-target.enabled",
-  false
-);
-
 export const WEBEXTENSION_FALLBACK_DOC_URL =
   "chrome://devtools/content/shared/webextension-fallback.html";
 
@@ -20,7 +15,7 @@ export const WEBEXTENSION_FALLBACK_DOC_URL =
  *        The WindowGlobal from which we want to extract the addonId. Either a
  *        WindowGlobalParent or a WindowGlobalChild depending on where this
  *        helper is used from.
- * @return {String} Returns the addon id if any could found, null otherwise.
+ * @return {string} Returns the addon id if any could found, null otherwise.
  */
 export function getAddonIdForWindowGlobal(windowGlobal) {
   const browsingContext = windowGlobal.browsingContext;
@@ -63,25 +58,21 @@ export function getAddonIdForWindowGlobal(windowGlobal) {
  *
  * @param {BrowsingContext} browsingContext
  *        The browsing context we want to check if it is part of debugged context
- * @param {Object} sessionContext
+ * @param {object} sessionContext
  *        The Session Context to help know what is debugged.
  *        See devtools/server/actors/watcher/session-context.js
- * @param {Object} options
+ * @param {object} options
  *        Optional arguments passed via a dictionary.
- * @param {Boolean} options.forceAcceptTopLevelTarget
+ * @param {boolean} options.forceAcceptTopLevelTarget
  *        If true, we will accept top level browsing context even when server target switching
  *        is disabled. In case of client side target switching, the top browsing context
  *        is debugged via a target actor that is being instantiated manually by the frontend.
  *        And this target actor isn't created, nor managed by the watcher actor.
- * @param {Boolean} options.acceptInitialDocument
+ * @param {boolean} options.acceptUncommitedInitialDocument
  *        By default, we ignore initial about:blank documents/WindowGlobals.
  *        But some code cares about all the WindowGlobals, this flag allows to also accept them.
  *        (Used by _validateWindowGlobal)
- * @param {Boolean} options.acceptSameProcessIframes
- *        If true, we will accept WindowGlobal that runs in the same process as their parent document.
- *        That, even when EFT is disabled.
- *        (Used by _validateWindowGlobal)
- * @param {Boolean} options.acceptNoWindowGlobal
+ * @param {boolean} options.acceptNoWindowGlobal
  *        By default, we will reject BrowsingContext that don't have any WindowGlobal,
  *        either retrieved via BrowsingContext.currentWindowGlobal in the parent process,
  *        or via the options.windowGlobal argument.
@@ -211,7 +202,7 @@ export function isBrowsingContextPartOfContext(
  *
  * @param {BrowsingContext} browsingContext
  *        The browsing context we want to check if it is part of debugged context
- * @param {Object} sessionContext
+ * @param {object} sessionContext
  *        WatcherActor's session context. This helps know what is the overall debugged scope.
  *        See watcher actor constructor for more info.
  */
@@ -239,56 +230,49 @@ function isPopupToDebug(browsingContext, sessionContext) {
  *
  * @param {WindowGlobalParent|WindowGlobalChild} windowGlobal
  *        The WindowGlobal we want to check if it is part of debugged context
- * @param {Object} sessionContext
+ * @param {object} sessionContext
  *        The Session Context to help know what is debugged.
  *        See devtools/server/actors/watcher/session-context.js
- * @param {Object} options
+ * @param {object} options
  *        Optional arguments passed via a dictionary.
  *        See `isBrowsingContextPartOfContext` jsdoc.
+ * @param {boolean} options.acceptUncommitedInitialDocument
+ *        By default, we ignore initial uncommitted about:blank documents/WindowGlobals
+ *        as they might be transient while the initial load is ongoing.
+ *        But some code cares about all the WindowGlobals.
  */
 function _validateWindowGlobal(
   windowGlobal,
   sessionContext,
-  { acceptInitialDocument, acceptSameProcessIframes }
+  { acceptUncommitedInitialDocument }
 ) {
-  // By default, before loading the actual document (even an about:blank document),
-  // we do load immediately "the initial about:blank document".
-  // This is expected by the spec. Typically when creating a new BrowsingContext/DocShell/iframe,
-  // we would have such transient initial document.
-  // `Document.isInitialDocument` helps identify this transient document, which
-  // we want to ignore as it would instantiate a very short lived target which
+  // When creating a new DocShell and before loading anything, we immediately
+  // create the initial about:blank. This is expected by the spec.
+  // Occasionally, multiple such transient empty documents may be created.
+  // These documents start out in the uncommitted state, but if a navigation to
+  // `about:blank` occurs, they can become permanent by being committed to, and
+  // a load event will be fired.
+  //
+  // `Document.isUncommittedInitialDocument` helps identify these transient documents,
+  // which we want to ignore as they would instantiate very short lived targets which
   // confuses many tests and triggers race conditions by spamming many targets.
   //
-  // We also ignore some other transient empty documents created while using `window.open()`
-  // When using this API with cross process loads, we may create up to three documents/WindowGlobals.
-  // We get a first initial about:blank document, and a second document created
-  // for moving the document in the right principal.
-  // The third document will be the actual document we expect to debug.
-  // The second document is an implementation artifact which ideally wouldn't exist
-  // and isn't expected by the spec.
+  // For example, when using `window.open()` with cross-process loads, we may create four
+  // such documents/WindowGlobals. We first get an initial about:blank document,
+  // a second one when moving to the right principal, a third one when moving to the correct
+  // process, and the fourth will is the actual document we expect to debug.
+  // The second and third documents are implementation artifacts that ideally
+  // wouldn't exist and aren't expected by the spec. These are implementation
+  // details that may have already changed or could change in the future.
+  //
   // Note that `window.print` and print preview are using `window.open` and are going through this.
   //
-  // WindowGlobalParent will have `isInitialDocument` attribute, while we have to go through the Document for WindowGlobalChild.
-  const isInitialDocument =
-    windowGlobal.isInitialDocument ||
-    windowGlobal.browsingContext.window?.document.isInitialDocument;
-  if (isInitialDocument && !acceptInitialDocument) {
-    return false;
-  }
-
-  // We may process an iframe that runs in the same process as its parent and we don't want
-  // to create targets for them if same origin targets (=EFT) are not enabled.
-  // Instead the WindowGlobalTargetActor will inspect these children document via docShell tree
-  // (typically via `docShells` or `windows` getters).
-  // This is quite common when Fission is off as any iframe will run in same process
-  // as their parent document. But it can also happen with Fission enabled if iframes have
-  // children iframes using the same origin.
-  const isSameProcessIframe = !windowGlobal.isProcessRoot;
-  if (
-    isSameProcessIframe &&
-    !acceptSameProcessIframes &&
-    !isEveryFrameTargetEnabled
-  ) {
+  // WindowGlobalParent will have `isUncommittedInitialDocument` attribute, while we have to go
+  // through the Document for WindowGlobalChild.
+  const isUncommittedInitialDocument =
+    windowGlobal.isUncommittedInitialDocument ||
+    windowGlobal.browsingContext.window?.document.isUncommittedInitialDocument;
+  if (isUncommittedInitialDocument && !acceptUncommitedInitialDocument) {
     return false;
   }
 
@@ -302,10 +286,10 @@ function _validateWindowGlobal(
  *
  * @param {WindowGlobalParent|WindowGlobalChild} windowGlobal
  *        The WindowGlobal we want to check if it is part of debugged context
- * @param {Object} sessionContext
+ * @param {object} sessionContext
  *        The Session Context to help know what is debugged.
  *        See devtools/server/actors/watcher/session-context.js
- * @param {Object} options
+ * @param {object} options
  *        Optional arguments passed via a dictionary.
  *        See `isBrowsingContextPartOfContext` jsdoc.
  */
@@ -326,26 +310,18 @@ export function isWindowGlobalPartOfContext(
 
 /**
  * Get all the BrowsingContexts that should be debugged by the given session context.
- * Consider using WatcherActor.getAllBrowsingContexts(options) which will automatically pass the right sessionContext.
+ * Consider using WatcherActor.getAllBrowsingContexts() which will automatically pass the right sessionContext.
  *
  * Really all of them:
  * - For all the privileged windows (browser.xhtml, browser console, ...)
  * - For all chrome *and* content contexts (privileged windows, as well as <browser> elements and their inner content documents)
  * - For all nested browsing context. We fetch the contexts recursively.
  *
- * @param {Object} sessionContext
+ * @param {object} sessionContext
  *        The Session Context to help know what is debugged.
  *        See devtools/server/actors/watcher/session-context.js
- * @param {Object} options
- *        Optional arguments passed via a dictionary.
- * @param {Boolean} options.acceptSameProcessIframes
- *        If true, we will accept WindowGlobal that runs in the same process as their parent document.
- *        That, even when EFT is disabled.
  */
-export function getAllBrowsingContextsForContext(
-  sessionContext,
-  { acceptSameProcessIframes = false } = {}
-) {
+export function getAllBrowsingContextsForContext(sessionContext) {
   const browsingContexts = [];
 
   // For a given BrowsingContext, add the `browsingContext`
@@ -413,7 +389,6 @@ export function getAllBrowsingContextsForContext(
     // it would only be returned if sessionContext.isServerSideTargetSwitching is enabled.
     isBrowsingContextPartOfContext(bc, sessionContext, {
       forceAcceptTopLevelTarget: true,
-      acceptSameProcessIframes,
     })
   );
 }

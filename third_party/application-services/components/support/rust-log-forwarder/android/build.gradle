@@ -1,0 +1,14 @@
+apply from: "$appServicesRootDir/build-scripts/component-common.gradle"
+apply from: "$appServicesRootDir/publish.gradle"
+
+android {
+    namespace 'org.mozilla.appservices.rust_log_forwarder'
+}
+
+dependencies {
+    api project(':tracing')
+}
+
+ext.configureUniFFIBindgen("rust_log_forwarder")
+ext.dependsOnTheMegazord()
+ext.configurePublish()

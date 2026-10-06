@@ -1,0 +1,52 @@
+<!DOCTYPE HTML>
+<html>
+<!--
+https://bugzilla.mozilla.org/show_bug.cgi?id=1997216
+-->
+<head>
+  <meta charset="utf-8">
+  <title>Test for Bug 1997216</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+  <script type="application/javascript">
+
+  /** Test for Bug 1997216 */
+
+  // Test 1: DOMException from querySelector
+  try {
+    document.querySelector('###INVALID_SELECTOR###');
+    ok(false, "Should have thrown");
+  } catch (e) {
+    is(e.lineNumber, 17, "querySelector exception should be on line 17");
+    is(e.columnNumber, 14, "querySelector exception should be on column 14");
+  }
+
+  // Test 2: Manually created DOMException
+  try {
+    throw new DOMException('Test exception', 'NotFoundError');
+  } catch (e) {
+    is(e.lineNumber, 26, "Manual DOMException should be on line 26");
+    is(e.columnNumber, 11, "Manual DOMException should be on column 11");
+  }
+
+  // Test 3: DOMException from invalid appendChild
+  try {
+    document.documentElement.appendChild(null);
+    ok(false, "Should have thrown");
+  } catch (e) {
+    is(e.lineNumber, 34, "appendChild exception should be on line 34");
+    is(e.columnNumber, 30, "appendChild exception should be on column 30");
+  }
+
+  </script>
+</head>
+<body>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1997216">Mozilla Bug 1997216</a>
+<p id="display"></p>
+<div id="content" style="display: none">
+
+</div>
+<pre id="test">
+</pre>
+</body>
+</html>

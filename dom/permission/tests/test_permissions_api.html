@@ -52,7 +52,15 @@
     type: 'microphone'
   }, ];
 
-  const PERMISSIONS = [...OTHER_PERMISSIONS, ...MEDIA_PERMISSIONS];
+  const LNA_PERMISSIONS = [{
+    name: 'loopback-network',
+    type: 'loopback-network'
+  }, {
+    name: 'local-network',
+    type: 'local-network'
+  }];
+
+  const PERMISSIONS = [...OTHER_PERMISSIONS, ...MEDIA_PERMISSIONS, ...LNA_PERMISSIONS];
 
   const UNSUPPORTED_PERMISSIONS = [
     { name: 'foobarbaz' }, // Not in spec, for testing only.
@@ -105,33 +113,23 @@
           });
         return Promise.all(promisesToQuery);
       },
-      promiseStateChanged(name, state) {
-        return iframeWindow.navigator.permissions
-          .query({ name })
-          .then(status => {
-            return new Promise( resolve => {
-              status.onchange = () => {
-                status.onchange = null;
-                is(status.state, state, `state changed for '${name}'`);
-                resolve();
-              };
-            });
-          },
-          () => ok(false, `query should not have rejected for '${name}'`));
-      },
-      testStatusOnChange() {
-        return new Promise((resolve) => {
-          SpecialPowers.popPermissions(() => {
-            const permission = 'geolocation';
-            const promiseGranted = this.promiseStateChanged(permission, 'granted');
-            this.setPermissions(ALLOW_ACTION);
-            promiseGranted.then(async () => {
-              const promisePrompt = this.promiseStateChanged(permission, 'prompt');
-              await SpecialPowers.popPermissions();
-              return promisePrompt;
-            }).then(resolve);
-          });
+      promiseStateChanged(status, state) {
+        return new Promise(resolve => {
+          status.addEventListener("change", () => {
+            is(status.state, state, `state changed to '${state}'`);
+            resolve();
+          }, { once: true });
         });
+      },
+      async testStatusOnChange() {
+        await SpecialPowers.popPermissions();
+        const status = await iframeWindow.navigator.permissions.query({ name: "geolocation" });
+        const promiseGranted = this.promiseStateChanged(status, "granted");
+        this.setPermissions(ALLOW_ACTION);
+        await promiseGranted;
+        const promisePrompt = this.promiseStateChanged(status, "prompt");
+        await SpecialPowers.popPermissions();
+        await promisePrompt;
       },
       testInvalidQuery() {
         return iframeWindow.navigator.permissions
@@ -271,6 +269,32 @@
       await tester.setPermissions(UNKNOWN_ACTION);
       await tester.checkUnsupportedPermissions(MEDIA_PERMISSIONS);
       await tester.checkPermissions(OTHER_PERMISSIONS, 'prompt');
+      await SpecialPowers.popPrefEnv();
+
+      // Test LNA permissions with pref disabled
+      await SpecialPowers.pushPrefEnv({
+        set: [
+          ["network.lna.blocking", false]
+        ]
+      });
+      await tester.setPermissions(UNKNOWN_ACTION);
+      await tester.checkUnsupportedPermissions(LNA_PERMISSIONS);
+      await tester.checkPermissions([...OTHER_PERMISSIONS, ...MEDIA_PERMISSIONS], 'prompt');
+      await SpecialPowers.popPrefEnv();
+
+      // Test LNA permissions with pref enabled
+      await SpecialPowers.pushPrefEnv({
+        set: [
+          ["network.lna.blocking", true]
+        ]
+      });
+      await tester.setPermissions(PROMPT_ACTION);
+      await tester.checkPermissions(PERMISSIONS, 'prompt', 'granted');
+      await tester.setPermissions(ALLOW_ACTION);
+      await tester.checkPermissions(PERMISSIONS, 'granted');
+      await tester.setPermissions(DENY_ACTION);
+      await tester.checkPermissions(PERMISSIONS, 'denied');
+      await SpecialPowers.popPrefEnv();
     } finally {
       SimpleTest.finish();
     }

@@ -10,7 +10,7 @@ const HTTP_ORIGIN = "http://www.example.com";
  * Returns a list of new nsILoginInfo objects that are a subset of the test
  * data, built to match the specified query.
  *
- * @param {Object} aQuery
+ * @param {object} aQuery
  *        Each property and value of this object restricts the search to those
  *        entries from the test data that match the property exactly.
  */
@@ -33,22 +33,22 @@ function buildExpectedLogins(aQuery) {
 /**
  * Tests the searchLogins function.
  *
- * @param {Object} aQuery
+ * @param {object} aQuery
  *        Each property and value of this object is translated to an entry in
  *        the nsIPropertyBag parameter of searchLogins.
- * @param {Number} aExpectedCount
+ * @param {number} aExpectedCount
  *        Number of logins from the test data that should be found.  The actual
  *        list of logins is obtained using the buildExpectedLogins helper, and
  *        this value is just used to verify that modifications to the test data
  *        don't make the current test meaningless.
  */
-function checkSearch(aQuery, aExpectedCount) {
+async function checkSearch(aQuery, aExpectedCount) {
   info("Testing searchLogins for " + JSON.stringify(aQuery));
 
   let expectedLogins = buildExpectedLogins(aQuery);
   Assert.equal(expectedLogins.length, aExpectedCount);
 
-  let logins = Services.logins.searchLogins(newPropertyBag(aQuery));
+  let logins = await Services.logins.searchLoginsAsync(aQuery);
   LoginTestUtils.assertLoginListsEqual(logins, expectedLogins);
 }
 
@@ -62,29 +62,29 @@ add_setup(async () => {
 /**
  * Tests searchLogins with the `schemeUpgrades` property
  */
-add_task(function test_search_schemeUpgrades_origin() {
+add_task(async function test_search_schemeUpgrades_origin() {
   // Origin-only
-  checkSearch(
+  await checkSearch(
     {
       origin: HTTPS_ORIGIN,
     },
     1
   );
-  checkSearch(
+  await checkSearch(
     {
       origin: HTTPS_ORIGIN,
       schemeUpgrades: false,
     },
     1
   );
-  checkSearch(
+  await checkSearch(
     {
       origin: HTTPS_ORIGIN,
       schemeUpgrades: undefined,
     },
     1
   );
-  checkSearch(
+  await checkSearch(
     {
       origin: HTTPS_ORIGIN,
       schemeUpgrades: true,
@@ -96,28 +96,28 @@ add_task(function test_search_schemeUpgrades_origin() {
 /**
  * Same as above but replacing origin with formActionOrigin.
  */
-add_task(function test_search_schemeUpgrades_formActionOrigin() {
-  checkSearch(
+add_task(async function test_search_schemeUpgrades_formActionOrigin() {
+  await checkSearch(
     {
       formActionOrigin: HTTPS_ORIGIN,
     },
     2
   );
-  checkSearch(
+  await checkSearch(
     {
       formActionOrigin: HTTPS_ORIGIN,
       schemeUpgrades: false,
     },
     2
   );
-  checkSearch(
+  await checkSearch(
     {
       formActionOrigin: HTTPS_ORIGIN,
       schemeUpgrades: undefined,
     },
     2
   );
-  checkSearch(
+  await checkSearch(
     {
       formActionOrigin: HTTPS_ORIGIN,
       schemeUpgrades: true,
@@ -126,15 +126,15 @@ add_task(function test_search_schemeUpgrades_formActionOrigin() {
   );
 });
 
-add_task(function test_search_schemeUpgrades_origin_formActionOrigin() {
-  checkSearch(
+add_task(async function test_search_schemeUpgrades_origin_formActionOrigin() {
+  await checkSearch(
     {
       formActionOrigin: HTTPS_ORIGIN,
       origin: HTTPS_ORIGIN,
     },
     1
   );
-  checkSearch(
+  await checkSearch(
     {
       formActionOrigin: HTTPS_ORIGIN,
       origin: HTTPS_ORIGIN,
@@ -142,7 +142,7 @@ add_task(function test_search_schemeUpgrades_origin_formActionOrigin() {
     },
     1
   );
-  checkSearch(
+  await checkSearch(
     {
       formActionOrigin: HTTPS_ORIGIN,
       origin: HTTPS_ORIGIN,
@@ -150,7 +150,7 @@ add_task(function test_search_schemeUpgrades_origin_formActionOrigin() {
     },
     1
   );
-  checkSearch(
+  await checkSearch(
     {
       formActionOrigin: HTTPS_ORIGIN,
       origin: HTTPS_ORIGIN,
@@ -158,7 +158,7 @@ add_task(function test_search_schemeUpgrades_origin_formActionOrigin() {
     },
     2
   );
-  checkSearch(
+  await checkSearch(
     {
       formActionOrigin: HTTPS_ORIGIN,
       origin: HTTPS_ORIGIN,
@@ -167,7 +167,7 @@ add_task(function test_search_schemeUpgrades_origin_formActionOrigin() {
     },
     2
   );
-  checkSearch(
+  await checkSearch(
     {
       formActionOrigin: HTTPS_ORIGIN,
       origin: HTTPS_ORIGIN,
@@ -177,7 +177,7 @@ add_task(function test_search_schemeUpgrades_origin_formActionOrigin() {
     },
     2
   );
-  checkSearch(
+  await checkSearch(
     {
       formActionOrigin: HTTPS_ORIGIN,
       origin: HTTPS_ORIGIN,
@@ -193,8 +193,8 @@ add_task(function test_search_schemeUpgrades_origin_formActionOrigin() {
 /**
  * HTTP submitting to HTTPS
  */
-add_task(function test_http_to_https() {
-  checkSearch(
+add_task(async function test_http_to_https() {
+  await checkSearch(
     {
       formActionOrigin: HTTPS_ORIGIN,
       origin: HTTP3_ORIGIN,
@@ -203,7 +203,7 @@ add_task(function test_http_to_https() {
     },
     1
   );
-  checkSearch(
+  await checkSearch(
     {
       formActionOrigin: HTTPS_ORIGIN,
       origin: HTTP3_ORIGIN,
@@ -217,8 +217,8 @@ add_task(function test_http_to_https() {
 /**
  * schemeUpgrades shouldn't cause downgrades
  */
-add_task(function test_search_schemeUpgrades_downgrade() {
-  checkSearch(
+add_task(async function test_search_schemeUpgrades_downgrade() {
+  await checkSearch(
     {
       formActionOrigin: HTTP_ORIGIN,
       origin: HTTP_ORIGIN,
@@ -228,7 +228,7 @@ add_task(function test_search_schemeUpgrades_downgrade() {
   info(
     "The same number should be found with schemeUpgrades since we're searching for HTTP"
   );
-  checkSearch(
+  await checkSearch(
     {
       formActionOrigin: HTTP_ORIGIN,
       origin: HTTP_ORIGIN,

@@ -148,8 +148,16 @@ LoginStore.prototype._dataPostProcessor = function (data) {
     data.potentiallyVulnerablePasswords = [];
   }
 
-  if (!data.dismissedBreachAlertsByLoginGUID) {
-    data.dismissedBreachAlertsByLoginGUID = {};
+  // Migrate breach alert dismissals from the separate map into per-login fields.
+  if (data.dismissedBreachAlertsByLoginGUID) {
+    for (let login of data.logins) {
+      if (login.guid in data.dismissedBreachAlertsByLoginGUID) {
+        const { timeBreachAlertDismissed } =
+          data.dismissedBreachAlertsByLoginGUID[login.guid];
+        login.timeLastBreachAlertDismissed = timeBreachAlertDismissed;
+      }
+    }
+    delete data.dismissedBreachAlertsByLoginGUID;
   }
 
   // sanitize dates in logins

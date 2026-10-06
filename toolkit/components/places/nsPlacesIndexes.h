@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=2 et lcs=trail\:.,tab\:>~ :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsPlacesIndexes_h__
-#define nsPlacesIndexes_h__
+#ifndef nsPlacesIndexes_h_
+#define nsPlacesIndexes_h_
 
 #define CREATE_PLACES_IDX(__name, __table, __columns, __type)                  \
   nsLiteralCString("CREATE " __type " INDEX IF NOT EXISTS " __table "_" __name \
@@ -133,4 +131,4 @@
   CREATE_PLACES_IDX("placeidindex", "moz_newtab_shortcuts_interaction", \
                     "place_id", "")
 
-#endif  // nsPlacesIndexes_h__
+#endif  // nsPlacesIndexes_h_

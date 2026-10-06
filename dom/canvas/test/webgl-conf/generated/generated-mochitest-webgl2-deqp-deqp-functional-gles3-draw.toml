@@ -1,0 +1,36 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-deqp"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/closure-library/**",
+  "../checkout/deqp/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_deqp__functional__gles3__draw__draw_arrays.html"]
+
+["test_2_deqp__functional__gles3__draw__draw_arrays_instanced.html"]
+
+["test_2_deqp__functional__gles3__draw__draw_elements.html"]
+
+["test_2_deqp__functional__gles3__draw__draw_elements_instanced.html"]
+
+["test_2_deqp__functional__gles3__draw__draw_range_elements.html"]
+
+["test_2_deqp__functional__gles3__draw__instancing.html"]
+
+["test_2_deqp__functional__gles3__draw__random.html"]

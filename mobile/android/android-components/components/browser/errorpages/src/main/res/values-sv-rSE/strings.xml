@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- The button that appears at the bottom of an error page. -->
   <string name="mozac_browser_errorpages_page_refresh">Försök igen</string>
@@ -9,15 +16,15 @@
   <!-- The document title and heading of the error page shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
   <string name="mozac_browser_errorpages_security_ssl_title">Säker anslutning misslyckades</string>
   <!-- The error message shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[<ul> <li>Sidan du försöker visa kan inte visas eftersom autenticiteten för de mottagna uppgifterna inte kunde verifieras.</li> <li>Kontakta webbplatsägarna för att informera dem om detta problem.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[<ul>\n<li>Sidan du försöker visa kan inte visas eftersom autenticiteten för de mottagna uppgifterna inte kunde verifieras.</li>\n<li>Kontakta webbplatsägarna för att informera dem om detta problem.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website sends has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_title">Säker anslutning misslyckades</string>
   <!-- The error message shown when a website sends has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[<ul> <li>Detta kan vara ett problem med serverns konfiguration eller det kan vara någon som försöker efterapa servern.</li> <li>Om du har anslutit till denna server framgångsrikt kan felet vara tillfälligt och du kan försöka igen senare.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[<ul>\n<li>Detta kan vara ett problem med serverns konfiguration eller det kan vara någon som försöker efterapa servern.</li>\n<li>Om du har anslutit till denna server framgångsrikt kan felet vara tillfälligt och du kan försöka igen senare.</li>\n</ul>]]></string>
   <!-- The text shown inside the advanced button used to expand the advanced options. It's only shown when a website has an invalid SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_advanced">Avancerat…</string>
   <!-- The advanced certificate information shown when a website sends has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Någon kan försöka efterlikna webbplatsen och du bör inte fortsätta.</label> <br><br> <label>Webbplatser bevisar sin identitet via certifikat. %1$s litar inte på <b>%2$s</b> eftersom certifikatutgivaren är okänd, certifikatet är självsignerat eller servern skickar inte rätt mellanliggande certifikat.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Någon kan försöka efterlikna webbplatsen och du bör inte fortsätta.</label> <br><br>\n<label>Webbplatser bevisar sin identitet via certifikat. %1$s litar inte på <b>%2$s</b> eftersom certifikatutgivaren är okänd, certifikatet är självsignerat eller servern skickar inte rätt mellanliggande certifikat.</label>]]></string>
   <!-- The text shown inside the advanced options button used to go back. It's only shown if the user has expanded the advanced options. -->
   <string name="mozac_browser_errorpages_security_bad_cert_back">Gå tillbaka (rekommenderas)</string>
   <!-- The text shown inside the advanced options button used to bypass the invalid SSL certificate. It's only shown if the user has expanded the advanced options. -->
@@ -25,7 +32,7 @@
   <!-- The document title and heading of the error page shown when a website uses HSTS. -->
   <string name="mozac_browser_errorpages_security_bad_hsts_cert_title">Denna webbplats kräver en säker anslutning.</string>
   <!-- The error message shown when a website uses HSTS. -->
-  <string name="mozac_browser_errorpages_security_bad_hsts_cert_message"><![CDATA[<ul> <li>Sidan du försöker visa kan inte visas eftersom den här webbplatsen kräver en säker anslutning.</li> <li>Problemet ligger troligen på webbplatsen och det finns inget du kan göra för att lösa det.</li> <li>Du kan meddela webbplatsens administratör om problemet.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_hsts_cert_message"><![CDATA[<ul>\n<li>Sidan du försöker visa kan inte visas eftersom den här webbplatsen kräver en säker anslutning.</li>\n<li>Problemet ligger troligen på webbplatsen och det finns inget du kan göra för att lösa det.</li>\n<li>Du kan meddela webbplatsens administratör om problemet.</li>\n</ul>]]></string>
   <!-- The text shown inside the advanced button used to expand the advanced options. It's only shown when a website uses HSTS. -->
   <string name="mozac_browser_errorpages_security_bad_hsts_cert_advanced">Avancerat…</string>
   <!-- The advanced certificate information shown when a website uses HSTS. The %1$s will be replaced by the website URL and %2$s will be replaced by the app name. It's only shown when a website uses HSTS. -->
@@ -35,15 +42,15 @@
   <!-- The document title and heading of the error page shown when the user's network connection is interrupted while connecting to a website. -->
   <string name="mozac_browser_errorpages_net_interrupt_title">Anslutningen avbröts</string>
   <!-- The error message shown when the user's network connection is interrupted while connecting to a website. -->
-  <string name="mozac_browser_errorpages_net_interrupt_message"><![CDATA[<p>Webbläsaren anslöt framgångsrikt, men anslutningen avbröts vid överföring av information. Försök igen.</p> <ul> <li>Webbplatsen kan vara tillfälligt otillgänglig eller för upptagen. Försök igen om några minuter.</li> <li>Om du inte kan ladda några sidor kan du kontrollera enhetens data eller Wi-Fi-anslutning.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_net_interrupt_message"><![CDATA[<p>Webbläsaren anslöt framgångsrikt, men anslutningen avbröts vid överföring av information. Försök igen.</p>\n<ul>\n<li>Webbplatsen kan vara tillfälligt otillgänglig eller för upptagen. Försök igen om några minuter.</li>\n<li>Om du inte kan ladda några sidor kan du kontrollera enhetens data eller Wi-Fi-anslutning.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website takes too long to load. -->
   <string name="mozac_browser_errorpages_net_timeout_title">Anslutningens tidsgräns överskreds</string>
   <!-- The error message shown when a website took long to load. -->
-  <string name="mozac_browser_errorpages_net_timeout_message"><![CDATA[<p>Den begärda webbplatsen svarade inte på en anslutningsbegäran och webbläsaren har slutat vänta på ett svar.</p> <ul> <li>Kan servern ha hög efterfrågan eller tillfälligt avbrott? Försök igen senare.</li> <li>Kan du inte surfa på andra webbplatser? Kontrollera enhetens nätverksanslutning.</li> <li>Är din enhet eller nätverk skyddad av en brandvägg eller proxy? Felaktiga inställningar kan påverka surfningen.</li> <li>Har du fortfarande problem? Kontakta nätverksadministratören eller internetleverantören för hjälp.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_net_timeout_message"><![CDATA[<p>Den begärda webbplatsen svarade inte på en anslutningsbegäran och webbläsaren har slutat vänta på ett svar.</p>\n<ul>\n<li>Kan servern ha hög efterfrågan eller tillfälligt avbrott? Försök igen senare.</li>\n<li>Kan du inte surfa på andra webbplatser? Kontrollera enhetens nätverksanslutning.</li>\n<li>Är din enhet eller nätverk skyddad av en brandvägg eller proxy? Felaktiga inställningar kan påverka surfningen.</li>\n<li>Har du fortfarande problem? Kontakta nätverksadministratören eller internetleverantören för hjälp.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website could not be reached. -->
   <string name="mozac_browser_errorpages_connection_failure_title">Kan inte ansluta</string>
   <!-- The error message shown when a website could not be reached. -->
-  <string name="mozac_browser_errorpages_connection_failure_message"><![CDATA[<ul> <li>Webbplatsen kan vara tillfälligt otillgänglig eller för upptagen. Försök igen om några minuter.</li> <li>Om du inte kan ladda några sidor kan du kontrollera enhetens data eller Wi-Fi-anslutning.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_connection_failure_message"><![CDATA[<ul>\n<li>Webbplatsen kan vara tillfälligt otillgänglig eller för upptagen. Försök igen om några minuter.</li>\n<li>Om du inte kan ladda några sidor kan du kontrollera enhetens data eller Wi-Fi-anslutning.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website responds in an unexpected way and the browser cannot continue. -->
   <string name="mozac_browser_errorpages_unknown_socket_type_title">Oväntat svar från servern</string>
   <!-- The error message shown when a website responds in an unexpected way and the browser cannot continue. -->
@@ -51,11 +58,11 @@
   <!-- The document title and heading of the error page shown when the browser gets stuck in an infinite loop when loading a website. -->
   <string name="mozac_browser_errorpages_redirect_loop_title">Sidan dirigeras om felaktigt</string>
   <!-- The error message shown when the browser gets stuck in an infinite loop when loading a website. -->
-  <string name="mozac_browser_errorpages_redirect_loop_message"><![CDATA[<p>Webbläsaren har slutat försöka hämta det begärda objektet. Webbplatsen omdirigerar begäran på ett sätt som aldrig kommer att slutföras.</p> <ul> <li>Har du inaktiverat eller blockerat kakor som krävs av denna webbplats?</li> <li>Om att acceptera webbplatsens kakor inte löser problemet, är det troligtvis ett konfigurationsproblem i servern och inte din enhet.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_redirect_loop_message"><![CDATA[<p>Webbläsaren har slutat försöka hämta det begärda objektet. Webbplatsen omdirigerar begäran på ett sätt som aldrig kommer att slutföras.</p>\n<ul>\n<li>Har du inaktiverat eller blockerat kakor som krävs av denna webbplats?</li>\n<li>Om att acceptera webbplatsens kakor inte löser problemet, är det troligtvis ett konfigurationsproblem i servern och inte din enhet.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website cannot be loaded because the browser is in offline mode. -->
   <string name="mozac_browser_errorpages_offline_title">Offlineläge</string>
   <!-- The error message shown when a website cannot be loaded because the browser is in offline mode. -->
-  <string name="mozac_browser_errorpages_offline_message"><![CDATA[<p>Webbläsaren arbetar i sitt offlineläge och kan inte ansluta till det begärda objektet.</p> <ul> <li>Är datorn ansluten till ett aktivt nätverk?</li> <li> Tryck på \"Försök igen\" för att växla till online-läge och ladda om sidan igen.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_offline_message"><![CDATA[<p>Webbläsaren arbetar i sitt offlineläge och kan inte ansluta till det begärda objektet.</p>\n<ul>\n<li>Är datorn ansluten till ett aktivt nätverk?</li>\n<li> Tryck på \"Försök igen\" för att växla till online-läge och ladda om sidan igen.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when the browser prevents loading a website on a restricted port. -->
   <string name="mozac_browser_errorpages_port_blocked_title">Porten har säkerhetsrestriktioner</string>
   <!-- The error message shown when the browser prevents loading a website on a restricted port. -->
@@ -63,25 +70,25 @@
   <!-- The document title and heading of the error page shown when the Internet connection is disrupted while loading a website. -->
   <string name="mozac_browser_errorpages_net_reset_title">Anslutningen återställdes</string>
   <!-- The error message shown when the Internet connection is disrupted while loading a website. -->
-  <string name="mozac_browser_errorpages_net_reset_message"><![CDATA[<p>Nätverkslänken avbröts under förhandlingar om en anslutning. Försök igen.</p> <ul> <li>Webbplatsen kan vara tillfälligt otillgänglig eller för upptagen. Försök igen om några minuter.</li> <li>Om du inte kan ladda några sidor kan du kontrollera enhetens data eller Wi-Fi-anslutning.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_net_reset_message"><![CDATA[<p>Nätverkslänken avbröts under förhandlingar om en anslutning. Försök igen.</p>\n<ul>\n<li>Webbplatsen kan vara tillfälligt otillgänglig eller för upptagen. Försök igen om några minuter.</li>\n<li>Om du inte kan ladda några sidor kan du kontrollera enhetens data eller Wi-Fi-anslutning.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when the browser refuses to load a type of file that is considered unsafe. -->
   <string name="mozac_browser_errorpages_unsafe_content_type_title">Osäker filtyp</string>
   <!-- The error message shown when the browser refuses to load a type of file that is considered unsafe. -->
-  <string name="mozac_browser_errorpages_unsafe_content_type_message"><![CDATA[<ul> <li>Kontakta webbplatsägarna för att informera dem om detta problem.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_unsafe_content_type_message"><![CDATA[<ul>\n<li>Kontakta webbplatsägarna för att informera dem om detta problem.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a file cannot be loaded because of a detected data corruption. -->
   <string name="mozac_browser_errorpages_corrupted_content_title">Korrupt innehållsfel</string>
   <!-- The error message shown when shown when a file cannot be loaded because of a detected data corruption. -->
-  <string name="mozac_browser_errorpages_corrupted_content_message"><![CDATA[<p>Sidan du försöker visa kan inte visas eftersom ett fel i dataöverföringen upptäcktes.</p> <ul> <li>Kontakta webbplatsägarna för att informera dem om detta problem.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_corrupted_content_message"><![CDATA[<p>Sidan du försöker visa kan inte visas eftersom ett fel i dataöverföringen upptäcktes.</p>\n<ul>\n<li>Kontakta webbplatsägarna för att informera dem om detta problem.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_content_crashed_title">Innehållet kraschade</string>
-  <string name="mozac_browser_errorpages_content_crashed_message"><![CDATA[<p>Sidan du försöker visa kan inte visas eftersom ett fel i dataöverföringen upptäcktes.</p> <ul> <li>Kontakta webbplatsägarna för att informera dem om detta problem.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_content_crashed_message"><![CDATA[<p>Sidan du försöker visa kan inte visas eftersom ett fel i dataöverföringen upptäcktes.</p>\n<ul>\n<li>Kontakta webbplatsägarna för att informera dem om detta problem.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_invalid_content_encoding_title">Kodningsfel av innehållet</string>
-  <string name="mozac_browser_errorpages_invalid_content_encoding_message"><![CDATA[<p>Sidan du försöker visa kan inte visas eftersom den använder en ogiltig eller icke-stödd form av komprimering.</p> <ul> <li>Kontakta webbplatsägarna för att informera dem om detta problem.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_invalid_content_encoding_message"><![CDATA[<p>Sidan du försöker visa kan inte visas eftersom den använder en ogiltig eller icke-stödd form av komprimering.</p>\n<ul>\n<li>Kontakta webbplatsägarna för att informera dem om detta problem.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_unknown_host_title">Adressen hittades inte</string>
   <!-- In the example, the two URLs in markup do not need to be translated. -->
-  <string name="mozac_browser_errorpages_unknown_host_message"><![CDATA[<p>Webbläsaren kunde inte hitta värdservern för den angivna adressen.</p> <ul> <li>Kontrollera adressen för skrivfel som t.ex. <strong>ww</strong>.example.com istället för <strong>www</strong>.example.com.</li> <li>Om du inte kan ladda några sidor kan du kontrollera enhetens data eller Wi-Fi-anslutning.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_unknown_host_message"><![CDATA[<p>Webbläsaren kunde inte hitta värdservern för den angivna adressen.</p>\n<ul>\n<li>Kontrollera adressen för skrivfel som t.ex. <strong>ww</strong>.example.com istället för <strong>www</strong>.example.com.</li>\n<li>Om du inte kan ladda några sidor kan du kontrollera enhetens data eller Wi-Fi-anslutning.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_no_internet_title_2">Det verkar finnas ett problem med din internetanslutning</string>
   <!-- The main body text of this error page. It will be shown beneath the title -->
@@ -96,22 +103,22 @@
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_malformed_uri_title_alternative">Adressen är inte giltig</string>
   <!-- This string contains markup. The URL should not be localized. -->
-  <string name="mozac_browser_errorpages_malformed_uri_message_alternative"><![CDATA[<ul> <li>Webbadresser är vanligtvis skrivna som <strong> http://www.example.com/</strong></li> <li>Se till att du använder framåtriktade snedstreck (dvs. <strong>/</strong>).</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_malformed_uri_message_alternative"><![CDATA[<ul>\n<li>Webbadresser är vanligtvis skrivna som <strong> http://www.example.com/</strong></li>\n<li>Se till att du använder framåtriktade snedstreck (dvs. <strong>/</strong>).</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_unknown_protocol_title">Okänt protokoll</string>
-  <string name="mozac_browser_errorpages_unknown_protocol_message"><![CDATA[<p>Adressen anger ett protokoll (t.ex. <q>wxyz://</q>) webbläsaren inte känner igen, så webbläsaren kan inte ansluta till webbplatsen korrekt. </p> <ul> <li>Försöker du få tillgång till multimedia eller andra icke-texttjänster? Kontrollera webbplatsen för extra krav.</li> <li>Vissa protokoll kan kräva programvara eller plugins från tredje part innan webbläsaren kan känna igen dem.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_unknown_protocol_message"><![CDATA[<p>Adressen anger ett protokoll (t.ex. <q>wxyz://</q>) webbläsaren inte känner igen, så webbläsaren kan inte ansluta till webbplatsen korrekt. </p>\n<ul>\n<li>Försöker du få tillgång till multimedia eller andra icke-texttjänster? Kontrollera webbplatsen för extra krav.</li>\n<li>Vissa protokoll kan kräva programvara eller plugins från tredje part innan webbläsaren kan känna igen dem.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_file_not_found_title">Filen hittades inte</string>
-  <string name="mozac_browser_errorpages_file_not_found_message"><![CDATA[<ul> <li>Kan objektet ha bytt namn, tagits bort eller flyttat?</li> <li>Finns det stavfel, stor bokstav eller annat typografiskt fel i adressen?</li> <li>Har du tillräckliga åtkomstbehörigheter till det begärda objektet?</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_file_not_found_message"><![CDATA[<ul>\n<li>Kan objektet ha bytt namn, tagits bort eller flyttat?</li>\n<li>Finns det stavfel, stor bokstav eller annat typografiskt fel i adressen?</li>\n<li>Har du tillräckliga åtkomstbehörigheter till det begärda objektet?</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_file_access_denied_title">Åtkomst till filen nekades</string>
-  <string name="mozac_browser_errorpages_file_access_denied_message"><![CDATA[<ul> <li>Den kan ha tagits bort, flyttats eller filbehörigheter kan förhindra åtkomst.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_file_access_denied_message"><![CDATA[<ul>\n<li>Den kan ha tagits bort, flyttats eller filbehörigheter kan förhindra åtkomst.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_proxy_connection_refused_title">Proxyservern avslog anslutningen</string>
-  <string name="mozac_browser_errorpages_proxy_connection_refused_message"><![CDATA[<p>Webbläsaren är konfigurerad för att använda en proxyserver, men proxyn vägrade en anslutning.</p> <ul> <li>Är webbläsarens proxykonfiguration korrekt? Kontrollera inställningarna och försök igen.</li> <li>Tillåter proxytjänsten anslutningar från det här nätverket?</li> <li>Har du fortfarande problem? Kontakta nätverksadministratören eller internetleverantören för hjälp.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_proxy_connection_refused_message"><![CDATA[<p>Webbläsaren är konfigurerad för att använda en proxyserver, men proxyn vägrade en anslutning.</p>\n<ul>\n<li>Är webbläsarens proxykonfiguration korrekt? Kontrollera inställningarna och försök igen.</li>\n<li>Tillåter proxytjänsten anslutningar från det här nätverket?</li>\n<li>Har du fortfarande problem? Kontakta nätverksadministratören eller internetleverantören för hjälp.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_unknown_proxy_host_title">Proxyservern hittades inte</string>
-  <string name="mozac_browser_errorpages_unknown_proxy_host_message"><![CDATA[<p>Webbläsaren är konfigurerad för att använda en proxyserver, men proxyn kunde inte hittas.</p> <ul> <li>Är webbläsarens proxykonfiguration korrekt? Kontrollera inställningarna och försök igen.</li> <li>Är datorn ansluten till ett aktivt nätverk?</li> <li>Har du fortfarande problem? Kontakta nätverksadministratören eller internetleverantören för hjälp.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_unknown_proxy_host_message"><![CDATA[<p>Webbläsaren är konfigurerad för att använda en proxyserver, men proxyn kunde inte hittas.</p>\n<ul>\n<li>Är webbläsarens proxykonfiguration korrekt? Kontrollera inställningarna och försök igen.</li>\n<li>Är datorn ansluten till ett aktivt nätverk?</li>\n<li>Har du fortfarande problem? Kontakta nätverksadministratören eller internetleverantören för hjälp.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_safe_browsing_malware_uri_title">Problem med skadlig kod</string>
   <!-- The %1$s will be replaced by the malicious website URL -->
@@ -128,6 +135,10 @@
   <string name="mozac_browser_errorpages_safe_phishing_uri_title">Problem med vilseledande webbplats</string>
   <!-- The %1$s will be replaced by the malicious website URL -->
   <string name="mozac_browser_errorpages_safe_phishing_uri_message"><![CDATA[<p>Denna webbsida på %1$s har rapporterats som en vilseledande webbplats och har blockerats baserat på dina säkerhetsinställningar.</p>]]></string>
+  <!-- The document title and heading of an error page. -->
+  <string name="mozac_browser_errorpages_harmful_addon_uri_title">Webbplatsen är blockerad för din säkerhet</string>
+  <!-- The %1$s will be replaced by the malicious website URL -->
+  <string name="mozac_browser_errorpages_harmful_addon_uri_message"><![CDATA[<p>Den här webbsidan på %1$s har blockerats eftersom ett av dina tillägg försökte öppna den. Webbplatsen kan användas för att stjäla din information — som lösenord eller kreditkortsnummer.</p>]]></string>
   <!-- The title of the error page for websites that do not support HTTPS when HTTPS-Only is turned on -->
   <string name="mozac_browser_errorpages_httpsonly_title">Säker webbplats finns inte tillgänglig</string>
   <!-- The text of the error page for websites that do not support HTTPS when HTTPS-Only is turned on. %1$s will be replaced with the URL of the website. -->

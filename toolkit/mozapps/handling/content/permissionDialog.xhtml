@@ -32,8 +32,15 @@
       type="application/javascript"
     />
 
+    <script
+      type="module"
+      src="chrome://global/content/elements/moz-message-bar.mjs"
+    ></script>
+
     <vbox id="description-box">
       <description id="description"></description>
+      <html:moz-message-bar type="warning" id="warning-bar" hidden="true">
+      </html:moz-message-bar>
       <label
         id="change-app"
         hidden="true"

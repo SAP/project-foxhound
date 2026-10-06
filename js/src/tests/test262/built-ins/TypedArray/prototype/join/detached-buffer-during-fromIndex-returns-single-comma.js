@@ -29,8 +29,8 @@ includes: [testTypedArray.js, detachArrayBuffer.js]
 features: [align-detached-buffer-semantics-with-web-reality, TypedArray]
 ---*/
 
-testWithTypedArrayConstructors(function(TA) {
-  const sample = new TA([1,2,3]);
+testWithTypedArrayConstructors(function(TA, makeCtorArg) {
+  const sample = new TA(makeCtorArg([1,2,3]));
   const separator = {
     toString() {
       $DETACHBUFFER(sample.buffer);
@@ -39,6 +39,6 @@ testWithTypedArrayConstructors(function(TA) {
   };
 
   assert.sameValue(sample.join(separator), ',,');
-});
+}, null, null, ["immutable"]);
 
 reportCompare(0, 0);

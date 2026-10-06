@@ -3,7 +3,7 @@ android-focus:
     description: Android formatting lint for Focus
     include: ['mobile/android/focus-android']
     exclude: []
-    extensions: ['java', 'kt']
+    extensions: ['java', 'kt', 'xml']
     support-files:
         - 'mobile/android/**/Makefile.in'
         - 'mobile/android/config/**'

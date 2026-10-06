@@ -1,12 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef HTMLBodyElement_h___
-#define HTMLBodyElement_h___
+#ifndef HTMLBodyElement_h_
+#define HTMLBodyElement_h_
 
-#include "mozilla/Attributes.h"
 #include "nsGenericHTMLElement.h"
 
 namespace mozilla {
@@ -19,9 +16,9 @@ class OnBeforeUnloadEventHandlerNonNull;
 
 class HTMLBodyElement final : public nsGenericHTMLElement {
  public:
-  using Element::GetText;
+  using Element::GetCharacterDataBuffer;
 
-  explicit HTMLBodyElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+  explicit HTMLBodyElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : nsGenericHTMLElement(std::move(aNodeInfo)) {}
 
   // nsISupports
@@ -39,7 +36,7 @@ class HTMLBodyElement final : public nsGenericHTMLElement {
   WINDOW_EVENT_HELPER(name_, EventHandlerNonNull)
 #define BEFOREUNLOAD_EVENT(name_, id_, type_, struct_) \
   WINDOW_EVENT_HELPER(name_, OnBeforeUnloadEventHandlerNonNull)
-#include "mozilla/EventNameList.h"  // IWYU pragma: keep
+#include "mozilla/EventNameList.inc"  // IWYU pragma: keep
 #undef BEFOREUNLOAD_EVENT
 #undef WINDOW_EVENT
 #undef WINDOW_EVENT_HELPER
@@ -114,4 +111,4 @@ class HTMLBodyElement final : public nsGenericHTMLElement {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif /* HTMLBodyElement_h___ */
+#endif /* HTMLBodyElement_h_ */

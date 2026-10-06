@@ -4,8 +4,7 @@ Notifications
 When initializing or running the engine, certain operations may take considerable time to complete.
 You can receive progress notifications for these operations using a callback function.
 
-Currently, progress notifications are supported only for model downloads.
-When the engine is created, it will download any model not already in the cache.
+Progress notifications are supported for model downloads, cache loads, and inference runs.
 
 Below is an example of using the callback function with the image-to-text model:
 
@@ -29,7 +28,7 @@ In the code above, **progressData** is an object of type `ProgressAndStatusCallb
 - **currentLoaded**: The amount of data loaded in the current callback call.
 - **total**: A float indicating an estimate of the total amount of data to be loaded.
 - **units**: The units in which the amounts are reported.
-- **type**: The name of the operation being tracked. It will be one of `ProgressType.DOWNLOAD`, `ProgressType.LOAD_FROM_CACHE`.
+- **type**: The name of the operation being tracked. It will be one of `ProgressType.DOWNLOAD`, `ProgressType.LOAD_FROM_CACHE`, `ProgressType.INFERENCE`.
 - **statusText**: A message indicating the status of the tracked operation, which can be:
 
   - `ProgressStatusText.INITIATE` Indicates that an operation has started. This will be used exactly once for each operation uniquely identified by `id` and `type`.

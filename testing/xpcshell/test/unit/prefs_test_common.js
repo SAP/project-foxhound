@@ -12,12 +12,12 @@ function has_pref_from_xpcshell_user_js() {
   return isValidPref("extensions.webextensions.warnings-as-errors");
 }
 
-// Test pref from xpcshell-with-prefs.ini
+// Test pref from xpcshell-with-prefs.toml
 function has_pref_from_manifest_defaults() {
   return isValidPref("dummy.pref.from.test.manifest");
 }
 
-// Test pref set in xpcshell.ini and xpcshell-with-prefs.ini
+// Test pref set in xpcshell.toml and xpcshell-with-prefs.toml
 function has_pref_from_manifest_file_section() {
   return isValidPref("dummy.pref.from.test.file");
 }
@@ -30,7 +30,7 @@ function check_common_xpcshell_with_prefs() {
 
   Assert.ok(
     has_pref_from_manifest_defaults(),
-    "Should have pref from DEFAULTS in xpcshell-with-prefs.ini"
+    "Should have pref from DEFAULTS in xpcshell-with-prefs.toml"
   );
 }
 
@@ -42,6 +42,6 @@ function check_common_xpcshell_without_prefs() {
 
   Assert.ok(
     !has_pref_from_manifest_defaults(),
-    "xpcshell.ini did not set any prefs in DEFAULTS"
+    "xpcshell.toml did not set any prefs in DEFAULTS"
   );
 }

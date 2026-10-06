@@ -9,6 +9,7 @@ const { sinon } = ChromeUtils.importESModule(
 
 const execProcess = sinon.stub();
 const sendCommandLine = sinon.stub().throws(Cr.NS_ERROR_NOT_AVAILABLE);
+const commandLineHandler = sinon.stub();
 
 add_setup(async () => {
   await initSelectableProfileService();
@@ -19,6 +20,12 @@ add_setup(async () => {
     (path, args, raise) => sendCommandLine(path, [...args], raise)
   );
   sinon.replace(getSelectableProfileService(), "execProcess", execProcess);
+
+  let { nsDefaultCommandLineHandler: browserClh } = ChromeUtils.importESModule(
+    "resource:///modules/BrowserContentHandler.sys.mjs"
+  );
+
+  sinon.replace(browserClh.prototype, "handle", commandLineHandler);
 });
 
 function nextCall(stub) {
@@ -89,29 +96,28 @@ add_task(async function test_redirect_args() {
     "Should have prevented the default handler"
   );
 
-  await nextCall(execProcess);
+  await nextCall(commandLineHandler);
 
   Assert.equal(
-    sendCommandLine.callCount,
+    commandLineHandler.callCount,
     1,
-    "Should have attempted to remote once"
-  );
-  Assert.deepEqual(
-    sendCommandLine.firstCall.args,
-    [profilePath, ["-url", "https://www.google.com/"], true],
-    "should have used the right arguments"
+    "Should have called the main browser command line handler directly"
   );
 
-  sendCommandLine.resetHistory();
-
-  Assert.equal(execProcess.callCount, 1, "Should have attempted to exec once");
-  Assert.deepEqual(
-    execProcess.firstCall.args,
-    [["-foreground", "-url", "https://www.google.com/"]],
-    "should have used the right arguments"
+  let [generatedCmdLine] = commandLineHandler.firstCall.args;
+  Assert.equal(
+    generatedCmdLine.length,
+    2,
+    "Should have generated a command line with the correct number of arguments"
+  );
+  Assert.equal(generatedCmdLine.getArgument(0), "-url");
+  Assert.equal(
+    generatedCmdLine.getArgument(1),
+    "https://www.google.com/",
+    "Should have generated a command line with the correct URL"
   );
 
-  execProcess.resetHistory();
+  commandLineHandler.resetHistory();
 
   let profileData = readProfilesIni();
 

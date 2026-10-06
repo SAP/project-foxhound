@@ -12,18 +12,24 @@
 #define MODULES_VIDEO_CAPTURE_LINUX_PIPEWIRE_SESSION_H_
 
 #include <pipewire/pipewire.h>
+#include <spa/pod/pod.h>
+#include <spa/utils/dict.h>
+#include <spa/utils/hook.h>
 
+#include <cstdint>
 #include <deque>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "api/ref_counted_base.h"
-#include "api/scoped_refptr.h"
 #include "modules/portal/pipewire_utils.h"
+#include "modules/portal/portal_request_response.h"
 #include "modules/video_capture/linux/camera_portal.h"
-#include "modules/video_capture/video_capture.h"
+#include "modules/video_capture/video_capture_defines.h"
 #include "modules/video_capture/video_capture_options.h"
 #include "rtc_base/synchronization/mutex.h"
+#include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
 namespace videocapturemodule {
@@ -67,21 +73,26 @@ class PipeWireNode {
                           uint32_t next,
                           const spa_pod* param);
   static bool ParseFormat(const spa_pod* param, VideoCaptureCapability* cap);
+  static void OnProxyDone(void* data, int seq);
 
-  pw_proxy* proxy_;
-  spa_hook node_listener_;
+  struct pw_proxy* proxy_;
+  struct spa_hook node_listener_;
+  struct spa_hook proxy_listener_;
   PipeWireSession* session_;
   uint32_t id_;
   std::string display_name_;
   std::string unique_id_;
   std::string model_id_;
+  struct pw_node_info* info_ = nullptr;
+  int sync_seq_ = 0;
   std::vector<VideoCaptureCapability> capabilities_;
+  std::vector<VideoCaptureCapability> pending_capabilities_;
 };
 
 class CameraPortalNotifier : public CameraPortal::PortalNotifier {
  public:
   CameraPortalNotifier(PipeWireSession* session);
-  ~CameraPortalNotifier() = default;
+  ~CameraPortalNotifier() override = default;
 
   void OnCameraRequestResult(xdg_portal::RequestResponse result,
                              int fd) override;
@@ -90,7 +101,7 @@ class CameraPortalNotifier : public CameraPortal::PortalNotifier {
   PipeWireSession* session_;
 };
 
-class PipeWireSession : public rtc::RefCountedNonVirtual<PipeWireSession> {
+class PipeWireSession : public webrtc::RefCountedNonVirtual<PipeWireSession> {
  public:
   PipeWireSession();
   ~PipeWireSession();
@@ -158,6 +169,7 @@ class PipeWireSession : public rtc::RefCountedNonVirtual<PipeWireSession> {
   VideoCaptureOptions::Status status_
       RTC_GUARDED_BY(device_info_lock_);
 
+  std::unique_ptr<PipeWireInitializer> pw_initializer_;
   struct pw_thread_loop* pw_main_loop_ = nullptr;
   struct pw_context* pw_context_ = nullptr;
   struct pw_core* pw_core_ = nullptr;

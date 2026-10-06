@@ -1,0 +1,55 @@
+[
+  {
+    "comment": "bookmarks type",
+    "test": {
+      "type": "bookmarks",
+      "title": "Bookmark Folder",
+      "links": [{ "url": "https://example.com", "title": "Example" }]
+    }
+  },
+  {
+    "comment": "tab_group type",
+    "test": {
+      "type": "tab_group",
+      "title": "My Tab Group",
+      "links": [{ "url": "https://example.com", "title": "Example" }]
+    }
+  },
+  {
+    "comment": "tabs type",
+    "test": {
+      "type": "tabs",
+      "title": "1 Tabs",
+      "links": [{ "url": "https://example.com", "title": "Example" }]
+    }
+  },
+  {
+    "comment": "http:// URL",
+    "test": {
+      "type": "tabs",
+      "title": "HTTP link",
+      "links": [{ "url": "http://example.com", "title": "HTTP" }]
+    }
+  },
+  {
+    "comment": "nested bookmarks",
+    "test": {
+      "type": "bookmarks",
+      "title": "Top Folder",
+      "links": [
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder",
+          "links": [
+            { "url": "https://example.com", "title": "Example" },
+            {
+              "type": "bookmarks",
+              "title": "Nested Folder 2",
+              "links": [{ "url": "https://example.com", "title": "Example" }]
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

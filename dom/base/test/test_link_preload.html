@@ -185,14 +185,14 @@
          NAME: 'preload-no-referrer-unsafe-url-set-attribute-with-origin-in-meta',
          META_POLICY: 'origin',
          REL: 'preload',
-         DESC: "preload-no-referrer-set-attribute (orginally unsafe-url) with origin in meta",
+         DESC: "preload-no-referrer-set-attribute (originally unsafe-url) with origin in meta",
          RESULT: 'none'},
         {ATTRIBUTE_POLICY: 'origin',
          NEW_ATTRIBUTE_POLICY: 'unsafe-url',
          NAME: 'preload-unsafe-url-origin-set-attribute-with-no-referrer-in-meta',
          META_POLICY: 'no-referrer',
          REL: 'preload',
-         DESC: "preload-unsafe-url-set-attribute(orginally origin) with no-referrer in meta",
+         DESC: "preload-unsafe-url-set-attribute(originally origin) with no-referrer in meta",
          RESULT: 'full'},
       ]},
 
@@ -203,14 +203,14 @@
          NAME: 'preload-unsafe-url-no-referrer-property-with-origin-in-meta',
          META_POLICY: 'origin',
          REL: 'preload',
-         DESC: "preload-unsafe-url-property (orginally no-referrer) with origin in meta",
+         DESC: "preload-unsafe-url-property (originally no-referrer) with origin in meta",
          RESULT: 'full'},
         {ATTRIBUTE_POLICY: 'origin',
          NEW_ATTRIBUTE_POLICY: 'unsafe-url',
          NAME: 'preload-unsafe-url-origin-property-with-no-referrer-in-meta',
          META_POLICY: 'no-referrer',
          REL: 'preload',
-         DESC: "preload-unsafe-url-property (orginally origin) with no-referrer in meta",
+         DESC: "preload-unsafe-url-property (originally origin) with no-referrer in meta",
          RESULT: 'full'},
       ]},
     {
@@ -220,8 +220,6 @@
       PREFS: [
         ["dom.security.https_first", false],
         ["security.mixed_content.upgrade_display_content", true],
-        ["security.mixed_content.upgrade_display_content.image", true],
-        
       ],
       TESTS: [
          // Downgrade.

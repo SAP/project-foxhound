@@ -21,7 +21,7 @@ fuzzy-if(cocoaWidget,255-255,20-20) fuzzy-if(!cocoaWidget,0-21,0-6) == backplate
 fuzzy-if(cocoaWidget,255-255,20-20) == backplate-bg-image-009.html backplate-bg-image-009-ref.html
 fuzzy-if(cocoaWidget,255-255,1495-1495) fuzzy-if(winWidget,255-255,353-353) fuzzy-if(Android,255-255,700-700) == backplate-bg-image-010.html backplate-bg-image-010-ref.html
 random-if(useDrawSnapshot) fuzzy-if(cocoaWidget,255-255,284-320) == backplate-bg-image-011.html backplate-bg-image-011-ref.html
-fuzzy-if(cocoaWidget,255-255,16-16) == backplate-bg-image-012.html backplate-bg-image-012-ref.html
+fuzzy-if(cocoaWidget,255-255,16-16) fuzzy-if(winWidget,0-47,0-2) == backplate-bg-image-012.html backplate-bg-image-012-ref.html
 == backplate-bg-image-013.html backplate-bg-image-013-ref.html
 fuzzy-if(cocoaWidget,255-255,20-20) == backplate-bg-image-014.html backplate-bg-image-001-ref.html # bug 1577028
 
@@ -34,8 +34,7 @@ test-pref(browser.display.suppress_canvas_background_image_on_forced_colors,fals
 needs-focus == selection-001.html selection-001-ref.html
 pref(browser.display.document_color_use,0) needs-focus != selection-001.html selection-001-ref.html
 
-pref(dom.text_fragments.enabled,true) == target-text-001.html target-text-001-ref.html
-pref(dom.text_fragments.enabled,true) == target-text-002.html target-text-001-ref.html
+pref(dom.text_fragments.enabled,true) == target-text.html target-text-ref.html
 
 == color-transparent-001.html about:blank
 != color-transparent-002.html about:blank
@@ -87,7 +86,7 @@ test-pref(browser.display.document_color_use,0) == forced-colors-002.html prefer
 == forced-colors-001.html prefers-contrast-black-ref.html
 test-pref(browser.display.document_color_use,0) != forced-colors-001.html prefers-contrast-black-ref.html
 
-pref(browser.display.use_system_colors,true) pref(browser.display.document_color_use,0) test-pref(layout.css.prefers-color-scheme.content-override,0) != about:blank about:blank
+pref(browser.display.document_color_use,0) test-pref(layout.css.prefers-color-scheme.content-override,0) != about:blank about:blank
 
 != system-colors.html system-colors-notref.html
 
@@ -97,9 +96,9 @@ pref(browser.display.use_system_colors,true) pref(browser.display.document_color
 
 != color-mix.html color-mix-notref.html
 
-test-pref(browser.display.background_color,"black") test-pref(browser.display.foreground_color,"white") test-pref(ui.-moz-fieldtext,"black") test-pref(ui.-moz-fieldtext.dark,"white") pref(ui.use_standins_for_native_colors,false) pref(browser.display.use_system_colors,false) == no-system-colors-color-scheme.html no-system-colors-color-scheme-ref.html
-pref(browser.display.document_color_use,2) pref(ui.use_standins_for_native_colors,false) pref(browser.display.use_system_colors,false) pref(browser.display.background_color,"black") pref(browser.display.foreground_color,"white") == prefers-color-scheme.html prefers-color-scheme-dark.html
-pref(ui.use_standins_for_native_colors,false) pref(browser.display.use_system_colors,false) pref(browser.display.background_color,"white") pref(browser.display.foreground_color,"black") == prefers-color-scheme.html prefers-color-scheme-light.html
+test-pref(browser.display.background_color,"black") test-pref(browser.display.foreground_color,"white") test-pref(ui.-moz-fieldtext,"black") test-pref(ui.-moz-fieldtext.dark,"white") pref(ui.use_standins_for_native_colors,false) == no-system-colors-color-scheme.html no-system-colors-color-scheme-ref.html
+pref(browser.display.document_color_use,2) pref(ui.use_standins_for_native_colors,false) pref(browser.display.background_color,"black") pref(browser.display.foreground_color,"white") == prefers-color-scheme.html prefers-color-scheme-dark.html
+pref(ui.use_standins_for_native_colors,false) pref(browser.display.background_color,"white") pref(browser.display.foreground_color,"black") == prefers-color-scheme.html prefers-color-scheme-light.html
 
 # Forced color adjust
 == backplate-force-color-adjust.html backplate-force-color-adjust-ref.html

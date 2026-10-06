@@ -6,9 +6,7 @@
 assert __name__ == "__main__"
 
 r"""
-To update ANGLE in Gecko, use Windows with git-bash, and setup depot_tools, python2, and
-python3. Because depot_tools expects `python` to be `python2` (shame!), python2 must come
-before python3 in your path.
+To update ANGLE in Gecko, use Windows with git-bash, and setup depot_tools and python3.
 
 Upstream: https://chromium.googlesource.com/angle/angle
 
@@ -19,8 +17,9 @@ Gecko with this script.
 This script leaves a record of the merge-base and cherry-picks that we pull into
 Gecko. (gfx/angle/cherries.log)
 
-ANGLE<->Chrome version mappings are here: https://omahaproxy.appspot.com/
-An easy choice is to grab Chrome's Beta's ANGLE branch.
+You can find out the current git hash of the ANGLE shipping in Chrome Beta using this command:
+curl https://chromiumdash.appspot.com/fetch_releases?platform=Win32&channel=beta' | jq -r '.[0].hashes.angle
+(or just go to https://chromiumdash.appspot.com/fetch_releases?platform=Win32&channel=beta and look for yourself)
 
 ## Usage
 
@@ -407,7 +406,7 @@ def export_target(target_full_name) -> Set[str]:
             if REGISTERED_DEFINES[k] == False:
                 line = "# " + line
         except KeyError:
-            print(f"[{name}] Unrecognized define: {k}")
+            print(f"[{name}] Unrecognized define: {k} = {v}")
             line = "# Unrecognized: " + line
         lines.append(line)
     lines.append("")

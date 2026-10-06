@@ -1,0 +1,25 @@
+<!doctype html>
+<script src="util.js"></script>
+<table>
+  <tbody id="container">
+  </tbody>
+</table>
+<script>
+onload = function() {
+  const kElementCount = 30000;
+  for (let i = 0; i < kElementCount; ++i) {
+    let tr = document.createElement("tr");
+    let td = tr.appendChild(document.createElement("td"));
+    td.appendChild(document.createTextNode(i));
+    container.appendChild(tr);
+    container.appendChild(document.createTextNode("\n"));
+  }
+  flush_layout();
+  perf_start();
+  for (let el of document.querySelectorAll("tr")) {
+    el.style.display = "none";
+  }
+  flush_layout();
+  perf_finish();
+};
+</script>

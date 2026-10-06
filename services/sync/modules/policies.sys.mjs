@@ -56,13 +56,13 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "IdleService",
   "@mozilla.org/widget/useridleservice;1",
-  "nsIUserIdleService"
+  Ci.nsIUserIdleService
 );
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "CaptivePortalService",
   "@mozilla.org/network/captive-portal-service;1",
-  "nsICaptivePortalService"
+  Ci.nsICaptivePortalService
 );
 
 // Get the value for an interval that's stored in preferences. To save users
@@ -302,7 +302,7 @@ SyncScheduler.prototype = {
           );
         }
         break;
-      case "network:link-status-changed":
+      case "network:link-status-changed": {
         // Note: NetworkLinkService is unreliable, we get false negatives for it
         // in cases such as VMs (bug 1420802), so we don't want to use it in
         // `get offline`, but we assume that it's probably reliable if we're
@@ -326,6 +326,7 @@ SyncScheduler.prototype = {
           this.clearSyncTriggers();
         }
         break;
+      }
       case "network:offline-status-changed":
       case "captive-portal-detected":
         // Whether online or offline, we'll reschedule syncs
@@ -342,7 +343,7 @@ SyncScheduler.prototype = {
 
         this.globalScore = 0;
         break;
-      case "weave:service:sync:finish":
+      case "weave:service:sync:finish": {
         this.nextSync = 0;
         this.adjustSyncInterval();
 
@@ -390,19 +391,21 @@ SyncScheduler.prototype = {
         }
         this.scheduleNextSync(sync_interval, { why: nextSyncReason });
         break;
+      }
       case "weave:engine:sync:finish":
         if (data == "clients") {
           // Update the client mode because it might change what we sync.
           this.updateClientMode();
         }
         break;
-      case "weave:engine:sync:error":
+      case "weave:engine:sync:error": {
         // `subject` is the exception thrown by an engine's sync() method.
         let exception = subject;
         if (exception.status >= 500 && exception.status <= 504) {
           this.requiresBackoff = true;
         }
         break;
+      }
       case "weave:service:login:error":
         this.clearSyncTriggers();
 
@@ -434,7 +437,7 @@ SyncScheduler.prototype = {
         this.handleSyncError();
         break;
       case "FxA:hawk:backoff:interval":
-      case "weave:service:backoff:interval":
+      case "weave:service:backoff:interval": {
         let requested_interval = subject * 1000;
         this._log.debug(
           "Got backoff notification: " + requested_interval + "ms"
@@ -447,7 +450,8 @@ SyncScheduler.prototype = {
           "Fuzzed minimum next sync: " + lazy.Status.minimumNextSync
         );
         break;
-      case "weave:engine:sync:applied":
+      }
+      case "weave:engine:sync:applied": {
         let numItems = subject.succeeded;
         this._log.trace(
           "Engine " + data + " successfully applied " + numItems + " items."
@@ -466,6 +470,7 @@ SyncScheduler.prototype = {
           );
         }
         break;
+      }
       case "weave:service:setup-complete":
         Services.prefs.savePrefFile(null);
         lazy.IdleService.addIdleObserver(this, this.idleTime);
@@ -991,7 +996,7 @@ ErrorHandler.prototype = {
         }
         break;
 
-      case 401:
+      case 401: {
         this.service.logout();
         this._log.info("Got 401 response; resetting clusterURL.");
         this.service.clusterURL = null;
@@ -1012,6 +1017,7 @@ ErrorHandler.prototype = {
         this._log.info("Attempting to schedule another sync.");
         this.service.scheduler.scheduleNextSync(delay, { why: "reschedule" });
         break;
+      }
 
       case 500:
       case 502:

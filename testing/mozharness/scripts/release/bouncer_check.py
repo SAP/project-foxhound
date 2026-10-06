@@ -3,7 +3,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
-""" bouncer_check.py
+"""bouncer_check.py
 
 A script to check HTTP statuses of Bouncer products to be shipped.
 """
@@ -79,7 +79,7 @@ class BouncerCheck(BaseScript):
     ]
 
     def __init__(self, require_config_file=True):
-        super(BouncerCheck, self).__init__(
+        super().__init__(
             config_options=self.config_options,
             require_config_file=require_config_file,
             config={
@@ -99,7 +99,7 @@ class BouncerCheck(BaseScript):
         )
 
     def _pre_config_lock(self, rw_config):
-        super(BouncerCheck, self)._pre_config_lock(rw_config)
+        super()._pre_config_lock(rw_config)
 
         if "product_field" not in self.config:
             return
@@ -176,7 +176,7 @@ class BouncerCheck(BaseScript):
                         yield url
 
     def check_bouncer(self):
-        import concurrent.futures as futures
+        from concurrent import futures
 
         import requests
 

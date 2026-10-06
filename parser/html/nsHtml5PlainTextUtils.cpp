@@ -12,7 +12,7 @@
 // static
 nsHtml5HtmlAttributes* nsHtml5PlainTextUtils::NewLinkAttributes() {
   nsHtml5HtmlAttributes* linkAttrs = new nsHtml5HtmlAttributes(0);
-  nsHtml5String rel = nsHtml5Portability::newStringFromLiteral("stylesheet");
+  nsHtml5String rel = nsHtml5String::FromStaticAtom(nsGkAtoms::stylesheet);
   linkAttrs->addAttribute(nsHtml5AttributeName::ATTR_REL, rel, -1);
   nsHtml5String href = nsHtml5Portability::newStringFromLiteral(
       "resource://content-accessible/plaintext.css");
@@ -26,8 +26,7 @@ nsHtml5HtmlAttributes* nsHtml5PlainTextUtils::NewBodyAttributes() {
     return nsHtml5HtmlAttributes::EMPTY_ATTRIBUTES;
   }
   nsHtml5HtmlAttributes* bodyAttrs = new nsHtml5HtmlAttributes(0);
-  RefPtr<nsAtom> nowrap = nsGkAtoms::nowrap;
   bodyAttrs->addAttribute(nsHtml5AttributeName::ATTR_CLASS,
-                          nsHtml5String::FromAtom(nowrap.forget()), -1);
+                          nsHtml5String::FromStaticAtom(nsGkAtoms::nowrap), -1);
   return bodyAttrs;
 }

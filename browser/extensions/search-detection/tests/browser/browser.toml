@@ -6,3 +6,8 @@ support-files = ["redirect.sjs"]
 ["browser_extension_loaded.js"]
 
 ["browser_server_side_redirection.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1776027
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug", # Bug 1776027
+  "os == 'win' && debug", # Bug 1776027
+]

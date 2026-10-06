@@ -55,15 +55,15 @@ class SearchMigration(
                 .byteInputStream()
                 .buffered()
 
-            loadSafely(engine, engineInputStream)
+            loadSafely(context, engine, engineInputStream)
         }
     }
 }
 
-@Suppress("SwallowedException", "DEPRECATION")
-private fun loadSafely(id: String, stream: BufferedInputStream?): SearchEngine? {
+@Suppress("DEPRECATION")
+private fun loadSafely(context: Context, id: String, stream: BufferedInputStream?): SearchEngine? {
     return try {
-        stream?.let { parseLegacySearchEngine(id, it) }
+        stream?.let { parseLegacySearchEngine(context, id, it) }
     } catch (e: IOException) {
         null
     } catch (e: XmlPullParserException) {

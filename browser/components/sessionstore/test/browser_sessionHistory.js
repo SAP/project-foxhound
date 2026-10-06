@@ -12,7 +12,7 @@ add_task(async function test_load_start() {
   // Create a new tab.
   let tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
   let browser = tab.linkedBrowser;
-  await promiseBrowserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
 
   const PAGE = "http://example.com/";
 
@@ -190,7 +190,7 @@ add_task(async function test_about_page_navigate() {
   // Create a new tab.
   let tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
   let browser = tab.linkedBrowser;
-  await promiseBrowserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
 
   // Check that we have a single shistory entry.
   await TabStateFlusher.flush(browser);

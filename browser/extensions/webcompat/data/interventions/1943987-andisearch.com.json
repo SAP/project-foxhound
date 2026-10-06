@@ -1,0 +1,18 @@
+{
+  "label": "andisearch.com",
+  "bugs": {
+    "1943987": {
+      "issue": "broken-layout",
+      "matches": ["*://andisearch.com/*"]
+    }
+  },
+  "css": {
+    "fix-offscreen-elements": "@media screen and (max-width: 800px) { .rcw-conversation-container { height: 90%; } }"
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "css": ["fix-offscreen-elements"]
+    }
+  ]
+}

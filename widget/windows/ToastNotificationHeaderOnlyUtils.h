@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -19,6 +17,10 @@
 // to a wide string when outside of a XUL context. String format specifiers need
 // to specify they're a wide string with `%ls` or narrow string with `%hs`.
 #include "mozilla/Logging.h"
+
+#define MOZ_NOTIFICATION_SERVER_NAME \
+  L"" MOZ_APP_DISPLAYNAME " Notification Server"
+
 #ifdef IMPL_LIBXUL
 namespace mozilla::widget {
 extern LazyLogModule sWASLog;
@@ -34,9 +36,9 @@ bool gVerbose = false;
     if (gVerbose || _level == mozilla::LogLevel::Error) { \
       POST_EXPAND_NOTIFY_LOG(MOZ_LOG_EXPAND_ARGS _args);  \
     }
-#  define POST_EXPAND_NOTIFY_LOG(...) \
-    MOZ_WIN_EVENT_LOG_ERROR_MESSAGE(  \
-        L"" MOZ_APP_DISPLAYNAME " Notification Server", L"" __VA_ARGS__)
+#  define POST_EXPAND_NOTIFY_LOG(...)                             \
+    MOZ_WIN_EVENT_LOG_ERROR_MESSAGE(MOZ_NOTIFICATION_SERVER_NAME, \
+                                    L"" __VA_ARGS__)
 #endif
 
 #include <functional>
@@ -51,6 +53,7 @@ const wchar_t kLaunchArgProfile[] = L"profile";
 const wchar_t kLaunchArgTag[] = L"windowsTag";
 const wchar_t kLaunchArgLogging[] = L"logging";
 const wchar_t kLaunchArgAction[] = L"action";
+const wchar_t kSkipNotificationKey[] = L"skipNotificationServer";
 
 const DWORD kNotificationServerTimeoutMs = (10 * 1000);
 

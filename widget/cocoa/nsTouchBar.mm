@@ -41,12 +41,14 @@ static const uint32_t kInputIconSize = 16;
     mTouchBarHelper = do_GetService(NS_TOUCHBARHELPER_CID);
     if (!mTouchBarHelper) {
       NS_ERROR("Unable to create Touch Bar Helper.");
+      [self release];
       return nil;
     }
 
     self.delegate = self;
     self.mappedLayoutItems = [NSMutableDictionary dictionary];
     self.customizationAllowedItemIdentifiers = @[];
+    self.scrollViewButtons = [NSMutableDictionary dictionary];
 
     if (!aInputs) {
       // This customization identifier is how users' custom layouts are saved by
@@ -58,6 +60,7 @@ static const uint32_t kInputIconSize = 16;
 
       nsresult rv = mTouchBarHelper->GetAllItems(getter_AddRefs(allItems));
       if (NS_FAILED(rv) || !allItems) {
+        [self release];
         return nil;
       }
 
@@ -92,12 +95,13 @@ static const uint32_t kInputIconSize = 16;
           // Add new input to dictionary for lookup of properties in delegate.
           self.mappedLayoutItems[[convertedInput nativeIdentifier]] =
               convertedInput;
+          [convertedInput release];
         }
 
-        orderedIdentifiers[i] = [convertedInput nativeIdentifier];
+        [orderedIdentifiers addObject:[convertedInput nativeIdentifier]];
       }
       [orderedIdentifiers addObject:@"NSTouchBarItemIdentifierFlexibleSpace"];
-      self.customizationAllowedItemIdentifiers = [orderedIdentifiers copy];
+      self.customizationAllowedItemIdentifiers = orderedIdentifiers;
 
       NSArray* defaultItemIdentifiers = @[
         [TouchBarInput nativeIdentifierWithType:@"button" withKey:@"back"],
@@ -109,7 +113,7 @@ static const uint32_t kInputIconSize = 16;
         [TouchBarInput shareScrubberIdentifier],
         [TouchBarInput searchPopoverIdentifier]
       ];
-      self.defaultItemIdentifiers = [defaultItemIdentifiers copy];
+      self.defaultItemIdentifiers = defaultItemIdentifiers;
     } else {
       NSMutableArray* defaultItemIdentifiers =
           [NSMutableArray arrayWithCapacity:[aInputs count]];
@@ -117,7 +121,7 @@ static const uint32_t kInputIconSize = 16;
         self.mappedLayoutItems[[input nativeIdentifier]] = input;
         [defaultItemIdentifiers addObject:[input nativeIdentifier]];
       }
-      self.defaultItemIdentifiers = [defaultItemIdentifiers copy];
+      self.defaultItemIdentifiers = defaultItemIdentifiers;
     }
   }
 
@@ -125,24 +129,6 @@ static const uint32_t kInputIconSize = 16;
 }
 
 - (void)dealloc {
-  for (NSTouchBarItemIdentifier identifier in self.mappedLayoutItems) {
-    NSTouchBarItem* item = [self itemForIdentifier:identifier];
-    if (!item) {
-      continue;
-    }
-    if ([item isKindOfClass:[NSPopoverTouchBarItem class]]) {
-      [(NSPopoverTouchBarItem*)item setCollapsedRepresentationImage:nil];
-      [(nsTouchBar*)[(NSPopoverTouchBarItem*)item popoverTouchBar] release];
-    } else if ([[item view] isKindOfClass:[NSScrollView class]]) {
-      [[(NSScrollView*)[item view] documentView] release];
-      [(NSScrollView*)[item view] release];
-    }
-
-    [item release];
-  }
-
-  [self.defaultItemIdentifiers release];
-  [self.customizationAllowedItemIdentifiers release];
   [self.scrollViewButtons removeAllObjects];
   [self.scrollViewButtons release];
   [self.mappedLayoutItems removeAllObjects];
@@ -172,21 +158,21 @@ static const uint32_t kInputIconSize = 16;
   }
 
   if ([input baseType] == TouchBarInputBaseType::kPopover) {
-    NSPopoverTouchBarItem* newPopoverItem =
-        [[NSPopoverTouchBarItem alloc] initWithIdentifier:aIdentifier];
+    NSPopoverTouchBarItem* newPopoverItem = [[[NSPopoverTouchBarItem alloc]
+        initWithIdentifier:aIdentifier] autorelease];
     [newPopoverItem setCustomizationLabel:[input title]];
     // We initialize popoverTouchBar here because we only allow setting this
     // property on popover creation. Updating popoverTouchBar for every update
     // of the popover item would be very expensive.
     newPopoverItem.popoverTouchBar =
-        [[nsTouchBar alloc] initWithInputs:[input children]];
+        [[[nsTouchBar alloc] initWithInputs:[input children]] autorelease];
     [self updatePopover:newPopoverItem withIdentifier:[input nativeIdentifier]];
     return newPopoverItem;
   }
 
   // Our new item, which will be initialized depending on aIdentifier.
-  NSCustomTouchBarItem* newItem =
-      [[NSCustomTouchBarItem alloc] initWithIdentifier:aIdentifier];
+  NSCustomTouchBarItem* newItem = [[[NSCustomTouchBarItem alloc]
+      initWithIdentifier:aIdentifier] autorelease];
   [newItem setCustomizationLabel:[input title]];
 
   if ([input baseType] == TouchBarInputBaseType::kScrollView) {
@@ -312,7 +298,6 @@ static const uint32_t kInputIconSize = 16;
         continue;
       }
       [[potentialScrollView children] replaceObjectAtIndex:i withObject:aInput];
-      [child release];
       return true;
     }
   }
@@ -320,7 +305,6 @@ static const uint32_t kInputIconSize = 16;
 }
 
 - (void)replaceMappedLayoutItem:(TouchBarInput*)aItem {
-  [self.mappedLayoutItems[[aItem nativeIdentifier]] release];
   self.mappedLayoutItems[[aItem nativeIdentifier]] = aItem;
 }
 
@@ -428,7 +412,8 @@ static const uint32_t kInputIconSize = 16;
   }
 
   NSMutableDictionary* constraintViews = [NSMutableDictionary dictionary];
-  NSView* documentView = [[NSView alloc] initWithFrame:NSZeroRect];
+  NSView* documentView =
+      [[[NSView alloc] initWithFrame:NSZeroRect] autorelease];
   NSString* layoutFormat = @"H:|-8-";
   NSSize size = NSMakeSize(kInputSpacing, 30);
   // Layout strings allow only alphanumeric characters. We will use this
@@ -456,10 +441,8 @@ static const uint32_t kInputIconSize = 16;
     [[button widthAnchor] constraintGreaterThanOrEqualToConstant:buttonSize]
         .active = YES;
 
-    NSCustomTouchBarItem* tempItem =
-        self.scrollViewButtons[[childInput nativeIdentifier]];
     self.scrollViewButtons[[childInput nativeIdentifier]] = newItem;
-    [tempItem release];
+    [newItem release];
 
     button.translatesAutoresizingMaskIntoConstraints = NO;
     [documentView addSubview:button];
@@ -481,8 +464,8 @@ static const uint32_t kInputIconSize = 16;
                           options:NSLayoutFormatAlignAllCenterY
                           metrics:nil
                             views:constraintViews];
-  NSScrollView* scrollView = [[NSScrollView alloc]
-      initWithFrame:CGRectMake(0, 0, size.width, size.height)];
+  NSScrollView* scrollView = [[[NSScrollView alloc]
+      initWithFrame:CGRectMake(0, 0, size.width, size.height)] autorelease];
   [documentView setFrame:NSMakeRect(0, 0, size.width, size.height)];
   [NSLayoutConstraint activateConstraints:hConstraints];
   scrollView.documentView = documentView;
@@ -508,8 +491,8 @@ static const uint32_t kInputIconSize = 16;
   TouchBarInput* input = self.mappedLayoutItems[aIdentifier];
   // System-default share menu
   NSSharingServicePickerTouchBarItem* servicesItem =
-      [[NSSharingServicePickerTouchBarItem alloc]
-          initWithIdentifier:aIdentifier];
+      [[[NSSharingServicePickerTouchBarItem alloc]
+          initWithIdentifier:aIdentifier] autorelease];
 
   // buttonImage needs to be set to nil while we wait for our icon to load.
   // Otherwise, the default Apple share icon is automatically loaded.
@@ -612,10 +595,10 @@ static const uint32_t kInputIconSize = 16;
   if (mTouchBarHelper) {
     nsresult rv = mTouchBarHelper->GetActiveUrl(url);
     if (!NS_FAILED(rv)) {
-      urlToShare = [NSURL URLWithString:nsCocoaUtils::ToNSString(url)];
-      // NSURL URLWithString returns nil if the URL is invalid. At this point,
-      // it is too late to simply shut down the share menu, so we default to
-      // about:blank if the share button is clicked when the URL is invalid.
+      urlToShare = nsCocoaUtils::ToNSURL(url);
+      // ToNSURL returns nil if the URL is invalid. At this point, it is too
+      // late to simply shut down the share menu, so we default to about:blank
+      // if the share button is clicked when the URL is invalid.
       if (urlToShare == nil) {
         urlToShare = [NSURL URLWithString:@"about:blank"];
       }

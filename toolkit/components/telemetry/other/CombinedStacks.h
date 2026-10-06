@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef CombinedStacks_h__
-#define CombinedStacks_h__
+#ifndef CombinedStacks_h_
+#define CombinedStacks_h_
 
 #include <vector>
 
@@ -99,10 +98,19 @@ struct ParamTraits<mozilla::Telemetry::CombinedStacks> {
       return false;
     }
 
+    for (const auto& stack : aResult->mStacks) {
+      for (const auto& frame : stack) {
+        if (frame.mModIndex != std::numeric_limits<uint16_t>::max() &&
+            frame.mModIndex >= aResult->mModules.size()) {
+          return false;
+        }
+      }
+    }
+
     return true;
   }
 };
 
 }  // namespace IPC
 
-#endif  // CombinedStacks_h__
+#endif  // CombinedStacks_h_

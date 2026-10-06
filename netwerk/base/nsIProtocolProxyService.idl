@@ -1,5 +1,3 @@
-/* -*- Mode: IDL; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim:set ts=4 sw=4 sts=4 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -199,6 +197,21 @@ interface nsIProtocolProxyService : nsISupports
                                       in unsigned long aFlags,
                                       in unsigned long aFailoverTimeout,
                                       in nsIProxyInfo aFailoverProxy);
+
+    /**
+     * Creates a new nsIProxyInfo instance for MASQUE proxy.
+     *
+     * Note: MASQUE support in Firefox is still experimental. You can follow the
+     * implementation progress via Bug 1978893.
+     */
+    nsIProxyInfo newMASQUEProxyInfo(in AUTF8String aHost,
+                                    in long aPort,
+                                    in AUTF8String aMasqueTemplate,
+                                    in ACString aProxyAuthorizationHeader,
+                                    in ACString aConnectionIsolationKey,
+                                    in unsigned long aFlags,
+                                    in unsigned long aFailoverTimeout,
+                                    in nsIProxyInfo aFailoverProxy);
 
     /**
      * If the proxy identified by aProxyInfo is unavailable for some reason,

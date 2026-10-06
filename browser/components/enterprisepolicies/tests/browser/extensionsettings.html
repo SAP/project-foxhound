@@ -3,26 +3,32 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<script type="text/javascript">
-function installTrigger(url) {
-  try {
-    InstallTrigger.install({extension: url});
-  } catch (err) {
-    dump(`Failed to execute InstallTrigger.install: ${err}\n`);
-  }
-  return false;
-}
-</script>
 </head>
 <body>
 <p>
 <a id="policytest" href="policytest_v0.1.xpi">policytest@mozilla.com</a>
 </p>
 <p>
-<a id="policytest_installtrigger" onclick="return installTrigger(this.href);" href="policytest_v0.1.xpi">policytest@mozilla.com</a>
-</p>
-<p>
 <a id="policytest_otherdomain" href="http://example.org:80/browser/browser/components/enterprisepolicies/tests/browser/policytest_v0.1.xpi">policytest@mozilla.com</a>
 </p>
+<p>
+<a id="policytest_mozaddonmanager" href="policytest_v0.1.xpi">policytest@mozilla.com</a>
+</p>
+<script type="text/javascript">
+async function mozAddonManagerInstall(url) {
+  try {
+    window.addonInstall = await navigator.mozAddonManager.createInstall({ url });
+    window.promiseCompleted = window.addonInstall.install().then(install =>
+      install.install()
+    );
+  } catch (err) {
+    dump(`Failed to execute navigator.mozAddonManager.createInstall: ${err}\n`);
+  }
+  return false;
+}
+document.querySelector("#policytest_mozaddonmanager").onclick = function mozAddonManagerInstallOnClick() {
+  mozAddonManagerInstall(this.href);
+};
+</script>
 </body>
 </html>

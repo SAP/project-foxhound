@@ -1,0 +1,14 @@
+[package]
+name = "examples-example-cli"
+version = "0.1.0"
+license = "MPL-2.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+cli-support = { path = "../cli-support" }
+example-component = { path = "../../components/example" }
+viaduct = { path = "../../components/viaduct"}
+viaduct-hyper = { path = "../../components/support/viaduct-hyper" }
+clap = {version = "4.2", default-features = false, features = ["std", "derive"]}
+anyhow = "1.0"

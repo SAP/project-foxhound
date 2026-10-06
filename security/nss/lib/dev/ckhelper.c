@@ -43,6 +43,7 @@ is_string_attribute(
     switch (aType) {
         case CKA_LABEL:
         case CKA_NSS_EMAIL:
+        case CKA_NSS_URL:
             isString = PR_TRUE;
             break;
         default:
@@ -93,7 +94,7 @@ nssCKObject_GetAttributes(
         /* Allocate memory for each attribute. */
         for (i = 0; i < count; i++) {
             CK_ULONG ulValueLen = obj_template[i].ulValueLen;
-            if (ulValueLen == 0 || ulValueLen == (CK_ULONG)-1) {
+            if (ulValueLen == 0 || ulValueLen >= (CK_ULONG)PR_UINT32_MAX) {
                 obj_template[i].pValue = NULL;
                 obj_template[i].ulValueLen = 0;
                 continue;
@@ -248,6 +249,11 @@ nss_cert_type_from_ck_attrib(CK_ATTRIBUTE_PTR attrib)
     if (!attrib->pValue) {
         /* default to PKIX */
         return NSSCertificateType_PKIX;
+    }
+    /* The token controls ulValueLen; reject any size that cannot hold a
+     * full CK_CERTIFICATE_TYPE to avoid an out-of-bounds heap read. */
+    if (attrib->ulValueLen != sizeof(CK_CERTIFICATE_TYPE)) {
+        return NSSCertificateType_Unknown;
     }
     ckCertType = *((CK_ULONG *)attrib->pValue);
     switch (ckCertType) {

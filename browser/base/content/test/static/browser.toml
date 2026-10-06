@@ -4,26 +4,35 @@
 # just skip the tests on sanitizer, debug and OS X verify builds.
 skip-if = [
   "asan",
-  "tsan",
   "debug",
+  "tsan",
 ]
 support-files = ["head.js"]
 
 ["browser_all_files_referenced.js"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'"] # TODO: this probably needs to be fixed, why not skipped from default?
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # TODO: this probably needs to be fixed, why not skipped from default?
+]
 
 ["browser_glean_metrics_exist.js"]
 
 ["browser_misused_characters_in_strings.js"]
 support-files = ["bug1262648_string_with_newlines.dtd"]
-run-if = ["!msix"] # Permafail on MSIX packages due to it running on files it shouldn't.
+run-if = [
+  "!msix", # Permafail on MSIX packages due to it running on files it shouldn't.
+]
 
 ["browser_parsable_css.js"]
 support-files = ["dummy_page.html"]
-run-if = ["!msix"] # Permafail on MSIX packages due to it running on files it shouldn't.
+run-if = [
+  "!msix", # Permafail on MSIX packages due to it running on files it shouldn't.
+]
 
 ["browser_parsable_script.js"]
-skip-if = ["ccov && os == 'linux'"] # https://bugzilla.mozilla.org/show_bug.cgi?id=1608081
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && ccov", # https://bugzilla.mozilla.org/show_bug.cgi?id=1608081
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && ccov", # https://bugzilla.mozilla.org/show_bug.cgi?id=1608081
+]
 
 ["browser_sentence_case_strings.js"]
 

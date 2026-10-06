@@ -1,0 +1,17 @@
+{
+  "label": "sp.hi.co.kr",
+  "bugs": {
+    "1902406": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://sp.hi.co.kr/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "content_scripts": {
+        "js": ["define_minimal_window_chrome.js"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>sessionStorage cloning with target=_blank and noopener</title>
+
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/EventUtils.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+
+<script type="text/javascript">
+
+SimpleTest.waitForExplicitFinish();
+
+async function runTest() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["test.events.async.enabled", false],
+    ],
+  });
+
+  if (isXOrigin) {
+    let path = location.pathname.replace(
+      "test_sessionStorageTargetBlank.html",
+      "file_targetBlankChild_xorigin_wrapper.html");
+    let wrapperUrl = "http://mochi.xorigin-test:8888" + path +
+      "?origin=" + encodeURIComponent(location.origin);
+    document.getElementById("link-opener").href = wrapperUrl;
+    document.getElementById("link-noopener").href = wrapperUrl;
+  }
+
+  sessionStorage.clear();
+  sessionStorage.setItem("key1", "value1");
+
+  // Test 1: target="_blank" (implicit noopener) — sessionStorage should NOT
+  // be cloned because target=_blank implies noopener per the HTML spec.
+  let bc = SpecialPowers.wrap(BroadcastChannel)
+    .unpartitionedTestingChannel("sessionStorageTargetBlank");
+  let resultPromise = new Promise(resolve => {
+    bc.onmessage = e => {
+      resolve(e.data);
+    }
+  });
+  synthesizeMouseAtCenter(document.getElementById("link-opener"), {});
+  let result = await resultPromise;
+  bc.close();
+
+  is(result.hasOpener, false, "target=_blank: should not have opener (implicit noopener)");
+  is(result.key1, null, "target=_blank: key1 should not be present");
+  is(result.length, 0, "target=_blank: should have 0 items");
+
+  // Test 2: rel="noopener" target="_blank" — sessionStorage should NOT be cloned
+  bc = SpecialPowers.wrap(BroadcastChannel)
+    .unpartitionedTestingChannel("sessionStorageTargetBlank");
+  resultPromise = new Promise(resolve => {
+    bc.onmessage = e => {
+      resolve(e.data);
+    }
+  });
+  synthesizeMouseAtCenter(document.getElementById("link-noopener"), {});
+  result = await resultPromise;
+  bc.close();
+
+  is(result.hasOpener, false, "noopener target=_blank: should not have opener");
+  is(result.key1, null, "noopener target=_blank: key1 should not be present");
+  is(result.length, 0, "noopener target=_blank: should have 0 items");
+
+  sessionStorage.clear();
+  await SpecialPowers.popPrefEnv();
+  SimpleTest.finish();
+}
+
+</script>
+</head>
+
+<body onload="runTest();">
+  <a id="link-opener" href="file_targetBlankChild.html" target="_blank">Open with opener</a>
+  <br/>
+  <a id="link-noopener" href="file_targetBlankChild.html" rel="noopener" target="_blank">Open without opener</a>
+</body>
+</html>

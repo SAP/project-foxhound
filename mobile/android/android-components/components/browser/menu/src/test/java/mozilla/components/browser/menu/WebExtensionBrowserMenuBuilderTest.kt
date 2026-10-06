@@ -23,10 +23,10 @@ import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.test.assertNotNull
 import androidx.appcompat.R as appcompatR
 import mozilla.components.ui.icons.R as iconsR
 
@@ -179,7 +179,7 @@ class WebExtensionBrowserMenuBuilderTest {
         val recyclerView: RecyclerView = popup.contentView.findViewById(R.id.mozac_browser_menu_recyclerView)
         assertNotNull(recyclerView)
 
-        val recyclerAdapter = recyclerView.adapter!!
+        val recyclerAdapter = recyclerView.adapter
         assertNotNull(recyclerAdapter)
         assertEquals(4, recyclerAdapter.itemCount)
 
@@ -232,7 +232,7 @@ class WebExtensionBrowserMenuBuilderTest {
         val recyclerView: RecyclerView = popup.contentView.findViewById(R.id.mozac_browser_menu_recyclerView)
         assertNotNull(recyclerView)
 
-        val recyclerAdapter = recyclerView.adapter!!
+        val recyclerAdapter = recyclerView.adapter
         assertNotNull(recyclerAdapter)
         assertEquals(4, recyclerAdapter.itemCount)
 
@@ -308,7 +308,7 @@ class WebExtensionBrowserMenuBuilderTest {
         val recyclerView: RecyclerView = popup.contentView.findViewById(R.id.mozac_browser_menu_recyclerView)
         assertNotNull(recyclerView)
 
-        val recyclerAdapter = recyclerView.adapter!! as BrowserMenuAdapter
+        val recyclerAdapter = recyclerView.adapter as BrowserMenuAdapter?
         assertNotNull(recyclerAdapter)
 
         // main menu should have the 4 initial items, one replaced by web extension one replaced by the extensions menu
@@ -380,7 +380,7 @@ class WebExtensionBrowserMenuBuilderTest {
         val recyclerView: RecyclerView = popup.contentView.findViewById(R.id.mozac_browser_menu_recyclerView)
         assertNotNull(recyclerView)
 
-        val recyclerAdapter = recyclerView.adapter!! as BrowserMenuAdapter
+        val recyclerAdapter = recyclerView.adapter as BrowserMenuAdapter?
         assertNotNull(recyclerAdapter)
 
         // main menu should have the 3 initial items, one replaced by extensions sub-menu
@@ -443,7 +443,7 @@ class WebExtensionBrowserMenuBuilderTest {
         val recyclerView: RecyclerView = popup.contentView.findViewById(R.id.mozac_browser_menu_recyclerView)
         assertNotNull(recyclerView)
 
-        val recyclerAdapter = recyclerView.adapter as BrowserMenuAdapter
+        val recyclerAdapter = recyclerView.adapter as BrowserMenuAdapter?
         assertNotNull(recyclerAdapter)
 
         // main menu should have 3 items and the last one should be the "Add-ons" item
@@ -489,7 +489,7 @@ class WebExtensionBrowserMenuBuilderTest {
         val recyclerView: RecyclerView = popup.contentView.findViewById(R.id.mozac_browser_menu_recyclerView)
         assertNotNull(recyclerView)
 
-        val recyclerAdapter = recyclerView.adapter as BrowserMenuAdapter
+        val recyclerAdapter = recyclerView.adapter as BrowserMenuAdapter?
         assertNotNull(recyclerAdapter)
 
         // main menu should have 2 items

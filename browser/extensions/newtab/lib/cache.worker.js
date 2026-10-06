@@ -14,6 +14,11 @@ const SCRIPT_TEMPLATE_RESOURCE_PATH =
 let window = self;
 window.requestAnimationFrame = () => {};
 window.cancelAnimationFrame = () => {};
+window.matchMedia = () => ({
+  matches: false,
+  addEventListener: () => {},
+  removeEventListener: () => {},
+});
 
 /* import-globals-from /toolkit/components/workerloader/require.js */
 importScripts("resource://gre/modules/workers/require.js");
@@ -30,22 +35,10 @@ importScripts("resource://gre/modules/workers/require.js");
   // eslint-disable-next-line no-implicit-globals, no-global-assign
   ChromeUtils = undefined;
 
-  /* import-globals-from ../../../../toolkit/content/vendor/react/react.js */
-  /* import-globals-from ../../../../toolkit/content/vendor/react/react-dom.js */
-  /* import-globals-from ../../../../toolkit/content/vendor/react/react-dom-server.js */
-  /* import-globals-from ../../../../toolkit/content/vendor/react/redux.js */
-  /* import-globals-from ../../../../toolkit/content/vendor/react/react-transition-group.js */
-  /* import-globals-from ../../../../toolkit/content/vendor/react/prop-types.js */
-  /* import-globals-from ../../../../toolkit/content/vendor/react/react-redux.js */
+  /* import-globals-from ../data/content/vendor.bundle.js */
   /* import-globals-from ../data/content/activity-stream.bundle.js */
   importScripts(
-    "chrome://global/content/vendor/react.js",
-    "chrome://global/content/vendor/react-dom.js",
-    "chrome://global/content/vendor/react-dom-server.js",
-    "chrome://global/content/vendor/redux.js",
-    "chrome://global/content/vendor/react-transition-group.js",
-    "chrome://global/content/vendor/prop-types.js",
-    "chrome://global/content/vendor/react-redux.js",
+    "resource://newtab/data/content/vendor.bundle.js",
     "resource://newtab/data/content/activity-stream.bundle.js"
   );
 
@@ -103,6 +96,9 @@ let Agent = {
    *
    * @param state (Object)
    *   The most recent Activity Stream Redux state.
+   * @param direction (String, optional)
+   *   The document directionality ("ltr" or "rtl"). May be absent when called
+   *   from an older Firefox version (train-hop compatibility).
    * @return Object
    *   An object with the following properties:
    *
@@ -112,7 +108,7 @@ let Agent = {
    *   script (String):
    *     The generated script for the document.
    */
-  construct(state) {
+  construct(state, direction) {
     // If anything in this function throws an exception, PromiseWorker
     // runs the risk of leaving the Promise associated with this method
     // forever unresolved. This is particularly bad when this method is
@@ -122,7 +118,7 @@ let Agent = {
     // To help ensure that no matter what, the Promise resolves with something,
     // we wrap the whole operation in a try/catch.
     try {
-      return this._construct(state);
+      return this._construct(state, direction);
     } catch (e) {
       console.error("about:home startup cache construction failed:", e);
       return { page: null, script: null };
@@ -136,6 +132,10 @@ let Agent = {
    *
    * @param state (Object)
    *   The most recent Activity Stream Redux state.
+   * @param direction (String, optional)
+   *   The document directionality ("ltr" or "rtl"). When provided, sets
+   *   self.document.dir so Nova render paths can read it. If not provided,
+   *   we assume "ltr".
    * @return Object
    *   An object with the following properties:
    *
@@ -145,9 +145,17 @@ let Agent = {
    *   script (String):
    *     The generated script for the document.
    */
-  _construct(state) {
+  _construct(state, direction) {
     for (const key of Object.keys(state.App.isForStartupCache)) {
       state.App.isForStartupCache[key] = true;
+    }
+
+    // Workers have no real DOM, so expose a minimal document stub so that
+    // Nova render paths that read document.dir have something to work with.
+    if (direction) {
+      self.document = { dir: direction };
+    } else {
+      self.document = { dir: "ltr" };
     }
 
     // ReactDOMServer.renderToString expects a Redux store to pull

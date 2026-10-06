@@ -208,19 +208,19 @@ function testRemoveBinaryDataFromMultipartText(data) {
   const EXPECTED_WIN_RESULT = [
     '^"',
     boundary,
-    '"^\u000d\u000A\u000d\u000A"',
+    "^\u000A\u000A",
     'Content-Disposition: form-data; name=^\\^"param1^\\^"',
-    '"^\u000d\u000A\u000d\u000A""^\u000d\u000A\u000d\u000A"',
+    "^\u000A\u000A^\u000A\u000A",
     "value1",
-    '"^\u000d\u000A\u000d\u000A"',
+    "^\u000A\u000A",
     boundary,
-    '"^\u000d\u000A\u000d\u000A"',
+    "^\u000A\u000A",
     'Content-Disposition: form-data; name=^\\^"file^\\^"; filename=^\\^"filename.png^\\^"',
-    '"^\u000d\u000A\u000d\u000A"',
+    "^\u000A\u000A",
     "Content-Type: image/png",
-    '"^\u000d\u000A\u000d\u000A""^\u000d\u000A\u000d\u000A"',
+    "^\u000A\u000A^\u000A\u000A",
     boundary + "--",
-    '"^\u000d\u000A\u000d\u000A"',
+    "^\u000A\u000A",
     '^"',
   ].join("");
 
@@ -326,17 +326,17 @@ function testEscapeStringWin() {
     "Percent signs should be escaped."
   );
 
-  const backslashes = "\\A simple string\\";
+  const backslashes = " - \\A simple string\\ - ";
   is(
     CurlUtils.escapeStringWin(backslashes),
-    '^\"^\\A simple string^\\^\"',
+    '^\" - ^\\^\\A simple string^\\^\\ - ^\"',
     "Backslashes should be escaped."
   );
 
   const newLines = "line1\r\nline2\r\rline3\n\nline4";
   is(
     CurlUtils.escapeStringWin(newLines),
-    '^\"line1\"^\r\n\r\n\"line2\"^\r\n\r\n\"\"^\r\n\r\n\"line3\"^\r\n\r\n\"\"^\r\n\r\n\"line4^\"',
+    '^\"line1^\n\nline2^\n\n^\n\nline3^\n\n^\n\nline4^\"',
     "Newlines should be escaped."
   );
 
@@ -357,8 +357,23 @@ function testEscapeStringWin() {
   const evilCommand = `query=evil\r\rcmd" /c timeout /t 3 & calc.exe\r\r`;
   is(
     CurlUtils.escapeStringWin(evilCommand),
-    '^\"query=evil\"^\r\n\r\n\"\"^\r\n\r\n\"cmd^\\^\" /c timeout /t 3 ^& calc.exe\"^\r\n\r\n\"\"^\r\n\r\n\"^\"',
+    '^\"query=evil^\n\n^\n\ncmd^\\^\" /c timeout /t 3 ^& calc.exe^\n\n^\n\n^\"',
     "The evil command is escaped properly"
+  );
+
+  // Control characters https://www.ascii-code.com/characters/control-characters
+  const containsControlChars = " - \u0007 \u0010 \u0014 \u001B \x1a - ";
+  is(
+    CurlUtils.escapeStringWin(containsControlChars),
+    '^\" - \u0007 \u0010 \u0014 \u001b \u001a - ^\"',
+    "Control characters should not be escaped with ^."
+  );
+
+  const controlCharsWithWhitespaces = " -\tcalc.exe\f- ";
+  is(
+    CurlUtils.escapeStringWin(controlCharsWithWhitespaces),
+    '^\" - calc.exe - ^\"',
+    "Control (non-printable) characters which are whitespace like charaters e.g (tab & form feed)"
   );
 }
 

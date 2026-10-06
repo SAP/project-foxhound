@@ -1,0 +1,17 @@
+{
+  "label": "www.nbcsports.com",
+  "bugs": {
+    "1919263": {
+      "issue": "broken-layout",
+      "matches": ["*://www.nbcsports.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "content_scripts": {
+        "js": ["load_mParticle_synchronously.js"]
+      }
+    }
+  ]
+}

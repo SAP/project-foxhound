@@ -13,12 +13,13 @@ const { TestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/TestUtils.sys.mjs"
 );
 
+let trrServer;
 add_setup(async function setup() {
   trr_test_setup();
 
-  h2Port = Services.env.get("MOZHTTP2_PORT");
-  Assert.notEqual(h2Port, null);
-  Assert.notEqual(h2Port, "");
+  trrServer = new TRRServer();
+  await trrServer.start();
+  h2Port = trrServer.port();
 
   Services.prefs.setBoolPref("network.dns.upgrade_with_https_rr", true);
   Services.prefs.setBoolPref("network.dns.use_https_rr_as_altsvc", true);
@@ -27,13 +28,14 @@ add_setup(async function setup() {
     false
   );
 
-  registerCleanupFunction(() => {
+  registerCleanupFunction(async () => {
     trr_clear_prefs();
     Services.prefs.clearUserPref("network.dns.upgrade_with_https_rr");
     Services.prefs.clearUserPref("network.dns.use_https_rr_as_altsvc");
     Services.prefs.clearUserPref(
       "network.dns.https_rr.check_record_with_cname"
     );
+    await trrServer.stop();
   });
 
   if (mozinfo.socketprocess_networking) {
@@ -68,7 +70,7 @@ add_task(async function testUseHTTPSSVCForHttpsUpgrade() {
   // use the h2 server as DOH provider
   Services.prefs.setCharPref(
     "network.trr.uri",
-    "https://foo.example.com:" + h2Port + "/httpssvc_as_altsvc"
+    "https://foo.example.com:" + h2Port + "/doh?httpssvc_as_altsvc=1"
   );
   Services.dns.clearCache(true);
 
@@ -110,7 +112,7 @@ add_task(async function testUseHTTPSSVCAsHSTS() {
   // use the h2 server as DOH provider
   Services.prefs.setCharPref(
     "network.trr.uri",
-    "https://foo.example.com:" + h2Port + "/httpssvc_as_altsvc"
+    "https://foo.example.com:" + h2Port + "/doh?httpssvc_as_altsvc=1"
   );
   Services.dns.clearCache(true);
 
@@ -151,7 +153,7 @@ add_task(async function testUseHTTPSSVC() {
   // use the h2 server as DOH provider
   Services.prefs.setCharPref(
     "network.trr.uri",
-    "https://foo.example.com:" + h2Port + "/httpssvc_as_altsvc"
+    "https://foo.example.com:" + h2Port + "/doh?httpssvc_as_altsvc=1"
   );
 
   // Do DNS resolution before creating the channel, so the HTTPSSVC record will
@@ -178,12 +180,6 @@ add_task(async function testUseHTTPSSVC() {
 
 // Test if we can successfully fallback to the original host and port.
 add_task(async function testFallback() {
-  let trrServer = new TRRServer();
-  registerCleanupFunction(async () => {
-    await trrServer.stop();
-  });
-  await trrServer.start();
-
   Services.prefs.setIntPref("network.trr.mode", Ci.nsIDNSService.MODE_TRRONLY);
   Services.prefs.setCharPref(
     "network.trr.uri",

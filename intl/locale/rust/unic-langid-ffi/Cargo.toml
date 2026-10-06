@@ -7,5 +7,4 @@ edition = "2018"
 
 [dependencies]
 nsstring = { path = "../../../../xpcom/rust/nsstring" }
-thin-vec = { version = "0.2.1", features = ["gecko-ffi"] }
 unic-langid = { version = "0.9", features = ["likelysubtags"] }

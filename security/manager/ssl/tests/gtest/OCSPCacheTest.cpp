@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,7 +25,7 @@ inline Input LiteralInput(const char (&valueString)[N]) {
   // Ideally we would use mozilla::BitwiseCast() here rather than
   // reinterpret_cast for better type checking, but the |N - 1| part trips
   // static asserts.
-  return Input(reinterpret_cast<const uint8_t(&)[N - 1]>(valueString));
+  return Input(reinterpret_cast<const uint8_t (&)[N - 1]>(valueString));
 }
 
 const int MaxCacheEntries = 1024;
@@ -308,10 +306,6 @@ TEST_F(psm_OCSPCacheTest, TestOriginAttributes) {
   // We test two attributes, firstPartyDomain and partitionKey, respectively
   // because we don't have entries that have both attributes set because the two
   // features that use these attributes are mutually exclusive.
-
-  // Set pref for OCSP cache network partitioning.
-  mozilla::Preferences::SetBool("privacy.partition.network_state.ocsp_cache",
-                                true);
 
   SCOPED_TRACE("");
   OriginAttributes attrs;

@@ -19,7 +19,7 @@ Animation inspector
 
 The Page Inspector's :ref:`Animations view <page_inspector_ui_tour_animations_view>` displays animations in the page synchronized along a timeline, with a draggable widget you can use to move to any point in the timeline and see the page at that point.
 
-It displays animations created using `CSS transitions <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Transitions>`_, `CSS @keyframes rules <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Animations/Using_CSS_animations>`_, or the `Web Animations API <https://developer.mozilla.org/en-US/docs/Web/API/Web_Animations_API>`_. Starting in Firefox 48, it will show animations applied to the `::before <https://developer.mozilla.org/en-US/docs/Web/CSS/::before>`_ and `::after <https://developer.mozilla.org/en-US/docs/Web/CSS/::after>`_ pseudo-elements.
+It displays animations created using `CSS transitions <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Transitions>`_, `CSS @keyframes rules <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Animations/Using>`_, or the `Web Animations API <https://developer.mozilla.org/en-US/docs/Web/API/Web_Animations_API>`_, including animations applied to the `::before <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/::before>`_ and `::after <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Selectors/::after>`_ pseudo-elements.
 
 To see how it works, we'll walk through an example. The box below contains a grayscale icon, representing `Firefox Developer Edition <https://www.mozilla.org/en-US/firefox/developer/>`_. If you click the icon, it enlarges and changes to color, and the name of the browser appears. Click the icon again to reverse the effect.
 
@@ -57,8 +57,8 @@ Animation bars
 Each animation or transition is shown as a horizontal bar laid across the timeline. The bar is:
 
 
-- blue if a `transition <https://developer.mozilla.org/en-US/docs/Web/CSS/transition>`_) was used to animate a property
-- orange if a `@keyframes animation <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Animations/Using_CSS_animations>`_ was used
+- blue if a `transition <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/transition>`_ was used to animate a property
+- orange if a `@keyframes animation <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@keyframes>`_ was used
 - green if the `Web Animations API <https://developer.mozilla.org/en-US/docs/Web/API/Web_Animations_API>`_ was used
 
 .. |image1| image:: compositor.png
@@ -106,7 +106,7 @@ If you click one of the bars, you'll see details of all the properties that were
   :class: border
 
 
-This is telling us that two properties were modified: `filter <https://developer.mozilla.org/en-US/docs/Web/CSS/filter>`_ and `transform <https://developer.mozilla.org/en-US/docs/Web/CSS/transform>`_. Each dot represents an entry for that property in the set of keyframes used for the animation. Both properties were initialized at 0ms and finalized at 750ms. ``filter`` was given a value at 250ms and ``transform`` at 500ms. If you hover over a dot, you'll see the value assigned to that property at that point in the timeline:
+This is telling us that two properties were modified: `filter <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/filter>`_ and `transform <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/transform>`_. Each dot represents an entry for that property in the set of keyframes used for the animation. Both properties were initialized at 0ms and finalized at 750ms. ``filter`` was given a value at 250ms and ``transform`` at 500ms. If you hover over a dot, you'll see the value assigned to that property at that point in the timeline:
 
 .. image:: animation_icon_scale.png
   :class: border
@@ -134,14 +134,14 @@ Applying all this to our example, we can see that:
 - The animation involved two elements, ``span#note`` and ``img#icon``. Hovering over these selectors, we can see that those elements are, respectively, the browser name "Firefox Developer Edition" and the browser icon.
 - The ``img#icon`` animation:
 
-  - animated the `filter <https://developer.mozilla.org/en-US/docs/Web/CSS/filter>`_ and `transform <https://developer.mozilla.org/en-US/docs/Web/CSS/transform>`_ properties, to scale the icon and color it
+  - animated the `filter <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/filter>`_ and `transform <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/transform>`_ properties, to scale the icon and color it
   - lasted 750ms, had an ``endDelay`` of 100ms
   - used the compositor thread
   - was given an `easing <https://developer.mozilla.org/en-US/docs/Web/API/KeyframeEffect/KeyframeEffect>`_ value of ``ease-in``: you can see this by the concave shape of the green bar.
 
 - The ``span#note`` animation:
 
-  - animated the `width <https://developer.mozilla.org/en-US/docs/Web/CSS/width>`_ and `opacity <https://developer.mozilla.org/en-US/docs/Web/CSS/opacity>`_ properties, to make the name gradually appear
+  - animated the `width <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/width>`_ and `opacity <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/opacity>`_ properties, to make the name gradually appear
   - lasted 500ms, and had a ``delay`` of 150ms
   - was given an `easing <https://developer.mozilla.org/en-US/docs/Web/API/KeyframeEffect/KeyframeEffect>`_ value of ``ease-out``: you can see this by the convex shape of the green bar.
 
@@ -163,7 +163,7 @@ Finally, if you click inside the bar at the top of the timeline, you get a scrub
 Further information about animation compositing
 -----------------------------------------------
 
-If you open `animation-inspector-compositing.html <https://firefox-devtools.github.io/devtools-examples/animation-inspector/animation-inspector-compositing.html>`_ and click the red rectangle, a simple `opacity <https://developer.mozilla.org/en-US/docs/Web/CSS/opacity>`_ animation will start. If you look at this in the Animation Inspector in Firefox 49+, you'll see that:
+If you open `animation-inspector-compositing.html <https://firefox-devtools.github.io/devtools-examples/animation-inspector/animation-inspector-compositing.html>`_ and click the red rectangle, a simple `opacity <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/opacity>`_ animation will start. If you look at this in the Animation Inspector, you'll see that:
 
 
 - The white lightning bolt icon now indicates whether all the animation properties have been optimized by running them through the compositor, where possible.
@@ -174,7 +174,7 @@ If you open `animation-inspector-compositing.html <https://firefox-devtools.gith
 .. image:: animation_swoosh_01.png
   :class: border
 
-Let's now look at `animation-inspector-compositing-silly.html <https://firefox-devtools.github.io/devtools-examples/animation-inspector/animation-inspector-compositing-silly.html>`_ — this is the same example, except that now once the red rectangle is clicked we animate both the `left <https://developer.mozilla.org/en-US/docs/Web/CSS/left>`_ and `transform <https://developer.mozilla.org/en-US/docs/Web/CSS/transform>`_ (with a translation) properties at the same time as `opacity <https://developer.mozilla.org/en-US/docs/Web/CSS/opacity>`_. It doesn't make much sense to try to animate a geometric property and a translation at the same time — the two effects won't be synchronized — so the ``transform`` property is deliberately not handed over to the compositor to handle. The Animation Inspector will tell you this — look at it now and you'll see that:
+Let's now look at `animation-inspector-compositing-silly.html <https://firefox-devtools.github.io/devtools-examples/animation-inspector/animation-inspector-compositing-silly.html>`_ — this is the same example, except that now once the red rectangle is clicked we animate both the `left <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/left>`_ and `transform <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/transform>`_ (with a translation) properties at the same time as `opacity <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/opacity>`_. It doesn't make much sense to try to animate a geometric property and a translation at the same time — the two effects won't be synchronized — so the ``transform`` property is deliberately not handed over to the compositor to handle. The Animation Inspector will tell you this — look at it now and you'll see that:
 
 
 - The white lightning bolt icon in the bar has been replaced with a grey lightning bolt icon, to indicate that only some of the relevant properties are being optimized by the compositor.
@@ -191,7 +191,7 @@ Let's now look at `animation-inspector-compositing-silly.html <https://firefox-d
 Edit @keyframes
 ***************
 
-Any `@keyframes rules <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Animations/Using_CSS_animations>`_ associated with the currently selected element are displayed in the :ref:`Rules view <page_inspector_ui_tour_rules_view>` and are editable:
+Any `@keyframes rules <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@keyframes>`_ associated with the currently selected element are displayed in the :ref:`Rules view <page_inspector_ui_tour_rules_view>` and are editable:
 
 .. raw:: html
 
@@ -205,9 +205,9 @@ Any `@keyframes rules <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Anim
 Edit timing functions
 *********************
 
-When you `create a CSS animation <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Animations/Using_CSS_animations>`_ you can specify a `timing function <https://developer.mozilla.org/en-US/docs/Web/CSS/animation-timing-function>`_: this determines the rate at which the animation progresses. One way to specify the timing function is with a cubic Bézier curve.
+When you `create a CSS animation <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Animations/Using>`_ you can specify a `timing function <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/animation-timing-function>`_: this determines the rate at which the animation progresses. One way to specify the timing function is with a cubic Bézier curve.
 
-Timing functions defined as cubic Bézier curves get an icon in the Rules view. If you click the icon you get a visual editor for the curve, enabling you to drag `P1 and P2 <https://developer.mozilla.org/en-US/docs/Web/CSS/easing-function#the_cubic-bezier()_class_of_timing-functions>`_, and see the results in the page:
+Timing functions defined as cubic Bézier curves get an icon in the Rules view. If you click the icon you get a visual editor for the curve, enabling you to drag `P1 and P2 <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/easing-function/cubic-bezier>`_, and see the results in the page:
 
 .. raw:: html
 

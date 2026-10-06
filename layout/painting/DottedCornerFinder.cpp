@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,7 +29,7 @@ struct BestOverlap {
 };
 
 static const size_t DottedCornerCacheSize = 256;
-MOZ_RUNINIT nsTHashMap<FourFloatsHashKey, BestOverlap> DottedCornerCache;
+constinit nsTHashMap<FourFloatsHashKey, BestOverlap> DottedCornerCache;
 
 DottedCornerFinder::DottedCornerFinder(const Bezier& aOuterBezier,
                                        const Bezier& aInnerBezier,
@@ -386,6 +384,13 @@ void DottedCornerFinder::FindBestOverlap(Float aMinR, Float aMinBorderRadius,
         mCount = mMaxCount;
         break;
       }
+      // GetCountAndLastOverlap() failed without writing |count| and
+      // |actualOverlap|: the walk needed more than mMaxCount circles, i.e.
+      // this overlap produces too many circles.  Narrow the search toward
+      // smaller overlaps.
+      upper = overlap;
+      overlap = (upper + lower) / 2.0f;
+      continue;
     }
 
     if (j == 0) {

@@ -1,0 +1,29 @@
+{
+  "border": {
+    "radius": {
+      "value": "{border.radius.small}"
+    }
+  },
+  "margin": {
+    "@base": {
+      "value": "{panel-menuitem.margin.block} {panel-menuitem.margin.inline}"
+    },
+    "block": {
+      "value": "0"
+    },
+    "inline": {
+      "value": "8px"
+    }
+  },
+  "padding": {
+    "@base": {
+      "value": "{panel-menuitem.padding.block} {panel-menuitem.padding.inline}"
+    },
+    "block": {
+      "value": "8px"
+    },
+    "inline": {
+      "value": "8px"
+    }
+  }
+}

@@ -7,21 +7,23 @@
 #ifndef SkEdgeBuilder_DEFINED
 #define SkEdgeBuilder_DEFINED
 
+#include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
+#include "include/private/base/SkAssert.h"
 #include "include/private/base/SkTDArray.h"
 #include "src/base/SkArenaAlloc.h"
 
 #include <cstddef>
 
+class SkEdge;
 class SkPath;
+struct SkPathRaw;
 struct SkAnalyticEdge;
-struct SkEdge;
-struct SkPoint;
 
 class SkEdgeBuilder {
 public:
-    int buildEdges(const SkPath& path,
-                   const SkIRect* shiftedClip);
+    int buildEdges(const SkPathRaw&, const SkIRect* shiftedClip);
+    int buildEdges(const SkPath&, const SkIRect* shiftedClip);
 
 protected:
     SkEdgeBuilder() = default;
@@ -40,8 +42,8 @@ protected:
     };
 
 private:
-    int build    (const SkPath& path, const SkIRect* clip, bool clipToTheRight);
-    int buildPoly(const SkPath& path, const SkIRect* clip, bool clipToTheRight);
+    int build    (const SkPathRaw&, const SkIRect* clip, bool clipToTheRight);
+    int buildPoly(const SkPathRaw&, const SkIRect* clip, bool clipToTheRight);
 
     virtual char* allocEdges(size_t n, size_t* sizeof_edge) = 0;
     virtual SkRect recoverClip(const SkIRect&) const = 0;
@@ -54,22 +56,27 @@ private:
 
 class SkBasicEdgeBuilder final : public SkEdgeBuilder {
 public:
-    explicit SkBasicEdgeBuilder(int clipShift) : fClipShift(clipShift) {}
+    explicit SkBasicEdgeBuilder() {}
 
     SkEdge** edgeList() { return (SkEdge**)fEdgeList; }
 
 private:
     Combine combineVertical(const SkEdge* edge, SkEdge* last);
 
-    char* allocEdges(size_t, size_t*) override;
+    char* allocEdges(size_t, size_t*) override {
+        SkDEBUGFAIL("Not implemented");
+        return nullptr;
+    }
+
     SkRect recoverClip(const SkIRect&) const override;
 
     void addLine (const SkPoint pts[]) override;
     void addQuad (const SkPoint pts[]) override;
     void addCubic(const SkPoint pts[]) override;
-    Combine addPolyLine(const SkPoint pts[], char* edge, char** edgePtr) override;
-
-    const int fClipShift;
+    Combine addPolyLine(const SkPoint pts[], char* edge, char** edgePtr) override {
+        SkDEBUGFAIL("Not implemented");
+        return kNo_Combine;
+    }
 };
 
 class SkAnalyticEdgeBuilder final : public SkEdgeBuilder {

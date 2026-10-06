@@ -1,4 +1,4 @@
-// |jit-test| --enable-symbols-as-weakmap-keys; skip-if: getBuildConfiguration("release_or_beta")
+// |jit-test| --enable-symbols-as-weakmap-keys
 function make(name) {
   return Symbol(name);
 }

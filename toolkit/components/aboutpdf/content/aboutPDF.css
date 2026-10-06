@@ -1,0 +1,197 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background-color: var(--background-color-canvas);
+}
+
+#container {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  min-height: 100%;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  max-width: 1458px;
+  margin-inline: auto;
+  padding: var(--space-xxlarge);
+  box-sizing: border-box;
+}
+
+#col-left,
+#col-right {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  width: 154px;
+  flex-shrink: 0;
+}
+
+#col-mid {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-xlarge);
+  padding-inline: var(--space-xlarge);
+}
+
+#logo-lockup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-small);
+}
+
+#logo-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+
+  h1 {
+    margin: 0;
+  }
+}
+
+#firefox-logo {
+  width: var(--size-item-medium);
+  height: var(--size-item-medium);
+}
+
+#tagline {
+  margin: 0;
+}
+
+#dropzone {
+  background-color: var(--background-color-box);
+  border: 2px dashed var(--focus-outline-color);
+  border-radius: var(--border-radius-large);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  min-height: 450px;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  max-width: 1200px;
+  padding: var(--space-large);
+  box-shadow: var(--box-shadow-level-3);
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+
+  &:hover:not(.drag-over, :active) {
+    background-color: var(--button-background-color-hover);
+  }
+
+  &:active,
+  &.drag-over {
+    background-color: var(--button-background-color-active);
+  }
+
+  &:focus-within {
+    border-style: solid;
+    outline: 2px solid var(--focus-outline-color);
+    outline-offset: 2px;
+  }
+
+  @media (forced-colors: active) {
+    box-shadow: none;
+    background-color: var(--button-background-color);
+    color: var(--button-text-color);
+    border-color: currentColor;
+    /* Color transitions flash through unrelated system colors in HCM. */
+    transition: none;
+
+    &:hover:not(.drag-over, :active),
+    &:active,
+    &.drag-over {
+      background-color: var(--background-color-list-item-hover);
+      color: var(--text-color-accent-primary-selected);
+    }
+
+    &:focus-within {
+      outline-color: currentColor;
+    }
+  }
+}
+
+#dropzone-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-small);
+
+  p {
+    margin: 0;
+    text-align: center;
+  }
+}
+
+#dropzone-privacy-hint {
+  font-size: var(--font-size-small);
+  color: var(--text-color-deemphasized);
+  padding-block-start: var(--space-small);
+}
+
+#dropzone-error {
+  align-items: flex-start;
+  gap: var(--space-xsmall);
+  color: var(--text-color);
+
+  &:not([hidden]) {
+    display: inline-flex;
+  }
+
+  &::before {
+    content: "";
+    display: inline-block;
+    width: var(--size-item-small);
+    height: var(--size-item-small);
+    background: url("chrome://global/skin/icons/warning.svg") no-repeat center / contain;
+    -moz-context-properties: fill;
+    fill: var(--icon-color-warning);
+    flex-shrink: 0;
+  }
+}
+
+/* Inherit dropzone color in HCM so hover/drag-over pick up SelectedItemText. */
+@media (forced-colors: active) {
+  #dropzone-hint,
+  #dropzone-privacy-hint,
+  #dropzone-error {
+    color: currentColor;
+  }
+}
+
+#promo-row {
+  display: flex;
+  justify-content: center;
+}
+
+#promo {
+  width: 100%;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  max-width: 700px;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  --promo-image-size: 100px;
+}
+
+@media (max-width: 760px) {
+  #col-left,
+  #col-right {
+    display: none;
+  }
+
+  #container {
+    padding: var(--space-xlarge);
+  }
+
+  #col-mid {
+    padding-inline: 0;
+  }
+}

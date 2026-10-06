@@ -1,0 +1,12 @@
+[package]
+name = "gecko_tracing"
+version = "0.1.0"
+edition = "2021"
+license = "MPL-2.0"
+
+[dependencies]
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
+# app-services crates, overridden in the `[patch.crates-io]` section of the top-level Cargo.toml
+error-support = { version = "0.1" }
+tracing-support = { version = "0.1" }

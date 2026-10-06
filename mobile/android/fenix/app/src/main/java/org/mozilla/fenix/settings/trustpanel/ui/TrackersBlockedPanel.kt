@@ -11,15 +11,17 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.Divider
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.menu.compose.MenuGroup
 import org.mozilla.fenix.components.menu.compose.MenuItem
@@ -28,15 +30,21 @@ import org.mozilla.fenix.components.menu.compose.header.SubmenuHeader
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.trackingprotection.TrackerBuckets
 import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory
-
-internal const val TRACKERS_PANEL_ROUTE = "trackers_panel"
+import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory.CROSS_SITE_TRACKING_COOKIES
+import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory.CRYPTOMINERS
+import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory.FINGERPRINTERS
+import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory.SOCIAL_MEDIA_TRACKERS
+import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory.TRACKING_CONTENT
+import mozilla.components.ui.icons.R as iconsR
 
 @Composable
 internal fun TrackersBlockedPanel(
     title: String,
     numberOfTrackersBlocked: Int,
+    numberOfTrackersBlockedThisWeek: Int,
     bucketedTrackers: TrackerBuckets,
     onTrackerCategoryClick: (TrackingProtectionCategory) -> Unit,
+    onTrackersBlockedThisWeekClicked: () -> Unit,
     onBackButtonClick: () -> Unit,
 ) {
     MenuScaffold(
@@ -55,12 +63,13 @@ internal fun TrackersBlockedPanel(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = stringResource(
-                        R.string.trackers_blocked_panel_total_num_trackers_blocked,
+                    text = pluralStringResource(
+                        R.plurals.trackers_blocked_panel_total_num_trackers_blocked_2,
+                        numberOfTrackersBlocked,
                         numberOfTrackersBlocked,
                     ),
                     modifier = Modifier.weight(1f),
-                    color = FirefoxTheme.colors.textAccent,
+                    color = MaterialTheme.colorScheme.onSurface,
                     style = FirefoxTheme.typography.headline8,
                 )
             }
@@ -70,13 +79,9 @@ internal fun TrackersBlockedPanel(
             MenuGroup {
                 TrackingProtectionCategory.entries
                     .filter { bucketedTrackers.get(it, true).isNotEmpty() }
-                    .forEachIndexed { index, trackingProtectionCategory ->
-                        if (index != 0) { Divider(color = FirefoxTheme.colors.borderSecondary) }
-
+                    .forEach { trackingProtectionCategory ->
                         MenuItem(
-                            label = stringResource(
-                                R.string.trackers_blocked_panel_categorical_num_trackers_blocked,
-                                stringResource(trackingProtectionCategory.title),
+                            label = trackingProtectionCategory.displayLabel(
                                 bucketedTrackers.get(trackingProtectionCategory, true).size,
                             ),
                             beforeIconPainter = painterResource(id = trackingProtectionCategory.icon),
@@ -84,9 +89,37 @@ internal fun TrackersBlockedPanel(
                         )
                     }
             }
+
+            Spacer(Modifier.height(FirefoxTheme.layout.space.static200))
+
+            MenuGroup {
+                MenuItem(
+                    label = pluralStringResource(
+                        R.plurals.trackers_blocked_panel_num_trackers_blocked_this_week_2,
+                        numberOfTrackersBlockedThisWeek,
+                        numberOfTrackersBlockedThisWeek,
+                    ),
+                    beforeIconPainter = painterResource(iconsR.drawable.mozac_ic_shield_checkmark_24),
+                    onClick = { onTrackersBlockedThisWeekClicked() },
+                )
+            }
         }
     }
 }
+
+@Composable
+@ReadOnlyComposable
+private fun TrackingProtectionCategory.displayLabel(count: Int): String = LocalResources.current.getQuantityString(
+    when (this) {
+        SOCIAL_MEDIA_TRACKERS -> R.plurals.trackers_blocked_panel_num_social_media_trackers
+        CROSS_SITE_TRACKING_COOKIES -> R.plurals.trackers_blocked_panel_num_cross_site_cookies
+        CRYPTOMINERS -> R.plurals.trackers_blocked_panel_num_cryptominers
+        FINGERPRINTERS -> R.plurals.trackers_blocked_panel_num_fingerprinters
+        TRACKING_CONTENT -> R.plurals.trackers_blocked_panel_num_trackers_2
+    },
+    count,
+    count,
+)
 
 @PreviewLightDark
 @Composable
@@ -94,13 +127,15 @@ private fun TrackersBlockedPanelPreview() {
     FirefoxTheme {
         Column(
             modifier = Modifier
-                .background(color = FirefoxTheme.colors.layer3),
+                .background(color = MaterialTheme.colorScheme.surface),
         ) {
             TrackersBlockedPanel(
                 title = "Mozilla",
                 numberOfTrackersBlocked = 0,
+                numberOfTrackersBlockedThisWeek = 33,
                 bucketedTrackers = TrackerBuckets(),
                 onTrackerCategoryClick = {},
+                onTrackersBlockedThisWeekClicked = {},
                 onBackButtonClick = {},
             )
         }

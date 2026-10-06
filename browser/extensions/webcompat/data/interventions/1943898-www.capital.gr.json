@@ -1,0 +1,17 @@
+{
+  "label": "www.capital.gr",
+  "bugs": {
+    "1943898": {
+      "issue": "broken-redirect",
+      "matches": ["*://www.capital.gr/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "content_scripts": {
+        "js": ["bug1943898-www.capital.gr-suppress-constant-reloading.js"]
+      }
+    }
+  ]
+}

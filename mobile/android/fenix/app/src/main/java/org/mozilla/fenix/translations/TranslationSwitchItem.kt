@@ -4,12 +4,14 @@
 
 package org.mozilla.fenix.translations
 
+import androidx.compose.runtime.Immutable
 import org.mozilla.fenix.R
 
 /**
  * TranslationSwitchItem that will appear on Translation screens.
  * @property type [TranslationSettingsOption] type depending on the screen.
- * In [TranslationOptionsDialog] is TranslationPageSettingsOption and in [TranslationSettings] is
+ * In [TranslationOptionsDialog] is TranslationPageSettingsOption and in
+ * [org.mozilla.fenix.translations.settings.TranslationSettings] is
  * [TranslationSettingsScreenOption].
  * @property textLabel The text that will appear on the switch item.
  * @property isChecked Whether the switch is checked or not.
@@ -17,6 +19,7 @@ import org.mozilla.fenix.R
  * @property onStateChange Invoked when the switch item is clicked,
  * the new checked state is passed into the callback.
  */
+@Immutable
 data class TranslationSwitchItem(
     val type: TranslationSettingsOption,
     val textLabel: String,
@@ -78,7 +81,8 @@ sealed class TranslationSettingsOption(
 )
 
 /**
- * Translation settings that is related to the web-page.It will appear in [TranslationSettings].
+ * Translation settings that is related to the web-page.It will appear in
+ * [org.mozilla.fenix.translations.settings.TranslationSettings].
  */
 sealed class TranslationSettingsScreenOption {
     /**

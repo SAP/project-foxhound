@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!-- Title of a dialog for a notification permission request. %1$s is the domain name of the website. -->
+  <string name="mozac_feature_sitepermissions_notification_title">អនុញ្ញាតឱ្យ %1$s ផ្ញើការជូនដំណឹង?</string>
+  <!-- Title of a dialog for a camera permission request. %1$s is the domain name of the website. -->
+  <string name="mozac_feature_sitepermissions_camera_title">អនុញ្ញាតឱ្យ %1$s ប្រើកាមេរ៉ារបស់អ្នក?</string>
+  <!-- Title of a dialog for a microphone permission request. %1$s is the domain name of the website. -->
+  <string name="mozac_feature_sitepermissions_microfone_title">អនុញ្ញាតឱ្យ %1$s ប្រើមីក្រូហ្វូនរបស់អ្នក?</string>
+  <!-- Title of a dialog for a location permission request. %1$s is the domain name of the website. -->
+  <string name="mozac_feature_sitepermissions_location_title">អនុញ្ញាតឱ្យ %1$s ប្រើប្រាស់ទីតាំងរបស់អ្នក?</string>
+  <!-- Title of a dialog for a camera and microphone permission request. %1$s is the domain name of the website. -->
+  <string name="mozac_feature_sitepermissions_camera_and_microphone">អនុញ្ញាតឱ្យ %1$s ប្រើកាមេរ៉ា និងមីក្រូហ្វូនរបស់អ្នក?</string>
+  <!-- Title of a dialog for a local network access request. %1$s is the domain name of the website -->
+  <string name="mozac_feature_sitepermissions_local_network_access_title">អនុញ្ញាតឱ្យ %1$s ចូលប្រើកម្មវិធី និងសេវាកម្មនៅលើឧបករណ៍ដែលភ្ជាប់ទៅបណ្តាញមូលដ្ឋានរបស់អ្នក?</string>
+  <!-- Title of a dialog for a local device access request. %1$s is the domain name of the website -->
+  <string name="mozac_feature_sitepermissions_local_device_access_title">អនុញ្ញាតឱ្យ %1$s ចូលប្រើកម្មវិធី និងសេវាកម្មផ្សេងទៀតនៅលើឧបករណ៍នេះ?</string>
+  <!--
+    Option in a dialog for requesting a microphone permission, this option will give access to
+    the first microphone
+  -->
+  <string name="mozac_feature_sitepermissions_option_microphone_one">មីក្រូហ្វូន 1</string>
+  <!--
+    Option in a dialog for requesting a camera permission, this option will give access to
+    back facing camera
+  -->
+  <string name="mozac_feature_sitepermissions_back_facing_camera2">កាមេរ៉ា​ក្រោយ</string>
+  <!--
+    Option in a dialog for requesting a camera permission, this option will give access to
+    front facing camera
+  -->
+  <string name="mozac_feature_sitepermissions_selfie_camera2">កាមេរ៉ាមុខ</string>
+  <!--
+    Text for a positive button in a permission request dialog, this button will give
+    access to this permission
+  -->
+  <string name="mozac_feature_sitepermissions_allow">អនុញ្ញាត</string>
+  <!--
+    Text for a negative button in a permission request dialog, this button will do not give
+    access to this permission
+  -->
+  <string name="mozac_feature_sitepermissions_not_allow">មិន​អនុញ្ញាត</string>
+  <!--
+    Alternate variant of the text for a negative button in a permission request dialog,
+    this button will not give access to this permission
+  -->
+  <string name="mozac_feature_sitepermissions_block">ទប់ស្កាត់</string>
+  <!-- Message of a dialog offering more context about the app level notification permission request. %1$s will be replaced with the name of the app. -->
+  <string name="mozac_feature_sitepermissions_notification_permission_rationale_dialog_message">អ្នកនឹងត្រូវអនុញ្ញាតឱ្យមានការជូនដំណឹងនៅក្នុង %1$s ដើម្បីទទួលបានការជូនដំណឹងពីគេហទំព័រនេះ។</string>
+  <!-- Button label in a notification permission request dialog to dismiss the dialog. -->
+  <string name="mozac_feature_sitepermissions_notification_permission_rationale_dialog_dismiss_label">បោះបង់</string>
+  <!-- Button label in a notification permission request dialog. It will let the user go to Android Settings to grant the permission. -->
+  <string name="mozac_feature_sitepermissions_notification_permission_rationale_dialog_settings_label">ចូលទៅ​ការកំណត់</string>
+  <!-- Text for a checkbox in a permission request dialog, this will allow to not show again the prompt -->
+  <string name="mozac_feature_sitepermissions_do_not_ask_again_on_this_site2">ចងចាំការសម្រេចចិត្តសម្រាប់គេហទំព័រនេះ</string>
+  <!-- Text for a checkbox in a permission request dialog, this will allow to not show again the prompt -->
+  <string name="mozac_feature_sitepermissions_do_not_ask_again_on_this_site4">ចងចាំសម្រាប់គេហទំព័រនេះ</string>
+  <!-- Text for a positive button in a permission request dialog. This will always allow and remember the decision of the user, this is the special case of the notification permission, that is only ask one time -->
+  <string name="mozac_feature_sitepermissions_always_allow">ជានិច្ច</string>
+  <!-- Text for a negative button in a permission request dialog. This will never allow and remember the decision of the user, this is the special case of the notification permission, that is only ask one time -->
+  <string name="mozac_feature_sitepermissions_never_allow">កុំ</string>
+  <!-- Title of a dialog to require to save data in persistent storage. %1$s will be replaced with the URL of the current page -->
+  <string name="mozac_feature_sitepermissions_persistent_storage_title">អនុញ្ញាតឱ្យ %1$s រក្សាទុកទិន្នន័យនៅក្នុងកន្លែងផ្ទុកអចិន្ត្រៃយ៍?</string>
+  <!-- Title of a dialog to use EME. %1$s will be replaced with the URL of the current page -->
+  <string name="mozac_feature_sitepermissions_media_key_system_access_title">អនុញ្ញាតឱ្យ %1$s ចាក់មាតិកាដែលគ្រប់គ្រងដោយ DRM?</string>
+  <!--
+    Title of a dialog to use cross origin storage permission. %1$s is the name of the site URL (www.site1.example) trying to track the user's activity.
+    %2$s is the name of the site URL (www.site2.example) that the user is visiting.  This is the same domain name displayed in the address bar
+  -->
+  <string name="mozac_feature_sitepermissions_storage_access_title">អនុញ្ញាតឱ្យ %1$s ប្រើប្រាស់ខូគីរបស់វានៅលើ %2$s?</string>
+  <!--
+    Message of a dialog offering more context about the cross origin storage permission.
+    %s is the name of the site URL (www.site1.example) trying to track the user's activity.
+  -->
+  <string name="mozac_feature_sitepermissions_storage_access_message">អ្នកប្រហែលជាចង់រារាំងការចូលប្រើ ប្រសិនបើវាមិនច្បាស់ថាហេតុអ្វីបានជា %s ត្រូវការទិន្នន័យនេះ។</string>
+  <!-- Text for a negative button in the storage access permission request dialog. This button will not give access to this permission. -->
+  <string name="mozac_feature_sitepermissions_storage_access_not_allow">ទប់ស្កាត់</string>
+  <!-- Clickable text that will open a new tab navigating the user to online documentation about specific features. -->
+  <string name="mozac_feature_sitepermissions_learn_more_title">ស្វែងយល់​បន្ថែម</string>
+</resources>

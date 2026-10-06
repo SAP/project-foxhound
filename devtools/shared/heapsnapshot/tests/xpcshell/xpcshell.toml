@@ -33,8 +33,7 @@ support-files = [
 
 ["test_DominatorTree_02.js"]
 skip-if = [
-  "os == 'android' && android_version == '24' && processor == 'x86_64'",
-  "os == 'android' && android_version == '34' && processor == 'x86_64'",
+  "os == 'android' && os_version == '14' && arch == 'x86_64'",
 ]
 
 ["test_DominatorTree_03.js"]
@@ -129,8 +128,7 @@ skip-if = [
 
 ["test_ReadHeapSnapshot_worker.js"]
 skip-if = [
-  "os == 'android' && android_version == '24' && processor == 'x86_64'",
-  "os == 'android' && android_version == '34' && processor == 'x86_64'",
+  "os == 'android' && os_version == '14' && arch == 'x86_64'",
 ]
 
 ["test_SaveHeapSnapshot.js"]

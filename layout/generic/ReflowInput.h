@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,7 +11,6 @@
 
 #include "LayoutConstants.h"
 #include "ReflowOutput.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/EnumSet.h"
 #include "mozilla/LayoutStructs.h"
 #include "mozilla/Maybe.h"
@@ -68,6 +65,9 @@ struct SizeComputationInput {
 
   // Rendering context to use for measurement.
   gfxContext* mRenderingContext;
+
+  // Cache for anchor resolution in this computation.
+  AnchorPosResolutionCache* mAnchorPosResolutionCache = nullptr;
 
   nsMargin ComputedPhysicalMargin() const {
     return mComputedMargin.GetPhysicalMargin(mWritingMode);
@@ -128,7 +128,9 @@ struct SizeComputationInput {
 
  public:
   // Callers using this constructor must call InitOffsets on their own.
-  SizeComputationInput(nsIFrame* aFrame, gfxContext* aRenderingContext);
+  SizeComputationInput(
+      nsIFrame* aFrame, gfxContext* aRenderingContext,
+      AnchorPosResolutionCache* aAnchorPosResolutionCache = nullptr);
 
   SizeComputationInput(nsIFrame* aFrame, gfxContext* aRenderingContext,
                        WritingMode aContainingBlockWritingMode,
@@ -364,6 +366,12 @@ struct ReflowInput : public SizeComputationInput {
   // unconstrained dimensions replaced by zero.
   nsSize ComputedSizeAsContainerIfConstrained() const;
 
+  // Return the physical content box relative to the frame itself.
+  nsRect ComputedPhysicalContentBoxRelativeToSelf() const {
+    auto bp = ComputedPhysicalBorderPadding();
+    return nsRect(nsPoint(bp.left, bp.top), ComputedPhysicalSize());
+  }
+
   // Get the writing mode of the containing block, to resolve float/clear
   // logical sides appropriately.
   WritingMode GetCBWritingMode() const;
@@ -377,11 +385,6 @@ struct ReflowInput : public SizeComputationInput {
   const nsStyleBorder* mStyleBorder = nullptr;
   const nsStyleMargin* mStyleMargin = nullptr;
 
-  enum class BreakType : uint8_t {
-    Auto,
-    Column,
-    Page,
-  };
   BreakType mBreakType = BreakType::Auto;
 
   // a frame (e.g. nsTableCellFrame) which may need to generate a special
@@ -459,6 +462,15 @@ struct ReflowInput : public SizeComputationInput {
     // reflow. The available block-size of the last column might become
     // unconstrained.
     bool mIsInLastColumnBalancingReflow : 1;
+
+    // We have an ancestor nsColumnSetFrame performing a measuring reflow. The
+    // available block-size becomes unconstrained.
+    //
+    // Note: only the top-level fragmentainer (multicol or print page sequence)
+    // can initiate a measuring reflow, so nested fragmentainers will do a
+    // measuring reflow only when the top-level one is doing it. See
+    // nsColumnSetFrame::Reflow() and nsPageSequenceFrame::Reflow() for details.
+    bool mIsInFragmentainerMeasuringReflow : 1;
 
     // True if ColumnSetWrapperFrame has a constrained block-size, and is going
     // to consume all of its block-size in this fragment. This bit is passed to
@@ -614,6 +626,9 @@ struct ReflowInput : public SizeComputationInput {
    *        call nsIFrame::ComputeSize() internally.
    * @param aComputeSizeFlags A set of flags used when we call
    *        nsIFrame::ComputeSize() internally.
+   * @param aAnchorResolutionCache A cache of referenced anchors to be populated
+   *        (If specified) for this reflowed frame. Should live for the lifetime
+   *        of this ReflowInput.
    */
   ReflowInput(nsPresContext* aPresContext,
               const ReflowInput& aParentReflowInput, nsIFrame* aFrame,
@@ -621,7 +636,8 @@ struct ReflowInput : public SizeComputationInput {
               const Maybe<LogicalSize>& aContainingBlockSize = Nothing(),
               InitFlags aFlags = {},
               const StyleSizeOverrides& aSizeOverrides = {},
-              ComputeSizeFlags aComputeSizeFlags = {});
+              ComputeSizeFlags aComputeSizeFlags = {},
+              AnchorPosResolutionCache* aAnchorPosResolutionCache = nullptr);
 
   /**
    * This method initializes various data members. It is automatically called by
@@ -683,9 +699,6 @@ struct ReflowInput : public SizeComputationInput {
                                          WritingMode aWM);
 
   static constexpr float kNormalLineHeightFactor = 1.2f;
-
-  LogicalSize ComputeContainingBlockRectangle(
-      nsPresContext* aPresContext, const ReflowInput* aContainingBlockRI) const;
 
   /**
    * Apply the mComputed(Min/Max)ISize constraints to the content
@@ -814,8 +827,7 @@ struct ReflowInput : public SizeComputationInput {
                                            WritingMode aContainingBlockWM,
                                            bool aIsMarginBStartAuto,
                                            bool aIsMarginBEndAuto,
-                                           LogicalMargin& aMargin,
-                                           LogicalMargin& aOffsets);
+                                           LogicalMargin& aMargin);
 
   // Resolve any inline-axis 'auto' margins (if any) for an absolutely
   // positioned frame. aMargin and aOffsets are both outparams (though we only
@@ -824,8 +836,7 @@ struct ReflowInput : public SizeComputationInput {
                                             WritingMode aContainingBlockWM,
                                             bool aIsMarginIStartAuto,
                                             bool aIsMarginIEndAuto,
-                                            LogicalMargin& aMargin,
-                                            LogicalMargin& aOffsets);
+                                            LogicalMargin& aMargin);
 
  protected:
   void InitCBReflowInput();
@@ -838,14 +849,25 @@ struct ReflowInput : public SizeComputationInput {
                        const Maybe<LogicalMargin>& aPadding,
                        LayoutFrameType aFrameType);
 
-  // Returns the nearest containing block or block frame (whether or not
-  // it is a containing block) for the specified frame.  Also returns
-  // the inline-start edge and logical size of the containing block's
-  // content area.
-  // These are returned in the coordinate space of the containing block.
-  nsIFrame* GetHypotheticalBoxContainer(nsIFrame* aFrame,
-                                        nscoord& aCBIStartEdge,
-                                        LogicalSize& aCBSize) const;
+  // Compute the content-box size of the containing block frame in mFrame's
+  // writing-mode (mWritingMode).
+  //
+  // Note: the block-size in the return value may be unconstrained.
+  LogicalSize ComputeContainingBlockRectangle(
+      nsPresContext* aPresContext, const ReflowInput* aContainingBlockRI) const;
+
+  // mBorderPadding and mFrame are both in mBoxContainer's writing-mode.
+  struct HypotheticalBoxContainerInfo {
+    nsIFrame* mBoxContainer;
+    LogicalMargin mBorderPadding;
+    LogicalSize mContentBoxSize;
+  };
+
+  // Returns the nearest containing block for aFrame. Also returns its border &
+  // padding and content-box size. These are returned in the coordinate space of
+  // the containing block.
+  HypotheticalBoxContainerInfo GetHypotheticalBoxContainer(
+      const nsIFrame* aFrame) const;
 
   // Calculate the position of the hypothetical box that the placeholder frame
   // (for a position:fixed/absolute element) would have if it were in the flow
@@ -855,8 +877,12 @@ struct ReflowInput : public SizeComputationInput {
   // absolute containing block (aCBReflowInput->mFrame). The writing mode of the
   // hypothetical box will have the same block direction as the absolute
   // containing block, but it may differ in the inline direction.
+  //
+  // @param aCBPaddingBoxSize the padding-box size of the absolute containing
+  // block, in its own writing-mode.
   void CalculateHypotheticalPosition(
       nsPlaceholderFrame* aPlaceholderFrame, const ReflowInput* aCBReflowInput,
+      const LogicalSize& aCBPaddingBoxSize,
       nsHypotheticalPosition& aHypotheticalPos) const;
 
   void InitAbsoluteConstraints(const ReflowInput* aCBReflowInput,
@@ -950,10 +976,5 @@ struct ReflowInput : public SizeComputationInput {
 };
 
 }  // namespace mozilla
-
-inline AnchorPosResolutionParams AnchorPosResolutionParams::From(
-    const mozilla::ReflowInput* aRI) {
-  return {aRI->mFrame, aRI->mStyleDisplay->mPosition};
-}
 
 #endif  // mozilla_ReflowInput_h

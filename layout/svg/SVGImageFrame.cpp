@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,13 +19,13 @@
 #include "mozilla/SVGUtils.h"
 #include "mozilla/StaticPrefs_image.h"
 #include "mozilla/dom/LargestContentfulPaint.h"
-#include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/SVGImageElement.h"
 #include "mozilla/image/WebRenderImageProvider.h"
 #include "mozilla/layers/RenderRootStateManager.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
 #include "nsContainerFrame.h"
 #include "nsIImageLoadingContent.h"
+#include "nsIMutationObserver.h"
 #include "nsIReflowCallback.h"
 #include "nsLayoutUtils.h"
 
@@ -179,7 +177,8 @@ bool SVGImageFrame::DoGetParentSVGTransforms(
 // nsIFrame methods:
 
 nsresult SVGImageFrame::AttributeChanged(int32_t aNameSpaceID,
-                                         nsAtom* aAttribute, int32_t aModType) {
+                                         nsAtom* aAttribute,
+                                         AttrModType aModType) {
   if (aNameSpaceID == kNameSpaceID_None) {
     if (aAttribute == nsGkAtoms::preserveAspectRatio) {
       // We don't paint the content of the image using display lists, therefore
@@ -190,7 +189,7 @@ nsresult SVGImageFrame::AttributeChanged(int32_t aNameSpaceID,
       return NS_OK;
     }
   }
-  if (aModType == dom::MutationEvent_Binding::REMOVAL &&
+  if (aModType == AttrModType::Removal &&
       (aNameSpaceID == kNameSpaceID_None ||
        aNameSpaceID == kNameSpaceID_XLink) &&
       aAttribute == nsGkAtoms::href) {
@@ -825,27 +824,37 @@ bool SVGImageFrame::IgnoreHitTest() const {
   return true;
 }
 
-void SVGImageFrame::NotifySVGChanged(uint32_t aFlags) {
-  MOZ_ASSERT(aFlags & (TRANSFORM_CHANGED | COORD_CONTEXT_CHANGED),
+void SVGImageFrame::NotifySVGChanged(ChangeFlags aFlags) {
+  MOZ_ASSERT(aFlags.contains(ChangeFlag::TransformChanged) ||
+                 aFlags.contains(ChangeFlag::CoordContextChanged),
              "Invalidation logic may need adjusting");
 }
 
 SVGBBox SVGImageFrame::GetBBoxContribution(const Matrix& aToBBoxUserspace,
-                                           uint32_t aFlags) {
+                                           SVGBBoxFlags aFlags) {
   if (aToBBoxUserspace.IsSingular()) {
     // XXX ReportToConsole
     return {};
   }
 
-  if ((aFlags & SVGUtils::eForGetClientRects) &&
+  if (aFlags.contains(SVGBBoxFlag::ForGetClientRects) &&
       aToBBoxUserspace.PreservesAxisAlignedRectangles()) {
-    Rect rect = NSRectToRect(mRect, AppUnitsPerCSSPixel());
-    return aToBBoxUserspace.TransformBounds(rect);
+    if (!mRect.IsEmpty()) {
+      Rect rect = NSRectToRect(mRect, AppUnitsPerCSSPixel());
+      return aToBBoxUserspace.TransformBounds(rect);
+    }
+    return {};
   }
 
   auto* element = static_cast<SVGImageElement*>(GetContent());
 
-  return element->GeometryBounds(aToBBoxUserspace);
+  Rect rect = element->GeometryBounds(aToBBoxUserspace);
+
+  if (aFlags.contains(SVGBBoxFlag::DisregardCSSZoom)) {
+    rect.Scale(1 / Style()->EffectiveZoom().ToFloat());
+  }
+
+  return rect;
 }
 
 //----------------------------------------------------------------------

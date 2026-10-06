@@ -17,7 +17,7 @@ info: |
   7. Let offset be ? ToIndex(byteOffset).
   8. If offset modulo elementSize ≠ 0, throw a RangeError exception.
   ...
-includes: [testBigIntTypedArray.js]
+includes: [testTypedArray.js]
 features: [BigInt, SharedArrayBuffer, TypedArray]
 ---*/
 
@@ -85,6 +85,6 @@ testWithBigIntTypedArrayConstructors(function(TA) {
       new TA(buffer, true);
     }, "1 modulo elementSize ≠ 0, throws a RangeError");
   }
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

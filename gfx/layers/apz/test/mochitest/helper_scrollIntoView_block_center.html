@@ -1,0 +1,57 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Tests that Element.scrollIntoView respects block option for visual scroll</title>
+  <script src="apz_test_native_event_utils.js"></script>
+  <script src="apz_test_utils.js"></script>
+  <script src="/tests/SimpleTest/paint_listener.js"></script>
+</head>
+<style>
+body {
+  margin: 0px;
+  padding: 0px;
+}
+#target {
+  position: fixed;
+  width: 100%;
+  height: 10px;
+  top: 50%;
+  bottom: 50%;
+  background-color: green;
+}
+</style>
+<body>
+<div id="target"></div>
+<script>
+async function test() {
+  is(window.scrollY, 0, "The initial scroll offset should be 0");
+  is(visualViewport.scale, 2.0, "The document should get scaled by 2.0");
+  is(visualViewport.pageTop, 0, "The initial visual viewport pageTop should be 0");
+
+  const target = document.querySelector("#target");
+  const targetRect = target.getBoundingClientRect();
+
+  const scrollPromise =
+    new Promise(resolve => visualViewport.addEventListener("scroll", resolve));
+  target.scrollIntoView({ block: "center" });
+  await scrollPromise;
+
+  await promiseApzFlushedRepaints();
+
+  // Calculate the expected position.
+  const centerOfTarget = targetRect.y + targetRect.height * 0.5;
+  const expected = centerOfTarget - visualViewport.height * 0.5;
+
+  isfuzzy(visualViewport.offsetTop, expected, 1.0,
+    "The position:fixed element is aligned at the center of visual viewport");
+}
+
+SpecialPowers.getDOMWindowUtils(window).setResolutionAndScaleTo(2.0);
+waitUntilApzStable()
+.then(test)
+.then(subtestDone, subtestFailed);
+</script>
+</body>
+</html>

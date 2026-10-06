@@ -1,0 +1,5 @@
+package test {
+  @A @B @C @D @E @F @G public class TestClass {
+    ctor TestClass();
+  }
+}

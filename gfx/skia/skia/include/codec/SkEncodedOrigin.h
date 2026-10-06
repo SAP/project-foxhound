@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -39,6 +39,23 @@ static inline SkMatrix SkEncodedOriginToMatrix(SkEncodedOrigin origin, int w, in
         case    kRightTop_SkEncodedOrigin: return SkMatrix::MakeAll( 0, -1, w,  1,  0, 0, 0, 0, 1);
         case kRightBottom_SkEncodedOrigin: return SkMatrix::MakeAll( 0, -1, w, -1,  0, h, 0, 0, 1);
         case  kLeftBottom_SkEncodedOrigin: return SkMatrix::MakeAll( 0,  1, 0, -1,  0, h, 0, 0, 1);
+    }
+    SK_ABORT("Unexpected origin");
+}
+
+/**
+ * Return a matrix equal to SkEncodedOriginToMatrix(origin, w, h).invert().
+ */
+static inline SkMatrix SkEncodedOriginToMatrixInverse(SkEncodedOrigin origin, int w, int h) {
+    switch (origin) {
+        case     kTopLeft_SkEncodedOrigin: return SkMatrix::I();
+        case    kTopRight_SkEncodedOrigin: return SkMatrix::MakeAll(-1,  0, w,  0,  1, 0, 0, 0, 1);
+        case kBottomRight_SkEncodedOrigin: return SkMatrix::MakeAll(-1,  0, w,  0, -1, h, 0, 0, 1);
+        case  kBottomLeft_SkEncodedOrigin: return SkMatrix::MakeAll( 1,  0, 0,  0, -1, h, 0, 0, 1);
+        case     kLeftTop_SkEncodedOrigin: return SkMatrix::MakeAll( 0,  1, 0,  1,  0, 0, 0, 0, 1);
+        case    kRightTop_SkEncodedOrigin: return SkMatrix::MakeAll( 0,  1, 0, -1,  0, w, 0, 0, 1);
+        case kRightBottom_SkEncodedOrigin: return SkMatrix::MakeAll( 0, -1, h, -1,  0, w, 0, 0, 1);
+        case  kLeftBottom_SkEncodedOrigin: return SkMatrix::MakeAll( 0, -1, h,  1,  0, 0, 0, 0, 1);
     }
     SK_ABORT("Unexpected origin");
 }

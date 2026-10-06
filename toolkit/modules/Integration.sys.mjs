@@ -188,7 +188,7 @@ IntegrationPoint.prototype = {
    *        overridden. Its only parameter is an object that contains the base
    *        implementation of all the available methods.
    *
-   * @note The override function is called every time the list of registered
+   * Note: The override function is called every time the list of registered
    *       override functions changes. Thus, it should not have any side
    *       effects or do any other initialization.
    */

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,8 +12,8 @@
 #include "mozilla/SMILValue.h"
 #include "mozilla/SVGContentUtils.h"
 #include "mozilla/TextUtils.h"
-#include "nsContentUtils.h"
 #include "nsCharSeparatedTokenizer.h"
+#include "nsContentUtils.h"
 
 using namespace mozilla::dom;
 //------------------------------------------------------------------------------
@@ -357,11 +355,11 @@ bool ParseElementBaseTimeValueSpec(const nsAString& aSpec,
 
     // element-name.begin
     if (token2.EqualsLiteral("begin")) {
-      result.mType = SMILTimeValueSpecParams::SYNCBASE;
+      result.mType = SMILTimeValueSpecParams::Type::Syncbase;
       result.mSyncBegin = true;
       // element-name.end
     } else if (token2.EqualsLiteral("end")) {
-      result.mType = SMILTimeValueSpecParams::SYNCBASE;
+      result.mType = SMILTimeValueSpecParams::Type::Syncbase;
       result.mSyncBegin = false;
       // element-name.repeat(digit+)
     } else if (StringBeginsWith(token2, REPEAT_PREFIX)) {
@@ -374,7 +372,7 @@ bool ParseElementBaseTimeValueSpec(const nsAString& aSpec,
       if (start == tokenEnd || *start != ')') {
         return false;
       }
-      result.mType = SMILTimeValueSpecParams::REPEAT;
+      result.mType = SMILTimeValueSpecParams::Type::Repeat;
       result.mRepeatIteration = repeatValue;
       // element-name.event-symbol
     } else {
@@ -382,12 +380,12 @@ bool ParseElementBaseTimeValueSpec(const nsAString& aSpec,
       if (atom == nullptr) {
         return false;
       }
-      result.mType = SMILTimeValueSpecParams::EVENT;
+      result.mType = SMILTimeValueSpecParams::Type::Event;
       result.mEventSymbol = atom;
     }
   } else {
     // event-symbol
-    result.mType = SMILTimeValueSpecParams::EVENT;
+    result.mType = SMILTimeValueSpecParams::Type::Event;
     result.mEventSymbol = atom;
   }
 
@@ -396,7 +394,7 @@ bool ParseElementBaseTimeValueSpec(const nsAString& aSpec,
   if (!ParseOptionalOffset(tokenEnd, end, &result.mOffset) || tokenEnd != end) {
     return false;
   }
-  aResult = result;
+  aResult = std::move(result);
   return true;
 }
 
@@ -574,13 +572,13 @@ bool SMILParserUtils::ParseTimeValueSpecParams(
   const nsAString& spec = TrimWhitespace(aSpec);
 
   if (spec.EqualsLiteral("indefinite")) {
-    aResult.mType = SMILTimeValueSpecParams::INDEFINITE;
+    aResult.mType = SMILTimeValueSpecParams::Type::Indefinite;
     return true;
   }
 
   // offset type
   if (ParseOffsetValue(spec, &aResult.mOffset)) {
-    aResult.mType = SMILTimeValueSpecParams::OFFSET;
+    aResult.mType = SMILTimeValueSpecParams::Type::Offset;
     return true;
   }
 

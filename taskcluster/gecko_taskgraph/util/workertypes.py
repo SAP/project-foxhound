@@ -2,7 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from mozbuild.util import memoize
+import functools
+
 from taskgraph.util.attributes import keymatch
 from taskgraph.util.keyed_by import evaluate_keyed_by
 
@@ -18,7 +19,7 @@ WORKER_TYPES = {
 }
 
 
-@memoize
+@functools.cache
 def _get(graph_config, alias, level, release_level, project):
     """Get the configuration for this worker_type alias: {provisioner,
     worker-type, implementation, os}"""
@@ -53,13 +54,11 @@ def _get(graph_config, alias, level, release_level, project):
         worker_config["provisioner"],
         f"worker-type alias {alias} field provisioner",
         {"level": level},
-    ).format(
-        **{
-            "trust-domain": graph_config["trust-domain"],
-            "level": level,
-            "alias": alias,
-        }
-    )
+    ).format(**{
+        "trust-domain": graph_config["trust-domain"],
+        "level": level,
+        "alias": alias,
+    })
     attrs = {"level": level, "release-level": release_level}
     if project:
         attrs["project"] = project
@@ -67,13 +66,11 @@ def _get(graph_config, alias, level, release_level, project):
         worker_config["worker-type"],
         f"worker-type alias {alias} field worker-type",
         attrs,
-    ).format(
-        **{
-            "trust-domain": graph_config["trust-domain"],
-            "level": level,
-            "alias": alias,
-        }
-    )
+    ).format(**{
+        "trust-domain": graph_config["trust-domain"],
+        "level": level,
+        "alias": alias,
+    })
 
     return worker_config
 
@@ -97,7 +94,7 @@ def get_worker_type(graph_config, parameters, worker_type):
         graph_config,
         worker_type,
         parameters["level"],
-        _release_level(parameters.get("project")),
+        _release_level(parameters),
         parameters.get("project"),
     )
     return worker_config["provisioner"], worker_config["worker-type"]

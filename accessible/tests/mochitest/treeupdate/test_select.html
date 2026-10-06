@@ -16,161 +16,76 @@
 
   <script type="application/javascript">
 
-    function addOptions(aID) {
-      this.selectNode = getNode(aID);
-      this.select = getAccessible(this.selectNode);
-      this.selectList = this.select.firstChild;
+    async function doTest() {
+      const selectNode = getNode("select");
+      const select = getAccessible(selectNode);
+      const selectList = select.firstChild;
 
-      this.invoke = function addOptions_invoke() {
-        for (let i = 0; i < 2; i++) {
-          var opt = document.createElement("option");
-          opt.value = i;
-          opt.text = "Option: Value " + i;
+      let reordered = waitForEvent(EVENT_REORDER, selectList);
+      for (let i = 0; i < 2; i++) {
+        const opt = document.createElement("option");
+        opt.value = i;
+        opt.text = "Option: Value " + i;
+        selectNode.add(opt, null);
+      }
+      await reordered;
 
-          this.selectNode.add(opt, null);
-        }
-      };
+      let tree =
+        { COMBOBOX: [
+          { COMBOBOX_LIST: [
+            { COMBOBOX_OPTION: [] },
+            { COMBOBOX_OPTION: [] },
+          ] },
+        ] };
+      testAccessibleTree(select, tree);
 
-      this.eventSeq = [
-        new invokerChecker(EVENT_REORDER, this.selectList),
-      ];
+      reordered = waitForEvent(EVENT_REORDER, selectList);
+      while (selectNode.length) {
+        selectNode.remove(0);
+      }
+      await reordered;
 
-      this.finalCheck = function addOptions_finalCheck() {
-        var tree =
-          { COMBOBOX: [
-            { COMBOBOX_LIST: [
-              { COMBOBOX_OPTION: [ ] },
-              { COMBOBOX_OPTION: [ ] },
-            ] },
-          ] };
-        testAccessibleTree(this.select, tree);
-      };
+      tree =
+        { COMBOBOX: [
+          { COMBOBOX_LIST: [] },
+        ] };
+      testAccessibleTree(select, tree);
 
-      this.getID = function addOptions_getID() {
-        return "test elements insertion into a select";
-      };
-    }
+      let p = waitForEvents([[EVENT_HIDE, "s2_o"], [EVENT_SHOW, "s2_o"]]);
+      getNode("s2_o").setAttribute("role", "option");
+      await p;
 
-    function removeOptions(aID) {
-      this.selectNode = getNode(aID);
-      this.select = getAccessible(this.selectNode);
-      this.selectList = this.select.firstChild;
+      tree =
+        { COMBOBOX: [
+          { COMBOBOX_LIST: [
+            { COMBOBOX_OPTION: [] },
+          ] },
+        ] };
+      testAccessibleTree("s2", tree);
 
-      this.invoke = function removeOptions_invoke() {
-        while (this.selectNode.length)
-          this.selectNode.remove(0);
-      };
+      p = waitForEvents([[EVENT_HIDE, "s3"], [EVENT_SHOW, "s3"]]);
+      getNode("s3").multiple = true;
+      await p;
 
-      this.eventSeq = [
-        new invokerChecker(EVENT_REORDER, this.selectList),
-      ];
+      tree =
+        { LISTBOX: [
+          { OPTION: [] },
+        ] };
+      testAccessibleTree("s3", tree);
 
-      this.finalCheck = function removeOptions_finalCheck() {
-        var tree =
-          { COMBOBOX: [
-            { COMBOBOX_LIST: [] },
-          ] };
-        testAccessibleTree(this.select, tree);
-      };
+      p = waitForEvents([[EVENT_HIDE, "s4"], [EVENT_SHOW, "s4"]]);
+      getNode("s4").removeAttribute("size");
+      await p;
 
-      this.getID = function removeptions_getID() {
-        return "test elements removal from a select";
-      };
-    }
+      tree =
+        { COMBOBOX: [
+          { COMBOBOX_LIST: [
+            { COMBOBOX_OPTION: [] },
+          ] },
+        ] };
+      testAccessibleTree("s4", tree);
 
-    /**
-     * Setting role=option on option makes the accessible recreate.
-     */
-    function setRoleOnOption() {
-      this.eventSeq = [
-        new invokerChecker(EVENT_HIDE, "s2_o"),
-        new invokerChecker(EVENT_SHOW, "s2_o"),
-      ];
-
-      this.invoke = function setRoleOnOption_setRole() {
-        getNode("s2_o").setAttribute("role", "option");
-      };
-
-      this.finalCheck = function() {
-        var tree =
-          { COMBOBOX: [
-            { COMBOBOX_LIST: [
-              { COMBOBOX_OPTION: [ ] },
-            ] },
-          ] };
-        testAccessibleTree("s2", tree);
-      };
-
-      this.getID = function removeptions_getID() {
-        return "setting role=option on select option";
-      };
-    }
-
-    /**
-     * Setting multiple on select makes the accessible recreate.
-     */
-     function setMultipleOnSelect() {
-      this.eventSeq = [
-        new invokerChecker(EVENT_HIDE, "s3"),
-        new invokerChecker(EVENT_SHOW, "s3"),
-      ];
-
-      this.invoke = function setRoleOnOption_setRole() {
-        getNode("s3").multiple = true;
-      };
-
-      this.finalCheck = function() {
-        var tree =
-          { LISTBOX: [
-            { OPTION: [ ] },
-          ] };
-        testAccessibleTree("s3", tree);
-      };
-
-      this.getID = function removeptions_getID() {
-        return "setting multiple on select element";
-      };
-    }
-
-
-    /**
-     * Removing size on select makes the accessible recreate.
-     */
-     function removeSizeFromSelect() {
-      this.eventSeq = [
-        new invokerChecker(EVENT_HIDE, "s4"),
-        new invokerChecker(EVENT_SHOW, "s4"),
-      ];
-
-      this.invoke = function setRoleOnOption_setRole() {
-        getNode("s4").removeAttribute("size");
-      };
-
-      this.finalCheck = function() {
-        var tree =
-          { COMBOBOX: [
-            { COMBOBOX_LIST: [
-              { COMBOBOX_OPTION: [ ] },
-            ] },
-          ] };
-        testAccessibleTree("s4", tree);
-      };
-
-      this.getID = function removeptions_getID() {
-        return "removing size from select element";
-      };
-    }
-
-    function doTest() {
-      const gQueue = new eventQueue();
-
-      gQueue.push(new addOptions("select"));
-      gQueue.push(new removeOptions("select"));
-      gQueue.push(new setRoleOnOption());
-      gQueue.push(new setMultipleOnSelect());
-      gQueue.push(new removeSizeFromSelect());
-
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

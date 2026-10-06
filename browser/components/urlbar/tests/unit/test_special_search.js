@@ -20,26 +20,30 @@ function setSuggestPrefsToFalse() {
 const TRANSITION_TYPED = PlacesUtils.history.TRANSITION_TYPED;
 
 add_task(async function test_special_searches() {
+  // High weight - Typed visit.
   let uri1 = Services.io.newURI("http://url/");
+  // Medium weight - Regular visit.
   let uri2 = Services.io.newURI("http://url/2");
+  // Medium weight - Regular visit.
   let uri3 = Services.io.newURI("http://foo.bar/");
+  // High weight - Typed visit.
   let uri4 = Services.io.newURI("http://foo.bar/2");
+  // High weight - Bookmark.
   let uri5 = Services.io.newURI("http://url/star");
+  // High weight - Bookmark, regular visit.
   let uri6 = Services.io.newURI("http://url/star/2");
+  // High weight - Bookmark, no visit.
   let uri7 = Services.io.newURI("http://foo.bar/star");
+  // High weight - Bookmark.
   let uri8 = Services.io.newURI("http://foo.bar/star/2");
+  // High weight - Bookmark, no visit.
   let uri9 = Services.io.newURI("http://url/tag");
+  // High weight - Bookmark, no visit.
   let uri10 = Services.io.newURI("http://url/tag/2");
+  // High weight - Bookmark, typed visit.
   let uri11 = Services.io.newURI("http://foo.bar/tag");
+  // High weight - Bookmark, 0 visits.
   let uri12 = Services.io.newURI("http://foo.bar/tag/2");
-  await PlacesTestUtils.addVisits([
-    { uri: uri11, title: "title", transition: TRANSITION_TYPED },
-    { uri: uri6, title: "foo.bar" },
-    { uri: uri4, title: "foo.bar", transition: TRANSITION_TYPED },
-    { uri: uri3, title: "title" },
-    { uri: uri2, title: "foo.bar" },
-    { uri: uri1, title: "title", transition: TRANSITION_TYPED },
-  ]);
 
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: uri12,
@@ -66,26 +70,37 @@ add_task(async function test_special_searches() {
   await PlacesTestUtils.addBookmarkWithDetails({ uri: uri6, title: "foo.bar" });
   await PlacesTestUtils.addBookmarkWithDetails({ uri: uri5, title: "title" });
 
+  await PlacesTestUtils.addVisits([
+    { uri: uri11, title: "title", transition: TRANSITION_TYPED },
+    { uri: uri6, title: "foo.bar" },
+    { uri: uri4, title: "foo.bar", transition: TRANSITION_TYPED },
+    { uri: uri3, title: "title" },
+    { uri: uri2, title: "foo.bar" },
+    { uri: uri1, title: "title", transition: TRANSITION_TYPED },
+  ]);
+
   await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   // Order of frecency when not restricting, descending:
-  // uri11
   // uri1
   // uri4
-  // uri6
   // uri5
+  // uri6
   // uri7
   // uri8
   // uri9
   // uri10
+  // uri11
   // uri12
   // uri2
   // uri3
+  // Because there are a lot of ties, the ordering is influenced by order in
+  // which they were inserted.
 
   // Test restricting searches.
 
   info("History restrict");
-  let context = createContext(UrlbarTokenizer.RESTRICT.HISTORY, {
+  let context = createContext(UrlbarShared.RESTRICT_TOKENS.HISTORY, {
     isPrivate: false,
   });
   await check_results({
@@ -95,17 +110,17 @@ add_task(async function test_special_searches() {
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
-      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri1.spec, title: "title" }),
       makeVisitResult(context, { uri: uri4.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri6.spec, title: "foo.bar" }),
+      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri2.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri3.spec, title: "title" }),
     ],
   });
 
   info("Star restrict");
-  context = createContext(UrlbarTokenizer.RESTRICT.BOOKMARK, {
+  context = createContext(UrlbarShared.RESTRICT_TOKENS.BOOKMARK, {
     isPrivate: false,
   });
   await check_results({
@@ -115,12 +130,8 @@ add_task(async function test_special_searches() {
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
-      makeBookmarkResult(context, {
-        uri: uri11.spec,
-        title: "title",
-      }),
-      makeBookmarkResult(context, { uri: uri6.spec, title: "foo.bar" }),
       makeBookmarkResult(context, { uri: uri5.spec, title: "title" }),
+      makeBookmarkResult(context, { uri: uri6.spec, title: "foo.bar" }),
       makeBookmarkResult(context, { uri: uri7.spec, title: "title" }),
       makeBookmarkResult(context, { uri: uri8.spec, title: "foo.bar" }),
       makeBookmarkResult(context, {
@@ -130,6 +141,10 @@ add_task(async function test_special_searches() {
       makeBookmarkResult(context, {
         uri: uri10.spec,
         title: "foo.bar",
+      }),
+      makeBookmarkResult(context, {
+        uri: uri11.spec,
+        title: "title",
       }),
       makeBookmarkResult(context, {
         uri: uri12.spec,
@@ -139,7 +154,9 @@ add_task(async function test_special_searches() {
   });
 
   info("Tag restrict");
-  context = createContext(UrlbarTokenizer.RESTRICT.TAG, { isPrivate: false });
+  context = createContext(UrlbarShared.RESTRICT_TOKENS.TAG, {
+    isPrivate: false,
+  });
   await check_results({
     context,
     matches: [
@@ -148,16 +165,16 @@ add_task(async function test_special_searches() {
         heuristic: true,
       }),
       makeBookmarkResult(context, {
-        uri: uri11.spec,
-        title: "title",
-      }),
-      makeBookmarkResult(context, {
         uri: uri9.spec,
         title: "title",
       }),
       makeBookmarkResult(context, {
         uri: uri10.spec,
         title: "foo.bar",
+      }),
+      makeBookmarkResult(context, {
+        uri: uri11.spec,
+        title: "title",
       }),
       makeBookmarkResult(context, {
         uri: uri12.spec,
@@ -167,7 +184,7 @@ add_task(async function test_special_searches() {
   });
 
   info("Special as first word");
-  context = createContext(`${UrlbarTokenizer.RESTRICT.HISTORY} foo bar`, {
+  context = createContext(`${UrlbarShared.RESTRICT_TOKENS.HISTORY} foo bar`, {
     isPrivate: false,
   });
   await check_results({
@@ -175,20 +192,20 @@ add_task(async function test_special_searches() {
     matches: [
       makeSearchResult(context, {
         query: "foo bar",
-        alias: UrlbarTokenizer.RESTRICT.HISTORY,
+        alias: UrlbarShared.RESTRICT_TOKENS.HISTORY,
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         heuristic: true,
       }),
-      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri4.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri6.spec, title: "foo.bar" }),
+      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri2.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri3.spec, title: "title" }),
     ],
   });
 
   info("Special as last word");
-  context = createContext(`foo bar ${UrlbarTokenizer.RESTRICT.HISTORY}`, {
+  context = createContext(`foo bar ${UrlbarShared.RESTRICT_TOKENS.HISTORY}`, {
     isPrivate: false,
   });
   await check_results({
@@ -198,9 +215,9 @@ add_task(async function test_special_searches() {
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
-      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri4.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri6.spec, title: "foo.bar" }),
+      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri2.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri3.spec, title: "title" }),
     ],
@@ -208,8 +225,8 @@ add_task(async function test_special_searches() {
 
   // Test restricting and matching searches with a term.
 
-  info(`foo ${UrlbarTokenizer.RESTRICT.HISTORY} -> history`);
-  context = createContext(`foo ${UrlbarTokenizer.RESTRICT.HISTORY}`, {
+  info(`foo ${UrlbarShared.RESTRICT_TOKENS.HISTORY} -> history`);
+  context = createContext(`foo ${UrlbarShared.RESTRICT_TOKENS.HISTORY}`, {
     isPrivate: false,
   });
   await check_results({
@@ -219,16 +236,16 @@ add_task(async function test_special_searches() {
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
-      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri4.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri6.spec, title: "foo.bar" }),
+      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri2.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri3.spec, title: "title" }),
     ],
   });
 
-  info(`foo ${UrlbarTokenizer.RESTRICT.BOOKMARK} -> is star`);
-  context = createContext(`foo ${UrlbarTokenizer.RESTRICT.BOOKMARK}`, {
+  info(`foo ${UrlbarShared.RESTRICT_TOKENS.BOOKMARK} -> is star`);
+  context = createContext(`foo ${UrlbarShared.RESTRICT_TOKENS.BOOKMARK}`, {
     isPrivate: false,
   });
   await check_results({
@@ -237,11 +254,6 @@ add_task(async function test_special_searches() {
       makeSearchResult(context, {
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
-      }),
-      makeBookmarkResult(context, {
-        uri: uri11.spec,
-        title: "title",
-        tags: ["foo.bar"],
       }),
       makeBookmarkResult(context, { uri: uri6.spec, title: "foo.bar" }),
       makeBookmarkResult(context, { uri: uri7.spec, title: "title" }),
@@ -254,6 +266,11 @@ add_task(async function test_special_searches() {
       makeBookmarkResult(context, {
         uri: uri10.spec,
         title: "foo.bar",
+        tags: ["foo.bar"],
+      }),
+      makeBookmarkResult(context, {
+        uri: uri11.spec,
+        title: "title",
         tags: ["foo.bar"],
       }),
       makeBookmarkResult(context, {
@@ -264,8 +281,8 @@ add_task(async function test_special_searches() {
     ],
   });
 
-  info(`foo ${UrlbarTokenizer.RESTRICT.TITLE} -> in title`);
-  context = createContext(`foo ${UrlbarTokenizer.RESTRICT.TITLE}`, {
+  info(`foo ${UrlbarShared.RESTRICT_TOKENS.TITLE} -> in title`);
+  context = createContext(`foo ${UrlbarShared.RESTRICT_TOKENS.TITLE}`, {
     isPrivate: false,
   });
   await check_results({
@@ -275,19 +292,19 @@ add_task(async function test_special_searches() {
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
-      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri4.spec, title: "foo.bar" }),
       makeBookmarkResult(context, { uri: uri6.spec, title: "foo.bar" }),
       makeBookmarkResult(context, { uri: uri8.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri9.spec, title: "title" }),
       makeVisitResult(context, { uri: uri10.spec, title: "foo.bar" }),
+      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri12.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri2.spec, title: "foo.bar" }),
     ],
   });
 
-  info(`foo ${UrlbarTokenizer.RESTRICT.URL} -> in url`);
-  context = createContext(`foo ${UrlbarTokenizer.RESTRICT.URL}`, {
+  info(`foo ${UrlbarShared.RESTRICT_TOKENS.URL} -> in url`);
+  context = createContext(`foo ${UrlbarShared.RESTRICT_TOKENS.URL}`, {
     isPrivate: false,
   });
   await check_results({
@@ -297,17 +314,17 @@ add_task(async function test_special_searches() {
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
-      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri4.spec, title: "foo.bar" }),
       makeBookmarkResult(context, { uri: uri7.spec, title: "title" }),
       makeBookmarkResult(context, { uri: uri8.spec, title: "foo.bar" }),
+      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri12.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri3.spec, title: "title" }),
     ],
   });
 
-  info(`foo ${UrlbarTokenizer.RESTRICT.TAG} -> is tag`);
-  context = createContext(`foo ${UrlbarTokenizer.RESTRICT.TAG}`, {
+  info(`foo ${UrlbarShared.RESTRICT_TOKENS.TAG} -> is tag`);
+  context = createContext(`foo ${UrlbarShared.RESTRICT_TOKENS.TAG}`, {
     isPrivate: false,
   });
   await check_results({
@@ -316,11 +333,6 @@ add_task(async function test_special_searches() {
       makeSearchResult(context, {
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
-      }),
-      makeBookmarkResult(context, {
-        uri: uri11.spec,
-        title: "title",
-        tags: ["foo.bar"],
       }),
       makeBookmarkResult(context, {
         uri: uri9.spec,
@@ -330,6 +342,11 @@ add_task(async function test_special_searches() {
       makeBookmarkResult(context, {
         uri: uri10.spec,
         title: "foo.bar",
+        tags: ["foo.bar"],
+      }),
+      makeBookmarkResult(context, {
+        uri: uri11.spec,
+        title: "title",
         tags: ["foo.bar"],
       }),
       makeBookmarkResult(context, {
@@ -343,20 +360,20 @@ add_task(async function test_special_searches() {
   // Test conflicting restrictions.
 
   info(
-    `conflict ${UrlbarTokenizer.RESTRICT.TITLE} ${UrlbarTokenizer.RESTRICT.URL} -> url wins`
+    `conflict ${UrlbarShared.RESTRICT_TOKENS.TITLE} ${UrlbarShared.RESTRICT_TOKENS.URL} -> url wins`
   );
   await PlacesTestUtils.addVisits([
     {
-      uri: `http://conflict.com/${UrlbarTokenizer.RESTRICT.TITLE}`,
+      uri: `http://conflict.com/${UrlbarShared.RESTRICT_TOKENS.TITLE}`,
       title: "test",
     },
     {
       uri: "http://conflict.com/",
-      title: `test${UrlbarTokenizer.RESTRICT.TITLE}`,
+      title: `test${UrlbarShared.RESTRICT_TOKENS.TITLE}`,
     },
   ]);
   context = createContext(
-    `conflict ${UrlbarTokenizer.RESTRICT.TITLE} ${UrlbarTokenizer.RESTRICT.URL}`,
+    `conflict ${UrlbarShared.RESTRICT_TOKENS.TITLE} ${UrlbarShared.RESTRICT_TOKENS.URL}`,
     { isPrivate: false }
   );
   await check_results({
@@ -367,22 +384,22 @@ add_task(async function test_special_searches() {
         heuristic: true,
       }),
       makeVisitResult(context, {
-        uri: `http://conflict.com/${UrlbarTokenizer.RESTRICT.TITLE}`,
+        uri: `http://conflict.com/${UrlbarShared.RESTRICT_TOKENS.TITLE}`,
         title: "test",
       }),
     ],
   });
 
   info(
-    `conflict ${UrlbarTokenizer.RESTRICT.HISTORY} ${UrlbarTokenizer.RESTRICT.BOOKMARK} -> bookmark wins`
+    `conflict ${UrlbarShared.RESTRICT_TOKENS.HISTORY} ${UrlbarShared.RESTRICT_TOKENS.BOOKMARK} -> bookmark wins`
   );
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: "http://bookmark.conflict.com/",
-    title: `conflict ${UrlbarTokenizer.RESTRICT.HISTORY}`,
+    title: `conflict ${UrlbarShared.RESTRICT_TOKENS.HISTORY}`,
   });
   await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
   context = createContext(
-    `conflict ${UrlbarTokenizer.RESTRICT.HISTORY} ${UrlbarTokenizer.RESTRICT.BOOKMARK}`,
+    `conflict ${UrlbarShared.RESTRICT_TOKENS.HISTORY} ${UrlbarShared.RESTRICT_TOKENS.BOOKMARK}`,
     { isPrivate: false }
   );
   await check_results({
@@ -394,26 +411,26 @@ add_task(async function test_special_searches() {
       }),
       makeBookmarkResult(context, {
         uri: "http://bookmark.conflict.com/",
-        title: `conflict ${UrlbarTokenizer.RESTRICT.HISTORY}`,
+        title: `conflict ${UrlbarShared.RESTRICT_TOKENS.HISTORY}`,
       }),
     ],
   });
 
   info(
-    `conflict ${UrlbarTokenizer.RESTRICT.BOOKMARK} ${UrlbarTokenizer.RESTRICT.TAG} -> tag wins`
+    `conflict ${UrlbarShared.RESTRICT_TOKENS.BOOKMARK} ${UrlbarShared.RESTRICT_TOKENS.TAG} -> tag wins`
   );
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: "http://tag.conflict.com/",
-    title: `conflict ${UrlbarTokenizer.RESTRICT.BOOKMARK}`,
+    title: `conflict ${UrlbarShared.RESTRICT_TOKENS.BOOKMARK}`,
     tags: ["one"],
   });
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: "http://nontag.conflict.com/",
-    title: `conflict ${UrlbarTokenizer.RESTRICT.BOOKMARK}`,
+    title: `conflict ${UrlbarShared.RESTRICT_TOKENS.BOOKMARK}`,
   });
   await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
   context = createContext(
-    `conflict ${UrlbarTokenizer.RESTRICT.BOOKMARK} ${UrlbarTokenizer.RESTRICT.TAG}`,
+    `conflict ${UrlbarShared.RESTRICT_TOKENS.BOOKMARK} ${UrlbarShared.RESTRICT_TOKENS.TAG}`,
     { isPrivate: false }
   );
   await check_results({
@@ -425,7 +442,7 @@ add_task(async function test_special_searches() {
       }),
       makeBookmarkResult(context, {
         uri: "http://tag.conflict.com/",
-        title: `conflict ${UrlbarTokenizer.RESTRICT.BOOKMARK}`,
+        title: `conflict ${UrlbarShared.RESTRICT_TOKENS.BOOKMARK}`,
       }),
     ],
   });
@@ -446,9 +463,9 @@ add_task(async function test_special_searches() {
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
-      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri4.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri6.spec, title: "foo.bar" }),
+      makeVisitResult(context, { uri: uri11.spec, title: "title" }),
       makeVisitResult(context, { uri: uri2.spec, title: "foo.bar" }),
       makeVisitResult(context, { uri: uri3.spec, title: "title" }),
     ],
@@ -471,11 +488,6 @@ add_task(async function test_special_searches() {
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
-      makeBookmarkResult(context, {
-        uri: uri11.spec,
-        title: "title",
-        tags: ["foo.bar"],
-      }),
       makeVisitResult(context, { uri: uri4.spec, title: "foo.bar" }),
       makeBookmarkResult(context, { uri: uri6.spec, title: "foo.bar" }),
       makeBookmarkResult(context, { uri: uri7.spec, title: "title" }),
@@ -488,6 +500,11 @@ add_task(async function test_special_searches() {
       makeBookmarkResult(context, {
         uri: uri10.spec,
         title: "foo.bar",
+        tags: ["foo.bar"],
+      }),
+      makeBookmarkResult(context, {
+        uri: uri11.spec,
+        title: "title",
         tags: ["foo.bar"],
       }),
       makeBookmarkResult(context, {
@@ -513,11 +530,6 @@ add_task(async function test_special_searches() {
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
-      makeBookmarkResult(context, {
-        uri: uri11.spec,
-        title: "title",
-        tags: ["foo.bar"],
-      }),
       makeBookmarkResult(context, { uri: uri6.spec, title: "foo.bar" }),
       makeBookmarkResult(context, { uri: uri7.spec, title: "title" }),
       makeBookmarkResult(context, { uri: uri8.spec, title: "foo.bar" }),
@@ -529,6 +541,11 @@ add_task(async function test_special_searches() {
       makeBookmarkResult(context, {
         uri: uri10.spec,
         title: "foo.bar",
+        tags: ["foo.bar"],
+      }),
+      makeBookmarkResult(context, {
+        uri: uri11.spec,
+        title: "title",
         tags: ["foo.bar"],
       }),
       makeBookmarkResult(context, {

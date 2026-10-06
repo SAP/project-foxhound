@@ -16,7 +16,6 @@ Test that the preallocated process starts up.
 SimpleTest.waitForExplicitFinish();
 
 function expectProcessCreated() {
-  /* eslint-env mozilla/chrome-script */
   return new Promise(resolve => {
     function parentExpectProcessCreated() {
       let topic = "ipc:content-initializing";

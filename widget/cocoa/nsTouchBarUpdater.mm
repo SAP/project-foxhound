@@ -50,6 +50,7 @@ nsTouchBarUpdater::UpdateTouchBarInputs(
       TouchBarInput* convertedInput =
           [[TouchBarInput alloc] initWithXPCOM:input];
       [(nsTouchBar*)cocoaWin.touchBar updateItem:convertedInput];
+      [convertedInput release];
     }
   }
 
@@ -96,8 +97,7 @@ nsTouchBarUpdater::IsTouchBarInitialized(bool* aResult) {
 }
 
 BaseWindow* nsTouchBarUpdater::GetCocoaWindow(nsIBaseWindow* aWindow) {
-  nsCOMPtr<nsIWidget> widget = nullptr;
-  aWindow->GetMainWidget(getter_AddRefs(widget));
+  nsCOMPtr<nsIWidget> widget = aWindow->GetMainWidget();
   if (!widget) {
     return nil;
   }

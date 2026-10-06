@@ -41,6 +41,6 @@ testWithTypedArrayConstructors(TA => {
 
   assert.sameValue(result, true);
   assert.sameValue(ta.length, 0);
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

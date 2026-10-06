@@ -22,9 +22,8 @@ devtools:
     data_reviews:
       - https://bugzil.la/1396811
     notification_emails:
-      - dev-developer-tools@lists.mozilla.org
+      - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_CURRENT_THEME
 
   cold_toolbox_open_delay:
     type: labeled_timing_distribution
@@ -45,9 +44,8 @@ devtools:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1566392
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1643433
     notification_emails:
-      - dev-developer-tools@lists.mozilla.org
+      - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_COLD_TOOLBOX_OPEN_DELAY_MS
 
   warm_toolbox_open_delay:
     type: labeled_timing_distribution
@@ -68,9 +66,8 @@ devtools:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1566392
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1643433
     notification_emails:
-      - dev-developer-tools@lists.mozilla.org
+      - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_WARM_TOOLBOX_OPEN_DELAY_MS
 
   toolbox_page_reload_delay:
     type: labeled_timing_distribution
@@ -91,9 +88,8 @@ devtools:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1566392
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1643433
     notification_emails:
-      - dev-developer-tools@lists.mozilla.org
+      - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_TOOLBOX_PAGE_RELOAD_DELAY_MS
 
   toolbox_host:
     type: custom_distribution
@@ -115,9 +111,8 @@ devtools:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1205845
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1389995
     notification_emails:
-      - dev-developer-tools@lists.mozilla.org
+      - devtools-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_TOOLBOX_HOST
 
 devtools.tool:
   registered:
@@ -139,10 +134,9 @@ devtools.tool:
       - https://bugzil.la/1503568
       - https://bugzil.la/1587985
     notification_emails:
-      - dev-developer-tools@lists.mozilla.org
+      - devtools-telemetry-alerts@mozilla.com
       - accessibility@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_TOOL_REGISTERED
 
 devtools.toolbox:
   tabs_reordered:
@@ -158,7 +152,6 @@ devtools.toolbox:
       - https://bugzil.la/1456551
       - https://bugzil.la/1566362
     notification_emails:
-      - dev-developer-tools@lists.mozilla.org
+      - devtools-telemetry-alerts@mozilla.com
       - daisuke@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_TOOLBOX_TABS_REORDERED

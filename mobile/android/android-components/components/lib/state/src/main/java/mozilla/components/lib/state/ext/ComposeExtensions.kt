@@ -4,14 +4,10 @@
 
 package mozilla.components.lib.state.ext
 
-import android.os.Parcelable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.Saver
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -47,34 +43,6 @@ fun <S : State, A : Action, R> Store<S, A>.observeAsComposableState(map: (S) -> 
 /**
  * Starts observing this [Store] and represents the mapped state (using [map]) via [ComposeState].
  *
- * Every time the mapped [Store] state changes, the returned [ComposeState] will be updated causing
- * recomposition of every [ComposeState.value] usage.
- *
- * The [Store] observer will automatically be removed when this composable disposes or the current
- * [LifecycleOwner] moves to the [Lifecycle.State.DESTROYED] state.
- *
- * @param initialValue Initial value emitted.
- * @param map The applied function to produced the mapped value [R] from [S].
- * @return A non nullable [ComposeState], making the api more reasonable for callers where the
- * state is non null.
- */
-@Composable
-fun <S : State, A : Action, R> Store<S, A>.observeAsState(
-    initialValue: R,
-    map: (S) -> R,
-): ComposeState<R> {
-    val lifecycleOwner = LocalLifecycleOwner.current
-
-    return produceState(initialValue = initialValue) {
-        observe(lifecycleOwner) { browserState ->
-            value = map(browserState)
-        }
-    }
-}
-
-/**
- * Starts observing this [Store] and represents the mapped state (using [map]) via [ComposeState].
- *
  * Everytime the [Store] state changes and the result of the [observe] function changes for this
  * state, the returned [ComposeState] will be updated causing recomposition of every
  * [ComposeState.value] usage.
@@ -103,44 +71,4 @@ fun <S : State, A : Action, O, R> Store<S, A>.observeAsComposableState(
     }
 
     return state
-}
-
-/**
- * Helper for creating a [Store] scoped to a `@Composable` and whose [State] gets saved and restored
- * on process recreation.
- */
-@Composable
-inline fun <reified S : State, A : Action> composableStore(
-    crossinline save: (S) -> Parcelable = { state ->
-        if (state is Parcelable) {
-            state
-        } else {
-            throw NotImplementedError(
-                "State of store does not implement Parcelable. Either implement Parcelable or pass " +
-                    "custom save function to composableStore()",
-            )
-        }
-    },
-    crossinline restore: (Parcelable) -> S = { parcelable ->
-        if (parcelable is S) {
-            parcelable
-        } else {
-            throw NotImplementedError(
-                "Restored parcelable is not of same class as state. Either the state needs to " +
-                    "implement Parcelable or you need to provide a custom restore function to composableStore()",
-            )
-        }
-    },
-    crossinline init: (S?) -> Store<S, A>,
-): Store<S, A> {
-    return rememberSaveable(
-        saver = Saver(
-            save = { store -> save(store.state) },
-            restore = { parcelable ->
-                val state = restore(parcelable)
-                init(state)
-            },
-        ),
-        init = { init(null) },
-    )
 }

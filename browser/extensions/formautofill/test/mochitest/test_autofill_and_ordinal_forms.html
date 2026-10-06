@@ -29,8 +29,6 @@ let MOCK_STORAGE = [{
 
 initPopupListener();
 
-let statusText = 'Also autofills address, name, organization';
-
 add_task(async function setupStorage() {
   await addAddress(MOCK_STORAGE[0]);
 
@@ -49,9 +47,7 @@ add_task(async function check_switch_autofill_form_popup() {
       makeAddressComment({
         primary: "+13453453456",
         secondary: "123 Sesame Street.",
-        status: statusText
-      }),
-      `{"primary":"","secondary":"","status":"${statusText}","style":"status"}`,
+      })
     ],
   );
 
@@ -80,9 +76,7 @@ add_task(async function check_switch_autofill_form_popup_back() {
       makeAddressComment({
         primary: "+13453453456",
         secondary: "123 Sesame Street.",
-        status: statusText
-      }),
-      `{"primary":"","secondary":"","status":"${statusText}","style":"status"}`,
+      })
     ],
   );
 

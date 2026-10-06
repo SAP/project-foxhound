@@ -1,4 +1,3 @@
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -261,6 +260,7 @@ NS_IMETHODIMP ExtensionEventListener::CallListener(
 
   // Convert args into a non-const sequence.
   dom::Sequence<JS::Value> args;
+  dom::SequenceRooter<JS::Value> argsRooter(aCx, &args);
   if (!args.AppendElements(aArgs, fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
@@ -316,7 +316,7 @@ void ExtensionListenerCallWorkerRunnable::DeserializeCallArguments(
     JSContext* aCx, dom::Sequence<JS::Value>& aArgs, ErrorResult& aRv) {
   JS::Rooted<JS::Value> jsvalue(aCx);
 
-  mArgsHolder->Read(xpc::CurrentNativeGlobal(aCx), aCx, &jsvalue, aRv);
+  mArgsHolder->Read(aCx, &jsvalue, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
@@ -597,7 +597,7 @@ void ExtensionListenerCallPromiseResultHandler::WorkerRunCallback(
     UniquePtr<dom::ClonedErrorHolder> ceh =
         dom::ClonedErrorHolder::Create(aCx, errObj, rv);
     if (!rv.Failed() && ceh) {
-      Unused << NS_WARN_IF(!ToJSValue(aCx, std::move(ceh), &retval));
+      (void)NS_WARN_IF(!ToJSValue(aCx, std::move(ceh), &retval));
     }
   }
 
@@ -641,7 +641,7 @@ void ExtensionListenerCallPromiseResultHandler::WorkerRunCallback(
     JS::Rooted<JS::Value> jsvalue(cx);
     IgnoredErrorResult rv;
 
-    resHolder->Read(global, cx, &jsvalue, rv);
+    resHolder->Read(cx, &jsvalue, rv);
 
     if (NS_WARN_IF(rv.Failed())) {
       promiseResult->MaybeReject(rv.StealNSResult());

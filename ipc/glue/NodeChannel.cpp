@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,14 +23,12 @@ struct IPC::ParamTraits<mozilla::ipc::NodeChannel::Introduction> {
   static void Write(MessageWriter* aWriter, paramType&& aParam) {
     WriteParam(aWriter, aParam.mName);
     WriteParam(aWriter, std::move(aParam.mHandle));
-    WriteParam(aWriter, aParam.mMode);
     WriteParam(aWriter, aParam.mMyPid);
     WriteParam(aWriter, aParam.mOtherPid);
   }
   static bool Read(MessageReader* aReader, paramType* aResult) {
     return ReadParam(aReader, &aResult->mName) &&
            ReadParam(aReader, &aResult->mHandle) &&
-           ReadParam(aReader, &aResult->mMode) &&
            ReadParam(aReader, &aResult->mMyPid) &&
            ReadParam(aReader, &aResult->mOtherPid);
   }
@@ -40,9 +36,8 @@ struct IPC::ParamTraits<mozilla::ipc::NodeChannel::Introduction> {
 
 namespace mozilla::ipc {
 
-NodeChannel::NodeChannel(const NodeName& aName,
-                         UniquePtr<IPC::Channel> aChannel, Listener* aListener,
-                         base::ProcessId aPid,
+NodeChannel::NodeChannel(const NodeName& aName, IPC::Channel* aChannel,
+                         Listener* aListener, base::ProcessId aPid,
                          GeckoChildProcessHost* aChildProcessHost)
     : mListener(aListener),
       mName(aName),

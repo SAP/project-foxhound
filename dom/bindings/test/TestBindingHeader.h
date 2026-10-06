@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -8,14 +6,14 @@
 #ifndef TestBindingHeader_h
 #define TestBindingHeader_h
 
+#include "js/Object.h"  // JS::GetClass
+#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/Record.h"
 #include "mozilla/dom/TypedArray.h"
-#include "mozilla/ErrorResult.h"
 #include "nsCOMPtr.h"
 #include "nsGenericHTMLElement.h"
 #include "nsWrapperCache.h"
-#include "js/Object.h"  // JS::GetClass
 
 // Forward declare this before we include TestCodeGenBinding.h, because that
 // header relies on including this one for it, for ParentDict. Hopefully it
@@ -1141,6 +1139,28 @@ class TestInterface : public nsISupports, public nsWrapperCache {
   void passAllowSharedInt8ArrayOrInt16Array(
       const MaybeSharedInt8ArrayOrMaybeSharedInt16Array&);
 
+  void SetAllowLargeArrayBufferView(const ArrayBufferView&);
+  void GetAllowLargeArrayBufferView(JSContext*, JS::MutableHandle<JSObject*>);
+  void SetAllowLargeNullableArrayBufferView(const Nullable<ArrayBufferView>&);
+  void GetAllowLargeNullableArrayBufferView(JSContext*,
+                                            JS::MutableHandle<JSObject*>);
+  void SetAllowLargeArrayBuffer(const ArrayBuffer&);
+  void GetAllowLargeArrayBuffer(JSContext*, JS::MutableHandle<JSObject*>);
+  void SetAllowLargeNullableArrayBuffer(const Nullable<ArrayBuffer>&);
+  void GetAllowLargeNullableArrayBuffer(JSContext*,
+                                        JS::MutableHandle<JSObject*>);
+
+  void PassAllowLargeArrayBufferView(const ArrayBufferView&);
+  void PassAllowLargeNullableArrayBufferView(const Nullable<ArrayBufferView>&);
+  void PassAllowLargeArrayBuffer(const ArrayBuffer&);
+  void PassAllowLargeNullableArrayBuffer(const Nullable<ArrayBuffer>&);
+  void PassUnionAllowLargeArrayBuffer(const StringOrAllowLargeArrayBuffer& foo);
+
+  void SetAllowSharedAllowLargeArrayBufferView(const ArrayBufferView&);
+  void GetAllowSharedAllowLargeArrayBufferView(JSContext*,
+                                               JS::MutableHandle<JSObject*>);
+  void PassAllowSharedAllowLargeArrayBufferView(const ArrayBufferView&);
+
   void GetReflectedHTMLAttributeReturningFrozenArray(
       bool*, Nullable<nsTArray<RefPtr<Element>>>&) const;
   void SetReflectedHTMLAttributeReturningFrozenArray(
@@ -1556,11 +1576,11 @@ class TestNamedDeleterWithRetvalInterface : public nsISupports,
   // We need a GetParentObject to make binding codegen happy
   virtual nsISupports* GetParentObject();
 
-  bool NamedDeleter(const nsAString&, bool&);
-  bool NamedDeleter(const nsAString&) = delete;
+  void NamedDeleter(const nsAString&, bool&);
+  void NamedDeleter(const nsAString&) = delete;
   long NamedGetter(const nsAString&, bool&);
-  bool DelNamedItem(const nsAString&);
-  bool DelNamedItem(const nsAString&, bool&) = delete;
+  void DelNamedItem(const nsAString&);
+  void DelNamedItem(const nsAString&, bool&) = delete;
   void GetSupportedNames(nsTArray<nsString>&);
 };
 

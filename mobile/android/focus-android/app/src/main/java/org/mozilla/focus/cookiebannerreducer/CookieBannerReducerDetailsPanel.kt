@@ -18,6 +18,7 @@ import org.mozilla.focus.GleanMetrics.CookieBanner
 import org.mozilla.focus.R
 import org.mozilla.focus.databinding.CookieBannerReducerDetailsBinding
 import org.mozilla.focus.ext.components
+import com.google.android.material.R as materialR
 
 /**
  * Cookie banner reducer details panel that will be visible when the user
@@ -61,8 +62,7 @@ class CookieBannerReducerDetailsPanel(
     }
 
     private fun expandBottomSheet() {
-        val bottomSheet =
-            findViewById<View>(R.id.design_bottom_sheet) as FrameLayout
+        val bottomSheet = findViewById<View>(materialR.id.design_bottom_sheet) as FrameLayout
         BottomSheetBehavior.from(bottomSheet).state = BottomSheetBehavior.STATE_EXPANDED
     }
 

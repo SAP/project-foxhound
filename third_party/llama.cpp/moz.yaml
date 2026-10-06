@@ -1,0 +1,88 @@
+schema: 1
+
+bugzilla:
+  product: Core
+  component: "xul"
+
+origin:
+  name: llama.cpp
+  description:  LLM inference in C/C++
+
+  url: https://github.com/ggml-org/llama.cpp
+
+  release: d32e03f4495d3efa1c5126f53b449f1d429c5664 (2025-08-14T11:59:50Z).
+  revision: d32e03f4495d3efa1c5126f53b449f1d429c5664
+
+  license: MIT
+
+vendoring:
+  url: https://github.com/ggml-org/llama.cpp
+  source-hosting: github
+  tracking: commit
+
+  skip-vendoring-steps:
+    - update-moz-build
+
+  keep:
+    - generate_sources_mozbuild.py
+    - generate_sources_mozbuild.sh
+    - cmakeparser.py
+    - make_patch.py
+    - sources.mozbuild
+    - post_update.sh
+    - requirements.txt
+    - run_parser.py
+    - moz-overrides.h
+
+  exclude:
+    - "**"
+    - src/llama-quant.cpp
+
+  include:
+    - LICENSE
+    - src/*.cpp
+    - src/*.h
+    - src/CMakeLists.txt
+    - CMakeLists.txt
+    - include/llama.h
+    - ggml/src/*
+    - ggml/src/*.cpp
+    - ggml/src/*.h
+    - ggml/src/ggml-cpu/*.cpp
+    - ggml/src/ggml-cpu/*.c
+    - ggml/src/ggml-cpu/*.h
+    - ggml/src/ggml-cpu/amx/
+    - ggml/src/ggml-cpu/arch/*.cpp
+    - ggml/src/ggml-cpu/arch/*.h
+    - ggml/src/ggml-cpu/arch/arm/
+    - ggml/src/ggml-cpu/arch/x86/
+    - ggml/src/ggml-cpu/CMakeLists.txt
+    - ggml/src/cmake/*
+    - ggml/cmake/*
+    - ggml/CMakeLists.txt
+    - ggml/include/ggml.h
+    - ggml/include/ggml-alloc.h
+    - ggml/include/ggml-backend.h
+    - ggml/include/ggml-cpu.h
+    - ggml/include/ggml-cpp.h
+    - ggml/include/ggml-opt.h
+    - ggml/include/gguf.h
+
+  update-actions:
+    - action: run-script
+      script: '{yaml_dir}/generate_sources_mozbuild.sh'
+      cwd: '{yaml_dir}'
+
+  patches:
+     - exceptions.patch # disable exception usage
+     - fs.patch # disable std::fs usage we don't need and is too recent for linux
+     - no-future.patch # same for future, switch to sequential
+     - no-wstring.patch # same, charset conversion is too recent
+     - get-terminate.patch # remove forbidden function usage, that we don't need
+     - random_device.patch # use of std::random_device, also too recent on linux
+     - detect-chat-template.patch # don't crash on exception caught for control flow
+     - load-from-buffer-or-fd.patch # add an API to load a model from a buffer or a fd
+     - static-ctors.patch # remove some static ctors
+     - fix-RLIMIT_MEMLOCK-solaris.patch # fix the build on solaris
+     - missing-include.patch # backported from https://github.com/ggml-org/llama.cpp/commit/2aa45ef9e31069ea0a7d0fef7ce858facdf25218
+     - profiler-hooks.patch # add thread callbacks for Firefox Profiler integration

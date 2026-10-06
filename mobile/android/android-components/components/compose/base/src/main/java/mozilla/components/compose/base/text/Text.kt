@@ -6,6 +6,7 @@ package mozilla.components.compose.base.text
 
 import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.res.stringResource
 
 /**
@@ -28,7 +29,9 @@ sealed interface Text {
      *
      * @property value The [Int] resource value.
      */
-    data class Resource(@param:StringRes val value: Int) : Text
+    data class Resource(
+        @param:StringRes val value: Int,
+    ) : Text
 }
 
 /**
@@ -36,6 +39,7 @@ sealed interface Text {
  */
 val Text.value: String
     @Composable
+    @ReadOnlyComposable
     get() =
         when (this) {
             is Text.String -> this.value

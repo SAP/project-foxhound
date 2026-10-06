@@ -12,4 +12,6 @@ support-files = ["head.js"]
 
 ["browser_RemoteValueDOM.js"]
 
+["browser_UserPromptHandlerManager.js"]
+
 ["browser_WebDriverBiDi.js"]

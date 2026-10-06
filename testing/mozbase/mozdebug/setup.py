@@ -4,8 +4,8 @@
 
 from setuptools import setup
 
-PACKAGE_VERSION = "0.3.1"
-DEPS = ["mozinfo"]
+PACKAGE_VERSION = "0.4.0"
+DEPS = ["mozinfo", "mozshellutil"]
 
 
 setup(

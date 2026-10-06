@@ -1,0 +1,15 @@
+{
+  "label": "webcartop.jp",
+  "bugs": {
+    "1944039": {
+      "issue": "desktop-layout-not-mobile",
+      "matches": ["*://*.webcartop.jp/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

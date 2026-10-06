@@ -15,88 +15,273 @@
           src="../events.js"></script>
 
   <script type="application/javascript">
-    /**
-     * Click checker.
-     */
-    function clickChecker(aCaretOffset, aIsSelectionCollapsed, aID, aExtraNodeOrID, aExtraCaretOffset) {
-      this.__proto__ = new caretMoveChecker(aCaretOffset, aIsSelectionCollapsed, aID);
 
-      this.extraNode = getNode(aExtraNodeOrID);
-
-      this.check = function clickChecker_check(aEvent) {
-        this.__proto__.check(aEvent);
-
-        if (this.extraNode) {
-          var acc = getAccessible(this.extraNode, [nsIAccessibleText]);
-          is(acc.caretOffset, aExtraCaretOffset,
-             "Wrong caret offset for " + aExtraNodeOrID);
-        }
-      };
+    async function checkCaretMove(target, expectedOffset, isCollapsed) {
+      let evt = await waitForEvent(EVENT_TEXT_CARET_MOVED, target);
+      evt.QueryInterface(nsIAccessibleCaretMoveEvent);
+      is(evt.caretOffset, expectedOffset,
+         "Wrong caret offset for " + prettyName(target));
+      is(evt.isSelectionCollapsed, isCollapsed,
+         "Wrong collapsed for " + prettyName(target));
     }
 
-    /**
-     * Do tests.
-     */
-    var gQueue = null;
-
-    // gA11yEventDumpToConsole = true;
-
-    function doTests() {
+    async function doTests() {
       // test caret move events and caret offsets
-      gQueue = new eventQueue();
+      let id = "textbox";
 
-      var id = "textbox";
-      gQueue.push(new synthFocus(id, new caretMoveChecker(5, true, id)));
-      gQueue.push(new synthSelectAll(id, new caretMoveChecker(5, false, id)));
-      gQueue.push(new synthClick(id, new caretMoveChecker(0, true, id)));
-      gQueue.push(new synthRightKey(id, new caretMoveChecker(1, true, id)));
+      // synthFocus
+      {
+        let p = checkCaretMove(id, 5, true);
+        selectAllTextAndFocus(id);
+        await p;
+      }
+
+      // synthSelectAll
+      {
+        let p = checkCaretMove(id, 5, false);
+        getNode(id).select();
+        await p;
+      }
+
+      // synthClick
+      {
+        let p = checkCaretMove(id, 0, true);
+        getNode(id).scrollIntoView(true);
+        synthesizeMouse(getNode(id), 1, 1, {});
+        await p;
+      }
+
+      // synthRightKey
+      {
+        let p = checkCaretMove(id, 1, true);
+        synthesizeKey("KEY_ArrowRight", {});
+        await p;
+      }
 
       if (!MAC) {
-        gQueue.push(new synthSelectAll(id, new caretMoveChecker(5, false, id)));
-        gQueue.push(new synthHomeKey(id, new caretMoveChecker(0, true, id)));
-        gQueue.push(new synthRightKey(id, new caretMoveChecker(1, true, id)));
-      }
-      else {
+        // synthSelectAll
+        {
+          let p = checkCaretMove(id, 5, false);
+          getNode(id).select();
+          await p;
+        }
+
+        // synthHomeKey
+        {
+          let p = checkCaretMove(id, 0, true);
+          synthesizeKey("KEY_Home", {});
+          await p;
+        }
+
+        // synthRightKey
+        {
+          let p = checkCaretMove(id, 1, true);
+          synthesizeKey("KEY_ArrowRight", {});
+          await p;
+        }
+      } else {
         todo(false, "Make these tests pass on OSX (bug 650294)");
       }
 
       id = "textarea";
-      gQueue.push(new synthClick(id, new caretMoveChecker(0, true, id)));
-      gQueue.push(new synthRightKey(id, new caretMoveChecker(1, true, id)));
-      gQueue.push(new synthDownKey(id, new caretMoveChecker(12, true, id)));
+
+      // synthClick
+      {
+        let p = checkCaretMove(id, 0, true);
+        getNode(id).scrollIntoView(true);
+        synthesizeMouse(getNode(id), 1, 1, {});
+        await p;
+      }
+
+      // synthRightKey
+      {
+        let p = checkCaretMove(id, 1, true);
+        synthesizeKey("KEY_ArrowRight", {});
+        await p;
+      }
+
+      // synthDownKey
+      {
+        let p = checkCaretMove(id, 12, true);
+        synthesizeKey("KEY_ArrowDown", {});
+        await p;
+      }
 
       id = "textarea_wrapped";
-      gQueue.push(new setCaretOffset(id, 4, id));
-      gQueue.push(new synthLeftKey(id, new caretMoveChecker(4, true, id)));
+      // synthFocus
+      {
+        let p = checkCaretMove(id, 10, true);
+        selectAllTextAndFocus(id);
+        await p;
+      }
+
+      // setCaretOffset
+      {
+        let target = getAccessible(id, [nsIAccessibleText]);
+        let offset = 4;
+        let p = waitForEvent(EVENT_TEXT_CARET_MOVED, target);
+        target.caretOffset = offset;
+        let evt = await p;
+        evt.QueryInterface(nsIAccessibleCaretMoveEvent);
+        is(evt.caretOffset, offset, "Wrong caret offset for " + prettyName(id));
+        is(
+          evt.isSelectionCollapsed,
+          true,
+          "Wrong collapsed for " + prettyName(id)
+        );
+      }
+
+      // synthLeftKey
+      {
+        let p = checkCaretMove(id, 4, true);
+        synthesizeKey("KEY_ArrowLeft", {});
+        await p;
+      }
 
       id = "p";
-      gQueue.push(new synthClick(id, new caretMoveChecker(0, true, id)));
-      gQueue.push(new synthRightKey(id, new caretMoveChecker(1, true, id)));
-      gQueue.push(new synthDownKey(id, new caretMoveChecker(6, true, id)));
 
-      id = "p1_in_div";
-      gQueue.push(new synthClick(id, new clickChecker(0, true, id, "p2_in_div", -1)));
+      // synthClick
+      {
+        let p = checkCaretMove(id, 0, true);
+        getNode(id).scrollIntoView(true);
+        synthesizeMouse(getNode(id), 1, 1, {});
+        await p;
+      }
 
-      id = "p";
-      gQueue.push(new synthShiftTab(id, new caretMoveChecker(0, true, id)));
-      id = "textarea";
-      gQueue.push(new synthShiftTab(id, new caretMoveChecker(12, true, id)));
-      id = "p";
-      gQueue.push(new synthTab(id, new caretMoveChecker(0, true, id)));
+      // synthRightKey
+      {
+        let p = checkCaretMove(id, 1, true);
+        synthesizeKey("KEY_ArrowRight", {});
+        await p;
+      }
 
-      // Set caret after a child of span element, i.e. after 'text' text.
-      gQueue.push(new moveCaretToDOMPoint("test1", getNode("test1_span"), 1,
-                                           4, "test1"));
-      gQueue.push(new moveCaretToDOMPoint("test2", getNode("test2_span"), 1,
-                                           4, "test2"));
+      // synthDownKey
+      {
+        let p = checkCaretMove(id, 6, true);
+        synthesizeKey("KEY_ArrowDown", {});
+        await p;
+      }
+
+      // synthClick on p1_in_div
+      {
+        let p1Id = "p1_in_div";
+        let p2Acc = getAccessible("p2_in_div", [nsIAccessibleText]);
+        let p = waitForEvent(EVENT_TEXT_CARET_MOVED, p1Id);
+        getNode(p1Id).scrollIntoView(true);
+        synthesizeMouse(getNode(p1Id), 1, 1, {});
+        let caretEvt = await p;
+        caretEvt.QueryInterface(nsIAccessibleCaretMoveEvent);
+        is(
+          caretEvt.caretOffset,
+          0,
+          "Wrong caret offset for " + prettyName(p1Id)
+        );
+        is(
+          caretEvt.isSelectionCollapsed,
+          true,
+          "Wrong collapsed for " + prettyName(p1Id)
+        );
+        is(p2Acc.caretOffset, -1, "Wrong caret offset for p2_in_div");
+      }
+
+      // synthShiftTab from p -> textarea
+      {
+        let p = checkCaretMove("p", 0, true);
+        synthesizeKey("KEY_Tab", { shiftKey: true });
+        await p;
+      }
+      {
+        let p = checkCaretMove("textarea", 12, true);
+        synthesizeKey("KEY_Tab", { shiftKey: true });
+        await p;
+      }
+
+      // synthTab from p
+      {
+        let p = checkCaretMove("p", 0, true);
+        synthesizeKey("KEY_Tab", { shiftKey: false });
+        await p;
+      }
+
+      // moveCaretToDOMPoint: Set caret after a child of span element
+      {
+        let target = getAccessible("test1", [nsIAccessibleText]);
+        let domPointNode = getNode("test1_span");
+        let p = waitForEvent(EVENT_TEXT_CARET_MOVED, target);
+        getNode("test1").focus();
+        let selection = domPointNode.documentGlobal.getSelection();
+        let selRange = selection.rangeCount
+          ? selection.getRangeAt(0)
+          : domPointNode.ownerDocument.createRange();
+        selRange.setStart(domPointNode, 1);
+        selRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(selRange);
+        let evt = await p;
+        evt.QueryInterface(nsIAccessibleCaretMoveEvent);
+        is(evt.caretOffset, 4, "Wrong caret offset for test1");
+        is(evt.isSelectionCollapsed, true, "Wrong collapsed for test1");
+      }
+
+      {
+        let target = getAccessible("test2", [nsIAccessibleText]);
+        let domPointNode = getNode("test2_span");
+        let p = waitForEvent(EVENT_TEXT_CARET_MOVED, target);
+        getNode("test2").focus();
+        let selection = domPointNode.documentGlobal.getSelection();
+        let selRange = selection.rangeCount
+          ? selection.getRangeAt(0)
+          : domPointNode.ownerDocument.createRange();
+        selRange.setStart(domPointNode, 1);
+        selRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(selRange);
+        let evt = await p;
+        evt.QueryInterface(nsIAccessibleCaretMoveEvent);
+        is(evt.caretOffset, 4, "Wrong caret offset for test2");
+        is(evt.isSelectionCollapsed, true, "Wrong collapsed for test2");
+      }
 
       // empty text element
-      gQueue.push(new moveCaretToDOMPoint("test3", getNode("test3"), 0,
-                                           0, "test3"));
-      gQueue.push(new moveCaretToDOMPoint("test4", getNode("test4_span"), 0,
-                                           0, "test4"));
+      {
+        let target = getAccessible("test3", [nsIAccessibleText]);
+        let domPointNode = getNode("test3");
+        let p = waitForEvent(EVENT_TEXT_CARET_MOVED, target);
+        domPointNode.focus();
+        let selection = domPointNode.documentGlobal.getSelection();
+        let selRange = selection.rangeCount
+          ? selection.getRangeAt(0)
+          : domPointNode.ownerDocument.createRange();
+        selRange.setStart(domPointNode, 0);
+        selRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(selRange);
+        let evt = await p;
+        evt.QueryInterface(nsIAccessibleCaretMoveEvent);
+        is(evt.caretOffset, 0, "Wrong caret offset for test3");
+        is(evt.isSelectionCollapsed, true, "Wrong collapsed for test3");
+      }
 
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      {
+        let target = getAccessible("test4", [nsIAccessibleText]);
+        let domPointNode = getNode("test4_span");
+        let p = waitForEvent(EVENT_TEXT_CARET_MOVED, target);
+        getNode("test4").focus();
+        let selection = domPointNode.documentGlobal.getSelection();
+        let selRange = selection.rangeCount
+          ? selection.getRangeAt(0)
+          : domPointNode.ownerDocument.createRange();
+        selRange.setStart(domPointNode, 0);
+        selRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(selRange);
+        let evt = await p;
+        evt.QueryInterface(nsIAccessibleCaretMoveEvent);
+        is(evt.caretOffset, 0, "Wrong caret offset for test4");
+        is(evt.isSelectionCollapsed, true, "Wrong collapsed for test4");
+      }
+
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <style>
+    div {
+      position:absolute;
+    }
+
+    #simple-div {
+      padding: 5px;
+      border: 7px solid red;
+      margin: 9px;
+      top: 30px;
+      left: 150px;
+    }
+
+    #rotated-div {
+      padding: 5px;
+      border: 7px solid red;
+      margin: 9px;
+      transform: rotate(45deg);
+      top: 30px;
+      left: 80px;
+    }
+
+    #widthHeightZero-div {
+      top: 30px;
+      left: 10px;
+      width: 0;
+      height: 0;
+    }
+
+    #pseudo::before {
+      content: "Animals:";
+      display: list-item;
+      width: 100px;
+      height: 50px;
+    }
+
+    #pseudo::before::marker {
+      content: "+";
+      color: tomato;
+    }
+
+    #pseudo::after {
+      content: "-";
+      color: gold;
+    }
+
+    dialog::backdrop {
+      background-color: rgb(from hotpink r g b / 0.2);
+      width: 85px;
+      height: 333px;
+    }
+
+    ::view-transition-group(root) {
+       /* large number so the view-transition pseudo elements are available during the whole test */
+       animation-duration: 3600s;
+    }
+    </style>
+  </head>
+  <body>
+    <div id="simple-div">Gort! Klaatu barada nikto!</div>
+    <div id="rotated-div"></div>
+    <div id="widthHeightZero-div">Width &amp; height = 0</div>
+    <ul id="pseudo">
+      <li>Dogs</li>
+      <li>Cats</li>
+    </ul>
+    <dialog>My Modal</dialog>
+    <script>
+      "use strict";
+
+      // show the dialog modal so the backdrop pseudo element node gets displayed
+      document.querySelector("dialog").showModal();
+    </script>
+  </body>
+</html>

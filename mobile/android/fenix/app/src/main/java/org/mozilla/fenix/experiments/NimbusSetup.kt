@@ -5,6 +5,7 @@
 package org.mozilla.fenix.experiments
 
 import android.content.Context
+import mozilla.appservices.remotesettings.RemoteSettingsService
 import mozilla.components.service.nimbus.NimbusApi
 import mozilla.components.service.nimbus.NimbusAppInfo
 import mozilla.components.service.nimbus.NimbusBuilder
@@ -12,11 +13,12 @@ import mozilla.components.service.nimbus.messaging.FxNimbusMessaging
 import mozilla.components.service.nimbus.messaging.NimbusSystem
 import mozilla.components.support.base.log.logger.Logger
 import org.mozilla.experiments.nimbus.NimbusInterface
+import org.mozilla.experiments.nimbus.internal.GeckoPrefHandler
 import org.mozilla.experiments.nimbus.internal.NimbusException
+import org.mozilla.experiments.nimbus.internal.NimbusServerSettings
 import org.mozilla.fenix.BuildConfig
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.messaging.CustomAttributeProvider
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.utils.Settings
@@ -34,19 +36,36 @@ private val logger = Logger("service/Nimbus")
 /**
  * Create the Nimbus singleton object for the Fenix app.
  */
-fun createNimbus(context: Context, urlString: String?): NimbusApi {
+fun createNimbus(
+    context: Context,
+    settings: Settings,
+    urlString: String?,
+    remoteSettingsService: RemoteSettingsService?,
+    geckoPrefHandler: GeckoPrefHandler,
+): NimbusApi {
     // These values can be used in the JEXL expressions when targeting experiments.
     val customTargetingAttributes = CustomAttributeProvider.getCustomTargetingAttributes(context)
 
-    val isAppFirstRun = context.settings().isFirstNimbusRun
+    val isAppFirstRun = settings.isFirstNimbusRun
     if (isAppFirstRun) {
-        context.settings().isFirstNimbusRun = false
+        settings.isFirstNimbusRun = false
     }
 
     val recordedNimbusContext = RecordedNimbusContext.create(
         context = context,
         isFirstRun = isAppFirstRun,
     )
+
+    val serverSettings: NimbusServerSettings? = remoteSettingsService?.let { service ->
+        NimbusServerSettings(
+            rsService = service,
+            collectionName = if (settings.nimbusUsePreview) {
+                "nimbus-preview"
+            } else {
+                "nimbus-mobile-experiments"
+            },
+        )
+    }
 
     // The name "fenix" here corresponds to the app_name defined for the family of apps
     // that encompasses all of the channels for the Fenix app.  This is defined upstream in
@@ -68,15 +87,15 @@ fun createNimbus(context: Context, urlString: String?): NimbusApi {
         errorReporter = context::reportError
         initialExperiments = R.raw.initial_experiments
         timeoutLoadingExperiment = TIME_OUT_LOADING_EXPERIMENT_FROM_DISK_MS
-        usePreviewCollection = context.settings().nimbusUsePreview
-        sharedPreferences = context.settings().preferences
+        sharedPreferences = settings.preferences
         isFirstRun = isAppFirstRun
         featureManifest = FxNimbus
         onFetchCallback = {
-            context.settings().nimbusExperimentsFetched = true
+            settings.nimbusExperimentsFetched = true
         }
         recordedContext = recordedNimbusContext
-    }.build(appInfo).also { nimbusApi ->
+        this.geckoPrefHandler = geckoPrefHandler
+    }.build(appInfo, serverSettings).also { nimbusApi ->
         nimbusApi.recordIsReady(FxNimbus.features.nimbusIsReady.value().eventCount)
     }
 }
@@ -115,20 +134,20 @@ fun NimbusException.isReportableError(): Boolean {
  * `nimbus.fml.yaml` file.
  */
 fun NimbusInterface.maybeFetchExperiments(
-    context: Context,
+    settings: Settings,
     feature: NimbusSystem = FxNimbusMessaging.features.nimbusSystem.value(),
     currentTimeMillis: Long = System.currentTimeMillis(),
 ) {
-    if (context.settings().nimbusUsePreview) {
-        context.settings().nimbusLastFetchTime = 0L
+    if (settings.nimbusUsePreview) {
+        settings.nimbusLastFetchTime = 0L
         fetchExperiments()
     } else {
         val minimumPeriodMinutes = feature.refreshIntervalForeground
-        val lastFetchTimeMillis = context.settings().nimbusLastFetchTime
+        val lastFetchTimeMillis = settings.nimbusLastFetchTime
         val minimumPeriodMillis = minimumPeriodMinutes * Settings.ONE_MINUTE_MS
 
         if (currentTimeMillis - lastFetchTimeMillis >= minimumPeriodMillis) {
-            context.settings().nimbusLastFetchTime = currentTimeMillis
+            settings.nimbusLastFetchTime = currentTimeMillis
             fetchExperiments()
         }
     }

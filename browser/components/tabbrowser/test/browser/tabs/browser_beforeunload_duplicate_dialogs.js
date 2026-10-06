@@ -58,7 +58,10 @@ registerCleanupFunction(() => {
 add_task(async function closeLastTabInWindow() {
   let newWin = await promiseOpenAndLoadWindow({}, true);
   let firstTab = newWin.gBrowser.selectedTab;
-  await promiseTabLoadEvent(firstTab, TEST_PAGE);
+  await BrowserTestUtils.loadURIString({
+    browser: firstTab.linkedBrowser,
+    uriString: TEST_PAGE,
+  });
   let windowClosedPromise = BrowserTestUtils.domWindowClosed(newWin);
   expectingDialog = true;
   // close tab:
@@ -72,12 +75,16 @@ add_task(async function closeWindowWithMultipleTabsIncludingOneBeforeUnload() {
   Services.prefs.setBoolPref("browser.tabs.warnOnClose", false);
   let newWin = await promiseOpenAndLoadWindow({}, true);
   let firstTab = newWin.gBrowser.selectedTab;
-  await promiseTabLoadEvent(firstTab, TEST_PAGE);
-  await promiseTabLoadEvent(
-    BrowserTestUtils.addTab(newWin.gBrowser),
+  await BrowserTestUtils.loadURIString({
+    browser: firstTab.linkedBrowser,
+    uriString: TEST_PAGE,
+  });
+  let secondTab = BrowserTestUtils.addTab(newWin.gBrowser);
+  await BrowserTestUtils.loadURIString({
+    browser: secondTab.linkedBrowser,
     // eslint-disable-next-line @microsoft/sdl/no-insecure-url
-    "http://example.com/"
-  );
+    uriString: "http://example.com/",
+  });
   let windowClosedPromise = BrowserTestUtils.domWindowClosed(newWin);
   expectingDialog = true;
   newWin.BrowserCommands.tryToCloseWindow();
@@ -90,7 +97,10 @@ add_task(async function closeWindowWithMultipleTabsIncludingOneBeforeUnload() {
 add_task(async function closeWindoWithSingleTabTwice() {
   let newWin = await promiseOpenAndLoadWindow({}, true);
   let firstTab = newWin.gBrowser.selectedTab;
-  await promiseTabLoadEvent(firstTab, TEST_PAGE);
+  await BrowserTestUtils.loadURIString({
+    browser: firstTab.linkedBrowser,
+    uriString: TEST_PAGE,
+  });
   let windowClosedPromise = BrowserTestUtils.domWindowClosed(newWin);
   expectingDialog = true;
   wantToClose = false;

@@ -6,12 +6,14 @@ support-files = ["!/services/common/tests/unit/head_helpers.js"]
 ["test_crypto_crypt.js"]
 
 ["test_crypto_random.js"]
-skip-if = ["appname == 'thunderbird'"]
+run-if = [
+  "appname != 'thunderbird'",
+]
 
 ["test_jwcrypto.js"]
-skip-if = ["appname == 'thunderbird'"]
-
-["test_load_modules.js"]
+run-if = [
+  "appname != 'thunderbird'",
+]
 
 ["test_utils_hawk.js"]
 

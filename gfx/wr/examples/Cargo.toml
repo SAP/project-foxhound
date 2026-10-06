@@ -58,10 +58,11 @@ app_units = "0.7"
 env_logger = { version = "0.10", default-features = false }
 euclid = "0.22"
 gleam = { workspace = true }
-glutin = "0.28"
+glutin = { version = "0.32", default-features = false }
+glutin-winit = "0.5"
 rayon = "1"
 webrender = { path = "../webrender" }
-winit = "0.26"
+winit = "0.30"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.7"

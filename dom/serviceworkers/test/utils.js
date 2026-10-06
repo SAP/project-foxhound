@@ -19,7 +19,7 @@ function waitForState(worker, state, context) {
 /**
  * Helper for browser tests to issue register calls from the content global and
  * wait for the SW to progress to the active state, as most tests desire.
- * From the ContentTask.spawn, use via
+ * From the SpecialPowers.spawn, use via
  * `content.wrappedJSObject.registerAndWaitForActive`.
  */
 async function registerAndWaitForActive(script, maybeScope) {

@@ -1,0 +1,24 @@
+<!doctype html>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html {
+  scrollbar-width: none;
+}
+body {
+  margin: 0;
+}
+#mask {
+  width: 100px;
+  height: 100px;
+  mask-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect x="0" y="0" width="20" height="20" fill="black"/></svg>');
+  mask-size: 100px 100px;
+  mask-position: center;
+  background-color: black;
+}
+</style>
+<div style="height:10.4px"></div>
+<div id="mask"></div>
+<div style="height: 100vh"></div>
+<script>
+  document.scrollingElement.scrollTop = 0.6;
+</script>

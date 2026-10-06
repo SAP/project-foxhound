@@ -18,14 +18,6 @@ import org.robolectric.annotation.Config
 class LocaleAwareAppCompatActivityTest {
 
     @Test
-    @Config(sdk = [Build.VERSION_CODES.N, Build.VERSION_CODES.P])
-    fun `when version is not Android 8 don't set layoutDirection`() {
-        val activity = spy(Robolectric.buildActivity(LocaleAwareAppCompatActivity::class.java).get())
-        activity.setLayoutDirectionIfNeeded()
-        verify(activity, Mockito.times(0)).window
-    }
-
-    @Test
     @Config(sdk = [Build.VERSION_CODES.O, Build.VERSION_CODES.O_MR1])
     fun `when version is Android 8 set layoutDirection`() {
         val activity = spy(Robolectric.buildActivity(LocaleAwareAppCompatActivity::class.java).get())

@@ -1,0 +1,15 @@
+{
+  "label": "watch.tonton.com.my",
+  "bugs": {
+    "1898970": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://watch.tonton.com.my/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

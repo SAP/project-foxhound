@@ -248,6 +248,8 @@ void InitBuiltInResources(ShBuiltInResources *resources)
     resources->MaxFragmentInputVectors = 15;
     resources->MinProgramTexelOffset   = -8;
     resources->MaxProgramTexelOffset   = 7;
+    resources->MaxFragmentUniformBlocks = 12;
+    resources->MaxVertexUniformBlocks   = 12;
 
     // Extensions constants.
     resources->MaxDualSourceDrawBuffers = 0;
@@ -288,6 +290,7 @@ void InitBuiltInResources(ShBuiltInResources *resources)
     resources->MaxComputeWorkGroupSize[2]  = 64;
     resources->MaxComputeUniformComponents = 512;
     resources->MaxComputeTextureImageUnits = 16;
+    resources->MaxComputeUniformBlocks     = 12;
 
     resources->MaxComputeAtomicCounters       = 8;
     resources->MaxComputeAtomicCounterBuffers = 1;
@@ -326,6 +329,7 @@ void InitBuiltInResources(ShBuiltInResources *resources)
     resources->MaxTessControlImageUniforms         = 0;
     resources->MaxTessControlAtomicCounters        = 0;
     resources->MaxTessControlAtomicCounterBuffers  = 0;
+    resources->MaxTessControlUniformBlocks         = 12;
 
     resources->MaxTessPatchComponents = 120;
     resources->MaxPatchVertices       = 32;
@@ -338,6 +342,7 @@ void InitBuiltInResources(ShBuiltInResources *resources)
     resources->MaxTessEvaluationImageUniforms        = 0;
     resources->MaxTessEvaluationAtomicCounters       = 0;
     resources->MaxTessEvaluationAtomicCounterBuffers = 0;
+    resources->MaxTessEvaluationUniformBlocks        = 12;
 
     resources->SubPixelBits = 8;
 

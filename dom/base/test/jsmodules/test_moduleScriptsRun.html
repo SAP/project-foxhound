@@ -8,6 +8,7 @@
 
   SimpleTest.waitForExplicitFinish();
 
+  // eslint-disable-next-line no-unused-vars
   function testLoaded() {
     ok(moduleRan, 'Check module script was run');
     ok(inlineModuleRan, 'Check inline module script was run');
@@ -15,5 +16,8 @@
   }
 </script>
 <script type="module" src="module_setRan.mjs"></script>
-<script type="module">inlineModuleRan = true;</script>
+<script type="module">
+  /* global inlineModuleRan */
+  inlineModuleRan = true;
+  </script>
 <body onload='testLoaded()'></body>

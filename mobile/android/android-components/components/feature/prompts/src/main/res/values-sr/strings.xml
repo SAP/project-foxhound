@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!-- Text for confirmation for a positive action in dialog -->
   <string name="mozac_feature_prompts_ok">ОК</string>
   <!-- Text for confirmation for a negative action in dialog. -->
@@ -52,6 +59,8 @@
   <string name="mozac_feature_prompts_deny">Забрани</string>
   <!-- Text of the title of a dialog when a page is requesting to open a new window. -->
   <string name="mozac_feature_prompts_popup_dialog_title">Дозволити отварање ове странице?</string>
+  <!-- Text of the title of a dialog when a third-party redirect is blocked. -->
+  <string name="mozac_feature_prompts_redirect_dialog_title">Дозволити преусмеравање на овај сајт?</string>
   <!-- Title of the dialog shown when a user is leaving a website and there is still data not saved yet. -->
   <string name="mozac_feature_prompt_before_unload_dialog_title">Да ли сте сигурни?</string>
   <!-- Body text of the dialog shown when a user is leaving a website and there is still data not saved yet. -->
@@ -60,6 +69,12 @@
   <string name="mozac_feature_prompts_before_unload_stay">Остани</string>
   <!-- Leave button of the dialog shown when a user is leaving a website and there is still data not saved yet, this indicates that the user wants to leave in the website. -->
   <string name="mozac_feature_prompts_before_unload_leave">Напусти</string>
+  <!-- Message shown when a site wants to create a passkey for a related domain. %1$s is the requesting site, %2$s is the related domain the passkey is for. -->
+  <string name="webauthn_related_origin_create_message">%1$s жели да направи приступни кључ за %2$s.</string>
+  <!-- Message shown when a site wants to use a passkey from a related domain. %1$s is the requesting site, %2$s is the related domain the passkey is for. -->
+  <string name="webauthn_related_origin_use_message">%1$s жели да употреби приступни кључ за %2$s.</string>
+  <!-- Continue button label for WebAuthn related origin prompt. -->
+  <string name="webauthn_continue">Настави</string>
   <!-- Title of the month chooser dialog. -->
   <string name="mozac_feature_prompts_set_month">Изаберите месец</string>
   <!-- January (short description), used on the month chooser dialog. -->
@@ -110,12 +125,8 @@
   <string name="mozac_feature_prompts_suggest_strong_password_use_password">Користи лозинку</string>
   <!-- Pressing this will dismiss the suggested strong password dialog -->
   <string name="mozac_feature_prompts_suggest_strong_password_dismiss">Не сада</string>
-  <!-- Title for showing the suggest strong password saved confirmation snackbar -->
-  <string name="mozac_feature_prompts_suggest_strong_password_saved_snackbar_title" tools:ignore="UnusedResources" moz:removedIn="142">Лозинка је сачувана</string>
   <!-- Title for showing the suggest strong password updated confirmation snackbar -->
   <string name="mozac_feature_prompts_suggest_strong_password_updated_snackbar_title">Лозинка је ажурирана</string>
-  <!-- Title for showing the username updated confirmation snackbar -->
-  <string name="mozac_feature_prompt_login_snackbar_username_updated" tools:ignore="UnusedResources" moz:removedIn="142">Корисничко име је ажурирано</string>
   <!-- Strings shown in a dialog that appear when users try to refresh a certain kind of webpages -->
   <string name="mozac_feature_prompt_repost_title">Поново послати податке на ову страницу?</string>
   <string name="mozac_feature_prompt_repost_message">Освежавање ове странице може резултовати дуплирањем недавних радњи, као што је дупло слање уплате или постављање коментара.</string>
@@ -148,7 +159,7 @@
   <!-- Text for the title of an update credit card dialog. -->
   <string name="mozac_feature_prompts_update_credit_card_prompt_title">Ажурирати датум истека картице?</string>
   <!-- Subtitle text displayed under the title of the saved card dialog. %s is the name of the app (for example "Firefox"). -->
-  <string name="mozac_feature_prompts_save_credit_card_prompt_body_2">%s шифрује број ваше картице. Сигурносни кȏд неће бити сачуван.</string>
+  <string name="mozac_feature_prompts_save_credit_card_prompt_body_2">%s шифрује број ваше картице. Сигурносни код неће бити сачуван.</string>
   <!--
     Address Autofill
 
@@ -161,6 +172,8 @@
   <string name="mozac_feature_prompts_collapse_address_content_description_2">Скупи сачуване адресе</string>
   <!-- Text for the manage addresses button. -->
   <string name="mozac_feature_prompts_manage_address">Управљај адресама</string>
+  <!-- Text for the title of a save address dialog. -->
+  <string name="mozac_feature_prompts_save_address_prompt_title">Сачувај адресу?</string>
   <!--
     Federated Credential Management prompts
 
@@ -179,4 +192,12 @@
   <string name="mozac_feature_prompts_identity_credentials_continue">Настави</string>
   <!-- Text for the cancel button of the Identity Credential dialogs. -->
   <string name="mozac_feature_prompts_identity_credentials_cancel">Откажи</string>
+  <!--
+    Email Mask Autofill
+
+    Text for the email mask prompt to allow users to fill an email input field in a sign up form with an email mask.
+  -->
+  <string name="mozac_feature_relay_chip_text">Користи маску е-поште</string>
+  <!-- Informational text for the contextual feature recommendation (CFR) enabling the email mask aliases. The %s is the name of the service, "Firefox Relay". -->
+  <string name="mozac_feature_relay_email_masks_cfr">Ново! %s маске е-поште су сада доступне на мобилним уређајима.</string>
 </resources>

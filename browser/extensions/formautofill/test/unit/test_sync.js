@@ -650,6 +650,52 @@ add_task(async function test_incoming_dupes() {
   }
 });
 
+add_task(async function test_dedupe_identical_unsynced_singlelineaddress() {
+  let { profileStorage, server, engine } = await setup();
+  try {
+    let profile = structuredClone(TEST_PROFILE_1);
+    // Change the street address so that it will parse correctly.
+    profile["street-address"] = "36B Main Street";
+
+    // create a record locally.
+    let localGuid = await profileStorage.addresses.add(profile);
+
+    // and an identical record on the server but different GUID.
+    let remoteGuid = Utils.makeGUID();
+    notEqual(localGuid, remoteGuid);
+    server.insertWBO(
+      "foo",
+      "addresses",
+      new ServerWBO(
+        remoteGuid,
+        encryptPayload({
+          id: remoteGuid,
+          entry: Object.assign(
+            {
+              version: 1,
+            },
+            profile
+          ),
+        }),
+        getDateForSync()
+      )
+    );
+
+    await engine.setLastSync(0);
+    await engine.sync();
+
+    // Should have 1 item locally with GUID changed to the remote one.
+    // There's no tombstone as the original was unsynced.
+    await expectLocalProfiles(profileStorage, [
+      {
+        guid: remoteGuid,
+      },
+    ]);
+  } finally {
+    await cleanup(server);
+  }
+});
+
 add_task(async function test_dedupe_identical_unsynced() {
   let { profileStorage, server, engine } = await setup();
   try {

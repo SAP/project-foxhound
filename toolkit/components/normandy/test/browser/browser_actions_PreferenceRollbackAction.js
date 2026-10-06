@@ -6,9 +6,6 @@ const { BaseAction } = ChromeUtils.importESModule(
 const { PreferenceRollbackAction } = ChromeUtils.importESModule(
   "resource://normandy/actions/PreferenceRollbackAction.sys.mjs"
 );
-const { Uptake } = ChromeUtils.importESModule(
-  "resource://normandy/lib/Uptake.sys.mjs"
-);
 const { PreferenceRollouts } = ChromeUtils.importESModule(
   "resource://normandy/lib/PreferenceRollouts.sys.mjs"
 );
@@ -184,9 +181,8 @@ decorate_task(
 // Test that a rollback without a matching rollout does not send telemetry
 decorate_task(
   withSendEventSpy(),
-  withStub(Uptake, "reportRecipe"),
   PreferenceRollouts.withTestMock(),
-  async function rollback_without_rollout({ sendEventSpy, reportRecipeStub }) {
+  async function rollback_without_rollout({ sendEventSpy }) {
     let recipe = { id: 1, arguments: { rolloutSlug: "missing-rollout" } };
 
     const action = new PreferenceRollbackAction();
@@ -195,11 +191,6 @@ decorate_task(
     is(action.lastError, null, "lastError should be null");
 
     sendEventSpy.assertEvents([]);
-    Assert.deepEqual(
-      reportRecipeStub.args,
-      [[recipe, Uptake.RECIPE_SUCCESS]],
-      "recipe should be reported as succesful"
-    );
   }
 );
 

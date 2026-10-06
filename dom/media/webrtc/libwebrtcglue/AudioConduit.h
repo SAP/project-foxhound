@@ -5,13 +5,12 @@
 #ifndef AUDIO_SESSION_H_
 #define AUDIO_SESSION_H_
 
+#include "MediaConduitInterface.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/ReentrantMonitor.h"
 #include "mozilla/RWLock.h"
+#include "mozilla/ReentrantMonitor.h"
 #include "mozilla/StateMirroring.h"
 #include "mozilla/TimeStamp.h"
-
-#include "MediaConduitInterface.h"
 
 /**
  * This file hosts several structures identifying different aspects of a RTP
@@ -33,7 +32,7 @@ class WebrtcAudioConduit : public AudioSessionConduit,
 
   void OnRtpReceived(webrtc::RtpPacketReceived&& aPacket,
                      webrtc::RTPHeader&& aHeader);
-  void OnRtcpReceived(rtc::CopyOnWriteBuffer&& aPacket);
+  void OnRtcpReceived(webrtc::CopyOnWriteBuffer&& aPacket);
 
   void OnRtcpBye() override;
   void OnRtcpTimeout() override;
@@ -56,12 +55,12 @@ class WebrtcAudioConduit : public AudioSessionConduit,
         aEvent.Connect(mCallThread, this, &WebrtcAudioConduit::OnRtpReceived);
   }
   void ConnectReceiverRtcpEvent(
-      MediaEventSourceExc<rtc::CopyOnWriteBuffer>& aEvent) override {
+      MediaEventSourceExc<webrtc::CopyOnWriteBuffer>& aEvent) override {
     mReceiverRtcpEventListener =
         aEvent.Connect(mCallThread, this, &WebrtcAudioConduit::OnRtcpReceived);
   }
   void ConnectSenderRtcpEvent(
-      MediaEventSourceExc<rtc::CopyOnWriteBuffer>& aEvent) override {
+      MediaEventSourceExc<webrtc::CopyOnWriteBuffer>& aEvent) override {
     mSenderRtcpEventListener =
         aEvent.Connect(mCallThread, this, &WebrtcAudioConduit::OnRtcpReceived);
   }
@@ -114,7 +113,8 @@ class WebrtcAudioConduit : public AudioSessionConduit,
 
   void SetJitterBufferTarget(DOMHighResTimeStamp aTargetMs) override;
 
-  void DeliverPacket(rtc::CopyOnWriteBuffer packet, PacketType type) override;
+  void DeliverPacket(webrtc::CopyOnWriteBuffer packet,
+                     PacketType type) override;
 
   RefPtr<GenericPromise> Shutdown() override;
 
@@ -125,6 +125,9 @@ class WebrtcAudioConduit : public AudioSessionConduit,
                      nsCOMPtr<nsISerialEventTarget> aStsThread);
 
   virtual ~WebrtcAudioConduit();
+
+  WebrtcAudioConduit(const WebrtcAudioConduit& other) = delete;
+  void operator=(const WebrtcAudioConduit& other) = delete;
 
   // Call thread.
   void InitControl(AudioConduitControlInterface* aControl) override;
@@ -150,7 +153,7 @@ class WebrtcAudioConduit : public AudioSessionConduit,
   /**
    * Override the remote ssrc configured on mRecvStreamConfig.
    *
-   * Recreates and restarts the recv stream if needed. The overriden value is
+   * Recreates and restarts the recv stream if needed. The overridden value is
    * overwritten the next time the mControl.mRemoteSsrc mirror changes value.
    *
    * Call thread only.
@@ -163,7 +166,7 @@ class WebrtcAudioConduit : public AudioSessionConduit,
   Maybe<webrtc::AudioReceiveStreamInterface::Stats> GetReceiverStats()
       const override;
   Maybe<webrtc::AudioSendStream::Stats> GetSenderStats() const override;
-  Maybe<webrtc::CallBasicStats> GetCallStats() const override;
+  Maybe<webrtc::Call::Stats> GetCallStats() const override;
 
   bool IsSamplingFreqSupported(int freq) const override;
 
@@ -176,9 +179,6 @@ class WebrtcAudioConduit : public AudioSessionConduit,
   const std::vector<webrtc::RtpSource>& GetUpstreamRtpSources() const override;
 
  private:
-  WebrtcAudioConduit(const WebrtcAudioConduit& other) = delete;
-  void operator=(const WebrtcAudioConduit& other) = delete;
-
   // Generate block size in sample length for a given sampling frequency
   unsigned int GetNum10msSamplesForFrequency(int samplingFreqHz) const;
 

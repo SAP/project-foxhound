@@ -22,18 +22,25 @@
 // confusing it's recommended to read over that section to see how it maps to
 // the various methods here.
 
+#[cfg(feature = "simd")]
+use crate::VisitSimdOperator;
 use crate::{
-    limits::MAX_WASM_FUNCTION_LOCALS, AbstractHeapType, BinaryReaderError, BlockType, BrTable,
-    Catch, ContType, FieldType, FrameKind, FuncType, GlobalType, Handle, HeapType, Ieee32, Ieee64,
-    MemArg, ModuleArity, RefType, Result, ResumeTable, StorageType, StructType, SubType, TableType,
-    TryTable, UnpackedIndex, ValType, VisitOperator, WasmFeatures, WasmModuleResources, V128,
+    AbstractHeapType, BinaryReaderError, BlockType, BrTable, Catch, ContType, FieldType, FrameKind,
+    FrameStack, FuncType, GlobalType, Handle, HeapType, Ieee32, Ieee64, MemArg, ModuleArity,
+    RefType, Result, ResumeTable, StorageType, StructType, SubType, TableType, TryTable,
+    UnpackedIndex, ValType, VisitOperator, WasmFeatures, WasmModuleResources,
+    limits::MAX_WASM_FUNCTION_LOCALS,
 };
-use crate::{prelude::*, CompositeInnerType, Ordering};
+use crate::{CompositeInnerType, Ordering, prelude::*};
 use core::ops::{Deref, DerefMut};
+use core::{cmp, iter, mem};
+
+#[cfg(feature = "simd")]
+mod simd;
 
 pub(crate) struct OperatorValidator {
     pub(super) locals: Locals,
-    pub(super) local_inits: Vec<bool>,
+    local_inits: LocalInits,
 
     // This is a list of flags for wasm features which are used to gate various
     // instructions.
@@ -46,24 +53,119 @@ pub(crate) struct OperatorValidator {
     control: Vec<Frame>,
     /// The `operands` is the current type stack.
     operands: Vec<MaybeType>,
-    /// When local_inits is modified, the relevant index is recorded here to be
-    /// undone when control pops
-    inits: Vec<u32>,
-
-    /// Offset of the `end` instruction which emptied the `control` stack, which
-    /// must be the end of the function.
-    end_which_emptied_control: Option<usize>,
 
     /// Whether validation is happening in a shared context.
     shared: bool,
 
+    /// A trace of all operand push/pop operations performed while validating an
+    /// opcode. This is then compared to the arity that we report to double
+    /// check that arity report's correctness. `true` is "push" and `false` is
+    /// "pop".
     #[cfg(debug_assertions)]
-    pub(crate) pop_push_count: (u32, u32),
+    pub(crate) pop_push_log: Vec<bool>,
+}
+
+/// Captures the initialization of non-defaultable locals.
+struct LocalInits {
+    /// Records if a local is already initialized.
+    local_inits: Vec<bool>,
+    /// When `local_inits` is modified, the relevant `index` is recorded
+    /// here to be undone when control pops.
+    inits: Vec<u32>,
+    /// The index of the first non-defaultable local.
+    ///
+    /// # Note
+    ///
+    /// This is an optimization so that we only have to perform expensive
+    /// look-ups for locals that have a local index equal to or higher than this.
+    first_non_default_local: u32,
+}
+
+impl Default for LocalInits {
+    fn default() -> Self {
+        Self {
+            local_inits: Vec::default(),
+            inits: Vec::default(),
+            first_non_default_local: u32::MAX,
+        }
+    }
+}
+
+impl LocalInits {
+    /// Defines new function local parameters.
+    pub fn define_params(&mut self, count: usize) {
+        let Some(new_len) = self.local_inits.len().checked_add(count) else {
+            panic!("tried to define too many function locals as parameters: {count}");
+        };
+        self.local_inits.resize(new_len, true);
+    }
+
+    /// Defines `count` function locals of type `ty`.
+    pub fn define_locals(&mut self, count: u32, ty: ValType) {
+        let Ok(count) = usize::try_from(count) else {
+            panic!("tried to define too many function locals: {count}");
+        };
+        let len = self.local_inits.len();
+        let Some(new_len) = len.checked_add(count) else {
+            panic!("tried to define too many function locals: {count}");
+        };
+        let is_defaultable = ty.is_defaultable();
+        if !is_defaultable && self.first_non_default_local == u32::MAX {
+            self.first_non_default_local = len as u32;
+        }
+        self.local_inits.resize(new_len, is_defaultable);
+    }
+
+    /// Returns `true` if the local at `local_index` has already been initialized.
+    #[inline]
+    pub fn is_uninit(&self, local_index: u32) -> bool {
+        if local_index < self.first_non_default_local {
+            return false;
+        }
+        !self.local_inits[local_index as usize]
+    }
+
+    /// Marks the local at `local_index` as initialized.
+    #[inline]
+    pub fn set_init(&mut self, local_index: u32) {
+        if self.is_uninit(local_index) {
+            self.local_inits[local_index as usize] = true;
+            self.inits.push(local_index);
+        }
+    }
+
+    /// Registers a new control frame and returns its `height`.
+    pub fn push_ctrl(&mut self) -> usize {
+        self.inits.len()
+    }
+
+    /// Pops a control frame via its `height`.
+    ///
+    /// This uninitializes all locals that have been initialized within it.
+    pub fn pop_ctrl(&mut self, height: usize) {
+        for local_index in self.inits.split_off(height) {
+            self.local_inits[local_index as usize] = false;
+        }
+    }
+
+    /// Clears the [`LocalInits`].
+    ///
+    /// After this operation `self` will be empty and ready for reuse.
+    pub fn clear(&mut self) {
+        self.local_inits.clear();
+        self.inits.clear();
+        self.first_non_default_local = u32::MAX;
+    }
+
+    /// Returns `true` if `self` is empty.
+    pub fn is_empty(&self) -> bool {
+        self.local_inits.is_empty()
+    }
 }
 
 // No science was performed in the creation of this number, feel free to change
 // it if you so like.
-const MAX_LOCALS_TO_TRACK: usize = 50;
+const MAX_LOCALS_TO_TRACK: u32 = 50;
 
 pub(super) struct Locals {
     // Total number of locals in the function.
@@ -85,7 +187,7 @@ pub(super) struct Locals {
     // `local.{get,set,tee}`. We do a binary search for the index desired, and
     // it either lies in a "hole" where the maximum index is specified later,
     // or it's at the end of the list meaning it's out of bounds.
-    all: Vec<(u32, ValType)>,
+    uncached: Vec<(u32, ValType)>,
 }
 
 /// A Wasm control flow block on the control flow stack during Wasm validation.
@@ -120,10 +222,9 @@ pub struct OperatorValidatorAllocations {
     popped_types_tmp: Vec<MaybeType>,
     control: Vec<Frame>,
     operands: Vec<MaybeType>,
-    local_inits: Vec<bool>,
-    inits: Vec<u32>,
+    local_inits: LocalInits,
     locals_first: Vec<ValType>,
-    locals_all: Vec<(u32, ValType)>,
+    locals_uncached: Vec<(u32, ValType)>,
 }
 
 /// Type storage within the validator.
@@ -158,9 +259,10 @@ enum MaybeType<T = ValType> {
 // The validator is pretty performance-sensitive and `MaybeType` is the main
 // unit of storage, so assert that it doesn't exceed 4 bytes which is the
 // current expected size.
-const _: () = {
-    assert!(core::mem::size_of::<MaybeType>() == 4);
-};
+#[test]
+fn assert_maybe_type_small() {
+    assert!(core::mem::size_of::<MaybeType>() == 8);
+}
 
 impl core::fmt::Display for MaybeType {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -226,33 +328,30 @@ impl OperatorValidator {
             control,
             operands,
             local_inits,
-            inits,
             locals_first,
-            locals_all,
+            locals_uncached,
         } = allocs;
         debug_assert!(popped_types_tmp.is_empty());
         debug_assert!(control.is_empty());
         debug_assert!(operands.is_empty());
         debug_assert!(local_inits.is_empty());
-        debug_assert!(inits.is_empty());
+        debug_assert!(local_inits.is_empty());
         debug_assert!(locals_first.is_empty());
-        debug_assert!(locals_all.is_empty());
+        debug_assert!(locals_uncached.is_empty());
         OperatorValidator {
             locals: Locals {
                 num_locals: 0,
                 first: locals_first,
-                all: locals_all,
+                uncached: locals_uncached,
             },
             local_inits,
-            inits,
             features: *features,
             popped_types_tmp,
             operands,
             control,
-            end_which_emptied_control: None,
             shared: false,
             #[cfg(debug_assertions)]
-            pop_push_count: (0, 0),
+            pop_push_log: vec![],
         }
     }
 
@@ -293,8 +392,8 @@ impl OperatorValidator {
         if let CompositeInnerType::Func(func_ty) = &sub_ty.composite_type.inner {
             for ty in func_ty.params() {
                 ret.locals.define(1, *ty);
-                ret.local_inits.push(true);
             }
+            ret.local_inits.define_params(func_ty.params().len());
         } else {
             bail!(offset, "expected func type at index {ty}, found {sub_ty}")
         }
@@ -343,8 +442,7 @@ impl OperatorValidator {
                 offset,
             ));
         }
-        self.local_inits
-            .resize(self.local_inits.len() + count as usize, ty.is_defaultable());
+        self.local_inits.define_locals(count, ty);
         Ok(())
     }
 
@@ -375,6 +473,17 @@ impl OperatorValidator {
         self.control.len()
     }
 
+    /// Validates a relative jump to the `depth` specified.
+    ///
+    /// Returns the type signature of the block that we're jumping to as well
+    /// as the kind of block if the jump is valid. Otherwise returns an error.
+    pub(crate) fn jump(&self, depth: u32) -> Option<(BlockType, FrameKind)> {
+        assert!(!self.control.is_empty());
+        let i = (self.control.len() - 1).checked_sub(depth as usize)?;
+        let frame = &self.control[i];
+        Some((frame.block_type, frame.kind))
+    }
+
     pub fn get_frame(&self, depth: usize) -> Option<&Frame> {
         self.control.iter().rev().nth(depth)
     }
@@ -384,7 +493,7 @@ impl OperatorValidator {
         &'validator mut self,
         resources: &'resources T,
         offset: usize,
-    ) -> impl VisitOperator<'a, Output = Result<()>> + ModuleArity + 'validator
+    ) -> impl VisitOperator<'a, Output = Result<()>> + ModuleArity + FrameStack + 'validator
     where
         T: WasmModuleResources,
         'resources: 'validator,
@@ -396,29 +505,26 @@ impl OperatorValidator {
         })
     }
 
-    pub fn finish(&mut self, offset: usize) -> Result<()> {
-        if self.control.last().is_some() {
-            bail!(
-                offset,
-                "control frames remain at end of function: END opcode expected"
-            );
-        }
-
-        // The `end` opcode is one byte which means that the `offset` here
-        // should point just beyond the `end` opcode which emptied the control
-        // stack. If not that means more instructions were present after the
-        // control stack was emptied.
-        if offset != self.end_which_emptied_control.unwrap() + 1 {
-            return Err(self.err_beyond_end(offset));
-        }
-        Ok(())
+    /// Same as `with_resources` above but guarantees it's able to visit simd
+    /// operators as well.
+    #[cfg(feature = "simd")]
+    pub fn with_resources_simd<'a, 'validator, 'resources, T>(
+        &'validator mut self,
+        resources: &'resources T,
+        offset: usize,
+    ) -> impl VisitSimdOperator<'a, Output = Result<()>> + ModuleArity + 'validator
+    where
+        T: WasmModuleResources,
+        'resources: 'validator,
+    {
+        WasmProposalValidator(OperatorValidatorTemp {
+            offset,
+            inner: self,
+            resources,
+        })
     }
 
-    fn err_beyond_end(&self, offset: usize) -> BinaryReaderError {
-        format_err!(offset, "operators remaining after end of function")
-    }
-
-    pub fn into_allocations(self) -> OperatorValidatorAllocations {
+    pub fn into_allocations(mut self) -> OperatorValidatorAllocations {
         fn clear<T>(mut tmp: Vec<T>) -> Vec<T> {
             tmp.clear();
             tmp
@@ -427,24 +533,26 @@ impl OperatorValidator {
             popped_types_tmp: clear(self.popped_types_tmp),
             control: clear(self.control),
             operands: clear(self.operands),
-            local_inits: clear(self.local_inits),
-            inits: clear(self.inits),
+            local_inits: {
+                self.local_inits.clear();
+                self.local_inits
+            },
             locals_first: clear(self.locals.first),
-            locals_all: clear(self.locals.all),
+            locals_uncached: clear(self.locals.uncached),
         }
     }
 
     fn record_pop(&mut self) {
         #[cfg(debug_assertions)]
         {
-            self.pop_push_count.0 += 1;
+            self.pop_push_log.push(false);
         }
     }
 
     fn record_push(&mut self) {
         #[cfg(debug_assertions)]
         {
-            self.pop_push_count.1 += 1;
+            self.pop_push_log.push(true);
         }
     }
 }
@@ -480,7 +588,7 @@ where
         if cfg!(debug_assertions) {
             match maybe_ty {
                 MaybeType::Known(ValType::Ref(r)) => match r.heap_type() {
-                    HeapType::Concrete(index) => {
+                    HeapType::Concrete(index) | HeapType::Exact(index) => {
                         debug_assert!(
                             matches!(index, UnpackedIndex::Id(_)),
                             "only ref types referencing `CoreTypeId`s can \
@@ -512,6 +620,28 @@ where
         self.push_operand(ref_ty)
     }
 
+    fn push_exact_ref(&mut self, nullable: bool, type_index: u32) -> Result<()> {
+        let mut heap_ty = HeapType::Exact(UnpackedIndex::Module(type_index));
+
+        // Canonicalize the module index into an id.
+        self.resources.check_heap_type(&mut heap_ty, self.offset)?;
+        debug_assert!(matches!(heap_ty, HeapType::Exact(UnpackedIndex::Id(_))));
+
+        let ref_ty = RefType::new(nullable, heap_ty).ok_or_else(|| {
+            format_err!(self.offset, "implementation limit: type index too large")
+        })?;
+
+        self.push_operand(ref_ty)
+    }
+
+    fn push_exact_ref_if_available(&mut self, nullable: bool, type_index: u32) -> Result<()> {
+        if self.features.custom_descriptors() {
+            self.push_exact_ref(nullable, type_index)
+        } else {
+            self.push_concrete_ref(nullable, type_index)
+        }
+    }
+
     fn pop_concrete_ref(&mut self, nullable: bool, type_index: u32) -> Result<MaybeType> {
         let mut heap_ty = HeapType::Concrete(UnpackedIndex::Module(type_index));
 
@@ -524,6 +654,27 @@ where
         })?;
 
         self.pop_operand(Some(ref_ty.into()))
+    }
+
+    fn pop_concrete_or_exact_ref(
+        &mut self,
+        nullable: bool,
+        type_index: u32,
+    ) -> Result<(MaybeType, bool)> {
+        let ty = self.pop_concrete_ref(nullable, type_index)?;
+        let is_exact = match ty {
+            MaybeType::Known(ValType::Ref(rt)) if rt.is_exact_type_ref() || rt.is_none_ref() => {
+                let mut heap_ty = HeapType::Exact(UnpackedIndex::Module(type_index));
+                self.resources.check_heap_type(&mut heap_ty, self.offset)?;
+                let expected = RefType::new(nullable, heap_ty).ok_or_else(|| {
+                    format_err!(self.offset, "implementation limit: type index too large")
+                })?;
+                self.resources.is_subtype(rt.into(), expected.into())
+            }
+            MaybeType::Bottom => true,
+            _ => false,
+        };
+        Ok((ty, is_exact))
     }
 
     /// Pop the given label types, checking that they are indeed present on the
@@ -599,10 +750,7 @@ where
         popped: Option<MaybeType>,
     ) -> Result<MaybeType> {
         self.operands.extend(popped);
-        let control = match self.control.last() {
-            Some(c) => c,
-            None => return Err(self.err_beyond_end(self.offset)),
-        };
+        let control = self.control.last().unwrap();
         let actual = if self.operands.len() == control.height && control.unreachable {
             MaybeType::Bottom
         } else {
@@ -686,14 +834,8 @@ where
         actual: ValType,
         expected: ValType,
     ) -> Result<(), BinaryReaderError> {
-        #[cfg(debug_assertions)]
-        let tmp = self.pop_push_count;
         self.push_operand(actual)?;
         self.pop_operand(Some(expected))?;
-        #[cfg(debug_assertions)]
-        {
-            self.pop_push_count = tmp;
-        }
         Ok(())
     }
 
@@ -702,21 +844,20 @@ where
         &mut self,
         expected_tys: impl PreciseIterator<Item = ValType> + 'resources,
     ) -> Result<()> {
-        debug_assert!(self.popped_types_tmp.is_empty());
-        self.popped_types_tmp.reserve(expected_tys.len());
-        #[cfg(debug_assertions)]
-        let tmp = self.pop_push_count;
+        let mut popped_types_tmp = mem::take(&mut self.popped_types_tmp);
+        debug_assert!(popped_types_tmp.is_empty());
+        popped_types_tmp.reserve(expected_tys.len());
+
         for expected_ty in expected_tys.rev() {
             let actual_ty = self.pop_operand(Some(expected_ty))?;
-            self.popped_types_tmp.push(actual_ty);
+            popped_types_tmp.push(actual_ty);
         }
-        for ty in self.inner.popped_types_tmp.drain(..).rev() {
-            self.inner.operands.push(ty.into());
+        for ty in popped_types_tmp.drain(..).rev() {
+            self.push_operand(ty)?;
         }
-        #[cfg(debug_assertions)]
-        {
-            self.pop_push_count = tmp;
-        }
+
+        debug_assert!(self.popped_types_tmp.is_empty());
+        self.popped_types_tmp = popped_types_tmp;
         Ok(())
     }
 
@@ -796,10 +937,7 @@ where
     /// Flags the current control frame as unreachable, additionally truncating
     /// the currently active operand stack.
     fn unreachable(&mut self) -> Result<()> {
-        let control = match self.control.last_mut() {
-            Some(frame) => frame,
-            None => return Err(self.err_beyond_end(self.offset)),
-        };
+        let control = self.control.last_mut().unwrap();
         control.unreachable = true;
         let new_height = control.height;
         self.operands.truncate(new_height);
@@ -816,7 +954,7 @@ where
         // Push a new frame which has a snapshot of the height of the current
         // operand stack.
         let height = self.operands.len();
-        let init_height = self.inits.len();
+        let init_height = self.local_inits.push_ctrl();
         self.control.push(Frame {
             kind,
             block_type: ty,
@@ -839,18 +977,13 @@ where
     fn pop_ctrl(&mut self) -> Result<Frame> {
         // Read the expected type and expected height of the operand stack the
         // end of the frame.
-        let frame = match self.control.last() {
-            Some(f) => f,
-            None => return Err(self.err_beyond_end(self.offset)),
-        };
+        let frame = self.control.last().unwrap();
         let ty = frame.block_type;
         let height = frame.height;
         let init_height = frame.init_height;
 
         // reset_locals in the spec
-        for init in self.inits.split_off(init_height) {
-            self.local_inits[init as usize] = false;
-        }
+        self.local_inits.pop_ctrl(init_height);
 
         // Pop all the result types, in reverse order, from the operand stack.
         // These types will, possibly, be transferred to the next frame.
@@ -876,14 +1009,8 @@ where
     /// Returns the type signature of the block that we're jumping to as well
     /// as the kind of block if the jump is valid. Otherwise returns an error.
     fn jump(&self, depth: u32) -> Result<(BlockType, FrameKind)> {
-        if self.control.is_empty() {
-            return Err(self.err_beyond_end(self.offset));
-        }
-        match (self.control.len() - 1).checked_sub(depth as usize) {
-            Some(i) => {
-                let frame = &self.control[i];
-                Ok((frame.block_type, frame.kind))
-            }
+        match self.inner.jump(depth) {
+            Some(tup) => Ok(tup),
             None => bail!(self.offset, "unknown label: branch depth too large"),
         }
     }
@@ -904,7 +1031,7 @@ where
         if memarg.align > memarg.max_align {
             bail!(
                 self.offset,
-                "malformed memop alignment: alignment must not be larger than natural"
+                "invalid memop alignment: alignment must not be larger than natural"
             );
         }
         if index_ty == ValType::I32 && memarg.offset > u64::from(u32::MAX) {
@@ -928,13 +1055,6 @@ where
             );
         }
         self.check_memory_index(memarg.memory)
-    }
-
-    fn check_simd_lane_index(&self, index: u8, max: u8) -> Result<()> {
-        if index >= max {
-            bail!(self.offset, "SIMD index out of bounds");
-        }
-        Ok(())
     }
 
     /// Validates a block type, primarily with various in-flight proposals.
@@ -996,18 +1116,12 @@ where
             self.pop_operand(Some(ty))?;
         }
 
-        // Match the results with this function's, but don't include in pop/push counts.
-        #[cfg(debug_assertions)]
-        let tmp = self.pop_push_count;
+        // Match the results with this function's.
         for &ty in ty.results() {
             debug_assert_type_indices_are_ids(ty);
             self.push_operand(ty)?;
         }
         self.check_return()?;
-        #[cfg(debug_assertions)]
-        {
-            self.pop_push_count = tmp;
-        }
 
         Ok(())
     }
@@ -1049,7 +1163,7 @@ where
         {
             bail!(
                 self.offset,
-                "indirect calls must go through a table with type <= funcref",
+                "type mismatch: indirect calls must go through a table with type <= funcref",
             );
         }
         self.pop_operand(Some(tab.index_type()))?;
@@ -1059,9 +1173,7 @@ where
     /// Validates a `return` instruction, popping types from the operand
     /// stack that the function needs.
     fn check_return(&mut self) -> Result<()> {
-        if self.control.is_empty() {
-            return Err(self.err_beyond_end(self.offset));
-        }
+        assert!(!self.control.is_empty());
         for ty in self.results(self.control[0].block_type)?.rev() {
             self.pop_operand(Some(ty))?;
         }
@@ -1072,9 +1184,7 @@ where
     /// Check that the given type has the same result types as the current
     /// function's results.
     fn check_func_type_same_results(&self, callee_ty: &FuncType) -> Result<()> {
-        if self.control.is_empty() {
-            return Err(self.err_beyond_end(self.offset));
-        }
+        assert!(!self.control.is_empty());
         let caller_rets = self.results(self.control[0].block_type)?;
         if callee_ty.results().len() != caller_rets.len()
             || !caller_rets
@@ -1194,72 +1304,6 @@ where
         Ok(())
     }
 
-    /// Checks a [`V128`] splat operator.
-    fn check_v128_splat(&mut self, src_ty: ValType) -> Result<()> {
-        self.pop_operand(Some(src_ty))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-
-    /// Checks a [`V128`] binary operator.
-    fn check_v128_binary_op(&mut self) -> Result<()> {
-        self.pop_operand(Some(ValType::V128))?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-
-    /// Checks a [`V128`] binary float operator.
-    fn check_v128_fbinary_op(&mut self) -> Result<()> {
-        self.check_floats_enabled()?;
-        self.check_v128_binary_op()
-    }
-
-    /// Checks a [`V128`] unary operator.
-    fn check_v128_unary_op(&mut self) -> Result<()> {
-        self.pop_operand(Some(ValType::V128))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-
-    /// Checks a [`V128`] unary float operator.
-    fn check_v128_funary_op(&mut self) -> Result<()> {
-        self.check_floats_enabled()?;
-        self.check_v128_unary_op()
-    }
-
-    /// Checks a [`V128`] relaxed ternary operator.
-    fn check_v128_ternary_op(&mut self) -> Result<()> {
-        self.pop_operand(Some(ValType::V128))?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-
-    /// Checks a [`V128`] test operator.
-    fn check_v128_bitmask_op(&mut self) -> Result<()> {
-        self.pop_operand(Some(ValType::V128))?;
-        self.push_operand(ValType::I32)?;
-        Ok(())
-    }
-
-    /// Checks a [`V128`] shift operator.
-    fn check_v128_shift_op(&mut self) -> Result<()> {
-        self.pop_operand(Some(ValType::I32))?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-
-    /// Checks a [`V128`] common load operator.
-    fn check_v128_load_op(&mut self, memarg: MemArg) -> Result<()> {
-        let idx = self.check_memarg(memarg)?;
-        self.pop_operand(Some(idx))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-
     /// Common helper for `ref.test` and `ref.cast` downcasting/checking
     /// instructions. Returns the given `heap_type` as a `ValType`.
     fn check_downcast(&mut self, nullable: bool, mut heap_type: HeapType) -> Result<RefType> {
@@ -1288,6 +1332,120 @@ where
     fn check_ref_cast(&mut self, nullable: bool, heap_type: HeapType) -> Result<()> {
         let sub_ty = self.check_downcast(nullable, heap_type)?;
         self.push_operand(sub_ty)
+    }
+
+    /// Common helper to check type hierarchy for `br_on_cast` operators.
+    fn check_br_on_cast_type_hierarchy(
+        &self,
+        from_ref_type: RefType,
+        to_ref_type: RefType,
+    ) -> Result<()> {
+        if self.features.custom_descriptors() {
+            // The constraint C |- rt_2 <: rt_1 on branching cast instructions
+            // before the custom descriptors proposal is relaxed to the constraint
+            // that rt_1 and rt_2 share some arbitrary valid supertype rt', i.e.
+            // that rt_1 and rt_2 must be in the same heap type hierarchy.
+            let from_ref_type_top = self.resources.top_type(&from_ref_type.heap_type());
+            let to_ref_type_top = self.resources.top_type(&to_ref_type.heap_type());
+            if from_ref_type_top != to_ref_type_top {
+                bail!(
+                    self.offset,
+                    "type mismatch: {from_ref_type} and {to_ref_type} have different heap type hierarchies"
+                );
+            }
+            return Ok(());
+        }
+
+        if !self
+            .resources
+            .is_subtype(to_ref_type.into(), from_ref_type.into())
+        {
+            bail!(
+                self.offset,
+                "type mismatch: expected {from_ref_type}, found {to_ref_type}"
+            );
+        }
+        Ok(())
+    }
+
+    /// Common helper to check descriptor for the specified type.
+    fn check_descriptor(&self, heap_type: HeapType) -> Result<u32> {
+        Ok(match heap_type {
+            HeapType::Exact(idx) | HeapType::Concrete(idx) => {
+                if let Some(descriptor_idx) = self
+                    .sub_type_at(idx.as_module_index().unwrap())?
+                    .composite_type
+                    .descriptor_idx
+                {
+                    u32::try_from(crate::validator::types::TypeIdentifier::index(
+                        &descriptor_idx.as_core_type_id().unwrap(),
+                    ))
+                    .unwrap()
+                } else {
+                    bail!(self.offset, "cast target must have descriptor")
+                }
+            }
+            _ => bail!(self.offset, "unexpected heap type"),
+        })
+    }
+
+    fn check_maybe_exact_descriptor_ref(&mut self, heap_type: HeapType) -> Result<bool> {
+        let descriptor_idx = self.check_descriptor(heap_type)?;
+        let (ty, _is_exact) = self.pop_concrete_or_exact_ref(true, descriptor_idx)?;
+        let is_exact = if let HeapType::Exact(_) = heap_type {
+            let mut descriptor_ty = HeapType::Exact(UnpackedIndex::Module(descriptor_idx));
+            self.resources
+                .check_heap_type(&mut descriptor_ty, self.offset)?;
+            let descriptor_ty = ValType::Ref(
+                RefType::new(true, descriptor_ty)
+                    .expect("existing heap types should be within our limits"),
+            );
+
+            match ty {
+                MaybeType::Known(actual) if !self.resources.is_subtype(actual, descriptor_ty) => {
+                    bail!(
+                        self.offset,
+                        "type mismatch: expected descriptor of exact type {descriptor_ty} found {actual}",
+                    );
+                }
+                _ => (),
+            }
+            true
+        } else {
+            false
+        };
+        Ok(is_exact)
+    }
+
+    /// Common helper for both nullable and non-nullable variants of `ref.cast_desc`
+    /// instructions.
+    fn check_ref_cast_desc(&mut self, nullable: bool, heap_type: HeapType) -> Result<()> {
+        let is_exact = self.check_maybe_exact_descriptor_ref(heap_type)?;
+
+        self.check_downcast(nullable, heap_type)?;
+
+        let idx = {
+            let mut heap_type = heap_type;
+            self.resources
+                .check_heap_type(&mut heap_type, self.offset)?;
+            match heap_type {
+                HeapType::Concrete(index) | HeapType::Exact(index) => {
+                    index.pack().ok_or_else(|| {
+                        BinaryReaderError::new(
+                            "implementation limit: type index too large",
+                            self.offset,
+                        )
+                    })?
+                }
+                _ => panic!(),
+            }
+        };
+
+        self.push_operand(if is_exact {
+            RefType::exact(nullable, idx)
+        } else {
+            RefType::concrete(nullable, idx)
+        })
     }
 
     /// Common helper for checking the types of globals accessed with atomic RMW
@@ -1582,43 +1740,58 @@ where
                     // Pop the continuation reference.
                     match self.label_types(block.0, block.1)?.last() {
                         Some(ValType::Ref(rt)) if rt.is_concrete_type_ref() => {
-                            let sub_ty = self.resources.sub_type_at_id(rt.type_index().unwrap().as_core_type_id().expect("canonicalized index"));
-                            let new_cont =
-                                if let CompositeInnerType::Cont(cont) = &sub_ty.composite_type.inner {
-                                    cont
-                                } else {
-                                    bail!(self.offset, "non-continuation type");
-                                };
+                            let sub_ty = self.resources.sub_type_at_id(
+                                rt.type_index()
+                                    .unwrap()
+                                    .as_core_type_id()
+                                    .expect("canonicalized index"),
+                            );
+                            let new_cont = if let CompositeInnerType::Cont(cont) =
+                                &sub_ty.composite_type.inner
+                            {
+                                cont
+                            } else {
+                                bail!(self.offset, "non-continuation type");
+                            };
                             let new_func_ty = self.func_type_of_cont_type(&new_cont);
                             // Check that (ts2' -> ts2) <: $ft
-                            if new_func_ty.params().len() != tag_ty.results().len() || !self.is_subtype_many(new_func_ty.params(), tag_ty.results())
-                                || old_func_ty.results().len() != new_func_ty.results().len() || !self.is_subtype_many(old_func_ty.results(), new_func_ty.results()) {
+                            if new_func_ty.params().len() != tag_ty.results().len()
+                                || !self.is_subtype_many(new_func_ty.params(), tag_ty.results())
+                                || old_func_ty.results().len() != new_func_ty.results().len()
+                                || !self
+                                    .is_subtype_many(old_func_ty.results(), new_func_ty.results())
+                            {
                                 bail!(self.offset, "type mismatch in continuation type")
                             }
                             let expected_nargs = tag_ty.params().len() + 1;
-                            let actual_nargs = self
-                                .label_types(block.0, block.1)?
-                                .len();
+                            let actual_nargs = self.label_types(block.0, block.1)?.len();
                             if actual_nargs != expected_nargs {
-                                bail!(self.offset, "type mismatch: expected {expected_nargs} label result(s), but label is annotated with {actual_nargs} results")
+                                bail!(
+                                    self.offset,
+                                    "type mismatch: expected {expected_nargs} label result(s), but label is annotated with {actual_nargs} results"
+                                )
                             }
 
-                            let labeltys = self
-                                .label_types(block.0, block.1)?
-                                .take(expected_nargs - 1);
+                            let labeltys =
+                                self.label_types(block.0, block.1)?.take(expected_nargs - 1);
 
                             // Check that ts1'' <: ts1'.
                             for (tagty, &lblty) in labeltys.zip(tag_ty.params()) {
                                 if !self.resources.is_subtype(lblty, tagty) {
-                                    bail!(self.offset, "type mismatch between tag type and label type")
+                                    bail!(
+                                        self.offset,
+                                        "type mismatch between tag type and label type"
+                                    )
                                 }
                             }
                         }
                         Some(ty) => {
                             bail!(self.offset, "type mismatch: {}", ty_to_str(ty))
                         }
-                        _ => bail!(self.offset,
-                                   "type mismatch: instruction requires continuation reference type but label has none")
+                        _ => bail!(
+                            self.offset,
+                            "type mismatch: instruction requires continuation reference type but label has none"
+                        ),
                     }
                 }
                 Handle::OnSwitch { tag } => {
@@ -1658,6 +1831,13 @@ where
         self.push_operand(ValType::I64)?;
         Ok(())
     }
+
+    fn check_enabled(&self, flag: bool, desc: &str) -> Result<()> {
+        if flag {
+            return Ok(());
+        }
+        bail!(self.offset, "{desc} support is not enabled");
+    }
 }
 
 pub fn ty_to_str(ty: ValType) -> &'static str {
@@ -1683,28 +1863,27 @@ struct WasmProposalValidator<'validator, 'resources, T>(
     OperatorValidatorTemp<'validator, 'resources, T>,
 );
 
-impl<T> WasmProposalValidator<'_, '_, T> {
-    fn check_enabled(&self, flag: bool, desc: &str) -> Result<()> {
-        if flag {
-            return Ok(());
-        }
-        bail!(self.0.offset, "{desc} support is not enabled");
-    }
-}
-
+#[cfg_attr(not(feature = "simd"), allow(unused_macro_rules))]
 macro_rules! validate_proposal {
     ($( @$proposal:ident $op:ident $({ $($arg:ident: $argty:ty),* })? => $visit:ident ($($ann:tt)*))*) => {
         $(
             fn $visit(&mut self $($(,$arg: $argty)*)?) -> Result<()> {
-                validate_proposal!(validate self $proposal);
+                validate_proposal!(validate self $proposal / $op);
                 self.0.$visit($( $($arg),* )?)
             }
         )*
     };
 
-    (validate self mvp) => {};
-    (validate $self:ident $proposal:ident) => {
-        $self.check_enabled($self.0.features.$proposal(), validate_proposal!(desc $proposal))?
+    (validate self mvp / $op:ident) => {};
+
+    // These opcodes are handled specially below as they were introduced in the
+    // bulk memory proposal but are gated by the `bulk_memory_opt`
+    // "sub-proposal".
+    (validate self $proposal:ident / MemoryFill) => {};
+    (validate self $proposal:ident / MemoryCopy) => {};
+
+    (validate $self:ident $proposal:ident / $op:ident) => {
+        $self.0.check_enabled($self.0.features.$proposal(), validate_proposal!(desc $proposal))?
     };
 
     (desc simd) => ("SIMD");
@@ -1723,6 +1902,7 @@ macro_rules! validate_proposal {
     (desc legacy_exceptions) => ("legacy exceptions");
     (desc stack_switching) => ("stack switching");
     (desc wide_arithmetic) => ("wide arithmetic");
+    (desc custom_descriptors) => ("custom descriptors operations");
 }
 
 impl<'a, T> VisitOperator<'a> for WasmProposalValidator<'_, '_, T>
@@ -1731,7 +1911,20 @@ where
 {
     type Output = Result<()>;
 
-    for_each_operator!(validate_proposal);
+    #[cfg(feature = "simd")]
+    fn simd_visitor(&mut self) -> Option<&mut dyn VisitSimdOperator<'a, Output = Self::Output>> {
+        Some(self)
+    }
+
+    crate::for_each_visit_operator!(validate_proposal);
+}
+
+#[cfg(feature = "simd")]
+impl<'a, T> VisitSimdOperator<'a> for WasmProposalValidator<'_, '_, T>
+where
+    T: WasmModuleResources,
+{
+    crate::for_each_visit_simd_operator!(validate_proposal);
 }
 
 #[track_caller]
@@ -1754,6 +1947,11 @@ where
     T: WasmModuleResources,
 {
     type Output = Result<()>;
+
+    #[cfg(feature = "simd")]
+    fn simd_visitor(&mut self) -> Option<&mut dyn VisitSimdOperator<'a, Output = Self::Output>> {
+        Some(self)
+    }
 
     fn visit_nop(&mut self) -> Self::Output {
         Ok(())
@@ -1903,10 +2101,8 @@ where
         for ty in self.results(frame.block_type)? {
             self.push_operand(ty)?;
         }
-
-        if self.control.is_empty() && self.end_which_emptied_control.is_none() {
+        if self.control.is_empty() {
             assert_ne!(self.offset, 0);
-            self.end_which_emptied_control = Some(self.offset);
         }
         Ok(())
     }
@@ -2031,10 +2227,14 @@ where
         self.push_operand(ty)?;
         Ok(())
     }
+    fn visit_typed_select_multi(&mut self, tys: Vec<ValType>) -> Self::Output {
+        debug_assert!(tys.len() != 1);
+        bail!(self.offset, "invalid result arity");
+    }
     fn visit_local_get(&mut self, local_index: u32) -> Self::Output {
         let ty = self.local(local_index)?;
         debug_assert_type_indices_are_ids(ty);
-        if !self.local_inits[local_index as usize] {
+        if self.local_inits.is_uninit(local_index) {
             bail!(self.offset, "uninitialized local: {}", local_index);
         }
         self.push_operand(ty)?;
@@ -2043,20 +2243,13 @@ where
     fn visit_local_set(&mut self, local_index: u32) -> Self::Output {
         let ty = self.local(local_index)?;
         self.pop_operand(Some(ty))?;
-        if !self.local_inits[local_index as usize] {
-            self.local_inits[local_index as usize] = true;
-            self.inits.push(local_index);
-        }
+        self.local_inits.set_init(local_index);
         Ok(())
     }
     fn visit_local_tee(&mut self, local_index: u32) -> Self::Output {
         let expected_ty = self.local(local_index)?;
         self.pop_operand(Some(expected_ty))?;
-        if !self.local_inits[local_index as usize] {
-            self.local_inits[local_index as usize] = true;
-            self.inits.push(local_index);
-        }
-
+        self.local_inits.set_init(local_index);
         self.push_operand(expected_ty)?;
         Ok(())
     }
@@ -2074,7 +2267,10 @@ where
         let ty = self.global_type_at(global_index)?.content_type;
         let supertype = RefType::ANYREF.into();
         if !(ty == ValType::I32 || ty == ValType::I64 || self.resources.is_subtype(ty, supertype)) {
-            bail!(self.offset, "invalid type: `global.atomic.get` only allows `i32`, `i64` and subtypes of `anyref`");
+            bail!(
+                self.offset,
+                "invalid type: `global.atomic.get` only allows `i32`, `i64` and subtypes of `anyref`"
+            );
         }
         Ok(())
     }
@@ -2096,7 +2292,10 @@ where
         let ty = self.global_type_at(global_index)?.content_type;
         let supertype = RefType::ANYREF.into();
         if !(ty == ValType::I32 || ty == ValType::I64 || self.resources.is_subtype(ty, supertype)) {
-            bail!(self.offset, "invalid type: `global.atomic.set` only allows `i32`, `i64` and subtypes of `anyref`");
+            bail!(
+                self.offset,
+                "invalid type: `global.atomic.set` only allows `i32`, `i64` and subtypes of `anyref`"
+            );
         }
         Ok(())
     }
@@ -2150,7 +2349,10 @@ where
             || ty == ValType::I64
             || self.resources.is_subtype(ty, RefType::ANYREF.into()))
         {
-            bail!(self.offset, "invalid type: `global.atomic.rmw.xchg` only allows `i32`, `i64` and subtypes of `anyref`");
+            bail!(
+                self.offset,
+                "invalid type: `global.atomic.rmw.xchg` only allows `i32`, `i64` and subtypes of `anyref`"
+            );
         }
         self.check_unary_op(ty)
     }
@@ -2164,7 +2366,10 @@ where
             || ty == ValType::I64
             || self.resources.is_subtype(ty, RefType::EQREF.into()))
         {
-            bail!(self.offset, "invalid type: `global.atomic.rmw.cmpxchg` only allows `i32`, `i64` and subtypes of `eqref`");
+            bail!(
+                self.offset,
+                "invalid type: `global.atomic.rmw.cmpxchg` only allows `i32`, `i64` and subtypes of `eqref`"
+            );
         }
         self.check_binary_op(ty)
     }
@@ -3015,11 +3220,16 @@ where
         }
 
         let index = UnpackedIndex::Id(type_id);
-        let ty = ValType::Ref(
-            RefType::new(false, HeapType::Concrete(index)).ok_or_else(|| {
-                BinaryReaderError::new("implementation limit: type index too large", self.offset)
-            })?,
-        );
+        let hty = if self.features.custom_descriptors()
+            && self.resources.has_function_exact_type(function_index)
+        {
+            HeapType::Exact(index)
+        } else {
+            HeapType::Concrete(index)
+        };
+        let ty = ValType::Ref(RefType::new(false, hty).ok_or_else(|| {
+            BinaryReaderError::new("implementation limit: type index too large", self.offset)
+        })?);
         self.push_operand(ty)?;
         Ok(())
     }
@@ -3044,890 +3254,6 @@ where
         }
         self.push_operand(ValType::I32)
     }
-    fn visit_v128_load(&mut self, memarg: MemArg) -> Self::Output {
-        let ty = self.check_memarg(memarg)?;
-        self.pop_operand(Some(ty))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-    fn visit_v128_store(&mut self, memarg: MemArg) -> Self::Output {
-        let ty = self.check_memarg(memarg)?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.pop_operand(Some(ty))?;
-        Ok(())
-    }
-    fn visit_v128_const(&mut self, _value: V128) -> Self::Output {
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-    fn visit_i8x16_splat(&mut self) -> Self::Output {
-        self.check_v128_splat(ValType::I32)
-    }
-    fn visit_i16x8_splat(&mut self) -> Self::Output {
-        self.check_v128_splat(ValType::I32)
-    }
-    fn visit_i32x4_splat(&mut self) -> Self::Output {
-        self.check_v128_splat(ValType::I32)
-    }
-    fn visit_i64x2_splat(&mut self) -> Self::Output {
-        self.check_v128_splat(ValType::I64)
-    }
-    fn visit_f32x4_splat(&mut self) -> Self::Output {
-        self.check_floats_enabled()?;
-        self.check_v128_splat(ValType::F32)
-    }
-    fn visit_f64x2_splat(&mut self) -> Self::Output {
-        self.check_floats_enabled()?;
-        self.check_v128_splat(ValType::F64)
-    }
-    fn visit_i8x16_extract_lane_s(&mut self, lane: u8) -> Self::Output {
-        self.check_simd_lane_index(lane, 16)?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.push_operand(ValType::I32)?;
-        Ok(())
-    }
-    fn visit_i8x16_extract_lane_u(&mut self, lane: u8) -> Self::Output {
-        self.visit_i8x16_extract_lane_s(lane)
-    }
-    fn visit_i16x8_extract_lane_s(&mut self, lane: u8) -> Self::Output {
-        self.check_simd_lane_index(lane, 8)?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.push_operand(ValType::I32)?;
-        Ok(())
-    }
-    fn visit_i16x8_extract_lane_u(&mut self, lane: u8) -> Self::Output {
-        self.visit_i16x8_extract_lane_s(lane)
-    }
-    fn visit_i32x4_extract_lane(&mut self, lane: u8) -> Self::Output {
-        self.check_simd_lane_index(lane, 4)?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.push_operand(ValType::I32)?;
-        Ok(())
-    }
-    fn visit_i8x16_replace_lane(&mut self, lane: u8) -> Self::Output {
-        self.check_simd_lane_index(lane, 16)?;
-        self.pop_operand(Some(ValType::I32))?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-    fn visit_i16x8_replace_lane(&mut self, lane: u8) -> Self::Output {
-        self.check_simd_lane_index(lane, 8)?;
-        self.pop_operand(Some(ValType::I32))?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-    fn visit_i32x4_replace_lane(&mut self, lane: u8) -> Self::Output {
-        self.check_simd_lane_index(lane, 4)?;
-        self.pop_operand(Some(ValType::I32))?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-    fn visit_i64x2_extract_lane(&mut self, lane: u8) -> Self::Output {
-        self.check_simd_lane_index(lane, 2)?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.push_operand(ValType::I64)?;
-        Ok(())
-    }
-    fn visit_i64x2_replace_lane(&mut self, lane: u8) -> Self::Output {
-        self.check_simd_lane_index(lane, 2)?;
-        self.pop_operand(Some(ValType::I64))?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-    fn visit_f32x4_extract_lane(&mut self, lane: u8) -> Self::Output {
-        self.check_floats_enabled()?;
-        self.check_simd_lane_index(lane, 4)?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.push_operand(ValType::F32)?;
-        Ok(())
-    }
-    fn visit_f32x4_replace_lane(&mut self, lane: u8) -> Self::Output {
-        self.check_floats_enabled()?;
-        self.check_simd_lane_index(lane, 4)?;
-        self.pop_operand(Some(ValType::F32))?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-    fn visit_f64x2_extract_lane(&mut self, lane: u8) -> Self::Output {
-        self.check_floats_enabled()?;
-        self.check_simd_lane_index(lane, 2)?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.push_operand(ValType::F64)?;
-        Ok(())
-    }
-    fn visit_f64x2_replace_lane(&mut self, lane: u8) -> Self::Output {
-        self.check_floats_enabled()?;
-        self.check_simd_lane_index(lane, 2)?;
-        self.pop_operand(Some(ValType::F64))?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-    fn visit_f32x4_eq(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f32x4_ne(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f32x4_lt(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f32x4_gt(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f32x4_le(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f32x4_ge(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f64x2_eq(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f64x2_ne(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f64x2_lt(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f64x2_gt(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f64x2_le(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f64x2_ge(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f32x4_add(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f32x4_sub(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f32x4_mul(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f32x4_div(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f32x4_min(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f32x4_max(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f32x4_pmin(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f32x4_pmax(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f64x2_add(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f64x2_sub(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f64x2_mul(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f64x2_div(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f64x2_min(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f64x2_max(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f64x2_pmin(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_f64x2_pmax(&mut self) -> Self::Output {
-        self.check_v128_fbinary_op()
-    }
-    fn visit_i8x16_eq(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_ne(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_lt_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_lt_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_gt_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_gt_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_le_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_le_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_ge_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_ge_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_eq(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_ne(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_lt_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_lt_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_gt_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_gt_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_le_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_le_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_ge_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_ge_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_eq(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_ne(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_lt_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_lt_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_gt_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_gt_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_le_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_le_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_ge_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_ge_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i64x2_eq(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i64x2_ne(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i64x2_lt_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i64x2_gt_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i64x2_le_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i64x2_ge_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_v128_and(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_v128_andnot(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_v128_or(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_v128_xor(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_add(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_add_sat_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_add_sat_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_sub(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_sub_sat_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_sub_sat_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_min_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_min_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_max_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_max_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_add(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_add_sat_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_add_sat_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_sub(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_sub_sat_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_sub_sat_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_mul(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_min_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_min_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_max_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_max_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_add(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_sub(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_mul(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_min_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_min_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_max_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_max_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_dot_i16x8_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i64x2_add(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i64x2_sub(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i64x2_mul(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_avgr_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_avgr_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_narrow_i16x8_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i8x16_narrow_i16x8_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_narrow_i32x4_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_narrow_i32x4_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_extmul_low_i8x16_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_extmul_high_i8x16_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_extmul_low_i8x16_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_extmul_high_i8x16_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_extmul_low_i16x8_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_extmul_high_i16x8_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_extmul_low_i16x8_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_extmul_high_i16x8_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i64x2_extmul_low_i32x4_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i64x2_extmul_high_i32x4_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i64x2_extmul_low_i32x4_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i64x2_extmul_high_i32x4_u(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_q15mulr_sat_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_f32x4_ceil(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_f32x4_floor(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_f32x4_trunc(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_f32x4_nearest(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_f64x2_ceil(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_f64x2_floor(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_f64x2_trunc(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_f64x2_nearest(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_f32x4_abs(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_f32x4_neg(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_f32x4_sqrt(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_f64x2_abs(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_f64x2_neg(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_f64x2_sqrt(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_f32x4_demote_f64x2_zero(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_f64x2_promote_low_f32x4(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_f64x2_convert_low_i32x4_s(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_f64x2_convert_low_i32x4_u(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_i32x4_trunc_sat_f32x4_s(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_i32x4_trunc_sat_f32x4_u(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_i32x4_trunc_sat_f64x2_s_zero(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_i32x4_trunc_sat_f64x2_u_zero(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_f32x4_convert_i32x4_s(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_f32x4_convert_i32x4_u(&mut self) -> Self::Output {
-        self.check_v128_funary_op()
-    }
-    fn visit_v128_not(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i8x16_abs(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i8x16_neg(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i8x16_popcnt(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i16x8_abs(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i16x8_neg(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i32x4_abs(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i32x4_neg(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i64x2_abs(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i64x2_neg(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i16x8_extend_low_i8x16_s(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i16x8_extend_high_i8x16_s(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i16x8_extend_low_i8x16_u(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i16x8_extend_high_i8x16_u(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i32x4_extend_low_i16x8_s(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i32x4_extend_high_i16x8_s(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i32x4_extend_low_i16x8_u(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i32x4_extend_high_i16x8_u(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i64x2_extend_low_i32x4_s(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i64x2_extend_high_i32x4_s(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i64x2_extend_low_i32x4_u(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i64x2_extend_high_i32x4_u(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i16x8_extadd_pairwise_i8x16_s(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i16x8_extadd_pairwise_i8x16_u(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i32x4_extadd_pairwise_i16x8_s(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i32x4_extadd_pairwise_i16x8_u(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_v128_bitselect(&mut self) -> Self::Output {
-        self.pop_operand(Some(ValType::V128))?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-    fn visit_i8x16_relaxed_swizzle(&mut self) -> Self::Output {
-        self.pop_operand(Some(ValType::V128))?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-    fn visit_i32x4_relaxed_trunc_f32x4_s(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i32x4_relaxed_trunc_f32x4_u(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i32x4_relaxed_trunc_f64x2_s_zero(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_i32x4_relaxed_trunc_f64x2_u_zero(&mut self) -> Self::Output {
-        self.check_v128_unary_op()
-    }
-    fn visit_f32x4_relaxed_madd(&mut self) -> Self::Output {
-        self.check_v128_ternary_op()
-    }
-    fn visit_f32x4_relaxed_nmadd(&mut self) -> Self::Output {
-        self.check_v128_ternary_op()
-    }
-    fn visit_f64x2_relaxed_madd(&mut self) -> Self::Output {
-        self.check_v128_ternary_op()
-    }
-    fn visit_f64x2_relaxed_nmadd(&mut self) -> Self::Output {
-        self.check_v128_ternary_op()
-    }
-    fn visit_i8x16_relaxed_laneselect(&mut self) -> Self::Output {
-        self.check_v128_ternary_op()
-    }
-    fn visit_i16x8_relaxed_laneselect(&mut self) -> Self::Output {
-        self.check_v128_ternary_op()
-    }
-    fn visit_i32x4_relaxed_laneselect(&mut self) -> Self::Output {
-        self.check_v128_ternary_op()
-    }
-    fn visit_i64x2_relaxed_laneselect(&mut self) -> Self::Output {
-        self.check_v128_ternary_op()
-    }
-    fn visit_f32x4_relaxed_min(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_f32x4_relaxed_max(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_f64x2_relaxed_min(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_f64x2_relaxed_max(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_relaxed_q15mulr_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i16x8_relaxed_dot_i8x16_i7x16_s(&mut self) -> Self::Output {
-        self.check_v128_binary_op()
-    }
-    fn visit_i32x4_relaxed_dot_i8x16_i7x16_add_s(&mut self) -> Self::Output {
-        self.check_v128_ternary_op()
-    }
-    fn visit_v128_any_true(&mut self) -> Self::Output {
-        self.check_v128_bitmask_op()
-    }
-    fn visit_i8x16_all_true(&mut self) -> Self::Output {
-        self.check_v128_bitmask_op()
-    }
-    fn visit_i8x16_bitmask(&mut self) -> Self::Output {
-        self.check_v128_bitmask_op()
-    }
-    fn visit_i16x8_all_true(&mut self) -> Self::Output {
-        self.check_v128_bitmask_op()
-    }
-    fn visit_i16x8_bitmask(&mut self) -> Self::Output {
-        self.check_v128_bitmask_op()
-    }
-    fn visit_i32x4_all_true(&mut self) -> Self::Output {
-        self.check_v128_bitmask_op()
-    }
-    fn visit_i32x4_bitmask(&mut self) -> Self::Output {
-        self.check_v128_bitmask_op()
-    }
-    fn visit_i64x2_all_true(&mut self) -> Self::Output {
-        self.check_v128_bitmask_op()
-    }
-    fn visit_i64x2_bitmask(&mut self) -> Self::Output {
-        self.check_v128_bitmask_op()
-    }
-    fn visit_i8x16_shl(&mut self) -> Self::Output {
-        self.check_v128_shift_op()
-    }
-    fn visit_i8x16_shr_s(&mut self) -> Self::Output {
-        self.check_v128_shift_op()
-    }
-    fn visit_i8x16_shr_u(&mut self) -> Self::Output {
-        self.check_v128_shift_op()
-    }
-    fn visit_i16x8_shl(&mut self) -> Self::Output {
-        self.check_v128_shift_op()
-    }
-    fn visit_i16x8_shr_s(&mut self) -> Self::Output {
-        self.check_v128_shift_op()
-    }
-    fn visit_i16x8_shr_u(&mut self) -> Self::Output {
-        self.check_v128_shift_op()
-    }
-    fn visit_i32x4_shl(&mut self) -> Self::Output {
-        self.check_v128_shift_op()
-    }
-    fn visit_i32x4_shr_s(&mut self) -> Self::Output {
-        self.check_v128_shift_op()
-    }
-    fn visit_i32x4_shr_u(&mut self) -> Self::Output {
-        self.check_v128_shift_op()
-    }
-    fn visit_i64x2_shl(&mut self) -> Self::Output {
-        self.check_v128_shift_op()
-    }
-    fn visit_i64x2_shr_s(&mut self) -> Self::Output {
-        self.check_v128_shift_op()
-    }
-    fn visit_i64x2_shr_u(&mut self) -> Self::Output {
-        self.check_v128_shift_op()
-    }
-    fn visit_i8x16_swizzle(&mut self) -> Self::Output {
-        self.pop_operand(Some(ValType::V128))?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-    fn visit_i8x16_shuffle(&mut self, lanes: [u8; 16]) -> Self::Output {
-        self.pop_operand(Some(ValType::V128))?;
-        self.pop_operand(Some(ValType::V128))?;
-        for i in lanes {
-            self.check_simd_lane_index(i, 32)?;
-        }
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-    fn visit_v128_load8_splat(&mut self, memarg: MemArg) -> Self::Output {
-        let ty = self.check_memarg(memarg)?;
-        self.pop_operand(Some(ty))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-    fn visit_v128_load16_splat(&mut self, memarg: MemArg) -> Self::Output {
-        let ty = self.check_memarg(memarg)?;
-        self.pop_operand(Some(ty))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-    fn visit_v128_load32_splat(&mut self, memarg: MemArg) -> Self::Output {
-        let ty = self.check_memarg(memarg)?;
-        self.pop_operand(Some(ty))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-    fn visit_v128_load32_zero(&mut self, memarg: MemArg) -> Self::Output {
-        self.visit_v128_load32_splat(memarg)
-    }
-    fn visit_v128_load64_splat(&mut self, memarg: MemArg) -> Self::Output {
-        self.check_v128_load_op(memarg)
-    }
-    fn visit_v128_load64_zero(&mut self, memarg: MemArg) -> Self::Output {
-        self.check_v128_load_op(memarg)
-    }
-    fn visit_v128_load8x8_s(&mut self, memarg: MemArg) -> Self::Output {
-        self.check_v128_load_op(memarg)
-    }
-    fn visit_v128_load8x8_u(&mut self, memarg: MemArg) -> Self::Output {
-        self.check_v128_load_op(memarg)
-    }
-    fn visit_v128_load16x4_s(&mut self, memarg: MemArg) -> Self::Output {
-        self.check_v128_load_op(memarg)
-    }
-    fn visit_v128_load16x4_u(&mut self, memarg: MemArg) -> Self::Output {
-        self.check_v128_load_op(memarg)
-    }
-    fn visit_v128_load32x2_s(&mut self, memarg: MemArg) -> Self::Output {
-        self.check_v128_load_op(memarg)
-    }
-    fn visit_v128_load32x2_u(&mut self, memarg: MemArg) -> Self::Output {
-        self.check_v128_load_op(memarg)
-    }
-    fn visit_v128_load8_lane(&mut self, memarg: MemArg, lane: u8) -> Self::Output {
-        let idx = self.check_memarg(memarg)?;
-        self.check_simd_lane_index(lane, 16)?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.pop_operand(Some(idx))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-    fn visit_v128_load16_lane(&mut self, memarg: MemArg, lane: u8) -> Self::Output {
-        let idx = self.check_memarg(memarg)?;
-        self.check_simd_lane_index(lane, 8)?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.pop_operand(Some(idx))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-    fn visit_v128_load32_lane(&mut self, memarg: MemArg, lane: u8) -> Self::Output {
-        let idx = self.check_memarg(memarg)?;
-        self.check_simd_lane_index(lane, 4)?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.pop_operand(Some(idx))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-    fn visit_v128_load64_lane(&mut self, memarg: MemArg, lane: u8) -> Self::Output {
-        let idx = self.check_memarg(memarg)?;
-        self.check_simd_lane_index(lane, 2)?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.pop_operand(Some(idx))?;
-        self.push_operand(ValType::V128)?;
-        Ok(())
-    }
-    fn visit_v128_store8_lane(&mut self, memarg: MemArg, lane: u8) -> Self::Output {
-        let idx = self.check_memarg(memarg)?;
-        self.check_simd_lane_index(lane, 16)?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.pop_operand(Some(idx))?;
-        Ok(())
-    }
-    fn visit_v128_store16_lane(&mut self, memarg: MemArg, lane: u8) -> Self::Output {
-        let idx = self.check_memarg(memarg)?;
-        self.check_simd_lane_index(lane, 8)?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.pop_operand(Some(idx))?;
-        Ok(())
-    }
-    fn visit_v128_store32_lane(&mut self, memarg: MemArg, lane: u8) -> Self::Output {
-        let idx = self.check_memarg(memarg)?;
-        self.check_simd_lane_index(lane, 4)?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.pop_operand(Some(idx))?;
-        Ok(())
-    }
-    fn visit_v128_store64_lane(&mut self, memarg: MemArg, lane: u8) -> Self::Output {
-        let idx = self.check_memarg(memarg)?;
-        self.check_simd_lane_index(lane, 2)?;
-        self.pop_operand(Some(ValType::V128))?;
-        self.pop_operand(Some(idx))?;
-        Ok(())
-    }
     fn visit_memory_init(&mut self, segment: u32, mem: u32) -> Self::Output {
         let ty = self.check_memory_index(mem)?;
         self.check_data_segment(segment)?;
@@ -3941,6 +3267,7 @@ where
         Ok(())
     }
     fn visit_memory_copy(&mut self, dst: u32, src: u32) -> Self::Output {
+        self.check_enabled(self.features.bulk_memory_opt(), "bulk memory")?;
         let dst_ty = self.check_memory_index(dst)?;
         let src_ty = self.check_memory_index(src)?;
 
@@ -3958,6 +3285,7 @@ where
         Ok(())
     }
     fn visit_memory_fill(&mut self, mem: u32) -> Self::Output {
+        self.check_enabled(self.features.bulk_memory_opt(), "bulk memory")?;
         let ty = self.check_memory_index(mem)?;
         self.pop_operand(Some(ty))?;
         self.pop_operand(Some(ValType::I32))?;
@@ -4110,14 +3438,32 @@ where
         Ok(())
     }
     fn visit_struct_new(&mut self, struct_type_index: u32) -> Self::Output {
+        if let Some(_) = self
+            .sub_type_at(struct_type_index)?
+            .composite_type
+            .descriptor_idx
+        {
+            bail!(
+                self.offset,
+                "type with descriptor requires descriptor allocation: `struct.new` with type {struct_type_index}"
+            );
+        }
+
         let struct_ty = self.struct_type_at(struct_type_index)?;
         for ty in struct_ty.fields.iter().rev() {
             self.pop_operand(Some(ty.element_type.unpack()))?;
         }
-        self.push_concrete_ref(false, struct_type_index)?;
+        self.push_exact_ref_if_available(false, struct_type_index)?;
         Ok(())
     }
     fn visit_struct_new_default(&mut self, type_index: u32) -> Self::Output {
+        if let Some(_) = self.sub_type_at(type_index)?.composite_type.descriptor_idx {
+            bail!(
+                self.offset,
+                "type with descriptor requires descriptor allocation: `struct.new_default` with type {type_index}"
+            );
+        }
+
         let ty = self.struct_type_at(type_index)?;
         for field in ty.fields.iter() {
             let val_ty = field.element_type.unpack();
@@ -4128,7 +3474,51 @@ where
                 );
             }
         }
-        self.push_concrete_ref(false, type_index)?;
+        self.push_exact_ref_if_available(false, type_index)?;
+        Ok(())
+    }
+    fn visit_struct_new_desc(&mut self, struct_type_index: u32) -> Self::Output {
+        if let Some(descriptor_idx) = self
+            .sub_type_at(struct_type_index)?
+            .composite_type
+            .descriptor_idx
+        {
+            let ty = ValType::Ref(RefType::exact(true, descriptor_idx));
+            self.pop_operand(Some(ty))?;
+        } else {
+            bail!(
+                self.offset,
+                "invalid `struct.new_desc`: type {struct_type_index} is not described"
+            );
+        }
+        let struct_ty = self.struct_type_at(struct_type_index)?;
+        for ty in struct_ty.fields.iter().rev() {
+            self.pop_operand(Some(ty.element_type.unpack()))?;
+        }
+        self.push_exact_ref_if_available(false, struct_type_index)?;
+        Ok(())
+    }
+    fn visit_struct_new_default_desc(&mut self, type_index: u32) -> Self::Output {
+        if let Some(descriptor_idx) = self.sub_type_at(type_index)?.composite_type.descriptor_idx {
+            let ty = ValType::Ref(RefType::exact(true, descriptor_idx));
+            self.pop_operand(Some(ty))?;
+        } else {
+            bail!(
+                self.offset,
+                "invalid `struct.new_default_desc`: type {type_index} is not described"
+            );
+        }
+        let ty = self.struct_type_at(type_index)?;
+        for field in ty.fields.iter() {
+            let val_ty = field.element_type.unpack();
+            if !val_ty.is_defaultable() {
+                bail!(
+                    self.offset,
+                    "invalid `struct.new_default`: {val_ty} field is not defaultable"
+                );
+            }
+        }
+        self.push_exact_ref_if_available(false, type_index)?;
         Ok(())
     }
     fn visit_struct_get(&mut self, struct_type_index: u32, field_index: u32) -> Self::Output {
@@ -4349,7 +3739,7 @@ where
         let array_ty = self.array_type_at(type_index)?;
         self.pop_operand(Some(ValType::I32))?;
         self.pop_operand(Some(array_ty.element_type.unpack()))?;
-        self.push_concrete_ref(false, type_index)
+        self.push_exact_ref_if_available(false, type_index)
     }
     fn visit_array_new_default(&mut self, type_index: u32) -> Self::Output {
         let ty = self.array_type_at(type_index)?;
@@ -4361,7 +3751,7 @@ where
             );
         }
         self.pop_operand(Some(ValType::I32))?;
-        self.push_concrete_ref(false, type_index)
+        self.push_exact_ref_if_available(false, type_index)
     }
     fn visit_array_new_fixed(&mut self, type_index: u32, n: u32) -> Self::Output {
         let array_ty = self.array_type_at(type_index)?;
@@ -4369,7 +3759,7 @@ where
         for _ in 0..n {
             self.pop_operand(Some(elem_ty))?;
         }
-        self.push_concrete_ref(false, type_index)
+        self.push_exact_ref_if_available(false, type_index)
     }
     fn visit_array_new_data(&mut self, type_index: u32, data_index: u32) -> Self::Output {
         let array_ty = self.array_type_at(type_index)?;
@@ -4384,7 +3774,7 @@ where
         self.check_data_segment(data_index)?;
         self.pop_operand(Some(ValType::I32))?;
         self.pop_operand(Some(ValType::I32))?;
-        self.push_concrete_ref(false, type_index)
+        self.push_exact_ref_if_available(false, type_index)
     }
     fn visit_array_new_elem(&mut self, type_index: u32, elem_index: u32) -> Self::Output {
         let array_ty = self.array_type_at(type_index)?;
@@ -4408,7 +3798,7 @@ where
         }
         self.pop_operand(Some(ValType::I32))?;
         self.pop_operand(Some(ValType::I32))?;
-        self.push_concrete_ref(false, type_index)
+        self.push_exact_ref_if_available(false, type_index)
     }
     fn visit_array_get(&mut self, type_index: u32) -> Self::Output {
         let array_ty = self.array_type_at(type_index)?;
@@ -4732,15 +4122,7 @@ where
         self.resources
             .check_ref_type(&mut to_ref_type, self.offset)?;
 
-        if !self
-            .resources
-            .is_subtype(to_ref_type.into(), from_ref_type.into())
-        {
-            bail!(
-                self.offset,
-                "type mismatch: expected {from_ref_type}, found {to_ref_type}"
-            );
-        }
+        self.check_br_on_cast_type_hierarchy(from_ref_type, to_ref_type)?;
 
         let (block_ty, frame_kind) = self.jump(relative_depth)?;
         let mut label_types = self.label_types(block_ty, frame_kind)?;
@@ -4776,15 +4158,7 @@ where
         self.resources
             .check_ref_type(&mut to_ref_type, self.offset)?;
 
-        if !self
-            .resources
-            .is_subtype(to_ref_type.into(), from_ref_type.into())
-        {
-            bail!(
-                self.offset,
-                "type mismatch: expected {from_ref_type}, found {to_ref_type}"
-            );
-        }
+        self.check_br_on_cast_type_hierarchy(from_ref_type, to_ref_type)?;
 
         let (block_ty, frame_kind) = self.jump(relative_depth)?;
         let mut label_tys = self.label_types(block_ty, frame_kind)?;
@@ -4841,7 +4215,7 @@ where
         }
         // Start a new frame and push `exnref` value.
         let height = self.operands.len();
-        let init_height = self.inits.len();
+        let init_height = self.local_inits.push_ctrl();
         self.control.push(Frame {
             kind: FrameKind::LegacyCatch,
             block_type: frame.block_type,
@@ -4890,7 +4264,7 @@ where
             bail!(self.offset, "catch_all found outside of a `try` block");
         }
         let height = self.operands.len();
-        let init_height = self.inits.len();
+        let init_height = self.local_inits.push_ctrl();
         self.control.push(Frame {
             kind: FrameKind::LegacyCatchAll,
             block_type: frame.block_type,
@@ -5066,6 +4440,107 @@ where
     fn visit_i64_mul_wide_u(&mut self) -> Result<()> {
         self.check_i64_mul_wide()
     }
+
+    fn visit_ref_get_desc(&mut self, type_index: u32) -> Self::Output {
+        let (_, is_exact) = self.pop_concrete_or_exact_ref(true, type_index)?;
+        match self.sub_type_at(type_index)?.composite_type.descriptor_idx {
+            Some(descriptor_idx) => {
+                let ref_ty = if is_exact {
+                    RefType::exact(false, descriptor_idx)
+                } else {
+                    RefType::concrete(false, descriptor_idx)
+                };
+                self.push_operand(ref_ty)
+            }
+            None => bail!(self.offset, "expected type with descriptor"),
+        }
+    }
+
+    fn visit_ref_cast_desc_non_null(&mut self, heap_type: HeapType) -> Self::Output {
+        self.check_ref_cast_desc(false, heap_type)
+    }
+    fn visit_ref_cast_desc_nullable(&mut self, heap_type: HeapType) -> Self::Output {
+        self.check_ref_cast_desc(true, heap_type)
+    }
+    fn visit_br_on_cast_desc(
+        &mut self,
+        relative_depth: u32,
+        mut from_ref_type: RefType,
+        mut to_ref_type: RefType,
+    ) -> Self::Output {
+        let described_ty = to_ref_type.heap_type();
+
+        self.resources
+            .check_ref_type(&mut from_ref_type, self.offset)?;
+        self.resources
+            .check_ref_type(&mut to_ref_type, self.offset)?;
+
+        self.check_br_on_cast_type_hierarchy(from_ref_type, to_ref_type)?;
+
+        self.check_maybe_exact_descriptor_ref(described_ty)?;
+
+        let (block_ty, frame_kind) = self.jump(relative_depth)?;
+        let mut label_types = self.label_types(block_ty, frame_kind)?;
+
+        match label_types.next_back() {
+            Some(label_ty) if self.resources.is_subtype(to_ref_type.into(), label_ty) => {
+                self.pop_operand(Some(from_ref_type.into()))?;
+            }
+            Some(label_ty) => bail!(
+                self.offset,
+                "type mismatch: casting to type {to_ref_type}, but it does not match \
+                 label result type {label_ty}"
+            ),
+            None => bail!(
+                self.offset,
+                "type mismatch: br_on_cast to label with empty types, must have a reference type"
+            ),
+        };
+
+        self.pop_push_label_types(label_types)?;
+        let diff_ty = RefType::difference(from_ref_type, to_ref_type);
+        self.push_operand(diff_ty)?;
+        Ok(())
+    }
+    fn visit_br_on_cast_desc_fail(
+        &mut self,
+        relative_depth: u32,
+        mut from_ref_type: RefType,
+        mut to_ref_type: RefType,
+    ) -> Self::Output {
+        let described_ty = to_ref_type.heap_type();
+
+        self.resources
+            .check_ref_type(&mut from_ref_type, self.offset)?;
+        self.resources
+            .check_ref_type(&mut to_ref_type, self.offset)?;
+
+        self.check_br_on_cast_type_hierarchy(from_ref_type, to_ref_type)?;
+
+        self.check_maybe_exact_descriptor_ref(described_ty)?;
+
+        let (block_ty, frame_kind) = self.jump(relative_depth)?;
+        let mut label_tys = self.label_types(block_ty, frame_kind)?;
+
+        let diff_ty = RefType::difference(from_ref_type, to_ref_type);
+        match label_tys.next_back() {
+            Some(label_ty) if self.resources.is_subtype(diff_ty.into(), label_ty) => {
+                self.pop_operand(Some(from_ref_type.into()))?;
+            }
+            Some(label_ty) => bail!(
+                self.offset,
+                "type mismatch: expected label result type {label_ty}, found {diff_ty}"
+            ),
+            None => bail!(
+                self.offset,
+                "type mismatch: expected a reference type, found nothing"
+            ),
+        }
+
+        self.pop_push_label_types(label_tys)?;
+        self.push_operand(to_ref_type)?;
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -5124,20 +4599,23 @@ impl Locals {
     /// definition is unsuccessful in case the amount of total variables
     /// after definition exceeds the allowed maximum number.
     fn define(&mut self, count: u32, ty: ValType) -> bool {
+        if count == 0 {
+            return true;
+        }
+        let vacant_first = MAX_LOCALS_TO_TRACK.saturating_sub(self.num_locals);
         match self.num_locals.checked_add(count) {
-            Some(n) => self.num_locals = n,
+            Some(num_locals) if num_locals > MAX_WASM_FUNCTION_LOCALS => return false,
             None => return false,
+            Some(num_locals) => self.num_locals = num_locals,
+        };
+        let push_to_first = cmp::min(vacant_first, count);
+        self.first
+            .extend(iter::repeat(ty).take(push_to_first as usize));
+        let num_uncached = count - push_to_first;
+        if num_uncached > 0 {
+            let max_uncached_idx = self.num_locals - 1;
+            self.uncached.push((max_uncached_idx, ty));
         }
-        if self.num_locals > (MAX_WASM_FUNCTION_LOCALS as u32) {
-            return false;
-        }
-        for _ in 0..count {
-            if self.first.len() >= MAX_LOCALS_TO_TRACK {
-                break;
-            }
-            self.first.push(ty);
-        }
-        self.all.push((self.num_locals - 1, ty));
         true
     }
 
@@ -5156,17 +4634,17 @@ impl Locals {
     }
 
     fn get_bsearch(&self, idx: u32) -> Option<ValType> {
-        match self.all.binary_search_by_key(&idx, |(idx, _)| *idx) {
+        match self.uncached.binary_search_by_key(&idx, |(idx, _)| *idx) {
             // If this index would be inserted at the end of the list, then the
             // index is out of bounds and we return an error.
-            Err(i) if i == self.all.len() => None,
+            Err(i) if i == self.uncached.len() => None,
 
             // If `Ok` is returned we found the index exactly, or if `Err` is
             // returned the position is the one which is the least index
             // greater that `idx`, which is still the type of `idx` according
             // to our "compressed" representation. In both cases we access the
             // list at index `i`.
-            Ok(i) | Err(i) => Some(self.all[i].1),
+            Ok(i) | Err(i) => Some(self.uncached[i].1),
         }
     }
 }
@@ -5205,5 +4683,14 @@ where
 
     fn label_block(&self, depth: u32) -> Option<(BlockType, FrameKind)> {
         self.0.jump(depth).ok()
+    }
+}
+
+impl<R> FrameStack for WasmProposalValidator<'_, '_, R>
+where
+    R: WasmModuleResources,
+{
+    fn current_frame(&self) -> Option<FrameKind> {
+        Some(self.0.control.last()?.kind)
     }
 }

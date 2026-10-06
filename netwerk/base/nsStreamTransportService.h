@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsStreamTransportService_h__
-#define nsStreamTransportService_h__
+#ifndef nsStreamTransportService_h_
+#define nsStreamTransportService_h_
 
 #include "nsIStreamTransportService.h"
 #include "nsIEventTarget.h"
@@ -11,9 +11,6 @@
 #include "nsCOMPtr.h"
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/DataMutex.h"
-#include "mozilla/Mutex.h"
 
 class nsIThreadPool;
 
@@ -29,17 +26,13 @@ class nsStreamTransportService final : public nsIStreamTransportService,
   NS_DECL_NSIEVENTTARGET_FULL
   NS_DECL_NSIOBSERVER
 
-  nsresult Init();
-
-  nsStreamTransportService();
+  static already_AddRefed<nsStreamTransportService> Create();
 
  private:
+  explicit nsStreamTransportService(already_AddRefed<nsIThreadPool> aPool);
   ~nsStreamTransportService();
 
-  nsCOMPtr<nsIThreadPool> mPool MOZ_GUARDED_BY(mShutdownLock);
-
-  mozilla::Mutex mShutdownLock{"nsStreamTransportService.mShutdownLock"};
-  bool mIsShutdown MOZ_GUARDED_BY(mShutdownLock){false};
+  const nsCOMPtr<nsIThreadPool> mPool;
 };
 
 }  // namespace net

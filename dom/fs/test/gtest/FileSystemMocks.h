@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,11 +17,11 @@
 #include "jsapi.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/ScopeExit.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/DOMExceptionBinding.h"
+#include "mozilla/dom/FileSystemHandle.h"
 #include "mozilla/dom/FileSystemManagerChild.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
@@ -92,14 +90,16 @@ class MockFileSystemRequestHandler : public FileSystemRequestHandler {
               (override));
 
   MOCK_METHOD(void, MoveEntry,
-              (RefPtr<FileSystemManager> & aManager, FileSystemHandle* aHandle,
+              (RefPtr<FileSystemManager> & aManager,
+               RefPtr<FileSystemHandle> aHandle,
                FileSystemEntryMetadata* const aEntry,
                const FileSystemChildMetadata& aNewEntry,
                RefPtr<Promise> aPromise, ErrorResult& aError),
               (override));
 
   MOCK_METHOD(void, RenameEntry,
-              (RefPtr<FileSystemManager> & aManager, FileSystemHandle* aHandle,
+              (RefPtr<FileSystemManager> & aManager,
+               RefPtr<FileSystemHandle> aHandle,
                FileSystemEntryMetadata* const aEntry, const Name& aName,
                RefPtr<Promise> aPromise, ErrorResult& aError),
               (override));
@@ -192,9 +192,9 @@ class TestPromiseListener : public PromiseNativeHandler,
       *isDone = true;
       FAIL() << "Timed out!";
     };
-    const char* timerName = "fs::TestPromiseListener::ClearDone";
     auto res = NS_NewTimerWithCallback(timerCallback, MilliSeconds,
-                                       nsITimer::TYPE_ONE_SHOT, timerName);
+                                       nsITimer::TYPE_ONE_SHOT,
+                                       "fs::TestPromiseListener::ClearDone"_ns);
     if (res.isOk()) {
       mTimer = res.unwrap();
     }
@@ -387,7 +387,7 @@ class MockGlobalObject : public nsIGlobalObject, public nsWrapperCache {
     return mGlobal->SerialEventTarget();
   }
 
-  nsresult Dispatch(already_AddRefed<nsIRunnable>&& aRunnable) const override {
+  nsresult Dispatch(already_AddRefed<nsIRunnable> aRunnable) const override {
     return mGlobal->Dispatch(std::move(aRunnable));
   }
 

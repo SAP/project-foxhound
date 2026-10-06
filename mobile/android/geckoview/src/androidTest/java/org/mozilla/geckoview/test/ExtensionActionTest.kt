@@ -11,6 +11,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assume.assumeThat
 import org.junit.Before
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
@@ -387,6 +388,7 @@ class ExtensionActionTest : BaseSessionTest() {
         }
     }
 
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")
     @Test
     fun setBadgeTextColor() {
         assumeThat("Only browserAction supports this API.", id, equalTo("#browserAction"))
@@ -580,6 +582,7 @@ class ExtensionActionTest : BaseSessionTest() {
         testSetPopup("/relative-url-02.html", true)
     }
 
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")
     @Test
     @GeckoSessionTestRule.WithDisplay(width = 100, height = 100)
     fun testOpenPopup() {

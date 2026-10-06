@@ -23,11 +23,11 @@
  */
 
 #include "HRTFPanner.h"
-#include "HRTFDatabaseLoader.h"
 
+#include "AudioBlock.h"
 #include "FFTConvolver.h"
 #include "HRTFDatabase.h"
-#include "AudioBlock.h"
+#include "HRTFDatabaseLoader.h"
 
 using namespace mozilla;
 using dom::ChannelInterpretation;

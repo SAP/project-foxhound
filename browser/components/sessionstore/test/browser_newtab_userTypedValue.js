@@ -9,7 +9,10 @@ requestLongerTimeout(4);
  */
 add_task(async function () {
   let win = await BrowserTestUtils.openNewBrowserWindow();
-  await BrowserTestUtils.openNewForegroundTab(win.gBrowser, "about:logo");
+  await BrowserTestUtils.openNewForegroundTab(
+    win.gBrowser,
+    "https://example.com/"
+  );
   let tabOpenedAndSwitchedTo = BrowserTestUtils.switchTab(
     win.gBrowser,
     () => {}
@@ -54,7 +57,7 @@ add_task(async function () {
   BrowserTestUtils.removeTab(tab);
 
   for (let url of gInitialPages) {
-    if (url == BROWSER_NEW_TAB_URL) {
+    if (url == BROWSER_NEW_TAB_URL || url === "about:opentabs") {
       continue; // We tested about:newtab using BrowserCommands.openTab() above.
     }
     info("Testing " + url + " - " + new Date());
@@ -70,7 +73,9 @@ add_task(async function () {
       "sessionstore-single-window-restored",
       subject => subject == win
     );
-    await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
+    await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser, {
+      wantLoad: url,
+    });
     await TabStateFlusher.flush(win.gBrowser.selectedBrowser);
 
     is(win.gURLBar.value, "", "URL bar should be empty");

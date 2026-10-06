@@ -57,8 +57,33 @@ add_task(
 
     Assert.equal(
       Utils.SERVER_URL,
-      AppConstants.REMOTE_SETTINGS_SERVER_URL,
+      AppConstants.REMOTE_SETTINGS_SERVER_URLS[0],
       "Server url pref was not read in release"
+    );
+  }
+);
+
+add_task(
+  {
+    skip_if: () => !AppConstants.RELEASE_OR_BETA,
+  },
+  async function test_server_url_can_be_changed_to_another_valid_option() {
+    Services.prefs.setStringPref(
+      "services.settings.server",
+      AppConstants.REMOTE_SETTINGS_SERVER_URLS[1]
+    );
+
+    const Utils = getNewUtils();
+
+    Assert.equal(
+      Utils.SERVER_URL,
+      AppConstants.REMOTE_SETTINGS_SERVER_URLS[1],
+      "Server url pref was read as second option in release"
+    );
+
+    Services.prefs.setStringPref(
+      "services.settings.server",
+      AppConstants.REMOTE_SETTINGS_SERVER_URLS[0]
     );
   }
 );
@@ -77,7 +102,7 @@ add_task(
 
     Assert.notEqual(
       Utils.SERVER_URL,
-      AppConstants.REMOTE_SETTINGS_SERVER_URL,
+      AppConstants.REMOTE_SETTINGS_SERVER_URLS[0],
       "Server url pref was read in nightly/dev"
     );
   }
@@ -126,7 +151,7 @@ add_task(
 
     Assert.equal(
       Utils.SERVER_URL,
-      AppConstants.REMOTE_SETTINGS_SERVER_URL,
+      AppConstants.REMOTE_SETTINGS_SERVER_URLS[0],
       "Server url pref was not read"
     );
     Assert.ok(Utils.LOAD_DUMPS, "Dumps will always be loaded");
@@ -147,7 +172,7 @@ add_task(
 
     Assert.notEqual(
       Utils.SERVER_URL,
-      AppConstants.REMOTE_SETTINGS_SERVER_URL,
+      AppConstants.REMOTE_SETTINGS_SERVER_URLS[0],
       "Server url pref was read"
     );
     Assert.ok(!Utils.LOAD_DUMPS, "Dumps are not loaded if server is not prod");
@@ -167,7 +192,7 @@ add_task(
 
     Assert.notEqual(
       Utils.SERVER_URL,
-      AppConstants.REMOTE_SETTINGS_SERVER_URL,
+      AppConstants.REMOTE_SETTINGS_SERVER_URLS[0],
       "Server url pref was read"
     );
   }
@@ -241,7 +266,7 @@ add_task(
     Services.env.set("MOZ_REMOTE_SETTINGS_DEVTOOLS", "1");
     Services.prefs.setStringPref(
       "services.settings.server",
-      AppConstants.REMOTE_SETTINGS_SERVER_URL
+      AppConstants.REMOTE_SETTINGS_SERVER_URLS[0]
     );
 
     const Utils = getNewUtils();

@@ -1,6 +1,7 @@
 package org.mozilla.geckoview.test
 
 import android.os.SystemClock
+import android.util.Log
 import android.view.InputDevice
 import android.view.MotionEvent
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -20,12 +21,14 @@ import org.mozilla.geckoview.GeckoSession.ScrollPositionUpdate
 import org.mozilla.geckoview.PanZoomController
 import org.mozilla.geckoview.ScreenLength
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDisplay
+import org.mozilla.geckoview.test.util.UiThreadUtils
 import kotlin.math.roundToInt
 
 @RunWith(AndroidJUnit4::class)
 @MediumTest
 class PanZoomControllerTest : BaseSessionTest() {
     private val errorEpsilon = 3.0
+    private val logTag = "PanZoomControllerTest"
     private val scrollWaitTimeout = 10000.0 // 10 seconds
 
     private fun setupDocument(documentPath: String) {
@@ -185,12 +188,12 @@ class PanZoomControllerTest : BaseSessionTest() {
         val originalVH = mainSession.evaluateJS("window.visualViewport.height") as Double
         assertThat("Visual viewport height is not zero", originalVH, greaterThan(0.0))
 
-        val innerHeight = mainSession.evaluateJS("window.innerHeight") as Double
+        val clientHeight = mainSession.evaluateJS("document.documentElement.clientHeight") as Double
         // Need to round due to dom.InnerSize.rounded=true
         assertThat(
-            "Visual viewport height equals to window.innerHeight",
+            "Visual viewport height equals to documentElement.clientHeight",
             originalVH.roundToInt(),
-            equalTo(innerHeight.roundToInt()),
+            equalTo(clientHeight.roundToInt()),
         )
 
         val originalScale = mainSession.evaluateJS("visualViewport.scale") as Double
@@ -789,6 +792,58 @@ class PanZoomControllerTest : BaseSessionTest() {
                 equalTo(ScrollPositionUpdate.SOURCE_OTHER),
             )
         }
+
+        // Clean up
+        mainSession.setCompositorScrollDelegate(null)
+    }
+
+    @WithDisplay(width = 100, height = 100)
+    @Test
+    fun compositorScrollDelegateNotifiedOnRegistration() {
+        // Load a simple vertically scrollable page
+        setupDocument(SIMPLE_SCROLL_TEST_PATH)
+
+        // Set up an initial CompositorScrollDelegate
+        // that appends updates to a local list
+        val updates: MutableList<ScrollPositionUpdate> = mutableListOf()
+        mainSession.setCompositorScrollDelegate(object : CompositorScrollDelegate {
+            override fun onScrollChanged(session: GeckoSession, update: ScrollPositionUpdate) {
+                updates.add(update)
+            }
+        })
+
+        // Scroll to y=50 and wait for the initial delegate to
+        // be notified on this
+        mainSession.evaluateJS("window.scrollTo(0, 50)")
+        while (updates.size == 0 || updates[updates.size - 1].scrollY != 50.0f) {
+            mainSession.promiseAllPaintsDone()
+            mainSession.flushApzRepaints()
+        }
+
+        // Register a second CompositorScrollDelegate, and check that it
+        // immediatley gets notified about the scrollY=50, even though
+        // that scroll offset was reached before the delegate was registered.
+        var wasNotified = false
+        mainSession.setCompositorScrollDelegate(object : CompositorScrollDelegate {
+            override fun onScrollChanged(session: GeckoSession, update: ScrollPositionUpdate) {
+                wasNotified = true
+                assertThat(
+                    "notified scrollY is correct",
+                        update.scrollY,
+                        equalTo(50.0f),
+                )
+            }
+        })
+
+        // setCompositorScrollDelegate() runs on the UI thread,
+        // so the delegate callback may not be called synchronously.
+        UiThreadUtils.loopUntilIdle(sessionRule.env.defaultTimeoutMillis)
+
+        assertThat(
+            "delegate was notified on registration",
+                   wasNotified,
+            equalTo(true),
+        )
 
         // Clean up
         mainSession.setCompositorScrollDelegate(null)

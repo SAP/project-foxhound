@@ -77,7 +77,14 @@ const DEVTOOLS_ALWAYS_ON_TOP = "devtools.toolbox.alwaysOnTop";
  * DevTools is a class that represents a set of developer tools, it holds a
  * set of tools and keeps track of open toolboxes in the browser.
  */
-function DevTools() {
+class DevTools extends EventEmitter {
+  #commandsPromiseByWebExtId;
+  #creatingToolboxes;
+  #telemetry;
+  #themes;
+  #toolboxesPerCommands;
+  #tools;
+
   // We should be careful to always load a unique instance of this module:
   // - only in the parent process
   // - only in the "shared JSM global" spawn by mozJSModuleLoader
@@ -86,45 +93,45 @@ function DevTools() {
   //   DevTools module loader named "DevTools (Server Module loader)".
   //   Also the realm location is appended the loading callsite, so only check
   //   the beginning of the string.
-  if (
-    Services.appinfo.processType != Services.appinfo.PROCESS_TYPE_DEFAULT ||
-    !Cu.getRealmLocation(globalThis).startsWith(DEFAULT_SANDBOX_NAME)
-  ) {
-    throw new Error(
-      "This module should be loaded in the parent process only, in the shared global."
-    );
+  constructor() {
+    if (
+      Services.appinfo.processType != Services.appinfo.PROCESS_TYPE_DEFAULT ||
+      !Cu.getRealmLocation(globalThis).startsWith(DEFAULT_SANDBOX_NAME)
+    ) {
+      throw new Error(
+        "This module should be loaded in the parent process only, in the shared global."
+      );
+    }
+
+    super();
+
+    this.#tools = new Map(); // Map<toolId, tool>
+    this.#themes = new Map(); // Map<themeId, theme>
+    this.#toolboxesPerCommands = new Map(); // Map<commands, toolbox>
+    // List of toolboxes that are still in process of creation
+    this.#creatingToolboxes = new Map(); // Map<commands, toolbox Promise>
+
+    this.#telemetry = new Telemetry();
+
+    // List of all commands of debugged local Web Extension.
+    this.#commandsPromiseByWebExtId = new Map(); // Map<extensionId, commands>
+
+    // Listen for changes to the theme pref.
+    addThemeObserver(this.#onThemeChanged);
+
+    // This is important step in initialization codepath where we are going to
+    // start registering all default tools and themes: create menuitems, keys, emit
+    // related events.
+    this.registerDefaults();
+
+    // Register this DevTools instance on the DevToolsShim, which is used by non-devtools
+    // code to interact with DevTools.
+    DevToolsShim.register(this);
   }
 
-  this._tools = new Map(); // Map<toolId, tool>
-  this._themes = new Map(); // Map<themeId, theme>
-  this._toolboxesPerCommands = new Map(); // Map<commands, toolbox>
-  // List of toolboxes that are still in process of creation
-  this._creatingToolboxes = new Map(); // Map<commands, toolbox Promise>
-
-  EventEmitter.decorate(this);
-  this._telemetry = new Telemetry();
-
-  // List of all commands of debugged local Web Extension.
-  this._commandsPromiseByWebExtId = new Map(); // Map<extensionId, commands>
-
-  // Listen for changes to the theme pref.
-  this._onThemeChanged = this._onThemeChanged.bind(this);
-  addThemeObserver(this._onThemeChanged);
-
-  // This is important step in initialization codepath where we are going to
-  // start registering all default tools and themes: create menuitems, keys, emit
-  // related events.
-  this.registerDefaults();
-
-  // Register this DevTools instance on the DevToolsShim, which is used by non-devtools
-  // code to interact with DevTools.
-  DevToolsShim.register(this);
-}
-
-DevTools.prototype = {
   // The windowtype of the main window, used in various tools. This may be set
   // to something different by other gecko apps.
-  chromeWindowType: "navigator:browser",
+  chromeWindowType = "navigator:browser";
 
   registerDefaults() {
     // Ensure registering items in the sorted order (getDefault* functions
@@ -133,7 +140,7 @@ DevTools.prototype = {
     this.getDefaultThemes().forEach(definition =>
       this.registerTheme(definition)
     );
-  },
+  }
 
   unregisterDefaults() {
     for (const definition of this.getToolDefinitionArray()) {
@@ -142,7 +149,7 @@ DevTools.prototype = {
     for (const definition of this.getThemeDefinitionArray()) {
       this.unregisterTheme(definition.id);
     }
-  },
+  }
 
   /**
    * Register a new developer tool.
@@ -185,10 +192,10 @@ DevTools.prototype = {
       toolDefinition.visibilityswitch = "devtools." + toolId + ".enabled";
     }
 
-    this._tools.set(toolId, toolDefinition);
+    this.#tools.set(toolId, toolDefinition);
 
     this.emit("tool-registered", toolId);
-  },
+  }
 
   /**
    * Removes all tools that match the given |toolId|
@@ -201,12 +208,12 @@ DevTools.prototype = {
    *        cause a cascade of costly events
    */
   unregisterTool(toolId, isQuitApplication) {
-    this._tools.delete(toolId);
+    this.#tools.delete(toolId);
 
     if (!isQuitApplication) {
       this.emit("tool-unregistered", toolId);
     }
-  },
+  }
 
   /**
    * Sorting function used for sorting tools based on their ordinals.
@@ -215,25 +222,33 @@ DevTools.prototype = {
     const o1 = typeof d1.ordinal == "number" ? d1.ordinal : MAX_ORDINAL;
     const o2 = typeof d2.ordinal == "number" ? d2.ordinal : MAX_ORDINAL;
     return o1 - o2;
-  },
+  }
 
   getDefaultTools() {
     return DefaultTools.sort(this.ordinalSort);
-  },
+  }
 
   getAdditionalTools() {
     const tools = [];
-    for (const [, value] of this._tools) {
+    for (const [, value] of this.#tools) {
       if (!DefaultTools.includes(value)) {
         tools.push(value);
       }
     }
     return tools.sort(this.ordinalSort);
-  },
+  }
 
   getDefaultThemes() {
     return DefaultThemes.sort(this.ordinalSort);
-  },
+  }
+
+  get tools() {
+    return this.#tools;
+  }
+
+  get toolboxesPerCommands() {
+    return this.#toolboxesPerCommands;
+  }
 
   /**
    * Get a tool definition if it exists and is enabled.
@@ -245,7 +260,7 @@ DevTools.prototype = {
    *         The ToolDefinition for the id or null.
    */
   getToolDefinition(toolId) {
-    const tool = this._tools.get(toolId);
+    const tool = this.#tools.get(toolId);
     if (!tool) {
       return null;
     } else if (!tool.visibilityswitch) {
@@ -255,7 +270,7 @@ DevTools.prototype = {
     const enabled = Services.prefs.getBoolPref(tool.visibilityswitch, true);
 
     return enabled ? tool : null;
-  },
+  }
 
   /**
    * Allow ToolBoxes to get at the list of tools that they should populate
@@ -267,14 +282,14 @@ DevTools.prototype = {
   getToolDefinitionMap() {
     const tools = new Map();
 
-    for (const [id, definition] of this._tools) {
+    for (const [id, definition] of this.#tools) {
       if (this.getToolDefinition(id)) {
         tools.set(id, definition);
       }
     }
 
     return tools;
-  },
+  }
 
   /**
    * Tools have an inherent ordering that can't be represented in a Map so
@@ -287,14 +302,14 @@ DevTools.prototype = {
   getToolDefinitionArray() {
     const definitions = [];
 
-    for (const [id, definition] of this._tools) {
+    for (const [id, definition] of this.#tools) {
       if (this.getToolDefinition(id)) {
         definitions.push(definition);
       }
     }
 
     return definitions.sort(this.ordinalSort);
-  },
+  }
 
   /**
    * Returns the name of the current theme for devtools.
@@ -304,7 +319,7 @@ DevTools.prototype = {
    */
   getTheme() {
     return getTheme();
-  },
+  }
 
   /**
    * Returns the name of the default (auto) theme for devtools.
@@ -313,14 +328,14 @@ DevTools.prototype = {
    */
   getAutoTheme() {
     return getAutoTheme();
-  },
+  }
 
   /**
    * Called when the developer tools theme changes.
    */
-  _onThemeChanged() {
+  #onThemeChanged = () => {
     this.emit("theme-changed", getTheme());
-  },
+  };
 
   /**
    * Register a new theme for developer tools toolbox.
@@ -351,14 +366,14 @@ DevTools.prototype = {
       throw new Error("Invalid theme id");
     }
 
-    if (this._themes.get(themeId)) {
+    if (this.#themes.get(themeId)) {
       throw new Error("Theme with the same id is already registered");
     }
 
-    this._themes.set(themeId, themeDefinition);
+    this.#themes.set(themeId, themeDefinition);
 
     this.emit("theme-registered", themeId);
-  },
+  }
 
   /**
    * Removes an existing theme from the list of registered themes.
@@ -371,7 +386,7 @@ DevTools.prototype = {
     let themeId = null;
     if (typeof theme == "string") {
       themeId = theme;
-      theme = this._themes.get(theme);
+      theme = this.#themes.get(theme);
     } else {
       themeId = theme.id;
     }
@@ -396,8 +411,8 @@ DevTools.prototype = {
       this.emit("theme-unregistered", theme);
     }
 
-    this._themes.delete(themeId);
-  },
+    this.#themes.delete(themeId);
+  }
 
   /**
    * Get a theme definition if it exists.
@@ -409,12 +424,12 @@ DevTools.prototype = {
    *         The ThemeDefinition for the id or null.
    */
   getThemeDefinition(themeId) {
-    const theme = this._themes.get(themeId);
+    const theme = this.#themes.get(themeId);
     if (!theme) {
       return null;
     }
     return theme;
-  },
+  }
 
   /**
    * Get map of registered themes.
@@ -425,14 +440,14 @@ DevTools.prototype = {
   getThemeDefinitionMap() {
     const themes = new Map();
 
-    for (const [id, definition] of this._themes) {
+    for (const [id, definition] of this.#themes) {
       if (this.getThemeDefinition(id)) {
         themes.set(id, definition);
       }
     }
 
     return themes;
-  },
+  }
 
   /**
    * Get registered themes definitions sorted by ordinal value.
@@ -443,19 +458,19 @@ DevTools.prototype = {
   getThemeDefinitionArray() {
     const definitions = [];
 
-    for (const [id, definition] of this._themes) {
+    for (const [id, definition] of this.#themes) {
       if (this.getThemeDefinition(id)) {
         definitions.push(definition);
       }
     }
 
     return definitions.sort(this.ordinalSort);
-  },
+  }
 
   /**
    * Called from SessionStore.sys.mjs in mozilla-central when saving the current state.
    *
-   * @param {Object} state
+   * @param {object} state
    *                 A SessionStore state object that gets modified by reference
    */
   saveDevToolsSession(state) {
@@ -463,7 +478,7 @@ DevTools.prototype = {
       BrowserConsoleManager.getBrowserConsoleSessionState();
     state.browserToolbox =
       lazy.BrowserToolboxLauncher.getBrowserToolboxSessionState();
-  },
+  }
 
   /**
    * Restore the devtools session state as provided by SessionStore.
@@ -476,13 +491,13 @@ DevTools.prototype = {
     if (browserConsole && !BrowserConsoleManager.getBrowserConsole()) {
       await BrowserConsoleManager.toggleBrowserConsole();
     }
-  },
+  }
 
   /**
    * Boolean, true, if we never opened a toolbox.
    * Used to implement the telemetry tracking toolbox opening.
    */
-  _firstShowToolbox: true,
+  #firstShowToolbox = true;
 
   /**
    * Show a Toolbox for a given "commands" (either by creating a new one, or if a
@@ -498,18 +513,18 @@ DevTools.prototype = {
    *
    * @param {Commands Object} commands
    *         The commands object which designates which context the toolbox will debug
-   * @param {Object} options
-   * @param {String} options.toolId
+   * @param {object} options
+   * @param {string} options.toolId
    *        The id of the tool to show
-   * @param {Object} options.toolOptions
+   * @param {object} options.toolOptions
    *        Options that will be passed to the tool init function
    * @param {Toolbox.HostType}options. hostType
    *        The type of host (bottom, window, left, right)
    * @param {object} options.hostOptions
    *        Options for host specifically
-   * @param {Number} options.startTime
+   * @param {number} options.startTime
    *        Indicates the time at which the user event related to
-   *        this toolbox opening started. This is a `Cu.now()` timing.
+   *        this toolbox opening started. This is a `ChromeUtils.now()` timing.
    * @param {string} options.reason
    *        Reason the tool was opened
    * @param {boolean} options.raise
@@ -530,7 +545,7 @@ DevTools.prototype = {
       hostOptions,
     } = {}
   ) {
-    let toolbox = this._toolboxesPerCommands.get(commands);
+    let toolbox = this.#toolboxesPerCommands.get(commands);
 
     if (toolbox) {
       if (hostType != null && toolbox.hostType != hostType) {
@@ -550,24 +565,24 @@ DevTools.prototype = {
       // Toolbox creation is async, we have to be careful about races.
       // Check if we are already waiting for a Toolbox for the provided
       // commands before creating a new one.
-      const promise = this._creatingToolboxes.get(commands);
+      const promise = this.#creatingToolboxes.get(commands);
       if (promise) {
         return promise;
       }
-      const toolboxPromise = this._createToolbox(commands, {
+      const toolboxPromise = this.#createToolbox(commands, {
         toolId,
         toolOptions,
         hostType,
         hostOptions,
       });
-      this._creatingToolboxes.set(commands, toolboxPromise);
+      this.#creatingToolboxes.set(commands, toolboxPromise);
       toolbox = await toolboxPromise;
-      this._creatingToolboxes.delete(commands);
+      this.#creatingToolboxes.delete(commands);
 
       if (startTime) {
         this.logToolboxOpenTime(toolbox, startTime);
       }
-      this._firstShowToolbox = false;
+      this.#firstShowToolbox = false;
     }
 
     // We send the "enter" width here to ensure it is always sent *after*
@@ -576,7 +591,7 @@ DevTools.prototype = {
     const panelName = this.makeToolIdHumanReadable(
       toolId || toolbox.defaultToolId
     );
-    this._telemetry.addEventProperty(
+    this.#telemetry.addEventProperty(
       toolbox,
       "enter",
       panelName,
@@ -586,7 +601,7 @@ DevTools.prototype = {
     );
 
     return toolbox;
-  },
+  }
 
   /**
    * Show the toolbox for a given tab. If a toolbox already exists for this tab
@@ -600,7 +615,7 @@ DevTools.prototype = {
    *
    * @param {XULTab} tab
    *        The tab the toolbox will debug
-   * @param {Object} options
+   * @param {object} options
    *        Various options that will be forwarded to `showToolbox`. See the
    *        JSDoc on this method.
    */
@@ -622,7 +637,7 @@ DevTools.prototype = {
       tab.linkedBrowser.browsingContext.opener &&
       Services.prefs.getBoolPref(POPUP_DEBUG_PREF)
     ) {
-      const openerTab = tab.ownerGlobal.gBrowser.getTabForBrowser(
+      const openerTab = tab.documentGlobal.gBrowser.getTabForBrowser(
         tab.linkedBrowser.browsingContext.opener.embedderElement
       );
       const openerCommands =
@@ -644,7 +659,7 @@ DevTools.prototype = {
       reason,
       hostOptions,
     });
-  },
+  }
 
   /**
    * Open a Toolbox in a dedicated top-level window for debugging a local WebExtension.
@@ -652,9 +667,9 @@ DevTools.prototype = {
    *
    * Note that this will spawn a new DevToolsClient.
    *
-   * @param {String} extensionId
+   * @param {string} extensionId
    *        ID of the extension to debug.
-   * @param {Object} (optional)
+   * @param {object} (optional)
    *        - {String} toolId
    *          The id of the tool to show
    */
@@ -662,14 +677,14 @@ DevTools.prototype = {
     // Ensure spawning only one commands instance per extension at a time by caching its commands.
     // showToolbox will later reopen the previously opened toolbox if called with the same
     // commands.
-    let commandsPromise = this._commandsPromiseByWebExtId.get(extensionId);
+    let commandsPromise = this.#commandsPromiseByWebExtId.get(extensionId);
     if (!commandsPromise) {
       commandsPromise = CommandsFactory.forAddon(extensionId);
-      this._commandsPromiseByWebExtId.set(extensionId, commandsPromise);
+      this.#commandsPromiseByWebExtId.set(extensionId, commandsPromise);
     }
     const commands = await commandsPromise;
     commands.client.once("closed").then(() => {
-      this._commandsPromiseByWebExtId.delete(extensionId);
+      this.#commandsPromiseByWebExtId.delete(extensionId);
     });
 
     return this.showToolbox(commands, {
@@ -681,7 +696,7 @@ DevTools.prototype = {
       },
       toolId,
     });
-  },
+  }
 
   /**
    * Log telemetry related to toolbox opening.
@@ -690,24 +705,24 @@ DevTools.prototype = {
    * subsequent toolbox opening, which should all be faster.
    * These two probes are indexed by Tool ID.
    *
-   * @param {String} toolbox
+   * @param {string} toolbox
    *        Toolbox instance.
-   * @param {Number} startTime
+   * @param {number} startTime
    *        Indicates the time at which the user event related to the toolbox
-   *        opening started. This is a `Cu.now()` timing.
+   *        opening started. This is a `ChromeUtils.now()` timing.
    */
   logToolboxOpenTime(toolbox, startTime) {
     const toolId = toolbox.currentToolId || toolbox.defaultToolId;
-    const delay = Cu.now() - startTime;
+    const delay = ChromeUtils.now() - startTime;
     const panelName = this.makeToolIdHumanReadable(toolId);
 
-    if (this._firstShowToolbox) {
+    if (this.#firstShowToolbox) {
       Glean.devtools.coldToolboxOpenDelay[toolId].accumulateSingleSample(delay);
     } else {
       Glean.devtools.warmToolboxOpenDelay[toolId].accumulateSingleSample(delay);
     }
     const browserWin = toolbox.topWindow;
-    this._telemetry.addEventProperty(
+    this.#telemetry.addEventProperty(
       browserWin,
       "open",
       "tools",
@@ -715,7 +730,7 @@ DevTools.prototype = {
       "first_panel",
       panelName
     );
-  },
+  }
 
   makeToolIdHumanReadable(toolId) {
     if (/^[0-9a-fA-F]{40}_temporary-addon/.test(toolId)) {
@@ -735,13 +750,13 @@ DevTools.prototype = {
     }
 
     return toolId;
-  },
+  }
 
   /**
    * Unconditionally create a new Toolbox instance for the provided commands.
    * See `showToolbox` for the arguments' jsdoc.
    */
-  async _createToolbox(
+  async #createToolbox(
     commands,
     { toolId, toolOptions, hostType, hostOptions } = {}
   ) {
@@ -749,14 +764,14 @@ DevTools.prototype = {
 
     const toolbox = await manager.create(toolId, toolOptions);
 
-    this._toolboxesPerCommands.set(commands, toolbox);
+    this.#toolboxesPerCommands.set(commands, toolbox);
 
     toolbox.once("destroy", () => {
       this.emit("toolbox-destroy", toolbox);
     });
 
     toolbox.once("destroyed", () => {
-      this._toolboxesPerCommands.delete(commands);
+      this.#toolboxesPerCommands.delete(commands);
       this.emit("toolbox-destroyed", toolbox);
     });
 
@@ -764,7 +779,7 @@ DevTools.prototype = {
     this.emit("toolbox-ready", toolbox);
 
     return toolbox;
-  },
+  }
 
   /**
    * Return the toolbox for a given commands object.
@@ -776,21 +791,21 @@ DevTools.prototype = {
    *         The toolbox that is debugging the given context designated by the commands
    */
   getToolboxForCommands(commands) {
-    return this._toolboxesPerCommands.get(commands);
-  },
+    return this.#toolboxesPerCommands.get(commands);
+  }
 
   /**
    * TabDescriptorFront requires a synchronous method and don't have a reference to its
    * related commands object. So expose something handcrafted just for this.
    */
   getToolboxForDescriptorFront(descriptorFront) {
-    for (const [commands, toolbox] of this._toolboxesPerCommands) {
+    for (const [commands, toolbox] of this.#toolboxesPerCommands) {
       if (commands.descriptorFront == descriptorFront) {
         return toolbox;
       }
     }
     return null;
-  },
+  }
 
   /**
    * Retrieve an existing toolbox for the provided tab if it was created before.
@@ -805,7 +820,7 @@ DevTools.prototype = {
     return this.getToolboxes().find(
       t => t.commands.descriptorFront.localTab === tab
     );
-  },
+  }
 
   /**
    * Close the toolbox for a given tab.
@@ -817,15 +832,15 @@ DevTools.prototype = {
   async closeToolboxForTab(tab) {
     const commands = await LocalTabCommandsFactory.getCommandsForTab(tab);
 
-    let toolbox = await this._creatingToolboxes.get(commands);
+    let toolbox = await this.#creatingToolboxes.get(commands);
     if (!toolbox) {
-      toolbox = this._toolboxesPerCommands.get(commands);
+      toolbox = this.#toolboxesPerCommands.get(commands);
     }
     if (!toolbox) {
       return;
     }
     await toolbox.destroy();
-  },
+  }
 
   /**
    * Compatibility layer for web-extensions. Used by DevToolsShim for
@@ -838,7 +853,7 @@ DevTools.prototype = {
    */
   createCommandsForTabForWebExtension(tab) {
     return CommandsFactory.forTab(tab, { isWebExtension: true });
-  },
+  }
 
   /**
    * Compatibility layer for web-extensions. Used by DevToolsShim for
@@ -849,7 +864,7 @@ DevTools.prototype = {
       BrowserConsoleManager,
     } = require("resource://devtools/client/webconsole/browser-console-manager.js");
     BrowserConsoleManager.openBrowserConsoleOrFocus();
-  },
+  }
 
   /**
    * Called from the DevToolsShim, used by nsContextMenu.js.
@@ -859,9 +874,9 @@ DevTools.prototype = {
    * @param {ElementIdentifier} domReference
    *        Identifier generated by ContentDOMReference. It is a unique pair of
    *        BrowsingContext ID and a numeric ID.
-   * @param {Number} startTime
+   * @param {number} startTime
    *        Optional, indicates the time at which the user event related to this node
-   *        inspection started. This is a `Cu.now()` timing.
+   *        inspection started. This is a `ChromeUtils.now()` timing.
    * @return {Promise} a promise that resolves when the node is selected in the inspector
    *         markup view.
    */
@@ -906,7 +921,7 @@ DevTools.prototype = {
     // Now that the node has been selected, wait until the inspector is
     // fully updated.
     await inspector.once("inspector-updated");
-  },
+  }
 
   /**
    * Called from the DevToolsShim, used by nsContextMenu.js.
@@ -916,9 +931,9 @@ DevTools.prototype = {
    * @param {ElementIdentifier} domReference
    *        Identifier generated by ContentDOMReference. It is a unique pair of
    *        BrowsingContext ID and a numeric ID.
-   * @param {Number} startTime
+   * @param {number} startTime
    *        Optional, indicates the time at which the user event related to this
-   *        node inspection started. This is a `Cu.now()` timing.
+   *        node inspection started. This is a `ChromeUtils.now()` timing.
    * @return {Promise} a promise that resolves when the accessible object is
    *         selected in the accessibility inspector.
    */
@@ -940,10 +955,11 @@ DevTools.prototype = {
     const onSelected = a11yPanel.once("new-accessible-front-selected");
     a11yPanel.selectAccessibleForNode(nodeFront, "browser-context-menu");
     await onSelected;
-  },
+  }
 
   /**
    * Either the DevTools Loader has been destroyed or firefox is shutting down.
+   *
    * @param {boolean} shuttingDown
    *        True if firefox is currently shutting down. We may prevent doing
    *        some cleanups to speed it up. Otherwise everything need to be
@@ -952,7 +968,7 @@ DevTools.prototype = {
   destroy({ shuttingDown }) {
     // Do not cleanup everything during firefox shutdown.
     if (!shuttingDown) {
-      for (const [, toolbox] of this._toolboxesPerCommands) {
+      for (const [, toolbox] of this.#toolboxesPerCommands) {
         toolbox.destroy();
       }
     }
@@ -963,7 +979,7 @@ DevTools.prototype = {
 
     gDevTools.unregisterDefaults();
 
-    removeThemeObserver(this._onThemeChanged);
+    removeThemeObserver(this.#onThemeChanged);
 
     // Do not unregister devtools from the DevToolsShim if the destroy is caused by an
     // application shutdown. For instance SessionStore needs to save the Browser Toolbox
@@ -975,9 +991,9 @@ DevTools.prototype = {
     }
 
     // Cleaning down the toolboxes: i.e.
-    //   for (let [, toolbox] of this._toolboxesPerCommands) toolbox.destroy();
+    //   for (let [, toolbox] of this.#toolboxesPerCommands) toolbox.destroy();
     // Is taken care of by the gDevToolsBrowser.forgetBrowserWindow
-  },
+  }
 
   /**
    * Returns the array of the existing toolboxes.
@@ -986,8 +1002,8 @@ DevTools.prototype = {
    *   An array of toolboxes.
    */
   getToolboxes() {
-    return Array.from(this._toolboxesPerCommands.values());
-  },
+    return Array.from(this.#toolboxesPerCommands.values());
+  }
 
   /**
    * Returns whether the given tab has toolbox.
@@ -1001,7 +1017,7 @@ DevTools.prototype = {
     return this.getToolboxes().some(
       t => t.commands.descriptorFront.localTab === tab
     );
-  },
-};
+  }
+}
 
 const gDevTools = (exports.gDevTools = new DevTools());

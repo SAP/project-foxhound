@@ -40,6 +40,7 @@
         'ssl_loopback_unittest.cc',
         'ssl_masking_unittest.cc',
         'ssl_misc_unittest.cc',
+        'ssl_reconfig_unittest.cc',
         'ssl_option_unittest.cc',
         'ssl_record_unittest.cc',
         'ssl_recordsep_unittest.cc',
@@ -48,6 +49,7 @@
         'ssl_resumption_unittest.cc',
         'ssl_skip_unittest.cc',
         'ssl_staticrsa_unittest.cc',
+        'ssl_timers_unittest.cc',
         'ssl_tls13compat_unittest.cc',
         'ssl_v2_client_hello_unittest.cc',
         'ssl_version_unittest.cc',
@@ -63,7 +65,6 @@
         'tls_protect.cc',
         'tls_psk_unittest.cc',
         'tls_subcerts_unittest.cc',
-        'tls_xyber_unittest.cc',
       ],
       'dependencies': [
         '<(DEPTH)/exports.gyp:nss_exports',
@@ -99,6 +100,11 @@
         [ 'disable_dbm==0', {
           'dependencies': [
             '<(DEPTH)/lib/dbm/src/src.gyp:dbm',
+          ],
+        }],
+        [ 'disable_kyber==0', {
+          'sources': [
+             'tls_xyber_unittest.cc',
           ],
         }],
         [ 'enable_sslkeylogfile==1 and sanitizer_flags==0', {

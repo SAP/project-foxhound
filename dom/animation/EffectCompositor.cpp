@@ -1,14 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "EffectCompositor.h"
 
-#include "mozilla/dom/Animation.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/KeyframeEffect.h"
 #include "mozilla/AnimationComparator.h"
 #include "mozilla/AnimationPerformanceWarning.h"
 #include "mozilla/AnimationTarget.h"
@@ -20,15 +15,18 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/RestyleManager.h"
+#include "mozilla/SVGObserverUtils.h"
 #include "mozilla/ServoBindings.h"  // Servo_GetProperties_Overriding_Animation
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/StyleAnimationValue.h"
-#include "mozilla/SVGObserverUtils.h"
-#include "nsComputedDOMStyle.h"
-#include "nsContentUtils.h"
+#include "mozilla/dom/Animation.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/KeyframeEffect.h"
 #include "nsCSSPropertyIDSet.h"
 #include "nsCSSProps.h"
+#include "nsComputedDOMStyle.h"
+#include "nsContentUtils.h"
 #include "nsDisplayItemTypes.h"
 #include "nsLayoutUtils.h"
 #include "nsTArray.h"
@@ -345,13 +343,15 @@ static void ComposeSortedEffects(
         dom::EndpointBehavior::Exclusive) {
   const bool isTransition =
       aCascadeLevel == EffectCompositor::CascadeLevel::Transitions;
-  InvertibleAnimatedPropertyIDSet propertiesToSkip;
   // Transitions should be overridden by running animations of the same
   // property per https://drafts.csswg.org/css-transitions/#application:
   //
   // > Implementations must add this value to the cascade if and only if that
   // > property is not currently undergoing a CSS Animation on the same element.
   //
+  InvertibleAnimatedPropertyIDSet propertiesToSkip;
+  AnimatedPropertyIDSet animatedProperties;
+
   // FIXME(emilio, bug 1606176): This should assert that
   // aEffectSet->PropertiesForAnimationsLevel() is up-to-date, and it may not
   // follow the spec in those cases. There are various places where we get style
@@ -359,11 +359,22 @@ static void ComposeSortedEffects(
   //
   // MOZ_ASSERT_IF(aEffectSet, !aEffectSet->CascadeNeedsUpdate());
   if (aEffectSet) {
+    animatedProperties.AddProperties(
+        aEffectSet->PropertiesForAnimationsLevel());
+    // When CommitStyles is called and its endpoint-inclusive behavior is
+    // enabled, the animation that CommitStyles targets is already finished and
+    // so aEffectSet doesn't include it. But its properties still has to be
+    // included in propertiesToSkip. So its properties have to be added manually
+    // here.
+    if (aEndpointBehavior == dom::EndpointBehavior::Inclusive &&
+        aCascadeLevel == EffectCompositor::CascadeLevel::Animations) {
+      animatedProperties.AddProperties(
+          aSortedEffects.LastElement()->GetPropertySet());
+    }
     // Note that we do invert the set on CascadeLevel::Animations because we
     // don't want to skip those properties when composing the animation rule on
     // CascadeLevel::Animations.
-    propertiesToSkip.Setup(&aEffectSet->PropertiesForAnimationsLevel(),
-                           !isTransition);
+    propertiesToSkip.Setup(&animatedProperties, !isTransition);
   }
 
   for (KeyframeEffect* effect : aSortedEffects) {
@@ -564,9 +575,10 @@ EffectCompositor::GetAnimationElementAndPseudoForFrame(const nsIFrame* aFrame) {
 
   Element* element = content->AsElement();
   switch (request.mType) {
-    case PseudoStyleType::before:
-    case PseudoStyleType::after:
-    case PseudoStyleType::marker: {
+    case PseudoStyleType::Before:
+    case PseudoStyleType::After:
+    case PseudoStyleType::Marker:
+    case PseudoStyleType::Backdrop: {
       nsIContent* parent = element->GetParent();
       if (!parent || !parent->IsElement()) {
         return result;
@@ -574,11 +586,11 @@ EffectCompositor::GetAnimationElementAndPseudoForFrame(const nsIFrame* aFrame) {
       element = parent->AsElement();
       break;
     }
-    case PseudoStyleType::viewTransition:
-    case PseudoStyleType::viewTransitionGroup:
-    case PseudoStyleType::viewTransitionImagePair:
-    case PseudoStyleType::viewTransitionOld:
-    case PseudoStyleType::viewTransitionNew: {
+    case PseudoStyleType::ViewTransition:
+    case PseudoStyleType::ViewTransitionGroup:
+    case PseudoStyleType::ViewTransitionImagePair:
+    case PseudoStyleType::ViewTransitionOld:
+    case PseudoStyleType::ViewTransitionNew: {
       request.mIdentifier =
           element->HasName()
               ? element->GetParsedAttr(nsGkAtoms::name)->GetAtomValue()
@@ -611,7 +623,8 @@ nsCSSPropertyIDSet EffectCompositor::GetOverriddenProperties(
 
   static constexpr size_t compositorAnimatableCount =
       nsCSSPropertyIDSet::CompositorAnimatableCount();
-  AutoTArray<nsCSSPropertyID, compositorAnimatableCount> propertiesToTrack;
+  AutoTArray<NonCustomCSSPropertyId, compositorAnimatableCount>
+      propertiesToTrack;
   {
     nsCSSPropertyIDSet propertiesToTrackAsSet;
     for (KeyframeEffect* effect : aEffectSet) {
@@ -621,11 +634,11 @@ nsCSSPropertyIDSet EffectCompositor::GetOverriddenProperties(
           continue;
         }
 
-        if (nsCSSProps::PropHasFlags(property.mProperty.mID,
+        if (nsCSSProps::PropHasFlags(property.mProperty.mId,
                                      CSSPropFlags::CanAnimateOnCompositor) &&
-            !propertiesToTrackAsSet.HasProperty(property.mProperty.mID)) {
-          propertiesToTrackAsSet.AddProperty(property.mProperty.mID);
-          propertiesToTrack.AppendElement(property.mProperty.mID);
+            !propertiesToTrackAsSet.HasProperty(property.mProperty.mId)) {
+          propertiesToTrackAsSet.AddProperty(property.mProperty.mId);
+          propertiesToTrack.AppendElement(property.mProperty.mId);
         }
       }
       // Skip iterating over the rest of the effects if we've already
@@ -698,7 +711,7 @@ void EffectCompositor::UpdateCascadeResults(
       // properties.
       // TODO: Bug 1869475. Support custom properties for compositor animations.
       if (overriddenProperties.HasProperty(prop.mProperty)) {
-        propertiesWithImportantRules.AddProperty(prop.mProperty.mID);
+        propertiesWithImportantRules.AddProperty(prop.mProperty.mId);
       }
 
       switch (cascadeLevel) {
@@ -789,6 +802,7 @@ bool EffectCompositor::PreTraverseInSubtree(ServoTraversalFlags aFlags,
   // element in mElementsToRestyle is the parent of the pseudo.
   if (aRoot && (aRoot->IsGeneratedContentContainerForBefore() ||
                 aRoot->IsGeneratedContentContainerForAfter() ||
+                aRoot->IsGeneratedContentContainerForBackdrop() ||
                 aRoot->IsGeneratedContentContainerForMarker())) {
     aRoot = aRoot->GetParentElement();
   }
@@ -923,7 +937,7 @@ bool EffectCompositor::PreTraverseInSubtree(ServoTraversalFlags aFlags,
 
 void EffectCompositor::NoteElementForReducing(
     const NonOwningAnimationTarget& aTarget) {
-  Unused << mElementsToReduce.put(
+  (void)mElementsToReduce.put(
       OwningAnimationTarget{aTarget.mElement, aTarget.mPseudoRequest});
 }
 

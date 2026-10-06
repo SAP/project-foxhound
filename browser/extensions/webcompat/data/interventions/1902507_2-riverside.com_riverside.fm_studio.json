@@ -1,0 +1,19 @@
+{
+  "label": "riverside.com/riverside.fm studio",
+  "bugs": {
+    "1902507": {
+      "issue": "broken-meetings",
+      "matches": [
+        "https://riverside.fm/studio*",
+        "https://riverside.com/studio*"
+      ]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "only_channels": ["nightly"],
+      "ua_string": ["Safari"]
+    }
+  ]
+}

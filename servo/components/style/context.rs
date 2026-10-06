@@ -9,7 +9,8 @@ use crate::animation::DocumentAnimationSet;
 use crate::bloom::StyleBloom;
 use crate::computed_value_flags::ComputedValueFlags;
 use crate::data::{EagerPseudoStyles, ElementData};
-use crate::dom::{SendElement, TElement};
+use crate::derives::*;
+use crate::dom::{ElementContext, SendElement, TElement};
 #[cfg(feature = "gecko")]
 use crate::gecko_bindings::structs;
 use crate::parallel::{STACK_SAFETY_MARGIN_KB, STYLE_THREAD_STACK_SIZE_KB};
@@ -17,7 +18,7 @@ use crate::properties::ComputedValues;
 #[cfg(feature = "servo")]
 use crate::properties::PropertyId;
 use crate::rule_cache::RuleCache;
-use crate::rule_tree::StrongRuleNode;
+use crate::rule_tree::{RuleCascadeFlags, StrongRuleNode};
 use crate::selector_parser::{SnapshotMap, EAGER_PSEUDO_COUNT};
 use crate::shared_lock::StylesheetGuards;
 use crate::sharing::StyleSharingCache;
@@ -25,23 +26,25 @@ use crate::stylist::Stylist;
 use crate::thread_state::{self, ThreadState};
 use crate::traversal::DomTraversal;
 use crate::traversal_flags::TraversalFlags;
+use crate::values::computed::TreeCountingResult;
 use app_units::Au;
 use euclid::default::Size2D;
 use euclid::Scale;
-#[cfg(feature = "servo")]
-use fxhash::FxHashMap;
+use rustc_hash::FxHashMap;
 use selectors::context::SelectorCaches;
+use selectors::OpaqueElement;
 #[cfg(feature = "gecko")]
 use servo_arc::Arc;
-#[cfg(feature = "servo")]
-use stylo_atoms::Atom;
 use std::fmt;
 use std::ops;
 use std::time::{Duration, Instant};
+use style_traits::dom::OpaqueNode;
 use style_traits::CSSPixel;
 use style_traits::DevicePixel;
 #[cfg(feature = "servo")]
 use style_traits::SpeculativePainter;
+#[cfg(feature = "servo")]
+use stylo_atoms::Atom;
 
 pub use selectors::matching::QuirksMode;
 
@@ -193,6 +196,9 @@ pub struct CascadeInputs {
 
     /// The set of flags from container queries that we need for invalidation.
     pub flags: ComputedValueFlags,
+
+    /// The set of RuleCascadeFlags to include in the cascade.
+    pub included_cascade_flags: RuleCascadeFlags,
 }
 
 impl CascadeInputs {
@@ -202,6 +208,7 @@ impl CascadeInputs {
             rules: style.rules.clone(),
             visited_rules: style.visited_style().and_then(|v| v.rules.clone()),
             flags: style.flags.for_cascade_inputs(),
+            included_cascade_flags: RuleCascadeFlags::empty(),
         }
     }
 }
@@ -358,7 +365,11 @@ impl fmt::Display for TraversalStatistics {
         )?;
         writeln!(f, "[PERF],declarations,{}", self.declarations)?;
         writeln!(f, "[PERF],stylist_rebuilds,{}", self.stylist_rebuilds)?;
-        writeln!(f, "[PERF],traversal_time_ms,{}", self.traversal_time.as_secs_f64() * 1000.)?;
+        writeln!(
+            f,
+            "[PERF],traversal_time_ms,{}",
+            self.traversal_time.as_secs_f64() * 1000.
+        )?;
         writeln!(f, "[PERF] perf block end")
     }
 }
@@ -419,6 +430,8 @@ bitflags! {
         const SCROLL_TIMELINES = structs::UpdateAnimationsTasks_ScrollTimelines;
         /// Update CSS named view progress timelines.
         const VIEW_TIMELINES = structs::UpdateAnimationsTasks_ViewTimelines;
+        /// Update CSS timeline scopes, which affect visibility of both scroll and view timelines.
+        const TIMELINE_SCOPES = structs::UpdateAnimationsTasks_TimelineScopes;
     }
 }
 
@@ -450,7 +463,7 @@ impl<E: TElement> SequentialTask<E> {
     /// Executes this task.
     pub fn execute(self) {
         use self::SequentialTask::*;
-        debug_assert_eq!(thread_state::get(), ThreadState::LAYOUT);
+        debug_assert!(thread_state::get().contains(ThreadState::LAYOUT));
         match self {
             Unused(_) => unreachable!(),
             #[cfg(feature = "gecko")]
@@ -511,7 +524,7 @@ where
     E: TElement,
 {
     fn drop(&mut self) {
-        debug_assert_eq!(thread_state::get(), ThreadState::LAYOUT);
+        debug_assert!(thread_state::get().contains(ThreadState::LAYOUT));
         for task in self.0.drain(..) {
             task.execute()
         }
@@ -582,6 +595,43 @@ impl StackLimitChecker {
     }
 }
 
+/// Caches to speed up evalution of tree-counting functions. Separate caches
+/// for index and count are used so that they can be populated in a single
+/// traversal of an element's siblings.
+///
+/// TODO(Bug 2046399) - Consider directly using the SelectorCaches instead.
+#[derive(Default)]
+pub struct TreeCountingCaches {
+    /// A cache of element sibling-index() values.
+    pub sibling_index: FxHashMap<OpaqueElement, u32>,
+    /// A cache of element sibling-count() values, keyed by the element's parent node.
+    pub sibling_count: FxHashMap<OpaqueNode, u32>,
+}
+
+impl TreeCountingCaches {
+    /// Look up the tree-counting function values for the given element. If the element and
+    /// its parent node are not cached, the values are computed and stored.
+    pub fn get_or_compute(&mut self, element_context: &dyn ElementContext) -> TreeCountingResult {
+        let (Some(target), Some(parent)) = (
+            element_context.opaque_element(),
+            element_context.opaque_parent(),
+        ) else {
+            return TreeCountingResult::default();
+        };
+
+        // Lookup from the index and count caches
+        let cached_index = self.sibling_index.get(&target).copied();
+        let cached_count = self.sibling_count.get(&parent).copied();
+        if let (Some(index), Some(count)) = (cached_index, cached_count) {
+            return TreeCountingResult::new(index, count);
+        }
+
+        // Compute the sibling index and sibling count for the element,
+        // inserting into the caches as it traverses through its siblings.
+        element_context.get_tree_counting_result(self)
+    }
+}
+
 /// A thread-local style context.
 ///
 /// This context contains data that needs to be used during restyling, but is
@@ -609,6 +659,8 @@ pub struct ThreadLocalStyleContext<E: TElement> {
     pub stack_limit_checker: StackLimitChecker,
     /// Collection of caches (And cache-likes) for speeding up expensive selector matches.
     pub selector_caches: SelectorCaches,
+    /// Caches for speeding up tree-counting function evaluations.
+    pub tree_counting_caches: TreeCountingCaches,
 }
 
 impl<E: TElement> ThreadLocalStyleContext<E> {
@@ -624,6 +676,7 @@ impl<E: TElement> ThreadLocalStyleContext<E> {
                 (STYLE_THREAD_STACK_SIZE_KB - STACK_SAFETY_MARGIN_KB) * 1024,
             ),
             selector_caches: SelectorCaches::default(),
+            tree_counting_caches: TreeCountingCaches::default(),
         }
     }
 }

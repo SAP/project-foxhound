@@ -1,0 +1,55 @@
+From: Byron Campen <docfaraday@gmail.com>
+Date: Thu, 20 Jul 2023 14:24:00 +0000
+Subject: Bug 1838080: Use the current TaskQueue, instead of the current
+ thread, to init this. r=pehrsons,webrtc-reviewers
+
+There are situations where the current thread is not set, but the current
+TaskQueue is (but not vice versa).
+
+Differential Revision: https://phabricator.services.mozilla.com/D180736
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/62e71a2f745c4b98d5ee7ce9e6386aa1b657be9b
+---
+ .../rtp_video_stream_receiver_frame_transformer_delegate.cc     | 2 +-
+ .../rtp_video_stream_receiver_frame_transformer_delegate.h      | 2 +-
+ video/rtp_video_stream_receiver2.cc                             | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.cc b/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.cc
+index 8950ec4baa..fb11c73c29 100644
+--- a/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.cc
++++ b/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.cc
+@@ -135,7 +135,7 @@ RtpVideoStreamReceiverFrameTransformerDelegate::
+         RtpVideoFrameReceiver* receiver,
+         Clock* clock,
+         scoped_refptr<FrameTransformerInterface> frame_transformer,
+-        Thread* network_thread,
++        TaskQueueBase* network_thread,
+         uint32_t ssrc)
+     : receiver_(receiver),
+       frame_transformer_(std::move(frame_transformer)),
+diff --git a/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.h b/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.h
+index fa6ccf8773..7cd379eff3 100644
+--- a/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.h
++++ b/modules/rtp_rtcp/source/rtp_video_stream_receiver_frame_transformer_delegate.h
+@@ -45,7 +45,7 @@ class RtpVideoStreamReceiverFrameTransformerDelegate
+       RtpVideoFrameReceiver* receiver,
+       Clock* clock,
+       scoped_refptr<FrameTransformerInterface> frame_transformer,
+-      Thread* network_thread,
++      TaskQueueBase* network_thread,
+       uint32_t ssrc);
+ 
+   void Init();
+diff --git a/video/rtp_video_stream_receiver2.cc b/video/rtp_video_stream_receiver2.cc
+index 86c6a785c0..9bbff9a156 100644
+--- a/video/rtp_video_stream_receiver2.cc
++++ b/video/rtp_video_stream_receiver2.cc
+@@ -385,7 +385,7 @@ RtpVideoStreamReceiver2::RtpVideoStreamReceiver2(
+     frame_transformer_delegate_ =
+         make_ref_counted<RtpVideoStreamReceiverFrameTransformerDelegate>(
+             this, &env_.clock(), std::move(frame_transformer),
+-            Thread::Current(), config_.rtp.remote_ssrc);
++            TaskQueueBase::Current(), config_.rtp.remote_ssrc);
+     frame_transformer_delegate_->Init();
+   }
+ }

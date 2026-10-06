@@ -89,7 +89,9 @@ class OpenWithFragment : AppCompatDialogFragment(), OnAppSelectedListener {
             contentView = view
         }
 
-        override fun setContentView(@LayoutRes layoutResID: Int) {
+        override fun setContentView(
+            @LayoutRes layoutResID: Int,
+        ) {
             throw IllegalStateException("CustomWidthBottomSheetDialog only supports setContentView(View)")
         }
 

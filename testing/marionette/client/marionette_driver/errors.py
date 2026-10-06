@@ -117,9 +117,7 @@ class ElementNotVisibleException(MarionetteException):
         stacktrace=None,
         cause=None,
     ):
-        super(ElementNotVisibleException, self).__init__(
-            message, cause=cause, stacktrace=stacktrace
-        )
+        super().__init__(message, cause=cause, stacktrace=stacktrace)
 
 
 class ElementNotAccessibleException(MarionetteException):

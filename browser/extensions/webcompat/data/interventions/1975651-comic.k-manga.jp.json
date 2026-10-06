@@ -1,0 +1,17 @@
+{
+  "label": "comic.k-manga.jp",
+  "bugs": {
+    "1975651": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://comic.k-manga.jp/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "content_scripts": {
+        "js": ["use_chrome_useragent.js", "use_chrome_appVersion.js"]
+      }
+    }
+  ]
+}

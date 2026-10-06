@@ -16,11 +16,11 @@ import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.whenever
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class AddonTest {
@@ -142,9 +142,8 @@ class AddonTest {
         )
 
         val hostNormalizationResult = Addon.classifyOriginPermissions(origins)
-        assertNotNull(hostNormalizationResult.getOrNull())
-
-        val hostPermissions = hostNormalizationResult.getOrNull()!!
+        val hostPermissions = hostNormalizationResult.getOrNull()
+        assertNotNull(hostPermissions)
 
         assertEquals(hostPermissions.sites.size, 2)
         assertEquals(hostPermissions.wildcards.size, 2)

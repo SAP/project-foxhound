@@ -11,7 +11,6 @@
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Unused.h"
 
 #define LOG_FONTLIST(args) \
   MOZ_LOG(gfxPlatform::GetLog(eGfxLog_fontlist), LogLevel::Debug, args)
@@ -335,7 +334,7 @@ bool Family::FindAllFacesForStyleInternal(FontList* aList,
     // calculate which one we want.
     // Note that we cannot simply return it as not all 4 faces are necessarily
     // present.
-    bool wantBold = aStyle.weight.IsBold();
+    bool wantBold = aStyle.weight.PreferBold();
     bool wantItalic = !aStyle.style.IsNormal();
     uint8_t faceIndex =
         (wantItalic ? kItalicMask : 0) | (wantBold ? kBoldMask : 0);
@@ -444,7 +443,7 @@ void Family::FindAllFacesForStyle(FontList* aList, const gfxFontStyle& aStyle,
 #ifdef MOZ_WIDGET_GTK
   bool anyNonScalable =
 #else
-  Unused <<
+  (void)
 #endif
       FindAllFacesForStyleInternal(aList, aStyle, aFaceList);
 
@@ -798,6 +797,14 @@ FontList::Header& FontList::GetHeader() const MOZ_NO_THREAD_SAFETY_ANALYSIS {
 
 bool FontList::AppendShmBlock(uint32_t aSizeNeeded) {
   MOZ_ASSERT(XRE_IsParentProcess());
+
+  // TODO: currently most callers of AppendShmBlock() (via Alloc()) assume
+  // the allocation is infallible; hence the release-assert here is the safe
+  // way to handle overflow. Consider whether to make the allocation fallible,
+  // and instead handle null safely in the callers.
+  MOZ_RELEASE_ASSERT(mBlocks.Length() < (1u << Pointer::kIndexBits),
+                     "FontList shm block limit exceeded");
+
   uint32_t size = std::max(aSizeNeeded, SHM_BLOCK_SIZE);
   auto handle = ipc::shared_memory::CreateFreezable(size);
   if (!handle) {
@@ -1269,8 +1276,18 @@ Family* FontList::FindFamily(const nsCString& aName, bool aPrimaryNameOnly) {
     if (BinarySearchIf(families, 0, familyCount,
                        FamilyNameComparator(this, base), &match)) {
       // Check to see if we have already read the face names for this base
-      // family. Note: EnsureLengthAtLeast will default new entries to false.
+      // family.
+
+      // First, extend mFaceNamesRead as-needed up to `familyCount` (setting
+      // new entries to 'false'):
+      const auto oldLength = mFaceNamesRead.Length();
       mFaceNamesRead.EnsureLengthAtLeast(familyCount);
+      for (auto i = oldLength; i < mFaceNamesRead.Length(); i++) {
+        mFaceNamesRead[i] = false;
+      }
+
+      // Now we can check its entry at index `match` to see if we've already
+      // read this one:
       if (mFaceNamesRead[match]) {
         return nullptr;
       }
@@ -1336,8 +1353,8 @@ void FontList::SearchForLocalFace(const nsACString& aName, Family** aFamily,
   Header& header = GetHeader();
   MOZ_ASSERT(header.mLocalFaceCount == 0,
              "do not use when local face names are already set up!");
-  LOG_FONTLIST(
-      ("(shared-fontlist) local face search for (%s)", aName.BeginReading()));
+  LOG_FONTLIST(("(shared-fontlist) local face search for (%s)",
+                PromiseFlatCString(aName).get()));
   char initial = aName[0];
   Family* families = Families();
   if (!families) {
@@ -1349,7 +1366,7 @@ void FontList::SearchForLocalFace(const nsACString& aName, Family** aFamily,
       continue;
     }
     LOG_FONTLIST(("(shared-fontlist) checking family (%s)",
-                  family->Key().AsString(this).BeginReading()));
+                  family->Key().AsString(this).get()));
     if (!family->IsInitialized()) {
       if (!gfxPlatformFontList::PlatformFontList()->InitializeFamily(family)) {
         continue;

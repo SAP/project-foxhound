@@ -1,0 +1,46 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+with Files("**"):
+    BUG_COMPONENT = ("Core", "Security")
+
+XPIDL_SOURCES += [
+    "nsILockstore.idl",
+]
+
+XPIDL_MODULE = "lockstore"
+
+XPCOM_MANIFESTS += [
+    "components.conf",
+]
+
+EXPORTS += [
+    "LockstoreService.h",
+]
+
+UNIFIED_SOURCES += [
+    "LockstoreService.cpp",
+]
+
+FINAL_LIBRARY = "xul"
+
+if CONFIG["COMPILE_ENVIRONMENT"]:
+    CbindgenHeader(
+        "lockstore_ffi_generated.h", inputs=["/security/lockstore/lockstore_ffi"]
+    )
+
+    EXPORTS.mozilla.security.lockstore += [
+        "!lockstore_ffi_generated.h",
+    ]
+
+TEST_DIRS += ["gtest"]
+
+# `LockstoreService` gtests hang on the Android emulator after the
+# first few `LockstoreServiceTest` cases (bug 1892964); the lower-level
+# Rust/FFI keystore gtests in `gtest/` still run there. The Service
+# layer is covered on every other config by the gtest + xpcshell tests.
+if CONFIG["OS_TARGET"] != "Android":
+    TEST_DIRS += ["tests/gtest"]
+
+XPCSHELL_TESTS_MANIFESTS += ["tests/unit/xpcshell.toml"]

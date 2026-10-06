@@ -9,11 +9,6 @@ user_pref("browser.sessionstore.resume_from_crash", false);
 // Better stacks for errors.
 user_pref("javascript.options.asyncstack_capture_debuggee_only", false);
 
-// Don't enable paint suppression when the background is unknown. While paint
-// is suppressed, synthetic click events and co. go to the old page, which can
-// be confusing for tests that send click events before the first paint.
-user_pref("nglayout.initialpaint.unsuppress_with_no_background", true);
-
 // Disable prefers-reduced-motion to ensure that smooth scrolls can be tested.
 user_pref("general.smoothScroll", true);
 
@@ -41,6 +36,3 @@ user_pref("places.history.floodingPrevention.enabled", false);
 // permission, and we can open it and wait for the user to give permission, then
 // don't do that.
 user_pref("geo.prompt.open_system_prefs", false);
-
-// Enable Nimbus debug logging.
-user_pref("messaging-system.log", "all");

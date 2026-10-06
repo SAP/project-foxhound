@@ -2,25 +2,23 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+@file:Suppress("DEPRECATION")
+
 package org.mozilla.fenix.ui
 
-import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.core.net.toUri
 import org.junit.Rule
 import org.junit.Test
-import org.mozilla.fenix.customannotations.SkipLeaks
 import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.helpers.AppAndSystemHelper.enableOrDisableBackGestureNavigationOnDevice
-import org.mozilla.fenix.helpers.AppAndSystemHelper.runWithAppLocaleChanged
-import org.mozilla.fenix.helpers.HomeActivityTestRule
-import org.mozilla.fenix.helpers.TestAssetHelper
-import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
-import org.mozilla.fenix.helpers.TestHelper.mDevice
-import org.mozilla.fenix.helpers.TestSetup
+import org.mozilla.fenix.helpers.FenixTestRule
+import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
+import org.mozilla.fenix.helpers.SearchMockServerRule
+import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.homeScreen
 import org.mozilla.fenix.ui.robots.navigationToolbar
-import java.util.Locale
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
 /**
  *  Tests for verifying basic functionality of browser navigation and page related interactions
@@ -32,29 +30,81 @@ import java.util.Locale
  *  - Find in page
  */
 
-class NavigationToolbarTest : TestSetup() {
-    @get:Rule
+class NavigationToolbarTest {
+    @get:Rule(order = 0)
+    val fenixTestRule: FenixTestRule = FenixTestRule()
+
+    private val mockWebServer get() = fenixTestRule.mockWebServer
+
+    @get:Rule(order = 1)
     val composeTestRule =
-        AndroidComposeTestRule(
-            HomeActivityTestRule.withDefaultSettingsOverrides(),
+        AndroidComposeTestRuleV2(
+            HomeActivityIntentTestRule(
+                isPWAsPromptEnabled = false,
+                isWallpaperOnboardingEnabled = false,
+                isOpenInAppBannerEnabled = false,
+                isMicrosurveyEnabled = false,
+                isTermsOfServiceAccepted = true,
+            ),
         ) { it.activity }
 
+    @get:Rule(order = 2)
+    val memoryLeaksRule = DetectMemoryLeaksRule(composeTestRule = { composeTestRule })
+
     @get:Rule
-    val memoryLeaksRule = DetectMemoryLeaksRule()
+    val searchMockServerRule = SearchMockServerRule()
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3135074
+    @SmokeTest
+    @Test
+    fun verifySecurePageSecuritySubMenuTest() {
+        val defaultWebPage = "https://mozilla-mobile.github.io/testapp/loginForm"
+        val defaultWebPageTitle = "Login_form"
+
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser(
+            defaultWebPage.toUri(),
+        ) {
+            verifyPageContent("Login Form")
+        }.openSiteSecuritySheet {
+            verifyQuickActionSheet(defaultWebPage, true)
+            openSecureConnectionSubMenu(true)
+            verifySecureConnectionSubMenu(defaultWebPageTitle, defaultWebPage, true)
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3135075
+    @SmokeTest
+    @Test
+    fun verifyInsecurePageSecuritySubMenuTest() {
+        val defaultWebPage = mockWebServer.getGenericAsset(1)
+
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser(defaultWebPage.url) {
+            verifyPageContent(defaultWebPage.content)
+        }.openSiteSecuritySheet {
+            verifyQuickActionSheet(defaultWebPage.url.toString(), false)
+            openSecureConnectionSubMenu(false)
+            verifySecureConnectionSubMenu(
+                defaultWebPage.title,
+                defaultWebPage.url.toString(),
+                false,
+            )
+        }
+    }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/987326
     // Swipes the nav bar left/right to switch between tabs
     @SmokeTest
     @Test
-    @SkipLeaks
     fun swipeToSwitchTabTest() {
-        val firstWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
-        val secondWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 2)
+        val firstWebPage = mockWebServer.getGenericAsset(1)
+        val secondWebPage = mockWebServer.getGenericAsset(2)
 
         // Disable the back gesture from the edge of the screen on the device.
         enableOrDisableBackGestureNavigationOnDevice(backGestureNavigationEnabled = false)
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(firstWebPage.url) {
         }.openTabDrawer(composeTestRule) {
         }.openNewTab {
@@ -66,110 +116,53 @@ class NavigationToolbarTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/987327
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3135066
     @Test
-    @SkipLeaks
-    fun swipeToSwitchTabInRTLTest() {
-        val firstWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
-        val secondWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 2)
-        val arabicLocale = Locale.Builder().setLanguage("ar").setRegion("AR").build()
-
-        // Disable the back gesture from the edge of the screen on the device.
-        enableOrDisableBackGestureNavigationOnDevice(backGestureNavigationEnabled = false)
-
-        runWithAppLocaleChanged(arabicLocale, composeTestRule.activityRule) {
-            navigationToolbar {
-            }.enterURLAndEnterToBrowser(firstWebPage.url) {
-            }.openTabDrawer(composeTestRule) {
-            }.openNewTab {
-            }.submitQuery(secondWebPage.url.toString()) {
-                swipeNavBarLeft(secondWebPage.url.toString())
-                verifyUrl(firstWebPage.url.toString())
-                swipeNavBarRight(firstWebPage.url.toString())
-                verifyUrl(secondWebPage.url.toString())
-            }
+    fun verifyTheToolbarItemsTest() {
+        navigationToolbar(composeTestRule) {
+            verifyDefaultSearchEngine("Google")
+            verifySearchBarPlaceholder("Search or enter address")
+            verifyTheTabCounter("0")
+            verifyTheMainMenuButton()
+        }
+        homeScreen(composeTestRule) {
+        }.togglePrivateBrowsingMode()
+        navigationToolbar(composeTestRule) {
+            verifyDefaultSearchEngine("Google")
+            verifySearchBarPlaceholder("Search or enter address")
+            verifyTheTabCounter("0", isPrivateBrowsingEnabled = true)
+            verifyTheMainMenuButton()
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2265279
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3135067
     @SmokeTest
     @Test
-    fun verifySecurePageSecuritySubMenuTest() {
-        val defaultWebPage = "https://mozilla-mobile.github.io/testapp/loginForm"
-        val defaultWebPageTitle = "Login_form"
+    fun verifyTheNewTabButtonTest() {
+        val firstPage = mockWebServer.getGenericAsset(1)
+        val secondPage = mockWebServer.getGenericAsset(2)
 
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(defaultWebPage.toUri()) {
-            verifyPageContent("Login Form")
-        }.openSiteSecuritySheet {
-            verifyQuickActionSheet(defaultWebPage, true)
-            openSecureConnectionSubMenu(true)
-            verifySecureConnectionSubMenu(defaultWebPageTitle, defaultWebPage, true)
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser(firstPage.url) {
+            verifyTabCounter("1")
         }
-    }
+        navigationToolbar(composeTestRule) {
+            verifyTheNewTabButton()
+        }.clickTheNewTabButton {
+        }.submitQuery(secondPage.url.toString()) {
+            verifyTabCounter("2")
+        }.goToHomescreen {
+        }.togglePrivateBrowsingMode()
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2265280
-    @SmokeTest
-    @Test
-    fun verifyInsecurePageSecuritySubMenuTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
-
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(defaultWebPage.url) {
-            verifyPageContent(defaultWebPage.content)
-        }.openSiteSecuritySheet {
-            verifyQuickActionSheet(defaultWebPage.url.toString(), false)
-            openSecureConnectionSubMenu(false)
-            verifySecureConnectionSubMenu(defaultWebPage.title, defaultWebPage.url.toString(), false)
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser(firstPage.url) {
+            verifyTabCounter("1", isPrivateBrowsingEnabled = true)
         }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1661318
-    @SmokeTest
-    @Test
-    @SkipLeaks
-    fun verifyClearCookiesFromQuickSettingsTest() {
-        val loginPage = "https://mozilla-mobile.github.io/testapp/loginForm"
-        val originWebsite = "mozilla-mobile.github.io"
-
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(loginPage.toUri()) {
-            waitForPageToLoad(waitingTimeLong)
-        }.openSiteSecuritySheet {
-            clickQuickActionSheetClearSiteData()
-            verifyClearSiteDataPrompt(originWebsite)
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1360555
-    @SmokeTest
-    @Test
-    fun goToHomeScreenTest() {
-        val genericURL = TestAssetHelper.getGenericAsset(mockWebServer, 1)
-
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(genericURL.url) {
-            mDevice.waitForIdle()
-        }.goToHomescreen(composeTestRule) {
-            verifyHomeScreen()
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2256552
-    @SmokeTest
-    @Test
-    fun goToHomeScreenInPrivateModeTest() {
-        val genericURL = TestAssetHelper.getGenericAsset(mockWebServer, 1)
-
-        homeScreen {
-            togglePrivateBrowsingModeOnOff(composeTestRule = composeTestRule)
-        }
-
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(genericURL.url) {
-            mDevice.waitForIdle()
-        }.goToHomescreen(composeTestRule) {
-            verifyHomeScreen()
+        navigationToolbar(composeTestRule) {
+            verifyTheNewTabButton(isPrivateModeEnabled = true)
+        }.clickTheNewTabButton(isPrivateModeEnabled = true) {
+        }.submitQuery(secondPage.url.toString()) {
+            verifyTabCounter("2", isPrivateBrowsingEnabled = true)
         }
     }
 }

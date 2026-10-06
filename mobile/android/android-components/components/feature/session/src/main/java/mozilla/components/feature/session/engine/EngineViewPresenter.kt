@@ -5,9 +5,10 @@
 package mozilla.components.feature.session.engine
 
 import android.view.View
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.map
 import mozilla.components.browser.state.action.EngineAction
 import mozilla.components.browser.state.action.LastAccessAction
@@ -25,14 +26,16 @@ internal class EngineViewPresenter(
     private val store: BrowserStore,
     private val engineView: EngineView,
     private val tabId: String?,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) {
     private var scope: CoroutineScope? = null
+    private var currentlyRenderedTabId: String? = null
 
     /**
      * Start presenter and display data in view.
      */
     fun start() {
-        scope = store.flowScoped { flow ->
+        scope = store.flowScoped(dispatcher = mainDispatcher) { flow ->
             flow.map { state -> state.findTabOrCustomTabOrSelectedTab(tabId) }
                 // Render if the tab itself changed and when an engine session is linked
                 .ifAnyChanged { tab ->
@@ -51,14 +54,22 @@ internal class EngineViewPresenter(
      * Stop presenter from updating view.
      */
     fun stop() {
+        stampLastVisibleAt()
         scope?.cancel()
         engineView.release()
     }
 
     private fun onTabToRender(tab: SessionState?) {
         if (tab == null) {
+            stampLastVisibleAt()
             engineView.release()
         } else {
+            // Only stamp when the tab actually changed. The flow can re-emit the same tab
+            // when engineSession, crashed, or firstContentfulPaint change without a tab
+            // switch, and we must not record the tab as having gone invisible in that case.
+            if (tab.id != currentlyRenderedTabId) {
+                stampLastVisibleAt()
+            }
             renderTab(tab)
         }
     }
@@ -86,7 +97,15 @@ internal class EngineViewPresenter(
             // Since we render the tab again let's update its last access flag. In the future, we
             // may need more fine-grained flags to differentiate viewing from tab selection.
             store.dispatch(LastAccessAction.UpdateLastAccessAction(tab.id, System.currentTimeMillis()))
+            currentlyRenderedTabId = tab.id
             engineView.render(engineSession)
+        }
+    }
+
+    private fun stampLastVisibleAt() {
+        currentlyRenderedTabId?.let {
+            store.dispatch(LastAccessAction.UpdateLastVisibleAtAction(it, System.currentTimeMillis()))
+            currentlyRenderedTabId = null
         }
     }
 }

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -58,8 +56,9 @@ class AbstractThread : public nsISerialEventTarget {
   NS_IMETHOD_(bool) IsOnCurrentThreadInfallible(void) override;
   NS_IMETHOD IsOnCurrentThread(bool* _retval) override;
   NS_IMETHOD Dispatch(already_AddRefed<nsIRunnable> event,
-                      uint32_t flags) override;
-  NS_IMETHOD DispatchFromScript(nsIRunnable* event, uint32_t flags) override;
+                      DispatchFlags flags) override;
+  NS_IMETHOD DispatchFromScript(nsIRunnable* event,
+                                DispatchFlags flags) override;
   NS_IMETHOD DelayedDispatch(already_AddRefed<nsIRunnable> event,
                              uint32_t delay) override;
 

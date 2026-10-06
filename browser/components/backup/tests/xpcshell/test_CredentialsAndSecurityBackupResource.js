@@ -43,15 +43,6 @@ add_task(async function test_measure() {
   let credentialsMeasurement =
     Glean.browserBackup.credentialsDataSize.testGetValue();
   let securityMeasurement = Glean.browserBackup.securityDataSize.testGetValue();
-  let scalars = TelemetryTestUtils.getProcessScalars("parent", false, false);
-
-  // Credentials measurements
-  TelemetryTestUtils.assertScalar(
-    scalars,
-    "browser.backup.credentials_data_size",
-    credentialsMeasurement,
-    "Glean and telemetry measurements for credentials data should be equal"
-  );
 
   Assert.equal(
     credentialsMeasurement,
@@ -59,13 +50,6 @@ add_task(async function test_measure() {
     "Should have collected the correct glean measurement for credentials files"
   );
 
-  // Security measurements
-  TelemetryTestUtils.assertScalar(
-    scalars,
-    "browser.backup.security_data_size",
-    securityMeasurement,
-    "Glean and telemetry measurements for security data should be equal"
-  );
   Assert.equal(
     securityMeasurement,
     EXPECTED_SECURITY_KILOBYTES_SIZE,
@@ -260,6 +244,63 @@ add_task(async function test_recover() {
     `${AUTOFILL_PROFILES_FILENAME} contained the expected data structure.`
   );
 
+  await maybeRemovePath(recoveryPath);
+  await maybeRemovePath(destProfilePath);
+
+  gFakeOSKeyStore.asyncDecryptBytes.resetHistory();
+  gFakeOSKeyStore.asyncEncryptBytes.resetHistory();
+});
+
+add_task(async function test_recover_without_autofill_profiles() {
+  let credentialsAndSecurityBackupResource =
+    new CredentialsAndSecurityBackupResource();
+  let recoveryPath = await IOUtils.createUniqueDirectory(
+    PathUtils.tempDir,
+    "CredentialsAndSecurityBackupResource-recovery-test"
+  );
+  let destProfilePath = await IOUtils.createUniqueDirectory(
+    PathUtils.tempDir,
+    "CredentialsAndSecurityBackupResource-test-profile"
+  );
+
+  const files = [
+    { path: "logins.json" },
+    { path: "logins-backup.json" },
+    { path: "credentialstate.sqlite" },
+    { path: "cert9.db" },
+    { path: "key4.db" },
+    { path: "pkcs11.txt" },
+  ];
+  await createTestFiles(recoveryPath, files);
+
+  const ENCRYPTED_CARD_AFTER_RECOVERY = "ThisIsAnEncryptedCardAfterRecovery";
+  const PLAINTEXT_CARD = "ThisIsAPlaintextCard";
+
+  let plaintextBytes = new Uint8Array(PLAINTEXT_CARD.length);
+  for (let i = 0; i < PLAINTEXT_CARD.length; i++) {
+    plaintextBytes[i] = PLAINTEXT_CARD.charCodeAt(i);
+  }
+
+  // Now we'll prepare the native OSKeyStore to accept a single call to
+  // asyncDecryptBytes, and then a single call to asyncEncryptBytes.
+  gFakeOSKeyStore.asyncDecryptBytes.resolves(plaintextBytes);
+  gFakeOSKeyStore.asyncEncryptBytes.resolves(ENCRYPTED_CARD_AFTER_RECOVERY);
+
+  // The backup method is expected to have returned a null ManifestEntry
+  let postRecoveryEntry = await credentialsAndSecurityBackupResource.recover(
+    null /* manifestEntry */,
+    recoveryPath,
+    destProfilePath
+  );
+
+  Assert.equal(
+    postRecoveryEntry,
+    null,
+    "CredentialsAndSecurityBackupResource.recover should return null as its post " +
+      "recovery entry"
+  );
+
+  await assertFilesExist(destProfilePath, files);
   await maybeRemovePath(recoveryPath);
   await maybeRemovePath(destProfilePath);
 

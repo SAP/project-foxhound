@@ -15,7 +15,7 @@
 ## Code
 
 The source for `fxview-tab-list` can be found under
-[browser/components/firefoxview/fxview-tab-list](https://searchfox.org/mozilla-central/source/browser/components/firefoxview/fxview-tab-list.mjs).
+[browser/components/firefoxview/fxview-tab-list](https://searchfox.org/firefox-main/source/browser/components/firefoxview/fxview-tab-list.mjs).
 
 `fxview-tab-list` can be imported into `.html`/`.xhtml` files:
 

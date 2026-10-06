@@ -57,7 +57,7 @@ def generate(output):
             /// Macro used to name a path in the objdir for use with macros like `include!`
             #[macro_export]
             macro_rules! objdir_path {{
-                ($path:literal) => {{
+                ($path:expr) => {{
                     concat!({escape_rust_string(buildconfig.topobjdir + "/")}, $path)
                 }}
             }}
@@ -65,7 +65,7 @@ def generate(output):
             /// Macro used to name a path in the srcdir for use with macros like `include!`
             #[macro_export]
             macro_rules! srcdir_path {{
-                ($path:literal) => {{
+                ($path:expr) => {{
                     concat!({escape_rust_string(buildconfig.topsrcdir + "/")}, $path)
                 }}
             }}
@@ -110,6 +110,7 @@ def generate(output):
     output.write(generate_string("MOZ_APP_BASENAME"))
     output.write(generate_string("MOZ_APP_NAME"))
     output.write(generate_string("MOZ_APP_VENDOR"))
+    output.write(generate_string("MOZ_APP_VERSION"))
 
     # Write out some useful booleans from the buildconfig.
     output.write(generate_bool("MOZ_FOLD_LIBS"))
@@ -119,6 +120,7 @@ def generate(output):
     output.write(generate_bool("MOZ_DEV_EDITION"))
     output.write(generate_bool("MOZ_ESR"))
     output.write(generate_bool("MOZ_DIAGNOSTIC_ASSERT_ENABLED"))
+    output.write(generate_bool("MOZ_CODE_COVERAGE"))
 
     # Used by toolkit/crashreporter/client
     output.write(generate_bool("MOZ_CRASHREPORTER_MOCK"))

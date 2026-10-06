@@ -957,13 +957,6 @@ function run_next_test() {
 }
 
 function run_test() {
-  // Thunderbird doesn't have one or more of the probes used in this test.
-  // Ensure the data is collected anyway.
-  Services.prefs.setBoolPref(
-    "toolkit.telemetry.testing.overrideProductsCheck",
-    true
-  );
-
   cleanup();
 
   do_test_pending();

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,11 +10,10 @@
 
 #include "ImageContainer.h"  // for ISharedImage, Image, etc
 #include "gfxTypes.h"
-#include "mozilla/Attributes.h"  // for override
-#include "mozilla/RefPtr.h"      // for RefPtr
-#include "mozilla/gfx/Point.h"   // for IntSize
-#include "mozilla/gfx/Types.h"   // for SurfaceFormat
-#include "nsCOMPtr.h"            // for already_AddRefed
+#include "mozilla/RefPtr.h"     // for RefPtr
+#include "mozilla/gfx/Point.h"  // for IntSize
+#include "mozilla/gfx/Types.h"  // for SurfaceFormat
+#include "nsCOMPtr.h"           // for already_AddRefed
 
 namespace mozilla {
 namespace layers {

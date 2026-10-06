@@ -6,7 +6,6 @@ package mozilla.components.browser.menu
 
 import android.content.res.ColorStateList
 import android.graphics.Color
-import android.os.Build
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -30,19 +29,18 @@ import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito
-import org.mockito.Mockito.doNothing
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
 import org.robolectric.Shadows
-import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDisplay
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class BrowserMenuTest {
@@ -147,7 +145,7 @@ class BrowserMenuTest {
         val recyclerView: RecyclerView = popup.contentView.findViewById(R.id.mozac_browser_menu_recyclerView)
         assertNotNull(recyclerView)
 
-        val recyclerAdapter = recyclerView.adapter!!
+        val recyclerAdapter = recyclerView.adapter
         assertNotNull(recyclerAdapter)
         assertEquals(2, recyclerAdapter.itemCount)
     }
@@ -170,28 +168,6 @@ class BrowserMenuTest {
 
         val layoutManager = recyclerView.layoutManager as LinearLayoutManager
         assertTrue(layoutManager.stackFromEnd)
-    }
-
-    @Test
-    @Config(sdk = [Build.VERSION_CODES.M])
-    fun `endOfMenuAlwaysVisible will be forwarded to scrollOnceToTheBottom on devices with Android M and below`() {
-        val items = listOf(
-            SimpleBrowserMenuItem("Hello") {},
-            SimpleBrowserMenuItem("World") {},
-        )
-
-        val adapter = BrowserMenuAdapter(testContext, items)
-        val menu = spy(BrowserMenu(adapter))
-        doNothing().`when`(menu).scrollOnceToTheBottom(any())
-
-        val anchor = Button(testContext)
-        val popup = menu.show(anchor, endOfMenuAlwaysVisible = true)
-
-        val recyclerView: RecyclerView = popup.contentView.findViewById(R.id.mozac_browser_menu_recyclerView)
-        val layoutManager = recyclerView.layoutManager as LinearLayoutManager
-
-        assertFalse(layoutManager.stackFromEnd)
-        verify(menu).scrollOnceToTheBottom(any())
     }
 
     @Test
@@ -332,8 +308,7 @@ class BrowserMenuTest {
         menu.menuPositioningData = MenuPositioningData(BrowserMenuPlacement.AnchoredToBottom.Dropdown(anchor))
 
         val result = menu.configureExpandableMenu(view, true)
-
-        assertTrue(result is ExpandableLayout)
+        assertIs<ExpandableLayout>(result)
         assertTrue(result.getChildAt(0) == view)
     }
 
@@ -350,8 +325,7 @@ class BrowserMenuTest {
         menu.menuPositioningData = MenuPositioningData(BrowserMenuPlacement.AnchoredToBottom.ManualAnchoring(anchor))
 
         val result = menu.configureExpandableMenu(view, true)
-
-        assertTrue(result is ExpandableLayout)
+        assertIs<ExpandableLayout>(result)
         assertTrue(result.getChildAt(0) == view)
     }
 
@@ -384,7 +358,7 @@ class BrowserMenuTest {
         menu.configureExpandableMenu(menu.menuList!!, false)
 
         assertNotSame(initialLayoutManager, menu.menuList!!.layoutManager)
-        assertTrue(menu.menuList!!.layoutManager is StickyHeaderLinearLayoutManager<*>)
+        assertIs<StickyHeaderLinearLayoutManager<*>>(menu.menuList!!.layoutManager)
     }
 
     @Test

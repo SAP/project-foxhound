@@ -1,4 +1,3 @@
-/* -*- Mode: C; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -59,7 +58,7 @@ MOZ_XML_SetExternalEntityRefHandler(XML_Parser parser,
 void
 MOZ_XML_SetReturnNSTriplet(XML_Parser parser, int do_nst);
 
-enum XML_Status
+void
 MOZ_XML_SetBase(XML_Parser parser, const XML_Char *base);
 
 const XML_Char *
@@ -68,13 +67,15 @@ MOZ_XML_GetBase(XML_Parser parser);
 int
 MOZ_XML_GetSpecifiedAttributeCount(XML_Parser parser);
 
-enum XML_Status
+// The return value is an XML_Status.
+int
 MOZ_XML_Parse(XML_Parser parser, const char *s, int len, int isFinal);
 
-enum XML_Status
+void
 MOZ_XML_StopParser(XML_Parser parser, int resumable);
 
-enum XML_Status
+// The return value is an XML_Status.
+int
 MOZ_XML_ResumeParser(XML_Parser parser);
 
 XML_Parser
@@ -86,10 +87,13 @@ int
 MOZ_XML_SetParamEntityParsing(XML_Parser parser,
                               enum XML_ParamEntityParsing parsing);
 
-int
-MOZ_XML_SetHashSalt(XML_Parser parser, unsigned long hash_salt);
+// Takes char (not uint8_t) because RLBox only permits memcpy of char/short/
+// wchar_t/char16_t/float/double across the sandbox boundary.
+XML_Bool
+MOZ_XML_SetHashSalt16Bytes(XML_Parser parser, const char entropy[16]);
 
-enum XML_Error
+// The return value is an XML_Error.
+int
 MOZ_XML_GetErrorCode(XML_Parser parser);
 
 XML_Size MOZ_XML_GetCurrentLineNumber(XML_Parser parser);

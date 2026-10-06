@@ -3,11 +3,11 @@
 To help find metrics in the [Glean Dictionary] and other tools, metrics should contain tag metadata corresponding to the
 feature area(s) that they belong to. In the case of Firefox for Android, tag information is based off of the GitHub feature labels for this repository:
 
-https://github.com/mozilla-mobile/fenix/labels?q=feature%3A
+<https://github.com/mozilla-mobile/fenix/labels?q=feature%3A>
 
 You can see how tag information is rendered here:
 
-https://dictionary.telemetry.mozilla.org/apps/fenix?itemType=tags&page=1
+<https://dictionary.telemetry.mozilla.org/apps/fenix?itemType=tags&page=1>
 
 ## Adding feature tags to metrics
 

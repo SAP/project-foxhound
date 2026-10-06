@@ -37,7 +37,7 @@ add_task(async function test_open_all_without_separator() {
     placesContext,
     "popupshown"
   );
-  synthesizeClickOnSelectedTreeCell(gLibrary.ContentTree.view, {
+  await synthesizeClickOnSelectedTreeCell(gLibrary.ContentTree.view, {
     button: 2,
     type: "contextmenu",
   });

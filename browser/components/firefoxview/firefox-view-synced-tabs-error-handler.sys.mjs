@@ -24,7 +24,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gNetworkLinkService",
   "@mozilla.org/network/network-link-service;1",
-  "nsINetworkLinkService"
+  Ci.nsINetworkLinkService
 );
 
 const FXA_ENABLED = "identity.fxaccounts.enabled";

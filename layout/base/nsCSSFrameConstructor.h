@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,15 +7,14 @@
  * tree and updating of that tree in response to dynamic changes
  */
 
-#ifndef nsCSSFrameConstructor_h___
-#define nsCSSFrameConstructor_h___
+#ifndef nsCSSFrameConstructor_h_
+#define nsCSSFrameConstructor_h_
 
 #include "mozilla/ArenaAllocator.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ContainStyleScopeManager.h"
 #include "mozilla/FunctionRef.h"
 #include "mozilla/LinkedList.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/ScrollStyles.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
@@ -32,7 +29,6 @@ struct nsGenConInitializer;
 class nsBlockFrame;
 class nsContainerFrame;
 class nsCanvasFrame;
-class nsCSSAnonBoxPseudoStaticAtom;
 class nsFirstLetterFrame;
 class nsFirstLineFrame;
 class nsFrameConstructorState;
@@ -71,13 +67,11 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                         PresShell* aPresShell);
   ~nsCSSFrameConstructor() { MOZ_ASSERT(mFCItemsInUse == 0); }
 
-  static void GetAlternateTextFor(const Element&, nsAString& aAltText);
-
- private:
   nsCSSFrameConstructor(const nsCSSFrameConstructor& aCopy) = delete;
   nsCSSFrameConstructor& operator=(const nsCSSFrameConstructor& aCopy) = delete;
 
- public:
+  static void GetAlternateTextFor(const Element&, nsAString& aAltText);
+
   /**
    * Whether insertion should be done synchronously or asynchronously.
    *
@@ -100,11 +94,10 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   mozilla::ViewportFrame* ConstructRootFrame();
 
  private:
-  enum Operation { CONTENTAPPEND, CONTENTINSERT };
-
   // aChild is the child being inserted for inserts, and the first
-  // child being appended for appends.
-  void ConstructLazily(Operation aOperation, nsIContent* aChild);
+  // child being appended for appends. All the nodes in the range are
+  // guaranteed to have the same flat tree parent.
+  void ConstructLazily(nsIContent* aStartChild, nsIContent* aEndChild);
 
 #ifdef DEBUG
   void CheckBitsForLazyFrameConstruction(nsIContent* aParent);
@@ -140,12 +133,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
      * It's undefined if mParentFrame is null.
      */
     nsIContent* mContainer;
-
-    /**
-     * Whether it is required to insert children one-by-one instead of as a
-     * range.
-     */
-    bool IsMultiple() const;
   };
 
   /**
@@ -231,28 +218,29 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   void ContentRangeInserted(nsIContent* aStartChild, nsIContent* aEndChild,
                             InsertionKind aInsertionKind);
 
-  enum RemoveFlags {
-    REMOVE_CONTENT,
-    REMOVE_FOR_RECONSTRUCTION,
+  // The kind of removal we're dealing with.
+  enum class RemovalKind : uint8_t {
+    // The DOM node is getting removed from the document.
+    Dom,
+    // We're about to remove this frame, but we will insert it later.
+    ForReconstruction,
+    // We're about to remove this frame due to a style change but we know we
+    // are not going to create a frame later.
+    ForDisplayNoneChange,
   };
 
   /**
    * Recreate or destroy frames for aChild.
    *
-   * aFlags == REMOVE_CONTENT means aChild has been removed from the document.
-   * aFlags == REMOVE_FOR_RECONSTRUCTION means the caller will reconstruct the
-   * frames later.
-   *
-   * In both the above cases, this method will in some cases try to reconstruct
-   * frames on some ancestor of aChild.  This can happen regardless of the value
-   * of aFlags.
+   * Regardless of the removal kind, this method will in some cases try to
+   * reconstruct frames on some ancestor of aChild.
    *
    * The return value indicates whether this "reconstruct an ancestor" action
    * took place.  If true is returned, that means that the frame subtree rooted
    * at some ancestor of aChild's frame was destroyed and will be reconstructed
    * async.
    */
-  bool ContentWillBeRemoved(nsIContent* aChild, RemoveFlags aFlags);
+  bool ContentWillBeRemoved(nsIContent* aChild, RemovalKind);
 
   void CharacterDataChanged(nsIContent* aContent,
                             const CharacterDataChangeInfo& aInfo);
@@ -339,12 +327,10 @@ class nsCSSFrameConstructor final : public nsFrameManager {
    */
   nsContainerFrame* GetContentInsertionFrameFor(nsIContent* aContent);
 
-  // GetInitialContainingBlock() is deprecated in favor of
-  // GetRootElementFrame(); nsIFrame* GetInitialContainingBlock() { return
-  // mRootElementFrame; } This returns the outermost frame for the root element
+  // This returns the outermost frame for the root element.
   nsContainerFrame* GetRootElementFrame() { return mRootElementFrame; }
   // This returns the frame for the root element that does not
-  // have a psuedo-element style
+  // have a pseudo-element style
   nsIFrame* GetRootElementStyleFrame() { return mRootElementStyleFrame; }
   nsPageSequenceFrame* GetPageSequenceFrame() { return mPageSequenceFrame; }
   // Returns the outermost canvas frame. There's usually one per document, but
@@ -379,9 +365,12 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                                        nsIFrame* aPrevPageFrame,
                                        nsCanvasFrame*& aCanvasFrame);
 
+  enum class AllowCounters : bool { No, Yes };
+
   void InitAndRestoreFrame(const nsFrameConstructorState& aState,
                            nsIContent* aContent, nsContainerFrame* aParentFrame,
-                           nsIFrame* aNewFrame, bool aAllowCounters = true);
+                           nsIFrame* aNewFrame,
+                           AllowCounters = AllowCounters::Yes);
 
   already_AddRefed<ComputedStyle> ResolveComputedStyle(nsIContent* aContent);
 
@@ -645,7 +634,7 @@ class nsCSSFrameConstructor final : public nsFrameManager {
              will set as the frame on the content.  Guaranteed non-null.
   */
   using FrameFullConstructor =
-      nsIFrame* (nsCSSFrameConstructor::*)(nsFrameConstructorState& aState,
+      nsIFrame* (nsCSSFrameConstructor::*)(nsFrameConstructorState & aState,
                                            FrameConstructionItem& aItem,
                                            nsContainerFrame* aParentFrame,
                                            const nsStyleDisplay* aStyleDisplay,
@@ -687,9 +676,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   /* If FCDATA_MAY_NEED_SCROLLFRAME is set, the new frame should be wrapped in
      a scrollframe if its overflow type so requires. */
 #define FCDATA_MAY_NEED_SCROLLFRAME 0x80
-  /* If FCDATA_IS_POPUP is set, the new frame is a XUL popup frame.  These need
-     some really weird special handling.  */
-#define FCDATA_IS_POPUP 0x100
   /* If FCDATA_SKIP_ABSPOS_PUSH is set, don't push this frame as an
      absolute containing block, no matter what its style says. */
 #define FCDATA_SKIP_ABSPOS_PUSH 0x200
@@ -891,7 +877,7 @@ class nsCSSFrameConstructor final : public nsFrameManager {
     // Also, the return value is always non-null, thanks to infallible 'new'.
     FrameConstructionItem* AppendItem(
         nsCSSFrameConstructor* aFCtor, const FrameConstructionData* aFCData,
-        nsIContent* aContent, already_AddRefed<ComputedStyle>&& aComputedStyle,
+        nsIContent* aContent, already_AddRefed<ComputedStyle> aComputedStyle,
         bool aSuppressWhiteSpaceOptimizations) {
       FrameConstructionItem* item = new (aFCtor)
           FrameConstructionItem(aFCData, aContent, std::move(aComputedStyle),
@@ -905,7 +891,7 @@ class nsCSSFrameConstructor final : public nsFrameManager {
     // Arguments are the same as AppendItem().
     FrameConstructionItem* PrependItem(
         nsCSSFrameConstructor* aFCtor, const FrameConstructionData* aFCData,
-        nsIContent* aContent, already_AddRefed<ComputedStyle>&& aComputedStyle,
+        nsIContent* aContent, already_AddRefed<ComputedStyle> aComputedStyle,
         bool aSuppressWhiteSpaceOptimizations) {
       FrameConstructionItem* item = new (aFCtor)
           FrameConstructionItem(aFCData, aContent, std::move(aComputedStyle),
@@ -919,6 +905,19 @@ class nsCSSFrameConstructor final : public nsFrameManager {
     void InlineItemAdded() { ++mInlineCount; }
     void BlockItemAdded() { ++mBlockCount; }
 
+    // Not allocated from the heap!
+    void* operator new(size_t) = delete;
+    void* operator new[](size_t) = delete;
+#ifdef _MSC_VER /* Visual Studio */
+   private:
+    void operator delete(void*) { MOZ_CRASH("FrameConstructionItemList::del"); }
+
+   public:
+#else
+    void operator delete(void*) = delete;
+#endif
+    void operator delete[](void*) = delete;
+
     class Iterator {
      public:
       explicit Iterator(FrameConstructionItemList& aList)
@@ -929,9 +928,8 @@ class nsCSSFrameConstructor final : public nsFrameManager {
         MOZ_ASSERT(&mList == &aOther.mList, "Iterators for different lists?");
         return mCurrent == aOther.mCurrent;
       }
-      bool operator!=(const Iterator& aOther) const {
-        return !(*this == aOther);
-      }
+      bool operator!=(const Iterator& aOther) const = default;
+
       Iterator& operator=(const Iterator& aOther) {
         MOZ_ASSERT(&mList == &aOther.mList, "Iterators for different lists?");
         mCurrent = aOther.mCurrent;
@@ -1055,15 +1053,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
     }
 
    private:
-    // Not allocated from the heap!
-    void* operator new(size_t) = delete;
-    void* operator new[](size_t) = delete;
-#ifdef _MSC_VER /* Visual Studio */
-    void operator delete(void*) { MOZ_CRASH("FrameConstructionItemList::del"); }
-#else
-    void operator delete(void*) = delete;
-#endif
-    void operator delete[](void*) = delete;
     // Placement new is used by Reset().
     void* operator new(size_t, void* aPtr) { return aPtr; }
 
@@ -1121,7 +1110,7 @@ class nsCSSFrameConstructor final : public nsFrameManager {
       : public mozilla::LinkedListElement<FrameConstructionItem> {
     FrameConstructionItem(const FrameConstructionData* aFCData,
                           nsIContent* aContent,
-                          already_AddRefed<ComputedStyle>&& aComputedStyle,
+                          already_AddRefed<ComputedStyle> aComputedStyle,
                           bool aSuppressWhiteSpaceOptimizations)
         : mFCData(aFCData),
           mContent(aContent),
@@ -1131,8 +1120,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
           mIsGeneratedContent(false),
           mIsAllInline(false),
           mIsBlock(false),
-          mIsPopup(false),
-          mIsLineParticipant(false),
           mIsRenderedLegend(false) {
       MOZ_COUNT_CTOR(FrameConstructionItem);
     }
@@ -1140,6 +1127,21 @@ class nsCSSFrameConstructor final : public nsFrameManager {
     void* operator new(size_t, nsCSSFrameConstructor* aFCtor) {
       return aFCtor->AllocateFCItem();
     }
+
+    // Not allocated from the general heap - instead, use the new/Delete APIs
+    // that take a nsCSSFrameConstructor* (which manages our arena allocation).
+    void* operator new(size_t) = delete;
+    void* operator new[](size_t) = delete;
+#ifdef _MSC_VER /* Visual Studio */
+   private:
+    void operator delete(void*) { MOZ_CRASH("FrameConstructionItem::delete"); }
+
+   public:
+#else
+    void operator delete(void*) = delete;
+#endif
+    void operator delete[](void*) = delete;
+    FrameConstructionItem(const FrameConstructionItem& aOther) = delete;
 
     void Delete(nsCSSFrameConstructor* aFCtor) {
       mChildItems.Destroy(aFCtor);
@@ -1200,26 +1202,10 @@ class nsCSSFrameConstructor final : public nsFrameManager {
     // they might still be blocks (and in particular, out-of-flows that didn't
     // find a containing block).
     bool mIsBlock : 1;
-    // Whether construction from this item will create a popup that needs to
-    // go into the global popup items.
-    bool mIsPopup : 1;
-    // Whether this item should be treated as a line participant
-    bool mIsLineParticipant : 1;
     // Whether this item is the rendered legend of a <fieldset>
     bool mIsRenderedLegend : 1;
 
    private:
-    // Not allocated from the general heap - instead, use the new/Delete APIs
-    // that take a nsCSSFrameConstructor* (which manages our arena allocation).
-    void* operator new(size_t) = delete;
-    void* operator new[](size_t) = delete;
-#ifdef _MSC_VER /* Visual Studio */
-    void operator delete(void*) { MOZ_CRASH("FrameConstructionItem::delete"); }
-#else
-    void operator delete(void*) = delete;
-#endif
-    void operator delete[](void*) = delete;
-    FrameConstructionItem(const FrameConstructionItem& aOther) = delete;
     // Not allocated from the stack!
     ~FrameConstructionItem() {
       MOZ_COUNT_DTOR(FrameConstructionItem);
@@ -1239,7 +1225,7 @@ class nsCSSFrameConstructor final : public nsFrameManager {
     explicit AutoFrameConstructionItem(nsCSSFrameConstructor* aFCtor,
                                        Args&&... args)
         : mFCtor(aFCtor),
-          mItem(new(aFCtor)
+          mItem(new (aFCtor)
                     FrameConstructionItem(std::forward<Args>(args)...)) {
       MOZ_ASSERT(mFCtor);
     }
@@ -1388,6 +1374,12 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                                         const nsStyleDisplay* aStyleDisplay,
                                         nsFrameList& aFrameList);
 
+  nsIFrame* ConstructTextControl(nsFrameConstructorState& aState,
+                                 FrameConstructionItem& aItem,
+                                 nsContainerFrame* aParentFrame,
+                                 const nsStyleDisplay* aStyleDisplay,
+                                 nsFrameList& aFrameList);
+
   // Creates a block frame wrapping an anonymous ruby frame.
   nsIFrame* ConstructBlockRubyFrame(nsFrameConstructorState& aState,
                                     FrameConstructionItem& aItem,
@@ -1447,8 +1439,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   // restriction (based on old spec-text) and we're planning to remove it.
   static const FrameConstructionData* FindDetailsData(const Element&,
                                                       ComputedStyle&);
-  static const FrameConstructionData* FindH1Data(const Element&,
-                                                 ComputedStyle&);
 
   /* Construct a frame from the given FrameConstructionItem.  This function
      will handle adding the frame to frame lists, processing children, setting
@@ -1516,16 +1506,8 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   static const FrameConstructionData* FindXULTagData(const Element&,
                                                      ComputedStyle&);
   // XUL data-finding helper functions and structures
-  static const FrameConstructionData* FindPopupGroupData(const Element&,
-                                                         ComputedStyle&);
-  static const FrameConstructionData* FindXULButtonData(const Element&,
-                                                        ComputedStyle&);
   static const FrameConstructionData* FindXULLabelOrDescriptionData(
       const Element&, ComputedStyle&);
-#ifdef XP_MACOSX
-  static const FrameConstructionData* FindXULMenubarData(const Element&,
-                                                         ComputedStyle&);
-#endif /* XP_MACOSX */
 
   /**
    * Constructs an outer frame, an anonymous child that wraps its real
@@ -1586,6 +1568,13 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                                         nsContainerFrame* aParentFrame,
                                         const nsStyleDisplay* aDisplay,
                                         nsFrameList& aFrameList);
+
+  // Construct a scrollable block with an already created subclass of
+  // ScrollContainerFrame, or nullptr for a plain ScrollContainerFrame.
+  void ConstructScrollableBlockWithScrollContainer(
+      nsFrameConstructorState& aState, FrameConstructionItem& aItem,
+      nsContainerFrame* aParentFrame, const nsStyleDisplay* aDisplay,
+      nsFrameList& aFrameList, nsContainerFrame*&);
 
   /**
    * This adds FrameConstructionItem objects to aItemsToConstruct for the
@@ -1691,8 +1680,7 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   already_AddRefed<ComputedStyle> BeginBuildingScrollContainerFrame(
       nsFrameConstructorState& aState, nsIContent* aContent,
       ComputedStyle* aContentStyle, nsContainerFrame* aParentFrame,
-      mozilla::PseudoStyleType aScrolledPseudo, bool aIsRoot,
-      nsContainerFrame*& aNewFrame);
+      bool aIsRoot, nsContainerFrame*& aNewFrame);
 
   // Completes the building of the scroll container frame.
   // Creates a view for the scrolledframe and makes it the child of the
@@ -1710,11 +1698,8 @@ class nsCSSFrameConstructor final : public nsFrameManager {
 
   /**
    * Recreate frames for aContent.
-   * @param aContent the content to recreate frames for
-   * @param aFlags normally you want to pass REMOVE_FOR_RECONSTRUCTION here
    */
-  void RecreateFramesForContent(nsIContent* aContent,
-                                InsertionKind aInsertionKind);
+  void RecreateFramesForContent(nsIContent* aContent, InsertionKind);
 
   /**
    *  Handles change of rowspan and colspan attributes on table cells.
@@ -1914,10 +1899,10 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   // rebuild the entire subtree when we insert or append new content under
   // aFrame.
   //
-  // This is similar to WipeContainingBlock(), but is called before constructing
-  // any frame construction items. Any container frames which need reframing
-  // regardless of the content inserted or appended can add a check in this
-  // method.
+  // This is similar to WipeContainingBlock(), but is called
+  // before constructing any frame construction items. Any container frames
+  // which need reframing regardless of the content inserted or appended can add
+  // a check in this method.
   //
   // @return true if we reconstructed the insertion parent frame; false
   // otherwise
@@ -1927,12 +1912,9 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   // because we're doing something like adding block kids to an inline frame
   // (and therefore need an {ib} split).  aPrevSibling must be correct, even in
   // aIsAppend cases.  Passing aIsAppend false even when an append is happening
-  // is ok in terms of correctness, but can lead to unnecessary reframing.  If
-  // aIsAppend is true, then the caller MUST call
-  // nsCSSFrameConstructor::AppendFramesToParent (as opposed to
-  // nsFrameManager::InsertFrames directly) to add the new frames.
-  // @return true if we reconstructed the containing block, false
-  // otherwise
+  // is ok in terms of correctness, but can lead to unnecessary reframing.
+  //
+  // @return true if we reconstructed the containing block, false otherwise.
   bool WipeContainingBlock(nsFrameConstructorState& aState,
                            nsIFrame* aContainingBlock, nsIFrame* aFrame,
                            FrameConstructionItemList& aItems, bool aIsAppend,
@@ -2037,14 +2019,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   void CheckForFirstLineInsertion(nsIFrame* aParentFrame,
                                   nsFrameList& aFrameList);
 
-  /**
-   * Find the next frame for appending to a given insertion point.
-   *
-   * We're appending, so this is almost always null, except for a few edge
-   * cases.
-   */
-  nsIFrame* FindNextSiblingForAppend(const InsertionPoint&);
-
   // The direction in which we should look for siblings.
   enum class SiblingDirection {
     Forward,
@@ -2061,65 +2035,34 @@ class nsCSSFrameConstructor final : public nsFrameManager {
    *
    * @param aIter should be positioned such that aIter.GetPreviousChild()
    *          is the first content to search for frames
-   * @param aTargetContentDisplay the CSS display enum for the content aIter
-   *          points to if already known. It will be filled in if needed.
    */
   template <SiblingDirection>
-  nsIFrame* FindSibling(
-      const mozilla::dom::FlattenedChildIterator& aIter,
-      mozilla::Maybe<mozilla::StyleDisplay>& aTargetContentDisplay);
+  nsIFrame* FindSibling(const mozilla::dom::FlattenedChildIterator& aIter);
 
   // Helper for the implementation of FindSibling.
   //
   // Beware that this function does mutate the iterator.
   template <SiblingDirection>
-  nsIFrame* FindSiblingInternal(
-      mozilla::dom::FlattenedChildIterator&, nsIContent* aTargetContent,
-      mozilla::Maybe<mozilla::StyleDisplay>& aTargetContentDisplay);
+  nsIFrame* FindSiblingInternal(mozilla::dom::FlattenedChildIterator&);
 
   // An alias of FindSibling<SiblingDirection::Forward>.
-  nsIFrame* FindNextSibling(
-      const mozilla::dom::FlattenedChildIterator& aIter,
-      mozilla::Maybe<mozilla::StyleDisplay>& aTargetContentDisplay);
-  // An alias of FindSibling<SiblingDirection::Backwards>.
+  nsIFrame* FindNextSibling(const mozilla::dom::FlattenedChildIterator& aIter);
+  // An alias of FindSibling<SiblingDirection::Backward>.
   nsIFrame* FindPreviousSibling(
-      const mozilla::dom::FlattenedChildIterator& aIter,
-      mozilla::Maybe<mozilla::StyleDisplay>& aTargetContentDisplay);
+      const mozilla::dom::FlattenedChildIterator& aIter);
 
-  // Given a potential first-continuation sibling frame for aTargetContent,
-  // verify that it is an actual valid sibling for it, and return the
-  // appropriate continuation the new frame for aTargetContent should be
-  // inserted next to.
-  nsIFrame* AdjustSiblingFrame(
-      nsIFrame* aSibling, nsIContent* aTargetContent,
-      mozilla::Maybe<mozilla::StyleDisplay>& aTargetContentDisplay,
-      SiblingDirection aDirection);
+  // Given a potential first-continuation sibling frame, return the
+  // appropriate continuation the new frame should be inserted next to.
+  nsIFrame* AdjustSiblingFrame(nsIFrame* aSibling, SiblingDirection);
 
   // Find the right previous sibling for an insertion.  This also updates the
   // parent frame to point to the correct continuation of the parent frame to
   // use, and returns whether this insertion is to be treated as an append.
   // aChild is the child being inserted.
-  // aIsRangeInsertSafe returns whether it is safe to do a range insert with
-  // aChild being the first child in the range. It is the callers'
-  // responsibility to check whether a range insert is safe with regards to
-  // fieldsets.
-  // The skip parameters are used to ignore a range of children when looking
-  // for a sibling. All nodes starting from aStartSkipChild and up to but not
-  // including aEndSkipChild will be skipped over when looking for sibling
-  // frames. Skipping a range can deal with shadow DOM, but not when there are
-  // multiple insertion points.
+  // It is the callers' responsibility to check whether a range insert is safe
+  // with regards to fieldsets / tables.
   nsIFrame* GetInsertionPrevSibling(InsertionPoint* aInsertion,  // inout
-                                    nsIContent* aChild, bool* aIsAppend,
-                                    bool* aIsRangeInsertSafe,
-                                    nsIContent* aStartSkipChild = nullptr,
-                                    nsIContent* aEndSkipChild = nullptr);
-
-  // see if aContent and aSibling are legitimate siblings due to restrictions
-  // imposed by table columns
-  // XXXbz this code is generally wrong, since the frame for aContent
-  // may be constructed based on tag, not based on aDisplay!
-  bool IsValidSibling(nsIFrame* aSibling, nsIContent* aContent,
-                      mozilla::Maybe<mozilla::StyleDisplay>& aDisplay);
+                                    nsIContent* aChild, bool* aIsAppend);
 
   void QuotesDirty();
   void CountersDirty();
@@ -2187,4 +2130,4 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   nsCOMPtr<nsILayoutHistoryState> mFrameTreeState;
 };
 
-#endif /* nsCSSFrameConstructor_h___ */
+#endif /* nsCSSFrameConstructor_h_ */

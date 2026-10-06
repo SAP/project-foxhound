@@ -20,7 +20,8 @@
 
 "use strict";
 
-const SPOOFED_HW_CONCURRENCY = 2;
+const SPOOFED_HW_CONCURRENCY =
+  SpecialPowers.Services.appinfo.OS == "Darwin" ? 8 : 4;
 
 const DEFAULT_HARDWARE_CONCURRENCY = navigator.hardwareConcurrency;
 
@@ -36,6 +37,19 @@ async function testHWConcurrency(result, expectedResults, extraData) {
     `Checking ${testDesc} navigator.hardwareConcurrency.`
   );
 }
+
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["privacy.fingerprintingProtection.overrides", "+NavigatorHWConcurrency"],
+    ],
+  });
+  registerCleanupFunction(async function () {
+    Services.prefs.clearUserPref(
+      "privacy.trackingprotection.allow_list.hasUserInteractedWithETPSettings"
+    );
+  });
+});
 
 // The following are convenience objects that allow you to quickly see what is
 //   and is not modified from a logical set of values.

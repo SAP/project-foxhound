@@ -155,11 +155,16 @@ impl FontContext {
 
     fn add_font_descriptor(&mut self, font_key: &FontKey, desc: &dwrote::FontDescriptor) {
         let system_fc = dwrote::FontCollection::get_system(false);
-        if let Some(font) = system_fc.get_font_from_descriptor(desc) {
-            let face = font.create_font_face();
-            let file = face.get_files().pop().unwrap();
-            let index = face.get_index();
-            self.fonts.insert(*font_key, FontFace { cached: None, file, index, face });
+        if let Ok(font) = system_fc.font_from_descriptor(desc) {
+            if let Some(font) = font {
+                let face = font.create_font_face();
+                if let Ok(mut files) = face.files() {
+                    if let Some(file) = files.pop() {
+                        let index = face.get_index();
+                        self.fonts.insert(*font_key, FontFace { cached: None, file, index, face });
+                    }
+                }
+            }
         }
     }
 
@@ -168,7 +173,7 @@ impl FontContext {
             return;
         }
 
-        if let Some(file) = dwrote::FontFile::new_from_data(data) {
+        if let Some(file) = dwrote::FontFile::new_from_buffer(data) {
             if let Ok(face) = file.create_face(index, dwrote::DWRITE_FONT_SIMULATIONS_NONE) {
                 self.fonts.insert(*font_key, FontFace { cached: None, file, index, face });
                 return;
@@ -367,8 +372,10 @@ impl FontContext {
 
     pub fn get_glyph_index(&mut self, font_key: FontKey, ch: char) -> Option<u32> {
         let face = &self.fonts.get(&font_key).unwrap().face;
-        let indices = face.get_glyph_indices(&[ch as u32]);
-        indices.first().map(|idx| *idx as u32)
+        if let Ok(indices) = face.glyph_indices(&[ch as u32]) {
+            return indices.first().map(|idx| *idx as u32);
+        }
+        None
     }
 
     pub fn get_glyph_dimensions(
@@ -397,22 +404,26 @@ impl FontContext {
         let extra_width = extra_strikes as f64 * pixel_step;
 
         let face = self.get_font_face(font);
-        face.get_design_glyph_metrics(&[key.index() as u16], false)
-            .first()
-            .map(|metrics| {
-                let em_size = size / 16.;
-                let design_units_per_pixel = face.metrics().metrics0().designUnitsPerEm as f32 / 16. as f32;
-                let scaled_design_units_to_pixels = em_size / design_units_per_pixel;
-                let advance = metrics.advanceWidth as f32 * scaled_design_units_to_pixels;
+        if let Ok(metrics) = face.design_glyph_metrics(&[key.index() as u16], false) {
+            return metrics
+                .first()
+                .map(|metrics| {
+                    let em_size = size / 16.;
+                    let design_units_per_pixel = face.metrics().metrics0().designUnitsPerEm as f32 / 16. as f32;
+                    let scaled_design_units_to_pixels = em_size / design_units_per_pixel;
+                    let advance = metrics.advanceWidth as f32 * scaled_design_units_to_pixels;
 
-                GlyphDimensions {
-                    left: bounds.left,
-                    top: -bounds.top,
-                    width: width + extra_width.ceil() as i32,
-                    height,
-                    advance: advance + extra_width as f32,
-                }
-            })
+                    GlyphDimensions {
+                        left: bounds.left,
+                        top: -bounds.top,
+                        width: width + extra_width.ceil() as i32,
+                        height,
+                        advance: advance + extra_width as f32,
+                    }
+                });
+        }
+
+        None
     }
 
     // DWrite ClearType gives us values in RGB, but WR expects BGRA.
@@ -633,6 +644,7 @@ impl FontContext {
             scale: (if bitmaps { y_scale.recip() } else { 1.0 }) as f32,
             format,
             bytes: bgra_pixels,
+            is_packed_glyph: false,
         })
     }
 }

@@ -1,0 +1,168 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Multiline editor ARIA forwarding test</title>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <link
+      rel="stylesheet"
+      href="chrome://mochikit/content/tests/SimpleTest/test.css"
+    />
+    <link rel="stylesheet" href="chrome://global/skin/global.css" />
+    <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+    <script src="../../../../../toolkit/content/tests/widgets/lit-test-helpers.js"></script>
+    <script
+      type="module"
+      src="chrome://browser/content/multilineeditor/multiline-editor.mjs"
+    ></script>
+    <script>
+      let html;
+      let testHelpers;
+
+      function getContentDOM(editor) {
+        return editor.shadowRoot.querySelector(
+          ".multiline-editor [contenteditable]"
+        );
+      }
+
+      async function waitForCondition(predicate, message) {
+        for (let i = 0; i < 60; i++) {
+          if (predicate()) {
+            return;
+          }
+          await new Promise(resolve => requestAnimationFrame(resolve));
+        }
+        ok(false, `Timed out waiting: ${message}`);
+      }
+
+      add_setup(async function setup() {
+        testHelpers = new LitTestHelpers();
+        ({ html } = await testHelpers.setupLit());
+        testHelpers.setupTests({
+          templateFn: (attributes) => html`<moz-multiline-editor ${attributes}></moz-multiline-editor>`,
+        });
+      });
+
+      add_task(async function testDefaultRoleIsTextbox() {
+        const result = await testHelpers.renderTemplate();
+        const editor = result.querySelector("moz-multiline-editor");
+        const content = getContentDOM(editor);
+
+        ok(content, "Inner contenteditable exists");
+        is(
+          editor.getAttribute("role"),
+          "presentation",
+          "Host has role=presentation"
+        );
+        is(content.getAttribute("role"), "textbox", "Default role is textbox");
+        is(
+          content.getAttribute("aria-multiline"),
+          "true",
+          "Default has aria-multiline"
+        );
+      });
+
+      add_task(async function testComboboxRoleForwarded() {
+        const result = await testHelpers.renderTemplate(html`
+          <moz-multiline-editor
+            role="combobox"
+            aria-controls="results"
+            aria-autocomplete="both"
+            aria-expanded="false"
+          ></moz-multiline-editor>
+        `);
+        const editor = result.querySelector("moz-multiline-editor");
+        const content = getContentDOM(editor);
+
+        is(
+          editor.getAttribute("role"),
+          "presentation",
+          "Host is hidden from a11y tree"
+        );
+        is(
+          content.getAttribute("role"),
+          "combobox",
+          "Inner element gets combobox role"
+        );
+        ok(
+          !content.hasAttribute("aria-multiline"),
+          "aria-multiline omitted in combobox mode"
+        );
+        is(
+          content.getAttribute("aria-controls"),
+          "results",
+          "aria-controls forwarded"
+        );
+        is(
+          content.getAttribute("aria-autocomplete"),
+          "both",
+          "aria-autocomplete forwarded"
+        );
+        is(
+          content.getAttribute("aria-expanded"),
+          "false",
+          "aria-expanded forwarded"
+        );
+      });
+
+      add_task(async function testAriaExpandedTogglePropagates() {
+        const result = await testHelpers.renderTemplate(html`
+          <moz-multiline-editor
+            role="combobox"
+            aria-expanded="false"
+          ></moz-multiline-editor>
+        `);
+        const editor = result.querySelector("moz-multiline-editor");
+        const content = getContentDOM(editor);
+
+        is(
+          content.getAttribute("aria-expanded"),
+          "false",
+          "Initial aria-expanded is false"
+        );
+
+        editor.setAttribute("aria-expanded", "true");
+        await waitForCondition(
+          () => content.getAttribute("aria-expanded") === "true",
+          "aria-expanded should propagate to true"
+        );
+
+        editor.setAttribute("aria-expanded", "false");
+        await waitForCondition(
+          () => content.getAttribute("aria-expanded") === "false",
+          "aria-expanded should propagate to false"
+        );
+      });
+
+      add_task(async function testAriaActiveDescendantAddedAndRemoved() {
+        const result = await testHelpers.renderTemplate(html`
+          <moz-multiline-editor role="combobox"></moz-multiline-editor>
+        `);
+        const editor = result.querySelector("moz-multiline-editor");
+        const content = getContentDOM(editor);
+
+        ok(
+          !content.hasAttribute("aria-activedescendant"),
+          "aria-activedescendant absent initially"
+        );
+
+        editor.setAttribute("aria-activedescendant", "result-1");
+        await waitForCondition(
+          () => content.getAttribute("aria-activedescendant") === "result-1",
+          "aria-activedescendant should be added"
+        );
+
+        editor.removeAttribute("aria-activedescendant");
+        await waitForCondition(
+          () => !content.hasAttribute("aria-activedescendant"),
+          "aria-activedescendant should be removed"
+        );
+      });
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+</html>

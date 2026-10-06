@@ -4,6 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
 import androidx.test.platform.app.InstrumentationRegistry
 import org.hamcrest.Matchers
+import org.hamcrest.Matchers.equalTo
 import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeThat
@@ -35,8 +36,28 @@ class ContentCrashTest : BaseSessionTest() {
 
         // TODO: bug 1710940
         assumeThat(sessionRule.env.isIsolatedProcess, Matchers.equalTo(false))
+        assumeThat(sessionRule.env.isAppZygoteProcess, equalTo(false))
 
         mainSession.loadUri(CONTENT_CRASH_URL)
+        mainSession.waitUntilCalled(ContentDelegate::class, "onCrash")
+
+        // This test is really slow so we allow double the usual timeout
+        var evalResult = client.getEvalResult(env.defaultTimeoutMillis * 2)
+        assertTrue(evalResult.mMsg, evalResult.mResult)
+    }
+
+    @IgnoreCrash
+    @Test
+    fun crashContentJava() {
+        // We need the crash reporter for this test
+        assumeTrue(BuildConfig.MOZ_CRASHREPORTER)
+
+        // TODO: bug 1710940
+        assumeThat(sessionRule.env.isIsolatedProcess, Matchers.equalTo(false))
+        assumeThat(sessionRule.env.isAppZygoteProcess, equalTo(false))
+
+        mainSession.loadUri(CONTENT_CRASH_JAVA_URL)
+        // Default handler will call MOZ_CRASH by GeckoAppShell.reportJavaCrash
         mainSession.waitUntilCalled(ContentDelegate::class, "onCrash")
 
         // This test is really slow so we allow double the usual timeout

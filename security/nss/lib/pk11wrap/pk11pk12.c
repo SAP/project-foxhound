@@ -17,6 +17,7 @@
 #include "pk11func.h"
 #include "secitem.h"
 #include "keyhi.h"
+#include "keyi.h"
 #include "secoid.h"
 #include "secasn1.h"
 #include "secerr.h"
@@ -79,6 +80,15 @@ struct SECKEYECPrivateKeyStr {
 };
 typedef struct SECKEYECPrivateKeyStr SECKEYECPrivateKey;
 
+struct SECKEYPQSeedPrivateKeyStr {
+    SECOidTag params;
+    SECItem privateValue;
+    SECItem seed;
+};
+typedef struct SECKEYPQSeedPrivateKeyStr SECKEYPQSeedPrivateKey;
+typedef struct SECKEYPQSeedPrivateKeyStr SECKEYMLDSAPrivateKey;
+typedef struct SECKEYPQSeedPrivateKeyStr SECKEYMLKEMPrivateKey;
+
 /*
 ** raw private key object
 */
@@ -90,12 +100,16 @@ struct SECKEYRawPrivateKeyStr {
         SECKEYDSAPrivateKey dsa;
         SECKEYDHPrivateKey dh;
         SECKEYECPrivateKey ec;
+        SECKEYPQSeedPrivateKey pq;
+        SECKEYMLDSAPrivateKey mldsa;
+        SECKEYMLKEMPrivateKey mlkem;
     } u;
 };
 typedef struct SECKEYRawPrivateKeyStr SECKEYRawPrivateKey;
 
 SEC_ASN1_MKSUB(SEC_AnyTemplate)
 SEC_ASN1_MKSUB(SECOID_AlgorithmIDTemplate)
+SEC_ASN1_MKSUB(SEC_OctetStringTemplate)
 
 /* ASN1 Templates for new decoder/encoder */
 /*
@@ -153,6 +167,25 @@ const SEC_ASN1Template SECKEY_DHPrivateKeyExportTemplate[] = {
     { SEC_ASN1_INTEGER, offsetof(SECKEYRawPrivateKey, u.dh.privateValue) },
     { SEC_ASN1_INTEGER, offsetof(SECKEYRawPrivateKey, u.dh.base) },
     { SEC_ASN1_INTEGER, offsetof(SECKEYRawPrivateKey, u.dh.prime) },
+};
+
+const SEC_ASN1Template SECKEY_PQPrivateKeyBothExportTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(SECKEYRawPrivateKey) },
+    { SEC_ASN1_OCTET_STRING, offsetof(SECKEYRawPrivateKey, u.pq.seed) },
+    { SEC_ASN1_OCTET_STRING, offsetof(SECKEYRawPrivateKey, u.pq.privateValue) },
+    { 0 }
+};
+
+const SEC_ASN1Template SECKEY_PQPrivateKeySeedExportTemplate[] = {
+    { SEC_ASN1_CONTEXT_SPECIFIC | SEC_ASN1_XTRN | 0, // NOLINT(misc-redundant-expression)
+      offsetof(SECKEYRawPrivateKey, u.pq.seed),
+      SEC_ASN1_SUB(SEC_OctetStringTemplate) },
+    { 0 }
+};
+
+const SEC_ASN1Template SECKEY_PQPrivateKeyKeyExportTemplate[] = {
+    { SEC_ASN1_OCTET_STRING, offsetof(SECKEYRawPrivateKey, u.pq.privateValue) },
+    { 0 }
 };
 
 SEC_ASN1_MKSUB(SEC_BitStringTemplate)
@@ -257,7 +290,7 @@ prepare_ec_priv_key_export_for_asn1(SECKEYRawPrivateKey *key)
 
 SECStatus
 PK11_ImportDERPrivateKeyInfo(PK11SlotInfo *slot, SECItem *derPKI,
-                             SECItem *nickname, SECItem *publicValue, PRBool isPerm,
+                             SECItem *nickname, const SECItem *publicValue, PRBool isPerm,
                              PRBool isPrivate, unsigned int keyUsage, void *wincx)
 {
     return PK11_ImportDERPrivateKeyInfoAndReturnKey(slot, derPKI,
@@ -268,7 +301,7 @@ PK11_ImportDERPrivateKeyInfo(PK11SlotInfo *slot, SECItem *derPKI,
 
 SECStatus
 PK11_ImportDERPrivateKeyInfoAndReturnKey(PK11SlotInfo *slot, SECItem *derPKI,
-                                         SECItem *nickname, SECItem *publicValue,
+                                         SECItem *nickname, const SECItem *publicValue,
                                          PRBool isPerm, PRBool isPrivate, unsigned int keyUsage,
                                          SECKEYPrivateKey **privk, void *wincx)
 {
@@ -297,7 +330,7 @@ PK11_ImportDERPrivateKeyInfoAndReturnKey(PK11SlotInfo *slot, SECItem *derPKI,
         PORT_FreeArena(temparena, PR_TRUE);
         return rv;
     }
-    if (pki->privateKey.data == NULL) {
+    if (pki->privateKey.data == NULL || pki->privateKey.len == 0) {
         /* If SEC_ASN1DecodeItems succeeds but SECKEYPrivateKeyInfo.privateKey
          * is a zero-length octet string, free the arena and return a failure
          * to avoid trying to zero the corresponding SECItem in
@@ -318,7 +351,7 @@ PK11_ImportDERPrivateKeyInfoAndReturnKey(PK11SlotInfo *slot, SECItem *derPKI,
 
 SECStatus
 PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
-                               SECItem *nickname, SECItem *publicValue, PRBool isPerm,
+                               SECItem *nickname, const SECItem *publicValue, PRBool isPerm,
                                PRBool isPrivate, unsigned int keyUsage, SECKEYPrivateKey **privk,
                                void *wincx)
 {
@@ -335,6 +368,7 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
     int signedcount = 0;
     CK_ATTRIBUTE *ap;
     SECItem *ck_id = NULL;
+    CK_ULONG paramSet;
 
     attrs = theTemplate;
 
@@ -428,7 +462,7 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
             }
             PK11_SETATTRS(attrs, CKA_SIGN, &cktrue, sizeof(CK_BBOOL));
             attrs++;
-            PK11_SETATTRS(attrs, CKA_SIGN_RECOVER, &cktrue, sizeof(CK_BBOOL));
+            PK11_SETATTRS(attrs, CKA_SIGN_RECOVER, &ckfalse, sizeof(CK_BBOOL));
             attrs++;
             if (nickname) {
                 PK11_SETATTRS(attrs, CKA_LABEL, nickname->data, nickname->len);
@@ -502,9 +536,7 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
             PK11_SETATTRS(attrs, CKA_SIGN, (keyUsage & KU_DIGITAL_SIGNATURE) ? &cktrue : &ckfalse,
                           sizeof(CK_BBOOL));
             attrs++;
-            PK11_SETATTRS(attrs, CKA_SIGN_RECOVER,
-                          (keyUsage & KU_DIGITAL_SIGNATURE) ? &cktrue
-                                                            : &ckfalse,
+            PK11_SETATTRS(attrs, CKA_SIGN_RECOVER, &ckfalse,
                           sizeof(CK_BBOOL));
             attrs++;
             PK11_SETATTRS(attrs, CKA_DERIVE, (keyUsage & KU_KEY_AGREEMENT) ? &cktrue : &ckfalse,
@@ -571,14 +603,115 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
                           lpk->u.ec.privateValue.len);
             attrs++;
             break;
+        case mldsaKey:
+            keyType = CKK_ML_DSA;
+            /* we need at least one of these to import into PKCS #11.
+             * if we have only one, it may still fail, but that is up
+             * to the token */
+            if ((lpk->u.mldsa.seed.len == 0) &&
+                (lpk->u.mldsa.privateValue.len == 0)) {
+                PORT_SetError(SEC_ERROR_BAD_KEY);
+                goto loser;
+            }
+            PK11_SETATTRS(attrs, CKA_SIGN, &cktrue, sizeof(CK_BBOOL));
+            attrs++;
+            PK11_SETATTRS(attrs, CKA_SIGN_RECOVER, &ckfalse, sizeof(CK_BBOOL));
+            attrs++;
+            /* if we have the public value, we can do more, without it
+             * we won't be able to set the ck_id properly, which will make
+             * this key effectively invisible. The application will need
+             * to update the ID before it looses it's handle */
+            if (publicValue != NULL) {
+                if (PK11_IsInternal(slot)) {
+                    PK11_SETATTRS(attrs, CKA_NSS_DB,
+                                  publicValue->data, publicValue->len);
+                    attrs++;
+                }
+                ck_id = PK11_MakeIDFromPubKey(publicValue);
+                if (ck_id == NULL) {
+                    goto loser;
+                }
+                PK11_SETATTRS(attrs, CKA_ID, ck_id->data, ck_id->len);
+                attrs++;
+            }
+            if (nickname) {
+                PK11_SETATTRS(attrs, CKA_LABEL, nickname->data, nickname->len);
+                attrs++;
+            }
+            paramSet = SECKEY_GetMLDSAPkcs11ParamSetByOidTag(lpk->u.mldsa.params);
+            PK11_SETATTRS(attrs, CKA_PARAMETER_SET, (unsigned char *)&paramSet,
+                          sizeof(CK_ML_DSA_PARAMETER_SET_TYPE));
+            attrs++;
+            if (lpk->u.mldsa.seed.len) {
+                PK11_SETATTRS(attrs, CKA_SEED, lpk->u.mldsa.seed.data,
+                              lpk->u.mldsa.seed.len);
+                attrs++;
+            }
+            if (lpk->u.mldsa.privateValue.len) {
+                PK11_SETATTRS(attrs, CKA_VALUE, lpk->u.mldsa.privateValue.data,
+                              lpk->u.mldsa.privateValue.len);
+                attrs++;
+            }
+            break;
+        case kyberKey:
+            keyType = CKK_ML_KEM;
+            /* we need at least one of these to import into PKCS #11.
+             * if we have only one, it may still fail, but that is up
+             * to the token */
+            if ((lpk->u.mlkem.seed.len == 0) &&
+                (lpk->u.mlkem.privateValue.len == 0)) {
+                PORT_SetError(SEC_ERROR_BAD_KEY);
+                goto loser;
+            }
+            PK11_SETATTRS(attrs, CKA_DECAPSULATE, &cktrue, sizeof(CK_BBOOL));
+            attrs++;
+            /* if we have the public value, we can do more, without it
+             * we won't be able to set the ck_id properly, which will make
+             * this key effectively invisible. The application will need
+             * to update the ID before it looses it's handle */
+            if (publicValue != NULL) {
+                if (PK11_IsInternal(slot)) {
+                    PK11_SETATTRS(attrs, CKA_NSS_DB,
+                                  publicValue->data, publicValue->len);
+                    attrs++;
+                }
+                ck_id = PK11_MakeIDFromPubKey(publicValue);
+                if (ck_id == NULL) {
+                    goto loser;
+                }
+                PK11_SETATTRS(attrs, CKA_ID, ck_id->data, ck_id->len);
+                attrs++;
+            }
+            if (nickname) {
+                PK11_SETATTRS(attrs, CKA_LABEL, nickname->data, nickname->len);
+                attrs++;
+            }
+            paramSet = seckey_GetMLKEMPkcs11ParamsByKyberParams(
+                seckey_GetKyberParamsByOidTag(lpk->u.mlkem.params));
+            PK11_SETATTRS(attrs, CKA_PARAMETER_SET, (unsigned char *)&paramSet,
+                          sizeof(CK_ML_KEM_PARAMETER_SET_TYPE));
+            attrs++;
+            if (lpk->u.mlkem.seed.len) {
+                PK11_SETATTRS(attrs, CKA_SEED, lpk->u.mlkem.seed.data,
+                              lpk->u.mlkem.seed.len);
+                attrs++;
+            }
+            if (lpk->u.mlkem.privateValue.len) {
+                PK11_SETATTRS(attrs, CKA_VALUE, lpk->u.mlkem.privateValue.data,
+                              lpk->u.mlkem.privateValue.len);
+                attrs++;
+            }
+            break;
         default:
             PORT_SetError(SEC_ERROR_BAD_KEY);
             goto loser;
     }
     templateCount = attrs - theTemplate;
     PORT_Assert(templateCount <= sizeof(theTemplate) / sizeof(CK_ATTRIBUTE));
-    if (lpk->keyType != ecKey && lpk->keyType != edKey && lpk->keyType != ecMontKey) {
-        PORT_Assert(signedattr);
+    /* we used to assert unless the key didn't need signedattrs, but that's
+     * now true of almost all modern keys, so now if the key has signedattrs
+     * the just need to set the value */
+    if (signedattr) {
         signedcount = attrs - signedattr;
         for (ap = signedattr; signedcount; ap++, signedcount--) {
             pk11_SignedToUnsigned(ap);
@@ -590,7 +723,7 @@ PK11_ImportAndReturnPrivateKey(PK11SlotInfo *slot, SECKEYRawPrivateKey *lpk,
 
     /* create and return a SECKEYPrivateKey */
     if (rv == SECSuccess && privk != NULL) {
-        *privk = PK11_MakePrivKey(slot, lpk->keyType, !isPerm, objectID, wincx);
+        *privk = pk11_MakePrivKey(slot, lpk->keyType, !isPerm, objectID, wincx);
         if (*privk == NULL) {
             rv = SECFailure;
         }
@@ -604,7 +737,7 @@ loser:
 
 SECStatus
 PK11_ImportPrivateKeyInfoAndReturnKey(PK11SlotInfo *slot,
-                                      SECKEYPrivateKeyInfo *pki, SECItem *nickname, SECItem *publicValue,
+                                      SECKEYPrivateKeyInfo *pki, SECItem *nickname, const SECItem *publicValue,
                                       PRBool isPerm, PRBool isPrivate, unsigned int keyUsage,
                                       SECKEYPrivateKey **privk, void *wincx)
 {
@@ -613,6 +746,7 @@ PK11_ImportPrivateKeyInfoAndReturnKey(PK11SlotInfo *slot,
     const SEC_ASN1Template *keyTemplate, *paramTemplate;
     void *paramDest = NULL;
     PLArenaPool *arena = NULL;
+    SECOidTag algTag;
 
     arena = PORT_NewArena(2048);
     if (!arena) {
@@ -627,8 +761,14 @@ PK11_ImportPrivateKeyInfoAndReturnKey(PK11SlotInfo *slot,
     }
     lpk->arena = arena;
 
-    switch (SECOID_GetAlgorithmTag(&pki->algorithm)) {
+    algTag = SECOID_GetAlgorithmTag(&pki->algorithm);
+    switch (algTag) {
         case SEC_OID_PKCS1_RSA_ENCRYPTION:
+        case SEC_OID_PKCS1_RSA_PSS_SIGNATURE:
+            /* An id-RSASSA-PSS PrivateKeyInfo wraps an ordinary RSAPrivateKey,
+             * identical to rsaEncryption; only the algorithm OID (and optional
+             * PSS parameters, which don't affect the raw key) differ. NSS
+             * represents RSA-PSS keys as rsaKey/CKK_RSA, so decode it as RSA. */
             prepare_rsa_priv_key_export_for_asn1(lpk);
             keyTemplate = SECKEY_RSAPrivateKeyExportTemplate;
             paramTemplate = NULL;
@@ -671,7 +811,41 @@ PK11_ImportPrivateKeyInfoAndReturnKey(PK11SlotInfo *slot,
             paramDest = NULL;
             lpk->keyType = ecKey;
             break;
-
+        case SEC_OID_ML_DSA_44:
+        case SEC_OID_ML_DSA_65:
+        case SEC_OID_ML_DSA_87:
+            lpk->keyType = mldsaKey;
+            lpk->u.mldsa.params = algTag;
+            goto handlePQKey;
+        case SEC_OID_ML_KEM_512:
+        case SEC_OID_ML_KEM_768:
+        case SEC_OID_ML_KEM_1024:
+            lpk->keyType = kyberKey;
+            lpk->u.mlkem.params = algTag;
+        handlePQKey:
+            if (pki->privateKey.data == NULL || pki->privateKey.len == 0) {
+                PORT_SetError(SEC_ERROR_BAD_KEY);
+                goto loser;
+            }
+            /* choice */
+            switch (pki->privateKey.data[0]) {
+                case SEC_ASN1_CONTEXT_SPECIFIC | 0:
+                    keyTemplate = SECKEY_PQPrivateKeySeedExportTemplate;
+                    break;
+                case SEC_ASN1_OCTET_STRING:
+                    keyTemplate = SECKEY_PQPrivateKeyKeyExportTemplate;
+                    break;
+                case SEC_ASN1_CONSTRUCTED | SEC_ASN1_SEQUENCE:
+                    keyTemplate = SECKEY_PQPrivateKeyBothExportTemplate;
+                    break;
+                default:
+                    keyTemplate = NULL;
+                    PORT_SetError(SEC_ERROR_BAD_DER);
+                    break;
+            }
+            paramTemplate = NULL;
+            paramDest = NULL;
+            break;
         default:
             keyTemplate = NULL;
             paramTemplate = NULL;
@@ -733,17 +907,20 @@ PK11_ImportPrivateKeyInfoAndReturnKey(PK11SlotInfo *slot,
 
     rv = PK11_ImportAndReturnPrivateKey(slot, lpk, nickname, publicValue, isPerm,
                                         isPrivate, keyUsage, privk, wincx);
-loser:
-    if (arena != NULL) {
-        PORT_FreeArena(arena, PR_TRUE);
+    if (rv != SECSuccess) {
+        goto loser;
     }
+    PORT_FreeArena(arena, PR_TRUE);
+    return SECSuccess;
 
-    return rv;
+loser:
+    PORT_FreeArena(arena, PR_TRUE);
+    return SECFailure;
 }
 
 SECStatus
 PK11_ImportPrivateKeyInfo(PK11SlotInfo *slot, SECKEYPrivateKeyInfo *pki,
-                          SECItem *nickname, SECItem *publicValue, PRBool isPerm,
+                          SECItem *nickname, const SECItem *publicValue, PRBool isPerm,
                           PRBool isPrivate, unsigned int keyUsage, void *wincx)
 {
     return PK11_ImportPrivateKeyInfoAndReturnKey(slot, pki, nickname,

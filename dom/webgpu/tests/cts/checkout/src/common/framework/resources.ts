@@ -3,7 +3,7 @@
  * workers must access resources using a different base path, so this is overridden in
  * `test_worker-worker.ts` and `standalone.ts`.
  */
-let baseResourcePath = './resources';
+let baseResourcePath = '/_mozilla/webgpu/resources';
 let crossOriginHost = '';
 
 function getAbsoluteBaseResourcePath(path: string) {
@@ -87,7 +87,7 @@ export function getCrossOriginResourcePath(pathRelativeToResourcesDir: string, o
 /**
  * Get a path to a resource in the `resources` directory, relative to the current execution context
  * (html file or worker .js file), for `fetch()`, `<img>`, `<video>`, etc. Pass the cross origin host
- * name if wants to load resoruce from cross origin host.
+ * name if wants to load resource from cross origin host.
  */
 export function getResourcePath(pathRelativeToResourcesDir: string) {
   return baseResourcePath + '/' + pathRelativeToResourcesDir;

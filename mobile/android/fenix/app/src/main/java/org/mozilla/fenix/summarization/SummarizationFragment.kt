@@ -1,0 +1,228 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+package org.mozilla.fenix.summarization
+
+import android.app.Dialog
+import android.content.Context
+import android.content.DialogInterface
+import android.graphics.Color
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.core.view.ViewCompat
+import androidx.fragment.app.viewModels
+import androidx.fragment.compose.content
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import androidx.navigation.fragment.navArgs
+import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import kotlinx.coroutines.suspendCancellableCoroutine
+import mozilla.components.browser.state.selector.selectedTab
+import mozilla.components.browser.state.state.TabSessionState
+import mozilla.components.concept.engine.EngineSession
+import mozilla.components.concept.engine.pageextraction.ContentParams
+import mozilla.components.feature.summarize.SummarizationState
+import mozilla.components.feature.summarize.SummarizationUi
+import mozilla.components.feature.summarize.ViewDismissed
+import mozilla.components.feature.summarize.content.PageContentExtractor
+import mozilla.components.feature.summarize.content.PageMetadata
+import mozilla.components.feature.summarize.content.PageMetadataExtractor
+import mozilla.components.feature.summarize.settings.SummarizeSettingsMiddleware
+import mozilla.components.feature.summarize.settings.SummarizeSettingsState
+import mozilla.components.feature.summarize.settings.SummarizeSettingsStore
+import mozilla.components.feature.summarize.settings.summarizeSettingsReducer
+import mozilla.components.support.base.log.logger.Logger
+import mozilla.components.support.ktx.android.view.setNavigationBarColorCompat
+import mozilla.components.support.utils.ext.top
+import org.mozilla.fenix.R
+import org.mozilla.fenix.ext.requireComponents
+import org.mozilla.fenix.settings.SupportUtils
+import org.mozilla.fenix.tabstray.ext.toDisplayTitle
+import org.mozilla.fenix.theme.FirefoxTheme
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import com.google.android.material.R as materialR
+
+private const val HIDING_FRICTION = 0.9f
+
+/**
+ * Gets the content for a given engine session.
+ */
+private fun EngineSession?.asPageContentExtractor(): PageContentExtractor = { options ->
+    runCatching {
+        val options = ContentParams(removeBoilerplate = options.shouldUseReaderModeContent)
+        suspendCancellableCoroutine { continuation ->
+            this!!.getPageContent(
+                options = options,
+                onResult = { content ->
+                    continuation.resume(content)
+                },
+                onException = { error ->
+                    continuation.resumeWithException(error)
+                },
+            )
+        }
+    }
+}
+
+private fun EngineSession?.asPageMetadataExtractor(): PageMetadataExtractor = {
+    runCatching {
+        suspendCancellableCoroutine { continuation ->
+            this!!.getPageMetadata(
+                onResult = { metadata ->
+                    continuation.resume(
+                        PageMetadata(
+                            structuredDataTypes = metadata.structuredDataTypes,
+                            wordCount = metadata.wordCount,
+                            language = metadata.language,
+                            isReaderable = metadata.isReaderable,
+                        ),
+                    )
+                },
+                onException = { error ->
+                    continuation.resumeWithException(error)
+                },
+            )
+        }
+    }
+}
+
+private fun Context.getConnectionType(): ConnectionType {
+    val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val capabilities = connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork)
+    return when {
+        capabilities == null -> ConnectionType.NONE
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> ConnectionType.WIFI
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> ConnectionType.CELLULAR
+        else -> ConnectionType.OTHER
+    }
+}
+
+/**
+ * Summarization UI entry fragment.
+ */
+class SummarizationFragment : BottomSheetDialogFragment() {
+    private val args by navArgs<SummarizationFragmentArgs>()
+    private val currentTab: TabSessionState? get() = requireComponents.core.store.state.selectedTab
+    private val isEngineAvailable: Boolean get() = currentTab?.engineState?.engineSession != null
+    private val storeViewModel: SummarizationStoreViewModel by viewModels {
+        val engineSession = currentTab?.engineState?.engineSession
+        val provider = requireComponents.llm.mlpaProvider
+        val title = currentTab?.toDisplayTitle() ?: ""
+        SummarizationStoreViewModel.factory(
+            initializedFromShake = args.fromShake,
+            pageTitle = title,
+            connectionType = requireContext().getConnectionType(),
+            llmProvider = provider,
+            settings = requireComponents.summarizationSettings,
+            pageContentExtractor = engineSession.asPageContentExtractor(),
+            pageMetadataExtractor = engineSession.asPageMetadataExtractor(),
+            errorReporter = { tag, exception ->
+                requireComponents.analytics.crashReporter.submitCaughtException(exception)
+                Logger(tag).error(exception.message ?: "", exception)
+            },
+        )
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // if we're recreating the backstack while resuming, we need to check that the tab hasn't been killed in the
+        // background
+        if (savedInstanceState != null && !isEngineAvailable) {
+            dismiss()
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val bottomSheet = dialog?.findViewById<View>(materialR.id.design_bottom_sheet)
+        bottomSheet?.let { sheet ->
+            with(BottomSheetBehavior.from(sheet)) {
+                skipCollapsed = true
+                state = BottomSheetBehavior.STATE_EXPANDED
+                hideFriction = HIDING_FRICTION
+            }
+        }
+    }
+
+    override fun onDismiss(dialog: DialogInterface) {
+        super.onDismiss(dialog)
+        storeViewModel.store.dispatch(ViewDismissed(isEngineAvailable))
+    }
+
+    override fun onCreateDialog(savedInstanceState: Bundle?): Dialog =
+        super.onCreateDialog(savedInstanceState).apply {
+            setOnShowListener {
+                val bottomSheet = findViewById<View>(materialR.id.design_bottom_sheet) ?: return@setOnShowListener
+                ViewCompat.setOnApplyWindowInsetsListener(bottomSheet) { view, insets ->
+                    // edge-to-edge workaround
+                    // exclude the bottom insets so that we can handle the insets in compose
+                    view.setPadding(0, insets.top(), 0, 0)
+                    insets
+                }
+                bottomSheet.setBackgroundResource(android.R.color.transparent)
+                dialog?.window?.setNavigationBarColorCompat(Color.TRANSPARENT)
+            }
+        }
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?,
+    ): View {
+        val summarizeSettings = requireComponents.summarizationSettings
+        val cache = requireComponents.summarizationSettingsCache
+
+        val settingsStore = SummarizeSettingsStore(
+            initialState = SummarizeSettingsState(
+                isFeatureEnabled = cache.featureEnabled.value,
+                isGestureEnabled = cache.gestureEnabled.value,
+            ),
+            reducer = ::summarizeSettingsReducer,
+            middleware = listOf(
+                SummarizeSettingsMiddleware(
+                    settings = summarizeSettings,
+                    onLearnMoreClicked = { openLearnMoreLink() },
+                    storeViewModel.viewModelScope,
+                ),
+            ),
+        )
+
+        return content {
+            val state by storeViewModel.store.stateFlow.collectAsStateWithLifecycle()
+            LaunchedEffect(state) {
+                when (state) {
+                    SummarizationState.LearnMoreAboutShakeConsent -> {
+                        openLearnMoreLink()
+                    }
+                    is SummarizationState.Finished -> {
+                        dismiss()
+                    }
+                    else -> {}
+                }
+            }
+
+            FirefoxTheme {
+                SummarizationUi(
+                    productName = getString(R.string.app_name),
+                    store = storeViewModel.store,
+                    settingsStore = settingsStore,
+                    resolveError = { throwable -> ErrorCodeLookup.lookup(throwable).code },
+                )
+            }
+        }
+    }
+
+    private fun openLearnMoreLink() {
+        val url = SupportUtils.getGenericSumoURLForTopic(SupportUtils.SumoTopic.PAGE_SUMMARIZATION)
+        SupportUtils.launchSandboxCustomTab(requireContext(), url)
+    }
+}

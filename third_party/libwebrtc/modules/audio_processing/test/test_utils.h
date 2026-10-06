@@ -11,12 +11,12 @@
 #ifndef MODULES_AUDIO_PROCESSING_TEST_TEST_UTILS_H_
 #define MODULES_AUDIO_PROCESSING_TEST_TEST_UTILS_H_
 
-#include <math.h>
-
-#include <iterator>
-#include <limits>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
 #include <memory>
-#include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"
@@ -101,25 +101,6 @@ class ChannelBufferWavWriter final {
   std::vector<float> interleaved_;
 };
 
-// Takes a pointer to a vector. Allows appending the samples of channel buffers
-// to the given vector, by interleaving the samples and converting them to float
-// S16.
-class ChannelBufferVectorWriter final {
- public:
-  explicit ChannelBufferVectorWriter(std::vector<float>* output);
-  ChannelBufferVectorWriter(const ChannelBufferVectorWriter&) = delete;
-  ChannelBufferVectorWriter& operator=(const ChannelBufferVectorWriter&) =
-      delete;
-  ~ChannelBufferVectorWriter();
-
-  // Creates an interleaved copy of `buffer`, converts the samples to float S16
-  // and appends the result to output_.
-  void Write(const ChannelBuffer<float>& buffer);
-
- private:
-  std::vector<float> interleaved_buffer_;
-  std::vector<float>* output_;
-};
 
 // Exits on failure; do not use in unit tests.
 FILE* OpenFile(absl::string_view filename, absl::string_view mode);

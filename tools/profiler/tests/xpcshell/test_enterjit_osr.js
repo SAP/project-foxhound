@@ -1,14 +1,14 @@
 // Check that the EnterJIT frame, added by the JIT trampoline and
 // usable by a native unwinder to resume unwinding after encountering
 // JIT code, is pushed as expected.
-function run_test() {
+add_task(async function test() {
   // This test assumes that it's starting on an empty profiler stack.
   // (Note that the other profiler tests also assume the profiler
   // isn't already started.)
   Assert.ok(!Services.profiler.IsActive());
 
   const ms = 5;
-  Services.profiler.StartProfiler(10000, ms, ["js"]);
+  await Services.profiler.StartProfiler(10000, ms, ["js"]);
 
   function has_arbitrary_name_in_stack() {
     // A frame for |arbitrary_name| has been pushed.  Do a sequence of
@@ -48,5 +48,5 @@ function run_test() {
     has_arbitrary_name_in_stack(),
     "A JS frame was found before the test timeout."
   );
-  Services.profiler.StopProfiler();
-}
+  await Services.profiler.StopProfiler();
+});

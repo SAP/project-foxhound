@@ -10,28 +10,30 @@ name = "neqo_glue"
 
 [dependencies]
 firefox-on-glean = { path = "../../../toolkit/components/glean/api" }
-neqo-udp = { tag = "v0.14.1", git = "https://github.com/mozilla/neqo" }
-neqo-http3 = { tag = "v0.14.1", git = "https://github.com/mozilla/neqo" }
-neqo-transport = { tag = "v0.14.1", git = "https://github.com/mozilla/neqo", features = ["gecko"] }
-neqo-common = { tag = "v0.14.1", git = "https://github.com/mozilla/neqo" }
-neqo-qpack = { tag = "v0.14.1", git = "https://github.com/mozilla/neqo" }
+neqo-udp = { tag = "v0.29.0", git = "https://github.com/mozilla/neqo" }
+neqo-http3 = { tag = "v0.29.0", git = "https://github.com/mozilla/neqo" }
+neqo-transport = { tag = "v0.29.0", git = "https://github.com/mozilla/neqo", features = ["gecko"] }
+neqo-common = { tag = "v0.29.0", git = "https://github.com/mozilla/neqo" }
+neqo-qpack = { tag = "v0.29.0", git = "https://github.com/mozilla/neqo" }
 nserror = { path = "../../../xpcom/rust/nserror" }
 nsstring = { path = "../../../xpcom/rust/nsstring" }
 xpcom = { path = "../../../xpcom/rust/xpcom" }
 thin-vec = { version = "0.2.1", features = ["gecko-ffi"] }
 log = "0.4.0"
-qlog = "0.15.1"
+qlog = "0.16"
 libc = "0.2.0"
+rustix = { version = "1.1", default-features = false, features = ["fs", "net"] }
 static_assertions = "1.1"
 static_prefs = { path = "../../../modules/libpref/init/static_prefs"}
 uuid = { version = "1.0", features = ["v4"] }
+zlib-rs = { version = "0.6", features = ["avx512"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = {version = "0.3", features = ["ws2def"] }
 
-[dependencies.neqo-crypto]
-tag = "v0.14.1"
-git = "https://github.com/mozilla/neqo"
+[dependencies.nss-rs]
+git = "https://github.com/mozilla/nss-rs"
+version = "0.13"
 default-features = false
 features = ["gecko"]
 

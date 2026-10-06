@@ -8,7 +8,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.whenever
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -17,6 +16,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.geckoview.GeckoRuntime
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class SpeculativeSessionFactoryTest {
@@ -53,7 +53,7 @@ class SpeculativeSessionFactoryTest {
 
         factory.create(runtime = runtime, private = false, contextId = null, defaultSettings = mock())
         assertNotSame(speculativeSession, factory.speculativeEngineSession)
-        assertFalse(speculativeSession!!.engineSession.geckoSession.isOpen)
+        assertFalse(speculativeSession.engineSession.geckoSession.isOpen)
         assertFalse(speculativeSession.engineSession.isObserved())
     }
 
@@ -67,7 +67,7 @@ class SpeculativeSessionFactoryTest {
 
         val speculativeSession = factory.get(private = true, contextId = null)
         assertNotNull(speculativeSession)
-        assertFalse(speculativeSession!!.isObserved())
+        assertFalse(speculativeSession.isObserved())
 
         assertFalse(factory.hasSpeculativeSession())
         assertNull(factory.speculativeEngineSession)
@@ -83,7 +83,7 @@ class SpeculativeSessionFactoryTest {
         assertNotNull(speculativeSession)
 
         assertNull(factory.get(private = true, contextId = "test"))
-        assertFalse(speculativeSession!!.engineSession.geckoSession.isOpen)
+        assertFalse(speculativeSession.engineSession.geckoSession.isOpen)
         assertFalse(speculativeSession.engineSession.isObserved())
     }
 

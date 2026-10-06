@@ -43,17 +43,6 @@ async function checkClipboardHasTestImage(imageType) {
       } else if (imageType === "jpeg") {
         expectedColor = [254, 0, 0];
       }
-      let {os} = await browser.runtime.getPlatformInfo();
-      if (os === "mac") {
-        // Due to https://bugzil.la/1396587, the pasted image differs from the
-        // original/expected image.
-        // Once that bug is fixed, this whole macOS-only branch can be removed.
-        if (imageType === "png") {
-          expectedColor = [255, 38, 0];
-        } else if (imageType === "jpeg") {
-          expectedColor = [255, 38, 0];
-        }
-      }
       browser.test.assertEq(expectedColor[0], r, "pixel should be red");
       browser.test.assertEq(expectedColor[1], g, "pixel should not contain green");
       browser.test.assertEq(expectedColor[2], b, "pixel should not contain blue");

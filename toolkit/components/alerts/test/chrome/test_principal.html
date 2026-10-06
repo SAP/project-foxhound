@@ -15,12 +15,16 @@
 const Cc = SpecialPowers.Cc;
 const Ci = SpecialPowers.Ci;
 const Services = SpecialPowers.Services;
+const AlertNotification = Components.Constructor(
+  "@mozilla.org/alert-notification;1",
+  "nsIAlertNotification",
+  "initWithObject"
+);
 
 const notifier = Cc["@mozilla.org/alerts-service;1"]
                    .getService(Ci.nsIAlertsService);
 
 const chromeScript = SpecialPowers.loadChromeScript(_ => {
-  /* eslint-env mozilla/chrome-script */
   addMessageListener("anyXULAlertsVisible", function() {
     var windows = Services.wm.getEnumerator("alert:alert");
     return windows.hasMoreElements();
@@ -50,10 +54,14 @@ function notify(alertName, principal) {
         resolve(source);
       }
     }
-    notifier.showAlertNotification(null, "Notification test",
-                                   "Surprise! I'm here to test notifications!",
-                                   false, alertName, observe, alertName,
-                                   null, null, null, principal);
+    let alert = new AlertNotification({
+      title: "Notification test",
+      text: "Surprise! I'm here to test notifications!",
+      cookie: alertName,
+      name: alertName,
+      principal
+    });
+    notifier.showAlert(alert, observe);
     if (SpecialPowers.Services.appinfo.OS == "Darwin") {
       notifier.closeAlert(alertName);
     }

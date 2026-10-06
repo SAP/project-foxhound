@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Unsupported MKV codecs test</title>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css">
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <script type="text/javascript" src="manifest.js"></script>
+</head>
+<body>
+<pre id="test">
+<script>
+/**
+ * This test verifies that MKV files with unsupported codecs fail to load with
+ * MEDIA_ERR_SRC_NOT_SUPPORTED. Tests are initially listed in gUnsupportedMKVtests
+ * and moved to gMKVtests once support is implemented. When all tests have been
+ * migrated to gMKVtests, this test can be removed.
+ */
+add_task(async function test_unsupported_mkv_sources() {
+  for (const test of gUnsupportedMKVtests) {
+    let v = document.createElement("video");
+    document.body.appendChild(v);
+    v.src = test.name;
+    v.preload = "auto";
+
+    let errorPromise = new Promise(resolve => {
+      v.addEventListener("error", () => {
+        is(v.error.code, MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED,
+           `video.error.code should be MEDIA_ERR_SRC_NOT_SUPPORTED for ${test.name}`);
+        resolve();
+      }, { once: true });
+    });
+    v.load();
+    await errorPromise;
+
+    ok(v.readyState < HTMLMediaElement.HAVE_METADATA,
+       `video.readyState (${v.readyState}) should be < HAVE_METADATA for ${test.name}`);
+    removeNodeAndSource(v);
+  }
+});
+</script>
+</pre>
+</body>
+</html>

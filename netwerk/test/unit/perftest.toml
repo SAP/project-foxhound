@@ -1,3 +1,7 @@
 [DEFAULT]
 
+["test_dns_stress.js"]
+
 ["test_http3_perf.js"]
+
+["test_trr_bench.js"]

@@ -7,35 +7,29 @@ package org.mozilla.fenix.settings.logins.ui
 import android.content.ClipboardManager
 import androidx.navigation.NavController
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.mockk.coEvery
+import io.mockk.mockk
+import io.mockk.verify
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.storage.Login
 import mozilla.components.concept.storage.LoginsStorage
-import mozilla.components.lib.state.Store
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
-import mozilla.components.support.test.mock
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.Mockito.verify
-import org.mockito.Mockito.`when`
 
 @RunWith(AndroidJUnit4::class)
 class LoginsMiddlewareTest {
 
-    @get:Rule
-    val coroutineRule = MainCoroutineRule()
-
     private lateinit var loginsStorage: LoginsStorage
     private lateinit var clipboardManager: ClipboardManager
     private lateinit var navController: NavController
+    private lateinit var navigateToImportDialog: () -> Unit
     private lateinit var exitLogins: () -> Unit
     private lateinit var openTab: (String, Boolean) -> Unit
     private lateinit var persistLoginsSortOrder: suspend (LoginsSortOrder) -> Unit
-    private var refreshLoginsList: Store<LoginsState, LoginsAction>.() -> Unit = {}
 
     private val loginList = List(5) {
         Login(
@@ -46,11 +40,14 @@ class LoginsMiddlewareTest {
         )
     }
 
+    private val testDispatcher = StandardTestDispatcher()
+
     @Before
     fun setup() {
-        loginsStorage = mock()
-        clipboardManager = mock()
-        navController = mock()
+        loginsStorage = mockk()
+        clipboardManager = mockk(relaxed = true)
+        navController = mockk(relaxed = true)
+        navigateToImportDialog = { }
         exitLogins = { }
         openTab = { _, _ -> }
         persistLoginsSortOrder = { }
@@ -58,31 +55,29 @@ class LoginsMiddlewareTest {
 
     @Test
     fun `GIVEN no logins in storage WHEN store is initialized THEN list of logins will be empty`() =
-        runTestOnMain {
-            `when`(loginsStorage.list()).thenReturn(listOf())
+        runTest(testDispatcher) {
+            coEvery { loginsStorage.list() } returns listOf()
             val middleware = buildMiddleware()
             val store = middleware.makeStore()
-            store.waitUntilIdle()
 
             assertEquals(0, store.state.loginItems.size)
         }
 
     @Test
     fun `GIVEN current screen is list logins WHEN add password is clicked THEN navigate to add login screen`() =
-        runTestOnMain {
-            `when`(loginsStorage.list()).thenReturn(listOf())
+        runTest(testDispatcher) {
+            coEvery { loginsStorage.list() } returns listOf()
 
             val middleware = buildMiddleware()
             val store = middleware.makeStore()
             store.dispatch(AddLoginAction.InitAdd)
-            store.waitUntilIdle()
-            verify(navController).navigate(LoginsDestinations.ADD_LOGIN)
+            verify { navController.navigate(LoginsDestinations.ADD_LOGIN) }
         }
 
     @Test
     fun `GIVEN current screen is list logins WHEN any login is clicked THEN navigate to detail login screen`() =
-        runTestOnMain {
-            `when`(loginsStorage.list()).thenReturn(loginList)
+        runTest(testDispatcher) {
+            coEvery { loginsStorage.list() } returns loginList
 
             val middleware = buildMiddleware()
             val store = middleware.makeStore()
@@ -97,14 +92,13 @@ class LoginsMiddlewareTest {
                     ),
                 ),
             )
-            store.waitUntilIdle()
-            verify(navController).navigate(LoginsDestinations.LOGIN_DETAILS)
+            verify { navController.navigate(LoginsDestinations.LOGIN_DETAILS) }
         }
 
     @Test
     fun `GIVEN current screen is list logins WHEN a login is clicked THEN navigate to edit login screen`() =
-        runTestOnMain {
-            `when`(loginsStorage.list()).thenReturn(loginList)
+        runTest(testDispatcher) {
+            coEvery { loginsStorage.list() } returns loginList
             val middleware = buildMiddleware()
             val store = middleware.makeStore()
 
@@ -119,41 +113,28 @@ class LoginsMiddlewareTest {
                     ),
                 ),
             )
-            store.waitUntilIdle()
 
-            verify(navController).navigate(LoginsDestinations.EDIT_LOGIN)
+            verify { navController.navigate(LoginsDestinations.EDIT_LOGIN) }
         }
 
     @Test
     fun `GIVEN current screen is list and the top-level is loaded WHEN back is clicked THEN exit logins`() =
-        runTestOnMain {
-            `when`(loginsStorage.list()).thenReturn(loginList)
+        runTest(testDispatcher) {
+            coEvery { loginsStorage.list() } returns loginList
             var exited = false
             exitLogins = { exited = true }
             val middleware = buildMiddleware()
             val store = middleware.makeStore()
 
             store.dispatch(LoginsListBackClicked)
-            store.waitUntilIdle()
 
             assertTrue(exited)
         }
 
     @Test
-    fun `GIVEN logins in storage WHEN store is initialized THEN logins will be loaded as display format`() =
-        runTestOnMain {
-            `when`(loginsStorage.list()).thenReturn(loginList)
-            val middleware = buildMiddleware()
-            val store = middleware.makeStore()
-            store.waitUntilIdle()
-
-            assertEquals(5, store.state.loginItems.size)
-        }
-
-    @Test
     fun `GIVEN a logins store WHEN SortMenuItem is clicked THEN Save the new sort order`() =
-        runTestOnMain {
-            `when`(loginsStorage.list()).thenReturn(loginList)
+        runTest(testDispatcher) {
+            coEvery { loginsStorage.list() } returns loginList
             var newSortOrder = LoginsSortOrder.default
             persistLoginsSortOrder = {
                 newSortOrder = it
@@ -161,14 +142,15 @@ class LoginsMiddlewareTest {
             val middleware = buildMiddleware()
             val store = middleware.makeStore()
             store.dispatch(LoginsListSortMenuAction.OrderByLastUsedClicked)
-            store.waitUntilIdle()
+            testDispatcher.scheduler.advanceUntilIdle()
+
             assertEquals(LoginsSortOrder.LastUsed, newSortOrder)
         }
 
     @Test
     fun `GIVEN login detail screen WHEN a login url button is clicked THEN open it in new tab`() =
-        runTestOnMain {
-            `when`(loginsStorage.list()).thenReturn(loginList)
+        runTest(testDispatcher) {
+            coEvery { loginsStorage.list() } returns loginList
             val url = loginList[2].origin
             var capturedUrl = ""
             var capturedNewTab = false
@@ -186,59 +168,21 @@ class LoginsMiddlewareTest {
             assertTrue(capturedNewTab)
         }
 
-    @Test
-    fun `WHEN two logins are deleted, the logins list is refreshed each time`() =
-        runTestOnMain {
-            var numberOfTimesLoginListRefreshed = 0
-            refreshLoginsList = { numberOfTimesLoginListRefreshed++ }
-            `when`(loginsStorage.list()).thenReturn(loginList)
-
-            val middleware = buildMiddleware()
-            val store = middleware.makeStore()
-            store.dispatch(
-                DetailLoginMenuAction.DeleteLoginMenuItemClicked(
-                    item = LoginItem(
-                        guid = loginList[1].guid,
-                        url = loginList[1].origin,
-                        username = loginList[1].username,
-                        password = loginList[1].password,
-                        timeLastUsed = 0L,
-                    ),
-                ),
-            )
-            store.dispatch(
-                DetailLoginMenuAction.DeleteLoginMenuItemClicked(
-                    item = LoginItem(
-                        guid = loginList[2].guid,
-                        url = loginList[2].origin,
-                        username = loginList[2].username,
-                        password = loginList[2].password,
-                        timeLastUsed = 0L,
-                    ),
-                ),
-            )
-            store.waitUntilIdle()
-
-            assertEquals(2, numberOfTimesLoginListRefreshed)
-        }
-
     private fun buildMiddleware() = LoginsMiddleware(
         loginsStorage = loginsStorage,
         getNavController = { navController },
+        navigateToImportDialog = navigateToImportDialog,
         exitLogins = exitLogins,
         openTab = openTab,
-        ioDispatcher = coroutineRule.testDispatcher,
+        ioDispatcher = testDispatcher,
         persistLoginsSortOrder = persistLoginsSortOrder,
         clipboardManager = clipboardManager,
-        refreshLoginsList = refreshLoginsList,
     )
 
     private fun LoginsMiddleware.makeStore(
-        initialState: LoginsState = LoginsState(),
+        initialState: LoginsState = LoginsState.default,
     ) = LoginsStore(
         initialState = initialState,
         middleware = listOf(this),
-    ).also {
-        it.waitUntilIdle()
-    }
+    )
 }

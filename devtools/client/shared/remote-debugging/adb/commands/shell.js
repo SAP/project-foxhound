@@ -66,7 +66,7 @@ const shell = async function (deviceId, command) {
           }
           ignoreResponseCode = true;
         // eslint-disable-next-lined no-fallthrough
-        case "decode-shell":
+        case "decode-shell": {
           const decoder = new TextDecoder();
           const text = new Uint8Array(
             client.getBuffer(data),
@@ -74,6 +74,7 @@ const shell = async function (deviceId, command) {
           );
           stdout += decoder.decode(text);
           break;
+        }
         default:
           dumpn("shell Unexpected State: " + state);
           reject("UNEXPECTED_STATE");

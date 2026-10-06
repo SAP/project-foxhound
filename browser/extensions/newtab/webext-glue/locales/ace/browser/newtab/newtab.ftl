@@ -9,6 +9,34 @@ newtab-page-title = Tab Barô
 newtab-settings-button =
     .title = Peuseusuwai Ôn Tab Barô droëneuh
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Tab barô
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label = { $num } baréh
+home-restore-defaults-srd =
+    .label = Peubalek Baku
+    .accesskey = P
+home-mode-choice-custom-srd =
+    .label = Atô URL...
+home-mode-choice-blank-srd =
+    .label = Laman sôh
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Kisah-kisah nyang diseuponsor
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Ônwèb nyang Disaweuë
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Peutanda
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Donlod Paléng Barô
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +44,7 @@ newtab-search-box-search-button =
     .title = Mita
     .aria-label = Mita
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Tamah Meusén Mita
 newtab-topsites-edit-topsites-header = Ubah Situih Paléng Ateuëh
@@ -44,9 +72,6 @@ newtab-topsites-add-button = Tamah
 newtab-confirm-delete-history-p1 = Droëneuh yakin keumeuk sampôh tiëp ceunto ônwèb nyoë nibak histori droëneuh?
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = Buët nyoë hanjeuët tapeubateuë.
-
-## Top Sites - Sponsored label
-
 
 ## Context Menu - Action Tooltips.
 
@@ -77,12 +102,6 @@ newtab-menu-delete-history = Sampôh nibak Histori
 newtab-menu-save-to-pocket = Keubah u { -pocket-brand-name }
 newtab-menu-delete-pocket = Sampôh nibak { -pocket-brand-name }
 newtab-menu-archive-pocket = Peuarsip lam { -pocket-brand-name }
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
-
-## Message displayed in a modal window to explain privacy and provide context for sponsored content.
-
 
 ##
 
@@ -133,9 +152,6 @@ newtab-section-menu-move-up = Peuék
 newtab-section-menu-move-down = Peutrôn
 newtab-section-menu-privacy-notice = Keubijakan Privasi
 
-## Section aria-labels
-
-
 ## Section Headers.
 
 newtab-section-header-topsites = Situih Paléng Ateuëh
@@ -151,77 +167,13 @@ newtab-empty-section-highlights = Mulai seumeulop, lheueh nyan kamoe peudeuih pa
 #   $provider (string) - Name of the content provider for this section, e.g "Pocket".
 newtab-empty-section-topstories = Ka gura hai rakan. Ntruek neugisa lom beh? mantöng lee hikayat laén dum nyang hayeu hayeu lé { $provider }. Beu jinoe ju? Neu piléh asoe laén nyang meukeunöng man sabôh nyan.
 
-## Empty Section (Content Discovery Experience). These show when there are no more stories or when some stories fail to load.
-
-
 ## Pocket Content Section.
 
 # This is shown at the bottom of the trending stories section and precedes a list of links to popular topics.
 newtab-pocket-read-more = Bhaih Meusyeuhu:
-
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
 
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
 newtab-error-fallback-info = Alah hai, na sipue pue nyang salah watée jipeuhah konten.
 newtab-error-fallback-refresh-link = Neu refresh laman bah ji trei lom.
-
-## Customization Menu
-
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

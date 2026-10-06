@@ -383,7 +383,7 @@ To disable the default trimming behavior, set :python:`trim:"False"` or
           "toolkit/chrome/mozapps/extensions/extensions.dtd",
           "discover.description2",
           {
-              "&brandShortName;": TERM_REFERENCE("-brand-short-name")
+              "&brandShortName;": TERM_REFERENCE("brand-short-name")
           },
           trim=False
       )

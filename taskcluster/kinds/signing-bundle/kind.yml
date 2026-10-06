@@ -9,11 +9,13 @@ transforms:
     - android_taskgraph.transforms.upstream_artifacts
     - android_taskgraph.transforms.treeherder:transforms
     - android_taskgraph.transforms.signing_android_app:transforms
-    - android_taskgraph.transforms.notify:transforms
     - gecko_taskgraph.transforms.task:transforms
 
 kind-dependencies:
     - build-bundle
+
+task-defaults:
+    run-on-repo-type: [hg]
 
 tasks:
     sign-bundle:

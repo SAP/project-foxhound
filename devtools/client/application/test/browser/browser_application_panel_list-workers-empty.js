@@ -16,7 +16,7 @@ add_task(async function () {
   const { panel, tab } = await openNewTabAndApplicationPanel(EMPTY_URL);
   const doc = panel.panelWin.document;
 
-  selectPage(panel, "service-workers");
+  await selectPage(panel, "service-workers");
 
   await waitUntil(
     () => doc.querySelector(".js-registration-list-empty") !== null

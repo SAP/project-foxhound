@@ -1,0 +1,15 @@
+{
+  "label": "enjoy.point.auone.jp",
+  "bugs": {
+    "1899047": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://enjoy.point.auone.jp/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

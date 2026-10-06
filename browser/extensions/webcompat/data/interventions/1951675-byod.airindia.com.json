@@ -1,0 +1,15 @@
+{
+  "label": "byod.airindia.com",
+  "bugs": {
+    "1951675": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://byod.airindia.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -126,7 +124,10 @@ class CachedTableAccessible final : public TableAccessible {
       return 0;
     }
     // Verify that the cell's Accessible is valid.
-    mCells[cellIdx].Acc(mAcc);
+    if (!mCells[cellIdx].Acc(mAcc)) {
+      return 0;
+    }
+
     return mCells[cellIdx].ColExtent();
   }
 
@@ -136,7 +137,10 @@ class CachedTableAccessible final : public TableAccessible {
       return 0;
     }
     // Verify that the cell's Accessible is valid.
-    mCells[cellIdx].Acc(mAcc);
+    if (!mCells[cellIdx].Acc(mAcc)) {
+      return 0;
+    }
+
     return mCells[cellIdx].RowExtent();
   }
 
@@ -183,16 +187,19 @@ class CachedTableAccessible final : public TableAccessible {
       return false;
     }
     // Verify that the cell's Accessible is valid.
-    mCells[cellIdx].Acc(mAcc);
+    if (!mCells[cellIdx].Acc(mAcc)) {
+      return false;
+    }
+
     return mCells[cellIdx].Selected();
   }
 
   virtual uint32_t SelectedCellCount() override {
     uint32_t count = 0;
     for (auto& cell : mCells) {
-      // Verify that the cell's Accessible is valid.
-      cell.Acc(mAcc);
-      if (cell.Selected()) {
+      // Verify that the cell's Accessible is valid and then check if it's
+      // selected.
+      if (cell.Acc(mAcc) && cell.Selected()) {
         ++count;
       }
     }
@@ -223,7 +230,7 @@ class CachedTableAccessible final : public TableAccessible {
     for (auto& cell : mCells) {
       // Verify that the cell's Accessible is valid.
       Accessible* acc = cell.Acc(mAcc);
-      if (cell.Selected()) {
+      if (acc && cell.Selected()) {
         aCells->AppendElement(acc);
       }
     }
@@ -232,9 +239,9 @@ class CachedTableAccessible final : public TableAccessible {
   virtual void SelectedCellIndices(nsTArray<uint32_t>* aCells) override {
     for (uint32_t idx = 0; idx < mCells.Length(); ++idx) {
       CachedTableCellAccessible& cell = mCells[idx];
-      // Verify that the cell's Accessible is valid.
-      cell.Acc(mAcc);
-      if (cell.Selected()) {
+      // Verify that the cell's Accessible is valid and then check if it's
+      // selected.
+      if (cell.Acc(mAcc) && cell.Selected()) {
         aCells->AppendElement(idx);
       }
     }

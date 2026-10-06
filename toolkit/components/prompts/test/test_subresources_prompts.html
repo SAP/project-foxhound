@@ -173,11 +173,11 @@ add_task(async function runTestAuth() {
  * Function to be passed to SpecialPowers.spawn that dispatches a MouseEvent
  * of a certain type to some element in a subframe.
  *
- * @param {String} targetID The ID of the element that will have the event
+ * @param {string} targetID The ID of the element that will have the event
  * dispatched on.
- * @param {String} type The type of MouseEvent.
- * @returns Promise
- * @resolves Once the event has been dispatched.
+ * @param {string} type The type of MouseEvent.
+ * @returns {Promise<void>}
+ *   Resolves once the event has been dispatched.
  */
 async function dispatchMouseEvent(targetID, type) {
   /* eslint-disable no-undef */

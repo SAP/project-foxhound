@@ -38,9 +38,7 @@ const trace = {
  * If the default log directory preference isn't set the following
  * directory is used by default: <profile>/har/logs
  */
-function HarAutomation() {}
-
-HarAutomation.prototype = {
+class HarAutomation {
   // Initialization
 
   async initialize(toolbox) {
@@ -48,7 +46,7 @@ HarAutomation.prototype = {
     this.commands = toolbox.commands;
 
     await this.startMonitoring();
-  },
+  }
 
   destroy() {
     if (this.collector) {
@@ -58,13 +56,13 @@ HarAutomation.prototype = {
     if (this.tabWatcher) {
       this.tabWatcher.disconnect();
     }
-  },
+  }
 
   // Automation
 
   async startMonitoring() {
-    await this.toolbox.resourceCommand.watchResources(
-      [this.toolbox.resourceCommand.TYPES.DOCUMENT_EVENT],
+    await this.commands.resourceCommand.watchResources(
+      [this.commands.resourceCommand.TYPES.DOCUMENT_EVENT],
       {
         onAvailable: resources => {
           // Only consider top level document, and ignore remote iframes top document
@@ -86,11 +84,11 @@ HarAutomation.prototype = {
         ignoreExistingResources: true,
       }
     );
-  },
+  }
 
   pageLoadBegin() {
     this.resetCollector();
-  },
+  }
 
   resetCollector() {
     if (this.collector) {
@@ -104,7 +102,7 @@ HarAutomation.prototype = {
     });
 
     this.collector.start();
-  },
+  }
 
   /**
    * A page is done loading, export collected data. Note that
@@ -124,7 +122,7 @@ HarAutomation.prototype = {
         return this.autoExport();
       });
     }
-  },
+  }
 
   autoExport() {
     const autoExport = Services.prefs.getBoolPref(
@@ -142,7 +140,7 @@ HarAutomation.prototype = {
     };
 
     return this.executeExport(data);
-  },
+  }
 
   // Public API
 
@@ -157,14 +155,14 @@ HarAutomation.prototype = {
     }
 
     return this.executeExport(data);
-  },
+  }
 
   /**
    * Clear currently collected data.
    */
   clear() {
     this.resetCollector();
-  },
+  }
 
   // HAR Export
 
@@ -210,7 +208,7 @@ HarAutomation.prototype = {
     }
 
     return jsonString;
-  },
+  }
 
   /**
    * Fetches the full text of a string.
@@ -221,8 +219,8 @@ HarAutomation.prototype = {
       stringGrip
     );
     return fullText;
-  },
-};
+  }
+}
 
 // Protocol Helpers
 

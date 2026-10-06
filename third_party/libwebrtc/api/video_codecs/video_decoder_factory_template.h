@@ -12,11 +12,11 @@
 #define API_VIDEO_CODECS_VIDEO_DECODER_FACTORY_TEMPLATE_H_
 
 #include <memory>
+#include <span>
 #include <type_traits>
 #include <vector>
 
 #include "absl/algorithm/container.h"
-#include "api/array_view.h"
 #include "api/environment/environment.h"
 #include "api/video_codecs/sdp_video_format.h"
 #include "api/video_codecs/video_decoder.h"
@@ -52,9 +52,8 @@ class VideoDecoderFactoryTemplate : public VideoDecoderFactory {
   }
 
  private:
-  bool IsFormatInList(
-      const SdpVideoFormat& format,
-      rtc::ArrayView<const SdpVideoFormat> supported_formats) const {
+  bool IsFormatInList(const SdpVideoFormat& format,
+                      std::span<const SdpVideoFormat> supported_formats) const {
     return absl::c_any_of(
         supported_formats, [&](const SdpVideoFormat& supported_format) {
           return supported_format.name == format.name &&

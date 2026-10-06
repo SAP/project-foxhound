@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,9 +6,9 @@
 #define mozilla_dom_URLClassifierParent_h
 
 #include "mozilla/dom/PContent.h"
-#include "mozilla/dom/PURLClassifierParent.h"
-#include "mozilla/dom/PURLClassifierLocalParent.h"
 #include "mozilla/dom/PURLClassifierLocalByNameParent.h"
+#include "mozilla/dom/PURLClassifierLocalParent.h"
+#include "mozilla/dom/PURLClassifierParent.h"
 #include "nsIURIClassifier.h"
 #include "nsIUrlClassifierFeature.h"
 
@@ -36,7 +34,7 @@ class URLClassifierParent : public nsIURIClassifierCallback,
     if (mIPCOpen) {
       ClassifierInfo info = ClassifierInfo(
           nsCString(aList), nsCString(aProvider), nsCString(aFullHash));
-      Unused << Send__delete__(this, Some(info), aErrorCode);
+      (void)Send__delete__(this, Some(info), aErrorCode);
     }
     return NS_OK;
   }
@@ -44,7 +42,7 @@ class URLClassifierParent : public nsIURIClassifierCallback,
   // Custom.
   void ClassificationFailed() {
     if (mIPCOpen) {
-      Unused << Send__delete__(this, Nothing(), NS_ERROR_FAILURE);
+      (void)Send__delete__(this, Nothing(), NS_ERROR_FAILURE);
     }
   }
 

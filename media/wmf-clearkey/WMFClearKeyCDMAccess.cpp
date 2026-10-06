@@ -4,7 +4,7 @@
 
 #include "WMFClearKeyCDMAccess.h"
 
-#include <Mferror.h>
+#include <mferror.h>
 #include <oleauto.h>
 
 #include "WMFClearKeyCDM.h"

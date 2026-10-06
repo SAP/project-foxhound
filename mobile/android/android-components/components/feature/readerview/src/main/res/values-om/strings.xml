@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  ~ This Source Code Form is subject to the terms of the Mozilla Public
+  ~  License, v. 2.0. If a copy of the MPL was not distributed with this
+  ~  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!-- Name for one of the font options available to use -->
+  <string name="mozac_feature_readerview_sans_serif_font">Sansi seriif</string>
+  <!-- Accessible description for the font option -->
+  <string name="mozac_feature_readerview_sans_serif_font_desc">Hanga qubee sansi Seriif</string>
+  <!-- Name for one of the font options available to use -->
+  <string name="mozac_feature_readerview_serif_font">Seriif</string>
+  <!-- Accessible description for the font option -->
+  <string name="mozac_feature_readerview_serif_font_desc">Hanga qubee seriif</string>
+  <!-- Accessible description for decreasing the font size -->
+  <string name="mozac_feature_readerview_font_size_decrease_desc">Hammi qubee hir\'achuu</string>
+  <!-- Accessible description for increasing the font size -->
+  <string name="mozac_feature_readerview_font_size_increase_desc">Haammi qubee dabaluu</string>
+  <!-- Color option for the background -->
+  <string name="mozac_feature_readerview_dark">Duukkana</string>
+  <!-- Accessible description for the color option -->
+  <string name="mozac_feature_readerview_dark_color_scheme_desc">Halluu dukkanaa\'aa</string>
+  <!-- Color option for the background -->
+  <string name="mozac_feature_readerview_sephia">Seepiyaa</string>
+  <!-- Accessible description for the color option -->
+  <string name="mozac_feature_readerview_sepia_color_scheme_desc">Iskeemaa halluu seepiyaa</string>
+  <!-- Color option for the background -->
+  <string name="mozac_feature_readerview_light">Ifaa</string>
+  <!-- Accessible description for the color option -->
+  <string name="mozac_feature_readerview_light_color_scheme_desc">Iskeemaa halluu ifaa</string>
+</resources>

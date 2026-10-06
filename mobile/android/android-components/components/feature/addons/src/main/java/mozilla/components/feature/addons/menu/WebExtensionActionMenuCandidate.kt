@@ -13,7 +13,7 @@ import mozilla.components.concept.menu.candidate.ContainerStyle
 import mozilla.components.concept.menu.candidate.TextMenuCandidate
 import mozilla.components.concept.menu.candidate.TextMenuIcon
 import mozilla.components.concept.menu.candidate.TextStyle
-import mozilla.components.ui.icons.R
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Create a browser menu item for displaying a web extension action.
@@ -27,7 +27,7 @@ fun Action.createMenuCandidate(
     return TextMenuCandidate(
         title.orEmpty(),
         start = loadIcon?.let { loadIcon ->
-            val defaultIcon = getDrawable(context, R.drawable.mozac_ic_web_extension_default_icon)
+            val defaultIcon = getDrawable(context, iconsR.drawable.mozac_ic_extension_fill_24)
             AsyncDrawableMenuIcon(
                 loadDrawable = { _, height ->
                     loadIcon(height)?.toDrawable(context.resources)

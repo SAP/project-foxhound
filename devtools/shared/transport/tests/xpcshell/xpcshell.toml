@@ -2,7 +2,9 @@
 tags = "devtools"
 head = "head_dbg.js"
 firefox-appdir = "browser"
-run-if = ["os != 'android'"]
+run-if = [
+  "os != 'android'",
+]
 support-files = ["testactors.js"]
 
 ["test_bulk_error.js"]

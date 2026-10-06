@@ -17,24 +17,32 @@ support-files = [
 ["test_check_nsIException.js"]
 
 ["test_check_nsIException_failing.js"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["test_do_check_matches.js"]
 
 ["test_do_check_matches_failing.js"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["test_do_check_null.js"]
 
 ["test_do_check_null_failing.js"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["test_do_get_tempdir.js"]
 
 ["test_execute_soon.js"]
 
 ["test_fail.js"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["test_get_file.js"]
 
@@ -64,7 +72,9 @@ prefs = ["dummy.pref.from.test.file=1"]
 ["test_sample.js"]
 
 ["test_skip.js"]
-run-if = ["false"]
+run-if = [
+  "false",
+]
 
 ["test_tasks_skip.js"]
 

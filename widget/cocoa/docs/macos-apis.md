@@ -86,11 +86,11 @@ See the [Supporting Multiple SDKs](sdks.md#supporting-multiple-sdks) docs for mo
 
 Keep these three things in mind:
 
- - Copy only what you need.
- - Wrap your declaration in `MAC_OS_X_VERSION_MAX_ALLOWED` checks so that, if an SDK is used that
-   already contains these declarations, your declaration does not conflict with the declaration in the SDK.
- - Include the `API_AVAILABLE` annotations so that the compiler can protect you from accidentally
-   calling the API on unsupported macOS versions.
+- Copy only what you need.
+- Wrap your declaration in `MAC_OS_X_VERSION_MAX_ALLOWED` checks so that, if an SDK is used that
+  already contains these declarations, your declaration does not conflict with the declaration in the SDK.
+- Include the `API_AVAILABLE` annotations so that the compiler can protect you from accidentally
+  calling the API on unsupported macOS versions.
 
 Our current code does not always follow the `API_AVAILABLE` advice, but it should.
 
@@ -109,6 +109,7 @@ typedef NS_ENUM(NSUInteger, MPNowPlayingPlaybackState) {
 } MP_API(ios(11.0), tvos(11.0), macos(10.12.2), watchos(5.0));
 #endif
 ```
+
 ### New enum values for existing enum type
 
 If the enum type itself already exists, but gained a new value, define the value in an unnamed enum:
@@ -128,10 +129,10 @@ For a new Objective-C class, copy the entire `@interface` declaration and wrap i
 
 I haven't personally tested this. If this does not compile (or maybe link?), you can use the following workaround:
 
- - Define your methods and properties as a category on `NSObject`.
- - Look up the class at runtime using `NSClassFromString()`.
- - If you need to create a subclass, do it at runtime using `objc_allocateClassPair` and `class_addMethod`.
-   [Here's an example of that.](https://searchfox.org/mozilla-central/rev/9ad88f80aeedcd3cd7d7f63be07f577861727054/widget/cocoa/VibrancyManager.mm#44-60)
+- Define your methods and properties as a category on `NSObject`.
+- Look up the class at runtime using `NSClassFromString()`.
+- If you need to create a subclass, do it at runtime using `objc_allocateClassPair` and `class_addMethod`.
+  [Here's an example of that.](https://searchfox.org/mozilla-central/rev/9ad88f80aeedcd3cd7d7f63be07f577861727054/widget/cocoa/VibrancyManager.mm#44-60)
 
 ### Objective-C properties and methods on an existing class
 
@@ -169,8 +170,8 @@ So then that part cannot be worked around by copying code from headers.
 
 Anyway, what always works is the pure runtime approach:
 
- 1. Define types for the functions you need, but not the functions themselves.
- 2. At runtime, look up the functions using `dlsym`.
+1. Define types for the functions you need, but not the functions themselves.
+2. At runtime, look up the functions using `dlsym`.
 
 ## Notes on Rust
 

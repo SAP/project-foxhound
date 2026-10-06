@@ -17,6 +17,7 @@
 #include <cstdint>
 
 class SkPath;
+class SkPathBuilder;
 
 SK_BEGIN_REQUIRE_DENSE
 class SK_API SkStrokeRec {
@@ -25,7 +26,7 @@ public:
         kHairline_InitStyle,
         kFill_InitStyle
     };
-    SkStrokeRec(InitStyle style);
+    explicit SkStrokeRec(InitStyle style);
     SkStrokeRec(const SkPaint&, SkPaint::Style, SkScalar resScale = 1);
     explicit SkStrokeRec(const SkPaint&, SkScalar resScale = 1);
 
@@ -96,7 +97,7 @@ public:
      *
      *  src and dst may be the same path.
      */
-    bool applyToPath(SkPath* dst, const SkPath& src) const;
+    bool applyToPath(SkPathBuilder* dst, const SkPath& src) const;
 
     /**
      *  Apply these stroke parameters to a paint.

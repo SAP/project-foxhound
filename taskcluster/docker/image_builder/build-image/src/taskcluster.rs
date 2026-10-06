@@ -11,13 +11,20 @@ pub struct TaskCluster {
 
 impl TaskCluster {
     pub fn from_env() -> Result<Self> {
-        std::env::var("TASKCLUSTER_ROOT_URL")
-            .context("TASKCLUSTER_ROOT_URL not set.")
-            .and_then(|var| var.parse().context("Couldn't parse TASKCLUSTER_ROOT_URL."))
-            .map(|root_url| TaskCluster {
-                root_url,
-                client: reqwest::blocking::Client::new(),
-            })
+        let root_url = if let Ok(proxy_url) = std::env::var("TASKCLUSTER_PROXY_URL") {
+            proxy_url
+                .parse()
+                .context("Couldn't parse TASKCLUSTER_PROXY_URL.")?
+        } else {
+            std::env::var("TASKCLUSTER_ROOT_URL")
+                .context("TASKCLUSTER_ROOT_URL not set.")
+                .and_then(|var| var.parse().context("Couldn't parse TASKCLUSTER_ROOT_URL."))?
+        };
+
+        Ok(TaskCluster {
+            root_url,
+            client: reqwest::blocking::Client::new(),
+        })
     }
 
     /// Return the root URL as suitable for passing to other processes.
@@ -41,6 +48,8 @@ impl TaskCluster {
 
 #[cfg(test)]
 mod test {
+    use std::env;
+
     #[test]
     fn test_url() {
         let cluster = super::TaskCluster {
@@ -51,5 +60,37 @@ mod test {
             cluster.task_artifact_url("QzDLgP4YRwanIvgPt6ClfA","public/docker-contexts/decision.tar.gz"),
             url::Url::parse("http://taskcluster.example/api/queue/v1/task/QzDLgP4YRwanIvgPt6ClfA/artifacts/public/docker-contexts/decision.tar.gz").unwrap(),
         );
+    }
+
+    #[test]
+    fn test_from_env_proxy_url() {
+        env::set_var("TASKCLUSTER_PROXY_URL", "http://taskcluster");
+        env::set_var(
+            "TASKCLUSTER_ROOT_URL",
+            "https://firefox-ci-tc.services.mozilla.com",
+        );
+
+        let cluster = super::TaskCluster::from_env().unwrap();
+        assert_eq!(cluster.root_url.as_str(), "http://taskcluster/");
+
+        env::remove_var("TASKCLUSTER_PROXY_URL");
+        env::remove_var("TASKCLUSTER_ROOT_URL");
+    }
+
+    #[test]
+    fn test_from_env_fallback_to_root_url() {
+        env::remove_var("TASKCLUSTER_PROXY_URL");
+        env::set_var(
+            "TASKCLUSTER_ROOT_URL",
+            "https://firefox-ci-tc.services.mozilla.com",
+        );
+
+        let cluster = super::TaskCluster::from_env().unwrap();
+        assert_eq!(
+            cluster.root_url.as_str(),
+            "https://firefox-ci-tc.services.mozilla.com/"
+        );
+
+        env::remove_var("TASKCLUSTER_ROOT_URL");
     }
 }

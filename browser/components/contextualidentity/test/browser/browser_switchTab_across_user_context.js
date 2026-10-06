@@ -17,10 +17,7 @@ ChromeUtils.defineLazyGetter(this, "UrlbarTestUtils", () => {
 
 add_setup(async () => {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["privacy.userContext.enabled", true],
-      ["browser.urlbar.switchTabs.searchAllContainers", true],
-    ],
+    set: [["privacy.userContext.enabled", true]],
   });
 });
 

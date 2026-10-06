@@ -18,10 +18,10 @@ By default the Fenix CI runs tests using virtual devices on `x86`.
 That's faster when the host is also a `x86(_64)` system, but most physical devices use the Arm platform.
 So first we need to instruct it to run tests on Arm.
 
-Which platform to test on is defined in [`taskcluster/kinds/ui-test/kind.yml`](https://searchfox.org/mozilla-central/source/taskcluster/kinds/ui-test/kind.yml).
+Which platform to test on is defined in [`taskcluster/kinds/ui-test/kind.yml`](https://searchfox.org/firefox-main/source/taskcluster/kinds/ui-test/kind.yml).
 Find the line where it downloads the `target.apk` produced in a previous step and change it from `x86` to `arm64-v8a`:
 
-```patch
+```diff
   run:
       commands:
 -         - [wget, {artifact-reference: '<signing/public/build/target.x86.apk>'}, '-O', app.apk]
@@ -30,7 +30,7 @@ Find the line where it downloads the `target.apk` produced in a previous step an
 
 Then look for the line where it invokes the `ui-test.sh` and tell it to use `arm64-v8a` again:
 
-```patch
+```diff
   run:
       commands:
 -         - [automation/taskcluster/androidTest/ui-test.sh, x86, app.apk, android-test.apk, '-1']
@@ -42,7 +42,7 @@ Now that we switched the architecture it will pick up [`automation/taskcluster/a
 
 In that file we can now pick the device we want to run on:
 
-```patch
+```diff
    device:
 -   - model: Pixel2
 +   - model: dreamlte

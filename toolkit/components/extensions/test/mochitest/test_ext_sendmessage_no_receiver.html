@@ -90,10 +90,6 @@ add_task(async function test_content_script_chrome_sendMessage_without_listener(
 });
 
 add_task(async function test_chrome_sendMessage_without_listener_v3() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.manifestV3.enabled", true]],
-  });
-
   // We only test the background here because content script behavior
   // is independant of the manifest version.
   let extension = ExtensionTestUtils.loadExtension({
@@ -108,7 +104,6 @@ add_task(async function test_chrome_sendMessage_without_listener_v3() {
   await extension.awaitMessage("finished");
 
   await extension.unload();
-  await SpecialPowers.popPrefEnv();
 });
 </script>
 </body>

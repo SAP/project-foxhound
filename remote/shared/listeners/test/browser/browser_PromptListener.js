@@ -177,7 +177,7 @@ add_task(async function test_events_in_another_browser() {
   const selectedBrowser = win.gBrowser.selectedBrowser;
   const listener = new PromptListener(() => ({
     contentBrowser: selectedBrowser,
-    window: selectedBrowser.ownerGlobal,
+    window: selectedBrowser.documentGlobal,
   }));
   const events = [];
   const onEvent = (name, data) => events.push(data);

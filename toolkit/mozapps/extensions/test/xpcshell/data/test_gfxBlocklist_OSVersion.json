@@ -3,7 +3,7 @@
     "os": "WINNT 6.2",
     "vendor": "0xabcd",
     "devices": ["0x2783", "0x1234", "0x2782"],
-    "feature": " DIRECT2D ",
+    "feature": " DX_NV12 ",
     "featureStatus": " BLOCKED_DRIVER_VERSION ",
     "driverVersion": " 8.52.322.2202 ",
     "driverVersionComparator": " LESS_THAN "

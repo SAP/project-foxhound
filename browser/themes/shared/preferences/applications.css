@@ -2,27 +2,30 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-richlistitem[appHandlerIcon="handleInternally"] .actionIcon,
-richlistitem[appHandlerIcon="handleInternally"] .actionsMenu::part(icon),
-menuitem[appHandlerIcon="handleInternally"] > .menu-icon {
-  content: url("chrome://branding/content/icon32.png");
+richlistitem[appHandlerIcon] .actionIcon,
+richlistitem[appHandlerIcon] .actionsMenu::part(icon) {
+  content: var(--app-handler-icon);
 }
 
-richlistitem[appHandlerIcon="ask"] .actionIcon,
-richlistitem[appHandlerIcon="ask"] .actionsMenu::part(icon),
-menuitem[appHandlerIcon="ask"] > .menu-icon {
-  content: url("chrome://browser/skin/preferences/alwaysAsk.png");
+menuitem[appHandlerIcon] {
+  --menuitem-icon: var(--app-handler-icon);
 }
 
-richlistitem[appHandlerIcon="save"] .actionIcon,
-richlistitem[appHandlerIcon="save"] .actionsMenu::part(icon),
-menuitem[appHandlerIcon="save"] > .menu-icon {
+:is(richlistitem, menuitem)[appHandlerIcon="handleInternally"] {
+  --app-handler-icon: url("chrome://branding/content/icon32.png");
+}
+
+:is(richlistitem, menuitem)[appHandlerIcon="ask"] {
+  --app-handler-icon: url("chrome://browser/skin/preferences/alwaysAsk.png");
+}
+
+:is(richlistitem, menuitem)[appHandlerIcon="save"] {
   @media not (-moz-platform: linux) {
-    content: url("chrome://browser/skin/preferences/saveFile.png");
+    --app-handler-icon: url("chrome://browser/skin/preferences/saveFile.png");
   }
   /* prettier-ignore */
   @media (-moz-platform: linux) {
-    content: image-set(
+    --app-handler-icon: image-set(
       "moz-icon://stock/document-save?size=16" 1x,
       "moz-icon://stock/document-save?size=16&scale=2" 2x
     );

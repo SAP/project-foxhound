@@ -8,7 +8,7 @@ add_task(async function () {
   await registerCleanupFunction(PlacesUtils.history.clear);
 
   // Used to verify errors are not marked as typed.
-  PlacesUtils.history.markPageAsTyped(NetUtil.newURI(url));
+  PlacesUtils.history.markPageAsTyped(Services.io.newURI(url));
 
   let promiseVisited = PlacesTestUtils.waitForNotification(
     "page-visited",

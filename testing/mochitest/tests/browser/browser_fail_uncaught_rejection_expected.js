@@ -1,5 +1,3 @@
-setExpectedFailuresForSelfTest(1);
-
 // The test will fail because there is only one of two expected rejections.
 const { PromiseTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/PromiseTestUtils.sys.mjs"

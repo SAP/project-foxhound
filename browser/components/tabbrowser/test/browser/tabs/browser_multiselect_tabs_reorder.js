@@ -1,10 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-add_task(async function () {
-  // Disable tab animations
-  gReduceMotionOverride = true;
-
+async function moveTabs() {
   let tab0 = gBrowser.selectedTab;
   let tab1 = await addTab();
   let tab2 = await addTab();
@@ -62,4 +59,12 @@ add_task(async function () {
   for (let tab of tabs.filter(t => t != tab0)) {
     BrowserTestUtils.removeTab(tab);
   }
+}
+
+add_task(async function () {
+  // Disable tab animations
+  gReduceMotionOverride = true;
+
+  info("Test tab reorder with tab stacking");
+  await moveTabs();
 });

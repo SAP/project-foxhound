@@ -2,7 +2,7 @@
 
 add_setup(async function () {
   useHttpServer();
-  await Services.search.init();
+  await SearchService.init();
 });
 
 add_task(async function test_engine_set_alias() {
@@ -15,7 +15,7 @@ add_task(async function test_engine_set_alias() {
     },
     { skipUnload: true }
   );
-  let engine1 = await Services.search.getEngineByName("bacon");
+  let engine1 = await SearchService.getEngineByName("bacon");
   Assert.ok(engine1.aliases.includes("b"));
   engine1.alias = "a";
   Assert.equal(engine1.alias, "a");
@@ -32,7 +32,7 @@ add_task(async function test_engine_set_alias_with_left_space() {
     },
     { skipUnload: true }
   );
-  let engine2 = await Services.search.getEngineByName("bacon");
+  let engine2 = await SearchService.getEngineByName("bacon");
   Assert.ok(engine2.aliases.includes("a"));
   engine2.alias = "    c";
   Assert.equal(engine2.alias, "c");
@@ -49,7 +49,7 @@ add_task(async function test_engine_set_alias_with_right_space() {
     },
     { skipUnload: true }
   );
-  let engine3 = await Services.search.getEngineByName("bacon");
+  let engine3 = await SearchService.getEngineByName("bacon");
   Assert.ok(engine3.aliases.includes("c"));
   engine3.alias = "o    ";
   Assert.equal(engine3.alias, "o");
@@ -66,7 +66,7 @@ add_task(async function test_engine_set_alias_with_right_left_space() {
     },
     { skipUnload: true }
   );
-  let engine4 = await Services.search.getEngineByName("bacon");
+  let engine4 = await SearchService.getEngineByName("bacon");
   Assert.ok(engine4.aliases.includes("o"));
   engine4.alias = "  n ";
   Assert.equal(engine4.alias, "n");
@@ -83,7 +83,7 @@ add_task(async function test_engine_set_alias_with_space() {
     },
     { skipUnload: true }
   );
-  let engine5 = await Services.search.getEngineByName("bacon");
+  let engine5 = await SearchService.getEngineByName("bacon");
   Assert.equal(engine5.alias, "");
   engine5.alias = "b";
   Assert.equal(engine5.alias, "b");
@@ -101,7 +101,7 @@ add_task(async function test_engine_change_alias() {
     },
     { skipUnload: true }
   );
-  let engine6 = await Services.search.getEngineByName("bacon");
+  let engine6 = await SearchService.getEngineByName("bacon");
 
   let promise = SearchTestUtils.promiseSearchNotification(
     SearchUtils.MODIFIED_TYPE.CHANGED,

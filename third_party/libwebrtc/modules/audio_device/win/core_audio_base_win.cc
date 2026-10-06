@@ -10,17 +10,20 @@
 
 #include "modules/audio_device/win/core_audio_base_win.h"
 
-#include <memory>
+#include <cstdint>
+#include <iterator>
 #include <string>
 
 #include "absl/strings/string_view.h"
-#include "modules/audio_device/audio_device_buffer.h"
-#include "rtc_base/arraysize.h"
+#include "api/audio/audio_device_defines.h"
+#include "api/environment/environment.h"
+#include "api/sequence_checker.h"
+#include "modules/audio_device/audio_device_name.h"
+#include "modules/audio_device/win/core_audio_utility_win.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/platform_thread.h"
-#include "rtc_base/time_utils.h"
 #include "rtc_base/win/scoped_com_initializer.h"
 #include "rtc_base/win/windows_version.h"
 
@@ -151,11 +154,13 @@ bool IsLowLatencySupported(IAudioClient3* client3,
 
 }  // namespace
 
-CoreAudioBase::CoreAudioBase(Direction direction,
+CoreAudioBase::CoreAudioBase(const Environment& env,
+                             Direction direction,
                              bool automatic_restart,
                              OnDataCallback data_callback,
                              OnErrorCallback error_callback)
-    : format_(),
+    : env_(env),
+      format_(),
       direction_(direction),
       automatic_restart_(automatic_restart),
       on_data_callback_(data_callback),
@@ -165,7 +170,7 @@ CoreAudioBase::CoreAudioBase(Direction direction,
   RTC_DLOG(LS_INFO) << __FUNCTION__ << "[" << DirectionToString(direction)
                     << "]";
   RTC_DLOG(LS_INFO) << "Automatic restart: " << automatic_restart;
-  RTC_DLOG(LS_INFO) << "Windows version: " << rtc::rtc_win::GetVersion();
+  RTC_DLOG(LS_INFO) << "Windows version: " << webrtc::rtc_win::GetVersion();
 
   // Create the event which the audio engine will signal each time a buffer
   // becomes ready to be processed by the client.
@@ -195,8 +200,8 @@ bool CoreAudioBase::IsRestarting() const {
   return is_restarting_;
 }
 
-int64_t CoreAudioBase::TimeSinceStart() const {
-  return rtc::TimeSince(start_time_);
+int64_t CoreAudioBase::TimeSinceStartMs() const {
+  return env_.clock().TimeInMilliseconds() - start_time_;
 }
 
 int CoreAudioBase::NumberOfActiveDevices() const {
@@ -410,7 +415,7 @@ bool CoreAudioBase::Init() {
   // preferred number of channels is larger than two; i.e., initialize the
   // stream in stereo even if the preferred configuration is multi-channel.
   if (params.channels() <= 2) {
-    format->nChannels = rtc::dchecked_cast<WORD>(params.channels());
+    format->nChannels = webrtc::dchecked_cast<WORD>(params.channels());
   } else {
     // TODO(henrika): ensure that this approach works on different multi-channel
     // devices. Verified on:
@@ -421,13 +426,14 @@ bool CoreAudioBase::Init() {
     format->nChannels = 2;
   }
   format->nSamplesPerSec = params.sample_rate();
-  format->wBitsPerSample = rtc::dchecked_cast<WORD>(params.bits_per_sample());
+  format->wBitsPerSample =
+      webrtc::dchecked_cast<WORD>(params.bits_per_sample());
   format->nBlockAlign = (format->wBitsPerSample / 8) * format->nChannels;
   format->nAvgBytesPerSec = format->nSamplesPerSec * format->nBlockAlign;
   format->cbSize = sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX);
   // Add the parts which are unique for the WAVE_FORMAT_EXTENSIBLE structure.
   format_.Samples.wValidBitsPerSample =
-      rtc::dchecked_cast<WORD>(params.bits_per_sample());
+      webrtc::dchecked_cast<WORD>(params.bits_per_sample());
   format_.dwChannelMask =
       format->nChannels == 1 ? KSAUDIO_SPEAKER_MONO : KSAUDIO_SPEAKER_STEREO;
   format_.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
@@ -558,9 +564,10 @@ bool CoreAudioBase::Start() {
   if (audio_thread_.empty()) {
     const absl::string_view name =
         IsInput() ? "wasapi_capture_thread" : "wasapi_render_thread";
-    audio_thread_ = rtc::PlatformThread::SpawnJoinable(
+    audio_thread_ = webrtc::PlatformThread::SpawnJoinable(
         [this] { ThreadRun(); }, name,
-        rtc::ThreadAttributes().SetPriority(rtc::ThreadPriority::kRealtime));
+        webrtc::ThreadAttributes().SetPriority(
+            webrtc::ThreadPriority::kRealtime));
     RTC_DLOG(LS_INFO) << "Started thread with name: " << name
                       << " and handle: " << *audio_thread_.GetHandle();
   }
@@ -574,7 +581,7 @@ bool CoreAudioBase::Start() {
     return false;
   }
 
-  start_time_ = rtc::TimeMillis();
+  start_time_ = env_.clock().TimeInMilliseconds();
   num_data_callbacks_ = 0;
 
   return true;
@@ -583,7 +590,7 @@ bool CoreAudioBase::Start() {
 bool CoreAudioBase::Stop() {
   RTC_DLOG(LS_INFO) << __FUNCTION__ << "[" << DirectionToString(direction())
                     << "]";
-  RTC_DLOG(LS_INFO) << "total activity time: " << TimeSinceStart();
+  RTC_DLOG(LS_INFO) << "total activity time: " << TimeSinceStartMs();
 
   // Stop audio streaming.
   _com_error error = audio_client_->Stop();
@@ -903,7 +910,7 @@ void CoreAudioBase::ThreadRun() {
   // is signaled. An error event can also break the main thread loop.
   while (streaming && !error) {
     // Wait for a close-down event, stream-switch event or a new render event.
-    DWORD wait_result = WaitForMultipleObjects(arraysize(wait_array),
+    DWORD wait_result = WaitForMultipleObjects(std::size(wait_array),
                                                wait_array, false, INFINITE);
     switch (wait_result) {
       case WAIT_OBJECT_0 + 0:

@@ -1,0 +1,15 @@
+package test {
+  public abstract static class Test.TestClass<Settings extends java.lang.String> {
+    method @androidx.annotation.MainThread public final void testMethod(@androidx.annotation.NonNull java.lang.String, @androidx.annotation.NonNull java.lang.String);
+    method @androidx.annotation.MainThread @androidx.annotation.NonNull public Settings testGeneric();
+    method @androidx.annotation.MainThread @androidx.annotation.NonNull public java.lang.Map<java.lang.Map<Settings, Settings>, java.lang.Map<Settings, Settings>> testMultipleGeneric();
+  }
+
+  public abstract static class RuntimeSettings.Builder<Settings extends org.mozilla.geckoview.RuntimeSettings> {
+    ctor public Builder();
+    method @androidx.annotation.AnyThread @androidx.annotation.NonNull public Settings build();
+    method @androidx.annotation.AnyThread @androidx.annotation.NonNull protected Settings getSettings();
+    method @androidx.annotation.AnyThread @androidx.annotation.NonNull protected abstract Settings newSettings(@androidx.annotation.Nullable Settings);
+  }
+}
+

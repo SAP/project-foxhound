@@ -13,7 +13,7 @@ class MozbaseMixin:
     """
 
     def __init__(self, *args, **kwargs):
-        super(MozbaseMixin, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     @PreScriptAction("create-virtualenv")
     def _install_mozbase(self, action):

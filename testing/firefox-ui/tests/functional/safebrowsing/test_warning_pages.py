@@ -10,7 +10,7 @@ from marionette_harness import MarionetteTestCase, WindowManagerMixin
 
 class TestSafeBrowsingWarningPages(WindowManagerMixin, MarionetteTestCase):
     def setUp(self):
-        super(TestSafeBrowsingWarningPages, self).setUp()
+        super().setUp()
 
         self.urls = [
             # Unwanted software URL
@@ -27,6 +27,8 @@ class TestSafeBrowsingWarningPages(WindowManagerMixin, MarionetteTestCase):
         self.marionette.set_pref("app.support.baseURL", self.support_page)
         self.marionette.set_pref("browser.safebrowsing.phishing.enabled", True)
         self.marionette.set_pref("browser.safebrowsing.malware.enabled", True)
+        self.marionette.set_pref("network.localhost.prompt.testing", True)
+        self.marionette.set_pref("network.localhost.prompt.testing.allow", True)
 
         # Give the browser a little time, because SafeBrowsing.sys.mjs takes a
         # while between start up and adding the example urls to the db.
@@ -42,11 +44,13 @@ class TestSafeBrowsingWarningPages(WindowManagerMixin, MarionetteTestCase):
             self.marionette.clear_pref("app.support.baseURL")
             self.marionette.clear_pref("browser.safebrowsing.malware.enabled")
             self.marionette.clear_pref("browser.safebrowsing.phishing.enabled")
+            self.marionette.clear_pref("network.localhost.prompt.testing")
+            self.marionette.clear_pref("network.localhost.prompt.testing.allow")
 
             self.remove_permission("https://www.itisatrap.org", "safe-browsing")
             self.close_all_tabs()
         finally:
-            super(TestSafeBrowsingWarningPages, self).tearDown()
+            super().tearDown()
 
     def test_warning_pages(self):
         for unsafe_page in self.urls:

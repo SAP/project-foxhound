@@ -1,0 +1,15 @@
+{
+  "label": "midi.city",
+  "bugs": {
+    "1957887": {
+      "issue": "unsupported-warning",
+      "matches": ["*://midi.city/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

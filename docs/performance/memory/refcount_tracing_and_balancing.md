@@ -51,7 +51,7 @@ amount of reference counting traffic.
 
 For platforms that don't have stack-crawl support, XPCOM supports
 logging at the call site to `AddRef`/`Release` using the usual cpp
-`__FILE__` and __LINE__ number macro expansion hackery. This results
+`__FILE__` and **LINE** number macro expansion hackery. This results
 in slower code, but at least you get some data about where the leaks
 might be occurring from.
 
@@ -165,11 +165,11 @@ What this little tree is telling you is that you leak *one refcount*
 overall on object `0x00253ab0`. But, more specifically, it shows you
 that:
 
--   `NS_NewFoo()` "leaks" a refcount. This is probably "okay"
-    because it's a factory method that creates an `AddRef()`-ed object.
--   `DoSomethingWithFooAndReturnItToo()` leaks *two* refcounts.
-    Hmm...this probably isn't okay, especially because...
--   `main()` is back down to leaking *one* refcount.
+- `NS_NewFoo()` "leaks" a refcount. This is probably "okay"
+  because it's a factory method that creates an `AddRef()`-ed object.
+- `DoSomethingWithFooAndReturnItToo()` leaks *two* refcounts.
+  Hmm...this probably isn't okay, especially because...
+- `main()` is back down to leaking *one* refcount.
 
 So from this, we can deduce that `main()` is correctly releasing the
 refcount that it got on the object returned from

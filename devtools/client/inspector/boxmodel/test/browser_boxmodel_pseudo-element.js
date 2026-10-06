@@ -52,7 +52,7 @@ const res1 = [
   },
   {
     selector: ".boxmodel-margin.boxmodel-left > span",
-    value: "4", // (100 - (10 * 2) - (20 * 2) - 32) / 2
+    value: "auto",
   },
   {
     selector: ".boxmodel-margin.boxmodel-bottom > span",
@@ -60,7 +60,7 @@ const res1 = [
   },
   {
     selector: ".boxmodel-margin.boxmodel-right > span",
-    value: "4", // (100 - (10 * 2) - (20 * 2) - 32) / 2
+    value: "auto",
   },
   {
     selector: ".boxmodel-padding.boxmodel-top > span",

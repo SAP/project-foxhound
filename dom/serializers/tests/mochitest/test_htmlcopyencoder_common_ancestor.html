@@ -1,0 +1,170 @@
+<!DOCTYPE HTML>
+<html>
+<!--
+-->
+<head>
+<title>Test on the html copy encoder for common ancestor</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1953174">Mozilla Bug 1953174</a>
+<p id="display"></p>
+<div id="content" style="display: none"></div>
+<div id="container"></div>
+<script>
+
+/* global describe, it, beforeEach */
+
+const ELEMENTS = [
+  "address", "article", "aside", "bdi", "bdo", "blockquote", "data", "dd",
+  "del", "div", "dl", "dt", "figcaption", "figure", "footer", "header",
+  "hgroup", "ins", "kdb", "main", "mark", "nav", "p", "q", "rp", "rt", "ruby",
+  "samp", "section", "sub", "sup", "time"
+];
+
+const ALWAYS_INCLUDE_ELEMENTS = [
+  "a", "abbr", "b", "big", "cite", "code", "dfn", "em", "font", "h1", "h2",
+  "h3", "h4", "h5", "h6", "i", "pre", "s", "script", "small", "span", "strike",
+  "strong", "tt", "u", "var"
+];
+
+const alwaysIncludeCommonAncestor = SpecialPowers.getBoolPref(
+  "dom.serializer.includeCommonAncestor.enabled"
+);
+
+const de = SpecialPowers.Ci.nsIDocumentEncoder;
+const encoder = SpecialPowers.Cu.createHTMLCopyEncoder();
+function testSelectAndCopy(aNode, aInclude) {
+  const innerHTML = `<${aNode} id="target">First Second</${aNode}>`;
+  describe(innerHTML, () => {
+    beforeEach(() => {
+      info("Construct nodes");
+      const container = document.getElementById("container");
+      container.innerHTML = innerHTML;
+    });
+
+    it(`Select node`, async () => {
+      info("Select nodes");
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+
+      const target = document.getElementById("target");
+      const range = document.createRange();
+      range.selectNode(target);
+      selection.addRange(range);
+
+      info("Initialize encoder");
+      encoder.init(document, "text/html", 0);
+      encoder.setSelection(selection);
+
+      let htmlContext = { value: '' };
+      let htmlInfo = { value: '' };
+      is(encoder.encodeToStringWithContext(htmlContext, htmlInfo),
+         alwaysIncludeCommonAncestor ? `<div id="container">${innerHTML}</div>` : innerHTML,
+         `Check serialized output`);
+      is(htmlContext.value,
+         alwaysIncludeCommonAncestor ? `<html><body></body></html>` : `<html><body><div id="container"></div></body></html>`,
+         `Check serialized context`);
+      is(htmlInfo.value, `0,0`, `Check serialized info`);
+    });
+
+    it(`Select node contents`, async () => {
+      info("Select nodes");
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+
+      const target = document.getElementById("target");
+      const range = document.createRange();
+      range.selectNodeContents(target);
+      selection.addRange(range);
+
+      info("Initialize encoder");
+      encoder.init(document, "text/html", 0);
+      encoder.setSelection(selection);
+
+      let expectedResult;
+      if (alwaysIncludeCommonAncestor) {
+        expectedResult = `<div id="container">${innerHTML}</div>`;
+      } else if (aInclude) {
+        expectedResult = innerHTML;
+      } else {
+        expectedResult = target.textContent;
+      }
+
+      let htmlContext = { value: '' };
+      let htmlInfo = { value: '' };
+      is(encoder.encodeToStringWithContext(htmlContext, htmlInfo), expectedResult,
+         `Check serialized output`);
+      is(htmlContext.value,
+         alwaysIncludeCommonAncestor ? `<html><body></body></html>`
+                                     : `<html><body><div id="container"><${aNode} id="target"></${aNode}></div></body></html>`,
+         `Check serialized context`);
+      is(htmlInfo.value, `0,0`, `Check serialized info`);
+    });
+
+    it(`Select whole text`, async () => {
+      info("Select text");
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+
+      const target = document.getElementById("target").firstChild;
+      const range = document.createRange();
+      range.setStart(target, 0);
+      range.setEnd(target, target.length);
+      selection.addRange(range);
+
+      info("Initialize encoder");
+      encoder.init(document, "text/html", 0);
+      encoder.setSelection(selection);
+
+      let htmlContext = { value: '' };
+      let htmlInfo = { value: '' };
+      is(encoder.encodeToStringWithContext(htmlContext, htmlInfo),
+         aInclude ? innerHTML : `First Second`,
+         `Check serialized output`);
+      is(htmlContext.value,
+         `<html><body><div id="container"><${aNode} id="target"></${aNode}></div></body></html>`,
+         `Check serialized context`);
+      is(htmlInfo.value, `0,0`, `Check serialized info`);
+    });
+
+    it(`Select partial text`, async () => {
+      info("Select text");
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+
+      const target = document.getElementById("target").firstChild;
+      const range = document.createRange();
+      range.setStart(target, 0);
+      range.setEnd(target, 5);
+      selection.addRange(range);
+
+      info("Initialize encoder");
+      encoder.init(document, "text/html", 0);
+      encoder.setSelection(selection);
+
+      let htmlContext = { value: '' };
+      let htmlInfo = { value: '' };
+      is(encoder.encodeToStringWithContext(htmlContext, htmlInfo),
+         aInclude ? `<${aNode} id="target">First</${aNode}>` : `First`,
+         `Check serialized output`);
+      is(htmlContext.value,
+         `<html><body><div id="container"><${aNode} id="target"></${aNode}></div></body></html>`,
+         `Check serialized context`);
+      is(htmlInfo.value, `0,0`, `Check serialized info`);
+    });
+  });
+}
+
+ELEMENTS.forEach(aNode => {
+  testSelectAndCopy(aNode, false);
+});
+
+ALWAYS_INCLUDE_ELEMENTS.forEach(aNode => {
+  testSelectAndCopy(aNode, true);
+});
+
+</script>
+</body>
+</html>

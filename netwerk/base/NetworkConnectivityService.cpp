@@ -361,7 +361,7 @@ NetworkConnectivityService::RecheckDNS() {
   if (nsIOService::UseSocketProcess()) {
     RefPtr<SocketProcessParent> parent = SocketProcessParent::GetSingleton();
     if (parent) {
-      Unused << parent->SendRecheckDNS();
+      (void)parent->SendRecheckDNS();
     }
   }
 
@@ -532,7 +532,7 @@ NetworkConnectivityService::RecheckIPConnectivity() {
   if (nsIOService::UseSocketProcess()) {
     RefPtr<SocketProcessParent> parent = SocketProcessParent::GetSingleton();
     if (parent) {
-      Unused << parent->SendRecheckIPConnectivity();
+      (void)parent->SendRecheckIPConnectivity();
     }
   }
 
@@ -626,7 +626,7 @@ NetworkConnectivityService::OnDataAvailable(nsIRequest* aRequest,
     mCheckedNetworkId = true;
   }
 
-  Unused << NS_ReadInputStreamToString(aInputStream, data, aCount);
+  (void)NS_ReadInputStreamToString(aInputStream, data, aCount);
   return NS_OK;
 }
 

@@ -8,21 +8,33 @@ support-files = [
 ]
 
 ["make_profile.js"]
-run-if = ["false"] # dummy test entry to generate profile zip files
+run-if = [
+  "false", # dummy test entry to generate profile zip files
+]
 
 ["test_bug1425146.js"]
+# Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_databaseWorkStarted.js"]
 
 ["test_empty_directories.js"]
+# Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_migration.js"]
+# Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_originInit.js"]
 
 ["test_padding_error_handle.js"]
+# Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_schema_26_upgrade.js"]
+# Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_slowDatabaseInitialization.js"]
 

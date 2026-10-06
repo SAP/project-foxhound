@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -79,7 +77,7 @@ nsresult SVGAnimatedNumberList::SetAnimValue(const SVGNumberList& aNewAnimValue,
     domWrapper->InternalAnimValListWillChangeTo(aNewAnimValue);
   }
   if (!mAnimVal) {
-    mAnimVal = MakeUnique<SVGNumberList>();
+    mAnimVal = std::make_unique<SVGNumberList>();
   }
   nsresult rv = mAnimVal->CopyFrom(aNewAnimValue);
   if (NS_FAILED(rv)) {
@@ -108,9 +106,9 @@ void SVGAnimatedNumberList::ClearAnimValue(SVGElement* aElement,
   aElement->DidAnimateNumberList(aAttrEnum);
 }
 
-UniquePtr<SMILAttr> SVGAnimatedNumberList::ToSMILAttr(SVGElement* aSVGElement,
-                                                      uint8_t aAttrEnum) {
-  return MakeUnique<SMILAnimatedNumberList>(this, aSVGElement, aAttrEnum);
+std::unique_ptr<SMILAttr> SVGAnimatedNumberList::ToSMILAttr(
+    SVGElement* aSVGElement, uint8_t aAttrEnum) {
+  return std::make_unique<SMILAnimatedNumberList>(this, aSVGElement, aAttrEnum);
 }
 
 nsresult SVGAnimatedNumberList::SMILAnimatedNumberList::ValueFromString(

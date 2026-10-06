@@ -22,8 +22,12 @@ const { AppMenuNotifications } = ChromeUtils.importESModule(
 // These are brand names, proper names, or other things that we expect to
 // not abide exactly to sentence case. NAMES is for single words, and PHRASES
 // is for words in a specific order.
-const NAMES = new Set(["Mozilla", "Nightly", "Firefox"]);
-const PHRASES = new Set(["Troubleshoot Mode…"]);
+const NAMES = new Set(["Mozilla", "Nightly", "Firefox", "AI"]);
+const PHRASES = new Set([
+  "Extensions and Themes",
+  "Find in Page…",
+  "Troubleshoot Mode…",
+]);
 
 let gCUITestUtils = new CustomizableUITestUtils(window);
 let gLocalization = new Localization(["browser/newtab/asrouter.ftl"], true);
@@ -86,7 +90,7 @@ function checkToolbarButtons(view) {
       toolbarbutton.label,
       toolbarbutton.textContent,
       toolbarbutton.toolTipText,
-      GetDynamicShortcutTooltipText(toolbarbutton.id),
+      DynamicShortcutTooltip.getText(toolbarbutton.id),
     ];
     info("Checking toolbarbutton " + toolbarbutton.id);
     for (let string of strings) {
@@ -138,8 +142,8 @@ async function checkUpdateBanner(view) {
 /**
  * Asserts whether or not a string matches sentence case.
  *
- * @param {String} string The string to check for sentence case.
- * @param {String} elementID The ID of the element being tested. This is
+ * @param {string} string The string to check for sentence case.
+ * @param {string} elementID The ID of the element being tested. This is
  *        mainly used for the assertion message to make it easier to debug
  *        failures, but items without IDs will not be checked (as these are
  *        likely using dynamic strings, like bookmarked page titles).
@@ -153,6 +157,15 @@ function checkSentenceCase(string, elementID) {
 
   let words = string.trim().split(/\s+/);
 
+  // A string in title case (every word capitalized) is also acceptable.
+  if (words.every(word => hasExpectedCapitalization(word, true))) {
+    Assert.ok(
+      true,
+      `${string} for ${elementID} should have sentence or title casing.`
+    );
+    return;
+  }
+
   // We expect that the first word is always capitalized. If it isn't,
   // there's no need to keep checking the rest of the string, since we're
   // going to fail the assertion.
@@ -163,7 +176,10 @@ function checkSentenceCase(string, elementID) {
 
       if (word) {
         if (isPartOfPhrase(words, wordIndex)) {
-          result = hasExpectedCapitalization(word, true);
+          // Skip capitalization check for words that are part of a phrase
+          // The phrase defines the correct capitalization - needed to make it
+          // work with phrases such as Find in Page with lowercase fillers such as in
+          result = true;
         } else {
           let isName = NAMES.has(word);
           result = hasExpectedCapitalization(word, isName);
@@ -185,9 +201,9 @@ function checkSentenceCase(string, elementID) {
  * to see if the word is indeed part of the phrase in context.
  *
  * @param {Array} words The full array of words being checked by the caller.
- * @param {Number} wordIndex The index of the word being checked within the
+ * @param {number} wordIndex The index of the word being checked within the
  *        words array.
- * @return {Boolean}
+ * @return {boolean}
  */
 function isPartOfPhrase(words, wordIndex) {
   let word = words[wordIndex];

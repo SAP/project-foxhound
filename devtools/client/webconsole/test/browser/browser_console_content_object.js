@@ -58,9 +58,10 @@ async function testExpandObject(objectMessage) {
   // |  contentObject: "YAY!"
   // |  ▶︎ deep: Array [ "yes!" ]
   // |  ▶︎ <prototype>
-  await waitFor(() => oi.querySelectorAll(".node").length === 4);
+  // |  ▶︎ <global>
+  await waitFor(() => oi.querySelectorAll(".node").length === 5);
   ok(true, "The ObjectInspector was expanded");
-  const [root, contentObjectProp, deepProp, prototypeProp] = [
+  const [root, contentObjectProp, deepProp, prototypeProp, globalProp] = [
     ...oi.querySelectorAll(".node"),
   ];
 
@@ -70,6 +71,7 @@ async function testExpandObject(objectMessage) {
   ok(contentObjectProp.textContent.includes(`contentObject: "YAY!"`));
   ok(deepProp.textContent.includes(`deep: Array [ "yes!" ]`));
   ok(prototypeProp.textContent.includes(`<prototype>`));
+  ok(globalProp.textContent.includes(`<global>`));
 
   // The object inspector now looks like:
   // ▼ Object { contentObject: "YAY!", deep: (1) […] }
@@ -78,8 +80,10 @@ async function testExpandObject(objectMessage) {
   // |  |  0: "yes!"
   // |  |  length: 1
   // |  |  ▶︎ <prototype>
+  // |  |  ▶︎ <global>
   // |  ▶︎ <prototype>
+  // |  ▶︎ <global>
   deepProp.querySelector(".theme-twisty").click();
-  await waitFor(() => oi.querySelectorAll(".node").length === 7);
+  await waitFor(() => oi.querySelectorAll(".node").length === 9);
   ok(true, "The nested array was expanded");
 }

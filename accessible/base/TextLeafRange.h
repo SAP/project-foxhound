@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_TextLeafRange_h__
-#define mozilla_a11y_TextLeafRange_h__
+#ifndef mozilla_a11y_TextLeafRange_h_
+#define mozilla_a11y_TextLeafRange_h_
 
 #include <stdint.h>
 
@@ -166,7 +164,7 @@ class TextLeafPoint final {
    * Returns a rect (in dev pixels) describing position and size of
    * the character at mOffset in mAcc. This rect is screen-relative.
    */
-  LayoutDeviceIntRect CharBounds();
+  LayoutDeviceIntRect CharBounds() const;
 
   /**
    * Returns true if the given point (in screen coords) is contained
@@ -188,7 +186,7 @@ class TextLeafPoint final {
   /**
    * Translate given TextLeafPoint into a DOM point.
    */
-  MOZ_CAN_RUN_SCRIPT std::pair<nsIContent*, uint32_t> ToDOMPoint(
+  MOZ_CAN_RUN_SCRIPT std::pair<RefPtr<nsIContent>, uint32_t> ToDOMPoint(
       bool aIncludeGenerated = true) const;
 
  private:
@@ -252,6 +250,10 @@ class TextLeafPoint final {
    * such that the resulting rect contains only one character.
    */
   LayoutDeviceIntRect ComputeBoundsFromFrame() const;
+
+  LayoutDeviceIntRect InsertionPointBounds() const;
+
+  friend class TextLeafRange;
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(TextLeafPoint::BoundaryFlags)
@@ -266,7 +268,7 @@ class TextLeafRange final {
       : mStart(aStart), mEnd(aEnd) {}
   explicit TextLeafRange(const TextLeafPoint& aStart)
       : mStart(aStart), mEnd(aStart) {}
-  explicit TextLeafRange() {}
+  explicit TextLeafRange() = default;
 
   // Create a TextLeafRange spanning the entire leaf.
   static TextLeafRange FromAccessible(Accessible* aAcc) {
@@ -345,6 +347,8 @@ class TextLeafRange final {
    */
   nsTArray<TextLeafRange> VisibleLines(Accessible* aContainer) const;
 
+  void GetFlattenedText(nsAString& aText) const;
+
  private:
   TextLeafPoint mStart;
   TextLeafPoint mEnd;
@@ -356,10 +360,11 @@ class TextLeafRange final {
    * that the first and last lines might be partial if the range begins or ends
    * in the middle of a line. They are exclusive of mEnd, since range ends are
    * always exclusive, so including mEnd would include the bounds for 1
-   * character past the end of the range. Each rectangle is screen-relative. The
-   * function returns true if it walks any lines, and false if it could not walk
-   * any lines, which could happen if the start and end points are improperly
-   * positioned.
+   * character past the end of the range. Each rectangle is screen-relative. If
+   * this range is collapsed, the callback is called with the insertion point
+   * bounds. The function returns true if it walks any lines, and false if it
+   * could not walk any lines, which could happen if the start and end points
+   * are improperly positioned.
    */
   using LineRectCallback =
       FunctionRef<void(TextLeafRange, LayoutDeviceIntRect)>;
@@ -378,6 +383,11 @@ class TextLeafRange final {
           mSegmentStart(aOther.mSegmentStart),
           mSegmentEnd(aOther.mSegmentEnd) {}
 
+    Iterator() = delete;
+    Iterator(const Iterator&) = delete;
+    Iterator& operator=(const Iterator&) = delete;
+    Iterator& operator=(const Iterator&&) = delete;
+
     static Iterator BeginIterator(const TextLeafRange& aRange);
 
     static Iterator EndIterator(const TextLeafRange& aRange);
@@ -395,11 +405,6 @@ class TextLeafRange final {
 
    private:
     explicit Iterator(const TextLeafRange& aRange) : mRange(aRange) {}
-
-    Iterator() = delete;
-    Iterator(const Iterator&) = delete;
-    Iterator& operator=(const Iterator&) = delete;
-    Iterator& operator=(const Iterator&&) = delete;
 
     const TextLeafRange& mRange;
     TextLeafPoint mSegmentStart;

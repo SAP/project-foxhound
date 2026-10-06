@@ -27,7 +27,7 @@ import { setTimeout } from "resource://gre/modules/Timer.sys.mjs";
 // We cannot use WebSocket from chrome code without a window,
 // see https://bugzilla.mozilla.org/show_bug.cgi?id=784686
 const browser = Services.appShell.createWindowlessBrowser(true);
-const {WebSocket} = browser.document.ownerGlobal;
+const {WebSocket} = browser.document.documentGlobal;
 
 export var FxAccountsPairingChannel =
 /******/ (function(modules) { // webpackBootstrap

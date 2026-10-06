@@ -86,11 +86,11 @@ export var NormandyApi = {
    * If the the signature is not valid, an error is thrown. Otherwise this
    * function returns undefined.
    *
-   * @param {object|String} data The object (or string) to be checked
+   * @param {object | string} data The object (or string) to be checked
    * @param {object} signaturePayload The signature information
-   * @param {String} signaturePayload.x5u The certificate chain URL
-   * @param {String} signaturePayload.signature base64 signature bytes
-   * @param {String} type The object type (eg. `"recipe"`, `"action"`)
+   * @param {string} signaturePayload.x5u The certificate chain URL
+   * @param {string} signaturePayload.signature base64 signature bytes
+   * @param {string} type The object type (eg. `"recipe"`, `"action"`)
    * @returns {Promise<undefined>} If the signature is valid, this function returns without error
    * @throws {NormandyApi.InvalidSignatureError} if signature is invalid.
    */
@@ -131,6 +131,7 @@ export var NormandyApi = {
 
   /**
    * Fetch metadata about this client determined by the server.
+   *
    * @return {object} Metadata specified by the server
    */
   async classifyClient() {
@@ -143,8 +144,9 @@ export var NormandyApi = {
 
   /**
    * Fetch details for an extension from the server.
+   *
    * @param extensionId {integer} The ID of the extension to look up
-   * @resolves {Object}
+   * @returns {Promise<object>}
    */
   async fetchExtensionDetails(extensionId) {
     const baseUrl = await this.getApiUrl("extension-list");

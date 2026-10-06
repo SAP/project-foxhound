@@ -1,16 +1,13 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ProfileBuffer.h"
 
-#include "BaseProfiler.h"
 #include "js/ColumnNumber.h"  // JS::LimitedColumnNumberOneOrigin
 #include "js/GCAPI.h"
 #include "jsfriendapi.h"
-#include "mozilla/MathAlgorithms.h"
+#include "mozilla/BaseProfiler.h"
 #include "nsJSPrincipals.h"
 #include "nsScriptSecurityManager.h"
 
@@ -59,8 +56,8 @@ uint64_t ProfileBuffer::AddThreadIdEntry(ProfilerThreadId aThreadId) {
 
 void ProfileBuffer::CollectCodeLocation(
     const char* aLabel, const char* aStr, uint32_t aFrameFlags,
-    uint64_t aInnerWindowID, const Maybe<uint32_t>& aLineNumber,
-    const Maybe<uint32_t>& aColumnNumber,
+    uint64_t aInnerWindowID, uint32_t aSourceId,
+    const Maybe<uint32_t>& aLineNumber, const Maybe<uint32_t>& aColumnNumber,
     const Maybe<JS::ProfilingCategoryPair>& aCategoryPair) {
   AddEntry(ProfileBufferEntry::Label(aLabel));
   AddEntry(ProfileBufferEntry::FrameFlags(uint64_t(aFrameFlags)));
@@ -104,6 +101,10 @@ void ProfileBuffer::CollectCodeLocation(
 
   if (aInnerWindowID) {
     AddEntry(ProfileBufferEntry::InnerWindowID(aInnerWindowID));
+  }
+
+  if (aSourceId) {
+    AddEntry(ProfileBufferEntry::SourceId(aSourceId));
   }
 
   if (aLineNumber) {
@@ -193,9 +194,10 @@ void ProfileBufferCollector::CollectJitReturnAddr(void* aAddr) {
   mBuf.AddEntry(ProfileBufferEntry::JitReturnAddr(aAddr));
 }
 
-void ProfileBufferCollector::CollectWasmFrame(
-    JS::ProfilingCategoryPair aCategory, const char* aLabel) {
-  mBuf.CollectCodeLocation("", aLabel, 0, 0, Nothing(), Nothing(),
+void ProfileBufferCollector::CollectWasmOrSyncJITFrame(
+    JS::ProfilingCategoryPair aCategory, const char* aLabel,
+    uint32_t aSourceId) {
+  mBuf.CollectCodeLocation("", aLabel, 0, 0, aSourceId, Nothing(), Nothing(),
                            Some(aCategory));
 }
 
@@ -210,6 +212,7 @@ void ProfileBufferCollector::CollectProfilingStackFrame(
   const char* dynamicString = aFrame.dynamicString();
   Maybe<uint32_t> line;
   Maybe<uint32_t> column;
+  uint32_t sourceId = aFrame.sourceId();
 
   if (aFrame.isJsFrame()) {
     // There are two kinds of JS frames that get pushed onto the ProfilingStack.
@@ -240,6 +243,6 @@ void ProfileBufferCollector::CollectProfilingStackFrame(
   }
 
   mBuf.CollectCodeLocation(label, dynamicString, aFrame.flags(),
-                           aFrame.realmID(), line, column,
+                           aFrame.realmID(), sourceId, line, column,
                            Some(aFrame.categoryPair()));
 }

@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -226,6 +224,25 @@ function exportLazyProperty(object, prop, getter) {
 }
 
 const POSTPROCESSORS = {
+  validCSSGradient(obj, context) {
+    // A ThemeCSSGradient is an object with a single property whose name is the
+    // gradient function and whose value holds the gradient arguments, e.g.
+    // { "linear-gradient": "to bottom, #FF6BBA, #FFC999" }.
+    const [gradient, args] = Object.entries(obj)[0];
+    if (!InspectorUtils.isValidCSSImage(`${gradient}(${args})`)) {
+      const errorMessage = `Invalid value for theme gradient: ${gradient}(${args})`;
+      if (context.cloneScope) {
+        // Report the error back to the caller when the theme API is being used
+        // programmatically.
+        throw new context.cloneScope.Error(errorMessage);
+      }
+      // Report a validation error and drop the gradient value when it originates
+      // from a static theme manifest, return an image(transparent) instead.
+      context.logError(context.makeError(errorMessage));
+      return { image: "transparent" };
+    }
+    return obj;
+  },
   convertImageDataToURL(imageData, context) {
     let document = context.cloneScope.document;
     let canvas = document.createElementNS(
@@ -320,19 +337,6 @@ const POSTPROCESSORS = {
       return normalizedValue;
     }
     return value;
-  },
-
-  manifestVersionCheck(value, context) {
-    if (
-      value == 2 ||
-      (value == 3 &&
-        Services.prefs.getBoolPref("extensions.manifestV3.enabled", false))
-    ) {
-      return value;
-    }
-    const msg = `Unsupported manifest version: ${value}`;
-    context.logError(context.makeError(msg));
-    throw new Error(msg);
   },
 
   webAccessibleMatching(value, context) {
@@ -445,6 +449,9 @@ class Context {
       localize(value) {
         return value;
       },
+      stringToLowerCase(value) {
+        return value.toLowerCase();
+      },
       ...params.preprocessors,
     };
 
@@ -478,6 +485,10 @@ class Context {
 
   get ignoreUnrecognizedProperties() {
     return !!this.params.ignoreUnrecognizedProperties;
+  }
+
+  get temporarilyInstalled() {
+    return !!this.params.temporarilyInstalled;
   }
 
   get principal() {
@@ -705,7 +716,7 @@ class Context {
 
   /**
    * Executes the given callback, and returns an array of choice strings
-   * passed to {@see #error} during its execution.
+   * passed to {@link #error} during its execution.
    *
    * @param {Function} callback
    * @returns {object}
@@ -1267,11 +1278,37 @@ const FORMATS = {
     // Manifest V3 extension_pages allows WASM.  When sandbox is
     // implemented, or any other V3 or later directive, the flags
     // logic will need to be updated.
+
     let flags =
       context.manifestVersion < 3
         ? Ci.nsIAddonContentPolicy.CSP_ALLOW_ANY
         : Ci.nsIAddonContentPolicy.CSP_ALLOW_WASM;
+
     let error = lazy.contentPolicyService.validateAddonCSP(string, flags);
+
+    if (
+      error &&
+      context.manifestVersion === 3 &&
+      !lazy.contentPolicyService.validateAddonCSP(
+        string,
+        flags | Ci.nsIAddonContentPolicy.CSP_ALLOW_LOCALHOST
+      )
+    ) {
+      error =
+        `Using localhost in the Content Security Policy is invalid, ` +
+        `and is only permitted during development with temporarily ` +
+        `loaded add-ons`;
+
+      // The error occurred due to the presence of localhost CSP settings, which should be allowed
+      // when an MV3 extension is loaded as a temporary add-on for debugging purposes.
+      if (context.temporarilyInstalled) {
+        context.logWarning(
+          `Warning processing ${context.currentTarget}: ${error}`
+        );
+        return string;
+      }
+    }
+
     if (error != null) {
       // The CSP validation error is not reported as part of the "choices" error message,
       // we log the CSP validation error explicitly here to make it easier for the addon developers
@@ -4010,7 +4047,7 @@ export var Schemas = {
       return;
     }
 
-    const startTime = Cu.now();
+    const startTime = ChromeUtils.now();
     let schemaCache = await this.loadCachedSchemas();
     const fromCache = schemaCache.has(url);
 

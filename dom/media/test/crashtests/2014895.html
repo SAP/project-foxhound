@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+<script>
+const prefix = Uint8Array.from(atob("ZkxhQwAAACKAAIAAAAAAAAAAAAAQ8AAAAAAAAAAAAAAAAAAAAAAAAAAAgQAACAAAAAAAAAAA//j9CP23jZmQgAABWQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAxDT/+P0I/beNmZCBAAEyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA5ZQ=="), c => c.charCodeAt(0));
+const fill = new Uint8Array(204800);
+fill.fill(0x01);
+const tail = Uint8Array.from(atob("//jzCADzAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACPI//48wgB9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4if/+PMIAv0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFUr"), c => c.charCodeAt(0));
+const blob = new Blob([prefix, fill, tail], {type: 'audio/flac'});
+const url = URL.createObjectURL(blob);
+const audio = new Audio();
+audio.src = url;
+audio.play().catch(e => {});
+</script>
+</body>
+</html>
+

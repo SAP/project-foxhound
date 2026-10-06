@@ -1,0 +1,15 @@
+{
+  "label": "ftiunpam.com",
+  "bugs": {
+    "2042797": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://ftiunpam.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

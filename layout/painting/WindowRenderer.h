@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,7 @@
 #include "gfxContext.h"
 #include "mozilla/ScrollPositionUpdate.h"  // for ScrollPositionUpdate
 #include "mozilla/dom/Animation.h"         // for Animation
+#include "mozilla/gfx/GPUProcessListener.h"
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/ScrollableLayerGuid.h"  // for ScrollableLayerGuid, ScrollableLayerGuid::ViewID
 #include "mozilla/webrender/webrender_ffi.h"
@@ -97,7 +96,7 @@ class FrameRecorder {
  * cleanup can be done once that happens.
  */
 class WindowRenderer : public FrameRecorder {
-  NS_INLINE_DECL_REFCOUNTING(WindowRenderer)
+  NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
 
  public:
   // Cast to implementation types.
@@ -241,23 +240,21 @@ class WindowRenderer : public FrameRecorder {
  */
 class FallbackRenderer : public WindowRenderer {
  public:
-  FallbackRenderer* AsFallback() override { return this; }
+  FallbackRenderer* AsFallback() final { return this; }
 
   void SetTarget(gfxContext* aContext);
 
-  bool BeginTransaction(const nsCString& aURL = nsCString()) override;
+  bool BeginTransaction(const nsCString& aURL = nsCString()) final;
 
-  bool EndEmptyTransaction(EndTransactionFlags aFlags = END_DEFAULT) override {
+  bool EndEmptyTransaction(EndTransactionFlags aFlags = END_DEFAULT) final {
     return false;
   }
 
-  layers::LayersBackend GetBackendType() override {
+  layers::LayersBackend GetBackendType() final {
     return layers::LayersBackend::LAYERS_NONE;
   }
 
-  void GetBackendName(nsAString& name) override {
-    name.AssignLiteral("Fallback");
-  }
+  void GetBackendName(nsAString& name) final { name.AssignLiteral("Fallback"); }
 
   void EndTransactionWithColor(const nsIntRect& aRect,
                                const gfx::DeviceColor& aColor);
@@ -267,6 +264,45 @@ class FallbackRenderer : public WindowRenderer {
                               EndTransactionFlags aFlags);
 
   gfxContext* mTarget = nullptr;
+
+ protected:
+  FallbackRenderer() = default;
+};
+
+/**
+ * DefaultFallbackRenderer is intended to be used when the caller does not want
+ * it to be destroyed/recreated based on the compositing state.
+ */
+class DefaultFallbackRenderer final : public FallbackRenderer {
+  NS_INLINE_DECL_REFCOUNTING(DefaultFallbackRenderer, final)
+
+ public:
+  DefaultFallbackRenderer() = default;
+
+ private:
+  ~DefaultFallbackRenderer() final = default;
+};
+
+/**
+ * BackgroundedFallbackRenderer is intended to be used as a placeholder while we
+ * wait for compositing to be reinstantiated.
+ */
+class BackgroundedFallbackRenderer final : public FallbackRenderer,
+                                           public gfx::GPUProcessListener {
+  NS_INLINE_DECL_REFCOUNTING(BackgroundedFallbackRenderer, final)
+
+ public:
+  explicit BackgroundedFallbackRenderer(nsIWidget* aWidget);
+
+  void Destroy() final;
+
+  void OnCompositorDestroyBackgrounded() final;
+
+ private:
+  ~BackgroundedFallbackRenderer() final;
+
+  // The widget to notify when compositing is reinstantiated.
+  nsIWidget* mWidget;
 };
 
 }  // namespace mozilla

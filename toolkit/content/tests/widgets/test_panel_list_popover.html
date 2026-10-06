@@ -1,0 +1,388 @@
+<!doctype html>
+<!-- Any copyright is dedicated to the Public Domain.
+     http://creativecommons.org/publicdomain/zero/1.0/ -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Test Panel List Popover</title>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+    <link
+      rel="stylesheet"
+      href="chrome://mochikit/content/tests/SimpleTest/test.css"
+    />
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content">
+      <div id="outside-scroller" style="overflow: auto; height: 100px">
+        <div style="height: 300px">Tall content to enable scrolling</div>
+      </div>
+      <button id="anchor-button">Open</button>
+      <panel-list id="panel-list">
+        <panel-item>one</panel-item>
+        <panel-item submenu="sub-panel-list" id="submenu-host">
+          two
+        </panel-item>
+        <panel-item>three</panel-item>
+      </panel-list>
+    </div>
+    <script class="testbody" type="application/javascript">
+      const { BrowserTestUtils } = ChromeUtils.importESModule(
+        "resource://testing-common/BrowserTestUtils.sys.mjs"
+      );
+      const { TestUtils } = ChromeUtils.importESModule(
+        "resource://testing-common/TestUtils.sys.mjs"
+      );
+      let anchorButton, panelList, outsideScroller;
+
+      add_setup(function setup() {
+        panelList = document.getElementById("panel-list");
+        anchorButton = document.getElementById("anchor-button");
+        outsideScroller = document.getElementById("outside-scroller");
+        anchorButton.addEventListener("click", e => panelList.toggle(e));
+      });
+
+      add_task(async function testPopoverAttributeSetOnConnect() {
+        is(
+          panelList.getAttribute("popover"),
+          "auto",
+          "Panel list should have popover='auto' attribute set"
+        );
+      });
+
+      add_task(async function testSupportsPopover() {
+        ok(
+          panelList.supportsPopover(),
+          "Panel list should support popover (not in XUL panel, not a submenu)"
+        );
+      });
+
+      add_task(async function testSubmenuDoesNotSupportPopover() {
+        await customElements.whenDefined("panel-list");
+        await customElements.whenDefined("panel-item");
+
+        let submenuHost = document.getElementById("submenu-host");
+        let subPanelList = document.createElement("panel-list");
+        subPanelList.setAttribute("slot", "submenu");
+        subPanelList.setAttribute("id", "sub-panel-list");
+
+        let subItem1 = document.createElement("panel-item");
+        subItem1.textContent = "sub one";
+        let subItem2 = document.createElement("panel-item");
+        subItem2.textContent = "sub two";
+
+        subPanelList.appendChild(subItem1);
+        subPanelList.appendChild(subItem2);
+        submenuHost.appendChild(subPanelList);
+
+        await customElements.whenDefined("panel-list");
+
+        ok(
+          !subPanelList.supportsPopover(),
+          "Submenu panel list should not support popover"
+        );
+        ok(
+          !subPanelList.hasAttribute("popover"),
+          "Submenu panel list should not have popover attribute"
+        );
+      });
+
+      add_task(async function testShowPopoverCalledOnShow() {
+        let shown = BrowserTestUtils.waitForEvent(panelList, "shown");
+        panelList.show();
+        await shown;
+
+        ok(
+          panelList.matches(":popover-open"),
+          "Panel should match :popover-open after show()"
+        );
+
+        let hidden = BrowserTestUtils.waitForEvent(panelList, "hidden");
+        panelList.hide();
+        await hidden;
+      });
+
+      add_task(async function testHidePopoverCalledOnHide() {
+        let shown = BrowserTestUtils.waitForEvent(panelList, "shown");
+        panelList.show();
+        await shown;
+
+        ok(
+          panelList.matches(":popover-open"),
+          "Panel should be open before hiding"
+        );
+
+        let hidden = BrowserTestUtils.waitForEvent(panelList, "hidden");
+        panelList.hide();
+        await hidden;
+
+        ok(
+          !panelList.matches(":popover-open"),
+          "Panel should no longer match :popover-open after hide()"
+        );
+      });
+
+      add_task(async function testNoRecursionOnShow() {
+        let shownCount = 0;
+        let shownListener = () => {
+          shownCount++;
+        };
+
+        panelList.addEventListener("shown", shownListener);
+
+        let shown = BrowserTestUtils.waitForEvent(panelList, "shown");
+        panelList.show();
+        await shown;
+
+        is(
+          shownCount,
+          1,
+          "shown event should fire exactly once (no recursion)"
+        );
+
+        panelList.removeEventListener("shown", shownListener);
+
+        let hidden = BrowserTestUtils.waitForEvent(panelList, "hidden");
+        panelList.hide();
+        await hidden;
+      });
+
+      add_task(async function testPopoverPanelHidesOnOutsideScroll() {
+        let shown = BrowserTestUtils.waitForEvent(panelList, "shown");
+        panelList.show();
+        await shown;
+
+        ok(
+          panelList.matches(":popover-open"),
+          "Panel should be open before scroll"
+        );
+
+        let hidden = BrowserTestUtils.waitForEvent(panelList, "hidden");
+        outsideScroller.scrollTop = 50;
+        await hidden;
+
+        ok(
+          !panelList.matches(":popover-open"),
+          "Popover panel should be hidden after scroll outside the panel"
+        );
+
+        outsideScroller.scrollTop = 0;
+      });
+
+      add_task(async function testPopoverPanelStaysOpenOnInsideScroll() {
+        // has-submenu forces overflow: visible which prevents scrolling.
+        // Remove it temporarily so we can assert scrolling in the panel list
+        // doesn't close it.
+        let hadSubmenu = panelList.hasAttribute("has-submenu");
+        panelList.removeAttribute("has-submenu");
+
+        let extraItems = [];
+        for (let i = 0; i < 30; i++) {
+          let item = document.createElement("panel-item");
+          item.textContent = `extra ${i}`;
+          panelList.appendChild(item);
+          extraItems.push(item);
+        }
+
+        let shown = BrowserTestUtils.waitForEvent(panelList, "shown");
+        panelList.show();
+        await shown;
+
+        ok(
+          panelList.matches(":popover-open"),
+          "Panel should be open before inside scroll"
+        );
+
+        panelList.scrollTop = 50;
+        await TestUtils.waitForTick();
+
+        ok(
+          panelList.matches(":popover-open"),
+          "Popover panel should remain open after scroll inside the panel"
+        );
+
+        let hidden = BrowserTestUtils.waitForEvent(panelList, "hidden");
+        panelList.hide();
+        await hidden;
+
+        for (let item of extraItems) {
+          item.remove();
+        }
+        if (hadSubmenu) {
+          panelList.setAttribute("has-submenu", "");
+        }
+      });
+
+      add_task(async function testPopoverPanelClosesOnResize() {
+        let shown = BrowserTestUtils.waitForEvent(panelList, "shown");
+        panelList.show();
+        await shown;
+
+        ok(
+          panelList.matches(":popover-open"),
+          "Panel should be open before resize"
+        );
+
+        let hidden = BrowserTestUtils.waitForEvent(panelList, "hidden");
+        window.dispatchEvent(new Event("resize"));
+        await hidden;
+
+        ok(
+          !panelList.matches(":popover-open"),
+          "Popover panel should close after resize event"
+        );
+      });
+
+      add_task(async function testToggleViaAnchorButtonClick() {
+        ok(
+          !panelList.matches(":popover-open"),
+          "Panel should be closed initially"
+        );
+
+        let shown = BrowserTestUtils.waitForEvent(panelList, "shown");
+        synthesizeMouseAtCenter(anchorButton, {});
+        await shown;
+
+        ok(
+          panelList.matches(":popover-open"),
+          "Panel should open after clicking anchor button"
+        );
+
+        let hidden = BrowserTestUtils.waitForEvent(panelList, "hidden");
+        synthesizeMouseAtCenter(anchorButton, {});
+        await hidden;
+
+        ok(
+          !panelList.matches(":popover-open"),
+          "Panel should close after clicking anchor button again"
+        );
+      });
+
+      add_task(async function testOutsideClickLightDismiss() {
+        let shown = BrowserTestUtils.waitForEvent(panelList, "shown");
+        panelList.show();
+        await shown;
+
+        ok(panelList.matches(":popover-open"), "Panel should be open");
+        ok(panelList.open, "Panel open attribute should be true");
+
+        let hidden = BrowserTestUtils.waitForEvent(panelList, "hidden");
+        // Click outside the panel to trigger light dismiss
+        synthesizeMouseAtCenter(document.body, {});
+        await hidden;
+
+        ok(
+          !panelList.matches(":popover-open"),
+          "Panel should be closed after outside click"
+        );
+        ok(
+          !panelList.open,
+          "Panel open attribute should be false after light dismiss"
+        );
+      });
+
+      add_task(async function testSecondPanelAutoClosesFirst() {
+        let secondAnchor = document.createElement("button");
+        secondAnchor.id = "second-anchor";
+        secondAnchor.textContent = "Second";
+        document.getElementById("content").appendChild(secondAnchor);
+
+        let secondPanelList = document.createElement("panel-list");
+        let secondItem = document.createElement("panel-item");
+        secondItem.textContent = "second one";
+        secondPanelList.appendChild(secondItem);
+        document.getElementById("content").appendChild(secondPanelList);
+        secondAnchor.addEventListener("click", e => secondPanelList.toggle(e));
+
+        await customElements.whenDefined("panel-list");
+
+        let firstShown = BrowserTestUtils.waitForEvent(panelList, "shown");
+        panelList.show();
+        await firstShown;
+
+        ok(panelList.matches(":popover-open"), "First panel should be open");
+
+        let firstHidden = BrowserTestUtils.waitForEvent(panelList, "hidden");
+        let secondShown = BrowserTestUtils.waitForEvent(
+          secondPanelList,
+          "shown"
+        );
+        synthesizeMouseAtCenter(secondAnchor, {});
+        await secondShown;
+
+        ok(
+          secondPanelList.matches(":popover-open"),
+          "Second panel should be open"
+        );
+
+        // The browser's auto mutual exclusion closes the first panel; wait for that
+        await firstHidden;
+
+        ok(
+          !panelList.matches(":popover-open"),
+          "First panel should be auto-closed when second panel opens"
+        );
+        ok(!panelList.open, "First panel open attribute should be false");
+
+        let secondHidden = BrowserTestUtils.waitForEvent(
+          secondPanelList,
+          "hidden"
+        );
+        secondPanelList.hide();
+        await secondHidden;
+
+        secondAnchor.remove();
+        secondPanelList.remove();
+      });
+
+      add_task(async function testDisableAutohideFallsBackToManual() {
+        await SpecialPowers.pushPrefEnv({
+          set: [["ui.popup.disable_autohide", true]],
+        });
+
+        let shown = BrowserTestUtils.waitForEvent(panelList, "shown");
+        panelList.show();
+        await shown;
+
+        is(
+          panelList.getAttribute("popover"),
+          "manual",
+          "Panel should use popover='manual' when disable_autohide is true"
+        );
+
+        ok(panelList.matches(":popover-open"), "Panel should be open");
+
+        // Outside click should NOT close a manual popover
+        synthesizeMouseAtCenter(document.body, {});
+        await TestUtils.waitForTick();
+
+        ok(
+          panelList.matches(":popover-open"),
+          "Panel should remain open after outside click with disable_autohide"
+        );
+
+        let hidden = BrowserTestUtils.waitForEvent(panelList, "hidden");
+        panelList.hide(undefined, { force: true });
+        await hidden;
+
+        await SpecialPowers.popPrefEnv();
+
+        // After clearing the pref, the next show() call should use "auto" again.
+        let reshown = BrowserTestUtils.waitForEvent(panelList, "shown");
+        panelList.show();
+        await reshown;
+
+        is(
+          panelList.getAttribute("popover"),
+          "auto",
+          "Panel should use popover='auto' again after pref is cleared"
+        );
+
+        let rehidden = BrowserTestUtils.waitForEvent(panelList, "hidden");
+        panelList.hide(undefined, { force: true });
+        await rehidden;
+      });
+    </script>
+  </body>
+</html>

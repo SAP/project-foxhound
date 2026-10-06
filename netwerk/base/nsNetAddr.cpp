@@ -1,5 +1,3 @@
-/* vim: et ts=2 sw=2 tw=80
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -33,26 +31,8 @@ NS_IMETHODIMP nsNetAddr::GetFamily(uint16_t* aFamily) {
 }
 
 NS_IMETHODIMP nsNetAddr::GetAddress(nsACString& aAddress) {
-  switch (mAddr.raw.family) {
-    /* PR_NetAddrToString can handle INET and INET6, but not LOCAL. */
-    case AF_INET:
-      aAddress.SetLength(kIPv4CStrBufSize);
-      mAddr.ToStringBuffer(aAddress.BeginWriting(), kIPv4CStrBufSize);
-      aAddress.SetLength(strlen(aAddress.BeginReading()));
-      break;
-    case AF_INET6:
-      aAddress.SetLength(kIPv6CStrBufSize);
-      mAddr.ToStringBuffer(aAddress.BeginWriting(), kIPv6CStrBufSize);
-      aAddress.SetLength(strlen(aAddress.BeginReading()));
-      break;
-#if defined(XP_UNIX)
-    case AF_LOCAL:
-      aAddress.Assign(mAddr.local.path);
-      break;
-#endif
-    // PR_AF_LOCAL falls through to default when not XP_UNIX
-    default:
-      return NS_ERROR_UNEXPECTED;
+  if (!mAddr.ToString(aAddress)) {
+    return NS_ERROR_UNEXPECTED;
   }
 
   return NS_OK;

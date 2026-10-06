@@ -6,7 +6,7 @@
 esid: sec-atomics.xor
 description: >
   Test range checking of Atomics.xor on arrays that allow atomic operations
-includes: [testAtomics.js, testBigIntTypedArray.js]
+includes: [testAtomics.js, testTypedArray.js]
 features: [ArrayBuffer, Atomics, BigInt, DataView, SharedArrayBuffer, Symbol, TypedArray]
 ---*/
 
@@ -19,6 +19,6 @@ testWithBigIntTypedArrayConstructors(function(TA) {
       Atomics.xor(view, IdxGen(view), 10);
     });
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

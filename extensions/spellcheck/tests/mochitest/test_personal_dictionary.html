@@ -1,0 +1,64 @@
+<!DOCTYPE HTML>
+<html>
+<!--
+Tests mozIPersonalDictionary add/check/remove roundtrip.
+-->
+<head>
+  <meta charset="utf-8">
+  <title>Test personal dictionary add/check/remove</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<pre id="test">
+<script>
+
+add_task(async function test_personal_dictionary_roundtrip() {
+  const results = await new Promise(resolve => {
+    const mm = SpecialPowers.loadChromeScript(function() {
+      /* global sendAsyncMessage */
+      try {
+        const spellChecker = Cc["@mozilla.org/spellchecker/engine;1"].getService(
+          Ci.mozISpellCheckingEngine
+        );
+        let personalDict = spellChecker.personalDictionary;
+        if (!personalDict) {
+          personalDict = Cc[
+            "@mozilla.org/spellchecker/personaldictionary;1"
+          ].createInstance(Ci.mozIPersonalDictionary);
+          spellChecker.personalDictionary = personalDict;
+        }
+        const testWord = "zymurgist";
+        const r = {};
+        r.beforeAdd = personalDict.check(testWord);
+        try {
+          personalDict.addWord(testWord);
+          r.afterAdd = personalDict.check(testWord);
+        } finally {
+          personalDict.removeWord(testWord);
+        }
+        r.afterRemove = personalDict.check(testWord);
+        sendAsyncMessage("done", r);
+      } catch (e) {
+        sendAsyncMessage("error", String(e));
+      }
+    });
+
+    mm.addMessageListener("done", msg => { mm.destroy(); resolve({ ok: true, data: msg }); });
+    mm.addMessageListener("error", msg => { mm.destroy(); resolve({ ok: false, error: msg }); });
+  });
+
+  if (!results.ok) {
+    ok(false, "chrome script threw: " + results.error);
+    return;
+  }
+
+  ok(!results.data.beforeAdd,   "word not in dictionary before add");
+  ok(results.data.afterAdd,     "word accepted after add");
+  ok(!results.data.afterRemove, "word rejected after remove");
+});
+
+</script>
+</pre>
+</body>
+</html>

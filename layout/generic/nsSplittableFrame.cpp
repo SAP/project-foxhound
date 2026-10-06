@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +9,7 @@
 
 #include "nsSplittableFrame.h"
 
+#include "mozilla/ReflowInput.h"
 #include "nsContainerFrame.h"
 #include "nsFieldSetFrame.h"
 #include "nsIFrameInlines.h"
@@ -304,7 +303,7 @@ nscoord nsSplittableFrame::GetEffectiveComputedBSize(
   // report zero for true overflow containers here.
   // XXXmats: hmm, can we fix this so that the sizes actually adds up instead?
   if (IsTrueOverflowContainer() &&
-      Style()->GetPseudoType() == PseudoStyleType::fieldsetContent) {
+      Style()->GetPseudoType() == PseudoStyleType::MozFieldsetContent) {
     for (nsFieldSetFrame* fieldset = do_QueryFrame(GetParent()); fieldset;
          fieldset = static_cast<nsFieldSetFrame*>(fieldset->GetPrevInFlow())) {
       bSize -= fieldset->LegendSpace();

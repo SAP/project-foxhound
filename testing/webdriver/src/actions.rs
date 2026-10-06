@@ -429,11 +429,10 @@ where
     D: Deserializer<'de>,
 {
     let opt_value = deserialize_to_option_f64(deserializer)?;
-    if let Some(value) = opt_value {
-        if !(0f64..=1.0).contains(&value) {
+    if let Some(value) = opt_value
+        && !(0f64..=1.0).contains(&value) {
             return Err(de::Error::custom(format!("{} is outside range 0-1", value)));
-        }
-    };
+        };
     Ok(opt_value)
 }
 
@@ -442,14 +441,13 @@ where
     D: Deserializer<'de>,
 {
     let opt_value = deserialize_to_option_f64(deserializer)?;
-    if let Some(value) = opt_value {
-        if !(-1.0..=1.0).contains(&value) {
+    if let Some(value) = opt_value
+        && !(-1.0..=1.0).contains(&value) {
             return Err(de::Error::custom(format!(
                 "{} is outside range -1-1",
                 value
             )));
-        }
-    };
+        };
     Ok(opt_value)
 }
 
@@ -458,14 +456,13 @@ where
     D: Deserializer<'de>,
 {
     let opt_value = deserialize_to_option_i64(deserializer)?;
-    if let Some(value) = opt_value {
-        if !(-90..=90).contains(&value) {
+    if let Some(value) = opt_value
+        && !(-90..=90).contains(&value) {
             return Err(de::Error::custom(format!(
                 "{} is outside range -90-90",
                 value
             )));
-        }
-    };
+        };
     Ok(opt_value)
 }
 
@@ -474,14 +471,13 @@ where
     D: Deserializer<'de>,
 {
     let opt_value = deserialize_to_option_u64(deserializer)?;
-    if let Some(value) = opt_value {
-        if !(0..=359).contains(&value) {
+    if let Some(value) = opt_value
+        && !(0..=359).contains(&value) {
             return Err(de::Error::custom(format!(
                 "{} is outside range 0-359",
                 value
             )));
-        }
-    };
+        };
     Ok(opt_value)
 }
 
@@ -490,14 +486,13 @@ where
     D: Deserializer<'de>,
 {
     let opt_value = deserialize_to_option_f64(deserializer)?;
-    if let Some(value) = opt_value {
-        if !(0f64..=f64::consts::FRAC_PI_2).contains(&value) {
+    if let Some(value) = opt_value
+        && !(0f64..=f64::consts::FRAC_PI_2).contains(&value) {
             return Err(de::Error::custom(format!(
                 "{} is outside range 0-PI/2",
                 value
             )));
-        }
-    };
+        };
     Ok(opt_value)
 }
 
@@ -506,14 +501,13 @@ where
     D: Deserializer<'de>,
 {
     let opt_value = deserialize_to_option_f64(deserializer)?;
-    if let Some(value) = opt_value {
-        if !(0f64..=f64::consts::TAU).contains(&value) {
+    if let Some(value) = opt_value
+        && !(0f64..=f64::consts::TAU).contains(&value) {
             return Err(de::Error::custom(format!(
                 "{} is outside range 0-2*PI",
                 value
             )));
-        }
-    };
+        };
     Ok(opt_value)
 }
 

@@ -34,7 +34,7 @@ The style sheet pane
 
 The style sheet pane, on the left, lists all the style sheets being used by the current document. You can quickly toggle the use of a given sheet on and off by clicking the eyeball icon to the left of the sheet's name. You can save any changes you've made to the style sheet to your local computer by clicking the Save button in the bottom-right corner of each sheet's entry in the list.
 
-From Firefox 40 onwards, the style sheet pane also includes a context menu that lets you open the selected style sheet in a new tab.
+The style sheet pane also includes a context menu that lets you open the selected style sheet in a new tab.
 
 
 .. _style-editor-the-editor-pane:
@@ -63,10 +63,10 @@ The At-rules sidebar
 
 The Style Editor displays a sidebar on the right-hand side whenever the current sheet contains any of the following At-rules:
 
-- `@media <https://developer.mozilla.org/en-US/docs/Web/CSS/Media_Queries/Using_media_queries>`_
-- `@supports <https://developer.mozilla.org/en-US/docs/Web/CSS/@supports>`_
-- `@layer <https://developer.mozilla.org/en-US/docs/Web/CSS/@layer>`_
-- `@container <https://developer.mozilla.org/en-US/docs/Web/CSS/Media_Queries/Using_media_queries>`_
+- `@media <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@media>`_
+- `@supports <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@supports>`_
+- `@layer <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@layer>`_
+- `@container <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@container>`_
 
 The sidebar lists the rules and provides a link to the line of the sheet where the rule is defined. Click an item to jump to that rule in the sheet. For ``@media`` rules, the condition text of the rule is greyed-out if the media query doesn’t currently apply.
 
@@ -81,7 +81,7 @@ The At-rules sidebar works especially well with :doc:`Responsive Design View <..
   <br/>
   <br/>
 
-From Firefox 46 onwards, if an ``@media`` rule contains a screen size in a condition, then it is made clickable: clicking it then resizes the screen to that size using the Responsive Design View.
+If an ``@media`` rule contains a screen size in a condition, then it is made clickable: clicking it then resizes the screen to that size using the Responsive Design View.
 
 
 Creating and importing style sheets
@@ -105,7 +105,7 @@ Source map support
 
 Web developers often create CSS files using a preprocessor like `Sass <https://sass-lang.com/>`_, `Less <https://lesscss.org/>`_, or `Stylus <https://learnboost.github.io/stylus/>`_. These tools generate CSS files from a richer and more expressive syntax. If you do this, being able to see and edit the generated CSS is not so useful, because the code you maintain is the preprocessor syntax, not the generated CSS. So you'd need to edit the generated CSS, then manually work out how to reapply that to the original source.
 
-Source maps enable the tools to map back from the generated CSS to the original syntax, so they can display, and allow you to edit, files in the original syntax. From Firefox 29 onwards, the Style Editor can understand CSS source maps.
+Source maps enable the tools to map back from the generated CSS to the original syntax, so they can display, and allow you to edit, files in the original syntax. The Style Editor can understand CSS source maps.
 
 This means that if you use, for example, Sass, then the Style Editor will show you, and allow you to edit, Sass files, rather than the CSS that is generated from them:
 
@@ -125,7 +125,7 @@ Viewing original sources
 
 Now, if you check "Show original sources" in the :ref:`Style Editor settings <settings-style-editor>`, the links next to CSS rules in the :ref:`Rules view <page_inspector_ui_tour_rules_view>` will link to the original sources in the Style Editor.
 
-From Firefox 35 onwards original sources are displayed by default.
+Original sources are displayed by default.
 
 
 Editing original sources

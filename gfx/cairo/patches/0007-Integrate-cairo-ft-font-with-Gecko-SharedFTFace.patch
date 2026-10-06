@@ -1,0 +1,398 @@
+From bfffb7d2f2a435fc07deb84a9028cd657d5fb71e Mon Sep 17 00:00:00 2001
+From: Jonathan Kew <jkew@mozilla.com>
+Date: Wed, 22 Apr 2026 13:00:22 -0700
+Subject: [PATCH 07/29] Integrate cairo-ft-font with Gecko SharedFTFace
+
+---
+ src/cairo-ft-font.c | 138 ++++++++++++++++++++++++++++++++++----------
+ src/cairo-ft.h      |   3 +-
+ 2 files changed, 108 insertions(+), 33 deletions(-)
+
+diff --git a/src/cairo-ft-font.c b/src/cairo-ft-font.c
+index a28af85f0..b86fe4fb8 100644
+--- a/src/cairo-ft-font.c
++++ b/src/cairo-ft-font.c
+@@ -114,6 +114,24 @@
+  */
+ #define MAX_OPEN_FACES 10
+ 
++extern void mozilla_AddRefSharedFTFace(void* aContext);
++extern void mozilla_ReleaseSharedFTFace(void* aContext, void* aOwner);
++/* Returns true if the face's state has been modified by another owner. */
++extern int mozilla_LockSharedFTFace(void* aContext, void* aOwner);
++extern void mozilla_UnlockSharedFTFace(void* aContext);
++extern FT_Error mozilla_LoadFTGlyph(FT_Face aFace, uint32_t aGlyphIndex, int32_t aFlags);
++extern void mozilla_LockFTLibrary(FT_Library aLibrary);
++extern void mozilla_UnlockFTLibrary(FT_Library aLibrary);
++
++#define CAIRO_FT_LOCK(unscaled)						\
++  ((unscaled)->face_context						\
++       ? (void)mozilla_LockSharedFTFace((unscaled)->face_context, NULL) \
++       : (void)CAIRO_MUTEX_LOCK((unscaled)->mutex))
++#define CAIRO_FT_UNLOCK(unscaled)			      \
++  ((unscaled)->face_context				      \
++       ? mozilla_UnlockSharedFTFace((unscaled)->face_context) \
++       : (void)CAIRO_MUTEX_UNLOCK((unscaled)->mutex))
++
+ /**
+  * SECTION:cairo-ft
+  * @Title: FreeType Fonts
+@@ -167,6 +185,7 @@ struct _cairo_ft_unscaled_font {
+ 
+     cairo_bool_t from_face; /* was the FT_Face provided by user? */
+     FT_Face face;	    /* provided or cached face */
++    void *face_context;
+ 
+     /* only set if from_face is false */
+     char *filename;
+@@ -352,7 +371,9 @@ _cairo_ft_unscaled_font_map_pluck_entry (void *entry, void *closure)
+     _cairo_hash_table_remove (font_map->hash_table,
+ 			      &unscaled->base.hash_entry);
+ 
+-    if (! unscaled->from_face)
++    if (unscaled->from_face)
++	mozilla_ReleaseSharedFTFace (unscaled->face_context, unscaled);
++    else
+ 	_font_map_release_face_lock_held (font_map, unscaled);
+ 
+     _cairo_ft_unscaled_font_fini (unscaled);
+@@ -411,7 +432,8 @@ _cairo_ft_unscaled_font_init_key (cairo_ft_unscaled_font_t *key,
+ 				  cairo_bool_t              from_face,
+ 				  char			   *filename,
+ 				  int			    id,
+-				  FT_Face		    face)
++				  FT_Face		    face,
++				  void                     *face_context)
+ {
+     uintptr_t hash;
+ 
+@@ -419,6 +441,7 @@ _cairo_ft_unscaled_font_init_key (cairo_ft_unscaled_font_t *key,
+     key->filename = filename;
+     key->id = id;
+     key->face = face;
++    key->face_context = face_context;
+ 
+     hash = _cairo_hash_string (filename);
+     /* the constants are just arbitrary primes */
+@@ -454,7 +477,8 @@ _cairo_ft_unscaled_font_init (cairo_ft_unscaled_font_t *unscaled,
+ 			      cairo_bool_t              from_face,
+ 			      const char	       *filename,
+ 			      int			id,
+-			      FT_Face			face)
++			      FT_Face			face,
++			      void		       *face_context)
+ {
+     _cairo_unscaled_font_init (&unscaled->base,
+ 			       &cairo_ft_unscaled_font_backend);
+@@ -464,7 +488,7 @@ _cairo_ft_unscaled_font_init (cairo_ft_unscaled_font_t *unscaled,
+     if (from_face) {
+ 	FT_MM_Var *ft_mm_var;
+ 	unscaled->from_face = TRUE;
+-	_cairo_ft_unscaled_font_init_key (unscaled, TRUE, NULL, id, face);
++	_cairo_ft_unscaled_font_init_key (unscaled, TRUE, NULL, id, face, face_context);
+ 
+ 
+         unscaled->have_color = FT_HAS_COLOR (face) != 0;
+@@ -480,12 +504,13 @@ _cairo_ft_unscaled_font_init (cairo_ft_unscaled_font_t *unscaled,
+ 
+ 	unscaled->from_face = FALSE;
+ 	unscaled->face = NULL;
++	unscaled->face_context = NULL;
+ 
+ 	filename_copy = strdup (filename);
+ 	if (unlikely (filename_copy == NULL))
+ 	    return _cairo_error (CAIRO_STATUS_NO_MEMORY);
+ 
+-	_cairo_ft_unscaled_font_init_key (unscaled, FALSE, filename_copy, id, NULL);
++	_cairo_ft_unscaled_font_init_key (unscaled, FALSE, filename_copy, id, NULL, NULL);
+ 
+ 	unscaled->have_color_set = FALSE;
+     }
+@@ -534,7 +559,8 @@ _cairo_ft_unscaled_font_keys_equal (const void *key_a,
+ 	unscaled_a->from_face == unscaled_b->from_face)
+      {
+         if (unscaled_a->from_face)
+-	    return unscaled_a->face == unscaled_b->face;
++	    return unscaled_a->face == unscaled_b->face &&
++		   unscaled_a->face_context == unscaled_b->face_context;
+ 
+ 	if (unscaled_a->filename == NULL && unscaled_b->filename == NULL)
+ 	    return TRUE;
+@@ -555,6 +581,7 @@ _cairo_ft_unscaled_font_create_internal (cairo_bool_t from_face,
+ 					 char *filename,
+ 					 int id,
+ 					 FT_Face font_face,
++					 void *face_context,
+ 					 cairo_ft_unscaled_font_t **out)
+ {
+     cairo_ft_unscaled_font_t key, *unscaled;
+@@ -565,7 +592,7 @@ _cairo_ft_unscaled_font_create_internal (cairo_bool_t from_face,
+     if (unlikely (font_map == NULL))
+ 	return _cairo_error (CAIRO_STATUS_NO_MEMORY);
+ 
+-    _cairo_ft_unscaled_font_init_key (&key, from_face, filename, id, font_face);
++    _cairo_ft_unscaled_font_init_key (&key, from_face, filename, id, font_face, face_context);
+ 
+     /* Return existing unscaled font if it exists in the hash table. */
+     unscaled = _cairo_hash_table_lookup (font_map->hash_table,
+@@ -582,7 +609,7 @@ _cairo_ft_unscaled_font_create_internal (cairo_bool_t from_face,
+ 	goto UNWIND_FONT_MAP_LOCK;
+     }
+ 
+-    status = _cairo_ft_unscaled_font_init (unscaled, from_face, filename, id, font_face);
++    status = _cairo_ft_unscaled_font_init (unscaled, from_face, filename, id, font_face, face_context);
+     if (unlikely (status))
+ 	goto UNWIND_UNSCALED_MALLOC;
+ 
+@@ -592,6 +619,8 @@ _cairo_ft_unscaled_font_create_internal (cairo_bool_t from_face,
+     if (unlikely (status))
+ 	goto UNWIND_UNSCALED_FONT_INIT;
+ 
++    mozilla_AddRefSharedFTFace (face_context);
++
+ DONE:
+     _cairo_ft_unscaled_font_map_unlock ();
+     *out = unscaled;
+@@ -644,16 +673,17 @@ _cairo_ft_unscaled_font_create_for_pattern (FcPattern *pattern,
+ 
+ DONE:
+     return _cairo_ft_unscaled_font_create_internal (font_face != NULL,
+-						    filename, id, font_face,
++						    filename, id, font_face, NULL,
+ 						    out);
+ }
+ #endif
+ 
+ static cairo_status_t
+ _cairo_ft_unscaled_font_create_from_face (FT_Face face,
++					  void *face_context,
+ 					  cairo_ft_unscaled_font_t **out)
+ {
+-    return _cairo_ft_unscaled_font_create_internal (TRUE, NULL, face->face_index, face, out);
++    return _cairo_ft_unscaled_font_create_internal (TRUE, NULL, face->face_index, face, face_context, out);
+ }
+ 
+ static cairo_bool_t
+@@ -681,12 +711,16 @@ _cairo_ft_unscaled_font_destroy (void *abstract_font)
+ 	 */
+ 	if (unscaled->faces && unscaled->faces->unscaled == NULL) {
+ 	    assert (unscaled->faces->next == NULL);
++	    CAIRO_FT_LOCK (unscaled);
+ 	    cairo_font_face_destroy (&unscaled->faces->base);
++	    CAIRO_FT_UNLOCK (unscaled);
+ 	}
++	mozilla_ReleaseSharedFTFace (unscaled->face_context, unscaled);
+     } else {
+ 	_font_map_release_face_lock_held (font_map, unscaled);
+     }
+     unscaled->face = NULL;
++    unscaled->face_context = NULL;
+ 
+     _cairo_ft_unscaled_font_map_unlock ();
+ 
+@@ -715,7 +749,13 @@ _cairo_ft_unscaled_font_lock_face (cairo_ft_unscaled_font_t *unscaled)
+     FT_Face face = NULL;
+     FT_Error error;
+ 
+-    CAIRO_MUTEX_LOCK (unscaled->mutex);
++    if (unscaled->face_context) {
++	if (!mozilla_LockSharedFTFace (unscaled->face_context, unscaled)) {
++	    unscaled->have_scale = FALSE;
++	}
++    } else {
++        CAIRO_FT_LOCK (unscaled);
++    }
+     unscaled->lock_count++;
+ 
+     if (unscaled->face)
+@@ -750,7 +790,7 @@ _cairo_ft_unscaled_font_lock_face (cairo_ft_unscaled_font_t *unscaled)
+     if (error)
+     {
+ 	unscaled->lock_count--;
+-	CAIRO_MUTEX_UNLOCK (unscaled->mutex);
++	CAIRO_FT_UNLOCK (unscaled);
+ 	_cairo_error_throw (_cairo_ft_to_cairo_error (error));
+ 	return NULL;
+     }
+@@ -775,7 +815,7 @@ _cairo_ft_unscaled_font_unlock_face (cairo_ft_unscaled_font_t *unscaled)
+ 
+     unscaled->lock_count--;
+ 
+-    CAIRO_MUTEX_UNLOCK (unscaled->mutex);
++    CAIRO_FT_UNLOCK (unscaled);
+ }
+ 
+ 
+@@ -3910,19 +3950,21 @@ _cairo_ft_font_face_destroy (void *abstract_face)
+      *    font_face <------- unscaled
+      */
+ 
+-    if (font_face->unscaled &&
+-	font_face->unscaled->from_face &&
+-	font_face->next == NULL &&
+-	font_face->unscaled->faces == font_face &&
+-	CAIRO_REFERENCE_COUNT_GET_VALUE (&font_face->unscaled->base.ref_count) > 1)
+-    {
+-	_cairo_unscaled_font_destroy (&font_face->unscaled->base);
+-	font_face->unscaled = NULL;
++    if (font_face->unscaled) {
++	CAIRO_FT_LOCK (font_face->unscaled);
+ 
+-	return FALSE;
+-    }
++	if (font_face->unscaled->from_face &&
++	    font_face->next == NULL &&
++	    font_face->unscaled->faces == font_face &&
++	    CAIRO_REFERENCE_COUNT_GET_VALUE (&font_face->unscaled->base.ref_count) > 1)
++        {
++	    CAIRO_FT_UNLOCK (font_face->unscaled);
++	    _cairo_unscaled_font_destroy (&font_face->unscaled->base);
++	    font_face->unscaled = NULL;
++
++	    return FALSE;
++        }
+ 
+-    if (font_face->unscaled) {
+ 	cairo_ft_font_face_t *tmp_face = NULL;
+ 	cairo_ft_font_face_t *last_face = NULL;
+ 
+@@ -3941,6 +3983,7 @@ _cairo_ft_font_face_destroy (void *abstract_face)
+ 	    last_face = tmp_face;
+ 	}
+ 
++	CAIRO_FT_UNLOCK (font_face->unscaled);
+ 	_cairo_unscaled_font_destroy (&font_face->unscaled->base);
+ 	font_face->unscaled = NULL;
+     }
+@@ -4014,6 +4057,24 @@ _cairo_ft_font_face_get_implementation (void                     *abstract_face,
+     return abstract_face;
+ }
+ 
++static void
++_cairo_ft_font_face_lock (void *abstract_face)
++{
++    cairo_ft_font_face_t *font_face = abstract_face;
++    if (font_face->unscaled) {
++	CAIRO_FT_LOCK (font_face->unscaled);
++    }
++}
++
++static void
++_cairo_ft_font_face_unlock (void *abstract_face)
++{
++    cairo_ft_font_face_t *font_face = abstract_face;
++    if (font_face->unscaled) {
++	CAIRO_FT_UNLOCK (font_face->unscaled);
++    }
++}
++
+ const cairo_font_face_backend_t _cairo_ft_font_face_backend = {
+     CAIRO_FONT_TYPE_FT,
+ #if CAIRO_HAS_FC_FONT
+@@ -4023,7 +4084,11 @@ const cairo_font_face_backend_t _cairo_ft_font_face_backend = {
+ #endif
+     _cairo_ft_font_face_destroy,
+     _cairo_ft_font_face_scaled_font_create,
+-    _cairo_ft_font_face_get_implementation
++    _cairo_ft_font_face_get_implementation,
++/*
++    _cairo_ft_font_face_lock,
++    _cairo_ft_font_face_unlock
++*/
+ };
+ 
+ #if CAIRO_HAS_FC_FONT
+@@ -4066,6 +4131,8 @@ _cairo_ft_font_face_create (cairo_ft_unscaled_font_t *unscaled,
+ {
+     cairo_ft_font_face_t *font_face, **prev_font_face;
+ 
++    CAIRO_FT_LOCK (unscaled);
++
+     /* Looked for an existing matching font face */
+     for (font_face = unscaled->faces, prev_font_face = &unscaled->faces;
+ 	 font_face;
+@@ -4087,15 +4154,19 @@ _cairo_ft_font_face_create (cairo_ft_unscaled_font_t *unscaled,
+ 		 * from owner to ownee. */
+ 		font_face->unscaled = unscaled;
+ 		_cairo_unscaled_font_reference (&unscaled->base);
+-		return &font_face->base;
+-	    } else
+-		return cairo_font_face_reference (&font_face->base);
++	    } else {
++		cairo_font_face_reference (&font_face->base);
++	    }
++
++	    CAIRO_FT_UNLOCK (unscaled);
++	    return &font_face->base;
+ 	}
+     }
+ 
+     /* No match found, create a new one */
+     font_face = _cairo_calloc (sizeof (cairo_ft_font_face_t));
+     if (unlikely (!font_face)) {
++	CAIRO_FT_UNLOCK (unscaled);
+ 	_cairo_error_throw (CAIRO_STATUS_NO_MEMORY);
+ 	return (cairo_font_face_t *)&_cairo_font_face_nil;
+     }
+@@ -4122,6 +4193,7 @@ _cairo_ft_font_face_create (cairo_ft_unscaled_font_t *unscaled,
+ 
+     _cairo_font_face_init (&font_face->base, &_cairo_ft_font_face_backend);
+ 
++    CAIRO_FT_UNLOCK (unscaled);
+     return &font_face->base;
+ }
+ 
+@@ -4481,14 +4553,16 @@ cairo_ft_font_face_create_for_pattern (FcPattern *pattern)
+ cairo_font_face_t *
+ cairo_ft_font_face_create_for_ft_face (FT_Face         face,
+ 				       int             load_flags,
+-				       unsigned int    synth_flags)
++				       unsigned int    synth_flags,
++				       void           *face_context)
+ {
+     cairo_ft_unscaled_font_t *unscaled;
+     cairo_font_face_t *font_face;
+     cairo_ft_options_t ft_options;
+     cairo_status_t status;
+ 
+-    status = _cairo_ft_unscaled_font_create_from_face (face, &unscaled);
++    status = _cairo_ft_unscaled_font_create_from_face (face, face_context,
++						       &unscaled);
+     if (unlikely (status))
+ 	return (cairo_font_face_t *)&_cairo_font_face_nil;
+ 
+@@ -4640,7 +4714,7 @@ cairo_ft_scaled_font_lock_face (cairo_scaled_font_t *abstract_font)
+      * opportunity for creating deadlock. This is obviously unsafe,
+      * but as documented, the user must add manual locking when using
+      * this function. */
+-     CAIRO_MUTEX_UNLOCK (scaled_font->unscaled->mutex);
++     CAIRO_FT_UNLOCK (scaled_font->unscaled);
+ 
+     return face;
+ }
+@@ -4673,7 +4747,7 @@ cairo_ft_scaled_font_unlock_face (cairo_scaled_font_t *abstract_font)
+      * cairo_ft_scaled_font_lock_face, so we have to acquire it again
+      * as _cairo_ft_unscaled_font_unlock_face expects it to be held
+      * when we call into it. */
+-    CAIRO_MUTEX_LOCK (scaled_font->unscaled->mutex);
++    CAIRO_FT_LOCK (scaled_font->unscaled);
+ 
+     _cairo_ft_unscaled_font_unlock_face (scaled_font->unscaled);
+ }
+diff --git a/src/cairo-ft.h b/src/cairo-ft.h
+index 842cd60a9..09959b7c2 100644
+--- a/src/cairo-ft.h
++++ b/src/cairo-ft.h
+@@ -55,7 +55,8 @@ CAIRO_BEGIN_DECLS
+ cairo_public cairo_font_face_t *
+ cairo_ft_font_face_create_for_ft_face (FT_Face         face,
+ 				       int             load_flags,
+-				       unsigned int    synth_flags);
++				       unsigned int    synth_flags,
++				       void           *face_context);
+ 
+ /**
+  * cairo_ft_synthesize_t:
+-- 
+2.53.0
+

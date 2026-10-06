@@ -51,7 +51,7 @@ class WebAppManifestParser {
      * - Removes invalid enum values (ie display: halfscreen)
      * - Ensures display, dir, start_url, and scope always have a value
      * - Trims most strings (name, short_name, ...)
-     * See https://searchfox.org/mozilla-central/source/dom/manifest/ManifestProcessor.jsm
+     * See https://searchfox.org/firefox-main/source/dom/manifest/ManifestProcessor.jsm
      */
     fun parse(json: JSONObject): Result {
         return try {

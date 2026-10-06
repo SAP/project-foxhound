@@ -20,7 +20,6 @@ head_rev: ed20a8b98a8f2d8593dbbbd9b5df993e3e91433f
 head_tag: ''
 hg_branch: default
 level: '3'
-message: ''
 moz_build_date: '20231122095244'
 next_version: null
 optimize_strategies: null
@@ -41,8 +40,6 @@ release_partners: []
 release_product: null
 release_type: nightly
 repository_type: hg
-required_signoffs: []
-signoff_urls: {}
 target_tasks_method: mozilla_central_tasks
 tasks_for: hg-push
 test_manifest_loader: default

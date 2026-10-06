@@ -1,0 +1,13 @@
+[package]
+edition = "2021"
+name = "locale_service_glue"
+version = "0.1.0"
+license = "MPL-2.0"
+authors = ["Eemeli Aro <eemeli@mozilla.com>"]
+
+[dependencies]
+nsstring = { path = "../../../../xpcom/rust/nsstring" }
+
+[dependencies.icu_locale]
+version = "~2.1.1"
+default-features = false

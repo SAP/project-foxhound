@@ -157,11 +157,11 @@ def test_get_raptor_test_list_firefox(mock_info, create_args):
 
 @patch("logger.logger.RaptorLogger.info")
 def test_get_raptor_test_list_chrome(mock_info, create_args):
-    args = create_args(app="chrome", test="speedometer", browser_cycles=1)
+    args = create_args(app="chrome", test="speedometer2", browser_cycles=1)
 
     test_list = get_raptor_test_list(args, mozinfo.os)
     assert len(test_list) == 1
-    assert test_list[0]["name"] == "speedometer"
+    assert test_list[0]["name"] == "speedometer2"
 
 
 @patch("logger.logger.RaptorLogger.info")
@@ -388,20 +388,20 @@ def test_get_raptor_test_list_add_test_url_params(mock_info, create_args):
 
 @patch("logger.logger.RaptorLogger.info")
 def test_get_raptor_test_list_refbrow(mock_info, create_args):
-    args = create_args(app="refbrow", test="speedometer", browser_cycles=1)
+    args = create_args(app="refbrow", test="speedometer2", browser_cycles=1)
 
     test_list = get_raptor_test_list(args, mozinfo.os)
     assert len(test_list) == 1
-    assert test_list[0]["name"] == "speedometer"
+    assert test_list[0]["name"] == "speedometer2"
 
 
 @patch("logger.logger.RaptorLogger.info")
 def test_get_raptor_test_list_fenix(mock_info, create_args):
-    args = create_args(app="fenix", test="speedometer", browser_cycles=1)
+    args = create_args(app="fenix", test="speedometer2", browser_cycles=1)
 
     test_list = get_raptor_test_list(args, mozinfo.os)
     assert len(test_list) == 1
-    assert test_list[0]["name"] == "speedometer"
+    assert test_list[0]["name"] == "speedometer2"
 
 
 def test_add_test_url_params_with_single_extra_param():

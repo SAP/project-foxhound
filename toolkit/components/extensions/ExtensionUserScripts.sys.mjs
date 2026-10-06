@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -356,6 +354,101 @@ class UserScriptsManager {
         );
       })
     );
+  }
+
+  /**
+   * Inject user script into the given target.
+   * Caller should make sure that each script has a valid worldId.
+   *
+   * @throws {ExtensionError} if the provided script is invalid.
+   */
+  async executeScript(context, injection) {
+    const { injectImmediately, js, target, world, worldId } = injection;
+
+    if (worldId && world === "MAIN") {
+      // worldId is only supported with world USER_SCRIPT (default).
+      throw new ExtensionUtils.ExtensionError(
+        "worldId cannot be used with MAIN world."
+      );
+    }
+
+    const { tabId, allFrames, documentIds, frameIds } = target;
+
+    if (documentIds && frameIds) {
+      throw new ExtensionUtils.ExtensionError(
+        "Cannot specify both 'documentIds' and 'frameIds'."
+      );
+    }
+    if (allFrames) {
+      if (frameIds) {
+        throw new ExtensionUtils.ExtensionError(
+          "Cannot specify both 'allFrames' and 'frameIds'."
+        );
+      } else if (documentIds) {
+        throw new ExtensionUtils.ExtensionError(
+          "Cannot specify both 'allFrames' and 'documentIds'."
+        );
+      }
+    }
+    if (js.length === 0) {
+      throw new ExtensionUtils.ExtensionError(
+        "The array of script sources provided to 'js' must not be empty."
+      );
+    }
+
+    const tab = this.extension.tabManager.get(tabId);
+
+    const options = {
+      isUserScript: true,
+      extensionId: this.extension.id,
+      hasActiveTabPermission: tab.hasActiveTabPermission,
+      matches: this.extension.allowedOrigins.patterns.map(host => host.pattern),
+      jsExecuteScriptSources: [],
+      cssPaths: [],
+      removeCSS: false,
+      runAt: injectImmediately ? "document_start" : "document_idle",
+      world: world ?? "USER_SCRIPT",
+      worldId: worldId ?? "",
+      wantReturnValue: true,
+      // With this option set to `true`, we'll receive executeScript() results with
+      // `frameId/result` properties and an `error` property will also be returned
+      // in case of an error.
+      returnResultsWithFrameIds: true,
+      matchOriginAsFallback: true,
+    };
+
+    if (allFrames) {
+      options.allFrames = allFrames;
+    } else if (frameIds) {
+      options.frameIds = frameIds;
+    } else if (documentIds) {
+      options.documentIds = documentIds;
+    } else {
+      options.frameIds = [0];
+    }
+
+    for (const { file, code } of js) {
+      if ((code == null) === (file == null)) {
+        throw new ExtensionUtils.ExtensionError(
+          "Requires either a 'code' or a 'file' property, but not both"
+        );
+      }
+
+      if (file != null) {
+        const url = context.uri.resolve(file);
+        if (!this.extension.isExtensionURL(url)) {
+          throw new ExtensionUtils.ExtensionError(
+            "Files to be injected must be within the extension"
+          );
+        } else {
+          options.jsExecuteScriptSources.push({ file: url });
+        }
+      } else if (code != null) {
+        options.jsExecuteScriptSources.push({ code });
+      }
+    }
+
+    return tab.queryContent("Execute", options);
   }
 
   async #initializeWorldsFromDatabase() {

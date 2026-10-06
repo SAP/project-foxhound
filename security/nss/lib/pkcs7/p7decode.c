@@ -66,6 +66,7 @@ sec_pkcs7_decoder_work_data(SEC_PKCS7DecoderContext *p7dcx,
                             PRBool final)
 {
     unsigned char *buf = NULL;
+    PRBool freeBuf = PR_FALSE;
     SECStatus rv;
     int i;
 
@@ -113,6 +114,7 @@ sec_pkcs7_decoder_work_data(SEC_PKCS7DecoderContext *p7dcx,
 
         if (p7dcx->cb != NULL) {
             buf = (unsigned char *)PORT_Alloc(buflen);
+            freeBuf = PR_TRUE;
             plain = NULL;
         } else {
             unsigned long oldlen;
@@ -128,14 +130,18 @@ sec_pkcs7_decoder_work_data(SEC_PKCS7DecoderContext *p7dcx,
             if (oldlen == 0) {
                 buf = (unsigned char *)PORT_ArenaAlloc(p7dcx->cinfo->poolp,
                                                        buflen);
+                plain->data = buf;
             } else {
                 buf = (unsigned char *)PORT_ArenaGrow(p7dcx->cinfo->poolp,
                                                       plain->data,
                                                       oldlen, oldlen + buflen);
+                /* Keep plain->data pointing at the start of the (possibly
+                 * relocated) buffer so that subsequent grows pass a valid
+                 * base pointer/length pair to PORT_ArenaGrow. */
+                plain->data = buf;
                 if (buf != NULL)
                     buf += oldlen;
             }
-            plain->data = buf;
         }
         if (buf == NULL) {
             p7dcx->error = SEC_ERROR_NO_MEMORY;
@@ -145,7 +151,7 @@ sec_pkcs7_decoder_work_data(SEC_PKCS7DecoderContext *p7dcx,
                               data, inlen, final);
         if (rv != SECSuccess) {
             p7dcx->error = PORT_GetError();
-            return; /* XXX indicate error? */
+            goto cleanup; /* XXX indicate error? */
         }
         if (plain != NULL) {
             PORT_Assert(final || outlen == buflen);
@@ -160,7 +166,9 @@ sec_pkcs7_decoder_work_data(SEC_PKCS7DecoderContext *p7dcx,
      */
     if (len) {
         for (i = 0; i < worker->digcnt; i++) {
-            (*worker->digobjs[i]->update)(worker->digcxs[i], data, len);
+            if (worker->digobjs[i]) {
+                (*worker->digobjs[i]->update)(worker->digcxs[i], data, len);
+            }
         }
     }
 
@@ -170,10 +178,11 @@ sec_pkcs7_decoder_work_data(SEC_PKCS7DecoderContext *p7dcx,
     if (p7dcx->cb != NULL) {
         if (len)
             (*p7dcx->cb)(p7dcx->cb_arg, (const char *)data, len);
-        if (worker->decryptobj != NULL) {
-            PORT_Assert(buf != NULL);
-            PORT_Free(buf);
-        }
+    }
+
+cleanup:
+    if (freeBuf && buf != NULL) {
+        PORT_Free(buf);
     }
 }
 
@@ -230,6 +239,8 @@ sec_pkcs7_decoder_start_digests(SEC_PKCS7DecoderContext *p7dcx, int depth,
 {
     int i, digcnt;
 
+    p7dcx->worker.digcnt = 0;
+
     if (digestalgs == NULL)
         return SECSuccess;
 
@@ -247,21 +258,22 @@ sec_pkcs7_decoder_start_digests(SEC_PKCS7DecoderContext *p7dcx, int depth,
     if (digcnt == 0)
         return SECSuccess;
 
-    p7dcx->worker.digcxs = (void **)PORT_ArenaAlloc(p7dcx->tmp_poolp,
-                                                    digcnt * sizeof(void *));
-    p7dcx->worker.digobjs = (const SECHashObject **)PORT_ArenaAlloc(p7dcx->tmp_poolp,
-                                                                    digcnt * sizeof(SECHashObject *));
+    p7dcx->worker.digcxs = (void **)PORT_ArenaZAlloc(p7dcx->tmp_poolp,
+                                                     digcnt * sizeof(void *));
+    p7dcx->worker.digobjs = (const SECHashObject **)PORT_ArenaZAlloc(p7dcx->tmp_poolp,
+                                                                     digcnt * sizeof(SECHashObject *));
     if (p7dcx->worker.digcxs == NULL || p7dcx->worker.digobjs == NULL) {
         p7dcx->error = SEC_ERROR_NO_MEMORY;
         return SECFailure;
     }
 
     p7dcx->worker.depth = depth;
-    p7dcx->worker.digcnt = 0;
 
     /*
-     * Create a digest context for each algorithm.
+     * Create a digest context for each algorithm.  Store at the original
+     * index so digcxs/digobjs stay aligned with digestAlgorithms.
      */
+    PRBool hasDigests = PR_FALSE;
     for (i = 0; i < digcnt; i++) {
         SECAlgorithmID *algid = digestalgs[i];
         SECOidTag oidTag = SECOID_FindOIDTag(&(algid->algorithm));
@@ -277,25 +289,51 @@ sec_pkcs7_decoder_start_digests(SEC_PKCS7DecoderContext *p7dcx, int depth,
          * but we cannot know that until later.
          */
         if (digobj == NULL) {
-            p7dcx->worker.digcnt--;
             continue;
         }
 
         digcx = (*digobj->create)();
         if (digcx != NULL) {
             (*digobj->begin)(digcx);
-            p7dcx->worker.digobjs[p7dcx->worker.digcnt] = digobj;
-            p7dcx->worker.digcxs[p7dcx->worker.digcnt] = digcx;
-            p7dcx->worker.digcnt++;
+            p7dcx->worker.digobjs[i] = digobj;
+            p7dcx->worker.digcxs[i] = digcx;
+            hasDigests = PR_TRUE;
         }
     }
+    p7dcx->worker.digcnt = digcnt;
 
-    if (p7dcx->worker.digcnt != 0)
+    if (hasDigests)
         SEC_ASN1DecoderSetFilterProc(p7dcx->dcx,
                                      sec_pkcs7_decoder_filter,
                                      p7dcx,
                                      (PRBool)(p7dcx->cb != NULL));
     return SECSuccess;
+}
+
+/* destroy any active digest contexts without harvesting results */
+static void
+sec_pkcs7_decoder_abort_digests(struct sec_pkcs7_decoder_worker *worker)
+{
+    int i;
+
+    PORT_Assert(worker);
+    if (!worker) {
+        return;
+    }
+
+    if (worker->digcnt <= 0 || !worker->digcxs || !worker->digobjs) {
+        worker->digcnt = 0;
+        return;
+    }
+
+    for (i = 0; i < worker->digcnt; i++) {
+        if (worker->digcxs[i] && worker->digobjs[i]) {
+            (*worker->digobjs[i]->destroy)(worker->digcxs[i], PR_TRUE);
+        }
+        worker->digcxs[i] = NULL;
+    }
+
+    worker->digcnt = 0;
 }
 
 /*
@@ -306,25 +344,19 @@ sec_pkcs7_decoder_finish_digests(SEC_PKCS7DecoderContext *p7dcx,
                                  PLArenaPool *poolp,
                                  SECItem ***digestsp)
 {
-    struct sec_pkcs7_decoder_worker *worker;
-    const SECHashObject *digobj;
-    void *digcx;
-    SECItem **digests, *digest;
-    int i;
-    void *mark;
-
     /*
      * XXX Handling nested contents would mean that there is a chain
      * of workers -- one per each level of content.  The following
      * would want to find the last worker in the chain.
      */
-    worker = &(p7dcx->worker);
+    struct sec_pkcs7_decoder_worker *worker = &(p7dcx->worker);
 
     /*
      * If no digests, then we have nothing to do.
      */
-    if (worker->digcnt == 0)
+    if (worker->digcnt == 0) {
         return SECSuccess;
+    }
 
     /*
      * No matter what happens after this, we want to stop filtering.
@@ -340,46 +372,50 @@ sec_pkcs7_decoder_finish_digests(SEC_PKCS7DecoderContext *p7dcx,
      * was digested.
      */
     if (!worker->saw_contents) {
-        for (i = 0; i < worker->digcnt; i++) {
-            digcx = worker->digcxs[i];
-            digobj = worker->digobjs[i];
-            (*digobj->destroy)(digcx, PR_TRUE);
-        }
+        sec_pkcs7_decoder_abort_digests(worker);
         return SECSuccess;
     }
 
-    mark = PORT_ArenaMark(poolp);
+    void *mark = PORT_ArenaMark(poolp);
 
     /*
      * Close out each digest context, saving digest away.
      */
-    digests =
-        (SECItem **)PORT_ArenaAlloc(poolp, (worker->digcnt + 1) * sizeof(SECItem *));
-    digest = (SECItem *)PORT_ArenaAlloc(poolp, worker->digcnt * sizeof(SECItem));
-    if (digests == NULL || digest == NULL) {
+    SECItem **digests =
+        (SECItem **)PORT_ArenaZAlloc(poolp, (worker->digcnt + 1) * sizeof(SECItem *));
+    if (digests == NULL) {
         p7dcx->error = PORT_GetError();
+        sec_pkcs7_decoder_abort_digests(worker);
         PORT_ArenaRelease(poolp, mark);
         return SECFailure;
     }
 
-    for (i = 0; i < worker->digcnt; i++, digest++) {
-        digcx = worker->digcxs[i];
-        digobj = worker->digobjs[i];
-
-        digest->data = (unsigned char *)PORT_ArenaAlloc(poolp, digobj->length);
-        if (digest->data == NULL) {
+    for (int i = 0; i < worker->digcnt; i++) {
+        const SECHashObject *digobj = worker->digobjs[i];
+        if (!digobj) {
+            continue;
+        }
+        digests[i] = SECITEM_AllocItem(poolp, NULL, digobj->length);
+        if (!digests[i]) {
             p7dcx->error = PORT_GetError();
+            sec_pkcs7_decoder_abort_digests(worker);
             PORT_ArenaRelease(poolp, mark);
             return SECFailure;
         }
-
-        digest->len = digobj->length;
-        (*digobj->end)(digcx, digest->data, &(digest->len), digest->len);
-        (*digobj->destroy)(digcx, PR_TRUE);
-
-        digests[i] = digest;
     }
-    digests[i] = NULL;
+
+    for (int i = 0; i < worker->digcnt; i++) {
+        void *digcx = worker->digcxs[i];
+        const SECHashObject *digobj = worker->digobjs[i];
+
+        if (!digobj) {
+            continue;
+        }
+        (*digobj->end)(digcx, digests[i]->data, &(digests[i]->len), digests[i]->len);
+        (*digobj->destroy)(digcx, PR_TRUE);
+        worker->digcxs[i] = NULL;
+    }
+    worker->digcnt = 0;
     *digestsp = digests;
 
     PORT_ArenaUnmark(poolp, mark);
@@ -612,10 +648,13 @@ sec_pkcs7_decoder_finish_decrypt(SEC_PKCS7DecoderContext *p7dcx,
     sec_pkcs7_decoder_work_data(p7dcx, worker, NULL, 0, PR_TRUE);
 
     /*
-     * All done, destroy it.
+     * The callback invoked from work_data may have aborted and already
+     * torn down the decrypt context, so only destroy if it is still set.
      */
-    sec_PKCS7DestroyDecryptObject(worker->decryptobj);
-    worker->decryptobj = NULL;
+    if (worker->decryptobj) {
+        sec_PKCS7DestroyDecryptObject(worker->decryptobj);
+        worker->decryptobj = NULL;
+    }
 
     return SECSuccess;
 }
@@ -1053,6 +1092,11 @@ SEC_PKCS7DecoderUpdate(SEC_PKCS7DecoderContext *p7dcx,
     }
 
     if (p7dcx->error) {
+        sec_pkcs7_decoder_abort_digests(&p7dcx->worker);
+        if (p7dcx->worker.decryptobj) {
+            sec_PKCS7DestroyDecryptObject(p7dcx->worker.decryptobj);
+            p7dcx->worker.decryptobj = NULL;
+        }
         if (p7dcx->dcx != NULL) {
             (void)SEC_ASN1DecoderFinish(p7dcx->dcx);
             p7dcx->dcx = NULL;
@@ -1073,6 +1117,7 @@ SEC_PKCS7DecoderFinish(SEC_PKCS7DecoderContext *p7dcx)
 {
     SEC_PKCS7ContentInfo *cinfo;
 
+    sec_pkcs7_decoder_abort_digests(&p7dcx->worker);
     cinfo = p7dcx->cinfo;
     if (p7dcx->dcx != NULL) {
         if (SEC_ASN1DecoderFinish(p7dcx->dcx) != SECSuccess) {
@@ -1083,7 +1128,9 @@ SEC_PKCS7DecoderFinish(SEC_PKCS7DecoderContext *p7dcx)
     /* free any NSS data structures */
     if (p7dcx->worker.decryptobj) {
         sec_PKCS7DestroyDecryptObject(p7dcx->worker.decryptobj);
+        p7dcx->worker.decryptobj = NULL;
     }
+
     PORT_FreeArena(p7dcx->tmp_poolp, PR_FALSE);
     PORT_Free(p7dcx);
     return cinfo;
@@ -1116,6 +1163,17 @@ void
 SEC_PKCS7DecoderAbort(SEC_PKCS7DecoderContext *p7dcx, int error)
 {
     PORT_Assert(p7dcx);
+    if (!p7dcx) {
+        return;
+    }
+
+    /* ensure any streaming helpers are torn down */
+    sec_pkcs7_decoder_abort_digests(&p7dcx->worker);
+    if (p7dcx->worker.decryptobj) {
+        sec_PKCS7DestroyDecryptObject(p7dcx->worker.decryptobj);
+        p7dcx->worker.decryptobj = NULL;
+    }
+
     SEC_ASN1DecoderAbort(p7dcx->dcx, error);
 }
 
@@ -1474,7 +1532,7 @@ sec_pkcs7_verify_signature(SEC_PKCS7ContentInfo *cinfo,
      * stashed in the struct itself or passed in explicitly (as would
      * be done for detached contents).
      */
-    if ((digests == NULL || digests[0] == NULL) && (detached_digest == NULL || detached_digest->data == NULL))
+    if (digests == NULL && (detached_digest == NULL || detached_digest->data == NULL))
         goto done;
 
     /*
@@ -1518,6 +1576,10 @@ sec_pkcs7_verify_signature(SEC_PKCS7ContentInfo *cinfo,
         }
 
         digest = digests[i];
+        if (digest == NULL) {
+            PORT_SetError(SEC_ERROR_PKCS7_BAD_SIGNATURE);
+            goto done;
+        }
     }
 
     encTag = SECOID_FindOIDTag(&(signerinfo->digestEncAlg.algorithm));

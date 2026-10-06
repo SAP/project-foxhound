@@ -1,5 +1,3 @@
-// vim: set ts=8 sts=4 et sw=4 tw=99:
-
 function S() {
   var t = new Float32Array(1);
   var k = 0;

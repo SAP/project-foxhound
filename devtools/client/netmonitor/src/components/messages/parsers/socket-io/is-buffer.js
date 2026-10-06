@@ -27,7 +27,7 @@ var isView = function (obj) {
 /**
  * Returns true if obj is a buffer or an arraybuffer.
  *
- * @api private
+ * @private
  */
 
 function isBuf(obj) {

@@ -1,0 +1,15 @@
+{
+  "label": "m.modanisa.com",
+  "bugs": {
+    "1959444": {
+      "issue": "incorrect-viewport-dimensions",
+      "matches": ["*://m.modanisa.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["change_Firefox_to_FireFox"]
+    }
+  ]
+}

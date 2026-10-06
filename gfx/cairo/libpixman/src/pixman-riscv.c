@@ -30,8 +30,22 @@
 #ifdef USE_RVV
 
 #if defined(__linux__)
-#include <asm/hwcap.h>
+#include <asm/hwprobe.h>
 #include <sys/auxv.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+
+static int
+is_rvv_1_0_available ()
+{
+    struct riscv_hwprobe pair = {RISCV_HWPROBE_KEY_IMA_EXT_0, 0};
+    if (sys_riscv_hwprobe (&pair, 1, 0, 0, 0) < 0)
+    {
+	return 0;
+    }
+    return (pair.value & RISCV_HWPROBE_IMA_V);
+}
+
 #endif
 
 typedef enum
@@ -45,7 +59,7 @@ detect_cpu_features (void)
     riscv_cpu_features_t features = 0;
 
 #if defined(__linux__)
-    if (getauxval (AT_HWCAP) & COMPAT_HWCAP_ISA_V)
+    if (is_rvv_1_0_available ())
     {
 	features |= RVV;
     }

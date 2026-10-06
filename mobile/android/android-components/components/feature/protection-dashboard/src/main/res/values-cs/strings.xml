@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this file,
+  You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!-- Title shown in the protection dashboard indicating the user is protected -->
+  <string name="mozac_protections_dashboard_youre_protected">Jste chráněni</string>
+  <plurals name="mozac_protections_dashboard_trackers_blocked_this_week">
+    <!--
+      Label shown below the tracker count in the dashboard. The count is displayed separately
+      above this string and is used to select the correct plural form. Do not include the number in
+      the translation.
+    -->
+    <item quantity="one">Zablokovaný sledovací prvek tento týden</item>
+    <item quantity="few">Zablokované sledovací prvky tento týden</item>
+    <item quantity="many">Zablokovaných sledovacích prvků tento týden</item>
+    <item quantity="other">Zablokovaných sledovacích prvků tento týden</item>
+  </plurals>
+  <plurals name="mozac_protections_dashboard_data_saved">
+    <!-- Label showing data saved in megabytes. %1$d is the number of MB saved -->
+    <item quantity="one">Ušetřen %1$d MB</item>
+    <item quantity="few">Ušetřeny %1$d MB</item>
+    <item quantity="many">Ušetřeno %1$d MB</item>
+    <item quantity="other">Ušetřeno %1$d MB</item>
+  </plurals>
+  <!-- Section header for tracker category breakdown -->
+  <string name="protections_dashboard_where_they_came_from">Odkud přišli</string>
+  <!-- Tracker category: Advertising trackers -->
+  <string name="protections_dashboard_category_ads">Reklamy</string>
+  <!-- Tracker category: Analytics trackers -->
+  <string name="protections_dashboard_category_analytics">Analytika</string>
+  <!-- Tracker category: Social media trackers -->
+  <string name="protections_dashboard_category_social">Sociální sítě</string>
+  <!-- Tracker category: Other trackers -->
+  <string name="protections_dashboard_category_others">Ostatní</string>
+  <!-- Title shown in the protection dashboard header next to the shield icon -->
+  <string name="mozac_protections_dashboard_trackers_blocked_this_week_title">Zablokovaných sledovacích prvků tento týden</string>
+  <!--
+    Title shown when no trackers have been blocked yet
+    %1$s will be replaced by the app name (e.g. Firefox Focus)
+  -->
+  <string name="mozac_protections_dashboard_empty_title">%1$s blokuje sledovací prvky při prohlížení.</string>
+  <!-- Subtitle shown when no trackers have been blocked yet -->
+  <string name="mozac_protections_dashboard_empty_subtitle">Uvidíte je zde.</string>
+</resources>

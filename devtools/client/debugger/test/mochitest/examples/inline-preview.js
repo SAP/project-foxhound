@@ -70,3 +70,27 @@ function onBtnClick(event) {
   dict[key] = "world";
   debugger;
 }
+
+function protoArg(__proto__) {
+  debugger;
+}
+
+function protoVar() {
+  const __proto__ = "lemon";
+  debugger;
+}
+
+// Test case to help assert that same binding in two different scope
+// does not show duplicate inline previews.
+// The func declaration `foo` will get hoisted (in non strict mode),
+// so it'll be available in both the block scope and the parnet function
+// scope.
+function innerBlockHoistedFuncDecl() {
+  {
+    function foo() {
+      console.trace();
+    }
+    foo();
+    debugger;
+  }
+}

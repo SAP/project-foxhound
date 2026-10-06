@@ -1,0 +1,18 @@
+{
+  "label": "vanguard.com",
+  "bugs": {
+    "2011898": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://funds.web.vanguard.com/n/*"]
+    }
+  },
+  "css": {
+    "fix_obscured_inputs": "button:-moz-focusring, input:-moz-focusring, select:-moz-focusring { color: inherit; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": ["fix_obscured_inputs"]
+    }
+  ]
+}

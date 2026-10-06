@@ -2,9 +2,9 @@
 Search Configuration Schema
 ===========================
 
-This document outlines the details of the `search-config-v2`_ schema and how
+This document outlines the details of the :searchfox:`search-config-v2 <services/settings/dumps/main/search-config-v2.json>` schema and how
 the various sub-parts interact. For the full fields and descriptions, please see
-the `schema itself`_.
+the :searchfox:`schema itself <toolkit/components/search/schema/>`.
 
 .. note::
     In the examples, only relevant properties are displayed.
@@ -385,6 +385,4 @@ configuration, the following algorithm is used by the search engine selector:
 
 #. Otherwise, the locale used doesn't matter, and either form may be used.
 
-.. _schema itself: https://searchfox.org/mozilla-central/source/toolkit/components/search/schema/
 .. _the version comparator: https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/version/format
-.. _search-config-v2: https://searchfox.org/mozilla-central/source/services/settings/dumps/main/search-config-v2.json

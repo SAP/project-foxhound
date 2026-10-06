@@ -1,3 +1,8 @@
+// |jit-test| --setpref=objectfuse_for_global=false
+
+// Don't use object fuses for this test because atomizing global constants
+// affects what we're testing.
+
 // Test structured cloning of StringBuffer references.
 
 gczeal(0);

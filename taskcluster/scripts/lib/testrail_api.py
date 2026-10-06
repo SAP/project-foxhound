@@ -74,6 +74,7 @@ class TestRail:
             "name": test_run_name,
             "milestone_id": milestone_id,
             "suite_id": suite_id,
+            "include_all": True,
         }
         return self.client.send_post(f"add_run/{project_id}", data)
 

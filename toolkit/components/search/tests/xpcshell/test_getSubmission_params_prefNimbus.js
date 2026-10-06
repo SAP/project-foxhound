@@ -66,14 +66,14 @@ add_task(async function test_pref_initial_value() {
     },
   ]);
 
-  await Services.search.init();
+  await SearchService.init();
 
   Assert.ok(
     updateStub.called,
     "Should have called onUpdate to listen for future updates"
   );
 
-  const engine = Services.search.getEngineById("preferenceEngine");
+  const engine = SearchService.getEngineById("preferenceEngine");
   Assert.equal(
     engine.getSubmission("foo").uri.spec,
     baseURL + "code=good%26id%3Dunique&q=foo",
@@ -93,7 +93,7 @@ add_task(async function test_pref_updated() {
   // Update the pref without re-init nor restart.
   updateStub.firstCall.args[0]();
 
-  const engine = Services.search.getEngineById("preferenceEngine");
+  const engine = SearchService.getEngineById("preferenceEngine");
   Assert.equal(
     engine.getSubmission("foo").uri.spec,
     baseURL + "code=supergood%26id%3Dunique123456&q=foo",
@@ -115,7 +115,7 @@ add_task(async function test_multiple_params() {
   // Update the pref without re-init nor restart.
   updateStub.firstCall.args[0]();
 
-  let engine = Services.search.getEngineById("preferenceEngine");
+  let engine = SearchService.getEngineById("preferenceEngine");
   Assert.equal(
     engine.getSubmission("foo").uri.spec,
     baseURL + "code=sng&test=sup&q=foo",
@@ -132,7 +132,7 @@ add_task(async function test_multiple_params() {
   // Update the pref without re-init nor restart.
   updateStub.firstCall.args[0]();
 
-  engine = Services.search.getEngineById("preferenceEngine");
+  engine = SearchService.getEngineById("preferenceEngine");
   Assert.equal(
     engine.getSubmission("foo").uri.spec,
     baseURL + "code=sng&q=foo",
@@ -146,7 +146,7 @@ add_task(async function test_pref_cleared() {
   getVariableStub.withArgs("extraParams").returns([]);
   updateStub.firstCall.args[0]();
 
-  let engine = Services.search.getEngineById("preferenceEngine");
+  let engine = SearchService.getEngineById("preferenceEngine");
   Assert.equal(
     engine.getSubmission("foo").uri.spec,
     baseURL + "q=foo",

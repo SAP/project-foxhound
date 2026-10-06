@@ -32,10 +32,10 @@ class SelectorHighlighter {
    * @param {DOMNode} node
    *        A context node used to get the document element on which to run
    *        querySelectorAll(). This node will not be highlighted.
-   * @param {Object} options
+   * @param {object} options
    *        Configuration options for SelectorHighlighter.
    *        All of the options for BoxModelHighlighter.show() are also valid here.
-   * @param {String} options.selector
+   * @param {string} options.selector
    *        Required. CSS selector used with querySelectorAll() to find matching elements.
    */
   async show(node, options = {}) {
@@ -80,7 +80,7 @@ class SelectorHighlighter {
    *
    * @param  {DOMNode} node
    *         Node to be highlighted
-   * @param  {Object} options
+   * @param  {object} options
    *         Configuration options for the BoxModelHighlighter
    * @return {Promise} Promise that resolves when the BoxModelHighlighter is ready
    */

@@ -34,7 +34,7 @@ def write_header(output, array_name, certificates):
             output.write(f"    {line}\n")
         output.write("};\n")
     output.write(
-        f'const mozilla::Span<const uint8_t> {array_name}[] = {{ {", ".join(certificate_names)} }};\n'
+        f"const mozilla::Span<const uint8_t> {array_name}[] = {{ {', '.join(certificate_names)} }};\n"
     )
 
 

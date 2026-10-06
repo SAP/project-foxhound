@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Google LLC.
+ * Copyright 2021 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -238,8 +238,7 @@ static bool check_main_signature(const Context& context, Position pos, const Typ
             break;
         }
         case ProgramKind::kFragment:
-        case ProgramKind::kGraphiteFragment:
-        case ProgramKind::kGraphiteFragmentES2: {
+        case ProgramKind::kGraphiteFragment: {
             bool validParams = (parameters.size() == 0) ||
                                (parameters.size() == 1 && paramIsCoords(0));
             if (!validParams) {
@@ -250,7 +249,6 @@ static bool check_main_signature(const Context& context, Position pos, const Typ
         }
         case ProgramKind::kVertex:
         case ProgramKind::kGraphiteVertex:
-        case ProgramKind::kGraphiteVertexES2:
         case ProgramKind::kCompute:
             if (!returnType.matches(*context.fTypes.fVoid)) {
                 errors.error(pos, "'main' must return 'void'");

@@ -19,7 +19,6 @@ loader.lazyRequireGetter(
  * - invoke actions to start and stop picking nodes on all walkers
  * - listen to node picker events from all walkers and relay them to subscribers
  *
- *
  * @param {Commands} commands
  *        The commands object with all interfaces defined from devtools/shared/commands/
  */
@@ -41,7 +40,7 @@ class NodePicker extends EventEmitter {
   /**
    * Start/stop the element picker on the debuggee target.
    *
-   * @param {Boolean} doFocus
+   * @param {boolean} doFocus
    *        Optionally focus the content area once the picker is activated.
    * @return Promise that resolves when done
    */
@@ -80,7 +79,7 @@ class NodePicker extends EventEmitter {
    * picking mode and remove all event listeners associated with node picking.
    *
    * @param {InspectorFront} inspectorFront
-   * @param {Boolean} isDestroyCodePath
+   * @param {boolean} isDestroyCodePath
    *        Optional. If true, we assume that's when the toolbox closes
    *        and we should avoid doing any RDP request.
    * @return {Promise}
@@ -131,7 +130,7 @@ class NodePicker extends EventEmitter {
    * created while node picking is active) to listen for mouse movements over their nodes
    * and trigger events when a node is hovered or picked.
    *
-   * @param {Boolean} doFocus
+   * @param {boolean} doFocus
    *        Optionally focus the content area once the picker is activated.
    */
   start = async doFocus => {
@@ -155,10 +154,10 @@ class NodePicker extends EventEmitter {
    * Stop the element picker. Note that the picker is automatically stopped when
    * an element is picked.
    *
-   * @param {Boolean} isDestroyCodePath
+   * @param {boolean} isDestroyCodePath
    *        Optional. If true, we assume that's when the toolbox closes
    *        and we should avoid doing any RDP request.
-   * @param {Boolean} canceled
+   * @param {boolean} canceled
    *        Optional. If true, emit an additional event to notify that the
    *        picker was canceled, ie stopped without selecting a node.
    */
@@ -204,7 +203,7 @@ class NodePicker extends EventEmitter {
   /**
    * When a node is hovered by the mouse when the highlighter is in picker mode
    *
-   * @param {Object} data
+   * @param {object} data
    *        Information about the node being hovered
    */
   #onHovered = async data => {
@@ -237,7 +236,7 @@ class NodePicker extends EventEmitter {
   /**
    * When a node has been picked while the highlighter is in picker mode
    *
-   * @param {Object} data
+   * @param {object} data
    *        Information about the picked node
    */
   #onPicked = data => {
@@ -249,7 +248,7 @@ class NodePicker extends EventEmitter {
    * When a node has been shift-clicked (previewed) while the highlighter is in
    * picker mode
    *
-   * @param {Object} data
+   * @param {object} data
    *        Information about the picked node
    */
   #onPreviewed = data => {

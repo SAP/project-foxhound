@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -17,7 +17,7 @@ class GlyphRun;
     harfbuzz), iterate over the clusters. */
 class SkClusterator {
 public:
-    SkClusterator(const sktext::GlyphRun& run);
+    explicit SkClusterator(const sktext::GlyphRun& run);
     uint32_t glyphCount() const { return fGlyphCount; }
     bool reversedChars() const { return fReversedChars; }
     struct Cluster {

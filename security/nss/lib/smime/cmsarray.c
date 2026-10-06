@@ -119,6 +119,12 @@ NSS_CMSArray_Sort(void **primary, int (*compare)(void *, void *), void **seconda
 
     PORT_Assert(secondary == NULL || NSS_CMSArray_Count(secondary) == n);
     PORT_Assert(tertiary == NULL || NSS_CMSArray_Count(tertiary) == n);
+    /* Companion arrays must have the same length as primary; if they don't,
+     * ignore them rather than swapping past their NULL terminator (OOB). */
+    if (secondary && NSS_CMSArray_Count(secondary) != n)
+        secondary = NULL;
+    if (tertiary && NSS_CMSArray_Count(tertiary) != n)
+        tertiary = NULL;
 
     if (n <= 1) /* ordering is fine */
         return;

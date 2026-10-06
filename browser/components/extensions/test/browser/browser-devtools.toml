@@ -1,0 +1,54 @@
+[DEFAULT]
+skip-if = [
+	"debug && standalone", # TODO bug 2048260: Drop skip-if = standalone
+]
+tags = "webextensions devtools"
+prefs = [
+  # We don't want to reset this at the end of the test, so that we don't have
+  # to spawn a new extension child process for each test unit.
+  "dom.ipc.keepProcessesAlive.extension=1",
+]
+support-files = [
+  "head.js",
+  "head_devtools.js",
+  "file_dummy.html",
+]
+
+["browser_ext_devtools_inspectedWindow.js"]
+
+["browser_ext_devtools_inspectedWindow_eval_bindings.js"]
+support-files = ["file_inspectedwindow_eval.html"]
+
+["browser_ext_devtools_inspectedWindow_eval_file.js"]
+
+["browser_ext_devtools_inspectedWindow_reload.js"]
+support-files = ["file_inspectedwindow_reload_target.sjs"]
+
+["browser_ext_devtools_inspectedWindow_targetSwitch.js"]
+
+["browser_ext_devtools_network.js"]
+https_first_disabled = true
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", # Bug 1697626
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1697626
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1697626
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64'", # Bug 1697626
+]
+
+["browser_ext_devtools_network_targetSwitch.js"]
+https_first_disabled = true
+
+["browser_ext_devtools_optional.js"]
+
+["browser_ext_devtools_page.js"]
+
+["browser_ext_devtools_page_incognito.js"]
+
+["browser_ext_devtools_panel.js"]
+
+["browser_ext_devtools_panel_zoom.js"]
+
+["browser_ext_devtools_panels_elements.js"]
+
+["browser_ext_devtools_panels_elements_sidebar.js"]
+support-files = ["../../../../../devtools/client/inspector/extensions/test/head_devtools_inspector_sidebar.js"]

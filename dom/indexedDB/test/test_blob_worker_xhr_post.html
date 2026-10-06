@@ -71,7 +71,6 @@
     info("Sending slice to a worker");
 
     function workerScript() {
-      /* eslint-env worker */
       onmessage = function(event) {
         var blob = event.data;
         var xhr = new XMLHttpRequest();

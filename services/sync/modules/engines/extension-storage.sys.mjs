@@ -5,10 +5,7 @@
 const STORAGE_VERSION = 1; // This needs to be kept in-sync with the rust storage version
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-import {
-  BridgedEngine,
-  LogAdapter,
-} from "resource://services-sync/bridged_engine.sys.mjs";
+import { BridgedEngine } from "resource://services-sync/bridged_engine.sys.mjs";
 import { SyncEngine, Tracker } from "resource://services-sync/engines.sys.mjs";
 
 const lazy = {};
@@ -18,6 +15,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   SCORE_INCREMENT_MEDIUM: "resource://services-sync/constants.sys.mjs",
   Svc: "resource://services-sync/util.sys.mjs",
   extensionStorageSync: "resource://gre/modules/ExtensionStorageSync.sys.mjs",
+  setupLoggerForTarget: "resource://gre/modules/AppServicesTracing.sys.mjs",
   storageSyncService:
     "resource://gre/modules/ExtensionStorageComponents.sys.mjs",
 
@@ -63,13 +61,8 @@ function setEngineEnabled(enabled) {
 
 // A "bridged engine" to our webext-storage component.
 export function ExtensionStorageEngineBridge(service) {
+  lazy.setupLoggerForTarget("webext_storage", "Sync.Engine.Extension-Storage");
   BridgedEngine.call(this, "Extension-Storage", service);
-
-  let app_services_logger = Cc["@mozilla.org/appservices/logger;1"].getService(
-    Ci.mozIAppServicesLogger
-  );
-  let logger_target = "app-services:webext_storage:sync";
-  app_services_logger.register(logger_target, new LogAdapter(this._log));
 }
 
 ExtensionStorageEngineBridge.prototype = {
@@ -141,13 +134,11 @@ Object.setPrototypeOf(
   BridgedEngine.prototype
 );
 
-/**
- *****************************************************************************
+/*******************************************************************************
  *
  * Deprecated support for Kinto
  *
- *****************************************************************************
- */
+ ******************************************************************************/
 
 /**
  * The Engine that manages syncing for the web extension "storage"

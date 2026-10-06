@@ -17,7 +17,7 @@ import org.mozilla.fenix.components.bookmarks.BookmarksUseCase
 import org.mozilla.fenix.home.HomeFragment
 
 /**
- * View-bound feature that retrieves a list of [BookmarkNode]s and dispatches
+ * Lifecycle-aware feature that retrieves a list of [BookmarkNode]s and dispatches
  * updates to the [AppStore].
  *
  * @param appStore the [AppStore] that holds the state of the [HomeFragment].

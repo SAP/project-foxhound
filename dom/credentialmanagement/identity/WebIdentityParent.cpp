@@ -1,15 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Components.h"
-#include "mozilla/dom/NavigatorLogin.h"
-#include "mozilla/dom/IdentityNetworkHelpers.h"
 #include "mozilla/dom/WebIdentityParent.h"
-#include "mozilla/dom/WindowGlobalParent.h"
+
+#include "mozilla/Components.h"
 #include "mozilla/IdentityCredentialRequestManager.h"
+#include "mozilla/dom/IdentityNetworkHelpers.h"
+#include "mozilla/dom/NavigatorLogin.h"
+#include "mozilla/dom/WindowGlobalParent.h"
 #include "nsIEffectiveTLDService.h"
 #include "nsIIdentityCredentialPromptService.h"
 #include "nsIIdentityCredentialStorageService.h"
@@ -35,6 +34,7 @@ mozilla::ipc::IPCResult WebIdentityParent::RecvGetIdentityCredential(
   WindowGlobalParent* manager = static_cast<WindowGlobalParent*>(Manager());
   if (!manager) {
     aResolver(NS_ERROR_FAILURE);
+    return IPC_OK();
   }
   identity::GetCredentialInMainProcess(
       manager->DocumentPrincipal(), this, std::move(aOptions),
@@ -54,6 +54,7 @@ mozilla::ipc::IPCResult WebIdentityParent::RecvDisconnectIdentityCredential(
   WindowGlobalParent* manager = static_cast<WindowGlobalParent*>(Manager());
   if (!manager) {
     aResolver(NS_ERROR_FAILURE);
+    return IPC_OK();
   }
   identity::DisconnectInMainProcess(manager->DocumentPrincipal(), aOptions)
       ->Then(
@@ -68,6 +69,7 @@ mozilla::ipc::IPCResult WebIdentityParent::RecvPreventSilentAccess(
   WindowGlobalParent* manager = static_cast<WindowGlobalParent*>(Manager());
   if (!manager) {
     aResolver(NS_ERROR_FAILURE);
+    return IPC_OK();
   }
   nsIPrincipal* principal = manager->DocumentPrincipal();
   if (principal) {
@@ -90,6 +92,7 @@ mozilla::ipc::IPCResult WebIdentityParent::RecvSetLoginStatus(
   WindowGlobalParent* manager = static_cast<WindowGlobalParent*>(Manager());
   if (!manager) {
     aResolver(NS_ERROR_FAILURE);
+    return IPC_OK();
   }
   nsIPrincipal* principal = manager->DocumentPrincipal();
   if (!principal) {
@@ -271,7 +274,7 @@ RefPtr<GetIPCIdentityCredentialPromise> DiscoverFromExternalSourceInMainProcess(
         },
         StaticPrefs::
             dom_security_credentialmanagement_identity_reject_delay_duration_ms(),
-        nsITimer::TYPE_ONE_SHOT, "IdentityCredentialTimeoutCallback");
+        nsITimer::TYPE_ONE_SHOT, "IdentityCredentialTimeoutCallback"_ns);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       result->Reject(NS_ERROR_FAILURE, __func__);
       return result.forget();

@@ -4,33 +4,67 @@
 
 package org.mozilla.fenix.onboarding
 
+import mozilla.components.support.base.log.logger.Logger
 import org.mozilla.fenix.GleanMetrics.Onboarding
+import org.mozilla.fenix.GleanMetrics.Pings
+import org.mozilla.fenix.GleanMetrics.TermsOfUse
 import org.mozilla.fenix.onboarding.view.OnboardingPageUiData
+import org.mozilla.fenix.termsofuse.TOU_VERSION
+import org.mozilla.fenix.termsofuse.store.Surface
 
 /**
  * Abstraction responsible for recording telemetry events for Onboarding.
  */
-class OnboardingTelemetryRecorder {
+class OnboardingTelemetryRecorder(
+    private val onboardingReason: OnboardingReason,
+    private val installSource: String,
+) {
+    val logger = Logger("OnboardingTelemetryRecorder")
 
     /**
-     * Records "onboarding_completed" telemetry event.
+     * Records "onboarding_completed" telemetry event and sends the onboarding ping.
      * @param sequenceId The identifier of the onboarding sequence shown to the user.
      * @param sequencePosition The sequence position of the page on which the completed event occurred.
+     * @param dismissedMethod The method used to dismiss the onboarding flow.
      */
-    fun onOnboardingComplete(sequenceId: String, sequencePosition: String) {
+    fun onOnboardingComplete(
+        sequenceId: String,
+        sequencePosition: String,
+        dismissedMethod: DismissedMethod = DismissedMethod.COMPLETED,
+        ) {
+        logger.debug(
+            "Recording onboarding completed event, sequenceId: $sequenceId, " +
+                "sequencePosition: $sequencePosition, dismissedMethod: $dismissedMethod",
+        )
+
         Onboarding.completed.record(
             Onboarding.CompletedExtra(
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
+        Onboarding.dismissed.record(
+            Onboarding.DismissedExtra(
+                method = dismissedMethod.telemetryId,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
+            ),
+        )
+        Pings.onboarding.submit()
     }
 
     /**
      * Records "onboarding_started" telemetry event.
      */
     fun onOnboardingStarted() {
-        Onboarding.started.record()
+        Onboarding.started.record(
+            extra = Onboarding.StartedExtra(
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
+            ),
+        )
     }
 
     /**
@@ -45,6 +79,11 @@ class OnboardingTelemetryRecorder {
         pageType: OnboardingPageUiData.Type,
         sequencePosition: String,
     ) {
+        logger.debug(
+            "Recording on impression event, sequenceId: $sequenceId, " +
+                "pageType: $pageType, sequencePosition: $sequencePosition",
+        )
+
         when (pageType) {
             OnboardingPageUiData.Type.DEFAULT_BROWSER -> {
                 Onboarding.setToDefaultCard.record(
@@ -53,6 +92,8 @@ class OnboardingTelemetryRecorder {
                         elementType = ET_ONBOARDING_CARD,
                         sequenceId = sequenceId,
                         sequencePosition = sequencePosition,
+                        onboardingReason = onboardingReason.value,
+                        installSource = installSource,
                     ),
                 )
             }
@@ -64,6 +105,8 @@ class OnboardingTelemetryRecorder {
                         elementType = ET_ONBOARDING_CARD,
                         sequenceId = sequenceId,
                         sequencePosition = sequencePosition,
+                        onboardingReason = onboardingReason.value,
+                        installSource = installSource,
                     ),
                 )
             }
@@ -75,6 +118,8 @@ class OnboardingTelemetryRecorder {
                         elementType = ET_ONBOARDING_CARD,
                         sequenceId = sequenceId,
                         sequencePosition = sequencePosition,
+                        onboardingReason = onboardingReason.value,
+                        installSource = installSource,
                     ),
                 )
             }
@@ -86,6 +131,8 @@ class OnboardingTelemetryRecorder {
                         elementType = ET_ONBOARDING_CARD,
                         sequenceId = sequenceId,
                         sequencePosition = sequencePosition,
+                        onboardingReason = onboardingReason.value,
+                        installSource = installSource,
                     ),
                 )
             }
@@ -97,17 +144,8 @@ class OnboardingTelemetryRecorder {
                         elementType = ET_ONBOARDING_CARD,
                         sequenceId = sequenceId,
                         sequencePosition = sequencePosition,
-                    ),
-                )
-            }
-
-            OnboardingPageUiData.Type.THEME_SELECTION -> {
-                Onboarding.themeSelectionCard.record(
-                    Onboarding.ThemeSelectionCardExtra(
-                        action = ACTION_IMPRESSION,
-                        elementType = ET_ONBOARDING_CARD,
-                        sequenceId = sequenceId,
-                        sequencePosition = sequencePosition,
+                        onboardingReason = onboardingReason.value,
+                        installSource = installSource,
                     ),
                 )
             }
@@ -119,9 +157,12 @@ class OnboardingTelemetryRecorder {
                         elementType = ET_ONBOARDING_CARD,
                         sequenceId = sequenceId,
                         sequencePosition = sequencePosition,
+                        onboardingReason = onboardingReason.value,
+                        installSource = installSource,
                     ),
                 )
             }
+
             OnboardingPageUiData.Type.MARKETING_DATA -> {
                 Onboarding.marketingDataCardViewed.record(
                     Onboarding.MarketingDataCardViewedExtra(
@@ -129,6 +170,8 @@ class OnboardingTelemetryRecorder {
                         elementType = ET_ONBOARDING_CARD,
                         sequenceId = sequenceId,
                         sequencePosition = sequencePosition,
+                        onboardingReason = onboardingReason.value,
+                        installSource = installSource,
                     ),
                 )
             }
@@ -141,12 +184,19 @@ class OnboardingTelemetryRecorder {
      * @param sequencePosition The sequence position of the page for which the impression occurred.
      */
     fun onSetToDefaultClick(sequenceId: String, sequencePosition: String) {
+        logger.debug(
+            "Recording set to default click event, sequenceId: $sequenceId, " +
+                "sequencePosition: $sequencePosition",
+        )
+
         Onboarding.setToDefault.record(
             Onboarding.SetToDefaultExtra(
                 action = ACTION_CLICK,
                 elementType = ET_PRIMARY_BUTTON,
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
     }
@@ -157,12 +207,19 @@ class OnboardingTelemetryRecorder {
      * @param sequencePosition The sequence position of the page for which the impression occurred.
      */
     fun onSyncSignInClick(sequenceId: String, sequencePosition: String) {
+        logger.debug(
+            "Recording sync sign in click event, sequenceId: $sequenceId, " +
+                "sequencePosition: $sequencePosition",
+        )
+
         Onboarding.signIn.record(
             Onboarding.SignInExtra(
                 action = ACTION_CLICK,
                 elementType = ET_PRIMARY_BUTTON,
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
     }
@@ -173,12 +230,19 @@ class OnboardingTelemetryRecorder {
      * @param sequencePosition The sequence position of the page for which the impression occurred.
      */
     fun onNotificationPermissionClick(sequenceId: String, sequencePosition: String) {
+        logger.debug(
+            "Recording notification permission click event, sequenceId: $sequenceId, " +
+                "sequencePosition: $sequencePosition",
+        )
+
         Onboarding.turnOnNotifications.record(
             Onboarding.TurnOnNotificationsExtra(
                 action = ACTION_CLICK,
                 elementType = ET_PRIMARY_BUTTON,
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
     }
@@ -195,6 +259,8 @@ class OnboardingTelemetryRecorder {
                 elementType = ET_PRIMARY_BUTTON,
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
     }
@@ -211,6 +277,8 @@ class OnboardingTelemetryRecorder {
                 elementType = ET_SECONDARY_BUTTON,
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
     }
@@ -219,14 +287,26 @@ class OnboardingTelemetryRecorder {
      * Records skip sign in click event.
      * @param sequenceId The identifier of the onboarding sequence shown to the user.
      * @param sequencePosition The sequence position of the page for which the impression occurred.
+     * @param elementType The type of UI element that triggered the click event.
      */
-    fun onSkipSignInClick(sequenceId: String, sequencePosition: String) {
+    fun onSkipSignInClick(
+        sequenceId: String,
+        sequencePosition: String,
+        elementType: String = ET_SECONDARY_BUTTON,
+    ) {
+        logger.debug(
+            "Recording skip sign in click event, sequenceId: $sequenceId, " +
+                "sequencePosition: $sequencePosition, elementType: $elementType",
+        )
+
         Onboarding.skipSignIn.record(
             Onboarding.SkipSignInExtra(
                 action = ACTION_CLICK,
-                elementType = ET_SECONDARY_BUTTON,
+                elementType = elementType,
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
     }
@@ -243,6 +323,8 @@ class OnboardingTelemetryRecorder {
                 elementType = ET_SECONDARY_BUTTON,
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
     }
@@ -251,14 +333,26 @@ class OnboardingTelemetryRecorder {
      * Records skip notification permission click event.
      * @param sequenceId The identifier of the onboarding sequence shown to the user.
      * @param sequencePosition The sequence position of the page for which the impression occurred.
+     * @param elementType The type of UI element that triggered the click event.
      */
-    fun onSkipTurnOnNotificationsClick(sequenceId: String, sequencePosition: String) {
+    fun onSkipTurnOnNotificationsClick(
+        sequenceId: String,
+        sequencePosition: String,
+        elementType: String = ET_SECONDARY_BUTTON,
+    ) {
+        logger.debug(
+            "Recording skip notification permission click event, " +
+                "sequenceId: $sequenceId, sequencePosition: $sequencePosition, elementType: $elementType",
+        )
+
         Onboarding.skipTurnOnNotifications.record(
             Onboarding.SkipTurnOnNotificationsExtra(
                 action = ACTION_CLICK,
-                elementType = ET_SECONDARY_BUTTON,
+                elementType = elementType,
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
     }
@@ -277,39 +371,8 @@ class OnboardingTelemetryRecorder {
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
                 toolbarPlacement = toolbarPlacement,
-            ),
-        )
-    }
-
-    /**
-     * Records select theme click event.
-     * @param themeOption The selected theme option ("dark", "light", or "system").
-     * @param sequenceId The identifier of the onboarding sequence shown to the user.
-     * @param sequencePosition The sequence position of the page for which the impression occurred.
-     */
-    fun onSelectThemeClick(themeOption: String, sequenceId: String, sequencePosition: String) {
-        Onboarding.selectTheme.record(
-            Onboarding.SelectThemeExtra(
-                action = ACTION_CLICK,
-                themeOption = themeOption,
-                sequenceId = sequenceId,
-                sequencePosition = sequencePosition,
-            ),
-        )
-    }
-
-    /**
-     * Records privacy policy link text click event.
-     * @param sequenceId The identifier of the onboarding sequence shown to the user.
-     * @param sequencePosition The sequence position of the page on which the link click event occurred.
-     */
-    fun onPrivacyPolicyClick(sequenceId: String, sequencePosition: String) {
-        Onboarding.privacyPolicy.record(
-            Onboarding.PrivacyPolicyExtra(
-                action = ACTION_CLICK,
-                elementType = ET_SECONDARY_BUTTON,
-                sequenceId = sequenceId,
-                sequencePosition = sequencePosition,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
             ),
         )
     }
@@ -318,28 +381,62 @@ class OnboardingTelemetryRecorder {
      * Records when the terms of service link is clicked.
      */
     fun onTermsOfServiceLinkClick() {
-        Onboarding.termsOfServiceLinkClicked.record()
+        Onboarding.termsOfServiceLinkClicked.record(
+            extra = Onboarding.TermsOfServiceLinkClickedExtra(
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
+            ),
+        )
     }
 
     /**
      * Records when the privacy notice link clicked.
      */
     fun onTermsOfServicePrivacyNoticeLinkClick() {
-        Onboarding.termsOfServicePrivacyNoticeLinkClicked.record()
+        Onboarding.termsOfServicePrivacyNoticeLinkClicked.record(
+            extra = Onboarding.TermsOfServicePrivacyNoticeLinkClickedExtra(
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
+            ),
+        )
     }
 
     /**
      * Records when the manage privacy preferences link clicked.
      */
     fun onTermsOfServiceManagePrivacyPreferencesLinkClick() {
-        Onboarding.termsOfServiceManageLinkClicked.record()
+        Onboarding.termsOfServiceManageLinkClicked.record(
+            extra = Onboarding.TermsOfServiceManageLinkClickedExtra(
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
+            ),
+        )
     }
 
     /**
      * Records when the accept terms button clicked.
      */
     fun onTermsOfServiceManagerAcceptTermsButtonClick() {
-        Onboarding.termsOfServiceAccepted.record()
+        Onboarding.shown.record(
+            extra = Onboarding.ShownExtra(
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
+            ),
+        )
+        Onboarding.termsOfServiceAccepted.record(
+            extra = Onboarding.TermsOfServiceAcceptedExtra(
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
+            ),
+        )
+        TermsOfUse.accepted.record(
+            TermsOfUse.AcceptedExtra(
+                surface = Surface.ONBOARDING.metricLabel,
+                touVersion = TOU_VERSION,
+            ),
+        )
+        TermsOfUse.version.set(TOU_VERSION.toLong())
+        TermsOfUse.date.set()
     }
 
     /**
@@ -348,14 +445,35 @@ class OnboardingTelemetryRecorder {
      */
     fun onMarketingDataContinueClicked(optIn: Boolean) {
         Onboarding.marketingDataContinueClicked.record(
-            Onboarding.MarketingDataContinueClickedExtra(optIn = optIn),
+            Onboarding.MarketingDataContinueClickedExtra(
+                optIn = optIn,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
+            ),
+        )
+    }
+
+    /**
+     * Records the marketing data card skip button click event.
+     */
+    fun onMarketingDataSkipClicked() {
+        Onboarding.marketingDataSkipClicked.record(
+            Onboarding.MarketingDataSkipClickedExtra(
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
+            ),
         )
     }
 
     /**
      * Records when the marketing data learn more link clicked.
      */
-    fun onMarketingDataLearnMoreClick() = Onboarding.marketingDataLearnMore.record()
+    fun onMarketingDataLearnMoreClick() = Onboarding.marketingDataLearnMore.record(
+        extra = Onboarding.MarketingDataLearnMoreExtra(
+            onboardingReason = onboardingReason.value,
+            installSource = installSource,
+        ),
+    )
 
     /**
      * Records the marketing data opt-in toggle event.
@@ -363,8 +481,19 @@ class OnboardingTelemetryRecorder {
      */
     fun onMarketingDataOptInToggled(optIn: Boolean) {
         Onboarding.marketingDataOptInToggled.record(
-            Onboarding.MarketingDataOptInToggledExtra(optIn = optIn),
+            Onboarding.MarketingDataOptInToggledExtra(
+                optIn = optIn,
+                onboardingReason = onboardingReason.value,
+                installSource = installSource,
+            ),
         )
+    }
+
+    /**
+     * Sends the onboarding ping when the user navigates to the next onboarding page.
+     */
+    fun onNavigatedToNextPage() {
+        Pings.onboarding.submit()
     }
 
     companion object {
@@ -373,5 +502,17 @@ class OnboardingTelemetryRecorder {
         private const val ET_ONBOARDING_CARD = "onboarding_card"
         private const val ET_PRIMARY_BUTTON = "primary_button"
         private const val ET_SECONDARY_BUTTON = "secondary_button"
+        const val ET_CARD_CLOSE_BUTTON = "card_close_button"
     }
+}
+
+/**
+ * Enum representing the method used to dismiss the onboarding flow.
+ * @property telemetryId The telemetry identifier.
+ *
+ * @see [Onboarding.DismissedExtra.method].
+ */
+enum class DismissedMethod(val telemetryId: String) {
+    COMPLETED("completed"),
+    SKIPPED("skipped"),
 }

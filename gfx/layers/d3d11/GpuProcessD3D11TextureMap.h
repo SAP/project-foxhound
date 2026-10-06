@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -42,17 +40,18 @@ class GpuProcessD3D11TextureMap {
 
   void Register(GpuProcessTextureId aTextureId, ID3D11Texture2D* aTexture,
                 uint32_t aArrayIndex, const gfx::IntSize& aSize,
-                RefPtr<ZeroCopyUsageInfo> aUsageInfo,
+                ZeroCopyUsageInfo* aUsageInfo,
                 RefPtr<gfx::FileHandleWrapper> aSharedHandle = nullptr);
   void Register(const MonitorAutoLock& aProofOfLock,
                 GpuProcessTextureId aTextureId, ID3D11Texture2D* aTexture,
                 uint32_t aArrayIndex, const gfx::IntSize& aSize,
-                RefPtr<ZeroCopyUsageInfo> aUsageInfo,
+                ZeroCopyUsageInfo* aUsageInfo,
                 RefPtr<gfx::FileHandleWrapper> aSharedHandle);
   void Unregister(GpuProcessTextureId aTextureId);
 
   RefPtr<ID3D11Texture2D> GetTexture(GpuProcessTextureId aTextureId);
   Maybe<HANDLE> GetSharedHandle(GpuProcessTextureId aTextureId);
+  void DisableZeroCopyNV12Texture(GpuProcessTextureId aTextureId);
 
   size_t GetWaitingTextureCount() const;
 
@@ -68,8 +67,7 @@ class GpuProcessD3D11TextureMap {
  private:
   struct TextureHolder {
     TextureHolder(ID3D11Texture2D* aTexture, uint32_t aArrayIndex,
-                  const gfx::IntSize& aSize,
-                  RefPtr<ZeroCopyUsageInfo> aUsageInfo,
+                  const gfx::IntSize& aSize, ZeroCopyUsageInfo* aUsageInfo,
                   RefPtr<gfx::FileHandleWrapper> aSharedHandle);
     TextureHolder() = default;
 

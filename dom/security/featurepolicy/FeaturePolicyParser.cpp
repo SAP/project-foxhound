@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,7 +26,7 @@ void ReportToConsoleUnsupportedFeature(Document* aDocument,
 
   nsContentUtils::ReportToConsole(
       nsIScriptError::warningFlag, "Feature Policy"_ns, aDocument,
-      nsContentUtils::eSECURITY_PROPERTIES,
+      PropertiesFile::SECURITY_PROPERTIES,
       "FeaturePolicyUnsupportedFeatureName", params);
 }
 
@@ -42,7 +40,7 @@ void ReportToConsoleInvalidEmptyAllowValue(Document* aDocument,
 
   nsContentUtils::ReportToConsole(
       nsIScriptError::warningFlag, "Feature Policy"_ns, aDocument,
-      nsContentUtils::eSECURITY_PROPERTIES,
+      PropertiesFile::SECURITY_PROPERTIES,
       "FeaturePolicyInvalidEmptyAllowValue", params);
 }
 
@@ -56,7 +54,7 @@ void ReportToConsoleInvalidAllowValue(Document* aDocument,
 
   nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
                                   "Feature Policy"_ns, aDocument,
-                                  nsContentUtils::eSECURITY_PROPERTIES,
+                                  PropertiesFile::SECURITY_PROPERTIES,
                                   "FeaturePolicyInvalidAllowValue", params);
 }
 

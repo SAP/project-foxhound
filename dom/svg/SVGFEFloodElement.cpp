@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,11 +5,11 @@
 #include "mozilla/dom/SVGFEFloodElement.h"
 
 #include "FilterSupport.h"
+#include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/SVGFEFloodElementBinding.h"
 #include "nsColor.h"
 #include "nsIFrame.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/BindContext.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(FEFlood)
 
@@ -52,7 +50,7 @@ FilterPrimitiveDescription SVGFEFloodElement::GetPrimitiveDescription(
 bool SVGFEFloodElement::OutputIsTainted(const nsTArray<bool>& aInputsAreTainted,
                                         nsIPrincipal* aReferencePrincipal) {
   if (const auto* frame = GetPrimaryFrame()) {
-    if (frame->Style()->StyleSVGReset()->mFloodColor.IsCurrentColor()) {
+    if (frame->Style()->StyleSVGReset()->mFloodColor.DependsOnCurrentColor()) {
       return true;
     }
   }

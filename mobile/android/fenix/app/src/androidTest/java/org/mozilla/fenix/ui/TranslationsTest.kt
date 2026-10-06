@@ -4,61 +4,62 @@
 
 package org.mozilla.fenix.ui
 
-import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
-import org.mozilla.fenix.customannotations.SkipLeaks
 import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.helpers.AppAndSystemHelper.disableWifiNetworkConnection
 import org.mozilla.fenix.helpers.AppAndSystemHelper.enableDataSaverSystemSetting
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
-import org.mozilla.fenix.helpers.TestAssetHelper
+import org.mozilla.fenix.helpers.TestAssetHelper.firstForeignWebPageAsset
+import org.mozilla.fenix.helpers.TestAssetHelper.secondForeignWebPageAsset
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
-import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.browserScreen
 import org.mozilla.fenix.ui.robots.navigationToolbar
 import org.mozilla.fenix.ui.robots.translationsRobot
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
-@Ignore("Bugzilla issue: https://bugzilla.mozilla.org/show_bug.cgi?id=1976470")
-class TranslationsTest : TestSetup() {
-    @get:Rule
+class TranslationsTest {
+    @get:Rule(order = 0)
+    val fenixTestRule: FenixTestRule = FenixTestRule()
+
+    private val mockWebServer get() = fenixTestRule.mockWebServer
+
+    @get:Rule(order = 1)
     val composeTestRule =
-        AndroidComposeTestRule(
+        AndroidComposeTestRuleV2(
             HomeActivityIntentTestRule(
                 skipOnboarding = true,
-                isMenuRedesignEnabled = false,
                 isMenuRedesignCFREnabled = false,
                 isPageLoadTranslationsPromptEnabled = true,
             ),
         ) { it.activity }
 
-    @get:Rule
-    val memoryLeaksRule = DetectMemoryLeaksRule()
+    @get:Rule(order = 2)
+    val memoryLeaksRule = DetectMemoryLeaksRule(composeTestRule = { composeTestRule })
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2436643
     @SmokeTest
     @Test
-    @SkipLeaks
     fun verifyTheFirstTranslationNotNowButtonFunctionalityTest() {
-        val testPage = TestAssetHelper.getFirstForeignWebPageAsset(mockWebServer)
+        val testPage = mockWebServer.firstForeignWebPageAsset
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(testPage.url) {
-            verifyPageContent(testPage.content)
-        }.openThreeDotMenu {
-        }.clickTranslateButton(composeTestRule) {
+        }
+        translationsRobot(composeTestRule) {
             verifyTranslationSheetIsDisplayed(isDisplayed = true)
         }.clickNotNowButton {
-        }
-        navigationToolbar {
         }.openThreeDotMenu {
-        }.clickTranslateButton(composeTestRule) {
+            clickTheMoreButton()
+        }.clickTranslateButton {
             verifyTranslationSheetIsDisplayed(isDisplayed = true)
         }.swipeCloseTranslationsSheet {
         }.openThreeDotMenu {
-        }.clickTranslateButton(composeTestRule) {
+            clickTheMoreButton()
+        }.clickTranslateButton {
             verifyTranslationSheetIsDisplayed(isDisplayed = true)
         }
     }
@@ -67,19 +68,17 @@ class TranslationsTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifyMainMenuTranslationButtonFunctionalityTest() {
-        val testPage = TestAssetHelper.getFirstForeignWebPageAsset(mockWebServer)
+        val testPage = mockWebServer.firstForeignWebPageAsset
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(testPage.url) {
-            verifyPageContent(testPage.content)
-        }.openThreeDotMenu {
-        }.clickTranslateButton(composeTestRule) {
+        }
+        translationsRobot(composeTestRule) {
             verifyTranslationSheetIsDisplayed(isDisplayed = true)
         }.clickNotNowButton {
-        }
-        navigationToolbar {
         }.openThreeDotMenu {
-        }.clickTranslateButton(composeTestRule) {
+            clickTheMoreButton()
+        }.clickTranslateButton {
             verifyTranslationSheetIsDisplayed(isDisplayed = true)
         }.clickTranslateButton {
             verifyPageContent("Article of the day")
@@ -90,13 +89,12 @@ class TranslationsTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifyTheDownloadLanguagesFunctionalityTest() {
-        val firstTestPage = TestAssetHelper.getFirstForeignWebPageAsset(mockWebServer)
+        val firstTestPage = mockWebServer.firstForeignWebPageAsset
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(firstTestPage.url) {
-            verifyPageContent(firstTestPage.content)
-        }.openThreeDotMenu {
-        }.clickTranslateButton(composeTestRule) {
+        }
+        translationsRobot(composeTestRule) {
             verifyTranslationSheetIsDisplayed(isDisplayed = true)
             clickTranslationsOptionsButton()
         }.clickTranslationSettingsButton {
@@ -110,14 +108,13 @@ class TranslationsTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifyTheNeverTranslateOptionTest() {
-        val firstTestPage = TestAssetHelper.getFirstForeignWebPageAsset(mockWebServer)
-        val secondTestPage = TestAssetHelper.getSecondForeignWebPageAsset(mockWebServer)
+        val firstTestPage = mockWebServer.firstForeignWebPageAsset
+        val secondTestPage = mockWebServer.secondForeignWebPageAsset
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(firstTestPage.url) {
-            verifyPageContent(firstTestPage.content)
-        }.openThreeDotMenu {
-        }.clickTranslateButton(composeTestRule) {
+        }
+        translationsRobot(composeTestRule) {
             verifyTranslationSheetIsDisplayed(isDisplayed = true)
             clickTranslationsOptionsButton()
             clickNeverTranslateLanguageOption(languageToTranslate = "French")
@@ -133,25 +130,27 @@ class TranslationsTest : TestSetup() {
         }.goBackToTranslationOptionSheet {
             closeTranslationsSheet()
         }
-        browserScreen {
+        browserScreen(composeTestRule) {
         }.openTabDrawer(composeTestRule) {
         }.openNewTab {
         }.submitQuery(secondTestPage.url.toString()) {
             waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
             verifyPageContent(secondTestPage.content)
         }
+        translationsRobot(composeTestRule) {
+            verifyTranslationSheetIsDisplayed(isDisplayed = false)
+        }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2436642
     @Test
     fun verifyFirstTranslationBottomSheetTranslateFunctionalityTest() {
-        val testPage = TestAssetHelper.getFirstForeignWebPageAsset(mockWebServer)
+        val testPage = mockWebServer.firstForeignWebPageAsset
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(testPage.url) {
-            verifyPageContent(testPage.content)
-        }.openThreeDotMenu {
-        }.clickTranslateButton(composeTestRule) {
+        }
+        translationsRobot(composeTestRule) {
             verifyTranslationSheetIsDisplayed(isDisplayed = true)
         }.clickTranslateButton {
             verifyPageContent("Article of the day")
@@ -161,18 +160,18 @@ class TranslationsTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2437112
     @Test
     fun verifyTheShowOriginalTranslationOptionTest() {
-        val testPage = TestAssetHelper.getFirstForeignWebPageAsset(mockWebServer)
+        val testPage = mockWebServer.firstForeignWebPageAsset
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(testPage.url) {
-            verifyPageContent(testPage.content)
-        }.openThreeDotMenu {
-        }.clickTranslateButton(composeTestRule) {
+        }
+        translationsRobot(composeTestRule) {
             verifyTranslationSheetIsDisplayed(isDisplayed = true)
         }.clickTranslateButton {
             verifyPageContent("Article of the day")
         }.openThreeDotMenu {
-        }.clickTranslateButton(composeTestRule) {
+            clickTheMoreButton()
+        }.clickTranslatedButton {
             verifyTranslationSheetIsDisplayed(isDisplayed = true)
         }.clickShowOriginalButton {
             verifyPageContent(testPage.content)
@@ -182,18 +181,18 @@ class TranslationsTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2437111
     @Test
     fun changeTheTranslateToLanguageTest() {
-        val testPage = TestAssetHelper.getFirstForeignWebPageAsset(mockWebServer)
+        val testPage = mockWebServer.firstForeignWebPageAsset
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(testPage.url) {
-            verifyPageContent(testPage.content)
-        }.openThreeDotMenu {
-        }.clickTranslateButton(composeTestRule) {
+        }
+        translationsRobot(composeTestRule) {
             verifyTranslationSheetIsDisplayed(isDisplayed = true)
         }.clickTranslateButton {
             verifyPageContent("Article of the day")
         }.openThreeDotMenu {
-        }.clickTranslateButton(composeTestRule) {
+            clickTheMoreButton()
+        }.clickTranslatedButton {
             verifyTranslationSheetIsDisplayed(isDisplayed = true)
             clickTranslateToDropdown()
             clickTranslateToLanguage("Estonian")
@@ -205,14 +204,14 @@ class TranslationsTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2437992
     @Test
     fun verifyTheAlwaysTranslateOptionTest() {
-        val firstTestPage = TestAssetHelper.getFirstForeignWebPageAsset(mockWebServer)
-        val secondTestPage = TestAssetHelper.getSecondForeignWebPageAsset(mockWebServer)
+        val firstTestPage = mockWebServer.firstForeignWebPageAsset
+        val secondTestPage = mockWebServer.secondForeignWebPageAsset
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(secondTestPage.url) {
-            verifyPageContent(secondTestPage.content)
-        }.openThreeDotMenu {
-        }.clickTranslateButton(composeTestRule) {
+            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
+        }
+        translationsRobot(composeTestRule) {
             verifyTranslationSheetIsDisplayed(isDisplayed = true)
             clickTranslationsOptionsButton()
             verifyAlwaysTranslateOptionIsChecked(isChecked = false)
@@ -228,11 +227,11 @@ class TranslationsTest : TestSetup() {
         }.goBackToTranslationOptionSheet {
             closeTranslationsSheet()
         }
-        browserScreen {
+        browserScreen(composeTestRule) {
             waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
             verifyPageContent("Word of the day")
         }
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(firstTestPage.url) {
             verifyPageContent("Article of the day")
         }
@@ -241,21 +240,19 @@ class TranslationsTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2439960
     @Test
     fun verifyTheSiteDeletionFromTheNeverTranslateListTest() {
-        val firstTestPage = TestAssetHelper.getFirstForeignWebPageAsset(mockWebServer)
+        val firstTestPage = mockWebServer.firstForeignWebPageAsset
 
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(firstTestPage.url) {
-            verifyPageContent(firstTestPage.content)
-        }.openThreeDotMenu {
-        }.clickTranslateButton(composeTestRule) {
+        browserScreen(composeTestRule) {
+        }.openTabDrawer(composeTestRule) {
+        }.openNewTab {
+        }.submitQuery(firstTestPage.url.toString()) {
+        }
+        translationsRobot(composeTestRule) {
             verifyTranslationSheetIsDisplayed(isDisplayed = true)
             clickTranslationsOptionsButton()
             verifyTheNeverTranslateThisSiteOptionIsChecked(isChecked = false)
             clickNeverTranslateThisSiteOption()
             verifyTheNeverTranslateThisSiteOptionIsChecked(isChecked = true)
-            verifyAlwaysOfferToTranslateOptionIsEnabled(isEnabled = false)
-            verifyAlwaysTranslateOptionIsEnabled(isEnabled = false)
-            verifyTheNeverTranslateLanguageOptionIsEnabled(isEnabled = false)
         }.clickTranslationSettingsButton {
             clickNeverTranslateTheseSitesButton()
             verifyNeverTranslateThisSiteRemoveButton("${firstTestPage.url.scheme}://${firstTestPage.url.authority}")
@@ -267,6 +264,7 @@ class TranslationsTest : TestSetup() {
             clickConfirmDeleteNeverTranslateThisSiteDialog()
         }.goBackToTranslationSettingsSubMenu {
         }.goBackToTranslationOptionSheet {
+            verifyAlwaysOfferToTranslateOptionIsChecked(isChecked = true)
             verifyTheNeverTranslateThisSiteOptionIsChecked(isChecked = false)
         }
     }
@@ -275,9 +273,9 @@ class TranslationsTest : TestSetup() {
     @Ignore("Failing, see https://bugzilla.mozilla.org/show_bug.cgi?id=1965222")
     @Test
     fun downloadLanguageWhileDataSaverModeIsOnTest() {
-        val firstTestPage = TestAssetHelper.getFirstForeignWebPageAsset(mockWebServer)
+        val firstTestPage = mockWebServer.firstForeignWebPageAsset
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURL(firstTestPage.url) {
         }
         translationsRobot(composeTestRule) {
@@ -294,6 +292,59 @@ class TranslationsTest : TestSetup() {
             verifyDownloadLanguageInSavingModePrompt()
             clickDownloadLanguageInSavingModePromptButton()
             verifyDownloadedLanguage("Bosnian")
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2437990
+    @Test
+    fun verifyTheAlwaysOfferToTranslateOptionTest() {
+        val firstTestPage = mockWebServer.firstForeignWebPageAsset
+        val secondTestPage = mockWebServer.secondForeignWebPageAsset
+
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser(firstTestPage.url) {
+        }
+        translationsRobot(composeTestRule) {
+            verifyTranslationSheetIsDisplayed(isDisplayed = true)
+            clickTranslationsOptionsButton()
+            verifyAlwaysOfferToTranslateOptionIsChecked(isChecked = true)
+            clickAlwaysOfferToTranslateOption()
+            verifyAlwaysOfferToTranslateOptionIsChecked(isChecked = false)
+            clickGoBackTranslationSheetButton()
+        }.swipeCloseTranslationsSheet {
+            verifyPageContent(firstTestPage.content)
+        }
+
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser(secondTestPage.url) {
+        }
+        translationsRobot(composeTestRule) {
+            verifyTranslationSheetIsDisplayed(isDisplayed = false)
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2443276
+    @SmokeTest
+    @Test
+    fun verifyTheTranslationIsDisplayedAutomaticallyTest() {
+        val firstTestPage = mockWebServer.firstForeignWebPageAsset
+        val secondTestPage = "https://mozilla-mobile.github.io/testapp/v2.0/germanForeignWebPage.html"
+
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser(firstTestPage.url) {
+        }
+        translationsRobot(composeTestRule) {
+            verifyTranslationSheetIsDisplayed(isDisplayed = true)
+            closeTranslationsSheet()
+        }
+        browserScreen(composeTestRule) {
+        }.openTabDrawer(composeTestRule) {
+        }.openNewTab {
+        }.submitQuery(secondTestPage) {
+            waitForPageToLoad()
+        }
+        translationsRobot(composeTestRule) {
+            verifyTranslationSheetIsDisplayed(isDisplayed = true)
         }
     }
 }

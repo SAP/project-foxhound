@@ -10,7 +10,7 @@ add_task(async function test_set_default_pdf_handler_no_data() {
   await SMATestUtils.executeAndValidateAction(
     { type: "SET_DEFAULT_PDF_HANDLER" },
     {
-      ownerGlobal: {
+      documentGlobal: {
         getShellService: () => ({
           setAsDefaultPDFHandler: stub,
         }),
@@ -24,7 +24,7 @@ add_task(async function test_set_default_pdf_handler_no_data() {
     "setAsDefaultPDFHandler was called by the action"
   );
   Assert.ok(
-    stub.calledWithExactly(false),
+    stub.calledWithExactly(false, false),
     "setAsDefaultPDFHandler called with onlyIfKnownBrowser = false"
   );
 });
@@ -41,7 +41,7 @@ add_task(async function test_set_default_pdf_handler_data_false() {
       },
     },
     {
-      ownerGlobal: {
+      documentGlobal: {
         getShellService: () => ({
           setAsDefaultPDFHandler: stub,
         }),
@@ -55,7 +55,7 @@ add_task(async function test_set_default_pdf_handler_data_false() {
     "setAsDefaultPDFHandler was called by the action"
   );
   Assert.ok(
-    stub.calledWithExactly(false),
+    stub.calledWithExactly(false, false),
     "setAsDefaultPDFHandler called with onlyIfKnownBrowser = false"
   );
 });
@@ -72,7 +72,7 @@ add_task(async function test_set_default_pdf_handler_data_true() {
       },
     },
     {
-      ownerGlobal: {
+      documentGlobal: {
         getShellService: () => ({
           setAsDefaultPDFHandler: stub,
         }),
@@ -86,7 +86,7 @@ add_task(async function test_set_default_pdf_handler_data_true() {
     "setAsDefaultPDFHandler was called by the action"
   );
   Assert.ok(
-    stub.calledWithExactly(true),
+    stub.calledWithExactly(true, false),
     "setAsDefaultPDFHandler called with onlyIfKnownBrowser = true"
   );
 });

@@ -1,5 +1,3 @@
-# -*- Mode: python; tab-width: 8; indent-tabs-mode: nil -*-
-# vim: set ts=8 sts=4 et sw=4 tw=80:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -30,29 +28,25 @@ KEY_RUN_COUNT = "RunCount"
 
 LEAKED_SYMLINK_PREFIX = "::\\{"
 
-PATH_SUBSTITUTIONS = OrderedDict(
-    [
-        ("profile", "{profile}"),
-        ("firefox", "{xre}"),
-        ("desktop", "{desktop}"),
-        ("fonts", "{fonts}"),
-        ("appdata", " {appdata}"),
-    ]
-)
-NAME_SUBSTITUTIONS = OrderedDict(
-    [
-        ("installtime", "{time}"),
-        ("prefetch", "{prefetch}"),
-        ("thumbnails", "{thumbnails}"),
-        # {appdata}\locallow\mozilla\temp-{*}
-        ("temp-{", "{temp}"),
-        ("cltbld.", "{cltbld}"),
-        ("windows media player", "{media_player}"),
-        # regex order matters
-        (re.compile(r"{\w{8}-\w{4}-\w{4}-\w{4}-\w{12}}"), "{uuid}"),
-        (re.compile(r"{uuid}\.\d+\.ver\w+\.db"), "{uuid-db}"),
-    ]
-)
+PATH_SUBSTITUTIONS = OrderedDict([
+    ("profile", "{profile}"),
+    ("firefox", "{xre}"),
+    ("desktop", "{desktop}"),
+    ("fonts", "{fonts}"),
+    ("appdata", " {appdata}"),
+])
+NAME_SUBSTITUTIONS = OrderedDict([
+    ("installtime", "{time}"),
+    ("prefetch", "{prefetch}"),
+    ("thumbnails", "{thumbnails}"),
+    # {appdata}\locallow\mozilla\temp-{*}
+    ("temp-{", "{temp}"),
+    ("cltbld.", "{cltbld}"),
+    ("windows media player", "{media_player}"),
+    # regex order matters
+    (re.compile(r"{\w{8}-\w{4}-\w{4}-\w{4}-\w{12}}"), "{uuid}"),
+    (re.compile(r"{uuid}\.\d+\.ver\w+\.db"), "{uuid-db}"),
+])
 
 TUPLE_EVENT_SOURCE_INDEX = 1
 TUPLE_FILENAME_INDEX = 2

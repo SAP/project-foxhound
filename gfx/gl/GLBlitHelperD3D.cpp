@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -39,12 +37,12 @@ static EGLStreamKHR StreamFromD3DTexture(EglDisplay* const egl,
           EGLExtension::NV_stream_consumer_gltexture_yuv) ||
       !egl->IsExtensionSupported(
           EGLExtension::ANGLE_stream_producer_d3d_texture)) {
-    return 0;
+    return nullptr;
   }
 
   const auto stream = egl->fCreateStreamKHR(nullptr);
   MOZ_ASSERT(stream);
-  if (!stream) return 0;
+  if (!stream) return nullptr;
   bool ok = true;
   NOTE_IF_FALSE(ok &= bool(egl->fStreamConsumerGLTextureExternalAttribsNV(
                     stream, nullptr)));
@@ -55,7 +53,7 @@ static EGLStreamKHR StreamFromD3DTexture(EglDisplay* const egl,
   if (ok) return stream;
 
   (void)egl->fDestroyStreamKHR(stream);
-  return 0;
+  return nullptr;
 }
 
 static RefPtr<ID3D11Texture2D> OpenSharedTexture(ID3D11Device* const d3d,
@@ -98,7 +96,7 @@ class BindAnglePlanes final {
         mNumPlanes(numPlanes),
         mMultiTex(mParent.mGL, mNumPlanes, LOCAL_GL_TEXTURE_EXTERNAL),
         mTempTexs{0},
-        mStreams{0},
+        mStreams{nullptr},
         mSuccess(true) {
     MOZ_RELEASE_ASSERT(numPlanes >= 1 && numPlanes <= 3);
 
@@ -170,7 +168,7 @@ ID3D11Device* GLBlitHelper::GetD3D11() const {
 
   const auto& gle = GLContextEGL::Cast(mGL);
   const auto& egl = gle->mEgl;
-  EGLDeviceEXT deviceEGL = 0;
+  EGLDeviceEXT deviceEGL = nullptr;
   NOTE_IF_FALSE(egl->fQueryDisplayAttribEXT(LOCAL_EGL_DEVICE_EXT,
                                             (EGLAttrib*)&deviceEGL));
   ID3D11Device* device = nullptr;
@@ -188,36 +186,40 @@ ID3D11Device* GLBlitHelper::GetD3D11() const {
 // -------------------------------------
 
 bool GLBlitHelper::BlitImage(layers::D3D11ShareHandleImage* const srcImage,
-                             const gfx::IntSize& destSize,
-                             const OriginPos destOrigin) const {
+                             const gfx::IntRect& destRect,
+                             const OriginPos destOrigin,
+                             const gfx::IntSize& fbSize) const {
   const auto& data = srcImage->GetData();
   if (!data) return false;
 
   layers::SurfaceDescriptorD3D10 desc;
   if (!data->SerializeSpecific(&desc)) return false;
 
-  return BlitDescriptor(desc, destSize, destOrigin);
+  return BlitDescriptor(desc, destRect, destOrigin, fbSize);
 }
 
 // -------------------------------------
 
 bool GLBlitHelper::BlitImage(layers::D3D11ZeroCopyTextureImage* const srcImage,
-                             const gfx::IntSize& destSize,
-                             const OriginPos destOrigin) const {
+                             const gfx::IntRect& destRect,
+                             const OriginPos destOrigin,
+                             const gfx::IntSize& fbSize) const {
   const auto& data = srcImage->GetData();
   if (!data) return false;
 
   layers::SurfaceDescriptorD3D10 desc;
   if (!data->SerializeSpecific(&desc)) return false;
 
-  return BlitDescriptor(desc, destSize, destOrigin);
+  return BlitDescriptor(desc, destRect, destOrigin, fbSize);
 }
 
 // -------------------------------------
 
 bool GLBlitHelper::BlitDescriptor(const layers::SurfaceDescriptorD3D10& desc,
-                                  const gfx::IntSize& destSize,
-                                  const OriginPos destOrigin) const {
+                                  const gfx::IntRect& destRect,
+                                  const OriginPos destOrigin,
+                                  const gfx::IntSize& fbSize,
+                                  Maybe<gfxAlphaType> convertAlpha) const {
   const auto& d3d = GetD3D11();
   if (!d3d) return false;
 
@@ -227,16 +229,30 @@ bool GLBlitHelper::BlitDescriptor(const layers::SurfaceDescriptorD3D10& desc,
   const auto& clipSize = desc.size();
 
   const auto srcOrigin = OriginPos::BottomLeft;
+  const bool yFlip = destOrigin != srcOrigin;
   const gfx::IntRect clipRect(0, 0, clipSize.width, clipSize.height);
   const auto colorSpace = desc.colorSpace();
   const auto fencesHolderId = desc.fencesHolderId();
 
-  if (format != gfx::SurfaceFormat::NV12 &&
-      format != gfx::SurfaceFormat::P010 &&
-      format != gfx::SurfaceFormat::P016) {
-    gfxCriticalError() << "Non-NV12 format for SurfaceDescriptorD3D10: "
-                       << uint32_t(format);
-    return false;
+  bool yuv = true;
+  switch (format) {
+    case gfx::SurfaceFormat::B8G8R8A8:
+    case gfx::SurfaceFormat::B8G8R8X8:
+    case gfx::SurfaceFormat::R8G8B8A8:
+    case gfx::SurfaceFormat::R8G8B8X8:
+    case gfx::SurfaceFormat::R10G10B10A2_UINT32:
+    case gfx::SurfaceFormat::R10G10B10X2_UINT32:
+    case gfx::SurfaceFormat::R16G16B16A16F:
+      yuv = false;
+      break;
+    case gfx::SurfaceFormat::NV12:
+    case gfx::SurfaceFormat::P010:
+    case gfx::SurfaceFormat::P016:
+      break;
+    default:
+      gfxCriticalError() << "Non-RGBA/NV12 format for SurfaceDescriptorD3D10: "
+                         << uint32_t(format);
+      return false;
   }
 
   RefPtr<ID3D11Texture2D> tex;
@@ -262,6 +278,33 @@ bool GLBlitHelper::BlitDescriptor(const layers::SurfaceDescriptorD3D10& desc,
   MOZ_ASSERT(fencesHolderMap);
   if (fencesHolderMap && fencesHolderId.isSome()) {
     fencesHolderMap->WaitWriteFence(fencesHolderId.ref(), d3d);
+  }
+
+  if (!yuv) {
+    const RefPtr<ID3D11Texture2D> texList[1] = {tex};
+    const EGLAttrib postAttribs0[] = {
+        LOCAL_EGL_D3D_TEXTURE_SUBRESOURCE_ID_ANGLE,
+        static_cast<EGLAttrib>(arrayIndex), LOCAL_EGL_NONE};
+    const EGLAttrib* const postAttribsList[1] = {postAttribs0};
+    const BindAnglePlanes bindPlanes(this, 1, texList,
+                                     arrayIndex ? postAttribsList : nullptr);
+    if (!bindPlanes.Success()) {
+      MOZ_GL_ASSERT(mGL, false);  // BindAnglePlanes failed.
+      return false;
+    }
+
+    D3D11_TEXTURE2D_DESC texDesc = {0};
+    tex->GetDesc(&texDesc);
+    gfx::IntSize texSize(texDesc.Width, texDesc.Height);
+
+    const DrawBlitProg::BaseArgs baseArgs = {SubRectMat3(clipRect, texSize),
+                                             yFlip, fbSize, destRect, clipSize};
+    const auto& prog =
+        GetDrawBlitProg({kFragHeader_TexExt,
+                         {kFragSample_OnePlane, kFragConvert_None,
+                          GetAlphaMixin(convertAlpha)}});
+    prog.Draw(baseArgs);
+    return true;
   }
 
   const RefPtr<ID3D11Texture2D> texList[2] = {tex, tex};
@@ -309,21 +352,23 @@ bool GLBlitHelper::BlitDescriptor(const layers::SurfaceDescriptorD3D10& desc,
     MOZ_ASSERT_UNREACHABLE();
   }();
 
-  const bool yFlip = destOrigin != srcOrigin;
   const DrawBlitProg::BaseArgs baseArgs = {SubRectMat3(clipRect, ySize), yFlip,
-                                           destSize, Nothing()};
+                                           fbSize, destRect, clipSize};
   const DrawBlitProg::YUVArgs yuvArgs = {
       SubRectMat3(clipRect, uvSize, divisors), Some(yuvColorSpace)};
 
-  const auto& prog = GetDrawBlitProg(
-      {kFragHeader_TexExt, {kFragSample_TwoPlane, kFragConvert_ColorMatrix}});
+  const auto& prog =
+      GetDrawBlitProg({kFragHeader_TexExt,
+                       {kFragSample_TwoPlane, kFragConvert_ColorMatrix,
+                        GetAlphaMixin(convertAlpha)}});
   prog.Draw(baseArgs, &yuvArgs);
   return true;
 }
 
 bool GLBlitHelper::BlitDescriptor(
     const layers::SurfaceDescriptorDXGIYCbCr& desc,
-    const gfx::IntSize& destSize, const OriginPos destOrigin) const {
+    const gfx::IntRect& destRect, const OriginPos destOrigin,
+    const gfx::IntSize& fbSize, Maybe<gfxAlphaType> convertAlpha) const {
   const auto& clipSize = desc.size();
   const auto& ySize = desc.sizeY();
   const auto& uvSize = desc.sizeCbCr();
@@ -337,19 +382,18 @@ bool GLBlitHelper::BlitDescriptor(
 
   const WindowsHandle handles[3] = {
       (WindowsHandle)handleY, (WindowsHandle)handleCb, (WindowsHandle)handleCr};
-  return BlitAngleYCbCr(handles, clipRect, ySize, uvSize, colorSpace, destSize,
-                        destOrigin);
+  return BlitAngleYCbCr(handles, clipRect, ySize, uvSize, colorSpace, destRect,
+                        destOrigin, fbSize, convertAlpha);
 }
 
 // --
 
-bool GLBlitHelper::BlitAngleYCbCr(const WindowsHandle (&handleList)[3],
-                                  const gfx::IntRect& clipRect,
-                                  const gfx::IntSize& ySize,
-                                  const gfx::IntSize& uvSize,
-                                  const gfx::YUVColorSpace colorSpace,
-                                  const gfx::IntSize& destSize,
-                                  const OriginPos destOrigin) const {
+bool GLBlitHelper::BlitAngleYCbCr(
+    const WindowsHandle (&handleList)[3], const gfx::IntRect& clipRect,
+    const gfx::IntSize& ySize, const gfx::IntSize& uvSize,
+    const gfx::YUVColorSpace colorSpace, const gfx::IntRect& destRect,
+    const OriginPos destOrigin, const gfx::IntSize& fbSize,
+    Maybe<gfxAlphaType> convertAlpha) const {
   const auto& d3d = GetD3D11();
   if (!d3d) return false;
 
@@ -366,12 +410,14 @@ bool GLBlitHelper::BlitAngleYCbCr(const WindowsHandle (&handleList)[3],
 
   const bool yFlip = destOrigin != srcOrigin;
   const DrawBlitProg::BaseArgs baseArgs = {SubRectMat3(clipRect, ySize), yFlip,
-                                           destSize, Nothing()};
+                                           fbSize, destRect, clipRect.Size()};
   const DrawBlitProg::YUVArgs yuvArgs = {
       SubRectMat3(clipRect, uvSize, divisors), Some(colorSpace)};
 
-  const auto& prog = GetDrawBlitProg(
-      {kFragHeader_TexExt, {kFragSample_ThreePlane, kFragConvert_ColorMatrix}});
+  const auto& prog =
+      GetDrawBlitProg({kFragHeader_TexExt,
+                       {kFragSample_ThreePlane, kFragConvert_ColorMatrix,
+                        GetAlphaMixin(convertAlpha)}});
   prog.Draw(baseArgs, &yuvArgs);
   return true;
 }

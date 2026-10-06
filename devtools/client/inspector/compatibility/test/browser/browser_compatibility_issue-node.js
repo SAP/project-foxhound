@@ -12,7 +12,7 @@ const TEST_URI = `
   }
   div {
     user-modify: read-only;
-    scrollbar-color: auto;
+    overflow-anchor: auto;
   }
   </style>
   <body>
@@ -26,7 +26,7 @@ const TEST_DATA_ALL = [
     nodes: ["body", "div"],
   },
   {
-    property: "scrollbar-color",
+    property: "overflow-anchor",
     nodes: ["div"],
   },
 ];

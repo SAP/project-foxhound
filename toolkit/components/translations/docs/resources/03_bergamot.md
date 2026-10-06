@@ -68,7 +68,7 @@ If the Bergamot Translator has a breaking change, then the `BERGAMOT_MAJOR_VERSI
     - Find the record in Remote Settings' [translations-wasm](https://remote-settings.mozilla.org/v1/admin/#/buckets/main-workspace/collections/translations-wasm/records) view.
     - At this point the record could still be in Preview, as the attachment won't change once it's approved.
     - Double click the newest record.
-    - Update the `url`, `sha256`, `size`, and `description` fields for `translations.inference.fetch` in `translations-fetch.yml`.
+    - Update the `url`, `sha256`, `size`, and `description` fields for `tr8ns.inference` in `translations-fetch.yml`.
     - The `size` can be found via `curl -sL --head $url` and the `content-length`.
 
 1. Publish to Nightly

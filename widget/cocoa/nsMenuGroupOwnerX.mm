@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,6 +35,9 @@ nsMenuGroupOwnerX::nsMenuGroupOwnerX(mozilla::dom::Element* aElement,
 nsMenuGroupOwnerX::~nsMenuGroupOwnerX() {
   MOZ_ASSERT(mContentToObserverTable.Count() == 0,
              "have outstanding mutation observers!\n");
+  if (mObservingMutationsOnRoot && mContent) {
+    mContent->RemoveMutationObserver(this);
+  }
   [mRepresentedObject setMenuGroupOwner:nullptr];
   [mRepresentedObject release];
 }
@@ -70,6 +72,7 @@ void nsMenuGroupOwnerX::CharacterDataChanged(nsIContent* aContent,
 
 void nsMenuGroupOwnerX::ContentAppended(nsIContent* aFirstNewContent,
                                         const ContentAppendInfo& aInfo) {
+  nsCOMPtr<nsIMutationObserver> kungFuDeathGrip(this);
   for (nsIContent* cur = aFirstNewContent; cur; cur = cur->GetNextSibling()) {
     ContentInserted(cur, aInfo);
   }
@@ -77,15 +80,12 @@ void nsMenuGroupOwnerX::ContentAppended(nsIContent* aFirstNewContent,
 
 void nsMenuGroupOwnerX::NodeWillBeDestroyed(nsINode* aNode) {}
 
-void nsMenuGroupOwnerX::AttributeWillChange(dom::Element* aElement,
-                                            int32_t aNameSpaceID,
-                                            nsAtom* aAttribute,
-                                            int32_t aModType) {}
+void nsMenuGroupOwnerX::AttributeWillChange(dom::Element*, int32_t, nsAtom*,
+                                            AttrModType) {}
 
-void nsMenuGroupOwnerX::AttributeChanged(dom::Element* aElement,
-                                         int32_t aNameSpaceID,
-                                         nsAtom* aAttribute, int32_t aModType,
-                                         const nsAttrValue* aOldValue) {
+void nsMenuGroupOwnerX::AttributeChanged(dom::Element* aElement, int32_t,
+                                         nsAtom* aAttribute, AttrModType,
+                                         const nsAttrValue*) {
   nsCOMPtr<nsIMutationObserver> kungFuDeathGrip(this);
   nsChangeObserver* obs = LookupContentChangeObserver(aElement);
   if (obs) {
@@ -130,7 +130,7 @@ void nsMenuGroupOwnerX::ContentInserted(nsIContent* aChild,
   if (obs) {
     obs->ObserveContentInserted(aChild->OwnerDoc(), container, aChild);
   } else if (container != mContent) {
-    // We do a lookup on the parent container in case things were removed
+    // We do a lookup on the parent container in case things were inserted
     // under a "menupopup" item. That is basically a wrapper for the contents
     // of a "menu" node.
     nsCOMPtr<nsIContent> parent = container->GetParent();
@@ -144,12 +144,6 @@ void nsMenuGroupOwnerX::ContentInserted(nsIContent* aChild,
 }
 
 void nsMenuGroupOwnerX::ParentChainChanged(nsIContent* aContent) {}
-
-void nsMenuGroupOwnerX::ARIAAttributeDefaultWillChange(
-    mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) {}
-
-void nsMenuGroupOwnerX::ARIAAttributeDefaultChanged(
-    mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) {}
 
 // For change management, we don't use a |nsSupportsHashtable| because
 // we know that the lifetime of all these items is bounded by the
@@ -167,7 +161,7 @@ void nsMenuGroupOwnerX::RegisterForContentChanges(
     // If aContent is outside mContent's subtree, for example if it's a
     // <command> element, we need to add a mutation observer.
     // Anything in mContent's subtree is already covered by the mutation
-    // observer we add in the nsMenuGroupOwnerX constructor.
+    // observer we add with InstallOrUninstallRootMutationObserver().
     aContent->AddMutationObserver(this);
   }
 
@@ -260,6 +254,9 @@ nsMenuItemX* nsMenuGroupOwnerX::GetMenuItemForCommandID(uint32_t aCommandID) {
 
 - (id)initWithMenuGroupOwner:(nsMenuGroupOwnerX*)aMenuGroupOwner {
   self = [super init];
+  if (!self) {
+    return nil;
+  }
   mMenuGroupOwner = aMenuGroupOwner;
   return self;
 }

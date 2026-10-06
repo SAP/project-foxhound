@@ -5,6 +5,7 @@
 package org.mozilla.fenix.downloads.listscreen.store
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DownloadUIStateTest {
@@ -1329,5 +1330,62 @@ class DownloadUIStateTest {
         )
 
         assertEquals(false, downloadUIState.isBackHandlerEnabled)
+    }
+
+    @Test
+    fun `WHEN search field is visible THEN settings icon is not visible`() {
+        val downloadUIState = DownloadUIState(
+            items = emptyList(),
+            mode = DownloadUIState.Mode.Normal,
+            pendingDeletionIds = emptySet(),
+            isSearchFieldRequested = true,
+            searchQuery = "",
+        )
+
+        assertEquals(false, downloadUIState.isSettingsIconVisible)
+    }
+
+    @Test
+    fun `WHEN state is in edit mode THEN settings icon is not visible`() {
+        val fileItem1 = fileItem(
+            id = "1",
+            fileName = "somefile",
+            displayedShortUrl = "firefox.com",
+            timeCategory = TimeCategory.LAST_30_DAYS,
+        )
+
+        val downloadUIState = DownloadUIState(
+            items = listOf(fileItem1),
+            mode = DownloadUIState.Mode.Editing(
+                selectedItems = setOf(fileItem1),
+            ),
+            pendingDeletionIds = emptySet(),
+            isSearchFieldRequested = false,
+            searchQuery = "",
+        )
+
+        assertEquals(false, downloadUIState.isSettingsIconVisible)
+    }
+
+    @Test
+    fun `WHEN search field is not visible and state is in normal mode THEN settings icon is visible`() {
+        val fileItems = listOf(
+            fileItem(
+                id = "1",
+                fileName = "somefile",
+                displayedShortUrl = "firefox.com",
+                timeCategory = TimeCategory.LAST_30_DAYS,
+            ),
+        )
+
+        val downloadUIState = DownloadUIState(
+            items = fileItems,
+            mode = DownloadUIState.Mode.Normal,
+            pendingDeletionIds = emptySet(),
+            isSearchFieldRequested = false,
+            searchQuery = "",
+        )
+
+        assertEquals(true, downloadUIState.isSettingsIconVisible)
     }
 }

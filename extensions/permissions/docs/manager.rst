@@ -13,13 +13,16 @@ a permission consists of the following:
    ``0`` (“Undefined”), ``1`` (“Allow”), ``2`` (“Deny”) or ``3`` (“Prompt the user”).
 
 For storing arbitrary preferences per origin instead of just permission values,
-the `content pref service
-<https://searchfox.org/mozilla-central/source/dom/interfaces/base/nsIContentPrefService2.idl>`__
-offers a good alternative to the permission manager. There also exists the `site
-permission manager
-<https://searchfox.org/mozilla-central/source/browser/modules/SitePermissions.sys.mjs>`__,
-which builds on top of the regular permission manager, and makes temporary
-permissions that are not stored to disk, and user interfaces easier.
+the :searchfox:`content pref service <dom/interfaces/base/nsIContentPrefService2.idl>`
+offers a good alternative to the permission manager.
+
+The permission manager also supports :doc:`browser-scoped (per-tab) temporary
+permissions <browser-scoped>` that are not stored to disk and are automatically
+cleared when their tab is closed.
+
+The :searchfox:`site permission manager <browser/modules/SitePermissions.sys.mjs>`
+builds on top of both regular and browser-scoped permissions, and makes user
+interfaces easier.
 
 Interfacing with the Permission Manager
 ---------------------------------------
@@ -29,8 +32,7 @@ interface. This interface is available through the
 ``@mozilla.org/permissionmanager;1`` service, or through the quick
 ``Services.perms`` getter in JavaScript. Below is a list of the most common
 methods, and examples on how to use them with JavaScript. For a full list of
-signatures, see `nsIPermissionManager.idl
-<https://searchfox.org/mozilla-central/source/netwerk/base/nsIPermissionManager.idl>`__.
+signatures, see :searchfox:`nsIPermissionManager.idl <netwerk/base/nsIPermissionManager.idl>`.
 
 ``testExactPermissionFromPrincipal``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -88,6 +90,8 @@ milliseconds.
     Date.now() + 1000 * 60 * 60 * 24
   );
 
+For per-tab temporary permissions, see :doc:`browser-scoped permissions
+<browser-scoped>`.
 
 ``removeFromPrincipal``
 ~~~~~~~~~~~~~~~~~~~~~~~

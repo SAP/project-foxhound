@@ -11,7 +11,7 @@
 
 import { Log } from "resource://gre/modules/Log.sys.mjs";
 
-import { CryptoUtils } from "resource://services-crypto/utils.sys.mjs";
+import { CryptoUtils } from "moz-src:///services/crypto/modules/utils.sys.mjs";
 
 import { CommonUtils } from "resource://services-common/utils.sys.mjs";
 
@@ -54,8 +54,7 @@ export var Credentials = Object.freeze({
    *
    * keyWord derivation for use as a salt.
    *
-   *
-   *   @param {String} context  String for use in generating salt
+   *   @param {string} context  String for use in generating salt
    *
    *   @return {bitArray} the salt
    *
@@ -71,8 +70,8 @@ export var Credentials = Object.freeze({
    *
    * keyWord extended with a name and an email.
    *
-   *   @param {String} name The name of the salt
-   *   @param {String} email The email of the user.
+   *   @param {string} name The name of the salt
+   *   @param {string} email The email of the user.
    *
    *   @return {bitArray} the salt combination with the namespace
    *

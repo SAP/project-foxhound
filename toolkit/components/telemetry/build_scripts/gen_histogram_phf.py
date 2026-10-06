@@ -2,15 +2,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from mozparsers.shared_telemetry_utils import ParserError
-from perfecthash import PerfectHash
-
-PHFSIZE = 1024
-
 import sys
 
 import buildconfig
 from mozparsers import parse_histograms
+from mozparsers.shared_telemetry_utils import ParserError
+from perfecthash import PerfectHash
 
 banner = """/* This file is auto-generated, see gen_histogram_phf.py.  */
 """
@@ -53,7 +50,7 @@ def main(output, *filenames):
     histograms = [
         (bytearray(hist.name(), "ascii"), idx) for (idx, hist) in enumerate(histograms)
     ]
-    name_phf = PerfectHash(histograms, PHFSIZE)
+    name_phf = PerfectHash(histograms)
 
     output.write(
         name_phf.cxx_codegen(

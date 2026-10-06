@@ -31,3 +31,29 @@ add_task(async function test_OPEN_URL_new_tab() {
   ok(browser, "should open URL in a new tab");
   BrowserTestUtils.removeTab(browser);
 });
+
+add_task(async function test_OPEN_URL_chromeless_with_dimensions() {
+  const { width, height } = ASRouterTargeting.Environment.primaryResolution;
+  if (width < 800 || height < 600) {
+    ok(true, "Skipping: screen too small to reliably test window dimensions");
+    return;
+  }
+  const action = {
+    type: "OPEN_URL",
+    data: { args: EXAMPLE_URL, where: "chromeless", width: 800, height: 600 },
+  };
+  const winPromise = BrowserTestUtils.waitForNewWindow();
+  await SMATestUtils.executeAndValidateAction(action);
+  const win = await winPromise;
+  if (win.delayedStartupPromise) {
+    await win.delayedStartupPromise;
+  }
+  await BrowserTestUtils.browserLoaded(
+    win.gBrowser.selectedBrowser,
+    false,
+    EXAMPLE_URL
+  );
+  Assert.equal(win.innerWidth, 800, "Window should have the requested width");
+  Assert.equal(win.innerHeight, 600, "Window should have the requested height");
+  await BrowserTestUtils.closeWindow(win);
+});

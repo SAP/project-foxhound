@@ -24,6 +24,10 @@ async function waitForDialog() {
 }
 
 add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["signon.rustMirror.enabled", false]],
+  });
+
   let login = LoginTestUtils.testData.formLogin({
     origin: "https://example.com",
     formActionOrigin: "https://example.com",
@@ -33,8 +37,9 @@ add_setup(async function () {
   await Services.logins.addLoginAsync(login);
   LoginTestUtils.primaryPassword.enable();
 
-  registerCleanupFunction(function () {
+  registerCleanupFunction(async function () {
     LoginTestUtils.primaryPassword.disable();
+    await SpecialPowers.flushPrefEnv();
   });
 
   // Set primary password prompt timeout to 3s.

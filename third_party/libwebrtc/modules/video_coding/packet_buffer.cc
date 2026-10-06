@@ -10,26 +10,24 @@
 
 #include "modules/video_coding/packet_buffer.h"
 
-#include <string.h>
-
 #include <algorithm>
 #include <cstdint>
-#include <limits>
+#include <cstring>
+#include <memory>
 #include <utility>
 #include <variant>
 #include <vector>
 
-#include "api/array_view.h"
-#include "api/rtp_packet_info.h"
+#include "api/video/video_codec_type.h"
 #include "api/video/video_frame_type.h"
 #include "common_video/h264/h264_common.h"
-#include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "modules/rtp_rtcp/source/rtp_video_header.h"
 #include "modules/video_coding/codecs/h264/include/h264_globals.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/mod_ops.h"
+#include "rtc_base/numerics/sequence_number_util.h"
 
 namespace webrtc {
 namespace video_coding {

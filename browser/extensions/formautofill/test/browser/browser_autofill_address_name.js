@@ -120,4 +120,66 @@ add_autofill_heuristic_tests([
       },
     ],
   },
+  {
+    description: "Two given name fields",
+    fixtureData: `<form>
+      <input id="first-name-1">
+      <input id="first-name-2">
+      <input id="family-name-2">
+      <input id="email" autocomplete="email">
+    </form>`,
+    profile: TEST_PROFILE,
+    expectedResult: [
+      {
+        default: {
+          reason: "regex-heuristic",
+        },
+        fields: [
+          { fieldName: "given-name", autofill: TEST_PROFILE["given-name"] },
+          {
+            fieldName: "additional-name",
+            reason: "update-heuristic",
+            autofill: TEST_PROFILE["additional-name"],
+          },
+          { fieldName: "family-name", autofill: TEST_PROFILE["family-name"] },
+          {
+            fieldName: "email",
+            autofill: TEST_PROFILE.email,
+            reason: "autocomplete",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    description: "Two family name fields",
+    fixtureData: `<form>
+      <input id="given-name-1">
+      <input id="family-name-1">
+      <input id="family-name-2">
+      <input id="email" autocomplete="email">
+    </form>`,
+    profile: TEST_PROFILE,
+    expectedResult: [
+      {
+        default: {
+          reason: "regex-heuristic",
+        },
+        fields: [
+          { fieldName: "given-name", autofill: TEST_PROFILE["given-name"] },
+          { fieldName: "family-name", autofill: TEST_PROFILE["family-name"] },
+          {
+            fieldName: "additional-name",
+            reason: "update-heuristic",
+            autofill: TEST_PROFILE["additional-name"],
+          },
+          {
+            fieldName: "email",
+            autofill: TEST_PROFILE.email,
+            reason: "autocomplete",
+          },
+        ],
+      },
+    ],
+  },
 ]);

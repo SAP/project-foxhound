@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,11 +6,11 @@
 #define DOM_MEDIA_EME_KEYSYSTEMCONFIG_H_
 
 #include "MediaData.h"
+#include "mozilla/MozPromise.h"
+#include "mozilla/dom/MediaKeySystemAccessBinding.h"
+#include "mozilla/dom/MediaKeysBinding.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#include "mozilla/MozPromise.h"
-#include "mozilla/dom/MediaKeysBinding.h"
-#include "mozilla/dom/MediaKeySystemAccessBinding.h"
 
 namespace mozilla {
 
@@ -236,7 +234,6 @@ struct KeySystemConfig {
   nsTArray<nsString> mAudioRobustness;
   ContainerSupport mMP4;
   ContainerSupport mWebM;
-  bool mIsHDCP22Compatible = false;
 
  private:
   static void CreateClearKeyKeySystemConfigs(

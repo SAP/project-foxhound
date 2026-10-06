@@ -7,27 +7,28 @@ import { SafeAnchor } from "../SafeAnchor/SafeAnchor";
 import { ImpressionStats } from "../../DiscoveryStreamImpressionStats/ImpressionStats";
 import { actionCreators as ac } from "common/Actions.mjs";
 import { AdBannerContextMenu } from "../AdBannerContextMenu/AdBannerContextMenu";
+import { PromoCard } from "../PromoCard/PromoCard.jsx";
+
+const PREF_SECTIONS_ENABLED = "discoverystream.sections.enabled";
+const PREF_OHTTP_UNIFIED_ADS = "unifiedAds.ohttp.enabled";
+const PREF_REPORT_ADS_ENABLED = "discoverystream.reportAds.enabled";
+const PREF_PROMOCARD_ENABLED = "discoverystream.promoCard.enabled";
+const PREF_PROMOCARD_VISIBLE = "discoverystream.promoCard.visible";
+// @nova-cleanup(remove-pref): Remove PREF_NOVA_ENABLED
+const PREF_NOVA_ENABLED = "nova.enabled";
 
 /**
  * A new banner ad that appears between rows of stories: leaderboard or billboard size.
  *
  * @param spoc
  * @param dispatch
- * @param firstVisibleTimestamp
  * @param row
  * @param type
  * @param prefs
  * @returns {Element}
- * @constructor
+ * @class
  */
-export const AdBanner = ({
-  spoc,
-  dispatch,
-  firstVisibleTimestamp,
-  row,
-  type,
-  prefs,
-}) => {
+export const AdBanner = ({ spoc, dispatch, row, type, prefs }) => {
   const getDimensions = format => {
     switch (format) {
       case "leaderboard":
@@ -47,11 +48,19 @@ export const AdBanner = ({
       height: undefined,
     };
   };
+  const promoCardEnabled =
+    spoc.format === "billboard" &&
+    prefs[PREF_PROMOCARD_ENABLED] &&
+    prefs[PREF_PROMOCARD_VISIBLE];
 
-  const sectionsEnabled = prefs["discoverystream.sections.enabled"];
-  const showAdReporting = prefs["discoverystream.reportAds.enabled"];
+  // @nova-cleanup(remove-conditional): Remove novaEnabled check
+  const novaEnabled = prefs[PREF_NOVA_ENABLED];
+  const sectionsEnabled = prefs[PREF_SECTIONS_ENABLED];
+  const ohttpEnabled = prefs[PREF_OHTTP_UNIFIED_ADS];
+  const showAdReporting = prefs[PREF_REPORT_ADS_ENABLED];
+  const ohttpImagesEnabled = prefs.ohttpImagesConfig?.enabled;
   const [menuActive, setMenuActive] = useState(false);
-  const adBannerWrapperClassName = `ad-banner-wrapper ${menuActive ? "active" : ""}`;
+  const adBannerWrapperClassName = `ad-banner-wrapper ${menuActive ? "active" : ""} ${promoCardEnabled ? "promo-card" : ""}`;
 
   const { width: imgWidth, height: imgHeight } = getDimensions(spoc.format);
 
@@ -66,8 +75,6 @@ export const AdBanner = ({
           card_type: "spoc",
           tile_id: spoc.id,
           ...(spoc.shim?.click ? { shim: spoc.shim.click } : {}),
-          fetchTimestamp: spoc.fetchTimestamp,
-          firstVisibleTimestamp,
           format: spoc.format,
           ...(sectionsEnabled
             ? {
@@ -88,8 +95,28 @@ export const AdBanner = ({
   // using clamp to make sure its between valid values (1-9)
   const clampedRow = Math.max(1, Math.min(9, row));
 
+  const secureImage = ohttpImagesEnabled && ohttpEnabled;
+
+  let rawImageSrc = spoc.raw_image_src;
+
+  // Wraps the image URL with the moz-cached-ohttp:// protocol.
+  // This enables Firefox to load resources over Oblivious HTTP (OHTTP),
+  // providing privacy-preserving resource loading.
+  // Applied only when inferred personalization is enabled.
+  // See: https://firefox-source-docs.mozilla.org/browser/components/mozcachedohttp/docs/index.html
+  if (secureImage) {
+    rawImageSrc = `moz-cached-ohttp://newtab-image/?url=${encodeURIComponent(spoc.raw_image_src)}`;
+  }
+
   return (
-    <aside className={adBannerWrapperClassName} style={{ gridRow: clampedRow }}>
+    <aside
+      className={adBannerWrapperClassName}
+      // Omit gridRow for Nova sections to ensure correct keyboard focus order.
+      // @nova-cleanup(remove-conditional): Remove novaEnabled check, keep sectionsEnabled condition
+      style={
+        novaEnabled && sectionsEnabled ? undefined : { gridRow: clampedRow }
+      }
+    >
       <div className={`ad-banner-inner ${spoc.format}`}>
         <SafeAnchor
           className="ad-banner-link"
@@ -97,6 +124,7 @@ export const AdBanner = ({
           title={spoc.title || spoc.sponsor || spoc.alt_text}
           onLinkClick={onLinkClick}
           dispatch={dispatch}
+          isSponsored={true}
         >
           <ImpressionStats
             flightId={spoc.flight_id}
@@ -114,11 +142,10 @@ export const AdBanner = ({
               },
             ]}
             dispatch={dispatch}
-            firstVisibleTimestamp={firstVisibleTimestamp}
           />
           <div className="ad-banner-content">
             <img
-              src={spoc.raw_image_src}
+              src={rawImageSrc}
               alt={spoc.alt_text}
               loading="eager"
               width={imgWidth}
@@ -140,9 +167,11 @@ export const AdBanner = ({
             type={type}
             showAdReporting={showAdReporting}
             toggleActive={toggleActive}
+            novaEnabled={novaEnabled}
           />
         </div>
       </div>
+      {promoCardEnabled && <PromoCard />}
     </aside>
   );
 };

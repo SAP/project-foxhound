@@ -14,7 +14,6 @@ add_setup(async function () {
       ["browser.contentblocking.database.enabled", false],
       ["browser.contentblocking.report.monitor.enabled", false],
       ["browser.contentblocking.report.lockwise.enabled", false],
-      ["browser.contentblocking.report.proxy.enabled", false],
     ],
   });
 });

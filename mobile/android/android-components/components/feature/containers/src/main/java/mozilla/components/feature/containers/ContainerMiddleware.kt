@@ -15,7 +15,6 @@ import mozilla.components.browser.state.action.InitAction
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.ContainerState
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.lib.state.Store
 import java.util.UUID
 import kotlin.coroutines.CoroutineContext
@@ -33,14 +32,14 @@ class ContainerMiddleware(
     private var scope = CoroutineScope(coroutineContext)
 
     override fun invoke(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         next: (BrowserAction) -> Unit,
         action: BrowserAction,
     ) {
         when (action) {
-            is InitAction -> initializeContainers(context.store)
+            is InitAction -> initializeContainers(store)
             is ContainerAction.AddContainerAction -> addContainer(action)
-            is ContainerAction.RemoveContainerAction -> removeContainer(context.store, action)
+            is ContainerAction.RemoveContainerAction -> removeContainer(store, action)
             else -> {
                 // no-op
             }
@@ -71,9 +70,12 @@ class ContainerMiddleware(
     private fun removeContainer(
         store: Store<BrowserState, BrowserAction>,
         action: ContainerAction.RemoveContainerAction,
-    ) = scope.launch {
-        store.state.containers[action.contextId]?.let {
-            containerStorage.removeContainer(it)
+    ) {
+        val containerToRemove = store.state.containers[action.contextId]
+        scope.launch {
+            containerToRemove?.let {
+                containerStorage.removeContainer(it)
+            }
         }
     }
 

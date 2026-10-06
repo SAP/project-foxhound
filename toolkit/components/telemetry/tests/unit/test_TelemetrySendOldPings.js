@@ -24,8 +24,8 @@ var gSeenPings = 0;
  *                an "age" field. The latter representing the age in milliseconds to offset
  *                from now. A value of 10 would make the ping 10ms older than now, for
  *                example.
- * @returns Promise
- * @resolve an Array with the created pings ids.
+ * @returns {Promise<string[]>}
+ *   Resolves to the created pings ids.
  */
 var createSavedPings = async function (aPingInfos) {
   let pingIds = [];
@@ -55,6 +55,7 @@ var createSavedPings = async function (aPingInfos) {
 
 /**
  * Fakes the pending pings storage quota.
+ *
  * @param {Integer} aPendingQuota The new quota, in bytes.
  */
 function fakePendingPingsQuota(aPendingQuota) {

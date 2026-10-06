@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +7,6 @@
 #include "fs/FileSystemAsyncCopy.h"
 #include "fs/FileSystemShutdownBlocker.h"
 #include "fs/FileSystemThreadSafeStreamOwner.h"
-#include "mozilla/Buffer.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/InputStreamLengthHelper.h"
 #include "mozilla/MozPromise.h"
@@ -301,7 +298,7 @@ FileSystemWritableFileStream::Create(
               if (stream->IsOpen()) {
                 // We don't need the promise, we just
                 // begin the closing process.
-                Unused << stream->BeginAbort();
+                (void)stream->BeginAbort();
               }
             });
         QM_TRY(MOZ_TO_RESULT(workerRef));
@@ -340,7 +337,7 @@ FileSystemWritableFileStream::Create(
   stream->mCloseHandler->Open([stream]() {
     if (stream->IsOpen()) {
       // We don't need the promise, we just begin the closing process.
-      Unused << stream->BeginAbort();
+      (void)stream->BeginAbort();
     }
   });
 
@@ -356,7 +353,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(FileSystemWritableFileStream,
                                                 WritableStream)
   // Per the comment for the FileSystemManager class, don't unlink mManager!
   if (tmp->IsOpen()) {
-    Unused << tmp->BeginAbort();
+    (void)tmp->BeginAbort();
   }
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(FileSystemWritableFileStream,

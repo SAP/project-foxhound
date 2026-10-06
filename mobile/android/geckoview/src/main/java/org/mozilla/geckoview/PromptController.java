@@ -40,9 +40,11 @@ import org.mozilla.geckoview.GeckoSession.PromptDelegate.IdentityCredential.Prov
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.PopupPrompt;
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.PromptInstanceDelegate;
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.PromptResponse;
+import org.mozilla.geckoview.GeckoSession.PromptDelegate.RedirectPrompt;
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.RepostConfirmPrompt;
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.SharePrompt;
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.TextPrompt;
+import org.mozilla.geckoview.GeckoSession.PromptDelegate.WebAuthnRelatedOriginPrompt;
 
 /* package */ class PromptController {
   private static final String LOGTAG = "Prompts";
@@ -204,6 +206,27 @@ import org.mozilla.geckoview.GeckoSession.PromptDelegate.TextPrompt;
         final GeckoSession session,
         final PromptDelegate delegate) {
       return delegate.onBeforeUnloadPrompt(session, prompt);
+    }
+  }
+
+  private static final class WebAuthnRelatedOriginHandler
+      implements PromptHandler<WebAuthnRelatedOriginPrompt> {
+    @Override
+    public WebAuthnRelatedOriginPrompt newPrompt(final GeckoBundle info, final Observer observer) {
+      return new WebAuthnRelatedOriginPrompt(
+          info.getString("id"),
+          info.getString("origin"),
+          info.getString("rpId"),
+          info.getBoolean("isCreate"),
+          observer);
+    }
+
+    @Override
+    public GeckoResult<PromptResponse> callDelegate(
+        final WebAuthnRelatedOriginPrompt prompt,
+        final GeckoSession session,
+        final PromptDelegate delegate) {
+      return delegate.onWebAuthnRelatedOriginPrompt(session, prompt);
     }
   }
 
@@ -445,6 +468,19 @@ import org.mozilla.geckoview.GeckoSession.PromptDelegate.TextPrompt;
     public GeckoResult<PromptResponse> callDelegate(
         final PopupPrompt prompt, final GeckoSession session, final PromptDelegate delegate) {
       return delegate.onPopupPrompt(session, prompt);
+    }
+  }
+
+  private static final class RedirectHandler implements PromptHandler<RedirectPrompt> {
+    @Override
+    public RedirectPrompt newPrompt(final GeckoBundle info, final Observer observer) {
+      return new RedirectPrompt(info.getString("id"), info.getString("targetUri"), observer);
+    }
+
+    @Override
+    public GeckoResult<PromptResponse> callDelegate(
+        final RedirectPrompt prompt, final GeckoSession session, final PromptDelegate delegate) {
+      return delegate.onRedirectPrompt(session, prompt);
     }
   }
 
@@ -776,6 +812,7 @@ import org.mozilla.geckoview.GeckoSession.PromptDelegate.TextPrompt;
   static {
     sPromptHandlers.register(new AlertHandler(), "alert");
     sPromptHandlers.register(new BeforeUnloadHandler(), "beforeUnload");
+    sPromptHandlers.register(new WebAuthnRelatedOriginHandler(), "webauthn-related-origin");
     sPromptHandlers.register(new ButtonHandler(), "button");
     sPromptHandlers.register(new TextHandler(), "text");
     sPromptHandlers.register(new AuthHandler(), "auth");
@@ -786,6 +823,7 @@ import org.mozilla.geckoview.GeckoSession.PromptDelegate.TextPrompt;
     sPromptHandlers.register(new FileHandler(), "file");
     sPromptHandlers.register(new FolderUploadHandler(), "folderUpload");
     sPromptHandlers.register(new PopupHandler(), "popup");
+    sPromptHandlers.register(new RedirectHandler(), "redirect");
     sPromptHandlers.register(new RepostHandler(), "repost");
     sPromptHandlers.register(new ShareHandler(), "share");
     sPromptHandlers.register(new LoginSaveHandler(), "Autocomplete:Save:Login");

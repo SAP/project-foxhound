@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,7 +19,7 @@ namespace mozilla {
 namespace layers {
 
 TextureWrapperD3D11Allocator::TextureWrapperD3D11Allocator()
-    : mThread(SharedThreadPool::Get("TextureUpdate"_ns, 1)),
+    : mThread(SharedThreadPool::Get("TextureUpdate", 1)),
       mMutex("TextureWrapperD3D11Allocator::mMutex") {}
 TextureWrapperD3D11Allocator::~TextureWrapperD3D11Allocator() = default;
 
@@ -48,14 +46,19 @@ RefPtr<ID3D11Texture2D> TextureWrapperD3D11Allocator::CreateOrRecycle(
       return nullptr;
     }
 
-    if (aSurfaceFormat != gfx::SurfaceFormat::NV12) {
+    DXGI_FORMAT dxgiFormat;
+    if (aSurfaceFormat == gfx::SurfaceFormat::NV12) {
+      dxgiFormat = DXGI_FORMAT_NV12;
+    } else if (aSurfaceFormat == gfx::SurfaceFormat::P010) {
+      dxgiFormat = DXGI_FORMAT_P010;
+    } else {
       MOZ_ASSERT_UNREACHABLE("unexpected to be called");
       return nullptr;
     }
-
-    if (mSize != aSize) {
+    if (mSize != aSize || mDXGIFormat != dxgiFormat) {
       ClearAllTextures(lock);
       mSize = aSize;
+      mDXGIFormat = dxgiFormat;
     }
 
     if (!mRecycledTextures.empty()) {
@@ -66,7 +69,7 @@ RefPtr<ID3D11Texture2D> TextureWrapperD3D11Allocator::CreateOrRecycle(
   }
 
   CD3D11_TEXTURE2D_DESC desc(
-      DXGI_FORMAT_NV12, mSize.width, mSize.height, 1, 1,
+      mDXGIFormat, mSize.width, mSize.height, 1, 1,
       D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE);
 
   RefPtr<ID3D11Texture2D> texture2D;
@@ -76,7 +79,7 @@ RefPtr<ID3D11Texture2D> TextureWrapperD3D11Allocator::CreateOrRecycle(
     return nullptr;
   }
 
-  EnsureStagingTextureNV12(device);
+  EnsureStagingTexture(device);
   if (!mStagingTexture) {
     return nullptr;
   }
@@ -84,7 +87,7 @@ RefPtr<ID3D11Texture2D> TextureWrapperD3D11Allocator::CreateOrRecycle(
   return texture2D;
 }
 
-void TextureWrapperD3D11Allocator::EnsureStagingTextureNV12(
+void TextureWrapperD3D11Allocator::EnsureStagingTexture(
     RefPtr<ID3D11Device> aDevice) {
   MOZ_ASSERT(mThread->IsOnCurrentThread());
   MOZ_ASSERT(aDevice);
@@ -96,7 +99,7 @@ void TextureWrapperD3D11Allocator::EnsureStagingTextureNV12(
   D3D11_TEXTURE2D_DESC desc = {};
   desc.Width = mSize.width;
   desc.Height = mSize.height;
-  desc.Format = DXGI_FORMAT_NV12;
+  desc.Format = mDXGIFormat;
   desc.MipLevels = 1;
   desc.ArraySize = 1;
   desc.Usage = D3D11_USAGE_STAGING;
@@ -114,7 +117,7 @@ void TextureWrapperD3D11Allocator::EnsureStagingTextureNV12(
   mStagingTexture = stagingTexture;
 }
 
-RefPtr<ID3D11Texture2D> TextureWrapperD3D11Allocator::GetStagingTextureNV12() {
+RefPtr<ID3D11Texture2D> TextureWrapperD3D11Allocator::GetStagingTexture() {
   MOZ_ASSERT(mThread->IsOnCurrentThread());
 
   return mStagingTexture;
@@ -148,7 +151,7 @@ void TextureWrapperD3D11Allocator::RecycleTexture(
 
   {
     MutexAutoLock lock(mMutex);
-    if (device != mDevice || desc.Format != DXGI_FORMAT_NV12 ||
+    if (device != mDevice || desc.Format != mDXGIFormat ||
         desc.Width != static_cast<UINT>(mSize.width) ||
         desc.Height != static_cast<UINT>(mSize.height)) {
       return;
@@ -211,8 +214,7 @@ RefPtr<TextureHost> TextureHostWrapperD3D11::CreateFromBufferTexture(
   }
 
   auto* bufferTexture = aTextureHost->AsBufferTextureHost();
-  if (!bufferTexture ||
-      bufferTexture->GetFormat() != gfx::SurfaceFormat::YUV420) {
+  if (!bufferTexture || !bufferTexture->IsYCbCr()) {
     MOZ_ASSERT_UNREACHABLE("unexpected to be called");
     return nullptr;
   }
@@ -232,10 +234,19 @@ RefPtr<TextureHost> TextureHostWrapperD3D11::CreateFromBufferTexture(
   auto colorRange = bufferTexture->GetColorRange();
   auto chromaSubsampling = bufferTexture->GetChromaSubsampling();
 
-  // Check if data could be used with NV12
+  gfx::SurfaceFormat outputFormat;
+  if (colorDepth == gfx::ColorDepth::COLOR_8) {
+    outputFormat = gfx::SurfaceFormat::NV12;
+  } else if (colorDepth == gfx::ColorDepth::COLOR_10) {
+    outputFormat = gfx::SurfaceFormat::P010;
+  } else {
+    outputFormat = gfx::SurfaceFormat::UNKNOWN;
+  }
+
+  // Check if data could be used with NV12/P010
   // XXX support gfx::ColorRange::FULL
   if (size.width % 2 != 0 || size.height % 2 != 0 ||
-      colorDepth != gfx::ColorDepth::COLOR_8 ||
+      outputFormat == gfx::SurfaceFormat::UNKNOWN ||
       colorRange != gfx::ColorRange::LIMITED ||
       chromaSubsampling != gfx::ChromaSubsampling::HALF_WIDTH_AND_HEIGHT) {
     if (profiler_thread_is_being_profiled_for_markers()) {
@@ -252,15 +263,17 @@ RefPtr<TextureHost> TextureHostWrapperD3D11::CreateFromBufferTexture(
   auto id = GpuProcessD3D11TextureMap::GetNextTextureId();
   auto flags = aTextureHost->GetFlags() | TextureFlags::SOFTWARE_DECODED_VIDEO;
 
+  auto transferFunction = bufferTexture->GetTransferFunction();
   auto colorSpace = ToColorSpace2(bufferTexture->GetYUVColorSpace());
 
   auto descD3D10 = SurfaceDescriptorD3D10(
       nullptr, Some(id),
-      /* arrayIndex */ 0, gfx::SurfaceFormat::NV12, size, colorSpace,
-      colorRange, /* hasKeyedMutex */ false, /* fencesHolderId */ Nothing());
+      /* arrayIndex */ 0, outputFormat, size, colorSpace, colorRange,
+      transferFunction, /* hdrMetadata */ Nothing(),
+      /* hasKeyedMutex */ false,
+      /* fencesHolderId */ Nothing());
 
-  RefPtr<DXGITextureHostD3D11> textureHostD3D11 =
-      new DXGITextureHostD3D11(flags, descD3D10);
+  RefPtr textureHostD3D11 = MakeRefPtr<DXGITextureHostD3D11>(flags, descD3D10);
 
   RefPtr<TextureHostWrapperD3D11> textureHostWrapper =
       new TextureHostWrapperD3D11(flags, aAllocator, id, textureHostD3D11,

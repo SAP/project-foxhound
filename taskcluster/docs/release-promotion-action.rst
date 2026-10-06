@@ -5,14 +5,14 @@ The release promotion action is how Releng triggers `release promotion`_
 taskgraphs. The one action covers all release promotion needs: different
 *flavors* allow for us to trigger the different :ref:`release promotion phases`
 for each product. The input schema and release promotion flavors are defined in
-the `release promotion action`_.
+the :searchfox:`release promotion action <taskcluster/gecko_taskgraph/actions/release_promotion.py>`.
 
 .. _snowman model:
 
 The snowman model
 -----------------
 
-The `release promotion action`_ allows us to chain multiple taskgraphs (aka graphs, aka task groups) together.
+The :searchfox:`release promotion action <taskcluster/gecko_taskgraph/actions/release_promotion.py>` allows us to chain multiple taskgraphs (aka graphs, aka task groups) together.
 Essentially, we're using `optimization`_ logic to replace task labels in the
 current taskgraph with task IDs from the previous taskgraph(s).
 
@@ -84,7 +84,7 @@ specifying kinds to rebuild.
 Release promotion action mechanics
 ----------------------------------
 
-There are a number of inputs defined in the `release promotion action`_. Among these are the ``previous_graph_ids``, which is an ordered list of taskGroupIds of the task groups that we want to build our task group, off of. In the :ref:`snowman model`, these define the already-built portions of the snowman.
+There are a number of inputs defined in the :searchfox:`release promotion action <taskcluster/gecko_taskgraph/actions/release_promotion.py>`. Among these are the ``previous_graph_ids``, which is an ordered list of taskGroupIds of the task groups that we want to build our task group, off of. In the :ref:`snowman model`, these define the already-built portions of the snowman.
 
 The action downloads the ``parameters.yml`` from the initial ``previous_graph_id``, which matches the decision- or action- taskId. (See :ref:`taskid vs taskgroupid`.) This is most likely the decision task of the revision to promote, which is generally the same revision the release promotion action is run against.
 
@@ -104,7 +104,7 @@ We've added ``_rc`` suffix flavors, to deal with special RC behavior around roll
 
 We are planning on adding ``_partners`` suffix flavors, to allow for creating partner repacks off-cycle.
 
-The various flavors are defined in the `release promotion action`_.
+The various flavors are defined in the :searchfox:`release promotion action <taskcluster/gecko_taskgraph/actions/release_promotion.py>`.
 
 Triggering the release promotion action via Treeherder
 ------------------------------------------------------
@@ -143,16 +143,15 @@ The full command for a ``promote_firefox`` test might look like::
         -p /src/gecko/params/maple-promote-firefox.yml \
         release_promotion_action > ../promote.json
 
-The input file (in the above example, that would be ``/src/gecko/params/promote_firefox.yml``), contains the action inputs. The input schema is defined in the `release promotion action`_. Previous example inputs are embedded in previous promotion task group action task definitions (``task.extra.action.input``).
+The input file (in the above example, that would be ``/src/gecko/params/promote_firefox.yml``), contains the action inputs. The input schema is defined in the :searchfox:`release promotion action <taskcluster/gecko_taskgraph/actions/release_promotion.py>`. Previous example inputs are embedded in previous promotion task group action task definitions (``task.extra.action.input``).
 
 The ``parameters.yml`` file is downloadable from a previous decision or action task.
 
 .. _release promotion: release-promotion.html
 .. _optimization: optimization.html
 .. _kinds: kinds.html
-.. _release promotion action: https://searchfox.org/mozilla-central/source/taskcluster/gecko_taskgraph/actions/release_promotion.py
 .. _Treeherder: https://treeherder.mozilla.org
 .. _Release Promotion Projects: https://searchfox.org/mozilla-central/search?q=RELEASE_PROMOTION_PROJECTS&path=taskcluster/gecko_taskgraph/util/attributes.py
 .. _releasewarrior docs: https://github.com/mozilla-releng/releasewarrior-2.0/blob/master/docs/release-promotion/desktop/howto.md#how
 .. _trigger_action.py: https://searchfox.org/build-central/source/tools/buildfarm/release/trigger_action.py#118
-.. _.taskcluster.yml: https://searchfox.org/mozilla-central/source/.taskcluster.yml
+.. _.taskcluster.yml: :searchfox:`.taskcluster.yml`

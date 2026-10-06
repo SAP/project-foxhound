@@ -43,7 +43,7 @@ def response(last_key, content, expire_version, writer, renewal):
     global write_header
     global total_count
     for key, value in content.items():
-        if (key == "$schema") or (key == "no_lint"):
+        if key in {"$schema", "no_lint"}:
             continue
         if key == "disabled":
             continue
@@ -118,7 +118,7 @@ with open(METRICS_FILENAME) as f:
         arg1 = sys.argv[1]
     except Exception:
         print("usage is to include argument of the form `100`")
-        quit()
+        sys.exit()
 
     # parse metrics.yaml to json
     write_header = True

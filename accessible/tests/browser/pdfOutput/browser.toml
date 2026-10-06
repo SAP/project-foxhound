@@ -1,0 +1,19 @@
+[DEFAULT]
+subsuite = "a11y"
+support-files = [
+  "head.js",
+  "!/accessible/tests/browser/shared-head.js",
+  "!/accessible/tests/mochitest/*.js",
+  "!/toolkit/components/printing/tests/head.js",
+]
+prefs = [
+  "security.allow_eval_with_system_principal=true",
+  "print.experimental.skpdf=true",
+  "accessibility.tagged_pdf_output.enabled=true",
+]
+
+["browser_a11yLifecycle.js"]
+
+["browser_outline.js"]
+
+["browser_structTree.js"]

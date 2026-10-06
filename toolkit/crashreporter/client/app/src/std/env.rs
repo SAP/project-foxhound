@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use super::mock::{mock_key, MockKey};
+pub use std::env::consts;
 pub use std::env::VarError;
 use std::ffi::{OsStr, OsString};
 

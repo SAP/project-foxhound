@@ -70,6 +70,10 @@ public class Environment {
     return BuildConfig.MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_PROCESS;
   }
 
+  public boolean isAppZygoteProcess() {
+    return getEnvVar("MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_WITH_ZYGOTE").equals("1");
+  }
+
   public long getScaledTimeoutMillis() {
     if (isX86()) {
       return isEmulator() ? DEFAULT_X86_EMULATOR_TIMEOUT_MILLIS : DEFAULT_X86_DEVICE_TIMEOUT_MILLIS;

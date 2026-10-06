@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsHttpConnectionInfo_h__
-#define nsHttpConnectionInfo_h__
+#ifndef nsHttpConnectionInfo_h_
+#define nsHttpConnectionInfo_h_
 
 #include "nsHttp.h"
 #include "nsProxyInfo.h"
@@ -16,6 +14,7 @@
 #include "mozilla/AlreadyAddRefed.h"
 #include "ARefBase.h"
 #include "nsIRequest.h"
+#include "mozilla/net/happy_eyeballs_glue.h"
 
 //-----------------------------------------------------------------------------
 // nsHttpConnectionInfo - holds the properties of a connection
@@ -64,9 +63,9 @@ class nsHttpConnectionInfo final : public ARefBase {
   DeserializeHttpConnectionInfoCloneArgs(
       const HttpConnectionInfoCloneArgs& aInfoArgs);
 
-  static void BuildOriginFrameHashKey(nsACString& newKey,
-                                      nsHttpConnectionInfo* ci,
-                                      const nsACString& host, int32_t port);
+  static HashNumber BuildOriginFrameHashKey(nsHttpConnectionInfo* ci,
+                                            const nsACString& host,
+                                            int32_t port);
 
  private:
   virtual ~nsHttpConnectionInfo() {
@@ -90,6 +89,7 @@ class nsHttpConnectionInfo final : public ARefBase {
     AnonymousAllowClientCert,
     FallbackConnection,
     WebTransport,
+    HappyEyeballs,
     End,
   };
   constexpr inline auto UnderlyingIndex(HashKeyIndex aIndex) const {
@@ -115,8 +115,16 @@ class nsHttpConnectionInfo final : public ARefBase {
   // mRoutedPort and mNPNToken will be replaced as well.
   already_AddRefed<nsHttpConnectionInfo> CloneAndAdoptHTTPSSVCRecord(
       nsISVCBRecord* aRecord) const;
-  void CloneAsDirectRoute(nsHttpConnectionInfo** outCI);
+  already_AddRefed<nsHttpConnectionInfo> CloneAndAdoptPortAndAlpn(
+      uint16_t aPort,
+      happy_eyeballs::ConnectionAttemptHttpVersions aProtocol) const;
+  void CloneAsDirectRoute(nsHttpConnectionInfo** outCI,
+                          nsProxyInfo* aProxyInfo = nullptr);
+
+  already_AddRefed<nsHttpConnectionInfo> CreateConnectUDPFallbackConnInfo();
+
   [[nodiscard]] nsresult CreateWildCard(nsHttpConnectionInfo** outParam);
+  bool IsWildCard() const { return mIsWildCard; }
 
   const char* ProxyHost() const {
     return mProxyInfo ? mProxyInfo->Host().get() : nullptr;
@@ -168,6 +176,11 @@ class nsHttpConnectionInfo final : public ARefBase {
   bool GetAnonymous() const {
     return GetHashCharAt(HashKeyIndex::Anonymous) == 'A';
   }
+  void AnonymousInvertedHashKey(nsACString& aResult) const {
+    aResult = mHashKey;
+    aResult.BeginWriting()[UnderlyingIndex(HashKeyIndex::Anonymous)] =
+        GetAnonymous() ? '.' : 'A';
+  }
   void SetPrivate(bool priv) {
     SetHashCharAt(priv ? 'P' : '.', HashKeyIndex::Private);
   }
@@ -211,6 +224,17 @@ class nsHttpConnectionInfo final : public ARefBase {
     return GetHashCharAt(HashKeyIndex::FallbackConnection) == 'F';
   }
 
+  void SetHappyEyeballsEnabled(bool aEnabled) {
+    SetHashCharAt(aEnabled ? 'H' : '.', HashKeyIndex::HappyEyeballs);
+    if (aEnabled && !mHappyEyeballsEnabled) {
+      mHappyEyeballsEnabled = aEnabled;
+      RebuildHashKey();
+    }
+  }
+  bool GetHappyEyeballsEnabled() const {
+    return GetHashCharAt(HashKeyIndex::HappyEyeballs) == 'H';
+  }
+
   void SetTlsFlags(uint32_t aTlsFlags);
   uint32_t GetTlsFlags() const { return mTlsFlags; }
 
@@ -236,10 +260,13 @@ class nsHttpConnectionInfo final : public ARefBase {
   void SetWebTransportId(uint64_t id);
   uint32_t GetWebTransportId() const { return mWebTransportId; };
 
-  const nsCString& GetNPNToken() { return mNPNToken; }
+  const nsCString& GetNPNToken() const { return mNPNToken; }
+  const nsCString& GetProxyNPNToken() const { return mProxyNPNToken; }
   const nsCString& GetUsername() { return mUsername; }
 
-  const OriginAttributes& GetOriginAttributes() { return mOriginAttributes; }
+  const OriginAttributes& GetOriginAttributes() const {
+    return mOriginAttributes;
+  }
 
   // Returns true for any kind of proxy (http, socks, https, etc..)
   bool UsingProxy();
@@ -273,6 +300,7 @@ class nsHttpConnectionInfo final : public ARefBase {
   }
 
   bool IsHttp3() const { return mIsHttp3; }
+  bool IsHttp3ProxyConnection() const { return mIsHttp3ProxyConnection; }
 
   void SetHasIPHintAddress(bool aHasIPHint) { mHasIPHintAddress = aHasIPHint; }
   bool HasIPHintAddress() const { return mHasIPHintAddress; }
@@ -309,6 +337,7 @@ class nsHttpConnectionInfo final : public ARefBase {
   // if will use CONNECT with http proxy
   bool mUsingConnect = false;
   nsCString mNPNToken;
+  nsCString mProxyNPNToken;
   OriginAttributes mOriginAttributes;
   nsIRequest::TRRMode mTRRMode;
 
@@ -321,6 +350,7 @@ class nsHttpConnectionInfo final : public ARefBase {
                         // tls1.3. If the tls version is till not know or it
                         // is 1.3 or greater the value will be false.
   bool mIsHttp3 = false;
+  bool mIsHttp3ProxyConnection = false;
   bool mWebTransport = false;
 
   bool mHasIPHintAddress = false;
@@ -328,6 +358,9 @@ class nsHttpConnectionInfo final : public ARefBase {
 
   uint64_t mWebTransportId = 0;  // current dedicated Id only used for
                                  // Webtransport, zero means not dedicated
+  bool mIsWildCard = false;
+
+  bool mHappyEyeballsEnabled = false;
 
   // for RefPtr
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(nsHttpConnectionInfo, override)
@@ -336,4 +369,4 @@ class nsHttpConnectionInfo final : public ARefBase {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // nsHttpConnectionInfo_h__
+#endif  // nsHttpConnectionInfo_h_

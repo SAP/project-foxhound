@@ -1,0 +1,32 @@
+header = """/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsStringFwd.h"
+#include "nsTArray.h"
+
+namespace mozilla::sdp::ffi {
+struct SdpAttribute;
+struct SdpAttributeImageAttrSet;
+struct SdpAttributeSimulcastId;
+struct SdpAttributeSimulcastVersion;
+struct SdpAttributeSsrc;
+struct SdpAttributeSsrc;
+struct SdpBandwidth;
+struct SdpMedia;
+struct SdpParserError;
+struct SdpSession;
+}
+"""
+autogen_warning = """/* DO NOT MODIFY THIS MANUALLY! This file was generated using cbindgen. */"""
+include_version = true
+include_guard = "mozilla_sdp_RsdparsaSdpInc_h"
+namespaces = ["mozilla", "sdp", "ffi"]
+braces = "SameLine"
+line_length = 100
+tab_width = 2
+language = "C++"
+includes = ["nsError.h"]
+
+[export.rename]
+"ThinVec" = "nsTArray"

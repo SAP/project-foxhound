@@ -26,7 +26,6 @@ timestamps:
       - perf-telemetry-alerts@mozilla.com
     expires: never
     unit: ms
-    telemetry_mirror: TIMESTAMPS_FIRST_PAINT
 
   first_paint_two:
     type: quantity
@@ -45,4 +44,3 @@ timestamps:
       - gfx-telemetry-alerts@mozilla.com
     expires: never
     unit: ms
-    telemetry_mirror: TIMESTAMPS_FIRST_PAINT_TWO

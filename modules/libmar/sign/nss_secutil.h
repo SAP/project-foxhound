@@ -14,7 +14,6 @@
 #include "hasht.h"
 #include "cert.h"
 #include "keyhi.h"
-#include <stdint.h>
 
 typedef struct {
   enum {

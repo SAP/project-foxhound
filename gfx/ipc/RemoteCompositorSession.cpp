@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,8 +10,7 @@
 #include "mozilla/layers/APZCTreeManagerChild.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "mozilla/layers/GeckoContentController.h"
-#include "mozilla/Unused.h"
-#include "nsBaseWidget.h"
+#include "nsIWidget.h"
 #if defined(MOZ_WIDGET_ANDROID)
 #  include "mozilla/layers/UiCompositorControllerChild.h"
 #endif  // defined(MOZ_WIDGET_ANDROID)
@@ -25,11 +22,11 @@ using namespace gfx;
 using namespace widget;
 
 RemoteCompositorSession::RemoteCompositorSession(
-    nsBaseWidget* aWidget, CompositorBridgeChild* aChild,
-    CompositorWidgetDelegate* aWidgetDelegate, APZCTreeManagerChild* aAPZ,
-    const LayersId& aRootLayerTreeId)
+    nsIWidget* aWidget, CompositorBridgeChild* aChild,
+    CompositorWidgetDelegate* aWidgetDelegate,
+    RefPtr<APZCTreeManagerChild>&& aAPZ, const LayersId& aRootLayerTreeId)
     : CompositorSession(aWidget, aWidgetDelegate, aChild, aRootLayerTreeId),
-      mAPZ(aAPZ) {
+      mAPZ(std::move(aAPZ)) {
   MOZ_ASSERT(!gfxPlatform::IsHeadless());
   GPUProcessManager::Get()->RegisterRemoteProcessSession(this);
   if (mAPZ) {
@@ -48,7 +45,7 @@ RemoteCompositorSession::~RemoteCompositorSession() {
 void RemoteCompositorSession::NotifySessionLost() {
   // Hold a reference to mWidget since NotifyCompositorSessionLost may
   // release the last reference mid-execution.
-  RefPtr<nsBaseWidget> widget(mWidget);
+  RefPtr<nsIWidget> widget(mWidget);
   // Re-entrancy should be impossible: when we are being notified of a lost
   // session, we have by definition not shut down yet. We will shutdown, but
   // then will be removed from the notification list.

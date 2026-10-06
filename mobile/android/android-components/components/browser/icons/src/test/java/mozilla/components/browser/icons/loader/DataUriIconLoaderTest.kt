@@ -9,10 +9,10 @@ import mozilla.components.browser.icons.Icon
 import mozilla.components.browser.icons.IconRequest
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class DataUriIconLoaderTest {
@@ -60,9 +60,9 @@ class DataUriIconLoaderTest {
             ),
         )
 
-        assertTrue(result is IconLoader.Result.BytesResult)
+        assertIs<IconLoader.Result.BytesResult>(result)
 
-        val data = (result as IconLoader.Result.BytesResult).bytes
+        val data = result.bytes
         assertEquals(Icon.Source.INLINE, result.source)
 
         assertNotNull(data)
@@ -82,9 +82,9 @@ class DataUriIconLoaderTest {
             ),
         )
 
-        assertTrue(result is IconLoader.Result.BytesResult)
+        assertIs<IconLoader.Result.BytesResult>(result)
 
-        val data = (result as IconLoader.Result.BytesResult).bytes
+        val data = result.bytes
         assertEquals(Icon.Source.INLINE, result.source)
 
         val text = String(data, Charsets.UTF_8)

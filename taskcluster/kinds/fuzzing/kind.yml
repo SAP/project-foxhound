@@ -16,7 +16,8 @@ kind-dependencies:
     - build
 
 task-defaults:
-    worker-type: b-linux-gcp
+    run-on-repo-type: [hg]
+    worker-type: b-linux
     description: Python Fuzzing Smoke Tests
     worker:
         max-run-time: 1800
@@ -35,7 +36,6 @@ task-defaults:
 tasks:
     simple:
         platform: linux64/opt
-        worker-type: b-linux-gcp
         require-build:
             linux64/opt: build-linux64/opt
         description: Simple Fuzzing Test
@@ -44,9 +44,9 @@ tasks:
         fetches:
             build:
                 - target.jsshell.zip
-                - target.fuzztest.tests.tar.gz
+                - target.fuzztest.tests.tar.zst
         worker:
-            docker-image: {in-tree: ubuntu1804-test}
+            docker-image: {in-tree: ubuntu2404-test}
             env:
                 LD_LIBRARY_PATH: /builds/worker/fetches
                 JSSHELL: ./js
@@ -56,49 +56,10 @@ tasks:
                 cd $MOZ_FETCHES_DIR &&
                 python3 tools/fuzzing/smoke/smoke.py
 
-    grizzly-linux32-opt:
-        platform: linux32/asan
-        worker-type: t-linux-docker
-        worker:
-            docker-image: {in-tree: ubuntu1804-test}
-            env:
-                GECKO_BINARY_PATH: "$MOZ_FETCHES_DIR/firefox/firefox"
-                ASAN_OPTIONS: "malloc_context_size=20:rss_limit_heap_profile=false:max_malloc_fill_size=4096:quarantine_size_mb=64"
-        require-build:
-            linux32/asan: build-linux-asan-fuzzing/opt
-        run:
-            using: python-test
-            subsuite: fuzzing
-        fetches:
-            build:
-                - artifact: target.tar.xz
-                - artifact: target.gtest.tests.tar.gz
-                - artifact: target.mozinfo.json
-
-    grizzly-linux32-debug:
-        platform: linux32/debug
-        worker-type: t-linux-docker
-        worker:
-            docker-image: {in-tree: ubuntu1804-test}
-            env:
-                GECKO_BINARY_PATH: "$MOZ_FETCHES_DIR/firefox/firefox"
-                ASAN_OPTIONS: "malloc_context_size=20:rss_limit_heap_profile=false:max_malloc_fill_size=4096:quarantine_size_mb=64"
-        require-build:
-            linux32/debug: build-linux-fuzzing/debug
-        run:
-            using: python-test
-            subsuite: fuzzing
-        fetches:
-            build:
-                - artifact: target.tar.xz
-                - artifact: target.gtest.tests.tar.gz
-                - artifact: target.mozinfo.json
-
     grizzly-linux64-opt:
         platform: linux64/asan
-        worker-type: b-linux-gcp
         worker:
-            docker-image: {in-tree: ubuntu1804-test}
+            docker-image: {in-tree: ubuntu2404-test}
             env:
                 GECKO_BINARY_PATH: "$MOZ_FETCHES_DIR/firefox/firefox"
         require-build:
@@ -109,14 +70,13 @@ tasks:
         fetches:
             build:
                 - artifact: target.tar.xz
-                - artifact: target.gtest.tests.tar.gz
+                - artifact: target.gtest.tests.tar.zst
                 - artifact: target.mozinfo.json
 
     grizzly-linux64-debug:
         platform: linux64/debug
-        worker-type: b-linux-gcp
         worker:
-            docker-image: {in-tree: ubuntu1804-test}
+            docker-image: {in-tree: ubuntu2404-test}
             env:
                 GECKO_BINARY_PATH: "$MOZ_FETCHES_DIR/firefox/firefox"
         require-build:
@@ -127,14 +87,13 @@ tasks:
         fetches:
             build:
                 - artifact: target.tar.xz
-                - artifact: target.gtest.tests.tar.gz
+                - artifact: target.gtest.tests.tar.zst
                 - artifact: target.mozinfo.json
 
     grizzly-linux64-tsan:
         platform: linux64/tsan
-        worker-type: b-linux-gcp
         worker:
-            docker-image: {in-tree: ubuntu1804-test}
+            docker-image: {in-tree: ubuntu2404-test}
             env:
                 GECKO_BINARY_PATH: "$MOZ_FETCHES_DIR/firefox/firefox"
         require-build:
@@ -145,7 +104,7 @@ tasks:
         fetches:
             build:
                 - artifact: target.tar.xz
-                - artifact: target.gtest.tests.tar.gz
+                - artifact: target.gtest.tests.tar.zst
                 - artifact: target.mozinfo.json
 
     grizzly-windows-debug:
@@ -159,6 +118,7 @@ tasks:
         run:
             using: python-test
             subsuite: fuzzing
+        run-on-projects: []
         fetches:
             build:
                 - target.zip
@@ -178,6 +138,7 @@ tasks:
         run:
             using: python-test
             subsuite: fuzzing
+        run-on-projects: []
         fetches:
             build:
                 - target.zip
@@ -193,6 +154,7 @@ tasks:
         run:
             using: python-test
             subsuite: fuzzing
+        run-on-projects: []
         fetches:
             build:
                 - target.zip
@@ -212,6 +174,7 @@ tasks:
         run:
             using: python-test
             subsuite: fuzzing
+        run-on-projects: []
         fetches:
             build:
                 - target.zip
@@ -227,6 +190,7 @@ tasks:
         run:
             using: python-test
             subsuite: fuzzing
+        run-on-projects: []
         fetches:
             build:
                 - target.dmg
@@ -242,6 +206,7 @@ tasks:
         run:
             using: python-test
             subsuite: fuzzing
+        run-on-projects: []
         fetches:
             build:
                 - target.dmg
@@ -257,6 +222,7 @@ tasks:
         run:
             using: python-test
             subsuite: fuzzing
+        run-on-projects: []
         fetches:
             build:
                 - target.dmg
@@ -272,6 +238,7 @@ tasks:
         run:
             using: python-test
             subsuite: fuzzing
+        run-on-projects: []
         fetches:
             build:
                 - target.dmg

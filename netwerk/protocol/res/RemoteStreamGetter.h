@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef RemoteStreamGetter_h___
-#define RemoteStreamGetter_h___
+#ifndef RemoteStreamGetter_h_
+#define RemoteStreamGetter_h_
 
 #include "nsIChannel.h"
 #include "nsIInputStreamPump.h"
@@ -65,4 +63,4 @@ class RemoteStreamGetter final : public nsICancelable {
 }  // namespace net
 }  // namespace mozilla
 
-#endif /* RemoteStreamGetter_h___ */
+#endif /* RemoteStreamGetter_h_ */

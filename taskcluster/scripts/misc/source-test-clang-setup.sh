@@ -20,6 +20,10 @@ ac_add_options --enable-clang-plugin
 ac_add_options --enable-gczeal
 # Do not treat warnings as errors
 ac_add_options --disable-warnings-as-errors
+# Avoid redundnant entries in compile_commands
+ac_add_options --disable-unified-build
+# We don't want to analyse tests
+ac_add_options --disable-tests
 EOT
 
 # Mach lookup clang-tidy in clang-tools

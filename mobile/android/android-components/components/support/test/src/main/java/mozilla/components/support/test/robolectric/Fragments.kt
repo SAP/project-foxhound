@@ -18,7 +18,23 @@ import org.robolectric.Robolectric
  * Activity.
  */
 inline fun <T : Fragment> createAddedTestFragment(fragmentTag: String = "test", fragmentFactory: () -> T): T {
-    val activity = Robolectric.buildActivity(FragmentActivity::class.java)
+    return createAddedTestFragmentWithActivity<T, FragmentActivity>(fragmentTag = fragmentTag, fragmentFactory = fragmentFactory)
+}
+
+/**
+ * Set up an added [Fragment] to a [FragmentActivity] that has been initialized to a resumed state.
+ *
+ * @param fragmentTag the name that will be used to tag the fragment inside the [FragmentManager].
+ * @param fragmentFactory a lambda function that returns a Fragment that will be added to the Activity.
+ *
+ * @return The same [Fragment] that was returned from [fragmentFactory] after it got added to the
+ * Activity.
+ */
+inline fun <T : Fragment, reified A : FragmentActivity> createAddedTestFragmentWithActivity(
+    fragmentTag: String = "test",
+    fragmentFactory: () -> T,
+): T {
+    val activity = Robolectric.buildActivity(A::class.java)
         .create()
         .start()
         .resume()

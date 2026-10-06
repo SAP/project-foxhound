@@ -5,7 +5,6 @@
 Build a command to run `mach release push-scriptworker-canaries`.
 """
 
-
 from shlex import quote as shell_quote
 
 from mozrelease.scriptworker_canary import TASK_TYPES
@@ -40,10 +39,11 @@ def build_command(config, jobs):
             command.extend(["--ssh-key-secret", ssh_key_secret])
             job.setdefault("scopes", []).append(f"secrets:get:{ssh_key_secret}")
 
-        job.setdefault("run", {}).update(
-            {"using": "mach", "mach": " ".join(map(shell_quote, command))}
-        )
-        job.setdefault("routes", []).extend(
-            [f"notify.email.{address}.on-failed" for address in addresses]
-        )
+        job.setdefault("run", {}).update({
+            "using": "mach",
+            "mach": " ".join(map(shell_quote, command)),
+        })
+        job.setdefault("routes", []).extend([
+            f"notify.email.{address}.on-failed" for address in addresses
+        ])
         yield job

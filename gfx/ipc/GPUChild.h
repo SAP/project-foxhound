@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,7 +19,7 @@ namespace gfx {
 
 class GPUProcessHost;
 
-class GPUChild final : public ipc::CrashReporterHelper<GPUChild>,
+class GPUChild final : public mozilla::ipc::CrashReporterHelper<GPUChild>,
                        public PGPUChild,
                        public gfxVarReceiver {
   typedef mozilla::dom::MemoryReportRequestHost MemoryReportRequestHost;
@@ -33,10 +31,12 @@ class GPUChild final : public ipc::CrashReporterHelper<GPUChild>,
 
   explicit GPUChild(GPUProcessHost* aHost);
 
-  void Init();
+  using InitPromiseType = MozPromise<Ok, Ok, true>;
+  RefPtr<InitPromiseType> Init();
 
-  bool EnsureGPUReady();
-  void MarkWaitForVarUpdate() { mWaitForVarUpdate = true; }
+  bool IsGPUReady() const { return mGPUReady; }
+
+  bool EnsureGPUReady(bool aForceSync = false);
 
   // Notifies that an unexpected GPU process shutdown has been noticed by a
   // different IPDL actor, and the GPU process is being torn down as a result.
@@ -54,10 +54,9 @@ class GPUChild final : public ipc::CrashReporterHelper<GPUChild>,
   void DeletePairedMinidump();
 
   // gfxVarReceiver overrides.
-  void OnVarChanged(const GfxVarUpdate& aVar) override;
+  void OnVarChanged(const nsTArray<GfxVarUpdate>& aVar) override;
 
   // PGPUChild overrides.
-  mozilla::ipc::IPCResult RecvInitComplete(const GPUDeviceData& aData);
   mozilla::ipc::IPCResult RecvDeclareStable();
   mozilla::ipc::IPCResult RecvReportCheckerboard(const uint32_t& aSeverity,
                                                  const nsCString& aLog);
@@ -79,7 +78,7 @@ class GPUChild final : public ipc::CrashReporterHelper<GPUChild>,
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
   mozilla::ipc::IPCResult RecvGraphicsError(const nsCString& aError);
-  mozilla::ipc::IPCResult RecvNotifyUiObservers(const nsCString& aTopic);
+  mozilla::ipc::IPCResult RecvFlushActiveCheckerboardReportsDone();
   mozilla::ipc::IPCResult RecvNotifyDeviceReset(
       const GPUDeviceData& aData, const DeviceResetReason& aReason,
       const DeviceResetDetectPlace& aPlace);
@@ -96,6 +95,7 @@ class GPUChild final : public ipc::CrashReporterHelper<GPUChild>,
   mozilla::ipc::IPCResult RecvUpdateMediaCodecsSupported(
       const media::MediaCodecsSupported& aSupported);
   mozilla::ipc::IPCResult RecvFOGData(ByteBuf&& aBuf);
+  mozilla::ipc::IPCResult RecvReportGLStrings(GfxInfoGLStrings&& aStrings);
 
   bool SendRequestMemoryReport(const uint32_t& aGeneration,
                                const bool& aAnonymize,
@@ -107,10 +107,11 @@ class GPUChild final : public ipc::CrashReporterHelper<GPUChild>,
  private:
   virtual ~GPUChild();
 
+  void OnInitComplete(const GPUDeviceData& aData);
+
   GPUProcessHost* mHost;
   UniquePtr<MemoryReportRequestHost> mMemoryReportRequest;
   bool mGPUReady;
-  bool mWaitForVarUpdate = false;
   bool mUnexpectedShutdown = false;
   // Whether a paired minidump has already been generated, meaning we do not
   // need to create a crash report in ActorDestroy().

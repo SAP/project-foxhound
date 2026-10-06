@@ -1,4 +1,3 @@
-/* -*- js-indent-level: 4; indent-tabs-mode: nil -*- */
 /*
  * e10s event dispatcher from content->chrome
  *
@@ -101,7 +100,7 @@ function testInDifferentProcess() {
  *  * Avoid moving iframes: That causes reloads on mozilla and opera.
  *
  *
- **/
+ */
 var TestRunner = {};
 TestRunner.logEnabled = false;
 TestRunner._currentTest = 0;
@@ -133,16 +132,11 @@ TestRunner._structuredFormatter = new StructuredFormatter();
 
 /**
  * Make sure the tests don't hang indefinitely.
- **/
+ */
 TestRunner._numTimeouts = 0;
 TestRunner._currentTestStartTime = new Date().valueOf();
 TestRunner._timeoutFactor = 1;
-
-/**
- * Used to collect code coverage with the js debugger.
- */
-TestRunner.jscovDirPrefix = "";
-var coverageCollector = {};
+TestRunner._currentTestTimedOut = false;
 
 function record(succeeded, expectedFail, msg) {
   let successInfo;
@@ -213,6 +207,7 @@ TestRunner._checkForHangs = function () {
       var frameWindow =
         (!testInXOriginFrame() && testIframe.contentWindow.wrappedJSObject) ||
         testIframe.contentWindow;
+      TestRunner._currentTestTimedOut = true;
       reportError(frameWindow, "Test timed out.");
       TestRunner.updateUI([{ result: false }]);
 
@@ -262,7 +257,7 @@ TestRunner.requestLongerTimeout = function (factor) {
 
 /**
  * This is used to loop tests
- **/
+ */
 TestRunner.repeat = 0;
 TestRunner._currentLoop = 1;
 
@@ -284,12 +279,12 @@ TestRunner.expectAssertions = function (min, max) {
 
 /**
  * This function is called after generating the summary.
- **/
+ */
 TestRunner.onComplete = null;
 
 /**
  * Adds a failed test case to a list so we can rerun only the failed tests
- **/
+ */
 TestRunner._failedTests = {};
 TestRunner._failureFile = "";
 
@@ -313,7 +308,7 @@ TestRunner.generateFailureList = function () {
 
 /**
  * If logEnabled is true, this is the logger that will be used.
- **/
+ */
 
 // This delimiter is used to avoid interleaving Mochitest/Gecko logs.
 var LOG_DELIMITER = "\ue175\uee31\u2c32\uacbf";
@@ -346,7 +341,7 @@ TestRunner._dumpMessage = function (message) {
   }
 };
 
-// From https://searchfox.org/mozilla-central/source/testing/modules/StructuredLog.sys.mjs
+// From https://searchfox.org/firefox-main/source/testing/modules/StructuredLog.sys.mjs
 TestRunner.structuredLogger = new StructuredLogger(
   "mochitest",
   TestRunner._dumpMessage,
@@ -392,7 +387,7 @@ TestRunner.failureHandler = function () {
 
 /**
  * Toggle element visibility
- **/
+ */
 TestRunner._toggle = function (el) {
   if (el.className == "noshow") {
     el.className = "";
@@ -405,7 +400,7 @@ TestRunner._toggle = function (el) {
 
 /**
  * Creates the iframe that contains a test
- **/
+ */
 TestRunner._makeIframe = function (url, retry) {
   var iframe = $("testframe");
   if (
@@ -503,21 +498,13 @@ TestRunner.dumpPrefContext = function () {
  *
  * The arguments are the URLs of the test to be ran.
  *
- **/
+ */
 TestRunner.runTests = function (/*url...*/) {
   TestRunner.structuredLogger.info("SimpleTest START");
   TestRunner.dumpPrefContext();
   TestRunner.originalTestURL = $("current-test").innerHTML;
 
   SpecialPowers.registerProcessCrashObservers();
-
-  // Initialize code coverage
-  if (TestRunner.jscovDirPrefix != "") {
-    var { CoverageCollector } = SpecialPowers.ChromeUtils.importESModule(
-      "resource://testing-common/CoverageUtils.sys.mjs"
-    );
-    coverageCollector = new CoverageCollector(TestRunner.jscovDirPrefix);
-  }
 
   SpecialPowers.requestResetCoverageCounters().then(() => {
     TestRunner._urls = flattenArguments(arguments);
@@ -540,7 +527,7 @@ TestRunner.runTests = function (/*url...*/) {
 /**
  * Used for running a set of tests in a loop for debugging purposes
  * Takes an array of URLs
- **/
+ */
 TestRunner.resetTests = function (listURLs) {
   TestRunner._currentTest = 0;
   // Reset our "Current-test" line - functionality depends on it
@@ -576,7 +563,7 @@ TestRunner.getNextUrl = function () {
 
 /**
  * Run the next test. If no test remains, calls onComplete().
- **/
+ */
 TestRunner._haltTests = false;
 async function _runNextTest() {
   if (
@@ -588,9 +575,10 @@ async function _runNextTest() {
 
     $("current-test-path").innerHTML = url;
 
-    TestRunner._currentTestStartTimestamp = SpecialPowers.Cu.now();
+    TestRunner._currentTestStartTimestamp = SpecialPowers.ChromeUtils.now();
     TestRunner._currentTestStartTime = new Date().valueOf();
     TestRunner._timeoutFactor = 1;
+    TestRunner._currentTestTimedOut = false;
     TestRunner._expectedMinAsserts = 0;
     TestRunner._expectedMaxAsserts = 0;
 
@@ -679,10 +667,6 @@ async function _runNextTest() {
       }
     }
     TestRunner.generateFailureList();
-
-    if (TestRunner.jscovDirPrefix != "") {
-      coverageCollector.finalize();
-    }
   }
 }
 TestRunner.runNextTest = _runNextTest;
@@ -693,12 +677,12 @@ TestRunner.expectChildProcessCrash = function () {
 
 /**
  * This stub is called by SimpleTest when a test is finished.
- **/
+ */
 TestRunner.testFinished = function (tests) {
   // Need to track subtests recorded here separately or else they'll
   // trigger the `result after SimpleTest.finish()` error.
   var extraTests = [];
-  var result = "OK";
+  var result = "PASS";
 
   // Prevent a test from calling finish() multiple times before we
   // have a chance to unload it.
@@ -706,18 +690,15 @@ TestRunner.testFinished = function (tests) {
     TestRunner._currentTest == TestRunner._lastTestFinished &&
     !TestRunner._loopIsRestarting
   ) {
+    record(false, false, "called finish() multiple times");
     TestRunner.structuredLogger.testEnd(
       TestRunner.currentTestURL,
-      "ERROR",
-      "OK",
+      "FAIL",
+      "PASS",
       "called finish() multiple times"
     );
     TestRunner.updateUI([{ result: false }]);
     return;
-  }
-
-  if (TestRunner.jscovDirPrefix != "") {
-    coverageCollector.recordTestCoverage(TestRunner.currentTestURL);
   }
 
   SpecialPowers.requestDumpCoverageCounters().then(() => {
@@ -752,8 +733,9 @@ TestRunner.testFinished = function (tests) {
         result = "ERROR";
       }
 
-      var unexpectedCrashDumpFiles =
-        await SpecialPowers.findUnexpectedCrashDumpFiles();
+      var unexpectedCrashDumpFiles = SpecialPowers.unwrap(
+        await SpecialPowers.findUnexpectedCrashDumpFiles()
+      );
       TestRunner._expectingProcessCrash = false;
       if (unexpectedCrashDumpFiles.length) {
         let subtest = "unexpected-crash-dump-found";
@@ -800,11 +782,6 @@ TestRunner.testFinished = function (tests) {
         result = result != "CRASH" ? "ERROR" : result;
       }
 
-      SpecialPowers.addProfilerMarker(
-        "TestRunner",
-        { category: "Test", startTime: TestRunner._currentTestStartTimestamp },
-        TestRunner.currentTestURL
-      );
       var runtime = new Date().valueOf() - TestRunner._currentTestStartTime;
 
       if (
@@ -816,6 +793,12 @@ TestRunner.testFinished = function (tests) {
       }
 
       TestRunner.updateUI(tests.concat(extraTests));
+
+      // Check if any tests failed
+      var results = TestRunner.countResults(tests.concat(extraTests));
+      if (results.notOK > 0 && result === "PASS") {
+        result = "FAIL";
+      }
 
       // Don't show the interstitial if we just run one test with no repeats:
       if (TestRunner._urls.length == 1 && TestRunner.repeat <= 1) {
@@ -846,10 +829,10 @@ TestRunner.testFinished = function (tests) {
           var testwin = $("testframe").contentWindow;
           if (testwin.SimpleTest) {
             if (typeof testwin.SimpleTest.testsLength === "undefined") {
-              TestRunner.structuredLogger.error(
-                "TEST-UNEXPECTED-FAIL | " +
-                  TestRunner.currentTestURL +
-                  " fired an unload callback with missing test data," +
+              record(
+                false,
+                false,
+                "fired an unload callback with missing test data," +
                   " possibly due to the test navigating or reloading"
               );
               TestRunner.updateUI([{ result: false }]);
@@ -865,11 +848,10 @@ TestRunner.testFinished = function (tests) {
                 wrongtestname =
                   testwin.SimpleTest._tests[testwin.SimpleTest.testsLength + i]
                     .name;
-                TestRunner.structuredLogger.error(
-                  "TEST-UNEXPECTED-FAIL | " +
-                    TestRunner.currentTestURL +
-                    " logged result after SimpleTest.finish(): " +
-                    wrongtestname
+                record(
+                  false,
+                  false,
+                  "logged result after SimpleTest.finish(): " + wrongtestname
                 );
                 didReportError = true;
               }
@@ -878,10 +860,10 @@ TestRunner.testFinished = function (tests) {
                 // here (e.g. if wrongtestlength is somehow negative), it's
                 // important that we log *something* for the { result: false }
                 // test-failure that we're about to post.
-                TestRunner.structuredLogger.error(
-                  "TEST-UNEXPECTED-FAIL | " +
-                    TestRunner.currentTestURL +
-                    " hit an unexpected condition when checking for" +
+                record(
+                  false,
+                  false,
+                  "hit an unexpected condition when checking for" +
                     " logged results after SimpleTest.finish()"
                 );
               }
@@ -906,7 +888,7 @@ TestRunner.testFinished = function (tests) {
 
 /**
  * This stub is called by XOrigin Tests to report assertion count.
- **/
+ */
 TestRunner._xoriginAssertionCount = 0;
 TestRunner.addAssertionCount = function (count) {
   if (!testInXOriginFrame()) {
@@ -953,7 +935,7 @@ TestRunner.testUnloaded = function (result, runtime) {
     );
 
     if (numAsserts < min || numAsserts > max) {
-      result = "ERROR";
+      result = "FAIL";
 
       var direction = "more";
       var target = max;
@@ -973,45 +955,44 @@ TestRunner.testUnloaded = function (result, runtime) {
           target +
           " assertions"
       );
-
-      // reset result so we don't print a second error on test-end
-      result = "OK";
     }
   }
 
-  TestRunner.structuredLogger.testEnd(
-    TestRunner.currentTestURL,
-    result,
-    "OK",
-    "Finished in " + runtime + "ms",
-    { runtime }
-  );
+  if (TestRunner._currentTestTimedOut && result == "PASS") {
+    result = "TIMEOUT";
+  }
 
-  // Always do this, so we can "reset" preferences between tests.
+  // Compare preferences before testEnd so that any changed-pref failures
+  // are attributed to the test that changed them. This also resets
+  // preferences between tests.
   // Note: this is for mochitest-plain only; browser tests do not
   // unconditionally reset between tests, see
   // checkPreferencesAfterTest in testing/mochitest/browser-test.js
-  SpecialPowers.comparePrefsToBaseline(
-    TestRunner.ignorePrefs,
-    TestRunner.verifyPrefsNextTest
-  );
-};
+  SpecialPowers.comparePrefsToBaseline(TestRunner.ignorePrefs, function (p) {
+    if (TestRunner.comparePrefs) {
+      let prefs = Array.from(SpecialPowers.Cu.waiveXrays(p), x =>
+        SpecialPowers.unwrapIfWrapped(SpecialPowers.Cu.unwaiveXrays(x))
+      );
+      for (let pr of prefs) {
+        record(false, false, "changed preference: " + pr);
+      }
+      if (prefs.length && result == "PASS") {
+        result = "FAIL";
+      }
+    }
 
-TestRunner.verifyPrefsNextTest = function (p) {
-  if (TestRunner.comparePrefs) {
-    let prefs = Array.from(SpecialPowers.Cu.waiveXrays(p), x =>
-      SpecialPowers.unwrapIfWrapped(SpecialPowers.Cu.unwaiveXrays(x))
+    TestRunner.structuredLogger.testEnd(
+      TestRunner.currentTestURL,
+      result,
+      "PASS",
+      TestRunner._currentTestTimedOut
+        ? "Test timed out"
+        : "Finished in " + runtime + "ms",
+      { runtime }
     );
-    prefs.forEach(pr =>
-      TestRunner.structuredLogger.error(
-        "TEST-UNEXPECTED-FAIL | " +
-          TestRunner.currentTestURL +
-          " | changed preference: " +
-          pr
-      )
-    );
-  }
-  TestRunner.doNextTest();
+
+    TestRunner.doNextTest();
+  });
 };
 
 TestRunner.doNextTest = function () {

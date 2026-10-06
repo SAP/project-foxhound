@@ -114,18 +114,6 @@ interface nsICrashReporter : nsISupports
   boolean isAnnotationValid(in ACString value);
 
   /**
-   * Checks if an annotation is allowed for inclusion in the crash ping.
-   *
-   * @param key
-   *        Name of a known crash annotation constant.
-   *
-   * @return True if the specified value is a valid annotation and can be
-             included in the crash ping, false otherwise.
-   * @throw NS_ERROR_INVALID_ARG if key contains an invalid value.
-   */
-  boolean isAnnotationAllowedForPing(in ACString value);
-
-  /**
    * Checks if an annotation is allowed for inclusion in a crash report.
    *
    * @param key

@@ -274,6 +274,8 @@ for more information.
 XPCOM getters always return primitive values via an outparam, while
 other getters normally use a return value.
 
+.. _cpp virtual final:
+
 Method declarations must use, at most, one of the following keywords:
 ``virtual``, ``override``, or ``final``. Use ``virtual`` to declare
 virtual methods, which do not override a base class method with the same
@@ -352,7 +354,7 @@ C/C++ practices
 ---------------
 
 -  **Have you checked for compiler warnings?** Warnings often point to
-   real bugs. `Many of them <https://searchfox.org/mozilla-central/source/build/moz.configure/warnings.configure>`__
+   real bugs. :searchfox:`Many of them <build/moz.configure/warnings.configure>`
    are enabled by default in the build system.
 -  In C++ code, use ``nullptr`` for pointers. In C code, using ``NULL``
    or ``0`` is allowed.
@@ -395,12 +397,12 @@ C/C++ practices
    should generally be marked explicit. Exceptions should be annotated
    with ``MOZ_IMPLICIT``.
 -  Global variables with runtime initialization should be avoided. Flagging
-   them as ``constexpr`` or ``MOZ_CONSTINIT`` is a good way to make sure the
+   them as ``constexpr`` or ``constinit`` is a good way to make sure the
    initialization happens at compile-time. If runtime initialization cannot be
    avoided, use the attribute ``MOZ_RUNINIT`` to identify those and tell the
    linter to ignore that variable. If a variable is flagged as ``MOZ_RUNINIT``
-   while the linter detects it could be ``MOZ_CONSTINIT``, you get an error. In
-   case where the status of the global variable varies (e.g. depending on
+   while the linter detects it could be ``constinit``, you will get an error. In
+   cases where the status of the global variable varies (e.g. depending on
    template parameter), just flag it ``MOZ_GLOBINIT``.
 -  Use ``char32_t`` as the return type or argument type of a method that
    returns or takes as argument a single Unicode scalar value. (Don't
@@ -414,6 +416,8 @@ C/C++ practices
    For parts of this rule, clang-tidy provides the ``modernize-use-using``
    check with autofixes.
 
+
+.. _header files:
 
 Header files
 ------------
@@ -487,8 +491,6 @@ included in a large number of translation units.
 
    .. code-block:: cpp
 
-      /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-      /* vim: set ts=8 sts=2 et sw=2 tw=80: */
       /* This Source Code Form is subject to the terms of the Mozilla Public
       * License, v. 2.0. If a copy of the MPL was not distributed with this file,
       * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -524,8 +526,6 @@ An example header file based on these rules (with some extra comments):
 
 .. code-block:: cpp
 
-   /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-   /* vim: set ts=8 sts=2 et sw=2 tw=80: */
    /* This Source Code Form is subject to the terms of the Mozilla Public
    * License, v. 2.0. If a copy of the MPL was not distributed with this file,
    * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -582,8 +582,6 @@ Corresponding implementation file:
 
 .. code-block:: cpp
 
-   /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-   /* vim: set ts=8 sts=2 et sw=2 tw=80: */
    /* This Source Code Form is subject to the terms of the Mozilla Public
    * License, v. 2.0. If a copy of the MPL was not distributed with this file,
    * You can obtain one at http://mozilla.org/MPL/2.0/. */

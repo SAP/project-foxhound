@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,24 +5,23 @@
 #include "MediaFormatReader.h"
 
 #include <algorithm>
-#include <map>
-#include <queue>
 
+#include "AOMDecoder.h"
 #include "AllocationPolicy.h"
-#ifdef MOZ_AV1
-#  include "AOMDecoder.h"
-#endif
+#include "MP4Decoder.h"
 #include "MediaData.h"
 #include "MediaDataDecoderProxy.h"
+#include "MediaGleanMetrics.h"
 #include "MediaInfo.h"
-#include "MP4Decoder.h"
 #include "PDMFactory.h"
+#include "PDMFactorySupport.h"
 #include "PerformanceRecorder.h"
+#include "VPXDecoder.h"
 #include "VideoFrameContainer.h"
 #include "VideoUtils.h"
-#include "VPXDecoder.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/CDMProxy.h"
+#include "mozilla/CheckedInt.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/Preferences.h"
@@ -33,7 +30,6 @@
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/TaskQueue.h"
-#include "mozilla/Unused.h"
 #include "mozilla/glean/DomMediaMetrics.h"
 #include "nsContentUtils.h"
 #include "nsLiteralString.h"
@@ -43,7 +39,6 @@
 using namespace mozilla::media;
 
 static mozilla::LazyLogModule sFormatDecoderLog("MediaFormatReader");
-mozilla::LazyLogModule gMediaDemuxerLog("MediaDemuxer");
 
 #define LOG(arg, ...)                                                  \
   DDMOZ_LOG(sFormatDecoderLog, mozilla::LogLevel::Debug, "::%s: " arg, \
@@ -727,7 +722,7 @@ class MediaFormatReader::DemuxerProxy::Wrapper : public MediaTrackDemuxer {
         "MediaFormatReader::DemuxerProxy::Wrapper::Reset",
         [self]() { self->mTrackDemuxer->Reset(); }));
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-    Unused << rv;
+    (void)rv;
   }
 
   nsresult GetNextRandomAccessPoint(TimeUnit* aTime) override {
@@ -785,7 +780,7 @@ class MediaFormatReader::DemuxerProxy::Wrapper : public MediaTrackDemuxer {
         "MediaFormatReader::DemuxerProxy::Wrapper::~Wrapper",
         [trackDemuxer]() { trackDemuxer->BreakCycles(); }));
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-    Unused << rv;
+    (void)rv;
     DecoderDoctorLogger::LogDestruction(
         "MediaFormatReader::DemuxerProxy::Wrapper", this);
   }
@@ -1220,10 +1215,7 @@ void MediaFormatReader::OnDemuxerInitDone(const MediaResult& aResult) {
 
   UniquePtr<MetadataTags> tags(MakeUnique<MetadataTags>());
 
-  RefPtr<PDMFactory> platform;
-  if (!IsWaitingOnCDMResource()) {
-    platform = new PDMFactory();
-  }
+  const bool checkSupport = !IsWaitingOnCDMResource();
 
   // To decode, we need valid video and a place to put it.
   bool videoActive = !!mDemuxer->GetNumberTracks(TrackInfo::kVideoTrack) &&
@@ -1242,8 +1234,8 @@ void MediaFormatReader::OnDemuxerInitDone(const MediaResult& aResult) {
     UniquePtr<TrackInfo> videoInfo = mVideo.mTrackDemuxer->GetInfo();
     videoActive = videoInfo && videoInfo->IsValid();
     if (videoActive) {
-      if (platform &&
-          platform->SupportsMimeType(videoInfo->mMimeType).isEmpty()) {
+      if (checkSupport &&
+          PDMFactorySupport::IsTypeSupported(videoInfo->mMimeType).isEmpty()) {
         // We have no decoder for this track. Error.
         LOG("No supported decoder for video track (%s)",
             videoInfo->mMimeType.get());
@@ -1281,9 +1273,10 @@ void MediaFormatReader::OnDemuxerInitDone(const MediaResult& aResult) {
 
     UniquePtr<TrackInfo> audioInfo = mAudio.mTrackDemuxer->GetInfo();
     // We actively ignore audio tracks that we know we can't play.
-    audioActive = audioInfo && audioInfo->IsValid() &&
-                  (!platform ||
-                   !platform->SupportsMimeType(audioInfo->mMimeType).isEmpty());
+    audioActive =
+        audioInfo && audioInfo->IsValid() &&
+        (!checkSupport ||
+         !PDMFactorySupport::IsTypeSupported(audioInfo->mMimeType).isEmpty());
 
     if (audioActive) {
       mInfo.mAudio = *audioInfo->GetAsAudioInfo();
@@ -1836,6 +1829,7 @@ void MediaFormatReader::NotifyNewOutput(
         // update the decoder name again, instead of using the wrong name.
         if (decoder.mNumSamplesOutput == 1) {
           decoder.mDescription = mVideo.mDecoder->GetDescriptionName();
+          decoder.LoadDecodeProperties();
         }
       }
       decoder.mDecodePerfRecorder->Record(
@@ -1939,7 +1933,7 @@ void MediaFormatReader::ScheduleUpdate(TrackType aTrack) {
       "MediaFormatReader::Update", this, &MediaFormatReader::Update, aTrack));
   nsresult rv = OwnerThread()->Dispatch(task.forget());
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 }
 
 bool MediaFormatReader::UpdateReceivedNewData(TrackType aTrack) {
@@ -2080,12 +2074,9 @@ void MediaFormatReader::DecoderData::StartRecordDecodingPerf(
       flag |= MediaInfoFlag::VIDEO_VP9;
     } else if (MP4Decoder::IsHEVC(mimeType)) {
       flag |= MediaInfoFlag::VIDEO_HEVC;
-    }
-#ifdef MOZ_AV1
-    else if (AOMDecoder::IsAV1(mimeType)) {
+    } else if (AOMDecoder::IsAV1(mimeType)) {
       flag |= MediaInfoFlag::VIDEO_AV1;
     }
-#endif
   }
   mDecodePerfRecorder->Start(aSample->mTime.ToMicroseconds(),
                              MediaStage::RequestDecode, height, flag);
@@ -2110,7 +2101,32 @@ void MediaFormatReader::DecodeDemuxedSamples(TrackType aTrack,
           aSample->mEOS ? " eos" : "");
 
   decoder.StartRecordDecodingPerf(aTrack, aSample);
-  if (mMediaEngineId && aSample->mCrypto.IsEncrypted()) {
+
+  const CryptoSample& crypto = aSample->mCrypto;
+  if (crypto.IsEncrypted() && !crypto.mPlainSizes.IsEmpty()) {
+    if (crypto.mPlainSizes.Length() != crypto.mEncryptedSizes.Length()) {
+      NotifyError(aTrack,
+                  MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
+                              "Mismatched crypto subsample array lengths"));
+      return;
+    }
+    CheckedInt<size_t> subsampleTotal = 0;
+    for (size_t i = 0; i < crypto.mPlainSizes.Length(); i++) {
+      subsampleTotal += crypto.mPlainSizes[i];
+      subsampleTotal += crypto.mEncryptedSizes[i];
+    }
+    if (!subsampleTotal.isValid() ||
+        subsampleTotal.value() != aSample->Size()) {
+      NotifyError(
+          aTrack,
+          MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
+                      "Crypto subsample sizes don't match sample size"));
+      return;
+    }
+  }
+
+  if (aSample->mCrypto.IsEncrypted() &&
+      (mMediaEngineId || (mCDMProxy && !!mCDMProxy->AsRemoteCDMProxy()))) {
     aSample->mShouldCopyCryptoToRemoteRawData = true;
   }
   decoder.mDecoder->Decode(aSample)
@@ -2470,16 +2486,24 @@ void MediaFormatReader::Update(TrackType aTrack) {
     } else if (decoder.HasFatalError()) {
       nsCString mimeType = decoder.GetCurrentInfo()->mMimeType;
       if (!mimeType.IsEmpty()) {
-        glean::media_playback::DecodeErrorExtra extraData;
-        extraData.mimeType = Some(mimeType);
-        extraData.errorName = Some(decoder.mError->ErrorName());
-        if (mCDMProxy) {
-          extraData.keySystem =
-              Some(NS_ConvertUTF16toUTF8(mCDMProxy->KeySystem()));
+        const nsCString& errorName = decoder.mError->ErrorName();
+        if (!IsNotRealDecodeError(errorName)) {
+          nsCString errorLabel = ErrorNameToLabel(errorName);
+          if (mCDMProxy) {
+            glean::media_playback::encrypted_decode_error
+                .Get(MimeTypeToEncryptedLabel(mimeType),
+                     KeySystemToLabel(mCDMProxy->KeySystem()))
+                .Add();
+          } else if (decoder.mIsHardwareAccelerated) {
+            glean::media_playback::unencrypted_hw_decode_error
+                .Get(MimeTypeToUnencryptedLabel(mimeType), errorLabel)
+                .Add();
+          } else {
+            glean::media_playback::unencrypted_sw_decode_error
+                .Get(MimeTypeToUnencryptedLabel(mimeType), errorLabel)
+                .Add();
+          }
         }
-        extraData.decoderName = Some(decoder.mDescription);
-        extraData.isHardwareAccelerated = Some(decoder.mIsHardwareAccelerated);
-        glean::media_playback::decode_error.Record(Some(extraData));
       }
       LOG("Rejecting %s promise for %s : DECODE_ERROR", TrackTypeToStr(aTrack),
           mimeType.get());
@@ -3028,7 +3052,7 @@ void MediaFormatReader::ScheduleSeek() {
   nsresult rv = OwnerThread()->Dispatch(NewRunnableMethod(
       "MediaFormatReader::AttemptSeek", this, &MediaFormatReader::AttemptSeek));
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 }
 
 void MediaFormatReader::AttemptSeek() {
@@ -3104,7 +3128,7 @@ void MediaFormatReader::OnSeekFailed(TrackType aTrack,
       } else {
         mFallbackSeekTime.reset();
       }
-      mPendingSeekTime = nextSeekTime;
+      mPendingSeekTime = std::move(nextSeekTime);
       DoAudioSeek();
       return;
     }
@@ -3535,6 +3559,22 @@ void MediaFormatReader::OnFirstDemuxFailed(TrackInfo::TrackType aType,
 void MediaFormatReader::SetEncryptedCustomIdent() {
   LOG("Set mEncryptedCustomIdent");
   mEncryptedCustomIdent = true;
+}
+
+void MediaFormatReader::VideoDecodeProperties::Load(
+    RefPtr<MediaDataDecoder>& aDecoder) {
+  using V = MediaDataDecoder::PropertyValue;
+  aDecoder
+      ->GetDecodeProperty(MediaDataDecoder::PropertyName::MaxNumVideoBuffers)
+      .apply([this](const V& v) { mMaxQueueSize = Some(v.as<uint32_t>()); });
+  aDecoder
+      ->GetDecodeProperty(MediaDataDecoder::PropertyName::MinNumVideoBuffers)
+      .apply([this](const V& v) { mMinQueueSize = Some(v.as<uint32_t>()); });
+  aDecoder
+      ->GetDecodeProperty(MediaDataDecoder::PropertyName::MaxNumCurrentImages)
+      .apply([this](const V& v) {
+        mSendToCompositorSize = Some(v.as<uint32_t>());
+      });
 }
 
 }  // namespace mozilla

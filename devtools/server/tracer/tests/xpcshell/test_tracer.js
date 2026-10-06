@@ -441,7 +441,7 @@ add_task(async function testTracingPauseOnStep() {
   info(
     "Run the to-be-traced code in a distinct event loop as it would be paused synchronously and would prevent further test script execution"
   );
-  const startTimestamp = Cu.now();
+  const startTimestamp = ChromeUtils.now();
   Services.tm.dispatchToMainThread(() => {
     sandbox.incrementCounter();
     onResumed.resolve();
@@ -466,7 +466,7 @@ add_task(async function testTracingPauseOnStep() {
   );
   Assert.equal(sandbox.counter, 1);
   info("The thread should have paused at least the pauseOnStep's duration");
-  Assert.greater(Cu.now() - startTimestamp, 250);
+  Assert.greater(ChromeUtils.now() - startTimestamp, 250);
 
   info("Stop tracing");
   JSTracer.stopTracing();

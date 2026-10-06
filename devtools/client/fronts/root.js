@@ -48,10 +48,11 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
   }
   /**
    * Retrieve all service worker registrations with their corresponding workers.
+   *
    * @param {Array} [workerTargets] (optional)
    *        Array containing the result of a call to `listAllWorkerTargets`.
    *        (this exists to avoid duplication of calls to that method)
-   * @return {Object[]} result - An Array of Objects with the following format
+   * @return {object[]} result - An Array of Objects with the following format
    *         - {result[].registration} - The registration front
    *         - {result[].workers} Array of form-like objects for service workers
    */
@@ -106,7 +107,7 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
    * unified array of serviceWorkers. If you are only interested in other workers, use
    * listWorkers.
    *
-   * @return {Object}
+   * @return {object}
    *         - {Array} service
    *           array of form-like objects for serviceworkers
    *         - {Array} shared
@@ -299,7 +300,7 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
     return this.request(packet);
   }
 
-  /*
+  /**
    * This function returns a protocol.js Front for any root actor.
    * i.e. the one directly served from RootActor.listTabs or getRoot.
    *
@@ -317,18 +318,18 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
     return front;
   }
 
-  /*
+  /**
    * This function returns true if the root actor has a registered global actor
    * with a given name.
-   * @param {String} actorName
+   *
+   * @param {string} actorName
    *        The name of a global actor.
    *
-   * @return {Boolean}
+   * @return {boolean}
    */
   async hasActor(actorName) {
     const rootForm = await this.rootForm;
     return !!rootForm[actorName + "Actor"];
   }
 }
-exports.RootFront = RootFront;
 registerFront(RootFront);

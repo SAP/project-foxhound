@@ -147,9 +147,9 @@ class PageloadSupport(BasePythonSupport):
 
         power_vals = raw_result.get("android").get("power", {})
         if power_vals:
-            bt_result["measurements"].setdefault("powerUsage", []).extend(
-                [round(vals["powerUsage"] * (1 * 10**-6), 2) for vals in power_vals]
-            )
+            bt_result["measurements"].setdefault("powerUsage", []).extend([
+                round(vals["powerUsage"] * (1 * 10**-6), 2) for vals in power_vals
+            ])
 
     def _process_measurements(self, suite, test, measurement_name, replicates):
         subtest = {}

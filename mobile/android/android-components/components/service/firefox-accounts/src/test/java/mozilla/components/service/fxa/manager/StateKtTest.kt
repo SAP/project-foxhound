@@ -35,6 +35,12 @@ class StateKtTest {
                     Event.Account.Logout -> State.Active(ProgressState.LoggingOut)
                     else -> null
                 }
+
+                // This is the old state machine that is no longer used so we don't need to implement
+                // new features into it. See Bug 2041509.
+                AccountState.Unknown -> {
+                    null
+                }
             }
             is State.Active -> when (state.progressState) {
                 ProgressState.Initializing -> when (event) {
@@ -74,6 +80,7 @@ class StateKtTest {
             "Authenticating" -> AccountState.Authenticating("https://example.com/oauth-start")
             "Authenticated" -> AccountState.Authenticated
             "AuthenticationProblem" -> AccountState.AuthenticationProblem
+            "Unknown" -> AccountState.Unknown
             else -> {
                 throw AssertionError("Unknown AccountState: $simpleName")
             }
@@ -83,8 +90,8 @@ class StateKtTest {
     private fun instantiateEvent(eventClassSimpleName: String): Event {
         return when (eventClassSimpleName) {
             "Start" -> Event.Account.Start
-            "BeginPairingFlow" -> Event.Account.BeginPairingFlow("http://some.pairing.url.com", mock(), mock())
-            "BeginEmailFlow" -> Event.Account.BeginEmailFlow(mock(), mock())
+            "BeginPairingFlow" -> Event.Account.BeginPairingFlow("http://some.pairing.url.com", "", mock(), mock())
+            "BeginEmailFlow" -> Event.Account.BeginEmailFlow("", mock(), mock())
             "CancelAuth" -> Event.Progress.CancelAuth
             "StartedOAuthFlow" -> Event.Progress.StartedOAuthFlow("https://example.com/oauth-start")
             "AuthenticationError" -> Event.Account.AuthenticationError("fxa op")

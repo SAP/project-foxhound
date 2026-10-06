@@ -18,7 +18,7 @@ const {
  *        The object actor of the object we are current listing properties.
  * @param string name
  *        The property that the descriptor is generated for.
- * @param {Number} depth
+ * @param {number} depth
  *                 Current depth in the generated preview object sent to the client.
  * @param boolean [onlyEnumerable]
  *        Optional: true if you want a descriptor only for an enumerable

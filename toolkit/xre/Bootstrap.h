@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,7 +11,6 @@
 #ifndef mozilla_Bootstrap_h
 #define mozilla_Bootstrap_h
 
-#include "mozilla/Maybe.h"
 #include "mozilla/ResultVariant.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/UniquePtrExtensions.h"
@@ -61,11 +59,11 @@ struct BootstrapConfig {
  */
 class Bootstrap {
  protected:
-  Bootstrap() {}
+  Bootstrap() = default;
 
   // Because of allocator mismatches, code outside libxul shouldn't delete a
   // Bootstrap instance. Use Dispose().
-  virtual ~Bootstrap() {}
+  virtual ~Bootstrap() = default;
 
   /**
    * Destroy and deallocate this Bootstrap instance.
@@ -77,7 +75,7 @@ class Bootstrap {
    */
   class BootstrapDelete {
    public:
-    constexpr BootstrapDelete() {}
+    constexpr BootstrapDelete() = default;
     void operator()(Bootstrap* aPtr) const { aPtr->Dispose(); }
   };
 
@@ -137,6 +135,12 @@ using BootstrapError = Variant<nsresult, DLErrorType>;
 
 using BootstrapResult = ::mozilla::Result<Bootstrap::UniquePtr, BootstrapError>;
 
+#ifdef XPCOM_GLUE
+typedef void (*GetBootstrapType)(Bootstrap::UniquePtr&);
+BootstrapResult GetBootstrap(
+    const char* aXPCOMFile = nullptr,
+    LibLoadingStrategy aLibLoadingStrategy = LibLoadingStrategy::NoReadAhead);
+#else
 /**
  * Creates and returns the singleton instance of the bootstrap object.
  * @param `b` is an outparam. We use a parameter and not a return value
@@ -144,12 +148,6 @@ using BootstrapResult = ::mozilla::Result<Bootstrap::UniquePtr, BootstrapError>;
  *        "C" linkage. On failure this will be null.
  * @note This function may only be called once and will crash if called again.
  */
-#ifdef XPCOM_GLUE
-typedef void (*GetBootstrapType)(Bootstrap::UniquePtr&);
-BootstrapResult GetBootstrap(
-    const char* aXPCOMFile = nullptr,
-    LibLoadingStrategy aLibLoadingStrategy = LibLoadingStrategy::NoReadAhead);
-#else
 extern "C" NS_EXPORT void NS_FROZENCALL
 XRE_GetBootstrap(Bootstrap::UniquePtr& b);
 

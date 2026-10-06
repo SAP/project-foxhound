@@ -23,8 +23,19 @@
 #include "aom_dsp/arm/mem_neon.h"
 #include "aom_dsp/arm/transpose_neon.h"
 #include "aom_ports/mem.h"
-#include "av1/common/arm/highbd_convolve_sve2.h"
+#include "av1/common/arm/convolve_sve2.h"
 #include "av1/common/arm/convolve_neon_i8mm.h"
+
+// clang-format off
+DECLARE_ALIGNED(16, const uint16_t, kSVEDotProdMergeBlockTbl[24]) = {
+  // Shift left and insert new last column in transposed 4x4 block.
+  1, 2, 3, 0, 5, 6, 7, 4,
+  // Shift left and insert two new columns in transposed 4x4 block.
+  2, 3, 0, 1, 6, 7, 4, 5,
+  // Shift left and insert three new columns in transposed 4x4 block.
+  3, 0, 1, 2, 7, 4, 5, 6,
+};
+// clang-format on
 
 static inline int32x4_t highbd_convolve12_4_2d_v(int16x8_t s0[2],
                                                  int16x8_t s1[2],
@@ -52,7 +63,7 @@ static inline void convolve_2d_sr_vert_12tap_sve2(
   const int bd = 8;
   const int16x8_t sub_const = vdupq_n_s16(1 << (bd - 1));
 
-  uint16x8x3_t merge_block_tbl = vld1q_u16_x3(kDotProdMergeBlockTbl);
+  uint16x8x3_t merge_block_tbl = vld1q_u16_x3(kSVEDotProdMergeBlockTbl);
   // Scale indices by size of the true vector length to avoid reading from an
   // 'undefined' portion of a vector on a system with SVE vectors > 128-bit.
   uint16x8_t correction0 =
@@ -81,21 +92,21 @@ static inline void convolve_2d_sr_vert_12tap_sve2(
         s6789[2], s789A[2];
     // This operation combines a conventional transpose and the sample permute
     // required before computing the dot product.
-    transpose_concat_4x4(s0, s1, s2, s3, s0123);
-    transpose_concat_4x4(s1, s2, s3, s4, s1234);
-    transpose_concat_4x4(s2, s3, s4, s5, s2345);
-    transpose_concat_4x4(s3, s4, s5, s6, s3456);
-    transpose_concat_4x4(s4, s5, s6, s7, s4567);
-    transpose_concat_4x4(s5, s6, s7, s8, s5678);
-    transpose_concat_4x4(s6, s7, s8, s9, s6789);
-    transpose_concat_4x4(s7, s8, s9, sA, s789A);
+    transpose_concat_elems_s16_4x4(s0, s1, s2, s3, s0123);
+    transpose_concat_elems_s16_4x4(s1, s2, s3, s4, s1234);
+    transpose_concat_elems_s16_4x4(s2, s3, s4, s5, s2345);
+    transpose_concat_elems_s16_4x4(s3, s4, s5, s6, s3456);
+    transpose_concat_elems_s16_4x4(s4, s5, s6, s7, s4567);
+    transpose_concat_elems_s16_4x4(s5, s6, s7, s8, s5678);
+    transpose_concat_elems_s16_4x4(s6, s7, s8, s9, s6789);
+    transpose_concat_elems_s16_4x4(s7, s8, s9, sA, s789A);
 
     do {
       int16x4_t sB, sC, sD, sE;
       load_s16_4x4(s, src_stride, &sB, &sC, &sD, &sE);
 
       int16x8_t s89AB[2], s9ABC[2], sABCD[2], sBCDE[2];
-      transpose_concat_4x4(sB, sC, sD, sE, sBCDE);
+      transpose_concat_elems_s16_4x4(sB, sC, sD, sE, sBCDE);
 
       // Merge new data into block from previous iteration.
       aom_tbl2x2_s16(s789A, sBCDE, merge_block_tbl.val[0], s89AB);

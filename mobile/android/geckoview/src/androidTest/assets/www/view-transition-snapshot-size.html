@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html {
+      view-transition-name: none;
+      scrollbar-width: none;
+      height: 400vh;
+      background-color: red;
+    }
+    body {
+      margin: 0px;
+      padding: 0px;
+    }
+    ::view-transition {
+      height: 100%;
+      width: 100%;
+      background-color: green;
+    }
+    #target {
+      view-transition-name: target;
+    }
+    ::view-transition-group(*),
+    ::view-transition-old(*),
+    ::view-transition-new(*) {
+      animation-duration: 2s;
+      animation-delay: -1s;
+      animation-play-state: paused;
+      animation-timing-function: linear;
+    }
+  </style>
+  <div id="target"></div>
+</html>

@@ -5,6 +5,7 @@
 
 /**
  * Inserts an iframe element and resolves once the iframe has loaded.
+ *
  * @param {*} browser - Browser to insert the iframe into.
  * @param {string} url - URL to load in the iframe.
  * @returns {Promise<BrowsingContext>} Promise which resolves to the iframe's

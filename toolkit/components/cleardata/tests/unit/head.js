@@ -8,7 +8,7 @@ const { PermissionTestUtils } = ChromeUtils.importESModule(
 );
 
 function run_test() {
-  do_get_profile();
+  do_get_profile(true);
   run_next_test();
 }
 

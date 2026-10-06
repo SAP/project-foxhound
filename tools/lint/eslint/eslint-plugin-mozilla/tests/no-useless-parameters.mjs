@@ -15,7 +15,7 @@ const ruleTester = new RuleTester();
 // ------------------------------------------------------------------------------
 
 function callError(messageId, data = {}) {
-  return [{ messageId, data, type: "CallExpression" }];
+  return [{ messageId, data }];
 }
 
 ruleTester.run("no-useless-parameters", rule, {

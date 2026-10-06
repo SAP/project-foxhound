@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,6 +27,12 @@
 
 #ifdef MOZ_ENABLE_FORKSERVER
 #  include "mozilla/ipc/ForkServiceChild.h"
+#endif
+
+#if defined(XP_LINUX) && !defined(ANDROID)
+#  include "mozilla/AvailableMemoryWatcher.h"
+#  include "mozilla/glean/XpcomMetrics.h"
+#  include "nsPrintfCString.h"
 #endif
 
 // Just to make sure the moz.build is doing the right things with
@@ -99,6 +103,29 @@ static mozilla::StaticDataMutex<mozilla::StaticAutoPtr<nsTArray<PendingChild>>>
 static int gSignalPipe[2] = {-1, -1};
 static mozilla::Atomic<bool> gProcessWatcherShutdown;
 
+#if defined(XP_LINUX) && !defined(ANDROID)
+// Record Glean event when a content process is killed by OOM killer
+static void RecordContentProcessOOMKilled() {
+  // Get PSI data
+  mozilla::PSIInfo psi;
+  nsresult rv = mozilla::GetLastPSISnapshot(psi);
+
+  if (NS_SUCCEEDED(rv)) {
+    // Record Glean event with PSI metrics
+    mozilla::glean::memory_watcher::ProcessOomKilledExtra extra;
+    extra.psiSomeAvg10 = mozilla::Some(nsPrintfCString("%lu", psi.some_avg10));
+    extra.psiSomeAvg60 = mozilla::Some(nsPrintfCString("%lu", psi.some_avg60));
+    extra.psiFullAvg10 = mozilla::Some(nsPrintfCString("%lu", psi.full_avg10));
+    extra.psiFullAvg60 = mozilla::Some(nsPrintfCString("%lu", psi.full_avg60));
+    extra.psiAvailable = mozilla::Some(psi.psi_available);
+    mozilla::glean::memory_watcher::process_oom_killed.Record(
+        mozilla::Some(extra));
+
+    mozilla::StartNonOOMPSISampling();
+  }
+}
+#endif
+
 // A wrapper around WaitForProcess to simplify the result (true if the
 // process exited and the pid is now freed for reuse, false if it's
 // still running), and handle the case where "blocking" mode doesn't
@@ -133,6 +160,14 @@ static bool IsProcessDead(pid_t pid, BlockingWait aBlock) {
     case base::ProcessStatus::Killed:
       CHROMIUM_LOG(WARNING)
           << "process " << pid << " exited on signal " << info;
+#if defined(XP_LINUX) && !defined(ANDROID)
+      // Record telemetry for OOM kills
+      if (info == SIGKILL) {
+        NS_DispatchToMainThread(
+            NS_NewRunnableFunction("ContentProcessOOMTelemetry",
+                                   []() { RecordContentProcessOOMKilled(); }));
+      }
+#endif
       return true;
 
     case base::ProcessStatus::Error:
@@ -188,7 +223,7 @@ already_AddRefed<nsITimer> DelayedKill(pid_t aPid) {
         // If the process was still running, it will exit and the
         // SIGCHLD handler will waitpid it.
       },
-      kMaxWaitMs, nsITimer::TYPE_ONE_SHOT, "ProcessWatcher::DelayedKill",
+      kMaxWaitMs, nsITimer::TYPE_ONE_SHOT, "ProcessWatcher::DelayedKill"_ns,
       XRE_GetAsyncIOEventTarget());
 
   // This should happen only during shutdown, in which case we're
@@ -413,9 +448,9 @@ mozilla::UniqueFileHandle ProcessWatcher::GetSignalPipe() {
   EnsureProcessWatcher();
   int fd = gSignalPipe[1];
   MOZ_ASSERT(fd >= 0);
-  fd = dup(fd);
-  MOZ_ASSERT(fd >= 0);
-  return mozilla::UniqueFileHandle(fd);
+  auto rv = mozilla::DuplicateFileHandle(fd);
+  MOZ_ASSERT(rv);
+  return rv;
 }
 
 /**

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -85,8 +83,8 @@ TEST(TaskController, RescheduleOnMainThread)
 {
   Logger logger;
 
-  RefPtr<ReschedulingTask> mainThreadTask =
-      new ReschedulingTask(Task::Kind::MainThreadOnly, &logger, "1");
+  RefPtr mainThreadTask =
+      MakeRefPtr<ReschedulingTask>(Task::Kind::MainThreadOnly, &logger, "1");
 
   TaskController::Get()->AddTask(do_AddRef(mainThreadTask));
 
@@ -102,8 +100,8 @@ TEST(TaskController, RescheduleOffMainThread)
 {
   Logger logger;
 
-  RefPtr<ReschedulingTask> offThreadTask =
-      new ReschedulingTask(Task::Kind::OffMainThreadOnly, &logger, "1");
+  RefPtr offThreadTask =
+      MakeRefPtr<ReschedulingTask>(Task::Kind::OffMainThreadOnly, &logger, "1");
 
   TaskController::Get()->AddTask(do_AddRef(offThreadTask));
 
@@ -121,10 +119,10 @@ TEST(TaskController, RescheduleMainAndOffMainThreads)
 {
   Logger logger;
 
-  RefPtr<ReschedulingTask> offThreadTask =
-      new ReschedulingTask(Task::Kind::OffMainThreadOnly, &logger, "1");
-  RefPtr<ReschedulingTask> mainThreadTask =
-      new ReschedulingTask(Task::Kind::MainThreadOnly, &logger, "2");
+  RefPtr offThreadTask =
+      MakeRefPtr<ReschedulingTask>(Task::Kind::OffMainThreadOnly, &logger, "1");
+  RefPtr mainThreadTask =
+      MakeRefPtr<ReschedulingTask>(Task::Kind::MainThreadOnly, &logger, "2");
 
   mainThreadTask->AddDependency(offThreadTask.get());
 
@@ -153,12 +151,12 @@ TEST(TaskController, RescheduleOrder)
 {
   Logger logger;
 
-  RefPtr<ReschedulingTask> mainThreadTask1 =
-      new ReschedulingTask(Task::Kind::MainThreadOnly, &logger, "1");
-  RefPtr<ReschedulingTask> mainThreadTask2 =
-      new ReschedulingTask(Task::Kind::MainThreadOnly, &logger, "2");
-  RefPtr<ReschedulingTask> mainThreadTask3 =
-      new ReschedulingTask(Task::Kind::MainThreadOnly, &logger, "3");
+  RefPtr mainThreadTask1 =
+      MakeRefPtr<ReschedulingTask>(Task::Kind::MainThreadOnly, &logger, "1");
+  RefPtr mainThreadTask2 =
+      MakeRefPtr<ReschedulingTask>(Task::Kind::MainThreadOnly, &logger, "2");
+  RefPtr mainThreadTask3 =
+      MakeRefPtr<ReschedulingTask>(Task::Kind::MainThreadOnly, &logger, "3");
 
   TaskController::Get()->AddTask(do_AddRef(mainThreadTask1));
   TaskController::Get()->AddTask(do_AddRef(mainThreadTask2));
@@ -181,12 +179,12 @@ TEST(TaskController, RescheduleOrderOffMainThread)
   Logger logger2;
   Logger logger3;
 
-  RefPtr<ReschedulingTask> offThreadTask1 =
-      new ReschedulingTask(Task::Kind::OffMainThreadOnly, &logger1, "1");
-  RefPtr<ReschedulingTask> offThreadTask2 =
-      new ReschedulingTask(Task::Kind::OffMainThreadOnly, &logger2, "2");
-  RefPtr<ReschedulingTask> offThreadTask3 =
-      new ReschedulingTask(Task::Kind::OffMainThreadOnly, &logger3, "3");
+  RefPtr offThreadTask1 = MakeRefPtr<ReschedulingTask>(
+      Task::Kind::OffMainThreadOnly, &logger1, "1");
+  RefPtr offThreadTask2 = MakeRefPtr<ReschedulingTask>(
+      Task::Kind::OffMainThreadOnly, &logger2, "2");
+  RefPtr offThreadTask3 = MakeRefPtr<ReschedulingTask>(
+      Task::Kind::OffMainThreadOnly, &logger3, "3");
 
   TaskController::Get()->AddTask(do_AddRef(offThreadTask1));
   TaskController::Get()->AddTask(do_AddRef(offThreadTask2));

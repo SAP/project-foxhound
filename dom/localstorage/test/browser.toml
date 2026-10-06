@@ -1,6 +1,8 @@
 [DEFAULT]
 tags = "inc-origin-init"
-skip-if = ["buildapp != 'browser'"]
+skip-if = [
+  "buildapp != 'browser'",
+]
 support-files = ["page_private_ls.html"]
 
 ["browser_private_ls.js"]

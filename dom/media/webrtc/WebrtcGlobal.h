@@ -2,17 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _WEBRTC_GLOBAL_H_
-#define _WEBRTC_GLOBAL_H_
+#ifndef WEBRTC_GLOBAL_H_
+#define WEBRTC_GLOBAL_H_
 
 #include "WebrtcIPCTraits.h"
 #include "ipc/EnumSerializer.h"
 #include "ipc/IPCMessageUtilsSpecializations.h"
-#include "mozilla/dom/BindingIPCUtils.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/BindingIPCUtils.h"
 #include "mozilla/dom/RTCDataChannelBinding.h"
 #include "mozilla/dom/RTCStatsReportBinding.h"
-#include "mozilla/UniquePtr.h"
 
 typedef mozilla::dom::RTCStatsReportInternal StatsReport;
 typedef nsTArray<mozilla::UniquePtr<StatsReport>> RTCReports;
@@ -37,7 +37,7 @@ static auto ForAllPublicRTCStatsCollectionMembers(Collection& aStats,
       aStats.mPeerConnectionStats, aStats.mRtpContributingSourceStats,
       aStats.mIceCandidatePairStats, aStats.mIceCandidateStats,
       aStats.mTrickledIceCandidateStats, aStats.mDataChannelStats,
-      aStats.mCodecStats);
+      aStats.mCodecStats, aStats.mTransportStats);
 }
 
 // Calls aFunction with all members of aStats, including internal ones.
@@ -79,6 +79,11 @@ template <>
 struct ParamTraits<mozilla::dom::RTCBundlePolicy>
     : public mozilla::dom::WebIDLEnumSerializer<mozilla::dom::RTCBundlePolicy> {
 };
+
+template <>
+struct ParamTraits<mozilla::dom::RTCIceTcpCandidateType>
+    : public mozilla::dom::WebIDLEnumSerializer<
+          mozilla::dom::RTCIceTcpCandidateType> {};
 
 DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::dom::RTCIceServerInternal, mUrls,
                                   mCredentialProvided, mUserNameProvided);
@@ -128,8 +133,8 @@ DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS_AND_FIELDS(
 
 DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS_AND_FIELDS(
     mozilla::dom::RTCIceCandidateStats, mozilla::dom::RTCStats, mCandidateType,
-    mPriority, mTransportId, mAddress, mRelayProtocol, mPort, mProtocol,
-    mProxied);
+    mPriority, mTransportId, mAddress, mRelayProtocol, mUsernameFragment,
+    mFoundation, mPort, mProtocol, mTcpType, mProxied);
 
 DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS_AND_FIELDS(
     mozilla::dom::RTCReceivedRtpStreamStats, mozilla::dom::RTCRtpStreamStats,
@@ -221,9 +226,27 @@ DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::dom::RTCCodecStats, mTimestamp,
                                   mTransportId, mMimeType, mClockRate,
                                   mChannels, mSdpFmtpLine)
 
+DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS_AND_FIELDS(
+    mozilla::dom::RTCTransportStats, mozilla::dom::RTCStats, mIceRole,
+    mIceLocalUsernameFragment, mDtlsState, mIceState, mSelectedCandidatePairId,
+    mTlsVersion, mDtlsCipher, mDtlsRole, mSrtpCipher)
+
+template <>
+struct ParamTraits<mozilla::dom::RTCIceRole>
+    : public mozilla::dom::WebIDLEnumSerializer<mozilla::dom::RTCIceRole> {};
+
+template <>
+struct ParamTraits<mozilla::dom::RTCDtlsRole>
+    : public mozilla::dom::WebIDLEnumSerializer<mozilla::dom::RTCDtlsRole> {};
+
+template <>
+struct ParamTraits<mozilla::dom::RTCDtlsTransportState>
+    : public mozilla::dom::WebIDLEnumSerializer<
+          mozilla::dom::RTCDtlsTransportState> {};
+
 template <>
 struct ParamTraits<mozilla::dom::RTCCodecType>
     : public mozilla::dom::WebIDLEnumSerializer<mozilla::dom::RTCCodecType> {};
 }  // namespace IPC
 
-#endif  // _WEBRTC_GLOBAL_H_
+#endif  // WEBRTC_GLOBAL_H_

@@ -1,0 +1,5 @@
+package test {
+  public class TestClass {
+    method public java.lang.String testRemovedArg();
+  }
+}

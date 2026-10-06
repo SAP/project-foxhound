@@ -9,6 +9,7 @@ import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.selector.findTabOrCustomTabOrSelectedTab
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.ContentState
+import mozilla.components.browser.state.state.SecurityInfo.Unknown
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.support.test.mock
@@ -16,8 +17,16 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.test.assertIs
 
 class ContentStateReducerTest {
+    @Test
+    fun `GIVEN a new ContentState THEN it's security status is unknown`() {
+        val defaultContentState = ContentState("emptyStateUrl")
+
+        assertIs<Unknown>(defaultContentState.securityInfo)
+    }
+
     @Test
     fun `updateContentState will return a new BrowserState with updated ContentState`() {
         val initialContentState = ContentState("emptyStateUrl")
@@ -44,7 +53,7 @@ class ContentStateReducerTest {
             initialState = BrowserState(tabs = listOf(mock(), currentTab)),
         )
 
-        browserStore.dispatch(ContentAction.EnteredPdfViewer(currentTabId)).join()
+        browserStore.dispatch(ContentAction.EnteredPdfViewer(currentTabId))
 
         assertTrue(browserStore.state.findTabOrCustomTabOrSelectedTab(currentTabId)!!.content.isPdf)
     }
@@ -63,7 +72,7 @@ class ContentStateReducerTest {
             initialState = BrowserState(tabs = listOf(mock(), currentTab)),
         )
 
-        browserStore.dispatch(ContentAction.ExitedPdfViewer(currentTabId)).join()
+        browserStore.dispatch(ContentAction.ExitedPdfViewer(currentTabId))
 
         assertFalse(browserStore.state.findTabOrCustomTabOrSelectedTab(currentTabId)!!.content.isPdf)
     }

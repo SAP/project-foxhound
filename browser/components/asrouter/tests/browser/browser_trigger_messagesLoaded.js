@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { ASRouter } = ChromeUtils.importESModule(
+const { ASRouter, MessageLoaderUtils } = ChromeUtils.importESModule(
   "resource:///modules/asrouter/ASRouter.sys.mjs"
 );
 const { RemoteSettings } = ChromeUtils.importESModule(
@@ -17,6 +17,12 @@ const { NimbusTestUtils } = ChromeUtils.importESModule(
 
 const client = RemoteSettings("nimbus-desktop-experiments");
 const secureClient = RemoteSettings("nimbus-secure-experiments");
+// Making these calls eliminates a lot of noisy EmptyDatabaseErrors.
+// TODO(bug 1979320): Remove this:
+const dbsReady = Promise.all([
+  client.db.importChanges({}, Date.now(), [], {}),
+  secureClient.db.importChanges({}, Date.now(), [], {}),
+]);
 
 const TEST_MESSAGE_CONTENT = {
   id: "ON_LOAD_TEST_MESSAGE",
@@ -49,45 +55,58 @@ const TEST_MESSAGE_CONTENT = {
   trigger: { id: "messagesLoaded" },
 };
 
+add_setup(async function () {
+  await dbsReady;
+  registerCleanupFunction(async () => {
+    await client.db.clear();
+    await secureClient.db.clear();
+  });
+});
+
 add_task(async function test_messagesLoaded_reach_experiment() {
   const sandbox = sinon.createSandbox();
+  await ASRouter.waitForInitialized;
+  await ASRouter._updateMessageProviders();
+  await ExperimentAPI._rsLoader.finishedUpdating();
+  await ExperimentAPI.ready();
+
   const sendTriggerSpy = sandbox.spy(ASRouter, "sendTriggerMessage");
   const routeSpy = sandbox.spy(ASRouter, "routeCFRMessage");
   const reachSpy = sandbox.spy(ASRouter, "_recordReachEvent");
   const triggerMatch = sandbox.match({ id: "messagesLoaded" });
   const featureId = "cfr";
-  const recipe = NimbusTestUtils.factories.recipe(
-    `messages_loaded_test_${Services.uuid
-      .generateUUID()
-      .toString()
-      .slice(1, -1)}`,
-    {
-      id: `messages-loaded-test`,
-      branches: [
-        {
-          slug: "control",
-          ratio: 1,
-          features: [
-            {
-              featureId,
-              value: { ...TEST_MESSAGE_CONTENT, id: "messages-loaded-test-1" },
+  const recipe = NimbusTestUtils.factories.recipe("messages_loaded_test", {
+    branches: [
+      {
+        slug: "control",
+        ratio: 1,
+        features: [
+          {
+            featureId,
+            value: {
+              ...TEST_MESSAGE_CONTENT,
+              id: "messages-loaded-test-1",
+              recordReach: true,
             },
-          ],
-        },
-        {
-          slug: "treatment",
-          ratio: 1,
-          features: [
-            {
-              featureId,
-              value: { ...TEST_MESSAGE_CONTENT, id: "messages-loaded-test-2" },
+          },
+        ],
+      },
+      {
+        slug: "treatment",
+        ratio: 1,
+        features: [
+          {
+            featureId,
+            value: {
+              ...TEST_MESSAGE_CONTENT,
+              id: "messages-loaded-test-2",
+              recordReach: true,
             },
-          ],
-        },
-      ],
-    }
-  );
-  await NimbusTestUtils.validateExperiment(recipe);
+          },
+        ],
+      },
+    ],
+  });
 
   await client.db.importChanges({}, Date.now(), [recipe], { clear: true });
   await secureClient.db.importChanges({}, Date.now(), [], { clear: true });
@@ -101,8 +120,9 @@ add_task(async function test_messagesLoaded_reach_experiment() {
       ],
     ],
   });
-  await ExperimentAPI._rsLoader.updateRecipes();
-  await BrowserTestUtils.waitForCondition(
+  await ExperimentAPI._rsLoader.updateRecipes("test");
+
+  let metadata = await BrowserTestUtils.waitForCondition(
     () =>
       NimbusFeatures[featureId].getEnrollmentMetadata(
         EnrollmentType.EXPERIMENT
@@ -110,15 +130,13 @@ add_task(async function test_messagesLoaded_reach_experiment() {
     "ExperimentAPI should return an experiment"
   );
 
-  await ASRouter._updateMessageProviders();
-  await ASRouter.loadMessagesFromAllProviders();
-
   const filterFn = m =>
     ["messages-loaded-test-1", "messages-loaded-test-2"].includes(m?.id);
   await BrowserTestUtils.waitForCondition(
     () => ASRouter.state.messages.filter(filterFn).length > 1,
     "Should load the test messages"
   );
+
   Assert.ok(sendTriggerSpy.calledWith(triggerMatch, true), "Trigger fired");
   Assert.ok(
     routeSpy.calledWith(
@@ -132,15 +150,29 @@ add_task(async function test_messagesLoaded_reach_experiment() {
     reachSpy.calledWith(sandbox.match(filterFn)),
     "Trigger recorded a reach event"
   );
+  const reachMessageId =
+    metadata.branch === "control"
+      ? "messages-loaded-test-2"
+      : "messages-loaded-test-1";
+  const reachMessageBranch =
+    metadata.branch === "control" ? "treatment" : "control";
+  const reachId = `${metadata.slug}:${reachMessageBranch}:${reachMessageId}`;
   Assert.ok(
-    ASRouter.state.messages.find(m => filterFn(m) && m.forReachEvent)
-      ?.forReachEvent.sent,
+    MessageLoaderUtils._recordedReachIds.has(reachId),
     "Reach message will not be sent again"
   );
 
-  sandbox.restore();
-  await client.db.clear();
-  await secureClient.db.clear();
-  await SpecialPowers.popPrefEnv();
+  ExperimentAPI.manager.store._deleteForTests("messages_loaded_test");
+  await client.db.importChanges({}, Date.now(), [], { clear: true });
+  await ExperimentAPI._rsLoader.updateRecipes("test");
+  MessageLoaderUtils._recordedReachIds.clear();
   await ASRouter._updateMessageProviders();
+  sandbox.restore();
+  await BrowserTestUtils.waitForCondition(
+    () =>
+      !NimbusFeatures[featureId].getEnrollmentMetadata(
+        EnrollmentType.EXPERIMENT
+      ),
+    "Wait for unenrollment"
+  );
 });

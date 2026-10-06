@@ -1,0 +1,21 @@
+{
+  "label": "iweather.gov.vn",
+  "bugs": {
+    "1973976": {
+      "issue": "broken-layout",
+      "matches": ["*://iweather.gov.vn/*"]
+    }
+  },
+  "css": {
+    "fix_narrow_interface": ".w-mc { width: -moz-available; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "pref_check": {
+        "layout.css.webkit-fill-available.enabled": false
+      },
+      "css": ["fix_narrow_interface"]
+    }
+  ]
+}

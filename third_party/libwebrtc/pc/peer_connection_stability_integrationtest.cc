@@ -14,21 +14,28 @@
 // The error messages when the tests fail are intended to contain C++ code
 // that can be pasted into the test when updating it.
 
-#include <stdint.h>
-
+#include <algorithm>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "absl/strings/str_cat.h"
+#include "api/audio_codecs/audio_decoder_factory.h"
+#include "api/audio_codecs/audio_encoder_factory.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "api/jsep.h"
 #include "api/peer_connection_interface.h"
+#include "api/scoped_refptr.h"
 #include "api/test/rtc_error_matchers.h"
 #include "api/video_codecs/builtin_video_decoder_factory.h"
 #include "api/video_codecs/builtin_video_encoder_factory.h"
+#include "api/video_codecs/sdp_video_format.h"
+#include "api/video_codecs/video_decoder_factory.h"
+#include "api/video_codecs/video_encoder_factory.h"
 #include "pc/session_description.h"
 #include "pc/test/integration_test_helpers.h"
+#include "rtc_base/logging.h"
 #include "rtc_base/strings/string_builder.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
@@ -41,6 +48,7 @@ namespace {
 using ::testing::ElementsAreArray;
 using ::testing::Eq;
 using ::testing::Not;
+using ::testing::UnorderedElementsAreArray;
 
 class FactorySignature {
  public:
@@ -54,6 +62,28 @@ class FactorySignature {
     kWebRtcAndroid,
     kGoogleInternal,
   };
+
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, Id id) {
+    switch (id) {
+      case Id::kNotRecognized:
+        sink.Append("kNotRecognized");
+        break;
+      case Id::kWebRtcTipOfTree:
+        sink.Append("kWebRtcTipOfTree");
+        break;
+      case Id::kWebRtcMoreConfigs1:
+        sink.Append("kWebRtcMoreConfigs1");
+        break;
+      case Id::kWebRtcAndroid:
+        sink.Append("kWebRtcAndroid");
+        break;
+      case Id::kGoogleInternal:
+        sink.Append("kGoogleInternal");
+        break;
+    }
+  }
+
   Id id() { return id_; }
   FactorySignature() {
     ExtractSignatureStrings();
@@ -63,10 +93,10 @@ class FactorySignature {
  private:
   // Extract a set of strings characterizing the factory in use.
   void ExtractSignatureStrings() {
-    rtc::scoped_refptr<AudioDecoderFactory> audio_decoders =
+    scoped_refptr<AudioDecoderFactory> audio_decoders =
         CreateBuiltinAudioDecoderFactory();
     for (const auto& codec : audio_decoders->GetSupportedDecoders()) {
-      rtc::StringBuilder sb;
+      StringBuilder sb;
       sb << "Decode audio/";
       sb << codec.format.name << "/" << codec.format.clockrate_hz << "/"
          << codec.format.num_channels;
@@ -75,10 +105,10 @@ class FactorySignature {
       }
       signature_.push_back(sb.Release());
     }
-    rtc::scoped_refptr<AudioEncoderFactory> audio_encoders =
+    scoped_refptr<AudioEncoderFactory> audio_encoders =
         CreateBuiltinAudioEncoderFactory();
     for (const auto& codec : audio_encoders->GetSupportedEncoders()) {
-      rtc::StringBuilder sb;
+      StringBuilder sb;
       sb << "Encode audio/";
       sb << codec.format.name << "/" << codec.format.clockrate_hz << "/"
          << codec.format.num_channels;
@@ -90,7 +120,7 @@ class FactorySignature {
     std::unique_ptr<VideoDecoderFactory> video_decoders =
         CreateBuiltinVideoDecoderFactory();
     for (const SdpVideoFormat& format : video_decoders->GetSupportedFormats()) {
-      rtc::StringBuilder sb;
+      StringBuilder sb;
       sb << "Decode video/";
       sb << format.name;
       for (const auto& kv : format.parameters) {
@@ -101,7 +131,7 @@ class FactorySignature {
     std::unique_ptr<VideoEncoderFactory> video_encoders =
         CreateBuiltinVideoEncoderFactory();
     for (const auto& format : video_encoders->GetSupportedFormats()) {
-      rtc::StringBuilder sb;
+      StringBuilder sb;
       sb << "Encode video/";
       // We don't use format.ToString because that includes scalability modes,
       // which aren't supposed to influence SDP.
@@ -315,7 +345,7 @@ class FactorySignature {
       return Id::kGoogleInternal;
     }
     // If unrecognized, produce a debug printout.
-    rtc::StringBuilder sb;
+    StringBuilder sb;
     sb << "{\n";
     for (std::string str : signature_) {
       sb << "\"" << str << "\",\n";
@@ -353,7 +383,7 @@ class PeerConnectionIntegrationTest : public PeerConnectionIntegrationBaseTest {
       const auto* media_description = content.media_description();
       const auto& codecs = media_description->codecs();
       for (const auto& codec : codecs) {
-        rtc::StringBuilder str;
+        StringBuilder str;
         str << media_section_counter << " " << absl::StrCat(codec);
         results.push_back(str.Release());
       }
@@ -369,11 +399,8 @@ class PeerConnectionIntegrationTest : public PeerConnectionIntegrationBaseTest {
                                        std::vector<std::string> caller_remote,
                                        std::vector<std::string> callee_local,
                                        std::vector<std::string> callee_remote) {
-    rtc::StringBuilder sb;
-    // TODO: issues.webrtc.org/397895867 - change kChangeThis to the name of
-    // the value. Requires adding an AbslStringifier to the enum.
-    sb << "\n{" << ".factory_id = FactorySignature::Id::kChangeThis"
-       << static_cast<int>(id) << ",\n"
+    StringBuilder sb;
+    sb << "\n{" << ".factory_id = FactorySignature::Id::" << id << ",\n"
        << ".caller_local = {";
     for (const std::string& str : caller_local) {
       sb << "\"" << str << "\",\n";
@@ -933,13 +960,54 @@ TEST_F(PeerConnectionIntegrationTest, BasicOfferAnswerPayloadTypesStable) {
 
   const ResultingCodecList& this_golden = *this_golden_it;
   EXPECT_THAT(CodecList(*caller()->pc()->local_description()),
-              ElementsAreArray(this_golden.caller_local));
+              UnorderedElementsAreArray(this_golden.caller_local))
+      << "Factory ID: " << factory_signature.id();
   EXPECT_THAT(CodecList(*caller()->pc()->remote_description()),
-              ElementsAreArray(this_golden.caller_remote));
+              UnorderedElementsAreArray(this_golden.caller_remote))
+      << "Factory ID: " << factory_signature.id();
   EXPECT_THAT(CodecList(*callee()->pc()->local_description()),
-              ElementsAreArray(this_golden.callee_local));
+              UnorderedElementsAreArray(this_golden.callee_local))
+      << "Factory ID: " << factory_signature.id();
   EXPECT_THAT(CodecList(*callee()->pc()->remote_description()),
-              ElementsAreArray(this_golden.callee_remote));
+              UnorderedElementsAreArray(this_golden.callee_remote))
+      << "Factory ID: " << factory_signature.id();
+
+  if (HasFailure()) {
+    return;
+  }
+
+  EXPECT_THAT(CodecList(*caller()->pc()->local_description()),
+              ElementsAreArray(this_golden.caller_local))
+      << "Factory ID: " << factory_signature.id();
+  EXPECT_THAT(CodecList(*caller()->pc()->remote_description()),
+              ElementsAreArray(this_golden.caller_remote))
+      << "Factory ID: " << factory_signature.id();
+  EXPECT_THAT(CodecList(*callee()->pc()->local_description()),
+              ElementsAreArray(this_golden.callee_local))
+      << "Factory ID: " << factory_signature.id();
+  EXPECT_THAT(CodecList(*callee()->pc()->remote_description()),
+              ElementsAreArray(this_golden.callee_remote))
+      << "Factory ID: " << factory_signature.id();
+}
+
+TEST_F(PeerConnectionIntegrationTest,
+       DumpAsResultingCodecListProducesExpectedOutput) {
+  std::vector<std::string> caller_local = {"cl1"};
+  std::vector<std::string> caller_remote = {"cr1"};
+  std::vector<std::string> callee_local = {"ce_l1"};
+  std::vector<std::string> callee_remote = {"ce_r1"};
+
+  std::string output = DumpAsResultingCodecList(
+      FactorySignature::Id::kWebRtcTipOfTree, caller_local, caller_remote,
+      callee_local, callee_remote);
+
+  EXPECT_THAT(output,
+              Eq("\n{.factory_id = FactorySignature::Id::kWebRtcTipOfTree,\n"
+                 ".caller_local = {\"cl1\",\n},\n"
+                 " .caller_remote = {\"cr1\",\n},\n"
+                 " .callee_local = {\"ce_l1\",\n},\n"
+                 " .callee_remote = {\"ce_r1\",\n"
+                 "}}\n"));
 }
 
 }  // namespace

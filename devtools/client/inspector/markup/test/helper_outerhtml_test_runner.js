@@ -13,6 +13,7 @@
  * This test runner will wait for the mutation event to be fired and will check
  * a few things. Each test may also provide its own validate function to perform
  * assertions and verify that the new outer html is correct.
+ *
  * @param {Array} tests See runEditOuterHTMLTest for the structure
  * @param {InspectorPanel} inspector The instance of InspectorPanel currently
  * opened
@@ -30,7 +31,8 @@ function runEditOuterHTMLTests(tests, inspector) {
 /**
  * Run a single edit-outer-html test.
  * See runEditOuterHTMLTests for a description.
- * @param {Object} test A test object should contain the following properties:
+ *
+ * @param {object} test A test object should contain the following properties:
  *        - selector {String} a css selector targeting the node to edit
  *        - oldHTML {String}
  *        - newHTML {String}

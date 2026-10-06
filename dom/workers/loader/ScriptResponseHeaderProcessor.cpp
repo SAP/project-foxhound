@@ -1,10 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ScriptResponseHeaderProcessor.h"
+
+#include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/Try.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerScope.h"
@@ -30,7 +30,7 @@ nsresult ScriptResponseHeaderProcessor::ProcessCrossOriginEmbedderPolicyHeader(
     // the main script, but it must pass CORP checking.
     // see: wpt window-simple-success.https.html, the worker import script
     // test-incrementer.js without coep header.
-    Unused << NS_WARN_IF(!aWorkerPrivate->MatchEmbedderPolicy(aPolicy));
+    (void)NS_WARN_IF(!aWorkerPrivate->MatchEmbedderPolicy(aPolicy));
   }
 
   return NS_OK;
@@ -40,15 +40,27 @@ nsresult ScriptResponseHeaderProcessor::ProcessCrossOriginEmbedderPolicyHeader(
 // https://github.com/whatwg/html/pull/4001
 nsresult ScriptResponseHeaderProcessor::EnsureExpectedModuleType(
     nsIRequest* aRequest) {
+  if (mModuleType == JS::ModuleType::Text) {
+    return NS_OK;
+  }
+
   nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
   MOZ_ASSERT(channel);
   nsAutoCString mimeType;
   channel->GetContentType(mimeType);
   NS_ConvertUTF8toUTF16 typeString(mimeType);
 
-  if (mModuleType == JS::ModuleType::JavaScript &&
-      nsContentUtils::IsJavascriptMIMEType(typeString)) {
-    return NS_OK;
+  if (mModuleType == JS::ModuleType::JavaScriptOrWasm) {
+    if (nsContentUtils::IsJavascriptMIMEType(typeString)) {
+      return NS_OK;
+    }
+#ifdef NIGHTLY_BUILD
+    if (StaticPrefs::javascript_options_experimental_wasm_esm_integration()) {
+      if (nsContentUtils::HasWasmMimeTypeEssence(typeString)) {
+        return NS_OK;
+      }
+    }
+#endif
   }
 
   if (mModuleType == JS::ModuleType::JSON &&

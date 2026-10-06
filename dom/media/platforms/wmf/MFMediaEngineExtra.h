@@ -6,7 +6,7 @@
 #define DOM_MEDIA_PLATFORM_WMF_MFMEDIAENGINEEXTRA_H
 
 #include <evr.h>
-#include <mfmediaengine.h>
 #include <mfapi.h>
+#include <mfmediaengine.h>
 
 #endif  // DOM_MEDIA_PLATFORM_WMF_MFMEDIAENGINENOTIFY_H

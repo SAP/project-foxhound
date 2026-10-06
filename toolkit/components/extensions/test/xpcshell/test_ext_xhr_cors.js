@@ -4,8 +4,6 @@
 // similarly in MV2 and MV3, except for intentional differences related to
 // permission handling.
 
-Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
-
 const server = createHttpServer({
   hosts: ["example.com", "example.net", "example.org"],
 });

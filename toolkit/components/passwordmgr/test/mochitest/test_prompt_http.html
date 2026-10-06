@@ -171,12 +171,12 @@ add_task(async function test_iframe() {
   await promptShownPromise;
 
   // Housekeeping: Delete login4 to test the save prompt in the next test.
-  runInParent(() => {
+  runInParent(async () => {
     var tmpLogin = Cc["@mozilla.org/login-manager/loginInfo;1"].
                    createInstance(Ci.nsILoginInfo);
     tmpLogin.init("http://mochi.test:8888", null, "mochitest3",
                   "mochiuser3", "mochipass3-old", "", "");
-    Services.logins.removeLogin(tmpLogin);
+    await Services.logins.removeLoginAsync(tmpLogin);
 
     // Clear cached auth from this subtest, and avoid leaking due to bug 459620.
     var authMgr = Cc["@mozilla.org/network/http-auth-manager;1"].

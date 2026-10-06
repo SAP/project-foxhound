@@ -8,4 +8,6 @@ browser.jar:
     content/browser/genai/chat.css
     content/browser/genai/chat.html
     content/browser/genai/chat.js
+    content/browser/genai/pageAssist.html
     content/browser/genai/content/ (content/link-preview-card*)
+    content/browser/genai/content/ (content/page-assist*)

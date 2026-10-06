@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Label shown below the tracker count indicating how many sites the trackers came from.
+     %1$d is the number of sites. -->
+    <plurals name="mozac_protections_dashboard_across_sites">
+        <item quantity="one">across %1$d site</item>
+        <item quantity="other">across %1$d sites</item>
+    </plurals>
+
+    <!-- Label showing data saved in megabytes. %1$d is the number of MB saved -->
+    <plurals name="mozac_protections_dashboard_data_saved">
+        <item quantity="one">%1$d MB saved</item>
+        <item quantity="other">%1$d MB saved</item>
+    </plurals>
+
+    <plurals name="protections_dashboard_category_cookies" translatable="false" tools:ignore="UnusedResources">
+        <item quantity="one">%1$d cross-site cookie</item>
+        <item quantity="other">%1$d cross-site cookies</item>
+    </plurals>
+    <plurals name="protections_dashboard_category_social" translatable="false" tools:ignore="UnusedResources">
+        <item quantity="one">%1$d social media tracker</item>
+        <item quantity="other">%1$d social media trackers</item>
+    </plurals>
+    <plurals name="protections_dashboard_category_fingerprinters" translatable="false" tools:ignore="UnusedResources">
+        <item quantity="one">%1$d fingerprinter</item>
+        <item quantity="other">%1$d fingerprinters</item>
+    </plurals>
+    <plurals name="protections_dashboard_category_tracking_content" translatable="false" tools:ignore="UnusedResources">
+        <item quantity="one">%1$d tracking content</item>
+        <item quantity="other">%1$d tracking content</item>
+    </plurals>
+</resources>

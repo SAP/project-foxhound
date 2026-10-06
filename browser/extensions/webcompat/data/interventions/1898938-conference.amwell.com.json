@@ -1,0 +1,15 @@
+{
+  "label": "conference.amwell.com",
+  "bugs": {
+    "1898938": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://conference.amwell.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome", "add_Firefox_as_Gecko"]
+    }
+  ]
+}

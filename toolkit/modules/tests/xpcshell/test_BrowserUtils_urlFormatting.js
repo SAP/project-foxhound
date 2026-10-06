@@ -19,6 +19,10 @@ const EXTENSION_URL_EXPECTED_STRING = gL10n.formatValueSync(
   { extension: EXTENSION_NAME }
 );
 
+const FILE_URL_EXPECTED_STRING = gL10n.formatValueSync(
+  "browser-utils-file-scheme"
+);
+
 const { AddonTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/AddonTestUtils.sys.mjs"
 );
@@ -88,7 +92,7 @@ const HTTP_TESTS = [
     output: "www.co.uk",
   },
 
-  // Other sudomains should be kept:
+  // Other subdomains should be kept:
   {
     input: "https://webmail.example.co.uk",
     output: "webmail.example.co.uk",
@@ -106,6 +110,16 @@ const HTTP_TESTS = [
   {
     input: "http://127.0.0.1/foo/bar?baz=bax#quux",
     output: "127.0.0.1",
+  },
+
+  // IDN domains should be displayed in unicode, not punycode (bug 2037875).
+  {
+    input: "https://bäcker.de/",
+    output: "bäcker.de",
+  },
+  {
+    input: "https://www.bäcker.de/",
+    output: "bäcker.de",
   },
 ];
 
@@ -157,6 +171,19 @@ const TESTS = [
   {
     input: "data:text/html,42",
     output: DATA_URL_EXPECTED_STRING,
+  },
+  {
+    input: "data://google.com/text/html,Hello World",
+    output: DATA_URL_EXPECTED_STRING,
+  },
+
+  {
+    input: `moz-icon:${Services.io.newFileURI(tempFile).spec}`,
+    output: tempFile.leafName,
+  },
+  {
+    input: "moz-icon://.extension?size=16",
+    output: "moz-icon://.extension?size=16",
   },
 ];
 
@@ -220,7 +247,9 @@ const { BrowserUtils } = ChromeUtils.importESModule(
 add_task(async function test_checkStringFormatting() {
   for (let { input, output } of TESTS) {
     Assert.equal(
-      BrowserUtils.formatURIStringForDisplay(input),
+      BrowserUtils.formatURIStringForDisplay(input, {
+        showFilenameForLocalURIs: true,
+      }),
       output,
       `String ${input} formatted for output should match`
     );
@@ -231,10 +260,56 @@ add_task(async function test_checkURIFormatting() {
   for (let { input, output } of TESTS) {
     let uri = Services.io.newURI(input);
     Assert.equal(
-      BrowserUtils.formatURIForDisplay(uri),
+      BrowserUtils.formatURIForDisplay(uri, {
+        showFilenameForLocalURIs: true,
+      }),
       output,
       `URI ${input} formatted for output should match`
     );
+  }
+});
+
+add_task(async function test_checkOnlyBaseDomain() {
+  for (let { input, output } of [
+    { input: "https://subdomain.example.com/", output: "example.com" },
+    {
+      input: "http://www.city.mikasa.hokkaido.jp/",
+      output: "city.mikasa.hokkaido.jp",
+    },
+    { input: "https://www.example.co.uk/", output: "example.co.uk" },
+    {
+      input: "mailto:example@subdomain.example.com",
+      output: "mailto:example@subdomain.example.com",
+    },
+    // IDN domains should be displayed in unicode (bug 2037875):
+    { input: "https://subdomain.bäcker.de/", output: "bäcker.de" },
+    { input: "https://subdomain.bäcker.de:8443/", output: "bäcker.de:8443" },
+  ]) {
+    let uri = Services.io.newURI(input);
+    Assert.equal(
+      BrowserUtils.formatURIForDisplay(uri, { onlyBaseDomain: true }),
+      output,
+      `URI ${input} formatted for output should match`
+    );
+  }
+});
+
+add_task(async function test_checkLocalFileFormatting() {
+  for (let { input } of TESTS) {
+    let uri = Services.io.newURI(input);
+    if (
+      ["file", "chrome", "moz-icon", "resource", "jar"].includes(uri.scheme)
+    ) {
+      Assert.equal(
+        BrowserUtils.formatURIForDisplay(uri, {
+          showFilenameForLocalURIs: false,
+        }),
+        uri.scheme == "file"
+          ? FILE_URL_EXPECTED_STRING
+          : `${uri.scheme} resource`,
+        `URI ${input} formatted for output should match`
+      );
+    }
   }
 });
 

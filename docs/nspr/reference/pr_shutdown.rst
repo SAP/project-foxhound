@@ -27,9 +27,9 @@ The function has the following parameters:
    The kind of disallowed operations on the socket. Possible values
    include the following:
 
-    - :ref:`PR_SHUTDOWN_RCV`. Further receives will be disallowed.
-    - :ref:`PR_SHUTDOWN_SEND`. Further sends will be disallowed.
-    - :ref:`PR_SHUTDOWN_BOTH`. Further sends and receives will be
+    - ``PR_SHUTDOWN_RCV``. Further receives will be disallowed.
+    - ``PR_SHUTDOWN_SEND``. Further sends will be disallowed.
+    - ``PR_SHUTDOWN_BOTH``. Further sends and receives will be
       disallowed.
 
 

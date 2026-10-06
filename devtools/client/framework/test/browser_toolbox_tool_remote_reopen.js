@@ -6,6 +6,16 @@
 const {
   DevToolsServer,
 } = require("resource://devtools/server/devtools-server.js");
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
+);
+
+// Closing the toolbox makes the performance panel try to stop the profiler;
+// when it's already running (MOZ_PROFILER_STARTUP=1) that request races the
+// connection teardown and rejects harmlessly. See bug 2044383.
+PromiseTestUtils.allowMatchingRejectionsGlobally(
+  /Connection closed, pending request to .*stopProfilerAndDiscardProfile/
+);
 
 // Bug 1277805: Too slow for debug runs
 requestLongerTimeout(2);

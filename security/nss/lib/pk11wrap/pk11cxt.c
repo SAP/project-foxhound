@@ -8,7 +8,6 @@
 
 #include "seccomon.h"
 #include "secmod.h"
-#include "nssilock.h"
 #include "secmodi.h"
 #include "secmodti.h"
 #include "pkcs11.h"
@@ -38,7 +37,7 @@ PK11_EnterContextMonitor(PK11Context *cx)
      * the Context */
     if ((cx->ownSession) && (cx->slot->isThreadSafe)) {
         /* Should this use monitors instead? */
-        PZ_Lock(cx->sessionLock);
+        PR_Lock(cx->sessionLock);
     } else {
         PK11_EnterSlotMonitor(cx->slot);
     }
@@ -51,7 +50,7 @@ PK11_ExitContextMonitor(PK11Context *cx)
      * the Context */
     if ((cx->ownSession) && (cx->slot->isThreadSafe)) {
         /* Should this use monitors instead? */
-        PZ_Unlock(cx->sessionLock);
+        PR_Unlock(cx->sessionLock);
     } else {
         PK11_ExitSlotMonitor(cx->slot);
     }
@@ -72,7 +71,7 @@ PK11_DestroyContext(PK11Context *context, PRBool freeit)
     if (context->param && context->param != &pk11_null_params)
         SECITEM_FreeItem(context->param, PR_TRUE);
     if (context->sessionLock)
-        PZ_DestroyLock(context->sessionLock);
+        PR_DestroyLock(context->sessionLock);
     PK11_FreeSlot(context->slot);
     if (freeit)
         PORT_Free(context);
@@ -154,7 +153,6 @@ pk11_contextInitMessage(PK11Context *context, CK_MECHANISM_PTR mech,
                         CK_FLAGS flags, CK_RV scrv)
 {
     PK11SlotInfo *slot = context->slot;
-    CK_VERSION version = slot->module->cryptokiVersion;
     CK_RV crv = CKR_OK;
 
     context->ivCounter = 0;
@@ -171,7 +169,7 @@ pk11_contextInitMessage(PK11Context *context, CK_MECHANISM_PTR mech,
      * PKCS #11 V2 interface.
      * Sign and verify do not have V2 interfaces, so we go ahead and fail
      * if those cases */
-    if ((version.major >= 3) &&
+    if ((PK11_CheckPKCS11Version(slot, 3, 0, PR_TRUE) >= 0) &&
         PK11_DoesMechanismFlag(slot, (mech)->mechanism, flags)) {
         PK11_EnterContextMonitor(context);
         crv = (*initFunc)((context)->session, (mech), (context)->objectID);
@@ -194,7 +192,8 @@ pk11_contextInitMessage(PK11Context *context, CK_MECHANISM_PTR mech,
  * Context initialization. Used by all flavors of CreateContext
  */
 static SECStatus
-pk11_context_init(PK11Context *context, CK_MECHANISM *mech_info)
+pk11_context_init(PK11Context *context, CK_MECHANISM *mech_info,
+                  const SECItem *sig)
 {
     CK_RV crv;
     SECStatus rv = SECSuccess;
@@ -238,6 +237,16 @@ pk11_context_init(PK11Context *context, CK_MECHANISM *mech_info)
              * PKCS #11 hash/Verify combo operations. */
             PK11_EnterContextMonitor(context);
             crv = PK11_GETTAB(context->slot)->C_VerifyInit(context->session, mech_info, context->objectID);
+            PK11_ExitContextMonitor(context);
+            break;
+        /* fake attibute to distingush CKA_VERIFY from CKA_VERIFY_SIGNAGURE */
+        case CKA_NSS_VERIFY_SIGNATURE:
+            if (!sig || !sig->data) {
+                PORT_SetError(SEC_ERROR_INVALID_ARGS);
+                return SECFailure;
+            }
+            PK11_EnterContextMonitor(context);
+            crv = PK11_GETTAB(context->slot)->C_VerifySignatureInit(context->session, mech_info, context->objectID, sig->data, sig->len);
             PK11_ExitContextMonitor(context);
             break;
         case CKA_DIGEST:
@@ -356,7 +365,8 @@ static PK11Context *
 pk11_CreateNewContextInSlot(CK_MECHANISM_TYPE type,
                             PK11SlotInfo *slot, CK_ATTRIBUTE_TYPE operation,
                             PK11SymKey *symKey, CK_OBJECT_HANDLE objectID,
-                            const SECItem *param, void *pwArg)
+                            const SECItem *param, const SECItem *sig,
+                            void *pwArg)
 {
     CK_MECHANISM mech_info;
     PK11Context *context;
@@ -416,7 +426,7 @@ pk11_CreateNewContextInSlot(CK_MECHANISM_TYPE type,
         context->param = NULL;
     }
     context->init = PR_FALSE;
-    context->sessionLock = PZ_NewLock(nssILockPK11cxt);
+    context->sessionLock = PR_NewLock();
     if ((context->param == NULL) || (context->sessionLock == NULL)) {
         PK11_DestroyContext(context, PR_TRUE);
         return NULL;
@@ -425,7 +435,7 @@ pk11_CreateNewContextInSlot(CK_MECHANISM_TYPE type,
     mech_info.mechanism = type;
     mech_info.pParameter = param->data;
     mech_info.ulParameterLen = param->len;
-    rv = pk11_context_init(context, &mech_info);
+    rv = pk11_context_init(context, &mech_info, sig);
 
     if (rv != SECSuccess) {
         PK11_DestroyContext(context, PR_TRUE);
@@ -508,7 +518,8 @@ PK11_CreateContextBySymKey(CK_MECHANISM_TYPE type, CK_ATTRIBUTE_TYPE operation,
      * free our reference we we are through, even though we may have
      * created the key using pk11_ForceSlot. */
     context = pk11_CreateNewContextInSlot(type, symKey->slot, operation, symKey,
-                                          symKey->objectID, param, symKey->cx);
+                                          symKey->objectID, param, NULL,
+                                          symKey->cx);
     PK11_FreeSymKey(symKey);
     return context;
 }
@@ -516,9 +527,10 @@ PK11_CreateContextBySymKey(CK_MECHANISM_TYPE type, CK_ATTRIBUTE_TYPE operation,
 /* To support multipart public key operations (like hash/verify operations),
  * we need to create contexts with public keys. */
 PK11Context *
-PK11_CreateContextByPubKey(CK_MECHANISM_TYPE type, CK_ATTRIBUTE_TYPE operation,
-                           SECKEYPublicKey *pubKey, const SECItem *param,
-                           void *pwArg)
+PK11_CreateSignatureContextByPubKey(CK_MECHANISM_TYPE type,
+                                    CK_ATTRIBUTE_TYPE operation,
+                                    SECKEYPublicKey *pubKey, const SECItem *param,
+                                    const SECItem *sig, void *pwArg)
 {
     PK11SlotInfo *slot = pubKey->pkcs11Slot;
     SECItem nullparam = { 0, 0, 0 };
@@ -545,7 +557,18 @@ PK11_CreateContextByPubKey(CK_MECHANISM_TYPE type, CK_ATTRIBUTE_TYPE operation,
      * PK11_VerifyWithMechanism */
     return pk11_CreateNewContextInSlot(type, pubKey->pkcs11Slot, operation,
                                        NULL, pubKey->pkcs11ID,
-                                       param ? param : &nullparam, pwArg);
+                                       param ? param : &nullparam, sig, pwArg);
+}
+
+/* traditional PK11_CreateContextByPubKey just doesn't have the signature.
+ * This will work unless operation is CKA_NSS_VERIFY_SIGNATURE */
+PK11Context *
+PK11_CreateContextByPubKey(CK_MECHANISM_TYPE type, CK_ATTRIBUTE_TYPE operation,
+                           SECKEYPublicKey *pubKey, const SECItem *param,
+                           void *pwArg)
+{
+    return PK11_CreateSignatureContextByPubKey(type, operation, pubKey, param,
+                                               NULL, pwArg);
 }
 
 /* To support multipart private key operations (like hash/sign operations),
@@ -566,7 +589,7 @@ PK11_CreateContextByPrivKey(CK_MECHANISM_TYPE type, CK_ATTRIBUTE_TYPE operation,
      * PK11_SignWithMechanism */
     return pk11_CreateNewContextInSlot(type, privKey->pkcs11Slot, operation,
                                        NULL, privKey->pkcs11ID,
-                                       param ? param : &nullparam,
+                                       param ? param : &nullparam, NULL,
                                        privKey->wincx);
 }
 
@@ -596,7 +619,7 @@ PK11_CreateDigestContext(SECOidTag hashAlg)
     param.type = 0;
 
     context = pk11_CreateNewContextInSlot(type, slot, CKA_DIGEST, NULL,
-                                          CK_INVALID_HANDLE, &param, NULL);
+                                          CK_INVALID_HANDLE, &param, NULL, NULL);
     PK11_FreeSlot(slot);
     return context;
 }
@@ -615,7 +638,7 @@ PK11_CloneContext(PK11Context *old)
 
     newcx = pk11_CreateNewContextInSlot(old->type, old->slot, old->operation,
                                         old->key, old->objectID, old->param,
-                                        old->pwArg);
+                                        NULL, old->pwArg);
     if (newcx == NULL)
         return NULL;
 
@@ -796,7 +819,7 @@ PK11_DigestBegin(PK11Context *cx)
     mech_info.mechanism = cx->type;
     mech_info.pParameter = cx->param->data;
     mech_info.ulParameterLen = cx->param->len;
-    rv = pk11_context_init(cx, &mech_info);
+    rv = pk11_context_init(cx, &mech_info, NULL);
 
     if (rv != SECSuccess) {
         return SECFailure;
@@ -1522,6 +1545,9 @@ PK11_DigestOp(PK11Context *context, const unsigned char *in, unsigned inLen)
         case CKA_VERIFY:
             crv = PK11_GETTAB(context->slot)->C_VerifyUpdate(context->session, (unsigned char *)in, inLen);
             break;
+        case CKA_NSS_VERIFY_SIGNATURE:
+            crv = PK11_GETTAB(context->slot)->C_VerifySignatureUpdate(context->session, (unsigned char *)in, inLen);
+            break;
         case CKA_DIGEST:
             crv = PK11_GETTAB(context->slot)->C_DigestUpdate(context->session, (unsigned char *)in, inLen);
             break;
@@ -1663,6 +1689,9 @@ finalize:
         case CKA_VERIFY:
             crv = PK11_GETTAB(context->slot)->C_VerifyFinal(context->session, buffer, count);
             break;
+        case CKA_NSS_VERIFY_SIGNATURE:
+            crv = PK11_GETTAB(context->slot)->C_VerifySignatureFinal(context->session);
+            break;
         case CKA_DIGEST:
             crv = PK11_GETTAB(context->slot)->C_DigestFinal(context->session, buffer, &count);
             break;
@@ -1696,7 +1725,11 @@ finalize:
     }
 
     /* Message interface does not need to allocate a final buffer */
-    if (((context->operation) & CKA_NSS_MESSAGE_MASK) == CKA_NSS_MESSAGE) {
+    /* nor does CKA_NSS_VERIFY_SIGNATURE. We could use a clever trick
+     * here to include the CKA_NSS_SIGNATURE addition, but this form is
+     * more clear to  the reader what is happenning */
+    if ((((context->operation) & CKA_NSS_MESSAGE_MASK) == CKA_NSS_MESSAGE) ||
+        ((context->operation) == CKA_NSS_VERIFY_SIGNATURE)) {
         return SECSuccess;
     }
 
@@ -1758,6 +1791,9 @@ PK11_DigestFinal(PK11Context *context, unsigned char *data,
             break;
         case CKA_VERIFY:
             crv = PK11_GETTAB(context->slot)->C_VerifyFinal(context->session, data, len);
+            break;
+        case CKA_NSS_VERIFY_SIGNATURE:
+            crv = PK11_GETTAB(context->slot)->C_VerifySignatureFinal(context->session);
             break;
         case CKA_DIGEST:
             crv = PK11_GETTAB(context->slot)->C_DigestFinal(context->session, data, &len);

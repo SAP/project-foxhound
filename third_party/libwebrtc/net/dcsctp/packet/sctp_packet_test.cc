@@ -9,11 +9,10 @@
  */
 #include "net/dcsctp/packet/sctp_packet.h"
 
+#include <cstddef>
 #include <cstdint>
-#include <utility>
 #include <vector>
 
-#include "api/array_view.h"
 #include "net/dcsctp/common/internal_types.h"
 #include "net/dcsctp/common/math.h"
 #include "net/dcsctp/packet/chunk/abort_chunk.h"
@@ -21,14 +20,13 @@
 #include "net/dcsctp/packet/chunk/data_chunk.h"
 #include "net/dcsctp/packet/chunk/init_chunk.h"
 #include "net/dcsctp/packet/chunk/sack_chunk.h"
-#include "net/dcsctp/packet/error_cause/error_cause.h"
 #include "net/dcsctp/packet/error_cause/user_initiated_abort_cause.h"
 #include "net/dcsctp/packet/parameter/parameter.h"
-#include "net/dcsctp/packet/tlv_trait.h"
 #include "net/dcsctp/public/dcsctp_options.h"
+#include "net/dcsctp/public/types.h"
 #include "net/dcsctp/testing/testing_macros.h"
-#include "rtc_base/gunit.h"
 #include "test/gmock.h"
+#include "test/gtest.h"
 
 namespace dcsctp {
 namespace {

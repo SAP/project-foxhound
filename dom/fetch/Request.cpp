@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,25 +5,22 @@
 #include "Request.h"
 
 #include "js/Value.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/dom/Fetch.h"
+#include "mozilla/dom/FetchUtil.h"
+#include "mozilla/dom/Headers.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/ReadableStreamDefaultReader.h"
+#include "mozilla/dom/URL.h"
+#include "mozilla/dom/WindowContext.h"
+#include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/dom/WorkerRunnable.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
 #include "nsTaintingUtils.h"
-
-#include "mozilla/ErrorResult.h"
-#include "mozilla/StaticPrefs_network.h"
-#include "mozilla/dom/Headers.h"
-#include "mozilla/dom/Fetch.h"
-#include "mozilla/dom/FetchUtil.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/dom/URL.h"
-#include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/dom/WorkerRunnable.h"
-#include "mozilla/dom/WindowContext.h"
-#include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "mozilla/Unused.h"
-
-#include "mozilla/dom/ReadableStreamDefaultReader.h"
 
 namespace mozilla::dom {
 
@@ -36,7 +31,7 @@ NS_IMPL_RELEASE_INHERITED(Request, FetchBody<Request>)
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Request)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(Request, FetchBody<Request>)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mOwner)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mGlobal)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mHeaders)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSignal)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mFetchStreamReader)
@@ -44,7 +39,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(Request, FetchBody<Request>)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(Request, FetchBody<Request>)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOwner)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mGlobal)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mHeaders)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSignal)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFetchStreamReader)
@@ -54,9 +49,9 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(Request)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
 NS_INTERFACE_MAP_END_INHERITING(FetchBody<Request>)
 
-Request::Request(nsIGlobalObject* aOwner, SafeRefPtr<InternalRequest> aRequest,
+Request::Request(nsIGlobalObject* aGlobal, SafeRefPtr<InternalRequest> aRequest,
                  AbortSignal* aSignal)
-    : FetchBody<Request>(aOwner), mRequest(std::move(aRequest)) {
+    : FetchBody<Request>(aGlobal), mRequest(std::move(aRequest)) {
   MOZ_ASSERT(mRequest->Headers()->Guard() == HeadersGuardEnum::Immutable ||
              mRequest->Headers()->Guard() == HeadersGuardEnum::Request ||
              mRequest->Headers()->Guard() == HeadersGuardEnum::Request_no_cors);
@@ -64,7 +59,7 @@ Request::Request(nsIGlobalObject* aOwner, SafeRefPtr<InternalRequest> aRequest,
     // If we don't have a signal as argument, we will create it when required by
     // content, otherwise the Request's signal must follow what has been passed.
     AutoTArray<OwningNonNull<AbortSignal>, 1> array{OwningNonNull(*aSignal)};
-    mSignal = AbortSignal::Any(aOwner, array, [](nsIGlobalObject* aGlobal) {
+    mSignal = AbortSignal::Any(aGlobal, array, [](nsIGlobalObject* aGlobal) {
       return AbortSignal::Create(aGlobal, SignalAborted::No,
                                  JS::UndefinedHandleValue);
     });
@@ -99,7 +94,7 @@ already_AddRefed<nsIURI> ParseURL(nsIGlobalObject* aGlobal,
 }
 
 void GetRequestURL(nsIGlobalObject* aGlobal, const nsACString& aInput,
-                   nsACString& aRequestURL, nsACString& aURLfragment,
+                   nsIURI** aRequestURL, nsACString& aURLfragment,
                    ErrorResult& aRv) {
   nsCOMPtr<nsIURI> resolvedURI = ParseURL(aGlobal, aInput, aRv);
   if (aRv.Failed()) {
@@ -108,18 +103,13 @@ void GetRequestURL(nsIGlobalObject* aGlobal, const nsACString& aInput,
   // This fails with URIs with weird protocols, even when they are valid,
   // so we ignore the failure
   nsAutoCString credentials;
-  Unused << resolvedURI->GetUserPass(credentials);
+  (void)resolvedURI->GetUserPass(credentials);
   if (!credentials.IsEmpty()) {
     aRv.ThrowTypeError<MSG_URL_HAS_CREDENTIALS>(aInput);
     return;
   }
 
-  nsCOMPtr<nsIURI> resolvedURIClone;
-  aRv = NS_GetURIWithoutRef(resolvedURI, getter_AddRefs(resolvedURIClone));
-  if (NS_WARN_IF(aRv.Failed())) {
-    return;
-  }
-  aRv = resolvedURIClone->GetSpec(aRequestURL);
+  aRv = NS_GetURIWithoutRef(resolvedURI, aRequestURL);
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
@@ -178,13 +168,14 @@ SafeRefPtr<Request> Request::Constructor(
     // aInput is UTF8String.
     // We need to get url before we create a InternalRequest.
     const nsACString& input = aInput.GetAsUTF8String();
-    nsAutoCString requestURL;
+    nsCOMPtr<nsIURI> requestURL;
     nsCString fragment;
-    GetRequestURL(aGlobal, input, requestURL, fragment, aRv);
+    GetRequestURL(aGlobal, input, getter_AddRefs(requestURL), fragment, aRv);
     if (aRv.Failed()) {
       return nullptr;
     }
-    request = MakeSafeRefPtr<InternalRequest>(requestURL, fragment);
+    request = MakeSafeRefPtr<InternalRequest>(WrapNotNull(requestURL.get()),
+                                              fragment);
   }
   request = request->GetRequestConstructorCopy(aGlobal, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
@@ -367,6 +358,11 @@ SafeRefPtr<Request> Request::Constructor(
     request->SetNeverTaint(aInit.mNeverTaint.Value());
   }
 
+  if (aInit.mCookieJarSettings.WasPassed() &&
+      aInit.mCookieJarSettings.Value()) {
+    request->SetCookieJarSettings(aInit.mCookieJarSettings.Value());
+  }
+
   // Request constructor step 14.
   if (aInit.mMethod.WasPassed()) {
     nsAutoCString method(aInit.mMethod.Value());
@@ -387,32 +383,16 @@ SafeRefPtr<Request> Request::Constructor(
 
   // Foxhound:
   nsCString cUrl;
-  request->GetURL(cUrl);
+  nsCOMPtr<nsIURI> requestUrl = request->GetURL();
+  if (requestUrl) {
+    requestUrl->GetSpec(cUrl);
+  }
   nsString url = NS_ConvertUTF8toUTF16(cUrl);
 
   RefPtr<InternalHeaders> requestHeaders = request->Headers();
 
-  RefPtr<InternalHeaders> headers;
-  if (aInit.mHeaders.WasPassed()) {
-    RefPtr<Headers> h = Headers::Create(aGlobal, aInit.mHeaders.Value(), aRv);
-    if (aRv.Failed()) {
-      return nullptr;
-    }
-    headers = h->GetInternalHeaders();
 
-    // Foxhound:
-    nsTArray<InternalHeaders::Entry> headerEntries;
-    headers->GetEntries(headerEntries);
-    for(InternalHeaders::Entry entry : headerEntries) {
-      ReportTaintSink(entry.mName, "fetch.header(key)", url);
-      ReportTaintSink(entry.mValue, "fetch.header(value)", url);
-    }
 
-  } else {
-    headers = new InternalHeaders(*requestHeaders);
-  }
-
-  requestHeaders->Clear();
   // From "Let r be a new Request object associated with request and a new
   // Headers object whose guard is "request"."
   requestHeaders->SetGuard(HeadersGuardEnum::Request, aRv);
@@ -432,9 +412,32 @@ SafeRefPtr<Request> Request::Constructor(
     }
   }
 
-  requestHeaders->Fill(*headers, aRv);
-  if (aRv.Failed()) {
-    return nullptr;
+  // Step 33. Remove privileged no-CORS request-headers, if any member presented
+  // in aInit.
+  if (aInit.IsAnyMemberPresent()) {
+    RefPtr<InternalHeaders> headers;
+    if (aInit.mHeaders.WasPassed()) {
+      RefPtr<Headers> h = Headers::Create(aGlobal, aInit.mHeaders.Value(), aRv);
+      if (aRv.Failed()) {
+        return nullptr;
+      }
+      headers = h->GetInternalHeaders();
+
+      nsTArray<InternalHeaders::Entry> headerEntries;
+      headers->GetEntries(headerEntries);
+      for (InternalHeaders::Entry entry : headerEntries) {
+        ReportTaintSink(entry.mName, "fetch.header(key)", url);
+        ReportTaintSink(entry.mValue, "fetch.header(value)", url);
+      }
+      headers = new InternalHeaders(*requestHeaders);
+    } else {
+      headers = new InternalHeaders(*requestHeaders);
+    }
+    requestHeaders->Clear();
+    requestHeaders->Fill(*headers, aRv);
+    if (aRv.Failed()) {
+      return nullptr;
+    }
   }
 
   if ((aInit.mBody.WasPassed() && !aInit.mBody.Value().IsNull()) ||
@@ -516,12 +519,18 @@ SafeRefPtr<Request> Request::Clone(ErrorResult& aRv) {
     return nullptr;
   }
 
-  return MakeSafeRefPtr<Request>(mOwner, std::move(ir), GetOrCreateSignal());
+  // InternalRequest::Clone() may have replaced our underlying input stream (a
+  // non-cloneable body is now consumed by the cloning copy). If an unread
+  // native ReadableStream still reflects this request's body, repoint it at the
+  // current stream so the original is not read from two places.
+  MaybeRebindReadableStreamBody();
+
+  return MakeSafeRefPtr<Request>(mGlobal, std::move(ir), GetOrCreateSignal());
 }
 
 Headers* Request::Headers_() {
   if (!mHeaders) {
-    mHeaders = new Headers(mOwner, mRequest->Headers());
+    mHeaders = new Headers(mGlobal, mRequest->Headers());
   }
 
   return mHeaders;
@@ -529,7 +538,7 @@ Headers* Request::Headers_() {
 
 AbortSignal* Request::GetOrCreateSignal() {
   if (!mSignal) {
-    mSignal = AbortSignal::Create(mOwner, SignalAborted::No,
+    mSignal = AbortSignal::Create(mGlobal, SignalAborted::No,
                                   JS::UndefinedHandleValue);
   }
 

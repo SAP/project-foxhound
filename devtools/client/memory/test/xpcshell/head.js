@@ -3,14 +3,16 @@
 
 "use strict";
 
-// via xpcshell.ini
+// via xpcshell.toml
 /* import-globals-from ../../../shared/test/shared-head.js */
 
 Services.prefs.setBoolPref("devtools.testing", true);
 Services.prefs.setBoolPref("devtools.debugger.log", true);
+Services.prefs.setIntPref("logging.devtools_rdp", 5);
 registerCleanupFunction(() => {
   Services.prefs.clearUserPref("devtools.testing");
   Services.prefs.clearUserPref("devtools.debugger.log");
+  Services.prefs.clearUserPref("logging.devtools_rdp");
 });
 
 var { FileUtils } = ChromeUtils.importESModule(
@@ -155,11 +157,11 @@ async function createTempFile() {
  * If the action is async and defines a `status` property, this helper will wait
  * for the status to reach either "error" or "done".
  *
- * @param {Object} store
+ * @param {object} store
  *        Redux store where the action should be dispatched.
- * @param {String} actionType
+ * @param {string} actionType
  *        The actionType to wait for.
- * @param {Number} repeat
+ * @param {number} repeat
  *        Optional, number of time the action is expected to be dispatched.
  *        Defaults to 1
  * @return {Promise}

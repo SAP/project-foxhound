@@ -8,8 +8,7 @@
 "use strict";
 
 add_task(async function () {
-  const TESTPAGE =
-    MAIN_DOMAIN_SECURED + "storage-indexeddb-duplicate-names.html";
+  const TESTPAGE = MAIN_URL_SECURED + "storage-indexeddb-duplicate-names.html";
 
   setPermission(TESTPAGE, "indexedDB");
 
@@ -17,7 +16,7 @@ add_task(async function () {
 
   await checkState([
     [
-      ["indexedDB", "https://test1.example.org"],
+      ["indexedDB", MAIN_ORIGIN_SECURED],
       ["idb1 (default)", "idb2 (default)"],
     ],
   ]);

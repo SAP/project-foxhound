@@ -10,7 +10,9 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
 import androidx.annotation.VisibleForTesting
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.map
@@ -30,11 +32,13 @@ import mozilla.components.lib.state.ext.flowScoped
  * @param applicationContext the application's [Context].
  * @param mediaServiceClass the media service class will handle the media playback state
  * @param store Reference to the browser store where tab state is located.
+ * @param mainDispatcher Dispatcher used for main thread operations.
  */
 class MediaSessionFeature(
     val applicationContext: Context,
     val mediaServiceClass: Class<*>,
     val store: BrowserStore,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) {
     @VisibleForTesting
     internal var scope: CoroutineScope? = null
@@ -62,7 +66,7 @@ class MediaSessionFeature(
      * Starts the feature.
      */
     fun start() {
-        scope = store.flowScoped { flow ->
+        scope = store.flowScoped(dispatcher = mainDispatcher) { flow ->
             flow.map { state -> state.findActiveMediaTab() }
                 .distinctUntilChangedBy { tab -> tab?.mediaSessionState }
                 .collect { state -> showMediaStatus(state) }

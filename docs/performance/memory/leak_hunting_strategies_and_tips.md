@@ -51,61 +51,61 @@ small and easy to identify using GC-based leak detection.)
 | [GC and CC logs](gc_and_cc_logs.md)      | JS objects, DOM objects, many other kinds of objects | All platforms       | Any build    |
 | Leak tools for medium-size object graphs |                                                      |                     |              |
 | [BloatView](bloatview.md), [refcount tracing and balancing](refcount_tracing_and_balancing.md)  | Objects that implement `nsISupports` or use `MOZ_COUNT_{CTOR,DTOR}` | All tier 1 platforms | Debug build (or build opt with `--enable-logrefcnt`)|
-| Leak tools for debugging memory growth that is cleaned up on shutdown                           |                     |              |
+| Leak tools for debugging memory growth that is cleaned up on shutdown |  |  |  |
 
 ## Common leak patterns
 
 When trying to find a leak of reference-counted objects, there are a
 number of patterns that could cause the leak:
 
-1.  Ownership cycles. The most common source of hard-to-fix leaks is
-    ownership cycles. If you can avoid creating cycles in the first
-    place, please do, since it's often hard to be sure to break the
-    cycle in every last case. Sometimes these cycles extend through JS
-    objects (discussed further below), and since JS is
-    garbage-collected, every pointer acts like an owning pointer and the
-    potential for fan-out is larger. See [bug
-    106860](https://bugzilla.mozilla.org/show_bug.cgi?id=106860){.external
-    .text} and [bug
-    84136](https://bugzilla.mozilla.org/show_bug.cgi?id=84136){.external
-    .text} for examples. (Is this advice still accurate now that we have
-    a cycle collector? \--Jesse)
-2.  Dropping a reference on the floor by:
-    1.  Forgetting to release (because you weren't using `nsCOMPtr`
-        when you should have been): See [bug
-        99180](https://bugzilla.mozilla.org/show_bug.cgi?id=99180){.external
-        .text} or [bug
-        93087](https://bugzilla.mozilla.org/show_bug.cgi?id=93087){.external
-        .text} for an example or [bug
-        28555](https://bugzilla.mozilla.org/show_bug.cgi?id=28555){.external
-        .text} for a slightly more interesting one. This is also a
-        frequent problem around early returns when not using `nsCOMPtr`.
-    2.  Double-AddRef: This happens most often when assigning the result
-        of a function that returns an AddRefed pointer (bad!) into an
-        `nsCOMPtr` without using `dont_AddRef()`. See [bug
-        76091](https://bugzilla.mozilla.org/show_bug.cgi?id=76091){.external
-        .text} or [bug
-        49648](https://bugzilla.mozilla.org/show_bug.cgi?id=49648){.external
-        .text} for an example.
-    3.  \[Obscure\] Double-assignment into the same variable: If you
-        release a member variable and then assign into it by calling
-        another function that does the same thing, you can leak the
-        object assigned into the variable by the inner function. (This
-        can happen equally with or without `nsCOMPtr`.) See [bug
-        38586](https://bugzilla.mozilla.org/show_bug.cgi?id=38586){.external
-        .text} and [bug
-        287847](https://bugzilla.mozilla.org/show_bug.cgi?id=287847){.external
-        .text} for examples.
-3.  Dropping a non-refcounted object on the floor (especially one that
-    owns references to reference counted objects). See [bug
-    109671](https://bugzilla.mozilla.org/show_bug.cgi?id=109671){.external
-    .text} for an example.
-4.  Destructors that should have been virtual: If you expect to override
-    an object's destructor (which includes giving a derived class of it
-    an `nsCOMPtr` member variable) and delete that object through a
-    pointer to the base class using delete, its destructor better be
-    virtual. (But we have many virtual destructors in the codebase that
-    don't need to be -- don't do that.)
+1. Ownership cycles. The most common source of hard-to-fix leaks is
+   ownership cycles. If you can avoid creating cycles in the first
+   place, please do, since it's often hard to be sure to break the
+   cycle in every last case. Sometimes these cycles extend through JS
+   objects (discussed further below), and since JS is
+   garbage-collected, every pointer acts like an owning pointer and the
+   potential for fan-out is larger. See [bug
+   106860](https://bugzilla.mozilla.org/show_bug.cgi?id=106860){.external
+   .text} and [bug
+   84136](https://bugzilla.mozilla.org/show_bug.cgi?id=84136){.external
+   .text} for examples. (Is this advice still accurate now that we have
+   a cycle collector? \--Jesse)
+2. Dropping a reference on the floor by:
+    1. Forgetting to release (because you weren't using `nsCOMPtr`
+       when you should have been): See [bug
+       99180](https://bugzilla.mozilla.org/show_bug.cgi?id=99180){.external
+       .text} or [bug
+       93087](https://bugzilla.mozilla.org/show_bug.cgi?id=93087){.external
+       .text} for an example or [bug
+       28555](https://bugzilla.mozilla.org/show_bug.cgi?id=28555){.external
+       .text} for a slightly more interesting one. This is also a
+       frequent problem around early returns when not using `nsCOMPtr`.
+    2. Double-AddRef: This happens most often when assigning the result
+       of a function that returns an AddRefed pointer (bad!) into an
+       `nsCOMPtr` without using `dont_AddRef()`. See [bug
+       76091](https://bugzilla.mozilla.org/show_bug.cgi?id=76091){.external
+       .text} or [bug
+       49648](https://bugzilla.mozilla.org/show_bug.cgi?id=49648){.external
+       .text} for an example.
+    3. \[Obscure\] Double-assignment into the same variable: If you
+       release a member variable and then assign into it by calling
+       another function that does the same thing, you can leak the
+       object assigned into the variable by the inner function. (This
+       can happen equally with or without `nsCOMPtr`.) See [bug
+       38586](https://bugzilla.mozilla.org/show_bug.cgi?id=38586){.external
+       .text} and [bug
+       287847](https://bugzilla.mozilla.org/show_bug.cgi?id=287847){.external
+       .text} for examples.
+3. Dropping a non-refcounted object on the floor (especially one that
+   owns references to reference counted objects). See [bug
+   109671](https://bugzilla.mozilla.org/show_bug.cgi?id=109671){.external
+   .text} for an example.
+4. Destructors that should have been virtual: If you expect to override
+   an object's destructor (which includes giving a derived class of it
+   an `nsCOMPtr` member variable) and delete that object through a
+   pointer to the base class using delete, its destructor better be
+   virtual. (But we have many virtual destructors in the codebase that
+   don't need to be -- don't do that.)
 
 ## Debugging leaks that go through XPConnect
 
@@ -207,12 +207,12 @@ glib
 
 ## Other References
 
--   [Performance
-    tools](https://wiki.mozilla.org/Performance:Tools "Performance:Tools")
--   [Leak Debugging Screencasts](https://dbaron.org/mozilla/leak-screencasts/){.external
-    .text}
--   [LeakingPages](https://wiki.mozilla.org/LeakingPages "LeakingPages") -
-    a list of pages known to leak
--   [mdc:Performance](https://developer.mozilla.org/en/Performance "mdc:Performance"){.extiw} -
-    contains documentation for all of our memory profiling and leak
-    detection tools
+- [Performance
+  tools](https://wiki.mozilla.org/Performance:Tools "Performance:Tools")
+- [Leak Debugging Screencasts](https://dbaron.org/mozilla/leak-screencasts/){.external
+  .text}
+- [LeakingPages](https://wiki.mozilla.org/LeakingPages "LeakingPages") -
+  a list of pages known to leak
+- [mdc:Performance](https://developer.mozilla.org/en/Performance "mdc:Performance"){.extiw} -
+  contains documentation for all of our memory profiling and leak
+  detection tools

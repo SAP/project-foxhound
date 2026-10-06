@@ -13,14 +13,14 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "resProto",
   "@mozilla.org/network/protocol;1?name=resource",
-  "nsISubstitutingProtocolHandler"
+  Ci.nsISubstitutingProtocolHandler
 );
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "aomStartup",
   "@mozilla.org/addons/addon-manager-startup;1",
-  "amIAddonManagerStartup"
+  Ci.amIAddonManagerStartup
 );
 
 function processTerminated() {
@@ -128,7 +128,7 @@ this.reftest = class extends ExtensionAPI {
       "chrome,dialog=no,left=800,height=200,width=200,all",
       null
     );
-    dummy.onload = async function () {
+    dummy.setTimeout(async function () {
       // Close pre-existing window
       win.close();
 
@@ -149,7 +149,7 @@ this.reftest = class extends ExtensionAPI {
         "chrome,dialog=no,all",
         {}
       );
-    };
+    }, 0);
   }
 
   onShutdown() {

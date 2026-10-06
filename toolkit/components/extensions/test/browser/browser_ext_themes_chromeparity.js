@@ -35,12 +35,12 @@ add_task(async function test_support_theme_frame() {
     "LWT text color attribute should not be set"
   );
 
-  let toolbox = document.querySelector("#navigator-toolbox");
-  let toolboxCS = window.getComputedStyle(toolbox);
+  let body = document.body;
+  let bodyCS = window.getComputedStyle(body);
 
   Assert.ok(
-    toolboxCS.backgroundImage.includes("face.png"),
-    `The backgroundImage should use face.png. Actual value is: ${toolboxCS.backgroundImage}`
+    bodyCS.backgroundImage.includes("face.png"),
+    `The backgroundImage should use face.png. Actual value is: ${bodyCS.backgroundImage}`
   );
   Assert.equal(
     getToolboxBackgroundColor(),
@@ -48,7 +48,7 @@ add_task(async function test_support_theme_frame() {
     "Expected correct background color"
   );
   Assert.equal(
-    toolboxCS.color,
+    bodyCS.color,
     "rgb(" + TAB_TEXT_COLOR.join(", ") + ")",
     "Expected correct text color"
   );

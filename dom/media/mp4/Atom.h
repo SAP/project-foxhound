@@ -10,7 +10,7 @@ namespace mozilla {
 class Atom {
  public:
   Atom() : mValid(false) {}
-  virtual bool IsValid() { return mValid; }
+  virtual bool IsValid() const { return mValid; }
 
  protected:
   bool mValid;

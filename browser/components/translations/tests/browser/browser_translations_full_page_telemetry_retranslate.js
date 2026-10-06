@@ -81,7 +81,6 @@ add_task(async function test_translations_telemetry_retranslate() {
         to_language: "en",
         auto_translate: false,
         document_language: "es",
-        top_preferred_language: "en-US",
         request_target: "full_page",
       },
     }
@@ -150,7 +149,6 @@ add_task(async function test_translations_telemetry_retranslate() {
         to_language: "uk",
         auto_translate: false,
         document_language: "es",
-        top_preferred_language: "en",
         request_target: "full_page",
       },
     }
@@ -159,6 +157,24 @@ add_task(async function test_translations_telemetry_retranslate() {
   await TestTranslationsTelemetry.assertTranslationsEnginePerformance({
     expectedEventCount: 2,
   });
+
+  await TestTranslationsTelemetry.assertEvent(
+    Glean.translations.identifyPageLanguage,
+    {
+      expectedEventCount: 1,
+      assertForMostRecentEvent: {
+        html_lang_attribute: "es",
+        identified_language: "es",
+        lang_tags_match: true,
+        is_lang_attribute_valid: true,
+        extracted_code_units: 2132,
+        extraction_time: ms => 0 < ms,
+        identification_time: ms => 0 < ms,
+        total_time: ms => 0 < ms,
+        confident: true,
+      },
+    }
+  );
 
   await cleanup();
 });

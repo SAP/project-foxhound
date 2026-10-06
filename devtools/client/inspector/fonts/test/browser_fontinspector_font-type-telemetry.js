@@ -8,13 +8,11 @@ const TEST_URI = URL_ROOT + "doc_browser_fontinspector.html";
 
 add_task(async function () {
   const { inspector } = await openFontInspectorForURL(TEST_URI);
-  startTelemetry();
+
   await selectNode(".normal-text", inspector);
   await selectNode(".bold-text", inspector);
-  checkTelemetry(
-    "DEVTOOLS_FONTEDITOR_FONT_TYPE_DISPLAYED",
-    "",
-    null,
-    "hasentries"
+  Assert.greater(
+    Glean.devtoolsInspector.fonteditorFontTypeDisplayed.nonvariable.testGetValue(),
+    0
   );
 });

@@ -106,8 +106,9 @@ private class RemoveTabWithUndoUseCase(
     private val view: View,
     private val undo: TabsUseCases.UndoTabRemovalUseCase,
 ) : TabsUseCases.RemoveTabUseCase {
-    override fun invoke(tabId: String) {
-        actual.invoke(tabId)
+
+    override fun invoke(tabId: String, excludedTabIds: Set<String>) {
+        actual.invoke(tabId, excludedTabIds)
         showSnackbar()
     }
 

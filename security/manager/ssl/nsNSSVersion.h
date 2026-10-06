@@ -1,23 +1,21 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _NS_NSSVERSION_H_
-#define _NS_NSSVERSION_H_
+#ifndef NS_NSSVERSION_H_
+#define NS_NSSVERSION_H_
 
 #include "nsINSSVersion.h"
-#include "mozilla/Attributes.h"
 
 class nsNSSVersion final : public nsINSSVersion {
  public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSINSSVERSION
 
-  nsNSSVersion();
+  nsNSSVersion() = default;
 
  private:
-  ~nsNSSVersion();
+  ~nsNSSVersion() = default;
 };
 
 #define NS_NSSVERSION_CID \

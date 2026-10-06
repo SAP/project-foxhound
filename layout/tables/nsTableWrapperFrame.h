@@ -1,12 +1,10 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsTableWrapperFrame_h__
-#define nsTableWrapperFrame_h__
+#ifndef nsTableWrapperFrame_h_
+#define nsTableWrapperFrame_h_
 
 #include "LayoutConstants.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "nsCellMap.h"
 #include "nsContainerFrame.h"
@@ -56,9 +54,6 @@ class nsTableWrapperFrame : public nsContainerFrame {
   void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                         const nsDisplayListSet& aLists) override;
 
-  nscoord SynthesizeFallbackBaseline(
-      mozilla::WritingMode aWM,
-      BaselineSharingGroup aBaselineGroup) const override;
   Maybe<nscoord> GetNaturalBaselineBOffset(
       mozilla::WritingMode aWM, BaselineSharingGroup aBaselineGroup,
       BaselineExportContext aExportContext) const override;
@@ -67,7 +62,7 @@ class nsTableWrapperFrame : public nsContainerFrame {
                          mozilla::IntrinsicISizeType aType) override;
 
   SizeComputationResult ComputeSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
+      const SizeComputationInput& aSizingInput, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
       const mozilla::LogicalSize& aMargin,
       const mozilla::LogicalSize& aBorderPadding,
@@ -75,7 +70,7 @@ class nsTableWrapperFrame : public nsContainerFrame {
       mozilla::ComputeSizeFlags aFlags) override;
 
   mozilla::LogicalSize ComputeAutoSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
+      const SizeComputationInput& aSizingInput, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
       const mozilla::LogicalSize& aMargin,
       const mozilla::LogicalSize& aBorderPadding,
@@ -186,8 +181,6 @@ class nsTableWrapperFrame : public nsContainerFrame {
   // having "physical" names.)
   MaybeCaptionSide GetCaptionSide() const;
 
-  mozilla::StyleVerticalAlignKeyword GetCaptionVerticalAlign() const;
-
   nscoord ComputeFinalBSize(const mozilla::LogicalSize& aInnerSize,
                             const mozilla::LogicalSize& aCaptionSize,
                             const mozilla::LogicalMargin& aCaptionMargin,
@@ -246,13 +239,13 @@ class nsTableWrapperFrame : public nsContainerFrame {
    * Note: CaptionShrinkWrapISize doesn't need StyleSizeOverrides parameter.
    */
   mozilla::LogicalSize InnerTableShrinkWrapSize(
-      gfxContext* aRenderingContext, nsTableFrame* aTableFrame,
+      const SizeComputationInput& aSizingInput, nsTableFrame* aTableFrame,
       mozilla::WritingMode aWM, const mozilla::LogicalSize& aCBSize,
       nscoord aAvailableISize,
       const mozilla::StyleSizeOverrides& aSizeOverrides,
       mozilla::ComputeSizeFlags aFlag) const;
   mozilla::LogicalSize CaptionShrinkWrapSize(
-      gfxContext* aRenderingContext, nsIFrame* aCaptionFrame,
+      const SizeComputationInput& aSizingInput, nsIFrame* aCaptionFrame,
       mozilla::WritingMode aWM, const mozilla::LogicalSize& aCBSize,
       nscoord aAvailableISize, mozilla::ComputeSizeFlags aFlag) const;
 

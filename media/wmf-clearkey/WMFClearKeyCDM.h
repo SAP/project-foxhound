@@ -64,9 +64,6 @@ class WMFClearKeyCDM final
 
  private:
   RefPtr<SessionManagerWrapper> mSessionManager;
-  Microsoft::WRL::ComPtr<
-      ABI::Windows::Media::Protection::IMediaProtectionPMPServer>
-      mPMPServer;
 };
 
 // In order to reuse existing Gecko clearkey implementation, we need to

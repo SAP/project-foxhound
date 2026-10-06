@@ -1,0 +1,21 @@
+{
+  "label": "copyleaks.com",
+  "bugs": {
+    "1898944": {
+      "issue": "unsupported-warning",
+      "matches": ["*://*.copyleaks.com/*"]
+    }
+  },
+  "css": {
+    "hide_browser_notice": "#outdated { display: none !important; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "css": {
+        "all_frames": true,
+        "which": ["hide_browser_notice"]
+      }
+    }
+  ]
+}

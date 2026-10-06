@@ -1,21 +1,18 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "LoginDetectionService.h"
 
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/StaticPrefs_fission.h"
+#include "mozilla/dom/ProcessIsolation.h"
 #include "nsILoginInfo.h"
 #include "nsILoginManager.h"
 #include "nsIObserver.h"
 #include "nsIXULRuntime.h"
 #include "nsServiceManagerUtils.h"
 #include "nsXULAppAPI.h"
-
-#include "mozilla/ClearOnShutdown.h"
-#include "mozilla/StaticPrefs_fission.h"
-#include "mozilla/dom/ProcessIsolation.h"
 
 namespace mozilla::dom {
 
@@ -86,7 +83,7 @@ void LoginDetectionService::FetchLogins() {
     return;
   }
 
-  Unused << loginManager->GetAllLoginsWithCallback(this);
+  (void)loginManager->GetAllLoginsWithCallback(this);
 }
 
 void LoginDetectionService::UnregisterObserver() {

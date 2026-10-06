@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl')||!this.Intl.Segmenter)
-
 var g = newGlobal({});
 
 var segmenter = new Intl.Segmenter();

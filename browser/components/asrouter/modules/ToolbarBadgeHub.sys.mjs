@@ -247,9 +247,7 @@ export class _ToolbarBadgeHub {
     // Only send pings for non private browsing windows
     if (
       win &&
-      !lazy.PrivateBrowsingUtils.isBrowserPrivate(
-        win.ownerGlobal.gBrowser.selectedBrowser
-      )
+      !lazy.PrivateBrowsingUtils.isBrowserPrivate(win.gBrowser.selectedBrowser)
     ) {
       this._sendPing({
         message_id: message.id,

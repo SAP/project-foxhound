@@ -1,28 +1,27 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SourceBuffer.h"
 
+#include <time.h>
+
 #include "AsyncEventRunner.h"
 #include "MediaData.h"
 #include "MediaSourceDemuxer.h"
 #include "MediaSourceUtils.h"
+#include "TimeUnits.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/Logging.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/MediaSourceBinding.h"
 #include "mozilla/dom/TimeRanges.h"
 #include "mozilla/dom/TypedArray.h"
 #include "nsError.h"
-#include "nsIRunnable.h"
 #include "nsGlobalWindowInner.h"
+#include "nsIRunnable.h"
 #include "nsThreadUtils.h"
-#include "mozilla/Logging.h"
-#include <time.h>
-#include "TimeUnits.h"
 
 struct JSContext;
 class JSObject;
@@ -32,13 +31,13 @@ extern mozilla::LogModule* GetMediaSourceAPILog();
 
 #define MSE_DEBUG(arg, ...)                                                  \
   DDMOZ_LOG(GetMediaSourceLog(), mozilla::LogLevel::Debug, "(%s)::%s: " arg, \
-            mType.OriginalString().Data(), __func__, ##__VA_ARGS__)
+            mType.OriginalString().get(), __func__, ##__VA_ARGS__)
 #define MSE_DEBUGV(arg, ...)                                                   \
   DDMOZ_LOG(GetMediaSourceLog(), mozilla::LogLevel::Verbose, "(%s)::%s: " arg, \
-            mType.OriginalString().Data(), __func__, ##__VA_ARGS__)
-#define MSE_API(arg, ...)                                              \
-  DDMOZ_LOG(GetMediaSourceAPILog(), mozilla::LogLevel::Debug,          \
-            "(%s)::%s: " arg, mType.OriginalString().Data(), __func__, \
+            mType.OriginalString().get(), __func__, ##__VA_ARGS__)
+#define MSE_API(arg, ...)                                             \
+  DDMOZ_LOG(GetMediaSourceAPILog(), mozilla::LogLevel::Debug,         \
+            "(%s)::%s: " arg, mType.OriginalString().get(), __func__, \
             ##__VA_ARGS__)
 
 namespace mozilla {

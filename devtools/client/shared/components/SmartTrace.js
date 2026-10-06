@@ -96,7 +96,8 @@ class SmartTrace extends Component {
                     id: sourceId,
                     url: filename.split(" -> ").pop(),
                     line: lineNumber,
-                    column: columnNumber,
+                    // stacktrace uses 1-based column whereas SourceMapURLService/SourceMapLoader/SourceMap used 0-based columns
+                    column: columnNumber - 1,
                   },
                   callback
                 )
@@ -235,6 +236,10 @@ class SmartTrace extends Component {
     const { onViewSourceInDebugger, onViewSource, stacktrace } = this.props;
     const { originalLocations } = this.state;
 
+    // `stacktrace` is either:
+    // - the `preview` attribute of an object actor's grip object for an Error JS Object when used from the ObjectInspector
+    // - the Console/CSS message or page error resource's `stacktrace` attribute
+    // In both bases both lineColumn and columnNumber are 1-based as relating to SavedFrames attributes being 1-based
     const frames = stacktrace.map(
       (
         {
@@ -250,8 +255,10 @@ class SmartTrace extends Component {
         // Create partial debugger frontend "location" objects compliant with <Frames> react component requirements
         const sourceUrl = filename.split(" -> ").pop();
         const generatedLocation = {
+          // Line is 1-based
           line: lineNumber,
-          column: columnNumber,
+          // SavedFrame/stacktrace column are 1-based while the debugger ones are 0-based
+          column: columnNumber - 1,
           source: {
             // 'id' isn't used by Frames, but by selectFrame callback below
             id: sourceId,
@@ -266,7 +273,9 @@ class SmartTrace extends Component {
         const originalLocation = originalLocations?.[i];
         if (originalLocation) {
           location = {
+            // Original lines are 1-based
             line: originalLocation.line,
+            // Original lines are 0-based
             column: originalLocation.column,
             source: {
               url: originalLocation.url,

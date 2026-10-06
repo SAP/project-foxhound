@@ -2,12 +2,13 @@ use alloc::{string::ToString as _, sync::Arc, vec::Vec};
 use core::mem::{size_of, ManuallyDrop};
 
 #[cfg(feature = "trace")]
-use crate::device::trace;
+use crate::device::trace::{Action, IntoTrace};
 use crate::device::DeviceError;
 use crate::{
     api_log,
     device::Device,
     global::Global,
+    hal_label,
     id::{self, BlasId, TlasId},
     lock::RwLock,
     lock::{rank, Mutex},
@@ -21,16 +22,16 @@ use crate::{
     LabelHelpers,
 };
 use hal::AccelerationStructureTriangleIndices;
-use wgt::Features;
+use wgt::{Features, AABB_GEOMETRY_MIN_STRIDE};
 
 impl Device {
-    fn create_blas(
+    pub fn create_blas(
         self: &Arc<Self>,
         blas_desc: &resource::BlasDescriptor,
         sizes: wgt::BlasGeometrySizeDescriptors,
     ) -> Result<Arc<resource::Blas>, CreateBlasError> {
         self.check_is_valid()?;
-        self.require_features(Features::EXPERIMENTAL_RAY_TRACING_ACCELERATION_STRUCTURE)?;
+        self.require_features(Features::EXPERIMENTAL_RAY_QUERY)?;
 
         if blas_desc
             .flags
@@ -62,7 +63,7 @@ impl Device {
                                 dyn hal::DynBuffer,
                             > {
                                 format: desc.index_format.unwrap(),
-                                buffer: None,
+                                buffer: Some(self.zero_buffer.as_ref()),
                                 offset: 0,
                                 count,
                             });
@@ -97,7 +98,7 @@ impl Device {
                     }
 
                     entries.push(hal::AccelerationStructureTriangles::<dyn hal::DynBuffer> {
-                        vertex_buffer: None,
+                        vertex_buffer: Some(self.zero_buffer.as_ref()),
                         vertex_format: desc.vertex_format,
                         first_vertex: 0,
                         vertex_count: desc.vertex_count,
@@ -111,6 +112,43 @@ impl Device {
                     self.raw().get_acceleration_structure_build_sizes(
                         &hal::GetAccelerationStructureBuildSizesDescriptor {
                             entries: &hal::AccelerationStructureEntries::Triangles(entries),
+                            flags: blas_desc.flags,
+                        },
+                    )
+                }
+            }
+            wgt::BlasGeometrySizeDescriptors::AABBs { descriptors } => {
+                if descriptors.len() as u32 > self.limits.max_blas_geometry_count {
+                    return Err(CreateBlasError::TooManyGeometries(
+                        self.limits.max_blas_geometry_count,
+                        descriptors.len() as u32,
+                    ));
+                }
+
+                let mut entries =
+                    Vec::<hal::AccelerationStructureAABBs<dyn hal::DynBuffer>>::with_capacity(
+                        descriptors.len(),
+                    );
+                for desc in descriptors {
+                    if desc.primitive_count > self.limits.max_blas_primitive_count {
+                        return Err(CreateBlasError::TooManyPrimitives(
+                            self.limits.max_blas_primitive_count,
+                            desc.primitive_count,
+                        ));
+                    }
+
+                    entries.push(hal::AccelerationStructureAABBs::<dyn hal::DynBuffer> {
+                        buffer: Some(self.zero_buffer.as_ref()),
+                        offset: 0,
+                        count: desc.primitive_count,
+                        stride: AABB_GEOMETRY_MIN_STRIDE,
+                        flags: desc.flags,
+                    });
+                }
+                unsafe {
+                    self.raw().get_acceleration_structure_build_sizes(
+                        &hal::GetAccelerationStructureBuildSizesDescriptor {
+                            entries: &hal::AccelerationStructureEntries::AABBs(entries),
                             flags: blas_desc.flags,
                         },
                     )
@@ -171,12 +209,12 @@ impl Device {
         }))
     }
 
-    fn create_tlas(
+    pub fn create_tlas(
         self: &Arc<Self>,
         desc: &resource::TlasDescriptor,
     ) -> Result<Arc<resource::Tlas>, CreateTlasError> {
         self.check_is_valid()?;
-        self.require_features(Features::EXPERIMENTAL_RAY_TRACING_ACCELERATION_STRUCTURE)?;
+        self.require_features(Features::EXPERIMENTAL_RAY_QUERY)?;
 
         if desc.max_instances > self.limits.max_tlas_instance_count {
             return Err(CreateTlasError::TooManyInstances(
@@ -206,7 +244,7 @@ impl Device {
                 &hal::GetAccelerationStructureBuildSizesDescriptor {
                     entries: &hal::AccelerationStructureEntries::Instances(
                         hal::AccelerationStructureInstances {
-                            buffer: None,
+                            buffer: Some(self.zero_buffer.as_ref()),
                             offset: 0,
                             count: desc.max_instances,
                         },
@@ -227,12 +265,15 @@ impl Device {
         }
         .map_err(|e| self.handle_hal_error_with_nonfatal_oom(e))?;
 
-        let instance_buffer_size =
-            self.alignments.raw_tlas_instance_size * desc.max_instances.max(1) as usize;
+        let instance_buffer_size = self
+            .alignments
+            .raw_tlas_instance_size
+            .checked_mul(desc.max_instances.max(1))
+            .expect("max_tlas_instance_count should not allow excessive buffer size");
         let instance_buffer = unsafe {
             self.raw().create_buffer(&hal::BufferDescriptor {
-                label: Some("(wgpu-core) instances_buffer"),
-                size: instance_buffer_size as u64,
+                label: hal_label(Some("(wgpu-core) instances_buffer"), self.instance_flags),
+                size: u64::from(instance_buffer_size),
                 usage: wgt::BufferUses::COPY_DST
                     | wgt::BufferUses::TOP_LEVEL_ACCELERATION_STRUCTURE_INPUT,
                 memory_flags: hal::MemoryFlags::PREFER_COHERENT,
@@ -272,19 +313,22 @@ impl Global {
             let device = self.hub.devices.get(device_id);
 
             #[cfg(feature = "trace")]
-            if let Some(trace) = device.trace.lock().as_mut() {
-                trace.add(trace::Action::CreateBlas {
-                    id: fid.id(),
-                    desc: desc.clone(),
-                    sizes: sizes.clone(),
-                });
-            }
+            let trace_sizes = sizes.clone();
 
             let blas = match device.create_blas(desc, sizes) {
                 Ok(blas) => blas,
                 Err(e) => break 'error e,
             };
             let handle = blas.handle;
+
+            #[cfg(feature = "trace")]
+            if let Some(trace) = device.trace.lock().as_mut() {
+                trace.add(Action::CreateBlas {
+                    id: blas.to_trace(),
+                    desc: desc.clone(),
+                    sizes: trace_sizes,
+                });
+            }
 
             let id = fid.assign(Fallible::Valid(blas));
             api_log!("Device::create_blas -> {id:?}");
@@ -309,18 +353,18 @@ impl Global {
         let error = 'error: {
             let device = self.hub.devices.get(device_id);
 
-            #[cfg(feature = "trace")]
-            if let Some(trace) = device.trace.lock().as_mut() {
-                trace.add(trace::Action::CreateTlas {
-                    id: fid.id(),
-                    desc: desc.clone(),
-                });
-            }
-
             let tlas = match device.create_tlas(desc) {
                 Ok(tlas) => tlas,
                 Err(e) => break 'error e,
             };
+
+            #[cfg(feature = "trace")]
+            if let Some(trace) = device.trace.lock().as_mut() {
+                trace.add(Action::CreateTlas {
+                    id: tlas.to_trace(),
+                    desc: desc.clone(),
+                });
+            }
 
             let id = fid.assign(Fallible::Valid(tlas));
             api_log!("Device::create_tlas -> {id:?}");
@@ -341,7 +385,7 @@ impl Global {
         #[cfg(feature = "trace")]
         if let Ok(blas) = _blas.get() {
             if let Some(t) = blas.device.trace.lock().as_mut() {
-                t.add(trace::Action::DestroyBlas(blas_id));
+                t.add(Action::DestroyBlas(blas.to_trace()));
             }
         }
     }
@@ -355,7 +399,7 @@ impl Global {
         #[cfg(feature = "trace")]
         if let Ok(tlas) = _tlas.get() {
             if let Some(t) = tlas.device.trace.lock().as_mut() {
-                t.add(trace::Action::DestroyTlas(tlas_id));
+                t.add(Action::DestroyTlas(tlas.to_trace()));
             }
         }
     }

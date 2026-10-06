@@ -17,8 +17,6 @@ usage-reporting:
   data_reviews:
     - https://bugzilla.mozilla.org/show_bug.cgi?id=1921440
   notification_emails:
-    - glean-team@mozilla.com
-    - jrediger@mozilla.com
     - loines@mozilla.com
   metadata:
     follows_collection_enabled: false
@@ -48,8 +46,6 @@ usage-deletion-request:
   data_reviews:
     - https://bugzilla.mozilla.org/show_bug.cgi?id=1932643
   notification_emails:
-    - glean-team@mozilla.com
-    - jrediger@mozilla.com
     - loines@mozilla.com
   metadata:
     follows_collection_enabled: false
@@ -74,8 +70,6 @@ onboarding-opt-out:
   data_reviews:
     - https://bugzilla.mozilla.org/show_bug.cgi?id=1942194
   notification_emails:
-    - glean-team@mozilla.com
-    - jrediger@mozilla.com
     - loines@mozilla.com
     - dberry@mozilla.com
   metadata:

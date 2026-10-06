@@ -1,0 +1,174 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-ext"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/conformance2/glsl3/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_conformance2__glsl3__array-as-return-value.html"]
+
+["test_2_conformance2__glsl3__array-assign-constructor.html"]
+
+["test_2_conformance2__glsl3__array-assign.html"]
+
+["test_2_conformance2__glsl3__array-complex-indexing.html"]
+
+["test_2_conformance2__glsl3__array-element-increment.html"]
+
+["test_2_conformance2__glsl3__array-equality.html"]
+
+["test_2_conformance2__glsl3__array-in-complex-expression.html"]
+
+["test_2_conformance2__glsl3__array-initialize-with-same-name-array.html"]
+
+["test_2_conformance2__glsl3__array-length-side-effects.html"]
+
+["test_2_conformance2__glsl3__attrib-location-length-limits.html"]
+
+["test_2_conformance2__glsl3__bool-type-cast-bug-uint-ivec-uvec.html"]
+
+["test_2_conformance2__glsl3__compare-structs-containing-arrays.html"]
+
+["test_2_conformance2__glsl3__compound-assignment-type-combination.html"]
+
+["test_2_conformance2__glsl3__const-array-init.html"]
+
+["test_2_conformance2__glsl3__const-struct-from-array-as-function-parameter.html"]
+
+["test_2_conformance2__glsl3__float-parsing.html"]
+
+["test_2_conformance2__glsl3__forbidden-operators.html"]
+
+["test_2_conformance2__glsl3__forward-declaration.html"]
+
+["test_2_conformance2__glsl3__frag-depth.html"]
+
+["test_2_conformance2__glsl3__fragment-shader-loop-crash.html"]
+
+["test_2_conformance2__glsl3__gradient-in-discontinuous-loop.html"]
+
+["test_2_conformance2__glsl3__input-with-interpotaion-as-lvalue.html"]
+
+["test_2_conformance2__glsl3__invalid-default-precision.html"]
+
+["test_2_conformance2__glsl3__invalid-invariant.html"]
+
+["test_2_conformance2__glsl3__loops-with-side-effects.html"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_2_conformance2__glsl3__matrix-row-major-dynamic-indexing.html"]
+fail-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+]
+
+["test_2_conformance2__glsl3__matrix-row-major.html"]
+
+["test_2_conformance2__glsl3__misplaced-version-directive.html"]
+
+["test_2_conformance2__glsl3__no-attribute-vertex-shader.html"]
+
+["test_2_conformance2__glsl3__precision-side-effects-bug.html"]
+
+["test_2_conformance2__glsl3__reciprocal-sqrt-of-sum-of-squares-crash.html"]
+
+["test_2_conformance2__glsl3__sampler-array-indexing.html"]
+
+["test_2_conformance2__glsl3__sampler-no-precision.html"]
+
+["test_2_conformance2__glsl3__sequence-operator-returns-non-constant.html"]
+
+["test_2_conformance2__glsl3__shader-linking.html"]
+
+["test_2_conformance2__glsl3__shader-with-1024-character-define.html"]
+
+["test_2_conformance2__glsl3__shader-with-1024-character-identifier.frag.html"]
+
+["test_2_conformance2__glsl3__shader-with-1025-character-define.html"]
+
+["test_2_conformance2__glsl3__shader-with-1025-character-identifier.frag.html"]
+
+["test_2_conformance2__glsl3__shader-with-invalid-characters.html"]
+
+["test_2_conformance2__glsl3__shader-with-mis-matching-uniform-block.html"]
+
+["test_2_conformance2__glsl3__short-circuiting-in-loop-condition.html"]
+
+["test_2_conformance2__glsl3__switch-case.html"]
+fail-if = [
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_2_conformance2__glsl3__texture-bias.html"]
+fail-if = [
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_2_conformance2__glsl3__texture-offset-non-constant-offset.html"]
+
+["test_2_conformance2__glsl3__texture-offset-out-of-range.html"]
+
+["test_2_conformance2__glsl3__texture-offset-uniform-texture-coordinate.html"]
+
+["test_2_conformance2__glsl3__tricky-loop-conditions.html"]
+fail-if = [
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_2_conformance2__glsl3__uint-int-shift-bug.html"]
+
+["test_2_conformance2__glsl3__unary-minus-operator-in-dynamic-loop.html"]
+
+["test_2_conformance2__glsl3__uniform-block-layout-match.html"]
+
+["test_2_conformance2__glsl3__uniform-block-layouts.html"]
+
+["test_2_conformance2__glsl3__uniform-location-length-limits.html"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && debug",
+  "os == 'win' && os_version == '11.26200' && debug",
+]
+
+["test_2_conformance2__glsl3__uniform-struct-with-non-square-matrix.html"]
+
+["test_2_conformance2__glsl3__uninitialized-local-global-variables.html"]
+
+["test_2_conformance2__glsl3__valid-invariant.html"]
+
+["test_2_conformance2__glsl3__varying-struct-inline-definition.html"]
+
+["test_2_conformance2__glsl3__vector-dynamic-indexing-nv-driver-bug.html"]
+
+["test_2_conformance2__glsl3__vector-dynamic-indexing-swizzled-lvalue.html"]
+fail-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+]
+
+["test_2_conformance2__glsl3__vector-dynamic-indexing.html"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!-- Description for the button to accept the search suggestion and continue editing the search. -->
+  <string name="mozac_browser_awesomebar_edit_suggestion">Yaada fudhachuu fi gulaaluu</string>
+  <!-- Description for the button to remove the search suggestion from the displayed results. -->
+  <string name="mozac_browser_awesomebar_remove_suggestion">Yaada kenname haqi</string>
+  <!--
+    The description for the stock suggestion card when the stock is decreasing.
+    %s is a placeholder that will be replaced by the change percent value
+  -->
+  <string name="mozac_browser_awesomebar_stock_suggestion_decrease">Dhibbeentaa %s gadi bu\'e</string>
+  <!--
+    The description for the stock suggestion card when the stock is increasing.
+    %s is a placeholder that will be replaced by the change percent value
+  -->
+  <string name="mozac_browser_awesomebar_stock_suggestion_increase">Dhibbeentaa %stu argame</string>
+  <!-- Description for the stock suggestion card when the stock is the same. -->
+  <string name="mozac_browser_awesomebar_stock_suggestion_no_change">Jijjiiramni hin jiru</string>
+</resources>

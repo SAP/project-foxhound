@@ -5,6 +5,10 @@
 task-defaults:
     suite:
         category: firefox-ui
+    worker-type:
+        by-test-platform:
+            windows11-(32|64)-24h2(-ccov|-devedition|-mingwclang|-shippable)?/.*: win11-64-25h2
+            default: default
     max-run-time: 5400
     test-manifest-loader: null  # don't load tests in the taskgraph
     run-on-projects: built-projects

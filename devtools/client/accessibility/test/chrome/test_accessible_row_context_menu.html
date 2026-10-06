@@ -103,7 +103,7 @@ window.onload = async function() {
     const row = document.getElementById(ROW_ID);
 
     info("Get topmost document where the context meny will be rendered");
-    const menuDoc = document.defaultView.windowRoot.ownerGlobal.document;
+    const menuDoc = document.defaultView.windowRoot.window.document;
     await withMockEnv(async function() {
       Simulate.contextMenu(row);
 

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,11 +16,10 @@
 #include "GLContextTypes.h"
 #include "GLDefs.h"
 #include "ImageContainer.h"
+#include "gfxTypes.h"
 #include "mozilla/Casting.h"
 #include "mozilla/CheckedInt.h"
-#include "mozilla/EnumTypeTraits.h"
-#include "mozilla/IsEnumCase.h"
-#include "mozilla/MathAlgorithms.h"
+#include "mozilla/DefineEnum.h"
 #include "mozilla/Range.h"
 #include "mozilla/RefCounted.h"
 #include "mozilla/Result.h"
@@ -29,6 +27,8 @@
 #include "mozilla/Span.h"
 #include "mozilla/TiedFields.h"
 #include "mozilla/TypedEnumBits.h"
+#include "mozilla/WeakPtr.h"
+#include "mozilla/dom/WebGLRenderingContextBinding.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/BuildConstants.h"
 #include "mozilla/gfx/Logging.h"
@@ -36,11 +36,8 @@
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/ipc/Shmem.h"
 #include "mozilla/layers/LayersSurfaces.h"
-#include "gfxTypes.h"
-
-#include "nsTArray.h"
 #include "nsString.h"
-#include "mozilla/dom/WebGLRenderingContextBinding.h"
+#include "nsTArray.h"
 
 // Manual reflection of WebIDL typedefs that are different from their
 // OpenGL counterparts.
@@ -101,7 +98,6 @@ namespace webgl {
 template <typename T>
 struct QueueParamTraits;
 class TexUnpackBytes;
-class TexUnpackImage;
 class TexUnpackSurface;
 }  // namespace webgl
 
@@ -306,26 +302,11 @@ struct SampleableInfo final {
   bool IsComplete() const { return bool(levels); }
 };
 
-enum class AttribBaseType : uint8_t {
-  Boolean,  // Can convert from anything.
-  Float,    // Also includes NormU?Int
-  Int,
-  Uint,
-};
-}  // namespace webgl
-template <>
-inline constexpr bool IsEnumCase<webgl::AttribBaseType>(
-    const webgl::AttribBaseType v) {
-  switch (v) {
-    case webgl::AttribBaseType::Boolean:
-    case webgl::AttribBaseType::Float:
-    case webgl::AttribBaseType::Int:
-    case webgl::AttribBaseType::Uint:
-      return true;
-  }
-  return false;
-}
-namespace webgl {
+MOZ_DEFINE_ENUM_CLASS_WITH_BASE(AttribBaseType, uint8_t,
+                                (Boolean,  // Can convert from anything.
+                                 Float,    // Also includes NormU?Int
+                                 Int, Uint))
+
 webgl::AttribBaseType ToAttribBaseType(GLenum);
 const char* ToString(AttribBaseType);
 
@@ -743,27 +724,10 @@ enum class OptionalRenderableFormatBits : uint8_t {
   RGB8 = (1 << 0),
   SRGB8 = (1 << 1),
 };
-MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(OptionalRenderableFormatBits)
+constexpr auto kAllOptionalRenderableFormatBits =
+    OptionalRenderableFormatBits((1 << 2) - 1);
 
-}  // namespace webgl
-template <>
-inline constexpr bool IsEnumCase<webgl::OptionalRenderableFormatBits>(
-    const webgl::OptionalRenderableFormatBits raw) {
-  auto rawWithoutValidBits = UnderlyingValue(raw);
-  auto bit = decltype(rawWithoutValidBits){1};
-  while (bit) {
-    switch (webgl::OptionalRenderableFormatBits{bit}) {
-      // -Werror=switch ensures exhaustive.
-      case webgl::OptionalRenderableFormatBits::RGB8:
-      case webgl::OptionalRenderableFormatBits::SRGB8:
-        rawWithoutValidBits &= ~bit;
-        break;
-    }
-    bit <<= 1;
-  }
-  return rawWithoutValidBits == 0;
-}
-namespace webgl {
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(OptionalRenderableFormatBits)
 
 // -
 
@@ -913,7 +877,10 @@ struct LinkActiveInfo final {
   std::vector<ActiveInfo> activeTfVaryings;
 };
 
-struct LinkResult final {
+struct LinkResult final : public SupportsWeakPtr {
+  LinkResult() {}
+  ~LinkResult() = default;
+
   bool pending = true;
   nsCString log;
   bool success = false;
@@ -934,7 +901,7 @@ struct TypedQuad final {
 
 /// [1-16]x32-bit primitives, with a type tag.
 struct GetUniformData final {
-  alignas(alignof(float)) uint8_t data[4 * 4 * sizeof(float)] = {};
+  alignas(alignof(float)) std::array<uint8_t, 4 * 4 * sizeof(float)> data = {};
   GLenum type = 0;
 };
 
@@ -1009,6 +976,17 @@ inline Maybe<T> MaybeAs(const U val) {
 }
 
 // -
+
+inline GLenum IsTexMipmapFilter(const GLenum texFilter) {
+  switch (texFilter) {
+    case LOCAL_GL_NEAREST_MIPMAP_NEAREST:
+    case LOCAL_GL_LINEAR_MIPMAP_NEAREST:
+    case LOCAL_GL_NEAREST_MIPMAP_LINEAR:
+    case LOCAL_GL_LINEAR_MIPMAP_LINEAR:
+      return true;
+  }
+  return false;
+}
 
 inline GLenum IsTexImageTarget(const GLenum imageTarget) {
   switch (imageTarget) {
@@ -1141,6 +1119,9 @@ struct ExplicitPixelPackingState final {
     // (srcStrideAndRowOverride.x, otherwise ROW_LENGTH != 0, otherwise size.x)
     // ...aligned to ALIGNMENT.
     size_t bytesPerRowStride = 0;
+
+    // SKIP_PIXELS+size.x
+    size_t usedPixelsPerRow = 0;
 
     // structuredSrcSize.y, otherwise IMAGE_HEIGHT*(SKIP_IMAGES+size.z)
     size_t totalRows = 0;
@@ -1310,21 +1291,6 @@ enum class ProvokingVertex : GLenum {
   FirstVertex = LOCAL_GL_FIRST_VERTEX_CONVENTION,
   LastVertex = LOCAL_GL_LAST_VERTEX_CONVENTION,
 };
-
-}  // namespace webgl
-
-template <>
-inline constexpr bool IsEnumCase<webgl::ProvokingVertex>(
-    const webgl::ProvokingVertex raw) {
-  switch (raw) {
-    case webgl::ProvokingVertex::FirstVertex:
-    case webgl::ProvokingVertex::LastVertex:
-      return true;
-  }
-  return false;
-}
-
-namespace webgl {
 
 // -
 

@@ -16,13 +16,13 @@ add_task(async function () {
 
   info("Refresh tab several times and check for correct message indentation");
   for (let i = 0; i < 5; i++) {
-    await reloadBrowserAndCheckIndent(hud);
+    await reloadSelectedTabAndCheckIndent(hud);
   }
 });
 
-async function reloadBrowserAndCheckIndent(hud) {
+async function reloadSelectedTabAndCheckIndent(hud) {
   const onMessage = waitForMessageByType(hud, "hello", ".startGroup");
-  await reloadBrowser();
+  await reloadSelectedTab();
   const { node } = await onMessage;
 
   is(

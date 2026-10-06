@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -57,7 +55,7 @@ class MessagePumpWin : public MessagePump {
     virtual bool Dispatch(const MSG& msg) = 0;
   };
 
-  MessagePumpWin() : have_work_(0), state_(NULL) {}
+  MessagePumpWin() : have_work_(0), state_(nullptr) {}
   virtual ~MessagePumpWin() {}
 
   // Add an Observer, which will start receiving notifications immediately.
@@ -76,7 +74,7 @@ class MessagePumpWin : public MessagePump {
   void RunWithDispatcher(Delegate* delegate, Dispatcher* dispatcher);
 
   // MessagePump methods:
-  virtual void Run(Delegate* delegate) { RunWithDispatcher(delegate, NULL); }
+  virtual void Run(Delegate* delegate) { RunWithDispatcher(delegate, nullptr); }
   virtual void Quit();
 
  protected:

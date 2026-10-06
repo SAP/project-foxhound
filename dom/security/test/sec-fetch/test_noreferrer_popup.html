@@ -1,0 +1,42 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Bug 1984940 - window.open() with noreferrer has invalid Sec-Fetch-Site=none</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+
+<body>
+
+<script class="testbody" type="text/javascript">
+
+add_task(async function() {
+  var script = SpecialPowers.loadChromeScript(() => {
+    Services.obs.addObserver(function onExamResp(subject) {
+    let channel = subject.QueryInterface(Ci.nsIHttpChannel);
+      info("request observed: " + channel.URI.spec);
+      if (!channel.URI.spec.startsWith("https://example.org")) {
+        return;
+      }
+
+      try {
+        is(channel.getRequestHeader("Sec-Fetch-Site"), "cross-site", "testing sec-fetch-site");
+      } catch (e) {
+        ok(false, "sec-fetch-site should be 'cross-site'");
+      }
+
+      sendAsyncMessage("test-pass");
+    }, "http-on-stop-request");
+  });
+
+  let promise = new Promise(resolve => script.addMessageListener("test-pass", resolve));
+
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  window.open("https://example.org", '', 'noreferrer');
+
+  await promise;
+});
+
+</script>
+</body>
+</html>

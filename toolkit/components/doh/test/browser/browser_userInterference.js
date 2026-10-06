@@ -11,12 +11,16 @@ add_task(async function testUserInterference() {
   setPassingHeuristics();
   let promise = waitForDoorhanger();
   let prefPromise = TestUtils.waitForPrefChange(prefs.BREADCRUMB_PREF);
-  Preferences.set(prefs.ENABLED_PREF, true);
+  Services.prefs.setBoolPref(prefs.ENABLED_PREF, true);
 
   await prefPromise;
-  is(Preferences.get(prefs.BREADCRUMB_PREF), true, "Breadcrumb saved.");
   is(
-    Preferences.get(prefs.TRR_SELECT_URI_PREF),
+    Services.prefs.getBoolPref(prefs.BREADCRUMB_PREF),
+    true,
+    "Breadcrumb saved."
+  );
+  is(
+    Services.prefs.getStringPref(prefs.TRR_SELECT_URI_PREF),
     "https://example.com/dns-query",
     "TRR selection complete."
   );
@@ -37,7 +41,7 @@ add_task(async function testUserInterference() {
   await prefPromise;
 
   is(
-    Preferences.get(prefs.DOORHANGER_USER_DECISION_PREF),
+    Services.prefs.getStringPref(prefs.DOORHANGER_USER_DECISION_PREF),
     "UIOk",
     "Doorhanger decision saved."
   );
@@ -48,34 +52,37 @@ add_task(async function testUserInterference() {
   await checkHeuristicsTelemetry("enable_doh", "startup");
 
   // Set the TRR mode pref manually and ensure we respect this.
-  Preferences.set(prefs.NETWORK_TRR_MODE_PREF, 3);
+  Services.prefs.setIntPref(prefs.NETWORK_TRR_MODE_PREF, 3);
   await ensureTRRMode(undefined);
 
   // Simulate a network change.
   simulateNetworkChange();
   await ensureNoTRRModeChange(undefined);
-  ensureNoHeuristicsTelemetry();
+  await ensureNoHeuristicsTelemetry();
 
   is(
-    Preferences.get(prefs.DISABLED_PREF, false),
+    Services.prefs.getBoolPref(prefs.DISABLED_PREF),
     true,
     "Manual disable recorded."
   );
-  is(Preferences.get(prefs.BREADCRUMB_PREF), undefined, "Breadcrumb cleared.");
+  ok(
+    !Services.prefs.prefHasUserValue(prefs.BREADCRUMB_PREF),
+    "Breadcrumb cleared."
+  );
 
   // Simulate another network change.
   simulateNetworkChange();
   await ensureNoTRRModeChange(undefined);
-  ensureNoHeuristicsTelemetry();
+  await ensureNoHeuristicsTelemetry();
 
   // Restart the controller for good measure.
   await restartDoHController();
   await ensureNoTRRModeChange(undefined);
-  ensureNoTRRSelectionTelemetry();
-  ensureNoHeuristicsTelemetry();
+  await ensureNoTRRSelectionTelemetry();
+  await ensureNoHeuristicsTelemetry();
 
   // Simulate another network change.
   simulateNetworkChange();
   await ensureNoTRRModeChange(undefined);
-  ensureNoHeuristicsTelemetry();
+  await ensureNoHeuristicsTelemetry();
 });

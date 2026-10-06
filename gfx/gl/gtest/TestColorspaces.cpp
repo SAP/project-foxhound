@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,8 +10,8 @@
 
 namespace mozilla::color {
 mat4 YuvFromYcbcr(const YcbcrDesc&);
-float TfFromLinear(const PiecewiseGammaDesc&, float linear);
-float LinearFromTf(const PiecewiseGammaDesc&, float tf);
+float TfFromLinear(const TransferFunctionDesc&, float linear);
+float LinearFromTf(const TransferFunctionDesc&, float tf);
 mat3 XyzFromLinearRgb(const Chromaticities&);
 }  // namespace mozilla::color
 
@@ -95,12 +94,12 @@ TEST(Colorspaces, ColorspaceTransform_Rec709Narrow)
 {
   const auto src = ColorspaceDesc{
       Chromaticities::Rec709(),
-      PiecewiseGammaDesc::Rec709(),
+      TransferFunctionDesc::Rec709(),
       {{YuvLumaCoeffs::Rec709(), YcbcrDesc::Narrow8()}},
   };
   const auto dst = ColorspaceDesc{
       Chromaticities::Rec709(),
-      PiecewiseGammaDesc::Rec709(),
+      TransferFunctionDesc::Rec709(),
       {},
   };
   const auto ct = ColorspaceTransform::Create(src, dst);
@@ -120,12 +119,12 @@ TEST(Colorspaces, LutSample_Rec709Float)
 {
   const auto src = ColorspaceDesc{
       Chromaticities::Rec709(),
-      PiecewiseGammaDesc::Rec709(),
+      TransferFunctionDesc::Rec709(),
       {{YuvLumaCoeffs::Rec709(), YcbcrDesc::Float()}},
   };
   const auto dst = ColorspaceDesc{
       Chromaticities::Rec709(),
-      PiecewiseGammaDesc::Rec709(),
+      TransferFunctionDesc::Rec709(),
       {},
   };
   const auto lut = ColorspaceTransform::Create(src, dst).ToLut3();
@@ -142,12 +141,12 @@ TEST(Colorspaces, LutSample_Rec709Narrow)
 {
   const auto src = ColorspaceDesc{
       Chromaticities::Rec709(),
-      PiecewiseGammaDesc::Rec709(),
+      TransferFunctionDesc::Rec709(),
       {{YuvLumaCoeffs::Rec709(), YcbcrDesc::Narrow8()}},
   };
   const auto dst = ColorspaceDesc{
       Chromaticities::Rec709(),
-      PiecewiseGammaDesc::Rec709(),
+      TransferFunctionDesc::Rec709(),
       {},
   };
   const auto lut = ColorspaceTransform::Create(src, dst).ToLut3();
@@ -165,12 +164,12 @@ TEST(Colorspaces, LutSample_Rec709Full)
 {
   const auto src = ColorspaceDesc{
       Chromaticities::Rec709(),
-      PiecewiseGammaDesc::Rec709(),
+      TransferFunctionDesc::Rec709(),
       {{YuvLumaCoeffs::Rec709(), YcbcrDesc::Full8()}},
   };
   const auto dst = ColorspaceDesc{
       Chromaticities::Rec709(),
-      PiecewiseGammaDesc::Rec709(),
+      TransferFunctionDesc::Rec709(),
       {},
   };
   const auto lut = ColorspaceTransform::Create(src, dst).ToLut3();
@@ -184,9 +183,9 @@ TEST(Colorspaces, LutSample_Rec709Full)
   EXPECT_EQ(Sample8From8(lut, {{255, 128, 128}}), (ivec3{255}));
 }
 
-TEST(Colorspaces, PiecewiseGammaDesc_Srgb)
+TEST(Colorspaces, TransferFunctionDesc_Srgb)
 {
-  const auto tf = PiecewiseGammaDesc::Srgb();
+  const auto tf = TransferFunctionDesc::Srgb();
 
   EXPECT_EQ(int(roundf(TfFromLinear(tf, 0x00 / 255.0) * 255)), 0x00);
   EXPECT_EQ(int(roundf(TfFromLinear(tf, 0x01 / 255.0) * 255)), 0x0d);
@@ -207,9 +206,9 @@ TEST(Colorspaces, PiecewiseGammaDesc_Srgb)
   EXPECT_EQ(int(roundf(LinearFromTf(tf, 0xff / 255.0) * 255)), 0xff);
 }
 
-TEST(Colorspaces, PiecewiseGammaDesc_Rec709)
+TEST(Colorspaces, TransferFunctionDesc_Rec709)
 {
-  const auto tf = PiecewiseGammaDesc::Rec709();
+  const auto tf = TransferFunctionDesc::Rec709();
 
   EXPECT_EQ(int(roundf(TfFromLinear(tf, 0x00 / 255.0) * 255)), 0x00);
   EXPECT_EQ(int(roundf(TfFromLinear(tf, 0x01 / 255.0) * 255)), 0x05);
@@ -230,7 +229,7 @@ TEST(Colorspaces, PiecewiseGammaDesc_Rec709)
   EXPECT_EQ(int(roundf(LinearFromTf(tf, 0xff / 255.0) * 255)), 0xff);
 }
 
-TEST(Colorspaces, ColorspaceTransform_PiecewiseGammaDesc)
+TEST(Colorspaces, ColorspaceTransform_TransferFunctionDesc)
 {
   const auto src = ColorspaceDesc{
       Chromaticities::Srgb(),
@@ -239,7 +238,7 @@ TEST(Colorspaces, ColorspaceTransform_PiecewiseGammaDesc)
   };
   const auto dst = ColorspaceDesc{
       Chromaticities::Srgb(),
-      PiecewiseGammaDesc::Srgb(),
+      TransferFunctionDesc::Srgb(),
       {},
   };
   const auto toGamma = ColorspaceTransform::Create(src, dst);
@@ -267,12 +266,12 @@ TEST(Colorspaces, SrgbFromRec709)
 {
   const auto src = ColorspaceDesc{
       Chromaticities::Rec709(),
-      PiecewiseGammaDesc::Rec709(),
+      TransferFunctionDesc::Rec709(),
       {{YuvLumaCoeffs::Rec709(), YcbcrDesc::Narrow8()}},
   };
   const auto dst = ColorspaceDesc{
       Chromaticities::Srgb(),
-      PiecewiseGammaDesc::Srgb(),
+      TransferFunctionDesc::Srgb(),
       {},
   };
   const auto ct = ColorspaceTransform::Create(src, dst);
@@ -289,11 +288,11 @@ TEST(Colorspaces, SrgbFromDisplayP3)
 {
   const auto p3C = ColorspaceDesc{
       Chromaticities::DisplayP3(),
-      PiecewiseGammaDesc::DisplayP3(),
+      TransferFunctionDesc::DisplayP3(),
   };
   const auto srgbC = ColorspaceDesc{
       Chromaticities::Srgb(),
-      PiecewiseGammaDesc::Srgb(),
+      TransferFunctionDesc::Srgb(),
   };
   const auto srgbLinearC = ColorspaceDesc{
       Chromaticities::Srgb(),
@@ -318,11 +317,11 @@ TEST(Colorspaces, DisplayP3FromSrgb)
 {
   const auto p3C = ColorspaceDesc{
       Chromaticities::DisplayP3(),
-      PiecewiseGammaDesc::DisplayP3(),
+      TransferFunctionDesc::DisplayP3(),
   };
   const auto srgbC = ColorspaceDesc{
       Chromaticities::Srgb(),
-      PiecewiseGammaDesc::Srgb(),
+      TransferFunctionDesc::Srgb(),
   };
   const auto p3FromSrgb = ColorspaceTransform::Create(srgbC, p3C);
 
@@ -462,12 +461,12 @@ TEST(Colorspaces, LutError_Rec709Full_Rec709Rgb)
 {
   const auto src = ColorspaceDesc{
       Chromaticities::Rec709(),
-      PiecewiseGammaDesc::Rec709(),
+      TransferFunctionDesc::Rec709(),
       {{YuvLumaCoeffs::Rec709(), YcbcrDesc::Full8()}},
   };
   const auto dst = ColorspaceDesc{
       Chromaticities::Rec709(),
-      PiecewiseGammaDesc::Rec709(),
+      TransferFunctionDesc::Rec709(),
       {},
   };
   const auto ct = ColorspaceTransform::Create(src, dst);
@@ -482,20 +481,20 @@ TEST(Colorspaces, LutError_Rec709Full_Srgb)
 {
   const auto src = ColorspaceDesc{
       Chromaticities::Rec709(),
-      PiecewiseGammaDesc::Rec709(),
+      TransferFunctionDesc::Rec709(),
       {{YuvLumaCoeffs::Rec709(), YcbcrDesc::Full8()}},
   };
   const auto dst = ColorspaceDesc{
       Chromaticities::Srgb(),
-      PiecewiseGammaDesc::Srgb(),
+      TransferFunctionDesc::Srgb(),
       {},
   };
   const auto ct = ColorspaceTransform::Create(src, dst);
   const auto stats = StatsForLutError(ct, ivec3{64}, ivec3{256});
-  EXPECT_NEAR(stats.mean, 0.530, 0.001);
-  EXPECT_NEAR(stats.standardDeviation(), 1.674, 0.001);
+  EXPECT_NEAR(stats.mean, 0.721, 0.001);
+  EXPECT_NEAR(stats.standardDeviation(), 1.775, 0.001);
   EXPECT_NEAR(stats.min, 0, 0.001);
-  EXPECT_NEAR(stats.max, 17, 0.001);
+  EXPECT_NEAR(stats.max, 15, 0.001);
 }
 
 // -
@@ -657,11 +656,11 @@ TEST(Colorspaces, ColorProfileConversionDesc_SrgbFromRec709)
 {
   const auto srgb = ColorProfileDesc::From({
       Chromaticities::Srgb(),
-      PiecewiseGammaDesc::Srgb(),
+      TransferFunctionDesc::Srgb(),
   });
   const auto rec709 = ColorProfileDesc::From({
       Chromaticities::Rec709(),
-      PiecewiseGammaDesc::Rec709(),
+      TransferFunctionDesc::Rec709(),
   });
 
   {
@@ -672,8 +671,8 @@ TEST(Colorspaces, ColorProfileConversionDesc_SrgbFromRec709)
     auto src = vec3(16.0);
     auto dst = conv.DstFromSrc(src / 255) * 255;
 
-    const auto tfa = PiecewiseGammaDesc::Srgb();
-    const auto tfb = PiecewiseGammaDesc::Srgb();
+    const auto tfa = TransferFunctionDesc::Srgb();
+    const auto tfb = TransferFunctionDesc::Srgb();
     const auto expected =
         TfFromLinear(tfb, LinearFromTf(tfa, src.x() / 255)) * 255;
 
@@ -689,8 +688,8 @@ TEST(Colorspaces, ColorProfileConversionDesc_SrgbFromRec709)
     auto src = vec3(16.0);
     auto dst = conv.DstFromSrc(src / 255) * 255;
 
-    const auto tfa = PiecewiseGammaDesc::Rec709();
-    const auto tfb = PiecewiseGammaDesc::Rec709();
+    const auto tfa = TransferFunctionDesc::Rec709();
+    const auto tfb = TransferFunctionDesc::Rec709();
     const auto expected =
         TfFromLinear(tfb, LinearFromTf(tfa, src.x() / 255)) * 255;
 
@@ -706,8 +705,8 @@ TEST(Colorspaces, ColorProfileConversionDesc_SrgbFromRec709)
     auto src = vec3(16.0);
     auto dst = conv.DstFromSrc(src / 255) * 255;
 
-    const auto tfa = PiecewiseGammaDesc::Rec709();
-    const auto tfb = PiecewiseGammaDesc::Srgb();
+    const auto tfa = TransferFunctionDesc::Rec709();
+    const auto tfb = TransferFunctionDesc::Srgb();
     const auto expected =
         TfFromLinear(tfb, LinearFromTf(tfa, src.x() / 255)) * 255;
     printf("expected: %f\n", expected);
@@ -727,11 +726,11 @@ TEST(Colorspaces, ColorProfileConversionDesc_Srgb_Displayp3)
 {
   const auto srgb = ColorProfileDesc::From({
       Chromaticities::Srgb(),
-      PiecewiseGammaDesc::Srgb(),
+      TransferFunctionDesc::Srgb(),
   });
   const auto displayp3 = ColorProfileDesc::From({
       Chromaticities::DisplayP3(),
-      PiecewiseGammaDesc::DisplayP3(),
+      TransferFunctionDesc::DisplayP3(),
   });
   const auto srgbToDisplayp3 = ColorProfileConversionDesc::From({
       .src = srgb,

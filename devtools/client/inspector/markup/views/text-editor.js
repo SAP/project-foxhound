@@ -34,26 +34,26 @@ loader.lazyRequireGetter(
 /**
  * Creates a simple text editor node, used for TEXT and COMMENT
  * nodes.
- *
- * @param  {MarkupContainer} container
- *         The container owning this editor.
- * @param  {DOMNode} node
- *         The node being edited.
- * @param  {String} type
- *         The type of editor to build. This can be either 'text' or 'comment'.
  */
-function TextEditor(container, node, type) {
-  this.container = container;
-  this.markup = this.container.markup;
-  this.node = node;
-  this._selected = false;
+class TextEditor {
+  /**
+   * @param  {MarkupContainer} container
+   *         The container owning this editor.
+   * @param  {DOMNode} node
+   *         The node being edited.
+   * @param  {string} type
+   *         The type of editor to build. This can be either 'text' or 'comment'.
+   */
+  constructor(container, node, type) {
+    this.container = container;
+    this.markup = this.container.markup;
+    this.node = node;
+    this._selected = false;
 
-  this.showTextEditor = this.showTextEditor.bind(this);
+    this.showTextEditor = this.showTextEditor.bind(this);
 
-  this.buildMarkup(type);
-}
-
-TextEditor.prototype = {
+    this.buildMarkup(type);
+  }
   buildMarkup(type) {
     const doc = this.markup.doc;
 
@@ -70,17 +70,17 @@ TextEditor.prototype = {
         this.elt
       );
     });
-  },
+  }
 
   get ReactDOM() {
     // Reuse the toolbox's ReactDOM to avoid loading react-dom.js again in the
     // Inspector's BrowserLoader.
     return this.container.markup.inspector.ReactDOM;
-  },
+  }
 
   get selected() {
     return this._selected;
-  },
+  }
 
   set selected(value) {
     if (value === this._selected) {
@@ -88,7 +88,7 @@ TextEditor.prototype = {
     }
     this._selected = value;
     this.update();
-  },
+  }
 
   showTextEditor(element) {
     new InplaceEditor({
@@ -114,7 +114,7 @@ TextEditor.prototype = {
       stopOnReturn: true,
       trimOutput: false,
     });
-  },
+  }
 
   async update() {
     try {
@@ -126,18 +126,18 @@ TextEditor.prototype = {
     } catch (e) {
       console.error(e);
     }
-  },
+  }
 
   destroy() {
     this.ReactDOM.unmountComponentAtNode(this.elt);
-  },
+  }
 
   /**
    * Stub method for consistency with ElementEditor.
    */
   getInfoAtNode() {
     return null;
-  },
-};
+  }
+}
 
 module.exports = TextEditor;

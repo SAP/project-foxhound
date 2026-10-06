@@ -3,9 +3,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "BufferStream.h"
+
+#include <algorithm>
+
 #include "MediaData.h"
 #include "MediaResource.h"
-#include <algorithm>
 
 namespace mozilla {
 
@@ -18,20 +20,20 @@ BufferStream::BufferStream(mozilla::MediaByteBuffer* aBuffer)
 BufferStream::~BufferStream() = default;
 
 /*virtual*/
-bool BufferStream::ReadAt(int64_t aOffset, void* aData, size_t aLength,
-                          size_t* aBytesRead) {
+nsresult BufferStream::ReadAt(int64_t aOffset, void* aData, size_t aLength,
+                              size_t* aBytesRead) {
   if (aOffset < mStartOffset || aOffset > mStartOffset + mData->Length()) {
-    return false;
+    return NS_ERROR_DOM_MEDIA_RANGE_ERR;
   }
   *aBytesRead =
       std::min(aLength, size_t(mStartOffset + mData->Length() - aOffset));
   memcpy(aData, mData->Elements() + aOffset - mStartOffset, *aBytesRead);
-  return true;
+  return NS_OK;
 }
 
 /*virtual*/
-bool BufferStream::CachedReadAt(int64_t aOffset, void* aData, size_t aLength,
-                                size_t* aBytesRead) {
+nsresult BufferStream::CachedReadAt(int64_t aOffset, void* aData,
+                                    size_t aLength, size_t* aBytesRead) {
   return ReadAt(aOffset, aData, aLength, aBytesRead);
 }
 

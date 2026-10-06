@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/EventUtils.js"></script>
+<link rel="stylesheet" href="/tests/SimpleTest/test.css">
+<script>
+  SimpleTest.requestFlakyTimeout("Needed to wait for opened window to fully finish loading before navigating it.");
+
+  add_task(async function navigateWindowOpenedExplicitAboutBlank() {
+    let w = window.open("about:blank");
+    
+    await new Promise(resolve => setTimeout(() => {
+      w.location = "about:blank#0";
+      ok(true, "setting location did not lead to a crash");
+      resolve();
+    }, 1000));
+  });
+</script>

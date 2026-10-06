@@ -16,7 +16,7 @@ NESTED_ATTR_MAP = {
 }
 
 # Each element of this list is the IPDL source representation of a priority.
-priorityList = ["normal", "input", "vsync", "mediumhigh", "control"]
+priorityList = ["normal", "input", "vsync", "mediumhigh", "control", "low"]
 
 priorityAttrMap = {src: idx for idx, src in enumerate(priorityList)}
 
@@ -404,19 +404,17 @@ class Param(Node):
 
 
 class TypeSpec(Node):
-    def __init__(self, loc, spec):
+    def __init__(self, loc, spec, nullable, modifiers=[]):
         Node.__init__(self, loc)
         assert isinstance(spec, str)
         self.spec = spec  # str
-        self.array = False  # bool
-        self.maybe = False  # bool
-        self.nullable = False  # bool
-        self.uniqueptr = False  # bool
+        self.nullable = nullable  # bool
+        self.modifiers = modifiers  # [str]
+
+    def withModifier(self, modifier):
+        return TypeSpec(self.loc, self.spec, self.nullable, self.modifiers + [modifier])
 
     def basename(self):
-        return self.spec
-
-    def __str__(self):
         return self.spec
 
 

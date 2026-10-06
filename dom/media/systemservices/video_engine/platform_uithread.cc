@@ -12,7 +12,7 @@
 
 #  include "platform_uithread.h"
 
-namespace rtc {
+namespace webrtc {
 
 // timer id used in delayed callbacks
 static const UINT_PTR kTimerId = 1;
@@ -193,6 +193,6 @@ LRESULT CALLBACK PlatformUIThread::EventWindowProc(HWND hwnd, UINT uMsg,
   return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
 
-}  // namespace rtc
+}  // namespace webrtc
 
 #endif

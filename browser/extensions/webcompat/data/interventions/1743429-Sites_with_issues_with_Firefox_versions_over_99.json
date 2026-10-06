@@ -1,0 +1,27 @@
+{
+  "label": "Sites with issues with Firefox versions over 99",
+  "bugs": {
+    "1944356": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://411.ca/"]
+    },
+    "1800241": {
+      "issue": "broken-layout",
+      "matches": ["*://*.mms.telekom.de/*"]
+    },
+    "1944355": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://ubank.com.au/*"]
+    },
+    "1944352": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://wifi.sncf/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["cap_Version_to_99"]
+    }
+  ]
+}

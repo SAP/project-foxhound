@@ -7,15 +7,16 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-// MSVC++ requires this to be set before any other includes to get M_PI.
-#define _USE_MATH_DEFINES
 #include "modules/audio_processing/rms_level.h"
 
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <numbers>
+#include <span>
 #include <vector>
 
-#include "api/array_view.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/numerics/safe_conversions.h"
 #include "test/gtest.h"
@@ -25,20 +26,20 @@ namespace {
 constexpr int kSampleRateHz = 48000;
 constexpr size_t kBlockSizeSamples = kSampleRateHz / 100;
 
-std::unique_ptr<RmsLevel> RunTest(rtc::ArrayView<const int16_t> input) {
+std::unique_ptr<RmsLevel> RunTest(std::span<const int16_t> input) {
   std::unique_ptr<RmsLevel> level(new RmsLevel);
   for (size_t n = 0; n + kBlockSizeSamples <= input.size();
        n += kBlockSizeSamples) {
-    level->Analyze(input.subview(n, kBlockSizeSamples));
+    level->Analyze(input.subspan(n, kBlockSizeSamples));
   }
   return level;
 }
 
-std::unique_ptr<RmsLevel> RunTest(rtc::ArrayView<const float> input) {
+std::unique_ptr<RmsLevel> RunTest(std::span<const float> input) {
   std::unique_ptr<RmsLevel> level(new RmsLevel);
   for (size_t n = 0; n + kBlockSizeSamples <= input.size();
        n += kBlockSizeSamples) {
-    level->Analyze(input.subview(n, kBlockSizeSamples));
+    level->Analyze(input.subspan(n, kBlockSizeSamples));
   }
   return level;
 }
@@ -49,7 +50,8 @@ std::vector<int16_t> CreateInt16Sinusoid(int frequency_hz,
   std::vector<int16_t> x(num_samples);
   for (size_t n = 0; n < num_samples; ++n) {
     x[n] = saturated_cast<int16_t>(
-        amplitude * std::sin(2 * M_PI * n * frequency_hz / kSampleRateHz));
+        amplitude *
+        std::sin(2 * std::numbers::pi * n * frequency_hz / kSampleRateHz));
   }
   return x;
 }
@@ -143,8 +145,8 @@ TEST(RmsLevelTest, Reset) {
 TEST(RmsLevelTest, ProcessMuted) {
   auto x = CreateInt16Sinusoid(1000, INT16_MAX, kSampleRateHz);
   auto level = RunTest(x);
-  const size_t kBlocksPerSecond = rtc::CheckedDivExact(
-      static_cast<size_t>(kSampleRateHz), kBlockSizeSamples);
+  const size_t kBlocksPerSecond =
+      CheckedDivExact(static_cast<size_t>(kSampleRateHz), kBlockSizeSamples);
   for (size_t i = 0; i < kBlocksPerSecond; ++i) {
     level->AnalyzeMuted(kBlockSizeSamples);
   }

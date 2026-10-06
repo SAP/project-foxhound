@@ -5,6 +5,7 @@
 //! Used for parsing and serializing component names from the syntax string.
 
 use super::{Component, ComponentName, Multiplier};
+use crate::derives::*;
 use std::fmt::{self, Debug, Write};
 use style_traits::{CssWriter, ToCss};
 
@@ -21,7 +22,7 @@ bitflags! {
 }
 
 /// <https://drafts.css-houdini.org/css-properties-values-api-1/#supported-names>
-#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq)]
+#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, ToShmem)]
 pub enum DataType {
     /// Any valid `<length>` value
     Length,
@@ -98,21 +99,21 @@ impl DataType {
     /// Returns which kinds of dependent data types this property might contain.
     pub fn dependent_types(&self) -> DependentDataTypes {
         match self {
-            DataType::Length |
-            DataType::LengthPercentage |
-            DataType::TransformFunction |
-            DataType::TransformList => DependentDataTypes::LENGTH,
+            DataType::Length
+            | DataType::LengthPercentage
+            | DataType::TransformFunction
+            | DataType::TransformList => DependentDataTypes::LENGTH,
             DataType::Color => DependentDataTypes::COLOR,
-            DataType::Number |
-            DataType::Percentage |
-            DataType::Image |
-            DataType::Url |
-            DataType::Integer |
-            DataType::Angle |
-            DataType::Time |
-            DataType::Resolution |
-            DataType::CustomIdent |
-            DataType::String => DependentDataTypes::empty(),
+            DataType::Number
+            | DataType::Percentage
+            | DataType::Image
+            | DataType::Url
+            | DataType::Integer
+            | DataType::Angle
+            | DataType::Time
+            | DataType::Resolution
+            | DataType::CustomIdent
+            | DataType::String => DependentDataTypes::empty(),
         }
     }
 }

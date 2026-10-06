@@ -276,11 +276,6 @@ The console prints a stack trace for all error messages, like this:
 Server
 ------
 
-.. note::
-
-  Server-side log messages was introduced in Firefox 43, but removed in Firefox 56. You can install the `Chrome Logger extension <https://addons.mozilla.org/en-US/firefox/addon/chromelogger/>`_ to (re)-enable the feature.
-
-
 With the `Chrome Logger extension <https://addons.mozilla.org/en-US/firefox/addon/chromelogger/>`_, Web Console can display messages sent from the server. This enables you to use the Web Console to debug server-side code.
 
 

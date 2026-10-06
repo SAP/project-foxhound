@@ -9,9 +9,10 @@
 export var SharedUtils = {
   /**
    * Check that the specified content matches the expected size and SHA-256 hash.
+   *
    * @param {ArrayBuffer} buffer binary content
-   * @param {Number} size expected file size
-   * @param {String} size expected file SHA-256 as hex string
+   * @param {number} size expected file size
+   * @param {string} size expected file SHA-256 as hex string
    * @returns {boolean}
    */
   async checkContentHash(buffer, size, hash) {
@@ -30,8 +31,9 @@ export var SharedUtils = {
 
   /**
    * Load (from disk) the JSON file distributed with the release for this collection.
-   * @param {String}  bucket
-   * @param {String}  collection
+   *
+   * @param {string}  bucket
+   * @param {string}  collection
    */
   async loadJSONDump(bucket, collection) {
     // When using the preview bucket, we still want to load the main dump.

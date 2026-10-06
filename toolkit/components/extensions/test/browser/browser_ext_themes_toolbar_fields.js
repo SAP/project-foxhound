@@ -49,8 +49,12 @@ add_task(async function test_support_toolbar_field_properties() {
   });
 
   let fields = [
-    document.querySelector("#urlbar-background"),
-    document.getElementById("searchbar"),
+    document.querySelector("#urlbar > .urlbar-background"),
+    document.querySelector(
+      Services.prefs.getBoolPref("browser.search.widget.new")
+        ? "#searchbar-new > .urlbar-background"
+        : "#searchbar"
+    ),
   ].filter(field => {
     let bounds = field.getBoundingClientRect();
     return bounds.width > 0 && bounds.height > 0;
@@ -86,7 +90,7 @@ add_task(async function test_support_toolbar_field_brighttext() {
   registerCleanupFunction(() => {
     root.setAttribute("remotecontrol", "true");
   });
-  let urlbar = gURLBar.textbox;
+  let urlbar = gURLBar;
 
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
@@ -154,7 +158,7 @@ add_task(async function test_support_toolbar_field_brighttext_dark_on_dark() {
   registerCleanupFunction(() => {
     root.setAttribute("remotecontrol", "true");
   });
-  let urlbar = gURLBar.textbox;
+  let urlbar = gURLBar;
 
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {

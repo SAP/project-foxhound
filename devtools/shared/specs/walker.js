@@ -91,6 +91,10 @@ const walkerSpec = generateActorSpec({
       type: "container-type-change",
       nodes: Arg(0, "array:domnode"),
     },
+    "anchor-name-change": {
+      type: "anchor-name-change",
+      nodes: Arg(0, "array:domnode"),
+    },
     // The walker actor emits a useful "resize" event to its front to let
     // clients know when the browser window gets resized. This may be useful
     // for refreshing a DOM node's styles for example, since those may depend on

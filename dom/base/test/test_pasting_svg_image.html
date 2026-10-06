@@ -9,6 +9,9 @@
   <script>
     const kPasteTargetId = "pasteTarget";
     const kTestContentId = "testContent";
+    const kIncludeCommonAncestor = SpecialPowers.getBoolPref(
+      "dom.serializer.includeCommonAncestor.enabled"
+    );
 
     function selectSVG() {
       const testContent = document.getElementById(kTestContentId);
@@ -19,7 +22,8 @@
       function validatorFn(aData) {
         const testContent = document.getElementById(kTestContentId);
 
-        let expectedData = testContent.outerHTML;
+        let expectedData = kIncludeCommonAncestor ? testContent.outerHTML
+                                                  : testContent.innerHTML;
         if (navigator.platform.includes(kPlatformWindows)) {
           expectedData = kTextHtmlPrefixClipboardDataWindows +
             expectedData + kTextHtmlSuffixClipboardDataWindows;
@@ -58,7 +62,8 @@
       // ids.
       const expectedPastedInnerHTML =
         SimpleTest.stripLinebreaksAndWhitespaceAfterTags(
-          document.getElementById(kTestContentId).outerHTML);
+          kIncludeCommonAncestor ? document.getElementById(kTestContentId).outerHTML
+                                 : document.getElementById(kTestContentId).innerHTML);
 
       const pasteTargetElement = document.getElementById(kPasteTargetId);
       await pasteTo(pasteTargetElement);

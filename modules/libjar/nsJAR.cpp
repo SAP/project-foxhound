@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +9,6 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Omnijar.h"
-#include "mozilla/Unused.h"
 
 #ifdef XP_UNIX
 #  include <sys/stat.h>
@@ -859,7 +856,7 @@ nsZipReaderCache::Observe(nsISupports* aSubject, const char* aTopic,
       file = do_QueryInterface(aSubject);
     } else if (aSomeData) {
       nsDependentString fileName(aSomeData);
-      Unused << NS_NewLocalFile(fileName, getter_AddRefs(file));
+      (void)NS_NewLocalFile(fileName, getter_AddRefs(file));
     }
 
     if (!file) return NS_OK;

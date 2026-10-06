@@ -1,5 +1,4 @@
-/* vim: sw=2 ts=2 et lcs=trail\:.,tab\:>~ :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -15,7 +14,6 @@
  */
 
 #include "mozIStorageFunction.h"
-#include "mozilla/Attributes.h"
 
 class mozIStorageConnection;
 
@@ -556,32 +554,6 @@ class StripPrefixAndUserinfoFunction final : public mozIStorageFunction {
 
  private:
   ~StripPrefixAndUserinfoFunction() = default;
-};
-
-////////////////////////////////////////////////////////////////////////////////
-//// Is frecency decaying function
-
-/**
- * Returns nsNavHistory::IsFrecencyDecaying().
- *
- * @return
- *        True if frecency is currently decaying and false otherwise.
- */
-class IsFrecencyDecayingFunction final : public mozIStorageFunction {
- public:
-  NS_DECL_THREADSAFE_ISUPPORTS
-  NS_DECL_MOZISTORAGEFUNCTION
-
-  /**
-   * Registers the function with the specified database connection.
-   *
-   * @param aDBConn
-   *        The database connection to register with.
-   */
-  static nsresult create(mozIStorageConnection* aDBConn);
-
- private:
-  ~IsFrecencyDecayingFunction() = default;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

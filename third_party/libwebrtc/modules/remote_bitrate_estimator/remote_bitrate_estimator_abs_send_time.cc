@@ -10,8 +10,6 @@
 
 #include "modules/remote_bitrate_estimator/remote_bitrate_estimator_abs_send_time.h"
 
-#include <math.h>
-
 #include <algorithm>
 #include <cstdint>
 #include <list>
@@ -98,7 +96,7 @@ void RemoteBitrateEstimatorAbsSendTime::MaybeAddCluster(
 
 RemoteBitrateEstimatorAbsSendTime::RemoteBitrateEstimatorAbsSendTime(
     const Environment& env,
-    absl::Nonnull<RemoteBitrateObserver*> observer)
+    RemoteBitrateObserver* absl_nonnull observer)
     : env_(env), observer_(observer), remote_rate_(env_.field_trials()) {
   RTC_LOG(LS_INFO) << "RemoteBitrateEstimatorAbsSendTime: Instantiating.";
 }

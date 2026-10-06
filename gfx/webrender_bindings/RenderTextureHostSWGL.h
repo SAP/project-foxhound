@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,7 +13,7 @@ namespace wr {
 
 class RenderTextureHostSWGL : public RenderTextureHost {
  public:
-  RenderTextureHostSWGL() {}
+  RenderTextureHostSWGL() = default;
 
   wr::WrExternalImage LockSWGL(uint8_t aChannelIndex, void* aContext,
                                RenderCompositor* aCompositor) override;
@@ -28,6 +26,10 @@ class RenderTextureHostSWGL : public RenderTextureHost {
 
   virtual gfx::ColorDepth GetColorDepth() const {
     return gfx::ColorDepth::COLOR_8;
+  }
+
+  virtual gfx::TransferFunction GetTransferFunction() const {
+    return gfx::TransferFunction::BT709;
   }
 
   struct PlaneInfo {
@@ -49,7 +51,7 @@ class RenderTextureHostSWGL : public RenderTextureHost {
   // WrSWGLCompositeSurfaceInfo. This is paired with a call to UnlockSWGL when
   // composition is done.
   bool LockSWGLCompositeSurface(void* aContext,
-                                wr::SWGLCompositeSurfaceInfo* aInfo);
+                                wr::SWGLCompositeSurfaceInfo* aInfo) override;
 
   size_t BytesFromPlanes() {
     NS_ASSERTION(mPlanes.size(), "Can't compute bytes without any planes");

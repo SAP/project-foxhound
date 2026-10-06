@@ -28,6 +28,7 @@ add_task(async function () {
     isPaused,
     waitForState,
     waitForSelectedSource,
+    //waitForElementWithSelector,
     waitForLoadedScopes,
     waitForInlinePreviews,
     waitForElement,

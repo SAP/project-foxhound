@@ -29,7 +29,6 @@ server.registerPathHandler("/", (req, res) => {
 });
 
 add_setup(async () => {
-  Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
   Services.prefs.setBoolPref("extensions.dnr.enabled", true);
   Services.prefs.setBoolPref("extensions.dnr.feedback", true);
 
@@ -333,12 +332,25 @@ add_task(async function test_enable_disabled_static_rules_after_restart() {
   // been detected at the previous session. Caching too much or too little in
   // StartupCache will trigger test failures in assertStoreReadsSinceLastCall.
   const sandboxStoreSpies = sinon.createSandbox();
-  const dnrStore = ExtensionDNRStore._getStoreForTesting();
-  const spyReadDNRStore = sandboxStoreSpies.spy(dnrStore, "_readData");
+  let dnrStore = ExtensionDNRStore._getStoreForTesting();
+  const spyReadDNRStore = sandboxStoreSpies.spy(
+    Object.getPrototypeOf(dnrStore),
+    "_readData"
+  );
 
   function assertStoreReadsSinceLastCall(expectedCount, description) {
     equal(spyReadDNRStore.callCount, expectedCount, description);
     spyReadDNRStore.resetHistory();
+  }
+
+  async function promiseRestartManagerWithRealisticDNRStoreInMemory() {
+    await AddonTestUtils.promiseShutdownManager();
+    // Recreate the DNR store to ensure that we test a realistic state without
+    // cached in-memory state.
+    dnrStore = ExtensionDNRStore._recreateStoreForTesting();
+    // After the store is recreated for testing, we will still be able to track
+    // reads, because spyReadDNRStore was attached to the prototype above.
+    await AddonTestUtils.promiseStartupManager();
   }
 
   const rule_resources = [
@@ -360,7 +372,7 @@ add_task(async function test_enable_disabled_static_rules_after_restart() {
   await extension.awaitMessage("bgpage:ready");
 
   assertStoreReadsSinceLastCall(1, "Read once at initial startup");
-  await AddonTestUtils.promiseRestartManager();
+  await promiseRestartManagerWithRealisticDNRStoreInMemory();
   // Note: ordinarily, event pages do not wake up after a browser restart,
   // unless a relevant event such as runtime.onStartup is triggered. But as
   // noted in bug 1822735, "event pages without any event listeners" will be
@@ -394,7 +406,7 @@ add_task(async function test_enable_disabled_static_rules_after_restart() {
   await assertDNRGetEnabledRulesets(extension, ["ruleset_initially_disabled"]);
 
   assertStoreReadsSinceLastCall(0, "No further reads before restart");
-  await AddonTestUtils.promiseRestartManager();
+  await promiseRestartManagerWithRealisticDNRStoreInMemory();
   await extension.awaitMessage("bgpage:ready");
 
   // Regression test 2: before bug 1921353 was fixed, even with a fix to the
@@ -414,7 +426,7 @@ add_task(async function test_enable_disabled_static_rules_after_restart() {
   await extension.awaitMessage("updateEnabledRulesets:done");
   await assertDNRGetEnabledRulesets(extension, []);
 
-  await AddonTestUtils.promiseRestartManager();
+  await promiseRestartManagerWithRealisticDNRStoreInMemory();
   await extension.awaitMessage("bgpage:ready");
   assertStoreReadsSinceLastCall(0, "Read skipped because rules were disabled");
   await assertDNRGetEnabledRulesets(extension, []);
@@ -422,7 +434,35 @@ add_task(async function test_enable_disabled_static_rules_after_restart() {
   // so we do not expect another read from disk.
   assertStoreReadsSinceLastCall(0, "Read still skipped despite API call");
 
+  // Regression test for bug 2006233: The skipped read (for extension without
+  // enabled rules) should not prevent the read for extension2 (with rules).
+  const extension2 = ExtensionTestUtils.loadExtension(
+    getDNRExtension({
+      rule_resources: [{ id: "my_ruleset", enabled: true, path: "rules.json" }],
+      files: { "rules.json": JSON.stringify([getDNRRule()]) },
+      id: "dnr@initially-enabled",
+    })
+  );
+  await extension2.startup();
+  await extension2.awaitMessage("bgpage:ready");
+  assertStoreReadsSinceLastCall(1, "Read for new extension");
+
+  await dnrStore.waitSaveCacheDataForTesting();
+
+  await promiseRestartManagerWithRealisticDNRStoreInMemory();
+
+  await extension.awaitMessage("bgpage:ready");
+  await extension2.awaitMessage("bgpage:ready");
+  assertStoreReadsSinceLastCall(1, "Read due to extension2 with enabled rules");
+  await assertDNRGetEnabledRulesets(extension2, ["my_ruleset"]);
+
+  ok(
+    dnrStore._data.get(extension2.uuid).isFromStartupCache(),
+    "extension2 StoreData should be initialized from startup cache"
+  );
+
   await extension.unload();
+  await extension2.unload();
 
   sandboxStoreSpies.restore();
 });
@@ -1110,7 +1150,7 @@ add_task(async function test_dnr_all_rules_disabled_allowed() {
 });
 
 add_task(async function test_static_rules_telemetry() {
-  resetTelemetryData();
+  Services.fog.testResetFOG();
 
   const ruleset1 = [
     getDNRRule({
@@ -1171,13 +1211,9 @@ add_task(async function test_static_rules_telemetry() {
     [
       {
         metric: "validateRulesTime",
-        mirroredName: "WEBEXT_DNR_VALIDATE_RULES_MS",
-        mirroredType: "histogram",
       },
       {
         metric: "evaluateRulesTime",
-        mirroredName: "WEBEXT_DNR_EVALUATE_RULES_MS",
-        mirroredType: "histogram",
       },
     ],
     "before test extension have been loaded"
@@ -1192,8 +1228,6 @@ add_task(async function test_static_rules_telemetry() {
     [
       {
         metric: "validateRulesTime",
-        mirroredName: "WEBEXT_DNR_VALIDATE_RULES_MS",
-        mirroredType: "histogram",
       },
     ],
     "after test extension loaded with all static rulesets disabled"
@@ -1213,8 +1247,6 @@ add_task(async function test_static_rules_telemetry() {
     [
       {
         metric: "validateRulesTime",
-        mirroredName: "WEBEXT_DNR_VALIDATE_RULES_MS",
-        mirroredType: "histogram",
         expectedSamplesCount: expectedValidateRulesTimeSamples,
       },
     ],
@@ -1235,8 +1267,6 @@ add_task(async function test_static_rules_telemetry() {
     [
       {
         metric: "validateRulesTime",
-        mirroredName: "WEBEXT_DNR_VALIDATE_RULES_MS",
-        mirroredType: "histogram",
         expectedSamplesCount: expectedValidateRulesTimeSamples,
       },
     ],
@@ -1249,8 +1279,6 @@ add_task(async function test_static_rules_telemetry() {
     [
       {
         metric: "validateRulesTime",
-        mirroredName: "WEBEXT_DNR_VALIDATE_RULES_MS",
-        mirroredType: "histogram",
         expectedSamplesCount: expectedValidateRulesTimeSamples,
       },
     ],
@@ -1268,8 +1296,6 @@ add_task(async function test_static_rules_telemetry() {
     [
       {
         metric: "validateRulesTime",
-        mirroredName: "WEBEXT_DNR_VALIDATE_RULES_MS",
-        mirroredType: "histogram",
         expectedSamplesCount: expectedValidateRulesTimeSamples,
       },
     ],
@@ -1289,8 +1315,6 @@ add_task(async function test_static_rules_telemetry() {
     [
       {
         metric: "validateRulesTime",
-        mirroredName: "WEBEXT_DNR_VALIDATE_RULES_MS",
-        mirroredType: "histogram",
         expectedSamplesCount: expectedValidateRulesTimeSamples,
       },
     ],
@@ -1309,13 +1333,9 @@ add_task(async function test_static_rules_telemetry() {
     [
       {
         metric: "evaluateRulesTime",
-        mirroredName: "WEBEXT_DNR_EVALUATE_RULES_MS",
-        mirroredType: "histogram",
       },
       {
         metric: "evaluateRulesCountMax",
-        mirroredName: "extensions.apis.dnr.evaluate_rules_count_max",
-        mirroredType: "scalar",
       },
     ],
     "before any request have been intercepted"
@@ -1331,13 +1351,9 @@ add_task(async function test_static_rules_telemetry() {
     [
       {
         metric: "evaluateRulesTime",
-        mirroredName: "WEBEXT_DNR_EVALUATE_RULES_MS",
-        mirroredType: "histogram",
       },
       {
         metric: "evaluateRulesCountMax",
-        mirroredName: "extensions.apis.dnr.evaluate_rules_count_max",
-        mirroredType: "scalar",
       },
     ],
     "after restricted request have been intercepted (but no rules evaluated)"
@@ -1364,8 +1380,6 @@ add_task(async function test_static_rules_telemetry() {
     [
       {
         metric: "evaluateRulesTime",
-        mirroredName: "WEBEXT_DNR_EVALUATE_RULES_MS",
-        mirroredType: "histogram",
         expectedSamplesCount: expectedEvaluateRulesTimeSamples,
       },
     ],
@@ -1378,8 +1392,6 @@ add_task(async function test_static_rules_telemetry() {
     [
       {
         metric: "evaluateRulesCountMax",
-        mirroredName: "extensions.apis.dnr.evaluate_rules_count_max",
-        mirroredType: "scalar",
         expectedGetValue: expectedEvaluateRulesCountMax,
       },
     ],
@@ -1395,8 +1407,6 @@ add_task(async function test_static_rules_telemetry() {
     [
       {
         metric: "evaluateRulesTime",
-        mirroredName: "WEBEXT_DNR_EVALUATE_RULES_MS",
-        mirroredType: "histogram",
         expectedSamplesCount: expectedEvaluateRulesTimeSamples,
       },
     ],
@@ -1418,8 +1428,6 @@ add_task(async function test_static_rules_telemetry() {
     [
       {
         metric: "evaluateRulesCountMax",
-        mirroredName: "extensions.apis.dnr.evaluate_rules_count_max",
-        mirroredType: "scalar",
         expectedGetValue: expectedEvaluateRulesCountMax,
       },
     ],
@@ -1438,8 +1446,6 @@ add_task(async function test_static_rules_telemetry() {
     [
       {
         metric: "evaluateRulesCountMax",
-        mirroredName: "extensions.apis.dnr.evaluate_rules_count_max",
-        mirroredType: "scalar",
         expectedGetValue: expectedEvaluateRulesCountMax,
       },
     ],

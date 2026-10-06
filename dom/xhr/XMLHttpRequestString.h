@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -54,11 +52,11 @@ class XMLHttpRequestString final {
 
   void CreateSnapshot(XMLHttpRequestStringSnapshot& aSnapshot);
 
- private:
   XMLHttpRequestString(const XMLHttpRequestString&) = delete;
   XMLHttpRequestString& operator=(const XMLHttpRequestString&) = delete;
   XMLHttpRequestString& operator=(const XMLHttpRequestString&&) = delete;
 
+ private:
   RefPtr<XMLHttpRequestStringBuffer> mBuffer;
 };
 
@@ -67,6 +65,13 @@ class MOZ_STACK_CLASS XMLHttpRequestStringWriterHelper final {
  public:
   explicit XMLHttpRequestStringWriterHelper(XMLHttpRequestString& aString);
   ~XMLHttpRequestStringWriterHelper();
+
+  XMLHttpRequestStringWriterHelper(const XMLHttpRequestStringWriterHelper&) =
+      delete;
+  XMLHttpRequestStringWriterHelper& operator=(
+      const XMLHttpRequestStringWriterHelper&) = delete;
+  XMLHttpRequestStringWriterHelper& operator=(
+      const XMLHttpRequestStringWriterHelper&&) = delete;
 
   /**
    * The existing length of the string. Do not call during BulkWrite().
@@ -80,13 +85,6 @@ class MOZ_STACK_CLASS XMLHttpRequestStringWriterHelper final {
   AppendTaintAt(size_t aIndex, const StringTaint& aTaint);
 
  private:
-  XMLHttpRequestStringWriterHelper(const XMLHttpRequestStringWriterHelper&) =
-      delete;
-  XMLHttpRequestStringWriterHelper& operator=(
-      const XMLHttpRequestStringWriterHelper&) = delete;
-  XMLHttpRequestStringWriterHelper& operator=(
-      const XMLHttpRequestStringWriterHelper&&) = delete;
-
   RefPtr<XMLHttpRequestStringBuffer> mBuffer;
   MutexAutoLock mLock;
 };
@@ -104,6 +102,9 @@ class XMLHttpRequestStringSnapshot final {
 
   XMLHttpRequestStringSnapshot& operator=(const XMLHttpRequestStringSnapshot&) =
       delete;
+  XMLHttpRequestStringSnapshot(const XMLHttpRequestStringSnapshot&) = delete;
+  XMLHttpRequestStringSnapshot& operator=(
+      const XMLHttpRequestStringSnapshot&&) = delete;
 
   void Reset() { ResetInternal(false /* isVoid */); }
 
@@ -111,7 +112,7 @@ class XMLHttpRequestStringSnapshot final {
 
   bool IsVoid() const { return mVoid; }
 
-  bool IsEmpty() const { return !mLength; }
+  bool IsEmpty() const { return !mBuffer; }
 
   [[nodiscard]] bool GetAsString(DOMString& aString) const;
 
@@ -120,16 +121,11 @@ class XMLHttpRequestStringSnapshot final {
   const StringTaint& Taint() const;
 
  private:
-  XMLHttpRequestStringSnapshot(const XMLHttpRequestStringSnapshot&) = delete;
-  XMLHttpRequestStringSnapshot& operator=(
-      const XMLHttpRequestStringSnapshot&&) = delete;
-
-  void Set(XMLHttpRequestStringBuffer* aBuffer, uint32_t aLength);
+  void Set(XMLHttpRequestStringBuffer* aBuffer);
 
   void ResetInternal(bool aIsVoid);
 
   RefPtr<XMLHttpRequestStringBuffer> mBuffer;
-  uint32_t mLength;
   bool mVoid;
 };
 

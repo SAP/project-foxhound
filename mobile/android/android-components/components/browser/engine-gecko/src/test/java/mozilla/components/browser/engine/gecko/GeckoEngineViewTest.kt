@@ -21,12 +21,11 @@ import mozilla.components.support.test.whenever
 import mozilla.components.test.ReflectionUtils
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
@@ -34,6 +33,8 @@ import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.robolectric.Robolectric.buildActivity
 import org.robolectric.Shadows.shadowOf
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class GeckoEngineViewTest {
@@ -173,7 +174,7 @@ class GeckoEngineViewTest {
 
         engineView.render(engineSession)
 
-        assertTrue(engineView.currentSelection is GeckoSelectionActionDelegate)
+        assertIs<GeckoSelectionActionDelegate>(engineView.currentSelection)
     }
 
     @Test
@@ -195,8 +196,8 @@ class GeckoEngineViewTest {
         val captor = argumentCaptor<GeckoSession.SelectionActionDelegate>()
         verify(geckoSession).selectionActionDelegate = captor.capture()
 
-        assertTrue(captor.value is GeckoSelectionActionDelegate)
-        val capturedDelegate = captor.value as GeckoSelectionActionDelegate
+        val capturedDelegate = captor.value
+        assertIs<GeckoSelectionActionDelegate>(capturedDelegate)
 
         assertEquals(delegate, capturedDelegate.customDelegate)
 
@@ -226,8 +227,8 @@ class GeckoEngineViewTest {
         val captor = argumentCaptor<GeckoSession.SelectionActionDelegate>()
         verify(geckoSession).selectionActionDelegate = captor.capture()
 
-        assertTrue(captor.value is GeckoSelectionActionDelegate)
-        val capturedDelegate = captor.value as GeckoSelectionActionDelegate
+        val capturedDelegate = captor.value
+        assertIs<GeckoSelectionActionDelegate>(capturedDelegate)
 
         assertEquals(delegate, capturedDelegate.customDelegate)
 
@@ -242,6 +243,31 @@ class GeckoEngineViewTest {
         )
 
         verify(geckoSession).selectionActionDelegate = null
+    }
+
+    fun `WHEN rendering a new session THEN start observing scroll events`() {
+        val listener: GeckoVerticalScrollListener = mock()
+        val engineView = GeckoEngineView(context).apply {
+            verticalScrollListener = listener
+        }
+        val geckoSession: GeckoSession = mock()
+        val engineSession = mock<GeckoEngineSession>()
+        doReturn(geckoSession).`when`(engineSession).geckoSession
+
+        engineView.render(engineSession)
+
+        verify(listener).observe(geckoSession)
+    }
+
+    fun `WHEN releasing a session THEN stop observing scroll events`() {
+        val listener: GeckoVerticalScrollListener = mock()
+        val engineView = GeckoEngineView(context).apply {
+            verticalScrollListener = listener
+        }
+
+        engineView.release()
+
+        verify(listener).release()
     }
 
     @Test

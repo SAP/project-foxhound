@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import "./panel-list.js";
+import "./panel-list.mjs";
 import { html, ifDefined } from "../vendor/lit.all.mjs";
 
 let accesskeyOptions = ["n", "w", "e", "c", "b"];
@@ -114,6 +114,7 @@ const Template = ({
               ?disabled=${item.disabled}
               type=${ifDefined(item.checked ? "checkbox" : undefined)}
               ?badged=${item.badged}
+              badge-type=${ifDefined(item.badgeType)}
               data-l10n-id=${item.l10nId ?? item}
               submenu=${ifDefined(subMenuId)}
               accesskey=${ifDefined(showAccesskeys ? accesskeys[index] : "")}
@@ -183,4 +184,13 @@ WithAccesskeys.args = {
   ...Simple.args,
   showAccesskeys: true,
   accesskeys: accesskeyOptions,
+};
+
+export const WithBadge = Template.bind({});
+WithBadge.args = {
+  ...Simple.args,
+  items: [
+    { l10nId: "panel-list-item-one", badgeType: "new" },
+    { l10nId: "panel-list-item-two", badgeType: "beta" },
+  ],
 };

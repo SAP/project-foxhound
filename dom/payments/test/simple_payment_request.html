@@ -48,7 +48,7 @@ if (request) {
   window.onmessage = async ({ data: action }) => {
     msg = "successful";
     switch (action) {
-      case "show PaymentRequest":
+      case "show PaymentRequest": {
         const responsePromise = request.show();
         window.parent.postMessage(msg, "*");
         try {
@@ -60,6 +60,7 @@ if (request) {
         }
         window.parent.postMessage(msg, "*")
         break;
+      }
       case "updateWith PaymentRequest":
         if (shippingChangedEvent) {
           try {

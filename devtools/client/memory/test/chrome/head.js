@@ -120,7 +120,7 @@ var TEST_NODE_ID_COUNTER = 0;
  * Create a mock DominatorTreeNode for testing, with sane defaults. Override any
  * property by providing it on `opts`. Optionally pass child nodes as well.
  *
- * @param {Object} opts
+ * @param {object} opts
  * @param {Array<DominatorTreeNode>?} children
  *
  * @returns {DominatorTreeNode}

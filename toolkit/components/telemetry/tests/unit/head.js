@@ -56,6 +56,15 @@ const PingServer = {
     return this._httpServer.identity.primaryHost;
   },
 
+  // The server's URL using the IPv4 loopback address explicitly rather than
+  // "localhost". Tests that point Telemetry at a stopped server should use this
+  // so the connection is refused immediately: "localhost" may resolve to ::1
+  // first and stall on the connection timeout (notably on Windows), making each
+  // failing ping send take several seconds.
+  get ipv4URL() {
+    return "http://127.0.0.1:" + this.port;
+  },
+
   get started() {
     return this._started;
   },
@@ -141,8 +150,9 @@ const PingServer = {
 
 /**
  * Decode the payload of an HTTP request into a ping.
- * @param {Object} request The data representing an HTTP request (nsIHttpRequest).
- * @return {Object} The decoded ping payload.
+ *
+ * @param {object} request The data representing an HTTP request (nsIHttpRequest).
+ * @return {object} The decoded ping payload.
  */
 function decodeRequestPayload(request) {
   let s = request.bodyInputStream;
@@ -593,6 +603,17 @@ if (runningInParent) {
       true
     );
   }
+
+  // Disable TOU pre-onboarding in xpcshell so Telemetry isn't gated on Browser
+  // UI.
+  const TOS_ENABLED_PREF = "browser.preonboarding.enabled";
+  const previous = Services.prefs.getBoolPref(TOS_ENABLED_PREF, false);
+
+  Services.prefs.setBoolPref(TOS_ENABLED_PREF, false);
+
+  registerCleanupFunction(() => {
+    Services.prefs.setBoolPref(TOS_ENABLED_PREF, previous);
+  });
 
   fakePingSendTimer(
     callback => {

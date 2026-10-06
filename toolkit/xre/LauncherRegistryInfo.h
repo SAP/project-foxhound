@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -71,6 +69,9 @@ class LauncherRegistryInfo final {
   LauncherResult<Maybe<DWORD>> GetSavedImageTimestamp();
   LauncherResult<Maybe<uint64_t>> GetLauncherStartTimestamp();
   LauncherResult<Maybe<uint64_t>> GetBrowserStartTimestamp();
+  LauncherVoidResult WriteLauncherCrashTimestamp(uint64_t aValue);
+  LauncherResult<Maybe<uint64_t>> GetLauncherCrashTimestamp();
+  LauncherResult<bool> ClearLauncherCrashTimestamp();
   LauncherResult<std::wstring> BuildDefaultBlocklistFilename();
 
   const std::wstring& ResolveLauncherValueName();
@@ -78,6 +79,7 @@ class LauncherRegistryInfo final {
   const std::wstring& ResolveImageTimestampValueName();
   const std::wstring& ResolveTelemetryValueName();
   const std::wstring& ResolveBlocklistValueName();
+  const std::wstring& ResolveLauncherCrashTimestampValueName();
 
  private:
   Maybe<uint64_t> mLauncherTimestampToWrite;
@@ -90,6 +92,7 @@ class LauncherRegistryInfo final {
   std::wstring mLauncherValueName;
   std::wstring mTelemetryValueName;
   std::wstring mBlocklistValueName;
+  std::wstring mLauncherCrashTimestampValueName;
 
   static const wchar_t kLauncherSubKeyPath[];
   static const wchar_t kLauncherSuffix[];
@@ -97,6 +100,7 @@ class LauncherRegistryInfo final {
   static const wchar_t kImageTimestampSuffix[];
   static const wchar_t kTelemetrySuffix[];
   static const wchar_t kBlocklistSuffix[];
+  static const wchar_t kLauncherCrashTimestampSuffix[];
 };
 
 }  // namespace mozilla

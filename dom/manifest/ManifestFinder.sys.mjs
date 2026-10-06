@@ -6,8 +6,9 @@ export var ManifestFinder = {
   /**
    * Check from content process if DOM Window has a conforming
    * manifest link relationship.
+   *
    * @param aContent DOM Window to check.
-   * @return {Promise<Boolean>}
+   * @return {Promise<boolean>}
    */
   contentHasManifestLink(aContent) {
     if (!aContent || isXULBrowser(aContent)) {
@@ -19,6 +20,7 @@ export var ManifestFinder = {
   /**
    * Check from a XUL browser (parent process) if it's content document has a
    * manifest link relationship.
+   *
    * @param aBrowser The XUL browser to check.
    * @return {Promise}
    */

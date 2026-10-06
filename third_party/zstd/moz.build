@@ -44,7 +44,7 @@ UNIFIED_SOURCES += [
 #  'lib/compress/zstdmt_compress.c',
 #]
 
-CFLAGS += [
+COMPILE_FLAGS["WARNINGS_CFLAGS"] += [
      '-Wextra',
      '-Wcast-qual',
      '-Wcast-align',

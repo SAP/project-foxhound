@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -39,8 +37,7 @@ class AppTrustDomain final : public mozilla::pkix::TrustDomain {
       const mozilla::pkix::CertID& certID, mozilla::pkix::Time time,
       mozilla::pkix::Duration validityDuration,
       /*optional*/ const mozilla::pkix::Input* stapledOCSPresponse,
-      /*optional*/ const mozilla::pkix::Input* aiaExtension,
-      /*optional*/ const mozilla::pkix::Input* sctExtension) override;
+      /*optional*/ const mozilla::pkix::Input* aiaExtension) override;
   virtual Result IsChainValid(
       const mozilla::pkix::DERArray& certChain, mozilla::pkix::Time time,
       const mozilla::pkix::CertPolicyId& requiredPolicy) override;
@@ -70,9 +67,6 @@ class AppTrustDomain final : public mozilla::pkix::TrustDomain {
       mozilla::pkix::Time notBefore, mozilla::pkix::Time notAfter,
       mozilla::pkix::EndEntityOrCA endEntityOrCA,
       mozilla::pkix::KeyPurposeId keyPurpose) override;
-  virtual Result NetscapeStepUpMatchesServerAuth(
-      mozilla::pkix::Time notBefore,
-      /*out*/ bool& matches) override;
   virtual void NoteAuxiliaryExtension(
       mozilla::pkix::AuxiliaryExtension extension,
       mozilla::pkix::Input extensionData) override;

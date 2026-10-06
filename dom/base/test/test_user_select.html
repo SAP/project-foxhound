@@ -56,6 +56,8 @@ bbbbbbb</div>
 
 function test()
 {
+  const excludeNonSelectableNodes = SpecialPowers.getBoolPref("dom.selection.exclude_non_selectable_nodes");
+
   function clear(w)
   {
     var sel = (w ? w : window).getSelection();
@@ -152,7 +154,10 @@ function test()
   var e = document.getElementById('test1');
   dragSelect(e, 20, 340);
   checkText('aaaaaacc', e);
-  checkRanges([[0,1,-1,1], [2,0,2,2]], e);
+  checkRanges(
+    excludeNonSelectableNodes ? [[0,1,-1,1], [2,0,2,2]] : [[0,1,2,2]],
+    e
+  );
 
   clear();
   dragSelect(e, 20, 260, 120);
@@ -183,7 +188,10 @@ function test()
   e = document.getElementById('test4');
   dragSelect(e, 20, 340);
   checkText('aaaaaacc', e);
-  checkRanges([[0,1,1,0], [2,0,2,2]], e);
+  checkRanges(
+    excludeNonSelectableNodes ? [[0,1,1,0], [2,0,2,2]] : [[0,1,2,2]],
+    e
+  );
   doneTest(e);
 
   clear();
@@ -204,7 +212,10 @@ function test()
   e = document.getElementById('test7');
   dragSelect(e, 20, 340);
   checkText('aaaaaacccccc', e);
-  checkRanges([[0,1,1,0], [2,0,2,6]], e);
+  checkRanges(
+    excludeNonSelectableNodes ? [[0,1,1,0], [2,0,2,6]] : [[0,1,2,6]],
+    e
+  );
   doneTest(e);
 
   clear();
@@ -240,17 +251,22 @@ function test()
   e = document.getElementById('testE');
   dragSelect(e, 20, 360, 295);
   checkText('aa\nbbbb\nee', e);
-  checkRangeCount(3, e);
-  checkRange(0, [0,1,-1,1], e);
-  checkRange(1, [1,0,-1,2], e.children[0]);
-  checkRange(2, [2,0,2,2], e);
+  if (excludeNonSelectableNodes) {
+    checkRangeCount(3, e);
+    checkRange(0, [0,1,-1,1], e);
+    checkRange(1, [1,0,-1,2], e.children[0]);
+    checkRange(2, [2,0,2,2], e);
+  } else {
+    checkRangeCount(1, e);
+    checkRanges([[0,1,2,2]], e);
+  }
   doneTest(e);
 
   clear();
   e = document.getElementById('testI');
   dragSelect(e, 200, 80);
   checkText('bbd', e);
-  checkRangeCount(2, e);
+  checkRangeCount(excludeNonSelectableNodes ? 2 : 1, e);
   doneTest(e);
 
   // ======================================================
@@ -264,9 +280,14 @@ function test()
   checkRangeText('aaaaaaa', 0);
   checkText('', e);
   shiftClick(e, 340);
-  checkRangeText('bbbbbbbbcc', 0);
   checkText('bbbbbbbbcc', e);
-  checkRanges([[-1,1,1,10]], e);
+  if (excludeNonSelectableNodes) {
+    checkRangeText('bbbbbbbbcc', 0);
+    checkRanges([[-1,1,1,10]], e);
+  } else {
+    checkRangeText('aaaaaaabbbbbbbbcc', 0);
+    checkRanges([[0,0,1,10]], e);
+  }
   doneTest(e);
 
   // test extending a selection that end in a -moz-user-select:none node
@@ -278,7 +299,10 @@ function test()
   shiftClick(e, 20);
   checkRangeText('aaaaaabbbbbbbb', 0);
   checkText('aaaaaabbbbbbbb', e);
-  checkRanges([[0,1,-1,1]], e);
+  checkRanges(
+    excludeNonSelectableNodes ? [[0,1,-1,1]] : [[0,1,1,0]],
+    e
+  );
   doneTest(e);
 
   clear();
@@ -286,7 +310,10 @@ function test()
   synthesizeMouse(e, 1, 1, {});
   synthesizeMouse(e, 400, 100, { shiftKey: true });
   checkText("aaaa bbbb", e);
-  checkRanges([[0,0,-1,1],[6,0,6,5]], e);
+  checkRanges(
+    excludeNonSelectableNodes ? [[0,0,-1,1],[6,0,6,5]] : [[0,0,6,5]],
+    e
+  );
   doneTest(e);
 
   clear();
@@ -294,7 +321,10 @@ function test()
   synthesizeMouse(e, 1, 1, {});
   synthesizeMouse(e, 400, 180, { shiftKey: true });
   checkText("aaaa\n\n\n\nbbbb", e);
-  checkRanges([[0,0,-1,1],[2,0,-1,3],[4,0,-1,5],[6,0,6,5]], e);
+  checkRanges(
+    excludeNonSelectableNodes ? [[0,0,-1,1],[2,0,-1,3],[4,0,-1,5],[6,0,6,5]] : [[0,0,6,5]],
+    e
+  );
   doneTest(e);
 
   clear();
@@ -304,7 +334,10 @@ function test()
   synthesizeMouse(e, 50, 90, { shiftKey: true });
   synthesizeMouse(e, 70, 90, { shiftKey: true });
   checkText("aaaa\n\nbbb", e);
-  checkRanges([[0,0,-1,1],[-1,2,3,4]], e);
+  checkRanges(
+    excludeNonSelectableNodes ? [[0,0,-1,1],[-1,2,3,4]] : [[0,0,3,4]],
+    e
+  );
 
   doneTest(e);
   // ======================================================
@@ -333,9 +366,14 @@ function test()
   sel = e.contentWindow.getSelection();
   is(window.getSelection().rangeCount, 0, "testD: no selection in outer window");
   is(sel.toString(), 'aaaacccc', "testD: kbd selection");
-  is(sel.rangeCount, 2, "testD: kbd selection is filtered");
-  is(sel.getRangeAt(0).toString(), 'aaaa', "testD: kbd selection is filtered");
-  is(sel.getRangeAt(1).toString(), 'cccc', "testD: kbd selection is filtered");
+  if (excludeNonSelectableNodes) {
+    is(sel.rangeCount, 2, "testD: kbd selection is filtered");
+    is(sel.getRangeAt(0).toString(), 'aaaa', "testD: kbd selection is filtered");
+    is(sel.getRangeAt(1).toString(), 'cccc', "testD: kbd selection is filtered");
+  } else {
+    is(sel.rangeCount, 1, "testD: kbd selection is filtered");
+    is(sel.getRangeAt(0).toString(), 'aaaabbbbcccc', "testD: kbd selection is filtered");
+  }
   doneTest(e);
 
   clear();

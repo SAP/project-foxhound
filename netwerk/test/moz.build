@@ -1,13 +1,8 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-TEST_DIRS += ["httpserver"]
-
-if CONFIG["ENABLE_TESTS"]:
-    TEST_DIRS += ["http3server", "gtest"]
+TEST_DIRS += ["httpserver", "http3server", "gtest"]
 
 BROWSER_CHROME_MANIFESTS += [
     "browser/browser.toml",
@@ -15,6 +10,11 @@ BROWSER_CHROME_MANIFESTS += [
     "useragent/browser_snap.toml",
 ]
 MOCHITEST_MANIFESTS += ["mochitests/mochitest.toml"]
+
+# mochitests using NodeServer need the cert for HTTPS servers
+TEST_HARNESS_FILES.testing.mochitest.tests.netwerk.test.unit += [
+    "/netwerk/test/unit/http2-ca.pem",
+]
 
 XPCSHELL_TESTS_MANIFESTS += [
     "unit/node_execute/xpcshell.toml",

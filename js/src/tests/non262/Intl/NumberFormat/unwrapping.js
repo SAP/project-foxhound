@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // Test UnwrapNumberFormat operation.
 
 const numberFormatFunctions = [];

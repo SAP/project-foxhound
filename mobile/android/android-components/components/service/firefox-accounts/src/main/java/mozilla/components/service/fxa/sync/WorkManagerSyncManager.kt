@@ -124,14 +124,8 @@ internal object WorkersLiveDataObserver {
         if (workersLiveData.hasObservers()) return
 
         // This must be called on the UI thread.
-        workersLiveData.observeForever {
-            val isRunning = when (it?.any { worker -> worker.state == WorkInfo.State.RUNNING }) {
-                null -> false
-                false -> false
-                true -> true
-            }
-
-            dispatcher?.workersStateChanged(isRunning)
+        workersLiveData.observeForever { workers ->
+            dispatcher?.workersStateChanged(workers?.map { it.state })
 
             // TODO process errors coming out of worker.outputData
         }
@@ -157,13 +151,13 @@ internal class WorkManagerSyncDispatcher(
         stopPeriodicSync()
     }
 
-    override fun workersStateChanged(isRunning: Boolean) {
-        if (isSyncActive && !isRunning) {
-            notifyObservers { onIdle() }
-            isSyncActive = false
-        } else if (!isSyncActive && isRunning) {
+    override fun workersStateChanged(currentWorkStates: List<WorkInfo.State>?) {
+        if (currentWorkStates?.any { it == WorkInfo.State.RUNNING } == true) {
             notifyObservers { onStarted() }
             isSyncActive = true
+        } else if (currentWorkStates?.any { it.isFinished } == true) {
+            notifyObservers { onIdle() }
+            isSyncActive = false
         }
     }
 
@@ -186,13 +180,27 @@ internal class WorkManagerSyncDispatcher(
         } else {
             0L
         }
+        // Use the 'keep' policy to minimize overhead from multiple "sync now" operations coming in
+        // at the same time. However, this policy means that if we are in a "retry" state the sync
+        // doesn't happen until that retry expires - which could be 5 hours!
+        // So if the user is requesting a "sync now" then we do not want that retry state to be
+        // enforced, and we rely on the UI disabling the "sync now" button to avoid multi
+        // user-requested syncs.
+        val policy = if (reason == SyncReason.User) {
+            ExistingWorkPolicy.REPLACE
+        } else {
+            ExistingWorkPolicy.KEEP
+        }
         WorkManager.getInstance(context).beginUniqueWork(
             SyncWorkerName.Immediate.name,
-            // Use the 'keep' policy to minimize overhead from multiple "sync now" operations coming in
-            // at the same time.
-            ExistingWorkPolicy.KEEP,
+            policy,
             regularSyncWorkRequest(reason, delayMs, debounce, customEngineSubset),
         ).enqueue()
+    }
+
+    override fun setEngineEnabled(engine: SyncEngine, enabled: Boolean) {
+        SyncEnginesStorage(context).setStatus(engine, enabled)
+        syncNow(SyncReason.EngineChange, debounce = false)
     }
 
     override fun close() {
@@ -342,7 +350,7 @@ internal class WorkManagerSyncWorker(
         }
     }
 
-    @Suppress("LongMethod", "ComplexMethod")
+    @Suppress("LongMethod", "CyclomaticComplexMethod")
     private suspend fun doSync(syncableStores: Map<SyncEngine, LazyStoreWithKey>): Result {
         val engineKeyProviders = mutableMapOf<SyncEngine, KeyProvider>()
 

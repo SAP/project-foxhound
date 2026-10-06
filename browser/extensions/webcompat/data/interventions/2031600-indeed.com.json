@@ -1,0 +1,15 @@
+{
+  "label": "indeed.com",
+  "bugs": {
+    "2031600": {
+      "issue": "broken-login",
+      "matches": ["*://*.indeed.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

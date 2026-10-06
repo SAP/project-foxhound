@@ -1,0 +1,14 @@
+<script>
+var request = indexedDB.open("locale-crash-test", 1);
+request.onupgradeneeded = function(e) {
+  var db = e.target.result;
+  var store = db.createObjectStore("store", { keyPath: "id" });
+  store.createIndex("name", "name", { locale: "en-US" });
+};
+request.onsuccess = function(e) {
+  var db = e.target.result;
+  var tx = db.transaction("store", "readwrite");
+  var store = tx.objectStore("store");
+  store.put({ id: 1, name: "" });
+};
+</script>

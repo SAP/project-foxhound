@@ -1,0 +1,13 @@
+[DEFAULT]
+dupe-manifest=true
+prefs = [
+  "browser.settings-redesign.enabled=true",
+]
+support-files = [
+  "head.js",
+]
+tags = "os_integration"
+
+["browser_usage_telemetry.js"]
+
+["browser_usage_telemetry_support_link.js"]

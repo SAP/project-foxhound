@@ -36,6 +36,78 @@ On macOS and Linux Desktop, it is also possible to get a screen recording of the
 
 The screen recording will be in the ``Artifacts and Debugging Tools`` section on Treeherder.
 
+Pushing via Lando (default behaviour)
+-------------------------------------
+
+By default, ``mach try`` uses Lando to push your commits to Try. This is the same
+behaviour that was previously accessed with ``--push-to-lando``.
+
+**Prerequisites (local setup)**
+
+- Your local Git repo must have the official Firefox repository configured as a remote.
+
+  You can verify this with:
+
+  .. code-block:: shell
+
+     git remote -v
+
+  Commonly the official remote is named ``origin``. You can add the remote with:
+
+  .. code-block:: shell
+
+     git remote add origin https://github.com/mozilla-firefox/firefox
+
+- You must have remote branch references from the official Firefox repo in your local Git repo
+  (for example, ``origin/autoland``). If those are missing, fetch them:
+
+  .. code-block:: shell
+
+     git fetch origin
+     git branch -r | grep origin/
+
+- You need an account on Mozilla's Auth0 instance in order to authenticate when submitting via Lando.
+
+How Pushing via Lando Works (high level)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+1. ``mach try`` scans your Git remotes (via ``git remote -v``) to identify the official Firefox
+   repository remote.
+2. It finds the first commit in the history from your current ``HEAD`` that is also present on that
+   remote. This commit is used as the **base commit**.
+3. All commits from the base commit (exclusive) up to ``HEAD`` are exported in ``git format-patch``
+   format.
+4. You authenticate in your browser through Auth0 to obtain a token that authorizes requests to Lando.
+5. ``mach try`` sends the base commit and the patch series to Lando using that token.
+6. On the Lando side:
+
+   - Lando converts the submitted Git base commit to the corresponding Mercurial SHA in
+     ``mozilla-unified``.
+   - Lando applies the submitted patches starting from that base commit.
+   - Lando pushes the resulting changes to ``hg.mozilla.org/try`` so they appear in Treeherder.
+
+Pushing directly to VCS
+-----------------------
+
+In some cases, you may want to bypass Lando and push directly to ``hg.mozilla.org/try``.
+This is done with the ``--push-to-vcs`` flag:
+
+.. code-block:: shell
+
+   ./mach try auto --push-to-vcs
+
+Requirements for using ``--push-to-vcs``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- You must be using Mercurial directly, or a Git checkout created with
+  `git-cinnabar <https://github.com/glandium/git-cinnabar>`_.
+- Your local repo must already be able to push directly to ``hg.mozilla.org``.
+- Unlike the default Lando-based workflow, no Auth0 authentication is used. Instead,
+  your SSH credentials are used to push.
+
+This option is generally only recommended for developers who are comfortable working directly
+with Mercurial or git-cinnabar.
+
 
 Resolving "<Try build> is damaged and can't be opened" error
 ------------------------------------------------------------
@@ -68,9 +140,11 @@ line instead, such as by using ``curl``:
 Profiler symbols for try builds
 -------------------------------
 
-When profiling a tryserver build, you don't get symbols by default. You have to trigger
-an additional `upload-symbols` job on your try push so that the symbols are available
-on the symbol server.
+When `profiling a tryserver build </testing/debugging-intermittents/index.html#use-the-firefox-profiler>`__,
+symbols are only available by default for artifact builds. With full
+(non-artifact) builds, you don't get symbols by default. You have to trigger an
+additional `upload-symbols` job on your try push so that the symbols are
+available on the symbol server.
 
 You can trigger this job manually in the Treeherder UI, using "Add new jobs (Search)...".
 
@@ -99,6 +173,14 @@ If you want to trigger the upload-symbol job when pushing to try, you can pick i
 when running ``./mach try fuzzy --full`` - the ``--full`` part is necessary.
 The ``-upload-symbols`` task has a dependency on the build task, so you don't have to trigger
 the build task separately if you do this.
+
+.. note::
+
+   Upload-symbols jobs are only available on **try** and **release branches**
+   (mozilla-central, mozilla-beta, mozilla-release, ESR branches). They are
+   **not** available on **autoland**. If you need symbols for an autoland build,
+   you will need to reproduce the build on try and trigger the upload-symbols
+   job there.
 
 Adding Try jobs to a Phabricator patch
 --------------------------------------

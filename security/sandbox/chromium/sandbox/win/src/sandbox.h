@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,28 +19,26 @@
 #ifndef SANDBOX_WIN_SRC_SANDBOX_H_
 #define SANDBOX_WIN_SRC_SANDBOX_H_
 
-#if !defined(SANDBOX_FUZZ_TARGET)
-#include <windows.h>
-#else
-#include "sandbox/win/fuzzer/fuzzer_types.h"
-#endif
-
 #include <stddef.h>
 #include <memory>
 #include <vector>
 
-#include "base/memory/ref_counted.h"
+#include "base/containers/span.h"
+#include "base/strings/string_piece.h"
+#include "base/win/windows_types.h"
 #include "sandbox/win/src/sandbox_policy.h"
 #include "sandbox/win/src/sandbox_types.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 // sandbox: Google User-Land Application Sandbox
 namespace sandbox {
 
-class BrokerServices;
+class BrokerServicesTargetTracker;
 class PolicyDiagnosticsReceiver;
 class ProcessState;
 class TargetPolicy;
 class TargetServices;
+enum class Desktop;
 
 // BrokerServices exposes all the broker API.
 // The basic use is to start the target(s) and wait for them to end.
@@ -55,7 +53,10 @@ class TargetServices;
 //  // -- later you can call:
 //  broker->WaitForAllTargets(option);
 //
-class BrokerServices {
+// We need [[clang::lto_visibility_public]] because instances of this class are
+// passed across module boundaries. This means different modules must have
+// compatible definitions of the class even when LTO is enabled.
+class [[clang::lto_visibility_public]] BrokerServices {
  public:
   // Initializes the broker. Must be called before any other on this class.
   // returns ALL_OK if successful. All other return values imply failure.
@@ -63,12 +64,49 @@ class BrokerServices {
   // more information.
   virtual ResultCode Init() = 0;
 
+  // May be called in place of Init in test code to add a tracker that validates
+  // job notifications and signals an event when all tracked processes are done.
+  virtual ResultCode InitForTesting(
+      std::unique_ptr<BrokerServicesTargetTracker> target_tracker) = 0;
+
+  // Pre-creates an alternate desktop. Must be called before a non-default
+  // desktop is used by any process.
+  [[nodiscard]] virtual ResultCode CreateAlternateDesktop(Desktop desktop) = 0;
+  // Destroys all desktops created for this Broker.
+  virtual void DestroyDesktops() = 0;
+  // Returns the name of the alternate desktop used. If an alternate window
+  // station is specified, the name is prepended by the window station name,
+  // followed by a backslash.
+  virtual std::wstring GetDesktopName(Desktop desktop) = 0;
+
   // Returns the interface pointer to a new, empty policy object. Use this
   // interface to specify the sandbox policy for new processes created by
-  // SpawnTarget()
-  virtual scoped_refptr<TargetPolicy> CreatePolicy() = 0;
+  // SpawnTarget().
+  virtual std::unique_ptr<TargetPolicy> CreatePolicy() = 0;
 
-  // Creates a new target (child process) in a suspended state.
+  // Returns the interface pointer to a new, empty policy object. Use this
+  // interface to specify the sandbox policy for new processes created by
+  // SpawnTarget().
+  //
+  // The first time a specific value of `tag` is provided an empty policy will
+  // be returned, and both TargetConfig and TargetPolicy methods should be
+  // called to populate the object before passing it to SpawnTarget().
+  //
+  // The second and subsequent times a given `tag` is provided, the object will
+  // share the backing data for state configured by TargetConfig methods (with
+  // the first instance) and those methods should not be called for this policy.
+  // TargetConfig::IsConfigured() will return `true` for the second and
+  // subsequent objects created with a given `tag`. Methods on TargetPolicy
+  // should continue to be called to populate the per-instance configuration.
+  //
+  // Provide an empty `tag` (or call CreatePolicy() with no tag) to create a
+  // policy which never shares its TargetConfig state with another policy
+  // object. For such an object both its TargetConfig and TargetPolicy methods
+  // must be called every time.
+  virtual std::unique_ptr<TargetPolicy> CreatePolicy(base::StringPiece tag) = 0;
+
+  // Creates a new target (child process) in a suspended state and takes
+  // ownership of |policy|.
   // Parameters:
   //   exe_path: This is the full path to the target binary. This parameter
   //   can be null and in this case the exe path must be the first argument
@@ -77,9 +115,6 @@ class BrokerServices {
   //   process. This can be null if the exe_path parameter is not null.
   //   policy: This is the pointer to the policy object for the sandbox to
   //   be created.
-  //   last_warning: The argument will contain an indication on whether
-  //   the process security was initialized completely, Only set if the
-  //   process can be used without a serious compromise in security.
   //   last_error: If an error or warning is returned from this method this
   //   parameter will hold the last Win32 error value.
   //   target: returns the resulting target process information such as process
@@ -90,17 +125,9 @@ class BrokerServices {
   virtual ResultCode SpawnTarget(const wchar_t* exe_path,
                                  const wchar_t* command_line,
                                  base::EnvironmentMap& env_map,
-                                 scoped_refptr<TargetPolicy> policy,
-                                 ResultCode* last_warning,
+                                 std::unique_ptr<TargetPolicy> policy,
                                  DWORD* last_error,
                                  PROCESS_INFORMATION* target) = 0;
-
-  // This call blocks (waits) for all the targets to terminate.
-  // Returns:
-  //   ALL_OK if successful. All other return values imply failure.
-  //   If the return is ERROR_GENERIC, you can call ::GetLastError() to get
-  //   more information.
-  virtual ResultCode WaitForAllTargets() = 0;
 
   // This call creates a snapshot of policies managed by the sandbox and
   // returns them via a helper class.
@@ -113,6 +140,19 @@ class BrokerServices {
   //   callback.
   virtual ResultCode GetPolicyDiagnostics(
       std::unique_ptr<PolicyDiagnosticsReceiver> receiver) = 0;
+
+  // For the broker, we have some mitigations set early in startup. In
+  // order to properly track those settings, SetStartingMitigations should be
+  // called before other mitigations are set by RatchetDownSecurityMitigations
+  virtual void SetStartingMitigations(MitigationFlags starting_mitigations) = 0;
+
+  // RatchetDownSecurityMitigations is then called by the broker process to
+  // gradually increase our security as startup continues. It's designed to
+  // be called multiple times. If you don't call SetStartingMitigations first
+  // and there were mitigations applied early in startup, the new mitigations
+  // may not be applied.
+  virtual bool RatchetDownSecurityMitigations(
+      MitigationFlags additional_flags) = 0;
 
   // Derive a capability PSID from the given string.
   virtual bool DeriveCapabilitySidFromName(const wchar_t* name,
@@ -146,13 +186,21 @@ class BrokerServices {
 //   }
 //
 // For more information see the BrokerServices API documentation.
-class TargetServices {
+class [[clang::lto_visibility_public]] TargetServices {
  public:
   // Initializes the target. Must call this function before any other.
   // returns ALL_OK if successful. All other return values imply failure.
   // If the return is ERROR_GENERIC, you can call ::GetLastError() to get
   // more information.
   virtual ResultCode Init() = 0;
+
+  // Returns a view of the delegate data blob - the target can use this data
+  // early in the process's lifetime to set itself up - the format of the data
+  // is decided by the embedder, and set using TargetPolicy::AddDelegateData().
+  // If no data was provided the span will have a size of zero. This method can
+  // be called at any time after Init(), but it is intended to be used sparingly
+  // prior to calling LowerToken().
+  virtual absl::optional<base::span<const uint8_t>> GetDelegateData() = 0;
 
   // Discards the impersonation token and uses the lower token, call before
   // processing any untrusted data or running third-party code. If this call
@@ -171,7 +219,7 @@ class TargetServices {
   ~TargetServices() {}
 };
 
-class PolicyInfo {
+class [[clang::lto_visibility_public]] PolicyInfo {
  public:
   // Returns a JSON representation of the policy snapshot.
   // This pointer has the same lifetime as this PolicyInfo object.
@@ -181,7 +229,7 @@ class PolicyInfo {
 
 // This is returned by BrokerServices::GetPolicyDiagnostics().
 // PolicyInfo entries need not be ordered.
-class PolicyList {
+class [[clang::lto_visibility_public]] PolicyList {
  public:
   virtual std::vector<std::unique_ptr<PolicyInfo>>::iterator begin() = 0;
   virtual std::vector<std::unique_ptr<PolicyInfo>>::iterator end() = 0;
@@ -190,7 +238,7 @@ class PolicyList {
 };
 
 // This class mediates calls to BrokerServices::GetPolicyDiagnostics().
-class PolicyDiagnosticsReceiver {
+class [[clang::lto_visibility_public]] PolicyDiagnosticsReceiver {
  public:
   // ReceiveDiagnostics() should return quickly and should not block the
   // thread on which it is called.
@@ -199,6 +247,18 @@ class PolicyDiagnosticsReceiver {
   // will not be called.
   virtual void OnError(ResultCode code) = 0;
   virtual ~PolicyDiagnosticsReceiver() {}
+};
+
+// For tests only -  this class is notified when the sandbox's internal tracking
+// thread sees a process added or removed. Methods in this class should complete
+// quickly and should not have side effects.
+class [[clang::lto_visibility_public]] BrokerServicesTargetTracker {
+ public:
+  // Called when job notifications indicate that a new process is added.
+  virtual void OnTargetAdded() = 0;
+  // Called when job notifications indicate that a process has finished.
+  virtual void OnTargetRemoved() = 0;
+  virtual ~BrokerServicesTargetTracker() {}
 };
 
 }  // namespace sandbox

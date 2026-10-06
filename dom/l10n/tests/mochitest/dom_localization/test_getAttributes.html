@@ -8,6 +8,15 @@
   <script type="application/javascript">
   "use strict";
 
+  function assertThrows(fn, expected, msg) {
+    try {
+      fn();
+      ok(false, `Error unexpectedly NOT thrown: ${expected} (${msg})`);
+    } catch (e) {
+      is(e.message, expected, msg);
+    }
+  }
+
   window.onload = function() {
     SimpleTest.waitForExplicitFinish();
 
@@ -19,6 +28,10 @@
     const p1 = document.querySelectorAll("p")[0];
     const p2 = document.querySelectorAll("p")[1];
     const p3 = document.querySelectorAll("p")[2];
+    const p4 = document.querySelectorAll("p")[3];
+    const p5 = document.querySelectorAll("p")[4];
+    const p6 = document.querySelectorAll("p")[5];
+    const p7 = document.querySelectorAll("p")[6];
     const attrs1 = domLoc.getAttributes(p1);
     const attrs2 = domLoc.getAttributes(p2);
     const attrs3 = domLoc.getAttributes(p3);
@@ -37,6 +50,32 @@
       },
     });
 
+    // Note: In tests these errors are thrown, but in production they are
+    // merely causing logspam (bug 1741430).
+    assertThrows(
+      () => domLoc.getAttributes(p4),
+      "DOMLocalization.getAttributes: [dom/l10n] Failed to parse l10n-args JSON (id3): [not a JSON obj]",
+      "Expected error when data-l10n-args cannot be parsed as JSON"
+    );
+
+    assertThrows(
+      () => domLoc.getAttributes(p5),
+      "DOMLocalization.getAttributes: [dom/l10n] Failed to parse l10n-args as JSON object (id4): 123456",
+      "Expected error when data-l10n-args is not a JSON object"
+    );
+
+    assertThrows(
+      () => domLoc.getAttributes(p6),
+      "DOMLocalization.getAttributes: [dom/l10n] Failed to convert l10n-args JSON (id5): {\"a\":1,\"arr\":[],\"c\":2}",
+      "Expected error when data-l10n-args contains array members"
+    );
+
+    assertThrows(
+      () => domLoc.getAttributes(p7),
+      "DOMLocalization.getAttributes: [dom/l10n] Failed to parse l10n-args JSON (): invalid JSON and without l10n-id",
+      "Expected error when data-l10n-args is not a JSON object, without l10n-id"
+    );
+
     SimpleTest.finish();
   };
   </script>
@@ -45,5 +84,9 @@
   <p />
   <p data-l10n-id="id1" />
   <p data-l10n-id="id2" data-l10n-args='{"userName": "John"}' />
+  <p data-l10n-id="id3" data-l10n-args="[not a JSON obj]" />
+  <p data-l10n-id="id4" data-l10n-args="123456" />
+  <p data-l10n-id="id5" data-l10n-args='{"a":1,"arr":[],"c":2}' />
+  <p data-l10n-args="invalid JSON and without l10n-id" />
 </body>
 </html>

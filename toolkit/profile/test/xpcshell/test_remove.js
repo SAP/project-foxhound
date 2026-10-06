@@ -56,15 +56,15 @@ add_task(async () => {
   let profiles = [];
   compareLists(service, profiles);
 
-  profiles.push(service.createProfile(null, "profile1"));
-  profiles.push(service.createProfile(null, "profile2"));
-  profiles.push(service.createProfile(null, "profile3"));
-  profiles.push(service.createProfile(null, "profile4"));
-  profiles.push(service.createProfile(null, "profile5"));
-  profiles.push(service.createProfile(null, "profile6"));
-  profiles.push(service.createProfile(null, "profile7"));
-  profiles.push(service.createProfile(null, "profile8"));
-  profiles.push(service.createProfile(null, "profile9"));
+  profiles.push(service.createProfile(null, "profile1", "tests"));
+  profiles.push(service.createProfile(null, "profile2", "tests"));
+  profiles.push(service.createProfile(null, "profile3", "tests"));
+  profiles.push(service.createProfile(null, "profile4", "tests"));
+  profiles.push(service.createProfile(null, "profile5", "tests"));
+  profiles.push(service.createProfile(null, "profile6", "tests"));
+  profiles.push(service.createProfile(null, "profile7", "tests"));
+  profiles.push(service.createProfile(null, "profile8", "tests"));
+  profiles.push(service.createProfile(null, "profile9", "tests"));
   compareLists(service, profiles);
 
   // Test removing the first profile.

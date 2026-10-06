@@ -166,7 +166,7 @@ occasionally reasons to implement a function in a child process, such as:
 To implement a function in a child process, simply include an ExtensionAPI
 subclass that is loaded in the appropriate context
 (e.g, ``addon_child``, ``content_child``, etc.) as described in
-the section on :ref:`basics`.
+the section on :ref:`webextensions-api-basics`.
 Code inside an ExtensionAPI subclass in a child process may call the
 implementation of a function in the parent process using a method from
 the API context as follows:

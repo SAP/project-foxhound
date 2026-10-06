@@ -7,7 +7,7 @@ add_setup(async () => {
   ));
 });
 
-add_task(async function test_getCategoriesFromFieldNames() {
+add_task(async function test_toOneLineAddress() {
   const TEST_CASES = [
     {
       strings: ["A", "B", "C", "D"],

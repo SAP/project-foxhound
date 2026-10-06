@@ -6,6 +6,7 @@
 
 This script manages Desktop partner repacks for beta/release builds.
 """
+
 import os
 import sys
 
@@ -86,7 +87,6 @@ class DesktopPartnerRepacks(AutomationMixin, BaseScript, VirtualenvMixin, Secret
                 "workdir": "partner-repacks",
             },
         }
-        #
 
         BaseScript.__init__(
             self, config_options=self.config_options, **buildscript_kwargs
@@ -119,7 +119,7 @@ class DesktopPartnerRepacks(AutomationMixin, BaseScript, VirtualenvMixin, Secret
     def query_abs_dirs(self):
         if self.abs_dirs:
             return self.abs_dirs
-        abs_dirs = super(DesktopPartnerRepacks, self).query_abs_dirs()
+        abs_dirs = super().query_abs_dirs()
         for directory in abs_dirs:
             value = abs_dirs[directory]
             abs_dirs[directory] = value

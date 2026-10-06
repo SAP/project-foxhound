@@ -64,6 +64,11 @@ div.WordSection1
        font-family:"Yu Gothic";}div.WordSection1
        {page:WordSection1}`,
   },
+  {
+    // bug 2025740
+    data: `div { color: green; @media (min-width: 1px) { color: red !important; } }`,
+    sanitized: ``,
+  },
 ];
 
 const kConditionalCSSTestCases = [
@@ -74,6 +79,10 @@ const kConditionalCSSTestCases = [
   {
     data: `@media (min-width: 300px) { #bar { display: none } }`,
     sanitized: ``,
+  },
+  {
+    data: `@keyframes foo { to { opacity: 0 } }`,
+    sanitized: `@keyframes foo { to { opacity: 0 } }`,
   },
 ];
 

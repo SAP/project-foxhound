@@ -7,6 +7,34 @@
 
 newtab-page-title = गोदान टेब
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = गोदान टेबफोर
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } सारि
+           *[other] { $num } सारिफोर
+        }
+home-restore-defaults-srd =
+    .label = डिफल्टखौ मोनफिन
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = कास्टम URLs...
+home-prefs-highlights-option-visited-pages-srd =
+    .label = थांखांनाय पेजफोर
+home-prefs-highlights-options-bookmarks-srd =
+    .label = बुकमाकॅफोर
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = दानिवौसो डाउनल'ड खालामनाया
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -14,7 +42,7 @@ newtab-search-box-search-button =
     .title = नागिर
     .aria-label = नागिर
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = नागिरनाय इन्जिनखौ दाजाबदेर
 newtab-topsites-edit-topsites-header = गिबि साइटखौ सुजु
@@ -36,9 +64,6 @@ newtab-topsites-add-button = दाजाबदेर
 
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = बे हाबाखौ मावनो हायै खालामनो हाया।
-
-## Top Sites - Sponsored label
-
 
 ## Context Menu - Action Tooltips.
 
@@ -62,9 +87,6 @@ newtab-menu-unpin = आनपिन
 newtab-menu-delete-history = जारिमिन निफ्राय खोमोर
 newtab-menu-save-to-pocket = { -pocket-brand-name } आव थिना दोन
 newtab-menu-delete-pocket = { -pocket-brand-name } निफ्राय खोमोर
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -116,18 +138,12 @@ newtab-section-menu-move-up = गोजौआव लाबो
 newtab-section-menu-move-down = गाहायाव लाबो
 newtab-section-menu-privacy-notice = गुमुरथि मिथिसारहोनाय
 
-## Section aria-labels
-
-
 ## Section Headers.
 
 newtab-section-header-topsites = गिबि साइटफोर
 # Variables:
 #   $provider (string) - Name of the corresponding content provider.
 newtab-section-header-pocket = { $provider } आ बसोन होनाइ
-
-## Empty Section States: These show when there are no more items in a section. Ex. When there are no more Pocket story recommendations, in the space where there would have been stories, this is shown instead.
-
 
 ## Empty Section (Content Discovery Experience). These show when there are no more stories or when some stories fail to load.
 
@@ -137,68 +153,3 @@ newtab-discovery-empty-section-topstories-loading = ल'ड खालाम ग�
 ## Pocket Content Section.
 
 newtab-pocket-cta-button = { -pocket-brand-name } ला
-
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
-## Error Fallback Content.
-## This message and suggested action link are shown in each section of UI that fails to render.
-
-
-## Customization Menu
-
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

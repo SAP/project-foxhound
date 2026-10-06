@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.fenix.ui.efficiency.selectors
 
 import org.mozilla.fenix.helpers.TestHelper.appName
@@ -17,7 +21,7 @@ object SettingsEnhancedTrackingProtectionSelectors {
         strategy = SelectorStrategy.ESPRESSO_BY_TEXT,
         value = "Exceptions",
         description = "Enhanced tracking protection Exceptions button",
-        groups = listOf("requiredForPage"),
+        groups = listOf("ETPSection", "requiresScroll"),
     )
 
     val all = listOf(

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -76,6 +75,25 @@ class MOZ_STACK_CLASS AutoClonedRangeArray {
    * be required by `TextEditor`.
    */
   void EnsureOnlyEditableRanges(const dom::Element& aEditingHost);
+
+  enum class RangeInReplacedOrVoidElement : bool {
+    // Each range in a replaced or a void element should be collapsed before the
+    // element.
+    Collapse,
+    // Each range in a replaced or a void element should be deleted.
+    Delete,
+  };
+
+  /**
+   * Adjust ranges if each boundary is in a replaced element or a void element.
+   * If the adjusted range is not at proper position to edit, this will remove
+   * the range.
+   *
+   * @return true if some ranges are modified.
+   */
+  bool AdjustRangesNotInReplacedNorVoidElements(
+      RangeInReplacedOrVoidElement aRangeInReplacedOrVoidElement,
+      const dom::Element& aEditingHost);
 
   /**
    * EnsureRangesInTextNode() is designed for TextEditor to guarantee that
@@ -185,7 +203,7 @@ class MOZ_STACK_CLASS AutoClonedRangeArray {
   /**
    * For compatiblity with the other browsers, we should shrink ranges to
    * start from an atomic content and/or end after one instead of start
-   * from end of a preceding text node and end by start of a follwing text
+   * from end of a preceding text node and end by start of a following text
    * node.  Returns true if this modifies a range.
    */
   enum class IfSelectingOnlyOneAtomicContent {

@@ -1,0 +1,94 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<!doctype html>
+<html>
+  <head>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src resource: chrome:; object-src 'none'; img-src chrome:;"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <title data-l10n-id="about-pdf-title"></title>
+    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
+    <link rel="stylesheet" href="chrome://global/content/aboutPDF.css" />
+    <link rel="localization" href="branding/brand.ftl" />
+    <link rel="localization" href="toolkit/about/aboutPDF.ftl" />
+    <script
+      type="module"
+      src="chrome://global/content/elements/moz-button.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://global/content/elements/moz-promo.mjs"
+    ></script>
+    <script type="module" src="chrome://global/content/aboutPDF.mjs"></script>
+  </head>
+  <body>
+    <div id="container">
+      <div id="col-left" aria-hidden="true"></div>
+      <div id="col-mid">
+        <div id="logo-lockup">
+          <div id="logo-row">
+            <img
+              id="firefox-logo"
+              src="chrome://branding/content/icon32.png"
+              alt=""
+              role="presentation"
+              width="24"
+              height="24"
+            />
+            <h1 data-l10n-id="about-pdf-header"></h1>
+          </div>
+          <p id="tagline" data-l10n-id="about-pdf-tagline"></p>
+        </div>
+        <div id="dropzone" data-l10n-id="about-pdf-dropzone">
+          <div id="dropzone-content">
+            <p id="dropzone-error" role="alert" hidden></p>
+            <p
+              id="dropzone-hint"
+              class="heading-medium"
+              data-l10n-id="about-pdf-dropzone-hint"
+            ></p>
+            <moz-button
+              id="browse-files"
+              type="primary"
+              data-l10n-id="about-pdf-browse-files"
+            ></moz-button>
+            <p
+              id="dropzone-privacy-hint"
+              data-l10n-id="about-pdf-dropzone-privacy-hint"
+            ></p>
+          </div>
+        </div>
+        <input
+          type="file"
+          id="file-input"
+          accept=".pdf,application/pdf"
+          hidden
+        />
+        <div id="promo-row">
+          <moz-promo
+            id="promo"
+            hidden
+            data-l10n-id="about-pdf-promo"
+            imagesrc="chrome://global/skin/illustrations/kit-in-circle.svg"
+            imagealignment="start"
+          >
+            <moz-button
+              id="set-default"
+              slot="actions"
+              data-l10n-id="about-pdf-set-default"
+            ></moz-button>
+            <moz-button
+              id="dismiss-promo"
+              slot="actions"
+              data-l10n-id="about-pdf-dismiss"
+            ></moz-button>
+          </moz-promo>
+        </div>
+      </div>
+      <div id="col-right" aria-hidden="true"></div>
+    </div>
+  </body>
+</html>

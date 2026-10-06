@@ -12,17 +12,16 @@ import mozilla.components.service.nimbus.messaging.Message
 import mozilla.components.service.nimbus.messaging.MessageData
 import mozilla.components.service.nimbus.messaging.NimbusMessagingControllerInterface
 import mozilla.components.support.test.robolectric.testContext
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppAction.MessagingAction.MessageClicked
 import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.robolectric.RobolectricTestRunner
-import java.lang.ref.WeakReference
 
 @RunWith(RobolectricTestRunner::class)
 class DefaultMessageControllerTest {
@@ -30,17 +29,18 @@ class DefaultMessageControllerTest {
     @get:Rule
     val gleanTestRule = FenixGleanTestRule(testContext)
 
-    private val homeActivity: HomeActivity = mockk(relaxed = true)
     private val messagingController: NimbusMessagingControllerInterface = mockk(relaxed = true)
     private lateinit var defaultMessageController: DefaultMessageController
     private val appStore: AppStore = mockk(relaxed = true)
+    private val processIntentCalls = mutableListOf<Intent?>()
+    private val processIntent: (Intent?) -> Unit = { processIntentCalls.add(it) }
 
     @Before
     fun setup() {
         defaultMessageController = DefaultMessageController(
             messagingController = messagingController,
             appStore = appStore,
-            homeActivityRef = WeakReference(homeActivity),
+            processIntent = processIntent,
         )
     }
 
@@ -52,7 +52,7 @@ class DefaultMessageControllerTest {
         defaultMessageController.onMessagePressed(message)
 
         verify { messagingController.getIntentForMessage(message) }
-        verify { homeActivity.processIntent(any()) }
+        assertEquals(1, processIntentCalls.size)
         verify { appStore.dispatch(MessageClicked(message)) }
     }
 

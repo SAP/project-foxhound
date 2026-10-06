@@ -1,0 +1,26 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:root {
+  /* override --background-color-canvas from tokens-shared.css */
+  background-color: transparent;
+
+  /* AI Window gradients */
+  --aiwindow-gradient-button: linear-gradient(97deg, #8341ca -31.39%, #656fff 90.52%);
+  --aiwindow-gradient-button-dark: linear-gradient(64deg, #4e2e9d -5.71%, #c1a9ff 122.83%);
+  --aiwindow-input-gradient: var(--smartwindow-border-color-gradient);
+  --aiwindow-input-gradient-dark: linear-gradient(90deg, #945af2, #f37e49);
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+#ai-window-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}

@@ -9,6 +9,7 @@ import android.content.pm.PackageInfo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
+import mozilla.components.support.utils.ext.packageManagerCompatHelper
 import org.junit.Assert.assertFalse
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -41,9 +42,9 @@ class PackageManagerTest {
     fun `isPackageInstalled() returns true when package is installed, false otherwise`() {
         val context = createContext(listOf("com.example", "com.test"))
 
-        assert(context.packageManager.isPackageInstalled("com.example"))
-        assert(context.packageManager.isPackageInstalled("com.test"))
-        assertFalse(context.packageManager.isPackageInstalled("com.mozilla"))
-        assertFalse(context.packageManager.isPackageInstalled("com.example.com"))
+        assert(context.packageManagerCompatHelper.isPackageInstalled("com.example"))
+        assert(context.packageManagerCompatHelper.isPackageInstalled("com.test"))
+        assertFalse(context.packageManagerCompatHelper.isPackageInstalled("com.mozilla"))
+        assertFalse(context.packageManagerCompatHelper.isPackageInstalled("com.example.com"))
     }
 }

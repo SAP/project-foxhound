@@ -1,4 +1,3 @@
-/* vim: set ts=2 sw=2 sts=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,6 +21,11 @@ import { ASRouterPreferences } from "resource:///modules/asrouter/ASRouterPrefer
 import { QueryCache } from "resource:///modules/asrouter/ASRouterTargeting.sys.mjs";
 import { ASRouterStorage } from "resource:///modules/asrouter/ASRouterStorage.sys.mjs";
 
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
+});
+
 const createStorage = async telemetryFeed => {
   // "snippets" is the name of one storage space, but these days it is used
   // not for snippet-related data (snippets were removed in bug 1715158),
@@ -43,6 +47,11 @@ const createStorage = async telemetryFeed => {
   } catch (e) {
     return Promise.reject(e);
   }
+  lazy.AsyncShutdown.profileBeforeChange.addBlocker(
+    "ASRouterStorage: flush pending writes",
+    () => dbStore.flush(),
+    { fetchState: () => ({ pending: dbStore.pendingWriteCount }) }
+  );
   return dbStore.getDbTable("snippets");
 };
 

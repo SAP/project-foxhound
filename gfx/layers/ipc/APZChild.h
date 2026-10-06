@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,10 +20,11 @@ class GeckoContentController;
  */
 class APZChild final : public PAPZChild {
  public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(APZChild, final);
+
   using APZStateChange = GeckoContentController_APZStateChange;
 
   explicit APZChild(RefPtr<GeckoContentController> aController);
-  virtual ~APZChild();
 
   mozilla::ipc::IPCResult RecvLayerTransforms(
       nsTArray<MatrixMessage>&& aTransforms);
@@ -64,6 +63,8 @@ class APZChild final : public PAPZChild {
   mozilla::ipc::IPCResult RecvDestroy();
 
  private:
+  virtual ~APZChild();
+
   void EnsureAPZTaskRunnable() {
     if (!mAPZTaskRunnable) {
       mAPZTaskRunnable = new APZTaskRunnable(mController);

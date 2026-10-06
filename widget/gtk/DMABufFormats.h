@@ -1,14 +1,12 @@
-/* -*- Mode: C; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __MOZ_DMABUF_FORMATS_H__
-#define __MOZ_DMABUF_FORMATS_H__
+#ifndef MOZ_DMABUF_FORMATS_H_
+#define MOZ_DMABUF_FORMATS_H_
 
 #include "nsTArray.h"
+#include "mozilla/gfx/Types.h"
 
 #ifdef MOZ_WAYLAND
 struct zwp_linux_dmabuf_v1;
@@ -50,7 +48,7 @@ class DRMFormat final {
   }
   bool UseModifiers() const {
     // Don't use modifiers if we don't have any or we have an invalid one.
-    return !(mModifiers.IsEmpty() || (mModifiers.Length() == 1 ||
+    return !(mModifiers.IsEmpty() || (mModifiers.Length() == 1 &&
                                       mModifiers[0] == DRM_FORMAT_MOD_INVALID));
   }
   const uint64_t* GetModifiers(uint32_t& aModifiersNum) {
@@ -93,6 +91,8 @@ class DMABufFormats final {
  private:
   ~DMABufFormats();
 
+  void EnsureBasicFormat(uint32_t aDrmFourcc);
+
   DMABufFormatsCallback mFormatRefreshCallback;
 #ifdef MOZ_WAYLAND
   zwp_linux_dmabuf_feedback_v1* mWaylandFeedback = nullptr;
@@ -113,12 +113,15 @@ class GlobalDMABufFormats final {
 
   GlobalDMABufFormats();
 
-  bool SupportsHDRComposition() { return !!mFormatP010 && !!mFormatNV12; }
+  bool SupportsDirectComposition(mozilla::gfx::SurfaceFormat aFormat) const;
 
  private:
   void LoadFormatModifiers();
   void SetModifiersToGfxVars();
   void GetModifiersFromGfxVars();
+
+  bool ConfigureFormat(RefPtr<DMABufFormats> aFormats,
+                       RefPtr<DRMFormat>& aTargetFormat, uint32_t aDrmFourcc);
 
   // Formats passed to RDD process to WebGL process
   // where we can't get formats/modifiers from Wayland display.
@@ -127,10 +130,11 @@ class GlobalDMABufFormats final {
   RefPtr<DRMFormat> mFormatRGBX;
   RefPtr<DRMFormat> mFormatP010;
   RefPtr<DRMFormat> mFormatNV12;
+  RefPtr<DRMFormat> mFormatYUV420;
 };
 
 GlobalDMABufFormats* GetGlobalDMABufFormats();
 
 }  // namespace mozilla::widget
 
-#endif  // __MOZ_DMABUF_FORMATS_H__
+#endif  // MOZ_DMABUF_FORMATS_H_

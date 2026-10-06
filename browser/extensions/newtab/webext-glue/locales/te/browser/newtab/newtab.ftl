@@ -18,6 +18,48 @@ newtab-personalize-dialog-label =
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-title =
+    .label = ముంగిలిపేజీ
+home-homepage-new-tabs =
+    .label = కొత్త ట్యాబు
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } వరుస
+           *[other] { $num } వరుసలు
+        }
+home-restore-defaults-srd =
+    .label = అప్రమేయాలను పునరుద్ధరించు
+    .accesskey = R
+home-mode-choice-default-fx-srd =
+    .label = { -firefox-home-brand-name } (అప్రమేయం)
+home-mode-choice-custom-srd =
+    .label = అభిమత URLలు…
+home-mode-choice-blank-srd =
+    .label = ఖాళీ పేజీ
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = ప్రాయోజిక కథనాలు
+home-prefs-highlights-option-visited-pages-srd =
+    .label = చూసిన పేజీలు
+home-prefs-highlights-options-bookmarks-srd =
+    .label = ఇష్టాంశాలు
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = ఇటీవలి దింపుకోలు
+home-prefs-recent-activity-header-srd =
+    .label = ఇటీవలి కార్యకలాపం
+home-prefs-recent-activity-select =
+    .aria-label = ఇటీవలి కార్యకలాపం
+home-prefs-weather-header-srd =
+    .label = వాతావరణం
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -43,7 +85,7 @@ newtab-search-box-input =
     .placeholder = జాలంలో వెతకండి
     .aria-label = జాలంలో వెతకండి
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = శోధన యంత్రాన్ని జోడించండి
 newtab-topsites-edit-topsites-header = టాప్ సైట్ను సవరించండి
@@ -110,9 +152,8 @@ newtab-menu-save-to-pocket = { -pocket-brand-name } కి సేవ్ చే�
 newtab-menu-delete-pocket = { -pocket-brand-name } నుండి తొలగించు
 newtab-menu-archive-pocket = { -pocket-brand-name }లో ఆర్కయివ్ చెయ్యి
 newtab-menu-show-privacy-info = మా స్పాన్సర్లు & మీ అంతరంగికత
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
+# Context menu option to open a support page explaining the New Tab personalization features and privacy controls.
+newtab-menu-section-learn-more = ఇంకా తెలుసుకోండి
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -232,9 +273,6 @@ newtab-pocket-save = భద్రపరుచు
 newtab-pocket-thumbs-up-tooltip =
     .title = ఇలాంటివి మరిన్ని
 
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
@@ -246,53 +284,58 @@ newtab-error-fallback-refresh-link = మళ్ళీ ప్రయత్నిం
 newtab-custom-shortcuts-subtitle = మీరు భద్రపరచుకున్న లేదా చూసిన సైట్లు
 # Variables
 #   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } వరుస
+           *[other] { $num } వరుసలు
+        }
+# Variables
+#   $num (number) - Number of rows to display
 newtab-custom-row-selector =
     { $num ->
         [one] { $num } వరుస
        *[other] { $num } వరుసలు
     }
+newtab-custom-stories-personalized-toggle =
+    .label = కథనాలు
 newtab-custom-pocket-sponsored = ప్రాయోజిక కథనాలు
 newtab-custom-recent-title = ఇటీవలి కార్యకలాపం
-newtab-custom-recent-toggle =
-    .label = ఇటీవలి కార్యకలాపం
-    .description = ఇటీవలి సైట్లు, విషయం నుండి కొన్ని
 newtab-custom-weather-toggle =
     .label = వాతావరణం
     .description = నేటి వాతావరణ అంచనా
+newtab-custom-widget-lists-toggle =
+    .label = జాబితాలు
 newtab-custom-close-button = మూసివేయి
-
-## New Tab Wallpapers
-
 
 ## Solid Colors
 
+#  (developer note): @nova-cleanup(remove-string): Remove old "Solid colors" string once Nova lands. The simplified "Colors" string will take over
 newtab-wallpaper-category-title-colors = నిండు రంగులు
 newtab-wallpaper-blue = నీలం
 newtab-wallpaper-light-blue = లేత నీలం
 newtab-wallpaper-light-green = లేత ఆకుపచ్చ
 newtab-wallpaper-green = పచ్చ
+newtab-wallpaper-yellow = పసుపు
 newtab-wallpaper-red = ఎరుపు
 newtab-wallpaper-dark-blue = ముదురు నీలం
 newtab-wallpaper-dark-green = ముదురాకుపచ్చ
 
-## Abstract
-
-
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = ఛాయాచిత్రాలు
 newtab-wallpaper-beach-at-sunrise = ఉషాతీరం
 newtab-wallpaper-beach-at-sunset = సంధ్యాతీరం
 newtab-wallpaper-feature-highlight-button = అర్థమైంది
 
-## Celestial
-
-
 ## New Tab Weather
 
 newtab-weather-menu-temperature-units = ఉష్ణోగ్రత యూనిట్లు
 newtab-weather-menu-temperature-option-celsius = సెల్సియస్
 newtab-weather-menu-learn-more = ఇంకా తెలుసుకోండి
+newtab-weather-opt-in-yes =
+    .label = అవును
 
 ## Topic Labels
 
@@ -318,30 +361,21 @@ newtab-topic-selection-button-maybe-later = బహుశా తర్వాత
 newtab-topic-selection-button-update-interests = మీ ఆసక్తులను తాజాకరించండి
 newtab-topic-selection-button-pick-interests = మీ ఆసక్తులను ఎంచుకోండి
 
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
+## Strings for reporting issues with ads and content
 
+newtab-report-content-requires-payment-subscription-learn-more = ఇంకా తెలుసుకోండి
+newtab-report-cancel = రద్దుచేయి
 
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
+## Strings for task / to-do list productivity widget
 
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = కొత్తది
+newtab-widget-lists-label-beta =
+    .label = బీటా
+newtab-widget-lists-menu-learn-more = ఇంకా తెలుసుకోండి
+newtab-widget-lists-input-menu-delete = తొలగించు
 
-## Confirmation modal for blocking a section
+## Strings introduced by the Nova redesign of the Timer widget
 
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-
+newtab-widget-timer-menu-learn-more = ఇంకా తెలుసుకోండి

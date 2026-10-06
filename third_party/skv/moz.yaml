@@ -1,0 +1,29 @@
+schema: 1
+
+bugzilla:
+  product: Core
+  component: SQLite and Embedded Database Bindings
+
+origin:
+  name: skv
+  description: A CRUD key-value store interface backed by rusqlite
+  url: https://github.com/mozilla/mzkv
+  release: 7633996a868681c44162869038f8fd6cf9c26428 (2026-04-02T10:22:48Z).
+  revision: 7633996a868681c44162869038f8fd6cf9c26428
+  license: MPL-2.0
+
+updatebot:
+    maintainer-phab: jari
+    maintainer-bz: jjalkanen@mozilla.com
+    tasks:
+      - type: vendoring
+        enabled: true
+        frequency: 4 weeks
+
+vendoring:
+  url: https://github.com/mozilla/mzkv
+  source-hosting: github
+  vendor-directory: third_party/skv
+
+  exclude:
+    - "docs/**"

@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsReadLine_h__
-#define nsReadLine_h__
+#ifndef nsReadLine_h_
+#define nsReadLine_h_
 
 #include "nsIInputStream.h"
 #include "mozilla/Likely.h"
@@ -128,4 +127,4 @@ nsresult NS_ReadLine(StreamType* aStream, nsLineBuffer<CharT>* aBuffer,
   }
 }
 
-#endif  // nsReadLine_h__
+#endif  // nsReadLine_h_

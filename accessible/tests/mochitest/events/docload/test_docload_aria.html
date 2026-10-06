@@ -18,37 +18,16 @@
           src="../../events.js"></script>
 
   <script type="application/javascript">
-    // //////////////////////////////////////////////////////////////////////////
-    // Invokers
+    async function doTests() {
+      let loaded = waitForEvent(EVENT_DOCUMENT_LOAD_COMPLETE, getNode("dialog"));
+      getNode("dialog").style.display = "block";
+      await loaded;
 
-    function showARIADialog(aID) {
-      this.dialogNode = getNode(aID);
+      loaded = waitForEvent(EVENT_DOCUMENT_LOAD_COMPLETE, getNode("document"));
+      getNode("document").style.display = "block";
+      await loaded;
 
-      this.eventSeq = [
-        new invokerChecker(EVENT_DOCUMENT_LOAD_COMPLETE, this.dialogNode),
-      ];
-
-      this.invoke = function showARIADialog_invoke() {
-        this.dialogNode.style.display = "block";
-      };
-
-      this.getID = function showARIADialog_getID() {
-        return "show ARIA dialog";
-      };
-    }
-
-    // //////////////////////////////////////////////////////////////////////////
-    // Do tests
-
-    var gQueue = null;
-
-    function doTests() {
-      gQueue = new eventQueue();
-
-      gQueue.push(new showARIADialog("dialog"));
-      gQueue.push(new showARIADialog("document"));
-
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -1438,13 +1436,13 @@ TEST_F(SdpTest, parseFmtpMaxPlaybackRate) {
 TEST_F(SdpTest, parseFmtpMaxPlaybackRateWith0) {
   ParseSdp(kVideoSdp + "a=fmtp:120 maxplaybackrate=0\r\n");
   sdp_attr_t* attr_p = sdp_find_attr(sdp_ptr_, 1, 0, SDP_ATTR_FMTP, 1);
-  ASSERT_EQ(NULL, attr_p);
+  ASSERT_EQ(nullptr, attr_p);
 }
 
 TEST_F(SdpTest, parseFmtpMaxPlaybackRateWith4294967296) {
   ParseSdp(kVideoSdp + "a=fmtp:120 maxplaybackrate=4294967296\r\n");
   sdp_attr_t* attr_p = sdp_find_attr(sdp_ptr_, 1, 0, SDP_ATTR_FMTP, 1);
-  ASSERT_EQ(NULL, attr_p);
+  ASSERT_EQ(nullptr, attr_p);
 }
 
 TEST_F(SdpTest, parseFmtpMaxFs) {

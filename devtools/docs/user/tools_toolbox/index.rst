@@ -8,7 +8,7 @@ There are three main ways to open the Toolbox:
 
 - Right-click a mouse on any element in the page, and select **Inspect** from the popup menu.
 
-- Open the Hamburger menu |image1| and select **More tools > Web Developer Tools** (Firefox 88 and earlier use the top-level menu **Web Developer** rather than **More tools**).
+- Open the Hamburger menu |image1| and select **More tools > Web Developer Tools**.
 
 - Press :kbd:`Ctrl` + :kbd:`Shift` + :kbd:`I` on Windows and Linux, or :kbd:`Cmd` + :kbd:`Opt` + :kbd:`I` on OS X. See also :doc:`keyboard shortcuts <../keyboard_shortcuts/index>`.
 
@@ -28,7 +28,7 @@ The window itself is split into two parts: a toolbar along the top, and a main p
 
 .. note::
 
-  Since Firefox 62, you can drag and drop tabs in the main toolbar of the toolbox to reorder your tools as you wish (`Bug 1226272 <https://bugzilla.mozilla.org/show_bug.cgi?id=1226272>`_)
+  You can drag and drop tabs in the main toolbar of the toolbox to reorder your tools as you wish.
 
 
 .. _tools-toolbox-docking-mode:
@@ -88,7 +88,7 @@ Extra tools
 Next there's an array of buttons that can be added or removed in the :ref:`settings <tool-toolbox-settings>`. None of these tools are enabled by default, but you can add them in the :doc:`developer tools settings <../settings/index>`
 
 
-- :doc:`Select a frame as the currently targeted document <../working_with_iframes/index>` (this is only included by default from Firefox 41 onwards)
+- :doc:`Select a frame as the currently targeted document <../working_with_iframes/index>`
 - :doc:`Highlight painted area <../paint_flashing_tool/index>`
 - :ref:`Take a screenshot of the entire page <taking_screenshots_taking_a_screenshot_of_the_page>`: take a screenshot of the complete web page and saves it in your Downloads directory
 - :doc:`Toggle rulers for the page <../rulers/index>`

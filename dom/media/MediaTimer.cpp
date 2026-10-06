@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,10 +8,8 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SharedThreadPool.h"
-#include "mozilla/Unused.h"
 #include "nsComponentManagerUtils.h"
 #include "nsThreadUtils.h"
-#include <math.h>
 
 namespace mozilla {
 
@@ -27,8 +23,7 @@ MediaTimer<T>::MediaTimer(bool aFuzzy)
 
   // Use the SharedThreadPool to create an nsIThreadPool with a maximum of one
   // thread, which is equivalent to an nsIThread for our purposes.
-  RefPtr<SharedThreadPool> threadPool(
-      SharedThreadPool::Get("MediaTimer"_ns, 1));
+  RefPtr<SharedThreadPool> threadPool(SharedThreadPool::Get("MediaTimer", 1));
   mThread = threadPool.get();
   mTimer = NS_NewTimer(mThread);
 }
@@ -44,7 +39,7 @@ void MediaTimer<T>::DispatchDestroy() {
                                                   &MediaTimer::Destroy),
                        NS_DISPATCH_NORMAL);
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
   (void)rv;
 }
 
@@ -83,7 +78,7 @@ template <typename T>
 RefPtr<MediaTimerPromise> MediaTimer<T>::WaitUntil(const T& aTimeStamp,
                                                    StaticString aCallSite) {
   MonitorAutoLock mon(mMonitor);
-  TIMER_LOG("MediaTimer::WaitUntil %" PRId64, RelativeMicroseconds(aTimeStamp));
+  TIMER_LOG("MediaTimer::WaitUntil {}", RelativeMicroseconds(aTimeStamp));
   Entry e(aTimeStamp, aCallSite);
   RefPtr<MediaTimerPromise> p = e.mPromise.get();
   mEntries.push(e);
@@ -110,7 +105,7 @@ void MediaTimer<T>::ScheduleUpdate() {
       NewRunnableMethod("MediaTimer::Update", this, &MediaTimer::Update),
       NS_DISPATCH_NORMAL);
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
   (void)rv;
 }
 
@@ -193,13 +188,13 @@ void MediaTimer<T>::ArmTimer(const T& aTarget, const T& aNow) {
   MOZ_DIAGNOSTIC_ASSERT(aTarget > aNow);
 
   const typename T::DurationType delay = aTarget - aNow;
-  TIMER_LOG("MediaTimer::ArmTimer delay=%.3fms", delay.ToMilliseconds());
+  TIMER_LOG("MediaTimer::ArmTimer delay={:.3f}ms", delay.ToMilliseconds());
   mCurrentTimerTarget.emplace(aTarget);
   TimeDuration duration =
       TimeDuration::FromMicroseconds(delay.ToMicroseconds());
   MOZ_ALWAYS_SUCCEEDS(mTimer->InitHighResolutionWithNamedFuncCallback(
       &TimerCallback, this, duration, nsITimer::TYPE_ONE_SHOT,
-      "MediaTimer::TimerCallback"));
+      "MediaTimer::TimerCallback"_ns));
 }
 
 template <typename T>

@@ -12,14 +12,15 @@ VPN_MESSAGE = "Please try again using a VPN set to South Korea."
 
 async def do_test(client, redirect_url, alert=None):
     redirect = await client.promise_navigation_begins(url=redirect_url, timeout=10)
-    if alert:
-        alert = await client.await_alert(alert)
+
     try:
         await client.navigate(URL, timeout=10, no_skip=True)
     except Exception:
         pytest.skip(VPN_MESSAGE)
+
     if alert:
-        assert await alert
+        assert await client.await_alert(alert)
+
     assert await redirect
 
 
@@ -27,6 +28,7 @@ async def do_test(client, redirect_url, alert=None):
 @pytest.mark.with_interventions
 async def test_enabled(client):
     await do_test(client, SUPPORTED_URL)
+    assert not await client.find_alert()
 
 
 @pytest.mark.asyncio

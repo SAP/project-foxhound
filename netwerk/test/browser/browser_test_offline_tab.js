@@ -34,3 +34,29 @@ add_task(async function test_set_tab_online() {
     });
   });
 });
+
+add_task(async function test_set_tab_offline_events() {
+  await BrowserTestUtils.withNewTab("https://example.com", async browser => {
+    await SpecialPowers.spawn(browser, [], async () => {
+      content.events = [];
+      content.window.addEventListener("offline", () =>
+        content.events.push("offline")
+      );
+      content.window.addEventListener("online", () =>
+        content.events.push("online")
+      );
+    });
+    gBrowser.selectedBrowser.browsingContext.forceOffline = true;
+    Assert.deepEqual(
+      await SpecialPowers.spawn(browser, [], async () => content.events),
+      ["offline"],
+      "events should be fired"
+    );
+    gBrowser.selectedBrowser.browsingContext.forceOffline = false;
+    Assert.deepEqual(
+      await SpecialPowers.spawn(browser, [], async () => content.events),
+      ["offline", "online"],
+      "events should be fired"
+    );
+  });
+});

@@ -50,7 +50,7 @@ add_task(async function () {
   // can expand an expression
   await toggleExpressionNode(dbg, 2);
 
-  is(findAllElements(dbg, "expressionNodes").length, 35);
+  is(findAllElements(dbg, "expressionNodes").length, 37);
   is(dbg.selectors.getExpressions(dbg.store.getState()).length, 2);
 
   await deleteExpression(dbg, "foo");
@@ -71,7 +71,7 @@ add_task(async function () {
   is(findAllElements(dbg, "expressionNodes").length, 1);
 
   await toggleExpressionNode(dbg, 1);
-  is(findAllElements(dbg, "expressionNodes").length, 34);
+  is(findAllElements(dbg, "expressionNodes").length, 36);
 
   await deleteExpression(dbg, "location");
   is(findAllElements(dbg, "expressionNodes").length, 0);

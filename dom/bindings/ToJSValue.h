@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +8,7 @@
 #include <cstddef>  // for size_t
 #include <cstdint>  // for int32_t, int64_t, uint32_t, uint64_t
 #include <type_traits>  // for is_base_of, enable_if_t, enable_if, is_pointer, is_same, void_t
-#include <utility>        // for forward
+
 #include "ErrorList.h"    // for nsresult
 #include "js/Array.h"     // for NewArrayObject
 #include "js/GCVector.h"  // for RootedVector, MutableWrappedPtrOperations
@@ -21,7 +19,6 @@
 #include "jsapi.h"                  // for CurrentGlobalOrNull
 #include "mozilla/Assertions.h"  // for AssertionConditionType, MOZ_ASSERT, MOZ_ASSERT_HELPER1
 #include "mozilla/UniquePtr.h"         // for UniquePtr
-#include "mozilla/Unused.h"            // for Unused
 #include "mozilla/dom/BindingUtils.h"  // for MaybeWrapValue, MaybeWrapObjectOrNullValue, XPCOMObjectToJsval, GetOrCreateDOMReflector
 #include "mozilla/dom/CallbackObject.h"  // for CallbackObject
 #include "mozilla/dom/Record.h"
@@ -102,13 +99,13 @@ inline bool ToJSValue(JSContext* aCx, uint64_t aArgument,
   return true;
 }
 
-// accept floating point types
+// Accept floating point types.
 inline bool ToJSValue(JSContext* aCx, float aArgument,
                       JS::MutableHandle<JS::Value> aValue) {
   // Make sure we're called in a compartment
   MOZ_ASSERT(JS::CurrentGlobalOrNull(aCx));
 
-  aValue.setNumber(aArgument);
+  aValue.set(JS_NumberValue(double(aArgument)));
   return true;
 }
 
@@ -186,7 +183,7 @@ ToJSValue(JSContext* aCx, UniquePtr<T>&& aArgument,
   }
 
   // JS object took ownership
-  Unused << aArgument.release();
+  (void)aArgument.release();
   return true;
 }
 

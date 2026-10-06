@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,11 +6,10 @@
 #define DOM_SVG_DOMSVGNUMBER_H_
 
 #include "DOMSVGNumberList.h"
+#include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsTArray.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/RefPtr.h"
 #include "nsWrapperCache.h"
 
 #define MOZ_SVG_LIST_INDEX_BIT_COUNT 27  // supports > 134 million list items
@@ -71,12 +68,12 @@ class DOMSVGNumber final : public nsWrapperCache {
 
  public:
   /**
-   * Create an unowned copy. The caller is responsible for the first AddRef().
+   * Create an unowned copy.
    */
-  DOMSVGNumber* Clone() {
-    DOMSVGNumber* clone = new DOMSVGNumber(mParent);
+  already_AddRefed<DOMSVGNumber> Clone() {
+    RefPtr clone = new DOMSVGNumber(mParent);
     clone->mValue = ToSVGNumber();
-    return clone;
+    return clone.forget();
   }
 
   bool IsInList() const { return !!mList; }
@@ -109,7 +106,10 @@ class DOMSVGNumber final : public nsWrapperCache {
   }
 
   /// This method is called to notify this object that its list index changed.
-  void UpdateListIndex(uint32_t aListIndex) { mListIndex = aListIndex; }
+  void UpdateListIndex(uint32_t aListIndex) {
+    MOZ_RELEASE_ASSERT(aListIndex <= MaxListIndex());
+    mListIndex = aListIndex;
+  }
 
   /**
    * This method is called to notify this DOM object that it is about to be

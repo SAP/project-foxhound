@@ -42,8 +42,8 @@ load 498698-1.html
 load 513113-1.html
 load 538062-1.xhtml
 load 570624-1.html
-asserts(1) load 578604-1.html # bug 584564
-asserts(4-7) load 590302-1.xhtml # bug 584564
+load 578604-1.html
+load 590302-1.xhtml
 load 626014.xhtml
 load 639733.xhtml
 load 669767.html

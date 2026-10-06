@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,8 +9,10 @@
 #include "nsClassHashtable.h"
 #include "nsIObserver.h"
 #include "nsITimer.h"
+#include "nsTHashMap.h"
 #include "nsTObserverArray.h"
 
+class nsIChannel;
 class nsIHttpChannel;
 class nsIPrincipal;
 class nsIURI;
@@ -27,6 +27,8 @@ class PrincipalInfo;
 
 namespace dom {
 
+class EndpointsList;
+
 class ReportingHeader final : public nsIObserver,
                               public nsITimerCallback,
                               public nsINamed {
@@ -40,12 +42,17 @@ class ReportingHeader final : public nsIObserver,
 
   // Exposed structs for gtests
 
+  // https://w3c.github.io/reporting/#endpoint
   struct Endpoint {
     nsCOMPtr<nsIURI> mUrl;
-    nsCString mEndpointName;
+    nsString mEndpointName;
     uint32_t mPriority;
     uint32_t mWeight;
     uint32_t mFailures;
+    static Endpoint Create(already_AddRefed<nsIURI> aURL,
+                           const nsAString& aEndpointName) {
+      return Endpoint{aURL, nsString{aEndpointName}, 1, 1, 0};
+    }
   };
 
   struct Group {
@@ -60,10 +67,16 @@ class ReportingHeader final : public nsIObserver,
     nsTObserverArray<Group> mGroups;
   };
 
+  // https://w3c.github.io/reporting/#process-header
+  static EndpointsList ProcessReportingEndpointsListFromResponse(
+      nsIHttpChannel* aChannel);
+
   // Parses the Reporting-Endpoints of a given header according to the algorithm
   // in https://www.w3.org/TR/reporting-1/#header
-  static UniquePtr<Client> ParseReportingEndpointsHeader(
-      const nsACString& aHeaderValue, nsIURI* aURI);
+  static size_t ParseReportingEndpointsHeader(
+      const nsACString& aHeaderValue, nsIURI* aURI,
+      std::function<void(const nsAString&, nsCOMPtr<nsIURI>)>&&
+          aOnParsedItemCallback);
 
   // [Deprecated] Parses the contents of a given header according to the
   // algorithm in https://www.w3.org/TR/2018/WD-reporting-1-20180925/#header
@@ -80,9 +93,18 @@ class ReportingHeader final : public nsIObserver,
                                    nsIPrincipal* aPrincipal,
                                    nsACString& aEndpointURI);
 
+  // Used for network-error-logging
+  // If no endpoint is found for aPrincipal and aIncludeSubdomains is true
+  // we'll check all parent origins for groups that have mIncludeSubdomains
+  // equal to true.
+  static void GetEndpointForReportIncludeSubdomains(const nsAString& aGroupName,
+                                                    nsIPrincipal* aPrincipal,
+                                                    bool aIncludeSubdomains,
+                                                    nsACString& aEndpointURI);
+
   static void RemoveEndpoint(const nsAString& aGroupName,
                              const nsACString& aEndpointURL,
-                             const mozilla::ipc::PrincipalInfo& aPrincipalInfo);
+                             nsIPrincipal* aPrincipal);
 
   // ChromeOnly-WebIDL methods
 
@@ -144,6 +166,15 @@ class ReportingHeader final : public nsIObserver,
   nsClassHashtable<nsCStringHashKey, Client> mOrigins;
 
   nsCOMPtr<nsITimer> mCleanupTimer;
+};
+
+class EndpointsList {
+ public:
+  ReportingHeader::Endpoint* GetEndpointWithName(
+      const nsAString& aEndpointName);
+  void RemoveEndpoint(const nsAString& aEndpointName);
+
+  nsTArray<ReportingHeader::Endpoint> mData;
 };
 
 }  // namespace dom

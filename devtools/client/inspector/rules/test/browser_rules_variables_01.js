@@ -128,5 +128,6 @@ add_task(async function () {
   await assertVariableTooltipForProperty(view, "*", "--nested-with-empty", {
     header: "&lt;empty&gt;",
     headerClasses: ["empty-css-variable"],
+    closeWithEscape: true,
   });
 });

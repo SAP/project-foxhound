@@ -1,0 +1,15 @@
+{
+  "label": "slrclub.com",
+  "bugs": {
+    "1743751": {
+      "issue": "desktop-layout-not-mobile",
+      "matches": ["*://*.slrclub.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+with Files("**"):
+    BUG_COMPONENT = ("Core", "Machine Learning: Frontend")
+
+BROWSER_CHROME_MANIFESTS += ["test/browser/browser.toml"]
+MARIONETTE_MANIFESTS += ["test/marionette/manifest.toml"]
+XPCSHELL_TESTS_MANIFESTS += ["test/xpcshell/xpcshell.toml"]
+
+MOZ_SRC_FILES += [
+    "actors/AIChatContentChild.sys.mjs",
+    "actors/AIChatContentParent.sys.mjs",
+    "actors/AISmartBarChild.sys.mjs",
+    "actors/AISmartBarParent.sys.mjs",
+    "modules/AIWindow.sys.mjs",
+    "modules/AIWindowAccountAuth.sys.mjs",
+    "modules/AIWindowConstants.sys.mjs",
+    "modules/AIWindowMenu.sys.mjs",
+    "modules/AIWindowTabStatesManager.sys.mjs",
+    "modules/AIWindowTelemetry.sys.mjs",
+    "modules/AIWindowUI.sys.mjs",
+    "modules/ChatConversation.sys.mjs",
+    "modules/ChatEnums.sys.mjs",
+    "modules/ChatMessage.sys.mjs",
+    "modules/ChatMigrations.sys.mjs",
+    "modules/ChatSql.sys.mjs",
+    "modules/ChatStore.sys.mjs",
+    "modules/ChatUtils.sys.mjs",
+    "modules/FeedbackModal.sys.mjs",
+    "modules/SmartWindowTelemetry.sys.mjs",
+    "modules/TabManagementService.sys.mjs",
+    "modules/ToolActionLog.sys.mjs",
+    "modules/ToolUI.sys.mjs",
+    "modules/ToolUITelemetry.sys.mjs",
+]
+
+TESTING_JS_MODULES += [
+    "test/AIWindowTestUtils.sys.mjs",
+]
+
+EXTRA_COMPONENTS += [
+    "aiwindow.manifest",
+]
+
+JAR_MANIFESTS += ["jar.mn"]

@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 add_task(async function test_clearWindowValues() {
-  /** Test for Bug 465223 **/
+  /** Test for Bug 465223 */
 
   let uniqueKey1 = "bug 465223.1";
   let uniqueKey2 = "bug 465223.2";

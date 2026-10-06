@@ -1,32 +1,9 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 
 // Author: kenton@google.com (Kenton Varda)
 //  Based on original Protocol Buffers design by
@@ -100,17 +77,18 @@
 #ifndef GOOGLE_PROTOBUF_SERVICE_H__
 #define GOOGLE_PROTOBUF_SERVICE_H__
 
-
 #include <string>
-#include <google/protobuf/stubs/callback.h>
-#include <google/protobuf/stubs/common.h>
+
+#include "google/protobuf/stubs/callback.h"
+#include "google/protobuf/stubs/common.h"
+#include "google/protobuf/port.h"
 
 #ifdef SWIG
 #error "You cannot SWIG proto headers"
 #endif
 
 // Must be included last.
-#include <google/protobuf/port_def.inc>
+#include "google/protobuf/port_def.inc"
 
 namespace google {
 namespace protobuf {
@@ -134,6 +112,8 @@ class Message;            // message.h
 class PROTOBUF_EXPORT Service {
  public:
   inline Service() {}
+  Service(const Service&) = delete;
+  Service& operator=(const Service&) = delete;
   virtual ~Service();
 
   // When constructing a stub, you may pass STUB_OWNS_CHANNEL as the second
@@ -142,7 +122,8 @@ class PROTOBUF_EXPORT Service {
   enum ChannelOwnership { STUB_OWNS_CHANNEL, STUB_DOESNT_OWN_CHANNEL };
 
   // Get the ServiceDescriptor describing this service and its methods.
-  virtual const ServiceDescriptor* GetDescriptor() = 0;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD virtual const ServiceDescriptor*
+  GetDescriptor() = 0;
 
   // Call a method of the service specified by MethodDescriptor.  This is
   // normally implemented as a simple switch() that calls the standard
@@ -186,13 +167,10 @@ class PROTOBUF_EXPORT Service {
   //   Message* response = stub->GetResponsePrototype(method)->New();
   //   request->ParseFromString(input);
   //   service->CallMethod(method, *request, response, callback);
-  virtual const Message& GetRequestPrototype(
-      const MethodDescriptor* method) const = 0;
-  virtual const Message& GetResponsePrototype(
-      const MethodDescriptor* method) const = 0;
-
- private:
-  GOOGLE_DISALLOW_EVIL_CONSTRUCTORS(Service);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD virtual const Message&
+  GetRequestPrototype(const MethodDescriptor* method) const = 0;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD virtual const Message&
+  GetResponsePrototype(const MethodDescriptor* method) const = 0;
 };
 
 // An RpcController mediates a single method call.  The primary purpose of
@@ -206,6 +184,8 @@ class PROTOBUF_EXPORT Service {
 class PROTOBUF_EXPORT RpcController {
  public:
   inline RpcController() {}
+  RpcController(const RpcController&) = delete;
+  RpcController& operator=(const RpcController&) = delete;
   virtual ~RpcController();
 
   // Client-side methods ---------------------------------------------
@@ -220,10 +200,10 @@ class PROTOBUF_EXPORT RpcController {
   // reasons for failure depend on the RPC implementation.  Failed() must not
   // be called before a call has finished.  If Failed() returns true, the
   // contents of the response message are undefined.
-  virtual bool Failed() const = 0;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD virtual bool Failed() const = 0;
 
   // If Failed() is true, returns a human-readable description of the error.
-  virtual std::string ErrorText() const = 0;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD virtual std::string ErrorText() const = 0;
 
   // Advises the RPC system that the caller desires that the RPC call be
   // canceled.  The RPC system may cancel it immediately, may wait awhile and
@@ -246,7 +226,7 @@ class PROTOBUF_EXPORT RpcController {
   // If true, indicates that the client canceled the RPC, so the server may
   // as well give up on replying to it.  The server should still call the
   // final "done" callback.
-  virtual bool IsCanceled() const = 0;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD virtual bool IsCanceled() const = 0;
 
   // Asks that the given callback be called when the RPC is canceled.  The
   // callback will always be called exactly once.  If the RPC completes without
@@ -256,9 +236,6 @@ class PROTOBUF_EXPORT RpcController {
   //
   // NotifyOnCancel() must be called no more than once per request.
   virtual void NotifyOnCancel(Closure* callback) = 0;
-
- private:
-  GOOGLE_DISALLOW_EVIL_CONSTRUCTORS(RpcController);
 };
 
 // Abstract interface for an RPC channel.  An RpcChannel represents a
@@ -272,6 +249,8 @@ class PROTOBUF_EXPORT RpcController {
 class PROTOBUF_EXPORT RpcChannel {
  public:
   inline RpcChannel() {}
+  RpcChannel(const RpcChannel&) = delete;
+  RpcChannel& operator=(const RpcChannel&) = delete;
   virtual ~RpcChannel();
 
   // Call the given method of the remote service.  The signature of this
@@ -282,14 +261,11 @@ class PROTOBUF_EXPORT RpcChannel {
   virtual void CallMethod(const MethodDescriptor* method,
                           RpcController* controller, const Message* request,
                           Message* response, Closure* done) = 0;
-
- private:
-  GOOGLE_DISALLOW_EVIL_CONSTRUCTORS(RpcChannel);
 };
 
 }  // namespace protobuf
 }  // namespace google
 
-#include <google/protobuf/port_undef.inc>
+#include "google/protobuf/port_undef.inc"
 
 #endif  // GOOGLE_PROTOBUF_SERVICE_H__

@@ -11,18 +11,20 @@
 #include "modules/audio_processing/aec3/adaptive_fir_filter_erl.h"
 
 #include <array>
+#include <cstddef>
 #include <vector>
 
+#include "modules/audio_processing/aec3/aec3_common.h"
+#include "rtc_base/cpu_info.h"
+#include "test/gtest.h"
+
+// Defines WEBRTC_ARCH_X86_FAMILY, used below.
 #include "rtc_base/system/arch.h"
 #if defined(WEBRTC_ARCH_X86_FAMILY)
 #include <emmintrin.h>
 #endif
 
-#include "system_wrappers/include/cpu_features_wrapper.h"
-#include "test/gtest.h"
-
 namespace webrtc {
-namespace aec3 {
 
 #if defined(WEBRTC_HAS_NEON)
 // Verifies that the optimized method for echo return loss computation is
@@ -53,7 +55,7 @@ TEST(AdaptiveFirFilter, UpdateErlNeonOptimization) {
 // Verifies that the optimized method for echo return loss computation is
 // bitexact to the reference counterpart.
 TEST(AdaptiveFirFilter, UpdateErlSse2Optimization) {
-  bool use_sse2 = (GetCPUInfo(kSSE2) != 0);
+  bool use_sse2 = cpu_info::Supports(cpu_info::ISA::kSSE2);
   if (use_sse2) {
     const size_t kNumPartitions = 12;
     std::vector<std::array<float, kFftLengthBy2Plus1>> H2(kNumPartitions);
@@ -78,7 +80,7 @@ TEST(AdaptiveFirFilter, UpdateErlSse2Optimization) {
 // Verifies that the optimized method for echo return loss computation is
 // bitexact to the reference counterpart.
 TEST(AdaptiveFirFilter, UpdateErlAvx2Optimization) {
-  bool use_avx2 = (GetCPUInfo(kAVX2) != 0);
+  bool use_avx2 = cpu_info::Supports(cpu_info::ISA::kAVX2);
   if (use_avx2) {
     const size_t kNumPartitions = 12;
     std::vector<std::array<float, kFftLengthBy2Plus1>> H2(kNumPartitions);
@@ -102,5 +104,4 @@ TEST(AdaptiveFirFilter, UpdateErlAvx2Optimization) {
 
 #endif
 
-}  // namespace aec3
 }  // namespace webrtc

@@ -1,14 +1,12 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CompositorWidgetChild.h"
-#include "mozilla/Unused.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/widget/CompositorWidgetVsyncObserver.h"
 #include "mozilla/widget/PlatformWidgetTypes.h"
-#include "nsBaseWidget.h"
+#include "nsIWidget.h"
 #include "VsyncDispatcher.h"
 #include "gfxPlatform.h"
 #include "RemoteBackbuffer.h"
@@ -32,7 +30,13 @@ CompositorWidgetChild::CompositorWidgetChild(
 
 CompositorWidgetChild::~CompositorWidgetChild() {}
 
-bool CompositorWidgetChild::Initialize() {
+bool CompositorWidgetChild::Initialize(
+    const layers::CompositorOptions& aOptions) {
+  // We only use remote_backbuffer::Provider with software WebRender.
+  if (!aOptions.UseSoftwareWebRender()) {
+    return true;
+  }
+
   mRemoteBackbufferProvider = std::make_unique<remote_backbuffer::Provider>();
   if (!mRemoteBackbufferProvider->Initialize(mWnd, OtherPid())) {
     return false;
@@ -43,18 +47,14 @@ bool CompositorWidgetChild::Initialize() {
     return false;
   }
 
-  Unused << SendInitialize(*maybeRemoteHandles);
+  (void)SendInitialize(*maybeRemoteHandles);
 
   return true;
 }
 
-void CompositorWidgetChild::EnterPresentLock() {
-  Unused << SendEnterPresentLock();
-}
+void CompositorWidgetChild::EnterPresentLock() { (void)SendEnterPresentLock(); }
 
-void CompositorWidgetChild::LeavePresentLock() {
-  Unused << SendLeavePresentLock();
-}
+void CompositorWidgetChild::LeavePresentLock() { (void)SendLeavePresentLock(); }
 
 void CompositorWidgetChild::OnDestroyWindow() {}
 
@@ -63,11 +63,11 @@ bool CompositorWidgetChild::OnWindowResize(const LayoutDeviceIntSize& aSize) {
 }
 
 void CompositorWidgetChild::NotifyVisibilityUpdated(bool aIsFullyOccluded) {
-  Unused << SendNotifyVisibilityUpdated(aIsFullyOccluded);
+  (void)SendNotifyVisibilityUpdated(aIsFullyOccluded);
 };
 
 void CompositorWidgetChild::UpdateTransparency(TransparencyMode aMode) {
-  Unused << SendUpdateTransparency(aMode);
+  (void)SendUpdateTransparency(aMode);
 }
 
 mozilla::ipc::IPCResult CompositorWidgetChild::RecvObserveVsync() {

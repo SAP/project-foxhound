@@ -1,4 +1,3 @@
-/* -*- Mode: c++; tab-width: 2; indent-tabs-mode: nil; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,8 +14,10 @@
 
 NS_IMPL_ISUPPORTS(nsMacSharingService, nsIMacSharingService)
 
-NSString* const remindersServiceName =
+NSString* const oldRemindersServiceName =
     @"com.apple.reminders.RemindersShareExtension";
+NSString* const newRemindersServiceName =
+    @"com.apple.reminders.sharingextension";
 
 // These are some undocumented constants also used by Safari
 // to let us open the preferences window
@@ -67,12 +68,14 @@ static bool ShouldIgnoreProvider(NSString* aProviderName) {
 - (void)sharingService:(NSSharingService*)sharingService
          didShareItems:(NSArray*)items {
   [self cleanup];
+  [self release];
 }
 
 - (void)sharingService:(NSSharingService*)service
     didFailToShareItems:(NSArray*)items
                   error:(NSError*)error {
   [self cleanup];
+  [self release];
 }
 
 - (void)dealloc {
@@ -162,7 +165,7 @@ nsMacSharingService::OpenSharingPreferences() {
                   withAppBundleIdentifier:nil
                                   options:NSWorkspaceLaunchAsync
            additionalEventParamDescriptor:descriptor
-                        launchIdentifiers:NULL];
+                        launchIdentifiers:nullptr];
 
   [descriptor release];
 
@@ -177,40 +180,40 @@ nsMacSharingService::ShareUrl(const nsAString& aServiceName,
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   NSString* serviceName = nsCocoaUtils::ToNSString(aServiceName);
-  NSURL* pageUrl = nsCocoaUtils::ToNSURL(aPageUrl);
-  NSString* pageTitle = nsCocoaUtils::ToNSString(aPageTitle);
   NSSharingService* service =
       [NSSharingService sharingServiceNamed:serviceName];
+  if (!service) {
+    return NS_ERROR_FAILURE;
+  }
 
-  // Reminders fetch its data from an activity, not the share data
-  if ([[service name] isEqual:remindersServiceName]) {
-    NSUserActivity* shareActivity = [[NSUserActivity alloc]
-        initWithActivityType:NSUserActivityTypeBrowsingWeb];
+  NSString* pageTitle = nsCocoaUtils::ToNSString(aPageTitle);
+  [service setSubject:pageTitle];
+
+  NSURL* pageUrl = nsCocoaUtils::ToNSURL(aPageUrl);
+  if (!pageUrl) {
+    return NS_ERROR_FAILURE;
+  }
+
+  // Reminders fetch data from an activity, not the share data
+  if ([serviceName isEqual:oldRemindersServiceName] ||
+      [serviceName isEqual:newRemindersServiceName]) {
+    NSUserActivity* shareActivity = [[[NSUserActivity alloc]
+        initWithActivityType:NSUserActivityTypeBrowsingWeb] autorelease];
 
     if ([pageUrl.scheme hasPrefix:@"http"]) {
       [shareActivity setWebpageURL:pageUrl];
     }
+
     [shareActivity setEligibleForHandoff:NO];
     [shareActivity setTitle:pageTitle];
     [shareActivity becomeCurrent];
 
-    // Pass ownership of shareActivity to shareDelegate, which will release the
-    // activity once sharing has completed.
     SharingServiceDelegate* shareDelegate =
         [[SharingServiceDelegate alloc] initWithActivity:shareActivity];
-    [shareActivity release];
-
-    [service setDelegate:shareDelegate];
-    [shareDelegate release];
+    [service setDelegate:shareDelegate];  // weak reference
   }
 
-  // Twitter likes the the title as an additional share item
-  NSArray* toShare = [[service name] isEqual:NSSharingServiceNamePostOnTwitter]
-                         ? @[ pageUrl, pageTitle ]
-                         : @[ pageUrl ];
-
-  [service setSubject:pageTitle];
-  [service performWithItems:toShare];
+  [service performWithItems:@[ pageUrl ]];
 
   return NS_OK;
 

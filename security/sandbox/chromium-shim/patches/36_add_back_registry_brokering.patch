@@ -1,0 +1,479 @@
+# HG changeset patch
+# User Bob Owen <bobowencode@gmail.com>
+Add back registry brokering.
+
+This was removed from the chromium codebase, but we still require it.
+The stand-alone files have been added to chromium-shim. This patch covers the
+wiring back into other chromium code.
+Much of this is reinstating removed code without change, but there are some
+differences to allow for new policy config style.
+
+diff --git a/sandbox/win/src/interceptors_64.cc b/sandbox/win/src/interceptors_64.cc
+--- a/sandbox/win/src/interceptors_64.cc
++++ b/sandbox/win/src/interceptors_64.cc
+@@ -5,16 +5,17 @@
+ #include "sandbox/win/src/interceptors_64.h"
+ 
+ #include "sandbox/win/src/filesystem_interception.h"
+ #include "sandbox/win/src/interceptors.h"
+ #include "sandbox/win/src/named_pipe_interception.h"
+ #include "sandbox/win/src/policy_target.h"
+ #include "sandbox/win/src/process_mitigations_win32k_interception.h"
+ #include "sandbox/win/src/process_thread_interception.h"
++#include "sandbox/win/src/registry_interception.h"
+ #include "sandbox/win/src/sandbox_nt_types.h"
+ #include "sandbox/win/src/sandbox_types.h"
+ #include "sandbox/win/src/signed_interception.h"
+ #include "sandbox/win/src/target_interceptions.h"
+ 
+ namespace sandbox {
+ 
+ SANDBOX_INTERCEPT OriginalFunctions g_originals;
+@@ -234,16 +235,46 @@ TargetCreateThread64(LPSECURITY_ATTRIBUT
+       reinterpret_cast<CreateThreadFunction>(g_originals[CREATE_THREAD_ID]);
+   return TargetCreateThread(orig_fn, thread_attributes, stack_size,
+                             start_address, parameter, creation_flags,
+                             thread_id);
+ }
+ 
+ // -----------------------------------------------------------------------
+ 
++SANDBOX_INTERCEPT NTSTATUS WINAPI TargetNtCreateKey64(
++    PHANDLE key, ACCESS_MASK desired_access,
++    POBJECT_ATTRIBUTES object_attributes, ULONG title_index,
++    PUNICODE_STRING class_name, ULONG create_options, PULONG disposition) {
++  NtCreateKeyFunction orig_fn =
++      reinterpret_cast<NtCreateKeyFunction>(g_originals[CREATE_KEY_ID]);
++  return TargetNtCreateKey(orig_fn, key, desired_access, object_attributes,
++                           title_index, class_name, create_options,
++                           disposition);
++}
++
++SANDBOX_INTERCEPT NTSTATUS WINAPI
++TargetNtOpenKey64(PHANDLE key, ACCESS_MASK desired_access,
++                  POBJECT_ATTRIBUTES object_attributes) {
++  NtOpenKeyFunction orig_fn =
++      reinterpret_cast<NtOpenKeyFunction>(g_originals[OPEN_KEY_ID]);
++  return TargetNtOpenKey(orig_fn, key, desired_access, object_attributes);
++}
++
++SANDBOX_INTERCEPT NTSTATUS WINAPI
++TargetNtOpenKeyEx64(PHANDLE key, ACCESS_MASK desired_access,
++                    POBJECT_ATTRIBUTES object_attributes, ULONG open_options) {
++  NtOpenKeyExFunction orig_fn =
++      reinterpret_cast<NtOpenKeyExFunction>(g_originals[OPEN_KEY_EX_ID]);
++  return TargetNtOpenKeyEx(orig_fn, key, desired_access, object_attributes,
++                           open_options);
++}
++
++// -----------------------------------------------------------------------
++
+ SANDBOX_INTERCEPT BOOL WINAPI TargetGdiDllInitialize64(HANDLE dll,
+                                                        DWORD reason) {
+   GdiDllInitializeFunction orig_fn =
+       reinterpret_cast<GdiDllInitializeFunction>(g_originals[GDIINITIALIZE_ID]);
+   return TargetGdiDllInitialize(orig_fn, dll, reason);
+ }
+ 
+ SANDBOX_INTERCEPT HGDIOBJ WINAPI TargetGetStockObject64(int object) {
+diff --git a/sandbox/win/src/interceptors_64.h b/sandbox/win/src/interceptors_64.h
+--- a/sandbox/win/src/interceptors_64.h
++++ b/sandbox/win/src/interceptors_64.h
+@@ -155,16 +155,35 @@ SANDBOX_INTERCEPT HANDLE WINAPI
+ TargetCreateThread64(LPSECURITY_ATTRIBUTES thread_attributes,
+                      SIZE_T stack_size,
+                      LPTHREAD_START_ROUTINE start_address,
+                      PVOID parameter,
+                      DWORD creation_flags,
+                      LPDWORD thread_id);
+ 
+ // -----------------------------------------------------------------------
++// Interceptors handled by the registry dispatcher.
++
++// Interception of NtCreateKey on the child process.
++SANDBOX_INTERCEPT NTSTATUS WINAPI TargetNtCreateKey64(
++    PHANDLE key, ACCESS_MASK desired_access,
++    POBJECT_ATTRIBUTES object_attributes, ULONG title_index,
++    PUNICODE_STRING class_name, ULONG create_options, PULONG disposition);
++
++// Interception of NtOpenKey on the child process.
++SANDBOX_INTERCEPT NTSTATUS WINAPI
++TargetNtOpenKey64(PHANDLE key, ACCESS_MASK desired_access,
++                  POBJECT_ATTRIBUTES object_attributes);
++
++// Interception of NtOpenKeyEx on the child process.
++SANDBOX_INTERCEPT NTSTATUS WINAPI
++TargetNtOpenKeyEx64(PHANDLE key, ACCESS_MASK desired_access,
++                    POBJECT_ATTRIBUTES object_attributes, ULONG open_options);
++
++// -----------------------------------------------------------------------
+ // Interceptors handled by the process mitigations win32k lockdown code.
+ 
+ // Interceptor for the GdiDllInitialize function.
+ SANDBOX_INTERCEPT BOOL WINAPI TargetGdiDllInitialize64(HANDLE dll,
+                                                        DWORD reason);
+ 
+ // Interceptor for the GetStockObject function.
+ SANDBOX_INTERCEPT HGDIOBJ WINAPI TargetGetStockObject64(int object);
+diff --git a/sandbox/win/src/ipc_tags.h b/sandbox/win/src/ipc_tags.h
+--- a/sandbox/win/src/ipc_tags.h
++++ b/sandbox/win/src/ipc_tags.h
+@@ -16,16 +16,18 @@ enum class IpcTag {
+   NTCREATEFILE,
+   NTOPENFILE,
+   NTQUERYATTRIBUTESFILE,
+   NTQUERYFULLATTRIBUTESFILE,
+   NTSETINFO_RENAME,
+   CREATENAMEDPIPEW,
+   NTOPENTHREAD,
+   NTOPENPROCESSTOKENEX,
++  NTCREATEKEY,
++  NTOPENKEY,
+   GDI_GDIDLLINITIALIZE,
+   GDI_GETSTOCKOBJECT,
+   USER_REGISTERCLASSW,
+   CREATETHREAD,
+   GETCOMPLEXLINEBREAKS,
+   NTCREATESECTION,
+   LAST
+ };
+diff --git a/sandbox/win/src/nt_internals.h b/sandbox/win/src/nt_internals.h
+--- a/sandbox/win/src/nt_internals.h
++++ b/sandbox/win/src/nt_internals.h
+@@ -216,16 +216,33 @@ typedef NTSTATUS(WINAPI* NtOpenProcessTo
+ 
+ typedef NTSTATUS(WINAPI* NtOpenProcessTokenExFunction)(
+     IN HANDLE ProcessHandle,
+     IN ACCESS_MASK DesiredAccess,
+     IN ULONG HandleAttributes,
+     OUT PHANDLE TokenHandle);
+ 
+ // -----------------------------------------------------------------------
++// Registry
++
++typedef NTSTATUS(WINAPI* NtCreateKeyFunction)(
++    OUT PHANDLE KeyHandle, IN ACCESS_MASK DesiredAccess,
++    IN POBJECT_ATTRIBUTES ObjectAttributes, IN ULONG TitleIndex,
++    IN PUNICODE_STRING Class OPTIONAL, IN ULONG CreateOptions,
++    OUT PULONG Disposition OPTIONAL);
++
++typedef NTSTATUS(WINAPI* NtOpenKeyFunction)(
++    OUT PHANDLE KeyHandle, IN ACCESS_MASK DesiredAccess,
++    IN POBJECT_ATTRIBUTES ObjectAttributes);
++
++typedef NTSTATUS(WINAPI* NtOpenKeyExFunction)(
++    OUT PHANDLE KeyHandle, IN ACCESS_MASK DesiredAccess,
++    IN POBJECT_ATTRIBUTES ObjectAttributes, IN DWORD open_options);
++
++// -----------------------------------------------------------------------
+ // Memory
+ 
+ // Don't really need this structure right now.
+ typedef PVOID PRTL_HEAP_PARAMETERS;
+ 
+ typedef PVOID(WINAPI* RtlCreateHeapFunction)(IN ULONG Flags,
+                                              IN PVOID HeapBase OPTIONAL,
+                                              IN SIZE_T ReserveSize OPTIONAL,
+diff --git a/sandbox/win/src/sandbox_nt_util.cc b/sandbox/win/src/sandbox_nt_util.cc
+--- a/sandbox/win/src/sandbox_nt_util.cc
++++ b/sandbox/win/src/sandbox_nt_util.cc
+@@ -364,16 +364,109 @@ NTSTATUS CopyNameAndAttributes(
+     ret = (NTSTATUS)GetExceptionCode();
+   }
+ 
+   if (!NT_SUCCESS(ret) && *out_name)
+     out_name->reset(nullptr);
+ 
+   return ret;
+ }
++NTSTATUS AllocAndGetFullPath(
++    HANDLE root, const wchar_t* path,
++    std::unique_ptr<wchar_t, NtAllocDeleter>* full_path) {
++  if (!InitHeap()) return STATUS_NO_MEMORY;
++
++  DCHECK_NT(full_path);
++  DCHECK_NT(path);
++  NTSTATUS ret = STATUS_UNSUCCESSFUL;
++  __try {
++    do {
++      static NtQueryObjectFunction NtQueryObject = nullptr;
++      if (!NtQueryObject) ResolveNTFunctionPtr("NtQueryObject", &NtQueryObject);
++
++      ULONG size = 0;
++      // Query the name information a first time to get the size of the name.
++      ret = NtQueryObject(root, ObjectNameInformation, nullptr, 0, &size);
++
++      std::unique_ptr<OBJECT_NAME_INFORMATION, NtAllocDeleter> handle_name;
++      if (size) {
++        handle_name.reset(reinterpret_cast<OBJECT_NAME_INFORMATION*>(
++            new (NT_ALLOC) BYTE[size]));
++
++        // Query the name information a second time to get the name of the
++        // object referenced by the handle.
++        ret = NtQueryObject(root, ObjectNameInformation, handle_name.get(),
++                            size, &size);
++      }
++
++      if (STATUS_SUCCESS != ret) break;
++
++      // Space for path + '\' + name + '\0'.
++      size_t name_length =
++          handle_name->ObjectName.Length + (wcslen(path) + 2) * sizeof(wchar_t);
++      full_path->reset(new (NT_ALLOC) wchar_t[name_length / sizeof(wchar_t)]);
++      if (!*full_path) break;
++      wchar_t* off = full_path->get();
++      ret = CopyData(off, handle_name->ObjectName.Buffer,
++                     handle_name->ObjectName.Length);
++      if (!NT_SUCCESS(ret)) break;
++      off += handle_name->ObjectName.Length / sizeof(wchar_t);
++      *off = L'\\';
++      off += 1;
++      ret = CopyData(off, path, wcslen(path) * sizeof(wchar_t));
++      if (!NT_SUCCESS(ret)) break;
++      off += wcslen(path);
++      *off = L'\0';
++    } while (false);
++  } __except (EXCEPTION_EXECUTE_HANDLER) {
++    ret = GetExceptionCode();
++  }
++
++  if (!NT_SUCCESS(ret) && *full_path) full_path->reset(nullptr);
++
++  return ret;
++}
++
++// Hacky code... replace with AllocAndCopyObjectAttributes.
++NTSTATUS AllocAndCopyName(const OBJECT_ATTRIBUTES* in_object,
++                          std::unique_ptr<wchar_t, NtAllocDeleter>* out_name,
++                          uint32_t* attributes, HANDLE* root) {
++  if (!InitHeap()) return STATUS_NO_MEMORY;
++
++  DCHECK_NT(out_name);
++  NTSTATUS ret = STATUS_UNSUCCESSFUL;
++  __try {
++    do {
++      if (in_object->RootDirectory != static_cast<HANDLE>(0) && !root) break;
++      if (!in_object->ObjectName) break;
++      if (!in_object->ObjectName->Buffer) break;
++
++      size_t size = in_object->ObjectName->Length + sizeof(wchar_t);
++      out_name->reset(new (NT_ALLOC) wchar_t[size / sizeof(wchar_t)]);
++      if (!*out_name) break;
++
++      ret = CopyData(out_name->get(), in_object->ObjectName->Buffer,
++                     size - sizeof(wchar_t));
++      if (!NT_SUCCESS(ret)) break;
++
++      out_name->get()[size / sizeof(wchar_t) - 1] = L'\0';
++
++      if (attributes) *attributes = in_object->Attributes;
++
++      if (root) *root = in_object->RootDirectory;
++      ret = STATUS_SUCCESS;
++    } while (false);
++  } __except (EXCEPTION_EXECUTE_HANDLER) {
++    ret = GetExceptionCode();
++  }
++
++  if (!NT_SUCCESS(ret) && *out_name) out_name->reset(nullptr);
++
++  return ret;
++}
+ 
+ NTSTATUS GetProcessId(HANDLE process, DWORD* process_id) {
+   PROCESS_BASIC_INFORMATION proc_info;
+   ULONG bytes_returned;
+ 
+   NTSTATUS ret = GetNtExports()->QueryInformationProcess(
+       process, ProcessBasicInformation, &proc_info, sizeof(proc_info),
+       &bytes_returned);
+diff --git a/sandbox/win/src/sandbox_nt_util.h b/sandbox/win/src/sandbox_nt_util.h
+--- a/sandbox/win/src/sandbox_nt_util.h
++++ b/sandbox/win/src/sandbox_nt_util.h
+@@ -127,16 +127,26 @@ NTSTATUS CopyData(void* destination, con
+ // string and |out_name_len| is the number of characters copied. |attributes|
+ // is a copy of the attribute flags from |in_object|.
+ NTSTATUS CopyNameAndAttributes(
+     const OBJECT_ATTRIBUTES* in_object,
+     std::unique_ptr<wchar_t, NtAllocDeleter>* out_name,
+     size_t* out_name_len,
+     uint32_t* attributes = nullptr);
+ 
++// Copies the name from an object attributes.
++NTSTATUS AllocAndCopyName(const OBJECT_ATTRIBUTES* in_object,
++                          std::unique_ptr<wchar_t, NtAllocDeleter>* out_name,
++                          uint32_t* attributes, HANDLE* root);
++
++// Determine full path name from object root and path.
++NTSTATUS AllocAndGetFullPath(
++    HANDLE root, const wchar_t* path,
++    std::unique_ptr<wchar_t, NtAllocDeleter>* full_path);
++
+ // Initializes our ntdll level heap
+ bool InitHeap();
+ 
+ // Returns true if the provided handle refers to the current process.
+ bool IsSameProcess(HANDLE process);
+ 
+ enum MappedModuleFlags {
+   MODULE_IS_PE_IMAGE = 1,      // Module is an executable.
+diff --git a/sandbox/win/src/sandbox_policy.h b/sandbox/win/src/sandbox_policy.h
+--- a/sandbox/win/src/sandbox_policy.h
++++ b/sandbox/win/src/sandbox_policy.h
+@@ -161,16 +161,25 @@ class [[clang::lto_visibility_public]] T
+   // Adds a policy rule effective for processes spawned using this policy.
+   // Named pipes matching `pattern` (see AllowFileAccess) can be created.
+   //
+   // Note: Do not add new uses of this function - instead proxy pipe handles
+   // into your process via normal Chrome IPC.
+   [[nodiscard]] virtual ResultCode AllowNamedPipes(const wchar_t* pattern) = 0;
+ 
+   // Adds a policy rule effective for processes spawned using this policy.
++  // Registry entries matching `pattern` (see AllowFileAccess) can be opened
++  // for read access.
++  //
++  // Note: Do not add new uses of this function - instead proxy registry handles
++  // into your process via normal Chrome IPC.
++  [[nodiscard]] virtual ResultCode AllowRegistryRead(
++      const wchar_t* pattern) = 0;
++
++  // Adds a policy rule effective for processes spawned using this policy.
+   // Modules patching `pattern` (see AllowFileAccess) can still be loaded under
+   // Code-Integrity Guard (MITIGATION_FORCE_MS_SIGNED_BINS).
+   [[nodiscard]] virtual ResultCode AllowExtraDlls(const wchar_t* pattern) = 0;
+ 
+   // Adds a policy rule effective for processes spawned using this policy.
+   // Fake gdi init to allow user32 and gdi32 to initialize under Win32 Lockdown.
+   [[nodiscard]] virtual ResultCode SetFakeGdiInit() = 0;
+ 
+diff --git a/sandbox/win/src/sandbox_policy_base.cc b/sandbox/win/src/sandbox_policy_base.cc
+--- a/sandbox/win/src/sandbox_policy_base.cc
++++ b/sandbox/win/src/sandbox_policy_base.cc
+@@ -28,16 +28,17 @@
+ #include "sandbox/win/src/line_break_policy.h"
+ #include "sandbox/win/src/named_pipe_policy.h"
+ #include "sandbox/win/src/policy_broker.h"
+ #include "sandbox/win/src/policy_engine_processor.h"
+ #include "sandbox/win/src/policy_low_level.h"
+ #include "sandbox/win/src/process_mitigations.h"
+ #include "sandbox/win/src/process_mitigations_win32k_policy.h"
+ #include "sandbox/win/src/process_thread_policy.h"
++#include "sandbox/win/src/registry_policy.h"
+ #include "sandbox/win/src/restricted_token_utils.h"
+ #include "sandbox/win/src/sandbox_policy.h"
+ #include "sandbox/win/src/sandbox_policy_diagnostic.h"
+ #include "sandbox/win/src/signed_policy.h"
+ #include "sandbox/win/src/target_process.h"
+ #include "sandbox/win/src/top_level_dispatcher.h"
+ #include "third_party/abseil-cpp/absl/types/optional.h"
+ 
+@@ -241,16 +242,24 @@ ResultCode ConfigBase::AllowFileAccess(F
+ ResultCode ConfigBase::AllowNamedPipes(const wchar_t* pattern) {
+   if (!NamedPipePolicy::GenerateRules(pattern, PolicyMaker())) {
+     NOTREACHED();
+     return SBOX_ERROR_BAD_PARAMS;
+   }
+   return SBOX_ALL_OK;
+ }
+ 
++ResultCode ConfigBase::AllowRegistryRead(const wchar_t* pattern) {
++  if (!RegistryPolicy::GenerateRules(pattern, PolicyMaker())) {
++    NOTREACHED();
++    return SBOX_ERROR_BAD_PARAMS;
++  }
++  return SBOX_ALL_OK;
++}
++
+ ResultCode ConfigBase::SetFakeGdiInit() {
+   DCHECK_EQ(MITIGATION_WIN32K_DISABLE, mitigations_ & MITIGATION_WIN32K_DISABLE)
+       << "Enable MITIGATION_WIN32K_DISABLE before adding win32k policy "
+          "rules.";
+   if (!ProcessMitigationsWin32KLockdownPolicy::GenerateRules(PolicyMaker())) {
+     NOTREACHED();
+     return SBOX_ERROR_BAD_PARAMS;
+   }
+diff --git a/sandbox/win/src/sandbox_policy_base.h b/sandbox/win/src/sandbox_policy_base.h
+--- a/sandbox/win/src/sandbox_policy_base.h
++++ b/sandbox/win/src/sandbox_policy_base.h
+@@ -63,16 +63,17 @@ class ConfigBase final : public TargetCo
+   void SetAllowEveryoneForUserRestricted() final;
+   bool GetAllowEveryoneForUserRestricted() final;
+   ResultCode SetJobLevel(JobLevel job_level, uint32_t ui_exceptions) override;
+   JobLevel GetJobLevel() const override;
+   void SetJobMemoryLimit(size_t memory_limit) override;
+   ResultCode AllowFileAccess(FileSemantics semantics,
+                              const wchar_t* pattern) override;
+   ResultCode AllowNamedPipes(const wchar_t* pattern) override;
++  ResultCode AllowRegistryRead(const wchar_t* pattern) final;
+   ResultCode AllowExtraDlls(const wchar_t* pattern) override;
+   ResultCode SetFakeGdiInit() override;
+   ResultCode AllowLineBreaking() final;
+   void AddDllToUnload(const wchar_t* dll_name) override;
+   ResultCode SetIntegrityLevel(IntegrityLevel integrity_level) override;
+   IntegrityLevel GetIntegrityLevel() const override;
+   void SetDelayedIntegrityLevel(IntegrityLevel integrity_level) override;
+   ResultCode SetLowBox(const wchar_t* sid) override;
+diff --git a/sandbox/win/src/top_level_dispatcher.cc b/sandbox/win/src/top_level_dispatcher.cc
+--- a/sandbox/win/src/top_level_dispatcher.cc
++++ b/sandbox/win/src/top_level_dispatcher.cc
+@@ -13,16 +13,17 @@
+ #include "sandbox/win/src/filesystem_dispatcher.h"
+ #include "sandbox/win/src/interception.h"
+ #include "sandbox/win/src/internal_types.h"
+ #include "sandbox/win/src/ipc_tags.h"
+ #include "sandbox/win/src/line_break_dispatcher.h"
+ #include "sandbox/win/src/named_pipe_dispatcher.h"
+ #include "sandbox/win/src/process_mitigations_win32k_dispatcher.h"
+ #include "sandbox/win/src/process_thread_dispatcher.h"
++#include "sandbox/win/src/registry_dispatcher.h"
+ #include "sandbox/win/src/sandbox_policy_base.h"
+ #include "sandbox/win/src/signed_dispatcher.h"
+ 
+ namespace sandbox {
+ 
+ TopLevelDispatcher::TopLevelDispatcher(PolicyBase* policy) : policy_(policy) {
+   // Initialize the IPC dispatcher array.
+   memset(ipc_targets_, 0, sizeof(ipc_targets_));
+@@ -42,16 +43,21 @@ TopLevelDispatcher::TopLevelDispatcher(P
+   named_pipe_dispatcher_.reset(dispatcher);
+ 
+   dispatcher = new ThreadProcessDispatcher();
+   ipc_targets_[static_cast<size_t>(IpcTag::NTOPENTHREAD)] = dispatcher;
+   ipc_targets_[static_cast<size_t>(IpcTag::NTOPENPROCESSTOKENEX)] = dispatcher;
+   ipc_targets_[static_cast<size_t>(IpcTag::CREATETHREAD)] = dispatcher;
+   thread_process_dispatcher_.reset(dispatcher);
+ 
++  dispatcher = new RegistryDispatcher(policy_);
++  ipc_targets_[static_cast<size_t>(IpcTag::NTCREATEKEY)] = dispatcher;
++  ipc_targets_[static_cast<size_t>(IpcTag::NTOPENKEY)] = dispatcher;
++  registry_dispatcher_.reset(dispatcher);
++
+   dispatcher = new ProcessMitigationsWin32KDispatcher(policy_);
+   ipc_targets_[static_cast<size_t>(IpcTag::GDI_GDIDLLINITIALIZE)] = dispatcher;
+   ipc_targets_[static_cast<size_t>(IpcTag::GDI_GETSTOCKOBJECT)] = dispatcher;
+   ipc_targets_[static_cast<size_t>(IpcTag::USER_REGISTERCLASSW)] = dispatcher;
+   process_mitigations_win32k_dispatcher_.reset(dispatcher);
+ 
+   dispatcher = new SignedDispatcher(policy_);
+   ipc_targets_[static_cast<size_t>(IpcTag::NTCREATESECTION)] = dispatcher;
+diff --git a/sandbox/win/src/top_level_dispatcher.h b/sandbox/win/src/top_level_dispatcher.h
+--- a/sandbox/win/src/top_level_dispatcher.h
++++ b/sandbox/win/src/top_level_dispatcher.h
+@@ -37,16 +37,17 @@ class TopLevelDispatcher : public Dispat
+ 
+   // Returns a dispatcher from ipc_targets_.
+   Dispatcher* GetDispatcher(IpcTag ipc_tag);
+ 
+   raw_ptr<PolicyBase> policy_;
+   std::unique_ptr<Dispatcher> filesystem_dispatcher_;
+   std::unique_ptr<Dispatcher> named_pipe_dispatcher_;
+   std::unique_ptr<Dispatcher> thread_process_dispatcher_;
++  std::unique_ptr<Dispatcher> registry_dispatcher_;
+   std::unique_ptr<Dispatcher> handle_dispatcher_;
+   std::unique_ptr<Dispatcher> process_mitigations_win32k_dispatcher_;
+   std::unique_ptr<Dispatcher> signed_dispatcher_;
+   std::unique_ptr<Dispatcher> line_break_dispatcher_;
+   Dispatcher* ipc_targets_[kMaxIpcTag];
+ };
+ 
+ }  // namespace sandbox

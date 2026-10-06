@@ -5,7 +5,6 @@
 privatebrowsingpage-open-private-window-label = Open a Private Window
     .accesskey = P
 about-private-browsing-search-placeholder = Search the web
-about-private-browsing-info-title = You’re in a Private Window
 about-private-browsing-search-btn =
     .title = Search the web
 # Variables
@@ -19,9 +18,6 @@ about-private-browsing-handoff-no-engine =
 about-private-browsing-handoff-text = Search with { $engine } or enter address
 about-private-browsing-handoff-text-no-engine = Search or enter address
 about-private-browsing-not-private = You are currently not in a private window.
-about-private-browsing-info-description-private-window = Private window: { -brand-short-name } clears your search and browsing history when you close all private windows. This doesn’t make you anonymous.
-about-private-browsing-info-description-simplified = { -brand-short-name } clears your search and browsing history when you close all private windows, but this doesn’t make you anonymous.
-about-private-browsing-learn-more-link = Learn more
 
 about-private-browsing-hide-activity = Hide your activity and location, everywhere you browse
 about-private-browsing-get-privacy = Get privacy protections everywhere you browse
@@ -69,8 +65,12 @@ about-private-browsing-pin-promo-title = No saved cookies or history, right from
 about-private-browsing-cookie-banners-promo-heading = { -brand-short-name } takes care of cookie banners for you
 about-private-browsing-cookie-banners-promo-body = We now automatically refuse many cookie banners so you can get tracked less and go back to distraction-free browsing.
 
-## Strings for Felt Privacy v1 experiments in 119
+## Strings for the info section of about:privatebrowsing
 
 about-private-browsing-felt-privacy-v1-info-header = Leave no traces on this device
 about-private-browsing-felt-privacy-v1-info-body = { -brand-short-name} deletes your cookies, history, and site data when you close all your private windows.
 about-private-browsing-felt-privacy-v1-info-link = Who might be able to see my activity?
+
+## Strings for the Nova redesign of about:privatebrowsing
+
+about-private-browsing-nova-info-body = Closing all your private windows deletes your cookies, history and site data.

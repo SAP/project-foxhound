@@ -1,0 +1,76 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+/**
+ * Provides functions that are called (on the main thread) when the secondary
+ * tile creation or deletion finishes.
+ */
+[scriptable, uuid(338038ab-c803-46f4-95a3-c600d0054a21)]
+interface nsISecondaryTileListener : nsISupports
+{
+  void succeeded(in boolean accepted);
+  void failed(in long aHresult);
+};
+
+/**
+ * Provides an interface to Windows' secondary tile APIs.
+ *
+ * Secondary tiles provide a way for apps to display additional entrypoints
+ * within Windows. Right now, this only adds them to the taskbar, such that
+ * they will open the browser with the provided command line arguments when
+ * clicked.
+ *
+ * This API doesn't appear to work on non-MSIX Windows installs. Furthermore,
+ * you probably want to use ShellService.requestCreateAndPinSecondaryTile and
+ * ShellService.requestDeleteSecondaryTile to get nice JS promises instead of
+ * XPCOM callbacks.
+ */
+[scriptable, uuid(f30f4087-bac4-4c51-b719-275bc292cb01)]
+interface nsISecondaryTileService : nsISupports
+{
+  /**
+   * Requests to create a new secondary tile and pin it to the taskbar.
+   *
+   * From JavaScript, you'll likely prefer to use
+   * ShellService.requestCreateAndPinSecondaryTile, since that allows using a
+   * JS promise.
+   *
+   * @param aTileId The ID to associate with the tile. Needs to be unique, and
+   * must not contain any slashes or backslashes.
+   * @param aName The name of the tile, which will be visible to the user.
+   * @param aIconPath The path to the icon to associate with the tile. Once
+   * the callback is called, the icon won't be used anymore.
+   * @param aArguments Arguments the system should pass to the browser when
+   * the user clicks on the secondary tile.
+   * @param aListener Callbacks that will run when the tile creation is
+   * completed.
+   * @throws NS_ERROR_INVALID_ARG if the tile ID contains a slash or backslash.
+   */
+  void requestCreateAndPin(
+    in ACString aTileId,
+    in AString aName,
+    in ACString aIconPath,
+    in Array<ACString> aArguments,
+    in nsISecondaryTileListener aListener
+  );
+
+  /**
+   * Requests to delete a secondary tile from the taskbar.
+   *
+   * From JavaScript, you'll likely prefer to use
+   * ShellService.requestDeleteSecondaryTile, since that allows using a JS
+   * promise.
+   *
+   * @param aTileId The ID that was used with nsISecondaryTile::requestCreate.
+   * @param aListener Callbacks that will run when the tile creation is
+   * completed.
+   * @throws NS_ERROR_INVALID_ARG if the tile ID contains a slash or backslash.
+   */
+  void requestDelete(
+    in ACString aTileId,
+    in nsISecondaryTileListener aListener
+  );
+};

@@ -33,8 +33,9 @@ class HeadersPanelContextMenu {
 
   /**
    * Handle the context menu opening.
-   * @param {Object} event open event
-   * @param {Object} selection object representing the current selection
+   *
+   * @param {object} event open event
+   * @param {object} selection object representing the current selection
    */
   open(event = {}, selection) {
     const { target } = event;
@@ -80,8 +81,9 @@ class HeadersPanelContextMenu {
 
   /**
    * Copies all.
-   * @param {Object} object the whole tree data
-   * @param {Object} selection object representing the current selection
+   *
+   * @param {object} object the whole tree data
+   * @param {object} selection object representing the current selection
    */
   copyAll(object, selection) {
     let buffer = "";
@@ -104,8 +106,9 @@ class HeadersPanelContextMenu {
 
   /**
    * Copies the value of a single item.
-   * @param {Object} object data object for specific node
-   * @param {Object} selection object representing the current selection
+   *
+   * @param {object} object data object for specific node
+   * @param {object} selection object representing the current selection
    */
   copyValue(object, selection) {
     let buffer = "";

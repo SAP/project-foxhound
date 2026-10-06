@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 // Like most of the mochitest-browser devtools test,
@@ -7,10 +5,6 @@
 requestLongerTimeout(4);
 
 loadTestSubscript("head_devtools.js");
-
-ChromeUtils.defineESModuleGetters(this, {
-  Preferences: "resource://gre/modules/Preferences.sys.mjs",
-});
 
 const DEVTOOLS_THEME_PREF = "devtools.theme";
 
@@ -45,7 +39,7 @@ async function test_theme_name(testWithPanel = false) {
 
   function switchTheme(theme) {
     const waitforThemeChanged = gDevTools.once("theme-changed");
-    Preferences.set(DEVTOOLS_THEME_PREF, theme);
+    Services.prefs.setStringPref(DEVTOOLS_THEME_PREF, theme);
     return waitforThemeChanged;
   }
 

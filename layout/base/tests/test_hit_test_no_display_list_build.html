@@ -1,0 +1,54 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Test that hit testing does not mark a frame's display list as built (bug 2043935)</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/paint_listener.js"></script>
+<link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+<style>
+  #target { width: 100px; height: 100px; background: green; }
+</style>
+</head>
+<body>
+<div id="target"></div>
+<script>
+SimpleTest.waitForExplicitFinish();
+
+const utils = SpecialPowers.getDOMWindowUtils(window);
+
+async function runTest() {
+  const docElement = document.documentElement;
+  const target = document.getElementById("target");
+
+  // Positive control: the initial paint builds the document's display list, so
+  // the flag must be set. This also clears it for the measurement below, and
+  // guards against the fix simply never recording the build.
+  await promiseAllPaintsDone(null, /* flush = */ true);
+  ok(utils.checkAndClearDisplayListState(docElement),
+     "Painting should mark the document element's display list as built");
+
+  // elementFromPoint performs main-thread hit testing, which builds a display
+  // list in EventDelivery mode over the root frame. Hit testing must not mark
+  // the frame's display list as built; only painting display list builds are
+  // recorded (see nsDisplayListBuilder::IsForPainting). The whole sequence runs
+  // synchronously, so no paint can interleave between the clear above and the
+  // check below.
+  const rect = target.getBoundingClientRect();
+  const x = Math.floor(rect.left + rect.width / 2);
+  const y = Math.floor(rect.top + rect.height / 2);
+  for (let i = 0; i < 5; i++) {
+    is(document.elementFromPoint(x, y), target,
+       "elementFromPoint should hit the target (so a hit test really happened)");
+  }
+
+  is(utils.checkAndClearDisplayListState(docElement), false,
+     "Hit testing should not mark the document element's display list as built");
+
+  SimpleTest.finish();
+}
+
+SimpleTest.waitForFocus(runTest);
+</script>
+</body>
+</html>

@@ -7,6 +7,14 @@ const { ExtensionUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/ExtensionUtils.sys.mjs"
 );
 
+const { Langpack } = ChromeUtils.importESModule(
+  "resource://gre/modules/Extension.sys.mjs"
+);
+
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
+);
+
 ChromeUtils.defineLazyGetter(this, "resourceProtocol", () =>
   Services.io
     .getProtocolHandler("resource")
@@ -58,6 +66,17 @@ AddonTestUtils.registerJSON(server, "/test_update_langpack.json", {
             gecko: {
               strict_min_version: "60.0",
               strict_max_version: "60.*",
+            },
+          },
+        },
+        {
+          version: "145.0.20251124.145406",
+          update_link:
+            "http://example.com/addons/latermajor/langpack-und@test.mozilla.org.xpi",
+          applications: {
+            gecko: {
+              strict_min_version: "145.0",
+              strict_max_version: "145.*",
             },
           },
         },
@@ -191,6 +210,15 @@ langpack_update_dotrelease2["manifest.json"].browser_specific_settings.gecko = {
   update_url: "http://example.com/test_update_langpack2.json",
 };
 
+const langpack_update_later_major = structuredClone(ADDONS.langpack_1);
+langpack_update_later_major["manifest.json"].version = "145.0.20251124.145406";
+langpack_update_later_major["manifest.json"].browser_specific_settings.gecko = {
+  id: ID,
+  strict_min_version: "145.0",
+  strict_max_version: "145.*",
+  // no update_url, the test using it doesn't care about updating after that.
+};
+
 let xpi = AddonTestUtils.createTempXPIFile(langpack_update);
 server.registerFile(`/addons/${ID}.xpi`, xpi);
 
@@ -203,6 +231,11 @@ let xpiDotRelease2 = AddonTestUtils.createTempXPIFile(
   langpack_update_dotrelease2
 );
 server.registerFile(`/addons/dotrelease2/${ID}.xpi`, xpiDotRelease2);
+
+let xpiLaterMajor = AddonTestUtils.createTempXPIFile(
+  langpack_update_later_major
+);
+server.registerFile(`/addons/latermajor/${ID}.xpi`, xpiLaterMajor);
 
 function promiseLangpackStartup() {
   return new Promise(resolve => {
@@ -598,6 +631,128 @@ add_task(async function test_staged_langpack_for_app_update_fail() {
 });
 
 /**
+ * This test verifies that the staged langpack update is available after
+ * updating the application, even if another langpack update happened in
+ * the meantime.
+ * Regression test for https://bugzilla.mozilla.org/show_bug.cgi?id=2006489
+ */
+add_task(async function test_staged_langpack_preserved_during_addon_update() {
+  let originalLocales = Services.locale.requestedLocales;
+
+  await promiseStartupManager("60");
+  let [, { addon }] = await Promise.all([
+    promiseLangpackStartup(),
+    AddonTestUtils.promiseInstallXPI(langpack_update),
+  ]);
+  Assert.ok(addon.isActive);
+  Assert.equal(addon.version, "60.0.20230207.112555");
+  await promiseLocaleChanged(["und"]);
+
+  await AddonManager.stageLangpacksForAppUpdate("145");
+
+  {
+    // Between stage of langpack for 60 and application update to 145,
+    // we trigger an add-on update check, where we discover an updated
+    // langpack for the current application version (60). This should not
+    // affect the langpack staged for 145.
+    let update = await promiseFindAddonUpdates(addon);
+    Assert.ok(update.updateAvailable, "update is available");
+    await promiseCompleteInstall(update.updateAvailable);
+    addon = await promiseAddonByID(ID);
+    Assert.equal(addon.version, "60.1.20230309.91233");
+    Assert.ok(addon.isActive);
+  }
+
+  await promiseRestartManager("145");
+
+  addon = await promiseAddonByID(ID);
+  Assert.equal(addon.version, "145.0.20251124.145406");
+  Assert.ok(addon.isActive);
+
+  await addon.uninstall();
+  await promiseShutdownManager();
+  Services.locale.requestedLocales = originalLocales;
+});
+
+/**
+ * This test verifies that an attempt to stage another langpack, after having
+ * already staged one, will cause the last attempt to take precedence.
+ */
+add_task(async function test_staged_langpack_twice_without_restart() {
+  let originalLocales = Services.locale.requestedLocales;
+
+  await promiseStartupManager("58");
+  let [, { addon }] = await Promise.all([
+    promiseLangpackStartup(),
+    AddonTestUtils.promiseInstallXPI(ADDONS.langpack_1),
+  ]);
+  Assert.ok(addon.isActive);
+  Assert.equal(addon.version, "58.0.20230105.121014");
+  await promiseLocaleChanged(["und"]);
+
+  info("Staging langpack for next version (60), without application restart");
+  const [[installFor60]] = await Promise.all([
+    AddonTestUtils.promiseInstallEvent("onInstallPostponed"),
+    AddonManager.stageLangpacksForAppUpdate("60"),
+  ]);
+  Assert.equal(installFor60.version, "60.1.20230309.91233");
+
+  info("Staging langpack for different version (145), will restart after.");
+  await AddonManager.stageLangpacksForAppUpdate("145");
+
+  info("cancel() on obsolete install (60) should not break install (145)");
+  Assert.equal(installFor60.state, AddonManager.STATE_POSTPONED);
+  // Sanity check: we are operating on an active install:
+  Assert.ok((await AddonManager.getAllInstalls()).includes(installFor60));
+  installFor60.cancel();
+
+  await promiseRestartManager("145");
+
+  addon = await promiseAddonByID(ID);
+  Assert.equal(addon.version, "145.0.20251124.145406");
+  Assert.ok(addon.isActive);
+
+  await addon.uninstall();
+  await promiseShutdownManager();
+  Services.locale.requestedLocales = originalLocales;
+});
+
+/**
+ * Tests that canceling a staged langpack will prevent its installation at
+ * the next application startup.
+ */
+add_task(async function test_staged_langpack_cancel() {
+  let originalLocales = Services.locale.requestedLocales;
+
+  await promiseStartupManager("58");
+  let [, { addon }] = await Promise.all([
+    promiseLangpackStartup(),
+    AddonTestUtils.promiseInstallXPI(ADDONS.langpack_1),
+  ]);
+  Assert.ok(addon.isActive);
+  Assert.equal(addon.version, "58.0.20230105.121014");
+  await promiseLocaleChanged(["und"]);
+
+  info("Staging langpack for next version (60), without application restart");
+  const [[installFor60]] = await Promise.all([
+    AddonTestUtils.promiseInstallEvent("onInstallPostponed"),
+    AddonManager.stageLangpacksForAppUpdate("60"),
+  ]);
+  Assert.equal(installFor60.version, "60.1.20230309.91233");
+  installFor60.cancel();
+
+  await promiseRestartManager("60");
+
+  addon = await promiseAddonByID(ID);
+  Assert.equal(addon.version, "58.0.20230105.121014");
+  Assert.ok(!addon.isActive);
+
+  await addon.uninstall();
+  await promiseShutdownManager();
+  Services.locale.requestedLocales = originalLocales;
+});
+
+/**
  * This test verifies that an update restart works when the langpack
  * cannot be updated.
  */
@@ -666,4 +821,86 @@ add_task(async function test_staged_langpack_compat_startup() {
   await addon.uninstall();
   await promiseShutdownManager();
   Services.locale.requestedLocales = originalLocales;
+});
+
+/**
+ * Verifies that Langpack.activeLangpackIds tracks the set of currently
+ * active langpacks via startup/shutdown, and that the new
+ * webextension-langpack-shutdown observer topic fires when a langpack is
+ * disabled or uninstalled (but not on APP_SHUTDOWN). See Bug 2046945.
+ */
+add_task(async function test_activeLangpackIds_and_shutdown_topic() {
+  const LANGPACK_METASOURCE = `langpack-und-${AppConstants.MOZ_BUILD_APP.replace(
+    "/",
+    "-"
+  )}`;
+  const SHUTDOWN_TOPIC = "webextension-langpack-shutdown";
+
+  await promiseStartupManager();
+
+  Assert.ok(
+    !Langpack.activeLangpackIds.has(LANGPACK_METASOURCE),
+    "activeLangpackIds is empty for our test langpack before install"
+  );
+
+  // Install → startup adds the langpack id to the set.
+  let [, { addon }] = await Promise.all([
+    promiseLangpackStartup(),
+    AddonTestUtils.promiseInstallXPI(ADDONS.langpack_1),
+  ]);
+  Assert.ok(
+    Langpack.activeLangpackIds.has(LANGPACK_METASOURCE),
+    "activeLangpackIds contains the langpack metasource after startup"
+  );
+
+  // Disable → fires shutdown topic with the Langpack instance as subject,
+  // and removes the id from the set.
+  let shutdownObserved = TestUtils.topicObserved(SHUTDOWN_TOPIC);
+  await addon.disable();
+  let [shutdownSubject] = await shutdownObserved;
+  Assert.equal(
+    shutdownSubject?.wrappedJSObject?.langpack?.startupData?.langpackId,
+    LANGPACK_METASOURCE,
+    "Shutdown subject carries the Langpack instance with the correct langpackId"
+  );
+  Assert.ok(
+    !Langpack.activeLangpackIds.has(LANGPACK_METASOURCE),
+    "activeLangpackIds removes the entry after disable"
+  );
+
+  // Re-enable → startup re-adds the id.
+  await Promise.all([promiseLangpackStartup(), addon.enable()]);
+  Assert.ok(
+    Langpack.activeLangpackIds.has(LANGPACK_METASOURCE),
+    "activeLangpackIds re-adds the entry after enable"
+  );
+
+  let shutdownTopicFired = false;
+  const observer = () => {
+    shutdownTopicFired = true;
+  };
+  Services.obs.addObserver(observer, SHUTDOWN_TOPIC);
+
+  await promiseShutdownManager();
+
+  Services.obs.removeObserver(observer, SHUTDOWN_TOPIC);
+
+  Assert.ok(
+    !shutdownTopicFired,
+    "webextension-langpack-shutdown does not fire on APP_SHUTDOWN"
+  );
+
+  await promiseStartupManager();
+  addon = await AddonManager.getAddonByID(ID);
+
+  // Uninstall → fires shutdown topic again, removes from set.
+  shutdownObserved = TestUtils.topicObserved(SHUTDOWN_TOPIC);
+  await addon.uninstall();
+  await shutdownObserved;
+  Assert.ok(
+    !Langpack.activeLangpackIds.has(LANGPACK_METASOURCE),
+    "activeLangpackIds removes the entry after uninstall"
+  );
+
+  await promiseShutdownManager();
 });

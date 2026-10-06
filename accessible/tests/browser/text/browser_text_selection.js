@@ -260,12 +260,7 @@ addAccessibleTask(
     // before the input to make tab consistent.
     info("Focusing before");
     const before = findAccessibleChildByID(docAcc, "before");
-    // Focusing a button fires a selection event. We must swallow this to
-    // avoid confusing the later test.
-    let events = waitForOrderedEvents([
-      [EVENT_FOCUS, before],
-      [EVENT_TEXT_SELECTION_CHANGED, docAcc],
-    ]);
+    let events = waitForOrderedEvents([[EVENT_FOCUS, before]]);
     before.takeFocus();
     await events;
 
@@ -306,7 +301,10 @@ addAccessibleTask(
     <li id="li">Number one</li>
   </ol>
   `,
-  async function (browser, docAcc) {
+  async function testApiSelection(browser, docAcc) {
+    // waitForSelectionChange expects caret events. Ensure the document is
+    // focused so we get caret events.
+    docAcc.takeFocus();
     const paragraph = findAccessibleChildByID(docAcc, "paragraph", [
       nsIAccessibleText,
     ]);

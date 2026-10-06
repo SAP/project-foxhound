@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -53,12 +51,18 @@ ReplacedHttpResponse::SetResponseBody(const nsACString& aResponseBody) {
 NS_IMETHODIMP
 ReplacedHttpResponse::SetResponseHeader(const nsACString& header,
                                         const nsACString& value, bool merge) {
+  if (mInVisitHeaders) {
+    return NS_ERROR_FAILURE;
+  }
   return mResponseHeaders.SetHeader(header, value, merge,
                                     nsHttpHeaderArray::eVarietyResponse);
 }
 
 NS_IMETHODIMP
 ReplacedHttpResponse::VisitResponseHeaders(nsIHttpHeaderVisitor* visitor) {
-  return mResponseHeaders.VisitHeaders(visitor);
+  ++mInVisitHeaders;
+  nsresult rv = mResponseHeaders.VisitHeaders(visitor);
+  --mInVisitHeaders;
+  return rv;
 }
 }  // namespace mozilla::net

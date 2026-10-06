@@ -1,0 +1,23 @@
+{
+  "color": {
+    "@base": {
+      "value": {
+        "nativeTheme": "LinkText",
+        "default": "{color.accent.primary.@base}",
+        "forcedColors": "LinkText"
+      }
+    },
+    "hover": {
+      "value": {
+        "default": "{color.accent.primary.hover}",
+        "forcedColors": "LinkText"
+      }
+    },
+    "active": {
+      "value": {
+        "default": "{color.accent.primary.active}",
+        "forcedColors": "ActiveText"
+      }
+    }
+  }
+}

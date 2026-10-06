@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // The IANA language subtag registry contains replacements for sign language
 // codes marked as redundant. For example:
 //

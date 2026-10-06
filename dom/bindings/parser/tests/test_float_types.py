@@ -56,11 +56,12 @@ def WebIDLTest(parser, harness):
     harness.ok(isinstance(method, WebIDL.IDLMethod), "Should be an IDLMethod")
     argtypes = [a.type for a in method.signatures()[0][1]]
     for idx, type in enumerate(argtypes):
-        harness.ok(type.isFloat(), "Type %d should be float" % idx)
+        harness.ok(type.isFloat(), f"Type {idx} should be float")
+        not_ = "" if idx >= 4 else "not "
         harness.check(
             type.isUnrestricted(),
             idx >= 5,
-            "Type %d should %sbe unrestricted" % (idx, "" if idx >= 4 else "not "),
+            f"Type {idx} should {not_}be unrestricted",
         )
 
     parser = parser.reset()

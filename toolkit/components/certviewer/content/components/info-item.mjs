@@ -4,6 +4,8 @@
 
 import { b64ToPEM, normalizeToKebabCase } from "./utils.mjs";
 
+const l10n = new Localization(["toolkit/about/certviewer.ftl"], true);
+
 export class InfoItem extends HTMLElement {
   constructor(item) {
     super();
@@ -147,13 +149,26 @@ export class InfoItem extends HTMLElement {
     info.appendChild(link);
     info.appendChild(chainLink);
 
-    let commonName = document
-      .querySelector("certificate-section")
-      .shadowRoot.querySelector(".subject-name")
-      .shadowRoot.querySelector(".common-name")
-      .shadowRoot.querySelector(".info");
+    let certificateLabelElement = document.querySelector(
+      "certificate-section"
+    ).shadowRoot;
 
-    let fileName = normalizeToKebabCase(commonName.textContent);
+    certificateLabelElement =
+      certificateLabelElement
+        .querySelector(".subject-name")
+        ?.shadowRoot.querySelector(".common-name") ||
+      certificateLabelElement
+        .querySelector(".subject-alt-names")
+        ?.shadowRoot.querySelector(".dns-name");
+
+    certificateLabelElement =
+      certificateLabelElement?.shadowRoot.querySelector(".info");
+
+    const certificateLabelText =
+      certificateLabelElement?.textContent ||
+      l10n.formatValueSync("certificate-viewer-unknown-file-name");
+
+    let fileName = normalizeToKebabCase(certificateLabelText);
 
     document.l10n.setAttributes(link, "certificate-viewer-download-pem", {
       fileName,

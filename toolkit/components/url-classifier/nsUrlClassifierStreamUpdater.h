@@ -1,4 +1,3 @@
-//* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,6 +28,7 @@ class nsUrlClassifierStreamUpdater final
       public nsINamed {
  public:
   nsUrlClassifierStreamUpdater();
+  nsUrlClassifierStreamUpdater(nsUrlClassifierStreamUpdater&) = delete;
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIURLCLASSIFIERSTREAMUPDATER
@@ -48,9 +48,6 @@ class nsUrlClassifierStreamUpdater final
   // to reset the stream updater.
   void DownloadDone();
 
-  // Disallow copy constructor
-  nsUrlClassifierStreamUpdater(nsUrlClassifierStreamUpdater&);
-
   nsresult AddRequestBody(const nsACString& aRequestBody);
 
   // Fetches an update for a single table.
@@ -58,6 +55,7 @@ class nsUrlClassifierStreamUpdater final
                        bool aIsPostRequest, const nsACString& aTable);
   // Dumb wrapper so we don't have to create URIs.
   nsresult FetchUpdate(const nsACString& aURI, const nsACString& aRequest,
+                       const nsACString& aRequestQueryParameters,
                        bool aIsPostRequest, const nsACString& aTable);
 
   // Fetches the next table, from mPendingUpdates.
@@ -68,7 +66,9 @@ class nsUrlClassifierStreamUpdater final
   struct UpdateRequest {
     nsCString mTables;
     nsCString mRequestPayload;
+    nsCString mRequestQueryParameters;
     bool mIsPostRequest;
+    nsCString mProvider;
     nsCString mUrl;
     nsCOMPtr<nsIUrlClassifierCallback> mSuccessCallback;
     nsCOMPtr<nsIUrlClassifierCallback> mUpdateErrorCallback;
@@ -77,7 +77,9 @@ class nsUrlClassifierStreamUpdater final
   // Utility function to create an update request.
   void BuildUpdateRequest(const nsACString& aRequestTables,
                           const nsACString& aRequestPayload,
-                          bool aIsPostRequest, const nsACString& aUpdateUrl,
+                          const nsACString& aRequestQueryParameters,
+                          bool aIsPostRequest, const nsACString& aProvider,
+                          const nsACString& aUpdateUrl,
                           nsIUrlClassifierCallback* aSuccessCallback,
                           nsIUrlClassifierCallback* aUpdateErrorCallback,
                           nsIUrlClassifierCallback* aDownloadErrorCallback,

@@ -28,7 +28,8 @@
   --fc-primary-button-background-active: var(--fc-primary-button-background-active-light, #053E94);
   --fc-primary-button-color-active: var(--fc-primary-button-color-active-light, rgb(251,251,254));
   --fc-primary-button-border-active: var(--fc-primary-button-border-active-light, transparent);
-  --fc-step-color: color-mix(in srgb, currentColor 50%, transparent);
+  --fc-step-color: var(--fc-step-color-light, color-mix(in srgb, currentColor 50%, transparent));
+  --fc-current-step-color: var(--fc-current-step-color-light, #0061E0);
   --fc-link-color: var(--fc-link-color-light, #0061E0);
   --fc-link-color-hover: var(--fc-link-color-hover-light, #0250BB);
   --fc-link-color-active: var(--fc-link-color-active-light, #053E94);
@@ -61,6 +62,8 @@
   --fc-primary-button-background-active: var(--fc-primary-button-background-active-dark, rgb(170,242,255));
   --fc-primary-button-color-active: var(--fc-primary-button-color-active-dark, rgb(43,42,51));
   --fc-primary-button-border-active: var(--fc-primary-button-border-active-dark, transparent);
+  --fc-step-color: var(--fc-step-color-dark, color-mix(in srgb, currentColor 50%, transparent));
+  --fc-current-step-color: var(--fc-current-step-color-dark, rgb(0,221,255));
   --fc-link-color: var(--fc-link-color-dark, #00DDFF);
   --fc-link-color-hover: var(--fc-link-color-hover-dark, #80EBFF);
   --fc-link-color-active: var(--fc-link-color-hover-active, #AAF2FF);
@@ -94,7 +97,8 @@
   --fc-primary-button-background-active: var(--fc-primary-button-background-active-hcm, SelectedItemText);
   --fc-primary-button-color-active: var(--fc-primary-button-color-active-hcm, SelectedItem);
   --fc-primary-button-border-active: var(--fc-primary-button-border-active-hcm, SelectedItem);
-  --fc-step-color: var(--fc-accent-color-hcm, LinkText);
+  --fc-step-color: var(--fc-step-color-hcm, CanvasText);
+  --fc-current-step-color: var(--fc-current-step-color-light, CanvasText);
   --fc-link-color: var(--fc-link-color-hcm, LinkText);
   --fc-link-color-hover: var(--fc-link-color-hover-hcm, LinkText);
   --fc-link-color-active: var(--fc-link-color-active-hcm, ActiveText);

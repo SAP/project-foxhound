@@ -1,0 +1,15 @@
+{
+  "label": "ct-tc.apps.cic.gc.ca",
+  "bugs": {
+    "1899932": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://ct-tc.apps.cic.gc.ca/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

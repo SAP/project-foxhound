@@ -103,13 +103,32 @@ struct BaseAudioDecoderApi {
   }
 };
 
-struct TraitWithTwoMakeAudioDecoders : BaseAudioDecoderApi {
+struct TraitWithFourMakeAudioDecoders : BaseAudioDecoderApi {
   // Create Decoders with different sample rates depending if it is created
-  // through one or another `MAkeAudioDecoder` so that a test may detect which
+  // through one or another `MakeAudioDecoder` so that a test may detect which
   // method was used.
   static constexpr int kRateWithoutEnv = 10'000;
   static constexpr int kRateWithEnv = 20'000;
+  static constexpr int kRateWithEnvWithoutCodecId = 30'000;
+  static constexpr int kRateWithoutEnvWithoutCodecId = 40'000;
 
+  static std::unique_ptr<AudioDecoder> MakeAudioDecoder(
+      const Config& /* config */) {
+    auto decoder = std::make_unique<NiceMock<MockAudioDecoder>>();
+    ON_CALL(*decoder, SampleRateHz)
+        .WillByDefault(Return(kRateWithoutEnvWithoutCodecId));
+    return decoder;
+  }
+
+  static std::unique_ptr<AudioDecoder> MakeAudioDecoder(
+      const Environment& /* env */,
+      const Config& /* config */) {
+    auto decoder = std::make_unique<NiceMock<MockAudioDecoder>>();
+    ON_CALL(*decoder, SampleRateHz)
+        .WillByDefault(Return(kRateWithEnvWithoutCodecId));
+    return decoder;
+  }
+  // Testing backwards compatible case
   static std::unique_ptr<AudioDecoder> MakeAudioDecoder(
       const Config& /* config */,
       std::optional<AudioCodecPairId> /* codec_pair_id */) {
@@ -131,11 +150,12 @@ struct TraitWithTwoMakeAudioDecoders : BaseAudioDecoderApi {
 TEST(AudioDecoderFactoryTemplateTest,
      PrefersToPassEnvironmentToMakeAudioDecoder) {
   const Environment env = CreateEnvironment();
-  auto factory = CreateAudioDecoderFactory<TraitWithTwoMakeAudioDecoders>();
+  auto factory = CreateAudioDecoderFactory<TraitWithFourMakeAudioDecoders>();
 
   EXPECT_THAT(factory->Create(env, BaseAudioDecoderApi::AudioFormat(), {}),
-              Pointer(Property(&AudioDecoder::SampleRateHz,
-                               TraitWithTwoMakeAudioDecoders::kRateWithEnv)));
+              Pointer(Property(
+                  &AudioDecoder::SampleRateHz,
+                  TraitWithFourMakeAudioDecoders::kRateWithEnvWithoutCodecId)));
 }
 
 struct AudioDecoderApiWithV1Make : BaseAudioDecoderApi {
@@ -156,8 +176,8 @@ TEST(AudioDecoderFactoryTemplateTest,
 
 TEST(AudioDecoderFactoryTemplateTest, NoDecoderTypes) {
   const Environment env = CreateEnvironment();
-  rtc::scoped_refptr<AudioDecoderFactory> factory(
-      rtc::make_ref_counted<
+  scoped_refptr<AudioDecoderFactory> factory(
+      make_ref_counted<
           audio_decoder_factory_template_impl::AudioDecoderFactoryT<>>());
   EXPECT_THAT(factory->GetSupportedDecoders(), ::testing::IsEmpty());
   EXPECT_FALSE(factory->IsSupportedDecoder({"foo", 8000, 1}));
@@ -279,6 +299,15 @@ TEST(AudioDecoderFactoryTemplateTest, Opus) {
   auto dec = factory->Create(env, {"opus", 48000, 2}, std::nullopt);
   ASSERT_NE(nullptr, dec);
   EXPECT_EQ(48000, dec->SampleRateHz());
+}
+
+TEST(AudioDecoderFactoryTemplateTest, G711TooManyChannels) {
+  auto factory = CreateAudioDecoderFactory<AudioDecoderG711>();
+  const Environment env = CreateEnvironment();
+  EXPECT_EQ(nullptr, factory->Create(env,
+                                     {"pcmu", 16000,
+                                      /* num_channels=*/1000},
+                                     std::nullopt));
 }
 
 }  // namespace

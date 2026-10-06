@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,10 +26,12 @@
 #include <gtk/gtk.h>
 #include <dlfcn.h>
 #include <glib.h>
+#include <inttypes.h>
 
 #ifdef MOZ_ENABLE_DBUS
 #  include "mozilla/ClearOnShutdown.h"
 #  include "mozilla/widget/AsyncDBus.h"
+#  include "nsAppShell.h"
 #endif  // MOZ_ENABLE_DBUS
 
 #ifdef MOZ_WAYLAND
@@ -103,14 +104,14 @@ bool IsMainWindowTransparent() {
 
 bool GdkIsWaylandDisplay(GdkDisplay* display) {
   static auto sGdkWaylandDisplayGetType =
-      (GType(*)())dlsym(RTLD_DEFAULT, "gdk_wayland_display_get_type");
+      (GType (*)())dlsym(RTLD_DEFAULT, "gdk_wayland_display_get_type");
   return sGdkWaylandDisplayGetType &&
          G_TYPE_CHECK_INSTANCE_TYPE(display, sGdkWaylandDisplayGetType());
 }
 
 bool GdkIsX11Display(GdkDisplay* display) {
   static auto sGdkX11DisplayGetType =
-      (GType(*)())dlsym(RTLD_DEFAULT, "gdk_x11_display_get_type");
+      (GType (*)())dlsym(RTLD_DEFAULT, "gdk_x11_display_get_type");
   return sGdkX11DisplayGetType &&
          G_TYPE_CHECK_INSTANCE_TYPE(display, sGdkX11DisplayGetType());
 }
@@ -139,6 +140,23 @@ GdkDevice* GdkGetPointer() {
   GdkDisplay* display = gdk_display_get_default();
   GdkDeviceManager* deviceManager = gdk_display_get_device_manager(display);
   return gdk_device_manager_get_client_pointer(deviceManager);
+}
+
+GdkSeat* GdkDeviceGetSeat(GdkDevice* device) {
+  static auto sGdkDeviceGetSeat =
+      (GdkSeat * (*)(GdkDevice*)) dlsym(RTLD_DEFAULT, "gdk_device_get_seat");
+  if (!sGdkDeviceGetSeat) {
+    return nullptr;
+  }
+  return sGdkDeviceGetSeat(device);
+}
+
+void GdkSeatUngrab(GdkSeat* seat) {
+  static auto sGdkSeatUngrab =
+      (void (*)(GdkSeat*))dlsym(RTLD_DEFAULT, "gdk_seat_ungrab");
+  if (sGdkSeatUngrab) {
+    sGdkSeatUngrab(seat);
+  }
 }
 
 static GdkEvent* sLastPointerDownEvent = nullptr;
@@ -170,6 +188,7 @@ bool IsRunningUnderFlatpak() {
 static void DoRegisterHostApp() {
   GUniquePtr<GError> error;
 
+  nsAppShell::DBusConnectionCheck();
   RefPtr<GDBusProxy> proxy = dont_AddRef(g_dbus_proxy_new_for_bus_sync(
       G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, nullptr, sXdpServiceName,
       sXdpDBusPath, sXdpRegistryInterfaceName, nullptr /* cancellable */,
@@ -196,9 +215,7 @@ static void DoRegisterHostApp() {
       ->Then(GetCurrentSerialEventTarget(), __func__,
              [](const DBusCallPromise::ResolveOrRejectValue& aValue) {
                if (aValue.IsReject()) {
-                 NS_WARNING(
-                     "Failed to register host application for "
-                     "portals\n");
+                 NS_WARNING("Failed to register host application for portals");
                }
              });
 }
@@ -294,6 +311,7 @@ bool ShouldUsePortal(PortalKind aPortalKind) {
   const int32_t pref = [&] {
     switch (aPortalKind) {
       case PortalKind::FilePicker:
+        autoBehavior = true;
         return StaticPrefs::widget_use_xdg_desktop_portal_file_picker();
       case PortalKind::MimeHandler:
         // Mime portal breaks default browser handling, see bug 1516290.
@@ -397,47 +415,42 @@ RefPtr<FocusRequestPromise> RequestWaylandFocusPromise() {
     return nullptr;
   }
 
-  RefPtr<nsWindow> sourceWindow = nsWindow::GetFocusedWindow();
-  if (!sourceWindow || sourceWindow->IsDestroyed()) {
-    LOGW("RequestWaylandFocusPromise() missing source window");
-    return nullptr;
-  }
-
   xdg_activation_v1* xdg_activation = WaylandDisplayGet()->GetXdgActivation();
   if (!xdg_activation) {
     LOGW("RequestWaylandFocusPromise() missing xdg_activation");
     return nullptr;
   }
 
-  wl_surface* focusSurface;
-  uint32_t focusSerial;
-  KeymapWrapper::GetFocusInfo(&focusSurface, &focusSerial);
-  if (!focusSurface) {
-    LOGW("RequestWaylandFocusPromise() missing focusSurface");
-    return nullptr;
-  }
-
-  GdkWindow* gdkWindow = sourceWindow->GetToplevelGdkWindow();
-  if (!gdkWindow) {
-    return nullptr;
-  }
-  wl_surface* surface = gdk_wayland_window_get_wl_surface(gdkWindow);
-  if (focusSurface != surface) {
-    LOGW("RequestWaylandFocusPromise() missing wl_surface");
-    return nullptr;
-  }
-
-  RefPtr<FocusRequestPromise::Private> transferPromise =
-      new FocusRequestPromise::Private(__func__);
+  auto transferPromise = MakeRefPtr<FocusRequestPromise::Private>(__func__);
 
   xdg_activation_token_v1* aXdgToken =
       xdg_activation_v1_get_activation_token(xdg_activation);
   xdg_activation_token_v1_add_listener(
       aXdgToken, &token_listener,
       new XDGTokenRequest(aXdgToken, transferPromise));
-  xdg_activation_token_v1_set_serial(aXdgToken, focusSerial,
-                                     WaylandDisplayGet()->GetSeat());
-  xdg_activation_token_v1_set_surface(aXdgToken, focusSurface);
+
+  // If a Firefox window already has focus use it as the activation source so
+  // the token carries full focus-transfer rights.  On first launch there is
+  // no focused source window; we still commit a bare token (no serial/surface)
+  // so Mutter places the new window on the current workspace rather than a
+  // stale or phantom output.
+  RefPtr<nsWindow> sourceWindow = nsWindow::GetFocusedWindow();
+  if (sourceWindow && !sourceWindow->IsDestroyed()) {
+    GdkWindow* gdkWindow = sourceWindow->GetToplevelGdkWindow();
+    wl_surface* surface =
+        gdkWindow ? gdk_wayland_window_get_wl_surface(gdkWindow) : nullptr;
+    if (surface) {
+      xdg_activation_token_v1_set_serial(aXdgToken,
+                                         nsWaylandDisplay::GetLastEventSerial(),
+                                         WaylandDisplayGet()->GetSeat());
+      xdg_activation_token_v1_set_surface(aXdgToken, surface);
+    }
+  } else {
+    LOGW(
+        "RequestWaylandFocusPromise() no source window, "
+        "requesting bare token for workspace placement");
+  }
+
   xdg_activation_token_v1_commit(aXdgToken);
 
   LOGW("RequestWaylandFocusPromise() XDG Token sent");
@@ -590,14 +603,13 @@ bool IsCancelledGError(GError* aGError) {
 }
 
 #if defined(MOZ_X11)
-static unsigned long GetWindowUserTime(GdkDisplay* aDisplay,
-                                       uintptr_t aWindow) {
+static uint32_t GetWindowUserTime(GdkDisplay* aDisplay, uintptr_t aWindow) {
   Atom actualType;
   int actualFormat;
   unsigned long numberOfItems;
   unsigned long bytesAfter;
   unsigned char* property = nullptr;
-  unsigned long userTime = 0;
+  uint32_t userTime = 0;
 
   Display* xDisplay = GDK_DISPLAY_XDISPLAY(aDisplay);
   Atom atom =
@@ -608,7 +620,7 @@ static unsigned long GetWindowUserTime(GdkDisplay* aDisplay,
                          &bytesAfter, &property) == Success &&
       property) {
     if (numberOfItems == 1) {
-      userTime = *((unsigned long*)property);
+      userTime = *((uint32_t*)property);
     }
     XFree(property);
   }
@@ -617,12 +629,12 @@ static unsigned long GetWindowUserTime(GdkDisplay* aDisplay,
 }
 
 void FindLatestUserTime(GdkDisplay* aDisplay, uintptr_t aWindow,
-                        unsigned long* aLatestTime) {
+                        uint32_t* aLatestTime) {
   Window rootReturn;
   Window parentReturn;
   Window* children;
   unsigned int numberOfChildren;
-  unsigned long userTime;
+  uint32_t userTime;
 
   Display* xDisplay = GDK_DISPLAY_XDISPLAY(aDisplay);
 
@@ -642,7 +654,7 @@ void FindLatestUserTime(GdkDisplay* aDisplay, uintptr_t aWindow,
 
 // Assume we're started from user interaction and infer user time if its missing
 nsCString SynthesizeStartupToken() {
-  unsigned long latestUserTime = 0;
+  uint32_t latestUserTime = 0;
   FindLatestUserTime(gdk_display_get_default(),
                      GDK_WINDOW_XID(gdk_get_default_root_window()),
                      &latestUserTime);
@@ -651,7 +663,7 @@ nsCString SynthesizeStartupToken() {
     return nsCString();
   }
 
-  return nsPrintfCString("%s_TIME%lu", g_get_host_name(), latestUserTime);
+  return nsPrintfCString("%s_TIME%" PRIu32, g_get_host_name(), latestUserTime);
 }
 #endif
 

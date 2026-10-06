@@ -340,14 +340,14 @@ add_task(async function test_calendar_button_markup_date() {
 
   let closed = helper.promisePickerClosed();
 
-  await testCalendarBtnAttribute("aria-expanded", "true");
-  await testCalendarBtnAttribute("aria-label", null, true);
-  await testCalendarBtnAttribute("data-l10n-id", "datetime-calendar");
+  await testPickerBtnAttribute("aria-expanded", "true");
+  await testPickerBtnAttribute("aria-label", null, true);
+  await testPickerBtnAttribute("data-l10n-id", "datetime-calendar");
 
   await SpecialPowers.spawn(browser, [], () => {
     const input = content.document.querySelector("input");
     const shadowRoot = SpecialPowers.wrap(input).openOrClosedShadowRoot;
-    const calendarBtn = shadowRoot.getElementById("calendar-button");
+    const calendarBtn = shadowRoot.getElementById("picker-button");
 
     Assert.equal(calendarBtn.tagName, "BUTTON", "Calendar control is a button");
     Assert.ok(
@@ -366,7 +366,7 @@ add_task(async function test_calendar_button_markup_date() {
     "Panel should be closed on click on the Calendar button"
   );
 
-  await testCalendarBtnAttribute("aria-expanded", "false");
+  await testPickerBtnAttribute("aria-expanded", "false");
 
   await helper.tearDown();
 });
@@ -387,14 +387,14 @@ add_task(async function test_calendar_button_markup_datetime() {
 
   let closed = helper.promisePickerClosed();
 
-  await testCalendarBtnAttribute("aria-expanded", "true");
-  await testCalendarBtnAttribute("aria-label", null, true);
-  await testCalendarBtnAttribute("data-l10n-id", "datetime-calendar");
+  await testPickerBtnAttribute("aria-expanded", "true");
+  await testPickerBtnAttribute("aria-label", null, true);
+  await testPickerBtnAttribute("data-l10n-id", "datetime-calendar");
 
   await SpecialPowers.spawn(browser, [], () => {
     const input = content.document.querySelector("input");
     const shadowRoot = SpecialPowers.wrap(input).openOrClosedShadowRoot;
-    const calendarBtn = shadowRoot.getElementById("calendar-button");
+    const calendarBtn = shadowRoot.getElementById("picker-button");
 
     Assert.equal(calendarBtn.tagName, "BUTTON", "Calendar control is a button");
     Assert.ok(
@@ -413,71 +413,7 @@ add_task(async function test_calendar_button_markup_datetime() {
     "Panel should be closed on click on the Calendar button"
   );
 
-  await testCalendarBtnAttribute("aria-expanded", "false");
+  await testPickerBtnAttribute("aria-expanded", "false");
 
   await helper.tearDown();
-});
-
-/**
- * Test that time input field does not include a Calendar button,
- * but opens a time picker panel on click within the field (with a pref)
- */
-add_task(async function test_calendar_button_markup_time() {
-  info("Test that type=time input field does not include a Calendar button");
-
-  // Toggle a pref to allow a time picker to be shown
-  await SpecialPowers.pushPrefEnv({
-    set: [["dom.forms.datetime.timepicker", true]],
-  });
-
-  let testTab = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    "data:text/html, <input type='time'>"
-  );
-
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
-    const input = content.document.querySelector("input");
-    const shadowRoot = SpecialPowers.wrap(input).openOrClosedShadowRoot;
-    const calendarBtn = shadowRoot.getElementById("calendar-button");
-
-    Assert.ok(
-      ContentTaskUtils.isHidden(calendarBtn),
-      "The Calendar control within a type=time input field is programmatically hidden"
-    );
-  });
-
-  let ready = helper.waitForPickerReady();
-
-  await BrowserTestUtils.synthesizeMouseAtCenter(
-    "input",
-    {},
-    gBrowser.selectedBrowser
-  );
-
-  await ready;
-
-  Assert.equal(
-    helper.panel.state,
-    "open",
-    "Time picker panel should be opened on click from anywhere within the time input field"
-  );
-
-  let closed = helper.promisePickerClosed();
-
-  await BrowserTestUtils.synthesizeMouseAtCenter(
-    "input",
-    {},
-    gBrowser.selectedBrowser
-  );
-
-  await closed;
-
-  Assert.equal(
-    helper.panel.state,
-    "closed",
-    "Time picker panel should be closed on click from anywhere within the time input field"
-  );
-
-  BrowserTestUtils.removeTab(testTab);
-  await SpecialPowers.popPrefEnv();
 });

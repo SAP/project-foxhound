@@ -10,7 +10,8 @@
 
 #include "modules/rtp_rtcp/source/source_tracker.h"
 
-#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <list>
 #include <optional>
 #include <random>
@@ -22,6 +23,10 @@
 #include "api/rtp_headers.h"
 #include "api/rtp_packet_info.h"
 #include "api/rtp_packet_infos.h"
+#include "api/transport/rtp/rtp_source.h"
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
+#include "system_wrappers/include/clock.h"
 #include "system_wrappers/include/ntp_time.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
@@ -50,8 +55,10 @@ class ExpectedSourceTracker {
 
     for (const auto& packet_info : packet_infos) {
       RtpSource::Extensions extensions = {
-          packet_info.audio_level(), packet_info.absolute_capture_time(),
-          packet_info.local_capture_clock_offset()};
+          .audio_level = packet_info.audio_level(),
+          .absolute_capture_time = packet_info.absolute_capture_time(),
+          .local_capture_clock_offset =
+              packet_info.local_capture_clock_offset()};
 
       for (const auto& csrc : packet_info.csrcs()) {
         entries_.emplace_front(now, csrc, RtpSourceType::CSRC,
@@ -266,8 +273,8 @@ TEST(SourceTrackerTest, OnFrameDeliveredRecordsSourcesDistinctSsrcs) {
   constexpr std::optional<uint8_t> kAudioLevel0 = 50;
   constexpr std::optional<uint8_t> kAudioLevel1 = 20;
   constexpr std::optional<AbsoluteCaptureTime> kAbsoluteCaptureTime =
-      AbsoluteCaptureTime{/*absolute_capture_timestamp=*/12,
-                          /*estimated_capture_clock_offset=*/std::nullopt};
+      AbsoluteCaptureTime{.absolute_capture_timestamp = 12,
+                          .estimated_capture_clock_offset = std::nullopt};
   constexpr std::optional<TimeDelta> kLocalCaptureClockOffset = std::nullopt;
   constexpr Timestamp kReceiveTime0 = Timestamp::Millis(60);
   constexpr Timestamp kReceiveTime1 = Timestamp::Millis(70);
@@ -322,8 +329,8 @@ TEST(SourceTrackerTest, OnFrameDeliveredRecordsSourcesSameSsrc) {
   constexpr std::optional<uint8_t> kAudioLevel1 = 20;
   constexpr std::optional<uint8_t> kAudioLevel2 = 10;
   constexpr std::optional<AbsoluteCaptureTime> kAbsoluteCaptureTime =
-      AbsoluteCaptureTime{/*absolute_capture_timestamp=*/12,
-                          /*estimated_capture_clock_offset=*/std::nullopt};
+      AbsoluteCaptureTime{.absolute_capture_timestamp = 12,
+                          .estimated_capture_clock_offset = std::nullopt};
   constexpr std::optional<TimeDelta> kLocalCaptureClockOffset = std::nullopt;
   constexpr Timestamp kReceiveTime0 = Timestamp::Millis(60);
   constexpr Timestamp kReceiveTime1 = Timestamp::Millis(70);
@@ -386,11 +393,14 @@ TEST(SourceTrackerTest, OnFrameDeliveredUpdatesSources) {
   constexpr std::optional<uint8_t> kAudioLevel1 = std::nullopt;
   constexpr std::optional<uint8_t> kAudioLevel2 = 10;
   constexpr std::optional<AbsoluteCaptureTime> kAbsoluteCaptureTime0 =
-      AbsoluteCaptureTime{12, 34};
+      AbsoluteCaptureTime{.absolute_capture_timestamp = 12,
+                          .estimated_capture_clock_offset = 34};
   constexpr std::optional<AbsoluteCaptureTime> kAbsoluteCaptureTime1 =
-      AbsoluteCaptureTime{56, 78};
+      AbsoluteCaptureTime{.absolute_capture_timestamp = 56,
+                          .estimated_capture_clock_offset = 78};
   constexpr std::optional<AbsoluteCaptureTime> kAbsoluteCaptureTime2 =
-      AbsoluteCaptureTime{89, 90};
+      AbsoluteCaptureTime{.absolute_capture_timestamp = 89,
+                          .estimated_capture_clock_offset = 90};
   constexpr std::optional<TimeDelta> kLocalCaptureClockOffset0 =
       TimeDelta::Millis(123);
   constexpr std::optional<TimeDelta> kLocalCaptureClockOffset1 =
@@ -480,6 +490,110 @@ TEST(SourceTrackerTest, OnFrameDeliveredUpdatesSources) {
                                     kRtpTimestamp0, extensions0)));
 }
 
+TEST(SourceTrackerTest, OnSourceChangedCallbackFiresOnChange) {
+  constexpr uint32_t kSsrc1 = 10;
+  constexpr uint32_t kSsrc2 = 11;
+  constexpr uint32_t kCsrc1 = 21;
+  constexpr uint32_t kCsrc2 = 22;
+  // Timestamps are not important in this test (as long as delivery time is not
+  // older than 10 seconds). Whatever frame was last delivered has by definition
+  // the "latest" SSRC/CSRC information.
+  constexpr uint32_t kRtpTimestamp = 123;
+  constexpr Timestamp kReceiveTime = Timestamp::Millis(321);
+
+  int fired_count = 0;
+  int ssrc_changed_count = 0;
+  int csrcs_changed_count = 0;
+  GlobalSimulatedTimeController time_controller(Timestamp::Seconds(1000));
+  SourceTracker tracker(time_controller.GetClock());
+
+  // Set callback, counters are initially zero because we haven't received any
+  // frames yet.
+  tracker.SetOnSourceChangedCallback(
+      [&](bool ssrc_changed, bool csrcs_changed) {
+        ++fired_count;
+        if (ssrc_changed) {
+          ++ssrc_changed_count;
+        }
+        if (csrcs_changed) {
+          ++csrcs_changed_count;
+        }
+      });
+  time_controller.AdvanceTime(TimeDelta::Zero());
+  EXPECT_EQ(fired_count, 0);
+  EXPECT_EQ(ssrc_changed_count, 0);
+  EXPECT_EQ(csrcs_changed_count, 0);
+
+  // First packet always fires.
+  tracker.OnFrameDelivered(
+      RtpPacketInfos({RtpPacketInfo(kSsrc1, {}, kRtpTimestamp, kReceiveTime)}));
+  time_controller.AdvanceTime(TimeDelta::Zero());
+  EXPECT_EQ(fired_count, 1);
+  EXPECT_EQ(ssrc_changed_count, 1);
+  EXPECT_EQ(csrcs_changed_count, 0);
+
+  // Change SSRC and add CSRC in the same frame.
+  tracker.OnFrameDelivered(RtpPacketInfos(
+      {RtpPacketInfo(kSsrc2, {kCsrc1}, kRtpTimestamp, kReceiveTime)}));
+  time_controller.AdvanceTime(TimeDelta::Zero());
+  EXPECT_EQ(fired_count, 2);
+  EXPECT_EQ(ssrc_changed_count, 2);
+  EXPECT_EQ(csrcs_changed_count, 1);
+
+  // Change CSRC list.
+  tracker.OnFrameDelivered(RtpPacketInfos(
+      {RtpPacketInfo(kSsrc2, {kCsrc1, kCsrc2}, kRtpTimestamp, kReceiveTime)}));
+  time_controller.AdvanceTime(TimeDelta::Zero());
+  EXPECT_EQ(fired_count, 3);
+  EXPECT_EQ(ssrc_changed_count, 2);
+  EXPECT_EQ(csrcs_changed_count, 2);
+
+  // Receive same SSRC/CSRC information as before and the event does not fire.
+  tracker.OnFrameDelivered(RtpPacketInfos(
+      {RtpPacketInfo(kSsrc2, {kCsrc1, kCsrc2}, kRtpTimestamp, kReceiveTime)}));
+  time_controller.AdvanceTime(TimeDelta::Zero());
+  EXPECT_EQ(fired_count, 3);
+}
+
+TEST(SourceTrackerTest, OnSourceChangedCallbackFiresIfSetAfterFrameDelivery) {
+  constexpr uint32_t kSsrc = 10;
+  constexpr uint32_t kCsrc = 21;
+  constexpr uint32_t kRtpTimestamp = 123;
+  constexpr Timestamp kReceiveTime = Timestamp::Millis(321);
+
+  int fired_count = 0;
+  int ssrc_changed_count = 0;
+  int csrcs_changed_count = 0;
+  GlobalSimulatedTimeController time_controller(Timestamp::Seconds(1000));
+  SourceTracker tracker(time_controller.GetClock());
+
+  // Receive frame but the callback has not been wired up yet so counters are
+  // still zero.
+  tracker.OnFrameDelivered(RtpPacketInfos(
+      {RtpPacketInfo(kSsrc, {kCsrc}, kRtpTimestamp, kReceiveTime)}));
+  time_controller.AdvanceTime(TimeDelta::Zero());
+  EXPECT_EQ(fired_count, 0);
+  EXPECT_EQ(ssrc_changed_count, 0);
+  EXPECT_EQ(csrcs_changed_count, 0);
+
+  // Set callback, which is called in response to this because the SSRC/CSRC
+  // information is already known.
+  tracker.SetOnSourceChangedCallback(
+      [&](bool ssrc_changed, bool csrcs_changed) {
+        ++fired_count;
+        if (ssrc_changed) {
+          ++ssrc_changed_count;
+        }
+        if (csrcs_changed) {
+          ++csrcs_changed_count;
+        }
+      });
+  time_controller.AdvanceTime(TimeDelta::Zero());
+  EXPECT_EQ(fired_count, 1);
+  EXPECT_EQ(ssrc_changed_count, 1);
+  EXPECT_EQ(csrcs_changed_count, 1);
+}
+
 TEST(SourceTrackerTest, TimedOutSourcesAreRemoved) {
   constexpr uint32_t kSsrc = 10;
   constexpr uint32_t kCsrcs0 = 20;
@@ -490,9 +604,11 @@ TEST(SourceTrackerTest, TimedOutSourcesAreRemoved) {
   constexpr std::optional<uint8_t> kAudioLevel0 = 50;
   constexpr std::optional<uint8_t> kAudioLevel1 = std::nullopt;
   constexpr std::optional<AbsoluteCaptureTime> kAbsoluteCaptureTime0 =
-      AbsoluteCaptureTime{12, 34};
+      AbsoluteCaptureTime{.absolute_capture_timestamp = 12,
+                          .estimated_capture_clock_offset = 34};
   constexpr std::optional<AbsoluteCaptureTime> kAbsoluteCaptureTime1 =
-      AbsoluteCaptureTime{56, 78};
+      AbsoluteCaptureTime{.absolute_capture_timestamp = 56,
+                          .estimated_capture_clock_offset = 78};
   constexpr std::optional<TimeDelta> kLocalCaptureClockOffset0 =
       TimeDelta::Millis(123);
   constexpr std::optional<TimeDelta> kLocalCaptureClockOffset1 =

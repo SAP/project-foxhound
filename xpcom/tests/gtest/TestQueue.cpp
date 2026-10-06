@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -181,6 +179,41 @@ TEST(Queue, PushPopSequence)
       }
     }
   }
+}
+
+TEST(Queue, Iterate)
+{
+  Queue<uint16_t, 8> queue;
+  for (uint16_t i = 0; i < 256; ++i) {
+    queue.Push(std::move(i));
+  }
+  uint16_t expected = 0;
+  queue.Iterate([&](uint16_t aItem) {
+    EXPECT_EQ(aItem, expected);
+    ++expected;
+  });
+  EXPECT_EQ(expected, 256u);
+}
+
+TEST(Queue, IterateWithNonZeroOffset)
+{
+  Queue<uint16_t, 8> queue;
+
+  // This will make the initial page start with index 1, while index 0 will
+  // still be filled after using up the last index, resulting:
+  // [7 1 2 3 4 5 6 pointer-to-next]
+  queue.Push(255);
+  queue.Pop();
+
+  for (uint16_t i = 0; i < 256; ++i) {
+    queue.Push(std::move(i));
+  }
+  uint16_t expected = 0;
+  queue.Iterate([&](uint16_t aItem) {
+    EXPECT_EQ(aItem, expected);
+    ++expected;
+  });
+  EXPECT_EQ(expected, 256u);
 }
 
 }  // namespace TestQueue

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -163,7 +161,7 @@ RefPtr<MediaDataDecoder::DecodePromise> AudioTrimmer::HandleDecodedResult(
     AudioData* sample = static_cast<AudioData*>(data.get());
     bool ok = sample->SetTrimWindow(trim);
     NS_ASSERTION(ok, "Trimming of audio sample failed");
-    Unused << ok;
+    (void)ok;
     if (sample->Frames() == 0) {
       LOGV("sample[%s, %s] is empty after trimming, dropping it",
            sampleInterval.mStart.ToString().get(),

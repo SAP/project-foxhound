@@ -10,13 +10,13 @@ function run_test() {
 
   Assert.ok(
     has_pref_from_manifest_file_section(),
-    "Should have pref set for file in xpcshell-with-prefs.ini"
+    "Should have pref set for file in xpcshell-with-prefs.toml"
   );
 
   Assert.equal(
     Services.prefs.getIntPref("dummy.pref.from.test.file"),
     2,
-    "Value of pref that was set once at the file in xpcshell-with-prefs.ini"
+    "Value of pref that was set once at the file in xpcshell-with-prefs.toml"
   );
 
   Assert.equal(

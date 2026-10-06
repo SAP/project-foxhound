@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+::selection {
+  color: currentColor;
+  background-color: transparent;
+}
+</style>
+</head>
+<body>
+  <!-- Accessible carets should be put around "ABC" -->
+  <div><span style="padding:100px">ABC</span></div>
+  <script>
+    getSelection().selectAllChildren(document.querySelector("div"));
+  </script>
+</body>
+</html>

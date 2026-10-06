@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -11,5 +10,6 @@
 [GenerateInitFromJSON]
 dictionary StripRule {
   sequence<UTF8String> queryParams = [];
-  sequence<UTF8String> topLevelSites = [];
+  boolean isGlobal = false;
+  sequence<UTF8String> origins = [];
 };

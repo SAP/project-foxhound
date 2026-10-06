@@ -1,0 +1,29 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test that the default animationsPlayBackRateMultiplier value is 1.0</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+</head>
+<style>
+#target {
+  width: 100px;
+  height: 100px;
+}
+</style>
+<body>
+<p id="display"></p>
+<div id="content" style="display: none"></div>
+<pre id="test"></pre>
+<script>
+add_task(async () => {
+  const multiplier = await SpecialPowers.spawnChrome([], () => {
+    return browsingContext.animationsPlayBackRateMultiplier;
+  });
+  is(multiplier, 1.0,
+     "The default animation playback multiplier should be 1.0");
+});
+</script>
+</body>
+</html>

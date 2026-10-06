@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { TabManager } = ChromeUtils.importESModule(
-  "chrome://remote/content/shared/TabManager.sys.mjs"
+const { NavigableManager } = ChromeUtils.importESModule(
+  "chrome://remote/content/shared/NavigableManager.sys.mjs"
 );
 
 const TEST_URL = "https://example.com/document-builder.sjs?html=test1";
@@ -22,7 +22,7 @@ add_task(async function testClosedPort() {
   const browser = tab.linkedBrowser;
 
   navigationManager.startMonitoring();
-  const navigableId = TabManager.getIdForBrowser(browser);
+  const navigableId = NavigableManager.getIdForBrowser(browser);
 
   is(
     navigationManager.getNavigationForBrowsingContext(browser.browsingContext),
@@ -64,7 +64,7 @@ add_task(async function testWrongURI() {
 
   navigationManager.startMonitoring();
 
-  const navigableId = TabManager.getIdForBrowser(browser);
+  const navigableId = NavigableManager.getIdForBrowser(browser);
 
   is(
     navigationManager.getNavigationForBrowsingContext(browser.browsingContext),

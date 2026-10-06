@@ -1,4 +1,3 @@
-/* vim: set ts=2 sw=2 sts=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,6 +17,8 @@ export const MESSAGE_TYPE_LIST = [
   "TOAST_NOTIFICATION_TELEMETRY",
   "MENU_MESSAGE_TELEMETRY",
   "NEWTAB_MESSAGE_TELEMETRY",
+  "SMART_WINDOW_PROMO_TELEMETRY",
+  "ACTION_ONLY_TELEMETRY",
   "AS_ROUTER_TELEMETRY_USER_EVENT",
 
   // Admin types
@@ -40,6 +41,8 @@ export const MESSAGE_TYPE_LIST = [
   "RESET_MESSAGE_STATE",
   "RESET_SCREEN_IMPRESSIONS",
   "EDIT_STATE",
+  "AW_EVALUATE_SCREEN_TARGETING",
+  "AW_ADD_SCREEN_IMPRESSION",
 ];
 
 export const MESSAGE_TYPE_HASH = MESSAGE_TYPE_LIST.reduce((hash, value) => {

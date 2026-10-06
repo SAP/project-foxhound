@@ -11,7 +11,7 @@ add_task(async function test_policy_offertosavelogins() {
   });
 
   await BrowserTestUtils.withNewTab(
-    "about:preferences#privacy",
+    "about:preferences#passwordsAutofill",
     async browser => {
       is(
         browser.contentDocument.getElementById("savePasswords").disabled,

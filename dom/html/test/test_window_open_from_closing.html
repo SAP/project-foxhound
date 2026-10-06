@@ -18,7 +18,7 @@ add_task(async function() {
   ];
 
   let resolver;
-  let channel = new BroadcastChannel("test");
+  let channel = SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel("test");
   channel.onmessage = function(e) {
     info("message from broadcastchannel: " + e.data);
     if (e.data == "load") {

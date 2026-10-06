@@ -43,10 +43,10 @@ async function testReplaceText(INPUT_TESTS, TEXTAREA_TESTS, CONTENTEDITABLE_TEST
     input.addEventListener("beforeinput", e => {
       is(e.inputType, "insertReplacementText",
          "inputType in input must be insertReplacementText by replaceText");
-      is(input.selectionStart, TEST.before.start,
-         "Before inputReplacementText, start offset is valid");
-      is(input.selectionEnd, TEST.before.end,
-         "Before inputReplacementText, end offset is valid");
+      is(input.selectionStart, TEST.replace.start,
+         "Before inputReplacementText, start offset should be changed to the replace start");
+      is(input.selectionEnd, TEST.replace.start + TEST.replace.src.length,
+         "Before inputReplacementText, end offset should be changed to the replace end");
     }, { once: true } );
 
     const promiseAfterOnInput =
@@ -87,10 +87,10 @@ async function testReplaceText(INPUT_TESTS, TEXTAREA_TESTS, CONTENTEDITABLE_TEST
     textarea.addEventListener("beforeinput", e => {
       is(e.inputType, "insertReplacementText",
          "inputType must be insertReplacementText by replaceText");
-      is(textarea.selectionStart, TEST.before.start,
-         "Before inputReplacementText, start offset is valid");
-      is(textarea.selectionEnd, TEST.before.end,
-         "Before inputReplacementText, end offset is valid");
+      is(textarea.selectionStart, TEST.replace.start,
+         "Before inputReplacementText, start offset be changed to the replace start");
+      is(textarea.selectionEnd, TEST.replace.start + TEST.replace.src.length,
+         "Before inputReplacementText, end offset be changed to the replace end");
     }, { once: true } );
 
     const promiseAfterOnTextarea =
@@ -139,10 +139,15 @@ async function testReplaceText(INPUT_TESTS, TEXTAREA_TESTS, CONTENTEDITABLE_TEST
       is(e.inputType, "insertReplacementText",
          "inputType must be insertReplacementText by replaceText");
       // eslint-disable-next-line no-eval
-      is(selection.focusNode, eval(TEST.before.focusNode),
-         "Before inputReplacementText, focus node is valid");
-      is(selection.focusOffset, TEST.before.focusOffset,
-         "Before inputReplacementText, focus offset is valid");
+      is(selection.anchorNode, eval(TEST.replace.textNode),
+         "Before inputReplacementText, focus node is the Text containing replacing text");
+      is(selection.anchorOffset, TEST.replace.start,
+         "Before inputReplacementText, focus offset is start of the replace start");
+      // eslint-disable-next-line no-eval
+      is(selection.focusNode, eval(TEST.replace.textNode),
+         "Before inputReplacementText, focus node is the Text containing replacing text");
+      is(selection.focusOffset, TEST.replace.start + TEST.replace.src.length,
+         "Before inputReplacementText, focus offset is start of the replace start");
     }, { once: true } );
 
     const promiseAfterEditingHost =
@@ -222,7 +227,7 @@ add_task(async function testReplaceTextWithoutPreventSetSelection() {
       value: "foo", focusNode: "editingHost.firstChild", focusOffset: 3
     },
     replace: {
-      src: "o", value: "bar", start: 1
+      src: "o", value: "bar", start: 1, textNode: "editingHost.firstChild",
     },
     after: {
       value: "fbaro", focusNode: "editingHost.firstChild", focusOffset: 4, isCollapsed: true
@@ -232,7 +237,7 @@ add_task(async function testReplaceTextWithoutPreventSetSelection() {
       value: "foo foo", focusNode: "editingHost.firstChild", focusOffset: 4
     },
     replace: {
-      src: "oo", value: "bar", start: 1
+      src: "oo", value: "bar", start: 1, textNode: "editingHost.firstChild",
     },
     after: {
       value: "fbar foo", focusNode: "editingHost.firstChild", focusOffset: 4, isCollapsed: true
@@ -292,7 +297,7 @@ add_task(async function testReplaceTextWithPreventSetSelection() {
       value: "foo", focusNode: "editingHost.firstChild", focusOffset: 3
     },
     replace: {
-      src: "o", value: "bar", start: 1
+      src: "o", value: "bar", start: 1, textNode: "editingHost.firstChild",
     },
     after: {
       value: "fbaro", focusNode: "editingHost.firstChild", focusOffset: 5, isCollapsed: true
@@ -302,7 +307,7 @@ add_task(async function testReplaceTextWithPreventSetSelection() {
       value: "foo foo", focusNode: "editingHost.firstChild", focusOffset: 4
     },
     replace: {
-      src: "oo", value: "bar", start: 1
+      src: "oo", value: "bar", start: 1, textNode: "editingHost.firstChild",
     },
     after: {
       value: "fbar foo", focusNode: "editingHost.firstChild", focusOffset: 5, isCollapsed: true

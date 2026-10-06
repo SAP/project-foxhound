@@ -1,0 +1,15 @@
+{
+  "label": "e.seb.ee",
+  "bugs": {
+    "1902414": {
+      "issue": "unsupported-warning",
+      "matches": ["*://e.seb.ee/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

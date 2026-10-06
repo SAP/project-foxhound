@@ -1,6 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * vim: sw=4 ts=4 sts=4 et
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -24,7 +22,8 @@ add_task(async function test_withProfileLock() {
   profilePath.append(`test_withProfileLock`);
   let profile = profileService.createUniqueProfile(
     profilePath,
-    "test_withProfileLock"
+    "test_withProfileLock",
+    "tests"
   );
 
   await BackgroundTasksUtils.withProfileLock(async lock => {
@@ -55,7 +54,8 @@ add_task(async function test_readPreferences() {
   profilePath.append(`test_readPreferences`);
   let profile = profileService.createUniqueProfile(
     profilePath,
-    "test_readPreferences"
+    "test_readPreferences",
+    "tests"
   );
 
   // Before we write any preferences, we fail to read.
@@ -112,7 +112,8 @@ add_task(async function test_readTelemetryClientID() {
   profilePath.append(`test_readTelemetryClientID`);
   let profile = profileService.createUniqueProfile(
     profilePath,
-    "test_readTelemetryClientID"
+    "test_readTelemetryClientID",
+    "tests"
   );
 
   // Before we write any state, we fail to read.
@@ -154,7 +155,8 @@ add_task(
     profilePath.append(`test_readFirefoxMessagingSystemTargetingSnapshot`);
     let profile = profileService.createUniqueProfile(
       profilePath,
-      "test_readFirefoxMessagingSystemTargetingSnapshot"
+      "test_readFirefoxMessagingSystemTargetingSnapshot",
+      "tests"
     );
 
     // Before we write any state, we fail to read.

@@ -11,7 +11,7 @@
   <script type="application/javascript"
           src="../common.js"></script>
   <script type="application/javascript"
-          src="../promisified-events.js"></script>
+          src="../events.js"></script>
   <script type="application/javascript"
           src="../role.js"></script>
   <script type="application/javascript"
@@ -379,7 +379,7 @@
       await openNode("detailsOpen6", "summaryOpen6", true);
 
       // Test delayed editable state change
-      var doc = document.getElementById("iframe").contentDocument;
+      const doc = document.getElementById("iframe").contentDocument;
       await makeEditableDoc(doc);
 
       // invalid state change

@@ -39,7 +39,7 @@ async function testWarningNotPresent(hud) {
   info(
     "wait for the page to refresh and make sure the warning still isn't there"
   );
-  await reloadBrowser();
+  await reloadSelectedTab();
   await waitFor(() => {
     return (
       findConsoleAPIMessages(hud, "foo").length === 2 &&
@@ -55,7 +55,7 @@ async function testWarningPresent(hud) {
   await waitFor(() => findWarningMessage(hud, "logging API"));
 
   info("reload the test page and wait for the warning to show");
-  await reloadBrowser();
+  await reloadSelectedTab();
   await waitFor(() => {
     return findWarningMessages(hud, "logging API").length === 2;
   });

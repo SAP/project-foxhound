@@ -1,18 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsCommandManager_h__
-#define nsCommandManager_h__
+#ifndef nsCommandManager_h_
+#define nsCommandManager_h_
 
-#include "nsString.h"
 #include "nsClassHashtable.h"
-#include "nsWeakReference.h"
-
-#include "nsICommandManager.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsICommandManager.h"
+#include "nsString.h"
+#include "nsWeakReference.h"
 
 class nsIController;
 template <class E>
@@ -30,7 +27,7 @@ class nsCommandManager final : public nsICommandManager,
    */
   explicit nsCommandManager(mozIDOMWindowProxy* aWindow);
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsCommandManager, nsICommandManager)
 
   NS_DECL_NSICOMMANDMANAGER
@@ -66,4 +63,4 @@ const nsCommandManager* nsICommandManager::AsCommandManager() const {
   return static_cast<const nsCommandManager*>(this);
 }
 
-#endif  // nsCommandManager_h__
+#endif  // nsCommandManager_h_

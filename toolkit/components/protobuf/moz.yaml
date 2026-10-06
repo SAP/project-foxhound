@@ -1,0 +1,71 @@
+---
+schema: 1
+
+bugzilla:
+  product: Core
+  component: General
+
+origin:
+  name: protobuf
+  description: Protocol Buffers - Google's data interchange format
+  url: https://protobuf.dev/
+  release: v35.0 (2026-05-19T12:53:03-07:00).
+  revision: v35.0
+  license: BSD-3-Clause
+
+vendoring:
+  url: https://github.com/protocolbuffers/protobuf
+  source-hosting: github
+  tracking: tag
+  keep:
+    - scripts/
+    - README.md
+  exclude:
+    - "**"
+    - "**/BUILD.bazel"
+    - src/google/protobuf/**/*_test*
+    - src/google/protobuf/**/*test_*
+    - src/google/protobuf/**/*_unittest*
+    - src/google/protobuf/**/*unittest_*
+    - src/google/protobuf/**/*unittest.*
+    - src/google/protobuf/**/testdata/*
+    - src/google/protobuf/**/test_protos/*
+    - src/google/protobuf/**/testing/*
+    - src/google/protobuf/bridge
+    - src/google/protobuf/compiler
+    - src/google/protobuf/json
+    - src/google/protobuf/util
+    - src/google/protobuf/cpp_file_options.proto
+    - src/google/protobuf/cpp_options.proto
+    - src/google/protobuf/fully_verify_message_sets_opt_out.cc
+    - src/google/protobuf/internal_options.proto
+    - src/google/protobuf/json_enumvalue_options.proto
+    - src/google/protobuf/json_options.proto
+    - src/google/protobuf/io/package_info.h
+    - src/google/protobuf/late_loaded_option.proto
+    - src/google/protobuf/late_loaded_option_user.proto
+    - src/google/protobuf/map_probe_benchmark.cc
+    - src/google/protobuf/package_info.h
+    - src/google/protobuf/sample_messages_edition.proto
+    - src/google/protobuf/string_member_robber.h
+  include:
+    - LICENSE
+    - src/google
+    - third_party/utf8_range/LICENSE
+    - third_party/utf8_range/utf8_range.c
+    - third_party/utf8_range/utf8_range.h
+    - third_party/utf8_range/utf8_range_neon.inc
+    - third_party/utf8_range/utf8_range_sse.inc
+    - third_party/utf8_range/utf8_validity.h
+  update-actions:
+    - action: run-script
+      script: "{yaml_dir}/scripts/generate_files.py"
+      cwd: "{yaml_dir}"
+      args: ["{revision}"]
+
+# !!!BIG WARNING!!!
+#
+# Before enabling the Updatebot, please review the discussion in [1] and consult 
+# with the Updatebot maintainer (Tom Ritter) for compatibility.
+#
+# [1]: https://phabricator.services.mozilla.com/D255174#anchor-inline-1432377

@@ -9,17 +9,17 @@
  */
 #include "modules/audio_processing/aec3/block_processor.h"
 
-#include <stddef.h>
-
 #include <atomic>
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <utility>
-#include <vector>
 
 #include "api/audio/echo_canceller3_config.h"
 #include "api/audio/echo_control.h"
+#include "api/environment/environment.h"
 #include "modules/audio_processing/aec3/aec3_common.h"
+#include "modules/audio_processing/aec3/block.h"
 #include "modules/audio_processing/aec3/block_processor_metrics.h"
 #include "modules/audio_processing/aec3/delay_estimate.h"
 #include "modules/audio_processing/aec3/echo_path_variability.h"
@@ -172,9 +172,8 @@ void BlockProcessorImpl::ProcessCapture(bool echo_path_gain_change,
       bool delay_change =
           render_buffer_->AlignFromDelay(estimated_delay_->delay);
       if (delay_change) {
-        rtc::LoggingSeverity log_level =
-            config_.delay.log_warning_on_delay_changes ? rtc::LS_WARNING
-                                                       : rtc::LS_INFO;
+        LoggingSeverity log_level =
+            config_.delay.log_warning_on_delay_changes ? LS_WARNING : LS_INFO;
         RTC_LOG_V(log_level) << "Delay changed to " << estimated_delay_->delay
                              << " at block " << capture_call_counter_;
         echo_path_variability.delay_change =
@@ -242,7 +241,8 @@ std::unique_ptr<BlockProcessor> BlockProcessor::Create(
     const EchoCanceller3Config& config,
     int sample_rate_hz,
     size_t num_render_channels,
-    size_t num_capture_channels) {
+    size_t num_capture_channels,
+    NeuralResidualEchoEstimator* neural_residual_echo_estimator) {
   std::unique_ptr<RenderDelayBuffer> render_buffer(
       RenderDelayBuffer::Create(config, sample_rate_hz, num_render_channels));
   std::unique_ptr<RenderDelayController> delay_controller;
@@ -250,8 +250,9 @@ std::unique_ptr<BlockProcessor> BlockProcessor::Create(
     delay_controller.reset(RenderDelayController::Create(config, sample_rate_hz,
                                                          num_capture_channels));
   }
-  std::unique_ptr<EchoRemover> echo_remover = EchoRemover::Create(
-      env, config, sample_rate_hz, num_render_channels, num_capture_channels);
+  std::unique_ptr<EchoRemover> echo_remover =
+      EchoRemover::Create(env, config, sample_rate_hz, num_render_channels,
+                          num_capture_channels, neural_residual_echo_estimator);
   return Create(config, sample_rate_hz, num_render_channels,
                 num_capture_channels, std::move(render_buffer),
                 std::move(delay_controller), std::move(echo_remover));
@@ -263,14 +264,16 @@ std::unique_ptr<BlockProcessor> BlockProcessor::Create(
     int sample_rate_hz,
     size_t num_render_channels,
     size_t num_capture_channels,
-    std::unique_ptr<RenderDelayBuffer> render_buffer) {
+    std::unique_ptr<RenderDelayBuffer> render_buffer,
+    NeuralResidualEchoEstimator* neural_residual_echo_estimator) {
   std::unique_ptr<RenderDelayController> delay_controller;
   if (!config.delay.use_external_delay_estimator) {
     delay_controller.reset(RenderDelayController::Create(config, sample_rate_hz,
                                                          num_capture_channels));
   }
-  std::unique_ptr<EchoRemover> echo_remover = EchoRemover::Create(
-      env, config, sample_rate_hz, num_render_channels, num_capture_channels);
+  std::unique_ptr<EchoRemover> echo_remover =
+      EchoRemover::Create(env, config, sample_rate_hz, num_render_channels,
+                          num_capture_channels, neural_residual_echo_estimator);
   return Create(config, sample_rate_hz, num_render_channels,
                 num_capture_channels, std::move(render_buffer),
                 std::move(delay_controller), std::move(echo_remover));

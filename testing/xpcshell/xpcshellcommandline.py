@@ -111,20 +111,6 @@ def add_common_arguments(parser):
         help="Directory where testing modules are located.",
     )
     parser.add_argument(
-        "--total-chunks",
-        type=int,
-        dest="totalChunks",
-        default=1,
-        help="how many chunks to split the tests up into",
-    )
-    parser.add_argument(
-        "--this-chunk",
-        type=int,
-        dest="thisChunk",
-        default=1,
-        help="which chunk to run between 1 and --total-chunks",
-    )
-    parser.add_argument(
         "--profile-name",
         type=str,
         dest="profileName",
@@ -206,7 +192,7 @@ def add_common_arguments(parser):
         "--jsdebugger",
         dest="jsDebugger",
         action="store_true",
-        help="Waits for a devtools JS debugger to connect before " "starting the test.",
+        help="Waits for a devtools JS debugger to connect before starting the test.",
     )
     parser.add_argument(
         "--jsdebugger-port",
@@ -269,6 +255,13 @@ def add_common_arguments(parser):
         help="override the number of jobs (threads) when running tests "
         "in parallel, the default is CPU x 1.5 when running via mach "
         "and CPU x 4 when running in automation",
+    )
+    parser.add_argument(
+        "--timeout-factor",
+        type=float,
+        dest="timeoutFactor",
+        default=1.0,
+        help="multiplier for test timeout values",
     )
     parser.add_argument(
         "--variant",
@@ -443,7 +436,7 @@ def add_remote_arguments(parser):
         action="store",
         type=str,
         dest="remoteTestRoot",
-        help="Remote directory to use as test root " "(eg. /data/local/tmp/test_root).",
+        help="Remote directory to use as test root (eg. /data/local/tmp/test_root).",
     )
 
 

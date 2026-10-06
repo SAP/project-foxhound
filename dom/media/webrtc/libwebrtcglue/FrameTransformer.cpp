@@ -1,17 +1,18 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "libwebrtcglue/FrameTransformer.h"
-#include "api/frame_transformer_interface.h"
-#include "mozilla/Mutex.h"
+
+#include <stdint.h>
+
 #include <memory>
 #include <utility>
+
+#include "api/frame_transformer_interface.h"
 #include "api/scoped_refptr.h"
-#include <stdint.h>
 #include "libwebrtcglue/FrameTransformerProxy.h"
+#include "mozilla/Mutex.h"
 
 namespace mozilla {
 
@@ -40,9 +41,9 @@ void FrameTransformer::Transform(
 }
 
 void FrameTransformer::RegisterTransformedFrameCallback(
-    rtc::scoped_refptr<webrtc::TransformedFrameCallback> aCallback) {
+    webrtc::scoped_refptr<webrtc::TransformedFrameCallback> aCallback) {
   MutexAutoLock lock(mCallbacksMutex);
-  mCallback = aCallback;
+  mCallback = std::move(aCallback);
 }
 
 void FrameTransformer::UnregisterTransformedFrameCallback() {
@@ -51,7 +52,7 @@ void FrameTransformer::UnregisterTransformedFrameCallback() {
 }
 
 void FrameTransformer::RegisterTransformedFrameSinkCallback(
-    rtc::scoped_refptr<webrtc::TransformedFrameCallback> aCallback,
+    webrtc::scoped_refptr<webrtc::TransformedFrameCallback> aCallback,
     uint32_t aSsrc) {
   MutexAutoLock lock(mCallbacksMutex);
   mCallbacksBySsrc[aSsrc] = aCallback;

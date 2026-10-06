@@ -128,6 +128,9 @@ function notifyPlacesEvent(guid) {
   ]);
 }
 
+/**
+ * An observer which stores an array of the notifications received.
+ */
 class Observer {
   constructor() {
     this.notifications = [];
@@ -142,8 +145,8 @@ class Observer {
 /**
  * Assert notifications the observer received.
  *
- * @param Array - notifications
- * @param Array - expectedNotifications
+ * @param {object[][]} notifications
+ * @param {object[][]} expectedNotifications
  */
 function assertNotifications(notifications, expectedNotifications) {
   Assert.equal(
@@ -164,8 +167,8 @@ function assertNotifications(notifications, expectedNotifications) {
  * Assert Places events.
  * This function checks given expected event field only.
  *
- * @param Array - events
- * @param Array - expectedEvents
+ * @param {object[]} events
+ * @param {object[]} expectedEvents
  */
 function assertPlacesEvents(events, expectedEvents) {
   Assert.equal(

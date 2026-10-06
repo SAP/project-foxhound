@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,9 +15,9 @@
 #include "ImageContainer.h"
 #include "ipc/EnumSerializer.h"
 #include "ipc/IPCMessageUtils.h"
+#include "mozilla/RelativeTo.h"
 #include "mozilla/ScrollSnapInfo.h"
 #include "mozilla/ServoBindings.h"
-#include "mozilla/ParamTraits_IsEnumCase.h"
 #include "mozilla/ParamTraits_TiedFields.h"
 #include "mozilla/ipc/ByteBuf.h"
 #include "mozilla/ipc/ProtocolMessageUtils.h"
@@ -158,11 +156,11 @@ struct ParamTraits<mozilla::layers::ScrollDirection>
           mozilla::layers::kHighestScrollDirection> {};
 
 template <>
-struct ParamTraits<mozilla::layers::FrameMetrics::ScrollOffsetUpdateType>
+struct ParamTraits<mozilla::layers::ScrollOffsetUpdateType>
     : public ContiguousEnumSerializerInclusive<
-          mozilla::layers::FrameMetrics::ScrollOffsetUpdateType,
-          mozilla::layers::FrameMetrics::ScrollOffsetUpdateType::eNone,
-          mozilla::layers::FrameMetrics::sHighestScrollOffsetUpdateType> {};
+          mozilla::layers::ScrollOffsetUpdateType,
+          mozilla::layers::ScrollOffsetUpdateType::None,
+          mozilla::layers::kHighestScrollOffsetUpdateType> {};
 
 template <>
 struct ParamTraits<mozilla::layers::RepaintRequest::ScrollOffsetUpdateType>
@@ -301,10 +299,12 @@ struct ParamTraits<mozilla::layers::FrameMetrics>
     WriteParam(aWriter, aParam.mVisualScrollUpdateType);
     WriteParam(aWriter, aParam.mFixedLayerMargins);
     WriteParam(aWriter, aParam.mCompositionSizeWithoutDynamicToolbar);
+    WriteParam(aWriter, aParam.mInteractiveWidget);
     WriteParam(aWriter, aParam.mIsRootContent);
     WriteParam(aWriter, aParam.mIsScrollInfoLayer);
     WriteParam(aWriter, aParam.mHasNonZeroDisplayPortMargins);
     WriteParam(aWriter, aParam.mMinimalDisplayPort);
+    WriteParam(aWriter, aParam.mIsSoftwareKeyboardVisible);
   }
 
   static bool Read(MessageReader* aReader, paramType* aResult) {
@@ -330,13 +330,16 @@ struct ParamTraits<mozilla::layers::FrameMetrics>
         ReadParam(aReader, &aResult->mVisualScrollUpdateType) &&
         ReadParam(aReader, &aResult->mFixedLayerMargins) &&
         ReadParam(aReader, &aResult->mCompositionSizeWithoutDynamicToolbar) &&
+        ReadParam(aReader, &aResult->mInteractiveWidget) &&
         ReadBoolForBitfield(aReader, aResult, &paramType::SetIsRootContent) &&
         ReadBoolForBitfield(aReader, aResult,
                             &paramType::SetIsScrollInfoLayer) &&
         ReadBoolForBitfield(aReader, aResult,
                             &paramType::SetHasNonZeroDisplayPortMargins) &&
         ReadBoolForBitfield(aReader, aResult,
-                            &paramType::SetMinimalDisplayPort));
+                            &paramType::SetMinimalDisplayPort) &&
+        ReadBoolForBitfield(aReader, aResult,
+                            &paramType::SetIsSoftwareKeyboardVisible));
   }
 };
 
@@ -437,9 +440,16 @@ struct ParamTraits<mozilla::StyleScrollSnapStop>
           mozilla::StyleScrollSnapStop, mozilla::StyleScrollSnapStop::Normal,
           mozilla::StyleScrollSnapStop::Always> {};
 
+struct ScrollSnapTargetIdValidator {
+  using IntegralType = std::underlying_type_t<mozilla::ScrollSnapTargetId>;
+
+  static bool IsLegalValue(const IntegralType e) { return true; }
+};
+
 template <>
 struct ParamTraits<mozilla::ScrollSnapTargetId>
-    : public ParamTraits_IsEnumCase<mozilla::ScrollSnapTargetId> {};
+    : public EnumSerializer<mozilla::ScrollSnapTargetId,
+                            ScrollSnapTargetIdValidator> {};
 
 template <>
 struct ParamTraits<mozilla::SnapPoint> {
@@ -452,6 +462,23 @@ struct ParamTraits<mozilla::SnapPoint> {
 
   static bool Read(MessageReader* aReader, paramType* aResult) {
     return ReadParam(aReader, &aResult->mX) && ReadParam(aReader, &aResult->mY);
+  }
+};
+
+template <>
+struct ParamTraits<mozilla::ScrollSnapRange> {
+  typedef mozilla::ScrollSnapRange paramType;
+
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.mDirection);
+    WriteParam(aWriter, aParam.mSnapArea);
+    WriteParam(aWriter, aParam.mTargetId);
+  }
+
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return ReadParam(aReader, &aResult->mDirection) &&
+           ReadParam(aReader, &aResult->mSnapArea) &&
+           ReadParam(aReader, &aResult->mTargetId);
   }
 };
 
@@ -470,23 +497,6 @@ struct ParamTraits<mozilla::ScrollSnapInfo::SnapTarget> {
     return ReadParam(aReader, &aResult->mSnapPoint) &&
            ReadParam(aReader, &aResult->mSnapArea) &&
            ReadParam(aReader, &aResult->mScrollSnapStop) &&
-           ReadParam(aReader, &aResult->mTargetId);
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::ScrollSnapInfo::ScrollSnapRange> {
-  typedef mozilla::ScrollSnapInfo::ScrollSnapRange paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mDirection);
-    WriteParam(aWriter, aParam.mSnapArea);
-    WriteParam(aWriter, aParam.mTargetId);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->mDirection) &&
-           ReadParam(aReader, &aResult->mSnapArea) &&
            ReadParam(aReader, &aResult->mTargetId);
   }
 };
@@ -552,6 +562,13 @@ struct ParamTraits<mozilla::ScrollTriggeredByScript>
           mozilla::ScrollTriggeredByScript::Yes> {};
 
 template <>
+struct ParamTraits<mozilla::ViewportType>
+    : public ContiguousEnumSerializerInclusive<mozilla::ViewportType,
+                                               mozilla::ViewportType::Layout,
+                                               mozilla::ViewportType::Visual> {
+};
+
+template <>
 struct ParamTraits<mozilla::ScrollPositionUpdate> {
   typedef mozilla::ScrollPositionUpdate paramType;
 
@@ -563,6 +580,7 @@ struct ParamTraits<mozilla::ScrollPositionUpdate> {
     WriteParam(aWriter, aParam.mDestination);
     WriteParam(aWriter, aParam.mSource);
     WriteParam(aWriter, aParam.mDelta);
+    WriteParam(aWriter, aParam.mViewportType);
     WriteParam(aWriter, aParam.mTriggeredByScript);
     WriteParam(aWriter, aParam.mSnapTargetIds);
   }
@@ -575,6 +593,7 @@ struct ParamTraits<mozilla::ScrollPositionUpdate> {
            ReadParam(aReader, &aResult->mDestination) &&
            ReadParam(aReader, &aResult->mSource) &&
            ReadParam(aReader, &aResult->mDelta) &&
+           ReadParam(aReader, &aResult->mViewportType) &&
            ReadParam(aReader, &aResult->mTriggeredByScript) &&
            ReadParam(aReader, &aResult->mSnapTargetIds);
   }
@@ -599,7 +618,6 @@ struct ParamTraits<mozilla::layers::ScrollMetadata>
     WriteParam(aWriter, aParam.GetContentDescription());
     WriteParam(aWriter, aParam.mLineScrollAmount);
     WriteParam(aWriter, aParam.mPageScrollAmount);
-    WriteParam(aWriter, aParam.mInteractiveWidget);
     WriteParam(aWriter, aParam.mIsLayersIdRoot);
     WriteParam(aWriter, aParam.mIsAutoDirRootContentRTL);
     WriteParam(aWriter, aParam.mForceDisableApz);
@@ -609,11 +627,11 @@ struct ParamTraits<mozilla::layers::ScrollMetadata>
     WriteParam(aWriter, aParam.mForceMousewheelAutodir);
     WriteParam(aWriter, aParam.mForceMousewheelAutodirHonourRoot);
     WriteParam(aWriter, aParam.mIsPaginatedPresentation);
-    WriteParam(aWriter, aParam.mIsSoftwareKeyboardVisible);
     WriteParam(aWriter, aParam.mDisregardedDirection);
     WriteParam(aWriter, aParam.mOverscrollBehavior);
     WriteParam(aWriter, aParam.mOverflow);
     WriteParam(aWriter, aParam.mScrollUpdates);
+    WriteParam(aWriter, aParam.mWritingMode);
   }
 
   static bool ReadContentDescription(MessageReader* aReader,
@@ -633,7 +651,6 @@ struct ParamTraits<mozilla::layers::ScrollMetadata>
             ReadContentDescription(aReader, aResult) &&
             ReadParam(aReader, &aResult->mLineScrollAmount) &&
             ReadParam(aReader, &aResult->mPageScrollAmount) &&
-            ReadParam(aReader, &aResult->mInteractiveWidget) &&
             ReadBoolForBitfield(aReader, aResult,
                                 &paramType::SetIsLayersIdRoot) &&
             ReadBoolForBitfield(aReader, aResult,
@@ -653,12 +670,11 @@ struct ParamTraits<mozilla::layers::ScrollMetadata>
                &paramType::SetForceMousewheelAutodirHonourRoot) &&
            ReadBoolForBitfield(aReader, aResult,
                                &paramType::SetIsPaginatedPresentation) &&
-           ReadBoolForBitfield(aReader, aResult,
-                               &paramType::SetIsSoftwareKeyboardVisible) &&
            ReadParam(aReader, &aResult->mDisregardedDirection) &&
            ReadParam(aReader, &aResult->mOverscrollBehavior) &&
            ReadParam(aReader, &aResult->mOverflow) &&
-           ReadParam(aReader, &aResult->mScrollUpdates);
+           ReadParam(aReader, &aResult->mScrollUpdates) &&
+           ReadParam(aReader, &aResult->mWritingMode);
   }
 };
 
@@ -806,6 +822,7 @@ struct ParamTraits<mozilla::layers::APZEventResult> {
     WriteParam(aWriter, aParam.GetHandledResult());
     WriteParam(aWriter, aParam.mTargetGuid);
     WriteParam(aWriter, aParam.mInputBlockId);
+    WriteParam(aWriter, aParam.mTargetCanScrollHorizontally);
   }
 
   static bool Read(MessageReader* aReader, paramType* aResult) {
@@ -822,7 +839,8 @@ struct ParamTraits<mozilla::layers::APZEventResult> {
     aResult->UpdateHandledResult(handledResult);
 
     return (ReadParam(aReader, &aResult->mTargetGuid) &&
-            ReadParam(aReader, &aResult->mInputBlockId));
+            ReadParam(aReader, &aResult->mInputBlockId) &&
+            ReadParam(aReader, &aResult->mTargetCanScrollHorizontally));
   }
 };
 
@@ -1029,7 +1047,7 @@ struct ParamTraits<mozilla::layers::CompositorOptions> {
 
 template <>
 struct ParamTraits<mozilla::layers::OverlaySupportType>
-    : public ContiguousEnumSerializerInclusive<
+    : public ContiguousEnumSerializer<
           mozilla::layers::OverlaySupportType,
           mozilla::layers::OverlaySupportType::None,
           mozilla::layers::OverlaySupportType::MAX> {};
@@ -1044,8 +1062,10 @@ struct ParamTraits<mozilla::layers::OverlayInfo> {
     WriteParam(aWriter, aParam.mYuy2Overlay);
     WriteParam(aWriter, aParam.mBgra8Overlay);
     WriteParam(aWriter, aParam.mRgb10a2Overlay);
+    WriteParam(aWriter, aParam.mRgba16fOverlay);
     WriteParam(aWriter, aParam.mSupportsVpSuperResolution);
     WriteParam(aWriter, aParam.mSupportsVpAutoHDR);
+    WriteParam(aWriter, aParam.mSupportsHDR);
   }
 
   static bool Read(MessageReader* aReader, paramType* aResult) {
@@ -1054,8 +1074,10 @@ struct ParamTraits<mozilla::layers::OverlayInfo> {
            ReadParam(aReader, &aResult->mYuy2Overlay) &&
            ReadParam(aReader, &aResult->mBgra8Overlay) &&
            ReadParam(aReader, &aResult->mRgb10a2Overlay) &&
+           ReadParam(aReader, &aResult->mRgba16fOverlay) &&
            ReadParam(aReader, &aResult->mSupportsVpSuperResolution) &&
-           ReadParam(aReader, &aResult->mSupportsVpAutoHDR);
+           ReadParam(aReader, &aResult->mSupportsVpAutoHDR) &&
+           ReadParam(aReader, &aResult->mSupportsHDR);
   }
 };
 
@@ -1219,26 +1241,20 @@ struct ParamTraits<mozilla::layers::CompositorScrollUpdate> {
   }
 };
 
-} /* namespace IPC */
-
-namespace mozilla {
-namespace ipc {
-
 template <>
-struct IPDLParamTraits<layers::GpuFence*> {
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    layers::GpuFence* aParam) {
+struct ParamTraits<mozilla::layers::GpuFence*> {
+  static void Write(MessageWriter* aWriter, mozilla::layers::GpuFence* aParam) {
     if (aParam) {
       MOZ_ASSERT_UNREACHABLE("unexpected to be called");
     }
-    WriteIPDLParam(aWriter, aActor, false);
+    WriteParam(aWriter, false);
   }
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   RefPtr<layers::GpuFence>* aResult) {
+  static bool Read(MessageReader* aReader,
+                   RefPtr<mozilla::layers::GpuFence>* aResult) {
     *aResult = nullptr;
     bool notnull = false;
-    if (!ReadIPDLParam(aReader, aActor, &notnull)) {
+    if (!ReadParam(aReader, &notnull)) {
       return false;
     }
 
@@ -1251,8 +1267,7 @@ struct IPDLParamTraits<layers::GpuFence*> {
   }
 };
 
-}  // namespace ipc
-}  // namespace mozilla
+} /* namespace IPC */
 
 #define DEFINE_SERVO_PARAMTRAITS(ty_)                                \
   MOZ_DEFINE_RUST_PARAMTRAITS(mozilla::ty_, Servo_##ty_##_Serialize, \

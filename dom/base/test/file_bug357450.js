@@ -1,4 +1,4 @@
-/** Test for Bug 357450 **/
+/** Test for Bug 357450 */
 
 SimpleTest.waitForExplicitFinish();
 

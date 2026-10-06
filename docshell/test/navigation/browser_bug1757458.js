@@ -14,7 +14,7 @@ add_task(async function () {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: testPage },
     async function (browser) {
-      await ContentTask.spawn(browser, [], async () => {
+      await SpecialPowers.spawn(browser, [], async () => {
         Assert.equal(
           content.document.getElementById("viewsource").localName,
           "body",
@@ -36,7 +36,7 @@ add_task(async function () {
       browser.browsingContext.goBack();
       await pageShownPromise;
 
-      await ContentTask.spawn(browser, [], async () => {
+      await SpecialPowers.spawn(browser, [], async () => {
         Assert.equal(
           content.document.getElementById("viewsource").localName,
           "body",

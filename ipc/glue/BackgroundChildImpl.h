@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_ipc_backgroundchildimpl_h__
-#define mozilla_ipc_backgroundchildimpl_h__
+#ifndef mozilla_ipc_backgroundchildimpl_h_
+#define mozilla_ipc_backgroundchildimpl_h_
 
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/UniquePtr.h"
@@ -113,11 +111,6 @@ class BackgroundChildImpl : public PBackgroundChild {
 
   virtual bool DeallocPCamerasChild(PCamerasChild* aActor) override;
 
-  virtual PUDPSocketChild* AllocPUDPSocketChild(
-      const Maybe<PrincipalInfo>& aPrincipalInfo,
-      const nsACString& aFilter) override;
-  virtual bool DeallocPUDPSocketChild(PUDPSocketChild* aActor) override;
-
   virtual PBroadcastChannelChild* AllocPBroadcastChannelChild(
       const PrincipalInfo& aPrincipalInfo, const nsACString& aOrigin,
       const nsAString& aChannel) override;
@@ -155,17 +148,10 @@ class BackgroundChildImpl : public PBackgroundChild {
   already_AddRefed<PServiceWorkerRegistrationChild>
   AllocPServiceWorkerRegistrationChild(
       const IPCServiceWorkerRegistrationDescriptor&);
-
-  virtual PEndpointForReportChild* AllocPEndpointForReportChild(
-      const nsAString& aGroupName,
-      const PrincipalInfo& aPrincipalInfo) override;
-
-  virtual bool DeallocPEndpointForReportChild(
-      PEndpointForReportChild* aActor) override;
 };
 
 class BackgroundChildImpl::ThreadLocal final {
-  friend class mozilla::DefaultDelete<ThreadLocal>;
+  friend mozilla::DefaultDelete<ThreadLocal>;
 
  public:
   mozilla::UniquePtr<mozilla::dom::indexedDB::ThreadLocal>
@@ -183,4 +169,4 @@ class BackgroundChildImpl::ThreadLocal final {
 }  // namespace ipc
 }  // namespace mozilla
 
-#endif  // mozilla_ipc_backgroundchildimpl_h__
+#endif  // mozilla_ipc_backgroundchildimpl_h_

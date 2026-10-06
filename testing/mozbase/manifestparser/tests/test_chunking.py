@@ -7,70 +7,9 @@ from itertools import chain
 from unittest import TestCase
 
 import mozunit
-from manifestparser.filters import chunk_by_dir, chunk_by_runtime, chunk_by_slice
+from manifestparser.filters import chunk_by_dir, chunk_by_runtime
 
 here = os.path.dirname(os.path.abspath(__file__))
-
-
-class ChunkBySlice(TestCase):
-    """Test chunking related filters"""
-
-    def generate_tests(self, num, disabled=None):
-        disabled = disabled or []
-        tests = []
-        for i in range(num):
-            test = {"name": "test%i" % i}
-            if i in disabled:
-                test["disabled"] = ""
-            tests.append(test)
-        return tests
-
-    def run_all_combos(self, num_tests, disabled=None):
-        tests = self.generate_tests(num_tests, disabled=disabled)
-
-        for total in range(1, num_tests + 1):
-            res = []
-            res_disabled = []
-            for chunk in range(1, total + 1):
-                f = chunk_by_slice(chunk, total)
-                res.append(list(f(tests, {})))
-                if disabled:
-                    f.disabled = True
-                    res_disabled.append(list(f(tests, {})))
-
-            lengths = [len([t for t in c if "disabled" not in t]) for c in res]
-            # the chunk with the most tests should have at most one more test
-            # than the chunk with the least tests
-            self.assertLessEqual(max(lengths) - min(lengths), 1)
-
-            # chaining all chunks back together should equal the original list
-            # of tests
-            self.assertEqual(list(chain.from_iterable(res)), list(tests))
-
-            if disabled:
-                lengths = [len(c) for c in res_disabled]
-                self.assertLessEqual(max(lengths) - min(lengths), 1)
-                self.assertEqual(list(chain.from_iterable(res_disabled)), list(tests))
-
-    def test_chunk_by_slice(self):
-        chunk = chunk_by_slice(1, 1)
-        self.assertEqual(list(chunk([], {})), [])
-
-        self.run_all_combos(num_tests=1)
-        self.run_all_combos(num_tests=10, disabled=[1, 2])
-
-        num_tests = 67
-        disabled = list(i for i in range(num_tests) if i % 4 == 0)
-        self.run_all_combos(num_tests=num_tests, disabled=disabled)
-
-    def test_two_times_more_chunks_than_tests(self):
-        # test case for bug 1182817
-        tests = self.generate_tests(5)
-
-        total_chunks = 10
-        for i in range(1, total_chunks + 1):
-            # ensure IndexError is not raised
-            chunk_by_slice(i, total_chunks)(tests, {})
 
 
 class ChunkByDir(TestCase):

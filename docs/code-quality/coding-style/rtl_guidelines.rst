@@ -92,16 +92,15 @@ What to mirror
 -  Icons or animations that imply directionality or motion like
    back/forward buttons or progress bars
 -  Icons that imply text direction, like
-   `reader-mode.svg <https://searchfox.org/mozilla-central/rev/f9beb753a84aa297713d1565dcd0c5e3c66e4174/browser/themes/shared/icons/reader-mode.svg>`__
+   :searchfox:`reader-mode.svg <mozilla-central/rev/f9beb753a84aa297713d1565dcd0c5e3c66e4174:browser/themes/shared/icons/reader-mode.svg>`
 -  Icons that imply location of UI elements in the screen, like
-   `sidebars-right.svg <https://searchfox.org/mozilla-central/rev/74cc0f4dce444fe0757e2a6b8307d19e4d0e0212/browser/themes/shared/icons/sidebars-right.svg>`__,
-   `open-in-new.svg <https://searchfox.org/mozilla-central/rev/f9beb753a84aa297713d1565dcd0c5e3c66e4174/toolkit/themes/shared/icons/open-in-new.svg>`__,
-   `default theme's preview.svg <https://searchfox.org/mozilla-central/rev/f9beb753a84aa297713d1565dcd0c5e3c66e4174/toolkit/mozapps/extensions/default-theme/preview.svg>`__
+   :searchfox:`sidebar-collapsed-right.svg <firefox-main/rev/b9c3ba706c41c42a7a1b4f6e5b5ba878782b3ab2:browser/themes/shared/icons/sidebar-collapsed-right.svg>`,
+   :searchfox:`open-in-new.svg <mozilla-central/rev/f9beb753a84aa297713d1565dcd0c5e3c66e4174:toolkit/themes/shared/icons/open-in-new.svg>`,
+   :searchfox:`default theme's preview.svg <mozilla-central/rev/f9beb753a84aa297713d1565dcd0c5e3c66e4174:toolkit/mozapps/extensions/default-theme/preview.svg>`
    or
-   `pane-collapse.svg <https://searchfox.org/mozilla-central/rev/74cc0f4dce444fe0757e2a6b8307d19e4d0e0212/devtools/client/debugger/images/pane-collapse.svg>`__
+   :searchfox:`pane-collapse.svg <mozilla-central/rev/74cc0f4dce444fe0757e2a6b8307d19e4d0e0212:devtools/client/debugger/images/pane-collapse.svg>`
 -  Icons representing objects that are meant to be handheld should look
-   like they're being right-handed, like the `magnifying glass
-   icon <https://searchfox.org/mozilla-central/rev/e7c61f4a68b974d5fecd216dc7407b631a24eb8f/toolkit/themes/windows/global/icons/search-textbox.svg>`__
+   like they're being right-handed, like the :searchfox:`magnifying glass icon <mozilla-central/rev/e7c61f4a68b974d5fecd216dc7407b631a24eb8f:toolkit/themes/windows/global/icons/search-textbox.svg>`
 -  Twisties in their collapsed state. Note that if the context in which
    they appear is LTR (e.g. code in a devtools HTML view), they should
    not be mirrored, even if the user might be using an RTL locale.
@@ -112,14 +111,12 @@ What NOT to mirror
 -  Text/numbers
 -  Icons containing text/numbers
 -  Icons/animations that are direction neutral
--  Icons that wouldn't look differently if they'd be mirrored, like `X
-   buttons <https://searchfox.org/mozilla-central/rev/a78233c11a6baf2c308fbed17eb16c6e57b6a2ac/devtools/client/debugger/images/close.svg>`__
-   or the `bookmark
-   star <https://searchfox.org/mozilla-central/rev/a78233c11a6baf2c308fbed17eb16c6e57b6a2ac/browser/themes/shared/icons/bookmark-hollow.svg>`__
+-  Icons that wouldn't look differently if they'd be mirrored, like :searchfox:`X buttons <mozilla-central/rev/a78233c11a6baf2c308fbed17eb16c6e57b6a2ac:devtools/client/debugger/images/close.svg>`
+   or the :searchfox:`bookmark star <mozilla-central/rev/a78233c11a6baf2c308fbed17eb16c6e57b6a2ac:browser/themes/shared/icons/bookmark-hollow.svg>`
    icon, or any other symmetric icon
 -  Icons that should look the same as LTR, like icons related to code
    (which is always LTR) like
-   `tool-webconsole.svg <https://searchfox.org/mozilla-central/rev/74cc0f4dce444fe0757e2a6b8307d19e4d0e0212/devtools/client/themes/images/tool-webconsole.svg>`__
+   :searchfox:`tool-webconsole.svg <mozilla-central/rev/74cc0f4dce444fe0757e2a6b8307d19e4d0e0212:devtools/client/themes/images/tool-webconsole.svg>`
 -  Checkmark icons
 -  Video/audio player controls
 -  Product logos

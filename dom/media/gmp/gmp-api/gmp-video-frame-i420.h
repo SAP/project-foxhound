@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* Copyright (c) 2011, The WebRTC project authors. All rights reserved.
  * Copyright (c) 2014, Mozilla
  *
@@ -34,11 +33,11 @@
 #ifndef GMP_VIDEO_FRAME_I420_h_
 #define GMP_VIDEO_FRAME_I420_h_
 
+#include <stdint.h>
+
 #include "gmp-errors.h"
 #include "gmp-video-frame.h"
 #include "gmp-video-plane.h"
-
-#include <stdint.h>
 
 enum GMPPlaneType {
   kGMPYPlane = 0,

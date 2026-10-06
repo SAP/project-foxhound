@@ -1,0 +1,90 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Test Panel Item badge-type attribute</title>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+    <link
+      rel="stylesheet"
+      href="chrome://mochikit/content/tests/SimpleTest/test.css"
+    />
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content">
+      <panel-list>
+        <panel-item badge-type="new">Badged item</panel-item>
+        <panel-item>Unbadged item</panel-item>
+      </panel-list>
+    </div>
+    <script class="testbody" type="application/javascript">
+      const getBadge = item => item.shadowRoot.querySelector("moz-badge");
+
+      add_task(async function testBadgeAddedFromMarkup() {
+        let panelList = document.querySelector("panel-list");
+        let [badgedItem, unbadgedItem] = panelList.children;
+
+        let badge = getBadge(badgedItem);
+        ok(badge, "moz-badge is present in the shadow DOM");
+        is(badge.getAttribute("type"), "new", "moz-badge has the correct type");
+
+        ok(!getBadge(unbadgedItem), "No moz-badge for item without badge-type");
+      });
+
+      add_task(async function testBadgeAddedDynamically() {
+        let panelList = document.querySelector("panel-list");
+        let dynamicItem = document.createElement("panel-item");
+        panelList.appendChild(dynamicItem);
+
+        ok(!getBadge(dynamicItem), "No moz-badge before setting badge-type");
+
+        dynamicItem.setAttribute("badge-type", "beta");
+        let badge = getBadge(dynamicItem);
+        ok(badge, "moz-badge is created after setting badge-type");
+        is(
+          badge.getAttribute("type"),
+          "beta",
+          "moz-badge has the correct type"
+        );
+
+        dynamicItem.setAttribute("badge-type", "new");
+        is(
+          getBadge(dynamicItem).getAttribute("type"),
+          "new",
+          "moz-badge type is updated when badge-type changes"
+        );
+        is(
+          panelList.querySelectorAll("panel-item:last-child moz-badge").length,
+          0,
+          "moz-badge is inside the shadow DOM, not the light DOM"
+        );
+
+        dynamicItem.removeAttribute("badge-type");
+        ok(
+          !getBadge(dynamicItem),
+          "moz-badge is removed when badge-type is removed"
+        );
+
+        panelList.removeChild(dynamicItem);
+      });
+
+      add_task(async function testBadgeRemovedFromInitialItem() {
+        let [badgedItem] = document.querySelector("panel-list").children;
+
+        ok(getBadge(badgedItem), "moz-badge is present initially");
+        badgedItem.removeAttribute("badge-type");
+        ok(
+          !getBadge(badgedItem),
+          "moz-badge is removed after removing badge-type"
+        );
+
+        badgedItem.setAttribute("badge-type", "new");
+        ok(
+          getBadge(badgedItem),
+          "moz-badge is re-added after restoring badge-type"
+        );
+      });
+    </script>
+  </body>
+</html>

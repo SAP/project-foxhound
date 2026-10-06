@@ -1,10 +1,42 @@
 [DEFAULT]
 # unsorted sections
 
+["browser_test_resolution.js"]
+skip-if = ["os == 'win'"] # bug 1372296
+# trailing comment
+
 ["ccc.js"]
+skip-if = [
+  "debug", # Bug 1792718
+  "os == 'win' && debug", # Bug 1792718
+]
 
 ["aaa.js"]
+support-files = ["do_work_500ms.html"]
+skip-if = [ # begin
+  "debug && verify",
+  "os == 'win'", #     Not yet supported on windows - Bug 1867328
+  # Enabling the JS feature leaks an 8-byte object. This causes failures when
+  # the leak checker is enabled, and run with test-verify (i.e. with both
+  # "debug" and "verify"). Having JS support for this feature is more important
+  # than these tests, so we're disabling them for now. See Bug 1904897.
+  "ccov", #            The signals for the profiler conflict with the ccov signals
+] # end
 
 ["bug_10.js"]
+skip-if = [
+  "ccov",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && opt", # Bug 1648862
+  "os == 'win' && !debug", # expands win, except tsan
+]
 
 ["bug_2.js"]
+skip-if = [
+  "ccov && os == 'linux' && os_version == '22.04'", # 1608081
+]
+
+["ddd.js"]
+skip-if = [
+  # This features is only enabled on nightly via MOZ_EXECUTION_TRACING build flag
+  "!nightly_build"
+]

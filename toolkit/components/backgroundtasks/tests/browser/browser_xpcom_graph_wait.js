@@ -1,6 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * vim: sw=4 ts=4 sts=4 et
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -61,6 +59,8 @@ const backgroundtaskPhases = {
         "@mozilla.org/layout/content-policy;1",
         "@mozilla.org/memory-reporter-manager;1",
         "@mozilla.org/network/captive-portal-service;1",
+        "@mozilla.org/network/dns-service;1",
+        "@mozilla.org/network/oblivious-http-service;1",
         "@mozilla.org/network/effective-tld-service;1",
         "@mozilla.org/network/idn-service;1",
         "@mozilla.org/network/io-service;1",

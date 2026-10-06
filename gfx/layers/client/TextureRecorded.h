@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -32,6 +30,8 @@ class RecordedTextureData final : public TextureData {
   already_AddRefed<gfx::DrawTarget> BorrowDrawTarget() final;
 
   void EndDraw() final;
+
+  void ReturnDrawTarget(already_AddRefed<gfx::DrawTarget> aDT) final;
 
   already_AddRefed<gfx::SourceSurface> BorrowSnapshot() final;
 
@@ -72,7 +72,7 @@ class RecordedTextureData final : public TextureData {
   RefPtr<gfx::DrawTargetRecording> mDT;
   RefPtr<gfx::SourceSurface> mSnapshot;
   RefPtr<gfx::SourceSurface> mSnapshotWrapper;
-  OpenMode mLockedMode;
+  OpenMode mLockedMode = OpenMode::OPEN_NONE;
   RemoteTextureId mLastRemoteTextureId;
   RefPtr<layers::FwdTransactionTracker> mFwdTransactionTracker;
   bool mUsedRemoteTexture = false;

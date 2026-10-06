@@ -37,7 +37,9 @@ add_task(async function () {
     info("Building the helper");
     const env = new HighlighterEnvironment();
     env.initFromWindow(doc.defaultView);
-    const helper = new CanvasFrameAnonymousContentHelper(env, nodeBuilder);
+    const helper = new CanvasFrameAnonymousContentHelper(env, nodeBuilder, {
+      contentRootHostClassName: "testHighlighter",
+    });
     await helper.initialize();
 
     ok(
@@ -89,6 +91,10 @@ add_task(async function () {
       helper.getAttributeForElement("child-element", "class"),
       "child-element",
       "The class attribute was retrieve correctly"
+    );
+    ok(
+      helper.content.root.host.classList.contains("testHighlighter"),
+      `The content root host has the class we passed in the contentRootHostClassName option (Got ${JSON.stringify([...helper.content.root.host.classList])})`
     );
 
     const el = helper.getElement("child-element");

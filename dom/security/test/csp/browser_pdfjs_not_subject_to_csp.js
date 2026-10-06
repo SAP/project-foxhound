@@ -17,14 +17,14 @@ add_task(async function () {
         true
       );
 
-      await ContentTask.spawn(browser, {}, async function () {
+      await SpecialPowers.spawn(browser, [], async function () {
         let pdfButton = content.document.getElementById("pdfButton");
         pdfButton.click();
       });
 
       await pdfPromise;
 
-      await ContentTask.spawn(browser, {}, async function () {
+      await SpecialPowers.spawn(browser, [], async function () {
         let pdfFrame = content.document.getElementById("pdfFrame");
         // 1) Sanity that we have loaded the PDF using a blob
         ok(pdfFrame.src.startsWith("blob:"), "it's a blob URL");

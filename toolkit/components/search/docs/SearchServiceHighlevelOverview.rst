@@ -30,16 +30,16 @@ described by number 1 below.
 
 1. When the user opens the Firefox Browser, the code starts to build the browser
    UI components. During this startup phase, we have various systems making
-   calls to the ``SearchService``. E.g. `browser.js <https://searchfox.org/mozilla-central/rev/47db1be98f8069b387ce07dcbea22d09f1854515/browser/base/content/browser.js#3325>`_
-   calls ``Services.search.getDefault`` to fetch the default Search Engine.
+   calls to the ``SearchService``. E.g. :searchfox:`browser.js <mozilla-central/rev/47db1be98f8069b387ce07dcbea22d09f1854515:browser/base/content/browser.js#3325>`
+   calls ``SearchService.getDefault`` to fetch the default Search Engine.
 
 2. The ``SearchService`` needs information from ``Extension System``,
    ``SearchSettings``, and ``Remote Settings`` to build the correct engines in
    the right order and to return the list of engines to its callers.
 
    a) First, the ``SearchService`` makes a request for the search configuration.
-   ``SearchService`` calls `SearchEngineSelector.fetchEngineConfiguration <https://searchfox.org/mozilla-central/rev/47db1be98f8069b387ce07dcbea22d09f1854515/toolkit/components/search/SearchService.sys.mjs#2602>`_
-   which makes a call to `Remote Settings <https://searchfox.org/mozilla-central/rev/47db1be98f8069b387ce07dcbea22d09f1854515/toolkit/components/search/SearchEngineSelector.sys.mjs#119>`_
+   ``SearchService`` calls :searchfox:`SearchEngineSelector.fetchEngineConfiguration <mozilla-central/rev/47db1be98f8069b387ce07dcbea22d09f1854515:toolkit/components/search/SearchService.sys.mjs#2602>`
+   which makes a call to :searchfox:`Remote Settings <mozilla-central/rev/47db1be98f8069b387ce07dcbea22d09f1854515:toolkit/components/search/SearchEngineSelector.sys.mjs#119>`
    for the search configuration. Remote Settings does not fetch the search
    configuration from the remote database on startup. Instead Remote Settings
    tries to load the :searchfox:`search configuration dump file <services/settings/dumps/main/search-config-v2.json>`
@@ -48,13 +48,13 @@ described by number 1 below.
    remote database when necessary. By connecting after startup, it avoids
    a potential network request that could delay startup.
 
-   b) Second, the ``SearchService`` `fetches a JSON file <https://searchfox.org/mozilla-central/rev/47db1be98f8069b387ce07dcbea22d09f1854515/toolkit/components/search/SearchService.sys.mjs#1368>`_
-   from the `SearchSettings <https://searchfox.org/mozilla-central/source/toolkit/components/search/SearchSettings.sys.mjs>`_.
+   b) Second, the ``SearchService`` :searchfox:`loads the JSON file <mozilla-central/rev/47db1be98f8069b387ce07dcbea22d09f1854515:toolkit/components/search/SearchService.sys.mjs#1368>`
+   containing the :searchfox:`SearchSettings <toolkit/components/search/SearchSettings.sys.mjs>`.
    This JSON file contains Search Engine metadata that is saved on the user's
    computer. It's information that helps the ``SearchService`` remember the
    user's custom settings for the Search Engines.
 
-   c) Third, the `Extension System <https://searchfox.org/mozilla-central/rev/cb6f8d7b1f1782b9d4b2ee7312de1dcc284aaf06/browser/components/extensions/parent/ext-chrome-settings-overrides.js#536>`_
+   c) Third, the :searchfox:`Extension System <mozilla-central/rev/cb6f8d7b1f1782b9d4b2ee7312de1dcc284aaf06:browser/components/extensions/parent/ext-chrome-settings-overrides.js#536>`
    passes the extension data to the ``SearchService``. At this point, the
    ``SearchService`` only installs user installed search extensions.
 
@@ -63,8 +63,8 @@ described by number 1 below.
    ``Remote Settings``. Now the ``SearchService`` can build the different
    types of Search Engines.
 
-3. The ``SearchService`` creates new instances of :searchfox:`SearchEngines <toolkit/components/search/SearchEngine.sys.mjs>`
-   by making an `App-Provided, Add-on, Open Search, or Enterprise Policy Search Engine <https://firefox-source-docs.mozilla.org/toolkit/search/SearchEngines.html>`_.
+3. The ``SearchService`` creates new instances of the various
+`SearchEngine Subclasses <https://firefox-source-docs.mozilla.org/toolkit/search/SearchEngines.html>`_.
 
 4. The ``SearchService`` returns the engines to the caller that requested it.
    E.g. the ``SearchService`` passes the default Search Engine back to

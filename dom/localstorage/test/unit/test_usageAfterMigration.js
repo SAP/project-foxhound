@@ -33,7 +33,7 @@ add_task(async function testSteps() {
 
     // The profile contains storage.sqlite and webappsstore.sqlite. The file
     // create_db.js in the package was run locally, specifically it was
-    // temporarily added to xpcshell.ini and then executed:
+    // temporarily added to xpcshell.toml and then executed:
     // mach xpcshell-test --interactive dom/localstorage/test/unit/create_db.js
     installPackage("usageAfterMigration_profile");
 

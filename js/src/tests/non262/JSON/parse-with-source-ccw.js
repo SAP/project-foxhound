@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-json-parse-with-source) skip-if(!JSON.hasOwnProperty('isRawJSON')||!xulRuntime.shell)
+// |reftest| skip-if(!JSON.hasOwnProperty('isRawJSON')||!xulRuntime.shell)
 
 (function checkCrossCompartmentWrappers() {
     var gbl = newGlobal({newCompartment: true});

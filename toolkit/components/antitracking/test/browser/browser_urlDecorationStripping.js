@@ -5,10 +5,6 @@
 
 "use strict";
 
-const { Preferences } = ChromeUtils.importESModule(
-  "resource://gre/modules/Preferences.sys.mjs"
-);
-
 const COLLECTION_NAME = "anti-tracking-url-decoration";
 const PREF_NAME = "privacy.restrict3rdpartystorage.url_decorations";
 const TOKEN_1 = "fooBar";
@@ -51,16 +47,16 @@ add_task(async _ => {
 
   await uds.ensureUpdated();
 
-  let list = Preferences.get(PREF_NAME).split(" ");
+  let list = Services.prefs.getStringPref(PREF_NAME).split(" ");
   ok(list.includes(TOKEN_1), "Token must now be available in " + PREF_NAME);
-  ok(Preferences.locked(PREF_NAME), PREF_NAME + " must be locked");
+  ok(Services.prefs.prefIsLocked(PREF_NAME), PREF_NAME + " must be locked");
 
   async function verifyList(array, not_array) {
     await emitSync();
 
     await uds.ensureUpdated();
 
-    list = Preferences.get(PREF_NAME).split(" ");
+    list = Services.prefs.getStringPref(PREF_NAME).split(" ");
     for (let token of array) {
       ok(
         list.includes(token),
@@ -73,7 +69,7 @@ add_task(async _ => {
         token + " must not be available in " + PREF_NAME
       );
     }
-    ok(Preferences.locked(PREF_NAME), PREF_NAME + " must be locked");
+    ok(Services.prefs.prefIsLocked(PREF_NAME), PREF_NAME + " must be locked");
   }
 
   records.push(

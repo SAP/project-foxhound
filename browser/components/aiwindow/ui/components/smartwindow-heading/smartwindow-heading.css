@@ -1,0 +1,38 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:host {
+  --heading-text-color: light-dark(var(--color-violet-70), var(--color-violet-30));
+}
+
+.heading-container {
+  display: flex;
+  align-items: center;
+  gap: var(--space-large);
+  padding-block: var(--space-xlarge);
+  margin-bottom: var(--space-large);
+}
+
+.heading-logo {
+  width: var(--size-image-small);
+  height: var(--size-image-small);
+}
+
+.heading-title {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-small);
+
+  h1 {
+    color: var(--heading-text-color);
+    font-weight: var(--font-weight);
+    /* Line-height used to align title and badge */
+    line-height: calc(1em - 4px);
+    margin: 0;
+  }
+
+  moz-badge {
+    --badge-text-color: var(--heading-text-color);
+  }
+}

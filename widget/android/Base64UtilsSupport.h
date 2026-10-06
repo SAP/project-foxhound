@@ -1,10 +1,9 @@
-/* -*- Mode: c++; c-basic-offset: 2; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef Base64UtilsSupport_h__
-#define Base64UtilsSupport_h__
+#ifndef Base64UtilsSupport_h_
+#define Base64UtilsSupport_h_
 
 #include "mozilla/Base64.h"
 #include "mozilla/java/Base64UtilsNatives.h"
@@ -49,4 +48,4 @@ class Base64UtilsSupport final
 }  // namespace widget
 }  // namespace mozilla
 
-#endif  // Base64UtilsSupport_h__
+#endif  // Base64UtilsSupport_h_

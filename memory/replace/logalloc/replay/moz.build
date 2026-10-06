@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -12,7 +10,6 @@ SOURCES += [
     "/mfbt/RandomNum.cpp",
     "/mfbt/RefCounted.cpp",
     "/mfbt/TaggedAnonymousMemory.cpp",
-    "/mfbt/Unused.cpp",
     "/mozglue/misc/StackWalk.cpp",
     "Replay.cpp",
 ]
@@ -39,7 +36,6 @@ elif CONFIG["OS_TARGET"] == "Android":
 if CONFIG["MOZ_REPLACE_MALLOC_STATIC"] and (CONFIG["MOZ_DMD"] or CONFIG["MOZ_PHC"]):
     UNIFIED_SOURCES += [
         "/mfbt/HashFunctions.cpp",
-        "/mfbt/JSONWriter.cpp",
     ]
 
 if CONFIG["OS_ARCH"] == "WINNT":
@@ -95,3 +91,30 @@ DisableStlWrapping()
 
 include("/mozglue/build/replace_malloc.mozbuild")
 include("/mozglue/misc/timestamp.mozbuild")
+
+
+if not CONFIG["MOZ_CODE_COVERAGE"] and not CONFIG["CROSS_COMPILE"]:
+    if not CONFIG["MOZ_REPLACE_MALLOC_STATIC"]:
+        if CONFIG["OS_TARGET"] == "WINNT":
+            logalloc_var = "MOZ_REPLACE_MALLOC_LIB"
+        elif CONFIG["OS_TARGET"] == "Darwin":
+            logalloc_var = "DYLD_INSERT_LIBRARIES"
+        else:
+            logalloc_var = "LD_PRELOAD"
+        logalloc = f"--logalloc={logalloc_var}={OBJDIR}/../{CONFIG['DLL_PREFIX']}logalloc{CONFIG['DLL_SUFFIX']}"
+    else:
+        logalloc = "--logalloc="
+
+    LegacyTest(
+        "test_logalloc.sh",
+        logalloc,
+        f"!/{FINAL_TARGET}/{PROGRAM}{CONFIG['BIN_SUFFIX']}",
+        ".",
+        f"%{CONFIG['PYTHON3']}",
+        depends=[
+            f"!/{FINAL_TARGET}/{PROGRAM}{CONFIG['BIN_SUFFIX']}",
+            "logalloc_munge.py",
+            "expected_output_minimal.log",
+            "replay.log",
+        ],
+    )

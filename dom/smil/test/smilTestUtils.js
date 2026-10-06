@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -587,8 +585,9 @@ AnimTestcaseFrom.prototype = {
 };
 extend(AnimTestcaseFrom, AnimTestcase);
 
-/*
+/**
  * A testcase for a simple "from-to" animation
+ *
  * @param aFrom  The 'from' value
  * @param aTo    The 'to' value
  * @param aComputedValMap  A hash-map that contains some computed values,
@@ -603,7 +602,6 @@ extend(AnimTestcaseFrom, AnimTestcase);
  * @param aSkipReason  If this test-case is known to currently fail, this
  *                     parameter should be a string explaining why.
  *                     Otherwise, this value should be null (or omitted).
- *
  */
 function AnimTestcaseFromTo(aFrom, aTo, aComputedValMap, aSkipReason) {
   this.from = aFrom;
@@ -628,7 +626,7 @@ AnimTestcaseFromTo.prototype = {
 };
 extend(AnimTestcaseFromTo, AnimTestcaseFrom);
 
-/*
+/**
  * A testcase for a simple "from-by" animation.
  *
  * @param aFrom  The 'from' value
@@ -695,8 +693,9 @@ AnimTestcaseFromBy.prototype = {
 };
 extend(AnimTestcaseFromBy, AnimTestcaseFrom);
 
-/*
+/**
  * A testcase for a "paced-mode" animation
+ *
  * @param aValues   An array of values, to be used as the "Values" list
  * @param aComputedValMap  A hash-map that contains some computed values,
  *                         if they're needed, as follows:
@@ -838,7 +837,7 @@ AnimTestcasePaced.prototype = {
 };
 extend(AnimTestcasePaced, AnimTestcase);
 
-/*
+/**
  * A testcase for an <animateMotion> animation.
  *
  * @param aAttrValueHash   A hash-map mapping attribute names to values.

@@ -18,13 +18,18 @@ class DomainMatcherTest {
         assertNull(segmentAwareDomainMatch("moz", listOf()))
 
         val urls = listOf(
-            "http://www.mozilla.org", "http://Firefox.com",
-            "https://mobile.twitter.com", "https://m.youtube.com",
+            "http://www.mozilla.org",
+            "http://Firefox.com",
+            "https://mobile.twitter.com",
+            "https://m.youtube.com",
             "https://en.Wikipedia.org/Wiki/Mozilla",
             "https://www.github.com/mozilla-mobile/fenix",
-            "http://192.168.254.254:8000", "http://192.168.254.254:8000/admin",
+            "http://192.168.254.254:8000",
+            "http://192.168.254.254:8000/admin",
             "http://иННая.локаль", // TODO add more test data for non-english locales
-            "about:config", "about:crashes", "http://localhost:8080/index.html",
+            "about:config",
+            "about:crashes",
+            "http://localhost:8080/index.html",
             "https://www.reddit.com/r/vancouver/comments/quu9lt/hwy_1_just_north_of_lytton_is_gone/",
         )
         // Full url matching.

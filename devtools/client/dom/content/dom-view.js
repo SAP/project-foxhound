@@ -28,14 +28,17 @@ const store = createStore(reducers);
  * for rendering the content. It renders the top level ReactJS
  * component: the MainFrame.
  */
-function DomView(localStore) {
-  addEventListener("devtools/chrome/message", this.onMessage.bind(this), true);
+class DomView {
+  constructor(localStore) {
+    addEventListener(
+      "devtools/chrome/message",
+      this.onMessage.bind(this),
+      true
+    );
 
-  // Make it local so, tests can access it.
-  this.store = localStore;
-}
-
-DomView.prototype = {
+    // Make it local so, tests can access it.
+    this.store = localStore;
+  }
   initialize(rootGrip) {
     const content = document.querySelector("#content");
     const mainFrame = MainFrame({
@@ -52,7 +55,7 @@ DomView.prototype = {
     );
 
     this.mainFrame = ReactDOM.render(provider, content);
-  },
+  }
 
   onMessage(event) {
     const data = event.data;
@@ -61,8 +64,8 @@ DomView.prototype = {
     if (typeof this[method] == "function") {
       this[method](data.args);
     }
-  },
-};
+  }
+}
 
 // Construct DOM panel view object and expose it to tests.
 // Tests can access it through: |panel.panelWin.view|

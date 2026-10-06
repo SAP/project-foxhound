@@ -6,7 +6,19 @@
     <title>showDynamicToolbar test content</title>
     <script>
       document.addEventListener("click", function () {
-        document.body.style.position = "fixed";
+        const searchParams = new URLSearchParams(location.search);
+        let element;
+        switch (searchParams.get("target")) {
+          case "html": {
+            element = document.documentElement;
+            break;
+          }
+          case "body": {
+            element = document.body;
+            break;
+          }
+        }
+        element.style.position = "fixed";
       });
     </script>
   </head>

@@ -1,0 +1,19 @@
+{
+  "label": "CitrusLab",
+  "bugs": {
+    "1913720": {
+      "issue": "firefox-blocked-completely",
+      "matches": [
+        "https://cotota.app/*",
+        "https://h2breeze.com/*",
+        "https://is-sets.com/*"
+      ]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

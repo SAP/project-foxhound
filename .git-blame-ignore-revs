@@ -2642,3 +2642,9 @@ f6757db01e205aa308e9e5dfb2013f4313da268b
 ab3fb399381a370d790724524214f90feb8c237c
 # 422049f09fc2fa9463b31faa5a0f6cb7a7a21814 - mcarare - [fenix] For https://github.com/mozilla-mobile/fenix/issues/26844: Fix ktlint issues and remove them from baseline.
 296836d1757ed782072f1c01f66c24fd982d5ca7
+f09a8f737505ea0e921ec3e5695fadade3c4ca5f # Bug 1994397 - Remove obsolete Unused.h header
+6f04fd49f406bdebc6eb6615c554dc0a0d01b8bd # Bug 1994397 - Remove obsolete Unused.h header
+b5f588f848de17b9d4787c18d3d621d621827eb6 # Bug 1994397 - Remove obsolete Unused.h header
+9e6366be325625a58f8839779978b8310f991757 # Revert - Bug 1994397 - Remove obsolete Unused.h header
+9084cc9d3ed0308af1e30e391daf509995dc0598 # Revert - Bug 1994397 - Remove obsolete Unused.h header
+82d01f49ea3166afa2daeb31f79b9e446894ed06 # Revert - Bug 1994397 - Remove obsolete Unused.h header

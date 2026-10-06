@@ -69,7 +69,7 @@ add_task(async function test() {
 
   // select tab and make sure its browser is focused
   gBrowser.selectedTab = tab;
-  tab.ownerGlobal.focus();
+  tab.documentGlobal.focus();
 
   // wait for tab load
   await BrowserTestUtils.browserLoaded(gBrowser.getBrowserForTab(tab));

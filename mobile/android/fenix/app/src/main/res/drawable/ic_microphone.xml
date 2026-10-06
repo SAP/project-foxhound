@@ -5,10 +5,10 @@
 <animated-selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item
             android:id="@+id/enabled"
-            android:drawable="@drawable/ic_microphone_enabled"
+            android:drawable="@drawable/mozac_ic_microphone_24"
             android:state_enabled="true" />
     <item
             android:id="@+id/disabled"
-            android:drawable="@drawable/ic_microphone_disabled" />
+            android:drawable="@drawable/mozac_ic_microphone_slash_24" />
 
   </animated-selector>

@@ -70,8 +70,7 @@ add_task(async function test_new_tab() {
     await insertAndClickAnchor(testBrowser);
 
     let newTab = (await tabOpenEventPromise).target;
-    await promiseTabLoadEvent(newTab);
-
+    await BrowserTestUtils.browserLoaded(newTab.linkedBrowser);
     // insertAndClickAnchor causes an open to a web page which
     // means that the tab should eventually become remote.
     ok(
@@ -137,8 +136,7 @@ add_task(async function test_new_window() {
 
     let newTab = newWindow.gBrowser.selectedTab;
 
-    await promiseTabLoadEvent(newTab);
-
+    await BrowserTestUtils.browserLoaded(newTab.linkedBrowser);
     // insertAndClickAnchor causes an open to a web page which
     // means that the tab should eventually become remote.
     ok(

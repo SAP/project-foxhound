@@ -38,7 +38,7 @@ export class MarionetteEventsParent extends JSWindowActorParent {
   }
 }
 
-// Flag to check if the MarionetteEvents actors have already been registed.
+// Flag to check if the MarionetteEvents actors have already been registered.
 let eventsActorRegistered = false;
 
 /**
@@ -52,7 +52,6 @@ function registerEventsActor() {
   try {
     // Register the JSWindowActor pair for events as used by Marionette
     ChromeUtils.registerWindowActor("MarionetteEvents", {
-      kind: "JSWindowActor",
       parent: {
         esModuleURI:
           "chrome://remote/content/marionette/actors/MarionetteEventsParent.sys.mjs",

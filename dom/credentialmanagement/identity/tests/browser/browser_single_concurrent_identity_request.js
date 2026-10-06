@@ -31,11 +31,11 @@ add_task(async function test_concurrent_identity_credential() {
     }
   };
 
-  ContentTask.spawn(tab.linkedBrowser, null, requestCredential);
+  SpecialPowers.spawn(tab.linkedBrowser, [], requestCredential).catch(() => {});
 
-  let secondRequest = ContentTask.spawn(
+  let secondRequest = SpecialPowers.spawn(
     tab.linkedBrowser,
-    null,
+    [],
     requestCredential
   );
 

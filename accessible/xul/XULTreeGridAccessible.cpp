@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,7 +29,7 @@
 using namespace mozilla::a11y;
 using namespace mozilla;
 
-XULTreeGridAccessible::~XULTreeGridAccessible() {}
+XULTreeGridAccessible::~XULTreeGridAccessible() = default;
 
 ////////////////////////////////////////////////////////////////////////////////
 // XULTreeGridAccessible: Table
@@ -203,7 +202,7 @@ role XULTreeGridAccessible::NativeRole() const {
 
 already_AddRefed<XULTreeItemAccessibleBase>
 XULTreeGridAccessible::CreateTreeItemAccessible(int32_t aRow) const {
-  RefPtr<XULTreeItemAccessibleBase> accessible = new XULTreeGridRowAccessible(
+  auto accessible = MakeRefPtr<XULTreeGridRowAccessible>(
       mContent, mDoc, const_cast<XULTreeGridAccessible*>(this), mTree,
       mTreeView, aRow);
 
@@ -224,7 +223,7 @@ XULTreeGridRowAccessible::XULTreeGridRowAccessible(
   mStateFlags |= eNoKidsFromDOM;
 }
 
-XULTreeGridRowAccessible::~XULTreeGridRowAccessible() {}
+XULTreeGridRowAccessible::~XULTreeGridRowAccessible() = default;
 
 ////////////////////////////////////////////////////////////////////////////////
 // XULTreeGridRowAccessible: nsISupports and cycle collection implementation
@@ -251,7 +250,7 @@ void XULTreeGridRowAccessible::Shutdown() {
 
 role XULTreeGridRowAccessible::NativeRole() const { return roles::ROW; }
 
-ENameValueFlag XULTreeGridRowAccessible::Name(nsString& aName) const {
+ENameValueFlag XULTreeGridRowAccessible::DirectName(nsString& aName) const {
   aName.Truncate();
 
   // XXX: the row name sholdn't be a concatenation of cell names (bug 664384).
@@ -319,7 +318,7 @@ XULTreeGridCellAccessible* XULTreeGridRowAccessible::GetCellAccessible(
   XULTreeGridCellAccessible* cachedCell = mAccessibleCache.GetWeak(key);
   if (cachedCell) return cachedCell;
 
-  RefPtr<XULTreeGridCellAccessible> cell = new XULTreeGridCellAccessible(
+  auto cell = MakeRefPtr<XULTreeGridCellAccessible>(
       mContent, mDoc, const_cast<XULTreeGridRowAccessible*>(this), mTree,
       mTreeView, mRow, aColumn);
   mAccessibleCache.InsertOrUpdate(key, RefPtr{cell});
@@ -372,7 +371,7 @@ XULTreeGridCellAccessible::XULTreeGridCellAccessible(
   }
 }
 
-XULTreeGridCellAccessible::~XULTreeGridCellAccessible() {}
+XULTreeGridCellAccessible::~XULTreeGridCellAccessible() = default;
 
 ////////////////////////////////////////////////////////////////////////////////
 // XULTreeGridCellAccessible: nsISupports implementation
@@ -400,7 +399,7 @@ void XULTreeGridCellAccessible::Shutdown() {
 
 Accessible* XULTreeGridCellAccessible::FocusedChild() { return nullptr; }
 
-ENameValueFlag XULTreeGridCellAccessible::Name(nsString& aName) const {
+ENameValueFlag XULTreeGridCellAccessible::DirectName(nsString& aName) const {
   aName.Truncate();
 
   if (!mTreeView) return eNameOK;
@@ -455,7 +454,7 @@ nsRect XULTreeGridCellAccessible::BoundsInAppUnits() const {
 bool XULTreeGridCellAccessible::HasPrimaryAction() const {
   return mColumn->Cycler() ||
          (mColumn->Type() == dom::TreeColumn_Binding::TYPE_CHECKBOX &&
-          IsEditable());
+          IsEditableCell());
 }
 
 void XULTreeGridCellAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
@@ -469,7 +468,7 @@ void XULTreeGridCellAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
   }
 
   if (mColumn->Type() == dom::TreeColumn_Binding::TYPE_CHECKBOX &&
-      IsEditable()) {
+      IsEditableCell()) {
     nsAutoString value;
     mTreeView->GetCellValue(mRow, mColumn, value);
     if (value.EqualsLiteral("true")) {
@@ -522,7 +521,7 @@ bool XULTreeGridCellAccessible::Selected() {
 // XULTreeGridCellAccessible: LocalAccessible public implementation
 
 already_AddRefed<AccAttributes> XULTreeGridCellAccessible::NativeAttributes() {
-  RefPtr<AccAttributes> attributes = new AccAttributes();
+  auto attributes = MakeRefPtr<AccAttributes>();
 
   // "table-cell-index" attribute
   TableAccessible* table = Table();
@@ -587,8 +586,8 @@ bool XULTreeGridCellAccessible::CellInvalidated() {
     mTreeView->GetCellValue(mRow, mColumn, textEquiv);
     if (mCachedTextEquiv != textEquiv) {
       bool isEnabled = textEquiv.EqualsLiteral("true");
-      RefPtr<AccEvent> accEvent =
-          new AccStateChangeEvent(this, states::CHECKED, isEnabled);
+      auto accEvent =
+          MakeRefPtr<AccStateChangeEvent>(this, states::CHECKED, isEnabled);
       nsEventShell::FireEvent(accEvent);
 
       mCachedTextEquiv = textEquiv;
@@ -647,7 +646,7 @@ void XULTreeGridCellAccessible::DispatchClickEvent(
 ////////////////////////////////////////////////////////////////////////////////
 // XULTreeGridCellAccessible: protected implementation
 
-bool XULTreeGridCellAccessible::IsEditable() const {
+bool XULTreeGridCellAccessible::IsEditableCell() const {
   // XXX: logic corresponds to tree.xml, it's preferable to have interface
   // method to check it.
   bool isEditable = false;

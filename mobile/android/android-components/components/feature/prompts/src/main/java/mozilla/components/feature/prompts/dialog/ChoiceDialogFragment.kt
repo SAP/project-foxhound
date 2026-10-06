@@ -16,6 +16,7 @@ import androidx.annotation.VisibleForTesting.Companion.PRIVATE
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import mozilla.components.concept.engine.prompt.Choice
 import mozilla.components.feature.prompts.R
 import mozilla.components.support.utils.ext.getParcelableArrayCompat
@@ -105,7 +106,7 @@ internal class ChoiceDialogFragment : PromptDialogFragment() {
     }
 
     private fun createSingleChoiceDialog(): AlertDialog {
-        val builder = AlertDialog.Builder(requireContext())
+        val builder = MaterialAlertDialogBuilder(requireContext())
         val inflater = LayoutInflater.from(requireContext())
         val view = createDialogContentView(inflater)
 
@@ -116,7 +117,7 @@ internal class ChoiceDialogFragment : PromptDialogFragment() {
     }
 
     private fun createMultipleChoiceDialog(): AlertDialog {
-        val builder = AlertDialog.Builder(requireContext())
+        val builder = MaterialAlertDialogBuilder(requireContext())
         val inflater = LayoutInflater.from(requireContext())
         val view = createDialogContentView(inflater)
 

@@ -5,7 +5,8 @@
 /**
  * We skip authenticode cert checks from the service udpates
  * so that we can use updater-xpcshell with the wrong certs for testing.
- * This tests that code path.  */
+ * This tests that code path.
+ */
 
 function run_test() {
   if (!IS_AUTHENTICODE_CHECK_ENABLED) {

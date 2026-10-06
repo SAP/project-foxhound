@@ -1,0 +1,19 @@
+{
+  "label": "Sites relying on there being no window.InstallTrigger",
+  "bugs": {
+    "1854165": {
+      "issue": "broken-printing",
+      "matches": ["*://*.stallionexpress.ca/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "skip_if": ["InstallTrigger_undefined"],
+      "content_scripts": {
+        "all_frames": true,
+        "js": ["undefine_InstallTrigger.js"]
+      }
+    }
+  ]
+}

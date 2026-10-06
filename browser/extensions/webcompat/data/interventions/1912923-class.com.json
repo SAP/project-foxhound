@@ -1,0 +1,23 @@
+{
+  "label": "class.com",
+  "bugs": {
+    "1951358": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.class.com/*"]
+    },
+    "2028137": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.blackboard.com/*"]
+    },
+    "2033777": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.bbcollab.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

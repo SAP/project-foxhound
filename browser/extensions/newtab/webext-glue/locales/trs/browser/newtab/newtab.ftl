@@ -9,6 +9,38 @@ newtab-page-title = Rakïj ñanj nakàa
 newtab-settings-button =
     .title = Naduna dàj garan' ruhuât riña ñanj nakàa
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Rakïj ñanj nakàa
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num }dukuáan
+           *[other] { $num }ga'ì dukuáan
+        }
+home-restore-defaults-srd =
+    .label = Nagi'io' ru'ua nìanj
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = Nagi'iaj mu'ù nej URL...
+home-mode-choice-blank-srd =
+    .label = Ñanj gatsìi
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Nej sa du'uej
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Nej ñanj ngà' ni'io'
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Sa raj sun nichrò' doj
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Hiàj naduninj ma
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +48,7 @@ newtab-search-box-search-button =
     .title = Nana'uì'
     .aria-label = Nana'uì'
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Nutò' a'ngô sa ruguñu'unj ñù' nana'uì'
 newtab-topsites-edit-topsites-header = Nagi'io' sitio yitïnj in
@@ -44,9 +76,6 @@ newtab-topsites-add-button = Nutà'
 newtab-confirm-delete-history-p1 = Yitinj àni ruat dure' daran' riña gaché nut riña pagina na anj?
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = Si ga'ue dure' sa 'ngà gahuin na
-
-## Top Sites - Sponsored label
-
 
 ## Context Menu - Action Tooltips.
 
@@ -78,9 +107,6 @@ newtab-menu-save-to-pocket = Nanín sa'aj riña { -pocket-brand-name }
 newtab-menu-delete-pocket = Dure' riña { -pocket-brand-name }
 newtab-menu-archive-pocket = Nagi'iaj chre' riña { -pocket-brand-name }
 newtab-menu-show-privacy-info = Nej duguî' rugûñu'unj ni sa tna'uej rayi'ît
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -177,69 +203,8 @@ newtab-pocket-more-recommendations = A'ngô ne nuguan ni'ñanj huaa
 newtab-pocket-cta-button = Girì' { -pocket-brand-name }
 newtab-pocket-cta-text = Na'nïnj sà' nej nuguan' 'ï ruhuât riña { -pocket-brand-name } ni gataj ni'ñanj rát ngà nej sa gahiat.
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
 newtab-error-fallback-info = Hua 'ngo sa nu gahui hue'e 'nga gayi'ij na'nïnj ma
 newtab-error-fallback-refresh-link = Nagi'iaj nakà pagina nī garahue ñut
-
-## Customization Menu
-
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

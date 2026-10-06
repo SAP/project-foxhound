@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef HttpConnectionMgrShell_h__
-#define HttpConnectionMgrShell_h__
+#ifndef HttpConnectionMgrShell_h_
+#define HttpConnectionMgrShell_h_
 
 #include "nsISupports.h"
 
@@ -215,4 +215,4 @@ class HttpConnectionMgrShell : public nsISupports {
 
 }  // namespace mozilla::net
 
-#endif  // HttpConnectionMgrShell_h__
+#endif  // HttpConnectionMgrShell_h_

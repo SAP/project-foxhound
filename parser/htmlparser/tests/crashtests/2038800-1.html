@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<script>
+class XDiv extends HTMLDivElement {
+  static get observedAttributes() {
+    return ['x'];
+  }
+  attributeChangedCallback() {
+    if (window.alreadyMovedBody) {
+        return;
+    }
+    window.alreadyMovedBody = true;
+    this.appendChild(document.body);
+  }
+}
+customElements.define('x-div', XDiv, { extends: 'div' });
+</script>
+<body>
+<div is="x-div" x="t"></div>

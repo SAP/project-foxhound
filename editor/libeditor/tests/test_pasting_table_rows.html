@@ -238,12 +238,12 @@
         const rectOfLastColumnOfLastRow =
           lastColumnOfLastRow.getBoundingClientRect();
 
-        synthesizeMouse(lastColumnOfLastRow, rectOfLastColumnOfLastRow.width
-          /* aOffsetX */, rectOfLastColumnOfLastRow.height /* aOffsetY */,
+        synthesizeMouse(lastColumnOfLastRow, rectOfLastColumnOfLastRow.width - 1
+          /* aOffsetX */, rectOfLastColumnOfLastRow.height - 1 /* aOffsetY */,
           { type: "mousemove" } /* aEvent */);
 
-        synthesizeMouse(lastColumnOfLastRow, rectOfLastColumnOfLastRow.width
-          /* aOffsetX */, rectOfLastColumnOfLastRow.height /* aOffsetY */,
+        synthesizeMouse(lastColumnOfLastRow, rectOfLastColumnOfLastRow.width - 1
+          /* aOffsetX */, rectOfLastColumnOfLastRow.height - 1/* aOffsetY */,
           { type: "mouseup" } /* aEvent */);
       }
 

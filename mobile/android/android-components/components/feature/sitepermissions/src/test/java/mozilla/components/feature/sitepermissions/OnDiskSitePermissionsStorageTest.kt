@@ -6,9 +6,7 @@ package mozilla.components.feature.sitepermissions
 
 import android.os.Looper.getMainLooper
 import androidx.paging.DataSource
-import androidx.room.DatabaseConfiguration
 import androidx.room.InvalidationTracker
-import androidx.sqlite.db.SupportSQLiteOpenHelper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.engine.DataCleanable
@@ -126,6 +124,8 @@ class OnDiskSitePermissionsStorageTest {
                 autoplayAudible = AutoplayStatus.BLOCKED,
                 autoplayInaudible = AutoplayStatus.BLOCKED,
                 mediaKeySystemAccess = NO_DECISION,
+                localDeviceAccess = NO_DECISION,
+                localNetworkAccess = NO_DECISION,
                 savedAt = 0,
             )
 
@@ -222,6 +222,8 @@ class OnDiskSitePermissionsStorageTest {
                 autoplayAudible = AutoplayStatus.BLOCKED,
                 autoplayInaudible = AutoplayStatus.BLOCKED,
                 mediaKeySystemAccess = NO_DECISION,
+                localDeviceAccess = NO_DECISION,
+                localNetworkAccess = NO_DECISION,
                 savedAt = 0,
             ),
             SitePermissionsEntity(
@@ -236,6 +238,8 @@ class OnDiskSitePermissionsStorageTest {
                 autoplayAudible = AutoplayStatus.BLOCKED,
                 autoplayInaudible = AutoplayStatus.BLOCKED,
                 mediaKeySystemAccess = NO_DECISION,
+                localDeviceAccess = NO_DECISION,
+                localNetworkAccess = NO_DECISION,
                 savedAt = 0,
             ),
         )
@@ -243,8 +247,6 @@ class OnDiskSitePermissionsStorageTest {
 
     private fun mockDatabase(dao: SitePermissionsDao) = object : SitePermissionsDatabase() {
         override fun sitePermissionsDao() = dao
-
-        override fun createOpenHelper(config: DatabaseConfiguration): SupportSQLiteOpenHelper = mock()
         override fun createInvalidationTracker(): InvalidationTracker = mock()
         override fun clearAllTables() = Unit
     }

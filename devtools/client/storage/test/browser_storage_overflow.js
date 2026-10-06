@@ -9,7 +9,7 @@
 const ITEMS_PER_PAGE = 50;
 
 add_task(async function () {
-  await openTabAndSetupStorage(MAIN_DOMAIN_SECURED + "storage-overflow.html");
+  await openTabAndSetupStorage(MAIN_URL_SECURED + "storage-overflow.html");
 
   info("Run the tests with short DevTools");
   await runTests();
@@ -36,7 +36,7 @@ async function runTests(tall) {
   }
 
   gUI.tree.expandAll();
-  await selectTreeItem(["localStorage", "https://test1.example.org"]);
+  await selectTreeItem(["localStorage", MAIN_ORIGIN_SECURED]);
 
   if (tall) {
     if (getCellLength() === ITEMS_PER_PAGE) {

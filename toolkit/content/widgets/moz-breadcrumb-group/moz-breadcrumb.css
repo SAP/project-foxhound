@@ -3,11 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 :host {
-  --breadcrumb-link-color: var(--link-color);
-  --breadcrumb-link-color-hover: var(--link-color-hover);
-  --breadcrumb-link-color-active: var(--link-color-active);
-  --breadcrumb-link-color-visited: var(--link-color-visited);
-
   display: flex;
   align-items: center;
   font-size: var(--font-size-small);

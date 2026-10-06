@@ -3,8 +3,15 @@
 
 "use strict";
 
+const { MAX_CAPTURE_DIMENSION } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/screenshots/ScreenshotsUtils.sys.mjs"
+);
+
+const STRINGS_URI = "devtools/shared/locales/screenshot.properties";
+const L10N = new LocalizationHelper(STRINGS_URI);
+
 const TEST_URL = `data:text/html;charset=utf8,
-  <div id="blue-node" style="width:30px;height:11000px;background:rgb(0, 0, 255)"></div>`;
+  <div id="blue-node" style="width:30px;height:${MAX_CAPTURE_DIMENSION + 1}px;background:rgb(0, 0, 255)"></div>`;
 
 // Test taking a screenshot of a tall node displays a warning message in the notification box.
 add_task(async function () {
@@ -15,11 +22,16 @@ add_task(async function () {
 
   info("Take a screenshot of the blue node and verify it looks as expected");
   const blueScreenshot = await takeNodeScreenshot(inspector);
-  await assertSingleColorScreenshotImage(blueScreenshot, 30, 10000, {
-    r: 0,
-    g: 0,
-    b: 255,
-  });
+  await assertSingleColorScreenshotImage(
+    blueScreenshot,
+    30,
+    MAX_CAPTURE_DIMENSION,
+    {
+      r: 0,
+      g: 0,
+      b: 255,
+    }
+  );
 
   info(
     "Check that a warning message was displayed to indicate the screenshot was truncated"
@@ -28,9 +40,19 @@ add_task(async function () {
     toolbox.doc.querySelector(".notificationbox")
   );
 
-  const message = notificationBox.querySelector(".notification").textContent;
-  ok(
-    message.startsWith("The image was cut off"),
+  const message = notificationBox
+    .querySelector(".notification")
+    .textContent.trim();
+
+  const expectedMsg = L10N.getFormatStr(
+    "screenshotTruncationWarning",
+    blueScreenshot.width,
+    blueScreenshot.height
+  );
+
+  is(
+    message,
+    expectedMsg,
     `The warning message is rendered as expected (${message})`
   );
 

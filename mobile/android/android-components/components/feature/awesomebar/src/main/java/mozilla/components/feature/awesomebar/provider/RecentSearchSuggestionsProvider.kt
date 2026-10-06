@@ -20,9 +20,9 @@ import mozilla.components.feature.search.ext.buildSearchUrl
 import java.util.UUID
 
 /**
- * Return 2 recent search suggestions by default. Same as on desktop.
+ * Number of recent search suggestions to return by default.
  */
-const val DEFAULT_RECENT_SEARCH_SUGGESTION_LIMIT = 2
+const val DEFAULT_RECENT_SEARCH_SUGGESTION_LIMIT = 5
 
 /**
  * Error message if clients are requesting for a too big number of suggestions.

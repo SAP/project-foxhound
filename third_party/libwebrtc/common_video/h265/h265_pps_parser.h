@@ -11,9 +11,11 @@
 #ifndef COMMON_VIDEO_H265_H265_PPS_PARSER_H_
 #define COMMON_VIDEO_H265_H265_PPS_PARSER_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <optional>
+#include <span>
 
-#include "api/array_view.h"
 #include "common_video/h265/h265_sps_parser.h"
 #include "rtc_base/bitstream_reader.h"
 #include "rtc_base/system/rtc_export.h"
@@ -44,17 +46,17 @@ class RTC_EXPORT H265PpsParser {
   };
 
   // Unpack RBSP and parse PPS state from the supplied buffer.
-  static std::optional<PpsState> ParsePps(rtc::ArrayView<const uint8_t> data,
+  static std::optional<PpsState> ParsePps(std::span<const uint8_t> data,
                                           const H265SpsParser::SpsState* sps);
   // TODO: bugs.webrtc.org/42225170 - Deprecate.
   static inline std::optional<PpsState> ParsePps(
       const uint8_t* data,
       size_t length,
       const H265SpsParser::SpsState* sps) {
-    return ParsePps(rtc::MakeArrayView(data, length), sps);
+    return ParsePps(std::span(data, length), sps);
   }
 
-  static bool ParsePpsIds(rtc::ArrayView<const uint8_t> data,
+  static bool ParsePpsIds(std::span<const uint8_t> data,
                           uint32_t* pps_id,
                           uint32_t* sps_id);
   // TODO: bugs.webrtc.org/42225170 - Deprecate.
@@ -62,14 +64,14 @@ class RTC_EXPORT H265PpsParser {
                                  size_t length,
                                  uint32_t* pps_id,
                                  uint32_t* sps_id) {
-    return ParsePpsIds(rtc::MakeArrayView(data, length), pps_id, sps_id);
+    return ParsePpsIds(std::span(data, length), pps_id, sps_id);
   }
 
  protected:
   // Parse the PPS state, for a bit buffer where RBSP decoding has already been
   // performed.
   static std::optional<PpsState> ParseInternal(
-      rtc::ArrayView<const uint8_t> buffer,
+      std::span<const uint8_t> buffer,
       const H265SpsParser::SpsState* sps);
   static bool ParsePpsIdsInternal(BitstreamReader& reader,
                                   uint32_t& pps_id,

@@ -7,32 +7,32 @@
 // Test that the samesite cookie attribute is displayed correctly.
 
 add_task(async function () {
-  await openTabAndSetupStorage(MAIN_DOMAIN + "storage-cookies-samesite.html");
+  await openTabAndSetupStorage(MAIN_URL + "storage-cookies-samesite.html");
 
   const id1 = getCookieId(
     "test1",
-    "test1.example.org",
+    MAIN_HOST,
     "/browser/devtools/client/storage/test"
   );
   const id2 = getCookieId(
     "test2",
-    "test1.example.org",
+    MAIN_HOST,
     "/browser/devtools/client/storage/test"
   );
   const id3 = getCookieId(
     "test3",
-    "test1.example.org",
+    MAIN_HOST,
     "/browser/devtools/client/storage/test"
   );
   const id4 = getCookieId(
     "test4",
-    "test1.example.org",
+    MAIN_HOST,
     "/browser/devtools/client/storage/test"
   );
 
   await checkState([
     [
-      ["cookies", "http://test1.example.org"],
+      ["cookies", MAIN_ORIGIN],
       [id1, id2, id3, id4],
     ],
   ]);

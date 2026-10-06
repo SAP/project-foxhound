@@ -285,7 +285,7 @@ and when.
 
 Please do [reach out for assistance][glean-matrix] if you have any questions.
 
-[app-shutdown]: https://searchfox.org/mozilla-central/source/xpcom/base/AppShutdown.cpp#57
+[app-shutdown]: https://searchfox.org/firefox-main/source/xpcom/base/AppShutdown.cpp#57
 [glean-lifetimes]: https://mozilla.github.io/glean/book/user/metrics/adding-new-metrics.html#when-should-the-glean-sdk-automatically-clear-the-measurement
 [glean-matrix]: https://chat.mozilla.org/#/room/#glean:mozilla.org
 [stringlist-limit]: https://mozilla.github.io/glean/book/reference/metrics/string_list.html#limits-1

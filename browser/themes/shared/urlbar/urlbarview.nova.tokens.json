@@ -1,0 +1,8 @@
+{
+  "border": {
+    "radius": {
+      "comment": "TODO Bug 2031910: Finalize the border radius for Nova.",
+      "value": "1.8462em"
+    }
+  }
+}

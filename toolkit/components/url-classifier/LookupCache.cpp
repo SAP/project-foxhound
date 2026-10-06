@@ -1,4 +1,3 @@
-//* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +7,6 @@
 #include "HashStore.h"
 #include "nsIFileStreams.h"
 #include "nsISeekableStream.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/glean/UrlClassifierMetrics.h"
 #include "mozilla/Logging.h"
 #include "nsNetUtil.h"
@@ -206,7 +204,7 @@ nsresult LookupCache::Open() {
     rv = LoadPrefixSet();
   }
 
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   return rv;
 }
@@ -505,7 +503,7 @@ void LookupCache::GetLookupEntitylistFragments(
     if (FindCharInReadable('.', iter, end)) {
       iter++;
       nsAutoCString thirdPartyURLToAdd;
-      thirdPartyURLToAdd.Assign(Substring(iter++, end));
+      thirdPartyURLToAdd.Assign(Substring(iter, end));
 
       // don't bother checking toplevel domains
       if (FindCharInReadable('.', iter, end)) {
@@ -721,7 +719,7 @@ nsresult LookupCache::StoreToFile(nsCOMPtr<nsIFile>& aFile) {
     nsCOMPtr<nsIFileOutputStream> fos(do_QueryInterface(localOutFile));
     auto timer = glean::urlclassifier::vlps_fallocate_time.Measure();
 
-    Unused << fos->Preallocate(fileSize);
+    (void)fos->Preallocate(fileSize);
   }
 
   nsCOMPtr<nsIOutputStream> out;
@@ -757,7 +755,7 @@ nsresult LookupCache::StoreToFile(nsCOMPtr<nsIFile>& aFile) {
   LOG(("[%s] Storing PrefixSet successful", mTableName.get()));
 
   // This is to remove old ".pset" files if exist
-  Unused << ClearLegacyFile();
+  (void)ClearLegacyFile();
   return NS_OK;
 }
 

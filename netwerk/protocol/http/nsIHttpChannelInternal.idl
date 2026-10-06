@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -277,10 +276,22 @@ interface nsIHttpChannelInternal : nsISupports
     [must_use] attribute boolean bypassProxy;
 
     /**
+     * Based on the proxy configuration, indicates how the end server host
+     * name will be resolved. ORIGIN (1) means the client resolves the host
+     * locally; PROXY (2) means the proxy resolves the host (so no DNS query
+     * for the origin host should be issued by the client).
+     */
+    cenum ProxyDNSStrategy : 8 {
+      PROXY_DNS_STRATEGY_ORIGIN = 1,
+      PROXY_DNS_STRATEGY_PROXY = 2,
+    };
+    [must_use, noscript] readonly attribute nsIHttpChannelInternal_ProxyDNSStrategy proxyDNSStrategy;
+
+    /**
      * True if channel is used by the internal trusted recursive resolver
      * This flag places data for the request in a cache segment specific to TRR
      */
-    [noscript, must_use] attribute boolean isTRRServiceChannel;
+    [must_use] attribute boolean isTRRServiceChannel;
 
     /**
      * If the channel's remote IP was resolved using TRR.

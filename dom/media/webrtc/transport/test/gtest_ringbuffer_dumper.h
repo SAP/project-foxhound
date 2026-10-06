@@ -1,22 +1,19 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Original author: bcampen@mozilla.com
 
-#ifndef gtest_ringbuffer_dumper_h__
-#define gtest_ringbuffer_dumper_h__
+#ifndef gtest_ringbuffer_dumper_h_
+#define gtest_ringbuffer_dumper_h_
 
 #include "mozilla/SyncRunnable.h"
 
 #define GTEST_HAS_RTTI 0
 #include "gtest/gtest.h"
-
 #include "mtransport_test_utils.h"
-#include "runnable_utils.h"
 #include "rlogconnector.h"
+#include "runnable_utils.h"
 
 using mozilla::RLogConnector;
 using mozilla::WrapRunnable;
@@ -85,4 +82,4 @@ class RingbufferDumper : public ::testing::EmptyTestEventListener {
 
 }  // namespace test
 
-#endif  // gtest_ringbuffer_dumper_h__
+#endif  // gtest_ringbuffer_dumper_h_

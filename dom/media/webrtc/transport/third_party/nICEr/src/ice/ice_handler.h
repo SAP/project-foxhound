@@ -34,10 +34,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef _ice_h
 #define _ice_h
-#ifdef __cplusplus
-using namespace std;
-extern "C" {
-#endif /* __cplusplus */
 
 typedef struct nr_ice_handler_vtbl_ {
   /* The checks on this media stream are done. The handler needs to
@@ -83,8 +79,5 @@ typedef struct nr_ice_handler_ {
   nr_ice_handler_vtbl *vtbl;
 } nr_ice_handler;
 
-#ifdef __cplusplus
-}
-#endif /* __cplusplus */
 #endif
 

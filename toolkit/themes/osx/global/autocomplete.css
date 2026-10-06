@@ -16,8 +16,8 @@ panel[type="autocomplete-richlistbox"] {
   background-color: transparent;
   font: icon;
   --panel-padding: 0px;
-  --panel-color: FieldText;
-  --panel-background: Field;
+  --panel-text-color: FieldText;
+  --panel-background-color: Field;
   --panel-border-color: ThreeDShadow;
 }
 

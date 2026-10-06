@@ -1,9 +1,6 @@
 [DEFAULT]
 support-files = [
   "empty.html",
-  "image.gif",
-  "image.png",
-  "image_server.sjs",
 ]
 tags = "os_integration"
 
@@ -16,10 +13,10 @@ tags = "os_integration"
 
 ["test_alerts_requireinteraction.html"]
 
-["test_image.html"]
-
 ["test_invalid_utf16.html"]
-run-if = ["os == 'win'"] # Bug 1836526
+run-if = [
+  "os == 'win'", # Bug 1836526
+]
 
 ["test_multiple_alerts.html"]
 

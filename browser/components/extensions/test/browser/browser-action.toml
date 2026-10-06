@@ -1,0 +1,136 @@
+[DEFAULT]
+skip-if = [
+	"debug && standalone", # TODO bug 2048260: Drop skip-if = standalone
+]
+tags = "webextensions"
+prefs = [
+  # We don't want to reset this at the end of the test, so that we don't have
+  # to spawn a new extension child process for each test unit.
+  "dom.ipc.keepProcessesAlive.extension=1",
+]
+support-files = [
+  "head.js",
+  "head_browserAction.js",
+  "head_pageAction.js",
+  "file_dummy.html",
+]
+
+["browser_ext_action_openPopup.js"]
+support-files = [
+  "context.html",
+  "context_frame.html",
+  "ctxmenu-image.png",
+]
+
+["browser_ext_action_popup_allowed_urls.js"]
+
+["browser_ext_browserAction_activeTab.js"]
+
+["browser_ext_browserAction_area.js"]
+
+["browser_ext_browserAction_click_types.js"]
+
+["browser_ext_browserAction_context.js"]
+https_first_disabled = true
+
+["browser_ext_browserAction_contextMenu.js"]
+support-files = ["head_unified_extensions.js"]
+
+["browser_ext_browserAction_disabled.js"]
+
+["browser_ext_browserAction_experiment.js"]
+
+["browser_ext_browserAction_getUserSettings.js"]
+
+["browser_ext_browserAction_incognito.js"]
+
+["browser_ext_browserAction_keyclick.js"]
+
+["browser_ext_browserAction_onUserSettingsChanged.js"]
+
+["browser_ext_browserAction_pageAction_icon.js"]
+
+["browser_ext_browserAction_pageAction_icon_permissions.js"]
+
+["browser_ext_browserAction_popup.js"]
+
+["browser_ext_browserAction_popup_port.js"]
+
+["browser_ext_browserAction_popup_preload.js"]
+
+["browser_ext_browserAction_popup_preload_smoketest.js"]
+
+["browser_ext_browserAction_popup_resize.js"]
+
+["browser_ext_browserAction_popup_resize_bottom.js"]
+
+["browser_ext_browserAction_simple.js"]
+
+["browser_ext_browserAction_telemetry.js"]
+
+["browser_ext_browserAction_theme_icons.js"]
+
+["browser_ext_incognito_popup.js"]
+
+["browser_ext_openPanel.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1775565
+]
+
+["browser_ext_pageAction_activeTab.js"]
+
+["browser_ext_pageAction_click_types.js"]
+
+["browser_ext_pageAction_color_scheme_svg.js"]
+
+["browser_ext_pageAction_context.js"]
+https_first_disabled = true
+
+["browser_ext_pageAction_contextMenu.js"]
+
+["browser_ext_pageAction_popup.js"]
+
+["browser_ext_pageAction_popup_resize.js"]
+
+["browser_ext_pageAction_show_matches.js"]
+https_first_disabled = true
+
+["browser_ext_pageAction_simple.js"]
+
+["browser_ext_pageAction_telemetry.js"]
+
+["browser_ext_pageAction_title.js"]
+
+["browser_ext_popup_after_close.js"]
+
+["browser_ext_popup_api_injection.js"]
+support-files = [
+  "file_popup_api_injection_a.html",
+  "file_popup_api_injection_b.html",
+]
+
+["browser_ext_popup_background.js"]
+
+["browser_ext_popup_bug1906132.js"]
+
+["browser_ext_popup_corners.js"]
+
+["browser_ext_popup_focus.js"]
+
+["browser_ext_popup_links_open_in_tabs.js"]
+
+["browser_ext_popup_requestPermission.js"]
+
+["browser_ext_popup_select.js"]
+run-if = [
+  "os == 'win'", # disabled on macos/linux in bug 1379508 due to frequent failures; see browser_ext_popup_select_in_oopif.js instead
+]
+
+["browser_ext_popup_select_in_oopif.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan && fission && swgl", # high frequency intermittent
+]
+
+["browser_ext_popup_sendMessage.js"]
+
+["browser_ext_popup_shutdown.js"]

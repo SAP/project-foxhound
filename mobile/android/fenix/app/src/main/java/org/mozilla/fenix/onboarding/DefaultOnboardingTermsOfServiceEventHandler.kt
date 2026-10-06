@@ -7,6 +7,7 @@ package org.mozilla.fenix.onboarding
 import mozilla.components.support.ktx.kotlin.ifNullOrEmpty
 import org.mozilla.fenix.onboarding.view.OnboardingTermsOfServiceEventHandler
 import org.mozilla.fenix.settings.SupportUtils
+import org.mozilla.fenix.termsofuse.TOU_VERSION
 import org.mozilla.fenix.utils.Settings
 
 /**
@@ -17,6 +18,7 @@ class DefaultOnboardingTermsOfServiceEventHandler(
     private val openLink: (String) -> Unit,
     private val showManagePrivacyPreferencesDialog: () -> Unit,
     private val settings: Settings,
+    private val startGlean: () -> Unit,
 ) : OnboardingTermsOfServiceEventHandler {
 
     override fun onTermsOfServiceLinkClicked(url: String) {
@@ -32,7 +34,7 @@ class DefaultOnboardingTermsOfServiceEventHandler(
         telemetryRecorder.onTermsOfServicePrivacyNoticeLinkClick()
         openLink(
             url.trim().ifNullOrEmpty {
-                SupportUtils.getMozillaPageUrl(SupportUtils.MozillaPage.PRIVATE_NOTICE)
+                SupportUtils.getMozillaPageUrl(SupportUtils.MozillaPage.PRIVACY_NOTICE)
             },
         )
     }
@@ -42,8 +44,11 @@ class DefaultOnboardingTermsOfServiceEventHandler(
         showManagePrivacyPreferencesDialog()
     }
 
-    override fun onAcceptTermsButtonClicked() {
+    override fun onAcceptTermsButtonClicked(nowMillis: Long) {
         telemetryRecorder.onTermsOfServiceManagerAcceptTermsButtonClick()
         settings.hasAcceptedTermsOfService = true
+        settings.termsOfUseAcceptedVersion = TOU_VERSION
+        settings.termsOfUseAcceptedTimeInMillis = nowMillis
+        startGlean()
     }
 }

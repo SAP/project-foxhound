@@ -4,6 +4,15 @@
 
 @import url("chrome://global/skin/in-content/common.css");
 
+:host {
+  /* Local variables with fallbacks for mobile compatibility.
+   * Bug 1986645: We should ship these variables in Android and remove here. */
+  --aboutlogging-text-color-deemphasized: var(--text-color-deemphasized, color-mix(in srgb, currentColor 69%, transparent));
+  --aboutlogging-box-background: var(--background-color-box, light-dark(#fff, #23222b));
+  --aboutlogging-box-border-color: var(--border-color, color-mix(in srgb, currentColor 41%, transparent));
+  --aboutlogging-border-radius-small: var(--border-radius-small, 4px);
+}
+
 [hidden] {
   /* This page uses the hidden attribute a lot, so let's make sure we don't
    * override it by mistake. */
@@ -25,7 +34,9 @@
   background-color: var(--background-color-success);
   color: var(--text-color);
   text-align: center;
-  border-radius: var(--border-radius-small);
+  /* Bug 1986645: Border radius tokens are not shipped in Android, so we use a variable with fallback */
+  /* stylelint-disable-next-line  stylelint-plugin-mozilla/use-design-tokens */
+  border-radius: var(--aboutlogging-border-radius-small);
   padding: var(--space-medium);
   opacity: 0;
   transition:
@@ -80,6 +91,9 @@
 
 label {
   line-height: 1.8em;
+  & + input {
+    margin-inline-start: 1em;
+  }
 }
 
 input[type="text"] {
@@ -105,11 +119,11 @@ input[type="text"] {
 
 .info-box {
   padding: 1em;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
 }
 
 .info-box-label {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 #error {
@@ -118,8 +132,8 @@ input[type="text"] {
 }
 
 #some-elements-unavailable {
-  background-color: var(--in-content-box-info-background);
-  border-color: var(--in-content-box-border-color);
+  background-color: var(--background-color-box-info);
+  border-color: var(--aboutlogging-box-border-color);
 }
 
 .button-with-icon {
@@ -129,4 +143,56 @@ input[type="text"] {
   /* Make sure that the icon changes color in dark mode. */
   -moz-context-properties: fill;
   fill: currentColor;
+}
+
+/* Uploaded Profiles section styles */
+#uploaded-profiles-section {
+  margin-bottom: 2em;
+}
+
+.uploaded-profile-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1em;
+  margin-bottom: 0.5em;
+  border: 1px solid var(--aboutlogging-box-border-color);
+  /* Bug 1986645: Border radius tokens are not shipped in Android, so we use a variable with fallback */
+  /* stylelint-disable-next-line  stylelint-plugin-mozilla/use-design-tokens */
+  border-radius: var(--aboutlogging-border-radius-small);
+  background-color: var(--aboutlogging-box-background);
+}
+
+.uploaded-profile-info {
+  flex: 1;
+}
+
+.uploaded-profile-name {
+  font-weight: var(--font-weight-semibold);
+  margin-bottom: 0.25em;
+}
+
+.uploaded-profile-details {
+  display: flex;
+  gap: 1em;
+  font-size: 0.9em;
+  color: var(--aboutlogging-text-color-deemphasized);
+}
+
+.uploaded-profile-actions {
+  margin-inline-start: 1em;
+}
+
+.delete-profile-button {
+  /* moz-button doesn't have proper styles for Android and it doesn't appear
+   * clickable there. Making this look like a clickable element. This will be
+   * overwritten by moz-button on desktop. */
+  color: LinkText;
+}
+
+#no-uploaded-profiles {
+  color: var(--aboutlogging-text-color-deemphasized);
+  font-style: italic;
+  text-align: center;
+  padding: 2em;
 }

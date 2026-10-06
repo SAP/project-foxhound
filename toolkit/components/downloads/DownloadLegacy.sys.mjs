@@ -98,6 +98,14 @@ DownloadLegacyTransfer.prototype = {
       // object to be available before notifying.
       this._promiseDownload
         .then(download => {
+          download.source.triggeredByContentDispositionHeader = false;
+          if (aRequest instanceof Ci.nsIHttpChannel) {
+            try {
+              download.source.triggeredByContentDispositionHeader =
+                !!aRequest.contentDispositionHeader;
+            } catch (e) {}
+          }
+
           // If the request was blocked, now that we have the download object we
           // should set a flag that can be retrieved later when handling the
           // cancellation so that the proper error can be thrown.

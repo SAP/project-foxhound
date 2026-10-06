@@ -1,0 +1,116 @@
+<?xml version="1.0"?>
+<?xml-stylesheet href="chrome://global/skin" type="text/css"?>
+<?xml-stylesheet href="chrome://mochikit/content/tests/SimpleTest/test.css" type="text/css"?>
+
+<window title="Native anchored menu tests"
+        xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
+  <title>Native anchored menu tests</title>
+
+  <script type="application/javascript"
+          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+
+  <script type="application/javascript">
+  <![CDATA[
+    function promiseShown(element) {
+      return new Promise((resolve) => {
+        element.addEventListener("popupshown", (e) => resolve(e.target), { once: true });
+      });
+    }
+
+    function promiseHidden(element) {
+      return new Promise((resolve) => {
+        element.addEventListener("popuphidden", (e) => resolve(e.target), { once: true });
+      });
+    }
+
+    add_task(async function testMenuNativeness() {
+      const anchor = document.querySelector("#anchor");
+
+      // Test that an element which has an associated menu opens as a native menu.
+      const buttonMenu = document.querySelector("#buttonMenu");
+      const buttonMenuShown = promiseShown(buttonMenu);
+      anchor.click();
+      await buttonMenuShown;
+
+      ok(buttonMenu.isNativeMenu, "Button menupopup is native");
+
+      const buttonMenuHidden = promiseHidden(buttonMenu);
+      buttonMenu.hidePopup();
+      await buttonMenuHidden;
+
+
+      // Test that a menupopup with an anchor element opens as a native menu.
+      const menupopup = document.querySelector("#menupopup");
+      const nativeShown = promiseShown(menupopup);
+      menupopup.openPopup(anchor);
+      await nativeShown;
+
+      ok(menupopup.isNativeMenu, "Menupopup with anchor element is native");
+
+      const nativeHidden = promiseHidden(menupopup);
+      menupopup.hidePopup();
+      await nativeHidden;
+
+
+      // Test that a menupopup with an anchor rect opens as a native menu.
+      const nativeRectShown = promiseShown(menupopup);
+      menupopup.openPopupAtScreenRect("after_start", 0, 0, 100, 30);
+      await nativeRectShown;
+
+      ok(menupopup.isNativeMenu, "Menupopup with anchor rect is native");
+
+      const nativeRectHidden = promiseHidden(menupopup);
+      menupopup.hidePopup();
+      await nativeRectHidden;
+
+
+      // Test that a menupopup with the nonnative attribute set opens as a non-native menu.
+      menupopup.toggleAttribute("nonnative", true);
+      const nonNativeShown = promiseShown(menupopup);
+      menupopup.openPopup(anchor);
+      await nonNativeShown;
+
+      ok(!menupopup.isNativeMenu, "Menupopup with nonnative attribute set is non-native");
+
+      const nonNativeHidden = promiseHidden(menupopup);
+      menupopup.hidePopup();
+      await nonNativeHidden;
+
+
+      // Test that a popup that is not a menupopup does not open as a native menu.
+      const panel = document.querySelector("#panel");
+      const panelShown = promiseShown(panel);
+      panel.openPopup(anchor);
+      await panelShown;
+
+      ok(!panel.isNativeMenu, "Panel is not a native menu");
+
+      const panelHidden = promiseHidden(panel);
+      panel.hidePopup();
+      await panelHidden;
+    });
+  ]]>
+  </script>
+
+  <body xmlns="http://www.w3.org/1999/xhtml"
+        xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
+    <p id="display">
+      <xul:button type="menu" label="Open menu" id="anchor">
+        <xul:menupopup id="buttonMenu">
+          <xul:menuitem title="Button menu item" />
+        </xul:menupopup>
+      </xul:button>
+    </p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+
+  <popupset>
+    <panel id="panel">
+      <hbox width="50" height="50" />
+    </panel>
+    <menupopup id="menupopup">
+      <menuitem label="Menu item" />
+    </menupopup>
+  </popupset>
+</window>

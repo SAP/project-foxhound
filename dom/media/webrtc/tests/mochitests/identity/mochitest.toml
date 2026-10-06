@@ -1,6 +1,8 @@
 [DEFAULT]
 subsuite = "media"
-skip-if = ["os == 'linux' && !debug"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt",
+]
 support-files = [
   "/.well-known/idp-proxy/idp.js",
   "identityPcTest.js",
@@ -44,11 +46,15 @@ support-files = [
 
 ["test_peerConnection_asymmetricIsolation.html"]
 scheme = "https"
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_peerConnection_peerIdentity.html"]
 scheme = "https"
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_setIdentityProvider.html"]
 scheme = "https"

@@ -25,7 +25,7 @@ ifdef NDK_ROOT
 # Android.mk file in the libvpx directory:
 # LOCAL_PATH := $(call my-dir)
 # include $(CLEAR_VARS)
-# include jni/libvpx/build/make/Android.mk
+# include libvpx/build/make/Android.mk
 #
 # By default libvpx will use the 'cpufeatures' module from the NDK. This allows
 # the library to be built with all available optimizations (SSE2->AVX512 for
@@ -83,6 +83,8 @@ include $(LIBVPX_PATH)/libs.mk
 
 # Optimise the code. May want to revisit this setting in the future.
 LOCAL_CFLAGS := -O3
+
+LOCAL_CONLYFLAGS := -std=c11
 
 # For x86, include the source code in the search path so it will find files
 # like x86inc.asm and x86_abi_support.asm

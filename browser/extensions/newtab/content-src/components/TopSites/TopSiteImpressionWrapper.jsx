@@ -23,6 +23,11 @@ export const INTERSECTION_RATIO = 0.5;
  * only when the component is visible on the page.
  */
 export class TopSiteImpressionWrapper extends React.PureComponent {
+  constructor(props) {
+    super(props);
+    this.wrapperRef = React.createRef();
+  }
+
   _dispatchImpressionStats() {
     const { actionType, tile } = this.props;
     if (!actionType) {
@@ -99,7 +104,7 @@ export class TopSiteImpressionWrapper extends React.PureComponent {
         )
       ) {
         this._dispatchImpressionStats();
-        this.impressionObserver.unobserve(this.refs.topsite_impression_wrapper);
+        this.impressionObserver.unobserve(this.wrapperRef.current);
       }
     };
 
@@ -108,7 +113,7 @@ export class TopSiteImpressionWrapper extends React.PureComponent {
       this._handleIntersect,
       options
     );
-    this.impressionObserver.observe(this.refs.topsite_impression_wrapper);
+    this.impressionObserver.observe(this.wrapperRef.current);
   }
 
   componentDidMount() {
@@ -119,7 +124,7 @@ export class TopSiteImpressionWrapper extends React.PureComponent {
 
   componentWillUnmount() {
     if (this._handleIntersect && this.impressionObserver) {
-      this.impressionObserver.unobserve(this.refs.topsite_impression_wrapper);
+      this.impressionObserver.unobserve(this.wrapperRef.current);
     }
     if (this._onVisibilityChange) {
       this.props.document.removeEventListener(
@@ -131,10 +136,7 @@ export class TopSiteImpressionWrapper extends React.PureComponent {
 
   render() {
     return (
-      <div
-        ref={"topsite_impression_wrapper"}
-        className="topsite-impression-observer"
-      >
+      <div ref={this.wrapperRef} className="topsite-impression-observer">
         {this.props.children}
       </div>
     );

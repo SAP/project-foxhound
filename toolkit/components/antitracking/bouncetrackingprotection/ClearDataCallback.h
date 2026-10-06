@@ -1,10 +1,11 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef mozilla_ClearDataCallback_h__
-#define mozilla_ClearDataCallback_h__
+#ifndef mozilla_ClearDataCallback_h_
+#define mozilla_ClearDataCallback_h_
 
 #include "BounceTrackingMapEntry.h"
+#include "BounceTrackingRecord.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/glean/bindings/GleanMetric.h"
 #include "nsIClearDataService.h"
@@ -29,7 +30,8 @@ class ClearDataCallback final : public nsIClearDataCallback,
 
   explicit ClearDataCallback(ClearDataMozPromise::Private* aPromise,
                              const OriginAttributes& aOriginAttributes,
-                             const nsACString& aHost, PRTime aBounceTime);
+                             const nsACString& aHost, PRTime aBounceTime,
+                             BounceTrackingRecord* aChainRecord = nullptr);
 
  private:
   virtual ~ClearDataCallback();

@@ -14,7 +14,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "IOUtil",
   "@mozilla.org/io-util;1",
-  "nsIIOUtil"
+  Ci.nsIIOUtil
 );
 
 ChromeUtils.defineLazyGetter(lazy, "ScriptableInputStream", () => {

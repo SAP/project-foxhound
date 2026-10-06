@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -42,6 +40,7 @@
 #include "vm/List.h"
 #include "vm/Opcodes.h"
 #include "vm/RealmFuses.h"
+#include "vm/RuntimeFuses.h"
 #include "vm/Shape.h"
 #include "vm/TypeofEqOperand.h"  // TypeofEqOperand
 #include "wasm/WasmConstants.h"
@@ -94,6 +93,8 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
 
   // OperandId and stub offsets are stored in a single byte, so make sure
   // this doesn't overflow. We use a very conservative limit for now.
+  // Note also that addStubField scans existing fields to deduplicate, so
+  // we are quadratic in the number of stub fields.
   static const size_t MaxOperandIds = 20;
   static const size_t MaxStubDataSizeInBytes = 20 * sizeof(uintptr_t);
   bool tooLarge_;
@@ -164,7 +165,20 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
   void writeCallFlagsImm(CallFlags flags) { buffer_.writeByte(flags.toByte()); }
 
   void addStubField(uint64_t value, StubField::Type fieldType) {
-    size_t fieldOffset = stubDataSize_;
+    size_t fieldOffset = 0;
+    for (size_t i = 0; i < numStubFields(); i++) {
+      auto existing = stubField(i);
+      if (value == existing.rawData() && fieldType == existing.type()) {
+        // We found an existing stub field with the same content. Reuse it.
+        // Note: if we ever add mutable stub fields, we will have to skip them
+        // here.
+        MOZ_ASSERT((fieldOffset % sizeof(uintptr_t)) == 0);
+        buffer_.writeByte(fieldOffset / sizeof(uintptr_t));
+        return;
+      }
+      fieldOffset += existing.sizeInBytes();
+    }
+    MOZ_ASSERT_IF(!buffer_.oom(), fieldOffset == stubDataSize_);
 #ifndef JS_64BIT
     // On 32-bit platforms there are two stub field sizes (4 bytes and 8 bytes).
     // Ensure 8-byte fields are properly aligned.
@@ -179,8 +193,7 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
 #ifndef JS_64BIT
       // Add a RawInt32 stub field for padding if necessary, because when we
       // iterate over the stub fields we assume there are no 'holes'.
-      if (fieldOffset != stubDataSize_) {
-        MOZ_ASSERT((stubDataSize_ + sizeof(uintptr_t)) == fieldOffset);
+      if (fieldOffset == stubDataSize_ + sizeof(uintptr_t)) {
         buffer_.propagateOOM(
             stubFields_.append(StubField(0, StubField::Type::RawInt32)));
       }
@@ -203,10 +216,6 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     MOZ_ASSERT(shape);
     assertSameZone(shape);
     addStubField(uintptr_t(shape), StubField::Type::WeakShape);
-  }
-  void writeWeakGetterSetterField(GetterSetter* gs) {
-    MOZ_ASSERT(gs);
-    addStubField(uintptr_t(gs), StubField::Type::WeakGetterSetter);
   }
   void writeObjectField(JSObject* obj) {
     MOZ_ASSERT(obj);
@@ -240,11 +249,18 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
   void writeRawPointerField(const void* ptr) {
     addStubField(uintptr_t(ptr), StubField::Type::RawPointer);
   }
+  void writeICScriptField(const ICScript* icScript) {
+    addStubField(uintptr_t(icScript), StubField::Type::ICScript);
+  }
   void writeIdField(jsid id) {
     addStubField(id.asRawBits(), StubField::Type::Id);
   }
   void writeValueField(const Value& val) {
     addStubField(val.asRawBits(), StubField::Type::Value);
+  }
+  void writeWeakValueField(const Value& val) {
+    MOZ_ASSERT(val.isGCThing());
+    addStubField(val.asRawBits(), StubField::Type::WeakValue);
   }
   void writeRawInt64Field(uint64_t val) {
     addStubField(val, StubField::Type::RawInt64);
@@ -304,6 +320,11 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
                   "RealmFuses::FuseIndex must fit in a byte");
     buffer_.writeByte(uint8_t(realmFuseIndex));
   }
+  void writeRuntimeFuseIndexImm(RuntimeFuses::FuseIndex runtimeFuseIndex) {
+    static_assert(sizeof(RuntimeFuses::FuseIndex) == sizeof(uint8_t),
+                  "RuntimeFuses::FuseIndex must fit in a byte");
+    buffer_.writeByte(uint8_t(runtimeFuseIndex));
+  }
 
   void writeByteImm(uint32_t b) {
     MOZ_ASSERT(b <= UINT8_MAX);
@@ -358,6 +379,9 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
   bool failed() const { return tooLarge() || oom(); }
 
   TrialInliningState trialInliningState() const { return trialInliningState_; }
+  void setTrialInliningState(TrialInliningState state) {
+    trialInliningState_ = state;
+  }
 
   uint32_t numInputOperands() const { return numInputOperands_; }
   uint32_t numOperandIds() const { return nextOperandId_; }
@@ -387,8 +411,9 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
   size_t stubDataSize() const { return stubDataSize_; }
   void copyStubData(uint8_t* dest) const;
   bool stubDataEquals(const uint8_t* stubData) const;
-  bool stubDataEqualsIgnoring(const uint8_t* stubData,
-                              uint32_t ignoreOffset) const;
+  bool stubDataEqualsIgnoringShapeAndOffset(
+      const uint8_t* stubData, uint32_t shapeFieldOffset,
+      mozilla::Maybe<uint32_t> offsetFieldOffset) const;
 
   bool operandIsDead(uint32_t operandId, uint32_t currentInstruction) const {
     if (operandId >= operandLastUsed_.length()) {
@@ -525,19 +550,6 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     return ObjOperandId(loadArgumentFixedSlot(kind, argc, flags).id());
   }
 
-  void callScriptedFunction(ObjOperandId callee, Int32OperandId argc,
-                            CallFlags flags, uint32_t argcFixed) {
-    callScriptedFunction_(callee, argc, flags, argcFixed);
-    trialInliningState_ = TrialInliningState::Candidate;
-  }
-
-  void callInlinedFunction(ObjOperandId callee, Int32OperandId argc,
-                           ICScript* icScript, CallFlags flags,
-                           uint32_t argcFixed) {
-    callInlinedFunction_(callee, argc, icScript, flags, argcFixed);
-    trialInliningState_ = TrialInliningState::Inlined;
-  }
-
   void callNativeFunction(ObjOperandId calleeId, Int32OperandId argc, JSOp op,
                           JSFunction* calleeFunc, CallFlags flags,
                           uint32_t argcFixed) {
@@ -644,7 +656,6 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     uint32_t nargsAndFlags = getter->flagsAndArgCountRaw();
     ObjOperandId callee = getterSetterCalleeOperand(getter);
     callScriptedGetterResult_(receiver, callee, sameRealm, nargsAndFlags);
-    trialInliningState_ = TrialInliningState::Candidate;
   }
 
   void callInlinedGetterResult(ValOperandId receiver, ObjOperandId callee,
@@ -655,7 +666,6 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     uint32_t nargsAndFlags = getter->flagsAndArgCountRaw();
     callInlinedGetterResult_(receiver, callee, icScript, sameRealm,
                              nargsAndFlags);
-    trialInliningState_ = TrialInliningState::Inlined;
   }
 
   void callNativeGetterResult(ValOperandId receiver, JSFunction* getter,
@@ -672,7 +682,6 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     uint32_t nargsAndFlags = setter->flagsAndArgCountRaw();
     ObjOperandId callee = getterSetterCalleeOperand(setter);
     callScriptedSetter_(receiver, callee, rhs, sameRealm, nargsAndFlags);
-    trialInliningState_ = TrialInliningState::Candidate;
   }
 
   void callInlinedSetter(ObjOperandId receiver, ObjOperandId callee,
@@ -683,7 +692,6 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     uint32_t nargsAndFlags = setter->flagsAndArgCountRaw();
     callInlinedSetter_(receiver, callee, rhs, icScript, sameRealm,
                        nargsAndFlags);
-    trialInliningState_ = TrialInliningState::Inlined;
   }
 
   void callNativeSetter(ObjOperandId receiver, JSFunction* setter,
@@ -714,13 +722,15 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
   }
 #endif
 
-  void metaScriptedThisShape(Shape* thisShape) {
-    metaScriptedThisShape_(thisShape);
-  }
-
   void guardMultipleShapes(ObjOperandId obj, ListObject* shapes) {
     MOZ_ASSERT(shapes->length() > 0);
     guardMultipleShapes_(obj, shapes);
+  }
+
+  Int32OperandId guardMultipleShapesToOffset(ObjOperandId obj,
+                                             ListObject* shapes) {
+    MOZ_ASSERT(shapes->length() > 0);
+    return guardMultipleShapesToOffset_(obj, shapes);
   }
 
   friend class CacheIRCloner;

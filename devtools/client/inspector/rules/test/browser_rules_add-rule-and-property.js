@@ -18,14 +18,17 @@ add_task(async function () {
   await addNewRuleAndDismissEditor(inspector, view, "#testid", 1);
 
   info("Adding a new property for this rule");
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  await addProperty(view, 1, "font-weight", "bold");
 
-  const onRuleViewChanged = view.once("ruleview-changed");
-  ruleEditor.addProperty("font-weight", "bold", "", true);
-  await onRuleViewChanged;
+  info(
+    "Add another rule to make sure we reuse the stylesheet we created the first time we added a rule"
+  );
+  await addNewRuleAndDismissEditor(inspector, view, "#testid", 1);
 
-  const textProps = ruleEditor.rule.textProps;
-  const prop = textProps[textProps.length - 1];
-  is(prop.name, "font-weight", "The last property name is font-weight");
-  is(prop.value, "bold", "The last property value is bold");
+  const styleSheetsCount = await SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [],
+    () => content.document.styleSheets.length
+  );
+  is(styleSheetsCount, 1, "Only one stylesheet was created in the document");
 });

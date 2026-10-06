@@ -9,10 +9,9 @@ function load() {
 
   var count = 0;
   var iframe = document.createElement("iframe");
+  iframe.src = "data:text/html;charset=utf-8,iframe " + (++count);
   iframe.onload = function() { setTimeout(next, 0); };
   document.body.appendChild(iframe);
-
-  setTimeout(next, 0);
 }
 </script>
 </head>

@@ -88,7 +88,6 @@
           },
           "documentId": {
             "type": "string",
-            "unsupported": true,
             "optional": true,
             "description": "An UUID for the document associated with this context, or undefined if it is not hosted in a document"
           },
@@ -155,6 +154,11 @@
             "optional": true,
             "description": "The $(topic:frame_ids)[frame] that opened the connection. 0 for top-level frames, positive for child frames. This will only be set when <code>tab</code> is set."
           },
+          "documentId": {
+            "type": "string",
+            "optional": true,
+            "description": "A UUID of the document that opened the connection."
+          },
           "id": {
             "type": "string",
             "optional": true,
@@ -192,6 +196,7 @@
           "aarch64",
           "arm",
           "ppc64",
+          "riscv64",
           "s390x",
           "sparc64",
           "x86-32",
@@ -395,6 +400,24 @@
         }
       },
       {
+        "name": "getDocumentId",
+        "type": "function",
+        "allowedContexts": ["content", "devtools"],
+        "description": "Get the documentId of any window global or frame element. Throws for invalid targets, such as unloaded frames.",
+        "parameters": [
+          {
+            "type": "any",
+            "name": "target",
+            "description": "A WindowProxy or a browsing context container Element (iframe, frame, embed, or object) for the target frame."
+          }
+        ],
+        "allowCrossOriginArguments": true,
+        "returns": {
+          "type": "string",
+          "description": "The documentId of the target document."
+        }
+      },
+      {
         "name": "getFrameId",
         "type": "function",
         "allowedContexts": ["content", "devtools"],
@@ -403,7 +426,7 @@
           {
             "type": "any",
             "name": "target",
-            "description": "A WindowProxy or a Browsing Context container element (IFrame, Frame, Embed, Object) for the target frame."
+            "description": "A WindowProxy or a browsing context container Element (iframe, frame, embed, or object) for the target frame."
           }
         ],
         "allowCrossOriginArguments": true,
@@ -511,7 +534,7 @@
         ],
         "returns": {
           "$ref": "Port",
-          "description": "Port through which messages can be sent and received. The port's $(ref:runtime.Port onDisconnect) event is fired if the extension/app does not exist. "
+          "description": "Port through which messages can be sent and received. The port's $(ref:runtime.Port.onDisconnect) event is fired if the extension/app does not exist. "
         }
       },
       {

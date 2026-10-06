@@ -1,10 +1,6 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-#include "mozilla/Attributes.h"
 
 #include "nsEnumeratorUtils.h"
 
@@ -109,7 +105,7 @@ nsSingletonEnumerator::~nsSingletonEnumerator() = default;
 
 NS_IMETHODIMP
 nsSingletonEnumerator::HasMoreElements(bool* aResult) {
-  MOZ_ASSERT(aResult != 0, "null ptr");
+  MOZ_ASSERT(aResult != nullptr, "null ptr");
   if (!aResult) {
     return NS_ERROR_NULL_POINTER;
   }
@@ -120,7 +116,7 @@ nsSingletonEnumerator::HasMoreElements(bool* aResult) {
 
 NS_IMETHODIMP
 nsSingletonEnumerator::GetNext(nsISupports** aResult) {
-  MOZ_ASSERT(aResult != 0, "null ptr");
+  MOZ_ASSERT(aResult != nullptr, "null ptr");
   if (!aResult) {
     return NS_ERROR_NULL_POINTER;
   }
@@ -138,7 +134,7 @@ nsSingletonEnumerator::GetNext(nsISupports** aResult) {
 
 nsresult NS_NewSingletonEnumerator(nsISimpleEnumerator** aResult,
                                    nsISupports* aSingleton) {
-  RefPtr<nsSingletonEnumerator> enumer = new nsSingletonEnumerator(aSingleton);
+  RefPtr enumer = mozilla::MakeRefPtr<nsSingletonEnumerator>(aSingleton);
   enumer.forget(aResult);
   return NS_OK;
 }
@@ -174,7 +170,7 @@ nsUnionEnumerator::~nsUnionEnumerator() = default;
 
 NS_IMETHODIMP
 nsUnionEnumerator::HasMoreElements(bool* aResult) {
-  MOZ_ASSERT(aResult != 0, "null ptr");
+  MOZ_ASSERT(aResult != nullptr, "null ptr");
   if (!aResult) {
     return NS_ERROR_NULL_POINTER;
   }
@@ -215,7 +211,7 @@ nsUnionEnumerator::HasMoreElements(bool* aResult) {
 
 NS_IMETHODIMP
 nsUnionEnumerator::GetNext(nsISupports** aResult) {
-  MOZ_ASSERT(aResult != 0, "null ptr");
+  MOZ_ASSERT(aResult != nullptr, "null ptr");
   if (!aResult) {
     return NS_ERROR_NULL_POINTER;
   }

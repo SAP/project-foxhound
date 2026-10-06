@@ -11,11 +11,11 @@ import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.Locale
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class BundledSearchEnginesStorageTest {
@@ -108,7 +108,7 @@ class BundledSearchEnginesStorageTest {
         // searchDefault: "百度"
         val default = searchEngines.find { it.id == engines.defaultSearchEngineId }
         assertNotNull(default)
-        assertEquals("baidu", default!!.id)
+        assertEquals("baidu", default.id)
     }
 
     @Test
@@ -125,7 +125,7 @@ class BundledSearchEnginesStorageTest {
         // searchDefault: "Google"
         val default = searchEngines.find { it.id == engines.defaultSearchEngineId }
         assertNotNull(default)
-        assertEquals("google-com-nocodes", default!!.id)
+        assertEquals("google-com-nocodes", default.id)
     }
 
     @Test
@@ -145,7 +145,7 @@ class BundledSearchEnginesStorageTest {
         // searchDefault (default): "Google"
         val default = searchEngines.find { it.id == engines.defaultSearchEngineId }
         assertNotNull(default)
-        assertEquals("google-b-m", default!!.id)
+        assertEquals("google-b-m", default.id)
     }
 
     @Test
@@ -184,7 +184,7 @@ class BundledSearchEnginesStorageTest {
         assertEquals(5, searchEngines.size)
 
         val google = searchEngines.find { it.name == "Google" }
-        assertNotNull(google!!)
+        assertNotNull(google)
 
         assertEquals("google-b-1-m", google.id)
         assertEquals("Google", google.name)

@@ -10,7 +10,7 @@
 
 <button id="button1" label="One"/>
 <menulist id="list">
-  <menupopup id="popup" onpopupshowing="return gShowPopup;">
+  <menupopup id="popup" onpopupshowing="return gShowPopup;" nonnative="">
     <menuitem id="i1" label="One"/>
     <menuitem id="i2" label="Two"/>
     <menuitem id="i2b" disabled="true" label="Two and a Half"/>
@@ -20,7 +20,7 @@
 </menulist>
 <button id="button2" label="Two"/>
 <menulist id="list2">
-  <menupopup id="popup" onpopupshown="checkCursorNavigation();">
+  <menupopup id="popup" onpopupshown="checkCursorNavigation();" nonnative="">
     <menuitem id="b1" label="One"/>
     <menuitem id="b2" label="Two" selected="true"/>
     <menuitem id="b3" label="Three"/>
@@ -28,7 +28,7 @@
   </menupopup>
 </menulist>
 <menulist id="list3" sizetopopup="none">
-  <menupopup>
+  <menupopup nonnative="">
     <menuitem id="s1" label="One"/>
     <menuitem id="s2" label="Two"/>
     <menuitem id="s3" label="Three"/>
@@ -165,8 +165,12 @@ function tabAndScroll()
     list.appendItem("Item" + i, "item" + i);
   }
   list.open = true;
-  is(list.getBoundingClientRect().width, list.menupopup.getBoundingClientRect().width - 2 * inputMargin(list.menupopup),
-     "menu and popup width match");
+
+  // Allow for minor, subpixel differences from relative units
+  const menuWidth = list.getBoundingClientRect().width;
+  const popupWidth = list.menupopup.getBoundingClientRect().width - 2 * inputMargin(list.menupopup);
+  const diff = Math.abs(menuWidth - popupWidth);
+  is(true, diff < 1, "menu and popup width match");
   var minScrollbarWidth = window.matchMedia("(-moz-overlay-scrollbars)").matches ? 0 : 3;
   ok(list.getBoundingClientRect().width >= list.getItemAtIndex(0).getBoundingClientRect().width + minScrollbarWidth,
      "menuitem width accounts for scrollbar");

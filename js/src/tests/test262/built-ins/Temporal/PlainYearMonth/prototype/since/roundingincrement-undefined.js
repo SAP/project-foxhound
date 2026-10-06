@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2021 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -24,5 +24,8 @@ TemporalHelpers.assertDuration(explicit, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, "default 
 
 const implicit = later.since(earlier, {});
 TemporalHelpers.assertDuration(implicit, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, "default roundingIncrement is 1");
+
+const lambda = later.since(earlier, () => {});
+TemporalHelpers.assertDuration(lambda, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, "default roundingIncrement is 1");
 
 reportCompare(0, 0);

@@ -3,6 +3,7 @@
     "providerId",
     "searchPageRegexp",
     "includeParams",
-    "excludeParams"
+    "excludeParams",
+    "filter_expression"
   ]
 }

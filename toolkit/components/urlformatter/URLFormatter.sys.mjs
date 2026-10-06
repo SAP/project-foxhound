@@ -164,7 +164,8 @@ nsURLFormatterService.prototype = {
         format
       )
     ) {
-      // This looks as if it might be a localised preference
+      // This looks as if it might be a localised preference,
+      // which could theoretically happen with browser.startup.homepage.
       try {
         format = Services.prefs.getComplexValue(
           aPref,

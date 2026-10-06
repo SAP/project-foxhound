@@ -1,0 +1,1248 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+* License, v. 2.0. If a copy of the MPL was not distributed with this
+* file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+use glob::MatchOptions;
+use std::collections::HashSet;
+
+use super::commands::{
+    GenerateExperimenterManifestCmd, GenerateSingleFileManifestCmd, GenerateStructCmd,
+    PrintChannelsCmd, PrintInfoCmd, ValidateCmd,
+};
+use crate::backends::info::ManifestInfo;
+use crate::error::FMLError::CliError;
+use crate::frontend::ManifestFrontEnd;
+use crate::{
+    backends,
+    error::{FMLError, Result},
+    intermediate_representation::{FeatureManifest, TargetLanguage},
+    parser::Parser,
+    util::loaders::{FileLoader, FilePath, LoaderConfig},
+};
+use std::io::Write;
+use std::path::Path;
+use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
+
+/// Use this when recursively looking for files.
+const MATCHING_FML_EXTENSION: &str = ".fml.yaml";
+
+pub(crate) fn generate_struct(cmd: &GenerateStructCmd) -> Result<()> {
+    let files: FileLoader = TryFrom::try_from(&cmd.loader)?;
+
+    let filename = &cmd.manifest;
+    let input = files.file_path(filename)?;
+
+    validate(&ValidateCmd {
+        manifest: cmd.manifest.clone(),
+        loader: cmd.loader.clone(),
+    })?;
+
+    match (&input, &cmd.output.is_dir()) {
+        (FilePath::Remote(_), _) => generate_struct_single(&files, input, cmd),
+        (FilePath::Local(file), _) if !file.exists() => Err(FMLError::CliError(format!(
+            "Input file or directory `{}' does not exist",
+            filename
+        ))),
+        (FilePath::Local(file), _) if file.is_file() => generate_struct_single(&files, input, cmd),
+        (FilePath::Local(dir), true) if dir.is_dir() => generate_struct_from_dir(&files, cmd, dir),
+        (_, true) => generate_struct_from_glob(&files, cmd, filename),
+        _ => Err(FMLError::CliError(
+            "Cannot generate a single output file from an input directory".to_string(),
+        )),
+    }
+}
+
+fn generate_struct_from_dir(files: &FileLoader, cmd: &GenerateStructCmd, cwd: &Path) -> Result<()> {
+    let entries = cwd.read_dir()?;
+    for entry in entries.filter_map(Result::ok) {
+        let pb = entry.path();
+        if pb.is_dir() {
+            generate_struct_from_dir(files, cmd, &pb)?;
+        } else if let Some(nm) = pb.file_name().map(|s| s.to_str().unwrap_or_default()) {
+            if nm.ends_with(MATCHING_FML_EXTENSION) {
+                let path = pb.as_path().into();
+                generate_struct_single(files, path, cmd)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn generate_struct_from_glob(
+    files: &FileLoader,
+    cmd: &GenerateStructCmd,
+    pattern: &str,
+) -> Result<()> {
+    use glob::glob_with;
+    let entries = glob_with(pattern, MatchOptions::new()).unwrap();
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.as_path().into();
+        generate_struct_single(files, path, cmd)?;
+    }
+    Ok(())
+}
+
+fn generate_struct_single(
+    files: &FileLoader,
+    manifest_path: FilePath,
+    cmd: &GenerateStructCmd,
+) -> Result<()> {
+    let ir = load_feature_manifest(
+        files.clone(),
+        manifest_path,
+        cmd.load_from_ir,
+        Some(&cmd.channel),
+        false,
+    )?;
+    generate_struct_from_ir(&ir, cmd)
+}
+
+fn generate_struct_from_ir(ir: &FeatureManifest, cmd: &GenerateStructCmd) -> Result<()> {
+    let language = &cmd.language;
+    ir.validate_manifest_for_lang(language)?;
+    match language {
+        TargetLanguage::IR => {
+            let contents = serde_json::to_string_pretty(&ir)?;
+            std::fs::write(&cmd.output, contents)?;
+        }
+        TargetLanguage::Kotlin => backends::kotlin::generate_struct(ir, cmd)?,
+        TargetLanguage::Swift => backends::swift::generate_struct(ir, cmd)?,
+        _ => unimplemented!(
+            "Unsupported output language for structs: {}",
+            language.extension()
+        ),
+    };
+    Ok(())
+}
+
+pub(crate) fn generate_experimenter_manifest(cmd: &GenerateExperimenterManifestCmd) -> Result<()> {
+    let files: FileLoader = TryFrom::try_from(&cmd.loader)?;
+    let path = files.file_path(&cmd.manifest)?;
+    let ir = load_feature_manifest(
+        files,
+        path,
+        cmd.load_from_ir,
+        None,
+        cmd.loader.lax_gecko_pref_validation,
+    )?;
+    backends::experimenter_manifest::generate_manifest(ir, cmd)?;
+    Ok(())
+}
+
+pub(crate) fn generate_single_file_manifest(cmd: &GenerateSingleFileManifestCmd) -> Result<()> {
+    let files: FileLoader = TryFrom::try_from(&cmd.loader)?;
+    let path = files.file_path(&cmd.manifest)?;
+    let fm = load_feature_manifest(
+        files,
+        path,
+        false,
+        Some(&cmd.channel),
+        cmd.loader.lax_gecko_pref_validation,
+    )?;
+    let frontend: ManifestFrontEnd = fm.into();
+    std::fs::write(&cmd.output, serde_yaml::to_string(&frontend)?)?;
+    Ok(())
+}
+
+fn load_feature_manifest(
+    files: FileLoader,
+    path: FilePath,
+    load_from_ir: bool,
+    channel: Option<&str>,
+    lax_gecko_pref_validation: bool,
+) -> Result<FeatureManifest> {
+    let ir = if !load_from_ir {
+        let parser: Parser = Parser::new(files, path)?;
+        parser.get_intermediate_representation(channel)?
+    } else {
+        files.read_ir::<FeatureManifest>(&path)?
+    };
+    ir.validate_manifest_with(lax_gecko_pref_validation)?;
+    Ok(ir)
+}
+
+pub(crate) fn fetch_file(files: &LoaderConfig, nm: &str) -> Result<()> {
+    let files: FileLoader = files.try_into()?;
+    let file = files.file_path(nm)?;
+
+    let string = files.read_to_string(&file)?;
+
+    println!("{}", string);
+    Ok(())
+}
+
+fn output_ok(stream: &mut StandardStream, title: &str) -> Result<()> {
+    write!(stream, "✅ ")?;
+    stream.set_color(ColorSpec::new().set_fg(Some(Color::Green)))?;
+    writeln!(stream, "{title}")?;
+    stream.reset()?;
+
+    Ok(())
+}
+
+fn output_note(stream: &mut StandardStream, title: &str) -> Result<()> {
+    write!(stream, "ℹ️ ")?;
+    stream.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)))?;
+    writeln!(stream, "{title}")?;
+    stream.reset()?;
+
+    Ok(())
+}
+
+fn output_warn(stream: &mut StandardStream, title: &str, detail: &str) -> Result<()> {
+    write!(stream, "⚠️ ")?;
+    stream.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)))?;
+    write!(stream, "{title}")?;
+    stream.reset()?;
+    writeln!(stream, ": {detail}")?;
+    Ok(())
+}
+
+fn output_err(stream: &mut StandardStream, title: &str, detail: &str) -> Result<()> {
+    writeln!(stream, "❎ ")?;
+    stream.set_color(ColorSpec::new().set_fg(Some(Color::Red)))?;
+    writeln!(stream, "{title}")?;
+    stream.reset()?;
+    writeln!(stream, ": {detail}")?;
+
+    Ok(())
+}
+
+pub(crate) fn validate(cmd: &ValidateCmd) -> Result<()> {
+    let mut stdout = StandardStream::stdout(ColorChoice::Auto);
+
+    let files: FileLoader = TryFrom::try_from(&cmd.loader)?;
+
+    let filename = &cmd.manifest;
+    let file_path = files.file_path(filename)?;
+    let parser: Parser = Parser::new(files, file_path.clone())?;
+    let mut loading = HashSet::new();
+    let manifest_front_end = parser.load_manifest(&file_path, &mut loading)?;
+
+    let iter_includes = loading.iter().map(|id| id.to_string());
+
+    let channels = manifest_front_end.channels();
+    if channels.is_empty() {
+        output_note(
+            &mut stdout,
+            &format!(
+                "Loaded modules:\n- {}\n",
+                iter_includes.collect::<Vec<String>>().join("\n- ")
+            ),
+        )?;
+        output_ok(&mut stdout, &format!(
+            "{}\n{}\n{}",
+            "The manifest is valid for including in other files. To be imported, or used as an app manifest, it requires the following:",
+            "- A `channels` list",
+            "- An `about` block",
+        ))?;
+        return Ok(());
+    }
+    let intermediate_representation =
+        parser
+            .get_intermediate_representation(None)
+            .inspect_err(|e| {
+                output_err(&mut stdout, "Manifest is invalid", &e.to_string()).unwrap();
+            })?;
+
+    output_note(
+        &mut stdout,
+        &format!(
+            "Loaded modules:\n- {}\n",
+            iter_includes
+                .chain(
+                    intermediate_representation
+                        .all_imports
+                        .keys()
+                        .map(|m| m.to_string())
+                )
+                .collect::<Vec<String>>()
+                .join("\n- ")
+        ),
+    )?;
+
+    writeln!(stdout, "Validating feature metadata:")?;
+    let mut features_with_warnings = 0;
+    for (_, f) in intermediate_representation.iter_all_feature_defs() {
+        let fm = &f.metadata;
+        let mut missing = vec![];
+        if fm.meta_bug.is_none() {
+            missing.push("'meta-bug'");
+        }
+        if fm.documentation.is_empty() {
+            missing.push("'documentation'");
+        }
+        if fm.contacts.is_empty() {
+            missing.push("'contacts'");
+        }
+        if !missing.is_empty() {
+            output_warn(
+                &mut stdout,
+                &format!("'{}' missing metadata", &f.name),
+                &missing.join(", "),
+            )?;
+            features_with_warnings += 1;
+        }
+    }
+
+    if features_with_warnings == 0 {
+        output_ok(&mut stdout, "All feature metadata ok\n")?;
+    } else {
+        let features = if features_with_warnings == 1 {
+            "feature"
+        } else {
+            "features"
+        };
+        writeln!(
+            &mut stdout,
+            "Each feature should have entries for at least:"
+        )?;
+        writeln!(&mut stdout, "  - meta-bug: a URL where to file bugs")?;
+        writeln!(
+            &mut stdout,
+            "  - documentation: a list of one or more URLs documenting the feature"
+        )?;
+        writeln!(&mut stdout, "      e.g. QA docs, user docs")?;
+        writeln!(
+            &mut stdout,
+            "  - contacts: a list of one or more email addresses"
+        )?;
+        writeln!(&mut stdout, "      (with Mozilla Jira accounts)")?;
+        writeln!(
+            &mut stdout,
+            "Metadata warnings detected in {features_with_warnings} {features}\n"
+        )?;
+    }
+
+    writeln!(&mut stdout, "Validating manifest for different channels:")?;
+
+    let results = channels
+        .iter()
+        .map(|c| {
+            let intermediate_representation = parser.get_intermediate_representation(Some(c));
+            match intermediate_representation {
+                Ok(ir) => (
+                    c,
+                    ir.validate_manifest_with(cmd.loader.lax_gecko_pref_validation),
+                ),
+                Err(e) => (c, Err(e)),
+            }
+        })
+        .collect::<Vec<(&String, Result<_>)>>();
+
+    let mut error_count = 0;
+    for (channel, result) in results {
+        match result {
+            Ok(_) => {
+                output_ok(&mut stdout, &format!("{channel:.<20}valid"))?;
+            }
+            Err(e) => {
+                error_count += 1;
+                output_err(
+                    &mut stdout,
+                    &format!("{channel:.<20}invalid"),
+                    &e.to_string(),
+                )?;
+            }
+        };
+    }
+
+    if error_count > 0 {
+        return Err(CliError(format!(
+            "Manifest contains error(s) in {} channel{}",
+            error_count,
+            if error_count > 1 { "s" } else { "" }
+        )));
+    }
+
+    Ok(())
+}
+
+pub(crate) fn print_channels(cmd: &PrintChannelsCmd) -> Result<()> {
+    let files = TryFrom::try_from(&cmd.loader)?;
+    let manifest = Parser::load_frontend(files, &cmd.manifest)?;
+    let channels = manifest.channels();
+    if cmd.as_json {
+        let json = serde_json::Value::from(channels);
+        println!("{}", json);
+    } else {
+        println!("{}", channels.join("\n"));
+    }
+    Ok(())
+}
+
+pub(crate) fn print_info(cmd: &PrintInfoCmd) -> Result<()> {
+    let files: FileLoader = TryFrom::try_from(&cmd.loader)?;
+    let path = files.file_path(&cmd.manifest)?;
+    let fm = load_feature_manifest(files, path.clone(), false, cmd.channel.as_deref(), false)?;
+    let info = if let Some(feature_id) = &cmd.feature {
+        ManifestInfo::from_feature(&path, &fm, feature_id)?
+    } else {
+        ManifestInfo::from(&path, &fm)
+    };
+    if cmd.as_json {
+        println!("{}", info.to_json()?);
+    } else {
+        println!("{}", info.to_yaml()?);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use std::path::PathBuf;
+
+    use anyhow::anyhow;
+    use tempfile::NamedTempFile;
+
+    use super::*;
+    use crate::frontend::AboutBlock;
+    use crate::util::{join, pkg_dir};
+
+    pub(crate) const MANIFEST_PATHS: &[&str] = &[
+        "fixtures/ir/simple_nimbus_validation.ir.json",
+        "fixtures/ir/simple_nimbus_validation.ir.json",
+        "fixtures/ir/with_objects.ir.json",
+        "fixtures/ir/full_homescreen.ir.json",
+        "fixtures/fe/importing/simple/app.yaml",
+        "fixtures/fe/importing/diamond/00-app.yaml",
+        "fixtures/fe/gecko-pref.yaml",
+    ];
+
+    #[allow(dead_code)]
+    pub(crate) fn generate_and_assert(
+        test_script: &str,
+        manifest: &str,
+        channel: &str,
+        is_ir: bool,
+    ) -> Result<()> {
+        let output = NamedTempFile::new()?;
+        let cmd = create_command_from_test(test_script, manifest, channel, is_ir, output.path())?;
+        generate_struct(&cmd)?;
+        run_script_with_generated_code(
+            &cmd.language,
+            &[cmd.output.as_path().display().to_string()],
+            test_script,
+        )?;
+        Ok(())
+    }
+
+    fn generate_struct_cli_overrides(from_cli: AboutBlock, cmd: &GenerateStructCmd) -> Result<()> {
+        let files: FileLoader = TryFrom::try_from(&cmd.loader)?;
+        let path = files.file_path(&cmd.manifest)?;
+        let mut ir =
+            load_feature_manifest(files, path, cmd.load_from_ir, Some(&cmd.channel), false)?;
+
+        // We do a dance here to make sure that we can override class names and package names during tests,
+        // and while we still have to support setting those options from the command line.
+        // We will deprecate setting classnames, package names etc, then we can simplify.
+        let from_file = ir.about;
+        let kotlin_about = from_cli.kotlin_about.or(from_file.kotlin_about);
+        let swift_about = from_cli.swift_about.or(from_file.swift_about);
+        let about = AboutBlock {
+            kotlin_about,
+            swift_about,
+            ..Default::default()
+        };
+        ir.about = about;
+
+        generate_struct_from_ir(&ir, cmd)
+    }
+
+    // Given a manifest.fml and script.kts in the tests directory generate
+    // a manifest.kt and run the script against it.
+    #[allow(dead_code)]
+    pub(crate) fn generate_and_assert_with_config(
+        test_script: &str,
+        manifest: &str,
+        channel: &str,
+        is_ir: bool,
+        config_about: AboutBlock,
+    ) -> Result<()> {
+        let output = NamedTempFile::new()?;
+        let cmd = create_command_from_test(test_script, manifest, channel, is_ir, output.path())?;
+        generate_struct_cli_overrides(config_about, &cmd)?;
+        run_script_with_generated_code(
+            &cmd.language,
+            &[cmd.output.as_path().display().to_string()],
+            test_script,
+        )?;
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn create_command_from_test(
+        test_script: &str,
+        manifest: &str,
+        channel: &str,
+        is_ir: bool,
+        output: &Path,
+    ) -> Result<GenerateStructCmd, crate::error::FMLError> {
+        let test_script = join(pkg_dir(), test_script);
+        let pbuf = PathBuf::from(&test_script);
+        let ext = pbuf
+            .extension()
+            .ok_or_else(|| anyhow!("Require a test_script with an extension: {}", test_script))?;
+        let language: TargetLanguage = ext.try_into()?;
+        let manifest_fml = join(pkg_dir(), manifest);
+        let loader = Default::default();
+        Ok(GenerateStructCmd {
+            manifest: manifest_fml,
+            output: output.into(),
+            load_from_ir: is_ir,
+            language,
+            channel: channel.into(),
+            loader,
+        })
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn generate_multiple_and_assert(
+        test_script: &str,
+        manifests: &[(&str, &str)],
+    ) -> Result<()> {
+        let cmds = manifests
+            .iter()
+            .map(|(manifest, channel)| {
+                let output = NamedTempFile::new()?;
+                let cmd =
+                    create_command_from_test(test_script, manifest, channel, false, output.path())?;
+                generate_struct(&cmd)?;
+                Ok(cmd)
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let first = cmds
+            .first()
+            .expect("At least one manifests are always used");
+        let language = &first.language;
+
+        let manifests_out = cmds
+            .iter()
+            .map(|cmd| cmd.output.display().to_string())
+            .collect::<Vec<_>>();
+
+        run_script_with_generated_code(language, &manifests_out, test_script)?;
+        Ok(())
+    }
+
+    fn run_script_with_generated_code(
+        language: &TargetLanguage,
+        #[allow(unused_variables)] manifests_out: &[String],
+        #[allow(unused_variables)] test_script: &str,
+    ) -> Result<()> {
+        match language {
+            #[cfg(all(feature = "kotlin-tests", not(feature = "all-features-workaround")))]
+            TargetLanguage::Kotlin => {
+                backends::kotlin::test::run_script_with_generated_code(manifests_out, test_script)?
+            }
+
+            #[cfg(all(feature = "swift-tests", not(feature = "all-features-workaround")))]
+            TargetLanguage::Swift => backends::swift::test::run_script_with_generated_code(
+                manifests_out,
+                test_script.as_ref(),
+            )?,
+
+            _ => unimplemented!(),
+        }
+
+        #[allow(unreachable_code)]
+        Ok(())
+    }
+
+    #[test]
+    fn test_importing_simple_experimenter_manifest() -> Result<()> {
+        // Both the app and lib files declare features, so we should have an experimenter manifest file with two features.
+        let tmpfile = NamedTempFile::new()?;
+        let cmd = create_experimenter_manifest_cmd(
+            "fixtures/fe/importing/simple/app.yaml",
+            tmpfile.path(),
+        )?;
+        generate_experimenter_manifest(&cmd)?;
+
+        let manifest: serde_yaml::Value = serde_yaml::from_reader(&tmpfile)?;
+        println!("{:?}", manifest);
+
+        assert!(manifest.is_mapping());
+        let manifest = manifest.as_mapping().unwrap();
+
+        assert!(manifest.contains_key("homescreen"));
+        assert!(manifest.contains_key("search"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_experimenter_gecko_prefs() -> Result<()> {
+        let tmpfile = NamedTempFile::new()?;
+        let cmd = create_experimenter_manifest_cmd("fixtures/fe/gecko-pref.yaml", tmpfile.path())?;
+        generate_experimenter_manifest(&cmd)?;
+
+        let manifest: serde_yaml::Value = serde_yaml::from_reader(&tmpfile)?;
+        println!("{:?}", manifest);
+
+        let variables = manifest
+            .get("gecko-nimbus-validation")
+            .unwrap()
+            .get("variables")
+            .unwrap();
+
+        fn assert_pref_var(
+            variable: &serde_yaml::Value,
+            expected_pref: &str,
+            expected_branch: &str,
+        ) {
+            let pref_annotation = variable.get("setPref").unwrap();
+            let pref = pref_annotation.get("pref").unwrap().as_str().unwrap();
+            assert_eq!(pref, expected_pref);
+            let branch = pref_annotation.get("branch").unwrap().as_str().unwrap();
+            assert_eq!(branch, expected_branch);
+        }
+
+        assert_pref_var(
+            variables.get("test-preference-bool").unwrap(),
+            "gecko.nimbus.test.bool",
+            "default",
+        );
+
+        assert_pref_var(
+            variables.get("test-preference-int").unwrap(),
+            "gecko.nimbus.test.int",
+            "default",
+        );
+
+        assert_pref_var(
+            variables.get("test-preference-string").unwrap(),
+            "gecko.nimbus.test.string",
+            "default",
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_catches_invalid_feature() -> Result<(), FMLError> {
+        let manifest = join(
+            pkg_dir(),
+            "fixtures/fe/invalid/invalid_default_value_for_one_channel.fml.yaml",
+        );
+        let output = NamedTempFile::new()?;
+
+        let cmd: GenerateStructCmd = GenerateStructCmd {
+            manifest,
+            output: output.path().into(),
+            language: TargetLanguage::ExperimenterYAML,
+            load_from_ir: false,
+            channel: "app-debug".to_string(),
+            loader: Default::default(),
+        };
+
+        let result = generate_struct(&cmd);
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_command() -> Result<()> {
+        let paths = MANIFEST_PATHS
+            .iter()
+            .filter(|p| p.ends_with(".yaml"))
+            .chain([&"fixtures/fe/no_about_no_channels.yaml"])
+            .collect::<Vec<&&str>>();
+        for path in paths {
+            let manifest = join(pkg_dir(), path);
+            let cmd = ValidateCmd {
+                loader: Default::default(),
+                manifest,
+            };
+            validate(&cmd)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_command_fails_on_bad_default_value_for_one_channel() -> Result<()> {
+        let path = "fixtures/fe/invalid/invalid_default_value_for_one_channel.fml.yaml";
+        let manifest = join(pkg_dir(), path);
+        let cmd = ValidateCmd {
+            loader: Default::default(),
+            manifest,
+        };
+        let result = validate(&cmd);
+
+        assert!(result.is_err());
+
+        match result.err().unwrap() {
+            CliError(error) => {
+                assert_eq!(error, "Manifest contains error(s) in 1 channel");
+            }
+            _ => panic!("Error is not a ValidationError"),
+        };
+
+        Ok(())
+    }
+
+    pub(crate) fn create_experimenter_manifest_cmd(
+        path: &str,
+        output: &Path,
+    ) -> Result<GenerateExperimenterManifestCmd> {
+        let manifest = join(pkg_dir(), path);
+        let load_from_ir = manifest.ends_with(".ir.json");
+        let loader = Default::default();
+        Ok(GenerateExperimenterManifestCmd {
+            manifest,
+            output: output.into(),
+            language: TargetLanguage::ExperimenterYAML,
+            load_from_ir,
+            loader,
+        })
+    }
+
+    fn test_single_merged_manifest_file(path: &str, channel: &str) -> Result<()> {
+        let manifest = join(pkg_dir(), path);
+        let loader = Default::default();
+
+        // Load the source file, and get the default_json()
+        let files: FileLoader = TryFrom::try_from(&loader)?;
+        let src = files.file_path(&manifest)?;
+        let fm = load_feature_manifest(files, src, false, Some(channel), false)?;
+        let expected = fm.default_json();
+
+        let output = NamedTempFile::new()?;
+
+        // Generate the merged file
+        let cmd = GenerateSingleFileManifestCmd {
+            loader: Default::default(),
+            manifest,
+            output: output.path().into(),
+            channel: channel.to_string(),
+        };
+        generate_single_file_manifest(&cmd)?;
+
+        // Reload the generated file, and get the default_json()
+        let dest = FilePath::Local(output.path().into());
+        let files: FileLoader = TryFrom::try_from(&loader)?;
+        let fm = load_feature_manifest(files, dest, false, Some(channel), false)?;
+        let observed = fm.default_json();
+
+        // They should be the same.
+        assert_eq!(expected, observed);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_single_file_command() -> Result<()> {
+        test_single_merged_manifest_file("fixtures/fe/browser.yaml", "release")?;
+        test_single_merged_manifest_file(
+            "fixtures/fe/importing/including-imports/ui.fml.yaml",
+            "none",
+        )?;
+        test_single_merged_manifest_file(
+            "fixtures/fe/importing/including-imports/app.fml.yaml",
+            "release",
+        )?;
+        test_single_merged_manifest_file("fixtures/fe/importing/overrides/app.fml.yaml", "debug")?;
+        test_single_merged_manifest_file("fixtures/fe/importing/overrides/lib.fml.yaml", "debug")?;
+        test_single_merged_manifest_file("fixtures/fe/importing/diamond/00-app.yaml", "debug")?;
+        test_single_merged_manifest_file("fixtures/fe/importing/diamond/01-lib.yaml", "debug")?;
+        test_single_merged_manifest_file("fixtures/fe/importing/diamond/02-sublib.yaml", "debug")?;
+        test_single_merged_manifest_file("fixtures/fe/misc-features.yaml", "debug")?;
+        Ok(())
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "jsonschema-tests",
+    not(feature = "all-features-workaround")
+))]
+mod test_jsonschema {
+    use std::fs;
+
+    use jsonschema::JSONSchema;
+    use tempfile::NamedTempFile;
+
+    use super::test::{create_experimenter_manifest_cmd, MANIFEST_PATHS};
+    use super::*;
+    use crate::backends::experimenter_manifest::ExperimenterManifest;
+    use crate::util::{join, pkg_dir};
+
+    fn validate_against_experimenter_schema<P: AsRef<Path>>(
+        schema_path: P,
+        generated_yaml: &serde_yaml::Value,
+    ) -> Result<()> {
+        let generated_manifest: ExperimenterManifest =
+            serde_yaml::from_value(generated_yaml.to_owned())?;
+        let generated_json = serde_json::to_value(generated_manifest)?;
+
+        let schema = fs::read_to_string(&schema_path)?;
+        let schema: serde_json::Value = serde_json::from_str(&schema)?;
+        let compiled = JSONSchema::compile(&schema).expect("The schema is invalid");
+        let res = compiled.validate(&generated_json);
+        if let Err(e) = res {
+            panic!(
+                "Validation errors: \n{}",
+                e.map(|e| e.to_string()).collect::<Vec<String>>().join("\n")
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_schema_validation() -> Result<()> {
+        for path in MANIFEST_PATHS {
+            let output = NamedTempFile::new()?;
+            let cmd = create_experimenter_manifest_cmd(path, output.path())?;
+            generate_experimenter_manifest(&cmd)?;
+
+            let generated = fs::read_to_string(&cmd.output)?;
+            let generated_yaml = serde_yaml::from_str(&generated)?;
+            validate_against_experimenter_schema(
+                join(pkg_dir(), "ExperimentFeatureManifest.schema.json"),
+                &generated_yaml,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "kotlin-tests",
+    not(feature = "all-features-workaround")
+))]
+mod kts_tests {
+    use crate::frontend::{AboutBlock, KotlinAboutBlock};
+
+    use super::test::{
+        generate_and_assert, generate_and_assert_with_config, generate_multiple_and_assert,
+    };
+    use super::*;
+
+    #[test]
+    fn test_simple_validation_code_from_ir() -> Result<()> {
+        generate_and_assert(
+            "test/simple_nimbus_validation.kts",
+            "fixtures/ir/simple_nimbus_validation.ir.json",
+            "release",
+            true,
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_objects_code_from_ir() -> Result<()> {
+        generate_and_assert(
+            "test/with_objects.kts",
+            "fixtures/ir/with_objects.ir.json",
+            "release",
+            true,
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_full_homescreen_from_ir() -> Result<()> {
+        generate_and_assert(
+            "test/full_homescreen.kts",
+            "fixtures/ir/full_homescreen.ir.json",
+            "release",
+            true,
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_full_fenix_release() -> Result<()> {
+        generate_and_assert_with_config(
+            "test/fenix_release.kts",
+            "fixtures/fe/browser.yaml",
+            "release",
+            false,
+            AboutBlock {
+                kotlin_about: Some(KotlinAboutBlock {
+                    package: "com.example.app".to_string(),
+                    class: "com.example.release.FxNimbus".to_string(),
+                }),
+                swift_about: None,
+                ..Default::default()
+            },
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_full_fenix_nightly() -> Result<()> {
+        generate_and_assert_with_config(
+            "test/fenix_nightly.kts",
+            "fixtures/fe/browser.yaml",
+            "nightly",
+            false,
+            AboutBlock {
+                kotlin_about: Some(KotlinAboutBlock {
+                    package: "com.example.app".to_string(),
+                    class: "com.example.nightly.FxNimbus".to_string(),
+                }),
+                swift_about: None,
+                ..Default::default()
+            },
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_full_fenix_nightly_with_prefs() -> Result<()> {
+        generate_and_assert_with_config(
+            "test/fenix_nightly.kts",
+            "fixtures/fe/browser-with-prefs.yaml",
+            "nightly",
+            false,
+            AboutBlock {
+                kotlin_about: Some(KotlinAboutBlock {
+                    package: "com.example.app".to_string(),
+                    class: "com.example.nightly.FxNimbus".to_string(),
+                }),
+                swift_about: None,
+                ..Default::default()
+            },
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_dx_improvements() -> Result<()> {
+        generate_and_assert(
+            "test/dx_improvements_testing.kts",
+            "fixtures/fe/dx_improvements.yaml",
+            "testing",
+            false,
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_app_menu_from_ir() -> Result<()> {
+        generate_and_assert(
+            "test/app_menu.kts",
+            "fixtures/ir/app_menu.ir.json",
+            "release",
+            true,
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_bundled_resources_kts() -> Result<()> {
+        generate_and_assert(
+            "test/bundled_resources.kts",
+            "fixtures/fe/bundled_resouces.yaml",
+            "testing",
+            false,
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_importing_simple_kts() -> Result<()> {
+        generate_multiple_and_assert(
+            "test/importing/simple/app_debug.kts",
+            &[
+                ("fixtures/fe/importing/simple/lib.yaml", "debug"),
+                ("fixtures/fe/importing/simple/app.yaml", "debug"),
+            ],
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_importing_channel_mismatching_kts() -> Result<()> {
+        generate_multiple_and_assert(
+            "test/importing/channels/app_debug.kts",
+            &[
+                ("fixtures/fe/importing/channels/app.fml.yaml", "app-debug"),
+                ("fixtures/fe/importing/channels/lib.fml.yaml", "debug"),
+            ],
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_importing_override_defaults_kts() -> Result<()> {
+        generate_multiple_and_assert(
+            "test/importing/overrides/app_debug.kts",
+            &[
+                ("fixtures/fe/importing/overrides/app.fml.yaml", "debug"),
+                ("fixtures/fe/importing/overrides/lib.fml.yaml", "debug"),
+            ],
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_importing_override_defaults_coverall_kts() -> Result<()> {
+        generate_multiple_and_assert(
+            "test/importing/overrides-coverall/app_debug.kts",
+            &[
+                (
+                    "fixtures/fe/importing/overrides-coverall/app.fml.yaml",
+                    "debug",
+                ),
+                (
+                    "fixtures/fe/importing/overrides-coverall/lib.fml.yaml",
+                    "debug",
+                ),
+            ],
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_importing_diamond_overrides_kts() -> Result<()> {
+        // In this test, sublib implements a feature.
+        // Both lib and app offer some configuration, and both app and lib
+        // need to import sublib.
+        generate_multiple_and_assert(
+            "test/importing/diamond/00-app.kts",
+            &[
+                ("fixtures/fe/importing/diamond/00-app.yaml", "debug"),
+                ("fixtures/fe/importing/diamond/01-lib.yaml", "debug"),
+                ("fixtures/fe/importing/diamond/02-sublib.yaml", "debug"),
+            ],
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    #[ignore]
+    fn test_importing_reexporting_features() -> Result<()> {
+        // In this test, sublib implements a feature.
+        // Both lib and app offer some configuration, but app doesn't need to know
+        // that the feature is provided by sublib– where the feature lives
+        // is an implementation detail, and should be encapsulated by lib.
+        // This is currently not possible, but filed as EXP-2540.
+        generate_multiple_and_assert(
+            "test/importing/reexporting/00-app.kts",
+            &[
+                ("fixtures/fe/importing/reexporting/00-app.yaml", "debug"),
+                ("fixtures/fe/importing/reexporting/01-lib.yaml", "debug"),
+                ("fixtures/fe/importing/reexporting/02-sublib.yaml", "debug"),
+            ],
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_importing_including_imports_kts() -> Result<()> {
+        generate_multiple_and_assert(
+            "test/importing/including-imports/app_release.kts",
+            &[
+                (
+                    "fixtures/fe/importing/including-imports/ui.fml.yaml",
+                    "none",
+                ),
+                (
+                    "fixtures/fe/importing/including-imports/app.fml.yaml",
+                    "release",
+                ),
+            ],
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn regression_test_concurrent_access_of_feature_holder_kts() -> Result<()> {
+        generate_and_assert(
+            "test/threadsafe_feature_holder.kts",
+            "fixtures/fe/browser.yaml",
+            "release",
+            false,
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_coenrolled_features_and_imports_kts() -> Result<()> {
+        generate_multiple_and_assert(
+            "test/allow_coenrolling.kts",
+            &[
+                ("fixtures/fe/importing/coenrolling/app.fml.yaml", "release"),
+                ("fixtures/fe/importing/coenrolling/ui.fml.yaml", "release"),
+            ],
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_preference_overrides_kt() -> Result<()> {
+        generate_multiple_and_assert(
+            "test/pref_overrides.kts",
+            &[("fixtures/fe/pref_overrides.fml.yaml", "debug")],
+        )?;
+        Ok(())
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "swift-tests",
+    not(feature = "all-features-workaround")
+))]
+mod swift_tests {
+    use super::test::{generate_and_assert, generate_multiple_and_assert};
+    use super::*;
+
+    #[test]
+    fn test_with_app_menu_swift_from_ir() -> Result<()> {
+        generate_and_assert(
+            "test/app_menu.swift",
+            "fixtures/ir/app_menu.ir.json",
+            "release",
+            true,
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_objects_swift_from_ir() -> Result<()> {
+        generate_and_assert(
+            "test/with_objects.swift",
+            "fixtures/ir/with_objects.ir.json",
+            "release",
+            true,
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_bundled_resources_swift() -> Result<()> {
+        generate_and_assert(
+            "test/bundled_resources.swift",
+            "fixtures/fe/bundled_resouces.yaml",
+            "testing",
+            false,
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_full_fenix_release_swift() -> Result<()> {
+        generate_and_assert(
+            "test/fenix_release.swift",
+            "fixtures/fe/browser.yaml",
+            "release",
+            false,
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_full_fenix_nightly_swift() -> Result<()> {
+        generate_and_assert(
+            "test/fenix_nightly.swift",
+            "fixtures/fe/browser.yaml",
+            "nightly",
+            false,
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_full_firefox_swift() -> Result<()> {
+        generate_and_assert(
+            "test/firefox_ios_release.swift",
+            "fixtures/fe/including/ios.yaml",
+            "release",
+            false,
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_importing_simple_swift() -> Result<()> {
+        generate_multiple_and_assert(
+            "test/importing/simple/app_debug.swift",
+            &[
+                ("fixtures/fe/importing/simple/app.yaml", "debug"),
+                ("fixtures/fe/importing/simple/lib.yaml", "debug"),
+            ],
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_importing_override_defaults_swift() -> Result<()> {
+        generate_multiple_and_assert(
+            "test/importing/overrides/app_debug.swift",
+            &[
+                ("fixtures/fe/importing/overrides/app.fml.yaml", "debug"),
+                ("fixtures/fe/importing/overrides/lib.fml.yaml", "debug"),
+            ],
+        )?;
+        Ok(())
+    }
+    #[test]
+    fn test_importing_diamond_overrides_swift() -> Result<()> {
+        // In this test, sublib implements a feature.
+        // Both lib and app offer some configuration, and both app and lib
+        // need to import sublib.
+        generate_multiple_and_assert(
+            "test/importing/diamond/00-app.swift",
+            &[
+                ("fixtures/fe/importing/diamond/00-app.yaml", "debug"),
+                ("fixtures/fe/importing/diamond/01-lib.yaml", "debug"),
+                ("fixtures/fe/importing/diamond/02-sublib.yaml", "debug"),
+            ],
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_importing_including_imports_swift() -> Result<()> {
+        generate_multiple_and_assert(
+            "test/importing/including-imports/app_release.swift",
+            &[
+                (
+                    "fixtures/fe/importing/including-imports/ui.fml.yaml",
+                    "none",
+                ),
+                (
+                    "fixtures/fe/importing/including-imports/app.fml.yaml",
+                    "release",
+                ),
+            ],
+        )?;
+        Ok(())
+    }
+    #[test]
+    fn regression_test_concurrent_access_of_feature_holder_swift() -> Result<()> {
+        generate_and_assert(
+            "test/threadsafe_feature_holder.swift",
+            "fixtures/fe/browser.yaml",
+            "release",
+            false,
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_coenrolled_features_and_imports_swift() -> Result<()> {
+        generate_multiple_and_assert(
+            "test/allow_coenrolling.swift",
+            &[
+                ("fixtures/fe/importing/coenrolling/app.fml.yaml", "release"),
+                ("fixtures/fe/importing/coenrolling/ui.fml.yaml", "release"),
+            ],
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_preference_overrides_swift() -> Result<()> {
+        generate_multiple_and_assert(
+            "test/pref_overrides.swift",
+            &[("fixtures/fe/pref_overrides.fml.yaml", "debug")],
+        )?;
+        Ok(())
+    }
+}

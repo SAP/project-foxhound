@@ -4,6 +4,8 @@
 
 package org.mozilla.fenix.library.history
 
+import android.os.Build
+import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.core.view.isInvisible
@@ -22,6 +24,7 @@ import org.mozilla.fenix.databinding.ComponentHistoryBinding
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.library.LibraryPageView
 import org.mozilla.fenix.theme.ThemeManager
+import com.google.android.material.R as materialR
 
 /**
  * View that contains and configures the History List
@@ -81,13 +84,18 @@ class HistoryView(
             (itemAnimator as SimpleItemAnimator).supportsChangeAnimations = false
         }
 
-        val primaryTextColor = ThemeManager.resolveAttribute(R.attr.textPrimary, context)
-        val primaryBackgroundColor = ThemeManager.resolveAttribute(R.attr.layer2, context)
+        val primaryTextColor = ThemeManager.resolveAttribute(materialR.attr.colorOnSurface, context)
+        val primaryBackgroundColor =
+            ThemeManager.resolveAttribute(materialR.attr.colorSurfaceContainerLowest, context)
         binding.swipeRefresh.apply {
             setColorSchemeResources(primaryTextColor)
             setProgressBackgroundColorSchemeResource(primaryBackgroundColor)
         }
+
         binding.swipeRefresh.setOnRefreshListener {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                binding.swipeRefresh.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+            }
             store.dispatch(HistoryFragmentAction.StartSync)
             scope.launch {
                 accountManager.syncNow(

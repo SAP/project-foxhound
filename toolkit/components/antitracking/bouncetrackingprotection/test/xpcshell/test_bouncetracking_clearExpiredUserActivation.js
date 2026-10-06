@@ -4,9 +4,6 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
 add_setup(function () {
-  // BTP needs a profile for storage.
-  do_get_profile();
-
   Services.prefs.setIntPref(
     "privacy.bounceTrackingProtection.mode",
     Ci.nsIBounceTrackingProtection.MODE_ENABLED

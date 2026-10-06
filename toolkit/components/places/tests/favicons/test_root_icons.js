@@ -6,9 +6,9 @@
  */
 
 add_task(async function () {
-  let pageURI = NetUtil.newURI("http://www.places.test/page/");
+  let pageURI = Services.io.newURI("http://www.places.test/page/");
   await PlacesTestUtils.addVisits(pageURI);
-  let faviconURI = NetUtil.newURI("http://www.places.test/favicon.ico");
+  let faviconURI = Services.io.newURI("http://www.places.test/favicon.ico");
   await PlacesTestUtils.setFaviconForPage(
     pageURI,
     faviconURI,
@@ -64,27 +64,27 @@ add_task(async function () {
 add_task(async function test_removePagesByTimeframe() {
   const BASE_URL = "http://www.places.test";
   // Add a visit in the past with no directly associated icon.
-  let oldPageURI = NetUtil.newURI(`${BASE_URL}/old/`);
+  let oldPageURI = Services.io.newURI(`${BASE_URL}/old/`);
   await PlacesTestUtils.addVisits({
     uri: oldPageURI,
     visitDate: new Date(Date.now() - 86400000),
   });
   // And another more recent visit.
-  let pageURI = NetUtil.newURI(`${BASE_URL}/page/`);
+  let pageURI = Services.io.newURI(`${BASE_URL}/page/`);
   await PlacesTestUtils.addVisits({
     uri: pageURI,
     visitDate: new Date(Date.now() - 7200000),
   });
 
   // Add a normal icon to the most recent page.
-  let faviconURI = NetUtil.newURI(`${BASE_URL}/page/favicon.ico`);
+  let faviconURI = Services.io.newURI(`${BASE_URL}/page/favicon.ico`);
   await PlacesTestUtils.setFaviconForPage(
     pageURI,
     faviconURI,
     SMALLSVG_DATA_URI
   );
   // Add a root icon to the most recent page.
-  let rootIconURI = NetUtil.newURI(`${BASE_URL}/favicon.ico`);
+  let rootIconURI = Services.io.newURI(`${BASE_URL}/favicon.ico`);
   await PlacesTestUtils.setFaviconForPage(
     pageURI,
     rootIconURI,
@@ -136,15 +136,15 @@ add_task(async function test_removePagesByTimeframe() {
   rows = await db.execute("SELECT * FROM moz_icons");
   // Debug logging for possible intermittent failure (bug 1358368).
   if (rows.length) {
-    dump_table("moz_icons");
+    await PlacesTestUtils.dumpTable({ db, table: "moz_icons" });
   }
   Assert.equal(rows.length, 0, "There should be no icon entry");
 });
 
 add_task(async function test_different_host() {
-  let pageURI = NetUtil.newURI("http://places.test/page/");
+  let pageURI = Services.io.newURI("http://places.test/page/");
   await PlacesTestUtils.addVisits(pageURI);
-  let faviconURI = NetUtil.newURI("http://mozilla.test/favicon.ico");
+  let faviconURI = Services.io.newURI("http://mozilla.test/favicon.ico");
   await PlacesTestUtils.setFaviconForPage(
     pageURI,
     faviconURI,
@@ -172,16 +172,16 @@ add_task(async function test_same_size() {
     do_get_file("favicon-normal32.png"),
     "image/png"
   );
-  let pageURI = NetUtil.newURI("http://new_places.test/page/");
+  let pageURI = Services.io.newURI("http://new_places.test/page/");
   await PlacesTestUtils.addVisits(pageURI);
 
-  let faviconURI = NetUtil.newURI("http://new_places.test/favicon.ico");
+  let faviconURI = Services.io.newURI("http://new_places.test/favicon.ico");
   await PlacesTestUtils.setFaviconForPage(
     pageURI.spec,
     faviconURI.spec,
     dataURL
   );
-  faviconURI = NetUtil.newURI("http://new_places.test/another_icon.ico");
+  faviconURI = Services.io.newURI("http://new_places.test/another_icon.ico");
   await PlacesTestUtils.setFaviconForPage(
     pageURI.spec,
     faviconURI.spec,
@@ -208,16 +208,16 @@ add_task(async function test_root_on_different_host() {
   // Check that a root icon associated to 2 domains is not removed when the
   // root domain is removed.
   const TEST_URL1 = "http://places1.test/page/";
-  let pageURI1 = NetUtil.newURI(TEST_URL1);
+  let pageURI1 = Services.io.newURI(TEST_URL1);
   await PlacesTestUtils.addVisits(pageURI1);
 
   const TEST_URL2 = "http://places2.test/page/";
-  let pageURI2 = NetUtil.newURI(TEST_URL2);
+  let pageURI2 = Services.io.newURI(TEST_URL2);
   await PlacesTestUtils.addVisits(pageURI2);
 
   // Root favicon for TEST_URL1.
   const ICON_URL = "http://places1.test/favicon.ico";
-  let iconURI = NetUtil.newURI(ICON_URL);
+  let iconURI = Services.io.newURI(ICON_URL);
   await PlacesTestUtils.setFaviconForPage(pageURI1, iconURI, SMALLPNG_DATA_URI);
   Assert.equal(await getRootValue(ICON_URL), 1, "Check root == 1");
   Assert.equal(

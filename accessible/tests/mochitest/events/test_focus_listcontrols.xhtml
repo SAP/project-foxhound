@@ -19,65 +19,80 @@
           src="../events.js" />
 
   <script type="application/javascript">
-    let PromEvents = {};
-    Services.scriptloader.loadSubScript(
-      "chrome://mochitests/content/a11y/accessible/tests/mochitest/promisified-events.js",
-      PromEvents);
-    //gA11yEventDumpID = "eventdump"; // debug stuff
-    gA11yEventDumpToConsole = true; // debug stuff
 
-    var gQueue = null;
-    async function doTests()
-    {
+    async function doTests() {
       // Test focus events.
-      gQueue = new eventQueue();
-      // Later tests use await.
-      let queueFinished = new Promise(resolve => {
-        gQueue.onFinish = function() {
-          resolve();
-          return DO_NOT_FINISH_TEST;
-        };
-      });
+      let focused = waitForEvent(EVENT_FOCUS, "rlb_item1");
+      getNode("richlistbox").focus();
+      await focused;
 
-      gQueue.push(new synthFocus("richlistbox", new focusChecker("rlb_item1")));
-      gQueue.push(new synthDownKey("rlb_item1", new focusChecker("rlb_item2")));
-      gQueue.push(new synthFocus("multiselrichlistbox", new focusChecker("msrlb_item1")));
-      gQueue.push(new synthDownKey("msrlb_item1", new focusChecker("msrlb_item2"), { shiftKey: true }));
-      gQueue.push(new synthFocus("emptyrichlistbox", new focusChecker("emptyrichlistbox")));
+      focused = waitForEvent(EVENT_FOCUS, "rlb_item2");
+      synthesizeKey("VK_DOWN", {});
+      await focused;
 
-      gQueue.push(new synthFocus("menulist"));
-      gQueue.push(new synthClick("menulist", new focusChecker("ml_tangerine"),
-        { where: "center" }));
-      gQueue.push(new synthDownKey("ml_tangerine", new focusChecker("ml_marmalade")));
-      gQueue.push(new synthEscapeKey("ml_marmalade", new focusChecker("menulist")));
+      focused = waitForEvent(EVENT_FOCUS, "msrlb_item1");
+      getNode("multiselrichlistbox").focus();
+      await focused;
+
+      focused = waitForEvent(EVENT_FOCUS, "msrlb_item2");
+      synthesizeKey("VK_DOWN", { shiftKey: true });
+      await focused;
+
+      focused = waitForEvent(EVENT_FOCUS, "emptyrichlistbox");
+      getNode("emptyrichlistbox").focus();
+      await focused;
+
+      focused = waitForEvent(EVENT_FOCUS, "menulist");
+      getNode("menulist").focus();
+      await focused;
+
+      focused = waitForEvent(EVENT_FOCUS, "ml_tangerine");
+      synthesizeMouseAtCenter(getNode("menulist"), {});
+      await focused;
+
+      focused = waitForEvent(EVENT_FOCUS, "ml_marmalade");
+      synthesizeKey("VK_DOWN", {});
+      await focused;
+
+      focused = waitForEvent(EVENT_FOCUS, "menulist");
+      synthesizeKey("VK_ESCAPE", {});
+      await focused;
 
       // On Windows, items get selected during navigation.
-      let expectedItem = WIN ? "ml_strawberry" : "ml_marmalade";
-      gQueue.push(new synthDownKey("menulist", new nofocusChecker(expectedItem)));
-      gQueue.push(new synthOpenComboboxKey("menulist", new focusChecker(expectedItem)));
-      gQueue.push(new synthEnterKey(expectedItem, new focusChecker("menulist")));
+      let expectedItem = WIN ? "ml_strawberry" : ( MAC ? "ml_tangerine" : "ml_marmalade" );
+      synthesizeKey("VK_DOWN", {});
+
+      focused = waitForEvent(EVENT_FOCUS, expectedItem);
+      synthesizeKey("VK_DOWN", { altKey: true });
+      await focused;
+
+      focused = waitForEvent(EVENT_FOCUS, "menulist");
+      synthesizeKey("VK_RETURN", {});
+      await focused;
 
       // no focus events for unfocused list controls when current item is
       // changed.
-      gQueue.push(new synthFocus("emptyrichlistbox"));
+      focused = waitForEvent(EVENT_FOCUS, "emptyrichlistbox");
+      getNode("emptyrichlistbox").focus();
+      await focused;
 
-      gQueue.push(new changeCurrentItem("richlistbox", "rlb_item1"));
-      gQueue.push(new changeCurrentItem("menulist", WIN ? "ml_marmalade" : "ml_tangerine"));
-
-      gQueue.invoke();
-      await queueFinished;
-      // Tests beyond this point use await rather than eventQueue.
+      getNode("richlistbox").currentItem = getNode("rlb_item1");
+      getNode("menulist").selectedItem = getNode(
+        WIN ? "ml_marmalade" : "ml_tangerine"
+      );
 
       // When a menulist contains something other than XUL menuitems, we need
       // to manage focus with aria-activedescendant.
       info("Testing opening a menupopup with aria-activedescendant");
       let popupDiv1 = getNode("menupopup_ad_div1");
-      let focused = PromEvents.waitForEvent(EVENT_FOCUS, popupDiv1);
+      focused = waitForEvent(EVENT_FOCUS, popupDiv1);
       let popup = getNode("menupopup_ad");
       popup.openPopup();
       await focused;
-      info("Testing removal of previous active descendant + setting new active descendant");
-      focused = PromEvents.waitForEvent(EVENT_FOCUS, "menupopup_ad_div2");
+      info(
+        "Testing removal of previous active descendant + setting new active descendant"
+      );
+      focused = waitForEvent(EVENT_FOCUS, "menupopup_ad_div2");
       popupDiv1.remove();
       popup.setAttribute("aria-activedescendant", "menupopup_ad_div2");
       await focused;
@@ -133,7 +148,7 @@
       <richlistbox id="emptyrichlistbox" seltype="multiple"/>
 
       <menulist id="menulist">
-        <menupopup>
+        <menupopup nonnative="">
           <menuitem id="ml_tangerine" label="tangerine trees"/>
           <menuitem id="ml_marmalade" label="marmalade skies"/>
           <menuitem id="ml_strawberry" label="strawberry fields"/>
@@ -141,7 +156,7 @@
       </menulist>
 
       <menulist>
-        <menupopup id="menupopup_ad" aria-activedescendant="menupopup_ad_div1">
+        <menupopup id="menupopup_ad" aria-activedescendant="menupopup_ad_div1" nonnative="">
           <div id="menupopup_ad_div1" role="option"></div>
           <div id="menupopup_ad_div2" role="option"></div>
         </menupopup>

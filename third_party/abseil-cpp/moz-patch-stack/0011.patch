@@ -1,25 +1,30 @@
-From 69187605305acf876a75c64a7665ffa725a306cb Mon Sep 17 00:00:00 2001
-From: =?UTF-8?q?Dan=20Hor=C3=A1k?= <dan@danny.cz>
-Date: Wed, 29 Jan 2025 10:22:58 +0000
-Subject: Bug 1944513 - avoid symbol visibility issues for getauxval()
+From: Michael Froman <mfroman@mozilla.com>
+Date: Tue, 7 Jan 2025 15:39:00 -0600
+Subject: Bug 1935474 - disable ABSL_HAVE_THREAD_SANITIZER due to missing
+ symbols (like __tsan_mutex_destroy). r?ng!
 
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/a248ecb7e0fa939cc145e3ef62f57783411ec367
 ---
- abseil-cpp/absl/random/internal/randen_detect.cc | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
+ abseil-cpp/absl/base/config.h | 2 ++
+ 1 file changed, 2 insertions(+)
 
-diff --git a/abseil-cpp/absl/random/internal/randen_detect.cc b/abseil-cpp/absl/random/internal/randen_detect.cc
-index bdeab877..e23cdb32 100644
---- a/abseil-cpp/absl/random/internal/randen_detect.cc
-+++ b/abseil-cpp/absl/random/internal/randen_detect.cc
-@@ -63,7 +63,7 @@ static void __cpuid(int cpu_info[4], int info_type) {
- // On linux, just use the c-library getauxval call.
- #if defined(ABSL_INTERNAL_USE_LINUX_GETAUXVAL)
+diff --git a/abseil-cpp/absl/base/config.h b/abseil-cpp/absl/base/config.h
+index 7514b86e5e7..7ae83241314 100644
+--- a/abseil-cpp/absl/base/config.h
++++ b/abseil-cpp/absl/base/config.h
+@@ -655,6 +655,7 @@ static_assert(ABSL_INTERNAL_INLINE_NAMESPACE_STR[0] != 'h' ||
+ // ABSL_HAVE_THREAD_SANITIZER
+ //
+ // ThreadSanitizer (TSan) is a fast data race detector.
++#if 0 // mozilla - builds fail missing tsan symbols like __tsan_mutex_destroy
+ #ifdef ABSL_HAVE_THREAD_SANITIZER
+ #error "ABSL_HAVE_THREAD_SANITIZER cannot be directly set."
+ #elif defined(__SANITIZE_THREAD__)
+@@ -662,6 +663,7 @@ static_assert(ABSL_INTERNAL_INLINE_NAMESPACE_STR[0] != 'h' ||
+ #elif ABSL_HAVE_FEATURE(thread_sanitizer)
+ #define ABSL_HAVE_THREAD_SANITIZER 1
+ #endif
++#endif
  
--extern "C" unsigned long getauxval(unsigned long type);  // NOLINT(runtime/int)
-+#include <sys/auxv.h>
- 
- static uint32_t GetAuxval(uint32_t hwcap_type) {
-   return static_cast<uint32_t>(getauxval(hwcap_type));
--- 
-2.47.0
-
+ // ABSL_HAVE_ADDRESS_SANITIZER
+ //

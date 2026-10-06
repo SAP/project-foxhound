@@ -1,0 +1,15 @@
+{
+  "label": "bchydro.com",
+  "bugs": {
+    "2015723": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://app.bchydro.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

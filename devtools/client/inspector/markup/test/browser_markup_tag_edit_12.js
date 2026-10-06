@@ -63,7 +63,8 @@ async function testAttributeDeletion(inspector) {
   const attrs = await getAttributesFromEditor("#delattr", inspector);
 
   info("Entering an invalid attribute to delete the attribute");
-  await editAttributeAndTab('"', inspector);
+  // Use > which is still forbidden in attribute names with relaxed rules
+  await editAttributeAndTab(">", inspector);
   checkFocusedAttribute(attrs[2], true);
 
   info("Deleting the last attribute");
@@ -75,7 +76,7 @@ async function testAttributeDeletion(inspector) {
     focusedAttr.classList.contains("styleinspector-propertyeditor"),
     "in newattr"
   );
-  is(focusedAttr.tagName, "textarea", "newattr is active");
+  is(focusedAttr.tagName.toLowerCase(), "textarea", "newattr is active");
 }
 
 async function editAttributeAndTab(newValue, inspector, goPrevious) {

@@ -1,4 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
 // -- test that NumberFormat correctly formats 0 with various numbers of significant digits
 
 /* This Source Code Form is subject to the terms of the Mozilla Public

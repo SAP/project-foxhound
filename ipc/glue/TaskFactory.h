@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -48,8 +46,7 @@ class TaskFactory : public RevocableStore {
   template <typename TaskParamType, typename... Args>
   inline already_AddRefed<TaskParamType> NewTask(Args&&... args) {
     typedef TaskWrapper<TaskParamType> TaskWrapper;
-    RefPtr<TaskWrapper> task =
-        new TaskWrapper(this, std::forward<Args>(args)...);
+    RefPtr task = MakeRefPtr<TaskWrapper>(this, std::forward<Args>(args)...);
     return task.forget();
   }
 
@@ -60,7 +57,7 @@ class TaskFactory : public RevocableStore {
     typedef RunnableMethod<Method, ArgTuple> RunnableMethod;
     typedef TaskWrapper<RunnableMethod> TaskWrapper;
 
-    RefPtr<TaskWrapper> task = new TaskWrapper(
+    RefPtr task = MakeRefPtr<TaskWrapper>(
         this, object_, method, base::MakeTuple(std::forward<Args>(args)...));
 
     return task.forget();

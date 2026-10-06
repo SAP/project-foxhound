@@ -7,14 +7,14 @@
 "use strict";
 
 add_task(async function () {
-  await openTabAndSetupStorage(MAIN_DOMAIN + "storage-cookies.html");
+  await openTabAndSetupStorage(MAIN_URL + "storage-cookies.html");
   showAllColumns(true);
   showColumn("uniqueKey", false);
 
   const date = new Date();
   const futureExpires = date.setDate(date.getDate() + 2000);
 
-  const id = getCookieId("test4", "test1.example.org", "/browser");
+  const id = getCookieId("test4", MAIN_HOST, "/browser");
   const originalExpires = Date.parse(getRowValues(id).expires);
 
   await editCell(id, "expires", date.toGMTString(), false);

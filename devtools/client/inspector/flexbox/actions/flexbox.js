@@ -34,7 +34,7 @@ module.exports = {
   /**
    * Updates the color used for the flexbox's highlighter.
    *
-   * @param  {String} color
+   * @param  {string} color
    *         The color to use for this nodeFront's flexbox highlighter.
    */
   updateFlexboxColor(color) {
@@ -47,7 +47,7 @@ module.exports = {
   /**
    * Updates the flexbox highlighted state.
    *
-   * @param  {Boolean} highlighted
+   * @param  {boolean} highlighted
    *         Whether or not the flexbox highlighter is highlighting the flexbox.
    */
   updateFlexboxHighlighted(highlighted) {

@@ -15,6 +15,15 @@
             </intent-filter>
         </service>
 
+        <!-- ProfilerProvider is only exposed in nightly builds to allow profiler control through adb.
+             Access is restricted to shell / system UID via enforceShellCaller(). -->
+        <provider
+            android:name=".perf.ProfilerProvider"
+            android:authorities="${applicationId}.profiler"
+            android:exported="true"
+            android:enabled="true"
+            tools:replace="android:exported,android:enabled" />
+
     </application>
 
 </manifest>

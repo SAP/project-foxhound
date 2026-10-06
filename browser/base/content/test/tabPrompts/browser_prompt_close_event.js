@@ -21,24 +21,23 @@ const BEFOREUNLOAD_URL = BUILDER_URL + encodeURI(BEFOREUNLOAD_MARKUP);
 
 /**
  * Execute the provided script content by generating a dynamic script tag and
- * inserting it in the page for the current selected browser.
+ * inserting it in the page for the provided browser.
  *
  * @param {string} script
  *     The script to execute.
+ * @param {Browser} browser
+ *     The browser element where the script has to be to executed.
+ *     Defaults to a current selected browser.
  * @returns {Promise}
  *     A promise that resolves when the script node was added and removed from
  *     the content page.
  */
-function createScriptNode(script) {
-  return SpecialPowers.spawn(
-    gBrowser.selectedBrowser,
-    [script],
-    function (_script) {
-      const scriptTag = content.document.createElement("script");
-      scriptTag.append(content.document.createTextNode(_script));
-      content.document.body.append(scriptTag);
-    }
-  );
+function createScriptNode(script, browser = gBrowser.selectedBrowser) {
+  return SpecialPowers.spawn(browser, [script], function (_script) {
+    const scriptTag = content.document.createElement("script");
+    scriptTag.append(content.document.createTextNode(_script));
+    content.document.body.append(scriptTag);
+  });
 }
 
 add_task(async function test_close_prompt_event_detail_prompt_types() {
@@ -103,6 +102,11 @@ add_task(async function test_close_prompt_event_detail_beforeunload() {
           "beforeunload",
           "Received correct `promptType` value in the event detail"
         );
+        is(
+          closedEvent.detail.owningBrowsingContext,
+          browser.browsingContext,
+          "Received correct `owningBrowsingContext` value in the event detail"
+        );
 
         if (leavePage) {
           await BrowserTestUtils.browserLoaded(browser, false, "about:blank");
@@ -153,6 +157,11 @@ add_task(
       defaultValue,
       "Received correct `value` value in the event detail"
     );
+    is(
+      closedEvent.detail.owningBrowsingContext,
+      gBrowser.selectedBrowser.browsingContext,
+      "Received correct `owningBrowsingContext` value in the event detail"
+    );
   }
 );
 
@@ -194,6 +203,11 @@ add_task(
       amendedValue,
       "Received correct `value` value in the event detail"
     );
+    is(
+      closedEvent.detail.owningBrowsingContext,
+      gBrowser.selectedBrowser.browsingContext,
+      "Received correct `owningBrowsingContext` value in the event detail"
+    );
   }
 );
 
@@ -231,6 +245,11 @@ add_task(
       closedEvent.detail.value,
       null,
       "Received correct `value` value in the event detail"
+    );
+    is(
+      closedEvent.detail.owningBrowsingContext,
+      gBrowser.selectedBrowser.browsingContext,
+      "Received correct `owningBrowsingContext` value in the event detail"
     );
   }
 );
@@ -273,5 +292,63 @@ add_task(
       null,
       "Received correct `value` value in the event detail"
     );
+    is(
+      closedEvent.detail.owningBrowsingContext,
+      gBrowser.selectedBrowser.browsingContext,
+      "Received correct `owningBrowsingContext` value in the event detail"
+    );
   }
 );
+
+add_task(async function test_close_prompt_event_detail_in_iframe() {
+  const IFRAME_HTML = `
+  <!doctype html>
+  <html>
+    <head>
+      <meta charset=utf8>
+  </head>
+    <body>
+      <h1>Iframe</h1>
+    </body>
+  </html>`;
+
+  const PAGE_WITH_IFRAME = `
+  <html>
+  <head>
+  </head>
+  <body>
+    <iframe src='${BUILDER_URL + encodeURI(IFRAME_HTML)}'></iframe>
+  </body>
+  </html>
+  `;
+
+  await BrowserTestUtils.withNewTab(
+    BUILDER_URL + encodeURI(PAGE_WITH_IFRAME),
+    async function (browser) {
+      const iframeBrowsingContext = browser.browsingContext.children[0];
+
+      const closed = BrowserTestUtils.waitForEvent(
+        window,
+        "DOMModalDialogClosed"
+      );
+
+      const promptPromise = BrowserTestUtils.promiseAlertDialogOpen();
+      await createScriptNode(
+        `setTimeout(() => window.alert('test'))`,
+        iframeBrowsingContext
+      );
+      const promptWin = await promptPromise;
+
+      info("accepting prompt with default value.");
+      promptWin.document.querySelector("dialog").acceptDialog();
+
+      const closedEvent = await closed;
+
+      is(
+        closedEvent.detail.owningBrowsingContext,
+        iframeBrowsingContext,
+        "Received correct `owningBrowsingContext` value in the event detail"
+      );
+    }
+  );
+});

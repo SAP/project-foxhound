@@ -4,21 +4,28 @@
 
 package org.mozilla.fenix.settings
 
+import android.content.DialogInterface
 import android.os.Bundle
+import android.text.SpannableStringBuilder
 import androidx.annotation.VisibleForTesting
+import androidx.appcompat.app.AlertDialog
+import androidx.core.text.HtmlCompat
 import androidx.navigation.findNavController
+import androidx.navigation.fragment.findNavController
+import androidx.navigation.fragment.navArgs
 import androidx.preference.CheckBoxPreference
 import androidx.preference.DropDownPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
-import androidx.preference.SwitchPreference
-import org.mozilla.fenix.BrowserDirection
+import androidx.preference.SwitchPreferenceCompat
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.mozilla.fenix.GleanMetrics.TrackingProtection
-import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.nav
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.openToBrowser
+import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.trackingprotection.TrackingProtectionMode
 import org.mozilla.fenix.utils.view.addToRadioGroup
@@ -27,7 +34,8 @@ import org.mozilla.fenix.utils.view.addToRadioGroup
  * Displays the toggle for tracking protection, options for tracking protection policy and a button
  * to open info about the tracking protection [org.mozilla.fenix.settings.TrackingProtectionFragment].
  */
-class TrackingProtectionFragment : PreferenceFragmentCompat() {
+class TrackingProtectionFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFragment {
+    private val args by navArgs<TrackingProtectionFragmentArgs>()
 
     private val exceptionsClickListener = Preference.OnPreferenceClickListener {
         val directions =
@@ -75,6 +83,15 @@ class TrackingProtectionFragment : PreferenceFragmentCompat() {
     @VisibleForTesting
     internal lateinit var strictAllowListConvenienceTrackingProtection: CheckBoxPreference
 
+    @VisibleForTesting
+    internal lateinit var strictAllowListTrackingProtectionSubheader: Preference
+
+    @VisibleForTesting
+    internal lateinit var customAllowListTrackingProtectionSubheader: Preference
+
+    @VisibleForTesting
+    lateinit var alertDialog: AlertDialog
+
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.tracking_protection_preferences, rootKey)
         val radioStrict = bindStrict()
@@ -93,9 +110,9 @@ class TrackingProtectionFragment : PreferenceFragmentCompat() {
         val preferenceTP =
             requirePreference<FenixSwitchPreference>(R.string.pref_key_tracking_protection)
 
-        preferenceTP.isChecked = requireContext().settings().shouldUseTrackingProtection
+        preferenceTP.isChecked = requireComponents.settings.shouldUseTrackingProtection
         preferenceTP.setOnPreferenceChangeListener<Boolean> { preference, trackingProtectionOn ->
-            preference.context.settings().shouldUseTrackingProtection =
+            preference.context.components.settings.shouldUseTrackingProtection =
                 trackingProtectionOn
             with(preference.context.components) {
                 val policy = core.trackingProtectionPolicyFactory.createTrackingProtectionPolicy()
@@ -107,11 +124,11 @@ class TrackingProtectionFragment : PreferenceFragmentCompat() {
 
         val learnMorePreference = requirePreference<Preference>(R.string.pref_key_etp_learn_more)
         learnMorePreference.setOnPreferenceClickListener {
-            (activity as HomeActivity).openToBrowserAndLoad(
+            findNavController().openToBrowser()
+            requireComponents.useCases.fenixBrowserUseCases.loadUrlOrSearch(
                 searchTermOrURL = SupportUtils.getGenericSumoURLForTopic
                     (SupportUtils.SumoTopic.TRACKING_PROTECTION),
                 newTab = true,
-                from = BrowserDirection.FromTrackingProtection,
             )
             true
         }
@@ -120,27 +137,11 @@ class TrackingProtectionFragment : PreferenceFragmentCompat() {
             getString(R.string.app_name),
         )
 
-        val strictAllowListBaseline =
-            requirePreference<Preference>(R.string.pref_key_tracking_protection_strict_allow_list_baseline)
-
-        strictAllowListBaseline.summary = getString(
-            R.string.preference_enhanced_tracking_protection_allow_list_baseline,
-            getString(R.string.app_name),
-        )
-
-        val customAllowListBaseline =
-            requirePreference<Preference>(R.string.pref_key_tracking_protection_custom_allow_list_baseline)
-
-        customAllowListBaseline.summary = getString(
-            R.string.preference_enhanced_tracking_protection_allow_list_baseline,
-            getString(R.string.app_name),
-        )
-
         val preferenceExceptions =
             requirePreference<Preference>(R.string.pref_key_tracking_protection_exceptions)
         preferenceExceptions.onPreferenceClickListener = exceptionsClickListener
 
-        requirePreference<SwitchPreference>(R.string.pref_key_privacy_enable_global_privacy_control).apply {
+        requirePreference<SwitchPreferenceCompat>(R.string.pref_key_privacy_enable_global_privacy_control).apply {
             onPreferenceChangeListener = object : SharedPreferenceUpdater() {
                 override fun onPreferenceChange(preference: Preference, newValue: Any?): Boolean {
                     context.components.core.engine.settings.globalPrivacyControlEnabled = newValue as Boolean
@@ -148,6 +149,10 @@ class TrackingProtectionFragment : PreferenceFragmentCompat() {
                     return super.onPreferenceChange(preference, newValue)
                 }
             }
+        }
+
+        args.preferenceToScrollTo?.let {
+            scrollToPreferenceWithHighlight(it)
         }
     }
 
@@ -184,12 +189,25 @@ class TrackingProtectionFragment : PreferenceFragmentCompat() {
         strictAllowListConvenienceTrackingProtection =
             requirePreference(R.string.pref_key_tracking_protection_strict_allow_list_convenience)
 
+        strictAllowListTrackingProtectionSubheader =
+            requirePreference(R.string.pref_key_tracking_protection_strict_allow_list_subheader)
+
+        val learnMore =
+            getString(R.string.preference_enhanced_tracking_protection_allow_list_learn_more)
+        strictAllowListTrackingProtectionSubheader.summary = getLink(learnMore)
+        strictAllowListTrackingProtectionSubheader.setOnPreferenceClickListener {
+            openSumoArticle()
+            true
+        }
+
         strictAllowListBaselineTrackingProtection.onPreferenceChangeListener = object : SharedPreferenceUpdater() {
             override fun onPreferenceChange(preference: Preference, newValue: Any?): Boolean {
+                // If user is unchecking the baseline protection, show dialog and prevent immediate update
                 if (!(newValue as Boolean)) {
-                    requireContext().settings().strictAllowListConvenienceTrackingProtection = false
-                    strictAllowListConvenienceTrackingProtection.isChecked = false
+                    showDisableBaselineDialog(isStrictTrackingMode = true)
+                    return false
                 }
+                // If user is checking the baseline protection, allow it and update policy
                 return super.onPreferenceChange(preference, newValue).also {
                     updateTrackingProtectionPolicy()
                 }
@@ -244,6 +262,17 @@ class TrackingProtectionFragment : PreferenceFragmentCompat() {
 
         customAllowListConvenienceTrackingProtection =
             requirePreference(R.string.pref_key_tracking_protection_custom_allow_list_convenience)
+
+        customAllowListTrackingProtectionSubheader =
+            requirePreference(R.string.pref_key_tracking_protection_custom_allow_list_subheader)
+
+        val learnMore =
+            getString(R.string.preference_enhanced_tracking_protection_allow_list_learn_more)
+        customAllowListTrackingProtectionSubheader.summary = getLink(learnMore)
+        customAllowListTrackingProtectionSubheader.setOnPreferenceClickListener {
+            openSumoArticle()
+            true
+        }
 
         customCookies.onPreferenceChangeListener = object : SharedPreferenceUpdater() {
             override fun onPreferenceChange(preference: Preference, newValue: Any?): Boolean {
@@ -323,8 +352,8 @@ class TrackingProtectionFragment : PreferenceFragmentCompat() {
         customAllowListBaselineTrackingProtection.onPreferenceChangeListener = object : SharedPreferenceUpdater() {
             override fun onPreferenceChange(preference: Preference, newValue: Any?): Boolean {
                 if (!(newValue as Boolean)) {
-                    requireContext().settings().customAllowListConvenienceTrackingProtection = false
-                    customAllowListConvenienceTrackingProtection.isChecked = false
+                    showDisableBaselineDialog(isStrictTrackingMode = false)
+                    return false
                 }
                 return super.onPreferenceChange(preference, newValue).also {
                     updateTrackingProtectionPolicy()
@@ -345,7 +374,8 @@ class TrackingProtectionFragment : PreferenceFragmentCompat() {
         return radio
     }
 
-    private fun updateTrackingProtectionPolicy() {
+    @VisibleForTesting()
+    internal fun updateTrackingProtectionPolicy() {
         context?.components?.let {
             val policy = it.core.trackingProtectionPolicyFactory
                 .createTrackingProtectionPolicy()
@@ -356,13 +386,14 @@ class TrackingProtectionFragment : PreferenceFragmentCompat() {
     }
 
     private fun updateStrictOptionsVisibility() {
-        val isStrictSelected = requireContext().settings().useStrictTrackingProtection
+        val isStrictSelected = requireComponents.settings.useStrictTrackingProtection
         strictAllowListBaselineTrackingProtection.isVisible = isStrictSelected
         strictAllowListConvenienceTrackingProtection.isVisible = isStrictSelected
+        strictAllowListTrackingProtectionSubheader.isVisible = isStrictSelected
     }
 
     private fun updateCustomOptionsVisibility() {
-        val isCustomSelected = requireContext().settings().useCustomTrackingProtection
+        val isCustomSelected = requireComponents.settings.useCustomTrackingProtection
         customCookies.isVisible = isCustomSelected
         customCookiesSelect.isVisible = isCustomSelected && customCookies.isChecked
         customTracking.isVisible = isCustomSelected
@@ -374,12 +405,13 @@ class TrackingProtectionFragment : PreferenceFragmentCompat() {
         customSuspectedFingerprintersSelect.isVisible = isCustomSelected && customSuspectedFingerprinters.isChecked
         customAllowListBaselineTrackingProtection.isVisible = isCustomSelected
         customAllowListConvenienceTrackingProtection.isVisible = isCustomSelected
+        customAllowListTrackingProtectionSubheader.isVisible = isCustomSelected
     }
 
     private fun updateFingerprintingProtection() {
-        val isStandardSelected = requireContext().settings().useStandardTrackingProtection
-        val isStrictSelected = requireContext().settings().useStrictTrackingProtection
-        val isCustomSelected = requireContext().settings().useCustomTrackingProtection
+        val isStandardSelected = requireComponents.settings.useStandardTrackingProtection
+        val isStrictSelected = requireComponents.settings.useStrictTrackingProtection
+        val isCustomSelected = requireComponents.settings.useCustomTrackingProtection
 
         context?.components?.let {
             if (isCustomSelected) {
@@ -399,5 +431,91 @@ class TrackingProtectionFragment : PreferenceFragmentCompat() {
                 it.core.engine.settings.fingerprintingProtectionPrivateBrowsing = true
             }
         }
+    }
+
+    private fun getLink(text: String): SpannableStringBuilder {
+        val rawTextWithLink = HtmlCompat.fromHtml(
+            "<a href=\"\">$text</a>",
+            HtmlCompat.FROM_HTML_MODE_COMPACT,
+        )
+        return SpannableStringBuilder(rawTextWithLink)
+    }
+
+    private fun openSumoArticle() {
+        findNavController().openToBrowser()
+        requireComponents.useCases.fenixBrowserUseCases.loadUrlOrSearch(
+            searchTermOrURL = SupportUtils.getGenericSumoURLForTopic(
+                SupportUtils.SumoTopic.TRACKING_PROTECTION,
+            ),
+            newTab = true,
+        )
+    }
+
+    /**
+     * Shows a confirmation dialog when the user attempts to disable baseline tracking exceptions.
+     *
+     * @param isStrictTrackingMode `true` if the user is in strict tracking protection mode,
+     * `false` if in custom mode.
+     */
+    private fun showDisableBaselineDialog(isStrictTrackingMode: Boolean) {
+        alertDialog = MaterialAlertDialogBuilder(requireContext()).apply {
+            setTitle(R.string.preference_enhanced_tracking_protection_allow_list_dialog_title)
+            setMessage(
+                getString(
+                R.string.preference_enhanced_tracking_protection_allow_list_dialog_message,
+                getString(R.string.app_name),
+            ),
+            )
+            // We set positive to "cancel" and negative to "confirm" because we want to encourage
+            // users to keep the option on.
+            setPositiveButton(R.string.preference_enhanced_tracking_protection_allow_list_dialog_cancel) { dialog, _ ->
+                onDialogCancel(isStrictTrackingMode, dialog)
+            }
+            setNegativeButton(R.string.preference_enhanced_tracking_protection_allow_list_dialog_confirm) { dialog, _ ->
+                onDialogConfirm(isStrictTrackingMode, dialog)
+            }
+            setCancelable(false)
+        }.create()
+        alertDialog.show()
+    }
+
+    /**
+     * Handles the user's confirmation to disable baseline tracking exception.
+     *
+     * @param isStrictTrackingMode `true` if disabling strict baseline exceptions,
+     * `false` if disabling custom baseline exceptions
+     * @param dialog the dialog interface to dismiss after processing
+     */
+    @VisibleForTesting()
+    internal fun onDialogConfirm(isStrictTrackingMode: Boolean, dialog: DialogInterface) {
+        if (isStrictTrackingMode) {
+            strictAllowListBaselineTrackingProtection.isChecked = false
+            requireComponents.settings.strictAllowListBaselineTrackingProtection = false
+        } else {
+            customAllowListBaselineTrackingProtection.isChecked = false
+            requireComponents.settings.customAllowListBaselineTrackingProtection = false
+        }
+        updateTrackingProtectionPolicy()
+        dialog.dismiss()
+    }
+
+    /**
+     * Handles the user's cancellation of the baseline exception disable dialog.
+     *
+     * @param isStrictTrackingMode `true` if re-enabling strict baseline exceptions,
+     * `false` if re-enabling custom baseline exceptions
+     * @param dialog the dialog interface to dismiss after processing
+     */
+    @VisibleForTesting()
+    internal fun onDialogCancel(isStrictTrackingMode: Boolean, dialog: DialogInterface) {
+        if (isStrictTrackingMode) {
+            strictAllowListBaselineTrackingProtection.isChecked = true
+            requireComponents.settings.strictAllowListBaselineTrackingProtection = true
+        } else {
+            customAllowListBaselineTrackingProtection.isChecked = true
+            requireComponents.settings.customAllowListBaselineTrackingProtection = true
+        }
+        updateTrackingProtectionPolicy()
+        dialog.dismiss()
     }
 }

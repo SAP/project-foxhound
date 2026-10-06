@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,14 +7,12 @@
 #ifndef MTRANSPORT_DUMMY_SOCKET_H_
 #define MTRANSPORT_DUMMY_SOCKET_H_
 
-#include "nr_socket_prsock.h"
-
-extern "C" {
-#include "transport_addr.h"
-}
-
 #include "mediapacket.h"
 #include "mozilla/UniquePtr.h"
+#include "nr_socket.h"
+#include "nr_socket_prsock.h"
+#include "r_errors.h"
+#include "transport_addr.h"
 
 #define GTEST_HAS_RTTI 0
 #include "gtest/gtest.h"

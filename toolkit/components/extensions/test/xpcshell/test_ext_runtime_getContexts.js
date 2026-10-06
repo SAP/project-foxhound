@@ -3,6 +3,10 @@
 
 "use strict";
 
+const { ExtensionDocumentId } = ChromeUtils.importESModule(
+  "resource://gre/modules/ExtensionDocumentId.sys.mjs"
+);
+
 add_task(async function test_runtime_getContexts() {
   function background() {
     browser.test.onMessage.addListener(async (msg, ...args) => {
@@ -23,7 +27,10 @@ add_task(async function test_runtime_getContexts() {
         }
       }
     });
-    browser.test.sendMessage("bgpage:loaded");
+    browser.test.sendMessage(
+      "bgpage:loaded",
+      browser.runtime.getDocumentId(window)
+    );
   }
 
   const extension = ExtensionTestUtils.loadExtension({
@@ -37,7 +44,7 @@ add_task(async function test_runtime_getContexts() {
   });
 
   await extension.startup();
-  await extension.awaitMessage("bgpage:loaded");
+  const bgDocumentId = await extension.awaitMessage("bgpage:loaded");
 
   const documentOrigin = extension.extension.baseURI.spec.slice(0, -1);
   const tabDocumentUrl = extension.extension.baseURI.resolve("tab.html");
@@ -45,8 +52,20 @@ add_task(async function test_runtime_getContexts() {
     "_generated_background_page.html"
   );
 
+  const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  const assertValidDocumentId = documentId => {
+    Assert.ok(
+      UUID_RE.test(documentId),
+      `documentId should be a UUID, got: ${documentId}`
+    );
+  };
+
+  assertValidDocumentId(bgDocumentId);
+
   let expectedBackground = {
     contextType: "BACKGROUND",
+    documentId: bgDocumentId,
     documentOrigin,
     documentUrl: bgDocumentUrl,
     incognito: false,
@@ -57,6 +76,7 @@ add_task(async function test_runtime_getContexts() {
 
   let expectedTab = {
     contextType: "TAB",
+    documentId: undefined, // populated after loadContentPage
     documentOrigin,
     documentUrl: `${tabDocumentUrl}?fistOpenedTab=true`,
     incognito: false,
@@ -123,6 +143,16 @@ add_task(async function test_runtime_getContexts() {
     `${tabDocumentUrl}?fistOpenedTab=true`
   );
 
+  expectedTab.documentId = ExtensionDocumentId.getDocumentId(
+    page.browser.innerWindowID
+  );
+  assertValidDocumentId(expectedTab.documentId);
+  Assert.notEqual(
+    bgDocumentId,
+    expectedTab.documentId,
+    "Background and tab contexts have different documentIds"
+  );
+
   res = await page.spawn([], () =>
     this.content.wrappedJSObject.browser.runtime.getContexts({})
   );
@@ -143,6 +173,42 @@ add_task(async function test_runtime_getContexts() {
     "Expect the expected properties for the background context (included same contextId)",
     { assertContextId: true }
   );
+
+  info("Test runtime.getContexts with a documentIds filter");
+
+  extension.sendMessage("runtime.getContexts", { documentIds: [bgDocumentId] });
+  res = await extension.awaitMessage("runtime.getContexts:result");
+  assertGetContextsResult(
+    res,
+    [expectedBackground],
+    "documentIds filter for background returns only the background context"
+  );
+
+  extension.sendMessage("runtime.getContexts", {
+    documentIds: [expectedTab.documentId],
+  });
+  res = await extension.awaitMessage("runtime.getContexts:result");
+  assertGetContextsResult(
+    res,
+    [expectedTab],
+    "documentIds filter for tab returns only the tab context"
+  );
+
+  extension.sendMessage("runtime.getContexts", {
+    documentIds: [bgDocumentId, expectedTab.documentId],
+  });
+  res = await extension.awaitMessage("runtime.getContexts:result");
+  assertGetContextsResult(
+    res,
+    [expectedBackground, expectedTab],
+    "documentIds filter with both ids returns both contexts"
+  );
+
+  extension.sendMessage("runtime.getContexts", {
+    documentIds: ["00000000-0000-0000-0000-000000000000"],
+  });
+  res = await extension.awaitMessage("runtime.getContexts:result");
+  Assert.equal(res.length, 0, "Unknown documentId filter returns empty array");
 
   info("Test runtime.getContexts with a contextType filter");
   res = await page.spawn([], () =>

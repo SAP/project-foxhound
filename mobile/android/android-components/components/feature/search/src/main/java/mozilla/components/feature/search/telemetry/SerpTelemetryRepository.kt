@@ -5,76 +5,46 @@
 package mozilla.components.feature.search.telemetry
 
 import androidx.annotation.VisibleForTesting
-import mozilla.appservices.remotesettings.RemoteSettingsResponse
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.ktx.android.org.json.asSequence
 import mozilla.components.support.ktx.android.org.json.toList
-import mozilla.components.support.remotesettings.RemoteSettingsClient
-import mozilla.components.support.remotesettings.RemoteSettingsResult
+import mozilla.components.support.remotesettings.RemoteSettingsService
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
-import java.io.File
-
-internal const val REMOTE_PROD_ENDPOINT_URL = "https://firefox.settings.services.mozilla.com"
-internal const val REMOTE_ENDPOINT_BUCKET_NAME = "main"
 
 /**
  * Parse SERP Telemetry json from remote config.
  */
 class SerpTelemetryRepository(
-    rootStorageDirectory: File,
     private val readJson: () -> JSONObject,
     collectionName: String,
-    serverUrl: String = REMOTE_PROD_ENDPOINT_URL,
-    bucketName: String = REMOTE_ENDPOINT_BUCKET_NAME,
+    remoteSettingsService: RemoteSettingsService,
 ) {
     val logger = Logger("SerpTelemetryRepository")
     private var providerList: List<SearchProviderModel> = emptyList()
 
     @VisibleForTesting
-    internal var remoteSettingsClient = RemoteSettingsClient(
-        serverUrl = serverUrl,
-        bucketName = bucketName,
-        collectionName = collectionName,
-        storageRootDirectory = rootStorageDirectory,
-    )
+    internal var remoteSettingsClient =
+        remoteSettingsService.remoteSettingsService.makeClient(collectionName)
 
     /**
-     * Provides list of search providers from cache or dump and fetches from remotes server .
+     * Provides list of search providers from remote server, cache or dump.
      */
     suspend fun updateProviderList(): List<SearchProviderModel> {
-        val (cacheLastModified, cacheResponse) = loadProvidersFromCache()
+        val cacheLastModified = remoteSettingsClient.getLastModifiedTimestamp()
+        val cachedRecords = remoteSettingsClient.getRecords()
         val localResponse = readJson()
-        if (cacheResponse.isEmpty() || cacheLastModified <= localResponse.getString("timestamp").toULong()) {
+        if (cachedRecords.isNullOrEmpty() || cacheLastModified == null ||
+            cacheLastModified <= localResponse.getString("timestamp").toULong()
+        ) {
             providerList = parseLocalPreinstalledData(localResponse)
         } else if (cacheLastModified > localResponse.getString("timestamp").toULong()) {
-            providerList = cacheResponse
+            providerList = cachedRecords.mapNotNull {
+                it.fields.toSearchProviderModel()
+            }
         }
-        fetchRemoteResponse(cacheLastModified)
         return providerList
-    }
-
-    @VisibleForTesting
-    internal suspend fun fetchRemoteResponse(
-        cacheLastModified: ULong?,
-    ) {
-        if (cacheLastModified == null) {
-            return
-        }
-        val remoteResponse = fetchRemoteResponse()
-        if (remoteResponse.lastModified > cacheLastModified) {
-            providerList = parseRemoteResponse(remoteResponse)
-            writeToCache(remoteResponse)
-        }
-    }
-
-    /**
-     * Writes data to local cache.
-     */
-    @VisibleForTesting
-    internal suspend fun writeToCache(records: RemoteSettingsResponse): RemoteSettingsResult {
-        return remoteSettingsClient.write(records)
     }
 
     /**
@@ -88,45 +58,6 @@ class SerpTelemetryRepository(
                 (it as JSONObject).toSearchProviderModel()
             }
             .toList()
-    }
-
-    /**
-     * Parses remote server response.
-     */
-    private fun parseRemoteResponse(response: RemoteSettingsResponse): List<SearchProviderModel> {
-        return response.records.mapNotNull {
-            it.fields.toSearchProviderModel()
-        }
-    }
-
-    /**
-     * Returns data from remote servers.
-     */
-    @VisibleForTesting
-    internal suspend fun fetchRemoteResponse(): RemoteSettingsResponse {
-        val result = remoteSettingsClient.fetch()
-        return if (result is RemoteSettingsResult.Success) {
-            result.response
-        } else {
-            RemoteSettingsResponse(emptyList(), 0u)
-        }
-    }
-
-    /**
-     * Returns search providers from local cache.
-     */
-    @VisibleForTesting
-    internal suspend fun loadProvidersFromCache(): Pair<ULong, List<SearchProviderModel>> {
-        val result = remoteSettingsClient.read()
-        return if (result is RemoteSettingsResult.Success) {
-            val response = result.response.records.mapNotNull {
-                it.fields.toSearchProviderModel()
-            }
-            val lastModified = result.response.lastModified
-            Pair(lastModified, response)
-        } else {
-            Pair(0u, emptyList())
-        }
     }
 }
 
@@ -148,7 +79,10 @@ internal fun JSONObject.toSearchProviderModel(): SearchProviderModel? =
             expectedOrganicCodes = optJSONArray("expectedOrganicCodes")?.toList(),
         )
     } catch (e: JSONException) {
-        Logger("SerpTelemetryRepository").error("JSONException while trying to parse remote config", e)
+        Logger("SerpTelemetryRepository").error(
+            "JSONException while trying to parse remote config",
+            e,
+        )
         null
     }
 
@@ -165,6 +99,9 @@ private fun JSONObject.toSearchProviderCookie(): SearchProviderCookie? =
             codeParamName = optString("codeParamName"),
         )
     } catch (e: JSONException) {
-        Logger("SerpTelemetryRepository").error("JSONException while trying to parse remote config", e)
+        Logger("SerpTelemetryRepository").error(
+            "JSONException while trying to parse remote config",
+            e,
+        )
         null
     }

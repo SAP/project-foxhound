@@ -101,7 +101,7 @@ function disableBrowserCache(disabled) {
 /**
  * Change performance statistics panel open state.
  *
- * @param {Object} connector - connector object to the backend
+ * @param {object} connector - connector object to the backend
  * @param {boolean} visible - expected performance statistics panel open state
  */
 function openStatistics(connector, open) {
@@ -180,7 +180,7 @@ function toggleColumn(column) {
 /**
  * Set width of multiple columns
  *
- * @param {array} widths - array of pairs {name, width}
+ * @param {Array} widths - array of pairs {name, width}
  */
 function setColumnsWidth(widths) {
   return {

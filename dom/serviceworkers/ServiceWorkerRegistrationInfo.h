@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -70,6 +68,10 @@ class ServiceWorkerRegistrationInfo final
   bool mCorrupt;
 
   IPCNavigationPreloadState mNavigationPreloadState;
+  int64_t mNumberOfAttemptedActivations{0};
+  bool mIsBroken{false};
+  int64_t mCacheAPIId{-1};
+  uint16_t mIPAddressSpace = 0;
 
  public:
   NS_DECL_ISUPPORTS
@@ -78,9 +80,17 @@ class ServiceWorkerRegistrationInfo final
   using TryToActivateCallback = std::function<void()>;
 
   ServiceWorkerRegistrationInfo(
-      const nsACString& aScope, nsIPrincipal* aPrincipal,
+      const nsACString& aScope, WorkerType aType, nsIPrincipal* aPrincipal,
       ServiceWorkerUpdateViaCache aUpdateViaCache,
       IPCNavigationPreloadState&& aNavigationPreloadState);
+
+  int64_t GetNumberOfAttemptedActivations() const {
+    return mNumberOfAttemptedActivations;
+  }
+
+  bool IsBroken() const { return mIsBroken; }
+
+  int64_t GetCacheAPIId() const { return mCacheAPIId; }
 
   void AddInstance(ServiceWorkerRegistrationListener* aInstance,
                    const ServiceWorkerRegistrationDescriptor& aDescriptor);
@@ -88,6 +98,8 @@ class ServiceWorkerRegistrationInfo final
   void RemoveInstance(ServiceWorkerRegistrationListener* aInstance);
 
   const nsCString& Scope() const;
+
+  WorkerType Type() const;
 
   nsIPrincipal* Principal() const;
 
@@ -212,7 +224,8 @@ class ServiceWorkerRegistrationInfo final
 
   ServiceWorkerUpdateViaCache GetUpdateViaCache() const;
 
-  void SetUpdateViaCache(ServiceWorkerUpdateViaCache aUpdateViaCache);
+  void SetOptions(ServiceWorkerUpdateViaCache aUpdateViaCache,
+                  WorkerType aType);
 
   int64_t GetLastUpdateTime() const;
 
@@ -234,6 +247,24 @@ class ServiceWorkerRegistrationInfo final
 
   const nsID& AgentClusterId() const;
 
+  uint16_t GetIPAddressSpace() const { return mIPAddressSpace; }
+  void SetIPAddressSpace(uint16_t aIPAddressSpace) {
+    // Only update when the new value is non-zero (non-Unknown). The IP address
+    // space is resolved asynchronously (UpdateCurrentIpAddressSpace runs in
+    // OnStopRequest, after InitPolicyContainer in StartDocumentLoad), so a
+    // registration call can arrive with Unknown (0) if the document's policy
+    // container was initialized before the peer IP was known. Keeping a
+    // previously-resolved non-zero value avoids regressing to Unknown.
+    if (aIPAddressSpace != 0) {
+      // Two non-zero values must agree — same-origin documents cannot have
+      // different IP address spaces.
+      MOZ_ASSERT(mIPAddressSpace == 0 || mIPAddressSpace == aIPAddressSpace,
+                 "Unexpected IP address space mismatch for same-origin "
+                 "service worker registration");
+      mIPAddressSpace = aIPAddressSpace;
+    }
+  }
+
   void SetNavigationPreloadEnabled(const bool& aEnabled);
 
   void SetNavigationPreloadHeader(const nsCString& aHeader);
@@ -246,7 +277,8 @@ class ServiceWorkerRegistrationInfo final
   // may get CC-ed.
   void UpdateRegistrationState();
 
-  void UpdateRegistrationState(ServiceWorkerUpdateViaCache aUpdateViaCache);
+  void UpdateRegistrationState(ServiceWorkerUpdateViaCache aUpdateViaCache,
+                               WorkerType aType);
 
   // Used by devtools to track changes to the properties of
   // *nsIServiceWorkerRegistrationInfo*. Note, this doesn't necessarily need to

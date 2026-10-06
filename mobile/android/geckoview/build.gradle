@@ -1,11 +1,11 @@
 plugins {
     alias(libs.plugins.kotlin.android)
+    id 'com.android.library'
+    id 'checkstyle'
+    id 'org.mozilla.apilint'
 }
 
 import groovy.json.JsonOutput
-
-apply plugin: 'com.android.library'
-apply plugin: 'checkstyle'
 
 // The SDK binding generation tasks depend on the JAR creation task of the
 // :annotations project.
@@ -13,15 +13,17 @@ evaluationDependsOn(':annotations')
 
 android {
     buildToolsVersion = project.ext.buildToolsVersion
-    compileSdkVersion = project.ext.compileSdkVersion
+    compileSdk {
+        version = release(project.ext.compileSdkMajorVersion) { minorApiLevel = project.ext.compileSdkMinorVersion }
+    }
 
     useLibrary 'android.test.runner'
     useLibrary 'android.test.base'
     useLibrary 'android.test.mock'
 
     defaultConfig {
-        targetSdkVersion = project.ext.targetSdkVersion
-        minSdkVersion = project.ext.minSdkVersion
+        targetSdk project.ext.targetSdkVersion
+        minSdk project.ext.minSdkVersion
         manifestPlaceholders = project.ext.manifestPlaceholders
 
         versionCode project.ext.versionCode
@@ -79,7 +81,7 @@ android {
         buildConfigField 'boolean', 'MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_PROCESS', mozconfig.substs.MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_PROCESS ? 'true' : 'false';
     }
 
-    lintOptions {
+    lint {
         abortOnError = false
     }
 
@@ -91,6 +93,7 @@ android {
                     exclude 'org/mozilla/gecko/media/GeckoHlsPlayer.java'
                     exclude 'org/mozilla/gecko/media/GeckoHlsRendererBase.java'
                     exclude 'org/mozilla/gecko/media/GeckoHlsVideoRenderer.java'
+                    exclude 'org/mozilla/gecko/media/HttpChannelDataSource.java'
                     exclude 'org/mozilla/gecko/media/Utils.java'
                 }
 
@@ -115,6 +118,13 @@ android {
             assets {
                 // This should contain only `omni.ja`.
                 srcDir "${topobjdir}/dist/geckoview/assets"
+            }
+
+            if (mozconfig.substs.MOZ_ARTIFACT_BUILDS) {
+                assets {
+                    // The assets_jog directory should contain only `jogfile.json`.
+                    srcDir "${topobjdir}/dist/bin/assets_jog"
+                }
             }
 
             jniLibs {
@@ -147,56 +157,18 @@ android {
     namespace = 'org.mozilla.geckoview'
 }
 
-tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile) {
-    // Translate Kotlin messages like "w: ..." and "e: ..." into
-    // "...: warning: ..." and "...: error: ...", to make Treeherder understand.
-    def listener = {
-        if (it.startsWith("e: warnings found")) {
-            return
-        }
-
-        if (it.startsWith('w: ') || it.startsWith('e: ')) {
-            def matches = (it =~ /([ew]): (.+): \((\d+), (\d+)\): (.*)/)
-            if (!matches) {
-                logger.quiet "kotlinc message format has changed!"
-                if (it.startsWith('w: ')) {
-                    // For warnings, don't continue because we don't want to throw an
-                    // exception. For errors, we want the exception so that the new error
-                    // message format gets translated properly.
-                    return
-                }
-            }
-            def (_, type, file, line, column, message) = matches[0]
-            type = (type == 'w') ? 'warning' : 'error'
-            // Use logger.lifecycle, which does not go through stderr again.
-            logger.lifecycle "$file:$line:$column: $type: $message"
-        }
-    } as StandardOutputListener
-
-    compilerOptions {
-        allWarningsAsErrors = true
-    }
-
-    doFirst {
-        logging.addStandardErrorListener(listener)
-    }
-    doLast {
-        logging.removeStandardErrorListener(listener)
-    }
-}
-
-def projectVersion = project.ext.gleanVersion
+def gleanVersion = libs.versions.glean.get()
 
 configurations {
     api {
         outgoing {
             if (!mozconfig.substs.MOZ_ANDROID_GECKOVIEW_LITE) {
                 // The omni build provides glean-native
-                capability("org.mozilla.telemetry:glean-native:${project.ext.gleanVersion}")
+                capability("org.mozilla.telemetry:glean-native:${gleanVersion}")
             }
             afterEvaluate {
                 // Implicit capability
-                capability("org.mozilla.geckoview:${getArtifactId()}:${projectVersion}")
+                capability("org.mozilla.geckoview:${computeArtifactId()}:${gleanVersion}")
             }
         }
     }
@@ -207,7 +179,7 @@ configurations {
     runtimeOnly {
         outgoing {
             afterEvaluate {
-                capability("org.mozilla.geckoview:geckoview:${projectVersion}")
+                capability("org.mozilla.geckoview:geckoview:${gleanVersion}")
             }
         }
     }
@@ -218,58 +190,62 @@ dependencies {
     implementation libs.androidx.annotation.experimental
     implementation libs.androidx.collection
     implementation libs.androidx.core
-
+    implementation libs.androidx.lifecycle.common
+    implementation libs.androidx.lifecycle.process
     implementation libs.play.services.fido
     implementation "org.yaml:snakeyaml:2.2"
 
-    implementation libs.androidx.lifecycle.common
-    implementation libs.androidx.lifecycle.process
-
     if (mozconfig.substs.MOZ_ANDROID_HLS_SUPPORT) {
-        implementation project(":exoplayer2")
+        implementation libs.androidx.media3.common
+        implementation libs.androidx.media3.datasource
+        implementation libs.androidx.media3.decoder
+        implementation libs.androidx.media3.exoplayer
+        implementation libs.androidx.media3.exoplayer.hls
     }
 
     testImplementation platform(libs.junit.bom)
     testImplementation libs.junit4
-    testRuntimeOnly libs.junit.vintage
     testRuntimeOnly libs.junit.platform.launcher
-    testImplementation libs.testing.robolectric
+    testRuntimeOnly libs.junit.vintage
+    testImplementation libs.robolectric
 
-    androidTestImplementation libs.testing.coroutines
     androidTestImplementation libs.androidx.core.ktx
-    androidTestImplementation libs.androidx.test.runner
-    androidTestImplementation libs.androidx.test.rules
+    androidTestImplementation libs.androidx.test.espresso.core
     androidTestImplementation libs.androidx.test.junit
-    androidTestImplementation libs.androidx.espresso.core
-
+    androidTestImplementation libs.androidx.test.rules
+    androidTestImplementation libs.androidx.test.runner
+    androidTestImplementation libs.kotlin.test
+    androidTestImplementation libs.kotlinx.coroutines.test
     androidTestImplementation 'com.koushikdutta.async:androidasync:3.1.0'
 }
 
 apply from: "${topsrcdir}/mobile/android/gradle/with_gecko_binaries.gradle"
 
-android.libraryVariants.all { variant ->
-    configureVariantWithGeckoBinaries(variant)
+// Bug 1353055 - Strip 'vars' debugging information to agree with moz.build.
+apply from: "${topsrcdir}/mobile/android/gradle/debug_level.gradle"
+
+def geckoviewVariantNames = []
+
+androidComponents.onVariants(androidComponents.selector().all()) { variant ->
+    def name = variant.name
+    geckoviewVariantNames << name
+    configureVariantWithGeckoBinaries(name)
+    configureVariantDebugLevel(name, variant.buildType)
 
     // Javadoc and Sources JAR configuration cribbed from
     // https://github.com/mapbox/mapbox-gl-native/blob/d169ea55c1cfa85cd8bf19f94c5f023569f71810/platform/android/MapboxGLAndroidSDK/build.gradle#L85
     // informed by
     // https://code.tutsplus.com/tutorials/creating-and-publishing-an-android-library--cms-24582,
     // and amended from numerous Stackoverflow posts.
-    def name = variant.name
-    def classpathFilesProvider = variant.javaCompileProvider.flatMap { compileTask ->
-        project.provider { compileTask.classpath.files }
-    }
-
-    def classpathFilesProviderFiles = project.provider {
-        files(classpathFilesProvider.get())
-    }
+    def sourceDirs = variant.sources.java.all
+    def staticSourceDirs = variant.sources.java.getStatic()
 
     def androidLintProperty = project.provider { project.hasProperty('android-lint') }
 
-    def javadoc = task "javadoc${name.capitalize()}"(type: Javadoc) {
+    def javadoc = tasks.register("javadoc${name.capitalize()}", Javadoc) {
         failOnError = false
         description = "Generate Javadoc for build variant $name"
-        destinationDir = new File(destinationDir, variant.baseName)
+        destinationDir = new File(destinationDir, name)
 
         // The javadoc task will not re-run if the previous run is still up-to-date,
         // this is a problem for the javadoc lint, which needs to read the output of the task
@@ -278,10 +254,6 @@ android.libraryVariants.all { variant ->
 
         outputs.upToDateWhen {
             !androidLintProperty.get()
-        }
-
-        doFirst {
-            classpath = classpathFilesProviderFiles.get()
         }
 
         def results = []
@@ -301,12 +273,15 @@ android.libraryVariants.all { variant ->
             results << [path: file, lineno: line, level: level, message: message]
         } as StandardOutputListener
 
-        doFirst {
-            logging.addStandardErrorListener(listener)
-        }
-
         def reportsDir = file("$buildDir/reports")
         def reportsJsonFile = file("$buildDir/reports/javadoc-results-${name}.json")
+
+        doFirst {
+            // The classpath is wired from the javac task's classpath in afterEvaluate (below).
+            // variant.sources.java.all covers the static and AGP-generated (BuildConfig/AIDL) sources.
+            logging.addStandardErrorListener(listener)
+            options.addPathOption('sourcepath').setValue(sourceDirs.get().collect { it.asFile })
+        }
 
         doLast {
             logging.removeStandardErrorListener(listener)
@@ -319,18 +294,15 @@ android.libraryVariants.all { variant ->
             reportsJsonFile.write(resultsJson)
         }
 
-        source = variant.sourceSets.collect({ it.java.srcDirs })
+        source = files(sourceDirs)
         exclude '**/R.java', '**/BuildConfig.java'
         include 'org/mozilla/geckoview/**.java'
-        options.addPathOption('sourcepath').setValue(
-             variant.sourceSets.collect({ it.java.srcDirs }).flatten() +
-             variant.generateBuildConfigProvider.get().sourceOutputDir.asFile.get() +
-             variant.aidlCompileProvider.get().sourceOutputDir.asFile.get()
-        )
         options.addStringOption("Xmaxwarns", "1000")
-
-        classpath += files(android.getBootClasspath())
-        classpath += variant.javaCompileProvider.get().classpath
+        if (!project.hasProperty('android-lint')) {
+            // It's not helpful to produce 100s of lint warnings during regular
+            // builds.  (When linting, it is helpful.)
+            options.addBooleanOption("Xdoclint:-missing", true)
+        }
 
         options.memberLevel = JavadocMemberLevel.PROTECTED
         options.source = 11
@@ -343,35 +315,37 @@ android.libraryVariants.all { variant ->
         options.tags = ['hide:a:']
     }
 
-    def javadocJar = task("javadocJar${name.capitalize()}", type: Jar, dependsOn: javadoc) {
+    def javadocJar = tasks.register("javadocJar${name.capitalize()}", Jar) {
+        dependsOn javadoc
         archiveClassifier = 'javadoc'
-        from javadoc.destinationDir
+        from javadoc.map { it.destinationDir }
     }
 
     // This task is used by `mach android geckoview-docs`.
-    task("javadocCopyJar${name.capitalize()}", type: Copy) {
-        from(javadocJar.destinationDirectory) {
+    tasks.register("javadocCopyJar${name.capitalize()}", Copy) {
+        from(javadocJar.flatMap { it.destinationDirectory }) {
             include 'geckoview-*-javadoc.jar'
             rename { _ -> 'geckoview-javadoc.jar' }
         }
-        into javadocJar.destinationDirectory
+        into javadocJar.flatMap { it.destinationDirectory }
         dependsOn javadocJar
     }
 
-    def sourcesJar = task("sourcesJar${name.capitalize()}", type: Jar) {
+    tasks.register("sourcesJar${name.capitalize()}", Jar) {
         archiveClassifier = 'sources'
         description = "Generate Javadoc for build variant $name"
+        // Static sources only, to exclude AGP-generated sources (e.g. BuildConfig); dedupe overlaps.
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
         destinationDirectory =
-            file("${topobjdir}/mobile/android/geckoview/sources/${variant.baseName}")
-        from files(variant.sourceSets.collect({ it.java.srcDirs }).flatten())
+            file("${topobjdir}/mobile/android/geckoview/sources/${name}")
+        from files(staticSourceDirs)
     }
 
-    task("checkstyle${name.capitalize()}", type: Checkstyle) {
-        classpath = variant.javaCompileProvider.get().classpath
+    tasks.register("checkstyle${name.capitalize()}", Checkstyle) {
+        // classpath is wired from the javac task's classpath in afterEvaluate (below).
         // TODO: cleanup and include all sources
         source = ['src/main/java/']
         include '**/*.java'
-
     }
 }
 
@@ -381,9 +355,21 @@ checkstyle {
     toolVersion = "8.36.2"
 }
 
-android.libraryVariants.all { variant ->
-    if (variant.name == mozconfig.substs.GRADLE_ANDROID_GECKOVIEW_VARIANT_NAME) {
-        configureLibraryVariantWithJNIWrappers(variant, "Generated")
+// AGP creates the javac and bundleLibRuntimeToJar tasks after onVariants runs, so wire the
+// javadoc/checkstyle/JNI classpaths from the javac task's classpath (the legacy variant API's
+// javaCompileProvider.classpath) here in afterEvaluate.
+afterEvaluate {
+    def javacClasspath = { variantName ->
+        files(tasks.named("compile${variantName.capitalize()}JavaWithJavac").map { it.classpath })
+    }
+    geckoviewVariantNames.each { variantName ->
+        tasks.named("javadoc${variantName.capitalize()}").configure { classpath = javacClasspath(variantName) }
+        tasks.named("checkstyle${variantName.capitalize()}").configure { classpath = javacClasspath(variantName) }
+    }
+
+    def jniVariantName = mozconfig.substs.GRADLE_ANDROID_GECKOVIEW_VARIANT_NAME
+    if (geckoviewVariantNames.contains(jniVariantName)) {
+        configureLibraryVariantWithJNIWrappers(jniVariantName, javacClasspath(jniVariantName), "Generated")
     }
 }
 
@@ -393,7 +379,7 @@ version = getVersionNumber()
 println("GeckoView version = " + version)
 group = 'org.mozilla.geckoview'
 
-def getArtifactId() {
+def computeArtifactId() {
     def id = "geckoview" + project.ext.artifactSuffix
 
     if (!mozconfig.substs.MOZ_ANDROID_GECKOVIEW_LITE) {
@@ -414,50 +400,47 @@ def getArtifactId() {
 }
 
 publishing {
-    publications {
-        android.libraryVariants.all { variant ->
-            "${variant.name}"(MavenPublication) {
-                from components.findByName(variant.name)
-
-                pom {
-                    afterEvaluate {
-                        artifactId = getArtifactId()
-                    }
-
-                    url = 'https://geckoview.dev'
-
-                    licenses {
-                        license {
-                            name = 'The Mozilla Public License, v. 2.0'
-                            url = 'http://mozilla.org/MPL/2.0/'
-                            distribution = 'repo'
-                        }
-                    }
-
-                    scm {
-                        if (gradle.mozconfig.substs.MOZ_INCLUDE_SOURCE_INFO) {
-                            // URL is like "https://hg.mozilla.org/mozilla-central/rev/1e64b8a0c546a49459d404aaf930d5b1f621246a".
-                            connection = "scm:hg:${gradle.mozconfig.source_repo.MOZ_SOURCE_REPO}"
-                            url = gradle.mozconfig.source_repo.MOZ_SOURCE_URL
-                            tag = gradle.mozconfig.source_repo.MOZ_SOURCE_STAMP
-                        } else {
-                            // Default to mozilla-central.
-                            connection = 'scm:hg:https://hg.mozilla.org/mozilla-central/'
-                            url = 'https://hg.mozilla.org/mozilla-central/'
-                        }
-                    }
-                }
-
-                // Javadoc and sources for developer ergononomics.
-                artifact tasks["javadocJar${variant.name.capitalize()}"]
-                artifact tasks["sourcesJar${variant.name.capitalize()}"]
-            }
-        }
-    }
     repositories {
         maven {
             url = "${topobjdir}/gradle/maven"
         }
+    }
+}
+
+// Declared in afterEvaluate so the `debug` software component (from singleVariant('debug')) exists.
+afterEvaluate {
+    publishing.publications.create('debug', MavenPublication) {
+        from components.debug
+        artifactId = computeArtifactId()
+
+        pom {
+            url = 'https://geckoview.dev'
+
+            licenses {
+                license {
+                    name = 'The Mozilla Public License, v. 2.0'
+                    url = 'http://mozilla.org/MPL/2.0/'
+                    distribution = 'repo'
+                }
+            }
+
+            scm {
+                if (gradle.mozconfig.substs.MOZ_INCLUDE_SOURCE_INFO) {
+                    // URL is like "https://hg.mozilla.org/mozilla-central/rev/1e64b8a0c546a49459d404aaf930d5b1f621246a".
+                    connection = "scm:hg:${gradle.mozconfig.source_repo.MOZ_SOURCE_REPO}"
+                    url = gradle.mozconfig.source_repo.MOZ_SOURCE_URL
+                    tag = gradle.mozconfig.source_repo.MOZ_SOURCE_STAMP
+                } else {
+                    // Default to mozilla-central.
+                    connection = 'scm:hg:https://hg.mozilla.org/mozilla-central/'
+                    url = 'https://hg.mozilla.org/mozilla-central/'
+                }
+            }
+        }
+
+        // Javadoc and sources for developer ergononomics.
+        artifact tasks.named("javadocJarDebug")
+        artifact tasks.named("sourcesJarDebug")
     }
 }
 
@@ -489,12 +472,16 @@ afterEvaluate {
     }
 }
 
-// Bug 1353055 - Strip 'vars' debugging information to agree with moz.build.
-apply from: "${topsrcdir}/mobile/android/gradle/debug_level.gradle"
-android.libraryVariants.all configureVariantDebugLevel
-
+// Keep these lazy: eagerly touching androidComponents.sdkComponents at configuration time disrupts AGP's
+// variant/component creation (it breaks the `debug` publishing component above), and referencing it inside
+// the task's doFirst fails under the configuration cache. A script-level provider resolved at execution
+// time avoids both.
 def androidBootClasspath = provider {
-    android.bootClasspath.findAll { it.name.startsWith('android.jar') }
+    androidComponents.sdkComponents.bootClasspath.get()*.asFile.findAll { it.name.startsWith('android.jar') }
+}
+
+def androidLintBindir = provider {
+    "${androidComponents.sdkComponents.sdkDirectory.get().asFile}/tools"
 }
 
 def bindingsDir = "${topobjdir}/widget/android/bindings"
@@ -508,17 +495,14 @@ tasks.register("generateSDKBindings", JavaExec) {
     classpath project(':annotations').compileJava.classpath
     classpath project(':annotations').sourceSets.main.runtimeClasspath
 
-    // To use the lint APIs: "Lint must be invoked with the System property
-    // com.android.tools.lint.bindir pointing to the ANDROID_SDK tools
-    // directory"
-    systemProperties = [
-        'com.android.tools.lint.bindir': "${android.sdkDirectory}/tools",
-    ]
-
     mainClass = 'org.mozilla.gecko.annotationProcessors.SDKProcessor'
 
     // Configure the arguments at evaluation-time, not at configuration-time.
     doFirst {
+        // To use the lint APIs: "Lint must be invoked with the System property
+        // com.android.tools.lint.bindir pointing to the ANDROID_SDK tools directory".
+        systemProperty 'com.android.tools.lint.bindir', androidLintBindir.get()
+
         // We only want to generate bindings for the main framework JAR,
         // but not any of the additional android.test libraries.
         args androidBootClasspath.get()
@@ -543,20 +527,13 @@ tasks.register("generateSDKBindings", JavaExec) {
     outputs.dir("${topobjdir}/widget/android/bindings")
 
     dependsOn project(':annotations').jar
+    dependsOn rootProject.verifyGleanVersion
 }
-
-preBuild.dependsOn(":verifyGleanVersion")
-
-apply plugin: 'org.mozilla.apilint'
 
 apiLint {
     // TODO: Change this to `org` after hiding org.mozilla.gecko
     packageFilter = 'org.mozilla.geckoview'
     changelogFileName = 'src/main/java/org/mozilla/geckoview/doc-files/CHANGELOG.md'
-    // Put those files in ${buildDir}/intermediates/javac/<variant>
-    // instead of ${buildDir}/intermediates/javac/<variant>/compile<Variant>JavaWithJavac/classes
-    jsonResultFileName = '../../apilint-result.json'
-    apiOutputFileName = '../../api.txt'
     skipClassesRegex = [
         '^org.mozilla.geckoview.BuildConfig$',
         '^org.mozilla.geckoview.R$',
@@ -571,14 +548,13 @@ apiLint {
         'org.json',
         'org.mozilla.geckoview',
     ]
+    helpCommand = { variantName -> "\$ ./mach gradle :geckoview:apiUpdateFile${variantName}" }
 }
 
-// generateDebugLintModel and other lint tasks that depend on it check the geckoview assets folder
-// too which is used by machStagePackage task in parallel. This is a temporary fix to allow building
-// from root folder and should be replaced by a proper input and output dependency definition
-// or with an AGP update.
+// Lint tasks check the geckoview assets folder, which machStagePackage also writes to.
+// Ensure lint runs after machStagePackage when both are in the task graph to avoid conflicts.
 tasks.configureEach { task ->
     if (task.name.toLowerCase().contains("lint")) {
-        dependsOn(":machStagePackage")
+        mustRunAfter(":machStagePackage")
     }
 }

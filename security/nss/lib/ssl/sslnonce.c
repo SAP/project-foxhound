@@ -14,14 +14,13 @@
 
 #include "sslimpl.h"
 #include "sslproto.h"
-#include "nssilock.h"
 #include "sslencode.h"
 #if defined(XP_UNIX) || defined(XP_WIN) || defined(_WINDOWS)
 #include <time.h>
 #endif
 
 static sslSessionID *cache = NULL;
-static PZLock *cacheLock = NULL;
+static PRLock *cacheLock = NULL;
 
 /* sids can be in one of 5 states:
  *
@@ -33,12 +32,12 @@ static PZLock *cacheLock = NULL;
  */
 
 #define LOCK_CACHE lock_cache()
-#define UNLOCK_CACHE PZ_Unlock(cacheLock)
+#define UNLOCK_CACHE PR_Unlock(cacheLock)
 
 static SECStatus
 ssl_InitClientSessionCacheLock(void)
 {
-    cacheLock = PZ_NewLock(nssILockCache);
+    cacheLock = PR_NewLock();
     return cacheLock ? SECSuccess : SECFailure;
 }
 
@@ -46,7 +45,7 @@ static SECStatus
 ssl_FreeClientSessionCacheLock(void)
 {
     if (cacheLock) {
-        PZ_DestroyLock(cacheLock);
+        PR_DestroyLock(cacheLock);
         cacheLock = NULL;
         return SECSuccess;
     }
@@ -158,7 +157,7 @@ static void
 lock_cache(void)
 {
     ssl_InitSessionCacheLocks(PR_TRUE);
-    PZ_Lock(cacheLock);
+    PR_Lock(cacheLock);
 }
 
 /* BEWARE: This function gets called for both client and server SIDs !!
@@ -528,7 +527,9 @@ ssl_DecodeResumptionToken(sslSessionID *sid, const PRUint8 *encodedToken,
         }
         SECItem tempItem = { siBuffer, (unsigned char *)readerBuffer.buf,
                              readerBuffer.len };
-        SECITEM_CopyItem(NULL, &sid->peerCertStatus.items[0], &tempItem);
+        if (SECITEM_CopyItem(NULL, &sid->peerCertStatus.items[0], &tempItem) != SECSuccess) {
+            return SECFailure;
+        }
     }
 
     if (sslRead_ReadVariable(&reader, 1, &readerBuffer) != SECSuccess) {
@@ -540,7 +541,11 @@ ssl_DecodeResumptionToken(sslSessionID *sid, const PRUint8 *encodedToken,
         if (sid->peerID) {
             PORT_Free((void *)sid->peerID);
         }
-        sid->peerID = PORT_Strdup((const char *)readerBuffer.buf);
+        sid->peerID = PORT_ZAlloc(readerBuffer.len + 1);
+        if (!sid->peerID) {
+            return SECFailure;
+        }
+        PORT_Memcpy((void *)sid->peerID, readerBuffer.buf, readerBuffer.len);
     }
 
     if (sslRead_ReadVariable(&reader, 1, &readerBuffer) != SECSuccess) {
@@ -552,7 +557,11 @@ ssl_DecodeResumptionToken(sslSessionID *sid, const PRUint8 *encodedToken,
             PORT_Free((void *)sid->urlSvrName);
         }
         PORT_Assert(readerBuffer.buf);
-        sid->urlSvrName = PORT_Strdup((const char *)readerBuffer.buf);
+        sid->urlSvrName = PORT_ZAlloc(readerBuffer.len + 1);
+        if (!sid->urlSvrName) {
+            return SECFailure;
+        }
+        PORT_Memcpy((void *)sid->urlSvrName, readerBuffer.buf, readerBuffer.len);
     }
 
     if (sslRead_ReadVariable(&reader, 3, &readerBuffer) != SECSuccess) {
@@ -566,6 +575,9 @@ ssl_DecodeResumptionToken(sslSessionID *sid, const PRUint8 *encodedToken,
         sid->localCert = CERT_NewTempCertificate(NULL, /* dbHandle */
                                                  &tempItem,
                                                  NULL, PR_FALSE, PR_TRUE);
+        if (!sid->localCert) {
+            return SECFailure;
+        }
     }
 
     if (sslRead_ReadNumber(&reader, 8, &sid->addr.pr_s6_addr64[0]) != SECSuccess) {
@@ -626,6 +638,10 @@ ssl_DecodeResumptionToken(sslSessionID *sid, const PRUint8 *encodedToken,
     }
     if (readerBuffer.len) {
         PORT_Assert(readerBuffer.buf);
+        if (readerBuffer.len > SSL3_SESSIONID_BYTES) {
+            PORT_SetError(SEC_ERROR_INVALID_ARGS);
+            return SECFailure;
+        }
         PORT_Memcpy(sid->u.ssl3.sessionID, readerBuffer.buf, readerBuffer.len);
     }
 

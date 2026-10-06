@@ -1,0 +1,22 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:host {
+  --nav-notice-background-color: var(--theme-bg-color, rgba(21, 20, 26, 0.02));
+  --nav-notice-text-color: var(--theme-fg-color, --text-color);
+
+  font-size: var(--font-size-small);
+}
+
+moz-box-item,
+moz-box-link {
+  --box-padding: var(--space-xsmall) var(--space-medium);
+  --box-icon-fill: currentColor;
+  --box-icon-stroke: currentColor;
+
+  display: flex;
+  min-height: var(--size-item-xlarge);
+  background-color: var(--nav-notice-background-color);
+  color: var(--nav-notice-text-color);
+}

@@ -10,6 +10,10 @@ const {
   invokeAsyncTestTraitInterfaceThrowIfEqual,
   invokeTestTraitInterfaceNoop,
   invokeTestTraitInterfaceSetValue,
+  roundtripAsyncTestTraitInterface,
+  roundtripAsyncTestTraitInterfaceList,
+  roundtripTestTraitInterface,
+  roundtripTestTraitInterfaceList,
   Failure1,
   AsyncTestTraitInterface,
   CallbackInterfaceNumbers,
@@ -48,9 +52,8 @@ class TraitImpl extends TestTraitInterface {
   }
 }
 
-// Test calling the Rust impl from JS
-add_task(() => {
-  const int = createTestTraitInterface(42);
+// Test calling sync trait interfaces from JS
+function testSyncTraitInterfaceFromJs(int) {
   int.noop();
   Assert.equal(int.getValue(), 42);
   int.setValue(43);
@@ -77,37 +80,51 @@ add_task(() => {
       b: 11,
     })
   );
-});
+}
 
-// Test calling the async Rust impl from JS
-add_task(async () => {
-  const int = await createAsyncTestTraitInterface(42);
-  await int.noop();
-  Assert.equal(await int.getValue(), 42);
-  await int.setValue(43);
-  Assert.equal(await int.getValue(), 43);
-  await Assert.rejects(
-    int.throwIfEqual(
-      new CallbackInterfaceNumbers({
-        a: 10,
-        b: 10,
-      })
-    ),
-    Failure1
-  );
-  Assert.deepEqual(
-    await int.throwIfEqual(
-      new CallbackInterfaceNumbers({
-        a: 10,
-        b: 11,
-      })
-    ),
-    new CallbackInterfaceNumbers({
-      a: 10,
-      b: 11,
-    })
-  );
-});
+// Test calling sync JS interfaces from Rust
+//
+// We can't test that much, since sync callback interfaces are automatically wrapped to be
+// fire-and-forget and can't return values
+function testSyncTraitInterfaceFromRust(int) {
+  // Arrange for `noop()` to be called, then wait a while and make sure nothing crashes.
+  invokeTestTraitInterfaceNoop(int);
+  do_test_pending();
+  do_timeout(100, do_test_finished);
+
+  // Arrange for `setValue` to be called and test that it happened
+  invokeTestTraitInterfaceSetValue(int, 43);
+  do_test_pending();
+  do_timeout(100, () => {
+    Assert.equal(int.getValue(), 43);
+    do_test_finished();
+  });
+}
+
+// Test various combinations of Rust and JS implemented trait interfaces
+add_task(() => testSyncTraitInterfaceFromJs(createTestTraitInterface(42)));
+add_task(() => testSyncTraitInterfaceFromRust(new TraitImpl(42)));
+// Test passing async trait interfaces back and forth across the FFI
+add_task(() =>
+  testSyncTraitInterfaceFromJs(
+    roundtripTestTraitInterface(createTestTraitInterface(42))
+  )
+);
+add_task(() =>
+  testSyncTraitInterfaceFromRust(roundtripTestTraitInterface(new TraitImpl(42)))
+);
+// This time, pass them across the FFI using a RustBuffer, which goes through a slightly different
+// codepath
+add_task(() =>
+  testSyncTraitInterfaceFromJs(
+    roundtripTestTraitInterfaceList([createTestTraitInterface(42)])[0]
+  )
+);
+add_task(() =>
+  testSyncTraitInterfaceFromRust(
+    roundtripTestTraitInterfaceList([new TraitImpl(42)])[0]
+  )
+);
 
 /**
  *
@@ -140,29 +157,37 @@ class AsyncTraitImpl extends AsyncTestTraitInterface {
   }
 }
 
-// Test calling sync JS interfaces from Rust
-//
-// We can't test that much, since sync callback interfaces are automatically wrapped to be
-// fire-and-forget and can't return values
-add_task(async () => {
-  const int = new TraitImpl(42);
-  // Arrange for `noop()` to be called, then wait a while and make sure nothing crashes.
-  invokeTestTraitInterfaceNoop(int);
-  do_test_pending();
-  do_timeout(100, do_test_finished);
-
-  // Arrange for `setValue` to be called and test that it happened
-  invokeTestTraitInterfaceSetValue(int, 43);
-  do_test_pending();
-  do_timeout(100, () => {
-    Assert.equal(int.getValue(), 43);
-    do_test_finished();
-  });
-});
+// Test calling the async Rust impl from JS
+async function testAsyncTraitInterfaceFromJs(int) {
+  await int.noop();
+  Assert.equal(await int.getValue(), 42);
+  await int.setValue(43);
+  Assert.equal(await int.getValue(), 43);
+  await Assert.rejects(
+    int.throwIfEqual(
+      new CallbackInterfaceNumbers({
+        a: 10,
+        b: 10,
+      })
+    ),
+    Failure1
+  );
+  Assert.deepEqual(
+    await int.throwIfEqual(
+      new CallbackInterfaceNumbers({
+        a: 10,
+        b: 11,
+      })
+    ),
+    new CallbackInterfaceNumbers({
+      a: 10,
+      b: 11,
+    })
+  );
+}
 
 // Test calling async JS interfaces from Rust
-add_task(async () => {
-  const int = new AsyncTraitImpl(42);
+async function testAsyncTraitInterfaceFromRust(int) {
   await invokeAsyncTestTraitInterfaceNoop(int);
   Assert.equal(await invokeAsyncTestTraitInterfaceGetValue(int), 42);
   await invokeAsyncTestTraitInterfaceSetValue(int, 43);
@@ -190,53 +215,34 @@ add_task(async () => {
       b: 11,
     })
   );
-});
+}
 
-// Test calling a Rust trait interface from Rust -- after roundtripping it through JS
-add_task(async () => {
-  const int = createTestTraitInterface(42);
-  // Arrange for `noop()` to be called, then wait a while and make sure nothing crashes.
-  invokeTestTraitInterfaceNoop(int);
-  do_test_pending();
-  do_timeout(100, do_test_finished);
-
-  // Arrange for `setValue` to be called and test that it happened
-  invokeTestTraitInterfaceSetValue(int, 43);
-  do_test_pending();
-  do_timeout(100, () => {
-    Assert.equal(int.getValue(), 43);
-    do_test_finished();
-  });
-});
-
-// Test calling an async Rust trait interface from Rust -- after roundtripping it through JS
-add_task(async () => {
-  const int = await createAsyncTestTraitInterface(42);
-  await invokeAsyncTestTraitInterfaceNoop(int);
-  Assert.equal(await invokeAsyncTestTraitInterfaceGetValue(int), 42);
-  await invokeAsyncTestTraitInterfaceSetValue(int, 43);
-  Assert.equal(await invokeAsyncTestTraitInterfaceGetValue(int), 43);
-  await Assert.rejects(
-    invokeAsyncTestTraitInterfaceThrowIfEqual(
-      int,
-      new CallbackInterfaceNumbers({
-        a: 10,
-        b: 10,
-      })
-    ),
-    Failure1
-  );
-  Assert.deepEqual(
-    await invokeAsyncTestTraitInterfaceThrowIfEqual(
-      int,
-      new CallbackInterfaceNumbers({
-        a: 10,
-        b: 11,
-      })
-    ),
-    new CallbackInterfaceNumbers({
-      a: 10,
-      b: 11,
-    })
-  );
-});
+add_task(async () =>
+  testAsyncTraitInterfaceFromJs(await createAsyncTestTraitInterface(42))
+);
+add_task(async () => testAsyncTraitInterfaceFromRust(new AsyncTraitImpl(42)));
+// Test passing async trait interfaces back and forth across the FFI
+add_task(async () =>
+  testAsyncTraitInterfaceFromJs(
+    roundtripAsyncTestTraitInterface(await createAsyncTestTraitInterface(42))
+  )
+);
+add_task(async () =>
+  testAsyncTraitInterfaceFromRust(
+    roundtripAsyncTestTraitInterface(new AsyncTraitImpl(42))
+  )
+);
+// This time, pass them across the FFI using a RustBuffer, which goes through a slightly different
+// codepath
+add_task(async () =>
+  testAsyncTraitInterfaceFromJs(
+    roundtripAsyncTestTraitInterfaceList([
+      await createAsyncTestTraitInterface(42),
+    ])[0]
+  )
+);
+add_task(async () =>
+  testAsyncTraitInterfaceFromRust(
+    roundtripAsyncTestTraitInterfaceList([new AsyncTraitImpl(42)])[0]
+  )
+);

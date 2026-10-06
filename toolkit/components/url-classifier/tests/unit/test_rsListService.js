@@ -293,7 +293,9 @@ add_test(function test_update() {
   streamUpdater.downloadUpdates(
     "content-fingerprinting-track-digest256",
     "content-fingerprinting-track-digest256;\n",
+    "",
     true,
+    "test",
     "moz-sbrs://remote-setting",
     updateSuccess,
     handleError,
@@ -351,7 +353,9 @@ add_test(function test_update_download_error() {
   streamUpdater.downloadUpdates(
     "social-track-digest256",
     "social-track-digest256;\n",
+    "",
     true,
+    "test",
     "moz-sbrs://remote-setting",
     updateSuccessOrError,
     updateSuccessOrError,
@@ -376,7 +380,9 @@ add_test(function test_update_update_error() {
   streamUpdater.downloadUpdates(
     "analytic-track-digest256",
     "analytic-track-digest256;\n",
+    "",
     true,
+    "test",
     "moz-sbrs://remote-setting",
     updateSuccessOrDownloadError,
     updateError,

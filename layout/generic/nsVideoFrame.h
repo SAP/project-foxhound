@@ -1,15 +1,12 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* rendering object for the HTML <video> element */
 
-#ifndef nsVideoFrame_h___
-#define nsVideoFrame_h___
+#ifndef nsVideoFrame_h_
+#define nsVideoFrame_h_
 
-#include "mozilla/Attributes.h"
 #include "nsContainerFrame.h"
 #include "nsIAnonymousContentCreator.h"
 #include "nsIReflowCallback.h"
@@ -42,7 +39,7 @@ class nsVideoFrame : public nsContainerFrame,
                         const nsDisplayListSet& aLists) final;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) final;
+                            AttrModType aModType) final;
 
   void OnVisibilityChange(
       Visibility aNewVisibility,
@@ -50,9 +47,11 @@ class nsVideoFrame : public nsContainerFrame,
 
   /* get the size of the video's display */
   mozilla::IntrinsicSize GetIntrinsicSize() final;
+  mozilla::IntrinsicSize GetIntrinsicSize(bool aIgnoreContainment) const;
   mozilla::AspectRatio GetIntrinsicRatio() const final;
+  mozilla::AspectRatio GetIntrinsicRatio(bool aIgnoreContainment) const;
   SizeComputationResult ComputeSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
+      const SizeComputationInput& aSizingInput, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
       const mozilla::LogicalSize& aMargin,
       const mozilla::LogicalSize& aBorderPadding,
@@ -61,6 +60,8 @@ class nsVideoFrame : public nsContainerFrame,
 
   nscoord IntrinsicISize(const mozilla::IntrinsicSizeInput& aInput,
                          mozilla::IntrinsicISizeType aType) final;
+
+  nsRect GetDestRect(const nsRect& aContentBox) const;
 
   void Destroy(DestroyContext&) final;
 
@@ -141,4 +142,4 @@ class nsAudioFrame final : public nsVideoFrame {
   virtual ~nsAudioFrame();
 };
 
-#endif /* nsVideoFrame_h___ */
+#endif /* nsVideoFrame_h_ */

@@ -10,10 +10,18 @@
 
 #include "modules/video_coding/rtp_generic_ref_finder.h"
 
+#include <cstddef>
+#include <memory>
 #include <utility>
 
+#include "api/video/encoded_frame.h"
 #include "api/video/video_codec_constants.h"
+#include "modules/rtp_rtcp/source/frame_object.h"
+#include "modules/rtp_rtcp/source/rtp_video_header.h"
+#include "modules/video_coding/codecs/interface/common_constants.h"
+#include "modules/video_coding/rtp_frame_reference_finder.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/numerics/safe_conversions.h"
 
 namespace webrtc {
 
@@ -21,7 +29,7 @@ RtpFrameReferenceFinder::ReturnVector RtpGenericFrameRefFinder::ManageFrame(
     std::unique_ptr<RtpFrameObject> frame,
     const RTPVideoHeader::GenericDescriptorInfo& descriptor) {
   RtpFrameReferenceFinder::ReturnVector res;
-  if (descriptor.spatial_index >= kMaxSpatialLayers) {
+  if (checked_cast<size_t>(descriptor.spatial_index) >= kMaxSpatialLayers) {
     RTC_LOG(LS_WARNING) << "Spatial index " << descriptor.spatial_index
                         << " is unsupported.";
     return res;

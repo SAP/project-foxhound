@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2011-2016 Google Inc.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the gfx/skia/LICENSE file.
@@ -105,7 +103,10 @@ void convolve_horizontally_sse2(const unsigned char* srcData,
       AccumRemainder(srcData + remainderOffset, filterValues, accum, r);
     }
 
-    // Shift right for fixed point implementation.
+    // Shift right for fixed point implementation, with rounding.
+    __m128i round =
+        _mm_set1_epi32(1 << (SkConvolutionFilter1D::kShiftBits - 1));
+    accum = _mm_add_epi32(accum, round);
     accum = _mm_srai_epi32(accum, SkConvolutionFilter1D::kShiftBits);
 
     // Packing 32 bits |accum| to 16 bits per channel (signed saturation).
@@ -179,11 +180,17 @@ static void ConvolveVertically(
       accum3 = _mm_add_epi32(accum3, t);
     }
 
-    // Shift right for fixed point implementation.
-    accum0 = _mm_srai_epi32(accum0, SkConvolutionFilter1D::kShiftBits);
-    accum1 = _mm_srai_epi32(accum1, SkConvolutionFilter1D::kShiftBits);
-    accum2 = _mm_srai_epi32(accum2, SkConvolutionFilter1D::kShiftBits);
-    accum3 = _mm_srai_epi32(accum3, SkConvolutionFilter1D::kShiftBits);
+    // Shift right for fixed point implementation, with rounding.
+    __m128i round =
+        _mm_set1_epi32(1 << (SkConvolutionFilter1D::kShiftBits - 1));
+    accum0 = _mm_srai_epi32(_mm_add_epi32(accum0, round),
+                            SkConvolutionFilter1D::kShiftBits);
+    accum1 = _mm_srai_epi32(_mm_add_epi32(accum1, round),
+                            SkConvolutionFilter1D::kShiftBits);
+    accum2 = _mm_srai_epi32(_mm_add_epi32(accum2, round),
+                            SkConvolutionFilter1D::kShiftBits);
+    accum3 = _mm_srai_epi32(_mm_add_epi32(accum3, round),
+                            SkConvolutionFilter1D::kShiftBits);
 
     // Packing 32 bits |accum| to 16 bits per channel (signed saturation).
     // [16] a1 b1 g1 r1 a0 b0 g0 r0
@@ -254,9 +261,14 @@ static void ConvolveVertically(
       accum2 = _mm_add_epi32(accum2, t);
     }
 
-    accum0 = _mm_srai_epi32(accum0, SkConvolutionFilter1D::kShiftBits);
-    accum1 = _mm_srai_epi32(accum1, SkConvolutionFilter1D::kShiftBits);
-    accum2 = _mm_srai_epi32(accum2, SkConvolutionFilter1D::kShiftBits);
+    __m128i round =
+        _mm_set1_epi32(1 << (SkConvolutionFilter1D::kShiftBits - 1));
+    accum0 = _mm_srai_epi32(_mm_add_epi32(accum0, round),
+                            SkConvolutionFilter1D::kShiftBits);
+    accum1 = _mm_srai_epi32(_mm_add_epi32(accum1, round),
+                            SkConvolutionFilter1D::kShiftBits);
+    accum2 = _mm_srai_epi32(_mm_add_epi32(accum2, round),
+                            SkConvolutionFilter1D::kShiftBits);
     // [16] a1 b1 g1 r1 a0 b0 g0 r0
     accum0 = _mm_packs_epi32(accum0, accum1);
     // [16] a3 b3 g3 r3 a2 b2 g2 r2

@@ -19,9 +19,9 @@ async function expectHeightChanges(tab, expectedNewHeightChanges, msg) {
   await new Promise(r => window.requestAnimationFrame(r));
   await new Promise(r => window.requestAnimationFrame(r));
 
-  let contentObservedHeightChanges = await ContentTask.spawn(
+  let contentObservedHeightChanges = await SpecialPowers.spawn(
     tab.linkedBrowser,
-    null,
+    [],
     async () => {
       // Resize events happen before rAF.
       await new Promise(resolve => content.requestAnimationFrame(resolve));
@@ -62,8 +62,8 @@ async function expectBmToolbarVisibilityChange(triggerFn, visible, msg) {
   triggerFn();
   await collapsedState;
   is(
-    BookmarkingUI.toolbar.getAttribute("collapsed"),
-    (!visible).toString(),
+    BookmarkingUI.toolbar.hasAttribute("collapsed"),
+    !visible,
     `${msg}; collapsed attribute state`
   );
   if (visible) {

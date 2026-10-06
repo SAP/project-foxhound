@@ -1,15 +1,47 @@
 const PAGE = "about:logging";
 
+const { PromptTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromptTestUtils.sys.mjs"
+);
+
 function clearLoggingPrefs() {
   for (let pref of Services.prefs.getBranch("logging.").getChildList("")) {
+    if (pref === "config.clear_on_startup") {
+      // Do not reset logging.config.clear_on_startup which is set by the
+      // testing framework.
+      continue;
+    }
     info(`Clearing: ${pref}`);
     Services.prefs.clearUserPref("logging." + pref);
   }
+
+  // Clear devtools.performance.recording preferences that may be set by about:logging
+  const devtoolsPrefs = [
+    "devtools.performance.recording.preset",
+    "devtools.performance.recording.entries",
+    "devtools.performance.recording.threads",
+    "devtools.performance.recording.features",
+    "devtools.performance.popup.intro-displayed",
+  ];
+
+  for (let pref of devtoolsPrefs) {
+    Services.prefs.clearUserPref(pref);
+  }
+}
+
+function clearUploadedProfilesDB(content) {
+  return new Promise(resolve => {
+    const deleteRequest = content.indexedDB.deleteDatabase(
+      "aboutLoggingProfiles"
+    );
+    deleteRequest.onsuccess = deleteRequest.onerror = resolve;
+  });
 }
 
 /**
  * This function will select a node from the XPath.
  * This function has been copied from the devtools' performance panel's tests.
+ *
  * @returns {HTMLElement?}
  */
 function getElementByXPath(document, path) {
@@ -56,11 +88,6 @@ add_setup(async function saveRestoreLogModules() {
   registerCleanupFunction(() => {
     clearLoggingPrefs();
     info(" -- Restoring log modules: " + savedLogModules);
-    for (let pref of savedLogModules.split(",")) {
-      let [logModule, level] = pref.split(":");
-      Services.prefs.setIntPref("logging." + logModule, parseInt(level));
-    }
-    // Removing this line causes a sandboxxing error in nsTraceRefCnt.cpp (!).
     Services.env.set("MOZ_LOG", savedLogModules);
   });
 });
@@ -561,10 +588,19 @@ add_task(async function testAndroidUI() {
     info("Click the save button");
     const saveButton = await getElementFromDocumentByText(document, "Save");
     EventUtils.synthesizeMouseAtCenter(saveButton, {}, window);
+
     const savedText = await getElementFromDocumentByText(document, "Saved to");
     ok(savedText, "The text path is being displayed");
-    info(`The text displayed is: ${savedText.textContent}`);
-    const savedPath = savedText.textContent.slice("Saved to ".length);
+
+    // Extract the file path from the l10n arguments
+    const savedPath = JSON.parse(savedText.getAttribute("data-l10n-args")).path;
+    info(`Profile saved to: ${savedPath}`);
+
+    Assert.ok(
+      savedPath && !!savedPath.length,
+      "Saved path should not be empty"
+    );
+
     const fileinfo = await IOUtils.stat(savedPath);
     Assert.greater(
       fileinfo.size,
@@ -612,6 +648,8 @@ add_task(async function testAndroidUI() {
       "An error happened while uploading the profile: Error: xhr onload with status != 200, xhr.statusText: Not Found",
       "The error is output to the user."
     );
+
+    await clearUploadedProfilesDB(content);
   });
 });
 
@@ -661,4 +699,291 @@ add_task(async function testCopyToClipboard() {
     },
     "Waiting to have clipboard data"
   );
+});
+
+// Test the uploaded profiles functionality.
+add_task(async function testUploadedProfilesFeatures() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["toolkit.aboutLogging.uploadProfileToCloud", true],
+      [
+        "toolkit.aboutlogging.uploadProfileUrl",
+        "https://api.profiler.firefox.com/browser/toolkit/content/tests/browser/browser_about_logging_server.sjs",
+      ],
+      [
+        "toolkit.aboutlogging.deleteProfileUrl",
+        "https://api.profiler.firefox.com/browser/toolkit/content/tests/browser/browser_about_logging_server.sjs?token",
+      ],
+    ],
+  });
+
+  await BrowserTestUtils.withNewTab(PAGE, async browser => {
+    await clearUploadedProfilesDB(content);
+    const document = browser.contentDocument;
+    const window = browser.contentWindow;
+
+    // Test UI elements presence and initial state
+    await SpecialPowers.spawn(browser, [], async () => {
+      const $ = content.document.querySelector.bind(content.document);
+
+      await ContentTaskUtils.waitForCondition(
+        () => $("#uploaded-profiles-section"),
+        "Uploaded profiles section should be present"
+      );
+
+      const section = $("#uploaded-profiles-section");
+      Assert.ok(section, "Uploaded profiles section should exist");
+
+      // Check that the section has the correct title
+      const title = section.querySelector(
+        "h2[data-l10n-id='about-logging-uploaded-profiles-title']"
+      );
+      Assert.ok(title, "Uploaded profiles title should be present");
+
+      // Check that the "no profiles" message is shown initially
+      const noProfilesMessage = $("#no-uploaded-profiles");
+      Assert.ok(noProfilesMessage, "No profiles message should exist");
+      Assert.ok(
+        !noProfilesMessage.hidden,
+        "No profiles message should be visible initially"
+      );
+
+      // Check that the profiles list container exists
+      const profilesList = $("#uploaded-profiles-list");
+      Assert.ok(profilesList, "Profiles list container should exist");
+      Assert.equal(
+        profilesList.children.length,
+        0,
+        "Profiles list should be empty initially"
+      );
+    });
+
+    // Create first profile by actually using the UI
+    info("Make sure the profiler option is selected.");
+    EventUtils.synthesizeMouseAtCenter(
+      await getElementFromDocumentByText(
+        document,
+        "Logging to the Firefox Profiler"
+      ),
+      {},
+      window
+    );
+
+    info("Start logging for first profile");
+    const loggingButton = await getElementFromDocumentByText(
+      document,
+      "Start Logging"
+    );
+    EventUtils.synthesizeMouseAtCenter(loggingButton, {}, window);
+
+    // Wait for the profiler to start. This can be very slow.
+    await content.profilerPromise();
+
+    info("Wait for first profile to collect some data");
+    // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+    await new Promise(resolve => content.setTimeout(resolve, 100));
+
+    info("Stop logging for first profile");
+    EventUtils.synthesizeMouseAtCenter(loggingButton, {}, window);
+
+    ok(
+      await getElementFromDocumentByText(
+        document,
+        "The profile data has been captured."
+      ),
+      "The information about the profile data capture is displayed."
+    );
+
+    info("Upload first profile");
+    const uploadButton = await getElementFromDocumentByText(document, "Upload");
+    EventUtils.synthesizeMouseAtCenter(uploadButton, {}, window);
+
+    ok(
+      await getElementFromDocumentByText(document, "Uploading"),
+      "Some text is displayed while uploading."
+    );
+
+    const uploadedText = await getElementFromDocumentByText(
+      document,
+      "Uploaded to"
+    );
+    const uploadedUrl = uploadedText.querySelector("a").href;
+    is(
+      uploadedUrl,
+      "https://profiler.firefox.com/public/24j1wmckznh8sj22zg1tsmg47dyfdtprj0g41s8",
+      "The profiler URL is displayed for first profile."
+    );
+
+    // Wait for the profile to be saved to IndexedDB
+    // Now that we tested the real user path by capturing a profile, let's add
+    // another profile to the DB quickly for testing purposes.
+    const { getAllUploadedProfiles, saveUploadedProfile } =
+      ChromeUtils.importESModule(
+        "chrome://global/content/aboutLogging/profileStorage.mjs"
+      );
+    await TestUtils.waitForCondition(async () => {
+      const profiles = await getAllUploadedProfiles();
+      return profiles.length >= 1;
+    }, "Uploaded profile should be saved to IndexedDB");
+
+    const testProfile = {
+      jwtToken: "test.jwt.token",
+      profileToken: "test-hash-123",
+      profileUrl: "https://profiler.firefox.com/public/test-hash-123",
+      uploadDate: new Date(),
+      profileName: "Test Profile",
+    };
+
+    const profileId = await saveUploadedProfile(testProfile);
+    Assert.strictEqual(
+      typeof profileId,
+      "number",
+      "Profile ID should be a number"
+    );
+
+    // Test that profiles are displayed and sorted correctly
+    const { initialProfileCount, firstProfileName } = await SpecialPowers.spawn(
+      browser,
+      [],
+      async () => {
+        const $ = content.document.querySelector.bind(content.document);
+
+        // Wait for the uploaded profiles manager to be initialized
+        await ContentTaskUtils.waitForCondition(
+          () => content.gUploadedProfilesManager,
+          "UploadedProfilesManager should be initialized"
+        );
+
+        // Manually refresh to ensure we have the latest data
+        await content.gUploadedProfilesManager.refresh();
+
+        // Wait for profiles to appear in UI with a more robust check
+        await ContentTaskUtils.waitForCondition(() => {
+          const profileItems = $("#uploaded-profiles-list").children;
+          const noProfilesMessage = $("#no-uploaded-profiles");
+          return profileItems.length >= 2 && noProfilesMessage.hidden;
+        }, "Both profiles should appear in the UI and no-profiles message should be hidden");
+
+        const profilesList = $("#uploaded-profiles-list");
+        const noProfilesMessage = $("#no-uploaded-profiles");
+
+        // Check that profiles are displayed
+        Assert.ok(
+          noProfilesMessage.hidden,
+          "No profiles message should be hidden"
+        );
+
+        Assert.greaterOrEqual(
+          profilesList.children.length,
+          2,
+          "Should have at least two profile items"
+        );
+
+        // Verify profiles are sorted by upload date (most recent first)
+        const profileItems = Array.from(profilesList.children);
+
+        // Get upload dates from the profile items
+        const uploadDates = profileItems.map(item => {
+          const dateElement = item.querySelector(".uploaded-profile-date");
+          return dateElement ? new Date(dateElement.textContent) : new Date(0);
+        });
+
+        // Check that dates are in descending order (most recent first)
+        for (let i = 0; i < uploadDates.length - 1; i++) {
+          Assert.greaterOrEqual(
+            uploadDates[i],
+            uploadDates[i + 1],
+            `Profile at index ${i} should have a more recent or equal upload date than profile at index ${i + 1}`
+          );
+        }
+
+        // Test the delete button exists and has correct attributes
+        const deleteButton = profileItems[0].querySelector(
+          ".delete-profile-button"
+        );
+        Assert.ok(deleteButton, "Delete button should exist");
+        Assert.equal(
+          deleteButton.dataset.l10nId,
+          "about-logging-delete-uploaded-profile",
+          "Delete button should have correct l10n ID"
+        );
+
+        // Prepare for deletion test - get initial state and profile info
+        const initialProfileCount = profileItems.length;
+        const firstProfileId = parseInt(profileItems[0].dataset.profileId, 10);
+        const firstProfileName = profileItems[0].querySelector(
+          ".uploaded-profile-name"
+        ).textContent;
+
+        info(
+          `Preparing to delete profile ID ${firstProfileId}: ${firstProfileName}`
+        );
+
+        return { initialProfileCount, firstProfileName };
+      }
+    );
+
+    // Test actual deletion by clicking the delete button and handling the confirmation prompt
+    info("Testing profile deletion with confirmation prompt");
+
+    // Set up prompt handling for the confirmation dialog
+    // Services.prompt.confirm from content creates a window modal prompt
+    const promptPromise = PromptTestUtils.handleNextPrompt(
+      browser,
+      { modalType: Services.prompt.MODAL_TYPE_WINDOW },
+      { buttonNumClick: 0 } // 0 = OK/Yes, 1 = Cancel/No
+    );
+
+    // Click the delete button to trigger the confirmation prompt
+    await SpecialPowers.spawn(browser, [], async () => {
+      const $ = content.document.querySelector.bind(content.document);
+      const profileItems = Array.from($("#uploaded-profiles-list").children);
+      const deleteButton = profileItems[0].querySelector(
+        ".delete-profile-button"
+      );
+      deleteButton.click();
+    });
+
+    // Wait for the prompt to be handled
+    await promptPromise;
+
+    // Verify the profile was deleted
+    await SpecialPowers.spawn(
+      browser,
+      [initialProfileCount, firstProfileName],
+      async (initialProfileCount, firstProfileName) => {
+        const $ = content.document.querySelector.bind(content.document);
+
+        // Manually refresh the UI after deletion
+        await content.gUploadedProfilesManager.refresh();
+
+        // Wait for the profile to be deleted from the UI
+        await ContentTaskUtils.waitForCondition(() => {
+          const currentProfileItems = $("#uploaded-profiles-list").children;
+          return currentProfileItems.length === initialProfileCount - 1;
+        }, "Profile should be deleted from the UI");
+
+        // Verify the profile was removed
+        const remainingProfileItems = Array.from(
+          $("#uploaded-profiles-list").children
+        );
+        Assert.equal(
+          remainingProfileItems.length,
+          initialProfileCount - 1,
+          "Profile count should decrease by 1 after deletion"
+        );
+
+        // Verify the specific profile was deleted (check that the deleted profile name is no longer present)
+        const remainingProfileNames = remainingProfileItems.map(
+          item => item.querySelector(".uploaded-profile-name").textContent
+        );
+        Assert.ok(
+          !remainingProfileNames.includes(firstProfileName),
+          `Deleted profile "${firstProfileName}" should no longer be in the list`
+        );
+      }
+    );
+
+    await clearUploadedProfilesDB(content);
+  });
 });

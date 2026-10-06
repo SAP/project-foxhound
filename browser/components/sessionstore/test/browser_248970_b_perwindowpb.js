@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 function test() {
-  /** Test (B) for Bug 248970 **/
+  /** Test (B) for Bug 248970 */
   waitForExplicitFinish();
 
   let windowsToClose = [];

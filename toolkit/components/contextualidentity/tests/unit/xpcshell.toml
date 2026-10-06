@@ -1,14 +1,13 @@
 [DEFAULT]
 firefox-appdir = "browser"
+run-if = [
+  "appname != 'thunderbird'",
+]
 
 ["test_basic.js"]
-skip-if = ["appname == 'thunderbird'"]
-
-["test_telemetry.js"]
-skip-if = ["appname == 'thunderbird'"]
 
 ["test_corruptedFile.js"]
-skip-if = ["appname == 'thunderbird'"]
 
 ["test_migratedFile.js"]
-skip-if = ["appname == 'thunderbird'"]
+
+["test_telemetry.js"]

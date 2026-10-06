@@ -1,0 +1,437 @@
+[External="remote_settings"]
+typedef interface RemoteSettingsService;
+
+[External="remote_settings"]
+typedef enum RemoteSettingsServer;
+
+[External="remote_settings"]
+typedef record RemoteSettingsRecord;
+
+dictionary CalculatedAttributes {
+    i32? days_since_install;
+    i32? days_since_update;
+    string? language;
+    string? region;
+};
+
+namespace nimbus {
+
+    /// A test utility used to validate event queries against the jexl evaluator.
+    ///
+    /// This method should only be used in tests.
+    [Throws=NimbusError]
+    void validate_event_queries(RecordedContext recorded_context);
+
+    ///
+    [Throws=NimbusError]
+    CalculatedAttributes get_calculated_attributes(i64? installation_date, string db_path, string locale);
+};
+
+dictionary AppContext {
+    string app_name;
+    string app_id;
+    string channel;
+    string? app_version;
+    string? app_build;
+    string? architecture;
+    string? device_manufacturer;
+    string? device_model;
+    string? locale;
+    string? os;
+    string? os_version;
+    string? android_sdk_version;
+    string? debug_tag;
+    // Note that installation date is
+    // the unix time, which is milliseconds since epoch
+    i64? installation_date;
+    JsonObject? custom_targeting_attributes;
+};
+
+dictionary EnrolledExperiment {
+    sequence<string> feature_ids;
+    string slug;
+    string user_facing_name;
+    string user_facing_description;
+    string branch_slug;
+};
+
+dictionary AvailableExperiment {
+    string slug;
+    string user_facing_name;
+    string user_facing_description;
+    sequence<ExperimentBranch> branches;
+    string? reference_branch;
+};
+
+dictionary ExperimentBranch {
+    string slug;
+    i32 ratio;
+};
+
+dictionary EnrollmentChangeEvent {
+    string experiment_slug;
+    string branch_slug;
+    string? reason;
+    EnrollmentChangeEventType change;
+};
+
+enum EnrollmentChangeEventType {
+    "Enrollment",
+    "EnrollFailed",
+    "Disqualification",
+    "Unenrollment",
+    "UnenrollFailed",
+};
+
+[Trait, WithForeign]
+interface MetricsHandler {
+    void record_database_load(DatabaseLoadExtraDef event);
+
+    void record_database_migration(DatabaseMigrationExtraDef event);
+
+    void record_enrollment_statuses(sequence<EnrollmentStatusExtraDef> enrollment_status_extras);
+    /// Feature activation is the pre-cursor to feature exposure: it is defined as the first time
+    /// the feature configuration is asked for.
+    void record_feature_activation(FeatureExposureExtraDef event);
+
+    void record_feature_exposure(FeatureExposureExtraDef event);
+
+    void record_malformed_feature_config(MalformedFeatureConfigExtraDef event);
+
+    void submit_targeting_context();
+};
+
+dictionary DatabaseLoadExtraDef {
+    boolean? corrupt;
+    string? error;
+    u16? initial_version;
+    u16? migrated_version;
+    string? migration_error;
+};
+
+dictionary DatabaseMigrationExtraDef {
+    string reason;
+    u16 from_version;
+    u16 to_version;
+    string? error;
+};
+
+dictionary EnrollmentStatusExtraDef {
+    string? branch;
+    string? conflict_slug;
+    string? error_string;
+    string? reason;
+    string? slug;
+    string? status;
+    sequence<PreviousGeckoPrefState>? prev_gecko_pref_states;
+};
+
+dictionary PreviousGeckoPrefState {
+    OriginalGeckoPref original_value;
+    string feature_id;
+    string variable;
+};
+
+dictionary FeatureExposureExtraDef {
+    string? branch;
+    string slug;
+    string feature_id;
+};
+
+dictionary MalformedFeatureConfigExtraDef {
+    string? branch;
+    string? slug;
+    string feature_id;
+    string part;
+};
+
+callback interface GeckoPrefHandler {
+    record<string, record<string, GeckoPrefState>> get_prefs_with_state();
+
+    void set_gecko_prefs_state(sequence<GeckoPrefState> new_prefs_state);
+
+    void set_gecko_prefs_original_values(sequence<OriginalGeckoPref> original_gecko_prefs);
+
+};
+
+dictionary GeckoPref {
+    string pref;
+    PrefBranch branch;
+};
+
+dictionary GeckoPrefState {
+    GeckoPref gecko_pref;
+    PrefValue? gecko_value;
+    PrefEnrollmentData? enrollment_value;
+    boolean is_user_set;
+};
+
+enum PrefBranch {
+    "Default",
+    "User",
+};
+
+dictionary OriginalGeckoPref {
+    string pref;
+    PrefBranch branch;
+    PrefValue? value;
+};
+
+
+enum PrefUnenrollReason {
+    "Changed",
+    "FailedToSet",
+};
+
+dictionary PrefEnrollmentData {
+    string experiment_slug;
+    PrefValue pref_value;
+    string feature_id;
+    string variable;
+};
+
+
+dictionary NimbusServerSettings {
+    RemoteSettingsService rs_service;
+    string collection_name;
+};
+
+[Error]
+enum NimbusError {
+    "InvalidPersistedData", "RkvError", "IOError",
+    "JSONError", "EvaluationError", "InvalidExpression", "InvalidFraction",
+    "TryFromSliceError", "EmptyRatiosError", "OutOfBoundsError","UrlParsingError",
+    "UuidError", "InvalidExperimentFormat",
+    "InvalidPath", "InternalError", "NoSuchExperiment", "NoSuchBranch",
+    "DatabaseNotReady", "VersionParsingError", "BehaviorError", "TryFromIntError",
+    "ParseIntError", "TransformParameterError", "ClientError", "UniFFICallbackError",
+    "RegexError",
+};
+
+[Custom]
+typedef string JsonObject;
+
+[Custom]
+typedef string PrefValue;
+
+[Trait, WithForeign]
+interface RecordedContext {
+    JsonObject to_json();
+
+    record<string, string> get_event_queries();
+
+    void set_event_query_values(record<string, f64> event_query_values);
+
+    void record();
+};
+
+interface NimbusClient {
+    [Throws=NimbusError]
+    constructor(
+        AppContext app_ctx,
+        RecordedContext? recorded_context,
+        sequence<string> coenrolling_feature_ids,
+        string dbpath,
+        MetricsHandler metrics_handler,
+        GeckoPrefHandler? gecko_pref_handler,
+        NimbusServerSettings? remote_settings_info
+    );
+
+    /// Initializes the database and caches enough information so that the
+    /// non-blocking API functions (eg, `get_experiment_branch()`) can
+    /// return accurate results rather than throwing a "not initialized" error.
+    /// It's not strictly necessary to call this function - any function that
+    /// wants to use the database will implicitly initialize too - this exists
+    /// so that the consuming application can have confidence the non-blocking
+    /// functions will return data instead of returning an error, and will do
+    /// the minimum amount of work to achieve that.
+    [Throws=NimbusError]
+    void initialize();
+
+    /// Returns the branch allocated for a given slug or id.
+    [Throws=NimbusError]
+    string? get_experiment_branch(string id);
+
+    [Throws=NimbusError]
+    string? get_feature_config_variables(string feature_id);
+
+    /// Returns a list of experiment branches for a given experiment ID.
+    [Throws=NimbusError]
+    sequence<ExperimentBranch> get_experiment_branches(string experiment_slug);
+
+    /// Returns a list of experiments this user is enrolled in.
+    [Throws=NimbusError]
+    sequence<EnrolledExperiment> get_active_experiments();
+
+    /// Records a Glean event that this feature has been exposed.
+    /// If the feature is not involved in an experiment, then the event is suppressed.
+    /// If the feature is only involved in a rollout, then the event is suppressed.
+    /// If the feature is involved in an experiment, then record the experiment slug
+    /// and branch.
+    /// If the feature is involved in an experiment and a rollout, then record only the
+    /// experiment slug and branch.
+    /// If the slug is specified, then use this as the experiment, and use it to look up
+    /// the branch. This is useful for coenrolling features.
+    void record_feature_exposure(string feature_id, string? slug);
+
+    /// Records a Glean event that this feature configuration is malformed.
+    /// Accepts a part_id to give the experiment owner or feature implementer
+    /// clues where to look.
+    /// The Glean event will always fire, but the content of that event will
+    /// vary depending on whether then feature is part of an experiment or rollout
+    /// or not.
+    void record_malformed_feature_config(string feature_id, string part_id);
+
+    /// Returns a list of experiments for this `app_name`, as specified in the `AppContext`.
+    /// It is not intended to be used to be used for user facing applications.
+    [Throws=NimbusError]
+    sequence<AvailableExperiment> get_available_experiments();
+
+    /// Getter and setter for user's participation in experiments only.
+    /// Possible values are:
+    /// * `true`: the user will enroll in experiments as usual.
+    /// * `false`: the user will not enroll in new experiments, and opt out of all existing ones.
+    [Throws=NimbusError]
+    boolean get_experiment_participation();
+
+    [Throws=NimbusError]
+    sequence<EnrollmentChangeEvent> set_experiment_participation(boolean opt_in);
+
+    /// Getter and setter for user's participation in rollouts.
+    /// Possible values are:
+    /// * `true`: the user will enroll in rollouts as usual.
+    /// * `false`: the user will not enroll in new rollouts, and opt out of all existing ones.
+    [Throws=NimbusError]
+    boolean get_rollout_participation();
+
+    [Throws=NimbusError]
+    sequence<EnrollmentChangeEvent> set_rollout_participation(boolean opt_in);
+
+    /// Fetches the list of experiments from the server. This does not affect the list
+    /// of active experiments or experiment enrolment.
+    /// Fetched experiments are not applied until `apply_pending_updates()` is called.
+    [Throws=NimbusError]
+    void fetch_experiments();
+
+    /// Toggles the enablement of the fetch. If `false`, then calling `fetch_experiments`
+    /// returns immediately, having not done any fetching from remote settings.
+    /// This is only useful for QA, and should not be used in production: use
+    /// `set_experiment_participation` or `set_rollout_participation` instead.
+    [Throws=NimbusError]
+    void set_fetch_enabled(boolean flag);
+
+    [Throws=NimbusError]
+    boolean is_fetch_enabled();
+
+    /// Apply the updated experiments from the last fetch.
+    /// After calling this, the list of active experiments might change
+    /// (there might be new experiments, or old experiments might have expired).
+    [Throws=NimbusError]
+    sequence<EnrollmentChangeEvent> apply_pending_experiments();
+
+    /// A convenience method for apps to set the experiments from a local source
+    /// for either testing, or before the first fetch has finished.
+    ///
+    /// Experiments set with this method are not applied until `apply_pending_updates()` is called.
+    [Throws=NimbusError]
+    void set_experiments_locally(string experiments_json);
+
+    /// These are test-only functions and should never be exposed to production
+    /// users, as they mess with the "statistical requirements" of the SDK.
+
+    /// Reset the enrollments and experiments in the database to an empty state.
+    [Throws=NimbusError]
+    void reset_enrollments();
+
+    /// Opt in to a specific branch on a specific experiment. Useful for
+    /// developers to test their app's interaction with the experiment.
+    [Throws=NimbusError]
+    sequence<EnrollmentChangeEvent> opt_in_with_branch(string experiment_slug, string branch);
+
+    /// Opt out of a specific experiment.
+    [Throws=NimbusError]
+    sequence<EnrollmentChangeEvent> opt_out(string experiment_slug);
+
+    /// Reset internal state in response to application-level telemetry reset.
+    ///
+    /// Consumers should call this method when the user resets the telemetry state of the
+    /// consuming application, such as by opting out of submitting telemetry. It resets the
+    /// internal state of the Nimbus client to create a clean break between data collected
+    /// before and after the reset, including:
+    ///
+    ///    * clearing any unique identifiers used internally, so they will reset to
+    ///      new random values on next use.
+    ///    * accepting new randomization units, based on application-level ids that
+    ///      may have also changed.
+    ///    * disqualifying this client out of any active experiments, to avoid submitting
+    ///      misleading incomplete data.
+    ///
+    [Throws=NimbusError]
+    sequence<EnrollmentChangeEvent> reset_telemetry_identifiers();
+
+    /// This provides low level access to the targeting machinery for other uses by the application (e.g. messages)
+    /// Additional parameters can be added via the optional JSON object. This allows for many JEXL expressions
+    /// to be run across the same context.
+    [Throws=NimbusError]
+    NimbusTargetingHelper create_targeting_helper(optional JsonObject? additional_context = null);
+
+    /// This provides a unified String interpolation library which exposes the application context.
+    /// It's first use is in the messaging helper, to add extra parameters to URLs.
+    [Throws=NimbusError]
+    NimbusStringHelper create_string_helper(optional JsonObject? additional_context = null);
+
+    /// Records an event for the purposes of behavioral targeting.
+    /// This function is used to record and persist data used for the behavioral
+    /// targeting such as "core-active" user targeting.
+    [Throws=NimbusError]
+    void record_event(string event_id, optional i64 count = 1);
+
+    /// Records an event as if it were in the past.
+    /// This, and `advance_event_time` are useful for testing.
+    /// `seconds_ago` must be positive.
+    [Throws=NimbusError]
+    void record_past_event(string event_id, i64 seconds_ago, optional i64 count = 1);
+
+    /// Advances what the event store thinks is now.
+    /// This, and `record_past_event` are useful for testing.
+    /// `by_seconds` must be positive.
+    [Throws=NimbusError]
+    void advance_event_time(i64 by_seconds);
+
+    [Throws=NimbusError]
+    void clear_events();
+
+    [Throws=NimbusError]
+    void dump_state_to_log();
+
+    [Throws=NimbusError]
+    sequence<EnrollmentChangeEvent> unenroll_for_gecko_pref(GeckoPrefState pref_state, PrefUnenrollReason pref_unenroll_reason);
+
+    [Throws=NimbusError]
+    void register_previous_gecko_pref_states([ByRef] sequence<GeckoPrefState> gecko_pref_states);
+
+    [Throws=NimbusError]
+    sequence<PreviousGeckoPrefState>? get_previous_gecko_pref_states(string experiment_slug);
+};
+
+interface NimbusTargetingHelper {
+    /// Execute the given jexl expression and evaluate against the existing targeting parameters and context passed to
+    /// the helper at construction.
+    [Throws=NimbusError]
+    boolean eval_jexl(string expression);
+
+    /// Evaluate a JEXL expression and return debug results as JSON.
+    /// For CLI testing and debugging.
+    [Throws=NimbusError]
+    string eval_jexl_debug(string expression);
+};
+
+interface NimbusStringHelper {
+    /// Take the given template and find patterns that match the regular expression `{\w+}`.
+    /// Any matches are used as keys into the application context, the `additional_context` or the special case `uuid`.
+    string string_format(string template, optional string? uuid = null);
+
+    /// Generates an optional UUID to be passed into the `string_format` method.
+    /// If the return is not null, then it should be recorded with Glean as a UuidMetricType.
+    string? get_uuid(string template);
+};

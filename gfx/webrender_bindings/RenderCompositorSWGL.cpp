@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -263,18 +261,19 @@ RenderedFrameId RenderCompositorSWGL::EndFrame(
 }
 
 bool RenderCompositorSWGL::RequestFullRender() {
-#ifdef MOZ_WIDGET_ANDROID
+#if defined(MOZ_WIDGET_ANDROID)
   // XXX Add partial present support.
   return true;
-#endif
-#ifdef MOZ_WIDGET_GTK
+#elif defined(MOZ_WIDGET_GTK)
   // We're requested to do full render after Resume() on Wayland.
   if (mRequestFullRender) {
     mRequestFullRender = false;
     return true;
   }
-#endif
   return false;
+#else
+  return false;
+#endif
 }
 
 void RenderCompositorSWGL::Pause() {}

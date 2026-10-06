@@ -19,8 +19,8 @@ add_task(async function test_tabGroups_move_index() {
 
       // In this test we are going to reuse many tabs; to make tests easier to
       // understand, the tests are going to reference tabs by their initial
-      // index in the tab. This array maps the tabs at the "initial index" to
-      // the actual tab ID.
+      // index in the tabstrip. This array maps the tabs at the "initial index"
+      // to the actual tab ID.
       let reusableTabIds = [firstTab.id];
 
       // We are also going to reuse the window. When there are more tabs than
@@ -30,7 +30,7 @@ add_task(async function test_tabGroups_move_index() {
       const windowId = testWindow.id; // Used in the whole test!
       let numberOfTabsInTestWindow = 1;
 
-      async function setTabCountInTestWindow(tabCount) {
+      async function prepareTestWindow(tabCount) {
         await browser.tabs.ungroup(
           reusableTabIds.slice(0, numberOfTabsInTestWindow)
         );
@@ -63,7 +63,8 @@ add_task(async function test_tabGroups_move_index() {
       // in the format [0, 1, 2, [3, 4, 5], 6, etc], where the numbers reflect
       // the tabs (by their initial index), and the nested array marks a group.
       async function testTabGroupMove(testCase) {
-        browser.test.log(`testTabGroupMove: ${JSON.stringify(testCase)}`);
+        const testCaseStr = JSON.stringify(testCase);
+        browser.test.log(`testTabGroupMove: ${testCaseStr}`);
         const DUMMY_TABGROUPS_MOVE_NO_ERROR = "(tabGroups.move succeeded)";
         const {
           description,
@@ -77,12 +78,12 @@ add_task(async function test_tabGroups_move_index() {
         let allTabIndexes = starting_tabstrip.flatMap(num => num);
         // Sanity check: each number reflects the initial index.
         if (allTabIndexes.some((num, i) => num !== i)) {
-          browser.test.fail(`Bad starting_tabstrip: ${starting_tabstrip}`);
+          browser.test.fail(`Bad starting_tabstrip: ${testCaseStr}`);
         }
 
         // Setup: Prepare window as specified by starting_tabstrip, with a
         // group for each array.
-        await setTabCountInTestWindow(allTabIndexes.length);
+        await prepareTestWindow(/* tabCount */ allTabIndexes.length);
         const groupIdAtIndex = new Map();
         for (let v of starting_tabstrip) {
           if (Array.isArray(v)) {
@@ -100,7 +101,7 @@ add_task(async function test_tabGroups_move_index() {
 
         if (!groupIdAtIndex.has(group_at_tab)) {
           // Sanity check: group starts at the given index.
-          browser.test.fail("Bad group_at_tab: no group found at index");
+          browser.test.fail(`Bad no group at group_at_tab: ${testCaseStr}`);
         }
 
         const groupId = groupIdAtIndex.get(group_at_tab);

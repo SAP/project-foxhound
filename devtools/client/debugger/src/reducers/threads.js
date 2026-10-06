@@ -4,6 +4,7 @@
 
 /**
  * Threads reducer
+ *
  * @module reducers/threads
  */
 
@@ -65,7 +66,7 @@ export default function update(state = initialThreadsState(), action) {
         }),
       };
 
-    case "TRACING_TOGGLED":
+    case "TRACING_TOGGLED": {
       const { mutableTracingThreads } = state;
       const sizeBefore = mutableTracingThreads.size;
       if (action.enabled) {
@@ -83,6 +84,7 @@ export default function update(state = initialThreadsState(), action) {
         };
       }
       return state;
+    }
 
     default:
       return state;

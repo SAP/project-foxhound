@@ -25,7 +25,7 @@ function getImageDataURI() {
   return document.getElementsByTagName("img")[0].getAttribute("src");
 }
 
-/** Test for Bug 1250010 **/
+/** Test for Bug 1250010 */
 SimpleTest.waitForExplicitFinish();
 SimpleTest.waitForFocus(function() {
   // First test: Empty paragraph is split correctly.
@@ -66,11 +66,8 @@ SimpleTest.waitForFocus(function() {
   synthesizeKey("KEY_Enter");
   sendString("A");
 
-  // TODO: The <br> in the new paragraph and the paragraph containing the <img>
-  //       should be removed at typing "A" because they are not necessary
-  //       anymore to make the paragraphs visible (bug 503838).
   const expectedHTML =
-    "<p><tt>xyz</tt></p><p><tt><img src=\"" + getImageDataURI() + "\"><br></tt></p>" +
+    "<p><tt>xyz</tt></p><p><tt><img src=\"" + getImageDataURI() + "\"></tt></p>" +
     "<p><tt>A</tt></p>";
   is(
     div.innerHTML,

@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -33,7 +32,6 @@ interface mixin GlobalEventHandlers {
            attribute EventHandler onauxclick;
            attribute EventHandler onbeforeinput;
            // https://html.spec.whatwg.org/#event-beforematch
-           [Pref="dom.hidden_until_found.enabled"]
            attribute EventHandler onbeforematch;
            attribute EventHandler onbeforetoggle;
            attribute EventHandler oncanplay;
@@ -44,7 +42,6 @@ interface mixin GlobalEventHandlers {
            attribute EventHandler oncontentvisibilityautostatechange;
            attribute EventHandler oncontextlost;
            attribute EventHandler oncontextmenu;
-           [Pref="dom.element.commandfor.enabled"]
            attribute EventHandler oncommand;
            attribute EventHandler oncontextrestored;
            attribute EventHandler oncopy;
@@ -163,6 +160,8 @@ interface mixin WindowEventHandlers {
            attribute EventHandler onoffline;
            attribute EventHandler ononline;
            attribute EventHandler onpagehide;
+           [Pref="dom.viewTransitions.cross-document.enabled"]
+           attribute EventHandler onpagereveal;
            attribute EventHandler onpageshow;
            attribute EventHandler onpopstate;
            attribute EventHandler onrejectionhandled;

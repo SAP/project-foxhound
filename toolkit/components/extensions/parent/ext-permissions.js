@@ -147,6 +147,23 @@ this.permissions = class extends ExtensionAPIPersistent {
             }
           }
 
+          // Per Chrome, a per-addon ExtensionSettings entry overrides the
+          // global "*" blocked_permissions even if it doesn't set its own.
+          // Chrome throws "Permissions are blocked by enterprise policy" when
+          // any requested permission is blocked, so we match that contract
+          // (extensions can distinguish admin-block from user-deny in catch).
+          // getExtensionSettings returns the effective blocked list, which
+          // already accounts for allowed_permissions.
+          if (
+            Services.policies
+              ?.getExtensionSettings(extension.id)
+              ?.blocked_permissions?.some(p => permissions.includes(p))
+          ) {
+            throw new ExtensionError(
+              "Permissions are blocked by enterprise policy."
+            );
+          }
+
           if (promptsEnabled) {
             permissions = permissions.filter(
               perm => !context.extension.hasPermission(perm)
@@ -236,6 +253,19 @@ this.permissions = class extends ExtensionAPIPersistent {
         },
 
         async remove(permissions) {
+          if (Services.policies?.isAddonRequiredByPolicy(extension.id)) {
+            // Match Chrome: any origin subsumed by a required manifest origin
+            // (host_permissions or content_scripts patterns) cannot be removed.
+            let manifestSet = extension.getManifestOriginsMatchPatternSet();
+            for (let origin of permissions.origins) {
+              if (manifestSet.subsumes(new MatchPattern(origin))) {
+                throw new ExtensionError(
+                  "You cannot remove required permissions. " +
+                    "Host permissions are locked by enterprise policies."
+                );
+              }
+            }
+          }
           await ExtensionPermissions.remove(
             extension.id,
             permissions,

@@ -1,27 +1,27 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsWindowMemoryReporter.h"
-#include "nsWindowSizes.h"
-#include "nsGlobalWindowInner.h"
-#include "nsGlobalWindowOuter.h"
-#include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/dom/Document.h"
+
+#include "XPCJSMemoryReporter.h"
+#include "js/MemoryMetrics.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Try.h"
-#include "mozilla/ResultExtensions.h"
+#include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/Document.h"
+#include "nsGlobalWindowInner.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsNetCID.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsPrintfCString.h"
-#include "XPCJSMemoryReporter.h"
-#include "js/MemoryMetrics.h"
 #include "nsQueryObject.h"
 #include "nsServiceManagerUtils.h"
+#include "nsStyleStructList.h"
+#include "nsWindowSizes.h"
 #include "nsXULPrototypeCache.h"
 
 using namespace mozilla;
@@ -94,7 +94,7 @@ void nsWindowMemoryReporter::Init() {
   MOZ_ASSERT(!sWindowReporter);
   sWindowReporter = new nsWindowMemoryReporter();
   ClearOnShutdown(&sWindowReporter);
-  RegisterStrongMemoryReporter(sWindowReporter);
+  RegisterStrongMemoryReporter(do_AddRef(sWindowReporter));
   RegisterNonJSSizeOfTab(NonJSSizeOfTab);
 
   nsCOMPtr<nsIObserverService> os = services::GetObserverService();
@@ -427,6 +427,12 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
                "Number of event listeners in a window, including event "
                "listeners on nodes and other event targets.");
 
+  REPORT_COUNT(
+      "/media/media-source-urls", mMediaSourceURLsCount,
+      "Number of MediaSource object URLs allocated with URL.createObjectURL; "
+      "the referenced data cannot be freed until all URLs for it have been "
+      "explicitly invalidated with URL.revokeObjectURL.");
+
   // There are many different kinds of frames, but it is very likely
   // that only a few matter.  Implement a cutoff so we don't bloat
   // about:memory with many uninteresting entries.
@@ -448,7 +454,7 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
   }
 #define PRES_ARENA_OBJECT(name_) \
   ARENA_OBJECT(name_, presArenaSundriesSize, "/layout/pres-arena/")
-#include "nsPresArenaObjectList.h"
+#include "nsPresArenaObjectList.inc"
 #undef PRES_ARENA_OBJECT
 
   if (presArenaSundriesSize > 0) {
@@ -462,7 +468,7 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
 #define DISPLAY_LIST_ARENA_OBJECT(name_)            \
   ARENA_OBJECT(name_, displayListArenaSundriesSize, \
                "/layout/display-list-arena/")
-#include "nsDisplayListArenaTypes.h"
+#include "nsDisplayListArenaTypes.inc"
 #undef DISPLAY_LIST_ARENA_OBJECT
 
   if (displayListArenaSundriesSize > 0) {
@@ -481,7 +487,7 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
       js::MemoryReportingSundriesThreshold();
 
   size_t styleSundriesSize = 0;
-#define STYLE_STRUCT(name_)                                             \
+#define PROCESS_STYLE_STRUCT(name_)                                     \
   {                                                                     \
     size_t size = windowSizes.mStyleSizes.NS_STYLE_SIZES_FIELD(name_);  \
     if (size < STYLE_SUNDRIES_THRESHOLD) {                              \
@@ -493,8 +499,8 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
     }                                                                   \
     aWindowTotalSizes->mStyleSizes.NS_STYLE_SIZES_FIELD(name_) += size; \
   }
-#include "nsStyleStructList.h"
-#undef STYLE_STRUCT
+  FOR_EACH_STYLE_STRUCT(PROCESS_STYLE_STRUCT, PROCESS_STYLE_STRUCT)
+#undef PROCESS_STYLE_STRUCT
 
   if (styleSundriesSize > 0) {
     REPORT_SUM_SIZE(
@@ -655,7 +661,7 @@ nsWindowMemoryReporter::CollectReports(nsIHandleReportCallback* aHandleReport,
   size_t presArenaTotal = 0;
 #define PRES_ARENA_OBJECT(name_) \
   presArenaTotal += windowTotalSizes.mArenaSizes.NS_ARENA_SIZES_FIELD(name_);
-#include "nsPresArenaObjectList.h"
+#include "nsPresArenaObjectList.inc"
 #undef PRES_ARENA_OBJECT
 
   REPORT("window-objects/layout/pres-arena", presArenaTotal,
@@ -666,7 +672,7 @@ nsWindowMemoryReporter::CollectReports(nsIHandleReportCallback* aHandleReport,
 #define DISPLAY_LIST_ARENA_OBJECT(name_) \
   displayListArenaTotal +=               \
       windowTotalSizes.mArenaSizes.NS_ARENA_SIZES_FIELD(name_);
-#include "nsDisplayListArenaTypes.h"
+#include "nsDisplayListArenaTypes.inc"
 #undef DISPLAY_LIST_ARENA_OBJECT
 
   REPORT("window-objects/layout/display-list-arena", displayListArenaTotal,
@@ -674,10 +680,10 @@ nsWindowMemoryReporter::CollectReports(nsIHandleReportCallback* aHandleReport,
          "sum of all windows' 'layout/display-list-arena/' numbers.");
 
   size_t styleTotal = 0;
-#define STYLE_STRUCT(name_) \
+#define ADD_TO_STYLE_TOTAL(name_) \
   styleTotal += windowTotalSizes.mStyleSizes.NS_STYLE_SIZES_FIELD(name_);
-#include "nsStyleStructList.h"
-#undef STYLE_STRUCT
+  FOR_EACH_STYLE_STRUCT(ADD_TO_STYLE_TOTAL, ADD_TO_STYLE_TOTAL)
+#undef ADD_TO_STYLE_TOTAL
 
   REPORT("window-objects/layout/style-structs", styleTotal,
          "Memory used for style structs within windows. This is the sum of "
@@ -761,7 +767,7 @@ void nsWindowMemoryReporter::AsyncCheckForGhostWindows() {
   NS_NewTimerWithFuncCallback(
       getter_AddRefs(mCheckTimer), CheckTimerFired, nullptr, timerDelay,
       nsITimer::TYPE_ONE_SHOT,
-      "nsWindowMemoryReporter::AsyncCheckForGhostWindows_timer");
+      "nsWindowMemoryReporter::AsyncCheckForGhostWindows_timer"_ns);
 }
 
 void nsWindowMemoryReporter::ObserveAfterMinimizeMemoryUsage() {

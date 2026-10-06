@@ -17,7 +17,7 @@ import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 import { connect } from "devtools/client/shared/vendor/react-redux";
 import actions from "../../actions/index";
 
-import { CloseButton } from "../shared/Button/index";
+import CloseButton from "devtools/client/shared/components/CloseButton";
 
 import { getXHRBreakpoints, shouldPauseOnAnyXHR } from "../../selectors/index";
 import ExceptionOption from "./Breakpoints/ExceptionOption";
@@ -42,6 +42,8 @@ const xhrMethods = [
 ];
 
 class XHRBreakpoints extends Component {
+  #input;
+
   constructor(props) {
     super(props);
 
@@ -75,23 +77,23 @@ class XHRBreakpoints extends Component {
 
     // Ensures that the input is focused when the "+"
     // is clicked while the panel is collapsed
-    if (this._input && showInput) {
-      this._input.focus();
+    if (this.#input && showInput) {
+      this.#input.focus();
     }
   }
 
   componentDidUpdate(prevProps, prevState) {
-    const _input = this._input;
+    const inputEl = this.#input;
 
-    if (!_input) {
+    if (!inputEl) {
       return;
     }
 
     if (!prevState.editing && this.state.editing) {
-      _input.setSelectionRange(0, _input.value.length);
-      _input.focus();
+      inputEl.setSelectionRange(0, inputEl.value.length);
+      inputEl.focus();
     } else if (this.props.showInput && !this.state.focused) {
-      _input.focus();
+      inputEl.focus();
     }
   }
 
@@ -221,7 +223,7 @@ class XHRBreakpoints extends Component {
         onFocus: this.onFocus,
         value: inputValue,
         onKeyDown: this.handleTab,
-        ref: c => (this._input = c),
+        ref: c => (this.#input = c),
       }),
       this.renderMethodSelectElement(),
       input({

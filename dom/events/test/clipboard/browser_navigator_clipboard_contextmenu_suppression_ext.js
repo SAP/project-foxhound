@@ -1,5 +1,3 @@
-/* -*- Mode: JavaScript; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,12 +5,7 @@
 "use strict";
 requestLongerTimeout(2);
 
-const kBaseUrlForContent = getRootDirectory(gTestPath).replace(
-  "chrome://mochitests/content",
-  "https://example.com"
-);
-const kContentFileName = "file_toplevel.html";
-const kContentFileUrl = kBaseUrlForContent + kContentFileName;
+const kContentFileUrl = kBaseUrlForContent + "file_toplevel.html";
 const kIsMac = navigator.platform.indexOf("Mac") > -1;
 
 async function waitForPasteContextMenu() {
@@ -126,8 +119,6 @@ function testExtensionContentScript(aContentScript, aMessage) {
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["dom.events.asyncClipboard.readText", true],
-      ["dom.events.asyncClipboard.clipboardItem", true],
       ["test.events.async.enabled", true],
       // Avoid paste button delay enabling making test too long.
       ["security.dialog_enable_delay", 0],

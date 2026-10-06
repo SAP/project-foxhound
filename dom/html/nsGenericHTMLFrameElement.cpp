@@ -1,22 +1,22 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsGenericHTMLFrameElement.h"
 
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/HTMLIFrameElement.h"
-#include "mozilla/dom/XULFrameElement.h"
-#include "mozilla/dom/BrowserBridgeChild.h"
-#include "mozilla/dom/WindowProxyHolder.h"
+#include "mozilla/ErrorResult.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/ErrorResult.h"
+#include "mozilla/dom/BrowserBridgeChild.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/HTMLIFrameElement.h"
+#include "mozilla/dom/UnbindContext.h"
+#include "mozilla/dom/WindowProxyHolder.h"
+#include "mozilla/dom/XULFrameElement.h"
 #include "nsAttrValueInlines.h"
+#include "nsAttrValueOrString.h"
 #include "nsContentUtils.h"
 #include "nsIDocShell.h"
 #include "nsIFrame.h"
@@ -25,7 +25,6 @@
 #include "nsPresContext.h"
 #include "nsServiceManagerUtils.h"
 #include "nsSubDocumentFrame.h"
-#include "nsAttrValueOrString.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -182,7 +181,7 @@ nsresult nsGenericHTMLFrameElement::BindToTree(BindContext& aContext,
   nsresult rv = nsGenericHTMLElement::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (IsInComposedDoc()) {
+  if (IsInComposedDoc() && !mFrameLoader) {
     NS_ASSERTION(!nsContentUtils::IsSafeToRunScript(),
                  "Missing a script blocker!");
 
@@ -199,7 +198,7 @@ nsresult nsGenericHTMLFrameElement::BindToTree(BindContext& aContext,
 }
 
 void nsGenericHTMLFrameElement::UnbindFromTree(UnbindContext& aContext) {
-  if (mFrameLoader) {
+  if (mFrameLoader && !aContext.IsMove()) {
     // This iframe is being taken out of the document, destroy the
     // iframe's frame loader (doing that will tear down the window in
     // this iframe).

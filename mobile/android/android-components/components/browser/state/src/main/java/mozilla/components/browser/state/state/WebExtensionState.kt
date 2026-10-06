@@ -25,6 +25,7 @@ import mozilla.components.concept.engine.webextension.WebExtensionPageAction
  * @property popupSessionId The ID of the session displaying
  * the browser action popup.
  * @property popupSession The [EngineSession] displaying the browser or page action popup.
+ * @property activeOptionsPage The state of an active options page.
  */
 data class WebExtensionState(
     val id: String,
@@ -37,4 +38,19 @@ data class WebExtensionState(
     val pageAction: WebExtensionPageAction? = null,
     val popupSessionId: String? = null,
     val popupSession: EngineSession? = null,
+    val activeOptionsPage: ActiveOptionsPage? = null,
+)
+
+/**
+ * The state for an active options page.
+ *
+ * @property instanceId The unique ID for this options page instance. This makes repeated requests
+ * distinguishable when observers miss the cleared state.
+ * @property url The URL of the options page.
+ * @property name The Name for the extension.
+ */
+data class ActiveOptionsPage(
+    val instanceId: String,
+    val url: String,
+    val name: String,
 )

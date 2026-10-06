@@ -16,6 +16,9 @@ It supports various types (`default`, `primary`, `destructive`, `icon`, `icon gh
               tooltiptext="Icon Ghost" type="ghost">
   </moz-button>
   <moz-button type="ghost" label="Ghost"></moz-button>
+  <moz-button type="split"
+              label="Split">
+</moz-button>
 </div>
 ```
 
@@ -40,7 +43,7 @@ More information about this component including design, writing, and localizatio
 
 ## Code
 
-The source for `moz-button` can be found under [toolkit/content/widgets/moz-button/](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/moz-button)
+The source for `moz-button` can be found under [toolkit/content/widgets/moz-button/](https://searchfox.org/firefox-main/source/toolkit/content/widgets/moz-button)
 
 ## How to use `moz-button`
 
@@ -167,7 +170,7 @@ Ghost buttons are used for secondary or less prominent actions. They are ideal f
 
 #### Menu Button
 
-When `moz-button` is given a `menuId` property, it functions as a menu button. This property links the button to an associated [panel-list](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/panel-list/panel-list.js) component, which will act as the popup menu. The `menuId` must correspond to the ID of that `panel-list` element.
+When `moz-button` is given a `menuId` property, it functions as a menu button. This property links the button to an associated [panel-list](https://searchfox.org/firefox-main/source/toolkit/content/widgets/panel-list/panel-list.mjs) component, which will act as the popup menu. The `menuId` must correspond to the ID of that `panel-list` element.
 
 This built-in integration with `panel-list` offers several automatic features:
 * The button is automatically assigned `aria-haspopup="menu"`.
@@ -205,6 +208,53 @@ For now, you can't associate other types of menu with `moz-button` using `menuId
     <panel-item>Option Two</panel-item>
     <panel-item>Option Three</panel-item>
   </panel-list>
+</div>
+```
+
+#### Split Button
+
+Split Button is an action button combined with an adjacent menu button offering additional options. To create a split button, set the `type` to `split` and provide a `menuId` that links to a `panel-list` element. Split Button renders "More options" menu button with chevron icon and default `l10nId`.
+
+```html
+<moz-button type="split"
+            label="Split Button"
+            menuid="panel-list">
+</moz-button>
+<panel-list id="panel-list">
+  <panel-item>Option One</panel-item>
+  <panel-item>Option Two</panel-item>
+  <panel-item>Option Three</panel-item>
+</panel-list>
+```
+
+```html story
+<moz-button type="split"
+            label="Split Button"
+            menuid="panel-list">
+</moz-button>
+<div>
+  <panel-list id="panel-list" stay-open open>
+    <panel-item>Option One</panel-item>
+    <panel-item>Option Two</panel-item>
+    <panel-item>Option Three</panel-item>
+  </panel-list>
+</div>
+```
+
+#### Toggle button
+
+Adding `aria-pressed` to the `moz-button` turns it into a toggle button. The `aria-pressed` attribute represents the button's current "pressed" state.
+
+Refer to [the W3C ARIA documentation](https://w3c.github.io/aria/#aria-pressed) for more information on using `aria-pressed` attribute.
+
+```html
+<moz-button label="Could be pressed" aria-pressed="false"></moz-button>
+<moz-button label="Is already pressed" aria-pressed="true"></moz-button>
+```
+```html story
+<div style={{ display: 'flex', gap: '1rem' }}>
+  <moz-button label="Could be pressed" aria-pressed="false"></moz-button>
+  <moz-button label="Is already pressed" aria-pressed="true"></moz-button>
 </div>
 ```
 

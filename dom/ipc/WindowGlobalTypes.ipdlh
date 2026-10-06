@@ -1,18 +1,16 @@
-/* -*- Mode: C++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 8 -*- */
-/* vim: set sw=4 ts=8 et tw=80 ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 include "mozilla/dom/PermissionMessageUtils.h";
-include "mozilla/ipc/TransportSecurityInfoUtils.h";
 include "mozilla/ipc/URIUtils.h";
 
 include NeckoChannelParams;
 include DOMTypes;
 
 using mozilla::dom::WindowContextInitializer from "mozilla/dom/WindowContext.h";
-[RefCounted] using class nsITransportSecurityInfo from "nsITransportSecurityInfo.h";
+[RefCounted] using mozilla::dom::ParentProcessChannelHandle from "mozilla/dom/ParentProcessChannelHandle.h";
+using mozilla::dom::MaybeDiscardedWindowContext from "mozilla/dom/WindowContext.h";
 
 namespace mozilla {
 namespace dom {
@@ -26,14 +24,20 @@ struct WindowGlobalInit
   nullable nsIPrincipal principal;
   nullable nsIPrincipal storagePrincipal;
   nullable nsIURI documentURI;
+  nullable ParentProcessChannelHandle documentChannelHandle;
+  nullable ParentProcessChannelHandle failedChannelHandle;
+
+  // If this window is for a static clone (i.e. print-preview), the window
+  // global it was cloned from.
+  MaybeDiscardedWindowContext staticCloneOf;
 
   bool isInitialDocument;
+  bool isUncommittedInitialDocument;
   bool blockAllMixedContent;
   bool upgradeInsecureRequests;
   uint32_t sandboxFlags;
   CookieJarSettingsArgs cookieJarSettings;
   uint32_t httpsOnlyStatus;
-  nullable nsITransportSecurityInfo securityInfo;
 };
 
 } // namespace dom

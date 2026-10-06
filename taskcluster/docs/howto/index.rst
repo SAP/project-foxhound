@@ -49,6 +49,19 @@ platform.  For example:
             linux64/debug: 10
             default: 8
 
+Test suites that support manifest-based chunking can set ``chunks: dynamic``
+to let the taskgraph compute the number of chunks from historical runtime
+data.  When runtime data is unavailable (new platforms, new variants), the
+value of ``default-chunks`` is used as a fallback:
+
+.. code-block:: yaml
+
+    chunks: dynamic
+    default-chunks:
+        by-test-platform:
+            linux64/debug: 10
+            default: 8
+
 The full set of available properties is in
 ``taskcluster/gecko_taskgraph/transforms/test/__init__.py``.  Some other
 commonly-modified properties are ``max-run-time`` (useful if tests are being

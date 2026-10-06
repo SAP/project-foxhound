@@ -6,11 +6,11 @@
 # AppAssocReg
 #   http://nsis.sourceforge.net/Application_Association_Registration_plug-in
 # BitsUtils
-#   http://searchfox.org/mozilla-central/source/other-licenses/nsis/Contrib/BitsUtils
+#   http://searchfox.org/firefox-main/source/other-licenses/nsis/Contrib/BitsUtils
 # CityHash
-#   http://searchfox.org/mozilla-central/source/other-licenses/nsis/Contrib/CityHash
+#   http://searchfox.org/firefox-main/source/other-licenses/nsis/Contrib/CityHash
 # HttpPostFile
-#   http://searchfox.org/mozilla-central/source/other-licenses/nsis/Contrib/HttpPostFile
+#   http://searchfox.org/firefox-main/source/other-licenses/nsis/Contrib/HttpPostFile
 # ShellLink
 #   http://nsis.sourceforge.net/ShellLink_plug-in
 # UAC
@@ -109,18 +109,13 @@ VIAddVersionKey "OriginalFilename" "helper.exe"
 !insertmacro WriteRegDWORD2
 !insertmacro WriteRegStr2
 
-; This needs to be inserted after InitHashAppModelId because it uses
-; $AppUserModelID and the compiler can't handle using variables lexically before
-; they've been declared.
-!insertmacro GetInstallerRegistryPref
-
 !insertmacro un.ChangeMUIHeaderImage
 !insertmacro un.ChangeMUISidebarImage
 !insertmacro un.CheckForFilesInUse
 !insertmacro un.CleanMaintenanceServiceLogs
 !insertmacro un.CleanVirtualStore
-!insertmacro un.DeleteShortcuts
 !insertmacro un.GetCommonDirectory
+!insertmacro un.DeleteShortcuts
 !insertmacro un.GetLongPath
 !insertmacro un.GetSecondInstallPath
 !insertmacro un.InitHashAppModelId
@@ -137,6 +132,7 @@ VIAddVersionKey "OriginalFilename" "helper.exe"
 !insertmacro un.SetBrandNameVars
 
 !include shared.nsh
+!include uninstaller_helpers.nsh
 
 ; Helper macros for ui callbacks. Insert these after shared.nsh
 !insertmacro OnEndCommon
@@ -449,6 +445,18 @@ Section "Uninstall"
     ClearErrors
   ${EndIf}
 
+  ReadRegDWORD $R4 HKCU "Software\Mozilla\${BrandFullNameInternal}" DesktopLauncherAppInstalled
+  ${IfNot} ${Errors}
+  ${AndIf} $R4 == "1"
+    ; The current user had a desktop launcher at some point, so remove it.
+    SetShellVarContext current
+    Delete "$DESKTOP\${BrandShortName}.exe"
+    ${IfNot} ${Errors}
+      DeleteRegValue HKCU "Software\Mozilla\${BrandFullNameInternal}" DesktopLauncherAppInstalled
+    ${EndIf}
+  ${EndIf}
+  ClearErrors
+
   SetShellVarContext current  ; Set SHCTX to HKCU
   ${un.RegCleanMain} "Software\Mozilla"
   ${un.RegCleanPrefs} "Software\Mozilla\${AppName}"
@@ -483,6 +491,7 @@ Section "Uninstall"
     SetShellVarContext all  ; Set SHCTX to HKLM
     DeleteRegValue HKLM "Software\Mozilla" "${BrandShortName}InstallerTest"
     StrCpy $RegHive "HKLM"
+    DeleteRegValue HKLM "Software\Mozilla\${BrandFullNameInternal}" "UpdaterDeletedShortcut"
     ${un.RegCleanMain} "Software\Mozilla"
     ${un.RegCleanUninstall}
     ${un.DeleteShortcuts}
@@ -1035,6 +1044,8 @@ FunctionEnd
 # Initialization Functions
 
 Function .onInit
+  StrCpy $AddTaskbarSC ""
+
   ; Remove the current exe directory from the search order.
   ; This only effects LoadLibrary calls and not implicitly loaded DLLs.
   System::Call 'kernel32::SetDllDirectoryW(w "")'

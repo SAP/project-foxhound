@@ -24,10 +24,13 @@ var TEST_DATA = [
     },
   },
   {
-    desc: "Invalid attribute name",
+    desc: "Attribute name starting with <",
     text: "x='y' <why-would-you-do-this>=\"???\"",
     expectedAttributes: {
       x: "y",
+      // HTML parser reads "<why-would-you-do-this" as attr name (> ends tag).
+      // With relaxed rules, < is now valid in attribute names.
+      "<why-would-you-do-this": "",
     },
   },
   {

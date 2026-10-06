@@ -126,7 +126,7 @@ add_task(async function test_click_on_footer() {
       await BrowserTestUtils.waitForCondition(() =>
         BrowserTestUtils.isVisible(optionButton)
       );
-      await EventUtils.synthesizeMouseAtCenter(optionButton, {});
+      EventUtils.synthesizeMouseAtCenter(optionButton, {});
       info(`expecting tab: about:preferences#privacy opened`);
       const prefTab = await prefTabPromise;
       info(`expecting tab: about:preferences#privacy removed`);
@@ -135,37 +135,6 @@ add_task(async function test_click_on_footer() {
         true,
         "Tab: preferences#privacy was successfully opened by clicking on the footer"
       );
-
-      await closePopup(browser);
-    }
-  );
-});
-
-add_task(async function test_phishing_warning_single_category() {
-  await BrowserTestUtils.withNewTab(
-    { gBrowser, url: URL },
-    async function (browser) {
-      await openPopupOn(browser, "#tel");
-      await expectWarningText(browser, "Also autofills address");
-      await closePopup(browser);
-    }
-  );
-});
-
-add_task(async function test_phishing_warning_complex_categories() {
-  await BrowserTestUtils.withNewTab(
-    { gBrowser, url: URL },
-    async function (browser) {
-      await openPopupOn(browser, "#street-address");
-
-      await expectWarningText(browser, "Also autofills organization, email");
-      await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, browser);
-      await expectWarningText(browser, "Autofills address");
-      await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, browser);
-      await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, browser);
-      await expectWarningText(browser, "Also autofills organization, email");
-      await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, browser);
-      await expectWarningText(browser, "Also autofills organization, email");
 
       await closePopup(browser);
     }

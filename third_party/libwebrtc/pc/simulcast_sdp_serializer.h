@@ -28,8 +28,8 @@ namespace webrtc {
 //     format without knowing about the SDP attribute details (a=simulcast:)
 // Usage:
 //     Consider the SDP attribute for simulcast a=simulcast:<configuration>.
-//     The SDP serializtion code (webrtc_sdp.h) should use `SdpSerializer` to
-//     serialize and deserialize the <configuration> section.
+//     The SDP serialization code (webrtc_sdp.h) should use `SdpSerialize`
+//     to serialize and deserialize the <configuration> section.
 // This class will allow testing the serialization of components without
 // having to serialize the entire SDP while hiding implementation details
 // from callers of sdp serialization (webrtc_sdp.h).
@@ -38,22 +38,22 @@ class SimulcastSdpSerializer {
   // Serialization for the Simulcast description according to
   // https://tools.ietf.org/html/draft-ietf-mmusic-sdp-simulcast-13#section-5.1
   std::string SerializeSimulcastDescription(
-      const cricket::SimulcastDescription& simulcast) const;
+      const SimulcastDescription& simulcast) const;
 
   // Deserialization for the SimulcastDescription according to
   // https://tools.ietf.org/html/draft-ietf-mmusic-sdp-simulcast-13#section-5.1
-  RTCErrorOr<cricket::SimulcastDescription> DeserializeSimulcastDescription(
+  RTCErrorOr<SimulcastDescription> DeserializeSimulcastDescription(
       absl::string_view string) const;
 
   // Serialization for the RID description according to
   // https://tools.ietf.org/html/draft-ietf-mmusic-rid-15#section-10
   std::string SerializeRidDescription(
       const MediaContentDescription& media_desc,
-      const cricket::RidDescription& rid_description) const;
+      const RidDescription& rid_description) const;
 
   // Deserialization for the RidDescription according to
   // https://tools.ietf.org/html/draft-ietf-mmusic-rid-15#section-10
-  RTCErrorOr<cricket::RidDescription> DeserializeRidDescription(
+  RTCErrorOr<RidDescription> DeserializeRidDescription(
       const MediaContentDescription& media_desc,
       absl::string_view string) const;
 };

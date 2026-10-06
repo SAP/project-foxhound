@@ -116,7 +116,7 @@ class PrintHelper {
   }
 
   async startPrint(condition = {}) {
-    this.sourceBrowser.ownerGlobal.document
+    this.sourceBrowser.documentGlobal.document
       .getElementById("cmd_print")
       .doCommand();
     return this.waitForDialog(condition);
@@ -149,7 +149,7 @@ class PrintHelper {
       );
     }).then(([doc]) => {
       doc.addEventListener("DOMContentLoaded", () => {
-        initFn(doc.ownerGlobal);
+        initFn(doc.documentGlobal);
       });
     });
   }
@@ -258,6 +258,7 @@ class PrintHelper {
       printerInfoPromise = Promise.resolve(),
       paperSizeUnit = Ci.nsIPrintSettings.kPaperSizeInches,
       paperId,
+      sortAfterLocal = false,
     } = opts;
     let PSSVC = Cc["@mozilla.org/gfx/printsettings-service;1"].getService(
       Ci.nsIPrintSettingsService
@@ -297,6 +298,7 @@ class PrintHelper {
 
     let printer = {
       name,
+      sortAfterLocal,
       supportsColor: Promise.resolve(true),
       supportsMonochrome: Promise.resolve(true),
       printerInfo: printerInfoPromise.then(() => ({
@@ -317,7 +319,7 @@ class PrintHelper {
   }
 
   get _tabDialogBox() {
-    return this.sourceBrowser.ownerGlobal.gBrowser.getTabDialogBox(
+    return this.sourceBrowser.documentGlobal.gBrowser.getTabDialogBox(
       this.sourceBrowser
     );
   }
@@ -523,7 +525,7 @@ class PrintHelper {
   mockFilePickerCancel() {
     if (!pickerMocked) {
       pickerMocked = true;
-      MockFilePicker.init(window.browsingContext);
+      MockFilePicker.init();
       registerCleanupFunction(() => MockFilePicker.cleanup());
     }
     MockFilePicker.returnValue = MockFilePicker.returnCancel;
@@ -532,7 +534,7 @@ class PrintHelper {
   mockFilePicker(filename) {
     if (!pickerMocked) {
       pickerMocked = true;
-      MockFilePicker.init(window.browsingContext);
+      MockFilePicker.init();
       registerCleanupFunction(() => MockFilePicker.cleanup());
     }
     MockFilePicker.returnValue = MockFilePicker.returnOK;

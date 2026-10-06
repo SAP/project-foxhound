@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -365,7 +364,7 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       break;
 
     case IntID::PrimaryPointerCapabilities:
-      aResult = java::GeckoAppShell::GetAllPointerCapabilities();
+      aResult = java::GeckoSystemStateListener::GetAllPointerCapabilities();
 
       // We cannot assume what is primary device, so we use Blink's way for web
       // compatibility (https://crbug.com/136119#c6). If having coarse
@@ -376,7 +375,7 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       break;
 
     case IntID::AllPointerCapabilities:
-      aResult = java::GeckoAppShell::GetAllPointerCapabilities();
+      aResult = java::GeckoSystemStateListener::GetAllPointerCapabilities();
       break;
 
     case IntID::SystemUsesDarkTheme: {
@@ -397,7 +396,7 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       break;
 
     case IntID::PointingDeviceKinds:
-      aResult = java::GeckoAppShell::GetPointingDeviceKinds();
+      aResult = java::GeckoSystemStateListener::GetPointingDeviceKinds();
       break;
 
     default:

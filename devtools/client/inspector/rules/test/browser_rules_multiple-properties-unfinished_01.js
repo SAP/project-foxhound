@@ -16,7 +16,7 @@ add_task(async function () {
 });
 
 async function testCreateNewMultiUnfinished(inspector, view) {
-  const ruleEditor = getRuleViewRuleEditor(view, 0);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 0);
   const onMutation = inspector.once("markupmutation");
   let onRuleViewChanged = view.once("ruleview-changed");
   await createNewRuleViewProperty(

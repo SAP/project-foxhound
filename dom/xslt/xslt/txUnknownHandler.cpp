@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +6,6 @@
 
 #include <utility>
 
-#include "mozilla/UniquePtrExtensions.h"
 #include "nsGkAtoms.h"
 #include "txExecutionState.h"
 #include "txStringUtils.h"
@@ -157,7 +155,7 @@ nsresult txUnknownHandler::createHandlerAndFlush(bool aHTMLRoot,
 
   UniquePtr<txAXMLEventHandler> handler;
   nsresult rv = mEs->mOutputHandlerFactory->createHandlerWith(
-      &format, aName, aNsID, getter_Transfers(handler));
+      &format, aName, aNsID, mozilla::getter_Transfers(handler));
   NS_ENSURE_SUCCESS(rv, rv);
 
   mEs->mOutputHandler = handler.get();

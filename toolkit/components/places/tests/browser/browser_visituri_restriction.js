@@ -27,7 +27,7 @@ add_setup(async function () {
         4,
       ],
       // To enable UserActivation by EventUtils.synthesizeMouseAtCenter() in
-      // ContentTask.spawn() in synthesizeVisitByUser().
+      // SpecialPowers.spawn() in synthesizeVisitByUser().
       ["test.events.async.enabled", true],
     ],
   });

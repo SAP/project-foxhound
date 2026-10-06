@@ -1,0 +1,65 @@
+{
+  "label": "FastClick breakage",
+  "bugs": {
+    "1901449": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://teikiyoyaku.tokyu.co.jp/*"]
+    },
+    "1913099": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://whooshmotorsports.com/*"]
+    },
+    "1944007": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://*.discountcoffee.co.uk/*"]
+    },
+    "1944008": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://*.franmar.com/*"]
+    },
+    "1944019": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://*.themusiclab.org/*"]
+    },
+    "1944020": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://bathpublishing.com/*"]
+    },
+    "1944024": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://dylantalkstone.com/*"]
+    },
+    "1916407": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://give.umrelief.org/give/*"]
+    },
+    "1944026": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://renewd.com.au/*"]
+    },
+    "1968640": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://shop.ticket-center-hohenschwangau.de/*"]
+    },
+    "1982550": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://www.passline.com/*"]
+    },
+    "1982801": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://www.linguee.de/*"]
+    },
+    "1986875": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://www.electrosport.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "content_scripts": {
+        "js": ["disable_FastClick.js"]
+      }
+    }
+  ]
+}

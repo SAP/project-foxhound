@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode:nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sts=2 sw=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,6 +15,7 @@
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIInputStream.h"
+#include "nsIJARChannel.h"
 #include "nsIStreamConverterService.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsIHttpChannel.h"
@@ -40,11 +39,10 @@
 #include "nsMimeTypes.h"
 
 #include "nsDocLoader.h"
-#include "mozilla/Attributes.h"
+#include "mozilla/dom/LoadURIOptionsBinding.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Result.h"
-#include "mozilla/Unused.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_general.h"
@@ -86,7 +84,7 @@ nsDocumentOpenInfo::nsDocumentOpenInfo(uint32_t aFlags,
           mozilla::StaticPrefs::general_document_open_conversion_depth_limit()),
       mAllowListenerConversions(aAllowListenerConversions) {}
 
-nsDocumentOpenInfo::~nsDocumentOpenInfo() {}
+nsDocumentOpenInfo::~nsDocumentOpenInfo() = default;
 
 nsresult nsDocumentOpenInfo::Prepare() {
   LOG(("[0x%p] nsDocumentOpenInfo::Prepare", this));
@@ -190,8 +188,10 @@ NS_IMETHODIMP nsDocumentOpenInfo::OnStartRequest(nsIRequest* request) {
 
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (m_targetStreamListener)
-    rv = m_targetStreamListener->OnStartRequest(request);
+  if (nsCOMPtr<nsIStreamListener> targetStreamListener =
+          m_targetStreamListener) {
+    rv = targetStreamListener->OnStartRequest(request);
+  }
 
   LOG(("  OnStartRequest returning: 0x%08" PRIX32, static_cast<uint32_t>(rv)));
 
@@ -224,9 +224,11 @@ nsDocumentOpenInfo::OnDataAvailable(nsIRequest* request, nsIInputStream* inStr,
   mReceivedData = true;
   nsresult rv = NS_OK;
 
-  if (m_targetStreamListener)
-    rv = m_targetStreamListener->OnDataAvailable(request, inStr, sourceOffset,
-                                                 count);
+  if (nsCOMPtr<nsIStreamListener> targetStreamListener =
+          m_targetStreamListener) {
+    rv = targetStreamListener->OnDataAvailable(request, inStr, sourceOffset,
+                                               count);
+  }
   return rv;
 }
 
@@ -567,7 +569,10 @@ nsresult nsDocumentOpenInfo::DispatchContent(nsIRequest* request) {
     }
   }
 
-  if (mFlags & nsIURILoader::DONT_RETARGET) {
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+  if (mFlags & nsIURILoader::DONT_RETARGET ||
+      loadInfo->GetForceMediaDocument() !=
+          mozilla::dom::ForceMediaDocument::None) {
     LOG(
         ("  External handling forced or (listener not interested and no "
          "stream converter exists), and retargeting disallowed -> aborting"));
@@ -692,6 +697,15 @@ nsresult nsDocumentOpenInfo::TryStreamConversion(nsIChannel* aChannel) {
     srcContentType.AssignLiteral(UNKNOWN_CONTENT_TYPE);
   }
 
+  // If this is an unknown content type loaded from a JAR file
+  // don't attempt to sniff it.
+  if (srcContentType.EqualsLiteral(UNKNOWN_CONTENT_TYPE)) {
+    if (nsCOMPtr<nsIJARChannel> jar = do_QueryInterface(aChannel)) {
+      m_targetStreamListener = nullptr;
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+  }
+
   nsresult rv =
       ConvertData(aChannel, m_contentListener, srcContentType, anyType);
   if (NS_FAILED(rv)) {
@@ -807,9 +821,9 @@ bool nsDocumentOpenInfo::TryDefaultContentListener(nsIChannel* aChannel) {
 // Implementation of nsURILoader
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
-nsURILoader::nsURILoader() {}
+nsURILoader::nsURILoader() = default;
 
-nsURILoader::~nsURILoader() {}
+nsURILoader::~nsURILoader() = default;
 
 NS_IMPL_ADDREF(nsURILoader)
 NS_IMPL_RELEASE(nsURILoader)
@@ -895,8 +909,8 @@ nsresult nsURILoader::OpenChannel(nsIChannel* channel, uint32_t aFlags,
 
   // we need to create a DocumentOpenInfo object which will go ahead and open
   // the url and discover the content type....
-  RefPtr<nsDocumentOpenInfo> loader =
-      new nsDocumentOpenInfo(aWindowContext, aFlags, this);
+  RefPtr loader =
+      mozilla::MakeRefPtr<nsDocumentOpenInfo>(aWindowContext, aFlags, this);
 
   // Set the correct loadgroup on the channel
   nsCOMPtr<nsILoadGroup> loadGroup(do_GetInterface(aWindowContext));
@@ -910,7 +924,7 @@ nsresult nsURILoader::OpenChannel(nsIChannel* channel, uint32_t aFlags,
       nsCOMPtr<nsISupports> cookie;
       listener->GetLoadCookie(getter_AddRefs(cookie));
       if (!cookie) {
-        RefPtr<nsDocLoader> newDocLoader = new nsDocLoader();
+        RefPtr newDocLoader = mozilla::MakeRefPtr<nsDocLoader>();
         nsresult rv = newDocLoader->Init();
         if (NS_FAILED(rv)) return rv;
         rv = nsDocLoader::AddDocLoaderAsChildOfRoot(newDocLoader);

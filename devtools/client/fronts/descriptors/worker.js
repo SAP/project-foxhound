@@ -145,5 +145,4 @@ class WorkerDescriptorFront extends DescriptorMixin(
   }
 }
 
-exports.WorkerDescriptorFront = WorkerDescriptorFront;
-registerFront(exports.WorkerDescriptorFront);
+registerFront(WorkerDescriptorFront);

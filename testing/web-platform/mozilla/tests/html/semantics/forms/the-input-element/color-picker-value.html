@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script src="/resources/testdriver.js"></script>
+<script src="/resources/testdriver-vendor.js"></script>
+<input type="color" id="input" value="#ffffff">
+<input type="color" id="inputDisplayP3" colorspace=display-p3 value="color(display-p3 0.5 0 0)">
+<script>
+promise_setup(async () => {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["dom.forms.html_color_picker.enabled", true],
+      // The pref sets `color(srgb 0.1 0.2 0.3)` on showPicker
+      ["dom.forms.html_color_picker.testing", true],
+    ]
+  });
+});
+
+promise_test(async () => {
+  const pickerColor = SpecialPowers.wrap(input).getColor();
+  assert_equals(pickerColor.component1, 1, "R should be 1.0");
+  assert_equals(pickerColor.component2, 1, "G should be 1.0");
+  assert_equals(pickerColor.component3, 1, "B should be 1.0");
+  assert_equals(pickerColor.alpha, NaN, "alpha should be NaN");
+
+  await test_driver.bless();
+  input.showPicker();
+
+  const { promise, resolve } = Promise.withResolvers();
+  input.addEventListener("change", resolve, { once: true });
+  await promise;
+
+  assert_equals(input.value, "#1a334d", "HTML compatibility serialization should happen");
+}, "Input picker value without alpha nor colorspace attributes");
+
+promise_test(async () => {
+  const pickerColor = SpecialPowers.wrap(inputDisplayP3).getColor();
+  console.log(pickerColor);
+  assert_approx_equals(pickerColor.component1, 0.549, 1e-3, "R should be 0.549");
+  assert_equals(pickerColor.component2, 0, "G should be 0.0");
+  assert_equals(pickerColor.component3, 0, "B should be 0.0");
+  assert_equals(pickerColor.alpha, NaN, "alpha should be NaN");
+
+  await test_driver.bless();
+  inputDisplayP3.showPicker();
+
+  const { promise, resolve } = Promise.withResolvers();
+  inputDisplayP3.addEventListener("change", resolve, { once: true });
+  await promise;
+
+  assert_equals(
+    inputDisplayP3.value,
+    "color(display-p3 0.123797 0.197524 0.291819)",
+    "The result should be converted to display-p3",
+  );
+}, "Input picker value with display-p3 colorspace");
+</script>

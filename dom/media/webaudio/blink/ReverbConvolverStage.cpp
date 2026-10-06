@@ -31,7 +31,6 @@
 #include "ReverbAccumulationBuffer.h"
 #include "ReverbConvolver.h"
 #include "ReverbInputBuffer.h"
-#include "mozilla/PodOperations.h"
 
 using namespace mozilla;
 

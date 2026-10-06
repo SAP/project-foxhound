@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,7 @@
 #include "mozilla/dom/SVGStyleElement.h"
 
 #include "mozilla/RefPtr.h"
+#include "mozilla/StyleSheet.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/FetchPriority.h"
@@ -47,7 +46,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 // Implementation
 
 SVGStyleElement::SVGStyleElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : SVGStyleElementBase(std::move(aNodeInfo)) {
   AddMutationObserver(this);
   SetEnabledCallbacks(kCharacterDataChanged | kContentAppended |
@@ -73,7 +72,7 @@ void SVGStyleElement::UnbindFromTree(UnbindContext& aContext) {
   nsCOMPtr<Document> oldDoc = GetUncomposedDoc();
   ShadowRoot* oldShadow = GetContainingShadow();
   SVGStyleElementBase::UnbindFromTree(aContext);
-  Unused << UpdateStyleSheetInternal(oldDoc, oldShadow);
+  (void)UpdateStyleSheetInternal(oldDoc, oldShadow);
 }
 
 void SVGStyleElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
@@ -84,7 +83,7 @@ void SVGStyleElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
   if (aNameSpaceID == kNameSpaceID_None) {
     if (aName == nsGkAtoms::title || aName == nsGkAtoms::media ||
         aName == nsGkAtoms::type) {
-      Unused << UpdateStyleSheetInternal(nullptr, nullptr, ForceUpdate::Yes);
+      (void)UpdateStyleSheetInternal(nullptr, nullptr, ForceUpdate::Yes);
     }
   }
 
@@ -140,7 +139,7 @@ void SVGStyleElement::ContentWillBeRemoved(nsIContent* aChild,
 
 void SVGStyleElement::ContentChanged(nsIContent* aContent) {
   if (nsContentUtils::IsInSameAnonymousTree(this, aContent)) {
-    Unused << UpdateStyleSheetInternal(nullptr, nullptr);
+    (void)UpdateStyleSheetInternal(nullptr, nullptr);
   }
 }
 

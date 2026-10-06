@@ -29,7 +29,7 @@ add_task(async function test_runtime_getFrameId_invalid() {
       for (let value of invalid) {
         browser.test.assertThrows(
           () => browser.runtime.getFrameId(value),
-          /Invalid argument/,
+          "Invalid argument: target is not a valid window or frame element.",
           "Correct exception thrown."
         );
       }

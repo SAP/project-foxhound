@@ -47,7 +47,7 @@ function allActiveFilters() {
 
 function audit(state = getInitialState(), action) {
   switch (action.type) {
-    case FILTER_TOGGLE:
+    case FILTER_TOGGLE: {
       const { filter } = action;
       let { filters } = state;
       const isToggledToActive = !filters[filter];
@@ -78,26 +78,29 @@ function audit(state = getInitialState(), action) {
         ...state,
         filters,
       };
-    case AUDITING:
+    }
+    case AUDITING: {
       const { auditing } = action;
 
       return {
         ...state,
         auditing,
       };
+    }
     case AUDIT:
       return {
         ...state,
         auditing: getInitialState().auditing,
         progress: null,
       };
-    case AUDIT_PROGRESS:
+    case AUDIT_PROGRESS: {
       const { progress } = action;
 
       return {
         ...state,
         progress,
       };
+    }
     case SELECT:
     case RESET:
       return getInitialState();

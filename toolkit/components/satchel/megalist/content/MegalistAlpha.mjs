@@ -17,11 +17,14 @@ ChromeUtils.defineESModuleGetters(lazy, {
 import "chrome://global/content/elements/moz-button.mjs";
 
 // eslint-disable-next-line import/no-unassigned-import
-import "chrome://global/content/megalist/components/password-card/password-card.mjs";
+import { PasswordCard } from "chrome://global/content/megalist/components/password-card/password-card.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://global/content/megalist/components/login-form/login-form.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://global/content/megalist/components/notification-message-bar/notification-message-bar.mjs";
+// eslint-disable-next-line import/no-unassigned-import
+import "chrome://global/content/megalist/components/virtual-passwords-list/virtual-passwords-list.mjs";
+
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/sidebar/sidebar-panel-header.mjs";
 
@@ -52,6 +55,10 @@ export class MegalistAlpha extends MozLitElement {
     this.viewMode = VIEW_MODES.LIST;
     this.selectedRecord = null;
     this.sidebarHiding = false;
+    this.shouldShowPrimaryPasswordAuth = false;
+
+    // This is used to force re-rendering the virtual list after receiving snapshot
+    this.listVersion = 0;
 
     window.addEventListener("MessageFromViewModel", ev =>
       this.#onMessageFromViewModel(ev)
@@ -74,6 +81,7 @@ export class MegalistAlpha extends MozLitElement {
       notification: { type: Object },
       displayMode: { type: String },
       viewMode: { type: String },
+      shouldShowPrimaryPasswordAuth: { type: Boolean },
     };
   }
 
@@ -88,7 +96,9 @@ export class MegalistAlpha extends MozLitElement {
           const { BrowserWindowTracker } = ChromeUtils.importESModule(
             "resource:///modules/BrowserWindowTracker.sys.mjs"
           );
-          const window = BrowserWindowTracker.getTopWindow();
+          const window = BrowserWindowTracker.getTopWindow({
+            allowFromInactiveWorkspace: true,
+          });
           window.SidebarController.hide();
         }
       }
@@ -257,6 +267,8 @@ export class MegalistAlpha extends MozLitElement {
     const field = snapshot.field;
     this.records[recordIndex][field] = snapshot;
     this.requestUpdate();
+
+    this.listVersion += 1;
   }
 
   receiveSetNotification(notification) {
@@ -284,6 +296,10 @@ export class MegalistAlpha extends MozLitElement {
       this.reauthResolver = resolve;
       commandFn();
     });
+  }
+
+  receivePrimaryPasswordAuthenticated(authenticated) {
+    this.shouldShowPrimaryPasswordAuth = !authenticated;
   }
 
   #createLoginRecords(snapshots) {
@@ -329,18 +345,56 @@ export class MegalistAlpha extends MozLitElement {
     }
   }
 
-  // TODO: This should be passed to virtualized list with an explicit height.
-  renderListItem({ origin: displayOrigin, username, password }, index) {
+  #handleNoLoginsFocusInOrOut(isFocusIn) {
+    const group = this.shadowRoot.querySelector(".no-logins-card-buttons");
+    const btns = group.querySelectorAll("moz-button");
+
+    btns.forEach(btn => {
+      btn.setAttribute("tabindex", isFocusIn ? "-1" : "0");
+    });
+  }
+
+  #handleNoLoginsKeydown(e) {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") {
+      return;
+    }
+
+    const browserBtn = this.shadowRoot.querySelector(
+      ".empty-state-import-from-browser"
+    );
+    const fileBtn = this.shadowRoot.querySelector(
+      ".empty-state-import-from-file"
+    );
+    const addBtn = this.shadowRoot.querySelector(".empty-state-add-password");
+    const focusables = [browserBtn, fileBtn, addBtn];
+    const currentIndex = focusables.findIndex(el =>
+      el.shadowRoot?.contains(e.composedTarget)
+    );
+
+    e.preventDefault();
+
+    const direction = e.key === "ArrowUp" ? -1 : 1;
+    const newIndex = currentIndex + direction;
+
+    if (newIndex >= 0 && newIndex < focusables.length) {
+      focusables[newIndex]?.focus();
+    }
+  }
+
+  heightCalculator = items =>
+    items.reduce((sum, item) => sum + PasswordCard.getItemHeight(item), 0);
+
+  itemTemplate = ({ origin: displayOrigin, username, password }, index) => {
     return html` <password-card
-      @keypress=${e => {
+      @keydown=${e => {
         if (e.shiftKey && e.key === "Tab") {
           e.preventDefault();
           this.shadowRoot.querySelector(".passwords-list").focus();
         } else if (e.key === "Tab") {
           e.preventDefault();
-          const webContent =
-            lazy.BrowserWindowTracker.getTopWindow().gBrowser.selectedTab
-              .linkedBrowser;
+          const webContent = lazy.BrowserWindowTracker.getTopWindow({
+            allowFromInactiveWorkspace: true,
+          }).gBrowser.selectedTab.linkedBrowser;
           webContent.focus();
         }
       }}
@@ -363,30 +417,60 @@ export class MegalistAlpha extends MozLitElement {
       }}
     >
     </password-card>`;
-  }
+  };
 
-  // TODO: Temporary. Should be rendered by the virtualized list.
   renderList() {
+    const scroller = this.shadowRoot.querySelector(
+      ".sidebar-panel-scrollable-content"
+    );
+
     return this.records.length
       ? html`
-          <div
+          <virtual-passwords-list
             class="passwords-list"
             role="listbox"
             tabindex="0"
             data-l10n-id="contextual-manager-passwords-list-label"
-            @keypress=${e => {
-              if (e.key === "ArrowDown") {
+            @keydown=${e => {
+              // Handle up/down arrow key navigation between password cards.
+              if (e.key !== "ArrowUp" && e.key !== "ArrowDown") {
+                return;
+              }
+
+              const passwordsList = e.currentTarget;
+
+              let active = this.shadowRoot.activeElement;
+              let cardToFocus;
+              if (active === passwordsList) {
+                if (e.key === "ArrowDown") {
+                  cardToFocus = passwordsList.querySelector("password-card");
+                }
+              } else {
+                const cards = Array.from(
+                  passwordsList.querySelectorAll("password-card")
+                );
+                const currentIndex = cards.findIndex(card => card === active);
+                let nextIndex =
+                  e.key === "ArrowUp" ? currentIndex - 1 : currentIndex + 1;
+                if (nextIndex < 0 || nextIndex >= cards.length) {
+                  return;
+                }
+                cardToFocus = cards[nextIndex];
+              }
+
+              if (cardToFocus) {
                 e.preventDefault();
-                this.shadowRoot
-                  .querySelector("password-card")
-                  .originLine.focus();
+                cardToFocus.focusByKeyEvent(e);
               }
             }}
+            .items=${this.records}
+            .scroller=${scroller}
+            .version=${this.listVersion}
+            .itemHeightEstimate=${PasswordCard.DEFAULT_PASSWORD_CARD_HEIGHT}
+            .heightCalculator=${this.heightCalculator}
+            .template=${this.itemTemplate}
           >
-            ${this.records.map((record, index) =>
-              this.renderListItem(record, index)
-            )}
-          </div>
+          </virtual-passwords-list>
         `
       : this.renderEmptyState();
   }
@@ -399,12 +483,12 @@ export class MegalistAlpha extends MozLitElement {
         notification: origin.breachedNotification,
       },
       {
-        displayAlert: !username.value.length,
-        notification: username.noUsernameNotification,
-      },
-      {
         displayAlert: password.vulnerable,
         notification: password.vulnerableNotification,
+      },
+      {
+        displayAlert: !username.value.length,
+        notification: username.noUsernameNotification,
       },
     ];
 
@@ -488,7 +572,11 @@ export class MegalistAlpha extends MozLitElement {
   renderNoLoginsCard() {
     return html`
       <moz-card class="empty-state-card">
-        <div class="no-logins-card-content">
+        <div
+          role="region"
+          class="no-logins-card-content"
+          aria-labelledby="no-logins-card-heading"
+        >
           <img
             src="chrome://global/content/megalist/icons/cpm-fox-illustration.svg"
             role="presentation"
@@ -496,7 +584,7 @@ export class MegalistAlpha extends MozLitElement {
           />
           <strong
             class="no-logins-card-heading"
-            data-l10n-id="contextual-manager-passwords-no-passwords-header"
+            data-l10n-id="contextual-manager-passwords-no-passwords-header-2"
           ></strong>
           <p
             data-l10n-id="contextual-manager-passwords-no-passwords-message"
@@ -504,7 +592,12 @@ export class MegalistAlpha extends MozLitElement {
           <p
             data-l10n-id="contextual-manager-passwords-no-passwords-get-started-message"
           ></p>
-          <div class="no-logins-card-buttons">
+          <div
+            class="no-logins-card-buttons"
+            @focusin=${() => this.#handleNoLoginsFocusInOrOut(true)}
+            @focusout=${() => this.#handleNoLoginsFocusInOrOut(false)}
+            @keydown=${this.#handleNoLoginsKeydown}
+          >
             <moz-button
               class="empty-state-import-from-browser"
               data-l10n-id="contextual-manager-passwords-command-import-from-browser"
@@ -541,7 +634,7 @@ export class MegalistAlpha extends MozLitElement {
       <div
         id="no-results-message"
         class="empty-search-results"
-        data-l10n-id="contextual-manager-passwords-no-passwords-found-message"
+        data-l10n-id="contextual-manager-passwords-no-passwords-found-message-2"
       ></div>
     </moz-card>`;
   }
@@ -627,7 +720,7 @@ export class MegalistAlpha extends MozLitElement {
           type="radio"
           id="allLogins"
           name="logins"
-          value=${DISPLAY_MODES.ALL}
+          .value=${DISPLAY_MODES.ALL}
         />
         <label
           for="allLogins"
@@ -641,7 +734,7 @@ export class MegalistAlpha extends MozLitElement {
           type="radio"
           id="alerts"
           name="logins"
-          value=${DISPLAY_MODES.ALERTS}
+          .value=${DISPLAY_MODES.ALERTS}
         />
         <label
           for="alerts"
@@ -713,7 +806,7 @@ export class MegalistAlpha extends MozLitElement {
         <hr />
         <panel-item
           action="open-preferences"
-          data-l10n-id="contextual-manager-passwords-command-settings"
+          data-l10n-id="contextual-manager-passwords-command-options"
           @click=${() => {
             const command = this.header.commands.find(
               command => command.id === "Settings"
@@ -747,15 +840,40 @@ export class MegalistAlpha extends MozLitElement {
   }
 
   async #scrollPasswordCardIntoView(guid) {
+    this.viewMode = VIEW_MODES.LIST;
+
     const matchingRecordIndex = this.records.findIndex(
       record => record.origin.guid === guid
     );
-    this.viewMode = VIEW_MODES.LIST;
-    await this.getUpdateComplete();
-    const passwordCard =
-      this.shadowRoot.querySelectorAll("password-card")[matchingRecordIndex];
-    passwordCard.scrollIntoView({ block: "center" });
-    passwordCard.originLine.focus();
+    if (matchingRecordIndex === -1) {
+      return;
+    }
+
+    const scroll = async () => {
+      // Virtual list is ready at this point, but the password card might not be render
+      // because it is not in the viewport. So we need to update the activeIndex so that
+      // the password card is created.
+      const virtualList = this.shadowRoot.querySelector(
+        "virtual-passwords-list"
+      );
+      virtualList.activeIndex = matchingRecordIndex;
+      await virtualList.updateComplete;
+
+      const passwordCard = virtualList.getItem(matchingRecordIndex);
+      await passwordCard.updateComplete;
+      passwordCard.scrollIntoView({ block: "center" });
+      passwordCard.originLine.focus();
+    };
+
+    const virtualList = this.shadowRoot.querySelector("virtual-passwords-list");
+    let sublist = virtualList?.getSubListForItem(matchingRecordIndex);
+    if (!sublist) {
+      this.addEventListener("virtual-list-ready", () => scroll(), {
+        once: true,
+      });
+    } else {
+      scroll();
+    }
   }
 
   renderNotification() {
@@ -778,24 +896,82 @@ export class MegalistAlpha extends MozLitElement {
     `;
   }
 
+  renderReauthPrimaryPassword() {
+    return html`
+      <moz-card class="empty-state-card">
+        <div class="reauth-card-content">
+          <img
+            src="chrome://global/content/megalist/icons/cpm-fox-illustration.svg"
+            role="presentation"
+            alt=""
+          />
+          <strong
+            class="no-logins-card-heading"
+            data-l10n-id="contextual-manager-primary-password-reauth-header"
+          ></strong>
+          <a
+            is="moz-support-link"
+            data-l10n-id="contextual-manager-primary-password-learn-more-link"
+            support-page="primary-password-stored-logins"
+            @click=${e => {
+              e.preventDefault();
+              this.#sendCommand("OpenLink", {
+                value:
+                  "https://support.mozilla.org/en-US/kb/use-primary-password-protect-stored-logins",
+              });
+            }}
+          >
+          </a>
+          <div class="no-logins-card-buttons">
+            <moz-button
+              class="empty-state-import-from-browser"
+              data-l10n-id="contextual-manager-primary-password-reauth-button"
+              type="primary"
+              @click=${() => {
+                this.#messageToViewModel("ReauthPrimaryPassword");
+              }}
+            ></moz-button>
+          </div>
+        </div>
+      </moz-card>
+    `;
+  }
+
+  renderAuthenticatedView() {
+    return html`${this.renderNotification()} ${this.renderContent()}`;
+  }
+
   render() {
     const showToolbar =
-      this.viewMode === VIEW_MODES.ALERTS ||
-      (this.viewMode === VIEW_MODES.LIST && this.header?.value?.total > 0);
+      this.viewMode === VIEW_MODES.LIST && this.header?.value?.total > 0;
 
     return html`
       <link
         rel="stylesheet"
         href="chrome://global/content/megalist/megalist.css"
       />
-      <div class="container">
+      <link
+        rel="stylesheet"
+        href="chrome://browser/content/sidebar/sidebar.css"
+      />
+      <div
+        class="container sidebar-panel"
+        aria-labelledby="sidebar-menu-cpm-header"
+      >
         <sidebar-panel-header
           data-l10n-id="sidebar-menu-cpm-header"
           data-l10n-attrs="heading"
           view="viewCPMSidebar"
-        ></sidebar-panel-header>
-        ${when(showToolbar, () => html` ${this.renderToolbar()} `)}
-        ${this.renderNotification()} ${this.renderContent()}
+        >
+          ${when(!this.shouldShowPrimaryPasswordAuth && showToolbar, () =>
+            this.renderToolbar()
+          )}
+        </sidebar-panel-header>
+        <div class="sidebar-panel-scrollable-content">
+          ${!this.shouldShowPrimaryPasswordAuth
+            ? this.renderAuthenticatedView()
+            : this.renderReauthPrimaryPassword()}
+        </div>
       </div>
     `;
   }

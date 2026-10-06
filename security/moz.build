@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -8,6 +6,7 @@ with Files("**"):
     BUG_COMPONENT = ("Core", "Security: PSM")
 
 DIRS += [
+    "/security/lockstore",
     "/security/mls",
 ]
 
@@ -23,6 +22,10 @@ with Files("nss.symbols"):
 if CONFIG["MOZ_SYSTEM_NSS"]:
     Library("nss")
     OS_LIBS += CONFIG["NSS_LIBS"]
+    if CONFIG["OS_TARGET"] == "Linux":
+        OS_LIBS += ["-lfreeblpriv3"]
+    else:
+        OS_LIBS += ["-lfreebl3"]
 
 include("/build/gyp_base.mozbuild")
 if CONFIG["MOZ_FOLD_LIBS"]:
@@ -169,20 +172,15 @@ if CONFIG["OS_TARGET"] == "WINNT":
         "-Wno-error=unused-function",  # bug 1856445
     ]
     if CONFIG["TARGET_CPU"] == "x86":
-        # This should really be the default.
-        sandbox_vars["ASFLAGS"] = ["-safeseh"]
+        # Only add -safeseh for MSVC builds (clang-cl), not MinGW builds.
+        # MinGW uses GNU as which doesn't recognize the -safeseh flag.
+        if CONFIG["CC_TYPE"] == "clang-cl":
+            sandbox_vars["ASFLAGS"] = ["-safeseh"]
 
     DELAYLOAD_DLLS += [
         "winmm.dll",
     ]
 
-if CONFIG["OS_TARGET"] == "Android":
-    sandbox_vars["CFLAGS"] = [
-        "-include",
-        TOPSRCDIR + "/security/manager/android_stub.h",
-    ]
-    if CONFIG["ANDROID_VERSION"]:
-        sandbox_vars["CFLAGS"] += ["-DANDROID_VERSION=" + CONFIG["ANDROID_VERSION"]]
 if CONFIG["MOZ_SYSTEM_NSS"]:
     sandbox_vars["CXXFLAGS"] = CONFIG["NSS_CFLAGS"]
 GYP_DIRS["nss"].sandbox_vars = sandbox_vars

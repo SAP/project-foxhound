@@ -1,4 +1,5 @@
 UNIFIED_SOURCES += [
+    "test_mathml_prefs.cpp",
     "test_reduceprecision.cpp",
     "test_usercharping.cpp",
 ]

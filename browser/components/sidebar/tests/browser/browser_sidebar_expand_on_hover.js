@@ -247,3 +247,29 @@ add_task(async function test_expand_on_hover_pinned_tabs() {
   await SidebarController.toggleExpandOnHover(false);
   await SidebarController.waitUntilStable();
 });
+
+add_task(
+  async function test_expand_on_hover_persists_through_vertical_tabs_toggle() {
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        [VERTICAL_TABS_PREF, true],
+        ["sidebar.visibility", "expand-on-hover"],
+      ],
+    });
+    is(
+      SidebarController.sidebarRevampVisibility,
+      "expand-on-hover",
+      "Expand on hover is enabled before toggling vertical tabs"
+    );
+    await SpecialPowers.pushPrefEnv({ set: [[VERTICAL_TABS_PREF, false]] });
+    await SpecialPowers.pushPrefEnv({ set: [[VERTICAL_TABS_PREF, true]] });
+    is(
+      SidebarController.sidebarRevampVisibility,
+      "expand-on-hover",
+      "Expand on hover is restored after re-enabling vertical tabs"
+    );
+    await SpecialPowers.popPrefEnv();
+    await SpecialPowers.popPrefEnv();
+    await SpecialPowers.popPrefEnv();
+  }
+);

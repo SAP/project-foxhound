@@ -11,12 +11,15 @@
 #include "video/video_stream_buffer_controller.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <utility>
 
-#include "absl/base/attributes.h"
+#include "absl/container/inlined_vector.h"
 #include "absl/functional/bind_front.h"
+#include "api/field_trials_view.h"
 #include "api/sequence_checker.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/units/data_size.h"
@@ -26,15 +29,16 @@
 #include "api/video/frame_buffer.h"
 #include "api/video/video_content_type.h"
 #include "modules/video_coding/frame_helpers.h"
+#include "modules/video_coding/include/video_coding_defines.h"
 #include "modules/video_coding/timing/inter_frame_delay_variation_calculator.h"
 #include "modules/video_coding/timing/jitter_estimator.h"
+#include "modules/video_coding/timing/timing.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/experiments/field_trial_parser.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/thread_annotations.h"
 #include "rtc_base/trace_event.h"
 #include "video/frame_decode_scheduler.h"
 #include "video/frame_decode_timing.h"
-#include "video/task_queue_frame_decode_scheduler.h"
 #include "video/video_receive_stream_timeout_tracker.h"
 
 namespace webrtc {
@@ -42,13 +46,13 @@ namespace webrtc {
 namespace {
 
 // Max number of frames the buffer will hold.
-static constexpr size_t kMaxFramesBuffered = 800;
+constexpr size_t kMaxFramesBuffered = 800;
 // Max number of decoded frame info that will be saved.
-static constexpr int kMaxFramesHistory = 1 << 13;
+constexpr int kMaxFramesHistory = 1 << 13;
 
 // Default value for the maximum decode queue size that is used when the
 // low-latency renderer is used.
-static constexpr size_t kZeroPlayoutDelayDefaultMaxDecodeQueueSize = 8;
+constexpr size_t kZeroPlayoutDelayDefaultMaxDecodeQueueSize = 8;
 
 struct FrameMetadata {
   explicit FrameMetadata(const EncodedFrame& frame)
@@ -162,8 +166,8 @@ std::optional<int64_t> VideoStreamBufferController::InsertFrame(
     if (!metadata.delayed_by_retransmission && metadata.receive_time &&
         (field_trials_.IsDisabled("WebRTC-IncomingTimestampOnMarkerBitOnly") ||
          metadata.is_last_spatial_layer)) {
-      timing_->IncomingTimestamp(metadata.rtp_timestamp,
-                                 *metadata.receive_time);
+      timing_->OnCompleteTemporalUnit(metadata.rtp_timestamp,
+                                      *metadata.receive_time);
     }
     if (complete_units < buffer_->GetTotalNumberOfContinuousTemporalUnits()) {
       TRACE_EVENT2("webrtc",
@@ -255,10 +259,7 @@ void VideoStreamBufferController::OnFrameReady(
                                        superframe_size);
     }
 
-    static constexpr float kRttMult = 0.9f;
-    static constexpr TimeDelta kRttMultAddCap = TimeDelta::Millis(200);
-    timing_->SetJitterDelay(
-        jitter_estimator_.GetJitterEstimate(kRttMult, kRttMultAddCap));
+    timing_->SetMinimumDelay(jitter_estimator_.GetEstimate());
     timing_->UpdateCurrentDelay(render_time, now);
   } else {
     jitter_estimator_.FrameNacked();
@@ -268,7 +269,6 @@ void VideoStreamBufferController::OnFrameReady(
   UpdateDroppedFrames();
   UpdateDiscardedPackets();
   UpdateFrameBufferTimings(min_receive_time, now);
-  UpdateTimingFrameInfo();
 
   std::unique_ptr<EncodedFrame> frame =
       CombineAndDeleteFrames(std::move(frames));
@@ -368,12 +368,6 @@ void VideoStreamBufferController::UpdateFrameBufferTimings(
       std::max(TimeDelta::Zero(), now - min_receive_time);
   stats_proxy_->OnDecodableFrame(jitter_buffer_delay, timings.target_delay,
                                  timings.minimum_delay);
-}
-
-void VideoStreamBufferController::UpdateTimingFrameInfo() {
-  std::optional<TimingFrameInfo> info = timing_->GetTimingFrameInfo();
-  if (info)
-    stats_proxy_->OnTimingFrameInfoUpdated(*info);
 }
 
 bool VideoStreamBufferController::IsTooManyFramesQueued() const

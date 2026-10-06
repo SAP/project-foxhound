@@ -157,12 +157,7 @@ add_task(async function () {
   ]);
 
   info("Display the popup again and try to expand a property");
-  const { element: popupEl, tokenEl } = await tryHovering(
-    dbg,
-    60,
-    7,
-    "previewPopup"
-  );
+  const { element: popupEl } = await tryHovering(dbg, 60, 7, "previewPopup");
   const nodes = popupEl.querySelectorAll(".preview-popup .node");
   const initialNodesLength = nodes.length;
   nodes[1].querySelector(".theme-twisty").click();
@@ -172,7 +167,18 @@ add_task(async function () {
       initialNodesLength
   );
   ok(true, `"hello" was expanded`);
-  await closePreviewForToken(dbg, tokenEl, "popup");
+
+  info("Check that the preview popup can be closed with Escape");
+  // sanity check
+  ok(!!findElement(dbg, "popup"), "The popup is open");
+  pressKey(dbg, "Escape");
+  info("Wait for the popup to be closed");
+  await waitFor(() => findElement(dbg, "popup") == null);
+  ok(true, "The popup was closed with Escape");
+  // wait for a bit so the split view would have time to be opened
+  await wait(500);
+  ok(!dbg.toolbox.splitConsole, "Split console did not open");
+
   await resume(dbg);
 });
 

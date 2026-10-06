@@ -37,7 +37,7 @@ add_task(async function () {
  *        The FontInspector document.
  * @param {Array[String]} originalURIs
  *        An array of URIs to compare with the current URIs.
- * @param {Boolean} assertIdentical
+ * @param {boolean} assertIdentical
  *        If true, this method asserts that the previous and current URIs are
  *        identical. If false, this method asserts that the previous and current
  *        URI's are different.

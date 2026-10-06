@@ -103,7 +103,7 @@ add_task(async function () {
 });
 
 function logInTab(tab, message) {
-  return ContentTask.spawn(tab.linkedBrowser, message, function (_message) {
+  return SpecialPowers.spawn(tab.linkedBrowser, [message], function (_message) {
     content.console.log(_message);
   });
 }

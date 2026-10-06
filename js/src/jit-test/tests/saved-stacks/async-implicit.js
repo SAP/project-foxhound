@@ -44,9 +44,13 @@ caller(bindAndExpect({ stack: fakeStack, cause: 'ano', explicit: false },
 caller(bindAndExpect({ stack: fakeStack, cause: 'hi', explicit: true },
                      "bindee, hi*fake2, fake1, (top level)"));
 
-enqueueJob(bindAndExpect({ stack: fakeStack, cause: 'mita', explicit: false },
-                         "bindee, mita*fake2, fake1, (top level)"));
-
-enqueueJob(bindAndExpect({ stack: fakeStack, cause: 'hana', explicit: true },
-                         "bindee, hana*fake2, fake1, (top level)"));
-
+Promise.resolve()
+  .then(function () {
+    bindAndExpect({ stack: fakeStack, cause: 'hana', explicit: true },
+                  "bindee, hana*fake2, fake1, (top level)");
+  });
+Promise.resolve()
+  .then(function () {
+    bindAndExpect({ stack: fakeStack, cause: 'hana', explicit: true },
+                  "bindee, hana*fake2, fake1, (top level)");
+  });

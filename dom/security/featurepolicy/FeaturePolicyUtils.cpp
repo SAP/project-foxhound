@@ -1,20 +1,18 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FeaturePolicyUtils.h"
-#include "nsIOService.h"
 
-#include "mozilla/ipc/IPDLParamTraits.h"
-#include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/dom/PermissionMessageUtils.h"
-#include "mozilla/dom/FeaturePolicyViolationReportBody.h"
-#include "mozilla/dom/ReportingUtils.h"
+#include "ipc/IPCMessageUtilsSpecializations.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/FeaturePolicyViolationReportBody.h"
+#include "mozilla/dom/PermissionMessageUtils.h"
+#include "mozilla/dom/ReportingUtils.h"
 #include "nsContentUtils.h"
+#include "nsIOService.h"
 #include "nsJSUtils.h"
 
 namespace mozilla {
@@ -33,6 +31,9 @@ static FeatureMap sSupportedFeatures[] = {
     {"camera", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"geolocation", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"microphone", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
+    {"digital-credentials-create",
+     FeaturePolicyUtils::FeaturePolicyValue::eSelf},
+    {"digital-credentials-get", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"display-capture", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"fullscreen", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"web-share", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
@@ -41,9 +42,14 @@ static FeatureMap sSupportedFeatures[] = {
      FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"publickey-credentials-get",
      FeaturePolicyUtils::FeaturePolicyValue::eSelf},
+    {"serial", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"speaker-selection", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"storage-access", FeaturePolicyUtils::FeaturePolicyValue::eAll},
     {"screen-wake-lock", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
+    {"loopback-network", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
+    {"local-network", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
+    {"aria-notify", FeaturePolicyUtils::FeaturePolicyValue::eAll},
+    {"picture-in-picture", FeaturePolicyUtils::FeaturePolicyValue::eAll},
 };
 
 /*
@@ -209,14 +215,9 @@ void FeaturePolicyUtils::ReportViolation(Document* aDocument,
     return;
   }
 
-  // Strip the URL of any possible username/password and make it ready to be
-  // presented in the UI.
-  nsCOMPtr<nsIURI> exposableURI = net::nsIOService::CreateExposableURI(uri);
-  nsAutoCString spec;
-  nsresult rv = exposableURI->GetSpec(spec);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return;
-  }
+  nsAutoCString url;
+  ReportingUtils::StripURL(uri, url);
+
   JSContext* cx = nsContentUtils::GetCurrentJSContext();
   if (NS_WARN_IF(!cx)) {
     return;
@@ -224,10 +225,11 @@ void FeaturePolicyUtils::ReportViolation(Document* aDocument,
 
   Nullable<int32_t> lineNumber;
   Nullable<int32_t> columnNumber;
-  auto loc = JSCallingLocation::Get();
-  if (loc) {
+  nsAutoCString sourceFile;
+  if (auto loc = JSCallingLocation::Get()) {
     lineNumber.SetValue(static_cast<int32_t>(loc.mLine));
     columnNumber.SetValue(static_cast<int32_t>(loc.mColumn));
+    ReportingUtils::StripLocationFileName(loc, sourceFile);
   }
 
   nsPIDOMWindowInner* window = aDocument->GetInnerWindow();
@@ -237,58 +239,36 @@ void FeaturePolicyUtils::ReportViolation(Document* aDocument,
 
   RefPtr<FeaturePolicyViolationReportBody> body =
       new FeaturePolicyViolationReportBody(window->AsGlobal(), aFeatureName,
-                                           loc.FileName(), lineNumber,
-                                           columnNumber, u"enforce"_ns);
+                                           sourceFile, lineNumber, columnNumber,
+                                           u"enforce"_ns);
 
   ReportingUtils::Report(window->AsGlobal(), nsGkAtoms::featurePolicyViolation,
-                         u"default"_ns, NS_ConvertUTF8toUTF16(spec), body);
+                         u"default"_ns, NS_ConvertUTF8toUTF16(url), body);
 }
 
 }  // namespace dom
-
-namespace ipc {
-
-void IPDLParamTraits<dom::FeaturePolicyInfo>::Write(
-    IPC::MessageWriter* aWriter, IProtocol* aActor,
-    const dom::FeaturePolicyInfo& aParam) {
-  WriteIPDLParam(aWriter, aActor, aParam.mInheritedDeniedFeatureNames);
-  WriteIPDLParam(aWriter, aActor, aParam.mAttributeEnabledFeatureNames);
-  WriteIPDLParam(aWriter, aActor, aParam.mDeclaredString);
-  WriteIPDLParam(aWriter, aActor, aParam.mDefaultOrigin);
-  WriteIPDLParam(aWriter, aActor, aParam.mSelfOrigin);
-  WriteIPDLParam(aWriter, aActor, aParam.mSrcOrigin);
-}
-
-bool IPDLParamTraits<dom::FeaturePolicyInfo>::Read(
-    IPC::MessageReader* aReader, IProtocol* aActor,
-    dom::FeaturePolicyInfo* aResult) {
-  if (!ReadIPDLParam(aReader, aActor, &aResult->mInheritedDeniedFeatureNames)) {
-    return false;
-  }
-
-  if (!ReadIPDLParam(aReader, aActor,
-                     &aResult->mAttributeEnabledFeatureNames)) {
-    return false;
-  }
-
-  if (!ReadIPDLParam(aReader, aActor, &aResult->mDeclaredString)) {
-    return false;
-  }
-
-  if (!ReadIPDLParam(aReader, aActor, &aResult->mDefaultOrigin)) {
-    return false;
-  }
-
-  if (!ReadIPDLParam(aReader, aActor, &aResult->mSelfOrigin)) {
-    return false;
-  }
-
-  if (!ReadIPDLParam(aReader, aActor, &aResult->mSrcOrigin)) {
-    return false;
-  }
-
-  return true;
-}
-}  // namespace ipc
-
 }  // namespace mozilla
+
+namespace IPC {
+
+void ParamTraits<mozilla::dom::FeaturePolicyInfo>::Write(
+    MessageWriter* aWriter, const mozilla::dom::FeaturePolicyInfo& aParam) {
+  WriteParam(aWriter, aParam.mInheritedDeniedFeatureNames);
+  WriteParam(aWriter, aParam.mAttributeEnabledFeatureNames);
+  WriteParam(aWriter, aParam.mDeclaredString);
+  WriteParam(aWriter, aParam.mDefaultOrigin);
+  WriteParam(aWriter, aParam.mSelfOrigin);
+  WriteParam(aWriter, aParam.mSrcOrigin);
+}
+
+bool ParamTraits<mozilla::dom::FeaturePolicyInfo>::Read(
+    MessageReader* aReader, mozilla::dom::FeaturePolicyInfo* aResult) {
+  return ReadParam(aReader, &aResult->mInheritedDeniedFeatureNames) &&
+         ReadParam(aReader, &aResult->mAttributeEnabledFeatureNames) &&
+         ReadParam(aReader, &aResult->mDeclaredString) &&
+         ReadParam(aReader, &aResult->mDefaultOrigin) &&
+         ReadParam(aReader, &aResult->mSelfOrigin) &&
+         ReadParam(aReader, &aResult->mSrcOrigin);
+}
+
+}  // namespace IPC

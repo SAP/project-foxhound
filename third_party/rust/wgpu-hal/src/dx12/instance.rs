@@ -1,51 +1,30 @@
 use alloc::{string::String, sync::Arc, vec::Vec};
 
 use parking_lot::RwLock;
-use windows::{
-    core::Interface as _,
-    Win32::{
-        Foundation,
-        Graphics::{Direct3D12, Dxgi},
-    },
-};
+use windows::Win32::{Foundation, Graphics::Dxgi};
 
 use super::SurfaceTarget;
 use crate::{
     auxil,
-    dx12::{shader_compilation::CompilerContainer, D3D12Lib},
+    dx12::{
+        device_creation::DeviceFactory, shader_compilation::CompilerContainer, D3D12Lib, DCompLib,
+    },
 };
 
 impl crate::Instance for super::Instance {
     type A = super::Api;
 
-    unsafe fn init(desc: &crate::InstanceDescriptor) -> Result<Self, crate::InstanceError> {
+    unsafe fn init(desc: &crate::InstanceDescriptor<'_>) -> Result<Self, crate::InstanceError> {
         profiling::scope!("Init DX12 Backend");
         let lib_main = D3D12Lib::new().map_err(|e| {
             crate::InstanceError::with_source(String::from("failed to load d3d12.dll"), e)
         })?;
 
-        if desc
-            .flags
-            .intersects(wgt::InstanceFlags::VALIDATION | wgt::InstanceFlags::GPU_BASED_VALIDATION)
-        {
-            // Enable debug layer
-            if let Ok(Some(debug_controller)) = lib_main.debug_interface() {
-                if desc.flags.intersects(wgt::InstanceFlags::VALIDATION) {
-                    unsafe { debug_controller.EnableDebugLayer() }
-                }
-                if desc
-                    .flags
-                    .intersects(wgt::InstanceFlags::GPU_BASED_VALIDATION)
-                {
-                    #[allow(clippy::collapsible_if)]
-                    if let Ok(debug1) = debug_controller.cast::<Direct3D12::ID3D12Debug1>() {
-                        unsafe { debug1.SetEnableGPUBasedValidation(true) }
-                    } else {
-                        log::warn!("Failed to enable GPU-based validation");
-                    }
-                }
-            }
-        }
+        // Create DeviceFactory first so we know which debug path to use
+        let device_factory =
+            DeviceFactory::new(&lib_main, desc.backend_options.dx12.agility_sdk.as_ref())?;
+
+        device_factory.enable_debug_layer(&lib_main, desc.flags);
 
         let (lib_dxgi, factory) = auxil::dxgi::factory::create_factory(desc.flags)?;
 
@@ -71,20 +50,50 @@ impl crate::Instance for super::Instance {
 
         // Initialize the shader compiler
         let compiler_container = match desc.backend_options.dx12.shader_compiler.clone() {
-            wgt::Dx12Compiler::DynamicDxc {
-                dxc_path,
-                max_shader_model,
-            } => CompilerContainer::new_dynamic_dxc(dxc_path.into(), max_shader_model).map_err(
-                |e| {
+            wgt::Dx12Compiler::DynamicDxc { dxc_path } => {
+                CompilerContainer::new_dynamic_dxc(dxc_path.into()).map_err(|e| {
                     crate::InstanceError::with_source(String::from("Failed to load dynamic DXC"), e)
-                },
-            )?,
+                })?
+            }
             wgt::Dx12Compiler::StaticDxc => CompilerContainer::new_static_dxc().map_err(|e| {
                 crate::InstanceError::with_source(String::from("Failed to load static DXC"), e)
             })?,
             wgt::Dx12Compiler::Fxc => CompilerContainer::new_fxc().map_err(|e| {
                 crate::InstanceError::with_source(String::from("Failed to load FXC"), e)
             })?,
+            wgt::Dx12Compiler::Auto => {
+                if cfg!(feature = "static-dxc") {
+                    // Prefer static DXC if its compiled in
+                    CompilerContainer::new_static_dxc().map_err(|e| {
+                        crate::InstanceError::with_source(
+                            String::from("Failed to load static DXC"),
+                            e,
+                        )
+                    })?
+                } else {
+                    // Try to load dynamic DXC
+                    let dynamic = CompilerContainer::new_dynamic_dxc("dxcompiler.dll".into());
+                    match dynamic {
+                        Ok(v) => v,
+                        Err(super::shader_compilation::GetContainerError::FailedToLoad(..)) => {
+                            // If it can't be found load FXC
+                            CompilerContainer::new_fxc().map_err(|e| {
+                                crate::InstanceError::with_source(
+                                    String::from("Failed to load FXC"),
+                                    e,
+                                )
+                            })?
+                        }
+                        Err(e) => {
+                            // If another error occurs when loading static DXC return that error
+                            return Err(crate::InstanceError::with_source(
+                                String::from("Failed to load dynamic DXC"),
+                                e,
+                            ));
+                        }
+                    }
+                }
+            }
         };
 
         match compiler_container {
@@ -104,28 +113,49 @@ impl crate::Instance for super::Instance {
             factory,
             factory_media,
             library: Arc::new(lib_main),
+            device_factory: Arc::new(device_factory),
+            dcomp_lib: Arc::new(DCompLib::new()),
+            presentation_system: desc.backend_options.dx12.presentation_system,
             _lib_dxgi: lib_dxgi,
             supports_allow_tearing,
             flags: desc.flags,
             memory_budget_thresholds: desc.memory_budget_thresholds,
             compiler_container: Arc::new(compiler_container),
+            options: desc.backend_options.dx12.clone(),
+            telemetry: desc.telemetry,
         })
     }
 
     unsafe fn create_surface(
         &self,
-        _display_handle: raw_window_handle::RawDisplayHandle,
+        display_handle: raw_window_handle::RawDisplayHandle,
         window_handle: raw_window_handle::RawWindowHandle,
     ) -> Result<super::Surface, crate::InstanceError> {
+        assert!(matches!(
+            display_handle,
+            raw_window_handle::RawDisplayHandle::Windows(_)
+        ));
         match window_handle {
-            raw_window_handle::RawWindowHandle::Win32(handle) => Ok(super::Surface {
-                factory: self.factory.clone(),
-                factory_media: self.factory_media.clone(),
+            raw_window_handle::RawWindowHandle::Win32(handle) => {
                 // https://github.com/rust-windowing/raw-window-handle/issues/171
-                target: SurfaceTarget::WndHandle(Foundation::HWND(handle.hwnd.get() as *mut _)),
-                supports_allow_tearing: self.supports_allow_tearing,
-                swap_chain: RwLock::new(None),
-            }),
+                let handle = Foundation::HWND(handle.hwnd.get() as *mut _);
+                let target = match self.presentation_system {
+                    wgt::Dx12SwapchainKind::DxgiFromHwnd => SurfaceTarget::WndHandle(handle),
+                    wgt::Dx12SwapchainKind::DxgiFromVisual => SurfaceTarget::VisualFromWndHandle {
+                        handle,
+                        dcomp_state: Default::default(),
+                    },
+                };
+
+                Ok(super::Surface {
+                    factory: self.factory.clone(),
+                    factory_media: self.factory_media.clone(),
+                    target,
+                    supports_allow_tearing: self.supports_allow_tearing,
+                    swap_chain: RwLock::new(None),
+                    options: self.options.clone(),
+                })
+            }
             _ => Err(crate::InstanceError::new(format!(
                 "window handle {window_handle:?} is not a Win32 handle"
             ))),
@@ -144,9 +174,13 @@ impl crate::Instance for super::Instance {
                 super::Adapter::expose(
                     raw,
                     &self.library,
+                    &self.device_factory,
+                    &self.dcomp_lib,
                     self.flags,
                     self.memory_budget_thresholds,
                     self.compiler_container.clone(),
+                    self.options.clone(),
+                    self.telemetry,
                 )
             })
             .collect()

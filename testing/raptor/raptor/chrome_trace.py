@@ -35,7 +35,7 @@ class ChromeTrace(RaptorProfiling):
         # Make sure no archive already exists in the location where
         # we plan to output our profiler archive
         self.profile_arcname = Path(
-            self.upload_dir, "profile_{0}.zip".format(self.test_config["name"])
+            self.upload_dir, "profile_{}.zip".format(self.test_config["name"])
         )
         LOG.info(f"Clearing archive {self.profile_arcname}")
         mozfile.remove(self.profile_arcname)
@@ -91,7 +91,7 @@ class ChromeTrace(RaptorProfiling):
 
                 try:
                     test_run_type = (
-                        "{0}-{1}".format(test_type, profile_info["type"])
+                        "{}-{}".format(test_type, profile_info["type"])
                         if test_type == "pageload"
                         else test_type
                     )

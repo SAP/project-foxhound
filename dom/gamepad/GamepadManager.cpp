@@ -1,11 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/GamepadManager.h"
 
+#include "VRManagerChild.h"
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/Services.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/dom/Gamepad.h"
 #include "mozilla/dom/GamepadAxisMoveEvent.h"
 #include "mozilla/dom/GamepadButtonEvent.h"
@@ -13,24 +17,13 @@
 #include "mozilla/dom/GamepadEventChannelChild.h"
 #include "mozilla/dom/GamepadMonitoring.h"
 #include "mozilla/dom/Promise.h"
-
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/ClearOnShutdown.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/StaticPtr.h"
-
 #include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
 #include "nsIObserver.h"
 #include "nsIObserverService.h"
 #include "nsThreadUtils.h"
-#include "VRManagerChild.h"
-#include "mozilla/Services.h"
-#include "mozilla/Unused.h"
-
-#include <cstddef>
 
 using namespace mozilla::ipc;
 

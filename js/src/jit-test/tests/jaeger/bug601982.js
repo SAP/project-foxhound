@@ -1,5 +1,3 @@
-/* vim: set ts=8 sts=4 et sw=4 tw=99: */
-
 function J(i) {
     /* Cause a branch to build(?) */
     if (i % 3)

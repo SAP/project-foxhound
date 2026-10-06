@@ -94,7 +94,7 @@ var gDataNotificationInfoBar = {
 
   observe(subject, topic) {
     switch (topic) {
-      case "datareporting:notify-data-policy:request":
+      case "datareporting:notify-data-policy:request": {
         let request = subject.wrappedJSObject.object;
         try {
           this._displayDataPolicyInfoBar(request);
@@ -102,6 +102,7 @@ var gDataNotificationInfoBar = {
           request.onUserNotifyFailed(ex);
         }
         break;
+      }
 
       case "datareporting:notify-data-policy:close":
         // If this observer fires, it means something else took care of

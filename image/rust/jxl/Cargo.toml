@@ -1,0 +1,15 @@
+[package]
+name = "jxl_decoder"
+version = "0.1.0"
+authors = [
+    "Martin Bruse <zondolfin@gmail.com>",
+    "Kagami Sascha Rosylight <saschanaz@outlook.com>",
+    "Sami Boukortt <sboukortt@google.com>",
+    "Timothy Nikkel <tnikkel@gmail.com>",
+]
+edition = "2021"
+license = "MPL-2.0"
+
+[dependencies]
+jxl = { git = "https://github.com/libjxl/jxl-rs", rev = "c41cbfaf34c2c8ebc3fb6655c885fe427ab9542a"}
+log = "0.4"

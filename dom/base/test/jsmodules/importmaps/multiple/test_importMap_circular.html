@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<meta charset=utf-8>
+<title>Test module import error message</title>
+<script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+<script>
+  SimpleTest.waitForExplicitFinish();
+
+  let count = 0;
+
+  window.onerror = function (event, src, lineno, colno, error) {
+    info("window.onerror: message: " + error.message);
+    info("window.onerror: src: " + src);
+    ok(error instanceof SyntaxError, "Should be a SyntaxError.");
+
+    if (src.match("import_circular_1.mjs")) {
+      ok(error.message.match("contains circular import"));
+    } else {
+      ok(false, "unknown src " + src);
+    }
+    count++;
+  };
+
+  // eslint-disable-next-line no-unused-vars
+  function testLoaded() {
+    ok(count === 1, "Should have 1 SynaxError thrown.");
+    SimpleTest.finish();
+  }
+
+  const script = document.createElement('script');
+  script.type = 'importmap';
+  script.textContent =
+  `{
+    "imports": {
+      "foo": "bar"
+    }
+  }`;
+  document.head.appendChild(script);
+</script>
+
+<script type="module" src="import_circular.mjs"></script>
+<body onload='testLoaded()'></body>

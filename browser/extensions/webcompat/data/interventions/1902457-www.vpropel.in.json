@@ -1,0 +1,15 @@
+{
+  "label": "www.vpropel.in",
+  "bugs": {
+    "1902457": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://www.vpropel.in/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

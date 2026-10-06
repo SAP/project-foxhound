@@ -1,19 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAttrValueInlines_h__
-#define nsAttrValueInlines_h__
+#ifndef nsAttrValueInlines_h_
+#define nsAttrValueInlines_h_
 
 #include <stdint.h>
 
-#include "nsAttrValue.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/ServoUtils.h"
 #include "mozilla/dom/DOMString.h"
+#include "nsAttrValue.h"
 
 namespace mozilla {
 class ShadowParts;
@@ -191,11 +188,9 @@ inline bool nsAttrValue::IsSVGType(ValueType aType) const {
 }
 
 inline bool nsAttrValue::StoresOwnData() const {
-  if (BaseType() != eOtherBase) {
-    return true;
-  }
-  ValueType t = Type();
-  return t != eCSSDeclaration && !IsSVGType(t);
+  // Only SVG attributes don't store their own data.
+  // FIXME(emilio): This is a pretty terrible set-up.
+  return BaseType() != eOtherBase || !IsSVGType(Type());
 }
 
 inline void nsAttrValue::SetPtrValueAndType(void* aValue, ValueBaseType aType) {
@@ -262,7 +257,7 @@ inline void nsAttrValue::ToString(mozilla::dom::DOMString& aResult) const {
       break;
     }
     default: {
-      ToString(aResult.AsAString());
+      ToString(static_cast<nsAString&>(aResult));
     }
   }
 }

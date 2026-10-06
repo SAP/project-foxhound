@@ -10,7 +10,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.support.images.DesiredSize
 import mozilla.components.support.test.any
 import mozilla.components.support.test.mock
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -18,6 +17,7 @@ import org.mockito.Mockito.anyInt
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.spy
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class AndroidImageDecoderTest {
@@ -36,7 +36,7 @@ class AndroidImageDecoderTest {
             ),
         )
 
-        assertNotNull(bitmap!!)
+        assertNotNull(bitmap)
     }
 
     @Test
@@ -235,9 +235,11 @@ class AndroidImageDecoderTest {
     fun `WHEN bitmap size is good THEN returns non null`() {
         val bitmap: Bitmap = mock()
         val size = Size(128, 128)
-        val decoder = spy(AndroidImageDecoder())
+        val scaler: BitmapScaler = mock()
+        val decoder = spy(AndroidImageDecoder(scaler))
         doReturn(size).`when`(decoder).decodeBitmapBounds(any())
         doReturn(bitmap).`when`(decoder).decodeBitmap(any(), anyInt())
+        doReturn(bitmap).`when`(scaler).scale(bitmap, 256, 256)
 
         val decodedBitmap = decoder.decode(
             ByteArray(0),

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -350,17 +348,18 @@ namespace mozilla::glean {
 
 namespace impl {
 
-TimerId TimingDistributionMetric::Start() const {
+TimerId TimingDistributionStandalone::Start() const {
   return fog_timing_distribution_start(mId);
 }
 
-void TimingDistributionMetric::StopAndAccumulate(const TimerId&& aId) const {
+void TimingDistributionStandalone::StopAndAccumulate(
+    const TimerId&& aId) const {
   fog_timing_distribution_stop_and_accumulate(mId, aId);
 }
 
 // Intentionally not exposed to JS for lack of use case and a time duration
 // type.
-void TimingDistributionMetric::AccumulateRawDuration(
+void TimingDistributionStandalone::AccumulateRawDuration(
     const TimeDuration& aDuration) const {
   // `* 1000.0` is an acceptable overflow risk as durations are unlikely to be
   // on the order of (-)10^282 years.
@@ -378,7 +377,7 @@ void TimingDistributionMetric::AccumulateRawDuration(
       mId, static_cast<uint64_t>(roundedDurationNs));
 }
 
-void TimingDistributionMetric::Cancel(const TimerId&& aId) const {
+void TimingDistributionStandalone::Cancel(const TimerId&& aId) const {
   fog_timing_distribution_cancel(mId, aId);
 }
 
@@ -400,16 +399,17 @@ TimingDistributionMetric::TestGetValue(const nsACString& aPingName) const {
   return Some(DistributionData(buckets, counts, sum, count));
 }
 
-TimingDistributionMetric::AutoTimer TimingDistributionMetric::Measure() const {
+TimingDistributionStandalone::AutoTimer TimingDistributionStandalone::Measure()
+    const {
   return AutoTimer(mId, this->Start());
 }
 
-void TimingDistributionMetric::AutoTimer::Cancel() {
+void TimingDistributionStandalone::AutoTimer::Cancel() {
   fog_timing_distribution_cancel(mMetricId, std::move(mTimerId));
   mTimerId = 0;
 }
 
-TimingDistributionMetric::AutoTimer::~AutoTimer() {
+TimingDistributionStandalone::AutoTimer::~AutoTimer() {
   if (mTimerId) {
     fog_timing_distribution_stop_and_accumulate(mMetricId, std::move(mTimerId));
   }

@@ -14,10 +14,6 @@ const ruleTester = new RuleTester();
 // Tests
 // ------------------------------------------------------------------------------
 
-function error(messageId, type) {
-  return [{ messageId, type }];
-}
-
 /* globals nsIFlug */
 function QueryInterface(iid) {
   if (
@@ -40,17 +36,17 @@ ruleTester.run("use-chromeutils-generateqi", rule, {
     {
       code: `X.prototype.QueryInterface = XPCOMUtils.generateQI(["nsIMeh"]);`,
       output: `X.prototype.QueryInterface = ChromeUtils.generateQI(["nsIMeh"]);`,
-      errors: error("noXpcomUtilsGenerateQI", "CallExpression"),
+      errors: [{ messageId: "noXpcomUtilsGenerateQI" }],
     },
     {
       code: `X.prototype = { QueryInterface: XPCOMUtils.generateQI(["nsIMeh"]) };`,
       output: `X.prototype = { QueryInterface: ChromeUtils.generateQI(["nsIMeh"]) };`,
-      errors: error("noXpcomUtilsGenerateQI", "CallExpression"),
+      errors: [{ messageId: "noXpcomUtilsGenerateQI" }],
     },
     {
       code: `X.prototype = { QueryInterface: ${QueryInterface} };`,
       output: `X.prototype = { QueryInterface: ChromeUtils.generateQI(["nsIMeh", "nsIFlug", "amIFoo"]) };`,
-      errors: error("noJSQueryInterface", "Property"),
+      errors: [{ messageId: "noJSQueryInterface" }],
     },
     {
       code: `X.prototype = { ${String(QueryInterface).replace(
@@ -58,12 +54,12 @@ ruleTester.run("use-chromeutils-generateqi", rule, {
         ""
       )} };`,
       output: `X.prototype = { QueryInterface: ChromeUtils.generateQI(["nsIMeh", "nsIFlug", "amIFoo"]) };`,
-      errors: error("noJSQueryInterface", "Property"),
+      errors: [{ messageId: "noJSQueryInterface" }],
     },
     {
       code: `X.prototype.QueryInterface = ${QueryInterface};`,
       output: `X.prototype.QueryInterface = ChromeUtils.generateQI(["nsIMeh", "nsIFlug", "amIFoo"]);`,
-      errors: error("noJSQueryInterface", "AssignmentExpression"),
+      errors: [{ messageId: "noJSQueryInterface" }],
     },
   ],
 });

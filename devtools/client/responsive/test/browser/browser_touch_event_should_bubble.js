@@ -22,15 +22,16 @@ addRDMTask(TEST_URL, async function ({ ui }) {
     });
 
     const touchStartPromise = ContentTaskUtils.waitForEvent(span, "touchstart");
-    await EventUtils.synthesizeMouseAtCenter(
+    EventUtils.synthesizeMouseAtCenter(
       span,
       { type: "mousedown", isSynthesized: false },
       content
     );
     await touchStartPromise;
 
-    const win = content.document.defaultView;
-    const bg = win.getComputedStyle(span).getPropertyValue("background-color");
+    const bg = content
+      .getComputedStyle(span)
+      .getPropertyValue("background-color");
 
     is(
       bg,
@@ -38,7 +39,7 @@ addRDMTask(TEST_URL, async function ({ ui }) {
       `span's background color should be rgb(0, 128, 0): got ${bg}`
     );
 
-    await EventUtils.synthesizeMouseAtCenter(
+    EventUtils.synthesizeMouseAtCenter(
       span,
       { type: "mouseup", isSynthesized: false },
       content

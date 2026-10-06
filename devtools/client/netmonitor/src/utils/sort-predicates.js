@@ -283,9 +283,6 @@ function getTransferedSizeValue(item) {
     value = -3;
   } else if (typeof item.transferredSize == "number") {
     value = item.transferredSize;
-    if (item.isRacing && typeof item.isRacing == "boolean") {
-      value = -4;
-    }
   } else if (item.transferredSize === null) {
     value = -5;
   }

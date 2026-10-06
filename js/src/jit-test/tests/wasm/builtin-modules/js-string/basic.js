@@ -444,6 +444,25 @@ for (let a of testStringsAndNull) {
   }
 }
 
+// equals must trap on non-string non-null inputs
+for (let a of WasmExternrefValues) {
+  if (a === null || typeof a === "string") {
+    continue;
+  }
+  for (let b of testStringsAndNull) {
+    assertErrorMessage(() => assertSameBehavior(
+      builtinExports['equals'],
+      polyfillExports['equals'],
+      a, b
+    ), WebAssembly.RuntimeError, /./);
+    assertErrorMessage(() => assertSameBehavior(
+      builtinExports['equals'],
+      polyfillExports['equals'],
+      b, a
+    ), WebAssembly.RuntimeError, /./);
+  }
+}
+
 // fromCharCodeArray endIndex is an unsigned integer
 {
   let arrayMutI16 = createArrayMutI16(1);

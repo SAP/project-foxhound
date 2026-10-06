@@ -3,6 +3,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Generic types for the column properties.
+use crate::derives::*;
 
 /// A generic type for `column-count` values.
 #[derive(
@@ -21,8 +22,10 @@
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(u8)]
+#[typed(todo_derive_fields)]
 pub enum GenericColumnCount<PositiveInteger> {
     /// A positive integer.
     Integer(PositiveInteger),
@@ -35,7 +38,7 @@ pub use self::GenericColumnCount as ColumnCount;
 impl<I> ColumnCount<I> {
     /// Returns whether this value is `auto`.
     #[inline]
-    pub fn is_auto(self) -> bool {
+    pub fn is_auto(&self) -> bool {
         matches!(self, ColumnCount::Auto)
     }
 }

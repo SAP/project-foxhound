@@ -330,7 +330,7 @@ Highlighter.prototype = {
     let containerRect = this.container.getBoundingClientRect();
     let range = this._getRange(startOffset, startOffset + length);
     let rangeRects = range.getClientRects();
-    let win = this.container.ownerGlobal;
+    let win = this.container.documentGlobal;
     let computedStyle = win.getComputedStyle(range.endContainer.parentNode);
     let nodes = this._getFreshHighlightNodes(rangeRects.length);
 

@@ -1,4 +1,3 @@
-# vim: set ts=4 et sw=4 tw=80
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -65,6 +64,7 @@ STUNS_PORT = 5349
 
 TURN_REDIRECT_PORT = 3479
 TURNS_REDIRECT_PORT = 5350
+TURN_WRONG_RELAYED_ADDR_PORT = 3480
 
 
 def unpack_uint(bytes_buf):
@@ -490,6 +490,9 @@ class StunHandler(object):
             self.transport_handler.transport.getHost().port,
         )
 
+    def get_relayed_address(self, allocation):
+        return allocation.transport.getHost()
+
     def handle_allocation(self, request):
         allocate_response = self.check_long_term_auth(request)
         if allocate_response.msg_class == SUCCESS_RESPONSE:
@@ -509,7 +512,7 @@ class StunHandler(object):
             )
 
             allocate_response.add_xor_address(
-                allocation.transport.getHost(), XOR_RELAYED_ADDRESS
+                self.get_relayed_address(allocation), XOR_RELAYED_ADDRESS
             )
 
             lifetime = request.get_lifetime()
@@ -699,9 +702,6 @@ class StunRedirectHandler(StunHandler):
     Can be used to test port-based redirect handling.
     """
 
-    def __init__(self, transport_handler):
-        super(StunRedirectHandler, self).__init__(transport_handler)
-
     def handle_stun(self, stun_message, address):
         self.client_address = address
         if stun_message.msg_class == REQUEST:
@@ -761,20 +761,11 @@ class TcpStunHandlerFactory(protocol.Factory):
         return TcpStunHandler(addr)
 
 
-class TcpStunHandler(protocol.Protocol):
-    """
-    Represents a connected TCP port for TURN.
-    """
+class TcpStunHandlerBase(protocol.Protocol):
 
     def __init__(self, addr):
         self.address = addr
         self.stun_handler = None
-
-    def dataReceived(self, data):
-        # This needs to persist, since it handles framing
-        if not self.stun_handler:
-            self.stun_handler = StunHandler(self)
-        self.stun_handler.data_received(data, self.address)
 
     def connectionLost(self, reason):
         print("Lost connection from {}".format(self.address))
@@ -792,6 +783,25 @@ class TcpStunHandler(protocol.Protocol):
     def write(self, data, address):
         self.transport.write(bytes(data))
 
+    def makeStunHandler(self):
+        raise NotImplementedError("Must implement makeStunHandler!")
+
+    def dataReceived(self, data):
+        # This needs to persist, since it handles framing. Framing matters here
+        # because we do a round of auth before redirecting.
+        if not self.stun_handler:
+            self.stun_handler = self.makeStunHandler()
+        self.stun_handler.data_received(data, self.address)
+
+
+class TcpStunHandler(TcpStunHandlerBase):
+    """
+    Represents a connected TCP port for TURN.
+    """
+
+    def makeStunHandler(self):
+        return StunHandler(self)
+
 
 class TcpStunRedirectHandlerFactory(protocol.Factory):
     """
@@ -802,23 +812,53 @@ class TcpStunRedirectHandlerFactory(protocol.Factory):
         return TcpStunRedirectHandler(addr)
 
 
-class TcpStunRedirectHandler(protocol.DatagramProtocol):
-    def __init__(self, addr):
-        self.address = addr
-        self.stun_handler = None
+class TcpStunRedirectHandler(TcpStunHandlerBase):
+    def makeStunHandler(self):
+        return StunRedirectHandler(self)
 
-    def dataReceived(self, data):
-        # This needs to persist, since it handles framing. Framing matters here
-        # because we do a round of auth before redirecting.
-        if not self.stun_handler:
-            self.stun_handler = StunRedirectHandler(self)
-        self.stun_handler.data_received(data, self.address)
+
+class StunWrongRelayedAddrHandler(StunHandler):
+    """
+    Lies about XOR-RELAYED-ADDRESS in allocate responses, to simulate address
+    translation applied on the TURN server's relayed address, causing the
+    remote peer to see ICE checks arriving from somewhere other than the
+    relayed address. The allocation's real socket is still used for relay
+    traffic, so the relay path works end-to-end; only the advertised address is
+    wrong. TEST-NET-1 (RFC 5737) is used so nothing tries to route to it.
+    """
+
+    def get_relayed_address(self, allocation):
+        real = allocation.transport.getHost()
+        return to_ipaddress(real.type, "192.0.2.1", real.port)
+
+
+class UdpStunWrongRelayedAddrHandler(protocol.DatagramProtocol):
+    """
+    Represents a UDP listen port for TURN that lies about
+    XOR-RELAYED-ADDRESS in allocate responses.
+    """
+
+    def datagramReceived(self, data, address):
+        stun_handler = StunWrongRelayedAddrHandler(self)
+        stun_handler.data_received(data, to_ipaddress("UDP", address[0], address[1]))
 
     def write(self, data, address):
-        self.transport.write(bytes(data))
+        self.transport.write(bytes(data), (address.host, address.port))
 
-    def connectionLost(self, reason):
-        print("Lost connection from {}".format(self.address))
+
+class TcpStunWrongRelayedAddrHandlerFactory(protocol.Factory):
+    """
+    Represents a TCP listen port for TURN that lies about
+    XOR-RELAYED-ADDRESS in allocate responses.
+    """
+
+    def buildProtocol(self, addr):
+        return TcpStunWrongRelayedAddrHandler(addr)
+
+
+class TcpStunWrongRelayedAddrHandler(TcpStunHandlerBase):
+    def makeStunHandler(self):
+        return StunWrongRelayedAddrHandler(self)
 
 
 def get_default_route(family):
@@ -952,6 +992,17 @@ if __name__ == "__main__":
         TURN_REDIRECT_PORT, TcpStunRedirectHandlerFactory(), interface=interface_4
     )
 
+    reactor.listenUDP(
+        TURN_WRONG_RELAYED_ADDR_PORT,
+        UdpStunWrongRelayedAddrHandler(),
+        interface=interface_4,
+    )
+    reactor.listenTCP(
+        TURN_WRONG_RELAYED_ADDR_PORT,
+        TcpStunWrongRelayedAddrHandlerFactory(),
+        interface=interface_4,
+    )
+
     try:
         reactor.listenUDP(STUN_PORT, UdpStunHandler(), interface=interface_6)
         reactor.listenTCP(STUN_PORT, TcpStunHandlerFactory(), interface=interface_6)
@@ -961,6 +1012,17 @@ if __name__ == "__main__":
         )
         reactor.listenTCP(
             TURN_REDIRECT_PORT, TcpStunRedirectHandlerFactory(), interface=interface_6
+        )
+
+        reactor.listenUDP(
+            TURN_WRONG_RELAYED_ADDR_PORT,
+            UdpStunWrongRelayedAddrHandler(),
+            interface=interface_6,
+        )
+        reactor.listenTCP(
+            TURN_WRONG_RELAYED_ADDR_PORT,
+            TcpStunWrongRelayedAddrHandlerFactory(),
+            interface=interface_6,
         )
     except:
         pass
@@ -1017,9 +1079,11 @@ if __name__ == "__main__":
 
     template = Template(
         '[\
-{"urls":["stun:$hostname", "stun:$hostname?transport=tcp"]}, \
-{"username":"$user","credential":"$pwd","turn_redirect_port":"$TURN_REDIRECT_PORT","turns_redirect_port":"$TURNS_REDIRECT_PORT","urls": \
-["turn:$hostname", "turn:$hostname?transport=tcp" $turns_url] \
+{"urls":["stun:$hostname"]}, \
+{"username":"$user","credential":"$pwd", \
+"urls": ["turn:$hostname", "turn:$hostname?transport=tcp" $turns_url], \
+"turn_redirect_port":"$TURN_REDIRECT_PORT","turns_redirect_port":"$TURNS_REDIRECT_PORT", \
+"turn_wrong_relayed_addr_port":"$TURN_WRONG_RELAYED_ADDR_PORT" \
 $cert_prop}]'  # Hack to make it easier to override cert checks
     )
 
@@ -1032,6 +1096,7 @@ $cert_prop}]'  # Hack to make it easier to override cert checks
             cert_prop=cert_prop,
             TURN_REDIRECT_PORT=TURN_REDIRECT_PORT,
             TURNS_REDIRECT_PORT=TURNS_REDIRECT_PORT,
+            TURN_WRONG_RELAYED_ADDR_PORT=TURN_WRONG_RELAYED_ADDR_PORT,
         )
     )
 

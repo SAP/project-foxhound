@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +6,7 @@
 
 #include "ServoCSSParser.h"
 
-#include "mozilla/AnimatedPropertyID.h"
+#include "mozilla/CSSPropertyId.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/dom/Document.h"
@@ -22,14 +20,28 @@ bool ServoCSSParser::IsValidCSSColor(const nsACString& aValue) {
 }
 
 /* static */
-bool ServoCSSParser::ComputeColor(ServoStyleSet* aStyleSet,
+bool ServoCSSParser::IsValidCSSImage(const nsACString& aValue) {
+  return Servo_IsValidCSSImage(&aValue);
+}
+
+/* static */
+bool ServoCSSParser::ComputeColor(const StylePerDocumentStyleData* aStyleData,
                                   nscolor aCurrentColor,
                                   const nsACString& aValue,
                                   nscolor* aResultColor, bool* aWasCurrentColor,
                                   css::Loader* aLoader) {
-  return Servo_ComputeColor(aStyleSet ? aStyleSet->RawData() : nullptr,
-                            aCurrentColor, &aValue, aResultColor,
+  return Servo_ComputeColor(aStyleData, aCurrentColor, &aValue, aResultColor,
                             aWasCurrentColor, aLoader);
+}
+
+/* static */
+Maybe<StyleAbsoluteColor> ServoCSSParser::ComputeAbsoluteColor(
+    const StylePerDocumentStyleData* aStyleData, const nsACString& aValue) {
+  StyleAbsoluteColor color{};
+  if (Servo_ComputeAbsoluteColor(aStyleData, &aValue, &color)) {
+    return Some(color);
+  }
+  return Nothing();
 }
 
 /* static */
@@ -44,16 +56,16 @@ bool ServoCSSParser::ColorTo(const nsACString& aFromColor,
 
 /* static */
 already_AddRefed<StyleLockedDeclarationBlock> ServoCSSParser::ParseProperty(
-    nsCSSPropertyID aProperty, const nsACString& aValue,
+    NonCustomCSSPropertyId aProperty, const nsACString& aValue,
     const ParsingEnvironment& aParsingEnvironment,
     const StyleParsingMode& aParsingMode) {
-  AnimatedPropertyID property(aProperty);
+  CSSPropertyId property(aProperty);
   return ParseProperty(property, aValue, aParsingEnvironment, aParsingMode);
 }
 
 /* static */
 already_AddRefed<StyleLockedDeclarationBlock> ServoCSSParser::ParseProperty(
-    const AnimatedPropertyID& aProperty, const nsACString& aValue,
+    const CSSPropertyId& aProperty, const nsACString& aValue,
     const ParsingEnvironment& aParsingEnvironment,
     const StyleParsingMode& aParsingMode) {
   return Servo_ParseProperty(
@@ -67,6 +79,15 @@ already_AddRefed<StyleLockedDeclarationBlock> ServoCSSParser::ParseProperty(
 bool ServoCSSParser::ParseEasing(const nsACString& aValue,
                                  StyleComputedTimingFunction& aResult) {
   return Servo_ParseEasing(&aValue, &aResult);
+}
+
+/* static */
+bool ServoCSSParser::ParseAndComputeViewTimelineInset(
+    const nsACString& aValue, const Element* aSubject,
+    const ComputedStyle* aStyle, const StylePerDocumentStyleData* aRawData,
+    StyleViewTimelineInset& aResult) {
+  return Servo_ParseAndComputeViewTimelineInset(&aValue, aSubject, aStyle,
+                                                aRawData, &aResult);
 }
 
 /* static */
@@ -95,6 +116,7 @@ already_AddRefed<URLExtraData> ServoCSSParser::GetURLExtraData(
 
 /* static */ ServoCSSParser::ParsingEnvironment
 ServoCSSParser::GetParsingEnvironment(Document* aDocument) {
-  return {GetURLExtraData(aDocument), aDocument->GetCompatibilityMode(),
-          aDocument->CSSLoader()};
+  return {
+      GetURLExtraData(aDocument), aDocument->GetCompatibilityMode(),
+      aDocument->GetExistingCSSLoader()};  // Loader for error reporting only.
 }

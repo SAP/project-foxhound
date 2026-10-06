@@ -7,25 +7,21 @@ import { GeckoViewActorChild } from "resource://gre/modules/GeckoViewActorChild.
 export class ScrollDelegateChild extends GeckoViewActorChild {
   // eslint-disable-next-line complexity
   handleEvent(aEvent) {
-    if (aEvent.originalTarget.ownerGlobal != this.contentWindow) {
-      return;
-    }
-
     debug`handleEvent: ${aEvent.type}`;
 
     switch (aEvent.type) {
-      case "mozvisualscroll":
+      case "mozvisualscroll": {
         const x = {};
         const y = {};
         this.contentWindow.windowUtils.getVisualViewportOffset(x, y);
-        this.eventDispatcher.sendRequest({
-          type: "GeckoView:ScrollChanged",
+        this.sendAsyncMessage("GeckoView:ScrollChanged", {
           scrollX: x.value,
           scrollY: y.value,
         });
         break;
+      }
     }
   }
 }
 
-const { debug, warn } = ScrollDelegateChild.initLogging("ScrollDelegate");
+const { debug } = ScrollDelegateChild.initLogging("ScrollDelegate");

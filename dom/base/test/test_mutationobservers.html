@@ -9,7 +9,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=641821
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
-<body onload="SpecialPowers.pushPrefEnv({'set': [['dom.mutation_events.enabled', true]]}, runTest)">
+<body onload="SimpleTest.executeSoon(runTest)">
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=641821">Mozilla Bug 641821</a>
 <p id="display"></p>
 <div id="content" style="display: none">
@@ -18,7 +18,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=641821
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 641821 **/
+/** Test for Bug 641821 */
 
 SimpleTest.requestFlakyTimeout("requestFlakyTimeout is silly. (But make sure marquee has time to initialize itself.)");
 
@@ -499,11 +499,6 @@ function testTakeRecords() {
 }
 
 function testTakeRecords() {
-  function mutationListener(e) {
-    ++mutationEventCount;
-    is(e.attrChange, MutationEvent.ADDITION, "unexpected change");
-  }
-
   m = new M(function(records, observer) {
       is(records.length, 2, "Should have got 2 records");
       is(records[0].type, "attributes", "Should have got attributes");
@@ -513,16 +508,12 @@ function testTakeRecords() {
       is(records[1].attributeName, "foo", "");
       is(records[1].oldValue, "bar", "");
       observer.disconnect();
-      div.removeEventListener("DOMAttrModified", mutationListener);
       then(testExpandos);
       m = null;
     });
   m.observe(div, { attributes: true, attributeOldValue: true });
-  var mutationEventCount = 0;
-  div.addEventListener("DOMAttrModified", mutationListener);
   div.setAttribute("foo", "bar");
   div.setAttribute("foo", "bar");
-  is(mutationEventCount, 1, "Should have got only one mutation event!");
 }
 
 function testExpandos() {

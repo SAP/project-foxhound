@@ -1,0 +1,24 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test that NotifySelectionListeners doesn't crash when GetPresShell() is null</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script>
+SimpleTest.requestFlakyTimeout('Crash happens a little bit after message is sent, during window.close()');
+add_task(async() => {
+  let waitForMessage = new Promise(r => addEventListener('message', e => {
+    is(e.data, 'closing', 'should receive message from opened window');
+    r();
+  }));
+  let w = open('file_selection_change_null_presshell.html');
+  await waitForMessage;
+  await new Promise(r => setTimeout(r, 100));
+  ok(true, "Didn't crash");
+});
+</script>
+</body>
+</html>

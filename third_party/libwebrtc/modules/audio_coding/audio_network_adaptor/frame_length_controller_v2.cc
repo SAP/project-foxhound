@@ -10,9 +10,10 @@
 
 #include "modules/audio_coding/audio_network_adaptor/frame_length_controller_v2.h"
 
-#include <algorithm>
+#include <span>
 
 #include "absl/algorithm/container.h"
+#include "modules/audio_coding/audio_network_adaptor/include/audio_network_adaptor_config.h"
 #include "rtc_base/checks.h"
 
 namespace webrtc {
@@ -25,7 +26,7 @@ int OverheadBps(int overhead_bytes_per_packet, int frame_length_ms) {
 }  // namespace
 
 FrameLengthControllerV2::FrameLengthControllerV2(
-    rtc::ArrayView<const int> encoder_frame_lengths_ms,
+    std::span<const int> encoder_frame_lengths_ms,
     int min_payload_bitrate_bps,
     bool use_slow_adaptation)
     : encoder_frame_lengths_ms_(encoder_frame_lengths_ms.begin(),

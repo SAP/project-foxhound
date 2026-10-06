@@ -38,7 +38,7 @@ def scriptworker_canary(parameters, graph_config, input, task_group_id, task_id)
         "scriptworker-canary-workers": scriptworkers,
     }
     parameters["tasks_for"] = "action"
-
+    parameters["dontbuild"] = False
     # make parameters read-only
     parameters = Parameters(**parameters)
 

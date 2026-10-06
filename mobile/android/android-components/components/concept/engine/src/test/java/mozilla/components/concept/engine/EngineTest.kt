@@ -9,14 +9,16 @@ import android.util.AttributeSet
 import android.util.JsonReader
 import mozilla.components.concept.base.profiler.Profiler
 import mozilla.components.concept.engine.Engine.BrowsingData
+import mozilla.components.concept.engine.preferences.BrowserPrefObserverDelegate
 import mozilla.components.concept.engine.utils.EngineVersion
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.lang.UnsupportedOperationException
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 class EngineTest {
 
@@ -53,6 +55,30 @@ class EngineTest {
 
         override val settings: Settings
             get() = throw NotImplementedError("Not needed for test")
+
+        override fun registerPrefObserverDelegate(prefObserverDelegate: BrowserPrefObserverDelegate) {
+            throw NotImplementedError("Not needed for test")
+        }
+
+        override fun unregisterPrefObserverDelegate() {
+            throw NotImplementedError("Not needed for test")
+        }
+
+        override fun registerPrefForObservation(
+            pref: String,
+            onSuccess: () -> Unit,
+            onError: (Throwable) -> Unit,
+        ) {
+            throw NotImplementedError("Not needed for test")
+        }
+
+        override fun unregisterPrefForObservation(
+            pref: String,
+            onSuccess: () -> Unit,
+            onError: (Throwable) -> Unit,
+        ) {
+            throw NotImplementedError("Not needed for test")
+        }
     }
 
     @Test
@@ -71,17 +97,17 @@ class EngineTest {
         var exception: Throwable? = null
         testEngine.installWebExtension("resource://path", onError = { e -> exception = e })
         assertNotNull(exception)
-        assertTrue(exception is UnsupportedOperationException)
+        assertIs<UnsupportedOperationException>(exception)
 
         exception = null
         testEngine.installBuiltInWebExtension("a-built-in", "resource://path", onError = { e -> exception = e })
         assertNotNull(exception)
-        assertTrue(exception is UnsupportedOperationException)
+        assertIs<UnsupportedOperationException>(exception)
 
         exception = null
         testEngine.listInstalledWebExtensions(onSuccess = { }, onError = { e -> exception = e })
         assertNotNull(exception)
-        assertTrue(exception is UnsupportedOperationException)
+        assertIs<UnsupportedOperationException>(exception)
     }
 
     @Test
@@ -89,7 +115,7 @@ class EngineTest {
         var exception: Throwable? = null
         testEngine.clearData(Engine.BrowsingData.all(), onError = { exception = it })
         assertNotNull(exception)
-        assertTrue(exception is UnsupportedOperationException)
+        assertIs<UnsupportedOperationException>(exception)
     }
 
     @Test

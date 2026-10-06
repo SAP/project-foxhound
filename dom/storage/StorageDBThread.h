@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,23 +5,23 @@
 #ifndef mozilla_dom_StorageDBThread_h
 #define mozilla_dom_StorageDBThread_h
 
-#include "prthread.h"
-#include "prinrval.h"
-#include "nsTArray.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/Monitor.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/Monitor.h"
 #include "mozilla/OriginAttributes.h"
-#include "mozilla/storage/StatementCache.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
-#include "nsString.h"
+#include "mozilla/storage/StatementCache.h"
 #include "nsCOMPtr.h"
 #include "nsClassHashtable.h"
 #include "nsIFile.h"
 #include "nsIThreadInternal.h"
-#include "nsThreadUtils.h"
+#include "nsString.h"
+#include "nsTArray.h"
 #include "nsTHashSet.h"
+#include "nsThreadUtils.h"
+#include "prinrval.h"
+#include "prthread.h"
 
 class mozIStorageConnection;
 

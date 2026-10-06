@@ -1,44 +1,50 @@
 android_perftest_backstop: true
-app_version: '140.0'
+app_version: '150.0'
 backstop: true
-base_ref: default
+base_ref: ''
 base_repository: https://hg.mozilla.org/mozilla-unified
-base_rev: 0195f762b5e0c6f43f71d78fda5609afcc14b347
-build_date: 1748888616
+base_rev: 9e645d471130b8ec116abf03fcb40647cd854f69
+build_date: 1776276856
 build_number: 1
 do_not_optimize: []
+dontbuild: false
 enable_always_target:
   - docker-image
 existing_tasks: {}
 files_changed:
-  - netwerk/dns/effective_tld_names.dat
+  - mobile/android/fenix/app/src/main/res/raw/initial_experiments.json
   - security/ct/CTKnownLogs.h
-  - security/manager/ssl/StaticHPKPins.h
-  - security/manager/ssl/nsSTSPreloadList.inc
   - security/manager/tools/log_list.json
   - services/settings/dumps/blocklists/addons-bloomfilters.json
-  - services/settings/dumps/main/devtools-compatibility-browsers.json
-  - services/settings/dumps/main/translations-models.json
-  - services/settings/dumps/security-state/intermediates.json
+  - services/settings/dumps/main/ai-window-prompts.json
+  - taskcluster/docs/parameters.rst
+  - taskcluster/gecko_taskgraph/actions/merge_automation.py
+  - taskcluster/gecko_taskgraph/actions/release_promotion.py
+  - taskcluster/gecko_taskgraph/actions/run_nightly.py
+  - taskcluster/gecko_taskgraph/actions/scriptworker_canary.py
+  - taskcluster/gecko_taskgraph/decision.py
+  - taskcluster/gecko_taskgraph/morph.py
+  - taskcluster/gecko_taskgraph/parameters.py
+  - taskcluster/gecko_taskgraph/test/test_util_backstop.py
+  - taskcluster/gecko_taskgraph/util/backstop.py
 filters:
   - target_tasks_method
-head_git_rev: e9bb8f1599e3990cb0f3c1ee35c9281a382501b0
-head_ref: 8a7f43b7c20648e64c707d19fc14b899d85c32a3
+head_git_rev: c034b1c857d52dac5ca28b11e94c996d1c8d5e59
+head_ref: eab1c14b7eb1edad6b10f299cccef8def55a4a0f
 head_repository: https://hg.mozilla.org/releases/mozilla-beta
-head_rev: 8a7f43b7c20648e64c707d19fc14b899d85c32a3
+head_rev: eab1c14b7eb1edad6b10f299cccef8def55a4a0f
 head_tag: ''
 hg_branch: default
 level: '3'
-message: ''
-moz_build_date: '20250602182336'
+moz_build_date: '20260415181416'
 next_version: null
-optimize_strategies: null
+optimize_strategies: gecko_taskgraph.optimize:project.beta
 optimize_target_tasks: true
 owner: user@example.com
 phabricator_diff: null
 project: mozilla-beta
-pushdate: 1748888616
-pushlog_id: '22133'
+pushdate: 1776276856
+pushlog_id: '25814'
 release_enable_emefree: false
 release_enable_partner_attribution: false
 release_enable_partner_repack: false
@@ -50,12 +56,9 @@ release_partners: []
 release_product: null
 release_type: beta
 repository_type: hg
-required_signoffs: []
-signoff_urls: {}
 target_tasks_method: android-l10n-sync
 tasks_for: cron
 test_manifest_loader: default
 try_mode: null
-try_options: null
 try_task_config: {}
-version: 140.0b5
+version: 150.0b11

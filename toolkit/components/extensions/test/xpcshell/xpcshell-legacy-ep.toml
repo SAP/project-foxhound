@@ -18,6 +18,7 @@ prefs = ["services.settings.server='data:,#remote-settings-dummy/v1'"]
 # migrate to rkv
 
 ["test_ext_permissions.js"]
+requesttimeoutfactor = 2  # Slow on debug
 
 ["test_ext_permissions_api.js"]
 

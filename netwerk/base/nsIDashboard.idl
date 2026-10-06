@@ -55,14 +55,14 @@ interface nsIDashboard : nsISupports
     void requestDNSHTTPSRRLookup(in ACString aHost,
                                  in nsINetDashboardCallback cb);
 
-    /**
-     * Asyncly returns stats regarding the "Race Cache With Network" feature.
-     */
-    void requestRcwnStats(in nsINetDashboardCallback cb);
-
     AUTF8String getLogPath();
 
     /* Arrays: host, port
      * Array of arrays: connection stats */
     void requestHttp3ConnectionStats(in nsINetDashboardCallback cb);
+
+    /* Alt-Svc cache entries:
+     * Arrays: originHost, originPort, alternateHost, alternatePort, alpn,
+     *         https, validated, ttl, originAttributesSuffix */
+    void requestAltSvcCache(in nsINetDashboardCallback cb);
 };

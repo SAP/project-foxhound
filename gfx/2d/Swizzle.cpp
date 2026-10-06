@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Swizzle.h"
 #include "Logging.h"
+#include "src/base/SkVx.h"
 #include "Orientation.h"
 #include "Tools.h"
 #include "mozilla/CheckedInt.h"
@@ -20,6 +19,7 @@
 #  include "mozilla/arm.h"
 #endif
 
+#include <bit>
 #include <new>
 
 namespace mozilla {
@@ -56,9 +56,8 @@ namespace gfx {
 // Whether B comes before R in pixel memory layout.
 static constexpr bool IsBGRFormat(SurfaceFormat aFormat) {
   return aFormat == SurfaceFormat::B8G8R8A8 ||
-#if MOZ_LITTLE_ENDIAN()
-         aFormat == SurfaceFormat::R5G6B5_UINT16 ||
-#endif
+         (std::endian::native == std::endian::little &&
+          aFormat == SurfaceFormat::R5G6B5_UINT16) ||
          aFormat == SurfaceFormat::B8G8R8X8 || aFormat == SurfaceFormat::B8G8R8;
 }
 
@@ -83,11 +82,11 @@ static constexpr uint32_t AlphaByteIndex(SurfaceFormat aFormat) {
 
 // The endian-dependent bit shift to access RGB of a UINT32 pixel.
 static constexpr uint32_t RGBBitShift(SurfaceFormat aFormat) {
-#if MOZ_LITTLE_ENDIAN()
-  return 8 * RGBByteIndex(aFormat);
-#else
-  return 8 - 8 * RGBByteIndex(aFormat);
-#endif
+  if constexpr (std::endian::native == std::endian::little) {
+    return 8 * RGBByteIndex(aFormat);
+  } else {
+    return 8 - 8 * RGBByteIndex(aFormat);
+  }
 }
 
 // The endian-dependent bit shift to access alpha of a UINT32 pixel.
@@ -776,11 +775,11 @@ static void SwizzleChunkSwap(const uint8_t*& aSrc, uint8_t*& aDst,
   do {
     // Use an endian swap to move the bytes, i.e. BGRA -> ARGB.
     uint32_t rgba = *reinterpret_cast<const uint32_t*>(aSrc);
-#if MOZ_LITTLE_ENDIAN()
-    rgba = NativeEndian::swapToBigEndian(rgba);
-#else
-    rgba = NativeEndian::swapToLittleEndian(rgba);
-#endif
+    if constexpr (std::endian::native == std::endian::little) {
+      rgba = NativeEndian::swapToBigEndian(rgba);
+    } else {
+      rgba = NativeEndian::swapToLittleEndian(rgba);
+    }
     if (aOpaqueAlpha) {
       rgba |= 0xFF << aDstAShift;
     }
@@ -868,7 +867,7 @@ static void SwizzleChunkOpaqueUpdate(uint8_t*& aBuffer, int32_t aLength) {
 }
 
 template <uint32_t aDstAShift>
-static void SwizzleChunkOpaqueCopy(const uint8_t*& aSrc, uint8_t* aDst,
+static void SwizzleChunkOpaqueCopy(const uint8_t*& aSrc, uint8_t*& aDst,
                                    int32_t aLength) {
   const uint8_t* end = aSrc + 4 * aLength;
   do {
@@ -1045,11 +1044,11 @@ void UnpackRowRGB24(const uint8_t* aSrc, uint8_t* aDst, int32_t aLength) {
     uint8_t r = src[aSwapRB ? 2 : 0];
     uint8_t g = src[1];
     uint8_t b = src[aSwapRB ? 0 : 2];
-#if MOZ_LITTLE_ENDIAN()
-    *--dst = 0xFF000000 | (b << 16) | (g << 8) | r;
-#else
-    *--dst = 0x000000FF | (b << 8) | (g << 16) | (r << 24);
-#endif
+    if constexpr (std::endian::native == std::endian::little) {
+      *--dst = 0xFF000000 | (b << 16) | (g << 8) | r;
+    } else {
+      *--dst = 0x000000FF | (b << 8) | (g << 16) | (r << 24);
+    }
     src -= 3;
   }
 }
@@ -1073,11 +1072,11 @@ static void UnpackRowRGB24_To_ARGB(const uint8_t* aSrc, uint8_t* aDst,
     uint8_t r = src[0];
     uint8_t g = src[1];
     uint8_t b = src[2];
-#if MOZ_LITTLE_ENDIAN()
-    *--dst = 0x000000FF | (r << 8) | (g << 16) | (b << 24);
-#else
-    *--dst = 0xFF000000 | (r << 24) | (g << 16) | b;
-#endif
+    if constexpr (std::endian::native == std::endian::little) {
+      *--dst = 0x000000FF | (r << 8) | (g << 16) | (b << 24);
+    } else {
+      *--dst = 0xFF000000 | (r << 24) | (g << 16) | b;
+    }
     src -= 3;
   }
 }
@@ -1568,6 +1567,49 @@ ReorientRowFn ReorientRow(const struct image::Orientation& aOrientation) {
 
   MOZ_ASSERT_UNREACHABLE("Unhandled orientation!");
   return nullptr;
+}
+
+void ConvertFloat16RowToUint16(const uint16_t* aSrc, uint16_t* aDst,
+                               uint32_t aWidth, uint32_t aChannels) {
+  uint32_t x = 0;
+  // Process 4 pixels (16 channels) per iteration.
+  for (; x + 4 <= aWidth; x += 4) {
+    auto f32 = skvx::from_half(skvx::Vec<16, uint16_t>::Load(aSrc + x * 4));
+    // Zero NaN lanes; ±inf is handled by the clamp below.
+    auto bits = sk_bit_cast<skvx::Vec<16, int32_t>>(f32);
+    f32 = sk_bit_cast<skvx::Vec<16, float>>(
+        bits & ((bits & int32_t(0x7FFFFFFF)) <= int32_t(0x7F800000)));
+    f32 = skvx::max(skvx::Vec<16, float>(0.0f),
+                    skvx::min(f32, skvx::Vec<16, float>(1.0f)));
+    auto u16 = skvx::cast<uint16_t>(f32 * 65535.0f + 0.5f);
+    if (aChannels == 4) {
+      u16.store(aDst + x * 4);
+    } else {
+      for (int p = 0; p < 4; p++) {
+        aDst[(x + uint32_t(p)) * 3 + 0] = u16[p * 4 + 0];
+        aDst[(x + uint32_t(p)) * 3 + 1] = u16[p * 4 + 1];
+        aDst[(x + uint32_t(p)) * 3 + 2] = u16[p * 4 + 2];
+      }
+    }
+  }
+  // Remaining pixels.
+  for (; x < aWidth; x++) {
+    auto f32 = skvx::from_half(skvx::Vec<4, uint16_t>::Load(aSrc + x * 4));
+    // Zero NaN lanes; ±inf is handled by the clamp below.
+    auto bits = sk_bit_cast<skvx::Vec<4, int32_t>>(f32);
+    f32 = sk_bit_cast<skvx::Vec<4, float>>(
+        bits & ((bits & int32_t(0x7FFFFFFF)) <= int32_t(0x7F800000)));
+    f32 = skvx::max(skvx::Vec<4, float>(0.0f),
+                    skvx::min(f32, skvx::Vec<4, float>(1.0f)));
+    auto u16 = skvx::cast<uint16_t>(f32 * 65535.0f + 0.5f);
+    if (aChannels == 4) {
+      u16.store(aDst + x * 4);
+    } else {
+      aDst[x * 3 + 0] = u16[0];
+      aDst[x * 3 + 1] = u16[1];
+      aDst[x * 3 + 2] = u16[2];
+    }
+  }
 }
 
 }  // namespace gfx

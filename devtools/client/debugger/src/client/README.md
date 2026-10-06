@@ -32,8 +32,8 @@ temporary pauses called interrupts.
 We want to do these interrupts transparently, so we've decided that the client
 should not notify the application that the thread has been paused or resumed.
 
-[protocol]: https://searchfox.org/mozilla-central/source/devtools/docs/backend/protocol.md
-[devtools-client.js]: https://searchfox.org/mozilla-central/source/devtools/client/devtools-client.js
+[protocol]: https://searchfox.org/firefox-main/source/devtools/docs/contributor/backend/protocol.md
+[devtools-client.js]: https://searchfox.org/firefox-main/source/devtools/client/devtools-client.js
 
 ## Chrome
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,21 +5,21 @@
 #ifndef DOM_TENSOR_H_
 #define DOM_TENSOR_H_
 
-#include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/ONNXBinding.h"
 #include "js/TypeDecls.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/ONNXBinding.h"
 #include "mozilla/dom/onnxruntime_c_api.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsWrapperCache.h"
 #include "nsIGlobalObject.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 class Promise;
 
 class Tensor final : public nsISupports, public nsWrapperCache {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Tensor)
 
  public:

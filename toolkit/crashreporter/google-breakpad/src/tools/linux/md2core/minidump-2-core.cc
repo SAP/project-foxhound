@@ -77,6 +77,10 @@
   #define ELF_ARCH  EM_MIPS
 #elif defined(__aarch64__)
   #define ELF_ARCH  EM_AARCH64
+#elif defined(__loongarch__)
+  #define ELF_ARCH  EM_LOONGARCH
+#elif defined(__riscv)
+  #define ELF_ARCH  EM_RISCV
 #endif
 
 #if defined(__arm__)

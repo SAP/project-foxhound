@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,8 +6,9 @@
 #define mozilla_glean_GleanCustomDistribution_h
 
 #include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/glean/bindings/GleanMetric.h"
+#include "mozilla/glean/bindings/CustomDistributionStandalone.h"
 #include "mozilla/glean/bindings/DistributionData.h"
+#include "mozilla/glean/bindings/GleanMetric.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Result.h"
 #include "nsTArray.h"
@@ -22,9 +21,10 @@ namespace mozilla::glean {
 
 namespace impl {
 
-class CustomDistributionMetric {
+class CustomDistributionMetric : public CustomDistributionStandalone {
  public:
-  constexpr explicit CustomDistributionMetric(uint32_t aId) : mId(aId) {}
+  constexpr explicit CustomDistributionMetric(uint32_t aId)
+      : CustomDistributionStandalone(aId) {}
 
   /**
    * Accumulates the provided samples in the metric.
@@ -33,13 +33,6 @@ class CustomDistributionMetric {
    *                 metric.
    */
   void AccumulateSamples(const nsTArray<uint64_t>& aSamples) const;
-
-  /**
-   * Accumulates the provided sample in the metric.
-   *
-   * @param aSamples The sample to be recorded by the metric.
-   */
-  void AccumulateSingleSample(uint64_t aSample) const;
 
   /**
    * Accumulates the provided samples in the metric.
@@ -51,14 +44,6 @@ class CustomDistributionMetric {
    * and reports an `InvalidValue` error for each of them.
    */
   void AccumulateSamplesSigned(const nsTArray<int64_t>& aSamples) const;
-
-  /**
-   * Accumulates the provided sample in the metric.
-   *
-   * @param aSamples The signed integer sample to be recorded by the
-   *                 metric.
-   */
-  void AccumulateSingleSampleSigned(int64_t aSample) const;
 
   /**
    * **Test-only API**
@@ -79,9 +64,6 @@ class CustomDistributionMetric {
    */
   Result<Maybe<DistributionData>, nsCString> TestGetValue(
       const nsACString& aPingName = nsCString()) const;
-
- private:
-  const uint32_t mId;
 };
 }  // namespace impl
 

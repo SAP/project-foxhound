@@ -26,6 +26,7 @@
 @import "chrome://devtools/content/application/src/components/service-workers/Registration.css";
 @import "chrome://devtools/content/application/src/components/service-workers/RegistrationList.css";
 @import "chrome://devtools/content/application/src/components/service-workers/Worker.css";
+@import "chrome://devtools/content/application/src/components/session-history/SessionHistory.css";
 @import "chrome://devtools/content/application/src/components/ui/UIButton.css";
 
 html,

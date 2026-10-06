@@ -10,6 +10,10 @@ registerCleanupFunction(() => {
   Services.prefs.clearUserPref("network.http.priority_header.enabled");
 });
 
+const { NodeHTTPSServer } = ChromeUtils.importESModule(
+  "resource://testing-common/NodeServer.sys.mjs"
+);
+
 function channelOpenPromise(chan, flags) {
   return new Promise(resolve => {
     function finish(req, buffer) {

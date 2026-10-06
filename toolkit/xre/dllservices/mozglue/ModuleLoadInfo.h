@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -9,7 +7,6 @@
 
 #include "mozilla/NativeNt.h"
 #include "mozilla/Vector.h"
-#include "mozilla/Unused.h"
 
 namespace mozilla {
 
@@ -105,7 +102,7 @@ struct ModuleLoadInfo final {
     // is just a macro that resolve to this function anyway.
     WORD numCaptured = ::RtlCaptureStackBackTrace(2, kMaxBacktraceSize,
                                                   mBacktrace.begin(), nullptr);
-    Unused << mBacktrace.resize(numCaptured);
+    (void)mBacktrace.resize(numCaptured);
     // These backtraces might stick around for a while, so let's trim any
     // excess memory.
     mBacktrace.shrinkStorageToFit();

@@ -1,16 +1,15 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaTrackConstraints.h"
 
-#include <limits>
 #include <algorithm>
 #include <iterator>
+#include <limits>
 
-#include "mozilla/dom/MediaStreamTrackBinding.h"
 #include "mozilla/MediaManager.h"
+#include "mozilla/dom/MediaStreamTrackBinding.h"
 
 #ifdef MOZ_WEBRTC
 namespace mozilla {
@@ -19,7 +18,7 @@ extern LazyLogModule gMediaManagerLog;
 #else
 static mozilla::LazyLogModule gMediaManagerLog("MediaManager");
 #endif
-#define LOG(...) MOZ_LOG(gMediaManagerLog, LogLevel::Debug, (__VA_ARGS__))
+#define LOG(...) MOZ_LOG_FMT(gMediaManagerLog, LogLevel::Debug, __VA_ARGS__)
 
 namespace mozilla {
 
@@ -89,7 +88,7 @@ void NormalizedConstraintSet::Range<bool>::FinalizeMerge() {
 }
 
 NormalizedConstraintSet::LongRange::LongRange(
-    const char* aName,
+    const nsCString& aName,
     const dom::Optional<dom::OwningLongOrConstrainLongRange>& aOther,
     bool advanced)
     : Range<int32_t>(aName,
@@ -111,7 +110,7 @@ NormalizedConstraintSet::LongRange::LongRange(
 }
 
 NormalizedConstraintSet::LongLongRange::LongLongRange(
-    const char* aName, const dom::Optional<int64_t>& aOther)
+    const nsCString& aName, const dom::Optional<int64_t>& aOther)
     : Range<int64_t>(aName,
                      1 + INT64_MIN,  // +1 avoids Windows compiler bug
                      INT64_MAX) {
@@ -121,7 +120,7 @@ NormalizedConstraintSet::LongLongRange::LongLongRange(
 }
 
 NormalizedConstraintSet::DoubleRange::DoubleRange(
-    const char* aName,
+    const nsCString& aName,
     const dom::Optional<dom::OwningDoubleOrConstrainDoubleRange>& aOther,
     bool advanced)
     : Range<double>(aName, -std::numeric_limits<double>::infinity(),
@@ -142,7 +141,7 @@ NormalizedConstraintSet::DoubleRange::DoubleRange(
 }
 
 NormalizedConstraintSet::BooleanRange::BooleanRange(
-    const char* aName,
+    const nsCString& aName,
     const dom::Optional<dom::OwningBooleanOrConstrainBooleanParameters>& aOther,
     bool advanced)
     : Range<bool>(aName, false, true) {
@@ -169,7 +168,7 @@ NormalizedConstraintSet::BooleanRange::BooleanRange(
 }
 
 NormalizedConstraintSet::StringRange::StringRange(
-    const char* aName,
+    const nsCString& aName,
     const dom::Optional<
         dom::OwningStringOrStringSequenceOrConstrainDOMStringParameters>&
         aOther,
@@ -263,7 +262,7 @@ void NormalizedConstraintSet::StringRange::Intersect(
   set_intersection(mExact.begin(), mExact.end(), aOther.mExact.begin(),
                    aOther.mExact.end(),
                    std::inserter(intersection, intersection.begin()));
-  mExact = intersection;
+  mExact = std::move(intersection);
 }
 
 bool NormalizedConstraintSet::StringRange::Merge(const StringRange& aOther) {
@@ -275,7 +274,7 @@ bool NormalizedConstraintSet::StringRange::Merge(const StringRange& aOther) {
   ValueType unioned;
   set_union(mIdeal.begin(), mIdeal.end(), aOther.mIdeal.begin(),
             aOther.mIdeal.end(), std::inserter(unioned, unioned.begin()));
-  mIdeal = unioned;
+  mIdeal = std::move(unioned);
   return true;
 }
 
@@ -508,7 +507,7 @@ const char* MediaConstraintsHelper::FindBadConstraint(
 static void LogConstraintStringRange(
     const NormalizedConstraintSet::StringRange& aRange) {
   if (aRange.mExact.size() <= 1 && aRange.mIdeal.size() <= 1) {
-    LOG("  %s: { exact: [%s], ideal: [%s] }", aRange.mName,
+    LOG("  {}: {{ exact: [{}], ideal: [{}] }}", aRange.mName.get(),
         (aRange.mExact.empty()
              ? ""
              : NS_ConvertUTF16toUTF8(*aRange.mExact.begin()).get()),
@@ -516,15 +515,15 @@ static void LogConstraintStringRange(
              ? ""
              : NS_ConvertUTF16toUTF8(*aRange.mIdeal.begin()).get()));
   } else {
-    LOG("  %s: { exact: [", aRange.mName);
+    LOG("  {}: {{ exact: [", aRange.mName.get());
     for (const auto& entry : aRange.mExact) {
-      LOG("      %s,", NS_ConvertUTF16toUTF8(entry).get());
+      LOG("      {},", NS_ConvertUTF16toUTF8(entry).get());
     }
     LOG("    ], ideal: [");
     for (const auto& entry : aRange.mIdeal) {
-      LOG("      %s,", NS_ConvertUTF16toUTF8(entry).get());
+      LOG("      {},", NS_ConvertUTF16toUTF8(entry).get());
     }
-    LOG("    ]}");
+    LOG("    ]}}");
   }
 }
 
@@ -532,20 +531,22 @@ template <typename T>
 static void LogConstraintRange(
     const NormalizedConstraintSet::Range<T>& aRange) {
   if (aRange.mIdeal.isSome()) {
-    LOG("  %s: { min: %d, max: %d, ideal: %d }", aRange.mName, aRange.mMin,
-        aRange.mMax, aRange.mIdeal.valueOr(0));
+    LOG("  {}: {{ min: {}, max: {}, ideal: {} }}", aRange.mName.get(),
+        aRange.mMin, aRange.mMax, aRange.mIdeal.valueOr(0));
   } else {
-    LOG("  %s: { min: %d, max: %d }", aRange.mName, aRange.mMin, aRange.mMax);
+    LOG("  {}: {{ min: {}, max: {} }}", aRange.mName.get(), aRange.mMin,
+        aRange.mMax);
   }
 }
 
 template <>
 void LogConstraintRange(const NormalizedConstraintSet::Range<double>& aRange) {
   if (aRange.mIdeal.isSome()) {
-    LOG("  %s: { min: %f, max: %f, ideal: %f }", aRange.mName, aRange.mMin,
-        aRange.mMax, aRange.mIdeal.valueOr(0));
+    LOG("  {}: {{ min: {}, max: {}, ideal: {} }}", aRange.mName.get(),
+        aRange.mMin, aRange.mMax, aRange.mIdeal.valueOr(0));
   } else {
-    LOG("  %s: { min: %f, max: %f }", aRange.mName, aRange.mMin, aRange.mMax);
+    LOG("  {}: {{ min: {}, max: {} }}", aRange.mName.get(), aRange.mMin,
+        aRange.mMax);
   }
 }
 
@@ -553,8 +554,8 @@ void LogConstraintRange(const NormalizedConstraintSet::Range<double>& aRange) {
 void MediaConstraintsHelper::LogConstraints(
     const NormalizedConstraintSet& aConstraints) {
   const auto& c = aConstraints;
-  LOG("Constraints: {");
-  LOG("%s", [&]() {
+  LOG("Constraints: {{");
+  LOG("{}", [&]() {
     LogConstraintRange(c.mWidth);
     LogConstraintRange(c.mHeight);
     LogConstraintRange(c.mFrameRate);
@@ -571,4 +572,33 @@ void MediaConstraintsHelper::LogConstraints(
   }());
 }
 
+/* static */
+Maybe<VideoResizeModeEnum> MediaConstraintsHelper::GetResizeMode(
+    const NormalizedConstraintSet& aConstraints,
+    const MediaEnginePrefs& aPrefs) {
+  if (!aPrefs.mResizeModeEnabled) {
+    return Nothing();
+  }
+  auto defaultResizeMode = aPrefs.mResizeMode;
+  nsString defaultResizeModeString =
+      NS_ConvertASCIItoUTF16(dom::GetEnumString(defaultResizeMode));
+  uint32_t distanceToDefault = MediaConstraintsHelper::FitnessDistance(
+      Some(defaultResizeModeString), aConstraints.mResizeMode);
+  if (distanceToDefault == 0) {
+    return Some(defaultResizeMode);
+  }
+  VideoResizeModeEnum otherResizeMode =
+      (defaultResizeMode == VideoResizeModeEnum::None)
+          ? VideoResizeModeEnum::Crop_and_scale
+          : VideoResizeModeEnum::None;
+  nsString otherResizeModeString =
+      NS_ConvertASCIItoUTF16(dom::GetEnumString(otherResizeMode));
+  uint32_t distanceToOther = MediaConstraintsHelper::FitnessDistance(
+      Some(otherResizeModeString), aConstraints.mResizeMode);
+  return Some((distanceToDefault <= distanceToOther) ? defaultResizeMode
+                                                     : otherResizeMode);
+}
+
 }  // namespace mozilla
+
+#undef LOG

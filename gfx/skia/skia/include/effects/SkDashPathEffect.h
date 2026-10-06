@@ -8,11 +8,11 @@
 #ifndef SkDashPathEffect_DEFINED
 #define SkDashPathEffect_DEFINED
 
+#include "include/core/SkPathEffect.h"  // IWYU pragma: keep    (for unspanned apis)
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
+#include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
-
-class SkPathEffect;
 
 class SK_API SkDashPathEffect {
 public:
@@ -37,7 +37,7 @@ public:
 
         Note: only affects stroked paths.
     */
-    static sk_sp<SkPathEffect> Make(const SkScalar intervals[], int count, SkScalar phase);
+    static sk_sp<SkPathEffect> Make(SkSpan<const SkScalar> intervals, SkScalar phase);
 };
 
 #endif

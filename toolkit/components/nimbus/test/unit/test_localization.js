@@ -244,7 +244,9 @@ add_task(async function test_getLocalizedValue_unenroll_missingEntry() {
     "_getLocalizedValue() with a bogus localization"
   );
 
-  await NimbusTestUtils.waitForInactiveEnrollment(enrollment.slug);
+  await NimbusTestUtils.assert.enrollmentExists(enrollment.slug, {
+    active: false,
+  });
 
   Assert.equal(
     manager.store.getExperimentForFeature(FEATURE_ID),
@@ -315,7 +317,9 @@ add_task(async function test_getLocalizedValue_unenroll_missingEntry() {
     "_getLocalizedValue() with a bogus localization"
   );
 
-  await NimbusTestUtils.waitForInactiveEnrollment(enrollment.slug);
+  await NimbusTestUtils.assert.enrollmentExists(enrollment.slug, {
+    active: false,
+  });
 
   Assert.equal(
     manager.store.getExperimentForFeature(FEATURE_ID),
@@ -646,8 +650,10 @@ add_task(async function test_getVariables_fallback_unenroll() {
     waldo: ["fallback-waldo-pref-value"],
   });
 
-  await NimbusTestUtils.waitForInactiveEnrollment("experiment");
-  await NimbusTestUtils.waitForInactiveEnrollment("rollout");
+  await NimbusTestUtils.assert.enrollmentExists("experiment", {
+    active: false,
+  });
+  await NimbusTestUtils.assert.enrollmentExists("rollout", { active: false });
 
   Assert.equal(
     manager.store.getExperimentForFeature(FEATURE_ID),

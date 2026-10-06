@@ -14,7 +14,6 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.paging.LoadState
@@ -24,6 +23,7 @@ import androidx.paging.PagingDataAdapter
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.launch
@@ -32,14 +32,18 @@ import mozilla.components.support.ktx.kotlin.stripDefaultPort
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 import org.mozilla.fenix.NavHostActivity
 import org.mozilla.fenix.R
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.loadIntoView
 import org.mozilla.fenix.ext.nav
 
 private const val MAX_ITEMS_PER_PAGE = 50
 
+/**
+ * Settings screen allowing users to configure browser permissions exceptions for specific websites.
+ */
 class SitePermissionsExceptionsFragment :
-    Fragment(R.layout.fragment_site_permissions_exceptions), View.OnClickListener {
+    Fragment(R.layout.fragment_site_permissions_exceptions), View.OnClickListener, SystemInsetsPaddedFragment {
     private lateinit var emptyContainerMessage: View
     private lateinit var recyclerView: RecyclerView
     private lateinit var clearButton: Button
@@ -109,7 +113,7 @@ class SitePermissionsExceptionsFragment :
     private fun bindClearButton(rootView: View) {
         clearButton = rootView.findViewById(R.id.delete_all_site_permissions_button)
         clearButton.setOnClickListener {
-            AlertDialog.Builder(requireContext()).apply {
+            MaterialAlertDialogBuilder(requireContext()).apply {
                 setMessage(R.string.confirm_clear_permissions_on_all_sites)
                 setTitle(R.string.clear_permissions)
                 setPositiveButton(R.string.clear_permissions_positive) { dialog: DialogInterface, _ ->

@@ -1,0 +1,197 @@
+<!DOCTYPE HTML>
+  <html>
+<head>
+  <meta charset="utf-8">
+  <title>Tests userScripts.execute() and injectImmediately</title>
+  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
+  <script type="text/javascript" src="head.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+
+<script type="text/javascript">
+
+"use strict";
+
+const MOCHITEST_HOST_PERMISSIONS = [
+  "*://mochi.test/",
+  "*://mochi.xorigin-test/",
+  "*://test1.example.com/",
+];
+
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.webextOptionalPermissionPrompts", false]],
+  });
+});
+
+const makeExtension = ({ manifest: manifestProps, ...otherProps }) => {
+  return ExtensionTestUtils.loadExtension({
+    manifest: {
+      manifest_version: 3,
+      optional_permissions: ["userScripts"],
+      host_permissions: [
+        ...MOCHITEST_HOST_PERMISSIONS,
+        // Used in `file_contains_iframe.html`
+        "https://example.org/",
+      ],
+      granted_host_permissions: true,
+      ...manifestProps,
+    },
+    useAddonManager: "temporary",
+    ...otherProps,
+  });
+};
+
+async function verifyExecuteInjectImmediately({
+  whenDocumentIdle = false,
+} = {}) {
+  const extension = makeExtension({
+    async background() {
+      const msgPromise = new Promise((resolve, reject) =>
+        browser.test.onMessage.addListener((msg, opts) => {
+          if (msg === "execute") {
+            return resolve(opts);
+          }
+          reject("invalid message received");
+        })
+      );
+
+      browser.test.sendMessage("bgpage:ready");
+
+      const { whenDocumentIdle } = await msgPromise;
+
+      await new Promise(resolve => {
+        browser.test.withHandlingUserInput(() => {
+          resolve(
+            browser.permissions.request({ permissions: ["userScripts"] })
+          );
+        });
+      });
+
+      const tabs = await browser.tabs.query({ active: true });
+      const tabId = tabs[0].id;
+
+      let onUpdatedPromise = (tabId, url, status) => {
+        return new Promise(resolve => {
+          browser.tabs.onUpdated.addListener(
+            function listener(_, changed, tab) {
+              if (
+                tabId == tab.id &&
+                changed.status == status &&
+                tab.url == url
+              ) {
+                browser.tabs.onUpdated.removeListener(listener);
+                resolve();
+              }
+            }
+          );
+        });
+      };
+
+      const url = [
+        "https://test1.example.com/tests/toolkit/components/extensions/test/mochitest/",
+        `file_slowed_document.sjs?with-iframe&r=${Math.random()}`,
+      ].join("");
+
+      const loadingPromise = onUpdatedPromise(tabId, url, "loading");
+      const completePromise = onUpdatedPromise(tabId, url, "complete");
+
+      await browser.tabs.update(tabId, { url });
+
+      await loadingPromise;
+      if (whenDocumentIdle) {
+        await completePromise;
+      }
+
+      const js = [
+        {
+          code: `
+          window.counter ??= 0;
+          ++window.counter;
+        `,
+        },
+      ];
+
+      const results = await Promise.all([
+        // onLoading: 1 / onIdle: 1
+        browser.userScripts.execute({
+          target: { tabId },
+          js,
+          injectImmediately: true,
+        }),
+        // onLoading: 3 / onIdle: 2
+        browser.userScripts.execute({
+          target: { tabId },
+          js,
+          injectImmediately: false,
+        }),
+        // onLoading: 4 / onIdle: 3
+        browser.userScripts.execute({
+          target: { tabId },
+          js,
+          // `injectImmediately` is `false` by default
+        }),
+        // onLoading: 2 / onIdle: 4
+        browser.userScripts.execute({
+          target: { tabId },
+          js,
+          injectImmediately: true,
+        }),
+        // onLoading: 5 / onIdle: 5
+        browser.userScripts.execute({
+          target: { tabId },
+          js,
+          injectImmediately: false,
+        }),
+      ]);
+      browser.test.assertEq(
+        5,
+        results.length,
+        "got expected number of results"
+      );
+
+      browser.test.assertEq(
+        whenDocumentIdle ? "1 2 3 4 5" : "1 3 4 2 5",
+        results.map(res => res[0].result).join(" "),
+        `got expected results: ${JSON.stringify(results)}`
+      );
+
+      if (!whenDocumentIdle) {
+        await completePromise;
+      }
+
+      browser.test.notifyPass("execute-script");
+    },
+  });
+
+  const tab = await AppTestDelegate.openNewForegroundTab(
+    window,
+    "https://test1.example.com/",
+    true
+  );
+
+  await extension.startup();
+  await extension.awaitMessage("bgpage:ready");
+  extension.sendMessage("execute", {
+    whenDocumentIdle,
+  });
+  await extension.awaitFinish("execute-script");
+  await extension.unload();
+
+  await AppTestDelegate.removeTab(window, tab);
+}
+
+add_task(async function test_execute_injectImmediately() {
+  await verifyExecuteInjectImmediately();
+});
+
+add_task(async function test_execute_injectImmediately_after_document_idle() {
+  await verifyExecuteInjectImmediately({ whenDocumentIdle: true });
+});
+
+</script>
+
+</body>
+</html>

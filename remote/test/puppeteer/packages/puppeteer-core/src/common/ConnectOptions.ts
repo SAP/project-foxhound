@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {Session} from 'chromium-bidi/lib/cjs/protocol/protocol.js';
+import type {Session} from 'webdriver-bidi-protocol';
 
 import type {
   IsPageTargetCallback,
@@ -39,6 +39,15 @@ export interface SupportedWebDriverCapabilities {
 }
 
 /**
+ * @public
+ */
+export type ChromeReleaseChannel =
+  | 'chrome'
+  | 'chrome-beta'
+  | 'chrome-canary'
+  | 'chrome-dev';
+
+/**
  * Generic browser options that can be passed when launching any browser or when
  * connecting to an existing browser instance.
  * @public
@@ -49,6 +58,26 @@ export interface ConnectOptions {
    * @defaultValue `false`
    */
   acceptInsecureCerts?: boolean;
+  /**
+   * If specified, puppeteer looks for an open WebSocket at the well-known
+   * default user data directory for the specified channel and attempts to
+   * connect to it using ws://localhost:$ActivePort/devtools/browser. Only works
+   * for Chrome and when run in Node.js.
+   *
+   * This option is experimental when used with puppeteer.connect().
+   *
+   * @experimental
+   */
+  channel?: ChromeReleaseChannel;
+  /**
+   * Experimental setting to disable monitoring network events by default. When
+   * set to `false`, parts of Puppeteer that depend on network events would not
+   * work such as HTTPRequest and HTTPResponse.
+   *
+   * @experimental
+   * @defaultValue `true`
+   */
+  networkEnabled?: boolean;
   /**
    * Sets the viewport for each page.
    *
@@ -74,6 +103,14 @@ export interface ConnectOptions {
   _isPageTarget?: IsPageTargetCallback;
 
   /**
+   * Whether to handle the DevTools windows as pages in Puppeteer. Supported
+   * only in Chrome with CDP.
+   *
+   * @defaultValue 'false'
+   */
+  handleDevToolsAsPage?: boolean;
+
+  /**
    * @defaultValue Determined at run time:
    *
    * - Launching Chrome - 'cdp'.
@@ -95,6 +132,14 @@ export interface ConnectOptions {
   browserWSEndpoint?: string;
   browserURL?: string;
   transport?: ConnectionTransport;
+  /**
+   * @internal
+   *
+   * Custom ID generator for CDP / BiDi messages. Useful if the same transport
+   * is shared for multiple connections.
+   */
+  idGenerator?: () => number;
+
   /**
    * Headers to use for the web socket connection.
    * @remarks

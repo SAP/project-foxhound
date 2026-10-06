@@ -1,0 +1,79 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.sw-topsites-container {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--space-small);
+  padding-block-start: var(--space-xxlarge);
+  padding-block-end: var(--space-large);
+}
+
+.sw-topsite {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-small);
+  inline-size: var(--size-image-xlarge);
+  padding: var(--space-xsmall);
+  border-radius: var(--border-radius-medium);
+  text-decoration: none;
+  color: var(--text-color-deemphasized);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens, stylelint-plugin-mozilla/no-base-design-tokens */
+  --sw-topsite-hover-background: light-dark(color-mix(in srgb, var(--color-violet-50) 15%, transparent), color-mix(in srgb, white 10%, transparent));
+}
+
+@media not (forced-colors) {
+  .sw-topsite:hover {
+    background-color: var(--sw-topsite-hover-background);
+  }
+}
+
+.sw-topsite-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--size-image-large);
+  block-size: var(--size-image-large);
+  /* Hardcoded to match Figma (12px) until the new border-radius scale lands;
+   * see https://bugzilla.mozilla.org/show_bug.cgi?id=2030460 */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  border-radius: 12px;
+  background-color: var(--background-color-box);
+  box-shadow: var(--box-shadow-level-1);
+  overflow: hidden;
+
+  @media (forced-colors) {
+    border: 1px solid var(--border-color);
+  }
+}
+
+.sw-topsite-icon img {
+  inline-size: var(--size-image-xsmall);
+  block-size: var(--size-image-xsmall);
+  object-fit: contain;
+  /* Recolors only the context-fill default favicon (shown when a site has no
+   * icon of its own) so it follows the theme instead of staying dark. Real
+   * favicons are not context-fill, so they are unaffected. */
+  -moz-context-properties: fill;
+  fill: var(--icon-color);
+}
+
+.sw-topsite-title {
+  max-inline-size: 100%;
+  font-size: var(--font-size-small);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media not (forced-colors) {
+  .sw-topsite-title {
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    color: var(--smartwindow-brand-accent);
+  }
+}

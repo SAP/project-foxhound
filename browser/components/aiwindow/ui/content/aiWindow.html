@@ -1,0 +1,65 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
+
+<!doctype html>
+<html class="ai-window">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src resource: chrome:; object-src 'none'; img-src chrome: blob: data: moz-remote-image: page-icon:;"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <title data-l10n-id="smartwindow-document-title"></title>
+    <link
+      id="tabIcon"
+      rel="icon"
+      type="image/svg+xml"
+      href="chrome://browser/skin/smart-window-simplified.svg"
+    />
+    <!-- TODO (Bug 2008938): Make in-page Smartbar styling not dependent on chrome styles -->
+    <link
+      rel="stylesheet"
+      href="chrome://browser/content/aiwindow/ai-window-shared.css"
+    />
+    <link
+      rel="stylesheet"
+      href="chrome://browser/content/sidebar/sidebar.css"
+    />
+    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
+    <link
+      rel="stylesheet"
+      href="chrome://browser/content/aiwindow/ai-window-overrides.css"
+    />
+    <script
+      type="module"
+      src="chrome://browser/content/urlbar/SmartbarInput.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://browser/content/aiwindow/components/ai-window.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://browser/content/aiwindow/components/smartwindow-heading.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://browser/content/aiwindow/components/smartwindow-footer.mjs"
+    ></script>
+    <link rel="localization" href="branding/brand.ftl" />
+    <link rel="localization" href="browser/browser.ftl" />
+    <link rel="localization" href="browser/search.ftl" />
+    <link rel="localization" href="preview/aiWindow.ftl" />
+    <link rel="localization" href="preview/enUS-searchFeatures.ftl" />
+    <link rel="localization" href="toolkit/branding/brandings.ftl" />
+    <script
+      type="module"
+      src="chrome://browser/content/aiwindow/smartwindow-init.mjs"
+    ></script>
+  </head>
+  <body>
+    <ai-window></ai-window>
+  </body>
+</html>

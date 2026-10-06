@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,10 +9,7 @@
 "use strict";
 
 add_setup(async function () {
-  await setCookieBehaviorPref(
-    BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
-    false
-  );
+  await setCookieBehaviorPref(BEHAVIOR_PARTITION_FOREIGN, false);
 });
 
 add_task(async function runTest() {

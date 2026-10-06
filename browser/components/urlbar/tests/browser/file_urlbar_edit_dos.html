@@ -7,7 +7,9 @@
 <body>
 <script>
 function dos_hash() {
-  location.hash = "#";
+  // Trigger a same document location change by navigating to a different
+  // anchor on the page.
+  location.hash = "#" + Math.random();
 }
 
 function dos_pushState() {

@@ -2,10 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const EDIT_ADDRESS_URL = "chrome://formautofill/content/editAddress.xhtml";
-const EDIT_CREDIT_CARD_URL =
-  "chrome://formautofill/content/editCreditCard.xhtml";
-
 const { AppConstants } = ChromeUtils.importESModule(
   "resource://gre/modules/AppConstants.sys.mjs"
 );
@@ -20,8 +16,9 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   CreditCard: "resource://gre/modules/CreditCard.sys.mjs",
   FormAutofillUtils: "resource://gre/modules/shared/FormAutofillUtils.sys.mjs",
-  OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
   formAutofillStorage: "resource://autofill/FormAutofillStorage.sys.mjs",
+  FormAutofillPreferences:
+    "resource://autofill/FormAutofillPreferences.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "log", () =>
@@ -337,13 +334,10 @@ export class ManageAddresses extends ManageRecords {
    * @param  {object} address [optional]
    */
   openEditDialog(address) {
-    this.prefWin.gSubDialog.open(EDIT_ADDRESS_URL, undefined, {
-      record: address,
-      // Don't validate in preferences since it's fine for fields to be missing
-      // for autofill purposes. For PaymentRequest addresses get more validation.
-      noValidate: true,
-      l10nStrings: ManageAddresses.getAddressL10nStrings(),
-    });
+    return lazy.FormAutofillPreferences.openEditAddressDialog(
+      address,
+      this.prefWin
+    );
   }
 
   getLabelInfo(address) {
@@ -371,69 +365,9 @@ export class ManageCreditCards extends ManageRecords {
    * @param  {object} creditCard [optional]
    */
   async openEditDialog(creditCard) {
-    // Ask for reauth if user is trying to edit an existing credit card.
-    if (creditCard) {
-      const promptMessage = lazy.FormAutofillUtils.reauthOSPromptMessage(
-        "autofill-edit-payment-method-os-prompt-macos",
-        "autofill-edit-payment-method-os-prompt-windows",
-        "autofill-edit-payment-method-os-prompt-other"
-      );
-      let verified;
-      let result;
-      try {
-        verified = await lazy.FormAutofillUtils.verifyUserOSAuth(
-          FormAutofill.AUTOFILL_CREDITCARDS_OS_AUTH_LOCKED_PREF,
-          promptMessage
-        );
-        result = verified ? "success" : "fail_user_canceled";
-      } catch (ex) {
-        result = "fail_error";
-        throw ex;
-      } finally {
-        Glean.formautofill.promptShownOsReauth.record({
-          trigger: "edit",
-          result,
-        });
-      }
-      if (!verified) {
-        return;
-      }
-    }
-
-    let decryptedCCNumObj = {};
-    let errorResult = 0;
-    if (creditCard && creditCard["cc-number-encrypted"]) {
-      try {
-        decryptedCCNumObj["cc-number"] = await lazy.OSKeyStore.decrypt(
-          creditCard["cc-number-encrypted"]
-        );
-      } catch (ex) {
-        errorResult = ex.result;
-        if (ex.result == Cr.NS_ERROR_ABORT) {
-          // User shouldn't be ask to reauth here, but it could happen.
-          // Return here and skip opening the dialog.
-          return;
-        }
-        // We've got ourselves a real error.
-        // Recover from encryption error so the user gets a chance to re-enter
-        // unencrypted credit card number.
-        decryptedCCNumObj["cc-number"] = "";
-        console.error(ex);
-      } finally {
-        Glean.creditcard.osKeystoreDecrypt.record({
-          isDecryptSuccess: errorResult === 0,
-          errorResult,
-          trigger: "edit",
-        });
-      }
-    }
-    let decryptedCreditCard = Object.assign({}, creditCard, decryptedCCNumObj);
-    this.prefWin.gSubDialog.open(
-      EDIT_CREDIT_CARD_URL,
-      { features: "resizable=no" },
-      {
-        record: decryptedCreditCard,
-      }
+    return lazy.FormAutofillPreferences.openEditCreditCardDialog(
+      creditCard,
+      this.prefWin
     );
   }
 

@@ -4,56 +4,45 @@
 
 package org.mozilla.fenix.browser.store
 
+import android.content.Context
 import android.view.Gravity
 import androidx.annotation.VisibleForTesting
+import androidx.fragment.app.FragmentManager
 import mozilla.components.concept.base.crash.Breadcrumb
 import mozilla.components.feature.downloads.ui.DownloadCancelDialogFragment
 import mozilla.components.lib.crash.CrashReporter
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.lib.state.Store
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.store.BrowserScreenAction.CancelPrivateDownloadsOnPrivateTabsClosedAccepted
 import org.mozilla.fenix.browser.store.BrowserScreenAction.ClosingLastPrivateTab
-import org.mozilla.fenix.browser.store.BrowserScreenAction.EnvironmentCleared
-import org.mozilla.fenix.browser.store.BrowserScreenAction.EnvironmentRehydrated
-import org.mozilla.fenix.browser.store.BrowserScreenStore.Environment
+import org.mozilla.fenix.ext.pixelSizeFor
 import org.mozilla.fenix.theme.ThemeManager
 
 /**
  * [Middleware] responsible for handling actions related to the browser screen.
  *
+ * @param uiContext [Context] used for various system interactions.
  * @param crashReporter [CrashReporter] for recording crashes.
+ * @param fragmentManager [FragmentManager] to use for showing other fragments.
  */
 class BrowserScreenMiddleware(
+    private val uiContext: Context,
     private val crashReporter: CrashReporter,
+    private val fragmentManager: FragmentManager,
 ) : Middleware<BrowserScreenState, BrowserScreenAction> {
-    @VisibleForTesting
-    internal var environment: Environment? = null
 
     override fun invoke(
-        context: MiddlewareContext<BrowserScreenState, BrowserScreenAction>,
+        store: Store<BrowserScreenState, BrowserScreenAction>,
         next: (BrowserScreenAction) -> Unit,
         action: BrowserScreenAction,
     ) {
         when (action) {
-            is EnvironmentRehydrated -> {
-                next(action)
-
-                environment = action.environment
-            }
-
-            is EnvironmentCleared -> {
-                next(action)
-
-                environment = null
-            }
-
             is ClosingLastPrivateTab -> {
                 next(action)
 
                 showCancelledDownloadWarning(
-                    store = context.store,
+                    store = store,
                     downloadCount = action.inProgressPrivateDownloads,
                     tabId = action.tabId,
                 )
@@ -68,36 +57,54 @@ class BrowserScreenMiddleware(
         downloadCount: Int,
         tabId: String?,
     ) {
-        val environment = environment ?: return
-
         crashReporter.recordCrashBreadcrumb(
             Breadcrumb("DownloadCancelDialogFragment shown in browser screen"),
         )
-        val dialog = DownloadCancelDialogFragment.newInstance(
+        val dialog = createDownloadCancelDialog(uiContext, store, downloadCount, tabId)
+
+        dialog.show(fragmentManager, CANCEL_PRIVATE_DOWNLOADS_DIALOG_FRAGMENT_TAG)
+    }
+
+    /**
+     * Creates and configures a new instance of [DownloadCancelDialogFragment].
+     */
+    @VisibleForTesting
+    internal fun createDownloadCancelDialog(
+        context: Context,
+        store: Store<BrowserScreenState, BrowserScreenAction>,
+        downloadCount: Int,
+        tabId: String?,
+    ): DownloadCancelDialogFragment {
+        return DownloadCancelDialogFragment.newInstance(
             downloadCount = downloadCount,
             tabId = tabId,
             source = null,
-            promptStyling = DownloadCancelDialogFragment.PromptStyling(
-                gravity = Gravity.BOTTOM,
-                shouldWidthMatchParent = true,
-                positiveButtonBackgroundColor = ThemeManager.resolveAttribute(
-                    R.attr.accent,
-                    environment.context,
-                ),
-                positiveButtonTextColor = ThemeManager.resolveAttribute(
-                    R.attr.textOnColorPrimary,
-                    environment.context,
-                ),
-                positiveButtonRadius = environment.context.resources.getDimensionPixelSize(
-                    R.dimen.tab_corner_radius,
-                ).toFloat(),
-            ),
-
+            promptStyling = createDialogPromptStyling(context),
             onPositiveButtonClicked = { _, _ ->
                 store.dispatch(CancelPrivateDownloadsOnPrivateTabsClosedAccepted)
             },
         )
-        dialog.show(environment.fragmentManager, CANCEL_PRIVATE_DOWNLOADS_DIALOG_FRAGMENT_TAG)
+    }
+
+    /**
+     * Creates the specific styling configuration for the download cancellation prompt.
+     */
+    fun createDialogPromptStyling(context: Context): DownloadCancelDialogFragment.PromptStyling {
+        return DownloadCancelDialogFragment.PromptStyling(
+            gravity = Gravity.BOTTOM,
+            shouldWidthMatchParent = true,
+            positiveButtonBackgroundColor = ThemeManager.resolveAttribute(
+                R.attr.accent,
+                context,
+            ),
+            positiveButtonTextColor = ThemeManager.resolveAttribute(
+                R.attr.textOnColorPrimary,
+                context,
+            ),
+            positiveButtonRadius = context.pixelSizeFor(
+                R.dimen.tab_corner_radius,
+            ).toFloat(),
+        )
     }
 
     /**

@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "$id": "file:///SmartWindowNewtabPromo.schema.json",
+  "title": "SmartWindowNewtabPromo",
+  "description": "A template for promo messages that appear on the Smart Window new tab page.",
+  "allOf": [{ "$ref": "file:///FxMSCommon.schema.json#/$defs/Message" }],
+  "type": "object",
+  "properties": {
+    "content": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "The visual style of the promo (passed through to moz-promo)."
+        },
+        "heading": {
+          "$ref": "file:///FxMSCommon.schema.json#/$defs/localizableText",
+          "description": "The heading text of the promo."
+        },
+        "message": {
+          "$ref": "file:///FxMSCommon.schema.json#/$defs/localizableText",
+          "description": "The body text of the promo."
+        },
+        "imageSrc": {
+          "type": "string",
+          "description": "URL of the image to display."
+        },
+        "imageAlignment": {
+          "type": "string",
+          "description": "Alignment of the image within the promo."
+        },
+        "imageWidth": {
+          "type": "string",
+          "description": "Width preset for the image."
+        },
+        "imageDisplay": {
+          "type": "string",
+          "description": "Display style for the image."
+        },
+        "primary_button": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "$ref": "file:///FxMSCommon.schema.json#/$defs/localizableText",
+              "description": "The label for the primary action button."
+            },
+            "action": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "description": "Action dispatched by the button."
+                },
+                "data": {
+                  "type": "object"
+                }
+              },
+              "required": ["type"],
+              "additionalProperties": true,
+              "description": "The action to take upon clicking the primary button."
+            }
+          },
+          "required": ["label", "action"]
+        },
+        "additional_button": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "$ref": "file:///FxMSCommon.schema.json#/$defs/localizableText",
+              "description": "The label for the additional action button."
+            },
+            "action": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "description": "Action dispatched by the button."
+                },
+                "data": {
+                  "type": "object"
+                }
+              },
+              "required": ["type"],
+              "additionalProperties": true,
+              "description": "The action to take upon clicking the additional button."
+            }
+          },
+          "required": ["label", "action"]
+        }
+      },
+      "additionalProperties": true
+    },
+    "template": {
+      "type": "string",
+      "const": "smart_window_newtab_promo"
+    }
+  },
+  "additionalProperties": true
+}

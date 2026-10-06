@@ -125,20 +125,15 @@ pub(crate) trait MonotoneFramework: Sized + fmt::Debug {
 
 /// Whether an analysis's `constrain` function modified the incremental results
 /// or not.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub(crate) enum ConstrainResult {
     /// The incremental results were updated, and the fix-point computation
     /// should continue.
     Changed,
 
     /// The incremental results were not updated.
+    #[default]
     Same,
-}
-
-impl Default for ConstrainResult {
-    fn default() -> Self {
-        ConstrainResult::Same
-    }
 }
 
 impl ops::BitOr for ConstrainResult {
@@ -216,7 +211,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{HashMap, HashSet};
+    use crate::HashSet;
 
     // Here we find the set of nodes that are reachable from any given
     // node. This is a lattice mapping nodes to subsets of all nodes. Our join
@@ -285,9 +280,9 @@ mod tests {
 
         fn reverse(&self) -> Graph {
             let mut reversed = Graph::default();
-            for (node, edges) in self.0.iter() {
+            for (node, edges) in &self.0 {
                 reversed.0.entry(*node).or_insert_with(Vec::new);
-                for referent in edges.iter() {
+                for referent in edges {
                     reversed
                         .0
                         .entry(*referent)
@@ -311,7 +306,7 @@ mod tests {
         type Extra = &'a Graph;
         type Output = HashMap<Node, HashSet<Node>>;
 
-        fn new(graph: &'a Graph) -> ReachableFrom {
+        fn new(graph: &'a Graph) -> Self {
             let reversed = graph.reverse();
             ReachableFrom {
                 reachable: Default::default(),
@@ -321,7 +316,7 @@ mod tests {
         }
 
         fn initial_worklist(&self) -> Vec<Node> {
-            self.graph.0.keys().cloned().collect()
+            self.graph.0.keys().copied().collect()
         }
 
         fn constrain(&mut self, node: Node) -> ConstrainResult {
@@ -336,7 +331,7 @@ mod tests {
 
             let original_size = self.reachable.entry(node).or_default().len();
 
-            for sub_node in self.graph.0[&node].iter() {
+            for sub_node in &self.graph.0[&node] {
                 self.reachable.get_mut(&node).unwrap().insert(*sub_node);
 
                 let sub_reachable =
@@ -348,10 +343,10 @@ mod tests {
             }
 
             let new_size = self.reachable[&node].len();
-            if original_size != new_size {
-                ConstrainResult::Changed
-            } else {
+            if original_size == new_size {
                 ConstrainResult::Same
+            } else {
+                ConstrainResult::Changed
             }
         }
 
@@ -359,7 +354,7 @@ mod tests {
         where
             F: FnMut(Node),
         {
-            for dep in self.reversed.0[&node].iter() {
+            for dep in &self.reversed.0[&node] {
                 f(*dep);
             }
         }
@@ -375,13 +370,13 @@ mod tests {
     fn monotone() {
         let g = Graph::make_test_graph();
         let reachable = analyze::<ReachableFrom>(&g);
-        println!("reachable = {:#?}", reachable);
+        println!("reachable = {reachable:#?}");
 
         fn nodes<A>(nodes: A) -> HashSet<Node>
         where
             A: AsRef<[usize]>,
         {
-            nodes.as_ref().iter().cloned().map(Node).collect()
+            nodes.as_ref().iter().copied().map(Node).collect()
         }
 
         let mut expected = HashMap::default();
@@ -393,7 +388,7 @@ mod tests {
         expected.insert(Node(6), nodes([8]));
         expected.insert(Node(7), nodes([3, 4, 5, 6, 7, 8]));
         expected.insert(Node(8), nodes([]));
-        println!("expected = {:#?}", expected);
+        println!("expected = {expected:#?}");
 
         assert_eq!(reachable, expected);
     }

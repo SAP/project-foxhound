@@ -46,7 +46,7 @@ add_task(async function clickSuggestion() {
     "Expected suggestion engine"
   );
 
-  let uri = (await Services.search.getDefault()).getSubmission(suggestion).uri;
+  let uri = (await SearchService.getDefault()).getSubmission(suggestion).uri;
   let loadPromise = BrowserTestUtils.browserLoaded(
     gBrowser.selectedBrowser,
     false,
@@ -88,7 +88,7 @@ async function testPressEnterOnSuggestion(
 
   let hasExpectedUrl = !!expectedUrl;
   if (!expectedUrl) {
-    expectedUrl = (await Services.search.getDefault()).getSubmission(suggestion)
+    expectedUrl = (await SearchService.getDefault()).getSubmission(suggestion)
       .uri.spec;
   }
 
@@ -198,7 +198,7 @@ add_task(async function pasteMaxChars() {
   for (let i = 0; i < maxChars; i++) {
     value += String.fromCharCode("a".charCodeAt(0) + i);
   }
-  await selectAndPaste(value);
+  await UrlbarTestUtils.selectAndPaste(value, window);
 
   // Suggestions should be fetched since the pasted string is not longer than
   // maxChars.
@@ -229,7 +229,7 @@ add_task(async function pasteMoreThanMaxChars() {
   for (let i = 0; i < 2 * maxChars; i++) {
     value += String.fromCharCode("a".charCodeAt(0) + i);
   }
-  await selectAndPaste(value);
+  await UrlbarTestUtils.selectAndPaste(value, window);
 
   // Suggestions should not be fetched since the value was pasted and it was
   // longer than maxChars.
@@ -246,7 +246,7 @@ add_task(async function pasteMoreThanMaxChars() {
 
   // Paste again.  The string is longer than maxChars, so suggestions should not
   // be fetched.
-  await selectAndPaste(value);
+  await UrlbarTestUtils.selectAndPaste(value, window);
   await assertSuggestions([]);
 
   await SpecialPowers.popPrefEnv();
@@ -272,7 +272,7 @@ add_task(async function heuristicAddsFormHistory() {
   Assert.equal(result.type, UrlbarUtils.RESULT_TYPE.SEARCH);
   Assert.equal(result.searchParams.query, "foo");
 
-  let uri = (await Services.search.getDefault()).getSubmission("foo").uri;
+  let uri = (await SearchService.getDefault()).getSubmission("foo").uri;
   let loadPromise = BrowserTestUtils.browserLoaded(
     gBrowser.selectedBrowser,
     false,

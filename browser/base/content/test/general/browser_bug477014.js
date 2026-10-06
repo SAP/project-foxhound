@@ -11,11 +11,7 @@ add_task(async function () {
   let tabToDetach = BrowserTestUtils.addTab(gBrowser, testPage);
   await BrowserTestUtils.browserStopped(tabToDetach.linkedBrowser);
 
-  gBrowser.setIcon(
-    tabToDetach,
-    iconURLSpec,
-    Services.scriptSecurityManager.getSystemPrincipal()
-  );
+  gBrowser.setIcon(tabToDetach, iconURLSpec);
   tabToDetach.setAttribute("busy", "true");
 
   // detach and set the listener on the new window

@@ -4,7 +4,7 @@
 /*---
 esid: sec-atomics.exchange
 description: Test Atomics.exchange on arrays that allow atomic operations.
-includes: [testAtomics.js, testBigIntTypedArray.js]
+includes: [testAtomics.js, testTypedArray.js]
 features: [ArrayBuffer, Atomics, BigInt, DataView, SharedArrayBuffer, Symbol, TypedArray]
 ---*/
 const sab = new SharedArrayBuffer(1024);
@@ -69,6 +69,6 @@ testWithBigIntTypedArrayConstructors(function(TA) {
       'Atomics.exchange(view, Idx, 0n) returns 37n'
     );
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

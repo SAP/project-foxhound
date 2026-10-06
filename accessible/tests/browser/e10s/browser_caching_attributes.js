@@ -7,6 +7,10 @@
 /* import-globals-from ../../mochitest/attributes.js */
 loadScripts({ name: "attributes.js", dir: MOCHITESTS_DIR });
 
+// This file has a lot of tests and may fail in the slower environments (such as
+// test-verify).
+requestLongerTimeout(2);
+
 /**
  * Default textbox accessible attributes.
  */
@@ -427,6 +431,12 @@ addAccessibleTask(
 <article id="markup">markup</article>
 <article id="markupWithRole" role="banner">markupWithRole</article>
 <article id="markupWithEmptyRole" role="">markupWithEmptyRole</article>
+<em id="emphasisMarkup">emphasisMarkup</em>
+<em id="emphasisMarkupWithRole" role="note">emphasisMarkupWithRole</em>
+<em id="emphasisMarkupWithEmptyRole" role="">emphasisMarkupWithEmptyRole</em>
+<strong id="strongMarkup">strongMarkup</strong>
+<strong id="strongMarkupWithRole" role="note">strongMarkupWithRole</strong>
+<strong id="strongMarkupWithEmptyRole" role="">strongMarkupWithEmptyRole</strong>
   `,
   async function (browser, docAcc) {
     const knownRole = findAccessibleChildByID(docAcc, "knownRole");
@@ -458,6 +468,30 @@ addAccessibleTask(
       "markupWithEmptyRole"
     );
     testAttrs(markupWithEmptyRole, { "xml-roles": "article" }, true);
+    const emphasis = findAccessibleChildByID(docAcc, "emphasisMarkup");
+    testAttrs(emphasis, { "xml-roles": "emphasis" }, true);
+    const emphasisWithRole = findAccessibleChildByID(
+      docAcc,
+      "emphasisMarkupWithRole"
+    );
+    testAttrs(emphasisWithRole, { "xml-roles": "note" }, true);
+    const emphasisWithEmptyRole = findAccessibleChildByID(
+      docAcc,
+      "emphasisMarkupWithEmptyRole"
+    );
+    testAttrs(emphasisWithEmptyRole, { "xml-roles": "emphasis" }, true);
+    const strong = findAccessibleChildByID(docAcc, "strongMarkup");
+    testAttrs(strong, { "xml-roles": "strong" }, true);
+    const strongWithRole = findAccessibleChildByID(
+      docAcc,
+      "strongMarkupWithRole"
+    );
+    testAttrs(strongWithRole, { "xml-roles": "note" }, true);
+    const strongWithEmptyRole = findAccessibleChildByID(
+      docAcc,
+      "strongMarkupWithEmptyRole"
+    );
+    testAttrs(strongWithEmptyRole, { "xml-roles": "strong" }, true);
   },
   { chrome: true, topLevel: true, iframe: true, remoteIframe: true }
 );
@@ -758,6 +792,87 @@ addAccessibleTask(
     });
     popover = (await shown).accessible;
     testAttrs(popover, { ispopup: "manual" }, true);
+  },
+  { chrome: true, topLevel: true }
+);
+
+/**
+ * Test has-actions attribute.
+ */
+addAccessibleTask(
+  `<dialog aria-actions="btn" id="dlg" open>
+      Hello
+      <button id="btn">Close</button>
+      <button id="btn-hidden" hidden>Pin</button>
+    </dialog>`,
+  async function testHasActionsAttribute(browser, docAcc) {
+    function getDlgHasActions() {
+      try {
+        return dlg.attributes.getStringProperty("has-actions");
+      } catch (e) {
+        return null;
+      }
+    }
+
+    const dlg = findAccessibleChildByID(docAcc, "dlg");
+    is(getDlgHasActions(), "true", "dlg has-actions attribute is true");
+
+    // Removing the 'aria-actions' attribute from the element
+    // should remove the 'has-actions' attribute from the accessible.
+    let changed = waitForEvent(EVENT_OBJECT_ATTRIBUTE_CHANGED, "dlg");
+    await invokeSetAttribute(browser, "dlg", "aria-actions");
+    await changed;
+    await untilCacheIs(
+      getDlgHasActions,
+      null,
+      "dlg has-actions attribute removed"
+    );
+
+    // Setting the 'aria-actions' attribute to an empty string
+    // should make the 'has-actions' accessible attribute true.
+    changed = waitForEvent(EVENT_OBJECT_ATTRIBUTE_CHANGED, "dlg");
+    await invokeSetAttribute(browser, "dlg", "aria-actions", "");
+    await changed;
+    await untilCacheIs(
+      getDlgHasActions,
+      "true",
+      "dlg has-actions attribute re-added"
+    );
+
+    // Remove again to set up for next test
+    await invokeSetAttribute(browser, "dlg", "aria-actions");
+    await untilCacheIs(
+      getDlgHasActions,
+      null,
+      "dlg has-actions attribute removed again"
+    );
+
+    // Setting the 'aria-actions' attribute to a hidden target
+    // should still make 'has-actions' true
+    changed = waitForEvent(EVENT_OBJECT_ATTRIBUTE_CHANGED, "dlg");
+    await invokeSetAttribute(browser, "dlg", "aria-actions", "btn-hidden");
+    await changed;
+    await untilCacheIs(
+      getDlgHasActions,
+      "true",
+      "dlg has-actions attribute re-added with hidden target"
+    );
+  },
+  { chrome: true, topLevel: true }
+);
+
+// Test that a native modal dialog doesn't expose a "modal" object attribute.
+// We expose the modal state instead, which is tested elsewhere.
+addAccessibleTask(
+  `<dialog id="modal_dialog"></dialog>`,
+  async function testModalDialogNoAttr(browser, _docAcc) {
+    info("Showing modal dialog");
+    let shown = waitForEvent(EVENT_SHOW, "modal_dialog");
+    await invokeContentTask(browser, [], () => {
+      content.document.getElementById("modal_dialog").showModal();
+    });
+    const modal = (await shown).accessible;
+    testAbsentAttrs(modal, { modal: "true" });
   },
   { chrome: true, topLevel: true }
 );

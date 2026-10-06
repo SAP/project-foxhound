@@ -14,14 +14,10 @@ add_task(async function () {
   await testSourcesOnNavigation();
   await testDebuggerPauseStateOnNavigation();
 
-  // bfcacheInParent only works if sessionHistoryInParent is enable
-  // so only test it if both settings are enabled.
-  if (Services.appinfo.sessionHistoryInParent) {
-    info("Run test with bfcacheInParent ENABLED");
-    await pushPref("fission.bfcacheInParent", true);
-    await testSourcesOnNavigation();
-    await testDebuggerPauseStateOnNavigation();
-  }
+  info("Run test with bfcacheInParent ENABLED");
+  await pushPref("fission.bfcacheInParent", true);
+  await testSourcesOnNavigation();
+  await testDebuggerPauseStateOnNavigation();
 });
 
 async function testSourcesOnNavigation() {

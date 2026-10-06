@@ -10,7 +10,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1107592
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
   /* global TestInterfaceJS */
-  /** Test for Bug 1107592 **/
+  /** Test for Bug 1107592 */
 
   SimpleTest.waitForExplicitFinish();
 
@@ -20,7 +20,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1107592
     var asyncFrame;
     /* Async parent frames from pushPrefEnv don't show up in e10s.  */
     if (!SpecialPowers.getBoolPref("javascript.options.asyncstack_capture_debuggee_only")) {
-      asyncFrame = `Async*@${file}:153:17
+      asyncFrame = `Async*@${file}:152:17
 `;
     } else {
       asyncFrame = "";
@@ -64,8 +64,7 @@ ${asyncFrame}`,
          file,
          "Should still have the right file name");
       is(e.lineNumber, 50, "Should still have the right line number");
-      todo_isnot(e.columnNumber, 0,
-                 "No column number support for DOMException yet");
+      is(e.columnNumber, 9, "Should have the right column number");
     }
 
     try {
@@ -78,13 +77,13 @@ ${asyncFrame}`,
       is(e.message, "We are a TypeError",
          "Should also have the right message (2)");
       is(e.stack,
-         `doTest@${file}:72:9
+         `doTest@${file}:71:9
 ${asyncFrame}`,
          "Exception stack for TypeError should only show our code");
       is(e.fileName,
          file,
          "Should still have the right file name for TypeError");
-      is(e.lineNumber, 72, "Should still have the right line number for TypeError");
+      is(e.lineNumber, 71, "Should still have the right line number for TypeError");
       is(e.columnNumber, 9, "Should have the right column number for TypeError");
     }
 
@@ -98,14 +97,14 @@ ${asyncFrame}`,
       is(e.message, "missing argument 0 when calling function Array.prototype.forEach",
          "Should also have the right message (3)");
       is(e.stack,
-         `doTest/<@${file}:92:61
-doTest@${file}:92:9
+         `doTest/<@${file}:91:61
+doTest@${file}:91:9
 ${asyncFrame}`,
          "Exception stack for TypeError should only show our code (3)");
       is(e.fileName,
          file,
          "Should still have the right file name for TypeError (3)");
-      is(e.lineNumber, 92, "Should still have the right line number for TypeError (3)");
+      is(e.lineNumber, 91, "Should still have the right line number for TypeError (3)");
       is(e.columnNumber, 61, "Should have the right column number for TypeError (3)");
     }
 
@@ -118,14 +117,14 @@ ${asyncFrame}`,
       is(e.name, "NS_ERROR_UNEXPECTED", "Name should be sanitized (4)");
       is(e.message, "", "Message should be sanitized (5)");
       is(e.stack,
-         `doTest@${file}:113:9
+         `doTest@${file}:112:9
 ${asyncFrame}`,
          "Exception stack for sanitized exception should only show our code (4)");
       is(e.filename,
          file,
          "Should still have the right file name for sanitized exception (4)");
-      is(e.lineNumber, 113, "Should still have the right line number for sanitized exception (4)");
-      todo_isnot(e.columnNumber, 0, "Should have the right column number for sanitized exception (4)");
+      is(e.lineNumber, 112, "Should still have the right line number for sanitized exception (4)");
+      is(e.columnNumber, 9, "Should have the right column number for sanitized exception (4)");
     }
 
     try {
@@ -137,14 +136,14 @@ ${asyncFrame}`,
       is(e.name, "NS_ERROR_UNEXPECTED", "Name should be sanitized (5)");
       is(e.message, "", "Message should be sanitized (5)");
       is(e.stack,
-         `doTest@${file}:132:9
+         `doTest@${file}:131:9
 ${asyncFrame}`,
          "Exception stack for sanitized exception should only show our code (5)");
       is(e.filename,
          file,
          "Should still have the right file name for sanitized exception (5)");
-      is(e.lineNumber, 132, "Should still have the right line number for sanitized exception (5)");
-      todo_isnot(e.columnNumber, 0, "Should have the right column number for sanitized exception (5)");
+      is(e.lineNumber, 131, "Should still have the right line number for sanitized exception (5)");
+      is(e.columnNumber, 9, "Should have the right column number for sanitized exception (5)");
     }
 
     SimpleTest.finish();

@@ -8,6 +8,7 @@
 #ifndef SkRegion_DEFINED
 #define SkRegion_DEFINED
 
+#include "include/core/SkPath.h"
 #include "include/core/SkRect.h"
 #include "include/private/base/SkAPI.h"
 #include "include/private/base/SkAssert.h"
@@ -18,7 +19,7 @@
 #include <cstdint>
 #include <type_traits>
 
-class SkPath;
+class SkPathBuilder;
 
 /** \class SkRegion
     SkRegion describes the set of pixels used to clip SkCanvas. SkRegion is compact,
@@ -177,7 +178,7 @@ public:
     */
     int computeRegionComplexity() const;
 
-    /** Appends outline of SkRegion to path.
+    /** Appends outline of SkRegion to path builder.
         Returns true if SkRegion is not empty; otherwise, returns false, and leaves path
         unmodified.
 
@@ -186,7 +187,12 @@ public:
 
         example: https://fiddle.skia.org/c/@Region_getBoundaryPath
     */
-    bool getBoundaryPath(SkPath* path) const;
+    bool addBoundaryPath(SkPathBuilder*) const;
+
+    /**
+     * Return the boundary of the region as a path.
+     */
+    SkPath getBoundaryPath() const;
 
     /** Constructs an empty SkRegion. SkRegion is set to empty bounds
         at (0, 0) with zero width and height. Always returns false.
@@ -441,8 +447,9 @@ public:
 #endif
 
     /** \class SkRegion::Iterator
-        Returns sequence of rectangles, sorted along y-axis, then x-axis, that make
-        up SkRegion.
+        Goes through the region one rectangle at a time. For each "strip" of one or more contiguous
+        Y values (scanlines) in ascending order, the iterator returns each rectangle in that strip
+        (from left to right) before advancing to the next strip (which may or may not have a gap).
     */
     class SK_API Iterator {
     public:
@@ -488,9 +495,12 @@ public:
         bool done() const { return fDone; }
 
         /** Advances SkRegion::Iterator to next SkIRect in SkRegion if it is not done.
-
-        example: https://fiddle.skia.org/c/@Region_Iterator_next
-        */
+         * This moves to the next rectangle to the right within the current
+         * horizontal strip. If the end of the strip is reached, it automatically
+         * advances to the first rectangle in the next strip, skipping any vertical gaps.
+         *
+         * example: https://fiddle.skia.org/c/@Region_Iterator_next
+         */
         void next();
 
         /** Returns SkIRect element in SkRegion. Does not return predictable results if SkRegion
@@ -508,6 +518,7 @@ public:
 
     private:
         const SkRegion* fRgn;
+        // See top of SkRegion.cpp for more on the RLE encoding
         const SkRegion::RunType*  fRuns;
         SkIRect         fRect = {0, 0, 0, 0};
         bool            fDone;
@@ -560,7 +571,7 @@ public:
     /** \class SkRegion::Spanerator
         Returns the line segment ends within SkRegion that intersect a horizontal line.
     */
-    class Spanerator {
+    class SK_API Spanerator {
     public:
 
         /** Sets SkRegion::Spanerator to return line segments in SkRegion on scan line.
@@ -626,7 +637,7 @@ private:
     struct RunHead;
 
     static RunHead* emptyRunHeadPtr() { return (SkRegion::RunHead*) -1; }
-    static constexpr RunHead* kRectRunHeadPtr = nullptr;
+    static constexpr const RunHead* const kRectRunHeadPtr = nullptr;
 
     // allocate space for count runs
     void allocateRuns(int count);

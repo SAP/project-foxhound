@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,11 +30,9 @@
  * that the placeholder points to its out-of-flow.
  */
 
-#ifndef nsPlaceholderFrame_h___
-#define nsPlaceholderFrame_h___
+#ifndef nsPlaceholderFrame_h_
+#define nsPlaceholderFrame_h_
 
-#include "mozilla/Attributes.h"
-#include "nsGkAtoms.h"
 #include "nsIFrame.h"
 
 namespace mozilla {
@@ -170,11 +166,11 @@ class nsPlaceholderFrame final : public nsIFrame {
   /**
    * @return the out-of-flow for aFrame, which is known to be a placeholder
    */
-  static nsIFrame* GetRealFrameForPlaceholder(nsIFrame* aFrame) {
+  static nsIFrame* GetRealFrameForPlaceholder(const nsIFrame* aFrame) {
     MOZ_ASSERT(aFrame->IsPlaceholderFrame(),
                "Must have placeholder frame as input");
     nsIFrame* outOfFlow =
-        static_cast<nsPlaceholderFrame*>(aFrame)->GetOutOfFlowFrame();
+        static_cast<const nsPlaceholderFrame*>(aFrame)->GetOutOfFlowFrame();
     NS_ASSERTION(outOfFlow, "Null out-of-flow for placeholder?");
     return outOfFlow;
   }
@@ -188,4 +184,4 @@ class nsPlaceholderFrame final : public nsIFrame {
   nsIFrame* mOutOfFlowFrame;
 };
 
-#endif /* nsPlaceholderFrame_h___ */
+#endif /* nsPlaceholderFrame_h_ */

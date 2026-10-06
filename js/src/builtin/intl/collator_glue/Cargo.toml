@@ -1,0 +1,13 @@
+[package]
+name = "collator_glue"
+version = "0.1.0"
+edition = "2021"
+rust-version.workspace = true
+
+[dependencies]
+icu_collator = { version = "2.1.1", features = ["latin1", "compiled_data", "unstable"] }
+icu_locale_core = "2.1.1"
+tinystr = { version = "0.8.0", default-features = false }
+arraystring = "0.3.0"
+writeable = { version = "0.6.0", default-features = false }
+arrayvec = "0.7"

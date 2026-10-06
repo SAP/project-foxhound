@@ -9,12 +9,20 @@ use api::{
     IdNamespace, FontTemplate, FontKey, FontInstanceKey, FontInstanceOptions,
     FontInstancePlatformOptions, ColorF, FontInstanceFlags, units::DevicePoint,
 };
-use glutin::ContextBuilder;
-use glutin::dpi::PhysicalSize;
-use glutin::event::{Event, WindowEvent};
-use glutin::event_loop::{ControlFlow, EventLoop};
-use glutin::window::WindowBuilder;
+use glutin::config::{ConfigTemplateBuilder, GlConfig};
+use glutin::context::{
+    ContextApi, ContextAttributesBuilder, NotCurrentGlContext, Version,
+};
+use glutin::display::{GetGlDisplay, GlDisplay};
+use glutin::surface::{GlSurface, SurfaceAttributesBuilder, WindowSurface};
+use glutin_winit::DisplayBuilder;
 use rayon::ThreadPoolBuilder;
+use std::num::NonZeroU32;
+use winit::application::ApplicationHandler;
+use winit::dpi::PhysicalSize;
+use winit::event::{WindowEvent};
+use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use wr_glyph_rasterizer::RasterizedGlyph;
 use wr_glyph_rasterizer::{
     SharedFontResources, BaseFontInstance, GlyphRasterizer, FontInstance, GlyphKey,
@@ -129,49 +137,133 @@ fn load_glyphs() -> Vec<RasterizedGlyph> {
     glyphs
 }
 
-fn main() {
-    let glyphs = load_glyphs();
+struct App {
+    glyphs: Vec<RasterizedGlyph>,
+    gl_state: Option<GlState>,
+}
 
-    let el = EventLoop::new();
-    let wb = WindowBuilder::new()
-        .with_title("A fantastic window!")
-        .with_inner_size(PhysicalSize::new(1900. as f64, 1300. as f64));
+struct GlState {
+    gl_obj: boilerplate::Gl,
+    window: winit::window::Window,
+    gl_surface: glutin::surface::Surface<WindowSurface>,
+    gl_context: glutin::context::PossiblyCurrentContext,
+}
 
-    let windowed_context = ContextBuilder::new()
-        .with_gl(glutin::GlRequest::GlThenGles {
-            opengl_version: (3, 2),
-            opengles_version: (3, 0),
-        })
-        .build_windowed(wb, &el)
-        .unwrap();
+impl ApplicationHandler for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.gl_state.is_some() {
+            return;
+        }
 
-    let windowed_context = unsafe { windowed_context.make_current().unwrap() };
+        let window_attrs = winit::window::Window::default_attributes()
+            .with_title("A fantastic window!")
+            .with_inner_size(PhysicalSize::new(1900.0_f64, 1300.0_f64));
 
-    let gl = boilerplate::load(windowed_context.context(), glyphs);
+        let template = ConfigTemplateBuilder::new().with_depth_size(24);
 
-    el.run(move |event, _, control_flow| {
-        *control_flow = ControlFlow::Wait;
+        let (window, gl_config) = DisplayBuilder::new()
+            .with_window_attributes(Some(window_attrs))
+            .build(event_loop, template, |configs| {
+                configs.reduce(|acc, config| {
+                    if config.num_samples() > acc.num_samples() { config } else { acc }
+                }).unwrap()
+            })
+            .expect("failed to create GL display and window");
+
+        let window = window.unwrap();
+        let gl_display = gl_config.display();
+
+        let raw_window_handle: RawWindowHandle = window
+            .window_handle()
+            .expect("failed to get window handle")
+            .as_raw();
+
+        let (not_current_ctx, is_gles) = {
+            let gl_attrs = ContextAttributesBuilder::new()
+                .with_context_api(ContextApi::OpenGl(Some(Version::new(3, 2))))
+                .build(Some(raw_window_handle));
+            match unsafe { gl_display.create_context(&gl_config, &gl_attrs) } {
+                Ok(ctx) => (ctx, false),
+                Err(_) => {
+                    let gles_attrs = ContextAttributesBuilder::new()
+                        .with_context_api(ContextApi::Gles(Some(Version::new(3, 0))))
+                        .build(Some(raw_window_handle));
+                    let ctx = unsafe { gl_display.create_context(&gl_config, &gles_attrs) }
+                        .expect("failed to create GLES context");
+                    (ctx, true)
+                }
+            }
+        };
+
+        let physical_size = window.inner_size();
+        let surface_attrs = SurfaceAttributesBuilder::<WindowSurface>::new()
+            .build(
+                raw_window_handle,
+                NonZeroU32::new(physical_size.width.max(1)).unwrap(),
+                NonZeroU32::new(physical_size.height.max(1)).unwrap(),
+            );
+
+        let gl_surface = unsafe {
+            gl_display
+                .create_window_surface(&gl_config, &surface_attrs)
+                .expect("failed to create GL surface")
+        };
+
+        let gl_context = not_current_ctx
+            .make_current(&gl_surface)
+            .expect("failed to make GL context current");
+
+        let gl_obj = boilerplate::load(is_gles, &gl_display, std::mem::take(&mut self.glyphs));
+
+        self.gl_state = Some(GlState {
+            gl_obj,
+            window,
+            gl_surface,
+            gl_context,
+        });
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        _window_id: winit::window::WindowId,
+        event: WindowEvent,
+    ) {
+        let state = match self.gl_state {
+            Some(ref state) => state,
+            None => return,
+        };
 
         match event {
-            Event::LoopDestroyed => (),
-            Event::WindowEvent { event, .. } => match event {
-                WindowEvent::Resized(physical_size) => windowed_context.resize(physical_size),
-                WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-                _ => (),
-            },
-            Event::RedrawRequested(_) => {
-                let size = windowed_context.window().inner_size();
-                let scale_factor = windowed_context.window().scale_factor();
-                gl.draw_frame(
+            WindowEvent::CloseRequested => {
+                event_loop.exit();
+            }
+            WindowEvent::RedrawRequested => {
+                let size = state.window.inner_size();
+                let scale_factor = state.window.scale_factor();
+                state.gl_obj.draw_frame(
                     size.width as f32,
                     size.height as f32,
                     [0., 0., 0., 1.0],
                     [1., 1., 1., 1.0],
                     scale_factor as f32,
                 );
-                windowed_context.swap_buffers().unwrap();
+                state.gl_surface.swap_buffers(&state.gl_context).unwrap();
             }
             _ => (),
         }
-    });
+    }
+}
+
+fn main() {
+    let glyphs = load_glyphs();
+
+    let event_loop = EventLoop::new().expect("failed to create event loop");
+
+    let mut app = App {
+        glyphs,
+        gl_state: None,
+    };
+
+    event_loop.run_app(&mut app).expect("event loop error");
 }

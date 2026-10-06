@@ -2,7 +2,7 @@ ChromeUtils.defineESModuleGetters(this, {
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
 });
 const { AttributionIOUtils } = ChromeUtils.importESModule(
-  "resource:///modules/AttributionCode.sys.mjs"
+  "moz-src:///browser/components/attribution/AttributionCode.sys.mjs"
 );
 
 add_task(async function test_parse_error() {

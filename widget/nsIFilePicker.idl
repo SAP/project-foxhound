@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -38,7 +37,8 @@ interface nsIFilePicker : nsISupports
                                                 // *.png; *.bmp; *.ico; *.svg;
                                                 // *.svgz; *.tif; *.tiff; *.ai;
                                                 // *.drw; *.pct; *.psp; *.xcf;
-                                                // *.psd; *.raw; *.webp; *.heic
+                                                // *.psd; *.raw; *.webp; *.heic;
+                                                // *.avif; *.jxl
   const long filterXML        = 0x010;          // *.xml
   const long filterXUL        = 0x020;          // *.xul
   const long filterApps       = 0x040;          // Applications (per-platform implementation)
@@ -66,13 +66,15 @@ interface nsIFilePicker : nsISupports
   * Initialize the file picker widget.  The file picker is not valid until this
   * method is called.
   *
-  * @param      browsingContext   The context in which the file picker is being
-  *                               shown, must be non-null.
-  * @param      title             The title for the file widget
-  * @param      mode              load, save, or get folder
-  *
+  * @param      bc     The context in which the file picker is being shown,
+  *                    must be non-null.
+  * @param      title  The title for the file widget
+  * @param      mode   load, save, or get folder
+  * @param      global the global the result objects should be associated with,
+  *                    defaults to browsingContext's inner window.
   */
-  void init(in BrowsingContext browsingContext, in AString title, in nsIFilePicker_Mode mode);
+  void init(in BrowsingContext bc, in AString title, in nsIFilePicker_Mode mode,
+            [optional] in nsISupports global);
 
   /**
    * Returns a Promise that resolves to true if the passed nsIFilePicker mode

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +8,13 @@ include GMPTypes;
 include "GMPMessageUtils.h";
 include "ChromiumCDMParent.h";
 
+using cdm::Exception from "GMPSanitizedExports.h";
+using cdm::KeyStatus from "GMPSanitizedExports.h";
 using cdm::HdcpVersion from "GMPSanitizedExports.h";
+using cdm::InitDataType from "GMPSanitizedExports.h";
+using cdm::MessageType from "GMPSanitizedExports.h";
+using cdm::SessionType from "GMPSanitizedExports.h";
+using cdm::Status from "GMPSanitizedExports.h";
 
 namespace mozilla {
 namespace gmp {
@@ -31,12 +36,12 @@ child:
                              uint8_t[] aServerCert);
 
   async CreateSessionAndGenerateRequest(uint32_t aPromiseId,
-                                        uint32_t aSessionType,
-                                        uint32_t aInitDataType,
+                                        SessionType aSessionType,
+                                        InitDataType aInitDataType,
                                         uint8_t[] aInitData);
 
   async LoadSession(uint32_t aPromiseId,
-                    uint32_t aSessionType,
+                    SessionType aSessionType,
                     nsCString aSessionId);
 
   async UpdateSession(uint32_t aPromiseId,
@@ -78,19 +83,19 @@ parent:
   async __delete__();
 
   // cdm::Host_11
-  async OnResolvePromiseWithKeyStatus(uint32_t aPromiseId, uint32_t aKeyStatus);
+  async OnResolvePromiseWithKeyStatus(uint32_t aPromiseId, KeyStatus aKeyStatus);
 
   async OnResolveNewSessionPromise(uint32_t aPromiseId, nsCString aSessionId);
 
   async OnResolvePromise(uint32_t aPromiseId);
 
   async OnRejectPromise(uint32_t aPromiseId,
-                        uint32_t aException,
+                        Exception aException,
                         uint32_t aSystemCode,
                         nsCString aErrorMessage);
 
   async OnSessionMessage(nsCString aSessionId,
-                         uint32_t aMessageType,
+                         MessageType aMessageType,
                          uint8_t[] aMessage);
 
   async OnSessionKeysChange(nsCString aSessionId,
@@ -106,16 +111,16 @@ parent:
   async ResolveLoadSessionPromise(uint32_t aPromiseId, bool aSuccessful);
 
   // Return values of cdm::ContentDecryptionModule_10::Decrypt
-  async DecryptedShmem(uint32_t aId, uint32_t aStatus, Shmem aData);
-  async DecryptedData(uint32_t aId, uint32_t aStatus, uint8_t[] aData);
-  async DecryptFailed(uint32_t aId, uint32_t aStatus);
+  async DecryptedShmem(uint32_t aId, Status aStatus, Shmem aData);
+  async DecryptedData(uint32_t aId, Status aStatus, uint8_t[] aData);
+  async DecryptFailed(uint32_t aId, Status aStatus);
 
-  async OnDecoderInitDone(uint32_t aStatus);
+  async OnDecoderInitDone(Status aStatus);
 
   // Return values of cdm::ContentDecryptionModule_10::DecryptAndDecodeFrame
   async DecodedShmem(CDMVideoFrame aFrame, Shmem aData);
   async DecodedData(CDMVideoFrame aFrame, uint8_t[] aData);
-  async DecodeFailed(uint32_t aStatus);
+  async DecodeFailed(Status aStatus);
 
   async ResetVideoDecoderComplete();
 

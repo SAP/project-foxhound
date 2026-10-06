@@ -1,0 +1,34 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+package mozilla.components.lib.llm.mlpa
+
+import kotlinx.coroutines.flow.Flow
+import mozilla.components.concept.llm.Llm
+import mozilla.components.concept.llm.LlmProvider.ModelID
+import mozilla.components.concept.llm.Prompt
+import mozilla.components.lib.llm.mlpa.service.AuthorizationToken
+import mozilla.components.lib.llm.mlpa.service.ChatService
+import mozilla.components.lib.llm.mlpa.service.ChatService.Request
+import mozilla.components.lib.llm.mlpa.service.ChatService.Request.Message
+
+internal class MlpaLlm(
+    val chatService: ChatService,
+    val authorizationToken: AuthorizationToken,
+    val modelID: ModelID,
+) : Llm {
+    override suspend fun prompt(prompt: Prompt): Flow<String> = chatService.completion(
+        authorizationToken,
+        request = prompt.toRequest(modelID),
+    )
+}
+
+internal fun Prompt.toRequest(model: ModelID) = Request(
+    model = model,
+    messages = buildList {
+        systemPrompt?.let { add(Message.system(it)) }
+        add(Message.user(userPrompt))
+    },
+    stream = true,
+)

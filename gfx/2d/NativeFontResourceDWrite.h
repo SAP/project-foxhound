@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,7 +26,7 @@ class NativeFontResourceDWrite final : public NativeFontResource {
    * @return Referenced NativeFontResourceDWrite or nullptr if invalid.
    */
   static already_AddRefed<NativeFontResourceDWrite> Create(
-      uint8_t* aFontData, uint32_t aDataLength);
+      const uint8_t* aFontData, uint32_t aDataLength);
 
   already_AddRefed<UnscaledFont> CreateUnscaledFont(
       uint32_t aIndex, const uint8_t* aInstanceData,

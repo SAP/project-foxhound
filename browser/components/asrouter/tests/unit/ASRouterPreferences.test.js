@@ -14,7 +14,8 @@ const CFR_USER_PREF_ADDONS =
 const CFR_USER_PREF_FEATURES =
   "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features";
 
-/** NUMBER_OF_PREFS_TO_OBSERVE includes:
+/**
+ * NUMBER_OF_PREFS_TO_OBSERVE includes:
  *  1. asrouter.providers. pref branch
  *  2. asrouter.devtoolsEnabled
  *  3. browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons (user preference - cfr)
@@ -166,6 +167,7 @@ describe("ASRouterPreferences", () => {
        * looks like a migrated version of the original provider. Requires that:
        * its id matches the original provider's id; it has no bucket; and its
        * collection is set to the value of the original provider's bucket.
+       *
        * @param {object} provider the provider object to compare to
        * @returns {object} custom matcher object for sinon
        */

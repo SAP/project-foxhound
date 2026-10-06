@@ -19,6 +19,7 @@ class FileItemToIconMapperTest {
             description = "Test description",
             displayedShortUrl = "url",
             contentType = "image/png",
+            directoryPath = "downloads",
             status = FileItem.Status.Completed,
             timeCategory = TimeCategory.TODAY,
         )

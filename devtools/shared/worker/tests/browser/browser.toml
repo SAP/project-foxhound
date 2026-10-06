@@ -4,7 +4,13 @@ subsuite = "devtools"
 support-files = ["../../../../server/tests/browser/head.js"]
 
 ["browser_worker-01.js"]
+support-files = [
+    "file_worker-01-transfer.worker.js",
+    "file_worker-01-worker.worker.js"
+]
 
 ["browser_worker-02.js"]
+support-files = ["file_worker-02.worker.js"]
 
 ["browser_worker-03.js"]
+support-files = ["file_worker-03.worker.js"]

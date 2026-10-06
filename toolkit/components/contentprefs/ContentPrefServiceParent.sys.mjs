@@ -1,4 +1,3 @@
-/* vim: set ts=2 sw=2 sts=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -73,7 +72,7 @@ export class ContentPrefsParent extends JSProcessActorParent {
         break;
       }
 
-      case "ContentPrefs:FunctionCall":
+      case "ContentPrefs:FunctionCall": {
         let data = msg.data;
         let signature;
 
@@ -130,6 +129,7 @@ export class ContentPrefsParent extends JSProcessActorParent {
           // And call the function.
           lazy.cps2[data.call](...args);
         });
+      }
     }
 
     return undefined;
@@ -156,5 +156,5 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "cps2",
   "@mozilla.org/content-pref/service;1",
-  "nsIContentPrefService2"
+  Ci.nsIContentPrefService2
 );

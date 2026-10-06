@@ -108,6 +108,10 @@ class ProfileAgeImpl {
     return Promise.resolve(undefined);
   }
 
+  get source() {
+    return this._times.source;
+  }
+
   /**
    * Return a promise representing the writing the current times to the profile.
    */
@@ -149,6 +153,16 @@ class ProfileAgeImpl {
    */
   recordProfileReset(time = Date.now()) {
     this._times.reset = time;
+    this._times.source = "reset";
+    return this.writeTimes();
+  }
+
+  /**
+   * Record that this profile was copied from another.
+   * Returns a promise that is resolved once the file has been written.
+   */
+  recordProfileCopied() {
+    this._times.source = "copy";
     return this.writeTimes();
   }
 
@@ -170,6 +184,7 @@ class ProfileAgeImpl {
    */
   recordRecoveredFromBackup(time = Date.now()) {
     this._times.recoveredFromBackup = time;
+    this._times.source = "backup";
     return this.writeTimes();
   }
 

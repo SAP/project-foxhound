@@ -1,50 +1,44 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include <stdio.h>
-#include <math.h>
-#include <string.h>
-#include "mozilla/Logging.h"
-#include "prdtoa.h"
 #include "AudioStream.h"
+
+#include <math.h>
+#include <stdio.h>
+
+#include <algorithm>
+
+#include "AudioConverter.h"
+#include "CubebUtils.h"
+#include "UnderrunHandler.h"
 #include "VideoUtils.h"
-#include "mozilla/dom/AudioDeviceInfo.h"
+#include "mozilla/Logging.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Sprintf.h"
-#include "mozilla/Unused.h"
-#include <algorithm>
-#include "CubebUtils.h"
+#include "mozilla/dom/AudioDeviceInfo.h"
 #include "nsNativeCharsetUtils.h"
 #include "nsPrintfCString.h"
-#include "AudioConverter.h"
-#include "UnderrunHandler.h"
+#include "prdtoa.h"
 #if defined(XP_WIN)
 #  include "nsXULAppAPI.h"
 #endif
-#include "Tracing.h"
-#include "webaudio/blink/DenormalDisabler.h"
 #include "CallbackThreadRegistry.h"
-#include "mozilla/StaticPrefs_media.h"
-
 #include "RLBoxSoundTouch.h"
+#include "Tracing.h"
+#include "mozilla/StaticPrefs_media.h"
+#include "webaudio/blink/DenormalDisabler.h"
 
 namespace mozilla {
 
-#undef LOG
-#undef LOGW
-#undef LOGE
-
 LazyLogModule gAudioStreamLog("AudioStream");
 // For simple logs
-#define LOG(x, ...)                                  \
-  MOZ_LOG(gAudioStreamLog, mozilla::LogLevel::Debug, \
-          ("%p " x, this, ##__VA_ARGS__))
-#define LOGW(x, ...)                                   \
-  MOZ_LOG(gAudioStreamLog, mozilla::LogLevel::Warning, \
-          ("%p " x, this, ##__VA_ARGS__))
+#define LOG(x, ...)                                               \
+  MOZ_LOG_FMT(gAudioStreamLog, mozilla::LogLevel::Debug, "{} " x, \
+              fmt::ptr(this), ##__VA_ARGS__)
+#define LOGW(x, ...)                                                \
+  MOZ_LOG_FMT(gAudioStreamLog, mozilla::LogLevel::Warning, "{} " x, \
+              fmt::ptr(this), ##__VA_ARGS__)
 #define LOGE(x, ...)                                                          \
   NS_DebugBreak(NS_DEBUG_WARNING,                                             \
                 nsPrintfCString("%p " x, this, ##__VA_ARGS__).get(), nullptr, \
@@ -149,7 +143,7 @@ AudioStream::AudioStream(DataSource& aSource, uint32_t aInRate,
       mCallbacksStarted(false) {}
 
 AudioStream::~AudioStream() {
-  LOG("deleted, state %d", mState.load());
+  LOG("deleted, state {}", static_cast<int>(mState.load()));
   MOZ_ASSERT(mState == SHUTDOWN && !mCubebStream,
              "Should've called ShutDown() before deleting an AudioStream");
 }
@@ -234,7 +228,7 @@ nsresult AudioStream::Init(AudioDeviceInfo* aSinkInfo)
   auto startTime = TimeStamp::Now();
   TRACE("AudioStream::Init");
 
-  LOG("%s channels: %d, rate: %d", __FUNCTION__, mOutChannels,
+  LOG("{} channels: {}, rate: {}", __FUNCTION__, mOutChannels,
       mAudioClock.GetInputRate());
 
   mSinkInfo = aSinkInfo;
@@ -245,6 +239,7 @@ nsresult AudioStream::Init(AudioDeviceInfo* aSinkInfo)
   params.layout = static_cast<uint32_t>(mChannelMap);
   params.format = CubebUtils::ToCubebFormat<AUDIO_OUTPUT_FORMAT>::value;
   params.prefs = CubebUtils::GetDefaultStreamPrefs(CUBEB_DEVICE_TYPE_OUTPUT);
+  params.input_params = CUBEB_INPUT_PROCESSING_PARAM_NONE;
 
   // This is noop if MOZ_DUMP_AUDIO is not set.
   mDumpFile.Open("AudioStream", mOutChannels, mAudioClock.GetInputRate());
@@ -287,7 +282,7 @@ nsresult AudioStream::OpenCubeb(cubeb* aContext, cubeb_stream_params& aParams,
   }
 
   TimeDuration timeDelta = TimeStamp::Now() - aStartTime;
-  LOG("creation time %sfirst: %u ms", aIsFirst ? "" : "not ",
+  LOG("creation time {}first: {} ms", aIsFirst ? "" : "not ",
       (uint32_t)timeDelta.ToMilliseconds());
 
   return NS_OK;
@@ -344,7 +339,7 @@ RefPtr<MediaSink::EndedPromise> AudioStream::Start() {
       mEndedPromise.RejectIfExists(NS_ERROR_FAILURE, __func__);
     }
 
-    LOG("started, state %s", mState == STARTED   ? "STARTED"
+    LOG("started, state {}", mState == STARTED   ? "STARTED"
                              : mState == DRAINED ? "DRAINED"
                                                  : "ERRORED");
   }
@@ -395,7 +390,7 @@ void AudioStream::Resume() {
 
 void AudioStream::ShutDown() {
   TRACE("AudioStream::ShutDown");
-  LOG("ShutDown, state %d", mState.load());
+  LOG("ShutDown, state {}", static_cast<int>(mState.load()));
 
   MonitorAutoLock mon(mMonitor);
   if (mCubebStream) {
@@ -465,7 +460,7 @@ int64_t AudioStream::GetPositionInFramesUnlocked() {
 
 bool AudioStream::IsValidAudioFormat(Chunk* aChunk) {
   if (aChunk->Rate() != mAudioClock.GetInputRate()) {
-    LOGW("mismatched sample %u, mInRate=%u", aChunk->Rate(),
+    LOGW("mismatched sample {}, mInRate={}", aChunk->Rate(),
          mAudioClock.GetInputRate());
     return false;
   }
@@ -527,6 +522,10 @@ void AudioStream::GetTimeStretched(AudioBufferWriter& aWriter) {
   uint32_t toPopFrames =
       ceil(aWriter.Available() * mAudioClock.GetPlaybackRate());
 
+  if (!mTimeStretcher) {
+    return;
+  }
+
   // At each iteration, get number of samples and (based on this) write from
   // the data source or silence. At worst, if the number of samples is a lie
   // (i.e., under attacker control) we'll either not write anything or keep
@@ -540,7 +539,7 @@ void AudioStream::GetTimeStretched(AudioBufferWriter& aWriter) {
     auto size = CheckedUint32(mOutChannels) * toPopFrames;
     if (!size.isValid()) {
       // The overflow should not happen in normal case.
-      LOGW("Invalid member data: %d channels, %d frames", mOutChannels,
+      LOGW("Invalid member data: {} channels, {} frames", mOutChannels,
            toPopFrames);
       return;
     }
@@ -590,6 +589,10 @@ void AudioStream::UpdatePlaybackRateIfNeeded() {
 
   mAudioClock.SetPlaybackRate(mPlaybackRate);
   mAudioClock.SetPreservesPitch(mPreservesPitch);
+
+  if (!mTimeStretcher) {
+    return;
+  }
 
   if (mPreservesPitch) {
     mTimeStretcher->setTempo(mPlaybackRate);
@@ -643,7 +646,7 @@ long AudioStream::DataCallback(void* aBuffer, long aFrames) {
     if (writer.Available() > 0) {
       TRACE_COMMENT("AudioStream::DataCallback", "Underrun: %d frames missing",
                     writer.Available());
-      LOGW("lost %d frames", writer.Available());
+      LOGW("lost {} frames", writer.Available());
       writer.WriteZeros(writer.Available());
     }
   } else {
@@ -671,7 +674,8 @@ long AudioStream::DataCallback(void* aBuffer, long aFrames) {
 
 void AudioStream::StateCallback(cubeb_state aState) {
   MOZ_ASSERT(mState != SHUTDOWN, "No state callback after shutdown");
-  LOG("StateCallback, mState=%d cubeb_state=%d", mState.load(), aState);
+  LOG("StateCallback, mState={} cubeb_state={}",
+      static_cast<int>(mState.load()), static_cast<int>(aState));
 
   MonitorAutoLock mon(mMonitor);
   if (aState == CUBEB_STATE_DRAINED) {
@@ -757,5 +761,9 @@ void AudioClock::SetPreservesPitch(bool aPreservesPitch) {
 }
 
 bool AudioClock::GetPreservesPitch() const { return mPreservesPitch; }
+
+#undef LOG
+#undef LOGW
+#undef LOGE
 
 }  // namespace mozilla

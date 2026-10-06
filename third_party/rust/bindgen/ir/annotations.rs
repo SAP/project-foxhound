@@ -8,14 +8,15 @@ use std::str::FromStr;
 
 use crate::clang;
 
-/// What kind of visibility modifer should be used for a struct or field?
-#[derive(Copy, PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+/// What kind of visibility modifier should be used for a struct or field?
+#[derive(Copy, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Default)]
 pub enum FieldVisibilityKind {
     /// Fields are marked as private, i.e., struct Foo {bar: bool}
     Private,
     /// Fields are marked as crate public, i.e., struct Foo {pub(crate) bar: bool}
     PublicCrate,
     /// Fields are marked as public, i.e., struct Foo {pub bar: bool}
+    #[default]
     Public,
 }
 
@@ -27,7 +28,7 @@ impl FromStr for FieldVisibilityKind {
             "private" => Ok(Self::Private),
             "crate" => Ok(Self::PublicCrate),
             "public" => Ok(Self::Public),
-            _ => Err(format!("Invalid visibility kind: `{}`", s)),
+            _ => Err(format!("Invalid visibility kind: `{s}`")),
         }
     }
 }
@@ -41,12 +42,6 @@ impl std::fmt::Display for FieldVisibilityKind {
         };
 
         s.fmt(f)
-    }
-}
-
-impl Default for FieldVisibilityKind {
-    fn default() -> Self {
-        FieldVisibilityKind::Public
     }
 }
 
@@ -107,6 +102,8 @@ pub(crate) struct Annotations {
     constify_enum_variant: bool,
     /// List of explicit derives for this type.
     derives: Vec<String>,
+    /// List of explicit attributes for this type.
+    attributes: Vec<String>,
 }
 
 fn parse_accessor(s: &str) -> FieldAccessorKind {
@@ -174,6 +171,11 @@ impl Annotations {
         &self.derives
     }
 
+    /// The list of attributes that have been specified in this annotation.
+    pub(crate) fn attributes(&self) -> &[String] {
+        &self.attributes
+    }
+
     /// Should we avoid implementing the `Copy` trait?
     pub(crate) fn disallow_copy(&self) -> bool {
         self.disallow_copy
@@ -211,7 +213,7 @@ impl Annotations {
             comment
                 .get_tag_attrs()
                 .next()
-                .map_or(false, |attr| attr.name == "rustbindgen")
+                .is_some_and(|attr| attr.name == "rustbindgen")
         {
             *matched = true;
             for attr in comment.get_tag_attrs() {
@@ -225,18 +227,19 @@ impl Annotations {
                     "replaces" => {
                         self.use_instead_of = Some(
                             attr.value.split("::").map(Into::into).collect(),
-                        )
+                        );
                     }
                     "derive" => self.derives.push(attr.value),
+                    "attribute" => self.attributes.push(attr.value),
                     "private" => {
-                        self.visibility_kind = if attr.value != "false" {
-                            Some(FieldVisibilityKind::Private)
-                        } else {
+                        self.visibility_kind = if attr.value == "false" {
                             Some(FieldVisibilityKind::Public)
+                        } else {
+                            Some(FieldVisibilityKind::Private)
                         };
                     }
                     "accessor" => {
-                        self.accessor_kind = Some(parse_accessor(&attr.value))
+                        self.accessor_kind = Some(parse_accessor(&attr.value));
                     }
                     "constant" => self.constify_enum_variant = true,
                     _ => {}

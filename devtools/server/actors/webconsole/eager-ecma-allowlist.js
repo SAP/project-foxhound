@@ -191,6 +191,7 @@ const getterAllowList = [
   getter(Intl.Locale.prototype, "language"),
   getter(Intl.Locale.prototype, "script"),
   getter(Intl.Locale.prototype, "region"),
+  getter(Iterator.prototype, "constructor"),
   getter(Map.prototype, "size"),
   getter(Map, Symbol.species),
   // NOTE: Object.prototype.__proto__ is not safe, because it can internally
@@ -236,11 +237,5 @@ const getterAllowList = [
   getter(TypedArray.prototype, Symbol.toStringTag),
   getter(TypedArray, Symbol.species),
 ];
-
-// TODO: See Bug 1910717, this can be removed when we remove the pref for iterator helpers
-if (typeof Iterator === "function") {
-  // eslint-disable-next-line no-undef
-  getterAllowList.push(getter(Iterator.prototype, "constructor"));
-}
 
 module.exports = { functions: functionAllowList, getters: getterAllowList };

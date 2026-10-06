@@ -2,8 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import subprocess
 import sys
-from unittest import skipIf
+import unittest
 
 from urllib.parse import quote
 
@@ -14,6 +15,24 @@ from marionette_harness import (
     MarionetteTestCase,
     WindowManagerMixin,
 )
+
+
+def _is_macos_vm():
+    # Marionette's test harness runs in a venv with a pre-installed mozinfo
+    # that may not have the macos_vm flag from D302479; sysctl directly so the
+    # detection works regardless of which mozinfo is on PYTHONPATH.
+    if sys.platform != "darwin":
+        return False
+    try:
+        out = subprocess.check_output(
+            ["sysctl", "-n", "hw.model"], text=True, timeout=5
+        ).strip()
+        return out.startswith("VirtualMac")
+    except Exception:
+        return False
+
+
+_MACOS_VM = _is_macos_vm()
 
 
 def inline(doc):
@@ -99,10 +118,6 @@ class TestSwitchToWindowContent(WindowManagerMixin, MarionetteTestCase):
         self.assertEqual(self.marionette.current_window_handle, self.start_tab)
         self.assertEqual(self.get_selected_tab_index(), self.selected_tab_index)
 
-    @skipIf(
-        sys.platform.startswith("linux"),
-        "Bug 1557232 - Original window sometimes doesn't receive focus",
-    )
     def test_switch_tabs_in_different_windows_with_focus_change(self):
         new_tab1 = self.open_tab(focus=True)
         self.assertEqual(self.marionette.current_window_handle, self.start_tab)
@@ -160,6 +175,10 @@ class TestSwitchToWindowContent(WindowManagerMixin, MarionetteTestCase):
         self.assertEqual(self.marionette.current_window_handle, self.start_tab)
         self.assertEqual(self.get_selected_tab_index(), self.selected_tab_index)
 
+    @unittest.skipIf(
+        _MACOS_VM,
+        "Bug 2037084 - in-app restart times out on no-display VM workers",
+    )
     def test_switch_to_unloaded_tab(self):
         first_page = inline("<p>foo")
         second_page = inline("<p>bar")

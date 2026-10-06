@@ -14,9 +14,9 @@
 #include <stdint.h>
 
 #include <memory>
+#include <span>
 #include <string>
 
-#include "api/array_view.h"
 #include "api/media_stream_interface.h"
 #include "api/scoped_refptr.h"
 #include "api/video/video_frame.h"
@@ -40,21 +40,23 @@ typedef struct _cairo cairo_t;
 class GtkMainWnd : public MainWindow {
  public:
   GtkMainWnd(const char* server, int port, bool autoconnect, bool autocall);
-  ~GtkMainWnd();
+  ~GtkMainWnd() override;
 
-  virtual void RegisterObserver(MainWndCallback* callback);
-  virtual bool IsWindow();
-  virtual void SwitchToConnectUI();
-  virtual void SwitchToPeerList(const Peers& peers);
-  virtual void SwitchToStreamingUI();
-  virtual void MessageBox(const char* caption, const char* text, bool is_error);
-  virtual MainWindow::UI current_ui();
-  virtual void StartLocalRenderer(webrtc::VideoTrackInterface* local_video);
-  virtual void StopLocalRenderer();
-  virtual void StartRemoteRenderer(webrtc::VideoTrackInterface* remote_video);
-  virtual void StopRemoteRenderer();
+  void RegisterObserver(MainWndCallback* callback) override;
+  bool IsWindow() override;
+  void SwitchToConnectUI() override;
+  void SwitchToPeerList(const Peers& peers) override;
+  void SwitchToStreamingUI() override;
+  void MessageBox(const char* caption,
+                  const char* text,
+                  bool is_error) override;
+  MainWindow::UI current_ui() override;
+  void StartLocalRenderer(webrtc::VideoTrackInterface* local_video) override;
+  void StopLocalRenderer() override;
+  void StartRemoteRenderer(webrtc::VideoTrackInterface* remote_video) override;
+  void StopRemoteRenderer() override;
 
-  virtual void QueueUIThreadCallback(int msg_id, void* data);
+  void QueueUIThreadCallback(int msg_id, void* data) override;
 
   // Creates and shows the main window with the |Connect UI| enabled.
   bool Create();
@@ -83,16 +85,16 @@ class GtkMainWnd : public MainWindow {
   void Draw(GtkWidget* widget, cairo_t* cr);
 
  protected:
-  class VideoRenderer : public rtc::VideoSinkInterface<webrtc::VideoFrame> {
+  class VideoRenderer : public webrtc::VideoSinkInterface<webrtc::VideoFrame> {
    public:
     VideoRenderer(GtkMainWnd* main_wnd,
                   webrtc::VideoTrackInterface* track_to_render);
-    virtual ~VideoRenderer();
+    ~VideoRenderer() override;
 
     // VideoSinkInterface implementation
     void OnFrame(const webrtc::VideoFrame& frame) override;
 
-    rtc::ArrayView<const uint8_t> image() const { return image_; }
+    std::span<const uint8_t> image() const { return image_; }
 
     int width() const { return width_; }
 
@@ -100,11 +102,11 @@ class GtkMainWnd : public MainWindow {
 
    protected:
     void SetSize(int width, int height);
-    rtc::Buffer image_;
+    webrtc::Buffer image_;
     int width_;
     int height_;
     GtkMainWnd* main_wnd_;
-    rtc::scoped_refptr<webrtc::VideoTrackInterface> rendered_track_;
+    webrtc::scoped_refptr<webrtc::VideoTrackInterface> rendered_track_;
   };
 
  protected:
@@ -123,7 +125,7 @@ class GtkMainWnd : public MainWindow {
   std::unique_ptr<VideoRenderer> remote_renderer_;
   int width_ = 0;
   int height_ = 0;
-  rtc::Buffer draw_buffer_;
+  webrtc::Buffer draw_buffer_;
   int draw_buffer_size_;
 };
 

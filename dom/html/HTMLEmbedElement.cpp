@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,18 +5,18 @@
  * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
  */
 
-#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/HTMLEmbedElement.h"
-#include "mozilla/dom/HTMLEmbedElementBinding.h"
-#include "mozilla/dom/ElementInlines.h"
 
+#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/Document.h"
-#include "nsObjectLoadingContent.h"
-#include "nsThreadUtils.h"
-#include "nsIWidget.h"
+#include "mozilla/dom/ElementInlines.h"
+#include "mozilla/dom/HTMLEmbedElementBinding.h"
 #include "nsContentUtils.h"
 #include "nsFrameLoader.h"
+#include "nsIWidget.h"
+#include "nsObjectLoadingContent.h"
 #include "nsTaintingUtils.h"
+#include "nsThreadUtils.h"
 #ifdef XP_MACOSX
 #  include "mozilla/EventDispatcher.h"
 #  include "mozilla/dom/Event.h"
@@ -29,8 +27,7 @@ NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(Embed)
 namespace mozilla::dom {
 
 HTMLEmbedElement::HTMLEmbedElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
-    FromParser aFromParser)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo, FromParser aFromParser)
     : nsGenericHTMLElement(std::move(aNodeInfo)) {
   SetIsNetworkCreated(aFromParser == FROM_PARSER_NETWORK);
 }

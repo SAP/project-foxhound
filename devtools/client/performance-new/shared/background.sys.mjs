@@ -25,6 +25,7 @@ import { createLazyLoaders } from "resource://devtools/client/performance-new/sh
  * @typedef {import("../@types/perf").ProfilerBrowserInfo} ProfilerBrowserInfo
  * @typedef {import("../@types/perf").ProfileCaptureResult} ProfileCaptureResult
  * @typedef {import("../@types/perf").ProfilerFaviconData} ProfilerFaviconData
+ * @typedef {import("../@types/perf").JSSources} JSSources
  */
 
 /** @type {PerformancePref["PopupFeatureFlag"]} */
@@ -35,7 +36,7 @@ const POPUP_FEATURE_FLAG_PREF = "devtools.performance.popup.feature-flag";
 // capabilities of the WebChannel. The front-end can handle old WebChannel
 // versions and has a full list of versions and capabilities here:
 // https://github.com/firefox-devtools/profiler/blob/main/src/app-logic/web-channel.js
-const CURRENT_WEBCHANNEL_VERSION = 5;
+const CURRENT_WEBCHANNEL_VERSION = 6;
 
 const lazyRequire = {};
 // eslint-disable-next-line mozilla/lazy-getter-object-name
@@ -72,7 +73,9 @@ const lazy = createLazyLoaders({
       "resource://devtools/shared/performance-new/recording-utils.sys.mjs"
     ),
   CustomizableUI: () =>
-    ChromeUtils.importESModule("resource:///modules/CustomizableUI.sys.mjs"),
+    ChromeUtils.importESModule(
+      "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs"
+    ),
   PerfSymbolication: () =>
     ChromeUtils.importESModule(
       "resource://devtools/shared/performance-new/symbolication.sys.mjs"
@@ -86,10 +89,14 @@ const lazy = createLazyLoaders({
       .PlacesUtils,
 });
 
+/** @type {{[key:string]: number} | null} */
+let gPreviousMozLogValues = null;
+
 /**
  * This function is called when the profile is captured with the shortcut keys,
  * with the profiler toolbarbutton, with the button inside the popup, or with
  * the about:logging page.
+ *
  * @param {PageContext} pageContext
  * @return {Promise<void>}
  */
@@ -106,6 +113,7 @@ export async function captureProfile(pageContext) {
   const { profileCaptureResult, additionalInformation } = await lazy
     .RecordingUtils()
     .getProfileDataAsGzippedArrayBufferThenStop();
+  cleanupMozLogs();
   const profilerViewMode = lazy
     .PrefsPresets()
     .getProfilerViewModeForCurrentPreset(pageContext);
@@ -125,7 +133,8 @@ export async function captureProfile(pageContext) {
   registerProfileCaptureForBrowser(
     browser,
     profileCaptureResult,
-    symbolicationService
+    symbolicationService,
+    additionalInformation?.jsSources ?? null
   );
 }
 
@@ -133,16 +142,21 @@ export async function captureProfile(pageContext) {
  * This function is called when the profiler is started with the shortcut
  * keys, with the profiler toolbarbutton, or with the button inside the
  * popup.
+ *
  * @param {PageContext} pageContext
  */
 export function startProfiler(pageContext) {
-  const { entries, interval, features, threads, duration } = lazy
+  const { entries, interval, features, threads, mozLogs, duration } = lazy
     .PrefsPresets()
     .getRecordingSettings(pageContext, Services.profiler.GetFeatures());
 
   // Get the active Browser ID from browser.
   const { getActiveBrowserID } = lazy.RecordingUtils();
   const activeTabID = getActiveBrowserID();
+
+  if (typeof mozLogs == "string") {
+    updateMozLogs(mozLogs);
+  }
 
   Services.profiler.StartProfiler(
     entries,
@@ -155,17 +169,65 @@ export function startProfiler(pageContext) {
 }
 
 /**
- * This function is called directly by devtools/startup/DevToolsStartup.jsm when
- * using the shortcut keys to capture a profile.
+ * Given a MOZ_LOG string, toggles the expected preferences to enable the
+ * LogModules mentioned in the string at the expected level of logging.
+ * This will also record preference values in order to reset them on stop.
+ * `mozLogs` is a string similar to the one passed as MOZ_LOG env variable.
+ *
+ * @param {string} mozLogs
+ */
+function updateMozLogs(mozLogs) {
+  gPreviousMozLogValues = {};
+  for (const module of mozLogs.split(",")) {
+    const lastColon = module.lastIndexOf(":");
+    const logName = module.slice(0, lastColon).trim();
+    const value = parseInt(module.slice(lastColon + 1).trim(), 10);
+    const prefName = `logging.${logName}`;
+    gPreviousMozLogValues[prefName] = Services.prefs.getIntPref(
+      prefName,
+      undefined
+    );
+    // MOZ_LOG aren't profiler specific and enabled globally in Firefox.
+    // Preferences are the easiest (only?) way to toggle them from JavaScript.
+    Services.prefs.setIntPref(prefName, value);
+  }
+}
+
+/**
+ * This function is called directly by devtools/startup/DevToolsStartup.sys.mjs
+ * when using the shortcut keys to capture a profile.
+ *
  * @type {() => void}
  */
 export function stopProfiler() {
   Services.profiler.StopProfiler();
+
+  cleanupMozLogs();
 }
 
 /**
- * This function is called directly by devtools/startup/DevToolsStartup.jsm when
- * using the shortcut keys to start and stop the profiler.
+ * This function should be called when we are done profiler in order to reset
+ * the MOZ_LOG enabled while profiling.
+ *
+ * @type {() => void}
+ */
+export function cleanupMozLogs() {
+  if (gPreviousMozLogValues) {
+    for (const [prefName, value] of Object.entries(gPreviousMozLogValues)) {
+      if (typeof value == "number") {
+        Services.prefs.setIntPref(prefName, value);
+      } else {
+        Services.prefs.clearUserPref(prefName);
+      }
+    }
+    gPreviousMozLogValues = null;
+  }
+}
+
+/**
+ * This function is called directly by devtools/startup/DevToolsStartup.sys.mjs
+ * when using the shortcut keys to start and stop the profiler.
+ *
  * @param {PageContext} pageContext
  * @return {void}
  */
@@ -340,7 +402,33 @@ async function getResponseForMessage(request, browser) {
       const { openScriptInDebugger } = lazy.BrowserModule();
       return openScriptInDebugger(tabId, scriptUrl, line, column);
     }
+    case "GET_JS_SOURCES": {
+      const { sourceUuids } = request;
+      if (!Array.isArray(sourceUuids)) {
+        throw new Error("sourceUuids must be an array");
+      }
 
+      const infoForBrowser = infoForBrowserMap.get(browser);
+      if (infoForBrowser === undefined) {
+        throw new Error("No JS source data found for this tab");
+      }
+
+      const jsSources = infoForBrowser.jsSources;
+      if (jsSources === null) {
+        return sourceUuids.map(() => ({
+          error: "Source not found in the browser",
+        }));
+      }
+
+      return sourceUuids.map(uuid => {
+        const sourceText = jsSources[uuid];
+        if (!sourceText) {
+          return { error: "Source not found in the browser" };
+        }
+
+        return { sourceText };
+      });
+    }
     default: {
       console.error(
         "An unknown message type was received by the profiler's WebChannel handler.",
@@ -440,15 +528,18 @@ export async function handleWebChannelMessage(channel, id, message, target) {
  *   when profiler.firefox.com sends GET_SYMBOL_TABLE WebChannel messages to us. This
  *   method should obtain a symbol table for the requested binary and resolve the
  *   returned promise with it.
+ * @param {JSSources | null} jsSources - JS sources from the profile collection.
  */
 export function registerProfileCaptureForBrowser(
   browser,
   profileCaptureResult,
-  symbolicationService
+  symbolicationService,
+  jsSources
 ) {
   infoForBrowserMap.set(browser, {
     profileCaptureResult,
     symbolicationService,
+    jsSources,
   });
 }
 

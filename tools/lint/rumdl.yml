@@ -1,0 +1,44 @@
+---
+rumdl:
+    description: A fast Markdown linter, written in Rust
+    include:
+        - docs/
+        - accessible/docs/
+        - browser/docs/
+        - devtools/docs/
+        - dom/docs/
+        - editor/docs/
+        - gfx/docs/
+        - intl/docs/
+        - ipc/docs/
+        - layout/docs/
+        - mobile/android/docs/
+        - mobile/android/fenix/docs/
+        - mobile/android/focus-android/docs/
+        - modules/libpref/docs/
+        - python/docs/
+        - services/docs/
+        - storage/docs/
+        - taskcluster/docs/
+        - testing/tps/docs/
+        - toolkit/components/ml/docs/
+        - toolkit/docs/
+        - tools/code-coverage/docs/
+        - tools/fuzzing/docs/
+        - tools/moztreedocs/docs/
+        - tools/profiler/docs/
+        - tools/sanitizer/docs/
+        - tools/update-verify/docs/
+        - uriloader/docs/
+        - widget/cocoa/docs/
+        - widget/windows/docs/
+        - xpcom/docs/
+    exclude: []
+    extensions:
+        - md
+    support-files:
+        - '**/.rumdl.toml'
+        - '**/rumdl.toml'
+        - 'tools/lint/python/rumdl.py'
+    type: external
+    payload: python.rumdl:lint

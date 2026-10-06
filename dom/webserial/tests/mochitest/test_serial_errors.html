@@ -1,0 +1,165 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Web Serial API - Error Handling</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="serial_test_utils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script>
+
+"use strict";
+
+SimpleTest.waitForExplicitFinish();
+
+SimpleTest.registerCleanupFunction(cleanupSerialPorts);
+
+add_task(async function testInvalidBaudRate() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  const invalidBaudRates = [0, -1, -9600, NaN, Infinity, -Infinity];
+
+  for (const baudRate of invalidBaudRates) {
+    await Assert.rejects(
+      port.open({ baudRate }),
+      /TypeError/,
+      `Should throw TypeError for baudRate: ${baudRate}`
+    );
+  }
+});
+
+add_task(async function testInvalidDataBits() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  const invalidDataBits = [0, 6, 9, 10, -1];
+
+  for (const dataBits of invalidDataBits) {
+    await Assert.rejects(
+      port.open({ baudRate: 9600, dataBits }),
+      /TypeError/,
+      `Should throw TypeError for dataBits: ${dataBits}`
+    );
+  }
+});
+
+add_task(async function testInvalidStopBits() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  const invalidStopBits = [0, 3, -1];
+
+  for (const stopBits of invalidStopBits) {
+    await Assert.rejects(
+      port.open({ baudRate: 9600, stopBits }),
+      e => e.name === "TypeError" || e.name === "RangeError",
+      `Should throw error for stopBits: ${stopBits}`
+    );
+  }
+});
+
+add_task(async function testInvalidParity() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  const invalidParity = ["invalid", "NONE", "EVEN", "", null];
+
+  for (const parity of invalidParity) {
+    await Assert.rejects(
+      port.open({ baudRate: 9600, parity }),
+      /TypeError/,
+      `Should throw TypeError for parity: ${parity}`
+    );
+  }
+});
+
+add_task(async function testInvalidFlowControl() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  const invalidFlowControl = ["invalid", "NONE", "HARDWARE", "", null];
+
+  for (const flowControl of invalidFlowControl) {
+    await Assert.rejects(
+      port.open({ baudRate: 9600, flowControl }),
+      /TypeError/,
+      `Should throw TypeError for flowControl: ${flowControl}`
+    );
+  }
+});
+
+add_task(async function testOperationsOnClosedPort() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  is(port.writable, null, "writable should be null on closed port");
+  is(port.readable, null, "readable should be null on closed port");
+});
+
+add_task(async function testDoubleOpen() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  await port.open({ baudRate: 9600 });
+
+  await Assert.rejects(
+    port.open({ baudRate: 115200 }),
+    /InvalidStateError/,
+    "Should throw InvalidStateError on double open"
+  );
+
+  await port.close();
+});
+
+add_task(async function testWriteAfterClose() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer = port.writable.getWriter();
+  await port.close();
+
+  const encoder = new TextEncoder();
+  await Assert.rejects(
+    writer.write(encoder.encode("Test")),
+    /NetworkError/,
+    "Write after close should fail with NetworkError"
+  );
+});
+
+add_task(async function testReadAfterClose() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const reader = port.readable.getReader();
+  await port.close();
+
+  // close() cancels the readable stream, so a read returns {done: true}.
+  const result = await reader.read();
+  ok(result.done, "Read after close should return done");
+});
+
+add_task(async function testMissingRequiredOptions() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  await Assert.rejects(
+    port.open({}),
+    /TypeError/,
+    "Should throw TypeError when baudRate missing"
+  );
+
+  await Assert.rejects(
+    port.open({ dataBits: 8 }),
+    /TypeError/,
+    "Should throw TypeError when baudRate missing with other options"
+  );
+});
+
+</script>
+</body>
+</html>

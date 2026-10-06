@@ -1,0 +1,18 @@
+{
+  "label": "mygeha.com",
+  "bugs": {
+    "1981995": {
+      "issue": "broken-layout",
+      "matches": ["*://www.mygeha.com/tpa-ap-web/*"]
+    }
+  },
+  "css": {
+    "fix_location_section_layout": ".allign_location { display: flex; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "css": ["fix_location_section_layout"]
+    }
+  ]
+}

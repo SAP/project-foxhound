@@ -1,0 +1,15 @@
+{
+  "label": "mymsc.com",
+  "bugs": {
+    "1898989": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.mymsc.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

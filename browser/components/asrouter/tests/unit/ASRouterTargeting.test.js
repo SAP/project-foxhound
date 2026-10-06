@@ -322,7 +322,10 @@ describe("ASRouterTargeting", () => {
       false
     );
     assert.calledOnce(fakeTargetingContext.evalWithDefault);
-    assert.calledWithExactly(fakeTargetingContext.evalWithDefault, "true");
+    assert.include(
+      fakeTargetingContext.evalWithDefault.firstCall.args[0],
+      "!isAIWindow"
+    );
     assert.calledWithExactly(
       fakeTargetingContext.setTelemetrySource,
       "message"
@@ -403,6 +406,53 @@ describe("ASRouterTargeting", () => {
     );
 
     assert.calledTwice(evalStub);
+  });
+  it("defaults to Classic-only targeting when no targeting is specified", async () => {
+    evalStub.resolves(true);
+    const targetingContext = new global.TargetingContext();
+    const message = { id: "test-message" };
+
+    await ASRouterTargeting.checkMessageTargeting(
+      message,
+      targetingContext,
+      null,
+      false
+    );
+
+    assert.calledOnce(fakeTargetingContext.evalWithDefault);
+    assert.calledWith(fakeTargetingContext.evalWithDefault, "!isAIWindow");
+  });
+  it("blocks messages in AI windows by default via !isAIWindow", async () => {
+    evalStub.resolves(true);
+    const targetingContext = new global.TargetingContext();
+    targetingContext.isAIWindow = false;
+    const message = { id: "test-message" };
+
+    await ASRouterTargeting.checkMessageTargeting(
+      message,
+      targetingContext,
+      null,
+      false
+    );
+
+    assert.calledOnce(fakeTargetingContext.evalWithDefault);
+    assert.calledWith(fakeTargetingContext.evalWithDefault, "!isAIWindow");
+  });
+  it("does not modify targeting that explicitly references isAIWindow", async () => {
+    evalStub.resolves(true);
+    const targetingContext = new global.TargetingContext();
+    targetingContext.isAIWindow = true;
+    const message = { id: "test-message", targeting: "isAIWindow" };
+
+    await ASRouterTargeting.checkMessageTargeting(
+      message,
+      targetingContext,
+      null,
+      false
+    );
+
+    assert.calledOnce(fakeTargetingContext.evalWithDefault);
+    assert.calledWith(fakeTargetingContext.evalWithDefault, "isAIWindow");
   });
 
   describe("#findMatchingMessage", () => {
@@ -520,5 +570,47 @@ describe("getSortedMessages", () => {
       ],
       { ordered: true }
     );
+  });
+});
+
+describe("#experimentsLoaded", () => {
+  let sandbox;
+  let globals;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    globals = new GlobalOverrider();
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+    globals.restore();
+  });
+
+  it("returns true when ExperimentAPI._rsLoader._hasUpdatedOnce is true", () => {
+    globals.set("ExperimentAPI", {
+      enabled: true,
+      _rsLoader: { _hasUpdatedOnce: true },
+    });
+
+    const result = ASRouterTargeting.Environment.experimentsLoaded;
+    assert.isTrue(result);
+  });
+
+  it("returns false when ExperimentAPI._rsLoader._hasUpdatedOnce is false", () => {
+    globals.set("ExperimentAPI", {
+      enabled: true,
+      _rsLoader: { _hasUpdatedOnce: false },
+    });
+
+    const result = ASRouterTargeting.Environment.experimentsLoaded;
+    assert.isFalse(result);
+  });
+
+  it("returns true when ExperimentAPI is not enabled", () => {
+    globals.set("ExperimentAPI", { enabled: false });
+
+    const result = ASRouterTargeting.Environment.experimentsLoaded;
+    assert.isTrue(result);
   });
 });

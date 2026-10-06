@@ -1,0 +1,74 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-deqp"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/closure-library/**",
+  "../checkout/deqp/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__blend.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__clear.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__tex2d_00.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__tex2d_01.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__tex2d_02.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__tex2d_03.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__tex2d_04.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__tex2d_05.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__tex2darray_00.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__tex2darray_01.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__tex2darray_02.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__tex2darray_03.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__tex2darray_04.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__tex2darray_05.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__tex3d_00.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__tex3d_01.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__tex3d_02.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__tex3d_03.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__tex3d_04.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__tex3d_05.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__texcube_00.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__texcube_01.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__texcube_02.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__texcube_03.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__texcube_04.html"]
+
+["test_2_deqp__functional__gles3__fbocolorbuffer__texcube_05.html"]

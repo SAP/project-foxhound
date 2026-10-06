@@ -239,6 +239,74 @@ function test() {
     "Downloads button inserted in navbar before other widgets"
   );
 
+  // Test re-running the reset PBM button migration (version 24).
+  // Users who were on versions 20-23 may not have gotten the button because
+  // the feature was previously limited to certain channels. The migration was
+  // re-run at version 24 to ensure all users get it.
+
+  // Case 1: User at version 23 without the button - it should be added.
+  CustomizableUI.setTestOnlyInternalProp("gSavedState", {
+    currentVersion: 23,
+    placements: {
+      "nav-bar": [
+        "back-button",
+        "forward-button",
+        "stop-reload-button",
+        "vertical-spacer",
+        "urlbar-container",
+        "downloads-button",
+        "fxa-toolbar-menu-button",
+      ],
+    },
+  });
+  CustomizableUIInternal.updateForNewVersion();
+  Assert.deepEqual(
+    getSavedStatePlacements("nav-bar"),
+    [
+      "back-button",
+      "forward-button",
+      "stop-reload-button",
+      "vertical-spacer",
+      "urlbar-container",
+      "downloads-button",
+      "fxa-toolbar-menu-button",
+      "reset-pbm-toolbar-button",
+    ],
+    "Reset PBM button should be added for users upgrading from version 23"
+  );
+
+  // Case 2: User at version 23 who already has the button - no duplicate.
+  CustomizableUI.setTestOnlyInternalProp("gSavedState", {
+    currentVersion: 23,
+    placements: {
+      "nav-bar": [
+        "back-button",
+        "forward-button",
+        "stop-reload-button",
+        "vertical-spacer",
+        "urlbar-container",
+        "downloads-button",
+        "fxa-toolbar-menu-button",
+        "reset-pbm-toolbar-button",
+      ],
+    },
+  });
+  CustomizableUIInternal.updateForNewVersion();
+  Assert.deepEqual(
+    getSavedStatePlacements("nav-bar"),
+    [
+      "back-button",
+      "forward-button",
+      "stop-reload-button",
+      "vertical-spacer",
+      "urlbar-container",
+      "downloads-button",
+      "fxa-toolbar-menu-button",
+      "reset-pbm-toolbar-button",
+    ],
+    "Reset PBM button should not be duplicated for users who already have it"
+  );
+
   gFuturePlacements.delete(CustomizableUI.AREA_NAVBAR);
   gPalette.delete(testWidgetNew.id);
   gPalette.delete(testWidgetOld.id);

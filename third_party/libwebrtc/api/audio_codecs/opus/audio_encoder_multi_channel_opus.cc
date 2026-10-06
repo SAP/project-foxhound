@@ -10,8 +10,16 @@
 
 #include "api/audio_codecs/opus/audio_encoder_multi_channel_opus.h"
 
+#include <memory>
+#include <optional>
 #include <utility>
+#include <vector>
 
+#include "api/audio_codecs/audio_codec_pair_id.h"
+#include "api/audio_codecs/audio_encoder.h"
+#include "api/audio_codecs/audio_format.h"
+#include "api/audio_codecs/opus/audio_encoder_multi_channel_opus_config.h"
+#include "api/field_trials_view.h"
 #include "modules/audio_coding/codecs/opus/audio_encoder_multi_channel_opus_impl.h"
 
 namespace webrtc {
@@ -39,7 +47,8 @@ void AudioEncoderMultiChannelOpus::AppendSupportedEncoders(
                                  {"channel_mapping", "0,4,1,2,3,5"},
                                  {"num_streams", "4"},
                                  {"coupled_streams", "2"}}});
-    specs->push_back({std::move(opus_format), surround_5_1_opus_info});
+    specs->push_back(
+        {.format = std::move(opus_format), .info = surround_5_1_opus_info});
   }
   {
     AudioCodecInfo surround_7_1_opus_info{48000, 8,
@@ -54,7 +63,8 @@ void AudioEncoderMultiChannelOpus::AppendSupportedEncoders(
                                  {"channel_mapping", "0,6,1,2,3,4,5,7"},
                                  {"num_streams", "5"},
                                  {"coupled_streams", "3"}}});
-    specs->push_back({std::move(opus_format), surround_7_1_opus_info});
+    specs->push_back(
+        {.format = std::move(opus_format), .info = surround_7_1_opus_info});
   }
 }
 
@@ -64,11 +74,11 @@ AudioCodecInfo AudioEncoderMultiChannelOpus::QueryAudioEncoder(
 }
 
 std::unique_ptr<AudioEncoder> AudioEncoderMultiChannelOpus::MakeAudioEncoder(
-    const AudioEncoderMultiChannelOpusConfig& config,
+    AudioEncoderMultiChannelOpusConfig config,
     int payload_type,
     std::optional<AudioCodecPairId> /*codec_pair_id*/,
     const FieldTrialsView* /* field_trials */) {
-  return AudioEncoderMultiChannelOpusImpl::MakeAudioEncoder(config,
+  return AudioEncoderMultiChannelOpusImpl::MakeAudioEncoder(std::move(config),
                                                             payload_type);
 }
 

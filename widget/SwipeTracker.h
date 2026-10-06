@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +9,7 @@
 #include "mozilla/layers/AxisPhysicsMSDModel.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
+#include "nsIWeakReferenceUtils.h"
 #include "nsRefreshObservers.h"
 #include "Units.h"
 
@@ -54,6 +53,8 @@ class SwipeTracker final : public nsARefreshObserver {
 
   void Destroy();
 
+  void StartTracking(const PanGestureInput& aSwipeStartEvent);
+
   nsEventStatus ProcessEvent(const PanGestureInput& aEvent,
                              bool aProcessingFirstEvent = false);
   void CancelSwipe(const TimeStamp& aTimeStamp);
@@ -79,10 +80,10 @@ class SwipeTracker final : public nsARefreshObserver {
   void StartAnimating(double aStartValue, double aTargetValue);
   void SwipeFinished(const TimeStamp& aTimeStamp);
   void UnregisterFromRefreshDriver();
-  bool SendSwipeEvent(EventMessage aMsg, uint32_t aDirection, double aDelta,
+  void SendSwipeEvent(EventMessage aMsg, uint32_t aDirection, double aDelta,
                       const TimeStamp& aTimeStamp);
 
-  nsIWidget& mWidget;
+  nsWeakPtr mWidget;
   RefPtr<nsRefreshDriver> mRefreshDriver;
   layers::AxisPhysicsMSDModel mAxis;
   const LayoutDeviceIntPoint mEventPosition;

@@ -28,23 +28,21 @@ fun NeverTranslateSiteDialogPreference(
 ) {
     AlertDialog(
         onDismissRequest = {},
-        title = {
+        text = {
             Text(
                 text = stringResource(R.string.never_translate_site_dialog_title_preference, websiteUrl),
-                style = FirefoxTheme.typography.headline7,
+                style = FirefoxTheme.typography.body2,
             )
         },
         confirmButton = {
             TextButton(
                 text = stringResource(id = R.string.never_translate_site_dialog_confirm_delete_preference),
-                upperCaseText = false,
                 onClick = { onConfirmDelete() },
             )
         },
         dismissButton = {
             TextButton(
                 text = stringResource(id = R.string.never_translate_site_dialog_cancel_preference),
-                upperCaseText = false,
                 onClick = { onCancel() },
             )
         },

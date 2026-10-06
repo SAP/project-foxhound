@@ -56,6 +56,6 @@ testWithTypedArrayConstructors(TA => {
     array.toLocaleString();
     throw new Test262Error('toLocaleString completed successfully');
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

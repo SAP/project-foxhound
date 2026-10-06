@@ -55,8 +55,6 @@ std::string GainController1ModeToString(const Agc1Config::Mode& mode) {
 
 }  // namespace
 
-constexpr int AudioProcessing::kNativeSampleRatesHz[];
-
 void CustomProcessing::SetRuntimeSetting(
     AudioProcessing::RuntimeSetting /* setting */) {}
 
@@ -127,8 +125,7 @@ operator==(const AudioProcessing::Config::CaptureLevelAdjustment::
 }
 
 std::string AudioProcessing::Config::ToString() const {
-  char buf[2048];
-  SimpleStringBuilder builder(buf);
+  StringBuilder builder;
   builder << "AudioProcessing::Config{ "
              "pipeline: { "
              "maximum_internal_processing_rate: "
@@ -147,7 +144,6 @@ std::string AudioProcessing::Config::ToString() const {
           << capture_level_adjustment.analog_mic_gain_emulation.initial_level
           << " }}, high_pass_filter: { enabled: " << high_pass_filter.enabled
           << " }, echo_canceller: { enabled: " << echo_canceller.enabled
-          << ", mobile_mode: " << echo_canceller.mobile_mode
           << ", enforce_high_pass_filtering: "
           << echo_canceller.enforce_high_pass_filtering
           << " }, noise_suppression: { enabled: " << noise_suppression.enabled
@@ -211,24 +207,24 @@ std::string AudioProcessing::Config::ToString() const {
           << gain_controller2.adaptive_digital.max_output_noise_level_dbfs
           << " }, input_volume_control : { enabled "
           << gain_controller2.input_volume_controller.enabled << "}}";
-  return builder.str();
+  return builder.Release();
 }
 
-absl::Nonnull<std::unique_ptr<AudioProcessingBuilderInterface>>
+absl_nonnull std::unique_ptr<AudioProcessingBuilderInterface>
 CustomAudioProcessing(
-    absl::Nonnull<scoped_refptr<AudioProcessing>> audio_processing) {
+    absl_nonnull scoped_refptr<AudioProcessing> audio_processing) {
   class Builder : public AudioProcessingBuilderInterface {
    public:
-    explicit Builder(absl::Nonnull<scoped_refptr<AudioProcessing>> ap)
+    explicit Builder(absl_nonnull scoped_refptr<AudioProcessing> ap)
         : ap_(std::move(ap)) {}
 
-    absl::Nullable<scoped_refptr<AudioProcessing>> Build(
+    absl_nullable scoped_refptr<AudioProcessing> Build(
         const Environment& /*env*/) override {
       return std::move(ap_);
     }
 
    private:
-    absl::Nonnull<scoped_refptr<AudioProcessing>> ap_;
+    absl_nonnull scoped_refptr<AudioProcessing> ap_;
   };
 
   RTC_CHECK(audio_processing);

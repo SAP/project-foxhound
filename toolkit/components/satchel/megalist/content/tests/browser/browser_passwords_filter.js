@@ -8,6 +8,7 @@ add_setup(async function () {
     set: [
       ["browser.contextual-password-manager.enabled", true],
       ["signon.rememberSignons", true],
+      ["toolkit.osKeyStore.unofficialBuildOnlyLogin", ""],
     ],
   });
   registerCleanupFunction(LoginTestUtils.clearData);

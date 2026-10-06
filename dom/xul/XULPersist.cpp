@@ -1,19 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "XULPersist.h"
 
-#include "nsIXULStore.h"
-#include "nsIStringEnumerator.h"
-#include "nsServiceManagerUtils.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "nsContentUtils.h"
 #include "nsIAppWindow.h"
+#include "nsIStringEnumerator.h"
+#include "nsIXULStore.h"
+#include "nsServiceManagerUtils.h"
 
 namespace mozilla::dom {
 
@@ -62,7 +60,7 @@ void XULPersist::DropDocumentReference() {
 }
 
 void XULPersist::AttributeChanged(dom::Element* aElement, int32_t aNameSpaceID,
-                                  nsAtom* aAttribute, int32_t aModType,
+                                  nsAtom* aAttribute, AttrModType,
                                   const nsAttrValue* aOldValue) {
   NS_ASSERTION(aElement->OwnerDoc() == mDocument, "unexpected doc");
 
@@ -89,7 +87,7 @@ void XULPersist::Persist(Element* aElement, nsAtom* aAttribute) {
   if (!mDocument) {
     return;
   }
-  // For non-chrome documents, persistance is simply broken
+  // For non-chrome documents, persistence is simply broken
   if (!mDocument->NodePrincipal()->IsSystemPrincipal()) {
     return;
   }
@@ -171,13 +169,13 @@ nsresult XULPersist::ApplyPersistentAttributes() {
 
     // We want to hold strong refs to the elements while applying
     // persistent attributes, just in case.
-    const nsTArray<Element*>* allElements = mDocument->GetAllElementsForId(id);
-    if (!allElements) {
+    const Span allElements = mDocument->GetAllElementsForId(id);
+    if (allElements.IsEmpty()) {
       continue;
     }
     elements.Clear();
-    elements.SetCapacity(allElements->Length());
-    for (Element* element : *allElements) {
+    elements.SetCapacity(allElements.Length());
+    for (Element* element : allElements) {
       elements.AppendObject(element);
     }
 
@@ -217,6 +215,11 @@ nsresult XULPersist::ApplyPersistentAttributesToElements(
       return NS_ERROR_OUT_OF_MEMORY;
     }
 
+    if (NS_WARN_IF(
+            nsContentUtils::IsEventAttributeName(attr, EventNameType_All))) {
+      continue;
+    }
+
     uint32_t cnt = aElements.Length();
     for (int32_t i = int32_t(cnt) - 1; i >= 0; --i) {
       Element* element = aElements.SafeElementAt(i);
@@ -234,9 +237,9 @@ nsresult XULPersist::ApplyPersistentAttributesToElements(
       }
 
       if (value == kMissingAttributeToken) {
-        Unused << element->UnsetAttr(kNameSpaceID_None, attr, true);
+        (void)element->UnsetAttr(kNameSpaceID_None, attr, true);
       } else {
-        Unused << element->SetAttr(kNameSpaceID_None, attr, value, true);
+        (void)element->SetAttr(kNameSpaceID_None, attr, value, true);
       }
     }
   }

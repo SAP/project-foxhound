@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2021 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -25,7 +25,7 @@ const explicit = date.subtract(duration, { overflow: undefined });
 TemporalHelpers.assertPlainDate(explicit, 1997, 4, "M04", 30, "default overflow is constrain");
 const implicit = date.subtract(duration, {});
 TemporalHelpers.assertPlainDate(implicit, 1997, 4, "M04", 30, "default overflow is constrain");
-const lambda = date.subtract(duration, {});
+const lambda = date.subtract(duration, () => {});
 TemporalHelpers.assertPlainDate(lambda, 1997, 4, "M04", 30, "default overflow is constrain");
 
 reportCompare(0, 0);

@@ -18,3 +18,9 @@ const UA = navigator.userAgent;
 const isMozBrowser = /Firefox/.test(UA);
 
 document.body.toggleAttribute("is-moz-browser", isMozBrowser);
+
+const filePath = decodeURI(document.location.pathname);
+const filePathNode = document.getElementById("backup-file-path-value");
+if (filePathNode) {
+  filePathNode.innerText = filePath;
+}

@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sw=2 ts=2 sts=2 et */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -45,32 +43,56 @@ export class FirefoxProfileMigrator extends MigratorBase {
     return "chrome://branding/content/icon128.png";
   }
 
-  _getAllProfiles() {
+  /**
+   * Return a map of all migratable Firefox profiles.
+   *
+   * Subclasses can override this to provide profiles from different sources
+   * (e.g. selectable profiles instead of toolkit profiles).
+   *
+   * @returns {Promise<Map<string, object>>} A map keyed by absolute profile path, where
+   *   each value is an object with the following properties:
+   *   - {string} id - The absolute profile path (same as the key).
+   *   - {string} name - The display name of the profile.
+   *   - {nsIFile} rootDir - The root directory of the profile.
+   */
+  async getAllProfiles() {
     let allProfiles = new Map();
     let profileService = Cc[
       "@mozilla.org/toolkit/profile-service;1"
     ].getService(Ci.nsIToolkitProfileService);
     for (let profile of profileService.profiles) {
       let rootDir = profile.rootDir;
+      let path = rootDir.path;
 
       if (
         rootDir.exists() &&
         rootDir.isReadable() &&
         !rootDir.equals(MigrationUtils.profileStartup.directory)
       ) {
-        allProfiles.set(profile.name, rootDir);
+        allProfiles.set(path, {
+          id: path,
+          name: profile.name,
+          rootDir,
+        });
       }
     }
     return allProfiles;
   }
 
-  getSourceProfiles() {
+  async getSourceProfiles() {
     let sorter = (a, b) => {
-      return a.id.toLocaleLowerCase().localeCompare(b.id.toLocaleLowerCase());
+      return a.name
+        .toLocaleLowerCase()
+        .localeCompare(b.name.toLocaleLowerCase());
     };
 
-    return [...this._getAllProfiles().keys()]
-      .map(x => ({ id: x, name: x }))
+    let profiles = await this.getAllProfiles();
+
+    return [...profiles.values()]
+      .map(p => ({
+        id: p.id,
+        name: p.name,
+      }))
       .sort(sorter);
   }
 
@@ -84,12 +106,24 @@ export class FirefoxProfileMigrator extends MigratorBase {
     return file.exists() ? file : null;
   }
 
-  getResources(aProfile) {
-    let sourceProfileDir = aProfile
-      ? this._getAllProfiles().get(aProfile.id)
-      : Cc["@mozilla.org/toolkit/profile-service;1"].getService(
-          Ci.nsIToolkitProfileService
-        ).defaultProfile.rootDir;
+  /**
+   * Gets the source profile directory for an object representing a profile.
+   *
+   * @param {object} aProfile An object containing an "id".
+   *   The id must be an absolute path string to the source profile directory.
+   * @returns {nsIFile} The directory of the source profile
+   */
+  async getSourceProfileDir(aProfile) {
+    let sourceProfileDir = Cc["@mozilla.org/file/local;1"].createInstance(
+      Ci.nsIFile
+    );
+    sourceProfileDir.initWithPath(aProfile.id);
+
+    return sourceProfileDir;
+  }
+
+  async getResources(aProfile) {
+    let sourceProfileDir = await this.getSourceProfileDir(aProfile);
     if (
       !sourceProfileDir ||
       !sourceProfileDir.exists() ||
@@ -107,7 +141,7 @@ export class FirefoxProfileMigrator extends MigratorBase {
       return null;
     }
 
-    return this._getResourcesInternal(sourceProfileDir, currentProfileDir);
+    return this.getResourcesInternal(sourceProfileDir, currentProfileDir);
   }
 
   getLastUsedDate() {
@@ -117,7 +151,17 @@ export class FirefoxProfileMigrator extends MigratorBase {
     return Promise.resolve(new Date(0));
   }
 
-  _getResourcesInternal(sourceProfileDir, currentProfileDir) {
+  /**
+   * An internal function specific to FirefoxProfileMigrator that gets the
+   * resources from the sourceProfileDir and copies the resources into
+   * currentProfileDir when the migration resources are invoked.
+   *
+   * @param {nsIFile} sourceProfileDir The profile we are migrating from
+   * @param {nsIFile} currentProfileDir The profile we are migrating into
+   * @returns {Array<object>} An array of "migration resources" objects for the
+   * sourceProfileDir to migrate into the currentProfileDir
+   */
+  getResourcesInternal(sourceProfileDir, currentProfileDir) {
     let getFileResource = (aMigrationType, aFileNames) => {
       let files = [];
       for (let fileName of aFileNames) {

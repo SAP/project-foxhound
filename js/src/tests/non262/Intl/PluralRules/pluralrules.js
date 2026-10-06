@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // Tests the format function with a diverse set of locales and options.
 
 var pr;

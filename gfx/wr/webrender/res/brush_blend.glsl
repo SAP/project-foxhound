@@ -5,7 +5,7 @@
 #define VECS_PER_SPECIFIC_BRUSH 3
 #define WR_FEATURE_TEXTURE_2D
 
-#include shared,prim_shared,brush,blend
+#include shared,prim_shared,brush,blend,image_source
 
 // Interpolated UV coordinates to sample.
 varying highp vec2 v_uv;

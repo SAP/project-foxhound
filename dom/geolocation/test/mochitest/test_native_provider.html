@@ -7,6 +7,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1765835
 <head>
   <title>Test for getCurrentPosition with native location provider</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/GleanTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -15,14 +16,50 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1765835
 <script type="text/javascript">
 "use strict";
 
-add_task(async function test_maximumAge() {
+const { AppConstants } = SpecialPowers.ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
+
+// Windows will keep the monitor for a minute, so we expect the test not to
+// create new location monitors in that case.  On other platforms, we always
+// recreate.
+function shouldReRequestPosition() {
+  return AppConstants.platform !== "win";
+}
+
+// Get the telemetry for the current native provider (or geoclue).
+async function getCurrentMetrics() {
+  return await GleanTest.geolocation.geolocationService.system.testGetValue() +
+      await GleanTest.geolocation.geolocationService.geoclue.testGetValue();
+}
+
+async function checkMetrics(nScans) {
+  let requestCount = await getCurrentMetrics();
+  // TODO: Determine why Android is using the NetworkGeolocationProvider in
+  // this test, causing the wrong telemetry to be set.
+  if (AppConstants.platform == "android") {
+    todo_is(requestCount, nScans, `made ${nScans} new system requests`);
+    return;
+  }
+  is(requestCount, nScans, `made ${nScans} new system requests`);
+}
+
+add_setup(async function () {
+  // Use native provider and don't show/wait for the permissions prompt.
   await SpecialPowers.pushPrefEnv({
-    set: [["geo.provider.testing", false]],
+    set: [
+      ["geo.provider.testing", false],
+      ["geo.prompt.testing", true]
+    ],
   });
+});
+
+add_task(async function test_maximumAge() {
+  await GleanTest.testResetFOG();
 
   await new Promise(resolve => {
     navigator.geolocation.getCurrentPosition(() => {
-      ok(true, "can get position");
+      ok(true, "can get position with maximumAge");
       resolve();
     }, () => {
       ok(false, "error callback should not have been called");
@@ -30,15 +67,15 @@ add_task(async function test_maximumAge() {
     },
     { maximumAge: 10000 });
   });
+  await checkMetrics(1);
 });
 
 add_task(async function test_highAccuracy() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["geo.provider.testing", false]],
-  });
+  await GleanTest.testResetFOG();
 
   const lowAccuracy = await new Promise(resolve => {
     navigator.geolocation.getCurrentPosition((pos) => {
+      ok(true, "can get position with default accuracy");
       resolve(pos.coords.accuracy);
     }, () => {
       ok(false, "error callback should not have been called on low accuracy call");
@@ -46,9 +83,12 @@ add_task(async function test_highAccuracy() {
     },
     { enableHighAccuracy: false});
   });
+  await checkMetrics(shouldReRequestPosition() ? 1 : 0);
 
+  await GleanTest.testResetFOG();
   const highAccuracy = await new Promise(resolve => {
     navigator.geolocation.getCurrentPosition((pos) => {
+      ok(true, "can get position with high accuracy");
       resolve(pos.coords.accuracy);
     }, () => {
       ok(false, "error callback should not have been called on high accuracy call");
@@ -56,6 +96,7 @@ add_task(async function test_highAccuracy() {
     },
     { enableHighAccuracy: true});
   });
+  await checkMetrics(shouldReRequestPosition() ? 1 : 0);
 
   // Low accuracy can sometimes be the same as high accuracy
   // if a location provider recently provided a value
@@ -64,6 +105,8 @@ add_task(async function test_highAccuracy() {
   } else {
     ok(false, "lower accuracy calls should not out perform high accuracy calls");
   }
+
+  await SpecialPowers.popPrefEnv();
 });
 </script>
 </body>

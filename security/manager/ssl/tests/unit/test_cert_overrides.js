@@ -1,4 +1,3 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -21,10 +20,8 @@ Services.prefs.setBoolPref(
 );
 
 function check_telemetry() {
-  let histogram = Services.telemetry
-    .getHistogramById("SSL_CERT_ERROR_OVERRIDES")
-    .snapshot();
-  equal(histogram.values[0], 0, "Should have 0 unclassified values");
+  let histogram = Glean.ssl.certErrorOverrides.testGetValue();
+  equal(histogram.values[0] || 0, 0, "Should have 0 unclassified values");
   equal(
     histogram.values[2],
     9,
@@ -116,11 +113,9 @@ function check_telemetry() {
     "Actual and expected MOZILLA_PKIX_ERROR_MITM_DETECTED values should match"
   );
 
-  let keySizeHistogram = Services.telemetry
-    .getHistogramById("CERT_CHAIN_KEY_SIZE_STATUS")
-    .snapshot();
+  let keySizeHistogram = Glean.cert.chainKeySizeStatus.testGetValue();
   equal(
-    keySizeHistogram.values[0],
+    keySizeHistogram.values[0] || 0,
     0,
     "Actual and expected unchecked key size values should match"
   );
@@ -195,6 +190,9 @@ function run_port_equivalency_test(inPort, outPort) {
 }
 
 function run_test() {
+  Services.fog.initializeFOG();
+  Services.fog.testResetFOG();
+
   run_port_equivalency_test(-1, 443);
   run_port_equivalency_test(443, -1);
 

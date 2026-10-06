@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -58,7 +56,6 @@ CertVerifier::CertVerifier(OcspDownloadConfig odc, OcspStrictConfig osc,
                            mozilla::TimeDuration ocspTimeoutSoft,
                            mozilla::TimeDuration ocspTimeoutHard,
                            uint32_t certShortLifetimeInDays,
-                           NetscapeStepUpPolicy netscapeStepUpPolicy,
                            CertificateTransparencyConfig&& ctConfig,
                            CRLiteMode crliteMode,
                            const nsTArray<EnterpriseCert>& thirdPartyCerts)
@@ -67,7 +64,6 @@ CertVerifier::CertVerifier(OcspDownloadConfig odc, OcspStrictConfig osc,
       mOCSPTimeoutSoft(ocspTimeoutSoft),
       mOCSPTimeoutHard(ocspTimeoutHard),
       mCertShortLifetimeInDays(certShortLifetimeInDays),
-      mNetscapeStepUpPolicy(netscapeStepUpPolicy),
       mCTConfig(std::move(ctConfig)),
       mCRLiteMode(crliteMode),
       mSignatureCache(
@@ -204,9 +200,6 @@ static Result BuildCertChainForOneKeyUsage(
 }
 
 void CertVerifier::LoadKnownCTLogs() {
-  if (mCTConfig.mMode == CertificateTransparencyMode::Disabled) {
-    return;
-  }
   mCTVerifier = MakeUnique<MultiLogCTVerifier>();
   for (const CTLogInfo& log : kCTLogList) {
     Input publicKey;
@@ -345,24 +338,6 @@ Result CertVerifier::VerifyCertificateTransparencyPolicyInner(
     NSSCertDBTrustDomain& trustDomain,
     const nsTArray<nsTArray<uint8_t>>& builtChain, Input sctsFromTLS, Time time,
     /*optional out*/ CertificateTransparencyInfo* ctInfo) {
-  Input embeddedSCTs = trustDomain.GetSCTListFromCertificate();
-  if (embeddedSCTs.GetLength() > 0) {
-    MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
-            ("Got embedded SCT data of length %zu\n",
-             static_cast<size_t>(embeddedSCTs.GetLength())));
-  }
-  Input sctsFromOCSP = trustDomain.GetSCTListFromOCSPStapling();
-  if (sctsFromOCSP.GetLength() > 0) {
-    MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
-            ("Got OCSP SCT data of length %zu\n",
-             static_cast<size_t>(sctsFromOCSP.GetLength())));
-  }
-  if (sctsFromTLS.GetLength() > 0) {
-    MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
-            ("Got TLS SCT data of length %zu\n",
-             static_cast<size_t>(sctsFromTLS.GetLength())));
-  }
-
   if (builtChain.Length() == 1) {
     // Issuer certificate is required for SCT verification.
     // If we've arrived here, we probably have a "trust chain" with only one
@@ -388,29 +363,61 @@ Result CertVerifier::VerifyCertificateTransparencyPolicyInner(
     return rv;
   }
 
-  const nsTArray<uint8_t>& issuerBytes = builtChain.ElementAt(1);
-  Input issuerInput;
-  rv = issuerInput.Init(issuerBytes.Elements(), issuerBytes.Length());
-  if (rv != Success) {
-    return rv;
+  // We evaluated embedded SCTs and SCTs from the TLS handshake before we
+  // performed revocation checks, and we should have a cached CTVerifyResult in
+  // the trust domain. If we later received SCTs from OCSP (very rare), then
+  // we'll re-check all of the SCTs. Otherwise we'll use the cached
+  // CTVerifyResult.
+  Input sctsFromOCSP = trustDomain.GetSCTListFromOCSPStapling();
+  if (sctsFromOCSP.GetLength() > 0) {
+    MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
+            ("Got OCSP SCT data of length %zu",
+             static_cast<size_t>(sctsFromOCSP.GetLength())));
   }
-
-  BackCert issuerBackCert(issuerInput, EndEntityOrCA::MustBeCA, nullptr);
-  rv = issuerBackCert.Init();
-  if (rv != Success) {
-    return rv;
-  }
-  Input issuerPublicKeyInput = issuerBackCert.GetSubjectPublicKeyInfo();
 
   CTVerifyResult result;
-  rv = mCTVerifier->Verify(endEntityInput, issuerPublicKeyInput, embeddedSCTs,
-                           sctsFromOCSP, sctsFromTLS, time,
-                           trustDomain.GetDistrustAfterTime(), result);
-  if (rv != Success) {
-    MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
-            ("SCT verification failed with fatal error %" PRId32 "\n",
-             static_cast<uint32_t>(rv)));
-    return rv;
+  if (trustDomain.GetCachedCTVerifyResult().isSome() &&
+      sctsFromOCSP.GetLength() == 0) {
+    result = trustDomain.GetCachedCTVerifyResult().extract();
+  } else {
+    // invalidate the cached result if it exists
+    trustDomain.GetCachedCTVerifyResult().reset();
+
+    Input embeddedSCTs = trustDomain.GetSCTListFromCertificate();
+    if (embeddedSCTs.GetLength() > 0) {
+      MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
+              ("Got embedded SCT data of length %zu",
+               static_cast<size_t>(embeddedSCTs.GetLength())));
+    }
+    if (sctsFromTLS.GetLength() > 0) {
+      MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
+              ("Got TLS SCT data of length %zu",
+               static_cast<size_t>(sctsFromTLS.GetLength())));
+    }
+
+    const nsTArray<uint8_t>& issuerBytes = builtChain.ElementAt(1);
+    Input issuerInput;
+    rv = issuerInput.Init(issuerBytes.Elements(), issuerBytes.Length());
+    if (rv != Success) {
+      return rv;
+    }
+
+    BackCert issuerBackCert(issuerInput, EndEntityOrCA::MustBeCA, nullptr);
+    rv = issuerBackCert.Init();
+    if (rv != Success) {
+      return rv;
+    }
+    Input issuerPublicKeyInput = issuerBackCert.GetSubjectPublicKeyInfo();
+
+    rv = mCTVerifier->Verify(endEntityInput, issuerPublicKeyInput, embeddedSCTs,
+                             sctsFromOCSP, sctsFromTLS, time,
+                             trustDomain.GetDistrustAfterTime(), result);
+    if (rv != Success) {
+      MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
+              ("SCT verification failed with fatal error %" PRId32 "\n",
+               static_cast<uint32_t>(rv)));
+      return rv;
+    }
   }
 
   if (MOZ_LOG_TEST(gCertVerifierLog, LogLevel::Debug)) {
@@ -535,12 +542,12 @@ Result CertVerifier::VerifyCert(
 
   // We configure the OCSP fetching modes separately for EV and non-EV
   // verifications.
-  NSSCertDBTrustDomain::OCSPFetching defaultOCSPFetching =
+  NSSCertDBTrustDomain::RevocationCheckMode defaultRevCheckMode =
       (mOCSPDownloadConfig == ocspOff) || (mOCSPDownloadConfig == ocspEVOnly) ||
               (flags & FLAG_LOCAL_ONLY)
-          ? NSSCertDBTrustDomain::NeverFetchOCSP
-      : !mOCSPStrict ? NSSCertDBTrustDomain::FetchOCSPForDVSoftFail
-                     : NSSCertDBTrustDomain::FetchOCSPForDVHardFail;
+          ? NSSCertDBTrustDomain::RevocationCheckLocalOnly
+      : !mOCSPStrict ? NSSCertDBTrustDomain::RevocationCheckMayFetch
+                     : NSSCertDBTrustDomain::RevocationCheckRequired;
 
   Input stapledOCSPResponseInput;
   const Input* stapledOCSPResponse = nullptr;
@@ -567,13 +574,12 @@ Result CertVerifier::VerifyCert(
       // XXX: We don't really have a trust bit for SSL client authentication so
       // just use trustEmail as it is the closest alternative.
       NSSCertDBTrustDomain trustDomain(
-          trustEmail, defaultOCSPFetching, mOCSPCache, mSignatureCache.get(),
+          trustEmail, defaultRevCheckMode, mOCSPCache, mSignatureCache.get(),
           mTrustCache.get(), pinArg, mOCSPTimeoutSoft, mOCSPTimeoutHard,
-          mCertShortLifetimeInDays, MIN_RSA_BITS_WEAK,
-          ValidityCheckingMode::CheckingOff, NetscapeStepUpPolicy::NeverMatch,
-          mCRLiteMode, originAttributes, mThirdPartyRootInputs,
-          mThirdPartyIntermediateInputs, extraCertificates, builtChain, nullptr,
-          nullptr);
+          mCertShortLifetimeInDays, MIN_RSA_BITS_WEAK, mCRLiteMode,
+          originAttributes, mThirdPartyRootInputs,
+          mThirdPartyIntermediateInputs, extraCertificates, sctsFromTLSInput,
+          mCTVerifier, builtChain, nullptr, nullptr);
       rv = BuildCertChain(
           trustDomain, certDER, time, EndEntityOrCA::MustBeEndEntity,
           KeyUsage::digitalSignature, KeyPurposeId::id_kp_clientAuth,
@@ -591,23 +597,23 @@ Result CertVerifier::VerifyCert(
       // chosen by the server.
 
       // Try to validate for EV first.
-      NSSCertDBTrustDomain::OCSPFetching evOCSPFetching =
+      NSSCertDBTrustDomain::RevocationCheckMode evRevCheckMode =
           (mOCSPDownloadConfig == ocspOff) || (flags & FLAG_LOCAL_ONLY)
-              ? NSSCertDBTrustDomain::LocalOnlyOCSPForEV
-              : NSSCertDBTrustDomain::FetchOCSPForEV;
+              ? NSSCertDBTrustDomain::RevocationCheckLocalOnly
+          : !mOCSPStrict ? NSSCertDBTrustDomain::RevocationCheckMayFetch
+                         : NSSCertDBTrustDomain::RevocationCheckRequired;
 
       nsTArray<CertPolicyId> evPolicies;
       GetKnownEVPolicies(certBytes, evPolicies);
       rv = Result::ERROR_UNKNOWN_ERROR;
       for (const auto& evPolicy : evPolicies) {
         NSSCertDBTrustDomain trustDomain(
-            trustSSL, evOCSPFetching, mOCSPCache, mSignatureCache.get(),
+            trustSSL, evRevCheckMode, mOCSPCache, mSignatureCache.get(),
             mTrustCache.get(), pinArg, mOCSPTimeoutSoft, mOCSPTimeoutHard,
-            mCertShortLifetimeInDays, MIN_RSA_BITS,
-            ValidityCheckingMode::CheckForEV, mNetscapeStepUpPolicy,
-            mCRLiteMode, originAttributes, mThirdPartyRootInputs,
-            mThirdPartyIntermediateInputs, extraCertificates, builtChain,
-            pinningTelemetryInfo, hostname);
+            mCertShortLifetimeInDays, MIN_RSA_BITS, mCRLiteMode,
+            originAttributes, mThirdPartyRootInputs,
+            mThirdPartyIntermediateInputs, extraCertificates, sctsFromTLSInput,
+            mCTVerifier, builtChain, pinningTelemetryInfo, hostname);
         rv = BuildCertChainForOneKeyUsage(
             trustDomain, certDER, time,
             KeyUsage::digitalSignature,  // (EC)DHE
@@ -664,13 +670,12 @@ Result CertVerifier::VerifyCert(
         }
 
         NSSCertDBTrustDomain trustDomain(
-            trustSSL, defaultOCSPFetching, mOCSPCache, mSignatureCache.get(),
+            trustSSL, defaultRevCheckMode, mOCSPCache, mSignatureCache.get(),
             mTrustCache.get(), pinArg, mOCSPTimeoutSoft, mOCSPTimeoutHard,
-            mCertShortLifetimeInDays, keySizeOptions[i],
-            ValidityCheckingMode::CheckingOff, mNetscapeStepUpPolicy,
-            mCRLiteMode, originAttributes, mThirdPartyRootInputs,
-            mThirdPartyIntermediateInputs, extraCertificates, builtChain,
-            pinningTelemetryInfo, hostname);
+            mCertShortLifetimeInDays, keySizeOptions[i], mCRLiteMode,
+            originAttributes, mThirdPartyRootInputs,
+            mThirdPartyIntermediateInputs, extraCertificates, sctsFromTLSInput,
+            mCTVerifier, builtChain, pinningTelemetryInfo, hostname);
         rv = BuildCertChainForOneKeyUsage(
             trustDomain, certDER, time,
             KeyUsage::digitalSignature,  //(EC)DHE
@@ -697,6 +702,12 @@ Result CertVerifier::VerifyCert(
           if (isBuiltChainRootBuiltInRoot) {
             *isBuiltChainRootBuiltInRoot =
                 trustDomain.GetIsBuiltChainRootBuiltInRoot();
+          }
+          // Enforce the minimum (non-weak) RSA key size for certificates
+          // issued from built-in roots.
+          if (keySizeOptions[i] < MIN_RSA_BITS &&
+              trustDomain.GetIsBuiltChainRootBuiltInRoot()) {
+            return Result::ERROR_INADEQUATE_KEY_SIZE;
           }
           break;
         }
@@ -727,13 +738,12 @@ Result CertVerifier::VerifyCert(
       }
 
       NSSCertDBTrustDomain trustDomain(
-          trustType, defaultOCSPFetching, mOCSPCache, mSignatureCache.get(),
+          trustType, defaultRevCheckMode, mOCSPCache, mSignatureCache.get(),
           mTrustCache.get(), pinArg, mOCSPTimeoutSoft, mOCSPTimeoutHard,
-          mCertShortLifetimeInDays, MIN_RSA_BITS_WEAK,
-          ValidityCheckingMode::CheckingOff, mNetscapeStepUpPolicy, mCRLiteMode,
+          mCertShortLifetimeInDays, MIN_RSA_BITS_WEAK, mCRLiteMode,
           originAttributes, mThirdPartyRootInputs,
-          mThirdPartyIntermediateInputs, extraCertificates, builtChain, nullptr,
-          nullptr);
+          mThirdPartyIntermediateInputs, extraCertificates, sctsFromTLSInput,
+          mCTVerifier, builtChain, nullptr, nullptr);
       rv = BuildCertChain(trustDomain, certDER, time, EndEntityOrCA::MustBeCA,
                           KeyUsage::keyCertSign, purpose,
                           CertPolicyId::anyPolicy, stapledOCSPResponse);
@@ -746,13 +756,12 @@ Result CertVerifier::VerifyCert(
 
     case VerifyUsage::EmailSigner: {
       NSSCertDBTrustDomain trustDomain(
-          trustEmail, defaultOCSPFetching, mOCSPCache, mSignatureCache.get(),
+          trustEmail, defaultRevCheckMode, mOCSPCache, mSignatureCache.get(),
           mTrustCache.get(), pinArg, mOCSPTimeoutSoft, mOCSPTimeoutHard,
-          mCertShortLifetimeInDays, MIN_RSA_BITS_WEAK,
-          ValidityCheckingMode::CheckingOff, NetscapeStepUpPolicy::NeverMatch,
-          mCRLiteMode, originAttributes, mThirdPartyRootInputs,
-          mThirdPartyIntermediateInputs, extraCertificates, builtChain, nullptr,
-          nullptr);
+          mCertShortLifetimeInDays, MIN_RSA_BITS_WEAK, mCRLiteMode,
+          originAttributes, mThirdPartyRootInputs,
+          mThirdPartyIntermediateInputs, extraCertificates, sctsFromTLSInput,
+          mCTVerifier, builtChain, nullptr, nullptr);
       rv = BuildCertChain(
           trustDomain, certDER, time, EndEntityOrCA::MustBeEndEntity,
           KeyUsage::digitalSignature, KeyPurposeId::id_kp_emailProtection,
@@ -775,13 +784,12 @@ Result CertVerifier::VerifyCert(
       // usage it is trying to verify for, and base its algorithm choices
       // based on the result of the verification(s).
       NSSCertDBTrustDomain trustDomain(
-          trustEmail, defaultOCSPFetching, mOCSPCache, mSignatureCache.get(),
+          trustEmail, defaultRevCheckMode, mOCSPCache, mSignatureCache.get(),
           mTrustCache.get(), pinArg, mOCSPTimeoutSoft, mOCSPTimeoutHard,
-          mCertShortLifetimeInDays, MIN_RSA_BITS_WEAK,
-          ValidityCheckingMode::CheckingOff, NetscapeStepUpPolicy::NeverMatch,
-          mCRLiteMode, originAttributes, mThirdPartyRootInputs,
-          mThirdPartyIntermediateInputs, extraCertificates, builtChain, nullptr,
-          nullptr);
+          mCertShortLifetimeInDays, MIN_RSA_BITS_WEAK, mCRLiteMode,
+          originAttributes, mThirdPartyRootInputs,
+          mThirdPartyIntermediateInputs, extraCertificates, sctsFromTLSInput,
+          mCTVerifier, builtChain, nullptr, nullptr);
       rv = BuildCertChain(trustDomain, certDER, time,
                           EndEntityOrCA::MustBeEndEntity,
                           KeyUsage::keyEncipherment,  // RSA

@@ -13,6 +13,7 @@ class Metadata(MachLogger):
         self.flavor = flavor
         self.options = defaultdict(dict)
         self._results = []
+        self._eval_payloads = []
         self._output = None
         self._env = env
         self.script = script
@@ -39,6 +40,12 @@ class Metadata(MachLogger):
 
     def clear_results(self):
         self._results = []
+
+    def add_eval_payload(self, test_name, payload):
+        self._eval_payloads.append((test_name, payload))
+
+    def get_eval_payloads(self):
+        return self._eval_payloads
 
     def add_extra_options(self, options):
         self._extra_options.extend(options)

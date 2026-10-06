@@ -174,6 +174,23 @@ function test_datetimeformat() {
   equal(formatted, "2020年12月8日");
 
   Services.prefs.clearUserPref("intl.date_time.pattern_override.date_long");
+
+  // When an explicit locale is given, the OS regional date pattern must not
+  // override ICU's own formatting for that locale.
+  const date = new Date("2020-06-15T12:00:00Z");
+  for (const locale of ["en-US", "de", "ja", "fr"]) {
+    const expected = new Intl.DateTimeFormat(locale, {
+      dateStyle: "short",
+    }).format(date);
+    const actual = new Services.intl.DateTimeFormat(locale, {
+      dateStyle: "short",
+    }).format(date);
+    equal(
+      actual,
+      expected,
+      `explicit locale "${locale}" uses ICU format, not OS regional pattern`
+    );
+  }
 }
 
 function test_getLanguageDirection() {

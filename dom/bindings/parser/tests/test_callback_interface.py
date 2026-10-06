@@ -101,6 +101,5 @@ def WebIDLTest(parser, harness):
         harness.check(
             iface.isSingleOperationInterface(),
             i < 4,
-            "Interface %s should be a single operation interface"
-            % iface.identifier.name,
+            f"Interface {iface.identifier.name} should be a single operation interface",
         )

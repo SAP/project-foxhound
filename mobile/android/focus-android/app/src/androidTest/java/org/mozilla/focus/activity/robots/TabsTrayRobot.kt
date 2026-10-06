@@ -37,6 +37,14 @@ class TabsTrayRobot {
 
     fun verifyCloseTabButton(tabTitle: String) = closeTabButton(tabTitle).check(matches(isDisplayed()))
 
+    fun verifyTheAddNewTabButtonIsDisplayed() {
+        addNewTabButton().check(matches(isDisplayed()))
+    }
+
+    fun verifyTheCloseOtherTabsButtonIsDisplayed() {
+        onView(withText("Close other tabs")).check(matches(isDisplayed()))
+    }
+
     class Transition {
         fun selectTab(tabTitle: String, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
             onView(withText(containsString(tabTitle))).perform(click())
@@ -57,6 +65,13 @@ class TabsTrayRobot {
             BrowserRobot().interact()
             return BrowserRobot.Transition()
         }
+
+        fun clickTheAddNewTabButton(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
+            addNewTabButton().perform(click())
+
+            BrowserRobot().interact()
+            return BrowserRobot.Transition()
+        }
     }
 }
 
@@ -67,3 +82,5 @@ private fun closeTabButton(tabTitle: String) =
             hasSibling(withText(containsString(tabTitle))),
         ),
     )
+
+private fun addNewTabButton() = onView(withText("Add new tab"))

@@ -25,8 +25,8 @@ add_setup(async function () {
   });
 
   // Move the second engine at the beginning of the one-off list.
-  let engineOneOff = Services.search.getEngineByName("MozSearch2");
-  await Services.search.moveEngine(engineOneOff, 0);
+  let engineOneOff = SearchService.getEngineByName("MozSearch2");
+  await SearchService.moveEngine(engineOneOff, 0);
 
   // Enable local telemetry recording for the duration of the tests.
   let oldCanRecord = Services.telemetry.canRecordExtended;
@@ -103,76 +103,4 @@ add_task(async function test_context_menu() {
   contextMenu.hidePopup();
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
   BrowserTestUtils.removeTab(tab);
-});
-
-add_task(async function test_about_newtab() {
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      [
-        "browser.newtabpage.activity-stream.improvesearch.handoffToAwesomebar",
-        false,
-      ],
-    ],
-  });
-  // Let's reset the counts.
-  Services.telemetry.clearScalars();
-  Services.telemetry.clearEvents();
-  Services.fog.testResetFOG();
-  TelemetryTestUtils.getAndClearKeyedHistogram("SEARCH_COUNTS");
-
-  let tab = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    "about:newtab",
-    false
-  );
-  await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
-    await ContentTaskUtils.waitForCondition(() => !content.document.hidden);
-  });
-
-  info("Trigger a simple serch, just text + enter.");
-  let p = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
-  await typeInSearchField(
-    tab.linkedBrowser,
-    "test query",
-    "newtab-search-text"
-  );
-  await BrowserTestUtils.synthesizeKey("VK_RETURN", {}, tab.linkedBrowser);
-  await p;
-
-  // Check if the scalars contain the expected values.
-  const scalars = TelemetryTestUtils.getProcessScalars("parent", true, false);
-  TelemetryTestUtils.assertKeyedScalar(
-    scalars,
-    SCALAR_ABOUT_NEWTAB,
-    "search_enter",
-    1
-  );
-  Assert.equal(
-    Object.keys(scalars[SCALAR_ABOUT_NEWTAB]).length,
-    1,
-    "This search must only increment one entry in the scalar."
-  );
-
-  // Make sure SAP telemetry has also been incremented.
-  await SearchUITestUtils.assertSAPTelemetry({
-    engineName: "MozSearch",
-    source: "newtab",
-    count: 1,
-  });
-
-  // Also also check Glean events.
-  const record = Glean.newtabSearch.issued.testGetValue();
-  Assert.ok(!!record, "Must have recorded a search issuance");
-  Assert.equal(record.length, 1, "One search, one event");
-  Assert.deepEqual(
-    {
-      search_access_point: "about_newtab",
-      telemetry_id: "other-MozSearch",
-    },
-    record[0].extra,
-    "Must have recorded the expected information."
-  );
-
-  BrowserTestUtils.removeTab(tab);
-  await SpecialPowers.popPrefEnv();
 });

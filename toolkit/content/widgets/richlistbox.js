@@ -778,7 +778,7 @@
             : this.getPreviousItem(newItem, 1) || this.getNextItem(newItem, 1);
       }
       if (newItem) {
-        let hadFocus = this.currentItem.contains(document.activeElement);
+        let hadFocus = this.currentItem?.contains(document.activeElement);
         this.ensureIndexIsVisible(this.getIndexOfItem(newItem));
         if (aIsSelectingRange) {
           this.selectItemRange(null, newItem);
@@ -817,11 +817,7 @@
       }
 
       var style = document.defaultView.getComputedStyle(aItem);
-      return (
-        style.display != "none" &&
-        style.visibility == "visible" &&
-        style.MozUserInput != "none"
-      );
+      return style.display != "none" && style.visibility == "visible";
     }
 
     _selectTimeoutHandler(aMe) {
@@ -997,7 +993,7 @@
     }
 
     get selected() {
-      return this.getAttribute("selected") == "true";
+      return this.hasAttribute("selected");
     }
     /**
      * nsIDOMXULSelectControlItemElement

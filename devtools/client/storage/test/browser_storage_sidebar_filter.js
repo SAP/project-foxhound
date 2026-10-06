@@ -8,11 +8,11 @@
 
 add_task(async function () {
   await openTabAndSetupStorage(
-    MAIN_DOMAIN_SECURED + "storage-complex-values.html"
+    MAIN_URL_SECURED + "storage-complex-values.html"
   );
 
   const updated = gUI.once("sidebar-updated");
-  await selectTreeItem(["localStorage", "https://test1.example.org"]);
+  await selectTreeItem(["localStorage", MAIN_ORIGIN_SECURED]);
   await selectTableItem("ls1");
   await updated;
 

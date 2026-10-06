@@ -8,6 +8,12 @@ Services.scriptloader.loadSubScript(
   this
 );
 
+const { ProfilerTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/ProfilerTestUtils.sys.mjs"
+);
+
+add_setup(ProfilerTestUtils.assertProfilerInactive);
+
 registerCleanupFunction(() => {
   const { revertRecordingSettings } = ChromeUtils.importESModule(
     "resource://devtools/shared/performance-new/prefs-presets.sys.mjs"

@@ -1,0 +1,84 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+plugins {
+    id 'java'
+    alias(libs.plugins.spotless)
+}
+
+dependencies {
+    implementation files("${System.properties['java.home']}/../lib/tools.jar")
+}
+
+def javadocExecutable
+switch (JavaVersion.current()) {
+    case JavaVersion.VERSION_1_7:
+    case JavaVersion.VERSION_1_8:
+       javadocExecutable = "${System.properties['java.home']}/../bin/javadoc"
+       break
+
+    case JavaVersion.VERSION_1_9:
+    case JavaVersion.VERSION_1_10:
+    case JavaVersion.VERSION_11:
+    case JavaVersion.VERSION_12:
+    case JavaVersion.VERSION_13:
+    case JavaVersion.VERSION_14:
+    case JavaVersion.VERSION_15:
+    case JavaVersion.VERSION_16:
+    case JavaVersion.VERSION_17:
+    case JavaVersion.VERSION_18:
+    case JavaVersion.VERSION_19:
+    case JavaVersion.VERSION_20:
+    case JavaVersion.VERSION_21:
+    case JavaVersion.VERSION_HIGHER:
+        javadocExecutable = "${System.properties['java.home']}/bin/javadoc"
+        break
+
+    default:
+        throw new GradleException("Java version '" + JavaVersion.current() + "' not supported")
+}
+
+task testApiDoclet(type: Exec) {
+    workingDir '.'
+    commandLine 'python3', file('src/test/resources/apidoc_test.py'),
+        '--javadoc', javadocExecutable,
+        '--doclet-jar', jar.outputs.files.singleFile.absolutePath,
+        '--java-root', file('src/test/fake_root'),
+        '--out-dir', "${buildDir}/tmp",
+        '--expected', file('src/test/resources/expected-doclet-output.txt'),
+        '--expected-map', file('src/test/resources/expected-map-output.txt')
+}
+
+testApiDoclet.dependsOn jar
+
+test.dependsOn testApiDoclet
+
+task sourcesJar(type: Jar) {
+    from sourceSets.main.allJava
+    archiveClassifier = 'sources'
+}
+
+task javadocJar(type: Jar, dependsOn: javadoc) {
+    from javadoc.destinationDir
+    archiveClassifier = 'javadoc'
+}
+
+group = 'org.mozilla.apilint'
+
+spotless {
+    lineEndings = com.diffplug.spotless.LineEnding.UNIX
+    java {
+        googleJavaFormat(libs.versions.google.java.format.get())
+    }
+}
+
+test.dependsOn tasks.findByName("spotlessCheck")
+
+configurations {
+    docletJar
+}
+
+artifacts {
+    docletJar jar
+}

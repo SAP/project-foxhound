@@ -24,8 +24,8 @@ support-files = [
 
 ["test_TLD.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_TextDecoder.html"]
@@ -34,8 +34,8 @@ skip-if = [
 
 ["test_in_lk_TLD.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_stringencoding.html"]

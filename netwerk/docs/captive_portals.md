@@ -15,7 +15,7 @@ There are many different ways in which captive portal network might attempt to d
     - They might not be intercepted at all.
 
 ## Implementation
-The [CaptivePortalService](https://searchfox.org/mozilla-central/source/netwerk/base/CaptivePortalService.h) controls when the checks are performed. Consumers can check the state on [nsICaptivePortalService](https://searchfox.org/mozilla-central/source/netwerk/base/nsICaptivePortalService.idl) to determine the state of the captive portal.
+The [CaptivePortalService](https://searchfox.org/firefox-main/source/netwerk/base/CaptivePortalService.h) controls when the checks are performed. Consumers can check the state on [nsICaptivePortalService](https://searchfox.org/firefox-main/source/netwerk/base/nsICaptivePortalService.idl) to determine the state of the captive portal.
 - UNKNOWN
     - The checks have not been performed or have timed out.
 - NOT_CAPTIVE
@@ -24,9 +24,9 @@ The [CaptivePortalService](https://searchfox.org/mozilla-central/source/netwerk/
     - A captive portal was previously detected, but has been unlocked by the user. This state might cause the browser to increase the frequency of the captive portal checks.
 - LOCKED_PORTAL
     - A captive portal was detected, and internet connectivity is not currently available.
-    - A [captive portal notification bar](https://searchfox.org/mozilla-central/source/browser/base/content/browser-captivePortal.js) might be displayed to the user.
+    - A [captive portal notification bar](https://searchfox.org/firefox-main/source/browser/base/content/browser-captivePortal.js) might be displayed to the user.
 
-The Captive portal service uses [CaptiveDetect.sys.mjs](https://searchfox.org/mozilla-central/source/toolkit/components/captivedetect/CaptiveDetect.sys.mjs) to perform the checks, which in turn uses XMLHttpRequest.
+The Captive portal service uses [CaptiveDetect.sys.mjs](https://searchfox.org/firefox-main/source/toolkit/components/captivedetect/CaptiveDetect.sys.mjs) to perform the checks, which in turn uses XMLHttpRequest.
 This request needs to be exempted from HTTPS upgrades, DNS over HTTPS, and many new browser features in order to function as expected.
 
 ```{note}

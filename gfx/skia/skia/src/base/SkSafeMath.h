@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -41,6 +41,7 @@ public:
      *  be set to false, and it is undefined what this returns.
      */
     int addInt(int a, int b) {
+        static_assert(sizeof(int) == 4, "int is not 4 bytes");
         if (b < 0 && a < std::numeric_limits<int>::min() - b) {
             fOK = false;
             return a;
@@ -49,6 +50,23 @@ public:
             return a;
         }
         return a + b;
+    }
+
+    int subInt(int a, int b) {
+        if (b == std::numeric_limits<int>::min()) {
+            fOK = false;
+            return a;
+        }
+        return addInt(a, -b);
+    }
+
+    int mulInt(int x, int y) {
+        int64_t result = (int64_t)x * (int64_t)y;
+        if (result > std::numeric_limits<int>::max() || result < std::numeric_limits<int>::min()) {
+            fOK = false;
+            return x;
+        }
+        return (int)result;
     }
 
     size_t alignUp(size_t x, size_t alignment) {

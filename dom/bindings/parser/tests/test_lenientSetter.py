@@ -14,7 +14,7 @@ def should_throw(parser, harness, message, code):
     except WebIDL.WebIDLError:
         threw = True
 
-    harness.ok(threw, "Should have thrown: %s" % message)
+    harness.ok(threw, f"Should have thrown: {message}")
 
 
 def WebIDLTest(parser, harness):

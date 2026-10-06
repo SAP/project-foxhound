@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2021 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -16,5 +16,8 @@ assert.sameValue(explicit.day, 29, "default overflow is constrain");
 
 const implicit = monthday.with(fields);
 assert.sameValue(implicit.day, 29, "default overflow is constrain");
+
+const lambda = monthday.with(fields, () => {});
+assert.sameValue(lambda.day, 29, "default overflow is constrain");
 
 reportCompare(0, 0);

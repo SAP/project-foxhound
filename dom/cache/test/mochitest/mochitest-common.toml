@@ -32,7 +32,9 @@ support-files = [
 # amounts to third-party iframes. We have separate tests for our behaviors
 # in that case (usually as "browser" tests) and do not want to complicate
 # these normal functionality tests.
-skip-if = ["xorigin"]
+skip-if = [
+  "xorigin",
+]
 
 ["test_cache.html"]
 
@@ -52,20 +54,23 @@ skip-if = ["xorigin"]
 
 ["test_cache_orphaned_body.html"]
 scheme = "https"
-skip-if = ["os == 'linux' && bits == 64 && debug"] # Bug 1749068
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug", # Bug 1749068
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1749068
+]
 
 ["test_cache_orphaned_cache.html"]
 
 ["test_cache_overwrite.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_cache_padding.html"]
 skip-if = [
-  "os == 'android'", # Bug 1468434 for android
   "condprof", # "The opaque response should be removed by caches.delete() and cache.delete()"
+  "os == 'android'", # Bug 1468434 for android
 ]
 
 ["test_cache_put.html"]
@@ -84,15 +89,18 @@ skip-if = [
 
 ["test_cache_untrusted.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_cache_updateUsage.html"]
 
 ["test_cache_worker_gc.html"]
 scheme = "https"
-skip-if = ["os == 'linux' && bits == 64 && debug"] # Bug 1749068
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug", # Bug 1749068
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1749068
+]
 
 ["test_caches.html"]
 

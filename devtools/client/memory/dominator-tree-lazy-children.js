@@ -10,7 +10,7 @@
  * incrementally fetched from the `HeapAnalysesWorker`.
  *
  * @param {NodeId} parentNodeId
- * @param {Number} siblingIndex
+ * @param {number} siblingIndex
  */
 function DominatorTreeLazyChildren(parentNodeId, siblingIndex) {
   this._parentNodeId = parentNodeId;
@@ -22,7 +22,7 @@ function DominatorTreeLazyChildren(parentNodeId, siblingIndex) {
  * be used as the key in a hash table or as the `key` property for a React
  * component, for example.
  *
- * @returns {String}
+ * @returns {string}
  */
 DominatorTreeLazyChildren.prototype.key = function () {
   return `dominator-tree-lazy-children-${this._parentNodeId}-${this._siblingIndex}`;
@@ -33,7 +33,7 @@ DominatorTreeLazyChildren.prototype.key = function () {
  * parent. Return false if it is a placeholder for loading more of its parent's
  * children.
  *
- * @returns {Boolean}
+ * @returns {boolean}
  */
 DominatorTreeLazyChildren.prototype.isFirstChild = function () {
   return this._siblingIndex === 0;
@@ -51,7 +51,7 @@ DominatorTreeLazyChildren.prototype.parentNodeId = function () {
 /**
  * Get this subtree's index in its parent's children array.
  *
- * @returns {Number}
+ * @returns {number}
  */
 DominatorTreeLazyChildren.prototype.siblingIndex = function () {
   return this._siblingIndex;

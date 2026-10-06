@@ -1,13 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsMathMLmrowFrame_h___
-#define nsMathMLmrowFrame_h___
+#ifndef nsMathMLmrowFrame_h_
+#define nsMathMLmrowFrame_h_
 
-#include "mozilla/Attributes.h"
 #include "nsMathMLContainerFrame.h"
 
 namespace mozilla {
@@ -28,7 +25,7 @@ class nsMathMLmrowFrame final : public nsMathMLContainerFrame {
                                          ComputedStyle* aStyle);
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   NS_IMETHOD
   InheritAutomaticData(nsIFrame* aParent) override;
@@ -38,7 +35,7 @@ class nsMathMLmrowFrame final : public nsMathMLContainerFrame {
     return TransmitAutomaticDataForMrowLikeElement();
   }
 
-  eMathMLFrameType GetMathMLFrameType() override;
+  MathMLFrameType GetMathMLFrameType() override;
 
   bool IsMrowLike() override {
     // <mrow> elements with a single child are treated identically to the case
@@ -53,4 +50,4 @@ class nsMathMLmrowFrame final : public nsMathMLContainerFrame {
   virtual ~nsMathMLmrowFrame();
 };
 
-#endif /* nsMathMLmrowFrame_h___ */
+#endif /* nsMathMLmrowFrame_h_ */

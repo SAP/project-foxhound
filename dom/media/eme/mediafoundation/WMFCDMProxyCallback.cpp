@@ -15,8 +15,9 @@ namespace mozilla {
     return;                   \
   }
 
-#define LOG(msg, ...) \
-  EME_LOG("WMFCDMProxyCallback[%p]@%s: " msg, this, __func__, ##__VA_ARGS__)
+#define LOG(msg, ...)                                                   \
+  EME_LOG("WMFCDMProxyCallback[{}]@{}: " msg, fmt::ptr(this), __func__, \
+          ##__VA_ARGS__)
 
 WMFCDMProxyCallback::WMFCDMProxyCallback(WMFCDMProxy* aProxy) : mProxy(aProxy) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -49,7 +50,7 @@ void WMFCDMProxyCallback::OnSessionKeyStatusesChange(
                 keyInfo.keyId(), keyStatuses.sessionId(),
                 dom::Optional<dom::MediaKeyStatus>(keyInfo.status()));
             keyStatusesChange |= statusChanged;
-            LOG("Session ID: %s, Key ID: %s, Status changed: %s",
+            LOG("Session ID: {}, Key ID: {}, Status changed: {}",
                 NS_ConvertUTF16toUTF8(keyStatuses.sessionId()).get(),
                 ToHexString(keyInfo.keyId()).get(),
                 statusChanged ? "true" : "false");
@@ -71,6 +72,25 @@ void WMFCDMProxyCallback::OnSessionKeyExpiration(
             expiration.sessionId(),
             expiration.expiredTimeMilliSecondsSinceEpoch());
       }));
+}
+
+void WMFCDMProxyCallback::OnSessionClosed(
+    const MFCDMSessionClosedResult& aResult) {
+  NS_DispatchToMainThread(NS_NewRunnableFunction(
+      "WMFCDMProxyCallback::OnSessionClosed",
+      [self = RefPtr{this}, this, result = aResult]() {
+        RETURN_IF_NULL(mProxy);
+        mProxy->OnSessionClosed(result.sessionId(), result.reason());
+      }));
+}
+
+void WMFCDMProxyCallback::OnRemoteProcessCrashed() {
+  NS_DispatchToMainThread(
+      NS_NewRunnableFunction("WMFCDMProxyCallback::OnRemoteProcessCrashed",
+                             [self = RefPtr{this}, this]() {
+                               RETURN_IF_NULL(mProxy);
+                               mProxy->Terminated();
+                             }));
 }
 
 void WMFCDMProxyCallback::Shutdown() {

@@ -60,7 +60,7 @@ class AreaPositionManager {
    */
   constructor(aContainer) {
     // Caching the direction and bounds of the container for quick access later:
-    this.#rtl = aContainer.ownerGlobal.RTL_UI;
+    this.#rtl = aContainer.documentGlobal.RTL_UI;
     this.#containerInfo = DOMRectReadOnly.fromRect(
       aContainer.getBoundingClientRect()
     );

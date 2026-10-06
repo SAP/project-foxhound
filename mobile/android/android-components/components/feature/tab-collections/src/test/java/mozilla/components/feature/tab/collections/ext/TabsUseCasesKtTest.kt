@@ -4,7 +4,6 @@
 
 package mozilla.components.feature.tab.collections.ext
 
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import mozilla.components.browser.state.engine.EngineMiddleware
 import mozilla.components.browser.state.selector.findTab
 import mozilla.components.browser.state.state.BrowserState
@@ -16,14 +15,11 @@ import mozilla.components.concept.engine.EngineSession
 import mozilla.components.feature.tab.collections.Tab
 import mozilla.components.feature.tab.collections.TabCollection
 import mozilla.components.feature.tabs.TabsUseCases
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.mock
-import mozilla.components.support.test.rule.MainCoroutineRule
 import mozilla.components.support.test.whenever
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyBoolean
@@ -39,10 +35,6 @@ class TabsUseCasesKtTest {
     private lateinit var collection: TabCollection
     private lateinit var tab: Tab
     private lateinit var filesDir: File
-
-    @OptIn(ExperimentalCoroutinesApi::class)
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
 
     @Before
     fun setup() {
@@ -87,16 +79,12 @@ class TabsUseCasesKtTest {
     fun `RestoreUseCase updates last access when restoring collection`() {
         tabsUseCases.restore.invoke(filesDir, engine, collection) {}
 
-        store.waitUntilIdle()
-
         assertNotEquals(3735928559L, store.state.findTab("123")!!.lastAccess)
     }
 
     @Test
     fun `RestoreUseCase updates last access when restoring single tab in collection`() {
         tabsUseCases.restore.invoke(filesDir, engine, tab, onTabRestored = {}, onFailure = {})
-
-        store.waitUntilIdle()
 
         assertNotEquals(3735928559L, store.state.findTab("123")!!.lastAccess)
     }
@@ -105,8 +93,33 @@ class TabsUseCasesKtTest {
     fun `Restored single tab should be the last in the tabs list`() {
         tabsUseCases.restore.invoke(filesDir, engine, tab, onTabRestored = {}, onFailure = {})
 
-        store.waitUntilIdle()
-
         assertEquals("123", store.state.tabs.last().id)
+    }
+
+    @Test
+    fun `GIVEN source and target keys are the same WHEN MoveTabs is invoked THEN order is not updated`() {
+        val initialState = store.state.copy()
+        tabsUseCases.moveTabs.invoke("mozilla", "mozilla", true)
+        assertEquals(initialState, store.state)
+    }
+
+    @Test
+    fun `GIVEN source and target keys are not the same WHEN MoveTabs is invoked THEN order is updated`() {
+        val initialState = store.state.copy()
+        val expectedState = store.state.copy(
+            tabs = listOf(
+                initialState.tabs[1],
+                initialState.tabs[0],
+            ),
+        )
+        tabsUseCases.moveTabs.invoke("mozilla", "example", true)
+        assertEquals(expectedState, store.state)
+    }
+
+    @Test
+    fun `GIVEN target key is null WHEN MoveTabs is invoked THEN order is not updated`() {
+        val initialState = store.state.copy()
+        tabsUseCases.moveTabs.invoke("mozilla", null, true)
+        assertEquals(initialState, store.state)
     }
 }

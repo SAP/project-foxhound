@@ -4,22 +4,19 @@ pub use crate::ir::analysis::DeriveTrait;
 pub use crate::ir::derive::CanDerive as ImplementsTrait;
 pub use crate::ir::enum_ty::{EnumVariantCustomBehavior, EnumVariantValue};
 pub use crate::ir::int::IntKind;
+pub use cexpr::token::Kind as TokenKind;
+pub use cexpr::token::Token;
 use std::fmt;
 
 /// An enum to allow ignoring parsing of macros.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum MacroParsingBehavior {
     /// Ignore the macro, generating no code for it, or anything that depends on
     /// it.
     Ignore,
     /// The default behavior bindgen would have otherwise.
+    #[default]
     Default,
-}
-
-impl Default for MacroParsingBehavior {
-    fn default() -> Self {
-        MacroParsingBehavior::Default
-    }
 }
 
 /// A trait to allow configuring different kinds of types in different
@@ -53,6 +50,9 @@ pub trait ParseCallbacks: fmt::Debug {
     ) -> Option<String> {
         None
     }
+
+    /// Modify the contents of a macro
+    fn modify_macro(&self, _name: &str, _tokens: &mut Vec<Token>) {}
 
     /// The integer kind an integer macro should have, given a name and the
     /// value of that macro, or `None` if you want the default to be chosen.
@@ -94,8 +94,8 @@ pub trait ParseCallbacks: fmt::Debug {
         None
     }
 
-    /// Allows to rename an item, replacing `_original_item_name`.
-    fn item_name(&self, _original_item_name: &str) -> Option<String> {
+    /// Allows to rename an item, replacing `_item_info.name`.
+    fn item_name(&self, _item_info: ItemInfo) -> Option<String> {
         None
     }
 
@@ -134,6 +134,14 @@ pub trait ParseCallbacks: fmt::Debug {
         vec![]
     }
 
+    /// Provide a list of custom attributes.
+    ///
+    /// If no additional attributes are wanted, this function should return an
+    /// empty `Vec`.
+    fn add_attributes(&self, _info: &AttributeInfo<'_>) -> Vec<String> {
+        vec![]
+    }
+
     /// Process a source code comment.
     fn process_comment(&self, _comment: &str) -> Option<String> {
         None
@@ -159,13 +167,107 @@ pub trait ParseCallbacks: fmt::Debug {
     fn wrap_as_variadic_fn(&self, _name: &str) -> Option<String> {
         None
     }
+
+    /// This will get called everytime an item (currently struct, union, and alias) is found with some information about it
+    fn new_item_found(
+        &self,
+        _id: DiscoveredItemId,
+        _item: DiscoveredItem,
+        _source_location: Option<&SourceLocation>,
+    ) {
+    }
+
+    // TODO add callback for ResolvedTypeRef
+}
+
+/// An identifier for a discovered item. Used to identify an aliased type (see [`DiscoveredItem::Alias`])
+#[derive(Ord, PartialOrd, PartialEq, Eq, Hash, Debug, Clone, Copy)]
+pub struct DiscoveredItemId(usize);
+
+impl DiscoveredItemId {
+    /// Constructor
+    pub fn new(value: usize) -> Self {
+        Self(value)
+    }
+}
+
+/// Struct passed to [`ParseCallbacks::new_item_found`] containing information about discovered
+/// items (struct, union, and alias)
+#[derive(Debug, Hash, Clone, Ord, PartialOrd, Eq, PartialEq)]
+pub enum DiscoveredItem {
+    /// Represents a struct with its original name in C and its generated binding name
+    Struct {
+        /// The original name (learnt from C) of the structure
+        /// Can be None if the union is anonymous.
+        original_name: Option<String>,
+
+        /// The name of the generated binding
+        final_name: String,
+    },
+
+    /// Represents a union with its original name in C and its generated binding name
+    Union {
+        /// The original name (learnt from C) of the structure.
+        /// Can be None if the union is anonymous.
+        original_name: Option<String>,
+
+        /// The name of the generated binding
+        final_name: String,
+    },
+
+    /// Represents an alias like a typedef
+    /// ```c
+    ///     typedef struct MyStruct {
+    ///         ...
+    ///     } StructAlias;
+    /// ```
+    /// Here, the name of the alias is `StructAlias` and it's an alias for `MyStruct`
+    Alias {
+        /// The name of the alias in C (`StructAlias`)
+        alias_name: String,
+
+        /// The identifier of the discovered type
+        alias_for: DiscoveredItemId,
+    },
+
+    /// Represents an enum.
+    Enum {
+        /// The final name of the generated binding
+        final_name: String,
+    },
+
+    /// A function or method.
+    Function {
+        /// The final name used.
+        final_name: String,
+    },
+
+    /// A method.
+    Method {
+        /// The final name used.
+        final_name: String,
+
+        /// Type to which this method belongs.
+        parent: DiscoveredItemId,
+    }, // modules, etc.
 }
 
 /// Relevant information about a type to which new derive attributes will be added using
 /// [`ParseCallbacks::add_derives`].
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct DeriveInfo<'a> {
+    /// The name of the type.
+    pub name: &'a str,
+    /// The kind of the type.
+    pub kind: TypeKind,
+}
+
+/// Relevant information about a type to which new attributes will be added using
+/// [`ParseCallbacks::add_attributes`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AttributeInfo<'a> {
     /// The name of the type.
     pub name: &'a str,
     /// The kind of the type.
@@ -184,6 +286,7 @@ pub enum TypeKind {
 }
 
 /// A struct providing information about the item being passed to [`ParseCallbacks::generated_name_override`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct ItemInfo<'a> {
     /// The name of the item
@@ -192,9 +295,14 @@ pub struct ItemInfo<'a> {
     pub kind: ItemKind,
 }
 
-/// An enum indicating the kind of item for an ItemInfo.
+/// An enum indicating the kind of item for an `ItemInfo`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ItemKind {
+    /// A module
+    Module,
+    /// A type
+    Type,
     /// A Function
     Function,
     /// A Variable
@@ -203,11 +311,27 @@ pub enum ItemKind {
 
 /// Relevant information about a field for which visibility can be determined using
 /// [`ParseCallbacks::field_visibility`].
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct FieldInfo<'a> {
     /// The name of the type.
     pub type_name: &'a str,
     /// The name of the field.
     pub field_name: &'a str,
+    /// The name of the type of the field.
+    pub field_type_name: Option<&'a str>,
+}
+
+/// Location in the source code. Roughly equivalent to the same type
+/// within `clang_sys`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourceLocation {
+    /// Line number.
+    pub line: usize,
+    /// Column number within line.
+    pub col: usize,
+    /// Byte offset within file.
+    pub byte_offset: usize,
+    /// Filename, if known.
+    pub file_name: Option<String>,
 }

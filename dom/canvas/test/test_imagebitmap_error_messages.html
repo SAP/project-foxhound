@@ -1,0 +1,97 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Bug 2003863 - createImageBitmap rejection messages</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" href="/tests/SimpleTest/test.css">
+</head>
+<body>
+<script>
+"use strict";
+
+SimpleTest.waitForExplicitFinish();
+
+async function expectInvalidStateMessage(promise, expectedSubstring, label) {
+  try {
+    await promise;
+    ok(false, `${label}: expected rejection, got resolution`);
+  } catch (e) {
+    is(e.name, "InvalidStateError", `${label}: error name`);
+    ok(
+      typeof e.message === "string" && e.message.includes(expectedSubstring),
+      `${label}: message should include "${expectedSubstring}" (got: "${e.message}")`
+    );
+  }
+}
+
+async function run() {
+  // HTMLImageElement that has no source data. Per HTML, an <img> with no src
+  // is "complete", so this exercises the GetSurfaceFromElement no-surface
+  // path rather than the !Complete() branch.
+  await expectInvalidStateMessage(
+    createImageBitmap(new Image()),
+    "could not be decoded",
+    "HTMLImageElement, no source"
+  );
+
+  // HTMLVideoElement with no src (NETWORK_EMPTY).
+  await expectInvalidStateMessage(
+    createImageBitmap(document.createElement("video")),
+    "has not loaded any data",
+    "HTMLVideoElement, NETWORK_EMPTY"
+  );
+
+  // <canvas> with width 0.
+  {
+    const canvas = document.createElement("canvas");
+    canvas.width = 0;
+    canvas.height = 10;
+    await expectInvalidStateMessage(
+      createImageBitmap(canvas),
+      "width 0",
+      "HTMLCanvasElement, width 0"
+    );
+  }
+
+  // <canvas> with height 0.
+  {
+    const canvas = document.createElement("canvas");
+    canvas.width = 10;
+    canvas.height = 0;
+    await expectInvalidStateMessage(
+      createImageBitmap(canvas),
+      "height 0",
+      "HTMLCanvasElement, height 0"
+    );
+  }
+
+  // Closed (detached) ImageBitmap.
+  {
+    const canvas = document.createElement("canvas");
+    canvas.width = 10;
+    canvas.height = 10;
+    const bitmap = await createImageBitmap(canvas);
+    bitmap.close();
+    await expectInvalidStateMessage(
+      createImageBitmap(bitmap),
+      "closed or transferred",
+      "Detached ImageBitmap"
+    );
+  }
+
+  // Blob whose contents cannot be decoded as an image (Jake's headline case
+  // from bug 2003863 comment 0).
+  await expectInvalidStateMessage(
+    createImageBitmap(new Blob(["YO"])),
+    "could not be decoded",
+    "Undecodable Blob"
+  );
+
+  SimpleTest.finish();
+}
+
+run();
+</script>
+</body>
+</html>

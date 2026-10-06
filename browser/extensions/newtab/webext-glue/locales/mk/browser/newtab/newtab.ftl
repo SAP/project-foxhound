@@ -9,6 +9,37 @@ newtab-page-title = Ново јазиче
 newtab-settings-button =
     .title = Прилагодете ја страницата на вашето Ново јазиче
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Нови јазичиња
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } ред
+           *[other] { $num } редови
+        }
+home-mode-choice-blank-srd =
+    .label = Празна страница
+home-prefs-shortcuts-header-srd =
+    .label = Кратенки
+home-prefs-shortcuts-select =
+    .aria-label = Кратенки
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Спонзорирани приказни
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Посетени страници
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Обележувачи
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Последно преземање
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +47,7 @@ newtab-search-box-search-button =
     .title = Барај
     .aria-label = Барај
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Додај сервис за пребарување
 newtab-topsites-edit-topsites-header = Уреди врвно мрежно место
@@ -41,10 +72,7 @@ newtab-topsites-add-button = Додај
 
 newtab-confirm-delete-history-p1 = Дали сте сигурни дека сакате да ја избришете оваа страница отсекаде во вашата историја на прелистување?
 # "This action" refers to deleting a page from history.
-newtab-confirm-delete-history-p2 = Ова дејство не може да се одврати.
-
-## Top Sites - Sponsored label
-
+newtab-confirm-delete-history-p2 = Ова е неповратна акција.
 
 ## Context Menu - Action Tooltips.
 
@@ -75,9 +103,6 @@ newtab-menu-delete-history = Избриши од историја
 newtab-menu-save-to-pocket = Зачувај во { -pocket-brand-name }
 newtab-menu-delete-pocket = Избриши од { -pocket-brand-name }
 newtab-menu-archive-pocket = Архивирај во { -pocket-brand-name }
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -129,9 +154,6 @@ newtab-section-menu-move-up = Помести нагоре
 newtab-section-menu-move-down = Помести надолу
 newtab-section-menu-privacy-notice = Белешка за приватност
 
-## Section aria-labels
-
-
 ## Section Headers.
 
 newtab-section-header-topsites = Популарни мрежни места
@@ -162,69 +184,8 @@ newtab-pocket-read-more = Популарни теми:
 newtab-pocket-more-recommendations = Повеќе препораки
 newtab-pocket-cta-button = Превземете го { -pocket-brand-name }
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
 newtab-error-fallback-info = Упс, нешто отиде погрешно со прикажување на оваа содржина
 newtab-error-fallback-refresh-link = Освежете ја страницата за да се обидете повторно.
-
-## Customization Menu
-
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

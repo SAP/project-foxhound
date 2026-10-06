@@ -12,6 +12,13 @@ interface nsILoadContextInfo;
 interface nsIOutputStream;
 interface nsITransportSecurityInfo;
 
+%{C++
+namespace mozilla::net {
+class DictionaryCacheEntry;
+}
+%}
+[ptr] native DictionaryCacheEntry(mozilla::net::DictionaryCacheEntry);
+
 [scriptable, uuid(607c2a2c-0a48-40b9-a956-8cf2bb9857cf)]
 interface nsICacheEntry : nsISupports
 {
@@ -22,12 +29,13 @@ interface nsICacheEntry : nsISupports
   const unsigned long CONTENT_TYPE_MEDIA = 4;
   const unsigned long CONTENT_TYPE_STYLESHEET = 5;
   const unsigned long CONTENT_TYPE_WASM = 6;
+  const unsigned long CONTENT_TYPE_DICTIONARY = 7;
   /**
    * Content type that is used internally to check whether the value parsed
    * from disk is within allowed limits. Don't pass CONTENT_TYPE_LAST to
    * setContentType method.
    */
-  const unsigned long CONTENT_TYPE_LAST = 7;
+  const unsigned long CONTENT_TYPE_LAST = 8;
 
   /**
    * Placeholder for the initial value of expiration time.
@@ -51,6 +59,11 @@ interface nsICacheEntry : nsISupports
    * while are not actually persisted to disk.
    */
   readonly attribute boolean persistent;
+
+  /**
+   * Get if the cache file is READY or REVALIDATING
+   */
+  readonly attribute boolean readyOrRevalidating;
 
   /**
    * Get the number of times the cache entry has been opened.
@@ -192,6 +205,11 @@ interface nsICacheEntry : nsISupports
   void   setMetaDataElement(in string key, in string value);
 
   /**
+   * Get if the entry is empty (new)
+   */
+  readonly attribute boolean isEmpty;
+
+  /**
    * Obtain the list of metadata keys this entry keeps.
    *
    * NOTE: The callback is invoked under the CacheFile's lock.  It means
@@ -309,6 +327,17 @@ interface nsICacheEntry : nsISupports
    * Get the nsILoadContextInfo of the cache entry
    */
   readonly attribute nsILoadContextInfo loadContextInfo;
+
+  /**
+   * This method gets called to indicate that this entry will be used
+   * as a Dictionary in the future, so we know to calculate a hash for it.
+   */
+  [noscript] void SetDictionary(in DictionaryCacheEntry dict);
+
+  /**
+   * Set bypass flag to allow waiting listeners to continue even while entry is being written
+   */
+  void setBypassWriterLock(in boolean aBypass);
 };
 
 /**

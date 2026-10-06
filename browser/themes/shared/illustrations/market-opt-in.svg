@@ -1,0 +1,53 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="98" height="86" viewBox="0 0 98 86">
+  <style>
+    :root {
+      color-scheme: light dark;
+    }
+    #row-icon-bg {
+      fill: context-fill light-dark(#DDCFFF, #4E2E9D);
+    }
+    #row-bg {
+      fill: light-dark(#FFF, #23222B);
+    }
+    .row-icon-glyph {
+      fill: #7844F0;
+    }
+    #row-inset-hbox-1 {
+      fill: url(#grad1);
+    }
+    #row-inset-hbox-2 {
+      fill: url(#grad2);
+    }
+    @media (prefers-contrast) {
+      #row-inset-hbox-1,
+      #row-inset-hbox-2 {
+        fill: context-fill;
+      }
+    }
+    .gradient-stop-1 {
+      stop-color: light-dark(#DDCFFF, #4E2E9D);
+    }
+    .gradient-stop-2 {
+      stop-color: light-dark(#F4F0FF, #23222B);
+    }
+  </style>
+  <path id="row-bg" d="M8 28C8 20.82 13.82 15 21 15H100C103.31 15 106 17.69 106 21V65C106 68.31 103.31 71 100 71H21C13.82 71 8 65.18 8 58V28Z"/>
+  <path id="row-icon-bg" d="M15 28C15 24.69 17.69 22 21 22H52C55.31 22 58 24.69 58 28V58C58 61.31 55.31 64 52 64H21C17.69 64 15 61.31 15 58V28Z"/>
+  <path class="row-icon-glyph" d="M27.75 48.25V35H29.5V48.25C29.5 48.66 29.84 49 30.25 49H44.5V50.75H30.25C28.87 50.75 27.75 49.63 27.75 48.25Z"/>
+  <path class="row-icon-glyph" d="M32.2 46L30.96 44.77L34.2 41.51C34.54 41.17 35.09 41.17 35.43 41.51L37.72 43.78L43.3 38.51L44.5 39.78L38.3 45.63C37.96 45.95 37.42 45.95 37.09 45.61L34.82 43.36L32.2 46Z"/>
+  <rect id="row-inset-hbox-1" x="65" y="26.04" width="167.97" height="17.23" rx="8.62"/>
+  <rect id="row-inset-hbox-2" x="65" y="51.35" width="167.97" height="8.62" rx="4.31"/>
+  <defs>
+    <linearGradient id="grad1" x1="65" y1="34.65" x2="232.97" y2="34.65" gradientUnits="userSpaceOnUse">
+      <stop class="gradient-stop-1"/>
+      <stop class="gradient-stop-2" offset="0.35"/>
+    </linearGradient>
+    <linearGradient id="grad2" x1="65" y1="55.66" x2="232.97" y2="55.66" gradientUnits="userSpaceOnUse">
+      <stop class="gradient-stop-1"/>
+      <stop class="gradient-stop-2" offset="0.35"/>
+    </linearGradient>
+  </defs>
+</svg>

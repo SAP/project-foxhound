@@ -10,10 +10,12 @@
 
 #include "test/rtp_file_reader.h"
 
+#include <cstdint>
 #include <map>
 #include <memory>
+#include <span>
+#include <string>
 
-#include "api/array_view.h"
 #include "modules/rtp_rtcp/source/rtp_util.h"
 #include "test/gtest.h"
 #include "test/testsupport/file_utils.h"
@@ -27,7 +29,7 @@ class TestRtpFileReader : public ::testing::Test {
         test::ResourcePath("video_coding/" + filename, "rtp");
     rtp_packet_source_.reset(
         test::RtpFileReader::Create(test::RtpFileReader::kRtpDump, filepath));
-    ASSERT_TRUE(rtp_packet_source_.get() != NULL);
+    ASSERT_TRUE(rtp_packet_source_.get() != nullptr);
     headers_only_file_ = headers_only_file;
   }
 
@@ -68,7 +70,7 @@ class TestPcapFileReader : public ::testing::Test {
         test::ResourcePath("video_coding/" + filename, "pcap");
     rtp_packet_source_.reset(
         test::RtpFileReader::Create(test::RtpFileReader::kPcap, filepath));
-    ASSERT_TRUE(rtp_packet_source_.get() != NULL);
+    ASSERT_TRUE(rtp_packet_source_.get() != nullptr);
   }
 
   int CountRtpPackets() {
@@ -85,7 +87,7 @@ class TestPcapFileReader : public ::testing::Test {
     PacketsPerSsrc pps;
     test::RtpPacket packet;
     while (rtp_packet_source_->NextPacket(&packet)) {
-      rtc::ArrayView<const uint8_t> raw(packet.data, packet.length);
+      std::span<const uint8_t> raw(packet.data, packet.length);
       if (IsRtpPacket(raw)) {
         pps[ParseRtpSsrc(raw)]++;
       }

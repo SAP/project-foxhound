@@ -16,22 +16,14 @@ const TRACKER_URL = "https://tracking.example.com/";
 const IMG_FILE =
   "browser/devtools/client/webconsole/test/browser/test-image.png";
 const CONTENT_BLOCKED_BY_ETP_URL = TRACKER_URL + IMG_FILE;
-const WARNING_GROUP_PREF = "devtools.webconsole.groupWarningMessages";
-
-const { UrlClassifierTestUtils } = ChromeUtils.importESModule(
-  "resource://testing-common/UrlClassifierTestUtils.sys.mjs"
-);
-UrlClassifierTestUtils.addTestTrackers();
-registerCleanupFunction(function () {
-  UrlClassifierTestUtils.cleanupTestTrackers();
-});
-
-pushPref("privacy.trackingprotection.enabled", true);
+const WARNING_GROUP_PREF = "devtools.webconsole.groupSimilarMessages";
 
 const ENHANCED_TRACKING_PROTECTION_GROUP_LABEL =
   "The resource at “<URL>” was blocked because Enhanced Tracking Protection is enabled.";
 
 add_task(async function testContentBlockingMessage() {
+  await setupUrlClassifierTest();
+
   // Enable persist log
   await pushPref("devtools.webconsole.persistlog", true);
 
@@ -257,7 +249,7 @@ function emitEnhancedTrackingProtectionMessage() {
  * Log a string from the content page.
  *
  * @param {WebConsole} hud
- * @param {String} str
+ * @param {string} str
  */
 function logString(hud, str) {
   const onMessage = waitForMessageByType(hud, str, ".console-api");

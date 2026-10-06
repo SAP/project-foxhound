@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_AppWindow_h__
-#define mozilla_AppWindow_h__
+#ifndef mozilla_AppWindow_h_
+#define mozilla_AppWindow_h_
 
 // Local Includes
 #include "nsChromeTreeOwner.h"
@@ -40,6 +39,7 @@
 
 class nsAtom;
 class nsXULTooltipListener;
+class nsIOpenWindowInfo;
 
 namespace mozilla {
 class PresShell;
@@ -88,11 +88,10 @@ class AppWindow final : public nsIBaseWindow,
     MOZ_CAN_RUN_SCRIPT_BOUNDARY
     mozilla::PresShell* GetPresShell() override;
     MOZ_CAN_RUN_SCRIPT_BOUNDARY
-    bool WindowMoved(nsIWidget* aWidget, int32_t x, int32_t y,
+    void WindowMoved(nsIWidget*, const LayoutDeviceIntPoint&,
                      ByMoveToRect) override;
     MOZ_CAN_RUN_SCRIPT_BOUNDARY
-    bool WindowResized(nsIWidget* aWidget, int32_t aWidth,
-                       int32_t aHeight) override;
+    void WindowResized(nsIWidget*, const LayoutDeviceIntSize&) override;
     MOZ_CAN_RUN_SCRIPT_BOUNDARY
     bool RequestWindowClose(nsIWidget* aWidget) override;
     MOZ_CAN_RUN_SCRIPT_BOUNDARY
@@ -134,7 +133,8 @@ class AppWindow final : public nsIBaseWindow,
   // AppWindow methods...
   nsresult Initialize(nsIAppWindow* aParent, nsIAppWindow* aOpener,
                       int32_t aInitialWidth, int32_t aInitialHeight,
-                      bool aIsHiddenWindow, widget::InitData& widgetInitData);
+                      bool aIsHiddenWindow, widget::InitData& widgetInitData,
+                      nsIOpenWindowInfo* aOpenWindowInfo);
 
   nsDocShell* GetDocShell() { return mDocShell; }
 
@@ -147,9 +147,9 @@ class AppWindow final : public nsIBaseWindow,
   nsIAppWindow* GetAppWindow() { return this; }
   mozilla::PresShell* GetPresShell();
   MOZ_CAN_RUN_SCRIPT
-  bool WindowMoved(nsIWidget* aWidget, int32_t aX, int32_t aY);
+  void WindowMoved(nsIWidget*, const mozilla::LayoutDeviceIntPoint&);
   MOZ_CAN_RUN_SCRIPT
-  bool WindowResized(nsIWidget* aWidget, int32_t aWidth, int32_t aHeight);
+  void WindowResized(nsIWidget*, const mozilla::LayoutDeviceIntSize&);
   MOZ_CAN_RUN_SCRIPT bool RequestWindowClose(nsIWidget* aWidget);
   MOZ_CAN_RUN_SCRIPT void SizeModeChanged(nsSizeMode aSizeMode);
   MOZ_CAN_RUN_SCRIPT void FullscreenWillChange(bool aInFullscreen);
@@ -374,10 +374,13 @@ class AppWindow final : public nsIBaseWindow,
                       const Maybe<LayoutDeviceIntSize>& aSize, bool aRepaint);
   nsresult MoveResize(const Maybe<DesktopPoint>& aPosition,
                       const Maybe<DesktopSize>& aSize, bool aRepaint);
+  nsresult CenterImpl(nsIAppWindow* aRelative, bool aScreen, bool aAlert,
+                      bool aAllowCenteringForSizeChange);
+
   nsCOMPtr<nsIXULStore> mLocalStore;
   bool mIsWidgetInFullscreen = false;
 };
 
 }  // namespace mozilla
 
-#endif /* mozilla_AppWindow_h__ */
+#endif /* mozilla_AppWindow_h_ */

@@ -28,4 +28,17 @@ through `staging ship-it instance <https://shipit.staging.mozilla-releng.net/new
    If pushing from beta or release, the corresponding migration should not be
    passed, as they have already been applied.
 
+The ``--tasks`` flag controls the scope of the try push:
+
+.. option:: --tasks staging
+
+   *(default)* Only shippable build-phase tasks (builds, signing, repackaging,
+   PGO profiling) — the minimal set required before triggering a staging release
+   via `ShipIt staging <https://shipit.staging.mozilla-releng.net/>`_.
+
+.. option:: --tasks release-sim
+
+   Simulates a full release branch push, including tests. Used by sheriffs to
+   look for branch-dependent test failures.
+
 .. [#shipit] This is only available to release engineering and release management (as of 2018-10-15).

@@ -2,26 +2,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { SuggestBackend } from "resource:///modules/urlbar/private/SuggestFeature.sys.mjs";
+import { SuggestBackend } from "moz-src:///browser/components/urlbar/private/SuggestFeature.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  MerinoClient: "resource:///modules/MerinoClient.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+  MerinoClient: "moz-src:///browser/components/urlbar/MerinoClient.sys.mjs",
 });
 
 /**
- * @import {MerinoClient} from "resource:///modules/MerinoClient.sys.mjs"
+ * @import {MerinoClient} from "moz-src:///browser/components/urlbar/MerinoClient.sys.mjs"
  */
 
 /**
- * The Suggest Merino backend. This backend is enabled when the user opts in to
- * Merino, also called "online" Suggest.
+ * The Suggest Merino backend. This backend is enabled when online Suggest is
+ * available to the user and enabled.
  */
 export class SuggestBackendMerino extends SuggestBackend {
   get enablingPreferences() {
-    return ["quicksuggest.dataCollection.enabled"];
+    return ["quickSuggestOnlineAvailable", "quicksuggest.online.enabled"];
   }
 
   /**
@@ -50,21 +49,7 @@ export class SuggestBackendMerino extends SuggestBackend {
       this.#client = new lazy.MerinoClient(this.name, { allowOhttp: true });
     }
 
-    let providers;
-    if (
-      !lazy.UrlbarPrefs.get("suggest.quicksuggest.nonsponsored") &&
-      !lazy.UrlbarPrefs.get("suggest.quicksuggest.sponsored") &&
-      !lazy.UrlbarPrefs.get("merinoProviders")
-    ) {
-      // Data collection is enabled but suggestions are not. Per product
-      // requirements, we still want to ping Merino so it can record the query,
-      // but pass an empty list of providers to tell it not to fetch any
-      // suggestions.
-      providers = [];
-    }
-
     let suggestions = await this.#client.fetch({
-      providers,
       query: searchString,
     });
 

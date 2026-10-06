@@ -1,5 +1,6 @@
 <!doctype html>
-<textarea style="resize: none; background-color: red; background-image: linear-gradient(red, blue);"></textarea>
+<style>textarea { resize: none; font-family: system-ui; font-size: 13px; }</style>
+<textarea style="background-color: red; background-image: linear-gradient(red, blue);"></textarea>
 <script>
   let textarea = SpecialPowers.wrap(document.querySelector("textarea"));
   SpecialPowers.Cc["@mozilla.org/satchel/form-fill-controller;1"].getService(SpecialPowers.Ci.nsIFormFillController).markAsAutoCompletableField(textarea);

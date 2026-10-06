@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +5,6 @@
 #ifndef mozilla_dom_XMLStylesheetProcessingInstruction_h
 #define mozilla_dom_XMLStylesheetProcessingInstruction_h
 
-#include "mozilla/Attributes.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/LinkStyle.h"
 #include "mozilla/dom/ProcessingInstruction.h"
 #include "nsIURI.h"
@@ -19,7 +15,7 @@ class XMLStylesheetProcessingInstruction final : public ProcessingInstruction,
                                                  public LinkStyle {
  public:
   XMLStylesheetProcessingInstruction(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
       const nsAString& aData)
       : ProcessingInstruction(std::move(aNodeInfo), aData) {}
 
@@ -38,8 +34,9 @@ class XMLStylesheetProcessingInstruction final : public ProcessingInstruction,
                                            ProcessingInstruction)
 
   // nsINode
-  virtual void SetNodeValueInternal(const nsAString& aNodeValue,
-                                    mozilla::ErrorResult& aError) override;
+  virtual void SetNodeValueInternal(
+      const nsAString& aNodeValue, mozilla::ErrorResult& aError,
+      MutationEffectOnScript aMutationEffectOnScript) override;
 
   // nsIContent
   virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
@@ -57,14 +54,9 @@ class XMLStylesheetProcessingInstruction final : public ProcessingInstruction,
   // LinkStyle
   void GetCharset(nsAString& aCharset) override;
 
-  virtual void SetData(const nsAString& aData,
-                       mozilla::ErrorResult& rv) override {
-    CharacterData::SetData(aData, rv);
-    if (rv.Failed()) {
-      return;
-    }
-    Unused << UpdateStyleSheetInternal(nullptr, nullptr, ForceUpdate::Yes);
-  }
+  virtual void SetDataInternal(const nsAString& aData,
+                               MutationEffectOnScript aMutationEffectOnScript,
+                               mozilla::ErrorResult& rv) override;
 
  protected:
   virtual ~XMLStylesheetProcessingInstruction();

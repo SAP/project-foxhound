@@ -26,11 +26,13 @@ class LocaleAdapter(private val interactor: LocaleSettingsViewInteractor) :
                 view,
                 selectedLocale,
                 interactor,
+                DefaultLocaleSelectionChecker(),
             )
             ItemType.LOCALE.ordinal -> LocaleViewHolder(
                 view,
                 selectedLocale,
                 interactor,
+                DefaultLocaleSelectionChecker(),
             )
             else -> throw IllegalStateException("ViewType $viewType does not match to a ViewHolder")
         }

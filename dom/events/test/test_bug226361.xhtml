@@ -26,7 +26,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=226361
 <script type="application/javascript">
 <![CDATA[
 
-/** Test for Bug 226361 **/
+/** Test for Bug 226361 */
 
 // accessibility.tabfocus must be set to value 7 before running test also
 // on a mac.
@@ -43,12 +43,6 @@ function tab_to(id) {
 }
 
 function tab_iframe() {
-  let canTabMoveFocusToRootElement = !SpecialPowers.getBoolPref("dom.disable_tab_focus_to_root_element");
-  if (canTabMoveFocusToRootElement) {
-    doc = document;
-    tab_to('iframe');
-  }
-
   // inside iframe
   doc = document.getElementById('iframe').contentDocument
   tab_to('a3');tab_to('a5');tab_to('a1');tab_to('a2');tab_to('a4');

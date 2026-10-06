@@ -6839,6 +6839,13 @@ sftk_IsSafePrime(const SECItem *dhPrime, const SECItem *dhSubPrime, PRBool *isSa
     int offset = 0, subPrimeLen = dhPrime->len;
     *isSafe = PR_FALSE;
 
+    /* Reject empty inputs before indexing data[len - 1] to avoid an
+     * out-of-bounds read when len is zero. */
+    if (dhPrime->len == 0 || dhSubPrime->len == 0) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return SECFailure;
+    }
+
     /* Both dhPrime and dhSubPrime should be odd */
     if (((dhPrime->data[dhPrime->len - 1] & 0x1) != 1) && ((dhSubPrime->data[dhSubPrime->len - 1] & 0x1) != 1)) {
         PORT_SetError(SEC_ERROR_INVALID_ARGS);

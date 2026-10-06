@@ -52,3 +52,30 @@ let deadCode = new WebAssembly.Module(wasmTextToBinary(`
 )`));
 
 assertEq(wasmParsedBranchHints(deadCode), true);
+
+
+// A branch without a hint placed before a branch with a hint.
+let m = new WebAssembly.Module(wasmTextToBinary(`
+(module
+  (func $test (param i32) (result i32)
+    local.get 0
+    if (result i32)
+      i32.const 1
+    else
+      i32.const 0
+    end
+    local.get 0
+    (@metadata.code.branch_hint "\\00") if (result i32)
+      i32.const 10
+    else
+      i32.const 20
+    end
+    i32.add
+  )
+  (export "test" (func $test))
+)`));
+
+assertEq(wasmParsedBranchHints(m), true);
+let instance = new WebAssembly.Instance(m);
+assertEq(instance.exports.test(1), 11);
+assertEq(instance.exports.test(0), 20);

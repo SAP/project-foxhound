@@ -36,7 +36,7 @@ add_task(async function () {
     const requestsListStatus = requestItem.querySelector(".status-code");
     EventUtils.sendMouseEvent({ type: "mouseover" }, requestsListStatus);
     await waitUntil(() => requestsListStatus.title);
-    await waitForDOMIfNeeded(requestItem, ".requests-list-timings-total");
+    await waitForDOM(requestItem, ".requests-list-timings-total");
   }
 
   await verifyRequestItemTarget(
@@ -88,7 +88,7 @@ add_task(async function () {
   const waitForHeader = waitForDOM(document, "#request-panel .data-header");
   const waitForSourceEditor = waitForDOM(
     document,
-    "#request-panel .CodeMirror-code"
+    "#request-panel .cm-content"
   );
   EventUtils.sendMouseEvent(
     { type: "mousedown" },
@@ -104,7 +104,7 @@ add_task(async function () {
 
     function checkVisibility(box) {
       is(
-        tabpanel.querySelector(".CodeMirror-code") === null,
+        tabpanel.querySelector(".cm-content") === null,
         !box.includes("editor"),
         "The request post data doesn't have the intended visibility."
       );

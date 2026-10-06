@@ -39,11 +39,8 @@ add_task(
         return ["989df240-a40c-405a-9a22-f2fc4a31db6c"];
       };
 
-    lazy.EventDispatcher.instance.dispatch(
-      "GeckoView:CrashPullController.Delegate:Attached",
-      undefined,
-      undefined,
-      undefined
+    lazy.EventDispatcher.instance.sendRequest(
+      "GeckoView:CrashPullController.Delegate:Attached"
     );
 
     const payload = {

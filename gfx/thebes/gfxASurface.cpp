@@ -1,13 +1,9 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsIMemoryReporter.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Base64.h"
-#include "mozilla/CheckedInt.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/MemoryReporting.h"
 #include "nsISupportsImpl.h"
 #include "mozilla/gfx/2D.h"
@@ -22,7 +18,6 @@
 #include "gfxRect.h"
 
 #include "cairo.h"
-#include <algorithm>
 
 #ifdef CAIRO_HAS_WIN32_SURFACE
 #  include "gfxWindowsSurface.h"
@@ -409,7 +404,7 @@ void gfxASurface::RecordMemoryUsedForSurfaceType(gfxSurfaceType aType,
 
   static bool registered = false;
   if (!registered) {
-    RegisterStrongMemoryReporter(new SurfaceMemoryReporter());
+    RegisterStrongMemoryReporter(MakeAndAddRef<SurfaceMemoryReporter>());
     registered = true;
   }
 

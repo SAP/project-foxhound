@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Google Inc.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -30,7 +30,7 @@ public:
 protected:
     friend class GrImageContextPriv; // for hidden functions
 
-    GrImageContext(sk_sp<GrContextThreadSafeProxy>);
+    explicit GrImageContext(sk_sp<GrContextThreadSafeProxy>);
 
     SK_API virtual void abandonContext();
     SK_API virtual bool abandoned();

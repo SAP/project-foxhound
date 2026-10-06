@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+</head>
+<body>
+<script>
+const workerSrc = `
+let openCount = 0;
+onmessage = (event) => {
+  if (event.data.channel) {
+    const channel = event.data.channel;
+    const checkOpen = () => {
+      if (++openCount === 2) self.postMessage("opened");
+    };
+    if (channel.readyState == "open") {
+      checkOpen();
+    } else {
+      channel.onopen = checkOpen;
+    }
+  }
+};
+`;
+
+async function run() {
+  try {
+    const pc1 = new RTCPeerConnection();
+    const pc2 = new RTCPeerConnection();
+    pc1.onicecandidate = (e) => pc2.addIceCandidate(e.candidate);
+    pc2.onicecandidate = (e) => pc1.addIceCandidate(e.candidate);
+
+    const worker = new Worker(
+      URL.createObjectURL(new Blob([workerSrc], { type: "text/javascript" }))
+    );
+
+    let dc1 = pc1.createDataChannel("test", { negotiated: true, id: 0 });
+    let dc2 = pc2.createDataChannel("test", { negotiated: true, id: 0 });
+    worker.postMessage({ channel: dc1 }, [dc1]);
+    worker.postMessage({ channel: dc2 }, [dc2]);
+    // Null immediately so main-thread RTCDataChannel wrappers are eligible for
+    // GC during signaling (while the worker is alive). If GC fires then,
+    // UnsetWorkerNeedsUs() reaches the worker before NotifyWorkerRefs(Canceling),
+    // leaving mWorkerDomDataChannel non-null through CC shutdown so the
+    // subsequent AnnounceClosed crashes on the AddRef.
+    dc1 = dc2 = null;
+
+    const offer = await pc1.createOffer();
+    await pc1.setLocalDescription(offer);
+    await pc2.setRemoteDescription(offer);
+    const answer = await pc2.createAnswer();
+    await pc2.setLocalDescription(answer);
+    await pc1.setRemoteDescription(answer);
+
+    await new Promise((resolve) => {
+      worker.onmessage = (e) => { if (e.data == "opened") resolve(); };
+    });
+
+    // Navigate without explicitly closing the PCs. Page teardown terminates
+    // the worker and closes the PCs, triggering the race.
+    window.location = "about:blank";
+  } catch (e) {
+    window.location = "about:blank";
+  }
+}
+
+run();
+</script>
+</body>
+</html>

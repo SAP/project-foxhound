@@ -52,7 +52,7 @@ struct RTC_EXPORT StreamsConfig {
   // If `enable_repeated_initial_probing` is set to true, Probes are sent
   // periodically every 1s during the first 5s after the network becomes
   // available. The probes ignores max_total_allocated_bitrate.
-  std::optional<bool> enable_repeated_initial_probing;
+  bool enable_repeated_initial_probing = false;
   std::optional<double> pacing_factor;
 
   // TODO(srte): Use BitrateAllocationLimits here.
@@ -88,6 +88,9 @@ struct RTC_EXPORT NetworkRouteChange {
   // The TargetRateConstraints are set here so they can be changed synchronously
   // when network route changes.
   TargetRateConstraints constraints;
+  // If true, the change is significant enough to warrant a reset of the
+  // bandwidth estimator.
+  bool restart_bwe = true;
 };
 
 struct RTC_EXPORT PacedPacketInfo {
@@ -154,11 +157,16 @@ struct RTC_EXPORT TransportLossReport {
 };
 
 // Packet level feedback
-
 struct RTC_EXPORT PacketResult {
   class ReceiveTimeOrder {
    public:
     bool operator()(const PacketResult& lhs, const PacketResult& rhs);
+  };
+
+  struct RtpPacketInfo {
+    uint32_t ssrc = 0;
+    uint16_t rtp_sequence_number = 0;
+    bool is_retransmission = false;
   };
 
   PacketResult();
@@ -169,7 +177,24 @@ struct RTC_EXPORT PacketResult {
 
   SentPacket sent_packet;
   Timestamp receive_time = Timestamp::PlusInfinity();
+  // Delta from when feedback was sent and the packet was received. Can be used
+  // for calculating round trip time per packet.
+  std::optional<TimeDelta> arrival_time_offset;
+  // Ecn marking from the feedback report how this packet was received.
   EcnMarking ecn = EcnMarking::kNotEct;
+
+  // Indicates if packet was sent with ECN marking 'ect1'.
+  bool sent_with_ect1 = false;
+
+  // Indicates if packet was reported lost for the first time.
+  bool reported_lost_for_the_first_time = false;
+
+  // Indicates if packet was recovered, i.e., previously feedback report marked
+  // this packet as lost, but current report marks it as received.
+  bool reported_recovered_for_the_first_time = false;
+
+  // `rtp_packet_info` is only set if the feedback is related to a RTP packet.
+  std::optional<RtpPacketInfo> rtp_packet_info;
 };
 
 struct RTC_EXPORT TransportPacketsFeedback {
@@ -179,6 +204,7 @@ struct RTC_EXPORT TransportPacketsFeedback {
 
   Timestamp feedback_time = Timestamp::PlusInfinity();
   DataSize data_in_flight = DataSize::Zero();
+
   bool transport_supports_ecn = false;
   std::vector<PacketResult> packet_feedbacks;
 
@@ -189,6 +215,9 @@ struct RTC_EXPORT TransportPacketsFeedback {
   std::vector<PacketResult> LostWithSendInfo() const;
   std::vector<PacketResult> PacketsWithFeedback() const;
   std::vector<PacketResult> SortedByReceiveTime() const;
+
+  // True if at least one packet is CE marked.
+  bool HasPacketWithEcnCe() const;
 };
 
 // Network estimation
@@ -206,14 +235,26 @@ struct RTC_EXPORT NetworkEstimate {
 // Network control
 
 struct RTC_EXPORT PacerConfig {
+  static constexpr TimeDelta kDefaultTimeInterval = TimeDelta::Millis(40);
+  static PacerConfig Create(Timestamp at_time,
+                            DataRate send_rate,
+                            DataRate pad_rate,
+                            TimeDelta time_window = kDefaultTimeInterval);
+
   Timestamp at_time = Timestamp::PlusInfinity();
   // Pacer should send at most data_window data over time_window duration.
+  // If `time_window` is TimeDelta::Zero, Pacer should pace every packet as
+  // accurate as possible and data_rate() is calculated as
+  // data_window/TimeDelta::Seconds(1);
   DataSize data_window = DataSize::Infinity();
   TimeDelta time_window = TimeDelta::PlusInfinity();
+  TimeDelta rate_window() const {
+    return time_window.IsZero() ? TimeDelta::Seconds(1) : time_window;
+  }
   // Pacer should send at least pad_window data over time_window duration.
   DataSize pad_window = DataSize::Zero();
-  DataRate data_rate() const { return data_window / time_window; }
-  DataRate pad_rate() const { return pad_window / time_window; }
+  DataRate data_rate() const { return data_window / rate_window(); }
+  DataRate pad_rate() const { return pad_window / rate_window(); }
 };
 
 struct RTC_EXPORT ProbeClusterConfig {
@@ -232,7 +273,6 @@ struct RTC_EXPORT TargetTransferRate {
   // The estimate on which the target rate is based on.
   NetworkEstimate network_estimate;
   DataRate target_rate = DataRate::Zero();
-  DataRate stable_target_rate = DataRate::Zero();
   double cwnd_reduce_ratio = 0;
 };
 

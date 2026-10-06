@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/remote-page */
-
 "use strict";
 
 const searchParams = new URLSearchParams(document.documentURI.split("?")[1]);
@@ -69,6 +67,8 @@ function initPage() {
     // try to ping secure www link in the AboutHttpsOnlyErrorChild
     RPMTryPingSecureWWWLink();
   }
+
+  resetClickjackingTimeout();
 }
 
 /*  Suggestion Box */

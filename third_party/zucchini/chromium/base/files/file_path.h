@@ -202,7 +202,11 @@ class BASE_EXPORT FilePath {
   FilePath(FilePath&& that) noexcept;
   // Replaces the contents with those of |that|, which is left in valid but
   // unspecified state.
+#if !defined(MOZ_ZUCCHINI)
   FilePath& operator=(FilePath&& that) noexcept;
+#else
+  FilePath& operator=(FilePath&& that);
+#endif  // !defined(MOZ_ZUCCHINI)
 
   bool operator==(const FilePath& that) const;
 

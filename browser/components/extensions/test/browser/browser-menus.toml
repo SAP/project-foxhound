@@ -1,0 +1,103 @@
+[DEFAULT]
+skip-if = [
+	"debug && standalone", # TODO bug 2048260: Drop skip-if = standalone
+]
+tags = "webextensions"
+prefs = [
+  # We don't want to reset this at the end of the test, so that we don't have
+  # to spawn a new extension child process for each test unit.
+  "dom.ipc.keepProcessesAlive.extension=1",
+]
+support-files = [
+  "head.js",
+  "context.html",
+  "context_frame.html",
+  "ctxmenu-image.png",
+  "context_with_redirect.html",
+  "redirect_to.sjs",
+]
+
+["browser_ext_contextMenus.js"]
+support-files = ["!/browser/components/places/tests/browser/head.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1971622
+]
+
+["browser_ext_contextMenus_bookmarks.js"]
+support-files = ["!/browser/components/places/tests/browser/head.js"]
+
+["browser_ext_contextMenus_checkboxes.js"]
+
+["browser_ext_contextMenus_commands.js"]
+
+["browser_ext_contextMenus_icons.js"]
+
+["browser_ext_contextMenus_onclick.js"]
+https_first_disabled = true
+
+["browser_ext_contextMenus_radioGroups.js"]
+
+["browser_ext_contextMenus_srcUrl_redirect.js"]
+
+["browser_ext_contextMenus_targetUrlPatterns.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
+]
+tags = "bleedover"
+
+["browser_ext_contextMenus_uninstall.js"]
+
+["browser_ext_contextMenus_urlPatterns.js"]
+
+["browser_ext_menus.js"]
+https_first_disabled = true
+
+["browser_ext_menus_accesskey.js"]
+
+["browser_ext_menus_activeTab.js"]
+
+["browser_ext_menus_capture_secondary_click.js"]
+
+["browser_ext_menus_errors.js"]
+
+["browser_ext_menus_event_order.js"]
+
+["browser_ext_menus_eventpage.js"]
+
+["browser_ext_menus_events.js"]
+
+["browser_ext_menus_events_after_context_destroy.js"]
+
+["browser_ext_menus_incognito.js"]
+
+["browser_ext_menus_refresh.js"]
+
+["browser_ext_menus_replace_menu.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1775561
+]
+
+["browser_ext_menus_replace_menu_context.js"]
+https_first_disabled = true
+
+["browser_ext_menus_replace_menu_permissions.js"]
+
+["browser_ext_menus_startup_restored.js"]
+
+["browser_ext_menus_targetElement.js"]
+
+["browser_ext_menus_targetElement_extension.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
+]
+tags = "bleedover"
+
+["browser_ext_menus_targetElement_shadow.js"]
+
+["browser_ext_menus_viewType.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
+]
+tags = "bleedover"
+
+["browser_ext_menus_visible.js"]

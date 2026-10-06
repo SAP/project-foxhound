@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,7 +26,7 @@ void VsyncMainChild::AddChildRefreshTimer(VsyncObserver* aVsyncObserver) {
   }
 
   if (mObservers.IsEmpty()) {
-    Unused << PVsyncChild::SendObserve();
+    (void)PVsyncChild::SendObserve();
   }
   mObservers.AppendElement(std::move(aVsyncObserver));
 }
@@ -40,7 +38,7 @@ void VsyncMainChild::RemoveChildRefreshTimer(VsyncObserver* aVsyncObserver) {
   }
 
   if (mObservers.RemoveElement(aVsyncObserver) && mObservers.IsEmpty()) {
-    Unused << PVsyncChild::SendUnobserve();
+    (void)PVsyncChild::SendUnobserve();
   }
 }
 
@@ -50,7 +48,7 @@ void VsyncMainChild::ActorDestroy(ActorDestroyReason aActorDestroyReason) {
   mIsShutdown = true;
 
   if (!mObservers.IsEmpty()) {
-    Unused << PVsyncChild::SendUnobserve();
+    (void)PVsyncChild::SendUnobserve();
   }
   mObservers.Clear();
 }

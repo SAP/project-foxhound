@@ -15,19 +15,18 @@ class D extends C {
     }
 }
 
-const MAX_DEPTH = 250;
-
 // These values should work.
-var depths = [0, 1, 10, 200, MAX_DEPTH];
+var depths = [0, 1, 10, 200, 300];
 for (var d of depths) {
     var o = new D(d);
     assertEq(o.x, d + 1);
 }
 
-// This should fail.
+// When we use a large enough depth that we run out of stack, we throw instead
+// of crashing
 var ex;
 try {
-    new D(MAX_DEPTH + 1);
+    new D(2000);
 } catch(e) {
     ex = e;
 }

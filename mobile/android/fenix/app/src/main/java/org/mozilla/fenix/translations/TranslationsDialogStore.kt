@@ -226,7 +226,7 @@ internal object TranslationsDialogReducer {
      * @param action The action to perform.
      * @return The new [TranslationsDialogState].
      */
-    @Suppress("LongMethod")
+    @Suppress("LongMethod", "CognitiveComplexMethod")
     fun reduce(
         state: TranslationsDialogState,
         action: TranslationsDialogAction,

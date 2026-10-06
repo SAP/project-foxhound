@@ -5,17 +5,15 @@
 package mozilla.components.feature.prompts.file
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.engine.prompt.PromptRequest.File.Companion.DEFAULT_UPLOADS_DIR_NAME
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -23,19 +21,17 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 class FileUploadsDirCleanerTest {
     private lateinit var fileCleaner: FileUploadsDirCleaner
-
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
+    private val testDispatcher = StandardTestDispatcher()
 
     @Before
     fun setup() {
         fileCleaner = FileUploadsDirCleaner(
-            scope = MainScope(),
+            scope = CoroutineScope(testDispatcher),
+            ioDispatcher = testDispatcher,
         ) {
             testContext.cacheDir
         }
         fileCleaner.fileNamesToBeDeleted = emptyList()
-        fileCleaner.dispatcher = Dispatchers.Main
     }
 
     @Test
@@ -47,7 +43,7 @@ class FileUploadsDirCleanerTest {
 
     @Test
     fun `WHEN calling cleanRecentUploads THEN all the enqueued files should be deleted and not enqueued files must be kept`() =
-        runTestOnMain {
+        runTest(testDispatcher) {
             val cachedDir = File(testContext.cacheDir, DEFAULT_UPLOADS_DIR_NAME)
             assertTrue(cachedDir.mkdir())
 
@@ -62,6 +58,7 @@ class FileUploadsDirCleanerTest {
             fileCleaner.enqueueForCleanup(fileToBeDeleted.name)
 
             fileCleaner.cleanRecentUploads()
+            testDispatcher.scheduler.advanceUntilIdle()
 
             assertTrue(fileCleaner.fileNamesToBeDeleted.isEmpty())
             assertFalse(fileToBeDeleted.exists())
@@ -70,7 +67,7 @@ class FileUploadsDirCleanerTest {
 
     @Test
     fun `WHEN calling cleanUploadsDirectory THEN the uploads directory should emptied`() =
-        runTestOnMain {
+        runTest(testDispatcher) {
             val cachedDir = File(testContext.cacheDir, DEFAULT_UPLOADS_DIR_NAME)
             assertTrue(cachedDir.mkdir())
 

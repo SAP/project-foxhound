@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +5,7 @@
 #ifndef js_loader_BaseLoadContext_h
 #define js_loader_BaseLoadContext_h
 
-#include "js/loader/ScriptLoadRequest.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsIStringBundle.h"
 
 namespace mozilla::dom {
@@ -39,7 +37,7 @@ class LoadContextBase : public nsISupports {
   ContextKind mKind;
 
  protected:
-  virtual ~LoadContextBase() = default;
+  virtual ~LoadContextBase();
 
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -47,7 +45,7 @@ class LoadContextBase : public nsISupports {
 
   explicit LoadContextBase(ContextKind kind);
 
-  void SetRequest(JS::loader::ScriptLoadRequest* aRequest);
+  void SetRequest(ScriptLoadRequest* aRequest);
 
   // Used to output a string for the Gecko Profiler.
   virtual void GetProfilerLabel(nsACString& aOutString);
@@ -69,7 +67,7 @@ class LoadContextBase : public nsISupports {
   bool IsWorkletContext() const { return mKind == ContextKind::Worklet; }
   mozilla::dom::WorkletLoadContext* AsWorkletContext();
 
-  RefPtr<JS::loader::ScriptLoadRequest> mRequest;
+  RefPtr<ScriptLoadRequest> mRequest;
 };
 
 }  // namespace JS::loader

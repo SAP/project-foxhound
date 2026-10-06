@@ -56,8 +56,13 @@ add_task(async function test_blocks_event_handlers() {
   is(violation.disposition, "enforce", "disposition matches");
 
   let testValue = Glean.security.cspViolationInternalPage.testGetValue();
-  is(testValue.length, 1, "Should have telemetry for one violation");
+  is(testValue.length, 2, "Should have telemetry for two violations");
+
   let extra = testValue[0].extra;
+  is(extra.baseline, "true", "first violation from baseline CSP");
+
+  extra = testValue[1].extra;
+  is(extra.baseline, "false", "second violation from custom CSP");
   is(extra.directive, "script-src-attr", "violation's `directive` is correct");
   is(extra.selftype, "chromeuri", "violation's `selftype` is correct");
   is(

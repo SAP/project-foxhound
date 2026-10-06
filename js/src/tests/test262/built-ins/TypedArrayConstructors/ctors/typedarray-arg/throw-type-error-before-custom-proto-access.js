@@ -46,6 +46,6 @@ testWithTypedArrayConstructors(function (TA) {
   assert.throws(TypeError, function () {
     Reflect.construct(TA, [Symbol()], newTarget);
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

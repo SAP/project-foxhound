@@ -1,19 +1,18 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsXULPrototypeDocument_h__
-#define nsXULPrototypeDocument_h__
+#ifndef nsXULPrototypeDocument_h_
+#define nsXULPrototypeDocument_h_
+
+#include <functional>
 
 #include "js/TracingAPI.h"
-#include "mozilla/Attributes.h"
 #include "nsCOMArray.h"
 #include "nsCOMPtr.h"
-#include "nsTArray.h"
-#include "nsISerializable.h"
 #include "nsCycleCollectionParticipant.h"
-#include <functional>
+#include "nsISerializable.h"
+#include "nsTArray.h"
 
 class nsAtom;
 class nsIPrincipal;
@@ -38,7 +37,7 @@ class nsXULPrototypeDocument final : public nsISerializable {
   using Callback = std::function<void()>;
 
   // nsISupports interface
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
 
   // nsISerializable interface
   NS_DECL_NSISERIALIZABLE
@@ -124,4 +123,4 @@ class nsXULPrototypeDocument final : public nsISerializable {
   bool mWasL10nCached;
 };
 
-#endif  // nsXULPrototypeDocument_h__
+#endif  // nsXULPrototypeDocument_h_

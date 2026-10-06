@@ -41,7 +41,11 @@ tags = "webextensions in-process-webextensions"
 ["test_chrome_ext_webrequest_host_permissions.html"]
 
 ["test_chrome_ext_webrequest_mozextension.html"]
-run-if = ["false"] # Bug 1404172
+run-if = [
+  "false", # Bug 1404172
+]
 
 ["test_chrome_native_messaging_paths.html"]
-run-if = ["os != 'win'"]
+run-if = [
+  "os != 'win'",
+]

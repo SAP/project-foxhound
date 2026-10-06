@@ -13,8 +13,6 @@ support-files = "!/accessible/tests/mochitest/*.js"
 
 ["test_number.html"]
 
-["test_password.html"]
-
 ["test_progress.html"]
 
 ["test_range.html"]

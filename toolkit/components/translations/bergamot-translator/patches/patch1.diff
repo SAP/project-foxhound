@@ -1,0 +1,20 @@
+diff --git a/toolkit/components/translations/bergamot-translator/bergamot-translator.js b/toolkit/components/translations/bergamot-translator/bergamot-translator.js
+index 61a37a7a1182..1b534c79c466 100644
+--- a/toolkit/components/translations/bergamot-translator/bergamot-translator.js
++++ b/toolkit/components/translations/bergamot-translator/bergamot-translator.js
+@@ -643,9 +643,13 @@ function loadBergamot(Module) {
+       receiveInstance(result.instance);
+     }
+     function instantiateArrayBuffer(receiver) {
++      // This function has been patched from the original version.
++      // See Bug 1988289.
+       return getBinaryPromise()
+-        .then(function (binary) {
+-          return WebAssembly.instantiate(binary, info);
++        .then(binary => {
++          const module = new WebAssembly.Module(binary);
++          const instance = new WebAssembly.Instance(module, info);
++          return { module, instance };
+         })
+         .then(function (instance) {
+           return instance;

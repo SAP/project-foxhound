@@ -1,20 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gtest/gtest.h"
-
-#include "mozilla/dom/IntegrityPolicy.h"
-#include "mozilla/dom/nsCSPContext.h"
-#include "mozilla/dom/PolicyContainer.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/Preferences.h"
-#include "nsNetUtil.h"
-
+#include "mozilla/dom/IntegrityPolicy.h"
+#include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/dom/nsCSPContext.h"
 #include "nsCOMPtr.h"
 #include "nsLiteralString.h"
+#include "nsNetUtil.h"
 #include "nsSerializationHelper.h"
 
 using namespace mozilla;
@@ -78,23 +74,18 @@ void AssertSerializationForHeadersForPolicyContainer(
 
 TEST(PolicyContainer, Serialization)
 {
-  const auto* prefKey = "security.integrity_policy.enabled";
-  Preferences::SetBool(prefKey, true);
-
   // Test serialization with no headers
   AssertSerializationForHeadersForPolicyContainer(
       VoidCString(), VoidCString(),
-      "ydqGXsPXSqGicQ9XHwE8MAAAAAAAAAAAwAAAAAAAAEYAAAABAAA="_ns);
+      "ydqGXsPXSqGicQ9XHwE8MAAAAAAAAAAAwAAAAAAAAEYAAAACAAAAAA=="_ns);
 
   // Test serialization with empty headers
   AssertSerializationForHeadersForPolicyContainer(
       ""_ns, ""_ns,
-      "ydqGXsPXSqGicQ9XHwE8MAAAAAAAAAAAwAAAAAAAAEYAAAABAQnZ7Rrl1EAEv+Anzrkj2awdYyAIbJdIrqUcFuLaoPT2Ad6UctCANBHTk5kAEEug/UCSBzpUbXhPMJE6uHGBMgjGAAAAAv////8AAABQAQAAABNodHRwOi8vZXhhbXBsZS5jb20vAAAAAAAAAAQAAAAHAAAACwAAAAf/////AAAAB/////8AAAAHAAAACwAAABIAAAABAAAAEgAAAAEAAAASAAAAAQAAABMAAAAAAAAAAP////8AAAAA/////wAAAAD/////AAAAAP////8BAAAAAAAAAAAACHsiMyI6e319AAAAAAFIEv8yG/9CO5f8QKVpba0iSBL/Mhv/QjuX/EClaW2tIgAAAAEAAA=="_ns);
+      "ydqGXsPXSqGicQ9XHwE8MAAAAAAAAAAAwAAAAAAAAEYAAAACAQnZ7Rrl1EAEv+Anzrkj2awdYyAIbJdIrqUcFuLaoPT2Ad6UctCANBHTk5kAEEug/UCSBzpUbXhPMJE6uHGBMgjGAAAAAv////8AAABQAQAAABNodHRwOi8vZXhhbXBsZS5jb20vAAAAAAAAAAQAAAAHAAAACwAAAAf/////AAAAB/////8AAAAHAAAACwAAABIAAAABAAAAEgAAAAEAAAASAAAAAQAAABMAAAAAAAAAAP////8AAAAA/////wAAAAD/////AAAAAP////8BAAAAAAAAAAAACHsiMyI6e319AAAAAAFIEv8yG/9CO5f8QKVpba0iSBL/Mhv/QjuX/EClaW2tIgAAAAEAAAAA"_ns);
 
   // Test serialization with all headers
   AssertSerializationForHeadersForPolicyContainer(
       "default-src 'self'"_ns, "blocked-destinations=(script)"_ns,
-      "ydqGXsPXSqGicQ9XHwE8MAAAAAAAAAAAwAAAAAAAAEYAAAABAQnZ7Rrl1EAEv+Anzrkj2awdYyAIbJdIrqUcFuLaoPT2Ad6UctCANBHTk5kAEEug/UCSBzpUbXhPMJE6uHGBMgjGAAAAAv////8AAABQAQAAABNodHRwOi8vZXhhbXBsZS5jb20vAAAAAAAAAAQAAAAHAAAACwAAAAf/////AAAAB/////8AAAAHAAAACwAAABIAAAABAAAAEgAAAAEAAAASAAAAAQAAABMAAAAAAAAAAP////8AAAAA/////wAAAAD/////AAAAAP////8BAAAAAAAAAAAACHsiMyI6e319AAAAAQAAABIAZABlAGYAYQB1AGwAdAAtAHMAcgBjACAAJwBzAGUAbABmACcAAQABSBL/Mhv/QjuX/EClaW2tIkgS/zIb/0I7l/xApWltrSIAAAABAQAAAAEAAAABAAAAAAA="_ns);
-
-  Preferences::ClearUser(prefKey);
+      "ydqGXsPXSqGicQ9XHwE8MAAAAAAAAAAAwAAAAAAAAEYAAAACAQnZ7Rrl1EAEv+Anzrkj2awdYyAIbJdIrqUcFuLaoPT2Ad6UctCANBHTk5kAEEug/UCSBzpUbXhPMJE6uHGBMgjGAAAAAv////8AAABQAQAAABNodHRwOi8vZXhhbXBsZS5jb20vAAAAAAAAAAQAAAAHAAAACwAAAAf/////AAAAB/////8AAAAHAAAACwAAABIAAAABAAAAEgAAAAEAAAASAAAAAQAAABMAAAAAAAAAAP////8AAAAA/////wAAAAD/////AAAAAP////8BAAAAAAAAAAAACHsiMyI6e319AAAAAQAAABIAZABlAGYAYQB1AGwAdAAtAHMAcgBjACAAJwBzAGUAbABmACcAAQABSBL/Mhv/QjuX/EClaW2tIkgS/zIb/0I7l/xApWltrSIAAAABAQAAAAEAAAABAAAAAAAAAA=="_ns);
 }

@@ -8,7 +8,7 @@ import { features, prefs } from "../prefs";
 /**
  * Create a SourceEditor
  *
- * @param {Object} config: SourceEditor config object
+ * @param {object} config: SourceEditor config object
  * @returns
  */
 export function createEditor(config = { cm6: false }) {
@@ -19,8 +19,10 @@ export function createEditor(config = { cm6: false }) {
   }
 
   return new SourceEditor({
-    mode: SourceEditor.modes.js,
+    mode: SourceEditor.modes.javascript,
     foldGutter: features.codeFolding,
+    disableSearchAddon: false,
+    useSearchAddonPanel: false,
     enableCodeFolding: features.codeFolding,
     readOnly: true,
     lineNumbers: true,

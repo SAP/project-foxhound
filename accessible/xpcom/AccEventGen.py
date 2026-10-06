@@ -98,7 +98,7 @@ def print_header_file(fd, conf, incdirs):
                 fd.write("  NS_DECL_%s\n" % iface.name.upper())
 
             fd.write("\nprivate:\n")
-            fd.write("  ~%s() {}\n\n" % classname)
+            fd.write("  ~%s() =default;\n\n" % classname)
             for a in attributes:
                 fd.write("  %s\n" % attributeVariableTypeAndName(a))
             fd.write("};\n\n")

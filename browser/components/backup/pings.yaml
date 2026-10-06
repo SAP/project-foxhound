@@ -1,0 +1,38 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+---
+$schema: moz://mozilla.org/schemas/glean/pings/2-0-0
+
+profile-restore:
+  description: |
+    Only used for telemetry specific to restoring a profile from a backup. This
+    is necessary to ensure that we can unconditionally send it immediately when
+    we complete the restore since, if we don't, that profile may never be
+    launched again and then the telemetry would be lost.
+    Note that this only contains specifically the probes that have this
+    requirement. Any telemetry that is intended to be gathered regularly or
+    telemetry that is intended to be gathered in the new (post-restore) profile
+    will not be in this ping.
+  include_client_id: true
+  bugs:
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=1992809
+  data_reviews:
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=1992809
+  notification_emails:
+    - drubino@mozilla.com
+
+post-profile-restore:
+  description: |
+    Only used for telemetry that is sent from a profile created by restoring a
+    backup. This is in a separate ping specifically to avoid associating the
+    client id of the restored profile with the client ids of the backed up
+    profile and the profile that did the restoring.
+  include_client_id: false
+  bugs:
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=1992809
+  data_reviews:
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=1992809
+  notification_emails:
+    - drubino@mozilla.com

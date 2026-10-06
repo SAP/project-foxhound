@@ -20,6 +20,7 @@ export var GMPUtils = {
   /**
    * Checks whether or not a given plugin is hidden. Hidden plugins are neither
    * downloaded nor displayed in the addons manager.
+   *
    * @param   aPlugin
    *          The plugin to check.
    */
@@ -41,6 +42,7 @@ export var GMPUtils = {
 
   /**
    * Checks whether or not a given plugin is supported by the current OS.
+   *
    * @param   aPlugin
    *          The plugin to check.
    */
@@ -73,6 +75,7 @@ export var GMPUtils = {
    * Checks whether or not a given plugin is visible in the addons manager
    * UI and the "enable DRM" notification box. This can be used to test
    * plugins that aren't yet turned on in the mozconfig.
+   *
    * @param   aPlugin
    *          The plugin to check.
    */
@@ -84,6 +87,7 @@ export var GMPUtils = {
    * Checks whether or not a given plugin is forced-supported. This is used
    * in automated tests to override the checks that prevent GMPs running on an
    * unsupported platform.
+   *
    * @param   aPlugin
    *          The plugin to check.
    */
@@ -171,15 +175,13 @@ export var GMPPrefs = {
   KEY_PLUGIN_FORCE_INSTALL: "media.{0}.forceInstall",
   KEY_PLUGIN_ALLOW_X64_ON_ARM64: "media.{0}.allow-x64-plugin-on-arm64",
   KEY_PLUGIN_CHROMIUM_GUID: "media.{0}.chromium-guid",
+  KEY_PLUGIN_ALLOW_CHROMIUM_UPDATE: "media.{0}.allow-chromium-update",
   KEY_PLUGIN_FORCE_CHROMIUM_UPDATE: "media.{0}.force-chromium-update",
   KEY_PLUGIN_FORCE_CHROMIUM_BETA: "media.{0}.force-chromium-beta",
   KEY_ALLOW_LOCAL_SOURCES: "media.gmp-manager.allowLocalSources",
   KEY_URL: "media.gmp-manager.url",
   KEY_URL_OVERRIDE: "media.gmp-manager.url.override",
   KEY_CHROMIUM_UPDATE_URL: "media.gmp-manager.chromium-update-url",
-  KEY_CERT_CHECKATTRS: "media.gmp-manager.cert.checkAttributes",
-  KEY_CERT_REQUIREBUILTIN: "media.gmp-manager.cert.requireBuiltIn",
-  KEY_CHECK_CONTENT_SIGNATURE: "media.gmp-manager.checkContentSignature",
   KEY_UPDATE_LAST_CHECK: "media.gmp-manager.lastCheck",
   KEY_UPDATE_LAST_EMPTY_CHECK: "media.gmp-manager.lastEmptyCheck",
   KEY_SECONDS_BETWEEN_CHECKS: "media.gmp-manager.secondsBetweenChecks",
@@ -187,7 +189,6 @@ export var GMPPrefs = {
   KEY_APP_DISTRIBUTION: "distribution.id",
   KEY_APP_DISTRIBUTION_VERSION: "distribution.version",
   KEY_BUILDID: "media.gmp-manager.buildID",
-  KEY_CERTS_BRANCH: "media.gmp-manager.certs.",
   KEY_PROVIDER_ENABLED: "media.gmp-provider.enabled",
   KEY_LOG_BASE: "media.gmp.log.",
   KEY_LOGGING_LEVEL: "media.gmp.log.level",
@@ -195,6 +196,7 @@ export var GMPPrefs = {
 
   /**
    * Obtains the specified string preference in relation to the specified plugin.
+   *
    * @param aKey The preference key value to use.
    * @param aDefaultValue The default value if no preference exists.
    * @param aPlugin The plugin to scope the preference to.
@@ -215,6 +217,7 @@ export var GMPPrefs = {
 
   /**
    * Obtains the specified int preference in relation to the specified plugin.
+   *
    * @param aKey The preference key value to use.
    * @param aDefaultValue The default value if no preference exists.
    * @param aPlugin The plugin to scope the preference to.
@@ -229,6 +232,7 @@ export var GMPPrefs = {
 
   /**
    * Obtains the specified bool preference in relation to the specified plugin.
+   *
    * @param aKey The preference key value to use.
    * @param aDefaultValue The default value if no preference exists.
    * @param aPlugin The plugin to scope the preference to.
@@ -243,6 +247,7 @@ export var GMPPrefs = {
 
   /**
    * Sets the specified string preference in relation to the specified plugin.
+   *
    * @param aKey The preference key value to use.
    * @param aVal The value to set.
    * @param aPlugin The plugin to scope the preference to.
@@ -253,6 +258,7 @@ export var GMPPrefs = {
 
   /**
    * Sets the specified bool preference in relation to the specified plugin.
+   *
    * @param aKey The preference key value to use.
    * @param aVal The value to set.
    * @param aPlugin The plugin to scope the preference to.
@@ -263,6 +269,7 @@ export var GMPPrefs = {
 
   /**
    * Sets the specified int preference in relation to the specified plugin.
+   *
    * @param aKey The preference key value to use.
    * @param aVal The value to set.
    * @param aPlugin The plugin to scope the preference to.
@@ -274,6 +281,7 @@ export var GMPPrefs = {
   /**
    * Checks whether or not the specified preference is set in relation to the
    * specified plugin.
+   *
    * @param aKey The preference key value to use.
    * @param aPlugin The plugin to scope the preference to.
    * @return true if the preference is set, false otherwise.
@@ -285,6 +293,7 @@ export var GMPPrefs = {
   /**
    * Resets the specified preference in relation to the specified plugin to its
    * default.
+   *
    * @param aKey The preference key value to use.
    * @param aPlugin The plugin to scope the preference to.
    */
@@ -294,6 +303,7 @@ export var GMPPrefs = {
 
   /**
    * Scopes the specified preference key to the specified plugin.
+   *
    * @param aKey The preference key value to use.
    * @param aPlugin The plugin to scope the preference to.
    * @return A preference key scoped to the specified plugin.

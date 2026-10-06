@@ -1,0 +1,19 @@
+{
+  "label": "santanderbank.com",
+  "bugs": {
+    "1646791": {
+      "issue": "page-fails-to-load",
+      "matches": [
+        "*://*.bancosantander.es/*",
+        "*://*.gruposantander.es/*",
+        "*://*.santander.co.uk/*"
+      ]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["cap_Version_to_99", "change_Gecko_to_like_Gecko"]
+    }
+  ]
+}

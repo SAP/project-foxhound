@@ -5,7 +5,7 @@
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         width="600"
         height="600"
-        onload="setTimeout(startTests,0);"
+        onload="startTests();"
         title="bug 514732 test">
 
   <script type="application/javascript"><![CDATA[
@@ -76,7 +76,11 @@
       finish();
     }
 
-    function startTests() {
+    async function startTests() {
+      await new Promise(r => {
+        requestAnimationFrame(() => requestAnimationFrame(r));
+      });
+
       // Flush layout in outer and inner documents (in that order), to be sure
       // our TestWindow's initial about:blank document doesn't have any
       // pending reflows. (If we leave these pending reflows un-flushed, then

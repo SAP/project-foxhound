@@ -5,6 +5,13 @@
 
 // Test require
 
+// Disable `xpc::IsInAutomation()` so we don't crash with
+// "Missing chrome or resource URLs: resource://devtools/foo.js"
+Services.prefs.setBoolPref(
+  "security.turn_off_all_security_so_that_viruses_can_take_over_this_computer",
+  false
+);
+
 // Ensure that DevtoolsLoader.require doesn't spawn multiple
 // loader/modules when early cached
 function testBug1091706() {

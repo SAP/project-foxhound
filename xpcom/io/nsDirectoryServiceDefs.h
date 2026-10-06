@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,14 +12,13 @@
  * subclass). Keys whose definition ends in "LIST" return an nsISimpleEnumerator
  * which enumerates a list of file objects.
  *
- * Defines listed in this file are FROZEN.  This list may grow.  Each unique
- * string in this file should have a corresponding atom defined in
+ * Each unique string in this file should have a corresponding atom defined in
  * StaticAtoms.py (search for "DirectoryService"), regardless of whether it
  * is defined here due to conditional compilation.
  */
 
-#ifndef nsDirectoryServiceDefs_h___
-#define nsDirectoryServiceDefs_h___
+#ifndef nsDirectoryServiceDefs_h_
+#define nsDirectoryServiceDefs_h_
 
 /* General OS specific locations */
 
@@ -86,6 +83,8 @@
 #  define NS_WIN_APPDATA_DIR "AppData"
 #  define NS_WIN_LOCAL_APPDATA_DIR "LocalAppData"
 #  define NS_WIN_COOKIES_DIR "CookD"
+#  define NS_WIN_ONEDRIVE_PERSONAL_DIR "OneDrPD"
+#  define NS_WIN_ONEDRIVE_BUSINESS_DIR_LIST "OneDrBDL"
 #elif defined(XP_UNIX)
 #  define NS_UNIX_HOME_DIR NS_OS_HOME_DIR
 #endif

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,8 +10,8 @@
 #include "mozilla/dom/BindingDeclarations.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsHashKeys.h"
-#include "nsTHashMap.h"
 #include "nsHashtablesFwd.h"
+#include "nsTHashMap.h"
 #include "nsWrapperCache.h"
 
 class nsFrameSelection;
@@ -26,6 +24,8 @@ namespace mozilla::dom {
 class AbstractRange;
 class Document;
 class Highlight;
+struct HighlightHitResult;
+struct HighlightsFromPointOptions;
 
 /**
  * @brief HighlightRegistry manages all `Highlight`s available to a `Document`.
@@ -43,7 +43,7 @@ class Highlight;
  */
 class HighlightRegistry final : public nsISupports, public nsWrapperCache {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(HighlightRegistry)
 
  public:
@@ -92,6 +92,15 @@ class HighlightRegistry final : public nsISupports, public nsWrapperCache {
 
   void RepaintHighlightSelection(Highlight& aHighlight);
 
+  /**
+   * @brief Repaints all highlight selections.
+   *
+   * This is called after style changes to ensure highlight pseudo-element
+   * styles are properly repainted, since they are resolved lazily during
+   * painting and don't generate change hints during restyle.
+   */
+  void RepaintAllHighlightSelections();
+
   // WebIDL interface
 
   Document* GetParentObject() const { return mDocument; };
@@ -129,6 +138,18 @@ class HighlightRegistry final : public nsISupports, public nsWrapperCache {
    * @return true if `aKey` existed and was deleted.
    */
   MOZ_CAN_RUN_SCRIPT bool Delete(const nsAString& aKey, ErrorResult& aRv);
+
+  /**
+   * @brief Returns all `Ranges` for all `Highlights` that are present at
+   *        position (x,y).
+   *
+   * @param aX       x coordinate.
+   * @param aY       y coordinate.
+   * @param aOptions An optional sequence of shadow roots to consider.
+   */
+  void HighlightsFromPoint(float aX, float aY,
+                           const HighlightsFromPointOptions& aOptions,
+                           nsTArray<HighlightHitResult>& aResult);
 
   /**
    * @brief Get the `FrameSelection` object if available. Can return nullptr.

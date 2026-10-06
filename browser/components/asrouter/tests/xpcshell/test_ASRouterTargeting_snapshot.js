@@ -135,38 +135,70 @@ add_task(async function target_order() {
 });
 
 /*
- * NB: This test is last because it manipulates shutdown phases.
+ * NB: This test is last because it advances the shutdown phase, which
+ * cannot be undone within the same xpcshell process.
  *
  * Adding tests after this one will result in failures.
  */
-add_task(async function should_ignore_rejections() {
-  // The order that `ASRouterTargeting.getEnvironmentSnapshot`
-  // enumerates the target object matters here, but it's guaranteed to
-  // be consistent by the `for ... in` ordering: see
-  // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/for...in#description.
-  let target = {
-    get foo() {
-      return new Promise(resolve => resolve(1));
-    },
+add_task(async function quit_application_unsticks_hung_properties() {
+  // Part 1: reproduces the failure mode from bug 1830551. A property
+  // whose resolver never settles on its own (eg. waits on a
+  // cross-instance update lock another Firefox is holding) must not
+  // pin the snapshot open indefinitely. Firing `quit-application`
+  // after the snapshot has started should drop the hung property and
+  // let the snapshot return with what has resolved so far.
+  let raceTarget = {
+    fast: Promise.resolve(1),
+    stuck: new Promise(() => {}),
+  };
 
-    get bar() {
-      return new Promise(resolve => {
-        // Pretend that we're about to shut down.
-        Services.startup.advanceShutdownPhase(
-          Services.startup.SHUTDOWN_PHASE_APPSHUTDOWN
-        );
-        resolve(2);
-      });
-    },
+  let snapshotPromise = ASRouterTargeting.getEnvironmentSnapshot({
+    targets: [raceTarget],
+  });
 
-    get baz() {
-      return new Promise(resolve => resolve(3));
+  // Yield long enough for getEnvironmentSnapshot to install its
+  // observer and arm the per-property races against
+  // `quit-application`. A handful of microtask turns is enough.
+  for (let i = 0; i < 5; i++) {
+    await Promise.resolve();
+  }
+
+  // Advancing to AppShutdownConfirmed is the legal way to fire the
+  // `quit-application` topic that the race listens for. Calling
+  // Services.obs.notifyObservers directly on a shutdown-phase topic
+  // is asserted against in debug builds (see
+  // nsObserverService::NotifyObservers /
+  // AppShutdown::IsNoOrLegalShutdownTopic).
+  Services.startup.advanceShutdownPhase(
+    Services.startup.SHUTDOWN_PHASE_APPSHUTDOWNCONFIRMED
+  );
+
+  Assert.deepEqual(
+    await snapshotPromise,
+    { environment: { fast: 1 }, version: 1 },
+    "stuck property is dropped after quit-application fires; fast is kept"
+  );
+
+  // Part 2: with shutdown now started, properties are dropped at the
+  // synchronous `Services.startup.shuttingDown` fast-path before
+  // their getters are even invoked.
+  let postQuitGetterRan = false;
+  let postQuitTarget = {
+    get prop() {
+      postQuitGetterRan = true;
+      return Promise.resolve(42);
     },
   };
 
-  let snapshot = await ASRouterTargeting.getEnvironmentSnapshot({
-    targets: [target],
-  });
-  // `baz` is dropped since we're shutting down by the time it's processed.
-  Assert.deepEqual(snapshot, { environment: { foo: 1, bar: 2 }, version: 1 });
+  Assert.deepEqual(
+    await ASRouterTargeting.getEnvironmentSnapshot({
+      targets: [postQuitTarget],
+    }),
+    { environment: {}, version: 1 },
+    "property is dropped synchronously once shuttingDown is true"
+  );
+  Assert.ok(
+    !postQuitGetterRan,
+    "property getter is not invoked once shuttingDown is true"
+  );
 });

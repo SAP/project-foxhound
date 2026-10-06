@@ -7,14 +7,14 @@ export class PointerLockParent extends JSWindowActorParent {
     let browser = this.manager.browsingContext.top.embedderElement;
     switch (message.name) {
       case "PointerLock:Entered": {
-        browser.ownerGlobal.PointerLock.entered(
+        browser.documentGlobal.PointerLock.entered(
           this.manager.documentPrincipal.originNoSuffix
         );
         break;
       }
 
       case "PointerLock:Exited": {
-        browser.ownerGlobal.PointerLock.exited();
+        browser.documentGlobal.PointerLock.exited();
         break;
       }
     }

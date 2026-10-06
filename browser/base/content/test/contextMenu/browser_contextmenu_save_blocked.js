@@ -4,7 +4,7 @@
 "use strict";
 
 var MockFilePicker = SpecialPowers.MockFilePicker;
-MockFilePicker.init(window.browsingContext);
+MockFilePicker.init();
 
 function mockPromptService() {
   let { prompt } = Services;

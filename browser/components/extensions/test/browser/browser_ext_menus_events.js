@@ -22,10 +22,6 @@ async function grantOptionalPermission(extension, permissions) {
 var someOtherTab, testTab;
 
 add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.manifestV3.enabled", true]],
-  });
-
   // To help diagnose an intermittent later.
   SimpleTest.requestCompleteLog();
 
@@ -82,7 +78,7 @@ async function testShowHideEvent({
 
     browser.test.onMessage.addListener(async msg => {
       switch (msg) {
-        case "register-menu":
+        case "register-menu": {
           let menuId;
           await new Promise(resolve => {
             menuId = browser.menus.create(menu_create_params, resolve);
@@ -99,6 +95,7 @@ async function testShowHideEvent({
           );
           browser.test.sendMessage("menu-registered", menuId);
           break;
+        }
         case "assert-menu-shown":
           browser.test.assertEq(1, shownEvents.length, "expected onShown");
           browser.test.assertEq(

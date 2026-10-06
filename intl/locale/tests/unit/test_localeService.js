@@ -76,11 +76,12 @@ add_test(function test_requestedLocales_matchOS() {
   const observer = {
     observe(aSubject, aTopic) {
       switch (aTopic) {
-        case REQ_LOC_CHANGE_EVENT:
+        case REQ_LOC_CHANGE_EVENT: {
           const reqLocs = localeService.requestedLocales;
           Assert.strictEqual(reqLocs[0], osPrefs.systemLocale);
           Services.obs.removeObserver(observer, REQ_LOC_CHANGE_EVENT);
           do_test_finished();
+        }
       }
     },
   };
@@ -104,11 +105,12 @@ add_test(function test_requestedLocales_onChange() {
   const observer = {
     observe(aSubject, aTopic) {
       switch (aTopic) {
-        case REQ_LOC_CHANGE_EVENT:
+        case REQ_LOC_CHANGE_EVENT: {
           const reqLocs = localeService.requestedLocales;
           Assert.strictEqual(reqLocs[0], "sr-RU");
           Services.obs.removeObserver(observer, REQ_LOC_CHANGE_EVENT);
           do_test_finished();
+        }
       }
     },
   };
@@ -237,6 +239,124 @@ add_test(function test_handle_ja_JP_mac() {
   Assert.equal(localeService.appLocaleAsLangTag, "ja-JP-mac");
 
   localeService.availableLocales = bkpAvLocales;
+
+  run_next_test();
+});
+
+add_test(function test_locale_service_glue() {
+  // On Android, intl.accept_languages is set with a user pref value,
+  // so we clear that in order to test the default value handling.
+  let origAcceptLanguages = null;
+  if (Services.prefs.prefHasUserValue("intl.accept_languages")) {
+    origAcceptLanguages = Services.prefs.getCharPref("intl.accept_languages");
+    Services.prefs.clearUserPref("intl.accept_languages");
+  }
+  const origAvLocales = localeService.availableLocales;
+
+  localeService.availableLocales = ["en-US"];
+  localeService.requestedLocales = ["en-US"];
+  Assert.equal(localeService.acceptLanguages, "en-US, en");
+  Assert.equal(localeService.ellipsis, "…");
+  Assert.equal(localeService.alwaysAppendAccesskeys, false);
+  Assert.equal(localeService.insertSeparatorBeforeAccesskeys, true);
+
+  localeService.availableLocales = ["ca-valencia", "en-US"];
+  localeService.requestedLocales = ["ca-valencia"];
+  Assert.equal(localeService.acceptLanguages, "ca-valencia, ca, en-US, en");
+
+  localeService.availableLocales = ["hi-IN", "en-US"];
+  localeService.requestedLocales = ["hi-IN"];
+  Assert.equal(localeService.acceptLanguages, "hi-IN, hi, en-US, en");
+
+  localeService.availableLocales = ["ja-JP-mac", "en-US"];
+  localeService.requestedLocales = ["ja-JP-mac"];
+  Assert.equal(localeService.acceptLanguages, "ja, en-US, en");
+  Assert.equal(localeService.ellipsis, "...");
+  Assert.equal(localeService.alwaysAppendAccesskeys, true);
+  Assert.equal(localeService.insertSeparatorBeforeAccesskeys, false);
+
+  localeService.availableLocales = ["zh-CN", "en-US"];
+  localeService.requestedLocales = ["zh-CN"];
+  Assert.equal(
+    localeService.acceptLanguages,
+    "zh-CN, zh, zh-TW, zh-HK, en-US, en"
+  );
+  Assert.equal(localeService.ellipsis, "…");
+  Assert.equal(localeService.alwaysAppendAccesskeys, false);
+  Assert.equal(localeService.insertSeparatorBeforeAccesskeys, false);
+
+  localeService.availableLocales = ["zh-TW", "en-US"];
+  localeService.requestedLocales = ["zh-TW"];
+  Assert.equal(localeService.acceptLanguages, "zh-TW, zh, en-US, en");
+  Assert.equal(localeService.ellipsis, "…");
+  Assert.equal(localeService.alwaysAppendAccesskeys, true);
+  Assert.equal(localeService.insertSeparatorBeforeAccesskeys, true);
+
+  if (origAcceptLanguages) {
+    Services.prefs.setCharPref("intl.accept_languages", origAcceptLanguages);
+  }
+  localeService.availableLocales = origAvLocales;
+
+  run_next_test();
+});
+
+add_test(function test_font_language_group() {
+  const origAvLocales = localeService.availableLocales;
+
+  for (const [locales, expGroup] of [
+    [["ar", "ckb", "fa", "ks", "skr"], "ar"],
+    [["az", "mai", "sat", "vi"], "x-unicode"],
+    [["be", "bg", "kk", "mk", "ru", "sah", "sr", "tg", "uk"], "x-cyrillic"],
+    [["bn"], "x-beng"],
+    [["bo"], "x-tibt"],
+    [["brx", "hi", "mr", "ne"], "x-devanagari"],
+    [["el"], "el"],
+    [["gu-IN"], "x-gujr"],
+    [["he"], "he"],
+    [["hy", "hye", "xcl"], "x-armn"],
+    [["ja"], "ja"],
+    [["kn"], "x-knda"],
+    [["ko"], "ko"],
+    [["lo", "th"], "th"],
+    [["ml"], "x-mlym"],
+    [["si"], "x-sinh"],
+    [["son"], "x-western"],
+    [["te"], "x-telu"],
+    [["th"], "th"],
+    [["zh-CN"], "zh-CN"],
+    [["zh-TW"], "zh-TW"],
+  ]) {
+    for (const locale of locales) {
+      localeService.availableLocales = [locale, "en-US"];
+      localeService.requestedLocales = [locale];
+      Assert.equal(localeService.fontLanguageGroup, expGroup, locale);
+    }
+  }
+
+  localeService.availableLocales = origAvLocales;
+
+  run_next_test();
+});
+
+add_test(function test_url_fixup_suffix() {
+  const origAvLocales = localeService.availableLocales;
+
+  for (const [locales, expSuffix] of [
+    [["be"], ".by"],
+    [["cs"], ".cz"],
+    [["da"], ".dk"],
+    [["nb-NO", "nn-NO"], ".no"],
+    [["sk"], ".sk"],
+    [["en-US", "fi"], ".com"],
+  ]) {
+    for (const locale of locales) {
+      localeService.availableLocales = [locale, "en-US"];
+      localeService.requestedLocales = [locale];
+      Assert.equal(localeService.urlFixupSuffix, expSuffix, locale);
+    }
+  }
+
+  localeService.availableLocales = origAvLocales;
 
   run_next_test();
 });

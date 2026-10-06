@@ -68,7 +68,7 @@ system_default:
       known browsers.
 
       Possible values currently include the following (from
-      [DefaultBrowser.cpp](https://searchfox.org/mozilla-central/source/toolkit/mozapps/defaultagent/DefaultBrowser.cpp)):
+      [DefaultBrowser.cpp](https://searchfox.org/firefox-main/source/toolkit/mozapps/defaultagent/DefaultBrowser.cpp)):
       * "error"
       * "" (unknown)
       * "firefox"
@@ -134,7 +134,7 @@ system_default:
       known handlers.
 
       Possible values currently include the following (from
-      [DefaultPDF.cpp](https://searchfox.org/mozilla-central/source/toolkit/mozapps/defaultagent/DefaultPDF.cpp)):
+      [DefaultPDF.cpp](https://searchfox.org/firefox-main/source/toolkit/mozapps/defaultagent/DefaultPDF.cpp)):
       * "Error"
       * "" (unknown)
       * "Firefox"
@@ -203,6 +203,57 @@ notification:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1838755
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1621293
+    expires: never
+    send_in_pings:
+      - default-agent
+
+system_pin:
+  is_taskbar_pinned:
+    type: string
+    description: >
+      Whether Firefox is currently pinned to the Windows taskbar.
+
+      Possible values:
+      * "IsPinned"
+      * "NotPinned"
+      * "Error"
+    lifetime: application
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2041932
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2041932
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - install-update@mozilla.com
+    expires: never
+    send_in_pings:
+      - default-agent
+
+  previous_is_taskbar_pinned:
+    type: string
+    description: >
+      Whether Firefox was pinned to the Windows taskbar as of the previous ping.
+
+      Possible values are the same as for `system_pin.is_taskbar_pinned`.
+
+      The OS does not keep track of previous pin state, so the agent records
+      this information itself. That means that it will be inaccurate until the
+      first time the pin state changes after the agent task begins running.
+      Before then, the value of `previous_is_taskbar_pinned` will be the same
+      as `is_taskbar_pinned`.
+
+      This value is updated only when a ping is actually sent, so transitions
+      are not missed across rate-limited runs.
+    lifetime: application
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2041932
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2041932
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - install-update@mozilla.com
     expires: never
     send_in_pings:
       - default-agent

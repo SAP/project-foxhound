@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,17 +5,17 @@
 #ifndef mozilla_dom_XULResizerElement_h
 #define mozilla_dom_XULResizerElement_h
 
-#include "nsXULElement.h"
 #include "Units.h"
+#include "nsXULElement.h"
 
 namespace mozilla::dom {
 
 nsXULElement* NS_NewXULResizerElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
 class XULResizerElement final : public nsXULElement {
  public:
-  explicit XULResizerElement(already_AddRefed<dom::NodeInfo>&& aNodeInfo)
+  explicit XULResizerElement(already_AddRefed<dom::NodeInfo> aNodeInfo)
       : nsXULElement(std::move(aNodeInfo)) {}
 
   MOZ_CAN_RUN_SCRIPT

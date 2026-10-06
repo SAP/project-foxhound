@@ -10,8 +10,8 @@ Coding style
 Linting
 ~~~~~~~
 
-The Python linting is done by :ref:`Flake8` and :ref:`pylint`
-They are executed by mozlint both at review phase and in the CI.
+The Python linting is done by :ref:`ruff` which includes rules from `flake8` and `pylint`.
+It is executed by mozlint both at review phase and in the CI.
 
 Indentation
 ~~~~~~~~~~~

@@ -5,22 +5,23 @@
 #ifndef MEDIA_CONDUIT_ABSTRACTION_
 #define MEDIA_CONDUIT_ABSTRACTION_
 
-#include <vector>
 #include <functional>
 #include <map>
+#include <span>
+#include <vector>
 
 #include "CodecConfig.h"
 #include "ImageContainer.h"
-#include "jsapi/RTCStatsReport.h"
-#include "MediaConduitErrors.h"
-#include "mozilla/media/MediaUtils.h"
-#include "mozilla/MozPromise.h"
-#include "WebrtcVideoCodecFactory.h"
-#include "nsTArray.h"
-#include "mozilla/dom/RTCRtpSourcesBinding.h"
-#include "PerformanceRecorder.h"
-#include "transport/mediapacket.h"
 #include "MediaConduitControl.h"
+#include "MediaConduitErrors.h"
+#include "PerformanceRecorder.h"
+#include "WebrtcVideoCodecFactory.h"
+#include "jsapi/RTCStatsReport.h"
+#include "mozilla/MozPromise.h"
+#include "mozilla/dom/RTCRtpSourcesBinding.h"
+#include "mozilla/media/MediaUtils.h"
+#include "nsTArray.h"
+#include "transport/mediapacket.h"
 
 // libwebrtc includes
 #include "api/audio/audio_frame.h"
@@ -32,7 +33,7 @@
 #include "api/video/video_frame_buffer.h"
 #include "call/audio_receive_stream.h"
 #include "call/audio_send_stream.h"
-#include "call/call_basic_stats.h"
+#include "call/call.h"
 #include "call/video_receive_stream.h"
 #include "call/video_send_stream.h"
 #include "rtc_base/copy_on_write_buffer.h"
@@ -64,7 +65,7 @@ class FrameTransformerProxy;
  */
 class VideoRenderer {
  protected:
-  virtual ~VideoRenderer() {}
+  virtual ~VideoRenderer() = default;
 
  public:
   /**
@@ -93,7 +94,7 @@ class VideoRenderer {
  */
 class MediaSessionConduit {
  protected:
-  virtual ~MediaSessionConduit() {}
+  virtual ~MediaSessionConduit() = default;
 
  public:
   enum Type { AUDIO, VIDEO };
@@ -125,10 +126,10 @@ class MediaSessionConduit {
           aEvent) = 0;
 
   virtual void ConnectReceiverRtcpEvent(
-      MediaEventSourceExc<rtc::CopyOnWriteBuffer>& aEvent) = 0;
+      MediaEventSourceExc<webrtc::CopyOnWriteBuffer>& aEvent) = 0;
 
   virtual void ConnectSenderRtcpEvent(
-      MediaEventSourceExc<rtc::CopyOnWriteBuffer>& aEvent) = 0;
+      MediaEventSourceExc<webrtc::CopyOnWriteBuffer>& aEvent) = 0;
 
   // Sts thread only.
   virtual Maybe<uint16_t> RtpSendBaseSeqFor(uint32_t aSsrc) const = 0;
@@ -155,7 +156,7 @@ class MediaSessionConduit {
   virtual bool SendSenderRtcp(const uint8_t* aData, size_t aLength) = 0;
   virtual bool SendReceiverRtcp(const uint8_t* aData, size_t aLength) = 0;
 
-  virtual void DeliverPacket(rtc::CopyOnWriteBuffer packet,
+  virtual void DeliverPacket(webrtc::CopyOnWriteBuffer packet,
                              PacketType type) = 0;
 
   virtual RefPtr<GenericPromise> Shutdown() = 0;
@@ -165,7 +166,7 @@ class MediaSessionConduit {
   virtual Maybe<RefPtr<AudioSessionConduit>> AsAudioSessionConduit() = 0;
   virtual Maybe<RefPtr<VideoSessionConduit>> AsVideoSessionConduit() = 0;
 
-  virtual Maybe<webrtc::CallBasicStats> GetCallStats() const = 0;
+  virtual Maybe<webrtc::Call::Stats> GetCallStats() const = 0;
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MediaSessionConduit)
 
@@ -239,11 +240,12 @@ class WebrtcSendTransport : public webrtc::Transport {
  public:
   explicit WebrtcSendTransport(MediaSessionConduit* aConduit)
       : mConduit(aConduit) {}
-  bool SendRtp(rtc::ArrayView<const uint8_t> aPacket,
+  bool SendRtp(std::span<const uint8_t> aPacket,
                const webrtc::PacketOptions& aOptions) {
     return mConduit->SendRtp(aPacket.data(), aPacket.size(), aOptions);
   }
-  bool SendRtcp(rtc::ArrayView<const uint8_t> aPacket) {
+  bool SendRtcp(std::span<const uint8_t> aPacket,
+                const webrtc::PacketOptions& aOptions) {
     return mConduit->SendSenderRtcp(aPacket.data(), aPacket.size());
   }
 };
@@ -255,11 +257,12 @@ class WebrtcReceiveTransport : public webrtc::Transport {
  public:
   explicit WebrtcReceiveTransport(MediaSessionConduit* aConduit)
       : mConduit(aConduit) {}
-  bool SendRtp(rtc::ArrayView<const uint8_t> aPacket,
+  bool SendRtp(std::span<const uint8_t> aPacket,
                const webrtc::PacketOptions& aOptions) {
     MOZ_CRASH("Unexpected RTP packet");
   }
-  bool SendRtcp(rtc::ArrayView<const uint8_t> aPacket) {
+  bool SendRtcp(std::span<const uint8_t> aPacket,
+                const webrtc::PacketOptions& aOptions) {
     return mConduit->SendReceiverRtcp(aPacket.data(), aPacket.size());
   }
 };
@@ -271,17 +274,17 @@ class CodecPluginID {
  public:
   virtual MediaEventSource<uint64_t>* InitPluginEvent() { return nullptr; }
   virtual MediaEventSource<uint64_t>* ReleasePluginEvent() { return nullptr; }
-  virtual ~CodecPluginID() {}
+  virtual ~CodecPluginID() = default;
 };
 
 class VideoEncoder : public CodecPluginID {
  public:
-  virtual ~VideoEncoder() {}
+  virtual ~VideoEncoder() = default;
 };
 
 class VideoDecoder : public CodecPluginID {
  public:
-  virtual ~VideoDecoder() {}
+  virtual ~VideoDecoder() = default;
 };
 
 /**
@@ -334,7 +337,7 @@ class VideoSessionConduit : public MediaSessionConduit {
         mUsingTmmbr(false),
         mUsingFEC(false) {}
 
-  virtual ~VideoSessionConduit() {}
+  virtual ~VideoSessionConduit() = default;
 
   Type type() const override { return VIDEO; }
 
@@ -422,7 +425,7 @@ class AudioSessionConduit : public MediaSessionConduit {
       RefPtr<WebrtcCallWrapper> aCall,
       nsCOMPtr<nsISerialEventTarget> aStsThread);
 
-  virtual ~AudioSessionConduit() {}
+  virtual ~AudioSessionConduit() = default;
 
   Type type() const override { return AUDIO; }
 

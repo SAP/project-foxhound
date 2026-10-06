@@ -1,25 +1,27 @@
 [DEFAULT]
 
 ["test_ext_adoption_with_private_field_xrays.js"]
-skip-if = ["!nightly_build"]
-run-sequentially = "very high failure rate in parallel"
+run-if = [
+  "nightly_build",
+]
 
 ["test_ext_adoption_with_xrays.js"]
 
 ["test_ext_contentScripts_register.js"]
 
 ["test_ext_contentscript.js"]
-skip-if = ["socketprocess_networking"] # Bug 1759035
-run-sequentially = "very high failure rate in parallel"
+skip-if = [
+  "socketprocess_networking", # Bug 1759035
+]
 
 ["test_ext_contentscript_about_blank_start.js"]
 
 ["test_ext_contentscript_canvas_tainting.js"]
-run-sequentially = "very high failure rate in parallel"
 
 ["test_ext_contentscript_errors.js"]
-skip-if = ["socketprocess_networking"] # Bug 1759035
-run-sequentially = "very high failure rate in parallel"
+skip-if = [
+  "socketprocess_networking", # Bug 1759035
+]
 
 ["test_ext_contentscript_permissions_change.js"]
 
@@ -29,20 +31,17 @@ run-sequentially = "very high failure rate in parallel"
 
 ["test_ext_contentscript_triggeringPrincipal.js"]
 skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && ccov", # Bug 1854843
   "tsan", # Bug 1612707
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && ccov", # Bug 1854843
 ]
 
 ["test_ext_contentscript_xrays.js"]
-run-sequentially = "very high failure rate in parallel"
 
 ["test_ext_contexts_gc.js"]
-run-sequentially = "very high failure rate in parallel"
 
 ["test_ext_i18n.js"]
 
 ["test_ext_i18n_css.js"]
-run-sequentially = "very high failure rate in parallel"
 
 ["test_ext_i18n_system.js"]
 
@@ -51,4 +50,3 @@ run-sequentially = "very high failure rate in parallel"
 ["test_ext_web_accessible_resources.js"]
 
 ["test_ext_web_accessible_resources_matches.js"]
-run-sequentially = "very high failure rate in parallel"

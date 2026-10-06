@@ -35,6 +35,7 @@ async function wait(time) {
  * so it is licence MIT and:
  * Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com).
  * See the full license in https://raw.githubusercontent.com/sindresorhus/escape-string-regexp/main/license.
+ *
  * @param {string} string The string to be escaped
  * @returns {string} The result
  */

@@ -110,22 +110,22 @@ async function openWindow(tabIdx, configParams) {
 /**
  * Configure the test.  All fields are required.
  *
- * @param {Object} configParams
- * @param {String} configParams.outerURL1
+ * @param {object} configParams
+ * @param {string} configParams.outerURL1
  *                 URL of window #1's main frame's content (not iframes).
  *                 The document must contain an iframe with ID "iframe"
  *                 that will be used to load the iframe HTML.  It also
  *                 must contain an element with ID "dropSource" that will be
  *                 used as the source of a drag, as well as one with ID
  *                 "dropTarget" that will be used as the drop target.
- * @param {String} configParams.outerURL2
+ * @param {string} configParams.outerURL2
  *                 Like outerURL1 but for the second window.  outerURL1 and
  *                 outerURL2 may be identical.  Must include "dropSource" and
  *                 "dropTarget" elements.
- * @param {String} configParams.innerURL1
+ * @param {string} configParams.innerURL1
  *                 URL of the inner frame's content in window #1.  Must
  *                 include "dropSource" and "dropTarget" elements.
- * @param {String} configParams.innerURL1
+ * @param {string} configParams.innerURL1
  *                 URL of the inner frame's content in window #2.  Must
  *                 include "dropSource" and "dropTarget" elements.
  */

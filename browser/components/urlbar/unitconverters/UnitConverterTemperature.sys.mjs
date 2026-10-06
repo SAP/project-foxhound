@@ -2,14 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { UrlbarUtils } from "resource:///modules/UrlbarUtils.sys.mjs";
+import { UrlbarUtils } from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const ABSOLUTE = ["celsius", "kelvin", "fahrenheit"];
-const ALIAS = ["c", "k", "f"];
+const ALIAS = ["c", "k", "f", "°c", "°k", "°f"];
 const UNITS = [...ABSOLUTE, ...ALIAS];
 
 const NUMBER_REGEX = "-?\\d+(?:\\.\\d+)?\\s*";
-const UNIT_REGEX = "\\w+";
+const UNIT_REGEX = "°?\\w+";
 
 // NOTE: This regex need to be localized upon supporting multi locales
 //       since it supports en-US input format only.
@@ -122,9 +122,9 @@ function findUnits(inputUnit, outputUnit) {
 }
 
 function toAbsoluteUnit(unit) {
-  if (unit.length !== 1) {
+  if (unit.length > 2) {
     return unit;
   }
 
-  return ABSOLUTE.find(a => a.startsWith(unit));
+  return ABSOLUTE.find(a => a.startsWith(unit.slice(-1)));
 }

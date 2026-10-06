@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,10 +5,9 @@
 #ifndef DOM_SVG_DOMSVGSTRINGLIST_H_
 #define DOM_SVG_DOMSVGSTRINGLIST_H_
 
-#include "nsCycleCollectionParticipant.h"
 #include "SVGElement.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/RefPtr.h"
+#include "nsCycleCollectionParticipant.h"
 
 namespace mozilla {
 
@@ -49,7 +46,7 @@ class DOMSVGStringList final : public nsISupports, public nsWrapperCache {
   friend class AutoChangeStringListNotifier;
 
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(DOMSVGStringList)
 
   dom::SVGElement* GetParentObject() const { return mElement; }

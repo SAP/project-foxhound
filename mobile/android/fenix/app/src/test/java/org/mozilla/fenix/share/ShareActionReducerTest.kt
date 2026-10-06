@@ -2,25 +2,26 @@ package org.mozilla.fenix.share
 
 import io.mockk.mockk
 import mozilla.components.concept.sync.TabData
-import mozilla.components.support.test.ext.joinBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction
+import org.mozilla.fenix.components.appstate.AppState
+import org.mozilla.fenix.components.appstate.AppStoreReducer
 import org.mozilla.fenix.components.appstate.snackbar.SnackbarState
 
 class ShareActionReducerTest {
     @Test
     fun `WHEN ShareToAppFailed action is dispatched THEN snackbar state is updated`() {
-        val appStore = AppStore()
+        val initialState = AppState()
 
-        appStore.dispatch(
+        val finalState = AppStoreReducer.reduce(
+            initialState,
             AppAction.ShareAction.ShareToAppFailed,
-        ).joinBlocking()
+        )
 
         assertEquals(
             SnackbarState.ShareToAppFailed,
-            appStore.state.snackbarState,
+            finalState.snackbarState,
         )
     }
 
@@ -28,15 +29,16 @@ class ShareActionReducerTest {
     fun `WHEN SharedTabsSuccessfully action is dispatched THEN snackbar state is updated`() {
         val destination = listOf("a")
         val tabs = listOf(mockk<TabData>(), mockk<TabData>())
-        val appStore = AppStore()
+        val initialState = AppState()
 
-        appStore.dispatch(
+        val finalState = AppStoreReducer.reduce(
+            initialState,
             AppAction.ShareAction.SharedTabsSuccessfully(destination, tabs),
-        ).joinBlocking()
+        )
 
         assertEquals(
             SnackbarState.SharedTabsSuccessfully(destination, tabs),
-            appStore.state.snackbarState,
+            finalState.snackbarState,
         )
     }
 
@@ -44,29 +46,31 @@ class ShareActionReducerTest {
     fun `WHEN ShareTabsFailed action is dispatched THEN snackbar state is updated`() {
         val destination = listOf("a")
         val tabs = listOf(mockk<TabData>(), mockk<TabData>())
-        val appStore = AppStore()
+        val initialState = AppState()
 
-        appStore.dispatch(
+        val finalState = AppStoreReducer.reduce(
+            initialState,
             AppAction.ShareAction.ShareTabsFailed(destination, tabs),
-        ).joinBlocking()
+        )
 
         assertEquals(
             SnackbarState.ShareTabsFailed(destination, tabs),
-            appStore.state.snackbarState,
+            finalState.snackbarState,
         )
     }
 
     @Test
     fun `WHEN CopyLinkToClipboard action is dispatched THEN snackbar state is updated`() {
-        val appStore = AppStore()
+        val initialState = AppState()
 
-        appStore.dispatch(
+        val finalState = AppStoreReducer.reduce(
+            initialState,
             AppAction.ShareAction.CopyLinkToClipboard,
-        ).joinBlocking()
+        )
 
         assertEquals(
             SnackbarState.CopyLinkToClipboard,
-            appStore.state.snackbarState,
+            finalState.snackbarState,
         )
     }
 }

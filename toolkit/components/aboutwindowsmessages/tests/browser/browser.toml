@@ -1,3 +1,6 @@
 [DEFAULT]
 
 ["browser_aboutwindowsmessages.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]

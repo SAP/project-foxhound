@@ -86,4 +86,37 @@ class FlowKtTest {
             identityItems,
         )
     }
+
+    @Test
+    fun `GIVEN a flow of values WHEN asked for just full windows of these THEN avoid returning partial windows`() = runTest {
+        val values = flowOf(1, 2, 3, 4, 5)
+        var valuesReceived = 0
+        val step = 2
+        values.windowed(2, step).collect { output ->
+            assertEquals(2, output.size)
+            assertEquals(++valuesReceived, output.first())
+            assertEquals(++valuesReceived, output.last())
+        }
+        assertEquals(4, valuesReceived) // the last value in the last full window is 4
+     }
+
+    @Test
+    fun `GIVEN a flow of values WHEN asked for full and a last partial window of these THEN return the correct windows`() = runTest {
+        val values = flowOf(1, 2, 3, 4, 5)
+        var valuesReceived = 0
+        var currentStep = 0
+        val fullWindowsNo = 2
+        val step = 2
+        values.windowed(2, step, true).collect { output ->
+            if (++currentStep <= fullWindowsNo) {
+                assertEquals(2, output.size)
+                assertEquals(++valuesReceived, output.first())
+                assertEquals(++valuesReceived, output.last())
+            } else {
+                assertEquals(1, output.size)
+                assertEquals(++valuesReceived, output.first())
+            }
+        }
+        assertEquals(5, valuesReceived) // the last value in the end partial window is 5
+    }
 }

@@ -81,7 +81,7 @@ class SendTabUseCases(
                 device?.let {
                     return constellation.sendCommandToDevice(
                         device.id,
-                        SendTab(tab.title, tab.url),
+                        SendTab(tab.title, tab.url, tab.privacy),
                     )
                 }
             }
@@ -142,7 +142,7 @@ class SendTabUseCases(
                     // Send the tab!
                     constellation.sendCommandToDevice(
                         device.id,
-                        SendTab(tab.title, tab.url),
+                        SendTab(tab.title, tab.url, tab.privacy),
                     )
                 }.fold(true) { acc, result ->
                     // Collect the results and reduce them into one final result.

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<resources>
+    <string name="mozac_feature_ipprotection_title">IP Protection Debug UI</string>
+    <string name="mozac_feature_ipprotection_eligibility">Eligibility</string>
+    <string name="mozac_feature_ipprotection_eligibilitystatus">eligibilityStatus</string>
+    <string name="mozac_feature_ipprotection_name">IP Protection</string>
+    <string name="mozac_feature_ipprotection_proxystatus">proxyStatus</string>
+    <string name="mozac_feature_ipprotection_servicestatus">serviceStatus</string>
+    <string name="mozac_feature_ipprotection_lasterror">lastError</string>
+    <string name="mozac_feature_ipprotection_vpn_ui">VPN UI</string>
+    <string name="mozac_feature_ipprotection_activate">activated</string>
+    <string name="mozac_feature_ipprotection_data_usage">Data usage</string>
+    <string name="mozac_feature_ipprotection_remainingdatabytes">remainingDataBytes</string>
+    <string name="mozac_feature_ipprotection_maxdatabytes">maxDataBytes</string>
+    <string name="mozac_feature_ipprotection_useddatagb">usedDataGb</string>
+    <string name="mozac_feature_ipprotection_resetdate">resetDate</string>
+    <string name="mozac_feature_ipprotection_account">Account</string>
+    <string name="mozac_feature_ipprotection_account_status">status</string>
+</resources>

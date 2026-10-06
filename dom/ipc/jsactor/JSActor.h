@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,9 +5,9 @@
 #ifndef mozilla_dom_JSActor_h
 #define mozilla_dom_JSActor_h
 
-#include "js/TypeDecls.h"
 #include "ipc/EnumSerializer.h"
-#include "mozilla/Attributes.h"
+#include "js/TypeDecls.h"
+#include "mozilla/dom/JSIPCValue.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsTHashMap.h"
@@ -66,20 +64,20 @@ class JSActor : public nsISupports, public nsWrapperCache {
   // message metadata |aMetadata|. The underlying transport should call the
   // |ReceiveMessage| method on the other side asynchronously.
   virtual void SendRawMessage(const JSActorMessageMeta& aMetadata,
-                              Maybe<ipc::StructuredCloneData>&& aData,
-                              Maybe<ipc::StructuredCloneData>&& aStack,
+                              JSIPCValue&& aData,
+                              ipc::StructuredCloneData* aStack,
                               ErrorResult& aRv) = 0;
 
   // Helper method to send an in-process raw message.
   using OtherSideCallback = std::function<already_AddRefed<JSActorManager>()>;
   static void SendRawMessageInProcess(const JSActorMessageMeta& aMeta,
-                                      Maybe<ipc::StructuredCloneData>&& aData,
-                                      Maybe<ipc::StructuredCloneData>&& aStack,
+                                      JSIPCValue&& aData,
+                                      ipc::StructuredCloneData* aStack,
                                       OtherSideCallback&& aGetOtherSide);
 
   virtual ~JSActor() = default;
 
-  void Init(const nsACString& aName);
+  void Init(const nsACString& aName, bool aSendTyped);
 
   bool CanSend() const { return mCanSend; }
 
@@ -134,7 +132,7 @@ class JSActor : public nsISupports, public nsWrapperCache {
     ~QueryHandler() = default;
 
     void SendReply(JSContext* aCx, JSActorMessageKind aKind,
-                   Maybe<ipc::StructuredCloneData>&& aData);
+                   JSIPCValue&& aData);
 
     RefPtr<JSActor> mActor;
     RefPtr<Promise> mPromise;
@@ -155,6 +153,12 @@ class JSActor : public nsISupports, public nsWrapperCache {
   nsTHashMap<nsUint64HashKey, PendingQuery> mPendingQueries;
   uint64_t mNextQueryId = 0;
   bool mCanSend = true;
+
+  // If this is false, the receiver won't be doing type checking, so
+  // use structured clone when sending. The security of the receiver does not
+  // depend on this value, because it will make its own independent judgment
+  // about whether the message needs to be typed.
+  bool mSendTyped = true;
 };
 
 }  // namespace dom

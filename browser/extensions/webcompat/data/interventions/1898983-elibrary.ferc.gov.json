@@ -1,0 +1,17 @@
+{
+  "label": "elibrary.ferc.gov",
+  "bugs": {
+    "1898983": {
+      "issue": "unsupported-warning",
+      "matches": ["*://elibrary.ferc.gov/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "content_scripts": {
+        "js": ["define_minimal_window_chrome.js"]
+      }
+    }
+  ]
+}

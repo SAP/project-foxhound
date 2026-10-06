@@ -36,7 +36,7 @@ TASKS = [
     "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-firefox-motionmark-animometer-1-3",
     "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-wasm-firefox-wasm-godot-optimizing",
     "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-firefox-webaudio",
-    "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-firefox-speedometer",
+    "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-firefox-speedometer2",
     "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-wasm-firefox-wasm-misc",
     "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-firefox-jetstream2",
     "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-firefox-ares6",
@@ -880,9 +880,9 @@ def test_category_expansion(
 
     assert len(expanded_cats) == expected_counts
     assert not any([expanded_cats.get(ucat, None) is not None for ucat in missing])
-    assert all(
-        [expanded_cats.get(ucat, None) is not None for ucat in unique_categories.keys()]
-    )
+    assert all([
+        expanded_cats.get(ucat, None) is not None for ucat in unique_categories.keys()
+    ])
 
     # Ensure that the queries are as expected
     for cat_name, cat_query in unique_categories.items():
@@ -1068,9 +1068,7 @@ def test_full_run(options, call_counts, log_ind, expected_log_message):
         "tryselect.selectors.perf.print",
     ) as perf_print, mock.patch(
         "tryselect.selectors.perf.PerfParser.set_categories_for_test"
-    ) as tests_mock, mock.patch(
-        "tryselect.selectors.perf.requests"
-    ) as requests_mock:
+    ) as tests_mock, mock.patch("tryselect.selectors.perf.requests") as requests_mock:
 
         def test_mock_func(*args, **kwargs):
             """Used for testing any --test functionality."""
@@ -1162,17 +1160,19 @@ def test_full_run(options, call_counts, log_ind, expected_log_message):
                 "here once the tests are complete (the autodetected framework "
                 "selection may not show all of your tests):\n"
                 " https://perf.compare/compare-lando-results?"
-                "baseLando=13&newLando=14&"
+                "landoInstance=lando-test&baseLando=42&newLando=43&"
                 "baseRepo=try&newRepo=try&framework=1\n"
             ),
         ),
     ],
 )
 @pytest.mark.skipif(os.name == "nt", reason="fzf not installed on host")
-def test_full_run_lando(options, call_counts, log_ind, expected_log_message):
-    with mock.patch("tryselect.selectors.perf.push_to_try") as ptt, mock.patch(
-        "tryselect.selectors.perf.run_fzf"
-    ) as fzf, mock.patch(
+def test_full_run_lando(
+    mock_push_to_lando_try, options, call_counts, log_ind, expected_log_message
+):
+    with mock_push_to_lando_try as ptt_lando, mock.patch(
+        "tryselect.selectors.perf.push_to_try"
+    ) as ptt, mock.patch("tryselect.selectors.perf.run_fzf") as fzf, mock.patch(
         "tryselect.selectors.perf.get_repository_object", new=mock.MagicMock()
     ), mock.patch(
         "tryselect.selectors.perf.LogProcessor.revision",
@@ -1186,9 +1186,7 @@ def test_full_run_lando(options, call_counts, log_ind, expected_log_message):
         "tryselect.selectors.perf.print",
     ) as perf_print, mock.patch(
         "tryselect.selectors.perf.PerfParser.set_categories_for_test"
-    ) as tests_mock, mock.patch(
-        "tryselect.selectors.perf.requests"
-    ) as requests_mock:
+    ) as tests_mock, mock.patch("tryselect.selectors.perf.requests") as requests_mock:
 
         def test_mock_func(*args, **kwargs):
             """Used for testing any --test functionality."""
@@ -1212,6 +1210,7 @@ def test_full_run_lando(options, call_counts, log_ind, expected_log_message):
                     "description": "",
                 },
             }
+
             fzf.side_effect = [
                 ["", ["test 1 windows firefox"]],
                 ["", TASKS],
@@ -1235,7 +1234,12 @@ def test_full_run_lando(options, call_counts, log_ind, expected_log_message):
         get_mock.json.return_value = {"tasks": ["task 1", "task 2"]}
         requests_mock.get.return_value = get_mock
 
-        ptt.side_effect = ["13", "14"]
+        # Get the Lando return data from the fixture, and use it to build the return
+        # values for the subsequent calls to PTT
+        ptt_lando_job = ptt_lando.return_value
+        ptt_lando_job2 = ptt_lando_job.copy()
+        ptt_lando_job2["lando_job_id"] += 1
+        ptt.side_effect = [ptt_lando_job, ptt_lando_job2]
 
         fzf_side_effects = [
             ["", ["Benchmarks linux"]],
@@ -1508,9 +1512,7 @@ def test_check_cached_revision(
         "tryselect.selectors.perf.json.dump"
     ) as dump, mock.patch(
         "tryselect.selectors.perf.pathlib.Path.is_file"
-    ) as is_file, mock.patch(
-        "tryselect.selectors.perf.pathlib.Path.open"
-    ):
+    ) as is_file, mock.patch("tryselect.selectors.perf.pathlib.Path.open"):
         load.return_value = load_data
         is_file.return_value = exists_cache_file
         result = PerfParser.check_cached_revision(*args)
@@ -1518,6 +1520,49 @@ def test_check_cached_revision(
         assert load.call_count == call_counts[0]
         assert dump.call_count == call_counts[1]
         assert result == return_value
+
+
+@pytest.mark.parametrize(
+    "cached_lando_instance, current_lando_instance, expected_return",
+    [
+        # Cache from old lando, current push on new lando -> miss
+        ("lando-prod", "lando-prod-2025", None),
+        # Cache from new lando, current push on old lando -> miss
+        ("lando-prod-2025", "lando-prod", None),
+        # Both on the same (new) lando -> hit
+        ("lando-prod-2025", "lando-prod-2025", "2b04563b5"),
+    ],
+)
+def test_check_cached_revision_lando_instance_change(
+    cached_lando_instance, current_lando_instance, expected_return
+):
+    load_data = {
+        "lando_base_commit": [
+            {
+                "base_revision_treeherder": "2b04563b5",
+                "date": "2023-03-31",
+                "tasks": [],
+                "lando": True,
+                "lando_instance": cached_lando_instance,
+            },
+        ],
+    }
+    with mock.patch("tryselect.selectors.perf.json.load") as load, mock.patch(
+        "tryselect.selectors.perf.json.dump"
+    ), mock.patch(
+        "tryselect.selectors.perf.pathlib.Path.is_file"
+    ) as is_file, mock.patch("tryselect.selectors.perf.pathlib.Path.open"), mock.patch(
+        "tryselect.selectors.perf.PerfParser.determine_lando_instance",
+        return_value=current_lando_instance,
+    ):
+        load.return_value = load_data
+        is_file.return_value = True
+
+        result = PerfParser.check_cached_revision(
+            [], "lando_base_commit", push_to_vcs=False
+        )
+
+        assert result == expected_return
 
 
 @pytest.mark.parametrize(
@@ -1540,9 +1585,7 @@ def test_save_revision_treeherder(args, call_counts, exists_cache_file):
         "tryselect.selectors.perf.json.dump"
     ) as dump, mock.patch(
         "tryselect.selectors.perf.pathlib.Path.is_file"
-    ) as is_file, mock.patch(
-        "tryselect.selectors.perf.pathlib.Path.open"
-    ):
+    ) as is_file, mock.patch("tryselect.selectors.perf.pathlib.Path.open"):
         is_file.return_value = exists_cache_file
 
         PerfParser.push_info.base_revision = "base_revision_treeherder"
@@ -1561,7 +1604,7 @@ def test_save_revision_treeherder(args, call_counts, exists_cache_file):
             [1, 0, 0, 1],
             (
                 "\n\n----------------------------------------------------------------------------------------------\n"
-                f"You have selected {MAX_PERF_TASKS+1} total test runs! (selected tasks({MAX_PERF_TASKS+1}) * rebuild"
+                f"You have selected {MAX_PERF_TASKS + 1} total test runs! (selected tasks({MAX_PERF_TASKS + 1}) * rebuild"
                 f" count(1) \nThese tests won't be triggered as the current maximum for a single ./mach try "
                 f"perf run is {MAX_PERF_TASKS}. \nIf this was unexpected, please file a bug in Testing :: Performance."
                 "\n----------------------------------------------------------------------------------------------\n\n"
@@ -1735,8 +1778,8 @@ def test_preview_description(options, call_count):
     "tests, tasks_found, categories_produced",
     [
         (["amazon"], 2, 1),
-        (["speedometer"], 1, 1),
-        (["webaudio", "speedometer"], 3, 2),
+        (["speedometer2"], 1, 1),
+        (["webaudio", "speedometer2"], 3, 2),
         (["webaudio", "tp5n"], 3, 2),
         (["xperf"], 1, 1),
         (["awsy"], 1, 1),
@@ -1787,7 +1830,6 @@ def test_perftest_test_selection(tests, tasks_found, categories_produced):
     ) as mock_script_info, mock.patch(
         "mozperftest.argparser.PerftestArgumentParser.parse_known_args"
     ) as mock_parse_args:
-
         mock_si_instance = mock_script_info.return_value
         mock_si_instance.get.return_value = "background-resource"
         mock_si_instance.script = pathlib.Path(
@@ -1812,6 +1854,82 @@ def test_unknown_framework():
     setup_perfparser()
     PerfParser.get_majority_framework(["unknown"])
     assert PerfParser.push_info.framework == 1
+
+
+EXPANDED_CATEGORIES = {
+    "Critical Desktop Performance desktop firefox": {
+        "try-config-defaults": {"per-task-rebuild": {"speedometer3": 20}},
+    },
+    "Benchmarks desktop firefox": {
+        "try-config-defaults": {},
+    },
+}
+
+
+SP3_TASK = "browsertime-benchmark-firefox-speedometer3"
+
+
+@pytest.mark.parametrize(
+    "selected_categories, tasks, try_config_params, expected_rebuild",
+    [
+        (
+            ["Critical Desktop Performance desktop firefox"],
+            [SP3_TASK],
+            {},
+            {SP3_TASK: 20},
+        ),
+        (
+            ["Critical Desktop Performance desktop firefox"],
+            [SP3_TASK],
+            {"try_task_config": {"rebuild": 5}},
+            5,
+        ),
+        (
+            [
+                "Critical Desktop Performance desktop firefox",
+                "Benchmarks desktop firefox",
+            ],
+            [SP3_TASK, "browsertime-benchmark-firefox-motionmark"],
+            {},
+            {SP3_TASK: 20},
+        ),
+    ],
+)
+def test_category_default_rebuild(
+    selected_categories, tasks, try_config_params, expected_rebuild
+):
+    with category_reset():
+        from tryselect.selectors.perfselector.classification import (
+            ClassificationProvider,
+        )
+
+        PerfParser.categories = ClassificationProvider().categories
+
+        with mock.patch(
+            "tryselect.selectors.perf.PerfParser.perf_push_to_try"
+        ) as perf_push_to_try_mock, mock.patch(
+            "tryselect.selectors.perf.fzf_bootstrap", return_value=mock.MagicMock()
+        ), mock.patch(
+            "tryselect.selectors.perf.PerfParser.get_perf_tasks"
+        ) as get_perf_tasks_mock, mock.patch(
+            "tryselect.selectors.perf.PerfParser.get_tasks"
+        ), mock.patch(
+            "tryselect.selectors.perf.PerfParser.get_majority_framework"
+        ), mock.patch(
+            "tryselect.selectors.perf.PerfParser.build_category_description"
+        ), mock.patch(
+            "tryselect.selectors.perf.PerfParser.get_categories",
+            return_value=EXPANDED_CATEGORIES,
+        ):
+            get_perf_tasks_mock.return_value = tasks, selected_categories, []
+
+            run(try_config_params=try_config_params, push_to_vcs=True)
+
+            assert perf_push_to_try_mock.call_count == 1
+            actual_try_config = perf_push_to_try_mock.call_args[0][3]
+            task_config = (actual_try_config or {}).get("try_task_config", {})
+            actual_rebuild = task_config.get("rebuild", 1)
+            assert actual_rebuild == expected_rebuild
 
 
 if __name__ == "__main__":

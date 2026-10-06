@@ -2,14 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsSyncStreamListener_h__
-#define nsSyncStreamListener_h__
+#ifndef nsSyncStreamListener_h_
+#define nsSyncStreamListener_h_
 
 #include "nsISyncStreamListener.h"
 #include "nsIInputStream.h"
 #include "nsIOutputStream.h"
 #include "nsCOMPtr.h"
-#include "mozilla/Attributes.h"
 
 //-----------------------------------------------------------------------------
 
@@ -40,4 +39,4 @@ class nsSyncStreamListener final : public nsISyncStreamListener,
   bool mDone{false};
 };
 
-#endif  // nsSyncStreamListener_h__
+#endif  // nsSyncStreamListener_h_

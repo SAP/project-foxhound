@@ -13,26 +13,6 @@ namespace mozilla::intl {
 // Firefox 1.0 release date.
 const double CALENDAR_DATE = 1032800850000.0;
 
-TEST(IntlCalendar, GetLegacyKeywordValuesForLocale)
-{
-  bool hasGregorian = false;
-  bool hasIslamic = false;
-  auto gregorian = MakeStringSpan("gregorian");
-  auto islamic = MakeStringSpan("islamic");
-  auto keywords = Calendar::GetLegacyKeywordValuesForLocale("en-US").unwrap();
-  for (auto name : keywords) {
-    // Check a few keywords, as this list may not be stable between ICU updates.
-    if (name.unwrap() == gregorian) {
-      hasGregorian = true;
-    }
-    if (name.unwrap() == islamic) {
-      hasIslamic = true;
-    }
-  }
-  ASSERT_TRUE(hasGregorian);
-  ASSERT_TRUE(hasIslamic);
-}
-
 TEST(IntlCalendar, GetBcp47KeywordValuesForLocale)
 {
   bool hasGregory = false;

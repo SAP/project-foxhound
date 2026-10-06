@@ -10,43 +10,44 @@
 
 #include "modules/audio_coding/neteq/decoder_database.h"
 
-#include <stddef.h>
-
 #include <cstdint>
 #include <list>
-#include <type_traits>
+#include <map>
+#include <optional>
 #include <utility>
+#include <vector>
 
 #include "absl/strings/match.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "api/audio_codecs/audio_decoder.h"
+#include "api/audio_codecs/audio_decoder_factory.h"
+#include "api/audio_codecs/audio_format.h"
 #include "api/environment/environment.h"
+#include "api/scoped_refptr.h"
+#include "modules/audio_coding/codecs/cng/webrtc_cng.h"
+#include "modules/audio_coding/neteq/packet.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/strings/audio_format_to_string.h"
 
 namespace webrtc {
 
 DecoderDatabase::DecoderDatabase(
     const Environment& env,
-    scoped_refptr<AudioDecoderFactory> decoder_factory,
-    std::optional<AudioCodecPairId> codec_pair_id)
+    scoped_refptr<AudioDecoderFactory> decoder_factory)
     : env_(env),
       active_decoder_type_(-1),
       active_cng_decoder_type_(-1),
-      decoder_factory_(std::move(decoder_factory)),
-      codec_pair_id_(codec_pair_id) {}
+      decoder_factory_(std::move(decoder_factory)) {}
 
 DecoderDatabase::~DecoderDatabase() = default;
 
 DecoderDatabase::DecoderInfo::DecoderInfo(
     const Environment& env,
     const SdpAudioFormat& audio_format,
-    std::optional<AudioCodecPairId> codec_pair_id,
     AudioDecoderFactory* factory)
     : env_(env),
       audio_format_(audio_format),
-      codec_pair_id_(codec_pair_id),
       factory_(factory),
       cng_decoder_(CngDecoder::Create(audio_format)),
       subtype_(SubtypeFromFormat(audio_format)) {}
@@ -63,9 +64,9 @@ AudioDecoder* DecoderDatabase::DecoderInfo::GetDecoder() const {
     // TODO(ossu): Keep a check here for now, since a number of tests create
     // DecoderInfos without factories.
     RTC_DCHECK(factory_);
-    decoder_ = factory_->Create(env_, audio_format_, codec_pair_id_);
+    decoder_ = factory_->Create(env_, audio_format_);
   }
-  RTC_DCHECK(decoder_) << "Failed to create: " << rtc::ToString(audio_format_);
+  RTC_DCHECK(decoder_) << "Failed to create: " << absl::StrCat(audio_format_);
   return decoder_.get();
 }
 
@@ -130,8 +131,8 @@ std::vector<int> DecoderDatabase::SetCodecs(
     RTC_DCHECK_LE(rtp_payload_type, 0x7f);
     if (decoders_.count(rtp_payload_type) == 0) {
       decoders_.insert(std::make_pair(
-          rtp_payload_type, DecoderInfo(env_, audio_format, codec_pair_id_,
-                                        decoder_factory_.get())));
+          rtp_payload_type,
+          DecoderInfo(env_, audio_format, decoder_factory_.get())));
     } else {
       // The mapping for this payload type hasn't changed.
     }
@@ -145,9 +146,9 @@ int DecoderDatabase::RegisterPayload(int rtp_payload_type,
   if (rtp_payload_type < 0 || rtp_payload_type > 0x7f) {
     return kInvalidRtpPayloadType;
   }
-  const auto ret = decoders_.insert(std::make_pair(
-      rtp_payload_type,
-      DecoderInfo(env_, audio_format, codec_pair_id_, decoder_factory_.get())));
+  const auto ret = decoders_.insert(
+      std::make_pair(rtp_payload_type,
+                     DecoderInfo(env_, audio_format, decoder_factory_.get())));
   if (ret.second == false) {
     // Database already contains a decoder with type `rtp_payload_type`.
     return kDecoderExists;
@@ -180,7 +181,7 @@ const DecoderDatabase::DecoderInfo* DecoderDatabase::GetDecoderInfo(
   DecoderMap::const_iterator it = decoders_.find(rtp_payload_type);
   if (it == decoders_.end()) {
     // Decoder not found.
-    return NULL;
+    return nullptr;
   }
   return &it->second;
 }
@@ -213,7 +214,7 @@ int DecoderDatabase::SetActiveDecoder(uint8_t rtp_payload_type,
 AudioDecoder* DecoderDatabase::GetActiveDecoder() const {
   if (active_decoder_type_ < 0) {
     // No active decoder.
-    return NULL;
+    return nullptr;
   }
   return GetDecoder(active_decoder_type_);
 }
@@ -238,7 +239,7 @@ int DecoderDatabase::SetActiveCngDecoder(uint8_t rtp_payload_type) {
 ComfortNoiseDecoder* DecoderDatabase::GetActiveCngDecoder() const {
   if (active_cng_decoder_type_ < 0) {
     // No active CNG decoder.
-    return NULL;
+    return nullptr;
   }
   if (!active_cng_decoder_) {
     active_cng_decoder_.reset(new ComfortNoiseDecoder);

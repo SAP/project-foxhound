@@ -169,11 +169,11 @@ configurations.all { config ->
                         }
 
                         if (geckoviewModules.contains(module) && !isLite) {
-                          warn("Substituting a geckoview omni build into a lite dependency. Add ac_add_options --enable-geckoview-lite to ${mozconfig.mozconfig.path} to fix this.")
+                          warn("Substituting a geckoview omni build into a lite dependency. Add ac_add_options --enable-geckoview-lite to your mozconfig to fix this.")
                         } else if (geckoviewOmniModules.contains(module) && isLite) {
                           // Substituting lite into omni is unlikely to work at
                           // all so we just error out here.
-                          throw new GradleException("Substituting a geckoview lite build into an omni dependency. Remove ac_add_options --enable-geckoview-lite in ${mozconfig.mozconfig.path} to fix this.")
+                          throw new GradleException("Substituting a geckoview lite build into an omni dependency. Remove ac_add_options --enable-geckoview-lite from your mozconfig to fix this.")
                         }
 
                         log("Substituting ${group}:${dependency.requested.module} with local GeckoView ${group}:${name} in ${config}")

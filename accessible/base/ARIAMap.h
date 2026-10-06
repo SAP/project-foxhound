@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -245,13 +242,14 @@ const nsRoleMapEntry* GetRoleMap(dom::Element* aEl);
  * given roles. This will use the first valid ARIA role if the role attribute
  * provides a space delimited list of roles, excluding any given roles.
  *
- * @param aEl          [in] the DOM node to get the role map entry for
- * @param aRolesToSkip [in] the roles to skip when searching the role string
- * @return             the index of the pointer to the role map entry for the
- *                     ARIA role, or NO_ROLE_MAP_ENTRY_INDEX if none
+ * @param aRoleAttrValue [in] the string value of the aria role(s)
+ * @param aRolesToSkip   [in] the roles to skip when searching the role string
+ * @return               the index of the pointer to the role map entry for the
+ *                       ARIA role, or NO_ROLE_MAP_ENTRY_INDEX if none
  */
 uint8_t GetFirstValidRoleMapIndexExcluding(
-    dom::Element* aEl, std::initializer_list<nsStaticAtom*> aRolesToSkip);
+    const nsString& aRoleAttrValue,
+    std::initializer_list<nsStaticAtom*> aRolesToSkip);
 
 /**
  * Get the role map entry pointer's index for a given DOM node. This will use
@@ -297,6 +295,13 @@ bool IsRoleMapIndexValid(uint8_t aRoleMapIndex);
 uint64_t UniversalStatesFor(dom::Element* aElement);
 
 /**
+ * Map an ARIA state rule only if it is listed in the provided role map entry.
+ */
+void MapToStateIfInRoleMapEntry(const nsRoleMapEntry* aRoleMapEntry,
+                                EStateRule aRule, dom::Element* aElement,
+                                uint64_t* aState);
+
+/**
  * Get the ARIA attribute characteristics for a given ARIA attribute.
  *
  * @param aAtom  ARIA attribute
@@ -338,6 +343,10 @@ class AttrIterator {
  public:
   explicit AttrIterator(nsIContent* aContent);
 
+  AttrIterator() = delete;
+  AttrIterator(const AttrIterator&) = delete;
+  AttrIterator& operator=(const AttrIterator&) = delete;
+
   bool Next();
 
   nsAtom* AttrName() const;
@@ -351,10 +360,6 @@ class AttrIterator {
   bool ExposeAttr(AccAttributes* aTargetAttrs) const;
 
  private:
-  AttrIterator() = delete;
-  AttrIterator(const AttrIterator&) = delete;
-  AttrIterator& operator=(const AttrIterator&) = delete;
-
   dom::Element* mElement;
 
   bool mIteratingDefaults;
@@ -372,17 +377,17 @@ class AttrWithCharacteristicsIterator {
   explicit AttrWithCharacteristicsIterator(uint8_t aCharacteristics)
       : mIdx(-1), mCharacteristics(aCharacteristics) {}
 
-  bool Next();
-
-  nsStaticAtom* AttrName() const;
-
- private:
   AttrWithCharacteristicsIterator() = delete;
   AttrWithCharacteristicsIterator(const AttrWithCharacteristicsIterator&) =
       delete;
   AttrWithCharacteristicsIterator& operator=(
       const AttrWithCharacteristicsIterator&) = delete;
 
+  bool Next();
+
+  nsStaticAtom* AttrName() const;
+
+ private:
   int32_t mIdx;
   uint8_t mCharacteristics;
 };

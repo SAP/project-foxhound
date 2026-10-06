@@ -18,6 +18,7 @@ kind-dependencies:
     - snap-upstream-build
 
 task-defaults:
+    run-on-repo-type: [hg]
     from-deps:
         group-by: single-with-filters
     attributes:

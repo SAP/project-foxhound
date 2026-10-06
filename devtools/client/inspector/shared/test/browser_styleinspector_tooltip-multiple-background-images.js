@@ -33,7 +33,7 @@ async function testComputedViewUrls(inspector) {
   info("Testing tooltips in the computed view");
 
   const onComputedViewReady = inspector.once("computed-view-refreshed");
-  const view = selectComputedView(inspector);
+  const view = await selectComputedView(inspector);
   await onComputedViewReady;
 
   const { valueSpan } = getComputedViewProperty(view, "background-image");

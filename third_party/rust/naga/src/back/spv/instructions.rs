@@ -156,9 +156,19 @@ impl super::Instruction {
         instruction
     }
 
+    pub(super) fn ext_inst_gl_op(
+        set_id: Word,
+        op: spirv::GlslStd450Op,
+        result_type_id: Word,
+        id: Word,
+        operands: &[Word],
+    ) -> Self {
+        Self::ext_inst(set_id, op as u32, result_type_id, id, operands)
+    }
+
     pub(super) fn ext_inst(
         set_id: Word,
-        op: spirv::GLOp,
+        op: u32,
         result_type_id: Word,
         id: Word,
         operands: &[Word],
@@ -167,7 +177,7 @@ impl super::Instruction {
         instruction.set_type(result_type_id);
         instruction.set_result(id);
         instruction.add_operand(set_id);
-        instruction.add_operand(op as u32);
+        instruction.add_operand(op);
         for operand in operands {
             instruction.add_operand(*operand)
         }
@@ -281,7 +291,24 @@ impl super::Instruction {
         instruction
     }
 
-    #[allow(clippy::too_many_arguments)]
+    pub(super) fn type_coop_matrix(
+        id: Word,
+        scalar_type_id: Word,
+        scope_id: Word,
+        row_count_id: Word,
+        column_count_id: Word,
+        matrix_use_id: Word,
+    ) -> Self {
+        let mut instruction = Self::new(Op::TypeCooperativeMatrixKHR);
+        instruction.set_result(id);
+        instruction.add_operand(scalar_type_id);
+        instruction.add_operand(scope_id);
+        instruction.add_operand(row_count_id);
+        instruction.add_operand(column_count_id);
+        instruction.add_operand(matrix_use_id);
+        instruction
+    }
+
     pub(super) fn type_image(
         id: Word,
         sampled_type_id: Word,
@@ -824,6 +851,53 @@ impl super::Instruction {
         instruction
     }
 
+    pub(super) fn ray_query_get_t_min(result_type_id: Word, id: Word, query: Word) -> Self {
+        let mut instruction = Self::new(Op::RayQueryGetRayTMinKHR);
+        instruction.set_type(result_type_id);
+        instruction.set_result(id);
+        instruction.add_operand(query);
+        instruction
+    }
+
+    pub(super) fn ray_query_terminate(query: Word) -> Self {
+        let mut instruction = Self::new(Op::RayQueryTerminateKHR);
+        instruction.add_operand(query);
+        instruction
+    }
+
+    //
+    //  Ray Tracing Pipeline Instructions
+    //
+
+    #[expect(clippy::too_many_arguments)]
+    pub(super) fn trace_ray(
+        acceleration_structure: Word,
+        ray_flags: Word,
+        cull_mask: Word,
+        sbt_offset: Word,
+        sbt_stride: Word,
+        miss_idx: Word,
+        ray_origin: Word,
+        ray_tmin: Word,
+        ray_dir: Word,
+        ray_tmax: Word,
+        payload: Word,
+    ) -> Self {
+        let mut instruction = Self::new(Op::TraceRayKHR);
+        instruction.add_operand(acceleration_structure);
+        instruction.add_operand(ray_flags);
+        instruction.add_operand(cull_mask);
+        instruction.add_operand(sbt_offset);
+        instruction.add_operand(sbt_stride);
+        instruction.add_operand(miss_idx);
+        instruction.add_operand(ray_origin);
+        instruction.add_operand(ray_tmin);
+        instruction.add_operand(ray_dir);
+        instruction.add_operand(ray_tmax);
+        instruction.add_operand(payload);
+        instruction
+    }
+
     //
     //  Conversion Instructions
     //
@@ -1227,6 +1301,41 @@ impl super::Instruction {
 
         instruction
     }
+
+    // Cooperative operations
+    pub(super) fn coop_load(
+        result_type_id: Word,
+        id: Word,
+        pointer_id: Word,
+        layout_id: Word,
+        stride_id: Word,
+    ) -> Self {
+        let mut instruction = Self::new(Op::CooperativeMatrixLoadKHR);
+        instruction.set_type(result_type_id);
+        instruction.set_result(id);
+        instruction.add_operand(pointer_id);
+        instruction.add_operand(layout_id);
+        instruction.add_operand(stride_id);
+        instruction
+    }
+    pub(super) fn coop_store(id: Word, pointer_id: Word, layout_id: Word, stride_id: Word) -> Self {
+        let mut instruction = Self::new(Op::CooperativeMatrixStoreKHR);
+        instruction.add_operand(pointer_id);
+        instruction.add_operand(id);
+        instruction.add_operand(layout_id);
+        instruction.add_operand(stride_id);
+        instruction
+    }
+    pub(super) fn coop_mul_add(result_type_id: Word, id: Word, a: Word, b: Word, c: Word) -> Self {
+        let mut instruction = Self::new(Op::CooperativeMatrixMulAddKHR);
+        instruction.set_type(result_type_id);
+        instruction.set_result(id);
+        instruction.add_operand(a);
+        instruction.add_operand(b);
+        instruction.add_operand(c);
+
+        instruction
+    }
 }
 
 impl From<crate::StorageFormat> for spirv::ImageFormat {
@@ -1286,6 +1395,16 @@ impl From<crate::ImageDimension> for spirv::Dim {
             Id::D2 => Self::Dim2D,
             Id::D3 => Self::Dim3D,
             Id::Cube => Self::DimCube,
+        }
+    }
+}
+
+impl From<crate::CooperativeRole> for spirv::CooperativeMatrixUse {
+    fn from(role: crate::CooperativeRole) -> Self {
+        match role {
+            crate::CooperativeRole::A => Self::MatrixAKHR,
+            crate::CooperativeRole::B => Self::MatrixBKHR,
+            crate::CooperativeRole::C => Self::MatrixAccumulatorKHR,
         }
     }
 }

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -276,8 +274,10 @@ Maybe<BlobImageKeyData> BlobSurfaceProvider::RecordDrawing(
   wr::BlobImageKey key = aBlobKey
                              ? aBlobKey.value()
                              : wr::BlobImageKey{wrBridge->GetNextImageKey()};
-  wr::ImageDescriptor descriptor(imageRect.Size(), 0, SurfaceFormat::OS_RGBA,
-                                 wr::OpacityType::HasAlphaChannel);
+  wr::ImageDescriptor descriptor(
+      imageRect.Size(), 0,
+      *wr::SurfaceFormatToImageFormat(SurfaceFormat::OS_RGBA),
+      wr::OpacityType::HasAlphaChannel);
 
   auto visibleRect = ImageIntRect::FromUnknownRect(imageRectOrigin);
   if (aBlobKey) {

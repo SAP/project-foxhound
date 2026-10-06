@@ -6,7 +6,7 @@
   appearance: none;
   -moz-context-properties: fill, fill-opacity;
   list-style-image: url(chrome://global/skin/icons/close.svg);
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   color: inherit;
   fill: currentColor;
   padding: 2px;
@@ -15,11 +15,11 @@
   outline: var(--toolbarbutton-outline);
 
   &:hover {
-    outline-color: var(--toolbarbutton-hover-outline-color);
+    outline-color: var(--toolbarbutton-outline-color-hover);
   }
 
   &:hover:active {
-    outline-color: var(--toolbarbutton-active-outline-color);
+    outline-color: var(--toolbarbutton-outline-color-active);
   }
 }
 

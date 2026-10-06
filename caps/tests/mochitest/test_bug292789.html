@@ -19,7 +19,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=292789
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
-/** Test for Bug 292789
+/**
+ * Test for Bug 292789
  *
  * Selectively allow access to allowlisted chrome packages
  * even for ALLOW_CHROME mechanisms (<script>, <img> etc)
@@ -39,14 +40,15 @@ function testScriptSrc(aCallback) {
     is(typeof gTreeUtils.sort, "function",
        "content can still load <script> from chrome://global");
 
-    /** Try to find an export from history.js.  We will find it if it is
-     *  improperly not blocked, otherwise it will be "undefined".
+    /**
+     * Try to find an export from history.js.  We will find it if it is
+     * improperly not blocked, otherwise it will be "undefined".
      */
     is(typeof gUpdateHistory, "undefined",
        "content should not be able to load <script> from chrome://mozapps");
 
-    /** make sure the last one didn't pass because someone
-     *  moved history.js
+    /**
+     * Make sure the last one didn't pass because someone moved history.js.
      */
     var resjs = document.getElementById("resjs");
     resjs.onload = scriptOnload;

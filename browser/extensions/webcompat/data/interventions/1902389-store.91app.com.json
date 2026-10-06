@@ -1,0 +1,15 @@
+{
+  "label": "store.91app.com",
+  "bugs": {
+    "1902389": {
+      "issue": "unsupported-warning",
+      "matches": ["*://store.91app.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

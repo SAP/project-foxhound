@@ -12,12 +12,14 @@ LOCAL_INCLUDES += [
 
 UNIFIED_SOURCES += [
   "exporter.cc",
+  "multi_recordable.cc",
   "provider.cc",
   "random_id_generator.cc",
   "random_id_generator_factory.cc",
   "samplers/always_on_factory.cc",
   "simple_processor_factory.cc",
   "span.cc",
+  "span_data.cc",
   "tracer.cc",
   "tracer_config.cc",
   "tracer_context.cc",

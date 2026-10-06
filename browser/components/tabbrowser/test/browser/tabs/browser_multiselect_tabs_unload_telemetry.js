@@ -14,7 +14,7 @@ async function openTabMenuFor(tab) {
   EventUtils.synthesizeMouseAtCenter(
     tab,
     { type: "contextmenu" },
-    tab.ownerGlobal
+    tab.documentGlobal
   );
   await tabMenuShown;
 
@@ -38,10 +38,10 @@ async function addBrowserTabs(numberOfTabs) {
 add_setup(async function () {
   // This is helpful to avoid some weird race conditions in the test, specifically
   // the assertion that !this.blankTab in AsyncTabSwitcher when adding a new tab.
-  await promiseTabLoadEvent(
-    gBrowser.selectedTab,
-    "http://mochi.test:8888/#originalTab"
-  );
+  await BrowserTestUtils.loadURIString({
+    browser: gBrowser.selectedTab.linkedBrowser,
+    uriString: "http://mochi.test:8888/#originalTab",
+  });
   let originalTab = gBrowser.selectedTab;
   // switch to Firefox View tab to initialize it
   FirefoxViewHandler.openTab();

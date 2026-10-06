@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -142,7 +141,7 @@ var connectHandler = {
 
 function dataAvailable(data) {
   switch (state) {
-    case STATE_READ_CONNECT_REQUEST:
+    case STATE_READ_CONNECT_REQUEST: {
       connectRequest += String.fromCharCode.apply(String, data);
       const headerEnding = connectRequest.indexOf("\r\n\r\n");
       const alpnHeaderIndex = connectRequest.indexOf(`ALPN: ${ALPN}`);
@@ -158,6 +157,7 @@ function dataAvailable(data) {
       }
 
       break;
+    }
     case STATE_CHECK_WRITE_READ:
       checkWriteData += String.fromCharCode.apply(String, data);
 

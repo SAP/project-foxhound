@@ -10,7 +10,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   truncate: "chrome://remote/content/shared/Format.sys.mjs",
 });
 
-/** Representation of the packets transproted over the wire. */
+/** Representation of the packets transported over the wire. */
 export class Message {
   /**
    * @param {number} messageID

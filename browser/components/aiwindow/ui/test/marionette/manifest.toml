@@ -1,0 +1,5 @@
+[DEFAULT]
+subsuite = "integration"
+tags = "local os_integration"
+
+["test_smartwindow_default_startup.py"]

@@ -829,6 +829,22 @@ test_only:
     notification_emails:
       - telemetry-client-dev@mozilla.com
     expires: never
+  an_event:
+    type: event
+    description: |
+      This is a test-only metric.
+      Just recording some events.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1979075
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1979075
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - glean-team@mozilla.com
+    expires: never
+    send_in_pings:
+      - test-ping
 
 
 test_only.ipc:
@@ -1362,6 +1378,28 @@ test_only.ipc:
       - test-ping
     no_lint:
       - COMMON_PREFIX
+  an_unordered_quantity:
+    type: quantity
+    unit: squad
+    description: |
+      This is a test-only metric.
+      Just quantifying things unorderedly in child processes.
+    metadata:
+      permit_non_commutative_operations_over_ipc: true
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2012590
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2012590#c1
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - glean-team@mozilla.com
+    expires: never
+    send_in_pings:
+      - test-ping
+    no_lint:
+      - COMMON_PREFIX
+    telemetry_mirror: TELEMETRY_TEST_MIRROR_FOR_UNORDERED_QUANTITY
   irate:
     type: rate
     description: |

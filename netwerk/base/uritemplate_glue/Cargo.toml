@@ -1,0 +1,15 @@
+[package]
+name = "uritemplate_glue"
+version = "0.1.0"
+authors = ["The Mozilla Necko Team <necko@mozilla.com>"]
+edition = "2021"
+license = "MPL-2.0"
+
+[lib]
+name = "uritemplate_glue"
+
+[dependencies]
+uritemplate-next = "0.2.0"
+nserror = { path = "../../../xpcom/rust/nserror" }
+nsstring = { path = "../../../xpcom/rust/nsstring" }
+xpcom = { path = "../../../xpcom/rust/xpcom" }

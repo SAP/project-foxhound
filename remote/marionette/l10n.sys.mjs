@@ -9,7 +9,7 @@
  * based applications is done via entities and properties. For static
  * values entities are used, which are located in .dtd files. Whereby for
  * dynamically updated content the values come from .property files. Both
- * types of elements can be identifed via a unique id, and the translated
+ * types of elements can be identified via a unique id, and the translated
  * content retrieved.
  */
 

@@ -792,5 +792,85 @@ describe("mapExpression", () => {
         originalExpression: true,
       },
     },
+    {
+      name: "await (inside top-level block)",
+      expression: "{ await 1 }",
+      newExpression: formatAwait("{ await 1 }"),
+      bindings: [],
+      mappings: {},
+      shouldMapBindings: false,
+      expectedMapped: {
+        await: true,
+        bindings: false,
+        originalExpression: false,
+      },
+    },
+    {
+      name: "await (inside top-level try block)",
+      expression: "try { await 1 } catch (e) {}",
+      newExpression: formatAwait("try { await 1; } catch (e) {}"),
+      bindings: [],
+      mappings: {},
+      shouldMapBindings: false,
+      expectedMapped: {
+        await: true,
+        bindings: false,
+        originalExpression: false,
+      },
+    },
+    {
+      name: "await (inside top-level catch block)",
+      expression: "try { throw 'Error' } catch (e) { await 2; }",
+      newExpression: formatAwait(
+        "try { throw 'Error' } catch (e) { await 2; }"
+      ),
+      bindings: [],
+      mappings: {},
+      shouldMapBindings: false,
+      expectedMapped: {
+        await: true,
+        bindings: false,
+        originalExpression: false,
+      },
+    },
+    {
+      name: "await (inside top-level if-else block)",
+      expression: "if (false) { await 1; } else { await 2; }",
+      newExpression: formatAwait(`if (false) { await 1; } else { await 2; }`),
+      bindings: [],
+      mappings: {},
+      shouldMapBindings: false,
+      expectedMapped: {
+        await: true,
+        bindings: false,
+        originalExpression: false,
+      },
+    },
+    {
+      name: "await (in method name of a class)",
+      expression: "class A { [await 0]() {} }",
+      newExpression: formatAwait(`class A { [await 0]() {} }`),
+      bindings: [],
+      mappings: {},
+      shouldMapBindings: false,
+      expectedMapped: {
+        await: true,
+        bindings: false,
+        originalExpression: false,
+      },
+    },
+    {
+      name: "await (for await)",
+      expression: "for await (const num of [1,2,3]);",
+      newExpression: formatAwait(`for await (const num of [1,2,3]);`),
+      bindings: [],
+      mappings: {},
+      shouldMapBindings: false,
+      expectedMapped: {
+        await: true,
+        bindings: false,
+        originalExpression: false,
+      },
+    },
   ]);
 });

@@ -1,0 +1,26 @@
+---
+typescript:
+    description: TypeScript type checker for JavaScript
+    include:
+        # Currently, directories listed here should contain a `tsconfig.json`
+        # project file. Only directories which pass typescript should be added
+        # to this list.
+        # These should be kept in sync with the list in
+        # taskcluster/kinds/source-test/mozlint.yml
+        - browser/components/places/
+        - browser/components/search/
+        - browser/components/urlbar/
+        - toolkit/components/places/
+        - toolkit/components/search/
+    exclude: []
+    # TODO: Figure out if we can add sjs type support.
+    extensions: ['mjs', 'js', 'jsx', '.ts']
+    support-files:
+        - 'tools/@types/**'
+        - 'tools/lint/typescript.yml'
+        - 'tools/lint/typescript/**'
+    type: external
+    payload: typescript:lint
+    # Reuse the ESLint set-up, as that installs TypeScript at the top level
+    # alongside the other required modules.
+    setup: eslint:setup

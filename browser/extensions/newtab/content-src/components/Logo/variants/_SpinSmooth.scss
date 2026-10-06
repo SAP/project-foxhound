@@ -1,0 +1,10 @@
+// @backward-compat { version 153 }
+// The .spin-smooth block can be removed after Firefox 153 hits
+// Release (2026 World Cup logo variation sunset).
+.logo-and-wordmark {
+  .spin-smooth {
+    // Click-triggered SMIL animation — no variant-specific styling required.
+    // Sizing and `cursor: pointer` are inherited from the shared
+    // `.logo-variation-small` class in `_Logo.scss`.
+  }
+}

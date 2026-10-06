@@ -23,7 +23,7 @@
   height: auto;
 }
 
-.network-monitor .headers-panel-container .devtools-button {
+.network-monitor .headers-panel-container .devtools-button:not(.learn-more-link) {
   padding: 0;
 }
 .network-monitor .headers-panel-container .devtools-dropdown-button {
@@ -75,6 +75,13 @@
 
 .network-monitor .properties-view .tree-container .treeTable .treeValueCell .devtools-checkbox-toggle {
   margin-block: 2px;
+}
+
+.network-monitor .tree-container .devtools-button.learn-more-link {
+  position: absolute;
+  top: 0;
+  inset-inline-start: 5px;
+  padding: 2px;
 }
 
 .network-monitor .properties-view .raw-headers-container .raw-headers {

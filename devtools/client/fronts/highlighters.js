@@ -49,5 +49,4 @@ class CustomHighlighterFront extends FrontClassWithSpec(customHighlighterSpec) {
   }
 }
 
-exports.CustomHighlighterFront = CustomHighlighterFront;
 registerFront(CustomHighlighterFront);

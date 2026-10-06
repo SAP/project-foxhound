@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -22,10 +20,8 @@
 #include "mozilla/RDDChild.h"
 #include "mozilla/RDDParent.h"
 #include "mozilla/RDDProcessManager.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/Services.h"
 #include "mozilla/Telemetry.h"
-#include "mozilla/Unused.h"
 #include "ModuleEvaluator.h"
 #include "nsCOMPtr.h"
 #include "nsHashKeys.h"
@@ -191,15 +187,15 @@ NS_IMETHODIMP UntrustedModulesProcessor::Observe(nsISupports* aSubject,
       nsTArray<dom::ContentParent*> contentProcesses;
       dom::ContentParent::GetAll(contentProcesses);
       for (auto* proc : contentProcesses) {
-        Unused << proc->SendUnblockUntrustedModulesThread();
+        (void)proc->SendUnblockUntrustedModulesThread();
       }
       if (RefPtr<net::SocketProcessParent> proc =
               net::SocketProcessParent::GetSingleton()) {
-        Unused << proc->SendUnblockUntrustedModulesThread();
+        (void)proc->SendUnblockUntrustedModulesThread();
       }
       if (auto* rddMgr = RDDProcessManager::Get()) {
         if (auto* proc = rddMgr->GetRDDChild()) {
-          Unused << proc->SendUnblockUntrustedModulesThread();
+          (void)proc->SendUnblockUntrustedModulesThread();
         }
       }
       if (RefPtr<gmp::GeckoMediaPluginServiceParent> gmps =
@@ -707,7 +703,7 @@ void UntrustedModulesProcessor::ProcessModuleLoadQueue() {
       return;
     }
 
-    Unused << processedStacks.emplaceBack(std::move(processedStack));
+    (void)processedStacks.emplaceBack(std::move(processedStack));
     processedEvents.insertBack(
         new ProcessedModuleLoadEventContainer(std::move(event)));
   }
@@ -966,7 +962,7 @@ void UntrustedModulesProcessor::CompleteProcessing(
       Telemetry::ProcessedStack processedStack =
           stackProcessor.GetStackAndModules(backtrace);
 
-      Unused << processedStacks.emplaceBack(std::move(processedStack));
+      (void)processedStacks.emplaceBack(std::move(processedStack));
       processedEvents.insertBack(
           new ProcessedModuleLoadEventContainer(std::move(event)));
     }

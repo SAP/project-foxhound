@@ -10,12 +10,10 @@
 
 #include "api/audio_codecs/g722/audio_encoder_g722.h"
 
-#include <stddef.h>
-
+#include <cstddef>
 #include <map>
 #include <memory>
 #include <optional>
-#include <utility>
 #include <vector>
 
 #include "absl/strings/match.h"
@@ -60,7 +58,7 @@ void AudioEncoderG722::AppendSupportedEncoders(
     std::vector<AudioCodecSpec>* specs) {
   const SdpAudioFormat fmt = {"G722", 8000, 1};
   const AudioCodecInfo info = QueryAudioEncoder(*SdpToConfig(fmt));
-  specs->push_back({fmt, info});
+  specs->push_back({.format = fmt, .info = info});
 }
 
 AudioCodecInfo AudioEncoderG722::QueryAudioEncoder(

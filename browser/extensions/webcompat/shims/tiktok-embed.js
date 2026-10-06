@@ -5,7 +5,7 @@
 /* globals browser, embedHelperLib */
 
 embedHelperLib.initEmbedShim({
-  shimId: "TiktokEmbed",
+  shimId: "TikTokEmbed",
   scriptURL: "https://www.tiktok.com/embed.js",
   embedLogoURL: "https://smartblock.firefox.etp/tiktok.svg",
   embedSelector: ".tiktok-embed",

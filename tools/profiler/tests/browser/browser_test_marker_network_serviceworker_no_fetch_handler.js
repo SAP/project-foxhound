@@ -51,10 +51,7 @@ add_task(async function test_network_markers_service_worker_register() {
 });
 
 add_task(async function test_network_markers_service_worker_use() {
-  Assert.ok(
-    !Services.profiler.IsActive(),
-    "The profiler is not currently active"
-  );
+  await ProfilerTestUtils.assertProfilerInactive();
 
   await ProfilerTestUtils.startProfilerForMarkerTests();
 
@@ -179,6 +176,7 @@ add_task(async function test_network_markers_service_worker_use() {
         endTime: Expect.number(),
         id: Expect.number(),
         pri: Expect.number(),
+        priorityHeader: Expect.string(),
         count: Expect.number(),
         domainLookupStart: Expect.number(),
         domainLookupEnd: Expect.number(),

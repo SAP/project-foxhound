@@ -23,6 +23,7 @@ const TEST_URI = `data:text/html,<!DOCTYPE html>
       </template>
     </div>
     <div id="3">3</div>
+    <details><summary>spoil</summary>peekaboo</details>
   </main>`;
 
 add_task(async function () {
@@ -103,4 +104,16 @@ add_task(async function () {
     "Array [ div#2-3.x ]"
   );
   ok(message, "works when passed a scope inside the shadow DOM");
+
+  message = await executeAndWaitForResultMessage(
+    hud,
+    // The <details> element uses a <slot> element to control its layout. It shouldn't
+    // be returned, but shouldn't make the helper throw (See Bug 2002814)
+    `$$$("slot, details, summary")`,
+    "Array [ details, summary ]"
+  );
+  ok(
+    message,
+    "works when the selector matches native anonymous node (but don't return them)"
+  );
 });

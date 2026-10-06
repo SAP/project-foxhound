@@ -1,0 +1,15 @@
+{
+  "label": "trip.com",
+  "bugs": {
+    "1996137": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.trip.com/webapp/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

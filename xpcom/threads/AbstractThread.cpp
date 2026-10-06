@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,14 +6,12 @@
 
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/DelayedRunnable.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"  // We initialize the MozPromise logging in this file.
 #include "mozilla/ProfilerRunnable.h"
 #include "mozilla/StateWatching.h"  // We initialize the StateWatching logging in this file.
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TaskDispatcher.h"
 #include "mozilla/TaskQueue.h"
-#include "mozilla/Unused.h"
 #include "nsContentUtils.h"
 #include "nsIDirectTaskDispatcher.h"
 #include "nsIThreadInternal.h"
@@ -84,12 +80,16 @@ class XPCOMThreadWrapper final : public AbstractThread,
     // fails, rather than releasing it. But given that this condition only
     // applies very late in shutdown when only one thread remains operational,
     // that concern is unlikely to apply.
+    //
+    // For the same reason, we also always specify `NS_DISPATCH_FALLIBLE` when
+    // dispatching to the underlying thread here, to ensure we consistently do
+    // not leak the runnable.
     if (gXPCOMMainThreadEventsAreDoomed) {
       return NS_ERROR_FAILURE;
     }
 
-    RefPtr<nsIRunnable> runner = new Runner(this, r.forget());
-    return mThread->Dispatch(runner.forget(), NS_DISPATCH_NORMAL);
+    RefPtr runner = MakeRefPtr<Runner>(this, r.forget());
+    return mThread->Dispatch(runner.forget(), NS_DISPATCH_FALLIBLE);
   }
 
   // Prevent a GCC warning about the other overload of Dispatch being hidden.
@@ -101,6 +101,10 @@ class XPCOMThreadWrapper final : public AbstractThread,
 
   NS_IMETHOD UnregisterShutdownTask(nsITargetShutdownTask* aTask) override {
     return mThread->UnregisterShutdownTask(aTask);
+  }
+
+  NS_IMETHOD_(FeatureFlags) GetFeatures() override {
+    return mThread->GetFeatures();
   }
 
   bool IsCurrentThreadIn() const override {
@@ -242,14 +246,15 @@ AbstractThread::IsOnCurrentThread(bool* aResult) {
 }
 
 NS_IMETHODIMP
-AbstractThread::DispatchFromScript(nsIRunnable* aEvent, uint32_t aFlags) {
-  nsCOMPtr<nsIRunnable> event(aEvent);
-  return Dispatch(event.forget(), aFlags);
+AbstractThread::DispatchFromScript(nsIRunnable* aEvent, DispatchFlags aFlags) {
+  return Dispatch(do_AddRef(aEvent), aFlags);
 }
 
 NS_IMETHODIMP
 AbstractThread::Dispatch(already_AddRefed<nsIRunnable> aEvent,
-                         uint32_t aFlags) {
+                         DispatchFlags aFlags) {
+  // NOTE: This dispatch implementation never leaks aEvent on error, whether or
+  // not `NS_DISPATCH_FALLIBLE` is specified.
   return Dispatch(std::move(aEvent), NormalDispatch);
 }
 
@@ -259,8 +264,8 @@ AbstractThread::DelayedDispatch(already_AddRefed<nsIRunnable> aEvent,
   nsCOMPtr<nsIRunnable> event = aEvent;
   NS_ENSURE_TRUE(!!aDelayMs, NS_ERROR_UNEXPECTED);
 
-  RefPtr<DelayedRunnable> r =
-      new DelayedRunnable(do_AddRef(this), event.forget(), aDelayMs);
+  RefPtr r =
+      MakeRefPtr<DelayedRunnable>(do_AddRef(this), event.forget(), aDelayMs);
   nsresult rv = r->Init();
   NS_ENSURE_SUCCESS(rv, rv);
 

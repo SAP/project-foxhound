@@ -83,8 +83,8 @@ print <<__END__;
    by genSpecialCasingData.pl - do not edit! */
 
 #include "nsSpecialCasingData.h"
-#include "mozilla/ArrayUtils.h" // for ArrayLength
 #include <stdlib.h>       // for bsearch
+#include <array>          // for std::size
 
 __END__
 map { print "/* $_ */\n" } @headerLines;
@@ -211,17 +211,8 @@ __END__
   <p>
 __END__
   foreach my $key (sort { $a <=> $b } keys %$hash) {
-    # Bug 1476304: we exclude Georgian letters U+10D0..10FF because of lack
-    # of widespread font support for the corresponding Mtavruli characters
-    # at this time (July 2018).
-    # This condition is to be removed once the major platforms ship with
-    # fonts that support U+1C90..1CBF.
-    my $skippedGeorgian = $whichMapping eq "upper" && $key >= 0x10D0 && $key <= 0x10FF;
-    print OUT "<!-- " if $skippedGeorgian;
     print OUT join('', map { sprintf("&#x%s;", $_) } split(/ /, $hash->{$key}));
-    print OUT " -->" if $skippedGeorgian;
     print OUT " <!-- $charName{$key} -->" if exists $charName{$key};
-    print OUT " <!-- Temporarily skipped, see bug 1476304. -->" if $skippedGeorgian;
     print OUT "\n";
   }
   print OUT <<__END__;

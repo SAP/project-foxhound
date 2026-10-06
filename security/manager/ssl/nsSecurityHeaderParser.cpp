@@ -130,10 +130,10 @@ void nsSecurityHeaderParser::Directive() {
   mDirectives.insertBack(mDirective);
   if (mDirective->mValue.isSome()) {
     SHPARSERLOG(("read directive name '%s', value '%s'",
-                 mDirective->mName.Data(), mDirective->mValue->Data()));
+                 mDirective->mName.get(), mDirective->mValue->get()));
   } else {
     SHPARSERLOG(
-        ("read valueless directive name '%s'", mDirective->mName.Data()));
+        ("read valueless directive name '%s'", mDirective->mName.get()));
   }
 }
 

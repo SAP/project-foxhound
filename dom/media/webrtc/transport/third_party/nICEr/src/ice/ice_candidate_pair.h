@@ -34,10 +34,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef _ice_candidate_pair_h
 #define _ice_candidate_pair_h
-#ifdef __cplusplus
-using namespace std;
-extern "C" {
-#endif /* __cplusplus */
 
 
 struct nr_ice_cand_pair_ {
@@ -89,7 +85,6 @@ int nr_ice_candidate_pair_start(nr_ice_peer_ctx *pctx, nr_ice_cand_pair *pair);
 void nr_ice_candidate_pair_set_state(nr_ice_peer_ctx *pctx, nr_ice_cand_pair *pair, int state);
 void nr_ice_candidate_pair_dump_state(nr_ice_cand_pair *pair, int log_level);
 void nr_ice_candidate_pair_cancel(nr_ice_peer_ctx *pctx,nr_ice_cand_pair *pair, int move_to_wait_state);
-int nr_ice_candidate_pair_select(nr_ice_cand_pair *pair);
 int nr_ice_candidate_pair_do_triggered_check(nr_ice_peer_ctx *pctx, nr_ice_cand_pair *pair, int force);
 void nr_ice_candidate_pair_insert(nr_ice_cand_pair_head *head,nr_ice_cand_pair *pair);
 int nr_ice_candidate_pair_trigger_check_append(nr_ice_cand_pair_head *head,nr_ice_cand_pair *pair);
@@ -98,8 +93,5 @@ int nr_ice_candidate_pair_destroy(nr_ice_cand_pair **pairp);
 void nr_ice_candidate_pair_role_change(nr_ice_cand_pair *pair);
 void nr_ice_candidate_pair_update_rtt(nr_ice_cand_pair *pair, UINT8 rtt_ms);
 
-#ifdef __cplusplus
-}
-#endif /* __cplusplus */
 #endif
 

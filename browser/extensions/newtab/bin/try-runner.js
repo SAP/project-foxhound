@@ -185,6 +185,64 @@ const tests = {
 
     return false;
   },
+
+  jest() {
+    logStart(`jest ${process.cwd()}`);
+
+    const errors = [];
+    const resultsPath = path.join("logs", "jest-run-results.json");
+    const { exitCode, out, err } = execOut(npmCommand, [
+      "run",
+      "testmc:jest",
+      "--",
+      "--json",
+      `--outputFile=${resultsPath}`,
+      // , "--log-level", "--verbose",
+      // to debug the jest integration, uncomment the above line
+    ]);
+
+    let jsonContent;
+    try {
+      jsonContent = readFileSync(resultsPath);
+    } catch (ex) {
+      console.error(`exception reading ${resultsPath}: `, ex);
+      console.log("-----jest stdout below this line---");
+      console.log(out);
+      console.log("-----jest stdout above this line---");
+      console.log("-----jest stderr below this line---");
+      console.log(err);
+      console.log("-----jest stderr above this line---");
+      return false;
+    }
+
+    const results = JSON.parse(jsonContent);
+
+    for (const testResult of results.testResults) {
+      const failed = testResult.assertionResults.filter(
+        a => a.status === "failed"
+      );
+      errors.push(
+        ...failed.map(
+          a =>
+            `${testResult.name} > ${a.ancestorTitles.join(" > ")} > ${a.title}: ${a.failureMessages.join("\n")}`
+        )
+      );
+
+      if (testResult.status === "failed" && !failed.length) {
+        errors.push(
+          `${testResult.name}: suite failed without assertion-level detail (${testResult.message || "no message"})`
+        );
+      }
+    }
+
+    logErrors(`jest ${process.cwd()}`, errors);
+
+    console.log("-----jest stdout below this line---");
+    console.log(out);
+    console.log("-----jest stdout above this line---");
+
+    return errors.length === 0 && !exitCode;
+  },
 };
 
 async function main() {

@@ -45,6 +45,19 @@ async function initTest() {
   runTest();
 }
 
+function hasOutline(element) {
+  let cs = getComputedStyle(element);
+  return cs.outlineWidth != "0px" && cs.outlineStyle != "none";
+}
+
+function checkRing(element, width, message) {
+  const expectOutline = width != "0px";
+  is(hasOutline(element), expectOutline, message);
+  if (expectOutline) {
+    is(getComputedStyle(element).outlineWidth, width, message);
+  }
+}
+
 function runTest()
 {
   // Make sure our snapshots don't depend on mouse position.
@@ -54,8 +67,7 @@ function runTest()
 
   function checkFocus(element, visible, testid)
   {
-    var outline = getComputedStyle(element, "").outlineWidth;
-    is(outline, visible ? "2px" : "0px", testid);
+    is(hasOutline(element), visible, testid);
   }
 
   // make sure that a focus ring appears on the focused button
@@ -75,7 +87,7 @@ function runTest()
   // kind of real user input, mouse or key, was last entered. But we can handle
   // the test regardless of which user input last occurred.
   $("l1").focus();
-  var expectedVisible = (!isWinOrLinux || getComputedStyle($("l1"), "").outlineWidth == "2px");
+  var expectedVisible = !isWinOrLinux || hasOutline($("l1"));
   testHTMLElements(htmlElements, isWinOrLinux && !expectedVisible);
 
   $("l1").focus();
@@ -84,7 +96,7 @@ function runTest()
 
   checkFocus($("l2"), true, "appearance on list after focus() with :focus");
 
-  is(getComputedStyle($("l1"), "").outlineWidth, "0px", "appearance on previous list after focus() with :focus");
+  ok(!hasOutline($("l1")), "appearance on previous list after focus() with :focus");
 
   synthesizeMouse($("l1"), 4, 4, { });
   checkFocus($("l1"), false, "appearance on list after mouse focus with :moz-focusring");
@@ -176,8 +188,8 @@ function testHTMLElements(list, expectedNoRingsOnWin) {
 
     synthesizeMouse(elem, 8, 8, { }, childwin);
     is(childdoc.activeElement, shouldFocus ? elem : childdoc.body, "mouse click on " + list[e]);
-    is(childwin.getComputedStyle(elem).outlineWidth, mouseRingSize, "mouse click on " + list[e] + " ring");
-    is(elem.matches(":-moz-focusring"), expectedMatchWithMouse, "mouse click on " + list[e] + " selector");
+    is(elem.matches(":focus-visible"), expectedMatchWithMouse, "mouse click on " + list[e] + " selector");
+    checkRing(elem, mouseRingSize, "mouse click on " + list[e] + " ring");
 
     if (childdoc.activeElement)
       childdoc.activeElement.blur();
@@ -189,8 +201,7 @@ function testHTMLElements(list, expectedNoRingsOnWin) {
 
     elem.focus();
     is(childdoc.activeElement, elem, "focus() on " + list[e]);
-    is(childwin.getComputedStyle(elem).outlineWidth, ringSize,
-       "focus() on " + list[e] + " ring");
+    checkRing(elem, ringSize, "focus() on " + list[e] + " ring");
 
     childdoc.activeElement.blur();
 

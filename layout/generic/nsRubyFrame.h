@@ -1,13 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* rendering object for CSS "display: ruby" */
 
-#ifndef nsRubyFrame_h___
-#define nsRubyFrame_h___
+#ifndef nsRubyFrame_h_
+#define nsRubyFrame_h_
 
 #include "RubyUtils.h"
 #include "nsInlineFrame.h"
@@ -42,6 +40,12 @@ class nsRubyFrame final : public nsInlineFrame {
 
   mozilla::RubyBlockLeadings GetBlockLeadings() const { return mLeadings; }
 
+  mozilla::RubyMetrics RubyMetrics(float aRubyMetricsFactor) const override {
+    // aRubyMetricsFactor is ignored here; it was already accounted for in
+    // accumulating mRubyMetrics.
+    return mRubyMetrics;
+  }
+
  protected:
   friend nsContainerFrame* NS_NewRubyFrame(mozilla::PresShell* aPresShell,
                                            ComputedStyle* aStyle);
@@ -60,6 +64,9 @@ class nsRubyFrame final : public nsInlineFrame {
   // The leadings required to put the annotations. They are dummy-
   // initialized to 0, and get meaningful values at first reflow.
   mozilla::RubyBlockLeadings mLeadings;
+
+  // Accumulated normalized-ascent/descent metrics used for ruby positioning.
+  mozilla::RubyMetrics mRubyMetrics;
 };
 
-#endif /* nsRubyFrame_h___ */
+#endif /* nsRubyFrame_h_ */

@@ -1,5 +1,3 @@
-/* eslint-env mozilla/chrome-script */
-
 let dialogObserverTopic = "common-dialog-loaded";
 
 function waitForButtonEnabledState(button) {
@@ -11,7 +9,7 @@ function waitForButtonEnabledState(button) {
     }
 
     // Create a MutationObserver instance
-    let win = button.ownerGlobal;
+    let win = button.documentGlobal;
     let { MutationObserver } = win;
     const observer = new MutationObserver(mutationsList => {
       for (const mutation of mutationsList) {

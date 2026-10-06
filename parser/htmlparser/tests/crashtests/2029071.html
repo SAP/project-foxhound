@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<head>
+<script>
+let D = null;
+class XA extends HTMLElement {
+  constructor() {
+    super();
+    const t = document.querySelector('table');
+    D = document.createElement('div');
+    D.appendChild(t);
+  }
+}
+customElements.define('x-a', XA);
+
+class XInput extends HTMLInputElement {
+  constructor() {
+    super();
+    if (D) {
+      D.replaceChildren();
+      D = null;
+
+      dump("Force GC and CC\n");
+      SpecialPowers.forceShrinkingGC();
+      SpecialPowers.forceCC();
+      SpecialPowers.forceShrinkingGC();
+      SpecialPowers.forceCC();
+    }
+  }
+}
+customElements.define('x-input', XInput, {extends: 'input'});
+</script>
+</head>
+<body>
+<form>
+<table>
+<x-a></x-a>
+<input is="x-input">
+</table>
+</form>
+</body>

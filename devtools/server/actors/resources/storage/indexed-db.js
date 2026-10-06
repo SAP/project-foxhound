@@ -75,17 +75,18 @@ const ILLEGAL_CHAR_REGEX = new RegExp(illegalFileNameCharacters, "g");
 
 /**
  * Meta data object for a particular index in an object store
- *
- * @param {IDBIndex} index
- *        The particular index from the object store.
  */
-function IndexMetadata(index) {
-  this._name = index.name;
-  this._keyPath = index.keyPath;
-  this._unique = index.unique;
-  this._multiEntry = index.multiEntry;
-}
-IndexMetadata.prototype = {
+class IndexMetadata {
+  /**
+   * @param {IDBIndex} index
+   *        The particular index from the object store.
+   */
+  constructor(index) {
+    this._name = index.name;
+    this._keyPath = index.keyPath;
+    this._unique = index.unique;
+    this._multiEntry = index.multiEntry;
+  }
   toObject() {
     return {
       name: this._name,
@@ -93,40 +94,41 @@ IndexMetadata.prototype = {
       unique: this._unique,
       multiEntry: this._multiEntry,
     };
-  },
-};
+  }
+}
 
 /**
  * Meta data object for a particular object store in a db
- *
- * @param {IDBObjectStore} objectStore
- *        The particular object store from the db.
  */
-function ObjectStoreMetadata(objectStore) {
-  this._name = objectStore.name;
-  this._keyPath = objectStore.keyPath;
-  this._autoIncrement = objectStore.autoIncrement;
-  this._indexes = [];
+class ObjectStoreMetadata {
+  /**
+   * @param {IDBObjectStore} objectStore
+   *        The particular object store from the db.
+   */
+  constructor(objectStore) {
+    this._name = objectStore.name;
+    this._keyPath = objectStore.keyPath;
+    this._autoIncrement = objectStore.autoIncrement;
+    this._indexes = [];
 
-  for (let i = 0; i < objectStore.indexNames.length; i++) {
-    const index = objectStore.index(objectStore.indexNames[i]);
+    for (let i = 0; i < objectStore.indexNames.length; i++) {
+      const index = objectStore.index(objectStore.indexNames[i]);
 
-    const newIndex = {
-      keypath: index.keyPath,
-      multiEntry: index.multiEntry,
-      name: index.name,
-      objectStore: {
-        autoIncrement: index.objectStore.autoIncrement,
-        indexNames: [...index.objectStore.indexNames],
-        keyPath: index.objectStore.keyPath,
-        name: index.objectStore.name,
-      },
-    };
+      const newIndex = {
+        keypath: index.keyPath,
+        multiEntry: index.multiEntry,
+        name: index.name,
+        objectStore: {
+          autoIncrement: index.objectStore.autoIncrement,
+          indexNames: [...index.objectStore.indexNames],
+          keyPath: index.objectStore.keyPath,
+          name: index.objectStore.name,
+        },
+      };
 
-    this._indexes.push([newIndex, new IndexMetadata(index)]);
+      this._indexes.push([newIndex, new IndexMetadata(index)]);
+    }
   }
-}
-ObjectStoreMetadata.prototype = {
   toObject() {
     return {
       name: this._name,
@@ -136,44 +138,45 @@ ObjectStoreMetadata.prototype = {
         [...this._indexes.values()].map(index => index.toObject())
       ),
     };
-  },
-};
+  }
+}
 
 /**
  * Meta data object for a particular indexed db in a host.
- *
- * @param {string} origin
- *        The host associated with this indexed db.
- * @param {IDBDatabase} db
- *        The particular indexed db.
- * @param {String} storage
- *        Storage type, either "temporary", "default" or "persistent".
  */
-function DatabaseMetadata(origin, db, storage) {
-  this._origin = origin;
-  this._name = db.name;
-  this._version = db.version;
-  this._objectStores = [];
-  this.storage = storage;
+class DatabaseMetadata {
+  /**
+   * @param {string} origin
+   *        The host associated with this indexed db.
+   * @param {IDBDatabase} db
+   *        The particular indexed db.
+   * @param {string} storage
+   *        Storage type, either "temporary", "default" or "persistent".
+   */
+  constructor(origin, db, storage) {
+    this._origin = origin;
+    this._name = db.name;
+    this._version = db.version;
+    this._objectStores = [];
+    this.storage = storage;
 
-  if (db.objectStoreNames.length) {
-    const transaction = db.transaction(db.objectStoreNames, "readonly");
+    if (db.objectStoreNames.length) {
+      const transaction = db.transaction(db.objectStoreNames, "readonly");
 
-    for (let i = 0; i < transaction.objectStoreNames.length; i++) {
-      const objectStore = transaction.objectStore(
-        transaction.objectStoreNames[i]
-      );
-      this._objectStores.push([
-        transaction.objectStoreNames[i],
-        new ObjectStoreMetadata(objectStore),
-      ]);
+      for (let i = 0; i < transaction.objectStoreNames.length; i++) {
+        const objectStore = transaction.objectStore(
+          transaction.objectStoreNames[i]
+        );
+        this._objectStores.push([
+          transaction.objectStoreNames[i],
+          new ObjectStoreMetadata(objectStore),
+        ]);
+      }
     }
   }
-}
-DatabaseMetadata.prototype = {
   get objectStores() {
     return this._objectStores;
-  },
+  }
 
   toObject() {
     return {
@@ -184,8 +187,8 @@ DatabaseMetadata.prototype = {
       version: this._version,
       objectStores: this._objectStores.size,
     };
-  },
-};
+  }
+}
 
 class IndexedDBStorageActor extends BaseStorageActor {
   constructor(storageActor) {
@@ -878,9 +881,9 @@ class IndexedDBStorageActor extends BaseStorageActor {
    *        The principal of the given document.
    * @param {string} dbName
    *        The name of the indexed db from the above host.
-   * @param {String} storage
+   * @param {string} storage
    *        Storage type, either "temporary", "default" or "persistent".
-   * @param {Object} requestOptions
+   * @param {object} requestOptions
    *        An object in the following format:
    *        {
    *          objectStore: The name of the object store from the above db,

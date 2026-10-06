@@ -39,7 +39,7 @@ add_task(async function () {
 
   // Reload the page. A different source file will be loaded.
   sourceSeen = waitForSourceLoad(toolbox, JS_URL);
-  await reloadBrowser();
+  await reloadSelectedTab();
   await sourceSeen;
 
   info(

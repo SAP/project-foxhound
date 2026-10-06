@@ -13,20 +13,20 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-// Loading and common.js from accessible/tests/mochitest/ for all tests, as
-// well as events.js.
+// Loading helpers from accessible/tests/mochitest/ for all tests.
 loadScripts(
   { name: "common.js", dir: MOCHITESTS_DIR },
   { name: "layout.js", dir: MOCHITESTS_DIR },
-  { name: "promisified-events.js", dir: MOCHITESTS_DIR }
+  { name: "events.js", dir: MOCHITESTS_DIR }
 );
 
 /**
  * Verifies that the given attribute is cached on the given acc. Retries until
  * a timeout via untilCacheOk.
+ *
  * @param {nsIAccessible} accessible the accessible where the attribute to query
  *                                   should be cached
- * @param {String}        attribute  the attribute to query in the cache
+ * @param {string}        attribute  the attribute to query in the cache
  */
 async function verifyAttributeCached(accessible, attribute) {
   // Wait until the attribute is present in the cache.
@@ -43,9 +43,10 @@ async function verifyAttributeCached(accessible, attribute) {
 /**
  * Verifies that the given attribute is cached on the given acc. Doesn't retry
  * until a timeout.
+ *
  * @param {nsIAccessible} accessible the accessible where the attribute to query
  *                                   should be cached
- * @param {String}        attribute  the attribute to query in the cache
+ * @param {string}        attribute  the attribute to query in the cache
  */
 function verifyAttributeCachedNoRetry(accessible, attribute) {
   try {
@@ -56,7 +57,7 @@ function verifyAttributeCachedNoRetry(accessible, attribute) {
   }
 }
 
-/*
+/**
  * @callback QueryCallback A function taking no arguments that queries an
  *                         attribute that may be cached, e.g., bounds, state
  */
@@ -66,9 +67,10 @@ function verifyAttributeCachedNoRetry(accessible, attribute) {
  * accessibility service to activate those cache domains by running the provided
  * query function, which queries the attribute. Finally, verifies that the
  * attribute is present in the cache.
+ *
  * @param  {nsIAccessible}  accessible the accessible where the attribute to
  *                                     query should be cached
- * @param  {String}         attribute  the attribute to query in the cache
+ * @param  {string}         attribute  the attribute to query in the cache
  * @param  {QueryCallback}  queryCb    the callback that this function will
  *                                     invoke to query the given attribute
  */
@@ -95,9 +97,10 @@ async function testAttributeCachePresence(accessible, attribute, queryCb) {
  * Verify that the given attribute is properly cached, taking into account
  * platform considerations which may affect what is testable. Ideally, test
  * attribute absence and presence, but only presence may be possible.
+ *
  * @param  {nsIAccessible}  accessible the accessible where the attribute to
  *                                     query should be cached
- * @param  {String}         attribute  the attribute to query in the cache
+ * @param  {string}         attribute  the attribute to query in the cache
  * @param  {QueryCallback}  queryCb    the callback that this function will
  *                                     invoke to query the given attribute
  */

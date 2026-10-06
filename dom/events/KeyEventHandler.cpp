@@ -1,42 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
+#include "KeyEventHandler.h"
 
 #include "ErrorList.h"
-#include "nsCOMPtr.h"
-#include "nsQueryObject.h"
-#include "KeyEventHandler.h"
-#include "nsContentUtils.h"
-#include "nsGlobalWindowCommands.h"
-#include "nsIContent.h"
-#include "nsAtom.h"
-#include "nsNameSpaceManager.h"
-#include "mozilla/dom/Document.h"
-#include "nsIController.h"
-#include "nsIControllers.h"
-#include "nsXULElement.h"
-#include "nsFocusManager.h"
-#include "nsIFormControl.h"
-#include "nsPIDOMWindow.h"
-#include "nsPIWindowRoot.h"
-#include "nsIScriptError.h"
-#include "nsIWeakReferenceUtils.h"
-#include "nsString.h"
-#include "nsReadableUtils.h"
-#include "nsGkAtoms.h"
-#include "nsDOMCID.h"
-#include "nsUnicharUtils.h"
-#include "nsCRT.h"
-#include "nsJSUtils.h"
 #include "mozilla/BasicEvents.h"
-#include "mozilla/LookAndFeel.h"
 #include "mozilla/JSEventHandler.h"
+#include "mozilla/LookAndFeel.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/TextEvents.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/EventHandlerBinding.h"
@@ -46,6 +20,29 @@
 #include "mozilla/dom/KeyboardEventBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/layers/KeyboardMap.h"
+#include "nsAtom.h"
+#include "nsCOMPtr.h"
+#include "nsCRT.h"
+#include "nsContentUtils.h"
+#include "nsDOMCID.h"
+#include "nsFocusManager.h"
+#include "nsGkAtoms.h"
+#include "nsGlobalWindowCommands.h"
+#include "nsIContent.h"
+#include "nsIController.h"
+#include "nsIControllers.h"
+#include "nsIFormControl.h"
+#include "nsIScriptError.h"
+#include "nsIWeakReferenceUtils.h"
+#include "nsJSUtils.h"
+#include "nsNameSpaceManager.h"
+#include "nsPIDOMWindow.h"
+#include "nsPIWindowRoot.h"
+#include "nsQueryObject.h"
+#include "nsReadableUtils.h"
+#include "nsString.h"
+#include "nsUnicharUtils.h"
+#include "nsXULElement.h"
 #include "xpcpublic.h"
 
 namespace mozilla {
@@ -149,7 +146,7 @@ bool KeyEventHandler::TryConvertToKeyboardShortcut(
 
   NS_LossyConvertUTF16toASCII commandText(mCommand);
   KeyboardScrollAction action;
-  if (!nsGlobalWindowCommands::FindScrollCommand(commandText.get(), &action)) {
+  if (!nsGlobalWindowCommands::FindScrollCommand(commandText, &action)) {
     // This action doesn't represent a scroll so we need to create a dispatch
     // to content keyboard shortcut so APZ handles this command correctly
     *aOut = KeyboardShortcut(eventType, keyCode, charCode, modifiers,
@@ -166,9 +163,7 @@ bool KeyEventHandler::TryConvertToKeyboardShortcut(
 
 bool KeyEventHandler::KeyElementIsDisabled() const {
   RefPtr<dom::Element> keyElement = GetHandlerElement();
-  return keyElement &&
-         keyElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::disabled,
-                                 nsGkAtoms::_true, eCaseMatters);
+  return keyElement && keyElement->GetBoolAttr(nsGkAtoms::disabled);
 }
 
 already_AddRefed<dom::Element> KeyEventHandler::GetHandlerElement() const {
@@ -316,8 +311,7 @@ nsresult KeyEventHandler::DispatchXBLCommand(dom::EventTarget* aTarget,
 nsresult KeyEventHandler::DispatchXULKeyCommand(dom::Event* aEvent) {
   nsCOMPtr<dom::Element> handlerElement = GetHandlerElement();
   NS_ENSURE_STATE(handlerElement);
-  if (handlerElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::disabled,
-                                  nsGkAtoms::_true, eCaseMatters)) {
+  if (handlerElement->GetBoolAttr(nsGkAtoms::disabled)) {
     // Don't dispatch command events for disabled keys.
     return NS_SUCCESS_DOM_NO_OPERATION;
   }
@@ -391,27 +385,15 @@ already_AddRefed<nsIController> KeyEventHandler::GetController(
   // This code should have no special knowledge of what objects might have
   // controllers.
   nsCOMPtr<nsIControllers> controllers;
-
   if (nsIContent* targetContent = nsIContent::FromEventTarget(aTarget)) {
-    RefPtr<nsXULElement> xulElement = nsXULElement::FromNode(targetContent);
-    if (xulElement) {
-      controllers = xulElement->GetControllers(IgnoreErrors());
-    }
-
-    if (!controllers) {
-      dom::HTMLTextAreaElement* htmlTextArea =
-          dom::HTMLTextAreaElement::FromNode(targetContent);
-      if (htmlTextArea) {
-        htmlTextArea->GetControllers(getter_AddRefs(controllers));
-      }
-    }
-
-    if (!controllers) {
-      dom::HTMLInputElement* htmlInputElement =
-          dom::HTMLInputElement::FromNode(targetContent);
-      if (htmlInputElement) {
-        htmlInputElement->GetControllers(getter_AddRefs(controllers));
-      }
+    if (auto* xulElement = nsXULElement::FromNode(targetContent)) {
+      controllers = xulElement->GetExtantControllers();
+    } else if (auto* htmlTextArea =
+                   dom::HTMLTextAreaElement::FromNode(targetContent)) {
+      htmlTextArea->GetControllers(getter_AddRefs(controllers));
+    } else if (auto* htmlInput =
+                   dom::HTMLInputElement::FromNode(targetContent)) {
+      htmlInput->GetControllers(getter_AddRefs(controllers));
     }
   }
 
@@ -474,7 +456,7 @@ static const keyCodeData gKeyCodes[] = {
 
 #define NS_DEFINE_VK(aDOMKeyName, aDOMKeyCode) \
   {#aDOMKeyName, sizeof(#aDOMKeyName) - 1, aDOMKeyCode},
-#include "mozilla/VirtualKeyCodeList.h"
+#include "mozilla/VirtualKeyCodeList.inc"
 #undef NS_DEFINE_VK
 
     {nullptr, 0, 0}};
@@ -669,7 +651,7 @@ void KeyEventHandler::ReportKeyConflict(const char16_t* aKey,
   params.AppendElement(id);
   nsContentUtils::ReportToConsole(
       nsIScriptError::warningFlag, "Key dom::Event Handler"_ns, doc,
-      nsContentUtils::eDOM_PROPERTIES, aMessageName, params);
+      PropertiesFile::DOM_PROPERTIES, aMessageName, params);
 }
 
 bool KeyEventHandler::ModifiersMatchMask(

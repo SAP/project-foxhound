@@ -1,10 +1,14 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 const FILE_URL = Services.io.newFileURI(
   new FileUtils.File(getTestFilePath("file_dummy.html"))
 ).spec;
+
+add_setup(async () => {
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.webextensions.fileSchemeAccess.requireOptIn", false]],
+  });
+});
 
 add_task(async function testExecuteScript_at_file_url() {
   let extension = ExtensionTestUtils.loadExtension({

@@ -198,18 +198,23 @@ struct ObjectStoreGetKeyParams
   SerializedKeyRange keyRange;
 };
 
+struct GetAllOptions
+{
+  SerializedKeyRange? optionalKeyRange;
+  uint32_t limit;
+  Direction direction;
+};
+
 struct ObjectStoreGetAllParams
 {
   int64_t objectStoreId;
-  SerializedKeyRange? optionalKeyRange;
-  uint32_t limit;
+  GetAllOptions options;
 };
 
 struct ObjectStoreGetAllKeysParams
 {
   int64_t objectStoreId;
-  SerializedKeyRange? optionalKeyRange;
-  uint32_t limit;
+  GetAllOptions options;
 };
 
 struct ObjectStoreDeleteParams
@@ -247,16 +252,27 @@ struct IndexGetAllParams
 {
   int64_t objectStoreId;
   int64_t indexId;
-  SerializedKeyRange? optionalKeyRange;
-  uint32_t limit;
+  GetAllOptions options;
 };
 
 struct IndexGetAllKeysParams
 {
   int64_t objectStoreId;
   int64_t indexId;
-  SerializedKeyRange? optionalKeyRange;
-  uint32_t limit;
+  GetAllOptions options;
+};
+
+struct ObjectStoreGetAllRecordsParams
+{
+  int64_t objectStoreId;
+  GetAllOptions options;
+};
+
+struct IndexGetAllRecordsParams
+{
+  int64_t objectStoreId;
+  int64_t indexId;
+  GetAllOptions options;
 };
 
 struct IndexCountParams
@@ -274,6 +290,7 @@ union RequestParams
   ObjectStoreGetKeyParams;
   ObjectStoreGetAllParams;
   ObjectStoreGetAllKeysParams;
+  ObjectStoreGetAllRecordsParams;
   ObjectStoreDeleteParams;
   ObjectStoreClearParams;
   ObjectStoreCountParams;
@@ -281,6 +298,7 @@ union RequestParams
   IndexGetKeyParams;
   IndexGetAllParams;
   IndexGetAllKeysParams;
+  IndexGetAllRecordsParams;
   IndexCountParams;
 };
 

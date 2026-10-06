@@ -129,10 +129,10 @@ PushRecord.prototype = {
     }
 
     if (AppConstants.MOZ_GECKOVIEW_HISTORY) {
-      let result = await lazy.EventDispatcher.instance.sendRequestForResult({
-        type: "History:GetPrePathLastVisitedTimeMilliseconds",
-        prePath: this.uri.prePath,
-      });
+      let result = await lazy.EventDispatcher.instance.sendRequestForResult(
+        "History:GetPrePathLastVisitedTimeMilliseconds",
+        { prePath: this.uri.prePath }
+      );
       return result == 0 ? -Infinity : result;
     }
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,13 +27,19 @@ class APZCBasicTester : public APZCTesterBase {
     APZThreadUtils::SetThreadAssertionsEnabled(false);
     APZThreadUtils::SetControllerThread(NS_GetCurrentThread());
 
-    tm = new TestAPZCTreeManager(mcc);
+    tm = CreateTreeManager();
     updater = new APZUpdater(tm, false);
     sampler = new APZSampler(tm, false);
     apzc =
         new TestAsyncPanZoomController(LayersId{0}, mcc, tm, mGestureBehavior);
     apzc->SetFrameMetrics(TestFrameMetrics());
     apzc->GetScrollMetadata().SetIsLayersIdRoot(true);
+
+    // The page scroll amount also needs to be set, otherwise the wheel handling
+    // code will get confused by things like the "don't scroll more than one
+    // page" check.
+    apzc->GetScrollMetadata().SetPageScrollAmount({1000, 1000});
+
     // Since we're working with just one APZC, make it the root-content one.
     // Tests that want to test the behaviour of a non-root-content APZC
     // generally want to do so in a context where it has a root-content
@@ -55,6 +59,10 @@ class APZCBasicTester : public APZCTesterBase {
     return CSSRect(metrics.GetScrollableRect().TopLeft(),
                    metrics.GetScrollableRect().Size() -
                        metrics.CalculateCompositedSizeInCssPixels());
+  }
+
+  virtual TestAPZCTreeManager* CreateTreeManager() {
+    return new TestAPZCTreeManager(mcc);
   }
 
   virtual void TearDown() {

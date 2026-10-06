@@ -203,7 +203,7 @@ export class EditCreditCard extends EditAutofillForm {
   }
 
   generateYears() {
-    const count = 11;
+    const count = 20;
     const currentYear = new Date().getFullYear();
     const ccExpYear = this._record && this._record["cc-exp-year"];
 

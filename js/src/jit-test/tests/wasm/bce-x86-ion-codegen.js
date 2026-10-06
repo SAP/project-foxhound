@@ -23,10 +23,10 @@ codegenTestX86_adhoc(
      drop
      (i32.load (local.get 1))))`,
     'f', `
-3b ..                     cmp %e.., %e..
-0f 83 .. 00 00 00         jnb 0x00000000000000..
-8b .. ..                  movl \\(%r..,%r..,1\\), %e..
-8b .. ..                  movl \\(%r..,%r..,1\\), %eax`,
+(movl 0x04\\(%r..\\), %e..\ncmp %e.., %e..|cmpl 0x04\\(%r..\\), %e..)
+jnb 0x00000000000000..
+movl \\(%r..,%r..,1\\), %e..
+movl \\(%r..,%r..,1\\), %eax`,
     {no_prefix:true});
 
 // Make sure constant indices below the heap minimum do not require a bounds check.
@@ -37,8 +37,8 @@ codegenTestX86_adhoc(
    (func (export "f") (result i32)
      (i32.load (i32.const 16))))`,
     'f', `
-8b ..                     movl \\(%rsi\\), %e..
-8b .. 10                  movl 0x10\\(%r..\\), %eax`);
+movl \\(%rsi\\), %e..
+movl 0x10\\(%r..\\), %eax`);
 
 // Ditto, even at the very limit of the known heap, extending into the guard
 // page.  This is an OOB access, of course, but it needs no explicit bounds
@@ -50,5 +50,5 @@ codegenTestX86_adhoc(
      (i32.load (i32.const 65535))))`,
     'f',
 `
-8b ..                     movl \\(%rsi\\), %e..
-8b .. ff ff 00 00         movl 0xFFFF\\(%r..\\), %eax`);
+movl \\(%rsi\\), %e..
+movl 0xFFFF\\(%r..\\), %eax`);

@@ -9,10 +9,8 @@
 #include "nsString.h"
 
 class nsAlertsUtils final {
- private:
-  nsAlertsUtils() = delete;
-
  public:
+  nsAlertsUtils() = delete;
   /**
    * Indicates whether an alert from |aPrincipal| should include the source
    * string and action buttons. Returns false if |aPrincipal| is |nullptr|, or

@@ -8,7 +8,7 @@
         android:key="@string/pref_key_save_logins_settings"
         android:summary="@string/preferences_passwords_save_logins_ask_to_save"
         android:title="@string/preferences_passwords_save_logins_2" />
-    <SwitchPreference
+    <SwitchPreferenceCompat
         android:defaultValue="true"
         android:key="@string/pref_key_autofill_logins"
         android:title="@string/preferences_passwords_autofill2"
@@ -26,5 +26,5 @@
     <androidx.preference.Preference
         android:key="@string/pref_key_login_exceptions"
         android:title="@string/preferences_passwords_exceptions"
-        app:icon="@drawable/ic_internet" />
+        app:icon="@drawable/mozac_ic_globe_24" />
 </PreferenceScreen>

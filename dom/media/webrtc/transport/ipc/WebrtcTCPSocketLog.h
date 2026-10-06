@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef webrtc_tcp_socket_log_h__
-#define webrtc_tcp_socket_log_h__
+#ifndef webrtc_tcp_socket_log_h_
+#define webrtc_tcp_socket_log_h_
 
 #include "mozilla/Logging.h"
 
@@ -14,7 +12,8 @@ extern LazyLogModule webrtcTCPSocketLog;
 }  // namespace mozilla::net
 
 #undef LOG
-#define LOG(args) \
-  MOZ_LOG(mozilla::net::webrtcTCPSocketLog, mozilla::LogLevel::Debug, args)
+#define LOG(...)                                                          \
+  MOZ_LOG_FMT(mozilla::net::webrtcTCPSocketLog, mozilla::LogLevel::Debug, \
+              __VA_ARGS__)
 
-#endif  // webrtc_tcp_socket_log_h__
+#endif  // webrtc_tcp_socket_log_h_

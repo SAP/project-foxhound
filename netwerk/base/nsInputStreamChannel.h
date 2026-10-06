@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsInputStreamChannel_h__
-#define nsInputStreamChannel_h__
+#ifndef nsInputStreamChannel_h_
+#define nsInputStreamChannel_h_
 
 #include "nsBaseChannel.h"
 #include "nsIInputStreamChannel.h"
@@ -42,4 +41,4 @@ class nsInputStreamChannel : public nsBaseChannel,
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // !nsInputStreamChannel_h__
+#endif  // !nsInputStreamChannel_h_

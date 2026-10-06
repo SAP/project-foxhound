@@ -101,7 +101,7 @@ function getState(view, snapshot, diffing, individuals) {
  * @param {models.view} view
  * @param {snapshotModel} snapshot
  *
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function shouldDisplayStatus(state, view, snapshot) {
   switch (state) {
@@ -129,7 +129,7 @@ function shouldDisplayStatus(state, view, snapshot) {
  * @param {snapshotState|diffingState|dominatorTreeState} state
  * @param {diffingModel} diffing
  *
- * @returns {String}
+ * @returns {string}
  */
 function getStateStatusText(state, diffing) {
   if (state === diffingState.SELECTING) {
@@ -149,7 +149,7 @@ function getStateStatusText(state, diffing) {
  *
  * @param {diffingModel} diffing
  *
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function shouldDisplayThrobber(diffing) {
   return !diffing || diffing.state !== diffingState.SELECTING;
@@ -273,9 +273,8 @@ class Heap extends Component {
       "initial",
       dom.button(
         {
-          className: "devtools-button take-snapshot",
+          className: "devtools-button devtools-button-standalone take-snapshot",
           onClick: onSnapshotClick,
-          "data-standalone": true,
         },
         L10N.getStr("take-snapshot")
       )

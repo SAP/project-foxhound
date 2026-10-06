@@ -55,6 +55,7 @@ def record_cherry_picks(dir_in_gecko, merge_base_origin):
             "git",
             "show",
             "-s",
+            "--date=format:%a %b %d %H:%M:%S %Y %z",
             "--format=commit %H %cd",
             merge_base,
             stdout=subprocess.PIPE,
@@ -66,6 +67,7 @@ def record_cherry_picks(dir_in_gecko, merge_base_origin):
     mb_info = run_checked(
         "git",
         "log",
+        "--date=format:%a %b %d %H:%M:%S %Y %z",
         "--format=medium",
         "--no-decorate",
         "--no-abbrev-commit",
@@ -75,6 +77,7 @@ def record_cherry_picks(dir_in_gecko, merge_base_origin):
     cherries = run_checked(
         "git",
         "log",
+        "--date=format:%a %b %d %H:%M:%S %Y %z",
         "--format=medium",
         "--no-decorate",
         "--no-abbrev-commit",

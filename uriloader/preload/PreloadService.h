@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef PreloadService_h__
-#define PreloadService_h__
+#ifndef PreloadService_h_
+#define PreloadService_h_
 
 #include "nsIContentPolicy.h"
 #include "nsIURI.h"
@@ -74,9 +73,10 @@ class PreloadService {
   // AsyncOpen.
   void PreloadLinkHeader(nsIURI* aURI, const nsAString& aURL,
                          nsContentPolicyType aPolicyType, const nsAString& aAs,
-                         const nsAString& aType, const nsAString& aNonce,
-                         const nsAString& aIntegrity, const nsAString& aSrcset,
-                         const nsAString& aSizes, const nsAString& aCORS,
+                         const nsAString& aRel, const nsAString& aType,
+                         const nsAString& aNonce, const nsAString& aIntegrity,
+                         const nsAString& aSrcset, const nsAString& aSizes,
+                         const nsAString& aCORS,
                          const nsAString& aReferrerPolicy,
                          uint64_t aEarlyHintPreloaderId,
                          const nsAString& aFetchPriority);
@@ -119,12 +119,12 @@ class PreloadService {
 
   PreloadOrCoalesceResult PreloadOrCoalesce(
       nsIURI* aURI, const nsAString& aURL, nsContentPolicyType aPolicyType,
-      const nsAString& aAs, const nsAString& aType, const nsAString& aCharset,
-      const nsAString& aSrcset, const nsAString& aSizes,
-      const nsAString& aNonce, const nsAString& aIntegrity,
-      const nsAString& aCORS, const nsAString& aReferrerPolicy,
-      const nsAString& aFetchPriority, bool aFromHeader,
-      uint64_t aEarlyHintPreloaderId);
+      const nsAString& aAs, const nsAString& aRel, const nsAString& aType,
+      const nsAString& aCharset, const nsAString& aSrcset,
+      const nsAString& aSizes, const nsAString& aNonce,
+      const nsAString& aIntegrity, const nsAString& aCORS,
+      const nsAString& aReferrerPolicy, const nsAString& aFetchPriority,
+      bool aFromHeader, uint64_t aEarlyHintPreloaderId);
 
  private:
   nsRefPtrHashtable<PreloadHashKey, PreloaderBase> mPreloads;

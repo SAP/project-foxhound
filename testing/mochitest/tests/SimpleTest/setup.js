@@ -1,5 +1,3 @@
-/* -*- js-indent-level: 2; indent-tabs-mode: nil -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -198,10 +196,6 @@ if (params.dumpDMDAfterTest) {
 // on the `interactiveDebugger` flag being passed along.
 if (params.interactiveDebugger || params.jsdebugger || params.debugger) {
   TestRunner.interactiveDebugger = true;
-}
-
-if (params.jscovDirPrefix) {
-  TestRunner.jscovDirPrefix = params.jscovDirPrefix;
 }
 
 if (params.maxTimeouts) {

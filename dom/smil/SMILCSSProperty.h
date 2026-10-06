@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,10 +7,9 @@
 #ifndef DOM_SMIL_SMILCSSPROPERTY_H_
 #define DOM_SMIL_SMILCSSPROPERTY_H_
 
-#include "mozilla/Attributes.h"
+#include "NonCustomCSSPropertyId.h"
 #include "mozilla/SMILAttr.h"
 #include "nsAtom.h"
-#include "nsCSSPropertyID.h"
 #include "nsCSSValue.h"
 
 namespace mozilla {
@@ -30,14 +27,14 @@ class SMILCSSProperty : public SMILAttr {
  public:
   /**
    * Constructs a new SMILCSSProperty.
-   * @param  aPropID   The CSS property we're interested in animating.
+   * @param  aPropId   The CSS property we're interested in animating.
    * @param  aElement  The element whose CSS property is being animated.
    * @param  aBaseComputedStyle  The ComputedStyle to use when getting the base
    *                             value. If this is nullptr and GetBaseValue is
    *                             called, an empty SMILValue initialized with
    *                             the SMILCSSValueType will be returned.
    */
-  SMILCSSProperty(nsCSSPropertyID aPropID, dom::Element* aElement,
+  SMILCSSProperty(NonCustomCSSPropertyId aPropId, dom::Element* aElement,
                   const ComputedStyle* aBaseComputedStyle);
 
   // SMILAttr methods
@@ -57,10 +54,10 @@ class SMILCSSProperty : public SMILAttr {
    * @return  true if the given property is supported for SMIL animation, or
    *          false otherwise
    */
-  static bool IsPropertyAnimatable(nsCSSPropertyID aPropID);
+  static bool IsPropertyAnimatable(NonCustomCSSPropertyId aPropId);
 
  protected:
-  nsCSSPropertyID mPropID;
+  NonCustomCSSPropertyId mPropId;
   // Using non-refcounted pointer for mElement -- we know mElement will stay
   // alive for my lifetime because a SMILAttr (like me) only lives as long
   // as the Compositing step, and DOM elements don't get a chance to die during

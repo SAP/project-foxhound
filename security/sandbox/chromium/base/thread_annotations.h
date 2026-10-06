@@ -1,4 +1,4 @@
-// Copyright (c) 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,11 @@
 // that allow developers to document the locking policies of multi-threaded
 // code. The annotations can also help program analysis tools to identify
 // potential thread safety issues.
+//
+// Note that no analysis is done inside constructors and destructors,
+// regardless of what attributes are used. See
+// https://clang.llvm.org/docs/ThreadSafetyAnalysis.html#no-checking-inside-constructors-and-destructors
+// for details.
 //
 // Note that the annotations we use are described as deprecated in the Clang
 // documentation, linked below. E.g. we use EXCLUSIVE_LOCKS_REQUIRED where the
@@ -32,10 +37,10 @@
 #ifndef BASE_THREAD_ANNOTATIONS_H_
 #define BASE_THREAD_ANNOTATIONS_H_
 
-#include "base/logging.h"
+#include "base/dcheck_is_on.h"
 #include "build/build_config.h"
 
-#if defined(__clang__)
+#if defined(__clang__) && __clang_major__ >= 9
 #define THREAD_ANNOTATION_ATTRIBUTE__(x) __attribute__((x))
 #else
 #define THREAD_ANNOTATION_ATTRIBUTE__(x)  // no-op
@@ -242,16 +247,10 @@ inline T& ts_unchecked_read(T& v) NO_THREAD_SAFETY_ANALYSIS {
 // synonyms are added for Chromium concepts (SequenceChecker/ThreadChecker).
 #if DCHECK_IS_ON()
 
-// Equivalent to GUARDED_BY for SequenceChecker/ThreadChecker. Currently,
-// clang's error message "requires holding mutex" is misleading. Usage of this
-// macro is discouraged until the message is updated.
-// TODO(etiennep): Update comment above once clang's error message is updated.
+// Equivalent to GUARDED_BY for SequenceChecker/ThreadChecker.
 #define GUARDED_BY_CONTEXT(name) GUARDED_BY(name)
 
 // Equivalent to EXCLUSIVE_LOCKS_REQUIRED for SequenceChecker/ThreadChecker.
-// Currently, clang's error message "requires holding mutex" is misleading.
-// Usage of this macro is discouraged until the message is updated.
-// TODO(etiennep): Update comment above once clang's error message is updated.
 #define VALID_CONTEXT_REQUIRED(name) EXCLUSIVE_LOCKS_REQUIRED(name)
 
 #else  // DCHECK_IS_ON()

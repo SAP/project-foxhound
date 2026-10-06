@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "BlobImpl.h"
+
 #include "File.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/ErrorResult.h"
@@ -94,6 +93,6 @@ nsresult BlobImpl::GetSendInfo(nsIInputStream** aBody, uint64_t* aContentLength,
   return NS_OK;
 }
 
-NS_IMPL_ISUPPORTS(BlobImpl, BlobImpl)
+NS_IMPL_QUERY_INTERFACE(BlobImpl, BlobImpl)
 
 }  // namespace mozilla::dom

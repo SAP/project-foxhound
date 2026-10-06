@@ -1,0 +1,99 @@
+<!DOCTYPE HTML>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Test for Bug 1966443</title>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css">
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SpecialPowers.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+</head>
+
+<body>
+  <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1966443">Mozilla Bug 1966443 DND test</a>
+  <div></div>
+  <textarea style="cursor: pointer;" id="source"></textarea>
+  <div></div>
+  <input type="text" id="target" ondragover="event.preventDefault();"/>
+  <script type="application/javascript">
+    SimpleTest.waitForExplicitFinish();
+
+    const Ci = SpecialPowers.Ci;
+    const sourceElt = document.getElementById("source");
+    const targetElt = document.getElementById("target");
+    const scale = window.devicePixelRatio;
+    // For the test, assume the special NUL character is 13px wide.
+    const NULCharWidth = 13;
+
+    async function test(actual, expected) {
+      info(`initializing source to '${actual}' and clearing target`);
+      targetElt.value = "";
+      sourceElt.textContent = actual;
+      sourceElt.select();
+
+      // Find the first non-NUL character and use its position as drag start.
+      // If there are no non-NUL characters then use the first NUL.
+      let nonNulIndex = 0;
+      for (let i = 0; i < actual.length; i++) {
+        if (actual.charAt(i) != '\0') {
+          nonNulIndex = i;
+          break;
+        }
+      }
+
+      info(`dragging '${sourceElt.textContent}' from source to target`);
+      // Add a small offset to cover borders and text margins.
+      const offset = 8;
+      let sourceOffset = [ (nonNulIndex * NULCharWidth) * scale + offset, offset ];
+      let targetOffset = [ offset, offset ];
+      await synthesizeMockDragAndDrop({
+        srcElement: "source",
+        targetElement: "target",
+        sourceOffset,
+        targetOffset,
+        record,
+        info,
+        // No drag should happen if the expected string is empty.
+        expectNoDragEvents: expected === "",
+      });
+
+      is(targetElt.value, expected, "dropped data is correct");
+    }
+
+    async function runTests() {
+      await SpecialPowers.contentTransformsReceived(window);
+      for (let currentTest of tests) {
+        await test(currentTest.actual, currentTest.expected);
+      }
+      SimpleTest.finish();
+    }
+
+    // actual is the string sent to the clipboard.
+    // expected is the result of reading or pasting the clipboard.
+    // Tests that expect the empty string are only sanity checks -- they will
+    // pass because the target is initialized to the empty string.  In those
+    // cases, we should not receive any drag events.  This actually happens
+    // because clicking on a special character representing a NUL undoes the
+    // selection that would be dragged, so there is nowhere to click to start
+    // an empty drag.  This also means that we need to search for a non-NUL
+    // character to click when initiating a drag.
+    let tests = [
+      { actual: "abc", expected: "abc"},
+      { actual: "\0", expected: ""},
+      { actual: "a\0", expected: "a"},
+      { actual: "\0a", expected: "a"},
+      { actual: "a\0b", expected: "ab"},
+      { actual: "\0\0", expected: ""},
+      { actual: "a\0\0", expected: "a"},
+      { actual: "\0\0a", expected: "a"},
+      { actual: "a\0\0b", expected: "ab"},
+      { actual: "a\0b\0c", expected: "abc"},
+    ];
+
+    runTests();
+  </script>
+</body>
+</html>

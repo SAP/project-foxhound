@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,6 +11,7 @@
 #include "mozilla/Logging.h"
 #include "mozilla/UniquePtr.h"
 #include <algorithm>
+#include <bit>
 
 // MOZ_LOG=UrlClassifierPrefixSet:5
 static mozilla::LazyLogModule gUrlClassifierPrefixSetLog(
@@ -144,19 +143,19 @@ nsresult VariableLengthPrefixSet::SetPrefixes(PrefixStringMap& aPrefixMap) {
 
     uint32_t numPrefixes = prefixes->Length() / PREFIX_SIZE_FIXED;
 
-    // Prefixes are lexicographically-sorted, so the interger array
+    // Prefixes are lexicographically-sorted, so the integer array
     // passed to nsUrlClassifierPrefixSet should also follow the same order.
     // Reverse byte order in-place in Little-Endian platform.
-#if MOZ_LITTLE_ENDIAN()
-    char* begin = prefixes->BeginWriting();
-    char* end = prefixes->EndWriting();
+    if constexpr (std::endian::native == std::endian::little) {
+      char* begin = prefixes->BeginWriting();
+      char* end = prefixes->EndWriting();
 
-    while (begin != end) {
-      uint32_t* p = reinterpret_cast<uint32_t*>(begin);
-      *p = BigEndian::readUint32(begin);
-      begin += sizeof(uint32_t);
+      while (begin != end) {
+        uint32_t* p = reinterpret_cast<uint32_t*>(begin);
+        *p = BigEndian::readUint32(begin);
+        begin += sizeof(uint32_t);
+      }
     }
-#endif
     const uint32_t* arrayPtr =
         reinterpret_cast<const uint32_t*>(prefixes->BeginReading());
 

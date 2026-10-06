@@ -1,0 +1,209 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>audio loopback output check for captureStream() and MediaElementAudioSourceNode</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="../webaudio/test/webaudio.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script>
+"use strict";
+
+add_task(async function setupTestPrefs() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["media.captureStream.enabled", true],
+      // For mediaDevices and getUserMedia
+      ["media.navigator.permission.disabled", true],
+      ["media.devices.unfocused.enabled", true],
+    ],
+  });
+});
+
+// When calling captureStream() on a media element, audio playback should still
+// be output through the media pipeline's audio device. We verify this by
+// checking the loopback stream.
+add_task(async function testCaptureStreamAudioPlayout() {
+  if (!navigator.userAgent.includes("Linux")) {
+    ok(true, "audio loopback is only supported on Linux");
+    return;
+  }
+
+  if (!navigator.mediaDevices) {
+    ok(true, "No mediaDevices, then gUM cannot have been called either");
+    return;
+  }
+
+  info("creating and playing audio element");
+  const { ac, source, loopbackStream } = await setupLoopbackAudioGraph();
+  const audio = await createAndPlayAudio();
+
+  info("capturing the audio element's media stream");
+  const stream = audio.captureStream();
+  is(stream.getAudioTracks().length, 1, "captured stream has an audio track");
+
+  info("waiting for loopback audio to become audible");
+  const SILENCE_RMS_THRESHOLD = 0.0;
+  const AUDIBLE_RMS_THRESHOLD = 0.01;
+  let curRms = await waitForRmsOverThreshold(ac, source, AUDIBLE_RMS_THRESHOLD);
+  ok(curRms > 0.01, `Expected audible baseline RMS ${curRms}`);
+
+  audio.volume = 0.3;
+  info(`Lowering volume to ${audio.volume}`);
+  let tempAudibleThreshold = AUDIBLE_RMS_THRESHOLD * audio.volume;
+  curRms = await waitForRmsOverThreshold(ac, source, tempAudibleThreshold);
+  ok(curRms > tempAudibleThreshold,
+     `Expected non-silent RMS ${curRms} after volume=${audio.volume}`);
+
+  audio.volume = 0.0;
+  info(`Lowering volume to ${audio.volume}`);
+  curRms = await waitForRmsEqualToThreshold(ac, source, SILENCE_RMS_THRESHOLD);
+  is(curRms, SILENCE_RMS_THRESHOLD,
+     `Expected silent RMS ${curRms} after volume=${audio.volume}`);
+
+  audio.volume = 1.0;
+  info(`Raising volume to ${audio.volume}`);
+  curRms = await waitForRmsOverThreshold(ac, source, AUDIBLE_RMS_THRESHOLD);
+  ok(curRms > AUDIBLE_RMS_THRESHOLD,
+     `Expected non-silent RMS ${curRms} after volume=${audio.volume}`);
+
+  audio.muted = true;
+  info("Muting audio");
+  curRms = await waitForRmsEqualToThreshold(ac, source, SILENCE_RMS_THRESHOLD);
+  is(curRms, SILENCE_RMS_THRESHOLD, `Expected silent RMS ${curRms} after muting`);
+
+  audio.muted = false;
+  info("Unmuting audio");
+  curRms = await waitForRmsOverThreshold(ac, source, AUDIBLE_RMS_THRESHOLD);
+  ok(curRms > AUDIBLE_RMS_THRESHOLD,
+     `Expected non-silent RMS ${curRms} after unmuting`);
+
+  info("cleaning up");
+  audio.pause();
+  audio.remove();
+  loopbackStream.getTracks().forEach(t => t.stop());
+  await ac.close();
+});
+
+// When a MediaElementAudioSourceNode is created for a media element, audio
+// output should be routed through the Web Audio graph, and the loopback stream
+// should therefore be silent.
+add_task(async function testMediaElementAudioSourceNodeAudioPlayout() {
+  if (!navigator.userAgent.includes("Linux")) {
+    ok(true, "audio loopback is only supported on Linux");
+    return;
+  }
+
+  if (!navigator.mediaDevices) {
+    ok(true, "No mediaDevices, then gUM cannot have been called either");
+    return;
+  }
+
+  const { ac, source, loopbackStream } = await setupLoopbackAudioGraph();
+  const audio = await createAndPlayAudio();
+
+  info("connecting to a media element source node");
+  const srcElementNode = ac.createMediaElementSource(audio);
+
+  info("audio playback should now be routed through the Web Audio graph");
+  const SILENCE_RMS_THRESHOLD = 0.0;
+  const AUDIBLE_RMS_THRESHOLD = 0.01;
+  let curRms = await waitForRmsEqualToThreshold(ac, source, SILENCE_RMS_THRESHOLD);
+  is(curRms, SILENCE_RMS_THRESHOLD,
+     `Expected silent RMS ${curRms} for loopback stream`);
+
+  info("waiting for the Web Audio graph to produce audible sound");
+  curRms = await waitForRmsOverThreshold(ac, srcElementNode, AUDIBLE_RMS_THRESHOLD);
+  ok(curRms > AUDIBLE_RMS_THRESHOLD,
+     `Expected audible RMS ${curRms} from the graph`);
+
+  info("calling captureStream() on the media element");
+  const captured = audio.captureStream();
+  ok(!!captured.getTracks().length, "captureStream() returned tracks");
+
+  info("verifying the loopback stream remains silent after captureStream()");
+  curRms = await waitForRmsEqualToThreshold(ac, source, SILENCE_RMS_THRESHOLD);
+  is(curRms, SILENCE_RMS_THRESHOLD,
+     `Expected silent RMS ${curRms} for loopback stream`);
+
+  info("verifying the Web Audio graph still produces audible sound");
+  curRms = await waitForRmsOverThreshold(ac, srcElementNode, AUDIBLE_RMS_THRESHOLD);
+  ok(curRms > AUDIBLE_RMS_THRESHOLD,
+     `Expected audible RMS ${curRms} from the graph`);
+
+  info("cleaning up");
+  audio.pause();
+  audio.remove();
+  loopbackStream.getTracks().forEach(t => t.stop());
+  await ac.close();
+});
+
+/**
+ * Helper functions
+ */
+async function setupLoopbackAudioGraph() {
+  info("opening loopback input device");
+  const loopbackStream =
+    await navigator.mediaDevices.getUserMedia({ audio: true });
+
+  ok(loopbackStream.getAudioTracks().length === 1,
+     "Got loopback audio track");
+
+  info("setting up graph");
+  const ac = new AudioContext();
+  await ac.resume();
+
+  const source = ac.createMediaStreamSource(loopbackStream);
+  return { ac, source, loopbackStream };
+}
+
+async function createAndPlayAudio() {
+  info("creating and playing audio element");
+  const audio = document.createElement("audio");
+  audio.src = "tone_1s_nosilence.mp3";
+  audio.loop = true;
+  document.body.appendChild(audio);
+  ok(await audio.play().then(() => true, () => false), "audio started playing");
+  return audio;
+}
+
+async function waitForRmsEqualToThreshold(ac, src, threshold) {
+  return await waitForRmsPredicate(ac, src, threshold, rms => rms == threshold);
+}
+
+async function waitForRmsOverThreshold(ac, src, threshold) {
+  return await waitForRmsPredicate(ac, src, threshold, rms => rms > threshold);
+}
+
+async function waitForRmsPredicate(ac, src, threshold, predicate, timeoutMs = 10000) {
+  const start = performance.now();
+  while (true) {
+    const rms = await measureRMSOnceWithFreshScriptProcessor(ac, src);
+    if (predicate(rms)) {
+      return rms;
+    }
+    const elapsedTime = performance.now() - start;
+    if (elapsedTime > timeoutMs) {
+      throw new Error(`Timed out waitForRmsPredicate ${elapsedTime}`);
+    }
+  }
+}
+
+async function measureRMSOnceWithFreshScriptProcessor(ac, src) {
+  // Use a new ScriptProcessorNode for each measurement, so that an event does
+  // not contain samples from the past.
+  const sp = ac.createScriptProcessor(2048, 1, 1);
+  src.connect(sp);
+  sp.connect(ac.destination);
+
+  const { inputBuffer } = await new Promise(r => (sp.onaudioprocess = r));
+
+  src.disconnect(sp);
+  sp.disconnect();
+  sp.onaudioprocess = null;
+  return rms(inputBuffer); // from webaudio.js
+}
+</script>
+</body>
+</html>

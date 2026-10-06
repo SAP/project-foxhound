@@ -59,7 +59,11 @@ add_task(async function test_recover_database() {
   let profiles = await SelectableProfileService.getAllProfiles();
   Assert.equal(profiles.length, 2, "Should be two profiles in the database");
 
-  let newProfile = await SelectableProfileService.createNewProfile(false);
+  let newProfile = await SelectableProfileService.createNewProfile(
+    false,
+    null,
+    "tests"
+  );
   Assert.ok(newProfile, "Should have created a new profile");
 
   profiles = await SelectableProfileService.getAllProfiles();

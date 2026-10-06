@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,7 +23,7 @@ namespace mozilla {
 #  undef LOG_INTERNAL
 #endif  // LOG_INTERNAL
 #define LOG_INTERNAL(level, msg, ...) \
-  MOZ_LOG(gWebCodecsLog, LogLevel::level, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gWebCodecsLog, LogLevel::level, msg, ##__VA_ARGS__)
 
 #ifdef LOG
 #  undef LOG
@@ -61,11 +59,11 @@ DecoderAgent::DecoderAgent(Id aId, UniquePtr<TrackInfo>&& aInfo)
   MOZ_ASSERT(mOwnerThread);
   MOZ_ASSERT(mPDMFactory);
   MOZ_ASSERT(mImageContainer);
-  LOG("DecoderAgent #%d (%p) ctor", mId, this);
+  LOG("DecoderAgent #{} ({}) ctor", mId, fmt::ptr(this));
 }
 
 DecoderAgent::~DecoderAgent() {
-  LOG("DecoderAgent #%d (%p) dtor", mId, this);
+  LOG("DecoderAgent #{} ({}) dtor", mId, fmt::ptr(this));
   MOZ_ASSERT(mState == State::Unconfigured, "decoder release in wrong state");
   MOZ_ASSERT(!mDecoder, "decoder must be shutdown");
 }
@@ -79,7 +77,8 @@ RefPtr<DecoderAgent::ConfigurePromise> DecoderAgent::Configure(
   MOZ_ASSERT(!mInitRequest.Exists());
 
   if (mState == State::Error) {
-    LOGE("DecoderAgent #%d (%p) tried to configure in error state", mId, this);
+    LOGE("DecoderAgent #{} ({}) tried to configure in error state", mId,
+         fmt::ptr(this));
     return ConfigurePromise::CreateAndReject(
         MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                     "Cannot configure in error state"),
@@ -116,10 +115,11 @@ RefPtr<DecoderAgent::ConfigurePromise> DecoderAgent::Configure(
   // decoded video frames.
   params.mOptions += CreateDecoderParams::Option::KeepOriginalPts;
 
-  LOG("DecoderAgent #%d (%p) is creating a decoder (mime: %s) - PreferSW: %s, "
-      "low-latency: %s, create-decoder-params: %s",
-      mId, this, mInfo->mMimeType.get(), aPreferSoftwareDecoder ? "yes" : "no",
-      aLowLatency ? "yes" : "no", params.ToString().get());
+  LOG("DecoderAgent #{} ({}) is creating a decoder (mime: {}) - PreferSW: {}, "
+      "low-latency: {}, create-decoder-params: {}",
+      mId, fmt::ptr(this), mInfo->mMimeType.get(),
+      aPreferSoftwareDecoder ? "yes" : "no", aLowLatency ? "yes" : "no",
+      params.ToString().get());
 
   RefPtr<ConfigurePromise> p = mConfigurePromise.Ensure(__func__);
 
@@ -137,18 +137,18 @@ RefPtr<DecoderAgent::ConfigurePromise> DecoderAgent::Configure(
                          "configuration should have been rejected");
 
               LOGW(
-                  "DecoderAgent #%d (%p) has been shut down. We need to shut "
+                  "DecoderAgent #{} ({}) has been shut down. We need to shut "
                   "the newly created decoder down",
-                  self->mId, self.get());
+                  self->mId, fmt::ptr(self.get()));
               aDecoder->Shutdown()->Then(
                   self->mOwnerThread, __func__,
                   [self](const ShutdownPromise::ResolveOrRejectValue& aValue) {
                     MOZ_ASSERT(self->mState == State::ShuttingDown);
 
                     LOGW(
-                        "DecoderAgent #%d (%p), newly created decoder shutdown "
-                        "has been %s",
-                        self->mId, self.get(),
+                        "DecoderAgent #{} ({}), newly created decoder shutdown "
+                        "has been {}",
+                        self->mId, fmt::ptr(self.get()),
                         aValue.IsResolve() ? "resolved" : "rejected");
 
                     self->SetState(State::Unconfigured);
@@ -162,16 +162,16 @@ RefPtr<DecoderAgent::ConfigurePromise> DecoderAgent::Configure(
             self->mDecoder = new MediaDataDecoderProxy(
                 aDecoder.forget(),
                 CreateMediaDecodeTaskQueue("DecoderAgent TaskQueue"));
-            LOG("DecoderAgent #%d (%p) has created a decoder, now initialize "
+            LOG("DecoderAgent #{} ({}) has created a decoder, now initialize "
                 "it",
-                self->mId, self.get());
+                self->mId, fmt::ptr(self.get()));
             self->mDecoder->Init()
                 ->Then(
                     self->mOwnerThread, __func__,
                     [self](const TrackInfo::TrackType aTrackType) {
                       self->mInitRequest.Complete();
-                      LOG("DecoderAgent #%d (%p) has initialized the decoder",
-                          self->mId, self.get());
+                      LOG("DecoderAgent #{} ({}) has initialized the decoder",
+                          self->mId, fmt::ptr(self.get()));
                       MOZ_ASSERT(aTrackType == self->mInfo->GetType());
                       self->SetState(State::Configured);
                       self->mConfigurePromise.Resolve(true, __func__);
@@ -179,9 +179,9 @@ RefPtr<DecoderAgent::ConfigurePromise> DecoderAgent::Configure(
                     [self](const MediaResult& aError) {
                       self->mInitRequest.Complete();
                       LOGE(
-                          "DecoderAgent #%d (%p) failed to initialize the "
+                          "DecoderAgent #{} ({}) failed to initialize the "
                           "decoder",
-                          self->mId, self.get());
+                          self->mId, fmt::ptr(self.get()));
                       self->SetState(State::Error);
                       self->mConfigurePromise.Reject(aError, __func__);
                     })
@@ -189,8 +189,8 @@ RefPtr<DecoderAgent::ConfigurePromise> DecoderAgent::Configure(
           },
           [self = RefPtr{this}](const MediaResult& aError) {
             self->mCreateRequest.Complete();
-            LOGE("DecoderAgent #%d (%p) failed to create a decoder", self->mId,
-                 self.get());
+            LOGE("DecoderAgent #{} ({}) failed to create a decoder", self->mId,
+                 fmt::ptr(self.get()));
 
             // If DecoderAgent has been shut down, we need to resolve the
             // shutdown promise.
@@ -200,9 +200,9 @@ RefPtr<DecoderAgent::ConfigurePromise> DecoderAgent::Configure(
                          "configuration should have been rejected");
 
               LOGW(
-                  "DecoderAgent #%d (%p) has been shut down. Resolve the "
+                  "DecoderAgent #{} ({}) has been shut down. Resolve the "
                   "shutdown promise right away since decoder creation failed",
-                  self->mId, self.get());
+                  self->mId, fmt::ptr(self.get()));
 
               self->SetState(State::Unconfigured);
               self->mShutdownWhileCreationPromise.Resolve(true, __func__);
@@ -220,7 +220,7 @@ RefPtr<DecoderAgent::ConfigurePromise> DecoderAgent::Configure(
 RefPtr<ShutdownPromise> DecoderAgent::Shutdown() {
   MOZ_ASSERT(mOwnerThread->IsOnCurrentThread());
 
-  LOG("DecoderAgent #%d (%p), shutdown in %s state", mId, this,
+  LOG("DecoderAgent #{} ({}), shutdown in {} state", mId, fmt::ptr(this),
       EnumValueToString(mState));
 
   MOZ_ASSERT(mShutdownWhileCreationPromise.IsEmpty(),
@@ -238,10 +238,10 @@ RefPtr<ShutdownPromise> DecoderAgent::Shutdown() {
     MOZ_ASSERT(mState == State::Configuring);
 
     LOGW(
-        "DecoderAgent #%d (%p) shutdown while the decoder-creation for "
+        "DecoderAgent #{} ({}) shutdown while the decoder-creation for "
         "configuration is in flight. Reject the configuration now and defer "
         "the shutdown until the created decoder has been shut down",
-        mId, this);
+        mId, fmt::ptr(this));
 
     // Reject the configuration in flight.
     mConfigurePromise.Reject(r, __func__);
@@ -254,7 +254,8 @@ RefPtr<ShutdownPromise> DecoderAgent::Shutdown() {
 
   // If decoder creation has been completed but failed, no decoder is set.
   if (!mDecoder) {
-    LOG("DecoderAgent #%d (%p) shutdown without an active decoder", mId, this);
+    LOG("DecoderAgent #{} ({}) shutdown without an active decoder", mId,
+        fmt::ptr(this));
     MOZ_ASSERT(mState == State::Error);
     MOZ_ASSERT(!mInitRequest.Exists());
     MOZ_ASSERT(mConfigurePromise.IsEmpty());
@@ -304,7 +305,8 @@ RefPtr<DecoderAgent::DecodePromise> DecoderAgent::Decode(
   MOZ_ASSERT(!mDecodeRequest.Exists());
 
   if (mState == State::Error) {
-    LOGE("DecoderAgent #%d (%p) tried to decode in error state", mId, this);
+    LOGE("DecoderAgent #{} ({}) tried to decode in error state", mId,
+         fmt::ptr(this));
     return DecodePromise::CreateAndReject(
         MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                     "Cannot decode in error state"),
@@ -322,15 +324,15 @@ RefPtr<DecoderAgent::DecodePromise> DecoderAgent::Decode(
           mOwnerThread, __func__,
           [self = RefPtr{this}](MediaDataDecoder::DecodedData&& aData) {
             self->mDecodeRequest.Complete();
-            LOGV("DecoderAgent #%d (%p) decode successfully", self->mId,
-                 self.get());
+            LOGV("DecoderAgent #{} ({}) decode successfully", self->mId,
+                 fmt::ptr(self.get()));
             self->SetState(State::Configured);
             self->mDecodePromise.Resolve(std::move(aData), __func__);
           },
           [self = RefPtr{this}](const MediaResult& aError) {
             self->mDecodeRequest.Complete();
-            LOGV("DecoderAgent #%d (%p) failed to decode", self->mId,
-                 self.get());
+            LOGV("DecoderAgent #{} ({}) failed to decode", self->mId,
+                 fmt::ptr(self.get()));
             self->SetState(State::Error);
             self->mDecodePromise.Reject(aError, __func__);
           })
@@ -351,7 +353,8 @@ RefPtr<DecoderAgent::DecodePromise> DecoderAgent::DrainAndFlush() {
   MOZ_ASSERT(!mFlushRequest.Exists());
 
   if (mState == State::Error) {
-    LOGE("DecoderAgent #%d (%p) tried to flush-out in error state", mId, this);
+    LOGE("DecoderAgent #{} ({}) tried to flush-out in error state", mId,
+         fmt::ptr(this));
     return DecodePromise::CreateAndReject(
         MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                     "Cannot flush in error state"),
@@ -370,9 +373,9 @@ RefPtr<DecoderAgent::DecodePromise> DecoderAgent::DrainAndFlush() {
           mOwnerThread, __func__,
           [self = RefPtr{this}](MediaDataDecoder::DecodedData&& aData) {
             self->mDryRequest.Complete();
-            LOG("DecoderAgent #%d (%p) has dried the decoder. Now flushing the "
+            LOG("DecoderAgent #{} ({}) has dried the decoder. Now flushing the "
                 "decoder",
-                self->mId, self.get());
+                self->mId, fmt::ptr(self.get()));
             MOZ_ASSERT(self->mDrainAndFlushData.IsEmpty());
             self->mDrainAndFlushData.AppendElements(std::move(aData));
             self->mDecoder->Flush()
@@ -380,16 +383,16 @@ RefPtr<DecoderAgent::DecodePromise> DecoderAgent::DrainAndFlush() {
                     self->mOwnerThread, __func__,
                     [self](const bool /* aUnUsed */) {
                       self->mFlushRequest.Complete();
-                      LOG("DecoderAgent #%d (%p) has flushed the decoder",
-                          self->mId, self.get());
+                      LOG("DecoderAgent #{} ({}) has flushed the decoder",
+                          self->mId, fmt::ptr(self.get()));
                       self->SetState(State::Configured);
                       self->mDrainAndFlushPromise.Resolve(
                           std::move(self->mDrainAndFlushData), __func__);
                     },
                     [self](const MediaResult& aError) {
                       self->mFlushRequest.Complete();
-                      LOGE("DecoderAgent #%d (%p) failed to flush the decoder",
-                           self->mId, self.get());
+                      LOGE("DecoderAgent #{} ({}) failed to flush the decoder",
+                           self->mId, fmt::ptr(self.get()));
                       self->SetState(State::Error);
                       self->mDrainAndFlushData.Clear();
                       self->mDrainAndFlushPromise.Reject(aError, __func__);
@@ -398,8 +401,8 @@ RefPtr<DecoderAgent::DecodePromise> DecoderAgent::DrainAndFlush() {
           },
           [self = RefPtr{this}](const MediaResult& aError) {
             self->mDryRequest.Complete();
-            LOGE("DecoderAgent #%d (%p) failed to dry the decoder", self->mId,
-                 self.get());
+            LOGE("DecoderAgent #{} ({}) failed to dry the decoder", self->mId,
+                 fmt::ptr(self.get()));
             self->SetState(State::Error);
             self->mDrainAndFlushPromise.Reject(aError, __func__);
           })
@@ -428,7 +431,7 @@ void DecoderAgent::DrainUntilDry() {
   MOZ_ASSERT(!mDrainRequest.Exists());
   MOZ_ASSERT(mDecoder);
 
-  LOG("DecoderAgent #%d (%p) is drainng the decoder", mId, this);
+  LOG("DecoderAgent #{} ({}) is drainng the decoder", mId, fmt::ptr(this));
   mDecoder->Drain()
       ->Then(
           mOwnerThread, __func__,
@@ -436,21 +439,23 @@ void DecoderAgent::DrainUntilDry() {
             self->mDrainRequest.Complete();
 
             if (aData.IsEmpty()) {
-              LOG("DecoderAgent #%d (%p) is dry now", self->mId, self.get());
+              LOG("DecoderAgent #{} ({}) is dry now", self->mId,
+                  fmt::ptr(self.get()));
               self->mDryPromise.Resolve(std::move(self->mDryData), __func__);
               return;
             }
 
-            LOG("DecoderAgent #%d (%p) drained %zu decoded data. Keep draining "
+            LOG("DecoderAgent #{} ({}) drained {} decoded data. Keep draining "
                 "until dry",
-                self->mId, self.get(), aData.Length());
+                self->mId, fmt::ptr(self.get()), aData.Length());
             self->mDryData.AppendElements(std::move(aData));
             self->DrainUntilDry();
           },
           [self = RefPtr{this}](const MediaResult& aError) {
             self->mDrainRequest.Complete();
 
-            LOGE("DecoderAgent %p failed to drain decoder", self.get());
+            LOGE("DecoderAgent {} failed to drain decoder",
+                 fmt::ptr(self.get()));
             self->mDryData.Clear();
             self->mDryPromise.Reject(aError, __func__);
           })
@@ -488,7 +493,7 @@ void DecoderAgent::SetState(State aState) {
 
   DebugOnly<bool> isValid = validateStateTransition(mState, aState);
   MOZ_ASSERT(isValid);
-  LOG("DecoderAgent #%d (%p) state change: %s -> %s", mId, this,
+  LOG("DecoderAgent #{} ({}) state change: {} -> {}", mId, fmt::ptr(this),
       EnumValueToString(mState), EnumValueToString(aState));
   mState = aState;
 }

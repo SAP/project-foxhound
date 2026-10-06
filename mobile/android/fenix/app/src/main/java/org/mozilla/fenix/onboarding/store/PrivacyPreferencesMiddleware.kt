@@ -5,7 +5,7 @@
 package org.mozilla.fenix.onboarding.store
 
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 
 /**
  * [Middleware] that reacts to various [PrivacyPreferencesAction]s and updates any corresponding preferences.
@@ -17,7 +17,7 @@ class PrivacyPreferencesMiddleware(
 ) : Middleware<PrivacyPreferencesState, PrivacyPreferencesAction> {
 
     override fun invoke(
-        context: MiddlewareContext<PrivacyPreferencesState, PrivacyPreferencesAction>,
+        store: Store<PrivacyPreferencesState, PrivacyPreferencesAction>,
         next: (PrivacyPreferencesAction) -> Unit,
         action: PrivacyPreferencesAction,
     ) {

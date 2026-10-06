@@ -1,0 +1,209 @@
+<!doctype html>
+<title>MediaStreamTrack clones have independent settings. Assumes Mozilla's fake camera source with 480p and 720p capabilities.</title>
+<meta name="timeout" content="long">
+<p class="instructions">When prompted, accept to share your video stream.</p>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script src=/resources/testdriver.js></script>
+<script src=/resources/testdriver-vendor.js></script>
+<script src=video-test-helper.js></script>
+<script>
+  "use strict"
+
+  // Native capabilities supported by the fake camera.
+  const nativeLow = {width: 640, height: 480, frameRate: 30, resizeMode: "none"};
+  const nativeHigh = {width: 1280, height: 720, frameRate: 10, resizeMode: "none"};
+
+  [
+    [
+      [{resizeMode: "none", width: 1000}, {resizeMode: "none", width: 500}],
+      [nativeHigh, nativeLow],
+    ],
+    [
+      [{resizeMode: "none", height: 500}, {resizeMode: "none", width: 1000}],
+      [nativeLow, nativeHigh],
+    ],
+    [
+      [{resizeMode: "none", width: 500, height: 500}, {resizeMode: "crop-and-scale", width: 1000, height: 750}],
+      [nativeLow, {resizeMode: "crop-and-scale", width: 1000, height: 720, frameRate: 10}],
+    ],
+    [
+      [{resizeMode: "crop-and-scale", width: 800, height: 600}, {resizeMode: "none"}],
+      [{resizeMode: "crop-and-scale", width: 800, height: 600, frameRate: 10}, nativeLow],
+    ],
+    [
+      [{resizeMode: "crop-and-scale", height: 500}, {resizeMode: "crop-and-scale", height: 300}],
+      [
+        {resizeMode: "crop-and-scale", width: 889, height: 500, frameRate: 10},
+        {resizeMode: "crop-and-scale", width: 400, height: 300, frameRate: 30}
+      ],
+    ],
+    [
+      [
+        {resizeMode: "crop-and-scale", frameRate: {exact: 5}},
+        {resizeMode: "crop-and-scale", frameRate: {exact: 1}},
+      ],
+      [
+        {resizeMode: "crop-and-scale", width: 640, height: 480, frameRate: 5},
+        {resizeMode: "crop-and-scale", width: 640, height: 480, frameRate: 1},
+      ],
+      [[2, 7], [0.5, 3]],
+    ],
+  ].forEach(
+    ([
+      [video, cloneVideo],
+      [expected, cloneExpected],
+      [testFramerate, cloneTestFramerate] = [null, null]
+    ]) => promise_test(async t => {
+      const stream = await navigator.mediaDevices.getUserMedia({video});
+      const [track] = stream.getTracks();
+      const clone = track.clone();
+      t.add_cleanup(() => {
+        track.stop();
+        clone.stop();
+      });
+      let settings = track.getSettings();
+      let cloneSettings = clone.getSettings();
+      for (const key of Object.keys(expected)) {
+        assert_equals(settings[key], expected[key], `original: ${key}`);
+        assert_equals(cloneSettings[key], expected[key], `clone: ${key}`);
+      }
+      await clone.applyConstraints(cloneVideo);
+      settings = track.getSettings();
+      cloneSettings = clone.getSettings();
+      for (const key of Object.keys(expected)) {
+        assert_equals(settings[key], expected[key], `original-post: ${key}`);
+      }
+      for (const key of Object.keys(cloneExpected)) {
+        assert_equals(cloneSettings[key], cloneExpected[key], `clone-post: ${key}`);
+      }
+      await test_resolution_equals(t, track, settings.width, settings.height);
+      await test_resolution_equals(t, clone, cloneSettings.width, cloneSettings.height);
+      if (testFramerate) {
+        const [low, high] = testFramerate;
+        await test_framerate_between_exclusive(t, track, low, high);
+      }
+      if (cloneTestFramerate) {
+        const [low, high] = cloneTestFramerate;
+        await test_framerate_between_exclusive(t, clone, low, high);
+      }
+    }, `gUM gets ${JSON.stringify(expected)} + clone ` +
+       `${JSON.stringify(cloneExpected)} by ${JSON.stringify(video)} ` +
+       `and ${JSON.stringify(cloneVideo)}`));
+
+  [
+    [
+      [{echoCancellation: true}, {echoCancellation: false, noiseSuppression: true, autoGainControl: true}],
+      [
+        {echoCancellation: true, noiseSuppression: true, autoGainControl: true},
+        {echoCancellation: false, noiseSuppression: true, autoGainControl: true},
+      ],
+    ],
+    [
+      [{echoCancellation: false, noiseSuppression: false, autoGainControl: false}, {}],
+      [
+        {echoCancellation: false, noiseSuppression: false, autoGainControl: false},
+        {echoCancellation: true, noiseSuppression: true, autoGainControl: true},
+      ],
+    ],
+  ].forEach(
+    ([
+      [audio, cloneAudio],
+      [expected, cloneExpected],
+    ]) => promise_test(async t => {
+      const stream = await navigator.mediaDevices.getUserMedia({audio});
+      const [track] = stream.getTracks();
+      const clone = track.clone();
+      t.add_cleanup(() => {
+        track.stop();
+        clone.stop();
+      });
+      let settings = track.getSettings();
+      let cloneSettings = clone.getSettings();
+      for (const key of Object.keys(expected)) {
+        assert_equals(settings[key], expected[key], `original: ${key}`);
+        assert_equals(cloneSettings[key], expected[key], `clone: ${key}`);
+      }
+      await clone.applyConstraints(cloneAudio);
+      settings = track.getSettings();
+      cloneSettings = clone.getSettings();
+      for (const key of Object.keys(expected)) {
+        assert_equals(settings[key], expected[key], `original-post: ${key}`);
+      }
+      for (const key of Object.keys(cloneExpected)) {
+        assert_equals(cloneSettings[key], cloneExpected[key], `clone-post: ${key}`);
+      }
+    }, `gUM gets ${JSON.stringify(expected)} + clone ` +
+       `${JSON.stringify(cloneExpected)} by ${JSON.stringify(audio)} ` +
+       `and ${JSON.stringify(cloneAudio)}`));
+
+
+
+  promise_test(async t => {
+    const stream = await navigator.mediaDevices.getUserMedia({video: true});
+    const [track] = stream.getTracks();
+    const clone = track.clone();
+    t.add_cleanup(() => {
+      track.stop();
+      clone.stop();
+    });
+    try {
+      await clone.applyConstraints({resizeMode: "none", width: {min: 2000}})
+    } catch(e) {
+      assert_equals(e.name, "OverconstrainedError", `got error ${e.message}`);
+      return;
+    }
+    assert_unreached("applyConstraints is rejected with impossible width");
+  }, "applyConstraints on gUM clone is rejected by resizeMode none and impossible min-width");
+
+  promise_test(async t => {
+    const stream = await navigator.mediaDevices.getUserMedia({video: true});
+    const [track] = stream.getTracks();
+    const clone = track.clone();
+    t.add_cleanup(() => {
+      track.stop();
+      clone.stop();
+    });
+    try {
+      await clone.applyConstraints({resizeMode: "none", width: {max: 200}})
+    } catch(e) {
+      assert_equals(e.name, "OverconstrainedError", `got error ${e.message}`);
+      return;
+    }
+    assert_unreached("applyConstraints is rejected with impossible width");
+  }, "applyConstraints on gUM clone is rejected by resizeMode none and impossible max-width");
+
+  promise_test(async t => {
+    const stream = await navigator.mediaDevices.getUserMedia({video: true});
+    const [track] = stream.getTracks();
+    const clone = track.clone();
+    t.add_cleanup(() => {
+      track.stop();
+      clone.stop();
+    });
+    try {
+      await clone.applyConstraints({resizeMode: "crop-and-scale", width: {min: 2000}})
+    } catch(e) {
+      assert_equals(e.name, "OverconstrainedError", `got error ${e.message}`);
+      return;
+    }
+    assert_unreached("applyConstraints is rejected with impossible width");
+  }, "applyConstraints on gUM clone is rejected by resizeMode crop-and-scale and impossible width");
+
+  promise_test(async t => {
+    const stream = await navigator.mediaDevices.getUserMedia({video: true});
+    const [track] = stream.getTracks();
+    const clone = track.clone();
+    t.add_cleanup(() => {
+      track.stop();
+      clone.stop();
+    });
+    try {
+      await clone.applyConstraints({resizeMode: "crop-and-scale", frameRate: {min: 50}});
+    } catch(e) {
+      assert_equals(e.name, "OverconstrainedError", `got error ${e.message}`);
+      return;
+    }
+    assert_unreached("applyConstraints is rejected with impossible fps");
+  }, "applyConstraints on gUM clone is rejected by resizeMode crop-and-scale impossible fps");
+</script>

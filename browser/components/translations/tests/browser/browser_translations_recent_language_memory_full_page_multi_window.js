@@ -10,12 +10,13 @@
 add_task(
   async function test_full_page_translations_panel_recent_language_memory_with_multiple_windows() {
     const window1 = window;
+    await focusWindow(window1);
     const { runInPage, resolveDownloads, cleanup } = await loadTestPage({
       page: SPANISH_PAGE_URL,
       languagePairs: LANGUAGE_PAIRS,
     });
 
-    const window2 = await BrowserTestUtils.openNewBrowserWindow();
+    const window2 = await openNewFocusedBrowserWindow();
 
     const testPage2 = await loadTestPage({
       win: window2,

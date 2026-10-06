@@ -9,10 +9,11 @@
 
   SimpleTest.waitForExplicitFinish();
 
-  window.onerror = function(message, url, line, column, error) {
+  window.onerror = function(_message, _url, _line, _column, _error) {
     errorCount++;
   }
 
+  // eslint-disable-next-line no-unused-vars
   function testError() {
     ok(!wasRun, 'Check script was not run');
     ok(eventCount == 1, 'Check that an error event was fired');
@@ -22,6 +23,7 @@
 </script>
 <script type="module" onerror="eventCount++">
 import "./nonExistentModule.mjs";
+/* global wasRun */
 wasRun = true;
 </script>
 <body onload='testError()'></body>

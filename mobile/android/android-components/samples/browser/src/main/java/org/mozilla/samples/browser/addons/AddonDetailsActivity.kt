@@ -13,7 +13,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.net.toUri
 import androidx.core.text.HtmlCompat
-import kotlinx.coroutines.CoroutineScope
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -103,14 +103,13 @@ class AddonDetailsActivity : AppCompatActivity() {
 
     private fun showUpdaterDialog(addon: Addon) {
         val context = this@AddonDetailsActivity
-        val scope = CoroutineScope(Dispatchers.IO)
-        scope.launch {
-            val updateAttempt = updateAttemptStorage.findUpdateAttemptBy(addon.id)
-            updateAttempt?.let {
-                withContext(Dispatchers.Main) {
-                    it.showInformationDialog(context)
-                }
+
+        lifecycleScope.launch {
+            val updateAttempt = withContext(Dispatchers.IO) {
+                updateAttemptStorage.findUpdateAttemptBy(addon.id)
             }
+
+            updateAttempt?.showInformationDialog(context)
         }
     }
 

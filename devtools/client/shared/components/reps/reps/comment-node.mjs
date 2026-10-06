@@ -5,13 +5,9 @@
 import PropTypes from "resource://devtools/client/shared/vendor/react-prop-types.mjs";
 import { span } from "resource://devtools/client/shared/vendor/react-dom-factories.mjs";
 
-import {
-  cropString,
-  cropMultipleLines,
-  wrapRender,
-} from "resource://devtools/client/shared/components/reps/reps/rep-utils.mjs";
-import { MODE } from "resource://devtools/client/shared/components/reps/reps/constants.mjs";
-import * as nodeConstants from "resource://devtools/client/shared/components/reps/shared/dom-node-constants.mjs";
+import { cropString, cropMultipleLines, wrapRender } from "./rep-utils.mjs";
+import { MODE } from "./constants.mjs";
+import * as nodeConstants from "../shared/dom-node-constants.mjs";
 
 /**
  * Renders DOM comment node.

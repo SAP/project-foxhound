@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _SPECIALSYSTEMDIRECTORY_H_
-#define _SPECIALSYSTEMDIRECTORY_H_
+#ifndef SPECIALSYSTEMDIRECTORY_H_
+#define SPECIALSYSTEMDIRECTORY_H_
 
+#include "nsCOMArray.h"
 #include "nscore.h"
 #include "nsIFile.h"
 
@@ -44,6 +43,7 @@ enum SystemDirectories {
   Win_ProgramFiles = 225,
   Win_Downloads = 226,
   Win_Documents = 228,
+  Win_OneDrivePersonal = 229,
 
   Unix_HomeDirectory = 303,
   Unix_XDG_Desktop = 304,
@@ -52,8 +52,17 @@ enum SystemDirectories {
   Unix_SystemConfigDirectory = 307,
 };
 
+enum SystemDirectoryLists {
+  Win_OneDriveBusiness = 1000,
+};
+
 nsresult GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,
                                    nsIFile** aFile);
+
+nsresult GetSpecialSystemDirectoryList(
+    SystemDirectoryLists aSystemDirectoryLists,
+    nsCOMArray<nsIFile>& aDirectories);
+
 #ifdef MOZ_WIDGET_COCOA
 nsresult GetOSXFolderType(short aDomain, OSType aFolderType,
                           nsIFile** aLocalFile);

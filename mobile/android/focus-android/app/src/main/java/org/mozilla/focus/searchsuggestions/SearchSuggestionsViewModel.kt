@@ -14,12 +14,29 @@ import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.focus.FocusApplication
 import org.mozilla.focus.GleanMetrics.SearchSuggestions
 
+/**
+ * Represents the state of search suggestions.
+ */
 sealed class State {
+    /**
+     * Search suggestions are disabled.
+     */
     data class Disabled(val givePrompt: Boolean) : State()
+
+    /**
+     * The selected search engine does not provide a suggestions API.
+     */
     data class NoSuggestionsAPI(val givePrompt: Boolean) : State()
+
+    /**
+     * Ready to fetch and display search suggestions.
+     */
     object ReadyForSuggestions : State()
 }
 
+/**
+ * ViewModel for managing search suggestions.
+ */
 class SearchSuggestionsViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences: SearchSuggestionsPreferences = SearchSuggestionsPreferences(application)
 
@@ -38,6 +55,13 @@ class SearchSuggestionsViewModel(application: Application) : AndroidViewModel(ap
     var alwaysSearch = false
         private set
 
+    /**
+     * Selects a [suggestion] from the list of search suggestions.
+     *
+     * @param suggestion the suggestion text.
+     * @param defaultSearchEngineName the name of the default search engine.
+     * @param alwaysSearch if true, performs a search immediately.
+     */
     fun selectSearchSuggestion(
         suggestion: String,
         defaultSearchEngineName: String,
@@ -57,39 +81,63 @@ class SearchSuggestionsViewModel(application: Application) : AndroidViewModel(ap
         }
     }
 
+    /**
+     * Clears the currently selected search suggestion.
+     */
     fun clearSearchSuggestion() {
         _selectedSearchSuggestion.postValue(null)
     }
 
+    /**
+     * Sets the given [text] as an autocomplete suggestion.
+     */
     fun setAutocompleteSuggestion(text: String) {
         _autocompleteSuggestion.postValue(text)
         SearchSuggestions.autocompleteArrowTapped.record(NoExtras())
     }
 
+    /**
+     * Clears the current autocomplete suggestion.
+     */
     fun clearAutocompleteSuggestion() {
         _autocompleteSuggestion.postValue(null)
     }
 
+    /**
+     * Sets the current search [query].
+     */
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
     }
 
+    /**
+     * Enables search suggestions.
+     */
     fun enableSearchSuggestions() {
         preferences.enableSearchSuggestions()
         updateState()
         setSearchQuery(searchQuery.value ?: "")
     }
 
+    /**
+     * Disables search suggestions.
+     */
     fun disableSearchSuggestions() {
         preferences.disableSearchSuggestions()
         updateState()
     }
 
+    /**
+     * Dismisses the "no suggestions" message.
+     */
     fun dismissNoSuggestionsMessage() {
         preferences.dismissNoSuggestionsMessage()
         updateState()
     }
 
+    /**
+     * Refreshes the state of search suggestions.
+     */
     fun refresh() {
         updateState()
     }

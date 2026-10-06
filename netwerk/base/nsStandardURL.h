@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,24 +5,24 @@
  * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
  */
 
-#ifndef nsStandardURL_h__
-#define nsStandardURL_h__
+#ifndef nsStandardURL_h_
+#define nsStandardURL_h_
 
 #include <bitset>
 
 #include "nsString.h"
+#include "nsIIPCSerializableURI.h"
 #include "nsISerializable.h"
 #include "nsIFileURL.h"
 #include "nsIStandardURL.h"
 #include "mozilla/Encoding.h"
 #include "nsCOMPtr.h"
 #include "nsURLHelper.h"
-#include "nsISizeOf.h"
-#include "mozilla/Attributes.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/LinkedList.h"
-#include "mozilla/MemoryReporting.h"
 #include "nsISensitiveInfoHiddenURI.h"
 #include "nsIURIMutator.h"
+#include "nsIURIWithSizeOf.h"
 
 #ifdef NS_BUILD_REFCNT_LOGGING
 #  define DEBUG_DUMP_URLS_AT_SHUTDOWN
@@ -115,8 +114,9 @@ class URLSegmentNumber {
 class nsStandardURL : public nsIFileURL,
                       public nsIStandardURL,
                       public nsISerializable,
-                      public nsISizeOf,
-                      public nsISensitiveInfoHiddenURI
+                      public nsISensitiveInfoHiddenURI,
+                      public nsIIPCSerializableURI,
+                      public nsIURIWithSizeOf
 #ifdef DEBUG_DUMP_URLS_AT_SHUTDOWN
     ,
                       public LinkedListElement<nsStandardURL>
@@ -134,10 +134,8 @@ class nsStandardURL : public nsIFileURL,
   NS_DECL_NSISTANDARDURL
   NS_DECL_NSISERIALIZABLE
   NS_DECL_NSISENSITIVEINFOHIDDENURI
-
-  // nsISizeOf
-  virtual size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const override;
-  virtual size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override;
+  NS_DECL_NSIIPCSERIALIZABLEURI
+  NS_DECL_NSIURIWITHSIZEOF
 
   static void InitGlobalObjects();
   static void ShutdownGlobalObjects();
@@ -420,6 +418,9 @@ class nsStandardURL : public nsIFileURL,
     }
 
     [[nodiscard]] NS_IMETHOD Finalize(nsIURI** aURI) override {
+      if (!BaseURIMutator<T>::mURI) {
+        return NS_ERROR_NULL_POINTER;
+      }
       BaseURIMutator<T>::mURI.forget(aURI);
       return NS_OK;
     }
@@ -609,6 +610,11 @@ inline nsDependentCSubstring nsStandardURL::Host() {
   if (mHost.mLen > 0) {
     pos = mHost.mPos;
     len = mHost.mLen;
+    MOZ_RELEASE_ASSERT(pos < mSpec.Length());
+    // `pos + len - 1 < mSpec.Length()` is `len <= mSpec.Length() - pos`
+    // but also avoids overflow. Underflow can't happen because of previous
+    // assert.
+    MOZ_RELEASE_ASSERT(len <= mSpec.Length() - pos);
     if (mSpec.CharAt(pos) == '[' && mSpec.CharAt(pos + len - 1) == ']') {
       pos++;
       len -= 2;
@@ -631,4 +637,4 @@ inline nsDependentCSubstring nsStandardURL::Filename() {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // nsStandardURL_h__
+#endif  // nsStandardURL_h_

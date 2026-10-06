@@ -1,0 +1,15 @@
+{
+  "label": "events.webinar.ru",
+  "bugs": {
+    "1898941": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://events.webinar.ru/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

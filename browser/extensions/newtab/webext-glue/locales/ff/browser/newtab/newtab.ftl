@@ -9,6 +9,38 @@ newtab-page-title = Tabbere hesere
 newtab-settings-button =
     .title = Neɗɗin tabbere maa hello hesere ndee
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Tabbe kese
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } gorol
+           *[other] { $num } gorol
+        }
+home-restore-defaults-srd =
+    .label = Artir Goowaaɗe
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = Heertin URLs...
+home-mode-choice-blank-srd =
+    .label = Hello Meho
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Daari joɓanaaɗi
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Kelle jiyaaɗe
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Maantore
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Cakkitiiɗe awteede
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +48,7 @@ newtab-search-box-search-button =
     .title = Yiylo
     .aria-label = Yiylo
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Ɓeydu yiylorde
 newtab-topsites-edit-topsites-header = Taƴto Lowre Dowrowre
@@ -44,9 +76,6 @@ newtab-topsites-add-button = Ɓeydu
 newtab-confirm-delete-history-p1 = Aɗa yananaa yiɗde momtude kala cilol ngoo hello e to aslol maa?
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = Ngal baɗal waawaa firteede.
-
-## Top Sites - Sponsored label
-
 
 ## Context Menu - Action Tooltips.
 
@@ -82,9 +111,6 @@ newtab-menu-save-to-pocket = Danndu e { -pocket-brand-name }
 newtab-menu-delete-pocket = Momtu e { -pocket-brand-name }
 newtab-menu-archive-pocket = Mooftu nder { -pocket-brand-name }
 newtab-menu-show-privacy-info = Tammbiiɓe min & suturo mon
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -195,69 +221,8 @@ newtab-pocket-learn-more = Ɓeydu humpito
 newtab-pocket-cta-button = Heɓ { -pocket-brand-name }
 newtab-pocket-cta-text = Hisnu daari njiɗ-ɗaa nder { -pocket-brand-name }, ñikliraa hakkille maa taro welngo.
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
 newtab-error-fallback-info = Uf, saɗeende kewii e loowgol ngoo loowdi.
 newtab-error-fallback-refresh-link = Wultin hello ngoo ngam ennditde.
-
-## Customization Menu
-
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

@@ -1,6 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * vim: ts=4 sw=4 expandtab:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -74,18 +72,45 @@ public class ContentBlocking {
           .dataSharingEnabled(false)
           .build();
 
-  // This class shouldn't be instantiated
+  /** {@link SafeBrowsingProvider} configuration for Google's SafeBrowsing V5 server. */
+  public static final SafeBrowsingProvider GOOGLE_SAFE_BROWSING_V5_PROVIDER =
+      SafeBrowsingProvider.withName("google5")
+          .lists(
+              "goog-badbinurl-proto",
+              "goog-downloadwhite-proto",
+              "goog-phish-proto",
+              "googpub-phish-proto",
+              "goog-malware-proto",
+              "goog-unwanted-proto",
+              "goog-harmful-proto",
+              "goog-globalcache-proto")
+          .updateUrl(
+              "https://safebrowsing.googleapis.com/v5/hashLists:batchGet?key=%GOOGLE_SAFEBROWSING_API_KEY%")
+          .getHashUrl(
+              "https://safebrowsing.googleapis.com/v5/hashes:search?key=%GOOGLE_SAFEBROWSING_API_KEY%")
+          .reportUrl("https://safebrowsing.google.com/safebrowsing/diagnostic?site=")
+          .reportPhishingMistakeUrl("https://%LOCALE%.phish-error.mozilla.com/?url=")
+          .reportMalwareMistakeUrl("https://%LOCALE%.malware-error.mozilla.com/?url=")
+          .advisoryUrl("https://developers.google.com/safe-browsing/v4/advisory")
+          .advisoryName("Google Safe Browsing")
+          .enabled(true)
+          .build();
+
+  /** Protected constructor - this class shouldn't be instantiated. */
   protected ContentBlocking() {}
 
+  /** Content blocking settings for configuring various blocking features. */
   @AnyThread
   public static class Settings extends RuntimeSettings {
     private final Map<String, SafeBrowsingProvider> mSafeBrowsingProviders = new HashMap<>();
 
     private static final SafeBrowsingProvider[] DEFAULT_PROVIDERS = {
       ContentBlocking.GOOGLE_LEGACY_SAFE_BROWSING_PROVIDER,
-      ContentBlocking.GOOGLE_SAFE_BROWSING_PROVIDER
+      ContentBlocking.GOOGLE_SAFE_BROWSING_PROVIDER,
+      ContentBlocking.GOOGLE_SAFE_BROWSING_V5_PROVIDER
     };
 
+    /** Builder for constructing ContentBlocking Settings instances. */
     @AnyThread
     public static class Builder extends RuntimeSettings.Builder<Settings> {
       @Override
@@ -391,6 +416,104 @@ public class ContentBlocking {
         getSettings().setAllowListConvenienceTrackingProtection(enabled);
         return this;
       }
+
+      /**
+       * Set whether the content blocking database is enabled. When enabled, Gecko persists tracking
+       * protection blocking events to a database that can be queried for aggregate statistics
+       * (e.g., total trackers blocked, events by date range).
+       *
+       * @param enabled A boolean indicating whether to enable the content blocking database.
+       * @return The Builder instance.
+       */
+      public @NonNull Builder contentBlockingDatabase(final boolean enabled) {
+        getSettings().setContentBlockingDatabaseStatus(enabled);
+        return this;
+      }
+
+      /**
+       * When set to true, the SafeBrowsing Global Cache is enabled.
+       *
+       * @param enabled A boolean indicating whether to enable the global cache.
+       * @return The Builder instance.
+       */
+      public @NonNull Builder safeBrowsingGlobalCacheEnabled(final boolean enabled) {
+        getSettings().setSafeBrowsingGlobalCacheEnabled(enabled);
+        return this;
+      }
+
+      /**
+       * When set to true, the SafeBrowsing real-time mode is enabled.
+       *
+       * @param enabled A boolean indicating whether to enable the real-time mode.
+       * @return The Builder instance.
+       */
+      public @NonNull Builder safeBrowsingRealTimeEnabled(final boolean enabled) {
+        getSettings().setSafeBrowsingRealTimeEnabled(enabled);
+        return this;
+      }
+
+      /**
+       * When set to true, the SafeBrowsing real-time simulation is enabled.
+       *
+       * @param enabled A boolean indicating whether to enable the real-time simulation.
+       * @return The Builder instance.
+       */
+      @ExperimentalGeckoViewApi
+      public @NonNull Builder safeBrowsingRealTimeSimulationEnabled(final boolean enabled) {
+        getSettings().setSafeBrowsingRealTimeSimulationEnabled(enabled);
+        return this;
+      }
+
+      /**
+       * Set the hit probability for SafeBrowsing real-time simulation.
+       *
+       * @param hitProbability The hit probability value.
+       * @return The Builder instance.
+       */
+      @ExperimentalGeckoViewApi
+      public @NonNull Builder safeBrowsingRealTimeSimulationHitProbability(
+          final int hitProbability) {
+        getSettings().setSafeBrowsingRealTimeSimulationHitProbability(hitProbability);
+        return this;
+      }
+
+      /**
+       * Set the cache TTL in seconds for SafeBrowsing real-time simulation.
+       *
+       * @param cacheTTLSec The cache TTL in seconds.
+       * @return The Builder instance.
+       */
+      @ExperimentalGeckoViewApi
+      public @NonNull Builder safeBrowsingRealTimeSimulationCacheTTLSec(final int cacheTTLSec) {
+        getSettings().setSafeBrowsingRealTimeSimulationCacheTTLSec(cacheTTLSec);
+        return this;
+      }
+
+      /**
+       * When set to true, the negative cache for SafeBrowsing real-time simulation is enabled.
+       *
+       * @param enabled A boolean indicating whether to enable the negative cache.
+       * @return The Builder instance.
+       */
+      @ExperimentalGeckoViewApi
+      public @NonNull Builder safeBrowsingRealTimeSimulationNegativeCacheEnabled(
+          final boolean enabled) {
+        getSettings().setSafeBrowsingRealTimeSimulationNegativeCacheEnabled(enabled);
+        return this;
+      }
+
+      /**
+       * Set the negative cache TTL in seconds for SafeBrowsing real-time simulation.
+       *
+       * @param negativeCacheTTLSec The negative cache TTL in seconds.
+       * @return The Builder instance.
+       */
+      @ExperimentalGeckoViewApi
+      public @NonNull Builder safeBrowsingRealTimeSimulationNegativeCacheTTLSec(
+          final int negativeCacheTTLSec) {
+        getSettings().setSafeBrowsingRealTimeSimulationNegativeCacheTTLSec(negativeCacheTTLSec);
+        return this;
+      }
     }
 
     /* package */ final Pref<String> mAt =
@@ -421,6 +544,22 @@ public class ContentBlocking {
         new Pref<Boolean>("browser.safebrowsing.malware.enabled", true);
     /* package */ final Pref<Boolean> mSbPhishing =
         new Pref<Boolean>("browser.safebrowsing.phishing.enabled", true);
+    /* package */ final Pref<Boolean> mSbHarmfulAddon =
+        new Pref<Boolean>("privacy.trackingprotection.harmfuladdon.enabled", true);
+    /* package */ final Pref<Boolean> mSbGlobalCacheEnabled =
+        new Pref<Boolean>("browser.safebrowsing.globalCache.enabled", false);
+    /* package */ final Pref<Boolean> mSbRealTimeEnabled =
+        new Pref<Boolean>("browser.safebrowsing.realTime.enabled", false);
+    /* package */ final Pref<Boolean> mSbRealTimeSimulationEnabled =
+        new Pref<Boolean>("browser.safebrowsing.realTime.simulation.enabled", false);
+    /* package */ final Pref<Integer> mSbRealTimeSimulationHitProbability =
+        new Pref<Integer>("browser.safebrowsing.realTime.simulation.hitProbability", 5);
+    /* package */ final Pref<Integer> mSbRealTimeSimulationCacheTTLSec =
+        new Pref<Integer>("browser.safebrowsing.realTime.simulation.cacheTTLSec", 300);
+    /* package */ final Pref<Boolean> mSbRealTimeSimulationNegativeCacheEnabled =
+        new Pref<Boolean>("browser.safebrowsing.realTime.simulation.negativeCacheEnabled", false);
+    /* package */ final Pref<Integer> mSbRealTimeSimulationNegativeCacheTTLSec =
+        new Pref<Integer>("browser.safebrowsing.realTime.simulation.negativeCacheTTLSec", 300);
     /* package */ final Pref<Integer> mCookieBehavior =
         new Pref<Integer>(
             "network.cookie.cookieBehavior", CookieBehavior.ACCEPT_FIRST_PARTY_AND_ISOLATE_OTHERS);
@@ -438,6 +577,9 @@ public class ContentBlocking {
 
     /* package */ final Pref<String> mEtpCategory =
         new Pref<String>("browser.contentblocking.category", "standard");
+
+    /* package */ final Pref<Boolean> mContentBlockingDatabase =
+        new Pref<Boolean>("browser.contentblocking.database.enabled", false);
 
     /* package */ final Pref<Boolean> mAllowListBaselineTrackingProtection =
         new Pref<Boolean>("privacy.trackingprotection.allow_list.baseline.enabled", true);
@@ -489,6 +631,11 @@ public class ContentBlocking {
         new Pref<String>(
             "urlclassifier.features.emailtracking.blocklistTables",
             ContentBlocking.catToPref(AntiTracking.NONE, AntiTracking.EMAIL, EMAIL));
+
+    /* package */ final Pref<String> mSbHarmfulAddonList =
+        new Pref<String>(
+            "urlclassifier.features.harmfuladdon.blocklistTables",
+            ContentBlocking.catToPref(AntiTracking.NONE, SafeBrowsing.HARMFULADDON, HARMFULADDON));
 
     /* package */ final Pref<String> mSafeBrowsingMalwareTable =
         new Pref<>(
@@ -564,8 +711,9 @@ public class ContentBlocking {
      * Sets the collection of {@link SafeBrowsingProvider} for this runtime.
      *
      * <p>By default the collection is composed of {@link
-     * ContentBlocking#GOOGLE_LEGACY_SAFE_BROWSING_PROVIDER} and {@link
-     * ContentBlocking#GOOGLE_SAFE_BROWSING_PROVIDER}.
+     * ContentBlocking#GOOGLE_LEGACY_SAFE_BROWSING_PROVIDER}, {@link
+     * ContentBlocking#GOOGLE_SAFE_BROWSING_PROVIDER} and {@link
+     * ContentBlocking#GOOGLE_SAFE_BROWSING_V5_PROVIDER}.
      *
      * @param providers {@link SafeBrowsingProvider} instances for this runtime.
      * @return the {@link Settings} instance.
@@ -579,6 +727,194 @@ public class ContentBlocking {
         mSafeBrowsingProviders.put(provider.getName(), new SafeBrowsingProvider(this, provider));
       }
 
+      return this;
+    }
+
+    /**
+     * Get whether Safe Browsing V5 is enabled.
+     *
+     * @return Whether Safe Browsing V5 is enabled.
+     */
+    public @NonNull Boolean getSafeBrowsingV5Enabled() {
+      final SafeBrowsingProvider provider = mSafeBrowsingProviders.get("google5");
+      if (provider == null) {
+        return false;
+      }
+
+      final Boolean enabled = provider.getEnabled();
+      if (enabled == null) {
+        return false;
+      }
+
+      return enabled;
+    }
+
+    /**
+     * Set the value to control whether Safe Browsing V5 is enabled.
+     *
+     * @param enabled Whether we set the Safe Browsing V5 to enabled or disabled
+     * @return the {@link Settings} instance.
+     */
+    public @NonNull Settings setSafeBrowsingV5Enabled(final boolean enabled) {
+      final SafeBrowsingProvider provider = mSafeBrowsingProviders.get("google5");
+      if (provider == null) {
+        return this;
+      }
+
+      provider.mEnabled.commit(enabled);
+      return this;
+    }
+
+    /**
+     * Get whether Safe Browsing Global Cache is enabled.
+     *
+     * @return Whether the Global Cache is enabled.
+     */
+    public boolean getSafeBrowsingGlobalCacheEnabled() {
+      return mSbGlobalCacheEnabled.get();
+    }
+
+    /**
+     * Set whether Safe Browsing Global Cache is enabled.
+     *
+     * @param enabled Whether to enable the Global Cache.
+     * @return This {@link Settings} instance.
+     */
+    public @NonNull Settings setSafeBrowsingGlobalCacheEnabled(final boolean enabled) {
+      mSbGlobalCacheEnabled.commit(enabled);
+      return this;
+    }
+
+    /**
+     * Get whether Safe Browsing Real-Time lookup is enabled.
+     *
+     * @return Whether Real-Time lookup is enabled.
+     */
+    public boolean getSafeBrowsingRealTimeEnabled() {
+      return mSbRealTimeEnabled.get();
+    }
+
+    /**
+     * Set whether Safe Browsing Real-Time lookup is enabled.
+     *
+     * @param enabled Whether to enable Real-Time lookup.
+     * @return This {@link Settings} instance.
+     */
+    public @NonNull Settings setSafeBrowsingRealTimeEnabled(final boolean enabled) {
+      mSbRealTimeEnabled.commit(enabled);
+      return this;
+    }
+
+    /**
+     * Get whether Safe Browsing Real-Time simulation is enabled.
+     *
+     * @return Whether Real-Time simulation is enabled.
+     */
+    @ExperimentalGeckoViewApi
+    public boolean getSafeBrowsingRealTimeSimulationEnabled() {
+      return mSbRealTimeSimulationEnabled.get();
+    }
+
+    /**
+     * Set whether Safe Browsing Real-Time simulation is enabled.
+     *
+     * @param enabled Whether to enable Real-Time simulation.
+     * @return This {@link Settings} instance.
+     */
+    @ExperimentalGeckoViewApi
+    public @NonNull Settings setSafeBrowsingRealTimeSimulationEnabled(final boolean enabled) {
+      mSbRealTimeSimulationEnabled.commit(enabled);
+      return this;
+    }
+
+    /**
+     * Get the hit probability for Safe Browsing Real-Time simulation.
+     *
+     * @return The hit probability.
+     */
+    @ExperimentalGeckoViewApi
+    public int getSafeBrowsingRealTimeSimulationHitProbability() {
+      return mSbRealTimeSimulationHitProbability.get();
+    }
+
+    /**
+     * Set the hit probability for Safe Browsing Real-Time simulation.
+     *
+     * @param hitProbability The hit probability.
+     * @return This {@link Settings} instance.
+     */
+    @ExperimentalGeckoViewApi
+    public @NonNull Settings setSafeBrowsingRealTimeSimulationHitProbability(
+        final int hitProbability) {
+      mSbRealTimeSimulationHitProbability.commit(hitProbability);
+      return this;
+    }
+
+    /**
+     * Get the cache TTL in seconds for Safe Browsing Real-Time simulation.
+     *
+     * @return The cache TTL in seconds.
+     */
+    @ExperimentalGeckoViewApi
+    public int getSafeBrowsingRealTimeSimulationCacheTTLSec() {
+      return mSbRealTimeSimulationCacheTTLSec.get();
+    }
+
+    /**
+     * Set the cache TTL in seconds for Safe Browsing Real-Time simulation.
+     *
+     * @param cacheTTLSec The cache TTL in seconds.
+     * @return This {@link Settings} instance.
+     */
+    @ExperimentalGeckoViewApi
+    public @NonNull Settings setSafeBrowsingRealTimeSimulationCacheTTLSec(final int cacheTTLSec) {
+      mSbRealTimeSimulationCacheTTLSec.commit(cacheTTLSec);
+      return this;
+    }
+
+    /**
+     * Get whether the negative cache for Safe Browsing Real-Time simulation is enabled.
+     *
+     * @return Whether the negative cache is enabled.
+     */
+    @ExperimentalGeckoViewApi
+    public boolean getSafeBrowsingRealTimeSimulationNegativeCacheEnabled() {
+      return mSbRealTimeSimulationNegativeCacheEnabled.get();
+    }
+
+    /**
+     * Set whether the negative cache for Safe Browsing Real-Time simulation is enabled.
+     *
+     * @param enabled Whether to enable the negative cache.
+     * @return This {@link Settings} instance.
+     */
+    @ExperimentalGeckoViewApi
+    public @NonNull Settings setSafeBrowsingRealTimeSimulationNegativeCacheEnabled(
+        final boolean enabled) {
+      mSbRealTimeSimulationNegativeCacheEnabled.commit(enabled);
+      return this;
+    }
+
+    /**
+     * Get the negative cache TTL in seconds for Safe Browsing Real-Time simulation.
+     *
+     * @return The negative cache TTL in seconds.
+     */
+    @ExperimentalGeckoViewApi
+    public int getSafeBrowsingRealTimeSimulationNegativeCacheTTLSec() {
+      return mSbRealTimeSimulationNegativeCacheTTLSec.get();
+    }
+
+    /**
+     * Set the negative cache TTL in seconds for Safe Browsing Real-Time simulation.
+     *
+     * @param negativeCacheTTLSec The negative cache TTL in seconds.
+     * @return This {@link Settings} instance.
+     */
+    @ExperimentalGeckoViewApi
+    public @NonNull Settings setSafeBrowsingRealTimeSimulationNegativeCacheTTLSec(
+        final int negativeCacheTTLSec) {
+      mSbRealTimeSimulationNegativeCacheTTLSec.commit(negativeCacheTTLSec);
       return this;
     }
 
@@ -761,6 +1097,7 @@ public class ContentBlocking {
     public @NonNull Settings setSafeBrowsing(final @CBSafeBrowsing int cat) {
       mSbMalware.commit(ContentBlocking.catToSbMalware(cat));
       mSbPhishing.commit(ContentBlocking.catToSbPhishing(cat));
+      mSbHarmfulAddon.commit(ContentBlocking.catToSbHarmfulAddon(cat));
       return this;
     }
 
@@ -823,7 +1160,8 @@ public class ContentBlocking {
      */
     public @CBSafeBrowsing int getSafeBrowsingCategories() {
       return ContentBlocking.sbMalwareToSbCat(mSbMalware.get())
-          | ContentBlocking.sbPhishingToSbCat(mSbPhishing.get());
+          | ContentBlocking.sbPhishingToSbCat(mSbPhishing.get())
+          | ContentBlocking.sbHarmfulAddonToSbCat(mSbHarmfulAddon.get());
     }
 
     /**
@@ -1062,6 +1400,7 @@ public class ContentBlocking {
       return mCbhModePrivateBrowsing.get();
     }
 
+    /** Parcelable creator for ContentBlocking Settings instances. */
     public static final Parcelable.Creator<Settings> CREATOR =
         new Parcelable.Creator<Settings>() {
           @Override
@@ -1138,6 +1477,27 @@ public class ContentBlocking {
       mAllowListConvenienceTrackingProtection.commit(enabled);
       return this;
     }
+
+    /**
+     * Get whether the content blocking database is enabled.
+     *
+     * @return A boolean indicating whether the content blocking database is enabled.
+     */
+    public boolean getContentBlockingDatabaseStatus() {
+      return mContentBlockingDatabase.get();
+    }
+
+    /**
+     * Enable or disable the content blocking database. When enabled, Gecko persists tracking
+     * protection blocking events to a database that can be queried for aggregate statistics.
+     *
+     * @param enabled A boolean indicating whether to enable the content blocking database.
+     * @return This Settings instance.
+     */
+    public @NonNull Settings setContentBlockingDatabaseStatus(final boolean enabled) {
+      mContentBlockingDatabase.commit(enabled);
+      return this;
+    }
   }
 
   /**
@@ -1147,8 +1507,9 @@ public class ContentBlocking {
    * custom SafeBrowsing provider to the app. <br>
    * <br>
    * Default configuration for Google's SafeBrowsing servers can be found at {@link
-   * ContentBlocking#GOOGLE_SAFE_BROWSING_PROVIDER} and {@link
-   * ContentBlocking#GOOGLE_LEGACY_SAFE_BROWSING_PROVIDER}. <br>
+   * ContentBlocking#GOOGLE_SAFE_BROWSING_PROVIDER}, {@link
+   * ContentBlocking#GOOGLE_LEGACY_SAFE_BROWSING_PROVIDER} and {@link
+   * ContentBlocking#GOOGLE_SAFE_BROWSING_V5_PROVIDER}. <br>
    * <br>
    * This class is immutable, once constructed its values cannot be changed. <br>
    * <br>
@@ -1188,6 +1549,7 @@ public class ContentBlocking {
    *         custom,
    *         // Add this if you want to keep the existing configuration too.
    *         ContentBlocking.GOOGLE_SAFE_BROWSING_PROVIDER,
+   *         ContentBlocking.GOOGLE_SAFE_BROWSING_V5_PROVIDER,
    *         ContentBlocking.GOOGLE_LEGACY_SAFE_BROWSING_PROVIDER);
    * </code></pre>
    *
@@ -1222,6 +1584,7 @@ public class ContentBlocking {
     /* package */ final Pref<String> mAdvisoryName;
     /* package */ final Pref<String> mDataSharingUrl;
     /* package */ final Pref<Boolean> mDataSharingEnabled;
+    /* package */ final Pref<Boolean> mEnabled;
 
     /**
      * Creates a {@link SafeBrowsingProvider.Builder} for a provider with the given name.
@@ -1255,6 +1618,7 @@ public class ContentBlocking {
       return new Builder(provider);
     }
 
+    /** Builder for constructing SafeBrowsingProvider instances. */
     @AnyThread
     public static class Builder {
       final SafeBrowsingProvider mProvider;
@@ -1403,6 +1767,17 @@ public class ContentBlocking {
       }
 
       /**
+       * Set whether to enable this provider. This is currently only used for the SafeBrowsing V5.
+       *
+       * @param enabled <code>true</code> if the provider should be enabled.
+       * @return this {@link Builder} instance.
+       */
+      public @NonNull Builder enabled(final boolean enabled) {
+        mProvider.mEnabled.set(enabled);
+        return this;
+      }
+
+      /**
        * Build the {@link SafeBrowsingProvider} based on this {@link Builder} instance.
        *
        * @return thie {@link SafeBrowsingProvider} instance.
@@ -1448,6 +1823,7 @@ public class ContentBlocking {
       mAdvisoryName = new Pref<>(ROOT + mName + ".advisoryName", null);
       mDataSharingUrl = new Pref<>(ROOT + mName + ".dataSharingURL", null);
       mDataSharingEnabled = new Pref<>(ROOT + mName + ".dataSharing.enabled", false);
+      mEnabled = new Pref<>(ROOT + mName + ".enabled", null);
 
       if (source != null) {
         updatePrefs(source);
@@ -1574,6 +1950,15 @@ public class ContentBlocking {
       return mDataSharingEnabled.get();
     }
 
+    /**
+     * Get whether this provider is enabled. This is currently only used for the SafeBrowsing V5.
+     *
+     * @return <code>true</code> if the provider is enabled, <code>false</code> otherwise.
+     */
+    public @Nullable Boolean getEnabled() {
+      return mEnabled.get();
+    }
+
     @Override // Parcelable
     @AnyThread
     public void writeToParcel(final Parcel out, final int flags) {
@@ -1625,7 +2010,9 @@ public class ContentBlocking {
     return pref != null ? pref.split(",") : new String[] {};
   }
 
+  /** Anti-tracking content blocking constants. */
   public static class AntiTracking {
+    /** No anti-tracking protection. */
     public static final int NONE = 0;
 
     /** Block advertisement trackers. */
@@ -1664,9 +2051,11 @@ public class ContentBlocking {
     /** Block all known trackers. May cause issues with some web sites. */
     public static final int STRICT = DEFAULT | CONTENT | CRYPTOMINING | FINGERPRINTING | EMAIL;
 
+    /** Protected constructor for AntiTracking. */
     protected AntiTracking() {}
   }
 
+  /** Content blocking anti-tracking type definitions. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef(
       flag = true,
@@ -1686,7 +2075,9 @@ public class ContentBlocking {
       })
   public @interface CBAntiTracking {}
 
+  /** Safe browsing content blocking constants. */
   public static class SafeBrowsing {
+    /** No safe browsing protection. */
     public static final int NONE = 0;
 
     /** Block malware sites. */
@@ -1701,23 +2092,30 @@ public class ContentBlocking {
     /** Block phishing sites. */
     public static final int PHISHING = 1 << 13;
 
-    /** Block all unsafe sites. */
-    public static final int DEFAULT = MALWARE | UNWANTED | HARMFUL | PHISHING;
+    /** Block harmful add-on sites. */
+    public static final int HARMFULADDON = 1 << 14;
 
+    /** Block all unsafe sites. */
+    public static final int DEFAULT = MALWARE | UNWANTED | HARMFUL | PHISHING | HARMFULADDON;
+
+    /** Protected constructor for SafeBrowsing. */
     protected SafeBrowsing() {}
   }
 
+  /** Content blocking safe browsing type definitions. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef(
       flag = true,
       value = {
         SafeBrowsing.MALWARE, SafeBrowsing.UNWANTED,
         SafeBrowsing.HARMFUL, SafeBrowsing.PHISHING,
-        SafeBrowsing.DEFAULT, SafeBrowsing.NONE
+        SafeBrowsing.HARMFULADDON, SafeBrowsing.DEFAULT,
+        SafeBrowsing.NONE
       })
   public @interface CBSafeBrowsing {}
 
   // Sync values with nsICookieService.idl.
+  /** Cookie behavior content blocking constants. */
   public static class CookieBehavior {
     /** Accept first-party and third-party cookies and site data. */
     public static final int ACCEPT_ALL = 0;
@@ -1749,9 +2147,11 @@ public class ContentBlocking {
      */
     public static final int ACCEPT_FIRST_PARTY_AND_ISOLATE_OTHERS = 5;
 
+    /** Protected constructor for CookieBehavior. */
     protected CookieBehavior() {}
   }
 
+  /** Content blocking cookie behavior type definitions. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({
     CookieBehavior.ACCEPT_ALL,
@@ -1763,6 +2163,7 @@ public class ContentBlocking {
   })
   public @interface CBCookieBehavior {}
 
+  /** Content blocking ETP level type definitions. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({EtpLevel.NONE, EtpLevel.DEFAULT, EtpLevel.STRICT})
   public @interface CBEtpLevel {}
@@ -1781,19 +2182,20 @@ public class ContentBlocking {
     public static final int STRICT = 2;
   }
 
+  /** Content blocking ETP category type definitions. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({EtpCategory.STANDARD, EtpCategory.STRICT, EtpCategory.CUSTOM})
   public @interface CBEtpCategory {}
 
   /** Possible settings for ETP category. */
   public static class EtpCategory {
-    // The default ETP category, balancing privacy and web compatibility.
+    /** The default ETP category, balancing privacy and web compatibility. */
     public static final int STANDARD = 0;
-    // The strict ETP category, blocking more trackers but potentially breaking
-    // more sites.
+
+    /** The strict ETP category, blocking more trackers but potentially breaking more sites. */
     public static final int STRICT = 1;
-    // The custom ETP category, allowing the user to choose which anti-tracking
-    // to enable.
+
+    /** The custom ETP category, allowing the user to choose which anti-tracking to enable. */
     public static final int CUSTOM = 2;
   }
 
@@ -1807,7 +2209,15 @@ public class ContentBlocking {
     private final @CBCookieBehavior int mCookieBehaviorCat;
     private final boolean mIsBlocking;
 
-    @SuppressWarnings("checkstyle:javadocmethod")
+    /**
+     * Constructor for BlockEvent.
+     *
+     * @param uri The URI of the blocked resource
+     * @param atCat The anti-tracking category
+     * @param sbCat The safe browsing category
+     * @param cbCat The cookie behavior category
+     * @param isBlocking Whether the resource is being blocked
+     */
     public BlockEvent(
         @NonNull final String uri,
         final @CBAntiTracking int atCat,
@@ -1877,8 +2287,12 @@ public class ContentBlocking {
           blocking);
     }
 
+    /**
+     * Get whether this resource is being blocked.
+     *
+     * @return true if the resource is being blocked, false otherwise
+     */
     @UiThread
-    @SuppressWarnings("checkstyle:javadocmethod")
     public boolean isBlocking() {
       return mIsBlocking;
     }
@@ -1918,6 +2332,7 @@ public class ContentBlocking {
   private static final String STP =
       "social-tracking-protection-facebook-digest256,social-tracking-protection-linkedin-digest256,social-tracking-protection-twitter-digest256";
   private static final String EMAIL = "base-email-track-digest256";
+  private static final String HARMFULADDON = "harmful-addon-block-digest256";
 
   /* package */ static @CBSafeBrowsing int sbMalwareToSbCat(final boolean enabled) {
     return enabled
@@ -1929,12 +2344,20 @@ public class ContentBlocking {
     return enabled ? SafeBrowsing.PHISHING : SafeBrowsing.NONE;
   }
 
+  /* package */ static @CBSafeBrowsing int sbHarmfulAddonToSbCat(final boolean enabled) {
+    return enabled ? SafeBrowsing.HARMFULADDON : SafeBrowsing.NONE;
+  }
+
   /* package */ static boolean catToSbMalware(@CBSafeBrowsing final int cat) {
     return (cat & (SafeBrowsing.MALWARE | SafeBrowsing.UNWANTED | SafeBrowsing.HARMFUL)) != 0;
   }
 
   /* package */ static boolean catToSbPhishing(@CBSafeBrowsing final int cat) {
     return (cat & SafeBrowsing.PHISHING) != 0;
+  }
+
+  /* package */ static boolean catToSbHarmfulAddon(@CBSafeBrowsing final int cat) {
+    return (cat & SafeBrowsing.HARMFULADDON) != 0;
   }
 
   /* package */ static String catToAtPref(@CBAntiTracking final int cat) {
@@ -2089,6 +2512,9 @@ public class ContentBlocking {
     if (error == 0x805D001EL) {
       return SafeBrowsing.MALWARE;
     }
+    if (error == 0x805D002E) {
+      return SafeBrowsing.HARMFULADDON;
+    }
     if (error == 0x805D0023L) {
       return SafeBrowsing.UNWANTED;
     }
@@ -2144,6 +2570,7 @@ public class ContentBlocking {
 
   // Cookie Banner Handling feature.
 
+  /** Cookie banner handling mode constants. */
   public static class CookieBannerMode {
     /** Do not enable handling cookie banners. */
     public static final int COOKIE_BANNER_MODE_DISABLED = 0;
@@ -2154,9 +2581,11 @@ public class ContentBlocking {
     /** Reject cookies when possible otherwise accept the cookies. */
     public static final int COOKIE_BANNER_MODE_REJECT_OR_ACCEPT = 2;
 
+    /** Protected constructor for CookieBannerMode. */
     protected CookieBannerMode() {}
   }
 
+  /** Content blocking cookie banner mode type definitions. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({
     CookieBannerMode.COOKIE_BANNER_MODE_DISABLED,
@@ -2185,9 +2614,11 @@ public class ContentBlocking {
      */
     public static final int BOUNCE_TRACKING_PROTECTION_MODE_ENABLED_DRY_RUN = 3;
 
+    /** Protected constructor for BounceTrackingProtectionMode. */
     protected BounceTrackingProtectionMode() {}
   }
 
+  /** Content blocking bounce tracking protection mode type definitions. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({
     BounceTrackingProtectionMode.BOUNCE_TRACKING_PROTECTION_MODE_DISABLED,

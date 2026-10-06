@@ -4,6 +4,9 @@
 
 "use strict";
 
+const { SearchService } = ChromeUtils.importESModule(
+  "moz-src:///toolkit/components/search/SearchService.sys.mjs"
+);
 const { UrlbarTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/UrlbarTestUtils.sys.mjs"
 );
@@ -27,6 +30,12 @@ function getMacAccessible(accOrElmOrID) {
     }, 10);
   });
 }
+
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.trustPanel.featureGate", false]],
+  });
+});
 
 /**
  * Test a11yUtils announcements are exposed to VO
@@ -139,7 +148,7 @@ add_task(async () => {
       url: "about:license",
     },
     async () => {
-      let root = await getMacAccessible(document);
+      const root = await getMacAccessible(document);
       let rootChildCount = () => root.getAttributeValue("AXChildren").length;
 
       // With no popups, the root accessible has 5 visible children:
@@ -196,23 +205,6 @@ add_task(async () => {
 
       // We're back to base child count
       is(rootChildCount(), baseRootChildCount, "Root has original child count");
-
-      // Open site identity popup
-      document.getElementById("identity-icon-box").click();
-      const identityPopup = document.getElementById("identity-popup");
-      await BrowserTestUtils.waitForPopupEvent(identityPopup, "shown");
-
-      // Now root has another child
-      is(rootChildCount(), baseRootChildCount + 1, "Root has another child");
-
-      // Close popup
-      let hide = waitForMacEvent("AXUIElementDestroyed");
-      EventUtils.synthesizeKey("KEY_Escape");
-      await BrowserTestUtils.waitForPopupEvent(identityPopup, "hidden");
-      await hide;
-
-      // We're back to the base child count
-      is(rootChildCount(), baseRootChildCount, "Root has the base child count");
     }
   );
 });
@@ -286,10 +278,10 @@ add_task(async () => {
       url: 'data:text/html,<a id="exampleLink" href="https://example.com">link</a>',
     },
     async browser => {
-      if (!Services.search.isInitialized) {
-        let aStatus = await Services.search.init();
+      if (!SearchService.isInitialized) {
+        let aStatus = await SearchService.init();
         Assert.ok(Components.isSuccessCode(aStatus));
-        Assert.ok(Services.search.isInitialized);
+        Assert.ok(SearchService.isInitialized);
       }
 
       const hasContainers =
@@ -386,4 +378,115 @@ add_task(async () => {
       await waitForMacEvent("AXMenuClosed");
     }
   );
+});
+
+async function testPopover(native) {
+  await SpecialPowers.pushPrefEnv({
+    set: [["widget.macos.native-popovers", native]],
+  });
+  // Needs to happen in a separate window for the native/not-native pref to take effect.
+  let win = await BrowserTestUtils.openNewBrowserWindow();
+
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser: win.gBrowser,
+      url: "about:license",
+    },
+    async () => {
+      let root = await getMacAccessible(win.document);
+      let rootChildCount = () => root.getAttributeValue("AXChildren").length;
+
+      let baseRootChildCount = 5;
+      is(
+        rootChildCount(),
+        baseRootChildCount,
+        `Root with no popups has ${baseRootChildCount} children`
+      );
+
+      // Open site identity popup
+      win.document.getElementById("identity-icon-box").click();
+      const identityPopup = win.document.getElementById("identity-popup");
+      await BrowserTestUtils.waitForPopupEvent(identityPopup, "shown");
+
+      if (native) {
+        // With native popovers the popover will appear in a separate child window and
+        // not in the main root group.
+        is(
+          rootChildCount(),
+          baseRootChildCount,
+          "Root does not have another child"
+        );
+      } else {
+        // With non native popovers, the AXPopover will appear in-line with its markup
+        // in the root group.
+        is(rootChildCount(), baseRootChildCount + 1, "Root has another child");
+      }
+
+      let popupAcc = getAccessible(
+        identityPopup
+      ).nativeInterface.QueryInterface(Ci.nsIAccessibleMacInterface);
+      is(
+        popupAcc.getAttributeValue("AXSubrole"),
+        "AXApplicationAlertDialog",
+        "Popup has correct subrole"
+      );
+
+      let popupAccParent = popupAcc.getAttributeValue("AXParent");
+
+      if (native) {
+        // With native popovers, the popup's parent is the native popover.
+        is(
+          popupAccParent.getAttributeValue("AXRole"),
+          "AXPopover",
+          "Popup's parent is the popover window"
+        );
+      } else {
+        // In non-native, the popup itself uses the role of popover
+        is(
+          popupAcc.getAttributeValue("AXRole"),
+          "AXPopover",
+          "Popup has correct role"
+        );
+      }
+
+      let popupAccGrandparent = popupAccParent.getAttributeValue("AXParent");
+
+      if (native) {
+        is(
+          popupAccGrandparent.getAttributeValue("AXRole"),
+          "AXWindow",
+          "native popup's grandparent is the app window"
+        );
+      } else {
+        is(
+          popupAccGrandparent.getAttributeValue("AXRole"),
+          "AXWindow",
+          "non-native popup's parent is the root group, and its grandparent is the main window"
+        );
+      }
+
+      // Close popup
+      let hide = waitForMacEvent("AXUIElementDestroyed");
+      EventUtils.synthesizeKey("KEY_Escape", null, win);
+      await BrowserTestUtils.waitForPopupEvent(identityPopup, "hidden");
+      await hide;
+
+      // We're back to the base child count
+      is(rootChildCount(), baseRootChildCount, "Root has the base child count");
+    }
+  );
+  await SpecialPowers.popPrefEnv();
+  await BrowserTestUtils.closeWindow(win);
+}
+
+/**
+ * Test popovers.
+ */
+add_task(async () => {
+  if (Services.env.get("MOZ_HEADLESS")) {
+    todo(false, "Popovers don't work quite right in headless mode");
+    return;
+  }
+  // await testPopover(true);
+  await testPopover(false);
 });

@@ -50,6 +50,16 @@ if (typeof assertNoWarning === 'undefined') {
     };
 }
 
+if (typeof assertNoError === 'undefined') {
+  var assertNoError = function assertNoError(f, message) {
+    try {
+      f();
+    } catch (e) {
+      throw new Error((message ? `${message}: ` : "") + e.message);
+    }
+  };
+}
+
 if (typeof assertErrorMessage === 'undefined') {
   var assertErrorMessage = function assertErrorMessage(f, ctor, test, message) {
     try {

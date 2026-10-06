@@ -65,11 +65,10 @@ observe and control these settings.
 
 But there are some other pieces of state which absolutely must come from a
 profile, such as the telemetry client ID and logging level settings (see
-`BackgroundTasksUtils.sys.mjs <https://searchfox.org/mozilla-central/source/toolkit/components/backgroundtasks/BackgroundTasksUtils.sys.mjs>`__).
+:searchfox:`BackgroundTasksUtils.sys.mjs <toolkit/components/backgroundtasks/BackgroundTasksUtils.sys.mjs>`).
 
 This means that, in addition to our per-installation prefs, we also need
-to be able to identify and load a profile. To do that, we leverage `the profile
-service <https://searchfox.org/mozilla-central/source/toolkit/profile/nsIToolkitProfileService.idl>`__
+to be able to identify and load a profile. To do that, we leverage :searchfox:`the profile service <toolkit/profile/nsIToolkitProfileService.idl>`
 to determine what the default profile for the installation would be if we were
 running a normal browser session, and the background updater always uses it.
 
@@ -137,7 +136,7 @@ API <https://docs.microsoft.com/en-us/windows/win32/taskschd/task-scheduler-star
 on macOS this will use
 `launchd <https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html>`__.
 For platform-specific scheduling details, see the
-`TaskScheduler.sys.mjs <https://searchfox.org/mozilla-central/source/toolkit/components/taskscheduler/TaskScheduler.sys.mjs>`__
+:searchfox:`TaskScheduler.sys.mjs <toolkit/components/taskscheduler/TaskScheduler.sys.mjs>`
 module.
 
 These background tasks are scheduled per OS user and run with that user’s
@@ -177,7 +176,7 @@ visible to users: see `bug 1775132
 
 After setting up this profile and reading all the configuration we need
 into it, the regular
-`UpdateService.sys.mjs <https://searchfox.org/mozilla-central/source/toolkit/mozapps/update/UpdateService.sys.mjs>`__
+:searchfox:`UpdateService.sys.mjs <toolkit/mozapps/update/UpdateService.sys.mjs>`
 check process is initiated. To the greatest extent possible, this process is
 identical to what happens during any regular browsing session.
 

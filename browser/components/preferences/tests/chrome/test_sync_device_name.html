@@ -1,0 +1,264 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>sync-device-name test</title>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <link
+      rel="stylesheet"
+      href="chrome://mochikit/content/tests/SimpleTest/test.css"
+    />
+    <link rel="stylesheet" href="chrome://global/skin/global.css" />
+    <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+    <script src="../../../../../toolkit/content/tests/widgets/lit-test-helpers.js"></script>
+    <script
+      type="module"
+      src="chrome://browser/content/preferences/widgets/sync-device-name.mjs"
+    ></script>
+    <script>
+      let html, testHelpers;
+
+      const TEST_DEVICE_NAME = "My Device";
+
+      add_setup(async function setup() {
+        testHelpers = new LitTestHelpers();
+        ({ html } = await testHelpers.setupLit());
+        testHelpers.setupTests({
+          templateFn: () =>
+            html`<sync-device-name
+              value=${TEST_DEVICE_NAME}
+            ></sync-device-name>`,
+        });
+
+        MozXULElement.insertFTLIfNeeded("browser/preferences/preferences.ftl");
+      });
+
+      add_task(async function testSyncDeviceName() {
+        let {
+          children: [syncDeviceName],
+        } = await testHelpers.renderTemplate();
+
+        ok(syncDeviceName, "sync-device-name element renders.");
+        ok(
+          !syncDeviceName._isInEditMode,
+          "sync-device-name initially renders in display mode."
+        );
+        let deviceNameLabel =
+          syncDeviceName.shadowRoot.querySelector("moz-box-item").label;
+        is(deviceNameLabel, TEST_DEVICE_NAME, "Device name is displayed.");
+        ok(syncDeviceName.changeBtnEl, "Change device name button renders.");
+
+        synthesizeMouseAtCenter(syncDeviceName.changeBtnEl, {});
+        await syncDeviceName.updateComplete;
+
+        ok(
+          syncDeviceName._isInEditMode,
+          "sync-device-name switches to edit mode."
+        );
+        is(
+          syncDeviceName.shadowRoot.activeElement,
+          syncDeviceName.inputTextEl,
+          "The input element is in focus."
+        );
+        is(
+          syncDeviceName.inputTextEl.inputEl.value,
+          TEST_DEVICE_NAME,
+          "Device name text is displayed in input element."
+        );
+
+        let cancelBtn = syncDeviceName.shadowRoot.querySelector(
+          "#fxaCancelChangeDeviceName"
+        );
+        let saveBtn = syncDeviceName.shadowRoot.querySelector(
+          "#fxaSaveChangeDeviceName"
+        );
+        ok(cancelBtn && saveBtn, "Cancel and Save buttons render.");
+
+        synthesizeMouseAtCenter(cancelBtn, {});
+        await syncDeviceName.updateComplete;
+
+        ok(
+          !syncDeviceName._isInEditMode,
+          "sync-device-name switches back to display mode."
+        );
+        is(
+          syncDeviceName.shadowRoot.activeElement,
+          syncDeviceName.changeBtnEl,
+          "The Change device name button element is in focus."
+        );
+      });
+
+      add_task(async function testDisabledStateOfSyncDeviceName() {
+        let {
+          children: [syncDeviceName],
+        } = await testHelpers.renderTemplate();
+
+        ok(!syncDeviceName.disabled, "sync-device-name is enabled by default.");
+        ok(
+          !syncDeviceName.changeBtnEl.disabled,
+          "Change device name button is enabled by default."
+        );
+
+        syncDeviceName.disabled = true;
+        await syncDeviceName.updateComplete;
+
+        ok(
+          syncDeviceName.changeBtnEl.disabled,
+          "Change device name button is disabled when sync-device-name is disabled."
+        );
+      });
+
+      add_task(async function testEditModeOfSyncDeviceName() {
+        let {
+          children: [syncDeviceName],
+        } = await testHelpers.renderTemplate();
+
+        const TEST_STRING = " Test";
+
+        ok(syncDeviceName, "sync-device-name element renders.");
+
+        synthesizeMouseAtCenter(syncDeviceName.changeBtnEl, {});
+        await syncDeviceName.updateComplete;
+
+        is(
+          syncDeviceName.shadowRoot.activeElement,
+          syncDeviceName.inputTextEl,
+          "The input element is in focus."
+        );
+
+        sendString(TEST_STRING);
+
+        is(
+          syncDeviceName.inputTextEl.value,
+          `${TEST_DEVICE_NAME}${TEST_STRING}`,
+          "The input element has updated value."
+        );
+
+        let cancelBtn = syncDeviceName.shadowRoot.querySelector(
+          "#fxaCancelChangeDeviceName"
+        );
+
+        synthesizeMouseAtCenter(cancelBtn, {});
+        await syncDeviceName.updateComplete;
+
+        is(
+          syncDeviceName.value,
+          TEST_DEVICE_NAME,
+          "Device name value hasn't changed."
+        );
+
+        synthesizeMouseAtCenter(syncDeviceName.changeBtnEl, {});
+        await syncDeviceName.updateComplete;
+        sendString(TEST_STRING);
+
+        is(
+          syncDeviceName.inputTextEl.value,
+          `${TEST_DEVICE_NAME}${TEST_STRING}`,
+          "The input element has updated value."
+        );
+
+        let saveBtn = syncDeviceName.shadowRoot.querySelector(
+          "#fxaSaveChangeDeviceName"
+        );
+        synthesizeMouseAtCenter(saveBtn, {});
+        await syncDeviceName.updateComplete;
+
+        is(
+          syncDeviceName.value,
+          `${TEST_DEVICE_NAME}${TEST_STRING}`,
+          "Device name value was updated after clicking the Save button."
+        );
+      });
+
+      add_task(async function testSyncDeviceNameKeyboardInteraction() {
+        let {
+          children: [syncDeviceName],
+        } = await testHelpers.renderTemplate();
+
+        const TEST_STRING = " Test";
+
+        ok(syncDeviceName, "sync-device-name element renders.");
+
+        synthesizeKey("KEY_Tab", {});
+
+        is(
+          syncDeviceName.shadowRoot.activeElement,
+          syncDeviceName.changeBtnEl,
+          "Change device name button element is in focus."
+        );
+
+        synthesizeKey("KEY_Enter", {});
+        await syncDeviceName.updateComplete;
+
+        is(
+          syncDeviceName.shadowRoot.activeElement,
+          syncDeviceName.inputTextEl,
+          "The input element is in focus."
+        );
+
+        sendString(TEST_STRING);
+
+        is(
+          syncDeviceName.inputTextEl.value,
+          `${TEST_DEVICE_NAME}${TEST_STRING}`,
+          "The input element has updated value."
+        );
+
+        synthesizeKey("KEY_Escape", {});
+        await syncDeviceName.updateComplete;
+
+        ok(
+          !syncDeviceName._isInEditMode,
+          "sync-device-name switched to display mode after pressing Escape key."
+        );
+        is(
+          syncDeviceName.shadowRoot.activeElement,
+          syncDeviceName.changeBtnEl,
+          "Change device name button element is in focus."
+        );
+        is(
+          syncDeviceName.value,
+          TEST_DEVICE_NAME,
+          "Device name value hasn't changed."
+        );
+
+        synthesizeKey("KEY_Enter", {});
+        await syncDeviceName.updateComplete;
+
+        ok(
+          syncDeviceName._isInEditMode,
+          "sync-device-name is back in edit mode."
+        );
+        is(
+          syncDeviceName.shadowRoot.activeElement,
+          syncDeviceName.inputTextEl,
+          "The input element is in focus."
+        );
+
+        sendString(TEST_STRING);
+        synthesizeKey("KEY_Enter", {});
+        await syncDeviceName.updateComplete;
+
+        ok(
+          !syncDeviceName._isInEditMode,
+          "sync-device-name switched to display mode after pressing Enter key."
+        );
+        is(
+          syncDeviceName.shadowRoot.activeElement,
+          syncDeviceName.changeBtnEl,
+          "Change device name button element is in focus."
+        );
+        is(
+          syncDeviceName.value,
+          `${TEST_DEVICE_NAME}${TEST_STRING}`,
+          "Device name value was updated."
+        );
+      });
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+</html>

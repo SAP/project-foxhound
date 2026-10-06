@@ -27,23 +27,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1121701
   });
 
   addLoadEvent(async function() {
-
-    // Bug 1746646: Make mochitests work with TCP enabled (cookieBehavior = 5)
-    // Acquire storage access permission here so that the BroadcastChannel used to
-    // communicate with the opened windows works in xorigin tests. Otherwise,
-    // the iframe containing this page is isolated from first-party storage access,
-    // which isolates BroadcastChannel communication.
-    if (isXOrigin) {
-      await SpecialPowers.pushPrefEnv({
-        set: [["privacy.partition.always_partition_third_party_non_cookie_storage", false]],
-      });
-      SpecialPowers.wrap(document).notifyUserGestureActivation();
-      await SpecialPowers.addPermission("storageAccessAPI", true, window.location.href);
-      await SpecialPowers.wrap(document).requestStorageAccess();
-    }
-
-    var bc = new BroadcastChannel("file_bug1121701_1");
-    var bc2 = new BroadcastChannel("file_bug1121701_2");
+    var bc = SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel("file_bug1121701_1");
+    var bc2 = SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel("file_bug1121701_2");
 
     async function scheduleFinish() {
       await Promise.all([page1Done.promise, page2Done.promise]);

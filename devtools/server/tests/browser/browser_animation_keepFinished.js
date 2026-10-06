@@ -7,7 +7,7 @@
 // Test that the AnimationsActor doesn't report finished animations as removed.
 // Indeed, animations that only have the "finished" playState can be modified
 // still, so we want the AnimationsActor to preserve the corresponding
-// AnimationPlayerActor.
+// AnimationActor.
 
 add_task(async function () {
   const { target, walker, animations } = await initAnimationsFrontForUrl(

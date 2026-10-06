@@ -1,0 +1,15 @@
+{
+  "label": "aylak.com",
+  "bugs": {
+    "1950100": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.aylak.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

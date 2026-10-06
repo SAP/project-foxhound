@@ -1,0 +1,15 @@
+{
+  "label": "saxoinvestor.fr",
+  "bugs": {
+    "1719859": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.saxoinvestor.fr/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

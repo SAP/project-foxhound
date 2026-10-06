@@ -15,16 +15,9 @@
       #scroll div {
         display: inline-block;
       }
-      .fill {
-        width: 99px;
-        height: 1px;
-      }
-      #contain {
-        width: 200px;
-        height: 10px;
-        background-color: gray;
-      }
       #sticky {
+        position: relative;
+        left: 10px;
         width: 81px;
         height: 10px;
         background-color: black;
@@ -32,9 +25,7 @@
     </style>
   <body>
     <div id="scroll">
-      <div class="fill"></div
-      ><div id="sticky"></div
-      ><div class="fill"></div>
+      <div id="sticky"></div>
     </div>
   </body>
 </html>

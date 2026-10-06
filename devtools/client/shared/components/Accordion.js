@@ -119,7 +119,7 @@ class Accordion extends Component {
 
   /**
    * @param {Event} event Click event.
-   * @param {Object} item The item to be collapsed/expanded.
+   * @param {object} item The item to be collapsed/expanded.
    */
   onHeaderClick(event, item) {
     event.preventDefault();
@@ -132,7 +132,8 @@ class Accordion extends Component {
 
   /**
    * Expand or collapse an accordion list item.
-   * @param  {Object} item The item to be collapsed or expanded.
+   *
+   * @param  {object} item The item to be collapsed or expanded.
    */
   toggleItem(item) {
     const opened = !this.state.opened[item.id];

@@ -25,6 +25,9 @@ import org.junit.runner.RunWith
 import org.mozilla.fenix.R
 import org.mozilla.fenix.databinding.FragmentAddOnDetailsBinding
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertIs
+import com.google.android.material.R as materialR
+import mozilla.components.feature.addons.R as addonsR
 
 @RunWith(RobolectricTestRunner::class)
 class AddonDetailsBindingDelegateTest {
@@ -70,12 +73,12 @@ class AddonDetailsBindingDelegateTest {
         assertEquals(4.5f, binding.ratingView.rating)
         assertEquals("100", binding.reviewCount.text)
 
-        val ratingContentDescription = testContext.getString(R.string.mozac_feature_addons_rating_content_description_2)
+        val ratingContentDescription = testContext.getString(addonsR.string.mozac_feature_addons_rating_content_description_2)
         var formattedRatting = String.format(ratingContentDescription, 4.3f)
         assertEquals(formattedRatting, binding.ratingLabel.contentDescription)
         assertEquals(IMPORTANT_FOR_ACCESSIBILITY_NO, binding.ratingView.importantForAccessibility)
 
-        val reviewContentDescription = testContext.getString(R.string.mozac_feature_addons_user_rating_count_2)
+        val reviewContentDescription = testContext.getString(addonsR.string.mozac_feature_addons_user_rating_count_2)
         formattedRatting = String.format(reviewContentDescription, 100)
         assertEquals(formattedRatting, binding.reviewCount.contentDescription)
     }
@@ -154,7 +157,7 @@ class AddonDetailsBindingDelegateTest {
         )
 
         assertEquals("Sarah Jane", binding.authorText.text)
-        assertNotEquals(testContext.getColorFromAttr(R.attr.textAccent), binding.authorText.currentTextColor)
+        assertNotEquals(testContext.getColorFromAttr(materialR.attr.colorTertiary), binding.authorText.currentTextColor)
         val expectedContentDescription = binding.authorLabel.text.toString() + " Sarah Jane"
         assertEquals(expectedContentDescription, binding.authorLabel.contentDescription)
         assertEquals(IMPORTANT_FOR_ACCESSIBILITY_NO, binding.authorText.importantForAccessibility)
@@ -167,7 +170,7 @@ class AddonDetailsBindingDelegateTest {
         )
 
         assertEquals("Sarah Jane", binding.authorText.text.toString())
-        assertEquals(testContext.getColorFromAttr(R.attr.textAccent), binding.authorText.currentTextColor)
+        assertEquals(testContext.getColorFromAttr(materialR.attr.colorTertiary), binding.authorText.currentTextColor)
 
         binding.authorText.performClick()
 
@@ -182,7 +185,7 @@ class AddonDetailsBindingDelegateTest {
             "Some blank addon\nwith a blank line",
             binding.details.text.toString(),
         )
-        assertTrue(binding.details.movementMethod is LinkMovementMethod)
+        assertIs<LinkMovementMethod>(binding.details.movementMethod)
     }
 
     @Test

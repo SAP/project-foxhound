@@ -1,13 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* utility functions for drawing borders and backgrounds */
 
-#ifndef nsCSSRendering_h___
-#define nsCSSRendering_h___
+#ifndef nsCSSRendering_h_
+#define nsCSSRendering_h_
 
 #include "gfxBlur.h"
 #include "gfxContext.h"
@@ -153,7 +151,7 @@ struct nsCSSRendering {
                                   const nsRect& aDirtyRect,
                                   float aOpacity = 1.0);
 
-  static void ComputePixelRadii(const nscoord* aAppUnitsRadii,
+  static void ComputePixelRadii(const nsRectCornerRadii& aRadii,
                                 nscoord aAppUnitsPerPixel,
                                 RectCornerRadii* oBorderRadii);
 
@@ -247,8 +245,9 @@ struct nsCSSRendering {
    * Uses a fixed style equivalent to "1px dotted |aColor|".
    * Not used for controls, because the native theme may differ.
    */
-  static void PaintFocus(nsPresContext* aPresContext, DrawTarget* aDrawTarget,
-                         const nsRect& aFocusRect, nscolor aColor);
+  static nsCSSBorderRenderer GetBorderRendererForFocus(nsIFrame*, DrawTarget*,
+                                                       const nsRect& aFocusRect,
+                                                       nscolor aColor);
 
   /**
    * Render a gradient for an element.
@@ -362,7 +361,7 @@ struct nsCSSRendering {
     nsRect mDirtyRectInAppUnits;
     gfxRect mDirtyRectInDevPx;
 
-    nscoord mRadii[8];
+    nsRectCornerRadii mRadii;
     RectCornerRadii mClippedRadii;
     bool mHasRoundedCorners;
     bool mHasAdditionalBGClipArea;
@@ -374,9 +373,7 @@ struct nsCSSRendering {
     ImageLayerClipState()
         : mHasRoundedCorners(false),
           mHasAdditionalBGClipArea(false),
-          mCustomClip(false) {
-      memset(mRadii, 0, sizeof(nscoord) * 8);
-    }
+          mCustomClip(false) {}
 
     bool IsValid() const;
   };
@@ -512,17 +509,8 @@ struct nsCSSRendering {
                                        const nsStyleImageLayers::Layer& aLayer,
                                        uint32_t aFlags);
 
-  /**
-   * Called when we start creating a display list. The frame tree will not
-   * change until a matching EndFrameTreeLocked is called.
-   */
-  static void BeginFrameTreesLocked();
-  /**
-   * Called when we've finished using a display list. When all
-   * BeginFrameTreeLocked calls have been balanced by an EndFrameTreeLocked,
-   * the frame tree may start changing again.
-   */
-  static void EndFrameTreesLocked();
+  /** Called when we switch pres shells during painting. */
+  static void PresShellChanged();
 
   // Draw a border segment in the table collapsing border model with beveling
   // corners.
@@ -556,9 +544,16 @@ struct nsCSSRendering {
       mozilla::Side aStartBevelSide, nscoord aStartBevelOffset,
       mozilla::Side aEndBevelSide, nscoord aEndBevelOffset);
 
-  // NOTE: pt, dirtyRect, lineSize, ascent, offset in the following
-  //       structs are non-rounded device pixels, not app units.
+  // NOTE: pt, dirtyRect, lineSize, ascent, offset, insetLeft, and insetRight in
+  //       the following structs are non-rounded device pixels, not app units.
   struct DecorationRectParams {
+    // Checks if either start or end inset value is negative.
+    // In that situation, text decoration will extend past the edges of the
+    // text.
+    bool HasNegativeInset() const {
+      return insetLeft < 0.0 || insetRight < 0.0;
+    }
+
     // The width [length] and the height [thickness] of the decoration
     // line. This is a "logical" size in textRun orientation, so that
     // for a vertical textrun, width will actually be a physical height;
@@ -591,10 +586,15 @@ struct nsCSSRendering {
     // The style of the decoration line
     mozilla::StyleTextDecorationStyle style =
         mozilla::StyleTextDecorationStyle::None;
+    // Decoration-line start/end inset values for this decoration.
+    // The caller must ensure that the start/end values are translated to
+    // left/right in the line-relative direction.
+    Float insetLeft = 0.0f;
+    Float insetRight = 0.0f;
     bool vertical = false;
     bool sidewaysLeft = false;
     gfxTextRun::Range glyphRange;
-    gfxTextRun::PropertyProvider* provider;
+    gfxTextRun::PropertyProvider* provider = nullptr;
   };
 
   struct PaintDecorationLineParams : DecorationRectParams {
@@ -612,6 +612,9 @@ struct nsCSSRendering {
     Float baselineOffset = 0.0f;
     // Whether text-decoration-skip-ink behavior is to be supported.
     bool allowInkSkipping = true;
+
+    mozilla::StyleTextDecorationSkipInk skipInk =
+        mozilla::StyleTextDecorationSkipInk::None;
   };
 
   /**
@@ -724,7 +727,8 @@ struct nsCSSRendering {
 
  protected:
   static gfxRect GetTextDecorationRectInternal(
-      const Point& aPt, const DecorationRectParams& aParams);
+      const Point& aPt, const DecorationRectParams& aParams,
+      bool aSnapToDevicePixels);
 
   /**
    * Returns inflated rect for painting a decoration line.
@@ -752,7 +756,7 @@ struct nsCSSRendering {
  * nsContextBoxBlur
  * Creates an 8-bit alpha channel context for callers to draw in, blurs the
  * contents of that context and applies it as a 1-color mask on a
- * different existing context. Uses gfxAlphaBoxBlur as its back end.
+ * different existing context. Uses gfxGaussianBlur as its back end.
  *
  * You must call Init() first to create a suitable temporary surface to draw
  * on.  You must then draw any desired content onto the given context, then
@@ -767,7 +771,7 @@ class nsContextBoxBlur {
   typedef mozilla::gfx::RectCornerRadii RectCornerRadii;
 
  public:
-  enum { FORCE_MASK = 0x01, DISABLE_HARDWARE_ACCELERATION_BLUR = 0x02 };
+  enum { FORCE_MASK = 0x01 };
   /**
    * Prepares a gfxContext to draw on. Do not call this twice; if you want
    * to get the gfxContext again use GetContext().
@@ -913,7 +917,7 @@ class nsContextBoxBlur {
                                      mozilla::gfx::IntSize& aOutSpreadRadius,
                                      bool aConstrainSpreadRadius = true);
 
-  gfxAlphaBoxBlur mAlphaBoxBlur;
+  gfxGaussianBlur mGaussianBlur;
   mozilla::UniquePtr<gfxContext> mOwnedContext;
   gfxContext* mContext;  // may be either mOwnedContext or mDestinationContext
   gfxContext* mDestinationCtx;
@@ -923,4 +927,4 @@ class nsContextBoxBlur {
   bool mPreTransformed;
 };
 
-#endif /* nsCSSRendering_h___ */
+#endif /* nsCSSRendering_h_ */

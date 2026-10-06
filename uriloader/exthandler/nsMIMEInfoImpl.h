@@ -1,10 +1,8 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef __nsmimeinfoimpl_h___
-#define __nsmimeinfoimpl_h___
+#ifndef _nsmimeinfoimpl_h_
+#define _nsmimeinfoimpl_h_
 
 #include "nsIMIMEInfo.h"
 #include "nsAtom.h"
@@ -183,7 +181,7 @@ class nsMIMEInfoImpl : public nsMIMEInfoBase {
       : nsMIMEInfoBase(aMIMEType) {}
   nsMIMEInfoImpl(const nsACString& aType, HandlerClass aClass)
       : nsMIMEInfoBase(aType, aClass) {}
-  virtual ~nsMIMEInfoImpl() {}
+  virtual ~nsMIMEInfoImpl() = default;
 
   // nsIMIMEInfo methods
   NS_IMETHOD GetHasDefaultHandler(bool* _retval) override;
@@ -223,4 +221,4 @@ class nsMIMEInfoImpl : public nsMIMEInfoBase {
       mDefaultApplication;  ///< default application associated with this type.
 };
 
-#endif  //__nsmimeinfoimpl_h___
+#endif  //_nsmimeinfoimpl_h_

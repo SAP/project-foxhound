@@ -168,7 +168,7 @@ function assert_calendar_hidden(id) {
 function is_calendar_button_hidden(id) {
   const input = document.getElementById(id);
   const shadowRoot = SpecialPowers.wrap(input).openOrClosedShadowRoot;
-  const calendarButton = shadowRoot.getElementById("calendar-button");
+  const calendarButton = shadowRoot.getElementById("picker-button");
   const calendarButtonDisplay = SpecialPowers.wrap(window).getComputedStyle(calendarButton).display;
   return calendarButtonDisplay === "none";
 }

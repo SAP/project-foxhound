@@ -1,13 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* Debug Logging support. */
 
-#ifndef xpclog_h___
-#define xpclog_h___
+#ifndef xpclog_h_
+#define xpclog_h_
 
 #include "mozilla/Attributes.h"
 #include "mozilla/Logging.h"
@@ -66,4 +64,4 @@ void XPC_Log_Finish();
 #  define XPC_LOG_FINISH() ((void)0)
 #endif
 
-#endif /* xpclog_h___ */
+#endif /* xpclog_h_ */

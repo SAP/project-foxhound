@@ -1,0 +1,19 @@
+{
+  "label": "livestorm.co",
+  "bugs": {
+    "1943289": {
+      "issue": "broken-meetings",
+      "matches": ["https://*.livestorm.co/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "only_channels": ["nightly"],
+      "content_scripts": {
+        "all_frames": true,
+        "js": ["bug1994562-shim-mstp-mstg-on-window.js"]
+      }
+    }
+  ]
+}

@@ -1,8 +1,8 @@
-/* vim: se cin sw=2 ts=2 et filetype=javascript :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const kTaskbarTabsWindowFeatures =
@@ -16,8 +16,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  WindowsUIUtils: ["@mozilla.org/windows-ui-utils;1", "nsIWindowsUIUtils"],
-  WinTaskbar: ["@mozilla.org/windows-taskbar;1", "nsIWinTaskbar"],
+  WindowsUIUtils: ["@mozilla.org/windows-ui-utils;1", Ci.nsIWindowsUIUtils],
+  WinTaskbar: ["@mozilla.org/windows-taskbar;1", Ci.nsIWinTaskbar],
 });
 
 ChromeUtils.defineLazyGetter(lazy, "logConsole", () => {
@@ -42,10 +42,13 @@ export class TaskbarTabsWindowManager {
    *
    * @param {TaskbarTab} aTaskbarTab - The Taskbar Tab to replace the window with.
    * @param {MozTabbrowserTab} aTab - The tab to adopt as a Taskbar Tab.
+   * @param {imgIContainer} aIcon - Additional information for the window.
    * @returns {Promise<DOMWindow>} The newly created Taskbar Tab window.
    */
-  async replaceTabWithWindow(aTaskbarTab, aTab) {
-    let originWindow = aTab.ownerGlobal;
+  async replaceTabWithWindow(aTaskbarTab, aTab, aIcon) {
+    let originWindow = aTab.documentGlobal;
+
+    Glean.webApp.moveToTaskbar.record({});
 
     // Save the parent window of this tab, so we can revert back if needed.
     let tabId = getTabId(aTab);
@@ -55,22 +58,29 @@ export class TaskbarTabsWindowManager {
       Ci.nsIWritablePropertyBag2
     );
     extraOptions.setPropertyAsAString("taskbartab", aTaskbarTab.id);
+    if (AppConstants.platform === "linux") {
+      extraOptions.setPropertyAsAString(
+        "taskbartabclass",
+        getLinuxWindowClass(aTaskbarTab)
+      );
+    }
 
     let args = Cc["@mozilla.org/array;1"].createInstance(Ci.nsIMutableArray);
     args.appendElement(aTab);
     args.appendElement(extraOptions);
 
     this.#tabOriginMap.set(tabId, windowId);
-    return await this.#openWindow(aTaskbarTab, args);
+    return await this.#openWindow(aTaskbarTab, args, aIcon);
   }
 
   /**
    * Opens a new Taskbar Tab Window.
    *
    * @param {TaskbarTab} aTaskbarTab - The Taskbar Tab to open.
+   * @param {imgIContainer} aIcon - Additional options for the window.
    * @returns {Promise<DOMWindow>} The newly-created Taskbar Tab window.
    */
-  async openWindow(aTaskbarTab) {
+  async openWindow(aTaskbarTab, aIcon) {
     let url = Cc["@mozilla.org/supports-string;1"].createInstance(
       Ci.nsISupportsString
     );
@@ -80,6 +90,12 @@ export class TaskbarTabsWindowManager {
       Ci.nsIWritablePropertyBag2
     );
     extraOptions.setPropertyAsAString("taskbartab", aTaskbarTab.id);
+    if (AppConstants.platform === "linux") {
+      extraOptions.setPropertyAsAString(
+        "taskbartabclass",
+        getLinuxWindowClass(aTaskbarTab)
+      );
+    }
 
     let userContextId = Cc["@mozilla.org/supports-PRUint32;1"].createInstance(
       Ci.nsISupportsPRUint32
@@ -97,7 +113,7 @@ export class TaskbarTabsWindowManager {
     args.appendElement(null);
     args.appendElement(Services.scriptSecurityManager.getSystemPrincipal());
 
-    return await this.#openWindow(aTaskbarTab, args);
+    return await this.#openWindow(aTaskbarTab, args, aIcon);
   }
 
   /**
@@ -105,26 +121,36 @@ export class TaskbarTabsWindowManager {
    *
    * @param {TaskbarTab} aTaskbarTab - The Taskbar Tab associated to the window.
    * @param {nsIMutableArray} aArgs - `args` to pass to the opening window.
+   * @param {imgIContainer} aIcon - Additional options for the new window.
    * @returns {Promise<DOMWindow>} Resolves once window has opened and tab count
    * has been incremented.
    */
-  async #openWindow(aTaskbarTab, aArgs) {
-    let url = Services.io.newURI(aTaskbarTab.startUrl);
-    let imgPromise = lazy.TaskbarTabsUtils.getFavicon(url);
-
+  async #openWindow(aTaskbarTab, aArgs, aIcon) {
     let win = await lazy.BrowserWindowTracker.promiseOpenWindow({
       args: aArgs,
       features: kTaskbarTabsWindowFeatures,
       all: false,
     });
 
-    imgPromise.then(imgContainer =>
-      lazy.WindowsUIUtils.setWindowIcon(win, imgContainer, imgContainer)
-    );
-
     this.#trackWindow(aTaskbarTab.id, win);
 
-    lazy.WinTaskbar.setGroupIdForWindow(win, aTaskbarTab.id);
+    if (AppConstants.platform === "win") {
+      lazy.WindowsUIUtils.setWindowIcon(win, aIcon, aIcon);
+
+      // If on MSIX, we need to match the system's expectations.
+      let pfn = Services.sysinfo.getProperty("winPackageFamilyName");
+      if (pfn) {
+        lazy.WinTaskbar.setGroupIdForWindow(
+          win,
+          // This is based on the tile ID set when we create the secondary tile
+          // in TaskbarTabsPin.sys.mjs.
+          `${pfn}!App:taskbartab-${aTaskbarTab.id}`
+        );
+      } else {
+        // If on non-MSIX, use the AUMID of the shortcut (which is just the ID).
+        lazy.WinTaskbar.setGroupIdForWindow(win, aTaskbarTab.id);
+      }
+    }
 
     this.#attachWindowFocusTelemetry(win);
     Glean.webApp.activate.record({});
@@ -336,4 +362,15 @@ function getTabId(aTab) {
  */
 function getWindowId(aWindow) {
   return aWindow.docShell.outerWindowID;
+}
+
+function getLinuxWindowClass(aTaskbarTab) {
+  if (aTaskbarTab.shortcutRelativePath) {
+    // Use the existing desktop entry, removing the .desktop extension and any earlier subdirectories.
+    let subdir = aTaskbarTab.shortcutRelativePath.split("/");
+    return subdir[subdir.length - 1].replace(/\.desktop$/, "");
+  }
+
+  // It hasn't been saved yet, use the name that will be used.
+  return lazy.TaskbarTabsUtils._determineNewDesktopEntryName(aTaskbarTab.id);
 }

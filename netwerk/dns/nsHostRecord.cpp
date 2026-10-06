@@ -1,4 +1,3 @@
-/* vim:set ts=4 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,8 +8,8 @@
 #include "DNSLogging.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/glean/NetwerkDnsMetrics.h"
-#include "mozilla/ThreadSafety.h"
 #include "TRRService.h"
+#include "mozilla/ProfilerMarkers.h"
 
 //----------------------------------------------------------------------------
 // this macro filters out any flags that are not used when constructing the
@@ -31,6 +30,32 @@
 
 using namespace mozilla;
 using namespace mozilla::net;
+
+struct HostResolverMarker {
+  static constexpr mozilla::Span<const char> MarkerTypeName() {
+    return mozilla::MakeStringSpan("HostResolver");
+  }
+  static void StreamJSONMarkerData(
+      mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
+      const mozilla::ProfilerString8View& aHost,
+      const mozilla::ProfilerString8View& aOriginSuffix, uint16_t aType,
+      uint32_t aFlags) {
+    aWriter.StringProperty("host", aHost);
+    aWriter.StringProperty("originSuffix", aOriginSuffix);
+    aWriter.IntProperty("qtype", aType);
+    aWriter.StringProperty("flags", nsPrintfCString("0x%x", aFlags));
+  }
+  static MarkerSchema MarkerTypeDisplay() {
+    using MS = MarkerSchema;
+    MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
+    schema.SetTableLabel("{marker.data.host}");
+    schema.AddKeyFormat("host", MS::Format::SanitizedString);
+    schema.AddKeyFormat("originSuffix", MS::Format::SanitizedString);
+    schema.AddKeyFormat("qtype", MS::Format::Integer);
+    schema.AddKeyFormat("flags", MS::Format::String);
+    return schema;
+  }
+};
 
 nsHostKey::nsHostKey(const nsACString& aHost, const nsACString& aTrrServer,
                      uint16_t aType, nsIDNSService::DNSFlags aFlags,
@@ -162,10 +187,7 @@ NS_IMPL_ISUPPORTS_INHERITED(AddrHostRecord, nsHostRecord, AddrHostRecord)
 
 AddrHostRecord::AddrHostRecord(const nsHostKey& key) : nsHostRecord(key) {}
 
-AddrHostRecord::~AddrHostRecord() {
-  mCallbacks.clear();
-  glean::dns::blocklist_count.AccumulateSingleSample(mUnusableCount);
-}
+AddrHostRecord::~AddrHostRecord() { mCallbacks.clear(); }
 
 bool AddrHostRecord::Blocklisted(const NetAddr* aQuery) {
   addr_info_lock.AssertCurrentThreadOwns();
@@ -200,15 +222,13 @@ void AddrHostRecord::ReportUnusable(const NetAddr* aAddress) {
        "used trr=%d\n",
        host.get(), this, mTRRSuccess));
 
-  ++mUnusableCount;
-
-  char buf[kIPv6CStrBufSize];
-  if (aAddress->ToStringBuffer(buf, sizeof(buf))) {
+  nsCString item;
+  if (aAddress->ToString(item)) {
     LOG(
         ("Successfully adding address [%s] to blocklist for host "
          "[%s].\n",
-         buf, host.get()));
-    mUnusableItems.AppendElement(nsCString(buf));
+         item.get(), host.get()));
+    mUnusableItems.AppendElement(item);
   }
 }
 
@@ -224,13 +244,15 @@ size_t AddrHostRecord::SizeOfIncludingThis(MallocSizeOf mallocSizeOf) const {
 
   n += nsHostKey::SizeOfExcludingThis(mallocSizeOf);
   n += SizeOfResolveHostCallbackListExcludingHead(mCallbacks, mallocSizeOf);
-
-  n += addr_info ? addr_info->SizeOfIncludingThis(mallocSizeOf) : 0;
   n += mallocSizeOf(addr.get());
 
-  n += mUnusableItems.ShallowSizeOfExcludingThis(mallocSizeOf);
-  for (size_t i = 0; i < mUnusableItems.Length(); i++) {
-    n += mUnusableItems[i].SizeOfExcludingThisIfUnshared(mallocSizeOf);
+  {
+    MutexAutoLock lock(addr_info_lock);
+    n += addr_info ? addr_info->SizeOfIncludingThis(mallocSizeOf) : 0;
+    n += mUnusableItems.ShallowSizeOfExcludingThis(mallocSizeOf);
+    for (size_t i = 0; i < mUnusableItems.Length(); i++) {
+      n += mUnusableItems[i].SizeOfExcludingThisIfUnshared(mallocSizeOf);
+    }
   }
   return n;
 }
@@ -250,6 +272,7 @@ bool AddrHostRecord::HasUsableResultInternal(
     return true;
   }
 
+  MutexAutoLock lock(addr_info_lock);
   return addr_info || addr;
 }
 
@@ -286,9 +309,16 @@ void AddrHostRecord::NotifyRetryingTrr() {
 }
 
 void AddrHostRecord::ResolveComplete() {
+  TimeStamp now = TimeStamp::Now();
+
   if (LoadNativeUsed()) {
     if (mNativeSuccess) {
       glean::dns::native_lookup_time.AccumulateRawDuration(mNativeDuration);
+      profiler_add_marker(
+          "Native DNS Lookup", geckoprofiler::category::NETWORK,
+          MarkerOptions(MarkerTiming::Interval(mNativeStart, now),
+                        MarkerThreadId::MainThread()),
+          HostResolverMarker{}, host, originSuffix, type, flags);
     }
     glean::dns::lookup_disposition
         .Get(TRRService::ProviderKey(),
@@ -302,6 +332,11 @@ void AddrHostRecord::ResolveComplete() {
                             mozilla::net::TRRSkippedReason::TRR_OK);
       glean::dns::trr_lookup_time.Get(TRRService::ProviderKey())
           .AccumulateRawDuration(mTrrDuration);
+      profiler_add_marker(
+          "TRR DNS Lookup", geckoprofiler::category::NETWORK,
+          MarkerOptions(MarkerTiming::Interval(now - mTrrDuration, now),
+                        MarkerThreadId::MainThread()),
+          HostResolverMarker{}, host, originSuffix, type, flags);
     }
     glean::dns::lookup_disposition
         .Get(TRRService::ProviderKey(), mTRRSuccess ? "trrOK"_ns : "trrFail"_ns)
@@ -473,10 +508,8 @@ bool TypeHostRecord::HasUsableResultInternal(
     return true;
   }
 
-  MOZ_PUSH_IGNORE_THREAD_SAFETY
-  // To avoid locking in a const method
+  MutexAutoLock lock(mResultsLock);
   return !mResults.is<Nothing>();
-  MOZ_POP_THREAD_SAFETY
 }
 
 bool TypeHostRecord::RefreshForNegativeResponse() const { return false; }
@@ -655,9 +688,14 @@ void TypeHostRecord::ResolveComplete() {
         .AccumulateSingleSample(static_cast<uint32_t>(mTRRSkippedReason));
   }
 
+  // Record the lookup time, keyed by whether it was resolved over DoH/TRR or
+  // natively; failed lookups go to a separate metric.
   if (mTRRSuccess) {
-    glean::dns::by_type_succeeded_lookup_time.AccumulateRawDuration(
+    glean::dns::https_rr_lookup_time.Get("doh"_ns).AccumulateRawDuration(
         mTrrDuration);
+  } else if (mNativeSuccess) {
+    glean::dns::https_rr_lookup_time.Get("native"_ns)
+        .AccumulateRawDuration(mNativeDuration);
   } else {
     glean::dns::by_type_failed_lookup_time.AccumulateRawDuration(mTrrDuration);
   }

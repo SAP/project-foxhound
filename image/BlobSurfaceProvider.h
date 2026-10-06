@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +8,7 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/SVGImageContext.h"
 #include "mozilla/gfx/2D.h"
-#include "mozilla/gfx/DrawEventRecorder.h"
+#include "mozilla/gfx/DrawEventRecorderTypes.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
 #include "ImageRegion.h"
 #include "ISurfaceProvider.h"
@@ -25,7 +23,7 @@ class BlobImageKeyData final {
   BlobImageKeyData(
       layers::WebRenderLayerManager* aManager, const wr::BlobImageKey& aBlobKey,
       std::vector<RefPtr<gfx::ScaledFont>>&& aScaledFonts,
-      gfx::DrawEventRecorderPrivate::ExternalSurfacesHolder&& aExternalSurfaces)
+      gfx::DrawEventRecorderPrivate_ExternalSurfacesHolder&& aExternalSurfaces)
       : mManager(aManager),
         mBlobKey(aBlobKey),
         mScaledFonts(std::move(aScaledFonts)),
@@ -54,7 +52,7 @@ class BlobImageKeyData final {
   RefPtr<layers::WebRenderLayerManager> mManager;
   wr::BlobImageKey mBlobKey;
   std::vector<RefPtr<gfx::ScaledFont>> mScaledFonts;
-  gfx::DrawEventRecorderPrivate::ExternalSurfacesHolder mExternalSurfaces;
+  gfx::DrawEventRecorderPrivate_ExternalSurfacesHolder mExternalSurfaces;
   bool mDirty;
 };
 

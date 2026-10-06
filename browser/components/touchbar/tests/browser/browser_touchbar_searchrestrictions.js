@@ -3,8 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 ChromeUtils.defineESModuleGetters(this, {
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(this, "UrlbarTestUtils", () => {
@@ -19,7 +19,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "TouchBarHelper",
   "@mozilla.org/widget/touchbarhelper;1",
-  "nsITouchBarHelper"
+  Ci.nsITouchBarHelper
 );
 
 /**
@@ -30,7 +30,7 @@ XPCOMUtils.defineLazyServiceGetter(
  * @param {object} options
  * @param {string} options.input
  *   The value to be inserted in the Urlbar.
- * @param {UrlbarTokenizer.RESTRICT} options.token
+ * @param {UrlbarShared.RESTRICT_TOKENS} options.token
  *   A restriction token corresponding to a Touch Bar button.
  */
 async function searchAndCheckState({ input, token }) {
@@ -39,10 +39,10 @@ async function searchAndCheckState({ input, token }) {
     value: input,
   });
   input = input.trimStart();
-  if (Object.values(UrlbarTokenizer.RESTRICT).includes(input[0])) {
+  if (Object.values(UrlbarShared.RESTRICT_TOKENS).includes(input[0])) {
     input = input.slice(1).trimStart();
   }
-  let searchMode = UrlbarUtils.searchModeForToken(token);
+  let searchMode = gURLBar.searchModeForToken(token);
   let expectedValue = searchMode ? input : `${token} ${input}`;
   TouchBarHelper.insertRestrictionInUrlbar(token);
 
@@ -63,19 +63,19 @@ add_task(async function insertTokens() {
   const tests = [
     {
       input: "mozilla",
-      token: UrlbarTokenizer.RESTRICT.HISTORY,
+      token: UrlbarShared.RESTRICT_TOKENS.HISTORY,
     },
     {
       input: "mozilla",
-      token: UrlbarTokenizer.RESTRICT.BOOKMARK,
+      token: UrlbarShared.RESTRICT_TOKENS.BOOKMARK,
     },
     {
       input: "mozilla",
-      token: UrlbarTokenizer.RESTRICT.TAG,
+      token: UrlbarShared.RESTRICT_TOKENS.TAG,
     },
     {
       input: "mozilla",
-      token: UrlbarTokenizer.RESTRICT.OPENPAGE,
+      token: UrlbarShared.RESTRICT_TOKENS.OPENPAGE,
     },
   ];
   for (let test of tests) {
@@ -87,19 +87,19 @@ add_task(async function existingTokens() {
   const tests = [
     {
       input: "* mozilla",
-      token: UrlbarTokenizer.RESTRICT.HISTORY,
+      token: UrlbarShared.RESTRICT_TOKENS.HISTORY,
     },
     {
       input: "+ mozilla",
-      token: UrlbarTokenizer.RESTRICT.BOOKMARK,
+      token: UrlbarShared.RESTRICT_TOKENS.BOOKMARK,
     },
     {
       input: "( $ ^ mozilla",
-      token: UrlbarTokenizer.RESTRICT.TAG,
+      token: UrlbarShared.RESTRICT_TOKENS.TAG,
     },
     {
       input: "^*+%?#$ mozilla",
-      token: UrlbarTokenizer.RESTRICT.TAG,
+      token: UrlbarShared.RESTRICT_TOKENS.TAG,
     },
   ];
   for (let test of tests) {
@@ -111,15 +111,15 @@ add_task(async function stripSpaces() {
   const tests = [
     {
       input: "     ^     mozilla",
-      token: UrlbarTokenizer.RESTRICT.HISTORY,
+      token: UrlbarShared.RESTRICT_TOKENS.HISTORY,
     },
     {
       input: "     +         mozilla   ",
-      token: UrlbarTokenizer.RESTRICT.BOOKMARK,
+      token: UrlbarShared.RESTRICT_TOKENS.BOOKMARK,
     },
     {
       input: "  moz    illa  ",
-      token: UrlbarTokenizer.RESTRICT.TAG,
+      token: UrlbarShared.RESTRICT_TOKENS.TAG,
     },
   ];
   for (let test of tests) {
@@ -131,11 +131,11 @@ add_task(async function clearURLs() {
   const tests = [
     {
       loadUrl: "http://example.com/",
-      token: UrlbarTokenizer.RESTRICT.HISTORY,
+      token: UrlbarShared.RESTRICT_TOKENS.HISTORY,
     },
     {
       loadUrl: "about:mozilla",
-      token: UrlbarTokenizer.RESTRICT.BOOKMARK,
+      token: UrlbarShared.RESTRICT_TOKENS.BOOKMARK,
     },
   ];
   let win = BrowserWindowTracker.getTopWindow();

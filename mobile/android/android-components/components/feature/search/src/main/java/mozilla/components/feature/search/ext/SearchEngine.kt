@@ -4,6 +4,7 @@
 
 package mozilla.components.feature.search.ext
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.annotation.VisibleForTesting
@@ -113,8 +114,8 @@ fun SearchEngine.buildSearchUrl(searchTerm: String): String {
  * Parses a [SearchEngine] from the given [stream].
  */
 @Deprecated("Only for migrating legacy search engines. Will eventually be removed.")
-fun parseLegacySearchEngine(id: String, stream: InputStream): SearchEngine {
-    val reader = SearchEngineReader(SearchEngine.Type.CUSTOM)
+fun parseLegacySearchEngine(context: Context, id: String, stream: InputStream): SearchEngine {
+    val reader = SearchEngineReader(context, SearchEngine.Type.CUSTOM)
     return reader.loadStream(id, stream)
 }
 

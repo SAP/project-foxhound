@@ -7,13 +7,31 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
+#include "modules/rtp_rtcp/source/rtp_packet.h"
+
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <optional>
+#include <span>
+#include <string>
+#include <type_traits>
+#include <utility>
+#include <vector>
+
+#include "absl/strings/string_view.h"
+#include "api/rtp_headers.h"
+#include "api/units/time_delta.h"
+#include "api/video/color_space.h"
+#include "api/video/video_timing.h"
 #include "common_video/test/utilities.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/rtp_dependency_descriptor_extension.h"
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
-#include "rtc_base/random.h"
+#include "rtc_base/copy_on_write_buffer.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
@@ -24,6 +42,7 @@ using ::testing::Each;
 using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
 using ::testing::IsEmpty;
+using ::testing::Not;
 
 constexpr int8_t kPayloadType = 100;
 constexpr uint32_t kSsrc = 0x12345678;
@@ -448,6 +467,34 @@ TEST(RtpPacketTest, SetReservedExtensionsAfterPayload) {
   EXPECT_TRUE(packet.SetExtension<TransmissionOffset>(kTimeOffset));
 }
 
+TEST(RtpPacketTest, SetEmptyPayload) {
+  std::span<const uint8_t> empty_payload;
+  RtpPacket packet;
+  packet.SetPayload(empty_payload);
+
+  EXPECT_THAT(packet.payload(), IsEmpty());
+}
+
+TEST(RtpPacketTest, SetEmptyPayloadOverwritesExistingPayload) {
+  const uint8_t payload[] = {1, 2, 3, 4, 2, 0, 42};
+  std::span<const uint8_t> empty_payload;
+  RtpPacket packet;
+
+  packet.SetPayload(payload);
+  EXPECT_THAT(packet.payload(), Not(IsEmpty()));
+
+  packet.SetPayload(empty_payload);
+  EXPECT_THAT(packet.payload(), IsEmpty());
+}
+
+TEST(RtpPacketTest, SetPayload) {
+  const uint8_t payload[] = {1, 2, 3, 4, 2, 0, 42};
+  RtpPacket packet;
+  packet.SetPayload(payload);
+
+  EXPECT_THAT(packet.payload(), ElementsAreArray(payload));
+}
+
 TEST(RtpPacketTest, CreatePurePadding) {
   const size_t kPaddingSize = kMaxPaddingSize - 1;
   RtpPacketToSend packet(nullptr, 12 + kPaddingSize);
@@ -489,8 +536,7 @@ TEST(RtpPacketTest, UsesZerosForPadding) {
   RtpPacket packet;
 
   EXPECT_TRUE(packet.SetPadding(kPaddingSize));
-  EXPECT_THAT(rtc::MakeArrayView(packet.data() + 12, kPaddingSize - 1),
-              Each(0));
+  EXPECT_THAT(std::span(packet.data() + 12, kPaddingSize - 1), Each(0));
 }
 
 TEST(RtpPacketTest, CreateOneBytePadding) {
@@ -524,7 +570,7 @@ TEST(RtpPacketTest, ParseMinimum) {
 }
 
 TEST(RtpPacketTest, ParseBuffer) {
-  rtc::CopyOnWriteBuffer unparsed(kMinimumPacket);
+  CopyOnWriteBuffer unparsed(kMinimumPacket);
   const uint8_t* raw = unparsed.data();
 
   RtpPacketReceived packet;
@@ -563,7 +609,7 @@ TEST(RtpPacketTest, ParseHeaderOnly) {
   // clang-format on
 
   RtpPacket packet;
-  EXPECT_TRUE(packet.Parse(rtc::CopyOnWriteBuffer(kPaddingHeader)));
+  EXPECT_TRUE(packet.Parse(CopyOnWriteBuffer(kPaddingHeader)));
   EXPECT_EQ(packet.PayloadType(), 0x62u);
   EXPECT_EQ(packet.SequenceNumber(), 0x3579u);
   EXPECT_EQ(packet.Timestamp(), 0x65431278u);
@@ -583,7 +629,7 @@ TEST(RtpPacketTest, ParseHeaderOnlyWithPadding) {
   // clang-format on
 
   RtpPacket packet;
-  EXPECT_TRUE(packet.Parse(rtc::CopyOnWriteBuffer(kPaddingHeader)));
+  EXPECT_TRUE(packet.Parse(CopyOnWriteBuffer(kPaddingHeader)));
 
   EXPECT_TRUE(packet.has_padding());
   EXPECT_EQ(packet.padding_size(), 0u);
@@ -603,7 +649,7 @@ TEST(RtpPacketTest, ParseHeaderOnlyWithExtensionAndPadding) {
   RtpHeaderExtensionMap extensions;
   extensions.Register<TransmissionOffset>(1);
   RtpPacket packet(&extensions);
-  EXPECT_TRUE(packet.Parse(rtc::CopyOnWriteBuffer(kPaddingHeader)));
+  EXPECT_TRUE(packet.Parse(CopyOnWriteBuffer(kPaddingHeader)));
   EXPECT_TRUE(packet.has_padding());
   EXPECT_TRUE(packet.HasExtension<TransmissionOffset>());
   EXPECT_EQ(packet.padding_size(), 0u);
@@ -619,7 +665,7 @@ TEST(RtpPacketTest, ParsePaddingOnlyPacket) {
   // clang-format on
 
   RtpPacket packet;
-  EXPECT_TRUE(packet.Parse(rtc::CopyOnWriteBuffer(kPaddingHeader)));
+  EXPECT_TRUE(packet.Parse(CopyOnWriteBuffer(kPaddingHeader)));
   EXPECT_TRUE(packet.has_padding());
   EXPECT_EQ(packet.padding_size(), 3u);
 }
@@ -905,11 +951,11 @@ struct UncopyableExtension {
   static constexpr absl::string_view Uri() { return "uri"; }
 
   static size_t ValueSize(const UncopyableValue& /* value */) { return 1; }
-  static bool Write(rtc::ArrayView<uint8_t> /* data */,
+  static bool Write(std::span<uint8_t> /* data */,
                     const UncopyableValue& /* value */) {
     return true;
   }
-  static bool Parse(rtc::ArrayView<const uint8_t> /* data */,
+  static bool Parse(std::span<const uint8_t> /* data */,
                     UncopyableValue* /* value */) {
     return true;
   }
@@ -942,14 +988,12 @@ struct ParseByReferenceExtension {
   static size_t ValueSize(uint8_t /* value1 */, uint8_t /* value2 */) {
     return 2;
   }
-  static bool Write(rtc::ArrayView<uint8_t> data,
-                    uint8_t value1,
-                    uint8_t value2) {
+  static bool Write(std::span<uint8_t> data, uint8_t value1, uint8_t value2) {
     data[0] = value1;
     data[1] = value2;
     return true;
   }
-  static bool Parse(rtc::ArrayView<const uint8_t> data,
+  static bool Parse(std::span<const uint8_t> data,
                     uint8_t& value1,
                     uint8_t& value2) {
     value1 = data[0];
@@ -1044,8 +1088,8 @@ TEST(RtpPacketTest, CreateAndParseAbsoluteCaptureTime) {
   send_packet.SetSsrc(kSsrc);
 
   constexpr AbsoluteCaptureTime kAbsoluteCaptureTime{
-      /*absolute_capture_timestamp=*/9876543210123456789ULL,
-      /*estimated_capture_clock_offset=*/-1234567890987654321LL};
+      .absolute_capture_timestamp = 9876543210123456789ULL,
+      .estimated_capture_clock_offset = -1234567890987654321LL};
   ASSERT_TRUE(send_packet.SetExtension<AbsoluteCaptureTimeExtension>(
       kAbsoluteCaptureTime));
 
@@ -1074,8 +1118,8 @@ TEST(RtpPacketTest,
   send_packet.SetSsrc(kSsrc);
 
   constexpr AbsoluteCaptureTime kAbsoluteCaptureTime{
-      /*absolute_capture_timestamp=*/9876543210123456789ULL,
-      /*estimated_capture_clock_offset=*/std::nullopt};
+      .absolute_capture_timestamp = 9876543210123456789ULL,
+      .estimated_capture_clock_offset = std::nullopt};
   ASSERT_TRUE(send_packet.SetExtension<AbsoluteCaptureTimeExtension>(
       kAbsoluteCaptureTime));
 
@@ -1163,7 +1207,7 @@ TEST(RtpPacketTest, CreateAndParseTransportSequenceNumberV2Preallocated) {
 
   constexpr int kTransportSequenceNumber = 12345;
   constexpr std::optional<FeedbackRequest> kNoFeedbackRequest =
-      FeedbackRequest{/*include_timestamps=*/false, /*sequence_count=*/0};
+      FeedbackRequest{.include_timestamps = false, .sequence_count = 0};
   send_packet.ReserveExtension<TransportSequenceNumberV2>();
   send_packet.SetExtension<TransportSequenceNumberV2>(kTransportSequenceNumber,
                                                       kNoFeedbackRequest);
@@ -1196,7 +1240,7 @@ TEST(RtpPacketTest,
 
   constexpr int kTransportSequenceNumber = 12345;
   constexpr std::optional<FeedbackRequest> kFeedbackRequest =
-      FeedbackRequest{/*include_timestamps=*/true, /*sequence_count=*/3};
+      FeedbackRequest{.include_timestamps = true, .sequence_count = 3};
   send_packet.SetExtension<TransportSequenceNumberV2>(kTransportSequenceNumber,
                                                       kFeedbackRequest);
 
@@ -1332,6 +1376,28 @@ TEST(RtpPacketTest, SetExtensionWithArray) {
   packet.SetRawExtension<RtpDependencyDescriptorExtension>(extension_data);
   EXPECT_THAT(packet.GetRawExtension<RtpDependencyDescriptorExtension>(),
               ElementsAreArray(extension_data));
+}
+
+TEST(RtpPacketTest, SetCsrcsTruncatesWhenExceedingMax) {
+  RtpPacketToSend packet(nullptr);
+  packet.SetPayloadType(kPayloadType);
+  packet.SetSequenceNumber(kSeqNum);
+  packet.SetTimestamp(kTimestamp);
+  packet.SetSsrc(kSsrc);
+
+  std::vector<uint32_t> many_csrcs;
+  for (uint32_t i = 0; i < 20; ++i) {
+    many_csrcs.push_back(kSsrc + i);
+  }
+
+  // SetCsrcs should truncate to maximum elements allowed.
+  packet.SetCsrcs(many_csrcs);
+
+  std::vector<uint32_t> csrcs = packet.Csrcs();
+  EXPECT_EQ(csrcs.size(), RtpPacket::kMaxCsrcs);
+  for (size_t i = 0; i < RtpPacket::kMaxCsrcs; ++i) {
+    EXPECT_EQ(csrcs[i], many_csrcs[i]);
+  }
 }
 
 }  // namespace

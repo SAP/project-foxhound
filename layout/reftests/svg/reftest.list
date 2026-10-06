@@ -157,8 +157,8 @@ fuzzy(0-1,0-10000) == dynamic-filter-contents-01b.svg dynamic-filter-contents-01
 == dynamic-pattern-02.svg pass.svg
 == dynamic-pattern-contents-01.svg pass.svg
 == dynamic-pattern-contents-02.svg pass.svg
-== dynamic-rect-01.svg dynamic-rect-01-ref.svg
-fuzzy-if(winWidget,0-3,0-1200) == dynamic-rect-02.svg dynamic-rect-02-ref.svg # bug 776038 for Win7, Win8
+fuzzy(0-5,0-2800) == dynamic-rect-01.svg dynamic-rect-01-ref.svg
+fuzzy(0-13,0-6600) == dynamic-rect-02.svg dynamic-rect-02-ref.svg
 == dynamic-rect-03.svg dynamic-rect-03-ref.svg
 == dynamic-rect-04.xhtml pass.svg
 == dynamic-rect-05.svg pass.svg
@@ -170,7 +170,7 @@ fuzzy-if(winWidget,0-3,0-1200) == dynamic-rect-02.svg dynamic-rect-02-ref.svg # 
 == dynamic-stroke-width-01.svg pass.svg
 == dynamic-switch-01.svg pass.svg
 == dynamic-text-01.svg dynamic-text-01-ref.svg
-fuzzy-if(winWidget,0-4,0-12739) fuzzy-if(gfxSVGFEGaussianBlur,0-7,0-1000000) == dynamic-text-02.svg dynamic-text-02-ref.svg # bug 776038 for Win7, Win8
+fuzzy-if(winWidget,0-4,0-12739) fuzzy-if(gfxSVGFEGaussianBlur,0-16,0-1000000) == dynamic-text-02.svg dynamic-text-02-ref.svg # bug 776038 for Win7, Win8
 fuzzy-if(winWidget,0-2,0-10539) == dynamic-text-03.svg dynamic-text-03-ref.svg # bug 776038 for Win7
 == dynamic-text-04.svg dynamic-text-04-ref.svg
 == dynamic-text-05.svg pass.svg
@@ -249,7 +249,8 @@ fuzzy-if(Android,0-18,0-600) == foreignObject-fixedpos-01.html foreignObject-dyn
 == foreignObject-dynamic-line-height-01.html foreignObject-dynamic-line-height-01-ref.html
 == foreignObject-vertical-01.svg foreignObject-vertical-01-ref.svg
 
-== fragmentIdentifier-01.xhtml pass.svg
+== fragmentIdentifier-01a.xhtml pass.svg
+== fragmentIdentifier-01b.xhtml pass.svg
 
 == g-transform-01.svg pass.svg
 
@@ -281,7 +282,7 @@ fuzzy(0-1,0-800000) == markers-and-group-opacity-01.svg markers-and-group-opacit
 fuzzy(0-1,0-1) == marker-dynamic-opacity.html marker-dynamic-opacity-ref.html
 == marker-css-transform.html marker-css-transform-ref.html
 == marker-effects-01.svg marker-effects-01-ref.svg
-fuzzy(0-1,0-100) == marker-viewBox-01.svg marker-viewBox-01-ref.svg
+fuzzy(0-9,0-12) == marker-viewBox-01.svg marker-viewBox-01-ref.svg
 fuzzy(0-65,0-570) == marker-orientation-01.svg marker-orientation-01-ref.svg
 fuzzy(0-65,0-570) == marker-orientation-02.svg marker-orientation-02-ref.svg
 == marker-orientation-03.svg pass.svg
@@ -627,6 +628,7 @@ fuzzy(0-1,0-150) == mask-opacity-invalidation-1.html mask-opacity-invalidation-1
 skip-if(Android) skip-if(cocoaWidget) skip-if(winWidget) == transform-animation-on-path.html transform-animation-on-path-ref.html #Bug 1638909
 
 fuzzy(0-20,0-110) == 1792313.svg 1792313-ref.svg
+fuzzy(0-20,0-1000) == 2039658.svg 2039658-ref.png
 pref(svg.use-element.recursive-clone-limit.enabled,1) != about:blank explosive-use.svg
 
 # do not increase fuzz significantly, test was designed to be within 1 color unit
@@ -634,3 +636,6 @@ fuzzy(0-1,0-230400) == 1630900-1.html 1630900-1-ref.html
 # do not increase fuzz significantly, test was designed to be within 1 color unit
 
 fuzzy-if(winWidget||cocoaWidget,0-1,0-6050) == rect-no-backgrounds-print.html rect-no-backgrounds-print-ref.html
+
+== bad-arc.html bad-arc-ref.html
+pref(layout.disable-pixel-alignment,true) == mask-image-at-fractional-position.html mask-image-at-fractional-position-ref.html

@@ -1,4 +1,3 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -283,17 +282,8 @@ add_task(async function () {
   let ee_cert = loadedCerts[2];
   notEqual(ee_cert, null, "EE cert should have successfully loaded");
 
-  let init_num_trustObj = certdb.countTrustObjects();
   setup_basic_trusts(ca_cert, int_cert);
   await test_ca_distrust(ee_cert, ca_cert, true);
-
-  // testing countTrustObjects(), loaded 2 certs from above code
-  let num_trustObj = certdb.countTrustObjects();
-  equal(
-    num_trustObj,
-    init_num_trustObj + 2,
-    "Number of trust objects should be 2"
-  );
 
   setup_basic_trusts(ca_cert, int_cert);
   await test_ca_distrust(ee_cert, int_cert, false);

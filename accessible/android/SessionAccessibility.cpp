@@ -1,5 +1,4 @@
-/* -*- Mode: c++; c-basic-offset: 2; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -16,7 +15,6 @@
 #include "JavaBuiltins.h"
 #include "nsAccessibilityService.h"
 #include "nsAccUtils.h"
-#include "nsViewManager.h"
 
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/BrowserParent.h"
@@ -388,12 +386,7 @@ RefPtr<SessionAccessibility> SessionAccessibility::GetInstanceFor(
     return nullptr;
   }
 
-  nsViewManager* vm = aPresShell->GetViewManager();
-  if (!vm) {
-    return nullptr;
-  }
-
-  nsCOMPtr<nsIWidget> rootWidget = vm->GetRootWidget();
+  nsCOMPtr<nsIWidget> rootWidget = aPresShell->GetRootWidget();
   // `rootWidget` can be one of several types. Here we make sure it is an
   // android nsWindow.
   if (RefPtr<nsWindow> window = nsWindow::From(rootWidget)) {
@@ -642,7 +635,6 @@ void SessionAccessibility::PopulateNodeInfo(
   aAccessible->Description(accDesc);
   uint64_t state = aAccessible->State();
   LayoutDeviceIntRect bounds = aAccessible->Bounds();
-  uint8_t actionCount = aAccessible->ActionCount();
   int32_t virtualViewID = AccessibleWrap::GetVirtualViewID(aAccessible);
   Accessible* parent = virtualViewID != kNoID ? aAccessible->Parent() : nullptr;
   int32_t parentID = parent ? AccessibleWrap::GetVirtualViewID(parent) : 0;
@@ -653,7 +645,8 @@ void SessionAccessibility::PopulateNodeInfo(
     role = roles::TEXT;
   }
 
-  uint32_t flags = AccessibleWrap::GetFlags(role, state, actionCount);
+  uint32_t flags = AccessibleWrap::GetFlags(aAccessible);
+
   int32_t className = AccessibleWrap::AndroidClass(aAccessible);
 
   nsAutoString hint;

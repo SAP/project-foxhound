@@ -12,11 +12,10 @@
 #include "sslimpl.h"
 
 #include "base/database.h"
-#include "base/mutate.h"
 #include "tls/common.h"
+#include "tls/config.h"
 #include "tls/mutators.h"
 #include "tls/server_certs.h"
-#include "tls/server_config.h"
 #include "tls/socket.h"
 
 #ifdef IS_DTLS_FUZZ
@@ -40,7 +39,7 @@ static PRStatus InitModelSocket(void* arg) {
   PRFileDesc* fd = reinterpret_cast<PRFileDesc*>(arg);
 
   TlsCommon::EnableAllCipherSuites(fd);
-  TlsServer::InstallServerCertificates(fd);
+  TlsServerCerts::InstallCertificates(fd);
 
   return PR_SUCCESS;
 }
@@ -65,7 +64,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   assert(sslFd == prFd.get());
 
   // Derive server config from input data.
-  TlsServer::Config config = TlsServer::Config(data, size);
+  TlsConfig::Server config = TlsConfig::Server(data, size);
 
   if (ssl_trace >= 90) {
     std::cerr << config << "\n";
@@ -83,7 +82,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   config.SetCallbacks(sslFd);
   config.SetSocketOptions(sslFd);
 
-  // Perform the acutal handshake.
+  // Perform the actual handshake.
   TlsCommon::DoHandshake(sslFd, true);
 
   // Clear the cache. We never want to resume as we couldn't reproduce that.
@@ -94,17 +93,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
 extern "C" size_t LLVMFuzzerCustomMutator(uint8_t* data, size_t size,
                                           size_t maxSize, unsigned int seed) {
-  return CustomMutate(
-      {TlsMutators::DropRecord, TlsMutators::ShuffleRecords,
-       TlsMutators::DuplicateRecord, TlsMutators::TruncateRecord,
-       TlsMutators::FragmentRecord},
-      data, size, maxSize, seed);
+  return TlsMutators::CustomMutator(data, size, maxSize, seed);
 }
 
 extern "C" size_t LLVMFuzzerCustomCrossOver(const uint8_t* data1, size_t size1,
                                             const uint8_t* data2, size_t size2,
                                             uint8_t* out, size_t maxOutSize,
                                             unsigned int seed) {
-  return TlsMutators::CrossOver(data1, size1, data2, size2, out, maxOutSize,
-                                seed);
+  return TlsMutators::CustomCrossOver(data1, size1, data2, size2, out,
+                                      maxOutSize, seed);
 }

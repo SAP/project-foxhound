@@ -64,7 +64,7 @@ add_setup(async function () {
   let places = [];
   for (let i = 0; i < pages.length; i++) {
     places.push({
-      uri: NetUtil.newURI(pages[i]),
+      uri: Services.io.newURI(pages[i]),
       visitDate: (time - i) * 1000,
       transition: PlacesUtils.history.TRANSITION_TYPED,
     });
@@ -142,7 +142,7 @@ add_task(async function test_library_history_telemetry() {
 
   // Double click first History link to open it
   gLibrary.ContentTree.view.selectNode(firstHistoryNode);
-  synthesizeClickOnSelectedTreeCell(gLibrary.ContentTree.view, {
+  await synthesizeClickOnSelectedTreeCell(gLibrary.ContentTree.view, {
     clickCount: 2,
   });
 
@@ -179,7 +179,7 @@ add_task(async function test_library_history_telemetry() {
   gResponse = 1;
 
   // Open all history entries
-  synthesizeClickOnSelectedTreeCell(gLibrary.PlacesOrganizer._places, {
+  await synthesizeClickOnSelectedTreeCell(gLibrary.PlacesOrganizer._places, {
     button: 1,
   });
 
@@ -209,7 +209,7 @@ add_task(async function test_library_history_telemetry() {
   gResponse = 0;
 
   // Open all history entries
-  synthesizeClickOnSelectedTreeCell(gLibrary.PlacesOrganizer._places, {
+  await synthesizeClickOnSelectedTreeCell(gLibrary.PlacesOrganizer._places, {
     button: 1,
   });
 
@@ -223,7 +223,7 @@ add_task(async function test_library_history_telemetry() {
   TelemetryTestUtils.assertHistogram(cumulativeSearchesHistogram, 4, 1);
   info("Cumulative search telemetry looks right");
 
-  synthesizeClickOnSelectedTreeCell(gLibrary.ContentTree.view, {
+  await synthesizeClickOnSelectedTreeCell(gLibrary.ContentTree.view, {
     button: 2,
     type: "contextmenu",
   });
@@ -243,7 +243,7 @@ add_task(async function test_library_history_telemetry() {
     1
   );
 
-  synthesizeClickOnSelectedTreeCell(gLibrary.ContentTree.view, {
+  await synthesizeClickOnSelectedTreeCell(gLibrary.ContentTree.view, {
     button: 2,
     type: "contextmenu",
   });
@@ -265,7 +265,7 @@ add_task(async function test_library_history_telemetry() {
 
   let newWinOpened = BrowserTestUtils.waitForNewWindow();
 
-  synthesizeClickOnSelectedTreeCell(gLibrary.ContentTree.view, {
+  await synthesizeClickOnSelectedTreeCell(gLibrary.ContentTree.view, {
     button: 2,
     type: "contextmenu",
   });
@@ -293,7 +293,7 @@ add_task(async function test_library_history_telemetry() {
 
   let newPrivateWinOpened = BrowserTestUtils.waitForNewWindow();
 
-  synthesizeClickOnSelectedTreeCell(gLibrary.ContentTree.view, {
+  await synthesizeClickOnSelectedTreeCell(gLibrary.ContentTree.view, {
     button: 2,
     type: "contextmenu",
   });
@@ -361,7 +361,7 @@ add_task(async function test_library_bookmarks_telemetry() {
   let firstNode = library.ContentTree.view.view.nodeForTreeIndex(0);
   library.ContentTree.view.selectNode(firstNode);
 
-  synthesizeClickOnSelectedTreeCell(library.ContentTree.view, {
+  await synthesizeClickOnSelectedTreeCell(library.ContentTree.view, {
     clickCount: 2,
   });
 
@@ -391,7 +391,7 @@ add_task(async function test_library_bookmarks_telemetry() {
   firstNode = library.ContentTree.view.view.nodeForTreeIndex(0);
   library.ContentTree.view.selectNode(firstNode);
 
-  synthesizeClickOnSelectedTreeCell(library.ContentTree.view, {
+  await synthesizeClickOnSelectedTreeCell(library.ContentTree.view, {
     clickCount: 2,
   });
 

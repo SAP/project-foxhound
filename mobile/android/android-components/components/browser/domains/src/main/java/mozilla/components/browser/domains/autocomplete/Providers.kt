@@ -5,8 +5,10 @@
 package mozilla.components.browser.domains.autocomplete
 
 import android.content.Context
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import mozilla.components.browser.domains.CustomDomains
@@ -49,14 +51,16 @@ open class BaseDomainAutocompleteProvider(
     private val list: DomainList,
     private val domainsLoader: DomainsLoader,
     override val autocompletePriority: Int = 0,
-) : AutocompleteProvider, CoroutineScope by CoroutineScope(Dispatchers.IO) {
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) : AutocompleteProvider {
+    private val scope = CoroutineScope(ioDispatcher + SupervisorJob())
 
     // We compute 'domains' on the worker thread; make sure it's immediately visible on the UI thread.
     @Volatile
     var domains: List<Domain> = emptyList()
 
     fun initialize(context: Context) {
-        launch {
+        scope.launch {
             domains = async { domainsLoader(context) }.await()
         }
     }

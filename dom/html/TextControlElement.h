@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,7 @@
 #ifndef mozilla_TextControlElement_h
 #define mozilla_TextControlElement_h
 
+#include "mozilla/Attributes.h"
 #include "mozilla/dom/FromParser.h"
 #include "mozilla/dom/NodeInfo.h"
 #include "nsGenericHTMLElement.h"
@@ -28,7 +27,7 @@ class TextEditor;
  */
 class TextControlElement : public nsGenericHTMLFormControlElementWithState {
  public:
-  TextControlElement(already_AddRefed<dom::NodeInfo>&& aNodeInfo,
+  TextControlElement(already_AddRefed<dom::NodeInfo> aNodeInfo,
                      dom::FromParser aFromParser, FormControlType aType)
       : nsGenericHTMLFormControlElementWithState(std::move(aNodeInfo),
                                                  aFromParser, aType) {};
@@ -45,7 +44,17 @@ class TextControlElement : public nsGenericHTMLFormControlElementWithState {
    */
   bool IsTextControlElement() const final { return true; }
 
-  virtual bool IsSingleLineTextControlOrTextArea() const = 0;
+  bool IsSingleLineTextControlOrTextArea() const {
+    return IsSingleLineTextControl() || IsTextArea();
+  }
+
+  /**
+   * Find out whether this is a single line text control.  (text or password)
+   * @return whether this is a single line text control
+   */
+  bool IsSingleLineTextControl() const {
+    return nsGenericHTMLFormControlElement::IsSingleLineTextControl(false);
+  }
 
   NS_IMPL_FROMNODE_HELPER(TextControlElement, IsTextControlElement())
 
@@ -55,22 +64,30 @@ class TextControlElement : public nsGenericHTMLFormControlElementWithState {
   virtual void SetValueChanged(bool) = 0;
 
   /**
-   * Find out whether this is a single line text control.  (text or password)
-   * @return whether this is a single line text control
+   * Called when this is a single line text control or a <textarea> and will get
+   * focus (before dispatching eFocus to the DOM).
    */
-  virtual bool IsSingleLineTextControl() const = 0;
+  MOZ_CAN_RUN_SCRIPT void WillFocus(const WidgetEvent&);
+
+  /**
+   * Called when this is a single line text control or a <textarea> and will
+   * blur (before dispatching eBlur to the DOM).
+   */
+  MOZ_CAN_RUN_SCRIPT void WillBlur(const WidgetEvent&);
 
   /**
    * Find out whether this control is a textarea.
    * @return whether this is a textarea text control
    */
-  virtual bool IsTextArea() const = 0;
+  bool IsTextArea() const { return mType == FormControlType::Textarea; }
 
   /**
    * Find out whether this is a password control (input type=password)
    * @return whether this is a password ontrol
    */
-  virtual bool IsPasswordTextControl() const = 0;
+  bool IsPasswordTextControl() const {
+    return mType == FormControlType::InputPassword;
+  }
 
   /**
    * Get the cols attribute (if textarea) or a default
@@ -136,35 +153,14 @@ class TextControlElement : public nsGenericHTMLFormControlElementWithState {
   virtual TextControlState* GetTextControlState() const = 0;
 
   /**
-   * Binds a frame to the text control.  This is performed when a frame
-   * is created for the content node.
-   * Be aware, this must be called with script blocker.
-   */
-  virtual nsresult BindToFrame(nsTextControlFrame* aFrame) = 0;
-
-  /**
-   * Unbinds a frame from the text control.  This is performed when a frame
-   * belonging to a content node is destroyed.
-   */
-  MOZ_CAN_RUN_SCRIPT virtual void UnbindFromFrame(
-      nsTextControlFrame* aFrame) = 0;
-
-  /**
-   * Creates an editor for the text control.  This should happen when
-   * a frame has been created for the text control element, but the created
-   * editor may outlive the frame itself.
-   */
-  MOZ_CAN_RUN_SCRIPT virtual nsresult CreateEditor() = 0;
-
-  /**
    * Update preview value for the text control.
    */
-  virtual void SetPreviewValue(const nsAString& aValue) = 0;
+  void SetPreviewValue(const nsAString& aValue);
 
   /**
    * Get the current preview value for text control.
    */
-  virtual void GetPreviewValue(nsAString& aValue) = 0;
+  void GetPreviewValue(nsAString& aValue);
 
   /**
    * Enable preview or autofilled state for the text control.
@@ -175,21 +171,6 @@ class TextControlElement : public nsGenericHTMLFormControlElementWithState {
    * Get the current preview or autofilled state for the text control.
    */
   virtual void GetAutofillState(nsAString& aState) = 0;
-
-  /**
-   * Enable preview for text control.
-   */
-  virtual void EnablePreview() = 0;
-
-  /**
-   * Find out whether this control enables preview for form autofoll.
-   */
-  virtual bool IsPreviewEnabled() = 0;
-
-  /**
-   * Initialize the keyboard event listeners.
-   */
-  virtual void InitializeKeyboardEventListeners() = 0;
 
   enum class ValueChangeKind {
     Internal,
@@ -222,16 +203,6 @@ class TextControlElement : public nsGenericHTMLFormControlElementWithState {
   inline static constexpr int32_t DEFAULT_ROWS_TEXTAREA = 2;
   inline static constexpr int32_t DEFAULT_UNDO_CAP = 1000;
 
-  // wrap can be one of these three values.
-  typedef enum {
-    eHTMLTextWrap_Off = 1,   // "off"
-    eHTMLTextWrap_Hard = 2,  // "hard"
-    eHTMLTextWrap_Soft = 3   // the default
-  } nsHTMLTextWrap;
-
-  static bool GetWrapPropertyEnum(nsIContent* aContent,
-                                  nsHTMLTextWrap& aWrapProp);
-
   /**
    * Does the editor have a selection cache?
    *
@@ -243,7 +214,42 @@ class TextControlElement : public nsGenericHTMLFormControlElementWithState {
   static already_AddRefed<TextControlElement>
   GetTextControlElementFromEditingHost(nsIContent* aHost);
 
+  // Returns the ::-moz-text-control-editing-root pseudo-element if it exists.
+  // It always has one text node child.
+  Element* GetTextEditorRoot() const;
+  // Returns the ::placeholder pseudo-element if it exists.
+  // It always has one text node child.
+  Element* GetTextEditorPlaceholder() const;
+  // Returns the ::-moz-text-control-preview pseudo-element if it exists.
+  // It always has one non-empty text node child if it does.
+  Element* GetTextEditorPreview() const;
+  // Returns the auxiliary button pseudo-element like ::-moz-reveal /
+  // ::-moz-search-clear-button / ::-moz-number-spin-box.
+  Element* GetTextEditorButton() const;
+  // Creates the appropriate button element for this control type, or returns
+  // nullptr if none is needed.
+  already_AddRefed<Element> CreateButton() const;
+  // Returns whether the given PseudoStyleType is one of the button pseudos we
+  // create for buttons.
+  static bool IsButtonPseudoElement(PseudoStyleType);
+
+  // Updates the text node when not managed by editor.
+  void UpdateValueDisplay(bool aNotify);
+
+  enum class ScrollAncestors : bool { No, Yes };
+  void ScrollSelectionIntoViewAsync(ScrollAncestors = ScrollAncestors::No);
+
  protected:
+  MOZ_CAN_RUN_SCRIPT void SelectAll();
+  MOZ_CAN_RUN_SCRIPT void ShowSelection();
+  bool NeedToInitializeEditorForEvent(EventChainPreVisitor&) const;
+
+  void SetupShadowTree(dom::ShadowRoot&, bool aNotify);
+  Element* FindShadowPseudo(PseudoStyleType) const;
+  void UpdatePlaceholder(const nsAttrValue* aOldValue,
+                         const nsAttrValue* aNewValue);
+  void UpdateTextEditorShadowTree();
+
   virtual ~TextControlElement() = default;
 
   // The focusability state of this form control.  eUnfocusable means that it

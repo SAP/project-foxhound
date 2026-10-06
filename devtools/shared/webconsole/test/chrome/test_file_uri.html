@@ -45,9 +45,9 @@ function doFileActivity()
   NetUtil.asyncCopy(stream, fout, addIframe);
 }
 
-function addIframe(aStatus)
+function addIframe(status)
 {
-  ok(Components.isSuccessCode(aStatus),
+  ok(Components.isSuccessCode(status),
      "the temporary file was saved successfully");
 
   const iframe = document.createElement("iframe");
@@ -63,19 +63,19 @@ async function startTest()
   onAttach(state);
 }
 
-function onAttach(aState)
+function onAttach(state)
 {
-  gState = aState;
+  gState = state;
   gState.webConsoleFront.on("fileActivity", onFileActivity);
   doFileActivity();
 }
 
-function onFileActivity(aPacket)
+function onFileActivity(packet)
 {
   gState.webConsoleFront.off("fileActivity", onFileActivity);
 
-  info("aPacket.uri: " + aPacket.uri);
-  ok(/\bbug798764\b.*\.html$/.test(aPacket.uri), "file URI match");
+  info("packet.uri: " + packet.uri);
+  ok(/\bbug798764\b.*\.html$/.test(packet.uri), "file URI match");
 
   testEnd();
 }

@@ -23,13 +23,13 @@ add_task(async function () {
 
   const sourceTab = findElementWithSelector(dbg, ".source-tab.active");
   ok(
-    sourceTab.querySelector(".img.blackBox"),
+    sourceTab.querySelector(".dbg-img-blackBox"),
     "Source tab has a blackbox icon"
   );
 
   const treeItem = findElementWithSelector(dbg, ".tree-node.focused");
   ok(
-    treeItem.querySelector(".img.blackBox"),
+    treeItem.querySelector(".dbg-img-blackBox"),
     "Source tree item has a blackbox icon"
   );
 

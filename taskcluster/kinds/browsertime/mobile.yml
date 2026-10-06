@@ -1,0 +1,581 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+task-defaults:
+    max-run-time: 3600
+    suite: raptor
+    variants:
+        - geckoview-no-fission
+    run-on-projects: []
+    tier:
+        by-app:
+            fenix: 1
+            default: 3
+    test-manifest-loader: null  # don't load tests in the taskgraph
+    target:
+        by-app:
+            fenix:
+                by-test-platform:
+                    android-hw.*-aarch64.*/.*:
+                        upstream-task: signing-apk
+                        name: public/build/target.arm64-v8a.apk
+                    default:
+                        upstream-task: signing-apk
+                        name: public/build/target.armeabi-v7a.apk
+            refbrow:
+                by-test-platform:
+                    android-hw.*-aarch64.*/.*:
+                        index: mobile.v2.reference-browser.raptor.latest.arm64-v8a
+                        name: target.arm64-v8a.apk
+                    default:
+                        index: mobile.v2.reference-browser.raptor.latest.armeabi-v7a
+                        name: target.armeabi-v7a.apk
+            default: geckoview_example.apk
+    virtualization: hardware
+    raptor:
+        activity:
+            by-app:
+                fenix: org.mozilla.fenix.IntentReceiverActivity
+                geckoview: org.mozilla.geckoview_example.GeckoViewActivity
+                refbrow: org.mozilla.reference.browser.BrowserTestActivity
+                default: None
+        binary-path:
+            by-app:
+                fenix: org.mozilla.fenix
+                geckoview: org.mozilla.geckoview_example
+                refbrow: org.mozilla.reference.browser.raptor
+                default: None
+    mozharness:
+        script: raptor_script.py
+        config:
+            - raptor/android_hw_config.py
+        extra-options:
+            # Bug 1635749, disable window recorder temporarily
+            - --browsertime-no-ffwindowrecorder
+    optimization:
+        skip-unless-android-perftest-backstop: null
+    limit-platforms:
+        by-app:
+            chrome-m:
+                - .*shippable.*
+            cstm-car-m:
+                - .*shippable.*
+            default: []
+    fetches:
+        toolchain:
+            by-app:
+                cstm-car-m:
+                    - android-custom-car
+                    - linux64-minidump-stackwalk
+                    - linux64-fix-stacks
+                default:
+                    - linux64-minidump-stackwalk
+                    - linux64-fix-stacks
+    dependencies:
+        by-app:
+            fenix:
+                signing-apk: signing-apk-fenix-nightly-simulation
+            default: {}
+
+browsertime-tp6m:
+    <<: &tp6m-defaults
+        description: Raptor (browsertime) tp6 page-load tests on android
+        max-run-time:
+            by-subtest:
+                reddit:
+                    by-app:
+                        geckoview: 7200
+                        default: 3600
+                imdb:
+                    by-app:
+                        geckoview: 7200
+                        default: 3600
+                default: 3600
+        mozharness:
+            extra-options:
+                - --chimera
+                # Bug 1884667 - Fresh profiles cause high frequency intermittents
+                - --conditioned-profile=settled
+        tier:
+            by-app:
+                geckoview: 1
+                fenix: 1
+                refbrow: 2
+                default: 3
+        treeherder-symbol: Btime(tp6m)
+    raptor:
+        apps: [geckoview, fenix, chrome-m, refbrow, cstm-car-m]
+        run-visual-metrics: true
+        test: tp6m
+        subtests:
+            - amazon
+            - bing
+            - [bing-search-restaurants, bing-s-r]
+            - booking
+            - cnn
+            - [cnn-ampstories, cnn-amp]
+            - dailymail
+            - [ebay-kleinanzeigen, ebay-k]
+            - [ebay-kleinanzeigen-search, ebay-k-s]
+            # Bug 1682027 - Disabled due to high failure rate
+            # - [facebook-cristiano, fb-cris]
+            - [google-maps, gmaps]
+            - [google-search-restaurants, gsearch-r]
+            - instagram
+            - imdb
+            - reddit
+            - sina
+            - [stackoverflow, stacko]
+            - bild-de
+            - wikipedia
+            - youtube
+    run-on-projects:
+        by-app:
+            geckoview: []
+            fenix:
+                by-variant:
+                    geckoview-no-fission:
+                        by-test-platform:
+                            android-hw-a55.*shippable.*: [trunk-only]
+                            default: []
+                    default: [mozilla-central]
+            default: []
+
+browsertime-tp6m-essential:
+    <<: *tp6m-defaults
+    raptor:
+        apps: [geckoview, fenix, chrome-m, refbrow, cstm-car-m]
+        run-visual-metrics: true
+        test: tp6m
+        subtests:
+            - allrecipes
+            - [amazon-search, amazon-s]
+            - espn
+            # Bug 1682027 - Disabled due to high failure rate
+            # - facebook
+            - google
+            - [microsoft-support, micros-sup]
+            - [youtube-watch, youtube-w]
+    run-on-projects:
+        by-app:
+            geckoview: []
+            fenix:
+                by-test-platform:
+                    android-hw-a55.*shippable.*: [trunk-only]
+                    default: []
+            default: []
+    tier:
+        by-app:
+            geckoview: 1
+            fenix: 1
+            refbrow: 2
+            default: 3
+
+browsertime-tp6m-webextensions:
+    <<: *tp6m-defaults
+    description: Raptor (browsertime) tp6 page-load tests with webextensions installed on android
+    treeherder-symbol: Btime-webext(tp6m)
+    mozharness:
+        extra-options:
+            - --chimera
+            - --browsertime-no-ffwindowrecorder
+            - --conditioned-profile=settled-webext
+            - --browser-cycles=5
+    raptor:
+        apps: [fenix]
+        run-visual-metrics: true
+        test: tp6m
+        subtests:
+            - [amazon-search, amazon-s]
+    fetches:
+        fetch:
+            - firefox-addons
+    run-on-projects:
+        by-app:
+            fenix:
+                by-test-platform:
+                    android-hw-a55.*shippable.*: [mozilla-central]
+                    default: []
+            default: []
+    # TODO(Bug 1867781): promote to tier 2 after confirming no issue have been caught while runing as tier 3.
+    tier: 3
+
+browsertime-youtube-playback-mobile:
+    description: Browsertime YouTube Playback on Android
+    treeherder-symbol: Btime(ytp)
+    raptor:
+        apps: [fenix, geckoview, refbrow]
+        subtests:
+            by-app:
+                fenix:
+                    by-test-platform:
+                        android-hw-a55.*:
+                            - [youtube-playback-av1-sfr, ytp-av1-sfr]
+                            - [youtube-playback-hfr, ytp-hfr]
+                            - [youtube-playback-vp9-sfr, ytp-vp9-sfr]
+                            # Bug 1699469 - Disabled until a crash is fixed.
+                            # - [youtube-playback-widevine-h264-sfr, ytp-widevine-h264-sfr]
+                            # - [youtube-playback-widevine-hfr, ytp-widevine-hfr]
+                        default: []
+                default:
+                    by-test-platform:
+                        android-hw-a55.*:
+                            - [youtube-playback-h264-sfr, ytp-h264-sfr]
+                            - [youtube-playback-hfr, ytp-hfr]
+                            # Bug 1699469 - Disabled until a crash is fixed.
+                            # - [youtube-playback-widevine-h264-sfr, ytp-widevine-h264-sfr]
+                            # - [youtube-playback-widevine-hfr, ytp-widevine-hfr]
+                        default: []
+        test-url-param:
+            by-subtest:
+                youtube-playback-h264-sfr:  # remove high resolution tests
+                    exclude=1,2,
+                    23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38
+                youtube-playback-hfr:
+                    by-test-platform:
+                        android-hw-a55.*:  # remove VP9(1-34) and AV1(51-74) tests
+                            exclude=1,2,
+                            3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,
+                            51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74
+                        default: ""
+                youtube-playback-widevine-hfr:
+                    by-test-platform:
+                        android-hw-a55.*:  # remove VP9(1-34) tests
+                            exclude=1,2,
+                            3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34
+                        default: ""
+                default: ""
+    run-on-projects:
+        by-app:
+            fenix:
+                by-test-platform:
+                    android-hw-a55.*shippable.*: [mozilla-central]
+                    default: []
+            geckoview: []
+            default: []
+    tier:
+        by-app:
+            fenix: 1
+            default: 3
+    max-run-time: 3600
+
+browsertime-youtube-playback-power-mobile:
+    description: Browsertime YouTube Playback on Android for Power Usage Testing
+    treeherder-symbol: Btime(ytp)
+    tier:
+        by-app:
+            fenix: 1
+            geckoview: 2
+            default: 3
+    raptor:
+        apps: [fenix, geckoview, chrome-m]
+        subtests:
+            - [youtube-playback-h264-720p60, ytp-h264-720]
+            - [youtube-playback-vp9-720p60, ytp-vp9-720]
+    run-on-projects:
+        by-app:
+            fenix:
+                by-test-platform:
+                    android-hw-a55.*shippable.*: []  # Bug 1934169: disabled, intermittent power measurement failure
+                    default: []
+            geckoview: []
+            default: []
+    max-run-time: 1800
+    mozharness:
+        extra-options:
+            - --power-test
+
+browsertime-tp6m-live:
+    <<: *tp6m-defaults
+    raptor:
+        apps: [chrome-m, fenix, geckoview]
+        run-visual-metrics: true
+        test: tp6m
+        subtests:
+            - allrecipes
+            - amazon
+            - [amazon-search, amazon-s]
+            - bing
+            - [bing-search-restaurants, bing-s-r]
+            - booking
+            - booking-sf
+            - cnn
+            - [cnn-ampstories, cnn-amp]
+            - dailymail
+            - discord
+            - [ebay-kleinanzeigen, ebay-k]
+            - [ebay-kleinanzeigen-search, ebay-k-s]
+            - espn
+            - expedia
+            - facebook
+            - [facebook-cristiano, fb-cris]
+            - [fashionbeans, fashbea]
+            - google
+            - [google-accounts, gacc]
+            - [google-maps, gmaps]
+            - [google-search-restaurants, gsearch-r]
+            - instagram
+            - imdb
+            - [imdb-firefox, imdb-f]
+            - [medium-article, medium]
+            - [microsoft-support, micros-sup]
+            - nytimes
+            - [people-article, people]
+            - reddit
+            - [reddit-thread, reddit-thr]
+            - rumble-fox
+            - [stackoverflow, stacko]
+            - [stackoverflow-question, stack-q]
+            - [urbandictionary-define, urbict-def]
+            - bild-de
+            - [wikia-marvel, wikia-m]
+            - wikipedia
+            - youtube
+            - [youtube-watch, youtube-w]
+    mozharness:
+        extra-options:
+            - --live-sites
+            - --chimera
+    run-on-projects:
+        by-subtest:
+            cnn-ampstories:
+                by-app:
+                    geckoview: []
+                    default: []
+            default: []
+    tier:
+        by-app:
+            fenix: 1
+            default: 3
+    treeherder-symbol: Btime-live(tp6m)
+
+browsertime-tp6m-profiling:
+    description: Raptor (browsertime) tp6 page-load tests on android with Gecko profiling
+    raptor:
+        apps: [geckoview]
+        test: tp6m
+        subtests: [amazon, youtube]
+    treeherder-symbol: Btime-Prof(tp6m)
+    mozharness:
+        script: raptor_script.py
+        config:
+            - raptor/android_hw_config.py
+        extra-options:
+            - --chimera
+            - --gecko-profile
+    run-on-projects:
+        by-test-platform:
+            android-hw-a55.*shippable.*/opt: [mozilla-central]
+            default: []
+    tier:
+        by-app:
+            fenix: 1
+            default: 3
+
+browsertime-video-playback-latency-mobile:
+    <<: *tp6m-defaults
+    description: Browsertime Video Playback Latency on Android
+    treeherder-symbol: Btime(vpl)
+    raptor:
+        apps: [chrome-m, fenix, geckoview]
+        run-visual-metrics: true
+        test: video-playback-latency
+        subtests:
+            - vpl-av1
+            - vpl-h264
+            - vpl-vp9
+    mozharness:
+        extra-options:
+            - --chimera
+            - --browsertime-no-ffwindowrecorder
+            - --extra-profiler-run
+    run-on-projects:
+        by-app:
+            chrome-m: []
+            geckoview: []
+            default:
+                by-test-platform:
+                    android-hw-a55.*shippable.*: [autoland, mozilla-central]
+                    default: []
+    tier:
+        by-app:
+            fenix: 1
+            default: 3
+    fetches:
+        toolchain:
+            - linux64-minidump-stackwalk
+            - linux64-fix-stacks
+            - linux64-samply
+            - profiler-node-tools
+
+browsertime-benchmark-speedometer2-mobile:
+    description: Browsertime Speedometer 2 on Android
+    raptor:
+        apps: [geckoview, fenix, chrome-m, cstm-car-m]
+    tier:
+        by-app:
+            fenix: 1
+            default: 3
+    run-on-projects: []
+    treeherder-symbol: Btime(sp2)
+    mozharness:
+        extra-options:
+            - --test=speedometer2
+
+browsertime-benchmark-speedometer3-mobile:
+    description: Browsertime Speedometer 3 on Android
+
+    raptor:
+        apps: [geckoview, fenix, chrome-m, cstm-car-m]
+    tier:
+        by-app:
+            fenix: 1
+            geckoview: 2
+            cstm-car-m: 2
+            default: 3
+    run-on-projects:
+        by-app:
+            fenix:
+                by-test-platform:
+                    android-hw-a55.*shippable.*: [trunk-only]
+                    android-hw-p6.*shippable.*: [mozilla-central]
+                    android-hw-s24.*shippable.*: [mozilla-central]
+                    default: []
+            geckoview: []
+            chrome-m:
+                by-test-platform:
+                    android-hw-p6.*shippable.*: [mozilla-central]
+                    android-hw-s24.*shippable.*: [mozilla-central]
+                    default: []
+            default: []
+    treeherder-symbol: Btime(sp3)
+    mozharness:
+        extra-options:
+            - --test=speedometer3
+
+browsertime-benchmark-motionmark-1-3:
+    description: Raptor (browsertime) Motionmark 1.3 benchmark tests
+    raptor:
+        apps: [geckoview, fenix, chrome-m, cstm-car-m]
+        subtests:
+            - [motionmark-1-3, mm-1.3]
+            - [motionmark-htmlsuite-1-3, mm-h-1.3]
+    run-on-projects:
+        by-app:
+            chrome-m: []
+            geckoview: []
+            default:
+                by-test-platform:
+                    android-hw-a55.*shippable.*: [mozilla-central]
+                    default: []
+    treeherder-symbol: Btime()
+    tier:
+        by-app:
+            fenix: 1
+            geckoview: 2
+            default: 3
+
+browsertime-benchmark-jetstream2:
+    description: Raptor (browsertime) jetstream 2 benchmark test
+    raptor:
+        apps: [geckoview, fenix, chrome-m, cstm-car-m]
+        subtests:
+            - [jetstream2, js]
+    run-on-projects:
+        by-test-platform:
+            android-hw-a55.*shippable.*:
+                by-app:
+                    fenix: [mozilla-central]
+                    default: []
+            default: []
+    treeherder-symbol: Btime()
+    tier:
+        by-app:
+            fenix: 1
+            default: 3
+
+browsertime-benchmark-jetstream3:
+    description: Raptor (browsertime) jetstream 3 benchmark test
+    raptor:
+        # Bug 1954124 not quite ready for Fenix and GVE
+        apps: [chrome-m, cstm-car-m, fenix]
+        subtests:
+            - [jetstream3, js3]
+    run-on-projects:
+        by-test-platform:
+            android-hw-a55.*shippable.*:
+                by-app:
+                    fenix: [trunk-only]
+                    default: []
+            default: []
+    treeherder-symbol: Btime()
+    tier:
+        by-app:
+            fenix: 2
+            default: 3
+
+browsertime-benchmark-unity-webgl-mobile:
+    description: Browsertime Unity WebGL on Android
+    raptor:
+        apps: [geckoview, refbrow, fenix, chrome-m]
+    tier:
+        by-app:
+            fenix: 1
+            geckoview: 2
+            default: 3
+    treeherder-symbol: Btime(ugl)
+    run-on-projects:
+        by-app:
+            refbrow: []
+            geckoview: []
+            default:
+                by-test-platform:
+                    android-hw-a55.*shippable.*: [mozilla-central]
+                    default: []
+    max-run-time: 900
+    mozharness:
+        extra-options:
+            - --test=unity-webgl
+
+browsertime-power:
+    description: Browsertime Power Usage Tests on Android
+    raptor:
+        apps: [geckoview, fenix, refbrow]
+        subtests:
+            - idle
+            - idle-bg
+            - [speedometer2, sp2]
+    tier:
+        by-app:
+            fenix: 1
+            default: 2
+    run-on-projects: []
+    treeherder-symbol: Btime-P(power)
+    mozharness:
+        extra-options:
+            - --power-test
+
+browsertime-trr-performance-m:
+    raptor:
+        apps: [fenix]
+        run-visual-metrics: false
+        subtests:
+            - dns-multi
+            - dns-native
+            - trr-cloudf
+            - trr-multi
+            - trr-next
+            - trr-w-clou
+            - trr-w-next
+
+    description: Raptor (browsertime) trr performance tests, mobile
+    max-run-time: 600
+    run-on-projects:
+        by-app:
+            fenix:
+                by-test-platform:
+                    android-hw-a55.*shippable.*: [mozilla-central]
+                    default: []
+    tier: 3
+    treeherder-symbol: Btime(trrperfm)

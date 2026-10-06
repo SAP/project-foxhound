@@ -18,7 +18,7 @@ add_task(async function () {
 
   is(actors.length, 1, "have a single actor");
   ok(
-    actors[0].url.endsWith("/source-pragma.js"),
+    actors[0].sourceObject.url.endsWith("/source-pragma.js"),
     "source url was not rewritten"
   );
   is(actors[0].sourceMapURL, null, "source map was not exposed");

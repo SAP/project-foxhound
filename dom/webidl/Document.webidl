@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -155,9 +154,9 @@ partial interface Document {
   WindowProxy? open(UTF8String url, DOMString name, DOMString features);
   [CEReactions, Throws]
   undefined close();
-  [CEReactions, Throws]
+  [CEReactions, Throws, NeedsSubjectPrincipal=NonSystem]
   undefined write((TrustedHTML or DOMString)... text);
-  [CEReactions, Throws]
+  [CEReactions, Throws, NeedsSubjectPrincipal=NonSystem]
   undefined writeln((TrustedHTML or DOMString)... text);
 
   // user interaction
@@ -176,7 +175,7 @@ partial interface Document {
   boolean queryCommandIndeterm(DOMString commandId);
   [Throws]
   boolean queryCommandState(DOMString commandId);
-  [Throws, NeedsCallerType]
+  [Throws, NeedsSubjectPrincipal]
   boolean queryCommandSupported(DOMString commandId);
   [Throws]
   DOMString queryCommandValue(DOMString commandId);
@@ -248,13 +247,17 @@ partial interface Document {
   [ChromeOnly]
   readonly attribute ReferrerPolicy referrerPolicy;
 
-    /**
+  /**
    * Current referrer info, which holds all referrer related information
    * including referrer policy and raw referrer of document.
    */
   [ChromeOnly]
   readonly attribute nsIReferrerInfo referrerInfo;
 
+  // If true, forces the (-moz-native-theme) media query to evaluate to false
+  // on this document. Note this doesn't propagate to subdocuments.
+  [ChromeOnly]
+  attribute boolean forceNonNativeTheme;
 };
 
 // https://html.spec.whatwg.org/multipage/obsolete.html#other-elements%2C-attributes-and-apis
@@ -299,6 +302,15 @@ partial interface Document {
   // Events handlers
   attribute EventHandler onfullscreenchange;
   attribute EventHandler onfullscreenerror;
+
+  [ChromeOnly, BinaryName="getFullscreenKeyboardLockStatus"]
+  readonly attribute FullscreenKeyboardLock fullscreenKeyboardLock;
+};
+
+// https://w3c.github.io/picture-in-picture/#extensions-to-the-document-interface
+partial interface Document {
+  [Pref="dom.media-pip.enabled"] readonly attribute boolean pictureInPictureEnabled;
+  [Pref="dom.media-pip.enabled", NewObject, Throws] Promise<undefined> exitPictureInPicture();
 };
 
 // https://w3c.github.io/pointerlock/#extensions-to-the-document-interface
@@ -352,6 +364,9 @@ dictionary CaretPositionFromPointOptions {
 partial interface Document {
     CaretPosition? caretPositionFromPoint(float x, float y, optional CaretPositionFromPointOptions options = {});
 
+    [Pref="dom.caretRangeFromPoint.enabled"]
+    Range? caretRangeFromPoint(optional long x = 0, optional long y = 0);
+
     readonly attribute Element? scrollingElement;
 };
 
@@ -368,12 +383,6 @@ partial interface Document {
 
 //  Mozilla extensions of various sorts
 partial interface Document {
-  // @deprecated We are going to remove these (bug 1584269).
-  [Pref="dom.events.script_execute.enabled"]
-  attribute EventHandler onbeforescriptexecute;
-  [Pref="dom.events.script_execute.enabled"]
-  attribute EventHandler onafterscriptexecute;
-
   // Creates a new XUL element regardless of the document's default type.
   [ChromeOnly, CEReactions, NewObject, Throws]
   Element createXULElement(DOMString localName, optional (ElementCreationOptions or DOMString) options = {});
@@ -447,6 +456,11 @@ partial interface Document {
   [ChromeOnly] readonly attribute nsILoadGroup? documentLoadGroup;
 
   // Blocks the initial document parser until the given promise is settled.
+  // Note: In order to prevent extension or test code from altering about:blank
+  // semantics, this cannot block about:blank.
+  //
+  // If the option `blockScriptCreated` is not set to `false` this alters
+  // the Web-exposed behavior of `document.open()`ed documents, which is bad.
   [ChromeOnly, NewObject]
   Promise<any> blockParsing(Promise<any> promise,
                             optional BlockParsingOptions options = {});
@@ -543,11 +557,6 @@ partial interface Document {
   Promise<boolean> hasStorageAccess();
   [Pref="dom.storage_access.enabled", NewObject]
   Promise<undefined> requestStorageAccess();
-  // https://github.com/privacycg/storage-access/pull/100
-  [Pref="dom.storage_access.forward_declared.enabled", NewObject]
-  Promise<undefined> requestStorageAccessUnderSite(DOMString serializedSite);
-  [Pref="dom.storage_access.forward_declared.enabled", NewObject]
-  Promise<undefined> completeStorageAccessRequestFromSite(DOMString serializedSite);
 };
 
 // A privileged API to give chrome privileged code and the content script of the
@@ -556,12 +565,6 @@ partial interface Document {
 partial interface Document {
   [Func="Document::CallerIsSystemPrincipalOrWebCompatAddon", NewObject]
   Promise<undefined> requestStorageAccessForOrigin(DOMString thirdPartyOrigin, optional boolean requireUserInteraction = true);
-};
-
-// Extension to give chrome JS the ability to determine whether
-// the user has interacted with the document or not.
-partial interface Document {
-  [ChromeOnly] readonly attribute boolean userHasInteracted;
 };
 
 // Extension to give chrome JS the ability to simulate activate the document
@@ -596,6 +599,10 @@ partial interface Document {
 partial interface Document {
   [ChromeOnly] readonly attribute PolicyContainer? policyContainer;
   [ChromeOnly] readonly attribute DOMString cspJSON;
+};
+
+partial interface Document {
+  [ChromeOnly] readonly attribute URI? tlsCertificateBindingURI;
 };
 
 partial interface Document {
@@ -662,7 +669,7 @@ partial interface Document {
    * tracking, fingerprinting, cryptomining and so on. This method is for
    * testing only.
    */
-  [ChromeOnly, Pure]
+  [ChromeOnly]
   readonly attribute NodeList blockedNodesByClassifier;
 };
 
@@ -698,8 +705,28 @@ partial interface Document {
 
 // Extension to allow chrome code to detect initial about:blank documents.
 partial interface Document {
+  /**
+   * https://html.spec.whatwg.org/#is-initial-about:blank
+   *
+   * True if this is the initial about:blank document that the browsing context
+   * started with. Any web-observable browsing context starts out with such
+   * an empty document.
+   *
+   * This flag remains true for the entire lifetime of that document.
+   */
   [ChromeOnly]
   readonly attribute boolean isInitialDocument;
+
+  /**
+   * True if this is the initial about:blank document and it is still transient,
+   * i.e. it has not been committed to as a navigation destination.
+   *
+   * In this state, many actions (e.g. firing the load event) have not yet occurred.
+   * The browser may commit to it synchronously (causing those actions to run),
+   * but it could also remain transient or be replaced.
+   */
+  [ChromeOnly]
+  readonly attribute boolean isUncommittedInitialDocument;
 };
 
 // Extension to allow chrome code to get some wireframe-like structure.
@@ -747,17 +774,27 @@ partial interface Document {
     readonly attribute FragmentDirective fragmentDirective;
 };
 
-// https://drafts.csswg.org/css-view-transitions-1/#additions-to-document-api
-partial interface Document {
-  [Pref="dom.viewTransitions.enabled"]
-  ViewTransition startViewTransition(optional ViewTransitionUpdateCallback updateCallback);
+
+callback ViewTransitionUpdateCallback = Promise<any> ();
+dictionary StartViewTransitionOptions {
+  ViewTransitionUpdateCallback? update = null;
+  sequence<DOMString>? types = null;
 };
 
-// https://github.com/w3c/csswg-drafts/pull/10767 for the name divergence in the spec
-callback ViewTransitionUpdateCallback = Promise<any> ();
+// https://drafts.csswg.org/css-view-transitions-2/#idl-index
+partial interface Document {
+  [Pref="dom.viewTransitions.enabled"]
+  ViewTransition startViewTransition(
+    optional (ViewTransitionUpdateCallback or StartViewTransitionOptions) callbackOptions = {}
+  );
+  [Pref="dom.viewTransitions.enabled"]
+  readonly attribute ViewTransition? activeViewTransition;
+};
 
 // https://wicg.github.io/sanitizer-api/#sanitizer-api
 partial interface Document {
   [Throws, Pref="dom.security.sanitizer.enabled"]
   static Document parseHTML(DOMString html, optional SetHTMLOptions options = {});
 };
+
+Document includes ARIANotifyMixin;

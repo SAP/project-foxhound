@@ -10,7 +10,7 @@ let oldRemoveEngineFunc;
 add_setup(async function () {
   SearchTestUtils.setRemoteSettingsConfig([{ identifier: "unused" }]);
 
-  await Services.search.init();
+  await SearchService.init();
   await promiseAfterSettings();
 
   extension = await SearchTestUtils.installSearchExtension(
@@ -30,10 +30,8 @@ add_setup(async function () {
   // For these tests, stub-out the removeEngine function, so that when we
   // remove it from the add-on manager, the engine is left in the search
   // settings.
-  oldRemoveEngineFunc = Services.search.wrappedJSObject.removeEngine.bind(
-    Services.search.wrappedJSObject
-  );
-  Services.search.wrappedJSObject.removeEngine = () => {};
+  oldRemoveEngineFunc = SearchService.removeEngine.bind(SearchService);
+  SearchService.removeEngine = () => {};
 
   registerCleanupFunction(async () => {
     await extensionPostData.unload();
@@ -44,15 +42,15 @@ add_task(async function test_valid_extensions_do_nothing() {
   Services.fog.testResetFOG();
 
   Assert.ok(
-    Services.search.getEngineByName("Example"),
+    SearchService.getEngineByName("Example"),
     "Should have installed the engine"
   );
   Assert.ok(
-    !!Services.search.getEngineByName("PostData"),
+    !!SearchService.getEngineByName("PostData"),
     "Should have installed the PostData engine"
   );
 
-  await Services.search.runBackgroundChecks();
+  await SearchService.runBackgroundChecks();
 
   let labels = ["1", "2", "4", "5", "6"];
   for (let label of labels) {
@@ -70,11 +68,11 @@ add_task(async function test_valid_extensions_do_nothing() {
 add_task(async function test_different_name() {
   Services.fog.testResetFOG();
 
-  let engine = Services.search.getEngineByName("Example");
+  let engine = SearchService.getEngineByName("Example");
 
-  engine.wrappedJSObject._name = "Example Test";
+  engine._name = "Example Test";
 
-  await Services.search.runBackgroundChecks();
+  await SearchService.runBackgroundChecks();
 
   let recordedQuantity =
     Glean.browserSearchinit.engineInvalidWebextension[
@@ -87,21 +85,21 @@ add_task(async function test_different_name() {
     "Should record an invalid web extension because the addon has a different name"
   );
 
-  engine.wrappedJSObject._name = "Example";
+  engine._name = "Example";
 });
 
 add_task(async function test_different_url() {
   Services.fog.testResetFOG();
 
-  let engine = Services.search.getEngineByName("Example");
+  let engine = SearchService.getEngineByName("Example");
 
-  engine.wrappedJSObject._urls = [];
-  engine.wrappedJSObject._setUrls({
+  engine._urls = [];
+  engine._setUrls({
     search_url: "https://example.com/123",
     search_url_get_params: "?q={searchTerms}",
   });
 
-  await Services.search.runBackgroundChecks();
+  await SearchService.runBackgroundChecks();
 
   let recordedQuantity =
     Glean.browserSearchinit.engineInvalidWebextension[
@@ -118,15 +116,15 @@ add_task(async function test_different_url() {
 add_task(async function test_different_url_post_data() {
   Services.fog.testResetFOG();
 
-  let engine = Services.search.getEngineByName("PostData");
+  let engine = SearchService.getEngineByName("PostData");
 
-  engine.wrappedJSObject._urls = [];
-  engine.wrappedJSObject._setUrls({
+  engine._urls = [];
+  engine._setUrls({
     search_url: "https://example.com/123",
     search_url_post_params: "?q={searchTerms}",
   });
 
-  await Services.search.runBackgroundChecks();
+  await SearchService.runBackgroundChecks();
 
   let recordedQuantity =
     Glean.browserSearchinit.engineInvalidWebextension[
@@ -157,7 +155,7 @@ add_task(async function test_extension_no_longer_specifies_engine() {
 
   await extension.upgrade(extensionInfo);
 
-  await Services.search.runBackgroundChecks();
+  await SearchService.runBackgroundChecks();
 
   let recordedQuantity =
     Glean.browserSearchinit.engineInvalidWebextension[
@@ -179,7 +177,7 @@ add_task(async function test_disabled_extension() {
   // stubbed removeEngine.
   await extension.addon.disable();
 
-  await Services.search.runBackgroundChecks();
+  await SearchService.runBackgroundChecks();
 
   let recordedQuantity =
     Glean.browserSearchinit.engineInvalidWebextension[
@@ -205,7 +203,7 @@ add_task(async function test_missing_extension() {
   // stubbed removeEngine.
   await extension.unload();
 
-  await Services.search.runBackgroundChecks();
+  await SearchService.runBackgroundChecks();
 
   let recordedQuantity =
     Glean.browserSearchinit.engineInvalidWebextension[
@@ -218,5 +216,5 @@ add_task(async function test_missing_extension() {
     "Should record an invalid web extension because the addon is no longer installed"
   );
 
-  await oldRemoveEngineFunc(Services.search.getEngineByName("Example"));
+  await oldRemoveEngineFunc(SearchService.getEngineByName("Example"));
 });

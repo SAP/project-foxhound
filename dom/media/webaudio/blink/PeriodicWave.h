@@ -29,11 +29,12 @@
 #ifndef PeriodicWave_h
 #define PeriodicWave_h
 
-#include "mozilla/dom/OscillatorNodeBinding.h"
-#include "mozilla/UniquePtr.h"
 #include <nsTArray.h>
+
 #include "AlignedTArray.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/dom/OscillatorNodeBinding.h"
 
 namespace WebCore {
 

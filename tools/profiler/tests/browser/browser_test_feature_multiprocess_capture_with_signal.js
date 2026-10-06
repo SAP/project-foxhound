@@ -87,10 +87,7 @@ function check_profile_for_synthetic_marker(profile) {
 
 add_task(
   async function test_profile_feature_multiprocess_start_and_capture_with_signal() {
-    Assert.ok(
-      !Services.profiler.IsActive(),
-      "The profiler is not currently active"
-    );
+    await ProfilerTestUtils.assertProfilerInactive();
 
     let ppid = await ChromeUtils.requestProcInfo();
     let parent_pid = ppid.pid;

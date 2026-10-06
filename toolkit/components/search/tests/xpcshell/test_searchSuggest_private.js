@@ -35,9 +35,13 @@ add_task(async function test_suggestions_in_private_mode_enabled() {
   Services.prefs.setBoolPref("browser.search.suggest.enabled.private", true);
 
   let controller = new SearchSuggestionController();
-  controller.maxLocalResults = 0;
-  controller.maxRemoteResults = 1;
-  let result = await controller.fetch("mo", true, engine);
+  let result = await controller.fetch({
+    searchString: "mo",
+    inPrivateBrowsing: true,
+    engine,
+    maxLocalResults: 0,
+    maxRemoteResults: 1,
+  });
   Assert.equal(result.remote.length, 1);
 });
 
@@ -45,8 +49,12 @@ add_task(async function test_suggestions_in_private_mode_disabled() {
   Services.prefs.setBoolPref("browser.search.suggest.enabled.private", false);
 
   let controller = new SearchSuggestionController();
-  controller.maxLocalResults = 0;
-  controller.maxRemoteResults = 1;
-  let result = await controller.fetch("mo", true, engine);
+  let result = await controller.fetch({
+    searchString: "mo",
+    inPrivateBrowsing: true,
+    engine,
+    maxLocalResults: 0,
+    maxRemoteResults: 1,
+  });
   Assert.equal(result.remote.length, 0);
 });

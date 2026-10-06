@@ -34,7 +34,6 @@ struct StatisticData
   uint64_t droppedFrames;
 };
 
-[ManualDealloc]
 async protocol PMFMediaEngine
 {
   manager PRemoteMediaManager;
@@ -55,10 +54,13 @@ parent:
 child:
   async NotifyEvent(MFMediaEngineEvent event);
   async NotifyError(MediaResult error);
+  async NotifyHardwareReset();
+  async NotifyWaitingForKey();
   async UpdateCurrentTime(double currentTimeInSecond);
   async RequestSample(TrackType type, bool isEnough);
   async UpdateStatisticData(StatisticData data);
   async NotifyResizing(uint32_t width, uint32_t height);
+  async NotifyFrameServerMode();
 };
 
 } // namespace mozilla

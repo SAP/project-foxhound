@@ -9,7 +9,7 @@ ChromeUtils.defineESModuleGetters(this, {
   Utils: "resource://services-settings/Utils.sys.mjs",
   reducers: "resource://newtab/common/Reducers.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
-  WallpaperFeed: "resource://newtab/lib/WallpaperFeed.sys.mjs",
+  WallpaperFeed: "resource://newtab/lib/Wallpapers/WallpaperFeed.sys.mjs",
 });
 
 const PREF_WALLPAPERS_ENABLED =
@@ -17,6 +17,12 @@ const PREF_WALLPAPERS_ENABLED =
 
 const PREF_WALLPAPERS_CUSTOM_WALLPAPER_UUID =
   "browser.newtabpage.activity-stream.newtabWallpapers.customWallpaper.uuid";
+
+const PREF_SELECTED_WALLPAPER =
+  "browser.newtabpage.activity-stream.newtabWallpapers.wallpaper";
+
+const PREF_WALLPAPERS_USER_ENABLED_MIGRATED =
+  "browser.newtabpage.activity-stream.newtabWallpapers.user.enabled.migrated";
 
 function getWallpaperFeedForTest() {
   let feed = new WallpaperFeed();
@@ -82,8 +88,11 @@ add_task(async function test_onAction_INIT() {
       data: [
         {
           ...attachment,
-          wallpaperUrl: "http://localhost:8888/base_url/attachment",
+          background_position: "center",
           category: "",
+          order: 0,
+          wallpaperUrl: "http://localhost:8888/base_url/attachment",
+          thumbnail: null,
         },
       ],
       meta: {
@@ -128,11 +137,11 @@ add_task(async function test_onAction_WALLPAPER_UPLOAD() {
 
   feed.onAction({
     type: actionTypes.WALLPAPER_UPLOAD,
-    data: fileData,
+    data: { file: fileData, theme: "light" },
   });
 
   Assert.ok(feed.wallpaperUpload.calledOnce);
-  Assert.ok(feed.wallpaperUpload.calledWith(fileData));
+  Assert.ok(feed.wallpaperUpload.calledWith(fileData, "light"));
 
   Services.prefs.clearUserPref(PREF_WALLPAPERS_ENABLED);
 
@@ -161,7 +170,7 @@ add_task(async function test_Wallpaper_Upload() {
   let testFileToUpload = await File.createFromNsIFile(testNsIFile);
 
   // Upload test file
-  let writtenFile = await feed.wallpaperUpload(testFileToUpload);
+  let writtenFile = await feed.wallpaperUpload(testFileToUpload, "light");
 
   // Check if test file exists in WallpaperFeed directory
   Assert.ok(await IOUtils.exists(writtenFile));
@@ -179,6 +188,12 @@ add_task(async function test_Wallpaper_Upload() {
   // Confirm written filename UUID matches the stored UUID pref
   Assert.equal(writtenUUID, storedUUID);
 
+  Assert.ok(
+    feed.store.dispatch.calledWith(
+      actionCreators.SetPref("newtabWallpapers.customWallpaper.theme", "light")
+    )
+  );
+
   // Cleanup files
   await IOUtils.remove(testWallpaperFile);
   await IOUtils.remove(writtenFile);
@@ -187,11 +202,133 @@ add_task(async function test_Wallpaper_Upload() {
   sandbox.restore();
 });
 
+add_task(async function test_updateWallpapers_category_order() {
+  let sandbox = sinon.createSandbox();
+  let feed = new WallpaperFeed();
+  Services.prefs.setBoolPref(PREF_WALLPAPERS_ENABLED, true);
+  Services.prefs.setBoolPref(
+    "browser.newtabpage.activity-stream.newtabWallpapers.customWallpaper.enabled",
+    true
+  );
+
+  const records = [
+    { category: "solid-colors", attachment: { location: "a" } },
+    { category: "photographs", attachment: { location: "b" } },
+    { category: "celestial", attachment: { location: "c" } },
+    { category: "abstracts", attachment: { location: "d" } },
+    { category: "firefox", attachment: { location: "e" } },
+  ];
+
+  sandbox.stub(feed, "RemoteSettings").returns({
+    get: () => records,
+    on: () => {},
+  });
+  sandbox
+    .stub(Utils, "baseAttachmentsURL")
+    .returns("http://localhost:8888/base_url/");
+
+  feed.store = { dispatch: sinon.spy() };
+
+  info(
+    "WallpaperFeed.updateWallpapers should dispatch categories in the correct display order"
+  );
+
+  await feed.wallpaperSetup(false);
+
+  const categoryCall = feed.store.dispatch
+    .getCalls()
+    .find(call => call.args[0].type === actionTypes.WALLPAPERS_CATEGORY_SET);
+
+  Assert.ok(categoryCall, "Expected a WALLPAPERS_CATEGORY_SET dispatch call");
+  Assert.deepEqual(categoryCall.args[0].data, [
+    "custom-wallpaper",
+    "firefox",
+    "abstracts",
+    "celestial",
+    "photographs",
+    "solid-colors",
+  ]);
+
+  Services.prefs.clearUserPref(PREF_WALLPAPERS_ENABLED);
+  Services.prefs.clearUserPref(
+    "browser.newtabpage.activity-stream.newtabWallpapers.customWallpaper.enabled"
+  );
+  sandbox.restore();
+});
+
+add_task(async function test_onAction_PREF_CHANGED_customColor() {
+  let sandbox = sinon.createSandbox();
+  let feed = new WallpaperFeed();
+  Services.prefs.setBoolPref(PREF_WALLPAPERS_ENABLED, true);
+  sandbox.stub(feed, "wallpaperTeardown").returns();
+  sandbox.stub(feed, "wallpaperSetup").returns();
+
+  info(
+    "WallpaperFeed.onAction PREF_CHANGED with customColor.enabled " +
+      "should teardown and re-setup wallpapers"
+  );
+
+  feed.onAction({
+    type: actionTypes.PREF_CHANGED,
+    data: { name: "newtabWallpapers.customColor.enabled" },
+  });
+
+  Assert.ok(
+    feed.wallpaperTeardown.calledOnce,
+    "wallpaperTeardown should be called when customColor.enabled pref changes"
+  );
+  Assert.ok(
+    feed.wallpaperSetup.calledOnce,
+    "wallpaperSetup should be called when customColor.enabled pref changes"
+  );
+  Assert.ok(
+    feed.wallpaperSetup.calledWith(false),
+    "wallpaperSetup should be called with isStartup=false"
+  );
+
+  Services.prefs.clearUserPref(PREF_WALLPAPERS_ENABLED);
+  sandbox.restore();
+});
+
+add_task(async function test_onAction_PREF_CHANGED_nova() {
+  let sandbox = sinon.createSandbox();
+  let feed = new WallpaperFeed();
+  Services.prefs.setBoolPref(PREF_WALLPAPERS_ENABLED, true);
+  sandbox.stub(feed, "wallpaperTeardown").returns();
+  sandbox.stub(feed, "wallpaperSetup").returns();
+
+  info(
+    "WallpaperFeed.onAction PREF_CHANGED with nova.enabled " +
+      "should teardown and re-setup wallpapers"
+  );
+
+  feed.onAction({
+    type: actionTypes.PREF_CHANGED,
+    data: { name: "nova.enabled" },
+  });
+
+  Assert.ok(
+    feed.wallpaperTeardown.calledOnce,
+    "wallpaperTeardown should be called when nova.enabled pref changes"
+  );
+  Assert.ok(
+    feed.wallpaperSetup.calledOnce,
+    "wallpaperSetup should be called when nova.enabled pref changes"
+  );
+  Assert.ok(
+    feed.wallpaperSetup.calledWith(false),
+    "wallpaperSetup should be called with isStartup=false"
+  );
+
+  Services.prefs.clearUserPref(PREF_WALLPAPERS_ENABLED);
+  sandbox.restore();
+});
+
 /**
- * Tests that the parent process sends down a consistent object URL to newtab to
- * render as the background.
+ * Tests that the parent process sends down a moz-newtab-wallpaper:// protocol URI
+ * to newtab to render as the background.
  */
-add_task(async function test_Wallpaper_objectURI() {
+add_task(async function test_Wallpaper_protocolURI() {
   let sandbox = sinon.createSandbox();
   let feed = getWallpaperFeedForTest(sandbox);
 
@@ -216,32 +353,146 @@ add_task(async function test_Wallpaper_objectURI() {
   let testFileToUpload = await File.createFromNsIFile(testNsIFile);
 
   // Upload test file
-  let writtenFile = await feed.wallpaperUpload(testFileToUpload);
+  let writtenFile = await feed.wallpaperUpload(testFileToUpload, "light");
 
   Assert.ok(
     feed.store.dispatch.calledWith(
       actionCreators.BroadcastToContent({
         type: actionTypes.WALLPAPERS_CUSTOM_SET,
-        data: sinon.match("blob:null/"),
+        data: sandbox.match("moz-newtab-wallpaper://"),
       })
-    )
+    ),
+    "Should dispatch WALLPAPERS_CUSTOM_SET with moz-newtab-wallpaper:// URI"
   );
 
-  // Now ensure that a consistent object URL gets returned for each subsequent
-  // request for a wallpaper by checking to see that it exists in the state
-  // object. This URL is non-deterministic, but we can pull it out from what was
-  // just passed to the store dispatch method.
+  // Verify the protocol URI uses the correct scheme and gets stored in state
   const [action] = feed.store.dispatch.getCall(0).args;
-  const wallpaperURL = action.data;
+  const wallpaperURI = action.data;
+
+  Assert.ok(
+    wallpaperURI.startsWith("moz-newtab-wallpaper://"),
+    "Wallpaper URI should use moz-newtab-wallpaper:// protocol"
+  );
+
   const state = reducers.Wallpapers(null, action);
   Assert.equal(
     state.uploadedWallpaper,
-    wallpaperURL,
-    "Should have updated the state to include the object URL"
+    wallpaperURI,
+    "Should have updated the state to include the protocol URI"
   );
 
   // Cleanup files
   await IOUtils.remove(testWallpaperFile);
   await IOUtils.remove(writtenFile);
   Services.prefs.clearUserPref(PREF_WALLPAPERS_CUSTOM_WALLPAPER_UUID);
+});
+
+add_task(
+  async function test_wallpaperSetup_migration_with_existing_wallpaper() {
+    let sandbox = sinon.createSandbox();
+    let feed = new WallpaperFeed();
+
+    Services.prefs.setBoolPref(PREF_WALLPAPERS_ENABLED, true);
+    Services.prefs.setStringPref(PREF_SELECTED_WALLPAPER, "beach");
+    Services.prefs.clearUserPref(PREF_WALLPAPERS_USER_ENABLED_MIGRATED);
+
+    sandbox.stub(feed, "RemoteSettings").returns({
+      get: () => [],
+      on: () => {},
+    });
+    feed.store = { dispatch: sinon.spy() };
+
+    info(
+      "wallpaperSetup should set user.enabled to true when a wallpaper was previously selected"
+    );
+
+    await feed.wallpaperSetup(true);
+
+    Assert.ok(
+      Services.prefs.getBoolPref(PREF_WALLPAPERS_USER_ENABLED_MIGRATED),
+      "Migration marker should be set after running"
+    );
+    Assert.ok(
+      feed.store.dispatch.calledWith(
+        actionCreators.SetPref("newtabWallpapers.user.enabled", true)
+      ),
+      "Should dispatch user.enabled = true when a wallpaper is already set"
+    );
+
+    Services.prefs.clearUserPref(PREF_WALLPAPERS_ENABLED);
+    Services.prefs.clearUserPref(PREF_SELECTED_WALLPAPER);
+    Services.prefs.clearUserPref(PREF_WALLPAPERS_USER_ENABLED_MIGRATED);
+    sandbox.restore();
+  }
+);
+
+add_task(
+  async function test_wallpaperSetup_migration_without_existing_wallpaper() {
+    let sandbox = sinon.createSandbox();
+    let feed = new WallpaperFeed();
+
+    Services.prefs.setBoolPref(PREF_WALLPAPERS_ENABLED, true);
+    Services.prefs.clearUserPref(PREF_SELECTED_WALLPAPER);
+    Services.prefs.clearUserPref(PREF_WALLPAPERS_USER_ENABLED_MIGRATED);
+
+    sandbox.stub(feed, "RemoteSettings").returns({
+      get: () => [],
+      on: () => {},
+    });
+    feed.store = { dispatch: sinon.spy() };
+
+    info(
+      "wallpaperSetup should not set user.enabled when no wallpaper was previously selected"
+    );
+
+    await feed.wallpaperSetup(true);
+
+    Assert.ok(
+      Services.prefs.getBoolPref(PREF_WALLPAPERS_USER_ENABLED_MIGRATED),
+      "Migration marker should be set after running"
+    );
+    Assert.ok(
+      !feed.store.dispatch.calledWith(
+        actionCreators.SetPref("newtabWallpapers.user.enabled", true)
+      ),
+      "Should not dispatch user.enabled = true when no wallpaper is set"
+    );
+
+    Services.prefs.clearUserPref(PREF_WALLPAPERS_ENABLED);
+    Services.prefs.clearUserPref(PREF_WALLPAPERS_USER_ENABLED_MIGRATED);
+    sandbox.restore();
+  }
+);
+
+add_task(async function test_wallpaperSetup_migration_does_not_rerun() {
+  let sandbox = sinon.createSandbox();
+  let feed = new WallpaperFeed();
+
+  Services.prefs.setBoolPref(PREF_WALLPAPERS_ENABLED, true);
+  Services.prefs.setStringPref(PREF_SELECTED_WALLPAPER, "beach");
+  Services.prefs.setBoolPref(PREF_WALLPAPERS_USER_ENABLED_MIGRATED, true);
+
+  sandbox.stub(feed, "RemoteSettings").returns({
+    get: () => [],
+    on: () => {},
+  });
+  feed.store = { dispatch: sinon.spy() };
+
+  info(
+    "wallpaperSetup should not set user.enabled when migration has already run"
+  );
+
+  await feed.wallpaperSetup(true);
+
+  Assert.ok(
+    !feed.store.dispatch.calledWith(
+      actionCreators.SetPref("newtabWallpapers.user.enabled", true)
+    ),
+    "Should not dispatch user.enabled = true when migration already ran"
+  );
+
+  Services.prefs.clearUserPref(PREF_WALLPAPERS_ENABLED);
+  Services.prefs.clearUserPref(PREF_SELECTED_WALLPAPER);
+  Services.prefs.clearUserPref(PREF_WALLPAPERS_USER_ENABLED_MIGRATED);
+  sandbox.restore();
 });

@@ -112,7 +112,7 @@ class LocalesMixin:
     def query_abs_dirs(self):
         if self.abs_dirs:
             return self.abs_dirs
-        abs_dirs = super(LocalesMixin, self).query_abs_dirs()
+        abs_dirs = super().query_abs_dirs()
         c = self.config
         dirs = {}
         dirs["abs_work_dir"] = os.path.join(c["base_work_dir"], c["work_dir"])

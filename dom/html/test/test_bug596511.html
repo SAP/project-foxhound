@@ -20,7 +20,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=596511
 <pre id="test">
 <script>
 
-/** Test for Bug 596511 **/
+/** Test for Bug 596511 */
 
 function checkNotSufferingFromBeingMissing(element, aTodo)
 {
@@ -132,7 +132,8 @@ function checkInvalidWhenValueMissing(element)
   element.required = true;
   select.options[0].textContent = "foo";
   // TODO: having that working would require us to add a mutation observer on
-  // the select element.
+  // the select element. TODO(emilio): We do now, we should probably
+  // make that work.
   checkNotSufferingFromBeingMissing(select, true);
 
   select.remove(0);

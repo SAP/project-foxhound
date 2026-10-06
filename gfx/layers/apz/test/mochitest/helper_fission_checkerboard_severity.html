@@ -66,8 +66,12 @@
     }
 
     async function test() {
-      await SpecialPowers.spawnChrome([], () => {
-        Services.telemetry.getHistogramById("CHECKERBOARD_SEVERITY").clear();
+      await SpecialPowers.spawnChrome([], async () => {
+        // Drain any in-flight Glean data before resetting — otherwise late-
+        // arriving records (e.g. checkerboard.severity from a previous test)
+        // can land after testResetFOG and pollute this test's check.
+        await Services.fog.testFlushAllChildren();
+        Services.fog.testResetFOG();
       });
 
       const iframe = document.getElementById("testframe");
@@ -116,11 +120,10 @@
         setTimeout(resolve, 100);
       });
 
-      const hasCheckerboardSeverity = await SpecialPowers.spawnChrome([], () => {
-        const histograms = Services.telemetry.getSnapshotForHistograms(
-          "main",
-          true /* clear the histograms after taking this snapshot*/).parent;
-        return histograms.hasOwnProperty("CHECKERBOARD_SEVERITY");
+      const hasCheckerboardSeverity = await SpecialPowers.spawnChrome([], async () => {
+        await Services.fog.testFlushAllChildren();
+        const chromeWindow = this.browsingContext.topChromeWindow;
+        return chromeWindow.Glean.gfxCheckerboard.severity.testGetValue() !== null;
       });
       ok(!hasCheckerboardSeverity, "there should be no checkerboard severity data");
     }

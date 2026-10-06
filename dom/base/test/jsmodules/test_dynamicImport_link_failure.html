@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<meta charset=utf-8>
+<title>Test link failure in import()</title>
+<script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+<script>
+  SimpleTest.waitForExplicitFinish();
+
+  // eslint-disable-next-line no-unused-vars
+  async function testLoaded() {
+    await import("./import_circular.mjs").then(() => {
+      ok(false, "Should have thrown a error");
+    }).catch((_error) => {
+      ok(true, "Error has been thrown");
+    }).finally(() => {
+      SimpleTest.finish();
+   });
+  }
+</script>
+<body onload='testLoaded()'></body>

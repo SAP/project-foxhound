@@ -16,7 +16,7 @@ function run_test() {
   run_next_test();
 }
 
-/** * Sample Bulk Actor ***/
+/*** Sample Bulk Actor ***/
 const protocol = require("resource://devtools/shared/protocol.js");
 const { Arg, RetVal } = protocol;
 const { Actor } = require("resource://devtools/shared/protocol/Actor.js");
@@ -31,6 +31,9 @@ const testBulkSpec = protocol.generateActorSpec({
     },
     bulkReply: {
       request: { foo: Arg(0, "number") },
+      response: protocol.BULK_RESPONSE,
+    },
+    bulkReplyWithReturnValue: {
       response: protocol.BULK_RESPONSE,
     },
   },
@@ -54,6 +57,10 @@ class TestBulkActor extends Actor {
 
     throw new Error("actor exception");
   }
+  // eslint-disable-next-line no-unused-vars
+  async bulkReplyWithReturnValue(startBulkSend) {
+    return "foo";
+  }
 }
 
 class TestBulkFront extends protocol.FrontClassWithSpec(testBulkSpec) {
@@ -74,7 +81,7 @@ function add_test_bulk_actor() {
   );
 }
 
-/** * Tests ***/
+/*** Tests ***/
 
 var test_string_error = async function (transportFactory) {
   const transport = await transportFactory();
@@ -83,6 +90,16 @@ var test_string_error = async function (transportFactory) {
   await client.connect();
   await client.mainRoot.rootForm;
   const front = await client.mainRoot.getFront("testBulk");
+
+  try {
+    await front.bulkReplyWithReturnValue();
+  } catch (e) {
+    Assert.stringContains(
+      e.message,
+      "Actor method 'testBulk.bulkReplyWithReturnValue' is supposed to return a bulk response, via last 'startBulkSend' callback argument, but returned some value",
+      "The method threw an error due to the returned value "
+    );
+  }
 
   try {
     await front.bulkReply({ foo: 42 });

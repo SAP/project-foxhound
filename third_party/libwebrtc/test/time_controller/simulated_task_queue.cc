@@ -10,20 +10,28 @@
 #include "test/time_controller/simulated_task_queue.h"
 
 #include <algorithm>
+#include <deque>
+#include <map>
 #include <utility>
+#include <vector>
+
+#include "absl/functional/any_invocable.h"
+#include "absl/strings/string_view.h"
+#include "api/location.h"
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
+#include "rtc_base/synchronization/mutex.h"
+#include "test/time_controller/simulated_time_controller_impl.h"
 
 namespace webrtc {
 
 SimulatedTaskQueue::SimulatedTaskQueue(
     sim_time_impl::SimulatedTimeControllerImpl* handler,
     absl::string_view name)
-    : handler_(handler), name_(new char[name.size()]) {
-  std::copy_n(name.begin(), name.size(), name_);
-}
+    : handler_(handler), name_(name) {}
 
 SimulatedTaskQueue::~SimulatedTaskQueue() {
   handler_->Unregister(this);
-  delete[] name_;
 }
 
 void SimulatedTaskQueue::Delete() {

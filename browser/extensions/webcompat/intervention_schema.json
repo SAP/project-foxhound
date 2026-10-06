@@ -1,0 +1,615 @@
+{
+  "type": "object",
+  "properties": {
+    "bugs": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/bug"
+      },
+      "minProperties": 1
+    },
+    "css": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/non_empty_string"
+      },
+      "minProperties": 1
+    },
+    "interventions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/intervention" },
+      "additionalItems": false
+    },
+    "label": {
+      "$ref": "#/$defs/non_empty_string"
+    }
+  },
+  "required": ["bugs", "interventions", "label"],
+  "additionalProperties": false,
+  "$defs": {
+    "alter_headers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "headers": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/$defs/non_empty_string"
+            }
+          },
+          "replacement": {
+            "type": ["string", "null"]
+          },
+          "fallback": {
+            "type": "string"
+          },
+          "types": {
+            "$ref": "#/$defs/resource_types"
+          },
+          "replace": {
+            "type": ["string", "null"]
+          },
+          "urls": {
+            "$ref": "#/$defs/match_patterns"
+          }
+        },
+        "required": ["headers", "replacement"],
+        "additionalProperties": false
+      },
+      "additionalItems": false
+    },
+    "bug": {
+      "type": "object",
+      "properties": {
+        "issue": {
+          "enum": [
+            "blocked-content",
+            "broken-audio",
+            "broken-captcha",
+            "broken-comments",
+            "broken-cookie-banner",
+            "broken-editor",
+            "broken-font",
+            "broken-images",
+            "broken-interactive-elements",
+            "broken-layout",
+            "broken-login",
+            "broken-map",
+            "broken-meetings",
+            "broken-printing",
+            "broken-redirect",
+            "broken-scrolling",
+            "broken-videos",
+            "broken-zooming",
+            "desktop-layout-not-mobile",
+            "extra-scrollbars",
+            "firefox-blocked-completely",
+            "frozen-tab",
+            "incorrect-viewport-dimensions",
+            "page-fails-to-load",
+            "redirect-loop",
+            "slow-performance",
+            "unsupported-warning",
+            "user-interface-frustration"
+          ]
+        },
+        "matches": {
+          "$ref": "#/$defs/matches_or_blocks"
+        },
+        "exclude_matches": {
+          "$ref": "#/$defs/matches_or_blocks"
+        },
+        "blocks": {
+          "$ref": "#/$defs/matches_or_blocks"
+        },
+        "exclude_blocks": {
+          "$ref": "#/$defs/matches_or_blocks"
+        }
+      },
+      "required": ["issue"],
+      "anyOf": [
+        { "required": ["blocks"] },
+        { "required": ["exclude_blocks"] },
+        { "required": ["matches"] },
+        { "required": ["exclude_matches"] }
+      ],
+      "additionalProperties": false
+    },
+    "channels": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": ["beta", "esr", "nightly", "stable"]
+      },
+      "additionalItems": false
+    },
+    "content_scripts": {
+      "type": "object",
+      "properties": {
+        "all_frames": {
+          "type": "boolean"
+        },
+        "isolated": {
+          "type": "boolean"
+        },
+        "match_origin_as_fallback": {
+          "type": "boolean"
+        },
+        "css": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/extension_url" },
+          "additionalItems": false
+        },
+        "js": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/extension_url" },
+          "additionalItems": false
+        }
+      },
+      "anyOf": [{ "required": ["css"] }, { "required": ["js"] }],
+      "additionalProperties": false
+    },
+    "extension_url": {
+      "$ref": "#/$defs/non_empty_string"
+    },
+    "hide_alerts": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/hidden_alert"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "all_frames": {
+              "type": "boolean"
+            },
+            "match_origin_as_fallback": {
+              "type": "boolean"
+            },
+            "alerts": {
+              "$ref": "#/$defs/hidden_alert"
+            }
+          },
+          "required": ["alerts"],
+          "minItems": 2,
+          "additionalProperties": false
+        }
+      ]
+    },
+    "hidden_alert": {
+      "$ref": "#/$defs/non_empty_string_or_array_thereof"
+    },
+    "hide_messages": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/hidden_message"
+        },
+        {
+          "$ref": "#/$defs/hidden_messages"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "all_frames": {
+              "type": "boolean"
+            },
+            "match_origin_as_fallback": {
+              "type": "boolean"
+            },
+            "messages": {
+              "$ref": "#/$defs/hidden_messages"
+            }
+          },
+          "required": ["messages"],
+          "minItems": 2,
+          "additionalProperties": false
+        }
+      ]
+    },
+    "hidden_messages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/hidden_message"
+      },
+      "minItems": 1,
+      "additionalItems": false
+    },
+    "hidden_message": {
+      "type": "object",
+      "properties": {
+        "container": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "click_adjacent": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "message": {
+          "$ref": "#/$defs/non_empty_string"
+        }
+      },
+      "required": ["message", "container"],
+      "additionalProperties": false
+    },
+    "intervention": {
+      "type": "object",
+      "properties": {
+        "alter_request_headers": {
+          "$ref": "#/$defs/alter_headers"
+        },
+        "alter_response_headers": {
+          "$ref": "#/$defs/alter_headers"
+        },
+        "content_scripts": {
+          "$ref": "#/$defs/content_scripts"
+        },
+        "css": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/non_empty_string_array"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "all_frames": {
+                  "type": "boolean"
+                },
+                "match_origin_as_fallback": {
+                  "type": "boolean"
+                },
+                "which": {
+                  "$ref": "#/$defs/non_empty_string_array"
+                }
+              },
+              "required": ["which"],
+              "minItems": 2,
+              "additionalProperties": false
+            }
+          ]
+        },
+        "hide_alerts": {
+          "$ref": "#/$defs/hide_alerts"
+        },
+        "hide_messages": {
+          "$ref": "#/$defs/hide_messages"
+        },
+        "modify_meta_viewport": {
+          "$ref": "#/$defs/modify_meta_viewport"
+        },
+        "max_version": {
+          "type": "number"
+        },
+        "min_version": {
+          "type": "number"
+        },
+        "not_channels": {
+          "$ref": "#/$defs/channels"
+        },
+        "not_platforms": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/platform"
+          },
+          "additionalItems": false
+        },
+        "only_channels": {
+          "$ref": "#/$defs/channels"
+        },
+        "platforms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/platform"
+          },
+          "additionalItems": false
+        },
+        "pref_check": {
+          "$ref": "#/$defs/prefs_to_check"
+        },
+        "replace_string_in_request": {
+          "$ref": "#/$defs/replace_string_in_request"
+        },
+        "run_script_before_request": {
+          "$ref": "#/$defs/run_script_before_request"
+        },
+        "skip_if": {
+          "$ref": "#/$defs/skip_if"
+        },
+        "ua_string": {
+          "$ref": "#/$defs/ua_string"
+        }
+      },
+      "anyOf": [
+        { "required": ["platforms"] },
+        { "required": ["not_platforms"] }
+      ],
+      "additionalProperties": false
+    },
+    "matches_or_blocks": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/match_patterns"
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": {
+              "types": {
+                "$ref": "#/$defs/resource_types"
+              },
+              "url": {
+                "$ref": "#/$defs/match_pattern"
+              }
+            },
+            "required": ["types", "url"],
+            "additionalProperties": false
+          },
+          "additionalItems": false
+        }
+      ]
+    },
+    "match_pattern": {
+      "type": "string",
+      "pattern": "^(https?|wss?|file|ftp|\\*)://(\\*|\\*\\.[^*/]+|[^*/]+)/.*$"
+    },
+    "match_patterns": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/match_pattern"
+      },
+      "additionalItems": false
+    },
+    "modify_meta_viewport": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/modify_meta_viewport_changes"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "all_frames": {
+              "type": "boolean"
+            },
+            "match_origin_as_fallback": {
+              "type": "boolean"
+            },
+            "modify": {
+              "$ref": "#/$defs/modify_meta_viewport_changes"
+            }
+          },
+          "minProperties": 2,
+          "required": ["modify"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "modify_meta_viewport_changes": {
+      "type": "object",
+      "properties": {
+        "height": {
+          "$ref": "#/$defs/modify_meta_viewport_change_spec"
+        },
+        "initial-scale": {
+          "$ref": "#/$defs/modify_meta_viewport_change_spec"
+        },
+        "interactive-widget": {
+          "$ref": "#/$defs/modify_meta_viewport_change_spec"
+        },
+        "maximum-scale": {
+          "$ref": "#/$defs/modify_meta_viewport_change_spec"
+        },
+        "minimum-scale": {
+          "$ref": "#/$defs/modify_meta_viewport_change_spec"
+        },
+        "user-scalable": {
+          "$ref": "#/$defs/modify_meta_viewport_change_spec"
+        },
+        "viewport-fit": {
+          "$ref": "#/$defs/modify_meta_viewport_change_spec"
+        },
+        "width": {
+          "$ref": "#/$defs/modify_meta_viewport_change_spec"
+        }
+      },
+      "minProperties": 1,
+      "additionalProperties": false
+    },
+    "modify_meta_viewport_change_spec": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/null_or_non_empty_string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "only_if_equals": {
+              "$ref": "#/$defs/non_empty_string_or_array_thereof"
+            },
+            "only_if_not_equals": {
+              "$ref": "#/$defs/non_empty_string_or_array_thereof"
+            },
+            "value": {
+              "$ref": "#/$defs/null_or_non_empty_string"
+            }
+          },
+          "minProperties": 2,
+          "required": ["value"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "non_empty_string": {
+      "type": "string",
+      "minLength": 1
+    },
+    "non_empty_string_array": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/non_empty_string"
+      },
+      "additionalItems": false
+    },
+    "non_empty_string_or_array_thereof": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        {
+          "$ref": "#/$defs/non_empty_string_array"
+        }
+      ]
+    },
+    "null_or_non_empty_string": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/non_empty_string"
+        }
+      ]
+    },
+    "platform": {
+      "enum": ["all", "android", "desktop", "fenix", "linux", "mac", "windows"]
+    },
+    "prefs_to_check": {
+      "type": "object",
+      "properties": {
+        "layout.css.prefixes.transforms": {
+          "type": "boolean"
+        },
+        "layout.css.fake-webkit-scrollbar.enabled": {
+          "type": "boolean"
+        },
+        "layout.css.webkit-fill-available.enabled": {
+          "type": "boolean"
+        },
+        "media.captureStream.enabled": {
+          "type": "boolean"
+        },
+        "media.webspeech.recognition.enable": {
+          "type": "boolean"
+        },
+        "timer.auto_increase_timer_resolution": {
+          "type": "boolean"
+        }
+      },
+      "minProperties": 1,
+      "additionalProperties": false
+    },
+    "replace_string_in_request": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "find": {
+            "$ref": "#/$defs/non_empty_string"
+          },
+          "replace": {
+            "$ref": "#/$defs/non_empty_string"
+          },
+          "types": {
+            "$ref": "#/$defs/resource_types"
+          },
+          "urls": {
+            "$ref": "#/$defs/match_patterns"
+          }
+        },
+        "required": ["find", "replace", "urls"],
+        "additionalProperties": false
+      },
+      "additionalItems": false
+    },
+    "resource_types": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": [
+          "beacon",
+          "csp_report",
+          "font",
+          "image",
+          "imageset",
+          "json",
+          "main_frame",
+          "media",
+          "object",
+          "other",
+          "ping",
+          "script",
+          "speculative",
+          "stylesheet",
+          "sub_frame",
+          "web_manifest",
+          "websocket",
+          "xml_dtd",
+          "xmlhttprequest",
+          "xslt"
+        ]
+      },
+      "additionalItems": false
+    },
+    "run_script_before_request": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "script": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "urls": {
+          "$ref": "#/$defs/match_patterns"
+        }
+      },
+      "required": ["message", "script", "urls"],
+      "additionalProperties": false
+    },
+    "skip_if": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": [
+          "InstallTrigger_defined",
+          "InstallTrigger_undefined",
+          "relaxed_name_validation_rules"
+        ]
+      },
+      "additionalItems": false
+    },
+    "ua_string": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/non_empty_string"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "change": {
+                "$ref": "#/$defs/non_empty_string"
+              }
+            },
+            "additionalProperties": {
+              "$ref": "#/$defs/non_empty_string"
+            },
+            "required": ["change"]
+          }
+        ]
+      },
+      "additionalItems": false
+    }
+  }
+}

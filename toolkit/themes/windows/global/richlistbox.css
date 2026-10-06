@@ -9,10 +9,10 @@ richlistbox {
   background-color: Field;
   color: FieldText;
   border: 1px solid ThreeDShadow;
-}
 
-richlistbox[disabled="true"] {
-  color: GrayText;
+  &[disabled] {
+    color: GrayText;
+  }
 }
 
 richlistitem[selected="true"] {

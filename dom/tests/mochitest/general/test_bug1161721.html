@@ -19,13 +19,19 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1161721
 
 <pre id="test">
   <script type="application/javascript">
-    ok(!document.queryCommandSupported("paste"), "Paste isn't supported in non-privilged JavaScript");
-    ok(document.queryCommandSupported("copy"), "Copy is supported in non-privilged JavaScript");
-    ok(document.queryCommandSupported("cut"), "Cut is supported in non-privilged JavaScript");
+    add_task(async function test() {
+      await SpecialPowers.pushPrefEnv({
+        set: [["dom.execCommand.paste.enabled", false]],
+      });
 
-    ok(SpecialPowers.wrap(document).queryCommandSupported("paste"), "Paste is supported in privilged JavaScript");
-    ok(SpecialPowers.wrap(document).queryCommandSupported("copy"), "Copy is supported in privilged JavaScript");
-    ok(SpecialPowers.wrap(document).queryCommandSupported("cut"), "Cut is supported in privilged JavaScript");
+      ok(!document.queryCommandSupported("paste"), "Paste isn't supported in non-privileged JavaScript");
+      ok(document.queryCommandSupported("copy"), "Copy is supported in non-privileged JavaScript");
+      ok(document.queryCommandSupported("cut"), "Cut is supported in non-privileged JavaScript");
+
+      ok(SpecialPowers.wrap(document).queryCommandSupported("paste"), "Paste is supported in privileged JavaScript");
+      ok(SpecialPowers.wrap(document).queryCommandSupported("copy"), "Copy is supported in privileged JavaScript");
+      ok(SpecialPowers.wrap(document).queryCommandSupported("cut"), "Cut is supported in privileged JavaScript");
+    });
   </script>
 </pre>
 </body>

@@ -31,6 +31,8 @@ fail() {
     exit 1
 }
 
+export PATH="${PATH}:${MOZ_FETCHES_DIR}/7zz"
+
 export MOZ_CRASHREPORTER_NO_REPORT=1
 export TINDERBOX_OUTPUT=1
 

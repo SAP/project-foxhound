@@ -80,7 +80,8 @@ class LoginsCrypto(
                 // A bad key should trigger a IncorrectKey, but check this branch just in case.
                 KeyGenerationReason.RecoveryNeeded.Corrupt
             }
-        } catch (e: InvalidKey) {
+        } catch (e: LoginsApiException) {
+            logger.error("Check key validity method - failed", e)
             KeyGenerationReason.RecoveryNeeded.Corrupt
         }
     }

@@ -15,7 +15,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "PageThumbsStorageService",
   "@mozilla.org/thumbnails/pagethumbs-service;1",
-  "nsIPageThumbsStorageService"
+  Ci.nsIPageThumbsStorageService
 );
 
 var oldEnabledPref = Services.prefs.getBoolPref(
@@ -36,6 +36,7 @@ registerCleanupFunction(function () {
 /**
  * Captures a screenshot for the currently selected tab, stores it in the cache,
  * retrieves it from the cache and compares pixel color values.
+ *
  * @param aRed The red component's intensity.
  * @param aGreen The green component's intensity.
  * @param aBlue The blue component's intensity.
@@ -57,6 +58,7 @@ async function captureAndCheckColor(aRed, aGreen, aBlue, aMessage) {
  * For a given URL, loads the corresponding thumbnail
  * to a canvas and passes its image data to the callback.
  * Note, not compat with e10s!
+ *
  * @param aURL The url associated with the thumbnail.
  * @returns Promise
  */
@@ -82,6 +84,7 @@ async function retrieveImageDataForURL(aURL) {
 
 /**
  * Returns the file of the thumbnail with the given URL.
+ *
  * @param aURL The URL of the thumbnail.
  */
 function thumbnailFile(aURL) {
@@ -90,6 +93,7 @@ function thumbnailFile(aURL) {
 
 /**
  * Checks if a thumbnail for the given URL exists.
+ *
  * @param aURL The url associated to the thumbnail.
  */
 function thumbnailExists(aURL) {
@@ -99,6 +103,7 @@ function thumbnailExists(aURL) {
 
 /**
  * Removes the thumbnail for the given URL.
+ *
  * @param aURL The URL associated with the thumbnail.
  */
 function removeThumbnail(aURL) {
@@ -178,16 +183,15 @@ function bgCaptureIfMissing(aURL, aOptions) {
 /**
  * Queues a BackgroundPageThumbs capture with the supplied method.
  *
- * @param {String} aMethodName One of the method names on BackgroundPageThumbs
+ * @param {string} aMethodName One of the method names on BackgroundPageThumbs
  * for capturing thumbnails. Example: "capture", "captureIfMissing".
- * @param {String} aURL The URL of the page to capture.
- * @param {Object} aOptions The options object to pass to BackgroundPageThumbs.
+ * @param {string} aURL The URL of the page to capture.
+ * @param {object} aOptions The options object to pass to BackgroundPageThumbs.
  *
- * @returns {Promise}
- * @resolves {Array} Resolves once the capture has completed with an Array of
- * results. The first element of the Array is the URL of the captured page,
- * and the second element is the completion reason from the BackgroundPageThumbs
- * module.
+ * @returns {Promise<Array>}
+ *   Resolves once the capture has completed with an Array of results. The
+ *   first element of the Array is the URL of the captured page, and the second
+ *   element is the completion reason from the BackgroundPageThumbs module.
  */
 function bgCaptureWithMethod(aMethodName, aURL, aOptions = {}) {
   // We'll get oranges if the expiration filter removes the file during the

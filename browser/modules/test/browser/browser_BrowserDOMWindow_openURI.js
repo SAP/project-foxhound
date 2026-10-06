@@ -56,7 +56,7 @@ add_task(async function test_taskbarTabWindowOpensNewTabsInParent() {
   }
 
   const uri = Services.io.newURI(BASE_URL);
-  const taskbarTab = await TaskbarTabs.findOrCreateTaskbarTab(uri, 0);
+  const { taskbarTab } = await TaskbarTabs.findOrCreateTaskbarTab(uri, 0);
   const win = await TaskbarTabs.openWindow(taskbarTab);
 
   const context = win.browserDOMWindow.openURI(

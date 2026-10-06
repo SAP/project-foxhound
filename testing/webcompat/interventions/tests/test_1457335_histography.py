@@ -5,7 +5,6 @@ SUPPORTED_CSS = "#screen1"
 UNSUPPORTED_TEXT = "WE ARE CURRENTLY NOT SUPPORTING YOUR BROWSER"
 
 
-@pytest.mark.skip_platforms("android")
 @pytest.mark.asyncio
 @pytest.mark.with_interventions
 async def test_enabled(client):
@@ -14,7 +13,6 @@ async def test_enabled(client):
     assert not client.find_text(UNSUPPORTED_TEXT, is_displayed=True)
 
 
-@pytest.mark.skip_platforms("android")
 @pytest.mark.asyncio
 @pytest.mark.without_interventions
 async def test_disabled(client):

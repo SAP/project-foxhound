@@ -17,12 +17,12 @@ import mozilla.components.browser.menu.R
 import mozilla.components.concept.menu.candidate.DrawableMenuIcon
 import mozilla.components.concept.menu.candidate.TextMenuCandidate
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.mock
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class BrowserMenuImageTextTest {

@@ -279,7 +279,7 @@ function setupTestBrowserWindow() {
     '<p><a id="commonlink" href="http://mochi.test/moz/">Common link</a></p>' +
     '<p><a id="panellink" href="http://mochi.test/moz/">Panel link</a></p>' +
     '<p><a id="emptylink">Empty link</a></p>' +
-    '<p><math id="mathlink" xmlns="http://www.w3.org/1998/Math/MathML" href="http://mochi.test/moz/"><mtext>MathML XLink</mtext></math></p>' +
+    '<p><math xmlns="http://www.w3.org/1998/Math/MathML"><a id="mathlink" href="http://mochi.test/moz/"><mtext>MathML XLink</mtext></a></math></p>' +
     '<p><svg id="svgxlink" xmlns="http://www.w3.org/2000/svg" width="100px" height="50px" version="1.1"><a xlink:type="simple" xlink:href="http://mochi.test/moz/"><text transform="translate(10, 25)">SVG XLink</text></a></svg></p>' +
     '<p><map name="map" id="map"><area href="http://mochi.test/moz/" shape="rect" coords="0,0,128,128" /></map><img id="maplink" usemap="#map" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAIAAABMXPacAAAABGdBTUEAALGPC%2FxhBQAAAOtJREFUeF7t0IEAAAAAgKD9qRcphAoDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGDAgAEDBgwYMGBgwIAAAT0N51AAAAAASUVORK5CYII%3D"/></p>';
   doc.body.appendChild(mainDiv);

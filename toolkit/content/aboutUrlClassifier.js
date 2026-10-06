@@ -52,6 +52,8 @@ var Search = {
     let list = document.getElementById("search-features");
     list.appendChild(fragment);
 
+    let input = document.getElementById("search-input");
+    input.addEventListener("keydown", this.onKeydown);
     let btn = document.getElementById("search-button");
     btn.addEventListener("click", this.search);
 
@@ -65,22 +67,35 @@ var Search = {
       list.firstChild.remove();
     }
 
+    let input = document.getElementById("search-input");
+    input.removeEventListener("keydown", this.onKeydown);
     let btn = document.getElementById("search-button");
     btn.removeEventListener("click", this.search);
+  },
+
+  onKeydown(event) {
+    if (event.key === "Enter") {
+      Search.search();
+    }
   },
 
   search() {
     Search.hideError();
     Search.hideResults();
 
-    let input = document.getElementById("search-input").value;
+    let searchInput = document.getElementById("search-input");
+    let input = searchInput.value;
 
     let uri;
     try {
-      uri = Services.io.newURI(input);
+      uri = Services.uriFixup.getFixupURIInfo(input).preferredURI;
       if (!uri) {
         Search.reportError("url-classifier-search-error-invalid-url");
         return;
+      }
+      // default to https
+      if (uri.schemeIs("http") && !input.startsWith("http:")) {
+        uri = uri.mutate().setScheme("https").finalize();
       }
     } catch (ex) {
       Search.reportError("url-classifier-search-error-invalid-url");
@@ -111,11 +126,10 @@ var Search = {
       document.getElementById("search-listtype").value == 0
         ? Ci.nsIUrlClassifierFeature.blocklist
         : Ci.nsIUrlClassifierFeature.entitylist;
-    classifier.asyncClassifyLocalWithFeatures(uri, features, listType, list =>
-      Search.showResults(list)
-    );
-
-    Search.hideError();
+    classifier.asyncClassifyLocalWithFeatures(uri, features, listType, list => {
+      searchInput.value = uri.spec;
+      Search.showResults(list);
+    });
   },
 
   hideError() {
@@ -138,6 +152,12 @@ var Search = {
   },
 
   showResults(results) {
+    let resultTitle = document.getElementById("result-title");
+    resultTitle.style.display = "";
+    if (!results.length) {
+      Search.reportError("url-classifier-search-error-no-results");
+      return;
+    }
     let fragment = document.createDocumentFragment();
     results.forEach(result => {
       let tr = document.createElement("tr");
@@ -172,9 +192,6 @@ var Search = {
 
     resultTable.appendChild(fragment);
     resultTable.style.display = "";
-
-    let resultTitle = document.getElementById("result-title");
-    resultTitle.style.display = "";
   },
 };
 
@@ -346,6 +363,15 @@ var Provider = {
   // the provider is active. This is used to filter out google v2 provider
   // without changing the preference.
   isActiveProvider(provider) {
+    if (
+      provider === "google5" &&
+      !Services.prefs.getBoolPref(
+        "browser.safebrowsing.provider.google5.enabled"
+      )
+    ) {
+      return false;
+    }
+
     let listmanager = Cc[
       "@mozilla.org/url-classifier/listmanager;1"
     ].getService(Ci.nsIUrlListManager);

@@ -10,6 +10,11 @@
   animation: toastSlideInSlideOut 4s ease-in-out forwards;
 }
 
+.nova-enabled ~ .notification-wrapper .newtab-toast-success {
+  --message-bar-background-color: var(--background-color-box);
+  --message-bar-icon-color: var(--icon-color-success);
+}
+
 @keyframes toastSlideInSlideOut {
   0%, 100% {
     opacity: 0;

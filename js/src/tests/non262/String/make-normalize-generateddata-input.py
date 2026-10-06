@@ -1,10 +1,10 @@
 #!/usr/bin/python -B
 
-""" Usage: make-normalize-generateddata-input.py PATH_TO_MOZILLA_CENTRAL
+"""Usage: make-normalize-generateddata-input.py PATH_TO_MOZILLA_CENTRAL
 
-    This script generates test input data for String.prototype.normalize
-    from intl/icu/source/data/unidata/NormalizationTest.txt
-    to js/src/tests/non262/String/normalize-generateddata-input.js
+This script generates test input data for String.prototype.normalize
+from intl/icu/source/data/unidata/NormalizationTest.txt
+to js/src/tests/non262/String/normalize-generateddata-input.js
 """
 
 import re

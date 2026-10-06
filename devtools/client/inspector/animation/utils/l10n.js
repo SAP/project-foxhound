@@ -19,7 +19,7 @@ const INSPECTOR_L10N = new LocalizationHelper(
  * if the server provides the type, what type it is and if the animation
  * has a name.
  *
- * @param {Object} state
+ * @param {object} state
  */
 function getFormattedTitle(state) {
   // Older servers don't send a type, and only know about

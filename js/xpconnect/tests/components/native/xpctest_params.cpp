@@ -67,13 +67,13 @@ NS_IMPL_ISUPPORTS(nsXPCTestParams, nsIXPCTestParams)
     /* Copy b into rv. */                                                      \
     *rvLength = *bLength;                                                      \
     *rv = static_cast<type*>(moz_xmalloc(elemSize * (*bLength + padding)));    \
-    memcpy(*rv, *b, elemSize*(*bLength + padding));                            \
+    memcpy(*rv, *b, elemSize * (*bLength + padding));                          \
                                                                                \
     /* Copy a into b. */                                                       \
     *bLength = aLength;                                                        \
     free(*b);                                                                  \
     *b = static_cast<type*>(moz_xmalloc(elemSize * (aLength + padding)));      \
-    memcpy(*b, a, elemSize*(aLength + padding));                               \
+    memcpy(*b, a, elemSize * (aLength + padding));                             \
                                                                                \
     /* We need to take ownership of the data we got from a,                    \
        since the caller owns it. */                                            \

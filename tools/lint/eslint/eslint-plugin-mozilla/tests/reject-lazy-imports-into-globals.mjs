@@ -32,7 +32,7 @@ ruleTester.run("reject-lazy-imports-into-globals", rule, {
       `XPCOMUtils.defineLazyPreferenceGetter(globalThis, "foo", "foo.bar");`
     ),
     invalidCode(
-      `XPCOMUtils.defineLazyServiceGetter(globalThis, "foo", "@foo", "nsIFoo");`
+      `XPCOMUtils.defineLazyServiceGetter(globalThis, "foo", "@foo", Ci.nsIFoo);`
     ),
     invalidCode(`XPCOMUtils.defineLazyGlobalGetters(globalThis, {});`),
     invalidCode(`XPCOMUtils.defineLazyGlobalGetters(window, {});`),

@@ -59,35 +59,33 @@ function test() {
       var tab = BrowserTestUtils.addTab(gBrowser);
       gBrowser.selectedTab = tab;
 
-      Downloads.getList(Downloads.ALL)
-        .then(function (downloadList) {
-          var downloadListener;
+      Downloads.getList(Downloads.ALL).then(function (downloadList) {
+        var downloadListener;
 
-          function downloadVerifier(aDownload) {
-            if (aDownload.succeeded) {
-              var file = getFile(aDownload.target.path);
-              ok(file.exists(), "download completed");
-              is(file.fileSize, 33, "downloaded file has correct size");
-              file.remove(false);
-              downloadList.remove(aDownload).catch(console.error);
-              downloadList.removeView(downloadListener).catch(console.error);
-              gBrowser.removeTab(tab);
-              Services.ww.unregisterNotification(windowObserver);
+        function downloadVerifier(aDownload) {
+          if (aDownload.succeeded) {
+            var file = getFile(aDownload.target.path);
+            ok(file.exists(), "download completed");
+            is(file.fileSize, 33, "downloaded file has correct size");
+            file.remove(false);
+            downloadList.remove(aDownload).catch(console.error);
+            downloadList.removeView(downloadListener);
+            gBrowser.removeTab(tab);
+            Services.ww.unregisterNotification(windowObserver);
 
-              executeSoon(finish);
-            }
+            executeSoon(finish);
           }
+        }
 
-          downloadListener = {
-            onDownloadAdded: downloadVerifier,
-            onDownloadChanged: downloadVerifier,
-          };
+        downloadListener = {
+          onDownloadAdded: downloadVerifier,
+          onDownloadChanged: downloadVerifier,
+        };
 
-          return downloadList.addView(downloadListener);
-        })
-        .then(function () {
-          BrowserTestUtils.startLoadingURIString(gBrowser, url);
-        });
+        downloadList.addView(downloadListener);
+
+        BrowserTestUtils.startLoadingURIString(gBrowser, url);
+      });
     }
   );
 }

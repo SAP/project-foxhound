@@ -12,7 +12,7 @@ import { setupWorkerEnvironment } from './utils_worker.js';
 
 const loader = new DefaultTestFileLoader();
 
-setBaseResourcePath('../../../resources');
+setBaseResourcePath('/_mozilla/webgpu/resources');
 
 // MessagePort, DedicatedWorkerGlobalScope, etc.
 

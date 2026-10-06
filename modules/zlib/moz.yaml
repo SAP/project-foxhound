@@ -1,0 +1,154 @@
+schema: 1
+
+bugzilla:
+  product: Core
+  component: General
+
+origin:
+  name: zlib
+  description: A massively spiffy yet delicately unobtrusive compression library
+
+  url: https://github.com/madler/zlib
+
+  release: v1.3.2 (2026-02-17T05:01:19-08:00).
+  revision: v1.3.2
+
+  license: Zlib
+
+vendoring:
+  url: https://github.com/madler/zlib
+  source-hosting: github
+  tracking: tag
+
+  exclude:
+    - ".**"
+    - "*.cmakein"
+    - "*.in"
+    - "*.map"
+    - "*.xml"
+    - "**/CMakeLists.txt"
+    - "BUILD.bazel"
+    - "CMakeLists.txt"
+    - "FAQ"
+    - "INDEX"
+    - "Makefile"
+    - "Makefile.in"
+    - "MODULE.bazel"
+    - "README-cmake.md"
+    - "amiga"
+    - "configure"
+    - "contrib"
+    - "doc"
+    - "examples"
+    - "make_vms.com"
+    - "msdos"
+    - "nintendods"
+    - "old"
+    - "os400"
+    - "qnx"
+    - "test"
+    - "watcom"
+    - "win32"
+    - "zlib.3"
+    - "zlib.3.pdf"
+
+  include:
+    - "*.c"
+    - "*.h"
+    - ChangeLog
+    - LICENSE
+    - README
+
+  keep:
+    - LICENSE
+    - src/mozzconf.h
+    - src/moz.build
+
+  patches:
+    - mozzconf.patch
+
+  update-actions:
+    - action: move-file
+      from: '{vendor_dir}/adler32.c'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/compress.c'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/crc32.c'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/deflate.c'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/gzclose.c'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/gzlib.c'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/gzread.c'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/gzwrite.c'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/infback.c'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/inffast.c'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/inflate.c'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/inftrees.c'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/trees.c'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/uncompr.c'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/zutil.c'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/crc32.h'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/deflate.h'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/gzguts.h'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/inffast.h'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/inffixed.h'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/inflate.h'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/inftrees.h'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/trees.h'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/zconf.h'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/zlib.h'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/zutil.h'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/ChangeLog'
+      to: '{vendor_dir}/src/'
+    - action: move-file
+      from: '{vendor_dir}/README'
+      to: '{vendor_dir}/src/'

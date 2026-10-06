@@ -1,0 +1,25 @@
+{
+  "label": "Office 365 Outlook locations",
+  "bugs": {
+    "1815733": {
+      "issue": "broken-editor",
+      "matches": [
+        "*://outlook.live.com/*",
+        "*://outlook.office.com/*",
+        "*://outlook.office365.com/*",
+        "*://outlook.office365.us/*",
+        "*://*.outlook.cn/*",
+        "*://*.outlook.com/*"
+      ]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "content_scripts": {
+        "all_frames": true,
+        "js": ["disable_navigator_clipboard_read.js"]
+      }
+    }
+  ]
+}

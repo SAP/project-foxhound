@@ -58,7 +58,7 @@ const TEST_URI = `
       --custom-property-2: cyan;
       --custom-property-empty: ;
       --registered-color-secondary: rgb(13, 17, 23);
-      border: var(--registered-length) solid var( /* color */ --registered-color );
+      outline: var(--registered-length) solid var( /* color */ --registered-color );
     }
   </style>
   <main>
@@ -188,6 +188,18 @@ add_task(async function () {
       value: "rgb(255, 215, 0)",
     },
     {
+      name: "outline-color",
+      value: "rgb(0, 100, 200)",
+    },
+    {
+      name: "outline-style",
+      value: "solid",
+    },
+    {
+      name: "outline-width",
+      value: "10px",
+    },
+    {
       name: "--custom-property-2",
       value: "cyan",
     },
@@ -249,6 +261,27 @@ add_task(async function () {
       ],
     },
   ]);
+
+  info(
+    "Checking matched selectors for shorthand property defined in longhand with CSS variable"
+  );
+  const container = await getComputedViewMatchedRules(view, "outline-color");
+  Assert.deepEqual(
+    [...container.querySelectorAll("p")].map(matchEl =>
+      [...matchEl.querySelectorAll("div")].map(el => el.textContent)
+    ),
+    [
+      [
+        "#match-2",
+
+        // FIXME: At the moment, we only have an empty string value, which is the result of
+        // `CSSStyleDeclaration.getPropertyValue`.
+        // See Bug 2003264.
+        "",
+      ],
+    ],
+    "Got the expected matched selectors"
+  );
 
   await assertComputedPropertiesForNode(inspector, view, "html", []);
 });

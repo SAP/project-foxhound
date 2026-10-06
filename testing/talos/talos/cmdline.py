@@ -15,7 +15,7 @@ class _StopAction(argparse.Action):
         default=argparse.SUPPRESS,
         help=None,
     ):
-        super(_StopAction, self).__init__(
+        super().__init__(
             option_strings=option_strings,
             dest=dest,
             default=default,
@@ -264,7 +264,7 @@ def create_parser(mach_interface=False):
     add_arg(
         "--tppagecycles",
         type=int,
-        help="number of pageloader cycles to run for each page in" " the manifest",
+        help="number of pageloader cycles to run for each page in the manifest",
     )
     add_arg(
         "--no-download",

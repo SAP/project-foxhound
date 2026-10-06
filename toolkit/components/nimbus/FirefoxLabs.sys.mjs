@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/** @import {OptInEntry} from "./lib/ExperimentManager.sys.mjs" */
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -22,17 +24,22 @@ const IS_MAIN_PROCESS =
   Services.appinfo.processType === Services.appinfo.PROCESS_TYPE_DEFAULT;
 
 export class FirefoxLabs {
-  #recipes;
+  /**
+   * A map of experiment slugs to opt-in entries.
+   *
+   * @type {Map<string, OptInEntry>}
+   */
+  #optIns;
 
   /**
    * Construct a new FirefoxLabs instance from the given set of recipes.
    *
-   * @param {object[]} recipes The opt-in recipes to use.
+   * @param {OptInEntry[]} optIns The opt-ins.
    *
    * NB: You shiould use FirefoxLabs.create() directly instead of calling this constructor.
    */
-  constructor(recipes) {
-    this.#recipes = new Map(recipes.map(recipe => [recipe.slug, recipe]));
+  constructor(optIns) {
+    this.#optIns = new Map(optIns.map(entry => [entry.recipe.slug, entry]));
   }
 
   /**
@@ -44,8 +51,8 @@ export class FirefoxLabs {
       throw new Error("FirefoxLabs can only be created in the main process");
     }
 
-    const recipes = await lazy.ExperimentAPI.manager.getAllOptInRecipes();
-    return new FirefoxLabs(recipes);
+    const entries = await lazy.ExperimentAPI.manager.getAvailableOptIns();
+    return new FirefoxLabs(entries);
   }
 
   /**
@@ -59,11 +66,13 @@ export class FirefoxLabs {
       throw new TypeError("enroll: slug and branchSlug are required");
     }
 
-    const recipe = this.#recipes.get(slug);
-    if (!recipe) {
-      lazy.log.error(`No recipe found with slug ${slug}`);
+    const entry = this.#optIns.get(slug);
+    if (!entry) {
+      lazy.log.error(`No recipe found with id ${slug}`);
       return;
     }
+
+    const { recipe, source } = entry;
 
     if (!recipe.branches.find(branch => branch.slug === branchSlug)) {
       lazy.log.error(
@@ -73,7 +82,7 @@ export class FirefoxLabs {
     }
 
     try {
-      await lazy.ExperimentAPI.manager.enroll(recipe, "rs-loader", {
+      await lazy.ExperimentAPI.manager.enroll(recipe, source, {
         branchSlug,
       });
     } catch (e) {
@@ -91,7 +100,7 @@ export class FirefoxLabs {
       throw new TypeError("slug is required");
     }
 
-    if (!this.#recipes.has(slug)) {
+    if (!this.#optIns.has(slug)) {
       lazy.log.error(`Unknown opt-in ${slug}`);
       return;
     }
@@ -114,28 +123,28 @@ export class FirefoxLabs {
    * @return {number} The number of eligible opt-ins.
    */
   get count() {
-    return this.#recipes.size;
+    return this.#optIns.size;
   }
 
   /**
    * Yield all available opt-ins.
    *
-   * @yields {object} The opt-ins.
+   * @returns {Generator<object>} The recipes of the available opt-ins.
    */
   *all() {
-    for (const recipe of this.#recipes.values()) {
-      yield recipe;
+    for (const entry of this.#optIns.values()) {
+      yield entry.recipe;
     }
   }
 
   /**
-   * Return an opt-in by its slug
+   * Return an opt-in by its slug.
    *
    * @param {string} slug The slug of the opt-in to return.
    *
-   * @returns {object} The requested opt-in, if it exists.
+   * @returns {OptInEntry} The requested opt-in, if it exists.
    */
   get(slug) {
-    return this.#recipes.get(slug);
+    return this.#optIns.get(slug);
   }
 }

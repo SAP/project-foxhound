@@ -39,6 +39,32 @@ XUL <splitter> collapsing tests
       );
     }
 
+    async function arrowKeyNudgeSplitter(direction) {
+      const splitterRect = splitter.getBoundingClientRect();
+      const leftPanelRect = splitter.getBoundingClientRect();
+      let keyToPress;
+      switch (direction) {
+      case "up":
+        keyToPress = "KEY_ArrowUp";
+        break;
+      case "down":
+        keyToPress = "KEY_ArrowDown";
+        break;
+      case "left":
+        keyToPress = "KEY_ArrowLeft";
+        break;
+      case "right":
+        keyToPress = "KEY_ArrowRight";
+        break;
+      }
+      Services.focus.setFocus(splitter, Services.focus.FLAG_BYKEY);
+      let promisedEvent = promiseCommandEvent(splitter);
+      info("sending key: " + keyToPress);
+      synthesizeKey(keyToPress);
+      info("Waiting for command event");
+      await promisedEvent;
+    }
+
     function shouldBeCollapsed(where) {
       is(splitter.getAttribute("state"), "collapsed", "The splitter should be collapsed");
       is(splitter.getAttribute("substate"), where, "The splitter should be collapsed " + where);
@@ -93,9 +119,63 @@ XUL <splitter> collapsing tests
       await runPass(rtl, true, true);
     }
 
+    function promiseCommandEvent(target) {
+      return new Promise(res => {
+        target.addEventListener("command", res, { once: true });
+      });
+    }
+
+    async function runHorizontalSplitterKeyboardTests(splitterId) {
+      info(`Running keyboard tests for ${splitterId}`);
+      splitter = document.getElementById(splitterId);
+      setActiveBox(splitter.parentNode);
+
+      const leftPanel = splitter.previousElementSibling;
+      const rightPanel = splitter.nextElementSibling;
+      const leftRect = leftPanel.getBoundingClientRect();
+      const rightRect = rightPanel.getBoundingClientRect();
+      let splitterRect = splitter.getBoundingClientRect();
+
+      await arrowKeyNudgeSplitter("left");
+      ok(splitter.getBoundingClientRect().x < splitterRect.x, "The splitter moved to the left");
+      ok(leftPanel.getBoundingClientRect().width < leftRect.width, "The left panel got narrower");
+      ok(rightPanel.getBoundingClientRect().width > rightRect.width, "The right panel got wider");
+
+      await arrowKeyNudgeSplitter("right");
+      await arrowKeyNudgeSplitter("right");
+      ok(splitter.getBoundingClientRect().x > splitterRect.x, "The splitter moved to the right");
+      ok(leftPanel.getBoundingClientRect().width > leftRect.width, "The left panel got wider");
+      ok(rightPanel.getBoundingClientRect().width < rightRect.width, "The right panel got narrower");
+    }
+
+    async function runVerticalSplitterKeyboardTests(splitterId) {
+      info(`Running keyboard tests for ${splitterId}`);
+      splitter = document.getElementById(splitterId);
+      setActiveBox(splitter.parentNode);
+
+      const topPanel = splitter.previousElementSibling;
+      const bottomPanel = splitter.nextElementSibling;
+      const topRect = topPanel.getBoundingClientRect();
+      const bottomRect = bottomPanel.getBoundingClientRect();
+      let splitterRect = splitter.getBoundingClientRect();
+
+      await arrowKeyNudgeSplitter("down");
+      ok(splitter.getBoundingClientRect().y > splitterRect.y, "The splitter moved down");
+      ok(topPanel.getBoundingClientRect().height > topRect.height, "The top panel got taller");
+      ok(bottomPanel.getBoundingClientRect().height < bottomRect.height, "The bottom panel got shorter");
+
+      await arrowKeyNudgeSplitter("up");
+      await arrowKeyNudgeSplitter("up");
+      ok(splitter.getBoundingClientRect().y < splitterRect.y, "The splitter moved up");
+      ok(topPanel.getBoundingClientRect().height < topRect.height, "The top panel got shorter");
+      ok(bottomPanel.getBoundingClientRect().height > bottomRect.height, "The bottom panel got taller");
+    }
+
     async function runAllTests() {
       await runTests(false, "ltr-splitter");
       await runTests(true, "rtl-splitter");
+      await runHorizontalSplitterKeyboardTests("focusable-splitter");
+      await runVerticalSplitterKeyboardTests("focusable-splitter-vert");
       SimpleTest.finish();
     }
 
@@ -103,7 +183,7 @@ XUL <splitter> collapsing tests
    ]]></script>
 
   <hbox style="display: none; width: 200px; height: 300px; direction: ltr;">
-  <vbox style="height: 300px; flex: 1 auto"/>
+    <vbox style="height: 300px; flex: 1 auto"/>
     <splitter id="ltr-splitter" style="width: 5px"/>
     <vbox style="height: 300px; flex: 1 auto;"/>
   </hbox>
@@ -113,5 +193,17 @@ XUL <splitter> collapsing tests
     <splitter id="rtl-splitter" style="width: 5px"/>
     <vbox style="height: 300px; flex: 1 auto" />
   </hbox>
+
+  <hbox style="display: none; width: 200px; height: 300px; direction: ltr;">
+    <vbox style="height: 300px; flex: 1 auto" />
+    <splitter id="focusable-splitter" style="width: 5px; -moz-user-focus: normal;"/>
+    <vbox style="height: 300px; flex: 1 auto" />
+  </hbox>
+
+  <vbox style="display: none; height: 200px; width: 300px; direction: ltr;">
+    <hbox style="width: 300px; flex: 1 auto" />
+    <splitter id="focusable-splitter-vert" style="height: 5px; -moz-user-focus: normal;"/>
+    <hbox style="width: 300px; flex: 1 auto" />
+  </vbox>
 
 </window>

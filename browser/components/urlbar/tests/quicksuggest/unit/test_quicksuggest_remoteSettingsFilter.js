@@ -73,8 +73,8 @@ add_setup(async function () {
   await QuickSuggestTestUtils.ensureQuickSuggestInit({
     remoteSettingsRecords,
     prefs: [
+      ["suggest.quicksuggest.all", true],
       ["suggest.quicksuggest.sponsored", true],
-      ["suggest.quicksuggest.nonsponsored", true],
       ["quicksuggest.ampTopPickCharThreshold", 0],
     ],
   });
@@ -241,19 +241,14 @@ add_task(async function () {
 
 async function doTests({ locales, homeRegion, tests }) {
   for (let locale of locales) {
-    // Disable and reenable Suggest so its store is recreated with the
-    // appropriate remote settings app context for the locale and region.
-    info("Disabling Suggest: " + JSON.stringify({ locales, homeRegion }));
-    UrlbarPrefs.set("quicksuggest.enabled", false);
-
-    await QuickSuggestTestUtils.withLocales({
-      homeRegion,
-      locales: [locale],
+    await QuickSuggestTestUtils.withRegionAndLocale({
+      locale,
+      region: homeRegion,
+      // AMP and Wikipedia suggestions are not enabled by default for all
+      // regions/locales in this test, so don't reset Suggest so that they
+      // remain enabled rather than being set according to region/locale.
+      skipSuggestReset: true,
       callback: async () => {
-        info("Reenabling Suggest: " + JSON.stringify({ locale, homeRegion }));
-        UrlbarPrefs.set("quicksuggest.enabled", true);
-        await QuickSuggestTestUtils.forceSync();
-
         for (let { expected, queries } of tests) {
           for (let query of queries) {
             info(
@@ -267,6 +262,12 @@ async function doTests({ locales, homeRegion, tests }) {
                   keyword: query,
                   url: `https://example.com/${query}`,
                   title: `Suggestion: ${query}`,
+                  suggestedIndex:
+                    // Expect index -1 for amp results because we test
+                    // without the search suggestions provider.
+                    expected == QuickSuggestTestUtils.ampResult
+                      ? -1
+                      : undefined,
                 })
               );
             }

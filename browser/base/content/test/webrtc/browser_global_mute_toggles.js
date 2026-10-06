@@ -38,9 +38,9 @@ add_setup(async function () {
  *
  * @param {<xul:browser>} browser - The browser running in the content process
  * to be monitored.
- * @param {Boolean} isMuted - True if the muted topic should be fired.
- * @return {Promise}
- * @resolves {undefined} When the notification fires.
+ * @param {boolean} isMuted - True if the muted topic should be fired.
+ * @returns {Promise<void>}
+ *   Resovles when the notification fires.
  */
 function waitForCameraMuteState(browser, isMuted) {
   let topic = isMuted ? "getUserMedia:muteVideo" : "getUserMedia:unmuteVideo";
@@ -58,9 +58,9 @@ function waitForCameraMuteState(browser, isMuted) {
  *
  * @param {<xul:browser>} browser - The browser running in the content process
  * to be monitored.
- * @param {Boolean} isMuted - True if the muted topic should be fired.
- * @return {Promise}
- * @resolves {undefined} When the notification fires.
+ * @param {boolean} isMuted - True if the muted topic should be fired.
+ * @returns {Promise<void>}
+ *   Resolves when the notification fires.
  */
 function waitForMicrophoneMuteState(browser, isMuted) {
   let topic = isMuted ? "getUserMedia:muteAudio" : "getUserMedia:unmuteAudio";

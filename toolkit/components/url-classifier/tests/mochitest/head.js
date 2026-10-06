@@ -16,6 +16,20 @@ function addCompletionToServer(list, url, mochitestUrl) {
   });
 }
 
+function resetStateOnCompletionServer(url, state) {
+  return new Promise(resolve => {
+    let xhr = new XMLHttpRequest();
+    xhr.open("GET", url + "?reset=" + state, true);
+    xhr.setRequestHeader("Content-Type", "text/plain");
+    xhr.onreadystatechange = function () {
+      if (this.readyState == this.DONE) {
+        resolve();
+      }
+    };
+    xhr.send();
+  });
+}
+
 function hash(str) {
   var hasher = SpecialPowers.Cc["@mozilla.org/security/hash;1"].createInstance(
     SpecialPowers.Ci.nsICryptoHash

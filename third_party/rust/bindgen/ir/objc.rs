@@ -17,20 +17,20 @@ use clang_sys::CXCursor_ObjCSuperClassRef;
 use clang_sys::CXCursor_TemplateTypeParameter;
 use proc_macro2::{Ident, Span, TokenStream};
 
-/// Objective C interface as used in TypeKind
+/// Objective-C interface as used in `TypeKind`
 ///
-/// Also protocols and categories are parsed as this type
+/// Also, protocols and categories are parsed as this type
 #[derive(Debug)]
 pub(crate) struct ObjCInterface {
     /// The name
-    /// like, NSObject
+    /// like, `NSObject`
     name: String,
 
     category: Option<String>,
 
     is_protocol: bool,
 
-    /// The list of template names almost always, ObjectType or KeyType
+    /// The list of template names almost always, `ObjectType` or `KeyType`
     pub(crate) template_names: Vec<String>,
 
     /// The list of protocols that this interface conforms to.
@@ -39,7 +39,7 @@ pub(crate) struct ObjCInterface {
     /// The direct parent for this interface.
     pub(crate) parent_class: Option<ItemId>,
 
-    /// List of the methods defined in this interfae
+    /// List of the methods defined in this interface
     methods: Vec<ObjCMethod>,
 
     class_methods: Vec<ObjCMethod>,
@@ -53,7 +53,7 @@ pub(crate) struct ObjCMethod {
     name: String,
 
     /// Method name as converted to rust
-    /// like, dataWithBytes_length_
+    /// like, `dataWithBytes_length`_
     rust_name: String,
 
     signature: FunctionSig,
@@ -77,17 +77,17 @@ impl ObjCInterface {
     }
 
     /// The name
-    /// like, NSObject
+    /// like, `NSObject`
     pub(crate) fn name(&self) -> &str {
         self.name.as_ref()
     }
 
     /// Formats the name for rust
-    /// Can be like NSObject, but with categories might be like NSObject_NSCoderMethods
-    /// and protocols are like PNSObject
+    /// Can be like `NSObject`, but with categories might be like `NSObject_NSCoderMethods`
+    /// and protocols are like `PNSObject`
     pub(crate) fn rust_name(&self) -> String {
         if let Some(ref cat) = self.category {
-            format!("{}_{}", self.name(), cat)
+            format!("{}_{cat}", self.name())
         } else if self.is_protocol {
             format!("P{}", self.name())
         } else {
@@ -137,7 +137,7 @@ impl ObjCInterface {
                 CXCursor_ObjCClassRef => {
                     if cursor.kind() == CXCursor_ObjCCategoryDecl {
                         // We are actually a category extension, and we found the reference
-                        // to the original interface, so name this interface approriately
+                        // to the original interface, so name this interface appropriately
                         interface.name = c.spelling();
                         interface.category = Some(cursor.spelling());
                     }
@@ -147,8 +147,8 @@ impl ObjCInterface {
                     let needle = format!("P{}", c.spelling());
                     let items_map = ctx.items();
                     debug!(
-                        "Interface {} conforms to {}, find the item",
-                        interface.name, needle
+                        "Interface {} conforms to {needle}, find the item",
+                        interface.name,
                     );
 
                     for (id, item) in items_map {
@@ -163,10 +163,7 @@ impl ObjCInterface {
                                         ty.name()
                                     );
                                     if Some(needle.as_ref()) == ty.name() {
-                                        debug!(
-                                            "Found conforming protocol {:?}",
-                                            item
-                                        );
+                                        debug!("Found conforming protocol {item:?}");
                                         interface.conforms_to.push(id);
                                         break;
                                     }
@@ -230,12 +227,12 @@ impl ObjCMethod {
     }
 
     /// Method name as converted to rust
-    /// like, dataWithBytes_length_
+    /// like, `dataWithBytes_length`_
     pub(crate) fn rust_name(&self) -> &str {
         self.rust_name.as_ref()
     }
 
-    /// Returns the methods signature as FunctionSig
+    /// Returns the methods signature as `FunctionSig`
     pub(crate) fn signature(&self) -> &FunctionSig {
         &self.signature
     }
@@ -262,10 +259,7 @@ impl ObjCMethod {
                     // unless it is `crate`, `self`, `super` or `Self`, so we try to add the `_`
                     // suffix to it and parse it.
                     if ["crate", "self", "super", "Self"].contains(&name) {
-                        Some(Ident::new(
-                            &format!("{}_", name),
-                            Span::call_site(),
-                        ))
+                        Some(Ident::new(&format!("{name}_"), Span::call_site()))
                     } else {
                         Some(Ident::new(name, Span::call_site()))
                     }
@@ -278,11 +272,11 @@ impl ObjCMethod {
                     Some(
                         syn::parse_str::<Ident>(name)
                             .or_else(|err| {
-                                syn::parse_str::<Ident>(&format!("r#{}", name))
+                                syn::parse_str::<Ident>(&format!("r#{name}"))
                                     .map_err(|_| err)
                             })
                             .or_else(|err| {
-                                syn::parse_str::<Ident>(&format!("{}_", name))
+                                syn::parse_str::<Ident>(&format!("{name}_"))
                                     .map_err(|_| err)
                             })
                             .expect("Invalid identifier"),
@@ -300,20 +294,15 @@ impl ObjCMethod {
         }
 
         // Check right amount of arguments
-        assert!(
-            args.len() == split_name.len() - 1,
-            "Incorrect method name or arguments for objc method, {:?} vs {:?}",
-            args,
-            split_name
-        );
+        assert_eq!(args.len(), split_name.len() - 1, "Incorrect method name or arguments for objc method, {args:?} vs {split_name:?}");
 
         // Get arguments without type signatures to pass to `msg_send!`
         let mut args_without_types = vec![];
-        for arg in args.iter() {
+        for arg in args {
             let arg = arg.to_string();
             let name_and_sig: Vec<&str> = arg.split(' ').collect();
             let name = name_and_sig[0];
-            args_without_types.push(Ident::new(name, Span::call_site()))
+            args_without_types.push(Ident::new(name, Span::call_site()));
         }
 
         let args = split_name.into_iter().zip(args_without_types).map(

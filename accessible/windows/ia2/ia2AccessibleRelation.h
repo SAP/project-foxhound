@@ -1,12 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _NS_ACCESSIBLE_RELATION_WRAP_H
-#define _NS_ACCESSIBLE_RELATION_WRAP_H
+#ifndef NS_ACCESSIBLE_RELATION_WRAP_H
+#define NS_ACCESSIBLE_RELATION_WRAP_H
 
 #include "MsaaAccessible.h"
 #include "IUnknownImpl.h"
@@ -69,7 +66,7 @@ const WCHAR* const IA2_RELATION_NULL = L"";
 
 static const std::pair<RelationType, const WCHAR* const> sRelationTypePairs[] =
     {
-#include "RelationTypeMap.h"
+#include "RelationTypeMap.inc"
 };
 
 #undef RELATIONTYPE

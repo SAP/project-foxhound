@@ -98,7 +98,6 @@ private fun Modifier.fadeText(
             ),
         ) { textLayoutState?.didOverflowWidth == true }
     },
-
     inspectorInfo = {
         name = "fade text"
         properties["key"] = text

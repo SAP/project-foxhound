@@ -6,6 +6,7 @@ import os
 import re
 
 from mach.decorators import Command, CommandArgument
+from mach.util import UserError
 
 FIXME_COMMENT = "// FIXME: replace with path to your reusable widget\n"
 LICENSE_HEADER = """/* This Source Code Form is subject to the terms of the Mozilla Public
@@ -279,9 +280,50 @@ def addstory(command_context, name, project_name, path):
     category="misc",
     description="Build the design tokens CSS files",
 )
-def buildtokens(command_context):
+@CommandArgument(
+    "--fetch-figma",
+    action="store_true",
+    help="Fetch the current Nova design tokens from Figma before building. "
+    "Requires a valid FIGMA_ACCESS_TOKEN in your environment.",
+)
+def buildtokens(command_context, fetch_figma):
+    if run_mach(
+        command_context,
+        "npm",
+        args=["ls", "--prefix=toolkit/themes/shared/design-system"],
+    ):
+        run_mach(
+            command_context,
+            "npm",
+            args=["ci", "--prefix=toolkit/themes/shared/design-system"],
+        )
+    if fetch_figma:
+        failed = run_mach(
+            command_context,
+            "npm",
+            args=[
+                "run",
+                "fetch-figma-nova",
+                "--prefix=toolkit/themes/shared/design-system",
+            ],
+        )
+        if failed:
+            raise UserError(
+                "Failed to access Figma API, is FIGMA_ACCESS_TOKEN set and valid?"
+            )
+    run_mach(
+        command_context,
+        "npm",
+        args=[
+            "run",
+            "build-figma-nova",
+            "--prefix=toolkit/themes/shared/design-system",
+        ],
+    )
     run_mach(
         command_context,
         "npm",
         args=["run", "build", "--prefix=toolkit/themes/shared/design-system"],
     )
+    run_mach(command_context, "newtab", subcommand="install")
+    run_mach(command_context, "newtab", subcommand="bundle")

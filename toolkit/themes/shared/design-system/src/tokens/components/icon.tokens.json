@@ -1,0 +1,59 @@
+{
+  "color": {
+    "@base": {
+      "value": {
+        "light": "{color.gray.70}",
+        "dark": "{color.gray.0}",
+        "prefersContrast": "{text.color.@base}"
+      }
+    },
+    "information": {
+      "value": {
+        "light": "{color.blue.60}",
+        "dark": "{color.blue.20}",
+        "prefersContrast": "{icon.color.@base}"
+      }
+    },
+    "success": {
+      "value": {
+        "light": "{color.green.60}",
+        "dark": "{color.green.20}",
+        "prefersContrast": "{icon.color.@base}"
+      }
+    },
+    "warning": {
+      "value": {
+        "light": "{color.yellow.60}",
+        "dark": "{color.yellow.20}",
+        "prefersContrast": "{icon.color.@base}"
+      }
+    },
+    "critical": {
+      "value": {
+        "light": "{color.red.60}",
+        "dark": "{color.red.20}",
+        "prefersContrast": "{icon.color.@base}"
+      }
+    }
+  },
+  "size": {
+    "@base": {
+      "value": "{icon.size.small}"
+    },
+    "xsmall": {
+      "value": "{dimension.12}"
+    },
+    "small": {
+      "value": "{dimension.16}"
+    },
+    "medium": {
+      "value": "{dimension.20}"
+    },
+    "large": {
+      "value": "{dimension.24}"
+    },
+    "xlarge": {
+      "value": "{dimension.32}"
+    }
+  }
+}

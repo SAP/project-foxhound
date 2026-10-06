@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -123,7 +122,7 @@ TextAttrsMgr::LangTextAttr::LangTextAttr(HyperTextAccessible* aRoot,
   }
 }
 
-TextAttrsMgr::LangTextAttr::~LangTextAttr() {}
+TextAttrsMgr::LangTextAttr::~LangTextAttr() = default;
 
 void TextAttrsMgr::LangTextAttr::ExposeValue(AccAttributes* aAttributes,
                                              const nsString& aValue) {
@@ -570,40 +569,41 @@ TextAttrsMgr::TextPosTextAttr::GetAriaTextPosValue(nsIContent* aElm,
 
 Maybe<TextAttrsMgr::TextPosValue>
 TextAttrsMgr::TextPosTextAttr::GetLayoutTextPosValue(nsIFrame* aFrame) const {
-  const auto& verticalAlign = aFrame->StyleDisplay()->mVerticalAlign;
-  if (verticalAlign.IsKeyword()) {
-    switch (verticalAlign.AsKeyword()) {
-      case StyleVerticalAlignKeyword::Baseline:
-        return Some(eTextPosBaseline);
-      case StyleVerticalAlignKeyword::Sub:
+  const auto& baselineShift = aFrame->StyleDisplay()->mBaselineShift;
+  if (baselineShift.IsKeyword()) {
+    switch (baselineShift.AsKeyword()) {
+      case StyleBaselineShiftKeyword::Sub:
         return Some(eTextPosSub);
-      case StyleVerticalAlignKeyword::Super:
+      case StyleBaselineShiftKeyword::Super:
         return Some(eTextPosSuper);
-      // No good guess for the rest, so do not expose value of text-position
-      // attribute.
       default:
-        return Nothing{};
+        break;
     }
-  }
+  } else {
+    const auto& length = baselineShift.AsLength();
+    if (length.ConvertsToPercentage()) {
+      const float percentValue = length.ToPercentage();
+      return percentValue > 0 ? Some(eTextPosSuper)
+                              : (percentValue < 0 ? Some(eTextPosSub)
+                                                  : Some(eTextPosBaseline));
+    }
 
-  const auto& length = verticalAlign.AsLength();
-  if (length.ConvertsToPercentage()) {
-    const float percentValue = length.ToPercentage();
-    return percentValue > 0 ? Some(eTextPosSuper)
-                            : (percentValue < 0 ? Some(eTextPosSub)
-                                                : Some(eTextPosBaseline));
-  }
-
-  if (length.ConvertsToLength()) {
-    const nscoord coordValue = length.ToLength();
-    return coordValue > 0
-               ? Some(eTextPosSuper)
-               : (coordValue < 0 ? Some(eTextPosSub) : Some(eTextPosBaseline));
+    if (length.ConvertsToLength()) {
+      const nscoord coordValue = length.ToLength();
+      return coordValue > 0 ? Some(eTextPosSuper)
+                            : (coordValue < 0 ? Some(eTextPosSub)
+                                              : Some(eTextPosBaseline));
+    }
   }
 
   if (const nsIContent* content = aFrame->GetContent()) {
     if (content->IsHTMLElement(nsGkAtoms::sup)) return Some(eTextPosSuper);
     if (content->IsHTMLElement(nsGkAtoms::sub)) return Some(eTextPosSub);
+  }
+
+  const auto& alignmentBaseline = aFrame->StyleDisplay()->mAlignmentBaseline;
+  if (alignmentBaseline == StyleAlignmentBaseline::Baseline) {
+    return Some(eTextPosBaseline);
   }
 
   return Nothing{};

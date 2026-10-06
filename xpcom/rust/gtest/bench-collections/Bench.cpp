@@ -37,7 +37,7 @@
 //       $OBJDIR/dist/bin/firefox -unittest
 //   callgrind_annotate --auto=yes clgout > clgann
 //
-// where $IMPL is part of an implementation name in a test (e.g. "PLDHash",
+// where $IMPL is part of an implementation name in a test (e.g. "nsTHash",
 // "MozHash") and $OBJDIR is an objdir containing a --enable-release build.
 //
 // Note that multiple processes are spawned, so `clgout` gets overwritten
@@ -48,12 +48,10 @@
 #include "gtest/gtest.h"
 #include "gtest/MozGTestBench.h"  // For MOZ_GTEST_BENCH
 #include "mozilla/AllocPolicy.h"
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/HashFunctions.h"
 #include "mozilla/HashTable.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/TimeStamp.h"
-#include "PLDHashTable.h"
+#include "nsTHashtable.h"
 #include <unordered_set>
 
 using namespace mozilla;
@@ -124,44 +122,43 @@ static void Bench_Cpp_unordered_set(const Params* aParams, void** aVals,
 }
 
 // Keep this in sync with all the other Bench_*() functions.
-static void Bench_Cpp_PLDHashTable(const Params* aParams, void** aVals,
+static void Bench_Cpp_nsTHashtable(const Params* aParams, void** aVals,
                                    size_t aLen) {
-  PLDHashTable hs(PLDHashTable::StubOps(), sizeof(PLDHashEntryStub));
+  nsTHashtable<nsVoidPtrHashKey> hs;
 
   for (size_t j = 0; j < aParams->mNumInserts; j++) {
-    auto entry = static_cast<PLDHashEntryStub*>(hs.Add(aVals[j]));
-    MOZ_RELEASE_ASSERT(!entry->key);
-    entry->key = aVals[j];
+    hs.PutEntry(aVals[j]);
   }
 
   for (size_t i = 0; i < aParams->mNumSuccessfulLookups; i++) {
     for (size_t j = 0; j < aParams->mNumInserts; j++) {
-      MOZ_RELEASE_ASSERT(hs.Search(aVals[j]));
+      MOZ_RELEASE_ASSERT(hs.GetEntry(aVals[j]));
     }
   }
 
   for (size_t i = 0; i < aParams->mNumFailingLookups; i++) {
     for (size_t j = aParams->mNumInserts; j < aParams->mNumInserts * 2; j++) {
-      MOZ_RELEASE_ASSERT(!hs.Search(aVals[j]));
+      MOZ_RELEASE_ASSERT(!hs.GetEntry(aVals[j]));
     }
   }
 
   for (size_t i = 0; i < aParams->mNumIterations; i++) {
     size_t n = 0;
-    for (auto iter = hs.Iter(); !iter.Done(); iter.Next()) {
+    for (auto& entry : hs) {
+      (void)entry;
       n++;
     }
     MOZ_RELEASE_ASSERT(aParams->mNumInserts == n);
-    MOZ_RELEASE_ASSERT(hs.EntryCount() == n);
+    MOZ_RELEASE_ASSERT(hs.Count() == n);
   }
 
   if (aParams->mRemoveInserts) {
     for (size_t j = 0; j < aParams->mNumInserts; j++) {
-      hs.Remove(aVals[j]);
+      hs.RemoveEntry(aVals[j]);
     }
-    MOZ_RELEASE_ASSERT(hs.EntryCount() == 0);
+    MOZ_RELEASE_ASSERT(hs.Count() == 0);
   } else {
-    MOZ_RELEASE_ASSERT(hs.EntryCount() == aParams->mNumInserts);
+    MOZ_RELEASE_ASSERT(hs.Count() == aParams->mNumInserts);
   }
 }
 
@@ -281,8 +278,8 @@ StaticMutex BenchCollections::sValsMutex;
 MOZ_GTEST_BENCH_F(BenchCollections, unordered_set,
                   [this] { BenchImpl(Bench_Cpp_unordered_set); });
 
-MOZ_GTEST_BENCH_F(BenchCollections, PLDHash,
-                  [this] { BenchImpl(Bench_Cpp_PLDHashTable); });
+MOZ_GTEST_BENCH_F(BenchCollections, nsTHash,
+                  [this] { BenchImpl(Bench_Cpp_nsTHashtable); });
 
 MOZ_GTEST_BENCH_F(BenchCollections, MozHash,
                   [this] { BenchImpl(Bench_Cpp_MozHashSet); });

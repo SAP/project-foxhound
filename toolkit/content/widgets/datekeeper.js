@@ -42,16 +42,17 @@ function DateKeeper(props) {
 
     /**
      * Initialize DateKeeper
-     * @param  {Number} year
-     * @param  {Number} month
-     * @param  {Number} day
-     * @param  {Number} min
-     * @param  {Number} max
-     * @param  {Number} step
-     * @param  {Number} stepBase
-     * @param  {Number} firstDayOfWeek
-     * @param  {Array<Number>} weekends
-     * @param  {Number} calViewSize
+     *
+     * @param  {number} year
+     * @param  {number} month
+     * @param  {number} day
+     * @param  {number} min
+     * @param  {number} max
+     * @param  {number} step
+     * @param  {number} stepBase
+     * @param  {number} firstDayOfWeek
+     * @param  {Array<number>} weekends
+     * @param  {number} calViewSize
      */
     init({
       year,
@@ -94,8 +95,8 @@ function DateKeeper(props) {
         month = today.getMonth();
       }
 
-      const minYear = this.state.min.getFullYear();
-      const maxYear = this.state.max.getFullYear();
+      const minYear = this.state.min.getUTCFullYear();
+      const maxYear = this.state.max.getUTCFullYear();
 
       // Choose a valid year for the value/min/max properties
       const selectedYear = Math.min(Math.max(year, minYear), maxYear);
@@ -107,14 +108,14 @@ function DateKeeper(props) {
         selectedMonth = Math.min(
           Math.max(
             month,
-            selectedYear === minYear ? this.state.min.getMonth() : 0
+            selectedYear === minYear ? this.state.min.getUTCMonth() : 0
           ),
-          selectedYear === maxYear ? this.state.max.getMonth() : 11
+          selectedYear === maxYear ? this.state.max.getUTCMonth() : 11
         );
       } else if (selectedYear === minYear) {
-        selectedMonth = this.state.min.getMonth();
+        selectedMonth = this.state.min.getUTCMonth();
       } else if (selectedYear === maxYear) {
-        selectedMonth = this.state.max.getMonth();
+        selectedMonth = this.state.max.getUTCMonth();
       }
 
       this.setCalendarMonth({
@@ -126,7 +127,8 @@ function DateKeeper(props) {
     /**
      * Set new calendar month. The year is always treated as full year, so the
      * short-form is not supported.
-     * @param {Object} date parts
+     *
+     * @param {object} date parts
      *        {
      *          {Number} year [optional]
      *          {Number} month [optional]
@@ -146,11 +148,31 @@ function DateKeeper(props) {
 
     /**
      * Set selection date
-     * @param {Number} year
-     * @param {Number} month
-     * @param {Number} day
+     *
+     * @param {number} year
+     * @param {number} month
+     * @param {number} day
      */
     setSelection({ year, month, day }) {
+      // Select the date only if it is within bounds
+      const minYear = this.state.min.getUTCFullYear();
+      const minMonth = this.state.min.getUTCMonth();
+      const minDate = this.state.min.getUTCDate();
+      const maxYear = this.state.max.getUTCFullYear();
+      const maxMonth = this.state.max.getUTCMonth();
+      const maxDate = this.state.max.getUTCDate();
+
+      if (
+        year > maxYear ||
+        year < minYear ||
+        (year == maxYear && month > maxMonth) ||
+        (year == minYear && month < minMonth) ||
+        (year == maxYear && month == maxMonth && day > maxDate) ||
+        (year == minYear && month == minMonth && day < minDate)
+      ) {
+        return;
+      }
+
       this.state.selection.year = year;
       this.state.selection.month = month;
       this.state.selection.day = day;
@@ -158,7 +180,8 @@ function DateKeeper(props) {
 
     /**
      * Set month. Makes sure the day is <= the last day of the month
-     * @param {Number} month
+     *
+     * @param {number} month
      */
     setMonth(month) {
       this.setCalendarMonth({ year: this.year, month });
@@ -166,7 +189,8 @@ function DateKeeper(props) {
 
     /**
      * Set year. Makes sure the day is <= the last day of the month
-     * @param {Number} year
+     *
+     * @param {number} year
      */
     setYear(year) {
       this.setCalendarMonth({ year, month: this.month });
@@ -174,7 +198,8 @@ function DateKeeper(props) {
 
     /**
      * Set month by offset. Makes sure the day is <= the last day of the month
-     * @param {Number} offset
+     *
+     * @param {number} offset
      */
     setMonthByOffset(offset) {
       this.setCalendarMonth({ year: this.year, month: this.month + offset });
@@ -182,7 +207,8 @@ function DateKeeper(props) {
 
     /**
      * Generate the array of months
-     * @return {Array<Object>}
+     *
+     * @return {Array<object>}
      *         {
      *           {Number} value: Month in int
      *           {Boolean} enabled
@@ -193,10 +219,10 @@ function DateKeeper(props) {
 
       const currentYear = this.year;
 
-      const minYear = this.state.min.getFullYear();
-      const minMonth = this.state.min.getMonth();
-      const maxYear = this.state.max.getFullYear();
-      const maxMonth = this.state.max.getMonth();
+      const minYear = this.state.min.getUTCFullYear();
+      const minMonth = this.state.min.getUTCMonth();
+      const maxYear = this.state.max.getUTCFullYear();
+      const maxMonth = this.state.max.getUTCMonth();
 
       for (let i = 0; i < MONTHS_IN_A_YEAR; i++) {
         const disabled =
@@ -213,7 +239,8 @@ function DateKeeper(props) {
 
     /**
      * Generate the array of years
-     * @return {Array<Object>}
+     *
+     * @return {Array<object>}
      *         {
      *           {Number} value: Year in int
      *           {Boolean} enabled
@@ -226,8 +253,8 @@ function DateKeeper(props) {
       const lastItem = this.state.years[this.state.years.length - 1];
       const currentYear = this.year;
 
-      const minYear = Math.max(this.state.min.getFullYear(), 1);
-      const maxYear = Math.min(this.state.max.getFullYear(), MAX_YEAR);
+      const minYear = Math.max(this.state.min.getUTCFullYear(), 1);
+      const maxYear = Math.min(this.state.max.getUTCFullYear(), MAX_YEAR);
 
       // Generate new years array when the year is outside of the first &
       // last item range. If not, return the cached result.
@@ -255,7 +282,8 @@ function DateKeeper(props) {
 
     /**
      * Get days for calendar
-     * @return {Array<Object>}
+     *
+     * @return {Array<object>}
      *         {
      *           {Date} dateObj
      *           {Number} content
@@ -348,9 +376,10 @@ function DateKeeper(props) {
 
     /**
      * Check if a date is off step given a starting point and the next increment
+     *
      * @param  {Date} start
      * @param  {Date} next
-     * @return {Boolean}
+     * @return {boolean}
      */
     _checkIsOffStep(start, next) {
       // If the increment is larger or equal to the step, it must not be off-step.
@@ -369,9 +398,10 @@ function DateKeeper(props) {
 
     /**
      * Get week headers for calendar
-     * @param  {Number} firstDayOfWeek
-     * @param  {Array<Number>} weekends
-     * @return {Array<Object>}
+     *
+     * @param  {number} firstDayOfWeek
+     * @param  {Array<number>} weekends
+     * @return {Array<object>}
      *         {
      *           {Number} content
      *           {Array<String>} classNames
@@ -395,8 +425,9 @@ function DateKeeper(props) {
 
     /**
      * Get the first day on a calendar month
+     *
      * @param  {Date} dateObj
-     * @param  {Number} firstDayOfWeek
+     * @param  {number} firstDayOfWeek
      * @return {Date}
      */
     _getFirstCalendarDate(dateObj, firstDayOfWeek) {
@@ -420,7 +451,8 @@ function DateKeeper(props) {
 
     /**
      * Helper function for creating UTC dates
-     * @param  {...[Number]} parts
+     *
+     * @param  {...[number]} parts
      * @return {Date}
      */
     _newUTCDate(...parts) {

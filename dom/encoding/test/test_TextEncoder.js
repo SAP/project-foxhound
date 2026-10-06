@@ -3,8 +3,6 @@
  * bug 764234 tests
  */
 
-/* eslint-env mozilla/testharness */
-
 function runTextEncoderTests() {
   test(testEncoderEncode, "testEncoderEncode");
   test(testEncoderGetEncoding, "testEncoderGetEncoding");

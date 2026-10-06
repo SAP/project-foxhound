@@ -5,17 +5,20 @@
 package mozilla.components.support.utils.ext
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
-import androidx.annotation.RequiresApi
+import android.view.Window
 import androidx.core.content.ContextCompat
-import androidx.core.os.bundleOf
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.utils.BuildManufacturerChecker
 
@@ -25,10 +28,22 @@ const val DEFAULT_BROWSER_APP_OPTION = "default_browser"
 const val ACTION_MANAGE_DEFAULT_APPS_SETTINGS_HUAWEI = "com.android.settings.PREFERRED_SETTINGS"
 private val logger = Logger("navigateToDefaultBrowserAppsSettings")
 
+val Context.packageManagerWrapper: PackageManagerWrapper
+    get() = DefaultPackageManagerWrapper(packageManager)
+
+/**
+ * The default [PackageManagerCompatHelper] for this [Context].
+ *
+ * @returns a [DefaultPackageManagerCompatHelper] created with the context's [PackageManager].
+ */
+val Context.packageManagerCompatHelper: PackageManagerCompatHelper
+    get() = DefaultPackageManagerCompatHelper(
+        DefaultPackageManagerWrapper(packageManager),
+    )
+
 /**
  * Open OS settings for default browser.
  */
-@RequiresApi(Build.VERSION_CODES.N)
 fun Context.navigateToDefaultBrowserAppsSettings(buildManufacturerChecker: BuildManufacturerChecker) {
     val intent = when {
         buildManufacturerChecker.isHuawei() -> Intent(ACTION_MANAGE_DEFAULT_APPS_SETTINGS_HUAWEI)
@@ -39,7 +54,7 @@ fun Context.navigateToDefaultBrowserAppsSettings(buildManufacturerChecker: Build
             )
             putExtra(
                 SETTINGS_SHOW_FRAGMENT_ARGS,
-                bundleOf(SETTINGS_SELECT_OPTION_KEY to DEFAULT_BROWSER_APP_OPTION),
+                Bundle().apply { putString(SETTINGS_SELECT_OPTION_KEY, DEFAULT_BROWSER_APP_OPTION) },
             )
         }
     }
@@ -86,4 +101,20 @@ fun Context.registerReceiverCompat(
  */
 fun Context.isLandscape(): Boolean {
     return resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+}
+
+/**
+ * Try getting the activity window from the current context.
+ *
+ * @return The current [Activity]'s [Window] or null if it cannot be found.
+ */
+fun Context.getActivityWindow(): Window? {
+    var context = this
+    while (context is ContextWrapper) {
+        if (context is Activity) {
+            return context.window
+        }
+        context = context.baseContext
+    }
+    return null
 }

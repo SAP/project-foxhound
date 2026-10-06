@@ -12,6 +12,9 @@
     title: "Test ICE gathering when setConfiguration is used to change the ICE config"
   });
 
+  let turnAddressV4;
+  let turnHostname;
+
   const tests = [
     async function baselineV4Cases() {
       await checkSrflx([{urls:[`stun:${turnAddressV4}`]}]);
@@ -328,6 +331,17 @@
       }
     },
 
+    async function port443IsNotIgnored() {
+      const pc = new RTCPeerConnection();
+      try {
+        pc.setConfiguration({iceServers: [{urls:[`turns:${turnHostname}:443`], username, credential}]});
+        const candidates = await gatherWithTimeout(pc, 32000, `Bad port 443 on TURNS server`);
+        ok(!candidates.some(c => c.candidate.includes("relay")), "Should not get a relay candidate; test TURNS server listens only on 5349");
+      } finally {
+        pc.close();
+      }
+    },
+
     async function addOffererStunServerAllowsIceToConnect() {
       const offerer = new RTCPeerConnection();
       const answerer = new RTCPeerConnection();
@@ -382,6 +396,55 @@
       }
     },
 
+    async function iceCandidateErrorWithBadCredentials() {
+      const pc = new RTCPeerConnection();
+      pc.setConfiguration({iceServers: [{
+        urls: [`turn:${turnAddressV4}`],
+        username: "wronguser",
+        credential: "wrongpass",
+      }]});
+      try {
+        const candidateErrorPromise = new Promise(resolve =>
+          pc.addEventListener('icecandidateerror', resolve, { once: true })
+        );
+        await pc.setLocalDescription(
+          await pc.createOffer({ offerToReceiveAudio: true })
+        );
+        const event = await candidateErrorPromise;
+        ok(event instanceof RTCPeerConnectionIceErrorEvent,
+           'event is RTCPeerConnectionIceErrorEvent');
+        is(event.errorCode, 401, "401 for bad TURN credentials");
+        ok(event.url.startsWith("turn:"), "URL starts with turn:");
+      } finally {
+        pc.close();
+      }
+    },
+
+    async function noIceCandidateErrorWithGoodCredentials() {
+      const pc = new RTCPeerConnection();
+      pc.setConfiguration({iceServers: [{
+        urls: [`turn:${turnAddressV4}`],
+        username,
+        credential,
+      }]});
+      try {
+        let errorFired = false;
+        pc.addEventListener('icecandidateerror', () => { errorFired = true; });
+        await pc.setLocalDescription(
+          await pc.createOffer({ offerToReceiveAudio: true })
+        );
+        await new Promise(resolve => {
+          pc.addEventListener('icegatheringstatechange', () => {
+            if (pc.iceGatheringState === 'complete') resolve();
+          });
+          if (pc.iceGatheringState === 'complete') resolve();
+        });
+        ok(!errorFired, "No icecandidateerror event should fire with valid credentials");
+      } finally {
+        pc.close();
+      }
+    },
+
     async function addOffererTurnServerAllowsIceToConnect() {
       await pushPrefs(
           ['media.peerconnection.nat_simulator.filtering_type', 'PORT_DEPENDENT'],
@@ -419,7 +482,7 @@
     // Just use the first url. It might make sense to look for TURNS first,
     // since that will always use a hostname, but on CI we don't have TURNS
     // support anyway (see bug 1323439).
-    const turnHostname = getTurnHostname(turnServer.urls[0]);
+    turnHostname = getTurnHostname(turnServer.urls[0]);
     turnAddressV4 = await dnsLookupV4(turnHostname);
 
     await pushPrefs(

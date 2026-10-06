@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!-- Link text to learn more about downloading Gemini Nano -->
+  <string name="mozac_summarize_learn_more_link">더 알아보기</string>
+  <!-- Title for the off-device shake summarization consent screen. Localization note: Asking if the user wants to use the shake gesture to summarize the page they are viewing. -->
+  <string name="mozac_summarize_shake_consent_off_device_title">흔들어서 요약하시겠습니까?</string>
+  <!-- Message for the off-device shake summarization consent screen. %1$s is 'Firefox' -->
+  <string name="mozac_summarize_shake_consent_off_device_message">기기를 흔들어 보세요. 몇 초 안에 %1$s의 페이지 요약 정보를 확인하실 수 있습니다.</string>
+  <!-- Button text for the off-device shake summarization consent screen approving shake consent. Localization note: "Continue" turns on the shake to summarize feature. -->
+  <string name="mozac_summarize_shake_consent_off_device_button_positive">계속</string>
+  <!-- Button text for the off-device shake summarization consent screen denying shake consent. Localization note: "Not now" dismisses the request to turn on the shake to summarize feature. -->
+  <string name="mozac_summarize_shake_consent_off_device_negative_button">나중에</string>
+  <!-- Title for the on-device shake summarization and download consent screen -->
+  <string name="mozac_summarize_shake_consent_on_device_title">이 페이지 요약</string>
+  <!-- Message for the on-device shake summarization and download consent screen. %s will be replaced by app name. -->
+  <string name="mozac_summarize_shake_consent_on_device_message">빠르게 한 번만 다운로드하면, 기기를 흔들 때마다 %s가 해당 페이지를 요약해 줍니다.</string>
+  <!-- Button text for the on-device shake summarization and download consent screen approving shake and download consent -->
+  <string name="mozac_summarize_shake_consent_on_device_button_positive">다운로드</string>
+  <!-- Button text for the on-device shake summarization and download consent screen denying shake and download consent -->
+  <string name="mozac_summarize_shake_consent_on_device_negative_button">나중에</string>
+  <!-- Title for the download consent screen -->
+  <string name="mozac_summarize_download_consent_title">비공개 요약 설정</string>
+  <!-- Message for the consent to download when using an on-device model. %s will be replaced by app name. -->
+  <string name="mozac_summarize_download_nano_consent_message">한 번만 다운로드하면 %s를 통해 사용자가 직접 관리할 수 있는 페이지 요약 정보를 생성할 수 있습니다.</string>
+  <!-- Button text for the consent to download an on-device model approving download consent -->
+  <string name="mozac_summarize_download_consent_button_positive">다운로드</string>
+  <!-- Button text for the consent to download an on-device model denying download consent -->
+  <string name="mozac_summarize_download_consent_button_negative">취소</string>
+  <!-- Title for the download in progress screen -->
+  <string name="mozac_summarize_download_progress_title">요약 설정</string>
+  <!-- Message to describe that a download is in progress using an on-device, private model -->
+  <string name="mozac_summarize_download_progress_message">비공개 요약을 위한 일회성 다운로드.</string>
+  <!-- Caption to describe the progress of the download. %1$.2f is bytes downloaded, %2$.2f is total bytes required for download to complete. -->
+  <string name="mozac_summarize_download_progress_caption">%1$.2f MB / %2$.2f MB</string>
+  <!-- Button text shown while a download is in progress to cancel the download -->
+  <string name="mozac_summarize_download_progress_button_negative">취소</string>
+  <!-- Title for the download error screen -->
+  <string name="mozac_summarize_download_error_title">오류</string>
+  <!-- Generic fallback message for the download error screen -->
+  <string name="mozac_summarize_download_error_fallback_message">알 수 없는 오류</string>
+  <!-- Button for the download error screen to try again -->
+  <string name="mozac_summarize_download_error_positive_button">다시 시도</string>
+  <!-- Button for the download error screen to cancel -->
+  <string name="mozac_summarize_download_error_negative_button">취소</string>
+  <!-- Title for the error screen when page is too long to summarize -->
+  <string name="mozac_summarize_content_too_long_error_title">페이지가 너무 길어 요약할 수 없음</string>
+  <!-- Title for the info error screen -->
+  <string name="mozac_summarize_info_error_title">지금 요약할 수 없음</string>
+  <!-- Generic fallback message for the info error screen -->
+  <string name="mozac_summarize_info_error_message">나중에 다시 시도하세요.</string>
+  <!-- Error code shown on long press of the error icon. %1$d is an error code. -->
+  <string name="mozac_summarize_info_error_code">오류 코드: %1$d</string>
+  <!-- Loading text displayed while a page summary is being generated -->
+  <string name="mozac_feature_summarize_loading_title">요약하는 중…</string>
+  <!-- Content description for the settings icon button in the summarized view -->
+  <string name="mozac_summarize_settings_button_content_description">페이지 요약 설정</string>
+  <!-- Title for the settings screen shown in the summarization bottom sheet -->
+  <string name="mozac_summarize_settings_title">페이지 요약</string>
+  <!-- Label for the summarize pages toggle in settings -->
+  <string name="mozac_summarize_settings_summarize_pages">페이지 요약</string>
+  <!-- Description for the summarize pages toggle -->
+  <string name="mozac_summarize_settings_summarize_pages_cloud">AI로 페이지 요약을 만듭니다. 페이지와 요약은 비공개로 유지되며 저장되지 않습니다.</string>
+  <!-- Link text to learn more about page summaries in settings -->
+  <string name="mozac_summarize_settings_learn_more">더 알아보기</string>
+  <!-- Section header for gesture settings -->
+  <string name="mozac_summarize_settings_gestures">제스처</string>
+  <!-- Label for the shake to summarize toggle in settings -->
+  <string name="mozac_summarize_settings_shake_to_summarize">흔들어서 요약</string>
+  <!-- Description for the shake to summarize toggle in settings -->
+  <string name="mozac_summarize_settings_shake_to_summarize_description">기기를 좌우로 흔들어 페이지를 요약하세요.</string>
+  <!-- Label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity">흔들기 민감도</string>
+  <!-- Description for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_description">요약 기능을 실행하기 위해 기기를 얼마나 세게 흔들어야 하는지 조절합니다.</string>
+  <!-- Low option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_low">낮음</string>
+  <!-- Medium option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_medium">중간</string>
+  <!-- High option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_high">높음</string>
+  <!-- Message for summary by model, %1$s is the name of the model that is being displayed -->
+  <string name="mozac_feature_summarize_summary_model">%1$s의 요약</string>
+  <!-- Disclaimer message -->
+  <string name="mozac_feature_summarize_disclaimer_message">AI는 실수를 할 수 있음</string>
+  <!-- Title for the page summary AI controllable feature -->
+  <string name="mozac_ai_controls_page_summary_title">페이지 요약</string>
+  <!-- Description for the page summary AI controllable feature -->
+  <string name="mozac_ai_controls_page_summary_description">페이지와 요약은 저장되지 않습니다.</string>
+  <!-- Button text for the Error dismiss button on Shake to Summarize -->
+  <string name="mozac_summarize_error_dissmiss">닫기</string>
+</resources>

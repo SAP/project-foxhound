@@ -1,4 +1,3 @@
-// |reftest| shell-option(--enable-uint8array-base64) skip-if(!Uint8Array.fromBase64||!xulRuntime.shell) -- uint8array-base64 is not enabled unconditionally, requires shell-options
 // Copyright (C) 2024 Kevin Gibbons. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 /*---
@@ -10,9 +9,9 @@ features: [uint8array-base64, TypedArray]
 
 var toHex = Uint8Array.prototype.toHex;
 
-testWithTypedArrayConstructors(function(TA) {
+testWithTypedArrayConstructors(function(TA, makeCtorArg) {
   if (TA === Uint8Array) return;
-  var sample = new TA(2);
+  var sample = new TA(makeCtorArg(2));
   assert.throws(TypeError, function() {
     Uint8Array.prototype.toHex.call(sample);
   });

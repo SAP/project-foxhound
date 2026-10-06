@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,24 +6,24 @@
 
 #include <algorithm>
 
+#include "imgIContainer.h"
+#include "imgITools.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Result.h"
 #include "mozilla/ResultVariant.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/BlobBinding.h"
-#include "mozilla/dom/ClipboardItem.h"
 #include "mozilla/dom/ClipboardBinding.h"
+#include "mozilla/dom/ClipboardItem.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/DataTransfer.h"
+#include "mozilla/dom/DataTransferItem.h"
+#include "mozilla/dom/DataTransferItemList.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
-#include "mozilla/dom/DataTransfer.h"
-#include "mozilla/dom/DataTransferItemList.h"
-#include "mozilla/dom/DataTransferItem.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "imgIContainer.h"
-#include "imgITools.h"
 #include "nsArrayUtils.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
@@ -320,10 +318,6 @@ void Clipboard::RequestRead(Promise* aPromise, ReadRequestType aType,
     callback->OnError(rv);
     return;
   }
-}
-
-static bool IsReadTextExposedToContent() {
-  return StaticPrefs::dom_events_asyncClipboard_readText_DoNotUseDirectly();
 }
 
 already_AddRefed<Promise> Clipboard::ReadHelper(nsIPrincipal& aSubjectPrincipal,
@@ -782,7 +776,7 @@ already_AddRefed<Promise> Clipboard::Write(
 already_AddRefed<Promise> Clipboard::WriteText(const nsAString& aData,
                                                nsIPrincipal& aSubjectPrincipal,
                                                ErrorResult& aRv) {
-  nsCOMPtr<nsIGlobalObject> global = GetOwnerGlobal();
+  nsCOMPtr<nsIGlobalObject> global = GetRelevantGlobal();
   if (!global) {
     aRv.ThrowInvalidStateError("Unable to get global.");
     return nullptr;
@@ -809,14 +803,6 @@ JSObject* Clipboard::WrapObject(JSContext* aCx,
 
 /* static */
 LogModule* Clipboard::GetClipboardLog() { return gClipboardLog; }
-
-/* static */
-bool Clipboard::ReadTextEnabled(JSContext* aCx, JSObject* aGlobal) {
-  nsIPrincipal* prin = nsContentUtils::SubjectPrincipal(aCx);
-  return IsReadTextExposedToContent() ||
-         prin->GetIsAddonOrExpandedAddonPrincipal() ||
-         prin->IsSystemPrincipal();
-}
 
 /* static */
 bool Clipboard::IsTestingPrefEnabled() {

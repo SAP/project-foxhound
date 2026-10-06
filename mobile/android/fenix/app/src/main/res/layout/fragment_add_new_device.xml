@@ -51,7 +51,7 @@
                 android:textColor="@color/sync_error_text_color"
                 android:textSize="16sp"
                 android:visibility="visible"
-                app:drawableStartCompat="@drawable/ic_info"
+                app:drawableStartCompat="@drawable/mozac_ic_information_24"
                 app:drawableTint="@color/sync_error_text_color" />
 
         </RelativeLayout>

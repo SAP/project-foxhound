@@ -16,88 +16,31 @@
           src="../events.js"></script>
 
   <script type="application/javascript">
-    function t1_setARIAHidden() {
-      this.eventSeq = [
-        new invokerChecker(EVENT_REORDER, "t1"),
-      ];
-
-      this.invoke = function t1_setARIAHidden_invoke() {
-        getNode("t1_child").setAttribute("aria-hidden", "true");
-      };
-
-      this.finalCheck = function t1_setARIAHidden_finalCheck() {
-        ok(!isAccessible("t1_child"), "No accessible for aria-hidden");
-      };
-
-      this.getID = function t1_setARIAHidden_getID() {
-        return "aria-hidden set to true";
-      };
-    }
-
-    function t1_removeARIAHidden() {
-      this.eventSeq = [
-        new invokerChecker(EVENT_REORDER, "t1"),
-      ];
-
-      this.invoke = function t1_removeARIAHidden_invoke() {
-        getNode("t1_child").removeAttribute("aria-hidden");
-      };
-
-      this.finalCheck = function t1_removeARIAHidden_finalCheck() {
-        ok(isAccessible("t1_child"), "No aria-hidden, has to be accessible");
-      };
-
-      this.getID = function t1_removeARIAHidden_getID() {
-        return "remove aria-hidden";
-      };
-    }
-
-    function t2_setARIAHidden() {
-      this.eventSeq = [
-        new invokerChecker(EVENT_REORDER, "t2"),
-      ];
-
-      this.invoke = function t2_setARIAHidden_invoke() {
-        getNode("t2_child").setAttribute("aria-hidden", "true");
-      };
-
-      this.finalCheck = function t2_setARIAHidden_finalCheck() {
-        testAccessibleTree("t2", { SECTION: []});
-      };
-
-      this.getID = function t2_setARIAHidden_getID() {
-        return "t2: set aria-hidden";
-      };
-    }
-
-    function t2_insertUnderARIAHidden() {
-      this.eventSeq = [
-        new unexpectedInvokerChecker(EVENT_REORDER, "t2"),
-      ];
-
-      this.invoke = function t2_insertUnderARIAHidden_invoke() {
-        getNode("t2_child").innerHTML = "<input>";
-      };
-
-      this.finalCheck = function t2_insertUnderARIAHidden_finalCheck() {
-        testAccessibleTree("t2", { SECTION: []});
-      };
-
-      this.getID = function t2_insertUnderARIAHidden_getID() {
-        return "t2: insert under aria-hidden";
-      };
-    }
-
-    // gA11yEventDumpToConsole = true;
-    function doTests() {
+    async function doTests() {
       ok(!isAccessible("t1_child"), "No accessible for aria-hidden");
 
-      const gQueue = new eventQueue();
-      gQueue.push(new t1_removeARIAHidden());
-      gQueue.push(new t1_setARIAHidden());
-      gQueue.push(new t2_setARIAHidden());
-      gQueue.push(new t2_insertUnderARIAHidden());
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      let reordered = waitForEvent(EVENT_REORDER, "t1");
+      getNode("t1_child").removeAttribute("aria-hidden");
+      await reordered;
+      ok(isAccessible("t1_child"), "No aria-hidden, has to be accessible");
+
+      reordered = waitForEvent(EVENT_REORDER, "t1");
+      getNode("t1_child").setAttribute("aria-hidden", "true");
+      await reordered;
+      ok(!isAccessible("t1_child"), "No accessible for aria-hidden");
+
+      reordered = waitForEvent(EVENT_REORDER, "t2");
+      getNode("t2_child").setAttribute("aria-hidden", "true");
+      await reordered;
+      testAccessibleTree("t2", { SECTION: []});
+
+      let unexpected = new UnexpectedEvents([[EVENT_REORDER, "t2"]]);
+      getNode("t2_child").innerHTML = "<input>";
+      await unexpected.flush();
+      unexpected.stop();
+      testAccessibleTree("t2", { SECTION: []});
+
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

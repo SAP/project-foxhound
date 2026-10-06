@@ -5,13 +5,14 @@
 package org.mozilla.fenix.addons
 
 import android.view.View
+import androidx.navigation.findNavController
 import mozilla.components.feature.addons.Addon
 import mozilla.components.feature.addons.ui.AddonsManagerAdapterDelegate
-import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.BuildConfig
-import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.compose.snackbar.Snackbar
 import org.mozilla.fenix.compose.snackbar.SnackbarState
+import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.ext.openToBrowser
 import org.mozilla.fenix.settings.SupportUtils
 
 /**
@@ -35,21 +36,26 @@ internal fun showSnackBar(
     ).show()
 }
 
-internal fun openLearnMoreLink(
-    activity: HomeActivity,
+internal fun View.openLearnMoreLink(
     link: AddonsManagerAdapterDelegate.LearnMoreLinks,
     addon: Addon,
-    from: BrowserDirection,
 ) {
-    val url = when (link) {
+    val url = resolveLearnMoreUrl(link, addon) ?: return
+    findNavController().openToBrowser()
+    context.components.useCases.fenixBrowserUseCases.loadUrlOrSearch(
+        searchTermOrURL = url,
+        newTab = true,
+    )
+}
+
+private fun resolveLearnMoreUrl(
+    link: AddonsManagerAdapterDelegate.LearnMoreLinks,
+    addon: Addon,
+): String? {
+    return when (link) {
         AddonsManagerAdapterDelegate.LearnMoreLinks.BLOCKLISTED_ADDON ->
             "${BuildConfig.AMO_BASE_URL}/android/blocked-addon/${addon.id}/${addon.version}/"
         AddonsManagerAdapterDelegate.LearnMoreLinks.ADDON_NOT_CORRECTLY_SIGNED ->
-            SupportUtils.getSumoURLForTopic(activity.baseContext, SupportUtils.SumoTopic.UNSIGNED_ADDONS)
+            SupportUtils.getGenericSumoURLForTopic(SupportUtils.SumoTopic.UNSIGNED_ADDONS)
     }
-    openLinkInNewTab(activity, url, from)
-}
-
-internal fun openLinkInNewTab(activity: HomeActivity, url: String, from: BrowserDirection) {
-    activity.openToBrowserAndLoad(searchTermOrURL = url, newTab = true, from = from)
 }

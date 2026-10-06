@@ -1,0 +1,15 @@
+{
+  "label": "aliexpress.com bundle deals pages",
+  "bugs": {
+    "1946443": {
+      "issue": "broken-layout",
+      "matches": ["*://www.aliexpress.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome", "add_Firefox_as_Gecko"]
+    }
+  ]
+}

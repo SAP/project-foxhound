@@ -17,7 +17,11 @@
     <p>other content trackers not blocked</p>
     <img
       src="https://content-track-digest256.dummytracker.org/test_not_blocked.png"
-      onerror="this.onerror=null;this.src='https://not-a-tracker.dummytracker.org/test_blocked.png';alert('other content trackers blocked')"
+      onerror="
+        this.onerror = null;
+        this.src = 'https://not-a-tracker.dummytracker.org/test_blocked.png';
+        alert('other content trackers blocked');
+      "
     />
   </body>
 </html>

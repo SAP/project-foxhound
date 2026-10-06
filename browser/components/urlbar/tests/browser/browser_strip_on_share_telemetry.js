@@ -14,7 +14,6 @@ add_setup(async function () {
     set: [
       ["privacy.query_stripping.strip_on_share.enabled", true],
       ["privacy.query_stripping.enabled", false],
-      ["privacy.query_stripping.strip_on_share.canDisable", false],
     ],
   });
 
@@ -84,16 +83,9 @@ async function testStripOnShare(validUrl, strippedUrl) {
   await BrowserTestUtils.withNewTab(validUrl, async function () {
     gURLBar.focus();
     gURLBar.select();
-    let menuitem = await promiseContextualMenuitem("strip-on-share");
-    Assert.ok(BrowserTestUtils.isVisible(menuitem), "Menu item is visible");
-    let hidePromise = BrowserTestUtils.waitForEvent(
-      menuitem.parentElement,
-      "popuphidden"
-    );
     // Make sure the clean copy of the link will be copied to the clipboard
-    await SimpleTest.promiseClipboardChange(strippedUrl, () => {
-      menuitem.closest("menupopup").activateItem(menuitem);
+    await SimpleTest.promiseClipboardChange(strippedUrl, async () => {
+      await UrlbarTestUtils.activateContextMenuItem(window, "strip-on-share");
     });
-    await hidePromise;
   });
 }

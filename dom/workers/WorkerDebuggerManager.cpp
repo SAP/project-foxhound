@@ -1,21 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WorkerDebuggerManager.h"
 
-#include "nsSimpleEnumerator.h"
-
-#include "mozilla/dom/JSExecutionManager.h"
+#include "WorkerDebugger.h"
+#include "WorkerPrivate.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
-
-#include "WorkerDebugger.h"
-#include "WorkerPrivate.h"
+#include "mozilla/dom/JSExecutionManager.h"
 #include "nsIObserverService.h"
+#include "nsSimpleEnumerator.h"
 
 namespace mozilla::dom {
 
@@ -78,9 +74,9 @@ class WorkerDebuggerEnumerator final : public nsSimpleEnumerator {
   explicit WorkerDebuggerEnumerator(
       const nsTArray<nsCOMPtr<nsIWorkerDebugger>>& aDebuggers)
       : mIndex(0) {
-    for (auto debugger : aDebuggers) {
+    for (const auto& debugger : aDebuggers) {
       bool isRemote;
-      Unused << debugger->GetIsRemote(&isRemote);
+      (void)debugger->GetIsRemote(&isRemote);
       if (!isRemote) {
         mDebuggers.AppendElement(debugger);
       }
@@ -303,7 +299,7 @@ void WorkerDebuggerManager::RegisterDebuggerMainThread(
     WorkerPrivate* aWorkerPrivate, bool aNotifyListeners) {
   AssertIsOnMainThread();
 
-  RefPtr<WorkerDebugger> debugger = new WorkerDebugger(aWorkerPrivate);
+  RefPtr<WorkerDebugger> debugger = WorkerDebugger::Create(aWorkerPrivate);
   mDebuggers.AppendElement(debugger);
 
   aWorkerPrivate->SetDebugger(debugger);

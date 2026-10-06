@@ -10,7 +10,7 @@
 "use strict";
 
 function assertChild(div, content) {
-  const name = div.parentElement.localName;
+  const name = div.getRootNode().host.localName;
   is(div.firstChild.nodeType, Node.TEXT_NODE, `<${name}>: The first node of the root element must be a text node`);
   is(div.firstChild.textContent, content, `<${name}>: The content of the text node is wrong`);
 }

@@ -68,8 +68,6 @@ SimpleTest.waitForFocus(async () => {
 
   await new Promise((resolve) => { maybeOnSpellCheck(contenteditable, resolve); });
   let editor = getEditor();
-  // isSpellingCheckOk is defined in spellcheck.js
-  // eslint-disable-next-line no-undef
   ok(isSpellingCheckOk(editor, misspelledWords), "correct word is selected as misspelled");
 
   SimpleTest.finish();

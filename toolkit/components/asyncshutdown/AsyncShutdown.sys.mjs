@@ -44,7 +44,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gDebug",
   "@mozilla.org/xpcom/debug;1",
-  "nsIDebug2"
+  Ci.nsIDebug2
 );
 
 // `true` if this is a content process, `false` otherwise.
@@ -107,6 +107,7 @@ PromiseSet.prototype = {
    *
    * Note that calling `wait()` causes Promise to be removed from the
    * Set once they are resolved.
+   *
    * @param {function} onDoneCb invoked synchronously once all the entries
    * have been handled and no new entries will be accepted.
    * @return {Promise} Resolved once all Promise have been resolved or removed,
@@ -488,6 +489,23 @@ function getPhase(topic) {
       );
       if (accepted) {
         return () => spinner.observe();
+      }
+      return undefined;
+    },
+
+    /**
+     * Reset the phase after a call to _trigger().
+     * For testing purposes only.
+     */
+    get _reset() {
+      let accepted = Services.prefs.getBoolPref(
+        "toolkit.asyncshutdown.testing",
+        false
+      );
+      if (accepted) {
+        return () => {
+          spinner = new Spinner(topic);
+        };
       }
       return undefined;
     },

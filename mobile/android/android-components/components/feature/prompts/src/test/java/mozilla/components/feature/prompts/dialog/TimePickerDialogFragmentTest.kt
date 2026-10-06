@@ -4,15 +4,13 @@
 
 package mozilla.components.feature.prompts.dialog
 
-import android.app.AlertDialog
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import android.content.DialogInterface.BUTTON_NEUTRAL
 import android.content.DialogInterface.BUTTON_POSITIVE
 import android.os.Looper.getMainLooper
 import android.widget.DatePicker
 import android.widget.NumberPicker
 import android.widget.TimePicker
+import androidx.appcompat.app.AlertDialog
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.feature.prompts.R
 import mozilla.components.feature.prompts.dialog.TimePickerDialogFragment.Companion.SELECTION_TYPE_DATE_AND_TIME
@@ -44,72 +42,10 @@ import java.util.Date
 @RunWith(AndroidJUnit4::class)
 class TimePickerDialogFragmentTest {
 
-    @Mock private lateinit var mockFeature: Prompter
-
     @Before
     fun setup() {
+        testContext.setTheme(com.google.android.material.R.style.Theme_MaterialComponents_Light)
         openMocks(this)
-    }
-
-    @Test
-    fun `build dialog`() {
-        val initialDate = "2019-11-29".toDate("yyyy-MM-dd")
-        val minDate = "2019-11-28".toDate("yyyy-MM-dd")
-        val maxDate = "2019-11-30".toDate("yyyy-MM-dd")
-        val fragment = spy(
-            TimePickerDialogFragment.newInstance("sessionId", "uid", true, initialDate, minDate, maxDate),
-        )
-
-        doReturn(appCompatContext).`when`(fragment).requireContext()
-
-        val dialog = fragment.onCreateDialog(null)
-        dialog.show()
-
-        val datePicker = (dialog as DatePickerDialog).datePicker
-        assertEquals("sessionId", fragment.sessionId)
-        assertEquals("uid", fragment.promptRequestUID)
-        assertEquals(2019, datePicker.year)
-        assertEquals(11, datePicker.month + 1)
-        assertEquals(29, datePicker.dayOfMonth)
-        assertEquals(minDate, Date(datePicker.minDate))
-        assertEquals(maxDate, Date(datePicker.maxDate))
-    }
-
-    @Test
-    fun `Clicking on positive, neutral and negative button notifies the feature`() {
-        val initialDate = "2019-11-29".toDate("yyyy-MM-dd")
-        val fragment = spy(
-            TimePickerDialogFragment.newInstance("sessionId", "uid", false, initialDate, null, null),
-        )
-        fragment.feature = mockFeature
-
-        doReturn(appCompatContext).`when`(fragment).requireContext()
-
-        val dialog = fragment.onCreateDialog(null)
-        dialog.show()
-
-        val positiveButton = (dialog as AlertDialog).getButton(BUTTON_POSITIVE)
-        positiveButton.performClick()
-        shadowOf(getMainLooper()).idle()
-
-        verify(mockFeature).onConfirm(eq("sessionId"), eq("uid"), any())
-
-        val neutralButton = dialog.getButton(BUTTON_NEUTRAL)
-        neutralButton.performClick()
-        shadowOf(getMainLooper()).idle()
-
-        verify(mockFeature).onClear("sessionId", "uid")
-    }
-
-    @Test
-    fun `touching outside of the dialog must notify the feature onCancel`() {
-        val fragment = spy(
-            TimePickerDialogFragment.newInstance("sessionId", "uid", true, Date(), null, null),
-        )
-        fragment.feature = mockFeature
-        doReturn(testContext).`when`(fragment).requireContext()
-        fragment.onCancel(mock())
-        verify(mockFeature).onCancel("sessionId", "uid")
     }
 
     @Test
@@ -122,43 +58,6 @@ class TimePickerDialogFragmentTest {
 
         assertEquals(calendar.hour, 1)
         assertEquals(calendar.minutes, 12)
-    }
-
-    @Test
-    fun `building a date and time picker`() {
-        val initialDate = "2018-06-12T19:30".toDate("yyyy-MM-dd'T'HH:mm")
-        val minDate = "2018-06-07T00:00".toDate("yyyy-MM-dd'T'HH:mm")
-        val maxDate = "2018-06-14T00:00".toDate("yyyy-MM-dd'T'HH:mm")
-        val fragment = spy(
-            TimePickerDialogFragment.newInstance(
-                "sessionId",
-                "uid",
-                true,
-                initialDate,
-                minDate,
-                maxDate,
-                SELECTION_TYPE_DATE_AND_TIME,
-            ),
-        )
-
-        doReturn(appCompatContext).`when`(fragment).requireContext()
-
-        val dialog = fragment.onCreateDialog(null)
-        dialog.show()
-
-        val datePicker = dialog.findViewById<DatePicker>(R.id.date_picker)
-
-        assertEquals(2018, datePicker.year)
-        assertEquals(6, datePicker.month + 1)
-        assertEquals(12, datePicker.dayOfMonth)
-
-        assertEquals(minDate, Date(datePicker.minDate))
-        assertEquals(maxDate, Date(datePicker.maxDate))
-
-        val timePicker = dialog.findViewById<TimePicker>(R.id.datetime_picker)
-
-        assertEquals(19, timePicker.hour)
-        assertEquals(30, timePicker.minute)
     }
 
     @Test
@@ -205,30 +104,6 @@ class TimePickerDialogFragmentTest {
 
         assertEquals(2019, selectedDate.year)
         assertEquals(7, selectedDate.month)
-    }
-
-    @Test
-    fun `building a time picker`() {
-        val initialDate = "2018-06-12T19:30".toDate("yyyy-MM-dd'T'HH:mm")
-        val minDate = "2018-06-07T00:00".toDate("yyyy-MM-dd'T'HH:mm")
-        val maxDate = "2018-06-14T00:00".toDate("yyyy-MM-dd'T'HH:mm")
-        val fragment = spy(
-            TimePickerDialogFragment.newInstance(
-                "sessionId",
-                "uid",
-                true,
-                initialDate,
-                minDate,
-                maxDate,
-                SELECTION_TYPE_TIME,
-            ),
-        )
-
-        doReturn(appCompatContext).`when`(fragment).requireContext()
-
-        val dialog = fragment.onCreateDialog(null)
-        dialog.show()
-        assertTrue(dialog is TimePickerDialog)
     }
 
     @Test(expected = IllegalArgumentException::class)

@@ -23,8 +23,8 @@ namespace {
 
 using ::libvpx_test::ACMRandom;
 
-typedef void (*HadamardFunc)(const int16_t *a, ptrdiff_t a_stride,
-                             tran_low_t *b);
+using HadamardFunc = void (*)(const int16_t *a, ptrdiff_t a_stride,
+                              tran_low_t *b);
 
 void hadamard_loop(const tran_low_t *a, tran_low_t *out) {
   tran_low_t b[8];
@@ -293,11 +293,11 @@ INSTANTIATE_TEST_SUITE_P(
                       HadamardFuncWithSize(&vpx_hadamard_32x32_avx2, 32)));
 #endif  // HAVE_AVX2
 
-#if HAVE_SSSE3 && VPX_ARCH_X86_64
+#if HAVE_SSSE3 && VPX_ARCH_X86_64 && HAVE_X86_ASM
 INSTANTIATE_TEST_SUITE_P(
     SSSE3, HadamardLowbdTest,
     ::testing::Values(HadamardFuncWithSize(&vpx_hadamard_8x8_ssse3, 8)));
-#endif  // HAVE_SSSE3 && VPX_ARCH_X86_64
+#endif  // HAVE_SSSE3 && VPX_ARCH_X86_64 && HAVE_X86_ASM
 
 #if HAVE_NEON
 INSTANTIATE_TEST_SUITE_P(

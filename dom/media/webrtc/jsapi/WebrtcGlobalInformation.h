@@ -2,14 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _WEBRTC_GLOBAL_INFORMATION_H_
-#define _WEBRTC_GLOBAL_INFORMATION_H_
+#ifndef WEBRTC_GLOBAL_INFORMATION_H_
+#define WEBRTC_GLOBAL_INFORMATION_H_
 
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/WebrtcGlobalInformationBinding.h"
-#include "mozilla/dom/BindingDeclarations.h"  // for Optional
-#include "nsDOMNavigationTiming.h"
 #include "WebrtcGlobalStatsHistory.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/dom/BindingDeclarations.h"  // for Optional
+#include "mozilla/dom/WebrtcGlobalInformationBinding.h"
+#include "nsDOMNavigationTiming.h"
 
 namespace mozilla {
 class PeerConnectionImpl;
@@ -98,4 +98,4 @@ class WebrtcGlobalInformation {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // _WEBRTC_GLOBAL_INFORMATION_H_
+#endif  // WEBRTC_GLOBAL_INFORMATION_H_

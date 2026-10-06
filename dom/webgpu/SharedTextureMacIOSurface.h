@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,8 +5,8 @@
 #ifndef GPU_SharedTextureMacIOSurface_H_
 #define GPU_SharedTextureMacIOSurface_H_
 
-#include "mozilla/gfx/FileHandleWrapper.h"
 #include "mozilla/WeakPtr.h"
+#include "mozilla/gfx/FileHandleWrapper.h"
 #include "mozilla/webgpu/SharedTexture.h"
 
 class MacIOSurface;
@@ -34,8 +33,7 @@ class SharedTextureMacIOSurface final : public SharedTexture {
 
   Maybe<layers::SurfaceDescriptor> ToSurfaceDescriptor() override;
 
-  void GetSnapshot(const ipc::Shmem& aDestShmem,
-                   const gfx::IntSize& aSize) override;
+  void GetSnapshot(const ipc::Shmem& aDestShmem, size_t aDestStride) override;
 
   SharedTextureMacIOSurface* AsSharedTextureMacIOSurface() override {
     return this;

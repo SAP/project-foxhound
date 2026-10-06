@@ -30,7 +30,6 @@ When using connect, you'll break up your component into two parts:
 
         module.exports = connect(mapStateToProps)(Todos);
 
-
 `connect()` generates the container component. It wraps around the presentational component that was passed in (e.g. Todos).
 
 The `mapStateToProps` is often called a selector. That's because it selects data from the state object. When the container component is rendering, the the selector will be called. It will pick out the data that the presentational component is going to need. Redux will take this object and pass it in to the presentational component as props.

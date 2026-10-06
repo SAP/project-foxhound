@@ -42,6 +42,8 @@ const gIgnoredImports = new Set(["loader", "require"]);
  * Returns a function that forwards to `report` but provides a fixer
  * for redeclared imports that just removes those imports.
  *
+ * @param {object} context
+ *   The ESLint context for the file being processed.
  * @returns {Function}
  */
 function trapReport(context) {

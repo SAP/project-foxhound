@@ -6,7 +6,7 @@
   padding-inline-end: 3px;
 }
 
-.secondary-panes .header-buttons .img.shortcuts {
+.secondary-panes .header-buttons .dbg-img.dbg-img-shortcuts {
   width: 14px;
   height: 14px;
   /* Better vertical centering of the icon */
@@ -21,7 +21,7 @@
   padding-inline-start: 3px;
 }
 
-.scopes-content .toggle-map-scopes .img.shortcuts {
+.scopes-content .toggle-map-scopes .dbg-img.dbg-img-shortcuts {
   background: var(--theme-comment);
 }
 

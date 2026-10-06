@@ -6,15 +6,17 @@ package org.mozilla.focus.telemetry.startuptelemetry
 
 import android.app.Activity
 import android.app.Application
+import android.content.ComponentCallbacks2
+import android.content.res.Configuration
 import android.os.Bundle
 
 /**
- * An inheritance of [Application.ActivityLifecycleCallbacks] where each method has a default
- * implementation that does nothing. This allows classes that extend this interface to have
- * more concise definitions if they don't implement some methods; this is in the spirit of
- * other `Default*` classes, such as [androidx.lifecycle.DefaultLifecycleObserver].
+ * An inheritance of [Application.ActivityLifecycleCallbacks] and [ComponentCallbacks2] where each
+ * method has a default implementation that does nothing. This allows classes that extend this
+ * interface to have more concise definitions if they don't implement some methods; this is in the
+ * spirit of other `Default*` classes, such as [androidx.lifecycle.DefaultLifecycleObserver].
  */
-interface DefaultActivityLifecycleCallbacks : Application.ActivityLifecycleCallbacks {
+interface DefaultActivityLifecycleCallbacks : Application.ActivityLifecycleCallbacks, ComponentCallbacks2 {
     override fun onActivityCreated(activity: Activity, bundle: Bundle?) {}
     override fun onActivityStarted(activity: Activity) {}
     override fun onActivityResumed(activity: Activity) {}
@@ -22,4 +24,9 @@ interface DefaultActivityLifecycleCallbacks : Application.ActivityLifecycleCallb
     override fun onActivityStopped(activity: Activity) {}
     override fun onActivitySaveInstanceState(activity: Activity, bundle: Bundle) {}
     override fun onActivityDestroyed(activity: Activity) {}
+    override fun onTrimMemory(level: Int) {}
+    override fun onConfigurationChanged(newConfig: Configuration) {}
+
+    @Deprecated("Deprecated in Java")
+    override fun onLowMemory() {}
 }

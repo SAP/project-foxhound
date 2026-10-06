@@ -12,7 +12,9 @@ import {
 } from "devtools/client/shared/vendor/react-dom-factories";
 import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 import Modal from "./shared/Modal";
-import { formatKeyShortcut } from "../utils/text";
+const {
+  stringifyFromElectronKey,
+} = require("resource://devtools/client/shared/key-shortcuts.js");
 const classnames = require("resource://devtools/client/shared/classnames.js");
 
 const isMacOS = Services.appinfo.OS === "Darwin";
@@ -55,15 +57,15 @@ export class ShortcutsModal extends Component {
       },
       this.renderShorcutItem(
         L10N.getStr("shortcuts.toggleBreakpoint"),
-        formatKeyShortcut(L10N.getStr("toggleBreakpoint.key"))
+        stringifyFromElectronKey(L10N.getStr("toggleBreakpoint.key"))
       ),
       this.renderShorcutItem(
         L10N.getStr("shortcuts.toggleCondPanel.breakpoint"),
-        formatKeyShortcut(L10N.getStr("toggleCondPanel.breakpoint.key"))
+        stringifyFromElectronKey(L10N.getStr("toggleCondPanel.breakpoint.key"))
       ),
       this.renderShorcutItem(
         L10N.getStr("shortcuts.toggleCondPanel.logPoint"),
-        formatKeyShortcut(L10N.getStr("toggleCondPanel.logPoint.key"))
+        stringifyFromElectronKey(L10N.getStr("toggleCondPanel.logPoint.key"))
       )
     );
   }
@@ -78,7 +80,7 @@ export class ShortcutsModal extends Component {
       this.renderShorcutItem(L10N.getStr("shortcuts.stepIn"), "F11"),
       this.renderShorcutItem(
         L10N.getStr("shortcuts.stepOut"),
-        formatKeyShortcut(L10N.getStr("stepOut.key"))
+        stringifyFromElectronKey(L10N.getStr("stepOut.key"))
       )
     );
   }
@@ -90,19 +92,19 @@ export class ShortcutsModal extends Component {
       },
       this.renderShorcutItem(
         L10N.getStr("shortcuts.fileSearch2"),
-        formatKeyShortcut(L10N.getStr("sources.search.key2"))
+        stringifyFromElectronKey(L10N.getStr("sources.search.key2"))
       ),
       this.renderShorcutItem(
         L10N.getStr("shortcuts.projectSearch2"),
-        formatKeyShortcut(L10N.getStr("projectTextSearch.key"))
+        stringifyFromElectronKey(L10N.getStr("projectTextSearch.key"))
       ),
       this.renderShorcutItem(
         L10N.getStr("shortcuts.functionSearch2"),
-        formatKeyShortcut(L10N.getStr("functionSearch.key"))
+        stringifyFromElectronKey(L10N.getStr("functionSearch.key"))
       ),
       this.renderShorcutItem(
         L10N.getStr("shortcuts.gotoLine"),
-        formatKeyShortcut(L10N.getStr("gotoLineModal.key3"))
+        stringifyFromElectronKey(L10N.getStr("gotoLineModal.key3"))
       )
     );
   }

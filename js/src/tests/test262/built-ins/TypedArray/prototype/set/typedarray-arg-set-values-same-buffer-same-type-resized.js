@@ -42,6 +42,6 @@ testWithTypedArrayConstructors(function(TA) {
 
   target.set(source);
   assert(compareArray(target, expected), 'following shrink');
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

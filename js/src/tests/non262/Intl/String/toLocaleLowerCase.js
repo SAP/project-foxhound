@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // Test language dependent special casing with different language tags.
 for (let locale of ["tr", "TR", "tr-TR", "tr-u-co-search", "tr-x-turkish"]) {
     assertEq("\u0130".toLocaleLowerCase(locale), "i");

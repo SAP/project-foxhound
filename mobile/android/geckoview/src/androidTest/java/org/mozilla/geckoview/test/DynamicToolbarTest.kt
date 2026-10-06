@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * Any copyright is dedicated to the Public Domain.
+/* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 package org.mozilla.geckoview.test
@@ -352,7 +351,37 @@ class DynamicToolbarTest : BaseSessionTest() {
         // Set active since setVerticalClipping call affects only for forground tab.
         mainSession.setActive(true)
 
-        mainSession.loadTestPath(SHOW_DYNAMIC_TOOLBAR_HTML_PATH)
+        mainSession.loadTestPath(SHOW_DYNAMIC_TOOLBAR_HTML_PATH + "?target=body")
+        mainSession.waitForPageStop()
+        mainSession.evaluateJS("window.scrollTo(0, " + dynamicToolbarMaxHeight + ")")
+        mainSession.waitUntilCalled(object : ScrollDelegate {
+            @AssertCalled(count = 1)
+            override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) {
+            }
+        })
+
+        // Simulate the dynamic toolbar being hidden by the scroll
+        sessionRule.display?.run { setVerticalClipping(-dynamicToolbarMaxHeight) }
+
+        mainSession.synthesizeTap(5, 25)
+
+        mainSession.waitUntilCalled(object : ContentDelegate {
+            @AssertCalled(count = 1)
+            override fun onShowDynamicToolbar(session: GeckoSession) {
+            }
+        })
+    }
+
+    @WithDisplay(height = SCREEN_HEIGHT, width = SCREEN_WIDTH)
+    @Test
+    fun showDynamicToolbarOnFrameReconstruction() {
+        val dynamicToolbarMaxHeight = SCREEN_HEIGHT / 2
+        sessionRule.display?.run { setDynamicToolbarMaxHeight(dynamicToolbarMaxHeight) }
+
+        // Set active since setVerticalClipping call affects only for forground tab.
+        mainSession.setActive(true)
+
+        mainSession.loadTestPath(SHOW_DYNAMIC_TOOLBAR_HTML_PATH + "?target=html")
         mainSession.waitForPageStop()
         mainSession.evaluateJS("window.scrollTo(0, " + dynamicToolbarMaxHeight + ")")
         mainSession.waitUntilCalled(object : ScrollDelegate {
@@ -1055,6 +1084,51 @@ class DynamicToolbarTest : BaseSessionTest() {
         )
 
         // Simulate the dynamic toolbar being hidden by the scroll
+        sessionRule.display?.run { setVerticalClipping(-dynamicToolbarMaxHeight) }
+
+        mainSession.flushApzRepaints()
+        mainSession.flushApzRepaints()
+
+        sessionRule.display?.let {
+            assertScreenshotResult(it.capturePixels(), reference)
+        }
+    }
+
+    // Adapted off test bug1909181(). Generally ::-moz-snapshot-containing-block matches
+    // the viewport frame size, but on mobile we verify it includes the dynamic toolbar height.
+    @WithDisplay(height = SCREEN_HEIGHT, width = SCREEN_WIDTH)
+    @Test
+    fun viewTransitionSnapshotSize() {
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf(
+                "dom.viewTransitions.enabled" to true,
+            ),
+        )
+
+        val reference = getComparisonScreenshot(SCREEN_WIDTH, SCREEN_HEIGHT)
+
+        val dynamicToolbarMaxHeight = SCREEN_HEIGHT / 2
+        sessionRule.display?.run { setDynamicToolbarMaxHeight(dynamicToolbarMaxHeight) }
+
+        // Set active since setVerticalClipping call affects only for foreground tab.
+        mainSession.setActive(true)
+
+        mainSession.loadTestPath(BaseSessionTest.VIEW_TRANSITION_SNAPSHOT_SIZE)
+        mainSession.waitForPageStop()
+
+        // Wait for the view transition to start.
+        val promise = mainSession.evaluatePromiseJS(
+            """
+            new Promise(resolve => {
+                document.startViewTransition(() => {}).ready
+                    .then(() => resolve(true))
+                    .catch(() => resolve(false));
+            });
+            """.trimIndent(),
+        )
+        assertThat("View transition is ready", promise.value as Boolean, equalTo(true))
+
+        // Simulate the dynamic toolbar being hidden by the scroll.
         sessionRule.display?.run { setVerticalClipping(-dynamicToolbarMaxHeight) }
 
         mainSession.flushApzRepaints()

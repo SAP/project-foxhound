@@ -9,6 +9,9 @@ import android.util.AttributeSet
 import org.mozilla.focus.settings.LearnMoreSwitchPreference
 import org.mozilla.focus.utils.SupportUtils
 
+/**
+ * A custom preference for the "Reject All" cookie banner option.
+ */
 class CookieBannerRejectAllPreference(context: Context, attrs: AttributeSet?) :
     LearnMoreSwitchPreference(context, attrs) {
 

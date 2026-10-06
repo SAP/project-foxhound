@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -95,7 +94,7 @@ InProcessWinCompositorWidget::StartRemoteDrawing() {
   uint32_t flags = TransparencyModeIs(TransparencyMode::Opaque)
                        ? 0
                        : gfxWindowsSurface::FLAG_IS_TRANSPARENT;
-  RefPtr<gfxASurface> surf = new gfxWindowsSurface(dc, flags);
+  auto surf = MakeRefPtr<gfxWindowsSurface>(dc, flags);
   IntSize size = surf->GetSize();
   if (size.width <= 0 || size.height <= 0) {
     if (dc) {

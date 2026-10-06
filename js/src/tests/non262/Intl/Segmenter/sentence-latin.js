@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl')||!this.Intl.Segmenter)
-
 // https://www.unicode.org/reports/tr29/#Sentence_Boundary_Rules
 
 const strings = {

@@ -1,0 +1,13 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Framebusting - Child</title>
+  </head>
+  <body>
+    <script>
+      if (self != top) {
+        window.top.location = window.location;
+      }
+    </script>
+  </body>
+</html>

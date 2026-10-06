@@ -3,7 +3,8 @@
 [DEFAULT]
 skip-if = [
   "ccov",
-  "os == 'linux' && (asan || tsan)", # bug 1784517
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", # bug 1784517
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # bug 1784517
 ]
 tags = "contentsandbox"
 support-files = [
@@ -14,4 +15,6 @@ test-directories = "/tmp/.snap_firefox_current_real/"
 environment = "SNAP=/tmp/.snap_firefox_current_real/"
 
 ["browser_content_sandbox_fs_snap.js"]
-run-if = ["os == 'linux'"]
+run-if = [
+  "os == 'linux'",
+]

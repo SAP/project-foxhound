@@ -118,7 +118,8 @@
         TouchBarInput* convertedChild =
             [[TouchBarInput alloc] initWithXPCOM:child];
         if (convertedChild) {
-          orderedChildren[i] = convertedChild;
+          [orderedChildren addObject:convertedChild];
+          [convertedChild release];
         }
       }
       [self setChildren:orderedChildren];
@@ -132,48 +133,56 @@
   nsAutoString keyStr;
   nsresult rv = aInput->GetKey(keyStr);
   if (NS_FAILED(rv)) {
+    [self release];
     return nil;
   }
 
   nsAutoString titleStr;
   rv = aInput->GetTitle(titleStr);
   if (NS_FAILED(rv)) {
+    [self release];
     return nil;
   }
 
   nsCOMPtr<nsIURI> imageURI;
   rv = aInput->GetImage(getter_AddRefs(imageURI));
   if (NS_FAILED(rv)) {
+    [self release];
     return nil;
   }
 
   nsAutoString typeStr;
   rv = aInput->GetType(typeStr);
   if (NS_FAILED(rv)) {
+    [self release];
     return nil;
   }
 
   nsCOMPtr<nsITouchBarInputCallback> callback;
   rv = aInput->GetCallback(getter_AddRefs(callback));
   if (NS_FAILED(rv)) {
+    [self release];
     return nil;
   }
 
   uint32_t colorInt;
   rv = aInput->GetColor(&colorInt);
   if (NS_FAILED(rv)) {
+    [self release];
     return nil;
   }
 
   bool disabled = false;
   rv = aInput->GetDisabled(&disabled);
   if (NS_FAILED(rv)) {
+    [self release];
     return nil;
   }
 
   nsCOMPtr<nsIArray> children;
   rv = aInput->GetChildren(getter_AddRefs(children));
   if (NS_FAILED(rv)) {
+    [self release];
     return nil;
   }
 
@@ -200,6 +209,9 @@
 }
 
 - (void)dealloc {
+  [_key release];
+  [_title release];
+  [_color release];
   if (mIcon) {
     mIcon->Destroy();
     mIcon = nil;

@@ -54,19 +54,18 @@ def rewrite_patch(patch, strip_dir):
 
 def rewrite_message(patch):
     if patch.message.bug is not None:
-        return "\n".join(
-            [
-                patch.message.summary,
-                patch.message.body,
-                "",
-                "Upstreamed from https://bugzilla.mozilla.org/show_bug.cgi?id=%s [ci skip]"
-                % patch.message.bug,  # noqa E501
-            ]
-        )
+        return "\n".join([
+            patch.message.summary,
+            patch.message.body,
+            "",
+            "Upstreamed from https://bugzilla.mozilla.org/show_bug.cgi?id=%s [ci skip]"
+            % patch.message.bug,  # noqa E501
+        ])
 
-    return "\n".join(
-        [patch.message.full_summary, "%s\n[ci skip]\n" % patch.message.body]
-    )
+    return "\n".join([
+        patch.message.full_summary,
+        "%s\n[ci skip]\n" % patch.message.body,
+    ])
 
 
 class SyncToUpstream(Step):
@@ -93,9 +92,13 @@ class SyncToUpstream(Step):
             state.sync_tree = GitTree(root=state.sync["path"])
 
         kwargs = state.kwargs
-        with state.push(
-            ["local_tree", "sync_tree", "tests_path", "metadata_path", "sync"]
-        ):
+        with state.push([
+            "local_tree",
+            "sync_tree",
+            "tests_path",
+            "metadata_path",
+            "sync",
+        ]):
             state.token = kwargs["token"]
             runner = SyncToUpstreamRunner(self.logger, state)
             runner.run()

@@ -4,12 +4,13 @@
 
 import os
 import re
-import signal
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 
 from mozboot.util import get_tools_dir
+from mozbuild.util import cpu_count
 from mozlint import result
 from mozlint.pathutils import expand_exclusions
 
@@ -32,16 +33,15 @@ def setup(root, mach_command_context, **lintargs):
 
 
 def run_process(config, cmd):
-    orig = signal.signal(signal.SIGINT, signal.SIG_IGN)
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
     )
-    signal.signal(signal.SIGINT, orig)
     try:
         output, _ = proc.communicate()
         proc.wait()
     except KeyboardInterrupt:
         proc.kill()
+        raise
 
     return output
 
@@ -92,7 +92,7 @@ def remove_ignored_path(paths, topsrcdir, log):
             ignored_dir.append(r"^[\./]*" + line.rstrip())
 
     # Generates the list of regexp
-    ignored_dir_re = "(%s)" % "|".join(ignored_dir)
+    ignored_dir_re = "({})".format("|".join(ignored_dir))
 
     path_list = []
     for f in paths:
@@ -127,25 +127,42 @@ def lint(paths, config, fix=None, **lintargs):
             return 1
         return []
 
-    cmd_args = [binary]
-
-    base_command = cmd_args + ["--version"]
-    version = run_process(config, base_command).rstrip("\r\n")
+    version = run_process(config, [binary, "--version"]).rstrip("\r\n")
     log.debug(f"Version: {version}")
 
-    cmd_args.append("--output-replacements-xml")
-    base_command = cmd_args + paths
-    log.debug("Command: {}".format(" ".join(cmd_args)))
-    output = run_process(config, base_command)
+    # Round-robin across workers to balance work regardless of which top-level
+    # directories the paths come from; CPU work happens in child processes.
+    num_procs = min(cpu_count(), len(paths))
+    chunks = [paths[i::num_procs] for i in range(num_procs)]
 
+    log.debug(f"clang-format: {len(paths)} files split across {len(chunks)} workers")
+
+    if len(chunks) == 1:
+        results, fixed = lint_chunk(binary, chunks[0], config, fix)
+    else:
+        results = []
+        fixed = 0
+        with ThreadPoolExecutor(max_workers=len(chunks)) as pool:
+            for chunk_results, chunk_fixed in pool.map(
+                lambda chunk: lint_chunk(binary, chunk, config, fix), chunks
+            ):
+                results.extend(chunk_results)
+                fixed += chunk_fixed
+
+    return {"results": results, "fixed": fixed}
+
+
+def parse_replacements(output):
     def replacement(parser):
+        items = []
         for end, e in parser.read_events():
             assert end == "end"
             if e.tag == "replacement":
                 item = {k: int(v) for k, v in e.items()}
                 assert sorted(item.keys()) == ["length", "offset"]
                 item["with"] = (e.text or "").encode("utf-8")
-                yield item
+                items.append(item)
+        return items
 
     # When given multiple paths as input, --output-replacements-xml
     # will output one xml per path, in the order they are given, but
@@ -156,10 +173,23 @@ def lint(paths, config, fix=None, **lintargs):
         line = l.rstrip("\r\n")
         if line.startswith("<?xml "):
             if parser:
-                replacements.append(list(replacement(parser)))
+                replacements.append(replacement(parser))
             parser = ET.XMLPullParser(["end"])
-        parser.feed(line)
-    replacements.append(list(replacement(parser)))
+        if parser is not None:
+            parser.feed(line)
+    if parser is not None:
+        replacements.append(replacement(parser))
+    return replacements
+
+
+def lint_chunk(binary, paths, config, fix):
+    """Run clang-format on a chunk of paths and return (results, fixed_count)."""
+    if not paths:
+        return [], 0
+
+    base_command = [binary, "--output-replacements-xml"] + paths
+    output = run_process(config, base_command)
+    replacements = parse_replacements(output)
 
     results = []
     fixed = 0
@@ -226,4 +256,4 @@ def lint(paths, config, fix=None, **lintargs):
                 fh.write(patched_data)
             fixed += len(linenos)
 
-    return {"results": results, "fixed": fixed}
+    return results, fixed

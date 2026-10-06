@@ -1,0 +1,157 @@
+[DEFAULT]
+tags = "devtools"
+subsuite = "devtools"
+support-files = [
+  "examples/*",
+  "head.js",
+  "shared-head.js",
+  "!/devtools/client/framework/browser-toolbox/test/helpers-browser-toolbox.js",
+  "!/devtools/client/inspector/test/head.js",
+  "!/devtools/client/inspector/test/shared-head.js",
+  "!/devtools/client/shared/test/shared-head.js",
+  "!/devtools/client/shared/test/highlighter-test-actor.js",
+  "!/devtools/client/webconsole/test/browser/shared-head.js",
+]
+prefs = [
+ "dom.ipc.processPrelaunch.enabled=false", # Disable randomly spawning processes during tests. After enabling windowless service workers, a process spawning will trigger an update of the service workers list which can fail the test if it occurs during shutdown (unhandled promise rejection).
+ "devtools.debugger.features.javascript-tracing=true", # This pref has to be set before the process starts
+ "javascript.options.experimental.explicit_resource_management=true", # This pref has to be set before the process starts
+]
+
+["browser_dbg-quick-open.js"]
+
+["browser_dbg-react-app.js"]
+
+["browser_dbg-react-jsx.js"]
+
+["browser_dbg-reducer-cleanup-on-target-removal.js"]
+
+["browser_dbg-reloading.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2028047
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64'",
+]
+
+["browser_dbg-remember-expanded-scopes.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-restart-frame.js"]
+
+["browser_dbg-returnvalues.js"]
+
+["browser_dbg-scopes-duplicated.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-scopes-mutations.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-scopes-xrays.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-scopes.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-scroll-run-to-completion.js"]
+skip-if = [
+  "true", # See bug 1968387
+]
+
+["browser_dbg-scrolling-with-search.js"]
+
+["browser_dbg-search-file-paused.js"]
+
+["browser_dbg-search-file-retains-query.js"]
+
+["browser_dbg-search-file.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-settings-disable-javascript.js"]
+
+["browser_dbg-slow-script.js"]
+
+["browser_dbg-source-pragma.js"]
+
+["browser_dbg-sourceURL-breakpoint.js"]
+
+["browser_dbg-sources-project-search.js"]
+
+["browser_dbg-sources-tree.js"]
+
+["browser_dbg-state-based-panels.js"]
+
+["browser_dbg-step-in-navigate.js"]
+
+["browser_dbg-step-in-uninitialized.js"]
+
+["browser_dbg-stepping.js"]
+
+["browser_dbg-tabs-keyboard.js"]
+
+["browser_dbg-tabs-pretty-print.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-tabs-without-urls-selected.js"]
+
+["browser_dbg-tabs-without-urls.js"]
+
+["browser_dbg-tabs.js"]
+
+["browser_dbg-toggling-tools.js"]
+
+["browser_dbg-ua-widgets.js"]
+
+["browser_dbg-unselected-pause.js"]
+
+["browser_dbg-watchpoints.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1814093
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1814093
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1814093, Bug 2028047
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1814093
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64'", # Bug 1814093
+]
+
+["browser_dbg-windowless-service-workers-reload.js"]
+
+["browser_dbg-windowless-service-workers.js"]
+
+["browser_dbg-windowless-workers-early-breakpoint.js"]
+
+["browser_dbg-windowless-workers.js"]
+
+["browser_dbg-worker-exception.js"]
+
+["browser_dbg-worker-module.js"]
+
+["browser_dbg-worker-nested.js"]
+
+["browser_dbg-worker-scopes.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-wrong-fetch.js"]
+
+["browser_dbg-xhr-breakpoints.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-xhr-run-to-completion.js"]

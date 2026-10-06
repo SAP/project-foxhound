@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -279,6 +278,7 @@ interface nsITextInputProcessor : nsISupports
    *                        when this returns true.  If this returns false,
    *                        your TIP should wait next chance.
    */
+  [can_run_script]
   boolean beginInputTransaction(in mozIDOMWindow aWindow,
                                 in nsITextInputProcessorCallback aCallback);
 
@@ -289,7 +289,7 @@ interface nsITextInputProcessor : nsISupports
    * Note that aCallback can be null.  If it's null, nsITextInputProcessor
    * implementation will handle them automatically.
    */
-  [optional_argc] boolean
+  [can_run_script, optional_argc] boolean
     beginInputTransactionForTests(
       in mozIDOMWindow aWindow,
       [optional] in nsITextInputProcessorCallback aCallback);

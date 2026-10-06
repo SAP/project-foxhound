@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -47,6 +45,9 @@ enum XrayType {
 class XrayTraits {
  public:
   constexpr XrayTraits() = default;
+
+  XrayTraits(XrayTraits&) = delete;
+  const XrayTraits& operator=(XrayTraits&) = delete;
 
   static JSObject* getTargetObject(JSObject* wrapper) {
     JSObject* target =
@@ -102,11 +103,8 @@ class XrayTraits {
   virtual JSObject* createHolder(JSContext* cx, JSObject* wrapper) = 0;
 
   JSObject* getExpandoChain(JS::HandleObject obj);
-  JSObject* detachExpandoChain(JS::HandleObject obj);
   bool setExpandoChain(JSContext* cx, JS::HandleObject obj,
                        JS::HandleObject chain);
-  bool cloneExpandoChain(JSContext* cx, JS::HandleObject dst,
-                         JS::HandleObject srcChain);
 
  protected:
   static const JSClass HolderClass;
@@ -135,9 +133,6 @@ class XrayTraits {
                                 JS::HandleObject exclusiveWrapper,
                                 JS::HandleObject exclusiveWrapperGlobal,
                                 nsIPrincipal* origin);
-
-  XrayTraits(XrayTraits&) = delete;
-  const XrayTraits& operator=(XrayTraits&) = delete;
 };
 
 void ExpandoObjectFinalize(JS::GCContext* gcx, JSObject* obj);
@@ -268,16 +263,16 @@ class JSXrayTraits : public XrayTraits {
   };
   virtual JSObject* createHolder(JSContext* cx, JSObject* wrapper) override;
 
-  static JSProtoKey getProtoKey(JSObject* holder) {
+  static JSProtoKey getProtoKey(const JSObject* holder) {
     int32_t key = JS::GetReservedSlot(holder, SLOT_PROTOKEY).toInt32();
     return static_cast<JSProtoKey>(key);
   }
 
-  static bool isPrototype(JSObject* holder) {
+  static bool isPrototype(const JSObject* holder) {
     return JS::GetReservedSlot(holder, SLOT_ISPROTOTYPE).toBoolean();
   }
 
-  static JSProtoKey constructorFor(JSObject* holder) {
+  static JSProtoKey constructorFor(const JSObject* holder) {
     int32_t key = JS::GetReservedSlot(holder, SLOT_CONSTRUCTOR_FOR).toInt32();
     return static_cast<JSProtoKey>(key);
   }

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,8 +12,11 @@ namespace mozilla::dom::cache {
 // Declared in ActorUtils.h
 void DeallocPCacheParent(PCacheParent* aActor) { delete aActor; }
 
-CacheParent::CacheParent(SafeRefPtr<cache::Manager> aManager, CacheId aCacheId)
-    : mManager(std::move(aManager)), mCacheId(aCacheId) {
+CacheParent::CacheParent(const WeakRefParentType& aManagingActor,
+                         SafeRefPtr<cache::Manager> aManager, CacheId aCacheId)
+    : mManagingActor(aManagingActor),
+      mManager(std::move(aManager)),
+      mCacheId(aCacheId) {
   MOZ_COUNT_CTOR(cache::CacheParent);
   MOZ_DIAGNOSTIC_ASSERT(mManager);
   mManager->AddRefCacheId(mCacheId);
@@ -42,12 +43,12 @@ already_AddRefed<PCacheOpParent> CacheParent::AllocPCacheOpParent(
     MOZ_CRASH("Invalid operation sent to Cache actor!");
   }
 
-  return MakeAndAddRef<CacheOpParent>(Manager(), mCacheId, aOpArgs);
+  return MakeAndAddRef<CacheOpParent>(mManagingActor, aOpArgs, mCacheId);
 }
 
 mozilla::ipc::IPCResult CacheParent::RecvPCacheOpConstructor(
     PCacheOpParent* aActor, const CacheOpArgs& aOpArgs) {
-  auto actor = static_cast<CacheOpParent*>(aActor);
+  auto* actor = static_cast<CacheOpParent*>(aActor);
   actor->Execute(mManager.clonePtr());
   return IPC_OK();
 }

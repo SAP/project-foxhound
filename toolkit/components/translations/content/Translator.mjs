@@ -9,111 +9,140 @@
 /**
  * @typedef {import("../translations").LanguagePair} LanguagePair
  * @typedef {import("../translations").RequestTranslationsPort} RequestTranslationsPort
+ * @typedef {import("../translations").TranslationRequest} TranslationRequest
  */
 
 /**
- * This class manages the communications to the translations engine via MessagePort.
+ * The Translator class communicates with the {@link TranslationsEngine} to translate text for a given {@link LanguagePair}.
+ *
+ * Use the asynchronous {@link Translator.create} method to create a new Translator.
+ *
+ * You must provide the Translator with a means to acquire a {@link MessagePort} for communication with the engine.
+ * For typical use cases, you can pass the {@link TranslationsParent.requestTranslationsPort} function.
  */
 export class Translator {
   /**
-   * The port through with to communicate with the Translations Engine.
+   * A private token to ensure the constructor is only called internally.
+   * Prefer the asynchronous {@link Translator.create} method for instantiation.
    *
-   * @type {MessagePort}
+   * @type {object}
    */
-  #port;
+  static #constructorToken = {};
 
   /**
-   * True if the current #port is closed, otherwise false.
+   * A port to send requests to and receive reposes from the TranslationsEngine.
    *
-   * @type {boolean}
+   * @type {MessagePort | null}
    */
-  #portClosed = true;
+  #port = null;
 
   /**
-   * A promise that resolves when the Translator has successfully established communication with
-   * the translations engine, or rejects if communication was not successfully established.
+   * A promise that resolves when the Translator has established communication
+   * with the TranslationsEngine and is ready to submit translation requests.
+   *
+   * Rejects if the instantiation of the Translator has failed.
    *
    * @type {Promise<void>}
    */
   #ready = Promise.reject;
 
   /**
-   * The current language pair to use for translation.
+   * The language pair consisting of the source language and target language.
    *
    * @type {LanguagePair}
    */
   #languagePair;
 
   /**
-   * The callback function to request a new port, provided at construction time
-   * by the caller.
+   * An asynchronous callback that establishes a connection with the TranslationsEngine
+   * and returns a {@link MessagePort} for communication with the engine.
+   *
+   * This function is provided by the caller when a Translator is instantiated.
    *
    * @type {RequestTranslationsPort}
    */
   #requestTranslationsPort;
 
   /**
-   * An id for each message sent. This is used to match up the request and response.
+   * A monotonically increasing integer that is incremented by 1 with each new translation request.
+   * The current value represents the id of the most recent translation request.
    *
    * @type {number}
    */
-  #nextTranslationId = 0;
+  #translationId = 0;
 
   /**
-   * Tie together a message id to a resolved response.
+   * A map of active translation requests that have yet to be rejected or resolved.
    *
    * @type {Map<number, TranslationRequest>}
    */
-  #requests = new Map();
+  #translationRequests = new Map();
 
   /**
-   * Initializes a new Translator.
+   * The limit to the count of active requests that this Translator can have at a given time.
+   * If a new request comes in when the Translator is already at capacity, then the oldest request
+   * will be cancelled and its promise resolved with null, to make room for the newest request.
    *
-   * Prefer using the Translator.create() function.
-   *
-   * @see Translator.create
+   * @type {number | null}
+   */
+  #activeRequestCapacity = null;
+
+  /**
+   * The internal constructor for the Translator.
+   * Use the asynchronous {@link Translator.create} function instead.
    *
    * @param {LanguagePair} languagePair
-   * @param {RequestTranslationsPort} requestTranslationsPort - A callback function to request a new MessagePort.
-   */
-  constructor(languagePair, requestTranslationsPort) {
-    this.#languagePair = languagePair;
-    this.#requestTranslationsPort = requestTranslationsPort;
-  }
-
-  /**
-   * @returns {Promise<void>} A promise that indicates if the Translator is ready to translate.
-   */
-  get ready() {
-    return this.#ready;
-  }
-
-  /**
-   * @returns {boolean} True if the translation port is closed, false otherwise.
-   */
-  get portClosed() {
-    return this.#portClosed;
-  }
-
-  /**
-   * Opens up a port and creates a new translator.
+   * @param {RequestTranslationsPort} requestTranslationsPort
+   * @param {number | null} [activeRequestCapacity=null]
+   * @param {object} [token]
    *
-   * @param {LanguagePair} languagePair
-   * @param {RequestTranslationsPort} [requestTranslationsPort]
-   *  - A function to request a translations port for communication with the Translations engine.
-   *    This is required in all cases except if allowSameLanguage is true and the sourceLanguage
-   *    is the same as the targetLanguage.
-   * @param {boolean} [allowSameLanguage]
-   *  - Whether to allow or disallow the creation of a PassthroughTranslator in the event
-   *    that the sourceLanguage and the targetLanguage are the same language.
-   *
-   * @returns {Promise<Translator | PassthroughTranslator>}
+   * @throws {Error}
    */
-  static async create(
+  constructor(
     languagePair,
     requestTranslationsPort,
-    allowSameLanguage
+    activeRequestCapacity = null,
+    token
   ) {
+    if (token !== Translator.#constructorToken) {
+      throw new Error(
+        "Translator constructor called: use async Translator.create() instead."
+      );
+    }
+
+    this.#languagePair = languagePair;
+    this.#requestTranslationsPort = requestTranslationsPort;
+    this.#activeRequestCapacity = activeRequestCapacity;
+  }
+
+  /**
+   * Asynchronously constructs a new Translator instance.
+   *
+   * @param {object} params
+   * @param {LanguagePair} params.languagePair - The source and target language pair.
+   * @param {boolean} [params.allowSameLanguage=true]
+   *  Whether a same-language pair is allowed, such as English to English.
+   *  When allowed, this results in a simple passthrough as the translation.
+   * @param {number | null} [params.activeRequestCapacity=null]
+   *  The limit to the count of active requests that this Translator can have at a given time.
+   *  If a new request comes in when the Translator is already at capacity, then the oldest request
+   *  will be cancelled and its promise resolved with null, to make room for the newest request.
+   * @param {RequestTranslationsPort} [params.requestTranslationsPort]
+   *  A callback to request a new {@link MessagePort} for communication with the TranslationsEngine.
+   *  For typical use cases, you can pass the {@link TranslationsParent.requestTranslationsPort} function.
+   *
+   * @returns {Promise<Translator|PassthroughTranslator>}
+   *  Resolves once a valid message port has been established for communication
+   *  with the TranslationsEngine, otherwise rejects if instantiation has failed.
+   *
+   * @throws {Error}
+   */
+  static async create({
+    languagePair,
+    allowSameLanguage = true,
+    activeRequestCapacity = null,
+    requestTranslationsPort,
+  }) {
     if (languagePair.sourceLanguage === languagePair.targetLanguage) {
       if (!allowSameLanguage) {
         throw new Error("Attempt to create disallowed PassthroughTranslator");
@@ -127,84 +156,77 @@ export class Translator {
       );
     }
 
-    const translator = new Translator(languagePair, requestTranslationsPort);
+    if (activeRequestCapacity !== null && activeRequestCapacity <= 0) {
+      throw new Error(
+        `Attempt to create Translator with an invalid active request capacity: ${activeRequestCapacity}`
+      );
+    }
+
+    const translator = new Translator(
+      languagePair,
+      requestTranslationsPort,
+      activeRequestCapacity,
+      Translator.#constructorToken
+    );
+
     await translator.#createNewPortIfClosed();
 
     return translator;
   }
 
   /**
-   * Creates a new translation port if the current one is closed.
+   * Returns true if the message port has been closed, otherwise false.
    *
-   * @returns {Promise<void>} - Whether the Translator is ready to translate.
+   * @returns {boolean}
    */
-  async #createNewPortIfClosed() {
-    if (!this.#portClosed) {
-      return;
-    }
-
-    this.#port = await this.#requestTranslationsPort(this.#languagePair);
-    this.#portClosed = false;
-
-    // Create a promise that will be resolved when the engine is ready.
-    const { promise, resolve, reject } = Promise.withResolvers();
-
-    // Match up a response on the port to message that was sent.
-    this.#port.onmessage = ({ data }) => {
-      switch (data.type) {
-        case "TranslationsPort:TranslationResponse": {
-          const { targetText, translationId } = data;
-          // A request may not match match a translationId if there is a race during the pausing
-          // and discarding of the queue.
-          this.#requests.get(translationId)?.resolve(targetText);
-          break;
-        }
-        case "TranslationsPort:GetEngineStatusResponse": {
-          if (data.status === "ready") {
-            resolve();
-          } else {
-            this.#portClosed = true;
-            reject(new Error(data.error));
-          }
-          break;
-        }
-        case "TranslationsPort:EngineTerminated": {
-          this.#portClosed = true;
-          break;
-        }
-        default:
-          break;
-      }
-    };
-
-    this.#ready = promise;
-    this.#port.postMessage({ type: "TranslationsPort:GetEngineStatusRequest" });
+  get portClosed() {
+    return this.#port === null;
   }
 
   /**
-   * Send a request to translate text to the Translations Engine. If it returns `null`
-   * then the request is stale. A rejection means there was an error in the translation.
-   * This request may be queued.
+   * Returns true if the given language pair matches this translator, otherwise false.
    *
-   * @param {string} sourceText
-   * @returns {Promise<string>}
+   * @param {LanguagePair} languagePair
+   * @returns {boolean}
+   */
+  matchesLanguagePair(languagePair) {
+    return (
+      languagePair.sourceLanguage === this.#languagePair.sourceLanguage &&
+      languagePair.targetLanguage === this.#languagePair.targetLanguage &&
+      languagePair.sourceVariant === this.#languagePair.sourceVariant &&
+      languagePair.targetVariant === this.#languagePair.targetVariant
+    );
+  }
+
+  /**
+   * Sends a request to translate the source text.
+   *
+   * @param {string} sourceText - The text to translate into the target language.
+   * @param {boolean} [isHTML=false] - True if the source text contains HTML markup, otherwise false.
+   *
+   * @returns {Promise<string | null>}
+   *  Resolves with the translated text when the request is complete.
+   *  Resolves with null if the request has been cancelled.
+   *  Rejects if an error has occurred during translation.
    */
   async translate(sourceText, isHTML = false) {
     await this.#createNewPortIfClosed();
     await this.#ready;
 
-    const { promise, resolve, reject } = Promise.withResolvers();
-    const translationId = this.#nextTranslationId++;
+    const translationId = ++this.#translationId;
 
-    // Store the "resolve" for the promise. It will be matched back up with the
-    // `translationId` in #handlePortMessage.
-    this.#requests.set(translationId, {
+    this.#maybeCancelOldestActiveRequest();
+
+    const { promise, resolve, reject } = Promise.withResolvers();
+
+    this.#translationRequests.set(translationId, {
       sourceText,
       isHTML,
       resolve,
       reject,
     });
-    this.#port.postMessage({
+
+    this.#port?.postMessage({
       type: "TranslationsPort:TranslationRequest",
       translationId,
       sourceText,
@@ -215,12 +237,127 @@ export class Translator {
   }
 
   /**
-   * Close the port and remove any pending or queued requests.
+   * Destroys the Translator, ensuring its port is closed, and all pending requests are cancelled.
+   *
+   * @returns {void}
    */
   destroy() {
-    this.#port.close();
-    this.#portClosed = true;
+    try {
+      this.#port?.close();
+    } catch {
+      // We're destroying anyway, nothing to do.
+    }
+    this.#port = null;
+
+    for (const request of this.#translationRequests.values()) {
+      request.resolve(null);
+    }
+
+    this.#translationRequests.clear();
     this.#ready = Promise.reject;
+  }
+
+  /**
+   * Creates a new {@link MessagePort} for communication with the TranslationsEngine,
+   * only if the Translator does not currently have an open port.
+   *
+   * @returns {Promise<void>}
+   *  Resolves once the port has been instantiated.
+   *  Rejects if the port failed to instantiate.
+   */
+  async #createNewPortIfClosed() {
+    if (this.#port !== null) {
+      return;
+    }
+
+    this.#port = await this.#requestTranslationsPort(this.#languagePair);
+
+    const { promise, resolve, reject } = Promise.withResolvers();
+
+    this.#port.onmessage = ({ data }) => {
+      switch (data.type) {
+        case "TranslationsPort:TranslationResponse": {
+          const { targetText, translationId } = data;
+          const request = this.#translationRequests.get(translationId);
+          if (request) {
+            request.resolve(targetText);
+            this.#translationRequests.delete(translationId);
+          }
+          break;
+        }
+        case "TranslationsPort:GetEngineStatusResponse": {
+          if (data.status === "ready") {
+            resolve();
+          } else {
+            this.#port = null;
+            reject(new Error(data.error));
+          }
+
+          break;
+        }
+        case "TranslationsPort:EngineTerminated": {
+          this.#port = null;
+
+          for (const request of this.#translationRequests.values()) {
+            request.resolve(null);
+          }
+
+          this.#translationRequests.clear();
+
+          break;
+        }
+        default: {
+          throw new Error(
+            `Translator receive unexpected port message: ${data.type}`
+          );
+        }
+      }
+    };
+
+    this.#ready = promise;
+    this.#port.postMessage({ type: "TranslationsPort:GetEngineStatusRequest" });
+  }
+
+  /**
+   * Cancels an active translation request that belongs to the given id.
+   *
+   * @param {number} translationId
+   * @returns {void}
+   */
+  #cancelTranslationRequest(translationId) {
+    const request = this.#translationRequests.get(translationId);
+
+    if (!request) {
+      return;
+    }
+
+    request.resolve(null);
+    this.#port?.postMessage({
+      type: "TranslationsPort:CancelSingleTranslation",
+      translationId,
+    });
+
+    this.#translationRequests.delete(translationId);
+  }
+
+  /**
+   * Cancels the oldest active translation request,
+   * only if this Translator is at its active request capacity.
+   */
+  #maybeCancelOldestActiveRequest() {
+    if (this.#activeRequestCapacity === null) {
+      // This Translator has no limit to active requests.
+      return;
+    }
+
+    if (this.#translationRequests.size < this.#activeRequestCapacity) {
+      // This Translator is not currently at capacity.
+      return;
+    }
+
+    // Since JS Map preserves insertion order, the oldest request will be the first key.
+    const oldestId = this.#translationRequests.keys().next().value;
+    this.#cancelTranslationRequest(oldestId);
   }
 }
 
@@ -288,6 +425,19 @@ class PassthroughTranslator {
       );
     }
     this.#language = languagePair.sourceLanguage;
+  }
+
+  /**
+   * Returns true if the given language pair matches this translator, otherwise false.
+   *
+   * @param {LanguagePair} languagePair
+   * @returns {boolean}
+   */
+  matchesLanguagePair(languagePair) {
+    return (
+      languagePair.sourceLanguage === this.#language &&
+      languagePair.targetLanguage === this.#language
+    );
   }
 
   /**

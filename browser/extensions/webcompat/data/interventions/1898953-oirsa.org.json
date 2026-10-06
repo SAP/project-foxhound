@@ -1,0 +1,15 @@
+{
+  "label": "oirsa.org",
+  "bugs": {
+    "1898953": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.oirsa.org/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

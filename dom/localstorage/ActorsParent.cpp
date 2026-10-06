@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,11 +14,12 @@
 #include <cstdlib>
 #include <cstring>
 #include <new>
-#include <tuple>
 #include <type_traits>
 #include <utility>
+
 #include "ErrorList.h"
 #include "MainThreadUtils.h"
+#include "NotifyUtils.h"
 #include "mozIStorageAsyncConnection.h"
 #include "mozIStorageConnection.h"
 #include "mozIStorageFunction.h"
@@ -33,8 +32,8 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/GeckoTrace.h"
 #include "mozilla/Logging.h"
-#include "mozilla/MacroForEach.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Mutex.h"
@@ -50,8 +49,6 @@
 #include "mozilla/StaticPtr.h"
 #include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
-#include "mozilla/Utf8.h"
 #include "mozilla/Variant.h"
 #include "mozilla/dom/ClientManagerService.h"
 #include "mozilla/dom/FlippedOnce.h"
@@ -68,6 +65,7 @@
 #include "mozilla/dom/PBackgroundLSSharedTypes.h"
 #include "mozilla/dom/PBackgroundLSSimpleRequestParent.h"
 #include "mozilla/dom/PBackgroundLSSnapshotParent.h"
+#include "mozilla/dom/ProcessIsolation.h"
 #include "mozilla/dom/SnappyUtils.h"
 #include "mozilla/dom/StorageDBUpdater.h"
 #include "mozilla/dom/StorageUtils.h"
@@ -85,10 +83,10 @@
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/dom/quota/PrincipalUtils.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
-#include "mozilla/dom/quota/StorageHelpers.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/quota/QuotaObject.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
+#include "mozilla/dom/quota/StorageHelpers.h"
 #include "mozilla/dom/quota/ThreadUtils.h"
 #include "mozilla/dom/quota/UsageInfo.h"
 #include "mozilla/glean/DomLocalstorageMetrics.h"
@@ -99,11 +97,9 @@
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/storage/Variant.h"
-#include "NotifyUtils.h"
 #include "nsBaseHashtable.h"
 #include "nsCOMPtr.h"
 #include "nsClassHashtable.h"
-#include "nsTHashMap.h"
 #include "nsDebug.h"
 #include "nsError.h"
 #include "nsHashKeys.h"
@@ -135,6 +131,7 @@
 #include "nsStringFlags.h"
 #include "nsStringFwd.h"
 #include "nsTArray.h"
+#include "nsTHashMap.h"
 #include "nsTHashSet.h"
 #include "nsTLiteralString.h"
 #include "nsTStringRepr.h"
@@ -625,7 +622,7 @@ Result<nsCOMPtr<mozIStorageConnection>, nsresult> CreateStorageConnection(
       // Windows caches the file size, let's force it to stat the file again.
       QM_TRY_INSPECT(const bool& exists,
                      MOZ_TO_RESULT_INVOKE_MEMBER(aDBFile, Exists));
-      Unused << exists;
+      (void)exists;
 
       QM_TRY_INSPECT(const int64_t& fileSize,
                      MOZ_TO_RESULT_INVOKE_MEMBER(aDBFile, GetFileSize));
@@ -738,6 +735,8 @@ Result<nsCOMPtr<nsIFile>, nsresult> GetArchiveFile(
 
 Result<nsCOMPtr<mozIStorageConnection>, nsresult>
 CreateArchiveStorageConnection(const nsAString& aStoragePath) {
+  GECKO_TRACE_SCOPE("dom::localstorage", "CreateArchiveStorageConnection");
+
   AssertIsOnIOThread();
   MOZ_ASSERT(!aStoragePath.IsEmpty());
 
@@ -1060,6 +1059,8 @@ nsresult UpdateUsageFile(nsIFile* aUsageFile, nsIFile* aUsageJournalFile,
 }
 
 Result<UsageInfo, nsresult> LoadUsageFile(nsIFile& aUsageFile) {
+  GECKO_TRACE_SCOPE("dom::localstorage", "LoadUsageFile");
+
   AssertIsOnIOThread();
 
   QM_TRY_INSPECT(const int64_t& fileSize,
@@ -1676,7 +1677,7 @@ class PrivateDatastore {
 class PreparedDatastore {
   RefPtr<Datastore> mDatastore;
   nsCOMPtr<nsITimer> mTimer;
-  const Maybe<ContentParentId> mContentParentId;
+  const RefPtr<ThreadsafeContentParentHandle> mContentParentHandle;
   // Strings share buffers if possible, so it's not a problem to duplicate the
   // origin here.
   const nsCString mOrigin;
@@ -1686,12 +1687,12 @@ class PreparedDatastore {
 
  public:
   PreparedDatastore(Datastore* aDatastore,
-                    const Maybe<ContentParentId>& aContentParentId,
+                    ThreadsafeContentParentHandle* aContentParentHandle,
                     const nsACString& aOrigin, uint64_t aDatastoreId,
                     bool aForPreload)
       : mDatastore(aDatastore),
         mTimer(NS_NewTimer()),
-        mContentParentId(aContentParentId),
+        mContentParentHandle(aContentParentHandle),
         mOrigin(aOrigin),
         mDatastoreId(aDatastoreId),
         mForPreload(aForPreload),
@@ -1704,7 +1705,7 @@ class PreparedDatastore {
 
     MOZ_ALWAYS_SUCCEEDS(mTimer->InitWithNamedFuncCallback(
         TimerCallback, this, kPreparedDatastoreTimeoutMs,
-        nsITimer::TYPE_ONE_SHOT, "PreparedDatastore::TimerCallback"));
+        nsITimer::TYPE_ONE_SHOT, "PreparedDatastore::TimerCallback"_ns));
   }
 
   ~PreparedDatastore() {
@@ -1730,8 +1731,8 @@ class PreparedDatastore {
     return *mDatastore;
   }
 
-  const Maybe<ContentParentId>& GetContentParentId() const {
-    return mContentParentId;
+  ThreadsafeContentParentHandle* GetContentParentHandle() const {
+    return mContentParentHandle;
   }
 
   const nsCString& Origin() const { return mOrigin; }
@@ -1746,7 +1747,7 @@ class PreparedDatastore {
 
       MOZ_ALWAYS_SUCCEEDS(mTimer->InitWithNamedFuncCallback(
           TimerCallback, this, 0, nsITimer::TYPE_ONE_SHOT,
-          "PreparedDatastore::TimerCallback"));
+          "PreparedDatastore::TimerCallback"_ns));
     }
   }
 
@@ -1772,7 +1773,7 @@ class Database final
   RefPtr<Datastore> mDatastore;
   Snapshot* mSnapshot;
   const PrincipalInfo mPrincipalInfo;
-  const Maybe<ContentParentId> mContentParentId;
+  const RefPtr<ThreadsafeContentParentHandle> mContentParentHandle;
   // Strings share buffers if possible, so it's not a problem to duplicate the
   // origin here.
   nsCString mOrigin;
@@ -1788,7 +1789,7 @@ class Database final
  public:
   // Created in AllocPBackgroundLSDatabaseParent.
   Database(const PrincipalInfo& aPrincipalInfo,
-           const Maybe<ContentParentId>& aContentParentId,
+           ThreadsafeContentParentHandle* aContentParentHandle,
            const nsACString& aOrigin, uint32_t aPrivateBrowsingId);
 
   void AssertIsOnOwningThread() const {
@@ -1809,8 +1810,8 @@ class Database final
 
   const PrincipalInfo& GetPrincipalInfo() const { return mPrincipalInfo; }
 
-  const Maybe<ContentParentId>& ContentParentIdRef() const {
-    return mContentParentId;
+  ThreadsafeContentParentHandle* ContentParentHandle() const {
+    return mContentParentHandle;
   }
 
   uint32_t PrivateBrowsingId() const { return mPrivateBrowsingId; }
@@ -2088,17 +2089,17 @@ class Snapshot final : public PBackgroundLSSnapshotParent {
 };
 
 class Observer final : public PBackgroundLSObserverParent {
-  const Maybe<ContentParentId> mContentParentId;
+  const RefPtr<ThreadsafeContentParentHandle> mContentParentHandle;
   nsCString mOrigin;
   bool mActorDestroyed;
 
  public:
   // Created in AllocPBackgroundLSObserverParent.
-  Observer(const Maybe<ContentParentId>& aContentParentId,
+  Observer(ThreadsafeContentParentHandle* aContentParentHandle,
            const nsACString& aOrigin);
 
-  const Maybe<ContentParentId>& ContentParentIdRef() const {
-    return mContentParentId;
+  ThreadsafeContentParentHandle* ContentParentHandle() const {
+    return mContentParentHandle;
   }
 
   const nsCString& Origin() const { return mOrigin; }
@@ -2151,13 +2152,13 @@ class LSRequestBase : public DatastoreOperationBase,
   };
 
   const LSRequestParams mParams;
-  Maybe<ContentParentId> mContentParentId;
+  RefPtr<ThreadsafeContentParentHandle> mContentParentHandle;
   State mState;
   bool mWaitingForFinish;
 
  public:
   LSRequestBase(const LSRequestParams& aParams,
-                const Maybe<ContentParentId>& aContentParentId);
+                ThreadsafeContentParentHandle* aContentParentHandle);
 
   void Dispatch();
 
@@ -2169,6 +2170,10 @@ class LSRequestBase : public DatastoreOperationBase,
 
  protected:
   ~LSRequestBase() override;
+
+  ThreadsafeContentParentHandle* ContentParentHandle() const {
+    return mContentParentHandle;
+  }
 
   virtual nsresult Start() = 0;
 
@@ -2319,7 +2324,7 @@ class PrepareDatastoreOp
 
  public:
   PrepareDatastoreOp(const LSRequestParams& aParams,
-                     const Maybe<ContentParentId>& aContentParentId);
+                     ThreadsafeContentParentHandle* aContentParentHandle);
 
   Maybe<ClientDirectoryLock&> MaybeDirectoryLockRef() const {
     AssertIsOnBackgroundThread();
@@ -2460,7 +2465,7 @@ class PrepareObserverOp : public LSRequestBase {
 
  public:
   PrepareObserverOp(const LSRequestParams& aParams,
-                    const Maybe<ContentParentId>& aContentParentId);
+                    ThreadsafeContentParentHandle* aContentParentHandle);
 
  private:
   nsresult Start() override;
@@ -2488,12 +2493,12 @@ class LSSimpleRequestBase : public DatastoreOperationBase,
   };
 
   const LSSimpleRequestParams mParams;
-  Maybe<ContentParentId> mContentParentId;
+  RefPtr<ThreadsafeContentParentHandle> mContentParentHandle;
   State mState;
 
  public:
   LSSimpleRequestBase(const LSSimpleRequestParams& aParams,
-                      const Maybe<ContentParentId>& aContentParentId);
+                      ThreadsafeContentParentHandle* aContentParentHandle);
 
   void Dispatch();
 
@@ -2524,7 +2529,7 @@ class PreloadedOp : public LSSimpleRequestBase {
 
  public:
   PreloadedOp(const LSSimpleRequestParams& aParams,
-              const Maybe<ContentParentId>& aContentParentId);
+              ThreadsafeContentParentHandle* aContentParentHandle);
 
  private:
   nsresult Start() override;
@@ -2537,7 +2542,7 @@ class GetStateOp : public LSSimpleRequestBase {
 
  public:
   GetStateOp(const LSSimpleRequestParams& aParams,
-             const Maybe<ContentParentId>& aContentParentId);
+             ThreadsafeContentParentHandle* aContentParentHandle);
 
  private:
   nsresult Start() override;
@@ -2831,7 +2836,7 @@ using PrivateDatastoreHashtable =
 // event of an (unlikely) race where the private browsing windows are still
 // being torn down, will cause the Datastore to be discarded when the last
 // window actually goes away.
-MOZ_RUNINIT UniquePtr<PrivateDatastoreHashtable> gPrivateDatastores;
+constinit UniquePtr<PrivateDatastoreHashtable> gPrivateDatastores;
 
 using DatabaseArray = nsTArray<Database*>;
 
@@ -2894,6 +2899,8 @@ already_AddRefed<Datastore> GetDatastore(const nsACString& aOrigin) {
 }
 
 nsresult LoadArchivedOrigins() {
+  GECKO_TRACE_SCOPE("dom::localstorage", "LoadArchivedOrigins");
+
   AssertIsOnIOThread();
   MOZ_ASSERT(!gArchivedOrigins);
 
@@ -3118,12 +3125,24 @@ void ForceKillAllDatabases() {
   }
 }
 
-bool VerifyPrincipalInfo(const PrincipalInfo& aPrincipalInfo,
+bool VerifyPrincipalInfo(ThreadsafeContentParentHandle* aContentParentHandle,
+                         const PrincipalInfo& aPrincipalInfo,
                          const PrincipalInfo& aStoragePrincipalInfo,
                          bool aCheckClientPrincipal) {
   AssertIsOnBackgroundThread();
 
   if (NS_WARN_IF(!quota::IsPrincipalInfoValid(aPrincipalInfo))) {
+    return false;
+  }
+
+  auto prinResult = PrincipalInfoToPrincipal(aPrincipalInfo);
+  if (NS_WARN_IF(prinResult.isErr())) {
+    return false;
+  }
+
+  if (aContentParentHandle &&
+      NS_WARN_IF(!ValidatePrincipalCouldPotentiallyBeLoadedBy(
+          prinResult.inspect(), aContentParentHandle->GetRemoteType(), {}))) {
     return false;
   }
 
@@ -3150,7 +3169,7 @@ bool VerifyPrincipalInfo(const PrincipalInfo& aPrincipalInfo,
   return true;
 }
 
-bool VerifyClientId(const Maybe<ContentParentId>& aContentParentId,
+bool VerifyClientId(ThreadsafeContentParentHandle* aContentParentHandle,
                     const Maybe<PrincipalInfo>& aPrincipalInfo,
                     const Maybe<nsID>& aClientId) {
   AssertIsOnBackgroundThread();
@@ -3165,8 +3184,9 @@ bool VerifyClientId(const Maybe<ContentParentId>& aContentParentId,
     }
 
     RefPtr<ClientManagerService> svc = ClientManagerService::GetInstance();
-    if (svc && NS_WARN_IF(!svc->HasWindow(
-                   aContentParentId, aPrincipalInfo.ref(), aClientId.ref()))) {
+    if (svc &&
+        NS_WARN_IF(!svc->HasWindow(aContentParentHandle, aPrincipalInfo.ref(),
+                                   aClientId.ref()))) {
       return false;
     }
   }
@@ -3181,7 +3201,7 @@ bool VerifyOriginKey(const nsACString& aOriginKey,
   QM_TRY_INSPECT((const auto& [originAttrSuffix, originKey]),
                  GenerateOriginKey2(aPrincipalInfo), false);
 
-  Unused << originAttrSuffix;
+  (void)originAttrSuffix;
 
   QM_TRY(OkIf(originKey == aOriginKey), false,
          ([&originKey = originKey, &aOriginKey](const auto) {
@@ -3280,7 +3300,7 @@ already_AddRefed<PBackgroundLSDatabaseParent> AllocPBackgroundLSDatabaseParent(
   // method.
 
   RefPtr<Database> database =
-      new Database(aPrincipalInfo, preparedDatastore->GetContentParentId(),
+      new Database(aPrincipalInfo, preparedDatastore->GetContentParentHandle(),
                    preparedDatastore->Origin(), aPrivateBrowsingId);
 
   return database.forget();
@@ -3416,12 +3436,8 @@ PBackgroundLSRequestParent* AllocPBackgroundLSRequestParent(
     return nullptr;
   }
 
-  Maybe<ContentParentId> contentParentId;
-
-  uint64_t childID = BackgroundParent::GetChildID(aBackgroundActor);
-  if (childID) {
-    contentParentId = Some(ContentParentId(childID));
-  }
+  RefPtr<ThreadsafeContentParentHandle> contentParentHandle =
+      BackgroundParent::GetContentParentHandle(aBackgroundActor);
 
   RefPtr<LSRequestBase> actor;
 
@@ -3429,7 +3445,7 @@ PBackgroundLSRequestParent* AllocPBackgroundLSRequestParent(
     case LSRequestParams::TLSRequestPreloadDatastoreParams:
     case LSRequestParams::TLSRequestPrepareDatastoreParams: {
       RefPtr<PrepareDatastoreOp> prepareDatastoreOp =
-          new PrepareDatastoreOp(aParams, contentParentId);
+          new PrepareDatastoreOp(aParams, contentParentHandle);
 
       if (!gPrepareDatastoreOps) {
         gPrepareDatastoreOps = new PrepareDatastoreOpArray();
@@ -3444,7 +3460,7 @@ PBackgroundLSRequestParent* AllocPBackgroundLSRequestParent(
 
     case LSRequestParams::TLSRequestPrepareObserverParams: {
       RefPtr<PrepareObserverOp> prepareObserverOp =
-          new PrepareObserverOp(aParams, contentParentId);
+          new PrepareObserverOp(aParams, contentParentHandle);
 
       actor = std::move(prepareObserverOp);
 
@@ -3499,19 +3515,15 @@ PBackgroundLSSimpleRequestParent* AllocPBackgroundLSSimpleRequestParent(
     return nullptr;
   }
 
-  Maybe<ContentParentId> contentParentId;
-
-  uint64_t childID = BackgroundParent::GetChildID(aBackgroundActor);
-  if (childID) {
-    contentParentId = Some(ContentParentId(childID));
-  }
+  RefPtr<ThreadsafeContentParentHandle> contentParentHandle =
+      BackgroundParent::GetContentParentHandle(aBackgroundActor);
 
   RefPtr<LSSimpleRequestBase> actor;
 
   switch (aParams.type()) {
     case LSSimpleRequestParams::TLSSimpleRequestPreloadedParams: {
       RefPtr<PreloadedOp> preloadedOp =
-          new PreloadedOp(aParams, contentParentId);
+          new PreloadedOp(aParams, contentParentHandle);
 
       actor = std::move(preloadedOp);
 
@@ -3519,7 +3531,8 @@ PBackgroundLSSimpleRequestParent* AllocPBackgroundLSSimpleRequestParent(
     }
 
     case LSSimpleRequestParams::TLSSimpleRequestGetStateParams: {
-      RefPtr<GetStateOp> getStateOp = new GetStateOp(aParams, contentParentId);
+      RefPtr<GetStateOp> getStateOp =
+          new GetStateOp(aParams, contentParentHandle);
 
       actor = std::move(getStateOp);
 
@@ -4212,7 +4225,7 @@ nsresult Connection::RollbackWriteTransaction() {
 
   // This may fail if SQLite already rolled back the transaction so ignore any
   // errors.
-  Unused << stmt->Execute();
+  (void)stmt->Execute();
 
   return NS_OK;
 }
@@ -4229,7 +4242,7 @@ void Connection::ScheduleFlush() {
 
   MOZ_ALWAYS_SUCCEEDS(mFlushTimer->InitWithNamedFuncCallback(
       FlushTimerCallback, this, kFlushTimeoutMs, nsITimer::TYPE_ONE_SHOT,
-      "Connection::FlushTimerCallback"));
+      "Connection::FlushTimerCallback"_ns));
 
   mFlushScheduled = true;
 }
@@ -4595,7 +4608,7 @@ bool Datastore::HasOtherProcessDatabases(Database* aDatabase) {
   AssertIsOnBackgroundThread();
 
   for (Database* database : mDatabases) {
-    if (database->ContentParentIdRef() != aDatabase->ContentParentIdRef()) {
+    if (database->ContentParentHandle() != aDatabase->ContentParentHandle()) {
       return true;
     }
   }
@@ -5103,7 +5116,7 @@ bool Datastore::HasOtherProcessObservers(Database* aDatabase) {
   MOZ_ASSERT(array);
 
   for (Observer* observer : *array) {
-    if (observer->ContentParentIdRef() != aDatabase->ContentParentIdRef()) {
+    if (observer->ContentParentHandle() != aDatabase->ContentParentHandle()) {
       return true;
     }
   }
@@ -5134,7 +5147,7 @@ void Datastore::NotifyOtherProcessObservers(Database* aDatabase,
   // that caused the change.
 
   for (Observer* observer : *array) {
-    if (observer->ContentParentIdRef() != aDatabase->ContentParentIdRef()) {
+    if (observer->ContentParentHandle() != aDatabase->ContentParentHandle()) {
       observer->Observe(aDatabase, aDocumentURI, aKey, aOldValue, aNewValue);
     }
   }
@@ -5155,7 +5168,7 @@ void Datastore::NoteChangedObserverArray(
     bool hasOtherProcessObservers = false;
 
     for (Observer* observer : aObservers) {
-      if (observer->ContentParentIdRef() != database->ContentParentIdRef()) {
+      if (observer->ContentParentHandle() != database->ContentParentHandle()) {
         hasOtherProcessObservers = true;
         break;
       }
@@ -5363,11 +5376,11 @@ void PreparedDatastore::TimerCallback(nsITimer* aTimer, void* aClosure) {
  ******************************************************************************/
 
 Database::Database(const PrincipalInfo& aPrincipalInfo,
-                   const Maybe<ContentParentId>& aContentParentId,
+                   ThreadsafeContentParentHandle* aContentParentHandle,
                    const nsACString& aOrigin, uint32_t aPrivateBrowsingId)
     : mSnapshot(nullptr),
       mPrincipalInfo(aPrincipalInfo),
-      mContentParentId(aContentParentId),
+      mContentParentHandle(aContentParentHandle),
       mOrigin(aOrigin),
       mRequestAllowToCloseTimerId(0),
       mPrivateBrowsingId(aPrivateBrowsingId),
@@ -5492,7 +5505,7 @@ void Database::Stringify(nsACString& aResult) const {
   aResult.Append(kQuotaGenericDelimiter);
 
   aResult.AppendLiteral("OtherProcessActor:");
-  aResult.AppendInt(mContentParentId.isSome());
+  aResult.AppendInt(!!mContentParentHandle);
   aResult.Append(kQuotaGenericDelimiter);
 
   aResult.AppendLiteral("Origin:");
@@ -5716,7 +5729,7 @@ void Snapshot::MarkDirty() {
   AssertIsOnBackgroundThread();
 
   if (!mSentMarkDirty) {
-    Unused << SendMarkDirty();
+    (void)SendMarkDirty();
     mSentMarkDirty = true;
   }
 }
@@ -6074,8 +6087,8 @@ mozilla::ipc::IPCResult Snapshot::RecvLoadValueAndMoreItems(
         }
 
         LSItemInfo* itemInfo = aItemInfos->AppendElement();
-        itemInfo->key() = key;
-        itemInfo->value() = value;
+        itemInfo->key() = std::move(key);
+        itemInfo->value() = std::move(value);
       }
 
       mNextLoadIndex++;
@@ -6153,9 +6166,9 @@ mozilla::ipc::IPCResult Snapshot::RecvIncreasePeakUsage(const int64_t& aMinSize,
  * Observer
  ******************************************************************************/
 
-Observer::Observer(const Maybe<ContentParentId>& aContentParentId,
+Observer::Observer(ThreadsafeContentParentHandle* aContentParentHandle,
                    const nsACString& aOrigin)
-    : mContentParentId(aContentParentId),
+    : mContentParentHandle(aContentParentHandle),
       mOrigin(aOrigin),
       mActorDestroyed(false) {
   AssertIsOnBackgroundThread();
@@ -6169,9 +6182,9 @@ void Observer::Observe(Database* aDatabase, const nsString& aDocumentURI,
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aDatabase);
 
-  Unused << SendObserve(aDatabase->GetPrincipalInfo(),
-                        aDatabase->PrivateBrowsingId(), aDocumentURI, aKey,
-                        aOldValue, aNewValue);
+  (void)SendObserve(aDatabase->GetPrincipalInfo(),
+                    aDatabase->PrivateBrowsingId(), aDocumentURI, aKey,
+                    aOldValue, aNewValue);
 }
 
 void Observer::ActorDestroy(ActorDestroyReason aWhy) {
@@ -6216,10 +6229,11 @@ mozilla::ipc::IPCResult Observer::RecvDeleteMe() {
  * LSRequestBase
  ******************************************************************************/
 
-LSRequestBase::LSRequestBase(const LSRequestParams& aParams,
-                             const Maybe<ContentParentId>& aContentParentId)
+LSRequestBase::LSRequestBase(
+    const LSRequestParams& aParams,
+    ThreadsafeContentParentHandle* aContentParentHandle)
     : mParams(aParams),
-      mContentParentId(aContentParentId),
+      mContentParentHandle(aContentParentHandle),
       mState(State::Initial),
       mWaitingForFinish(false) {}
 
@@ -6308,7 +6322,8 @@ bool LSRequestBase::VerifyRequestParams() {
           mParams.get_LSRequestPreloadDatastoreParams().commonParams();
 
       if (NS_WARN_IF(!VerifyPrincipalInfo(
-              params.principalInfo(), params.storagePrincipalInfo(), false))) {
+              ContentParentHandle(), params.principalInfo(),
+              params.storagePrincipalInfo(), false))) {
         return false;
       }
 
@@ -6326,20 +6341,20 @@ bool LSRequestBase::VerifyRequestParams() {
 
       const LSRequestCommonParams& commonParams = params.commonParams();
 
-      if (NS_WARN_IF(!VerifyPrincipalInfo(commonParams.principalInfo(),
-                                          commonParams.storagePrincipalInfo(),
-                                          false))) {
+      if (NS_WARN_IF(!VerifyPrincipalInfo(
+              ContentParentHandle(), commonParams.principalInfo(),
+              commonParams.storagePrincipalInfo(), false))) {
         return false;
       }
 
       if (params.clientPrincipalInfo() &&
-          NS_WARN_IF(!VerifyPrincipalInfo(commonParams.principalInfo(),
-                                          params.clientPrincipalInfo().ref(),
-                                          true))) {
+          NS_WARN_IF(!VerifyPrincipalInfo(
+              ContentParentHandle(), commonParams.principalInfo(),
+              params.clientPrincipalInfo().ref(), true))) {
         return false;
       }
 
-      if (NS_WARN_IF(!VerifyClientId(mContentParentId,
+      if (NS_WARN_IF(!VerifyClientId(ContentParentHandle(),
                                      params.clientPrincipalInfo(),
                                      params.clientId()))) {
         return false;
@@ -6358,18 +6373,19 @@ bool LSRequestBase::VerifyRequestParams() {
           mParams.get_LSRequestPrepareObserverParams();
 
       if (NS_WARN_IF(!VerifyPrincipalInfo(
-              params.principalInfo(), params.storagePrincipalInfo(), false))) {
+              ContentParentHandle(), params.principalInfo(),
+              params.storagePrincipalInfo(), false))) {
         return false;
       }
 
       if (params.clientPrincipalInfo() &&
-          NS_WARN_IF(!VerifyPrincipalInfo(params.principalInfo(),
-                                          params.clientPrincipalInfo().ref(),
-                                          true))) {
+          NS_WARN_IF(!VerifyPrincipalInfo(
+              ContentParentHandle(), params.principalInfo(),
+              params.clientPrincipalInfo().ref(), true))) {
         return false;
       }
 
-      if (NS_WARN_IF(!VerifyClientId(mContentParentId,
+      if (NS_WARN_IF(!VerifyClientId(ContentParentHandle(),
                                      params.clientPrincipalInfo(),
                                      params.clientId()))) {
         return false;
@@ -6497,8 +6513,7 @@ void LSRequestBase::SendResults() {
       response = ResultCode();
     }
 
-    Unused << PBackgroundLSRequestParent::Send__delete__(this,
-                                                         std::move(response));
+    (void)PBackgroundLSRequestParent::Send__delete__(this, std::move(response));
   }
 
   Cleanup();
@@ -6595,6 +6610,12 @@ mozilla::ipc::IPCResult LSRequestBase::RecvCancel() {
 mozilla::ipc::IPCResult LSRequestBase::RecvFinish() {
   AssertIsOnOwningThread();
 
+  // A well-behaved content process only sends Finish() after receiving Ready(),
+  // which transitions us to WaitingForFinish.
+  if (NS_WARN_IF(mState != State::WaitingForFinish)) {
+    return IPC_FAIL(this, "Finish received in unexpected state");
+  }
+
   Finish();
 
   return IPC_OK();
@@ -6606,8 +6627,8 @@ mozilla::ipc::IPCResult LSRequestBase::RecvFinish() {
 
 PrepareDatastoreOp::PrepareDatastoreOp(
     const LSRequestParams& aParams,
-    const Maybe<ContentParentId>& aContentParentId)
-    : LSRequestBase(aParams, aContentParentId),
+    ThreadsafeContentParentHandle* aContentParentHandle)
+    : LSRequestBase(aParams, aContentParentHandle),
       mProcessingTimerId(
           glean::localstorage_request::prepare_datastore_processing_time
               .Start()),
@@ -7020,6 +7041,8 @@ void PrepareDatastoreOp::SendToIOThread() {
 }
 
 nsresult PrepareDatastoreOp::DatabaseWork() {
+  GECKO_TRACE_SCOPE("dom::localstorage", "PrepareDatastoreOp::DatabaseWork");
+
   AssertIsOnIOThread();
   MOZ_ASSERT(mArchivedOriginScope);
   MOZ_ASSERT(mUsage == 0);
@@ -7586,8 +7609,8 @@ void PrepareDatastoreOp::GetResponse(LSRequestResponse& aResponse) {
   }
   const auto& preparedDatastore = gPreparedDatastores->InsertOrUpdate(
       mDatastoreId, MakeUnique<PreparedDatastore>(
-                        mDatastore, mContentParentId, Origin(), mDatastoreId,
-                        /* aForPreload */ mForPreload));
+                        mDatastore, ContentParentHandle(), Origin(),
+                        mDatastoreId, /* aForPreload */ mForPreload));
 
   if (mInvalidated) {
     preparedDatastore->Invalidate();
@@ -7966,8 +7989,8 @@ PrepareDatastoreOp::CompressionTypeFunction::OnFunctionCall(
 
 PrepareObserverOp::PrepareObserverOp(
     const LSRequestParams& aParams,
-    const Maybe<ContentParentId>& aContentParentId)
-    : LSRequestBase(aParams, aContentParentId) {
+    ThreadsafeContentParentHandle* aContentParentHandle)
+    : LSRequestBase(aParams, aContentParentHandle) {
   MOZ_ASSERT(aParams.type() ==
              LSRequestParams::TLSRequestPrepareObserverParams);
 }
@@ -8007,7 +8030,7 @@ void PrepareObserverOp::GetResponse(LSRequestResponse& aResponse) {
 
   uint64_t observerId = ++gLastObserverId;
 
-  RefPtr<Observer> observer = new Observer(mContentParentId, mOrigin);
+  RefPtr<Observer> observer = new Observer(ContentParentHandle(), mOrigin);
 
   if (!gPreparedObsevers) {
     gPreparedObsevers = new PreparedObserverHashtable();
@@ -8027,9 +8050,9 @@ void PrepareObserverOp::GetResponse(LSRequestResponse& aResponse) {
 
 LSSimpleRequestBase::LSSimpleRequestBase(
     const LSSimpleRequestParams& aParams,
-    const Maybe<ContentParentId>& aContentParentId)
+    ThreadsafeContentParentHandle* aContentParentHandle)
     : mParams(aParams),
-      mContentParentId(aContentParentId),
+      mContentParentHandle(aContentParentHandle),
       mState(State::Initial) {}
 
 LSSimpleRequestBase::~LSSimpleRequestBase() {
@@ -8055,8 +8078,9 @@ bool LSSimpleRequestBase::VerifyRequestParams() {
       const LSSimpleRequestPreloadedParams& params =
           mParams.get_LSSimpleRequestPreloadedParams();
 
-      if (NS_WARN_IF(!VerifyPrincipalInfo(
-              params.principalInfo(), params.storagePrincipalInfo(), false))) {
+      if (NS_WARN_IF(
+              !VerifyPrincipalInfo(mContentParentHandle, params.principalInfo(),
+                                   params.storagePrincipalInfo(), false))) {
         return false;
       }
 
@@ -8067,8 +8091,9 @@ bool LSSimpleRequestBase::VerifyRequestParams() {
       const LSSimpleRequestGetStateParams& params =
           mParams.get_LSSimpleRequestGetStateParams();
 
-      if (NS_WARN_IF(!VerifyPrincipalInfo(
-              params.principalInfo(), params.storagePrincipalInfo(), false))) {
+      if (NS_WARN_IF(
+              !VerifyPrincipalInfo(mContentParentHandle, params.principalInfo(),
+                                   params.storagePrincipalInfo(), false))) {
         return false;
       }
 
@@ -8125,7 +8150,7 @@ void LSSimpleRequestBase::SendResults() {
       response = ResultCode();
     }
 
-    Unused << PBackgroundLSSimpleRequestParent::Send__delete__(this, response);
+    (void)PBackgroundLSSimpleRequestParent::Send__delete__(this, response);
   }
 
   mState = State::Completed;
@@ -8177,8 +8202,8 @@ void LSSimpleRequestBase::ActorDestroy(ActorDestroyReason aWhy) {
  ******************************************************************************/
 
 PreloadedOp::PreloadedOp(const LSSimpleRequestParams& aParams,
-                         const Maybe<ContentParentId>& aContentParentId)
-    : LSSimpleRequestBase(aParams, aContentParentId) {
+                         ThreadsafeContentParentHandle* aContentParentHandle)
+    : LSSimpleRequestBase(aParams, aContentParentHandle) {
   MOZ_ASSERT(aParams.type() ==
              LSSimpleRequestParams::TLSSimpleRequestPreloadedParams);
 }
@@ -8234,8 +8259,8 @@ void PreloadedOp::GetResponse(LSSimpleRequestResponse& aResponse) {
  ******************************************************************************/
 
 GetStateOp::GetStateOp(const LSSimpleRequestParams& aParams,
-                       const Maybe<ContentParentId>& aContentParentId)
-    : LSSimpleRequestBase(aParams, aContentParentId) {
+                       ThreadsafeContentParentHandle* aContentParentHandle)
+    : LSSimpleRequestBase(aParams, aContentParentHandle) {
   MOZ_ASSERT(aParams.type() ==
              LSSimpleRequestParams::TLSSimpleRequestGetStateParams);
 }
@@ -8572,7 +8597,7 @@ Result<UsageInfo, nsresult> QuotaClient::InitOrigin(
 
         switch (dirEntryKind) {
           case nsIFileKind::ExistsAsDirectory:
-            Unused << WARN_IF_FILE_IS_UNKNOWN(*file);
+            (void)WARN_IF_FILE_IS_UNKNOWN(*file);
             break;
 
           case nsIFileKind::ExistsAsFile: {
@@ -8587,7 +8612,7 @@ Result<UsageInfo, nsresult> QuotaClient::InitOrigin(
               return Ok{};
             }
 
-            Unused << WARN_IF_FILE_IS_UNKNOWN(*file);
+            (void)WARN_IF_FILE_IS_UNKNOWN(*file);
 
             break;
           }
@@ -8888,18 +8913,15 @@ void QuotaClient::AbortOperationsForLocks(
 void QuotaClient::AbortOperationsForProcess(ContentParentId aContentParentId) {
   AssertIsOnBackgroundThread();
 
-  // XXX Quota Manager should do the wrapping.
-  Maybe<ContentParentId> contentParentId;
-
-  if (aContentParentId) {
-    contentParentId = Some(aContentParentId);
-  }
-
   // XXX We could try to invalidate other objects here.
 
   RequestAllowToCloseDatabasesMatching(
-      [&contentParentId](const auto& database) {
-        return database.ContentParentIdRef() == contentParentId;
+      [aContentParentId](const auto& database) {
+        ThreadsafeContentParentHandle* contentParentHandle =
+            database.ContentParentHandle();
+        return contentParentHandle
+                   ? contentParentHandle->ChildID() == aContentParentId
+                   : !aContentParentId;
       });
 }
 
@@ -9065,7 +9087,7 @@ QuotaClient::CreateArchivedOriginScope(const OriginScope& aOriginScope) {
     QM_TRY_INSPECT((const auto& [originAttrSuffix, originKey]),
                    GenerateOriginKey2(principalInfo));
 
-    Unused << originAttrSuffix;
+    (void)originAttrSuffix;
 
     return ArchivedOriginScope::CreateFromPrefix(originKey);
   }

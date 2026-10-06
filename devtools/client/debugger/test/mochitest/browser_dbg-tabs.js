@@ -28,6 +28,14 @@ add_task(async function testTabsOnReload() {
   is(countTabs(dbg), 2);
 });
 
+function assertTabs(dbg, tabs) {
+  const { children } = findElement(dbg, "sourceTabs");
+  is(children.length, tabs.length);
+  for (let i = 0; i < tabs.length; i++) {
+    is(tabs[i], children[i].textContent);
+  }
+}
+
 add_task(async function testOpeningAndClosingTabs() {
   const dbg = await initDebugger(
     "doc-scripts.html",
@@ -43,6 +51,8 @@ add_task(async function testOpeningAndClosingTabs() {
   await selectSource(dbg, "simple3.js");
   await selectSource(dbg, "simple2.js");
   await selectSource(dbg, "simple1.js");
+
+  assertTabs(dbg, ["simple1.js", "simple2.js", "simple3.js"]);
 
   info("Reselect simple2 so that we then close the selected tab");
   await selectSource(dbg, "simple2.js");
@@ -73,9 +83,9 @@ add_task(async function testOpeningAndClosingTabs() {
     "Selected location is cleared when closing the last tab"
   );
 
-  info("Test reloading the debugger");
+  info("Test reloading the debugger with all tabs closed");
   await reload(dbg, "simple1.js", "simple2.js", "simple3.js");
-  is(countTabs(dbg), 0);
+  is(countTabs(dbg), 0, "No tab is reopened after reload");
 
   // /!\ Tabs are opened by default on the left/beginning
   // so that they are displayed in the other way around.
@@ -85,6 +95,12 @@ add_task(async function testOpeningAndClosingTabs() {
   await selectSource(dbg, "simple2.js");
   await selectSource(dbg, "simple1.js");
   is(countTabs(dbg), 3);
+  assertTabs(dbg, ["simple1.js", "simple2.js", "simple3.js"]);
+
+  info("Test reloading the debugger with tabs left opened");
+  await reload(dbg, "simple1.js", "simple2.js", "simple3.js");
+  is(countTabs(dbg), 3);
+  assertTabs(dbg, ["simple1.js", "simple2.js", "simple3.js"]);
 
   info("Reselect simple3 so that we then close the selected tab");
   await selectSource(dbg, "simple3.js");
@@ -94,14 +110,61 @@ add_task(async function testOpeningAndClosingTabs() {
   is(countTabs(dbg), 2);
   await waitForSelectedSource(dbg, "simple2.js");
 
+  info(
+    "Open tab for the HTML page, which has many source actors and may trigger more than one tab to be opened on reload"
+  );
+  await selectSource(dbg, "doc-scripts.html");
+  is(countTabs(dbg), 3);
+  await reload(
+    dbg,
+    "doc-scripts.html",
+    "simple1.js",
+    "simple2.js",
+    "simple3.js"
+  );
+  is(countTabs(dbg), 3);
+
+  // Inject lots of sources to have some tabs displayed in the dropdown
+  const injectedSources = await SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [],
+    function () {
+      const sources = [];
+      for (let i = 1; i <= 10; i++) {
+        const value = String(i).padStart(3, "0");
+        content.eval(
+          `function evalSource() {}; //# sourceURL=eval-source-${value}.js`
+        );
+        sources.push(`eval-source-${value}.js`);
+      }
+      return sources;
+    }
+  );
+  await waitForSources(dbg, ...injectedSources);
+  for (const source of injectedSources) {
+    await selectSource(dbg, source);
+  }
+  ok(
+    findElementWithSelector(dbg, ".dbg-img-more-tabs"),
+    "There is some hidden tabs displayed via a dropdown"
+  );
+
   info("Test the close all tabs context menu");
   const waitForOpen = waitForContextMenu(dbg);
   info(`Open the current active tab context menu`);
   rightClickElement(dbg, "activeTab");
   await waitForOpen;
-  const onCloseTabsAction = waitForDispatch(dbg.store, "CLOSE_TABS");
+
   info(`Select the close all tabs context menu item`);
+  const onCloseTabsAction = waitForDispatch(
+    dbg.store,
+    "CLOSE_TABS_FOR_SOURCES"
+  );
   selectContextMenuItem(dbg, `#node-menu-close-all-tabs`);
   await onCloseTabsAction;
   is(countTabs(dbg), 0);
+  ok(
+    !findElementWithSelector(dbg, ".dbg-img-more-tabs"),
+    "After closing all tabs, hidden tabs dropdown is hidden"
+  );
 });

@@ -1,13 +1,8 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "HTMLEditor.h"
-
-#include <algorithm>
-#include <utility>
 
 #include "AutoClonedRangeArray.h"
 #include "CSSEditUtils.h"
@@ -41,7 +36,7 @@ namespace mozilla {
 using namespace dom;
 
 using EditorType = EditorUtils::EditorType;
-using WalkTreeOption = HTMLEditUtils::WalkTreeOption;
+using LeafNodeOption = HTMLEditUtils::LeafNodeOption;
 
 /*****************************************************************************
  * ListElementSelectionState
@@ -285,9 +280,9 @@ AlignStateAtSelection::AlignStateAtSelection(HTMLEditor& aHTMLEditor,
   else if (atStartOfSelection.IsContainerHTMLElement(nsGkAtoms::html) &&
            atBodyOrDocumentElement.IsSet() &&
            atStartOfSelection.Offset() == atBodyOrDocumentElement.Offset()) {
-    editTargetContent = HTMLEditUtils::GetNextContent(
-        atStartOfSelection, {WalkTreeOption::IgnoreNonEditableNode},
-        BlockInlineCheck::Unused, aHTMLEditor.ComputeEditingHost());
+    editTargetContent = HTMLEditUtils::GetNextLeafContent(
+        atStartOfSelection, {LeafNodeOption::IgnoreNonEditableNode},
+        BlockInlineCheck::Auto, aHTMLEditor.ComputeEditingHost());
     if (NS_WARN_IF(!editTargetContent)) {
       aRv.Throw(NS_ERROR_FAILURE);
       return;
@@ -415,7 +410,7 @@ AlignStateAtSelection::AlignStateAtSelection(HTMLEditor& aHTMLEditor,
       }
     }
 
-    if (!HTMLEditUtils::SupportsAlignAttr(*containerElement)) {
+    if (!HTMLEditUtils::IsAlignAttrSupported(*containerElement)) {
       continue;
     }
 
@@ -682,7 +677,7 @@ nsresult ParagraphStateAtSelection::CollectEditableFormatNodesInSelection(
 
   // Pre-process our list of nodes
   for (size_t index : Reversed(IntegerRange(aArrayOfContents.Length()))) {
-    OwningNonNull<nsIContent> content = aArrayOfContents[index];
+    const OwningNonNull<nsIContent> content = aArrayOfContents[index];
 
     // Remove all non-editable nodes.  Leave them be.
     if (!EditorUtils::IsEditableContent(content, EditorType::HTML)) {
@@ -693,9 +688,9 @@ nsresult ParagraphStateAtSelection::CollectEditableFormatNodesInSelection(
     // Scan for table elements.  If we find table elements other than table,
     // replace it with a list of any editable non-table content.  Ditto for
     // list elements.
-    if (HTMLEditUtils::IsAnyTableElement(content) ||
-        HTMLEditUtils::IsAnyListElement(content) ||
-        HTMLEditUtils::IsListItem(content)) {
+    if (HTMLEditUtils::IsAnyTableElementExceptColumnElement(content) ||
+        HTMLEditUtils::IsListElement(*content) ||
+        HTMLEditUtils::IsListItemElement(*content)) {
       aArrayOfContents.RemoveElementAt(index);
       HTMLEditUtils::CollectChildren(
           content, aArrayOfContents, index,

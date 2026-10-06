@@ -1,0 +1,27 @@
+{
+  "label": "docs.google.com",
+  "bugs": {
+    "1836872": {
+      "issue": "broken-layout",
+      "matches": ["*://docs.google.com/document/*"]
+    }
+  },
+  "css": {
+    "fix_inaccessible_menus": "/* font family sub-menus */ [class='goog-menu goog-menu-vertical'], /* font style sub-menus */ .goog-menu.apps-menu-hide-mnemonics { margin-inline-start: -20px; } /* sort options on recent docs page (bz2009417) */ .docsshared-menu-bubble [class='goog-menu goog-menu-vertical'], .goog-menu.apps-menu-hide-mnemonics { margin-inline-start: auto; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "max_version": 150,
+      "css": ["fix_inaccessible_menus"]
+    },
+    {
+      "platforms": ["desktop"],
+      "min_version": 151,
+      "pref_check": {
+        "layout.css.fake-webkit-scrollbar.enabled": false
+      },
+      "css": ["fix_inaccessible_menus"]
+    }
+  ]
+}

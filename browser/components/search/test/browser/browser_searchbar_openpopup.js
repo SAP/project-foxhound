@@ -35,6 +35,14 @@ let goButton;
 let engine;
 
 add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      // Force settings redesign to false, so that `hideOneOffButton` will correctly
+      // work for the time being.
+      ["browser.settings-redesign.enabled", false],
+    ],
+  });
+
   searchbar = await gCUITestUtils.addSearchBar();
   textbox = searchbar.textbox;
   searchIcon = searchbar.querySelector(".searchbar-search-button");
@@ -209,8 +217,8 @@ add_task(async function click_opens_popup() {
 
 add_task(async function open_empty_hiddenOneOffs() {
   // Disable all the engines but the current one and check the oneoffs.
-  let defaultEngine = await Services.search.getDefault();
-  let engines = (await Services.search.getVisibleEngines()).filter(
+  let defaultEngine = await SearchService.getDefault();
+  let engines = (await SearchService.getVisibleEngines()).filter(
     e => e.name != defaultEngine.name
   );
 

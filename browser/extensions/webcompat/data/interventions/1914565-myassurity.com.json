@@ -1,0 +1,15 @@
+{
+  "label": "myassurity.com",
+  "bugs": {
+    "1914565": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://myassurity.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

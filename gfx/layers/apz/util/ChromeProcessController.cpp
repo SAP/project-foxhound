@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,7 +20,6 @@
 #include "mozilla/layers/RepaintRequest.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsLayoutUtils.h"
-#include "nsView.h"
 
 static mozilla::LazyLogModule sApzChromeLog("apz.cc.chrome");
 
@@ -113,10 +110,8 @@ PresShell* ChromeProcessController::GetPresShell() const {
   if (!mWidget) {
     return nullptr;
   }
-  if (nsView* view = nsView::GetViewFor(mWidget)) {
-    return view->GetPresShell();
-  }
-  return nullptr;
+  auto* frame = mWidget->GetFrame();
+  return frame ? frame->PresShell() : nullptr;
 }
 
 dom::Document* ChromeProcessController::GetRootDocument() const {
@@ -148,7 +143,7 @@ void ChromeProcessController::HandleDoubleTap(
   MOZ_ASSERT(mUIThread->IsOnCurrentThread());
 
   RefPtr<dom::Document> document = GetRootContentDocument(aGuid.mScrollId);
-  if (!document.get()) {
+  if (!document) {
     return;
   }
 
@@ -344,14 +339,9 @@ void ChromeProcessController::NotifyAsyncAutoscrollRejected(
 
 void ChromeProcessController::CancelAutoscroll(
     const ScrollableLayerGuid& aGuid) {
-  if (!mUIThread->IsOnCurrentThread()) {
-    mUIThread->Dispatch(NewRunnableMethod<ScrollableLayerGuid>(
-        "layers::ChromeProcessController::CancelAutoscroll", this,
-        &ChromeProcessController::CancelAutoscroll, aGuid));
-    return;
-  }
-
-  APZCCallbackHelper::CancelAutoscroll(aGuid.mScrollId);
+  mUIThread->Dispatch(NewRunnableFunction("layers::CancelAutoscroll",
+                                          &APZCCallbackHelper::CancelAutoscroll,
+                                          aGuid.mScrollId));
 }
 
 void ChromeProcessController::NotifyScaleGestureComplete(
@@ -375,14 +365,5 @@ void ChromeProcessController::NotifyScaleGestureComplete(
 }
 
 nsIFrame* ChromeProcessController::GetWidgetFrame() const {
-  if (!mWidget) {
-    return nullptr;
-  }
-
-  nsView* view = nsView::GetViewFor(mWidget);
-  if (!view) {
-    return nullptr;
-  }
-
-  return view->GetFrame();
+  return mWidget ? mWidget->GetFrame() : nullptr;
 }

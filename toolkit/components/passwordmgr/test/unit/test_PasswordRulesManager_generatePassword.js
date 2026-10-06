@@ -118,7 +118,7 @@ add_task(async function test_verify_password_rules() {
  * This is because a password can still be valid even if there is not a character from
  * the "allowed" list.
  * If a character, or character class, is required, then it should be marked as such.
- * */
+ */
 
 add_task(async function test_generatePassword_many_rules() {
   // Force password generation to be enabled.

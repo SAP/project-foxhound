@@ -46,7 +46,7 @@ See the description for debugger-metrics. This test is exactly the same but appl
 
 ## server.pool
 
-server.pool measures the performance of the DevTools `Pool` [class](https://searchfox.org/mozilla-central/source/devtools/shared/protocol/Pool.js) which is intensively used by the DevTools server. This test is a mochitest which can be executed with:
+server.pool measures the performance of the DevTools `Pool` [class](https://searchfox.org/firefox-main/source/devtools/shared/protocol/Pool.js) which is intensively used by the DevTools server. This test is a mochitest which can be executed with:
 
 ```bash
 ./mach test devtools/client/framework/test/metrics/browser_metrics_pool.js --headless
@@ -64,7 +64,7 @@ toolbox:parent-process measures the number of objects allocated by DevTools afte
 ./mach test devtools/client/framework/test/allocations/browser_allocations_toolbox.js --headless
 ```
 
-The test will record allocations while opening and closing the Toolbox several times. The `PERFHERDER_DATA` entry in the logs will contain 3 measures. objects-with-stacks is the number of allocated objects for which the allocation site is known and should be easy to fix for developers. You can refer to the [allocation tests documentation](https://searchfox.org/mozilla-central/source/devtools/client/framework/test/allocations/docs/index.md) for a more detailed description of this test and how to use it to investigate and fix memory issues.
+The test will record allocations while opening and closing the Toolbox several times. The `PERFHERDER_DATA` entry in the logs will contain 3 measures. objects-with-stacks is the number of allocated objects for which the allocation site is known and should be easy to fix for developers. You can refer to the [allocation tests documentation](https://searchfox.org/firefox-main/source/devtools/client/framework/test/allocations/docs/index.md) for a more detailed description of this test and how to use it to investigate and fix memory issues.
 
 A regression here may indicate a leak, for instance a module which no longer cleans its dependencies. It can also indicate that DevTools is loading more singletons or other objects which are not tied to the lifecycle of the DevTools objects.
 

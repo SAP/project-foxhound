@@ -92,10 +92,10 @@ async function launchTaskbarTab(aContext) {
         Services.scriptSecurityManager.DEFAULT_USER_CONTEXT_ID;
     }
 
-    taskbarTab = await lazy.TaskbarTabs.findOrCreateTaskbarTab(
+    ({ taskbarTab } = await lazy.TaskbarTabs.findOrCreateTaskbarTab(
       aContext.url,
       aContext.userContextId
-    );
+    ));
   }
 
   await lazy.TaskbarTabs.openWindow(taskbarTab);

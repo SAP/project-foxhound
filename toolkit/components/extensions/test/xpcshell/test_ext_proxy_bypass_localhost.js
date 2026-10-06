@@ -4,7 +4,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "authManager",
   "@mozilla.org/network/http-auth-manager;1",
-  "nsIHttpAuthManager"
+  Ci.nsIHttpAuthManager
 );
 
 const gOverride = Cc["@mozilla.org/network/native-dns-override;1"].getService(

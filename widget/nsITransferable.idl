@@ -1,5 +1,4 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,7 +25,6 @@ interface nsIReferrerInfo;
 #define kRTFMime                    "text/rtf"
 #define kMozTextInternal            "text/x-moz-text-internal"  // text data which isn't suppoed to be parsed by other apps.
 #define kHTMLMime                   "text/html"
-#define kAOLMailMime                "AOLMAIL"
 #define kPNGImageMime               "image/png"
 #define kJPEGImageMime              "image/jpeg"
 #define kJPGImageMime               "image/jpg"

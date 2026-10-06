@@ -1,0 +1,15 @@
+{
+  "label": "testbook.com",
+  "bugs": {
+    "1935598": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://testbook.com/*/lesson/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

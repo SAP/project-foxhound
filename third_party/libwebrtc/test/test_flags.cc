@@ -15,13 +15,6 @@
 
 #include "absl/flags/flag.h"
 
-ABSL_FLAG(std::string,
-          force_fieldtrials,
-          "",
-          "Field trials control experimental feature code which can be forced. "
-          "E.g. running with --force_fieldtrials=WebRTC-FooFeature/Enable/"
-          " will assign the group Enable to field trial WebRTC-FooFeature.");
-
 ABSL_FLAG(std::vector<std::string>,
           plot,
           {},
@@ -36,19 +29,6 @@ ABSL_FLAG(
     "Path where the perf results should be stored in proto format described "
     "described by histogram.proto in "
     "https://chromium.googlesource.com/catapult/.");
-
-ABSL_FLAG(std::string,
-          webrtc_test_metrics_output_path,
-          "",
-          "Path where the test perf metrics should be stored using "
-          "api/test/metrics/metric.proto proto format. File will contain "
-          "MetricsSet as a root proto. On iOS, this MUST be a file name "
-          "and the file will be stored under NSDocumentDirectory.");
-
-ABSL_FLAG(bool,
-          export_perf_results_new_api,
-          false,
-          "Tells to initialize new API for exporting performance metrics");
 
 ABSL_FLAG(bool,
           webrtc_quick_perf_test,

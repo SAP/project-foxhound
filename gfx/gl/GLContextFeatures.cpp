@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -90,6 +89,16 @@ static const FeatureInfo sFeatureInfoArr[] = {
      GLESVersion::ES3,
      GLContext::ARB_copy_buffer,
      {GLContext::Extensions_End}},
+    {"copy_image",
+     GLVersion::GL4_3,
+     GLESVersion::ES3_2,
+     GLContext::ARB_copy_image,
+     {GLContext::Extensions_End}},
+    {"debug",
+     GLVersion::GL4_3,
+     GLESVersion::ES3_2,
+     GLContext::Extension_None,
+     {GLContext::KHR_debug, GLContext::Extensions_End}},
     {"depth_clamp",
      GLVersion::GL3_2,
      GLESVersion::NONE,

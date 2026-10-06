@@ -10,17 +10,17 @@
 
 #include "modules/audio_coding/neteq/comfort_noise.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <span>
 
-#include "api/array_view.h"
 #include "modules/audio_coding/codecs/cng/webrtc_cng.h"
 #include "modules/audio_coding/neteq/audio_multi_vector.h"
 #include "modules/audio_coding/neteq/audio_vector.h"
 #include "modules/audio_coding/neteq/decoder_database.h"
 #include "modules/audio_coding/neteq/dsp_helper.h"
 #include "modules/audio_coding/neteq/sync_buffer.h"
-#include "rtc_base/buffer.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 
@@ -67,8 +67,8 @@ int ComfortNoise::Generate(size_t requested_length, AudioMultiVector* output) {
   }
 
   std::unique_ptr<int16_t[]> temp(new int16_t[number_of_samples]);
-  if (!cng_decoder->Generate(
-          rtc::ArrayView<int16_t>(temp.get(), number_of_samples), new_period)) {
+  if (!cng_decoder->Generate(std::span<int16_t>(temp.get(), number_of_samples),
+                             new_period)) {
     // Error returned.
     output->Zeros(requested_length);
     RTC_LOG(LS_ERROR)

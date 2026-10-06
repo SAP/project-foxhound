@@ -1,0 +1,200 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Test Prefetch Cache: Vary and Cross-Origin Behavior</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+<p id="display"></p>
+<pre id="test">
+<script type="application/javascript">
+
+SimpleTest.waitForExplicitFinish();
+
+const SJS_PATH = "/tests/netwerk/test/mochitests/prefetch_cache.sjs";
+
+function getRequestCount(key) {
+  return fetch(`${SJS_PATH}?key=${key}&mode=count`)
+    .then(r => r.text())
+    .then(t => parseInt(t, 10));
+}
+
+function resetCount(key) {
+  return fetch(`${SJS_PATH}?key=${key}&mode=reset`);
+}
+
+// True when the test runs inside a cross-origin iframe (mochitest-plain-xorig).
+// In that 3p context, fetch()/XHR get a "FETCH" cache enhanceID that
+// <link rel=prefetch> does not (network.fetch.cache_partition_cross_origin in
+// nsHttpChannel), so prefetch and fetch land in distinct cache scopes.
+function isThirdPartyContext() {
+  try {
+    return window.top.location.origin !== window.location.origin;
+  } catch (e) {
+    return true;
+  }
+}
+
+function prefetchAndWait(url) {
+  return new Promise((resolve, reject) => {
+    const link = document.createElement("link");
+    link.rel = "prefetch";
+    link.href = url;
+    link.addEventListener("load", () => resolve(link));
+    link.addEventListener("error", () => reject(new Error("prefetch failed")));
+    document.head.appendChild(link);
+  });
+}
+
+function loadScript(url) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = url;
+    script.addEventListener("load", () => {
+      script.remove();
+      resolve();
+    });
+    script.addEventListener("error", () => {
+      script.remove();
+      reject(new Error("script load failed"));
+    });
+    document.body.appendChild(script);
+  });
+}
+
+// Vary: Authorization
+// 1p context: matching request (no Authorization) reuses the prefetch entry;
+//   fetch with an explicit Authorization header re-fetches.
+// 3p context: fetch()/XHR get a "FETCH" cache enhanceID that prefetch lacks
+//   (network.fetch.cache_partition_cross_origin in nsHttpChannel), so both
+//   fetches miss the prefetch entry regardless of Vary.
+async function testPrefetchVaryReuse() {
+  const key = "vary-" + Date.now();
+  const url = `${SJS_PATH}?key=${key}&type=application/javascript` +
+              `&cache-control=max-age%3D10000&vary=Authorization`;
+  const inThirdParty = isThirdPartyContext();
+
+  await resetCount(key);
+
+  const link = await prefetchAndWait(url);
+
+  let count = await getRequestCount(key);
+  is(count, 1, "Vary: prefetch made exactly one request");
+
+  await fetch(url);
+  count = await getRequestCount(key);
+  if (inThirdParty) {
+    is(count, 2, "Vary (3p): fetch did not reuse prefetch entry (partitioned cache scope)");
+  } else {
+    is(count, 1, "Vary: matching request reused cache entry");
+  }
+
+  await fetch(url, { headers: { "Authorization": "Bearer test-token" } });
+  count = await getRequestCount(key);
+  if (inThirdParty) {
+    is(count, 3, "Vary (3p): Authorization fetch made another request");
+  } else {
+    is(count, 2, "Vary: different Authorization re-fetched from origin");
+  }
+
+  link.remove();
+}
+
+// Resolves when the cross-origin popup posts back via SJS notify=opener.
+function waitForOpenerMessage(key) {
+  return new Promise(resolve => {
+    function onMessage(event) {
+      if (
+        event.data &&
+        event.data.type === "prefetch-nav-loaded" &&
+        event.data.key === key
+      ) {
+        window.removeEventListener("message", onMessage);
+        resolve(event.data);
+      }
+    }
+    window.addEventListener("message", onMessage);
+  });
+}
+
+// Cross-origin prefetch is cached and reused by same-first-party subresource loads.
+async function testPrefetchCrossOriginBaseline() {
+  const key = "x-origin-" + Date.now();
+  // Mochitests run from mochi.test:8888; example.com is a different origin.
+  const xOriginUrl =
+    `https://example.com${SJS_PATH}?key=${key}&type=application/javascript` +
+    `&cache-control=max-age%3D10000`;
+
+  await resetCount(key);
+
+  const link = await prefetchAndWait(xOriginUrl);
+
+  let count = await getRequestCount(key);
+  is(count, 1, "cross-origin: prefetch made exactly one request");
+
+  await loadScript(xOriginUrl);
+
+  count = await getRequestCount(key);
+  is(count, 1, "cross-origin: subsequent script load reused prefetch entry");
+
+  link.remove();
+}
+
+// Prefetch entry is cached but not reused on cross-origin top-level
+// navigation: the new top-level lands in a different cache partition.
+async function testPrefetchCrossOriginNavigation() {
+  const key = "x-origin-nav-" + Date.now();
+  const xOriginUrl =
+    `https://example.com${SJS_PATH}?key=${key}&type=text/html` +
+    `&cache-control=max-age%3D10000&notify=opener`;
+
+  await resetCount(key);
+
+  const link = await prefetchAndWait(xOriginUrl);
+
+  let count = await getRequestCount(key);
+  is(count, 1, "cross-origin nav: prefetch made exactly one request");
+
+  const messagePromise = waitForOpenerMessage(key);
+  // mochitest-plain: window.open is the only way to get a new top-level
+  // browsing context (navigating the current window would unload the test).
+  const popup = window.open(xOriginUrl);
+  const message = await messagePromise;
+  popup.close();
+
+  count = await getRequestCount(key);
+  is(
+    count,
+    2,
+    "cross-origin nav: top-level navigation re-fetched (prefetch entry not reused across partitions)"
+  );
+  is(
+    message.count,
+    2,
+    "cross-origin nav: popup body reflects the re-fetched response"
+  );
+
+  link.remove();
+}
+
+async function runTests() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["network.prefetch-next", true],
+    ],
+  });
+
+  await testPrefetchVaryReuse();
+  await testPrefetchCrossOriginBaseline();
+  await testPrefetchCrossOriginNavigation();
+
+  SimpleTest.finish();
+}
+
+runTests();
+
+</script>
+</pre>
+</body>
+</html>

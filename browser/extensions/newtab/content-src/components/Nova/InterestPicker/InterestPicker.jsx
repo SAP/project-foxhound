@@ -1,0 +1,180 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+// @nova-cleanup(move-directory): Move to components/DiscoveryStreamComponents/InterestPicker/ after Nova ships
+
+import React, { useState, useRef, useCallback } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
+import { useIntersectionObserver } from "../../../lib/utils";
+const PREF_VISIBLE_SECTIONS =
+  "discoverystream.sections.interestPicker.visibleSections";
+
+/**
+ * Shows a list of recommended topics with visual indication whether
+ * the user follows some of the topics (active, blue, selected topics)
+ * or is yet to do so (neutrally-coloured topics with a "plus" button).
+ *
+ * @returns {React.Element}
+ */
+
+function InterestPicker({ title, subtitle, interests, receivedFeedRank }) {
+  const dispatch = useDispatch();
+  const focusedRef = useRef(null);
+  const focusRef = useRef(null);
+  const [focusedIndex, setFocusedIndex] = useState(0);
+  const prefs = useSelector(state => state.Prefs.values);
+  const { sectionPersonalization } = useSelector(
+    state => state.DiscoveryStream
+  );
+  const visibleSections = prefs[PREF_VISIBLE_SECTIONS]?.split(",")
+    .map(item => item.trim())
+    .filter(item => item);
+
+  const handleIntersection = useCallback(() => {
+    dispatch(
+      ac.AlsoToMain({
+        type: at.INLINE_SELECTION_IMPRESSION,
+        data: {
+          section_position: receivedFeedRank,
+        },
+      })
+    );
+  }, [dispatch, receivedFeedRank]);
+
+  const ref = useIntersectionObserver(handleIntersection);
+
+  const onKeyDown = useCallback(e => {
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      // Arrow direction should match visual navigation direction in RTL
+      const isRTL = document.dir === "rtl";
+      const navigateToPrevious = isRTL
+        ? e.key === "ArrowRight"
+        : e.key === "ArrowLeft";
+
+      const target = navigateToPrevious
+        ? focusedRef.current?.previousSibling
+        : focusedRef.current?.nextSibling;
+
+      const button = target?.querySelector("moz-button");
+      if (button) {
+        button.tabIndex = 0;
+        button.focus();
+      }
+    }
+  }, []);
+
+  function onWrapperFocus() {
+    focusRef.current?.addEventListener("keydown", onKeyDown);
+  }
+  function onWrapperBlur() {
+    focusRef.current?.removeEventListener("keydown", onKeyDown);
+  }
+  function onItemFocus(index) {
+    setFocusedIndex(index);
+  }
+
+  // Updates user preferences as they follow or unfollow topics
+  // by selecting them from the list
+  function handleClick(topic, isChecked, index) {
+    let updatedSections = { ...sectionPersonalization };
+    if (isChecked) {
+      updatedSections[topic] = {
+        isFollowed: true,
+        isBlocked: false,
+        followedAt: new Date().toISOString(),
+      };
+      if (!visibleSections.includes(topic)) {
+        // add section to visible sections and place after the inline picker
+        // subtract 1 from the rank so that it is normalized with array index
+        visibleSections.splice(receivedFeedRank - 1, 0, topic);
+        dispatch(ac.SetPref(PREF_VISIBLE_SECTIONS, visibleSections.join(", ")));
+      }
+    } else {
+      delete updatedSections[topic];
+    }
+    dispatch(
+      ac.OnlyToMain({
+        type: at.INLINE_SELECTION_CLICK,
+        data: {
+          topic,
+          is_followed: isChecked,
+          topic_position: index,
+          section_position: receivedFeedRank,
+        },
+      })
+    );
+    dispatch(
+      ac.AlsoToMain({
+        type: at.SECTION_PERSONALIZATION_SET,
+        data: updatedSections,
+      })
+    );
+  }
+
+  return (
+    <section
+      className="inline-selection-wrapper ds-section"
+      aria-labelledby="interest-picker-title"
+      ref={el => {
+        ref.current = [el];
+      }}
+    >
+      <div className="section-heading">
+        <div className="section-title-wrapper">
+          <h2 id="interest-picker-title" className="section-title">
+            {title}
+          </h2>
+          <p className="section-subtitle">{subtitle}</p>
+        </div>
+      </div>
+      <ul
+        className="topic-list"
+        role="group"
+        onFocus={onWrapperFocus}
+        onBlur={onWrapperBlur}
+        ref={focusRef}
+      >
+        {interests
+          .filter(interest => interest.followable !== false)
+          .map((interest, index) => {
+            const checked =
+              sectionPersonalization[interest.sectionId]?.isFollowed;
+            return (
+              <li
+                key={interest.sectionId}
+                ref={index === focusedIndex ? focusedRef : null}
+              >
+                {/* TODO: switch unchecked to type="neutral" once that type is added to moz-button */}
+                <moz-button
+                  type={checked ? "primary" : "default"}
+                  iconSrc={
+                    checked
+                      ? "chrome://global/skin/icons/check-filled.svg"
+                      : "chrome://newtab/content/data/content/assets/glyph-add-circle-fill-16.svg"
+                  }
+                  aria-pressed={String(!!checked)}
+                  tabIndex={index === focusedIndex ? 0 : -1}
+                  onClick={() =>
+                    handleClick(interest.sectionId, !checked, index)
+                  }
+                  onFocus={() => onItemFocus(index)}
+                >
+                  {interest.title || ""}
+                </moz-button>
+              </li>
+            );
+          })}
+      </ul>
+      <p className="learn-more-copy">
+        <a
+          href={prefs["support.url"]}
+          data-l10n-id="newtab-topic-selection-privacy-link"
+        />
+      </p>
+    </section>
+  );
+}
+
+export { InterestPicker };

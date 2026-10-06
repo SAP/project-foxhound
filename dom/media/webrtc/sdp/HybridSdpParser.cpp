@@ -1,19 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "sdp/HybridSdpParser.h"
-#include "sdp/SdpLog.h"
-#include "sdp/SdpPref.h"
-#include "sdp/SipccSdpParser.h"
-#include "sdp/RsdparsaSdpParser.h"
-#include "sdp/ParsingResultComparer.h"
 
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
-
-#include <unordered_map>
+#include "sdp/ParsingResultComparer.h"
+#include "sdp/RsdparsaSdpParser.h"
+#include "sdp/SdpLog.h"
+#include "sdp/SdpPref.h"
+#include "sdp/SipccSdpParser.h"
 
 namespace mozilla {
 
@@ -31,15 +27,15 @@ HybridSdpParser::HybridSdpParser()
       mFailover(SdpPref::Failover()) {
   MOZ_ASSERT(!(mSecondary && mFailover),
              "Can not have both a secondary and failover parser!");
-  MOZ_LOG(SdpLog, LogLevel::Info,
-          ("Primary SDP Parser: %s", mPrimary->Name().c_str()));
+  MOZ_LOG_FMT(SdpLog, LogLevel::Info, "Primary SDP Parser: {}",
+              mPrimary->Name().c_str());
   mSecondary.apply([](auto& parser) {
-    MOZ_LOG(SdpLog, LogLevel::Info,
-            ("Secondary SDP Logger: %s", parser->Name().c_str()));
+    MOZ_LOG_FMT(SdpLog, LogLevel::Info, "Secondary SDP Logger: {}",
+                parser->Name().c_str());
   });
   mFailover.apply([](auto& parser) {
-    MOZ_LOG(SdpLog, LogLevel::Info,
-            ("Failover SDP Logger: %s", parser->Name().c_str()));
+    MOZ_LOG_FMT(SdpLog, LogLevel::Info, "Failover SDP Logger: {}",
+                parser->Name().c_str());
   });
 }
 

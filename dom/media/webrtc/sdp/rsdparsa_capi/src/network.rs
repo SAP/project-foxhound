@@ -2,16 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-extern crate nserror;
-
-use std::ffi::{CStr, CString};
+use std::fmt::Write;
 use std::net::IpAddr;
-use std::os::raw::c_char;
 
+use nsstring::nsACString;
 use rsdparsa::address::{Address, AddressType, AddressTyped, ExplicitlyTypedAddress};
 use rsdparsa::{SdpBandwidth, SdpConnection, SdpOrigin};
 use std::convert::TryFrom;
-use types::{StringView, NULL_STRING};
+use types::StringView;
 
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq)]
@@ -71,6 +69,7 @@ pub fn get_octets(addr: &IpAddr) -> [u8; 16] {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct RustAddress {
     ip_address: [u8; 50],
     fqdn: StringView,
@@ -100,13 +99,14 @@ impl<'a> From<&'a IpAddr> for RustAddress {
         }
         Self {
             ip_address: c_addr,
-            fqdn: NULL_STRING,
+            fqdn: StringView::empty(),
             is_fqdn: false,
         }
     }
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct RustExplicitlyTypedAddress {
     address_type: RustAddressType,
     address: RustAddress,
@@ -118,7 +118,7 @@ impl Default for RustExplicitlyTypedAddress {
             address_type: RustAddressType::IP4,
             address: RustAddress {
                 ip_address: [0; 50],
-                fqdn: NULL_STRING,
+                fqdn: StringView::empty(),
                 is_fqdn: false,
             },
         }
@@ -206,13 +206,10 @@ fn bandwidth_value(bandwidth: &SdpBandwidth) -> u32 {
     }
 }
 
-pub unsafe fn get_bandwidth(bandwidths: &Vec<SdpBandwidth>, bandwidth_type: *const c_char) -> u32 {
-    let bw_type = match CStr::from_ptr(bandwidth_type).to_str() {
-        Ok(string) => string,
-        Err(_) => return 0,
-    };
+pub fn get_bandwidth(bandwidths: &Vec<SdpBandwidth>, bandwidth_type: &nsACString) -> u32 {
+    let bw_type = bandwidth_type.to_utf8();
     for bandwidth in bandwidths.iter() {
-        if bandwidth_match(bw_type, bandwidth) {
+        if bandwidth_match(&bw_type, bandwidth) {
             return bandwidth_value(bandwidth);
         }
     }
@@ -220,43 +217,19 @@ pub unsafe fn get_bandwidth(bandwidths: &Vec<SdpBandwidth>, bandwidth_type: *con
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_serialize_bandwidth(bw: *const Vec<SdpBandwidth>) -> *mut c_char {
-    let mut builder = String::new();
-    for bandwidth in (*bw).iter() {
+pub extern "C" fn sdp_serialize_bandwidth(bw: &Vec<SdpBandwidth>, out: &mut nsACString) {
+    for bandwidth in bw.iter() {
         match *bandwidth {
-            SdpBandwidth::As(val) => {
-                builder.push_str("b=AS:");
-                builder.push_str(&val.to_string());
-                builder.push_str("\r\n");
-            }
-            SdpBandwidth::Ct(val) => {
-                builder.push_str("b=CT:");
-                builder.push_str(&val.to_string());
-                builder.push_str("\r\n");
-            }
-            SdpBandwidth::Tias(val) => {
-                builder.push_str("b=TIAS:");
-                builder.push_str(&val.to_string());
-                builder.push_str("\r\n");
-            }
-            SdpBandwidth::Unknown(ref name, val) => {
-                builder.push_str("b=");
-                builder.push_str(name.as_str());
-                builder.push(':');
-                builder.push_str(&val.to_string());
-                builder.push_str("\r\n");
-            }
+            SdpBandwidth::As(val) => write!(out, "b=AS:{}\r\n", val),
+            SdpBandwidth::Ct(val) => write!(out, "b=CT:{}\r\n", val),
+            SdpBandwidth::Tias(val) => write!(out, "b=TIAS:{}\r\n", val),
+            SdpBandwidth::Unknown(ref name, val) => write!(out, "b={}:{}\r\n", name, val),
         }
+        .unwrap()
     }
-    CString::from_vec_unchecked(builder.into_bytes()).into_raw()
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn sdp_free_string(s: *mut c_char) {
-    drop(CString::from_raw(s));
-}
-
-pub unsafe fn origin_view_helper(origin: &SdpOrigin) -> RustSdpOrigin {
+pub fn origin_view_helper(origin: &SdpOrigin) -> RustSdpOrigin {
     RustSdpOrigin {
         username: StringView::from(origin.username.as_str()),
         session_id: origin.session_id,

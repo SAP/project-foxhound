@@ -11,7 +11,7 @@
 #import <Foundation/Foundation.h>
 #import <OCMock/OCMock.h>
 
-#include "rtc_base/gunit.h"
+#include "test/gtest.h"
 
 // Width and height don't play any role so lets use predefined values throughout
 // the tests.
@@ -21,12 +21,12 @@ static const int kFormatHeight = 987;
 // Hardcoded framrate to be used throughout the tests.
 static const int kFramerate = 30;
 
-// Same width and height is used so it's ok to expect same cricket::VideoFormat
-static cricket::VideoFormat expectedFormat =
-    cricket::VideoFormat(kFormatWidth,
-                         kFormatHeight,
-                         cricket::VideoFormat::FpsToInterval(kFramerate),
-                         cricket::FOURCC_NV12);
+// Same width and height is used so it's ok to expect same webrtc::VideoFormat
+static webrtc::VideoFormat expectedFormat =
+    webrtc::VideoFormat(kFormatWidth,
+                        kFormatHeight,
+                        webrtc::VideoFormat::FpsToInterval(kFramerate),
+                        webrtc::FOURCC_NV12);
 
 // Mock class for AVCaptureDeviceFormat.
 // Custom implementation needed because OCMock cannot handle the
@@ -118,7 +118,7 @@ TEST(AVFormatMapperTest, SuportedCricketFormatsWithInvalidFramerateFormats) {
   OCMStub([mockDevice formats]).andReturn(@[ mock ]);
 
   // when
-  std::set<cricket::VideoFormat> result =
+  std::set<webrtc::VideoFormat> result =
       webrtc::GetSupportedVideoFormatsForDevice(mockDevice);
 
   // then
@@ -135,7 +135,7 @@ TEST(AVFormatMapperTest, SuportedCricketFormatsWithInvalidFormats) {
   OCMStub([mockDevice formats]).andReturn(@[ mock ]);
 
   // when
-  std::set<cricket::VideoFormat> result =
+  std::set<webrtc::VideoFormat> result =
       webrtc::GetSupportedVideoFormatsForDevice(mockDevice);
 
   // then
@@ -151,7 +151,7 @@ TEST(AVFormatMapperTest, SuportedCricketFormats) {
   OCMStub([mockDevice formats]).andReturn(@[ mock ]);
 
   // when
-  std::set<cricket::VideoFormat> result =
+  std::set<webrtc::VideoFormat> result =
       webrtc::GetSupportedVideoFormatsForDevice(mockDevice);
 
   // then
@@ -202,8 +202,8 @@ TEST(AVFormatMapperTest, SetFormatWhenDeviceCannotLock) {
   [[[mockDevice stub] andReturn:@[]] formats];
 
   // when
-  bool resultFormat = webrtc::SetFormatForCaptureDevice(
-      mockDevice, nil, cricket::VideoFormat());
+  bool resultFormat =
+      webrtc::SetFormatForCaptureDevice(mockDevice, nil, webrtc::VideoFormat());
 
   // then
   EXPECT_FALSE(resultFormat);
@@ -222,8 +222,8 @@ TEST(AVFormatMapperTest, SetFormatWhenFormatIsIncompatible) {
   OCMExpect([mockDevice unlockForConfiguration]);
 
   // when
-  bool resultFormat = webrtc::SetFormatForCaptureDevice(
-      mockDevice, nil, cricket::VideoFormat());
+  bool resultFormat =
+      webrtc::SetFormatForCaptureDevice(mockDevice, nil, webrtc::VideoFormat());
 
   // then
   EXPECT_FALSE(resultFormat);

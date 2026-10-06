@@ -1,0 +1,24 @@
+{
+  "main": {
+    "content": {
+      "width": {
+        "value": {
+          "brand": {
+            "default": "664px"
+          }
+        }
+      }
+    }
+  },
+  "space": {
+    "block": {
+      "start": {
+        "value": {
+          "brand": {
+            "default": "64px"
+          }
+        }
+      }
+    }
+  }
+}

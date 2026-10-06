@@ -68,9 +68,9 @@ async function testColorValueSpanClickWithoutNameChange(propEditor, view) {
     "blur valueSpan editor to trigger ruleview-changed event and prevent " +
       "having pending request"
   );
-  const onRuleViewChanged = view.once("ruleview-changed");
+  const onModifications = view.once("property-value-updated");
   editor.input.blur();
-  await onRuleViewChanged;
+  await onModifications;
 }
 
 async function testColorValueSpanClickAfterNameChange(propEditor, view) {
@@ -87,7 +87,7 @@ async function testColorValueSpanClickAfterNameChange(propEditor, view) {
   );
   editor.input.value = "border-color";
 
-  let onRuleViewChanged = view.once("ruleview-changed");
+  const onRuleViewChanged = view.once("ruleview-changed");
   const onPropertyValueUpdate = view.once("property-value-updated");
 
   info("blur propEditor.nameSpan by clicking on the color span");
@@ -113,7 +113,7 @@ async function testColorValueSpanClickAfterNameChange(propEditor, view) {
     "blur valueSpan editor to trigger ruleview-changed event and prevent " +
       "having pending request"
   );
-  onRuleViewChanged = view.once("ruleview-changed");
+  const onModifications = view.once("property-value-updated");
   editor.input.blur();
-  await onRuleViewChanged;
+  await onModifications;
 }

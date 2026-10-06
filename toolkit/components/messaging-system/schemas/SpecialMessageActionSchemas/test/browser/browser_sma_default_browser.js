@@ -10,7 +10,7 @@ add_task(async function test_set_default_browser() {
   await SMATestUtils.executeAndValidateAction(
     { type: "SET_DEFAULT_BROWSER" },
     {
-      ownerGlobal: {
+      documentGlobal: {
         getShellService: () => ({
           setAsDefault: stub,
         }),

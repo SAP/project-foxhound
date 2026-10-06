@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This test is based on
      https://searchfox.org/mozilla-central/rev/25d26b0a62cc5bb4aa3bb90a11f3b0b7c52859c4/gfx/layers/apz/test/mochitest/browser_test_position_sticky.js
 */

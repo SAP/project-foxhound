@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,15 +14,13 @@ namespace mozilla {
 nsresult GetSelectedCityInfo(nsAString& aCountryCode) {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
-  // Can be replaced with [[NSLocale currentLocale] countryCode] once we build
-  // with the 10.12 SDK.
-  id countryCode = [[NSLocale currentLocale] objectForKey:NSLocaleCountryCode];
+  NSString* countryCode = NSLocale.currentLocale.countryCode;
 
-  if (![countryCode isKindOfClass:[NSString class]]) {
+  if (!countryCode) {
     return NS_ERROR_FAILURE;
   }
 
-  mozilla::CopyNSStringToXPCOMString((NSString*)countryCode, aCountryCode);
+  mozilla::CopyNSStringToXPCOMString(countryCode, aCountryCode);
 
   return NS_OK;
 

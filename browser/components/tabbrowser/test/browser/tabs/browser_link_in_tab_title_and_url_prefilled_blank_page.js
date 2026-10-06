@@ -107,9 +107,10 @@ add_task(async function by_script() {
       tab: BLANK_TITLE,
       urlbar: UrlbarTestUtils.trimURL(BLANK_URL),
     },
-    async actionWhileLoading(onTabLoaded) {
-      info("Wait until loading the link target");
-      await onTabLoaded;
+    async actionWhileLoading(_onTabLoaded) {
+      // window.open("about:blank") will cause a synchronous load that cannot
+      // be catched by listeners attached afterwards
+      info("Skip waiting for link target to load");
     },
     finalState: {
       tab: BLANK_TITLE,

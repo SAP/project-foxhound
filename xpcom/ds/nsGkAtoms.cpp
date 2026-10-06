@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,8 +18,7 @@ extern constexpr GkAtoms gGkAtoms = {
 //   u"bb",
 //   u"Ccc",
 //
-#define GK_ATOM(name_, value_, hash_, is_ascii_lower_, type_, atom_type_) \
-  u"" value_,
+#define GK_ATOM(name_, value_, hash_, is_ascii_lower_) u"" value_,
 #include "nsGkAtomList.h"
 #undef GK_ATOM
     {
@@ -54,7 +51,7 @@ extern constexpr GkAtoms gGkAtoms = {
 //       offsetof(GkAtoms, Ccc_string),
 //     false),
 //
-#define GK_ATOM(name_, value_, hash_, is_ascii_lower_, type_, atom_type_)     \
+#define GK_ATOM(name_, value_, hash_, is_ascii_lower_)                        \
   nsStaticAtom(                                                               \
       sizeof(value_) - 1, hash_,                                              \
       offsetof(GkAtoms, mAtoms[static_cast<size_t>(GkAtoms::Atoms::name_)]) - \

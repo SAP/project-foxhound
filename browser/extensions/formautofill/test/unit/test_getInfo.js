@@ -155,10 +155,7 @@ const TESTCASES = [
                  <input id="targetElement" type="text">
                </form>`,
     elementId: "targetElement",
-    expectedReturnValue: [
-      "cc-number",
-      { fathomLabel: "cc-number", fathomConfidence: 1 },
-    ],
+    expectedReturnValue: ["cc-number", { fathomConfidence: 1 }],
   },
   {
     description: "Identify credit card type field",
@@ -227,6 +224,7 @@ TESTCASES.forEach(testcase => {
 
     let element = doc.getElementById(testcase.elementId);
     let value = FormAutofillHeuristics.inferFieldInfo(element);
+    delete value[2]; // ignore extra argument
 
     Assert.deepEqual(value, testcase.expectedReturnValue);
     LabelUtils.clearLabelMap();
@@ -275,6 +273,7 @@ add_task(async function test_regexp_list() {
 
     let element = doc.getElementById(testcase.elementId);
     let value = FormAutofillHeuristics.inferFieldInfo(element);
+    delete value[2]; // ignore extra argument
 
     Assert.deepEqual(value, testcase.expectedReturnValue, label);
   }
@@ -298,13 +297,14 @@ add_task(async function test_autofill_creditCards_autocomplete_off_pref() {
   );
   let element = doc.getElementById("targetElement");
   let value = FormAutofillHeuristics.inferFieldInfo(element);
+  delete value[2]; // ignore extra argument
 
   Assert.deepEqual(value, expected);
   document = `<form>
                 <label for="targetElement"> Card Number</label>
                 <input id="targetElement" type="text">
               </form>`;
-  expected = ["cc-number", { fathomLabel: "cc-number", fathomConfidence: 1 }];
+  expected = ["cc-number", { fathomConfidence: 1 }];
   info(
     `Set pref so that credit card autofill does not respect autocomplete="off"`
   );
@@ -318,6 +318,7 @@ add_task(async function test_autofill_creditCards_autocomplete_off_pref() {
   );
   element = doc.getElementById("targetElement");
   value = FormAutofillHeuristics.inferFieldInfo(element);
+  delete value[2]; // ignore extra argument
 
   Assert.deepEqual(value, expected);
   Services.prefs.clearUserPref(
@@ -341,6 +342,7 @@ add_task(async function test_autofill_addresses_autocomplete_off_pref() {
   );
   let element = doc.getElementById("given-name");
   let value = FormAutofillHeuristics.inferFieldInfo(element);
+  delete value[2]; // ignore extra argument
 
   Assert.deepEqual(value, expected);
   document = `<form>
@@ -358,6 +360,7 @@ add_task(async function test_autofill_addresses_autocomplete_off_pref() {
   );
   element = doc.getElementById("given-name");
   value = FormAutofillHeuristics.inferFieldInfo(element);
+  delete value[2]; // ignore extra argument
 
   Assert.deepEqual(value, expected);
   Services.prefs.clearUserPref(

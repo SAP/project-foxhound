@@ -332,6 +332,45 @@ describe("Downloads Manager", () => {
       assert.equal(results[1].url, olderDownload2.source.url);
       assert.equal(results[2].url, olderDownload1.source.url);
     });
+    it("should sort downloads by recency regardless of insertion order", async () => {
+      const download1 = {
+        source: { url: "https://site.com/download1.pdf" },
+        endTime: Date.now() - 3 * 60 * 60 * 1000, // 3 hours ago
+        target: { path: "/path/to/download1.pdf", exists: true },
+        succeeded: true,
+        refresh: async () => {},
+      };
+      const download2 = {
+        source: { url: "https://site.com/download2.pdf" },
+        endTime: Date.now() - 2 * 60 * 60 * 1000, // 2 hours ago
+        target: { path: "/path/to/download2.pdf", exists: true },
+        succeeded: true,
+        refresh: async () => {},
+      };
+      const download3 = {
+        source: { url: "https://site.com/download3.pdf" },
+        endTime: Date.now() - 60 * 60 * 1000, // 1 hour ago
+        target: { path: "/path/to/download3.pdf", exists: true },
+        succeeded: true,
+        refresh: async () => {},
+      };
+      // Add newest first, then oldest, then middle — insertion order
+      // differs from expected recency order
+      downloadsManager.onDownloadAdded(newDownload);
+      downloadsManager.onDownloadAdded(download1);
+      downloadsManager.onDownloadAdded(download3);
+      downloadsManager.onDownloadAdded(download2);
+      const results = await downloadsManager.getDownloads(Infinity, {
+        numItems: 5,
+        onlySucceeded: true,
+        onlyExists: true,
+      });
+      assert.equal(results.length, 4);
+      assert.equal(results[0].url, newDownload.source.url);
+      assert.equal(results[1].url, download3.source.url);
+      assert.equal(results[2].url, download2.source.url);
+      assert.equal(results[3].url, download1.source.url);
+    });
     it("should format the description properly if there is no file type", async () => {
       newDownload.target.path = null;
       downloadsManager.onDownloadAdded(newDownload);

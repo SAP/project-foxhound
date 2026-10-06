@@ -24,7 +24,7 @@
         android:paddingEnd="16dp"
         android:textColor="@color/primaryText"
         android:textSize="14sp"
-        app:drawableStartCompat="@drawable/ic_link"
+        app:drawableStartCompat="@drawable/mozac_ic_link_24"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toStartOf="@id/close_button"
         app:layout_constraintStart_toStartOf="parent"

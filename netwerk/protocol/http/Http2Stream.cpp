@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,11 +28,19 @@ Http2Stream::Http2Stream(nsAHttpTransaction* httpTransaction,
   LOG1(("Http2Stream::Http2Stream %p trans=%p", this, httpTransaction));
 }
 
-Http2Stream::~Http2Stream() {}
+Http2Stream::~Http2Stream() = default;
 
 void Http2Stream::CloseStream(nsresult reason) {
+  if (reason == NS_ERROR_NET_RESET &&
+      mTransaction->ConnectionInfo()->IsHttp3ProxyConnection()) {
+    // If we got NS_ERROR_NET_RESET, the transaction will be retried. When
+    // MASQUE proxy is used, keep the Alt-Svc in the connection info. Dropping
+    // it could trigger an unintended proxy connection fallback.
+    mTransaction->DoNotRemoveAltSvc();
+  }
   mTransaction->Close(reason);
   mSession = nullptr;
+  mClosed = true;
 }
 
 uint32_t Http2Stream::GetWireStreamId() {
@@ -130,13 +136,6 @@ nsresult Http2Stream::GenerateHeaders(nsCString& aCompressedData,
     // to determine whether or not to put fin on headers
     firstFrameFlags |= Http2Session::kFlag_END_STREAM;
   }
-
-  // The size of the input headers is approximate
-  uint32_t ratio =
-      aCompressedData.Length() * 100 /
-      (11 + requestURI.Length() + mFlatHttpRequestHeaders.Length());
-
-  glean::spdy::syn_ratio.AccumulateSingleSample(ratio);
 
   return NS_OK;
 }

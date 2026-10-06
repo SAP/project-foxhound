@@ -73,10 +73,16 @@ def getParser(path):
         if re.search(item[0], path):
             return item[1]
     try:
-        from pkg_resources import iter_entry_points
+        from importlib.metadata import entry_points
 
-        for entry_point in iter_entry_points("compare_locales.parsers"):
-            p = entry_point.resolve()()
+        eps = entry_points()
+        # Python 3.10+ returns a selectable object, earlier versions a dict.
+        if hasattr(eps, "select"):
+            parsers = eps.select(group="compare_locales.parsers")
+        else:
+            parsers = eps.get("compare_locales.parsers", [])
+        for entry_point in parsers:
+            p = entry_point.load()()
             if p.use(path):
                 return p
     except (ImportError, OSError):

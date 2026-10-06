@@ -1,0 +1,1321 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		248A03CA2B87FA35009597A2 /* Rendering.swift in Sources */ = {isa = PBXBuildFile; fileRef = 248A03C92B87FA35009597A2 /* Rendering.swift */; };
+		248A03CE2B87FA35009597A2 /* Rendering.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = 248A03C72B87FA35009597A2 /* Rendering.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		248A03D32B87FCA4009597A2 /* GeckoView.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 24B269132B85686A00678012 /* GeckoView.framework */; };
+		248A03DF2B87FD1F009597A2 /* Networking.swift in Sources */ = {isa = PBXBuildFile; fileRef = 248A03DE2B87FD1F009597A2 /* Networking.swift */; };
+		248A03E32B87FD1F009597A2 /* Networking.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = 248A03DC2B87FD1F009597A2 /* Networking.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		248A03E72B87FD2E009597A2 /* GeckoView.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 24B269132B85686A00678012 /* GeckoView.framework */; };
+		24A88AD42BB54B2C0052426E /* AllowOrDeny.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24A88AD32BB54B2B0052426E /* AllowOrDeny.swift */; };
+		24A88AD62BB54B300052426E /* ContentDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24A88AD52BB54B300052426E /* ContentDelegate.swift */; };
+		24A88AD82BB54B330052426E /* EventDispatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24A88AD72BB54B330052426E /* EventDispatcher.swift */; };
+		24A88ADA2BB54B370052426E /* GeckoRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24A88AD92BB54B370052426E /* GeckoRuntime.swift */; };
+		24A88ADC2BB54B3C0052426E /* GeckoSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24A88ADB2BB54B3C0052426E /* GeckoSession.swift */; };
+		24A88ADE2BB54B400052426E /* GeckoSessionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24A88ADD2BB54B400052426E /* GeckoSessionHandler.swift */; };
+		24A88AE02BB54B450052426E /* GeckoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24A88ADF2BB54B450052426E /* GeckoView.swift */; };
+		24A88AE22BB54B4A0052426E /* NavigationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24A88AE12BB54B490052426E /* NavigationDelegate.swift */; };
+		24A88AE42BB54B4D0052426E /* PermissionDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24A88AE32BB54B4D0052426E /* PermissionDelegate.swift */; };
+		24A88AE62BB54B510052426E /* ProgressDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24A88AE52BB54B510052426E /* ProgressDelegate.swift */; };
+		24AD393C2AB8B6D10058B40E /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24AD393B2AB8B6D10058B40E /* main.swift */; };
+		24B269162B85686A00678012 /* GeckoView.h in Headers */ = {isa = PBXBuildFile; fileRef = 24B269152B85686A00678012 /* GeckoView.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		24B269192B85686A00678012 /* GeckoView.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 24B269132B85686A00678012 /* GeckoView.framework */; };
+		24B2691A2B85686A00678012 /* GeckoView.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 24B269132B85686A00678012 /* GeckoView.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		24B269212B85689A00678012 /* AddGecko.sh in Resources */ = {isa = PBXBuildFile; fileRef = 24F4166D2ABE0E5D00496406 /* AddGecko.sh */; };
+		24B2692A2B85695700678012 /* WebContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24B269292B85695700678012 /* WebContent.swift */; };
+		24B2692E2B85695700678012 /* WebContent.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = 24B269272B85695700678012 /* WebContent.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		24B269332B8569E800678012 /* GeckoView.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 24B269132B85686A00678012 /* GeckoView.framework */; };
+		431C639C2912F52F00ABE21B /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 431C639B2912F52F00ABE21B /* AppDelegate.swift */; };
+		431C639E2912F52F00ABE21B /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 431C639D2912F52F00ABE21B /* SceneDelegate.swift */; };
+		431C63A52912F53100ABE21B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 431C63A42912F53100ABE21B /* Assets.xcassets */; };
+		431C63A82912F53100ABE21B /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 431C63A62912F53100ABE21B /* LaunchScreen.storyboard */; };
+		8AE0D9872927DB4A00FA9C83 /* BrowserSearchBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AE0D9862927DB4A00FA9C83 /* BrowserSearchBar.swift */; };
+		8AE0D9CE2927F16300FA9C83 /* UIView+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AE0D9CD2927F16300FA9C83 /* UIView+Extension.swift */; };
+		8AE0D9D629281A5600FA9C83 /* BrowserToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AE0D9D529281A5600FA9C83 /* BrowserToolbar.swift */; };
+		8AE0D9DA292841AB00FA9C83 /* RootViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AE0D9D9292841AB00FA9C83 /* RootViewController.swift */; };
+		8AE0D9DC29284EAE00FA9C83 /* UIViewController+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AE0D9DB29284EAE00FA9C83 /* UIViewController+Extension.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		248A03CC2B87FA35009597A2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 431C63902912F52F00ABE21B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 248A03C62B87FA35009597A2;
+			remoteInfo = Rendering;
+		};
+		248A03D52B87FCA4009597A2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 431C63902912F52F00ABE21B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 24B269122B85686A00678012;
+			remoteInfo = GeckoView;
+		};
+		248A03E12B87FD1F009597A2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 431C63902912F52F00ABE21B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 248A03DB2B87FD1F009597A2;
+			remoteInfo = Networking;
+		};
+		248A03E92B87FD2E009597A2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 431C63902912F52F00ABE21B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 24B269122B85686A00678012;
+			remoteInfo = GeckoView;
+		};
+		24B269172B85686A00678012 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 431C63902912F52F00ABE21B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 24B269122B85686A00678012;
+			remoteInfo = GeckoView;
+		};
+		24B2692C2B85695700678012 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 431C63902912F52F00ABE21B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 24B269262B85695700678012;
+			remoteInfo = WebContent;
+		};
+		24B269352B8569E800678012 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 431C63902912F52F00ABE21B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 24B269122B85686A00678012;
+			remoteInfo = GeckoView;
+		};
+		431C63AF2912F53100ABE21B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 431C63902912F52F00ABE21B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 431C63972912F52F00ABE21B;
+			remoteInfo = GeckoTestBrowser;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		24B2691E2B85686A00678012 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				24B2691A2B85686A00678012 /* GeckoView.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		24B269322B85695700678012 /* Embed ExtensionKit Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(EXTENSIONS_FOLDER_PATH)";
+			dstSubfolderSpec = 16;
+			files = (
+				24B2692E2B85695700678012 /* WebContent.appex in Embed ExtensionKit Extensions */,
+				248A03CE2B87FA35009597A2 /* Rendering.appex in Embed ExtensionKit Extensions */,
+				248A03E32B87FD1F009597A2 /* Networking.appex in Embed ExtensionKit Extensions */,
+			);
+			name = "Embed ExtensionKit Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		248A03C72B87FA35009597A2 /* Rendering.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = Rendering.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		248A03C92B87FA35009597A2 /* Rendering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Rendering.swift; sourceTree = "<group>"; };
+		248A03CB2B87FA35009597A2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		248A03D22B87FA79009597A2 /* Rendering.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Rendering.entitlements; sourceTree = "<group>"; };
+		248A03DC2B87FD1F009597A2 /* Networking.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = Networking.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		248A03DE2B87FD1F009597A2 /* Networking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Networking.swift; sourceTree = "<group>"; };
+		248A03E02B87FD1F009597A2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		248A03EC2B87FD6A009597A2 /* Networking.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Networking.entitlements; sourceTree = "<group>"; };
+		24A88AD32BB54B2B0052426E /* AllowOrDeny.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllowOrDeny.swift; sourceTree = "<group>"; };
+		24A88AD52BB54B300052426E /* ContentDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentDelegate.swift; sourceTree = "<group>"; };
+		24A88AD72BB54B330052426E /* EventDispatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventDispatcher.swift; sourceTree = "<group>"; };
+		24A88AD92BB54B370052426E /* GeckoRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeckoRuntime.swift; sourceTree = "<group>"; };
+		24A88ADB2BB54B3C0052426E /* GeckoSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeckoSession.swift; sourceTree = "<group>"; };
+		24A88ADD2BB54B400052426E /* GeckoSessionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeckoSessionHandler.swift; sourceTree = "<group>"; };
+		24A88ADF2BB54B450052426E /* GeckoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeckoView.swift; sourceTree = "<group>"; };
+		24A88AE12BB54B490052426E /* NavigationDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationDelegate.swift; sourceTree = "<group>"; };
+		24A88AE32BB54B4D0052426E /* PermissionDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionDelegate.swift; sourceTree = "<group>"; };
+		24A88AE52BB54B510052426E /* ProgressDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressDelegate.swift; sourceTree = "<group>"; };
+		24AD393B2AB8B6D10058B40E /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		24B2690D2B85675200678012 /* GeckoTestBrowser.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GeckoTestBrowser.entitlements; sourceTree = "<group>"; };
+		24B269132B85686A00678012 /* GeckoView.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = GeckoView.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		24B269152B85686A00678012 /* GeckoView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeckoView.h; sourceTree = "<group>"; };
+		24B269272B85695700678012 /* WebContent.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = WebContent.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		24B269292B85695700678012 /* WebContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContent.swift; sourceTree = "<group>"; };
+		24B2692B2B85695700678012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		24B269382B856BFB00678012 /* WebContent.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WebContent.entitlements; sourceTree = "<group>"; };
+		24F4166D2ABE0E5D00496406 /* AddGecko.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = AddGecko.sh; sourceTree = "<group>"; };
+		431C63982912F52F00ABE21B /* GeckoTestBrowser.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GeckoTestBrowser.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		431C639B2912F52F00ABE21B /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		431C639D2912F52F00ABE21B /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		431C63A42912F53100ABE21B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		431C63A72912F53100ABE21B /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		431C63A92912F53100ABE21B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		431C63AE2912F53100ABE21B /* GeckoTestBrowserTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GeckoTestBrowserTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		8AE0D9862927DB4A00FA9C83 /* BrowserSearchBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserSearchBar.swift; sourceTree = "<group>"; };
+		8AE0D9CD2927F16300FA9C83 /* UIView+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UIView+Extension.swift"; sourceTree = "<group>"; };
+		8AE0D9D529281A5600FA9C83 /* BrowserToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserToolbar.swift; sourceTree = "<group>"; };
+		8AE0D9D9292841AB00FA9C83 /* RootViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootViewController.swift; sourceTree = "<group>"; };
+		8AE0D9DB29284EAE00FA9C83 /* UIViewController+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UIViewController+Extension.swift"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		248A03C42B87FA35009597A2 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				248A03D32B87FCA4009597A2 /* GeckoView.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		248A03D92B87FD1F009597A2 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				248A03E72B87FD2E009597A2 /* GeckoView.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		24B269102B85686A00678012 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		24B269242B85695700678012 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				24B269332B8569E800678012 /* GeckoView.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		431C63952912F52F00ABE21B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				24B269192B85686A00678012 /* GeckoView.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		431C63AB2912F53100ABE21B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		248A03C82B87FA35009597A2 /* Rendering */ = {
+			isa = PBXGroup;
+			children = (
+				248A03C92B87FA35009597A2 /* Rendering.swift */,
+				248A03D22B87FA79009597A2 /* Rendering.entitlements */,
+				248A03CB2B87FA35009597A2 /* Info.plist */,
+			);
+			path = Rendering;
+			sourceTree = "<group>";
+		};
+		248A03DD2B87FD1F009597A2 /* Networking */ = {
+			isa = PBXGroup;
+			children = (
+				248A03DE2B87FD1F009597A2 /* Networking.swift */,
+				248A03EC2B87FD6A009597A2 /* Networking.entitlements */,
+				248A03E02B87FD1F009597A2 /* Info.plist */,
+			);
+			path = Networking;
+			sourceTree = "<group>";
+		};
+		24B269142B85686A00678012 /* GeckoView */ = {
+			isa = PBXGroup;
+			children = (
+				24A88AD32BB54B2B0052426E /* AllowOrDeny.swift */,
+				24A88AD52BB54B300052426E /* ContentDelegate.swift */,
+				24A88AD72BB54B330052426E /* EventDispatcher.swift */,
+				24A88AD92BB54B370052426E /* GeckoRuntime.swift */,
+				24A88ADB2BB54B3C0052426E /* GeckoSession.swift */,
+				24A88ADD2BB54B400052426E /* GeckoSessionHandler.swift */,
+				24A88ADF2BB54B450052426E /* GeckoView.swift */,
+				24A88AE12BB54B490052426E /* NavigationDelegate.swift */,
+				24A88AE32BB54B4D0052426E /* PermissionDelegate.swift */,
+				24A88AE52BB54B510052426E /* ProgressDelegate.swift */,
+				24F4166D2ABE0E5D00496406 /* AddGecko.sh */,
+				24B269152B85686A00678012 /* GeckoView.h */,
+			);
+			path = GeckoView;
+			sourceTree = "<group>";
+		};
+		24B269282B85695700678012 /* WebContent */ = {
+			isa = PBXGroup;
+			children = (
+				24B269292B85695700678012 /* WebContent.swift */,
+				24B269382B856BFB00678012 /* WebContent.entitlements */,
+				24B2692B2B85695700678012 /* Info.plist */,
+			);
+			path = WebContent;
+			sourceTree = "<group>";
+		};
+		24D2EA972AEC34F000F34B8D /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		431C638F2912F52F00ABE21B = {
+			isa = PBXGroup;
+			children = (
+				24B269142B85686A00678012 /* GeckoView */,
+				24B269282B85695700678012 /* WebContent */,
+				248A03C82B87FA35009597A2 /* Rendering */,
+				248A03DD2B87FD1F009597A2 /* Networking */,
+				431C63992912F52F00ABE21B /* Products */,
+				431C639A2912F52F00ABE21B /* GeckoTestBrowser */,
+				8AE0D99D2927DDB700FA9C83 /* GeckoTestBrowserTests */,
+				24D2EA972AEC34F000F34B8D /* Frameworks */,
+			);
+			sourceTree = "<group>";
+		};
+		431C63992912F52F00ABE21B /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				431C63982912F52F00ABE21B /* GeckoTestBrowser.app */,
+				431C63AE2912F53100ABE21B /* GeckoTestBrowserTests.xctest */,
+				24B269132B85686A00678012 /* GeckoView.framework */,
+				24B269272B85695700678012 /* WebContent.appex */,
+				248A03C72B87FA35009597A2 /* Rendering.appex */,
+				248A03DC2B87FD1F009597A2 /* Networking.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		431C639A2912F52F00ABE21B /* GeckoTestBrowser */ = {
+			isa = PBXGroup;
+			children = (
+				8AE0D9B52927DF9600FA9C83 /* Launch */,
+				8AE0D9B32927DF6800FA9C83 /* Resources */,
+				431C63A92912F53100ABE21B /* Info.plist */,
+				8AE0D9BF2927E21B00FA9C83 /* Extensions */,
+				8AE0D9B42927DF7F00FA9C83 /* UI */,
+				24B2690D2B85675200678012 /* GeckoTestBrowser.entitlements */,
+			);
+			path = GeckoTestBrowser;
+			sourceTree = "<group>";
+		};
+		8AE0D99D2927DDB700FA9C83 /* GeckoTestBrowserTests */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = GeckoTestBrowserTests;
+			sourceTree = "<group>";
+		};
+		8AE0D9B32927DF6800FA9C83 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				431C63A42912F53100ABE21B /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		8AE0D9B42927DF7F00FA9C83 /* UI */ = {
+			isa = PBXGroup;
+			children = (
+				8AE0D9C22927E27400FA9C83 /* Components */,
+				8AE0D9D9292841AB00FA9C83 /* RootViewController.swift */,
+			);
+			path = UI;
+			sourceTree = "<group>";
+		};
+		8AE0D9B52927DF9600FA9C83 /* Launch */ = {
+			isa = PBXGroup;
+			children = (
+				431C639B2912F52F00ABE21B /* AppDelegate.swift */,
+				431C63A62912F53100ABE21B /* LaunchScreen.storyboard */,
+				431C639D2912F52F00ABE21B /* SceneDelegate.swift */,
+				24AD393B2AB8B6D10058B40E /* main.swift */,
+			);
+			path = Launch;
+			sourceTree = "<group>";
+		};
+		8AE0D9BF2927E21B00FA9C83 /* Extensions */ = {
+			isa = PBXGroup;
+			children = (
+				8AE0D9CD2927F16300FA9C83 /* UIView+Extension.swift */,
+				8AE0D9DB29284EAE00FA9C83 /* UIViewController+Extension.swift */,
+			);
+			path = Extensions;
+			sourceTree = "<group>";
+		};
+		8AE0D9C22927E27400FA9C83 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				8AE0D9862927DB4A00FA9C83 /* BrowserSearchBar.swift */,
+				8AE0D9D529281A5600FA9C83 /* BrowserToolbar.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXHeadersBuildPhase section */
+		24B2690E2B85686A00678012 /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				24B269162B85686A00678012 /* GeckoView.h in Headers */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXHeadersBuildPhase section */
+
+/* Begin PBXNativeTarget section */
+		248A03C62B87FA35009597A2 /* Rendering */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 248A03CF2B87FA35009597A2 /* Build configuration list for PBXNativeTarget "Rendering" */;
+			buildPhases = (
+				248A03C32B87FA35009597A2 /* Sources */,
+				248A03C42B87FA35009597A2 /* Frameworks */,
+				248A03C52B87FA35009597A2 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				248A03D62B87FCA4009597A2 /* PBXTargetDependency */,
+			);
+			name = Rendering;
+			productName = Rendering;
+			productReference = 248A03C72B87FA35009597A2 /* Rendering.appex */;
+			productType = "com.apple.product-type.extensionkit-extension";
+		};
+		248A03DB2B87FD1F009597A2 /* Networking */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 248A03E42B87FD1F009597A2 /* Build configuration list for PBXNativeTarget "Networking" */;
+			buildPhases = (
+				248A03D82B87FD1F009597A2 /* Sources */,
+				248A03D92B87FD1F009597A2 /* Frameworks */,
+				248A03DA2B87FD1F009597A2 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				248A03EA2B87FD2E009597A2 /* PBXTargetDependency */,
+			);
+			name = Networking;
+			productName = Networking;
+			productReference = 248A03DC2B87FD1F009597A2 /* Networking.appex */;
+			productType = "com.apple.product-type.extensionkit-extension";
+		};
+		24B269122B85686A00678012 /* GeckoView */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 24B2691B2B85686A00678012 /* Build configuration list for PBXNativeTarget "GeckoView" */;
+			buildPhases = (
+				24B269222B8568FB00678012 /* Add Gecko */,
+				24B2690E2B85686A00678012 /* Headers */,
+				24B2690F2B85686A00678012 /* Sources */,
+				24B269102B85686A00678012 /* Frameworks */,
+				24B269112B85686A00678012 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = GeckoView;
+			packageProductDependencies = (
+			);
+			productName = GeckoView;
+			productReference = 24B269132B85686A00678012 /* GeckoView.framework */;
+			productType = "com.apple.product-type.framework";
+		};
+		24B269262B85695700678012 /* WebContent */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 24B2692F2B85695700678012 /* Build configuration list for PBXNativeTarget "WebContent" */;
+			buildPhases = (
+				24B269232B85695700678012 /* Sources */,
+				24B269242B85695700678012 /* Frameworks */,
+				24B269252B85695700678012 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				24B269362B8569E800678012 /* PBXTargetDependency */,
+			);
+			name = WebContent;
+			productName = WebContent;
+			productReference = 24B269272B85695700678012 /* WebContent.appex */;
+			productType = "com.apple.product-type.extensionkit-extension";
+		};
+		431C63972912F52F00ABE21B /* GeckoTestBrowser */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 431C63C22912F53100ABE21B /* Build configuration list for PBXNativeTarget "GeckoTestBrowser" */;
+			buildPhases = (
+				431C63942912F52F00ABE21B /* Sources */,
+				431C63952912F52F00ABE21B /* Frameworks */,
+				431C63962912F52F00ABE21B /* Resources */,
+				24B2691E2B85686A00678012 /* Embed Frameworks */,
+				24B269322B85695700678012 /* Embed ExtensionKit Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				24B269182B85686A00678012 /* PBXTargetDependency */,
+				24B2692D2B85695700678012 /* PBXTargetDependency */,
+				248A03CD2B87FA35009597A2 /* PBXTargetDependency */,
+				248A03E22B87FD1F009597A2 /* PBXTargetDependency */,
+			);
+			name = GeckoTestBrowser;
+			packageProductDependencies = (
+			);
+			productName = GeckoTestBrowser;
+			productReference = 431C63982912F52F00ABE21B /* GeckoTestBrowser.app */;
+			productType = "com.apple.product-type.application";
+		};
+		431C63AD2912F53100ABE21B /* GeckoTestBrowserTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 431C63C52912F53100ABE21B /* Build configuration list for PBXNativeTarget "GeckoTestBrowserTests" */;
+			buildPhases = (
+				431C63AA2912F53100ABE21B /* Sources */,
+				431C63AB2912F53100ABE21B /* Frameworks */,
+				431C63AC2912F53100ABE21B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				431C63B02912F53100ABE21B /* PBXTargetDependency */,
+			);
+			name = GeckoTestBrowserTests;
+			productName = GeckoTestBrowserTests;
+			productReference = 431C63AE2912F53100ABE21B /* GeckoTestBrowserTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		431C63902912F52F00ABE21B /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1530;
+				LastUpgradeCheck = 1400;
+				TargetAttributes = {
+					248A03C62B87FA35009597A2 = {
+						CreatedOnToolsVersion = 15.3;
+					};
+					248A03DB2B87FD1F009597A2 = {
+						CreatedOnToolsVersion = 15.3;
+					};
+					24B269122B85686A00678012 = {
+						CreatedOnToolsVersion = 15.3;
+					};
+					24B269262B85695700678012 = {
+						CreatedOnToolsVersion = 15.3;
+					};
+					431C63972912F52F00ABE21B = {
+						CreatedOnToolsVersion = 14.0;
+					};
+					431C63AD2912F53100ABE21B = {
+						CreatedOnToolsVersion = 14.0;
+						LastSwiftMigration = 1400;
+						TestTargetID = 431C63972912F52F00ABE21B;
+					};
+				};
+			};
+			buildConfigurationList = 431C63932912F52F00ABE21B /* Build configuration list for PBXProject "GeckoTestBrowser" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 431C638F2912F52F00ABE21B;
+			productRefGroup = 431C63992912F52F00ABE21B /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				431C63972912F52F00ABE21B /* GeckoTestBrowser */,
+				431C63AD2912F53100ABE21B /* GeckoTestBrowserTests */,
+				24B269122B85686A00678012 /* GeckoView */,
+				24B269262B85695700678012 /* WebContent */,
+				248A03C62B87FA35009597A2 /* Rendering */,
+				248A03DB2B87FD1F009597A2 /* Networking */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		248A03C52B87FA35009597A2 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		248A03DA2B87FD1F009597A2 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		24B269112B85686A00678012 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				24B269212B85689A00678012 /* AddGecko.sh in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		24B269252B85695700678012 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		431C63962912F52F00ABE21B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				431C63A82912F53100ABE21B /* LaunchScreen.storyboard in Resources */,
+				431C63A52912F53100ABE21B /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		431C63AC2912F53100ABE21B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		24B269222B8568FB00678012 /* Add Gecko */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Add Gecko";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${SRCROOT}/GeckoView/AddGecko.sh\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		248A03C32B87FA35009597A2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				248A03CA2B87FA35009597A2 /* Rendering.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		248A03D82B87FD1F009597A2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				248A03DF2B87FD1F009597A2 /* Networking.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		24B2690F2B85686A00678012 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				24A88AD62BB54B300052426E /* ContentDelegate.swift in Sources */,
+				24A88AE62BB54B510052426E /* ProgressDelegate.swift in Sources */,
+				24A88ADE2BB54B400052426E /* GeckoSessionHandler.swift in Sources */,
+				24A88AE02BB54B450052426E /* GeckoView.swift in Sources */,
+				24A88AD82BB54B330052426E /* EventDispatcher.swift in Sources */,
+				24A88ADA2BB54B370052426E /* GeckoRuntime.swift in Sources */,
+				24A88ADC2BB54B3C0052426E /* GeckoSession.swift in Sources */,
+				24A88AE22BB54B4A0052426E /* NavigationDelegate.swift in Sources */,
+				24A88AD42BB54B2C0052426E /* AllowOrDeny.swift in Sources */,
+				24A88AE42BB54B4D0052426E /* PermissionDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		24B269232B85695700678012 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				24B2692A2B85695700678012 /* WebContent.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		431C63942912F52F00ABE21B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8AE0D9DA292841AB00FA9C83 /* RootViewController.swift in Sources */,
+				8AE0D9872927DB4A00FA9C83 /* BrowserSearchBar.swift in Sources */,
+				431C639C2912F52F00ABE21B /* AppDelegate.swift in Sources */,
+				8AE0D9DC29284EAE00FA9C83 /* UIViewController+Extension.swift in Sources */,
+				431C639E2912F52F00ABE21B /* SceneDelegate.swift in Sources */,
+				24AD393C2AB8B6D10058B40E /* main.swift in Sources */,
+				8AE0D9D629281A5600FA9C83 /* BrowserToolbar.swift in Sources */,
+				8AE0D9CE2927F16300FA9C83 /* UIView+Extension.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		431C63AA2912F53100ABE21B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		248A03CD2B87FA35009597A2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 248A03C62B87FA35009597A2 /* Rendering */;
+			targetProxy = 248A03CC2B87FA35009597A2 /* PBXContainerItemProxy */;
+		};
+		248A03D62B87FCA4009597A2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 24B269122B85686A00678012 /* GeckoView */;
+			targetProxy = 248A03D52B87FCA4009597A2 /* PBXContainerItemProxy */;
+		};
+		248A03E22B87FD1F009597A2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 248A03DB2B87FD1F009597A2 /* Networking */;
+			targetProxy = 248A03E12B87FD1F009597A2 /* PBXContainerItemProxy */;
+		};
+		248A03EA2B87FD2E009597A2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 24B269122B85686A00678012 /* GeckoView */;
+			targetProxy = 248A03E92B87FD2E009597A2 /* PBXContainerItemProxy */;
+		};
+		24B269182B85686A00678012 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 24B269122B85686A00678012 /* GeckoView */;
+			targetProxy = 24B269172B85686A00678012 /* PBXContainerItemProxy */;
+		};
+		24B2692D2B85695700678012 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 24B269262B85695700678012 /* WebContent */;
+			targetProxy = 24B2692C2B85695700678012 /* PBXContainerItemProxy */;
+		};
+		24B269362B8569E800678012 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 24B269122B85686A00678012 /* GeckoView */;
+			targetProxy = 24B269352B8569E800678012 /* PBXContainerItemProxy */;
+		};
+		431C63B02912F53100ABE21B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 431C63972912F52F00ABE21B /* GeckoTestBrowser */;
+			targetProxy = 431C63AF2912F53100ABE21B /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXVariantGroup section */
+		431C63A62912F53100ABE21B /* LaunchScreen.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				431C63A72912F53100ABE21B /* Base */,
+			);
+			name = LaunchScreen.storyboard;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		248A03D02B87FA35009597A2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_ENTITLEMENTS = Rendering/Rendering.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 43AQ936H96;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Rendering/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Rendering;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.mozilla.ios.GeckoTestBrowser.Rendering;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		248A03D12B87FA35009597A2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_ENTITLEMENTS = Rendering/Rendering.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 43AQ936H96;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Rendering/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Rendering;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.mozilla.ios.GeckoTestBrowser.Rendering;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		248A03E52B87FD1F009597A2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_ENTITLEMENTS = Networking/Networking.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 43AQ936H96;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Networking/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Networking;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.mozilla.ios.GeckoTestBrowser.Networking;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		248A03E62B87FD1F009597A2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_ENTITLEMENTS = Networking/Networking.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 43AQ936H96;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Networking/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Networking;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.mozilla.ios.GeckoTestBrowser.Networking;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		24B2691C2B85686A00678012 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DEVELOPMENT_TEAM = 43AQ936H96;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GECKO_TOPSRCDIR = "${SRCROOT}/../../..";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
+				OTHER_LDFLAGS = "$(BUILT_PRODUCTS_DIR)/$(CONTENTS_FOLDER_PATH)/Frameworks/XUL";
+				PRODUCT_BUNDLE_IDENTIFIER = org.mozilla.ios.GeckoTestBrowser.GeckoView;
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = Debug;
+		};
+		24B2691D2B85686A00678012 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DEVELOPMENT_TEAM = 43AQ936H96;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GECKO_TOPSRCDIR = "${SRCROOT}/../../..";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
+				OTHER_LDFLAGS = "$(BUILT_PRODUCTS_DIR)/$(CONTENTS_FOLDER_PATH)/Frameworks/XUL";
+				PRODUCT_BUNDLE_IDENTIFIER = org.mozilla.ios.GeckoTestBrowser.GeckoView;
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = Release;
+		};
+		24B269302B85695700678012 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_ENTITLEMENTS = WebContent/WebContent.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 43AQ936H96;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = WebContent/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = WebContent;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.mozilla.ios.GeckoTestBrowser.WebContent;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		24B269312B85695700678012 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_ENTITLEMENTS = WebContent/WebContent.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 43AQ936H96;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = WebContent/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = WebContent;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.mozilla.ios.GeckoTestBrowser.WebContent;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		431C63C02912F53100ABE21B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.4;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		431C63C12912F53100ABE21B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.4;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		431C63C32912F53100ABE21B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = GeckoTestBrowser/GeckoTestBrowser.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 43AQ936H96;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = GeckoTestBrowser/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.mozilla.ios.GeckoTestBrowser;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		431C63C42912F53100ABE21B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = GeckoTestBrowser/GeckoTestBrowser.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 43AQ936H96;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = GeckoTestBrowser/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.mozilla.ios.GeckoTestBrowser;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		431C63C62912F53100ABE21B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 43AQ936H96;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.mozilla.ios.GeckoTestBrowserTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/GeckoTestBrowser.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/GeckoTestBrowser";
+			};
+			name = Debug;
+		};
+		431C63C72912F53100ABE21B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 43AQ936H96;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.mozilla.ios.GeckoTestBrowserTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/GeckoTestBrowser.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/GeckoTestBrowser";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		248A03CF2B87FA35009597A2 /* Build configuration list for PBXNativeTarget "Rendering" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				248A03D02B87FA35009597A2 /* Debug */,
+				248A03D12B87FA35009597A2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		248A03E42B87FD1F009597A2 /* Build configuration list for PBXNativeTarget "Networking" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				248A03E52B87FD1F009597A2 /* Debug */,
+				248A03E62B87FD1F009597A2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		24B2691B2B85686A00678012 /* Build configuration list for PBXNativeTarget "GeckoView" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				24B2691C2B85686A00678012 /* Debug */,
+				24B2691D2B85686A00678012 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		24B2692F2B85695700678012 /* Build configuration list for PBXNativeTarget "WebContent" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				24B269302B85695700678012 /* Debug */,
+				24B269312B85695700678012 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		431C63932912F52F00ABE21B /* Build configuration list for PBXProject "GeckoTestBrowser" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				431C63C02912F53100ABE21B /* Debug */,
+				431C63C12912F53100ABE21B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		431C63C22912F53100ABE21B /* Build configuration list for PBXNativeTarget "GeckoTestBrowser" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				431C63C32912F53100ABE21B /* Debug */,
+				431C63C42912F53100ABE21B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		431C63C52912F53100ABE21B /* Build configuration list for PBXNativeTarget "GeckoTestBrowserTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				431C63C62912F53100ABE21B /* Debug */,
+				431C63C72912F53100ABE21B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 431C63902912F52F00ABE21B /* Project object */;
+}

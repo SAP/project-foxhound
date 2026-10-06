@@ -1,0 +1,15 @@
+{
+  "label": "authface.liquid-auth.com",
+  "bugs": {
+    "1968187": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://authface.liquid-auth.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

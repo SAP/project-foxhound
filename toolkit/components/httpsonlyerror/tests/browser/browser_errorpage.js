@@ -22,23 +22,21 @@ add_setup(async function () {
 add_task(async function () {
   info("Check that the error pages shows up");
 
-  await Promise.all([
-    testPageWithURI(
-      GOOD_PAGE,
-      "Should not show error page on upgradeable website.",
-      false
-    ),
-    testPageWithURI(
-      BAD_CERT,
-      "Should show error page on bad-certificate error.",
-      true
-    ),
-    testPageWithURI(
-      UNKNOWN_ISSUER,
-      "Should show error page on unkown-issuer error.",
-      true
-    ),
-  ]);
+  await testPageWithURI(
+    GOOD_PAGE,
+    "Should not show error page on upgradeable website.",
+    false
+  );
+  await testPageWithURI(
+    BAD_CERT,
+    "Should show error page on bad-certificate error.",
+    true
+  );
+  await testPageWithURI(
+    UNKNOWN_ISSUER,
+    "Should show error page on unkown-issuer error.",
+    true
+  );
 });
 
 add_task(async function () {

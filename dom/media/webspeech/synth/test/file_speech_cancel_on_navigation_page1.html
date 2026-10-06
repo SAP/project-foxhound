@@ -1,0 +1,11 @@
+<html>
+<script>
+  var u = new SpeechSynthesisUtterance("hello");
+  u.lang = "it-IT-noend";
+  u.addEventListener("start", function() {
+    location = "file_speech_cancel_on_navigation_page2.html";
+  });
+  speechSynthesis.speak(u);
+</script>
+<body></body>
+</html>

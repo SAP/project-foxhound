@@ -431,56 +431,27 @@
   uses_memory: false
 
 #if defined(ENABLE_WASM_JSPI)
-
-- op: CreateSuspender
+- op: CreatePromise
   symbolic_address:
-    name: CreateSuspender
-    type: Args_General_GeneralInt32
+    name: CreatePromise
+    type: Args_General1
     needs_thunk: true
-  entry: CreateSuspender
-  export: createSuspender
+  entry: CreatePromise
+  export: createPromise
+  result: 'externref'
+  fail_mode: FailOnNullPtr
+  uses_memory: false
+
+- op: GetPromiseResults
+  symbolic_address:
+    name: GetPromiseResults
+    type: Args_General_GeneralGeneralInt32
+    needs_thunk: true
+  entry: GetPromiseResults
+  export: getPromiseResults
   params:
+    - 'externref'
     - 'i32'
-  result: 'externref'
-  fail_mode: FailOnNullPtr
-  uses_memory: false
-
-- op: CreatePromisingPromise
-  symbolic_address:
-    name: CreatePromisingPromise
-    type: Args_General2
-    needs_thunk: true
-  entry: CreatePromisingPromise
-  export: createPromisingPromise
-  params:
-    - 'externref'
-  result: 'externref'
-  fail_mode: FailOnNullPtr
-  uses_memory: false
-
-- op: CurrentSuspender
-  symbolic_address:
-    name: CurrentSuspender
-    type: Args_General_GeneralInt32
-    needs_thunk: true
-  entry: CurrentSuspender
-  export: currentSuspender
-  params:
-    - 'i32'
-  result: 'externref'
-  fail_mode: FailOnNullPtr
-  uses_memory: false
-
-- op: GetSuspendingPromiseResult
-  symbolic_address:
-    name: GetSuspendingPromiseResult
-    type: Args_General3
-    needs_thunk: true
-  entry: GetSuspendingPromiseResult
-  export: getSuspendingPromiseResult
-  params:
-    - 'externref'
-    - 'externref'
   result: 'anyref'
   fail_mode: FailOnNullPtr
   uses_memory: false
@@ -488,42 +459,41 @@
 - op: AddPromiseReactions
   symbolic_address:
     name: AddPromiseReactions
-    type: Args_General4
+    type: Args_Int32_GeneralGeneralGeneralGeneralGeneral
     needs_thunk: true
   entry: AddPromiseReactions
   export: addPromiseReactions
   params:
     - 'externref'
-    - 'externref'
+    - 'contref'
     - 'funcref'
-  result: 'anyref'
-  fail_mode: FailOnInvalidRef
+    - 'externref'
+  fail_mode: FailOnNegI32
   uses_memory: false
 
-- op: ForwardExceptionToSuspended
+- op: PromiseResolve
   symbolic_address:
-    name: ForwardExceptionToSuspended
+    name: PromiseResolve
+    type: Args_General2
+    needs_thunk: true
+  entry: PromiseResolve
+  export: promiseResolve
+  params:
+    - 'externref'
+  result: 'externref'
+  fail_mode: FailOnNullPtr
+  uses_memory: false
+
+- op: ResolvePromiseWithResults
+  symbolic_address:
+    name: ResolvePromiseWithResults
     type: Args_General3
     needs_thunk: true
-  entry: ForwardExceptionToSuspended
-  export: forwardExceptionToSuspended
+  entry: ResolvePromiseWithResults
+  export: resolvePromiseWithResults
   params:
-    - 'externref'
-    - 'exnref'
-  result: 'anyref'
-  fail_mode: Infallible
-  uses_memory: false
-
-- op: SetPromisingPromiseResults
-  symbolic_address:
-    name: SetPromisingPromiseResults
-    type: Args_Int32_GeneralGeneralGeneral
-    needs_thunk: true
-  entry: SetPromisingPromiseResults
-  export: setPromisingPromiseResults
-  params:
-    - 'externref'
     - 'anyref'
+    - 'externref'
   fail_mode: FailOnNegI32
   uses_memory: false
 

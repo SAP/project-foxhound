@@ -3,7 +3,7 @@ We use [Redux](https://github.com/reactjs/redux) to manage application
 state. The [docs](http://redux.js.org/) do a good job explaining the
 concepts, so go read them.
 
-# Quick Intro
+# Redux Quick Intro
 
 Just like the [React introduction](react.md), this is a quick
 introduction to redux, focusing on how it fits into React and why we

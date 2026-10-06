@@ -8,6 +8,8 @@ const {
   DocumentEventsListener,
 } = require("resource://devtools/server/actors/webconsole/listeners/document-events.js");
 
+loader.lazyRequireGetter(this, "flags", "resource://devtools/shared/flags.js");
+
 class DocumentEventWatcher {
   #abortController = new AbortController();
   /**
@@ -31,6 +33,15 @@ class DocumentEventWatcher {
       return;
     }
 
+    // Test-only codepath used to test the AppErrorBoundary displayed when the
+    // toolbox fails to initialize.
+    if (
+      flags.testing &&
+      Services.prefs.getBoolPref("devtools.testing.force-server-error", false)
+    ) {
+      throw new TypeError("Test only server error");
+    }
+
     const onDocumentEvent = (
       name,
       {
@@ -42,6 +53,8 @@ class DocumentEventWatcher {
         hasNativeConsoleAPI,
         // This is only passed for will-navigate event
         newURI,
+        // Are we loading an error page like about:neterror
+        isErrorPage,
       } = {}
     ) => {
       // Ignore will-navigate as that's managed by parent-process-document-event.js.
@@ -73,6 +86,8 @@ class DocumentEventWatcher {
           // other events
           hasNativeConsoleAPI:
             name == "dom-complete" ? hasNativeConsoleAPI : null,
+          // Fallback to undefined to drop the attribute when serializating to JSON
+          isErrorPage: isErrorPage || undefined,
         },
       ]);
     };

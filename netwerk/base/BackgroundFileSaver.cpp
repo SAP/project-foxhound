@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,6 +10,7 @@
 #include "mozilla/Casting.h"
 #include "mozilla/Logging.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/glean/NetwerkMetrics.h"
 #include "nsCOMArray.h"
 #include "nsComponentManagerUtils.h"
@@ -522,7 +521,7 @@ nsresult BackgroundFileSaver::ProcessStateChange() {
 
       // Try to clean up the inputStream if an error occurs.
       auto closeGuard =
-          mozilla::MakeScopeExit([&] { Unused << inputStream->Close(); });
+          mozilla::MakeScopeExit([&] { (void)inputStream->Close(); });
 
       char buffer[BUFFERED_IO_SIZE];
       while (true) {
@@ -596,10 +595,12 @@ nsresult BackgroundFileSaver::ProcessStateChange() {
   {
     MutexAutoLock lock(mLock);
 
-    rv = NS_AsyncCopy(mPipeInputStream, outputStream, mBackgroundET,
-                      NS_ASYNCCOPY_VIA_READSEGMENTS, 4096, AsyncCopyCallback,
-                      this, false, true, getter_AddRefs(mAsyncCopyContext),
-                      GetProgressCallback());
+    rv = NS_AsyncCopy(
+        mPipeInputStream, outputStream, mBackgroundET,
+        NS_ASYNCCOPY_VIA_READSEGMENTS,
+        StaticPrefs::network_backgroundfilesaver_async_copy_chunk_size(),
+        AsyncCopyCallback, this, false, true, getter_AddRefs(mAsyncCopyContext),
+        GetProgressCallback());
     if (NS_FAILED(rv)) {
       NS_WARNING("NS_AsyncCopy failed.");
       mAsyncCopyContext = nullptr;
@@ -768,9 +769,10 @@ nsresult BackgroundFileSaver::ExtractSignatureInfo(const nsAString& filePath) {
   }
 #ifdef XP_WIN
   // Setup the file to check.
+  const nsString flatFilePath(filePath);
   WINTRUST_FILE_INFO fileToCheck = {0};
   fileToCheck.cbStruct = sizeof(WINTRUST_FILE_INFO);
-  fileToCheck.pcwszFilePath = filePath.Data();
+  fileToCheck.pcwszFilePath = flatFilePath.get();
   fileToCheck.hFile = nullptr;
   fileToCheck.pgKnownSubject = nullptr;
 

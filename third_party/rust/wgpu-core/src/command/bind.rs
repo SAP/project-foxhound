@@ -1,13 +1,11 @@
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 
-use arrayvec::ArrayVec;
 use thiserror::Error;
 
 use crate::{
     binding_model::{BindGroup, LateMinBufferBindingSizeMismatch, PipelineLayout},
-    device::SHADER_STAGE_COUNT,
     pipeline::LateSizedBufferGroup,
-    resource::{Labeled, ResourceErrorIdent},
+    resource::{Labeled, ParentDevice, ResourceErrorIdent},
 };
 
 mod compat {
@@ -16,9 +14,8 @@ mod compat {
         sync::{Arc, Weak},
         vec::Vec,
     };
-    use core::{num::NonZeroU32, ops::Range};
+    use core::num::NonZeroU32;
 
-    use arrayvec::ArrayVec;
     use thiserror::Error;
     use wgt::{BindingType, ShaderStages};
 
@@ -44,12 +41,17 @@ mod compat {
     }
 
     impl Entry {
-        fn empty() -> Self {
+        const fn empty() -> Self {
             Self {
                 assigned: None,
                 expected: None,
             }
         }
+
+        fn is_assigned(&self) -> bool {
+            self.assigned.is_some()
+        }
+
         fn is_active(&self) -> bool {
             self.assigned.is_some() && self.expected.is_some()
         }
@@ -62,12 +64,8 @@ mod compat {
                     false
                 }
             } else {
-                true
+                false
             }
-        }
-
-        fn is_incompatible(&self) -> bool {
-            self.expected.is_none() || !self.is_valid()
         }
 
         fn check(&self) -> Result<(), Error> {
@@ -191,58 +189,76 @@ mod compat {
         }
     }
 
-    #[derive(Debug, Default)]
-    pub(crate) struct BoundBindGroupLayouts {
-        entries: ArrayVec<Entry, { hal::MAX_BIND_GROUPS }>,
+    #[derive(Debug)]
+    pub(super) struct BoundBindGroupLayouts {
+        entries: [Entry; hal::MAX_BIND_GROUPS],
+        rebind_start: usize,
     }
 
     impl BoundBindGroupLayouts {
         pub fn new() -> Self {
             Self {
-                entries: (0..hal::MAX_BIND_GROUPS).map(|_| Entry::empty()).collect(),
+                entries: [const { Entry::empty() }; hal::MAX_BIND_GROUPS],
+                rebind_start: 0,
             }
         }
 
-        pub fn num_valid_entries(&self) -> usize {
-            // find first incompatible entry
+        /// Takes the start index of the bind group range to be rebound, and clears it.
+        pub fn take_rebind_start_index(&mut self) -> usize {
+            let start = self.rebind_start;
+            self.rebind_start = self.entries.len();
+            start
+        }
+
+        pub fn update_rebind_start_index(&mut self, start_index: usize) {
+            self.rebind_start = self.rebind_start.min(start_index);
+        }
+
+        pub fn update_expectations(&mut self, expectations: &[Option<Arc<BindGroupLayout>>]) {
+            let mut rebind_start_index = None;
+
+            for (i, (e, new_expected_bgl)) in self
+                .entries
+                .iter_mut()
+                .zip(expectations.iter().chain(core::iter::repeat(&None)))
+                .enumerate()
+            {
+                let (must_set, must_rebind) = match (&mut e.expected, new_expected_bgl) {
+                    (None, None) => (false, false),
+                    (None, Some(_)) => (true, true),
+                    (Some(_), None) => (true, false),
+                    (Some(old_expected_bgl), Some(new_expected_bgl)) => {
+                        let is_different = !old_expected_bgl.is_equal(new_expected_bgl);
+                        (is_different, is_different)
+                    }
+                };
+                if must_set {
+                    e.expected = new_expected_bgl.clone();
+                }
+                if must_rebind && rebind_start_index.is_none() {
+                    rebind_start_index = Some(i);
+                }
+            }
+
+            if let Some(rebind_start_index) = rebind_start_index {
+                self.update_rebind_start_index(rebind_start_index);
+            }
+        }
+
+        pub fn assign(&mut self, index: usize, value: Arc<BindGroupLayout>) {
+            self.entries[index].assigned = Some(value);
+            self.update_rebind_start_index(index);
+        }
+
+        pub fn clear(&mut self, index: usize) {
+            self.entries[index].assigned = None;
+        }
+
+        pub fn list_assigned(&self) -> impl Iterator<Item = usize> + '_ {
             self.entries
                 .iter()
-                .position(|e| e.is_incompatible())
-                .unwrap_or(self.entries.len())
-        }
-
-        fn make_range(&self, start_index: usize) -> Range<usize> {
-            let end = self.num_valid_entries();
-            start_index..end.max(start_index)
-        }
-
-        pub fn update_expectations(
-            &mut self,
-            expectations: &[Arc<BindGroupLayout>],
-        ) -> Range<usize> {
-            let start_index = self
-                .entries
-                .iter()
-                .zip(expectations)
-                .position(|(e, expect)| {
-                    e.expected.is_none() || !e.expected.as_ref().unwrap().is_equal(expect)
-                })
-                .unwrap_or(expectations.len());
-            for (e, expect) in self.entries[start_index..]
-                .iter_mut()
-                .zip(expectations[start_index..].iter())
-            {
-                e.expected = Some(expect.clone());
-            }
-            for e in self.entries[expectations.len()..].iter_mut() {
-                e.expected = None;
-            }
-            self.make_range(start_index)
-        }
-
-        pub fn assign(&mut self, index: usize, value: Arc<BindGroupLayout>) -> Range<usize> {
-            self.entries[index].assigned = Some(value);
-            self.make_range(index)
+                .enumerate()
+                .filter_map(|(i, e)| if e.is_assigned() { Some(i) } else { None })
         }
 
         pub fn list_active(&self) -> impl Iterator<Item = usize> + '_ {
@@ -250,6 +266,13 @@ mod compat {
                 .iter()
                 .enumerate()
                 .filter_map(|(i, e)| if e.is_active() { Some(i) } else { None })
+        }
+
+        pub fn list_valid(&self) -> impl Iterator<Item = usize> + '_ {
+            self.entries
+                .iter()
+                .enumerate()
+                .filter_map(|(i, e)| if e.is_valid() { Some(i) } else { None })
         }
 
         #[allow(clippy::result_large_err)]
@@ -283,18 +306,19 @@ pub enum BinderError {
 
 #[derive(Debug)]
 struct LateBufferBinding {
+    binding_index: u32,
     shader_expect_size: wgt::BufferAddress,
     bound_size: wgt::BufferAddress,
 }
 
 #[derive(Debug, Default)]
-pub(super) struct EntryPayload {
-    pub(super) group: Option<Arc<BindGroup>>,
-    pub(super) dynamic_offsets: Vec<wgt::DynamicOffset>,
+struct EntryPayload {
+    group: Option<Arc<BindGroup>>,
+    dynamic_offsets: Vec<wgt::DynamicOffset>,
     late_buffer_bindings: Vec<LateBufferBinding>,
     /// Since `LateBufferBinding` may contain information about the bindings
     /// not used by the pipeline, we need to know when to stop validating.
-    pub(super) late_bindings_effective_count: usize,
+    late_bindings_effective_count: usize,
 }
 
 impl EntryPayload {
@@ -306,7 +330,7 @@ impl EntryPayload {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(super) struct Binder {
     pub(super) pipeline_layout: Option<Arc<PipelineLayout>>,
     manager: compat::BoundBindGroupLayouts,
@@ -329,45 +353,33 @@ impl Binder {
         }
     }
 
+    /// Returns `true` if the pipeline layout has been changed, i.e. if the
+    /// new PL was not the same as the old PL.
     pub(super) fn change_pipeline_layout<'a>(
         &'a mut self,
         new: &Arc<PipelineLayout>,
         late_sized_buffer_groups: &[LateSizedBufferGroup],
-    ) -> (usize, &'a [EntryPayload]) {
-        let old_id_opt = self.pipeline_layout.replace(new.clone());
+    ) -> bool {
+        self.update_late_buffer_bindings(late_sized_buffer_groups);
 
-        let mut bind_range = self.manager.update_expectations(&new.bind_group_layouts);
-
-        // Update the buffer binding sizes that are required by shaders.
-        for (payload, late_group) in self.payloads.iter_mut().zip(late_sized_buffer_groups) {
-            payload.late_bindings_effective_count = late_group.shader_sizes.len();
-            for (late_binding, &shader_expect_size) in payload
-                .late_buffer_bindings
-                .iter_mut()
-                .zip(late_group.shader_sizes.iter())
-            {
-                late_binding.shader_expect_size = shader_expect_size;
-            }
-            if late_group.shader_sizes.len() > payload.late_buffer_bindings.len() {
-                for &shader_expect_size in
-                    late_group.shader_sizes[payload.late_buffer_bindings.len()..].iter()
-                {
-                    payload.late_buffer_bindings.push(LateBufferBinding {
-                        shader_expect_size,
-                        bound_size: 0,
-                    });
-                }
+        if let Some(old) = self.pipeline_layout.as_ref() {
+            if old.is_equal(new) {
+                return false;
             }
         }
 
-        if let Some(old) = old_id_opt {
+        let old = self.pipeline_layout.replace(new.clone());
+
+        self.manager.update_expectations(&new.bind_group_layouts);
+
+        if let Some(old) = old {
             // root constants are the base compatibility property
-            if old.push_constant_ranges != new.push_constant_ranges {
-                bind_range.start = 0;
+            if old.immediate_size != new.immediate_size {
+                self.manager.update_rebind_start_index(0);
             }
         }
 
-        (bind_range.start, &self.payloads[bind_range])
+        true
     }
 
     pub(super) fn assign_group<'a>(
@@ -375,7 +387,7 @@ impl Binder {
         index: usize,
         bind_group: &Arc<BindGroup>,
         offsets: &[wgt::DynamicOffset],
-    ) -> &'a [EntryPayload] {
+    ) {
         let payload = &mut self.payloads[index];
         payload.group = Some(bind_group.clone());
         payload.dynamic_offsets.clear();
@@ -383,40 +395,76 @@ impl Binder {
 
         // Fill out the actual binding sizes for buffers,
         // whose layout doesn't specify `min_binding_size`.
-        for (late_binding, late_size) in payload
+
+        // Update entries that already exist as the pipeline was bound before the group
+        // was bound.
+        for (late_binding, late_info) in payload
             .late_buffer_bindings
             .iter_mut()
-            .zip(bind_group.late_buffer_binding_sizes.iter())
+            .zip(bind_group.late_buffer_binding_infos.iter())
         {
-            late_binding.bound_size = late_size.get();
+            late_binding.binding_index = late_info.binding_index;
+            late_binding.bound_size = late_info.size.get();
         }
-        if bind_group.late_buffer_binding_sizes.len() > payload.late_buffer_bindings.len() {
-            for late_size in
-                bind_group.late_buffer_binding_sizes[payload.late_buffer_bindings.len()..].iter()
+
+        // Add new entries for the bindings that were not known when the pipeline was bound.
+        if bind_group.late_buffer_binding_infos.len() > payload.late_buffer_bindings.len() {
+            for late_info in
+                bind_group.late_buffer_binding_infos[payload.late_buffer_bindings.len()..].iter()
             {
                 payload.late_buffer_bindings.push(LateBufferBinding {
+                    binding_index: late_info.binding_index,
                     shader_expect_size: 0,
-                    bound_size: late_size.get(),
+                    bound_size: late_info.size.get(),
                 });
             }
         }
 
-        let bind_range = self.manager.assign(index, bind_group.layout.clone());
-        &self.payloads[bind_range]
+        self.manager.assign(index, bind_group.layout.clone());
     }
 
-    pub(super) fn list_active<'a>(&'a self) -> impl Iterator<Item = &'a Arc<BindGroup>> + 'a {
+    pub(super) fn clear_group(&mut self, index: usize) {
+        self.payloads[index].reset();
+        self.manager.clear(index);
+    }
+
+    /// Takes the start index of the bind group range to be rebound, and clears it.
+    pub(super) fn take_rebind_start_index(&mut self) -> usize {
+        self.manager.take_rebind_start_index()
+    }
+
+    pub(super) fn list_valid_with_start(
+        &self,
+        start: usize,
+    ) -> impl Iterator<Item = (usize, &Arc<BindGroup>, &[wgt::DynamicOffset])> + '_ {
+        let payloads = &self.payloads;
+        self.manager
+            .list_valid()
+            .filter(move |i| *i >= start)
+            .map(move |index| {
+                (
+                    index,
+                    payloads[index].group.as_ref().unwrap(),
+                    payloads[index].dynamic_offsets.as_slice(),
+                )
+            })
+    }
+
+    pub(super) fn last_assigned_index(&self) -> Option<usize> {
+        self.manager.list_assigned().last()
+    }
+
+    pub(super) fn list_active(&self) -> impl Iterator<Item = &Arc<BindGroup>> + '_ {
         let payloads = &self.payloads;
         self.manager
             .list_active()
             .map(move |index| payloads[index].group.as_ref().unwrap())
     }
 
-    pub(super) fn list_valid<'a>(&'a self) -> impl Iterator<Item = (usize, &'a EntryPayload)> + 'a {
-        self.payloads
-            .iter()
-            .take(self.manager.num_valid_entries())
-            .enumerate()
+    pub(super) fn list_valid(
+        &self,
+    ) -> impl Iterator<Item = (usize, &Arc<BindGroup>, &[wgt::DynamicOffset])> + '_ {
+        self.list_valid_with_start(0)
     }
 
     pub(super) fn check_compatibility<T: Labeled>(
@@ -451,15 +499,13 @@ impl Binder {
     ) -> Result<(), LateMinBufferBindingSizeMismatch> {
         for group_index in self.manager.list_active() {
             let payload = &self.payloads[group_index];
-            for (compact_index, late_binding) in payload.late_buffer_bindings
-                [..payload.late_bindings_effective_count]
-                .iter()
-                .enumerate()
+            for late_binding in
+                &payload.late_buffer_bindings[..payload.late_bindings_effective_count]
             {
                 if late_binding.bound_size < late_binding.shader_expect_size {
                     return Err(LateMinBufferBindingSizeMismatch {
                         group_index: group_index as u32,
-                        compact_index,
+                        binding_index: late_binding.binding_index,
                         shader_size: late_binding.shader_expect_size,
                         bound_size: late_binding.bound_size,
                     });
@@ -468,55 +514,36 @@ impl Binder {
         }
         Ok(())
     }
-}
 
-struct PushConstantChange {
-    stages: wgt::ShaderStages,
-    offset: u32,
-    enable: bool,
-}
+    /// This must be called even when a new pipeline has the same layout
+    /// as the previous one, because different pipelines can have different
+    /// shader-expected buffer sizes even with identical layouts.
+    fn update_late_buffer_bindings(&mut self, late_sized_buffer_groups: &[LateSizedBufferGroup]) {
+        for (payload, late_group) in self.payloads.iter_mut().zip(late_sized_buffer_groups) {
+            payload.late_bindings_effective_count = late_group.shader_sizes.len();
 
-/// Break up possibly overlapping push constant ranges into a set of
-/// non-overlapping ranges which contain all the stage flags of the
-/// original ranges. This allows us to zero out (or write any value)
-/// to every possible value.
-pub fn compute_nonoverlapping_ranges(
-    ranges: &[wgt::PushConstantRange],
-) -> ArrayVec<wgt::PushConstantRange, { SHADER_STAGE_COUNT * 2 }> {
-    if ranges.is_empty() {
-        return ArrayVec::new();
-    }
-    debug_assert!(ranges.len() <= SHADER_STAGE_COUNT);
+            // Update entries that already exist as the bind group was bound before the pipeline
+            // was bound.
+            for (late_binding, &shader_expect_size) in payload
+                .late_buffer_bindings
+                .iter_mut()
+                .zip(late_group.shader_sizes.iter())
+            {
+                late_binding.shader_expect_size = shader_expect_size;
+            }
 
-    let mut breaks: ArrayVec<PushConstantChange, { SHADER_STAGE_COUNT * 2 }> = ArrayVec::new();
-    for range in ranges {
-        breaks.push(PushConstantChange {
-            stages: range.stages,
-            offset: range.range.start,
-            enable: true,
-        });
-        breaks.push(PushConstantChange {
-            stages: range.stages,
-            offset: range.range.end,
-            enable: false,
-        });
-    }
-    breaks.sort_unstable_by_key(|change| change.offset);
-
-    let mut output_ranges = ArrayVec::new();
-    let mut position = 0_u32;
-    let mut stages = wgt::ShaderStages::NONE;
-
-    for bk in breaks {
-        if bk.offset - position > 0 && !stages.is_empty() {
-            output_ranges.push(wgt::PushConstantRange {
-                stages,
-                range: position..bk.offset,
-            })
+            // Add new entries for the bindings that were not known when the bind group was bound.
+            if late_group.shader_sizes.len() > payload.late_buffer_bindings.len() {
+                for &shader_expect_size in
+                    late_group.shader_sizes[payload.late_buffer_bindings.len()..].iter()
+                {
+                    payload.late_buffer_bindings.push(LateBufferBinding {
+                        binding_index: 0,
+                        shader_expect_size,
+                        bound_size: 0,
+                    });
+                }
+            }
         }
-        position = bk.offset;
-        stages.set(bk.stages, bk.enable);
     }
-
-    output_ranges
 }

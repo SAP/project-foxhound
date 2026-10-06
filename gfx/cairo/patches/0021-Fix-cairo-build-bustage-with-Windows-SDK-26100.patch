@@ -1,0 +1,25 @@
+From c796dde23852a5b0eeeaddc331aefdc9f4ea75b3 Mon Sep 17 00:00:00 2001
+From: Ryan VanderMeulen <rvandermeulen@mozilla.com>
+Date: Wed, 22 Apr 2026 13:00:22 -0700
+Subject: [PATCH 21/29] Fix cairo build bustage with Windows SDK 26100
+
+---
+ src/cairo-compiler-private.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/cairo-compiler-private.h b/src/cairo-compiler-private.h
+index 28455f99d..ab2d216e1 100644
+--- a/src/cairo-compiler-private.h
++++ b/src/cairo-compiler-private.h
+@@ -144,7 +144,7 @@
+ #define unlikely(expr) (expr)
+ #endif
+ 
+-#ifndef __GNUC__
++#if !defined(__GNUC__) && !defined (__clang__)
+ #undef __attribute__
+ #define __attribute__(x)
+ #endif
+-- 
+2.53.0
+

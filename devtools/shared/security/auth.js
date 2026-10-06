@@ -80,16 +80,16 @@ var Prompt = (Authenticators.Prompt = {});
 
 Prompt.mode = "PROMPT";
 
-Prompt.Client = function () {};
-Prompt.Client.prototype = {
-  mode: Prompt.mode,
+Prompt.Client = class {
+  mode = Prompt.mode;
 
   /**
    * When client is about to make a new connection, verify that the connection settings
    * are compatible with this authenticator.
+   *
    * @throws if validation requirements are not met
    */
-  validateSettings() {},
+  validateSettings() {}
 
   /**
    * When client has just made a new socket connection, validate the connection
@@ -108,7 +108,7 @@ Prompt.Client.prototype = {
    */
   validateConnection() {
     return true;
-  },
+  }
 
   /**
    * Work with the server to complete any additional steps required by this
@@ -126,12 +126,11 @@ Prompt.Client.prototype = {
    *        A transport that can be used to communicate with the server.
    * @return A promise can be used if there is async behavior.
    */
-  authenticate() {},
+  authenticate() {}
 };
 
-Prompt.Server = function () {};
-Prompt.Server.prototype = {
-  mode: Prompt.mode,
+Prompt.Server = class {
+  mode = Prompt.mode;
 
   /**
    * Augment the service discovery advertisement with any additional data needed
@@ -144,7 +143,7 @@ Prompt.Server.prototype = {
    */
   augmentAdvertisement(listener, advertisement) {
     advertisement.authentication = Prompt.mode;
-  },
+  }
 
   /**
    * Determine whether a connection the server should be allowed or not based on
@@ -175,7 +174,7 @@ Prompt.Server.prototype = {
       client,
       server,
     });
-  },
+  }
 
   /**
    * Prompt the user to accept or decline the incoming connection.  The default
@@ -201,7 +200,7 @@ Prompt.Server.prototype = {
    * @return An AuthenticationResult value.
    *         A promise that will be resolved to the above is also allowed.
    */
-  allowConnection: prompt.Server.defaultAllowConnection,
+  allowConnection = prompt.Server.defaultAllowConnection;
 };
 
 exports.Authenticators = {

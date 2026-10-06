@@ -1,0 +1,52 @@
+<html reftest-async-scroll>
+<style>
+.container {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+.scroller {
+  position: absolute;
+  overflow: auto;
+  scrollbar-width: none;
+  width: 100px;
+  height: 100px;
+}
+.spacer {
+  width: 1px;
+  height: 100px;
+}
+.largespacer {
+  width: 1px;
+  height: 500px;
+}
+.anchor {
+  position: sticky;
+  top: 0;
+  width: 50px;
+  height: 50px;
+  background: blue;
+  anchor-name: --my-anchor;
+}
+.anchored {
+  position: absolute;
+  position-anchor: --my-anchor;
+  position-visibility: always;
+  width: 50px;
+  height: 50px;
+  background: yellow;
+  left: anchor(right);
+  top: anchor(bottom); 
+}
+</style>
+<div class="container">
+  <div class="scroller"
+    reftest-displayport-x="0" reftest-displayport-y="0"
+    reftest-displayport-w="100" reftest-displayport-h="500"
+    reftest-async-scroll-y="250">
+    <div class="spacer"></div>
+    <div class="anchor"></div>
+    <div class="largespacer"></div>
+  </div>
+  <div class="anchored"></div>
+</html>

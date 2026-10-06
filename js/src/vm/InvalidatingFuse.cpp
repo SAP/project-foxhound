@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -33,7 +31,14 @@ bool js::InvalidatingRuntimeFuse::addFuseDependency(
   return scriptSet->addScriptForFuse(this, ionScript);
 }
 
+// This method will pop the fuse and iterates over its dependencies
+// iff this fuse is still intact.
+// This avoids a costly iteration over dependencies in subsequent calls.
 void js::InvalidatingRuntimeFuse::popFuse(JSContext* cx) {
+  if (!intact()) {
+    return;
+  }
+
   // Pop the fuse in the base class
   GuardFuse::popFuse(cx);
   JS_LOG(fuseInvalidation, Verbose, "Invalidating fuse popping: %s", name());

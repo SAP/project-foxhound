@@ -106,6 +106,57 @@ function handleRequest(request, response) {
     }
   `;
 
+  let workerFetchScript = `
+    results.workerFetch = "PENDING";
+    const w = new Worker("worker_lna.js");
+    w.postMessage({ type: "worker-fetch", rand: "${rand}" });
+    w.onmessage = (e) => results.workerFetch = e.data.status;
+    w.onerror = () => results.workerFetch = "FAIL";
+  `;
+
+  let workerXhrScript = `
+    results.workerXhr = "PENDING";
+    const w = new Worker("worker_lna.js");
+    w.postMessage({ type: "worker-xhr", rand: "${rand}" });
+    w.onmessage = (e) => results.workerXhr = e.data.status;
+    w.onerror = () => results.workerXhr = "FAIL";
+  `;
+
+  let sharedWorkerFetchScript = `
+    results.sharedWorkerFetch = "PENDING";
+    const sw = new SharedWorker("shared_worker_lna.js");
+    sw.port.start();
+    sw.port.postMessage({ type: "shared-worker-fetch", rand: "${rand}" });
+    sw.port.onmessage = (e) => results.sharedWorkerFetch = e.data.status;
+    sw.onerror = () => results.sharedWorkerFetch = "FAIL";
+  `;
+
+  let sharedWorkerXhrScript = `
+    results.sharedWorkerXhr = "PENDING";
+    const sw = new SharedWorker("shared_worker_lna.js");
+    sw.port.start();
+    sw.port.postMessage({ type: "shared-worker-xhr", rand: "${rand}" });
+    sw.port.onmessage = (e) => results.sharedWorkerXhr = e.data.status;
+    sw.onerror = () => results.sharedWorkerXhr = "FAIL";
+  `;
+
+  let serviceWorkerFetchScript = `
+    results.serviceWorkerFetch = "PENDING";
+    navigator.serviceWorker.register("service_worker_lna.sjs", { scope: "./" })
+      .then(reg => {
+        return navigator.serviceWorker.ready;
+      })
+      .then(reg => {
+        navigator.serviceWorker.onmessage = (e) => {
+          results.serviceWorkerFetch = e.data.status;
+        };
+        reg.active.postMessage({ type: "service-worker-fetch", rand: "${rand}" });
+      })
+      .catch((e) => {
+        results.serviceWorkerFetch = "FAIL";
+      });
+  `;
+
   switch (params.get("test")) {
     case "fetch":
       response.write(fetchScript);
@@ -136,6 +187,21 @@ function handleRequest(request, response) {
       return;
     case "websocket":
       response.write(websocketScript);
+      return;
+    case "worker-fetch":
+      response.write(workerFetchScript);
+      return;
+    case "worker-xhr":
+      response.write(workerXhrScript);
+      return;
+    case "shared-worker-fetch":
+      response.write(sharedWorkerFetchScript);
+      return;
+    case "shared-worker-xhr":
+      response.write(sharedWorkerXhrScript);
+      return;
+    case "service-worker-fetch":
+      response.write(serviceWorkerFetchScript);
       return;
   }
   response.write(`console.log("unknown test type")`);

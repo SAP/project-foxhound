@@ -381,6 +381,8 @@ pub enum FontHinting {
 pub struct FontInstancePlatformOptions {
     pub lcd_filter: FontLCDFilter,
     pub hinting: FontHinting,
+    pub gamma: i16,
+    pub enhanced_contrast: i16,
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows")))]
@@ -389,6 +391,8 @@ impl Default for FontInstancePlatformOptions {
         FontInstancePlatformOptions {
             lcd_filter: FontLCDFilter::Default,
             hinting: FontHinting::LCD,
+            gamma: -1,
+            enhanced_contrast: 0,
         }
     }
 }

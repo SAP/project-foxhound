@@ -52,8 +52,8 @@ export let DownloadHistory = {
    *        Optional number that limits the amount of results the history query
    *        may return.
    *
-   * @return {Promise}
-   * @resolves The requested DownloadHistoryList object.
+   * @returns {Promise<DownloadHistoryList>}
+   *   Resolves to the requested DownloadHistoryList object.
    * @rejects JavaScript exception.
    */
   async getList({ type = lazy.Downloads.PUBLIC, maxHistoryResults } = {}) {
@@ -242,8 +242,8 @@ let DownloadCache = {
   /**
    * This returns an object containing the meta data for the supplied URL.
    *
-   * @param {String} url The url to get the meta data for.
-   * @return {Object|null} Returns an empty object if there is no meta data found, or
+   * @param {string} url The url to get the meta data for.
+   * @return {object | null} Returns an empty object if there is no meta data found, or
    *                       an object containing the meta data. The meta data
    *                       will look like:
    *
@@ -312,8 +312,8 @@ let DownloadCache = {
    * for the given url, it will be overwritten (note: the targetFileSpec will be
    * maintained).
    *
-   * @param {String} url The url to set the meta data for.
-   * @param {Object} metadata The new metaData to save in the cache.
+   * @param {string} url The url to set the meta data for.
+   * @param {object} metadata The new metaData to save in the cache.
    */
   async setMetadata(url, metadata) {
     await this.ensureInitialized();
@@ -398,14 +398,14 @@ class HistoryDownload {
   /**
    * History downloads are never in progress.
    *
-   * @type {Boolean}
+   * @type {boolean}
    */
   stopped = true;
 
   /**
    * No percentage indication is shown for history downloads.
    *
-   * @type {Boolean}
+   * @type {boolean}
    */
   hasProgress = false;
 
@@ -416,7 +416,7 @@ class HistoryDownload {
    * instead of the history download. In case this session download is not
    * available, we show the history download as canceled, not paused.
    *
-   * @type {Boolean}
+   * @type {boolean}
    */
   hasPartialData = false;
 
@@ -605,8 +605,9 @@ class DownloadHistoryList extends DownloadList {
     this._slotsForUrl = new Map();
     this._slotForDownload = new WeakMap();
 
-    // Start the asynchronous queries to retrieve history and session downloads.
-    publicList.addView(this).catch(console.error);
+    // Retrieve history and session downloads.
+    publicList.addView(this);
+
     let query = {},
       options = {};
     lazy.PlacesUtils.history.queryStringToQuery(place, query, options);
@@ -634,7 +635,7 @@ class DownloadHistoryList extends DownloadList {
    * Index of the first slot that contains a session download. This is equal to
    * the length of the list when there are no session downloads.
    *
-   * @type {Number}
+   * @type {number}
    */
   _firstSessionSlotIndex = 0;
 
@@ -663,8 +664,8 @@ class DownloadHistoryList extends DownloadList {
    * Updates the download history item when the meta data or destination file
    * changes.
    *
-   * @param {String} sourceUrl The sourceUrl which was updated.
-   * @param {Object} metaData The new meta data for the sourceUrl.
+   * @param {string} sourceUrl The sourceUrl which was updated.
+   * @param {object} metaData The new meta data for the sourceUrl.
    */
   updateForMetaDataChange(sourceUrl, metaData) {
     let slotsForUrl = this._slotsForUrl.get(sourceUrl);

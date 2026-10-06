@@ -204,8 +204,7 @@ void GeckoMVMContext::Reflow(const CSSSize& aNewSize) {
   MOZ_ASSERT(doc);
   MOZ_ASSERT(ps);
 
-  if (ps->ResizeReflowIgnoreOverride(CSSPixel::ToAppUnits(aNewSize.width),
-                                     CSSPixel::ToAppUnits(aNewSize.height))) {
+  if (ps->ResizeReflowIgnoreOverride(CSSPixel::ToAppUnits(aNewSize))) {
     doc->FlushPendingNotifications(FlushType::InterruptibleLayout);
   }
 }

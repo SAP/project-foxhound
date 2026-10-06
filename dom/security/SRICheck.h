@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,11 +5,11 @@
 #ifndef mozilla_dom_SRICheck_h
 #define mozilla_dom_SRICheck_h
 
-#include "nsTString.h"
-#include "nsStringFwd.h"
+#include "mozilla/LoadTainting.h"
 #include "nsCOMPtr.h"
 #include "nsICryptoHash.h"
-#include "mozilla/LoadTainting.h"
+#include "nsStringFwd.h"
+#include "nsTString.h"
 
 class nsIChannel;
 class nsIConsoleReportCollector;
@@ -67,6 +65,7 @@ class SRICheckDataVerifier final {
                   nsIConsoleReportCollector* aReporter);
 
   bool IsComplete() const { return mComplete; }
+  bool IsInvalid() const { return mInvalidMetadata; }
 
   // Report the length of the computed hash and its type, such that we can
   // reserve the space for encoding it in a vector.

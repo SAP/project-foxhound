@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Captive Portal LNA Test Page</title>
+</head>
+<body>
+<h1>Captive Portal LNA Test</h1>
+<div id="result"></div>
+
+<script type="text/javascript">
+  window.addEventListener('load', async function () {
+    const resultDiv = document.getElementById('result');
+    const params = new URLSearchParams(location.search);
+    const localUrl = "http://localhost:21555/?type=fetch&rand=" + (params.get("rand") || Math.random());
+
+    try {
+      resultDiv.textContent = "Making fetch request to local server...";
+      const response = await fetch(localUrl);
+      const text = await response.text();
+      resultDiv.textContent = "Success: " + text;
+    } catch (error) {
+      resultDiv.textContent = "Error: " + error.message;
+    }
+  });
+</script>
+</body>
+</html>

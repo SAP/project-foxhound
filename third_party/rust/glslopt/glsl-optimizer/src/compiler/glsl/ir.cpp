@@ -550,7 +550,7 @@ ir_expression::ir_expression(int op, ir_rvalue *op0, ir_rvalue *op1)
          base = GLSL_TYPE_UINT64;
          break;
       default:
-         unreachable(!"Invalid base type.");
+         UNREACHABLE("Invalid base type.");
       }
 
       this->type = glsl_type::get_instance(base, op0->type->vector_elements, 1);
@@ -623,7 +623,7 @@ ir_expression::get_num_operands(ir_expression_operation op)
    if (op <= ir_last_quadop)
       return 4;
 
-   unreachable("Could not calculate number of operands");
+   UNREACHABLE("Could not calculate number of operands");
 }
 
 #include "ir_expression_operation_strings.h"
@@ -689,7 +689,7 @@ ir_constant::ir_constant(const struct glsl_type *type,
    memcpy(& this->value, data, sizeof(this->value));
 }
 
-ir_constant::ir_constant(float16_t f16, unsigned vector_elements)
+ir_constant::ir_constant(mesa::float16_t f16, unsigned vector_elements)
    : ir_rvalue(ir_type_constant)
 {
    assert(vector_elements <= 4);

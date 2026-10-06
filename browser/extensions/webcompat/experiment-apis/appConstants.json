@@ -7,22 +7,61 @@
         "name": "getAndroidPackageName",
         "type": "function",
         "description": "",
-        "async": true,
-        "parameters": []
+        "parameters": [],
+        "returns": {
+          "type": "string",
+          "description": "The Android package name (e.g. org.mozilla.fenix)."
+        }
+      },
+      {
+        "name": "getAppVersion",
+        "type": "function",
+        "description": "",
+        "parameters": [],
+        "returns": {
+          "type": "string",
+          "description": "The app version (e.g. 148.0a1)."
+        }
       },
       {
         "name": "getEffectiveUpdateChannel",
         "type": "function",
         "description": "",
-        "async": true,
-        "parameters": []
+        "parameters": [],
+        "returns": {
+          "type": "string",
+          "description": "The effective update channel (beta, esr, nightly, or stable)."
+        }
+      },
+      {
+        "name": "getPlatform",
+        "type": "function",
+        "description": "",
+        "parameters": [],
+        "returns": {
+          "type": "string",
+          "description": "The platform (android, linux, mac, or windows)."
+        }
       },
       {
         "name": "getReleaseBranch",
         "type": "function",
         "description": "",
-        "async": true,
-        "parameters": []
+        "parameters": [],
+        "returns": {
+          "type": "string",
+          "description": "The release branch (dev_edition, early_beta_or_earlier, nightly, release_or_beta, or unknown)."
+        }
+      },
+      {
+        "name": "isInAutomation",
+        "type": "function",
+        "description": "",
+        "parameters": [],
+        "returns": {
+          "type": "boolean",
+          "description": "Whether Firefox is running in automation."
+        }
       }
     ]
   }

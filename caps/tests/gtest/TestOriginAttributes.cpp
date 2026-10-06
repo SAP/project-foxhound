@@ -90,7 +90,7 @@ TEST(OriginAttributes, FirstPartyDomain_site)
   TEST_FPD(u"http://s3.amazonaws.com", u"(http,s3.amazonaws.com)");
   TEST_FPD(u"http://com", u"(http,com)");
   TEST_FPD(u"http://com.", u"(http,com.)");
-  TEST_FPD(u"http://com:8080", u"(http,com,8080)");
+  TEST_FPD(u"http://com:8080", u"(http,com)");
   TEST_FPD(u"http://.com", u"(http,.com)");
   TEST_FPD(u"http://..com", u"(http,..com)");
   TEST_FPD(u"http://127.0.0.1", u"(http,127.0.0.1)");

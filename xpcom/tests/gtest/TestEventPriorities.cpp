@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -51,10 +49,10 @@ TEST(EventPriorities, IdleAfterNormal)
 {
   int normalRan = 0, idleRan = 0;
 
-  RefPtr<TestEvent> evNormal =
-      new TestEvent(&normalRan, [&] { ASSERT_EQ(idleRan, 0); });
-  RefPtr<TestEvent> evIdle =
-      new TestEvent(&idleRan, [&] { ASSERT_EQ(normalRan, 3); });
+  RefPtr evNormal =
+      MakeRefPtr<TestEvent>(&normalRan, [&] { ASSERT_EQ(idleRan, 0); });
+  RefPtr evIdle =
+      MakeRefPtr<TestEvent>(&idleRan, [&] { ASSERT_EQ(normalRan, 3); });
 
   NS_DispatchToCurrentThreadQueue(do_AddRef(evIdle), EventQueuePriority::Idle);
   NS_DispatchToCurrentThreadQueue(do_AddRef(evIdle), EventQueuePriority::Idle);
@@ -72,9 +70,9 @@ TEST(EventPriorities, HighNormal)
 {
   int normalRan = 0, highRan = 0;
 
-  RefPtr<TestEvent> evNormal = new TestEvent(
+  RefPtr evNormal = MakeRefPtr<TestEvent>(
       &normalRan, [&] { ASSERT_TRUE((highRan - normalRan) >= 0); });
-  RefPtr<TestEvent> evHigh = new TestEvent(
+  RefPtr evHigh = MakeRefPtr<TestEvent>(
       &highRan, [&] { ASSERT_TRUE((highRan - normalRan) >= 0); },
       nsIRunnablePriority::PRIORITY_VSYNC);
 

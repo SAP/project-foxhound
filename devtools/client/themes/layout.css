@@ -709,7 +709,7 @@ html[dir="rtl"] .flex-item-list .devtools-button::after {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--theme-graphs-full-red);
+  color: red;
 }
 
 .grid-outline-text-icon {

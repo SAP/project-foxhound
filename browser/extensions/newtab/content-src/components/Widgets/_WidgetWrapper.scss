@@ -1,0 +1,38 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+// Slot wrapper around each widget. The wrapper is the grid item; widgets
+// continue to render their own article inside with their existing classes.
+// Grid placement lives here so each widget doesn't have to know about it.
+// Each widget can migrate its own internals on its own schedule; this file
+// is the permissive transitional layer.
+
+.nova-enabled .widget-wrapper {
+  &.small-widget {
+    grid-column: span 2;
+    grid-row: span 2;
+  }
+
+  &.medium-widget {
+    grid-row: span 2;
+  }
+
+  &.large-widget {
+    grid-row: span 4;
+  }
+
+  &:has(> .large-widget) {
+    grid-column: span 4;
+    grid-row: span 4;
+  }
+}
+
+// When a widget throws, its ErrorBoundary renders this fallback in place of the
+// widget article. Fill the grid cell so the message centers in the slot instead
+// of collapsing to its text height.
+.widget-error-fallback {
+  block-size: 100%;
+  padding: var(--space-large);
+  text-align: center;
+}

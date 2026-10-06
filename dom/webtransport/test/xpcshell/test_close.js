@@ -1,8 +1,6 @@
 //
 //  Simple WebTransport test
 //
-// keep eslint happy until it knows about WebTransport
-/* global WebTransport:false */
 
 "use strict";
 
@@ -57,9 +55,7 @@ add_task(async function setup() {
 });
 
 add_task(async function test_webtransport_create() {
-  Services.prefs.setBoolPref("network.webtransport.enabled", true);
-
-  const wt = new WebTransport("https://" + host + "/success");
+  const wt = newWebTransport("https://" + host + "/success");
   await wt.ready;
   dump("**** ready\n");
 
@@ -68,7 +64,7 @@ add_task(async function test_webtransport_create() {
 
 // bug 1840626 - cancel and then close
 add_task(async function test_wt_stream_create_bidi_cancel_close() {
-  let wt = new WebTransport("https://" + host + "/success");
+  let wt = newWebTransport("https://" + host + "/success");
   await wt.ready;
 
   await wt.createBidirectionalStream();

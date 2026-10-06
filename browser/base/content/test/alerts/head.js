@@ -41,8 +41,8 @@ function openNotification(aBrowser, fn, timeout) {
   info(`openNotification: ${fn}`);
   return SpecialPowers.spawn(
     aBrowser,
-    [[fn, timeout]],
-    async function ([contentFn, contentTimeout]) {
+    [fn, timeout],
+    async function (contentFn, contentTimeout) {
       await new Promise((resolve, reject) => {
         let win = content.wrappedJSObject;
         let notification = win[contentFn]();

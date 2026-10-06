@@ -96,7 +96,7 @@ Other context menu options worth mentioning are:
 Inline variable preview
 ***********************
 
-New in Firefox 71, the :ref:`source pane <debugger_ui_tour_source_pane>` now gives you an inline preview of the variables on each line of code you've stepped through:
+The :ref:`source pane <debugger_ui_tour_source_pane>` now gives you an inline preview of the variables on each line of code you've stepped through:
 
 .. image:: inline-variables.png
   :class: border

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,6 +11,7 @@
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
+#  include "AndroidDecoderModule.h"
 #  include "AndroidEncoderModule.h"
 #endif
 
@@ -25,11 +24,8 @@
 #endif
 
 #include "FFVPXRuntimeLinker.h"
-
 #include "GMPEncoderModule.h"
-
 #include "mozilla/RemoteEncoderModule.h"
-
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/gfx/gfxVars.h"
@@ -40,12 +36,12 @@ namespace mozilla {
 
 LazyLogModule sPEMLog("PlatformEncoderModule");
 
-#define LOGE(fmt, ...)                       \
-  MOZ_LOG(sPEMLog, mozilla::LogLevel::Error, \
-          ("[PEMFactory] %s: " fmt, __func__, ##__VA_ARGS__))
-#define LOG(fmt, ...)                        \
-  MOZ_LOG(sPEMLog, mozilla::LogLevel::Debug, \
-          ("[PEMFactory] %s: " fmt, __func__, ##__VA_ARGS__))
+#define LOGE(fmt, ...)                                                    \
+  MOZ_LOG_FMT(sPEMLog, mozilla::LogLevel::Error, "[PEMFactory] {}: " fmt, \
+              __func__, ##__VA_ARGS__)
+#define LOG(fmt, ...)                                                     \
+  MOZ_LOG_FMT(sPEMLog, mozilla::LogLevel::Debug, "[PEMFactory] {}: " fmt, \
+              __func__, ##__VA_ARGS__)
 
 static CodecType MediaCodecToCodecType(MediaCodec aCodec) {
   switch (aCodec) {
@@ -195,6 +191,12 @@ void PEMFactory::InitUtilityPEMs() {
     }
   }
 #endif
+
+#ifdef MOZ_WIDGET_ANDROID
+  if (StaticPrefs::media_utility_android_media_codec_enabled()) {
+    mCurrentPEMs.AppendElement(new AndroidEncoderModule());
+  }
+#endif
 }
 
 void PEMFactory::InitContentPEMs() {
@@ -236,7 +238,9 @@ void PEMFactory::InitContentPEMs() {
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
-    mCurrentPEMs.AppendElement(new AndroidEncoderModule());
+    if (AndroidDecoderModule::IsJavaDecoderModuleAllowed()) {
+      mCurrentPEMs.AppendElement(new AndroidEncoderModule());
+    }
 #endif
 
 #ifdef XP_WIN
@@ -295,7 +299,9 @@ void PEMFactory::InitDefaultPEMs() {
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
-  mCurrentPEMs.AppendElement(new AndroidEncoderModule());
+  if (AndroidDecoderModule::IsJavaDecoderModuleAllowed()) {
+    mCurrentPEMs.AppendElement(new AndroidEncoderModule());
+  }
 #endif
 
 #ifdef XP_WIN
@@ -387,7 +393,7 @@ PEMFactory::CheckAndMaybeCreateEncoder(const EncoderConfig& aConfig,
   return PlatformEncoderModule::CreateEncoderPromise::CreateAndReject(
       MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                   nsPrintfCString("Error no encoder found for %s",
-                                  GetCodecTypeString(aConfig.mCodec))
+                                  EnumValueToString(aConfig.mCodec))
                       .get()),
       __func__);
 }
@@ -432,12 +438,12 @@ EncodeSupportSet PEMFactory::Supports(const EncoderConfig& aConfig) const {
     EncodeSupportSet supports = m->Supports(aConfig);
     if (!supports.isEmpty()) {
       // TODO name
-      LOG("Checking if %s supports codec %s: yes", m->GetName(),
-          GetCodecTypeString(aConfig.mCodec));
+      LOG("Checking if {} supports codec {}: yes", m->GetName(),
+          EnumValueToString(aConfig.mCodec));
       return supports;
     }
-    LOG("Checking if %s supports codec %s: no", m->GetName(),
-        GetCodecTypeString(aConfig.mCodec));
+    LOG("Checking if {} supports codec {}: no", m->GetName(),
+        EnumValueToString(aConfig.mCodec));
   }
   return EncodeSupportSet{};
 }
@@ -447,12 +453,12 @@ EncodeSupportSet PEMFactory::SupportsCodec(CodecType aCodec) const {
   for (const auto& m : mCurrentPEMs) {
     EncodeSupportSet pemSupports = m->SupportsCodec(aCodec);
     // TODO name
-    LOG("Checking if %s supports codec %d: %s", m->GetName(),
+    LOG("Checking if {} supports codec {}: {}", m->GetName(),
         static_cast<int>(aCodec), pemSupports.isEmpty() ? "no" : "yes");
     supports += pemSupports;
   }
   if (supports.isEmpty()) {
-    LOG("No PEM support %d", static_cast<int>(aCodec));
+    LOG("No PEM support {}", static_cast<int>(aCodec));
   }
   return supports;
 }
@@ -516,10 +522,8 @@ media::EncodeSupportSet PEMFactory::SupportsCodec(
         return media::MCSInfo::GetEncodeSupportSet(MediaCodec::VP8, aSupported);
       case CodecType::VP9:
         return media::MCSInfo::GetEncodeSupportSet(MediaCodec::VP9, aSupported);
-#ifdef MOZ_AV1
       case CodecType::AV1:
         return media::MCSInfo::GetEncodeSupportSet(MediaCodec::AV1, aSupported);
-#endif
       default:
         break;
     }

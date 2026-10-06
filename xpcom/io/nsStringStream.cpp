@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,7 +21,6 @@
 #include "nsCRT.h"
 #include "prerror.h"
 #include "nsIClassInfoImpl.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/ReentrantMonitor.h"
@@ -539,7 +536,7 @@ NS_IMETHODIMP
 nsStringInputStream::Clone(nsIInputStream** aCloneOut) {
   ReentrantMonitorAutoEnter lock(mMon);
 
-  RefPtr<nsStringInputStream> ref = new nsStringInputStream();
+  RefPtr ref = MakeRefPtr<nsStringInputStream>();
   // Nothing else can access this yet, but suppress static analysis warnings
   ReentrantMonitorAutoEnter reflock(ref->mMon);
   if (mSource && !mSource->Owning()) {
@@ -568,7 +565,7 @@ nsresult NS_NewByteInputStream(nsIInputStream** aStreamResult,
                                const StringTaint& aTaint) {
   MOZ_ASSERT(aStreamResult, "null out ptr");
 
-  RefPtr<nsStringInputStream> stream = new nsStringInputStream();
+  RefPtr stream = MakeRefPtr<nsStringInputStream>();
 
   nsresult rv;
   switch (aAssignment) {
@@ -602,7 +599,7 @@ nsresult NS_NewByteInputStream(nsIInputStream** aStreamResult,
                                const StringTaint& aTaint) {
   MOZ_ASSERT(aStreamResult, "null out ptr");
 
-  RefPtr<nsStringInputStream> stream = new nsStringInputStream();
+  RefPtr stream = MakeRefPtr<nsStringInputStream>();
 
   nsresult rv = stream->Init(std::move(aArray));
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -619,7 +616,7 @@ extern nsresult NS_NewByteInputStream(nsIInputStream** aStreamResult,
                                       mozilla::StreamBufferSource* aSource) {
   MOZ_ASSERT(aStreamResult, "null out ptr");
 
-  RefPtr<nsStringInputStream> stream = new nsStringInputStream();
+  RefPtr stream = MakeRefPtr<nsStringInputStream>();
 
   nsresult rv = stream->SetDataSource(aSource);
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -634,7 +631,7 @@ nsresult NS_NewCStringInputStream(nsIInputStream** aStreamResult,
                                   const nsACString& aStringToRead) {
   MOZ_ASSERT(aStreamResult, "null out ptr");
 
-  RefPtr<nsStringInputStream> stream = new nsStringInputStream();
+  RefPtr stream = MakeRefPtr<nsStringInputStream>();
 
   nsresult rv = stream->SetData(aStringToRead);
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -649,7 +646,7 @@ nsresult NS_NewCStringInputStream(nsIInputStream** aStreamResult,
                                   nsCString&& aStringToRead) {
   MOZ_ASSERT(aStreamResult, "null out ptr");
 
-  RefPtr<nsStringInputStream> stream = new nsStringInputStream();
+  RefPtr stream = MakeRefPtr<nsStringInputStream>();
 
   nsresult rv = stream->Init(std::move(aStringToRead));
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -664,6 +661,6 @@ nsresult NS_NewCStringInputStream(nsIInputStream** aStreamResult,
 nsresult nsStringInputStreamConstructor(REFNSIID aIID, void** aResult) {
   *aResult = nullptr;
 
-  RefPtr<nsStringInputStream> inst = new nsStringInputStream();
+  RefPtr inst = MakeRefPtr<nsStringInputStream>();
   return inst->QueryInterface(aIID, aResult);
 }

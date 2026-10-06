@@ -171,7 +171,7 @@ async function verifyAutofillResults(testCase) {
   });
 
   if (testCase.extra_login) {
-    await Services.logins.removeLogin(testCase.extra_login);
+    await Services.logins.removeLoginAsync(testCase.extra_login);
   }
 
   if (testCase.prefs) {

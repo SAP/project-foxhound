@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,7 +30,6 @@
 #  define MOZ_USE_WIFI_TICKLER
 #endif
 
-#include "mozilla/Attributes.h"
 #include "nsISupports.h"
 #include <stdint.h>
 
@@ -41,7 +39,7 @@
 #  include "nsISupports.h"
 #  include "nsIThread.h"
 #  include "nsITimer.h"
-#  include "nsWeakReference.h"
+#  include "mozilla/ThreadSafeWeakPtr.h"
 #  include "prio.h"
 
 class nsIPrefBranch;
@@ -59,9 +57,9 @@ namespace net {
      0x4af9,             \
      {0x9f, 0x7e, 0x9e, 0x83, 0x2d, 0xa3, 0x75, 0x4e}}
 
-class Tickler final : public nsSupportsWeakReference {
+class Tickler final : public SupportsThreadSafeWeakPtr<Tickler> {
  public:
-  NS_DECL_THREADSAFE_ISUPPORTS
+  MOZ_DECLARE_REFCOUNTED_TYPENAME(Tickler)
   NS_INLINE_DECL_STATIC_IID(NS_TICKLER_IID)
 
   // These methods are main thread only
@@ -78,21 +76,22 @@ class Tickler final : public nsSupportsWeakReference {
  private:
   ~Tickler();
 
+  friend class SupportsThreadSafeWeakPtr<Tickler>;
   friend class TicklerTimer;
-  Mutex mLock MOZ_UNANNOTATED;
-  nsCOMPtr<nsIThread> mThread;
-  nsCOMPtr<nsITimer> mTimer;
-  nsCOMPtr<nsIPrefBranch> mPrefs;
+  Mutex mLock;
+  nsCOMPtr<nsIThread> mThread MOZ_GUARDED_BY(mLock);
+  nsCOMPtr<nsITimer> mTimer MOZ_GUARDED_BY(mLock);
+  nsCOMPtr<nsIPrefBranch> mPrefs MOZ_GUARDED_BY(mLock);
 
-  bool mActive;
-  bool mCanceled;
-  bool mEnabled;
-  uint32_t mDelay;
-  TimeDuration mDuration;
-  PRFileDesc* mFD;
+  bool mActive MOZ_GUARDED_BY(mLock);
+  bool mCanceled MOZ_GUARDED_BY(mLock);
+  bool mEnabled MOZ_GUARDED_BY(mLock);
+  uint32_t mDelay MOZ_GUARDED_BY(mLock);
+  TimeDuration mDuration MOZ_GUARDED_BY(mLock);
+  PRFileDesc* mFD MOZ_GUARDED_BY(mLock);
 
-  TimeStamp mLastTickle;
-  PRNetAddr mAddr;
+  TimeStamp mLastTickle MOZ_GUARDED_BY(mLock);
+  PRNetAddr mAddr;  // written on main thread before concurrent use
 
   // These functions may be called from any thread
   void PostCheckTickler();

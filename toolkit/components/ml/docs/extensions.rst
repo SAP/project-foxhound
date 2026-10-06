@@ -71,7 +71,7 @@ Below is a full example of using the engine to summarize a content:
   await browser.trial.ml.deleteCachedModels();
 
 
-The `createEngine` call will trigger downloads in case the model files are not already cached in IndexDB.
+The `createEngine` call will trigger downloads in case the model files are not already cached in OPFS.
 This means that the first call to `createEngine` may last for a while, which need to be taken
 into account when building the web extension. Subsequent calls will be much faster.
 
@@ -125,6 +125,7 @@ one.
 - **depth-estimation**: Xenova/dpt-large
 - **feature-extraction**: Xenova/all-MiniLM-L6-v2
 - **image-feature-extraction**: Xenova/vit-base-patch16-224-in21k
+- **text-to-speech**: Xenova/speecht5_tts
 
 Any model in Hugging Face that is compatible with Transformers.js should work.
 You can browse them using `this link <https://huggingface.co/models?library=transformers.js&sort=trending>`_.

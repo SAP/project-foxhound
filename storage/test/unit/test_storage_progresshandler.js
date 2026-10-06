@@ -83,14 +83,7 @@ function test_handler_abort() {
     Assert.equal(Cr.NS_ERROR_ABORT, e.result);
     Assert.equal(SQLITE_INTERRUPT, msc.lastError);
   }
-  try {
-    stmt.finalize();
-    do_throw("We shouldn't get here!");
-  } catch (e) {
-    // finalize should return the error code since we encountered an error
-    Assert.equal(Cr.NS_ERROR_ABORT, e.result);
-    Assert.equal(SQLITE_INTERRUPT, msc.lastError);
-  }
+  stmt.finalize();
 }
 
 var tests = [

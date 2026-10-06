@@ -1,36 +1,33 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsThreadUtils.h"
 #include "OnlineSpeechRecognitionService.h"
+
+#include <json/json.h>
+
+#include "OggWriter.h"
+#include "OpusTrackEncoder.h"
 #include "SpeechGrammar.h"
 #include "SpeechRecognition.h"
 #include "SpeechRecognitionAlternative.h"
 #include "SpeechRecognitionResult.h"
 #include "SpeechRecognitionResultList.h"
-#include "mozilla/dom/Document.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ScopeExit.h"
-#include "nsNetUtil.h"
+#include "mozilla/dom/Document.h"
 #include "nsContentUtils.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIChannel.h"
+#include "nsIClassOfService.h"
 #include "nsIHttpChannel.h"
+#include "nsIOutputStream.h"
 #include "nsIPrincipal.h"
 #include "nsIStreamListener.h"
 #include "nsIUploadChannel2.h"
+#include "nsNetUtil.h"
 #include "nsStringStream.h"
-#include "nsIOutputStream.h"
-#include "nsGlobalWindowInner.h"
-#include "OpusTrackEncoder.h"
-#include "OggWriter.h"
-#include "nsIClassOfService.h"
-#include <json/json.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include "nsThreadUtils.h"
 
 namespace mozilla {
 
@@ -95,7 +92,7 @@ OnlineSpeechRecognitionService::OnStopRequest(nsIRequest* aRequest,
   nsAutoCString errorMsg;
   SpeechRecognitionErrorCode errorCode;
 
-  SR_LOG("STT Result: %s", mBuf.get());
+  SR_LOG("STT Result: {}", mBuf.get());
 
   if (NS_FAILED(aStatusCode)) {
     success = false;
@@ -211,7 +208,7 @@ void OnlineSpeechRecognitionService::EncoderInitialized() {
   rv = mWriter->GetContainerData(&mEncodedData, ContainerWriter::GET_HEADER);
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
 
-  Unused << rv;
+  (void)rv;
 }
 
 void OnlineSpeechRecognitionService::EncoderError() {
@@ -289,7 +286,7 @@ void OnlineSpeechRecognitionService::DoSTT() {
                           prefEndpoint);
 
   if (!prefEndpoint.IsEmpty()) {
-    speechRecognitionEndpoint = prefEndpoint;
+    speechRecognitionEndpoint = std::move(prefEndpoint);
   } else {
     speechRecognitionEndpoint = DEFAULT_RECOGNITION_ENDPOINT;
   }
@@ -426,7 +423,7 @@ OnlineSpeechRecognitionService::SoundEnd() {
         }
       }));
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 
   mEncodeTaskQueue = nullptr;
 

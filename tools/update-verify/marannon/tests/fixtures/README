@@ -1,0 +1,3 @@
+This directory contains a few things to support testing `replace_certs`:
+* A partial `updater` binary. This has been truncated to largely just be the parts that contain mar certificates to avoid checking in a ~250kb file.
+* Pairs of mar certificates.

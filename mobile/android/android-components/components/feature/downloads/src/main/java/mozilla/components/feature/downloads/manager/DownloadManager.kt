@@ -36,6 +36,11 @@ interface DownloadManager {
         downloadId: String,
     )
 
+    /**
+     * Registers any listeners required by the [DownloadManager] to monitor download progress or status changes.
+     */
+    fun registerListeners() = Unit
+
     fun unregisterListeners() = Unit
 }
 

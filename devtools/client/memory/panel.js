@@ -7,26 +7,25 @@
 const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 const HeapAnalysesClient = require("resource://devtools/shared/heapsnapshot/HeapAnalysesClient.js");
 
-function MemoryPanel(iframeWindow, toolbox, commands) {
-  this.panelWin = iframeWindow;
-  this._toolbox = toolbox;
-  this._commands = commands;
+class MemoryPanel extends EventEmitter {
+  constructor(iframeWindow, toolbox, commands) {
+    super();
 
-  const { BrowserLoader } = ChromeUtils.importESModule(
-    "resource://devtools/shared/loader/browser-loader.sys.mjs"
-  );
-  const browserRequire = BrowserLoader({
-    baseURI: "resource://devtools/client/memory/",
-    window: this.panelWin,
-  }).require;
-  this.initializer = browserRequire("devtools/client/memory/initializer");
+    this.panelWin = iframeWindow;
+    this._toolbox = toolbox;
+    this._commands = commands;
 
-  this._onTargetAvailable = this._onTargetAvailable.bind(this);
+    const { BrowserLoader } = ChromeUtils.importESModule(
+      "resource://devtools/shared/loader/browser-loader.sys.mjs"
+    );
+    const browserRequire = BrowserLoader({
+      baseURI: "resource://devtools/client/memory/",
+      window: this.panelWin,
+    }).require;
+    this.initializer = browserRequire("devtools/client/memory/initializer");
 
-  EventEmitter.decorate(this);
-}
-
-MemoryPanel.prototype = {
+    this._onTargetAvailable = this._onTargetAvailable.bind(this);
+  }
   async open() {
     this.panelWin.gToolbox = this._toolbox;
     this.panelWin.gHeapAnalysesClient = new HeapAnalysesClient();
@@ -39,7 +38,7 @@ MemoryPanel.prototype = {
     });
 
     return this;
-  },
+  }
 
   async _onTargetAvailable({ targetFront }) {
     if (targetFront.isTopLevel) {
@@ -47,7 +46,7 @@ MemoryPanel.prototype = {
       await front.attach();
       this.initializer.updateFront(front);
     }
-  },
+  }
 
   // DevToolPanel API
 
@@ -68,7 +67,7 @@ MemoryPanel.prototype = {
     this.panelWin.gHeapAnalysesClient.destroy();
     this.panelWin = null;
     this.emit("destroyed");
-  },
-};
+  }
+}
 
 exports.MemoryPanel = MemoryPanel;

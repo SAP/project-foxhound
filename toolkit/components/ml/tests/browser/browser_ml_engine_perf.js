@@ -41,7 +41,7 @@ const perfMetadata = {
   },
 };
 
-requestLongerTimeout(120);
+requestLongerTimeout(10);
 
 /**
  * Tests remote ml model

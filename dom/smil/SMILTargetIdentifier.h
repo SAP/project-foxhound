@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,9 +6,9 @@
 #define DOM_SMIL_SMILTARGETIDENTIFIER_H_
 
 // XXX Avoid including this here by moving function bodies to the cpp file
+#include "mozilla/dom/Element.h"
 #include "nsAtom.h"
 #include "nsIContent.h"
-#include "mozilla/dom/Element.h"
 
 class nsIContent;
 

@@ -10,9 +10,13 @@
 <script class="testbody" type="text/javascript">
 const Cc = SpecialPowers.Cc;
 const Ci = SpecialPowers.Ci;
+const AlertNotification = Components.Constructor(
+  "@mozilla.org/alert-notification;1",
+  "nsIAlertNotification",
+  "initWithObject"
+);
 
 const chromeScript = SpecialPowers.loadChromeScript(_ => {
-  /* eslint-env mozilla/chrome-script */
   const {clearTimeout, setTimeout} = ChromeUtils.importESModule(
     "resource://gre/modules/Timer.sys.mjs"
   );
@@ -52,9 +56,16 @@ function promiseCreateXULAlert(alertService, listener, name) {
     });
 
     chromeScript.sendAsyncMessage("waitForXULAlert");
-    alertService.showAlertNotification(null, "title", "body",
-      true, cookie++, listener, name, null, null, null,
-      null, false, true);
+
+    let alert = new AlertNotification({
+      title: "title",
+      text: "body",
+      textClickable: true,
+      cookie: cookie++,
+      name,
+      requireInteraction: true
+    });
+    alertService.showAlert(alert, listener);
   });
 }
 

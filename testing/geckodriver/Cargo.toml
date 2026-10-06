@@ -1,7 +1,7 @@
 [package]
-edition = "2021"
+edition = "2024"
 name = "geckodriver"
-version = "0.36.0"
+version = "0.37.0"
 authors = ["Mozilla"]
 include = [
     "/.cargo",
@@ -27,15 +27,15 @@ chrono = "0.4.6"
 clap = { version = "4", default-features = false, features = ["cargo", "std", "suggestions", "wrap_help", "string"] }
 # Depend on flate2 to enable the rust backend (the default) for flate2 used by the zip crate.
 flate2 = "1"
-hyper = "0.14"
+http = "1.4"
 icu_segmenter = { version = "2.0", default-features = false, features = ["auto", "compiled_data"] }
 lazy_static = "1.0"
 log = { version = "0.4", features = ["std"] }
-marionette = { path = "./marionette", version="0.7.0" }
-mozdevice = { path = "../mozbase/rust/mozdevice", version="0.5.4" }
-mozprofile = { path = "../mozbase/rust/mozprofile", version="0.9.4" }
-mozrunner = { path = "../mozbase/rust/mozrunner", version="0.15.4" }
-mozversion = { path = "../mozbase/rust/mozversion", version="0.5.3" }
+marionette = { path = "./marionette", version="0.8.0" }
+mozdevice = { path = "../mozbase/rust/mozdevice", version="0.5.5" }
+mozprofile = { path = "../mozbase/rust/mozprofile", version="0.9.5" }
+mozrunner = { path = "../mozbase/rust/mozrunner", version="0.15.5" }
+mozversion = { path = "../mozbase/rust/mozversion", version="0.5.4" }
 regex = { version="1.0", default-features = false, features = ["perf", "std"] }
 serde = "1.0"
 serde_derive = "1.0"
@@ -44,7 +44,7 @@ tempfile = "3"
 thiserror = "1"
 url = "2.4"
 uuid = { version = "1.0", features = ["v4"] }
-webdriver = { path = "../webdriver", version="0.53.0" }
+webdriver = { path = "../webdriver", version="0.54.0" }
 yaml-rust = { version = "0.10", package = "yaml-rust2" }
 zip = { version = "2.1.2", default-features = false, features = ["deflate-flate2", "flate2"] }
 mozilla-central-workspace-hack = { version = "0.1", features = ["geckodriver"], optional = true }

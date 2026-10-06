@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -74,7 +73,6 @@ void NativeKeyBindings::Init(NativeKeyBindingsType aType) {
   // from NSText's "Action Methods for Editing" section
 
   // TODO: Improves correctness of left / right meaning
-  // TODO: Add real paragraph motions
 
   // SEL_TO_COMMAND(cancelOperation:, );
   // SEL_TO_COMMAND(capitalizeWord:, );
@@ -125,33 +123,32 @@ void NativeKeyBindings::Init(NativeKeyBindingsType aType) {
   SEL_TO_COMMAND(moveLeft:, Command::CharPrevious);
   SEL_TO_COMMAND(moveLeftAndModifySelection:, Command::SelectCharPrevious);
   SEL_TO_COMMAND(moveParagraphBackwardAndModifySelection:,
-                 Command::SelectBeginLine);
+                 Command::SelectBeginParagraph);
   SEL_TO_COMMAND(moveParagraphForwardAndModifySelection:,
-                 Command::SelectEndLine);
+                 Command::SelectEndParagraph);
   SEL_TO_COMMAND(moveRight:, Command::CharNext);
   SEL_TO_COMMAND(moveRightAndModifySelection:, Command::SelectCharNext);
   SEL_TO_COMMAND(moveToBeginningOfDocument:, Command::MoveTop);
   SEL_TO_COMMAND(moveToBeginningOfDocumentAndModifySelection:,
                  Command::SelectTop);
-  SEL_TO_COMMAND(moveToBeginningOfLine:, Command::BeginLine);
+  SEL_TO_COMMAND(moveToBeginningOfLine:, Command::MoveLeft3);
   SEL_TO_COMMAND(moveToBeginningOfLineAndModifySelection:,
-                 Command::SelectBeginLine);
-  SEL_TO_COMMAND(moveToBeginningOfParagraph:, Command::BeginLine);
+                 Command::SelectLeft3);
+  SEL_TO_COMMAND(moveToBeginningOfParagraph:, Command::BeginParagraph);
   SEL_TO_COMMAND(moveToBeginningOfParagraphAndModifySelection:,
-                 Command::SelectBeginLine);
+                 Command::SelectBeginParagraph);
   SEL_TO_COMMAND(moveToEndOfDocument:, Command::MoveBottom);
   SEL_TO_COMMAND(moveToEndOfDocumentAndModifySelection:, Command::SelectBottom);
-  SEL_TO_COMMAND(moveToEndOfLine:, Command::EndLine);
-  SEL_TO_COMMAND(moveToEndOfLineAndModifySelection:, Command::SelectEndLine);
-  SEL_TO_COMMAND(moveToEndOfParagraph:, Command::EndLine);
+  SEL_TO_COMMAND(moveToEndOfLine:, Command::MoveRight3);
+  SEL_TO_COMMAND(moveToEndOfLineAndModifySelection:, Command::SelectRight3);
+  SEL_TO_COMMAND(moveToEndOfParagraph:, Command::EndParagraph);
   SEL_TO_COMMAND(moveToEndOfParagraphAndModifySelection:,
-                 Command::SelectEndLine);
-  SEL_TO_COMMAND(moveToLeftEndOfLine:, Command::BeginLine);
-  SEL_TO_COMMAND(moveToLeftEndOfLineAndModifySelection:,
-                 Command::SelectBeginLine);
-  SEL_TO_COMMAND(moveToRightEndOfLine:, Command::EndLine);
+                 Command::SelectEndParagraph);
+  SEL_TO_COMMAND(moveToLeftEndOfLine:, Command::MoveLeft3);
+  SEL_TO_COMMAND(moveToLeftEndOfLineAndModifySelection:, Command::SelectLeft3);
+  SEL_TO_COMMAND(moveToRightEndOfLine:, Command::MoveRight3);
   SEL_TO_COMMAND(moveToRightEndOfLineAndModifySelection:,
-                 Command::SelectEndLine);
+                 Command::SelectRight3);
   if (aType == NativeKeyBindingsType::SingleLineEditor) {
     SEL_TO_COMMAND(moveUp:, Command::BeginLine);
   } else {
@@ -349,7 +346,7 @@ void NativeKeyBindings::GetEditCommandsForTests(
               ? aEvent.GetRemappedKeyNameIndex(aWritingMode.ref())
               : aEvent.mKeyNameIndex) {
     case KEY_NAME_INDEX_USE_STRING:
-      // OSX specific key bindings.
+      // macOS specific key bindings.
       if (aEvent.IsControl() && aEvent.IsAlt()) {
         if (aEvent.PseudoCharCode() == 'b' || aEvent.PseudoCharCode() == 'B') {
           instance->AppendEditCommandsForSelector(
@@ -548,10 +545,19 @@ void NativeKeyBindings::GetEditCommandsForTests(
           aCommands);
       break;
     case KEY_NAME_INDEX_ArrowLeft:
-      if (aEvent.IsAlt()) {
+      if (aEvent.IsControl()) {
+        if (aEvent.IsShift() && !aEvent.IsAlt() && !aEvent.IsMeta()) {
+          instance->AppendEditCommandsForSelector(
+              ToObjcSelectorPtr(@selector
+                                (moveToLeftEndOfLineAndModifySelection:)),
+              aCommands);
+        }
         break;
       }
-      if (aEvent.IsMeta() || (aEvent.IsControl() && aEvent.IsShift())) {
+      if (aEvent.IsMeta()) {
+        if (aEvent.IsAlt()) {
+          break;
+        }
         instance->AppendEditCommandsForSelector(
             !aEvent.IsShift()
                 ? ToObjcSelectorPtr(@selector(moveToLeftEndOfLine:))
@@ -560,7 +566,12 @@ void NativeKeyBindings::GetEditCommandsForTests(
             aCommands);
         break;
       }
-      if (aEvent.IsControl()) {
+      if (aEvent.IsAlt()) {
+        instance->AppendEditCommandsForSelector(
+            !aEvent.IsShift()
+                ? ToObjcSelectorPtr(@selector(moveWordLeft:))
+                : ToObjcSelectorPtr(@selector(moveWordLeftAndModifySelection:)),
+            aCommands);
         break;
       }
       instance->AppendEditCommandsForSelector(
@@ -570,10 +581,19 @@ void NativeKeyBindings::GetEditCommandsForTests(
           aCommands);
       break;
     case KEY_NAME_INDEX_ArrowRight:
-      if (aEvent.IsAlt()) {
+      if (aEvent.IsControl()) {
+        if (aEvent.IsShift() && !aEvent.IsAlt() && !aEvent.IsMeta()) {
+          instance->AppendEditCommandsForSelector(
+              ToObjcSelectorPtr(@selector
+                                (moveToRightEndOfLineAndModifySelection:)),
+              aCommands);
+        }
         break;
       }
-      if (aEvent.IsMeta() || (aEvent.IsControl() && aEvent.IsShift())) {
+      if (aEvent.IsMeta()) {
+        if (aEvent.IsAlt()) {
+          break;
+        }
         instance->AppendEditCommandsForSelector(
             !aEvent.IsShift()
                 ? ToObjcSelectorPtr(@selector(moveToRightEndOfLine:))
@@ -582,7 +602,12 @@ void NativeKeyBindings::GetEditCommandsForTests(
             aCommands);
         break;
       }
-      if (aEvent.IsControl()) {
+      if (aEvent.IsAlt()) {
+        instance->AppendEditCommandsForSelector(
+            !aEvent.IsShift() ? ToObjcSelectorPtr(@selector(moveWordRight:))
+                              : ToObjcSelectorPtr(@selector(
+                                    moveWordRightAndModifySelection:)),
+            aCommands);
         break;
       }
       instance->AppendEditCommandsForSelector(
@@ -603,7 +628,7 @@ void NativeKeyBindings::GetEditCommandsForTests(
             !aEvent.IsShift()
                 ? ToObjcSelectorPtr(@selector(moveToBeginningOfDocument:))
                 : ToObjcSelectorPtr(
-                      @selector(moveToBegginingOfDocumentAndModifySelection:)),
+                      @selector(moveToBeginningOfDocumentAndModifySelection:)),
             aCommands);
         break;
       }

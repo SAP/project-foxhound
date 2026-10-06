@@ -1,11 +1,9 @@
-// -*- mode:js2 -*-
-
 function f() {
-    var x = 1;                          // line 4
+    var x = 1;                          // line 2
     return function g() {
-        var y = 2;                      // line 6
+        var y = 2;                      // line 4
         return function h() {
-            var z = 3;                  // line 8
+            var z = 3;                  // line 6
             return x+y+z;
         };
     };

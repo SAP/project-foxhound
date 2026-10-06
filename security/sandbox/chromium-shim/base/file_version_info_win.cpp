@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,11 +7,12 @@
 
 #include "base/file_version_info_win.h"
 
+#include <windows.h>
+
 #include "base/files/file_path.h"
 #include "base/memory/ptr_util.h"
 #include "base/threading/scoped_blocking_call.h"
 
-#include "mozilla/Unused.h"
 
 namespace {
 
@@ -85,6 +84,6 @@ FileVersionInfoWin::FileVersionInfoWin(std::vector<uint8_t>&& data,
       fixed_file_info_(GetVsFixedFileInfo(data_)) {
   DCHECK(!owned_data_.empty());
 
-  mozilla::Unused << language_;
-  mozilla::Unused << code_page_;
+  (void)language_;
+  (void)code_page_;
 }

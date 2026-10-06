@@ -1,4 +1,4 @@
-/** Test for Bug 1305950 **/
+/** Test for Bug 1305950 */
 
 const { MockRegistrar } = ChromeUtils.importESModule(
   "resource://testing-common/MockRegistrar.sys.mjs"

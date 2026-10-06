@@ -28,8 +28,8 @@ const CTRL_TAB_RUO_PREF = "browser.ctrlTab.sortByRecentlyUsed";
  *
  * @param {boolean} doFirstTabSwitch - True if this function should take
  *   care of doing the "freebie" tab switch for you.
- * @return {Promise}
- * @resolves {undefined} - Once the simulation is set up.
+ * @returns {Promise<void>}
+ *   Resolves once the simulation is set up.
  */
 async function pretendToShareDisplay(doFirstTabSwitch) {
   Assert.equal(
@@ -59,8 +59,8 @@ async function pretendToShareDisplay(doFirstTabSwitch) {
  * @param {DOM Window} aWindow - The window that we're simulating sharing.
  * @param {boolean} doFirstTabSwitch - True if this function should take
  *   care of doing the "freebie" tab switch for you. Defaults to true.
- * @return {Promise}
- * @resolves {undefined} - Once the simulation is set up.
+ * @returns {Promise<void>}
+ *   Resolves once the simulation is set up.
  */
 async function pretendToShareWindow(aWindow, doFirstTabSwitch = true) {
   // Poke into webrtcUI so that it thinks that the current browser
@@ -82,8 +82,8 @@ async function pretendToShareWindow(aWindow, doFirstTabSwitch = true) {
  *
  * @param {boolean} doFirstTabSwitch - True if this function should take
  *   care of doing the "freebie" tab switch for you. Defaults to true.
- * @return {Promise}
- * @resolves {undefined} - Once the simulation is set up.
+ * @returns {Promise<void>}
+ *   Resolves once the simulation is set up.
  */
 async function pretendToShareScreen(doFirstTabSwitch = true) {
   // Poke into webrtcUI so that it thinks that the current screen is being
@@ -101,8 +101,8 @@ async function pretendToShareScreen(doFirstTabSwitch = true) {
  * 1. Switch back to the first tab if it's not already selected.
  * 2. Check if the tab switch warning panel is open, and if so, close it.
  *
- * @return {Promise}
- * @resolves {undefined} - Once the state is reset.
+ * @returns {Promise<void>}
+ *   Resolves once the state is reset.
  */
 async function resetDisplaySharingState() {
   let firstTabBC = gBrowser.browsers[0].browsingContext;
@@ -125,8 +125,8 @@ async function resetDisplaySharingState() {
  * Checks to make sure that a tab switch warning doesn't show
  * within WARNING_PANEL_TIMEOUT_MS milliseconds.
  *
- * @return {Promise}
- * @resolves {undefined} - Once the check is complete.
+ * @returns {Promise<void>}
+ *   Resolves once the check is complete.
  */
 async function ensureNoWarning() {
   let timerExpired = false;
@@ -167,8 +167,8 @@ async function ensureNoWarning() {
  * a particular tab.
  *
  * @param {<xul:tab>} tab - The tab that the warning should be anchored to.
- * @return {Promise}
- * @resolves {undefined} - Once the check is complete.
+ * @returns {Promise<void>}
+ *   Resolves once the check is complete.
  */
 async function ensureWarning(tab) {
   let popupShowingEvent = await BrowserTestUtils.waitForEvent(

@@ -111,10 +111,6 @@ def run_mochitest_desktop(context, args):
     args.cleanupCrashes = True
     args.marionette_startup_timeout = "180"
     args.sandboxReadWhitelist.append(context.mozharness_workdir)
-    if args.flavor == "browser":
-        args.chunkByRuntime = True
-    else:
-        args.chunkByDir = 4
 
     from runtests import run_test_harness
 

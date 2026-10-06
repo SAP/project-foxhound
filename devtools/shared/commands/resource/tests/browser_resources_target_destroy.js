@@ -27,7 +27,7 @@ add_task(async function () {
     /watcher\d+$/,
     ""
   );
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     tab.linkedBrowser,
     [connectionPrefix],
     function (_connectionPrefix) {
@@ -71,7 +71,7 @@ add_task(async function () {
   info(
     "Spawn a content task in order to run some assertions on actors and resource watchers directly"
   );
-  await ContentTask.spawn(tab.linkedBrowser, [], function () {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], function () {
     const { require } = ChromeUtils.importESModule(
       "resource://devtools/shared/loader/Loader.sys.mjs"
     );

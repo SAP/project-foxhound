@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,10 +11,9 @@
  * bug 1306215 (month), bug 1306216 (week) and bug 1306217 (datetime-local).
  */
 
-#ifndef nsDateTimeControlFrame_h__
-#define nsDateTimeControlFrame_h__
+#ifndef nsDateTimeControlFrame_h_
+#define nsDateTimeControlFrame_h_
 
-#include "mozilla/Attributes.h"
 #include "nsCOMPtr.h"
 #include "nsContainerFrame.h"
 #include "nsIAnonymousContentCreator.h"
@@ -61,4 +58,4 @@ class nsDateTimeControlFrame final : public nsContainerFrame {
   nscoord mFirstBaseline = NS_INTRINSIC_ISIZE_UNKNOWN;
 };
 
-#endif  // nsDateTimeControlFrame_h__
+#endif  // nsDateTimeControlFrame_h_

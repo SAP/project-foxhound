@@ -1,0 +1,99 @@
+{
+  "color": {
+    "box": {
+      "@base": {
+        "value": {
+          "light": "{color.white.@base}",
+          "dark": "{color.gray.80}",
+          "prefersContrast": "{background.color.canvas}"
+        }
+      },
+      "info": {
+        "value": {
+          "prefersContrast": "{background.color.canvas}",
+          "brand": {
+            "light": "{color.gray.20}",
+            "dark": "{color.gray.80}"
+          },
+          "platform": {
+            "default": "color-mix(in srgb, currentColor 6%, transparent)"
+          }
+        }
+      }
+    },
+    "canvas": {
+      "value": {
+        "prefersContrast": "Canvas",
+        "brand": {
+          "light": "{color.white.@base}",
+          "dark": "{color.gray.90}"
+        },
+        "platform": {
+          "default": "Canvas"
+        }
+      }
+    },
+    "critical": {
+      "value": {
+        "light": "{color.red.0}",
+        "dark": "{color.red.90}",
+        "prefersContrast": "{background.color.canvas}"
+      }
+    },
+    "information": {
+      "value": {
+        "light": "{color.blue.0}",
+        "dark": "{color.blue.90}",
+        "prefersContrast": "{background.color.canvas}"
+      }
+    },
+    "success": {
+      "value": {
+        "light": "{color.green.0}",
+        "dark": "{color.green.90}",
+        "prefersContrast": "{background.color.canvas}"
+      }
+    },
+    "warning": {
+      "value": {
+        "light": "{color.yellow.0}",
+        "dark": "{color.yellow.90}",
+        "prefersContrast": "{background.color.canvas}"
+      }
+    },
+    "overlay": {
+      "value": "{color.black.alpha.50}"
+    },
+    "list": {
+      "item": {
+        "hover": {
+          "value": {
+            "brand": {
+              "default": "color-mix(in srgb, {color.accent.primary.@base} 20%, transparent)"
+            },
+            "platform": {
+              "default": "color-mix(in srgb, currentColor 20%, transparent)"
+            },
+            "prefersContrast": "SelectedItem"
+          }
+        }
+      }
+    },
+    "dimmed": {
+      "@base": {
+        "value": {
+          "light": "color-mix(in srgb, currentColor 12%, transparent)",
+          "dark": "color-mix(in srgb, currentColor 17%, transparent)",
+          "nativeTheme": "color-mix(in srgb, currentColor 17%, transparent)"
+        }
+      },
+      "further": {
+        "value": {
+          "light": "color-mix(in srgb, currentColor 20%, transparent)",
+          "dark": "color-mix(in srgb, currentColor 14%, transparent)",
+          "nativeTheme": "color-mix(in srgb, currentColor 30%, transparent)"
+        }
+      }
+    }
+  }
+}

@@ -116,29 +116,155 @@ add_task(async function () {
 async function testPseudoElements(inspector, container) {
   info("Checking for pseudo elements");
 
+  const checkBreadcrumbContent = async (nodeFront, expected, desc) => {
+    const onBreadcrumbsUpdated = inspector.once("breadcrumbs-updated");
+    await selectNode(nodeFront, inspector);
+    await onBreadcrumbsUpdated;
+    Assert.deepEqual(
+      [...container.childNodes].map(el => el.textContent),
+      expected,
+      desc
+    );
+  };
+
   const pseudoParent = await getNodeFront("#pseudo-container", inspector);
   const children = await inspector.walker.children(pseudoParent);
   is(children.nodes.length, 2, "Pseudo children returned from walker");
 
   const beforeElement = children.nodes[0];
-  let breadcrumbsUpdated = inspector.once("breadcrumbs-updated");
-  await selectNode(beforeElement, inspector);
-  await breadcrumbsUpdated;
-  is(
-    container.childNodes[3].textContent,
-    "::before",
+  await checkBreadcrumbContent(
+    beforeElement,
+    ["html", "body", "div#pseudo-container", "::before"],
     "::before shows up in breadcrumb"
   );
 
   const afterElement = children.nodes[1];
-  breadcrumbsUpdated = inspector.once("breadcrumbs-updated");
-  await selectNode(afterElement, inspector);
-  await breadcrumbsUpdated;
-  is(
-    container.childNodes[3].textContent,
-    "::after",
-    "::before shows up in breadcrumb"
+  await checkBreadcrumbContent(
+    afterElement,
+    ["html", "body", "div#pseudo-container", "::after"],
+    "::after shows up in breadcrumb"
   );
+
+  const dialogNodeFront = await getNodeFront("dialog", inspector);
+  const dialogChildren = await inspector.walker.children(dialogNodeFront);
+  is(
+    dialogChildren.nodes.length,
+    2,
+    "Expected number of children for the dialog element"
+  );
+  const backdropElement = dialogChildren.nodes[0];
+  await checkBreadcrumbContent(
+    backdropElement,
+    ["html", "body", "dialog", "::backdrop"],
+    ":backdrop shows up in breadcrumb"
+  );
+
+  info("Check rules on ::view-transition");
+  const htmlNodeFront = await getNodeFront("html", inspector);
+  const onMarkupMutation = inspector.once("markupmutation");
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async () => {
+    const document = content.document;
+    content.testTransition = document.startViewTransition();
+    await content.testTransition;
+  });
+  await onMarkupMutation;
+
+  const htmlChildren = await inspector.markup.walker.children(htmlNodeFront);
+  const viewTransitionNodeFront = htmlChildren.nodes[2];
+
+  is(
+    viewTransitionNodeFront.getAttribute("type"),
+    ":view-transition",
+    "Got expected ::view-transition node front"
+  );
+
+  await checkBreadcrumbContent(
+    viewTransitionNodeFront,
+    ["html", "::view-transition"],
+    "::view-transition shows up in breadcrumb"
+  );
+
+  const viewTransitionChildren = await inspector.markup.walker.children(
+    viewTransitionNodeFront
+  );
+  const viewTransitionGroupNodeFront = viewTransitionChildren.nodes[0];
+  is(
+    viewTransitionGroupNodeFront.getAttribute("type"),
+    ":view-transition-group",
+    "Got expected ::view-transition-group node front"
+  );
+
+  await checkBreadcrumbContent(
+    viewTransitionGroupNodeFront,
+    ["html", "::view-transition", "::view-transition-group(root)"],
+    "::view-transition-group(root) shows up in breadcrumb"
+  );
+
+  const viewTransitionGroupChildren = await inspector.markup.walker.children(
+    viewTransitionGroupNodeFront
+  );
+  const viewTransitionImagePairNodeFront = viewTransitionGroupChildren.nodes[0];
+  is(
+    viewTransitionImagePairNodeFront.getAttribute("type"),
+    ":view-transition-image-pair",
+    "Got expected ::view-transition-image-pair node front"
+  );
+
+  await checkBreadcrumbContent(
+    viewTransitionImagePairNodeFront,
+    [
+      "html",
+      "::view-transition",
+      "::view-transition-group(root)",
+      "::view-transition-image-pair(root)",
+    ],
+    "::view-transition-image-pair(root) shows up in breadcrumb"
+  );
+
+  const viewTransitionImagePairChildren =
+    await inspector.markup.walker.children(viewTransitionImagePairNodeFront);
+  const [viewTransitionOldNodeFront, viewTransitionNewNodeFront] =
+    viewTransitionImagePairChildren.nodes;
+  is(
+    viewTransitionOldNodeFront.getAttribute("type"),
+    ":view-transition-old",
+    "Got expected ::view-transition-old node front"
+  );
+  is(
+    viewTransitionNewNodeFront.getAttribute("type"),
+    ":view-transition-new",
+    "Got expected ::view-transition-new node front"
+  );
+
+  await checkBreadcrumbContent(
+    viewTransitionOldNodeFront,
+    [
+      "html",
+      "::view-transition",
+      "::view-transition-group(root)",
+      "::view-transition-image-pair(root)",
+      "::view-transition-old(root)",
+    ],
+    "::view-transition-old(root) shows up in breadcrumb"
+  );
+
+  await checkBreadcrumbContent(
+    viewTransitionNewNodeFront,
+    [
+      "html",
+      "::view-transition",
+      "::view-transition-group(root)",
+      "::view-transition-image-pair(root)",
+      "::view-transition-new(root)",
+    ],
+    "::view-transition-new(root) shows up in breadcrumb"
+  );
+
+  // Cancel transition
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async () => {
+    content.testTransition.skipTransition();
+    delete content.testTransition;
+  });
 }
 
 async function testComments(inspector, container) {
@@ -149,7 +275,9 @@ async function testComments(inspector, container) {
   const button = container.childNodes[pressedButtonIndex];
 
   let onBreadcrumbsUpdated = inspector.once("breadcrumbs-updated");
-  button.click();
+  // Don't use button.click(), as it doesn't cause the focus event to be dispatched, which
+  // we do need here.
+  EventUtils.synthesizeMouseAtCenter(button, {}, inspector.panelWin);
   await onBreadcrumbsUpdated;
 
   is(breadcrumbs.currentIndex, pressedButtonIndex, "New button is selected");
@@ -178,7 +306,9 @@ async function testComments(inspector, container) {
 
   onInspectorUpdated = inspector.once("inspector-updated");
   onBreadcrumbsUpdated = inspector.once("breadcrumbs-updated");
-  button.click();
+  // Don't use button.click(), as it doesn't cause the focus event to be dispatched, which
+  // we do need here.
+  EventUtils.synthesizeMouseAtCenter(button, {}, inspector.panelWin);
   await Promise.all([onInspectorUpdated, onBreadcrumbsUpdated]);
 
   is(

@@ -8,9 +8,8 @@ export async function doImport() {
   // Relative/absolute paths should be resolved based on the URI, instead of
   // file: path.
 
-  const namespaceWithURI = await import(
-    "resource://test/data/base_uri_module2.mjs"
-  );
+  const namespaceWithURI =
+    await import("resource://test/data/base_uri_module2.mjs");
   const namespaceWithCurrentDir = await import("./base_uri_module2.mjs");
   const namespaceWithParentDir = await import("../data/base_uri_module2.mjs");
   const namespaceWithAbsoluteDir = await import("/data/base_uri_module2.mjs");

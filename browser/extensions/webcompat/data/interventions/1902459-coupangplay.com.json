@@ -1,0 +1,15 @@
+{
+  "label": "coupangplay.com",
+  "bugs": {
+    "1902459": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.coupangplay.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

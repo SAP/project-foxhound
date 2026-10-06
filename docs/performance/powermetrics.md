@@ -23,14 +23,14 @@ command encompasses the most useful ones:
 
 sudo powermetrics --samplers tasks --show-process-coalition --show-process-gpu -n 1 -i 5000
 
--   `--samplers tasks` tells it to just do per-process measurements.
--   `--show-process-coalition`` `tells it to group *coalitions* of
-    related processes, e.g. the Firefox parent process and child
-    processes.
--   `--show-process-gpu` tells it to show per-process GPU measurements.
--   `-n 1` tells it to take one sample and then stop.
--   `-i 5000` tells it to use a sample length of 5 seconds (5000 ms).
-    Change this number to get shorter or longer samples.
+- `--samplers tasks` tells it to just do per-process measurements.
+- `--show-process-coalition`` `tells it to group *coalitions* of
+  related processes, e.g. the Firefox parent process and child
+  processes.
+- `--show-process-gpu` tells it to show per-process GPU measurements.
+- `-n 1` tells it to take one sample and then stop.
+- `-i 5000` tells it to use a sample length of 5 seconds (5000 ms).
+  Change this number to get shorter or longer samples.
 
 The following is example output from such an invocation:
 
@@ -61,52 +61,52 @@ The following is example output from such an invocation:
 
 This sample was taken while the following programs were running:
 
--   Firefox Beta (single process, invoked from the Mac OS dock, shown in
-    the `org.mozilla.firefox` coalition.)
--   Firefox Nightly (multi-process, invoked from the command line, shown
-    in the `com.apple.Terminal` coalition.)
--   Google Chrome.
--   Safari.
+- Firefox Beta (single process, invoked from the Mac OS dock, shown in
+  the `org.mozilla.firefox` coalition.)
+- Firefox Nightly (multi-process, invoked from the command line, shown
+  in the `com.apple.Terminal` coalition.)
+- Google Chrome.
+- Safari.
 
 The grouping of parent and child processes (in coalitions) is obvious.
 The meaning of the columns is as follows.
 
--   **Name**: Coalition/process name. Process names within coalitions
-    are indented.
--   **ID**: Coalition/process ID number.
--   **CPU ms/s**: CPU time used by the coalition/process, per second,
-    during the sample period. The sum of the process values typically
-    exceeds the coalition value slightly, for unknown reasons.
--   **User%**: Percentage of that CPU time spent in user space (as
-    opposed to kernel mode.)
--   **Deadlines (\<2 ms, 2-5 ms)**: These two columns count how many
-    \"short\" timers woke up threads in the process, per second, during
-    the sample period. High frequency timers, which typically have short
-    time-to-deadlines, can cause high power consumption and should be
-    avoided if possible.
--   **Wakeups (Intr, Pkg idle)**: These two columns count how many
-    wakeups occurred, per second, during the sample period. The first
-    column counts interrupt-level wakeups that resulted in a thread
-    being dispatched in the process. The second column counts \"package
-    idle exit\" wakeups, which wake up the entire package as opposed to
-    just a single core; such wakeups are particularly expensive, and
-    this count is a subset of the first column\'s count.
--   **GPU ms/s**: GPU time used by the coalition/process, per second,
-    during the sample period.
+- **Name**: Coalition/process name. Process names within coalitions
+  are indented.
+- **ID**: Coalition/process ID number.
+- **CPU ms/s**: CPU time used by the coalition/process, per second,
+  during the sample period. The sum of the process values typically
+  exceeds the coalition value slightly, for unknown reasons.
+- **User%**: Percentage of that CPU time spent in user space (as
+  opposed to kernel mode.)
+- **Deadlines (\<2 ms, 2-5 ms)**: These two columns count how many
+  \"short\" timers woke up threads in the process, per second, during
+  the sample period. High frequency timers, which typically have short
+  time-to-deadlines, can cause high power consumption and should be
+  avoided if possible.
+- **Wakeups (Intr, Pkg idle)**: These two columns count how many
+  wakeups occurred, per second, during the sample period. The first
+  column counts interrupt-level wakeups that resulted in a thread
+  being dispatched in the process. The second column counts \"package
+  idle exit\" wakeups, which wake up the entire package as opposed to
+  just a single core; such wakeups are particularly expensive, and
+  this count is a subset of the first column\'s count.
+- **GPU ms/s**: GPU time used by the coalition/process, per second,
+  during the sample period.
 
 Other things to note.
 
--   Smaller is better --- i.e. results in lower power consumption ---
-    for all of these measurements.
--   There is some overlap between the two \"Deadlines\" columns and the
-    two \"Wakeups\" columns. For example, firing a single sub-2ms
-    deadline can also cause a package idle exit wakeup.
--   Many of these measurements are also obtainable by passing the
-    `TASK_POWER_INFO` flag and a `task_power_info` struct to the
-    `task_info` function.
--   By default, the coalitions/processes are sorted by a composite value
-    computed from several factors, though this can be changed via
-    command-line options.
+- Smaller is better --- i.e. results in lower power consumption ---
+  for all of these measurements.
+- There is some overlap between the two \"Deadlines\" columns and the
+  two \"Wakeups\" columns. For example, firing a single sub-2ms
+  deadline can also cause a package idle exit wakeup.
+- Many of these measurements are also obtainable by passing the
+  `TASK_POWER_INFO` flag and a `task_power_info` struct to the
+  `task_info` function.
+- By default, the coalitions/processes are sorted by a composite value
+  computed from several factors, though this can be changed via
+  command-line options.
 
 ## Other measurements
 

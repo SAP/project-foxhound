@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,10 +9,10 @@
 #define mozilla_dom_HTMLAnchorElement_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/Link.h"
 #include "mozilla/dom/HTMLDNSPrefetch.h"
-#include "nsGenericHTMLElement.h"
+#include "mozilla/dom/Link.h"
 #include "nsDOMTokenList.h"
+#include "nsGenericHTMLElement.h"
 
 namespace mozilla {
 class EventChainPostVisitor;
@@ -25,10 +23,9 @@ class HTMLAnchorElement final : public nsGenericHTMLElement,
                                 public Link,
                                 public SupportsDNSPrefetch {
  public:
-  using Element::GetText;
+  using Element::GetCharacterDataBuffer;
 
-  explicit HTMLAnchorElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+  explicit HTMLAnchorElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : nsGenericHTMLElement(std::move(aNodeInfo)), Link(this) {}
 
   // nsISupports
@@ -112,10 +109,6 @@ class HTMLAnchorElement final : public nsGenericHTMLElement,
   }
   void SetHreflang(const nsAString& aValue, mozilla::ErrorResult& rv) {
     SetHTMLAttr(nsGkAtoms::hreflang, aValue, rv);
-  }
-  // Needed for docshell
-  void GetType(nsAString& aValue) const {
-    GetHTMLAttr(nsGkAtoms::type, aValue);
   }
   void GetType(DOMString& aValue) const {
     GetHTMLAttr(nsGkAtoms::type, aValue);

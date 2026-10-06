@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_DocAccessible_h__
-#define mozilla_a11y_DocAccessible_h__
+#ifndef mozilla_a11y_DocAccessible_h_
+#define mozilla_a11y_DocAccessible_h_
 
 #include "HyperTextAccessible.h"
 #include "AccEvent.h"
@@ -44,7 +43,6 @@ class TNotification;
  * all use this class to represent the doc they contain.
  */
 class DocAccessible : public HyperTextAccessible,
-                      public nsIDocumentObserver,
                       public nsSupportsWeakReference {
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(DocAccessible, LocalAccessible)
@@ -55,18 +53,17 @@ class DocAccessible : public HyperTextAccessible,
  public:
   DocAccessible(Document* aDocument, PresShell* aPresShell);
 
-  // nsIDocumentObserver
-  NS_DECL_NSIDOCUMENTOBSERVER
-
   // LocalAccessible
   virtual void Init();
-  virtual void Shutdown() override;
-  virtual nsIFrame* GetFrame() const override;
-  virtual nsINode* GetNode() const override;
+  void Shutdown() override;
+  nsIFrame* GetFrame() const override;
+  nsINode* GetNode() const override;
   Document* DocumentNode() const { return mDocumentNode; }
 
-  virtual mozilla::a11y::ENameValueFlag Name(nsString& aName) const override;
-  virtual void Description(nsString& aDescription) const override;
+  virtual mozilla::a11y::ENameValueFlag DirectName(
+      nsString& aName) const override;
+  virtual EDescriptionValueFlag Description(
+      nsString& aDescription) const override;
   virtual Accessible* FocusedChild() override;
   virtual mozilla::a11y::role NativeRole() const override;
   virtual uint64_t NativeState() const override;
@@ -128,7 +125,8 @@ class DocAccessible : public HyperTextAccessible,
    * We call this when we observe an ID mutation or when an acc is bound
    * to its document.
    */
-  void QueueCacheUpdateForDependentRelations(LocalAccessible* aAcc);
+  void QueueCacheUpdateForDependentRelations(
+      LocalAccessible* aAcc, const nsAttrValue* aOldId = nullptr);
 
   /**
    * Returns true if the instance has shutdown.
@@ -326,7 +324,7 @@ class DocAccessible : public HyperTextAccessible,
   /**
    * Return true if the given ID is referred by relation attribute.
    */
-  bool IsDependentID(dom::Element* aElement, const nsAString& aID) const {
+  bool IsDependentID(dom::Element* aElement, nsAtom* aID) const {
     return GetRelProviders(aElement, aID);
   }
 
@@ -400,9 +398,11 @@ class DocAccessible : public HyperTextAccessible,
    * and returns its scroll position and scroll range. If the given
    * accessible is `this`, return the scroll position and range of
    * the root scroll frame. Return values have been scaled by the
-   * PresShell's resolution.
+   * PresShell's resolution when aShouldScaleByResolution is explicitly
+   * true or unspecified.
    */
-  std::pair<nsPoint, nsRect> ComputeScrollData(LocalAccessible* aAcc);
+  std::pair<nsPoint, nsRect> ComputeScrollData(
+      const LocalAccessible* aAcc, bool aShouldScaleByResolution = true);
 
   /**
    * Only works in content process documents.
@@ -413,6 +413,50 @@ class DocAccessible : public HyperTextAccessible,
 
   void AttrElementWillChange(dom::Element* aElement, nsAtom* aAttr);
   void AttrElementChanged(dom::Element* aElement, nsAtom* aAttr);
+
+  /**
+   * Given an accessible, check if it is anchored to other frames, and
+   * refresh the cache on each of those frames' accessibles.
+   */
+  void RefreshAnchorRelationCacheForTarget(LocalAccessible* aTarget);
+
+  /**
+   * Queue cache updates for all invokers (popovertarget/commandfor) of a
+   * popover element.
+   */
+  void QueueCacheUpdateForPopoverInvokers(dom::Element* aPopoverEl);
+
+  /**
+   * Returns true if this document is a print document, which is a static clone
+   * of the original document.
+   */
+  bool IsPrintDoc() const;
+
+  /**
+   * Return the cache domain set that should be used for accessibles in this
+   * document.
+   */
+  uint64_t EffectiveCacheDomains() const;
+
+  /**
+   * For hidden subtrees, fire a name/description change event if the subtree
+   * is a target of aria-labelledby/describedby.
+   * This does nothing if it is called on a node which is not part of a hidden
+   * aria-labelledby/describedby target.
+   */
+  void MaybeHandleChangeToHiddenNameOrDescription(nsIContent* aChild);
+  void AttributeWillChange(dom::Element* aElement, int32_t aNameSpaceID,
+                           nsAtom* aAttribute, AttrModType aModType);
+  virtual void AttributeChanged(dom::Element* aElement, int32_t aNameSpaceID,
+                                nsAtom* aAttribute, AttrModType aModType,
+                                const nsAttrValue* aOldValue);
+  void ElementStateChanged(dom::Document* aDocument, dom::Element* aElement,
+                           dom::ElementState aStateMask);
+  void ARIAAttributeDefaultWillChange(dom::Element* aElement,
+                                      nsAtom* aAttribute, AttrModType aModType);
+
+  void ARIAAttributeDefaultChanged(dom::Element* aElement, nsAtom* aAttribute,
+                                   AttrModType aModType);
 
  protected:
   virtual ~DocAccessible();
@@ -735,17 +779,16 @@ class DocAccessible : public HyperTextAccessible,
     AttrRelProvider(nsAtom* aRelAttr, nsIContent* aContent)
         : mRelAttr(aRelAttr), mContent(aContent) {}
 
+    AttrRelProvider() = delete;
+    AttrRelProvider(const AttrRelProvider&) = delete;
+    AttrRelProvider& operator=(const AttrRelProvider&) = delete;
+
     nsAtom* mRelAttr;
     nsCOMPtr<nsIContent> mContent;
-
-   private:
-    AttrRelProvider();
-    AttrRelProvider(const AttrRelProvider&);
-    AttrRelProvider& operator=(const AttrRelProvider&);
   };
 
   typedef nsTArray<mozilla::UniquePtr<AttrRelProvider>> AttrRelProviders;
-  typedef nsClassHashtable<nsStringHashKey, AttrRelProviders>
+  typedef nsClassHashtable<nsAtomHashKey, AttrRelProviders>
       DependentIDsHashtable;
 
   /**
@@ -753,11 +796,10 @@ class DocAccessible : public HyperTextAccessible,
    * a DOM document if the element is in uncomposed document or associated
    * with shadow DOM the element is in.
    */
-  AttrRelProviders* GetRelProviders(dom::Element* aElement,
-                                    const nsAString& aID) const;
+  AttrRelProviders* GetRelProviders(dom::Element* aElement, nsAtom* aID) const;
   AttrRelProviders* GetOrCreateRelProviders(dom::Element* aElement,
-                                            const nsAString& aID);
-  void RemoveRelProvidersIfEmpty(dom::Element* aElement, const nsAString& aID);
+                                            nsAtom* aID);
+  void RemoveRelProvidersIfEmpty(dom::Element* aElement, nsAtom* aID);
 
   /**
    * A map used to look up the target node for an implicit reverse relation
@@ -790,6 +832,7 @@ class DocAccessible : public HyperTextAccessible,
   nsTHashMap<nsIContent*, AttrRelProviders> mDependentElementsMap;
 
   friend class RelatedAccIterator;
+  friend class HTMLLabelIterator;
 
   /**
    * Used for our caching algorithm. We store the list of nodes that should be
@@ -833,13 +876,8 @@ class DocAccessible : public HyperTextAccessible,
    */
   void TrackMovedAccessible(LocalAccessible* aAcc);
 
-  /**
-   * For hidden subtrees, fire a name/description change event if the subtree
-   * is a target of aria-labelledby/describedby.
-   * This does nothing if it is called on a node which is not part of a hidden
-   * aria-labelledby/describedby target.
-   */
-  void MaybeHandleChangeToHiddenNameOrDescription(nsIContent* aChild);
+  void MaybeHandleChangeToAriaActions(LocalAccessible* aAcc,
+                                      const nsAtom* aAttribute);
 
   void MaybeFireEventsForChangedPopover(LocalAccessible* aAcc);
 

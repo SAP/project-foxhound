@@ -16,13 +16,13 @@ kind-dependencies:
     - generate-baseline-profile-firebase
 
 task-defaults:
+    run-on-repo-type: [hg]
     apk-artifact-template:
         type: file
         name: 'public/build/target.{abi}.apk'
-        path: '/builds/worker/workspace/obj-build/gradle/build/mobile/android/{source_project_name}/app/outputs/apk/{gradle_build}/{gradle_build_type}/{fileName}'
+        path: '/builds/worker/workspace/obj-build/gradle/build/mobile/android/{source_project_name}/app/outputs/apk/{apk_path}/{fileName}'
     attributes:
         build_platform: android
-
 
 tasks:
     focus-debug:
@@ -63,7 +63,7 @@ tasks:
         description: 'Fenix debug build from source code'
         run:
             gradle-build-type: debug
-            gradle-build-name: fenixDebug
+            gradle-build-name: debug
             gradle-build: fenix
             gradle-extra-options:
                 - -PdisableLeakCanary
@@ -72,6 +72,13 @@ tasks:
         treeherder:
             symbol: fenix-debug(Bf)
             platform: fenix-android-all/opt
+        worker:
+            artifacts:
+                - path: /builds/worker/perfherder-data-apk-size.json
+                  name: public/build/perfherder-data-apk-size.json
+                  type: file
+            env:
+                MOZ_PERFHERDER_UPLOAD: /builds/worker/perfherder-data-apk-size.json
 
     focus-release:
         description: 'Release Focus build'
@@ -132,7 +139,7 @@ tasks:
         include-release-version: true
         run:
             gradle-build-type: release
-            gradle-build-name: fenixRelease
+            gradle-build-name: release
             gradle-build: fenix
             track-apk-size: true
             baseline-profile-path: /builds/worker/fetches/baselineProfiles
@@ -142,6 +149,13 @@ tasks:
         treeherder:
             symbol: fenix-release(Bf)
             platform: fenix-android-all/opt
+        worker:
+            artifacts:
+                - path: /builds/worker/perfherder-data-apk-size.json
+                  name: public/build/perfherder-data-apk-size.json
+                  type: file
+            env:
+                MOZ_PERFHERDER_UPLOAD: /builds/worker/perfherder-data-apk-size.json
 
     focus-nightly:
         description: 'Nightly focus build'
@@ -181,7 +195,7 @@ tasks:
         source-project-name: "fenix"
         run:
             gradle-build-type: nightly
-            gradle-build-name: fenixNightly
+            gradle-build-name: nightly
             gradle-build: fenix
             track-apk-size: true
             baseline-profile-path: /builds/worker/fetches/baselineProfiles
@@ -189,6 +203,13 @@ tasks:
         treeherder:
             symbol: fenix-nightly(B)
             platform: fenix-android-all/opt
+        worker:
+            artifacts:
+                - path: /builds/worker/perfherder-data-apk-size.json
+                  name: public/build/perfherder-data-apk-size.json
+                  type: file
+            env:
+                MOZ_PERFHERDER_UPLOAD: /builds/worker/perfherder-data-apk-size.json
 
     focus-beta:
         description: 'Beta focus build'
@@ -228,7 +249,7 @@ tasks:
         include-release-version: true
         run:
             gradle-build-type: beta
-            gradle-build-name: fenixBeta
+            gradle-build-name: beta
             gradle-build: fenix
             track-apk-size: true
             baseline-profile-path: /builds/worker/fetches/baselineProfiles
@@ -238,6 +259,13 @@ tasks:
         treeherder:
             symbol: fenix-beta(B)
             platform: fenix-android-all/opt
+        worker:
+            artifacts:
+                - path: /builds/worker/perfherder-data-apk-size.json
+                  name: public/build/perfherder-data-apk-size.json
+                  type: file
+            env:
+                MOZ_PERFHERDER_UPLOAD: /builds/worker/perfherder-data-apk-size.json
 
     focus-nightly-firebase:
         attributes:
@@ -266,7 +294,7 @@ tasks:
         disable-optimization: true
         run:
             gradle-build-type: nightly
-            gradle-build-name: fenixNightly
+            gradle-build-name: nightly
             gradle-build: fenix
             test-build-type: nightly
         run-on-projects: [trunk]
@@ -302,7 +330,7 @@ tasks:
         disable-optimization: true
         run:
             gradle-build-type: beta
-            gradle-build-name: fenixBeta
+            gradle-build-name: beta
             gradle-build: fenix
             test-build-type: beta
         run-on-projects: ['release']
@@ -344,8 +372,8 @@ tasks:
             # 3 differences here:
             #  * "androidTest/" is added
             #  * "{gradle_build_type}" is forced to "debug"
-            #  * "{fileName}" is forced to "app-fenix-debug-androidTest.apk"
-            path: '/builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/outputs/apk/androidTest/fenix/debug/app-fenix-debug-androidTest.apk'
+            #  * "{fileName}" is forced to "app-debug-androidTest.apk"
+            path: '/builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk'
         treeherder:
             symbol: fenix-debug(Bat)
             platform: fenix-android-all/opt
@@ -391,9 +419,9 @@ tasks:
         apk-artifact-template:
             # 3 differences here:
             #  * "androidTest/" is added
-            #  * "{gradle_build_type}" is forced to "debug"
-            #  * "{fileName}" is forced to "app-fenix-nightly-androidTest.apk"
-            path: '/builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/outputs/apk/androidTest/fenix/nightly/app-fenix-nightly-androidTest.apk'
+            #  * "{gradle_build_type}" is forced to "nightly"
+            #  * "{fileName}" is forced to "app-nightly-androidTest.apk"
+            path: '/builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/outputs/apk/androidTest/nightly/app-nightly-androidTest.apk'
         disable-optimization: true
         run:
             gradle-build-type: androidTest
@@ -435,8 +463,8 @@ tasks:
             # 3 differences here:
             #  * "androidTest/" is added
             #  * "{gradle_build_type}" is forced to "beta"
-            #  * "{fileName}" is forced to "app-fenix-beta-androidTest.apk"
-            path: '/builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/outputs/apk/androidTest/fenix/beta/app-fenix-beta-androidTest.apk'
+            #  * "{fileName}" is forced to "app-beta-androidTest.apk"
+            path: '/builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/outputs/apk/androidTest/beta/app-beta-androidTest.apk'
         disable-optimization: true
         run:
             gradle-build-type: androidTest
@@ -459,8 +487,8 @@ tasks:
             # 3 differences here:
             #  * "androidTest/" is added
             #  * "{gradle_build_type}" is forced to "beta"
-            #  * "{fileName}" is forced to "app-fenix-beta-androidTest.apk"
-            path: '/builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/outputs/apk/androidTest/fenix/beta/app-fenix-beta-androidTest.apk'
+            #  * "{fileName}" is forced to "app-beta-androidTest.apk"
+            path: '/builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/outputs/apk/androidTest/beta/app-beta-androidTest.apk'
         run-on-projects: []
         disable-optimization: true
         run:
@@ -492,7 +520,7 @@ tasks:
         run-on-projects: []
         run:
             gradle-build-type: nightly
-            gradle-build-name: fenixNightly
+            gradle-build-name: nightly
             gradle-build: fenix
             baseline-profile-path: /builds/worker/fetches/baselineProfiles
         source-project-name: "fenix"
@@ -512,7 +540,7 @@ tasks:
         include-shippable-secrets: true
         run:
             gradle-build-type: beta
-            gradle-build-name: fenixBeta
+            gradle-build-name: beta
             gradle-build: fenix
             gradle-extra-options:
                 - -PmozillaOnline
@@ -539,7 +567,7 @@ tasks:
         include-shippable-secrets: true
         run:
             gradle-build-type: release
-            gradle-build-name: fenixRelease
+            gradle-build-name: release
             gradle-build: fenix
             gradle-extra-options:
                 - -PmozillaOnline

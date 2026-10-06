@@ -31,8 +31,6 @@ forbid-mscom-init:
         # These files are existing legacy uses of CoInitialize (and so forth)
         # that must eventually be fixed -- probably by converting them to use
         # ApartmentRegion and moving them to _that_ lint's exception-list.
-        - browser/components/migration/nsIEHistoryEnumerator.cpp
-        - browser/components/migration/tests/unit/insertIEHistory/InsertIEHistory.cpp
         - browser/components/shell/nsWindowsShellService.cpp
         - gfx/thebes/gfxWindowsPlatform.cpp
         - image/DecodePool.cpp

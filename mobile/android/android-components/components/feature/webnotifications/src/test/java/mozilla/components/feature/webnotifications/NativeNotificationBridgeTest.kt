@@ -9,7 +9,6 @@ import android.app.Notification.BigTextStyle
 import android.app.Notification.EXTRA_SUB_TEXT
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.icons.BrowserIcons
 import mozilla.components.browser.icons.Icon
@@ -23,7 +22,6 @@ import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -31,6 +29,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.verify
+import kotlin.test.assertNotNull
 
 private const val TEST_TITLE = "test title"
 private const val TEST_TAG = "test tag"
@@ -38,12 +37,20 @@ private const val TEST_TEXT = "test text"
 private const val TEST_URL = "mozilla.org"
 private const val TEST_CHANNEL = "testChannel"
 
-@ExperimentalCoroutinesApi // for runTest
 @RunWith(AndroidJUnit4::class)
 class NativeNotificationBridgeTest {
     private val blankNotification = WebNotification(
-        TEST_TITLE, TEST_TAG, TEST_TEXT, TEST_URL, null, null,
-        null, true, mock(), 0, privateBrowsing = false,
+        TEST_TITLE,
+        TEST_TAG,
+        TEST_TEXT,
+        TEST_URL,
+        null,
+        null,
+        null,
+        true,
+        mock(),
+        0,
+        privateBrowsing = false,
     )
 
     private lateinit var icons: BrowserIcons

@@ -33,7 +33,7 @@ Examples:
   * The generated JavaScript serializes the data into an [ArrayBuffer](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/ArrayBuffer)
   * The C++ copies that data into a `RustBuffer`
 
-Note: in [UniFFI.webIDL](https://searchfox.org/mozilla-central/source/dom/chrome-webidl/UniFFI.webidl), functions input the `UniFFIScaffoldingValue` type which is the union of all types in the JavaScript lowered type column.
+Note: in [UniFFI.webIDL](https://searchfox.org/firefox-main/source/dom/chrome-webidl/UniFFI.webidl), functions input the `UniFFIScaffoldingValue` type which is the union of all types in the JavaScript lowered type column.
 
 ## RustBuffers and ArrayBuffers
 
@@ -41,7 +41,7 @@ Note: in [UniFFI.webIDL](https://searchfox.org/mozilla-central/source/dom/chrome
 The generated JavaScript doesn't deal with `RustBuffer`s directly, instead it uses an `ArrayBuffer` which is a JavaScript-native byte buffer.
 The generated C++ converts between `RustBuffer` and `ArrayBuffer`.
 When lifting a RustBuffer, the C++ uses `JS::NewExternalArrayBuffer` to create an array buffer that references the RustBuffer's memory.
-When lowering, the generated C++ currently copies the `ArrayBuffer` bytes into a new `RustBuffer`.  Maybe in the future we can find a way to avoid this copy.
+When lowering, the generated C++ currently copies the `ArrayBuffer` bytes into a new `RustBuffer`. Maybe in the future we can find a way to avoid this copy.
 
 ## UniFFIPointer object
 
@@ -67,7 +67,7 @@ These classes share a similar API, although they don't actually share a base cla
   Lower must be called from the main thread since it access JavaScript objects.
 * `IntoRust()`: Take the stored value and create a raw value to pass to Rust.
 * `FromRust()`: Input a raw Rust value and store it inside the FFI value class.
-* `Lift()`:  Take the stored value and lift it into a JavaScript value.
+* `Lift()`: Take the stored value and lift it into a JavaScript value.
   Lift must be called from the main thread since it access JavaScript objects.
 * _destructor_: If the FFI value is destroyed with a live value inside of if, the FFI value class is responsible for cleanup.
   For example if an object handle is lowered, but `IntoRust` was never called, then the FFI value class will free that handle.

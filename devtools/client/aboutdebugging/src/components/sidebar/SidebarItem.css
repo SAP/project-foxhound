@@ -4,7 +4,7 @@
 
 .sidebar-item {
   color: var(--sidebar-text-color);
-  border-radius: 2px;
+  border-radius: var(--border-radius-xsmall);
   padding-inline-end: var(--category-padding);
   padding-inline-start: var(--category-padding);
   transition: background-color var(--category-transition-duration);

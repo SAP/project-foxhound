@@ -6,9 +6,9 @@
 
 import PropTypes from "resource://devtools/client/shared/vendor/react-prop-types.mjs";
 
-import { wrapRender } from "resource://devtools/client/shared/components/reps/reps/rep-utils.mjs";
-import { MODE } from "resource://devtools/client/shared/components/reps/reps/constants.mjs";
-import * as Grip from "resource://devtools/client/shared/components/reps/reps/grip.mjs";
+import { wrapRender } from "./rep-utils.mjs";
+import { MODE } from "./constants.mjs";
+import * as Grip from "./grip.mjs";
 
 /**
  * Renders DOM event objects.

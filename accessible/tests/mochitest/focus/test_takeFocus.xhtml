@@ -23,47 +23,33 @@
 
   <script type="application/javascript">
   <![CDATA[
-    ////////////////////////////////////////////////////////////////////////////
-    // Invokers
-
-    function takeFocusInvoker(aID, aArgConverterFunc)
-    {
-      this.targetFunc = aArgConverterFunc ? aArgConverterFunc : getAccessible;
-
-      this.eventSeq = [ new focusChecker(this.targetFunc, aID) ];
-
-      this.invoke = function takeFocusInvoker_invoke()
-      {
-        this.targetFunc.call(null, aID).takeFocus();
-      }
-
-      this.getID = function takeFocusInvoker_getID()
-      {
-        return "takeFocus for " + prettyName(aID);
-      }
-    }
-
     function getLastChild(aID)
     {
       return getAccessible(aID).lastChild;
     }
 
-    ////////////////////////////////////////////////////////////////////////////
-    // Tests
-
-    //gA11yEventDumpID = "eventdump"; // debug stuff
-    //gA11yEventDumpToConsole = true; // debug stuff
-
-    var gQueue = null;
-    function doTests()
+    async function doTests()
     {
-      // Test focus events.
-      gQueue = new eventQueue();
+      const lastChild = getLastChild("tree");
+      // XXX: Bug 2034893 - We need to wait for both focus and ACTIVATE
+      // state change events to ensure that the focus has been fully processed
+      // and the ACTIVATE state has been applied to the focused element.
+      let focusedAndActivated = waitForEvents([
+        [EVENT_FOCUS, lastChild],
+        stateChangeEventArgs(lastChild, EXT_STATE_ACTIVE, true, true),
+      ]);
+      lastChild.takeFocus();
+      await focusedAndActivated;
 
-      gQueue.push(new takeFocusInvoker("tree", getLastChild));
-      gQueue.push(new takeFocusInvoker("listitem2"));
+      const listitem2Acc = getAccessible("listitem2");
+      focusedAndActivated = waitForEvents([
+        [EVENT_FOCUS, listitem2Acc],
+        stateChangeEventArgs(listitem2Acc, EXT_STATE_ACTIVE, true, true),
+      ]);
+      listitem2Acc.takeFocus();
+      await focusedAndActivated;
 
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

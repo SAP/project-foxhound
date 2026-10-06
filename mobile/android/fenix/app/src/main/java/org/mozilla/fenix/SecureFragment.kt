@@ -16,7 +16,9 @@ import org.mozilla.fenix.ext.secure
  *
  * Fragments displaying such screens should extend [SecureFragment] instead of [Fragment] class.
  */
-open class SecureFragment(@LayoutRes contentLayoutId: Int) : Fragment(contentLayoutId) {
+open class SecureFragment(
+    @LayoutRes contentLayoutId: Int,
+) : Fragment(contentLayoutId) {
 
     constructor() : this(0) {
         Fragment()

@@ -64,6 +64,7 @@ const BEFORE = [
           "grid-area": "foo",
         },
         ruleIndex: 1,
+        msgId: "inactive-css-not-grid-item",
       },
     ],
   },
@@ -75,6 +76,7 @@ const BEFORE = [
           "align-self": "stretch",
         },
         ruleIndex: 1,
+        msgId: "inactive-css-not-grid-or-flex-or-absolutely-positioned-item",
       },
     ],
   },
@@ -97,6 +99,7 @@ const BEFORE = [
           "flex-direction": "row",
         },
         ruleIndex: 1,
+        msgId: "inactive-css-not-flex-container",
       },
     ],
   },
@@ -137,6 +140,7 @@ const BEFORE = [
           "align-self": "start",
         },
         ruleIndex: 1,
+        msgId: "inactive-css-not-grid-or-flex-or-absolutely-positioned-item",
       },
     ],
   },
@@ -166,18 +170,21 @@ const AFTER = [
           "column-gap": "10px",
         },
         ruleIndex: 1,
+        msgId: "inactive-css-not-grid-or-flex-container-or-multicol-container",
       },
       {
         declaration: {
           "row-gap": "10px",
         },
         ruleIndex: 1,
+        msgId: "inactive-css-not-grid-or-flex-container",
       },
       {
         declaration: {
           "align-self": "start",
         },
         ruleIndex: 1,
+        msgId: "inactive-css-not-grid-or-flex-or-absolutely-positioned-item",
       },
     ],
   },
@@ -189,14 +196,13 @@ const AFTER = [
           "grid-column": 2,
         },
         ruleIndex: 1,
+        msgId: "inactive-css-not-grid-item",
       },
     ],
   },
 ];
 
 add_task(async function () {
-  await pushPref("devtools.inspector.inactive.css.enabled", true);
-
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openRuleView();
 
@@ -206,7 +212,7 @@ add_task(async function () {
   await toggleDeclaration(view, 0, {
     display: "grid",
   });
-  await view.once("ruleview-refreshed");
+  await inspector.once("rule-view-refreshed");
   await runInactiveCSSTests(view, inspector, AFTER);
 
   info("Toggle `display: grid` to enabled again.");
@@ -234,6 +240,7 @@ async function runAbsPosGridElementTests(view, inspector) {
             "grid-column": 2,
           },
           ruleIndex: 1,
+          msgId: "inactive-css-not-grid-item",
         },
       ],
     },
@@ -260,6 +267,7 @@ async function runAbsPosGridElementTests(view, inspector) {
             "grid-column": 2,
           },
           ruleIndex: 1,
+          msgId: "inactive-css-not-grid-item",
         },
       ],
     },

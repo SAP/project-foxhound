@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+// @ts-nocheck - TODO - Remove this to type check this file.
+
 /**
  * @typedef {import("./Utils.sys.mjs").ProgressAndStatusCallbackParams} ProgressAndStatusCallbackParams
  */
@@ -86,6 +88,12 @@ async function getFileHandleFromOPFS(filePath, { create = false } = {}) {
   // Retrieve or create the file handle within the directory.
   const fileHandle = await directoryHandle.getFileHandle(fileName, { create });
 
+  ChromeUtils.addProfilerMarker(
+    "MLEngine:OPFS",
+    null,
+    `File handle: ${fileName}`
+  );
+
   return fileHandle;
 }
 
@@ -166,12 +174,14 @@ export async function createResponseFromOPFSFile(filePath, headers) {
  * @param {string} params.savePath - OPFS path to save the file (e.g., "folder/file.txt").
  * @param {?function(ProgressAndStatusCallbackParams):void} [params.progressCallback] - Optional progress callback.
  * @param {boolean} [params.ignoreCachingErrors=false] - If true, all errors due to retrieving/saving from OPFS are ignored.
+ * @param {?AbortSignal} params.abortSignal - AbortSignal to cancel the download.
  * @returns {Promise<File>} The saved or existing file.
  */
 async function downloadToOPFSImpl({
   source,
   savePath,
   progressCallback,
+  abortSignal,
   ignoreCachingErrors = false,
 } = {}) {
   // Download and write file
@@ -192,11 +202,12 @@ async function downloadToOPFSImpl({
       mode: "siloed",
     });
 
-    await lazy.Progress.readResponseToWriter(
+    await lazy.Progress.readResponseToWriter({
       response,
       writableStream,
-      progressCallback
-    );
+      progressCallback,
+      abortSignal,
+    });
 
     fileObject = await fileHandle.getFile();
   } catch (err) {
@@ -241,7 +252,7 @@ async function maybeVerifyBlob(blob, expectedHash, expectedSize) {
  * the existing file is returned and no download is performed.
  *
  * @param {object} params - Parameters.
- * @param {string | URL | Response} params.source - The source of the content. If a string or URL is given, it will be fetched. If a Response is provided, it will be used directly.
+ * @param {string | URL | Response} [params.source] - The source of the content. If a string or URL is given, it will be fetched. If a Response is provided, it will be used directly.
  * @param {string} params.savePath - OPFS path to save the file (e.g., "folder/file.txt").
  * @param {?function(ProgressAndStatusCallbackParams):void} [params.progressCallback] - Optional progress callback.
  * @param {boolean} [params.skipIfExists=false] - Whether to skip download if the file exists and passes hash check.
@@ -249,6 +260,7 @@ async function maybeVerifyBlob(blob, expectedHash, expectedSize) {
  * @param {string} params.sha256Hash - Expected SHA-256 hash (hex).
  * @param {boolean} [params.deletePreviousVersions=false] - If true, deletes other entries in the parent directory after successful download.
  * @param {boolean} [params.ignoreCachingErrors=false] - If true, all errors due to retrieving/saving from OPFS are ignored.
+ * @param {AbortSignal} [params.abortSignal] - AbortSignal to cancel the download.
  * @returns {Promise<File>} The saved or existing file.
  */
 async function downloadToOPFS({
@@ -260,6 +272,7 @@ async function downloadToOPFS({
   fileSize,
   deletePreviousVersions = false,
   ignoreCachingErrors = false,
+  abortSignal,
 } = {}) {
   let fileObject;
   let cacheWasUsed = false;
@@ -285,6 +298,7 @@ async function downloadToOPFS({
       savePath,
       progressCallback,
       ignoreCachingErrors,
+      abortSignal,
     });
   }
 
@@ -302,6 +316,7 @@ async function downloadToOPFS({
         skipIfExists: false, // Retrigger forced download.
         sha256Hash,
         fileSize,
+        abortSignal,
       });
     }
     throw new Error(message);

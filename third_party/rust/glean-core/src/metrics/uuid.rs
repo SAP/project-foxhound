@@ -11,8 +11,8 @@ use crate::error_recording::{record_error, test_get_num_recorded_errors, ErrorTy
 use crate::metrics::Metric;
 use crate::metrics::MetricType;
 use crate::storage::StorageManager;
-use crate::CommonMetricData;
 use crate::Glean;
+use crate::{CommonMetricData, TestGetValue};
 
 /// An UUID metric.
 ///
@@ -82,7 +82,9 @@ impl UuidMetric {
         self.set_sync(glean, value.to_string())
     }
 
-    /// Generates a new random [`Uuid`'] and sets the metric to it.
+    /// Generates a new random [`Uuid`] and sets the metric to it.
+    ///
+    /// Returns the generated UUID formatted as a hex string.
     pub fn generate_and_set(&self) -> String {
         let uuid = Uuid::new_v4();
 
@@ -112,7 +114,7 @@ impl UuidMetric {
             .into()
             .unwrap_or_else(|| &self.meta().inner.send_in_pings[0]);
 
-        match StorageManager.snapshot_metric_for_test(
+        match StorageManager.snapshot_metric(
             glean.storage(),
             queried_ping_name,
             &self.meta.identifier(glean),
@@ -121,28 +123,6 @@ impl UuidMetric {
             Some(Metric::Uuid(uuid)) => Uuid::parse_str(&uuid).ok(),
             _ => None,
         }
-    }
-
-    /// **Test-only API (exported for FFI purposes).**
-    ///
-    /// Gets the currently stored value as a string.
-    ///
-    /// This doesn't clear the stored value.
-    ///
-    /// # Arguments
-    ///
-    /// * `ping_name` - the optional name of the ping to retrieve the metric
-    ///                 for. Defaults to the first value in `send_in_pings`.
-    ///
-    /// # Returns
-    ///
-    /// The stored value or `None` if nothing stored.
-    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<String> {
-        crate::block_on_dispatcher();
-        crate::core::with_glean(|glean| {
-            self.get_value(glean, ping_name.as_deref())
-                .map(|uuid| uuid.to_string())
-        })
     }
 
     /// **Exported for test purposes.**
@@ -161,6 +141,32 @@ impl UuidMetric {
 
         crate::core::with_glean(|glean| {
             test_get_num_recorded_errors(glean, self.meta(), error).unwrap_or(0)
+        })
+    }
+}
+
+impl TestGetValue for UuidMetric {
+    type Output = String;
+
+    /// **Test-only API (exported for FFI purposes).**
+    ///
+    /// Gets the currently stored value as a string.
+    ///
+    /// This doesn't clear the stored value.
+    ///
+    /// # Arguments
+    ///
+    /// * `ping_name` - the optional name of the ping to retrieve the metric
+    ///                 for. Defaults to the first value in `send_in_pings`.
+    ///
+    /// # Returns
+    ///
+    /// The stored value or `None` if nothing stored.
+    fn test_get_value(&self, ping_name: Option<String>) -> Option<String> {
+        crate::block_on_dispatcher();
+        crate::core::with_glean(|glean| {
+            self.get_value(glean, ping_name.as_deref())
+                .map(|uuid| uuid.to_string())
         })
     }
 }

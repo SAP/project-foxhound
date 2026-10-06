@@ -63,7 +63,7 @@ add_task(async function testContentProcessRequests() {
       },
       securityInfoAvailable: {
         securityState: "secure",
-        isRacing: false,
+
         securityInfoAvailable: true,
       },
       responseContentAvailable: {
@@ -91,7 +91,7 @@ add_task(async function testContentProcessRequests() {
       },
       securityInfoAvailable: {
         securityState: "secure",
-        isRacing: false,
+
         securityInfoAvailable: true,
       },
       responseContentAvailable: {
@@ -119,7 +119,7 @@ add_task(async function testContentProcessRequests() {
       },
       securityInfoAvailable: {
         securityState: "secure",
-        isRacing: false,
+
         securityInfoAvailable: true,
       },
       responseContentAvailable: {
@@ -196,7 +196,7 @@ add_task(async function testCanceledRequest() {
       },
       securityInfoAvailable: {
         securityState: "secure",
-        isRacing: false,
+
         securityInfoAvailable: true,
       },
       responseContentAvailable: {
@@ -224,7 +224,7 @@ add_task(async function testCanceledRequest() {
       },
       securityInfoAvailable: {
         securityState: "secure",
-        isRacing: false,
+
         securityInfoAvailable: true,
       },
       responseContentAvailable: {
@@ -326,7 +326,7 @@ add_task(async function testIframeRequest() {
       },
       securityInfoAvailable: {
         securityState: "secure",
-        isRacing: false,
+
         securityInfoAvailable: true,
       },
       responseContentAvailable: {
@@ -354,7 +354,7 @@ add_task(async function testIframeRequest() {
       },
       securityInfoAvailable: {
         securityState: "secure",
-        isRacing: false,
+
         securityInfoAvailable: true,
       },
       responseContentAvailable: {
@@ -382,7 +382,7 @@ add_task(async function testIframeRequest() {
       },
       securityInfoAvailable: {
         securityState: "secure",
-        isRacing: false,
+
         securityInfoAvailable: true,
       },
       responseContentAvailable: {

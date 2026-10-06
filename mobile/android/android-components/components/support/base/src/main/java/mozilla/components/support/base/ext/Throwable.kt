@@ -59,8 +59,9 @@ fun Throwable.getStacktraceAsJsonString(maxFrame: Int = STACK_TRACE_MAX_FRAME): 
                 frameCount++
             }
             val framesObject = JSONObject().put("frames", frames)
-            framesObject.put("type", throwable.toString().substringBefore(':').substringAfterLast('.'))
-            framesObject.put("module", throwable.toString().substringBefore(':').substringBeforeLast('.'))
+            val typeName = throwable.javaClass.kotlin.qualifiedName ?: throwable.toString().substringBefore(':', "")
+            framesObject.put("type", typeName.substringAfterLast('.'))
+            framesObject.put("module", typeName.substringBeforeLast('.'))
             framesObject.put("value", throwable.message)
             values.put(JSONObject().put("stacktrace", framesObject))
         }

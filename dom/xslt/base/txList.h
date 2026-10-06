@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,6 +25,8 @@ class txList : public txObject {
    * txList destructor, object references will not be deleted.
    **/
   ~txList();
+
+  txList(const txList& aOther) = delete;
 
   /**
    * Returns the number of items in this txList
@@ -60,8 +61,6 @@ class txList : public txObject {
   ListItem* remove(ListItem* sItem);
 
  private:
-  txList(const txList& aOther);  // not implemented
-
   ListItem* firstItem;
   ListItem* lastItem;
   int32_t itemCount;

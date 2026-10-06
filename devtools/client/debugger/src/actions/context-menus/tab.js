@@ -7,18 +7,19 @@ import { getTabMenuItems } from "../../utils/tabs";
 
 import {
   getSelectedLocation,
-  getSourcesForTabs,
+  getOpenedSources,
   isSourceBlackBoxed,
   isSourceMapIgnoreListEnabled,
   isSourceOnSourceMapIgnoreList,
+  isPrettyPrinted,
 } from "../../selectors/index";
 
 import { toggleBlackBox } from "../sources/blackbox";
 import { prettyPrintAndSelectSource } from "../sources/prettyPrint";
 import { copyToClipboard, showSource } from "../ui";
-import { closeTab, closeTabs } from "../tabs";
+import { closeTabForSource, closeTabsForSources } from "../tabs";
 
-import { getRawSourceURL, isPretty, shouldBlackbox } from "../../utils/source";
+import { getRawSourceURL, shouldBlackbox } from "../../utils/source";
 import { copyToTheClipboard } from "../../utils/clipboard";
 
 /**
@@ -38,40 +39,41 @@ export function showTabContextMenu(event, source) {
     const isSourceOnIgnoreList =
       isSourceMapIgnoreListEnabled(state) &&
       isSourceOnSourceMapIgnoreList(state, source);
-    const tabsSources = getSourcesForTabs(state);
+    const isSourcePrettyPrinted = isPrettyPrinted(state, source);
 
-    const otherTabsSources = tabsSources.filter(s => s !== source);
-    const tabIndex = tabsSources.findIndex(s => s === source);
-    const followingTabsSources = tabsSources.slice(tabIndex + 1);
+    const openedSources = getOpenedSources(state);
+    const otherSources = openedSources.filter(s => s != source);
+    const sourceIndex = openedSources.indexOf(source);
+    const sourcesForTabsAfter = openedSources.slice(sourceIndex + 1);
 
     const tabMenuItems = getTabMenuItems();
     const items = [
       {
         item: {
           ...tabMenuItems.closeTab,
-          click: () => dispatch(closeTab(source)),
+          click: () => dispatch(closeTabForSource(source)),
         },
       },
       {
         item: {
           ...tabMenuItems.closeOtherTabs,
-          disabled: otherTabsSources.length === 0,
-          click: () => dispatch(closeTabs(otherTabsSources)),
+          disabled: otherSources.length === 0,
+          click: () => dispatch(closeTabsForSources(otherSources)),
         },
       },
       {
         item: {
           ...tabMenuItems.closeTabsToEnd,
-          disabled: followingTabsSources.length === 0,
+          disabled: sourcesForTabsAfter.length === 0,
           click: () => {
-            dispatch(closeTabs(followingTabsSources));
+            dispatch(closeTabsForSources(sourcesForTabsAfter));
           },
         },
       },
       {
         item: {
           ...tabMenuItems.closeAllTabs,
-          click: () => dispatch(closeTabs(tabsSources)),
+          click: () => dispatch(closeTabsForSources(openedSources)),
         },
       },
       { item: { type: "separator" } },
@@ -117,7 +119,7 @@ export function showTabContextMenu(event, source) {
       {
         item: {
           ...tabMenuItems.prettyPrint,
-          disabled: isPretty(source),
+          disabled: isSourcePrettyPrinted,
           click: () => dispatch(prettyPrintAndSelectSource(source)),
         },
       },

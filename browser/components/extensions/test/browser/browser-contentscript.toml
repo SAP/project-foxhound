@@ -1,0 +1,70 @@
+[DEFAULT]
+skip-if = [
+	"debug && standalone", # TODO bug 2048260: Drop skip-if = standalone
+]
+tags = "webextensions"
+prefs = [
+  # We don't want to reset this at the end of the test, so that we don't have
+  # to spawn a new extension child process for each test unit.
+  "dom.ipc.keepProcessesAlive.extension=1",
+]
+support-files = [
+  "head.js",
+  "file_dummy.html",
+  "file_iframe_document.html",
+  "file_slowed_document.sjs",
+  "file_with_xorigin_frame.html",
+  "file_with_example_com_frame.html",
+]
+
+["browser_ext_activeScript.js"]
+support-files = ["head_unified_extensions.js"]
+
+["browser_ext_contentscript_animate.js"]
+
+["browser_ext_contentscript_connect.js"]
+
+["browser_ext_contentscript_cross_docGroup_adoption.js"]
+https_first_disabled = true
+
+["browser_ext_contentscript_cross_docGroup_adoption_xhr.js"]
+https_first_disabled = true
+
+["browser_ext_contentscript_dataTransfer_files.js"]
+support-files = ["file_dataTransfer_files.html"]
+
+["browser_ext_contentscript_in_parent.js"]
+
+["browser_ext_contentscript_incognito.js"]
+
+["browser_ext_contentscript_nontab_connect.js"]
+
+["browser_ext_contentscript_sender_url.js"]
+skip-if = [
+  "debug", # The nature of the reduced STR test triggers an unrelated debug assertion in DOM IPC code, see bug 1736590.
+  "os == 'win' && os_version == '11.26100' && arch == 'x86' && opt", # Bug 1933435
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1933435
+  "os == 'win' && os_version == '11.26200' && arch == 'x86' && opt", # Bug 1933435
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && opt", # Bug 1933435
+]
+tags = "bleedover"
+
+["browser_ext_slow_script.js"]
+https_first_disabled = true
+
+["browser_ext_tabs_executeScript.js"]
+https_first_disabled = true
+
+["browser_ext_tabs_executeScript_about_blank.js"]
+
+["browser_ext_tabs_executeScript_bad.js"]
+
+["browser_ext_tabs_executeScript_file.js"]
+
+["browser_ext_tabs_executeScript_good.js"]
+
+["browser_ext_tabs_executeScript_multiple.js"]
+
+["browser_ext_tabs_executeScript_no_create.js"]
+
+["browser_ext_tabs_executeScript_runAt.js"]

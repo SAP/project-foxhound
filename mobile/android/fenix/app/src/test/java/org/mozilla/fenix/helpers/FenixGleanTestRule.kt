@@ -43,12 +43,10 @@ class FenixGleanTestRule(
         // in tests without this line. Let's simply put it here.
         WorkManagerTestInitHelper.initializeTestWorkManager(context)
 
-        /**
-         * Always skip the first metrics ping, which would otherwise be overdue.
-         * Tests should explicitly destroy Glean and recreate it to test the metrics ping scheduler.
-         * This is the same as `delayMetricsPing` from `TestUtils.kt`,
-         * but now part of the publicly available test rule.
-         */
+        // Always skip the first metrics ping, which would otherwise be overdue.
+        // Tests should explicitly destroy Glean and recreate it to test the metrics ping scheduler.
+        // This is the same as `delayMetricsPing` from `TestUtils.kt`,
+        // but now part of the publicly available test rule.
 
 //        // Set the current system time to a known datetime.
 //        val fakeNow = Calendar.getInstance()

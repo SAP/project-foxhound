@@ -55,9 +55,20 @@ known_errors = [
     },
     {
         # Triggered as soon as anything tries to use shortcut keys.
+        # Bug 1936426 to reconsider warning as we want ctrl-alt-u for open tabs.
+        "message": "viewOpenTabsSidebarKb",
+    },
+    {
+        # Triggered as soon as anything tries to use shortcut keys.
         # Bug 1936426 to reconsider warning as we want ctrl-z / ctrl-alt-z
         # for sidebar.
         "message": "toggleSidebarKb",
+    },
+    {
+        # Triggered as soon as anything tries to access window.fullScreen.
+        # Bug 1709294 to stop exposing window.fullScreen to the web content and
+        # the warning can be removed.
+        "message": 'JavaScript Warning: "Window.fullScreen attribute is deprecated and will be removed in the future."',
     },
 ]
 

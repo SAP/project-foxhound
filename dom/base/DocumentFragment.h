@@ -1,13 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_DocumentFragment_h__
-#define mozilla_dom_DocumentFragment_h__
+#ifndef mozilla_dom_DocumentFragment_h_
+#define mozilla_dom_DocumentFragment_h_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/BorrowedAttrInfo.h"
 #include "mozilla/dom/FragmentOrElement.h"
 #include "nsStringFwd.h"
@@ -43,15 +40,13 @@ class DocumentFragment : public FragmentOrElement {
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(DocumentFragment, FragmentOrElement)
 
-  explicit DocumentFragment(already_AddRefed<dom::NodeInfo>&& aNodeInfo)
+  explicit DocumentFragment(already_AddRefed<dom::NodeInfo> aNodeInfo)
       : FragmentOrElement(std::move(aNodeInfo)), mHost(nullptr) {
     Init();
   }
 
   explicit DocumentFragment(nsNodeInfoManager* aNodeInfoManager)
-      : FragmentOrElement(aNodeInfoManager->GetNodeInfo(
-            nsGkAtoms::documentFragmentNodeName, nullptr, kNameSpaceID_None,
-            DOCUMENT_FRAGMENT_NODE)),
+      : FragmentOrElement(aNodeInfoManager->GetDocumentFragmentNodeInfo()),
         mHost(nullptr) {
     Init();
   }
@@ -112,4 +107,4 @@ inline const mozilla::dom::DocumentFragment* nsINode::AsDocumentFragment()
   return static_cast<const mozilla::dom::DocumentFragment*>(this);
 }
 
-#endif  // mozilla_dom_DocumentFragment_h__
+#endif  // mozilla_dom_DocumentFragment_h_

@@ -236,9 +236,9 @@ export class PreferenceExperimentAction extends BaseStudyAction {
    * The deadline is 7 days from the first time that recipe failed, as
    * reckoned by the client's clock.
    *
-   * @param {Object} args
+   * @param {object} args
    * @param {Experiment} args.experiment The enrolled experiment to potentially unenroll.
-   * @param {String} args.reason If the recipe should end, the reason it is ending.
+   * @param {string} args.reason If the recipe should end, the reason it is ending.
    */
   async _considerTemporaryError({ experiment, reason }) {
     if (!experiment || experiment.expired) {

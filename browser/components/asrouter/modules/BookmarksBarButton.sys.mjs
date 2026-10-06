@@ -5,7 +5,8 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   SpecialMessageActions:
     "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
   ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
@@ -16,7 +17,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 export const BookmarksBarButton = {
   async showBookmarksBarButton(browser, message) {
     const { label, action, logo } = message.content;
-    let { gBrowser } = browser.ownerGlobal;
+    let { gBrowser } = browser.documentGlobal;
     const featureId = "fxms_bmb_button";
     const widgetId = "fxms-bmb-button";
     const supportedActions = ["OPEN_URL", "SET_PREF", "MULTI_ACTION"];

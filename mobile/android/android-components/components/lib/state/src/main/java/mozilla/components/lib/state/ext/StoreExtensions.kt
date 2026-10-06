@@ -10,10 +10,9 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
-import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.awaitClose
@@ -21,7 +20,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import mozilla.components.lib.state.Action
 import mozilla.components.lib.state.Observer
 import mozilla.components.lib.state.State
@@ -108,7 +106,6 @@ fun <S : State, A : Action> Store<S, A>.observeForever(
  * [Lifecycle] switches back to at least STARTED state then the latest [State] and further updates
  * will be received.
  */
-@ExperimentalCoroutinesApi
 @MainThread
 fun <S : State, A : Action> Store<S, A>.channel(
     owner: LifecycleOwner = ProcessLifecycleOwner.get(),
@@ -121,15 +118,7 @@ fun <S : State, A : Action> Store<S, A>.channel(
     val channel = Channel<S>(Channel.CONFLATED)
 
     val subscription = observeManually { state ->
-        runBlocking {
-            try {
-                channel.send(state)
-            } catch (e: CancellationException) {
-                // It's possible for this channel to have been closed concurrently before
-                // we had a chance to unsubscribe. In this case we can just ignore this
-                // one subscription and keep going.
-            }
-        }
+        channel.trySend(state)
     }
 
     subscription.binding = SubscriptionLifecycleBinding(owner, subscription).apply {
@@ -173,15 +162,7 @@ fun <S : State, A : Action> Store<S, A>.flow(
         owner?.lifecycle?.removeObserver(ownerDestroyedObserver)
 
         val subscription = observeManually { state ->
-            runBlocking {
-                try {
-                    send(state)
-                } catch (e: CancellationException) {
-                    // It's possible for this channel to have been closed concurrently before
-                    // we had a chance to unsubscribe. In this case we can just ignore this
-                    // one subscription and keep going.
-                }
-            }
+            trySend(state)
         }
 
         if (owner == null) {
@@ -199,21 +180,23 @@ fun <S : State, A : Action> Store<S, A>.flow(
 }
 
 /**
- * Launches a coroutine in a new [MainScope] and creates a [Flow] for observing [State] changes in
- * the [Store] in that scope. Invokes [block] inside that scope and passes the [Flow] to it.
+ * Launches a coroutine in a new [CoroutineScope] using the provided [dispatcher] and creates a [Flow]
+ * for observing the [Store] in that scope. Invokes [block] inside that scope and passes the [Flow] to it.
  *
  * @param owner An optional [LifecycleOwner] that will be used to determine when to pause and resume
  * the store subscription. When the [Lifecycle] is in STOPPED state then no [State] will be received.
  * Once the [Lifecycle] switches back to at least STARTED state then the latest [State] and further
  * updates will be emitted.
+ * @param dispatcher The [CoroutineDispatcher] to be used for the [CoroutineScope] in which the flow will be collected.
  * @return The [CoroutineScope] [block] is getting executed in.
  */
 @MainThread
 fun <S : State, A : Action> Store<S, A>.flowScoped(
     owner: LifecycleOwner? = null,
+    dispatcher: CoroutineDispatcher,
     block: suspend (Flow<S>) -> Unit,
 ): CoroutineScope {
-    return MainScope().apply {
+    return CoroutineScope(SupervisorJob() + dispatcher).apply {
         launch {
             block(flow(owner))
         }

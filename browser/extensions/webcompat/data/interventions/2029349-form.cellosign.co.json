@@ -1,0 +1,15 @@
+{
+  "label": "form.cellosign.co",
+  "bugs": {
+    "2029349": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://form.cellosign.co/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

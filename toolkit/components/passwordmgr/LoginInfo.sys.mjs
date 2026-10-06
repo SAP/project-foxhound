@@ -123,6 +123,7 @@ nsLoginInfo.prototype = {
     clone.timeLastUsed = this.timeLastUsed;
     clone.timePasswordChanged = this.timePasswordChanged;
     clone.timesUsed = this.timesUsed;
+    clone.timeLastBreachAlertDismissed = this.timeLastBreachAlertDismissed;
     clone.syncCounter = this.syncCounter;
     clone.everSynced = this.everSynced;
 
@@ -141,4 +142,5 @@ nsLoginInfo.prototype = {
   timeLastUsed: null,
   timePasswordChanged: null,
   timesUsed: null,
+  timeLastBreachAlertDismissed: null,
 }; // end of nsLoginInfo implementation

@@ -191,6 +191,12 @@ add_task(async function testNullSavedState() {
   let CustomizableUIInternal = CustomizableUI.getTestOnlyInternalProp(
     "CustomizableUIInternal"
   );
+  // Calling initialize() wants to add this observer again.
+  // TODO: Having a test-only testReset() method could avoid this hack.
+  Services.obs.removeObserver(
+    CustomizableUIInternal,
+    "browser-set-toolbar-visibility"
+  );
   CustomizableUIInternal.initialize();
 
   Assert.greaterOrEqual(
@@ -224,7 +230,12 @@ add_task(async function testNullSavedState() {
   // Cleanup
   CustomizableUI.setTestOnlyInternalProp("gSavedState", oldState);
   await SpecialPowers.popPrefEnv();
+
   // Re-initialize to prevent future test failures
+  Services.obs.removeObserver(
+    CustomizableUIInternal,
+    "browser-set-toolbar-visibility"
+  );
   CustomizableUIInternal.initialize();
 });
 

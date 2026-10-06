@@ -20,7 +20,7 @@ Description
 
 :ref:`PR_EXTERN` is used to define externally visible routines and globals.
 For syntax details for each platform, see
-`prtypes.h <https://searchfox.org/mozilla-central/source/nsprpub/pr/include/prtypes.h>`__.
+:searchfox:`prtypes.h <nsprpub/pr/include/prtypes.h>`.
 The macro includes the proper specifications to declare the target
 ``extern`` and set up other required linkages.
 

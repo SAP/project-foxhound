@@ -2,59 +2,55 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _PEER_CONNECTION_IMPL_H_
-#define _PEER_CONNECTION_IMPL_H_
+#ifndef PEER_CONNECTION_IMPL_H_
+#define PEER_CONNECTION_IMPL_H_
 
+#include <map>
 #include <string>
 #include <vector>
-#include <map>
-#include <cmath>
 
-#include "prlock.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
 #include "nsComponentManagerUtils.h"
-#include "nsPIDOMWindow.h"
-#include "nsIUUIDGenerator.h"
 #include "nsIThread.h"
+#include "nsIUUIDGenerator.h"
+#include "nsPIDOMWindow.h"
 #include "nsTHashSet.h"
-#include "mozilla/Mutex.h"
-#include "mozilla/Attributes.h"
+#include "prlock.h"
 
 // Work around nasty macro in webrtc/voice_engine/voice_engine_defines.h
 #ifdef GetLastError
 #  undef GetLastError
 #endif
 
-#include "jsep/JsepSession.h"
-#include "jsep/JsepSessionImpl.h"
-#include "sdp/SdpMediaSection.h"
 #include "DefaultCodecPreferences.h"
-
-#include "mozilla/ErrorResult.h"
-#include "jsapi/PacketDumper.h"
-#include "mozilla/dom/RTCPeerConnectionBinding.h"  // mozPacketDumpType, maybe move?
-#include "mozilla/dom/PeerConnectionImplBinding.h"  // ChainedOperation
-#include "mozilla/dom/RTCRtpCapabilitiesBinding.h"
-#include "mozilla/dom/RTCRtpTransceiverBinding.h"
-#include "mozilla/dom/RTCConfigurationBinding.h"
-#include "PrincipalChangeObserver.h"
-#include "mozilla/dom/PromiseNativeHandler.h"
-
-#include "mozilla/TimeStamp.h"
-#include "mozilla/net/DataChannel.h"
-#include "VideoUtils.h"
-#include "VideoSegment.h"
-#include "mozilla/dom/RTCStatsReportBinding.h"
-#include "mozilla/PeerIdentity.h"
-#include "RTCStatsIdGenerator.h"
-#include "RTCStatsReport.h"
-
-#include "mozilla/net/StunAddrsRequestChild.h"
 #include "MediaEventSource.h"
 #include "MediaTransportHandler.h"
-#include "nsIHttpChannelInternal.h"
+#include "PrincipalChangeObserver.h"
 #include "RTCDtlsTransport.h"
 #include "RTCRtpTransceiver.h"
+#include "RTCStatsIdGenerator.h"
+#include "RTCStatsReport.h"
+#include "VideoSegment.h"
+#include "VideoUtils.h"
+#include "jsapi/PacketDumper.h"
+#include "jsep/JsepSession.h"
+#include "jsep/JsepSessionImpl.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/PeerIdentity.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/dom/PeerConnectionImplBinding.h"  // ChainedOperation
+#include "mozilla/dom/PromiseNativeHandler.h"
+#include "mozilla/dom/RTCConfigurationBinding.h"
+#include "mozilla/dom/RTCPeerConnectionBinding.h"  // mozPacketDumpType, maybe move?
+#include "mozilla/dom/RTCRtpCapabilitiesBinding.h"
+#include "mozilla/dom/RTCRtpTransceiverBinding.h"
+#include "mozilla/dom/RTCStatsReportBinding.h"
+#include "mozilla/net/DataChannel.h"
+#include "mozilla/net/StunAddrsRequestChild.h"
+#include "nsIHttpChannelInternal.h"
+#include "sdp/SdpMediaSection.h"
 
 namespace test {
 #ifdef USE_FAKE_PCOBSERVER
@@ -95,11 +91,7 @@ typedef NS_ConvertUTF8toUTF16 PCObserverString;
 }  // namespace dom
 }  // namespace mozilla
 
-#if defined(__cplusplus) && __cplusplus >= 201103L
 typedef struct Timecard Timecard;
-#else
-#  include "common/time_profiling/timecard.h"
-#endif
 
 // To preserve blame, convert nsresult to ErrorResult with wrappers. These
 // macros help declare wrappers w/function being wrapped when there are no
@@ -128,8 +120,8 @@ class RemoteSourceStreamInfo;
 class PCUuidGenerator : public JsepUuidGenerator {
  public:
   virtual bool Generate(std::string* idp) override;
-  virtual JsepUuidGenerator* Clone() const override {
-    return new PCUuidGenerator(*this);
+  virtual UniquePtr<JsepUuidGenerator> Clone() const override {
+    return MakeUnique<PCUuidGenerator>(*this);
   }
 
  private:
@@ -177,7 +169,7 @@ class PeerConnectionImpl final
  public:
   explicit PeerConnectionImpl(const dom::GlobalObject* aGlobal = nullptr);
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(PeerConnectionImpl)
 
   struct RtpExtensionHeader {
@@ -231,6 +223,7 @@ class PeerConnectionImpl final
                                dom::RTCIceGathererState state);
   void OnCandidateFound(const std::string& aTransportId,
                         const CandidateInfo& aCandidateInfo);
+  void OnCandidateError(const IceCandidateErrorInfo& aErrorInfo);
   void UpdateDefaultCandidate(const std::string& defaultAddr,
                               uint16_t defaultPort,
                               const std::string& defaultRtcpAddr,
@@ -409,10 +402,9 @@ class PeerConnectionImpl final
   MOZ_CAN_RUN_SCRIPT_BOUNDARY bool PluginCrash(uint32_t aPluginID,
                                                const nsAString& aPluginName);
 
-  NS_IMETHODIMP_TO_ERRORRESULT(SetConfiguration, ErrorResult& rv,
-                               const RTCConfiguration& aConfiguration) {
-    rv = SetConfiguration(aConfiguration);
-  }
+  NS_IMETHODIMP SetConfiguration(const RTCConfiguration& aConfiguration);
+  void SetConfiguration(const RTCConfiguration& aConfiguration,
+                        ErrorResult& rv);
 
   dom::RTCSctpTransport* GetSctp() const;
 
@@ -510,6 +502,9 @@ class PeerConnectionImpl final
   nsresult OnAlpnNegotiated(const std::string& aAlpn, bool aPrivacyRequested);
 
   void OnDtlsStateChange(const std::string& aTransportId,
+                         TransportLayer::State aState,
+                         const nsTArray<nsTArray<uint8_t>>& aRemoteCerts);
+  void OnRtcpStateChange(const std::string& aTransportId,
                          TransportLayer::State aState);
   dom::RTCPeerConnectionState GetNewConnectionState() const;
   // Returns whether we need to fire a state change event
@@ -605,18 +600,19 @@ class PeerConnectionImpl final
       nsTHashMap<nsCStringHashKey, RefPtr<dom::RTCDtlsTransport>>;
 
  private:
+  void ParseIceServers(const nsTArray<dom::RTCIceServer>& aIceServers,
+                       ErrorResult& aRv);
+
   virtual ~PeerConnectionImpl();
   PeerConnectionImpl(const PeerConnectionImpl& rhs);
   PeerConnectionImpl& operator=(PeerConnectionImpl);
 
   RefPtr<dom::RTCStatsPromise> GetDataChannelStats(
-      const RefPtr<DataChannelConnection>& aDataChannelConnection,
       const DOMHighResTimeStamp aTimestamp);
   nsresult CalculateFingerprint(const nsACString& algorithm,
                                 std::vector<uint8_t>* fingerprint) const;
 
-  NS_IMETHODIMP EnsureDataConnection(uint16_t aLocalPort, uint16_t aNumstreams,
-                                     uint32_t aMaxMessageSize, bool aMMSSet);
+  NS_IMETHODIMP EnsureDataConnection(uint16_t aLocalPort, uint16_t aNumstreams);
 
   nsresult CheckApiState(bool assert_ice_ready) const;
   void StoreFinalStats(UniquePtr<dom::RTCStatsReportInternal>&& report);
@@ -635,7 +631,7 @@ class PeerConnectionImpl final
 
   nsresult GetDatachannelParameters(uint32_t* channels, uint16_t* localport,
                                     uint16_t* remoteport,
-                                    uint32_t* maxmessagesize, bool* mmsset,
+                                    uint32_t* maxmessagesize,
                                     std::string* transportId,
                                     bool* client) const;
 
@@ -677,6 +673,7 @@ class PeerConnectionImpl final
   RefPtr<PeerConnectionObserver> mPCObserver;
 
   nsCOMPtr<nsPIDOMWindowInner> mWindow;
+  nsString mOrigin;
 
   // The SDP sent in from JS
   std::string mLocalRequestedSDP;
@@ -725,6 +722,7 @@ class PeerConnectionImpl final
   unsigned int mDataChannelsClosed = 0;
 
   bool mForceIceTcp;
+  Maybe<dom::RTCRtcpMuxPolicy> mRtcpMuxPolicy;
   RefPtr<MediaTransportHandler> mTransportHandler;
 
   // The JSEP negotiation session.
@@ -798,7 +796,7 @@ class PeerConnectionImpl final
     // This class is not cycle-collected, so we must avoid grabbing a strong
     // reference.
     const std::string mPcHandle;
-    virtual ~StunAddrsHandler() {}
+    virtual ~StunAddrsHandler() = default;
   };
 
   // Manage ICE transports.
@@ -934,6 +932,7 @@ class PeerConnectionImpl final
   MediaEventListener mGatheringStateChangeListener;
   MediaEventListener mConnectionStateChangeListener;
   MediaEventListener mCandidateListener;
+  MediaEventListener mCandidateErrorListener;
   MediaEventListener mAlpnNegotiatedListener;
   MediaEventListener mStateChangeListener;
   MediaEventListener mRtcpStateChangeListener;
@@ -966,4 +965,4 @@ class PeerConnectionWrapper {
 
 #undef NS_IMETHODIMP_TO_ERRORRESULT
 #undef NS_IMETHODIMP_TO_ERRORRESULT_RETREF
-#endif  // _PEER_CONNECTION_IMPL_H_
+#endif  // PEER_CONNECTION_IMPL_H_

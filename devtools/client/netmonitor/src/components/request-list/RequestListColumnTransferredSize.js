@@ -27,8 +27,9 @@ const SIZE_UNAVAILABLE_TITLE = L10N.getStr("networkMenu.sizeUnavailable.title");
 const UPDATED_TRANSFERRED_PROPS = [
   "transferredSize",
   "fromCache",
-  "isRacing",
   "fromServiceWorker",
+  "blockedReason",
+  "extension",
 ];
 
 class RequestListColumnTransferredSize extends Component {
@@ -49,26 +50,22 @@ class RequestListColumnTransferredSize extends Component {
   render() {
     const {
       blockedReason,
-      blockingExtension,
+      extension,
       fromCache,
       fromServiceWorker,
       status,
       transferredSize,
-      isRacing,
     } = this.props.item;
     let text;
 
     if (blockedReason) {
-      text = getBlockedReasonString(blockedReason, blockingExtension);
+      text = getBlockedReasonString(blockedReason, extension);
     } else if (fromCache || status === "304") {
       text = SIZE_CACHED;
     } else if (fromServiceWorker) {
       text = SIZE_SERVICE_WORKER;
     } else if (typeof transferredSize == "number") {
       text = getFormattedSize(transferredSize);
-      if (isRacing && typeof isRacing == "boolean") {
-        text = L10N.getFormatStr("networkMenu.raced", text);
-      }
     } else if (transferredSize === null) {
       text = SIZE_UNAVAILABLE;
     }
@@ -77,7 +74,8 @@ class RequestListColumnTransferredSize extends Component {
 
     return dom.td(
       {
-        className: "requests-list-column requests-list-transferred",
+        className:
+          "requests-list-column requests-list-number-column requests-list-transferred",
         title,
       },
       text

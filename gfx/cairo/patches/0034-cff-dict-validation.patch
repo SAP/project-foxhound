@@ -1,0 +1,47 @@
+From 24f40ad7b206919879c624ce9cde0cceb2fe43cc Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Emilio=20Cobos=20=C3=81lvarez?= <emilio@crisal.io>
+Date: Wed, 10 Jun 2026 14:54:33 +0200
+Subject: [PATCH 1/3] [cff-subset] Validate dictionary end.
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Emilio Cobos Álvarez <emilio@crisal.io>
+---
+ src/cairo-cff-subset.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/src/cairo-cff-subset.c b/src/cairo-cff-subset.c
+index cfe80688a..61ca4c459 100644
+--- a/src/cairo-cff-subset.c
++++ b/src/cairo-cff-subset.c
+@@ -1085,8 +1085,12 @@ cairo_cff_font_read_cid_fontdict (cairo_cff_font_t *font, unsigned char *ptr)
+             goto fail;
+         }
+         operand = decode_integer (operand, &size);
++        if (unlikely (size < 0)) {
++            status = CAIRO_INT_STATUS_UNSUPPORTED;
++            goto fail;
++        }
+         decode_integer (operand, &offset);
+-        if (unlikely (offset < 0 || (unsigned long)offset > font->data_length)) {
++        if (unlikely (offset < 0 || (unsigned long)(size + offset) > font->data_length)) {
+             status = CAIRO_INT_STATUS_UNSUPPORTED;
+             goto fail;
+         }
+@@ -1251,9 +1255,11 @@ cairo_cff_font_read_top_dict (cairo_cff_font_t *font)
+     } else {
+         operand = cff_dict_get_operands (font->top_dict, PRIVATE_OP, &size);
+         operand = decode_integer (operand, &size);
++        if (unlikely (size < 0))
++            return CAIRO_INT_STATUS_UNSUPPORTED;
+         decode_integer (operand, &offset);
+         p = font->data + offset;
+-        if (unlikely (p < font->data || p > font->data_end))
++        if (unlikely (p < font->data || p + size > font->data_end))
+             return CAIRO_INT_STATUS_UNSUPPORTED;
+         status = cairo_cff_font_read_private_dict (font,
+                                                    font->private_dict,
+-- 
+2.54.0
+

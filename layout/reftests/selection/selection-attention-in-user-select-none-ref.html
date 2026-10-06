@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Normal selection for the "Find in Page" result should be painted even if `user-select:none`</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<style></style>
+<script>
+"use strict";
+
+document.querySelector("style").textContent = `
+  ::selection {
+    color: ${SpecialPowers.getStringPref("ui.textSelectAttentionForeground")};
+    background-color: ${SpecialPowers.getStringPref("ui.textSelectAttentionBackground")};
+  }
+`;
+
+addEventListener("DOMContentLoaded", () => {
+  // Select "THIS".
+  getSelection().setBaseAndExtent(
+    document.body.firstChild,
+    "Look for ".length,
+    document.body.firstChild,
+    "Look for THIS".length
+  );
+}, {once: true});
+</script>
+</head>
+<body>Look for THIS.</body>
+</html>

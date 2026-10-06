@@ -1,0 +1,6 @@
+package test {
+  public interface FunctionalInterface {
+    method @android.support.annotation.UiThread public void testFunctional();
+  }
+}
+

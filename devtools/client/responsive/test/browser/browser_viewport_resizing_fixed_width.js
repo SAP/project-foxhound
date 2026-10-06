@@ -7,6 +7,7 @@
 
 const TEST_URL =
   "data:text/html;charset=utf-8," +
+  "<!DOCTYPE html>" +
   '<head><meta name="viewport" content="width=300"/></head>' +
   "<body>meta viewport width 300</body>";
 addRDMTask(TEST_URL, async function ({ ui, manager }) {

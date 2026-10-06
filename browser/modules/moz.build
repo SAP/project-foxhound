@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -132,22 +130,28 @@ EXTRA_JS_MODULES += [
     "LinksCache.sys.mjs",
     "PageActions.sys.mjs",
     "PartnerLinkAttribution.sys.mjs",
+    "PermissionPromptTargeting.sys.mjs",
     "PermissionUI.sys.mjs",
-    "PopupBlockerObserver.sys.mjs",
+    "PopupAndRedirectBlockerObserver.sys.mjs",
     "ProcessHangMonitor.sys.mjs",
+    "ReducedProtectionNotification.sys.mjs",
     "Sanitizer.sys.mjs",
     "SelectionChangedMenulist.sys.mjs",
     "SharingUtils.sys.mjs",
     "SiteDataManager.sys.mjs",
     "SitePermissions.sys.mjs",
     "TransientPrefs.sys.mjs",
+    "UpdatePolicyEnforcer.sys.mjs",
     "URILoadingHelper.sys.mjs",
     "webrtcUI.sys.mjs",
     "ZoomUI.sys.mjs",
 ]
 
 MOZ_SRC_FILES += [
+    "CanvasPermissionPromptHelper.sys.mjs",
     "ContextId.sys.mjs",
+    "ObserverForwarder.sys.mjs",
+    "PrivateBrowsingUI.sys.mjs",
 ]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":

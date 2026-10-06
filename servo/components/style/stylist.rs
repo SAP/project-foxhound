@@ -8,31 +8,44 @@ use crate::applicable_declarations::{
     ApplicableDeclarationBlock, ApplicableDeclarationList, CascadePriority, ScopeProximity,
 };
 use crate::computed_value_flags::ComputedValueFlags;
-use crate::context::{CascadeInputs, QuirksMode};
+use crate::context::{CascadeInputs, QuirksMode, TreeCountingCaches};
 use crate::custom_properties::ComputedCustomProperties;
+use crate::custom_properties::{parse_name, SpecifiedValue};
+use crate::derives::*;
+use crate::device::Device;
 use crate::dom::TElement;
+#[cfg(feature = "gecko")]
+use crate::dom::TShadowRoot;
 #[cfg(feature = "gecko")]
 use crate::gecko_bindings::structs::{ServoStyleSetSizes, StyleRuleInclusion};
 use crate::invalidation::element::invalidation_map::{
-    note_selector_for_invalidation, InvalidationMap, AdditionalRelativeSelectorInvalidationMap,
+    note_selector_for_invalidation, AdditionalRelativeSelectorInvalidationMap, Dependency,
+    DependencyInvalidationKind, InvalidationMap, ScopeDependencyInvalidationKind,
 };
 use crate::invalidation::media_queries::{
     EffectiveMediaQueryResults, MediaListKey, ToMediaListKey,
 };
-use crate::invalidation::stylesheets::RuleChangeKind;
-use crate::media_queries::Device;
-use crate::properties::{self, CascadeMode, ComputedValues, FirstLineReparenting};
-use crate::properties::{AnimationDeclarations, PropertyDeclarationBlock};
-use crate::properties_and_values::registry::{
-    PropertyRegistration, PropertyRegistrationData, ScriptRegistry as CustomPropertyScriptRegistry,
+use crate::invalidation::stylesheets::{RuleChangeKind, StylesheetInvalidationSet};
+#[cfg(feature = "gecko")]
+use crate::properties::StyleBuilder;
+use crate::properties::{
+    self, AnimationDeclarations, CascadeMode, ComputedValues, FirstLineReparenting,
+    PropertyDeclarationBlock,
 };
+use crate::properties_and_values::registry::{
+    PropertyRegistration, ScriptRegistry as CustomPropertyScriptRegistry,
+};
+use crate::properties_and_values::rule::{
+    Descriptors as PropertyDescriptors, Inherits, PropertyRegistrationError, PropertyRuleName,
+};
+use crate::properties_and_values::syntax::Descriptor;
 use crate::rule_cache::{RuleCache, RuleCacheConditions};
 use crate::rule_collector::RuleCollector;
-use crate::rule_tree::{CascadeLevel, RuleTree, StrongRuleNode, StyleSource};
-use crate::selector_map::{PrecomputedHashMap, PrecomputedHashSet, SelectorMap, SelectorMapEntry};
-use crate::selector_parser::{
-    NonTSPseudoClass, PerPseudoElementMap, PseudoElement, SelectorImpl, SnapshotMap,
+use crate::rule_tree::{
+    CascadeLevel, CascadeOrigin, RuleCascadeFlags, RuleTree, StrongRuleNode, StyleSource,
 };
+use crate::selector_map::{PrecomputedHashMap, PrecomputedHashSet, SelectorMap, SelectorMapEntry};
+use crate::selector_parser::{NonTSPseudoClass, PerPseudoElementMap, PseudoElement, SelectorImpl};
 use crate::shared_lock::{Locked, SharedRwLockReadGuard, StylesheetGuards};
 use crate::sharing::{RevalidationResult, ScopeRevalidationResult};
 use crate::stylesheet_set::{DataValidity, DocumentStylesheetSet, SheetRebuildKind};
@@ -42,29 +55,35 @@ use crate::stylesheets::import_rule::ImportLayer;
 use crate::stylesheets::keyframes_rule::KeyframesAnimation;
 use crate::stylesheets::layer_rule::{LayerName, LayerOrder};
 use crate::stylesheets::scope_rule::{
-    collect_scope_roots, element_is_outside_of_scope, scope_selector_list_is_trivial, ImplicitScopeRoot, ScopeRootCandidate, ScopeSubjectMap, ScopeTarget
+    collect_scope_roots, element_is_outside_of_scope, scope_selector_list_is_trivial,
+    ImplicitScopeRoot, ScopeRootCandidate, ScopeSubjectMap, ScopeTarget,
 };
+use crate::stylesheets::UrlExtraData;
+use crate::stylesheets::{
+    CounterStyleRule, CssRule, CssRuleRef, EffectiveRulesIterator, FontFaceRule,
+    FontFeatureValuesRule, FontPaletteValuesRule, Origin, OriginSet, PagePseudoClassFlags,
+    PageRule, PerOrigin, PerOriginIter, PositionTryRule, StylesheetContents, StylesheetInDocument,
+    ViewTransitionRule,
+};
+use crate::stylesheets::{CustomMediaEvaluator, CustomMediaMap};
 #[cfg(feature = "gecko")]
-use crate::stylesheets::{
-    CounterStyleRule, FontFaceRule, FontFeatureValuesRule, FontPaletteValuesRule,
-    PagePseudoClassFlags
-};
-use crate::stylesheets::{
-    CssRule, EffectiveRulesIterator, Origin, OriginSet, PageRule, PerOrigin,
-    PerOriginIter, StylesheetContents, StylesheetInDocument,
-};
-use crate::values::{computed, AtomIdent};
+use crate::values::specified::position::PositionTryFallbacksItem;
+use crate::values::specified::position::PositionTryFallbacksTryTactic;
+use crate::values::{computed, AtomIdent, Parser, SourceLocation};
 use crate::AllocErr;
+use crate::ArcSlice;
 use crate::{Atom, LocalName, Namespace, ShrinkIfNeeded, WeakAtom};
+use cssparser::ParserInput;
 use dom::{DocumentState, ElementState};
-use fxhash::FxHashMap;
-use malloc_size_of::{MallocSizeOf, MallocShallowSizeOf, MallocSizeOfOps};
 #[cfg(feature = "gecko")]
 use malloc_size_of::MallocUnconditionalShallowSizeOf;
+use malloc_size_of::{MallocShallowSizeOf, MallocSizeOf, MallocSizeOfOps};
+use rustc_hash::FxHashMap;
 use selectors::attr::{CaseSensitivity, NamespaceConstraint};
 use selectors::bloom::BloomFilter;
 use selectors::matching::{
-    matches_selector, selector_may_match, MatchingContext, MatchingMode, NeedsSelectorFlags, SelectorCaches
+    matches_selector, selector_may_match, MatchingContext, MatchingMode, NeedsSelectorFlags,
+    SelectorCaches,
 };
 use selectors::matching::{MatchingForInvalidation, VisitedHandlingMode};
 use selectors::parser::{
@@ -72,12 +91,12 @@ use selectors::parser::{
     SelectorList,
 };
 use selectors::visitor::{SelectorListKind, SelectorVisitor};
-use servo_arc::{Arc, ArcBorrow};
+use servo_arc::{Arc, ArcBorrow, ThinArc};
 use smallvec::SmallVec;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
-use std::sync::Mutex;
-use std::{mem, ops};
+use std::mem;
+use std::sync::{LazyLock, Mutex};
 
 /// The type of the stylesheets that the stylist contains.
 #[cfg(feature = "servo")]
@@ -108,6 +127,52 @@ impl Hash for StylesheetContentsPtr {
 
 type StyleSheetContentList = Vec<StylesheetContentsPtr>;
 
+/// The @position-try rules that have changed.
+#[derive(Default, Debug, MallocSizeOf)]
+pub struct CascadeDataDifference {
+    /// The set of changed @position-try rule names.
+    pub changed_position_try_names: PrecomputedHashSet<Atom>,
+}
+
+impl CascadeDataDifference {
+    /// Merges another difference into `self`.
+    pub fn merge_with(&mut self, other: Self) {
+        self.changed_position_try_names
+            .extend(other.changed_position_try_names.into_iter())
+    }
+
+    /// Returns whether we're empty.
+    pub fn is_empty(&self) -> bool {
+        self.changed_position_try_names.is_empty()
+    }
+
+    fn update(&mut self, old_data: &PositionTryMap, new_data: &PositionTryMap) {
+        let mut any_different_key = false;
+        let different_len = old_data.len() != new_data.len();
+        for (name, rules) in old_data.iter() {
+            let changed = match new_data.get(name) {
+                Some(new_rule) => !Arc::ptr_eq(&rules.last().unwrap().0, new_rule),
+                None => {
+                    any_different_key = true;
+                    true
+                },
+            };
+            if changed {
+                self.changed_position_try_names.insert(name.clone());
+            }
+        }
+
+        if any_different_key || different_len {
+            for name in new_data.keys() {
+                // If the key exists in both, we've already checked it above.
+                if !old_data.contains_key(name) {
+                    self.changed_position_try_names.insert(name.clone());
+                }
+            }
+        }
+    }
+}
+
 /// A key in the cascade data cache.
 #[derive(Debug, Hash, Default, PartialEq, Eq)]
 struct CascadeDataCacheKey {
@@ -127,6 +192,7 @@ trait CascadeDataCacheEntry: Sized {
         collection: SheetCollectionFlusher<S>,
         guard: &SharedRwLockReadGuard,
         old_entry: &Self,
+        difference: &mut CascadeDataDifference,
     ) -> Result<Arc<Self>, AllocErr>
     where
         S: StylesheetInDocument + PartialEq + 'static;
@@ -164,6 +230,7 @@ where
         collection: SheetCollectionFlusher<S>,
         guard: &SharedRwLockReadGuard,
         old_entry: &Entry,
+        difference: &mut CascadeDataDifference,
     ) -> Result<Option<Arc<Entry>>, AllocErr>
     where
         S: StylesheetInDocument + PartialEq + 'static,
@@ -176,6 +243,7 @@ where
         }
 
         let mut key = CascadeDataCacheKey::default();
+        let mut custom_media_map = CustomMediaMap::default();
         for sheet in collection.sheets() {
             CascadeData::collect_applicable_media_query_results_into(
                 device,
@@ -183,6 +251,7 @@ where
                 guard,
                 &mut key.media_query_results,
                 &mut key.contents,
+                &mut custom_media_map,
             )
         }
 
@@ -196,6 +265,7 @@ where
                     collection,
                     guard,
                     old_entry,
+                    difference,
                 )?;
                 e.insert(new_entry.clone());
             },
@@ -223,6 +293,7 @@ where
                     collection,
                     guard,
                     old_entry,
+                    difference,
                 )?;
                 e.insert(new_entry.clone());
             },
@@ -278,11 +349,9 @@ pub fn add_size_of_ua_cache(ops: &mut MallocSizeOfOps, sizes: &mut ServoStyleSet
         .add_size_of(ops, sizes);
 }
 
-lazy_static! {
-    /// A cache of computed user-agent data, to be shared across documents.
-    static ref UA_CASCADE_DATA_CACHE: Mutex<UserAgentCascadeDataCache> =
-        Mutex::new(UserAgentCascadeDataCache::new());
-}
+/// A cache of computed user-agent data, to be shared across documents.
+static UA_CASCADE_DATA_CACHE: LazyLock<Mutex<UserAgentCascadeDataCache>> =
+    LazyLock::new(|| Mutex::new(UserAgentCascadeDataCache::new()));
 
 impl CascadeDataCacheEntry for UserAgentCascadeData {
     fn rebuild<S>(
@@ -290,20 +359,21 @@ impl CascadeDataCacheEntry for UserAgentCascadeData {
         quirks_mode: QuirksMode,
         collection: SheetCollectionFlusher<S>,
         guard: &SharedRwLockReadGuard,
-        _old: &Self,
+        old: &Self,
+        difference: &mut CascadeDataDifference,
     ) -> Result<Arc<Self>, AllocErr>
     where
         S: StylesheetInDocument + PartialEq + 'static,
     {
-        // TODO: Maybe we should support incremental rebuilds, though they seem
-        // uncommon and rebuild() doesn't deal with
-        // precomputed_pseudo_element_decls for now so...
-        let mut new_data = Self {
+        // TODO: Maybe we should support incremental rebuilds, though they seem uncommon and
+        // rebuild() doesn't deal with precomputed_pseudo_element_decls for now so...
+        let mut new_data = servo_arc::UniqueArc::new(Self {
             cascade_data: CascadeData::new(),
             precomputed_pseudo_element_decls: PrecomputedPseudoElementDeclarations::default(),
-        };
+        });
 
         for (index, sheet) in collection.sheets().enumerate() {
+            let new_data = &mut *new_data;
             new_data.cascade_data.add_stylesheet(
                 device,
                 quirks_mode,
@@ -312,12 +382,17 @@ impl CascadeDataCacheEntry for UserAgentCascadeData {
                 guard,
                 SheetRebuildKind::Full,
                 Some(&mut new_data.precomputed_pseudo_element_decls),
+                None,
             )?;
         }
 
         new_data.cascade_data.did_finish_rebuild();
+        difference.update(
+            &old.cascade_data.extra_data.position_try_rules,
+            &new_data.cascade_data.extra_data.position_try_rules,
+        );
 
-        Ok(Arc::new(new_data))
+        Ok(new_data.shareable())
     }
 
     #[cfg(feature = "gecko")]
@@ -344,14 +419,12 @@ struct UserAgentCascadeData {
     precomputed_pseudo_element_decls: PrecomputedPseudoElementDeclarations,
 }
 
-lazy_static! {
-    /// The empty UA cascade data for un-filled stylists.
-    static ref EMPTY_UA_CASCADE_DATA: Arc<UserAgentCascadeData> = {
-        let arc = Arc::new(UserAgentCascadeData::default());
-        arc.mark_as_intentionally_leaked();
-        arc
-    };
-}
+/// The empty UA cascade data for un-filled stylists.
+static EMPTY_UA_CASCADE_DATA: LazyLock<Arc<UserAgentCascadeData>> = LazyLock::new(|| {
+    let arc = Arc::new(UserAgentCascadeData::default());
+    arc.mark_as_intentionally_leaked();
+    arc
+});
 
 /// All the computed information for all the stylesheets that apply to the
 /// document.
@@ -401,18 +474,27 @@ impl DocumentCascadeData {
         }
     }
 
-    fn iter_origins(&self) -> DocumentCascadeDataIter {
+    fn iter_origins(&self) -> DocumentCascadeDataIter<'_> {
         DocumentCascadeDataIter {
             iter: self.per_origin.iter_origins(),
             cascade_data: self,
         }
     }
 
-    fn iter_origins_rev(&self) -> DocumentCascadeDataIter {
+    fn iter_origins_rev(&self) -> DocumentCascadeDataIter<'_> {
         DocumentCascadeDataIter {
             iter: self.per_origin.iter_origins_rev(),
             cascade_data: self,
         }
+    }
+
+    fn custom_media_for_sheet(
+        &self,
+        s: &StylistSheet,
+        guard: &SharedRwLockReadGuard,
+    ) -> &CustomMediaMap {
+        let origin = s.contents(guard).origin;
+        &self.borrow_for_origin(origin).custom_media
     }
 
     /// Rebuild the cascade data for the given document stylesheets, and
@@ -424,6 +506,7 @@ impl DocumentCascadeData {
         quirks_mode: QuirksMode,
         mut flusher: DocumentStylesheetFlusher<'a, S>,
         guards: &StylesheetGuards,
+        difference: &mut CascadeDataDifference,
     ) -> Result<(), AllocErr>
     where
         S: StylesheetInDocument + PartialEq + 'static,
@@ -441,13 +524,13 @@ impl DocumentCascadeData {
                     origin_flusher,
                     guards.ua_or_user,
                     &self.user_agent,
+                    difference,
                 )?;
                 if let Some(new_data) = new_data {
                     self.user_agent = new_data;
                 }
                 let _unused_entries = ua_cache.take_unused();
-                // See the comments in take_unused() as for why the following
-                // line.
+                // See the comments in take_unused() as for why the following line.
                 std::mem::drop(ua_cache);
             }
         }
@@ -458,6 +541,7 @@ impl DocumentCascadeData {
             quirks_mode,
             flusher.flush_origin(Origin::User),
             guards.ua_or_user,
+            difference,
         )?;
 
         // And now the author sheets.
@@ -466,6 +550,7 @@ impl DocumentCascadeData {
             quirks_mode,
             flusher.flush_origin(Origin::Author),
             guards.author,
+            difference,
         )?;
 
         Ok(())
@@ -492,6 +577,7 @@ pub enum AuthorStylesEnabled {
 /// A wrapper over a DocumentStylesheetSet that can be `Sync`, since it's only
 /// used and exposed via mutable methods in the `Stylist`.
 #[cfg_attr(feature = "servo", derive(MallocSizeOf))]
+#[derive(Deref, DerefMut)]
 struct StylistStylesheetSet(DocumentStylesheetSet<StylistSheet>);
 // Read above to see why this is fine.
 unsafe impl Sync for StylistStylesheetSet {}
@@ -499,20 +585,6 @@ unsafe impl Sync for StylistStylesheetSet {}
 impl StylistStylesheetSet {
     fn new() -> Self {
         StylistStylesheetSet(DocumentStylesheetSet::new())
-    }
-}
-
-impl ops::Deref for StylistStylesheetSet {
-    type Target = DocumentStylesheetSet<StylistSheet>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl ops::DerefMut for StylistStylesheetSet {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
     }
 }
 
@@ -646,15 +718,69 @@ enum NestedDeclarationsContext {
     Scope,
 }
 
+/// A struct containing state related to scope rules
+struct ContainingScopeRuleState {
+    id: ScopeConditionId,
+    inner_dependencies: Vec<Dependency>,
+    matches_shadow_host: ScopeMatchesShadowHost,
+}
+
+impl Default for ContainingScopeRuleState {
+    fn default() -> Self {
+        Self {
+            id: ScopeConditionId::none(),
+            inner_dependencies: Vec::new(),
+            matches_shadow_host: Default::default(),
+        }
+    }
+}
+
+impl ContainingScopeRuleState {
+    fn save(&self) -> SavedContainingScopeRuleState {
+        SavedContainingScopeRuleState {
+            id: self.id,
+            matches_shadow_host: self.matches_shadow_host,
+            inner_dependencies_len: self.inner_dependencies.len(),
+        }
+    }
+
+    fn restore(
+        &mut self,
+        saved: &SavedContainingScopeRuleState,
+    ) -> Option<(Vec<Dependency>, ScopeConditionId)> {
+        debug_assert!(self.inner_dependencies.len() >= saved.inner_dependencies_len);
+
+        if self.id == saved.id {
+            return None;
+        }
+
+        let scope_id = self.id;
+        let inner_deps = self
+            .inner_dependencies
+            .drain(saved.inner_dependencies_len..)
+            .collect();
+
+        self.id = saved.id;
+        self.matches_shadow_host = saved.matches_shadow_host;
+
+        Some((inner_deps, scope_id))
+    }
+}
+
+struct SavedContainingScopeRuleState {
+    id: ScopeConditionId,
+    matches_shadow_host: ScopeMatchesShadowHost,
+    inner_dependencies_len: usize,
+}
+
 /// A struct containing state from ancestor rules like @layer / @import /
 /// @container / nesting / @scope.
 struct ContainingRuleState {
     layer_name: LayerName,
     layer_id: LayerId,
     container_condition_id: ContainerConditionId,
-    in_starting_style: bool,
-    scope_condition_id: ScopeConditionId,
-    scope_matches_shadow_host: ScopeMatchesShadowHost,
+    cascade_flags: RuleCascadeFlags,
+    containing_scope_rule_state: ContainingScopeRuleState,
     ancestor_selector_lists: SmallVec<[SelectorList<SelectorImpl>; 2]>,
     nested_declarations_context: NestedDeclarationsContext,
 }
@@ -665,10 +791,9 @@ impl Default for ContainingRuleState {
             layer_name: LayerName::new_empty(),
             layer_id: LayerId::root(),
             container_condition_id: ContainerConditionId::none(),
-            in_starting_style: false,
+            cascade_flags: RuleCascadeFlags::empty(),
             ancestor_selector_lists: Default::default(),
-            scope_condition_id: ScopeConditionId::none(),
-            scope_matches_shadow_host: Default::default(),
+            containing_scope_rule_state: Default::default(),
             nested_declarations_context: NestedDeclarationsContext::Style,
         }
     }
@@ -679,9 +804,8 @@ struct SavedContainingRuleState {
     layer_name_len: usize,
     layer_id: LayerId,
     container_condition_id: ContainerConditionId,
-    in_starting_style: bool,
-    scope_condition_id: ScopeConditionId,
-    scope_matches_shadow_host: ScopeMatchesShadowHost,
+    cascade_flags: RuleCascadeFlags,
+    saved_containing_scope_rule_state: SavedContainingScopeRuleState,
     nested_declarations_context: NestedDeclarationsContext,
 }
 
@@ -692,25 +816,37 @@ impl ContainingRuleState {
             layer_name_len: self.layer_name.0.len(),
             layer_id: self.layer_id,
             container_condition_id: self.container_condition_id,
-            in_starting_style: self.in_starting_style,
-            scope_condition_id: self.scope_condition_id,
-            scope_matches_shadow_host: self.scope_matches_shadow_host,
+            cascade_flags: self.cascade_flags,
+            saved_containing_scope_rule_state: self.containing_scope_rule_state.save(),
             nested_declarations_context: self.nested_declarations_context,
         }
     }
 
-    fn restore(&mut self, saved: &SavedContainingRuleState) {
+    fn restore(
+        &mut self,
+        saved: &SavedContainingRuleState,
+    ) -> Option<(Vec<Dependency>, ScopeConditionId)> {
         debug_assert!(self.layer_name.0.len() >= saved.layer_name_len);
         debug_assert!(self.ancestor_selector_lists.len() >= saved.ancestor_selector_lists_len);
+
         self.ancestor_selector_lists
             .truncate(saved.ancestor_selector_lists_len);
         self.layer_name.0.truncate(saved.layer_name_len);
         self.layer_id = saved.layer_id;
         self.container_condition_id = saved.container_condition_id;
-        self.in_starting_style = saved.in_starting_style;
-        self.scope_condition_id = saved.scope_condition_id;
-        self.scope_matches_shadow_host = saved.scope_matches_shadow_host;
+        self.cascade_flags = saved.cascade_flags;
         self.nested_declarations_context = saved.nested_declarations_context;
+
+        self.containing_scope_rule_state
+            .restore(&saved.saved_containing_scope_rule_state)
+    }
+
+    fn scope_is_effective(&self) -> bool {
+        self.containing_scope_rule_state.id != ScopeConditionId::none()
+    }
+
+    fn cascade_flags(&self) -> RuleCascadeFlags {
+        self.cascade_flags
     }
 }
 
@@ -751,7 +887,7 @@ impl Stylist {
 
     /// Iterate through all the cascade datas from the document.
     #[inline]
-    pub fn iter_origins(&self) -> DocumentCascadeDataIter {
+    pub fn iter_origins(&self) -> DocumentCascadeDataIter<'_> {
         self.cascade_data.iter_origins()
     }
 
@@ -763,16 +899,16 @@ impl Stylist {
 
     /// Returns the custom property registration for this property's name.
     /// https://drafts.css-houdini.org/css-properties-values-api-1/#determining-registration
-    pub fn get_custom_property_registration(&self, name: &Atom) -> &PropertyRegistrationData {
+    pub fn get_custom_property_registration(&self, name: &Atom) -> &PropertyDescriptors {
         if let Some(registration) = self.custom_property_script_registry().get(name) {
-            return &registration.data;
+            return &registration.descriptors;
         }
         for (data, _) in self.iter_origins() {
             if let Some(registration) = data.custom_property_registrations.get(name) {
-                return &registration.data;
+                return &registration.descriptors;
             }
         }
-        PropertyRegistrationData::unregistered()
+        PropertyDescriptors::unregistered()
     }
 
     /// Returns custom properties with their registered initial values.
@@ -793,9 +929,11 @@ impl Stylist {
         {
             let mut seen_names = PrecomputedHashSet::default();
             let mut rule_cache_conditions = RuleCacheConditions::default();
+            let mut tree_counting_caches = TreeCountingCaches::default();
             let context = computed::Context::new_for_initial_at_property_value(
                 self,
                 &mut rule_cache_conditions,
+                &mut tree_counting_caches,
             );
 
             for (k, v) in self.custom_property_script_registry().properties().iter() {
@@ -803,7 +941,7 @@ impl Stylist {
                 let Ok(value) = v.compute_initial_value(&context) else {
                     continue;
                 };
-                let map = if v.inherits() {
+                let map = if v.descriptors.inherits() {
                     &mut initial_values.inherited
                 } else {
                     &mut initial_values.non_inherited
@@ -817,7 +955,7 @@ impl Stylist {
                         let Ok(value) = last_value.compute_initial_value(&context) else {
                             continue;
                         };
-                        let map = if last_value.inherits() {
+                        let map = if last_value.descriptors.inherits() {
                             &mut initial_values.inherited
                         } else {
                             &mut initial_values.non_inherited
@@ -838,6 +976,7 @@ impl Stylist {
         old_data: &CascadeData,
         collection: SheetCollectionFlusher<S>,
         guard: &SharedRwLockReadGuard,
+        difference: &mut CascadeDataDifference,
     ) -> Result<Option<Arc<CascadeData>>, AllocErr>
     where
         S: StylesheetInDocument + PartialEq + 'static,
@@ -848,18 +987,19 @@ impl Stylist {
             collection,
             guard,
             old_data,
+            difference,
         )
     }
 
     /// Iterate over the extra data in origin order.
     #[inline]
-    pub fn iter_extra_data_origins(&self) -> ExtraStyleDataIterator {
+    pub fn iter_extra_data_origins(&self) -> ExtraStyleDataIterator<'_> {
         ExtraStyleDataIterator(self.cascade_data.iter_origins())
     }
 
     /// Iterate over the extra data in reverse origin order.
     #[inline]
-    pub fn iter_extra_data_origins_rev(&self) -> ExtraStyleDataIterator {
+    pub fn iter_extra_data_origins_rev(&self) -> ExtraStyleDataIterator<'_> {
         ExtraStyleDataIterator(self.cascade_data.iter_origins_rev())
     }
 
@@ -912,43 +1052,29 @@ impl Stylist {
 
     /// Flush the list of stylesheets if they changed, ensuring the stylist is
     /// up-to-date.
-    pub fn flush<E>(
-        &mut self,
-        guards: &StylesheetGuards,
-        document_element: Option<E>,
-        snapshots: Option<&SnapshotMap>,
-    ) -> bool
-    where
-        E: TElement,
-    {
+    pub fn flush(&mut self, guards: &StylesheetGuards) -> StylesheetInvalidationSet {
         if !self.stylesheets.has_changed() {
-            return false;
+            return Default::default();
         }
 
         self.num_rebuilds += 1;
 
-        let flusher = self.stylesheets.flush(document_element, snapshots);
-
-        let had_invalidations = flusher.had_invalidations();
+        let (flusher, mut invalidations) = self.stylesheets.flush();
 
         self.cascade_data
-            .rebuild(&self.device, self.quirks_mode, flusher, guards)
-            .unwrap_or_else(|_| warn!("OOM in Stylist::flush"));
+            .rebuild(
+                &self.device,
+                self.quirks_mode,
+                flusher,
+                guards,
+                &mut invalidations.cascade_data_difference,
+            )
+            .unwrap_or_else(|_| {
+                warn!("OOM in Stylist::flush");
+            });
 
         self.rebuild_initial_values_for_custom_properties();
-
-        had_invalidations
-    }
-
-    /// Insert a given stylesheet before another stylesheet in the document.
-    pub fn insert_stylesheet_before(
-        &mut self,
-        sheet: StylistSheet,
-        before_sheet: StylistSheet,
-        guard: &SharedRwLockReadGuard,
-    ) {
-        self.stylesheets
-            .insert_stylesheet_before(Some(&self.device), sheet, before_sheet, guard)
+        invalidations
     }
 
     /// Marks a given stylesheet origin as dirty, due to, for example, changes
@@ -970,16 +1096,35 @@ impl Stylist {
         self.stylesheets.has_changed()
     }
 
+    /// Insert a given stylesheet before another stylesheet in the document.
+    pub fn insert_stylesheet_before(
+        &mut self,
+        sheet: StylistSheet,
+        before_sheet: StylistSheet,
+        guard: &SharedRwLockReadGuard,
+    ) {
+        let custom_media = self.cascade_data.custom_media_for_sheet(&sheet, guard);
+        self.stylesheets.insert_stylesheet_before(
+            Some(&self.device),
+            custom_media,
+            sheet,
+            before_sheet,
+            guard,
+        )
+    }
+
     /// Appends a new stylesheet to the current set.
     pub fn append_stylesheet(&mut self, sheet: StylistSheet, guard: &SharedRwLockReadGuard) {
+        let custom_media = self.cascade_data.custom_media_for_sheet(&sheet, guard);
         self.stylesheets
-            .append_stylesheet(Some(&self.device), sheet, guard)
+            .append_stylesheet(Some(&self.device), custom_media, sheet, guard)
     }
 
     /// Remove a given stylesheet to the current set.
     pub fn remove_stylesheet(&mut self, sheet: StylistSheet, guard: &SharedRwLockReadGuard) {
+        let custom_media = self.cascade_data.custom_media_for_sheet(&sheet, guard);
         self.stylesheets
-            .remove_stylesheet(Some(&self.device), sheet, guard)
+            .remove_stylesheet(Some(&self.device), custom_media, sheet, guard)
     }
 
     /// Notify of a change of a given rule.
@@ -989,18 +1134,27 @@ impl Stylist {
         rule: &CssRule,
         guard: &SharedRwLockReadGuard,
         change_kind: RuleChangeKind,
+        ancestors: &[CssRuleRef],
     ) {
-        self.stylesheets
-            .rule_changed(Some(&self.device), sheet, rule, guard, change_kind)
+        let custom_media = self.cascade_data.custom_media_for_sheet(&sheet, guard);
+        self.stylesheets.rule_changed(
+            Some(&self.device),
+            custom_media,
+            sheet,
+            rule,
+            guard,
+            change_kind,
+            ancestors,
+        )
     }
 
-    /// Appends a new stylesheet to the current set.
+    /// Get the total stylesheet count for a given origin.
     #[inline]
     pub fn sheet_count(&self, origin: Origin) -> usize {
         self.stylesheets.sheet_count(origin)
     }
 
-    /// Appends a new stylesheet to the current set.
+    /// Get the index-th stylesheet for a given origin.
     #[inline]
     pub fn sheet_at(&self, origin: Origin, index: usize) -> Option<&StylistSheet> {
         self.stylesheets.get(origin, index)
@@ -1083,6 +1237,7 @@ impl Stylist {
                 rules: Some(rules),
                 visited_rules: None,
                 flags: Default::default(),
+                included_cascade_flags: RuleCascadeFlags::empty(),
             },
             pseudo,
             guards,
@@ -1213,13 +1368,100 @@ impl Stylist {
         self.cascade_style_and_visited(
             element,
             Some(pseudo),
-            inputs,
+            &inputs,
             guards,
             parent_style,
             parent_style,
             FirstLineReparenting::No,
+            &PositionTryFallbacksTryTactic::default(),
             /* rule_cache = */ None,
             &mut RuleCacheConditions::default(),
+            &mut TreeCountingCaches::default(),
+        )
+    }
+
+    /// Computes a fallback style lazily given the current and parent styles, and name.
+    #[cfg(feature = "gecko")]
+    pub fn resolve_position_try<E>(
+        &self,
+        style: &ComputedValues,
+        guards: &StylesheetGuards,
+        scope: CascadeLevel,
+        element: E,
+        fallback_item: &PositionTryFallbacksItem,
+    ) -> Option<Arc<ComputedValues>>
+    where
+        E: TElement,
+    {
+        let name_and_try_tactic = match *fallback_item {
+            PositionTryFallbacksItem::PositionArea(area) => {
+                // We don't bother passing the parent_style argument here since
+                // we probably don't need it. If we do, we could wrap this up in
+                // a style_resolver::with_default_parent_styles call, as below.
+                let mut builder =
+                    StyleBuilder::for_derived_style(&self.device, Some(self), style, None);
+                builder.rules = style.rules.clone();
+                builder.mutate_position().set_position_area(area);
+                return Some(builder.build());
+            },
+            PositionTryFallbacksItem::IdentAndOrTactic(ref name_and_try_tactic) => {
+                name_and_try_tactic
+            },
+        };
+
+        let fallback_rule = if !name_and_try_tactic.ident.is_empty() {
+            Some(self.lookup_position_try(&name_and_try_tactic.ident.0, scope, element)?)
+        } else {
+            None
+        };
+        let fallback_block = fallback_rule
+            .as_ref()
+            .map(|r| &r.read_with(guards.author).block);
+        let pseudo = style
+            .pseudo()
+            .or_else(|| element.implemented_pseudo_element());
+        let inputs = {
+            let mut inputs = CascadeInputs::new_from_style(style);
+            // @position-try doesn't care about any :visited-dependent property.
+            inputs.visited_rules = None;
+            let rules = inputs.rules.as_ref().unwrap_or(self.rule_tree.root());
+            let mut important_rules_changed = false;
+            if let Some(fallback_block) = fallback_block {
+                let new_rules = self.rule_tree.update_rule_at_level(
+                    CascadeLevel::new(CascadeOrigin::PositionFallback),
+                    LayerOrder::root(),
+                    Some(fallback_block.borrow_arc()),
+                    rules,
+                    guards,
+                    &mut important_rules_changed,
+                );
+                if new_rules.is_some() {
+                    inputs.rules = new_rules;
+                } else {
+                    // This will return an identical style to `style`. We could consider optimizing
+                    // this a bit more but for now just perform the cascade, this can only happen with
+                    // the same position-try name repeated multiple times anyways.
+                }
+            }
+            inputs
+        };
+        crate::style_resolver::with_default_parent_styles(
+            element,
+            |parent_style, layout_parent_style| {
+                Some(self.cascade_style_and_visited(
+                    Some(element),
+                    pseudo.as_ref(),
+                    &inputs,
+                    guards,
+                    parent_style,
+                    layout_parent_style,
+                    FirstLineReparenting::No,
+                    &name_and_try_tactic.try_tactic,
+                    /* rule_cache = */ None,
+                    &mut RuleCacheConditions::default(),
+                    &mut TreeCountingCaches::default(),
+                ))
+            },
         )
     }
 
@@ -1239,13 +1481,15 @@ impl Stylist {
         &self,
         element: Option<E>,
         pseudo: Option<&PseudoElement>,
-        inputs: CascadeInputs,
+        inputs: &CascadeInputs,
         guards: &StylesheetGuards,
         parent_style: Option<&ComputedValues>,
         layout_parent_style: Option<&ComputedValues>,
         first_line_reparenting: FirstLineReparenting,
+        try_tactic: &PositionTryFallbacksTryTactic,
         rule_cache: Option<&RuleCache>,
         rule_cache_conditions: &mut RuleCacheConditions,
+        tree_counting_caches: &mut TreeCountingCaches,
     ) -> Arc<ComputedValues>
     where
         E: TElement,
@@ -1265,6 +1509,7 @@ impl Stylist {
             },
         };
 
+        let mut implemented_pseudo = None;
         // Read the comment on `precomputed_values_for_pseudo` to see why it's
         // difficult to assert that display: contents nodes never arrive here
         // (tl;dr: It doesn't apply for replaced elements and such, but the
@@ -1273,17 +1518,23 @@ impl Stylist {
         // FIXME(emilio): We should assert that it holds if pseudo.is_none()!
         properties::cascade::<E>(
             &self,
-            pseudo,
+            pseudo.or_else(|| {
+                implemented_pseudo = element.unwrap().implemented_pseudo_element();
+                implemented_pseudo.as_ref()
+            }),
             inputs.rules.as_ref().unwrap_or(self.rule_tree.root()),
             guards,
             parent_style,
             layout_parent_style,
             first_line_reparenting,
+            try_tactic,
             visited_rules,
             inputs.flags,
+            inputs.included_cascade_flags,
             rule_cache,
             rule_cache_conditions,
             element,
+            tree_counting_caches,
         )
     }
 
@@ -1355,7 +1606,6 @@ impl Stylist {
                 None,
                 &mut selector_caches,
                 VisitedHandlingMode::RelevantLinkVisited,
-                selectors::matching::IncludeStartingStyle::No,
                 self.quirks_mode,
                 needs_selector_flags,
                 MatchingForInvalidation::No,
@@ -1388,6 +1638,7 @@ impl Stylist {
             rules: Some(rules),
             visited_rules,
             flags: matching_context.extra_data.cascade_input_flags,
+            included_cascade_flags: RuleCascadeFlags::empty(),
         })
     }
 
@@ -1470,10 +1721,23 @@ impl Stylist {
     ) where
         E: TElement,
     {
+        let mut cur = element;
+        let mut pseudos = SmallVec::<[_; 2]>::new();
+        if let Some(pseudo) = pseudo_element {
+            pseudos.push(pseudo.clone());
+        }
+        while let Some(p) = cur.implemented_pseudo_element() {
+            pseudos.push(p);
+            let Some(parent_pseudo) = cur.pseudo_element_originating_element() else {
+                break;
+            };
+            cur = parent_pseudo;
+        }
         RuleCollector::new(
             self,
             element,
-            pseudo_element,
+            cur,
+            &pseudos,
             style_attribute,
             smil_override,
             animation_declarations,
@@ -1501,35 +1765,41 @@ impl Stylist {
         self.any_applicable_rule_data(element, |data| data.mapped_ids.contains(id))
     }
 
-    /// Returns the registered `@keyframes` animation for the specified name.
+    /// Looks up a CascadeData-dependent rule for a given element.
+    ///
+    /// NOTE(emilio): This is a best-effort thing, the right fix is a bit TBD because it involves
+    /// "recording" which tree the name came from, see [1][2].
+    ///
+    /// [1]: https://github.com/w3c/csswg-drafts/issues/1995
+    /// [2]: https://bugzil.la/1458189
     #[inline]
-    pub fn get_animation<'a, E>(&'a self, name: &Atom, element: E) -> Option<&'a KeyframesAnimation>
+    fn lookup_element_dependent_at_rule<'a, T, F, E>(
+        &'a self,
+        element: E,
+        find_in: F,
+    ) -> Option<&'a T>
     where
         E: TElement + 'a,
+        F: Fn(&'a CascadeData) -> Option<&'a T>,
     {
         macro_rules! try_find_in {
             ($data:expr) => {
-                if let Some(animation) = $data.animations.get(name) {
-                    return Some(animation);
+                if let Some(thing) = find_in(&$data) {
+                    return Some(thing);
                 }
             };
         }
 
-        // NOTE(emilio): This is a best-effort thing, the right fix is a bit TBD because it
-        // involves "recording" which tree the name came from, see [1][2].
-        //
-        // [1]: https://github.com/w3c/csswg-drafts/issues/1995
-        // [2]: https://bugzil.la/1458189
-        let mut animation = None;
+        let mut result = None;
         let doc_rules_apply =
             element.each_applicable_non_document_style_rule_data(|data, _host| {
-                if animation.is_none() {
-                    animation = data.animations.get(name);
+                if result.is_none() {
+                    result = find_in(data);
                 }
             });
 
-        if animation.is_some() {
-            return animation;
+        if result.is_some() {
+            return result;
         }
 
         if doc_rules_apply {
@@ -1538,6 +1808,65 @@ impl Stylist {
         try_find_in!(self.cascade_data.user);
         try_find_in!(self.cascade_data.user_agent.cascade_data);
 
+        None
+    }
+
+    /// Returns the registered `@keyframes` animation for the specified name.
+    #[inline]
+    pub fn lookup_keyframes<'a, E>(
+        &'a self,
+        name: &Atom,
+        element: E,
+    ) -> Option<&'a KeyframesAnimation>
+    where
+        E: TElement + 'a,
+    {
+        self.lookup_element_dependent_at_rule(element, |data| data.animations.get(name))
+    }
+
+    /// Returns the last @view-transition rule
+    /// <https://drafts.csswg.org/css-view-transitions-2/#resolve-view-transition-rule>
+    #[inline]
+    pub fn last_view_transition_rule(&self) -> Option<&Arc<ViewTransitionRule>> {
+        // Iterate the effective rules sorted by origin and level
+        self.iter_extra_data_origins()
+            .flat_map(|(d, _)| d.view_transitions.iter())
+            .last()
+            .map(|(rule, _)| rule)
+    }
+
+    /// Returns the registered `@position-try-rule` animation for the specified name.
+    #[inline]
+    #[cfg(feature = "gecko")]
+    fn lookup_position_try<'a, E>(
+        &'a self,
+        name: &Atom,
+        scope: CascadeLevel,
+        element: E,
+    ) -> Option<&'a Arc<Locked<PositionTryRule>>>
+    where
+        E: TElement + 'a,
+    {
+        let mut shadow_root = scope.get_shadow_root_for_scoped(element);
+        // https://drafts.csswg.org/css-shadow/#tree-scoped-name-global
+        // "First search only the tree-scoped names associated with the same root as the tree-scoped reference."
+        while let Some(r) = shadow_root {
+            if let Some(rule) = r
+                .style_data()
+                .map(|data| data.extra_data.position_try_rules.get(name))
+                .flatten()
+            {
+                return Some(rule);
+            }
+            // "If no relevant tree-scoped name is found, and the root is a shadow root, then repeat this search in the root’s host’s node tree (recursively)."
+            shadow_root = r.host().containing_shadow();
+        }
+
+        for (data, _) in self.iter_extra_data_origins() {
+            if let Some(r) = data.position_try_rules.get(name) {
+                return Some(r);
+            }
+        }
         None
     }
 
@@ -1553,15 +1882,11 @@ impl Stylist {
     where
         E: TElement,
     {
-        // NB: `MatchingMode` doesn't really matter, given we don't share style
-        // between pseudos.
-        let mut matching_context = MatchingContext::new(
-            MatchingMode::Normal,
+        let mut matching_context = MatchingContext::new_for_revalidation(
             bloom,
             selector_caches,
             self.quirks_mode,
             needs_selector_flags,
-            MatchingForInvalidation::No,
         );
 
         // Note that, by the time we're revalidating, we're guaranteed that the
@@ -1639,7 +1964,7 @@ impl Stylist {
         let matches_document_rules =
             element.each_applicable_non_document_style_rule_data(|data, host| {
                 matching_context.with_shadow_host(Some(host), |matching_context| {
-                    data.revalidate_scopes(self, element, matching_context, &mut result);
+                    data.revalidate_scopes(element, matching_context, &mut result);
                 })
             });
 
@@ -1648,7 +1973,7 @@ impl Stylist {
                 continue;
             }
 
-            data.revalidate_scopes(self, element, &mut matching_context, &mut result);
+            data.revalidate_scopes(element, &mut matching_context, &mut result);
         }
 
         result
@@ -1689,19 +2014,23 @@ impl Stylist {
                     CascadePriority::new(
                         CascadeLevel::same_tree_author_normal(),
                         LayerOrder::root(),
+                        RuleCascadeFlags::empty(),
                     ),
                 )
             }),
             Some(parent_style),
             Some(parent_style),
             FirstLineReparenting::No,
+            &PositionTryFallbacksTryTactic::default(),
             CascadeMode::Unvisited {
                 visited_rules: None,
             },
             Default::default(),
+            RuleCascadeFlags::empty(),
             /* rule_cache = */ None,
             &mut Default::default(),
             /* element = */ None,
+            &mut TreeCountingCaches::default(),
         )
     }
 
@@ -1751,6 +2080,97 @@ impl Stylist {
     }
 }
 
+#[allow(missing_docs)]
+#[repr(u8)]
+pub enum RegisterCustomPropertyResult {
+    SuccessfullyRegistered,
+    InvalidName,
+    AlreadyRegistered,
+    InvalidSyntax,
+    NoInitialValue,
+    InvalidInitialValue,
+    InitialValueNotComputationallyIndependent,
+}
+
+impl Stylist {
+    /// <https://drafts.css-houdini.org/css-properties-values-api-1/#the-registerproperty-function>
+    pub fn register_custom_property(
+        &mut self,
+        url_data: &UrlExtraData,
+        name: &str,
+        syntax: &str,
+        inherits: bool,
+        initial_value: Option<&str>,
+    ) -> RegisterCustomPropertyResult {
+        use RegisterCustomPropertyResult::*;
+
+        // If name is not a custom property name string, throw a SyntaxError and exit this algorithm.
+        let Ok(name) = parse_name(name).map(Atom::from) else {
+            return InvalidName;
+        };
+
+        // If property set already contains an entry with name as its property name (compared
+        // codepoint-wise), throw an InvalidModificationError and exit this algorithm.
+        if self.custom_property_script_registry().get(&name).is_some() {
+            return AlreadyRegistered;
+        }
+        // Attempt to consume a syntax definition from syntax. If it returns failure, throw a
+        // SyntaxError. Otherwise, let syntax definition be the returned syntax definition.
+        let Ok(syntax) = Descriptor::from_str(syntax, /* preserve_specified = */ false) else {
+            return InvalidSyntax;
+        };
+
+        let initial_value = match initial_value {
+            Some(value) => {
+                let mut input = ParserInput::new(value);
+                let parsed = Parser::new(&mut input)
+                    .parse_entirely(|input| {
+                        input.skip_whitespace();
+                        SpecifiedValue::parse(input, None, url_data).map(Arc::new)
+                    })
+                    .ok();
+                if parsed.is_none() {
+                    return InvalidInitialValue;
+                }
+                parsed
+            },
+            None => None,
+        };
+
+        if let Err(error) =
+            PropertyRegistration::validate_initial_value(&syntax, initial_value.as_deref())
+        {
+            return match error {
+                PropertyRegistrationError::InitialValueNotComputationallyIndependent => {
+                    InitialValueNotComputationallyIndependent
+                },
+                PropertyRegistrationError::InvalidInitialValue => InvalidInitialValue,
+                PropertyRegistrationError::NoInitialValue => NoInitialValue,
+            };
+        }
+
+        let property_registration = PropertyRegistration {
+            name: PropertyRuleName(name),
+            descriptors: PropertyDescriptors {
+                syntax: Some(syntax),
+                inherits: Some(if inherits {
+                    Inherits::True
+                } else {
+                    Inherits::False
+                }),
+                initial_value,
+            },
+            url_data: url_data.clone(),
+            source_location: SourceLocation { line: 0, column: 0 },
+        };
+        self.custom_property_script_registry_mut()
+            .register(property_registration);
+        self.rebuild_initial_values_for_custom_properties();
+
+        SuccessfullyRegistered
+    }
+}
+
 /// A vector that is sorted in layer order.
 #[derive(Clone, Debug, Deref, MallocSizeOf)]
 pub struct LayerOrderedVec<T>(Vec<(T, LayerId)>);
@@ -1769,7 +2189,6 @@ impl<T> Default for LayerOrderedMap<T> {
     }
 }
 
-#[cfg(feature = "gecko")]
 impl<T: 'static> LayerOrderedVec<T> {
     fn clear(&mut self) {
         self.0.clear();
@@ -1851,7 +2270,6 @@ pub struct PageRuleMap {
     pub rules: PrecomputedHashMap<Atom, SmallVec<[PageRuleData; 1]>>,
 }
 
-#[cfg(feature = "gecko")]
 impl PageRuleMap {
     #[inline]
     fn clear(&mut self) {
@@ -1871,8 +2289,8 @@ impl PageRuleMap {
         pseudos: PagePseudoClassFlags,
     ) {
         let level = match origin {
-            Origin::UserAgent => CascadeLevel::UANormal,
-            Origin::User => CascadeLevel::UserNormal,
+            Origin::UserAgent => CascadeLevel::new(CascadeOrigin::UA),
+            Origin::User => CascadeLevel::new(CascadeOrigin::User),
             Origin::Author => CascadeLevel::same_tree_author_normal(),
         };
         let cascade_data = cascade_data.borrow_for_origin(origin);
@@ -1922,6 +2340,7 @@ impl PageRuleMap {
                 specificity,
                 cascade_data.layer_order_for(data.layer),
                 ScopeProximity::infinity(), // Page rule can't have nested rules anyway.
+                RuleCascadeFlags::empty(),
             ));
         }
     }
@@ -1933,33 +2352,34 @@ impl MallocShallowSizeOf for PageRuleMap {
     }
 }
 
-/// This struct holds data which users of Stylist may want to extract
-/// from stylesheets which can be done at the same time as updating.
+type PositionTryMap = LayerOrderedMap<Arc<Locked<PositionTryRule>>>;
+
+/// This struct holds data which users of Stylist may want to extract from stylesheets which can be
+/// done at the same time as updating.
 #[derive(Clone, Debug, Default)]
-#[cfg_attr(feature = "servo", derive(MallocSizeOf))]
 pub struct ExtraStyleData {
     /// A list of effective font-face rules and their origin.
-    #[cfg(feature = "gecko")]
     pub font_faces: LayerOrderedVec<Arc<Locked<FontFaceRule>>>,
 
     /// A list of effective font-feature-values rules.
-    #[cfg(feature = "gecko")]
     pub font_feature_values: LayerOrderedVec<Arc<FontFeatureValuesRule>>,
 
     /// A list of effective font-palette-values rules.
-    #[cfg(feature = "gecko")]
     pub font_palette_values: LayerOrderedVec<Arc<FontPaletteValuesRule>>,
 
     /// A map of effective counter-style rules.
-    #[cfg(feature = "gecko")]
     pub counter_styles: LayerOrderedMap<Arc<Locked<CounterStyleRule>>>,
 
+    /// A map of effective @position-try rules.
+    pub position_try_rules: PositionTryMap,
+
     /// A map of effective page rules.
-    #[cfg(feature = "gecko")]
     pub pages: PageRuleMap,
+
+    /// A list of effective @view-transition rules.
+    pub view_transitions: LayerOrderedVec<Arc<ViewTransitionRule>>,
 }
 
-#[cfg(feature = "gecko")]
 impl ExtraStyleData {
     /// Add the given @font-face rule.
     fn add_font_face(&mut self, rule: &Arc<Locked<FontFaceRule>>, layer: LayerId) {
@@ -1987,6 +2407,16 @@ impl ExtraStyleData {
         self.counter_styles.try_insert(name, rule.clone(), layer)
     }
 
+    /// Add the given @position-try rule.
+    fn add_position_try(
+        &mut self,
+        name: Atom,
+        rule: Arc<Locked<PositionTryRule>>,
+        layer: LayerId,
+    ) -> Result<(), AllocErr> {
+        self.position_try_rules.try_insert(name, rule, layer)
+    }
+
     /// Add the given @page rule.
     fn add_page(
         &mut self,
@@ -2012,22 +2442,26 @@ impl ExtraStyleData {
         Ok(())
     }
 
+    fn add_view_transition(&mut self, rule: &Arc<ViewTransitionRule>, layer: LayerId) {
+        self.view_transitions.push(rule.clone(), layer)
+    }
+
     fn sort_by_layer(&mut self, layers: &[CascadeLayer]) {
         self.font_faces.sort(layers);
         self.font_feature_values.sort(layers);
         self.font_palette_values.sort(layers);
         self.counter_styles.sort(layers);
+        self.position_try_rules.sort(layers);
+        self.view_transitions.sort(layers);
     }
 
     fn clear(&mut self) {
-        #[cfg(feature = "gecko")]
-        {
-            self.font_faces.clear();
-            self.font_feature_values.clear();
-            self.font_palette_values.clear();
-            self.counter_styles.clear();
-            self.pages.clear();
-        }
+        self.font_faces.clear();
+        self.font_feature_values.clear();
+        self.font_palette_values.clear();
+        self.counter_styles.clear();
+        self.position_try_rules.clear();
+        self.pages.clear();
     }
 }
 
@@ -2054,7 +2488,6 @@ impl<'a> Iterator for ExtraStyleDataIterator<'a> {
     }
 }
 
-#[cfg(feature = "gecko")]
 impl MallocSizeOf for ExtraStyleData {
     /// Measure heap usage.
     fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
@@ -2063,6 +2496,7 @@ impl MallocSizeOf for ExtraStyleData {
         n += self.font_feature_values.shallow_size_of(ops);
         n += self.font_palette_values.shallow_size_of(ops);
         n += self.counter_styles.shallow_size_of(ops);
+        n += self.position_try_rules.shallow_size_of(ops);
         n += self.pages.shallow_size_of(ops);
         n
     }
@@ -2113,7 +2547,7 @@ impl RevalidationSelectorAndHashes {
 }
 
 impl SelectorMapEntry for RevalidationSelectorAndHashes {
-    fn selector(&self) -> SelectorIter<SelectorImpl> {
+    fn selector(&self) -> SelectorIter<'_, SelectorImpl> {
         self.selector.iter_from(self.selector_offset)
     }
 }
@@ -2181,13 +2615,13 @@ fn component_needs_revalidation(
             // See https://bugzilla.mozilla.org/show_bug.cgi?id=1369611
             passed_rightmost_selector
         },
-        Component::AttributeInNoNamespaceExists { .. } |
-        Component::AttributeInNoNamespace { .. } |
-        Component::AttributeOther(_) |
-        Component::Empty |
-        Component::Nth(_) |
-        Component::NthOf(_) |
-        Component::Has(_) => true,
+        Component::AttributeInNoNamespaceExists { .. }
+        | Component::AttributeInNoNamespace { .. }
+        | Component::AttributeOther(_)
+        | Component::Empty
+        | Component::Nth(_)
+        | Component::NthOf(_)
+        | Component::Has(_) => true,
         Component::NonTSPseudoClass(ref p) => p.needs_cache_revalidation(),
         _ => false,
     }
@@ -2222,8 +2656,8 @@ impl<'a> SelectorVisitor for StylistSelectorVisitor<'a> {
         // NOTE(emilio): this call happens before we visit any of the simple
         // selectors in the next ComplexSelector, so we can use this to skip
         // looking at them.
-        self.passed_rightmost_selector = self.passed_rightmost_selector ||
-            !matches!(combinator, None | Some(Combinator::PseudoElement));
+        self.passed_rightmost_selector = self.passed_rightmost_selector
+            || !matches!(combinator, None | Some(Combinator::PseudoElement));
 
         true
     }
@@ -2274,8 +2708,8 @@ impl<'a> SelectorVisitor for StylistSelectorVisitor<'a> {
     }
 
     fn visit_simple_selector(&mut self, s: &Component<SelectorImpl>) -> bool {
-        *self.needs_revalidation = *self.needs_revalidation ||
-            component_needs_revalidation(s, self.passed_rightmost_selector);
+        *self.needs_revalidation = *self.needs_revalidation
+            || component_needs_revalidation(s, self.passed_rightmost_selector);
 
         match *s {
             Component::NonTSPseudoClass(NonTSPseudoClass::CustomState(ref name)) => {
@@ -2341,34 +2775,36 @@ struct GenericElementAndPseudoRules<Map> {
     /// FIXME(emilio): There are a bunch of wasted entries here in practice.
     /// Figure out a good way to do a `PerNonAnonBox` and `PerAnonBox` (for
     /// `precomputed_values_for_pseudo`) without duplicating a lot of code.
-    pseudos_map: PerPseudoElementMap<Box<Map>>,
+    pseudos_map: PerPseudoElementMap<Self>,
 }
 
 impl<Map: Default + MallocSizeOf> GenericElementAndPseudoRules<Map> {
     #[inline(always)]
-    fn for_insertion(&mut self, pseudo_element: Option<&PseudoElement>) -> &mut Map {
-        debug_assert!(
-            pseudo_element.map_or(true, |pseudo| {
-                !pseudo.is_precomputed() && !pseudo.is_unknown_webkit_pseudo_element()
-            }),
-            "Precomputed pseudos should end up in precomputed_pseudo_element_decls, \
-             and unknown webkit pseudos should be discarded before getting here"
-        );
+    fn for_insertion<'a>(&mut self, pseudo_elements: &[&'a PseudoElement]) -> &mut Map {
+        let mut current = self;
+        for &pseudo_element in pseudo_elements {
+            debug_assert!(
+                !pseudo_element.is_precomputed()
+                    && !pseudo_element.is_unknown_webkit_pseudo_element(),
+                "Precomputed pseudos should end up in precomputed_pseudo_element_decls, \
+                 and unknown webkit pseudos should be discarded before getting here"
+            );
 
-        match pseudo_element {
-            None => &mut self.element_map,
-            Some(pseudo) => self
+            current = current
                 .pseudos_map
-                .get_or_insert_with(pseudo, || Box::new(Default::default())),
+                .get_or_insert_with(pseudo_element, Default::default);
         }
+
+        &mut current.element_map
     }
 
     #[inline]
-    fn rules(&self, pseudo: Option<&PseudoElement>) -> Option<&Map> {
-        match pseudo {
-            Some(pseudo) => self.pseudos_map.get(pseudo).map(|p| &**p),
-            None => Some(&self.element_map),
+    fn rules(&self, pseudo_elements: &[PseudoElement]) -> Option<&Map> {
+        let mut current = self;
+        for pseudo in pseudo_elements {
+            current = current.pseudos_map.get(&pseudo)?;
         }
+        Some(&current.element_map)
     }
 
     /// Measures heap usage.
@@ -2377,9 +2813,7 @@ impl<Map: Default + MallocSizeOf> GenericElementAndPseudoRules<Map> {
         sizes.mElementAndPseudosMaps += self.element_map.size_of(ops);
 
         for elem in self.pseudos_map.iter() {
-            if let Some(ref elem) = *elem {
-                sizes.mElementAndPseudosMaps += <Box<_> as MallocSizeOf>::size_of(elem, ops);
-            }
+            sizes.mElementAndPseudosMaps += MallocSizeOf::size_of(elem, ops);
         }
     }
 }
@@ -2398,9 +2832,7 @@ impl ElementAndPseudoRules {
     fn shrink_if_needed(&mut self) {
         self.element_map.shrink_if_needed();
         for pseudo in self.pseudos_map.iter_mut() {
-            if let Some(ref mut pseudo) = pseudo {
-                pseudo.shrink_if_needed();
-            }
+            pseudo.shrink_if_needed();
         }
     }
 }
@@ -2456,15 +2888,20 @@ impl ContainerConditionId {
 #[derive(Clone, Debug, MallocSizeOf)]
 struct ContainerConditionReference {
     parent: ContainerConditionId,
+    /// Contains the container conditions of a particular rule.
+    ///
+    /// This should only ever be empty for the root rule, which acts as a
+    /// sentinel value.
     #[ignore_malloc_size_of = "Arc"]
-    condition: Option<Arc<ContainerCondition>>,
+    conditions: ArcSlice<ContainerCondition>,
 }
 
 impl ContainerConditionReference {
-    const fn none() -> Self {
+    /// Creates an empty, root container condition reference.
+    fn none() -> Self {
         Self {
             parent: ContainerConditionId::none(),
-            condition: None,
+            conditions: ArcSlice::default(),
         }
     }
 }
@@ -2475,23 +2912,50 @@ impl ContainerConditionReference {
 pub struct ScopeConditionId(u16);
 
 impl ScopeConditionId {
+    /// Construct a new scope condition id.
+    pub fn new(id: u16) -> Self {
+        Self(id)
+    }
+
     /// A special id that represents no scope rule.
     pub const fn none() -> Self {
         Self(0)
     }
 }
 
+/// Data required to process this scope condition.
 #[derive(Clone, Debug, MallocSizeOf)]
-struct ScopeConditionReference {
+pub struct ScopeConditionReference {
+    /// The ID of outer scope condition, `none()` otherwise.
     parent: ScopeConditionId,
+    /// Start and end bounds of the scope. None implies sentinel data (i.e. Not a scope condition).
     condition: Option<ScopeBoundsWithHashes>,
+    /// Implicit scope root of this scope condition, computed unconditionally,
+    /// even if the start bound may be Some.
     #[ignore_malloc_size_of = "Raw ptr behind the scenes"]
     implicit_scope_root: StylistImplicitScopeRoot,
+    /// Is the condition trivial? See `ScopeBoundsWithHashes::is_trivial`.
     is_trivial: bool,
 }
 
 impl ScopeConditionReference {
-    const fn none() -> Self {
+    /// Create a new scope condition.
+    pub fn new(
+        parent: ScopeConditionId,
+        condition: Option<ScopeBoundsWithHashes>,
+        implicit_scope_root: ImplicitScopeRoot,
+        is_trivial: bool,
+    ) -> Self {
+        Self {
+            parent,
+            condition,
+            implicit_scope_root: StylistImplicitScopeRoot::Normal(implicit_scope_root),
+            is_trivial,
+        }
+    }
+
+    /// Create a sentinel scope condition.
+    pub const fn none() -> Self {
         Self {
             parent: ScopeConditionId::none(),
             condition: None,
@@ -2501,18 +2965,12 @@ impl ScopeConditionReference {
     }
 }
 
-fn scope_bounds_is_trivial(bounds: &ScopeBoundsWithHashes) -> bool {
-    fn scope_bound_is_trivial(bound: &Option<ScopeBoundWithHashes>, default: bool) -> bool {
-        bound.as_ref().map_or(default, |bound| scope_selector_list_is_trivial(&bound.selectors))
-    }
-
-    // Given an implicit scope, we are unable to tell if the cousins share the same implicit root.
-    scope_bound_is_trivial(&bounds.start, false) && scope_bound_is_trivial(&bounds.end, true)
-}
-
-struct ScopeRootCandidates {
-    candidates: Vec<ScopeRootCandidate>,
-    is_trivial: bool,
+/// All potential sscope root candidates.
+pub struct ScopeRootCandidates {
+    /// List of scope root candidates.
+    pub candidates: Vec<ScopeRootCandidate>,
+    /// Is the scope condition matching these candidates trivial? See `ScopeBoundsWithHashes::is_trivial`.
+    pub is_trivial: bool,
 }
 
 impl Default for ScopeRootCandidates {
@@ -2533,8 +2991,9 @@ impl ScopeRootCandidates {
     }
 }
 
+/// Start and end bound of a scope, along with their selector hashes.
 #[derive(Clone, Debug, MallocSizeOf)]
-struct ScopeBoundWithHashes {
+pub struct ScopeBoundWithHashes {
     // TODO(dshin): With replaced parent selectors, these may be unique...
     #[ignore_malloc_size_of = "Arc"]
     selectors: SelectorList<SelectorImpl>,
@@ -2542,39 +3001,235 @@ struct ScopeBoundWithHashes {
 }
 
 impl ScopeBoundWithHashes {
-    fn new(
-        quirks_mode: QuirksMode,
-        selectors: SelectorList<SelectorImpl>,
-    ) -> Self {
+    fn new(quirks_mode: QuirksMode, selectors: SelectorList<SelectorImpl>) -> Self {
         let mut hashes = SmallVec::with_capacity(selectors.len());
         for selector in selectors.slice() {
             hashes.push(AncestorHashes::new(selector, quirks_mode));
         }
         Self { selectors, hashes }
     }
+
+    fn new_no_hash(selectors: SelectorList<SelectorImpl>) -> Self {
+        let hashes = selectors
+            .slice()
+            .iter()
+            .map(|_| AncestorHashes {
+                packed_hashes: [0, 0, 0],
+            })
+            .collect();
+        Self { selectors, hashes }
+    }
 }
 
+/// Bounds for this scope, along with corresponding selector hashes.
 #[derive(Clone, Debug, MallocSizeOf)]
-struct ScopeBoundsWithHashes {
+pub struct ScopeBoundsWithHashes {
+    /// Start of the scope bound. If None, implies implicit scope root.
     start: Option<ScopeBoundWithHashes>,
+    /// Optional end of the scope bound.
     end: Option<ScopeBoundWithHashes>,
 }
 
 impl ScopeBoundsWithHashes {
+    /// Create a new scope bound, hashing selectors for fast rejection.
     fn new(
         quirks_mode: QuirksMode,
         start: Option<SelectorList<SelectorImpl>>,
         end: Option<SelectorList<SelectorImpl>>,
     ) -> Self {
         Self {
-            start: start.map(|selectors| ScopeBoundWithHashes::new(
-                quirks_mode, selectors)),
-            end: end.map(|selectors| ScopeBoundWithHashes::new(
-                quirks_mode, selectors)),
+            start: start.map(|selectors| ScopeBoundWithHashes::new(quirks_mode, selectors)),
+            end: end.map(|selectors| ScopeBoundWithHashes::new(quirks_mode, selectors)),
         }
+    }
+
+    /// Create a new scope bound, but not hashing any selector.
+    pub fn new_no_hash(
+        start: Option<SelectorList<SelectorImpl>>,
+        end: Option<SelectorList<SelectorImpl>>,
+    ) -> Self {
+        Self {
+            start: start.map(|selectors| ScopeBoundWithHashes::new_no_hash(selectors)),
+            end: end.map(|selectors| ScopeBoundWithHashes::new_no_hash(selectors)),
+        }
+    }
+
+    fn selectors_for<'a>(
+        bound_with_hashes: Option<&'a ScopeBoundWithHashes>,
+    ) -> impl Iterator<Item = &'a Selector<SelectorImpl>> {
+        bound_with_hashes
+            .map(|b| b.selectors.slice().iter())
+            .into_iter()
+            .flatten()
+    }
+
+    fn start_selectors<'a>(&'a self) -> impl Iterator<Item = &'a Selector<SelectorImpl>> {
+        Self::selectors_for(self.start.as_ref())
+    }
+
+    fn end_selectors<'a>(&'a self) -> impl Iterator<Item = &'a Selector<SelectorImpl>> {
+        Self::selectors_for(self.end.as_ref())
+    }
+
+    fn is_trivial(&self) -> bool {
+        fn scope_bound_is_trivial(bound: &Option<ScopeBoundWithHashes>, default: bool) -> bool {
+            bound.as_ref().map_or(default, |bound| {
+                scope_selector_list_is_trivial(&bound.selectors)
+            })
+        }
+
+        // Given an implicit scope, we are unable to tell if the cousins share the same implicit root.
+        scope_bound_is_trivial(&self.start, false) && scope_bound_is_trivial(&self.end, true)
     }
 }
 
+/// Find all scope conditions for a given condition ID, indexing into the given list of scope conditions.
+pub fn scope_root_candidates<E>(
+    scope_conditions: &[ScopeConditionReference],
+    id: ScopeConditionId,
+    element: &E,
+    override_matches_shadow_host_for_part: bool,
+    scope_subject_map: &ScopeSubjectMap,
+    context: &mut MatchingContext<SelectorImpl>,
+) -> ScopeRootCandidates
+where
+    E: TElement,
+{
+    let condition_ref = &scope_conditions[id.0 as usize];
+    let bounds = match condition_ref.condition {
+        None => return ScopeRootCandidates::default(),
+        Some(ref c) => c,
+    };
+    // Make sure the parent scopes ara evaluated first. This runs a bit counter to normal
+    // selector matching where rightmost selectors match first. However, this avoids having
+    // to traverse through descendants (i.e. Avoids tree traversal vs linear traversal).
+    let outer_result = scope_root_candidates(
+        scope_conditions,
+        condition_ref.parent,
+        element,
+        override_matches_shadow_host_for_part,
+        scope_subject_map,
+        context,
+    );
+
+    let is_trivial = condition_ref.is_trivial && outer_result.is_trivial;
+    let is_outermost_scope = condition_ref.parent == ScopeConditionId::none();
+    if !is_outermost_scope && outer_result.candidates.is_empty() {
+        return ScopeRootCandidates::empty(is_trivial);
+    }
+
+    let (root_target, matches_shadow_host) = if let Some(start) = bounds.start.as_ref() {
+        if let Some(filter) = context.bloom_filter {
+            // Use the bloom filter here. If our ancestors do not have the right hashes,
+            // there's no point in traversing up. Besides, the filter is built for this depth,
+            // so the filter contains more data than it should, the further we go up the ancestor
+            // chain. It wouldn't generate wrong results, but makes the traversal even more pointless.
+            if !start
+                .hashes
+                .iter()
+                .any(|entry| selector_may_match(entry, filter))
+            {
+                return ScopeRootCandidates::empty(is_trivial);
+            }
+        }
+        (
+            ScopeTarget::Selector(&start.selectors),
+            scope_start_matches_shadow_host(&start.selectors),
+        )
+    } else {
+        let implicit_root = condition_ref.implicit_scope_root;
+        match implicit_root {
+            StylistImplicitScopeRoot::Normal(r) => (
+                ScopeTarget::Implicit(r.element(context.current_host.clone())),
+                r.matches_shadow_host(),
+            ),
+            StylistImplicitScopeRoot::Cached(index) => {
+                let host = context
+                    .current_host
+                    .expect("Cached implicit scope for light DOM implicit scope");
+                match E::implicit_scope_for_sheet_in_shadow_root(host, index) {
+                    None => return ScopeRootCandidates::empty(is_trivial),
+                    Some(root) => (
+                        ScopeTarget::Implicit(root.element(context.current_host.clone())),
+                        root.matches_shadow_host(),
+                    ),
+                }
+            },
+        }
+    };
+    // For `::part`, we need to be able to reach the outer tree. Parts without the corresponding
+    // `exportparts` attribute will be rejected at the selector matching time.
+    let matches_shadow_host = override_matches_shadow_host_for_part || matches_shadow_host;
+
+    let potential_scope_roots = if is_outermost_scope {
+        collect_scope_roots(
+            *element,
+            None,
+            context,
+            &root_target,
+            matches_shadow_host,
+            scope_subject_map,
+        )
+    } else {
+        let mut result = vec![];
+        for activation in outer_result.candidates {
+            let mut this_result = collect_scope_roots(
+                *element,
+                Some(activation.root),
+                context,
+                &root_target,
+                matches_shadow_host,
+                scope_subject_map,
+            );
+            result.append(&mut this_result);
+        }
+        result
+    };
+
+    if potential_scope_roots.is_empty() {
+        return ScopeRootCandidates::empty(is_trivial);
+    }
+
+    let candidates = if let Some(end) = bounds.end.as_ref() {
+        let mut result = vec![];
+        // If any scope-end selector matches, we're not in scope.
+        for scope_root in potential_scope_roots {
+            if end
+                .selectors
+                .slice()
+                .iter()
+                .zip(end.hashes.iter())
+                .all(|(selector, hashes)| {
+                    // Like checking for scope-start, use the bloom filter here.
+                    if let Some(filter) = context.bloom_filter {
+                        if !selector_may_match(hashes, filter) {
+                            // Selector this hash belongs to won't cause us to be out of this scope.
+                            return true;
+                        }
+                    }
+
+                    !element_is_outside_of_scope(
+                        selector,
+                        *element,
+                        scope_root.root,
+                        context,
+                        matches_shadow_host,
+                    )
+                })
+            {
+                result.push(scope_root);
+            }
+        }
+        result
+    } else {
+        potential_scope_roots
+    };
+
+    ScopeRootCandidates {
+        candidates,
+        is_trivial,
+    }
+}
 
 /// Implicit scope root, which may or may not be cached (i.e. For shadow DOM author
 /// styles that are cached and shared).
@@ -2699,6 +3354,9 @@ pub struct CascadeData {
     #[ignore_malloc_size_of = "Arc"]
     custom_property_registrations: LayerOrderedMap<Arc<PropertyRegistration>>,
 
+    /// Custom media query registrations.
+    custom_media: CustomMediaMap,
+
     /// A map from cascade layer name to layer order.
     layer_id: FxHashMap<LayerName, LayerId>,
 
@@ -2731,23 +3389,29 @@ pub struct CascadeData {
     num_declarations: usize,
 }
 
-lazy_static! {
-    static ref IMPLICIT_SCOPE: SelectorList<SelectorImpl> = {
-        // Implicit scope, as per https://github.com/w3c/csswg-drafts/issues/10196
-        // Also, `&` is `:where(:scope)`, as per https://github.com/w3c/csswg-drafts/issues/9740
-        // ``:where(:scope)` effectively behaves the same as the implicit scope.
-        let list = SelectorList::implicit_scope();
-        list.mark_as_intentionally_leaked();
-        list
-    };
-}
+static IMPLICIT_SCOPE: LazyLock<SelectorList<SelectorImpl>> = LazyLock::new(|| {
+    // Implicit scope, as per https://github.com/w3c/csswg-drafts/issues/10196
+    // Also, `&` is `:where(:scope)`, as per https://github.com/w3c/csswg-drafts/issues/9740
+    // ``:where(:scope)` effectively behaves the same as the implicit scope.
+    let list = SelectorList::implicit_scope();
+    list.mark_as_intentionally_leaked();
+    list
+});
 
 fn scope_start_matches_shadow_host(start: &SelectorList<SelectorImpl>) -> bool {
     // TODO(emilio): Should we carry a MatchesFeaturelessHost rather than a bool around?
     // Pre-existing behavior with multiple selectors matches this tho.
-    start.slice().iter().any(|s| {
-        s.matches_featureless_host(true).may_match()
-    })
+    start
+        .slice()
+        .iter()
+        .any(|s| s.matches_featureless_host(true).may_match())
+}
+
+/// Replace any occurrence of parent selector in the given selector with a implicit scope selector.
+pub fn replace_parent_selector_with_implicit_scope(
+    selectors: &SelectorList<SelectorImpl>,
+) -> SelectorList<SelectorImpl> {
+    selectors.replace_parent_selector(&IMPLICIT_SCOPE)
 }
 
 impl CascadeData {
@@ -2760,7 +3424,8 @@ impl CascadeData {
             part_rules: None,
             invalidation_map: InvalidationMap::new(),
             relative_selector_invalidation_map: InvalidationMap::new(),
-            additional_relative_selector_invalidation_map: AdditionalRelativeSelectorInvalidationMap::new(),
+            additional_relative_selector_invalidation_map:
+                AdditionalRelativeSelectorInvalidationMap::new(),
             nth_of_mapped_ids: PrecomputedHashSet::default(),
             nth_of_class_dependencies: PrecomputedHashSet::default(),
             nth_of_attribute_dependencies: PrecomputedHashSet::default(),
@@ -2773,6 +3438,7 @@ impl CascadeData {
             selectors_for_cache_revalidation: SelectorMap::new(),
             animations: Default::default(),
             custom_property_registrations: Default::default(),
+            custom_media: Default::default(),
             layer_id: Default::default(),
             layers: smallvec::smallvec![CascadeLayer::root()],
             container_conditions: smallvec::smallvec![ContainerConditionReference::none()],
@@ -2786,14 +3452,14 @@ impl CascadeData {
         }
     }
 
-    /// Rebuild the cascade data from a given SheetCollection, incrementally if
-    /// possible.
+    /// Rebuild the cascade data from a given SheetCollection, incrementally if possible.
     pub fn rebuild<'a, S>(
         &mut self,
         device: &Device,
         quirks_mode: QuirksMode,
         collection: SheetCollectionFlusher<S>,
         guard: &SharedRwLockReadGuard,
+        difference: &mut CascadeDataDifference,
     ) -> Result<(), AllocErr>
     where
         S: StylesheetInDocument + PartialEq + 'static,
@@ -2804,10 +3470,13 @@ impl CascadeData {
 
         let validity = collection.data_validity();
 
-        match validity {
-            DataValidity::Valid => {},
-            DataValidity::CascadeInvalid => self.clear_cascade_data(),
-            DataValidity::FullyInvalid => self.clear(),
+        let mut old_position_try_data = LayerOrderedMap::default();
+        if validity != DataValidity::Valid {
+            old_position_try_data = std::mem::take(&mut self.extra_data.position_try_rules);
+            self.clear_cascade_data();
+            if validity == DataValidity::FullyInvalid {
+                self.clear_invalidation_data();
+            }
         }
 
         let mut result = Ok(());
@@ -2821,13 +3490,29 @@ impl CascadeData {
                 guard,
                 rebuild_kind,
                 /* precomputed_pseudo_element_decls = */ None,
+                if validity == DataValidity::Valid {
+                    Some(difference)
+                } else {
+                    None
+                },
             );
             result.is_ok()
         });
 
         self.did_finish_rebuild();
 
+        // For DataValidity::Valid, we pass the difference down to `add_stylesheet` so that we
+        // populate it with new data. Otherwise we need to diff with the old data.
+        if validity != DataValidity::Valid {
+            difference.update(&old_position_try_data, &self.extra_data.position_try_rules);
+        }
+
         result
+    }
+
+    /// Returns the custom media query map.
+    pub fn custom_media_map(&self) -> &CustomMediaMap {
+        &self.custom_media
     }
 
     /// Returns the invalidation map.
@@ -2841,7 +3526,9 @@ impl CascadeData {
     }
 
     /// Returns the relative selector invalidation map data.
-    pub fn relative_invalidation_map_attributes(&self) -> &AdditionalRelativeSelectorInvalidationMap{
+    pub fn relative_invalidation_map_attributes(
+        &self,
+    ) -> &AdditionalRelativeSelectorInvalidationMap {
         &self.additional_relative_selector_invalidation_map
     }
 
@@ -2896,19 +3583,19 @@ impl CascadeData {
 
     /// Returns the normal rule map for a given pseudo-element.
     #[inline]
-    pub fn normal_rules(&self, pseudo: Option<&PseudoElement>) -> Option<&SelectorMap<Rule>> {
-        self.normal_rules.rules(pseudo)
+    pub fn normal_rules(&self, pseudo_elements: &[PseudoElement]) -> Option<&SelectorMap<Rule>> {
+        self.normal_rules.rules(pseudo_elements)
     }
 
     /// Returns the featureless pseudo rule map for a given pseudo-element.
     #[inline]
     pub fn featureless_host_rules(
         &self,
-        pseudo: Option<&PseudoElement>,
+        pseudo_elements: &[PseudoElement],
     ) -> Option<&SelectorMap<Rule>> {
         self.featureless_host_rules
             .as_ref()
-            .and_then(|d| d.rules(pseudo))
+            .and_then(|d| d.rules(pseudo_elements))
     }
 
     /// Whether there's any featureless rule that could match in this scope.
@@ -2918,8 +3605,10 @@ impl CascadeData {
 
     /// Returns the slotted rule map for a given pseudo-element.
     #[inline]
-    pub fn slotted_rules(&self, pseudo: Option<&PseudoElement>) -> Option<&SelectorMap<Rule>> {
-        self.slotted_rules.as_ref().and_then(|d| d.rules(pseudo))
+    pub fn slotted_rules(&self, pseudo_elements: &[PseudoElement]) -> Option<&SelectorMap<Rule>> {
+        self.slotted_rules
+            .as_ref()
+            .and_then(|d| d.rules(pseudo_elements))
     }
 
     /// Whether there's any ::slotted rule that could match in this scope.
@@ -2929,8 +3618,10 @@ impl CascadeData {
 
     /// Returns the parts rule map for a given pseudo-element.
     #[inline]
-    pub fn part_rules(&self, pseudo: Option<&PseudoElement>) -> Option<&PartMap> {
-        self.part_rules.as_ref().and_then(|d| d.rules(pseudo))
+    pub fn part_rules(&self, pseudo_elements: &[PseudoElement]) -> Option<&PartMap> {
+        self.part_rules
+            .as_ref()
+            .and_then(|d| d.rules(pseudo_elements))
     }
 
     /// Whether there's any ::part rule that could match in this scope.
@@ -2955,18 +3646,19 @@ impl CascadeData {
     {
         loop {
             let condition_ref = &self.container_conditions[id.0 as usize];
-            let condition = match condition_ref.condition {
-                None => return true,
-                Some(ref c) => c,
-            };
-            let matches = condition
-                .matches(
-                    stylist,
-                    element,
-                    context.extra_data.originating_element_style,
-                    &mut context.extra_data.cascade_input_flags,
-                )
-                .to_bool(/* unknown = */ false);
+            if condition_ref.conditions.is_empty() {
+                return true;
+            }
+            let matches = condition_ref.conditions.iter().any(|condition| {
+                condition
+                    .matches(
+                        stylist,
+                        element,
+                        context.extra_data.originating_element_style,
+                        &mut context.extra_data.cascade_input_flags,
+                    )
+                    .to_bool(/* unknown = */ false)
+            });
             if !matches {
                 return false;
             }
@@ -2977,159 +3669,33 @@ impl CascadeData {
     pub(crate) fn find_scope_proximity_if_matching<E: TElement>(
         &self,
         rule: &Rule,
-        stylist: &Stylist,
         element: E,
         context: &mut MatchingContext<E::Impl>,
     ) -> ScopeProximity {
-        context.extra_data.cascade_input_flags.insert(ComputedValueFlags::CONSIDERED_NONTRIVIAL_SCOPED_STYLE);
+        context
+            .extra_data
+            .cascade_input_flags
+            .insert(ComputedValueFlags::CONSIDERED_NONTRIVIAL_SCOPED_STYLE);
 
         // Whether the scope root matches a shadow host mostly olny depends on scope-intrinsic
         // parameters (i.e. bounds/implicit scope) - except for the use of `::parts`, where
         // matching crosses the shadow boundary.
-        let result = self.scope_condition_matches(
+        let result = scope_root_candidates(
+            &self.scope_conditions,
             rule.scope_condition_id,
-            stylist,
-            element,
+            &element,
             rule.selector.is_part(),
+            &self.scope_subject_map,
             context,
         );
         for candidate in result.candidates {
             if context.nest_for_scope(Some(candidate.root), |context| {
-                matches_selector(
-                    &rule.selector,
-                    0,
-                    Some(&rule.hashes),
-                    &element,
-                    context,
-                )
+                matches_selector(&rule.selector, 0, Some(&rule.hashes), &element, context)
             }) {
                 return candidate.proximity;
             }
         }
         ScopeProximity::infinity()
-    }
-
-    fn scope_condition_matches<E>(
-        &self,
-        id: ScopeConditionId,
-        stylist: &Stylist,
-        element: E,
-        override_matches_shadow_host_for_part: bool,
-        context: &mut MatchingContext<E::Impl>,
-    ) -> ScopeRootCandidates
-    where
-        E: TElement,
-    {
-        let condition_ref = &self.scope_conditions[id.0 as usize];
-        let bounds = match condition_ref.condition {
-            None => return ScopeRootCandidates::default(),
-            Some(ref c) => c,
-        };
-        // Make sure the parent scopes ara evaluated first. This runs a bit counter to normal
-        // selector matching where rightmost selectors match first. However, this avoids having
-        // to traverse through descendants (i.e. Avoids tree traversal vs linear traversal).
-        let outer_result =
-            self.scope_condition_matches(condition_ref.parent, stylist, element, override_matches_shadow_host_for_part, context);
-
-        let is_trivial = condition_ref.is_trivial && outer_result.is_trivial;
-        let is_outermost_scope = condition_ref.parent == ScopeConditionId::none();
-        if !is_outermost_scope && outer_result.candidates.is_empty() {
-            return ScopeRootCandidates::empty(is_trivial);
-        }
-
-        let (root_target, matches_shadow_host) = if let Some(start) = bounds.start.as_ref() {
-            if let Some(filter) = context.bloom_filter {
-                // Use the bloom filter here. If our ancestors do not have the right hashes,
-                // there's no point in traversing up. Besides, the filter is built for this depth,
-                // so the filter contains more data than it should, the further we go up the ancestor
-                // chain. It wouldn't generate wrong results, but makes the traversal even more pointless.
-                if !start.hashes.iter().any(|entry| selector_may_match(entry, filter)) {
-                    return ScopeRootCandidates::empty(is_trivial);
-                }
-            }
-            (
-                ScopeTarget::Selector(&start.selectors),
-                scope_start_matches_shadow_host(&start.selectors),
-            )
-        } else {
-            let implicit_root = condition_ref.implicit_scope_root;
-            match implicit_root {
-                StylistImplicitScopeRoot::Normal(r) => {
-                    (ScopeTarget::Implicit(r.element(context.current_host.clone())), r.matches_shadow_host())
-                },
-                StylistImplicitScopeRoot::Cached(index) => {
-                    let host = context
-                        .current_host
-                        .expect("Cached implicit scope for light DOM implicit scope");
-                    match E::implicit_scope_for_sheet_in_shadow_root(host, index) {
-                        None => return ScopeRootCandidates::empty(is_trivial),
-                        Some(root) => (
-                            ScopeTarget::Implicit(root.element(context.current_host.clone())),
-                            root.matches_shadow_host(),
-                        ),
-                    }
-                },
-            }
-        };
-        // For `::part`, we need to be able to reach the outer tree. Parts without the corresponding
-        // `exportparts` attribute will be rejected at the selector matching time.
-        let matches_shadow_host = override_matches_shadow_host_for_part || matches_shadow_host;
-
-        let potential_scope_roots = if is_outermost_scope {
-            collect_scope_roots(element, None, context, &root_target, matches_shadow_host, &self.scope_subject_map)
-        } else {
-            let mut result = vec![];
-            for activation in outer_result.candidates {
-                let mut this_result = collect_scope_roots(
-                    element,
-                    Some(activation.root),
-                    context,
-                    &root_target,
-                    matches_shadow_host,
-                    &self.scope_subject_map,
-                );
-                result.append(&mut this_result);
-            }
-            result
-        };
-
-        if potential_scope_roots.is_empty() {
-            return ScopeRootCandidates::empty(is_trivial);
-        }
-
-        let candidates = if let Some(end) = bounds.end.as_ref() {
-            let mut result = vec![];
-            // If any scope-end selector matches, we're not in scope.
-            for scope_root in potential_scope_roots {
-                if end.selectors.slice().iter().zip(end.hashes.iter()).all(|(selector, hashes)| {
-                    // Like checking for scope-start, use the bloom filter here.
-                    if let Some(filter) = context.bloom_filter {
-                        if !selector_may_match(hashes, filter) {
-                            // Selector this hash belongs to won't cause us to be out of this scope.
-                            return true;
-                        }
-                    }
-
-                    !element_is_outside_of_scope(
-                        selector,
-                        element,
-                        scope_root.root,
-                        context,
-                        matches_shadow_host,
-                    )
-                }) {
-                    result.push(scope_root);
-                }
-            }
-            result
-        } else {
-            potential_scope_roots
-        };
-
-        ScopeRootCandidates {
-            candidates,
-            is_trivial,
-        }
     }
 
     fn did_finish_rebuild(&mut self) {
@@ -3149,7 +3715,8 @@ impl CascadeData {
         self.custom_property_registrations.shrink_if_needed();
         self.invalidation_map.shrink_if_needed();
         self.relative_selector_invalidation_map.shrink_if_needed();
-        self.additional_relative_selector_invalidation_map.shrink_if_needed();
+        self.additional_relative_selector_invalidation_map
+            .shrink_if_needed();
         self.attribute_dependencies.shrink_if_needed();
         self.nth_of_attribute_dependencies.shrink_if_needed();
         self.nth_of_custom_state_dependencies.shrink_if_needed();
@@ -3198,7 +3765,6 @@ impl CascadeData {
                 order.inc();
             }
         }
-        #[cfg(feature = "gecko")]
         self.extra_data.sort_by_layer(&self.layers);
         self.animations
             .sort_with(&self.layers, compare_keyframes_in_same_layer);
@@ -3219,24 +3785,35 @@ impl CascadeData {
         guard: &SharedRwLockReadGuard,
         results: &mut Vec<MediaListKey>,
         contents_list: &mut StyleSheetContentList,
+        custom_media_map: &mut CustomMediaMap,
     ) where
         S: StylesheetInDocument + 'static,
     {
-        if !stylesheet.enabled() || !stylesheet.is_effective_for_device(device, guard) {
+        if !stylesheet.enabled() {
+            return;
+        }
+        if !stylesheet.is_effective_for_device(device, &custom_media_map, guard) {
             return;
         }
 
         debug!(" + {:?}", stylesheet);
-        let contents = stylesheet.contents();
+        let contents = stylesheet.contents(guard);
         results.push(contents.to_media_list_key());
 
         // Safety: StyleSheetContents are reference-counted with Arc.
         contents_list.push(StylesheetContentsPtr(unsafe {
-            Arc::from_raw_addrefed(contents)
+            Arc::from_raw_addrefed(&*contents)
         }));
 
-        for rule in stylesheet.effective_rules(device, guard) {
+        let mut iter = stylesheet
+            .contents(guard)
+            .effective_rules(device, custom_media_map, guard);
+        while let Some(rule) = iter.next() {
             match *rule {
+                CssRule::CustomMedia(ref custom_media) => {
+                    iter.custom_media()
+                        .insert(custom_media.name.0.clone(), custom_media.condition.clone());
+                },
                 CssRule::Import(ref lock) => {
                     let import_rule = lock.read_with(guard);
                     debug!(" + {:?}", import_rule.stylesheet.media(guard));
@@ -3262,22 +3839,21 @@ impl CascadeData {
         rebuild_kind: SheetRebuildKind,
         mut precomputed_pseudo_element_decls: Option<&mut PrecomputedPseudoElementDeclarations>,
         quirks_mode: QuirksMode,
+        mut collected_scope_dependencies: Option<&mut Vec<Dependency>>,
     ) -> Result<(), AllocErr> {
         self.num_declarations += declarations.read_with(guard).len();
         for selector in selectors.slice() {
             self.num_selectors += 1;
 
-            let pseudo_element = selector.pseudo_element();
-            if let Some(pseudo) = pseudo_element {
+            let pseudo_elements = selector.pseudo_elements();
+            let inner_pseudo_element = pseudo_elements.get(0);
+            if let Some(pseudo) = inner_pseudo_element {
                 if pseudo.is_precomputed() {
                     debug_assert!(selector.is_universal());
                     debug_assert!(ancestor_selectors.is_none());
                     debug_assert_eq!(containing_rule_state.layer_id, LayerId::root());
                     // Because we precompute pseudos, we cannot possibly calculate scope proximity.
-                    debug_assert_eq!(
-                        containing_rule_state.scope_condition_id,
-                        ScopeConditionId::none()
-                    );
+                    debug_assert!(!containing_rule_state.scope_is_effective());
                     precomputed_pseudo_element_decls
                         .as_mut()
                         .expect("Expected precomputed declarations for the UA level")
@@ -3285,17 +3861,25 @@ impl CascadeData {
                         .push(ApplicableDeclarationBlock::new(
                             StyleSource::from_declarations(declarations.clone()),
                             self.rules_source_order,
-                            CascadeLevel::UANormal,
+                            CascadeLevel::new(CascadeOrigin::UA),
                             selector.specificity(),
                             LayerOrder::root(),
                             ScopeProximity::infinity(),
+                            RuleCascadeFlags::empty(),
                         ));
                     continue;
                 }
-                if pseudo.is_unknown_webkit_pseudo_element() {
+                if pseudo_elements
+                    .iter()
+                    .any(|p| p.is_unknown_webkit_pseudo_element())
+                {
                     continue;
                 }
             }
+
+            debug_assert!(!pseudo_elements
+                .iter()
+                .any(|p| p.is_precomputed() || p.is_unknown_webkit_pseudo_element()));
 
             let selector = match ancestor_selectors {
                 Some(ref s) => selector.replace_parent_selector(&s),
@@ -3311,8 +3895,8 @@ impl CascadeData {
                 self.rules_source_order,
                 containing_rule_state.layer_id,
                 containing_rule_state.container_condition_id,
-                containing_rule_state.in_starting_style,
-                containing_rule_state.scope_condition_id,
+                containing_rule_state.cascade_flags(),
+                containing_rule_state.containing_scope_rule_state.id,
             );
 
             if let Some(ref mut replaced_selectors) = replaced_selectors {
@@ -3320,12 +3904,14 @@ impl CascadeData {
             }
 
             if rebuild_kind.should_rebuild_invalidation() {
-                note_selector_for_invalidation(
+                let mut scope_dependencies = note_selector_for_invalidation(
                     &rule.selector,
                     quirks_mode,
                     &mut self.invalidation_map,
                     &mut self.relative_selector_invalidation_map,
                     &mut self.additional_relative_selector_invalidation_map,
+                    None,
+                    None,
                 )?;
                 let mut needs_revalidation = false;
                 let mut visitor = StylistSelectorVisitor {
@@ -3336,10 +3922,8 @@ impl CascadeData {
                     nth_of_mapped_ids: &mut self.nth_of_mapped_ids,
                     attribute_dependencies: &mut self.attribute_dependencies,
                     nth_of_class_dependencies: &mut self.nth_of_class_dependencies,
-                    nth_of_attribute_dependencies: &mut self
-                        .nth_of_attribute_dependencies,
-                    nth_of_custom_state_dependencies: &mut self
-                        .nth_of_custom_state_dependencies,
+                    nth_of_attribute_dependencies: &mut self.nth_of_attribute_dependencies,
+                    nth_of_custom_state_dependencies: &mut self.nth_of_custom_state_dependencies,
                     state_dependencies: &mut self.state_dependencies,
                     nth_of_state_dependencies: &mut self.nth_of_state_dependencies,
                     document_state_dependencies: &mut self.document_state_dependencies,
@@ -3354,6 +3938,16 @@ impl CascadeData {
                         ),
                         quirks_mode,
                     )?;
+                }
+
+                match (
+                    scope_dependencies.as_mut(),
+                    collected_scope_dependencies.as_mut(),
+                ) {
+                    (Some(inner_scope_deps), Some(scope_deps)) => {
+                        scope_deps.append(inner_scope_deps)
+                    },
+                    _ => {},
                 }
             }
 
@@ -3370,20 +3964,26 @@ impl CascadeData {
                 let map = self
                     .part_rules
                     .get_or_insert_with(|| Box::new(Default::default()))
-                    .for_insertion(pseudo_element);
+                    .for_insertion(&pseudo_elements);
                 map.try_reserve(1)?;
                 let vec = map.entry(parts.last().unwrap().clone().0).or_default();
                 vec.try_reserve(1)?;
                 vec.push(rule);
             } else {
-                let scope_matches_shadow_host = containing_rule_state.scope_matches_shadow_host == ScopeMatchesShadowHost::Yes;
-                let matches_featureless_host_only = match rule.selector.matches_featureless_host(scope_matches_shadow_host) {
+                let scope_matches_shadow_host = containing_rule_state
+                    .containing_scope_rule_state
+                    .matches_shadow_host
+                    == ScopeMatchesShadowHost::Yes;
+                let matches_featureless_host_only = match rule
+                    .selector
+                    .matches_featureless_host(scope_matches_shadow_host)
+                {
                     MatchesFeaturelessHost::Only => true,
                     MatchesFeaturelessHost::Yes => {
                         // We need to insert this in featureless_host_rules but also normal_rules.
                         self.featureless_host_rules
                             .get_or_insert_with(|| Box::new(Default::default()))
-                            .for_insertion(pseudo_element)
+                            .for_insertion(&pseudo_elements)
                             .insert(rule.clone(), quirks_mode)?;
                         false
                     },
@@ -3405,7 +4005,7 @@ impl CascadeData {
                 } else {
                     &mut self.normal_rules
                 }
-                .for_insertion(pseudo_element);
+                .for_insertion(&pseudo_elements);
                 rules.insert(rule, quirks_mode)?;
             }
         }
@@ -3424,6 +4024,7 @@ impl CascadeData {
         rebuild_kind: SheetRebuildKind,
         containing_rule_state: &mut ContainingRuleState,
         mut precomputed_pseudo_element_decls: Option<&mut PrecomputedPseudoElementDeclarations>,
+        mut difference: Option<&mut CascadeDataDifference>,
     ) -> Result<(), AllocErr>
     where
         S: StylesheetInDocument + 'static,
@@ -3439,12 +4040,16 @@ impl CascadeData {
                     let has_nested_rules = style_rule.rules.is_some();
                     let mut replaced_selectors = ReplacedSelectors::new();
                     let ancestor_selectors = containing_rule_state.ancestor_selector_lists.last();
-                    let collect_replaced_selectors = has_nested_rules && ancestor_selectors.is_some();
+                    let collect_replaced_selectors =
+                        has_nested_rules && ancestor_selectors.is_some();
+                    let mut inner_dependencies: Option<Vec<Dependency>> = containing_rule_state
+                        .scope_is_effective()
+                        .then(|| Vec::new());
                     self.add_styles(
                         &style_rule.selectors,
                         &style_rule.block,
                         ancestor_selectors,
-                        &containing_rule_state,
+                        containing_rule_state,
                         if collect_replaced_selectors {
                             Some(&mut replaced_selectors)
                         } else {
@@ -3454,7 +4059,14 @@ impl CascadeData {
                         rebuild_kind,
                         precomputed_pseudo_element_decls.as_deref_mut(),
                         quirks_mode,
+                        inner_dependencies.as_mut(),
                     )?;
+                    if let Some(mut scope_dependencies) = inner_dependencies {
+                        containing_rule_state
+                            .containing_scope_rule_state
+                            .inner_dependencies
+                            .append(&mut scope_dependencies);
+                    }
                     if has_nested_rules {
                         handled = false;
                         list_for_nested_rules = Some(if collect_replaced_selectors {
@@ -3465,17 +4077,22 @@ impl CascadeData {
                     }
                 },
                 CssRule::NestedDeclarations(ref rule) => {
-                    if let Some(ref ancestor_selectors) = containing_rule_state.ancestor_selector_lists.last() {
+                    if let Some(ref ancestor_selectors) =
+                        containing_rule_state.ancestor_selector_lists.last()
+                    {
                         let decls = &rule.read_with(guard).block;
                         let selectors = match containing_rule_state.nested_declarations_context {
                             NestedDeclarationsContext::Style => ancestor_selectors,
                             NestedDeclarationsContext::Scope => &*IMPLICIT_SCOPE,
                         };
+                        let mut inner_dependencies: Option<Vec<Dependency>> = containing_rule_state
+                            .scope_is_effective()
+                            .then(|| Vec::new());
                         self.add_styles(
                             selectors,
                             decls,
                             /* ancestor_selectors = */ None,
-                            &containing_rule_state,
+                            containing_rule_state,
                             /* replaced_selectors = */ None,
                             guard,
                             // We don't need to rebuild invalidation data, since our ancestor style
@@ -3483,7 +4100,14 @@ impl CascadeData {
                             SheetRebuildKind::CascadeOnly,
                             precomputed_pseudo_element_decls.as_deref_mut(),
                             quirks_mode,
+                            inner_dependencies.as_mut(),
                         )?;
+                        if let Some(mut scope_dependencies) = inner_dependencies {
+                            containing_rule_state
+                                .containing_scope_rule_state
+                                .inner_dependencies
+                                .append(&mut scope_dependencies);
+                        }
                     }
                 },
                 CssRule::Keyframes(ref keyframes_rule) => {
@@ -3509,7 +4133,6 @@ impl CascadeData {
                         containing_rule_state.layer_id,
                     )?;
                 },
-                #[cfg(feature = "gecko")]
                 CssRule::FontFace(ref rule) => {
                     // NOTE(emilio): We don't care about container_condition_id
                     // because:
@@ -3524,17 +4147,14 @@ impl CascadeData {
                     self.extra_data
                         .add_font_face(rule, containing_rule_state.layer_id);
                 },
-                #[cfg(feature = "gecko")]
                 CssRule::FontFeatureValues(ref rule) => {
                     self.extra_data
                         .add_font_feature_values(rule, containing_rule_state.layer_id);
                 },
-                #[cfg(feature = "gecko")]
                 CssRule::FontPaletteValues(ref rule) => {
                     self.extra_data
                         .add_font_palette_values(rule, containing_rule_state.layer_id);
                 },
-                #[cfg(feature = "gecko")]
                 CssRule::CounterStyle(ref rule) => {
                     self.extra_data.add_counter_style(
                         guard,
@@ -3542,11 +4162,25 @@ impl CascadeData {
                         containing_rule_state.layer_id,
                     )?;
                 },
-                #[cfg(feature = "gecko")]
+                CssRule::PositionTry(ref rule) => {
+                    let name = rule.read_with(guard).name.0.clone();
+                    if let Some(ref mut difference) = difference {
+                        difference.changed_position_try_names.insert(name.clone());
+                    }
+                    self.extra_data.add_position_try(
+                        name,
+                        rule.clone(),
+                        containing_rule_state.layer_id,
+                    )?;
+                },
                 CssRule::Page(ref rule) => {
                     self.extra_data
                         .add_page(guard, rule, containing_rule_state.layer_id)?;
                     handled = false;
+                },
+                CssRule::ViewTransition(ref rule) => {
+                    self.extra_data
+                        .add_view_transition(rule, containing_rule_state.layer_id);
                 },
                 _ => {
                     handled = false;
@@ -3558,23 +4192,29 @@ impl CascadeData {
                 // effective.
                 if cfg!(debug_assertions) {
                     let mut effective = false;
-                    let children = EffectiveRulesIterator::children(
+                    let children = EffectiveRulesIterator::<&CustomMediaMap>::children(
                         rule,
                         device,
                         quirks_mode,
+                        &self.custom_media,
                         guard,
                         &mut effective,
                     );
-                    debug_assert!(children.is_none());
+                    debug_assert!(children.is_empty());
                     debug_assert!(effective);
                 }
                 continue;
             }
 
             let mut effective = false;
-            let children =
-                EffectiveRulesIterator::children(rule, device, quirks_mode, guard, &mut effective);
-
+            let children = EffectiveRulesIterator::<&CustomMediaMap>::children(
+                rule,
+                device,
+                quirks_mode,
+                &self.custom_media,
+                guard,
+                &mut effective,
+            );
             if !effective {
                 continue;
             }
@@ -3662,6 +4302,10 @@ impl CascadeData {
                 CssRule::LayerBlock(ref rule) => {
                     maybe_register_layers(self, rule.name.as_ref(), containing_rule_state);
                 },
+                CssRule::CustomMedia(ref custom_media) => {
+                    self.custom_media
+                        .insert(custom_media.name.0.clone(), custom_media.condition.clone());
+                },
                 CssRule::LayerStatement(ref rule) => {
                     for name in &*rule.names {
                         maybe_register_layers(self, Some(name), containing_rule_state);
@@ -3670,24 +4314,34 @@ impl CascadeData {
                     }
                 },
                 CssRule::Style(..) => {
-                    containing_rule_state.nested_declarations_context = NestedDeclarationsContext::Style;
+                    containing_rule_state.nested_declarations_context =
+                        NestedDeclarationsContext::Style;
                     if let Some(s) = list_for_nested_rules {
                         containing_rule_state.ancestor_selector_lists.push(s);
                     }
                 },
                 CssRule::Container(ref rule) => {
                     let id = ContainerConditionId(self.container_conditions.len() as u16);
-                    self.container_conditions.push(ContainerConditionReference {
+                    let condition = ContainerConditionReference {
                         parent: containing_rule_state.container_condition_id,
-                        condition: Some(rule.condition.clone()),
-                    });
+                        conditions: rule.conditions.0.clone(),
+                    };
+                    self.container_conditions.push(condition);
                     containing_rule_state.container_condition_id = id;
                 },
                 CssRule::StartingStyle(..) => {
-                    containing_rule_state.in_starting_style = true;
+                    containing_rule_state
+                        .cascade_flags
+                        .insert(RuleCascadeFlags::STARTING_STYLE);
+                },
+                CssRule::AppearanceBase(..) => {
+                    containing_rule_state
+                        .cascade_flags
+                        .insert(RuleCascadeFlags::APPEARANCE_BASE);
                 },
                 CssRule::Scope(ref rule) => {
-                    containing_rule_state.nested_declarations_context = NestedDeclarationsContext::Scope;
+                    containing_rule_state.nested_declarations_context =
+                        NestedDeclarationsContext::Scope;
                     let id = ScopeConditionId(self.scope_conditions.len() as u16);
                     let mut matches_shadow_host = false;
                     let implicit_scope_root = if let Some(start) = rule.bounds.start.as_ref() {
@@ -3700,12 +4354,13 @@ impl CascadeData {
                         if let Some(root) = stylesheet.implicit_scope_root() {
                             matches_shadow_host = root.matches_shadow_host();
                             match root {
-                                ImplicitScopeRoot::InLightTree(_) |
-                                ImplicitScopeRoot::Constructed |
-                                ImplicitScopeRoot::DocumentElement => {
+                                ImplicitScopeRoot::InLightTree(_)
+                                | ImplicitScopeRoot::Constructed
+                                | ImplicitScopeRoot::DocumentElement => {
                                     StylistImplicitScopeRoot::Normal(root)
                                 },
-                                ImplicitScopeRoot::ShadowHost(_) | ImplicitScopeRoot::InShadowTree(_) => {
+                                ImplicitScopeRoot::ShadowHost(_)
+                                | ImplicitScopeRoot::InShadowTree(_) => {
                                     // Style data can be shared between shadow trees, so we must
                                     // query the implicit root for that specific tree.
                                     // Shared stylesheet means shared sheet indices, so we can
@@ -3721,45 +4376,54 @@ impl CascadeData {
                         }
                     };
 
-                    let replaced = {
-                        let start = rule.bounds.start.as_ref().map(|selector| {
-                            match containing_rule_state.ancestor_selector_lists.last() {
-                                Some(s) => selector.replace_parent_selector(s),
-                                None => selector.clone(),
-                            }
-                        });
-                        let implicit_scope_selector = &*IMPLICIT_SCOPE;
-                        let end = rule.bounds
-                            .end
-                            .as_ref()
-                            .map(|selector| selector.replace_parent_selector(implicit_scope_selector));
-                        containing_rule_state.ancestor_selector_lists.push(implicit_scope_selector.clone());
-                        ScopeBoundsWithHashes::new(quirks_mode, start, end)
-                    };
+                    let replaced =
+                        {
+                            let start = rule.bounds.start.as_ref().map(|selector| {
+                                match containing_rule_state.ancestor_selector_lists.last() {
+                                    Some(s) => selector.replace_parent_selector(s),
+                                    None => selector.clone(),
+                                }
+                            });
+                            let implicit_scope_selector = &*IMPLICIT_SCOPE;
+                            let end = rule.bounds.end.as_ref().map(|selector| {
+                                selector.replace_parent_selector(implicit_scope_selector)
+                            });
+                            containing_rule_state
+                                .ancestor_selector_lists
+                                .push(implicit_scope_selector.clone());
+                            ScopeBoundsWithHashes::new(quirks_mode, start, end)
+                        };
 
                     if let Some(selectors) = replaced.start.as_ref() {
-                        self.scope_subject_map.add_bound_start(&selectors.selectors, quirks_mode);
+                        self.scope_subject_map
+                            .add_bound_start(&selectors.selectors, quirks_mode);
                     }
 
-                    let is_trivial = scope_bounds_is_trivial(&replaced);
+                    let is_trivial = replaced.is_trivial();
                     self.scope_conditions.push(ScopeConditionReference {
-                        parent: containing_rule_state.scope_condition_id,
+                        parent: containing_rule_state.containing_scope_rule_state.id,
                         condition: Some(replaced),
                         implicit_scope_root,
                         is_trivial,
                     });
+
                     containing_rule_state
-                        .scope_matches_shadow_host
+                        .containing_scope_rule_state
+                        .matches_shadow_host
                         .nest_for_scope(matches_shadow_host);
-                    containing_rule_state.scope_condition_id = id;
+                    containing_rule_state.containing_scope_rule_state.id = id;
+                    containing_rule_state
+                        .containing_scope_rule_state
+                        .inner_dependencies
+                        .reserve(children.iter().len());
                 },
                 // We don't care about any other rule.
                 _ => {},
             }
 
-            if let Some(children) = children {
+            if !children.is_empty() {
                 self.add_rule_list(
-                    children,
+                    children.iter(),
                     device,
                     quirks_mode,
                     stylesheet,
@@ -3768,10 +4432,49 @@ impl CascadeData {
                     rebuild_kind,
                     containing_rule_state,
                     precomputed_pseudo_element_decls.as_deref_mut(),
+                    difference.as_deref_mut(),
                 )?;
             }
 
-            containing_rule_state.restore(&saved_containing_rule_state);
+            if let Some(scope_restore_data) =
+                containing_rule_state.restore(&saved_containing_rule_state)
+            {
+                let (cur_scope_inner_dependencies, scope_idx) = scope_restore_data;
+                let cur_scope = &self.scope_conditions[scope_idx.0 as usize];
+                if let Some(cond) = cur_scope.condition.as_ref() {
+                    let mut _unused = false;
+                    let visitor = StylistSelectorVisitor {
+                        needs_revalidation: &mut _unused,
+                        passed_rightmost_selector: true,
+                        in_selector_list_of: SelectorListKind::default(),
+                        mapped_ids: &mut self.mapped_ids,
+                        nth_of_mapped_ids: &mut self.nth_of_mapped_ids,
+                        attribute_dependencies: &mut self.attribute_dependencies,
+                        nth_of_class_dependencies: &mut self.nth_of_class_dependencies,
+                        nth_of_attribute_dependencies: &mut self.nth_of_attribute_dependencies,
+                        nth_of_custom_state_dependencies: &mut self
+                            .nth_of_custom_state_dependencies,
+                        state_dependencies: &mut self.state_dependencies,
+                        nth_of_state_dependencies: &mut self.nth_of_state_dependencies,
+                        document_state_dependencies: &mut self.document_state_dependencies,
+                    };
+
+                    let dependency_vector = build_scope_dependencies(
+                        quirks_mode,
+                        cur_scope_inner_dependencies,
+                        visitor,
+                        cond,
+                        &mut self.invalidation_map,
+                        &mut self.relative_selector_invalidation_map,
+                        &mut self.additional_relative_selector_invalidation_map,
+                    )?;
+
+                    containing_rule_state
+                        .containing_scope_rule_state
+                        .inner_dependencies
+                        .extend(dependency_vector);
+                }
+            }
         }
 
         Ok(())
@@ -3787,18 +4490,22 @@ impl CascadeData {
         guard: &SharedRwLockReadGuard,
         rebuild_kind: SheetRebuildKind,
         mut precomputed_pseudo_element_decls: Option<&mut PrecomputedPseudoElementDeclarations>,
+        mut difference: Option<&mut CascadeDataDifference>,
     ) -> Result<(), AllocErr>
     where
         S: StylesheetInDocument + 'static,
     {
-        if !stylesheet.enabled() || !stylesheet.is_effective_for_device(device, guard) {
+        if !stylesheet.enabled() {
             return Ok(());
         }
 
-        let contents = stylesheet.contents();
+        if !stylesheet.is_effective_for_device(device, &self.custom_media, guard) {
+            return Ok(());
+        }
 
+        let contents = stylesheet.contents(guard);
         if rebuild_kind.should_rebuild_invalidation() {
-            self.effective_media_query_results.saw_effective(contents);
+            self.effective_media_query_results.saw_effective(&*contents);
         }
 
         let mut state = ContainingRuleState::default();
@@ -3812,6 +4519,7 @@ impl CascadeData {
             rebuild_kind,
             &mut state,
             precomputed_pseudo_element_decls.as_deref_mut(),
+            difference.as_deref_mut(),
         )?;
 
         Ok(())
@@ -3831,11 +4539,10 @@ impl CascadeData {
     {
         use crate::invalidation::media_queries::PotentiallyEffectiveMediaRules;
 
-        let effective_now = stylesheet.is_effective_for_device(device, guard);
+        let effective_now = stylesheet.is_effective_for_device(device, &self.custom_media, guard);
 
-        let effective_then = self
-            .effective_media_query_results
-            .was_effective(stylesheet.contents());
+        let contents = stylesheet.contents(guard);
+        let effective_then = self.effective_media_query_results.was_effective(contents);
 
         if effective_now != effective_then {
             debug!(
@@ -3851,36 +4558,46 @@ impl CascadeData {
             return true;
         }
 
-        let mut iter = stylesheet.iter_rules::<PotentiallyEffectiveMediaRules>(device, guard);
-
+        // We don't need a custom media map for PotentiallyEffectiveMediaRules.
+        let custom_media = CustomMediaMap::default();
+        let mut iter =
+            contents.iter_rules::<PotentiallyEffectiveMediaRules, _>(device, &custom_media, guard);
         while let Some(rule) = iter.next() {
             match *rule {
-                CssRule::Style(..) |
-                CssRule::NestedDeclarations(..) |
-                CssRule::Namespace(..) |
-                CssRule::FontFace(..) |
-                CssRule::Container(..) |
-                CssRule::CounterStyle(..) |
-                CssRule::Supports(..) |
-                CssRule::Keyframes(..) |
-                CssRule::Margin(..) |
-                CssRule::Page(..) |
-                CssRule::Property(..) |
-                CssRule::Document(..) |
-                CssRule::LayerBlock(..) |
-                CssRule::LayerStatement(..) |
-                CssRule::FontPaletteValues(..) |
-                CssRule::FontFeatureValues(..) |
-                CssRule::Scope(..) |
-                CssRule::StartingStyle(..) |
-                CssRule::PositionTry(..) => {
-                    // Not affected by device changes.
+                CssRule::Style(..)
+                | CssRule::NestedDeclarations(..)
+                | CssRule::Namespace(..)
+                | CssRule::FontFace(..)
+                | CssRule::Container(..)
+                | CssRule::CounterStyle(..)
+                | CssRule::Supports(..)
+                | CssRule::Keyframes(..)
+                | CssRule::Margin(..)
+                | CssRule::Page(..)
+                | CssRule::Property(..)
+                | CssRule::Document(..)
+                | CssRule::LayerBlock(..)
+                | CssRule::LayerStatement(..)
+                | CssRule::FontPaletteValues(..)
+                | CssRule::FontFeatureValues(..)
+                | CssRule::Scope(..)
+                | CssRule::StartingStyle(..)
+                | CssRule::AppearanceBase(..)
+                | CssRule::CustomMedia(..)
+                | CssRule::PositionTry(..)
+                | CssRule::ViewTransition(..) => {
+                    // Not affected by device changes. @custom-media is handled by the potential
+                    // @media rules referencing it being handled.
                     continue;
                 },
                 CssRule::Import(ref lock) => {
                     let import_rule = lock.read_with(guard);
                     let effective_now = match import_rule.stylesheet.media(guard) {
-                        Some(m) => m.evaluate(device, quirks_mode),
+                        Some(m) => m.evaluate(
+                            device,
+                            quirks_mode,
+                            &mut CustomMediaEvaluator::new(&self.custom_media, guard),
+                        ),
                         None => true,
                     };
                     let effective_then = self
@@ -3902,7 +4619,11 @@ impl CascadeData {
                 },
                 CssRule::Media(ref media_rule) => {
                     let mq = media_rule.media_queries.read_with(guard);
-                    let effective_now = mq.evaluate(device, quirks_mode);
+                    let effective_now = mq.evaluate(
+                        device,
+                        quirks_mode,
+                        &mut CustomMediaEvaluator::new(&self.custom_media, guard),
+                    );
                     let effective_then = self
                         .effective_media_query_results
                         .was_effective(&**media_rule);
@@ -3932,7 +4653,6 @@ impl CascadeData {
 
     fn revalidate_scopes<E: TElement>(
         &self,
-        stylist: &Stylist,
         element: &E,
         matching_context: &mut MatchingContext<E::Impl>,
         result: &mut ScopeRevalidationResult,
@@ -3950,13 +4670,14 @@ impl CascadeData {
                 // the same match result.
                 continue;
             } else {
-                let result = self.scope_condition_matches(
+                let result = scope_root_candidates(
+                    &self.scope_conditions,
                     ScopeConditionId(condition_id as u16),
-                    stylist,
-                    *element,
+                    element,
                     // This should be ok since we aren't sharing styles across shadow boundaries.
                     false,
-                    matching_context
+                    &self.scope_subject_map,
+                    matching_context,
                 );
                 !result.candidates.is_empty()
             };
@@ -3981,20 +4702,19 @@ impl CascadeData {
         self.layer_id.clear();
         self.layers.clear();
         self.layers.push(CascadeLayer::root());
+        self.custom_media.clear();
         self.container_conditions.clear();
         self.container_conditions
             .push(ContainerConditionReference::none());
         self.scope_conditions.clear();
         self.scope_conditions.push(ScopeConditionReference::none());
-        #[cfg(feature = "gecko")]
         self.extra_data.clear();
         self.rules_source_order = 0;
         self.num_selectors = 0;
         self.num_declarations = 0;
     }
 
-    fn clear(&mut self) {
-        self.clear_cascade_data();
+    fn clear_invalidation_data(&mut self) {
         self.invalidation_map.clear();
         self.relative_selector_invalidation_map.clear();
         self.additional_relative_selector_invalidation_map.clear();
@@ -4013,6 +4733,90 @@ impl CascadeData {
     }
 }
 
+fn note_scope_selector_for_invalidation(
+    quirks_mode: QuirksMode,
+    scope_dependencies: &Arc<servo_arc::HeaderSlice<(), Dependency>>,
+    dependency_vector: &mut Vec<Dependency>,
+    invalidation_map: &mut InvalidationMap,
+    relative_selector_invalidation_map: &mut InvalidationMap,
+    additional_relative_selector_invalidation_map: &mut AdditionalRelativeSelectorInvalidationMap,
+    visitor: &mut StylistSelectorVisitor<'_>,
+    scope_kind: ScopeDependencyInvalidationKind,
+    s: &Selector<SelectorImpl>,
+) -> Result<(), AllocErr> {
+    let mut new_inner_dependencies = note_selector_for_invalidation(
+        &s.clone(),
+        quirks_mode,
+        invalidation_map,
+        relative_selector_invalidation_map,
+        additional_relative_selector_invalidation_map,
+        Some(&scope_dependencies),
+        Some(scope_kind),
+    )?;
+    s.visit(visitor);
+    new_inner_dependencies.as_mut().map(|dep| {
+        dependency_vector.append(dep);
+    });
+    Ok(())
+}
+
+fn build_scope_dependencies(
+    quirks_mode: QuirksMode,
+    mut cur_scope_inner_dependencies: Vec<Dependency>,
+    mut visitor: StylistSelectorVisitor<'_>,
+    cond: &ScopeBoundsWithHashes,
+    mut invalidation_map: &mut InvalidationMap,
+    mut relative_selector_invalidation_map: &mut InvalidationMap,
+    mut additional_relative_selector_invalidation_map: &mut AdditionalRelativeSelectorInvalidationMap,
+) -> Result<Vec<Dependency>, AllocErr> {
+    if cond.end.is_some() {
+        let deps =
+            ThinArc::from_header_and_iter((), cur_scope_inner_dependencies.clone().into_iter());
+        let mut end_dependency_vector = Vec::new();
+        for s in cond.end_selectors() {
+            note_scope_selector_for_invalidation(
+                quirks_mode,
+                &deps,
+                &mut end_dependency_vector,
+                &mut invalidation_map,
+                &mut relative_selector_invalidation_map,
+                &mut additional_relative_selector_invalidation_map,
+                &mut visitor,
+                ScopeDependencyInvalidationKind::ScopeEnd,
+                s,
+            )?;
+        }
+        cur_scope_inner_dependencies.append(&mut end_dependency_vector);
+    }
+    let inner_scope_dependencies =
+        ThinArc::from_header_and_iter((), cur_scope_inner_dependencies.into_iter());
+
+    Ok(if cond.start.is_some() {
+        let mut dependency_vector = Vec::new();
+        for s in cond.start_selectors() {
+            note_scope_selector_for_invalidation(
+                quirks_mode,
+                &inner_scope_dependencies,
+                &mut dependency_vector,
+                &mut invalidation_map,
+                &mut relative_selector_invalidation_map,
+                &mut additional_relative_selector_invalidation_map,
+                &mut visitor,
+                ScopeDependencyInvalidationKind::ExplicitScope,
+                s,
+            )?;
+        }
+        dependency_vector
+    } else {
+        vec![Dependency::new(
+            IMPLICIT_SCOPE.slice()[0].clone(),
+            0,
+            Some(inner_scope_dependencies),
+            DependencyInvalidationKind::Scope(ScopeDependencyInvalidationKind::ImplicitScope),
+        )]
+    })
+}
+
 impl CascadeDataCacheEntry for CascadeData {
     fn rebuild<S>(
         device: &Device,
@@ -4020,6 +4824,7 @@ impl CascadeDataCacheEntry for CascadeData {
         collection: SheetCollectionFlusher<S>,
         guard: &SharedRwLockReadGuard,
         old: &Self,
+        difference: &mut CascadeDataDifference,
     ) -> Result<Arc<Self>, AllocErr>
     where
         S: StylesheetInDocument + PartialEq + 'static,
@@ -4030,12 +4835,7 @@ impl CascadeDataCacheEntry for CascadeData {
             DataValidity::Valid | DataValidity::CascadeInvalid => old.clone(),
             DataValidity::FullyInvalid => Self::new(),
         };
-        updatable_entry.rebuild(
-            device,
-            quirks_mode,
-            collection,
-            guard,
-        )?;
+        updatable_entry.rebuild(device, quirks_mode, collection, guard, difference)?;
         Ok(Arc::new(updatable_entry))
     }
 
@@ -4090,19 +4890,19 @@ pub struct Rule {
     /// The current @container rule id.
     pub container_condition_id: ContainerConditionId,
 
-    /// True if this rule is inside @starting-style.
-    pub is_starting_style: bool,
+    /// Flags for special cascade behaviors.
+    pub cascade_flags: RuleCascadeFlags,
 
     /// The current @scope rule id.
     pub scope_condition_id: ScopeConditionId,
 
     /// The actual style rule.
-    #[ignore_malloc_size_of = "Secondary ref. Primary ref is in StyleRule under Stylesheet." ]
+    #[ignore_malloc_size_of = "Secondary ref. Primary ref is in StyleRule under Stylesheet."]
     pub style_source: StyleSource,
 }
 
 impl SelectorMapEntry for Rule {
-    fn selector(&self) -> SelectorIter<SelectorImpl> {
+    fn selector(&self) -> SelectorIter<'_, SelectorImpl> {
         self.selector.iter()
     }
 }
@@ -4128,6 +4928,7 @@ impl Rule {
             self.specificity(),
             cascade_data.layer_order_for(self.layer_id),
             scope_proximity,
+            self.cascade_flags,
         )
     }
 
@@ -4139,7 +4940,7 @@ impl Rule {
         source_order: u32,
         layer_id: LayerId,
         container_condition_id: ContainerConditionId,
-        is_starting_style: bool,
+        cascade_flags: RuleCascadeFlags,
         scope_condition_id: ScopeConditionId,
     ) -> Self {
         Self {
@@ -4149,7 +4950,7 @@ impl Rule {
             source_order,
             layer_id,
             container_condition_id,
-            is_starting_style,
+            cascade_flags,
             scope_condition_id,
         }
     }

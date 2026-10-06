@@ -21,7 +21,7 @@ async function test() {
 function testJS(ed) {
   ok(!ed.getOption("autocomplete"), "Autocompletion is not set");
 
-  ed.setMode(Editor.modes.js);
+  ed.setMode(Editor.modes.javascript);
   ed.setOption("autocomplete", true);
 
   ok(ed.getOption("autocomplete"), "Autocompletion is set");
@@ -37,7 +37,7 @@ function testCSS(ed) {
 }
 
 function testPref(ed) {
-  ed.setMode(Editor.modes.js);
+  ed.setMode(Editor.modes.javascript);
   ed.setOption("autocomplete", true);
 
   ok(ed.getOption("autocomplete"), "Autocompletion is set");

@@ -22,19 +22,7 @@ add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   info("Wait until the iframe picker button is displayed");
-  try {
-    await waitFor(() => getFramesButton(hud.toolbox));
-    ok(
-      !isFissionEnabled() || isEveryFrameTargetEnabled(),
-      "iframe picker should only display remote frames when EFT is enabled"
-    );
-  } catch (e) {
-    if (isFissionEnabled() && !isEveryFrameTargetEnabled()) {
-      ok(true, "iframe picker displays remote frames only when EFT is enabled");
-      return;
-    }
-    throw e;
-  }
+  await waitFor(() => getFramesButton(hud.toolbox));
 
   const evaluationContextSelectorButton = hud.ui.outputNode.querySelector(
     ".webconsole-evaluation-selector-button"
@@ -48,27 +36,9 @@ add_task(async function () {
 
   info("Select the example.org iframe");
   selectFrameInIframePicker(hud.toolbox, "https://example.org");
-  try {
-    await waitFor(() =>
-      evaluationContextSelectorButton.innerText.includes("example.org")
-    );
-    if (!isEveryFrameTargetEnabled()) {
-      todo(
-        true,
-        "context selector should only reacts to iframe picker when EFT is enabled"
-      );
-      return;
-    }
-  } catch (e) {
-    if (!isEveryFrameTargetEnabled()) {
-      todo(
-        false,
-        "context selector only reacts to iframe picker when EFT is enabled"
-      );
-      return;
-    }
-    throw e;
-  }
+  await waitFor(() =>
+    evaluationContextSelectorButton.innerText.includes("example.org")
+  );
   ok(true, "The context was set to the example.org document");
 
   await executeAndWaitForResultMessage(

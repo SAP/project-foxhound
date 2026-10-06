@@ -12,7 +12,7 @@ info: |
     ...
     b. Let kValue be ? Get(arrayLike, Pk).
   ...
-includes: [testBigIntTypedArray.js]
+includes: [testTypedArray.js]
 features: [BigInt, TypedArray]
 ---*/
 
@@ -29,6 +29,6 @@ testWithBigIntTypedArrayConstructors(function(TA) {
   assert.throws(Test262Error, function() {
     TA.from(source);
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

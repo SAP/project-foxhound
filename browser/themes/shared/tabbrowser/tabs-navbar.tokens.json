@@ -1,0 +1,13 @@
+{
+  "separator": {
+    "color": {
+      "value": "ThreeDShadow"
+    },
+    "style": {
+      "value": {
+        "default": "none",
+        "nativeTheme": "solid"
+      }
+    }
+  }
+}

@@ -41,7 +41,8 @@
 // Annotate a function indicating it should not be inlined.
 // Use like:
 //   NOINLINE void DoStuff() { ... }
-#if defined(__clang__) && HAS_ATTRIBUTE(noinline)
+#if defined(__clang__) && HAS_ATTRIBUTE(noinline) && \
+    (!defined(MOZ_ZUCCHINI) || __clang_major__ >= 15)
 #define NOINLINE [[clang::noinline]]
 #elif defined(COMPILER_GCC) && HAS_ATTRIBUTE(noinline)
 #define NOINLINE __attribute__((noinline))
@@ -51,7 +52,8 @@
 #define NOINLINE
 #endif
 
-#if defined(__clang__) && defined(NDEBUG) && HAS_ATTRIBUTE(always_inline)
+#if defined(__clang__) && defined(NDEBUG) && HAS_ATTRIBUTE(always_inline) && \
+    (!defined(MOZ_ZUCCHINI) || __clang_major__ >= 15)
 #define ALWAYS_INLINE [[clang::always_inline]] inline
 #elif defined(COMPILER_GCC) && defined(NDEBUG) && HAS_ATTRIBUTE(always_inline)
 #define ALWAYS_INLINE inline __attribute__((__always_inline__))
@@ -69,7 +71,8 @@
 // prevent code folding, see NO_CODE_FOLDING() in base/debug/alias.h.
 // Use like:
 //   NOT_TAIL_CALLED void FooBar();
-#if defined(__clang__) && HAS_ATTRIBUTE(not_tail_called)
+#if defined(__clang__) && HAS_ATTRIBUTE(not_tail_called) && \
+    (!defined(MOZ_ZUCCHINI) || __clang_major__ >= 15)
 #define NOT_TAIL_CALLED [[clang::not_tail_called]]
 #else
 #define NOT_TAIL_CALLED
@@ -393,7 +396,7 @@ inline constexpr bool AnalyzerAssumeTrue(bool arg) {
 #define CONSTINIT
 #endif
 
-#if defined(__clang__)
+#if defined(__clang__) && (!defined(MOZ_ZUCCHINI) || __clang_major__ >= 13)
 #define GSL_OWNER [[gsl::Owner]]
 #define GSL_POINTER [[gsl::Pointer]]
 #else

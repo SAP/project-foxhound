@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>not restricted</title>
+</head>
+<body>
+  <a id="link">click me</a>
+  <script>
+    const documentURL = URL.parse(document.URL);
+    let frameHost = new URLSearchParams(documentURL.search).get("host");
+    if (!frameHost) {
+      frameHost = documentURL.host;
+    }
+    const link = document.getElementById("link");
+    link.href = `https://${frameHost}/browser/toolkit/content/tests/browser/file_restricted.html`
+  </script>
+</body>
+</html>

@@ -107,13 +107,11 @@ def parse_print_failure_results(results):
                             )
                             # Check if the current failure details are different from the last seen ones
                             if details != last_seen_failures.get(test_id, ""):
-                                table.rows.append(
-                                    [
-                                        test_id,
-                                        "Flaky",
-                                        details,
-                                    ]
-                                )
+                                table.rows.append([
+                                    test_id,
+                                    "Flaky",
+                                    details,
+                                ])
                             last_seen_failures[test_id] = details
                         else:
                             test_id = "%s#%s" % (case.classname, case.name)
@@ -122,13 +120,11 @@ def parse_print_failure_results(results):
                             )
                             # Check if the current failure details are different from the last seen ones
                             if details != last_seen_failures.get(test_id, ""):
-                                table.rows.append(
-                                    [
-                                        test_id,
-                                        "Failure",
-                                        details,
-                                    ]
-                                )
+                                table.rows.append([
+                                    test_id,
+                                    "Failure",
+                                    details,
+                                ])
                                 print(f"TEST-UNEXPECTED-FAIL | {test_id} | {details}")
                                 failure_count += 1
                             # Update the last seen failure details for this test case

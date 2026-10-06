@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!-- Link text to learn more about downloading Gemini Nano -->
+  <string name="mozac_summarize_learn_more_link">Gāhuin chrūn doj</string>
+  <!-- Title for the off-device shake summarization consent screen. Localization note: Asking if the user wants to use the shake gesture to summarize the page they are viewing. -->
+  <string name="mozac_summarize_shake_consent_off_device_title">Gūru’man ra’a da’ nāhuin rū’u man</string>
+  <!-- Message for the off-device shake summarization consent screen. %1$s is 'Firefox' -->
+  <string name="mozac_summarize_shake_consent_off_device_message">Dūsiki’ si āgâ’t nī nāhuin rā’ât nuguan’ huā rayiî pajinâ nan yichrá %1$s sēgûndo.</string>
+  <!-- Button text for the off-device shake summarization consent screen approving shake consent. Localization note: "Continue" turns on the shake to summarize feature. -->
+  <string name="mozac_summarize_shake_consent_off_device_button_positive">Guij ne\' ñāan</string>
+  <!-- Button text for the off-device shake summarization consent screen denying shake consent. Localization note: "Not now" dismisses the request to turn on the shake to summarize feature. -->
+  <string name="mozac_summarize_shake_consent_off_device_negative_button">Sī ga\'hue akuan\' nïn</string>
+  <!-- Title for the on-device shake summarization and download consent screen -->
+  <string name="mozac_summarize_shake_consent_on_device_title">Nāgi’hiaj rū’u sinūguàn’ ñanj nan</string>
+  <!-- Message for the on-device shake summarization and download consent screen. %s will be replaced by app name. -->
+  <string name="mozac_summarize_shake_consent_on_device_message">Ngà gisîj ndà nanèt chre nanínj sa nadunïnjt, nej %s gā’hue nāgi’hiaj rū’u man sinūguàn’ pajinâ nan si nāgunan’t aga’ nan.</string>
+  <!-- Button text for the on-device shake summarization and download consent screen approving shake and download consent -->
+  <string name="mozac_summarize_shake_consent_on_device_button_positive">Nādunïnj da’ gā’hue nāgi’hiaj rū’ût nuguan’an</string>
+  <!-- Button text for the on-device shake summarization and download consent screen denying shake and download consent -->
+  <string name="mozac_summarize_shake_consent_on_device_negative_button">Sī ga\'hue akuan\' nïn</string>
+  <!-- Title for the download consent screen -->
+  <string name="mozac_summarize_download_consent_title">Nāgi’hiaj riña ‘na’ nej nuguan’ huā rū’u huìi</string>
+  <!-- Message for the consent to download when using an on-device model. %s will be replaced by app name. -->
+  <string name="mozac_summarize_download_nano_consent_message">Ngō rïn nādunïnjt nī gā’nïnt riña %s da’ nāgi’hiaj rū’u man sinūguàn’ nej pajinâ huā ‘hiát.</string>
+  <!-- Button text for the consent to download an on-device model approving download consent -->
+  <string name="mozac_summarize_download_consent_button_positive">Nādunïnj da’ gā’hue nāgi’hiaj rū’ût nuguan’an</string>
+  <!-- Button text for the consent to download an on-device model denying download consent -->
+  <string name="mozac_summarize_download_consent_button_negative">Dūyichin\'</string>
+  <!-- Title for the download in progress screen -->
+  <string name="mozac_summarize_download_progress_title">Hìaj huin yūgui nuguan’ rū’u</string>
+  <!-- Message to describe that a download is in progress using an on-device, private model -->
+  <string name="mozac_summarize_download_progress_message">Ngō rïn nādunïnjt guendâ gīrīt nej nuguan’ rū’u.</string>
+  <!-- Caption to describe the progress of the download. %1$.2f is bytes downloaded, %2$.2f is total bytes required for download to complete. -->
+  <string name="mozac_summarize_download_progress_caption">%1$.2f MB/ %2$.2f MB</string>
+  <!-- Button text shown while a download is in progress to cancel the download -->
+  <string name="mozac_summarize_download_progress_button_negative">Dūyichin\'</string>
+  <!-- Title for the download error screen -->
+  <string name="mozac_summarize_download_error_title">Huā sa gahui a\'nan\'</string>
+  <!-- Generic fallback message for the download error screen -->
+  <string name="mozac_summarize_download_error_fallback_message">Nu ni’în’ nùhuin saj gire\'ej</string>
+  <!-- Button for the download error screen to try again -->
+  <string name="mozac_summarize_download_error_positive_button">Ginùn huin ñûn</string>
+  <!-- Button for the download error screen to cancel -->
+  <string name="mozac_summarize_download_error_negative_button">Dūyichin\'</string>
+  <!-- Title for the error screen when page is too long to summarize -->
+  <string name="mozac_summarize_content_too_long_error_title">Ûta yē’è hua pajinâ nan da’ nāhuin rū’u nuguan’an</string>
+  <!-- Title for the info error screen -->
+  <string name="mozac_summarize_info_error_title">Sī ga’hue nāgi’hiaj rū’û nuguan’an akuan’ nïn</string>
+  <!-- Generic fallback message for the info error screen -->
+  <string name="mozac_summarize_info_error_message">Ginùn huin nanâ doj.</string>
+  <!-- Error code shown on long press of the error icon. %1$d is an error code. -->
+  <string name="mozac_summarize_info_error_code">Da’nga’ nùhuin saj gire’ej: %1$d</string>
+  <!-- Loading text displayed while a page summary is being generated -->
+  <string name="mozac_feature_summarize_loading_title">Nù huin nagi’hiaj rū’u nuguan’an…</string>
+  <!-- Content description for the settings icon button in the summarized view -->
+  <string name="mozac_summarize_settings_button_content_description">Nātsij riña nagi’hiaj rū’u nuguan’an riña pajina</string>
+  <!-- Title for the settings screen shown in the summarization bottom sheet -->
+  <string name="mozac_summarize_settings_title">Nej nuguan’ rū’u a’min rayi’î nej pâjina</string>
+  <!-- Label for the summarize pages toggle in settings -->
+  <string name="mozac_summarize_settings_summarize_pages">Nāgi’hiaj rū’u si nūguàn’ pajinâ nan</string>
+  <!-- Description for the summarize pages toggle -->
+  <string name="mozac_summarize_settings_summarize_pages_cloud">Nāgi’hiaj rū’u si nūguàn’ ngà IA. Nej pajinâ dan ngà nej nuguan’ rū’u narugui’ dan nī nitāj āmān nañû sà’ nej man.</string>
+  <!-- Link text to learn more about page summaries in settings -->
+  <string name="mozac_summarize_settings_learn_more">Gāhuin chrūn doj</string>
+  <!-- Section header for gesture settings -->
+  <string name="mozac_summarize_settings_gestures">Da\'nga\'a</string>
+  <!-- Label for the shake to summarize toggle in settings -->
+  <string name="mozac_summarize_settings_shake_to_summarize">Shakê guendâ nāgi’hiaj rū’û’ nuguan’an</string>
+  <!-- Description for the shake to summarize toggle in settings -->
+  <string name="mozac_summarize_settings_shake_to_summarize_description">Nāgunan’ ānèj ané aga’ nan da’ nāgi’hiaj rū’u si nūguàn’ pâjina.</string>
+  <!-- Label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity">Sī dusiki’ ta’ut man</string>
+  <!-- Description for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_description">Dūsiki’ man da’ nāgi’hiaj rū’u nuguan’an.</string>
+  <!-- Low option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_low">Dòj</string>
+  <!-- Medium option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_medium">Dā’āj</string>
+  <!-- High option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_high">Yākàn</string>
+  <!-- Message for summary by model, %1$s is the name of the model that is being displayed -->
+  <string name="mozac_feature_summarize_summary_model">Sa nagi’hiaj rū’u nuguan’an huin %1$s</string>
+  <!-- Disclaimer message -->
+  <string name="mozac_feature_summarize_disclaimer_message">Huā sa ahui a’nan’ ‘hiaj IA nej</string>
+  <!-- Title for the page summary AI controllable feature -->
+  <string name="mozac_ai_controls_page_summary_title">Nej nuguan’ rū’u a’min rayi’î nej pâjina</string>
+  <!-- Description for the page summary AI controllable feature -->
+  <string name="mozac_ai_controls_page_summary_description">Nej pajinâ ngà nej nuguan’ rū’u dan nī nitāj āmān nañû sà’ nej man.</string>
+  <!-- Button text for the Error dismiss button on Shake to Summarize -->
+  <string name="mozac_summarize_error_dissmiss">Si gi\'hiaj guendô\'</string>
+</resources>

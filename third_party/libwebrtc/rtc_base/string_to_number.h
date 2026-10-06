@@ -13,7 +13,6 @@
 
 #include <limits>
 #include <optional>
-#include <string>
 #include <type_traits>
 
 #include "absl/strings/string_view.h"
@@ -102,10 +101,5 @@ StringToNumber(absl::string_view str, int /* base */ = 10) {
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::StringToNumber;
-}  // namespace rtc
 
 #endif  // RTC_BASE_STRING_TO_NUMBER_H_

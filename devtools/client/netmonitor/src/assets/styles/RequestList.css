@@ -18,7 +18,10 @@
 
 .notice-perf-message {
   margin-top: 2px;
-  align-items: center;
+
+  > * {
+    vertical-align: middle;
+  }
 }
 
 .requests-list-perf-notice-button {
@@ -168,6 +171,10 @@
   display: inline-block;
 }
 
+.requests-list-column.requests-list-number-column {
+  text-align: end;
+}
+
 /* Requests list headers */
 
 .requests-list-headers-group,
@@ -268,7 +275,7 @@
 
 .requests-list-header-button[data-sorted],
 .requests-list-column[data-active] + .requests-list-column .requests-list-header-button {
-  border-image: linear-gradient(var(--theme-splitter-color), var(--theme-splitter-color)) 1 1;
+  border-image: image(var(--theme-splitter-color)) 1 1;
 }
 
 /* Requests list headers column-resizer */
@@ -335,6 +342,11 @@
 
 .security-state-secure {
   background-image: url(chrome://devtools/skin/images/security-state-secure.svg);
+  width: 16px;
+}
+
+.security-state-secure-custom-root {
+  background-image: url(chrome://devtools/skin/images/security-state-secure-custom-root.svg);
   width: 16px;
 }
 
@@ -594,17 +606,7 @@
  * Dim requests served from cache when High Contrast Mode is not enabled
  */
 :root:not([forced-colors-active]) .request-list-item:not(.selected, :hover).fromCache {
-  --table-icon-opacity: 0.7;
   color: var(--theme-text-color-alt);
-}
-
-/*
- * Apply partial opacity to specific icons and icon-like elements
- * (e.g. for cached requests)
- */
-.requests-security-icon-group,
-.requests-list-status-code:not([data-code^="3"]) {
-  opacity: var(--table-icon-opacity, 1);
 }
 
 /*

@@ -126,11 +126,11 @@ add_task(function test_formatMaskedNumber() {
     const actual = CreditCard.formatMaskedNumber(input);
     Assert.equal(actual, expected);
   }
-  assertMaskedNumber("************0000", "****0000");
-  assertMaskedNumber("************1045", "****1045");
-  assertMaskedNumber("***********6806", "****6806");
-  assertMaskedNumber("**********0495", "****0495");
-  assertMaskedNumber("**********8250", "****8250");
+  assertMaskedNumber("••••••••••••0000", "••••0000");
+  assertMaskedNumber("••••••••••••1045", "••••1045");
+  assertMaskedNumber("•••••••••••6806", "••••6806");
+  assertMaskedNumber("••••••••••0495", "••••0495");
+  assertMaskedNumber("••••••••••8250", "••••8250");
 });
 
 add_task(function test_maskNumber() {
@@ -142,14 +142,14 @@ add_task(function test_maskNumber() {
       "Masked number should only show the last four digits"
     );
   }
-  testMask("0000000000000000", "**** 0000");
-  testMask("4929001587121045", "**** 1045");
-  testMask("5103059495477870", "**** 7870");
-  testMask("6011029476355493", "**** 5493");
-  testMask("3589993783099582", "**** 9582");
-  testMask("5415425865751454", "**** 1454");
-  testMask("344060747836806", "**** 6806");
-  testMask("6799990100000000019", "**** 0019");
+  testMask("0000000000000000", "•••• 0000");
+  testMask("4929001587121045", "•••• 1045");
+  testMask("5103059495477870", "•••• 7870");
+  testMask("6011029476355493", "•••• 5493");
+  testMask("3589993783099582", "•••• 9582");
+  testMask("5415425865751454", "•••• 1454");
+  testMask("344060747836806", "•••• 6806");
+  testMask("6799990100000000019", "•••• 0019");
   Assert.throws(
     () => new CreditCard({ number: "1234" }).maskedNumber,
     /Invalid credit card number/,
@@ -166,14 +166,14 @@ add_task(function test_longMaskedNumber() {
       "Long masked number should show asterisks for all digits but last four"
     );
   }
-  testMask("0000000000000000", "************0000");
-  testMask("4929001587121045", "************1045");
-  testMask("5103059495477870", "************7870");
-  testMask("6011029476355493", "************5493");
-  testMask("3589993783099582", "************9582");
-  testMask("5415425865751454", "************1454");
-  testMask("344060747836806", "***********6806");
-  testMask("6799990100000000019", "***************0019");
+  testMask("0000000000000000", "••••••••••••0000");
+  testMask("4929001587121045", "••••••••••••1045");
+  testMask("5103059495477870", "••••••••••••7870");
+  testMask("6011029476355493", "••••••••••••5493");
+  testMask("3589993783099582", "••••••••••••9582");
+  testMask("5415425865751454", "••••••••••••1454");
+  testMask("344060747836806", "•••••••••••6806");
+  testMask("6799990100000000019", "•••••••••••••••0019");
   Assert.throws(
     () => new CreditCard({ number: "1234" }).longMaskedNumber,
     /Invalid credit card number/,
@@ -422,12 +422,12 @@ add_task(async function test_label() {
     {
       number: "0000000000000000",
       name: "Rudy Badoody",
-      expectedMaskedLabel: "**** 0000, Rudy Badoody",
+      expectedMaskedLabel: "•••• 0000, Rudy Badoody",
     },
     {
       number: "3589993783099582",
       name: "Jimmy Babimmy",
-      expectedMaskedLabel: "**** 9582, Jimmy Babimmy",
+      expectedMaskedLabel: "•••• 9582, Jimmy Babimmy",
     },
   ];
 
@@ -520,16 +520,24 @@ add_task(async function test_getType() {
     ["5100000000000000", "mastercard"],
     ["5399999999999999", "mastercard"],
     ["6011000000000000", "discover"],
-    ["6221260000000000", "discover"],
-    ["6229250000000000", "discover"],
-    ["6240000000000000", "discover"],
-    ["6269990000000000", "discover"],
-    ["6282000000000000", "discover"],
-    ["6288990000000000", "discover"],
-    ["6400000000000000", "discover"],
+    ["6440000000000000", "discover"],
+    ["6490000000000000", "discover"],
     ["6500000000000000", "discover"],
     ["6200000000000000", "unionpay"],
+    ["6221260000000000", "unionpay"],
+    ["6229250000000000", "unionpay"],
+    ["6240000000000000", "unionpay"],
+    ["6269990000000000", "unionpay"],
+    ["6282000000000000", "unionpay"],
+    ["6288990000000000", "unionpay"],
     ["8100000000000000", "unionpay"],
+    ["4111111111111", "visa"],
+    ["411111111111111", "visa"],
+    ["41111111111111111", "visa"],
+    ["4111111111111111111", "visa"],
+    ["22000000000000000", "mir"],
+    ["220000000000000000", "mir"],
+    ["2200000000000000000", "mir"],
     // Valid according to Luhn number
     ["2204941877211882", "mir"],
     ["2720994326581252", "mastercard"],
@@ -557,8 +565,9 @@ add_task(async function test_getType() {
   }
 
   const UNRECOGNIZED_CARDS = [
-    ["411111111111111", "15 digits"],
-    ["41111111111111111", "17 digits"],
+    ["411111111111", "visa 12 digits - below min"],
+    ["41111111111111111111", "visa 20 digits - above max"],
+    ["6400000000000000", "640 prefix - not in discover range"],
     ["", "empty"],
     ["9111111111111111", "Unknown prefix"],
   ];

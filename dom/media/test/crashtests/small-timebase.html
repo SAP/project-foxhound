@@ -2,8 +2,8 @@
 <html class="reftest-wait">
 <video id=a src=small-timebase.mp4 controls autoplay></video>
 <script>
-a.onplaying = function() {
-  dump("OK");
+a.onerror = function() {
+  dump("OK\n");
   document.documentElement.removeAttribute("class");
 }
 </script>

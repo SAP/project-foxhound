@@ -15,22 +15,23 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
-#include "api/array_view.h"
 #include "api/audio_codecs/audio_encoder.h"
 #include "api/audio_codecs/audio_format.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/neteq/neteq.h"
-#include "api/rtp_headers.h"
 #include "modules/audio_coding/codecs/pcm16b/audio_encoder_pcm16b.h"
 #include "modules/audio_coding/neteq/tools/audio_checksum.h"
 #include "modules/audio_coding/neteq/tools/encode_neteq_input.h"
 #include "modules/audio_coding/neteq/tools/neteq_input.h"
 #include "modules/audio_coding/neteq/tools/neteq_test.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
+#include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "rtc_base/checks.h"
+#include "test/fuzzers/fuzz_data_helper.h"
 
 namespace webrtc {
 namespace test {
@@ -42,12 +43,12 @@ class SineGenerator : public EncodeNetEqInput::Generator {
   explicit SineGenerator(int sample_rate_hz)
       : sample_rate_hz_(sample_rate_hz) {}
 
-  rtc::ArrayView<const int16_t> Generate(size_t num_samples) override {
+  std::span<const int16_t> Generate(size_t num_samples) override {
     if (samples_.size() < num_samples) {
       samples_.resize(num_samples);
     }
 
-    rtc::ArrayView<int16_t> output(samples_.data(), num_samples);
+    std::span<int16_t> output(samples_.data(), num_samples);
     for (auto& x : output) {
       x = static_cast<int16_t>(2000.0 * std::sin(phase_));
       phase_ += 2 * kPi * kFreqHz / sample_rate_hz_;
@@ -65,7 +66,7 @@ class SineGenerator : public EncodeNetEqInput::Generator {
 
 class FuzzRtpInput : public NetEqInput {
  public:
-  explicit FuzzRtpInput(rtc::ArrayView<const uint8_t> data) : data_(data) {
+  explicit FuzzRtpInput(std::span<const uint8_t> data) : data_(data) {
     AudioEncoderPcm16B::Config config;
     config.payload_type = kPayloadType;
     config.sample_rate_hz = 32000;
@@ -80,7 +81,7 @@ class FuzzRtpInput : public NetEqInput {
   }
 
   std::optional<int64_t> NextPacketTime() const override {
-    return packet_->time_ms;
+    return packet_->arrival_time().ms();
   }
 
   std::optional<int64_t> NextOutputEventTime() const override {
@@ -91,9 +92,9 @@ class FuzzRtpInput : public NetEqInput {
     return input_->NextSetMinimumDelayInfo();
   }
 
-  std::unique_ptr<PacketData> PopPacket() override {
+  std::unique_ptr<RtpPacketReceived> PopPacket() override {
     RTC_DCHECK(packet_);
-    std::unique_ptr<PacketData> packet_to_return = std::move(packet_);
+    std::unique_ptr<RtpPacketReceived> packet_to_return = std::move(packet_);
     packet_ = input_->PopPacket();
     FuzzHeader();
     MaybeFuzzPayload();
@@ -108,9 +109,9 @@ class FuzzRtpInput : public NetEqInput {
 
   bool ended() const override { return ended_; }
 
-  std::optional<RTPHeader> NextHeader() const override {
+  const RtpPacketReceived* NextPacket() const override {
     RTC_DCHECK(packet_);
-    return packet_->header;
+    return packet_.get();
   }
 
  private:
@@ -122,18 +123,16 @@ class FuzzRtpInput : public NetEqInput {
     }
     RTC_DCHECK(packet_);
     const size_t start_ix = data_ix_;
-    packet_->header.payloadType =
-        ByteReader<uint8_t>::ReadLittleEndian(&data_[data_ix_]);
-    packet_->header.payloadType &= 0x7F;
+    packet_->SetPayloadType(
+        ByteReader<uint8_t>::ReadLittleEndian(&data_[data_ix_]) & 0x7F);
     data_ix_ += sizeof(uint8_t);
-    packet_->header.sequenceNumber =
-        ByteReader<uint16_t>::ReadLittleEndian(&data_[data_ix_]);
+    packet_->SetSequenceNumber(
+        ByteReader<uint16_t>::ReadLittleEndian(&data_[data_ix_]));
     data_ix_ += sizeof(uint16_t);
-    packet_->header.timestamp =
-        ByteReader<uint32_t>::ReadLittleEndian(&data_[data_ix_]);
+    packet_->SetTimestamp(
+        ByteReader<uint32_t>::ReadLittleEndian(&data_[data_ix_]));
     data_ix_ += sizeof(uint32_t);
-    packet_->header.ssrc =
-        ByteReader<uint32_t>::ReadLittleEndian(&data_[data_ix_]);
+    packet_->SetSsrc(ByteReader<uint32_t>::ReadLittleEndian(&data_[data_ix_]));
     data_ix_ += sizeof(uint32_t);
     RTC_CHECK_EQ(data_ix_ - start_ix, kNumBytesToFuzz);
   }
@@ -148,7 +147,7 @@ class FuzzRtpInput : public NetEqInput {
 
     // Restrict number of bytes to fuzz to 16; a reasonably low number enough to
     // cover a few RED headers. Also don't write outside the payload length.
-    bytes_to_fuzz = std::min(bytes_to_fuzz % 16, packet_->payload.size());
+    bytes_to_fuzz = std::min(bytes_to_fuzz % 16, packet_->payload_size());
 
     if (bytes_to_fuzz == 0)
       return;
@@ -158,21 +157,23 @@ class FuzzRtpInput : public NetEqInput {
       return;
     }
 
-    std::memcpy(packet_->payload.data(), &data_[data_ix_], bytes_to_fuzz);
+    // Call `SetPayloadSize` to get access to the writable RTP payload without
+    // changing its size.
+    uint8_t* payload = packet_->SetPayloadSize(packet_->payload_size());
+    std::memcpy(payload, &data_[data_ix_], bytes_to_fuzz);
     data_ix_ += bytes_to_fuzz;
   }
 
   bool ended_ = false;
-  rtc::ArrayView<const uint8_t> data_;
+  std::span<const uint8_t> data_;
   size_t data_ix_ = 0;
   std::unique_ptr<EncodeNetEqInput> input_;
-  std::unique_ptr<PacketData> packet_;
+  std::unique_ptr<RtpPacketReceived> packet_;
 };
 }  // namespace
 
-void FuzzOneInputTest(const uint8_t* data, size_t size) {
-  std::unique_ptr<FuzzRtpInput> input(
-      new FuzzRtpInput(rtc::ArrayView<const uint8_t>(data, size)));
+void FuzzOneInputTest(FuzzDataHelper fuzz_data) {
+  auto input = std::make_unique<FuzzRtpInput>(fuzz_data.ReadRemaining());
   std::unique_ptr<AudioChecksum> output(new AudioChecksum);
   NetEqTest::Callbacks callbacks;
   NetEq::Config config;
@@ -192,11 +193,11 @@ void FuzzOneInputTest(const uint8_t* data, size_t size) {
 
 }  // namespace test
 
-void FuzzOneInput(const uint8_t* data, size_t size) {
-  if (size > 70000) {
+void FuzzOneInput(FuzzDataHelper fuzz_data) {
+  if (fuzz_data.size() > 70'000) {
     return;
   }
-  test::FuzzOneInputTest(data, size);
+  test::FuzzOneInputTest(fuzz_data);
 }
 
 }  // namespace webrtc

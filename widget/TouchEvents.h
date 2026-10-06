@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_TouchEvents_h__
-#define mozilla_TouchEvents_h__
+#ifndef mozilla_TouchEvents_h_
+#define mozilla_TouchEvents_h_
 
 #include <stdint.h>
 
@@ -27,11 +26,9 @@ namespace mozilla {
  * (finger scrolling) or drag the target element.
  ******************************************************************************/
 
-class WidgetGestureNotifyEvent : public WidgetGUIEvent {
+class WidgetGestureNotifyEvent final : public WidgetGUIEvent {
  public:
-  virtual WidgetGestureNotifyEvent* AsGestureNotifyEvent() override {
-    return this;
-  }
+  NS_DEFINE_AS_EVENT_OVERRIDE(Widget, GestureNotifyEvent);
 
   WidgetGestureNotifyEvent(bool aIsTrusted, EventMessage aMessage,
                            nsIWidget* aWidget,
@@ -40,6 +37,10 @@ class WidgetGestureNotifyEvent : public WidgetGUIEvent {
                        aTime),
         mPanDirection(ePanNone),
         mDisplayPanFeedback(false) {}
+
+  NS_DEFINE_VIRTUAL_DESTRUCTOR_CHECKING_CLASS_VALUE(WidgetGestureNotifyEvent,
+                                                    eGestureNotifyEventClass,
+                                                    eGUIEventClass)
 
   virtual WidgetEvent* Duplicate() const override {
     // XXX Looks like this event is handled only in PostHandleEvent() of
@@ -81,11 +82,9 @@ class WidgetGestureNotifyEvent : public WidgetGUIEvent {
  * mozilla::WidgetSimpleGestureEvent
  ******************************************************************************/
 
-class WidgetSimpleGestureEvent : public WidgetMouseEventBase {
+class WidgetSimpleGestureEvent final : public WidgetMouseEventBase {
  public:
-  virtual WidgetSimpleGestureEvent* AsSimpleGestureEvent() override {
-    return this;
-  }
+  NS_DEFINE_AS_EVENT_OVERRIDE(Widget, SimpleGestureEvent);
 
   WidgetSimpleGestureEvent(bool aIsTrusted, EventMessage aMessage,
                            nsIWidget* aWidget,
@@ -104,6 +103,10 @@ class WidgetSimpleGestureEvent : public WidgetMouseEventBase {
         mDirection(aOther.mDirection),
         mClickCount(0),
         mDelta(aOther.mDelta) {}
+
+  NS_DEFINE_VIRTUAL_DESTRUCTOR_CHECKING_CLASS_VALUE(WidgetSimpleGestureEvent,
+                                                    eSimpleGestureEventClass,
+                                                    eMouseEventBaseClass)
 
   virtual WidgetEvent* Duplicate() const override {
     MOZ_ASSERT(mClass == eSimpleGestureEventClass,
@@ -147,7 +150,7 @@ class WidgetTouchEvent final : public WidgetInputEvent {
   typedef AutoTArray<RefPtr<mozilla::dom::Touch>, 10> AutoTouchArray;
   typedef AutoTouchArray::base_type TouchArrayBase;
 
-  WidgetTouchEvent* AsTouchEvent() override { return this; }
+  NS_DEFINE_AS_EVENT_OVERRIDE(Widget, TouchEvent);
 
   MOZ_COUNTED_DEFAULT_CTOR(WidgetTouchEvent)
 
@@ -162,7 +165,7 @@ class WidgetTouchEvent final : public WidgetInputEvent {
     if (static_cast<bool>(aCloneTouches)) {
       mTouches.SetCapacity(aOther.mTouches.Length());
       for (const RefPtr<dom::Touch>& touch : aOther.mTouches) {
-        RefPtr<dom::Touch> clonedTouch = new dom::Touch(*touch);
+        auto clonedTouch = MakeRefPtr<dom::Touch>(*touch);
         mTouches.AppendElement(std::move(clonedTouch));
       }
     } else {
@@ -197,7 +200,12 @@ class WidgetTouchEvent final : public WidgetInputEvent {
     mFlags.mCancelable = mMessage != eTouchCancel;
   }
 
-  MOZ_COUNTED_DTOR_OVERRIDE(WidgetTouchEvent)
+#if defined(NS_BUILD_REFCNT_LOGGING) || defined(DEBUG)
+  virtual ~WidgetTouchEvent() {
+    MOZ_COUNT_DTOR(WidgetTouchEvent);
+    NS_ASSERT_EVENT_CLASS_ID(eTouchEventClass, eInputEventClass);
+  }
+#endif
 
   WidgetEvent* Duplicate() const override {
     MOZ_ASSERT(mClass == eTouchEventClass,
@@ -215,6 +223,13 @@ class WidgetTouchEvent final : public WidgetInputEvent {
   int16_t mButton = eNotPressed;
   int16_t mButtons = 0;
 
+  /**
+   * An optional identifier for the callback associated with this touch event.
+   * This ID is used to reference a specific callback for a synthesized event,
+   * if one is present. If no callback is associated, this value will be empty.
+   */
+  Maybe<uint64_t> mCallbackId;
+
   void AssignTouchEventData(const WidgetTouchEvent& aEvent, bool aCopyTargets) {
     AssignInputEventData(aEvent, aCopyTargets);
 
@@ -222,6 +237,8 @@ class WidgetTouchEvent final : public WidgetInputEvent {
     MOZ_ASSERT(mTouches.IsEmpty());
     mTouches.AppendElements(aEvent.mTouches);
     mInputSource = aEvent.mInputSource;
+    // NOTE: Intentionally not copying mCallbackId, it should only be tracked by
+    //       the original event or propagated to the cross-process event.
   }
 
   void SetConvertToPointerRawUpdate(bool aConvert) {
@@ -241,4 +258,4 @@ class WidgetTouchEvent final : public WidgetInputEvent {
 
 }  // namespace mozilla
 
-#endif  // mozilla_TouchEvents_h__
+#endif  // mozilla_TouchEvents_h_

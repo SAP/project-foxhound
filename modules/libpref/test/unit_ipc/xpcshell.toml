@@ -14,9 +14,13 @@ head = ""
 ["test_sharedMap.js"]
 
 ["test_sharedMap_static_prefs.js"]
-run-if = ["debug"] # Relies on debug assertions to catch failure cases.
+run-if = [
+  "debug", # Relies on debug assertions to catch failure cases.
+]
 
 ["test_update_prefs.js"]
 
 ["test_user_default_prefs.js"]
-run-if = ["os != 'android'"]
+run-if = [
+  "os != 'android'",
+]

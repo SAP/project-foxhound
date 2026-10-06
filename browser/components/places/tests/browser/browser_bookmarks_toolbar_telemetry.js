@@ -105,6 +105,8 @@ add_task(async function test_bookmarks_toolbar_telemetry() {
   await EventUtils.synthesizePlainDragAndDrop({
     srcElement,
     destElement,
+    srcX: 5,
+    srcY: 5,
   });
 
   TelemetryTestUtils.assertScalar(

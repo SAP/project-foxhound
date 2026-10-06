@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +10,7 @@
 
 using namespace mozilla::widget;
 
-MOZ_CONSTINIT RefPtr<GfxDeviceFamily>
+constinit RefPtr<GfxDeviceFamily>
     GfxDriverInfo::sDeviceFamilies[static_cast<size_t>(DeviceFamily::Max)];
 nsString*
     GfxDriverInfo::sWindowProtocol[static_cast<size_t>(WindowProtocol::Max)];
@@ -49,8 +48,9 @@ GfxDriverInfo::GfxDriverInfo(
       mGpu2(gpu2) {}
 
 GfxDriverInfo::GfxDriverInfo(
-    OperatingSystem os, already_AddRefed<const GfxDeviceFamily> devices,
-    int32_t feature, int32_t featureStatus, RefreshRateStatus refreshRateStatus,
+    OperatingSystem os, const nsAString& vendor,
+    already_AddRefed<const GfxDeviceFamily> devices, int32_t feature,
+    int32_t featureStatus, RefreshRateStatus refreshRateStatus,
     VersionComparisonOp minRefreshRateOp, uint32_t minRefreshRate,
     uint32_t minRefreshRateMax, VersionComparisonOp maxRefreshRateOp,
     uint32_t maxRefreshRate, uint32_t maxRefreshRateMax, const char* ruleId,
@@ -63,6 +63,7 @@ GfxDriverInfo::GfxDriverInfo(
       mMaxRefreshRateMax(maxRefreshRateMax),
       mMaxRefreshRateComparisonOp(maxRefreshRateOp),
       mRefreshRateStatus(refreshRateStatus),
+      mAdapterVendor(vendor),
       mDevices(devices),
       mFeature(feature),
       mFeatureStatus(featureStatus),
@@ -697,7 +698,7 @@ const nsAString& GfxDriverInfo::GetWindowProtocol(WindowProtocol id) {
   case WindowProtocol::id:                      \
     sWindowProtocol[idx]->Assign(u##name##_ns); \
     break;
-#include "mozilla/widget/GfxInfoWindowProtocolDefs.h"
+#include "mozilla/widget/GfxInfoWindowProtocolDefs.inc"
 #undef GFXINFO_WINDOW_PROTOCOL
   }
 
@@ -799,7 +800,7 @@ const nsAString& GfxDriverInfo::GetDeviceVendor(DeviceVendor id) {
   case DeviceVendor::id:                       \
     sDeviceVendors[idx]->Assign(u##name##_ns); \
     break;
-#include "mozilla/widget/GfxInfoDeviceVendorDefs.h"
+#include "mozilla/widget/GfxInfoDeviceVendorDefs.inc"
 #undef GFXINFO_DEVICE_VENDOR
   }
 
@@ -825,7 +826,7 @@ const nsAString& GfxDriverInfo::GetDriverVendor(DriverVendor id) {
   case DriverVendor::id:                       \
     sDriverVendors[idx]->Assign(u##name##_ns); \
     break;
-#include "mozilla/widget/GfxInfoDriverVendorDefs.h"
+#include "mozilla/widget/GfxInfoDriverVendorDefs.inc"
 #undef GFXINFO_DRIVER_VENDOR
   }
 

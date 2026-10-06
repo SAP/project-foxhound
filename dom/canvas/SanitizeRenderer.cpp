@@ -1,14 +1,12 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/gfx/Logging.h"
-#include "mozilla/IntegerRange.h"
-
 #include <functional>
 #include <regex>
 #include <string>
+
+#include "mozilla/gfx/Logging.h"
 
 namespace mozilla {
 namespace webgl {
@@ -228,9 +226,16 @@ static std::optional<std::string> ChooseDeviceReplacement(
 
   // -
 
-  static const std::regex kAdreno("Adreno.*?([0-9][0-9][0-9]+)");
+  static const std::regex kAdreno("Adreno.*?([A-Z]?[0-9]-?[0-9]+)");
   if (std::regex_search(str, m, kAdreno)) {
-    const auto modelNum = stoul(m.str(1));
+    const std::string& modelName = m[1];
+    if (modelName[0] == 'A') {
+      return "Adreno (TM) A11";
+    }
+    if (modelName[0] == 'X') {
+      return "Adreno (TM) X1-45";
+    }
+    const auto modelNum = stoul(modelName);
     if (modelNum >= 600) {
       return "Adreno (TM) 650";
     }
@@ -301,7 +306,11 @@ std::string SanitizeRenderer(const std::string& raw_renderer) {
         "ANGLE [(]([^,]*), ([^,]*)( Direct3D[^,]*), .*[)]");
     // e.g. "ANGLE (Samsung Xclipse 940) on Vulkan 1.3.264"
     static const std::regex kReAngleVulkan(
-        "ANGLE [(](.*)[)]( on Vulkan) [0-9\\.]*");
+        "ANGLE [(]+(.*)[)]( on Vulkan) [0-9\\.]*[)]*");
+    // e.g. "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Version 15.3 (Build
+    // 24D60))"
+    static const std::regex kReAngleMetal(
+        "ANGLE [(]([^,]*), ANGLE Metal Renderer: ([^,]*), Version .*[)]");
 
     if (std::regex_match(raw_renderer, m, kReAngleDirect3D)) {
       const auto& vendor = m.str(1);
@@ -327,6 +336,18 @@ std::string SanitizeRenderer(const std::string& raw_renderer) {
         renderer2 = GENERIC_RENDERER;
       }
       return std::string("ANGLE (") + *renderer2 + ")" + vulkan_suffix;
+    } else if (std::regex_match(raw_renderer, m, kReAngleMetal)) {
+      const auto& vendor = m.str(1);
+      const auto& renderer = m.str(2);
+
+      auto renderer2 = ChooseDeviceReplacement(renderer);
+      if (!renderer2) {
+        gfxCriticalNote << "Couldn't sanitize Metal ANGLE renderer \""
+                        << renderer << "\" from GL_RENDERER \"" << raw_renderer;
+        renderer2 = GENERIC_RENDERER;
+      }
+      return std::string("ANGLE (") + vendor +
+             ", ANGLE Metal Renderer: " + *renderer2 + ")";
     } else if (Contains(raw_renderer, "ANGLE")) {
       gfxCriticalError() << "Failed to parse ANGLE renderer: " << raw_renderer;
       return {};
@@ -359,6 +380,51 @@ std::string SanitizeRenderer(const std::string& raw_renderer) {
   }
 
   return *replacementDevice + ", or similar";
+}
+
+// -
+
+/**
+ * Sanitize vendor string to standardized buckets.
+ * E.g. "NVIDIA Corporation" => "NVIDIA Corporation"
+ */
+std::string SanitizeVendor(const std::string& raw_vendor) {
+  if (Contains(raw_vendor, "NVIDIA")) {
+    return "NVIDIA Corporation";
+  }
+  if (Contains(raw_vendor, "Intel")) {
+    return "Intel";
+  }
+  if (Contains(raw_vendor, "AMD") || Contains(raw_vendor, "ATI") ||
+      Contains(raw_vendor, "Advanced Micro Devices")) {
+    return "AMD";
+  }
+  if (Contains(raw_vendor, "Qualcomm")) {
+    return "Qualcomm";
+  }
+  if (Contains(raw_vendor, "ARM")) {
+    return "ARM";
+  }
+  if (Contains(raw_vendor, "Apple")) {
+    return "Apple";
+  }
+  if (Contains(raw_vendor, "Samsung")) {
+    return "Samsung";
+  }
+  if (Contains(raw_vendor, "Mesa") || Contains(raw_vendor, "X.Org")) {
+    return "Mesa";
+  }
+  if (Contains(raw_vendor, "Microsoft")) {
+    return "Microsoft";
+  }
+  if (Contains(raw_vendor, "VMware")) {
+    return "VMware";
+  }
+  if (Contains(raw_vendor, "Google")) {
+    return "Google";
+  }
+
+  return "Other";
 }
 
 };  // namespace webgl

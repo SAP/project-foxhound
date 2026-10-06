@@ -5,7 +5,7 @@ Examine and edit the box model
 Viewing the box model
 *********************
 
-With the :ref:`Select Element button <page_inspector_select_element_button>` pressed, if you hover over an element in the page, the `box model <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Box_Model/Introduction_to_the_CSS_box_model>`_ for the element is shown overlaid on the page:
+With the :ref:`Select Element button <page_inspector_select_element_button>` pressed, if you hover over an element in the page, the `box model <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Box_model/Introduction>`_ for the element is shown overlaid on the page:
 
 .. raw:: html
 

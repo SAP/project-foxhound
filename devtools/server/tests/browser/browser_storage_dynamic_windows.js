@@ -127,13 +127,11 @@ add_task(async function () {
   await testAddIframe(commands, initialResources, {
     contentProcessStorages,
     parentProcessStorages,
-    allStorages,
   });
 
   await testRemoveIframe(commands, initialResources, {
     contentProcessStorages,
     parentProcessStorages,
-    allStorages,
   });
 
   await clearStorage();
@@ -247,28 +245,18 @@ function waitForResourceUpdates(resources, resourceTypes) {
 async function testAddIframe(
   commands,
   resources,
-  { contentProcessStorages, parentProcessStorages, allStorages }
+  { contentProcessStorages, parentProcessStorages }
 ) {
   info("Testing if new iframe addition works properly");
 
-  // If Fission or EFT is enabled:
-  // * we get new resources alongside single-store-update events for content process storages
-  // * only single-store-update events for previous resources for parent process storages
-  // Otherwise if fission is disables:
-  // * we get single-store-update events for all previous resources
+  // Expect:
+  // - new resources alongside single-store-update events for content process storages
+  // - only single-store-update events for previous resources for parent process storages
   const onResources = waitForNewResourcesAndUpdates(
     commands,
-    isFissionEnabled() || isEveryFrameTargetEnabled()
-      ? contentProcessStorages
-      : []
+    contentProcessStorages
   );
-  // If fission or EFT is enabled, we only get update for parent process storages.
-  // The content process storage resources are notified via brand new resource instances.
-  const storagesWithUpdates =
-    isFissionEnabled() || isEveryFrameTargetEnabled()
-      ? parentProcessStorages
-      : allStorages;
-  const onUpdates = waitForResourceUpdates(resources, storagesWithUpdates);
+  const onUpdates = waitForResourceUpdates(resources, parentProcessStorages);
 
   await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
@@ -288,35 +276,33 @@ async function testAddIframe(
   info("Wait for all updates");
   const previousResourceUpdates = await onUpdates;
 
-  if (isFissionEnabled() || isEveryFrameTargetEnabled()) {
-    for (const resourceType of contentProcessStorages) {
-      const resource = newResources[resourceType];
-      const expected = afterIframeAdded[resourceType];
-      // The resource only comes with hosts, without any values.
-      // Each host will be an empty array.
-      Assert.deepEqual(
-        Object.keys(resource.hosts),
-        Object.keys(expected),
-        `List of hosts for resource ${resourceType} is correct`
-      );
-      for (const host in resource.hosts) {
-        is(
-          resource.hosts[host].length,
-          0,
-          "For new resources, each host has no value and is an empty array"
-        );
-      }
-      const update = updates[resourceType];
-      const storageKey = resourceTypeToStorageKey(resourceType);
-      Assert.deepEqual(
-        update.added[storageKey],
-        expected,
-        "We get an update after the resource, with the host values"
+  for (const resourceType of contentProcessStorages) {
+    const resource = newResources[resourceType];
+    const expected = afterIframeAdded[resourceType];
+    // The resource only comes with hosts, without any values.
+    // Each host will be an empty array.
+    Assert.deepEqual(
+      Object.keys(resource.hosts),
+      Object.keys(expected),
+      `List of hosts for resource ${resourceType} is correct`
+    );
+    for (const host in resource.hosts) {
+      is(
+        resource.hosts[host].length,
+        0,
+        "For new resources, each host has no value and is an empty array"
       );
     }
+    const update = updates[resourceType];
+    const storageKey = resourceTypeToStorageKey(resourceType);
+    Assert.deepEqual(
+      update.added[storageKey],
+      expected,
+      "We get an update after the resource, with the host values"
+    );
   }
 
-  for (const resourceType of storagesWithUpdates) {
+  for (const resourceType of parentProcessStorages) {
     const expected = afterIframeAdded[resourceType];
     const update = previousResourceUpdates[resourceType];
     const storageKey = resourceTypeToStorageKey(resourceType);
@@ -333,18 +319,13 @@ async function testAddIframe(
 async function testRemoveIframe(
   commands,
   resources,
-  { contentProcessStorages, parentProcessStorages, allStorages }
+  { contentProcessStorages, parentProcessStorages }
 ) {
   info("Testing if iframe removal works properly");
 
-  // If fission or EFT is enabled, we only get update for parent process storages.
-  // The content process storage resources are wiped via their related target destruction.
-  const onUpdates = waitForResourceUpdates(
-    resources,
-    isFissionEnabled() || isEveryFrameTargetEnabled()
-      ? parentProcessStorages
-      : allStorages
-  );
+  // We only get updates for parent process storages, content process storage
+  // resources are wiped via their related target destruction.
+  const onUpdates = waitForResourceUpdates(resources, parentProcessStorages);
 
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     for (const iframe of content.document.querySelectorAll("iframe")) {
@@ -358,11 +339,7 @@ async function testRemoveIframe(
   info("Wait for all updates");
   const previousResourceUpdates = await onUpdates;
 
-  const storagesWithUpdates =
-    isFissionEnabled() || isEveryFrameTargetEnabled()
-      ? parentProcessStorages
-      : allStorages;
-  for (const resourceType of storagesWithUpdates) {
+  for (const resourceType of parentProcessStorages) {
     const expected = afterIframeRemoved[resourceType];
     const update = previousResourceUpdates[resourceType];
     const storageKey = resourceTypeToStorageKey(resourceType);
@@ -373,23 +350,20 @@ async function testRemoveIframe(
     );
   }
 
-  // With Fission or EFT, the iframe target is destroyed,
-  // which ends up destroying the related resources
-  if (isFissionEnabled() || isEveryFrameTargetEnabled()) {
-    const destroyedResourceTypes = [];
-    for (const storageType in resources) {
-      for (const resource of resources[storageType]) {
-        if (resource.isDestroyed()) {
-          destroyedResourceTypes.push(resource.resourceType);
-        }
+  // The iframe target is destroyed, which ends up destroying related resources
+  const destroyedResourceTypes = [];
+  for (const storageType in resources) {
+    for (const resource of resources[storageType]) {
+      if (resource.isDestroyed()) {
+        destroyedResourceTypes.push(resource.resourceType);
       }
     }
-    Assert.deepEqual(
-      destroyedResourceTypes.sort(),
-      contentProcessStorages.sort(),
-      "Content process storage resources have been destroyed [local and session storages]"
-    );
   }
+  Assert.deepEqual(
+    destroyedResourceTypes.sort(),
+    contentProcessStorages.sort(),
+    "Content process storage resources have been destroyed [local and session storages]"
+  );
 }
 
 /**

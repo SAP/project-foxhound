@@ -14,9 +14,9 @@ export var CanonicalJSON = {
    * The output will have all unicode chars escaped with the unicode codepoint
    * as lowercase hexadecimal.
    *
-   * @usage
-   *        CanonicalJSON.stringify(listOfRecords);
-   **/
+   * @example
+   * CanonicalJSON.stringify(listOfRecords);
+   */
   stringify: function stringify(source, jsescFn) {
     if (typeof jsescFn != "function") {
       const { jsesc } = ChromeUtils.importESModule(

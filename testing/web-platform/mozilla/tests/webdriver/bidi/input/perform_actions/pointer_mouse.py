@@ -47,7 +47,8 @@ async def test_click_in_display_none_frame(
 
     actions = Actions()
     (
-        actions.add_pointer()
+        actions
+        .add_pointer()
         .pointer_move(x=0, y=0, origin=get_element_origin(button))
         .pointer_down(button=0)
         .pointer_up(button=0)

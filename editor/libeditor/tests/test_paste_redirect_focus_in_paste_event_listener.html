@@ -54,6 +54,10 @@ SimpleTest.waitForFocus(async () => {
       "#src > div[contenteditable]"
     ]) {
       const editableElement = document.querySelector(editableSelector);
+      if (command === "cmd_pasteNoFormatting" && !editableElement.isContentEditable) {
+        // cmd_pasteNoFormatting is not supported by TextEditor
+        continue;
+      }
       const editableElementDesc = `<${
         editableElement.tagName.toLocaleLowerCase()
       }${editableElement.hasAttribute("contenteditable") ? " contenteditable" : ""}>`;

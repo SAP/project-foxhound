@@ -5,19 +5,22 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import argparse
+import json
 import os
+import pathlib
+import re
 import sys
 
 import mozcrash
 import mozinfo
-import mozlog
 import mozprocess
 from mozfile import load_source
+from mozlog import commandline
 from mozrunner.utils import get_stack_fixer_function
 
 HERE = os.path.abspath(os.path.dirname(__file__))
 
-log = mozlog.unstructured.getLogger("gtest")
+log = None
 
 
 class GTests:
@@ -30,6 +33,28 @@ class GTests:
             return 3600
         else:
             return 2400
+
+    def merge_perfherder_data(self, perfherder_data):
+        grouped = {}
+
+        for data in perfherder_data:
+            framework_name = data.get("framework", {}).get("name")
+            suites_by_name = grouped.setdefault(framework_name, {})
+            for suite in data.get("suites", []):
+                suite_name = suite.get("name")
+                suite_data = suites_by_name.setdefault(
+                    suite_name, {"name": suite_name, "subtests": []}
+                )
+                suite_data["subtests"].extend(suite.get("subtests", []))
+
+        results = {}
+        for framework_name, suites in grouped.items():
+            results[framework_name] = {
+                "framework": {"name": framework_name},
+                "suites": list(suites.values()),
+            }
+
+        return results
 
     def run_gtest(
         self,
@@ -59,6 +84,8 @@ class GTests:
         """
         self.xre_path = xre_path
         env = self.build_environment(enable_inc_origin_init, filter_set)
+        perfherder_data = []
+        PERFHERDER_MATCHER = re.compile(r"PERFHERDER_DATA:\s*(\{.*\})\s*$")
         log.info("Running gtest")
 
         if cwd and not os.path.isdir(cwd):
@@ -76,18 +103,21 @@ class GTests:
             else:
                 print(line)
 
+            match = PERFHERDER_MATCHER.search(line)
+            if match:
+                data = json.loads(match.group(1))
+                perfherder_data.append(data)
+
         def proc_timeout_handler(proc):
             GTests.run_gtest.timed_out = True
-            log.testFail(
-                "gtest | timed out after %d seconds", self.gtest_timeout_value()
-            )
+            log.error("gtest | timed out after %d seconds" % self.gtest_timeout_value())
             mozcrash.kill_and_get_minidump(proc.pid, cwd, utility_path)
 
         def output_timeout_handler(proc):
             GTests.run_gtest.timed_out = True
-            log.testFail(
-                "gtest | timed out after %d seconds without output",
-                GTests.TEST_PROC_NO_OUTPUT_TIMEOUT,
+            log.error(
+                "gtest | timed out after %d seconds without output"
+                % GTests.TEST_PROC_NO_OUTPUT_TIMEOUT
             )
             mozcrash.kill_and_get_minidump(proc.pid, cwd, utility_path)
 
@@ -102,6 +132,20 @@ class GTests:
             output_timeout_handler=output_timeout_handler,
         )
 
+        if perfherder_data and "MOZ_AUTOMATION" in os.environ:
+            upload_dir = pathlib.Path(os.getenv("MOZ_UPLOAD_DIR"))
+            upload_dir.mkdir(parents=True, exist_ok=True)
+            merged_perfherder_data = self.merge_perfherder_data(perfherder_data)
+            for framework_name, data in merged_perfherder_data.items():
+                file_name = (
+                    "perfherder-data-gtest.json"
+                    if len(merged_perfherder_data) == 1
+                    else f"perfherder-data-gtest-{framework_name}.json"
+                )
+                out_path = upload_dir / file_name
+                with out_path.open("w", encoding="utf-8") as f:
+                    json.dump(data, f)
+
         log.info("gtest | process wait complete, returncode=%s" % proc.returncode)
         if mozcrash.check_for_crashes(cwd, symbols_path, test_name="gtest"):
             # mozcrash will output the log failure line for us.
@@ -110,7 +154,7 @@ class GTests:
             return False
         result = proc.returncode == 0
         if not result:
-            log.testFail("gtest | test failed with return code %d", proc.returncode)
+            log.error("gtest | test failed with return code %d" % proc.returncode)
         return result
 
     def build_core_environment(self, env={}):
@@ -127,8 +171,6 @@ class GTests:
         env["MOZ_CRASHREPORTER"] = "1"
         env["MOZ_DISABLE_NONLOCAL_CONNECTIONS"] = "1"
         env["MOZ_RUN_GTEST"] = "1"
-        # Normally we run with GTest default output, override this to use the TBPL test format.
-        env["MOZ_TBPL_PARSER"] = "1"
 
         if not mozinfo.has_sandbox:
             # Bug 1082193 - This is horrible. Our linux build boxes run CentOS 6,
@@ -181,10 +223,9 @@ class GTests:
                 )
             if os.path.isfile(llvmsym):
                 env[symbolizer_path] = llvmsym
-                log.info("Using LLVM symbolizer at %s", llvmsym)
+                log.info("Using LLVM symbolizer at %s" % llvmsym)
             else:
-                # This should be |testFail| instead of |info|. See bug 1050891.
-                log.info("Failed to find LLVM symbolizer at %s", llvmsym)
+                log.info("Failed to find LLVM symbolizer at %s" % llvmsym)
 
         # webrender needs gfx.webrender.all=true, gtest doesn't use prefs
         env["MOZ_WEBRENDER"] = "1"
@@ -204,28 +245,29 @@ class GTests:
             gtest_filter_for_filter_set = gtest_filter_sets.get(filter_set)
             if gtest_filter_for_filter_set:
                 env["GTEST_FILTER"] = gtest_filter_for_filter_set
-                log.info("Using gtest filter for %s", filter_set)
+                log.info("Using gtest filter for %s" % filter_set)
             else:
-                log.info("Failed to get gtest filter for %s", filter_set)
+                log.info("Failed to get gtest filter for %s" % filter_set)
 
         return env
 
 
 class gtestOptions(argparse.ArgumentParser):
     def __init__(self):
-        super(gtestOptions, self).__init__()
+        super().__init__()
+        commandline.add_logging_group(self)
 
         self.add_argument(
             "--cwd",
             dest="cwd",
             default=os.getcwd(),
-            help="absolute path to directory from which " "to run the binary",
+            help="absolute path to directory from which to run the binary",
         )
         self.add_argument(
             "--xre-path",
             dest="xre_path",
             default=None,
-            help="absolute path to directory containing XRE " "(probably xulrunner)",
+            help="absolute path to directory containing XRE (probably xulrunner)",
         )
         self.add_argument(
             "--symbols-path",
@@ -270,8 +312,10 @@ def update_mozinfo():
 
 
 def main():
+    global log
     parser = gtestOptions()
     options = parser.parse_args()
+    log = commandline.setup_logging("gtest", options, {"raw": sys.stdout})
     args = options.args
     if not args:
         print("Usage: %s <binary>" % sys.argv[0])

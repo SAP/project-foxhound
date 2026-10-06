@@ -1,0 +1,35 @@
+From: stransky <stransky@redhat.com>
+Date: Tue, 29 Aug 2023 12:43:00 +0000
+Subject: Bug 1821629 [Pipewire/DMABuf] Don't create dmabuf backend if it's
+ disabled r=ng,webrtc-reviewers
+
+Depends on D172224
+
+Differential Revision: https://phabricator.services.mozilla.com/D172229
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/237d19fe96dd7d25b6a817415ee4e6854678d648
+---
+ .../desktop_capture/linux/wayland/shared_screencast_stream.cc | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/modules/desktop_capture/linux/wayland/shared_screencast_stream.cc b/modules/desktop_capture/linux/wayland/shared_screencast_stream.cc
+index 1a255aad45..353c9ab763 100644
+--- a/modules/desktop_capture/linux/wayland/shared_screencast_stream.cc
++++ b/modules/desktop_capture/linux/wayland/shared_screencast_stream.cc
+@@ -479,7 +479,7 @@ bool SharedScreenCastStreamPrivate::StartScreenCastStream(
+     RTC_LOG(LS_ERROR) << "Unable to open PipeWire library";
+     return false;
+   }
+-  if (!egl_dmabuf_) {
++  if (!egl_dmabuf_ && mozilla::gfx::IsDMABufEnabled()) {
+     egl_dmabuf_ = EglDmaBuf::CreateDefault();
+   }
+ 
+@@ -1037,7 +1037,7 @@ bool SharedScreenCastStreamPrivate::ProcessDMABuffer(
+ 
+   const uint n_planes = spa_buffer->n_datas;
+ 
+-  if (!n_planes) {
++  if (!n_planes || !egl_dmabuf_) {
+     return false;
+   }
+ 

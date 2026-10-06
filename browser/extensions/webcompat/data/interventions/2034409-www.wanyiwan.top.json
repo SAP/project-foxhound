@@ -1,0 +1,20 @@
+{
+  "label": "www.wanyiwan.top",
+  "bugs": {
+    "2034409": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://www.wanyiwan.top/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "hide_messages": [
+        {
+          "container": ".ant-alert-banner",
+          "message": "chrome"
+        }
+      ]
+    }
+  ]
+}

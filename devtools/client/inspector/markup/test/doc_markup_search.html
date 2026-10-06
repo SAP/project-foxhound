@@ -1,13 +1,17 @@
 <!DOCTYPE html>
 <html>
-<head></head>
+<head>
+  <style>
+    @import url("doc_markup_search.css");
+  </style>
+</head>
 <body>
   <ul>
     <li>
       <span>this is an <em>important</em> node</span>
     </li>
   </ul>
-  <section class="Buttons">
+  <section class="Buttons" style="display: flex">
     <button type="button" class="Button">OK</button>
     <p>Click the button</p>
   </section>
@@ -17,6 +21,8 @@
     thisisaverylongtextnodesowegetthemarkupviewtooverflowhorizontallythisisaverylongtextnodesowegetthemarkupviewtooverflowhorizontallythisisaverylongtextnodesowegetthemarkupviewtooverflowhorizontallyOVERFLOWSMATCH
   </section>
   <section id="cropped-attribute"></section>
+  <section class="pseudos">|</section>
+  <dialog>My Modal</dialog>
   <script>
     "use strict";
 
@@ -35,6 +41,9 @@
     const middle = Math.floor(collapseAttributeLength / 2);
     const cls = "-".repeat(middle) + strToMatch + "-".repeat(middle);
     croppedAttributeEl.classList.add(cls);
+
+    // show the dialog modal so the backdrop pseudo element node gets displayed
+    document.querySelector("dialog").showModal();
   </script>
 </body>
 </html>

@@ -1,13 +1,13 @@
 import pytest
+from webdriver.error import NoSuchElementException
 
 URL = "https://missingmail.usps.com/?_gl=1*veidlp*_gcl_aw*R0NMLjE1OTE3MjUyNTkuRUFJYUlRb2JDaE1Jd3AzaTBhYjE2UUlWa01EQUNoMlBBUVlrRUFBWUFTQUFFZ0lMeFBEX0J3RQ..*_gcl_dc*R0NMLjE1OTE3MjUyNTkuRUFJYUlRb2JDaE1Jd3AzaTBhYjE2UUlWa01EQUNoMlBBUVlrRUFBWUFTQUFFZ0lMeFBEX0J3RQ..#/"
 
-USERNAME_CSS = "#username"
-PASSWORD_CSS = "#password"
-SIGN_IN_CSS = "#btn-submit"
+USERNAME_CSS = "input[autocomplete=username]"
+PASSWORD_CSS = "input[autocomplete=current-password]"
+PRIMARY_BUTTON_CSS = "button.btn-primary[type=submit]"
 TERMS_CHECKBOX_CSS = "#tc-checkbox"
 TERMS_FAUX_CHECKBOX_CSS = "#tc-checkbox + .mrc-custom-checkbox"
-LOADING_CSS = ".blockUI.blockMsg.blockPage"
 
 # The USPS missing mail website takes a very long time to load (multiple
 # minutes). We give them a very generous amount of time here, but will
@@ -23,7 +23,7 @@ async def are_checkboxes_clickable(client, credentials):
 
     username = client.await_css(USERNAME_CSS)
     password = client.find_css(PASSWORD_CSS)
-    sign_in = client.find_css(SIGN_IN_CSS)
+    sign_in = client.find_css(PRIMARY_BUTTON_CSS)
     assert client.is_displayed(username)
     assert client.is_displayed(password)
     assert client.is_displayed(sign_in)
@@ -32,12 +32,15 @@ async def are_checkboxes_clickable(client, credentials):
     password.send_keys(credentials["password"])
     sign_in.click()
 
-    # site seems to not react at all to logins sometimes? (not just on Firefox)
-    client.await_css(LOADING_CSS, is_displayed=True)
-    client.await_element_hidden(client.css(LOADING_CSS))
-    if client.is_displayed(username):
-        pytest.skip("Login on the page seem to be broken right now. Try again later.")
-        return False
+    try:
+        client.await_css(
+            ".custom-control-label",
+            condition="elem.innerText.includes('Not Now')",
+            is_displayed=True,
+        ).click()
+        client.await_css(PRIMARY_BUTTON_CSS, is_displayed=True).click()
+    except NoSuchElementException:
+        pass
 
     tc = client.await_css(TERMS_CHECKBOX_CSS, timeout=TIMEOUT)
     if tc is None:

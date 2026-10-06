@@ -7,7 +7,7 @@
  * strings (the interpolated arguments aren't kept around), we load the string
  * bundle and use it to derive the exact string message we expect for the given
  * payload.
- **/
+ */
 
 let stringBundleService = SpecialPowers.Cc[
   "@mozilla.org/intl/stringbundle;1"
@@ -26,11 +26,11 @@ let localizer = stringBundleService.createBundle(
  * Multiple error messages can be expected, just repeat the msgId and args
  * argument pair as needed.
  *
- * @param {String} msgId
+ * @param {string} msgId
  *   The localization message identifier used in the properties file.
- * @param {String[]} args
+ * @param {string[]} args
  *   The list of formatting arguments we expect the error to be generated with.
- * @return {Object} Promise/handle to pass to wait_for_expected_message.
+ * @return {object} Promise/handle to pass to wait_for_expected_message.
  */
 function expect_console_message(/* msgId, args, ... */) {
   let expectations = [];

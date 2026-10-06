@@ -11,7 +11,7 @@ add_task(async function () {
       "big": 1516340399466235648,
       "precise": 3.141592653589793238462643383279,
       "exp": 1e2
-    }`
+    }`.replaceAll("\n", "") // ensure equality with actually loaded URI
   );
 
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {

@@ -128,6 +128,30 @@ const TESTCASES = [
       "cc-csc": [NORMAL],
     },
   },
+  {
+    description: "Preview when field is already filled",
+    document: `<form>
+    <input id="given-name" autocomplete="given-name">
+    <input id="family-name" autocomplete="family-name">
+    <input id="street-address" autocomplete="street-address">
+    <input id="address-level2" autocomplete="address-level2">
+    <input id="organization" autocomplete="organization">
+   </form>`,
+    focusedInputId: "given-name",
+    prefillId: "organization",
+    profileData: {
+      "given-name": "John",
+      "family-name": "Doe",
+      "street-address": "100 Main Street",
+      "address-level2": "Hamilton",
+    },
+    expectedResultState: {
+      "given-name": [PREVIEW],
+      "family-name": [PREVIEW],
+      "street-address": [PREVIEW],
+      "address-level2": [PREVIEW],
+    },
+  },
 ];
 
 add_task(async function test_preview_form_fields() {
@@ -138,6 +162,20 @@ add_task(async function test_preview_form_fields() {
     const TEST_URL =
       "https://example.org/document-builder.sjs?html=" + TEST.document;
     await BrowserTestUtils.withNewTab(TEST_URL, async browser => {
+      // If prefillId is set, then set the field with that id to a
+      // value and assign the autofill state.
+      if (TEST.prefillId) {
+        await SpecialPowers.spawn(
+          browser,
+          [TEST.prefillId],
+          async prefillId => {
+            const element = content.document.getElementById(prefillId);
+            element.value = "Mozilla";
+            element.autofillState = "autofill";
+          }
+        );
+      }
+
       const previewCompeletePromise = TestUtils.topicObserved(
         "formautofill-preview-complete"
       );
@@ -168,6 +206,14 @@ add_task(async function test_preview_form_fields() {
             element.previewValue,
             expectedValue,
             "Check if preview value is set correctly"
+          );
+        }
+
+        if (obj.prefillId) {
+          Assert.equal(
+            content.document.getElementById(obj.prefillId).autofillState,
+            "autofill",
+            "Previously filled field should remain autofilled"
           );
         }
       });

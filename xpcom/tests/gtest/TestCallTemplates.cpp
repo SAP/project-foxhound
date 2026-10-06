@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim:cindent:ts=8:et:sw=4:
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,7 +15,6 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsComponentManagerUtils.h"
 #include "nsServiceManagerUtils.h"
-#include "mozilla/Attributes.h"
 
 #define NS_ITESTSERVICE_IID \
   {0x127b5253, 0x37b1, 0x43c7, {0x96, 0x2b, 0xab, 0xf1, 0x2d, 0x22, 0x56, 0xae}}

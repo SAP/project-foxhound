@@ -16,7 +16,6 @@ const {
 const {
   getDebuggerSourceURL,
 } = require("resource://devtools/server/actors/utils/source-url.js");
-
 loader.lazyRequireGetter(
   this,
   "ArrayBufferActor",
@@ -36,12 +35,33 @@ loader.lazyRequireGetter(
   "resource://devtools/shared/DevToolsUtils.js"
 );
 
+ChromeUtils.defineESModuleGetters(
+  this,
+  {
+    ExtensionUtils: "resource://gre/modules/ExtensionUtils.sys.mjs",
+  },
+  { global: "contextual" }
+);
+
 const windowsDrive = /^([a-zA-Z]:)/;
 
+/**
+ * Resolve the potentially relative sourceURL to an absolute URL, based on the
+ * base URL of the current target actor owning this source.
+ *
+ * @param {string} sourceURL
+ *        The sourceURL to resolve to an absolute URL. If the URL is already an
+ *        absolute URL, the same value will be returned.
+ * @param {TargetActor} targetActor
+ *        The target actor to use to extract the base URL.
+ *
+ * @return {string|null} The resolved source URL or null.
+ */
 function resolveSourceURL(sourceURL, targetActor) {
   if (sourceURL) {
     let baseURL;
     if (targetActor.window) {
+      // Bug 2048537: Should use baseURI here.
       baseURL = targetActor.window.location?.href;
     }
     // For worker, we don't have easy access to location,
@@ -49,6 +69,10 @@ function resolveSourceURL(sourceURL, targetActor) {
     if (targetActor.workerUrl) {
       baseURL = targetActor.workerUrl;
     }
+
+    // TODO: for absolute URLs, baseURL is ignored by URL.parse.
+    // We could check URL.canParse(sourceURL) early and skip the baseURL
+    // computation in most cases.
     const parsedURL = URL.parse(sourceURL, baseURL);
     if (parsedURL) {
       return parsedURL.href;
@@ -57,48 +81,75 @@ function resolveSourceURL(sourceURL, targetActor) {
 
   return null;
 }
+
+/**
+ * Return the source's full URL as a string, according to `//# sourceURL` pragma
+ * if present in the source.
+ *
+ * @param {Debugger.Source} source
+ *        The source for which we want to get the full/display URL.
+ * @param {TargetActor} targetActor
+ *        The target actor owning the thread actor responsible for this source.
+ *
+ * @returns {string|null} The full / display URL or null if it could not be
+ *         computed
+ */
 function getSourceURL(source, targetActor) {
+  let result = resolveSourceURL(source.displayURL, targetActor);
+  if (!result) {
+    result = getRealSourceURL(source, targetActor);
+  }
+
+  // Avoid returning empty string and return null if no URL is found
+  return result || null;
+}
+
+/**
+ * Return the source's full URL as a string, ignoring any `//# sourceURL` pragma
+ * present in the source.
+ *
+ * @param {Debugger.Source} source
+ *        The source for which we want to get the real URL.
+ * @param {TargetActor} targetActor
+ *        The target actor owning the thread actor responsible for this source.
+ *
+ * @returns {string|null} The real URL or null if it could not be computed.
+ */
+function getRealSourceURL(source, targetActor) {
   // Some eval sources have URLs, but we want to explicitly ignore those because
   // they are generally useless strings like "eval" or "debugger eval code".
-  let resourceURL = getDebuggerSourceURL(source) || "";
+  let url = getDebuggerSourceURL(source) || "";
 
   // Strip out eventual stack trace stored in Source's url.
   // (not clear if that still happens)
-  resourceURL = resourceURL.split(" -> ").pop();
+  url = url.split(" -> ").pop();
 
   // Debugger.Source.url attribute may be of the form:
   //   "http://example.com/foo line 10 > inlineScript"
   // because of the following function `js::FormatIntroducedFilename`:
   // https://searchfox.org/mozilla-central/rev/253ae246f642fe9619597f44de3b087f94e45a2d/js/src/vm/JSScript.cpp#1816-1846
   // This isn't so easy to reproduce, but browser_dbg-breakpoints-popup.js's testPausedInTwoPopups covers this
-  resourceURL = resourceURL.replace(/ line \d+ > .*$/, "");
+  url = url.replace(/ line \d+ > .*$/, "");
 
-  // A "//# sourceURL=" pragma should basically be treated as a source file's
-  // full URL, so that is what we want to use as the base if it is present.
-  // If this is not an absolute URL, this will mean the maps in the file
-  // will not have a valid base URL, but that is up to tooling that
-  let result = resolveSourceURL(source.displayURL, targetActor);
-  if (!result) {
-    result = resolveSourceURL(resourceURL, targetActor) || resourceURL;
+  let sourceURL = resolveSourceURL(url, targetActor) || url;
 
-    // In XPCShell tests, the source URL isn't actually a URL, it's a file path.
-    // That causes issues because "C:/folder/file.js" is parsed as a URL with
-    // "c:" as the URL scheme, which causes the drive letter to be unexpectedly
-    // lower-cased when the parsed URL is re-serialized. To avoid that, we
-    // detect that case and re-uppercase it again. This is a bit gross and
-    // ideally it seems like XPCShell tests should use file:// URLs for files,
-    // but alas they do not.
-    if (
-      resourceURL &&
-      resourceURL.match(windowsDrive) &&
-      result.slice(0, 2) == resourceURL.slice(0, 2).toLowerCase()
-    ) {
-      result = resourceURL.slice(0, 2) + result.slice(2);
-    }
+  // In XPCShell tests, the source URL isn't actually a URL, it's a file path.
+  // That causes issues because "C:/folder/file.js" is parsed as a URL with
+  // "c:" as the URL scheme, which causes the drive letter to be unexpectedly
+  // lower-cased when the parsed URL is re-serialized. To avoid that, we
+  // detect that case and re-uppercase it again. This is a bit gross and
+  // ideally it seems like XPCShell tests should use file:// URLs for files,
+  // but alas they do not.
+  if (
+    url &&
+    sourceURL &&
+    url.match(windowsDrive) &&
+    sourceURL.slice(0, 2) == url.slice(0, 2).toLowerCase()
+  ) {
+    sourceURL = url.slice(0, 2) + sourceURL.slice(2);
   }
 
-  // Avoid returning empty string and return null if no URL is found
-  return result || null;
+  return sourceURL || null;
 }
 
 /**
@@ -160,7 +211,7 @@ class SourceActor extends Actor {
 
       // Cu is not available for workers and so we are not able to get a
       // WebExtensionPolicy object
-      if (!isWorker && this.url?.startsWith("moz-extension:")) {
+      if (!isWorker && ExtensionUtils.isExtensionUrl(this.url)) {
         try {
           const extURI = Services.io.newURI(this.url);
           const policy = WebExtensionPolicy.getByURI(extURI);
@@ -204,8 +255,12 @@ class SourceActor extends Actor {
       extensionName: this.extensionName,
       url: this.url,
       isBlackBoxed: this.sourcesManager.isBlackBoxed(this.url),
+      // Bug 1970319: only use the real URL for sourcemap resolution until
+      // requests can be handled in content.
+      // According to the spec (https://tc39.es/ecma426/#sec-linking-generated-code)
+      // sourceMapBaseURL should use the displayURL/sourceURL for inline sources.
       sourceMapBaseURL: getSourcemapBaseURL(
-        this.url,
+        getRealSourceURL(this._source, this.threadActor.targetActor),
         this.threadActor.targetActor.window
       ),
       sourceMapURL: source.sourceMapURL,
@@ -375,9 +430,15 @@ class SourceActor extends Actor {
       try {
         newScript = this._source.reparse();
       } catch (e) {
-        // reparse() will throw if the source is not valid JS. This can happen
-        // if this source is the resurrection of a GC'ed source and there are
-        // parse errors in the refetched contents.
+        // Parsing the source as a normal script failed. Try again to parse it
+        // as a module.
+        try {
+          newScript = this._source.reparse(/* asModule */ true);
+        } catch (ex) {
+          // reparse() will throw if the source is not valid JS. This can happen
+          // if this source is the resurrection of a GC'ed source and there are
+          // parse errors in the refetched contents.
+        }
       }
       if (newScript) {
         scripts = [newScript];
@@ -517,6 +578,7 @@ class SourceActor extends Actor {
 
   /**
    * Handler for the "onSource" packet.
+   *
    * @return Object
    *         The return of this function contains a field `contentType`, and
    *         a field `source`. `source` can either be an ArrayBuffer or
@@ -604,7 +666,7 @@ class SourceActor extends Actor {
     this.pausePoints = uncompressed;
   }
 
-  /*
+  /**
    * Ensure the given BreakpointActor is set as a breakpoint handler on all
    * scripts that match its location in the generated source.
    *

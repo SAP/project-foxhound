@@ -168,6 +168,8 @@ class SnapTestsBase:
                     test_status = "TIMEOUT"
 
                 test_message = repr(ex)
+                page_source = self._driver.page_source
+                self._logger.info(f"page source:\n-->\n{page_source}\n<--\n")
                 self.save_screenshot(
                     f"screenshot_{m.lower()}_{test_status.lower()}.png"
                 )
@@ -249,9 +251,10 @@ class SnapTestsBase:
         return self._is_debug_build
 
     def need_allow_system_access(self):
-        geckodriver_output = subprocess.check_output(
-            [self._EXE_PATH, "--help"]
-        ).decode()
+        geckodriver_output = subprocess.check_output([
+            self._EXE_PATH,
+            "--help",
+        ]).decode()
         return "--allow-system-access" in geckodriver_output
 
     def update_channel(self):
@@ -412,22 +415,22 @@ class SnapTestsBase:
 
             (left, upper, right, lower) = bbox
             assert right >= left, f"Inconsistent boundaries right={right} left={left}"
-            assert (
-                lower >= upper
-            ), f"Inconsistent boundaries lower={lower} upper={upper}"
+            assert lower >= upper, (
+                f"Inconsistent boundaries lower={lower} upper={upper}"
+            )
             if ((right - left) <= 2) or ((lower - upper) <= 2):
                 self._logger.info("Difference is a <= 2 pixels band, ignoring")
                 return
 
-            assert (
-                diff_px_on_bbox <= allowance
-            ), "Mismatching screenshots for {}".format(exp["reference"])
+            assert diff_px_on_bbox <= allowance, (
+                "Mismatching screenshots for {}".format(exp["reference"])
+            )
 
 
 class SnapTests(SnapTestsBase):
     def __init__(self, exp):
         self._dir = "basic_tests"
-        super(__class__, self).__init__(exp)
+        super().__init__(exp)
 
     def test_snap_core_base(self, exp):
         assert self.snap_core_base() in ["22", "24"], "Core base should be 22 or 24"
@@ -449,9 +452,9 @@ class SnapTests(SnapTestsBase):
         )
         self._wait.until(lambda d: len(distributionid_box.text) > 0)
         self._logger.info(f"about:support distribution ID: {distributionid_box.text}")
-        assert (
-            distributionid_box.text == exp["distribution_id"]
-        ), "distribution_id should match"
+        assert distributionid_box.text == exp["distribution_id"], (
+            "distribution_id should match"
+        )
 
         windowing_protocol = self._driver.execute_script(
             "return document.querySelector('th[data-l10n-id=\"graphics-window-protocol\"').parentNode.lastChild.textContent;"
@@ -469,18 +472,18 @@ class SnapTests(SnapTestsBase):
         )
         self._wait.until(lambda d: len(source_link.text) > 0)
         self._logger.info(f"about:buildconfig source: {source_link.text}")
-        assert source_link.text.startswith(
-            exp["source_repo"]
-        ), "source repo should exists and match"
+        assert source_link.text.startswith(exp["source_repo"]), (
+            "source repo should exists and match"
+        )
 
         build_flags_box = self._wait.until(
             EC.visibility_of_element_located((By.CSS_SELECTOR, "p:last-child"))
         )
         self._wait.until(lambda d: len(build_flags_box.text) > 0)
         self._logger.info(f"about:support buildflags: {build_flags_box.text}")
-        assert (
-            build_flags_box.text.find(exp["official"]) >= 0
-        ), "official build flag should be there"
+        assert build_flags_box.text.find(exp["official"]) >= 0, (
+            "official build flag should be there"
+        )
 
         return True
 
@@ -497,9 +500,10 @@ class SnapTests(SnapTestsBase):
         self._logger.info("Wait for consent form")
         try:
             self._wait.until(
-                EC.visibility_of_element_located(
-                    (By.CSS_SELECTOR, "button[aria-label*=Accept]")
-                )
+                EC.visibility_of_element_located((
+                    By.CSS_SELECTOR,
+                    "button[aria-label*=Accept]",
+                ))
             ).click()
         except TimeoutException:
             self._logger.info("Wait for consent form: timed out, maybe it is not here")
@@ -511,9 +515,10 @@ class SnapTests(SnapTestsBase):
         self._logger.info("Wait for cable proposal")
         try:
             self._wait.until(
-                EC.visibility_of_element_located(
-                    (By.CSS_SELECTOR, "button[aria-label*=Dismiss]")
-                )
+                EC.visibility_of_element_located((
+                    By.CSS_SELECTOR,
+                    "button[aria-label*=Dismiss]",
+                ))
             ).click()
         except TimeoutException:
             self._logger.info(
@@ -545,9 +550,9 @@ class SnapTests(SnapTestsBase):
             self._logger.info(
                 "video duration: {}".format(video.get_property("duration"))
             )
-            assert (
-                video.get_property("duration") > exp["duration"]
-            ), "youtube video should have duration"
+            assert video.get_property("duration") > exp["duration"], (
+                "youtube video should have duration"
+            )
 
             self._wait.until(
                 lambda d: video.get_property("currentTime") > exp["playback"]
@@ -555,9 +560,9 @@ class SnapTests(SnapTestsBase):
             self._logger.info(
                 "video played: {}".format(video.get_property("currentTime"))
             )
-            assert (
-                video.get_property("currentTime") > exp["playback"]
-            ), "youtube video should perform playback"
+            assert video.get_property("currentTime") > exp["playback"], (
+                "youtube video should perform playback"
+            )
         except TimeoutException as ex:
             self._logger.info("video detection timed out")
             self._logger.info(f"video: {video}")
@@ -577,30 +582,34 @@ class SnapTests(SnapTestsBase):
         )
 
         enable_drm_button = self._wait.until(
-            EC.visibility_of_element_located(
-                (By.CSS_SELECTOR, ".notification-button[label='Enable DRM']")
-            )
+            EC.visibility_of_element_located((
+                By.CSS_SELECTOR,
+                ".notification-button[label='Enable DRM']",
+            ))
         )
         self._logger.info("Enabling DRMs")
         enable_drm_button.click()
         self._wait.until(
-            EC.invisibility_of_element_located(
-                (By.CSS_SELECTOR, ".notification-button[label='Enable DRM']")
-            )
+            EC.invisibility_of_element_located((
+                By.CSS_SELECTOR,
+                ".notification-button[label='Enable DRM']",
+            ))
         )
 
         self._logger.info("Installing DRMs")
         self._wait.until(
-            EC.visibility_of_element_located(
-                (By.CSS_SELECTOR, ".infobar[value='drmContentCDMInstalling']")
-            )
+            EC.visibility_of_element_located((
+                By.CSS_SELECTOR,
+                ".infobar[value='drmContentCDMInstalling']",
+            ))
         )
 
         self._logger.info("Waiting for DRMs installation to complete")
         self._longwait.until(
-            EC.invisibility_of_element_located(
-                (By.CSS_SELECTOR, ".infobar[value='drmContentCDMInstalling']")
-            )
+            EC.invisibility_of_element_located((
+                By.CSS_SELECTOR,
+                ".infobar[value='drmContentCDMInstalling']",
+            ))
         )
 
         self._driver.set_context("content")
@@ -618,24 +627,25 @@ class SnapTests(SnapTestsBase):
         # Wait for duration to be set to something
         self._logger.info("Wait for video to start")
         video = self._wait.until(
-            EC.visibility_of_element_located(
-                (By.CSS_SELECTOR, "video.html5-main-video")
-            )
+            EC.visibility_of_element_located((
+                By.CSS_SELECTOR,
+                "video.html5-main-video",
+            ))
         )
         self._wait.until(lambda d: type(video.get_property("duration")) is float)
         self._logger.info("video duration: {}".format(video.get_property("duration")))
-        assert (
-            video.get_property("duration") > exp["duration"]
-        ), "youtube video should have duration"
+        assert video.get_property("duration") > exp["duration"], (
+            "youtube video should have duration"
+        )
 
         self._driver.execute_script("arguments[0].click();", video)
         video.send_keys("k")
 
         self._wait.until(lambda d: video.get_property("currentTime") > exp["playback"])
         self._logger.info("video played: {}".format(video.get_property("currentTime")))
-        assert (
-            video.get_property("currentTime") > exp["playback"]
-        ), "youtube video should perform playback"
+        assert video.get_property("currentTime") > exp["playback"], (
+            "youtube video should perform playback"
+        )
 
         return True
 

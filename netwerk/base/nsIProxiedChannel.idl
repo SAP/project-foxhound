@@ -33,4 +33,19 @@ interface nsIProxiedChannel : nsISupports
    * response code or 0 if we can't reach to the proxy.
    */
   readonly attribute int32_t httpProxyConnectResponseCode;
+
+  /**
+    * Get the value of a particular response header.
+    * Headers can be queried only when using a HTTP CONNECT tunnel.
+    * In all other cases, the function will throw NS_ERROR_NOT_AVAILABLE.
+    *
+    * @param aHeader
+    *        The name of the header to query.
+    *
+    * @return the value of the response header.
+    *
+    * @throws NS_ERROR_NOT_AVAILABLE if the header is not set or if the CONNECT
+    *         method was not used.
+    */
+  ACString getHttpProxyResponseHeader(in ACString aHeader);
 };

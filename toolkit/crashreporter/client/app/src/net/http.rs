@@ -16,8 +16,10 @@ use crate::std::{
     mem::ManuallyDrop,
     path::{Path, PathBuf},
     process::Child,
+    sync::atomic::{AtomicUsize, Ordering::Relaxed},
 };
 use anyhow::Context;
+use once_cell::sync::Lazy;
 use serde::Serialize;
 
 #[cfg(mock)]
@@ -39,7 +41,68 @@ impl MockHttp {
 }
 
 /// The user agent used by this application.
-pub const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
+pub fn user_agent() -> &'static str {
+    static USER_AGENT: Lazy<String> = Lazy::new(|| {
+        format!(
+            "{}/{} ({} {})",
+            env!("CARGO_PKG_NAME"),
+            mozbuild::config::MOZ_APP_VERSION,
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+        )
+    });
+    &*USER_AGENT
+}
+
+pub(crate) struct BackgroundTaskAttempts {
+    remaining: AtomicUsize,
+}
+
+impl BackgroundTaskAttempts {
+    #[cfg_attr(all(mock, not(test)), allow(unused))]
+    pub const fn new(count: usize) -> Self {
+        BackgroundTaskAttempts {
+            remaining: AtomicUsize::new(count),
+        }
+    }
+
+    /// Returns whether the background task should be attempted again.
+    pub fn should_attempt(&self) -> bool {
+        self.remaining.load(Relaxed) != 0
+    }
+
+    /// Record a failed background task attempt.
+    pub fn failed(&self) {
+        self.remaining.fetch_sub(1, Relaxed);
+    }
+
+    /// Remove all background task attempts.
+    pub fn drain(&self) {
+        self.remaining.store(0, Relaxed);
+    }
+}
+
+std::mock::mocked_static! {
+    /// How many times the background task may fail before discontinuing use.
+    ///
+    /// The background task may repeatedly fail for many reasons, for example due to a crash or
+    /// misconfigured network settings.
+    static BACKGROUND_TASK_ATTEMPTS: BackgroundTaskAttempts = BackgroundTaskAttempts::new(2);
+
+    impl BACKGROUND_TASK_ATTEMPTS {
+        fn should_attempt(self) -> bool {
+            Self.try_get(|v| v.should_attempt()).unwrap_or(true)
+        }
+
+        fn failed(self) {
+            Self.try_get(|v| v.failed());
+        }
+
+        fn drain(self) {
+            Self.try_get(|v| v.drain());
+        }
+    }
+}
 
 // TODO set reasonable connect timeout and low speed limit?
 
@@ -54,9 +117,6 @@ pub const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PK
 pub enum RequestBuilder<'a> {
     /// Send a POST with multiple mime parts.
     MimePost { parts: Vec<MimePart<'a>> },
-    /// Gzip and POST a file's contents.
-    #[allow(unused)]
-    GzipAndPostFile { file: &'a Path },
     /// Send a POST.
     Post {
         body: &'a [u8],
@@ -106,28 +166,6 @@ pub enum Request<'a> {
     },
 }
 
-/// Format a `time::Date` using the date format described by RFC 7231, section 7.1.1.2, for use in
-/// the HTTP Date header.
-fn format_rfc7231_datetime(datetime: time::OffsetDateTime) -> anyhow::Result<String> {
-    let format = time::macros::format_description!(
-        "[weekday repr:short], [day] [month repr:short] [year] [hour]:[minute]:[second] GMT"
-    );
-    datetime
-        .to_offset(time::UtcOffset::UTC)
-        .format(format)
-        .context("failed to format datetime")
-}
-
-fn now_date_header() -> Option<String> {
-    match format_rfc7231_datetime(time::OffsetDateTime::now_utc()) {
-        Err(e) => {
-            log::warn!("failed to format Date header, omitting: {e}");
-            None
-        }
-        Ok(s) => Some(format!("Date: {s}")),
-    }
-}
-
 impl<'a> RequestBuilder<'a> {
     /// Build the request with the given url.
     pub fn build(&self, url: &'a str) -> std::io::Result<Request<'a>> {
@@ -142,14 +180,19 @@ impl<'a> RequestBuilder<'a> {
         // First we try to invoke a firefox background task to send the request. This is
         // preferrable because it will respect the user's network settings, however it is less
         // reliable if the cause of our crash is a bug in early firefox startup or network code.
-        let background_task_err = match self.send_with_background_task(url) {
-            Ok(r) => return Ok(r),
-            Err(e) => e,
-        };
-
-        log::info!(
-            "failed to invoke background task ({background_task_err}), falling back to curl backend"
-        );
+        if BACKGROUND_TASK_ATTEMPTS.should_attempt() {
+            match self.send_with_background_task(url) {
+                Ok(r) => return Ok(r),
+                Err(e) => {
+                    log::info!(
+                        "failed to invoke background task ({e}), falling back to curl backend"
+                    );
+                    // A failure to spawn the background task more than likely indicates it will
+                    // never work in the future.
+                    BACKGROUND_TASK_ATTEMPTS.drain();
+                }
+            };
+        }
 
         self.send_with_curl(url)
     }
@@ -160,7 +203,11 @@ impl<'a> RequestBuilder<'a> {
         let mut cmd = crate::process::background_command(path);
         cmd.args(["--backgroundtask", "crashreporterNetworkBackend"]);
         cmd.arg(url);
-        cmd.arg(USER_AGENT);
+        cmd.arg(user_agent());
+        // Disable crash reporting in the background task. We don't want a crash in the background
+        // task to launch another crash reporter flow. See bugs 1991491/1987145.
+        cmd.env("MOZ_CRASHREPORTER_DISABLE", "1")
+            .env_remove("MOZ_CRASHREPORTER");
 
         let mut file = TempRequestFile::new()?;
         serde_json::to_writer(&mut *file, self)?;
@@ -215,22 +262,14 @@ impl<'a> RequestBuilder<'a> {
         let mut cmd = crate::process::background_command("curl");
         let mut stdin: Option<Box<dyn Read + Send + 'static>> = None;
 
-        cmd.args(["--user-agent", USER_AGENT]);
+        cmd.arg("--fail");
+        cmd.args(["--user-agent", user_agent()]);
 
         match self {
             Self::MimePost { parts } => {
                 for part in parts {
                     part.curl_command_args(&mut cmd, &mut stdin)?;
                 }
-            }
-            Self::GzipAndPostFile { file } => {
-                cmd.args(["--header", "Content-Encoding: gzip", "--data-binary", "@-"]);
-                if let Some(header) = now_date_header() {
-                    cmd.args(["--header", &header]);
-                }
-
-                let encoder = flate2::read::GzEncoder::new(File::open(file)?, Default::default());
-                stdin = Some(Box::new(encoder));
             }
             Self::Post { body, headers } => {
                 for (k, v) in headers.iter() {
@@ -258,7 +297,7 @@ impl<'a> RequestBuilder<'a> {
         let mut easy = curl.easy()?;
 
         easy.set_url(url)?;
-        easy.set_user_agent(USER_AGENT)?;
+        easy.set_user_agent(user_agent())?;
         easy.set_max_redirs(30)?;
 
         match self {
@@ -270,20 +309,6 @@ impl<'a> RequestBuilder<'a> {
                 }
 
                 easy.set_mime_post(mime)?;
-            }
-            Self::GzipAndPostFile { file } => {
-                let mut headers = easy.slist();
-                headers.append("Content-Encoding: gzip")?;
-                if let Some(header) = now_date_header() {
-                    headers.append(&header)?;
-                }
-                easy.set_headers(headers)?;
-
-                let mut encoder =
-                    flate2::read::GzEncoder::new(File::open(file)?, Default::default());
-                let mut data = Vec::new();
-                encoder.read_to_end(&mut data)?;
-                easy.set_postfields(data)?;
             }
             Self::Post { body, headers } => {
                 let mut header_list = easy.slist();
@@ -445,12 +470,20 @@ impl Request<'_> {
                     let output = child
                         .wait_with_output()
                         .context("failed to wait on background task process")?;
-                    anyhow::ensure!(
-                        output.status.success(),
-                        "process failed (exit status {}) with stderr: {}",
-                        output.status,
-                        String::from_utf8_lossy(&output.stderr)
-                    );
+
+                    if !output.status.success() {
+                        BACKGROUND_TASK_ATTEMPTS.failed();
+                        if !BACKGROUND_TASK_ATTEMPTS.should_attempt() {
+                            log::info!("the background task process has exceeded the acceptable number of failures and will no longer be used");
+                        }
+
+                        anyhow::bail!(
+                            "process failed (exit status {}) with stderr: {}",
+                            output.status,
+                            String::from_utf8_lossy(&output.stderr)
+                        );
+                    }
+
                     file.rewind().context("failed to rewind response file")?;
                     let mut ret = Vec::new();
                     file.read_to_end(&mut ret)

@@ -41,11 +41,6 @@ describe("MomentsPageHub", () => {
         },
       },
       Glean: {
-        messagingExperiments: {
-          reachMomentsPage: {
-            record: () => {},
-          },
-        },
         messagingSystem: {
           messageRequestTime: {
             start() {},
@@ -169,63 +164,21 @@ describe("MomentsPageHub", () => {
       assert.calledOnce(stopAndAccumulate);
       assert.calledWithExactly(stopAndAccumulate, fakeTimerId);
     });
-    it("should record Reach event for the Moments page experiment", async () => {
-      const momentsMessages = (await PanelTestProvider.getMessages()).filter(
-        ({ template }) => template === "update_action"
-      );
-      const messages = [
-        {
-          forReachEvent: { sent: false },
-          experimentSlug: "foo",
-          branchSlug: "bar",
-        },
-        ...momentsMessages,
-      ];
-      handleMessageRequestStub.resolves(messages);
-      sandbox.spy(global.Glean.messagingExperiments.reachMomentsPage, "record");
-      sandbox.spy(instance, "executeAction");
-
-      await instance.messageRequest({ triggerId: "trigger" });
-
-      assert.calledOnce(
-        global.Glean.messagingExperiments.reachMomentsPage.record
-      );
-      assert.calledOnce(instance.executeAction);
-    });
-    it("should not record the Reach event if it's already sent", async () => {
-      const messages = [
-        {
-          forReachEvent: { sent: true },
-          experimentSlug: "foo",
-          branchSlug: "bar",
-        },
-      ];
-      handleMessageRequestStub.resolves(messages);
-      sandbox.spy(global.Glean.messagingExperiments.reachMomentsPage, "record");
-
-      await instance.messageRequest({ triggerId: "trigger" });
-
-      assert.notCalled(
-        global.Glean.messagingExperiments.reachMomentsPage.record
-      );
-    });
     it("should not trigger the action if it's only for the Reach event", async () => {
       const messages = [
         {
-          forReachEvent: { sent: false },
-          experimentSlug: "foo",
-          branchSlug: "bar",
+          recordReach: true,
+          _reachId: "reach123",
+          _nimbusFeature: "moments-page",
+          _experimentSlug: "foo",
+          _branchSlug: "bar",
         },
       ];
       handleMessageRequestStub.resolves(messages);
-      sandbox.spy(global.Glean.messagingExperiments.reachMomentsPage, "record");
       sandbox.spy(instance, "executeAction");
 
       await instance.messageRequest({ triggerId: "trigger" });
 
-      assert.calledOnce(
-        global.Glean.messagingExperiments.reachMomentsPage.record
-      );
       assert.notCalled(instance.executeAction);
     });
   });

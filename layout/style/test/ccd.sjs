@@ -8,10 +8,8 @@ function handleRequest(request, response) {
   let responseCSS = request.queryString[0] == "I";
 
   // character 2: redirection type - we only care about whether we're
-  // ultimately same-origin with the requesting document ('A', 'D') or
-  // not ('B', 'C').
-  let sameOrigin =
-    request.queryString[1] == "A" || request.queryString[1] == "D";
+  // same-origin with the requesting document ('A').
+  let sameOrigin = request.queryString[1] == "A";
 
   // character 3: '1' = syntactically valid, '2' = invalid, '3' = http error
   let malformed = request.queryString[2] == "2";

@@ -63,6 +63,7 @@ async function testCached(
 
 /**
  * Creates tabs and loads images in first party and third party context.
+ *
  * @returns {Promise} - Promise which resolves once all tabs are initialized,
  * {@link originToTabs} is populated and (sub-)resources have loaded.
  */

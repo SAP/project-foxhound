@@ -8,6 +8,7 @@ import android.media.MediaCodec;
 import android.util.SparseArray;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import org.mozilla.gecko.mozglue.SharedMemory;
 
@@ -26,23 +27,47 @@ final class SamplePool {
       mBufferless = bufferless;
     }
 
-    private void setDefaultBufferSize(final int size) {
+    private synchronized void setDefaultBufferSize(final int size) {
       if (mBufferless) {
         throw new IllegalStateException("Setting buffer size of a bufferless pool is not allowed");
       }
+      if (size <= mDefaultBufferSize) {
+        return;
+      }
       mDefaultBufferSize = size;
+      // Sweep: any sample admitted under a smaller default is now stranded.
+      final Iterator<Sample> it = mRecycledSamples.iterator();
+      while (it.hasNext()) {
+        final Sample s = it.next();
+        final SampleBuffer buf = mBuffers.get(s.bufferId);
+        if (buf == null || buf.capacity() < mDefaultBufferSize) {
+          it.remove();
+          disposeSample(s);
+        }
+      }
     }
 
     private synchronized Sample obtain(final int size) {
-      if (!mRecycledSamples.isEmpty()) {
-        return mRecycledSamples.remove(0);
-      }
-
       if (mBufferless) {
+        if (!mRecycledSamples.isEmpty()) {
+          return mRecycledSamples.remove(0);
+        }
         return Sample.obtain();
-      } else {
-        return allocateSampleAndBuffer(size);
       }
+      final Iterator<Sample> it = mRecycledSamples.iterator();
+      while (it.hasNext()) {
+        final Sample candidate = it.next();
+        final SampleBuffer buf = mBuffers.get(candidate.bufferId);
+        if (buf != null && buf.capacity() >= size) {
+          it.remove();
+          return candidate;
+        }
+        it.remove();
+        if (buf != null) {
+          disposeSample(candidate);
+        }
+      }
+      return allocateSampleAndBuffer(size);
     }
 
     private Sample allocateSampleAndBuffer(final int size) {

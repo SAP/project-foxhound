@@ -10,7 +10,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1017086
     <script src="/tests/SimpleTest/SimpleTest.js"></script>
     <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
     <script type="text/javascript">
-      /** Test for Bug 1017086 **/
+      /** Test for Bug 1017086 */
       function prepareTest() {
         SimpleTest.waitForExplicitFinish();
         SimpleTest.executeSoon(startTest);
@@ -21,9 +21,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1017086
       }
       function part_of_checks(pointer_events, check, window, document, testelem) {
         for(item in pointer_events) { check(true,  pointer_events[item], window, "window"); }
-        /** TODO
-        for(item in pointer_events) { check(false, pointer_events[item], document, "document"); }
-        **/
+        // TODO
+        // for(item in pointer_events) { check(false, pointer_events[item], document, "document"); }
         for(item in pointer_events) { check(true,  pointer_events[item], testelem, "element"); }
         SimpleTest.finish();
       }

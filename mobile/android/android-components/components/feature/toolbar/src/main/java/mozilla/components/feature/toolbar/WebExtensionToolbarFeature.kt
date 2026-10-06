@@ -12,7 +12,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.android.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.collect
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.SessionState
@@ -31,6 +30,7 @@ import mozilla.components.support.ktx.kotlinx.coroutines.flow.ifAnyChanged
 class WebExtensionToolbarFeature(
     private val toolbar: Toolbar,
     private var store: BrowserStore,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) : LifecycleAwareFeature {
     // This maps web extension ids to [WebExtensionToolbarAction]s for efficient
     // updates of global and tab-specific browser/page actions within the same
@@ -77,7 +77,7 @@ class WebExtensionToolbarFeature(
             }
 
         iconJobDispatcher = iconHandler.asCoroutineDispatcher("WebExtensionIconDispatcher")
-        scope = store.flowScoped { flow ->
+        scope = store.flowScoped(dispatcher = mainDispatcher) { flow ->
             flow.ifAnyChanged { arrayOf(it.selectedTab, it.extensions) }
                 .collect { state ->
                     renderWebExtensionActions(state, state.selectedTab)

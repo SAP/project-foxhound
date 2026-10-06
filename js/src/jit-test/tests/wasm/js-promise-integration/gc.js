@@ -1,3 +1,5 @@
+// |jit-test| skip-if: !wasmJSPromiseIntegrationEnabled()
+
 // Test if we can trace roots on the alternative stack.
 
 let i = 0;
@@ -7,7 +9,9 @@ function js_import() {
 let wasm_js_import = new WebAssembly.Suspending(js_import);
 
 let wasm_gc_import = new WebAssembly.Suspending(
-    async () => { gc(); }
+    async () => {
+      gc();
+    }
 );
 
 var ins = wasmEvalText(`(module
@@ -50,6 +54,6 @@ let wrapped_export = WebAssembly.promising(ins.exports.test);
 let export_promise = wrapped_export();
 assertEq(0, ins.exports.g.value);
 assertEq(true, export_promise instanceof Promise);
-export_promise.then(() =>
+export_promise.then(() => {
   assertEq(15, ins.exports.g.value)
-);
+});

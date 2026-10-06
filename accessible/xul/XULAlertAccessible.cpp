@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,7 +20,7 @@ XULAlertAccessible::XULAlertAccessible(nsIContent* aContent,
   mGenericTypes |= eAlert;
 }
 
-XULAlertAccessible::~XULAlertAccessible() {}
+XULAlertAccessible::~XULAlertAccessible() = default;
 
 role XULAlertAccessible::NativeRole() const { return roles::ALERT; }
 
@@ -29,7 +28,7 @@ uint64_t XULAlertAccessible::NativeState() const {
   return LocalAccessible::NativeState() | states::ALERT;
 }
 
-ENameValueFlag XULAlertAccessible::Name(nsString& aName) const {
+ENameValueFlag XULAlertAccessible::DirectName(nsString& aName) const {
   // Screen readers need to read contents of alert, not the accessible name.
   // If we have both some screen readers will read the alert twice.
   aName.Truncate();

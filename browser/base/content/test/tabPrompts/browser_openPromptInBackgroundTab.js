@@ -52,9 +52,9 @@ add_task(async function test_modal_ui() {
   // switch tab back, and check the checkbox is displayed:
   await BrowserTestUtils.switchTab(gBrowser, openedTab);
   // check the prompt is there
-  let promptElements = openedTab.linkedBrowser.parentNode.querySelectorAll(
-    ".content-prompt-dialog"
-  );
+  let promptElements = openedTab.linkedBrowser
+    .closest(".browserSidebarContainer")
+    .querySelectorAll(".content-prompt-dialog");
 
   let dialogBox = gBrowser.getTabDialogBox(openedTab.linkedBrowser);
   let contentPromptManager = dialogBox.getContentDialogManager();

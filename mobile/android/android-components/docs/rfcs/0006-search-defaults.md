@@ -82,14 +82,14 @@ The new `SearchMiddleware` (see [RFC 2 about the new search architecture](https:
 
 ## Prior art
 
-* [Timezone check in Firefox desktop](https://searchfox.org/mozilla-central/source/toolkit/modules/Region.jsm#180)
-* [Update interval in Firefox desktop](https://searchfox.org/mozilla-central/source/toolkit/modules/Region.jsm#75)
+* [Timezone check in Firefox desktop](https://searchfox.org/firefox-main/source/toolkit/modules/Region.jsm#180)
+* [Update interval in Firefox desktop](https://searchfox.org/firefox-main/source/toolkit/modules/Region.jsm#75)
 * [RFC about moving state to new AC component](https://mozac.org/rfc/0002-search-state-in-browser-store)
 * [Fuzzy location provider idea](https://github.com/mozilla-mobile/android-components/issues/1720)
 * [SearchEngineManager in Fennec](https://searchfox.org/mozilla-esr68/source/mobile/android/base/java/org/mozilla/gecko/search/SearchEngineManager.java)
 * Current [SearchEngineManager in Android Components](https://github.com/mozilla-mobile/android-components/blob/08880314f56d73691b3cd909d5dee199bba4ed0b/components/browser/search/src/main/java/mozilla/components/browser/search/SearchEngineManager.kt#L28)
 * [FenixSearchEngineProvider](https://github.com/mozilla-mobile/fenix/blob/master/app/src/main/java/org/mozilla/fenix/components/searchengine/FenixSearchEngineProvider.kt) in Fenix
-* [SearchService](https://searchfox.org/mozilla-central/source/toolkit/components/search/SearchService.jsm) in Firefox (desktop)
+* [SearchService](https://searchfox.org/firefox-main/source/toolkit/components/search/SearchService.jsm) in Firefox (desktop)
 * [SearchEngines.swift](https://github.com/mozilla-mobile/firefox-ios/blob/main/Client/Frontend/Browser/SearchEngines.swift) in Firefox for iOS
 
 ## Unresolved questions

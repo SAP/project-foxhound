@@ -10,7 +10,6 @@ import mozilla.components.feature.addons.AddonManager
 /**
  * Provides global access to the dependencies needed for updating add-ons.
  */
-/** @suppress */
 object GlobalAddonDependencyProvider {
     @VisibleForTesting
     internal var addonManager: AddonManager? = null

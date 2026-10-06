@@ -1,22 +1,21 @@
 Test Runtimes
 =============
 
-These files contain runtimes for test manifests in the tree. They are of the form:
+This directory contains runtime data for test manifests, used by the taskgraph
+to chunk tests so that each chunk takes roughly the same amount of time.
 
-    { '<path to manifest>': <average runtime in seconds> }
+The ``fetch-manifest-data.js`` script collects per-manifest timing data from
+Treeherder errorsummary logs and produces two files:
 
-They are being used to normalize chunk durations so all chunks take roughly
-the same length of time.
+- ``manifests-runtimes.json`` -- runtimes grouped by manifest and job, used by
+  the taskgraph chunking code in
+  ``taskcluster/gecko_taskgraph/util/chunking.py``.
+- ``manifests.json`` -- detailed per-run data with task IDs and commit hashes,
+  useful for debugging timing regressions. This data powers the manifest
+  timings dashboard at https://tests.firefox.dev/manifests.html.
 
-Generating a Test Runtime File
-------------------------------
+See ``JSON_FORMAT.md`` for the format of these files.
 
-The ``writeruntimes`` script can be used to generate this file:
-
-    $ ./writeruntimes
-
-It will take awhile. You can optionally specify platforms or suites on the
-command line, but these should only be used for debugging purposes (not for
-committing an update to the data). For more info, see:
-
-    $ ./writeruntimes -- --help
+The data is regenerated periodically by the
+``source-test-file-metadata-test-info-manifest-timings-periodic`` task
+and published as a TaskCluster artifact.

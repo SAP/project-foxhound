@@ -1,9 +1,6 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* eslint-env mozilla/browser-window */
 
 /**
  * Handles the indicator that displays the progress of ongoing downloads, which
@@ -338,6 +335,7 @@ const DownloadsIndicatorView = {
 
   /**
    * Check if the panel containing aNode is open.
+   *
    * @param aNode
    *        the node whose panel we're interested in.
    */
@@ -384,7 +382,7 @@ const DownloadsIndicatorView = {
       return;
     }
 
-    if (anchor.ownerGlobal.matchMedia("(prefers-reduced-motion)").matches) {
+    if (anchor.documentGlobal.matchMedia("(prefers-reduced-motion)").matches) {
       // User has prefers-reduced-motion enabled, so we shouldn't show the animation.
       return;
     }

@@ -112,8 +112,8 @@ add_task(async () => {
   await waitForSelectedSource(dbg, "js2.min.js:formatted");
   assertPrettyPrintButton(
     dbg,
-    DEBUGGER_L10N.getStr("sourceFooter.prettyPrint.isPrettyPrintedMessage"),
-    true
+    DEBUGGER_L10N.getStr("sourceTabs.removePrettyPrint"),
+    false
   );
 });
 

@@ -30,12 +30,9 @@ let savedGlobals = null;
 function getSavedEnvironmentItems(environment) {
   if (!savedGlobals) {
     savedGlobals = JSON.parse(
-      fs.readFileSync(
-        path.join(import.meta.dirname, "environments", "saved-globals.json"),
-        {
-          encoding: "utf-8",
-        }
-      )
+      fs.readFileSync(path.join(import.meta.dirname, "saved-globals.json"), {
+        encoding: "utf-8",
+      })
     );
   }
   return savedGlobals.environments[environment];
@@ -56,15 +53,15 @@ function getGlobalsForScripts(environmentName, files, extraGlobals) {
   let fileGlobals = [];
   const root = helpers.rootDir;
   for (const file of files) {
-    const fileName = path.join(root, file);
+    const filePath = path.join(root, file);
     try {
-      fileGlobals = fileGlobals.concat(globals.getGlobalsForFile(fileName));
+      fileGlobals = fileGlobals.concat(globals.getGlobalsForFile({ filePath }));
     } catch (e) {
-      console.error(`Could not load globals from file ${fileName}: ${e}`);
+      console.error(`Could not load globals from file ${filePath}: ${e}`);
       console.error(
         `You may need to update the mappings for the ${environmentName} environment`
       );
-      throw new Error(`Could not load globals from file ${fileName}: ${e}`);
+      throw new Error(`Could not load globals from file ${filePath}: ${e}`);
     }
   }
 

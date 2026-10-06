@@ -47,14 +47,12 @@ class BenchmarkSupport(PageloadSupport):
 
     def modify_command(self, cmd, test):
         # Enable cpuTime, and wallclock-tracking metrics
-        cmd.extend(
-            [
-                "--browsertime.cpuTime_test",
-                "true",
-                "--browsertime.wallclock_tracking_test",
-                "true",
-            ]
-        )
+        cmd.extend([
+            "--browsertime.cpuTime_test",
+            "true",
+            "--browsertime.wallclock_tracking_test",
+            "true",
+        ])
 
     def handle_result(self, bt_result, raw_result, **kwargs):
         """Parse a result for the required results.
@@ -227,12 +225,8 @@ class BenchmarkSupport(PageloadSupport):
                         },
                     )["replicates"].append(subtest_result["value"])
 
-            for subtest_name in results[test_name]:
-                for subtest_name in result:
-                    subtest_result_name = f"{test_name} - {subtest_name}"
-                    _subtests[subtest_result_name]["value"] = filters.median(
-                        _subtests[subtest_result_name]["replicates"]
-                    )
+        for subtest in _subtests.values():
+            subtest["value"] = filters.median(subtest["replicates"])
 
         subtests = sorted(_subtests.values(), key=lambda x: x["name"], reverse=True)
         for subtest in subtests:
@@ -273,9 +267,9 @@ class BenchmarkSupport(PageloadSupport):
                 if not isinstance(value, Iterable):
                     updated_metric = [value]
                 # pylint: disable=W1633
-                _subtests[metric]["replicates"].extend(
-                    [round(x, 3) for x in updated_metric]
-                )
+                _subtests[metric]["replicates"].extend([
+                    round(x, 3) for x in updated_metric
+                ])
 
         vals = []
         subtests = []
@@ -434,7 +428,7 @@ class BenchmarkSupport(PageloadSupport):
         if "twitch-animation" in testname:
             return round(filters.geometric_mean(_filter(vals, "run")), 2)
 
-        if "ve" in testname:
+        if testname.startswith("ve-"):
             if "rt" in testname:
                 # We collect the mean and cv of frame-to-frame performance and the
                 # frame-dropping rate for both keyframe and non-keyframe. However,
@@ -544,7 +538,7 @@ class BenchmarkSupport(PageloadSupport):
         subtests = None
         if "youtube-playback" in test["name"]:
             subtests, vals = self.parseYoutubePlaybackPerformanceOutput(test)
-        elif "ve" in test["name"]:
+        elif test["name"].startswith("ve-"):
             subtests, vals = self.parseWebCodecsOutput(test)
         else:
             # Attempt to parse the unknown benchmark by flattening the

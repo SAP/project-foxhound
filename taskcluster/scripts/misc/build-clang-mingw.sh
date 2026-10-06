@@ -44,6 +44,16 @@ patch_file4="$(pwd)/taskcluster/scripts/misc/mingw-dispatchqueue.patch"
 patch_file5="$(pwd)/taskcluster/scripts/misc/mingw-ts_sd.patch"
 patch_file6="$(pwd)/taskcluster/scripts/misc/mingw-foundation_redef.patch"
 
+# clang-21 ONLY: this script is shared by the clang-21, clang-22 and clang-trunk
+# mingw builds. The upstream fix llvm/llvm-project@0991d7b8fd01 adapts libunwind's
+# Unwind-seh.cpp to mingw-w64 making EXCEPTION_DISPOSITION an enum (mingw-w64
+# 05a0980). It is already present in the clang-22 and clang-trunk source but is
+# missing from the clang 21.1.x release, so we backport it here. The guard below
+# skips the patch once the source already contains the fix, so this patch (and
+# taskcluster/scripts/misc/mingw-libunwind-seh.patch) can be dropped when the mingw
+# build is bumped to clang-22.
+patch_libunwind="$(pwd)/taskcluster/scripts/misc/mingw-libunwind-seh.patch"
+
 prepare() {
   pushd $MOZ_FETCHES_DIR/mingw-w64
   patch -p1 <$patch_file1
@@ -52,6 +62,12 @@ prepare() {
   patch -p1 <$patch_file4
   patch -p1 <$patch_file5
   patch -p1 <$patch_file6
+  popd
+
+  pushd $TOOLCHAIN_DIR
+  if grep -q 'return 4 /\* ExceptionExecuteHandler in mingw \*/' libunwind/src/Unwind-seh.cpp; then
+    patch -p1 <$patch_libunwind
+  fi
   popd
 }
 

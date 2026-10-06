@@ -1,0 +1,53 @@
+Backport of two upstream build fixes needed for Firefox's hazard build
+(GCC + libstdc++ 10 sysroot + C++20 + -fno-rtti):
+- dynamic_cast -> static_cast in affixmgr.cxx
+  Upstream PR: https://github.com/hunspell/hunspell/pull/1124 (merged)
+- Gate std::bit_cast on __cpp_lib_bit_cast in csutil.cxx / hashmgr.cxx
+  Upstream PR: https://github.com/hunspell/hunspell/pull/1125 (merged)
+Both will land naturally on the next vendor bump; this patch can be dropped then.
+
+--- a/src/affixmgr.cxx
++++ b/src/affixmgr.cxx
+@@ -4697,9 +4697,9 @@ bool AffixMgr::parse_affix(const std::string& line,
+   auto start = affentries.begin(), end = affentries.end();
+   for (auto affentry = start; affentry != end; ++affentry) {
+     if (at == 'P') {
+-      build_pfxtree(dynamic_cast<PfxEntry*>(*affentry));
++      build_pfxtree(static_cast<PfxEntry*>(*affentry));
+     } else {
+-      build_sfxtree(dynamic_cast<SfxEntry*>(*affentry));
++      build_sfxtree(static_cast<SfxEntry*>(*affentry));
+     }
+   }
+
+--- a/src/csutil.cxx
++++ b/src/csutil.cxx
+@@ -559,7 +559,7 @@ w_char upper_utf(w_char u, int langnum) {
+ //but g++ remains in five instructions
+ //maybe use inline asm for g++?
+
+-#if __cplusplus >= 202002L || (defined(_MSVC_LANG) && _MSVC_LANG >= 202002L)
++#if (__cplusplus >= 202002L || (defined(_MSVC_LANG) && _MSVC_LANG >= 202002L)) && defined __cpp_lib_bit_cast && __cpp_lib_bit_cast >= 201806L
+   return std::bit_cast<w_char>(unicodetoupper((unsigned short)u, langnum));
+ #else
+   const auto us = unicodetoupper((unsigned short)u, langnum);
+@@ -583,7 +583,7 @@ w_char lower_utf(w_char u, int langnum) {
+ //but g++ remains in five instructions
+ //maybe use inline asm for g++?
+
+-#if __cplusplus >= 202002L || (defined(_MSVC_LANG) && _MSVC_LANG >= 202002L)
++#if (__cplusplus >= 202002L || (defined(_MSVC_LANG) && _MSVC_LANG >= 202002L)) && defined __cpp_lib_bit_cast && __cpp_lib_bit_cast >= 201806L
+   return std::bit_cast<w_char>(unicodetolower((unsigned short)u, langnum));
+ #else
+   const auto us = unicodetolower((unsigned short)u, langnum);
+--- a/src/hashmgr.cxx
++++ b/src/hashmgr.cxx
+@@ -983,7 +983,7 @@ std::string HashMgr::encode_flag(unsigned short f) const {
+
+ #if defined(_WIN32) || (defined(__BYTE_ORDER__) && (__BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__))  || defined(__LITTLE_ENDIAN__)
+
+-#if __cplusplus >= 202002L || (defined(_MSVC_LANG) && _MSVC_LANG >= 202002L)
++#if (__cplusplus >= 202002L || (defined(_MSVC_LANG) && _MSVC_LANG >= 202002L)) && defined __cpp_lib_bit_cast && __cpp_lib_bit_cast >= 201806L
+     auto wc = std::bit_cast<w_char>(f);
+ #else
+     w_char wc;

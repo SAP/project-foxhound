@@ -820,3 +820,112 @@ TEST_F(ImageSourceBuffer, CompleteSuccessWithGreaterReadLength) {
   CheckedAdvanceIterator(iterator, 1);
   CheckIteratorIsComplete(iterator, 1);
 }
+
+TEST_F(ImageSourceBuffer, IsReadyState) {
+  SourceBufferIterator iterator = mSourceBuffer->Iterator();
+
+  // Before any advance the iterator is in START state, not READY.
+  EXPECT_FALSE(iterator.IsReady());
+
+  CheckedAppendToBuffer(mData, sizeof(mData));
+  CheckedCompleteBuffer(iterator, sizeof(mData));
+
+  auto state = iterator.AdvanceOrScheduleResume(SIZE_MAX, mExpectNoResume);
+  ASSERT_EQ(SourceBufferIterator::READY, state);
+  EXPECT_TRUE(iterator.IsReady());
+
+  // MarkConsumed keeps the state READY.
+  iterator.MarkConsumed(sizeof(mData));
+  EXPECT_TRUE(iterator.IsReady());
+
+  // After the iterator completes it is no longer READY.
+  state = iterator.AdvanceOrScheduleResume(SIZE_MAX, mExpectNoResume);
+  ASSERT_EQ(SourceBufferIterator::COMPLETE, state);
+  EXPECT_FALSE(iterator.IsReady());
+}
+
+TEST_F(ImageSourceBuffer, IsReadyWaiting) {
+  SourceBufferIterator iterator = mSourceBuffer->Iterator();
+  CheckIteratorMustWait(iterator, mExpectNoResume);
+  EXPECT_FALSE(iterator.IsReady());
+}
+
+TEST_F(ImageSourceBuffer, MarkConsumedPartial) {
+  SourceBufferIterator iterator = mSourceBuffer->Iterator();
+
+  CheckedAppendToBuffer(mData, sizeof(mData));
+  CheckedCompleteBuffer(iterator, sizeof(mData));
+
+  auto state = iterator.AdvanceOrScheduleResume(SIZE_MAX, mExpectNoResume);
+  ASSERT_EQ(SourceBufferIterator::READY, state);
+  ASSERT_EQ(sizeof(mData), iterator.Length());
+
+  // Partially consume the chunk and verify Data()/Length() reflect the
+  // unconsumed portion.
+  constexpr size_t consumed = 4;
+  constexpr size_t remaining = sizeof(mData) - consumed;
+  iterator.MarkConsumed(consumed);
+  EXPECT_TRUE(iterator.IsReady());
+  ASSERT_EQ(remaining, iterator.Length());
+  CheckData(iterator.Data(), consumed, remaining);
+
+  // Consume the rest and verify Length() drops to zero.
+  iterator.MarkConsumed(remaining);
+  EXPECT_TRUE(iterator.IsReady());
+  EXPECT_EQ(0u, iterator.Length());
+
+  CheckIteratorIsComplete(iterator, sizeof(mData));
+}
+
+TEST_F(ImageSourceBuffer, MarkConsumedFull) {
+  SourceBufferIterator iterator = mSourceBuffer->Iterator();
+
+  CheckedAppendToBuffer(mData, sizeof(mData));
+  CheckedCompleteBuffer(iterator, sizeof(mData));
+
+  auto state = iterator.AdvanceOrScheduleResume(SIZE_MAX, mExpectNoResume);
+  ASSERT_EQ(SourceBufferIterator::READY, state);
+  ASSERT_EQ(sizeof(mData), iterator.Length());
+
+  iterator.MarkConsumed(sizeof(mData));
+  EXPECT_TRUE(iterator.IsReady());
+  EXPECT_EQ(0u, iterator.Length());
+
+  CheckIteratorIsComplete(iterator, sizeof(mData));
+}
+
+TEST_F(ImageSourceBuffer, MarkConsumedAcrossChunks) {
+  constexpr size_t firstChunkLength = SourceBuffer::MIN_CHUNK_CAPACITY;
+  constexpr size_t secondChunkLength = SourceBuffer::MIN_CHUNK_CAPACITY / 2;
+  constexpr size_t totalLength = firstChunkLength + secondChunkLength;
+
+  SourceBufferIterator iterator = mSourceBuffer->Iterator();
+  CheckedAppendToBufferInChunks(firstChunkLength, totalLength);
+  CheckedCompleteBuffer(iterator, totalLength);
+
+  // First chunk: partially consume via MarkConsumed, then consume remainder.
+  auto state = iterator.AdvanceOrScheduleResume(SIZE_MAX, mExpectNoResume);
+  ASSERT_EQ(SourceBufferIterator::READY, state);
+  ASSERT_EQ(firstChunkLength, iterator.Length());
+
+  constexpr size_t firstConsumed = firstChunkLength / 4;
+  constexpr size_t firstRemaining = firstChunkLength - firstConsumed;
+  iterator.MarkConsumed(firstConsumed);
+  EXPECT_TRUE(iterator.IsReady());
+  ASSERT_EQ(firstRemaining, iterator.Length());
+  CheckData(iterator.Data(), firstConsumed, firstRemaining);
+
+  iterator.MarkConsumed(firstRemaining);
+  EXPECT_EQ(0u, iterator.Length());
+
+  // Second chunk (different size): consume fully via MarkConsumed.
+  state = iterator.AdvanceOrScheduleResume(SIZE_MAX, mExpectNoResume);
+  ASSERT_EQ(SourceBufferIterator::READY, state);
+  ASSERT_EQ(secondChunkLength, iterator.Length());
+  CheckData(iterator.Data(), firstChunkLength, secondChunkLength);
+
+  iterator.MarkConsumed(secondChunkLength);
+  EXPECT_EQ(0u, iterator.Length());
+
+  CheckIteratorIsComplete(iterator, 2, totalLength);
+}

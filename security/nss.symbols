@@ -205,6 +205,7 @@ NSS_CMSSignedData_Destroy
 NSS_CMSSignedData_GetSignerInfo
 NSS_CMSSignedData_SignerInfoCount
 NSS_CMSSignerInfo_GetSigningCertificate
+NSS_CMSSignerInfo_GetSigningTime
 NSS_CMSSignerInfo_Verify
 NSS_FindCertKEAType
 NSS_GetAlgorithmPolicy
@@ -309,7 +310,6 @@ PK11_DeriveWithFlags
 PK11_DeriveWithTemplate
 PK11_DestroyContext
 PK11_DestroyGenericObject
-PK11_DestroyGenericObjects
 PK11_DestroyMergeLog
 PK11_DestroyObject
 PK11_DestroyTokenObject
@@ -326,7 +326,6 @@ PK11_FindCertInSlot
 PK11_FindCertsFromEmailAddress
 PK11_FindCertsFromNickname
 PK11_FindEncodedCertInSlot
-PK11_FindGenericObjects
 PK11_FindKeyByAnyCert
 PK11_FindKeyByDERCert
 PK11_FindKeyByKeyID
@@ -362,7 +361,6 @@ PK11_GetLowLevelKeyIDForPrivateKey
 PK11_GetMechanism
 PK11_GetModInfo
 PK11_GetModuleURI
-PK11_GetNextGenericObject
 PK11_GetNextSafe
 PK11_GetNextSymKey
 PK11_GetPadMechanism
@@ -399,6 +397,7 @@ PK11_ImportDERPrivateKeyInfoAndReturnKey
 PK11_ImportEncryptedPrivateKeyInfoAndReturnKey
 PK11_ImportPublicKey
 PK11_ImportSymKey
+PK11_ImportSymKeyWithFlags
 PK11_InitPin
 PK11_IsDisabled
 PK11_IsFIPS
@@ -450,6 +449,7 @@ PK11_SetSymKeyNickname
 PK11_Sign
 PK11_SignatureLen
 PK11_SignWithMechanism
+PK11_SignWithSymKey
 PK11_TokenKeyGenWithFlags
 PK11_UnwrapPrivKey
 PK11_UnwrapSymKey
@@ -747,6 +747,11 @@ CERT_FindCertByNicknameOrEmailAddrCX
 SECKEY_GetPrivateKeyType
 SEC_DerSignDataWithAlgorithmID
 SEC_CreateSignatureAlgorithmParameters
+SECITEM_MakeItem
+SECOID_FindOIDTagFromDescripton
+SEC_CreateSignatureAlgorithmID
+SECKEY_GetKeyTypeString
+SEC_GetSignatureAlgorithmOidTagByKey
 # These symbols are not used by Firefox itself, but are used by Java's security
 # libraries, which in turn are used by Java applets/plugins/etc.  Provide them
 # to make Java code happy.

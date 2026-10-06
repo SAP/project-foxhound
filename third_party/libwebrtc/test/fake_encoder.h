@@ -11,26 +11,30 @@
 #ifndef TEST_FAKE_ENCODER_H_
 #define TEST_FAKE_ENCODER_H_
 
-#include <stddef.h>
-#include <stdint.h>
-
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"
 #include "api/environment/environment.h"
 #include "api/fec_controller_override.h"
+#include "api/scoped_refptr.h"
 #include "api/sequence_checker.h"
+#include "api/task_queue/task_queue_base.h"
 #include "api/video/encoded_image.h"
 #include "api/video/video_bitrate_allocation.h"
+#include "api/video/video_codec_constants.h"
 #include "api/video/video_frame.h"
+#include "api/video/video_frame_type.h"
+#include "api/video_codecs/simulcast_stream.h"
 #include "api/video_codecs/video_codec.h"
 #include "api/video_codecs/video_encoder.h"
 #include "modules/video_coding/include/video_codec_interface.h"
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/thread_annotations.h"
-#include "system_wrappers/include/clock.h"
 
 namespace webrtc {
 namespace test {
@@ -38,7 +42,7 @@ namespace test {
 class FakeEncoder : public VideoEncoder {
  public:
   explicit FakeEncoder(const Environment& env_);
-  virtual ~FakeEncoder() = default;
+  ~FakeEncoder() override = default;
 
   // Sets max bitrate. Not thread-safe, call before registering the encoder.
   void SetMaxBitrate(int max_kbps) RTC_LOCKS_EXCLUDED(mutex_);
@@ -95,7 +99,7 @@ class FakeEncoder : public VideoEncoder {
   // `buffer`.
   virtual CodecSpecificInfo EncodeHook(
       EncodedImage& encoded_image,
-      rtc::scoped_refptr<EncodedImageBuffer> buffer);
+      scoped_refptr<EncodedImageBuffer> buffer);
 
   void SetRatesLocked(const RateControlParameters& parameters)
       RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
@@ -123,12 +127,12 @@ class FakeEncoder : public VideoEncoder {
 class FakeH264Encoder : public FakeEncoder {
  public:
   explicit FakeH264Encoder(const Environment& env);
-  virtual ~FakeH264Encoder() = default;
+  ~FakeH264Encoder() override = default;
 
  private:
   CodecSpecificInfo EncodeHook(
       EncodedImage& encoded_image,
-      rtc::scoped_refptr<EncodedImageBuffer> buffer) override;
+      scoped_refptr<EncodedImageBuffer> buffer) override;
 
   int idr_counter_ RTC_GUARDED_BY(local_mutex_);
   Mutex local_mutex_;
@@ -137,7 +141,7 @@ class FakeH264Encoder : public FakeEncoder {
 class DelayedEncoder : public test::FakeEncoder {
  public:
   DelayedEncoder(const Environment& env, int delay_ms);
-  virtual ~DelayedEncoder() = default;
+  ~DelayedEncoder() override = default;
 
   void SetDelay(int delay_ms);
   int32_t Encode(const VideoFrame& input_image,
@@ -155,7 +159,7 @@ class DelayedEncoder : public test::FakeEncoder {
 class MultithreadedFakeH264Encoder : public test::FakeH264Encoder {
  public:
   explicit MultithreadedFakeH264Encoder(const Environment& env);
-  virtual ~MultithreadedFakeH264Encoder() = default;
+  ~MultithreadedFakeH264Encoder() override = default;
 
   int32_t InitEncode(const VideoCodec* config,
                      const Settings& settings) override;

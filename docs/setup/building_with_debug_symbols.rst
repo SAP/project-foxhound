@@ -44,7 +44,7 @@ archive of :ref:`Breakpad <Crash reporting>` symbol files:
 
 Treeherder uses an additional ``uploadsymbols`` target to upload
 symbols to a socorro server. See
-https://searchfox.org/mozilla-central/source/toolkit/crashreporter/tools/upload_symbols.py
+:searchfox:`toolkit/crashreporter/tools/upload_symbols.py`
 for more information about the environment variables used by this
 target.
 

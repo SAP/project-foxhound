@@ -4,16 +4,8 @@
 
 /////////////////////////////////////////////////////////////////////////////
 
-#ifdef XP_WIN
-#  define NS_WINIEHISTORYENUMERATOR_CID \
-    {0x93480624,                        \
-     0x806e,                            \
-     0x4756,                            \
-     {0xb7, 0xcb, 0x0f, 0xb7, 0xdd, 0x74, 0x6a, 0x8f}}
-
-#  define NS_IEHISTORYENUMERATOR_CONTRACTID \
-    "@mozilla.org/profile/migrator/iehistoryenumerator;1"
-#endif
+#ifndef BROWSER_COMPONENTS_BUILD_NSBROWSERCOMPSCID_H_
+#define BROWSER_COMPONENTS_BUILD_NSBROWSERCOMPSCID_H_
 
 #define NS_SHELLSERVICE_CID \
   {0x63c7b9f4, 0xcc8, 0x43f8, {0xb6, 0x66, 0xa, 0x66, 0x16, 0x55, 0xcb, 0x73}}
@@ -26,3 +18,5 @@
 // 136e2c4d-c5a4-477c-b131-d93d7d704f64
 #define NS_PRIVATE_BROWSING_SERVICE_WRAPPER_CID \
   {0x136e2c4d, 0xc5a4, 0x477c, {0xb1, 0x31, 0xd9, 0x3d, 0x7d, 0x70, 0x4f, 0x64}}
+
+#endif  // BROWSER_COMPONENTS_BUILD_NSBROWSERCOMPSCID_H_

@@ -13,7 +13,6 @@ import { getSelectedLocation } from "../../utils/selected-location";
 import { connect } from "devtools/client/shared/vendor/react-redux";
 import { fromEditorLine } from "../../utils/editor/index";
 import actions from "../../actions/index";
-import { markerTypes } from "../../constants";
 const classnames = require("resource://devtools/client/shared/classnames.js");
 
 const isMacOS = Services.appinfo.OS === "Darwin";
@@ -54,7 +53,7 @@ class Breakpoints extends Component {
     const wasmLineFormatter = editor.getWasmLineNumberFormatter();
     const markers = [
       {
-        id: markerTypes.GUTTER_BREAKPOINT_MARKER,
+        id: editor.markerTypes.GUTTER_BREAKPOINT_MARKER,
         lineClassName: "cm6-gutter-breakpoint",
         condition: line => {
           const lineNumber = fromEditorLine(selectedSource, line);

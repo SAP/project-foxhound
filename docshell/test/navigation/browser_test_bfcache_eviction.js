@@ -4,7 +4,6 @@ add_task(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.sessionhistory.max_total_viewers", 3],
-      ["docshell.shistory.testing.bfevict", true],
       // If Fission is disabled, the pref is no-op.
       ["fission.bfcacheInParent", true],
     ],
@@ -17,62 +16,31 @@ add_task(async function () {
     { gBrowser, url: testPage },
     async function (browser) {
       let testDone = {};
-      if (!SpecialPowers.Services.appinfo.sessionHistoryInParent) {
-        // 2.  Add a promise that will be resolved when the 'content viewer evicted' event goes off
-        testDone.promise = SpecialPowers.spawn(browser, [], async function () {
-          return new Promise(resolve => {
-            let webNavigation = content.docShell.QueryInterface(
-              Ci.nsIWebNavigation
-            );
-            let { legacySHistory } = webNavigation.sessionHistory;
-            // 3. Register a session history listener to listen for a 'content viewer evicted' event.
-            let historyListener = {
-              OnDocumentViewerEvicted() {
-                ok(
-                  true,
-                  "History listener got called after a content viewer was evicted"
-                );
-                legacySHistory.removeSHistoryListener(historyListener);
-                // 6. Resolve the promise when we got our 'content viewer evicted' event
-                resolve();
-              },
-              QueryInterface: ChromeUtils.generateQI([
-                "nsISHistoryListener",
-                "nsISupportsWeakReference",
-              ]),
-            };
-            legacySHistory.addSHistoryListener(historyListener);
-            // Keep the weak shistory listener alive
-            content._testListener = historyListener;
-          });
-        });
-      } else {
-        // 2.  Add a promise that will be resolved when the 'content viewer evicted' event goes off
-        testDone.promise = new Promise(resolve => {
-          testDone.resolve = resolve;
-        });
-        let shistory = browser.browsingContext.sessionHistory;
-        // 3. Register a session history listener to listen for a 'content viewer evicted' event.
-        let historyListener = {
-          OnDocumentViewerEvicted() {
-            ok(
-              true,
-              "History listener got called after a content viewer was evicted"
-            );
-            shistory.removeSHistoryListener(historyListener);
-            delete window._testListener;
-            // 6. Resolve the promise when we got our 'content viewer evicted' event
-            testDone.resolve();
-          },
-          QueryInterface: ChromeUtils.generateQI([
-            "nsISHistoryListener",
-            "nsISupportsWeakReference",
-          ]),
-        };
-        shistory.addSHistoryListener(historyListener);
-        // Keep the weak shistory listener alive
-        window._testListener = historyListener;
-      }
+      // 2.  Add a promise that will be resolved when the 'content viewer evicted' event goes off
+      testDone.promise = new Promise(resolve => {
+        testDone.resolve = resolve;
+      });
+      let shistory = browser.browsingContext.sessionHistory;
+      // 3. Register a session history listener to listen for a 'content viewer evicted' event.
+      let historyListener = {
+        OnDocumentViewerEvicted() {
+          ok(
+            true,
+            "History listener got called after a content viewer was evicted"
+          );
+          shistory.removeSHistoryListener(historyListener);
+          delete window._testListener;
+          // 6. Resolve the promise when we got our 'content viewer evicted' event
+          testDone.resolve();
+        },
+        QueryInterface: ChromeUtils.generateQI([
+          "nsISHistoryListener",
+          "nsISupportsWeakReference",
+        ]),
+      };
+      shistory.addSHistoryListener(historyListener);
+      // Keep the weak shistory listener alive
+      window._testListener = historyListener;
 
       // 4. Open a second tab
       testPage = `data:text/html,<html id='html1'><body id='body1'>I am a second tab!</body></html>`;

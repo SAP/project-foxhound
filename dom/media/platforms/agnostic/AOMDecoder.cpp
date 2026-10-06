@@ -1,21 +1,22 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AOMDecoder.h"
 
-#include <algorithm>
-
-#include "BitWriter.h"
-#include "BitReader.h"
-#include "ImageContainer.h"
-#include "MediaResult.h"
-#include "TimeUnits.h"
 #include <aom/aom_image.h>
 #include <aom/aomdx.h>
 #include <stdint.h>
+
+#include <algorithm>
+
+#include "BitReader.h"
+#include "BitWriter.h"
+#include "BufferReader.h"
+#include "ImageContainer.h"
+#include "MediaResult.h"
+#include "TimeUnits.h"
+#include "VideoUtils.h"
 #include "gfx2DGlue.h"
 #include "gfxUtils.h"
 #include "mozilla/PodOperations.h"
@@ -24,7 +25,6 @@
 #include "nsError.h"
 #include "nsThreadUtils.h"
 #include "prsystem.h"
-#include "VideoUtils.h"
 
 #undef LOG
 #define LOG(arg, ...)                                                  \
@@ -37,10 +37,10 @@
   DDMOZ_LOGEX(_this, sPDMLog, mozilla::LogLevel::Debug, \
               "::%s: %s (code %d) " message, __func__,  \
               aom_codec_err_to_string(code), (int)code, ##__VA_ARGS__)
-#define LOG_STATIC_RESULT(code, message, ...)                 \
-  MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug,                  \
-          ("AOMDecoder::%s: %s (code %d) " message, __func__, \
-           aom_codec_err_to_string(code), (int)code, ##__VA_ARGS__))
+#define LOG_STATIC_RESULT(code, message, ...)                    \
+  MOZ_LOG_FMT(sPDMLog, mozilla::LogLevel::Debug,                 \
+              "AOMDecoder::{}: {} (code {}) " message, __func__, \
+              aom_codec_err_to_string(code), (int)code, ##__VA_ARGS__)
 
 #define ASSERT_BYTE_ALIGNED(bitIO) MOZ_ASSERT((bitIO).BitCount() % 8 == 0)
 
@@ -101,6 +101,7 @@ AOMDecoder::~AOMDecoder() = default;
 RefPtr<ShutdownPromise> AOMDecoder::Shutdown() {
   RefPtr<AOMDecoder> self = this;
   return InvokeAsync(mTaskQueue, __func__, [self]() {
+    AUTO_PROFILER_LABEL("AOMDecoder::Shutdown", MEDIA_PLAYBACK);
     auto res = aom_codec_destroy(&self->mCodec);
     if (res != AOM_CODEC_OK) {
       LOGEX_RESULT(self.get(), res, "aom_codec_destroy");
@@ -110,6 +111,7 @@ RefPtr<ShutdownPromise> AOMDecoder::Shutdown() {
 }
 
 RefPtr<MediaDataDecoder::InitPromise> AOMDecoder::Init() {
+  AUTO_PROFILER_LABEL("AOMDecoder::Init", MEDIA_PLAYBACK);
   MediaResult rv = InitContext(*this, &mCodec, mInfo);
   if (NS_FAILED(rv)) {
     return AOMDecoder::InitPromise::CreateAndReject(rv, __func__);
@@ -120,6 +122,7 @@ RefPtr<MediaDataDecoder::InitPromise> AOMDecoder::Init() {
 
 RefPtr<MediaDataDecoder::FlushPromise> AOMDecoder::Flush() {
   return InvokeAsync(mTaskQueue, __func__, [this, self = RefPtr(this)]() {
+    AUTO_PROFILER_LABEL("AOMDecoder::Flush", MEDIA_PLAYBACK);
     mPerformanceRecorder.Record(std::numeric_limits<int64_t>::max());
     return FlushPromise::CreateAndResolve(true, __func__);
   });
@@ -132,6 +135,7 @@ struct AomImageFree {
 
 RefPtr<MediaDataDecoder::DecodePromise> AOMDecoder::ProcessDecode(
     MediaRawData* aSample) {
+  AUTO_PROFILER_LABEL("AOMDecoder::ProcessDecode", MEDIA_PLAYBACK);
   MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
 
 #if defined(DEBUG)
@@ -301,6 +305,7 @@ RefPtr<MediaDataDecoder::DecodePromise> AOMDecoder::Decode(
 
 RefPtr<MediaDataDecoder::DecodePromise> AOMDecoder::Drain() {
   return InvokeAsync(mTaskQueue, __func__, [] {
+    AUTO_PROFILER_LABEL("AOMDecoder::Drain", MEDIA_PLAYBACK);
     return DecodePromise::CreateAndResolve(DecodedData(), __func__);
   });
 }
@@ -308,6 +313,17 @@ RefPtr<MediaDataDecoder::DecodePromise> AOMDecoder::Drain() {
 /* static */
 bool AOMDecoder::IsAV1(const nsACString& aMimeType) {
   return aMimeType.EqualsLiteral("video/av1");
+}
+
+/* static */
+bool AOMDecoder::IsMainProfile(const MediaByteBuffer* aBox) {
+  if (!aBox || aBox->IsEmpty()) {
+    return false;
+  }
+  AV1SequenceInfo av1Info;
+  MediaResult seqHdrResult;
+  TryReadAV1CBox(aBox, av1Info, seqHdrResult);
+  return seqHdrResult.Code() == NS_OK && av1Info.mProfile == 0;
 }
 
 /* static */
@@ -737,6 +753,114 @@ MediaResult AOMDecoder::ReadSequenceHeaderInfo(
 
   aDestInfo = tempInfo;
   return NS_OK;
+}
+
+/* static */
+mozilla::Maybe<mozilla::gfx::HDRMetadata> AOMDecoder::ReadMetadataOBUHDR(
+    const Span<const uint8_t>& aSample) {
+  // AV1 Metadata OBU semantics:
+  // https://aomediacodec.github.io/av1-spec/#metadata-obu-semantics
+  // METADATA_TYPE_HDR_CLL  = 1 (CTA-861.3 content light level)
+  // METADATA_TYPE_HDR_MDCV = 2 (SMPTE ST 2086 mastering display)
+  static constexpr uint64_t kMetadataTypeCLL = 1;
+  static constexpr uint64_t kMetadataTypeMDCV = 2;
+  // AV1 §6.7.4: primary_chromaticity is 0.16 fixed-point (divide by 2^16).
+  // luminance_max is 24.8 fixed-point (divide by 2^8).
+  // luminance_min is 18.14 fixed-point (divide by 2^14).
+  static constexpr float kPrimariesDivisor = 65536.0f;
+  static constexpr float kMaxLuminanceDivisor = 256.0f;
+  static constexpr float kMinLuminanceDivisor = 16384.0f;
+
+  gfx::HDRMetadata hdr;
+  bool hasMDCV = false;
+  bool hasCLL = false;
+
+  OBUIterator iter = ReadOBUs(aSample);
+  while (iter.HasNext()) {
+    OBUInfo obu = iter.Next();
+    if (obu.mType != OBUType::Metadata || obu.mContents.IsEmpty()) {
+      continue;
+    }
+
+    // metadata_type is a leb128-encoded value at the start of the OBU payload.
+    // https://aomediacodec.github.io/av1-spec/#metadata-obu-syntax
+    BitReader br(obu.mContents.Elements(), obu.mContents.Length() * 8);
+    CheckedUint64 checkedMetadataType = br.ReadULEB128();
+    if (!checkedMetadataType.isValid()) {
+      continue;
+    }
+    uint64_t metadataType = checkedMetadataType.value();
+    size_t headerBytes = br.BitCount() / 8;
+    if (headerBytes >= obu.mContents.Length()) {
+      continue;
+    }
+    const uint8_t* payload = obu.mContents.Elements() + headerBytes;
+    size_t payloadLen = obu.mContents.Length() - headerBytes;
+
+    if (metadataType == kMetadataTypeMDCV) {
+      if (payloadLen < 24) {
+        NS_WARNING("AV1 MDCV metadata OBU: unexpected payload size");
+        continue;
+      }
+      // AV1 §6.7.4 primary order: R[0], G[1], B[2]
+      BufferReader br(payload, payloadLen);
+      auto r0x = br.ReadU16();
+      auto r0y = br.ReadU16();
+      auto g1x = br.ReadU16();
+      auto g1y = br.ReadU16();
+      auto b2x = br.ReadU16();
+      auto b2y = br.ReadU16();
+      auto wpx = br.ReadU16();
+      auto wpy = br.ReadU16();
+      auto maxL = br.ReadU32();
+      auto minL = br.ReadU32();
+      if (r0x.isErr() || r0y.isErr() || g1x.isErr() || g1y.isErr() ||
+          b2x.isErr() || b2y.isErr() || wpx.isErr() || wpy.isErr() ||
+          maxL.isErr() || minL.isErr()) {
+        MOZ_LOG_FMT(
+            sPDMLog, mozilla::LogLevel::Debug,
+            "AOMDecoder::ReadMetadataOBUHDR: failed to read MDCV fields");
+        continue;
+      }
+      gfx::Chromaticity red{r0x.unwrap() / kPrimariesDivisor,
+                            r0y.unwrap() / kPrimariesDivisor};
+      gfx::Chromaticity green{g1x.unwrap() / kPrimariesDivisor,
+                              g1y.unwrap() / kPrimariesDivisor};
+      gfx::Chromaticity blue{b2x.unwrap() / kPrimariesDivisor,
+                             b2y.unwrap() / kPrimariesDivisor};
+      gfx::Chromaticity whitePoint{wpx.unwrap() / kPrimariesDivisor,
+                                   wpy.unwrap() / kPrimariesDivisor};
+      float maxLuminance = maxL.unwrap() / kMaxLuminanceDivisor;
+      float minLuminance = minL.unwrap() / kMinLuminanceDivisor;
+
+      hdr.mSmpte2086 = Some(gfx::Smpte2086Metadata{red, green, blue, whitePoint,
+                                                   maxLuminance, minLuminance});
+      hasMDCV = true;
+    } else if (metadataType == kMetadataTypeCLL) {
+      if (payloadLen < 4) {
+        NS_WARNING("AV1 CLL metadata OBU: unexpected payload size");
+        continue;
+      }
+      BufferReader br(payload, payloadLen);
+      auto maxCLL = br.ReadU16();
+      auto maxFALL = br.ReadU16();
+      if (maxCLL.isErr() || maxFALL.isErr()) {
+        MOZ_LOG_FMT(
+            sPDMLog, mozilla::LogLevel::Debug,
+            "AOMDecoder::ReadMetadataOBUHDR: failed to read CLL fields");
+        continue;
+      }
+      hdr.mContentLightLevel =
+          Some(gfx::ContentLightLevel{maxCLL.unwrap(), maxFALL.unwrap()});
+      hasCLL = true;
+    }
+  }
+
+  if (!hasMDCV && !hasCLL) {
+    return Nothing();
+  }
+  MOZ_ASSERT(hdr.IsValid());
+  return Some(hdr);
 }
 
 /* static */

@@ -16,6 +16,7 @@
 #include <string>
 
 #include "absl/strings/string_view.h"
+#include "api/environment/environment.h"
 #include "api/test/network_emulation/network_emulation_interfaces.h"
 #include "api/test/network_emulation_manager.h"
 #include "api/transport/stun.h"
@@ -28,15 +29,15 @@
 namespace webrtc {
 namespace test {
 
-// EmulatedTURNServer wraps cricket::TurnServer to be used inside
+// EmulatedTURNServer wraps webrtc::TurnServer to be used inside
 // a emulated network.
 //
 // Packets from EmulatedEndpoint (client or peer) are received in
 // EmulatedTURNServer::OnPacketReceived which performs a map lookup
-// and delivers them into cricket::TurnServer using
+// and delivers them into webrtc::TurnServer using
 // AsyncPacketSocket::SignalReadPacket
 //
-// Packets from cricket::TurnServer to EmulatedEndpoint are sent into
+// Packets from webrtc::TurnServer to EmulatedEndpoint are sent into
 // using a wrapper around AsyncPacketSocket (no lookup required as the
 // wrapper around AsyncPacketSocket keep a pointer to the EmulatedEndpoint).
 class EmulatedTURNServer : public EmulatedTURNServerInterface,
@@ -44,9 +45,10 @@ class EmulatedTURNServer : public EmulatedTURNServerInterface,
                            public webrtc::EmulatedNetworkReceiverInterface {
  public:
   // Create an EmulatedTURNServer.
-  // `thread` is a thread that will be used to run cricket::TurnServer
+  // `thread` is a thread that will be used to run webrtc::TurnServer
   // that expects all calls to be made from a single thread.
-  EmulatedTURNServer(const EmulatedTURNServerConfig& config,
+  EmulatedTURNServer(const Environment& env,
+                     const EmulatedTURNServerConfig& config,
                      std::unique_ptr<Thread> thread,
                      EmulatedEndpoint* client,
                      EmulatedEndpoint* peer);
@@ -62,15 +64,15 @@ class EmulatedTURNServer : public EmulatedTURNServerInterface,
 
   EmulatedEndpoint* GetPeerEndpoint() const override { return peer_; }
 
-  // cricket::TurnAuthInterface
+  // webrtc::TurnAuthInterface
   bool GetKey(absl::string_view username,
               absl::string_view realm,
               std::string* key) override {
-    return cricket::ComputeStunCredentialHash(
-        std::string(username), std::string(realm), std::string(username), key);
+    return ComputeStunCredentialHash(std::string(username), std::string(realm),
+                                     std::string(username), key);
   }
 
-  AsyncPacketSocket* CreatePeerSocket() { return Wrap(peer_); }
+  std::unique_ptr<AsyncPacketSocket> CreatePeerSocket() { return Wrap(peer_); }
 
   // This method is called by network emulation when a packet
   // comes from an emulated link.
@@ -94,8 +96,8 @@ class EmulatedTURNServer : public EmulatedTURNServerInterface,
       RTC_GUARDED_BY(&thread_);
 
   // Wraps a EmulatedEndpoint in a AsyncPacketSocket to bridge interaction
-  // with TurnServer. cricket::TurnServer gets ownership of the socket.
-  AsyncPacketSocket* Wrap(EmulatedEndpoint* endpoint);
+  // with TurnServer.
+  std::unique_ptr<AsyncPacketSocket> Wrap(EmulatedEndpoint* endpoint);
 };
 
 }  // namespace test

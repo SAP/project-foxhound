@@ -16,12 +16,6 @@ const { NetUtil } = ChromeUtils.importESModule(
   "resource://gre/modules/NetUtil.sys.mjs"
 );
 
-// We do not want to log packets by default, because in some tests,
-// we can be sending large amounts of data. The test harness has
-// trouble dealing with logging all the data, and we end up with
-// intermittent time outs (e.g. bug 775924).
-// Services.prefs.setBoolPref("devtools.debugger.log", true);
-// Services.prefs.setBoolPref("devtools.debugger.log.verbose", true);
 // Enable remote debugging for the relevant tests.
 Services.prefs.setBoolPref("devtools.debugger.remote-enabled", true);
 
@@ -138,7 +132,7 @@ function writeTestTempFile(fileName, content) {
   }
 }
 
-/** * Transport Factories ***/
+/*** Transport Factories ***/
 
 var socket_transport = async function () {
   if (!DevToolsServer.listeningSockets) {
@@ -163,7 +157,7 @@ function local_transport() {
   return Promise.resolve(DevToolsServer.connectPipe());
 }
 
-/** * Sample Data ***/
+/*** Sample Data ***/
 
 var gReallyLong;
 function really_long() {

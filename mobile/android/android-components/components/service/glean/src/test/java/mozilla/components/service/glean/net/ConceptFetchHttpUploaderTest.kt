@@ -4,6 +4,10 @@
 
 package mozilla.components.service.glean.net
 
+import mockwebserver3.Dispatcher
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
+import mockwebserver3.RecordedRequest
 import mozilla.components.concept.fetch.Client
 import mozilla.components.concept.fetch.Request
 import mozilla.components.concept.fetch.Response
@@ -18,10 +22,6 @@ import mozilla.telemetry.glean.net.HttpStatus
 import mozilla.telemetry.glean.net.Incapable
 import mozilla.telemetry.glean.net.PingUploadRequest
 import mozilla.telemetry.glean.net.RecoverableFailure
-import okhttp3.mockwebserver.Dispatcher
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
-import okhttp3.mockwebserver.RecordedRequest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -50,10 +50,10 @@ class ConceptFetchHttpUploaderTest {
         server.dispatcher =
             object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
-                    return MockResponse().setBody("OK")
+                    return MockResponse(body = "OK")
                 }
             }
-
+        server.start()
         return server
     }
 
@@ -202,12 +202,12 @@ class ConceptFetchHttpUploaderTest {
         assertEquals(HttpStatus(200), client.upload(uploadRequest))
 
         val request = server.takeRequest()
-        assertEquals(testPath, request.path)
+        assertEquals(testPath, request.target)
         assertEquals("POST", request.method)
-        assertEquals(testPing, request.body.readUtf8())
-        assertEquals("header", request.getHeader("test"))
+        assertEquals(testPing, request.body!!.utf8())
+        assertEquals("header", request.headers["test"])
 
-        server.shutdown()
+        server.close()
     }
 
     @Test
@@ -221,13 +221,13 @@ class ConceptFetchHttpUploaderTest {
         assertEquals(HttpStatus(200), client.upload(uploadRequest))
 
         val request = server.takeRequest()
-        assertEquals(testPath, request.path)
+        assertEquals(testPath, request.target)
         assertEquals("POST", request.method)
-        assertEquals(testPing, request.body.readUtf8())
-        assertEquals("header", request.getHeader("test"))
+        assertEquals(testPing, request.body!!.utf8())
+        assertEquals("header", request.headers["test"])
         assertTrue(request.headers.values("Cookie").isEmpty())
 
-        server.shutdown()
+        server.close()
     }
 
     @Test
@@ -241,13 +241,13 @@ class ConceptFetchHttpUploaderTest {
         assertEquals(HttpStatus(200), client.upload(uploadRequest))
 
         val request = server.takeRequest()
-        assertEquals(testPath, request.path)
+        assertEquals(testPath, request.target)
         assertEquals("POST", request.method)
-        assertEquals(testPing, request.body.readUtf8())
-        assertEquals("header", request.getHeader("test"))
+        assertEquals(testPing, request.body!!.utf8())
+        assertEquals("header", request.headers["test"])
         assertTrue(request.headers.values("Cookie").isEmpty())
 
-        server.shutdown()
+        server.close()
     }
 
     @Test
@@ -291,16 +291,16 @@ class ConceptFetchHttpUploaderTest {
         assertEquals(HttpStatus(200), client.upload(uploadRequest))
 
         val request = server.takeRequest()
-        assertEquals(testPath, request.path)
+        assertEquals(testPath, request.target)
         assertEquals("POST", request.method)
-        assertEquals(testPing, request.body.readUtf8())
+        assertEquals(testPing, request.body!!.utf8())
         assertTrue(request.headers.values("Cookie").isEmpty())
 
         // Check that we still have a cookie.
         assertEquals(1, cookieManager.cookieStore.cookies.size)
         assertEquals("cookie-time2", cookieManager.cookieStore.cookies[0].name)
 
-        server.shutdown()
+        server.close()
     }
 
     @Test

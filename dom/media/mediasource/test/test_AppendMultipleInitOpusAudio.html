@@ -1,0 +1,74 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>MSE: Append multiple Opus init segments (bug 1341228)</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="mediasource.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+<pre id="test">
+<script class="testbody" type="text/javascript">
+
+// Bug 1341228 reproducer, modelled after YouTube TV conformance test
+// 'AppendMultipleInitOpusAudio' (test 11 in the ytlr-cert rig).
+//
+// The flow:
+//   1. Append the Opus init segment 10 times.
+//   2. Append a media segment (one Cluster) and record buffered.end(0).
+//   3. abort() the SourceBuffer.
+//   4. Append the Opus init segment 10 more times.
+//   5. Verify buffered.end(0) is unchanged.
+//
+// The init segment fixture (bug1341228_init.webm) is the first 591 bytes of
+// car_opus_low.webm from YouTube's conformance media set, containing EBML
+// header + Segment header + SeekHead + Void + SegmentInfo + Tracks + Cues.
+// The Cues element appears before any Cluster, which is spec-allowed but
+// historically tickled bugs in the WebM init-segment parsing path.
+
+SimpleTest.waitForExplicitFinish();
+
+async function appendN(sb, buf, count) {
+  for (let i = 0; i < count; i++) {
+    sb.appendBuffer(new Uint8Array(buf));
+    await once(sb, "updateend");
+  }
+}
+
+runWithMSE(async (ms, _v) => {
+  await once(ms, "sourceopen");
+  const sb = ms.addSourceBuffer('audio/webm; codecs="opus"');
+
+  const init = await fetchWithXHR("bug1341228_init.webm");
+  const cluster = await fetchWithXHR("bug1341228_cluster.webm");
+
+  info("- first round: append init x10 -");
+  await appendN(sb, init, 10);
+
+  info("- append media cluster -");
+  sb.appendBuffer(new Uint8Array(cluster));
+  await once(sb, "updateend");
+
+  is(sb.buffered.length, 1, "should have one buffered range after cluster");
+  const expectedEnd = sb.buffered.end(0);
+  info(`- recorded buffered.end(0) = ${expectedEnd} -`);
+
+  info("- abort source buffer -");
+  sb.abort();
+
+  info("- second round: append init x10 -");
+  await appendN(sb, init, 10);
+
+  info(`- buffered.end(0) after second round = ${sb.buffered.end(0)} -`);
+  is(sb.buffered.length, 1,
+     "should still have one buffered range after second init round");
+  is(sb.buffered.end(0), expectedEnd,
+     "buffered.end(0) must be unchanged across abort + multi-init append");
+
+  SimpleTest.finish();
+});
+
+</script>
+</pre>
+</body>
+</html>

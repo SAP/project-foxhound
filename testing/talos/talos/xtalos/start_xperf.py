@@ -94,7 +94,7 @@ def main(args=sys.argv[1:]):
         start_from_config(
             config_file=args.configFile,
             debug=args.debug_level >= xtalos.DEBUG_INFO,
-            **args.__dict__
+            **args.__dict__,
         )
     except xtalos.XTalosError as e:
         parser.error(str(e))

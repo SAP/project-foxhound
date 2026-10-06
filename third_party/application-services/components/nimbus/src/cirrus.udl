@@ -1,0 +1,40 @@
+namespace cirrus {};
+
+[Error]
+enum NimbusError {
+    "InvalidPersistedData", "IOError",
+    "JSONError", "EvaluationError", "InvalidExpression", "InvalidFraction",
+    "TryFromSliceError", "EmptyRatiosError", "OutOfBoundsError","UrlParsingError",
+    "UuidError", "InvalidExperimentFormat",
+    "InvalidPath", "InternalError", "NoSuchExperiment", "NoSuchBranch",
+    "DatabaseNotReady", "VersionParsingError", "TryFromIntError",
+    "ParseIntError", "TransformParameterError", "CirrusError", "UniFFICallbackError"
+};
+
+[Trait, WithForeign]
+interface MetricsHandler {
+    void record_enrollment_statuses_v2(sequence<EnrollmentStatusExtraDef> enrollment_status_extras, string? nimbus_user_id);
+};
+
+dictionary EnrollmentStatusExtraDef {
+    string? branch;
+    string? conflict_slug;
+    string? error_string;
+    string? reason;
+    string? slug;
+    string? status;
+    string? user_id;
+};
+
+interface CirrusClient {
+    [Throws=NimbusError]
+    constructor(string app_context, MetricsHandler metrics_handler, sequence<string> coenrolling_feature_ids);
+
+    /// Handles an enrollment request string and returns an enrollment response string.
+    [Throws=NimbusError]
+    string handle_enrollment(string request);
+
+    /// Sets the experiments list in the CirrusClient's internal state.
+    [Throws=NimbusError]
+    void set_experiments(string experiments);
+};

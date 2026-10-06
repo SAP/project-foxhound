@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -8,11 +6,11 @@
 
 #include "Worklet.h"
 #include "WorkletThread.h"
-
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/PolicyContainer.h"
 #include "mozilla/dom/RegisterWorkletBindings.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/WorkletBinding.h"
@@ -48,7 +46,7 @@ WorkletImpl::WorkletImpl(nsPIDOMWindowInner* aWindow, nsIPrincipal* aPrincipal)
       mFinishedOnExecutionThread(false),
       mIsPrivateBrowsing(false),
       mTrials(OriginTrials::FromWindow(nsGlobalWindowInner::Cast(aWindow))) {
-  Unused << NS_WARN_IF(
+  (void)NS_WARN_IF(
       NS_FAILED(ipc::PrincipalToPrincipalInfo(mPrincipal, &mPrincipalInfo)));
 
   if (aWindow->GetDocGroup()) {
@@ -61,11 +59,17 @@ WorkletImpl::WorkletImpl(nsPIDOMWindowInner* aWindow, nsIPrincipal* aPrincipal)
   mShouldResistFingerprinting = aWindow->AsGlobal()->ShouldResistFingerprinting(
       RFPTarget::IsAlwaysEnabledForPrecompute);
 
-  RefPtr<dom::Document> doc = nsGlobalWindowInner::Cast(aWindow)->GetDocument();
-  if (doc) {
+  if (RefPtr<dom::Document> doc =
+          nsGlobalWindowInner::Cast(aWindow)->GetDocument()) {
     mIsPrivateBrowsing = doc->IsInPrivateBrowsing();
     mOverriddenFingerprintingSettings =
         doc->GetOverriddenFingerprintingSettings();
+
+    if (auto* policy = PolicyContainer::Cast(doc->GetPolicyContainer())) {
+      ipc::PolicyContainerArgs policyContainer;
+      PolicyContainer::ToArgs(policy, policyContainer);
+      mPolicyContainer = Some(std::move(policyContainer));
+    }
   }
 }
 
@@ -115,6 +119,16 @@ dom::WorkletGlobalScope* WorkletImpl::GetGlobalScope() {
   return mGlobalScope;
 }
 
+dom::OffThreadCSPContext* WorkletImpl::GetCSPContext() {
+  dom::WorkletThread::AssertIsOnWorkletThread();
+
+  if (!mCSPContext && mPolicyContainer && mPolicyContainer->csp().isSome()) {
+    ipc::CSPInfo cspInfo(mPolicyContainer->csp().ref());
+    mCSPContext = MakeUnique<dom::OffThreadCSPContext>(std::move(cspInfo));
+  }
+  return mCSPContext.get();
+}
+
 void WorkletImpl::NotifyWorkletFinished() {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -128,6 +142,7 @@ void WorkletImpl::NotifyWorkletFinished() {
                              [self = RefPtr<WorkletImpl>(this)]() {
                                self->mFinishedOnExecutionThread = true;
                                self->mGlobalScope = nullptr;
+                               self->mCSPContext = nullptr;
                              }));
 
   mTerminated = true;

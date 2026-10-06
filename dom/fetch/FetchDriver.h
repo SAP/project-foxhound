@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,22 +5,20 @@
 #ifndef mozilla_dom_FetchDriver_h
 #define mozilla_dom_FetchDriver_h
 
+#include "mozilla/ConsoleReportCollector.h"
+#include "mozilla/Mutex.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/dom/AbortSignal.h"
+#include "mozilla/dom/SRIMetadata.h"
+#include "mozilla/dom/SafeRefPtr.h"
+#include "mozilla/dom/SerializedStackHolder.h"
 #include "nsIChannelEventSink.h"
 #include "nsIClassifiedChannel.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsINetworkInterceptController.h"
 #include "nsIStreamListener.h"
 #include "nsIThreadRetargetableStreamListener.h"
-#include "mozilla/ConsoleReportCollector.h"
-#include "mozilla/dom/AbortSignal.h"
-#include "mozilla/dom/SafeRefPtr.h"
-#include "mozilla/dom/SerializedStackHolder.h"
-#include "mozilla/dom/SRIMetadata.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/Mutex.h"
-#include "mozilla/UniquePtr.h"
-
-#include "mozilla/DebugOnly.h"
 
 class nsIConsoleReportCollector;
 class nsICookieJarSettings;
@@ -135,8 +131,8 @@ class FetchDriver final : public nsIChannelEventSink,
     mOriginStack = std::move(aOriginStack);
   }
 
-  PerformanceTimingData* GetPerformanceTimingData(nsAString& aInitiatorType,
-                                                  nsAString& aEntryName);
+  UniquePtr<PerformanceTimingData> GetPerformanceTimingData(
+      nsAString& aInitiatorType, nsAString& aEntryName);
 
   // AbortFollower
   void RunAbortAlgorithm() override;

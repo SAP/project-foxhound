@@ -73,6 +73,7 @@ add_task(async function () {
 
 /**
  * Get the text content of the latest command logged in the console
+ *
  * @param {WebConsole} hud: The webconsole
  * @return {string|null}
  */

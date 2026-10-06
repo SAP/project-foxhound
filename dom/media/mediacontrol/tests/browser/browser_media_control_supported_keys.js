@@ -11,6 +11,9 @@ const sDefaultSupportedKeys = [
   "seekto",
   "seekforward",
   "seekbackward",
+  "mute",
+  "unmute",
+  "setvolume",
 ];
 
 add_task(async function setupTestingPref() {

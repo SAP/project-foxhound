@@ -47,7 +47,7 @@ const UI_BASE_URL_PATH_DEFAULT = "/from-browser";
  * profiler.firefox.com to be analyzed. This function opens up profiler.firefox.com
  * into a new browser tab.
  *
- * @typedef {Object} OpenProfilerOptions
+ * @typedef {object} OpenProfilerOptions
  * @property {ProfilerViewMode | undefined} [profilerViewMode] - View mode for the Firefox Profiler
  *   front-end timeline. While opening the url, we should append a query string
  *   if a view other than "full" needs to be displayed.
@@ -98,7 +98,7 @@ async function openProfilerTab({ profilerViewMode, defaultPanel }) {
   // Note that when running from the browser toolbox, there won't be the browser window,
   // but only the browser toolbox document.
   const win =
-    Services.wm.getMostRecentWindow("navigator:browser") ||
+    Services.wm.getMostRecentBrowserWindow() ||
     Services.wm.getMostRecentWindow("devtools:toolbox");
   if (!win) {
     throw new Error("No browser window");
@@ -137,16 +137,17 @@ function restartBrowserWithEnvironmentVariable(env) {
 
 /**
  * @param {Window} window
+ * @param {string} pickerTitle
  * @param {string[]} objdirs
  * @param {(objdirs: string[]) => unknown} changeObjdirs
  */
-function openFilePickerForObjdir(window, objdirs, changeObjdirs) {
+function openFilePickerForObjdir(window, pickerTitle, objdirs, changeObjdirs) {
   const FilePicker = Cc["@mozilla.org/filepicker;1"].createInstance(
     Ci.nsIFilePicker
   );
   FilePicker.init(
     window.browsingContext,
-    "Pick build directory",
+    pickerTitle,
     FilePicker.modeGetFolder
   );
   FilePicker.open(rv => {
@@ -171,7 +172,7 @@ function openFilePickerForObjdir(window, objdirs, changeObjdirs) {
  * @param {number} columnOneBased
  */
 async function openScriptInDebugger(tabId, scriptUrl, line, columnOneBased) {
-  const win = Services.wm.getMostRecentWindow("navigator:browser");
+  const win = Services.wm.getMostRecentBrowserWindow();
 
   // Iterate through all tabs in the current window and find the tab that we want.
   const foundTab = win.gBrowser.tabs.find(

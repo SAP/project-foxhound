@@ -37,7 +37,7 @@ addEventListener("load", async () => {
   // If a payload parameter was included, just send the message.
   const payloadStr = url.searchParams.get("payload");
   if (payloadStr) {
-    const chan = new BroadcastChannel("test_broadcast_onload");
+    const chan = SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel("test_broadcast_onload");
     chan.postMessage(JSON.parse(payloadStr));
     window.close();
     return;

@@ -1,0 +1,1489 @@
+[
+  {
+    "comment": "empty object",
+    "test": {}
+  },
+  {
+    "comment": "missing type",
+    "test": {
+      "title": "No Type",
+      "links": [
+        {
+          "url": "https://example.com"
+        }
+      ]
+    }
+  },
+  {
+    "comment": "missing title",
+    "test": {
+      "type": "tabs",
+      "links": [
+        {
+          "url": "https://example.com"
+        }
+      ]
+    }
+  },
+  {
+    "comment": "missing links",
+    "test": {
+      "type": "tabs",
+      "title": "No Links"
+    }
+  },
+  {
+    "comment": "empty links array",
+    "test": {
+      "type": "tabs",
+      "title": "Empty Links",
+      "links": []
+    }
+  },
+  {
+    "comment": "invalid URL",
+    "test": {
+      "type": "tabs",
+      "title": "FTP Link",
+      "links": [
+        {
+          "url": "ftp://example.com/file"
+        }
+      ]
+    }
+  },
+  {
+    "comment": "title too long",
+    "test": {
+      "type": "tabs",
+      "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "links": [
+        {
+          "url": "https://example.com",
+          "title": "Example"
+        }
+      ]
+    }
+  },
+  {
+    "comment": "link title too long",
+    "test": {
+      "type": "tabs",
+      "title": "a",
+      "links": [
+        {
+          "url": "https://example.com",
+          "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    }
+  },
+  {
+    "comment": "incorrect type",
+    "test": {
+      "type": "bad type",
+      "title": "Title",
+      "links": [
+        {
+          "url": "https://example.com",
+          "title": "Example"
+        }
+      ]
+    }
+  },
+  {
+    "comment": "Extra property",
+    "test": {
+      "type": "tabs",
+      "title": "Extra Prop",
+      "links": [
+        {
+          "url": "https://example.com",
+          "title": "Example"
+        }
+      ],
+      "extra": "not allowed"
+    }
+  },
+  {
+    "comment": "Extra property on Bookmark",
+    "test": {
+      "type": "bookmarks",
+      "title": "Folder Extra Prop",
+      "links": [
+        {
+          "type": "bookmarks",
+          "title": "Bad Folder",
+          "links": [
+            {
+              "url": "https://example.com",
+              "title": "Example"
+            }
+          ],
+          "extra": "not allowed"
+        }
+      ]
+    }
+  },
+  {
+    "comment": "Wrong type for title (number)",
+    "test": {
+      "type": "tabs",
+      "title": 42,
+      "links": [
+        {
+          "url": "https://example.com",
+          "title": "Example"
+        }
+      ]
+    }
+  },
+  {
+    "comment": "Wrong type for links (object instead of array)",
+    "test": {
+      "type": "tabs",
+      "title": "Wrong Links Type",
+      "links": {
+        "url": "https://example.com",
+        "title": "Example"
+      }
+    }
+  },
+  {
+    "comment": "Link missing required url",
+    "test": {
+      "type": "tabs",
+      "title": "No URL",
+      "links": [
+        {
+          "title": "Missing URL"
+        }
+      ]
+    }
+  },
+  {
+    "comment": "Link missing required title",
+    "test": {
+      "type": "tabs",
+      "title": "No title",
+      "links": [
+        {
+          "url": "https://example.com"
+        }
+      ]
+    }
+  },
+  {
+    "comment": "links exceeding maxItems",
+    "test": {
+      "type": "tabs",
+      "title": "Too Many Links",
+      "links": [
+        {
+          "url": "https://example.com/0",
+          "title": "Example 0"
+        },
+        {
+          "url": "https://example.com/1",
+          "title": "Example 1"
+        },
+        {
+          "url": "https://example.com/2",
+          "title": "Example 2"
+        },
+        {
+          "url": "https://example.com/3",
+          "title": "Example 3"
+        },
+        {
+          "url": "https://example.com/4",
+          "title": "Example 4"
+        },
+        {
+          "url": "https://example.com/5",
+          "title": "Example 5"
+        },
+        {
+          "url": "https://example.com/6",
+          "title": "Example 6"
+        },
+        {
+          "url": "https://example.com/7",
+          "title": "Example 7"
+        },
+        {
+          "url": "https://example.com/8",
+          "title": "Example 8"
+        },
+        {
+          "url": "https://example.com/9",
+          "title": "Example 9"
+        },
+        {
+          "url": "https://example.com/10",
+          "title": "Example 10"
+        },
+        {
+          "url": "https://example.com/11",
+          "title": "Example 11"
+        },
+        {
+          "url": "https://example.com/12",
+          "title": "Example 12"
+        },
+        {
+          "url": "https://example.com/13",
+          "title": "Example 13"
+        },
+        {
+          "url": "https://example.com/14",
+          "title": "Example 14"
+        },
+        {
+          "url": "https://example.com/15",
+          "title": "Example 15"
+        },
+        {
+          "url": "https://example.com/16",
+          "title": "Example 16"
+        },
+        {
+          "url": "https://example.com/17",
+          "title": "Example 17"
+        },
+        {
+          "url": "https://example.com/18",
+          "title": "Example 18"
+        },
+        {
+          "url": "https://example.com/19",
+          "title": "Example 19"
+        },
+        {
+          "url": "https://example.com/20",
+          "title": "Example 20"
+        },
+        {
+          "url": "https://example.com/21",
+          "title": "Example 21"
+        },
+        {
+          "url": "https://example.com/22",
+          "title": "Example 22"
+        },
+        {
+          "url": "https://example.com/23",
+          "title": "Example 23"
+        },
+        {
+          "url": "https://example.com/24",
+          "title": "Example 24"
+        },
+        {
+          "url": "https://example.com/25",
+          "title": "Example 25"
+        },
+        {
+          "url": "https://example.com/26",
+          "title": "Example 26"
+        },
+        {
+          "url": "https://example.com/27",
+          "title": "Example 27"
+        },
+        {
+          "url": "https://example.com/28",
+          "title": "Example 28"
+        },
+        {
+          "url": "https://example.com/29",
+          "title": "Example 29"
+        },
+        {
+          "url": "https://example.com/30",
+          "title": "Example 30"
+        },
+        {
+          "url": "https://example.com/31",
+          "title": "Example 31"
+        },
+        {
+          "url": "https://example.com/32",
+          "title": "Example 32"
+        },
+        {
+          "url": "https://example.com/33",
+          "title": "Example 33"
+        },
+        {
+          "url": "https://example.com/34",
+          "title": "Example 34"
+        },
+        {
+          "url": "https://example.com/35",
+          "title": "Example 35"
+        },
+        {
+          "url": "https://example.com/36",
+          "title": "Example 36"
+        },
+        {
+          "url": "https://example.com/37",
+          "title": "Example 37"
+        },
+        {
+          "url": "https://example.com/38",
+          "title": "Example 38"
+        },
+        {
+          "url": "https://example.com/39",
+          "title": "Example 39"
+        },
+        {
+          "url": "https://example.com/40",
+          "title": "Example 40"
+        },
+        {
+          "url": "https://example.com/41",
+          "title": "Example 41"
+        },
+        {
+          "url": "https://example.com/42",
+          "title": "Example 42"
+        },
+        {
+          "url": "https://example.com/43",
+          "title": "Example 43"
+        },
+        {
+          "url": "https://example.com/44",
+          "title": "Example 44"
+        },
+        {
+          "url": "https://example.com/45",
+          "title": "Example 45"
+        },
+        {
+          "url": "https://example.com/46",
+          "title": "Example 46"
+        },
+        {
+          "url": "https://example.com/47",
+          "title": "Example 47"
+        },
+        {
+          "url": "https://example.com/48",
+          "title": "Example 48"
+        },
+        {
+          "url": "https://example.com/49",
+          "title": "Example 49"
+        },
+        {
+          "url": "https://example.com/50",
+          "title": "Example 50"
+        },
+        {
+          "url": "https://example.com/51",
+          "title": "Example 51"
+        },
+        {
+          "url": "https://example.com/52",
+          "title": "Example 52"
+        },
+        {
+          "url": "https://example.com/53",
+          "title": "Example 53"
+        },
+        {
+          "url": "https://example.com/54",
+          "title": "Example 54"
+        },
+        {
+          "url": "https://example.com/55",
+          "title": "Example 55"
+        },
+        {
+          "url": "https://example.com/56",
+          "title": "Example 56"
+        },
+        {
+          "url": "https://example.com/57",
+          "title": "Example 57"
+        },
+        {
+          "url": "https://example.com/58",
+          "title": "Example 58"
+        },
+        {
+          "url": "https://example.com/59",
+          "title": "Example 59"
+        },
+        {
+          "url": "https://example.com/60",
+          "title": "Example 60"
+        },
+        {
+          "url": "https://example.com/61",
+          "title": "Example 61"
+        },
+        {
+          "url": "https://example.com/62",
+          "title": "Example 62"
+        },
+        {
+          "url": "https://example.com/63",
+          "title": "Example 63"
+        },
+        {
+          "url": "https://example.com/64",
+          "title": "Example 64"
+        },
+        {
+          "url": "https://example.com/65",
+          "title": "Example 65"
+        },
+        {
+          "url": "https://example.com/66",
+          "title": "Example 66"
+        },
+        {
+          "url": "https://example.com/67",
+          "title": "Example 67"
+        },
+        {
+          "url": "https://example.com/68",
+          "title": "Example 68"
+        },
+        {
+          "url": "https://example.com/69",
+          "title": "Example 69"
+        },
+        {
+          "url": "https://example.com/70",
+          "title": "Example 70"
+        },
+        {
+          "url": "https://example.com/71",
+          "title": "Example 71"
+        },
+        {
+          "url": "https://example.com/72",
+          "title": "Example 72"
+        },
+        {
+          "url": "https://example.com/73",
+          "title": "Example 73"
+        },
+        {
+          "url": "https://example.com/74",
+          "title": "Example 74"
+        },
+        {
+          "url": "https://example.com/75",
+          "title": "Example 75"
+        },
+        {
+          "url": "https://example.com/76",
+          "title": "Example 76"
+        },
+        {
+          "url": "https://example.com/77",
+          "title": "Example 77"
+        },
+        {
+          "url": "https://example.com/78",
+          "title": "Example 78"
+        },
+        {
+          "url": "https://example.com/79",
+          "title": "Example 79"
+        },
+        {
+          "url": "https://example.com/80",
+          "title": "Example 80"
+        },
+        {
+          "url": "https://example.com/81",
+          "title": "Example 81"
+        },
+        {
+          "url": "https://example.com/82",
+          "title": "Example 82"
+        },
+        {
+          "url": "https://example.com/83",
+          "title": "Example 83"
+        },
+        {
+          "url": "https://example.com/84",
+          "title": "Example 84"
+        },
+        {
+          "url": "https://example.com/85",
+          "title": "Example 85"
+        },
+        {
+          "url": "https://example.com/86",
+          "title": "Example 86"
+        },
+        {
+          "url": "https://example.com/87",
+          "title": "Example 87"
+        },
+        {
+          "url": "https://example.com/88",
+          "title": "Example 88"
+        },
+        {
+          "url": "https://example.com/89",
+          "title": "Example 89"
+        },
+        {
+          "url": "https://example.com/90",
+          "title": "Example 90"
+        },
+        {
+          "url": "https://example.com/91",
+          "title": "Example 91"
+        },
+        {
+          "url": "https://example.com/92",
+          "title": "Example 92"
+        },
+        {
+          "url": "https://example.com/93",
+          "title": "Example 93"
+        },
+        {
+          "url": "https://example.com/94",
+          "title": "Example 94"
+        },
+        {
+          "url": "https://example.com/95",
+          "title": "Example 95"
+        },
+        {
+          "url": "https://example.com/96",
+          "title": "Example 96"
+        },
+        {
+          "url": "https://example.com/97",
+          "title": "Example 97"
+        },
+        {
+          "url": "https://example.com/98",
+          "title": "Example 98"
+        },
+        {
+          "url": "https://example.com/99",
+          "title": "Example 99"
+        },
+        {
+          "url": "https://example.com/100",
+          "title": "Example 100"
+        }
+      ]
+    }
+  },
+  {
+    "comment": "nested links exceeding maxItems",
+    "test": {
+      "type": "bookmarks",
+      "title": "Too Many Links",
+      "links": [
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder",
+          "links": [
+            {
+              "url": "https://example.com/0",
+              "title": "Example 0"
+            },
+            {
+              "url": "https://example.com/1",
+              "title": "Example 1"
+            },
+            {
+              "url": "https://example.com/2",
+              "title": "Example 2"
+            },
+            {
+              "url": "https://example.com/3",
+              "title": "Example 3"
+            },
+            {
+              "url": "https://example.com/4",
+              "title": "Example 4"
+            },
+            {
+              "url": "https://example.com/5",
+              "title": "Example 5"
+            },
+            {
+              "url": "https://example.com/6",
+              "title": "Example 6"
+            },
+            {
+              "url": "https://example.com/7",
+              "title": "Example 7"
+            },
+            {
+              "url": "https://example.com/8",
+              "title": "Example 8"
+            },
+            {
+              "url": "https://example.com/9",
+              "title": "Example 9"
+            },
+            {
+              "url": "https://example.com/10",
+              "title": "Example 10"
+            },
+            {
+              "url": "https://example.com/11",
+              "title": "Example 11"
+            },
+            {
+              "url": "https://example.com/12",
+              "title": "Example 12"
+            },
+            {
+              "url": "https://example.com/13",
+              "title": "Example 13"
+            },
+            {
+              "url": "https://example.com/14",
+              "title": "Example 14"
+            },
+            {
+              "url": "https://example.com/15",
+              "title": "Example 15"
+            },
+            {
+              "url": "https://example.com/16",
+              "title": "Example 16"
+            },
+            {
+              "url": "https://example.com/17",
+              "title": "Example 17"
+            },
+            {
+              "url": "https://example.com/18",
+              "title": "Example 18"
+            },
+            {
+              "url": "https://example.com/19",
+              "title": "Example 19"
+            },
+            {
+              "url": "https://example.com/20",
+              "title": "Example 20"
+            },
+            {
+              "url": "https://example.com/21",
+              "title": "Example 21"
+            },
+            {
+              "url": "https://example.com/22",
+              "title": "Example 22"
+            },
+            {
+              "url": "https://example.com/23",
+              "title": "Example 23"
+            },
+            {
+              "url": "https://example.com/24",
+              "title": "Example 24"
+            },
+            {
+              "url": "https://example.com/25",
+              "title": "Example 25"
+            },
+            {
+              "url": "https://example.com/26",
+              "title": "Example 26"
+            },
+            {
+              "url": "https://example.com/27",
+              "title": "Example 27"
+            },
+            {
+              "url": "https://example.com/28",
+              "title": "Example 28"
+            },
+            {
+              "url": "https://example.com/29",
+              "title": "Example 29"
+            },
+            {
+              "url": "https://example.com/30",
+              "title": "Example 30"
+            },
+            {
+              "url": "https://example.com/31",
+              "title": "Example 31"
+            },
+            {
+              "url": "https://example.com/32",
+              "title": "Example 32"
+            },
+            {
+              "url": "https://example.com/33",
+              "title": "Example 33"
+            },
+            {
+              "url": "https://example.com/34",
+              "title": "Example 34"
+            },
+            {
+              "url": "https://example.com/35",
+              "title": "Example 35"
+            },
+            {
+              "url": "https://example.com/36",
+              "title": "Example 36"
+            },
+            {
+              "url": "https://example.com/37",
+              "title": "Example 37"
+            },
+            {
+              "url": "https://example.com/38",
+              "title": "Example 38"
+            },
+            {
+              "url": "https://example.com/39",
+              "title": "Example 39"
+            },
+            {
+              "url": "https://example.com/40",
+              "title": "Example 40"
+            },
+            {
+              "url": "https://example.com/41",
+              "title": "Example 41"
+            },
+            {
+              "url": "https://example.com/42",
+              "title": "Example 42"
+            },
+            {
+              "url": "https://example.com/43",
+              "title": "Example 43"
+            },
+            {
+              "url": "https://example.com/44",
+              "title": "Example 44"
+            },
+            {
+              "url": "https://example.com/45",
+              "title": "Example 45"
+            },
+            {
+              "url": "https://example.com/46",
+              "title": "Example 46"
+            },
+            {
+              "url": "https://example.com/47",
+              "title": "Example 47"
+            },
+            {
+              "url": "https://example.com/48",
+              "title": "Example 48"
+            },
+            {
+              "url": "https://example.com/49",
+              "title": "Example 49"
+            },
+            {
+              "url": "https://example.com/50",
+              "title": "Example 50"
+            },
+            {
+              "url": "https://example.com/51",
+              "title": "Example 51"
+            },
+            {
+              "url": "https://example.com/52",
+              "title": "Example 52"
+            },
+            {
+              "url": "https://example.com/53",
+              "title": "Example 53"
+            },
+            {
+              "url": "https://example.com/54",
+              "title": "Example 54"
+            },
+            {
+              "url": "https://example.com/55",
+              "title": "Example 55"
+            },
+            {
+              "url": "https://example.com/56",
+              "title": "Example 56"
+            },
+            {
+              "url": "https://example.com/57",
+              "title": "Example 57"
+            },
+            {
+              "url": "https://example.com/58",
+              "title": "Example 58"
+            },
+            {
+              "url": "https://example.com/59",
+              "title": "Example 59"
+            },
+            {
+              "url": "https://example.com/60",
+              "title": "Example 60"
+            },
+            {
+              "url": "https://example.com/61",
+              "title": "Example 61"
+            },
+            {
+              "url": "https://example.com/62",
+              "title": "Example 62"
+            },
+            {
+              "url": "https://example.com/63",
+              "title": "Example 63"
+            },
+            {
+              "url": "https://example.com/64",
+              "title": "Example 64"
+            },
+            {
+              "url": "https://example.com/65",
+              "title": "Example 65"
+            },
+            {
+              "url": "https://example.com/66",
+              "title": "Example 66"
+            },
+            {
+              "url": "https://example.com/67",
+              "title": "Example 67"
+            },
+            {
+              "url": "https://example.com/68",
+              "title": "Example 68"
+            },
+            {
+              "url": "https://example.com/69",
+              "title": "Example 69"
+            },
+            {
+              "url": "https://example.com/70",
+              "title": "Example 70"
+            },
+            {
+              "url": "https://example.com/71",
+              "title": "Example 71"
+            },
+            {
+              "url": "https://example.com/72",
+              "title": "Example 72"
+            },
+            {
+              "url": "https://example.com/73",
+              "title": "Example 73"
+            },
+            {
+              "url": "https://example.com/74",
+              "title": "Example 74"
+            },
+            {
+              "url": "https://example.com/75",
+              "title": "Example 75"
+            },
+            {
+              "url": "https://example.com/76",
+              "title": "Example 76"
+            },
+            {
+              "url": "https://example.com/77",
+              "title": "Example 77"
+            },
+            {
+              "url": "https://example.com/78",
+              "title": "Example 78"
+            },
+            {
+              "url": "https://example.com/79",
+              "title": "Example 79"
+            },
+            {
+              "url": "https://example.com/80",
+              "title": "Example 80"
+            },
+            {
+              "url": "https://example.com/81",
+              "title": "Example 81"
+            },
+            {
+              "url": "https://example.com/82",
+              "title": "Example 82"
+            },
+            {
+              "url": "https://example.com/83",
+              "title": "Example 83"
+            },
+            {
+              "url": "https://example.com/84",
+              "title": "Example 84"
+            },
+            {
+              "url": "https://example.com/85",
+              "title": "Example 85"
+            },
+            {
+              "url": "https://example.com/86",
+              "title": "Example 86"
+            },
+            {
+              "url": "https://example.com/87",
+              "title": "Example 87"
+            },
+            {
+              "url": "https://example.com/88",
+              "title": "Example 88"
+            },
+            {
+              "url": "https://example.com/89",
+              "title": "Example 89"
+            },
+            {
+              "url": "https://example.com/90",
+              "title": "Example 90"
+            },
+            {
+              "url": "https://example.com/91",
+              "title": "Example 91"
+            },
+            {
+              "url": "https://example.com/92",
+              "title": "Example 92"
+            },
+            {
+              "url": "https://example.com/93",
+              "title": "Example 93"
+            },
+            {
+              "url": "https://example.com/94",
+              "title": "Example 94"
+            },
+            {
+              "url": "https://example.com/95",
+              "title": "Example 95"
+            },
+            {
+              "url": "https://example.com/96",
+              "title": "Example 96"
+            },
+            {
+              "url": "https://example.com/97",
+              "title": "Example 97"
+            },
+            {
+              "url": "https://example.com/98",
+              "title": "Example 98"
+            },
+            {
+              "url": "https://example.com/99",
+              "title": "Example 99"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "comment": "Bookmark nested links exceeding maxItems. The total length is 102 in this case",
+    "test": {
+      "type": "bookmarks",
+      "title": "Folder Too Many",
+      "links": [
+        {
+          "url": "https://example.com/0",
+          "title": "Example 0"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 1",
+          "links": [
+            {
+              "url": "https://example.com/1",
+              "title": "Example 1"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/2",
+          "title": "Example 2"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 3",
+          "links": [
+            {
+              "url": "https://example.com/3",
+              "title": "Example 3"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/4",
+          "title": "Example 4"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 5",
+          "links": [
+            {
+              "url": "https://example.com/5",
+              "title": "Example 5"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/6",
+          "title": "Example 6"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 7",
+          "links": [
+            {
+              "url": "https://example.com/7",
+              "title": "Example 7"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/8",
+          "title": "Example 8"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 9",
+          "links": [
+            {
+              "url": "https://example.com/9",
+              "title": "Example 9"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/10",
+          "title": "Example 10"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 11",
+          "links": [
+            {
+              "url": "https://example.com/11",
+              "title": "Example 11"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/12",
+          "title": "Example 12"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 13",
+          "links": [
+            {
+              "url": "https://example.com/13",
+              "title": "Example 13"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/14",
+          "title": "Example 14"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 15",
+          "links": [
+            {
+              "url": "https://example.com/15",
+              "title": "Example 15"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/16",
+          "title": "Example 16"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 17",
+          "links": [
+            {
+              "url": "https://example.com/17",
+              "title": "Example 17"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/18",
+          "title": "Example 18"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 19",
+          "links": [
+            {
+              "url": "https://example.com/19",
+              "title": "Example 19"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/20",
+          "title": "Example 20"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 21",
+          "links": [
+            {
+              "url": "https://example.com/21",
+              "title": "Example 21"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/22",
+          "title": "Example 22"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 23",
+          "links": [
+            {
+              "url": "https://example.com/23",
+              "title": "Example 23"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/24",
+          "title": "Example 24"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 25",
+          "links": [
+            {
+              "url": "https://example.com/25",
+              "title": "Example 25"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/26",
+          "title": "Example 26"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 27",
+          "links": [
+            {
+              "url": "https://example.com/27",
+              "title": "Example 27"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/28",
+          "title": "Example 28"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 29",
+          "links": [
+            {
+              "url": "https://example.com/29",
+              "title": "Example 29"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/30",
+          "title": "Example 30"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 31",
+          "links": [
+            {
+              "url": "https://example.com/31",
+              "title": "Example 31"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/32",
+          "title": "Example 32"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 33",
+          "links": [
+            {
+              "url": "https://example.com/33",
+              "title": "Example 33"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/34",
+          "title": "Example 34"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 35",
+          "links": [
+            {
+              "url": "https://example.com/35",
+              "title": "Example 35"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/36",
+          "title": "Example 36"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 37",
+          "links": [
+            {
+              "url": "https://example.com/37",
+              "title": "Example 37"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/38",
+          "title": "Example 38"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 39",
+          "links": [
+            {
+              "url": "https://example.com/39",
+              "title": "Example 39"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/40",
+          "title": "Example 40"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 41",
+          "links": [
+            {
+              "url": "https://example.com/41",
+              "title": "Example 41"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/42",
+          "title": "Example 42"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 43",
+          "links": [
+            {
+              "url": "https://example.com/43",
+              "title": "Example 43"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/44",
+          "title": "Example 44"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 45",
+          "links": [
+            {
+              "url": "https://example.com/45",
+              "title": "Example 45"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/46",
+          "title": "Example 46"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 47",
+          "links": [
+            {
+              "url": "https://example.com/47",
+              "title": "Example 47"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/48",
+          "title": "Example 48"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 49",
+          "links": [
+            {
+              "url": "https://example.com/49",
+              "title": "Example 49"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/50",
+          "title": "Example 50"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 51",
+          "links": [
+            {
+              "url": "https://example.com/51",
+              "title": "Example 51"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/52",
+          "title": "Example 52"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 53",
+          "links": [
+            {
+              "url": "https://example.com/53",
+              "title": "Example 53"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/54",
+          "title": "Example 54"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 55",
+          "links": [
+            {
+              "url": "https://example.com/55",
+              "title": "Example 55"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/56",
+          "title": "Example 56"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 57",
+          "links": [
+            {
+              "url": "https://example.com/57",
+              "title": "Example 57"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/58",
+          "title": "Example 58"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 59",
+          "links": [
+            {
+              "url": "https://example.com/59",
+              "title": "Example 59"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/60",
+          "title": "Example 60"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 61",
+          "links": [
+            {
+              "url": "https://example.com/61",
+              "title": "Example 61"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/62",
+          "title": "Example 62"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 63",
+          "links": [
+            {
+              "url": "https://example.com/63",
+              "title": "Example 63"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/64",
+          "title": "Example 64"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 65",
+          "links": [
+            {
+              "url": "https://example.com/65",
+              "title": "Example 65"
+            }
+          ]
+        },
+        {
+          "url": "https://example.com/66",
+          "title": "Example 66"
+        },
+        {
+          "type": "bookmarks",
+          "title": "Nested Folder 67",
+          "links": [
+            {
+              "url": "https://example.com/67",
+              "title": "Example 67"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

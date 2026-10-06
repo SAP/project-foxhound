@@ -1,5 +1,4 @@
 include_rules = [
-  "+vpx",
   "+call",
   "+common_video",
   "+sdk",
@@ -8,13 +7,14 @@ include_rules = [
   "+third_party/libyuv",
   "+rtc_base/system/rtc_export.h",
   "+video/config",
+  "+third_party/libvpx",
 ]
 
 specific_include_rules = {
-  "multiplex_encoder_adapter\.cc": [
+  "multiplex_encoder_adapter\\.cc": [
     "+media/base",
   ],
-  ".*test.*\.cc": [
+  ".*test.*\\.cc": [
      "+media/base",
      "+media/engine",
      "+video/config",

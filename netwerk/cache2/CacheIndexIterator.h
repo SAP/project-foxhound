@@ -2,11 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef CacheIndexIterator__h__
-#define CacheIndexIterator__h__
+#ifndef CacheIndexIterator_h_
+#define CacheIndexIterator_h_
 
-#include "nsTArray.h"
 #include "nsCOMPtr.h"
+#include "nsTHashSet.h"
 #include "mozilla/SHA1.h"
 #include "mozilla/StaticMutex.h"
 
@@ -52,7 +52,7 @@ class CacheIndexIterator {
 
   nsresult mStatus;
   RefPtr<CacheIndex> mIndex;
-  nsTArray<RefPtr<CacheIndexRecordWrapper>> mRecords;
+  nsTHashSet<RefPtr<CacheIndexRecordWrapper>> mRecords;
   bool mAddNew;
 };
 

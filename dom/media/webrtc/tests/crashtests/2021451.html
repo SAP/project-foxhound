@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<head>
+  <meta charset="utf-8">
+</head>
+<body>
+<script>
+document.addEventListener("DOMContentLoaded", async () => {
+    try {
+        const pc1 = new RTCPeerConnection;
+        const pc2 = new RTCPeerConnection;
+        const audioCtx = new AudioContext;
+        const dest = audioCtx.createMediaStreamDestination();
+        const audioSender = pc1.addTrack(dest.stream.getAudioTracks()[0], dest.stream);
+        await pc1.setLocalDescription();
+        await pc2.setRemoteDescription(pc1.localDescription);
+        await pc2.setLocalDescription();
+        await pc1.setRemoteDescription(pc2.localDescription);
+        const params = audioSender.getParameters();
+        params.encodings[0].maxBitrate = -1;
+        await audioSender.setParameters(params);
+    } finally {
+      document.documentElement.removeAttribute("class");
+    }
+})
+</script>

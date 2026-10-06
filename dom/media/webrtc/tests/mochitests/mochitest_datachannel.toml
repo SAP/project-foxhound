@@ -46,6 +46,9 @@ prefs = [
 ["test_dataChannel_basicDataOnly.html"]
 
 ["test_dataChannel_basicVideo.html"]
+skip-if = [
+  "isolated_process", # Bug 1709948
+]
 
 ["test_dataChannel_bug1013809.html"]
 
@@ -58,7 +61,9 @@ scheme = "http"
 
 ["test_dataChannel_hostnameObfuscation.html"]
 scheme = "http"
-skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64'"] # Bug 1961560
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1961560
+]
 
 ["test_dataChannel_id.html"]
 scheme = "http"

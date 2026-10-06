@@ -5,36 +5,35 @@
 
 // Test for as-authored styles.
 
-async function createTestContent(style) {
-  const html = `<style type="text/css">
-      ${style}
+add_task(async function () {
+  const html = `
+    <style type="text/css">
+      #testid {
+        /* Invalid property */
+        something: random;
+        /* Invalid value */
+        color: orang;
+        /* Override */
+        background-color: blue;
+        background-color: #f06;
+      }
       </style>
       <div id="testid" class="testclass">Styled Node</div>`;
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(html));
 
   const { inspector, view } = await openRuleView();
   await selectNode("#testid", inspector);
-  return view;
-}
 
-add_task(async function () {
-  const view = await createTestContent(
-    "#testid {" +
-      // Invalid property.
-      "  something: random;" +
-      // Invalid value.
-      "  color: orang;" +
-      // Override.
-      "  background-color: blue;" +
-      "  background-color: #f06;" +
-      "} "
-  );
-
-  const elementStyle = view._elementStyle;
+  const elementStyle = view.elementStyle;
 
   const expected = [
-    { name: "something", overridden: true, isNameValid: false, isValid: false },
-    { name: "color", overridden: true, isNameValid: true, isValid: false },
+    {
+      name: "something",
+      overridden: false,
+      isNameValid: false,
+      isValid: false,
+    },
+    { name: "color", overridden: false, isNameValid: true, isValid: false },
     {
       name: "background-color",
       overridden: true,

@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -21,5 +21,6 @@ TemporalHelpers.assertPlainDateTime(plainDateTime.with({ day: 8, hour: 10, year:
   2006, 1, "M01", 8, 10, 42, 58, 0, 0, 0,
   "only the properties that are present and defined in the plain object are copied"
 );
+// See options-empty.js for {} and () => {}
 
 reportCompare(0, 0);

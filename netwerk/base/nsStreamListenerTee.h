@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsStreamListenerTee_h__
-#define nsStreamListenerTee_h__
+#ifndef nsStreamListenerTee_h_
+#define nsStreamListenerTee_h_
 
 #include "nsIStreamListenerTee.h"
 #include "nsIThreadRetargetableStreamListener.h"

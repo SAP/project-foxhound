@@ -1,0 +1,117 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.smartwindow-panel-list-anchor {
+  height: var(--anchor-height, 0);
+  pointer-events: none;
+  position: absolute;
+  transform: translate(var(--anchor-left, 0), var(--anchor-top, 0));
+  visibility: hidden;
+  width: var(--anchor-width, 0);
+}
+
+panel-list {
+  --panel-list-border-radius: var(--space-medium);
+  --panel-list-box-shadow: var(--box-shadow-level-3);
+  --panel-max-width: 392px;
+  --panel-section-header-color: var(--text-color-deemphasized);
+  --panel-section-header-font-size: var(--font-size-small);
+  --panel-item-padding: calc(var(--size-item-small) / 2);
+  --panel-section-header-padding-inline-start: calc(var(--size-item-small) / 2);
+  --panel-item-icon-size: var(--icon-size-small);
+  --panel-item-button-border-radius: var(--border-radius-medium);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  max-width: var(--panel-max-width);
+  white-space: normal;
+
+  @media (not (prefers-contrast)) and (not -moz-pref("browser.nova.enabled")) {
+    --panel-list-background-color: light-dark(color-mix(in srgb, var(--color-violet-30) 5%, white), var(--color-violet-110));
+    --panel-list-border-color: light-dark(var(--color-purple-20), var(--color-gray-70));
+    --panel-list-color: light-dark(var(--color-violet-110), var(--color-violet-0));
+    --button-background-color-hover: light-dark(var(--color-violet-0), var(--color-violet-100));
+  }
+}
+
+@media -moz-pref("browser.nova.enabled") {
+  /* TODO: Bug 2033070 -  Nova tokens were implemented as the default value for the custom properties, and the fallbacks (and lint exceptions) will need to be removed after launch */
+  panel-list {
+    /* TODO: Bug 2030460 - replace with token when available */
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    --panel-list-border-radius: 12px;
+    --panel-section-header-padding-inline-start: var(--size-item-small);
+    /* TODO: Bug 2030460 - replace with token when available */
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    --panel-item-button-border-radius: 12px;
+
+    @media not (prefers-contrast) {
+      --panel-list-border-color: light-dark(var(--color-violet-desaturated-20), var(--color-violet-desaturated-50));
+      --panel-list-color: light-dark(var(--color-violet-90), var(--color-gray-0));
+      --panel-section-header-color: light-dark(
+        color-mix(in srgb, var(--color-violet-desaturated-90) 70%, transparent),
+        color-mix(in srgb, var(--color-violet-desaturated-0) 70%, transparent)
+      );
+      --button-background-color-hover: light-dark(
+        color-mix(in srgb, var(--color-violet-60) 15%, transparent),
+        color-mix(in srgb, var(--color-violet-40) 25%, transparent)
+      );
+      --button-background-color-active: light-dark(
+        color-mix(in srgb, var(--color-violet-60) 27%, transparent),
+        color-mix(in srgb, var(--color-violet-40) 40%, transparent)
+      );
+    }
+  }
+}
+
+panel-list[valign="bottom"] {
+  margin-block-start: var(--space-small);
+}
+
+panel-list[valign="top"] {
+  margin-block-start: calc(-1 * var(--space-small));
+}
+
+panel-item.panel-section-header::part(button) {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  color: var(--panel-section-header-color);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  font-size: var(--panel-section-header-font-size);
+  opacity: 1;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  padding-block: var(--panel-item-padding);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  padding-inline: var(--panel-section-header-padding-inline-start) var(--panel-item-padding);
+}
+
+panel-item:not(.panel-section-header)::part(button) {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  border-radius: var(--panel-item-button-border-radius);
+  cursor: pointer;
+  margin-inline: var(--space-small);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  max-width: calc(var(--panel-max-width) - var(--space-large));
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  padding: var(--panel-item-padding);
+}
+
+panel-item[icon]::part(button) {
+  background-image: var(--panel-item-icon-url);
+  background-size: var(--panel-item-icon-size);
+  background-repeat: no-repeat;
+  background-position: var(--panel-item-padding) center;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  padding-inline-start: calc(var(--panel-item-padding) + var(--panel-item-icon-size) + var(--panel-item-padding));
+  -moz-context-properties: fill;
+  fill: currentColor;
+}
+
+panel-item[icon]::part(button):dir(rtl) {
+  background-position-x: right var(--panel-item-padding);
+}
+
+panel-item::part(label) {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

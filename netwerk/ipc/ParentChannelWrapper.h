@@ -1,5 +1,3 @@
-/* vim: set sw=2 ts=8 et tw=80 : */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,8 +17,9 @@ class ParentChannelWrapper : public nsIParentChannel {
       : mChannel(aChannel), mListener(aListener) {}
 
   // Registers this nsIParentChannel wrapper with the RedirectChannelRegistrar
-  // and holds a reference.
-  void Register(uint64_t aRegistrarId);
+  // and holds a reference. aContentParentId identifies the process the redirect
+  // is destined for (0 for the parent process).
+  void Register(uint64_t aRegistrarId, uint64_t aContentParentId);
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIPARENTCHANNEL

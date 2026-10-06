@@ -17,7 +17,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=404748
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
-/** Test for Bug 404748 **/
+/** Test for Bug 404748 */
 var setterCalled = false;
 HTMLDivElement.prototype.
   __defineSetter__("onclick", function () { window.setterCalled = true });

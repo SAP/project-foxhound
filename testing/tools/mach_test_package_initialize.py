@@ -30,6 +30,7 @@ SEARCH_PATHS = [
     "mozbase/mozrunner",
     "mozbase/mozscreenshot",
     "mozbase/mozserve",
+    "mozbase/mozshellutil",
     "mozbase/mozsystemmonitor",
     "mozbase/moztest",
     "mozbase/mozversion",

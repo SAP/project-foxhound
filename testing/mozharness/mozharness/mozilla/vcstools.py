@@ -6,6 +6,7 @@
 
 Author: Armen Zambrano G.
 """
+
 import os
 
 from mozharness.base.script import PreScriptAction

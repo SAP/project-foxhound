@@ -1,0 +1,34 @@
+import pytest
+
+URL = "https://web.tax1099.com/#/?state=dG9rZW4lM0RleUpoYkdjaU9pSlNVekkxTmlJc0luUjVjQ0k2SWtwWFZDSjkuZXlKb2RIUndPaTh2YzJOb1pXMWhjeTU0Yld4emIyRndMbTl5Wnk5M2N5OHlNREExTHpBMUwybGtaVzUwYVhSNUwyTnNZV2x0Y3k5dVlXMWxhV1JsYm5ScFptbGxjaUk2SWpZeE9EWTBOQ0lzSW1oMGRIQTZMeTl6WTJobGJXRnpMbmh0YkhOdllYQXViM0puTDNkekx6SXdNRFV2TURVdmFXUmxiblJwZEhrdlkyeGhhVzF6TDJWdFlXbHNZV1JrY21WemN5STZJbk4xWlM1cGJuTndhWEpsWkVCbmJXRnBiQzVqYjIwaUxDSkRiMjV1WldOMGFXOXVTV1FpT2lJek9URXdZalptWWkwek9XTTVMVFJpTVRZdFltSTROUzFrT1dNek9EaGhaamcyTURVaUxDSk9ZVzFsSWpvaVUzVmxJRXRsY0doaGNuUWlMQ0pOYjJKcGJHVk9kVzFpWlhJaU9pSTNOelUxTkRRd05UZ3dJaXdpVlhObGNsUjVjR1VpT2lJeElpd2lRV1J0YVc1VmMyVnlUbUZ0WlNJNklpSXNJbWxoZENJNklqRTNOamt3TkRFd09UVWlMQ0p3WVhsdFpXNTBRMnhoYVcxeklqb2llMXdpVW05c1pWd2lPbHdpYzNWd1pYSmZZV1J0YVc1Y0lpeGNJbFZ6WlhKSlpGd2lPbHdpTkRWbE4yTm1NR0l0T0RJMllTMDBNemMwTFdJMk5ETXRabUk1T1RBMFl6WXlaR0ZsWENJc1hDSkpiblJsY201aGJGVnpaWEpjSWpwbVlXeHpaWDBpTENKbGVIQWlPakUzTmprd05EUTJPVFVzSW1semN5STZJbWgwZEhCek9pOHZZWEJwTFdGalkyOTFiblF1ZW1WdWQyOXlheTVqYjIwdklpd2lZWFZrSWpvaWFIUjBjSE02THk5M1pXSXVkR0Y0TVRBNU9TNWpiMjB2SW4wLnA0MkdsMHhXNy1RN1dodFpPdTBFdDJLQzJ6TnlyQWxNVTF3X283N1ExcGpZZzBuR2JpaTVVZWRCU3U1V2JhR0dHVjQ4V0hEWHhTNXZoUjF2cmJLRDg0cklVQ1R2MlhsNkthblp4ZTNLMkpSVVZWek1sdXBBZ3NVR0p0aEVQQXJQMGFzV19NTk9JS05QTHBJQkc4VHVtcGc0ZjJHYUVsX3VxRVUzR0l0RU9vSHVoQ2NRaEVONGppUHNkRm1aRWQ2MUJBRFREUFNVcllOZWJ6Mk4zMkgyWkIxalNvZmJFaHFJOWR3MGliYXJJTHNHTHcya3ZsQnRRa0dnV2prTVNlS3B2ZmdxSER5aFg3YUppbnRrUWZsQXlJeVNiTDAwZGtZaVI5ZVZlcndCYU1zekllYnJBTl8xV1NteTM1eDZBU05xbXQ0b043TkZra3BybDJqYjhJV0lMQSUyNmlkZW50aWZpZXIlM0QzOTEwYjZmYi0zOWM5LTRiMTYtYmI4NS1kOWMzODhhZjg2MDUlMjZ6cyUzRHQlMjZvJTNEaHR0cHMlMjUzQSUyNTJGJTI1MkZsb2dpbi50YXgxMDk5LmNvbQ=="
+
+USERNAME_CSS = "#email"
+PASSWORD_CSS = "#password"
+LOGIN_BUTTON_CSS = "button[type=submit]"
+
+IFRAME_CSS = "#chatbot-iframe"
+SUCCESS_CSS = "#toggle-chatbot"
+FAIL_MSG = "detectIncognito cannot determine the browser"
+
+
+async def get_to_ai_helper(client, credentials):
+    await client.make_preload_script("delete navigator.__proto__.webdriver")
+    await client.navigate(URL)
+    client.await_css(USERNAME_CSS, is_displayed=True).send_keys(credentials["username"])
+    client.await_css(PASSWORD_CSS, is_displayed=True).send_keys(credentials["password"])
+    client.await_css(LOGIN_BUTTON_CSS).click()
+
+
+@pytest.mark.asyncio
+@pytest.mark.with_interventions
+async def test_enabled(client, credentials):
+    await get_to_ai_helper(client, credentials)
+    client.switch_to_frame(client.await_css(IFRAME_CSS, timeout=30))
+    client.await_css(SUCCESS_CSS, is_displayed=True, timeout=30)
+
+
+@pytest.mark.asyncio
+@pytest.mark.without_interventions
+async def test_disabled(client, credentials):
+    await get_to_ai_helper(client, credentials)
+    await (await client.promise_console_message_listener(FAIL_MSG))

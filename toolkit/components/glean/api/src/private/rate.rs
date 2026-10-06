@@ -29,8 +29,8 @@ pub enum RateMetric {
     Child(ChildMetricMeta),
 }
 
-crate::define_metric_metadata_getter!(RateMetric, RATE_MAP);
-crate::define_metric_namer!(RateMetric);
+define_metric_metadata_getter!(RateMetric, RATE_MAP);
+define_metric_namer!(RateMetric);
 
 impl RateMetric {
     /// The public constructor used by automatically generated metrics.
@@ -84,7 +84,7 @@ impl Rate for RateMetric {
         };
 
         #[cfg(feature = "with_gecko")]
-        if gecko_profiler::can_accept_markers() {
+        if gecko_profiler::current_thread_is_being_profiled_for_markers() {
             gecko_profiler::add_marker(
                 "Rate::addToNumerator",
                 super::profiler_utils::TelemetryProfilerCategory,
@@ -118,7 +118,7 @@ impl Rate for RateMetric {
         };
 
         #[cfg(feature = "with_gecko")]
-        if gecko_profiler::can_accept_markers() {
+        if gecko_profiler::current_thread_is_being_profiled_for_markers() {
             gecko_profiler::add_marker(
                 "Rate::addToDenominator",
                 super::profiler_utils::TelemetryProfilerCategory,
@@ -132,28 +132,29 @@ impl Rate for RateMetric {
         }
     }
 
-    pub fn test_get_value<'a, S: Into<Option<&'a str>>>(
-        &self,
-        ping_name: S,
-    ) -> Option<glean::Rate> {
-        let ping_name = ping_name.into().map(|s| s.to_string());
-        match self {
-            RateMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
-            RateMetric::Child(meta) => {
-                panic!(
-                    "Cannot get test value for {:?} in non-parent process!",
-                    meta.id
-                );
-            }
-        }
-    }
-
     pub fn test_get_num_recorded_errors(&self, error: glean::ErrorType) -> i32 {
         match self {
             RateMetric::Parent { inner, .. } => inner.test_get_num_recorded_errors(error),
             RateMetric::Child(meta) => {
                 panic!(
                     "Cannot get the number of recorded errors for {:?} in non-parent process!",
+                    meta.id
+                );
+            }
+        }
+    }
+}
+
+#[inherent]
+impl glean::TestGetValue for RateMetric {
+    type Output = glean::Rate;
+
+    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<glean::Rate> {
+        match self {
+            RateMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
+            RateMetric::Child(meta) => {
+                panic!(
+                    "Cannot get test value for {:?} in non-parent process!",
                     meta.id
                 );
             }
@@ -179,7 +180,9 @@ mod test {
                 numerator: 1,
                 denominator: 100
             },
-            metric.test_get_value("test-ping").unwrap()
+            metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap()
         );
     }
 
@@ -220,7 +223,9 @@ mod test {
                 numerator: 45,
                 denominator: 33
             },
-            parent_metric.test_get_value("test-ping").unwrap(),
+            parent_metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap(),
             "Values from the 'processes' should be summed"
         );
     }

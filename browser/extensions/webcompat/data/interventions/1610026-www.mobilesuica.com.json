@@ -1,0 +1,15 @@
+{
+  "label": "www.mobilesuica.com",
+  "bugs": {
+    "1610026": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["https://www.mobilesuica.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

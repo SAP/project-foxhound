@@ -26,7 +26,7 @@ assert_invalid(
       (array.init_data \$a \$d1 (local.get \$1) (i32.const 0) (i32.const 0) (i32.const 0))
     )
   )`),
-  `array is immutable`,
+  `immutable array`,
 );
 
 // ./test/core/gc/array_init_data.wast:18

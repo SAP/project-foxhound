@@ -1,0 +1,51 @@
+{
+  "background": {
+    "color": {
+      "@base": {
+        "value": {
+          "light": "rgb(234, 234, 237)",
+          "dark": "{color.gray.90}",
+          "nativeTheme": "-moz-headerbar"
+        }
+      },
+      "inactive": {
+        "value": {
+          "default": "{toolbox.background.color.@base}",
+          "nativeTheme": "-moz-headerbarinactive"
+        }
+      },
+      "gradient-leading": {
+        "override": true,
+        "value": "unset"
+      },
+      "gradient-trailing": {
+        "override": true,
+        "value": "unset"
+      }
+    },
+    "nova-gradient": {
+      "comment": "This gradient is only used for Nova",
+      "value": {
+        "default": "linear-gradient(96deg, color-mix({toolbox.background.color.gradient-leading} 50%, transparent) 39.84%, color-mix({toolbox.background.color.gradient-trailing} 50%, transparent) 101.72%)",
+        "forcedColors": "image(transparent)"
+      }
+    }
+  },
+  "text": {
+    "color": {
+      "@base": {
+        "value": {
+          "light": "{color.gray.100}",
+          "dark": "{color.gray.0}",
+          "nativeTheme": "-moz-headerbartext"
+        }
+      },
+      "inactive": {
+        "value": {
+          "default": "{toolbox.text.color.@base}",
+          "nativeTheme": "-moz-headerbarinactivetext"
+        }
+      }
+    }
+  }
+}

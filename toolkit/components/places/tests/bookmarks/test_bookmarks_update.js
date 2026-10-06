@@ -107,7 +107,7 @@ add_task(async function invalid_input_throws() {
   );
 
   Assert.throws(
-    () => PlacesUtils.bookmarks.update({ url: NetUtil.newURI(longurl) }),
+    () => PlacesUtils.bookmarks.update({ url: Services.io.newURI(longurl) }),
     /Invalid value for property 'url'/
   );
   Assert.throws(

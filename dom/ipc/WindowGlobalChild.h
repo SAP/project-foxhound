@@ -1,5 +1,3 @@
-/* -*- Mode: C++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 8 -*- */
-/* vim: set sw=2 ts=8 et tw=80 ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,12 +7,12 @@
 
 #include "mozilla/RefPtr.h"
 #include "mozilla/WeakPtr.h"
-#include "mozilla/dom/PWindowGlobalChild.h"
-#include "nsRefPtrHashtable.h"
-#include "nsWrapperCache.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/PWindowGlobalChild.h"
 #include "mozilla/dom/WindowGlobalActor.h"
 #include "mozilla/dom/WindowProxyHolder.h"
+#include "nsRefPtrHashtable.h"
+#include "nsWrapperCache.h"
 
 class nsGlobalWindowInner;
 class nsDocShell;
@@ -39,7 +37,7 @@ class WindowGlobalChild final : public WindowGlobalActor,
   friend class PWindowGlobalChild;
 
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(WindowGlobalChild)
 
   static already_AddRefed<WindowGlobalChild> GetByInnerWindowId(
@@ -153,7 +151,7 @@ class WindowGlobalChild final : public WindowGlobalActor,
   void BlockBFCacheFor(BFCacheStatus aStatus);
 
  protected:
-  const nsACString& GetRemoteType() override;
+  const nsACString& GetRemoteType() const override;
 
   already_AddRefed<JSActor> InitJSActor(JS::Handle<JSObject*> aMaybeActor,
                                         const nsACString& aName,
@@ -161,9 +159,9 @@ class WindowGlobalChild final : public WindowGlobalActor,
   mozilla::ipc::IProtocol* AsNativeActor() override { return this; }
 
   // IPC messages
-  mozilla::ipc::IPCResult RecvRawMessage(
-      const JSActorMessageMeta& aMeta, const Maybe<ClonedMessageData>& aData,
-      const Maybe<ClonedMessageData>& aStack);
+  mozilla::ipc::IPCResult RecvRawMessage(const JSActorMessageMeta& aMeta,
+                                         JSIPCValue&& aData,
+                                         StructuredCloneData* aStack);
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvMakeFrameLocal(
@@ -179,11 +177,11 @@ class WindowGlobalChild final : public WindowGlobalActor,
   mozilla::ipc::IPCResult RecvDrawSnapshot(const Maybe<IntRect>& aRect,
                                            const float& aScale,
                                            const nscolor& aBackgroundColor,
-                                           const uint32_t& aFlags,
+                                           const CrossProcessPaintFlags& aFlags,
                                            DrawSnapshotResolver&& aResolve);
 
   mozilla::ipc::IPCResult RecvDispatchSecurityPolicyViolation(
-      const nsString& aViolationEventJSON);
+      const nsString& aViolationEventJSON, const nsString& aReportGroupName);
 
   mozilla::ipc::IPCResult RecvSaveStorageAccessPermissionGranted();
 
@@ -201,12 +199,24 @@ class WindowGlobalChild final : public WindowGlobalActor,
       dom::SessionStoreRestoreData* aData,
       RestoreTabContentResolver&& aResolve);
 
+  mozilla::ipc::IPCResult RecvNotifyAudioSessionStateChanged(
+      const dom::AudioSessionState& aState);
+
   mozilla::ipc::IPCResult RecvNotifyPermissionChange(const nsCString& aType,
                                                      uint32_t aPermission);
 
   // TODO: Use MOZ_CAN_RUN_SCRIPT when it gains IPDL support (bug 1539864)
   MOZ_CAN_RUN_SCRIPT_BOUNDARY mozilla::ipc::IPCResult RecvProcessCloseRequest(
       const MaybeDiscarded<dom::BrowsingContext>& aFrameContext);
+
+  mozilla::ipc::IPCResult RecvGetModelContextTools(
+      GetModelContextToolsResolver&& aResolver);
+
+  // TODO: Use MOZ_CAN_RUN_SCRIPT when it gains IPDL support (bug 1539864)
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  mozilla::ipc::IPCResult RecvInvokeModelContextTool(
+      const nsCString& aToolName, NotNull<StructuredCloneData*> aInput,
+      InvokeModelContextToolResolver&& aResolver);
 
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 

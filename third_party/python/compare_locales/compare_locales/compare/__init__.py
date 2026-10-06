@@ -13,7 +13,6 @@ from .content import ContentComparer
 from .observer import Observer, ObserverList
 from .utils import Tree, AddRemove
 
-
 __all__ = [
     "ContentComparer",
     "Observer",

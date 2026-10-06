@@ -9,7 +9,6 @@ import android.app.PendingIntent
 import android.app.PendingIntent.FLAG_UPDATE_CURRENT
 import android.content.Context
 import android.graphics.Bitmap
-import android.os.Build
 import android.support.v4.media.session.MediaSessionCompat
 import androidx.annotation.DrawableRes
 import androidx.core.app.NotificationCompat
@@ -23,8 +22,6 @@ import mozilla.components.feature.media.ext.getNonPrivateIcon
 import mozilla.components.feature.media.ext.getTitleOrUrl
 import mozilla.components.feature.media.service.AbstractMediaSessionService
 import mozilla.components.support.base.ids.SharedIdsHelper
-import mozilla.components.support.utils.PendingIntentUtils
-import java.util.Locale
 
 /**
  * Helper to display a notification for web content playing media.
@@ -61,17 +58,7 @@ internal class MediaNotification(
             builder.addAction(data.action)
             style.setShowActionsInCompactView(0)
         }
-
-        // There is a known OEM crash with Huawei Devices on lollipop with setting a style
-        // see https://github.com/mozilla-mobile/android-components/issues/7468 and
-        // https://issuetracker.google.com/issues/37078372
-        val huaweiOnLollipop =
-            Build.MANUFACTURER.lowercase(Locale.getDefault()).contains("huawei") &&
-                Build.VERSION.SDK_INT <= Build.VERSION_CODES.LOLLIPOP_MR1
-        if (!huaweiOnLollipop) {
-            builder.setStyle(style)
-        }
-
+        builder.setStyle(style)
         if (isCustomTab) {
             // We only set a content intent if this media notification is not for an "external app"
             // like a custom tab. Currently we can't route the user to that particular activity:
@@ -150,6 +137,6 @@ private data class NotificationData(
     val contentIntent: PendingIntent? = null,
 )
 
-private fun getNotificationFlag() = PendingIntentUtils.defaultFlags
+private fun getNotificationFlag() = PendingIntent.FLAG_IMMUTABLE
 
-private fun getUpdateNotificationFlag() = PendingIntentUtils.defaultFlags or FLAG_UPDATE_CURRENT
+private fun getUpdateNotificationFlag() = PendingIntent.FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT

@@ -11,13 +11,13 @@ prefs = [
 ]
 
 ["test_break_endless_upgrade_downgrade_loop.html"]
-skip-if = [
-  "os == 'android'", # no support for error pages, Bug 1697866
-  "http3",
-  "http2",
-]
 support-files = [
   "file_break_endless_upgrade_downgrade_loop.sjs",
+]
+skip-if = [
+  "http2",
+  "http3",
+  "os == 'android'", # no support for error pages, Bug 1697866
 ]
 
 ["test_fragment.html"]
@@ -26,39 +26,45 @@ support-files = ["file_fragment.html"]
 ["test_http_background_auth_request.html"]
 support-files = ["file_http_background_auth_request.sjs"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_http_background_request.html"]
 support-files = ["file_http_background_request.sjs"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_insecure_reload.html"]
 support-files = ["file_insecure_reload.sjs"]
-skip-if = ["os == 'android'"] # no https-only errorpage support in android
+skip-if = [
+  "os == 'android'", # no https-only errorpage support in android
+]
 
 ["test_redirect_upgrade.html"]
 scheme = "https"
-fail-if = ["xorigin"]
+fail-if = [
+  "xorigin",
+]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_resource_upgrade.html"]
 scheme = "https"
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_user_suggestion_box.html"]
+run-if = [
+  "os != 'android'", # no https-only errorpage support in android
+]
 skip-if = [
-  "os == 'android'", # no https-only errorpage support in android
-  "http3",
   "http2",
+  "http3",
 ]

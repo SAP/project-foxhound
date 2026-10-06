@@ -8,6 +8,7 @@
 #include "secasn1.h"
 #include "secitem.h"
 #include <stdarg.h>
+#include <limits.h>
 #include "secerr.h"
 #include "certi.h"
 
@@ -652,9 +653,18 @@ CERT_DecodeAVAValue(const SECItem *derAVAValue)
     }
 
     if (convert != conv_none) {
+        if (avaValue.len > UINT_MAX / 3) {
+            PORT_DestroyCheapArena(&tmpArena);
+            PORT_SetError(SEC_ERROR_INVALID_AVA);
+            return NULL;
+        }
         unsigned int utf8ValLen = avaValue.len * 3;
         unsigned char *utf8Val =
             (unsigned char *)PORT_ArenaZAlloc(&tmpArena.arena, utf8ValLen);
+        if (!utf8Val) {
+            PORT_DestroyCheapArena(&tmpArena);
+            return NULL;
+        }
 
         switch (convert) {
             case conv_ucs4:

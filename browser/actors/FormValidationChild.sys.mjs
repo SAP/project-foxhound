@@ -7,8 +7,6 @@
  * the display of the help panel on invalid elements.
  */
 
-import { LayoutUtils } from "resource://gre/modules/LayoutUtils.sys.mjs";
-
 export class FormValidationChild extends JSWindowActorChild {
   constructor() {
     super();
@@ -48,9 +46,9 @@ export class FormValidationChild extends JSWindowActorChild {
   notifyInvalidSubmit(aInvalidElements) {
     // Show a validation message on the first focusable element.
     for (let element of aInvalidElements) {
-      // Insure that this is the FormSubmitObserver associated with the
+      // Ensure that this is the FormSubmitObserver associated with the
       // element / window this notification is about.
-      if (this.contentWindow != element.ownerGlobal.document.defaultView) {
+      if (this.contentWindow != element.documentGlobal) {
         return;
       }
 
@@ -155,10 +153,12 @@ export class FormValidationChild extends JSWindowActorChild {
   _showPopup(aElement) {
     // Collect positional information and show the popup
     let panelData = {};
+    let win = aElement.documentGlobal;
 
     panelData.message = this._validationMessage;
 
-    panelData.screenRect = LayoutUtils.getElementBoundingScreenRect(aElement);
+    panelData.screenRect =
+      win.windowUtils.getElementBoundingScreenRect(aElement);
 
     // We want to show the popup at the middle of checkbox and radio buttons
     // and where the content begin for the other elements.
@@ -172,14 +172,14 @@ export class FormValidationChild extends JSWindowActorChild {
     }
     this.sendAsyncMessage("FormValidation:ShowPopup", panelData);
 
-    aElement.ownerGlobal.addEventListener("pagehide", this, {
+    win.addEventListener("pagehide", this, {
       mozSystemGroup: true,
     });
   }
 
   _hidePopup() {
     this.sendAsyncMessage("FormValidation:HidePopup", {});
-    this._element.ownerGlobal.removeEventListener("pagehide", this, {
+    this._element.documentGlobal.removeEventListener("pagehide", this, {
       mozSystemGroup: true,
     });
   }

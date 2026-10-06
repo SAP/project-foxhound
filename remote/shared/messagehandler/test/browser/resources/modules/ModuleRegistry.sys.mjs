@@ -43,6 +43,7 @@ ChromeUtils.defineESModuleGetters(modules.windowglobal, {
   commandwindowglobalonly: `${BASE_FOLDER}/windowglobal/commandwindowglobalonly.sys.mjs`,
   event: `${BASE_FOLDER}/windowglobal/event.sys.mjs`,
   eventemitter: `${BASE_FOLDER}/windowglobal/eventemitter.sys.mjs`,
+  eventemitterrelatedcontexts: `${BASE_FOLDER}/windowglobal/eventemitterrelatedcontexts.sys.mjs`,
   eventnointercept: `${BASE_FOLDER}/windowglobal/eventnointercept.sys.mjs`,
   eventonprefchange: `${BASE_FOLDER}/windowglobal/eventonprefchange.sys.mjs`,
   retry: `${BASE_FOLDER}/windowglobal/retry.sys.mjs`,

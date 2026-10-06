@@ -5,8 +5,6 @@
 package org.mozilla.fenix.debugsettings.region
 
 import android.content.Context
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,28 +12,34 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.flow.map
 import mozilla.components.browser.state.action.SearchAction
 import mozilla.components.browser.state.search.RegionState
 import mozilla.components.browser.state.store.BrowserStore
-import mozilla.components.compose.base.button.PrimaryButton
+import mozilla.components.compose.base.button.FilledButton
 import mozilla.components.compose.base.textfield.TextField
-import mozilla.components.lib.state.ext.observeAsState
 import org.mozilla.fenix.Config
 import org.mozilla.fenix.R
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.PreviewThemeProvider
+import org.mozilla.fenix.theme.Theme
 
 private const val DEFAULT_REGION = "XX"
 private const val MAX_REGION_LENGTH = 2
@@ -52,113 +56,117 @@ private const val PREFERENCE_KEY_HOME_REGION = "region.home"
 fun RegionTools(
     browserStore: BrowserStore,
 ) {
-    val region by browserStore.observeAsState(initialValue = RegionState.Default) { state ->
-        state.search.region ?: RegionState.Default
-    }
+    val region by remember {
+        browserStore.stateFlow.map { state ->
+            state.search.region ?: RegionState.Default
+        }
+    }.collectAsState(initial = RegionState.Default)
     val viewModel: RegionToolsViewModel = viewModel()
     val homeRegion = viewModel.homeRegion
     val currentRegion = viewModel.currentRegion
 
-    Column(
-        modifier = Modifier
-            .padding(all = 16.dp)
-            .verticalScroll(state = rememberScrollState()),
-    ) {
-        Text(
-            text = stringResource(R.string.debug_drawer_regin_tools_description),
-            color = FirefoxTheme.colors.textPrimary,
-            style = FirefoxTheme.typography.headline8,
-        )
+    Surface {
+        Column(
+            modifier = Modifier
+                .padding(all = 16.dp)
+                .verticalScroll(state = rememberScrollState()),
+        ) {
+            Text(
+                text = stringResource(R.string.debug_drawer_regin_tools_description),
+                style = FirefoxTheme.typography.headline8,
+            )
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-        Text(
-            text = stringResource(R.string.debug_drawer_home_region_label),
-            color = FirefoxTheme.colors.textPrimary,
-            style = FirefoxTheme.typography.caption,
-            modifier = Modifier.padding(4.dp),
-        )
+            Text(
+                text = stringResource(R.string.debug_drawer_home_region_label),
+                style = FirefoxTheme.typography.caption,
+                modifier = Modifier.padding(4.dp),
+            )
 
-        Text(
-            text = region.home,
-            color = FirefoxTheme.colors.textPrimary,
-            modifier = Modifier.padding(4.dp),
-            style = FirefoxTheme.typography.body1,
-        )
+            Text(
+                text = region.home,
+                modifier = Modifier.padding(4.dp),
+                style = FirefoxTheme.typography.body1,
+            )
 
-        Text(
-            text = stringResource(R.string.debug_drawer_current_region_label),
-            color = FirefoxTheme.colors.textPrimary,
-            style = FirefoxTheme.typography.caption,
-            modifier = Modifier.padding(4.dp),
-        )
+            Text(
+                text = stringResource(R.string.debug_drawer_current_region_label),
+                style = FirefoxTheme.typography.caption,
+                modifier = Modifier.padding(4.dp),
+            )
 
-        Text(
-            text = region.current,
-            color = FirefoxTheme.colors.textPrimary,
-            modifier = Modifier.padding(4.dp),
-            style = FirefoxTheme.typography.body1,
-        )
+            Text(
+                text = region.current,
+                modifier = Modifier.padding(4.dp),
+                style = FirefoxTheme.typography.body1,
+            )
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-        TextField(
-            value = viewModel.homeRegion,
-            onValueChange = {
-                it.validRegionInput(MAX_REGION_LENGTH)?.let { verifiedInput ->
-                    viewModel.homeRegion = verifiedInput
-                }
-            },
-            placeholder = "",
-            errorText = "",
-            modifier = Modifier.fillMaxWidth().padding(4.dp),
-            label = stringResource(R.string.debug_drawer_override_home_region_label),
-        )
+            TextField(
+                value = viewModel.homeRegion,
+                onValueChange = {
+                    it.validRegionInput(MAX_REGION_LENGTH)?.let { verifiedInput ->
+                        viewModel.homeRegion = verifiedInput
+                    }
+                },
+                placeholder = "",
+                errorText = "",
+                modifier = Modifier.fillMaxWidth().padding(4.dp),
+                label = stringResource(R.string.debug_drawer_override_home_region_label),
+            )
 
-        TextField(
-            value = viewModel.currentRegion,
-            onValueChange = {
-                it.validRegionInput(MAX_REGION_LENGTH)?.let { verifiedInput ->
-                    viewModel.currentRegion = verifiedInput
-                }
-            },
-            placeholder = "",
-            errorText = "",
-            modifier = Modifier.fillMaxWidth().padding(4.dp),
-            label = stringResource(R.string.debug_drawer_override_current_region_label),
-        )
+            TextField(
+                value = viewModel.currentRegion,
+                onValueChange = {
+                    it.validRegionInput(MAX_REGION_LENGTH)?.let { verifiedInput ->
+                        viewModel.currentRegion = verifiedInput
+                    }
+                },
+                placeholder = "",
+                errorText = "",
+                modifier = Modifier.fillMaxWidth().padding(4.dp),
+                label = stringResource(R.string.debug_drawer_override_current_region_label),
+            )
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-        PrimaryButton(
-            text = stringResource(R.string.debug_drawer_override_region),
-            modifier = Modifier.fillMaxWidth(),
-            onClick = {
-                browserStore.dispatch(
-                    SearchAction.SetRegionAction(
-                        regionState = RegionState(
-                            home = homeRegion.ifBlank { DEFAULT_REGION },
-                            current = currentRegion.ifBlank { DEFAULT_REGION },
+            FilledButton(
+                text = stringResource(R.string.debug_drawer_override_region),
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    browserStore.dispatch(
+                        SearchAction.SetRegionAction(
+                            regionState = RegionState(
+                                home = homeRegion.ifBlank { DEFAULT_REGION },
+                                current = currentRegion.ifBlank { DEFAULT_REGION },
+                            ),
+                            distribution = null,
                         ),
-                        distribution = null,
-                    ),
-                )
-            },
-        )
+                    )
+                },
+            )
 
-        if (Config.channel.isNightlyOrDebug) {
-            val preferences = LocalContext.current.getSharedPreferences(
+            if (Config.channel.isNightlyOrDebug) {
+                val preferences = LocalContext.current.getSharedPreferences(
                     PREFERENCE_FILE,
                     Context.MODE_PRIVATE,
                 )
 
-            PrimaryButton(
-                text = stringResource(R.string.debug_drawer_override_home_region_permanently),
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    preferences.edit { putString(PREFERENCE_KEY_HOME_REGION, homeRegion.ifBlank { DEFAULT_REGION }) }
-                },
-            )
+                FilledButton(
+                    text = stringResource(R.string.debug_drawer_override_home_region_permanently),
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        preferences.edit {
+                            putString(
+                                PREFERENCE_KEY_HOME_REGION,
+                                homeRegion.ifBlank { DEFAULT_REGION },
+                            )
+                        }
+                    },
+                )
+            }
         }
     }
 }
@@ -179,16 +187,14 @@ class RegionToolsViewModel : ViewModel() {
     var currentRegion by mutableStateOf("")
 }
 
+@Preview
 @Composable
-@PreviewLightDark
-private fun RegionScreenPreview() {
-    FirefoxTheme {
-        Box(
-            modifier = Modifier.background(color = FirefoxTheme.colors.layer1),
-        ) {
-            RegionTools(
-                browserStore = BrowserStore(),
-            )
-        }
+private fun RegionScreenPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
+        RegionTools(
+            browserStore = BrowserStore(),
+        )
     }
 }

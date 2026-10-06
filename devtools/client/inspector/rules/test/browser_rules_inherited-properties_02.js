@@ -24,8 +24,8 @@ add_task(async function () {
 
 function emptyInherit(inspector, view) {
   // No inheritable styles, this rule shouldn't show up.
-  const elementStyle = view._elementStyle;
-  is(elementStyle.rules.length, 1, "Should have 1 rule.");
+  const elementStyle = view.elementStyle;
+  assertDisplayedRulesCount(view, 1);
 
   const elementRule = elementStyle.rules[0];
   ok(

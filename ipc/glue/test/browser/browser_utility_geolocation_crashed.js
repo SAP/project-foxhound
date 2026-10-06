@@ -6,23 +6,10 @@
 async function getGeolocation() {
   info("Requesting geolocation");
 
-  let resolve;
-  let promise = new Promise((_resolve, _reject) => {
-    resolve = _resolve;
+  // We don't care about the response.  We are only testing recovery from the crash.
+  return new Promise(resolve => {
+    navigator.geolocation.getCurrentPosition(resolve);
   });
-
-  navigator.geolocation.getCurrentPosition(
-    () => {
-      ok(true, "geolocation succeeded");
-      resolve(undefined);
-    },
-    () => {
-      ok(false, "geolocation failed");
-      resolve(undefined);
-    }
-  );
-
-  return promise;
 }
 
 add_setup(async function () {

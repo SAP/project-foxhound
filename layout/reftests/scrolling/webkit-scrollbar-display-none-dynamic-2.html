@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<style>
+::-webkit-scrollbar {
+  display: block;
+}
+.scrollable {
+  overflow: scroll;
+  height: 100px;
+  width: 100px;
+  border: 2px solid black;
+}
+.scrollable::before {
+  display: block;
+  content: "overflowing content";
+  height: 300px;
+  width: 300px;
+}
+.none::-webkit-scrollbar {
+  display: none;
+}
+</style>
+<div class="scrollable"></div>
+<script>
+document.addEventListener('MozReftestInvalidate', () => {
+  document.querySelector(".scrollable").classList.add("none");
+  document.documentElement.classList.remove("reftest-wait");
+});
+</script>
+</html>

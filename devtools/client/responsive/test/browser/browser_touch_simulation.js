@@ -36,7 +36,7 @@ async function testWithNoTouch(ui) {
     info("testWithNoTouch: Initial test parameter and mouse mouse outside div");
     x = -1;
     y = -1;
-    await EventUtils.synthesizeMouse(
+    EventUtils.synthesizeMouse(
       div,
       x,
       y,
@@ -47,7 +47,7 @@ async function testWithNoTouch(ui) {
     div.style.backgroundColor = "";
 
     info("testWithNoTouch: Move mouse into the div element");
-    await EventUtils.synthesizeMouseAtCenter(
+    EventUtils.synthesizeMouseAtCenter(
       div,
       { type: "mousemove", isSynthesized: false },
       content
@@ -55,14 +55,14 @@ async function testWithNoTouch(ui) {
     is(div.style.backgroundColor, "red", "mouseenter or mouseover should work");
 
     info("testWithNoTouch: Drag the div element");
-    await EventUtils.synthesizeMouseAtCenter(
+    EventUtils.synthesizeMouseAtCenter(
       div,
       { type: "mousedown", isSynthesized: false },
       content
     );
     x = 100;
     y = 100;
-    await EventUtils.synthesizeMouse(
+    EventUtils.synthesizeMouse(
       div,
       x,
       y,
@@ -70,7 +70,7 @@ async function testWithNoTouch(ui) {
       content
     );
     is(div.style.transform, "none", "touchmove shouldn't work");
-    await EventUtils.synthesizeMouse(
+    EventUtils.synthesizeMouse(
       div,
       x,
       y,
@@ -81,7 +81,7 @@ async function testWithNoTouch(ui) {
     info("testWithNoTouch: Move mouse out of the div element");
     x = -1;
     y = -1;
-    await EventUtils.synthesizeMouse(
+    EventUtils.synthesizeMouse(
       div,
       x,
       y,
@@ -100,19 +100,19 @@ async function testWithNoTouch(ui) {
 
     // Assuming that this test runs on devices having no touch screen device.
     ok(
-      !content.document.defaultView.matchMedia("(pointer: coarse)").matches,
+      !content.matchMedia("(pointer: coarse)").matches,
       "pointer: coarse shouldn't be matched"
     );
     ok(
-      !content.document.defaultView.matchMedia("(hover: none)").matches,
+      !content.matchMedia("(hover: none)").matches,
       "hover: none shouldn't be matched"
     );
     ok(
-      !content.document.defaultView.matchMedia("(any-pointer: coarse)").matches,
+      !content.matchMedia("(any-pointer: coarse)").matches,
       "any-pointer: coarse shouldn't be matched"
     );
     ok(
-      !content.document.defaultView.matchMedia("(any-hover: none)").matches,
+      !content.matchMedia("(any-hover: none)").matches,
       "any-hover: none shouldn't be matched"
     );
   });
@@ -127,7 +127,7 @@ async function testWithTouch(ui) {
     info("testWithTouch: Initial test parameter and mouse mouse outside div");
     x = -1;
     y = -1;
-    await EventUtils.synthesizeMouse(
+    EventUtils.synthesizeMouse(
       div,
       x,
       y,
@@ -138,7 +138,7 @@ async function testWithTouch(ui) {
     div.style.backgroundColor = "";
 
     info("testWithTouch: Move mouse into the div element");
-    await EventUtils.synthesizeMouseAtCenter(
+    EventUtils.synthesizeMouseAtCenter(
       div,
       { type: "mousemove", isSynthesized: false },
       content
@@ -150,7 +150,7 @@ async function testWithTouch(ui) {
     );
 
     info("testWithTouch: Drag the div element");
-    await EventUtils.synthesizeMouseAtCenter(
+    EventUtils.synthesizeMouseAtCenter(
       div,
       { type: "mousedown", isSynthesized: false },
       content
@@ -158,7 +158,7 @@ async function testWithTouch(ui) {
     x = 100;
     y = 100;
     const touchMovePromise = ContentTaskUtils.waitForEvent(div, "touchmove");
-    await EventUtils.synthesizeMouse(
+    EventUtils.synthesizeMouse(
       div,
       x,
       y,
@@ -167,7 +167,7 @@ async function testWithTouch(ui) {
     );
     await touchMovePromise;
     isnot(div.style.transform, "none", "touchmove should work");
-    await EventUtils.synthesizeMouse(
+    EventUtils.synthesizeMouse(
       div,
       x,
       y,
@@ -178,7 +178,7 @@ async function testWithTouch(ui) {
     info("testWithTouch: Move mouse out of the div element");
     x = -1;
     y = -1;
-    await EventUtils.synthesizeMouse(
+    EventUtils.synthesizeMouse(
       div,
       x,
       y,
@@ -192,19 +192,19 @@ async function testWithTouch(ui) {
     );
 
     ok(
-      content.document.defaultView.matchMedia("(pointer: coarse)").matches,
+      content.matchMedia("(pointer: coarse)").matches,
       "pointer: coarse should be matched"
     );
     ok(
-      content.document.defaultView.matchMedia("(hover: none)").matches,
+      content.matchMedia("(hover: none)").matches,
       "hover: none should be matched"
     );
     ok(
-      content.document.defaultView.matchMedia("(any-pointer: coarse)").matches,
+      content.matchMedia("(any-pointer: coarse)").matches,
       "any-pointer: coarse should be matched"
     );
     ok(
-      content.document.defaultView.matchMedia("(any-hover: none)").matches,
+      content.matchMedia("(any-hover: none)").matches,
       "any-hover: none should be matched"
     );
   });

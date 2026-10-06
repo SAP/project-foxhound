@@ -1,23 +1,21 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsXULPrototypeCache_h__
-#define nsXULPrototypeCache_h__
+#ifndef nsXULPrototypeCache_h_
+#define nsXULPrototypeCache_h_
 
+#include "js/experimental/JSStencil.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/scache/StartupCache.h"
 #include "nsBaseHashtable.h"
 #include "nsCOMPtr.h"
 #include "nsIObserver.h"
+#include "nsIStorageStream.h"
 #include "nsInterfaceHashtable.h"
 #include "nsRefPtrHashtable.h"
 #include "nsURIHashKey.h"
 #include "nsXULPrototypeDocument.h"
-#include "nsIStorageStream.h"
-
-#include "mozilla/scache/StartupCache.h"
-#include "js/experimental/JSStencil.h"
-#include "mozilla/RefPtr.h"
 
 class nsIHandleReportCallback;
 namespace mozilla {
@@ -161,4 +159,4 @@ class nsXULPrototypeCache : public nsIObserver {
   nsresult BeginCaching(nsIURI* aDocumentURI);
 };
 
-#endif  // nsXULPrototypeCache_h__
+#endif  // nsXULPrototypeCache_h_

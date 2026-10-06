@@ -42,5 +42,34 @@ add_task(async function test_broadcasting_two_tabs_command() {
     broadcastValue.includes("broadcast-" + browsingContext2.id),
     "The broadcast returned the expected value from tab2"
   );
+
+  info("Unload the first tab and broadcast again");
+  await gBrowser.explicitUnloadTabs([tab1]);
+
+  const broadcastAfterUnload = await sendTestBroadcastCommand(
+    "commandwindowglobalonly",
+    "testBroadcast",
+    {},
+    contextDescriptorAll,
+    rootMessageHandler
+  );
+
+  ok(
+    Array.isArray(broadcastAfterUnload),
+    "The broadcast (after unload) returned an array of values"
+  );
+
+  is(
+    broadcastAfterUnload.length,
+    1,
+    "The broadcast (after unload) only returned 1 value"
+  );
+
+  is(
+    broadcastAfterUnload[0],
+    "broadcast-" + browsingContext2.id,
+    "The broadcast (after unload) returned the expected value from tab2"
+  );
+
   rootMessageHandler.destroy();
 });

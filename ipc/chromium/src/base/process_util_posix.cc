@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -17,9 +15,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include <limits>
-#include <set>
-
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/eintr_wrapper.h"
@@ -31,7 +26,6 @@
 #include "base/dir_reader_posix.h"
 
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 // For PR_DuplicateEnvironment:
 #include "prenv.h"
 #include "prmem.h"

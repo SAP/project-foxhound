@@ -2,14 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import functools
 import hashlib
 
 import mozpack.path as mozpath
-from mozbuild.util import memoize
 from mozversioncontrol import get_repository_object
 
 
-@memoize
+@functools.cache
 def hash_path(path):
     """Hash a single file.
 
@@ -19,7 +19,7 @@ def hash_path(path):
         return hashlib.sha256(fh.read()).hexdigest()
 
 
-@memoize
+@functools.cache
 def get_file_finder(base_path):
     return get_repository_object(base_path).get_tracked_files_finder(base_path)
 

@@ -43,6 +43,10 @@
 
 #if CAIRO_HAS_FT_FONT
 
+#ifdef FT_COLOR_H
+#include FT_COLOR_H
+#endif
+
 CAIRO_BEGIN_DECLS
 
 typedef struct _cairo_ft_unscaled_font cairo_ft_unscaled_font_t;

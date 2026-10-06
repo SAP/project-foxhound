@@ -296,19 +296,16 @@ add_task(async function webnav_transitions_props() {
   received = [];
   await loadAndWait(win, "onCompleted", REDIRECTED, () => { win.location = FRAME_REDIRECT; });
 
-  found = received.find((data) => (data.event == "onCommitted" && data.url == REDIRECT));
+  found = received.find((data) => (data.event == "onCommitted" && data.url == REDIRECTED));
 
   ok(found, "Got the onCommitted event");
 
   if (found) {
     is(found.details.transitionType, "auto_subframe",
        "Got the expected 'auto_subframe' transitionType in the OnCommitted event");
-    // TODO BUG 1264936: currently the server_redirect is not detected in sub-frames
-    // once we fix it we can test it here:
-    //
-    // ok(Array.isArray(found.details.transitionQualifiers) &&
-    //    found.details.transitionQualifiers.find((q) => q == "server_redirect"),
-    //    "Got the expected 'server_redirect' transitionQualifiers in the OnCommitted events");
+    ok(Array.isArray(found.details.transitionQualifiers) &&
+       found.details.transitionQualifiers.find((q) => q == "server_redirect"),
+       "Got the expected 'server_redirect' transitionQualifiers in the OnCommitted events");
   }
 
   // transitionType: manual_subframe

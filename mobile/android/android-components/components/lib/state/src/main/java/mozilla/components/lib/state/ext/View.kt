@@ -7,7 +7,8 @@ package mozilla.components.lib.state.ext
 import android.view.View
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.LifecycleOwner
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.launch
 import mozilla.components.lib.state.Action
@@ -24,13 +25,13 @@ import mozilla.components.support.ktx.android.view.toScope
  *
  * Inside a [Fragment] prefer to use [Fragment.consumeFrom].
  */
-@ExperimentalCoroutinesApi // Channel
 fun <S : State, A : Action> View.consumeFrom(
     store: Store<S, A>,
     owner: LifecycleOwner,
+    mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     block: (S) -> Unit,
 ) {
-    val scope = toScope()
+    val scope = toScope(mainDispatcher)
     val channel = store.channel(owner)
 
     scope.launch {

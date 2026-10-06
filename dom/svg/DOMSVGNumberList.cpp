@@ -1,18 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DOMSVGNumberList.h"
 
-#include "SVGElement.h"
-#include "DOMSVGNumber.h"
-#include "nsError.h"
-#include "SVGAnimatedNumberList.h"
-#include "mozilla/dom/SVGNumberListBinding.h"
-#include "mozilla/RefPtr.h"
 #include <algorithm>
+
+#include "DOMSVGNumber.h"
+#include "SVGAnimatedNumberList.h"
+#include "SVGElement.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/dom/SVGNumberListBinding.h"
+#include "nsError.h"
 
 // See the comment in this file's header.
 
@@ -149,7 +148,8 @@ already_AddRefed<DOMSVGNumber> DOMSVGNumberList::Initialize(DOMSVGNumber& aItem,
   // from this list, and so the InsertItemBefore() call would not insert a
   // clone of newItem, it would actually insert newItem. To prevent that from
   // happening we have to do the clone here, if necessary.
-  RefPtr<DOMSVGNumber> domItem = aItem.HasOwner() ? aItem.Clone() : &aItem;
+  RefPtr<DOMSVGNumber> domItem =
+      aItem.HasOwner() ? aItem.Clone() : do_AddRef(&aItem);
 
   Clear(aRv);
   MOZ_ASSERT(!aRv.Failed());
@@ -185,14 +185,14 @@ already_AddRefed<DOMSVGNumber> DOMSVGNumberList::InsertItemBefore(
     return nullptr;
   }
 
-  index = std::min(index, LengthNoFlush());
-  if (index >= DOMSVGNumber::MaxListIndex()) {
-    aRv.ThrowIndexSizeError("Index out of range");
+  if (LengthNoFlush() >= DOMSVGNumber::MaxListIndex()) {
+    aRv.ThrowIndexSizeError("List too long");
     return nullptr;
   }
 
   // must do this before changing anything!
-  RefPtr<DOMSVGNumber> domItem = aItem.HasOwner() ? aItem.Clone() : &aItem;
+  RefPtr<DOMSVGNumber> domItem =
+      aItem.HasOwner() ? aItem.Clone() : do_AddRef(&aItem);
 
   // Ensure we have enough memory so we can avoid complex error handling below:
   if (!mItems.SetCapacity(mItems.Length() + 1, fallible) ||
@@ -207,6 +207,8 @@ already_AddRefed<DOMSVGNumber> DOMSVGNumberList::InsertItemBefore(
       return nullptr;
     }
   }
+
+  index = std::min(index, LengthNoFlush());
 
   AutoChangeNumberListNotifier notifier(this);
   // Now that we know we're inserting, keep animVal list in sync as necessary.
@@ -238,7 +240,8 @@ already_AddRefed<DOMSVGNumber> DOMSVGNumberList::ReplaceItem(
   }
 
   // must do this before changing anything!
-  RefPtr<DOMSVGNumber> domItem = aItem.HasOwner() ? aItem.Clone() : &aItem;
+  RefPtr<DOMSVGNumber> domItem =
+      aItem.HasOwner() ? aItem.Clone() : do_AddRef(&aItem);
 
   AutoChangeNumberListNotifier notifier(this);
   if (mItems[index]) {

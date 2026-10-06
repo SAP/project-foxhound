@@ -34,10 +34,20 @@ options-show-user-agent-styles-label = Show Browser Styles
 options-show-user-agent-styles-tooltip =
     .title = Turning this on will show default styles that are loaded by the browser.
 
+# The label for the checkbox option to show all anonymous content
+options-show-user-agent-shadow-dom-label = Show Browser Shadow DOM
+options-show-user-agent-shadow-dom-tooltip =
+    .title = Turning this on will show Shadow DOM elements handled by the browser.
+
 # The label for the checkbox option to enable collapse attributes
 options-collapse-attrs-label = Truncate DOM attributes
 options-collapse-attrs-tooltip =
     .title = Truncate long attributes in the inspector
+
+# The label for the checkbox option to enable the display of comments in the Inspector
+options-show-comments-label = Show comments
+options-show-comments-tooltip =
+    .title = Display comment nodes in the inspector
 
 # The label for the checkbox option to enable the "drag to update" feature
 options-inspector-draggable-properties-label = Click and drag to edit size values
@@ -119,6 +129,54 @@ options-sourceeditor-tabsize-label = Tab size
 options-sourceeditor-keybinding-label = Keybindings
 options-sourceeditor-keybinding-default-label = Default
 
+## Local Mode section
+
+# The heading
+options-local-mode-label = Local Mode
+
+options-local-mode-only-work-locally = Local Mode only works locally and is disabled when debugging remote contexts
+
+options-local-mode-behavior = Local Mode allows you to load local files via https URL without any external dependency. The URLs can only be loaded from tabs with DevTools opened.
+
+options-local-mode-domain-label = Custom domain:
+
+options-local-mode-origin-input =
+    .placeholder = Origin for the local mapping
+
+# Errors shown when the origin input has an error
+options-local-mode-origin-conflict = This origin conflicts with another existing mapping
+options-local-mode-origin-invalid = This origin is invalid
+
+options-local-mode-folder-label = Local folder:
+
+options-local-mode-choose-folder = Browse…
+    .title = Choose a local folder to serve this mapping
+
+# Dialog's title when picking a folder for a mapping
+# Variables:
+#   $url (String): The url for the mapping being configured
+options-local-mode-choose-folder-picker-title = Choose local mode folder for: { $url }
+
+# Error shown when the folder is invalid
+# (can easily be triggered when using about:config and changing underlying mappings prefs)
+options-local-mode-folder-invalid = This folder doesn’t exists, or is invalid.
+
+options-local-mode-toggle =
+    .title = Toggle this local mapping
+
+options-local-mode-toggle-enable = Enable
+options-local-mode-toggle-disable = Disable
+
+options-local-mode-navigate-to =
+    .title = Navigate to this mapping URL
+
+# Dialog message prompted when clicking on the Delete button
+# Variables:
+#   $mappingOrigin (String): The origin for the mapping
+options-local-mode-confirm-deletion = Do you want to remove “{ $mappingOrigin }” mapping?
+
+options-local-mode-new-mapping = Add a new local mapping
+
 ## Advanced section
 
 # The heading (this item is also used in perftools.ftl)
@@ -130,7 +188,7 @@ options-disable-http-cache-tooltip =
     .title = Turning this option on will disable the HTTP cache for all tabs that have the toolbox open. Service Workers are not affected by this option.
 
 # The label for checkbox that toggles JavaScript on or off
-options-disable-javascript-label = Disable JavaScript *
+options-disable-javascript-label-2 = Disable JavaScript
 options-disable-javascript-tooltip =
     .title = Turning this option on will disable JavaScript for the current tab. If the tab or the toolbox is closed then this setting will be forgotten.
 
@@ -164,5 +222,23 @@ options-source-maps-label = Enable Source Maps
 options-source-maps-tooltip =
     .title = If you enable this option sources will be mapped in the tools.
 
+# The message shown for settings that trigger page reload and will only apply to the current session
+# This appears underneath the applicable options (e.g. options-disable-javascript-label-2).
+options-context-triggers-page-refresh-temporary = (current session only, reloads the page)
+
 # The message shown for settings that trigger page reload
-options-context-triggers-page-refresh = * Current session only, reloads the page
+# This appears underneath the applicable options (e.g. options-show-user-agent-shadow-dom-label).
+options-context-triggers-page-refresh-persists = (reloads the page)
+
+# This is used to add a * marker to the label for the Options Panel tool checkbox for the
+# tool which is not supported for the current toolbox target.
+# Variables:
+#   $toolLabel (String): The name of the tool not being supported
+options-tool-not-supported-marker = { $toolLabel } *
+
+# Used as a label for auto theme
+options-auto-theme-label = Auto
+
+# This is the text that appears in the settings panel for panel that will be removed in future releases.
+# This entire text is treated as a link to an MDN page.
+options-deprecation-notice = Deprecated. Learn More…

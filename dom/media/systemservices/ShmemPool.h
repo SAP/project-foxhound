@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,11 +11,12 @@
 
 extern mozilla::LazyLogModule sShmemPoolLog;
 #define SHMEMPOOL_LOG(args) \
-  MOZ_LOG(sShmemPoolLog, mozilla::LogLevel::Debug, args)
-#define SHMEMPOOL_LOG_WARN(args) \
-  MOZ_LOG(sShmemPoolLog, mozilla::LogLevel::Warning, args)
+  MOZ_LOG_FMT(sShmemPoolLog, mozilla::LogLevel::Debug, MOZ_LOG_EXPAND_ARGS args)
+#define SHMEMPOOL_LOG_WARN(args)                         \
+  MOZ_LOG_FMT(sShmemPoolLog, mozilla::LogLevel::Warning, \
+              MOZ_LOG_EXPAND_ARGS args)
 #define SHMEMPOOL_LOG_ERROR(args) \
-  MOZ_LOG(sShmemPoolLog, mozilla::LogLevel::Error, args)
+  MOZ_LOG_FMT(sShmemPoolLog, mozilla::LogLevel::Error, MOZ_LOG_EXPAND_ARGS args)
 
 namespace mozilla {
 
@@ -151,7 +150,7 @@ class ShmemPool final {
     if (poolUse > mMaxPoolUse) {
       mMaxPoolUse = poolUse;
       SHMEMPOOL_LOG(
-          ("Maximum ShmemPool use increased: %zu buffers", mMaxPoolUse));
+          ("Maximum ShmemPool use increased: {} buffers", mMaxPoolUse));
     }
 #endif
     return std::move(res);

@@ -29,6 +29,8 @@ import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_AUTOPLAY
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_AUTOPLAY_INAUDIBLE
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_DESKTOP_NOTIFICATION
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_GEOLOCATION
+import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_LOCAL_DEVICE_ACCESS
+import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_LOCAL_NETWORK_ACCESS
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_MEDIA_KEY_SYSTEM_ACCESS
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_PERSISTENT_STORAGE
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_STORAGE_ACCESS
@@ -147,7 +149,7 @@ class GeckoSitePermissionsStorage(
      * on the [geckoStorage] otherwise the same [SitePermissions].
      */
     @VisibleForTesting
-    @Suppress("LongMethod")
+    @Suppress("LongMethod", "CognitiveComplexMethod")
     internal suspend fun updateGeckoPermissionIfNeeded(
         userSitePermissions: SitePermissions,
         permissionRequest: PermissionRequest? = null,
@@ -165,6 +167,8 @@ class GeckoSitePermissionsStorage(
             val geckoCrossOriginStorageAccess = geckoPermissionsByType[PERMISSION_STORAGE_ACCESS]?.firstOrNull()
             val geckoAudible = geckoPermissionsByType[PERMISSION_AUTOPLAY_AUDIBLE]?.firstOrNull()
             val geckoInAudible = geckoPermissionsByType[PERMISSION_AUTOPLAY_INAUDIBLE]?.firstOrNull()
+            val geckoLocalDeviceAccess = geckoPermissionsByType[PERMISSION_LOCAL_DEVICE_ACCESS]?.firstOrNull()
+            val geckoLocalNetworkAccess = geckoPermissionsByType[PERMISSION_LOCAL_NETWORK_ACCESS]?.firstOrNull()
 
             /*
              * To avoid GeckoView caching previous request, we need to clear, previous data
@@ -235,6 +239,26 @@ class GeckoSitePermissionsStorage(
                 updatedPermission =
                     updatedPermission.copy(autoplayInaudible = AutoplayStatus.BLOCKED)
             }
+
+            if (geckoLocalDeviceAccess != null) {
+                removeTemporaryPermissionIfAny(geckoLocalDeviceAccess)
+                geckoStorage.setPermission(
+                    geckoLocalDeviceAccess,
+                    userSitePermissions.localDeviceAccess.toGeckoStatus(),
+                )
+                updatedPermission =
+                    updatedPermission.copy(localDeviceAccess = NO_DECISION)
+            }
+
+            if (geckoLocalNetworkAccess != null) {
+                removeTemporaryPermissionIfAny(geckoLocalNetworkAccess)
+                geckoStorage.setPermission(
+                    geckoLocalNetworkAccess,
+                    userSitePermissions.localNetworkAccess.toGeckoStatus(),
+                )
+                updatedPermission =
+                    updatedPermission.copy(localNetworkAccess = NO_DECISION)
+            }
         }
         return updatedPermission
     }
@@ -247,7 +271,7 @@ class GeckoSitePermissionsStorage(
      * @return a [SitePermissions] containing the values from the on disk and gecko permission.
      */
     @VisibleForTesting
-    @Suppress("ComplexMethod")
+    @Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod")
     internal fun mergePermissions(
         onDiskPermissions: SitePermissions?,
         geckoPermissionByType: Map<Int, List<ContentPermission>>,
@@ -267,53 +291,63 @@ class GeckoSitePermissionsStorage(
             }
             val geckoAudible = geckoPermissionByType[PERMISSION_AUTOPLAY_AUDIBLE]?.firstOrNull()
             val geckoInAudible = geckoPermissionByType[PERMISSION_AUTOPLAY_INAUDIBLE]?.firstOrNull()
+            val geckoLocalDeviceAccess = geckoPermissionByType[PERMISSION_LOCAL_DEVICE_ACCESS]?.firstOrNull()
+            val geckoLocalNetworkAccess = geckoPermissionByType[PERMISSION_LOCAL_NETWORK_ACCESS]?.firstOrNull()
 
-            /**
-             * We only consider permissions from geckoView, when the values default value
-             * has been changed otherwise we favor the values [onDiskPermissions].
-             */
+            // We only consider permissions from GeckoView when the values default value
+            // has been changed. Otherwise we favor the values [onDiskPermissions].
             if (geckoNotification != null && geckoNotification.value != VALUE_PROMPT) {
-                combinedPermissions = combinedPermissions?.copy(
+                combinedPermissions = combinedPermissions.copy(
                     notification = geckoNotification.value.toStatus(),
                 )
             }
 
             if (geckoLocation != null && geckoLocation.value != VALUE_PROMPT) {
-                combinedPermissions = combinedPermissions?.copy(
+                combinedPermissions = combinedPermissions.copy(
                     location = geckoLocation.value.toStatus(),
                 )
             }
 
             if (geckoMedia != null && geckoMedia.value != VALUE_PROMPT) {
-                combinedPermissions = combinedPermissions?.copy(
+                combinedPermissions = combinedPermissions.copy(
                     mediaKeySystemAccess = geckoMedia.value.toStatus(),
                 )
             }
 
             if (geckoStorage != null && geckoStorage.value != VALUE_PROMPT) {
-                combinedPermissions = combinedPermissions?.copy(
+                combinedPermissions = combinedPermissions.copy(
                     localStorage = geckoStorage.value.toStatus(),
                 )
             }
 
             if (geckoCrossOriginStorageAccess != null && geckoCrossOriginStorageAccess.value != VALUE_PROMPT) {
-                combinedPermissions = combinedPermissions?.copy(
+                combinedPermissions = combinedPermissions.copy(
                     crossOriginStorageAccess = geckoCrossOriginStorageAccess.value.toStatus(),
                 )
             }
 
-            /**
-             * Autoplay permissions don't have initial values, so when the value is changed on
-             * the gecko storage we trust it.
-             */
+            if (geckoLocalDeviceAccess != null && geckoLocalDeviceAccess.value != VALUE_PROMPT) {
+                combinedPermissions = combinedPermissions.copy(
+                    localDeviceAccess = geckoLocalDeviceAccess.value.toStatus(),
+                )
+            }
+
+            if (geckoLocalNetworkAccess != null && geckoLocalNetworkAccess.value != VALUE_PROMPT) {
+                combinedPermissions = combinedPermissions.copy(
+                    localNetworkAccess = geckoLocalNetworkAccess.value.toStatus(),
+                )
+            }
+
+            // Autoplay permissions don't have initial values, so when the value is changed on
+            // the gecko storage we trust it.
             if (geckoAudible != null && geckoAudible.value != VALUE_PROMPT) {
-                combinedPermissions = combinedPermissions?.copy(
+                combinedPermissions = combinedPermissions.copy(
                     autoplayAudible = geckoAudible.value.toAutoPlayStatus(),
                 )
             }
 
             if (geckoInAudible != null && geckoInAudible.value != VALUE_PROMPT) {
-                combinedPermissions = combinedPermissions?.copy(
+                combinedPermissions = combinedPermissions.copy(
                     autoplayInaudible = geckoInAudible.value.toAutoPlayStatus(),
                 )
             }
@@ -328,11 +362,15 @@ class GeckoSitePermissionsStorage(
         private: Boolean,
     ): List<ContentPermission>? {
         return withContext(mainScope.coroutineContext) {
-            val geckoPermissions = geckoStorage.getPermissions(origin, private).await()
-            if (includeTemporary) {
-                geckoPermissions
-            } else {
-                geckoPermissions.filterNotTemporaryPermissions(geckoTemporaryPermissions)
+            try {
+                val geckoPermissions = geckoStorage.getPermissions(origin, private).await()
+                if (includeTemporary) {
+                    geckoPermissions
+                } else {
+                    geckoPermissions.filterNotTemporaryPermissions(geckoTemporaryPermissions)
+                }
+            } catch (_: Exception) {
+                 null
             }
         }
     }

@@ -73,7 +73,22 @@ add_task(async function test_shortcuts() {
 async function do_test_shortcuts(activateTask) {
   info("Checks the shortcuts with a page that offers two engines.");
   let url = getRootDirectory(gTestPath) + "add_search_engine_two.html";
-  await BrowserTestUtils.withNewTab(url, async () => {
+  await BrowserTestUtils.withNewTab(url, async browser => {
+    info("Waiting for tab favicon, which will be used by the search engine");
+    await new Promise(resolve => {
+      let listener = {
+        onLinkIconAvailable(b) {
+          if (b !== browser) {
+            return;
+          }
+
+          gBrowser.removeTabsProgressListener(listener);
+          resolve();
+        },
+      };
+      gBrowser.addTabsProgressListener(listener);
+    });
+
     let shortcutButtons = UrlbarTestUtils.getOneOffSearchButtons(window);
     let rebuildPromise = BrowserTestUtils.waitForEvent(
       shortcutButtons,
@@ -95,8 +110,8 @@ async function do_test_shortcuts(activateTask) {
     );
 
     for (let button of addEngineButtons) {
-      Assert.ok(BrowserTestUtils.isVisible(button));
-      Assert.ok(button.hasAttribute("image"));
+      Assert.ok(BrowserTestUtils.isVisible(button), "button is visible");
+      Assert.ok(button.hasAttribute("image"), "button has image");
       await document.l10n.translateElements([button]);
       Assert.ok(
         button.getAttribute("tooltiptext").includes("add_search_engine_")
@@ -140,7 +155,7 @@ async function do_test_shortcuts(activateTask) {
 
     info("Remove the added engine");
     rebuildPromise = BrowserTestUtils.waitForEvent(shortcutButtons, "rebuild");
-    await Services.search.removeEngine(engine);
+    await SearchService.removeEngine(engine);
     await rebuildPromise;
     Assert.equal(
       Array.from(shortcutButtons.buttons.children).filter(b =>
@@ -202,11 +217,11 @@ add_task(async function shortcuts_without_other_engines() {
   info("Checks the shortcuts without other engines.");
 
   info("Remove search engines except default");
-  const defaultEngine = Services.search.defaultEngine;
-  const engines = await Services.search.getVisibleEngines();
+  const defaultEngine = SearchService.defaultEngine;
+  const engines = await SearchService.getVisibleEngines();
   for (const engine of engines) {
     if (defaultEngine.name !== engine.name) {
-      await Services.search.removeEngine(engine);
+      await SearchService.removeEngine(engine);
     }
   }
 
@@ -228,5 +243,5 @@ add_task(async function shortcuts_without_other_engines() {
     Assert.ok(shortcutButtons.container.hidden, "It should be hidden");
   });
 
-  Services.search.restoreDefaultEngines();
+  SearchService.restoreDefaultEngines();
 });

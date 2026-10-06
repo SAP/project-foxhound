@@ -62,7 +62,7 @@ class CurrentTimeScrubber extends PureComponent {
     event.stopPropagation();
     const current = this._ref.current;
     this.controllerArea = current.getBoundingClientRect();
-    this.listenerTarget = DevToolsUtils.getTopWindow(current.ownerGlobal);
+    this.listenerTarget = DevToolsUtils.getTopWindow(current.documentGlobal);
     this.listenerTarget.addEventListener("mousemove", this.onMouseMove);
     this.listenerTarget.addEventListener("mouseup", this.onMouseUp);
     this.decorationTarget = current.closest(".animation-list-container");

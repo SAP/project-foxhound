@@ -4,13 +4,13 @@
 
 package org.mozilla.fenix.home.blocklist
 
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
 import mozilla.components.browser.state.state.createTab
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.middleware.CaptureActionsMiddleware
-import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -46,13 +46,12 @@ class BlocklistMiddlewareTest {
                 topSites = appStore.state.topSites,
                 mode = appStore.state.mode,
                 collections = appStore.state.collections,
-                showCollectionPlaceholder = appStore.state.showCollectionPlaceholder,
                 recentTabs = appStore.state.recentTabs,
                 bookmarks = listOf(updatedBookmark),
                 recentHistory = appStore.state.recentHistory,
                 recentSyncedTabState = appStore.state.recentSyncedTabState,
             ),
-        ).joinBlocking()
+        )
 
         assertEquals(updatedBookmark, appStore.state.bookmarks[0])
     }
@@ -73,13 +72,12 @@ class BlocklistMiddlewareTest {
                 topSites = appStore.state.topSites,
                 mode = appStore.state.mode,
                 collections = appStore.state.collections,
-                showCollectionPlaceholder = appStore.state.showCollectionPlaceholder,
                 recentTabs = appStore.state.recentTabs,
                 bookmarks = listOf(updatedBookmark),
                 recentHistory = appStore.state.recentHistory,
                 recentSyncedTabState = appStore.state.recentSyncedTabState,
             ),
-        ).joinBlocking()
+        )
 
         assertEquals(updatedBookmark, appStore.state.bookmarks[0])
     }
@@ -100,13 +98,12 @@ class BlocklistMiddlewareTest {
                 topSites = appStore.state.topSites,
                 mode = appStore.state.mode,
                 collections = appStore.state.collections,
-                showCollectionPlaceholder = appStore.state.showCollectionPlaceholder,
                 recentTabs = appStore.state.recentTabs,
                 bookmarks = listOf(updatedBookmark),
                 recentHistory = appStore.state.recentHistory,
                 recentSyncedTabState = appStore.state.recentSyncedTabState,
             ),
-        ).joinBlocking()
+        )
 
         assertEquals(updatedBookmark, appStore.state.bookmarks[0])
     }
@@ -127,13 +124,12 @@ class BlocklistMiddlewareTest {
                 topSites = appStore.state.topSites,
                 mode = appStore.state.mode,
                 collections = appStore.state.collections,
-                showCollectionPlaceholder = appStore.state.showCollectionPlaceholder,
                 recentTabs = appStore.state.recentTabs,
                 bookmarks = listOf(updatedBookmark),
                 recentHistory = appStore.state.recentHistory,
                 recentSyncedTabState = appStore.state.recentSyncedTabState,
             ),
-        ).joinBlocking()
+        )
 
         assertTrue(appStore.state.bookmarks.isEmpty())
     }
@@ -156,13 +152,12 @@ class BlocklistMiddlewareTest {
                 topSites = appStore.state.topSites,
                 mode = appStore.state.mode,
                 collections = appStore.state.collections,
-                showCollectionPlaceholder = appStore.state.showCollectionPlaceholder,
                 recentTabs = updatedRecentTabs,
                 bookmarks = updatedBookmarks,
                 recentHistory = appStore.state.recentHistory,
                 recentSyncedTabState = appStore.state.recentSyncedTabState,
             ),
-        ).joinBlocking()
+        )
 
         assertTrue(appStore.state.bookmarks.isEmpty())
         assertTrue(appStore.state.recentTabs.isEmpty())
@@ -194,13 +189,12 @@ class BlocklistMiddlewareTest {
                 topSites = appStore.state.topSites,
                 mode = appStore.state.mode,
                 collections = appStore.state.collections,
-                showCollectionPlaceholder = appStore.state.showCollectionPlaceholder,
                 recentTabs = updatedRecentTabs,
                 bookmarks = updatedBookmarks,
                 recentHistory = appStore.state.recentHistory,
                 recentSyncedTabState = appStore.state.recentSyncedTabState,
             ),
-        ).joinBlocking()
+        )
 
         assertEquals(unblockedBookmark, appStore.state.bookmarks[0])
         assertEquals(unblockedRecentTab, appStore.state.recentTabs[0])
@@ -214,7 +208,7 @@ class BlocklistMiddlewareTest {
 
         val updateSlot = slot<Set<String>>()
         every { mockSettings.homescreenBlocklist } returns setOf() andThen setOf(removedUrl.stripAndHash())
-        every { mockSettings.homescreenBlocklist = capture(updateSlot) } returns Unit
+        every { mockSettings.homescreenBlocklist = capture(updateSlot) } just Runs
         val middleware = BlocklistMiddleware(blocklistHandler)
         val appStore = AppStore(
             AppState(bookmarks = listOf(removedBookmark)),
@@ -223,7 +217,7 @@ class BlocklistMiddlewareTest {
 
         appStore.dispatch(
             AppAction.RemoveBookmark(removedBookmark),
-        ).joinBlocking()
+        )
 
         val capturedAction = captureMiddleware.findFirstAction(AppAction.Change::class)
         assertEquals(emptyList<Bookmark>(), capturedAction.bookmarks)
@@ -247,13 +241,12 @@ class BlocklistMiddlewareTest {
                 topSites = appStore.state.topSites,
                 mode = appStore.state.mode,
                 collections = appStore.state.collections,
-                showCollectionPlaceholder = appStore.state.showCollectionPlaceholder,
                 recentTabs = appStore.state.recentTabs,
                 bookmarks = listOf(updatedBookmark),
                 recentHistory = appStore.state.recentHistory,
                 recentSyncedTabState = appStore.state.recentSyncedTabState,
             ),
-        ).joinBlocking()
+        )
 
         assertTrue(appStore.state.bookmarks.isEmpty())
     }
@@ -275,13 +268,12 @@ class BlocklistMiddlewareTest {
                 topSites = appStore.state.topSites,
                 mode = appStore.state.mode,
                 collections = appStore.state.collections,
-                showCollectionPlaceholder = appStore.state.showCollectionPlaceholder,
                 recentTabs = appStore.state.recentTabs,
                 bookmarks = listOf(updatedBookmark),
                 recentHistory = appStore.state.recentHistory,
                 recentSyncedTabState = appStore.state.recentSyncedTabState,
             ),
-        ).joinBlocking()
+        )
 
         assertTrue(appStore.state.bookmarks.isEmpty())
     }
@@ -303,13 +295,12 @@ class BlocklistMiddlewareTest {
                 topSites = appStore.state.topSites,
                 mode = appStore.state.mode,
                 collections = appStore.state.collections,
-                showCollectionPlaceholder = appStore.state.showCollectionPlaceholder,
                 recentTabs = appStore.state.recentTabs,
                 bookmarks = listOf(updatedBookmark),
                 recentHistory = appStore.state.recentHistory,
                 recentSyncedTabState = appStore.state.recentSyncedTabState,
             ),
-        ).joinBlocking()
+        )
 
         assertTrue(appStore.state.bookmarks.isEmpty())
     }
@@ -319,14 +310,14 @@ class BlocklistMiddlewareTest {
         val blockedHost = "https://www.mozilla.org"
         val blockedTab = RecentSyncedTab(
             deviceDisplayName = "",
-            deviceType = mock(),
+            deviceType = mockk(),
             title = "",
             url = "https://www.mozilla.org",
             previewImageUrl = null,
         )
         val allowedTab = RecentSyncedTab(
             deviceDisplayName = "",
-            deviceType = mock(),
+            deviceType = mockk(),
             title = "",
             url = "https://github.com",
             previewImageUrl = null,
@@ -349,7 +340,7 @@ class BlocklistMiddlewareTest {
                     ),
                 ),
             ),
-        ).joinBlocking()
+        )
 
         assertEquals(
             allowedTab,
@@ -371,7 +362,7 @@ class BlocklistMiddlewareTest {
             AppAction.RecentSyncedTabStateChange(
                 RecentSyncedTabState.None,
             ),
-        ).joinBlocking()
+        )
 
         assertEquals(RecentSyncedTabState.None, appStore.state.recentSyncedTabState)
     }
@@ -381,7 +372,7 @@ class BlocklistMiddlewareTest {
         val blockedHost = "https://www.mozilla.org"
         val blockedTab = RecentSyncedTab(
             deviceDisplayName = "",
-            deviceType = mock(),
+            deviceType = mockk(),
             title = "",
             url = "https://www.mozilla.org",
             previewImageUrl = null,
@@ -400,7 +391,7 @@ class BlocklistMiddlewareTest {
                     listOf(blockedTab),
                 ),
             ),
-        ).joinBlocking()
+        )
 
         assertEquals(
             RecentSyncedTabState.None,
@@ -414,21 +405,21 @@ class BlocklistMiddlewareTest {
         val currentTabs = listOf(
             RecentSyncedTab(
                 deviceDisplayName = "device1",
-                deviceType = mock(),
+                deviceType = mockk(),
                 title = "",
                 url = tabUrls[0],
                 previewImageUrl = null,
             ),
             RecentSyncedTab(
                 deviceDisplayName = "",
-                deviceType = mock(),
+                deviceType = mockk(),
                 title = "",
                 url = tabUrls[1],
                 previewImageUrl = null,
             ),
             RecentSyncedTab(
                 deviceDisplayName = "",
-                deviceType = mock(),
+                deviceType = mockk(),
                 title = "",
                 url = tabUrls[2],
                 previewImageUrl = null,
@@ -439,7 +430,7 @@ class BlocklistMiddlewareTest {
             middlewares = listOf(BlocklistMiddleware(blocklistHandler)),
         )
         val updateSlot = slot<Set<String>>()
-        every { mockSettings.homescreenBlocklist = capture(updateSlot) } returns Unit
+        every { mockSettings.homescreenBlocklist = capture(updateSlot) } just Runs
         every { mockSettings.homescreenBlocklist } returns setOf(tabUrls[0].stripAndHash())
         every { mockSettings.frecencyFilterQuery } returns ""
 
@@ -447,7 +438,7 @@ class BlocklistMiddlewareTest {
             AppAction.RemoveRecentSyncedTab(
                 currentTabs.first(),
             ),
-        ).joinBlocking()
+        )
 
         assertEquals(
             2,

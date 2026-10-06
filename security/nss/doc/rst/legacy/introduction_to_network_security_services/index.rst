@@ -10,7 +10,6 @@ Introduction to Network Security Services
    standards. For a general overview of NSS and the standards it supports, see
    :ref:`mozilla_projects_nss_overview`.
 
-.. _shared_libraries:
 
 `Shared libraries <#shared_libraries>`__
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -38,12 +37,7 @@ Introduction to Network Security Services
    threading and I/O. (Note that NSPR is a separate Mozilla project; see `Netscape Portable
    Runtime <https://developer.mozilla.org/en-US/docs/Mozilla/Projects/NSPR>`__ for details.)
 
-   .. image:: /en-US/docs/Mozilla/Projects/NSS/Introduction_to_Network_Security_Services/nss.gif
-      :alt: Diagram showing the relationships among core NSS libraries and NSPR.
-      :width: 429px
-      :height: 196px
 
-.. _naming_conventions_and_special_libraries:
 
 `Naming conventions and special libraries <#naming_conventions_and_special_libraries>`__
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -72,7 +66,6 @@ Introduction to Network Security Services
 
    The following static libraries aren't included in any shared libraries
 
-   -  ``libcrmf.a``/``crmf.lib`` provides an API for CRMF operations.
    -  ``libjar.a``/``jar.lib`` provides an API for creating JAR files.
 
    The following static libraries are included only in external loadable PKCS #11 modules:

@@ -276,3 +276,35 @@ addAccessibleTask(
     ok(!attributedText[2].AXHighlight);
   }
 );
+
+// Test the <mark> element, in conjunction with content that will
+// prevent the creation of a text attributes object.
+addAccessibleTask(
+  `<mark>a<button></button>b</mark>`,
+  async function testMarkNoAttributes(browser, accDoc) {
+    const macDoc = accDoc.nativeInterface.QueryInterface(
+      Ci.nsIAccessibleMacInterface
+    );
+    const range = macDoc.getParameterizedAttributeValue(
+      "AXTextMarkerRangeForUnorderedTextMarkers",
+      [
+        macDoc.getAttributeValue("AXStartTextMarker"),
+        macDoc.getAttributeValue("AXEndTextMarker"),
+      ]
+    );
+    const attributedText = macDoc.getParameterizedAttributeValue(
+      "AXAttributedStringForTextMarkerRange",
+      range
+    );
+    ok(attributedText, "Document has attributed text");
+    is(attributedText.length, 3, "3 pieces of attributed text exist");
+
+    ok(attributedText[0].AXHighlight, "0th pos text has highlight");
+    is(attributedText[0].string, "a", "0th pos text is string `a`");
+
+    ok(!attributedText[1].AXHighlight, "1st pos text has no highlight");
+
+    ok(attributedText[2].AXHighlight, "2nd pos text has highlight");
+    is(attributedText[2].string, "b", "2nd pos text is string `b`");
+  }
+);

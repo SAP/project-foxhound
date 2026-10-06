@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -20,5 +19,7 @@ enum RTCDtlsTransportState {
 interface RTCDtlsTransport : EventTarget {
   [SameObject] readonly attribute RTCIceTransport iceTransport;
   readonly attribute RTCDtlsTransportState state;
+  [Throws]
+  sequence<ArrayBuffer> getRemoteCertificates();
   attribute EventHandler onstatechange;
 };

@@ -5,11 +5,12 @@
 use api::{AsyncBlobImageRasterizer, BlobImageResult, DebugFlags, Parameter};
 use api::{DocumentId, PipelineId, ExternalEvent, BlobImageRequest};
 use api::{NotificationRequest, Checkpoint, IdNamespace, QualitySettings};
-use api::{PrimitiveKeyKind, GlyphDimensionRequest, GlyphIndexRequest};
+use api::{GlyphDimensionRequest, GlyphIndexRequest};
 use api::channel::{unbounded_channel, single_msg_channel, Receiver, Sender};
 use api::units::*;
 use crate::render_api::{ApiMsg, FrameMsg, SceneMsg, ResourceUpdate, TransactionMsg, MemoryReport};
 use crate::box_shadow::BoxShadow;
+use crate::prim_store::rectangle::RectanglePrim;
 #[cfg(feature = "capture")]
 use crate::capture::CaptureConfig;
 use crate::frame_builder::FrameBuilderConfig;
@@ -35,7 +36,6 @@ use crate::spatial_tree::{SceneSpatialTree, SpatialTreeUpdates};
 use crate::telemetry::Telemetry;
 use crate::SceneBuilderHooks;
 use std::iter;
-use time::precise_time_ns;
 use crate::util::drain_filter;
 use std::thread;
 use std::time::Duration;
@@ -550,7 +550,7 @@ impl SceneBuilderThread {
 
         let mut profile = txn.profile.take();
 
-        let scene_build_start = precise_time_ns();
+        let scene_build_start = zeitstempel::now();
         let mut removed_pipelines = Vec::new();
         let mut rebuild_scene = false;
         let mut frame_stats = FullFrameStats::default();
@@ -574,7 +574,7 @@ impl SceneBuilderThread {
                 } => {
                     let (builder_start_time_ns, builder_end_time_ns, send_time_ns) =
                       display_list.times();
-                    let content_send_time = profiler::ns_to_ms(precise_time_ns() - send_time_ns);
+                    let content_send_time = profiler::ns_to_ms(zeitstempel::now() - send_time_ns);
                     let dl_build_time = profiler::ns_to_ms(builder_end_time_ns - builder_start_time_ns);
                     profile.set(profiler::CONTENT_SEND_TIME, content_send_time);
                     profile.set(profiler::DISPLAY_LIST_BUILD_TIME, dl_build_time);
@@ -674,7 +674,7 @@ impl SceneBuilderThread {
         }
 
         let scene_build_time_ms =
-            profiler::ns_to_ms(precise_time_ns() - scene_build_start);
+            profiler::ns_to_ms(zeitstempel::now() - scene_build_start);
         profile.set(profiler::SCENE_BUILD_TIME, scene_build_time_ms);
 
         frame_stats.scene_build_time += scene_build_time_ms;

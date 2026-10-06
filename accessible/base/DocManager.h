@@ -38,6 +38,9 @@ class DocManager : public nsIWebProgressListener,
   NS_DECL_NSIWEBPROGRESSLISTENER
   NS_DECL_NSIDOMEVENTLISTENER
 
+  DocManager(const DocManager&) = delete;
+  DocManager& operator=(const DocManager&) = delete;
+
   /**
    * Return document accessible for the given DOM node.
    */
@@ -108,6 +111,10 @@ class DocManager : public nsIWebProgressListener,
   bool IsProcessingRefreshDriverNotification() const;
 #endif
 
+#ifdef MOZ_ENABLE_SKIA_PDF
+  static void NotifyOfPrintDocument(dom::Document* aDoc);
+#endif
+
  protected:
   DocManager();
   virtual ~DocManager() = default;
@@ -126,10 +133,6 @@ class DocManager : public nsIWebProgressListener,
     return mXPCDocumentCache.Count() > 0 ||
            (sRemoteXPCDocumentCache && sRemoteXPCDocumentCache->Count() > 0);
   }
-
- private:
-  DocManager(const DocManager&);
-  DocManager& operator=(const DocManager&);
 
  private:
   /**
@@ -151,7 +154,8 @@ class DocManager : public nsIWebProgressListener,
   /**
    * Create document or root accessible.
    */
-  DocAccessible* CreateDocOrRootAccessible(dom::Document* aDocument);
+  DocAccessible* CreateDocOrRootAccessible(dom::Document* aDocument,
+                                           bool aAllowStatic = false);
 
   /**
    * Clear the cache and shutdown the document accessibles.

@@ -62,6 +62,7 @@ export const SessionWriter = {
 
   /**
    * Write the contents of the session file.
+   *
    * @param state - May get changed on shutdown.
    */
   async write(state, options = {}) {

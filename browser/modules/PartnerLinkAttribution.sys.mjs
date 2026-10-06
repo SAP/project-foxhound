@@ -20,11 +20,12 @@ export var PartnerLinkAttribution = {
   /**
    * Sends an attribution request to an anonymizing proxy.
    *
-   * @param {string} targetURL
+   * @param {object} options
+   * @param {string} options.targetURL
    *   The URL we are routing through the anonmyzing proxy.
-   * @param {string} source
+   * @param {string} options.source
    *   The source of the anonmized request ("newtab" or "urlbar").
-   * @param {string} [campaignID]
+   * @param {string} [options.campaignID]
    *   The campaign ID for attribution. This should be a valid path on the
    *   anonymizing proxy. For example, if `campaignID` was `foo`, we'd send an
    *   attribution request to https://topsites.mozilla.com/cid/foo.

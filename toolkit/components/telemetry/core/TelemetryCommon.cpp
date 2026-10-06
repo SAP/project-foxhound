@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -112,9 +110,11 @@ nsresult MsSinceProcessStartExcludingSuspend(double* aResult) {
 void LogToBrowserConsole(uint32_t aLogLevel, const nsAString& aMsg) {
   if (!NS_IsMainThread()) {
     nsString msg(aMsg);
-    nsCOMPtr<nsIRunnable> task = NS_NewRunnableFunction(
-        "Telemetry::Common::LogToBrowserConsole",
-        [aLogLevel, msg]() { LogToBrowserConsole(aLogLevel, msg); });
+    nsCOMPtr<nsIRunnable> task =
+        NS_NewRunnableFunction("Telemetry::Common::LogToBrowserConsole",
+                               [aLogLevel, msg = std::move(msg)]() {
+                                 LogToBrowserConsole(aLogLevel, msg);
+                               });
     NS_DispatchToMainThread(task.forget(), NS_DISPATCH_NORMAL);
     return;
   }

@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -10,6 +10,7 @@ includes: [temporalHelpers.js]
 ---*/
 
 const tests = [
+  ["2019-12-15[u-ca=iso8601]", "without time or time zone"],
   ["2019-12-15T15:23[u-ca=iso8601]", "without time zone"],
   ["2019-12-15T15:23[UTC][u-ca=iso8601]", "with time zone"],
   ["2019-12-15T15:23[!u-ca=iso8601]", "with ! and no time zone"],

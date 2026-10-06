@@ -165,6 +165,19 @@ async function selectNodeWithManyVariablesAndLog(toolbox) {
   await selectNodeFront(inspector, testNodeFront);
   test.done();
 
+  // Select test node and measure the time to display the rule view with many unused variables,
+  // so we can check that our feature to hide unused variables has the expected impact
+  // on performance.
+  testNodeFront = await root.walkerFront.querySelector(
+    root,
+    ".many-unused-css-variables"
+  );
+
+  dump("Selecting .many-unused-css-variables test node front\n");
+  test = runTest("custom.inspector.manyunusedcssvariables.selectnode");
+  await selectNodeFront(inspector, testNodeFront);
+  test.done();
+
   await selectNodeFront(inspector, initialNodeFront);
 }
 

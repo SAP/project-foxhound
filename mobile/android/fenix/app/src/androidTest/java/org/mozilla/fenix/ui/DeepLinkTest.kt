@@ -4,14 +4,14 @@
 
 package org.mozilla.fenix.ui
 
-import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Rule
 import org.junit.Test
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
-import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.DeepLinkRobot
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
 /**
  *  Tests for verifying basic functionality of deep links
@@ -26,29 +26,29 @@ import org.mozilla.fenix.ui.robots.DeepLinkRobot
  *  - fenix://settings_logins — take the user to the settings page to do with logins (not the saved logins).
  **/
 
-class DeepLinkTest : TestSetup() {
-    private val robot = DeepLinkRobot()
+class DeepLinkTest {
+    @get:Rule(order = 0)
+    val fenixTestRule: FenixTestRule = FenixTestRule()
 
-    @get:Rule
-    val activityTestRule =
-        AndroidComposeTestRule(
-            HomeActivityIntentTestRule(
-                isMenuRedesignEnabled = false,
-                isMenuRedesignCFREnabled = false,
-            ),
+    @get:Rule(order = 1)
+    val composeTestRule =
+        AndroidComposeTestRuleV2(
+            HomeActivityIntentTestRule(isMenuRedesignCFREnabled = false),
         ) { it.activity }
 
-    @get:Rule
-    val memoryLeaksRule = DetectMemoryLeaksRule()
+    @get:Rule(order = 2)
+    val memoryLeaksRule = DetectMemoryLeaksRule(composeTestRule = { composeTestRule })
+
+    private val robot = DeepLinkRobot(composeTestRule)
 
     @Test
     fun openHomeScreen() {
         robot.openHomeScreen {
-            verifyHomeComponent(activityTestRule)
+            verifyHomeComponent()
         }
         robot.openSettings { /* move away from the home screen */ }
         robot.openHomeScreen {
-            verifyHomeComponent(activityTestRule)
+            verifyHomeComponent()
         }
     }
 
@@ -63,7 +63,7 @@ class DeepLinkTest : TestSetup() {
 
     @Test
     fun openBookmarks() {
-        robot.openBookmarks(activityTestRule) {
+        robot.openBookmarks(composeTestRule) {
             // verify we can see headings.
             verifyEmptyBookmarksMenuView()
         }
@@ -73,13 +73,6 @@ class DeepLinkTest : TestSetup() {
     fun openHistory() {
         robot.openHistory {
             verifyHistoryMenuView()
-        }
-    }
-
-    @Test
-    fun openCollections() {
-        robot.openCollections {
-            verifyCollectionsHeader(activityTestRule)
         }
     }
 
@@ -103,6 +96,13 @@ class DeepLinkTest : TestSetup() {
     fun openSettingsPrivacy() {
         robot.openSettingsPrivacy {
             verifyPrivacyHeading()
+        }
+    }
+
+    @Test
+    fun openSettingsAIControls() {
+        robot.openSettingsAIControls {
+            verifyAIControlsToolbarTitle()
         }
     }
 

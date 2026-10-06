@@ -9,12 +9,6 @@
 }
 
 .personalize-button {
-  // Throw these values for the button animation into variables
-  // so they're not recalculated all the time
-  --button-collapsed-width: calc(var(--size-item-small) + var(--size-item-medium));
-  --button-full-width: calc(2 * var(--button-collapsed-width));
-  --label-shift-by-value: calc(-1 * var(--space-small));
-
   border: 0;
   border-radius: var(--border-radius-small);
   background-color: var(--button-background-color, rgba(21, 20, 26, 7%));
@@ -26,9 +20,7 @@
   display: flex;
   align-items: center;
   overflow: hidden;
-  width: var(--button-collapsed-width);
-  min-width: var(--button-collapsed-width);
-  transition: all 0.5s ease-in-out;
+  transition: background-color 0.3s ease;
 
   .lightWallpaper &,
   .darkWallpaper & {
@@ -40,19 +32,17 @@
   }
 
   &:hover {
-    background-color: var(--newtab-element-hover-color);
-  }
-
-  &:focus {
-    background-color: var(--newtab-element-active-color);
+    background-color: var(--newtab-button-static-hover-background);
   }
 
   &:active {
-    background-color: var(--newtab-element-active-color);
+    background-color: var(--newtab-button-static-active-background);
   }
 
   &:focus-visible {
     @include ds-focus;
+
+    background-color: var(--newtab-button-static-active-background);
   }
 
   &.personalize-animate-exit-done {
@@ -80,47 +70,126 @@
   }
 
   > label {
-    margin-inline-start: 0;
+    margin-inline-end: 0;
     opacity: 0;
-    transform: translateX(var(--label-shift-by-value));
     white-space: nowrap;
+    overflow: hidden;
+    max-width: 0;
     transition:
-      opacity 0.5s ease-in-out,
-      margin 0.5s ease-in-out,
-      transform 0.5s ease-in-out;
+      opacity 0.3s ease,
+      margin 0.3s ease,
+      max-width 0.3s ease;
+  }
+
+}
+
+// @nova-cleanup(remove-conditional): replace .open-customization-button with the default .personalize-button styles
+.open-customization-button {
+  &.personalize-animate-exit-done {
+    visibility: hidden;
+  }
+
+  &::part(moz-button-label) {
+    opacity: 0;
+    max-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+
+    @media (prefers-reduced-motion: no-preference) {
+      transition: opacity 0.3s ease, max-width 0.3s ease;
+    }
+
+    @include wallpaper-contrast-fix;
+  }
+
+  &::part(button) {
+    min-width: var(--button-size-icon);
+    max-width: var(--button-size-icon);
+    height: var(--button-size-icon);
+    // centers the icon within the circular button when the label is hidden
+    padding-inline: 0 calc((var(--button-size-icon) - var(--icon-size-medium)) / 2);
+    overflow: hidden;
+    justify-content: flex-end;
+    gap: 0;
+
+    @media (prefers-reduced-motion: no-preference) {
+      transition: max-width 0.3s ease, padding 0.3s ease, gap 0.3s ease;
+    }
+
+    @include wallpaper-contrast-fix;
+  }
+
+  &:hover,
+  &:focus-within,
+  &.activation-window-variant-a,
+  &.activation-window-variant-b {
+    &::part(moz-button-label) {
+      opacity: 1;
+      max-width: 30ch;
+    }
+
+    &::part(button) {
+      // wider than the label to account for icon + gap + padding
+      max-width: calc(30ch + var(--icon-size-medium) + var(--space-small) + var(--space-large) * 2);
+      padding: var(--space-small) var(--space-large);
+      gap: var(--space-small);
+    }
   }
 }
 
 .personalize-button:hover,
-.personalize-button:focus {
-  width: fit-content;
-  // Animate the appearance of the button label on the min-width,
-  // as we need to cater for localised strings
-  min-width: var(--button-full-width);
-
+.personalize-button:focus-visible,
+.personalize-button:focus-within,
+.personalize-button.activation-window-variant-a,
+.personalize-button.activation-window-variant-b {
   > label {
     opacity: 1;
-    transform: translateX(0);
-    margin-inline-start: var(--space-small);
-    transition-duration: 0.2s;
+    margin-inline-end: var(--space-medium);
+    // CSS animations can only transition between fixed values;
+    // 30ch is enough to accommodate longest localized string (Bulgarian: 15ch)
+    max-width: 30ch;
   }
 }
 
 .customize-menu {
+  --customize-menu-bg: color-mix(in srgb, var(--newtab-background-color-secondary) 96%, transparent);
+
   color: var(--newtab-text-primary-color);
   background-color: var(--newtab-background-color-secondary);
   width: 432px;
-  height: 100%;
+  min-height: 100%;
   position: fixed;
   inset-block: 0;
-  inset-inline-end: 0;
+  inset-inline: auto 0;
   z-index: 1001;
   padding-block: 0 var(--space-large);
   padding-inline: var(--space-large);
-  overflow: auto;
   transform: translateX(435px);
   visibility: hidden;
   cursor: default;
+  overflow: auto;
+  border: none;
+  margin: 0;
+
+  // @nova-cleanup(remove-conditional): Remove &.nova-enabled and make these the default
+  &.nova-enabled {
+    background: var(--customize-menu-bg);
+    border-radius: var(--border-radius-large);
+    box-shadow: 0 0 14px 0 var(--box-shadow-color-accent-primary-primary);
+    width: 418px;
+    padding-inline: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: clip;
+    overflow-x: hidden;
+    min-height: calc(100% - var(--space-xsmall));
+    inset-block: var(--space-xxsmall);
+    inset-inline: auto var(--space-xxsmall);
+  }
+
+  &::backdrop {
+    background: transparent;
+  }
 
   @media (prefers-reduced-motion: no-preference) {
     // We need customize-animate-enter and customize-animate-exit to fix bug 1868232
@@ -153,6 +222,23 @@
   &.customize-animate-exit-active {
     box-shadow: $shadow-large;
   }
+}
+
+.customize-menu-content {
+  height: 100%;
+  overflow: auto;
+
+  // @nova-cleanup(remove-conditional): Remove .nova-enabled & and make these the default
+  .nova-enabled & {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    height: unset;
+  }
+
+  &.subpanel-open {
+    overflow: clip;
+  }
 
   .close-button-wrapper {
     position: sticky;
@@ -160,28 +246,55 @@
     padding-block-start: var(--space-large);
     background-color: var(--newtab-background-color-secondary);
     z-index: 1;
+
+    // @nova-cleanup(remove-conditional): Remove .nova-enabled & and make background: transparent the default
+    .nova-enabled & {
+      background: transparent;
+    }
+
+    moz-button {
+      margin-inline-start: auto;
+      margin-inline-end: var(--space-large);
+      display: block;
+    }
   }
 
-  .close-button {
-    margin-inline-start: auto;
-    margin-inline-end: var(--space-large);
-    white-space: nowrap;
-    display: block;
-    background-color: var(--newtab-element-secondary-color);
-    padding: var(--space-small) var(--space-medium);
-    border: $customize-menu-border-tint;
-    border-radius: var(--border-radius-small);
-    color: var(--newtab-text-primary-color);
-    font-size: var(--font-size-small);
-    font-weight: var(--font-weight-bold);
+  *:focus-visible {
+    outline: var(--focus-outline);
   }
 
-  .close-button:hover {
-    background-color: var(--newtab-element-secondary-hover-color);
-  }
+  .manage-settings-footer {
+    padding: var(--space-xlarge);
+    display: flex;
+    position: absolute;
+    inset-block-end: 0;
+    inset-inline-start: 0;
+    width: 100%;
+    // Fade background to transparent over the inline-end edge so the
+    // management panel scrollbar remains visible.
+    background: linear-gradient(to right, var(--customize-menu-bg) calc(100% - var(--space-xxlarge)), transparent);
 
-  .close-button:hover:active {
-    background-color: var(--newtab-element-secondary-active-color);
+    &:dir(rtl) {
+      background: linear-gradient(to left, var(--customize-menu-bg) calc(100% - var(--space-xxlarge)), transparent);
+    }
+
+    &::before {
+      content: '';
+      pointer-events: none;
+      position: absolute;
+      // calc() used here (instead of a literal 40px) to satisfy the Acorn token lint rule
+      // and to add a transparent-like gradient for the footer all while keeping it accessible
+      // --space-xlarge (1.5rem) + --space-large (1rem) = 2.5rem = 40px at default font size.
+      inset-block-start: calc((var(--space-xlarge) + var(--space-large)) * -1);
+      inset-inline: 0;
+      height: calc(var(--space-xlarge) + var(--space-large));
+      background: linear-gradient(to bottom, transparent, var(--customize-menu-bg));
+      mask-image: linear-gradient(to right, black calc(100% - var(--space-xxlarge)), transparent);
+    }
+
+    &:dir(rtl)::before {
+      mask-image: linear-gradient(to left, black calc(100% - var(--space-xxlarge)), transparent);
+    }
   }
 }
 
@@ -194,16 +307,41 @@
   grid-template-columns: 1fr;
   grid-template-rows: repeat(4, auto);
   grid-row-gap: var(--space-xxlarge);
-  padding: var(--space-large);
+  padding-block: var(--space-xsmall) var(--space-large);
+  padding-inline: var(--space-large);
+
+  // @nova-cleanup(remove-conditional): Remove .nova-enabled & and make these the default
+  .nova-enabled & {
+    align-content: start;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-inline: var(--space-xlarge);
+  }
 
   .wallpapers-section h2 {
     font-size: inherit;
   }
 
+  .widgets-section h2 {
+    font-size: inherit;
+    margin-block-start: 0;
+    font-weight: var(--font-weight-heading);
+  }
+
+  .settings-widgets,
   .settings-toggles {
     display: flex;
     flex-direction: column;
     gap: var(--space-xlarge);
+  }
+
+  .settings-widgets {
+    gap: var(--space-large);
+
+    .divider {
+      margin-block-start: var(--space-large);
+    }
   }
 
   [slot='nested'] {
@@ -261,35 +399,23 @@
       fill: var(--newtab-element-secondary-color);
     }
 
-    .selector {
-      color: var(--newtab-text-primary-color);
-      width: 118px;
-      display: block;
-      border: 1px solid var(--newtab-border-color);
-      border-radius: var(--border-radius-small);
-      appearance: none;
-      padding-block: var(--space-small);
-      padding-inline: var(--space-small) var(--space-medium);
-      margin-inline-start: var(--space-xxsmall);
-      margin-block-end: var(--space-xxsmall);
-      -moz-context-properties: fill;
-      fill: var(--newtab-text-primary-color);
-      background: url('chrome://global/skin/icons/arrow-down-12.svg') right no-repeat;
-      background-size: 8px;
-      background-origin: content-box;
-      background-color: var(--newtab-background-color-secondary);
+    #shortcuts-toggle {
+      display: flex;
+      flex-direction: column;
 
-      &:hover {
-        background-color: var(--newtab-element-secondary-hover-color);
-      }
-
-      &:dir(rtl) {
-        background-position-x: left;
+      #row-selector {
+        width: 138px;
       }
     }
 
+    .more-info-top-wrapper >
+    .more-information {
+      padding: var(--space-small);
+    }
+
     .more-info-top-wrapper,
-    .more-info-pocket-wrapper {
+    .more-info-pocket-wrapper,
+    .more-info-widgets-wrapper {
       margin-inline-start: calc(var(--space-xxsmall) * -1);
       overflow: hidden;
 
@@ -299,15 +425,27 @@
       }
     }
 
-    .more-info-pocket-wrapper {
+    .more-info-pocket-wrapper,
+    .more-info-widgets-wrapper {
       .more-information {
-        // Note: This is necessary so the follow/block topics panel can
+        // Note: This is necessary so the management panels can
         // be positioned absolutely across the entire Customize menu
         position: static;
+      }
+    }
+
+    .more-info-pocket-wrapper {
+      .more-information {
+        padding-block: var(--space-medium);
       }
 
       .check-wrapper {
         margin-block-end: var(--space-small);
+      }
+
+      // Prevent focus outline clipping by allowing overflow
+      &:has(moz-box-button:focus-within) {
+        overflow: visible;
       }
     }
 
@@ -338,47 +476,44 @@
   }
 
   .divider {
-    border-top: 1px var(--newtab-border-color) solid;
+    border-block-start: 1px var(--border-color) solid;
     margin: 0 calc(var(--space-large) * -1);
   }
 
-  .external-link {
-    -moz-context-properties: fill;
-    background: url('chrome://global/skin/icons/settings.svg') left no-repeat;
-    background-size: 16px;
-    border: 1px solid transparent;
-    border-radius: var(--border-radius-small);
-    color: var(--link-color);
-    cursor: pointer;
-    fill: var(--newtab-text-primary-color);
-    font-size: var(--font-size-small);
-    margin-block-end: var(--space-large);
-    padding-inline-start: var(--space-xlarge);
-    text-decoration: underline;
+}
 
-    &:hover {
-      color: var(--link-color-hover);
-      text-decoration: none;
-    }
+.external-link {
+  -moz-context-properties: fill;
+  background: url('chrome://global/skin/icons/settings.svg') left no-repeat;
+  background-size: 16px;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-small);
+  color: var(--link-color);
+  cursor: pointer;
+  fill: var(--link-color);
+  font-size: var(--font-size-small);
+  padding-inline-start: var(--space-xlarge);
+  text-decoration: underline;
 
-    &:active {
-      color: var(--link-color-active);
-    }
-
-    @media (forced-colors: active) {
-      padding: var(--space-small) var(--space-medium);
-      padding-inline-start: var(--space-xlarge);
-    }
-
-    &:dir(rtl) {
-      background-position-x: right;
-    }
-  }
-
-  .external-link:hover {
+  &:hover {
+    color: var(--link-color-hover);
     text-decoration: none;
   }
+
+  &:active {
+    color: var(--link-color-active);
+  }
+
+  @media (forced-colors: active) {
+    padding: var(--space-small) var(--space-medium);
+    padding-inline-start: var(--space-xlarge);
+  }
+
+  &:dir(rtl) {
+    background-position-x: right;
+  }
 }
+
 
 .external-link:focus-visible,
 .close-button:focus-visible {
@@ -390,7 +525,7 @@
 // Make sure form elements under the "Shortcuts" subsection don't change position on focus
 // by always having a 2px box shadow around them - one that blends in with the background.
 .home-section .section {
-  .customize-menu-checkbox, .selector {
+  .customize-menu-checkbox {
     outline: 0;
     box-shadow: 0 0 0 2px light-dark(var(--newtab-background-color), var(--newtab-background-color-dark));
   }
@@ -406,7 +541,7 @@
 // by setting a bright 2px box shadow in active and focus states.
 .home-section .section
 {
-  .customize-menu-checkbox, .selector {
+  .customize-menu-checkbox {
     &:is(:focus-visible) {
       box-shadow: 0 0 0 2px var(--color-accent-primary);
       outline: var(--focus-outline); // For Windows high-contrast mode
@@ -419,12 +554,10 @@
   }
 }
 
-.sections-mgmt-panel {
-  /* XXXdholbert The 32px subtraction here is to account for our 16px of
-  * margin on top and bottom. Ideally this should change to use
-  * 'height: stretch' when bug 1789477 lands. */
-  height: calc(100% - var(--space-xxlarge));
+.sections-mgmt-panel,
+.widgets-mgmt-panel {
   // Width of panel minus the margins
+  height: 100%;
   inset-inline-start: var(--space-xlarge);
   position: absolute;
   inset-block-start: 0;
@@ -434,31 +567,96 @@
   margin-block: var(--space-large) 0;
   padding: 0;
   background-color: var(--newtab-background-color-secondary);
+  overflow-y: auto;
+
+  // @nova-cleanup(remove-conditional): Remove .nova-enabled & and make these the default
+  .nova-enabled & {
+    height: 100vh;
+    inset-inline-start: 0;
+    position: fixed;
+    width: 100%;
+    margin-block: 0;
+  }
 
   &:dir(rtl) {
     transform: translateX(-100%);
+  }
+
+  h3 {
+    font-size: inherit;
+    margin-block: 0 var(--space-small);
+  }
+
+  // @nova-cleanup(remove-conditional): Remove button.arrow-button block once Nova ships
+  button.arrow-button {
+    background: url('chrome://global/skin/icons/arrow-left.svg') no-repeat left center;
+
+    &:dir(rtl) {
+      background: url('chrome://global/skin/icons/arrow-right.svg') no-repeat right center;
+    }
+
+    border: none;
+    cursor: pointer;
+    margin-block-end: var(--space-xlarge);
+    padding-inline-start: var(--space-xlarge);
+    -moz-context-properties: fill;
+    fill: currentColor;
+    min-height: var(--size-item-small);
+    margin-inline-start: var(--space-xsmall);
+    margin-block-start: var(--space-xsmall);
+
+    h1 {
+      font-size: var(--font-size-root);
+      margin-block: 0;
+      font-weight: var(--button-font-weight);
+    }
+  }
+
+  // @nova-cleanup(remove-conditional): Remove .nova-enabled & selector, keep .panel-content and .arrow-wrapper as default
+  .nova-enabled & {
+    .panel-content {
+      padding: var(--space-xlarge);
+    }
+
+    .arrow-wrapper {
+      display: flex;
+      align-items: center;
+      margin-block-end: var(--space-xlarge);
+
+      .arrow-button {
+        margin-inline-end: var(--space-small);
+      }
+
+      h2 {
+        font-size: var(--font-size-heading-medium);
+        margin-block: 0;
+        font-weight: var(--button-font-weight);
+      }
+    }
   }
 
   @media (prefers-reduced-motion: no-preference) {
     &.sections-mgmt-panel-enter,
     &.sections-mgmt-panel-exit,
     &.sections-mgmt-panel-enter-done,
-    &.sections-mgmt-panel-exit-done {
+    &.sections-mgmt-panel-exit-done,
+    &.widgets-mgmt-panel-enter,
+    &.widgets-mgmt-panel-exit,
+    &.widgets-mgmt-panel-enter-done,
+    &.widgets-mgmt-panel-exit-done {
       transition: transform 300ms;
     }
   }
 
   &.sections-mgmt-panel-enter-done,
-  &.sections-mgmt-panel-enter-active {
+  &.sections-mgmt-panel-enter-active,
+  &.widgets-mgmt-panel-enter-done,
+  &.widgets-mgmt-panel-enter-active {
     transform: translateX(0);
   }
+}
 
-  // Typography
-  h3 {
-    font-size: inherit;
-    margin-block: 0 var(--space-small);
-  }
-
+.sections-mgmt-panel {
   // List
   .topic-list {
     list-style: none;
@@ -480,30 +678,6 @@
     display: block;
     margin-block-end: var(--space-xxlarge);
     color: var(--text-color-deemphasized);
-  }
-
-  // Buttons
-  .arrow-button {
-    background: url('chrome://global/skin/icons/arrow-left.svg') no-repeat left center;
-
-    &:dir(rtl) {
-      background: url('chrome://global/skin/icons/arrow-right.svg') no-repeat right center;
-    }
-
-    border: none;
-    cursor: pointer;
-    margin-block-end: var(--space-xlarge);
-    padding-inline-start: var(--space-xlarge);
-    -moz-context-properties: fill;
-    fill: currentColor;
-    min-height: var(--space-large);
-
-    h1 {
-      font-size: var(--font-size-root);
-      margin-block: 0;
-      font-weight: var(--button-font-weight);
-    }
-
   }
 
   // Follow / Unfollow and Block / Unblock Buttons
@@ -567,5 +741,35 @@
       }
     }
   }
-
 }
+
+.widgets-mgmt-panel {
+  .settings-widgets {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-large);
+  }
+}
+
+.widgets-mgmt-panel-container {
+  padding-block: var(--space-medium);
+}
+
+// @nova-cleanup(remove-conditional): Remove .nova-enabled selector, make default behavior for #shortcuts-section, #widgets-section and #row-selector
+.nova-enabled {
+  #wallpapers-section,
+  #shortcuts-section,
+  #widgets-section,
+  #pocket-section {
+    margin-block: var(--space-medium);
+  }
+
+  .section #shortcuts-toggle #row-selector {
+    width: 100%;
+  }
+
+  #wallpapers-toggle {
+    margin-block-end: var(--space-large);
+  }
+}
+

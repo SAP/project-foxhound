@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -33,7 +31,7 @@ DIRS += [
     "signature_cache",
 ]
 
-CXXFLAGS += [
+COMPILE_FLAGS["WARNINGS_CXXFLAGS"] += [
     "-Wextra",
     "-Wunreachable-code",
 ]
@@ -41,6 +39,7 @@ CXXFLAGS += [
 # Gecko headers aren't warning-free enough for us to enable these warnings.
 CXXFLAGS += [
     "-Wno-unused-parameter",
+    "-Wno-missing-designated-field-initializers",
 ]
 
 include("/ipc/chromium/chromium-config.mozbuild")

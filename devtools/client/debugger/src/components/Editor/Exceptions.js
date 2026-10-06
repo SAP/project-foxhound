@@ -6,8 +6,6 @@ import { Component } from "devtools/client/shared/vendor/react";
 import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 import { connect } from "devtools/client/shared/vendor/react-redux";
 
-import { markerTypes } from "../../constants";
-
 import {
   getSelectedSource,
   getSelectedSourceExceptions,
@@ -46,8 +44,10 @@ class Exceptions extends Component {
       !exceptions.length ||
       prevProps?.selectedSource !== selectedSource
     ) {
-      editor.removeLineContentMarker(markerTypes.LINE_EXCEPTION_MARKER);
-      editor.removePositionContentMarker(markerTypes.EXCEPTION_POSITION_MARKER);
+      editor.removeLineContentMarker(editor.markerTypes.LINE_EXCEPTION_MARKER);
+      editor.removePositionContentMarker(
+        editor.markerTypes.EXCEPTION_POSITION_MARKER
+      );
     }
   }
 
@@ -58,13 +58,13 @@ class Exceptions extends Component {
     }
 
     editor.setLineContentMarker({
-      id: markerTypes.LINE_EXCEPTION_MARKER,
+      id: editor.markerTypes.LINE_EXCEPTION_MARKER,
       lineClassName: "line-exception",
       lines: exceptions.map(e => ({ line: e.lineNumber })),
     });
 
     editor.setPositionContentMarker({
-      id: markerTypes.EXCEPTION_POSITION_MARKER,
+      id: editor.markerTypes.EXCEPTION_POSITION_MARKER,
       positionClassName: "mark-text-exception",
       positions: exceptions.map(e => ({
         line: e.lineNumber,

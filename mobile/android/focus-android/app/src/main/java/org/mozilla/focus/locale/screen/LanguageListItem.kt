@@ -7,8 +7,8 @@ package org.mozilla.focus.locale.screen
 /**
  * Data class for the LanguageListItem that goes to the compose ListView
  *
- * @param language item to be display in ListView
- * @param onClick Callback when the user taps on Language Item
+ * @property language item to be display in ListView
+ * @property onClick Callback when the user taps on Language Item
  */
 data class LanguageListItem(
     val language: Language,

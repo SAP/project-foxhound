@@ -1,0 +1,21 @@
+{
+  "label": "developer.apple.com",
+  "bugs": {
+    "1925508": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://developer.apple.com/*"]
+    }
+  },
+  "css": {
+    "fallback_for_css_zoom": "@media only screen and (min-device-width: 320px) and (max-device-width: 980px), (min-device-width: 1024px) and (max-device-width: 1024px) and (min-device-height: 1366px) and (max-device-height: 1366px) and (min-width: 320px) and (max-width: 980px) { #tocContainer { -moz-transform: initial; } }"
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "pref_check": {
+        "layout.css.prefixes.transforms": true
+      },
+      "css": ["fallback_for_css_zoom"]
+    }
+  ]
+}

@@ -31,6 +31,7 @@ about-logging-no-log-modules = None
 about-logging-no-log-file = None
 about-logging-logging-preset-selector-text = Logging preset:
 about-logging-with-profiler-stacks-checkbox = Enable stack traces for log messages
+about-logging-with-javascript-tracing-checkbox = Enable JavaScript tracing
 about-logging-menu =
   .title = Advanced options
 
@@ -54,6 +55,10 @@ about-logging-preset-webcodecs-label = WebCodecs
 about-logging-preset-webcodecs-description = Log modules to diagnose issues with WebCodecs audio/video decoders and encoders, and image decoders
 about-logging-preset-ml-label = Machine Learning
 about-logging-preset-ml-description = Log modules to diagnose machine learning issues
+about-logging-preset-web-compat-label = Web Compat
+about-logging-preset-web-compat-description = Log modules to diagnose web compatibility issues
+about-logging-preset-navigation = Navigation
+about-logging-preset-navigation-description = Log modules to diagnose navigation and session history issues
 about-logging-preset-webgpu-label = WebGPU
 about-logging-preset-webgpu-description = Log modules to diagnose WebGPU issues
 about-logging-preset-gfx-label = Graphics
@@ -111,4 +116,29 @@ about-logging-share-uploaded-url = <img data-l10n-name="share-image"/> Share URL
 about-logging-upload-error = An error happened while uploading the profile: { $errorText }
 # Variables:
 #   $errorText (string) - The received error message, inserted as is.
+about-logging-profile-storage-error = An error happened while storing the uploaded profile: { $errorText }
+# Variables:
+#   $errorText (string) - The received error message, inserted as is.
 about-logging-save-error = An error happened while saving the file: { $errorText }
+
+## Uploaded Profiles section
+
+# This string is used as the default name for performance profiles when they are
+# uploaded from about:logging and saved to the local database. The generated
+# name will appear in the "Uploaded Profiles" section list, allowing users to
+# identify when each profile was captured.
+# Variables:
+#   $date (date) - The date and time when the profile was uploaded
+about-logging-uploaded-profile-name = Profile { DATETIME($date, dateStyle: "short", timeStyle: "medium") }
+
+about-logging-uploaded-profiles-title = Uploaded Profiles
+about-logging-no-uploaded-profiles = No profiles have been uploaded yet.
+about-logging-delete-uploaded-profile = Delete
+about-logging-view-uploaded-profile = View Profile
+about-logging-delete-profile-confirm-title = Delete Profile
+
+# Confirmation message shown when deleting an uploaded profile.
+# Variables:
+#   $profileName (string) - The name of the profile being deleted.
+about-logging-delete-profile-confirm = Are you sure you want to delete the profile “{ $profileName }”? This cannot be undone.
+about-logging-deleting-profile = Deleting…

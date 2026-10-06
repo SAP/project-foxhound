@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +9,7 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/DOMStringList.h"
 #include "mozilla/dom/LocationBase.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsString.h"
@@ -22,6 +21,10 @@ class nsIURI;
 class nsPIDOMWindowInner;
 
 namespace mozilla::dom {
+
+// Serializes principals to strings for location.ancestorOrigin purposes.
+nsTArray<nsString> ProduceAncestorOriginsList(
+    const nsTArray<nsCOMPtr<nsIPrincipal>>& aPrincipals);
 
 //*****************************************************************************
 // Location: Script "location" object
@@ -102,6 +105,9 @@ class Location final : public nsISupports,
   void SetHash(const nsACString& aHash, nsIPrincipal& aSubjectPrincipal,
                ErrorResult& aError);
 
+  RefPtr<DOMStringList> GetAncestorOrigins(nsIPrincipal& aSubjectPrincipal,
+                                           ErrorResult& aRv);
+
   nsPIDOMWindowInner* GetParentObject() const { return mInnerWindow; }
 
   virtual JSObject* WrapObject(JSContext* aCx,
@@ -130,6 +136,7 @@ class Location final : public nsISupports,
 
   nsCString mCachedHash;
   nsCOMPtr<nsPIDOMWindowInner> mInnerWindow;
+  RefPtr<DOMStringList> mRelevantDocNullAncestorOriginsList;
 };
 
 }  // namespace mozilla::dom

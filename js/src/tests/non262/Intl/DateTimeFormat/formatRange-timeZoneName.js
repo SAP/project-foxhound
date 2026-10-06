@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // Test all "timeZoneName" options with various locales when formatting a
 // date-time range.
 
@@ -24,11 +22,11 @@ const tests = {
       options: {hour: "numeric", minute: "numeric", hour12: false},
       timeZoneNames: {
         short: [Hour("00"), Literal(":"), Minute("00"), Literal(" – "), Hour("00"), Literal(":"), Minute("02"), Literal(" "), TimeZoneName("UTC")],
-        shortOffset: [Hour("00"), Literal(":"), Minute("00"), Literal(" – "), Hour("00"), Literal(":"), Minute("02"), Literal(" "), TimeZoneName("GMT")],
+        shortOffset: [Hour("00"), Literal(":"), Minute("00"), Literal(" – "), Hour("00"), Literal(":"), Minute("02"), Literal(" "), TimeZoneName("GMT+0")],
         shortGeneric: "shortOffset",
         long: [Hour("00"), Literal(":"), Minute("00"), Literal(" – "), Hour("00"), Literal(":"), Minute("02"), Literal(" "), TimeZoneName("Coordinated Universal Time")],
-        longOffset: "shortOffset",
-        longGeneric: "shortOffset",
+        longOffset: [Hour("00"), Literal(":"), Minute("00"), Literal(" – "), Hour("00"), Literal(":"), Minute("02"), Literal(" "), TimeZoneName("GMT+00:00")],
+        longGeneric: "longOffset",
       },
     },
     {
@@ -54,11 +52,11 @@ const tests = {
       options: {hour: "numeric", hour12: false},
       timeZoneNames: {
         short: [Hour("00"), Literal(" – "), Hour("02"), Literal(" "), TimeZoneName("UTC")],
-        shortOffset: "short",
-        shortGeneric: "short",
+        shortOffset: [Hour("00"), Literal(" – "), Hour("02"), Literal(" "), TimeZoneName("UTC+0")],
+        shortGeneric: "shortOffset",
         long: [Hour("00"), Literal(" – "), Hour("02"), Literal(" "), TimeZoneName("temps universel coordonné")],
-        longOffset: "short",
-        longGeneric: "short",
+        longOffset: [Hour("00"), Literal(" – "), Hour("02"), Literal(" "), TimeZoneName("UTC+00:00")],
+        longGeneric: "longOffset",
       },
     },
     {
@@ -84,11 +82,11 @@ const tests = {
       options: {hour: "numeric", hour12: false},
       timeZoneNames: {
         short: [Hour("00"), Literal("–"), Hour("02"), Literal(" Uhr "), TimeZoneName("UTC")],
-        shortOffset: [Hour("00"), Literal("–"), Hour("02"), Literal(" Uhr "), TimeZoneName("GMT")],
+        shortOffset: [Hour("00"), Literal("–"), Hour("02"), Literal(" Uhr "), TimeZoneName("GMT+0")],
         shortGeneric: "shortOffset",
         long: [Hour("00"), Literal("–"), Hour("02"), Literal(" Uhr "), TimeZoneName("Koordinierte Weltzeit")],
-        longOffset: "shortOffset",
-        longGeneric: "shortOffset",
+        longOffset: [Hour("00"), Literal("–"), Hour("02"), Literal(" Uhr "), TimeZoneName("GMT+00:00")],
+        longGeneric: "longOffset",
       },
     },
     {

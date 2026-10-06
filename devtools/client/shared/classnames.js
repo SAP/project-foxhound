@@ -12,7 +12,6 @@
  * For example: `classnames("hi", null, undefined, false, { foo: true, bar: false })` will
  * return `"hi foo"`
  *
- *
  * @param  {...string|object} argss
  * @returns String
  */

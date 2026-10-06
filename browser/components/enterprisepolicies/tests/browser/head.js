@@ -8,24 +8,14 @@ const { EnterprisePolicyTesting, PoliciesPrefTracker } =
   ChromeUtils.importESModule(
     "resource://testing-common/EnterprisePolicyTesting.sys.mjs"
   );
+const { setupPolicyEngineWithJson } = EnterprisePolicyTesting;
+EnterprisePolicyTesting.pathResolver = getTestFilePath;
 
 ChromeUtils.defineESModuleGetters(this, {
   HomePage: "resource:///modules/HomePage.sys.mjs",
 });
 
 PoliciesPrefTracker.start();
-
-async function setupPolicyEngineWithJson(json, customSchema) {
-  PoliciesPrefTracker.restoreDefaultValues();
-  if (typeof json != "object") {
-    let filePath = getTestFilePath(json ? json : "non-existing-file.json");
-    return EnterprisePolicyTesting.setupPolicyEngineWithJson(
-      filePath,
-      customSchema
-    );
-  }
-  return EnterprisePolicyTesting.setupPolicyEngineWithJson(json, customSchema);
-}
 
 function checkLockedPref(prefName, prefValue) {
   EnterprisePolicyTesting.checkPolicyPref(prefName, prefValue, true);
@@ -92,13 +82,15 @@ async function check_homepage({
   }
 
   // Test that UI is disabled when the Locked property is enabled
+  let homePaneLoaded = TestUtils.topicObserved("home-pane-loaded");
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
     "about:preferences"
   );
-  await ContentTask.spawn(
+  await homePaneLoaded;
+  await SpecialPowers.spawn(
     tab.linkedBrowser,
-    { expectedURL, expectedPageVal, locked },
+    [{ expectedURL, expectedPageVal, locked }],
     // eslint-disable-next-line no-shadow
     async function ({ expectedURL, expectedPageVal, locked }) {
       if (expectedPageVal != -1) {
@@ -122,6 +114,59 @@ async function check_homepage({
 
       if (!expectedURL) {
         // If only StartPage was changed, no need to check these
+        return;
+      }
+      const srdEnabled = Services.prefs.getBoolPref(
+        "browser.settings-redesign.enabled",
+        false
+      );
+      if (srdEnabled) {
+        await content.gotoPref("customHomepage");
+        let homepageTextbox = content.document.getElementById(
+          "customHomepageAddUrlInput"
+        );
+        let addButton = content.document.getElementById(
+          "customHomepageAddAddressButton"
+        );
+        let replaceCurrentButton = content.document.getElementById(
+          "customHomepageReplaceWithCurrentPagesButton"
+        );
+        let replaceBookmarksButton = content.document.getElementById(
+          "customHomepageReplaceWithBookmarksButton"
+        );
+        let boxGroup = content.document.getElementById(
+          "customHomepageBoxGroup"
+        );
+        let urlItems = [...boxGroup.querySelectorAll("moz-box-item[data-url]")];
+        is(
+          homepageTextbox.disabled,
+          locked,
+          "Homepage URL text box disabled status should match expected"
+        );
+        is(
+          addButton.disabled,
+          locked,
+          "Add address button disabled status should match expected"
+        );
+        is(
+          replaceCurrentButton.disabled,
+          locked,
+          '"Current open pages" button disabled status should match expected'
+        );
+        is(
+          replaceBookmarksButton.disabled,
+          locked,
+          '"Bookmarks..." button disabled status should match expected'
+        );
+        Assert.greater(urlItems.length, 0, "Some URLs are shown");
+        ok(
+          urlItems.every(item => !item.querySelector("moz-button") == locked),
+          "Item delete buttons hidden should match expected"
+        );
+        ok(
+          urlItems.every(item => !item.handleEl == locked),
+          "Item reorder handle hidden should match expected"
+        );
         return;
       }
       await content.gotoPref("paneHome");

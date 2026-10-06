@@ -13,12 +13,12 @@ registerCleanupFunction(() => {
 // Test dynamic updates in the storage inspector for cookies.
 
 add_task(async function () {
-  await openTabAndSetupStorage(MAIN_DOMAIN_SECURED + "storage-updates.html");
+  await openTabAndSetupStorage(MAIN_URL_SECURED + "storage-updates.html");
 
   gUI.tree.expandAll();
 
   ok(gUI.sidebar.hidden, "Sidebar is initially hidden");
-  const c1id = getCookieId("c1", "test1.example.org", "/browser");
+  const c1id = getCookieId("c1", MAIN_HOST, "/browser");
   await selectTableItem(c1id);
 
   // test that value is something initially
@@ -55,10 +55,10 @@ add_task(async function () {
   // Check if table shows correct initial value
   await checkState([
     [
-      ["cookies", "https://test1.example.org"],
+      ["cookies", MAIN_ORIGIN_SECURED],
       [
-        getCookieId("c1", "test1.example.org", "/browser"),
-        getCookieId("c2", "test1.example.org", "/browser"),
+        getCookieId("c1", MAIN_HOST, "/browser"),
+        getCookieId("c2", MAIN_HOST, "/browser"),
       ],
     ],
   ]);
@@ -72,10 +72,10 @@ add_task(async function () {
 
   await checkState([
     [
-      ["cookies", "https://test1.example.org"],
+      ["cookies", MAIN_ORIGIN_SECURED],
       [
-        getCookieId("c1", "test1.example.org", "/browser"),
-        getCookieId("c2", "test1.example.org", "/browser"),
+        getCookieId("c1", MAIN_HOST, "/browser"),
+        getCookieId("c2", MAIN_HOST, "/browser"),
       ],
     ],
   ]);
@@ -88,21 +88,17 @@ add_task(async function () {
 
   await checkState([
     [
-      ["cookies", "https://test1.example.org"],
+      ["cookies", MAIN_ORIGIN_SECURED],
       [
-        getCookieId("c1", "test1.example.org", "/browser"),
-        getCookieId("c2", "test1.example.org", "/browser"),
-        getCookieId(
-          "c3",
-          "test1.example.org",
-          "/browser/devtools/client/storage/test"
-        ),
+        getCookieId("c1", MAIN_HOST, "/browser"),
+        getCookieId("c2", MAIN_HOST, "/browser"),
+        getCookieId("c3", MAIN_HOST, "/browser/devtools/client/storage/test"),
       ],
     ],
   ]);
   const c3id = getCookieId(
     "c3",
-    "test1.example.org",
+    MAIN_HOST,
     "/browser/devtools/client/storage/test"
   );
   checkCell(c3id, "value", "booyeah");
@@ -114,26 +110,18 @@ add_task(async function () {
 
   await checkState([
     [
-      ["cookies", "https://test1.example.org"],
+      ["cookies", MAIN_ORIGIN_SECURED],
       [
-        getCookieId("c1", "test1.example.org", "/browser"),
-        getCookieId("c2", "test1.example.org", "/browser"),
-        getCookieId(
-          "c3",
-          "test1.example.org",
-          "/browser/devtools/client/storage/test"
-        ),
-        getCookieId(
-          "c4",
-          "test1.example.org",
-          "/browser/devtools/client/storage/test"
-        ),
+        getCookieId("c1", MAIN_HOST, "/browser"),
+        getCookieId("c2", MAIN_HOST, "/browser"),
+        getCookieId("c3", MAIN_HOST, "/browser/devtools/client/storage/test"),
+        getCookieId("c4", MAIN_HOST, "/browser/devtools/client/storage/test"),
       ],
     ],
   ]);
   const c4id = getCookieId(
     "c4",
-    "test1.example.org",
+    MAIN_HOST,
     "/browser/devtools/client/storage/test"
   );
   checkCell(c4id, "value", "booyeah");
@@ -145,19 +133,11 @@ add_task(async function () {
 
   await checkState([
     [
-      ["cookies", "https://test1.example.org"],
+      ["cookies", MAIN_ORIGIN_SECURED],
       [
-        getCookieId("c2", "test1.example.org", "/browser"),
-        getCookieId(
-          "c3",
-          "test1.example.org",
-          "/browser/devtools/client/storage/test"
-        ),
-        getCookieId(
-          "c4",
-          "test1.example.org",
-          "/browser/devtools/client/storage/test"
-        ),
+        getCookieId("c2", MAIN_HOST, "/browser"),
+        getCookieId("c3", MAIN_HOST, "/browser/devtools/client/storage/test"),
+        getCookieId("c4", MAIN_HOST, "/browser/devtools/client/storage/test"),
       ],
     ],
   ]);
@@ -174,14 +154,10 @@ add_task(async function () {
 
   await checkState([
     [
-      ["cookies", "https://test1.example.org"],
+      ["cookies", MAIN_ORIGIN_SECURED],
       [
-        getCookieId("c2", "test1.example.org", "/browser"),
-        getCookieId(
-          "c4",
-          "test1.example.org",
-          "/browser/devtools/client/storage/test"
-        ),
+        getCookieId("c2", MAIN_HOST, "/browser"),
+        getCookieId("c4", MAIN_HOST, "/browser/devtools/client/storage/test"),
       ],
     ],
   ]);
@@ -195,14 +171,8 @@ add_task(async function () {
 
   await checkState([
     [
-      ["cookies", "https://test1.example.org"],
-      [
-        getCookieId(
-          "c4",
-          "test1.example.org",
-          "/browser/devtools/client/storage/test"
-        ),
-      ],
+      ["cookies", MAIN_ORIGIN_SECURED],
+      [getCookieId("c4", MAIN_HOST, "/browser/devtools/client/storage/test")],
     ],
   ]);
 
@@ -213,7 +183,7 @@ add_task(async function () {
 
   await gUI.once("store-objects-edit");
 
-  await checkState([[["cookies", "https://test1.example.org"], []]]);
+  await checkState([[["cookies", MAIN_ORIGIN_SECURED], []]]);
 
   ok(gUI.sidebar.hidden, "Sidebar is hidden when no rows");
 });

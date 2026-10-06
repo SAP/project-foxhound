@@ -70,9 +70,9 @@ def _remote_settings_changed(self, event, other_conn):
         # we can't use ctx.log in this layer
         print("Ignored remote settings upstream")
         return True
-    new_settings = dict(
-        [(key, cs.new_value) for (key, cs) in event.changed_settings.items()]
-    )
+    new_settings = dict([
+        (key, cs.new_value) for (key, cs) in event.changed_settings.items()
+    ])
     self.connections[other_conn].safe_update_settings(new_settings)
     return True
 
@@ -279,13 +279,11 @@ class AlternateServerPlayback:
                 if ctx.options.upload_dir:
                     parsed_url = urlparse(unquote(f.request.url))
                     self.netlocs[parsed_url.netloc][f.response.status_code] += 1
-                    self.calls.append(
-                        {
-                            "time": str(time.time()),
-                            "url": f.request.url,
-                            "response_status": f.response.status_code,
-                        }
-                    )
+                    self.calls.append({
+                        "time": str(time.time()),
+                        "url": f.request.url,
+                        "response_status": f.response.status_code,
+                    })
             except Exception as e:
                 ctx.log.error("Could not generate response! Stopping playback process!")
                 ctx.log.info(e)

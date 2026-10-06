@@ -3,12 +3,7 @@
 
 // Test PlacesFrecencyRecalculator scheduling.
 
-// Enable the collection (during test) for all products so even products
-// that don't collect the data will be able to run the test without failure.
-Services.prefs.setBoolPref(
-  "toolkit.telemetry.testing.overrideProductsCheck",
-  true
-);
+Services.fog.initializeFOG();
 
 async function getOriginFrecency(origin) {
   let db = await PlacesUtils.promiseDBConnection();
@@ -145,17 +140,12 @@ add_task(async function test_chunk_time_telemetry() {
     PlacesUtils.history.shouldStartFrecencyRecalculation,
     "Should have set shouldStartFrecencyRecalculation"
   );
-  let histogram = TelemetryTestUtils.getAndClearHistogram(
-    "PLACES_FRECENCY_RECALC_CHUNK_TIME_MS"
-  );
+  Services.fog.testResetFOG();
   let subject = {};
   PlacesFrecencyRecalculator.observe(subject, "test-execute-taskFn", "");
   await subject.promise;
-  let snapshot = histogram.snapshot();
-  Assert.equal(
-    Object.values(snapshot.values).reduce((a, b) => a + b, 0),
-    1
-  );
+  let snapshot = Glean.places.frecencyRecalcChunkTime.testGetValue();
+  Assert.equal(snapshot.count, 1);
   Assert.greater(snapshot.sum, 0);
   Assert.ok(
     !PlacesUtils.history.shouldStartFrecencyRecalculation,
@@ -163,14 +153,10 @@ add_task(async function test_chunk_time_telemetry() {
   );
 
   // It should now not report any new time, since there's nothing to recalculate.
-  histogram.clear();
+  Services.fog.testResetFOG();
   PlacesFrecencyRecalculator.observe(subject, "test-execute-taskFn", "");
   await subject.promise;
-  snapshot = histogram.snapshot();
-  Assert.equal(
-    Object.values(snapshot.values).reduce((a, b) => a + b, 0),
-    0
-  );
+  Assert.equal(Glean.places.frecencyRecalcChunkTime.testGetValue(), null);
   Assert.ok(
     !PlacesUtils.history.shouldStartFrecencyRecalculation,
     "Should still not have set shouldStartFrecencyRecalculation"

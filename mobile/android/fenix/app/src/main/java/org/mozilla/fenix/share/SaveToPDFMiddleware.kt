@@ -16,7 +16,7 @@ import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.lib.state.Action
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.StandardSnackbarError
@@ -44,19 +44,19 @@ class SaveToPDFMiddleware(
 ) : Middleware<BrowserState, BrowserAction> {
 
     override fun invoke(
-        ctx: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         next: (BrowserAction) -> Unit,
         action: BrowserAction,
     ) {
         when (action) {
             is EngineAction.SaveToPdfAction -> {
-                postTelemetryTapped(ctx.state.findTab(action.tabId), isPrint = false)
+                postTelemetryTapped(store.state.findTab(action.tabId), isPrint = false)
                 // Continue to generate the PDF, passing through here to add telemetry
                 next(action)
             }
 
             is EngineAction.SaveToPdfCompleteAction -> {
-                postTelemetryCompleted(ctx.state.findTab(action.tabId), isPrint = false)
+                postTelemetryCompleted(store.state.findTab(action.tabId), isPrint = false)
             }
 
             is EngineAction.SaveToPdfExceptionAction -> {
@@ -67,16 +67,16 @@ class SaveToPDFMiddleware(
                         ),
                     ),
                 )
-                postTelemetryFailed(ctx.state.findTab(action.tabId), action.throwable, isPrint = false)
+                postTelemetryFailed(store.state.findTab(action.tabId), action.throwable, isPrint = false)
             }
 
             is EngineAction.PrintContentAction -> {
-                postTelemetryTapped(ctx.state.findTab(action.tabId), isPrint = true)
+                postTelemetryTapped(store.state.findTab(action.tabId), isPrint = true)
                 // Continue to print, passing through here to add telemetry
                 next(action)
             }
             is EngineAction.PrintContentCompletedAction -> {
-                postTelemetryCompleted(ctx.state.findTab(action.tabId), isPrint = true)
+                postTelemetryCompleted(store.state.findTab(action.tabId), isPrint = true)
             }
             is EngineAction.PrintContentExceptionAction -> {
                 context.components.appStore.dispatch(
@@ -86,7 +86,7 @@ class SaveToPDFMiddleware(
                         ),
                     ),
                 )
-                postTelemetryFailed(ctx.state.findTab(action.tabId), action.throwable, isPrint = true)
+                postTelemetryFailed(store.state.findTab(action.tabId), action.throwable, isPrint = true)
             }
             else -> {
                 next(action)

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,14 +5,13 @@
 #ifndef DOM_SVG_SVGFILTERS_H_
 #define DOM_SVG_SVGFILTERS_H_
 
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/SVGElement.h"
 #include "FilterDescription.h"
-#include "nsImageLoadingContent.h"
 #include "SVGAnimatedLength.h"
 #include "SVGAnimatedNumber.h"
 #include "SVGAnimatedNumberPair.h"
 #include "SVGAnimatedString.h"
+#include "mozilla/dom/SVGElement.h"
+#include "nsImageLoadingContent.h"
 
 namespace mozilla {
 class SVGFilterInstance;
@@ -47,7 +44,7 @@ class SVGFilterPrimitiveElement : public SVGFilterPrimitiveElementBase {
   using FilterPrimitiveDescription = mozilla::gfx::FilterPrimitiveDescription;
 
   explicit SVGFilterPrimitiveElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : SVGFilterPrimitiveElementBase(std::move(aNodeInfo)) {}
   virtual ~SVGFilterPrimitiveElement() = default;
 
@@ -145,7 +142,7 @@ class SVGFilterPrimitiveChildElement
     : public SVGFilterPrimitiveChildElementBase {
  protected:
   explicit SVGFilterPrimitiveChildElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : SVGFilterPrimitiveChildElementBase(std::move(aNodeInfo)) {}
 
  public:
@@ -169,7 +166,7 @@ using SVGFELightingElementBase = SVGFilterPrimitiveElement;
 class SVGFELightingElement : public SVGFELightingElementBase {
  protected:
   explicit SVGFELightingElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : SVGFELightingElementBase(std::move(aNodeInfo)) {}
 
   virtual ~SVGFELightingElement() = default;
@@ -210,21 +207,20 @@ class SVGFELightingElement : public SVGFELightingElementBase {
   SVGAnimatedNumber mNumberAttributes[4];
   static NumberInfo sNumberInfo[4];
 
-  enum { KERNEL_UNIT_LENGTH };
-  SVGAnimatedNumberPair mNumberPairAttributes[1];
-  static NumberPairInfo sNumberPairInfo[1];
-
   enum { RESULT, IN1 };
   SVGAnimatedString mStringAttributes[2];
   static StringInfo sStringInfo[2];
+
+  enum { KERNEL_UNIT_LENGTH };
+  SVGAnimatedNumberPair mNumberPairAttributes[1];
+  static NumberPairInfo sNumberPairInfo[1];
 };
 
 using SVGFELightElementBase = SVGFilterPrimitiveChildElement;
 
 class SVGFELightElement : public SVGFELightElementBase {
  protected:
-  explicit SVGFELightElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+  explicit SVGFELightElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : SVGFELightElementBase(std::move(aNodeInfo)) {}
 
  public:

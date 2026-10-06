@@ -19,7 +19,7 @@ add_task(async function test_TODO() {
   // SessionStore uses one-based indexes
   Assert.equal(state.windows[0].selected, 2);
 
-  await EventUtils.synthesizeMouseAtCenter(
+  EventUtils.synthesizeMouseAtCenter(
     window.document.getElementById("firefox-view-button"),
     { type: "mousedown" },
     window

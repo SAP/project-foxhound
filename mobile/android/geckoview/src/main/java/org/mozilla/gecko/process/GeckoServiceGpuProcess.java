@@ -1,11 +1,11 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.gecko.process;
 
 import android.os.Binder;
+import android.os.IBinder;
 import android.util.SparseArray;
 import android.view.Surface;
 import org.mozilla.gecko.annotation.WrapForJNI;
@@ -23,8 +23,8 @@ public class GeckoServiceGpuProcess extends GeckoServiceChildProcess {
     }
 
     @Override
-    public ISurfaceAllocator getSurfaceAllocator(final int allocatorId) {
-      return RemoteSurfaceAllocator.getInstance(allocatorId);
+    public ISurfaceAllocator getSurfaceAllocator(final int allocatorId, final IBinder client) {
+      return RemoteSurfaceAllocator.create(allocatorId, client);
     }
   }
 

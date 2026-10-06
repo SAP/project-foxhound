@@ -26,15 +26,26 @@ add_task(async function test_updates_post_policy() {
 });
 
 add_task(async function test_update_preferences_ui() {
-  let tab = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    "about:preferences"
+  let settingsRedesignEnabled = Services.prefs.getBoolPref(
+    "browser.settings-redesign.enabled",
+    false
   );
+  let prefUrl = settingsRedesignEnabled
+    ? "about:preferences#about"
+    : "about:preferences";
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, prefUrl);
 
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
-    let setting = content.document.getElementById("updateSettingsContainer");
+    let settingControl = content.document.getElementById(
+      "setting-control-installationFieldset"
+    );
+    await ContentTaskUtils.waitForMutationCondition(
+      settingControl,
+      { attributes: true, attributeFilter: ["hidden"] },
+      () => settingControl.hidden
+    );
     is(
-      setting.hidden,
+      settingControl.hidden,
       true,
       "Update choices should be disabled when app update is locked by policy"
     );

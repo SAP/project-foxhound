@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,6 +14,15 @@ namespace mozilla {
 namespace net {
 
 NS_IMPL_ISUPPORTS(nsHttpAuthManager, nsIHttpAuthManager)
+
+/* static */
+already_AddRefed<nsIHttpAuthCache>
+nsHttpAuthManager::GetHttpAuthCacheSingleton() {
+  NS_ASSERTION(!IsNeckoChild(), "not a parent process");
+
+  // Return only the non-private cache
+  return do_AddRef(gHttpHandler->AuthCache(/* aPrivate = */ false));
+}
 
 nsresult nsHttpAuthManager::Init() {
   // get reference to the auth cache.  we assume that we will live
@@ -46,8 +54,9 @@ nsHttpAuthManager::GetAuthIdentity(
     const nsACString& aAuthType, const nsACString& aRealm,
     const nsACString& aPath, nsAString& aUserDomain, nsAString& aUserName,
     nsAString& aUserPassword, bool aIsPrivate, nsIPrincipal* aPrincipal) {
-  nsHttpAuthCache* auth_cache = aIsPrivate ? mPrivateAuthCache : mAuthCache;
-  nsHttpAuthEntry* entry = nullptr;
+  RefPtr<nsHttpAuthCache> auth_cache =
+      aIsPrivate ? mPrivateAuthCache : mAuthCache;
+  RefPtr<nsHttpAuthEntry> entry = nullptr;
   nsresult rv;
 
   nsAutoCString originSuffix;
@@ -57,10 +66,10 @@ nsHttpAuthManager::GetAuthIdentity(
 
   if (!aPath.IsEmpty()) {
     rv = auth_cache->GetAuthEntryForPath(aScheme, aHost, aPort, aPath,
-                                         originSuffix, &entry);
+                                         originSuffix, entry);
   } else {
     rv = auth_cache->GetAuthEntryForDomain(aScheme, aHost, aPort, aRealm,
-                                           originSuffix, &entry);
+                                           originSuffix, entry);
   }
 
   if (NS_FAILED(rv)) return rv;
@@ -86,7 +95,8 @@ nsHttpAuthManager::SetAuthIdentity(
     aPrincipal->OriginAttributesRef().CreateSuffix(originSuffix);
   }
 
-  nsHttpAuthCache* auth_cache = aIsPrivate ? mPrivateAuthCache : mAuthCache;
+  RefPtr<nsHttpAuthCache> auth_cache =
+      aIsPrivate ? mPrivateAuthCache : mAuthCache;
   return auth_cache->SetAuthEntry(aScheme, aHost, aPort, aPath, aRealm,
                                   ""_ns,  // credentials
                                   ""_ns,  // challenge

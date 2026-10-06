@@ -23,9 +23,10 @@ class AutofillSelectBarBehavior<V : View>(
 
     // Priority list of possible anchors for the autofill bars.
     private val dependenciesIds = buildList {
-        add(R.id.toolbar_navbar_container)
+        add(R.id.navigation_bar)
         if (toolbarPosition == ToolbarPosition.BOTTOM) {
             add(R.id.toolbar)
+            add(R.id.composable_toolbar)
         }
     }
 

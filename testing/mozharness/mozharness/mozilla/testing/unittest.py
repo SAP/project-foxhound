@@ -63,10 +63,10 @@ class TestSummaryOutputParserHelper(OutputParser):
         self.last_line = None
         self.tbpl_status = TBPL_SUCCESS
         self.worst_log_level = INFO
-        super(TestSummaryOutputParserHelper, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
     def parse_single_line(self, line):
-        super(TestSummaryOutputParserHelper, self).parse_single_line(line)
+        super().parse_single_line(line)
         self.last_line = line
         m = self.regex.search(line)
         if m:
@@ -118,7 +118,7 @@ class DesktopUnittestOutputParser(OutputParser):
         # worst_log_level defined already in DesktopUnittestOutputParser
         # but is here to make pylint happy
         self.worst_log_level = INFO
-        super(DesktopUnittestOutputParser, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.summary_suite_re = TinderBoxPrintRe.get("%s_summary" % suite_category, {})
         self.harness_error_re = TinderBoxPrintRe["harness_error"]["minimum_regex"]
         self.full_harness_error_re = TinderBoxPrintRe["harness_error"]["full_regex"]
@@ -198,7 +198,7 @@ class DesktopUnittestOutputParser(OutputParser):
                 SystemResourceMonitor.end_marker("test", part[1])
             else:
                 SystemResourceMonitor.record_event(line)
-        super(DesktopUnittestOutputParser, self).parse_single_line(line)
+        super().parse_single_line(line)
 
     def evaluate_parser(self, return_code, success_codes=None, previous_summary=None):
         success_codes = success_codes or [0]

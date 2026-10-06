@@ -10,8 +10,8 @@
 
 #include "video/video_stream_buffer_controller.h"
 
-#include <stdint.h>
-
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -21,17 +21,21 @@
 #include <variant>
 #include <vector>
 
+#include "api/field_trials.h"
 #include "api/metronome/test/fake_metronome.h"
 #include "api/units/frequency.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
+#include "api/video/encoded_frame.h"
 #include "api/video/video_content_type.h"
 #include "api/video/video_timing.h"
+#include "modules/video_coding/timing/timing.h"
 #include "rtc_base/checks.h"
+#include "system_wrappers/include/clock.h"
+#include "test/create_test_field_trials.h"
 #include "test/fake_encoded_frame.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
-#include "test/scoped_key_value_config.h"
 #include "test/time_controller/simulated_time_controller.h"
 #include "video/decode_synchronizer.h"
 #include "video/task_queue_frame_decode_scheduler.h"
@@ -70,11 +74,10 @@ auto Frame(testing::Matcher<EncodedFrame> m) {
 std::unique_ptr<test::FakeEncodedFrame> WithReceiveTimeFromRtpTimestamp(
     std::unique_ptr<test::FakeEncodedFrame> frame) {
   if (frame->RtpTimestamp() == 0) {
-    frame->SetReceivedTime(kClockStart.ms());
+    frame->SetReceivedTime(kClockStart);
   } else {
-    frame->SetReceivedTime(
-        TimeDelta::Seconds(frame->RtpTimestamp() / 90000.0).ms() +
-        kClockStart.ms());
+    frame->SetReceivedTime(kClockStart +
+                           TimeDelta::Seconds(frame->RtpTimestamp() / 90000.0));
   }
   return frame;
 }
@@ -82,15 +85,14 @@ std::unique_ptr<test::FakeEncodedFrame> WithReceiveTimeFromRtpTimestamp(
 class VCMTimingTest : public VCMTiming {
  public:
   using VCMTiming::VCMTiming;
-  void IncomingTimestamp(uint32_t rtp_timestamp,
-                         Timestamp last_packet_time) override {
-    IncomingTimestampMocked(rtp_timestamp, last_packet_time);
-    VCMTiming::IncomingTimestamp(rtp_timestamp, last_packet_time);
+  void OnCompleteTemporalUnit(uint32_t rtp_timestamp, Timestamp now) override {
+    OnCompleteTemporalUnitMocked(rtp_timestamp, now);
+    VCMTiming::OnCompleteTemporalUnit(rtp_timestamp, now);
   }
 
   MOCK_METHOD(void,
-              IncomingTimestampMocked,
-              (uint32_t rtp_timestamp, Timestamp last_packet_time),
+              OnCompleteTemporalUnitMocked,
+              (uint32_t rtp_timestamp, Timestamp now),
               ());
 };
 
@@ -119,10 +121,6 @@ class VideoStreamBufferControllerStatsObserverMock
                int min_playout_delay_ms,
                int render_delay_ms),
               (override));
-  MOCK_METHOD(void,
-              OnTimingFrameInfoUpdated,
-              (const TimingFrameInfo& info),
-              (override));
 };
 
 }  // namespace
@@ -135,7 +133,7 @@ class VideoStreamBufferControllerFixture
  public:
   VideoStreamBufferControllerFixture()
       : sync_decoding_(std::get<0>(GetParam())),
-        field_trials_(std::get<1>(GetParam())),
+        field_trials_(CreateTestFieldTrials(std::get<1>(GetParam()))),
         time_controller_(kClockStart),
         clock_(time_controller_.GetClock()),
         fake_metronome_(TimeDelta::Millis(16)),
@@ -193,7 +191,7 @@ class VideoStreamBufferControllerFixture
     }
 
     Timestamp now = clock_->CurrentTime();
-    // TODO(bugs.webrtc.org/13756): Remove this when rtc::Thread uses uses
+    // TODO(bugs.webrtc.org/13756): Remove this when Thread uses uses
     // Timestamp instead of an integer milliseconds. This extra wait is needed
     // for some tests that use the metronome. This is due to rounding
     // milliseconds, affecting the precision of simulated time controller uses
@@ -224,7 +222,7 @@ class VideoStreamBufferControllerFixture
 
  protected:
   const bool sync_decoding_;
-  test::ScopedKeyValueConfig field_trials_;
+  FieldTrials field_trials_;
   GlobalSimulatedTimeController time_controller_;
   Clock* const clock_;
   test::FakeMetronome fake_metronome_;
@@ -926,7 +924,7 @@ class IncomingTimestampVideoStreamBufferControllerTest
 TEST_P(IncomingTimestampVideoStreamBufferControllerTest,
        IncomingTimestampOnMarkerBitOnly) {
   StartNextDecodeForceKeyframe();
-  EXPECT_CALL(timing_, IncomingTimestampMocked)
+  EXPECT_CALL(timing_, OnCompleteTemporalUnitMocked)
       .Times(field_trials_.IsDisabled("WebRTC-IncomingTimestampOnMarkerBitOnly")
                  ? 3
                  : 1);

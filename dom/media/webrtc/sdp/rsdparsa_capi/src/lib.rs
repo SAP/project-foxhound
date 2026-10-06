@@ -4,19 +4,19 @@
 
 extern crate libc;
 extern crate nserror;
+extern crate nsstring;
 extern crate rsdparsa;
+extern crate thin_vec;
 
-use std::ffi::CString;
-use std::os::raw::c_char;
 use std::ptr;
+use std::rc::Rc;
 
 use libc::size_t;
 
-use std::rc::Rc;
-
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 
 use nserror::{nsresult, NS_ERROR_INVALID_ARG, NS_OK};
+use nsstring::nsACString;
 use rsdparsa::address::ExplicitlyTypedAddress;
 use rsdparsa::anonymizer::{AnonymizingClone, StatefulSdpAnonymizer};
 use rsdparsa::attribute_type::SdpAttribute;
@@ -35,7 +35,7 @@ pub mod types;
 use network::{
     get_bandwidth, origin_view_helper, RustAddressType, RustSdpConnection, RustSdpOrigin,
 };
-pub use types::{StringView, NULL_STRING};
+pub use types::StringView;
 
 #[no_mangle]
 pub unsafe extern "C" fn parse_sdp(
@@ -44,12 +44,12 @@ pub unsafe extern "C" fn parse_sdp(
     session: *mut *const SdpSession,
     parser_error: *mut *const SdpParserError,
 ) -> nsresult {
-    let sdp_str: String = match sdp.try_into() {
+    let sdp_str = match std::str::from_utf8(sdp.as_slice()) {
         Ok(string) => string,
-        Err(boxed_error) => {
+        Err(e) => {
             *session = ptr::null();
             *parser_error = Box::into_raw(Box::new(SdpParserError::Sequence {
-                message: format!("{}", boxed_error),
+                message: format!("{}", e),
                 line_number: 0,
             }));
             return NS_ERROR_INVALID_ARG;
@@ -85,8 +85,8 @@ pub unsafe extern "C" fn create_anonymized_sdp_clone(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn create_sdp_clone(session: *const SdpSession) -> *const SdpSession {
-    Rc::into_raw(Rc::new((*session).clone()))
+pub unsafe extern "C" fn create_sdp_clone(session: *const SdpSession) -> *mut SdpSession {
+    Rc::into_raw(Rc::new((*session).clone())) as *mut _
 }
 
 #[no_mangle]
@@ -96,11 +96,11 @@ pub unsafe extern "C" fn sdp_free_session(sdp_ptr: *mut SdpSession) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_new_reference(session: *mut SdpSession) -> *const SdpSession {
+pub unsafe extern "C" fn sdp_new_reference(session: *mut SdpSession) -> *mut SdpSession {
     let original = Rc::from_raw(session);
     let ret = Rc::into_raw(Rc::clone(&original));
     std::mem::forget(original); // So the original reference doesn't get dropped
-    ret
+    ret as *mut _
 }
 
 #[no_mangle]
@@ -113,20 +113,11 @@ pub unsafe extern "C" fn sdp_get_error_line_num(parser_error: *mut SdpParserErro
 }
 
 #[no_mangle]
-// Callee must check that a nullptr is not returned
-pub unsafe extern "C" fn sdp_get_error_message(parser_error: *mut SdpParserError) -> *mut c_char {
-    let message = format!("{}", *parser_error);
-    return match CString::new(message.as_str()) {
-        Ok(c_char_ptr) => c_char_ptr.into_raw(),
-        Err(_) => 0 as *mut c_char,
-    };
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sdp_free_error_message(message: *mut c_char) {
-    if message != 0 as *mut c_char {
-        let _tmp = CString::from_raw(message);
-    }
+pub unsafe extern "C" fn sdp_get_error_message(
+    parser_error: &SdpParserError,
+    out: &mut nsACString,
+) {
+    out.assign(&format!("{}", parser_error));
 }
 
 #[no_mangle]
@@ -136,31 +127,34 @@ pub unsafe extern "C" fn sdp_free_error(parser_error: *mut SdpParserError) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn get_version(session: *const SdpSession) -> u64 {
-    (*session).get_version()
+pub extern "C" fn get_version(session: &SdpSession) -> u64 {
+    session.get_version()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_origin(session: *const SdpSession) -> RustSdpOrigin {
-    origin_view_helper((*session).get_origin())
+pub extern "C" fn sdp_get_origin(session: &SdpSession) -> RustSdpOrigin {
+    origin_view_helper(session.get_origin())
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn session_view(session: *const SdpSession) -> StringView {
-    StringView::from((*session).get_session())
+pub extern "C" fn session_view(session: &SdpSession) -> StringView {
+    match session.get_session() {
+        Some(ref s) => StringView::from(s.as_str()),
+        None => StringView::empty(),
+    }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_session_has_connection(session: *const SdpSession) -> bool {
-    (*session).connection.is_some()
+pub extern "C" fn sdp_session_has_connection(session: &SdpSession) -> bool {
+    session.connection.is_some()
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn sdp_get_session_connection(
-    session: *const SdpSession,
+    session: &SdpSession,
     connection: *mut RustSdpConnection,
 ) -> nsresult {
-    match (*session).connection {
+    match session.connection {
         Some(ref c) => {
             *connection = RustSdpConnection::from(c);
             NS_OK
@@ -185,14 +179,14 @@ pub unsafe extern "C" fn sdp_add_media_section(
             return e;
         }
     };
-    let address_string: String = match address.try_into() {
+    let address_string = match std::str::from_utf8(address.as_slice()) {
         Ok(x) => x,
-        Err(boxed_error) => {
-            error!("Error while parsing string, description: {}", boxed_error);
+        Err(e) => {
+            error!("Error while parsing string, description: {}", e);
             return NS_ERROR_INVALID_ARG;
         }
     };
-    let address = match ExplicitlyTypedAddress::try_from((addr_type, address_string.as_str())) {
+    let address = match ExplicitlyTypedAddress::try_from((addr_type, &*address_string)) {
         Ok(a) => a,
         Err(_) => {
             return NS_ERROR_INVALID_ARG;
@@ -278,7 +272,7 @@ pub unsafe extern "C" fn sdp_media_section_count(session: *const SdpSession) -> 
 #[no_mangle]
 pub unsafe extern "C" fn get_sdp_bandwidth(
     session: *const SdpSession,
-    bandwidth_type: *const c_char,
+    bandwidth_type: &nsACString,
 ) -> u32 {
     get_bandwidth(&(*session).bandwidth, bandwidth_type)
 }

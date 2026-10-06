@@ -1,0 +1,66 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl1-core"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/conformance/canvas/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_conformance__canvas__buffer-offscreen-test.html"]
+
+["test_conformance__canvas__buffer-preserve-test.html"]
+
+["test_conformance__canvas__canvas-test.html"]
+
+["test_conformance__canvas__canvas-zero-size.html"]
+
+["test_conformance__canvas__draw-static-webgl-to-multiple-canvas-test.html"]
+
+["test_conformance__canvas__draw-webgl-to-canvas-test.html"]
+
+["test_conformance__canvas__drawingbuffer-hd-dpi-test.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
+["test_conformance__canvas__drawingbuffer-static-canvas-test.html"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+]
+
+["test_conformance__canvas__drawingbuffer-test.html"]
+
+["test_conformance__canvas__framebuffer-bindings-affected-by-to-data-url.html"]
+
+["test_conformance__canvas__framebuffer-bindings-unaffected-on-resize.html"]
+
+["test_conformance__canvas__rapid-resizing.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
+["test_conformance__canvas__render-after-resize-test.html"]
+
+["test_conformance__canvas__texture-bindings-unaffected-on-resize.html"]
+
+["test_conformance__canvas__to-data-url-after-composite.html"]
+
+["test_conformance__canvas__to-data-url-test.html"]
+
+["test_conformance__canvas__viewport-unchanged-upon-resize.html"]
+
+["test_conformance__canvas__webgl-to-2d-canvas.html"]

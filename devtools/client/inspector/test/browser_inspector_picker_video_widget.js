@@ -22,7 +22,7 @@ add_task(async function () {
   await startPicker(toolbox);
 
   info("Listen to 'play' events on the <video> element of the test page");
-  await ContentTask.spawn(gBrowser.selectedBrowser, null, () => {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     content.wrappedJSObject.testVideoPlayed = false;
     content.document.querySelector("video").addEventListener("play", () => {
       content.wrappedJSObject.testVideoPlayed = true;
@@ -40,9 +40,9 @@ add_task(async function () {
     "The video element is now selected"
   );
 
-  const played = await ContentTask.spawn(
+  const played = await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
-    null,
+    [],
     () => content.wrappedJSObject.testVideoPlayed
   );
   ok(

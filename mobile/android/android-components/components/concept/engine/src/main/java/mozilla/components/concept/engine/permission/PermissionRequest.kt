@@ -4,6 +4,8 @@
 
 package mozilla.components.concept.engine.permission
 
+import mozilla.components.ExperimentalAndroidComponentsApi
+
 /**
  * Represents a permission request, used when engines need access to protected
  * resources. Every request must be handled by either calling [grant] or [reject].
@@ -61,6 +63,14 @@ interface PermissionRequest {
      * @param permissionsRequest the permission request to merge this.
      */
     fun merge(permissionRequest: PermissionRequest)
+
+    /**
+     * Notify the underlying engine that the UI for this permission request has been shown to the
+     * user. Implementations that surface a prompt are expected to call this once the prompt is
+     * visible, so that the engine can record the prompt display state (e.g. for telemetry).
+     */
+    @ExperimentalAndroidComponentsApi
+    fun notifyShown() = Unit
 }
 
 /**
@@ -138,6 +148,14 @@ sealed class Permission {
     ) : Permission()
     data class ContentCrossOriginStorageAccess(
         override val id: String? = "ContentCrossOriginStorageAccess",
+        override val desc: String? = "",
+    ) : Permission()
+    data class ContentLocalDeviceAccess(
+        override val id: String? = "ContentLocalDeviceAccess",
+        override val desc: String? = "",
+    ) : Permission()
+    data class ContentLocalNetworkAccess(
+        override val id: String? = "ContentLocalNetworkAccess",
         override val desc: String? = "",
     ) : Permission()
 

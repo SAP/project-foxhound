@@ -4,8 +4,8 @@ support-files = ["script_file.js"]
 ["test_ipcBlob_createImageBitmap.html"]
 support-files = ["green.jpg"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_ipcBlob_emptyMultiplex.html"]

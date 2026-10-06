@@ -55,6 +55,8 @@ Discovery:
 Download:
   description: Corresponds to the [Feature:Download](https://github.com/mozilla-mobile/fenix/issues?q=label%3AFeature%3ADownload)
     label on GitHub.
+EmailMask:
+  description: An email masking service, aka Relay, corresponds to the [fxrelay](https://searchfox.org/firefox-main/source/mobile/android/android-components/components/service/firefox-relay/src/main/java/mozilla/components/service/fxrelay) component.
 ErrorMessages:
   description: Corresponds to the [Feature:ErrorMessages](https://github.com/mozilla-mobile/fenix/issues?q=label%3AFeature%3AErrorMessages)
     label on GitHub.

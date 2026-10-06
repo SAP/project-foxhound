@@ -69,7 +69,7 @@ add_task(function pages_query() {
     compareArrayToResult([gTestData[0], gTestData[1], gTestData[2]], root);
     for (let i = 0; i < root.childCount; i++) {
       let node = root.getChild(i);
-      let uri = NetUtil.newURI(node.uri);
+      let uri = Services.io.newURI(node.uri);
       Assert.equal(node.tags, null);
       PlacesUtils.tagging.tagURI(uri, ["test-tag"]);
       Assert.equal(node.tags, "test-tag");
@@ -87,7 +87,7 @@ add_task(function visits_query() {
     compareArrayToResult([gTestData[0], gTestData[1], gTestData[2]], root);
     for (let i = 0; i < root.childCount; i++) {
       let node = root.getChild(i);
-      let uri = NetUtil.newURI(node.uri);
+      let uri = Services.io.newURI(node.uri);
       Assert.equal(node.tags, null);
       PlacesUtils.tagging.tagURI(uri, ["test-tag"]);
       Assert.equal(node.tags, "test-tag");
@@ -104,7 +104,7 @@ add_task(function bookmark_parent_query() {
     compareArrayToResult([gTestData[0], gTestData[1], gTestData[2]], root);
     for (let i = 0; i < root.childCount; i++) {
       let node = root.getChild(i);
-      let uri = NetUtil.newURI(node.uri);
+      let uri = Services.io.newURI(node.uri);
       Assert.equal(node.tags, null);
       PlacesUtils.tagging.tagURI(uri, ["test-tag"]);
       Assert.equal(node.tags, "test-tag");
@@ -120,7 +120,7 @@ add_task(function history_query() {
     compareArrayToResult([gTestData[0], gTestData[1], gTestData[2]], root);
     for (let i = 0; i < root.childCount; i++) {
       let node = root.getChild(i);
-      let uri = NetUtil.newURI(node.uri);
+      let uri = Services.io.newURI(node.uri);
       Assert.equal(node.tags, null);
       PlacesUtils.tagging.tagURI(uri, ["test-tag"]);
       Assert.equal(node.tags, null);

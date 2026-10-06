@@ -197,7 +197,7 @@ reference another element of the UI in your message:
 .. code-block:: fluent
 
   help-button = Help
-  help-explanation = Click the { help-button} to access support
+  help-explanation = Click the { help-button } to access support
 
 
 This enforces consistency and, if :js:`help-button` changes, all other messages

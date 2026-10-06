@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,24 +8,26 @@
  */
 
 #include "nsSyncLoadService.h"
+
+#include <algorithm>
+
+#include "ReferrerInfo.h"
+#include "mozilla/dom/Document.h"
 #include "nsCOMPtr.h"
+#include "nsContentUtils.h"  // for kLoadAsData
+#include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsIChannel.h"
 #include "nsIChannelEventSink.h"
-#include "nsIAsyncVerifyRedirectCallback.h"
+#include "nsIHttpChannel.h"
 #include "nsIInterfaceRequestor.h"
+#include "nsIPrincipal.h"
 #include "nsIStreamListener.h"
 #include "nsIURI.h"
-#include "nsString.h"
-#include "nsWeakReference.h"
-#include "mozilla/dom/Document.h"
-#include "nsIHttpChannel.h"
-#include "nsIPrincipal.h"
-#include "nsContentUtils.h"  // for kLoadAsData
-#include "nsThreadUtils.h"
 #include "nsNetUtil.h"
 #include "nsStreamUtils.h"
-#include "ReferrerInfo.h"
-#include <algorithm>
+#include "nsString.h"
+#include "nsThreadUtils.h"
+#include "nsWeakReference.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -100,12 +101,14 @@ nsForceXMLListener::OnStartRequest(nsIRequest* aRequest) {
     channel->SetContentType("text/xml"_ns);
   }
 
-  return mListener->OnStartRequest(aRequest);
+  nsCOMPtr<nsIStreamListener> listener = mListener;
+  return listener->OnStartRequest(aRequest);
 }
 
 NS_IMETHODIMP
 nsForceXMLListener::OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) {
-  return mListener->OnStopRequest(aRequest, aStatusCode);
+  nsCOMPtr<nsIStreamListener> listener = mListener;
+  return listener->OnStopRequest(aRequest, aStatusCode);
 }
 
 nsSyncLoader::~nsSyncLoader() {
@@ -159,7 +162,8 @@ nsresult nsSyncLoader::LoadDocument(nsIChannel* aChannel, bool aChannelIsSync,
 
   // Create document
   nsCOMPtr<Document> document;
-  rv = NS_NewXMLDocument(getter_AddRefs(document), nullptr, nullptr);
+  rv = NS_NewXMLDocument(getter_AddRefs(document), nullptr, nullptr,
+                         LoadedAsData::AsData);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Start the document load. Do this before we attach the load listener
@@ -244,7 +248,8 @@ nsresult nsSyncLoader::PushSyncStream(nsIStreamListener* aListener) {
 
 NS_IMETHODIMP
 nsSyncLoader::OnStartRequest(nsIRequest* aRequest) {
-  return mListener->OnStartRequest(aRequest);
+  nsCOMPtr<nsIStreamListener> listener = mListener;
+  return listener->OnStartRequest(aRequest);
 }
 
 NS_IMETHODIMP
@@ -252,7 +257,8 @@ nsSyncLoader::OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) {
   if (NS_SUCCEEDED(mAsyncLoadStatus) && NS_FAILED(aStatusCode)) {
     mAsyncLoadStatus = aStatusCode;
   }
-  nsresult rv = mListener->OnStopRequest(aRequest, aStatusCode);
+  nsCOMPtr<nsIStreamListener> listener = mListener;
+  nsresult rv = listener->OnStopRequest(aRequest, aStatusCode);
   if (NS_SUCCEEDED(mAsyncLoadStatus) && NS_FAILED(rv)) {
     mAsyncLoadStatus = rv;
   }
@@ -344,7 +350,7 @@ nsresult nsSyncLoadService::PushSyncStreamToListener(
   rv = aListener->OnStartRequest(aChannel);
   if (NS_SUCCEEDED(rv)) {
     uint64_t sourceOffset = 0;
-    while (1) {
+    while (true) {
       uint64_t readCount = 0;
       rv = in->Available(&readCount);
       if (NS_FAILED(rv) || !readCount) {

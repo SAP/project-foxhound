@@ -38,7 +38,7 @@ class RequestTest {
             url = "https://www.mozilla.org",
             method = Request.Method.POST,
             headers = MutableHeaders(
-                "Accept-Language" to "en-US,en;q=0.5",
+                "Accept-Language" to "en-US,en;q=0.9",
                 "Connection" to "keep-alive",
                 "Dnt" to "1",
             ),
@@ -56,10 +56,10 @@ class RequestTest {
         assertEquals(Request.Method.POST, request.method)
 
         assertEquals(10, request.connectTimeout!!.first)
-        assertEquals(TimeUnit.SECONDS, request.connectTimeout!!.second)
+        assertEquals(TimeUnit.SECONDS, request.connectTimeout.second)
 
         assertEquals(1, request.readTimeout!!.first)
-        assertEquals(TimeUnit.MINUTES, request.readTimeout!!.second)
+        assertEquals(TimeUnit.MINUTES, request.readTimeout.second)
 
         assertEquals("Hello World!", request.body!!.useStream { it.bufferedReader().readText() })
         assertEquals(Request.Redirect.MANUAL, request.redirect)
@@ -75,7 +75,7 @@ class RequestTest {
         assertEquals("Connection", headers[1].name)
         assertEquals("Dnt", headers[2].name)
 
-        assertEquals("en-US,en;q=0.5", headers[0].value)
+        assertEquals("en-US,en;q=0.9", headers[0].value)
         assertEquals("keep-alive", headers[1].value)
         assertEquals("1", headers[2].value)
     }

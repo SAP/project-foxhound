@@ -2,8 +2,8 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /**
- * @param  {Number} numbers that will be summed.
- * @returns {String} A string of the following form: `${arg1} + ${arg2} ${argn} = ${sum}`
+ * @param  {number} numbers that will be summed.
+ * @returns {string} A string of the following form: `${arg1} + ${arg2} ${argn} = ${sum}`
  */
 function sum(...args) {
   return `${args.join(" + ")} = ${args.reduce((acc, i) => acc + i)}`;

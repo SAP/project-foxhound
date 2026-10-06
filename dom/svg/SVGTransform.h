@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,31 +18,21 @@ namespace mozilla {
 class SVGTransform {
  public:
   // Default ctor initialises to matrix type with identity matrix
-  SVGTransform()
-      : mAngle(0.f),
-        mOriginX(0.f),
-        mOriginY(0.f),
-        mType(dom::SVGTransform_Binding::SVG_TRANSFORM_MATRIX) {}
+  SVGTransform() = default;
 
-  explicit SVGTransform(const gfxMatrix& aMatrix)
-      : mMatrix(aMatrix),
-        mAngle(0.f),
-        mOriginX(0.f),
-        mOriginY(0.f),
-        mType(dom::SVGTransform_Binding::SVG_TRANSFORM_MATRIX) {}
+  explicit SVGTransform(const gfxMatrix& aMatrix) : mMatrix(aMatrix) {}
 
   bool operator==(const SVGTransform& rhs) const {
-    return mType == rhs.mType && MatricesEqual(mMatrix, rhs.mMatrix) &&
-           mAngle == rhs.mAngle && mOriginX == rhs.mOriginX &&
-           mOriginY == rhs.mOriginY;
+    return mType == rhs.mType && mMatrix.ExactlyEquals(rhs.mMatrix) &&
+           mAngle == rhs.mAngle && mOrigin == rhs.mOrigin;
   }
 
   void GetValueAsString(nsAString& aValue) const;
 
   float Angle() const { return mAngle; }
   void GetRotationOrigin(float& aOriginX, float& aOriginY) const {
-    aOriginX = mOriginX;
-    aOriginY = mOriginY;
+    aOriginX = mOrigin.x;
+    aOriginY = mOrigin.y;
   }
   uint16_t Type() const { return mType; }
 
@@ -56,15 +44,13 @@ class SVGTransform {
   nsresult SetSkewX(float aAngle);
   nsresult SetSkewY(float aAngle);
 
-  static bool MatricesEqual(const gfxMatrix& a, const gfxMatrix& b) {
-    return a._11 == b._11 && a._12 == b._12 && a._21 == b._21 &&
-           a._22 == b._22 && a._31 == b._31 && a._32 == b._32;
-  }
+  static uint16_t GetTransformTypeForString(const nsAString& aTransformType);
 
  protected:
   gfxMatrix mMatrix;
-  float mAngle, mOriginX, mOriginY;
-  uint16_t mType;
+  gfx::Point mOrigin;
+  float mAngle = 0.f;
+  uint16_t mType = dom::SVGTransform_Binding::SVG_TRANSFORM_MATRIX;
 };
 
 /*
@@ -94,56 +80,56 @@ class SVGTransformSMILData {
  public:
   // Number of float-params required in constructor, if constructing one of the
   // 'simple' transform types (all but matrix type)
-  static const uint32_t NUM_SIMPLE_PARAMS = 3;
+  static constexpr size_t kNumSimpleParams = 3;
 
   // Number of float-params required in constructor for matrix type.
   // This is also the number of params we actually store, regardless of type.
-  static const uint32_t NUM_STORED_PARAMS = 6;
+  static constexpr size_t kNumStoredParams = 6;
+
+  using SimpleParams = std::array<float, kNumSimpleParams>;
+  using StoredParams = std::array<float, kNumStoredParams>;
 
   explicit SVGTransformSMILData(uint16_t aType) : mTransformType(aType) {
     MOZ_ASSERT(aType >= dom::SVGTransform_Binding::SVG_TRANSFORM_MATRIX &&
                    aType <= dom::SVGTransform_Binding::SVG_TRANSFORM_SKEWY,
                "Unexpected transform type");
-    for (uint32_t i = 0; i < NUM_STORED_PARAMS; ++i) {
-      mParams[i] = 0.f;
-    }
+    mParams.fill(0.f);
   }
 
-  SVGTransformSMILData(uint16_t aType, float (&aParams)[NUM_SIMPLE_PARAMS])
+  SVGTransformSMILData(uint16_t aType, const SimpleParams& aParams)
       : mTransformType(aType) {
     MOZ_ASSERT(aType >= dom::SVGTransform_Binding::SVG_TRANSFORM_TRANSLATE &&
                    aType <= dom::SVGTransform_Binding::SVG_TRANSFORM_SKEWY,
                "Expected 'simple' transform type");
-    for (uint32_t i = 0; i < NUM_SIMPLE_PARAMS; ++i) {
-      mParams[i] = aParams[i];
-    }
-    for (uint32_t i = NUM_SIMPLE_PARAMS; i < NUM_STORED_PARAMS; ++i) {
-      mParams[i] = 0.f;
-    }
+    std::copy(aParams.begin(), aParams.end(), mParams.begin());
+    std::fill(mParams.begin() + kNumSimpleParams, mParams.end(), 0.f);
   }
 
   // Conversion to/from a fully-fledged SVGTransform
   explicit SVGTransformSMILData(const SVGTransform& aTransform);
   SVGTransform ToSVGTransform() const;
 
+  float operator[](uint32_t aIndex) const { return mParams[aIndex]; }
+  float& operator[](uint32_t aIndex) { return mParams[aIndex]; }
+
   bool operator==(const SVGTransformSMILData& aOther) const {
     if (mTransformType != aOther.mTransformType) return false;
 
-    for (uint32_t i = 0; i < NUM_STORED_PARAMS; ++i) {
-      if (mParams[i] != aOther.mParams[i]) {
-        return false;
-      }
-    }
-
-    return true;
+    return mParams == aOther.mParams;
   }
 
   bool operator!=(const SVGTransformSMILData& aOther) const {
     return !(*this == aOther);
   }
 
+  nsresult Distance(const SVGTransformSMILData& aOther,
+                    double& aDistance) const;
+
+  uint16_t TransformType() const { return mTransformType; }
+
+ private:
+  StoredParams mParams;
   uint16_t mTransformType;
-  float mParams[NUM_STORED_PARAMS];
 };
 
 }  // namespace mozilla

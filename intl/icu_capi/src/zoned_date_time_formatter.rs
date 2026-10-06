@@ -7,7 +7,6 @@
 #[rustfmt::skip]
 #[diplomat::bridge]
 #[diplomat::abi_rename = "icu4x_{0}_mv1"]
-#[diplomat::attr(auto, namespace = "icu4x")]
 pub mod ffi {
     use alloc::boxed::Box;
     use icu_calendar::Gregorian;
@@ -49,6 +48,7 @@ pub mod ffi {
         #[diplomat::attr(all(supports = fallible_constructors, supports = named_constructors), named_constructor = "specific_long")]
         #[diplomat::rust_link(icu::datetime::fieldsets::zone::SpecificLong, Struct)]
         #[diplomat::rust_link(icu::datetime::fieldsets::Combo, Struct, hidden)]
+        #[diplomat::demo(default_constructor)]
         #[cfg(feature = "compiled_data")]
         pub fn create_specific_long(
             locale: &Locale,
@@ -379,7 +379,6 @@ pub mod ffi {
         #[diplomat::attr(all(supports = fallible_constructors, supports = named_constructors), named_constructor = "generic_short")]
         #[diplomat::rust_link(icu::datetime::fieldsets::zone::GenericShort, Struct)]
         #[diplomat::rust_link(icu::datetime::fieldsets::Combo, Struct, hidden)]
-        #[diplomat::demo(default_constructor)]
         #[cfg(feature = "compiled_data")]
         pub fn create_generic_short(
             locale: &Locale,
@@ -576,13 +575,13 @@ pub mod ffi {
         #[diplomat::rust_link(icu::datetime::FormattedDateTime::to_string, FnInStruct, hidden)]
         pub fn format_iso(
             &self,
-            date: &IsoDate,
+            iso_date: &IsoDate,
             time: &Time,
             zone: &TimeZoneInfo,
             write: &mut diplomat_runtime::DiplomatWrite,
         ) -> Result<(), DateTimeWriteError> {
             let mut input = icu_datetime::unchecked::DateTimeInputUnchecked::default();
-            let date_in_calendar = date.0.to_calendar(self.0.calendar());
+            let date_in_calendar = iso_date.0.to_calendar(self.0.calendar());
             input.set_date_fields_unchecked(date_in_calendar); // calendar conversion on previous line
             input.set_time_fields(time.0);
             input.set_time_zone_id(zone.id);
@@ -593,13 +592,13 @@ pub mod ffi {
                 input.set_time_zone_name_timestamp(zone_name_timestamp);
             }
             else {
-                input.set_time_zone_name_timestamp(icu_time::zone::ZoneNameTimestamp::from_date_time_iso(icu_time::DateTime {
-                    date: date.0,
-                    time: time.0
-                }))
-            }
-            if let Some(variant) = zone.variant {
-                input.set_time_zone_variant(variant);
+                #[allow(deprecated)] // clean up in 3.0
+                input.set_time_zone_name_timestamp(zone.id.with_offset(zone.offset).with_zone_name_timestamp(
+                    icu_time::zone::ZoneNameTimestamp::from_date_time_iso(icu_time::DateTime {
+                        date: iso_date.0,
+                        time: time.0,
+                    })
+                ).zone_name_timestamp());
             }
             let _infallible = self
                 .0
@@ -629,6 +628,7 @@ pub mod ffi {
         #[diplomat::attr(all(supports = fallible_constructors, supports = named_constructors), named_constructor = "specific_long")]
         #[diplomat::rust_link(icu::datetime::fieldsets::zone::SpecificLong, Struct)]
         #[diplomat::rust_link(icu::datetime::fieldsets::Combo, Struct, hidden)]
+        #[diplomat::demo(default_constructor)]
         #[cfg(feature = "compiled_data")]
         pub fn create_specific_long(
             locale: &Locale,
@@ -949,7 +949,6 @@ pub mod ffi {
         #[diplomat::attr(all(supports = fallible_constructors, supports = named_constructors), named_constructor = "generic_short")]
         #[diplomat::rust_link(icu::datetime::fieldsets::zone::GenericShort, Struct)]
         #[diplomat::rust_link(icu::datetime::fieldsets::Combo, Struct, hidden)]
-        #[diplomat::demo(default_constructor)]
         #[cfg(feature = "compiled_data")]
         pub fn create_generic_short(
             locale: &Locale,
@@ -1140,13 +1139,13 @@ pub mod ffi {
         #[diplomat::rust_link(icu::datetime::FormattedDateTime::to_string, FnInStruct, hidden)]
         pub fn format_iso(
             &self,
-            date: &IsoDate,
+            iso_date: &IsoDate,
             time: &Time,
             zone: &TimeZoneInfo,
             write: &mut diplomat_runtime::DiplomatWrite,
         ) -> Result<(), DateTimeWriteError> {
             let mut input = icu_datetime::unchecked::DateTimeInputUnchecked::default();
-            let date_in_calendar = date.0.to_calendar(Gregorian);
+            let date_in_calendar = iso_date.0.to_calendar(Gregorian);
             input.set_date_fields_unchecked(date_in_calendar); // calendar conversion on previous line
             input.set_time_fields(time.0);
             input.set_time_zone_id(zone.id);
@@ -1157,13 +1156,13 @@ pub mod ffi {
                 input.set_time_zone_name_timestamp(zone_name_timestamp);
             }
             else {
-                input.set_time_zone_name_timestamp(icu_time::zone::ZoneNameTimestamp::from_date_time_iso(icu_time::DateTime {
-                    date: date.0,
-                    time: time.0
-                }))
-            }
-            if let Some(variant) = zone.variant {
-                input.set_time_zone_variant(variant);
+                #[allow(deprecated)] // clean up in 3.0
+                input.set_time_zone_name_timestamp(zone.id.with_offset(zone.offset).with_zone_name_timestamp(
+                    icu_time::zone::ZoneNameTimestamp::from_date_time_iso(icu_time::DateTime {
+                        date: iso_date.0,
+                        time: time.0,
+                    })
+                ).zone_name_timestamp());
             }
             let _infallible = self
                 .0

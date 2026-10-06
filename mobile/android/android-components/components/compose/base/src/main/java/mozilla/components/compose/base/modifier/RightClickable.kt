@@ -4,7 +4,6 @@
 
 package mozilla.components.compose.base.modifier
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Indication
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
@@ -79,7 +78,6 @@ fun Modifier.rightClickable(
         },
 )
 
-@OptIn(ExperimentalFoundationApi::class)
 @Preview
 @Composable
 private fun RightClickablePreview() {

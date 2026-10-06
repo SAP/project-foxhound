@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsLanguageAtomService.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/intl/Locale.h"
 #include "mozilla/intl/OSPreferences.h"
@@ -203,6 +201,12 @@ nsStaticAtom* nsLanguageAtomService::GetUncachedLanguageGroup(
     if (result.isOk() && loc.Canonicalize().isOk()) {
       // Fill in script subtag if not present.
       if (loc.Script().Missing()) {
+        // No script. At this point it's fair to assume that en-* maps to
+        // x-western. This fast path avoids the slow call to AddLikelySubtags.
+        if (loc.Language().EqualTo("en")) {
+          return nsGkAtoms::x_western;
+        }
+
         if (loc.AddLikelySubtags().isErr()) {
           // Fall back to x-unicode if no match was found
           return nsGkAtoms::Unicode;

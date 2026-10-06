@@ -8,7 +8,7 @@ import type {ChildProcess} from 'node:child_process';
 
 import type {Protocol} from 'devtools-protocol';
 
-import type {DebugInfo} from '../api/Browser.js';
+import type {CreatePageOptions, DebugInfo} from '../api/Browser.js';
 import {
   Browser as BrowserBase,
   BrowserEvent,
@@ -16,6 +16,10 @@ import {
   type BrowserContextOptions,
   type IsPageTargetCallback,
   type TargetFilterCallback,
+  type ScreenInfo,
+  type AddScreenParams,
+  type WindowBounds,
+  type WindowId,
 } from '../api/Browser.js';
 import {BrowserContextEvent} from '../api/BrowserContext.js';
 import {CDPSessionEvent} from '../api/CDPSession.js';
@@ -41,6 +45,13 @@ import {TargetManager} from './TargetManager.js';
 /**
  * @internal
  */
+function isDevToolsPageTarget(url: string): boolean {
+  return url.startsWith('devtools://devtools/bundled/devtools_app.html');
+}
+
+/**
+ * @internal
+ */
 export class CdpBrowser extends BrowserBase {
   readonly protocol = 'cdp';
 
@@ -55,6 +66,8 @@ export class CdpBrowser extends BrowserBase {
     targetFilterCallback?: TargetFilterCallback,
     isPageTargetCallback?: IsPageTargetCallback,
     waitForInitiallyDiscoveredTargets = true,
+    networkEnabled = true,
+    handleDevToolsAsPage = false,
   ): Promise<CdpBrowser> {
     const browser = new CdpBrowser(
       connection,
@@ -65,6 +78,8 @@ export class CdpBrowser extends BrowserBase {
       targetFilterCallback,
       isPageTargetCallback,
       waitForInitiallyDiscoveredTargets,
+      networkEnabled,
+      handleDevToolsAsPage,
     );
     if (acceptInsecureCerts) {
       await connection.send('Security.setIgnoreCertificateErrors', {
@@ -82,7 +97,9 @@ export class CdpBrowser extends BrowserBase {
   #isPageTargetCallback!: IsPageTargetCallback;
   #defaultContext: CdpBrowserContext;
   #contexts = new Map<string, CdpBrowserContext>();
+  #networkEnabled = true;
   #targetManager: TargetManager;
+  #handleDevToolsAsPage = false;
 
   constructor(
     connection: Connection,
@@ -93,8 +110,11 @@ export class CdpBrowser extends BrowserBase {
     targetFilterCallback?: TargetFilterCallback,
     isPageTargetCallback?: IsPageTargetCallback,
     waitForInitiallyDiscoveredTargets = true,
+    networkEnabled = true,
+    handleDevToolsAsPage = false,
   ) {
     super();
+    this.#networkEnabled = networkEnabled;
     this.#defaultViewport = defaultViewport;
     this.#process = process;
     this.#connection = connection;
@@ -104,6 +124,7 @@ export class CdpBrowser extends BrowserBase {
       (() => {
         return true;
       });
+    this.#handleDevToolsAsPage = handleDevToolsAsPage;
     this.#setIsPageTargetCallback(isPageTargetCallback);
     this.#targetManager = new TargetManager(
       connection,
@@ -183,7 +204,10 @@ export class CdpBrowser extends BrowserBase {
         return (
           target.type() === 'page' ||
           target.type() === 'background_page' ||
-          target.type() === 'webview'
+          target.type() === 'webview' ||
+          (this.#handleDevToolsAsPage &&
+            target.type() === 'other' &&
+            isDevToolsPageTarget(target.url()))
         );
       });
   }
@@ -258,7 +282,7 @@ export class CdpBrowser extends BrowserBase {
       this.#targetManager,
       createSession,
     );
-    if (targetInfo.url?.startsWith('devtools://')) {
+    if (targetInfo.url && isDevToolsPageTarget(targetInfo.url)) {
       return new DevToolsTarget(
         targetInfo,
         session,
@@ -330,14 +354,31 @@ export class CdpBrowser extends BrowserBase {
     return this.#connection.url();
   }
 
-  override async newPage(): Promise<Page> {
-    return await this.#defaultContext.newPage();
+  override async newPage(options?: CreatePageOptions): Promise<Page> {
+    return await this.#defaultContext.newPage(options);
   }
 
-  async _createPageInContext(contextId?: string): Promise<Page> {
+  async _createPageInContext(
+    contextId?: string,
+    options?: CreatePageOptions,
+  ): Promise<Page> {
+    const hasTargets =
+      this.targets().filter(t => {
+        return t.browserContext().id === contextId;
+      }).length > 0;
+    const windowBounds =
+      options?.type === 'window' ? options.windowBounds : undefined;
     const {targetId} = await this.#connection.send('Target.createTarget', {
       url: 'about:blank',
       browserContextId: contextId || undefined,
+      left: windowBounds?.left,
+      top: windowBounds?.top,
+      width: windowBounds?.width,
+      height: windowBounds?.height,
+      windowState: windowBounds?.windowState,
+      // Works around crbug.com/454825274.
+      newWindow: hasTargets && options?.type === 'window' ? true : undefined,
+      background: options?.background,
     });
     const target = (await this.waitForTarget(t => {
       return (t as CdpTarget)._targetId === targetId;
@@ -360,6 +401,38 @@ export class CdpBrowser extends BrowserBase {
     return page;
   }
 
+  async _createDevToolsPage(pageTargetId: string): Promise<Page> {
+    const openDevToolsResponse = await this.#connection.send(
+      'Target.openDevTools',
+      {
+        targetId: pageTargetId,
+      },
+    );
+    const target = (await this.waitForTarget(t => {
+      return (t as CdpTarget)._targetId === openDevToolsResponse.targetId;
+    })) as CdpTarget;
+    if (!target) {
+      throw new Error(
+        `Missing target for DevTools page (id = ${pageTargetId})`,
+      );
+    }
+    const initialized =
+      (await target._initializedDeferred.valueOrThrow()) ===
+      InitializationStatus.SUCCESS;
+    if (!initialized) {
+      throw new Error(
+        `Failed to create target for DevTools page (id = ${pageTargetId})`,
+      );
+    }
+    const page = await target.page();
+    if (!page) {
+      throw new Error(
+        `Failed to create a DevTools Page for target (id = ${pageTargetId})`,
+      );
+    }
+    return page;
+  }
+
   override async installExtension(path: string): Promise<string> {
     const {id} = await this.#connection.send('Extensions.loadUnpacked', {path});
     return id;
@@ -367,6 +440,42 @@ export class CdpBrowser extends BrowserBase {
 
   override uninstallExtension(id: string): Promise<void> {
     return this.#connection.send('Extensions.uninstall', {id});
+  }
+
+  override async screens(): Promise<ScreenInfo[]> {
+    const {screenInfos} = await this.#connection.send(
+      'Emulation.getScreenInfos',
+    );
+    return screenInfos;
+  }
+
+  override async addScreen(params: AddScreenParams): Promise<ScreenInfo> {
+    const {screenInfo} = await this.#connection.send(
+      'Emulation.addScreen',
+      params,
+    );
+    return screenInfo;
+  }
+
+  override async removeScreen(screenId: string): Promise<void> {
+    return await this.#connection.send('Emulation.removeScreen', {screenId});
+  }
+
+  override async getWindowBounds(windowId: WindowId): Promise<WindowBounds> {
+    const {bounds} = await this.#connection.send('Browser.getWindowBounds', {
+      windowId: Number(windowId),
+    });
+    return bounds;
+  }
+
+  override async setWindowBounds(
+    windowId: WindowId,
+    windowBounds: WindowBounds,
+  ): Promise<void> {
+    await this.#connection.send('Browser.setWindowBounds', {
+      windowId: Number(windowId),
+      bounds: windowBounds,
+    });
   }
 
   override targets(): CdpTarget[] {
@@ -424,5 +533,9 @@ export class CdpBrowser extends BrowserBase {
     return {
       pendingProtocolErrors: this.#connection.getPendingProtocolErrors(),
     };
+  }
+
+  override isNetworkEnabled(): boolean {
+    return this.#networkEnabled;
   }
 }

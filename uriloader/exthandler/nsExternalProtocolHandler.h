@@ -1,17 +1,15 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsExternalProtocolHandler_h___
-#define nsExternalProtocolHandler_h___
+#ifndef nsExternalProtocolHandler_h_
+#define nsExternalProtocolHandler_h_
 
 #include "nsIExternalProtocolHandler.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsWeakReference.h"
-#include "mozilla/Attributes.h"
 
 class nsIURI;
 
@@ -33,4 +31,4 @@ class nsExternalProtocolHandler final : public nsIExternalProtocolHandler,
   nsCString m_schemeName;
 };
 
-#endif  // nsExternalProtocolHandler_h___
+#endif  // nsExternalProtocolHandler_h_

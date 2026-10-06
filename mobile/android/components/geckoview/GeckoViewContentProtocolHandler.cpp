@@ -1,18 +1,15 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-// vim:ts=4 sw=2 sts=2 et cin:
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GeckoViewContentProtocolHandler.h"
 #include "GeckoViewContentChannel.h"
+#include "GeckoViewContentChannelChild.h"
 #include "nsStandardURL.h"
 #include "nsURLHelper.h"
 #include "nsIURIMutator.h"
 
 #include "nsNetUtil.h"
-
-#include "mozilla/ResultExtensions.h"
 
 //-----------------------------------------------------------------------------
 
@@ -34,14 +31,21 @@ NS_IMETHODIMP
 GeckoViewContentProtocolHandler::NewChannel(nsIURI* uri, nsILoadInfo* aLoadInfo,
                                             nsIChannel** result) {
   nsresult rv;
-  RefPtr<GeckoViewContentChannel> chan = new GeckoViewContentChannel(uri);
+  RefPtr<nsBaseChannel> channel;
 
-  rv = chan->SetLoadInfo(aLoadInfo);
+  if (XRE_IsParentProcess()) {
+    channel = new GeckoViewContentChannel(uri);
+  } else {
+    channel = new mozilla::net::GeckoViewContentChannelChild(uri);
+  }
+
+  rv = channel->SetLoadInfo(aLoadInfo);
   if (NS_FAILED(rv)) {
     return rv;
   }
 
-  chan.forget(result);
+  *result = channel.forget().take();
+
   return NS_OK;
 }
 

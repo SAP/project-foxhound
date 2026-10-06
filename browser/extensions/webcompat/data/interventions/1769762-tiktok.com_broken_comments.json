@@ -1,0 +1,17 @@
+{
+  "label": "tiktok.com (broken comments)",
+  "bugs": {
+    "1769762": {
+      "issue": "broken-comments",
+      "matches": ["https://www.tiktok.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "content_scripts": {
+        "js": ["clear_navigator_plugins.js"]
+      }
+    }
+  ]
+}

@@ -89,7 +89,7 @@ var check_use_counter_worker = async function (
 
 add_task(async function test_dedicated_worker() {
   await check_use_counter_worker("CONSOLE_LOG", "DEDICATED", async browser => {
-    await ContentTask.spawn(browser, {}, function () {
+    await SpecialPowers.spawn(browser, [], function () {
       return new Promise(resolve => {
         let worker = new content.Worker("file_use_counter_worker.js");
         worker.onmessage = function (e) {
@@ -105,7 +105,7 @@ add_task(async function test_dedicated_worker() {
 
 add_task(async function test_shared_worker() {
   await check_use_counter_worker("CONSOLE_LOG", "SHARED", async browser => {
-    await ContentTask.spawn(browser, {}, function () {
+    await SpecialPowers.spawn(browser, [], function () {
       return new Promise(resolve => {
         let worker = new content.SharedWorker(
           "file_use_counter_shared_worker.js"
@@ -123,7 +123,7 @@ add_task(async function test_shared_worker() {
 
 add_task(async function test_shared_worker_microtask() {
   await check_use_counter_worker("CONSOLE_LOG", "SHARED", async browser => {
-    await ContentTask.spawn(browser, {}, function () {
+    await SpecialPowers.spawn(browser, [], function () {
       return new Promise(resolve => {
         let worker = new content.SharedWorker(
           "file_use_counter_shared_worker_microtask.js"
@@ -141,7 +141,7 @@ add_task(async function test_shared_worker_microtask() {
 
 add_task(async function test_service_worker() {
   await check_use_counter_worker("CONSOLE_LOG", "SERVICE", async browser => {
-    await ContentTask.spawn(browser, {}, function () {
+    await SpecialPowers.spawn(browser, [], function () {
       let waitForActivated = async function (registration) {
         return new Promise(resolve => {
           let worker =

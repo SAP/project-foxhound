@@ -1,0 +1,92 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+# This file contains information about all the artifacts that are
+# archived for autoland integration builds of Android, for use by mozregression.
+#
+# Structure
+# --------
+# `bucket_paths`          -- prefix to be used per product to correctly access our buckets
+# `default_locales`       -- list of locales to be used when composing upstream artifacts or the list of
+#                      destinations. If given an empty locale, it uses these locales instead.
+# `tasktype_map`          -- mapping between task reference and task type, particularly useful when
+#                      composing the upstreamArtifacts for scriptworker.
+# `platform_names`        -- various platform mappings used in reckoning artifacts or other paths
+# `default`               -- a default entry, which the mappings extend and override in such a way that
+#                      final path full-destinations will be a concatenation of the following:
+#                      `bucket_paths`, `destinations`, `locale_prefix`, `pretty_name`
+# `mapping`               -- the main section defining all artifacts to be archived
+#
+# Per-artifact fields (used within `mapping`):
+# `from`                  -- specifies the dependency(ies) from which to expect the particular artifact
+# `all_locales`           -- boolean argument to specify whether that particular artifact is to be expected
+#                      for all locales or just the default one
+# `description`           -- brief summary of what that artifact is
+# `locale_prefix`         -- prefix to be used in the final destination paths, whether that's for default locale or not
+# `source_path_modifier`  -- any parent dir that might be used in between artifact prefix and filename at source location
+#                            for example `public/build` vs `public/build/ach/`.
+# `destinations`          -- final list of directories where to push the artifacts
+# `pretty_name`           -- the final name the artifact will have at destination
+# `checksums_path`        -- the name to identify one artifact within the checksums file
+# `expiry`                -- how long to keep the artifacts
+# `not_for_platforms`     -- filtering option to avoid associating an artifact with a specific platform
+# `only_for_platforms`    -- filtering option to exclusively include the association of an artifact for a specific platform
+
+bucket_paths:
+    - pub/mobile/integration
+default_locales:
+    - en-US
+tasktype_map:
+    build: build
+platform_names:
+    filename_platform:
+        by-platform:
+            android-arm: 'android-arm'
+            android-aarch64: 'android-aarch64'
+            android-x86_64: 'android-x86_64'
+
+default: &default
+    from:
+        - build
+    all_locales: false
+    locale_prefix: ''
+    source_path_modifier:
+        by-locale:
+            default: '${locale}'
+            en-US: ''
+    destinations:
+        - ${branch}/${year}/${month}/${day}/${head_rev}
+    expiry: "8 years"
+
+mapping:
+    target.json:
+        <<: *default
+        description: "Various compile and moz_app flags baked together in a json file"
+        pretty_name: geckoview-${version}.${locale}.${filename_platform}.json
+        checksums_path: geckoview-${version}.${locale}.${filename_platform}.json
+    target.mozinfo.json:
+        <<: *default
+        description: "Various compile and moz_app flags baked together in a json file"
+        pretty_name: geckoview-${version}.${locale}.${filename_platform}.mozinfo.json
+        checksums_path: geckoview-${version}.${locale}.${filename_platform}.mozinfo.json
+    target.txt:
+        <<: *default
+        description: "File containing buildid and revision"
+        pretty_name: geckoview-${version}.${locale}.${filename_platform}.txt
+        checksums_path: geckoview-${version}.${locale}.${filename_platform}.txt
+    target_info.txt:
+        <<: *default
+        description: "File containing the buildID"
+        pretty_name: geckoview-${version}.${locale}.${filename_platform}_info.txt
+        checksums_path: geckoview-${version}.${locale}.${filename_platform}_info.txt
+    geckoview_example.apk:
+        <<: *default
+        description: "GeckoView example application APK"
+        pretty_name: geckoview_example-${version}.${locale}.${filename_platform}.apk
+        checksums_path: geckoview_example-${version}.${locale}.${filename_platform}.apk
+    geckoview-test_runner.apk:
+        <<: *default
+        description: "GeckoView test runner APK"
+        pretty_name: geckoview-test_runner-${version}.${locale}.${filename_platform}.apk
+        checksums_path: geckoview-test_runner-${version}.${locale}.${filename_platform}.apk

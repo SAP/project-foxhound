@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -190,7 +188,7 @@ add_task(async function run_test_3() {
   await new Promise(resolve => srv.stop(resolve));
 });
 
-/** *******************
+/*********************
  * UTILITY FUNCTIONS *
  *********************/
 
@@ -238,7 +236,7 @@ function check400(aData) {
   Assert.equal(firstLine.substring(0, HTTP_400_LEADER_LENGTH), HTTP_400_LEADER);
 }
 
-/** *************
+/***************
  * BEGIN TESTS *
  ***************/
 

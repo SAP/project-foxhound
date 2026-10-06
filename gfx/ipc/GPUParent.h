@@ -1,10 +1,8 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef _include_gfx_ipc_GPUParent_h__
-#define _include_gfx_ipc_GPUParent_h__
+#ifndef _include_gfx_ipc_GPUParent_h_
+#define _include_gfx_ipc_GPUParent_h_
 
 #include "mozilla/RefPtr.h"
 #include "mozilla/gfx/PGPUParent.h"
@@ -48,22 +46,25 @@ class GPUParent final : public PGPUParent {
   void NotifySwapChainInfo(layers::SwapChainInfo aInfo);
   void NotifyDisableRemoteCanvas();
 
+  void ReportGLStrings(GfxInfoGLStrings&& aStrings);
+
   mozilla::ipc::IPCResult RecvInit(nsTArray<GfxVarUpdate>&& vars,
                                    const DevicePrefs& devicePrefs,
                                    nsTArray<LayerTreeIdMapping>&& mappings,
                                    nsTArray<GfxInfoFeatureStatus>&& features,
-                                   uint32_t wrNamespace);
+                                   uint32_t wrNamespace,
+                                   InitResolver&& aInitResolver);
   mozilla::ipc::IPCResult RecvInitCompositorManager(
       Endpoint<PCompositorManagerParent>&& aEndpoint, uint32_t aNamespace);
   mozilla::ipc::IPCResult RecvInitVsyncBridge(
       Endpoint<PVsyncBridgeParent>&& aVsyncEndpoint);
   mozilla::ipc::IPCResult RecvInitImageBridge(
-      Endpoint<PImageBridgeParent>&& aEndpoint);
+      Endpoint<PImageBridgeParent>&& aEndpoint, uint32_t aNamespace);
   mozilla::ipc::IPCResult RecvInitVideoBridge(
       Endpoint<PVideoBridgeParent>&& aEndpoint,
       const layers::VideoBridgeSource& aSource);
   mozilla::ipc::IPCResult RecvInitVRManager(
-      Endpoint<PVRManagerParent>&& aEndpoint);
+      Endpoint<PVRManagerParent>&& aEndpoint, uint32_t aNamespace);
   mozilla::ipc::IPCResult RecvInitVR(Endpoint<PVRGPUChild>&& aVRGPUChild);
   mozilla::ipc::IPCResult RecvInitUiCompositorController(
       const LayersId& aRootLayerTreeId,
@@ -73,7 +74,7 @@ class GPUParent final : public PGPUParent {
       Endpoint<PAPZInputBridgeParent>&& aEndpoint);
   mozilla::ipc::IPCResult RecvInitProfiler(
       Endpoint<PProfilerChild>&& aEndpoint);
-  mozilla::ipc::IPCResult RecvUpdateVar(const GfxVarUpdate& pref);
+  mozilla::ipc::IPCResult RecvUpdateVar(const nsTArray<GfxVarUpdate>& var);
   mozilla::ipc::IPCResult RecvPreferenceUpdate(const Pref& pref);
   mozilla::ipc::IPCResult RecvScreenInformationChanged();
   mozilla::ipc::IPCResult RecvNotifyBatteryInfo(
@@ -82,10 +83,11 @@ class GPUParent final : public PGPUParent {
       Endpoint<PCompositorManagerParent>&& aEndpoint,
       const ContentParentId& aChildId, uint32_t aNamespace);
   mozilla::ipc::IPCResult RecvNewContentImageBridge(
-      Endpoint<PImageBridgeParent>&& aEndpoint,
-      const ContentParentId& aChildId);
+      Endpoint<PImageBridgeParent>&& aEndpoint, const ContentParentId& aChildId,
+      uint32_t aNamespace);
   mozilla::ipc::IPCResult RecvNewContentVRManager(
-      Endpoint<PVRManagerParent>&& aEndpoint, const ContentParentId& aChildId);
+      Endpoint<PVRManagerParent>&& aEndpoint, const ContentParentId& aChildId,
+      uint32_t aNamespace);
   mozilla::ipc::IPCResult RecvNewContentRemoteMediaManager(
       Endpoint<PRemoteMediaManagerParent>&& aEndpoint,
       const ContentParentId& aChildId);
@@ -95,7 +97,7 @@ class GPUParent final : public PGPUParent {
       const LayerTreeIdMapping& aMapping);
   mozilla::ipc::IPCResult RecvRemoveLayerTreeIdMapping(
       const LayerTreeIdMapping& aMapping);
-  mozilla::ipc::IPCResult RecvNotifyGpuObservers(const nsCString& aTopic);
+  mozilla::ipc::IPCResult RecvFlushActiveCheckerboardReports();
   mozilla::ipc::IPCResult RecvRequestMemoryReport(
       const uint32_t& generation, const bool& anonymize,
       const bool& minimizeMemoryUsage,
@@ -134,4 +136,4 @@ class GPUParent final : public PGPUParent {
 }  // namespace gfx
 }  // namespace mozilla
 
-#endif  // _include_gfx_ipc_GPUParent_h__
+#endif  // _include_gfx_ipc_GPUParent_h_

@@ -12,6 +12,7 @@ subtest_unit = "ms"
 test_url = "http://<host>:<port>/matrix_demo.html"
 type = "benchmark"
 unit = "ms"
+sparse_checkout = true
 
 ["matrix-react-bench"]
 repository = "https://github.com/mozilla/perf-automation"

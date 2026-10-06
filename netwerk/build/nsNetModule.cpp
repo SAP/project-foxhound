@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -76,15 +74,16 @@ NS_IMPL_COMPONENT_FACTORY(net::nsHttpsHandler) {
 #include "WebSocketChannel.h"
 #include "WebSocketChannelChild.h"
 namespace mozilla::net {
-static BaseWebSocketChannel* WebSocketChannelConstructor(bool aSecure) {
+static already_AddRefed<BaseWebSocketChannel> WebSocketChannelConstructor(
+    bool aSecure) {
   if (IsNeckoChild()) {
-    return new WebSocketChannelChild(aSecure);
+    return MakeAndAddRef<WebSocketChannelChild>(aSecure);
   }
 
   if (aSecure) {
-    return new WebSocketSSLChannel;
+    return MakeAndAddRef<WebSocketSSLChannel>();
   }
-  return new WebSocketChannel;
+  return MakeAndAddRef<WebSocketChannel>();
 }
 
 #define WEB_SOCKET_HANDLER_CONSTRUCTOR(type, secure)          \
@@ -222,9 +221,6 @@ void nsNetShutdown() {
 
   // Release global state used by the URL helper module.
   net_ShutdownURLHelper();
-#ifdef XP_MACOSX
-  net_ShutdownURLHelperOSX();
-#endif
 
   // Release DNS service reference.
   nsDNSPrefetch::Shutdown();

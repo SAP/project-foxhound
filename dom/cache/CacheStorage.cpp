@@ -1,18 +1,21 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/cache/CacheStorage.h"
 
+#include "js/Object.h"              // JS::GetClass
+#include "js/PropertyAndElement.h"  // JS_DefineProperty
 #include "mozilla/Preferences.h"
-#include "mozilla/Unused.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/dom/CacheBinding.h"
 #include "mozilla/dom/CacheStorageBinding.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/InternalRequest.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Response.h"
+#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/cache/AutoUtils.h"
 #include "mozilla/dom/cache/Cache.h"
 #include "mozilla/dom/cache/CacheChild.h"
@@ -24,20 +27,14 @@
 #include "mozilla/dom/cache/TypeUtils.h"
 #include "mozilla/dom/quota/PrincipalUtils.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
-#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/StaticPrefs_extensions.h"
 #include "nsContentUtils.h"
-#include "mozilla/dom/Document.h"
 #include "nsIGlobalObject.h"
 #include "nsMixedContentBlocker.h"
 #include "nsURLParsers.h"
-#include "js/Object.h"              // JS::GetClass
-#include "js/PropertyAndElement.h"  // JS_DefineProperty
 
 namespace mozilla::dom::cache {
 
@@ -66,8 +63,6 @@ struct CacheStorage::Entry final {
   // the request data separately for now.
   SafeRefPtr<InternalRequest> mRequest;
 };
-
-namespace {
 
 bool IsTrusted(const PrincipalInfo& aPrincipalInfo, bool aTestingPrefEnabled) {
   // Can happen on main thread or worker thread
@@ -129,8 +124,6 @@ bool IsTrusted(const PrincipalInfo& aPrincipalInfo, bool aTestingPrefEnabled) {
   return nsMixedContentBlocker::IsPotentiallyTrustworthyLoopbackHost(
       nsDependentCSubstring(url + authPos + hostPos, hostLen));
 }
-
-}  // namespace
 
 // static
 already_AddRefed<CacheStorage> CacheStorage::CreateOnMainThread(
@@ -271,6 +264,14 @@ CacheStorage::CacheStorage(Namespace aNamespace, nsIGlobalObject* aGlobal,
       mActor(nullptr),
       mStatus(NS_OK) {
   MOZ_DIAGNOSTIC_ASSERT(mGlobal);
+
+  // Throw if this process wouldn't be allowed to access storage.
+  if (!BackgroundChild::ValidatePrincipalInfo(*mPrincipalInfo, {})) {
+    MOZ_ASSERT_UNREACHABLE(
+        "ValidatePrincipalInfo failed in CacheStorage constructor");
+    mStatus = NS_ERROR_UNEXPECTED;
+    return;
+  }
 
   // If the PBackground actor is already initialized then we can
   // immediately use it
@@ -506,7 +507,7 @@ JSObject* CacheStorage::WrapObject(JSContext* aContext,
   return mozilla::dom::CacheStorage_Binding::Wrap(aContext, this, aGivenProto);
 }
 
-void CacheStorage::DestroyInternal(CacheStorageChild* aActor) {
+void CacheStorage::OnActorDestroy(CacheStorageChild* aActor) {
   NS_ASSERT_OWNINGTHREAD(CacheStorage);
   MOZ_DIAGNOSTIC_ASSERT(mActor);
   MOZ_DIAGNOSTIC_ASSERT(mActor == aActor);
@@ -527,18 +528,11 @@ void CacheStorage::AssertOwningThread() const {
 }
 #endif
 
-PBackgroundChild* CacheStorage::GetIPCManager() {
-  // This is true because CacheStorage always uses IgnoreBody for requests.
-  // So we should never need to get the IPC manager during Request or
-  // Response serialization.
-  MOZ_CRASH("CacheStorage does not implement TypeUtils::GetIPCManager()");
-}
-
 CacheStorage::~CacheStorage() {
   NS_ASSERT_OWNINGTHREAD(CacheStorage);
   if (mActor) {
     mActor->StartDestroyFromListener();
-    // DestroyInternal() is called synchronously by StartDestroyFromListener().
+    // OnActorDestroy() is called synchronously by StartDestroyFromListener().
     // So we should have already cleared the mActor.
     MOZ_DIAGNOSTIC_ASSERT(!mActor);
   }
@@ -591,10 +585,7 @@ bool CacheStorage::HasStorageAccess(UseCounter aLabel,
     }
   }
 
-  return access > StorageAccess::eDeny ||
-         (StaticPrefs::
-              privacy_partition_always_partition_third_party_non_cookie_storage() &&
-          ShouldPartitionStorage(access));
+  return access > StorageAccess::eDeny || ShouldPartitionStorage(access);
 }
 
 }  // namespace mozilla::dom::cache

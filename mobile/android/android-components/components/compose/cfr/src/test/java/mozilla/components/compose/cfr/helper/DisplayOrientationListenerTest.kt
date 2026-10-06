@@ -25,7 +25,7 @@ import org.mockito.Mockito.verifyNoInteractions
 import org.robolectric.annotation.Config
 
 @RunWith(AndroidJUnit4::class)
-@Config(sdk = [Build.VERSION_CODES.N])
+@Config(sdk = [Build.VERSION_CODES.O])
 class DisplayOrientationListenerTest {
     private val context: Context = mock()
     private val displayManager: DisplayManager = mock()

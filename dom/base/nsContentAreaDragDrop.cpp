@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,47 +11,48 @@
 #include "nsString.h"
 
 // Interfaces needed to be included
-#include "nsCopySupport.h"
-#include "nsISelectionController.h"
-#include "nsPIDOMWindow.h"
-#include "nsIFormControl.h"
-#include "nsITransferable.h"
+#include "BrowserParent.h"
+#include "imgIContainer.h"
+#include "imgIRequest.h"
+#include "mozilla/TextControlElement.h"
+#include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/DataTransfer.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/HTMLAnchorElement.h"
+#include "mozilla/dom/HTMLAreaElement.h"
+#include "mozilla/dom/Selection.h"
 #include "nsComponentManagerUtils.h"
-#include "nsXPCOM.h"
-#include "nsISupportsPrimitives.h"
-#include "nsServiceManagerUtils.h"
-#include "nsNetUtil.h"
-#include "nsIFile.h"
+#include "nsContentUtils.h"
+#include "nsCopySupport.h"
+#include "nsEscape.h"
 #include "nsFrameLoader.h"
 #include "nsFrameLoaderOwner.h"
 #include "nsIContent.h"
 #include "nsIContentInlines.h"
 #include "nsIContentPolicy.h"
-#include "nsIImageLoadingContent.h"
-#include "nsUnicharUtils.h"
-#include "nsIURL.h"
-#include "nsIURIMutator.h"
-#include "mozilla/dom/Document.h"
 #include "nsICookieJarSettings.h"
-#include "nsIPrincipal.h"
-#include "nsIWebBrowserPersist.h"
-#include "nsEscape.h"
-#include "nsContentUtils.h"
-#include "nsIMIMEService.h"
-#include "imgIContainer.h"
-#include "imgIRequest.h"
-#include "mozilla/dom/DataTransfer.h"
+#include "nsIFile.h"
+#include "nsIFormControl.h"
+#include "nsIImageLoadingContent.h"
 #include "nsIMIMEInfo.h"
-#include "nsRange.h"
-#include "BrowserParent.h"
-#include "mozilla/TextControlElement.h"
-#include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/HTMLAreaElement.h"
-#include "mozilla/dom/HTMLAnchorElement.h"
-#include "mozilla/dom/Selection.h"
-#include "nsVariant.h"
+#include "nsIMIMEService.h"
+#include "nsIPrincipal.h"
+#include "nsISelectionController.h"
+#include "nsISupportsPrimitives.h"
+#include "nsITransferable.h"
+#include "nsIURIMutator.h"
+#include "nsIURL.h"
+#include "nsIWebBrowserPersist.h"
+#include "nsNetUtil.h"
+#include "nsPIDOMWindow.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsQueryObject.h"
+#include "nsRange.h"
+#include "nsServiceManagerUtils.h"
+#include "nsUnicharUtils.h"
+#include "nsVariant.h"
+#include "nsXPCOM.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -334,7 +333,7 @@ void DragDataProducer::CreateLinkText(const nsAString& inURL,
   nsAutoString linkText(u"<a href=\""_ns + inURL + u"\">"_ns + inText +
                         u"</a>"_ns);
 
-  outLinkText = linkText;
+  outLinkText = std::move(linkText);
 }
 
 nsresult DragDataProducer::GetImageData(imgIContainer* aImage,
@@ -466,15 +465,20 @@ nsresult DragDataProducer::Produce(DataTransfer* aDataTransfer, bool* aCanDrag,
     bool haveSelectedContent = false;
 
     // only drag form elements by using the alt key,
-    // otherwise buttons and select widgets are hard to use
+    // otherwise select widgets are hard to use
 
     // Note that while <object> elements implement nsIFormControl, we should
     // really allow dragging them if they happen to be images.
+    // XXX Other browsers allow dragging ohter type of form element as well.
     if (!mIsAltKeyPressed) {
-      const auto* form = nsIFormControl::FromNodeOrNull(mTarget);
-      if (form && form->ControlType() != FormControlType::Object) {
-        *aCanDrag = false;
-        return NS_OK;
+      if (const auto* form = nsIFormControl::FromNodeOrNull(mTarget)) {
+        if (form->IsConceptButton()) {
+          return NS_OK;
+        }
+        if (form->ControlType() != FormControlType::Object) {
+          *aCanDrag = false;
+          return NS_OK;
+        }
       }
     }
 
@@ -640,6 +644,8 @@ nsresult DragDataProducer::Produce(DataTransfer* aDataTransfer, bool* aCanDrag,
     data = do_QueryInterface(supports);
     if (NS_SUCCEEDED(rv)) {
       data->GetData(mHtmlString);
+      // Do not add NULs to DND text.
+      mHtmlString.StripChar(L'\0');
     }
     rv = transferable->GetTransferData(kHTMLContext, getter_AddRefs(supports));
     data = do_QueryInterface(supports);
@@ -655,6 +661,8 @@ nsresult DragDataProducer::Produce(DataTransfer* aDataTransfer, bool* aCanDrag,
     data = do_QueryInterface(supports);
     NS_ENSURE_SUCCESS(rv, rv);  // require plain text at a minimum
     data->GetData(mTitleString);
+    // Do not add NULs to DND text.
+    mTitleString.StripChar(L'\0');
   }
 
   // default text value is the URL

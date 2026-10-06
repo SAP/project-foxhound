@@ -17,7 +17,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "resProto",
   "@mozilla.org/network/protocol;1?name=resource",
-  "nsIResProtocolHandler"
+  Ci.nsIResProtocolHandler
 );
 
 ChromeUtils.defineESModuleGetters(
@@ -125,6 +125,7 @@ function Sandbox(options) {
       "crypto",
       "ChromeUtils",
       "CSS",
+      "CSSPositionTryDescriptors",
       "CSSRule",
       "CustomStateSet",
       "DOMParser",
@@ -151,6 +152,7 @@ function Sandbox(options) {
 
     sandboxName: options.name,
     sandboxPrototype: "prototype" in options ? options.prototype : {},
+    freezeBuiltins: false,
     freshCompartment: options.freshCompartment || false,
   };
 

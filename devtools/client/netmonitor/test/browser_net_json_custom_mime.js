@@ -29,7 +29,7 @@ add_task(async function () {
   const requestsListStatus = requestItem.querySelector(".status-code");
   EventUtils.sendMouseEvent({ type: "mouseover" }, requestsListStatus);
   await waitUntil(() => requestsListStatus.title);
-  await waitForDOMIfNeeded(requestItem, ".requests-list-timings-total");
+  await waitForDOM(requestItem, ".requests-list-timings-total");
 
   await verifyRequestItemTarget(
     document,
@@ -60,7 +60,7 @@ add_task(async function () {
 
   testJsonSectionInResponseTab();
 
-  wait = waitForDOM(document, "#response-panel .CodeMirror-code");
+  wait = waitForDOM(document, "#response-panel .cm-content");
   const rawResponseToggle = document.querySelector(
     "#response-panel .raw-data-toggle-input .devtools-checkbox-toggle"
   );
@@ -115,7 +115,7 @@ add_task(async function () {
       "The raw response toggle should be on."
     );
     is(
-      tabpanel.querySelector(".CodeMirror-code") === null,
+      tabpanel.querySelector(".cm-content") === null,
       false,
       "The response editor has the intended visibility."
     );

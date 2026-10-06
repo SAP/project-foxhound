@@ -1,0 +1,18 @@
+{
+  "label": "myordbok.com",
+  "bugs": {
+    "2012708": {
+      "issue": "broken-layout",
+      "matches": ["*://myordbok.com/*"]
+    }
+  },
+  "css": {
+    "fix_layout": "div.ptl > div > div.define.result > div.promote { min-width: revert; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "css": ["fix_layout"]
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:host {
+  --select-border-radius: 24px;
+  --select-background-color: light-dark(var(--color-violet-desaturated-0, #f2f0f8), color-mix(in srgb, var(--color-violet-30) 12%, transparent));
+  --select-hover-background-color: light-dark(var(--color-violet-desaturated-10, #e7e1f8), color-mix(in srgb, var(--color-violet-40) 25%, transparent));
+  --select-active-background-color: light-dark(var(--color-violet-desaturated-20, #d2c8ec), color-mix(in srgb, var(--color-violet-40) 35%, transparent));
+}
+
+/*Checkbox */
+.website-select-checkbox {
+  padding: var(--space-small) var(--space-large);
+  /* TODO: Bug 2030460 - replace with token when available */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  border-radius: var(--select-border-radius);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  background-color: var(--select-background-color);
+  transition: background-color 0.2s ease;
+  white-space: nowrap;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  scroll-margin-block: 35px 45px;
+}
+
+.website-select-checkbox:hover {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  background-color: var(--select-hover-background-color);
+}
+
+.website-select-checkbox:active {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  background-color: var(--select-active-background-color);
+}
+
+/* label */
+.website-select-checkbox::part(label) {
+  font-size: var(--font-size-small);
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+  cursor: pointer;
+}

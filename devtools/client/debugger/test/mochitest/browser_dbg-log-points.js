@@ -190,4 +190,52 @@ add_task(async function () {
     null,
     "There is no stacktrace for the logpoint without stacktrace"
   );
+
+  info("Check logpoint async stacktrace");
+  await selectSource(dbg, "script-switching-01.js");
+  await setLogPoint(dbg, 25, `"async stack test"`, true);
+  invokeInTab("dbgTestAsyncStack");
+
+  info("Checking for any console messages");
+  await hasConsoleMessage(dbg, "async stack test");
+
+  const [asyncStacktraceMsg] = await findConsoleMessages(
+    dbg.toolbox,
+    "async stack test"
+  );
+  const asyncStacktraceFrames = await waitFor(() =>
+    asyncStacktraceMsg.querySelector(".frames")
+  );
+
+  const asyncFrameNodes = asyncStacktraceFrames.querySelectorAll(
+    ".frame, .location-async-cause"
+  );
+  Assert.stringContains(
+    asyncFrameNodes[0].textContent,
+    "dbgTestOnTimeout https://example.com/browser/devtools/client/debugger/test/mochitest/examples/script-switching-01.js:24"
+  );
+  Assert.stringContains(
+    asyncFrameNodes[1].textContent,
+    "(Async: setTimeout handler)"
+  );
+  Assert.stringContains(
+    asyncFrameNodes[2].textContent,
+    "dbgTestTimeout https://example.com/browser/devtools/client/debugger/test/mochitest/examples/script-switching-01.js:17"
+  );
+  Assert.stringContains(
+    asyncFrameNodes[3].textContent,
+    "dbgTestOnPromiseThen https://example.com/browser/devtools/client/debugger/test/mochitest/examples/script-switching-01.js:27"
+  );
+  Assert.stringContains(
+    asyncFrameNodes[4].textContent,
+    "(Async: promise callback)"
+  );
+  Assert.stringContains(
+    asyncFrameNodes[5].textContent,
+    "dbgTestPromiseThen https://example.com/browser/devtools/client/debugger/test/mochitest/examples/script-switching-01.js:21"
+  );
+  Assert.stringContains(
+    asyncFrameNodes[6].textContent,
+    "dbgTestAsyncStack https://example.com/browser/devtools/client/debugger/test/mochitest/examples/script-switching-01.js:30"
+  );
 });

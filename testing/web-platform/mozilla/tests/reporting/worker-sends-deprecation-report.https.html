@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script src='resources/report-helper.js'></script>
+<script>
+  const base_url = `${location.protocol}//${location.host}`;
+  const endpoint = `${base_url}/reporting/resources/report.py`;
+  const report_id = '46ecac28-6d27-4763-a692-bcc589054716';
+  const workerURL = "/_mozilla/reporting/resources/worker-trigger-deprecation.https.sub.js";
+
+  promise_test(async () => {
+    await fetch_tests_from_worker(new Worker(workerURL));
+    let reports = await pollReports(endpoint, report_id);
+    assert_equals(reports.length, 1);
+    const deprecationReport = reports[0];
+    assert_equals(deprecationReport.url, `${base_url}${workerURL}`);
+    assert_equals(deprecationReport.body.sourceFile, `${base_url}${workerURL}`);
+    assert_in_array(deprecationReport.body.lineNumber, [12, 13]);
+    assert_in_array(deprecationReport.body.columnNumber, [6, 7]);
+  });
+</script>

@@ -1,26 +1,18 @@
 diff --git a/src/filemgr.hxx b/src/filemgr.hxx
+index 0603b7d72de8..7773a321a66e 100644
 --- a/src/filemgr.hxx
 +++ b/src/filemgr.hxx
-@@ -67,32 +67,11 @@
-  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
-  * SUCH DAMAGE.
-  */
- 
- /* file manager class - read lines of files [filename] OR [filename.hz] */
+@@ -72,25 +72,6 @@
  #ifndef FILEMGR_HXX_
  #define FILEMGR_HXX_
  
 -#include "hunzip.hxx"
--#include <stdio.h>
+-#include <cstdio>
 -#include <string>
 -#include <fstream>
--
--class FileMgr {
-- private:
--  FileMgr(const FileMgr&);
--  FileMgr& operator=(const FileMgr&);
 +#include "mozHunspellRLBoxSandbox.h"
  
+-class FileMgr {
 - protected:
 -  std::ifstream fin;
 -  Hunzip* hin;
@@ -29,7 +21,9 @@ diff --git a/src/filemgr.hxx b/src/filemgr.hxx
 -  int linenum;
 -
 - public:
--  FileMgr(const char* filename, const char* key = NULL);
+-  FileMgr(const char* filename, const char* key = nullptr);
+-  FileMgr(const FileMgr&) = delete;
+-  FileMgr& operator=(const FileMgr&) = delete;
 -  ~FileMgr();
 -  bool getline(std::string&);
 -  int getlinenum();

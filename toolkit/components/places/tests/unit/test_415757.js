@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,9 +5,10 @@
 /**
  * Checks to see that a URI is in the database.
  *
- * @param aURI
- *        The URI to check.
- * @returns true if the URI is in the DB, false otherwise.
+ * @param {nsIURI} aURI
+ *   The URI to check.
+ * @returns {boolean}
+ *   true if the URI is in the DB, false otherwise.
  */
 function uri_in_db(aURI) {
   var options = PlacesUtils.history.getNewQueryOptions();

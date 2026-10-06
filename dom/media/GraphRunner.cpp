@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -9,12 +7,12 @@
 #include "GraphDriver.h"
 #include "MediaTrackGraph.h"
 #include "MediaTrackGraphImpl.h"
+#include "Tracing.h"
+#include "audio_thread_priority.h"
+#include "mozilla/dom/WorkletThread.h"
 #include "nsISupportsImpl.h"
 #include "nsISupportsPriority.h"
 #include "prthread.h"
-#include "Tracing.h"
-#include "mozilla/dom/WorkletThread.h"
-#include "audio_thread_priority.h"
 #ifdef MOZ_WIDGET_ANDROID
 #  include "AndroidProcess.h"
 #endif  // MOZ_WIDGET_ANDROID
@@ -62,15 +60,14 @@ void GraphRunner::Shutdown() {
   mThread->Shutdown();
 }
 
-auto GraphRunner::OneIteration(GraphTime aStateTime, GraphTime aIterationEnd,
+auto GraphRunner::OneIteration(GraphTime aStateTime,
                                MixerCallbackReceiver* aMixerReceiver)
     -> IterationResult {
   TRACE("GraphRunner::OneIteration");
 
   MonitorAutoLock lock(mMonitor);
   MOZ_ASSERT(mThreadState == ThreadState::Wait);
-  mIterationState =
-      Some(IterationState(aStateTime, aIterationEnd, aMixerReceiver));
+  mIterationState = Some(IterationState(aStateTime, aMixerReceiver));
 
 #ifdef DEBUG
   if (const auto* audioDriver =
@@ -106,14 +103,16 @@ auto GraphRunner::OneIteration(GraphTime aStateTime, GraphTime aIterationEnd,
 #ifdef MOZ_WIDGET_ANDROID
 namespace {
 void PromoteRenderingThreadAndroid() {
-  MOZ_LOG(gMediaTrackGraphLog, LogLevel::Debug,
-          ("GraphRunner default thread priority: %d",
-           java::sdk::Process::GetThreadPriority(java::sdk::Process::MyTid())));
+  MOZ_LOG_FMT(
+      gMediaTrackGraphLog, LogLevel::Debug,
+      "GraphRunner default thread priority: {}",
+      java::sdk::Process::GetThreadPriority(java::sdk::Process::MyTid()));
   java::sdk::Process::SetThreadPriority(
       java::sdk::Process::THREAD_PRIORITY_URGENT_AUDIO);
-  MOZ_LOG(gMediaTrackGraphLog, LogLevel::Debug,
-          ("GraphRunner promoted thread priority: %d",
-           java::sdk::Process::GetThreadPriority(java::sdk::Process::MyTid())));
+  MOZ_LOG_FMT(
+      gMediaTrackGraphLog, LogLevel::Debug,
+      "GraphRunner promoted thread priority: {}",
+      java::sdk::Process::GetThreadPriority(java::sdk::Process::MyTid()));
 }
 };  // namespace
 #endif  // MOZ_WIDGET_ANDROID
@@ -142,8 +141,7 @@ NS_IMETHODIMP GraphRunner::Run() {
     MOZ_DIAGNOSTIC_ASSERT(mIterationState.isSome());
     TRACE("GraphRunner::Run");
     mIterationResult = mGraph->OneIterationImpl(
-        mIterationState->StateTime(), mIterationState->IterationEnd(),
-        mIterationState->MixerReceiver());
+        mIterationState->StateTime(), mIterationState->MixerReceiver());
     // Signal that mIterationResult was updated
     mThreadState = ThreadState::Wait;
     mMonitor.Notify();

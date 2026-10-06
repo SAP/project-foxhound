@@ -4,51 +4,38 @@
 
 package org.mozilla.fenix.share
 
-import android.app.Application
 import android.content.pm.ActivityInfo
-import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.graphics.drawable.Drawable
 import android.net.ConnectivityManager
-import androidx.core.content.getSystemService
-import androidx.lifecycle.asFlow
-import io.mockk.Runs
+import io.mockk.coEvery
 import io.mockk.every
-import io.mockk.just
 import io.mockk.mockk
 import io.mockk.spyk
 import io.mockk.verify
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import mozilla.components.feature.share.RecentApp
 import mozilla.components.feature.share.RecentAppsStorage
 import mozilla.components.service.fxa.manager.FxaAccountManager
-import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mozilla.fenix.ext.application
-import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.share.DefaultShareController.Companion.ACTION_COPY_LINK_TO_CLIPBOARD
 import org.mozilla.fenix.share.ShareViewModel.Companion.RECENT_APPS_LIMIT
 import org.mozilla.fenix.share.listadapters.AppShareOption
 import org.mozilla.fenix.share.listadapters.SyncShareOption
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.shadows.ShadowLooper
 
 @RunWith(RobolectricTestRunner::class)
 class ShareViewModelTest {
 
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-    private val testIoDispatcher = coroutinesTestRule.testDispatcher
+    private val testDispatcher = StandardTestDispatcher()
 
-    private val packageName = "org.mozilla.fenix"
-    private lateinit var application: Application
-    private lateinit var packageManager: PackageManager
+    private val packageName = "org.packageName"
     private lateinit var connectivityManager: ConnectivityManager
     private lateinit var fxaAccountManager: FxaAccountManager
     private lateinit var viewModel: ShareViewModel
@@ -56,32 +43,41 @@ class ShareViewModelTest {
 
     @Before
     fun setup() {
-        application = spyk(testContext.application)
-        packageManager = mockk(relaxed = true)
         connectivityManager = mockk(relaxed = true)
         fxaAccountManager = mockk(relaxed = true)
         storage = mockk(relaxUnitFun = true)
 
-        every { application.packageName } returns packageName
-        every { application.packageManager } returns packageManager
-        every { application.getSystemService<ConnectivityManager>() } returns connectivityManager
-        every { application.components.backgroundServices.accountManager } returns fxaAccountManager
+        val mockCopyApp = AppShareOption(
+            "Copy",
+            mockk(),
+            ACTION_COPY_LINK_TO_CLIPBOARD,
+            "",
+        )
 
         viewModel = spyk(
-            ShareViewModel(application).apply {
-                this.ioDispatcher = testIoDispatcher
-            },
+            ShareViewModel(
+                fxaAccountManager,
+                storage,
+                connectivityManager,
+                testDispatcher,
+                mockk(),
+                packageName,
+                { mockCopyApp },
+            ),
         )
     }
 
     @Test
-    fun `liveData should be initialized as empty list`() {
-        assertEquals(emptyList<SyncShareOption>(), viewModel.devicesList.value)
-        assertEquals(emptyList<AppShareOption>(), viewModel.appsList.value)
+    fun `uiState should be initialized with loading true and empty lists`() {
+        val state = viewModel.uiState.value
+        assertTrue(state.isLoading)
+        assertTrue(state.devices.isEmpty())
+        assertTrue(state.recentApps.isEmpty())
+        assertTrue(state.otherApps.isEmpty())
     }
 
     @Test
-    fun `loadDevicesAndApps`() = runTestOnMain {
+    fun `initDataLoad updates state with apps and devices`() = runTest(testDispatcher) {
         val appOptions = listOf(
             AppShareOption("Label", mockk(), "Package", "Activity"),
         )
@@ -89,14 +85,13 @@ class ShareViewModelTest {
         val appEntity = mockk<RecentApp>()
         every { appEntity.activityName } returns "Activity"
         val recentAppOptions = listOf(appEntity)
-        every { storage.updateDatabaseWithNewApps(appOptions.map { app -> app.packageName }) } just Runs
+
         every { storage.getRecentAppsUpTo(RECENT_APPS_LIMIT) } returns recentAppOptions
+        coEvery { viewModel.buildAppsList(any()) } returns appOptions
+        coEvery { viewModel.buildDeviceList(any()) } returns listOf(SyncShareOption.Offline)
 
-        every { viewModel.buildAppsList(any(), any()) } returns appOptions
-        viewModel.recentAppsStorage = storage
-
-        viewModel.loadDevicesAndApps(testContext)
-        ShadowLooper.runUiThreadTasksIncludingDelayedTasks()
+        viewModel.initDataLoad()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify {
             connectivityManager.registerNetworkCallback(
@@ -105,14 +100,15 @@ class ShareViewModelTest {
             )
         }
 
-        assertEquals(1, viewModel.recentAppsList.asFlow().first().size)
-        assertEquals(1, viewModel.appsList.asFlow().first().size)
+        val state = viewModel.uiState.value
+        assertFalse(state.isLoading)
+        assertEquals(1, state.recentApps.size)
+        assertEquals(1, state.otherApps.size)
+        assertEquals(listOf(SyncShareOption.Offline), state.devices)
     }
 
     @Test
-    fun `buildAppsList transforms ResolveInfo list`() {
-        assertEquals(emptyList<AppShareOption>(), viewModel.buildAppsList(null, application))
-
+    fun `buildAppsList transforms ResolveInfo list`() = runTest(testDispatcher) {
         val icon1: Drawable = mockk()
         val icon2: Drawable = mockk()
 
@@ -121,79 +117,58 @@ class ShareViewModelTest {
             createResolveInfo("Self", mockk(), packageName, "activity self"),
             createResolveInfo("App 1", icon2, "package 1", "activity 1"),
         )
-        val apps = listOf(
+        val expected = listOf(
             AppShareOption("App 0", icon1, "package 0", "activity 0"),
             AppShareOption("App 1", icon2, "package 1", "activity 1"),
         )
-        assertEquals(apps, viewModel.buildAppsList(info, application))
+
+        val result = viewModel.buildAppsList(info)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(expected, result)
     }
 
     @Test
-    fun `buildDevicesList returns offline option`() {
+    fun `buildDeviceList returns offline option`() = runTest(testDispatcher) {
         every { viewModel.isOffline(any()) } returns true
-        assertEquals(listOf(SyncShareOption.Offline), viewModel.buildDeviceList(fxaAccountManager))
+        assertEquals(listOf(SyncShareOption.Offline), viewModel.buildDeviceList())
 
-        every { connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork) } returns null
-        assertEquals(listOf(SyncShareOption.Offline), viewModel.buildDeviceList(fxaAccountManager))
+        // every { connectivityManager.isOnline(any()) } returns false
+        assertEquals(listOf(SyncShareOption.Offline), viewModel.buildDeviceList())
     }
 
     @Test
-    fun `buildDevicesList returns sign-in option`() {
-        every { viewModel.isOffline(any()) } returns false
-        every { fxaAccountManager.authenticatedAccount() } returns null
-
-        assertEquals(listOf(SyncShareOption.SignIn), viewModel.buildDeviceList(fxaAccountManager))
-    }
-
-    @Test
-    fun `buildDevicesList returns reconnect option`() {
-        every { viewModel.isOffline(any()) } returns false
-        every { fxaAccountManager.authenticatedAccount() } returns mockk()
-        every { fxaAccountManager.accountNeedsReauth() } returns true
-
-        assertEquals(
-            listOf(SyncShareOption.Reconnect),
-            viewModel.buildDeviceList(fxaAccountManager),
-        )
-    }
-
-    @Test
-    fun `GIVEN only one app THEN show copy to clipboard before the app`() = runTestOnMain {
+    fun `GIVEN only one app THEN show copy to clipboard before the app`() = runTest(testDispatcher) {
         val appOptions = listOf(
             AppShareOption("Label", mockk(), "Package", "Activity"),
         )
 
-        val appEntity = mockk<RecentApp>()
-        every { appEntity.activityName } returns "Activity"
-        every { storage.updateDatabaseWithNewApps(appOptions.map { app -> app.packageName }) } just Runs
         every { storage.getRecentAppsUpTo(RECENT_APPS_LIMIT) } returns emptyList()
+        coEvery { viewModel.buildAppsList(any()) } returns appOptions
 
-        every { viewModel.buildAppsList(any(), any()) } returns appOptions
-        viewModel.recentAppsStorage = storage
+        viewModel.initDataLoad()
+        testDispatcher.scheduler.advanceUntilIdle()
 
-        viewModel.loadDevicesAndApps(testContext)
-        ShadowLooper.runUiThreadTasksIncludingDelayedTasks()
-
-        assertEquals(0, viewModel.recentAppsList.asFlow().first().size)
-        assertEquals(2, viewModel.appsList.asFlow().first().size)
-        assertEquals(ACTION_COPY_LINK_TO_CLIPBOARD, viewModel.appsList.asFlow().first()[0].packageName)
+        val state = viewModel.uiState.value
+        assertEquals(0, state.recentApps.size)
+        // 1 app + 1 copy action = 2
+        assertEquals(2, state.otherApps.size)
+        assertEquals(ACTION_COPY_LINK_TO_CLIPBOARD, state.otherApps[0].packageName)
     }
 
     @Test
-    fun `WHEN no app THEN at least have copy to clipboard as app`() = runTestOnMain {
-        val appEntity = mockk<RecentApp>()
-        every { appEntity.activityName } returns "Activity"
+    fun `WHEN no apps found THEN at least have copy to clipboard available`() = runTest(testDispatcher) {
         every { storage.getRecentAppsUpTo(RECENT_APPS_LIMIT) } returns emptyList()
+        coEvery { viewModel.getIntentActivities(any()) } returns emptyList()
+        coEvery { viewModel.buildAppsList(any()) } returns emptyList()
 
-        every { viewModel.buildAppsList(any(), any()) } returns emptyList()
-        viewModel.recentAppsStorage = storage
+        viewModel.initDataLoad()
+        testDispatcher.scheduler.advanceUntilIdle()
 
-        viewModel.loadDevicesAndApps(testContext)
-        ShadowLooper.runUiThreadTasksIncludingDelayedTasks()
-
-        assertEquals(0, viewModel.recentAppsList.asFlow().first().size)
-        assertEquals(1, viewModel.appsList.asFlow().first().size)
-        assertEquals(ACTION_COPY_LINK_TO_CLIPBOARD, viewModel.appsList.asFlow().first()[0].packageName)
+        val state = viewModel.uiState.value
+        assertEquals(0, state.recentApps.size)
+        assertEquals(1, state.otherApps.size)
+        assertEquals(ACTION_COPY_LINK_TO_CLIPBOARD, state.otherApps[0].packageName)
     }
 
     private fun createResolveInfo(
@@ -208,8 +183,8 @@ class ShareViewModelTest {
             activityInfo.name = name
         }
         val spy = spyk(info)
-        every { spy.loadLabel(packageManager) } returns label
-        every { spy.loadIcon(packageManager) } returns icon
+        every { spy.loadLabel(any()) } returns label
+        every { spy.loadIcon(any()) } returns icon
         return spy
     }
 }

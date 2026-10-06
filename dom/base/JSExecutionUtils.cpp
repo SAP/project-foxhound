@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,11 +11,12 @@
 
 #include "mozilla/dom/JSExecutionUtils.h"
 
-#include <utility>      // std::move
+#include <utility>  // std::move
+
 #include "ErrorList.h"  // NS_ERROR_OUT_OF_MEMORY, NS_SUCCESS_DOM_SCRIPT_EVALUATION_THREW, NS_SUCCESS_DOM_SCRIPT_EVALUATION_THREW_UNCATCHABLE
 #include "js/CompilationAndEvaluation.h"  // JS::UpdateDebugMetadata
+#include "js/SourceText.h"                // JS::SourceText, JS::SourceOwnership
 #include "js/experimental/JSStencil.h"  // JS::Stencil, JS::CompileGlobalScriptToStencil
-#include "js/SourceText.h"              // JS::SourceText, JS::SourceOwnership
 #include "jsapi.h"                      // JS_IsExceptionPending
 #include "nsTPromiseFlatString.h"  // PromiseFlatString
 

@@ -12,7 +12,7 @@ try:
     # try to access an existing property to please flake8 linting and as an
     # additional sanity check.
     buildconfig.topsrcdir
-except ModuleNotFoundError or AttributeError:
+except (ModuleNotFoundError, AttributeError):
     print(
         "This script should be executed using `mach python %s`" % __file__,
         file=sys.stderr,

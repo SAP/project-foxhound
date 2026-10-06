@@ -1,0 +1,18 @@
+{
+  "label": "www.cbsnews.com",
+  "bugs": {
+    "1934908": {
+      "issue": "broken-videos",
+      "matches": ["*://www.cbsnews.com/live/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "content_scripts": {
+        "all_frames": true,
+        "js": ["use_chrome_useragent.js", "use_chrome_vendor.js"]
+      }
+    }
+  ]
+}

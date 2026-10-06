@@ -1,0 +1,64 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+include "mozilla/dom/SerialPortIPCTypes.h";
+
+using nsString from "nsString.h";
+using mozilla::dom::ParityType from "mozilla/dom/SerialPortBinding.h";
+using mozilla::dom::FlowControlType from "mozilla/dom/SerialPortBinding.h";
+using mozilla::dom::RequestPortReason from "mozilla/dom/SerialPortIPCTypes.h";
+
+namespace mozilla {
+namespace dom {
+
+struct IPCSerialPortInfo {
+  nsString id;
+  nsString path;
+  nsString friendlyName;
+  uint16_t? usbVendorId;
+  uint16_t? usbProductId;
+  nsString? bluetoothServiceClassId;
+};
+
+// Filter applied by the parent process when enumerating ports for a chooser
+// request. Any usbVendorId/usbProductId/bluetoothServiceClassId fields not
+// passed by the page are sent as Nothing(); the bluetoothServiceClassId is
+// resolved to a canonical UUID by the content process before sending.
+struct IPCSerialPortFilter {
+  uint16_t? usbVendorId;
+  uint16_t? usbProductId;
+  nsString? bluetoothServiceClassId;
+};
+
+// Outcome of a parent-driven RequestPort IPC. The `port` field is set iff
+// reason is RequestPortReason::Granted.
+struct IPCRequestPortResult {
+  RequestPortReason reason;
+  IPCSerialPortInfo? port;
+};
+
+struct IPCSerialOptions {
+  uint32_t baudRate;
+  uint8_t dataBits;
+  uint8_t stopBits;
+  ParityType parity;
+  uint32_t bufferSize;
+  FlowControlType flowControl;
+};
+
+struct IPCSerialOutputSignals {
+  bool? dataTerminalReady;
+  bool? requestToSend;
+  bool? breakSignal;
+};
+
+struct IPCSerialInputSignals {
+  bool dataCarrierDetect;
+  bool clearToSend;
+  bool ringIndicator;
+  bool dataSetReady;
+};
+
+}  // namespace dom
+}  // namespace mozilla

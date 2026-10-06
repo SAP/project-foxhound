@@ -65,6 +65,6 @@ splitter[orient="vertical"][state="collapsed"][substate="after"] {
   cursor: n-resize;
 }
 
-splitter[disabled="true"] {
+splitter[disabled] {
   cursor: default !important;
 }

@@ -14,12 +14,10 @@
       var mockL10n;
 
       add_setup(async function setup() {
-        ({ html, render } = await import(
-          "chrome://global/content/vendor/lit.all.mjs"
-        ));
-        ({ MozLitElement } = await import(
-          "chrome://global/content/lit-utils.mjs"
-        ));
+        ({ html, render } =
+          await import("chrome://global/content/vendor/lit.all.mjs"));
+        ({ MozLitElement } =
+          await import("chrome://global/content/lit-utils.mjs"));
         renderTarget = document.getElementById("render");
 
         const l10nReg = new L10nRegistry();
@@ -33,6 +31,13 @@ example-label =
   .tooltiptext = Also a tooltiptext!
   .rename = Also renamed!
   .accesskey = E
+has-custom-attr =
+  .label = CustomAttribute!
+  .message = message!
+  .tooltiptext = tooltiptext!
+  .rename = rename!
+  .accesskey = A
+  .myattr = Custom attribute
         `,
           },
         ];
@@ -119,6 +124,33 @@ example-label =
 
         is(el.accessKey, "E", "accessKey is mapped with custom attribute");
         ok(!el.hasAttribute("accesskey"), "renamed attribute was removed");
+      });
+
+      add_task(async function testCustomL10nAttrs() {
+        let el = await renderTemplate(
+          html`<example-element
+            data-l10n-id="has-custom-attr"
+            data-l10n-attrs="myattr"
+          ></example-element>`
+        );
+        await new Promise(r =>
+          el.addEventListener("label-changed", r, { once: true })
+        );
+        is(
+          el.shadowRoot.textContent,
+          "CustomAttribute!message!tooltiptext!rename!A",
+          "Text rendered automatically on upgrade"
+        );
+        is(
+          el.dataset.l10nAttrs,
+          "label,message,tooltiptext,rename,accesskey,myattr",
+          "data-l10n-attrs is set"
+        );
+        is(
+          el.getAttribute("myattr"),
+          "Custom attribute",
+          "Custom attribute was set"
+        );
       });
 
       add_task(async function testMappedAttributes() {

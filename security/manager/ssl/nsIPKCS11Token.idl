@@ -1,0 +1,76 @@
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+[scriptable, builtinclass, uuid(51191434-1dd2-11b2-a17c-e49c4e99a4e3)]
+interface nsIPKCS11Token : nsISupports
+{
+  /*
+   * The name of the token
+   */
+  [must_use]
+  readonly attribute AUTF8String tokenName;
+  [must_use]
+  readonly attribute boolean isInternalKeyToken;
+  /**
+   * Manufacturer ID of the token.
+   */
+  [must_use]
+  readonly attribute AUTF8String tokenManID;
+  /**
+   * Hardware version of the token.
+   */
+  [must_use]
+  readonly attribute AUTF8String tokenHWVersion;
+  /**
+   * Firmware version of the token.
+   */
+  [must_use]
+  readonly attribute AUTF8String tokenFWVersion;
+  [must_use]
+  readonly attribute AUTF8String tokenSerialNumber;
+
+  /*
+   * Login information
+   */
+  [must_use]
+  readonly attribute boolean isLoggedIn;
+  [must_use]
+  void login();
+  [must_use]
+  void logout();
+
+  /*
+   * Reset password
+   */
+  [must_use]
+  void reset();
+
+  /**
+   * Changes the user pin (password) on the token. If no password has been set
+   * and `oldPassword` is empty, initializes the password to `newPassword`.
+   * Otherwise, if `oldPassword` is the current password, changes it to
+   * `newPassword`.
+   * Tokens with protected authentication paths are not supported.
+   */
+  [must_use]
+  void changePassword(in AUTF8String oldPassword, in AUTF8String newPassword);
+
+  /**
+   * True if a password can be set on this token, and false otherwise.
+   */
+  [must_use]
+  readonly attribute boolean canHavePassword;
+
+  /**
+   * True if a password has been configured for this token, and false otherwise.
+   * (Whether or not the user is currently logged in makes no difference.)
+   * In particular, this can be used to determine if a user has set a primary
+   * password (if this is the internal key token).
+   */
+  [must_use]
+  readonly attribute boolean hasPassword;
+};

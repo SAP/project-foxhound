@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 et tw=78: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,13 +5,13 @@
 #ifndef mozilla_dom_TextTrackRegion_h
 #define mozilla_dom_TextTrackRegion_h
 
+#include "mozilla/ErrorResult.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/dom/TextTrack.h"
+#include "mozilla/dom/VTTRegionBinding.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsString.h"
 #include "nsWrapperCache.h"
-#include "mozilla/ErrorResult.h"
-#include "mozilla/dom/TextTrack.h"
-#include "mozilla/dom/VTTRegionBinding.h"
-#include "mozilla/Preferences.h"
 
 namespace mozilla::dom {
 
@@ -22,7 +20,7 @@ class TextTrack;
 
 class TextTrackRegion final : public nsISupports, public nsWrapperCache {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(TextTrackRegion)
 
   JSObject* WrapObject(JSContext* aCx,

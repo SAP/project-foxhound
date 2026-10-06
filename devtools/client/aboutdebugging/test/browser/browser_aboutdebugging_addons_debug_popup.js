@@ -81,6 +81,18 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
   consoleWrapper.dispatchEvaluateExpression("backgroundFunction()");
   await onBackgroundFunctionCalled;
 
+  info("Start watching for dom-complete events");
+  const { onResource: onDomCompleteResource } =
+    await toolbox.commands.resourceCommand.waitForNextResource(
+      toolbox.commands.resourceCommand.TYPES.DOCUMENT_EVENT,
+      {
+        ignoreExistingResources: true,
+        predicate: resource => resource.name === "dom-complete",
+      }
+    );
+
+  // Clicking on the addon widget is what will ultimately trigger the dom-complete
+  // resource, so make sure to only do it after we start watching.
   clickOnAddonWidget(ADDON_ID);
 
   info("Wait until the frames list button is displayed");
@@ -110,14 +122,6 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
   info(
     "Click on the extension popup frame and wait for a `dom-complete` resource"
   );
-  const { onResource: onDomCompleteResource } =
-    await toolbox.commands.resourceCommand.waitForNextResource(
-      toolbox.commands.resourceCommand.TYPES.DOCUMENT_EVENT,
-      {
-        ignoreExistingResources: true,
-        predicate: resource => resource.name === "dom-complete",
-      }
-    );
   popupFrameBtn.click();
   await onDomCompleteResource;
 

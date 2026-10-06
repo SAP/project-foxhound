@@ -5,6 +5,7 @@
 package org.mozilla.fenix.settings.creditcards.view
 
 import android.view.View
+import androidx.annotation.LayoutRes
 import mozilla.components.concept.storage.CreditCard
 import mozilla.components.support.utils.creditCardIssuerNetwork
 import org.mozilla.fenix.R
@@ -56,7 +57,8 @@ class CreditCardItemViewHolder(
     }
 
     companion object {
-        const val LAYOUT_ID = R.layout.credit_card_list_item
+        @LayoutRes
+        val LAYOUT_ID = R.layout.credit_card_list_item
 
         // Date format pattern for the credit card expiry date.
         private const val DATE_PATTERN = "MM/yyyy"

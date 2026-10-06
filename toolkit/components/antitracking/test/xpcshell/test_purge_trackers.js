@@ -29,8 +29,17 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "PurgeTrackerService",
   "@mozilla.org/purge-tracker-service;1",
-  "nsIPurgeTrackerService"
+  Ci.nsIPurgeTrackerService
 );
+
+async function assertQuotaUsage(urls, assertFn) {
+  const usages = await Promise.all(
+    urls.map(url => SiteDataTestUtils.getQuotaUsage(url))
+  );
+  for (let i = 0; i < urls.length; i++) {
+    assertFn(usages[i], urls[i]);
+  }
+}
 
 async function setupTest(aCookieBehavior) {
   Services.prefs.setIntPref("network.cookie.cookieBehavior", aCookieBehavior);
@@ -43,6 +52,9 @@ async function setupTest(aCookieBehavior) {
 
   // Enables us to test localStorage in xpcshell.
   Services.prefs.setBoolPref("dom.storage.client_validation", false);
+
+  // Needed for BounceTrackingProtection.
+  do_get_profile(true);
 }
 
 /**
@@ -96,17 +108,18 @@ async function testIndexedDBAndLocalStorage() {
   );
 
   SiteDataTestUtils.addToCookies({ origin: BENIGN_PAGE });
-  for (let url of [
+  const urls = [
     TRACKING_PAGE,
     TRACKING_PAGE2,
     FOREIGN_PAGE,
     FOREIGN_PAGE2,
     FOREIGN_PAGE3,
-  ]) {
+  ];
+  for (let url of urls) {
     SiteDataTestUtils.addToLocalStorage(url);
     SiteDataTestUtils.addToCookies({ origin: url });
-    await SiteDataTestUtils.addToIndexedDB(url);
   }
+  await Promise.all(urls.map(url => SiteDataTestUtils.addToIndexedDB(url)));
 
   // Purge while storage access permission exists.
   await PurgeTrackerService.purgeTrackingCookieJars();
@@ -120,12 +133,10 @@ async function testIndexedDBAndLocalStorage() {
       SiteDataTestUtils.hasLocalStorage(url),
       "localStorage should not have been removed while storage access permission exists."
     );
-    Assert.greater(
-      await SiteDataTestUtils.getQuotaUsage(url),
-      0,
-      `We have data for ${url}`
-    );
   }
+  await assertQuotaUsage([TRACKING_PAGE, TRACKING_PAGE2], (usage, url) => {
+    Assert.greater(usage, 0, `We have data for ${url}`);
+  });
 
   // Run purge after storage access permission has been removed.
   PermissionTestUtils.remove(TRACKING_PAGE, "storageAccessAPI");
@@ -145,12 +156,13 @@ async function testIndexedDBAndLocalStorage() {
       SiteDataTestUtils.hasLocalStorage(url),
       `localStorage for ${url} should not have been removed.`
     );
-    Assert.greater(
-      await SiteDataTestUtils.getQuotaUsage(url),
-      0,
-      `We have data for ${url}`
-    );
   }
+  await assertQuotaUsage(
+    [FOREIGN_PAGE, FOREIGN_PAGE2, FOREIGN_PAGE3],
+    (usage, url) => {
+      Assert.greater(usage, 0, `We have data for ${url}`);
+    }
+  );
 
   // Cookie should have been removed.
 
@@ -163,12 +175,10 @@ async function testIndexedDBAndLocalStorage() {
       !SiteDataTestUtils.hasLocalStorage(url),
       "localStorage should have been removed"
     );
-    Assert.equal(
-      await SiteDataTestUtils.getQuotaUsage(url),
-      0,
-      "quota storage was deleted"
-    );
   }
+  await assertQuotaUsage([TRACKING_PAGE, TRACKING_PAGE2], usage => {
+    Assert.equal(usage, 0, "quota storage was deleted");
+  });
 
   UrlClassifierTestUtils.cleanupTestTrackers();
 }
@@ -323,16 +333,16 @@ async function testQuotaStorage() {
     }
 
     if (indexedDB) {
-      for (let url of [
-        TRACKING_PAGE,
-        TRACKING_PAGE2,
-        BENIGN_PAGE,
-        FOREIGN_PAGE,
-        FOREIGN_PAGE2,
-        FOREIGN_PAGE3,
-      ]) {
-        await SiteDataTestUtils.addToIndexedDB(url);
-      }
+      await Promise.all(
+        [
+          TRACKING_PAGE,
+          TRACKING_PAGE2,
+          BENIGN_PAGE,
+          FOREIGN_PAGE,
+          FOREIGN_PAGE2,
+          FOREIGN_PAGE3,
+        ].map(url => SiteDataTestUtils.addToIndexedDB(url))
+      );
     }
 
     // Purge while storage access permission exists.
@@ -346,19 +356,16 @@ async function testQuotaStorage() {
     }
 
     if (indexedDB) {
-      for (let url of [
-        TRACKING_PAGE,
-        TRACKING_PAGE2,
-        FOREIGN_PAGE,
-        FOREIGN_PAGE2,
-        FOREIGN_PAGE3,
-      ]) {
-        Assert.greater(
-          await SiteDataTestUtils.getQuotaUsage(url),
-          0,
-          `We have data for ${url}`
-        );
-      }
+      await assertQuotaUsage(
+        [
+          TRACKING_PAGE,
+          TRACKING_PAGE2,
+          FOREIGN_PAGE,
+          FOREIGN_PAGE2,
+          FOREIGN_PAGE3,
+        ],
+        (usage, url) => Assert.greater(usage, 0, `We have data for ${url}`)
+      );
     }
 
     // Run purge after storage access permission has been removed.
@@ -386,26 +393,18 @@ async function testQuotaStorage() {
     }
 
     if (indexedDB) {
-      for (let url of [
-        BENIGN_PAGE,
-        FOREIGN_PAGE,
-        FOREIGN_PAGE2,
-        FOREIGN_PAGE3,
-      ]) {
-        Assert.greater(
-          await SiteDataTestUtils.getQuotaUsage(url),
-          0,
-          "quota storage for non-tracking page was not deleted"
-        );
-      }
-
-      for (let url of [TRACKING_PAGE, TRACKING_PAGE2]) {
-        Assert.equal(
-          await SiteDataTestUtils.getQuotaUsage(url),
-          0,
-          "quota storage was deleted"
-        );
-      }
+      await assertQuotaUsage(
+        [BENIGN_PAGE, FOREIGN_PAGE, FOREIGN_PAGE2, FOREIGN_PAGE3],
+        usage =>
+          Assert.greater(
+            usage,
+            0,
+            "quota storage for non-tracking page was not deleted"
+          )
+      );
+      await assertQuotaUsage([TRACKING_PAGE, TRACKING_PAGE2], usage =>
+        Assert.equal(usage, 0, "quota storage was deleted")
+      );
     }
 
     await SiteDataTestUtils.clear();
@@ -421,14 +420,6 @@ async function testQuotaStorage() {
 async function testExpiredInteractionPermission() {
   await UrlClassifierTestUtils.addTestTrackers();
 
-  PermissionTestUtils.add(
-    TRACKING_PAGE,
-    "storageAccessAPI",
-    Services.perms.ALLOW_ACTION,
-    Services.perms.EXPIRE_TIME,
-    Date.now() + 500
-  );
-
   for (let url of [
     TRACKING_PAGE,
     TRACKING_PAGE2,
@@ -438,8 +429,24 @@ async function testExpiredInteractionPermission() {
   ]) {
     SiteDataTestUtils.addToLocalStorage(url);
     SiteDataTestUtils.addToCookies({ origin: url });
-    await SiteDataTestUtils.addToIndexedDB(url);
   }
+  await Promise.all(
+    [
+      TRACKING_PAGE,
+      TRACKING_PAGE2,
+      FOREIGN_PAGE,
+      FOREIGN_PAGE2,
+      FOREIGN_PAGE3,
+    ].map(url => SiteDataTestUtils.addToIndexedDB(url))
+  );
+
+  PermissionTestUtils.add(
+    TRACKING_PAGE,
+    "storageAccessAPI",
+    Services.perms.ALLOW_ACTION,
+    Services.perms.EXPIRE_TIME,
+    Date.now() + 500
+  );
 
   // Purge while storage access permission exists.
   await PurgeTrackerService.purgeTrackingCookieJars();
@@ -459,12 +466,11 @@ async function testExpiredInteractionPermission() {
       SiteDataTestUtils.hasLocalStorage(url),
       "localStorage should not have been removed while storage access permission exists."
     );
-    Assert.greater(
-      await SiteDataTestUtils.getQuotaUsage(url),
-      0,
-      `We have data for ${url}`
-    );
   }
+  await assertQuotaUsage(
+    [TRACKING_PAGE, TRACKING_PAGE2, FOREIGN_PAGE, FOREIGN_PAGE2, FOREIGN_PAGE3],
+    (usage, url) => Assert.greater(usage, 0, `We have data for ${url}`)
+  );
 
   // Run purge after storage access permission has been removed.
   // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
@@ -481,12 +487,10 @@ async function testExpiredInteractionPermission() {
       !SiteDataTestUtils.hasLocalStorage(url),
       "localStorage should not have been removed while storage access permission exists."
     );
-    Assert.equal(
-      await SiteDataTestUtils.getQuotaUsage(url),
-      0,
-      "quota storage was deleted"
-    );
   }
+  await assertQuotaUsage([TRACKING_PAGE, TRACKING_PAGE2], usage =>
+    Assert.equal(usage, 0, "quota storage was deleted")
+  );
 
   // Cookie should not have been removed.
   for (let url of [FOREIGN_PAGE, FOREIGN_PAGE2, FOREIGN_PAGE3]) {
@@ -706,7 +710,7 @@ add_task(async function () {
     Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN,
     Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN,
     Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
-    Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+    Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
   ];
 
   for (let cookieBehavior of cookieBehaviors) {

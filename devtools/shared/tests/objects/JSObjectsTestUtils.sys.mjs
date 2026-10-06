@@ -27,7 +27,7 @@ let gTestScope;
 /**
  * Initialize the test helper.
  *
- * @param {Object} testScope
+ * @param {object} testScope
  *        XPCShell or mochitest test scope (i.e. the global object of the test currently executed)
  */
 function init(testScope) {
@@ -120,20 +120,37 @@ function loadExpectedValues(expectedValuesFileName) {
   return null;
 }
 
-async function mayBeSaveExpectedValues(evaledStrings, newExpectedValues) {
-  if (!newExpectedValues?.length) {
+async function mayBeSaveExpectedValues(actualValues) {
+  const isUpdate = Services.env.get(UPDATE_SNAPSHOT_ENV) == "true";
+  if (!isUpdate) {
     return;
   }
-
-  if (evaledStrings.length != newExpectedValues.length) {
-    throw new Error("Unexpected discrepencies between the reported evaled strings and expected values");
+  if (!actualValues?.length) {
+    return;
   }
 
   const filePath = gExpectedValuesFilePath;
   const assertionValues = [];
   let i = 0;
-  for (const value of newExpectedValues) {
-    let evaled = evaledStrings[i];
+
+  for (const objectDescription of AllObjects) {
+    if (objectDescription.disabled) {
+      continue;
+    }
+
+    if (i >= actualValues.length) {
+      throw new Error("Unexpected discrepencies between the reported evaled strings and expected values");
+    }
+
+    const value = actualValues[i++]
+
+    // Ignore this JS object as the test function did not return any actual value.
+    // We assume none of the tests would store "undefined" as a target value.
+    if (value == undefined) {
+      continue;
+    }
+
+    let evaled = objectDescription.expression;
     // Remove any first empty line
     evaled = evaled.replace(/^\s*\n/, "");
     // remove the unnecessary indentation
@@ -149,12 +166,16 @@ async function mayBeSaveExpectedValues(evaledStrings, newExpectedValues) {
     assertionValues.push(
       "  // " + evaled +
         "\n" +
-        "  " +
-        JSON.stringify(value, null, 2) +
+        // Ident each newline to match the array item indentation
+        JSON.stringify(value, null, 2).replace(/^/gm, "  ") +
         ","
     );
-    i++;
   }
+
+  if (i != actualValues.length) {
+    throw new Error("Unexpected discrepencies between the reported evaled strings and expected values");
+  }
+
   const fileContent = `/* Any copyright is dedicated to the Public Domain.
   http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -171,6 +192,58 @@ ${assertionValues.join("\n\n")}
   await IOUtils.write(filePath, new TextEncoder().encode(fileContent));
 }
 
+async function testOrUpdateExpectedValues(expectedValuesFileName, actualValues) {
+  const isMochitest = "gTestPath" in gTestScope;
+
+  let expectedValues = loadExpectedValues(expectedValuesFileName);
+  if (expectedValues) {
+    // Clone the Array as we are going to mutate it via Array.shift().
+    expectedValues = [...expectedValues];
+
+    const testPath = isMochitest ? gTestScope.gTestPath.replace("chrome://mochitest/content/browser/", "") : "path/to/your/xpcshell/test";
+    const failureWarningMessage = "DEVTOOLS GENERATED-TEST FAILURE! SEE: https://firefox-source-docs.mozilla.org/devtools/tests/js-object-tests.html\n" +
+      "This test uses a generated file which might need to be updated by running:\n" +
+      `  $ mach test ${testPath} --headless --setenv ${UPDATE_SNAPSHOT_ENV}=true`;
+
+    let failed = false;
+    let i = 0;
+    for (const objectDescription of AllObjects) {
+      if (objectDescription.disabled) {
+        continue;
+      }
+      const actual = actualValues[i++];
+      const expression = objectDescription.expression;
+
+      // Ignore this JS object as the test function did not return any actual value.
+      // We assume none of the tests would store "undefined" as a target value.
+      if (actual == undefined) {
+        continue;
+      }
+
+      let failureMessage = `Got expected output for "${expression}"`;
+      const expected = expectedValues.shift();
+      if (!ObjectUtils.deepEqual(actual, expected)) {
+        if (isMochitest) {
+          if (!failed) {
+            // If this is the first failure, log a first failure with the full
+            // failure message including a link to the documentation.
+            failed = true;
+            gTestScope.Assert.ok(false, failureWarningMessage);
+          }
+          gTestScope.Assert.deepEqual(actual, expected, failureMessage);
+        } else {
+          // For xpcshell tests, the first failure will throw and stop the test
+          // so include both the documentation link and the failure details.
+          failureMessage = failureWarningMessage + "\n\n" + failureMessage;
+          gTestScope.Assert.deepEqual(actual, expected, failureMessage);
+        }
+      }
+    }
+  }
+
+  mayBeSaveExpectedValues(actualValues);
+}
+
 async function runTest(expectedValuesFileName, testFunction) {
   if (!gTestScope) {
     throw new Error("`JSObjectsTestUtils.init()` should be called before `runTest()`");
@@ -182,18 +255,11 @@ async function runTest(expectedValuesFileName, testFunction) {
     throw new Error("`JSObjectsTestUtils.runTest()` second argument should be a test function");
   }
 
+  const actualValues = [];
 
-  let expectedValues = loadExpectedValues(expectedValuesFileName);
-  if (expectedValues) {
-    // Clone the Array as we are going to mutate it via Array.shift().
-    expectedValues = [...expectedValues];
+  if (!gTestScope) {
+    throw new Error("`JSObjectsTestUtils.init()` should be called before `runTest()`");
   }
-
-  const evaledStrings = [];
-  const newExpectedValues = [];
-
-  let failed = false;
-  const testPath = "gtestPath" in gTestScope ? gTestScope.gTestPath.replace("chrome://mochitest/content/browser/", "") : "path/to/your/xpcshell/test";
 
   for (const objectDescription of AllObjects) {
     if (objectDescription.disabled) {
@@ -210,59 +276,10 @@ async function runTest(expectedValuesFileName, testFunction) {
     }
 
     const actual = await testFunction({ context, expression });
-
-    // Ignore this JS object as the test function did not return any actual value.
-    // We assume none of the tests would store "undefined" as a target value.
-    if (actual == undefined) {
-      continue;
-    }
-
-    const failureMessage = `This is a JavaScript value processing test, which includes an automatically generated snapshot file (${expectedValuesFileName}).\n` +
-      "You may update this file by running:`\n" +
-      `  $ mach test ${testPath} --headless --setenv ${UPDATE_SNAPSHOT_ENV}=true\n` +
-      "And then carefuly review if the result is valid regarding your ongoing changes.\n" +
-      "`More info in https://firefox-source-docs.mozilla.org/devtools/tests/js-object-tests.html\n";
-
-    const isMochitest = "gTestPath" in gTestScope;
-
-    // If we aren't in "update" mode, we are reading assertion values from $EXPECTED_VALUES_FILE
-    // and will assert the current returned values against these values
-    if (expectedValues) {
-      const expected = expectedValues.shift();
-      try {
-        gTestScope.Assert.deepEqual(actual, expected, `Got expected output for "${expression}"`);
-      } catch(e) {
-        // deepEqual only throws in case of differences when running in XPCShell tests. Mochitest won't throw and keep running.
-        // XPCShell will stop at the first failing assertion, so ensure showing our failure message and ok() will throw and stop the test.
-        if (!isMochitest) {
-          gTestScope.Assert.ok(false, failureMessage);
-        }
-        throw e;
-      }
-      // As mochitest won't throw when calling deepEqual with differences in the objects,
-      // we have to recompute the difference in order to know if any of the tests failed.
-      if (isMochitest && !failed && !ObjectUtils.deepEqual(actual, expected)) {
-        failed = true;
-      }
-    } else {
-      // Otherwise, if we are in update mode, we will collected all current values
-      // in order to store them in $EXPECTED_VALUES_FILE
-      //
-      // Force casting to string, in case this is a function.
-      evaledStrings.push(String(expression));
-      newExpectedValues.push(actual);
-    }
+    actualValues.push(actual);
   }
 
-  if (failed) {
-    const failureMessage = "This is a JavaScript value processing test, which includes an automatically generated snapshot file.\n" +
-      "If the change made to that snapshot file makes sense, you may simply update them by running:`\n" +
-      `  $ mach test ${testPath} --headless --setenv ${UPDATE_SNAPSHOT_ENV}=true\n` +
-      "`More info in devtools/shared/tests/objects/README.md\n";
-    gTestScope.Assert.ok(false, failureMessage);
-  }
-
-  mayBeSaveExpectedValues(evaledStrings, newExpectedValues);
+  testOrUpdateExpectedValues(expectedValuesFileName, actualValues);
 }
 
-export const JSObjectsTestUtils = { init, runTest };
+export const JSObjectsTestUtils = { init, runTest, testOrUpdateExpectedValues };

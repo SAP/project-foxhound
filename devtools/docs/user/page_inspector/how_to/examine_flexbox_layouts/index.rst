@@ -2,13 +2,13 @@
 CSS Flexbox Inspector: Examine Flexbox layouts
 ==============================================
 
-The **Flexbox Inspector** allows you to examine `CSS Flexbox Layouts <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Flexible_Box_Layout>`_ using the Firefox DevTools, which is useful for discovering flex containers on a page, examining and modifying them, debugging layout issues, and more.
+The **Flexbox Inspector** allows you to examine `CSS Flexbox Layouts <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Flexible_box_layout>`_ using the Firefox DevTools, which is useful for discovering flex containers on a page, examining and modifying them, debugging layout issues, and more.
 
 
 Discovering Flex Containers
 ***************************
 
-When an HTML element on your page has `display: flex <https://developer.mozilla.org/en-US/docs/Web/CSS/display>`_ applied to it, a number of features are made available in the DevTools to provide easy access to Flexbox layout features.
+When an HTML element on your page has `display: flex <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/display>`_ applied to it, a number of features are made available in the DevTools to provide easy access to Flexbox layout features.
 
 
 In the HTML pane
@@ -54,7 +54,7 @@ In the CSS pane
 .. |image1| image:: flexbox_icon.gif
   :width: 20
 
-In the :ref:`CSS pane <page_inspector_ui_tour_rules_view>`'s Rules view, any instance of a `display: flex <https://developer.mozilla.org/en-US/docs/Web/CSS/display>`_ declaration gets a small Flexbox icon |image1| next to the word ``flex``.
+In the :ref:`CSS pane <page_inspector_ui_tour_rules_view>`'s Rules view, any instance of a `display: flex <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/display>`_ declaration gets a small Flexbox icon |image1| next to the word ``flex``.
 
 .. image:: css-pane.png
   :alt: The CSS pane of the Firefox devtools, showing the CSS for a flex container with an icon to toggle the Flexbox overly

@@ -1,3 +1,7 @@
+### Why this patch?
+ * Baggage allows to add arbitrary data to the traces and at the moment it's the last thing we want
+ * In general, processing arbitrary data as opposed to fixed format messages, tends to be slow
+ * Input domain reduction helps with avoiding and detecting all kinds of misuse
 diff --git a/api/include/opentelemetry/context/context_value.h b/api/include/opentelemetry/context/context_value.h
 index 27bd40fb057a1..655effe0a1daa 100644
 --- a/api/include/opentelemetry/context/context_value.h

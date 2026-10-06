@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,14 +5,13 @@
 #ifndef TRANSFRMX_MOZILLA_XML_OUTPUT_H
 #define TRANSFRMX_MOZILLA_XML_OUTPUT_H
 
-#include "txXMLEventHandler.h"
-#include "nsIScriptLoaderObserver.h"
-#include "txOutputFormat.h"
-#include "nsTArray.h"
 #include "nsCOMPtr.h"
 #include "nsICSSLoaderObserver.h"
+#include "nsIScriptLoaderObserver.h"
+#include "nsTArray.h"
+#include "txOutputFormat.h"
 #include "txStack.h"
-#include "mozilla/Attributes.h"
+#include "txXMLEventHandler.h"
 
 class nsIContent;
 class nsAtom;

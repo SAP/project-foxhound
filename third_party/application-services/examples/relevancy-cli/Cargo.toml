@@ -1,0 +1,20 @@
+[package]
+name = "examples-relevancy-cli"
+version = "0.1.0"
+license = "MPL-2.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+viaduct = { path = "../../components/viaduct"}
+viaduct-hyper = { path = "../../components/support/viaduct-hyper" }
+log = "0.4"
+env_logger = { version = "0.10", default-features = false }
+clap = {version = "4.2", default-features = false, features = ["std", "derive"]}
+cli-support = { path = "../cli-support" }
+interrupt-support = { path = "../../components/support/interrupt" }
+places = { path = "../../components/places" }
+relevancy = { path = "../../components/relevancy" }
+anyhow = "1.0"
+sync15 = { path = "../../components/sync15" }
+nss-as = { version = "0.1.0", path = "../../components/support/rc_crypto/nss" }

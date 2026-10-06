@@ -230,6 +230,7 @@ if (window.googletag?.apiReady === undefined) {
     let clickUrl = "";
     let collapseEmptyDiv = null;
     let services = new Set();
+    const config = {};
     const slot = {
       addService(e) {
         services.add(e);
@@ -253,6 +254,19 @@ if (window.googletag?.apiReady === undefined) {
       getCategoryExclusions: () => Array.from(exclusions),
       getClickUrl: () => clickUrl,
       getCollapseEmptyDiv: () => collapseEmptyDiv,
+      getConfig(keys) {
+        const r = {};
+        for (const key of Array.isArray(keys) ? keys : [keys]) {
+          if (key == "clickUrl") {
+            r[key] = clickUrl;
+          } else if (key == "targeting") {
+            r[key] = targeting;
+          } else {
+            r[key] = config[key];
+          }
+        }
+        return Object.freeze(r);
+      },
       getContentUrl: () => "",
       getDivStartsCollapsed: () => null,
       getDomId: () => opt_div,
@@ -292,6 +306,19 @@ if (window.googletag?.apiReady === undefined) {
       setCollapseEmptyDiv(v) {
         collapseEmptyDiv = !!v;
         return slot;
+      },
+      setConfig(obj) {
+        try {
+          for (const [key, value] of Object.enrties(obj)) {
+            if (key == "clickUrl") {
+              clickUrl = value;
+            } else if (key == "targeting") {
+              updateTargeting(targeting, value);
+            } else {
+              config[key] = value;
+            }
+          }
+        } catch (_) {}
       },
       setSafeFrameConfig: noopthisfn,
       setTagForChildDirectedTreatment: noopthisfn,
@@ -450,6 +477,8 @@ if (window.googletag?.apiReady === undefined) {
     gt = window.googletag = {};
   }
 
+  const config = {};
+
   Object.assign(gt, {
     apiReady: true,
     companionAds: () => companionAdsService,
@@ -481,10 +510,36 @@ if (window.googletag?.apiReady === undefined) {
         TOP_ANCHOR: 2,
       },
     },
+    getConfig(keys) {
+      const r = {};
+      for (const key of Array.isArray(keys) ? keys : [keys]) {
+        if (key == "disableInitialLoad") {
+          r[key] = initialLoadDisabled;
+        } else if (key == "targeting") {
+          r[key] = gTargeting;
+        } else {
+          r[key] = config[key];
+        }
+      }
+      return Object.freeze(r);
+    },
     getVersion: () => version,
     pubads: () => pubadsService,
     pubadsReady: true,
     setAdIframeTitle() {},
+    setConfig(obj) {
+      try {
+        for (const [key, value] of Object.enrties(obj)) {
+          if (key == "disableInitialLoad") {
+            initialLoadDisabled = value;
+          } else if (key == "targeting") {
+            updateTargeting(gTargeting, value);
+          } else {
+            config[key] = value;
+          }
+        }
+      } catch (_) {}
+    },
     sizeMapping: () => new SizeMappingBuilder(),
   });
 

@@ -1,0 +1,20 @@
+{
+  "label": "zencastr.com",
+  "bugs": {
+    "1899831": {
+      "issue": "broken-meetings",
+      "matches": ["https://*.zencastr.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "only_channels": ["nightly"],
+      "ua_string": ["Chrome_with_FxQuantum"],
+      "content_scripts": {
+        "all_frames": true,
+        "js": ["bug1994562-shim-mstp-mstg-on-window.js"]
+      }
+    }
+  ]
+}

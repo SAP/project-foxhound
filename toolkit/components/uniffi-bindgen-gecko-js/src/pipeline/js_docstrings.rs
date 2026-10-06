@@ -6,8 +6,9 @@ use super::*;
 use std::borrow::Cow;
 
 pub fn pass(root: &mut Root) -> Result<()> {
-    root.visit_mut(|module: &mut Module| {
-        module.js_docstring = format_docstring(module.docstring.as_ref().unwrap_or(&module.name));
+    root.visit_mut(|namespace: &mut Namespace| {
+        namespace.js_docstring =
+            format_docstring(namespace.docstring.as_ref().unwrap_or(&namespace.name));
     });
     root.visit_mut(|func: &mut Function| {
         func.js_docstring = format_callable_docstring(
@@ -38,7 +39,12 @@ pub fn pass(root: &mut Root) -> Result<()> {
             format_docstring(variant.docstring.as_ref().unwrap_or(&variant.name));
     });
     root.visit_mut(|field: &mut Field| {
-        field.js_docstring = format_docstring(field.docstring.as_ref().unwrap_or(&field.name));
+        let type_docstring = format!("@type {{{}}}", field.ty.jsdoc_name);
+        let full_docstring = match &field.docstring {
+            Some(docstring) => format!("{docstring}\n{type_docstring}"),
+            None => type_docstring.to_string(),
+        };
+        field.js_docstring = format_docstring(&full_docstring);
     });
     root.visit_mut(|int: &mut Interface| {
         int.js_docstring = format_docstring(int.docstring.as_ref().unwrap_or(&int.name));
@@ -51,9 +57,6 @@ pub fn pass(root: &mut Root) -> Result<()> {
     });
     root.visit_mut(|custom: &mut CustomType| {
         custom.js_docstring = format_docstring(custom.docstring.as_ref().unwrap_or(&custom.name));
-    });
-    root.visit_mut(|field: &mut Field| {
-        field.js_docstring = format_docstring(field.docstring.as_ref().unwrap_or(&field.name));
     });
     Ok(())
 }

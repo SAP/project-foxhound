@@ -1,0 +1,47 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Testing nsIDOMWindowUtils.sendSelectionSetEvent works after the editor's selection controller is recreated (bug 2029505)</title>
+<script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
+<script>
+"use strict";
+
+SimpleTest.waitForExplicitFinish();
+SimpleTest.waitForFocus(async () => {
+  const flex = document.getElementById("flex");
+  const input = flex.querySelector("input");
+
+  function waitForFlushingIMEContentObserver() {
+    return new Promise(resolve => requestAnimationFrame(
+      () => requestAnimationFrame(resolve)
+    ));
+  }
+
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+  await waitForFlushingIMEContentObserver();
+
+  // Force the input to be reframed.  This can cause the focused editor's
+  // selection controller to be recreated while the editor itself survives.
+  flex.getBoundingClientRect();
+  flex.style.display = "flex";
+  flex.getBoundingClientRect();
+  flex.style.display = "";
+  flex.getBoundingClientRect();
+  await waitForFlushingIMEContentObserver();
+
+  const ret = windowUtils.sendSelectionSetEvent(
+    1, 3,
+    SpecialPowers.Ci.nsIDOMWindowUtils.SELECTION_SET_FLAG_USE_NATIVE_LINE_BREAK
+  );
+  ok(ret, "sendSelectionSetEvent should succeed");
+  is(input.selectionStart, 1,
+     "selectionStart should be updated after reframe");
+  is(input.selectionEnd, 4,
+     "selectionEnd should be updated after reframe");
+  SimpleTest.finish();
+});
+</script>
+<div id="flex">
+  <input value="test123">
+</div>

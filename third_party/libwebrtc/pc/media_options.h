@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "api/crypto/crypto_options.h"
 #include "api/media_types.h"
 #include "api/rtp_parameters.h"
@@ -24,8 +25,9 @@
 #include "p2p/base/transport_description.h"
 #include "p2p/base/transport_description_factory.h"
 #include "pc/simulcast_description.h"
+#include "rtc_base/system/plan_b_only.h"
 
-namespace cricket {
+namespace webrtc {
 
 // Default RTCP CNAME for unit tests.
 const char kDefaultRtcpCname[] = "DefaultRtcpCname";
@@ -44,43 +46,45 @@ struct SenderOptions {
 
 // Options for an individual media description/"m=" section.
 struct MediaDescriptionOptions {
-  MediaDescriptionOptions(webrtc::MediaType type,
-                          const std::string& mid,
-                          webrtc::RtpTransceiverDirection direction,
+  MediaDescriptionOptions(MediaType type,
+                          absl::string_view mid,
+                          RtpTransceiverDirection direction,
                           bool stopped)
       : type(type), mid(mid), direction(direction), stopped(stopped) {}
 
   // TODO(deadbeef): When we don't support Plan B, there will only be one
   // sender per media description and this can be simplified.
-  void AddAudioSender(const std::string& track_id,
-                      const std::vector<std::string>& stream_ids);
-  void AddVideoSender(const std::string& track_id,
-                      const std::vector<std::string>& stream_ids,
-                      const std::vector<RidDescription>& rids,
-                      const SimulcastLayerList& simulcast_layers,
-                      int num_sim_layers);
+  PLAN_B_ONLY void AddAudioSender(const std::string& track_id,
+                                  const std::vector<std::string>& stream_ids);
+  PLAN_B_ONLY void AddVideoSender(const std::string& track_id,
+                                  const std::vector<std::string>& stream_ids,
+                                  const std::vector<RidDescription>& rids,
+                                  const SimulcastLayerList& simulcast_layers,
+                                  int num_sim_layers);
 
-  webrtc::MediaType type;
+  MediaType type;
   std::string mid;
-  webrtc::RtpTransceiverDirection direction;
+  RtpTransceiverDirection direction;
   bool stopped;
   TransportOptions transport_options;
   // Note: There's no equivalent "RtpReceiverOptions" because only send
   // stream information goes in the local descriptions.
   std::vector<SenderOptions> sender_options;
-  std::vector<webrtc::RtpCodecCapability> codec_preferences;
-  std::vector<webrtc::RtpHeaderExtensionCapability> header_extensions;
+  std::vector<RtpCodecCapability> codec_preferences;
+  std::vector<RtpHeaderExtensionCapability> header_extensions;
   // Codecs to include in a generated offer or answer.
   // If this is used, session-level codec lists MUST be ignored.
   std::vector<Codec> codecs_to_include;
+  // Whether Sframe encryption is requested for this media section.
+  bool sframe_enabled = false;
 
  private:
   // Doesn't DCHECK on `type`.
-  void AddSenderInternal(const std::string& track_id,
-                         const std::vector<std::string>& stream_ids,
-                         const std::vector<RidDescription>& rids,
-                         const SimulcastLayerList& simulcast_layers,
-                         int num_sim_layers);
+  PLAN_B_ONLY void AddSenderInternal(const std::string& track_id,
+                                     const std::vector<std::string>& stream_ids,
+                                     const std::vector<RidDescription>& rids,
+                                     const SimulcastLayerList& simulcast_layers,
+                                     int num_sim_layers);
 };
 
 // Provides a mechanism for describing how m= sections should be generated.
@@ -90,15 +94,11 @@ struct MediaDescriptionOptions {
 struct MediaSessionOptions {
   MediaSessionOptions() {}
 
-  bool has_audio() const {
-    return HasMediaDescription(webrtc::MediaType::AUDIO);
-  }
-  bool has_video() const {
-    return HasMediaDescription(webrtc::MediaType::VIDEO);
-  }
-  bool has_data() const { return HasMediaDescription(webrtc::MediaType::DATA); }
+  bool has_audio() const { return HasMediaDescription(MediaType::AUDIO); }
+  bool has_video() const { return HasMediaDescription(MediaType::VIDEO); }
+  bool has_data() const { return HasMediaDescription(MediaType::DATA); }
 
-  bool HasMediaDescription(webrtc::MediaType type) const;
+  bool HasMediaDescription(MediaType type) const;
 
   bool vad_enabled = true;  // When disabled, removes all CN codecs from SDP.
   bool rtcp_mux_enabled = true;
@@ -106,7 +106,7 @@ struct MediaSessionOptions {
   bool offer_extmap_allow_mixed = false;
   bool raw_packetization_for_video = false;
   std::string rtcp_cname = kDefaultRtcpCname;
-  webrtc::CryptoOptions crypto_options;
+  CryptoOptions crypto_options;
   // List of media description options in the same order that the media
   // descriptions will be generated.
   std::vector<MediaDescriptionOptions> media_description_options;
@@ -117,8 +117,12 @@ struct MediaSessionOptions {
   // Default is true for backwards compatibility with clients that use
   // this internal interface.
   bool use_obsolete_sctp_sdp = true;
+
+  // Parse and serialize the draft-hancke-tsvwg-snap sctp-init.
+  bool use_sctp_snap = false;
 };
 
-}  // namespace cricket
+}  //  namespace webrtc
+
 
 #endif  // PC_MEDIA_OPTIONS_H_

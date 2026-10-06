@@ -1,0 +1,6 @@
+[ChildProc=any]
+protocol PUniquePtrRecursive {
+child:
+  async Msg1( UniquePtr< UniquePtr<int> > aa);
+  async Msg2(UniquePtr<UniquePtr<UniquePtr<UniquePtr<UniquePtr<int>>>>> aa);
+};

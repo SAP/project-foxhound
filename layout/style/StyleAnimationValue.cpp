@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,29 +6,25 @@
 
 #include "mozilla/StyleAnimationValue.h"
 
+#include "PseudoStyleType.h"
 #include "gfx2DGlue.h"
 #include "gfxMatrix.h"
 #include "gfxQuaternion.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/ComputedStyleInlines.h"
-#include "mozilla/FloatingPoint.h"
-#include "mozilla/Likely.h"
-#include "mozilla/MathAlgorithms.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/ServoBindings.h"  // StyleLockedDeclarationBlock
 #include "mozilla/ServoCSSParser.h"
 #include "mozilla/ServoStyleSet.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/layers/LayersMessages.h"
 #include "nsCOMArray.h"
-#include "nsCSSPseudoElements.h"
 #include "nsComputedDOMStyle.h"
 #include "nsIFrame.h"
 #include "nsString.h"
+#include "nsStyleTransformMatrix.h"
 
 using namespace mozilla;
 using namespace mozilla::css;
@@ -122,9 +116,9 @@ bool AnimationValue::IsOffsetPathUrl() const {
 MatrixScales AnimationValue::GetScaleValue(const nsIFrame* aFrame) const {
   using namespace nsStyleTransformMatrix;
 
-  AnimatedPropertyID property(eCSSProperty_UNKNOWN);
+  CSSPropertyId property(eCSSProperty_UNKNOWN);
   Servo_AnimationValue_GetPropertyId(mServo, &property);
-  switch (property.mID) {
+  switch (property.mId) {
     case eCSSProperty_scale: {
       const StyleScale& scale = GetScaleProperty();
       return scale.IsNone()
@@ -146,7 +140,8 @@ MatrixScales AnimationValue::GetScaleValue(const nsIFrame* aFrame) const {
   Matrix4x4 t =
       ReadTransforms(StyleTranslate::None(), StyleRotate::None(),
                      StyleScale::None(), nullptr, GetTransformProperty(),
-                     refBox, aFrame->PresContext()->AppUnitsPerDevPixel());
+                     refBox, aFrame->PresContext()->AppUnitsPerDevPixel(),
+                     aFrame->Style()->EffectiveZoom());
   Matrix transform2d;
   bool canDraw2D = t.CanDraw2D(&transform2d);
   if (!canDraw2D) {
@@ -156,13 +151,13 @@ MatrixScales AnimationValue::GetScaleValue(const nsIFrame* aFrame) const {
 }
 
 void AnimationValue::SerializeSpecifiedValue(
-    const AnimatedPropertyID& aProperty,
-    const StylePerDocumentStyleData* aRawData, nsACString& aString) const {
+    const CSSPropertyId& aProperty, const StylePerDocumentStyleData* aRawData,
+    nsACString& aString) const {
   MOZ_ASSERT(mServo);
   Servo_AnimationValue_Serialize(mServo, &aProperty, aRawData, &aString);
 }
 
-bool AnimationValue::IsInterpolableWith(const AnimatedPropertyID& aProperty,
+bool AnimationValue::IsInterpolableWith(const CSSPropertyId& aProperty,
                                         const AnimationValue& aToValue) const {
   if (IsNull() || aToValue.IsNull()) {
     return false;
@@ -187,7 +182,7 @@ double AnimationValue::ComputeDistance(const AnimationValue& aOther) const {
 }
 
 /* static */
-AnimationValue AnimationValue::FromString(AnimatedPropertyID& aProperty,
+AnimationValue AnimationValue::FromString(CSSPropertyId& aProperty,
                                           const nsACString& aValue,
                                           Element* aElement) {
   MOZ_ASSERT(aElement);
@@ -224,9 +219,16 @@ AnimationValue AnimationValue::FromString(AnimatedPropertyID& aProperty,
   return result;
 }
 
+std::ostream& operator<<(std::ostream& aOut, const AnimationValue& aValue) {
+  MOZ_ASSERT(aValue.mServo);
+  nsAutoCString s;
+  Servo_AnimationValue_Dump(aValue.mServo, &s);
+  return aOut << s;
+}
+
 /* static */
 already_AddRefed<StyleAnimationValue> AnimationValue::FromAnimatable(
-    nsCSSPropertyID aProperty, const layers::Animatable& aAnimatable) {
+    NonCustomCSSPropertyId aProperty, const layers::Animatable& aAnimatable) {
   switch (aAnimatable.type()) {
     case layers::Animatable::Tnull_t:
       break;

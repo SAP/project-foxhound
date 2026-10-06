@@ -1,0 +1,15 @@
+{
+  "label": "tza.red",
+  "bugs": {
+    "1898934": {
+      "issue": "unsupported-warning",
+      "matches": ["*://tza.red/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["change_Firefox_to_FireFox"]
+    }
+  ]
+}

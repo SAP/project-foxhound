@@ -1,0 +1,36 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+include protocol PCache;
+include protocol PCacheStorage;
+include protocol PCacheStreamControl;
+
+include PBackgroundSharedTypes;
+include "mozilla/dom/cache/IPCUtils.h";
+
+using mozilla::dom::cache::Namespace
+  from "mozilla/dom/cache/Types.h";
+
+namespace mozilla {
+namespace dom {
+namespace cache {
+
+[ChildProc=anydom]
+protocol PBoundStorageKey
+{
+  manages PCacheStorage;
+  manages PCache;
+  manages PCacheStreamControl;
+
+parent:
+  async PCacheStorage(Namespace aNamespace, PrincipalInfo aPrincipalInfo);
+
+child:
+  async PCache();
+  async PCacheStreamControl();
+};
+
+} // namespace cache
+} // namespace dom
+} // namespace mozilla

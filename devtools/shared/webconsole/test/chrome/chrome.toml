@@ -24,10 +24,14 @@ prefs = [
 ["test_console_group_styling.html"]
 
 ["test_console_serviceworker.html"]
-skip-if = ["release_or_beta"] # requires dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled
+skip-if = [
+  "release_or_beta", # requires dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled
+]
 
 ["test_console_serviceworker_cached.html"]
-skip-if = ["release_or_beta"] # requires dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled
+skip-if = [
+  "release_or_beta", # requires dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled
+]
 
 ["test_console_styling.html"]
 

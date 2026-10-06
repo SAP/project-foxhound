@@ -23,6 +23,7 @@ if (!("mediaDevices" in navigator)) {
     await pushPrefs(
         ['media.peerconnection.nat_simulator.filtering_type', 'ENDPOINT_INDEPENDENT'],
         ['media.peerconnection.nat_simulator.mapping_type', 'ENDPOINT_INDEPENDENT'],
+        ['media.peerconnection.ice.loopback', true],
         // The above triggers warning about 5 ICE servers
         ['media.peerconnection.treat_warnings_as_errors', false],
         ['media.getusermedia.insecure.enabled', true]);
@@ -51,7 +52,7 @@ const PC_LOCAL_TEST_LOCAL_STATS_RELAYCANDIDATE = test => {
     ok(haveRelayProtocol["relay-udp"], "Has UDP relay candidate");
     ok(haveRelayProtocol["relay-tcp"], "Has TCP relay candidate");
     ok(haveRelayProtocol["relay-tls"], "Has TLS relay candidate");
-    is(Object.keys(haveRelayProtocol).length, 5, "All candidate types are accounted for");
+    ok(Object.keys(haveRelayProtocol).length >= 5, "All candidate types are accounted for");
   });
 }
 </script>

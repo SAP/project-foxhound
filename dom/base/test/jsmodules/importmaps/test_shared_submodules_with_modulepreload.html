@@ -14,11 +14,12 @@
   SimpleTest.waitForExplicitFinish();
 
   const module1 = document.getElementById("module_1");
-  module1.addEventListener("error", (event) => {
+  module1.addEventListener("error", () => {
     info("error event");
     module1_error = true;
   });
 
+  // eslint-disable-next-line no-unused-vars
   function testLoaded() {
     ok(module1_error, "module_1.mjs should fire an error event");
     ok(!module1_loaded, "module_1.mjs should not be loaded");

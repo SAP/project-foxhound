@@ -9,6 +9,7 @@
 <script>
   SimpleTest.waitForExplicitFinish();
 
+  // eslint-disable-next-line no-unused-vars
   function assertThrowsTypeError(fn, msg) {
     let hasThrown = false;
     try {
@@ -20,6 +21,7 @@
     ok(hasThrown, msg);
   }
 
+  // eslint-disable-next-line no-unused-vars
   function testLoaded() {
     SimpleTest.finish();
   }
@@ -44,11 +46,13 @@
 </script>
 
 <script type="module">
+  /* global assertThrowsTypeError */
   assertThrowsTypeError(() => new import.meta.resolve("./x"),
                         "import.meta.resolve is not a constructor.");
 </script>
 
 <script type="module">
+  /* global assertThrowsTypeError */
   // Fails to resolve the specifier should throw a TypeError.
   assertThrowsTypeError(() => import.meta.resolve("failed"),
                         "import.meta.resolve should throw if fails to resolve");

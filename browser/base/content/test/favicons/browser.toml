@@ -91,11 +91,27 @@ support-files = [
   "file_favicon.png^headers^",
 ]
 
+["browser_favicon_svg.js"]
+support-files = [
+  "file_favicon_svg.html",
+  "file_favicon.svg"
+]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2019466
+]
+
 ["browser_icon_discovery.js"]
 
 ["browser_invalid_href_fallback.js"]
 https_first_disabled = true
 support-files = ["file_invalid_href.html"]
+
+["browser_favicon_pdf.js"]
+# Bug 2015285: PDF.js now declares an explicit chrome:// favicon, so no
+# /favicon.ico request is made to the PDF's origin and this test no longer
+# observes one. Disabled until the test is updated for the new behavior.
+skip-if = ["true"]
+support-files = ["blank.pdf"]
 
 ["browser_missing_favicon.js"]
 support-files = ["blank.html"]
@@ -104,6 +120,12 @@ support-files = ["blank.html"]
 support-files = [
   "file_insecure_favicon.html",
   "file_favicon.png",
+]
+
+["browser_multiple_ico.js"]
+support-files = [
+  "file_multiple_ico.html",
+  "file_multiple.ico",
 ]
 
 ["browser_multiple_icons_in_short_timeframe.js"]

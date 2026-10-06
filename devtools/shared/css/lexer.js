@@ -55,9 +55,9 @@ class InspectorCSSParserWrapper {
 
   /**
    *
-   * @param {String} input: The CSS text to lex
-   * @param {Object} options
-   * @param {Boolean} options.trackEOFChars: Set to true if performEOFFixup will be called.
+   * @param {string} input: The CSS text to lex
+   * @param {object} options
+   * @param {boolean} options.trackEOFChars: Set to true if performEOFFixup will be called.
    */
   constructor(input, options = {}) {
     this.parser = new InspectorCSSParser(input);

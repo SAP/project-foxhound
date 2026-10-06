@@ -29,7 +29,6 @@ let iframe = document.getElementById("target");
 
 add_setup(async function() {
   await SimpleTest.promiseFocus();
-  await SpecialPowers.pushPrefEnv({ set: [["test.events.async.enabled", true]] });
   disableNonTestMouseEvents(true);
   SimpleTest.registerCleanupFunction(() => {
     disableNonTestMouseEvents(false);
@@ -58,13 +57,13 @@ add_task(async function testMouseCaptureOnXoriginIframe() {
   document.addEventListener("mousemove", unexpectedHandler);
   document.addEventListener("mouseup", unexpectedHandler);
 
-  synthesizeMouseAtCenter(iframe, { type: "mousedown" });
+  synthesizeMouseAtCenter(iframe, { type: "mousedown", asyncEnabled: true });
   await waitForMessage("mousedown");
 
-  synthesizeMouse(iframe, 200, 200, { type: "mousemove" });
+  synthesizeMouse(iframe, 200, 200, { type: "mousemove", asyncEnabled: true });
   await waitForMessage("mousemove");
 
-  synthesizeMouse(iframe, 200, 200, { type: "mouseup" });
+  synthesizeMouse(iframe, 200, 200, { type: "mouseup", asyncEnabled: true });
   await waitForMessage("mouseup");
 });
 </script>

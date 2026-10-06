@@ -23,7 +23,7 @@ info: |
     a. If the value of newTypedArray's [[ArrayLength]] internal slot <
     argumentList[0], throw a TypeError exception.
   ...
-includes: [testBigIntTypedArray.js]
+includes: [testTypedArray.js]
 features: [BigInt, Symbol.species, TypedArray, resizable-arraybuffer]
 ---*/
 
@@ -37,6 +37,6 @@ testWithBigIntTypedArrayConstructors(function(TA) {
   assert.throws(TypeError, function() {
     ta.filter(() => true);
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

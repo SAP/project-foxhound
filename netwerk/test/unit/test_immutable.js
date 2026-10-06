@@ -3,7 +3,6 @@
 var prefs;
 var http2pref;
 var origin;
-var rcwnpref;
 
 function run_test() {
   var h2Port = Services.env.get("MOZHTTP2_PORT");
@@ -15,15 +14,12 @@ function run_test() {
   prefs = Services.prefs;
 
   http2pref = prefs.getBoolPref("network.http.http2.enabled");
-  rcwnpref = prefs.getBoolPref("network.http.rcwn.enabled");
 
   prefs.setBoolPref("network.http.http2.enabled", true);
   prefs.setCharPref(
     "network.dns.localDomains",
     "foo.example.com, bar.example.com"
   );
-  // Disable rcwn to make cache behavior deterministic.
-  prefs.setBoolPref("network.http.rcwn.enabled", false);
 
   // The moz-http2 cert is for foo.example.com and is signed by http2-ca.pem
   // so add that cert to the trust list as a signing cert.  // the foo.example.com domain name.
@@ -39,7 +35,6 @@ function run_test() {
 
 function resetPrefs() {
   prefs.setBoolPref("network.http.http2.enabled", http2pref);
-  prefs.setBoolPref("network.http.rcwn.enabled", rcwnpref);
   prefs.clearUserPref("network.dns.localDomains");
 }
 

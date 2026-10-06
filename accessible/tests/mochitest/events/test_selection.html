@@ -20,42 +20,70 @@
 
   <script type="application/javascript">
     // //////////////////////////////////////////////////////////////////////////
-    // Invokers
-
-    // //////////////////////////////////////////////////////////////////////////
     // Do tests
 
-    // gA11yEventDumpToConsole = true; // debuggin
-
-    var gQueue = null;
-    function doTests() {
-      gQueue = new eventQueue();
-
-
+    async function doTests() {
       // closed combobox
-      gQueue.push(new synthFocus("combobox"));
-      gQueue.push(new synthDownKey("cb1_item1",
-                                   selChangeSeq("cb1_item1", "cb1_item2")));
+      let focused = waitForEvent(EVENT_FOCUS, "combobox");
+      selectAllTextAndFocus("combobox");
+      await focused;
+      testStates(getAccessible("combobox"), STATE_FOCUSED);
+
+      let p = waitForEvents([
+        stateChangeEventArgs("cb1_item1", STATE_SELECTED, false),
+        stateChangeEventArgs("cb1_item2", STATE_SELECTED, true),
+        [EVENT_SELECTION, "cb1_item2"],
+      ]);
+      synthesizeKey("KEY_ArrowDown", {});
+      await p;
 
       // listbox
-      gQueue.push(new synthClick("lb1_item1",
-                                 new invokerChecker(EVENT_SELECTION, "lb1_item1")));
-      gQueue.push(new synthDownKey("lb1_item1",
-                                   selChangeSeq("lb1_item1", "lb1_item2")));
+      p = waitForEvent(EVENT_SELECTION, "lb1_item1");
+      let lb1item1 = getNode("lb1_item1");
+      lb1item1.scrollIntoView(true);
+      synthesizeMouse(lb1item1, 1, 1, {});
+      await p;
+
+      p = waitForEvents([
+        stateChangeEventArgs("lb1_item1", STATE_SELECTED, false),
+        stateChangeEventArgs("lb1_item2", STATE_SELECTED, true),
+        [EVENT_SELECTION, "lb1_item2"],
+      ]);
+      synthesizeKey("KEY_ArrowDown", {});
+      await p;
 
       // multiselectable listbox
-      gQueue.push(new synthClick("lb2_item1",
-                                 selChangeSeq(null, "lb2_item1")));
-      gQueue.push(new synthDownKey("lb2_item1",
-                                   selAddSeq("lb2_item2"),
-                                   { shiftKey: true }));
-      gQueue.push(new synthUpKey("lb2_item2",
-                                 selRemoveSeq("lb2_item2"),
-                                 { shiftKey: true }));
-      gQueue.push(new synthKey("lb2_item1", " ", { ctrlKey: true },
-                               selRemoveSeq("lb2_item1")));
+      p = waitForEvents([
+        stateChangeEventArgs("lb2_item1", STATE_SELECTED, true),
+        [EVENT_SELECTION, "lb2_item1"],
+      ]);
+      let lb2item1 = getNode("lb2_item1");
+      lb2item1.scrollIntoView(true);
+      synthesizeMouse(lb2item1, 1, 1, {});
+      await p;
 
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      p = waitForEvents([
+        stateChangeEventArgs("lb2_item2", STATE_SELECTED, true),
+        [EVENT_SELECTION_ADD, "lb2_item2"],
+      ]);
+      synthesizeKey("KEY_ArrowDown", { shiftKey: true });
+      await p;
+
+      p = waitForEvents([
+        stateChangeEventArgs("lb2_item2", STATE_SELECTED, false),
+        [EVENT_SELECTION_REMOVE, "lb2_item2"],
+      ]);
+      synthesizeKey("KEY_ArrowUp", { shiftKey: true });
+      await p;
+
+      p = waitForEvents([
+        stateChangeEventArgs("lb2_item1", STATE_SELECTED, false),
+        [EVENT_SELECTION_REMOVE, "lb2_item1"],
+      ]);
+      synthesizeKey(" ", { ctrlKey: true });
+      await p;
+
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

@@ -226,10 +226,6 @@ uniform __samplerExternal2DY2YEXT sColor1;
 uniform __samplerExternal2DY2YEXT sColor2;
 #endif
 
-#ifdef WR_FEATURE_DITHERING
-uniform sampler2D sDither;
-#endif
-
 //======================================================================================
 // Interpolator definitions
 //======================================================================================

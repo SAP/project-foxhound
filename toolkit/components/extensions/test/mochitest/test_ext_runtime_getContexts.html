@@ -12,14 +12,24 @@
 <script type="text/javascript">
 "use strict";
 
+// The runtime.getContexts() API is already tested in xpcshell tests:
+// toolkit/components/extensions/test/xpcshell/test_ext_runtime_getContexts.js
+// However, some properties require a full browser and are tested here. This
+// includes: extension popup browser, windowId, tabId.
+//
+// This test only tests APIs common across platforms. There is also a desktop
+// browser specific unit test that checks sidebars among other things:
+// browser/components/extensions/test/browser/browser_ext_runtime_getContexts.js
+
 function genericChecker() {
   const params = new URLSearchParams(window.location.search);
   const kind = params.get("kind");
   const createdTabIds = [];
 
-  browser.test.onMessage.addListener(async msg => {
+  browser.test.onMessage.addListener(async (msg, data) => {
     if (msg == `${kind}-test-get-contexts`) {
       try {
+        const { bgPartialContext, tabPartialContext, popupPartialContext } = data;
         const result = await browser.runtime.getContexts({});
         browser.test.assertEq(3, result.length, "Expect 3 extension contexts to be found");
 
@@ -30,6 +40,9 @@ function genericChecker() {
         browser.test.assertEq(window.location.href, bgContext.documentUrl, "background context has the expected documentUrl");
         browser.test.assertEq(-1, bgContext.windowId, "background context has the expected windowId");
         browser.test.assertEq(-1, bgContext.tabId, "background context has the expected tabId");
+        browser.test.assertEq(0, bgContext.frameId, "background context has the expected (top level) frameId");
+        browser.test.assertEq(bgPartialContext.documentId, bgContext.documentId, "background context has the expected documentId");
+
         browser.test.assertEq("TAB", tabContext.contextType, "Got expected tab context type");
         browser.test.assertTrue(
           typeof tabContext.windowId === "number" && tabContext.windowId > 0,
@@ -39,13 +52,17 @@ function genericChecker() {
           typeof tabContext.windowId === "number" && tabContext.tabId > 0,
           "Got expected tabId on tab context"
         );
+        browser.test.assertEq(0, tabContext.frameId, "tab context has the expected (top level) frameId");
+        browser.test.assertEq(tabPartialContext.documentId, tabContext.documentId, "tab context has the expected documentId");
         browser.test.assertEq(
           tabContext.windowId,
           popupContext.windowId,
-          "Poup and tab expected to have the same windowId"
+          "Popup and tab expected to have the same windowId"
         );
         browser.test.assertEq(-1, popupContext.tabId, "popup context has the expected tabId");
+        browser.test.assertEq(0, popupContext.frameId, "popup context has the expected (top level) frameId");
         browser.test.assertEq("POPUP", popupContext.contextType, "Got expected popup context type");
+        browser.test.assertEq(popupPartialContext.documentId, popupContext.documentId, "popup context has the expected documentId");
 
         browser.test.sendMessage(`${msg}:done`);
       } catch (err) {
@@ -62,7 +79,12 @@ function genericChecker() {
   });
 
   browser.test.log(`${kind} extension page loaded`);
-  browser.test.sendMessage(`${kind}-loaded`);
+  // Collect a part of the context that runtime.getContexts() is expected to
+  // return, that can only be meaningfull computed here in the page itself.
+  const thisPartialContext = {
+    documentId: browser.runtime.getDocumentId(window),
+  };
+  browser.test.sendMessage(`${kind}-loaded`, thisPartialContext);
 }
 
 add_task(async function test_runtime_getContexts() {
@@ -100,15 +122,19 @@ add_task(async function test_runtime_getContexts() {
   });
 
   await extension.startup();
-  await extension.awaitMessage("background-loaded");
+  const bgPartialContext = await extension.awaitMessage("background-loaded");
 
   extension.sendMessage("background-open-tab");
-  await extension.awaitMessage("tab-loaded");
+  const tabPartialContext = await extension.awaitMessage("tab-loaded");
 
   await AppTestDelegate.clickBrowserAction(window, extension);
-  await extension.awaitMessage("action-loaded");
+  const popupPartialContext = await extension.awaitMessage("action-loaded");
 
-  extension.sendMessage("background-test-get-contexts");
+  extension.sendMessage("background-test-get-contexts", {
+    bgPartialContext,
+    tabPartialContext,
+    popupPartialContext,
+  });
   await extension.awaitMessage("background-test-get-contexts:done");
 
   // Close popup window.

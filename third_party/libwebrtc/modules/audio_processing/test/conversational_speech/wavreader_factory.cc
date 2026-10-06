@@ -11,11 +11,13 @@
 #include "modules/audio_processing/test/conversational_speech/wavreader_factory.h"
 
 #include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <span>
 
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "common_audio/wav_file.h"
-#include "rtc_base/checks.h"
+#include "modules/audio_processing/test/conversational_speech/wavreader_interface.h"
 
 namespace webrtc {
 namespace test {
@@ -29,12 +31,12 @@ class WavReaderAdaptor final : public WavReaderInterface {
       : wav_reader_(filepath) {}
   ~WavReaderAdaptor() override = default;
 
-  size_t ReadFloatSamples(rtc::ArrayView<float> samples) override {
-    return wav_reader_.ReadSamples(samples.size(), samples.begin());
+  size_t ReadFloatSamples(std::span<float> samples) override {
+    return wav_reader_.ReadSamples(samples.size(), samples.data());
   }
 
-  size_t ReadInt16Samples(rtc::ArrayView<int16_t> samples) override {
-    return wav_reader_.ReadSamples(samples.size(), samples.begin());
+  size_t ReadInt16Samples(std::span<int16_t> samples) override {
+    return wav_reader_.ReadSamples(samples.size(), samples.data());
   }
 
   int SampleRate() const override { return wav_reader_.sample_rate(); }

@@ -3,7 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-from requests import HTTPError
+from taskcluster.exceptions import TaskclusterRestFailure
 from taskgraph.util.taskcluster import find_task_id, get_artifact
 
 from gecko_taskgraph.util.attributes import INTEGRATION_PROJECTS, TRY_PROJECTS
@@ -45,15 +45,17 @@ def is_backstop(
     if params.get(backstop_strategy, False):
         return True
 
+    # Backstops not used / supported on Github yet.
+    if params["repository_type"] == "git":
+        return False
+
     project = params["project"]
     if project in TRY_PROJECTS:
         return False
     if project not in integration_projects:
         return True
 
-    # This push was explicitly set to run nothing (e.g via DONTBUILD), so
-    # shouldn't be a backstop candidate.
-    if params["target_tasks_method"] == "nothing":
+    if params.get("dontbuild"):
         return False
 
     # Find the last backstop to compute push and time intervals.
@@ -62,7 +64,7 @@ def is_backstop(
 
     try:
         last_backstop_id = find_task_id(index)
-    except KeyError:
+    except TaskclusterRestFailure:
         # Index wasn't found, implying there hasn't been a backstop push yet.
         return True
 
@@ -72,12 +74,12 @@ def is_backstop(
 
     try:
         last_params = get_artifact(last_backstop_id, "public/parameters.yml")
-    except HTTPError as e:
+    except TaskclusterRestFailure as e:
         # If the last backstop decision task exists in the index, but
         # parameters.yml isn't available yet, it means the decision task is
         # still running. If that's the case, we can be pretty sure the time
         # component will not cause a backstop, so just return False.
-        if e.response.status_code == 404:
+        if e.status_code == 404:
             return False
         raise
 

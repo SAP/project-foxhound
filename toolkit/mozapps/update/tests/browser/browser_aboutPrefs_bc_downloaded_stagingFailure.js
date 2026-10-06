@@ -19,7 +19,7 @@ add_task(async function aboutPrefs_backgroundCheck_downloaded_stagingFailure() {
     backgroundUpdate: true,
     waitForUpdateState: STATE_PENDING,
   };
-  await runAboutDialogUpdateTest(params, [
+  await runAboutPrefsUpdateTest(params, [
     {
       panelId: "apply",
       checkActiveUpdate: { state: STATE_PENDING },

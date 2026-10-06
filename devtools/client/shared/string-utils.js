@@ -13,7 +13,7 @@ const {
  * @param {DevToolsClient} client
  * @param {object|string} stringGrip: A long string grip. If the param is a simple string,
  *                                    it will be returned as is.
- * @return {Promise<String>} The full string content.
+ * @return {Promise<string>} The full string content.
  */
 async function getLongStringFullText(client, stringGrip) {
   if (typeof stringGrip !== "object" || stringGrip.type !== "longString") {

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -100,7 +98,7 @@ void DriverCrashGuard::Initialize() {
     // Ask the parent whether or not activating the guard is okay. The parent
     // won't bother if it detected a crash.
     dom::ContentChild* cc = dom::ContentChild::GetSingleton();
-    cc->SendBeginDriverCrashGuard(uint32_t(mType), &mCrashDetected);
+    cc->SendBeginDriverCrashGuard(mType, &mCrashDetected);
     if (mCrashDetected) {
       LogFeatureDisabled();
       return;
@@ -153,7 +151,7 @@ DriverCrashGuard::~DriverCrashGuard() {
       SetStatus(DriverInitStatus::Okay);
     }
   } else {
-    dom::ContentChild::GetSingleton()->SendEndDriverCrashGuard(uint32_t(mType));
+    dom::ContentChild::GetSingleton()->SendEndDriverCrashGuard(mType);
   }
 
   CrashReporter::UnrecordAnnotation(
@@ -409,11 +407,6 @@ bool D3D11LayersCrashGuard::UpdateEnvironment() {
   bool changed = false;
   // Feature status.
 #if defined(XP_WIN)
-  bool d2dEnabled = StaticPrefs::gfx_direct2d_force_enabled_AtStartup() ||
-                    (!StaticPrefs::gfx_direct2d_disabled_AtStartup() &&
-                     FeatureEnabled(nsIGfxInfo::FEATURE_DIRECT2D));
-  changed |= CheckAndUpdateBoolPref("feature-d2d", d2dEnabled);
-
   bool d3d11Enabled = gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING);
   changed |= CheckAndUpdateBoolPref("feature-d3d11", d3d11Enabled);
   if (changed) {
@@ -468,9 +461,9 @@ void GLContextCrashGuard::Initialize() {
   // its drivers will essentially never change, so the crash guard could
   // permanently disable WebGL.
   return;
-#endif
-
+#else
   DriverCrashGuard::Initialize();
+#endif
 }
 
 bool GLContextCrashGuard::UpdateEnvironment() {

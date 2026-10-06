@@ -10,7 +10,9 @@
   }
 
   hr {
-    background-color: color-mix(in srgb, var(--newtab-border-color) 52%, transparent);
+    // Bug 2001446: We are incorrectly using a border color token as the background color, but the
+    // intent of this element is to appear a 1px solid border line.
+    background-color: var(--border-color-deemphasized);
     height: 1px;
     border: 0;
     margin: var(--space-small) 0 0;
@@ -35,7 +37,7 @@
           text-decoration: none;
           padding: var(--space-small) var(--space-medium);
           background: var(--newtab-background-color-secondary);
-          border: 1px solid color-mix(in srgb, var(--newtab-border-color) 52%, transparent);
+          border: 1px solid var(--border-color-deemphasized);
           color: var(--newtab-text-primary-color);
           border-radius: var(--border-radius-medium);
 

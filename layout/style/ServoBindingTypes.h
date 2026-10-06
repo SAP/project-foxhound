@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -54,11 +52,11 @@
 #ifndef mozilla_ServoBindingTypes_h
 #define mozilla_ServoBindingTypes_h
 
+#include "NonCustomCSSPropertyId.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/ServoTypes.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/Types.h"
-#include "nsCSSPropertyID.h"
 #include "nsStyleAutoArray.h"
 #include "nsTArray.h"
 
@@ -90,6 +88,7 @@ namespace dom {
 class StyleChildrenIterator;
 class Document;
 class Element;
+class ShadowRoot;
 }  // namespace dom
 
 }  // namespace mozilla
@@ -111,7 +110,7 @@ class Element;
   struct StyleLocked##name_;         \
   }                                  \
   SERVO_ARC_TYPE(name_, mozilla::StyleLocked##name_)
-#include "mozilla/ServoLockedArcTypeList.h"
+#include "mozilla/ServoLockedArcTypeList.inc"
 
 #define UNLOCKED_RULE_TYPE(name_) \
   namespace mozilla {             \
@@ -126,12 +125,15 @@ UNLOCKED_RULE_TYPE(Namespace)
 UNLOCKED_RULE_TYPE(Margin)
 UNLOCKED_RULE_TYPE(Container)
 UNLOCKED_RULE_TYPE(Media)
+UNLOCKED_RULE_TYPE(CustomMedia)
 UNLOCKED_RULE_TYPE(Supports)
 UNLOCKED_RULE_TYPE(Document)
 UNLOCKED_RULE_TYPE(FontFeatureValues)
 UNLOCKED_RULE_TYPE(FontPaletteValues)
 UNLOCKED_RULE_TYPE(Scope)
 UNLOCKED_RULE_TYPE(StartingStyle)
+UNLOCKED_RULE_TYPE(AppearanceBase)
+UNLOCKED_RULE_TYPE(ViewTransition)
 
 SERVO_ARC_TYPE(AnimationValue, mozilla::StyleAnimationValue)
 SERVO_ARC_TYPE(ComputedStyle, mozilla::ComputedStyle)
@@ -142,19 +144,20 @@ SERVO_ARC_TYPE(StyleSheetContents, mozilla::StyleStylesheetContents)
 #undef SERVO_LOCKED_ARC_TYPE
 #undef SERVO_ARC_TYPE
 
-#define SERVO_BOXED_TYPE(name_, type_)                                        \
-  namespace mozilla {                                                         \
-  struct Style##type_;                                                        \
-  }                                                                           \
-  extern "C" void Servo_##name_##_Drop(mozilla::Style##type_*);               \
-  namespace mozilla {                                                         \
-  template <>                                                                 \
-  class DefaultDelete<Style##type_> {                                         \
-   public:                                                                    \
-    void operator()(Style##type_* aPtr) const { Servo_##name_##_Drop(aPtr); } \
-  };                                                                          \
+#define SERVO_BOXED_TYPE(name_, type_)                          \
+  namespace mozilla {                                           \
+  struct Style##type_;                                          \
+  }                                                             \
+  extern "C" void Servo_##name_##_Drop(mozilla::Style##type_*); \
+  namespace std {                                               \
+  template <>                                                   \
+  struct default_delete<mozilla::Style##type_> {                \
+    void operator()(mozilla::Style##type_* aPtr) const {        \
+      Servo_##name_##_Drop(aPtr);                               \
+    }                                                           \
+  };                                                            \
   }
-#include "mozilla/ServoBoxedTypeList.h"
+#include "mozilla/ServoBoxedTypeList.inc"
 #undef SERVO_BOXED_TYPE
 
 // Other special cases.

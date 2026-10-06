@@ -1,11 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "sandboxTarget.h"
 
+#include "mozilla/CpuInfo.h"
+#include "mozilla/SandboxSettings.h"
 #include "sandbox/win/src/sandbox.h"
 
 namespace mozilla {
@@ -25,6 +25,18 @@ void SandboxTarget::StartSandbox() {
   }
 }
 
+void SandboxTarget::LowerContentSandbox() {
+  if (GetEffectiveContentSandboxLevel() > 7) {
+    // Libraries required by Network Security Services (NSS).
+    ::LoadLibraryW(L"freebl3.dll");
+    ::LoadLibraryW(L"softokn3.dll");
+    // Cache value that is retrieved from a registry entry.
+    (void)GetCpuFrequencyMHz();
+  }
+
+  StartSandbox();
+}
+
 void SandboxTarget::NotifyStartObservers() {
   for (auto&& obs : mStartObservers) {
     if (!obs) {
@@ -35,17 +47,6 @@ void SandboxTarget::NotifyStartObservers() {
   }
 
   mStartObservers.clear();
-}
-
-bool SandboxTarget::GetComplexLineBreaks(const WCHAR* text, uint32_t length,
-                                         uint8_t* break_before) {
-  if (!mTargetServices) {
-    return false;
-  }
-
-  sandbox::ResultCode result =
-      mTargetServices->GetComplexLineBreaks(text, length, break_before);
-  return (sandbox::SBOX_ALL_OK == result);
 }
 
 }  // namespace mozilla

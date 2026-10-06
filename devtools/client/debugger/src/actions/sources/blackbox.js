@@ -4,10 +4,10 @@
 
 /**
  * Redux actions for the sources state
+ *
  * @module actions/sources
  */
 
-import { originalToGeneratedId } from "devtools/client/shared/source-map-loader/index";
 import { recordEvent } from "../../utils/telemetry";
 import { toggleBreakpoints } from "../breakpoints/index";
 import {
@@ -29,7 +29,7 @@ export async function blackboxSourceActorsForSource(
   // and the range for where the original is represented in the generated file
   // (which might be a bundle including other files).
   if (source.isOriginal) {
-    sourceId = originalToGeneratedId(source.id);
+    sourceId = source.generatedSource.id;
     const range = await sourceMapLoader.getFileGeneratedRange(source.id);
     ranges = [];
     if (range) {
@@ -56,8 +56,8 @@ export async function blackboxSourceActorsForSource(
 /**
  * Toggle blackboxing for the whole source or for specific lines in a source
  *
- * @param {Object} source - The source to be blackboxed/unblackboxed.
- * @param {Boolean} [shouldBlackBox] - Specifies if the source should be blackboxed (true
+ * @param {object} source - The source to be blackboxed/unblackboxed.
+ * @param {boolean} [shouldBlackBox] - Specifies if the source should be blackboxed (true
  *                                     or unblackboxed (false). When this is not provided
  *                                     option is decided based on the blackboxed state
  *                                     of the source.
@@ -169,11 +169,11 @@ async function toggleBreakpointsInBlackboxedSources({
   }
 }
 
-/*
+/**
  * Blackboxes a group of sources together
  *
  * @param {Array} sourcesToBlackBox - The list of sources to blackbox
- * @param {Boolean} shouldBlackbox - Specifies if the sources should blackboxed (true)
+ * @param {boolean} shouldBlackbox - Specifies if the sources should blackboxed (true)
  *                                   or unblackboxed (false).
  */
 export function blackBoxSources(sourcesToBlackBox, shouldBlackBox) {

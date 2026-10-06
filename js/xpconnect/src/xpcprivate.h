@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -65,13 +63,10 @@
 
 /* All the XPConnect private declarations - only include locally. */
 
-#ifndef xpcprivate_h___
-#define xpcprivate_h___
+#ifndef xpcprivate_h_
+#define xpcprivate_h_
 
-#include "mozilla/Alignment.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectedJSContext.h"
@@ -82,6 +77,7 @@
 #include "mozilla/LinkedList.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/PodOperations.h"
 #include "mozilla/mozalloc.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/TimeStamp.h"
@@ -90,12 +86,11 @@
 
 #include "mozilla/dom/ScriptSettings.h"
 
-#include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include "xpcpublic.h"
+#include "js/friend/CycleCollector.h"
 #include "js/HashTable.h"
 #include "js/GCHashTable.h"
 #include "js/Object.h"              // JS::GetClass, JS::GetCompartment
@@ -229,12 +224,10 @@ class nsXPConnect final : public nsIXPConnect {
 
   void RecordTraversal(void* p, nsISupports* s);
 
- protected:
+ private:
+  nsXPConnect() = default;
   virtual ~nsXPConnect();
 
-  nsXPConnect();
-
- private:
   // Singleton instance
   static nsXPConnect* gSelf;
   static bool gOnceAliveNowDead;
@@ -481,7 +474,7 @@ class XPCJSRuntime final : public mozilla::CycleCollectedJSRuntime {
   bool InitializeStrings(JSContext* cx);
 
   virtual bool DescribeCustomObjects(JSObject* aObject, const JSClass* aClasp,
-                                     char (&aName)[72]) const override;
+                                     char (&aName)[512]) const override;
   virtual bool NoteCustomGCThingXPCOMChildren(
       const JSClass* aClasp, JSObject* aObj,
       nsCycleCollectionTraversalCallback& aCb) const override;
@@ -518,7 +511,6 @@ class XPCJSRuntime final : public mozilla::CycleCollectedJSRuntime {
   void DispatchDeferredDeletion(bool aContinuation,
                                 bool aPurge = false) override;
 
-  void CustomGCCallback(JSGCStatus status) override;
   void CustomOutOfMemoryCallback() override;
   void OnLargeAllocationFailure();
   static void GCSliceCallback(JSContext* cx, JS::GCProgress progress,
@@ -537,9 +529,6 @@ class XPCJSRuntime final : public mozilla::CycleCollectedJSRuntime {
   bool GCIsRunning() const { return mGCIsRunning; }
 
   ~XPCJSRuntime();
-
-  void AddGCCallback(xpcGCCallback cb);
-  void RemoveGCCallback(xpcGCCallback cb);
 
   JSObject* GetUAWidgetScope(JSContext* cx, nsIPrincipal* principal);
 
@@ -609,7 +598,6 @@ class XPCJSRuntime final : public mozilla::CycleCollectedJSRuntime {
   nsTArray<nsISupports*> mNativesToReleaseArray;
   bool mDoingFinalization;
   mozilla::LinkedList<nsXPCWrappedJS> mSubjectToFinalizationWJS;
-  nsTArray<xpcGCCallback> extraGCCallbacks;
   JS::GCSliceCallback mPrevGCSliceCallback;
   JS::DoCycleCollectionCallback mPrevDoCycleCollectionCallback;
   mozilla::WeakPtr<SandboxPrivate> mUnprivilegedJunkScope;
@@ -801,8 +789,6 @@ class XPCWrappedNativeScope final
   bool GetComponentsJSObject(JSContext* cx, JS::MutableHandleObject obj);
 
   JSObject* GetExpandoChain(JS::HandleObject target);
-
-  JSObject* DetachExpandoChain(JS::HandleObject target);
 
   bool SetExpandoChain(JSContext* cx, JS::HandleObject target,
                        JS::HandleObject chain);
@@ -2184,6 +2170,7 @@ struct GlobalProperties {
   bool Blob : 1;
   bool ChromeUtils : 1;
   bool CSS : 1;
+  bool CSSPositionTryDescriptors : 1;
   bool CSSRule : 1;
   bool CustomStateSet : 1;
   bool Directory : 1;
@@ -2258,6 +2245,7 @@ class MOZ_STACK_CLASS OptionsBase {
   bool ParseValue(const char* name, JS::MutableHandleValue prop,
                   bool* found = nullptr);
   bool ParseBoolean(const char* name, bool* prop);
+  bool ParseOptionalBoolean(const char* name, mozilla::Maybe<bool>& prop);
   bool ParseObject(const char* name, JS::MutableHandleObject prop);
   bool ParseJSString(const char* name, JS::MutableHandleString prop);
   bool ParseString(const char* name, nsCString& prop);
@@ -2305,6 +2293,7 @@ class MOZ_STACK_CLASS SandboxOptions : public OptionsBase {
   nsCString sandboxName;
   JS::RootedObject sameZoneAs;
   bool forceSecureContext;
+  mozilla::Maybe<bool> freezeBuiltins;
   bool freshCompartment;
   bool freshZone;
   bool isUAWidgetScope;
@@ -2448,6 +2437,14 @@ nsresult GetSandboxMetadata(JSContext* cx, JS::HandleObject sandboxArg,
 [[nodiscard]] nsresult SetSandboxMetadata(JSContext* cx,
                                           JS::HandleObject sandboxArg,
                                           JS::HandleValue metadata);
+
+[[nodiscard]] nsresult SetSandboxLocaleOverride(JSContext* cx,
+                                                JS::HandleObject sandboxArg,
+                                                const char* locale);
+
+[[nodiscard]] nsresult SetSandboxTimezoneOverride(JSContext* cx,
+                                                  JS::HandleObject sandboxArg,
+                                                  const char* timezone);
 
 bool CreateObjectIn(JSContext* cx, JS::HandleValue vobj,
                     CreateObjectInOptions& options,
@@ -2830,4 +2827,4 @@ void xpc_DelocalizeRuntime(JSRuntime* rt);
 
 /***************************************************************************/
 
-#endif /* xpcprivate_h___ */
+#endif /* xpcprivate_h_ */

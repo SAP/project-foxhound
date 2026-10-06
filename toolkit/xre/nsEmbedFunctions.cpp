@@ -21,7 +21,6 @@
 #  include <shobjidl.h>
 #  include "mozilla/ipc/WindowsMessageLoop.h"
 #  ifdef MOZ_SANDBOX
-#    include "mozilla/RandomNum.h"
 #  endif
 #  include "mozilla/ScopeExit.h"
 #  include "mozilla/WinDllServices.h"
@@ -125,6 +124,7 @@
 #endif
 
 #include "VRProcessChild.h"
+#include "nsTraceRefcnt.h"
 
 using namespace mozilla;
 
@@ -297,6 +297,7 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
   ScopedLogging logger;
 
   mozilla::LogModule::Init(aArgc, aArgv);
+  nsTraceRefcnt::EarlyInit();
 
   AUTO_BASE_PROFILER_LABEL("XRE_InitChildProcess (around Gecko Profiler)",
                            OTHER);
@@ -304,7 +305,7 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
   AUTO_PROFILER_LABEL("XRE_InitChildProcess", OTHER);
 
 #ifdef XP_MACOSX
-  gfxPlatformMac::RegisterSupplementalFonts();
+  auto _supplementalFontThread = gfxPlatformMac::RegisterSupplementalFonts();
 #endif
 
   // Ensure AbstractThread is minimally setup, so async IPC messages
@@ -329,12 +330,14 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
   const int kTimeoutMs = 1000;
 
   std::vector<mozilla::UniqueMachSendRight> sendRights;
-  if (NS_WARN_IF(
-          !MachChildProcessCheckIn(mach_port_name, kTimeoutMs, sendRights))) {
+  std::vector<mozilla::UniqueMachReceiveRight> receiveRights;
+  if (NS_WARN_IF(!MachChildProcessCheckIn(mach_port_name, kTimeoutMs,
+                                          sendRights, receiveRights))) {
     return NS_ERROR_FAILURE;
   }
 
   geckoargs::SetPassedMachSendRights(std::move(sendRights));
+  geckoargs::SetPassedMachReceiveRights(std::move(receiveRights));
 
 #  if defined(MOZ_SANDBOX)
   std::string sandboxError;
@@ -350,17 +353,13 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
 
   bool exceptionHandlerIsSet = false;
   if (!CrashReporter::IsDummy()) {
-    auto crashReporterArg = geckoargs::sCrashReporter.Get(aArgc, aArgv);
-    auto crashHelperArg = geckoargs::sCrashHelper.Get(aArgc, aArgv);
-    if (crashReporterArg && crashHelperArg) {
-      exceptionHandlerIsSet = CrashReporter::SetRemoteExceptionHandler(
-          std::move(*crashReporterArg), std::move(*crashHelperArg));
-      MOZ_ASSERT(exceptionHandlerIsSet,
-                 "Should have been able to set remote exception handler");
+    if (geckoargs::sCrashReporter.IsPresent(aArgc, aArgv)) {
+      exceptionHandlerIsSet =
+          CrashReporter::SetRemoteExceptionHandler(aArgc, aArgv);
 
       if (!exceptionHandlerIsSet) {
         // Bug 684322 will add better visibility into this condition
-        NS_WARNING("Could not setup crash reporting\n");
+        NS_WARNING("Could not setup crash reporting");
       }
     } else {
       // We might have registered a runtime exception module very early in
@@ -435,9 +434,19 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
   Maybe<base::ProcessId> parentPID = geckoargs::sParentPid.Get(aArgc, aArgv);
   Maybe<const char*> initialChannelIdString =
       geckoargs::sInitialChannelID.Get(aArgc, aArgv);
+  if (NS_WARN_IF(!parentPID || !initialChannelIdString)) {
+    return NS_ERROR_FAILURE;
+  }
+
   Maybe<IPC::Channel::ChannelHandle> clientChannel =
       geckoargs::sIPCHandle.Get(aArgc, aArgv);
-  if (NS_WARN_IF(!parentPID || !initialChannelIdString || !clientChannel)) {
+#ifdef XP_DARWIN
+  MOZ_ASSERT_IF(clientChannel, !geckoargs::sIPCPort.IsPresent(aArgc, aArgv));
+  if (!clientChannel) {
+    clientChannel = geckoargs::sIPCPort.Get(aArgc, aArgv);
+  }
+#endif
+  if (NS_WARN_IF(!clientChannel)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -675,12 +684,13 @@ void XRE_ShutdownChildProcess() {
 }
 
 namespace {
+
 UniqueContentParentKeepAlive& TestShellContentParent() {
   static NeverDestroyed<UniqueContentParentKeepAlive> sContentParent;
   return *sContentParent;
 }
 
-TestShellParent* GetOrCreateTestShellParent() {
+already_AddRefed<TestShellParent> GetOrCreateTestShellParent() {
   if (!TestShellContentParent()) {
     // Use a "web" child process by default.  File a bug if you don't like
     // this and you're sure you wouldn't be better off writing a "browser"
@@ -691,11 +701,13 @@ TestShellParent* GetOrCreateTestShellParent() {
   } else if (TestShellContentParent()->IsShuttingDown()) {
     return nullptr;
   }
-  TestShellParent* tsp = TestShellContentParent()->GetTestShellSingleton();
+
+  RefPtr<TestShellParent> tsp =
+      TestShellContentParent()->GetTestShellSingleton();
   if (!tsp) {
     tsp = TestShellContentParent()->CreateTestShell();
   }
-  return tsp;
+  return tsp.forget();
 }
 
 }  // namespace
@@ -703,7 +715,7 @@ TestShellParent* GetOrCreateTestShellParent() {
 bool XRE_SendTestShellCommand(JSContext* aCx, JSString* aCommand,
                               JS::Value* aCallback) {
   JS::Rooted<JSString*> cmd(aCx, aCommand);
-  TestShellParent* tsp = GetOrCreateTestShellParent();
+  RefPtr<TestShellParent> tsp = GetOrCreateTestShellParent();
   NS_ENSURE_TRUE(tsp, false);
 
   nsAutoJSString command;
@@ -728,8 +740,9 @@ bool XRE_ShutdownTestShell() {
   }
   bool ret = true;
   if (TestShellContentParent()->IsAlive()) {
-    ret = TestShellContentParent()->DestroyTestShell(
-        TestShellContentParent()->GetTestShellSingleton());
+    RefPtr<TestShellParent> tsp =
+        TestShellContentParent()->GetTestShellSingleton();
+    ret = TestShellContentParent()->DestroyTestShell(tsp);
   }
   TestShellContentParent().reset();
   return ret;

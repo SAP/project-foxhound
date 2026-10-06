@@ -254,12 +254,11 @@ add_task(async function test_getRecords_creditCards() {
   for (let testCase of testCases) {
     info("Starting testcase: " + testCase.description);
     if (testCase.mpEnabled) {
-      let tokendb = Cc["@mozilla.org/security/pk11tokendb;1"].createInstance(
-        Ci.nsIPK11TokenDB
+      let token = Cc["@mozilla.org/security/internalkeytoken;1"].createInstance(
+        Ci.nsIPKCS11Token
       );
-      let token = tokendb.getInternalKeyToken();
       token.reset();
-      token.initPassword("password");
+      token.changePassword("", "password");
     }
     const fap = new FormAutofillParent();
     sinon.stub(fap, "browsingContext").get(() => {

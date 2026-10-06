@@ -1,0 +1,10 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+browser.jar:
+  content/browser/multilineeditor/multiline-editor.css
+  content/browser/multilineeditor/multiline-editor.mjs
+  content/browser/multilineeditor/plugins/MentionsPlugin.mjs (plugins/MentionsPlugin.mjs)
+  content/browser/multilineeditor/prosemirror.bundle.mjs     (../../../third_party/js/prosemirror/prosemirror.bundle.mjs)
+  content/browser/multilineeditor/prosemirror.css            (../../../third_party/js/prosemirror/prosemirror-view/style/prosemirror.css)

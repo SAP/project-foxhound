@@ -99,6 +99,23 @@ broken_site_report.tab_info:
       - broken-site-report
 
 broken_site_report.tab_info.antitracking:
+  blocked_origins:
+    type: string_list
+    expires: never
+    data_sensitivity:
+      - highly_sensitive
+    description: >
+      List of origins which were blocked by antitracking.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1970745
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1970745
+    notification_emails:
+      - twisniewski@mozilla.com
+      - webcompat-reporting-tool-telemetry@mozilla.com
+    send_in_pings:
+      - broken-site-report
+
   block_list:
     type: string
     expires: never
@@ -741,6 +758,21 @@ broken_site_report.browser_info.security:
 
 
 webcompatreporting:
+  learn_more:
+    type: event
+    description: |
+      The user will be redirected to a SUMO article (https://support.mozilla.org/km/kb/report-breakage-due-blocking) to learn more about reporting a broken site.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1970705
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D255555
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - twisniewski@mozilla.com
+      - android-probes@mozilla.com
+      - webcompat-reporting-tool-telemetry@mozilla.com
+    expires: never
   opened:
     type: event
     description: >
@@ -764,6 +796,21 @@ webcompatreporting:
           * `hamburgerMenu`
           * `ETPShieldIconMenu`
         type: string
+  previewed:
+    type: event
+    description: |
+      The user clicked the report preview button.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1992050
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D267154
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - twisniewski@mozilla.com
+      - android-probes@mozilla.com
+      - webcompat-reporting-tool-telemetry@mozilla.com
+    expires: never
   reason_dropdown:
     type: event
     description: >
@@ -791,15 +838,20 @@ webcompatreporting:
     description: >
       Recorded when a user selects the Send button to submit webcompat report data.
     bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852340
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1970744
     data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852340#c16
+      - https://phabricator.services.mozilla.com/D260373
     data_sensitivity:
       - interaction
     notification_emails:
       - twisniewski@mozilla.com
       - webcompat-reporting-tool-telemetry@mozilla.com
     expires: never
+    extra_keys:
+      sent_with_blocked_trackers:
+        description: >
+          Whether the user opted into including blocked tracker origins.
+        type: boolean
   send_more_info:
     type: event
     description: >

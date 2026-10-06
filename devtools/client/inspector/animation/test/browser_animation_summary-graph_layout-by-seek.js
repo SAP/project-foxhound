@@ -32,7 +32,7 @@ add_task(async function () {
     let delayWidth = null;
 
     if (delayEl) {
-      const computedStyle = delayEl.ownerGlobal.getComputedStyle(delayEl);
+      const computedStyle = delayEl.documentGlobal.getComputedStyle(delayEl);
       delayX = computedStyle.left;
       delayWidth = computedStyle.width;
     }
@@ -42,7 +42,8 @@ add_task(async function () {
     let endDelayWidth = null;
 
     if (endDelayEl) {
-      const computedStyle = endDelayEl.ownerGlobal.getComputedStyle(endDelayEl);
+      const computedStyle =
+        endDelayEl.documentGlobal.getComputedStyle(endDelayEl);
       endDelayX = computedStyle.left;
       endDelayWidth = computedStyle.width;
     }
@@ -109,7 +110,7 @@ function checkExpectedCoordinates(itemEls, initialCoordinatesResult) {
     const delayEl = itemEl.querySelector(".animation-delay-sign");
 
     if (delayEl) {
-      const computedStyle = delayEl.ownerGlobal.getComputedStyle(delayEl);
+      const computedStyle = delayEl.documentGlobal.getComputedStyle(delayEl);
       is(
         computedStyle.left,
         expectedCoordinates.delayX,
@@ -128,7 +129,8 @@ function checkExpectedCoordinates(itemEls, initialCoordinatesResult) {
     const endDelayEl = itemEl.querySelector(".animation-end-delay-sign");
 
     if (endDelayEl) {
-      const computedStyle = endDelayEl.ownerGlobal.getComputedStyle(endDelayEl);
+      const computedStyle =
+        endDelayEl.documentGlobal.getComputedStyle(endDelayEl);
       is(
         computedStyle.left,
         expectedCoordinates.endDelayX,

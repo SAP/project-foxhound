@@ -24,14 +24,19 @@ pub(crate) fn new_socket(domain: libc::c_int, socket_type: libc::c_int) -> io::R
         target_os = "openbsd",
         target_os = "solaris",
         target_os = "hermit",
+        target_os = "cygwin",
     ))]
     let socket_type = socket_type | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC;
+    // WASI doesn't have the concept of `fork`ing or `exec`ing processes, so
+    // `SOCK_CLOEXEC` neither exists nor is relevant:
+    #[cfg(target_os = "wasi")]
+    let socket_type = socket_type | libc::SOCK_NONBLOCK;
     #[cfg(target_os = "nto")]
     let socket_type = socket_type | libc::SOCK_CLOEXEC;
 
     let socket = syscall!(socket(domain, socket_type, 0))?;
 
-    // Mimick `libstd` and set `SO_NOSIGPIPE` on apple systems.
+    // Mimic `libstd` and set `SO_NOSIGPIPE` on apple systems.
     #[cfg(any(
         target_os = "ios",
         target_os = "macos",
@@ -52,6 +57,7 @@ pub(crate) fn new_socket(domain: libc::c_int, socket_type: libc::c_int) -> io::R
 
     // Darwin (and others) doesn't have SOCK_NONBLOCK or SOCK_CLOEXEC.
     #[cfg(any(
+        target_os = "aix",
         target_os = "ios",
         target_os = "macos",
         target_os = "tvos",
@@ -106,7 +112,7 @@ pub(crate) fn socket_addr(addr: &SocketAddr) -> (SocketAddrCRepr, libc::socklen_
                 sin_family: libc::AF_INET as libc::sa_family_t,
                 sin_port: addr.port().to_be(),
                 sin_addr,
-                #[cfg(not(any(target_os = "haiku", target_os = "vita")))]
+                #[cfg(not(any(target_os = "haiku", target_os = "vita", target_os = "wasi")))]
                 sin_zero: [0; 8],
                 #[cfg(target_os = "haiku")]
                 sin_zero: [0; 24],
@@ -164,6 +170,7 @@ pub(crate) fn socket_addr(addr: &SocketAddr) -> (SocketAddrCRepr, libc::socklen_
                     target_os = "espidf",
                     target_os = "vita",
                     target_os = "nto",
+                    target_os = "hermit",
                 ))]
                 sin6_len: 0,
                 #[cfg(target_os = "vita")]

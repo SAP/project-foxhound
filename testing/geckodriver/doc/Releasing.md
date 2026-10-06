@@ -9,10 +9,15 @@ from [Mozilla’s CI infrastructure], we are currently in between two
 worlds: development happens in m-c, but releases continue to be made
 from GitHub.
 
-In any case, the steps to release geckodriver are as follows:
+A [releasing script] automates most of the steps below to limit potential
+manual failures. It has subcommands for each individual step — run
+`--help` for usage details.
 
-[mozilla-central]: https://hg.mozilla.org/mozilla-central/
+The steps to release geckodriver are as follows:
+
+[mozilla-central]: https://github.com/mozilla-firefox/firefox/tree/main
 [Mozilla’s CI infrastructure]: https://treeherder.mozilla.org/
+[releasing script]: https://bugzilla.mozilla.org/show_bug.cgi?id=1911056
 
 ### Update in-tree dependency crates
 
@@ -83,9 +88,9 @@ For each crate:
 [cargo-semver-checks]: https://crates.io/crates/cargo-semver-checks
 [audit criteria]: https://mozilla.github.io/cargo-vet/audit-criteria.html
 [wildcard audit entries]: https://mozilla.github.io/cargo-vet/wildcard-audit-entries.html
-[Cargo.toml]: https://searchfox.org/mozilla-central/source/testing/geckodriver/Cargo.toml
-[Cargo.lock]: https://searchfox.org/mozilla-central/source/Cargo.lock
-[audits.toml]: https://searchfox.org/mozilla-central/source/supply-chain/audits.toml
+[Cargo.toml]: https://searchfox.org/firefox-main/source/testing/geckodriver/Cargo.toml
+[Cargo.lock]: https://searchfox.org/firefox-main/source/Cargo.lock
+[audits.toml]: https://searchfox.org/firefox-main/source/supply-chain/audits.toml
 
 ### Update the change log
 
@@ -102,12 +107,11 @@ It is good practice to also include relevant information from the
 since these are the most important dependencies of geckodriver and a lot
 of its functionality is implemented there.
 
-To get a list of all the changes for one of the above crates one of the following
-commands can be used:
+To get a list of all the changes for one of the above crates the following
+command can be used:
 
 ```shell
-% hg log -M -r <revision>::central --template "{node|short}\t{desc|firstline}\n" <path>
-% git log --reverse $(git cinnabar hg2git <revision>)..HEAD --pretty="%s" <path>
+% git log --reverse <revision>..HEAD --pretty="%s" <path>
 ```
 
 where `<revision>` is the changeset of the last geckodriver release and `<path>`
@@ -124,11 +128,11 @@ mention of this.  Lines are optimally formatted at roughly 72 columns
 to make the file readable in a text editor as well as rendered HTML.
 fmt(1) does a splendid job at text formatting.
 
-[CHANGES.md]: https://searchfox.org/mozilla-central/source/testing/geckodriver/CHANGES.md
-[webdriver]: https://searchfox.org/mozilla-central/source/testing/webdriver
-[marionette]: https://searchfox.org/mozilla-central/source/testing/geckodriver/marionette
-[rust-mozrunner]: https://searchfox.org/mozilla-central/source/testing/mozbase/rust/mozrunner
-[rust-mozdevice]: https://searchfox.org/mozilla-central/source/testing/mozbase/rust/mozdevice
+[CHANGES.md]: https://searchfox.org/firefox-main/source/testing/geckodriver/CHANGES.md
+[webdriver]: https://searchfox.org/firefox-main/source/testing/webdriver
+[marionette]: https://searchfox.org/firefox-main/source/testing/geckodriver/marionette
+[rust-mozrunner]: https://searchfox.org/firefox-main/source/testing/mozbase/rust/mozrunner
+[rust-mozdevice]: https://searchfox.org/firefox-main/source/testing/mozbase/rust/mozdevice
 
 ### Bump the version number and update the support page
 
@@ -150,7 +154,7 @@ including the required versions of Selenium, and Firefox.
 Finally commit all those changes.
 
 [semantic versioning]: http://semver.org/
-[support page]: https://searchfox.org/mozilla-central/source/testing/geckodriver/doc/Support.md
+[support page]: https://searchfox.org/firefox-main/source/testing/geckodriver/doc/Support.md
 
 ### Add the changeset id
 
@@ -199,16 +203,10 @@ _release_, from where releases are made.
 
 Before we copy the code over to the GitHub repository we need to
 check out the [release commit that bumped the version number](#add-the-changeset-id)
-on mozilla-central:
+on `main` (formerly `mozilla-central`):
 
 ```shell
-% hg update $RELEASE_REVISION
-```
-
-Or:
-
-```shell
-% git checkout $(git cinnabar hg2git $RELEASE_REVISION)
+% git checkout $RELEASE_REVISION
 ```
 
 We will now export the contents of [testing/geckodriver] to a new branch that
@@ -230,8 +228,8 @@ Now verify that geckodriver builds correctly by running:
 % cargo build
 ```
 
-[README.md]: https://searchfox.org/mozilla-central/source/testing/geckodriver/README.md
-[testing/geckodriver]: https://searchfox.org/mozilla-central/source/testing/geckodriver
+[README.md]: https://searchfox.org/firefox-main/source/testing/geckodriver/README.md
+[testing/geckodriver]: https://searchfox.org/firefox-main/source/testing/geckodriver
 
 ### Commit local changes
 
@@ -280,6 +278,13 @@ geckodriver needs to be manually released on github.com. Therefore start to
 4. Find the signed geckodriver archives in the [taskcluster index] by
    replacing %changeset% with the full release changeset id. Rename the
    individual files so the basename looks like 'geckodriver-v%version%-%platform%'.
+   For macOS use the `macosx64-notarized` builds.
+
+   The macOS build is a universal binary (x86_64 + aarch64). For
+   backward compatibility, create a copy of the macOS archive with
+   the `-aarch64` platform suffix so that existing consumers that
+   reference the architecture-specific filename continue to work.
+
    Upload them all, including the checksum files for the Linux platforms.
 
 5. Before announcing the release on GitHub publish the geckodriver crate as well

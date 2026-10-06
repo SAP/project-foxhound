@@ -77,3 +77,44 @@ add_task(async function test_translations_panel_switch_language() {
 
   await cleanup();
 });
+
+add_task(async function test_translations_panel_switch_language_same_as_page() {
+  const { cleanup } = await loadTestPage({
+    page: ENGLISH_PAGE_URL,
+    languagePairs: LANGUAGE_PAIRS,
+  });
+
+  const { translateButton } = FullPageTranslationsPanel.elements;
+
+  await FullPageTranslationsTestUtils.openPanel({
+    expectedFromLanguage: "en",
+    expectedToLanguage: "",
+    onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewIntro,
+    openFromAppMenu: true,
+  });
+
+  ok(
+    translateButton.disabled,
+    "translations button is unavailable on the English page before opening from the app menu"
+  );
+
+  await FullPageTranslationsTestUtils.changeSelectedFromLanguage({
+    langTag: "es",
+  });
+
+  await waitForCondition(
+    () => FullPageTranslationsPanel.elements.toMenuList.value === "en",
+    "Wait for the target language to update to English."
+  );
+
+  await FullPageTranslationsTestUtils.assertSelectedToLanguage({
+    langTag: "en",
+  });
+
+  ok(
+    !translateButton.disabled,
+    "The translate button is enabled when a valid language is selected"
+  );
+
+  await cleanup();
+});

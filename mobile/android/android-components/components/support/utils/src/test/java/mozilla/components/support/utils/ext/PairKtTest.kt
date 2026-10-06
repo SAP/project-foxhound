@@ -3,9 +3,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import mozilla.components.support.utils.ext.toNullablePair
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
+import kotlin.test.assertNotNull
 
 class PairKtTest {
 
@@ -14,7 +14,7 @@ class PairKtTest {
         val actual = ("hi" as String? to "there" as String?).toNullablePair()
 
         assertNotNull(actual)
-        assertNotNull(actual!!.first)
+        assertNotNull(actual.first)
         assertNotNull(actual.second)
     }
 

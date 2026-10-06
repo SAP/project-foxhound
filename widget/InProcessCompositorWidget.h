@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_widget_InProcessCompositorWidget_h__
-#define mozilla_widget_InProcessCompositorWidget_h__
+#ifndef mozilla_widget_InProcessCompositorWidget_h_
+#define mozilla_widget_InProcessCompositorWidget_h_
 
 #include "CompositorWidget.h"
 
@@ -11,15 +11,15 @@ namespace mozilla {
 namespace widget {
 
 // This version of CompositorWidget implements a wrapper around
-// nsBaseWidget.
+// nsIWidget.
 class InProcessCompositorWidget : public CompositorWidget {
  public:
   InProcessCompositorWidget(const layers::CompositorOptions& aOptions,
-                            nsBaseWidget* aWidget);
+                            nsIWidget* aWidget);
 
   bool PreRender(WidgetRenderingContext* aManager) override;
   void PostRender(WidgetRenderingContext* aManager) override;
-  RefPtr<layers::NativeLayerRoot> GetNativeLayerRoot() override;
+  layers::NativeLayerRoot* GetNativeLayerRoot() override;
   already_AddRefed<gfx::DrawTarget> StartRemoteDrawing() override;
   already_AddRefed<gfx::DrawTarget> StartRemoteDrawingInRegion(
       const LayoutDeviceIntRegion& aInvalidRegion) override;
@@ -39,12 +39,12 @@ class InProcessCompositorWidget : public CompositorWidget {
   nsIWidget* RealWidget() override;
 
  protected:
-  nsBaseWidget* mWidget;
+  nsIWidget* mWidget;
   // Bug 1679368: Maintain an additional widget pointer, constant, and
   // function for sanity checking while we chase a crash.
   static const char* CANARY_VALUE;
   const char* mCanary;
-  nsBaseWidget* mWidgetSanity;
+  nsIWidget* mWidgetSanity;
   void CheckWidgetSanity();
 };
 

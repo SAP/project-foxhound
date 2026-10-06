@@ -1,3 +1,5 @@
+import { sha1 } from "@noble/hashes/sha1";
+import { sha256, sha384, sha512 } from "@noble/hashes/sha2";
 import * as asn1js from "asn1js";
 import * as pvutils from "pvutils";
 import * as pvtsutils from "pvtsutils";
@@ -18,185 +20,113 @@ import { ECNamedCurves } from "../ECNamedCurves";
 /**
  * Making MAC key using algorithm described in B.2 of PKCS#12 standard.
  */
-async function makePKCS12B2Key(cryptoEngine: CryptoEngine, hashAlgorithm: string, keyLength: number, password: ArrayBuffer, salt: ArrayBuffer, iterationCount: number) {
-  //#region Initial variables
-  let u: number;
-  let v: number;
+async function makePKCS12B2Key(hashAlgorithm: string, keyLength: number, password: ArrayBuffer, salt: ArrayBuffer, iterationCount: number) {
+  let u: number;  // Output length of the hash function
+  let v: number;  // Block size of the hash function
+  let md: (input: Uint8Array) => Uint8Array;  // Hash function
 
-  const result: number[] = [];
-  //#endregion
-
-  //#region Get "u" and "v" values
+  // Determine the hash algorithm parameters
   switch (hashAlgorithm.toUpperCase()) {
     case "SHA-1":
-      u = 20; // 160
-      v = 64; // 512
+      u = 20; // 160 bits
+      v = 64; // 512 bits
+      md = sha1;
       break;
     case "SHA-256":
-      u = 32; // 256
-      v = 64; // 512
+      u = 32; // 256 bits
+      v = 64; // 512 bits
+      md = sha256;
       break;
     case "SHA-384":
-      u = 48; // 384
-      v = 128; // 1024
+      u = 48; // 384 bits
+      v = 128; // 1024 bits
+      md = sha384;
       break;
     case "SHA-512":
-      u = 64; // 512
-      v = 128; // 1024
+      u = 64; // 512 bits
+      v = 128; // 1024 bits
+      md = sha512;
       break;
     default:
       throw new Error("Unsupported hashing algorithm");
   }
-  //#endregion
 
-  //#region Main algorithm making key
-  //#region Transform password to UTF-8 like string
-  const passwordViewInitial = new Uint8Array(password);
-
-  const passwordTransformed = new ArrayBuffer((password.byteLength * 2) + 2);
-  const passwordTransformedView = new Uint8Array(passwordTransformed);
-
-  for (let i = 0; i < passwordViewInitial.length; i++) {
-    passwordTransformedView[i * 2] = 0x00;
-    passwordTransformedView[i * 2 + 1] = passwordViewInitial[i];
+  const originalPassword = new Uint8Array(password);
+  let decodedPassword = new TextDecoder().decode(password);
+  const encodedPassword = new TextEncoder().encode(decodedPassword);
+  if (encodedPassword.some((byte, i) => byte !== originalPassword[i])) {
+    decodedPassword = String.fromCharCode(...originalPassword);
   }
 
-  passwordTransformedView[passwordTransformedView.length - 2] = 0x00;
-  passwordTransformedView[passwordTransformedView.length - 1] = 0x00;
+  // Transform the password into a byte array
+  const passwordTransformed = new Uint8Array(decodedPassword.length * 2 + 2);
+  const passwordView = new DataView(passwordTransformed.buffer);
+  for (let i = 0; i < decodedPassword.length; i++) {
+    passwordView.setUint16(i * 2, decodedPassword.charCodeAt(i), false);
+  }
+  // Add null-terminator
+  passwordView.setUint16(decodedPassword.length * 2, 0, false);
 
-  password = passwordTransformed.slice(0);
-  //#endregion
+  // Create a filled array D with the value 3 (ID for MACing)
+  const D = new Uint8Array(v).fill(3);
 
-  //#region Construct a string D (the "diversifier") by concatenating v/8 copies of ID
-  const D = new ArrayBuffer(v);
-  const dView = new Uint8Array(D);
-
-  for (let i = 0; i < D.byteLength; i++)
-    dView[i] = 3; // The ID value equal to "3" for MACing (see B.3 of standard)
-  //#endregion
-
-  //#region Concatenate copies of the salt together to create a string S of length v * ceil(s / v) bytes (the final copy of the salt may be trunacted to create S)
-  const saltLength = salt.byteLength;
-
-  const sLen = v * Math.ceil(saltLength / v);
-  const S = new ArrayBuffer(sLen);
-  const sView = new Uint8Array(S);
-
+  // Repeat the salt to fill the block size
   const saltView = new Uint8Array(salt);
+  const S = new Uint8Array(v * Math.ceil(saltView.length / v)).map((_, i) => saltView[i % saltView.length]);
 
-  for (let i = 0; i < sLen; i++)
-    sView[i] = saltView[i % saltLength];
-  //#endregion
+  // Repeat the password to fill the block size
+  const P = new Uint8Array(v * Math.ceil(passwordTransformed.length / v)).map((_, i) => passwordTransformed[i % passwordTransformed.length]);
 
-  //#region Concatenate copies of the password together to create a string P of length v * ceil(p / v) bytes (the final copy of the password may be truncated to create P)
-  const passwordLength = password.byteLength;
+  // Concatenate S and P to form I
+  let I = new Uint8Array(S.length + P.length);
+  I.set(S);
+  I.set(P, S.length);
 
-  const pLen = v * Math.ceil(passwordLength / v);
-  const P = new ArrayBuffer(pLen);
-  const pView = new Uint8Array(P);
-
-  const passwordView = new Uint8Array(password);
-
-  for (let i = 0; i < pLen; i++)
-    pView[i] = passwordView[i % passwordLength];
-  //#endregion
-
-  //#region Set I=S||P to be the concatenation of S and P
-  const sPlusPLength = S.byteLength + P.byteLength;
-
-  let I = new ArrayBuffer(sPlusPLength);
-  let iView = new Uint8Array(I);
-
-  iView.set(sView);
-  iView.set(pView, sView.length);
-  //#endregion
-
-  //#region Set c=ceil(n / u)
+  // Calculate the number of hash iterations needed
   const c = Math.ceil((keyLength >> 3) / u);
-  //#endregion
+  const result: number[] = [];
 
-  //#region Initial variables
-  let internalSequence = Promise.resolve(I);
-  //#endregion
+  // Main loop to generate the key material
+  for (let i = 0; i < c; i++) {
+    // Concatenate D and I
+    let A: Uint8Array = new Uint8Array(D.length + I.length);
+    A.set(D);
+    A.set(I, D.length);
 
-  //#region For i=1, 2, ..., c, do the following:
-  for (let i = 0; i <= c; i++) {
-    internalSequence = internalSequence.then(_I => {
-      //#region Create contecanetion of D and I
-      const dAndI = new ArrayBuffer(D.byteLength + _I.byteLength);
-      const dAndIView = new Uint8Array(dAndI);
+    // Perform hash iterations
+    for (let j = 0; j < iterationCount; j++) {
+      A = md(A);
+    }
 
-      dAndIView.set(dView);
-      dAndIView.set(iView, dView.length);
-      //#endregion
+    // Create a repeated block B from the hash output A
+    const B = new Uint8Array(v).map((_, i) => A[i % A.length]);
 
-      return dAndI;
-    });
+    // Determine the number of blocks
+    const k = Math.ceil(saltView.length / v) + Math.ceil(passwordTransformed.length / v);
+    const iRound: number[] = [];
 
-    //#region Make "iterationCount" rounds of hashing
-    for (let j = 0; j < iterationCount; j++)
-      internalSequence = internalSequence.then(roundBuffer => cryptoEngine.digest({ name: hashAlgorithm }, new Uint8Array(roundBuffer)));
-    //#endregion
+    // Adjust I based on B
+    for (let j = 0; j < k; j++) {
+      const chunk = Array.from(I.slice(j * v, (j + 1) * v));
+      let x = 0x1ff;
 
-    internalSequence = internalSequence.then(roundBuffer => {
-      //#region Concatenate copies of Ai to create a string B of length v bits (the final copy of Ai may be truncated to create B)
-      const B = new ArrayBuffer(v);
-      const bView = new Uint8Array(B);
-
-      for (let j = 0; j < B.byteLength; j++)
-        bView[j] = (roundBuffer as any)[j % roundBuffer.byteLength]; // TODO roundBuffer is ArrayBuffer. It doesn't have indexed values
-      //#endregion
-
-      //#region Make new I value
-      const k = Math.ceil(saltLength / v) + Math.ceil(passwordLength / v);
-      const iRound = [];
-
-      let sliceStart = 0;
-      let sliceLength = v;
-
-      for (let j = 0; j < k; j++) {
-        const chunk = Array.from(new Uint8Array(I.slice(sliceStart, sliceStart + sliceLength)));
-        sliceStart += v;
-        if ((sliceStart + v) > I.byteLength)
-          sliceLength = I.byteLength - sliceStart;
-
-        let x = 0x1ff;
-
-        for (let l = (B.byteLength - 1); l >= 0; l--) {
-          x >>= 8;
-          x += bView[l] + chunk[l];
-          chunk[l] = (x & 0xff);
-        }
-
-        iRound.push(...chunk);
+      for (let l = B.length - 1; l >= 0; l--) {
+        x >>= 8;
+        x += B[l] + (chunk[l] || 0);
+        chunk[l] = x & 0xff;
       }
 
-      I = new ArrayBuffer(iRound.length);
-      iView = new Uint8Array(I);
+      iRound.push(...chunk);
+    }
 
-      iView.set(iRound);
-      //#endregion
+    // Update I for the next iteration
+    I = new Uint8Array(iRound);
 
-      result.push(...(new Uint8Array(roundBuffer)));
-
-      return I;
-    });
+    // Collect the result
+    result.push(...A);
   }
-  //#endregion
 
-  //#region Initialize final key
-  internalSequence = internalSequence.then(() => {
-    const resultBuffer = new ArrayBuffer(keyLength >> 3);
-    const resultView = new Uint8Array(resultBuffer);
-
-    resultView.set((new Uint8Array(result)).slice(0, keyLength >> 3));
-
-    return resultBuffer;
-  });
-  //#endregion
-  //#endregion
-
-  return internalSequence;
+  return new Uint8Array(result.slice(0, keyLength >> 3)).buffer;
 }
 
 function prepareAlgorithm(data: globalThis.AlgorithmIdentifier | EcdsaParams): Algorithm & { hash?: Algorithm; } {
@@ -399,7 +329,7 @@ export class CryptoEngine extends AbstractCryptoEngine {
           try {
             privateKeyInfo.fromSchema(asn1.result);
           }
-          catch (ex) {
+          catch {
             throw new Error("Incorrect keyData");
           }
 
@@ -601,7 +531,7 @@ export class CryptoEngine extends AbstractCryptoEngine {
         try {
           publicKeyInfo.fromJSON(jwk);
         }
-        catch (ex) {
+        catch {
           throw new Error("Incorrect key data");
         }
 
@@ -613,7 +543,7 @@ export class CryptoEngine extends AbstractCryptoEngine {
         try {
           privateKeyInfo.fromJSON(jwk);
         }
-        catch (ex) {
+        catch {
           throw new Error("Incorrect key data");
         }
 
@@ -1664,7 +1594,7 @@ export class CryptoEngine extends AbstractCryptoEngine {
     try {
       pbes2Parameters = new PBES2Params({ schema: parameters.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams });
     }
-    catch (ex) {
+    catch {
       throw new Error("Incorrectly encoded \"pbes2Parameters\"");
     }
 
@@ -1673,7 +1603,7 @@ export class CryptoEngine extends AbstractCryptoEngine {
     try {
       pbkdf2Params = new PBKDF2Params({ schema: pbes2Parameters.keyDerivationFunc.algorithmParams });
     }
-    catch (ex) {
+    catch {
       throw new Error("Incorrectly encoded \"pbkdf2Params\"");
     }
 
@@ -1773,7 +1703,7 @@ export class CryptoEngine extends AbstractCryptoEngine {
     //#endregion
 
     //#region Create PKCS#12 key for integrity checking
-    const pkcsKey = await makePKCS12B2Key(this, parameters.hashAlgorithm, length, parameters.password, parameters.salt, parameters.iterationCount);
+    const pkcsKey = await makePKCS12B2Key(parameters.hashAlgorithm, length, parameters.password, parameters.salt, parameters.iterationCount);
     //#endregion
 
     //#region Import HMAC key
@@ -1829,7 +1759,7 @@ export class CryptoEngine extends AbstractCryptoEngine {
     //#endregion
 
     //#region Create PKCS#12 key for integrity checking
-    const pkcsKey = await makePKCS12B2Key(this, parameters.hashAlgorithm, length, parameters.password, parameters.salt, parameters.iterationCount);
+    const pkcsKey = await makePKCS12B2Key(parameters.hashAlgorithm, length, parameters.password, parameters.salt, parameters.iterationCount);
     //#endregion
 
     //#region Import HMAC key
@@ -1852,16 +1782,21 @@ export class CryptoEngine extends AbstractCryptoEngine {
     // Initial variables
     const signatureAlgorithm = new AlgorithmIdentifier();
 
-    //#region Get a "default parameters" for current algorithm
+    //#region Get "default parameters" for the current algorithm
     const parameters = this.getAlgorithmParameters(privateKey.algorithm.name, "sign");
     if (!Object.keys(parameters.algorithm).length) {
       throw new Error("Parameter 'algorithm' is empty");
     }
+    // Use the hash from the privateKey.algorithm.hash.name for keys with hash algorithms (like RSA)
     const algorithm = parameters.algorithm as any; // TODO remove `as any`
-    algorithm.hash.name = hashAlgorithm;
+    if ("hash" in privateKey.algorithm && privateKey.algorithm.hash && (privateKey.algorithm.hash as Algorithm).name) {
+      algorithm.hash.name = (privateKey.algorithm.hash as Algorithm).name;
+    } else {
+      algorithm.hash.name = hashAlgorithm;
+    }
     //#endregion
 
-    //#region Fill internal structures base on "privateKey" and "hashAlgorithm"
+    //#region Fill internal structures based on "privateKey" and "hashAlgorithm"
     switch (privateKey.algorithm.name.toUpperCase()) {
       case "RSASSA-PKCS1-V1_5":
       case "ECDSA":
@@ -1869,8 +1804,8 @@ export class CryptoEngine extends AbstractCryptoEngine {
         break;
       case "RSA-PSS":
         {
-          //#region Set "saltLength" as a length (in octets) of hash function result
-          switch (hashAlgorithm.toUpperCase()) {
+          //#region Set "saltLength" as the length (in octets) of the hash function result
+          switch (algorithm.hash.name.toUpperCase()) {
             case "SHA-256":
               algorithm.saltLength = 32;
               break;
@@ -1887,8 +1822,8 @@ export class CryptoEngine extends AbstractCryptoEngine {
           //#region Fill "RSASSA_PSS_params" object
           const paramsObject: Partial<IRSASSAPSSParams> = {};
 
-          if (hashAlgorithm.toUpperCase() !== "SHA-1") {
-            const hashAlgorithmOID = this.getOIDByAlgorithm({ name: hashAlgorithm }, true, "hashAlgorithm");
+          if (algorithm.hash.name.toUpperCase() !== "SHA-1") {
+            const hashAlgorithmOID = this.getOIDByAlgorithm({ name: algorithm.hash.name }, true, "hashAlgorithm");
 
             paramsObject.hashAlgorithm = new AlgorithmIdentifier({
               algorithmId: hashAlgorithmOID,
@@ -2066,7 +2001,7 @@ export class CryptoEngine extends AbstractCryptoEngine {
     //#endregion
 
     //#region Special case for ECDSA signatures
-    let signatureValue: BufferSource = signature.valueBlock.valueHexView;
+    let signatureValue: Uint8Array | ArrayBuffer = signature.valueBlock.valueHexView;
 
     if (publicKey.algorithm.name === "ECDSA") {
       const namedCurve = ECNamedCurves.find((publicKey.algorithm as EcKeyAlgorithm).namedCurve);
@@ -2102,7 +2037,7 @@ export class CryptoEngine extends AbstractCryptoEngine {
 
     return this.verify((algorithm.algorithm as any),
       publicKey,
-      signatureValue,
+      signatureValue as BufferSource,
       data,
     );
     //#endregion

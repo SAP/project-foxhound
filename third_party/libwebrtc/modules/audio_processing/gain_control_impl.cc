@@ -10,10 +10,17 @@
 
 #include "modules/audio_processing/gain_control_impl.h"
 
+#include <algorithm>
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
+#include <vector>
 
 #include "api/audio/audio_processing.h"
+#include "common_audio/include/audio_util.h"
+#include "modules/audio_processing/agc/gain_control.h"
 #include "modules/audio_processing/agc/legacy/gain_control.h"
 #include "modules/audio_processing/audio_buffer.h"
 #include "modules/audio_processing/logging/apm_data_dumper.h"
@@ -105,7 +112,7 @@ GainControlImpl::GainControlImpl()
 GainControlImpl::~GainControlImpl() = default;
 
 void GainControlImpl::ProcessRenderAudio(
-    rtc::ArrayView<const int16_t> packed_render_audio) {
+    std::span<const int16_t> packed_render_audio) {
   for (size_t ch = 0; ch < mono_agcs_.size(); ++ch) {
     WebRtcAgc_AddFarend(mono_agcs_[ch]->state, packed_render_audio.data(),
                         packed_render_audio.size());
@@ -118,8 +125,8 @@ void GainControlImpl::PackRenderAudioBuffer(
   RTC_DCHECK_GE(AudioBuffer::kMaxSplitFrameLength, audio.num_frames_per_band());
   std::array<int16_t, AudioBuffer::kMaxSplitFrameLength>
       mixed_16_kHz_render_data;
-  rtc::ArrayView<const int16_t> mixed_16_kHz_render(
-      mixed_16_kHz_render_data.data(), audio.num_frames_per_band());
+  std::span<const int16_t> mixed_16_kHz_render(mixed_16_kHz_render_data.data(),
+                                               audio.num_frames_per_band());
   if (audio.num_channels() == 1) {
     FloatS16ToS16(audio.split_bands_const(0)[kBand0To8kHz],
                   audio.num_frames_per_band(), mixed_16_kHz_render_data.data());
@@ -322,8 +329,6 @@ int GainControlImpl::enable_limiter(bool enable) {
 }
 
 void GainControlImpl::Initialize(size_t num_proc_channels, int sample_rate_hz) {
-  data_dumper_->InitiateNewSetOfRecordings();
-
   RTC_DCHECK(sample_rate_hz == 16000 || sample_rate_hz == 32000 ||
              sample_rate_hz == 48000);
 

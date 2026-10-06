@@ -1,0 +1,42 @@
+<!doctype html>
+<meta charset=utf-8>
+<title>Regression test for Bug 2018686</title>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script src="/webrtc/RTCPeerConnection-helper.js"></script>
+<script>
+"use strict";
+
+promise_test(async t => {
+  var pc1 = new RTCPeerConnection();
+  var pc2 = new RTCPeerConnection();
+  pc1.onicecandidate = function(e) {
+    if (e.candidate) {
+      pc2.addIceCandidate(e.candidate);
+    }
+  }
+
+  const stream = await getNoiseStream({audio: true});
+  const audioTrack = stream.getAudioTracks()[0];
+  pc1.addTrack(audioTrack, stream);
+
+  await exchangeOfferAnswer(pc1, pc2);
+  await connectionStateReached(pc1, 'connected');
+
+  var transceivers1 = pc1.getTransceivers();
+  var staleOfferWithActiveMSection = await pc1.createOffer();
+  transceivers1[0].stop();
+  try { pc1.restartIce() } catch (e) {}
+  (async function() {
+    await exchangeOfferAnswer(pc1, pc2);
+    await exchangeOfferAnswer(pc1, pc2);
+  })()
+  await pc1.getStats(audioTrack);
+  // Eventually, when Bug 1565712 is fixed, we'll see an
+  // InvalidModificationError thrown since we're setting a offer that does
+  // match the latest createOffer.
+  await promise_rejects_dom(t, 'OperationError',
+      pc1.setLocalDescription(staleOfferWithActiveMSection));
+}, "Set offer with active msection for a stopped Transceiver should reject with OperationError");
+
+</script>

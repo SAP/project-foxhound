@@ -1,8 +1,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef stun_socket_filter_h__
-#define stun_socket_filter_h__
+#ifndef stun_socket_filter_h_
+#define stun_socket_filter_h_
 
 #include "nsISocketFilter.h"
 
@@ -38,4 +38,4 @@ class nsStunTCPSocketFilterHandler : public nsISocketFilterHandler {
   virtual ~nsStunTCPSocketFilterHandler() = default;
 };
 
-#endif  // stun_socket_filter_h__
+#endif  // stun_socket_filter_h_

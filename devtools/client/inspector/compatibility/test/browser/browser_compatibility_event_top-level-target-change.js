@@ -12,7 +12,7 @@ const TEST_DATA_ISSUES = {
       overflow-anchor: auto;
     }
     div {
-      scrollbar-color: auto;
+      user-select: auto;
     }
     </style>
     <body>
@@ -22,17 +22,17 @@ const TEST_DATA_ISSUES = {
   expectedIssuesOnSelected: [
     {
       property: "overflow-anchor",
-      url: "https://developer.mozilla.org/docs/Web/CSS/overflow-anchor",
+      url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/overflow-anchor",
     },
   ],
   expectedIssuesOnAll: [
     {
       property: "overflow-anchor",
-      url: "https://developer.mozilla.org/docs/Web/CSS/overflow-anchor",
+      url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/overflow-anchor",
     },
     {
-      property: "scrollbar-color",
-      url: "https://developer.mozilla.org/docs/Web/CSS/scrollbar-color",
+      property: "user-select",
+      url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/user-select",
     },
   ],
 };

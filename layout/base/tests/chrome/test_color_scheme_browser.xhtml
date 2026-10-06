@@ -30,7 +30,7 @@
       add_task(async function ensureBrowsersLoaded() {
         info("Entering ensureBrowsersLoaded callback");
         const triggeringPrincipal = document.nodePrincipal;
-        for (let b of document.querySelectorAll("browser[remote=true]")) {
+        for (let b of document.querySelectorAll("browser[remote]")) {
           let listener;
           let loaded = new Promise(resolve => {
             info("Entering 'loaded' callback; about to add progress listener");

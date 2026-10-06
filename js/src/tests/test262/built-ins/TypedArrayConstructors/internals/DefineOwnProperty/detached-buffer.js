@@ -138,6 +138,6 @@ testWithTypedArrayConstructors(function(TA) {
     false,
     'Reflect.defineProperty(sample, "6", {configurable: false, enumerable: true, writable: true}) must return false'
   );
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

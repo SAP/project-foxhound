@@ -248,7 +248,6 @@ add_heuristic_tests([
         ],
       },
       {
-        invalid: true,
         fields: [{ fieldName: "name", reason: "autocomplete" }],
       },
     ],

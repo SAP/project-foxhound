@@ -10,8 +10,8 @@ ChromeUtils.defineESModuleGetters(this, {
 });
 
 const FRECENCY = {
-  SEARCHED: 100,
-  BOOKMARKED: 175,
+  SEARCHED: PlacesUtils.history.pageFrecencyThreshold(0, 1, false),
+  BOOKMARKED: PlacesUtils.history.pageFrecencyThreshold(0, 1, true),
 };
 
 const { VISIT_SOURCE_BOOKMARKED, VISIT_SOURCE_SEARCHED } = PlacesUtils.history;

@@ -1,0 +1,27 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-core"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/conformance/reading/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_conformance__reading__fbo-remains-unchanged-after-read-pixels.html"]
+
+["test_2_conformance__reading__read-pixels-pack-alignment.html"]
+
+["test_2_conformance__reading__read-pixels-test.html"]

@@ -1,4 +1,3 @@
-// |reftest| shell-option(--enable-iterator-helpers) skip-if(!this.hasOwnProperty('Iterator')||!xulRuntime.shell) -- iterator-helpers is not enabled unconditionally, requires shell-options
 // Copyright (C) 2024 Mozilla Corporation. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -10,9 +9,6 @@ info: |
   Iterator Helpers proposal 2.1.5
 features:
   - iterator-helpers
-includes: [sm/non262.js, sm/non262-shell.js]
-flags:
-  - noStrict
 ---*/
 
 //
@@ -41,7 +37,7 @@ for (const method of methods) {
   for (const value of [undefined, null, 0, false, '', Symbol('')]) {
     const iterator = new TestIterator();
     assert.sameValue(iterator.closed, false);
-    assertThrowsInstanceOf(() => method(iterator).next(value), TypeError);
+    assert.throws(TypeError, () => method(iterator).next(value));
     assert.sameValue(iterator.closed, false);
   }
 }

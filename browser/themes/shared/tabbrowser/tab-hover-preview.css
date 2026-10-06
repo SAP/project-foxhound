@@ -5,17 +5,38 @@
 #tab-preview-panel {
   --panel-width: 280px;
   --panel-padding: 0;
-  pointer-events: none;
+  @media not -moz-pref("browser.tabs.notes.enabled") {
+    pointer-events: none;
+
+    .tab-preview-text-container {
+      order: 1;
+    }
+    .tab-preview-thumbnail-container {
+      order: 2;
+    }
+  }
+}
+
+.tab-preview-content-interactive:not(:empty),
+.tab-preview-content-main {
+  gap: var(--space-small);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-small);
+}
+
+.tab-preview-content-interactive:not(:empty) {
+  padding-block-end: 0;
 }
 
 .tab-preview-text-container {
-  padding: var(--space-small);
+  margin: 0 var(--space-small);
 }
 
 .tab-preview-title {
   overflow: hidden;
   -webkit-line-clamp: 2;
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-heading);
 }
 
 .tab-preview-uri {
@@ -32,9 +53,10 @@
 }
 
 .tab-preview-thumbnail-container {
-  width: 280px;
-  height: 140px;
-  border-top: 1px solid var(--panel-border-color);
+  width: 264px;
+  margin: 0 auto;
+  overflow: hidden;
+
   &.hide-thumbnail {
     display: none;
   }
@@ -45,6 +67,142 @@
     display: block;
     width: 100%;
     animation: tab-hover-preview-fadein 0.2s ease;
+    border: 1px solid var(--border-color-deemphasized);
+    border-radius: var(--border-radius-medium);
+    box-sizing: border-box;
+  }
+}
+
+.tab-preview-add-note {
+  margin: 0 !important;
+  -moz-context-properties: fill;
+  fill: currentColor;
+
+  &[hidden] {
+    display: none;
+  }
+
+  &::after {
+    /* The badge is a flex child of the toolbarbutton, so without this the
+     * arrow would appear immediately after the badge rather than at the end. */
+    margin-inline-start: auto !important;
+  }
+
+  > .toolbarbutton-text {
+    max-width: max-content;
+  }
+
+  > moz-badge {
+    margin-inline-start: 8px;
+    align-self: center;
+  }
+}
+
+/*
+ * Tab note preview panel
+ */
+
+#tab-note-preview-panel {
+  --panel-width: 280px;
+  --panel-padding: var(--space-small);
+  --tab-note-text-background: light-dark(rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.3));
+  --tab-note-text-border-color: transparent;
+  @media (prefers-contrast) {
+    --tab-note-text-background: transparent;
+    --tab-note-text-border-color: var(--card-border-color);
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([lwtheme]) & {
+      --tab-note-text-background: var(--color-violet-0);
+    }
+  }
+}
+
+.tab-note-preview-container {
+  font: menu;
+  position: relative;
+  padding: var(--space-small);
+  border-radius: var(--border-radius-medium);
+  background-color: var(--tab-note-text-background);
+  border: var(--border-width) solid var(--tab-note-text-border-color);
+}
+
+.tab-note-preview-text {
+  overflow-wrap: break-word;
+
+  &::after {
+    /*
+    * The edit note icon is absolutely positioned along with the "read more"
+    * button. This ensures the text container adds a newline when the text flows
+    * to the edge, to prevent it overlapping the icon.
+    */
+    content: "";
+    display: inline-block;
+    width: var(--tab-note-expand-toggle-width, 0);
+    height: 1lh;
+  }
+
+  #tab-note-preview-panel:not([note-expanded]) & {
+    overflow: hidden;
+    -webkit-line-clamp: 10;
+  }
+
+  #tab-note-preview-panel[note-overflow]:not([note-expanded]) & {
+    /* Set by Javascript */
+    --tab-note-expand-toggle-width: 0;
+
+    --gradient-width: 40px;
+    --gradient-offset: 10px;
+    --gradient-direction: right;
+
+    mask:
+      /* Mask 1: make all lines except the last visible (by default,
+       * unmasked portions of an element are invisible, which is why
+       * this is needed). Mask 2: Fade out the end of the last line */
+      linear-gradient(black) 0 0 / 100% calc(100% - 1lh) no-repeat,
+      linear-gradient(
+          to var(--gradient-direction),
+          black calc(100% - var(--tab-note-expand-toggle-width) - var(--gradient-width) - var(--gradient-offset)),
+          transparent calc(100% - var(--tab-note-expand-toggle-width) - var(--gradient-offset))
+        )
+        0 100% / 100% 1lh no-repeat;
+
+    &:dir(rtl) {
+      --gradient-direction: left;
+    }
+  }
+}
+
+.tab-note-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-large);
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-end: 0;
+  padding: var(--space-small);
+}
+
+.tab-note-preview-expand {
+  cursor: pointer;
+  display: none;
+  text-decoration: underline;
+
+  #tab-note-preview-panel[note-overflow]:not([note-expanded]) & {
+    display: block;
+  }
+}
+
+.tab-note-preview-edit-icon {
+  width: var(--icon-size-xsmall);
+  height: var(--icon-size-xsmall);
+  -moz-context-properties: fill;
+  fill: currentColor;
+  cursor: pointer;
+  visibility: hidden;
+
+  .tab-note-preview-container:hover & {
+    visibility: visible;
   }
 }
 
@@ -53,6 +211,14 @@
     opacity: 0;
   }
   to {
-    opacity: 100;
+    opacity: 1;
+  }
+}
+
+#tabgroup-panel-content {
+  max-width: var(--menuitem-max-width);
+
+  & toolbarbutton.active-tab {
+    font-weight: var(--font-weight-semibold);
   }
 }

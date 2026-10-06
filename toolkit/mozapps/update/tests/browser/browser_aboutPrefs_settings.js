@@ -12,17 +12,20 @@ async function changeAndVerifyPref(tab, newConfigValue) {
     async function ({ newConfigValue }) {
       let radioId = newConfigValue ? "autoDesktop" : "manualDesktop";
       let radioElement = content.document.getElementById(radioId);
-      let updateRadioGroup = radioElement.radioGroup;
-      let promise = ContentTaskUtils.waitForEvent(
-        updateRadioGroup,
-        "ProcessedUpdatePrefChange"
-      );
+      let updateRadioGroup =
+        content.document.getElementById("updateRadioGroup");
       radioElement.click();
-      await promise;
+      let updateRadioSetting =
+        content.Preferences.getSetting("updateRadioGroup");
+      await ContentTaskUtils.waitForCondition(
+        () =>
+          updateRadioSetting.value === newConfigValue &&
+          !updateRadioGroup.disabled
+      );
 
       is(
         updateRadioGroup.value,
-        `${newConfigValue}`,
+        newConfigValue,
         "Update preference should match expected"
       );
       is(
@@ -76,10 +79,14 @@ async function changeAndVerifyUpdateWrites({
 }
 
 add_task(async function testUpdateAutoPrefUI() {
-  let tab = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    "about:preferences"
+  let settingsRedesignEnabled = Services.prefs.getBoolPref(
+    "browser.settings-redesign.enabled",
+    false
   );
+  let prefUrl = settingsRedesignEnabled
+    ? "about:preferences#about"
+    : "about:preferences";
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, prefUrl);
 
   // Hack: make the test run faster:
   await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
@@ -124,6 +131,10 @@ add_task(async function testUpdateAutoPrefUI() {
   registerCleanupFunction(() => {
     Services.prompt = prompt;
   });
+
+  // Re-enable automatic updates so that disabling them will trigger the prompt
+  info("Re-enable automatic updates before testing prompt behavior.");
+  await changeAndVerifyPref(tab, true);
 
   // Setting the value to false will call the prompt service and when we
   // don't discard the update there should still be an active update afterwards.

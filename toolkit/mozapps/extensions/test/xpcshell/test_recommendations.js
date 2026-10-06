@@ -700,6 +700,21 @@ add_task(
       extensionLine.awaitStartup(),
     ]);
 
+    Assert.equal(
+      WebExtensionPolicy.getByID(extensionInvalidRecommended.id)
+        .hasRecommendedState,
+      false
+    );
+    Assert.equal(
+      WebExtensionPolicy.getByID(extensionValidRecommended.id)
+        .hasRecommendedState,
+      true
+    );
+    Assert.equal(
+      WebExtensionPolicy.getByID(extensionLine.id).hasRecommendedState,
+      true
+    );
+
     // Uninstall all test extensions.
     await Promise.all(
       Object.keys(recommendationStatesPerId).map(async addonId => {

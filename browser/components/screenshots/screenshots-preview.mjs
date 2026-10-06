@@ -15,7 +15,8 @@ ChromeUtils.defineLazyGetter(lazy, "screenshotsLocalization", () => {
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
-  ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
+  ScreenshotsUtils:
+    "moz-src:///browser/components/screenshots/ScreenshotsUtils.sys.mjs",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
 });
 
@@ -129,7 +130,8 @@ class ScreenshotsPreview extends MozLitElement {
   /**
    * If the image is complete and the height is greater than 0, we can resolve.
    * Otherwise wait for a load event on the image and resolve then.
-   * @returns {Promise<String>} Resolves that resolves to the preview image src
+   *
+   * @returns {Promise<string>} Resolves that resolves to the preview image src
    *                            once the image is loaded.
    */
   async imageLoadedPromise() {
@@ -208,7 +210,8 @@ class ScreenshotsPreview extends MozLitElement {
   /**
    * Set the focus to the most recent saved method.
    * This will default to the download button.
-   * @param {String} buttonToFocus
+   *
+   * @param {string} buttonToFocus
    */
   focusButton(buttonToFocus) {
     if (buttonToFocus === "copy") {

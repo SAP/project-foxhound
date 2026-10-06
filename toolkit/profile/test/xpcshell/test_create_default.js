@@ -6,10 +6,27 @@
  */
 
 add_task(async () => {
+  let start = Date.now();
   let service = getProfileService();
   let { profile, didCreate } = selectStartupProfile();
 
+  let timesFile = profile.rootDir.clone();
+  timesFile.append("times.json");
+  let times = await IOUtils.readJSON(timesFile.path);
+
+  Assert.greaterOrEqual(
+    times.created,
+    start,
+    "Profile should have been created after the test startup began"
+  );
+  Assert.lessOrEqual(
+    times.created,
+    Date.now(),
+    "Profile should have been created before the test startup finished"
+  );
+
   checkStartupReason("firstrun-created-default");
+  await checkProfileSource(profile, "firstrun-created-default");
 
   let profileData = readProfilesIni();
   checkProfileService(profileData);
@@ -25,6 +42,9 @@ add_task(async () => {
     DEDICATED_NAME,
     "Should have created a new profile with the right name."
   );
+
+  profile = [...getProfileService().profiles].find(p => p.name == "default");
+  await checkProfileSource(profile, "legacy");
 
   Assert.ok(
     profileData.options.startWithLastProfile,

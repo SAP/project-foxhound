@@ -1,0 +1,18 @@
+{
+  "label": "td.com",
+  "bugs": {
+    "1954144": {
+      "issue": "extra-scrollbars",
+      "matches": ["*://*.td.com/*"]
+    }
+  },
+  "css": {
+    "fix_scrollbars": ".overlay-video-modal .cmp-dialog__details { overflow: auto; scrollbar-width: thin; scrollbar-color: #616161 #fff; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "css": ["fix_scrollbars"]
+    }
+  ]
+}

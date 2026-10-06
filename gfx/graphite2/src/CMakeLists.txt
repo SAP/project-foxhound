@@ -1,34 +1,16 @@
-#    GRAPHITE2 LICENSING
-#
-#    Copyright 2010, SIL International
-#    All rights reserved.
-#
-#    This library is free software; you can redistribute it and/or modify
-#    it under the terms of the GNU Lesser General Public License as published
-#    by the Free Software Foundation; either version 2.1 of License, or
-#    (at your option) any later version.
-#
-#    This program is distributed in the hope that it will be useful,
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-#    Lesser General Public License for more details.
-#
-#    You should also have received a copy of the GNU Lesser General Public
-#    License along with this library in the file named "LICENSE".
-#    If not, write to the Free Software Foundation, 51 Franklin Street,
-#    Suite 500, Boston, MA 02110-1335, USA or visit their web page on the
-#    internet at http://www.fsf.org/licenses/lgpl.html.
-
-CMAKE_MINIMUM_REQUIRED(VERSION 2.8.0 FATAL_ERROR)
+# SPDX-License-Identifier: MIT OR MPL-2.0 OR LGPL-2.1-or-later OR GPL-2.0-or-later
+# Copyright 2010, SIL International, All rights reserved.
+CMAKE_MINIMUM_REQUIRED(VERSION 3.16)
 project(graphite2_core)
-cmake_policy(SET CMP0012 NEW)
 INCLUDE(CheckCXXSourceCompiles)
 
 set(GRAPHITE_API_CURRENT 3)
-set(GRAPHITE_API_REVISION 2)
+set(GRAPHITE_API_REVISION 3)
 set(GRAPHITE_API_AGE 1)
 set(GRAPHITE_VERSION ${GRAPHITE_API_CURRENT}.${GRAPHITE_API_REVISION}.${GRAPHITE_API_AGE})
 set(GRAPHITE_SO_VERSION ${GRAPHITE_API_CURRENT})
+
+set_property(DIRECTORY "." PROPERTY lib_so_version "${GRAPHITE_VERSION}")
 
 include(TestBigEndian)
 
@@ -131,7 +113,9 @@ if  (${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
         nolib_test(stdc++ $<TARGET_SONAME_FILE:graphite2>)
     endif ()
     set(CMAKE_CXX_IMPLICIT_LINK_LIBRARIES "")
-    CREATE_LIBTOOL_FILE(graphite2 "/lib${LIB_SUFFIX}")
+    if (BUILD_SHARED_LIBS)
+        CREATE_LIBTOOL_FILE(graphite2 "/lib${LIB_SUFFIX}")
+    endif()
 endif()
 
 if  (${CMAKE_SYSTEM_NAME} STREQUAL "Darwin")
@@ -139,14 +123,18 @@ if  (${CMAKE_SYSTEM_NAME} STREQUAL "Darwin")
         COMPILE_FLAGS   "-Wall -Wextra -Wno-unknown-pragmas -Wimplicit-fallthrough -Wendif-labels -Wshadow -Wno-ctor-dtor-privacy -Wno-non-virtual-dtor -fno-rtti -fno-exceptions -fvisibility=hidden -fvisibility-inlines-hidden"
         LINK_FLAGS      "-nodefaultlibs"
         LINKER_LANGUAGE C)
-    if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86|i.86")
+    if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86|i.86" AND NOT "${CMAKE_OSX_ARCHITECTURES}" MATCHES "arm|ppc")
         add_definitions(-mfpmath=sse -msse2)
     endif()
     target_link_libraries(graphite2 c)
     include(Graphite)
-    nolib_test(stdc++ $<TARGET_SONAME_FILE:graphite2>)
+    if (BUILD_SHARED_LIBS)
+        nolib_test(stdc++ $<TARGET_SONAME_FILE:graphite2>)
+    endif ()
     set(CMAKE_CXX_IMPLICIT_LINK_LIBRARIES "")
-    CREATE_LIBTOOL_FILE(graphite2 "/lib${LIB_SUFFIX}")
+    if (BUILD_SHARED_LIBS)
+        CREATE_LIBTOOL_FILE(graphite2 "/lib${LIB_SUFFIX}")
+    endif()
 endif()
 
 if  (${CMAKE_SYSTEM_NAME} STREQUAL "Windows")

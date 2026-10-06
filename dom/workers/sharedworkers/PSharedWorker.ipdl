@@ -26,6 +26,8 @@ parent:
   async Resume();
   async Freeze();
   async Thaw();
+  async SetLocaleOverride(nsCString languageOverride, nsString[] languages);
+  async UpdateTimezoneOverride(nsString aTimezoneOverride);
 
 child:
   async Error(ErrorValue value);

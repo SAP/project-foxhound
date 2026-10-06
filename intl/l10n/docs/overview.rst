@@ -1,9 +1,9 @@
 .. role:: js(code)
    :language: javascript
 
-============
-Localization
-============
+=====================
+Localization Overview
+=====================
 
 Localization at Mozilla
 =======================

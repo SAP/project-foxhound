@@ -5,6 +5,15 @@ function handleRequest(request, response) {
   response.setHeader("Cache-Control", "no-cache", false);
   response.setHeader("Content-Type", "text/plain", false);
 
+  if (request.method === "DELETE") {
+    // Handle DELETE requests for profile deletion
+    // For testing purposes, always return success
+    response.setStatusLine(request.httpVersion, 200, "OK");
+    response.write("Profile deleted successfully");
+    return;
+  }
+
+  // Handle POST requests for profile uploads
   // A real JWT token as received by api.profiler.firefox.com
   // The profile token contained inside this JWT is
   // "24j1wmckznh8sj22zg1tsmg47dyfdtprj0g41s8".

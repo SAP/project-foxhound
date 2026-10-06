@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,6 +16,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/StaticPrefs_bidi.h"
+#include "mozilla/dom/CharacterDataBuffer.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/intl/BidiEmbeddingLevel.h"
@@ -35,7 +34,6 @@
 #include "nsLayoutUtils.h"
 #include "nsMenuPopupFrame.h"
 #include "nsPresContext.h"
-#include "nsTextFragment.h"
 #include "nsTextFrame.h"
 #include "nsXULPopupManager.h"
 
@@ -57,10 +55,6 @@ nsCaret::~nsCaret() { StopBlinking(); }
 nsresult nsCaret::Init(PresShell* aPresShell) {
   NS_ENSURE_ARG(aPresShell);
 
-  mPresShell =
-      do_GetWeakReference(aPresShell);  // the presshell owns us, so no addref
-  NS_ASSERTION(mPresShell, "Hey, pres shell should support weak refs");
-
   RefPtr<Selection> selection =
       aPresShell->GetSelection(nsISelectionController::SELECTION_NORMAL);
   if (!selection) {
@@ -69,6 +63,7 @@ nsresult nsCaret::Init(PresShell* aPresShell) {
 
   selection->AddSelectionListener(this);
   mDomSelectionWeak = selection;
+  UpdateHiddenDuringSelection();
   UpdateCaretPositionFromSelectionIfNeeded();
 
   return NS_OK;
@@ -76,14 +71,17 @@ nsresult nsCaret::Init(PresShell* aPresShell) {
 
 static bool DrawCJKCaret(nsIFrame* aFrame, int32_t aOffset) {
   nsIContent* content = aFrame->GetContent();
-  const nsTextFragment* frag = content->GetText();
-  if (!frag) {
+  const CharacterDataBuffer* characterDataBuffer =
+      content->GetCharacterDataBuffer();
+  if (!characterDataBuffer) {
     return false;
   }
-  if (aOffset < 0 || static_cast<uint32_t>(aOffset) >= frag->GetLength()) {
+  if (aOffset < 0 ||
+      static_cast<uint32_t>(aOffset) >= characterDataBuffer->GetLength()) {
     return false;
   }
-  const char16_t ch = frag->CharAt(AssertedCast<uint32_t>(aOffset));
+  const char16_t ch =
+      characterDataBuffer->CharAt(AssertedCast<uint32_t>(aOffset));
   return 0x2e80 <= ch && ch <= 0xd7ff;
 }
 
@@ -124,7 +122,6 @@ void nsCaret::Terminate() {
     mDomSelectionWeak->RemoveSelectionListener(this);
   }
   mDomSelectionWeak = nullptr;
-  mPresShell = nullptr;
   mCaretPosition = {};
 }
 
@@ -135,6 +132,7 @@ Selection* nsCaret::GetSelection() { return mDomSelectionWeak; }
 void nsCaret::SetSelection(Selection* aDOMSel) {
   MOZ_ASSERT(aDOMSel);
   mDomSelectionWeak = aDOMSel;
+  UpdateHiddenDuringSelection();
   UpdateCaretPositionFromSelectionIfNeeded();
   ResetBlinking();
   SchedulePaint();
@@ -188,10 +186,8 @@ static nsPoint AdjustRectForClipping(const nsRect& aRect, nsIFrame* aFrame,
                                      bool aVertical) {
   nsRect rectRelativeToClip = aRect;
   ScrollContainerFrame* sf = nullptr;
-  nsIFrame* scrollFrame = nullptr;
   for (nsIFrame* current = aFrame; current; current = current->GetParent()) {
     if ((sf = do_QueryFrame(current))) {
-      scrollFrame = current;
       break;
     }
     if (current->IsTransformed()) {
@@ -207,27 +203,6 @@ static nsPoint AdjustRectForClipping(const nsRect& aRect, nsIFrame* aFrame,
   }
 
   nsRect clipRect = sf->GetScrollPortRect();
-  {
-    const auto& disp = *scrollFrame->StyleDisplay();
-    if (disp.mOverflowClipBoxBlock == StyleOverflowClipBox::ContentBox ||
-        disp.mOverflowClipBoxInline == StyleOverflowClipBox::ContentBox) {
-      const WritingMode wm = scrollFrame->GetWritingMode();
-      const bool cbH = (wm.IsVertical() ? disp.mOverflowClipBoxBlock
-                                        : disp.mOverflowClipBoxInline) ==
-                       StyleOverflowClipBox::ContentBox;
-      const bool cbV = (wm.IsVertical() ? disp.mOverflowClipBoxInline
-                                        : disp.mOverflowClipBoxBlock) ==
-                       StyleOverflowClipBox::ContentBox;
-      nsMargin padding = scrollFrame->GetUsedPadding();
-      if (!cbH) {
-        padding.left = padding.right = 0;
-      }
-      if (!cbV) {
-        padding.top = padding.bottom = 0;
-      }
-      clipRect.Deflate(padding);
-    }
-  }
   nsPoint offset;
   // Now see if the caret extends beyond the view's bounds. If it does, then
   // snap it back, put it as close to the edge as it can.
@@ -376,11 +351,22 @@ nsIFrame* nsCaret::GetGeometry(const Selection* aSelection, nsRect* aRect) {
   return data.mFrame;
 }
 
+// Generally we want the caret to paint from the containing block of the frame
+// the caret is positioned at. The one exception is the
+// ::-moz-text-control-editing-root, in which case we want the caret to paint
+// from the input itself, so that it paints atop the placeholder and such
+// without having to do magic elsewhere.
 [[nodiscard]] static nsIFrame* GetContainingBlockIfNeeded(nsIFrame* aFrame) {
-  if (aFrame->IsBlockOutside() || aFrame->IsBlockFrameOrSubclass()) {
-    return nullptr;
+  for (auto* f = aFrame; f; f = f->GetContainingBlock()) {
+    if (f->Style()->GetPseudoType() ==
+        PseudoStyleType::MozTextControlEditingRoot) {
+      continue;
+    }
+    if (f != aFrame || f->IsBlockOutside() || f->IsBlockFrameOrSubclass()) {
+      return f == aFrame ? nullptr : f;
+    }
   }
-  return aFrame->GetContainingBlock();
+  return nullptr;
 }
 
 void nsCaret::SchedulePaint() {
@@ -404,10 +390,7 @@ void nsCaret::SetVisibilityDuringSelection(bool aVisibility) {
     return;
   }
   mShowDuringSelection = aVisibility;
-  if (mHiddenDuringSelection && aVisibility) {
-    RemoveForceHide();
-    mHiddenDuringSelection = false;
-  }
+  UpdateHiddenDuringSelection();
   SchedulePaint();
 }
 
@@ -419,7 +402,7 @@ void nsCaret::UpdateCaretPositionFromSelectionIfNeeded() {
   if (newPos == mCaretPosition) {
     return;
   }
-  mCaretPosition = newPos;
+  mCaretPosition = std::move(newPos);
   SchedulePaint();
 }
 
@@ -580,15 +563,7 @@ nsCaret::NotifySelectionChanged(Document*, Selection* aDomSel, int16_t aReason,
 
   // Check if we need to hide / un-hide the caret due to the selection being
   // collapsed.
-  if (!mShowDuringSelection &&
-      !aDomSel->IsCollapsed() != mHiddenDuringSelection) {
-    if (mHiddenDuringSelection) {
-      RemoveForceHide();
-    } else {
-      AddForceHide();
-    }
-    mHiddenDuringSelection = !mHiddenDuringSelection;
-  }
+  UpdateHiddenDuringSelection();
 
   // We don't bother computing the caret position when invisible. We'll do it if
   // we become visible in CaretVisibilityMaybeChanged().
@@ -598,6 +573,20 @@ nsCaret::NotifySelectionChanged(Document*, Selection* aDomSel, int16_t aReason,
   }
 
   return NS_OK;
+}
+
+void nsCaret::UpdateHiddenDuringSelection() {
+  const bool shouldShowCaret = mShowDuringSelection || !mDomSelectionWeak ||
+                               mDomSelectionWeak->IsCollapsed();
+  if (!shouldShowCaret == mHiddenDuringSelection) {
+    return;
+  }
+  if (shouldShowCaret) {
+    RemoveForceHide();
+  } else {
+    AddForceHide();
+  }
+  mHiddenDuringSelection = !shouldShowCaret;
 }
 
 void nsCaret::ResetBlinking() {
@@ -640,7 +629,7 @@ void nsCaret::ResetBlinking() {
   mLastBlinkTimerReset = now;
   mBlinkTimer->InitWithNamedFuncCallback(CaretBlinkCallback, this, mBlinkTime,
                                          nsITimer::TYPE_REPEATING_SLACK,
-                                         "CaretBlinkCallback");
+                                         "CaretBlinkCallback"_ns);
 }
 
 void nsCaret::StopBlinking() {
@@ -652,11 +641,6 @@ void nsCaret::StopBlinking() {
 
 size_t nsCaret::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const {
   size_t total = aMallocSizeOf(this);
-  if (mPresShell) {
-    // We only want the size of the nsWeakReference object, not the PresShell
-    // (since we don't own the PresShell).
-    total += mPresShell->SizeOfOnlyThis(aMallocSizeOf);
-  }
   if (mBlinkTimer) {
     total += mBlinkTimer->SizeOfIncludingThis(aMallocSizeOf);
   }

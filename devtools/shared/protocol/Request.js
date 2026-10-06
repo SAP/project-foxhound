@@ -4,7 +4,6 @@
 
 "use strict";
 
-const { extend } = require("resource://devtools/shared/extend.js");
 var {
   findPlaceholders,
   getPath,
@@ -16,36 +15,36 @@ var {
 
 /**
  * Manages a request template.
- *
- * @param string type
- *    The type defined in the specification for this request.
- *    For methods, it will be the attribute name in "methods" dictionary.
- *    For events, it will be the attribute name in "events" dictionary.
- * @param object template
- *    The request template.
- * @construcor
  */
-var Request = function (type, template = {}) {
-  // The EventEmitter event name (this.type, attribute name in the event specification file) emitted on the Actor/Front,
-  // may be different from the RDP JSON packet event name (ret[type], type attribute value in the event specification file)
-  // In the specification:
-  //   "my-event": { // <= EventEmitter name
-  //     type: "myEvent", // <= RDP packet type attribute
-  //     ...
-  //   }
-  this.type = template.type || type;
+class Request {
+  /**
+   * @param {string} type
+   *    The type defined in the specification for this request.
+   *    For methods, it will be the attribute name in "methods" dictionary.
+   *    For events, it will be the attribute name in "events" dictionary.
+   * @param {object} template
+   *    The request template.
+   */
+  constructor(type, template = {}) {
+    // The EventEmitter event name (this.type, attribute name in the event specification file) emitted on the Actor/Front,
+    // may be different from the RDP JSON packet event name (ret[type], type attribute value in the event specification file)
+    // In the specification:
+    //   "my-event": { // <= EventEmitter name
+    //     type: "myEvent", // <= RDP packet type attribute
+    //     ...
+    //   }
+    this.type = template.type || type;
 
-  this.template = template;
-  this.args = findPlaceholders(template, Arg);
-};
+    this.template = template;
+    this.args = findPlaceholders(template, Arg);
+  }
 
-Request.prototype = {
   /**
    * Write a request.
    *
-   * @param array fnArgs
+   * @param {Array} fnArgs
    *    The function arguments to place in the request.
-   * @param object ctx
+   * @param {object} ctx
    *    The object making the request.
    * @returns a request packet.
    */
@@ -86,14 +85,14 @@ Request.prototype = {
       }
     }
     return ret;
-  },
+  }
 
   /**
    * Read a request.
    *
-   * @param object packet
+   * @param {object} packet
    *    The request packet.
-   * @param object ctx
+   * @param {object} ctx
    *    The object making the request.
    * @returns an arguments array
    */
@@ -120,8 +119,8 @@ Request.prototype = {
       arg.read(getPath(packet, path), ctx, fnArgs, name);
     }
     return fnArgs;
-  },
-};
+  }
+}
 
 exports.Request = Request;
 
@@ -139,30 +138,30 @@ exports.Request = Request;
 
 /**
  * Placeholder for simple arguments.
- *
- * @param number index
- *    The argument index to place at this position.
- * @param type type
- *    The argument should be marshalled as this type.
- * @constructor
  */
-var Arg = function (index, type) {
-  this.index = index;
-  // Prevent force loading all Arg types by accessing it only when needed
-  loader.lazyGetter(this, "type", function () {
-    return types.getType(type);
-  });
-};
+class Arg {
+  /**
+   * @param {number} index
+   *    The argument index to place at this position.
+   * @param type type
+   *    The argument should be marshalled as this type.
+   */
+  constructor(index, type) {
+    this.index = index;
+    // Prevent force loading all Arg types by accessing it only when needed
+    loader.lazyGetter(this, "type", function () {
+      return types.getType(type);
+    });
+  }
 
-Arg.prototype = {
   write(arg, ctx) {
     return this.type.write(arg, ctx);
-  },
+  }
 
   read(v, ctx, outArgs) {
     outArgs[this.index] = this.type.read(v, ctx);
-  },
-};
+  }
+}
 
 // Outside of protocol.js, Arg is called as factory method, without the new keyword.
 exports.Arg = function (index, type) {
@@ -179,18 +178,18 @@ exports.Arg = function (index, type) {
  *
  * Then arguments[1].optionArg will be placed in the packet in this
  * value's place.
- *
- * @param number index
- *    The argument index of the options value.
- * @param type type
- *    The argument should be marshalled as this type.
- * @constructor
  */
-var Option = function (index, type) {
-  Arg.call(this, index, type);
-};
+class Option extends Arg {
+  /**
+   * @param {number} index
+   *    The argument index of the options value.
+   * @param type type
+   *    The argument should be marshalled as this type.
+   */
+  constructor(index, type) {
+    super(index, type);
+  }
 
-Option.prototype = extend(Arg.prototype, {
   write(arg, ctx, name) {
     // Ignore if arg is undefined or null; allow other falsy values
     if (arg == undefined || arg[name] == undefined) {
@@ -198,7 +197,8 @@ Option.prototype = extend(Arg.prototype, {
     }
     const v = arg[name];
     return this.type.write(v, ctx);
-  },
+  }
+
   read(v, ctx, outArgs, name) {
     if (outArgs[this.index] === undefined) {
       outArgs[this.index] = {};
@@ -207,8 +207,8 @@ Option.prototype = extend(Arg.prototype, {
       return;
     }
     outArgs[this.index][name] = this.type.read(v, ctx);
-  },
-});
+  }
+}
 
 // Outside of protocol.js, Option is called as factory method, without the new keyword.
 exports.Option = function (index, type) {

@@ -1,13 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* Private maps (hashtables). */
 
-#ifndef xpcmaps_h___
-#define xpcmaps_h___
+#ifndef xpcmaps_h_
+#define xpcmaps_h_
 
 #include "mozilla/AllocPolicy.h"
 #include "mozilla/MemoryReporting.h"
@@ -383,4 +381,4 @@ class JSObject2JSObjectMap {
   Map mTable{XPC_WRAPPER_MAP_LENGTH};
 };
 
-#endif /* xpcmaps_h___ */
+#endif /* xpcmaps_h_ */

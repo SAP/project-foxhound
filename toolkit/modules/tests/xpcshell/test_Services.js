@@ -53,11 +53,8 @@ function run_test() {
   checkService("vc", Ci.nsIVersionComparator);
   checkService("wm", Ci.nsIWindowMediator);
   checkService("ww", Ci.nsIWindowWatcher);
-  if ("nsISearchService" in Ci) {
-    checkService("search", Ci.nsISearchService);
-  }
   if ("nsIGeckoViewBridge" in Ci) {
-    checkService("androidBridge", Ci.nsIGeckoViewBridge);
+    checkService("geckoviewBridge", Ci.nsIGeckoViewBridge);
   }
   if ("@mozilla.org/enterprisepolicies;1" in Cc) {
     checkService("policies", Ci.nsIEnterprisePolicies);

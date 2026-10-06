@@ -1,4 +1,9 @@
-// |reftest| skip-if(!xulRuntime.shell)
+// |reftest| skip-if(!xulRuntime.shell||!this.hasOwnProperty("Intl")) -- Requires ICU time zone support
+
+// Requires ICU support because time zones like "PST8PDT" may use different
+// time zone rules when compared to "America/Los_Angeles". PST8PDT is a link
+// to America/Los_Angeles since tzdata 2024b, but system libraries may apply
+// different time zone rules.
 
 assertEq(/^(PST|PDT)$/.test(getTimeZone()), true,
          "The default time zone is set to PST8PDT for all jstests (when run in the shell)");

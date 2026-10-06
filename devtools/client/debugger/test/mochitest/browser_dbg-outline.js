@@ -70,7 +70,7 @@ add_task(async function () {
   );
 
   const sourcesTab = findElementWithSelector(dbg, ".sources-tab a");
-  EventUtils.synthesizeMouseAtCenter(sourcesTab, {}, sourcesTab.ownerGlobal);
+  EventUtils.synthesizeMouseAtCenter(sourcesTab, {}, sourcesTab.documentGlobal);
   await waitForSourcesInSourceTree(dbg, [], { noExpand: true });
 
   await selectSource(dbg, "simple1.js", 1);

@@ -110,6 +110,7 @@ typedef struct av1_codec_arg_definitions {
   arg_def_t save_as_annexb;
   arg_def_t noise_sens;
   arg_def_t sharpness;
+  arg_def_t enable_adaptive_sharpness;
   arg_def_t static_thresh;
   arg_def_t auto_altref;
   arg_def_t arnr_maxframes;
@@ -238,6 +239,7 @@ typedef struct av1_codec_arg_definitions {
   arg_def_t sb_qp_sweep;
   arg_def_t enable_low_complexity_decode;
   arg_def_t screen_detection_mode;
+  arg_def_t validate_hbd_input;
 #endif  // CONFIG_AV1_ENCODER
 } av1_codec_arg_definitions_t;
 

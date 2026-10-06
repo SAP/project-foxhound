@@ -162,9 +162,10 @@ HWY_INLINE void MaybePoison(T* HWY_RESTRICT unaligned, size_t count) {
 #endif
 }
 
+// This can be useful for working around MSAN limitations. For example, prior
+// to Clang 16, it did not understand AVX-512 CompressStore.
 template <typename T>
 HWY_INLINE void MaybeUnpoison(T* HWY_RESTRICT unaligned, size_t count) {
-  // Workaround for MSAN not marking compressstore as initialized (b/233326619)
 #if HWY_IS_MSAN
   __msan_unpoison(unaligned, count * sizeof(T));
 #else
@@ -559,6 +560,29 @@ HWY_API bool IsAligned(D d, T* ptr) {
   return reinterpret_cast<uintptr_t>(ptr) % (N * sizeof(T)) == 0;
 }
 
+// Returns whether `Lookup8` can definitely be used for vectors created from
+// tag `d`. May return a false negative for large scalable vectors.
+template <class D, typename T = TFromD<D>>
+HWY_API constexpr bool CanLookup8(D d) {
+  // `Lookup8` can use two-register tables, so it is sufficient to ensure
+  // vectors have at least four lanes (8/2). For fixed-length vectors: check
+  // `MaxLanes` directly. For scalable vectors, first require full
+  // (non-partial) vectors, which implies they are at least 128 bits. Then also
+  // require 16 or 32-bit elements, which implies at least 128/{16,32} =
+  // {8,4} lanes per vector. For 8-bit T, `TableLookupBytes` is more efficient.
+  return (!HWY_HAVE_SCALABLE && MaxLanes(d) >= 4) ||
+         (HWY_HAVE_SCALABLE && detail::IsFull(d) &&
+          (sizeof(T) == 2 || sizeof(T) == 4));
+}
+
+// Returns whether `Lookup16` can definitely be used for vectors created from
+// tag `d`. May return a false negative for large scalable vectors.
+template <class D, typename T = TFromD<D>>
+HWY_API constexpr bool CanLookup16(D d) {
+  return (!HWY_HAVE_SCALABLE && MaxLanes(d) >= 8) ||
+         (HWY_HAVE_SCALABLE && detail::IsFull(d) && (sizeof(T) == 2));
+}
+
 // ------------------------------ Choosing overloads (SFINAE)
 
 // Same as base.h macros but with a Simd<T, N, kPow2> argument instead of T.
@@ -703,7 +727,7 @@ HWY_API bool IsAligned(D d, T* ptr) {
 // HWY_IF_U2I_DEMOTE_FROM_LANE_SIZE_V is used to disable the default
 // implementation of unsigned to signed DemoteTo/ReorderDemote2To in
 // generic_ops-inl.h for at least some of the unsigned to signed demotions on
-// SCALAR/EMU128/SSE2/SSSE3/SSE4/AVX2/SVE/SVE2
+// SCALAR/EMU128/SSE2/SSSE3/SSE4/AVX2/SVE/SVE2/LSX/LASX
 
 #undef HWY_IF_U2I_DEMOTE_FROM_LANE_SIZE_V
 #define HWY_IF_U2I_DEMOTE_FROM_LANE_SIZE_V(V) void* = nullptr

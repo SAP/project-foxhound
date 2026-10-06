@@ -1,0 +1,21 @@
+[DEFAULT]
+dupe-manifest=true
+prefs = [
+  "browser.settings-redesign.enabled=true",
+]
+support-files = [
+  "head.js",
+]
+tags = "os_integration"
+
+["browser_moreFromMozilla_config.js"]
+
+["browser_moreFromMozilla_utm_srd.js"]
+
+["browser_moreFromMozilla_locales_srd.js"]
+
+["browser_moreFromMozilla_monitor_srd.js"]
+
+["browser_moreFromMozilla_relay.js"]
+
+["browser_moreFromMozilla_vpn.js"]

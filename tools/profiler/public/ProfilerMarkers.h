@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -47,15 +45,8 @@ class nsIDocShell;
 namespace geckoprofiler::markers::detail {
 // Please do not use anything from the detail namespace outside the profiler.
 
-#ifdef MOZ_GECKO_PROFILER
 mozilla::Maybe<uint64_t> profiler_get_inner_window_id_from_docshell(
     nsIDocShell* aDocshell);
-#else
-inline mozilla::Maybe<uint64_t> profiler_get_inner_window_id_from_docshell(
-    nsIDocShell* aDocshell) {
-  return mozilla::Nothing();
-}
-#endif  // MOZ_GECKO_PROFILER
 
 }  // namespace geckoprofiler::markers::detail
 
@@ -91,7 +82,6 @@ namespace geckoprofiler::category {
 using namespace ::mozilla::baseprofiler::category;
 }
 
-#ifdef MOZ_GECKO_PROFILER
 // Forward-declaration. TODO: Move to more common header, see bug 1681416.
 bool profiler_capture_backtrace_into(
     mozilla::ProfileChunkedBuffer& aChunkedBuffer,
@@ -108,7 +98,7 @@ mozilla::ProfileBufferBlockIndex AddMarkerToBuffer(
     const mozilla::MarkerCategory& aCategory, mozilla::MarkerOptions&& aOptions,
     MarkerType aMarkerType, const PayloadArguments&... aPayloadArguments) {
   AUTO_PROFILER_LABEL("AddMarkerToBuffer", PROFILER);
-  mozilla::Unused << aMarkerType;  // Only the empty object type is useful.
+  (void)aMarkerType;  // Only the empty object type is useful.
   return mozilla::base_profiler_markers_detail::AddMarkerToBuffer<MarkerType>(
       aBuffer, aName, aCategory, std::move(aOptions),
       profiler_active_without_feature(ProfilerFeature::NoMarkerStacks)
@@ -126,7 +116,6 @@ inline mozilla::ProfileBufferBlockIndex AddMarkerToBuffer(
   return AddMarkerToBuffer(aBuffer, aName, aCategory, std::move(aOptions),
                            mozilla::baseprofiler::markers::NoPayload{});
 }
-#endif
 
 // Internally we need to check specifically if gecko is collecting markers.
 [[nodiscard]] inline bool profiler_thread_is_being_gecko_profiled_for_markers(
@@ -137,6 +126,9 @@ inline mozilla::ProfileBufferBlockIndex AddMarkerToBuffer(
 
 // ETW collects on all threads. So when it is collecting these should always
 // return true.
+// This implementation must be kept in sync with
+// `gecko_profiler::current_thread_is_being_profiled_for_markers` in the
+// Profiler Rust API.
 [[nodiscard]] inline bool profiler_thread_is_being_profiled_for_markers() {
   return profiler_thread_is_being_profiled(ThreadProfilingFeatures::Markers) ||
          profiler_is_etw_collecting_markers() || profiler_is_perfetto_tracing();
@@ -163,21 +155,18 @@ mozilla::ProfileBufferBlockIndex profiler_add_marker_impl(
     const mozilla::ProfilerString8View& aName,
     const mozilla::MarkerCategory& aCategory, mozilla::MarkerOptions&& aOptions,
     MarkerType aMarkerType, const PayloadArguments&... aPayloadArguments) {
-#ifndef MOZ_GECKO_PROFILER
-  return {};
-#else
-#  ifndef RUST_BINDGEN
+#ifndef RUST_BINDGEN
   // Bindgen can't take Windows.h and as such can't parse this.
   ETW::EmitETWMarker(aName, aCategory, aOptions, aMarkerType,
                      aPayloadArguments...);
-#  endif
+#endif
 
-#  ifdef MOZ_PERFETTO
+#ifdef MOZ_PERFETTO
   if (profiler_is_perfetto_tracing()) {
     EmitPerfettoTrackEvent(aName, aCategory, aOptions, aMarkerType,
                            aPayloadArguments...);
   }
-#  endif
+#endif
 
   if (!profiler_thread_is_being_gecko_profiled_for_markers(
           aOptions.ThreadId().ThreadId())) {
@@ -187,7 +176,6 @@ mozilla::ProfileBufferBlockIndex profiler_add_marker_impl(
   return ::AddMarkerToBuffer(profiler_get_core_buffer(), aName, aCategory,
                              std::move(aOptions), aMarkerType,
                              aPayloadArguments...);
-#endif
 }
 
 // Add a marker (without payload) to the Gecko Profiler buffer.
@@ -217,8 +205,7 @@ inline mozilla::ProfileBufferBlockIndex profiler_add_marker_impl(
     }                                          \
   } while (false)
 
-// Same as `profiler_add_marker()` (without payload). This macro is safe to use
-// even if MOZ_GECKO_PROFILER is not #defined.
+// Same as `profiler_add_marker()` (without payload).
 #define PROFILER_MARKER_UNTYPED(markerName, categoryName, ...)               \
   do {                                                                       \
     AUTO_PROFILER_STATS(PROFILER_MARKER_UNTYPED);                            \
@@ -226,8 +213,7 @@ inline mozilla::ProfileBufferBlockIndex profiler_add_marker_impl(
                         ##__VA_ARGS__);                                      \
   } while (false)
 
-// Same as `profiler_add_marker()` (with payload). This macro is safe to use
-// even if MOZ_GECKO_PROFILER is not #defined.
+// Same as `profiler_add_marker()` (with payload).
 #define PROFILER_MARKER(markerName, categoryName, options, MarkerType, ...)  \
   do {                                                                       \
     AUTO_PROFILER_STATS(PROFILER_MARKER_with_##MarkerType);                  \
@@ -242,8 +228,7 @@ using TextMarker = ::mozilla::baseprofiler::markers::TextMarker;
 using Tracing = mozilla::baseprofiler::markers::Tracing;
 }  // namespace geckoprofiler::markers
 
-// Add a text marker. This macro is safe to use even if MOZ_GECKO_PROFILER is
-// not #defined.
+// Add a text marker.
 #define PROFILER_MARKER_TEXT(markerName, categoryName, options, text)        \
   do {                                                                       \
     AUTO_PROFILER_STATS(PROFILER_MARKER_TEXT);                               \
@@ -256,7 +241,7 @@ using Tracing = mozilla::baseprofiler::markers::Tracing;
   do {                                                                        \
     if (profiler_is_collecting_markers()) {                                   \
       AUTO_PROFILER_STATS(PROFILER_MARKER_TEXT);                              \
-      nsFmtCString fmt(FMT_STRING(format), ##__VA_ARGS__);                    \
+      nsFmtCString fmt(format, ##__VA_ARGS__);                                \
       profiler_add_marker(                                                    \
           markerName, ::geckoprofiler::category::categoryName, options,       \
           ::geckoprofiler::markers::TextMarker{},                             \
@@ -264,17 +249,32 @@ using Tracing = mozilla::baseprofiler::markers::Tracing;
     }                                                                         \
   } while (false)
 
+// Template specializations for Gecko-specific types
+namespace mozilla {
+template <>
+constexpr MarkerSchema::InputType
+MarkerSchema::getDefaultInputTypeForType<nsCString>() {
+  return InputType::CString;
+}
+
+template <>
+constexpr MarkerSchema::Format
+MarkerSchema::getDefaultFormatForType<nsCString>() {
+  return Format::SanitizedString;
+}
+}  // namespace mozilla
+
 namespace geckoprofiler::markers {
 // This allows us to bundle the argument name and its type into a single class
 // so they may be passed to the SimplePayloadMarkerTemplate class.
 template <const char* ArgName, typename ArgType>
 struct FieldDescription {
   static constexpr const char* name = ArgName;
-  static constexpr ArgType var = {};
+  using type = ArgType;
 };
 
 // This is a template class at the compile unit scope because function scope
-// classes cannot have static members. (Event when constexpr)
+// classes cannot have static members. (Even when constexpr)
 template <const char ArgName[], const char ArgTableLabel[],
           typename... ArgTypes>
 struct SimplePayloadMarkerTemplate
@@ -284,24 +284,18 @@ struct SimplePayloadMarkerTemplate
 
   using MS = mozilla::MarkerSchema;
 
-  static constexpr MS::PayloadField PayloadFields[] = {
+  // This needs to be explicitly sized due to:
+  // https://github.com/llvm/llvm-project/issues/150426
+  static constexpr MS::PayloadField PayloadFields[sizeof...(ArgTypes)] = {
       {ArgTypes::name,
-       MS::getDefaultInputTypeForType<decltype(ArgTypes::var)>(),
+       MS::getDefaultInputTypeForType<typename ArgTypes::type>(),
        ArgTypes::name,
-       MS::getDefaultFormatForType<decltype(ArgTypes::var)>()}...};
+       MS::getDefaultFormatForType<typename ArgTypes::type>()}...};
 
   static constexpr const char* TableLabel = ArgTableLabel;
 
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable};
-
-  static void StreamJSONMarkerData(
-      mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
-      const decltype(ArgTypes::var)&... args) {
-    mozilla::BaseMarkerType<
-        SimplePayloadMarkerTemplate<ArgName, ArgTableLabel, ArgTypes...>>::
-        StreamJSONMarkerDataImpl(aWriter, args...);
-  }
 };
 }  // namespace geckoprofiler::markers
 
@@ -328,8 +322,9 @@ struct SimplePayloadMarkerTemplate
 // Example: PROFILER_MARKER_SIMPLE_PAYLOAD("My Marker", DOM, mOpaque, mCount)
 //
 // Alternatively a label for the marker table can be specified:
-// Example: PROFILER_MARKET_SIMPLE_PAYLOAD("My Marker", DOM, "This is element
-// number {marker.data.mCount}. Opaque: {marker.data.mOpaque}", mOpaque, mCount)
+// Example: PROFILER_MARKER_SIMPLE_PAYLOAD_WITH_LABEL("My Marker", DOM,
+// "This is element number {marker.data.mCount}. Opaque: {marker.data.mOpaque}",
+// mOpaque, mCount)
 #define PROFILER_MARKER_SIMPLE_PAYLOAD_WITH_LABEL(markerName, categoryName,  \
                                                   label, ...)                \
   do {                                                                       \
@@ -390,8 +385,7 @@ class MOZ_RAII AutoProfilerUntypedMarker {
   mozilla::MarkerOptions mOptions;
 };
 
-// Creates an AutoProfilerUntypedMarker RAII object. This macro is safe to use
-// even if MOZ_GECKO_PROFILER is not #defined.
+// Creates an AutoProfilerUntypedMarker RAII object.
 #define AUTO_PROFILER_MARKER_UNTYPED(markerName, categoryName, options) \
   AutoProfilerUntypedMarker PROFILER_RAII(                              \
       markerName, ::mozilla::baseprofiler::category::categoryName, options)
@@ -417,13 +411,14 @@ class MOZ_RAII AutoProfilerTextMarker {
                          const nsACString& aText)
       : mMarkerName(aMarkerName),
         mCategory(aCategory),
-        mOptions(std::move(aOptions)),
-        mText(aText) {
+        mOptions(std::move(aOptions)) {
     MOZ_ASSERT(mOptions.Timing().EndTime().IsNull(),
                "AutoProfilerTextMarker options shouldn't have an end time");
-    if (profiler_is_active_and_unpaused() &&
-        mOptions.Timing().StartTime().IsNull()) {
-      mOptions.Set(mozilla::MarkerTiming::InstantNow());
+    if (profiler_is_active_and_unpaused()) {
+      mText = aText;
+      if (mOptions.Timing().StartTime().IsNull()) {
+        mOptions.Set(mozilla::MarkerTiming::InstantNow());
+      }
     }
   }
 
@@ -446,19 +441,18 @@ class MOZ_RAII AutoProfilerTextMarker {
   nsCString mText;
 };
 
-// Creates an AutoProfilerFmtMarker RAII object. This macro is safe to use
-// even if MOZ_GECKO_PROFILER is not #defined.
+// Creates an AutoProfilerFmtMarker RAII object.
 #define AUTO_PROFILER_MARKER_FMT(markerName, categoryName, options, format, \
                                  ...)                                       \
   AutoProfilerFmtMarker PROFILER_RAII(                                      \
       markerName, ::mozilla::baseprofiler::category::categoryName, options, \
-      FMT_STRING(format), __VA_ARGS__)
+      format, __VA_ARGS__)
 
 #define AUTO_PROFILER_MARKER_FMT_LONG(size, markerName, categoryName, options, \
                                       format, ...)                             \
   AutoProfilerFmtMarker<size> PROFILER_RAII(                                   \
       markerName, ::mozilla::baseprofiler::category::categoryName, options,    \
-      FMT_STRING(format), __VA_ARGS__)
+      format, __VA_ARGS__)
 
 // RAII object that adds a PROFILER_MARKER_FMT when destroyed; the marker's
 // timing will be the interval from construction (unless an instant or start
@@ -515,8 +509,7 @@ class AutoProfilerFmtMarker {
   char mFormatted[TextLength]{};
 };
 
-// Creates an AutoProfilerTextMarker RAII object.  This macro is safe to use
-// even if MOZ_GECKO_PROFILER is not #defined.
+// Creates an AutoProfilerTextMarker RAII object.
 #define AUTO_PROFILER_MARKER_TEXT(markerName, categoryName, options, text)  \
   AutoProfilerTextMarker PROFILER_RAII(                                     \
       markerName, ::mozilla::baseprofiler::category::categoryName, options, \
@@ -524,11 +517,10 @@ class AutoProfilerFmtMarker {
 
 class MOZ_RAII AutoProfilerTracing {
  public:
-  AutoProfilerTracing(const char* aCategoryString, const char* aMarkerName,
+  AutoProfilerTracing(const char* aMarkerName,
                       mozilla::MarkerCategory aCategoryPair,
                       const mozilla::Maybe<uint64_t>& aInnerWindowID)
-      : mCategoryString(aCategoryString),
-        mMarkerName(aMarkerName),
+      : mMarkerName(aMarkerName),
         mCategoryPair(aCategoryPair),
         mInnerWindowID(aInnerWindowID) {
     profiler_add_marker(
@@ -536,18 +528,14 @@ class MOZ_RAII AutoProfilerTracing {
         mCategoryPair,
         {mozilla::MarkerTiming::IntervalStart(),
          mozilla::MarkerInnerWindowId(mInnerWindowID)},
-        mozilla::baseprofiler::markers::StackMarker{},
-        mozilla::ProfilerString8View::WrapNullTerminatedString(
-            mCategoryString));
+        mozilla::baseprofiler::markers::StackMarker{});
   }
 
   AutoProfilerTracing(
-      const char* aCategoryString, const char* aMarkerName,
-      mozilla::MarkerCategory aCategoryPair,
+      const char* aMarkerName, mozilla::MarkerCategory aCategoryPair,
       mozilla::UniquePtr<mozilla::ProfileChunkedBuffer> aBacktrace,
       const mozilla::Maybe<uint64_t>& aInnerWindowID)
-      : mCategoryString(aCategoryString),
-        mMarkerName(aMarkerName),
+      : mMarkerName(aMarkerName),
         mCategoryPair(aCategoryPair),
         mInnerWindowID(aInnerWindowID) {
     profiler_add_marker(
@@ -556,9 +544,7 @@ class MOZ_RAII AutoProfilerTracing {
         {mozilla::MarkerTiming::IntervalStart(),
          mozilla::MarkerInnerWindowId(mInnerWindowID),
          mozilla::MarkerStack::TakeBacktrace(std::move(aBacktrace))},
-        mozilla::baseprofiler::markers::StackMarker{},
-        mozilla::ProfilerString8View::WrapNullTerminatedString(
-            mCategoryString));
+        mozilla::baseprofiler::markers::StackMarker{});
   }
 
   ~AutoProfilerTracing() {
@@ -567,36 +553,30 @@ class MOZ_RAII AutoProfilerTracing {
         mCategoryPair,
         {mozilla::MarkerTiming::IntervalEnd(),
          mozilla::MarkerInnerWindowId(mInnerWindowID)},
-        mozilla::baseprofiler::markers::StackMarker{},
-        mozilla::ProfilerString8View::WrapNullTerminatedString(
-            mCategoryString));
+        mozilla::baseprofiler::markers::StackMarker{});
   }
 
  protected:
-  const char* mCategoryString;
   const char* mMarkerName;
   const mozilla::MarkerCategory mCategoryPair;
   const mozilla::Maybe<uint64_t> mInnerWindowID;
 };
 
 // Adds a START/END pair of tracing markers.
-#define AUTO_PROFILER_TRACING_MARKER(categoryString, markerName, categoryPair) \
-  AutoProfilerTracing PROFILER_RAII(categoryString, markerName,                \
-                                    geckoprofiler::category::categoryPair,     \
-                                    mozilla::Nothing())
-#define AUTO_PROFILER_TRACING_MARKER_INNERWINDOWID(                        \
-    categoryString, markerName, categoryPair, innerWindowId)               \
-  AutoProfilerTracing PROFILER_RAII(categoryString, markerName,            \
+#define AUTO_PROFILER_MARKER(markerName, categoryPair) \
+  AutoProfilerTracing PROFILER_RAII(                   \
+      markerName, geckoprofiler::category::categoryPair, mozilla::Nothing())
+#define AUTO_PROFILER_MARKER_INNERWINDOWID(markerName, categoryPair,       \
+                                           innerWindowId)                  \
+  AutoProfilerTracing PROFILER_RAII(markerName,                            \
                                     geckoprofiler::category::categoryPair, \
                                     mozilla::Some(innerWindowId))
-#define AUTO_PROFILER_TRACING_MARKER_DOCSHELL(categoryString, markerName, \
-                                              categoryPair, docShell)     \
+#define AUTO_PROFILER_MARKER_DOCSHELL(markerName, categoryPair, docShell) \
   AutoProfilerTracing PROFILER_RAII(                                      \
-      categoryString, markerName, geckoprofiler::category::categoryPair,  \
+      markerName, geckoprofiler::category::categoryPair,                  \
       geckoprofiler::markers::detail::                                    \
           profiler_get_inner_window_id_from_docshell(docShell))
 
-#ifdef MOZ_GECKO_PROFILER
 extern template mozilla::ProfileBufferBlockIndex AddMarkerToBuffer(
     mozilla::ProfileChunkedBuffer&, const mozilla::ProfilerString8View&,
     const mozilla::MarkerCategory&, mozilla::MarkerOptions&&,
@@ -621,19 +601,29 @@ extern template mozilla::ProfileBufferBlockIndex profiler_add_marker_impl(
     const mozilla::ProfilerString8View&, const mozilla::MarkerCategory&,
     mozilla::MarkerOptions&&, mozilla::baseprofiler::markers::Tracing,
     const mozilla::ProfilerString8View&);
-#endif  // MOZ_GECKO_PROFILER
+
+// Register a custom marker schema from JavaScript.
+// This stores the schema so it can be included in profile output.
+void profiler_register_marker_schema(const nsCString& aSchemaName,
+                                     const nsString& aSchemaJSON);
 
 namespace mozilla {
 namespace detail {
 
 // Implement this here to prevent BaseProfilerMarkersPrerequisites from pulling
 // in nsString.h
-template <>
-inline void StreamPayload<ProfilerString16View>(
-    baseprofiler::SpliceableJSONWriter& aWriter, const Span<const char> aKey,
-    const ProfilerString16View& aPayload) {
-  aWriter.StringProperty(aKey, NS_ConvertUTF16toUTF8(aPayload));
-}
+template <MarkerSchema::Format aFormat>
+struct StreamPayloadHelper<ProfilerString16View, aFormat> {
+  static void Stream(baseprofiler::SpliceableJSONWriter& aWriter,
+                     const Span<const char> aKey,
+                     const ProfilerString16View& aPayload) {
+    if constexpr (aFormat == MarkerSchema::Format::UniqueString) {
+      aWriter.UniqueStringProperty(aKey, NS_ConvertUTF16toUTF8(aPayload));
+    } else {
+      aWriter.StringProperty(aKey, NS_ConvertUTF16toUTF8(aPayload));
+    }
+  }
+};
 
 }  // namespace detail
 }  // namespace mozilla

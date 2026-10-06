@@ -8,7 +8,6 @@ support-files = [
   "page_basic.html",
   "page_dom_nodes.html",
   "!/devtools/client/shared/test/shared-head.js",
-  "!/devtools/client/shared/test/telemetry-test-helpers.js",
 ]
 
 ["browser_dom_array.js"]

@@ -3,11 +3,13 @@
 ["test_autocomplete_change_after_focus.html"]
 skip-if = [
   "os == 'android'",
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && ccov && xorigin",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && ccov && xorigin",
 ]
 
 ["test_bug1407085.html"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && ccov && xorigin"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && ccov && xorigin",
+]
 
 ["test_mousecapture.xhtml"]
 allow_xul_xbl = true
@@ -19,12 +21,14 @@ support-files = [
   "file_mousecapture5.html",
 ]
 skip-if = [
+  "http2",
+  "http3",
   "os == 'android'",
   "xorigin", # SecurityError: Permission denied to access property "scrollX" on cross-origin object at runTests@http://mochi.test:8888/tests/toolkit/content/tests/mochitest/test_mousecapture.xhtml:170:17, inconsistent fail/pass
-  "http3",
-  "http2",
 ]
 
 ["test_video_control_no_control_overlay.html"]
 support-files = ["gizmo.mp4"]
-run-if = ["os == 'android'"]
+run-if = [
+  "os == 'android'",
+]

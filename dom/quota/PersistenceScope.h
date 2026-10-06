@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,6 +39,8 @@ class PersistenceScope {
 
  public:
   PersistenceScope() : mData(Null()) {}
+
+  bool operator==(const PersistenceScope& aOther) = delete;
 
   // XXX Consider renaming these static methods to Create
   static PersistenceScope CreateFromValue(PersistenceType aValue) {
@@ -159,8 +159,6 @@ class PersistenceScope {
 
     return mData.match(SetMatcher(aOther));
   }
-
-  bool operator==(const PersistenceScope& aOther) = delete;
 };
 
 bool MatchesPersistentPersistenceScope(

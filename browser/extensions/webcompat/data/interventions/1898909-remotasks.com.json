@@ -1,0 +1,15 @@
+{
+  "label": "remotasks.com",
+  "bugs": {
+    "1898909": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.remotasks.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

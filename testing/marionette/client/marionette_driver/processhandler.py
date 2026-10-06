@@ -232,11 +232,10 @@ class ProcessHandlerMixin:
         Handle process output until the process terminates or times out.
 
         :param timeout: If not None, the process will be allowed to continue
-        for that number of seconds before being killed.
-
-        :outputTimeout: If not None, the process will be allowed to continue
-        for that number of seconds without producing any output before
-        being killed.
+            for that number of seconds before being killed.
+        :param outputTimeout: If not None, the process will be allowed to continue
+            for that number of seconds without producing any output before
+            being killed.
         """
         # this method is kept for backward compatibility
         if not hasattr(self, "proc"):
@@ -253,12 +252,11 @@ class ProcessHandlerMixin:
         Starts the process.
 
         :param timeout: If not None, the process will be allowed to continue for
-        that number of seconds before being killed. If the process is killed
-        due to a timeout, the onTimeout handler will be called.
-
-        :outputTimeout: If not None, the process will be allowed to continue
-        for that number of seconds without producing any output before
-        being killed.
+            that number of seconds before being killed. If the process is killed
+            due to a timeout, the onTimeout handler will be called.
+        :param outputTimeout: If not None, the process will be allowed to continue
+            for that number of seconds without producing any output before
+            being killed.
         """
         self.didTimeout = False
         self.didOutputTimeout = False

@@ -1,0 +1,17 @@
+{
+  "label": "one.geekie.com.br",
+  "bugs": {
+    "1905069": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://one.geekie.com.br/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "content_scripts": {
+        "js": ["define_minimal_window_chrome.js", "use_chrome_vendor.js"]
+      }
+    }
+  ]
+}

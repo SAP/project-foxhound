@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -33,6 +32,7 @@ async function waitForListServiceInit(strippingEnabled) {
 
 /**
  * Set a list of prefs on the default branch and restore the original values on test end.
+ *
  * @param {*} prefs - Key value pairs in an array.
  */
 function setDefaultPrefs(prefs) {

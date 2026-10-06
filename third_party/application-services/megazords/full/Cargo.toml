@@ -1,0 +1,37 @@
+[package]
+name = "megazord"
+version = "0.1.0"
+authors = ["Sync Team <sync-team@mozilla.com>"]
+edition = "2021"
+license = "MPL-2.0"
+
+[lib]
+# "staticlib" needed for the m-c build environment, "cdylib" needed while in the application-services repo.
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+fxa-client = { path = "../../components/fxa-client" }
+logins = { path = "../../components/logins" }
+tabs = { path = "../../components/tabs/" }
+sync_manager = { path = "../../components/sync_manager/" }
+# TODO: Uncomment this code when webext-storage component is integrated in android
+# webext-storage = { path = "../../components/webext-storage/" }
+places = { path = "../../components/places" }
+push = { path = "../../components/push" }
+remote_settings = { path = "../../components/remote_settings", features=["telemetry-submission"] }
+rust-log-forwarder = { path = "../../components/support/rust-log-forwarder" }
+viaduct = { path = "../../components/viaduct", features = ["ohttp"] }
+nimbus-sdk = { path = "../../components/nimbus" }
+autofill = { path = "../../components/autofill" }
+crashtest = { path = "../../components/crashtest" }
+error-support = { path = "../../components/support/error" }
+suggest = { path = "../../components/suggest" }
+search = { path = "../../components/search" }
+tracing-support = { path = "../../components/support/tracing" }
+
+lazy_static = "1.4"
+init_rust_components = { path = "../../components/init_rust_components" }
+merino = { path = "../../components/merino" }
+relay = { path = "../../components/relay" }
+ads-client = { path = "../../components/ads-client" }
+mozilla-central-workspace-hack = { version = "0.1", features = ["megazord"], optional = true }

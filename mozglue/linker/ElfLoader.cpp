@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <string>
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
@@ -28,7 +27,6 @@ mozilla::Atomic<size_t, mozilla::ReleaseAcquire> gPageSize;
 #if defined(ANDROID)
 #  include <sys/syscall.h>
 #  include <sys/system_properties.h>
-#  include <math.h>
 
 #  include <android/api-level.h>
 

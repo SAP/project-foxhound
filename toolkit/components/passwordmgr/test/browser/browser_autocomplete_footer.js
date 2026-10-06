@@ -48,6 +48,10 @@ add_task(async function test_autocomplete_footer_onclick() {
       let footer = popup.querySelector(`[originaltype="loginsFooter"]`);
       Assert.ok(footer, "Got footer richlistitem");
 
+      // Wait for the layout to stabilize by waiting for possible reflow;
+      // otherwise, the synthesized mouse event might not be dispatched
+      // correctly.
+      await new Promise(requestAnimationFrame);
       await TestUtils.waitForCondition(() => {
         return !EventUtils.isHidden(footer);
       }, "Waiting for footer to become visible");

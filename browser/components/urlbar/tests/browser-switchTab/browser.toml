@@ -1,0 +1,19 @@
+[DEFAULT]
+tags = "urlbar"
+support-files = [
+  "../browser/head-common.js",
+  "../browser/dummy_page.html",
+  "head.js",
+]
+
+["browser_closesUrlbarPopup.js"]
+
+["browser_currentTab.js"]
+
+["browser_decodeuri.js"]
+
+["browser_inputHistory.js"]
+
+["browser_notFoundPage.js"]
+
+["browser_override.js"]

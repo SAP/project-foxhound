@@ -5,12 +5,10 @@
 /*---
 flags:
   - onlyStrict
-includes: [sm/non262.js, sm/non262-shell.js, sm/non262-TypedArray-shell.js]
 description: |
   pending
 esid: pending
 ---*/
-"use strict";
 
 // Seal
 assert.sameValue(Object.isSealed(new Int32Array(2)), false);
@@ -30,9 +28,9 @@ assert.sameValue(Object.isSealed(array), false);
 
 array = new Int32Array(2);
 array.b = "test";
-assertThrowsInstanceOf(() => Object.seal(array), TypeError);
+assert.throws(TypeError, () => Object.seal(array));
 assert.sameValue(Object.isSealed(array), false);
-assertThrowsInstanceOf(() => array.c = 15, TypeError);
+assert.throws(TypeError, () => array.c = 15);
 
 // Freeze
 assert.sameValue(Object.isFrozen(new Int32Array(2)), false);
@@ -53,9 +51,8 @@ assert.sameValue(Object.isFrozen(array), true);
 
 // Non-empty typed arrays can never be frozen, because the elements stay writable
 array = new Int32Array(1);
-assertThrowsInstanceOf(() => Object.freeze(array), TypeError);
+assert.throws(TypeError, () => Object.freeze(array));
 assert.sameValue(Object.isExtensible(array), false);
 assert.sameValue(Object.isFrozen(array), false);
-
 
 reportCompare(0, 0);

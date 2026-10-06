@@ -11,28 +11,24 @@
 #ifndef RTC_BASE_PLATFORM_THREAD_H_
 #define RTC_BASE_PLATFORM_THREAD_H_
 
-#include <functional>
-#include <string>
-#if !defined(WEBRTC_WIN)
-#include <pthread.h>
-#endif
-
 #include <optional>
 
+#include "absl/functional/any_invocable.h"
 #include "absl/strings/string_view.h"
-#include "rtc_base/platform_thread_types.h"
+#include "rtc_base/platform_thread_types.h"  // IWYU pragma: keep
 
-#include "rtc_base/deprecated/recursive_critical_section.h"
+#if !defined(WEBRTC_WIN)
+#include <pthread.h>  // IWYU pragma: keep
+#endif
 
 namespace webrtc {
-
-// Bug 1691641
-class PlatformUIThread;
 
 enum class ThreadPriority {
   kLow = 1,
   kNormal,
   kHigh,
+  kVideo,
+  kAudio,
   kRealtime,
 };
 
@@ -91,14 +87,14 @@ class PlatformThread final {
   // Creates a started joinable thread which will be joined when the returned
   // PlatformThread destructs or Finalize() is called.
   static PlatformThread SpawnJoinable(
-      std::function<void()> thread_function,
+      absl::AnyInvocable<void() &&> thread_function,
       absl::string_view name,
       ThreadAttributes attributes = ThreadAttributes());
 
   // Creates a started detached thread. The caller has to use external
   // synchronization as nothing is provided by the PlatformThread construct.
   static PlatformThread SpawnDetached(
-      std::function<void()> thread_function,
+      absl::AnyInvocable<void() &&> thread_function,
       absl::string_view name,
       ThreadAttributes attributes = ThreadAttributes());
 
@@ -112,25 +108,17 @@ class PlatformThread final {
 
  private:
   PlatformThread(Handle handle, bool joinable);
-  static PlatformThread SpawnThread(std::function<void()> thread_function,
-                                    absl::string_view name,
-                                    ThreadAttributes attributes,
-                                    bool joinable);
+  static PlatformThread SpawnThread(
+      absl::AnyInvocable<void() &&> thread_function,
+      absl::string_view name,
+      ThreadAttributes attributes,
+      bool joinable);
 
   std::optional<Handle> handle_;
   bool joinable_ = false;
-  // Bug 1691641
-  friend PlatformUIThread;
 };
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::PlatformThread;
-using ::webrtc::ThreadAttributes;
-using ::webrtc::ThreadPriority;
-}  // namespace rtc
 
 #endif  // RTC_BASE_PLATFORM_THREAD_H_

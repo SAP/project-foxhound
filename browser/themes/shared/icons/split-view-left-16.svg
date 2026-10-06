@@ -1,0 +1,17 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+   <svg width="16" height="16" fill="context-fill" fill-opacity="context-fill-opacity" xmlns="http://www.w3.org/2000/svg">
+<style>
+.nova { display: none; }
+
+@media -moz-pref("browser.nova.enabled") {
+  .proton { display: none; }
+  .nova { display: revert; }
+}
+</style>
+<g class="proton"><path d="M8.75 15h-1.5v-1H2c-1.103 0-2-.897-2-2V4c0-1.103.897-2 2-2h5.25V1h1.5v14zM14 2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-3.75v-1.5H14a.5.5 0 0 0 .5-.5V4a.5.5 0 0 0-.5-.5h-3.75V2H14z" /></g>
+<g class="nova">
+  <path d="M8 1a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-1.5 0v-.257a54 54 0 0 1-4.795-.281A2.74 2.74 0 0 1 0 10.975v-5.95a2.753 2.753 0 0 1 2.478-2.74A52 52 0 0 1 7.25 2.02v-.27A.75.75 0 0 1 8 1m2.25 1.06c1.102.046 2.2.114 3.295.228A2.74 2.74 0 0 1 16 5.025v5.95a2.753 2.753 0 0 1-2.477 2.74 54 54 0 0 1-3.273.227v-1.5a52 52 0 0 0 3.118-.22 1.254 1.254 0 0 0 1.132-1.247v-5.95c0-.644-.477-1.179-1.11-1.245a53 53 0 0 0-3.14-.221z" />
+</g>
+</svg>

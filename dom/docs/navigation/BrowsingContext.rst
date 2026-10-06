@@ -77,8 +77,8 @@ API Documentation
   .. hlist::
     :columns: 3
 
-    * `header (searchfox) <https://searchfox.org/mozilla-central/source/docshell/base/BrowsingContext.h>`_
-    * `source (searchfox) <https://searchfox.org/mozilla-central/source/docshell/base/BrowsingContext.cpp>`_
+    * :searchfox:`header (searchfox) <docshell/base/BrowsingContext.h>`
+    * :searchfox:`source (searchfox) <docshell/base/BrowsingContext.cpp>`
     * `html spec <https://html.spec.whatwg.org/multipage/browsers.html#browsing-context>`_
 
   This is a synced-context type. Instances of it will exist in every
@@ -115,8 +115,8 @@ API Documentation
   .. hlist::
     :columns: 3
 
-    * `header (searchfox) <https://searchfox.org/mozilla-central/source/docshell/base/CanonicalBrowsingContext.h>`_
-    * `source (searchfox) <https://searchfox.org/mozilla-central/source/docshell/base/CanonicalBrowsingContext.cpp>`_
+    * :searchfox:`header (searchfox) <docshell/base/CanonicalBrowsingContext.h>`
+    * :searchfox:`source (searchfox) <docshell/base/CanonicalBrowsingContext.cpp>`
 
   When a :cpp:class:`BrowsingContext` is constructed in the parent process,
   it is actually an instance of :cpp:class:`CanonicalBrowsingContext`.
@@ -129,21 +129,21 @@ API Documentation
   .. hlist::
     :columns: 3
 
-    * `header (searchfox) <https://searchfox.org/mozilla-central/source/docshell/base/WindowContext.h>`_
-    * `source (searchfox) <https://searchfox.org/mozilla-central/source/docshell/base/WindowContext.cpp>`_
+    * :searchfox:`header (searchfox) <docshell/base/WindowContext.h>`
+    * :searchfox:`source (searchfox) <docshell/base/WindowContext.cpp>`
 
 .. cpp:class:: WindowGlobalParent : public WindowContext, public WindowGlobalActor, public PWindowGlobalParent
 
   .. hlist::
     :columns: 3
 
-    * `header (searchfox) <https://searchfox.org/mozilla-central/source/dom/ipc/WindowGlobalParent.h>`_
-    * `source (searchfox) <https://searchfox.org/mozilla-central/source/dom/ipc/WindowGlobalParent.cpp>`_
+    * :searchfox:`header (searchfox) <dom/ipc/WindowGlobalParent.h>`
+    * :searchfox:`source (searchfox) <dom/ipc/WindowGlobalParent.cpp>`
 
 .. cpp:class:: WindowGlobalChild : public WindowGlobalActor, public PWindowGlobalChild
 
   .. hlist::
     :columns: 3
 
-    * `header (searchfox) <https://searchfox.org/mozilla-central/source/dom/ipc/WindowGlobalChild.h>`_
-    * `source (searchfox) <https://searchfox.org/mozilla-central/source/dom/ipc/WindowGlobalChild.cpp>`_
+    * :searchfox:`header (searchfox) <dom/ipc/WindowGlobalChild.h>`
+    * :searchfox:`source (searchfox) <dom/ipc/WindowGlobalChild.cpp>`

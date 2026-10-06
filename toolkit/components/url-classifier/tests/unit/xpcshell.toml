@@ -1,7 +1,9 @@
 [DEFAULT]
 head = "head_urlclassifier.js"
 tags = "condprof"
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 support-files = ["data/**"]
 
 ["test_addsub.js"]
@@ -15,12 +17,14 @@ support-files = ["data/**"]
 ["test_channelClassifierService.js"]
 
 ["test_dbservice.js"]
-skip-if = ["condprof"]  # Bug 1769828
+skip-if = [
+  "condprof", # Bug 1769828
+]
 
 ["test_digest256.js"]
-run-sequentially = "very high failure rate in parallel"
 
 ["test_exceptionListService.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 tags = "remote-settings"
 
 ["test_features.js"]
@@ -30,7 +34,7 @@ tags = "remote-settings"
 ["test_hashcompleter_v4.js"]
 
 ["test_listmanager.js"]
-run-sequentially = "very high failure rate in parallel"
+run-sequentially = ["true"] # fails 85% of the time in parallel
 
 ["test_malwaretable_pref.js"]
 
@@ -45,6 +49,7 @@ run-sequentially = "very high failure rate in parallel"
 ["test_provider_url.js"]
 
 ["test_rsListService.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 tags = "remote-settings"
 
 ["test_safebrowsing_protobuf.js"]

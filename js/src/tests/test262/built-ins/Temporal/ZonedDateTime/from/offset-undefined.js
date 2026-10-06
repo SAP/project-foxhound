@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2021 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -24,6 +24,6 @@ features: [Temporal]
 const propertyBag = { timeZone: "-04:00", offset: "+01:00", year: 2020, month: 2, day: 16, hour: 23, minute: 45 };
 
 assert.throws(RangeError, () => Temporal.ZonedDateTime.from(propertyBag, { offset: undefined }), "default offset is reject");
-// See options-undefined.js for {}
+// See options-object.js for {} and () => {}
 
 reportCompare(0, 0);

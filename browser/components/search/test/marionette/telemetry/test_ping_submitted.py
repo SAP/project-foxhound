@@ -8,17 +8,15 @@ from marionette_harness.marionette_test import MarionetteTestCase
 
 class TestPingSubmitted(MarionetteTestCase):
     def setUp(self):
-        super(TestPingSubmitted, self).setUp()
+        super().setUp()
 
         self.marionette.set_context(self.marionette.CONTEXT_CHROME)
 
-        self.marionette.enforce_gecko_prefs(
-            {
-                "datareporting.healthreport.uploadEnabled": True,
-                "telemetry.fog.test.localhost_port": 3000,
-                "browser.search.log": True,
-            }
-        )
+        self.marionette.enforce_gecko_prefs({
+            "datareporting.healthreport.uploadEnabled": True,
+            "telemetry.fog.test.localhost_port": 3000,
+            "browser.search.log": True,
+        })
         # The categorization ping is submitted on startup. If anything delays
         # its initialization, turning the preference on and immediately
         # attaching a categorization event could result in the ping being

@@ -89,7 +89,7 @@ function NetworkEventMessage({
     isXHR,
     timeStamp,
     blockedReason,
-    blockingExtension,
+    extension,
     httpVersion,
     status,
     statusText,
@@ -103,12 +103,7 @@ function NetworkEventMessage({
 
   let statusCode, statusInfo;
 
-  if (
-    httpVersion &&
-    status &&
-    statusText !== undefined &&
-    totalTime !== undefined
-  ) {
+  if (httpVersion && status && statusText !== undefined) {
     const statusCodeDocURL = getHTTPStatusCodeURL(
       status.toString(),
       "webconsole"
@@ -130,14 +125,17 @@ function NetworkEventMessage({
       { className: "status-info" },
       `[${httpVersion} `,
       statusCode,
-      ` ${statusText} ${totalTime}ms]`
+      ` ${statusText}${
+        // We might not get a valid totalTime, in such case, don't display anything
+        typeof totalTime === "number" ? ` ${totalTime}ms` : ""
+      }]`
     );
   }
 
   if (blockedReason) {
     statusInfo = dom.span(
       { className: "status-info" },
-      getBlockedReasonString(blockedReason, blockingExtension)
+      getBlockedReasonString(blockedReason, extension)
     );
     topLevelClasses.push("network-message-blocked");
   }
@@ -169,10 +167,17 @@ function NetworkEventMessage({
     unicodeURL
   );
   const statusBody = statusInfo
-    ? dom.a({ className: "status" }, statusInfo)
+    ? dom.span({ className: "status" }, statusInfo)
     : null;
 
-  const messageBody = [xhr, requestMethod, requestUrl, statusBody];
+  const messageBody = [
+    xhr,
+    // Add whitespace between "XHR" and method for formatting when copying to the clipboard.
+    xhr ? " " : null,
+    requestMethod,
+    requestUrl,
+    statusBody,
+  ];
 
   // API consumed by Net monitor UI components. Most of the method
   // are not needed in context of the Console panel (atm) and thus

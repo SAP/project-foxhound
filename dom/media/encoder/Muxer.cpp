@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +9,7 @@
 namespace mozilla {
 
 LazyLogModule gMuxerLog("Muxer");
-#define LOG(type, ...) MOZ_LOG(gMuxerLog, type, (__VA_ARGS__))
+#define LOG(type, ...) MOZ_LOG_FMT(gMuxerLog, type, __VA_ARGS__)
 
 Muxer::Muxer(UniquePtr<ContainerWriter> aWriter,
              MediaQueue<EncodedFrame>& aEncodedAudioQueue,
@@ -35,8 +34,8 @@ nsresult Muxer::SetMetadata(
   MOZ_DIAGNOSTIC_ASSERT(!mHasVideo);
   nsresult rv = mWriter->SetMetadata(aMetadata);
   if (NS_FAILED(rv)) {
-    LOG(LogLevel::Error, "%p Setting metadata failed, tracks=%zu", this,
-        aMetadata.Length());
+    LOG(LogLevel::Error, "{} Setting metadata failed, tracks={}",
+        fmt::ptr(this), aMetadata.Length());
     return rv;
   }
 
@@ -60,8 +59,8 @@ nsresult Muxer::SetMetadata(
   }
   mMetadataSet = true;
   MOZ_ASSERT(mHasAudio || mHasVideo);
-  LOG(LogLevel::Info, "%p Metadata set; audio=%d, video=%d", this, mHasAudio,
-      mHasVideo);
+  LOG(LogLevel::Info, "{} Metadata set; audio={}, video={}", fmt::ptr(this),
+      mHasAudio, mHasVideo);
   return NS_OK;
 }
 
@@ -72,7 +71,8 @@ nsresult Muxer::GetData(nsTArray<nsTArray<uint8_t>>* aOutputBuffers) {
   if (!mMetadataEncoded) {
     rv = mWriter->GetContainerData(aOutputBuffers, ContainerWriter::GET_HEADER);
     if (NS_FAILED(rv)) {
-      LOG(LogLevel::Error, "%p Failed getting metadata from writer", this);
+      LOG(LogLevel::Error, "{} Failed getting metadata from writer",
+          fmt::ptr(this));
       return rv;
     }
     mMetadataEncoded = true;
@@ -86,7 +86,7 @@ nsresult Muxer::GetData(nsTArray<nsTArray<uint8_t>>* aOutputBuffers) {
 
   rv = Mux();
   if (NS_FAILED(rv)) {
-    LOG(LogLevel::Error, "%p Failed muxing data into writer", this);
+    LOG(LogLevel::Error, "{} Failed muxing data into writer", fmt::ptr(this));
     return rv;
   }
 
@@ -103,7 +103,7 @@ nsresult Muxer::GetData(nsTArray<nsTArray<uint8_t>>* aOutputBuffers) {
 
   if (mEncodedAudioQueue.AtEndOfStream() &&
       mEncodedVideoQueue.AtEndOfStream()) {
-    LOG(LogLevel::Info, "%p All data written", this);
+    LOG(LogLevel::Info, "{} All data written", fmt::ptr(this));
   }
 
   return mWriter->GetContainerData(aOutputBuffers, flags);
@@ -163,9 +163,9 @@ nsresult Muxer::Mux() {
     }
   }
 
-  LOG(LogLevel::Debug,
-      "%p Muxed data, remaining-audio=%zu, remaining-video=%zu", this,
-      mEncodedAudioQueue.GetSize(), mEncodedVideoQueue.GetSize());
+  LOG(LogLevel::Debug, "{} Muxed data, remaining-audio={}, remaining-video={}",
+      fmt::ptr(this), mEncodedAudioQueue.GetSize(),
+      mEncodedVideoQueue.GetSize());
 
   // If encoding is complete for both encoders we should signal end of stream,
   // otherwise we keep going.

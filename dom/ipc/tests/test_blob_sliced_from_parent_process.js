@@ -7,7 +7,6 @@ const { XPCShellContentUtils } = ChromeUtils.importESModule(
 XPCShellContentUtils.init(this);
 
 function childFrameScript() {
-  /* eslint-env mozilla/frame-script */
   const messageName = "test:blob-slice-test";
   const blobData = ["So", " ", "many", " ", "blobs!"];
   const blobText = blobData.join("");

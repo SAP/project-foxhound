@@ -2,12 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/browser-window */
-
 ChromeUtils.defineESModuleGetters(this, {
   ContentBlockingAllowList:
     "resource://gre/modules/ContentBlockingAllowList.sys.mjs",
-  ReportBrokenSite: "resource:///modules/ReportBrokenSite.sys.mjs",
+  ReportBrokenSite:
+    "moz-src:///browser/components/reportbrokensite/ReportBrokenSite.sys.mjs",
   SpecialMessageActions:
     "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
 });
@@ -16,7 +15,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "TrackingDBService",
   "@mozilla.org/tracking-db-service;1",
-  "nsITrackingDBService"
+  Ci.nsITrackingDBService
 );
 
 /**
@@ -27,21 +26,22 @@ XPCOMUtils.defineLazyServiceGetter(
 class ProtectionCategory {
   /**
    * Creates a protection category.
+   *
    * @param {string} id - Identifier of the category. Used to query the category
    * UI elements in the DOM.
-   * @param {Object} options - Category options.
+   * @param {object} options - Category options.
    * @param {string} options.prefEnabled - ID of pref which controls the
    * category enabled state.
-   * @param {Object} flags - Flags for this category to look for in the content
+   * @param {object} flags - Flags for this category to look for in the content
    * blocking event and content blocking log.
-   * @param {Number} [flags.load] - Load flag for this protection category. If
+   * @param {number} [flags.load] - Load flag for this protection category. If
    * omitted, we will never match a isAllowing check for this category.
-   * @param {Number} [flags.block] - Block flag for this protection category. If
+   * @param {number} [flags.block] - Block flag for this protection category. If
    * omitted, we will never match a isBlocking check for this category.
-   * @param {Number} [flags.shim] - Shim flag for this protection category. This
+   * @param {number} [flags.shim] - Shim flag for this protection category. This
    * flag is set if we replaced tracking content with a non-tracking shim
    * script.
-   * @param {Number} [flags.allow] - Allow flag for this protection category.
+   * @param {number} [flags.allow] - Allow flag for this protection category.
    * This flag is set if we explicitly allow normally blocked tracking content.
    * The webcompat extension can do this if it needs to unblock content on user
    * opt-in.
@@ -111,6 +111,7 @@ class ProtectionCategory {
   /**
    * Get the category item associated with this protection from the main
    * protections panel.
+   *
    * @returns {xul:toolbarbutton|undefined} - Item or undefined if the panel is
    * not yet initialized.
    */
@@ -127,6 +128,7 @@ class ProtectionCategory {
 
   /**
    * Defaults to enabled state. May be overridden by child classes.
+   *
    * @returns {boolean} - Whether the protection is set to block trackers.
    */
   get blockingEnabled() {
@@ -136,6 +138,7 @@ class ProtectionCategory {
   /**
    * Update the category item state in the main view of the protections panel.
    * Determines whether the category is set to block trackers.
+   *
    * @returns {boolean} - true if the state has been updated, false if the
    * protections popup has not been initialized yet.
    */
@@ -189,7 +192,8 @@ class ProtectionCategory {
 
   /**
    * Create a list of items, each representing a tracker.
-   * @returns {Object} result - An object containing the results.
+   *
+   * @returns {object} result - An object containing the results.
    * @returns {HTMLDivElement[]} result.items - Generated tracker items. May be
    * empty.
    * @returns {boolean} result.anyShimAllowed - Flag indicating if any of the
@@ -216,8 +220,9 @@ class ProtectionCategory {
     };
   }
 
-  /*
+  /**
    * Return the number items blocked by this blocker.
+   *
    * @returns {Integer} count - The number of items blocked.
    */
   async getBlockerCount() {
@@ -227,10 +232,11 @@ class ProtectionCategory {
 
   /**
    * Create a DOM item representing a tracker.
+   *
    * @param {string} origin - Origin of the tracker.
    * @param {Array} actions - Array of actions from the content blocking log
    * associated with the tracking origin.
-   * @returns {Object} result - An object containing the results.
+   * @returns {object} result - An object containing the results.
    * @returns {HTMLDListElement} [options.item] - Generated item or null if we
    * don't have an item for this origin based on the actions log.
    * @returns {boolean} options.shimAllowed - Flag indicating whether the
@@ -278,6 +284,7 @@ class ProtectionCategory {
   /**
    * Create an indicator icon for marking origins that have been allowed by a
    * shim script.
+   *
    * @returns {HTMLImageElement} - Created element.
    */
   _getShimAllowIndicator() {
@@ -293,7 +300,7 @@ class ProtectionCategory {
   }
 
   /**
-   * @param {Number} state - Content blocking event flags.
+   * @param {number} state - Content blocking event flags.
    * @returns {boolean} - Whether the protection has blocked a tracker.
    */
   isBlocking(state) {
@@ -301,7 +308,7 @@ class ProtectionCategory {
   }
 
   /**
-   * @param {Number} state - Content blocking event flags.
+   * @param {number} state - Content blocking event flags.
    * @returns {boolean} - Whether the protection has allowed a tracker.
    */
   isAllowing(state) {
@@ -309,7 +316,7 @@ class ProtectionCategory {
   }
 
   /**
-   * @param {Number} state - Content blocking event flags.
+   * @param {number} state - Content blocking event flags.
    * @returns {boolean} - Whether the protection has detected (blocked or
    * allowed) a tracker.
    */
@@ -318,7 +325,7 @@ class ProtectionCategory {
   }
 
   /**
-   * @param {Number} state - Content blocking event flags.
+   * @param {number} state - Content blocking event flags.
    * @returns {boolean} - Whether the protections has allowed a tracker that
    * would have normally been blocked.
    */
@@ -331,10 +338,14 @@ let Fingerprinting =
   new (class FingerprintingProtection extends ProtectionCategory {
     iconSrc = "chrome://browser/skin/fingerprint.svg";
     l10nKeys = {
-      title: "fingerprinter",
       content: "fingerprinters",
       general: "fingerprinter",
+      title: {
+        blocking: "protections-blocking-fingerprinters",
+        "not-blocking": "protections-not-blocking-fingerprinters",
+      },
     };
+    #isInitialized = false;
 
     constructor() {
       super(
@@ -362,15 +373,24 @@ let Fingerprinting =
     init() {
       this.updateEnabled();
 
-      Services.prefs.addObserver(this.prefEnabled, this);
-      Services.prefs.addObserver(this.prefFPPEnabled, this);
-      Services.prefs.addObserver(this.prefFPPEnabledInPrivateWindows, this);
+      if (!this.#isInitialized) {
+        Services.prefs.addObserver(this.prefEnabled, this);
+        Services.prefs.addObserver(this.prefFPPEnabled, this);
+        Services.prefs.addObserver(this.prefFPPEnabledInPrivateWindows, this);
+        this.#isInitialized = true;
+      }
     }
 
     uninit() {
-      Services.prefs.removeObserver(this.prefEnabled, this);
-      Services.prefs.removeObserver(this.prefFPPEnabled, this);
-      Services.prefs.removeObserver(this.prefFPPEnabledInPrivateWindows, this);
+      if (this.#isInitialized) {
+        Services.prefs.removeObserver(this.prefEnabled, this);
+        Services.prefs.removeObserver(this.prefFPPEnabled, this);
+        Services.prefs.removeObserver(
+          this.prefFPPEnabledInPrivateWindows,
+          this
+        );
+        this.#isInitialized = false;
+      }
     }
 
     updateEnabled() {
@@ -427,19 +447,26 @@ let Cryptomining = new ProtectionCategory(
 Cryptomining.l10nId = "trustpanel-cryptomining";
 Cryptomining.iconSrc = "chrome://browser/skin/controlcenter/cryptominers.svg";
 Cryptomining.l10nKeys = {
-  title: "cryptominer",
   content: "cryptominers",
   general: "cryptominer",
+  title: {
+    blocking: "protections-blocking-cryptominers",
+    "not-blocking": "protections-not-blocking-cryptominers",
+  },
 };
 
 let TrackingProtection =
   new (class TrackingProtection extends ProtectionCategory {
     iconSrc = "chrome://browser/skin/canvas.svg";
     l10nKeys = {
-      title: "tracking-content",
       content: "tracking-content",
       general: "tracking-content",
+      title: {
+        blocking: "protections-blocking-tracking-content",
+        "not-blocking": "protections-not-blocking-tracking-content",
+      },
     };
+    #isInitialized = false;
 
     constructor() {
       super(
@@ -496,26 +523,35 @@ let TrackingProtection =
     init() {
       this.updateEnabled();
 
-      Services.prefs.addObserver(this.prefEnabled, this);
-      Services.prefs.addObserver(this.prefEnabledInPrivateWindows, this);
-      Services.prefs.addObserver(this.prefEmailTrackingProtectionEnabled, this);
-      Services.prefs.addObserver(
-        this.prefEmailTrackingProtectionEnabledInPrivateWindows,
-        this
-      );
+      if (!this.#isInitialized) {
+        Services.prefs.addObserver(this.prefEnabled, this);
+        Services.prefs.addObserver(this.prefEnabledInPrivateWindows, this);
+        Services.prefs.addObserver(
+          this.prefEmailTrackingProtectionEnabled,
+          this
+        );
+        Services.prefs.addObserver(
+          this.prefEmailTrackingProtectionEnabledInPrivateWindows,
+          this
+        );
+        this.#isInitialized = true;
+      }
     }
 
     uninit() {
-      Services.prefs.removeObserver(this.prefEnabled, this);
-      Services.prefs.removeObserver(this.prefEnabledInPrivateWindows, this);
-      Services.prefs.removeObserver(
-        this.prefEmailTrackingProtectionEnabled,
-        this
-      );
-      Services.prefs.removeObserver(
-        this.prefEmailTrackingProtectionEnabledInPrivateWindows,
-        this
-      );
+      if (this.#isInitialized) {
+        Services.prefs.removeObserver(this.prefEnabled, this);
+        Services.prefs.removeObserver(this.prefEnabledInPrivateWindows, this);
+        Services.prefs.removeObserver(
+          this.prefEmailTrackingProtectionEnabled,
+          this
+        );
+        Services.prefs.removeObserver(
+          this.prefEmailTrackingProtectionEnabledInPrivateWindows,
+          this
+        );
+        this.#isInitialized = false;
+      }
     }
 
     observe() {
@@ -679,9 +715,12 @@ let ThirdPartyCookies =
   new (class ThirdPartyCookies extends ProtectionCategory {
     iconSrc = "chrome://browser/skin/controlcenter/3rdpartycookies.svg";
     l10nKeys = {
-      title: "cookies-trackers",
       content: "cross-site-tracking-cookies",
       general: "tracking-cookies",
+      title: {
+        blocking: "protections-blocking-cookies-third-party",
+        "not-blocking": "protections-not-blocking-cookies-third-party",
+      },
     };
 
     constructor() {
@@ -711,7 +750,7 @@ let ThirdPartyCookies =
         // of the Preferences UI.
         Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN, // Block all third-party cookies
         Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER, // Block third-party cookies from trackers
-        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN, // Block trackers and patition third-party trackers
+        Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN, // Partition all third-party cookies
         Ci.nsICookieService.BEHAVIOR_REJECT, // Block all cookies
       ];
 
@@ -749,7 +788,7 @@ let ThirdPartyCookies =
 
       if (
         [
-          Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+          Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
           Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
           Ci.nsICookieService.BEHAVIOR_ACCEPT,
         ].includes(this.behaviorPref)
@@ -789,8 +828,7 @@ let ThirdPartyCookies =
             l10nId = "content-blocking-cookies-blocking-unvisited-label";
             break;
           case Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER:
-          case Ci.nsICookieService
-            .BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN:
+          case Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN:
             l10nId = "content-blocking-cookies-blocking-trackers-label";
             break;
           default:
@@ -927,7 +965,7 @@ let ThirdPartyCookies =
           }
           break;
         case Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER:
-        case Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN:
+        case Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN:
           l10nId = siteException
             ? "protections-not-blocking-cross-site-tracking-cookies"
             : "protections-blocking-cookies-trackers";
@@ -1129,9 +1167,12 @@ let SocialTracking =
   new (class SocialTrackingProtection extends ProtectionCategory {
     iconSrc = "chrome://browser/skin/thumb-down.svg";
     l10nKeys = {
-      title: "social-media-trackers",
       content: "social-media-trackers",
       general: "social-tracking",
+      title: {
+        blocking: "protections-blocking-social-media-trackers",
+        "not-blocking": "protections-not-blocking-social-media-trackers",
+      },
     };
 
     constructor() {
@@ -1167,7 +1208,7 @@ let SocialTracking =
         val =>
           [
             Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
-            Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+            Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
           ].includes(val)
       );
     }
@@ -1326,7 +1367,7 @@ let cookieBannerHandling = new (class {
     );
   }
 
-  /*
+  /**
    * @returns {string} - Base domain (eTLD + 1) used for clearing site data.
    */
   get #currentBaseDomain() {
@@ -1469,8 +1510,8 @@ var gProtectionsHandler = {
     },
     {
       matchPatterns: ["https://www.tiktok.com/*"],
-      shimId: "TiktokEmbed",
-      displayName: "Tiktok",
+      shimId: "TikTokEmbed",
+      displayName: "TikTok",
     },
     {
       matchPatterns: ["https://platform.twitter.com/*"],
@@ -1766,6 +1807,13 @@ var gProtectionsHandler = {
       this,
       "smartblockEmbedsEnabledPref",
       "extensions.webcompat.smartblockEmbeds.enabled",
+      false
+    );
+
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "trustPanelEnabledPref",
+      "browser.urlbar.trustPanel.featureGate",
       false
     );
 
@@ -2409,6 +2457,7 @@ var gProtectionsHandler = {
 
     if (this._milestoneTextSet && !expired) {
       this._protectionsPopup.setAttribute("milestone", this.milestonePref);
+      NimbusFeatures.privacySecurityMessaging.recordExposureEvent();
     } else {
       this._protectionsPopup.removeAttribute("milestone");
     }
@@ -2807,7 +2856,7 @@ var gProtectionsHandler = {
   /**
    * Showing the protections popup.
    *
-   * @param {Object} options
+   * @param {object} options
    *                 The object could have two properties.
    *                 event:
    *                   The event triggers the protections popup to be opened.
@@ -2820,6 +2869,9 @@ var gProtectionsHandler = {
    *                   telemetry purposes.
    */
   showProtectionsPopup(options = {}) {
+    if (this.trustPanelEnabledPref) {
+      return;
+    }
     const { event, toast, openingReason } = options;
 
     this._initializePopup();
@@ -2903,7 +2955,7 @@ var gProtectionsHandler = {
   /**
    * Sends a message to webcompat extension to unblock content and remove placeholders
    *
-   * @param {String} shimId - the id of the shim blocking the content
+   * @param {string} shimId - the id of the shim blocking the content
    */
   _sendUnblockMessageToSmartblock(shimId) {
     Services.obs.notifyObservers(
@@ -2916,7 +2968,7 @@ var gProtectionsHandler = {
   /**
    * Sends a message to webcompat extension to reblock content
    *
-   * @param {String} shimId - the id of the shim blocking the content
+   * @param {string} shimId - the id of the shim blocking the content
    */
   _sendReblockMessageToSmartblock(shimId) {
     Services.obs.notifyObservers(
@@ -2946,7 +2998,7 @@ var gProtectionsHandler = {
           where: message.content.cta_where || "tabshifted",
         },
       },
-      window.browser
+      window.gBrowser.selectedBrowser
     );
 
     // Only send telemetry for non private browsing windows

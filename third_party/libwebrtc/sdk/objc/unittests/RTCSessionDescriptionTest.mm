@@ -11,8 +11,9 @@
 #import <Foundation/Foundation.h>
 #import <XCTest/XCTest.h>
 
+#include "test/gtest.h"
+
 #include "api/jsep.h"
-#include "rtc_base/gunit.h"
 
 #import "api/peerconnection/RTCSessionDescription+Private.h"
 #import "api/peerconnection/RTCSessionDescription.h"
@@ -39,7 +40,7 @@
 
   EXPECT_EQ(RTCSdpTypeAnswer,
             [RTC_OBJC_TYPE(RTCSessionDescription)
-                typeForStdString:nativeDescription->type()]);
+                typeForSdpType:nativeDescription->GetType()]);
 
   std::string sdp;
   nativeDescription->ToString(&sdp);

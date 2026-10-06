@@ -14,7 +14,7 @@
  * @type {GetActiveBrowserID}
  */
 export function getActiveBrowserID() {
-  const win = Services.wm.getMostRecentWindow("navigator:browser");
+  const win = Services.wm.getMostRecentBrowserWindow();
 
   const browserId = win?.gBrowser?.selectedBrowser?.browsingContext?.browserId;
   if (browserId) {
@@ -30,7 +30,7 @@ export function getActiveBrowserID() {
 }
 
 /**
- * @typedef {Object} ProfileCaptureResultAndAdditionalInformation
+ * @typedef {object} ProfileCaptureResultAndAdditionalInformation
  * @property {ProfileCaptureResult} profileCaptureResult
  * @property {MockedExports.ProfileGenerationAdditionalInformation} [additionalInformation]
  */

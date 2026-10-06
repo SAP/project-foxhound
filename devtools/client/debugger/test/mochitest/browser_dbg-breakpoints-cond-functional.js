@@ -31,15 +31,15 @@ add_task(async function () {
 
   await removeBreakpoint(dbg, findSource(dbg, "simple2.js").id, 5);
 
-  info("Set condition `foo(` (syntax error), and pause on the exception");
-  await setConditionalBreakpoint(dbg, 5, "foo(");
+  info("Set condition `foo)` (syntax error), and pause on the exception");
+  await setConditionalBreakpoint(dbg, 5, "foo)");
 
   invokeInTab("main");
   await waitForPaused(dbg);
   let whyPaused = dbg.win.document.querySelector(".why-paused").innerText;
   is(
     whyPaused,
-    "Error with conditional breakpoint\nfoo - simple2.js:5:2\nexpected expression, got end of script"
+    "Error with conditional breakpoint\nfoo - simple2.js:5:2\nunexpected token: ')'"
   );
   await resume(dbg);
   assertNotPaused(dbg);
@@ -54,7 +54,7 @@ add_task(async function () {
   whyPaused = dbg.win.document.querySelector(".why-paused").innerText;
   is(
     whyPaused,
-    "Error with conditional breakpoint\nfoo - simple2.js:5:2\nexpected expression, got end of script"
+    "Error with conditional breakpoint\nfoo - simple2.js:5:2\nunexpected token: ')'"
   );
   await resume(dbg);
 

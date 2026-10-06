@@ -14,12 +14,13 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     attributes:
         cron: true
     treeherder:
         kind: build
         tier: 2
-    worker-type: b-linux-xlarge-gcp
+    worker-type: b-linux-docker-xlarge-amd
     run:
         checkout: true
     worker:
@@ -77,44 +78,6 @@ tasks:
             platform: linux64-snap/debug
             symbol: B-nightly(amd64)
 
-    armhf-nightly/opt:
-        description: Build Firefox Nightly as a Snap using upstream definition
-        attributes:
-            build_platform: linux-armhf-snap
-            build_type: opt
-        index:
-            product: firefox
-            job-name: snap-armhf-nightly-opt
-        worker:
-            docker-image: {in-tree: snap-build-core24}
-            max-run-time: 9000
-        run:
-            using: run-task
-            command: >-
-              ./run.sh nightly armhf
-        treeherder:
-            platform: linux64-snap/opt
-            symbol: B-nightly(armhf)
-
-    armhf-nightly/debug:
-        description: Build Firefox Nightly (debug) as a Snap using upstream definition
-        attributes:
-            build_platform: linux-armhf-snap
-            build_type: debug
-        index:
-            product: firefox
-            job-name: snap-armhf-nightly-debug
-        worker:
-            docker-image: {in-tree: snap-build-core24}
-            max-run-time: 7200
-        run:
-            using: run-task
-            command: >-
-              ./run.sh nightly armhf --debug
-        treeherder:
-            platform: linux64-snap/debug
-            symbol: B-nightly(armhf)
-
     arm64-nightly/opt:
         description: Build Firefox Nightly as a Snap using upstream definition
         attributes:
@@ -162,7 +125,7 @@ tasks:
             product: firefox
             job-name: snap-amd64-beta-opt
         worker:
-            docker-image: {in-tree: snap-build-core22}
+            docker-image: {in-tree: snap-build-core24}
             max-run-time: 9000
         run:
             using: run-task
@@ -181,7 +144,7 @@ tasks:
             product: firefox
             job-name: snap-amd64-beta-debug
         worker:
-            docker-image: {in-tree: snap-build-core22}
+            docker-image: {in-tree: snap-build-core24}
             max-run-time: 7200
         run:
             using: run-task
@@ -190,44 +153,6 @@ tasks:
         treeherder:
             platform: linux64-snap/debug
             symbol: B-beta(amd64)
-
-    amd64-betacore24/opt:
-        description: Build Firefox Beta (Core24) as a Snap using upstream definition
-        attributes:
-            build_platform: linux64-snap
-            build_type: opt
-        index:
-            product: firefox
-            job-name: snap-amd64-betacore24-opt
-        worker:
-            docker-image: {in-tree: snap-build-core24}
-            max-run-time: 9000
-        run:
-            using: run-task
-            command: >-
-              ./run.sh beta-core24 amd64
-        treeherder:
-            platform: linux64-snap/opt
-            symbol: B-beta24(amd64)
-
-    amd64-betacore24/debug:
-        description: Build Firefox Beta (Core24 debug) as a Snap using upstream definition
-        attributes:
-            build_platform: linux64-snap
-            build_type: debug
-        index:
-            product: firefox
-            job-name: snap-amd64-betacore24-debug
-        worker:
-            docker-image: {in-tree: snap-build-core24}
-            max-run-time: 7200
-        run:
-            using: run-task
-            command: >-
-              ./run.sh beta-core24 amd64 --debug
-        treeherder:
-            platform: linux64-snap/debug
-            symbol: B-beta24(amd64)
 
     amd64-stable/opt:
         description: Build Firefox Stable as a Snap using upstream definition
@@ -238,7 +163,7 @@ tasks:
             product: firefox
             job-name: snap-amd64-stable-opt
         worker:
-            docker-image: {in-tree: snap-build-core22}
+            docker-image: {in-tree: snap-build-core24}
             max-run-time: 9000
         run:
             using: run-task
@@ -257,7 +182,7 @@ tasks:
             product: firefox
             job-name: snap-amd64-stable-debug
         worker:
-            docker-image: {in-tree: snap-build-core22}
+            docker-image: {in-tree: snap-build-core24}
             max-run-time: 7200
         run:
             using: run-task
@@ -266,44 +191,6 @@ tasks:
         treeherder:
             platform: linux64-snap/debug
             symbol: B-stable(amd64)
-
-    amd64-stablecore24/opt:
-        description: Build Firefox Stable (Core24) as a Snap using upstream definition
-        attributes:
-            build_platform: linux64-snap
-            build_type: opt
-        index:
-            product: firefox
-            job-name: snap-amd64-stablecore24-opt
-        worker:
-            docker-image: {in-tree: snap-build-core24}
-            max-run-time: 9000
-        run:
-            using: run-task
-            command: >-
-              ./run.sh stable-core24 amd64
-        treeherder:
-            platform: linux64-snap/opt
-            symbol: B-stable24(amd64)
-
-    amd64-stablecore24/debug:
-        description: Build Firefox Stable (Core24 debug) as a Snap using upstream definition
-        attributes:
-            build_platform: linux64-snap
-            build_type: debug
-        index:
-            product: firefox
-            job-name: snap-amd64-stablecore24-debug
-        worker:
-            docker-image: {in-tree: snap-build-core24}
-            max-run-time: 7200
-        run:
-            using: run-task
-            command: >-
-              ./run.sh stable-core24 amd64 --debug
-        treeherder:
-            platform: linux64-snap/debug
-            symbol: B-stable24(amd64)
 
     amd64-esr/opt:
         description: Build Firefox ESR 128 as a Snap using upstream definition
@@ -388,52 +275,6 @@ tasks:
         treeherder:
             platform: linux64-snap/debug
             symbol: B-local(amd64)
-
-    armhf-local/opt:
-        description: Build Firefox Nightly as a Snap using upstream definition and local gecko checkout
-        attributes:
-            build_platform: linux-armhf-snap
-            build_type: opt
-            cron: false
-        run-on-projects:
-            - mozilla-central
-            - autoland
-        index:
-            product: firefox
-            job-name: snap-armhf-opt
-        worker:
-            docker-image: {in-tree: snap-build-core24}
-            max-run-time: 9000
-        run:
-            using: run-task
-            command: >-
-              ./run.sh try armhf
-        treeherder:
-            platform: linux64-snap/opt
-            symbol: B-local(armhf)
-
-    armhf-local/debug:
-        description: Build Firefox Nightly (debug) as a Snap using upstream definition and local gecko checkout
-        attributes:
-            build_platform: linux-armhf-snap
-            build_type: debug
-            cron: false
-        run-on-projects:
-            - mozilla-central
-            - autoland
-        index:
-            product: firefox
-            job-name: snap-armhf-debug
-        worker:
-            docker-image: {in-tree: snap-build-core24}
-            max-run-time: 7200
-        run:
-            using: run-task
-            command: >-
-              ./run.sh try armhf --debug
-        treeherder:
-            platform: linux64-snap/debug
-            symbol: B-local(armhf)
 
     arm64-local/opt:
         description: Build Firefox Nightly as a Snap using upstream definition and local gecko checkout

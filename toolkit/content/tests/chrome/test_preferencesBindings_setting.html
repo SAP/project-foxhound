@@ -124,6 +124,37 @@
         is(inputValue, 9, "Callback set inputValue to 9");
       });
 
+      add_task(async function testPrefSettingOnUserClick() {
+        const PREF_ID = "test.setting.click";
+        const SETTING_ID = "testSettingOnUserClick";
+        await SpecialPowers.pushPrefEnv({
+          set: [[PREF_ID, false]],
+        });
+
+        let clickValue;
+        Preferences.add({
+          id: PREF_ID,
+          type: "bool",
+        });
+        Preferences.addSetting({
+          id: SETTING_ID,
+          pref: PREF_ID,
+          onUserClick: event => {
+            clickValue = event.detail.value;
+          },
+        });
+
+        let setting = Preferences.getSetting(SETTING_ID);
+        ok(setting, "Got a setting object");
+
+        ok(!clickValue, "onUserClick callback has not fired.");
+
+        let testEvent = new CustomEvent("click", { detail: { value: true } });
+        setting.userClick(testEvent);
+
+        is(clickValue, true, "Callback set clickValue to true.");
+      });
+
       add_task(async function testPrefSettingVisible() {
         const PREF_ID = "test.setting.visible";
         const SETTING_ID = "testSettingVisible";
@@ -144,6 +175,24 @@
         ok(setting, "Got a setting object");
 
         is(setting.visible, false, "Setting is not visible");
+      });
+
+      add_task(async function testPrefSettingDisabled() {
+        const DEFAULT_SETTING_ID = "testSettingDisabledDefault";
+        const DISABLED_SETTING_ID = "testSettingDisabled";
+        Preferences.addSetting({
+          id: DEFAULT_SETTING_ID,
+        });
+        Preferences.addSetting({
+          id: DISABLED_SETTING_ID,
+          disabled: () => true,
+        });
+
+        let defaultSetting = Preferences.getSetting(DEFAULT_SETTING_ID);
+        ok(!defaultSetting.disabled, "Setting is not disabled by default");
+
+        let disabledSetting = Preferences.getSetting(DISABLED_SETTING_ID);
+        ok(disabledSetting.disabled, "Setting disabled is called");
       });
 
       add_task(async function testPrefIsLocked() {
@@ -211,6 +260,283 @@
           BASE_CONFIG,
           "There's a default implementation"
         );
+      });
+
+      add_task(async function testDepsChange() {
+        const DEP_PREF_ID = "test.depsChange.dep";
+        const DEP_SETTING_ID = "testDepsChangeDep";
+        await SpecialPowers.pushPrefEnv({
+          set: [[DEP_PREF_ID, true]],
+        });
+        Preferences.add({ id: DEP_PREF_ID, type: "bool" });
+        Preferences.addSetting({
+          id: DEP_SETTING_ID,
+          pref: DEP_PREF_ID,
+        });
+
+        const PARENT_SETTING_ID = "testDepsChangeParent";
+        Preferences.addSetting({
+          id: PARENT_SETTING_ID,
+          deps: [DEP_SETTING_ID],
+          visible: deps => deps[DEP_SETTING_ID].value,
+        });
+
+        const parentSetting = Preferences.getSetting(PARENT_SETTING_ID);
+
+        ok(parentSetting.visible, "Parent setting is visible initially");
+
+        let settingChanged = waitForSettingChange(parentSetting);
+        Services.prefs.setBoolPref(DEP_PREF_ID, false);
+        await settingChanged;
+
+        ok(
+          !parentSetting.visible,
+          "Parent setting is not visible based on dep"
+        );
+      });
+
+      add_task(async function testDepsToCallbacks() {
+        const SETTING_ID = "testDepsToCallbacks";
+        const DEP_ID = "testDepsToCallbacksDep";
+        const DEP_VALUE = Symbol("DEP_VALUE");
+        const INITIAL_VALUE = Symbol("INITIAL_VALUE");
+
+        Preferences.addSetting({
+          id: DEP_ID,
+          get: () => DEP_VALUE,
+        });
+
+        let setupResult;
+        let _value = INITIAL_VALUE;
+        let _valueWasDepsValue = false;
+        let _onUserChangeValue = null;
+        Preferences.addSetting({
+          id: SETTING_ID,
+          deps: [DEP_ID],
+          get: (_, deps) =>
+            _value == INITIAL_VALUE
+              ? INITIAL_VALUE
+              : deps[DEP_ID].value == _value,
+          set: (val, deps) => {
+            _value = val;
+            _valueWasDepsValue = val == deps[DEP_ID].value;
+          },
+          visible: deps => deps[DEP_ID].value,
+          disabled: deps => deps[DEP_ID].value,
+          getControlConfig: (_, deps) => deps[DEP_ID].value,
+          onUserChange: (_, deps) => {
+            _onUserChangeValue = deps[DEP_ID].value;
+          },
+          setup: (_, deps, setting) => {
+            setupResult = [deps[DEP_ID].value, setting.value];
+          },
+        });
+
+        let setting = Preferences.getSetting(SETTING_ID);
+
+        // Check setup gets real Setting objects
+        is(setupResult.length, 2, "setup was called");
+        is(setupResult[0], DEP_VALUE, "setup gets the deps as a real Setting");
+        is(
+          setupResult[1],
+          INITIAL_VALUE,
+          "setup gets the setting as a real Setting"
+        );
+
+        // Check the straightforward callbacks.
+        is(setting.value, INITIAL_VALUE, "initial value is INITIAL_VALUE");
+        is(setting.visible, DEP_VALUE, "visible is passed deps");
+        is(setting.disabled, DEP_VALUE, "disabled is passed deps");
+        is(
+          setting.getControlConfig(),
+          DEP_VALUE,
+          "getControlConfig() is passed deps"
+        );
+
+        // Check set and get
+        setting.value = "foo";
+        is(_value, "foo", "Value was set to foo");
+        is(_valueWasDepsValue, false, "Value was not set to DEP_VALUE");
+        is(setting.value, false, "Value changed to false (value != DEP_VALUE)");
+        setting.value = DEP_VALUE;
+        is(_value, DEP_VALUE, "Value was set to DEP_VALUE");
+        is(_valueWasDepsValue, true, "set is passed deps (value == DEP_VALUE)");
+        is(setting.value, true, "get is passed deps (value == DEP_VALUE)");
+
+        // Check onUserChange
+        is(_onUserChangeValue, null, "_onUserChangeValue is unset");
+        setting.userChange("foo");
+        is(_onUserChangeValue, DEP_VALUE, "onUserChange() is passed deps");
+      });
+
+      // Validate that settings can depend on one another, and that the order
+      // they are added in doesn't matter for defining dependencies.
+      add_task(async function testCircularDeps() {
+        const FIRST_PREF = "test.settings-group.first";
+        const FIRST_SETTING = "first-setting";
+
+        const SECOND_PREF = "test.settings-group.second";
+        const SECOND_SETTING = "second-setting";
+
+        await SpecialPowers.pushPrefEnv({
+          set: [
+            [FIRST_PREF, true],
+            [SECOND_PREF, true],
+          ],
+        });
+        Preferences.addAll([
+          { id: FIRST_PREF, type: "bool" },
+          { id: SECOND_PREF, type: "bool" },
+        ]);
+        Preferences.addSetting({
+          id: FIRST_SETTING,
+          pref: FIRST_PREF,
+          deps: [SECOND_SETTING],
+          visible: deps => deps[SECOND_SETTING].value,
+        });
+        Preferences.addSetting({
+          id: SECOND_SETTING,
+          pref: SECOND_PREF,
+          deps: [FIRST_SETTING],
+          visible: deps => deps[FIRST_SETTING].value,
+        });
+
+        let firstSetting = Preferences.getSetting(FIRST_SETTING);
+        let secondSetting = Preferences.getSetting(SECOND_SETTING);
+
+        ok(firstSetting.visible, "First setting is visible");
+        ok(secondSetting.visible, "Second setting is visible");
+
+        let settingChanged = waitForSettingChange(secondSetting);
+        Services.prefs.setBoolPref(SECOND_PREF, false);
+        await settingChanged;
+
+        ok(!firstSetting.visible, "First setting is no longer visible.");
+
+        settingChanged = waitForSettingChange(secondSetting);
+        Services.prefs.setBoolPref(FIRST_PREF, false);
+        await settingChanged;
+
+        ok(!secondSetting.visible, "Second setting is no longer visible.");
+
+        // Validate the console output to ensure we haven't cause infinite recursion.
+        let consoleOutput = Services.console.getMessageArray();
+        let recursionErrors = consoleOutput.filter(
+          item =>
+            item instanceof Ci.nsIScriptError &&
+            item.message.includes("InternalError: too much recursion")
+        );
+        ok(
+          !recursionErrors.length,
+          "Circular dependencies don't produce any console errors."
+        );
+      });
+
+      // Test that Settings with dynamically changing prefs respond to external changes
+      add_task(async function testDynamicPrefChangeListener() {
+        const PREF_A = "test.dynamic.pref.a";
+        const PREF_B = "test.dynamic.pref.b";
+        const SETTING_ID = "testDynamicPrefSetting";
+
+        await SpecialPowers.pushPrefEnv({
+          set: [
+            [PREF_A, "initial-a"],
+            [PREF_B, "initial-b"],
+          ],
+        });
+
+        Preferences.add({ id: PREF_A, type: "string" });
+        Preferences.add({ id: PREF_B, type: "string" });
+
+        let currentPrefId = PREF_A;
+        let switchToPrefB;
+
+        Preferences.addSetting({
+          id: SETTING_ID,
+          setup(emitChange, _deps, setting) {
+            setting.pref = Preferences.get(currentPrefId);
+
+            switchToPrefB = () => {
+              currentPrefId = PREF_B;
+              setting.pref = Preferences.get(PREF_B);
+              emitChange();
+            };
+          },
+        });
+
+        let setting = Preferences.getSetting(SETTING_ID);
+        ok(setting, "Got setting instance");
+        is(setting.value, "initial-a", "Setting initially reads from PREF_A");
+
+        // Test 1: External change to PREF_A should trigger setting change
+        let settingChanged = waitForSettingChange(setting);
+        Services.prefs.setStringPref(PREF_A, "external-change-a");
+        await settingChanged;
+        is(
+          setting.value,
+          "external-change-a",
+          "Setting updated from external PREF_A change"
+        );
+
+        // Test 2: Switch to PREF_B dynamically
+        settingChanged = waitForSettingChange(setting);
+        switchToPrefB();
+        await settingChanged;
+        is(setting.value, "initial-b", "Setting now reads from PREF_B");
+
+        // Test 3: External change to PREF_B should trigger setting change
+        settingChanged = waitForSettingChange(setting);
+        Services.prefs.setStringPref(PREF_B, "external-change-b");
+        await settingChanged;
+        is(
+          setting.value,
+          "external-change-b",
+          "Setting updated from external PREF_B change"
+        );
+
+        // Test 4: External change to PREF_A should NOT trigger setting change anymore
+        let changeTriggered = false;
+        let handler = () => {
+          changeTriggered = true;
+        };
+        setting.on("change", handler);
+
+        Services.prefs.setStringPref(PREF_A, "should-not-trigger");
+
+        // Give some time for any async handlers
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        setting.off("change", handler);
+        ok(
+          !changeTriggered,
+          "Setting no longer listens to old PREF_A after switching to PREF_B"
+        );
+        is(
+          setting.value,
+          "external-change-b",
+          "Setting value unchanged (still PREF_B value)"
+        );
+      });
+
+      // Verify that a PreferenceNotAddedError is thrown if adding a
+      // Setting with a preference that has not been registered
+      // through Preferences.add/addAll.
+      add_task(async function testPrefNotRegistered() {
+        const PREF_ID = "non_existent_pref";
+        const SETTING_ID = "testSettingNoPref";
+        try {
+          Preferences.addSetting({
+            id: SETTING_ID,
+            pref: PREF_ID,
+          });
+        } catch (e) {
+          let errorName = e.name;
+          is(
+            errorName,
+            "PreferenceNotAddedError",
+            "Adding a Setting without registering the Preference should throw a PreferenceNotAddedError"
+          );
+        }
       });
     </script>
   </head>

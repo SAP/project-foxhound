@@ -8,6 +8,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ActorManagerParent: "resource://gre/modules/ActorManagerParent.sys.mjs",
 
   Log: "chrome://remote/content/shared/Log.sys.mjs",
+  RemoteAgent: "chrome://remote/content/components/RemoteAgent.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "logger", () => lazy.Log.get());
@@ -27,8 +28,16 @@ const FRAME_ACTOR_CONFIG = {
     },
   },
   allFrames: true,
-  messageManagerGroups: ["browsers"],
 };
+
+// Bug 1713440: Workaround until the MessageHandler
+// supports chrome browsing contexts.
+if (lazy.RemoteAgent.allowSystemAccess) {
+  FRAME_ACTOR_CONFIG.includeChrome = true;
+} else {
+  // Without system access limit loading the actor for content browsers only.
+  FRAME_ACTOR_CONFIG.messageManagerGroups = ["browsers"];
+}
 
 /**
  * MessageHandlerFrameActor exposes a simple registration helper to lazily

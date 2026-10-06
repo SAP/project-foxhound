@@ -1,10 +1,6 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-#include <algorithm>
 
 #include "mozilla/IOInterposer.h"
 #include "mozilla/PoisonIOInterposer.h"
@@ -12,7 +8,6 @@
 #include "mozilla/SHA1.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Telemetry.h"
-#include "mozilla/Unused.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsLocalFile.h"
@@ -61,7 +56,7 @@ class SHA1Stream {
     str.AppendVprintf(aFormat, list);
     va_end(list);
     mSHA1.update(str.get(), str.Length());
-    mozilla::Unused << fwrite(str.get(), 1, str.Length(), mFile);
+    (void)fwrite(str.get(), 1, str.Length(), mFile);
   }
   void Finish(mozilla::SHA1Sum::Hash& aHash) {
     int fd = fileno(mFile);
@@ -203,8 +198,8 @@ void LateWriteObserver::Observe(
   // We append the sha1 of the contents to the file name. This provides a simple
   // client side deduplication.
   nsAutoString finalName(u"Telemetry.LateWriteFinal-"_ns);
-  for (int i = 0; i < 20; ++i) {
-    finalName.AppendPrintf("%02x", sha1[i]);
+  for (unsigned char c : sha1) {
+    finalName.AppendPrintf("%02x", c);
   }
   RefPtr<nsIFile> file;
   if (NS_SUCCEEDED(NS_NewPathStringLocalFile(nameAux, getter_AddRefs(file)))) {

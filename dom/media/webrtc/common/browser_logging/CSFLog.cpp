@@ -2,17 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <stdio.h>
-#include <string.h>
-#include <stdarg.h>
-
 #include "CSFLog.h"
+
+#include <stdarg.h>
+#include <stdio.h>
+
 #include "MainThreadUtils.h"
-
-#include "prthread.h"
-
 #include "mozilla/Logging.h"
 #include "mozilla/Sprintf.h"
+#include "prthread.h"
 
 mozilla::LazyLogModule gSignalingLog("signaling");
 
@@ -62,9 +60,8 @@ void CSFLogV(CSFLogLevel priority, const char* sourceFile, int sourceLine,
   }
 
   VsprintfLiteral(message, format, args);
-  MOZ_LOG(
-      gSignalingLog, level,
-      ("[%s|%s] %s:%d: %s", threadName, tag, sourceFile, sourceLine, message));
+  MOZ_LOG_FMT(gSignalingLog, level, "[{}|{}] {}:{}: {}", threadName, tag,
+              sourceFile, sourceLine, message);
 #endif
 }
 

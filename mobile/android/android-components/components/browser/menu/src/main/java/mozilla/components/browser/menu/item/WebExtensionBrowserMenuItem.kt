@@ -12,6 +12,7 @@ import android.widget.TextView
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.content.res.AppCompatResources.getDrawable
 import androidx.core.graphics.drawable.toDrawable
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import mozilla.components.browser.menu.BrowserMenu
@@ -41,6 +42,7 @@ class WebExtensionBrowserMenuItem(
     internal val id: String = "",
     override val isCollapsingMenuLimit: Boolean = false,
     override val isSticky: Boolean = false,
+    val uiScope: CoroutineScope = MainScope(),
 ) : BrowserMenuItem {
     override var visible: () -> Boolean = { true }
 
@@ -123,7 +125,7 @@ class WebExtensionBrowserMenuItem(
 
     @VisibleForTesting
     internal fun setupIcon(view: View, imageView: ImageView, iconTintColorResource: Int?) {
-        MainScope().launch {
+        uiScope.launch {
             loadIcon(view.context, imageView.measuredHeight)?.let {
                 iconTintColorResource?.let { tint -> imageView.setTintResource(tint) }
                 imageView.setImageDrawable(it)
@@ -143,7 +145,7 @@ class WebExtensionBrowserMenuItem(
                 "Failed to load browser action icon, falling back to default.",
             )
 
-            getDrawable(context, iconsR.drawable.mozac_ic_web_extension_default_icon)
+            getDrawable(context, iconsR.drawable.mozac_ic_extension_fill_24)
         }
     }
 

@@ -7,7 +7,7 @@ constructor warnings. We have replaced its build system with our own.
 Snappy comes from:
   https://github.com/google/snappy
 
-We are currently using revision: 1.2.0
+We are currently using revision: 1.2.2
 
 To upgrade to a newer version:
   1. Check out the new code using git.

@@ -1,0 +1,137 @@
+[DEFAULT]
+support-files = [
+  "DOMTestCase.js",
+  "activity-home.css",
+  "exclusions.js",
+  "files/hc_nodtdstaff.html",
+  "files/hc_nodtdstaff.xhtml",
+  "files/hc_staff.html",
+  "files/hc_staff.xhtml",
+  "files/staff.dtd",
+  "files/staff.xml",
+  "files/svgunit.js",
+  "files/xhtml-special.ent",
+  "files/xhtml1-frameset.dtd",
+  "files/xhtml1-transitional.dtd",
+  "files/hc_nodtdstaff.svg",
+  "files/hc_nodtdstaff.xml",
+  "files/hc_staff.svg",
+  "files/hc_staff.xml",
+  "files/staff.svg",
+  "files/svgtest.js",
+  "files/xhtml-lat1.ent",
+  "files/xhtml-symbol.ent",
+  "files/xhtml1-strict.dtd",
+]
+
+["test_attrcreatedocumentfragment.html"]
+
+["test_attrcreatetextnode.html"]
+
+["test_attrcreatetextnode2.html"]
+
+["test_attrdefaultvalue.html"]
+
+["test_attreffectivevalue.html"]
+
+["test_attrentityreplacement.html"]
+
+["test_attrname.html"]
+
+["test_attrnextsiblingnull.html"]
+
+["test_attrnotspecifiedvalue.html"]
+
+["test_attrparentnodenull.html"]
+
+["test_attrprevioussiblingnull.html"]
+
+["test_attrremovechild1.html"]
+
+["test_attrreplacechild1.html"]
+
+["test_attrsetvaluenomodificationallowederr.html"]
+
+["test_attrsetvaluenomodificationallowederrEE.html"]
+
+["test_attrspecifiedvalue.html"]
+
+["test_attrspecifiedvaluechanged.html"]
+
+["test_attrspecifiedvalueremove.html"]
+
+["test_hc_attrappendchild1.html"]
+
+["test_hc_attrappendchild2.html"]
+
+["test_hc_attrappendchild3.html"]
+
+["test_hc_attrappendchild4.html"]
+
+["test_hc_attrappendchild5.html"]
+
+["test_hc_attrappendchild6.html"]
+
+["test_hc_attrchildnodes1.html"]
+
+["test_hc_attrchildnodes2.html"]
+
+["test_hc_attrclonenode1.html"]
+
+["test_hc_attrcreatedocumentfragment.html"]
+
+["test_hc_attrcreatetextnode.html"]
+
+["test_hc_attrcreatetextnode2.html"]
+
+["test_hc_attreffectivevalue.html"]
+
+["test_hc_attrfirstchild.html"]
+
+["test_hc_attrgetvalue1.html"]
+
+["test_hc_attrgetvalue2.html"]
+
+["test_hc_attrhaschildnodes.html"]
+
+["test_hc_attrinsertbefore1.html"]
+
+["test_hc_attrinsertbefore2.html"]
+
+["test_hc_attrinsertbefore3.html"]
+
+["test_hc_attrinsertbefore4.html"]
+
+["test_hc_attrinsertbefore5.html"]
+
+["test_hc_attrinsertbefore6.html"]
+
+["test_hc_attrinsertbefore7.html"]
+
+["test_hc_attrlastchild.html"]
+
+["test_hc_attrname.html"]
+
+["test_hc_attrnextsiblingnull.html"]
+
+["test_hc_attrnormalize.html"]
+
+["test_hc_attrparentnodenull.html"]
+
+["test_hc_attrprevioussiblingnull.html"]
+
+["test_hc_attrremovechild1.html"]
+
+["test_hc_attrremovechild2.html"]
+
+["test_hc_attrreplacechild1.html"]
+
+["test_hc_attrreplacechild2.html"]
+
+["test_hc_attrsetvalue1.html"]
+
+["test_hc_attrsetvalue2.html"]
+
+["test_hc_attrspecifiedvalue.html"]
+
+["test_hc_attrspecifiedvaluechanged.html"]

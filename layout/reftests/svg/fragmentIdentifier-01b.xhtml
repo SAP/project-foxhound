@@ -1,0 +1,35 @@
+<html xmlns="http://www.w3.org/1999/xhtml" class="reftest-wait">
+  <head>
+    <title>Testcases for SVG fragment identifiers with media fragments</title>
+    <style>
+
+iframe {
+  border: none;
+}
+
+    </style>
+  </head>
+  <body style="background-color: lime;">
+    <div>
+      <iframe scrolling="no" type="image/svg+xml" width="100" height="100" src="fragmentIdentifier-rect-01.svg#limeView&amp;t=0" />
+      <iframe scrolling="no" type="image/svg+xml" width="100" height="100" src="fragmentIdentifier-rect-01.svg#svgView(viewBox(0,200,100,100))&amp;t=0" />
+    </div>
+    <div>
+      <iframe scrolling="no" type="image/svg+xml" width="100" height="100" src="fragmentIdentifier-rect-01.svg#svgView(viewBox(0,0,100,100);transform(translate(0,200)))&amp;t=0" />
+      <iframe scrolling="no" id="replace" type="image/svg+xml" width="100" height="100" src="fragmentIdentifier-rect-01.svg#svgView(viewBox(0,0,100,100);transform(translate(0,0))&amp;t=0" />
+      <iframe scrolling="no" id="remove" type="image/svg+xml" width="100" height="100" src="fragmentIdentifier-rect-01.svg#svgView(viewBox(0,200,100,100);transform(translate(0,200)))&amp;t=0" />
+    </div>
+    <script type="text/javascript">
+      window.onload = function() {
+        document.addEventListener("MozReftestInvalidate", doTest, false);
+        setTimeout(doTest, 4000); // fallback for running outside reftest
+      }
+
+      function doTest() {
+        document.getElementById("replace").setAttribute("src","fragmentIdentifier-rect-01.svg#svgView(viewBox(0,0,100,100);transform(translate(0,200)))&amp;t=0");
+        document.getElementById("remove").setAttribute("src","fragmentIdentifier-rect-01.svg#svgView(viewBox(0,200,100,100))&amp;t=0");
+        document.documentElement.removeAttribute("class");
+      }
+    </script>
+  </body>
+</html>

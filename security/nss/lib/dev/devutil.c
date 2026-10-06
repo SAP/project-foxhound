@@ -192,7 +192,7 @@ enum {
 
 struct nssTokenObjectCacheStr {
     NSSToken *token;
-    PZLock *lock;
+    PRLock *lock;
     PRBool loggedIn;
     PRBool doObjectType[3];
     PRBool searchedObjectType[3];
@@ -211,7 +211,7 @@ nssTokenObjectCache_Create(
     if (!rvCache) {
         goto loser;
     }
-    rvCache->lock = PZ_NewLock(nssILockOther); /* XXX */
+    rvCache->lock = PR_NewLock(); /* XXX */
     if (!rvCache->lock) {
         goto loser;
     }
@@ -252,9 +252,9 @@ nssTokenObjectCache_Clear(
     nssTokenObjectCache *cache)
 {
     if (cache) {
-        PZ_Lock(cache->lock);
+        PR_Lock(cache->lock);
         clear_cache(cache);
-        PZ_Unlock(cache->lock);
+        PR_Unlock(cache->lock);
     }
 }
 
@@ -265,7 +265,7 @@ nssTokenObjectCache_Destroy(
     if (cache) {
         clear_cache(cache);
         if (cache->lock) {
-            PZ_DestroyLock(cache->lock);
+            PR_DestroyLock(cache->lock);
         }
         nss_ZFreeIf(cache);
     }
@@ -277,7 +277,7 @@ nssTokenObjectCache_HaveObjectClass(
     CK_OBJECT_CLASS objclass)
 {
     PRBool haveIt;
-    PZ_Lock(cache->lock);
+    PR_Lock(cache->lock);
     switch (objclass) {
         case CKO_CERTIFICATE:
             haveIt = cache->doObjectType[cachedCerts];
@@ -292,7 +292,7 @@ nssTokenObjectCache_HaveObjectClass(
         default:
             haveIt = PR_FALSE;
     }
-    PZ_Unlock(cache->lock);
+    PR_Unlock(cache->lock);
     return haveIt;
 }
 
@@ -361,10 +361,6 @@ create_object(
         goto loser;
     }
     rvCachedObject->arena = arena;
-    /* The cache is tied to the token, and therefore the objects
-     * in it should not hold references to the token.
-     */
-    (void)nssToken_Destroy(object->token);
     rvCachedObject->object = object;
     rvCachedObject->attributes = nss_ZNEWARRAY(arena, CK_ATTRIBUTE, numTypes);
     if (!rvCachedObject->attributes) {
@@ -386,6 +382,12 @@ create_object(
     *status = PR_SUCCESS;
     nssSlot_Destroy(slot);
 
+    /* The cache is tied to the token, and therefore the objects in it should
+     * not hold references to the token. Drop the object's token reference
+     * only after success so that on failure the caller can still safely
+     * destroy the object (and its token reference) exactly once.
+     */
+    (void)nssToken_Destroy(object->token);
     return rvCachedObject;
 loser:
     *status = PR_FAILURE;
@@ -749,7 +751,7 @@ nssTokenObjectCache_FindObjectsByTemplate(
         default:
             goto finish;
     }
-    PZ_Lock(cache->lock);
+    PR_Lock(cache->lock);
     if (cache->doObjectType[objectType]) {
         status = get_token_objects_for_cache(cache, objectType, objclass);
         if (status == PR_SUCCESS) {
@@ -757,7 +759,7 @@ nssTokenObjectCache_FindObjectsByTemplate(
                                               otemplate, otlen, maximumOpt);
         }
     }
-    PZ_Unlock(cache->lock);
+    PR_Unlock(cache->lock);
 finish:
     if (statusOpt) {
         *statusOpt = status;
@@ -803,7 +805,7 @@ nssTokenObjectCache_GetObjectAttributes(
     if (!token_is_present(cache)) {
         return PR_FAILURE;
     }
-    PZ_Lock(cache->lock);
+    PR_Lock(cache->lock);
     switch (objclass) {
         case CKO_CERTIFICATE:
             objectType = cachedCerts;
@@ -867,13 +869,13 @@ nssTokenObjectCache_GetObjectAttributes(
             atemplate[i].ulValueLen = (CK_ULONG)-1;
         }
     }
-    PZ_Unlock(cache->lock);
+    PR_Unlock(cache->lock);
     if (mark) {
         nssArena_Unmark(arena, mark);
     }
     return PR_SUCCESS;
 loser:
-    PZ_Unlock(cache->lock);
+    PR_Unlock(cache->lock);
     if (mark) {
         nssArena_Release(arena, mark);
     }
@@ -897,7 +899,7 @@ nssTokenObjectCache_ImportObject(
     if (!token_is_present(cache)) {
         return PR_SUCCESS; /* cache not active, ignored */
     }
-    PZ_Lock(cache->lock);
+    PR_Lock(cache->lock);
     switch (objclass) {
         case CKO_CERTIFICATE:
             objectType = cachedCerts;
@@ -911,11 +913,11 @@ nssTokenObjectCache_ImportObject(
             objectType = cachedCRLs;
             break;
         default:
-            PZ_Unlock(cache->lock);
+            PR_Unlock(cache->lock);
             return PR_SUCCESS; /* don't need to import it here */
     }
     if (!cache_available_for_object_type(cache, objectType)) {
-        PZ_Unlock(cache->lock);
+        PR_Unlock(cache->lock);
         return PR_SUCCESS; /* cache not active, ignored */
     }
     count = 0;
@@ -951,7 +953,7 @@ nssTokenObjectCache_ImportObject(
     } else {
         status = PR_FAILURE;
     }
-    PZ_Unlock(cache->lock);
+    PR_Unlock(cache->lock);
     return status;
 }
 
@@ -965,7 +967,7 @@ nssTokenObjectCache_RemoveObject(
     if (!token_is_present(cache)) {
         return;
     }
-    PZ_Lock(cache->lock);
+    PR_Lock(cache->lock);
     for (oType = 0; oType < 3; oType++) {
         if (!cache_available_for_object_type(cache, oType) ||
             !cache->objects[oType]) {
@@ -993,7 +995,7 @@ nssTokenObjectCache_RemoveObject(
         nss_ZFreeIf(cache->objects[oType]); /* no entries remaining */
         cache->objects[oType] = NULL;
     }
-    PZ_Unlock(cache->lock);
+    PR_Unlock(cache->lock);
 }
 
 /* We need a general hash to support CKO_TRUST

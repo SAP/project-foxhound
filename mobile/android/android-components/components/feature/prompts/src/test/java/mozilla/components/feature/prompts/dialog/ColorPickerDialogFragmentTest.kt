@@ -34,6 +34,7 @@ class ColorPickerDialogFragmentTest {
     @Before
     fun setup() {
         openMocks(this)
+        testContext.setTheme(com.google.android.material.R.style.Theme_MaterialComponents_Light)
     }
 
     @Test

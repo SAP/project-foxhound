@@ -14,11 +14,11 @@
 #include <cmath>
 #include <cstddef>
 #include <deque>
-#include <functional>
 #include <list>
 #include <map>
 #include <set>
 
+#include "absl/functional/any_invocable.h"
 #include "api/sequence_checker.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/test/network_emulation/cross_traffic.h"
@@ -41,7 +41,7 @@ class RandomWalkCrossTraffic final : public CrossTrafficGenerator {
  public:
   RandomWalkCrossTraffic(RandomWalkConfig config,
                          CrossTrafficRoute* traffic_route);
-  ~RandomWalkCrossTraffic();
+  ~RandomWalkCrossTraffic() override;
 
   void Process(Timestamp at_time) override;
   TimeDelta GetProcessInterval() const override;
@@ -68,7 +68,7 @@ class PulsedPeaksCrossTraffic final : public CrossTrafficGenerator {
  public:
   PulsedPeaksCrossTraffic(PulsedPeaksConfig config,
                           CrossTrafficRoute* traffic_route);
-  ~PulsedPeaksCrossTraffic();
+  ~PulsedPeaksCrossTraffic() override;
 
   void Process(Timestamp at_time) override;
   TimeDelta GetProcessInterval() const override;
@@ -97,14 +97,15 @@ class TcpMessageRouteImpl final : public TcpMessageRoute {
   // Sends a TCP message of the given `size` over the route, `on_received` is
   // called when the message has been delivered. Note that the connection
   // parameters are reset iff there's no currently pending message on the route.
-  void SendMessage(size_t size, std::function<void()> on_received) override;
+  void SendMessage(size_t size,
+                   absl::AnyInvocable<void()> on_received) override;
 
  private:
   // Represents a message sent over the route. When all fragments has been
   // delivered, the message is considered delivered and the handler is
   // triggered. This only happen once.
   struct Message {
-    std::function<void()> handler;
+    absl::AnyInvocable<void()> handler;
     std::set<int> pending_fragment_ids;
   };
   // Represents a piece of a message that fit into a TCP packet.

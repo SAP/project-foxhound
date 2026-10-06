@@ -17,9 +17,16 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=420863
           src="actions.js"></script>
 
   <script type="application/javascript">
-    var gClickHandler = null;
+    const { TestUtils } = ChromeUtils.importESModule(
+      "resource://testing-common/TestUtils.sys.mjs");
 
-    function doTest() {
+    /* global testAction */
+    const gClickHandler = {
+      handleEvent: function handleEvent() {
+      },
+    };
+
+    async function doTest() {
       // Actions should be exposed on any accessible having related DOM node
       // with registered 'click' event handler.
 
@@ -34,42 +41,41 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=420863
       is(td1Acc.actionCount, 0,
            "Simple table cell shouldn't have any actions");
 
+      await testAction({
+        id: "td2", // "onclick" attribute
+        actionName: "click",
+        actionIndex: 0,
+        events: CLICK_EVENTS,
+      });
+
       // ////////////////////////////////////////////////////////////////////////
       // one td with 'onclick' attribute and one with registered click handler
       var td3Node = getNode("td3");
 
+      // check actions
+      is(getAccessible(td3Node).actionCount, 0,
+          "td3 initially shouldn't have actions");
+
       // register 'click' event handler
-      gClickHandler = {
-        handleEvent: function handleEvent() {
-        },
-      };
       td3Node.addEventListener("click", gClickHandler);
 
+      await testAction({
+        id: td3Node,
+        actionName: "click",
+        actionIndex: 0,
+        events: CLICK_EVENTS,
+      });
+
+
+      td3Node.removeEventListener("click", gClickHandler);
+
+      await TestUtils.waitForTick();
+
       // check actions
-      var actionsArray = [
-        {
-          ID: "td2", // "onclick" attribute
-          actionName: "click",
-          actionIndex: 0,
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: td3Node,
-          actionName: "click",
-          actionIndex: 0,
-          events: CLICK_EVENTS,
-          checkOnClickEvent: function check() {
-            // unregister click event handler
-            this.ID.removeEventListener("click", gClickHandler);
+      is(getAccessible(td3Node).actionCount, 0,
+          "td3 shouldn't have actions after listener removed");
 
-            // check actions
-            is(getAccessible(this.ID).actionCount, 0,
-               "td3 shouldn't have actions");
-          },
-        },
-      ];
-
-      testActions(actionsArray); // will call SimpleTest.finish()
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

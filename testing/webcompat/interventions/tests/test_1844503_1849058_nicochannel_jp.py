@@ -9,7 +9,7 @@ async def check_for_regression(client, url, shouldPass=True):
         "視聴するには、会員プランまたはレンタルプランを購入してください"
     )
     BLOCKED = client.text("このブラウザはサポートされていません。")
-    PLAY = client.css(".nfcp-overlay-play-lg")
+    PLAY = client.css("[data-testid=PlayArrowRoundedIcon]")
 
     await client.navigate(url)
 

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -127,9 +125,6 @@ class OffThreadPromiseTask : public JS::Dispatchable {
   // Cancellable list, and a dispatch has been attempted.
   bool cancellable_;
 
-  void operator=(const OffThreadPromiseTask&) = delete;
-  OffThreadPromiseTask(const OffThreadPromiseTask&) = delete;
-
   void unregister(OffThreadPromiseRuntimeState& state);
   // Used when we want to reuse a lock for unregistration and deletion.
   void unregister(OffThreadPromiseRuntimeState& state,
@@ -160,6 +155,10 @@ class OffThreadPromiseTask : public JS::Dispatchable {
 
  public:
   ~OffThreadPromiseTask() override;
+
+  void operator=(const OffThreadPromiseTask&) = delete;
+  OffThreadPromiseTask(const OffThreadPromiseTask&) = delete;
+
   static void DestroyUndispatchedTask(OffThreadPromiseTask* task,
                                       OffThreadPromiseRuntimeState& state,
                                       const AutoLockHelperThreadState& lock);
@@ -257,7 +256,16 @@ class OffThreadPromiseRuntimeState {
   // not require a lock.
   JS::DispatchToEventLoopCallback dispatchToEventLoopCallback_;
   JS::DelayedDispatchToEventLoopCallback delayedDispatchToEventLoopCallback_;
+  JS::AsyncTaskStartedCallback asyncTaskStartedCallback_;
+  JS::AsyncTaskFinishedCallback asyncTaskFinishedCallback_;
   void* dispatchToEventLoopClosure_;
+
+#ifdef DEBUG
+  // Set to true when the JS shell is force-quitting.
+  // In this case the tasks won't be drained and the destructor cannot
+  // assert anything.
+  HelperThreadLockData<bool> forceQuitting_;
+#endif
 
   // A set of all OffThreadPromiseTasks that have successfully called 'init'.
   // This set doesn't own tasks. OffThreadPromiseTask's destructor decrements
@@ -298,7 +306,6 @@ class OffThreadPromiseRuntimeState {
   // mean "the DispatchToEventLoopCallback failed after this task was dispatched
   // for execution".
   HelperThreadLockData<ConditionVariable> allFailed_;
-  HelperThreadLockData<size_t> numFailed_;
 
   // The queue of JS::Dispatchables used by the DispatchToEventLoopCallback that
   // calling js::UseInternalJobQueues installs.
@@ -331,14 +338,21 @@ class OffThreadPromiseRuntimeState {
       void*, js::UniquePtr<JS::Dispatchable>&&, uint32_t);
   bool usingInternalDispatchQueue() const;
 
-  void operator=(const OffThreadPromiseRuntimeState&) = delete;
-  OffThreadPromiseRuntimeState(const OffThreadPromiseRuntimeState&) = delete;
+  // Used by OffThreadPromiseTask
+  void registerTask(JSContext* cx, OffThreadPromiseTask* task);
+  void unregisterTask(OffThreadPromiseTask* task);
 
  public:
   OffThreadPromiseRuntimeState();
   ~OffThreadPromiseRuntimeState();
-  void init(JS::DispatchToEventLoopCallback callback,
-            JS::DelayedDispatchToEventLoopCallback delayCallback,
+
+  void operator=(const OffThreadPromiseRuntimeState&) = delete;
+  OffThreadPromiseRuntimeState(const OffThreadPromiseRuntimeState&) = delete;
+
+  void init(JS::DispatchToEventLoopCallback dispatchCallback,
+            JS::DelayedDispatchToEventLoopCallback delayedDispatchCallback,
+            JS::AsyncTaskStartedCallback asyncTaskStartedCallback,
+            JS::AsyncTaskFinishedCallback asyncTaskFinishedCallback,
             void* closure);
   void initInternalDispatchQueue();
   bool initialized() const;
@@ -355,8 +369,15 @@ class OffThreadPromiseRuntimeState {
   bool delayedDispatchToEventLoop(
       js::UniquePtr<JS::Dispatchable>&& dispatchable, uint32_t delay);
 
+  void cancelTasks(JSContext* cx);
+  void cancelTasks(AutoLockHelperThreadState& lock, JSContext* cx);
+
   // shutdown() must be called by the JSRuntime while the JSRuntime is valid.
   void shutdown(JSContext* cx);
+
+#ifdef DEBUG
+  void setForceQuitting() { forceQuitting_ = true; }
+#endif
 };
 
 }  // namespace js

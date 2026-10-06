@@ -20,7 +20,7 @@ global variables are defined into the given object.
       "chrome://browser/content/browser.js", this
     );
 
-See `mozIJSSubScriptLoader.idl <https://searchfox.org/mozilla-central/source/js/xpconnect/idl/mozIJSSubScriptLoader.idl>`_ for more details
+See :searchfox:`mozIJSSubScriptLoader.idl <js/xpconnect/idl/mozIJSSubScriptLoader.idl>` for more details
 
 Asynchronous Classic Script Compile
 -----------------------------------
@@ -41,7 +41,7 @@ classic script, and execute in given globals.
       const result2 = script.executeInGlobal(targetGlobal2);
     }
 
-See `ChromeUtils.webidl <https://searchfox.org/mozilla-central/source/dom/chrome-webidl/ChromeUtils.webidl>`_ and `PrecompiledScript.webidl <https://searchfox.org/mozilla-central/source/dom/chrome-webidl/PrecompiledScript.webidl>`_ for more details.
+See :searchfox:`ChromeUtils.webidl <dom/chrome-webidl/ChromeUtils.webidl>` and :searchfox:`PrecompiledScript.webidl <dom/chrome-webidl/PrecompiledScript.webidl>` for more details.
 
 Synchronous Module Import
 -------------------------

@@ -25,14 +25,17 @@
   </head>
 
   <body
-    onload="NewPrefDialog.init(); AboutConfig.init();"
-    onunload="AboutConfig.uninit();"
+    onload="
+      NewPrefDialog.init();
+      AboutConfig.init();
+    "
+    onunload="AboutConfig.uninit()"
   >
     <div class="toolbar">
       <div class="toolbar-container">
         <div
           id="new-pref-toggle-button"
-          onclick="NewPrefDialog.toggleShowHide();"
+          onclick="NewPrefDialog.toggleShowHide()"
         />
 
         <div class="toolbar-item" id="filter-container">
@@ -42,7 +45,7 @@
             type="search"
             data-l10n-id="config-toolbar-search"
             value=""
-            oninput="AboutConfig.bufferFilterInput();"
+            oninput="AboutConfig.bufferFilterInput()"
           />
         </div>
       </div>
@@ -57,12 +60,12 @@
               id="new-pref-name"
               type="text"
               data-l10n-id="config-new-pref-name"
-              onfocus="NewPrefDialog.focusName(event);"
-              oninput="NewPrefDialog.updateName(event);"
+              onfocus="NewPrefDialog.focusName(event)"
+              oninput="NewPrefDialog.updateName(event)"
             />
             <select
               id="new-pref-type"
-              onchange="NewPrefDialog.type = event.target.value;"
+              onchange="NewPrefDialog.type = event.target.value"
             >
               <option
                 value="boolean"
@@ -87,7 +90,7 @@
             />
             <div
               class="pref-button toggle"
-              onclick="NewPrefDialog.toggleBoolValue();"
+              onclick="NewPrefDialog.toggleBoolValue()"
               data-l10n-id="config-pref-toggle-button"
             ></div>
           </div>
@@ -110,13 +113,13 @@
             <div
               class="pref-button cancel"
               id="negative-button"
-              onclick="NewPrefDialog.hide();"
+              onclick="NewPrefDialog.hide()"
               data-l10n-id="config-new-pref-cancel-button"
             ></div>
             <div
               class="pref-button create"
               id="positive-button"
-              onclick="NewPrefDialog.create(event);"
+              onclick="NewPrefDialog.create(event)"
               data-l10n-id="config-new-pref-create-button"
             ></div>
           </div>
@@ -133,11 +136,11 @@
     <menu type="context" id="prefs-context-menu">
       <menuitem
         data-l10n-id="config-context-menu-copy-pref-name"
-        onclick="AboutConfig.clipboardCopy('name');"
+        onclick="AboutConfig.clipboardCopy('name')"
       ></menuitem>
       <menuitem
         data-l10n-id="config-context-menu-copy-pref-value"
-        onclick="AboutConfig.clipboardCopy('value');"
+        onclick="AboutConfig.clipboardCopy('value')"
       ></menuitem>
     </menu>
   </body>

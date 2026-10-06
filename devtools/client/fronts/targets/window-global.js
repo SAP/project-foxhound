@@ -124,6 +124,21 @@ class WindowGlobalTargetFront extends TargetMixin(
     this._title = title;
   }
 
+  /**
+   * Set the targetFront isErrorPage flag.
+   *
+   * @param {boolean} isErrorPage
+   */
+  setIsErrorPage(isErrorPage) {
+    this.isErrorPage = isErrorPage;
+  }
+
+  /**
+   * Will be true when the page failed loading
+   * and we are instead showing about:neterror page.
+   */
+  isErrorPage = false;
+
   async detach() {
     // When calling this.destroy() at the end of this method,
     // we will end up calling detach again from TargetMixin.destroy.

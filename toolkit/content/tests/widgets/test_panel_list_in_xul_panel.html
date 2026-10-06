@@ -23,14 +23,6 @@
 
     <div id="content">
       <button id="anchor-button">Open</button>
-      <panel-list id="panel-list">
-        <panel-item>one</panel-item>
-        <panel-item>two</panel-item>
-        <panel-item>three</panel-item>
-        <panel-item>four</panel-item>
-        <panel-item>five</panel-item>
-        <panel-item>six</panel-item>
-      </panel-list>
     </div>
 
     <script class="testbody" type="application/javascript">
@@ -44,11 +36,31 @@
         // we have to create the <xul:panel> programmatically with script.
         let content = document.getElementById("content");
         xulPanel = document.createXULElement("panel");
-        panelList = document.getElementById("panel-list");
+
+        // Create panel-list programmatically so it's never connected outside XUL panel
+        panelList = document.createElement("panel-list");
+        panelList.id = "panel-list";
+        ["one", "two", "three", "four", "five", "six"].forEach(text => {
+          let item = document.createElement("panel-item");
+          item.textContent = text;
+          panelList.appendChild(item);
+        });
+
         xulPanel.appendChild(panelList);
         content.appendChild(xulPanel);
         anchorButton = document.getElementById("anchor-button");
         anchorButton.addEventListener("click", e => panelList.toggle(e));
+      });
+
+      add_task(async function testSupportsPopover() {
+        ok(
+          !panelList.supportsPopover(),
+          "Panel list should not support popover when inside a XUL panel"
+        );
+        ok(
+          !panelList.hasAttribute("popover"),
+          "Panel list inside XUL panel should not have popover attribute"
+        );
       });
 
       add_task(async function testXULPanelOpenFromClicks() {

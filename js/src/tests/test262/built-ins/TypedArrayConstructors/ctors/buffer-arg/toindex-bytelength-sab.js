@@ -71,6 +71,6 @@ testWithTypedArrayConstructors(function(TA) {
       name + " prototype"
     );
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

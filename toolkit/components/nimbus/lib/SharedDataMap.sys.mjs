@@ -22,6 +22,7 @@ export class SharedDataMap extends EventEmitter {
     this._isReady = false;
     this._readyDeferred = Promise.withResolvers();
     this._data = null;
+    this._db = null;
 
     if (IS_MAIN_PROCESS) {
       this._shutdownBlocker = () => {
@@ -48,6 +49,15 @@ export class SharedDataMap extends EventEmitter {
         }
         return null;
       });
+
+      if (lazy.NimbusEnrollments.databaseEnabled) {
+        // We may be in an xpcshell test that has not initialized the
+        // ProfilesDatastoreService.
+        //
+        // TODO(bug 1967779): require the ProfilesDatastoreService to be initialized
+        // and remove this check.
+        this._db = new lazy.NimbusEnrollments(this);
+      }
     } else {
       this._syncFromParent();
       Services.cpmm.sharedData.addEventListener("change", this);
@@ -63,9 +73,20 @@ export class SharedDataMap extends EventEmitter {
         await this._jsonFile.load();
 
         if (lazy.NimbusEnrollments.readFromDatabaseEnabled) {
-          this._data = await lazy.NimbusEnrollments.loadEnrollments();
+          this._data = await this._db.init();
         } else {
           this._data = this._jsonFile.data;
+
+          // We still need to optionally load the database so that we have sync
+          // timestamp information.
+          if (lazy.NimbusEnrollments.databaseEnabled) {
+            // We may be in an xpcshell test that has not initialized the
+            // ProfilesDatastoreService.
+            //
+            // TODO(bug 1967779): require the ProfilesDatastoreService to be initialized
+            // and remove this check.
+            await this._db.init();
+          }
         }
 
         this._syncToChildren({ flush: true });

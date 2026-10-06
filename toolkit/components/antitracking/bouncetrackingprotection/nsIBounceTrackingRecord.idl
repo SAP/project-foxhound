@@ -1,0 +1,16 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+/**
+ * This interface exposes the per-tab bounce tracking record that captures the
+ * redirect chain context for a navigation.
+ */
+[scriptable, builtinclass, uuid(C4298AB7-C0C0-4FC7-977B-8C8F9B6B7206)]
+interface nsIBounceTrackingRecord : nsISupports {
+    readonly attribute ACString initialHost;
+    readonly attribute ACString finalHost;
+    readonly attribute Array<ACString> bounceHosts;
+};

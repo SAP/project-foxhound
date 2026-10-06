@@ -1,0 +1,15 @@
+{
+  "label": "my.rhinoshield.fr",
+  "bugs": {
+    "1896354": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://my.rhinoshield.fr/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

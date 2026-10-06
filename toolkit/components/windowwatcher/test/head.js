@@ -114,9 +114,14 @@ const POPUP_CHROME_FLAGS = {
 };
 
 async function testPopupPatterns(nonPopup) {
+  const TEST_PATH = getRootDirectory(gTestPath).replace(
+    "chrome://mochitests/content",
+    "https://example.com"
+  );
+
   for (const { features, popup } of WINDOW_OPEN_FEATURES_PATTERNS) {
     const BLANK_PAGE = "data:text/html,";
-    const OPEN_PAGE = "data:text/plain,hello";
+    const OPEN_PAGE = TEST_PATH + "file_open_page.html";
     const SCRIPT_PAGE = `data:text/html,<script>window.open("${OPEN_PAGE}", "", "${features}");</script>`;
 
     async function testNewWindow(flags) {

@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 add_task(async function test_json_parser() {
@@ -123,10 +121,7 @@ add_task(async function test_getExtensionVersionWithoutValidation() {
 
 add_task(
   {
-    pref_set: [
-      ["extensions.manifestV3.enabled", true],
-      ["extensions.webextensions.warnings-as-errors", false],
-    ],
+    pref_set: [["extensions.webextensions.warnings-as-errors", false]],
   },
   async function test_applications_no_longer_valid_in_mv3() {
     let id = "some@id";

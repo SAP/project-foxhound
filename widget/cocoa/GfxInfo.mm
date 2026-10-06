@@ -1,12 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <OpenGL/OpenGL.h>
 #include <OpenGL/CGLRenderers.h>
-
-#include "mozilla/ArrayUtils.h"
 
 #include "GfxInfo.h"
 #include "nsUnicharUtils.h"
@@ -15,8 +12,6 @@
 #include "nsCocoaUtils.h"
 #include "mozilla/Preferences.h"
 #include "js/PropertyAndElement.h"  // JS_SetElement, JS_SetProperty
-
-#include <algorithm>
 
 #import <Foundation/Foundation.h>
 #import <IOKit/IOKitLib.h>
@@ -31,46 +26,46 @@ using namespace mozilla::widget;
 NS_IMPL_ISUPPORTS_INHERITED(GfxInfo, GfxInfoBase, nsIGfxInfoDebug)
 #endif
 
-GfxInfo::GfxInfo() : mNumGPUsDetected(0), mOSXVersion{0} {
+GfxInfo::GfxInfo() : mNumGPUsDetected(0), mMacOSVersion{0} {
   mAdapterRAM[0] = mAdapterRAM[1] = 0;
 }
 
-static OperatingSystem OSXVersionToOperatingSystem(uint32_t aOSXVersion) {
-  switch (nsCocoaFeatures::ExtractMajorVersion(aOSXVersion)) {
+static OperatingSystem MacOSVersionToOperatingSystem(uint32_t aMacOSVersion) {
+  switch (nsCocoaFeatures::ExtractMajorVersion(aMacOSVersion)) {
     case 10:
-      switch (nsCocoaFeatures::ExtractMinorVersion(aOSXVersion)) {
+      switch (nsCocoaFeatures::ExtractMinorVersion(aMacOSVersion)) {
         case 6:
-          return OperatingSystem::OSX10_6;
+          return OperatingSystem::MacOS10_6;
         case 7:
-          return OperatingSystem::OSX10_7;
+          return OperatingSystem::MacOS10_7;
         case 8:
-          return OperatingSystem::OSX10_8;
+          return OperatingSystem::MacOS10_8;
         case 9:
-          return OperatingSystem::OSX10_9;
+          return OperatingSystem::MacOS10_9;
         case 10:
-          return OperatingSystem::OSX10_10;
+          return OperatingSystem::MacOS10_10;
         case 11:
-          return OperatingSystem::OSX10_11;
+          return OperatingSystem::MacOS10_11;
         case 12:
-          return OperatingSystem::OSX10_12;
+          return OperatingSystem::MacOS10_12;
         case 13:
-          return OperatingSystem::OSX10_13;
+          return OperatingSystem::MacOS10_13;
         case 14:
-          return OperatingSystem::OSX10_14;
+          return OperatingSystem::MacOS10_14;
         case 15:
-          return OperatingSystem::OSX10_15;
+          return OperatingSystem::MacOS10_15;
         case 16:
           // Depending on the SDK version, we either get 10.16 or 11.0.
           // Normalize this to 11.0.
-          return OperatingSystem::OSX11_0;
+          return OperatingSystem::MacOS11_0;
         default:
           break;
       }
       break;
     case 11:
-      switch (nsCocoaFeatures::ExtractMinorVersion(aOSXVersion)) {
+      switch (nsCocoaFeatures::ExtractMinorVersion(aMacOSVersion)) {
         case 0:
-          return OperatingSystem::OSX11_0;
+          return OperatingSystem::MacOS11_0;
         default:
           break;
       }
@@ -92,7 +87,7 @@ static uint32_t IntValueOfCFData(CFDataRef d) {
 
   if (d) {
     const uint32_t* vp = reinterpret_cast<const uint32_t*>(CFDataGetBytePtr(d));
-    if (vp != NULL) value = *vp;
+    if (vp != nullptr) value = *vp;
   }
 
   return value;
@@ -139,7 +134,7 @@ void GfxInfo::GetDeviceInfo() {
       }
     }
     IOObjectRelease(entry);
-    if (mNumGPUsDetected == 2) {
+    if (mNumGPUsDetected == kMaxGPUs) {
       break;
     }
   }
@@ -165,6 +160,9 @@ void GfxInfo::GetDeviceInfo() {
         ++mNumGPUsDetected;
       }
       IOObjectRelease(entry);
+      if (mNumGPUsDetected == kMaxGPUs) {
+        break;
+      }
     }
 
     IOObjectRelease(io_iter);
@@ -176,9 +174,30 @@ void GfxInfo::GetDeviceInfo() {
   }
 #endif
 
-  CFMutableDictionaryRef apv_dev_dict = IOServiceMatching("AppleParavirtGPU");
-  if (IOServiceGetMatchingServices(kIOMasterPortDefault, apv_dev_dict,
-                                   &io_iter) == kIOReturnSuccess) {
+  // "AppleParavirtGPU" is the class name in VMs that use the Apple
+  // Virtualization framework. But it's "AppleParavirtGPUControl" in VMware
+  // VMs (on Intel) that use VMware's "paravirtualized driver". Parallels
+  // Intel VMs have a "AppleParavirtGPUControl" service. But, like VMware
+  // VMs that don't use the "paravirtualized driver", they also have
+  // kClassCodeDisplayVGA devices. So these cases will have been dealt with
+  // above. On Apple Silicon, Parallels uses Apple's Virtualization
+  // framework. VMware doesn't support macOS guest VMs on Apple Silicon.
+  for (const char* className :
+       {"AppleParavirtGPU", "AppleParavirtGPUControl"}) {
+    CFMutableDictionaryRef apv_dev_dict = IOServiceMatching(className);
+    if (IOServiceGetMatchingServices(kIOMasterPortDefault, apv_dev_dict,
+                                     &io_iter) == kIOReturnSuccess) {
+      io_registry_entry_t entry = IOIteratorNext(io_iter);
+      if (entry != IO_OBJECT_NULL) {
+        IOObjectRelease(entry);
+        IOIteratorReset(io_iter);
+        break;
+      }
+      IOObjectRelease(io_iter);
+    }
+    io_iter = IO_OBJECT_NULL;
+  }
+  if (io_iter) {
     io_registry_entry_t entry = IO_OBJECT_NULL;
     while ((entry = IOIteratorNext(io_iter)) != IO_OBJECT_NULL) {
       CFTypeRef vendor_id_ref =
@@ -198,6 +217,9 @@ void GfxInfo::GetDeviceInfo() {
       }
       ++mNumGPUsDetected;
       IOObjectRelease(entry);
+      if (mNumGPUsDetected == kMaxGPUs) {
+        break;
+      }
     }
 
     IOObjectRelease(io_iter);
@@ -217,17 +239,14 @@ nsresult GfxInfo::Init() {
 
   AddCrashReportAnnotations();
 
-  mOSXVersion = nsCocoaFeatures::macOSVersion();
-  mOSXVersionEx =
-      GfxVersionEx(nsCocoaFeatures::ExtractMajorVersion(mOSXVersion),
-                   nsCocoaFeatures::ExtractMinorVersion(mOSXVersion),
-                   nsCocoaFeatures::ExtractBugFixVersion(mOSXVersion));
+  mMacOSVersion = nsCocoaFeatures::macOSVersion();
+  mMacOSVersionEx =
+      GfxVersionEx(nsCocoaFeatures::ExtractMajorVersion(mMacOSVersion),
+                   nsCocoaFeatures::ExtractMinorVersion(mMacOSVersion),
+                   nsCocoaFeatures::ExtractBugFixVersion(mMacOSVersion));
 
   return rv;
 }
-
-NS_IMETHODIMP
-GfxInfo::GetD2DEnabled(bool* aEnabled) { return NS_ERROR_FAILURE; }
 
 NS_IMETHODIMP
 GfxInfo::GetDWriteEnabled(bool* aEnabled) { return NS_ERROR_FAILURE; }
@@ -274,7 +293,7 @@ GfxInfo::GetAdapterDescription(nsAString& aAdapterDescription) {
 /* readonly attribute DOMString adapterDescription2; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterDescription2(nsAString& aAdapterDescription) {
-  if (mNumGPUsDetected < 2) {
+  if (mNumGPUsDetected < kMaxGPUs) {
     return NS_ERROR_FAILURE;
   }
   aAdapterDescription.AssignLiteral("");
@@ -291,7 +310,7 @@ GfxInfo::GetAdapterRAM(uint32_t* aAdapterRAM) {
 /* readonly attribute DOMString adapterRAM2; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterRAM2(uint32_t* aAdapterRAM) {
-  if (mNumGPUsDetected < 2) {
+  if (mNumGPUsDetected < kMaxGPUs) {
     return NS_ERROR_FAILURE;
   }
   *aAdapterRAM = mAdapterRAM[1];
@@ -308,7 +327,7 @@ GfxInfo::GetAdapterDriver(nsAString& aAdapterDriver) {
 /* readonly attribute DOMString adapterDriver2; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterDriver2(nsAString& aAdapterDriver) {
-  if (mNumGPUsDetected < 2) {
+  if (mNumGPUsDetected < kMaxGPUs) {
     return NS_ERROR_FAILURE;
   }
   aAdapterDriver.AssignLiteral("");
@@ -325,7 +344,7 @@ GfxInfo::GetAdapterDriverVendor(nsAString& aAdapterDriverVendor) {
 /* readonly attribute DOMString adapterDriverVendor2; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterDriverVendor2(nsAString& aAdapterDriverVendor) {
-  if (mNumGPUsDetected < 2) {
+  if (mNumGPUsDetected < kMaxGPUs) {
     return NS_ERROR_FAILURE;
   }
   aAdapterDriverVendor.AssignLiteral("");
@@ -342,7 +361,7 @@ GfxInfo::GetAdapterDriverVersion(nsAString& aAdapterDriverVersion) {
 /* readonly attribute DOMString adapterDriverVersion2; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterDriverVersion2(nsAString& aAdapterDriverVersion) {
-  if (mNumGPUsDetected < 2) {
+  if (mNumGPUsDetected < kMaxGPUs) {
     return NS_ERROR_FAILURE;
   }
   aAdapterDriverVersion.AssignLiteral("");
@@ -359,7 +378,7 @@ GfxInfo::GetAdapterDriverDate(nsAString& aAdapterDriverDate) {
 /* readonly attribute DOMString adapterDriverDate2; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterDriverDate2(nsAString& aAdapterDriverDate) {
-  if (mNumGPUsDetected < 2) {
+  if (mNumGPUsDetected < kMaxGPUs) {
     return NS_ERROR_FAILURE;
   }
   aAdapterDriverDate.AssignLiteral("");
@@ -376,7 +395,7 @@ GfxInfo::GetAdapterVendorID(nsAString& aAdapterVendorID) {
 /* readonly attribute DOMString adapterVendorID2; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterVendorID2(nsAString& aAdapterVendorID) {
-  if (mNumGPUsDetected < 2) {
+  if (mNumGPUsDetected < kMaxGPUs) {
     return NS_ERROR_FAILURE;
   }
   aAdapterVendorID = mAdapterVendorID[1];
@@ -393,7 +412,7 @@ GfxInfo::GetAdapterDeviceID(nsAString& aAdapterDeviceID) {
 /* readonly attribute DOMString adapterDeviceID2; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterDeviceID2(nsAString& aAdapterDeviceID) {
-  if (mNumGPUsDetected < 2) {
+  if (mNumGPUsDetected < kMaxGPUs) {
     return NS_ERROR_FAILURE;
   }
   aAdapterDeviceID = mAdapterDeviceID[1];
@@ -445,44 +464,38 @@ void GfxInfo::AddCrashReportAnnotations() {
 const nsTArray<RefPtr<GfxDriverInfo>>& GfxInfo::GetGfxDriverInfo() {
   if (!sDriverInfo->Length()) {
     IMPLEMENT_MAC_DRIVER_BLOCKLIST(
-        OperatingSystem::OSX, DeviceFamily::RadeonX1000,
+        OperatingSystem::MacOS, DeviceFamily::RadeonX1000,
         nsIGfxInfo::FEATURE_OPENGL_LAYERS, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
         "FEATURE_FAILURE_MAC_RADEONX1000_NO_TEXTURE2D");
     IMPLEMENT_MAC_DRIVER_BLOCKLIST(
-        OperatingSystem::OSX, DeviceFamily::Geforce7300GT,
+        OperatingSystem::MacOS, DeviceFamily::Geforce7300GT,
         nsIGfxInfo::FEATURE_WEBGL_OPENGL, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
         "FEATURE_FAILURE_MAC_7300_NO_WEBGL");
     IMPLEMENT_MAC_DRIVER_BLOCKLIST(
-        OperatingSystem::OSX, DeviceFamily::IntelHDGraphicsToIvyBridge,
+        OperatingSystem::MacOS, DeviceFamily::IntelHDGraphicsToIvyBridge,
         nsIGfxInfo::FEATURE_GL_SWIZZLE, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
         "FEATURE_FAILURE_MAC_INTELHD4000_NO_SWIZZLE");
     // We block texture swizzling everwhere on mac because it's broken in some
     // configurations and we want to support GPU switching.
     IMPLEMENT_MAC_DRIVER_BLOCKLIST(
-        OperatingSystem::OSX, DeviceFamily::All, nsIGfxInfo::FEATURE_GL_SWIZZLE,
-        nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
+        OperatingSystem::MacOS, DeviceFamily::All,
+        nsIGfxInfo::FEATURE_GL_SWIZZLE, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
         "FEATURE_FAILURE_MAC_GPU_SWITCHING_NO_SWIZZLE");
 
     // Older generation Intel devices do not perform well with WebRender.
     IMPLEMENT_MAC_DRIVER_BLOCKLIST(
-        OperatingSystem::OSX, DeviceFamily::IntelWebRenderBlocked,
+        OperatingSystem::MacOS, DeviceFamily::IntelWebRenderBlocked,
         nsIGfxInfo::FEATURE_WEBRENDER, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
         "FEATURE_FAILURE_INTEL_GEN5_OR_OLDER");
-
-    // Intel HD3000 disabled due to bug 1661505
-    IMPLEMENT_MAC_DRIVER_BLOCKLIST(
-        OperatingSystem::OSX, DeviceFamily::IntelSandyBridge,
-        nsIGfxInfo::FEATURE_WEBRENDER, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
-        "FEATURE_FAILURE_INTEL_MAC_HD3000_NO_WEBRENDER");
   }
   return *sDriverInfo;
 }
 
 OperatingSystem GfxInfo::GetOperatingSystem() {
-  return OSXVersionToOperatingSystem(mOSXVersion);
+  return MacOSVersionToOperatingSystem(mMacOSVersion);
 }
 
-GfxVersionEx GfxInfo::OperatingSystemVersionEx() { return mOSXVersionEx; }
+GfxVersionEx GfxInfo::OperatingSystemVersionEx() { return mMacOSVersionEx; }
 
 nsresult GfxInfo::GetFeatureStatusImpl(
     int32_t aFeature, int32_t* aStatus, nsAString& aSuggestedDriverVersion,
@@ -491,7 +504,7 @@ nsresult GfxInfo::GetFeatureStatusImpl(
   NS_ENSURE_ARG_POINTER(aStatus);
   aSuggestedDriverVersion.SetIsVoid(true);
   *aStatus = nsIGfxInfo::FEATURE_STATUS_UNKNOWN;
-  OperatingSystem os = OSXVersionToOperatingSystem(mOSXVersion);
+  OperatingSystem os = MacOSVersionToOperatingSystem(mMacOSVersion);
   if (aOS) *aOS = os;
 
   if (sShutdownOccurred) {
@@ -504,11 +517,11 @@ nsresult GfxInfo::GetFeatureStatusImpl(
     if (aFeature == nsIGfxInfo::FEATURE_CANVAS2D_ACCELERATION) {
       // See bug 1249659
       switch (os) {
-        case OperatingSystem::OSX10_5:
-        case OperatingSystem::OSX10_6:
-        case OperatingSystem::OSX10_7:
+        case OperatingSystem::MacOS10_5:
+        case OperatingSystem::MacOS10_6:
+        case OperatingSystem::MacOS10_7:
           *aStatus = nsIGfxInfo::FEATURE_BLOCKED_OS_VERSION;
-          aFailureId = "FEATURE_FAILURE_CANVAS_OSX_VERSION";
+          aFailureId = "FEATURE_FAILURE_CANVAS_MACOS_VERSION";
           break;
         default:
           *aStatus = nsIGfxInfo::FEATURE_STATUS_OK;
@@ -551,13 +564,13 @@ NS_IMETHODIMP GfxInfo::SpoofDriverVersion(const nsAString& aDriverVersion) {
 
 /* void spoofOSVersion (in unsigned long aVersion); */
 NS_IMETHODIMP GfxInfo::SpoofOSVersion(uint32_t aVersion) {
-  mOSXVersion = aVersion;
+  mMacOSVersion = aVersion;
   return NS_OK;
 }
 
 NS_IMETHODIMP GfxInfo::SpoofOSVersionEx(uint32_t aMajor, uint32_t aMinor,
                                         uint32_t aBuild, uint32_t aRevision) {
-  mOSXVersionEx = GfxVersionEx(aMajor, aMinor, aBuild, aRevision);
+  mMacOSVersionEx = GfxVersionEx(aMajor, aMinor, aBuild, aRevision);
   return NS_OK;
 }
 

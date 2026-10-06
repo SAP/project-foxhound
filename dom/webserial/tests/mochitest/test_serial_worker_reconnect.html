@@ -1,0 +1,67 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Web Serial API - Worker Reconnect After Disconnect While Open</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="serial_test_utils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script>
+"use strict";
+
+SimpleTest.waitForExplicitFinish();
+
+SimpleTest.registerCleanupFunction(async function() {
+  await cleanupSerialPorts();
+  await navigator.serial.resetToDefaultMockDevices();
+});
+
+add_task(async function testWorkerCanReopenAfterDisconnectReconnect() {
+  await navigator.serial.removeAllMockDevices();
+
+  await simulateDeviceConnection(
+    "worker-reconnect-test", "/dev/ttyUSB70", 0x1234, 0x5678
+  );
+
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  ok(port, "Should be able to request the simulated port");
+
+  const worker = new Worker("serial_worker_reconnect.js");
+
+  const testPromise = new Promise((resolve, reject) => {
+    worker.onmessage = (e) => {
+      if (e.data.type === "test") {
+        ok(e.data.result, e.data.message);
+      } else if (e.data.type === "ready_for_disconnect") {
+        info("Worker has port open, simulating device disconnection");
+        simulateDeviceDisconnection("worker-reconnect-test");
+      } else if (e.data.type === "ready_for_reconnect") {
+        info("Worker ready for reconnect, simulating device connection");
+        simulateDeviceConnection(
+          "worker-reconnect-test", "/dev/ttyUSB70", 0x1234, 0x5678
+        );
+      } else if (e.data.type === "done") {
+        resolve();
+      } else if (e.data.type === "error") {
+        reject(new Error(e.data.message));
+      }
+    };
+
+    worker.onerror = (e) => {
+      reject(new Error(`Worker error: ${e.message}`));
+    };
+  });
+
+  try {
+    await testPromise;
+  } finally {
+    worker.terminate();
+  }
+});
+
+</script>
+</body>
+</html>

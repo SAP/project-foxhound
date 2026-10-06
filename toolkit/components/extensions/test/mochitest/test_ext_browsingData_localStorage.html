@@ -269,7 +269,6 @@ add_task(async function test_browserData_on_aboutnewtab_and_file_data() {
 
   await new Promise(resolve => {
     const chromeScript = SpecialPowers.loadChromeScript(async () => {
-      /* eslint-env mozilla/chrome-script */
       const { SiteDataTestUtils } = ChromeUtils.importESModule(
         "resource://testing-common/SiteDataTestUtils.sys.mjs"
       );

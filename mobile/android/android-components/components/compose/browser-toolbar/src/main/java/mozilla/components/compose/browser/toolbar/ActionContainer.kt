@@ -6,8 +6,10 @@ package mozilla.components.compose.browser.toolbar
 
 import android.graphics.drawable.Drawable
 import androidx.appcompat.content.res.AppCompatResources
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.remember
@@ -16,11 +18,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewLightDark
 import mozilla.components.compose.base.theme.AcornTheme
 import mozilla.components.compose.browser.toolbar.concept.Action
 import mozilla.components.compose.browser.toolbar.concept.Action.ActionButton
 import mozilla.components.compose.browser.toolbar.concept.Action.ActionButtonRes
+import mozilla.components.compose.browser.toolbar.concept.Action.AnimatedPillActionRes
 import mozilla.components.compose.browser.toolbar.concept.Action.SearchSelectorAction
 import mozilla.components.compose.browser.toolbar.concept.Action.SearchSelectorAction.ContentDescription.StringContentDescription
 import mozilla.components.compose.browser.toolbar.concept.Action.SearchSelectorAction.ContentDescription.StringResContentDescription
@@ -28,6 +31,7 @@ import mozilla.components.compose.browser.toolbar.concept.Action.SearchSelectorA
 import mozilla.components.compose.browser.toolbar.concept.Action.SearchSelectorAction.Icon.DrawableResIcon
 import mozilla.components.compose.browser.toolbar.concept.Action.TabCounterAction
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.BrowserToolbarEvent
+import mozilla.components.compose.browser.toolbar.ui.AnimatedPillButton
 import mozilla.components.compose.browser.toolbar.ui.SearchSelector
 import mozilla.components.compose.browser.toolbar.ui.TabCounter
 import mozilla.components.compose.browser.toolbar.ui.ActionButton as ActionButtonComposable
@@ -36,7 +40,7 @@ import mozilla.components.ui.icons.R as iconsR
 /**
  * A container for displaying [Action]s.
  *
- * @param actions List of [Action]s to display in thuuuuuuuuuuu`e container.
+ * @param actions List of [Action]s to display in the container.
  * @param onInteraction Callback for handling [BrowserToolbarEvent]s on user interactions.
  * @param modifier Modifier to apply to the container.
  * @param horizontalArrangement The horizontal arrangement of the layout's children.
@@ -103,6 +107,21 @@ fun ActionContainer(
                         onInteraction = { onInteraction(it) },
                     )
                 }
+
+                is AnimatedPillActionRes -> {
+                    action.iconDrawable()?.let {
+                        AnimatedPillButton(
+                            icon = it,
+                            overlayIcon = action.overlayDrawable(),
+                            text = stringResource(action.textResId),
+                            contentDescription = stringResource(action.contentDescriptionResId),
+                            highlighted = action.highlighted,
+                            animated = action.animated,
+                            onClick = action.onClick,
+                            onInteraction = onInteraction,
+                        )
+                    }
+                }
             }
         }
     }
@@ -111,7 +130,7 @@ fun ActionContainer(
 @Composable
 private fun ActionButtonRes.iconDrawable(): Drawable? {
     val context = LocalContext.current
-    val tint = AcornTheme.colors.iconPrimary
+    val tint = MaterialTheme.colorScheme.onSurface
 
     return remember(this, context) {
         AppCompatResources.getDrawable(context, drawableResId)
@@ -120,8 +139,24 @@ private fun ActionButtonRes.iconDrawable(): Drawable? {
 }
 
 @Composable
+private fun AnimatedPillActionRes.iconDrawable(): Drawable? {
+    val context = LocalContext.current
+    return remember(iconResId, context) {
+        AppCompatResources.getDrawable(context, iconResId)
+    }
+}
+
+@Composable
+private fun AnimatedPillActionRes.overlayDrawable(): Drawable? {
+    val context = LocalContext.current
+    return remember(overlayResId, context) {
+        AppCompatResources.getDrawable(context, overlayResId)
+    }
+}
+
+@Composable
 private fun ActionButton.iconDrawable(): Drawable? {
-    val tint = AcornTheme.colors.iconPrimary
+    val tint = MaterialTheme.colorScheme.onSurface
 
     return remember(this) {
         when (shouldTint) {
@@ -141,7 +176,7 @@ private fun SearchSelectorAction.contentDescription() = when (contentDescription
 @Composable
 private fun SearchSelectorAction.iconDrawable(): Drawable? {
     val context = LocalContext.current
-    val tint = AcornTheme.colors.iconPrimary
+    val tint = MaterialTheme.colorScheme.onSurface
 
     val drawable = remember(this, context) {
         when (icon) {
@@ -153,7 +188,7 @@ private fun SearchSelectorAction.iconDrawable(): Drawable? {
     return drawable
 }
 
-@Preview(showBackground = true)
+@PreviewLightDark
 @Composable
 private fun ActionContainerPreview() {
     AcornTheme {
@@ -181,8 +216,17 @@ private fun ActionContainerPreview() {
                     showPrivacyMask = false,
                     onClick = object : BrowserToolbarEvent {},
                 ),
+                AnimatedPillActionRes(
+                    iconResId = iconsR.drawable.mozac_ic_shield_checkmark_24,
+                    overlayResId = iconsR.drawable.mozac_ic_globe_24,
+                    textResId = R.string.mozac_clear_button_description,
+                    contentDescriptionResId = R.string.mozac_clear_button_description,
+                    highlighted = true,
+                    onClick = object : BrowserToolbarEvent {},
+                ),
             ),
             onInteraction = {},
+            modifier = Modifier.background(color = MaterialTheme.colorScheme.surfaceContainerHighest),
         )
     }
 }

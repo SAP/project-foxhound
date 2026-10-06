@@ -13,6 +13,14 @@
       #pseudo-container::after {
         content: 'after';
       }
+      dialog::backdrop {
+        background-color: rgb(from hotpink r g b / 0.2);
+      }
+
+      ::view-transition-group(root) {
+        /* large number so the view-transition pseudo elements are available during the whole test */
+        animation-duration: 3600s;
+      }
     </style>
   </head>
   <body>
@@ -64,6 +72,7 @@
       <link />
     </article>
     <div id='pseudo-container'></div>
+    <dialog>My Modal</dialog>
     <!-- This is a comment node -->
     <svg id="vector" viewBox="0 0 10 10">
       <clipPath id="clip">
@@ -71,5 +80,11 @@
       </clipPath>
       <circle cx="5" cy="5" r="5" fill="blue" clip-path="url(#clip)"></circle>
     </svg>
+    <script>
+      "use strict";
+
+      // show the dialog modal so the backdrop pseudo element node gets displayed
+      document.querySelector("dialog").showModal();
+    </script>
   </body>
 </html>

@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -74,6 +73,7 @@ dictionary UniFFIScaffoldingCallResult {
 [Exposed=Window]
 callback interface UniFFICallbackHandler {
     Promise<UniFFIScaffoldingCallResult> callAsync(UniFFICallbackObjectHandle objectHandle, unsigned long methodIndex, UniFFIScaffoldingValue... args);
+    UniFFIScaffoldingCallResult callSync(UniFFICallbackObjectHandle objectHandle, unsigned long methodIndex, UniFFIScaffoldingValue... args);
     undefined destroy(UniFFICallbackObjectHandle objectHandle);
 };
 
@@ -123,4 +123,23 @@ namespace UniFFIScaffolding {
   // This is called at shutdown to clear out the reference to the JS function.
   [Throws]
   undefined deregisterCallbackHandler(UniFFICallbackInterfaceId interfaceId);
+
+  // Create a new handle for a callback interface object
+  //
+  // This is called by the JS code before lowering a callback interface object.  The returned handle
+  // is used as a key for the JS callback interface map and also returned to Rust.
+  unsigned long long callbackHandleCreate();
+
+  // Decrease the reference count for a callback interface handle
+  //
+  // The JS code calls this before lifting a callback interface object.  It returns the new
+  // reference count.  If `0`, then the map entry for the JS object is removed.
+  unsigned long callbackHandleRelease(unsigned long long handle);
+
+  // Free a callback interface handle
+  //
+  // This frees the underlying memory for the callback interface handle.  It should only be called
+  // when there's no chance of using the handle anymore.  In particular, only call it once the JS
+  // map entry is removed.
+  undefined callbackHandleFree(unsigned long long handle);
 };

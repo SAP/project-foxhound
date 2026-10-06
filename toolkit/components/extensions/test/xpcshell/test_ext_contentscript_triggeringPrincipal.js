@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 /**
@@ -183,7 +181,7 @@ function getElementData(test, opts) {
 }
 
 /**
- * The result type of the {@see createElement} function.
+ * The result type of the {@link createElement} function.
  *
  * @typedef {object} CreateElementResult
  * @property {Element} elem
@@ -197,7 +195,7 @@ function getElementData(test, opts) {
 
 /**
  * Creates a DOM tree for a given test, in a given configuration, as
- * understood by {@see getElementData}, but without the `test.srcAttr`
+ * understood by {@link getElementData}, but without the `test.srcAttr`
  * attribute having been set. The caller must set the value of that
  * attribute to the returned `src` value.
  *
@@ -207,9 +205,9 @@ function getElementData(test, opts) {
  * many variants of these as possible.
  *
  * @param {ElementTestCase} test
- *        A test object, as passed to {@see getElementData}.
+ *        A test object, as passed to {@link getElementData}.
  * @param {ElementTestOptions} opts
- *        An options object, as passed to {@see getElementData}.
+ *        An options object, as passed to {@link getElementData}.
  * @returns {CreateElementResult}
  */
 function createElement(test, opts) {
@@ -281,13 +279,13 @@ function escaped(strings, ...values) {
 }
 
 /**
- * Converts the given test data, as accepted by {@see getElementData},
+ * Converts the given test data, as accepted by {@link getElementData},
  * to an HTML representation.
  *
  * @param {ElementTestCase} test
- *        A test object, as passed to {@see getElementData}.
+ *        A test object, as passed to {@link getElementData}.
  * @param {ElementTestOptions} opts
- *        An options object, as passed to {@see getElementData}.
+ *        An options object, as passed to {@link getElementData}.
  * @returns {string}
  */
 function toHTML(test, opts) {
@@ -586,9 +584,9 @@ function testInlineCSS() {
  * various configurations.
  *
  * @param {Array<ElementTestCase>} tests
- *        A list of test objects, as understood by {@see getElementData}.
+ *        A list of test objects, as understood by {@link getElementData}.
  * @param {ElementTestOptions} baseOpts
- *        A base options object, as understood by {@see getElementData},
+ *        A base options object, as understood by {@link getElementData},
  *        which represents the default values for injections under this
  *        context.
  */
@@ -758,13 +756,13 @@ function injectElements(tests, baseOpts) {
 }
 
 /**
- * Stringifies the {@see injectElements} function for use as a page or
+ * Stringifies the {@link injectElements} function for use as a page or
  * content script.
  *
  * @param {Array<ElementTestCase>} tests
- *        A list of test objects, as understood by {@see getElementData}.
+ *        A list of test objects, as understood by {@link getElementData}.
  * @param {ElementTestOptions} opts
- *        A base options object, as understood by {@see getElementData},
+ *        A base options object, as understood by {@link getElementData},
  *        which represents the default values for injections under this
  *        context.
  * @returns {string}
@@ -822,7 +820,7 @@ function getOriginBase(origURL) {
  * with the `origin` query parameter removed.
  *
  * @param {Array<ElementTestCase>} tests
- *        A list of tests, as understood by {@see getElementData}.
+ *        A list of tests, as understood by {@link getElementData}.
  * @param {Record<string, object>} expectedSources
  *        A set of sources for which each of the above tests is expected
  *        to generate one request, if each of the properties in the
@@ -946,7 +944,7 @@ function computeExpectedForbiddenURLs(
  *
  * @param {Promise<object>} urlsPromise
  *        A promise which resolves to an object containing expected and
- *        forbidden URL sets, as returned by {@see computeBaseURLs}.
+ *        forbidden URL sets, as returned by {@link computeBaseURLs}.
  * @param {Record<string, string>} origins
  *        A mapping of origin parameters as they appear in URL query
  *        strings to the origin strings returned by corresponding
@@ -1015,7 +1013,7 @@ function awaitLoads(urlsPromise, origins) {
  *
  * @param {Promise<object>} urlsPromise
  *        A promise which resolves to an object containing expected and
- *        forbidden URL sets, as returned by {@see computeBaseURLs}.
+ *        forbidden URL sets, as returned by {@link computeBaseURLs}.
  * @param {ExtensionWrapper} extension
  * @returns {Promise}
  *        A promise which resolves when all requests have been
@@ -1087,7 +1085,7 @@ function awaitCSP(urlsPromise, extension) {
 
 /**
  * A list of tests to run in each context, as understood by
- * {@see getElementData}.
+ * {@link getElementData}.
  */
 const TESTS = [
   {
@@ -1361,8 +1359,6 @@ add_task(async function test_contentscript_csp() {
  * content page.
  */
 add_task(async function test_extension_contentscript_csp() {
-  Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
-
   gContentSecurityPolicy = `default-src 'none' 'report-sample'; script-src 'nonce-deadbeef' 'unsafe-eval' 'report-sample'; report-uri ${CSP_REPORT_PATH};`;
 
   let data = {
@@ -1396,5 +1392,4 @@ add_task(async function test_extension_contentscript_csp() {
 
   await extension.unload();
   await contentPage.close();
-  Services.prefs.clearUserPref("extensions.manifestV3.enabled");
 });

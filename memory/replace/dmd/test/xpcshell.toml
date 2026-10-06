@@ -1,4 +1,7 @@
 [DEFAULT]
+run-if = [
+  "os != 'android'",
+]
 support-files = [
   "basic-scan-32-expected.txt",
   "basic-scan-64-expected.txt",

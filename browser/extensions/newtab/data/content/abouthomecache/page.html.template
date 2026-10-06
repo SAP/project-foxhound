@@ -32,7 +32,6 @@
     <link rel="localization" href="browser/newtab/newtab.ftl" />
     <link rel="localization" href="toolkit/global/mozMessageBar.ftl" />
     <link rel="stylesheet" href="chrome://global/skin/design-system/tokens-brand.css">
-    <link rel="stylesheet" href="chrome://browser/content/contentSearchUI.css" />
     <link rel="stylesheet" href="chrome://newtab/content/css/activity-stream.css" />
   </head>
   <!-- Cached: {{ CACHE_TIME }} -->
@@ -43,13 +42,23 @@
     </div>
     <div id="footer-asrouter-container" role="presentation"></div>
     <script src="about:home?jscache"></script>
+    <script src="chrome://browser/content/contentTheme.js"></script>
+    <script src="resource://newtab/data/content/vendor.bundle.js"></script>
+    <script src="resource://newtab/data/content/activity-stream.bundle.js"></script>
+    <script src="resource://newtab/data/content/newtab-render.js"></script>
     <script async type="module" src="chrome://global/content/elements/moz-toggle.mjs"></script>
+    <script async type="module" src="chrome://global/content/elements/moz-badge.mjs"></script>
     <script async type="module" src="chrome://global/content/elements/moz-button.mjs"></script>
     <script async type="module" src="chrome://global/content/elements/moz-button-group.mjs"></script>
+    <script async type="module" src="chrome://global/content/elements/moz-input-text.mjs"></script>
+    <script async type="module" src="chrome://global/content/elements/moz-input-search.mjs"></script>
     <script async type="module" src="chrome://global/content/elements/moz-box-button.mjs"></script>
     <script async type="module" src="chrome://global/content/elements/moz-message-bar.mjs"></script>
     <script async type="module" src="chrome://global/content/elements/moz-radio-group.mjs"></script>
     <script async type="module" src="chrome://global/content/elements/moz-select.mjs"></script>
     <script async type="module" src="chrome://global/content/elements/moz-reorderable-list.mjs"></script>
+    <script async type="module" src="chrome://global/content/elements/panel-list.js"></script>
+    <script async type="module" src="chrome://global/content/elements/moz-support-link.mjs"></script>
+    <script async type="module" src="chrome://global/content/elements/moz-checkbox.mjs"></script>
   </body>
 </html>

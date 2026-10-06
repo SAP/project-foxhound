@@ -8,22 +8,27 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include <math.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-
 #include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
 #include <memory>
+#include <span>
+#include <utility>
+#include <vector>
 
 #include "absl/memory/memory.h"
+#include "api/environment/environment.h"
+#include "api/transport/ecn_marking.h"
 #include "api/units/time_delta.h"
-#include "rtc_base/arraysize.h"
+#include "api/units/timestamp.h"
 #include "rtc_base/async_packet_socket.h"
 #include "rtc_base/async_udp_socket.h"
-#include "rtc_base/fake_clock.h"
-#include "rtc_base/gunit.h"
+#include "rtc_base/byte_order.h"
 #include "rtc_base/ip_address.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/net_helpers.h"
@@ -33,41 +38,49 @@
 #include "rtc_base/task_utils/repeating_task.h"
 #include "rtc_base/test_client.h"
 #include "rtc_base/test_utils.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread.h"
-#include "rtc_base/time_utils.h"
 #include "rtc_base/virtual_socket_server.h"
+#include "test/create_test_environment.h"
+#include "test/gmock.h"
 #include "test/gtest.h"
+#include "test/time_controller/simulated_time_controller.h"
 
-namespace rtc {
+namespace webrtc {
 namespace {
 
-using ::webrtc::RepeatingTaskHandle;
-using ::webrtc::TimeDelta;
-using ::webrtc::testing::SSE_CLOSE;
-using ::webrtc::testing::SSE_ERROR;
-using ::webrtc::testing::SSE_OPEN;
-using ::webrtc::testing::SSE_READ;
-using ::webrtc::testing::SSE_WRITE;
-using ::webrtc::testing::StreamSink;
+using ::testing::ContainerEq;
+using ::testing::Eq;
+using ::testing::NotNull;
+using ::testing::Pointwise;
+using testing::SSE_CLOSE;
+using testing::SSE_ERROR;
+using testing::SSE_OPEN;
+using testing::SSE_READ;
+using testing::SSE_WRITE;
+using testing::StreamSink;
 
 // Sends at a constant rate but with random packet sizes.
 struct Sender {
-  Sender(webrtc::Thread* th, webrtc::Socket* s, uint32_t rt)
-      : thread(th),
-        socket(std::make_unique<webrtc::AsyncUDPSocket>(s)),
+  Sender(const Environment& env,
+         Thread* th,
+         std::unique_ptr<Socket> s,
+         uint32_t rt)
+      : env(env),
+        thread(th),
+        socket(std::make_unique<AsyncUDPSocket>(env, std::move(s))),
         rate(rt),
         count(0) {
-    last_send = webrtc::TimeMillis();
+    last_send = this->env.clock().TimeInMilliseconds();
 
     periodic = RepeatingTaskHandle::DelayedStart(thread, NextDelay(), [this] {
-      int64_t cur_time = webrtc::TimeMillis();
+      int64_t cur_time = this->env.clock().TimeInMilliseconds();
       int64_t delay = cur_time - last_send;
       uint32_t size =
           std::clamp<uint32_t>(rate * delay / 1000, sizeof(uint32_t), 4096);
       count += size;
-      memcpy(dummy, &cur_time, sizeof(cur_time));
-      socket->Send(dummy, size, options);
+
+      SetLE64(dummy, static_cast<uint64_t>(cur_time));
+      socket->Send(dummy.data(), size, options);
 
       last_send = cur_time;
       return NextDelay();
@@ -79,20 +92,25 @@ struct Sender {
     return TimeDelta::Seconds(1) * size / rate;
   }
 
-  webrtc::Thread* thread;
-  std::unique_ptr<webrtc::AsyncUDPSocket> socket;
-  rtc::PacketOptions options;
+  const Environment env;
+  Thread* thread;
+  std::unique_ptr<AsyncUDPSocket> socket;
+  AsyncSocketPacketOptions options;
   RepeatingTaskHandle periodic;
   uint32_t rate;  // bytes per second
   uint32_t count;
   int64_t last_send;
-  char dummy[4096];
+  std::array<uint8_t, 4096> dummy;
 };
 
-struct Receiver : public sigslot::has_slots<> {
-  Receiver(webrtc::Thread* th, webrtc::Socket* s, uint32_t bw)
-      : thread(th),
-        socket(std::make_unique<webrtc::AsyncUDPSocket>(s)),
+struct Receiver {
+  Receiver(const Environment& env,
+           Thread* th,
+           std::unique_ptr<Socket> s,
+           uint32_t bw)
+      : env(env),
+        thread(th),
+        socket(std::make_unique<AsyncUDPSocket>(this->env, std::move(s))),
         bandwidth(bw),
         count(0),
         sec_count(0),
@@ -100,7 +118,7 @@ struct Receiver : public sigslot::has_slots<> {
         sum_sq(0),
         samples(0) {
     socket->RegisterReceivedPacketCallback(
-        [&](rtc::AsyncPacketSocket* s, const rtc::ReceivedPacket& packet) {
+        [&](AsyncPacketSocket* s, const ReceivedIpPacket& packet) {
           OnReadPacket(s, packet);
         });
     periodic = RepeatingTaskHandle::DelayedStart(
@@ -115,27 +133,27 @@ struct Receiver : public sigslot::has_slots<> {
         });
   }
 
-  ~Receiver() override { periodic.Stop(); }
+  ~Receiver() { periodic.Stop(); }
 
-  void OnReadPacket(webrtc::AsyncPacketSocket* s,
-                    const rtc::ReceivedPacket& packet) {
+  void OnReadPacket(AsyncPacketSocket* s, const ReceivedIpPacket& packet) {
     ASSERT_EQ(socket.get(), s);
     ASSERT_GE(packet.payload().size(), 4U);
 
     count += packet.payload().size();
     sec_count += packet.payload().size();
 
-    uint32_t send_time =
-        *reinterpret_cast<const uint32_t*>(packet.payload().data());
-    uint32_t recv_time = webrtc::TimeMillis();
+    uint32_t send_time = GetLE32(packet.payload());
+    uint32_t recv_time =
+        static_cast<uint32_t>(env.clock().TimeInMilliseconds());
     uint32_t delay = recv_time - send_time;
     sum += delay;
     sum_sq += delay * delay;
     samples += 1;
   }
 
-  webrtc::Thread* thread;
-  std::unique_ptr<webrtc::AsyncUDPSocket> socket;
+  const Environment env;
+  Thread* thread;
+  std::unique_ptr<AsyncUDPSocket> socket;
   uint32_t bandwidth;
   RepeatingTaskHandle periodic;
   size_t count;
@@ -149,16 +167,17 @@ struct Receiver : public sigslot::has_slots<> {
 class VirtualSocketServerTest : public ::testing::Test {
  public:
   VirtualSocketServerTest()
-      : ss_(&fake_clock_),
-        thread_(&ss_),
-        kIPv4AnyAddress(webrtc::IPAddress(INADDR_ANY), 0),
-        kIPv6AnyAddress(webrtc::IPAddress(in6addr_any), 0) {}
+      : time_controller_(Timestamp::Millis(1000), &ss_),
+        env_(CreateTestEnvironment(
+            CreateTestEnvironmentOptions{.time = &time_controller_})),
+        kIPv4AnyAddress(IPAddress(INADDR_ANY), 0),
+        kIPv6AnyAddress(IPAddress(in6addr_any), 0) {}
 
-  void CheckPortIncrementalization(const webrtc::SocketAddress& post,
-                                   const webrtc::SocketAddress& pre) {
+  void CheckPortIncrementalization(const SocketAddress& post,
+                                   const SocketAddress& pre) {
     EXPECT_EQ(post.port(), pre.port() + 1);
-    webrtc::IPAddress post_ip = post.ipaddr();
-    webrtc::IPAddress pre_ip = pre.ipaddr();
+    IPAddress post_ip = post.ipaddr();
+    IPAddress pre_ip = pre.ipaddr();
     EXPECT_EQ(pre_ip.family(), post_ip.family());
     if (post_ip.family() == AF_INET) {
       in_addr pre_ipv4 = pre_ip.ipv4_address();
@@ -167,90 +186,94 @@ class VirtualSocketServerTest : public ::testing::Test {
     } else if (post_ip.family() == AF_INET6) {
       in6_addr post_ip6 = post_ip.ipv6_address();
       in6_addr pre_ip6 = pre_ip.ipv6_address();
-      uint32_t* post_as_ints = reinterpret_cast<uint32_t*>(&post_ip6.s6_addr);
-      uint32_t* pre_as_ints = reinterpret_cast<uint32_t*>(&pre_ip6.s6_addr);
-      EXPECT_EQ(post_as_ints[3], pre_as_ints[3]);
+      std::span<uint8_t, 16> post_bytes = post_ip6.s6_addr;
+      std::span<uint8_t, 16> pre_bytes = pre_ip6.s6_addr;
+      EXPECT_THAT(post_bytes.subspan(12, 4),
+                  Pointwise(Eq(), pre_bytes.subspan(12, 4)));
     }
   }
 
   // Test a client can bind to the any address, and all sent packets will have
   // the default source address. Also, it can receive packets sent to the
   // default address.
-  void TestDefaultSourceAddress(const webrtc::IPAddress& default_address) {
+  void TestDefaultSourceAddress(const IPAddress& default_address) {
     ss_.SetDefaultSourceAddress(default_address);
 
     // Create client1 bound to the any address.
-    webrtc::Socket* socket =
-        ss_.CreateSocket(default_address.family(), SOCK_DGRAM);
-    socket->Bind(
-        webrtc::EmptySocketAddressWithFamily(default_address.family()));
-    webrtc::SocketAddress client1_any_addr = socket->GetLocalAddress();
+    std::unique_ptr<Socket> socket =
+        ss_.Create(default_address.family(), SOCK_DGRAM);
+    socket->Bind(EmptySocketAddressWithFamily(default_address.family()));
+    SocketAddress client1_any_addr = socket->GetLocalAddress();
     EXPECT_TRUE(client1_any_addr.IsAnyIP());
-    auto client1 = std::make_unique<webrtc::TestClient>(
-        std::make_unique<webrtc::AsyncUDPSocket>(socket), &fake_clock_);
+    TestClient client1(
+        std::make_unique<AsyncUDPSocket>(env_, std::move(socket)),
+        &time_controller_);
 
     // Create client2 bound to the address route.
-    webrtc::Socket* socket2 =
-        ss_.CreateSocket(default_address.family(), SOCK_DGRAM);
-    socket2->Bind(webrtc::SocketAddress(default_address, 0));
-    webrtc::SocketAddress client2_addr = socket2->GetLocalAddress();
+    std::unique_ptr<Socket> socket2 =
+        ss_.Create(default_address.family(), SOCK_DGRAM);
+    socket2->Bind(SocketAddress(default_address, 0));
+    SocketAddress client2_addr = socket2->GetLocalAddress();
     EXPECT_FALSE(client2_addr.IsAnyIP());
-    auto client2 = std::make_unique<webrtc::TestClient>(
-        std::make_unique<webrtc::AsyncUDPSocket>(socket2), &fake_clock_);
+    TestClient client2(
+        std::make_unique<AsyncUDPSocket>(env_, std::move(socket2)),
+        &time_controller_);
 
     // Client1 sends to client2, client2 should see the default address as
     // client1's address.
-    webrtc::SocketAddress client1_addr;
-    EXPECT_EQ(6, client1->SendTo("bizbaz", 6, client2_addr));
-    EXPECT_TRUE(client2->CheckNextPacket("bizbaz", 6, &client1_addr));
+    SocketAddress client1_addr;
+    EXPECT_EQ(6, client1.SendTo("bizbaz", 6, client2_addr));
+    EXPECT_TRUE(client2.CheckNextPacket("bizbaz", 6, &client1_addr));
     EXPECT_EQ(client1_addr,
-              webrtc::SocketAddress(default_address, client1_any_addr.port()));
+              SocketAddress(default_address, client1_any_addr.port()));
 
     // Client2 can send back to client1's default address.
-    EXPECT_EQ(3, client2->SendTo("foo", 3, client1_addr));
-    EXPECT_TRUE(client1->CheckNextPacket("foo", 3, &client2_addr));
+    EXPECT_EQ(3, client2.SendTo("foo", 3, client1_addr));
+    EXPECT_TRUE(client1.CheckNextPacket("foo", 3, &client2_addr));
   }
 
-  void BasicTest(const webrtc::SocketAddress& initial_addr) {
-    webrtc::Socket* socket =
-        ss_.CreateSocket(initial_addr.family(), SOCK_DGRAM);
+  void BasicTest(const SocketAddress& initial_addr) {
+    std::unique_ptr<Socket> socket =
+        ss_.Create(initial_addr.family(), SOCK_DGRAM);
     socket->Bind(initial_addr);
-    webrtc::SocketAddress server_addr = socket->GetLocalAddress();
+    SocketAddress server_addr = socket->GetLocalAddress();
     // Make sure VSS didn't switch families on us.
     EXPECT_EQ(server_addr.family(), initial_addr.family());
 
-    auto client1 = std::make_unique<webrtc::TestClient>(
-        std::make_unique<webrtc::AsyncUDPSocket>(socket), &fake_clock_);
-    webrtc::Socket* socket2 =
-        ss_.CreateSocket(initial_addr.family(), SOCK_DGRAM);
-    auto client2 = std::make_unique<webrtc::TestClient>(
-        std::make_unique<webrtc::AsyncUDPSocket>(socket2), &fake_clock_);
+    TestClient client1(
+        std::make_unique<AsyncUDPSocket>(env_, std::move(socket)),
+        &time_controller_);
+    SocketAddress client2_addr;
+    {
+      std::unique_ptr<Socket> socket2 =
+          ss_.Create(initial_addr.family(), SOCK_DGRAM);
+      TestClient client2(
+          std::make_unique<AsyncUDPSocket>(env_, std::move(socket2)),
+          &time_controller_);
 
-    webrtc::SocketAddress client2_addr;
-    EXPECT_EQ(3, client2->SendTo("foo", 3, server_addr));
-    EXPECT_TRUE(client1->CheckNextPacket("foo", 3, &client2_addr));
+      EXPECT_EQ(3, client2.SendTo("foo", 3, server_addr));
+      EXPECT_TRUE(client1.CheckNextPacket("foo", 3, &client2_addr));
 
-    webrtc::SocketAddress client1_addr;
-    EXPECT_EQ(6, client1->SendTo("bizbaz", 6, client2_addr));
-    EXPECT_TRUE(client2->CheckNextPacket("bizbaz", 6, &client1_addr));
-    EXPECT_EQ(client1_addr, server_addr);
+      SocketAddress client1_addr;
+      EXPECT_EQ(6, client1.SendTo("bizbaz", 6, client2_addr));
+      EXPECT_TRUE(client2.CheckNextPacket("bizbaz", 6, &client1_addr));
+      EXPECT_EQ(client1_addr, server_addr);
+    }
 
-    webrtc::SocketAddress empty =
-        webrtc::EmptySocketAddressWithFamily(initial_addr.family());
+    SocketAddress empty = EmptySocketAddressWithFamily(initial_addr.family());
     for (int i = 0; i < 10; i++) {
-      client2 = std::make_unique<webrtc::TestClient>(
-          absl::WrapUnique(webrtc::AsyncUDPSocket::Create(&ss_, empty)),
-          &fake_clock_);
+      TestClient client2(AsyncUDPSocket::Create(env_, empty, ss_),
+                         &time_controller_);
 
-      webrtc::SocketAddress next_client2_addr;
-      EXPECT_EQ(3, client2->SendTo("foo", 3, server_addr));
-      EXPECT_TRUE(client1->CheckNextPacket("foo", 3, &next_client2_addr));
+      SocketAddress next_client2_addr;
+      EXPECT_EQ(3, client2.SendTo("foo", 3, server_addr));
+      EXPECT_TRUE(client1.CheckNextPacket("foo", 3, &next_client2_addr));
       CheckPortIncrementalization(next_client2_addr, client2_addr);
       // EXPECT_EQ(next_client2_addr.port(), client2_addr.port() + 1);
 
-      webrtc::SocketAddress server_addr2;
-      EXPECT_EQ(6, client1->SendTo("bizbaz", 6, next_client2_addr));
-      EXPECT_TRUE(client2->CheckNextPacket("bizbaz", 6, &server_addr2));
+      SocketAddress server_addr2;
+      EXPECT_EQ(6, client1.SendTo("bizbaz", 6, next_client2_addr));
+      EXPECT_TRUE(client2.CheckNextPacket("bizbaz", 6, &server_addr2));
       EXPECT_EQ(server_addr2, server_addr);
 
       client2_addr = next_client2_addr;
@@ -258,28 +281,28 @@ class VirtualSocketServerTest : public ::testing::Test {
   }
 
   // initial_addr should be made from either INADDR_ANY or in6addr_any.
-  void ConnectTest(const webrtc::SocketAddress& initial_addr) {
+  void ConnectTest(const SocketAddress& initial_addr) {
     StreamSink sink;
-    webrtc::SocketAddress accept_addr;
-    const webrtc::SocketAddress kEmptyAddr =
-        webrtc::EmptySocketAddressWithFamily(initial_addr.family());
+    SocketAddress accept_addr;
+    const SocketAddress kEmptyAddr =
+        EmptySocketAddressWithFamily(initial_addr.family());
 
     // Create client
-    std::unique_ptr<webrtc::Socket> client =
-        absl::WrapUnique(ss_.CreateSocket(initial_addr.family(), SOCK_STREAM));
+    std::unique_ptr<Socket> client =
+        ss_.Create(initial_addr.family(), SOCK_STREAM);
     sink.Monitor(client.get());
-    EXPECT_EQ(client->GetState(), webrtc::Socket::CS_CLOSED);
+    EXPECT_EQ(client->GetState(), Socket::CS_CLOSED);
     EXPECT_TRUE(client->GetLocalAddress().IsNil());
 
     // Create server
-    std::unique_ptr<webrtc::Socket> server =
-        absl::WrapUnique(ss_.CreateSocket(initial_addr.family(), SOCK_STREAM));
+    std::unique_ptr<Socket> server =
+        ss_.Create(initial_addr.family(), SOCK_STREAM);
     sink.Monitor(server.get());
     EXPECT_NE(0, server->Listen(5));  // Bind required
     EXPECT_EQ(0, server->Bind(initial_addr));
     EXPECT_EQ(server->GetLocalAddress().family(), initial_addr.family());
     EXPECT_EQ(0, server->Listen(5));
-    EXPECT_EQ(server->GetState(), webrtc::Socket::CS_CONNECTING);
+    EXPECT_EQ(server->GetState(), Socket::CS_CONNECTING);
 
     // No pending server connections
     EXPECT_FALSE(sink.Check(server.get(), SSE_READ));
@@ -293,61 +316,61 @@ class VirtualSocketServerTest : public ::testing::Test {
     EXPECT_NE(client->GetLocalAddress(), server->GetLocalAddress());
 
     // Client is connecting
-    EXPECT_EQ(client->GetState(), webrtc::Socket::CS_CONNECTING);
+    EXPECT_EQ(client->GetState(), Socket::CS_CONNECTING);
     EXPECT_FALSE(sink.Check(client.get(), SSE_OPEN));
     EXPECT_FALSE(sink.Check(client.get(), SSE_CLOSE));
 
-    ss_.ProcessMessagesUntilIdle();
+    time_controller_.AdvanceTime(TimeDelta::Zero());
 
     // Client still connecting
-    EXPECT_EQ(client->GetState(), webrtc::Socket::CS_CONNECTING);
+    EXPECT_EQ(client->GetState(), Socket::CS_CONNECTING);
     EXPECT_FALSE(sink.Check(client.get(), SSE_OPEN));
     EXPECT_FALSE(sink.Check(client.get(), SSE_CLOSE));
 
     // Server has pending connection
     EXPECT_TRUE(sink.Check(server.get(), SSE_READ));
-    std::unique_ptr<webrtc::Socket> accepted =
+    std::unique_ptr<Socket> accepted =
         absl::WrapUnique(server->Accept(&accept_addr));
     EXPECT_TRUE(nullptr != accepted);
     EXPECT_NE(accept_addr, kEmptyAddr);
     EXPECT_EQ(accepted->GetRemoteAddress(), accept_addr);
 
-    EXPECT_EQ(accepted->GetState(), webrtc::Socket::CS_CONNECTED);
+    EXPECT_EQ(accepted->GetState(), Socket::CS_CONNECTED);
     EXPECT_EQ(accepted->GetLocalAddress(), server->GetLocalAddress());
     EXPECT_EQ(accepted->GetRemoteAddress(), client->GetLocalAddress());
 
-    ss_.ProcessMessagesUntilIdle();
+    time_controller_.AdvanceTime(TimeDelta::Zero());
 
     // Client has connected
-    EXPECT_EQ(client->GetState(), webrtc::Socket::CS_CONNECTED);
+    EXPECT_EQ(client->GetState(), Socket::CS_CONNECTED);
     EXPECT_TRUE(sink.Check(client.get(), SSE_OPEN));
     EXPECT_FALSE(sink.Check(client.get(), SSE_CLOSE));
     EXPECT_EQ(client->GetRemoteAddress(), server->GetLocalAddress());
     EXPECT_EQ(client->GetRemoteAddress(), accepted->GetLocalAddress());
   }
 
-  void ConnectToNonListenerTest(const webrtc::SocketAddress& initial_addr) {
+  void ConnectToNonListenerTest(const SocketAddress& initial_addr) {
     StreamSink sink;
-    webrtc::SocketAddress accept_addr;
-    const webrtc::SocketAddress nil_addr;
-    const webrtc::SocketAddress empty_addr =
-        webrtc::EmptySocketAddressWithFamily(initial_addr.family());
+    SocketAddress accept_addr;
+    const SocketAddress nil_addr;
+    const SocketAddress empty_addr =
+        EmptySocketAddressWithFamily(initial_addr.family());
 
     // Create client
-    std::unique_ptr<webrtc::Socket> client =
-        absl::WrapUnique(ss_.CreateSocket(initial_addr.family(), SOCK_STREAM));
+    std::unique_ptr<Socket> client =
+        ss_.Create(initial_addr.family(), SOCK_STREAM);
     sink.Monitor(client.get());
 
     // Create server
-    std::unique_ptr<webrtc::Socket> server =
-        absl::WrapUnique(ss_.CreateSocket(initial_addr.family(), SOCK_STREAM));
+    std::unique_ptr<Socket> server =
+        ss_.Create(initial_addr.family(), SOCK_STREAM);
     sink.Monitor(server.get());
     EXPECT_EQ(0, server->Bind(initial_addr));
     EXPECT_EQ(server->GetLocalAddress().family(), initial_addr.family());
     // Attempt connect to non-listening socket
     EXPECT_EQ(0, client->Connect(server->GetLocalAddress()));
 
-    ss_.ProcessMessagesUntilIdle();
+    time_controller_.AdvanceTime(TimeDelta::Zero());
 
     // No pending server connections
     EXPECT_FALSE(sink.Check(server.get(), SSE_READ));
@@ -355,24 +378,24 @@ class VirtualSocketServerTest : public ::testing::Test {
     EXPECT_EQ(accept_addr, nil_addr);
 
     // Connection failed
-    EXPECT_EQ(client->GetState(), webrtc::Socket::CS_CLOSED);
+    EXPECT_EQ(client->GetState(), Socket::CS_CLOSED);
     EXPECT_FALSE(sink.Check(client.get(), SSE_OPEN));
     EXPECT_TRUE(sink.Check(client.get(), SSE_ERROR));
     EXPECT_EQ(client->GetRemoteAddress(), nil_addr);
   }
 
-  void CloseDuringConnectTest(const webrtc::SocketAddress& initial_addr) {
+  void CloseDuringConnectTest(const SocketAddress& initial_addr) {
     StreamSink sink;
-    webrtc::SocketAddress accept_addr;
-    const webrtc::SocketAddress empty_addr =
-        webrtc::EmptySocketAddressWithFamily(initial_addr.family());
+    SocketAddress accept_addr;
+    const SocketAddress empty_addr =
+        EmptySocketAddressWithFamily(initial_addr.family());
 
     // Create client and server
-    std::unique_ptr<webrtc::Socket> client(
-        ss_.CreateSocket(initial_addr.family(), SOCK_STREAM));
+    std::unique_ptr<Socket> client =
+        ss_.Create(initial_addr.family(), SOCK_STREAM);
     sink.Monitor(client.get());
-    std::unique_ptr<webrtc::Socket> server(
-        ss_.CreateSocket(initial_addr.family(), SOCK_STREAM));
+    std::unique_ptr<Socket> server =
+        ss_.Create(initial_addr.family(), SOCK_STREAM);
     sink.Monitor(server.get());
 
     // Initiate connect
@@ -386,13 +409,13 @@ class VirtualSocketServerTest : public ::testing::Test {
     EXPECT_FALSE(sink.Check(server.get(), SSE_READ));
     server->Close();
 
-    ss_.ProcessMessagesUntilIdle();
+    time_controller_.AdvanceTime(TimeDelta::Zero());
 
     // Result: connection failed
-    EXPECT_EQ(client->GetState(), webrtc::Socket::CS_CLOSED);
+    EXPECT_EQ(client->GetState(), Socket::CS_CLOSED);
     EXPECT_TRUE(sink.Check(client.get(), SSE_ERROR));
 
-    server.reset(ss_.CreateSocket(initial_addr.family(), SOCK_STREAM));
+    server = ss_.Create(initial_addr.family(), SOCK_STREAM);
     sink.Monitor(server.get());
 
     // Initiate connect
@@ -402,20 +425,20 @@ class VirtualSocketServerTest : public ::testing::Test {
     EXPECT_EQ(0, server->Listen(5));
     EXPECT_EQ(0, client->Connect(server->GetLocalAddress()));
 
-    ss_.ProcessMessagesUntilIdle();
+    time_controller_.AdvanceTime(TimeDelta::Zero());
 
     // Server close while socket is in accept queue
     EXPECT_TRUE(sink.Check(server.get(), SSE_READ));
     server->Close();
 
-    ss_.ProcessMessagesUntilIdle();
+    time_controller_.AdvanceTime(TimeDelta::Zero());
 
     // Result: connection failed
-    EXPECT_EQ(client->GetState(), webrtc::Socket::CS_CLOSED);
+    EXPECT_EQ(client->GetState(), Socket::CS_CLOSED);
     EXPECT_TRUE(sink.Check(client.get(), SSE_ERROR));
 
     // New server
-    server.reset(ss_.CreateSocket(initial_addr.family(), SOCK_STREAM));
+    server = ss_.Create(initial_addr.family(), SOCK_STREAM);
     sink.Monitor(server.get());
 
     // Initiate connect
@@ -425,42 +448,40 @@ class VirtualSocketServerTest : public ::testing::Test {
     EXPECT_EQ(0, server->Listen(5));
     EXPECT_EQ(0, client->Connect(server->GetLocalAddress()));
 
-    ss_.ProcessMessagesUntilIdle();
+    time_controller_.AdvanceTime(TimeDelta::Zero());
 
     // Server accepts connection
     EXPECT_TRUE(sink.Check(server.get(), SSE_READ));
-    std::unique_ptr<webrtc::Socket> accepted(server->Accept(&accept_addr));
+    std::unique_ptr<Socket> accepted(server->Accept(&accept_addr));
     ASSERT_TRUE(nullptr != accepted.get());
     sink.Monitor(accepted.get());
 
     // Client closes before connection complets
-    EXPECT_EQ(accepted->GetState(), webrtc::Socket::CS_CONNECTED);
+    EXPECT_EQ(accepted->GetState(), Socket::CS_CONNECTED);
 
     // Connected message has not been processed yet.
-    EXPECT_EQ(client->GetState(), webrtc::Socket::CS_CONNECTING);
+    EXPECT_EQ(client->GetState(), Socket::CS_CONNECTING);
     client->Close();
 
-    ss_.ProcessMessagesUntilIdle();
+    time_controller_.AdvanceTime(TimeDelta::Zero());
 
     // Result: accepted socket closes
-    EXPECT_EQ(accepted->GetState(), webrtc::Socket::CS_CLOSED);
+    EXPECT_EQ(accepted->GetState(), Socket::CS_CLOSED);
     EXPECT_TRUE(sink.Check(accepted.get(), SSE_CLOSE));
     EXPECT_FALSE(sink.Check(client.get(), SSE_CLOSE));
   }
 
-  void CloseTest(const webrtc::SocketAddress& initial_addr) {
+  void CloseTest(const SocketAddress& initial_addr) {
     StreamSink sink;
-    const webrtc::SocketAddress kEmptyAddr;
+    const SocketAddress kEmptyAddr;
 
     // Create clients
-    std::unique_ptr<webrtc::Socket> a =
-        absl::WrapUnique(ss_.CreateSocket(initial_addr.family(), SOCK_STREAM));
+    std::unique_ptr<Socket> a = ss_.Create(initial_addr.family(), SOCK_STREAM);
     sink.Monitor(a.get());
     a->Bind(initial_addr);
     EXPECT_EQ(a->GetLocalAddress().family(), initial_addr.family());
 
-    std::unique_ptr<webrtc::Socket> b =
-        absl::WrapUnique(ss_.CreateSocket(initial_addr.family(), SOCK_STREAM));
+    std::unique_ptr<Socket> b = ss_.Create(initial_addr.family(), SOCK_STREAM);
     sink.Monitor(b.get());
     b->Bind(initial_addr);
     EXPECT_EQ(b->GetLocalAddress().family(), initial_addr.family());
@@ -468,49 +489,47 @@ class VirtualSocketServerTest : public ::testing::Test {
     EXPECT_EQ(0, a->Connect(b->GetLocalAddress()));
     EXPECT_EQ(0, b->Connect(a->GetLocalAddress()));
 
-    ss_.ProcessMessagesUntilIdle();
+    time_controller_.AdvanceTime(TimeDelta::Zero());
 
     EXPECT_TRUE(sink.Check(a.get(), SSE_OPEN));
-    EXPECT_EQ(a->GetState(), webrtc::Socket::CS_CONNECTED);
+    EXPECT_EQ(a->GetState(), Socket::CS_CONNECTED);
     EXPECT_EQ(a->GetRemoteAddress(), b->GetLocalAddress());
 
     EXPECT_TRUE(sink.Check(b.get(), SSE_OPEN));
-    EXPECT_EQ(b->GetState(), webrtc::Socket::CS_CONNECTED);
+    EXPECT_EQ(b->GetState(), Socket::CS_CONNECTED);
     EXPECT_EQ(b->GetRemoteAddress(), a->GetLocalAddress());
 
     EXPECT_EQ(1, a->Send("a", 1));
     b->Close();
     EXPECT_EQ(1, a->Send("b", 1));
 
-    ss_.ProcessMessagesUntilIdle();
+    time_controller_.AdvanceTime(TimeDelta::Zero());
 
     char buffer[10];
     EXPECT_FALSE(sink.Check(b.get(), SSE_READ));
     EXPECT_EQ(-1, b->Recv(buffer, 10, nullptr));
 
     EXPECT_TRUE(sink.Check(a.get(), SSE_CLOSE));
-    EXPECT_EQ(a->GetState(), webrtc::Socket::CS_CLOSED);
+    EXPECT_EQ(a->GetState(), Socket::CS_CLOSED);
     EXPECT_EQ(a->GetRemoteAddress(), kEmptyAddr);
 
     // No signal for Closer
     EXPECT_FALSE(sink.Check(b.get(), SSE_CLOSE));
-    EXPECT_EQ(b->GetState(), webrtc::Socket::CS_CLOSED);
+    EXPECT_EQ(b->GetState(), Socket::CS_CLOSED);
     EXPECT_EQ(b->GetRemoteAddress(), kEmptyAddr);
   }
 
-  void TcpSendTest(const webrtc::SocketAddress& initial_addr) {
+  void TcpSendTest(const SocketAddress& initial_addr) {
     StreamSink sink;
-    const webrtc::SocketAddress kEmptyAddr;
+    const SocketAddress kEmptyAddr;
 
     // Connect two sockets
-    std::unique_ptr<webrtc::Socket> a =
-        absl::WrapUnique(ss_.CreateSocket(initial_addr.family(), SOCK_STREAM));
+    std::unique_ptr<Socket> a = ss_.Create(initial_addr.family(), SOCK_STREAM);
     sink.Monitor(a.get());
     a->Bind(initial_addr);
     EXPECT_EQ(a->GetLocalAddress().family(), initial_addr.family());
 
-    std::unique_ptr<webrtc::Socket> b =
-        absl::WrapUnique(ss_.CreateSocket(initial_addr.family(), SOCK_STREAM));
+    std::unique_ptr<Socket> b = ss_.Create(initial_addr.family(), SOCK_STREAM);
     sink.Monitor(b.get());
     b->Bind(initial_addr);
     EXPECT_EQ(b->GetLocalAddress().family(), initial_addr.family());
@@ -518,59 +537,62 @@ class VirtualSocketServerTest : public ::testing::Test {
     EXPECT_EQ(0, a->Connect(b->GetLocalAddress()));
     EXPECT_EQ(0, b->Connect(a->GetLocalAddress()));
 
-    ss_.ProcessMessagesUntilIdle();
+    time_controller_.AdvanceTime(TimeDelta::Zero());
 
     const size_t kBufferSize = 2000;
     ss_.set_send_buffer_capacity(kBufferSize);
     ss_.set_recv_buffer_capacity(kBufferSize);
 
     const size_t kDataSize = 5000;
-    char send_buffer[kDataSize], recv_buffer[kDataSize];
+    std::vector<char> send_buffer(kDataSize);
+    std::vector<char> recv_buffer(kDataSize);
     for (size_t i = 0; i < kDataSize; ++i)
       send_buffer[i] = static_cast<char>(i % 256);
-    memset(recv_buffer, 0, sizeof(recv_buffer));
+    std::fill(recv_buffer.begin(), recv_buffer.end(), 0);
     size_t send_pos = 0, recv_pos = 0;
 
     // Can't send more than send buffer in one write
-    int result = a->Send(send_buffer + send_pos, kDataSize - send_pos);
+    int result = a->Send(&send_buffer[send_pos], kDataSize - send_pos);
     EXPECT_EQ(static_cast<int>(kBufferSize), result);
     send_pos += result;
 
-    ss_.ProcessMessagesUntilIdle();
+    time_controller_.AdvanceTime(TimeDelta::Zero());
     EXPECT_FALSE(sink.Check(a.get(), SSE_WRITE));
     EXPECT_TRUE(sink.Check(b.get(), SSE_READ));
 
     // Receive buffer is already filled, fill send buffer again
-    result = a->Send(send_buffer + send_pos, kDataSize - send_pos);
+    result = a->Send(&send_buffer[send_pos], kDataSize - send_pos);
     EXPECT_EQ(static_cast<int>(kBufferSize), result);
     send_pos += result;
 
-    ss_.ProcessMessagesUntilIdle();
+    time_controller_.AdvanceTime(TimeDelta::Zero());
     EXPECT_FALSE(sink.Check(a.get(), SSE_WRITE));
     EXPECT_FALSE(sink.Check(b.get(), SSE_READ));
 
     // No more room in send or receive buffer
-    result = a->Send(send_buffer + send_pos, kDataSize - send_pos);
+    result = a->Send(&send_buffer[send_pos], kDataSize - send_pos);
     EXPECT_EQ(-1, result);
     EXPECT_TRUE(a->IsBlocking());
 
     // Read a subset of the data
-    result = b->Recv(recv_buffer + recv_pos, 500, nullptr);
+    result = b->Recv(&recv_buffer[recv_pos], 500, nullptr);
     EXPECT_EQ(500, result);
     recv_pos += result;
 
-    ss_.ProcessMessagesUntilIdle();
+    time_controller_.AdvanceTime(TimeDelta::Zero());
     EXPECT_TRUE(sink.Check(a.get(), SSE_WRITE));
     EXPECT_TRUE(sink.Check(b.get(), SSE_READ));
 
     // Room for more on the sending side
-    result = a->Send(send_buffer + send_pos, kDataSize - send_pos);
+    result = a->Send(&send_buffer[send_pos], kDataSize - send_pos);
     EXPECT_EQ(500, result);
     send_pos += result;
 
     // Empty the recv buffer
     while (true) {
-      result = b->Recv(recv_buffer + recv_pos, kDataSize - recv_pos, nullptr);
+      if (recv_pos >= kDataSize)
+        break;
+      result = b->Recv(&recv_buffer[recv_pos], kDataSize - recv_pos, nullptr);
       if (result < 0) {
         EXPECT_EQ(-1, result);
         EXPECT_TRUE(b->IsBlocking());
@@ -579,12 +601,14 @@ class VirtualSocketServerTest : public ::testing::Test {
       recv_pos += result;
     }
 
-    ss_.ProcessMessagesUntilIdle();
+    time_controller_.AdvanceTime(TimeDelta::Zero());
     EXPECT_TRUE(sink.Check(b.get(), SSE_READ));
 
     // Continue to empty the recv buffer
     while (true) {
-      result = b->Recv(recv_buffer + recv_pos, kDataSize - recv_pos, nullptr);
+      if (recv_pos >= kDataSize)
+        break;
+      result = b->Recv(&recv_buffer[recv_pos], kDataSize - recv_pos, nullptr);
       if (result < 0) {
         EXPECT_EQ(-1, result);
         EXPECT_TRUE(b->IsBlocking());
@@ -594,16 +618,18 @@ class VirtualSocketServerTest : public ::testing::Test {
     }
 
     // Send last of the data
-    result = a->Send(send_buffer + send_pos, kDataSize - send_pos);
+    result = a->Send(&send_buffer[send_pos], kDataSize - send_pos);
     EXPECT_EQ(500, result);
     send_pos += result;
 
-    ss_.ProcessMessagesUntilIdle();
+    time_controller_.AdvanceTime(TimeDelta::Zero());
     EXPECT_TRUE(sink.Check(b.get(), SSE_READ));
 
     // Receive the last of the data
     while (true) {
-      result = b->Recv(recv_buffer + recv_pos, kDataSize - recv_pos, nullptr);
+      if (recv_pos >= kDataSize)
+        break;
+      result = b->Recv(&recv_buffer[recv_pos], kDataSize - recv_pos, nullptr);
       if (result < 0) {
         EXPECT_EQ(-1, result);
         EXPECT_TRUE(b->IsBlocking());
@@ -612,23 +638,21 @@ class VirtualSocketServerTest : public ::testing::Test {
       recv_pos += result;
     }
 
-    ss_.ProcessMessagesUntilIdle();
+    time_controller_.AdvanceTime(TimeDelta::Zero());
     EXPECT_FALSE(sink.Check(b.get(), SSE_READ));
 
     // The received data matches the sent data
     EXPECT_EQ(kDataSize, send_pos);
     EXPECT_EQ(kDataSize, recv_pos);
-    EXPECT_EQ(0, memcmp(recv_buffer, send_buffer, kDataSize));
+    EXPECT_EQ(recv_buffer, send_buffer);
   }
 
-  void TcpSendsPacketsInOrderTest(const webrtc::SocketAddress& initial_addr) {
-    const webrtc::SocketAddress kEmptyAddr;
+  void TcpSendsPacketsInOrderTest(const SocketAddress& initial_addr) {
+    const SocketAddress kEmptyAddr;
 
     // Connect two sockets
-    std::unique_ptr<webrtc::Socket> a =
-        absl::WrapUnique(ss_.CreateSocket(initial_addr.family(), SOCK_STREAM));
-    std::unique_ptr<webrtc::Socket> b =
-        absl::WrapUnique(ss_.CreateSocket(initial_addr.family(), SOCK_STREAM));
+    std::unique_ptr<Socket> a = ss_.Create(initial_addr.family(), SOCK_STREAM);
+    std::unique_ptr<Socket> b = ss_.Create(initial_addr.family(), SOCK_STREAM);
     a->Bind(initial_addr);
     EXPECT_EQ(a->GetLocalAddress().family(), initial_addr.family());
 
@@ -637,20 +661,20 @@ class VirtualSocketServerTest : public ::testing::Test {
 
     EXPECT_EQ(0, a->Connect(b->GetLocalAddress()));
     EXPECT_EQ(0, b->Connect(a->GetLocalAddress()));
-    ss_.ProcessMessagesUntilIdle();
+    time_controller_.AdvanceTime(TimeDelta::Zero());
 
     // First, deliver all packets in 0 ms.
-    char buffer[2] = {0, 0};
+    std::array<char, 2> buffer = {0, 0};
     const char cNumPackets = 10;
     for (char i = 0; i < cNumPackets; ++i) {
       buffer[0] = '0' + i;
-      EXPECT_EQ(1, a->Send(buffer, 1));
+      EXPECT_EQ(1, a->Send(buffer.data(), 1));
     }
 
-    ss_.ProcessMessagesUntilIdle();
+    time_controller_.AdvanceTime(TimeDelta::Zero());
 
     for (char i = 0; i < cNumPackets; ++i) {
-      EXPECT_EQ(1, b->Recv(buffer, sizeof(buffer), nullptr));
+      EXPECT_EQ(1, b->Recv(buffer.data(), buffer.size(), nullptr));
       EXPECT_EQ(static_cast<char>('0' + i), buffer[0]);
     }
 
@@ -664,13 +688,13 @@ class VirtualSocketServerTest : public ::testing::Test {
 
     for (char i = 0; i < cNumPackets; ++i) {
       buffer[0] = 'A' + i;
-      EXPECT_EQ(1, a->Send(buffer, 1));
+      EXPECT_EQ(1, a->Send(buffer.data(), 1));
     }
 
-    ss_.ProcessMessagesUntilIdle();
+    time_controller_.AdvanceTime(TimeDelta::Seconds(2));
 
     for (char i = 0; i < cNumPackets; ++i) {
-      EXPECT_EQ(1, b->Recv(buffer, sizeof(buffer), nullptr));
+      EXPECT_EQ(1, b->Recv(buffer.data(), buffer.size(), nullptr));
       EXPECT_EQ(static_cast<char>('A' + i), buffer[0]);
     }
   }
@@ -678,11 +702,11 @@ class VirtualSocketServerTest : public ::testing::Test {
   // It is important that initial_addr's port has to be 0 such that the
   // incremental port behavior could ensure the 2 Binds result in different
   // address.
-  void BandwidthTest(const webrtc::SocketAddress& initial_addr) {
-    webrtc::Socket* send_socket =
-        ss_.CreateSocket(initial_addr.family(), SOCK_DGRAM);
-    webrtc::Socket* recv_socket =
-        ss_.CreateSocket(initial_addr.family(), SOCK_DGRAM);
+  void BandwidthTest(const SocketAddress& initial_addr) {
+    std::unique_ptr<Socket> send_socket =
+        ss_.Create(initial_addr.family(), SOCK_DGRAM);
+    std::unique_ptr<Socket> recv_socket =
+        ss_.Create(initial_addr.family(), SOCK_DGRAM);
     ASSERT_EQ(0, send_socket->Bind(initial_addr));
     ASSERT_EQ(0, recv_socket->Bind(initial_addr));
     EXPECT_EQ(send_socket->GetLocalAddress().family(), initial_addr.family());
@@ -692,15 +716,15 @@ class VirtualSocketServerTest : public ::testing::Test {
     uint32_t bandwidth = 64 * 1024;
     ss_.set_bandwidth(bandwidth);
 
-    webrtc::Thread* pthMain = webrtc::Thread::Current();
-    Sender sender(pthMain, send_socket, 80 * 1024);
-    Receiver receiver(pthMain, recv_socket, bandwidth);
+    Thread* pthMain = time_controller_.GetMainThread();
+    Sender sender(env_, pthMain, std::move(send_socket), 80 * 1024);
+    Receiver receiver(env_, pthMain, std::move(recv_socket), bandwidth);
 
     // Allow the sender to run for 5 (simulated) seconds, then be stopped for 5
     // seconds.
-    SIMULATED_WAIT(false, 5000, fake_clock_);
+    time_controller_.AdvanceTime(TimeDelta::Millis(5000));
     sender.periodic.Stop();
-    SIMULATED_WAIT(false, 5000, fake_clock_);
+    time_controller_.AdvanceTime(TimeDelta::Millis(5000));
 
     // Ensure the observed bandwidth fell within a reasonable margin of error.
     EXPECT_TRUE(receiver.count >= 5 * 3 * bandwidth / 4);
@@ -712,7 +736,7 @@ class VirtualSocketServerTest : public ::testing::Test {
   // It is important that initial_addr's port has to be 0 such that the
   // incremental port behavior could ensure the 2 Binds result in different
   // address.
-  void DelayTest(const webrtc::SocketAddress& initial_addr) {
+  void DelayTest(const SocketAddress& initial_addr) {
     time_t seed = ::time(nullptr);
     RTC_LOG(LS_VERBOSE) << "seed = " << seed;
     srand(static_cast<unsigned int>(seed));
@@ -724,28 +748,28 @@ class VirtualSocketServerTest : public ::testing::Test {
     ss_.set_delay_stddev(stddev);
     ss_.UpdateDelayDistribution();
 
-    webrtc::Socket* send_socket =
-        ss_.CreateSocket(initial_addr.family(), SOCK_DGRAM);
-    webrtc::Socket* recv_socket =
-        ss_.CreateSocket(initial_addr.family(), SOCK_DGRAM);
+    std::unique_ptr<Socket> send_socket =
+        ss_.Create(initial_addr.family(), SOCK_DGRAM);
+    std::unique_ptr<Socket> recv_socket =
+        ss_.Create(initial_addr.family(), SOCK_DGRAM);
     ASSERT_EQ(0, send_socket->Bind(initial_addr));
     ASSERT_EQ(0, recv_socket->Bind(initial_addr));
     EXPECT_EQ(send_socket->GetLocalAddress().family(), initial_addr.family());
     EXPECT_EQ(recv_socket->GetLocalAddress().family(), initial_addr.family());
     ASSERT_EQ(0, send_socket->Connect(recv_socket->GetLocalAddress()));
 
-    webrtc::Thread* pthMain = webrtc::Thread::Current();
+    Thread* pthMain = time_controller_.GetMainThread();
     // Avg packet size is 2K, so at 200KB/s for 10s, we should see about
     // 1000 packets, which is necessary to get a good distribution.
-    Sender sender(pthMain, send_socket, 100 * 2 * 1024);
-    Receiver receiver(pthMain, recv_socket, 0);
+    Sender sender(env_, pthMain, std::move(send_socket), 100 * 2 * 1024);
+    Receiver receiver(env_, pthMain, std::move(recv_socket), 0);
 
     // Simulate 10 seconds of packets being sent, then check the observed delay
     // distribution.
-    SIMULATED_WAIT(false, 10000, fake_clock_);
+    time_controller_.AdvanceTime(TimeDelta::Millis(10000));
     sender.periodic.Stop();
     receiver.periodic.Stop();
-    ss_.ProcessMessagesUntilIdle();
+    time_controller_.AdvanceTime(TimeDelta::Zero());
 
     const double sample_mean = receiver.sum / receiver.samples;
     double num =
@@ -769,49 +793,49 @@ class VirtualSocketServerTest : public ::testing::Test {
   // Test cross-family communication between a client bound to client_addr and a
   // server bound to server_addr. shouldSucceed indicates if communication is
   // expected to work or not.
-  void CrossFamilyConnectionTest(const webrtc::SocketAddress& client_addr,
-                                 const webrtc::SocketAddress& server_addr,
+  void CrossFamilyConnectionTest(const SocketAddress& client_addr,
+                                 const SocketAddress& server_addr,
                                  bool shouldSucceed) {
     StreamSink sink;
-    webrtc::SocketAddress accept_address;
-    const webrtc::SocketAddress kEmptyAddr;
+    SocketAddress accept_address;
+    const SocketAddress kEmptyAddr;
 
     // Client gets a IPv4 address
-    std::unique_ptr<webrtc::Socket> client =
-        absl::WrapUnique(ss_.CreateSocket(client_addr.family(), SOCK_STREAM));
+    std::unique_ptr<Socket> client =
+        ss_.Create(client_addr.family(), SOCK_STREAM);
     sink.Monitor(client.get());
-    EXPECT_EQ(client->GetState(), webrtc::Socket::CS_CLOSED);
+    EXPECT_EQ(client->GetState(), Socket::CS_CLOSED);
     EXPECT_EQ(client->GetLocalAddress(), kEmptyAddr);
     client->Bind(client_addr);
 
     // Server gets a non-mapped non-any IPv6 address.
     // IPv4 sockets should not be able to connect to this.
-    std::unique_ptr<webrtc::Socket> server =
-        absl::WrapUnique(ss_.CreateSocket(server_addr.family(), SOCK_STREAM));
+    std::unique_ptr<Socket> server =
+        ss_.Create(server_addr.family(), SOCK_STREAM);
     sink.Monitor(server.get());
     server->Bind(server_addr);
     server->Listen(5);
 
     if (shouldSucceed) {
       EXPECT_EQ(0, client->Connect(server->GetLocalAddress()));
-      ss_.ProcessMessagesUntilIdle();
+      time_controller_.AdvanceTime(TimeDelta::Zero());
       EXPECT_TRUE(sink.Check(server.get(), SSE_READ));
-      std::unique_ptr<webrtc::Socket> accepted =
+      std::unique_ptr<Socket> accepted =
           absl::WrapUnique(server->Accept(&accept_address));
       EXPECT_TRUE(nullptr != accepted);
       EXPECT_NE(kEmptyAddr, accept_address);
-      ss_.ProcessMessagesUntilIdle();
+      time_controller_.AdvanceTime(TimeDelta::Zero());
       EXPECT_TRUE(sink.Check(client.get(), SSE_OPEN));
       EXPECT_EQ(client->GetRemoteAddress(), server->GetLocalAddress());
     } else {
       // Check that the connection failed.
       EXPECT_EQ(-1, client->Connect(server->GetLocalAddress()));
-      ss_.ProcessMessagesUntilIdle();
+      time_controller_.AdvanceTime(TimeDelta::Zero());
 
       EXPECT_FALSE(sink.Check(server.get(), SSE_READ));
       EXPECT_TRUE(nullptr == server->Accept(&accept_address));
       EXPECT_EQ(accept_address, kEmptyAddr);
-      EXPECT_EQ(client->GetState(), webrtc::Socket::CS_CLOSED);
+      EXPECT_EQ(client->GetState(), Socket::CS_CLOSED);
       EXPECT_FALSE(sink.Check(client.get(), SSE_OPEN));
       EXPECT_EQ(client->GetRemoteAddress(), kEmptyAddr);
     }
@@ -820,61 +844,98 @@ class VirtualSocketServerTest : public ::testing::Test {
   // Test cross-family datagram sending between a client bound to client_addr
   // and a server bound to server_addr. shouldSucceed indicates if sending is
   // expected to succeed or not.
-  void CrossFamilyDatagramTest(const webrtc::SocketAddress& client_addr,
-                               const webrtc::SocketAddress& server_addr,
+  void CrossFamilyDatagramTest(const SocketAddress& client_addr,
+                               const SocketAddress& server_addr,
                                bool shouldSucceed) {
-    webrtc::Socket* socket = ss_.CreateSocket(AF_INET, SOCK_DGRAM);
+    std::unique_ptr<Socket> socket = ss_.Create(AF_INET, SOCK_DGRAM);
     socket->Bind(server_addr);
-    webrtc::SocketAddress bound_server_addr = socket->GetLocalAddress();
-    auto client1 = std::make_unique<webrtc::TestClient>(
-        std::make_unique<webrtc::AsyncUDPSocket>(socket), &fake_clock_);
+    SocketAddress bound_server_addr = socket->GetLocalAddress();
+    TestClient client1(
+        std::make_unique<AsyncUDPSocket>(env_, std::move(socket)),
+        &time_controller_);
 
-    webrtc::Socket* socket2 = ss_.CreateSocket(AF_INET, SOCK_DGRAM);
+    std::unique_ptr<Socket> socket2 = ss_.Create(AF_INET, SOCK_DGRAM);
     socket2->Bind(client_addr);
-    auto client2 = std::make_unique<webrtc::TestClient>(
-        std::make_unique<webrtc::AsyncUDPSocket>(socket2), &fake_clock_);
-    webrtc::SocketAddress client2_addr;
+    TestClient client2(
+        std::make_unique<AsyncUDPSocket>(env_, std::move(socket2)),
+        &time_controller_);
+    SocketAddress client2_addr;
 
     if (shouldSucceed) {
-      EXPECT_EQ(3, client2->SendTo("foo", 3, bound_server_addr));
-      EXPECT_TRUE(client1->CheckNextPacket("foo", 3, &client2_addr));
-      webrtc::SocketAddress client1_addr;
-      EXPECT_EQ(6, client1->SendTo("bizbaz", 6, client2_addr));
-      EXPECT_TRUE(client2->CheckNextPacket("bizbaz", 6, &client1_addr));
+      EXPECT_EQ(3, client2.SendTo("foo", 3, bound_server_addr));
+      EXPECT_TRUE(client1.CheckNextPacket("foo", 3, &client2_addr));
+      SocketAddress client1_addr;
+      EXPECT_EQ(6, client1.SendTo("bizbaz", 6, client2_addr));
+      EXPECT_TRUE(client2.CheckNextPacket("bizbaz", 6, &client1_addr));
       EXPECT_EQ(client1_addr, bound_server_addr);
     } else {
-      EXPECT_EQ(-1, client2->SendTo("foo", 3, bound_server_addr));
-      EXPECT_TRUE(client1->CheckNoPacket());
+      EXPECT_EQ(-1, client2.SendTo("foo", 3, bound_server_addr));
+      EXPECT_TRUE(client1.CheckNoPacket());
     }
   }
 
+  void SendReceiveEcn(const SocketAddress& initial_addr) {
+    std::unique_ptr<Socket> socket =
+        ss_.Create(initial_addr.family(), SOCK_DGRAM);
+    socket->Bind(initial_addr);
+    SocketAddress server_addr = socket->GetLocalAddress();
+
+    TestClient client1(
+        std::make_unique<AsyncUDPSocket>(env_, std::move(socket)),
+        &time_controller_);
+
+    SocketAddress client2_addr;
+    std::unique_ptr<Socket> socket2 =
+        ss_.Create(initial_addr.family(), SOCK_DGRAM);
+    TestClient client2(
+        std::make_unique<AsyncUDPSocket>(env_, std::move(socket2)),
+        &time_controller_);
+
+    client2.SendTo("foo", 3, server_addr);
+    std::unique_ptr<TestClient::Packet> packet_1 = client1.NextPacket();
+    ASSERT_THAT(packet_1.get(), NotNull());
+    EXPECT_EQ(packet_1->ecn, EcnMarking::kNotEct);
+
+    client2.SetOption(Socket::OPT_SEND_ECN, 1);
+    client2.SendTo("bar", 3, server_addr);
+    std::unique_ptr<TestClient::Packet> packet_2 = client1.NextPacket();
+    ASSERT_THAT(packet_2.get(), NotNull());
+    EXPECT_EQ(packet_2->ecn, EcnMarking::kNotEct);
+
+    client1.SetOption(Socket::OPT_RECV_ECN, 1);
+    client2.SendTo("bar", 3, server_addr);
+    std::unique_ptr<TestClient::Packet> packet_3 = client1.NextPacket();
+    ASSERT_THAT(packet_3.get(), NotNull());
+    EXPECT_EQ(packet_3->ecn, EcnMarking::kEct1);
+  }
+
  protected:
-  webrtc::ScopedFakeClock fake_clock_;
-  webrtc::VirtualSocketServer ss_;
-  webrtc::AutoSocketServerThread thread_;
-  const webrtc::SocketAddress kIPv4AnyAddress;
-  const webrtc::SocketAddress kIPv6AnyAddress;
+  VirtualSocketServer ss_;
+  GlobalSimulatedTimeController time_controller_;
+  const Environment env_;
+  const SocketAddress kIPv4AnyAddress;
+  const SocketAddress kIPv6AnyAddress;
 };
 
 TEST_F(VirtualSocketServerTest, basic_v4) {
-  webrtc::SocketAddress ipv4_test_addr(webrtc::IPAddress(INADDR_ANY), 5000);
+  SocketAddress ipv4_test_addr(IPAddress(INADDR_ANY), 5000);
   BasicTest(ipv4_test_addr);
 }
 
 TEST_F(VirtualSocketServerTest, basic_v6) {
-  webrtc::SocketAddress ipv6_test_addr(webrtc::IPAddress(in6addr_any), 5000);
+  SocketAddress ipv6_test_addr(IPAddress(in6addr_any), 5000);
   BasicTest(ipv6_test_addr);
 }
 
 TEST_F(VirtualSocketServerTest, TestDefaultRoute_v4) {
-  webrtc::IPAddress ipv4_default_addr(0x01020304);
+  IPAddress ipv4_default_addr(0x01020304);
   TestDefaultSourceAddress(ipv4_default_addr);
 }
 
 TEST_F(VirtualSocketServerTest, TestDefaultRoute_v6) {
-  webrtc::IPAddress ipv6_default_addr;
-  EXPECT_TRUE(webrtc::IPFromString("2401:fa00:4:1000:be30:5bff:fee5:c3",
-                                   &ipv6_default_addr));
+  IPAddress ipv6_default_addr;
+  EXPECT_TRUE(
+      IPFromString("2401:fa00:4:1000:be30:5bff:fee5:c3", &ipv6_default_addr));
   TestDefaultSourceAddress(ipv6_default_addr);
 }
 
@@ -908,6 +969,10 @@ TEST_F(VirtualSocketServerTest, close_v4) {
 
 TEST_F(VirtualSocketServerTest, close_v6) {
   CloseTest(kIPv6AnyAddress);
+}
+
+TEST_F(VirtualSocketServerTest, SendReceiveEcn) {
+  SendReceiveEcn(kIPv4AnyAddress);
 }
 
 TEST_F(VirtualSocketServerTest, tcp_send_v4) {
@@ -944,114 +1009,111 @@ TEST_F(VirtualSocketServerTest, delay_v6) {
 
 // Works, receiving socket sees 127.0.0.2.
 TEST_F(VirtualSocketServerTest, CanConnectFromMappedIPv6ToIPv4Any) {
-  CrossFamilyConnectionTest(webrtc::SocketAddress("::ffff:127.0.0.2", 0),
-                            webrtc::SocketAddress("0.0.0.0", 5000), true);
+  CrossFamilyConnectionTest(SocketAddress("::ffff:127.0.0.2", 0),
+                            SocketAddress("0.0.0.0", 5000), true);
 }
 
 // Fails.
 TEST_F(VirtualSocketServerTest, CantConnectFromUnMappedIPv6ToIPv4Any) {
-  CrossFamilyConnectionTest(webrtc::SocketAddress("::2", 0),
-                            webrtc::SocketAddress("0.0.0.0", 5000), false);
+  CrossFamilyConnectionTest(SocketAddress("::2", 0),
+                            SocketAddress("0.0.0.0", 5000), false);
 }
 
 // Fails.
 TEST_F(VirtualSocketServerTest, CantConnectFromUnMappedIPv6ToMappedIPv6) {
-  CrossFamilyConnectionTest(webrtc::SocketAddress("::2", 0),
-                            webrtc::SocketAddress("::ffff:127.0.0.1", 5000),
-                            false);
+  CrossFamilyConnectionTest(SocketAddress("::2", 0),
+                            SocketAddress("::ffff:127.0.0.1", 5000), false);
 }
 
 // Works. receiving socket sees ::ffff:127.0.0.2.
 TEST_F(VirtualSocketServerTest, CanConnectFromIPv4ToIPv6Any) {
-  CrossFamilyConnectionTest(webrtc::SocketAddress("127.0.0.2", 0),
-                            webrtc::SocketAddress("::", 5000), true);
+  CrossFamilyConnectionTest(SocketAddress("127.0.0.2", 0),
+                            SocketAddress("::", 5000), true);
 }
 
 // Fails.
 TEST_F(VirtualSocketServerTest, CantConnectFromIPv4ToUnMappedIPv6) {
-  CrossFamilyConnectionTest(webrtc::SocketAddress("127.0.0.2", 0),
-                            webrtc::SocketAddress("::1", 5000), false);
+  CrossFamilyConnectionTest(SocketAddress("127.0.0.2", 0),
+                            SocketAddress("::1", 5000), false);
 }
 
 // Works. Receiving socket sees ::ffff:127.0.0.1.
 TEST_F(VirtualSocketServerTest, CanConnectFromIPv4ToMappedIPv6) {
-  CrossFamilyConnectionTest(webrtc::SocketAddress("127.0.0.1", 0),
-                            webrtc::SocketAddress("::ffff:127.0.0.2", 5000),
-                            true);
+  CrossFamilyConnectionTest(SocketAddress("127.0.0.1", 0),
+                            SocketAddress("::ffff:127.0.0.2", 5000), true);
 }
 
 // Works, receiving socket sees a result from GetNextIP.
 TEST_F(VirtualSocketServerTest, CanConnectFromUnboundIPv6ToIPv4Any) {
-  CrossFamilyConnectionTest(webrtc::SocketAddress("::", 0),
-                            webrtc::SocketAddress("0.0.0.0", 5000), true);
+  CrossFamilyConnectionTest(SocketAddress("::", 0),
+                            SocketAddress("0.0.0.0", 5000), true);
 }
 
 // Works, receiving socket sees whatever GetNextIP gave the client.
 TEST_F(VirtualSocketServerTest, CanConnectFromUnboundIPv4ToIPv6Any) {
-  CrossFamilyConnectionTest(webrtc::SocketAddress("0.0.0.0", 0),
-                            webrtc::SocketAddress("::", 5000), true);
+  CrossFamilyConnectionTest(SocketAddress("0.0.0.0", 0),
+                            SocketAddress("::", 5000), true);
 }
 
 TEST_F(VirtualSocketServerTest, CanSendDatagramFromUnboundIPv4ToIPv6Any) {
-  CrossFamilyDatagramTest(webrtc::SocketAddress("0.0.0.0", 0),
-                          webrtc::SocketAddress("::", 5000), true);
+  CrossFamilyDatagramTest(SocketAddress("0.0.0.0", 0),
+                          SocketAddress("::", 5000), true);
 }
 
 TEST_F(VirtualSocketServerTest, CanSendDatagramFromMappedIPv6ToIPv4Any) {
-  CrossFamilyDatagramTest(webrtc::SocketAddress("::ffff:127.0.0.1", 0),
-                          webrtc::SocketAddress("0.0.0.0", 5000), true);
+  CrossFamilyDatagramTest(SocketAddress("::ffff:127.0.0.1", 0),
+                          SocketAddress("0.0.0.0", 5000), true);
 }
 
 TEST_F(VirtualSocketServerTest, CantSendDatagramFromUnMappedIPv6ToIPv4Any) {
-  CrossFamilyDatagramTest(webrtc::SocketAddress("::2", 0),
-                          webrtc::SocketAddress("0.0.0.0", 5000), false);
+  CrossFamilyDatagramTest(SocketAddress("::2", 0),
+                          SocketAddress("0.0.0.0", 5000), false);
 }
 
 TEST_F(VirtualSocketServerTest, CantSendDatagramFromUnMappedIPv6ToMappedIPv6) {
-  CrossFamilyDatagramTest(webrtc::SocketAddress("::2", 0),
-                          webrtc::SocketAddress("::ffff:127.0.0.1", 5000),
-                          false);
+  CrossFamilyDatagramTest(SocketAddress("::2", 0),
+                          SocketAddress("::ffff:127.0.0.1", 5000), false);
 }
 
 TEST_F(VirtualSocketServerTest, CanSendDatagramFromIPv4ToIPv6Any) {
-  CrossFamilyDatagramTest(webrtc::SocketAddress("127.0.0.2", 0),
-                          webrtc::SocketAddress("::", 5000), true);
+  CrossFamilyDatagramTest(SocketAddress("127.0.0.2", 0),
+                          SocketAddress("::", 5000), true);
 }
 
 TEST_F(VirtualSocketServerTest, CantSendDatagramFromIPv4ToUnMappedIPv6) {
-  CrossFamilyDatagramTest(webrtc::SocketAddress("127.0.0.2", 0),
-                          webrtc::SocketAddress("::1", 5000), false);
+  CrossFamilyDatagramTest(SocketAddress("127.0.0.2", 0),
+                          SocketAddress("::1", 5000), false);
 }
 
 TEST_F(VirtualSocketServerTest, CanSendDatagramFromIPv4ToMappedIPv6) {
-  CrossFamilyDatagramTest(webrtc::SocketAddress("127.0.0.1", 0),
-                          webrtc::SocketAddress("::ffff:127.0.0.2", 5000),
-                          true);
+  CrossFamilyDatagramTest(SocketAddress("127.0.0.1", 0),
+                          SocketAddress("::ffff:127.0.0.2", 5000), true);
 }
 
 TEST_F(VirtualSocketServerTest, CanSendDatagramFromUnboundIPv6ToIPv4Any) {
-  CrossFamilyDatagramTest(webrtc::SocketAddress("::", 0),
-                          webrtc::SocketAddress("0.0.0.0", 5000), true);
+  CrossFamilyDatagramTest(SocketAddress("::", 0),
+                          SocketAddress("0.0.0.0", 5000), true);
 }
 
 TEST_F(VirtualSocketServerTest, SetSendingBlockedWithUdpSocket) {
-  webrtc::Socket* socket1 =
-      ss_.CreateSocket(kIPv4AnyAddress.family(), SOCK_DGRAM);
-  std::unique_ptr<webrtc::Socket> socket2 =
-      absl::WrapUnique(ss_.CreateSocket(kIPv4AnyAddress.family(), SOCK_DGRAM));
+  std::unique_ptr<Socket> socket1 =
+      ss_.Create(kIPv4AnyAddress.family(), SOCK_DGRAM);
+  Socket& socket1_ref = *socket1;
+  std::unique_ptr<Socket> socket2 =
+      ss_.Create(kIPv4AnyAddress.family(), SOCK_DGRAM);
   socket1->Bind(kIPv4AnyAddress);
   socket2->Bind(kIPv4AnyAddress);
-  auto client1 = std::make_unique<webrtc::TestClient>(
-      std::make_unique<webrtc::AsyncUDPSocket>(socket1), &fake_clock_);
+  TestClient client1(std::make_unique<AsyncUDPSocket>(env_, std::move(socket1)),
+                     &time_controller_);
 
   ss_.SetSendingBlocked(true);
-  EXPECT_EQ(-1, client1->SendTo("foo", 3, socket2->GetLocalAddress()));
-  EXPECT_TRUE(socket1->IsBlocking());
-  EXPECT_EQ(0, client1->ready_to_send_count());
+  EXPECT_EQ(-1, client1.SendTo("foo", 3, socket2->GetLocalAddress()));
+  EXPECT_TRUE(socket1_ref.IsBlocking());
+  EXPECT_EQ(0, client1.ready_to_send_count());
 
   ss_.SetSendingBlocked(false);
-  EXPECT_EQ(1, client1->ready_to_send_count());
-  EXPECT_EQ(3, client1->SendTo("foo", 3, socket2->GetLocalAddress()));
+  EXPECT_EQ(1, client1.ready_to_send_count());
+  EXPECT_EQ(3, client1.SendTo("foo", 3, socket2->GetLocalAddress()));
 }
 
 TEST_F(VirtualSocketServerTest, SetSendingBlockedWithTcpSocket) {
@@ -1060,10 +1122,10 @@ TEST_F(VirtualSocketServerTest, SetSendingBlockedWithTcpSocket) {
   ss_.set_recv_buffer_capacity(kBufferSize);
 
   StreamSink sink;
-  std::unique_ptr<webrtc::Socket> socket1 =
-      absl::WrapUnique(ss_.CreateSocket(kIPv4AnyAddress.family(), SOCK_STREAM));
-  std::unique_ptr<webrtc::Socket> socket2 =
-      absl::WrapUnique(ss_.CreateSocket(kIPv4AnyAddress.family(), SOCK_STREAM));
+  std::unique_ptr<Socket> socket1 =
+      ss_.Create(kIPv4AnyAddress.family(), SOCK_STREAM);
+  std::unique_ptr<Socket> socket2 =
+      ss_.Create(kIPv4AnyAddress.family(), SOCK_STREAM);
   sink.Monitor(socket1.get());
   sink.Monitor(socket2.get());
   socket1->Bind(kIPv4AnyAddress);
@@ -1072,20 +1134,21 @@ TEST_F(VirtualSocketServerTest, SetSendingBlockedWithTcpSocket) {
   // Connect sockets.
   EXPECT_EQ(0, socket1->Connect(socket2->GetLocalAddress()));
   EXPECT_EQ(0, socket2->Connect(socket1->GetLocalAddress()));
-  ss_.ProcessMessagesUntilIdle();
+  time_controller_.AdvanceTime(TimeDelta::Zero());
 
-  char data[kBufferSize] = {};
+  std::vector<char> data(kBufferSize);
 
   // First Send call will fill the send buffer but not send anything.
   ss_.SetSendingBlocked(true);
-  EXPECT_EQ(static_cast<int>(kBufferSize), socket1->Send(data, kBufferSize));
-  ss_.ProcessMessagesUntilIdle();
+  EXPECT_EQ(static_cast<int>(kBufferSize),
+            socket1->Send(data.data(), kBufferSize));
+  time_controller_.AdvanceTime(TimeDelta::Zero());
   EXPECT_FALSE(sink.Check(socket1.get(), SSE_WRITE));
   EXPECT_FALSE(sink.Check(socket2.get(), SSE_READ));
   EXPECT_FALSE(socket1->IsBlocking());
 
   // Since the send buffer is full, next Send will result in EWOULDBLOCK.
-  EXPECT_EQ(-1, socket1->Send(data, kBufferSize));
+  EXPECT_EQ(-1, socket1->Send(data.data(), kBufferSize));
   EXPECT_FALSE(sink.Check(socket1.get(), SSE_WRITE));
   EXPECT_FALSE(sink.Check(socket2.get(), SSE_READ));
   EXPECT_TRUE(socket1->IsBlocking());
@@ -1093,7 +1156,7 @@ TEST_F(VirtualSocketServerTest, SetSendingBlockedWithTcpSocket) {
   // When sending is unblocked, the buffered data should be sent and
   // SignalWriteEvent should fire.
   ss_.SetSendingBlocked(false);
-  ss_.ProcessMessagesUntilIdle();
+  time_controller_.AdvanceTime(TimeDelta::Zero());
   EXPECT_TRUE(sink.Check(socket1.get(), SSE_WRITE));
   EXPECT_TRUE(sink.Check(socket2.get(), SSE_READ));
 }
@@ -1103,17 +1166,16 @@ TEST_F(VirtualSocketServerTest, CreatesStandardDistribution) {
   const double kTestDev[] = {0.25, 0.1, 0.01};
   // TODO(deadbeef): The current code only works for 1000 data points or more.
   const uint32_t kTestSamples[] = {/*10, 100,*/ 1000};
-  for (size_t midx = 0; midx < arraysize(kTestMean); ++midx) {
-    for (size_t didx = 0; didx < arraysize(kTestDev); ++didx) {
-      for (size_t sidx = 0; sidx < arraysize(kTestSamples); ++sidx) {
-        ASSERT_LT(0u, kTestSamples[sidx]);
-        const uint32_t kStdDev =
-            static_cast<uint32_t>(kTestDev[didx] * kTestMean[midx]);
-        std::unique_ptr<webrtc::VirtualSocketServer::Function> f =
-            webrtc::VirtualSocketServer::CreateDistribution(
-                kTestMean[midx], kStdDev, kTestSamples[sidx]);
+  for (uint32_t test_mean : kTestMean) {
+    for (double test_dev : kTestDev) {
+      for (uint32_t test_sample : kTestSamples) {
+        ASSERT_LT(0u, test_sample);
+        const uint32_t kStdDev = static_cast<uint32_t>(test_dev * test_mean);
+        std::unique_ptr<VirtualSocketServer::Function> f =
+            VirtualSocketServer::CreateDistribution(test_mean, kStdDev,
+                                                    test_sample);
         ASSERT_TRUE(nullptr != f.get());
-        ASSERT_EQ(kTestSamples[sidx], f->size());
+        ASSERT_EQ(test_sample, f->size());
         double sum = 0;
         for (uint32_t i = 0; i < f->size(); ++i) {
           sum += (*f)[i].second;
@@ -1125,16 +1187,14 @@ TEST_F(VirtualSocketServerTest, CreatesStandardDistribution) {
           sum_sq_dev += dev * dev;
         }
         const double stddev = sqrt(sum_sq_dev / f->size());
-        EXPECT_NEAR(kTestMean[midx], mean, 0.1 * kTestMean[midx])
-            << "M=" << kTestMean[midx] << " SD=" << kStdDev
-            << " N=" << kTestSamples[sidx];
+        EXPECT_NEAR(test_mean, mean, 0.1 * test_mean)
+            << "M=" << test_mean << " SD=" << kStdDev << " N=" << test_sample;
         EXPECT_NEAR(kStdDev, stddev, 0.1 * kStdDev)
-            << "M=" << kTestMean[midx] << " SD=" << kStdDev
-            << " N=" << kTestSamples[sidx];
+            << "M=" << test_mean << " SD=" << kStdDev << " N=" << test_sample;
       }
     }
   }
 }
 
 }  // namespace
-}  // namespace rtc
+}  // namespace webrtc

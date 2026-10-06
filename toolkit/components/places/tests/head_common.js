@@ -1,5 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -47,7 +46,7 @@ ChromeUtils.defineESModuleGetters(this, {
 });
 
 ChromeUtils.defineLazyGetter(this, "SMALLPNG_DATA_URI", function () {
-  return NetUtil.newURI(
+  return Services.io.newURI(
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAA" +
       "AAAA6fptVAAAACklEQVQI12NgAAAAAgAB4iG8MwAAAABJRU5ErkJggg=="
   );
@@ -55,7 +54,7 @@ ChromeUtils.defineLazyGetter(this, "SMALLPNG_DATA_URI", function () {
 const SMALLPNG_DATA_LEN = 67;
 
 ChromeUtils.defineLazyGetter(this, "SMALLSVG_DATA_URI", function () {
-  return NetUtil.newURI(
+  return Services.io.newURI(
     "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy5" +
       "3My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIiBmaWxs" +
       "PSIjNDI0ZTVhIj4NCiAgPGNpcmNsZSBjeD0iNTAiIGN5PSI1MCIgcj0iN" +
@@ -83,52 +82,19 @@ clearDB();
 /**
  * Shortcut to create a nsIURI.
  *
- * @param aSpec
- *        URLString of the uri.
+ * @param {string} aSpec
+ *   URLString of the uri.
  */
 function uri(aSpec) {
-  return NetUtil.newURI(aSpec);
-}
-
-/**
- * Gets the database connection.  If the Places connection is invalid it will
- * try to create a new connection.
- *
- * @param [optional] aForceNewConnection
- *        Forces creation of a new connection to the database.  When a
- *        connection is asyncClosed it cannot anymore schedule async statements,
- *        though connectionReady will keep returning true (Bug 726990).
- *
- * @return The database connection or null if unable to get one.
- */
-var gDBConn;
-function DBConn(aForceNewConnection) {
-  if (!aForceNewConnection) {
-    let db = PlacesUtils.history.DBConnection;
-    if (db.connectionReady) {
-      return db;
-    }
-  }
-
-  // If the Places database connection has been closed, create a new connection.
-  if (!gDBConn || aForceNewConnection) {
-    let file = Services.dirsvc.get("ProfD", Ci.nsIFile);
-    file.append("places.sqlite");
-    let dbConn = (gDBConn = Services.storage.openDatabase(file));
-
-    // Be sure to cleanly close this connection.
-    promiseTopicObserved("profile-before-change").then(() =>
-      dbConn.asyncClose()
-    );
-  }
-
-  return gDBConn.connectionReady ? gDBConn : null;
+  return Services.io.newURI(aSpec);
 }
 
 /**
  * Reads data from the provided inputstream.
  *
- * @return an array of bytes.
+ * @param {nsIInputStream} aStream
+ * @returns {number[]}
+ *   An array of bytes.
  */
 function readInputStreamData(aStream) {
   let bistream = Cc["@mozilla.org/binaryinputstream;1"].createInstance(
@@ -150,9 +116,10 @@ function readInputStreamData(aStream) {
 /**
  * Reads the data from the specified nsIFile.
  *
- * @param aFile
- *        The nsIFile to read from.
- * @return an array of bytes.
+ * @param {nsIFile} aFile
+ *   The file to read from.
+ * @returns {number[]}
+ *   An array of bytes.
  */
 function readFileData(aFile) {
   let inputStream = Cc[
@@ -172,12 +139,12 @@ function readFileData(aFile) {
 /**
  * Reads the data from the named file, verifying the expected file length.
  *
- * @param aFileName
- *        This file should be located in the same folder as the test.
- * @param aExpectedLength
- *        Expected length of the file.
- *
- * @return The array of bytes read from the file.
+ * @param {string} aFileName
+ *   This file should be located in the same folder as the test.
+ * @param {number} aExpectedLength
+ *   Expected length of the file.
+ * @returns {number[]}
+ *   The array of bytes read from the file.
  */
 function readFileOfLength(aFileName, aExpectedLength) {
   let data = readFileData(do_get_file(aFileName));
@@ -188,11 +155,12 @@ function readFileOfLength(aFileName, aExpectedLength) {
 /**
  * Reads the data from the specified nsIFile, then returns it as data URL.
  *
- * @param file
- *        The nsIFile to read from.
- * @param mimeType
- *        The mime type of the file content.
- * @return Promise that retunes data URL.
+ * @param {nsIFile} file
+ *   The file to read from.
+ * @param {string} mimeType
+ *   The mime type of the file content.
+ * @returns {Promise<string>}
+ *   Promise that retunes data URL.
  */
 async function readFileDataAsDataURL(file, mimeType) {
   const data = readFileData(file);
@@ -203,11 +171,11 @@ async function readFileDataAsDataURL(file, mimeType) {
  * Returns the base64-encoded version of the given string.  This function is
  * similar to window.btoa, but is available to xpcshell tests also.
  *
- * @param aString
- *        Each character in this string corresponds to a byte, and must be a
- *        code point in the range 0-255.
- *
- * @return The base64-encoded string.
+ * @param {string} aString
+ *   Each character in this string corresponds to a byte, and must be a code
+ *   point in the range 0-255.
+ * @returns {string}
+ *   The base64-encoded string.
  */
 function base64EncodeString(aString) {
   var stream = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(
@@ -223,10 +191,11 @@ function base64EncodeString(aString) {
 /**
  * Compares two arrays, and returns true if they are equal.
  *
- * @param aArray1
- *        First array to compare.
- * @param aArray2
- *        Second array to compare.
+ * @template T
+ * @param {T[]} aArray1
+ *   First array to compare.
+ * @param {T[]} aArray2
+ *   Second array to compare.
  */
 function compareArrays(aArray1, aArray2) {
   if (aArray1.length != aArray2.length) {
@@ -269,111 +238,57 @@ function clearDB() {
 }
 
 /**
- * Dumps the rows of a table out to the console.
- *
- * @param aName
- *        The name of the table or view to output.
- */
-function dump_table(aName, dbConn) {
-  if (!dbConn) {
-    dbConn = DBConn();
-  }
-  let stmt = dbConn.createStatement("SELECT * FROM " + aName);
-
-  print("\n*** Printing data from " + aName);
-  let count = 0;
-  while (stmt.executeStep()) {
-    let columns = stmt.numEntries;
-
-    if (count == 0) {
-      // Print the column names.
-      for (let i = 0; i < columns; i++) {
-        dump(stmt.getColumnName(i) + "\t");
-      }
-      dump("\n");
-    }
-
-    // Print the rows.
-    for (let i = 0; i < columns; i++) {
-      switch (stmt.getTypeOfIndex(i)) {
-        case Ci.mozIStorageValueArray.VALUE_TYPE_NULL:
-          dump("NULL\t");
-          break;
-        case Ci.mozIStorageValueArray.VALUE_TYPE_INTEGER:
-          dump(stmt.getInt64(i) + "\t");
-          break;
-        case Ci.mozIStorageValueArray.VALUE_TYPE_FLOAT:
-          dump(stmt.getDouble(i) + "\t");
-          break;
-        case Ci.mozIStorageValueArray.VALUE_TYPE_TEXT:
-          dump(stmt.getString(i) + "\t");
-          break;
-      }
-    }
-    dump("\n");
-
-    count++;
-  }
-  print("*** There were a total of " + count + " rows of data.\n");
-
-  stmt.finalize();
-}
-
-/**
  * Checks if an address is found in the database.
- * @param aURI
- *        nsIURI or address to look for.
- * @return place id of the page or 0 if not found
+ *
+ * @param {nsIURI|string} aURI
+ *   nsIURI or address to look for.
+ * @returns {number}
+ *   The place id of the page or 0 if not found.
  */
-function page_in_database(aURI) {
+async function page_in_database(aURI) {
   let url = aURI instanceof Ci.nsIURI ? aURI.spec : aURI;
-  let stmt = DBConn().createStatement(
-    "SELECT id FROM moz_places WHERE url_hash = hash(:url) AND url = :url"
+  let db = await PlacesUtils.promiseDBConnection();
+  let rows = await db.execute(
+    "SELECT id FROM moz_places WHERE url_hash = hash(:url) AND url = :url",
+    { url }
   );
-  stmt.params.url = url;
-  try {
-    if (!stmt.executeStep()) {
-      return 0;
-    }
-    return stmt.getInt64(0);
-  } finally {
-    stmt.finalize();
+  if (!rows?.length) {
+    return 0;
   }
+  return rows[0].getResultByName("id");
 }
 
 /**
  * Checks how many visits exist for a specified page.
- * @param aURI
- *        nsIURI or address to look for.
- * @return number of visits found.
+ *
+ * @param {nsIURI|string} aURI
+ *   nsIURI or address to look for.
+ * @returns {number}
+ *   The number of visits found.
  */
-function visits_in_database(aURI) {
+async function visits_in_database(aURI) {
   let url = aURI instanceof Ci.nsIURI ? aURI.spec : aURI;
-  let stmt = DBConn().createStatement(
-    `SELECT count(*) FROM moz_historyvisits v
+  let db = await PlacesUtils.promiseDBConnection();
+  let rows = await db.execute(
+    `SELECT count(*) AS cnt FROM moz_historyvisits v
      JOIN moz_places h ON h.id = v.place_id
-     WHERE url_hash = hash(:url) AND url = :url`
+     WHERE url_hash = hash(:url) AND url = :url`,
+    { url }
   );
-  stmt.params.url = url;
-  try {
-    if (!stmt.executeStep()) {
-      return 0;
-    }
-    return stmt.getInt64(0);
-  } finally {
-    stmt.finalize();
+  if (!rows?.length) {
+    return 0;
   }
+  return rows[0].getResultByName("cnt");
 }
 
 /**
  * Allows waiting for an observer notification once.
  *
- * @param aTopic
- *        Notification topic to observe.
+ * @param {string} aTopic
+ *   Notification topic to observe.
  *
- * @return {Promise}
- * @resolves The array [aSubject, aData] from the observed notification.
- * @rejects Never.
+ * @returns {Promise<[string, string]>}
+ *   The array [aSubject, aData] from the observed notification.
  */
 function promiseTopicObserved(aTopic) {
   return new Promise(resolve => {
@@ -413,11 +328,11 @@ const FILENAME_BOOKMARKS_JSON =
 /**
  * Creates a bookmarks.html file in the profile folder from a given source file.
  *
- * @param aFilename
- *        Name of the file to copy to the profile folder.  This file must
- *        exist in the directory that contains the test files.
- *
- * @return nsIFile object for the file.
+ * @param {string} aFilename
+ *   Name of the file to copy to the profile folder.  This file must exist in
+ *   the directory that contains the test files.
+ * @returns {nsIFile}
+ *   A reference to the created file.
  */
 function create_bookmarks_html(aFilename) {
   if (!aFilename) {
@@ -449,7 +364,8 @@ function remove_bookmarks_html() {
 /**
  * Check bookmarks.html file exists in the profile folder.
  *
- * @return nsIFile object for the file.
+ * @returns {nsIFile}
+ *   A reference to the found file.
  */
 function check_bookmarks_html() {
   let profileBookmarksHTMLFile = gProfD.clone();
@@ -461,11 +377,11 @@ function check_bookmarks_html() {
 /**
  * Creates a JSON backup in the profile folder folder from a given source file.
  *
- * @param aFilename
- *        Name of the file to copy to the profile folder.  This file must
- *        exist in the directory that contains the test files.
- *
- * @return nsIFile object for the file.
+ * @param {string} aFilename
+ *   Name of the file to copy to the profile folder.  This file must exist in
+ *   the directory that contains the test files.
+ * @returns {nsIFile}
+ *   A reference to the created backup file.
  */
 function create_JSON_backup(aFilename) {
   if (!aFilename) {
@@ -507,9 +423,10 @@ function remove_all_JSON_backups() {
 /**
  * Check a JSON backup file for today exists in the profile folder.
  *
- * @param aIsAutomaticBackup The boolean indicates whether it's an automatic
- *        backup.
- * @return nsIFile object for the file.
+ * @param {boolean} aIsAutomaticBackup
+ *   Indicates whether it's an automatic backup.
+ * @returns {nsIFile}
+ *   A reference to the found file.
  */
 function check_JSON_backup(aIsAutomaticBackup) {
   let profileBookmarksJSONFile;
@@ -534,35 +451,14 @@ function check_JSON_backup(aIsAutomaticBackup) {
 }
 
 /**
- * Returns the hidden status of a url.
- *
- * @param aURI
- *        The URI or spec to get hidden for.
- * @return @return true if the url is hidden, false otherwise.
- */
-function isUrlHidden(aURI) {
-  let url = aURI instanceof Ci.nsIURI ? aURI.spec : aURI;
-  let stmt = DBConn().createStatement(
-    "SELECT hidden FROM moz_places WHERE url_hash = hash(?1) AND url = ?1"
-  );
-  stmt.bindByIndex(0, url);
-  if (!stmt.executeStep()) {
-    throw new Error("No result for hidden.");
-  }
-  let hidden = stmt.getInt32(0);
-  stmt.finalize();
-
-  return !!hidden;
-}
-
-/**
  * Compares two times in usecs, considering eventual platform timers skews.
  *
- * @param aTimeBefore
- *        The older time in usecs.
- * @param aTimeAfter
- *        The newer time in usecs.
- * @return true if times are ordered, false otherwise.
+ * @param {number} before
+ *   The older time in usecs.
+ * @param {number} after
+ *   The newer time in usecs.
+ * @returns {boolean}
+ *   True if times are ordered, false otherwise.
  */
 function is_time_ordered(before, after) {
   // Windows has an estimated 16ms timers precision, since Date.now() and
@@ -577,7 +473,7 @@ function is_time_ordered(before, after) {
 /**
  * Shutdowns Places, invoking the callback when the connection has been closed.
  *
- * @param aCallback
+ * @param {(string, string) => void} aCallback
  *        Function to be called when done.
  */
 function waitForConnectionClosed(aCallback) {
@@ -588,10 +484,8 @@ function waitForConnectionClosed(aCallback) {
 /**
  * Tests if a given guid is valid for use in Places or not.
  *
- * @param aGuid
- *        The guid to test.
- * @param [optional] aStack
- *        The stack frame used to report the error.
+ * @param {string} aGuid
+ *   The guid to test.
  */
 function do_check_valid_places_guid(aGuid) {
   Assert.ok(/^[a-zA-Z0-9\-_]{12}$/.test(aGuid), "Should be a valid GUID");
@@ -600,10 +494,10 @@ function do_check_valid_places_guid(aGuid) {
 /**
  * Tests that a guid was set in moz_places for a given uri.
  *
- * @param aURI
- *        The uri to check.
- * @param [optional] aGUID
- *        The expected guid in the database.
+ * @param {string|nsIURI|URL} aURI
+ *   The uri to check.
+ * @param {string} [aGUID]
+ *   The expected guid in the database.
  */
 async function check_guid_for_uri(aURI, aGUID) {
   let guid = await PlacesTestUtils.getDatabaseValue("moz_places", "guid", {
@@ -618,10 +512,10 @@ async function check_guid_for_uri(aURI, aGUID) {
 /**
  * Tests that a guid was set in moz_places for a given bookmark.
  *
- * @param aId
- *        The bookmark id to check.
- * @param [optional] aGUID
- *        The expected guid in the database.
+ * @param {number} aId
+ *   The bookmark id to check.
+ * @param {string} [aGUID]
+ *   The expected guid in the database.
  */
 async function check_guid_for_bookmark(aId, aGUID) {
   let guid = await PlacesTestUtils.getDatabaseValue("moz_bookmarks", "guid", {
@@ -636,13 +530,15 @@ async function check_guid_for_bookmark(aId, aGUID) {
 /**
  * Compares 2 arrays returning whether they contains the same elements.
  *
- * @param a1
- *        First array to compare.
- * @param a2
- *        Second array to compare.
- * @param [optional] sorted
- *        Whether the comparison should take in count position of the elements.
- * @return true if the arrays contain the same elements, false otherwise.
+ * @template T
+ * @param {T[]} a1
+ *   First array to compare.
+ * @param {T[]} a2
+ *   Second array to compare.
+ * @param {boolean} [sorted]
+ *   Whether the comparison should take in count position of the elements.
+ * @returns {boolean}
+ *   true if the arrays contain the same elements, false otherwise.
  */
 function do_compare_arrays(a1, a2, sorted) {
   if (a1.length != a2.length) {
@@ -708,6 +604,8 @@ function checkBookmarkObject(info) {
 
 /**
  * Reads foreign_count value for a given url.
+ *
+ * @param {string|nsIURI} url
  */
 async function foreign_count(url) {
   if (url instanceof Ci.nsIURI) {
@@ -739,6 +637,10 @@ function sortBy(array, prop) {
 
 /**
  * Asynchronously compares contents from 2 favicon urls.
+ *
+ * @param {string|nsIURI} icon1
+ * @param {string|nsIURI} icon2
+ * @param {string} msg
  */
 async function compareFavicons(icon1, icon2, msg) {
   icon1 = new URL(icon1 instanceof Ci.nsIURI ? icon1.spec : icon1);
@@ -774,10 +676,11 @@ async function compareFavicons(icon1, icon2, msg) {
  * Get the internal "root" folder name for an item, specified by its itemGuid.
  * If the itemGuid does not point to a root folder, null is returned.
  *
- * @param itemGuid
- *        the item guid.
- * @return the internal-root name for the root folder, if itemGuid points
- * to such folder, null otherwise.
+ * @param {string} itemGuid
+ *   The item guid.
+ * @returns {?string}
+ *   The internal-root name for the root folder, if itemGuid points to such
+ *   folder, null otherwise.
  */
 function mapItemGuidToInternalRootName(itemGuid) {
   switch (itemGuid) {
@@ -809,7 +712,7 @@ const DB_FILENAME = "places.sqlite";
  *        directory that this file, head_common.js, is located.
  * @param {string} destFileName
  *        The destination filename to copy the database to.
- * @return {Promise} the final path to the database
+ * @returns {Promise} the final path to the database
  */
 async function setupPlacesDatabase(path, destFileName = DB_FILENAME) {
   let currentDir = do_get_cwd().path;
@@ -836,8 +739,10 @@ async function setupPlacesDatabase(path, destFileName = DB_FILENAME) {
 /**
  * Gets the URLs of pages that have a particular annotation.
  *
- * @param {String} name The name of the annotation to search for.
- * @return An array of URLs found.
+ * @param {string} name
+ *   The name of the annotation to search for.
+ * @returns {string}
+ *   An array of URLs found.
  */
 function getPagesWithAnnotation(name) {
   return PlacesUtils.promiseDBConnection().then(async db => {
@@ -873,4 +778,10 @@ async function assertNoOrphanPageAnnotations() {
     SELECT id FROM moz_anno_attributes
     WHERE id NOT IN (SELECT anno_attribute_id FROM moz_annos) AND
           id NOT IN (SELECT anno_attribute_id FROM moz_items_annos)`);
+}
+
+function daysAgo(days) {
+  let date = new Date();
+  date.setDate(date.getDate() - days);
+  return date;
 }

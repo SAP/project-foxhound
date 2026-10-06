@@ -4,23 +4,15 @@
 
 package org.mozilla.fenix.webcompat.middleware
 
-import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
-import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Assert.assertEquals
-import org.junit.Rule
 import org.junit.Test
-import org.junit.runner.RunWith
 import org.mozilla.fenix.webcompat.store.WebCompatReporterAction
 import org.mozilla.fenix.webcompat.store.WebCompatReporterStore
 
-@RunWith(AndroidJUnit4::class)
 class WebCompatReporterNavigationMiddlewareTest {
-
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
 
     @Test
     fun `WHEN a navigation action is emitted before and after the flow is collected THEN only the navigation action emitted after the collection is collected`() = runTest {

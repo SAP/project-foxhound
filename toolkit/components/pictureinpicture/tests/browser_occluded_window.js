@@ -24,7 +24,7 @@ add_task(async function forceActiveMultiPiPTabs() {
     async browser => {
       await ensureVideosReady(browser);
 
-      let bc = browser.ownerGlobal.browsingContext;
+      let bc = browser.documentGlobal.browsingContext;
       info("is window active: " + bc.isActive);
 
       info("Opening new tab");
@@ -114,7 +114,7 @@ add_task(async function forceActiveMovePiPToWindow() {
       await ensureVideosReady(browser);
 
       let tab = gBrowser.getTabForBrowser(browser);
-      let bc = browser.ownerGlobal.browsingContext;
+      let bc = browser.documentGlobal.browsingContext;
 
       info("is window active: " + bc.isActive);
 
@@ -204,7 +204,7 @@ add_task(async function forceActiveMultiPiPSamePage() {
     },
     async browser => {
       await ensureVideosReady(browser);
-      let bc = browser.ownerGlobal.browsingContext;
+      let bc = browser.documentGlobal.browsingContext;
 
       ok(
         !bc.forceAppWindowActive,

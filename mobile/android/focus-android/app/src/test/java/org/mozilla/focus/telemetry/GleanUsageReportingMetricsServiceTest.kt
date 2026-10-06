@@ -5,7 +5,6 @@
 package org.mozilla.focus.telemetry
 
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -14,6 +13,7 @@ import org.mozilla.focus.telemetry.fake.FakeGleanProfileIdStore
 import org.mozilla.focus.telemetry.fake.FakeGleanUsageReporting
 import org.mozilla.focus.telemetry.fake.FakeLifecycleEventObserver
 import org.mozilla.focus.telemetry.fake.FakeLifecycleOwner
+import kotlin.test.assertNotNull
 
 internal class GleanUsageReportingMetricsServiceTest {
 

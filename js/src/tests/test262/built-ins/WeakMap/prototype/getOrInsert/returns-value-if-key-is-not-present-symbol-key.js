@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-symbols-as-weakmap-keys) shell-option(--enable-upsert) skip-if(release_or_beta||!Map.prototype.getOrInsertComputed||!xulRuntime.shell) -- symbols-as-weakmap-keys is not released yet, upsert is not enabled unconditionally, requires shell-options
+// |reftest| shell-option(--enable-symbols-as-weakmap-keys) skip-if(!xulRuntime.shell) -- requires shell-options
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // Copyright (C) 2025 Jonas Haukenes. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.

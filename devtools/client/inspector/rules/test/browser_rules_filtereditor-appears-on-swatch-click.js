@@ -51,7 +51,11 @@ add_task(async function () {
   info("Hide the filter select");
   const onSelectPopupHidden = once(selectPopup, "popuphidden");
   const blurMenuItem = selectPopup.querySelector("menuitem[label='blur']");
-  EventUtils.synthesizeMouseAtCenter(blurMenuItem, {}, window);
+  if (selectPopup.isNativeMenu) {
+    selectPopup.activateItem(blurMenuItem);
+  } else {
+    EventUtils.synthesizeMouseAtCenter(blurMenuItem, {}, window);
+  }
   await onSelectPopupHidden;
   await waitFor(() => select.value === "blur");
   is(

@@ -184,6 +184,24 @@ impl DispatchOptions {
         }
     }
 
+    /// Indicates that the caller is prepared to handle dispatch failures.
+    ///
+    /// Some event targets may leak the dispatched runnable or otherwise assert
+    /// on failure to prevent objects from being destroyed on the wrong thread.
+    /// This flag disables those behaviours, making the caller responsible for
+    /// handling dispatch failure in all cases.
+    ///
+    /// See the comment on DISPATCH_FALLIBLE in nsIEventTarget.idl for details.
+    #[inline]
+    pub fn fallible(self, fallible: bool) -> DispatchOptions {
+        const FLAG: u32 = nsIEventTarget::DISPATCH_FALLIBLE;
+        if fallible {
+            DispatchOptions(self.flags() | FLAG)
+        } else {
+            DispatchOptions(self.flags() & !FLAG)
+        }
+    }
+
     /// Returns the set of bitflags to pass to `DispatchFromScript`.
     #[inline]
     fn flags(self) -> u32 {

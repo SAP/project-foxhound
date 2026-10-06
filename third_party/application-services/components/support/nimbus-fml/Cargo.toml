@@ -1,0 +1,56 @@
+[package]
+name = "nimbus-fml"
+version = "0.1.0"
+edition = "2021"
+authors = ["Nimbus SDK Engineering"]
+license = "MPL-2.0"
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+client-lib = []
+uniffi-bindings = ["client-lib", "dep:uniffi"]
+# XXX - this test code has failed undetected for a very long time and should either be removed or fixed.
+kotlin-tests = []
+swift-tests = []
+jsonschema-tests = []
+# and a work-around so that `--all-features` still arranges to keep our test features disabled.
+all-features-workaround = []
+
+[lib]
+name = "nimbus_fml"
+
+# A bin target needed when used in m-c.
+[[bin]]
+name = "nimbus-fml"
+
+[build-dependencies]
+uniffi = { version = "0.31", features = ["build"], optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+# If you enable the `jsonschema-tests` feature you will also need to uncomment this.
+# It is commented to avoid dragging it into m-c, which is a larger than expected yak to shave.
+# jsonschema = { version = "0.17", default-features = false }
+
+[dependencies]
+clap = {version = "4.2", default-features = false, features = ["std", "derive", "help"]}
+anyhow = "1.0.44"
+serde_json = { version = "1", features = ["preserve_order"] }
+serde_yaml = "0.9"
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2"
+askama = "0.14"
+textwrap = { version = "0.16", default-features = false }
+heck = "0.5"
+icu_segmenter = "2"
+url = { version = "2", features = ["serde"] }
+glob = "0.3.0"
+uniffi = { version = "0.31", optional = true }
+cfg-if = "1.0.0"
+lazy_static = "1.4"
+sha2 = "^0.10"
+itertools = "0"
+regex = "1.9"
+viaduct = { path = "../../viaduct/" }
+termcolor = "1.4.1"
+mozilla-central-workspace-hack = { version = "0.1", features = ["nimbus-fml"], optional = true }

@@ -3,44 +3,9 @@
 
 "use strict";
 
-const { TelemetryTestUtils } = ChromeUtils.importESModule(
-  "resource://testing-common/TelemetryTestUtils.sys.mjs"
-);
-
 const { ASRouter } = ChromeUtils.importESModule(
   "resource:///modules/asrouter/ASRouter.sys.mjs"
 );
-
-const PIP_URLBAR_EVENTS = [
-  {
-    category: "pictureinpicture",
-    method: "opened_method",
-    object: "urlBar",
-  },
-];
-
-const PIP_DISABLED_EVENTS = [
-  {
-    category: "pictureinpicture",
-    method: "opened_method",
-    object: "urlBar",
-    extra: { disableDialog: "true" },
-  },
-  {
-    category: "pictureinpicture",
-    method: "disrespect_disable",
-    object: "urlBar",
-  },
-];
-
-const FIRST_TOGGLE_AFTER_CALLOUT_EXPECTED_EVENTS = [
-  {
-    category: "pictureinpicture",
-    method: "opened_method",
-    object: "urlBar",
-    extra: { firstTimeToggle: "true", callout: "true" },
-  },
-];
 
 add_task(async function test_urlbar_toggle_multiple_contexts() {
   await BrowserTestUtils.withNewTab(
@@ -49,7 +14,7 @@ add_task(async function test_urlbar_toggle_multiple_contexts() {
       gBrowser,
     },
     async browser => {
-      Services.telemetry.clearEvents();
+      Services.fog.testResetFOG();
       await ensureVideosReady(browser);
       await ensureVideosReady(browser.browsingContext.children[0]);
 
@@ -102,17 +67,9 @@ add_task(async function test_urlbar_toggle_multiple_contexts() {
         "video"
       );
 
-      let filter = {
-        category: "pictureinpicture",
-        method: "opened_method",
-        object: "urlBar",
-      };
-      await waitForTelemeryEvents(filter, PIP_URLBAR_EVENTS.length, "content");
-
-      TelemetryTestUtils.assertEvents(PIP_URLBAR_EVENTS, filter, {
-        clear: true,
-        process: "content",
-      });
+      await Services.fog.testFlushAllChildren();
+      let ev = Glean.pictureinpicture.openedMethodUrlBar.testGetValue();
+      Assert.equal(ev.length, 1);
 
       let domWindowClosed = BrowserTestUtils.domWindowClosed(win);
       pipUrlbarToggle.click();
@@ -226,7 +183,7 @@ add_task(async function test_pipDisabled() {
       gBrowser,
     },
     async browser => {
-      Services.telemetry.clearEvents();
+      Services.fog.testResetFOG();
       await SpecialPowers.pushPrefEnv({
         set: [
           [
@@ -290,15 +247,11 @@ add_task(async function test_pipDisabled() {
         return BrowserTestUtils.isHidden(panel);
       });
 
-      let filter = {
-        category: "pictureinpicture",
-        object: "urlBar",
-      };
-      await waitForTelemeryEvents(filter, PIP_DISABLED_EVENTS.length, "parent");
-      TelemetryTestUtils.assertEvents(PIP_DISABLED_EVENTS, filter, {
-        clear: true,
-        process: "parent",
-      });
+      let ev = Glean.pictureinpicture.openedMethodUrlBar.testGetValue();
+      Assert.equal(ev.length, 1);
+      Assert.equal(ev[0].extra.disableDialog, "true");
+      ev = Glean.pictureinpicture.disrespectDisableUrlBar.testGetValue();
+      Assert.equal(ev.length, 1);
 
       // Confirm that the toggle is now visible because we no longer respect disablePictureInPicture
       await testToggleHelper(browser, VIDEO_ID, true);
@@ -350,7 +303,7 @@ add_task(async function test_urlbar_toggle_telemetry() {
       gBrowser,
     },
     async browser => {
-      Services.telemetry.clearEvents();
+      Services.fog.testResetFOG();
       await ensureVideosReady(browser);
       await ensureVideosReady(browser.browsingContext.children[0]);
 
@@ -429,22 +382,13 @@ add_task(async function test_urlbar_toggle_telemetry() {
         "video"
       );
 
-      let filter = {
-        category: "pictureinpicture",
-        method: "opened_method",
-        object: "urlBar",
-      };
-      await waitForTelemeryEvents(
-        filter,
-        FIRST_TOGGLE_AFTER_CALLOUT_EXPECTED_EVENTS.length,
-        "content"
-      );
-
-      TelemetryTestUtils.assertEvents(
-        FIRST_TOGGLE_AFTER_CALLOUT_EXPECTED_EVENTS,
-        filter,
-        { clear: true, process: "content" }
-      );
+      await Services.fog.testFlushAllChildren();
+      let ev = Glean.pictureinpicture.openedMethodUrlBar.testGetValue();
+      Assert.equal(ev.length, 1);
+      Assert.deepEqual(ev[0].extra, {
+        firstTimeToggle: "true",
+        callout: "true",
+      });
 
       let domWindowClosed = BrowserTestUtils.domWindowClosed(win);
       pipUrlbarToggle.click();

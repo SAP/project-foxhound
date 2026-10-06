@@ -34,7 +34,6 @@ server.registerPathHandler("/", (req, res) => {
 });
 
 add_setup(async () => {
-  Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
   Services.prefs.setBoolPref("extensions.dnr.enabled", true);
   Services.prefs.setBoolPref("extensions.dnr.feedback", true);
 
@@ -968,12 +967,25 @@ add_task(async function test_register_dynamic_rules_after_restart() {
   // been detected at the previous session. Caching too much or too little in
   // StartupCache will trigger test failures in assertStoreReadsSinceLastCall.
   const sandboxStoreSpies = sinon.createSandbox();
-  const dnrStore = ExtensionDNRStore._getStoreForTesting();
-  const spyReadDNRStore = sandboxStoreSpies.spy(dnrStore, "_readData");
+  let dnrStore = ExtensionDNRStore._getStoreForTesting();
+  const spyReadDNRStore = sandboxStoreSpies.spy(
+    Object.getPrototypeOf(dnrStore),
+    "_readData"
+  );
 
   function assertStoreReadsSinceLastCall(expectedCount, description) {
     equal(spyReadDNRStore.callCount, expectedCount, description);
     spyReadDNRStore.resetHistory();
+  }
+
+  async function promiseRestartManagerWithRealisticDNRStoreInMemory() {
+    await AddonTestUtils.promiseShutdownManager();
+    // Recreate the DNR store to ensure that we test a realistic state without
+    // cached in-memory state.
+    dnrStore = ExtensionDNRStore._recreateStoreForTesting();
+    // After the store is recreated for testing, we will still be able to track
+    // reads, because spyReadDNRStore was attached to the prototype above.
+    await AddonTestUtils.promiseStartupManager();
   }
 
   let { extension } = await runAsDNRExtension({
@@ -1015,7 +1027,7 @@ add_task(async function test_register_dynamic_rules_after_restart() {
   });
   await extension.awaitMessage("onInstalled");
   assertStoreReadsSinceLastCall(1, "Read once at initial startup");
-  await promiseRestartManager();
+  await promiseRestartManagerWithRealisticDNRStoreInMemory();
   await extension.awaitMessage("onStartup");
   assertStoreReadsSinceLastCall(0, "Read skipped due to hasDynamicRules=false");
 
@@ -1031,7 +1043,7 @@ add_task(async function test_register_dynamic_rules_after_restart() {
   await callTestMessageHandler(extension, "zero_to_one_rule");
 
   assertStoreReadsSinceLastCall(0, "No further reads before restart");
-  await promiseRestartManager();
+  await promiseRestartManagerWithRealisticDNRStoreInMemory();
   await extension.awaitMessage("onStartup");
 
   // Regression test 2: before bug 1921353 was fixed, even with a fix to the
@@ -1048,7 +1060,7 @@ add_task(async function test_register_dynamic_rules_after_restart() {
   // the initialization is skipped as expected.
 
   await callTestMessageHandler(extension, "one_to_zero_rules");
-  await promiseRestartManager();
+  await promiseRestartManagerWithRealisticDNRStoreInMemory();
   await extension.awaitMessage("onStartup");
   assertStoreReadsSinceLastCall(0, "Read skipped because rules were cleared");
   equal(
@@ -1060,13 +1072,53 @@ add_task(async function test_register_dynamic_rules_after_restart() {
   // not expect another read from disk.
   assertStoreReadsSinceLastCall(0, "Read still skipped despite API call");
 
+  // Regression test for bug 2006233: The skipped read (for extension without
+  // enabled rules) should not prevent the read for extension2 (with rules).
+  const { extension: extension2 } = await runAsDNRExtension({
+    unloadTestAtEnd: false,
+    id: "test-dnr-restart-with-rules-after-one-without@test-extension",
+    background: () => {
+      const dnr = browser.declarativeNetRequest;
+
+      browser.runtime.onInstalled.addListener(async () => {
+        await dnr.updateDynamicRules({
+          addRules: [{ id: 1, condition: {}, action: { type: "block" } }],
+        });
+        browser.test.sendMessage("dynamic_rules_registered_on_install");
+      });
+      browser.runtime.onStartup.addListener(async () => {
+        browser.test.assertEq(
+          1,
+          (await dnr.getDynamicRules()).length,
+          "Rule still registered after restart"
+        );
+        browser.test.sendMessage("dynamic_rules_still_registered");
+      });
+    },
+  });
+  await extension2.awaitMessage("dynamic_rules_registered_on_install");
+  assertStoreReadsSinceLastCall(1, "Read for new extension");
+
+  await dnrStore.waitSaveCacheDataForTesting();
+
+  await promiseRestartManagerWithRealisticDNRStoreInMemory();
+  await extension.awaitMessage("onStartup");
+  await extension2.awaitMessage("dynamic_rules_still_registered");
+  assertStoreReadsSinceLastCall(1, "Read due to extension2 with dynamic rules");
+
+  ok(
+    dnrStore._data.get(extension2.uuid).isFromStartupCache(),
+    "extension2 StoreData should be initialized from startup cache"
+  );
+
   await extension.unload();
+  await extension2.unload();
 
   sandboxStoreSpies.restore();
 });
 
 add_task(async function test_dynamic_rules_telemetry() {
-  resetTelemetryData();
+  Services.fog.testResetFOG();
 
   let { extension } = await runAsDNRExtension({
     unloadTestAtEnd: false,
@@ -1120,8 +1172,6 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "validateRulesTime",
-        mirroredName: "WEBEXT_DNR_VALIDATE_RULES_MS",
-        mirroredType: "histogram",
       },
     ],
     "before test extension have been loaded"
@@ -1160,8 +1210,6 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "validateRulesTime",
-        mirroredName: "WEBEXT_DNR_VALIDATE_RULES_MS",
-        mirroredType: "histogram",
       },
     ],
     "no additional rule validation expected for dynamic rules pre-validated on a updateDynamicRules API call"
@@ -1181,8 +1229,6 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "validateRulesTime",
-        mirroredName: "WEBEXT_DNR_VALIDATE_RULES_MS",
-        mirroredType: "histogram",
       },
     ],
     "no additional rule validation expected for dynamic rules removed by a updateDynamicRules API call"
@@ -1195,8 +1241,6 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "validateRulesTime",
-        mirroredName: "WEBEXT_DNR_VALIDATE_RULES_MS",
-        mirroredType: "histogram",
       },
     ],
     "no rule validation hit after disabling the extension"
@@ -1214,8 +1258,6 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "validateRulesTime",
-        mirroredName: "WEBEXT_DNR_VALIDATE_RULES_MS",
-        mirroredType: "histogram",
         expectedSamplesCount: 1,
       },
     ],
@@ -1226,13 +1268,9 @@ add_task(async function test_dynamic_rules_telemetry() {
       // Expected no startup cache file to be loaded or used on re-enabling a disabled extension.
       {
         metric: "startupCacheReadSize",
-        mirroredName: "WEBEXT_DNR_STARTUPCACHE_READ_BYTES",
-        mirroredType: "histogram",
       },
       {
         metric: "startupCacheReadTime",
-        mirroredName: "WEBEXT_DNR_STARTUPCACHE_READ_MS",
-        mirroredType: "histogram",
       },
     ],
     "on loading dnr rules for newly installed extension"
@@ -1244,13 +1282,9 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "evaluateRulesTime",
-        mirroredName: "WEBEXT_DNR_EVALUATE_RULES_MS",
-        mirroredType: "histogram",
       },
       {
         metric: "evaluateRulesCountMax",
-        mirroredName: "extensions.apis.dnr.evaluate_rules_count_max",
-        mirroredType: "scalar",
       },
     ],
     "before any request have been intercepted"
@@ -1266,13 +1300,9 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "evaluateRulesTime",
-        mirroredName: "WEBEXT_DNR_EVALUATE_RULES_MS",
-        mirroredType: "histogram",
       },
       {
         metric: "evaluateRulesCountMax",
-        mirroredName: "extensions.apis.dnr.evaluate_rules_count_max",
-        mirroredType: "scalar",
       },
     ],
     "after restricted request have been intercepted (but no rules evaluated)"
@@ -1299,8 +1329,6 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "evaluateRulesTime",
-        mirroredName: "WEBEXT_DNR_EVALUATE_RULES_MS",
-        mirroredType: "histogram",
         expectedSamplesCount: expectedEvaluateRulesTimeSamples,
       },
     ],
@@ -1312,8 +1340,6 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "evaluateRulesCountMax",
-        mirroredName: "extensions.apis.dnr.evaluate_rules_count_max",
-        mirroredType: "scalar",
         expectedGetValue: expectedEvaluateRulesCountMax,
       },
     ],
@@ -1339,8 +1365,6 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "evaluateRulesTime",
-        mirroredName: "WEBEXT_DNR_EVALUATE_RULES_MS",
-        mirroredType: "histogram",
         expectedSamplesCount: expectedEvaluateRulesTimeSamples,
       },
     ],
@@ -1353,8 +1377,6 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "evaluateRulesCountMax",
-        mirroredName: "extensions.apis.dnr.evaluate_rules_count_max",
-        mirroredType: "scalar",
         expectedGetValue: expectedEvaluateRulesCountMax,
       },
     ],
@@ -1377,8 +1399,6 @@ add_task(async function test_dynamic_rules_telemetry() {
     [
       {
         metric: "evaluateRulesCountMax",
-        mirroredName: "extensions.apis.dnr.evaluate_rules_count_max",
-        mirroredType: "scalar",
         expectedGetValue: expectedEvaluateRulesCountMax,
       },
     ],

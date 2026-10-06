@@ -5,7 +5,6 @@
 Transform the repackage task into an actual task description.
 """
 
-
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.copy import deepcopy
 from taskgraph.util.dependencies import get_primary_dependency

@@ -313,4 +313,40 @@ export class AddressParser {
   static mergeWhitespace(s) {
     return s?.replace(/\s{2,}/g, " ");
   }
+
+  // This is quite fragile, but handles a number of basic cases. This is intended
+  // to split the street number suffix from the street number. For example:
+  // 35B will be split into number=35,suffix=B
+  // Returns an array with [housenumber, suffix]
+  static parseHouseSuffix(address, structuredAddress) {
+    let streetNumber = structuredAddress?.street_number;
+    if (!streetNumber) {
+      return null;
+    }
+
+    let numberIndex = address.indexOf(streetNumber);
+    if (numberIndex < 0) {
+      return [streetNumber];
+    }
+
+    let match = streetNumber.match(/^(\d+)(\w?)/);
+    if (!match) {
+      return [streetNumber];
+    }
+
+    let suffix;
+    let result = [match[1]];
+    // If the house number is after the street, include the rest of the address
+    // as part of the suffix, otherwise just include the suffix on the number.
+    if (numberIndex > structuredAddress?.street_name.length) {
+      suffix = address.substring(numberIndex + match[1].length).trim();
+    } else {
+      suffix = match[2];
+    }
+    if (suffix) {
+      result.push(suffix.replace("\n", " "));
+    }
+
+    return result;
+  }
 }

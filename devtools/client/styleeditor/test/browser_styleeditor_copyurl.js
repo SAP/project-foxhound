@@ -24,7 +24,7 @@ add_task(async function () {
   is(editor.friendlyName, "simple.css", "editor is the expected one");
 
   const stylesheetEl = editor.summary.querySelector(".stylesheet-name");
-  await EventUtils.synthesizeMouseAtCenter(
+  EventUtils.synthesizeMouseAtCenter(
     stylesheetEl,
     { button: 2, type: "contextmenu" },
     panel.panelWindow
@@ -32,12 +32,41 @@ add_task(async function () {
   await onContextMenuShown;
 
   ok(!copyUrlItem.hidden, "Copy URL menu item should be showing.");
+  ok(
+    !copyUrlItem.hasAttribute("disabled"),
+    "Copy URL menu item should not be disabled."
+  );
 
   info(
     "Click on Copy URL menu item and wait for the URL to be copied to the clipboard."
   );
+  const hidden = new Promise(resolve => {
+    contextMenu.addEventListener(
+      "popuphidden",
+      function () {
+        resolve();
+      },
+      { once: true }
+    );
+  });
   await waitForClipboardPromise(
     () => contextMenu.activateItem(copyUrlItem),
     `${TEST_BASE_HTTPS}simple.css`
+  );
+
+  await hidden;
+
+  info("Right-click the second stylesheet editor.");
+  EventUtils.synthesizeMouseAtCenter(
+    ui.editors[1].summary.querySelector(".stylesheet-name"),
+    { button: 2, type: "contextmenu" },
+    panel.panelWindow
+  );
+  await onContextMenuShown;
+
+  ok(!copyUrlItem.hidden, "Copy URL menu item should be showing.");
+  ok(
+    copyUrlItem.hasAttribute("disabled"),
+    "Copy URL menu item should be disabled."
   );
 });

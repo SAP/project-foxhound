@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,6 +28,8 @@ static const char kPHCAvgDelayContentNormal[] =
 static const char kPHCAvgDelayContentPageReuse[] =
     "memory.phc.avg_delay.content.page_reuse";
 
+static const char kPHCSizePref[] = "memory.phc.size_kb";
+
 // True if PHC has ever been enabled for this process.
 static bool sWasPHCEnabled = false;
 
@@ -59,6 +59,8 @@ static void UpdatePHCState() {
                           StaticPrefs::memory_phc_avg_delay_page_reuse());
     }
 
+    SetPHCSize(StaticPrefs::memory_phc_size_kb() * 1024);
+
     SetPHCState(Enabled);
     sWasPHCEnabled = true;
   } else {
@@ -74,7 +76,8 @@ static void PrefChangeCallback(const char* aPrefName, void* aNull) {
              (0 == strcmp(aPrefName, kPHCAvgDelayPageReuse)) ||
              (0 == strcmp(aPrefName, kPHCAvgDelayContentFirst)) ||
              (0 == strcmp(aPrefName, kPHCAvgDelayContentNormal)) ||
-             (0 == strcmp(aPrefName, kPHCAvgDelayContentPageReuse)));
+             (0 == strcmp(aPrefName, kPHCAvgDelayContentPageReuse)) ||
+             (0 == strcmp(aPrefName, kPHCSizePref)));
 
   UpdatePHCState();
 }
@@ -89,6 +92,7 @@ void InitPHCState() {
   Preferences::RegisterCallback(PrefChangeCallback, kPHCAvgDelayContentNormal);
   Preferences::RegisterCallback(PrefChangeCallback,
                                 kPHCAvgDelayContentPageReuse);
+  Preferences::RegisterCallback(PrefChangeCallback, kPHCSizePref);
   UpdatePHCState();
 }
 

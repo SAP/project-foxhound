@@ -14,7 +14,7 @@ class DeletionRequestPingFilter(PingFilter):
     """Ping filter that accepts deletion-request pings."""
 
     def __call__(self, ping):
-        if not super(DeletionRequestPingFilter, self).__call__(ping):
+        if not super().__call__(ping):
             return False
 
         return ping["type"] == "deletion-request"
@@ -24,7 +24,7 @@ class EventPingFilter(PingFilter):
     """Ping filter that accepts event pings."""
 
     def __call__(self, ping):
-        if not super(EventPingFilter, self).__call__(ping):
+        if not super().__call__(ping):
             return False
 
         return ping["type"] == "event"
@@ -34,7 +34,7 @@ class FirstShutdownPingFilter(PingFilter):
     """Ping filter that accepts first-shutdown pings."""
 
     def __call__(self, ping):
-        if not super(FirstShutdownPingFilter, self).__call__(ping):
+        if not super().__call__(ping):
             return False
 
         return ping["type"] == "first-shutdown"
@@ -44,7 +44,7 @@ class MainPingFilter(PingFilter):
     """Ping filter that accepts main pings."""
 
     def __call__(self, ping):
-        if not super(MainPingFilter, self).__call__(ping):
+        if not super().__call__(ping):
             return False
 
         return ping["type"] == "main"
@@ -56,11 +56,11 @@ class MainPingReasonFilter(MainPingFilter):
     """
 
     def __init__(self, reason):
-        super(MainPingReasonFilter, self).__init__()
+        super().__init__()
         self.reason = reason
 
     def __call__(self, ping):
-        if not super(MainPingReasonFilter, self).__call__(ping):
+        if not super().__call__(ping):
             return False
 
         return ping["payload"]["info"]["reason"] == self.reason

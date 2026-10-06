@@ -7,6 +7,7 @@ package org.mozilla.fenix.home.pocket.interactor
 import mozilla.components.service.pocket.PocketStory
 import mozilla.components.service.pocket.PocketStory.PocketRecommendedStory
 import org.mozilla.fenix.home.pocket.PocketRecommendedStoriesCategory
+import org.mozilla.fenix.home.pocket.controller.PocketStoriesController
 
 /**
  * Contract for all possible user interactions with the Pocket recommended stories feature.
@@ -43,4 +44,45 @@ interface PocketStoriesInteractor {
      * of the clicked story.
      */
     fun onStoryClicked(storyClicked: PocketStory, storyPosition: Triple<Int, Int, Int>)
+
+    /**
+     * Callback when an user clicks on the "Discover more" nutton for stories on the homepage.
+     */
+    fun onDiscoverMoreClicked()
+
+    /**
+     * Sends telemetry related to the "Discover more" screen being viewed.
+     */
+    fun onDiscoverMoreScreenViewed()
+}
+
+/**
+ * Default implementation of [PocketStoriesInteractor].
+ */
+class DefaultPocketStoriesInteractor(
+    private val controller: PocketStoriesController,
+) : PocketStoriesInteractor {
+    override fun onStoryShown(storyShown: PocketStory, storyPosition: Triple<Int, Int, Int>) {
+        controller.handleStoryShown(storyShown, storyPosition)
+    }
+
+    override fun onStoriesShown(storiesShown: List<PocketStory>) {
+        controller.handleStoriesShown(storiesShown)
+    }
+
+    override fun onCategoryClicked(categoryClicked: PocketRecommendedStoriesCategory) {
+        controller.handleCategoryClick(categoryClicked)
+    }
+
+    override fun onStoryClicked(storyClicked: PocketStory, storyPosition: Triple<Int, Int, Int>) {
+        controller.handleStoryClicked(storyClicked, storyPosition)
+    }
+
+    override fun onDiscoverMoreClicked() {
+        controller.handleDiscoverMoreClicked()
+    }
+
+    override fun onDiscoverMoreScreenViewed() {
+        controller.handleDiscoverMoreScreenViewed()
+    }
 }

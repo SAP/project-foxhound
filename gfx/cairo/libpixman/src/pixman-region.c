@@ -2397,6 +2397,114 @@ PREFIX (_translate) (region_type_t *region, int x, int y)
 }
 
 PIXMAN_EXPORT void
+PREFIX (_translatef) (region_type_t *region, double x, double y)
+{
+    double x1, x2, y1, y2;
+    int nbox;
+    box_type_t * pbox;
+
+    GOOD (region);
+
+    if (x == 0 && y == 0)
+        return;
+
+    region->extents.x1 = x1 = region->extents.x1 + x;
+    region->extents.y1 = y1 = region->extents.y1 + y;
+    region->extents.x2 = x2 = region->extents.x2 + x;
+    region->extents.y2 = y2 = region->extents.y2 + y;
+    
+    if ((((overflow_int_t)(x1 - PIXMAN_REGION_MIN)) | 
+	 ((overflow_int_t)(y1 - PIXMAN_REGION_MIN)) | 
+	 ((overflow_int_t)(PIXMAN_REGION_MAX - x2)) | 
+	 ((overflow_int_t)(PIXMAN_REGION_MAX - y2))) >= 0)
+    {
+        if (region->data && (nbox = region->data->numRects))
+        {
+            for (pbox = PIXREGION_BOXPTR (region); nbox--; pbox++)
+            {
+                pbox->x1 += x;
+                pbox->y1 += y;
+                pbox->x2 += x;
+                pbox->y2 += y;
+	    }
+	}
+        return;
+    }
+
+    if ((((overflow_int_t)(x2 - PIXMAN_REGION_MIN)) | 
+	 ((overflow_int_t)(y2 - PIXMAN_REGION_MIN)) | 
+	 ((overflow_int_t)(PIXMAN_REGION_MAX - x1)) | 
+	 ((overflow_int_t)(PIXMAN_REGION_MAX - y1))) <= 0)
+    {
+        region->extents.x2 = region->extents.x1;
+        region->extents.y2 = region->extents.y1;
+        FREE_DATA (region);
+        region->data = pixman_region_empty_data;
+        return;
+    }
+
+    if (x1 < PIXMAN_REGION_MIN)
+	region->extents.x1 = PIXMAN_REGION_MIN;
+    else if (x2 > PIXMAN_REGION_MAX)
+	region->extents.x2 = PIXMAN_REGION_MAX;
+
+    if (y1 < PIXMAN_REGION_MIN)
+	region->extents.y1 = PIXMAN_REGION_MIN;
+    else if (y2 > PIXMAN_REGION_MAX)
+	region->extents.y2 = PIXMAN_REGION_MAX;
+
+    if (region->data && (nbox = region->data->numRects))
+    {
+        box_type_t * pbox_out;
+
+        for (pbox_out = pbox = PIXREGION_BOXPTR (region); nbox--; pbox++)
+        {
+            pbox_out->x1 = x1 = pbox->x1 + x;
+            pbox_out->y1 = y1 = pbox->y1 + y;
+            pbox_out->x2 = x2 = pbox->x2 + x;
+            pbox_out->y2 = y2 = pbox->y2 + y;
+
+            if ((((overflow_int_t)(x2 - PIXMAN_REGION_MIN)) | 
+		 ((overflow_int_t)(y2 - PIXMAN_REGION_MIN)) |
+                 ((overflow_int_t)(PIXMAN_REGION_MAX - x1)) | 
+		 ((overflow_int_t)(PIXMAN_REGION_MAX - y1))) <= 0)
+            {
+                region->data->numRects--;
+                continue;
+	    }
+
+            if (x1 < PIXMAN_REGION_MIN)
+		pbox_out->x1 = PIXMAN_REGION_MIN;
+            else if (x2 > PIXMAN_REGION_MAX)
+		pbox_out->x2 = PIXMAN_REGION_MAX;
+
+            if (y1 < PIXMAN_REGION_MIN)
+		pbox_out->y1 = PIXMAN_REGION_MIN;
+            else if (y2 > PIXMAN_REGION_MAX)
+		pbox_out->y2 = PIXMAN_REGION_MAX;
+
+            pbox_out++;
+	}
+
+        if (pbox_out != pbox)
+        {
+            if (region->data->numRects == 1)
+            {
+                region->extents = *PIXREGION_BOXPTR (region);
+                FREE_DATA (region);
+                region->data = (region_data_type_t *)NULL;
+	    }
+            else
+	    {
+		pixman_set_extents (region);
+	    }
+	}
+    }
+
+    GOOD (region);
+}
+
+PIXMAN_EXPORT void
 PREFIX (_reset) (region_type_t *region, const box_type_t *box)
 {
     GOOD (region);
@@ -2425,6 +2533,50 @@ PIXMAN_EXPORT int
 PREFIX (_contains_point) (const region_type_t * region,
                           int x, int y,
                           box_type_t * box)
+{
+    box_type_t *pbox, *pbox_end;
+    int numRects;
+
+    GOOD (region);
+    numRects = PIXREGION_NUMRECTS (region);
+
+    if (!numRects || !INBOX (&region->extents, x, y))
+	return(FALSE);
+
+    if (numRects == 1)
+    {
+        if (box)
+	    *box = region->extents;
+
+        return(TRUE);
+    }
+
+    pbox = PIXREGION_BOXPTR (region);
+    pbox_end = pbox + numRects;
+
+    pbox = find_box_for_y (pbox, pbox_end, y);
+
+    for (;pbox != pbox_end; pbox++)
+    {
+        if ((y < pbox->y1) || (x < pbox->x1))
+	    break;              /* missed it */
+
+        if (x >= pbox->x2)
+	    continue;           /* not there yet */
+
+        if (box)
+	    *box = *pbox;
+
+        return(TRUE);
+    }
+
+    return(FALSE);
+}
+
+PIXMAN_EXPORT int
+PREFIX (_contains_pointf) (const region_type_t * region,
+                           double x, double y,
+                           box_type_t * box)
 {
     box_type_t *pbox, *pbox_end;
     int numRects;

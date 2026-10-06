@@ -78,7 +78,7 @@ async function showChangePasswordDoorhanger(
 }
 
 async function setupLogins(...logins) {
-  Services.logins.removeAllUserFacingLogins();
+  await Services.logins.removeAllUserFacingLoginsAsync();
   let savedLogins = {};
   let timesCreated = new Set();
   for (let login of logins) {
@@ -128,7 +128,7 @@ async function promptToChangePasswordTest(testData) {
       TEST_ORIGIN,
     },
     async function (browser) {
-      await SimpleTest.promiseFocus(browser.ownerGlobal);
+      await SimpleTest.promiseFocus(browser.documentGlobal);
       let notif = await showChangePasswordDoorhanger(
         browser,
         oldLogin,
@@ -153,7 +153,7 @@ async function promptToChangePasswordTest(testData) {
       }
 
       info("Clicking mainActionButton");
-      mainActionButton.doCommand();
+      mainActionButton.click();
       info("Waiting for promiseHidden");
       await promiseHidden;
       info("Waiting for storagePromise");

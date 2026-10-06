@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<!--
+https://bugzilla.mozilla.org/show_bug.cgi?id=1894251
+-->
+<title>Test for CSSStyleRule::getScopeRootFor with @scope</title>
+<script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
+
+<main id=main></main>
+
+<template id=test_unscoped>
+  <style id=s>
+    .a .b .c .d {
+        color: green;
+    }
+  </style>
+  <div class=a>
+    <div class=b>
+      <div id=notMatching class=c>
+        <div id=matching class=d></div>
+      </div>
+    </div>
+  </div>
+</template>
+<script>
+add_task(async () => {
+  SimpleTest.registerCurrentTaskCleanupFunction(async () => main.replaceChildren());
+  main.append(test_unscoped.content.cloneNode(true));
+
+  const unscopedRule = s.sheet.cssRules[0];
+
+  const scopeRootForNotMatching = unscopedRule.getScopeRootFor(0, notMatching);
+  const scopeRootForMatching = unscopedRule.getScopeRootFor(0, matching);
+  
+  is(scopeRootForNotMatching, null, "Scope root for element not matching unscoped rule is null");
+  is(scopeRootForMatching, null, "Scope root for element matching unscoped rule is null");
+});
+</script>
+
+<template id=test_scoped_explicit_simple>
+  <style id=s>
+    @scope(.a) {
+      > #b {
+        color: green;
+      }
+
+      #c {
+        color: red;
+      }
+    }
+  </style>
+  <div id=root class=a>
+    <div id=b></div>
+    <div><div><div id=c></div></div></div>
+  </div>
+</template>
+<script>
+add_task(async () => {
+  SimpleTest.registerCurrentTaskCleanupFunction(async () => main.replaceChildren());
+  main.append(test_scoped_explicit_simple.content.cloneNode(true));
+
+  const scopeRule = s.sheet.cssRules[0];
+  const bRule = scopeRule.cssRules[0];
+  const cRule = scopeRule.cssRules[1];
+
+  const cScopeRootWithBRule = bRule.getScopeRootFor(0, c);
+  const bScopeRootWithCRule = cRule.getScopeRootFor(0, b);
+  
+  is(cScopeRootWithBRule, null, "Scope root for #b scoped rule with #c is null");
+  is(bScopeRootWithCRule, null, "Scope root for #c scoped rule with #b is null");
+
+  const bScopeRoot = bRule.getScopeRootFor(0, b);
+  const cScopeRoot = cRule.getScopeRootFor(0, c);
+
+  is(bScopeRoot, root, "Scope root for #b is #root");
+  is(cScopeRoot, root, "Scope root for #c is #root");
+});
+</script>
+
+<template id=test_scoped_implicit>
+  <div id=root>
+    <style id=s>
+      @scope {
+        > #b {
+          color: green;
+        }
+
+        #c {
+          color: red;
+        }
+      }
+    </style>
+    <div id=b></div>
+    <div><div><div id=c></div></div></div>
+  </div>
+</template>
+<script>
+add_task(async () => {
+  SimpleTest.registerCurrentTaskCleanupFunction(async () => main.replaceChildren());
+  main.append(test_scoped_implicit.content.cloneNode(true));
+
+  const scopeRule = s.sheet.cssRules[0];
+  const bRule = scopeRule.cssRules[0];
+  const cRule = scopeRule.cssRules[1];
+
+  const cScopeRootWithBRule = bRule.getScopeRootFor(0, c);
+  const bScopeRootWithCRule = cRule.getScopeRootFor(0, b);
+  
+  is(cScopeRootWithBRule, null, "Scope root for #b scoped rule with #c is null");
+  is(bScopeRootWithCRule, null, "Scope root for #c scoped rule with #b is null");
+
+  const bScopeRoot = bRule.getScopeRootFor(0, b);
+  const cScopeRoot = cRule.getScopeRootFor(0, c);
+
+  is(bScopeRoot, root, "Implicit scope root for #b is #root");
+  is(cScopeRoot, root, "Implicit scope root for #c is #root");
+});
+</script>
+
+<template id=test_scoped_explicit_with_end>
+  <style id=s>
+    @scope(.a) to (.b) {
+      .c {
+        color: green;
+      }
+    }
+  </style>
+  <div id=root class=a>
+    <div id=inScope class=c></div>
+    <div class=b>
+      <div id=outOfScope class=c></div>
+    </div>
+  </div>
+</template>
+<script>
+add_task(async () => {
+  SimpleTest.registerCurrentTaskCleanupFunction(async () => main.replaceChildren());
+  main.append(test_scoped_explicit_with_end.content.cloneNode(true));
+
+  const scopeRule = s.sheet.cssRules[0];
+  const cRule = scopeRule.cssRules[0];
+
+  const inScopeRoot = cRule.getScopeRootFor(0, inScope);
+  const outOfScopeRoot = cRule.getScopeRootFor(0, outOfScope);
+
+  is(inScopeRoot, root, "#inScope finds the root");
+  is(outOfScopeRoot, null, "#outOfScope is out of scope due to scope-end selector");
+});
+</script>
+
+<template id=test_scoped_different_roots>
+  <style id=s>
+    @scope(.a) {
+      :scope:not(.b) > .c {
+        color: green;
+      }
+      :scope.b .c {
+        color: red;
+      }
+    }
+  </style>
+  <div id=root1 class=a>
+    <div id=e1 class=c></div>
+    <div id=root2 class="a b">
+      <div id=e2 class=c></div>
+    </div>
+  </div>
+</template>
+<script>
+add_task(async () => {
+  SimpleTest.registerCurrentTaskCleanupFunction(async () => main.replaceChildren());
+  main.append(test_scoped_different_roots.content.cloneNode(true));
+
+  const scopeRule = s.sheet.cssRules[0];
+  const root1Rule = scopeRule.cssRules[0];
+  const root2Rule = scopeRule.cssRules[1];
+
+  const e1ScopeRoot = root1Rule.getScopeRootFor(0, e1);
+  const e2ScopeRoot = root2Rule.getScopeRootFor(0, e2);
+
+  is(e1ScopeRoot, root1, "Scope root of #e1 is #root1");
+  is(e2ScopeRoot, root2, "Scope root of #e2 is #root2");
+});
+</script>
+
+<template id=test_scoped_different_roots_different_selectors>
+  <style id=s>
+    @scope(.a) {
+      :scope > .c, :scope > .b > .c  {
+        color: green;
+      }
+    }
+  </style>
+  <div id=root2 class=a>
+    <div id=root1 class="a b">
+      <div id=e class=c></div>
+    </div>
+  </div>
+</template>
+<script>
+add_task(async () => {
+  SimpleTest.registerCurrentTaskCleanupFunction(async () => main.replaceChildren());
+  main.append(test_scoped_different_roots_different_selectors.content.cloneNode(true));
+
+  const scopeRule = s.sheet.cssRules[0];
+  const styleRule = scopeRule.cssRules[0];
+
+  const scopeRootForSelector0 = styleRule.getScopeRootFor(0, e);
+  const scopeRootForSelector1 = styleRule.getScopeRootFor(1, e);
+
+  is(scopeRootForSelector0, root1, "Scope root of #e given selector 0 is #root1");
+  is(scopeRootForSelector1, root2, "Scope root of #e given selector 1 is #root1");
+
+});
+</script>

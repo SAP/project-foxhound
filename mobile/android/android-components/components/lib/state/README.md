@@ -50,6 +50,18 @@ val store = Store<State, Action>(
 )
 ```
 
+To ensure the store survives across `Activity` recreations there are various helpers like `fragmentStore` which will persist the most recent `State` in a `ViewModel` and then allow to restore it in new `Store` instances.
+This is especially helpful if you need to pass lifecycle aware dependencies to the `Store` `Middleware` as it will allow avoiding memory leaks.
+
+```Kotlin
+val store by fragmentStore(State()) { restoredState ->
+    Store(
+    	initialState = restoredState,
+    	middleware = listOf(Middleware(requireContext()),
+	)
+}
+```
+
 Once the store is created, you can react to changes in the state by registering an observer.
 
 ```Kotlin

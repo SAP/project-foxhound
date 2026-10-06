@@ -1,0 +1,15 @@
+{
+  "label": "esampark.wondercement.com",
+  "bugs": {
+    "1902412": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://esampark.wondercement.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

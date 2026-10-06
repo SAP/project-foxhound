@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,14 +7,14 @@
  * ways.
  */
 
-#ifndef nsSyncLoadService_h__
-#define nsSyncLoadService_h__
+#ifndef nsSyncLoadService_h_
+#define nsSyncLoadService_h_
 
 #include "mozilla/AlreadyAddRefed.h"
-#include "nscore.h"
 #include "nsIContentPolicy.h"
 #include "nsILoadInfo.h"
 #include "nsIReferrerInfo.h"
+#include "nscore.h"
 
 class nsICookieJarSettings;
 class nsIInputStream;
@@ -68,4 +66,4 @@ class nsSyncLoadService {
                                            nsIChannel* aChannel);
 };
 
-#endif  // nsSyncLoadService_h__
+#endif  // nsSyncLoadService_h_

@@ -100,7 +100,7 @@ add_task(async function () {
     }
   );
   if (isDarkScheme) {
-    const onRuleViewRefreshed = view.once("ruleview-refreshed");
+    const onRuleViewRefreshed = inspector.once("rule-view-refreshed");
     inspector.panelDoc
       .querySelector("#color-scheme-simulation-light-toggle")
       .click();
@@ -114,7 +114,7 @@ add_task(async function () {
   ]);
 
   info("Trigger dark mode simulation");
-  const onRuleViewRefreshed = view.once("ruleview-refreshed");
+  const onRuleViewRefreshed = inspector.once("rule-view-refreshed");
   inspector.panelDoc
     .querySelector("#color-scheme-simulation-dark-toggle")
     .click();

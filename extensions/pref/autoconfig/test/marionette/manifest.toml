@@ -1,3 +1,5 @@
 [DEFAULT]
+subsuite = "integration"
+tags = "os_integration"
 
 ["test_autoconfig.py"]

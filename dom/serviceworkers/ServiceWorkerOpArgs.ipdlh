@@ -84,7 +84,8 @@ struct ServiceWorkerExtensionAPIEventOpArgs {
 
 struct ServiceWorkerMessageEventOpArgs {
   PostMessageSource source;
-  ClonedOrErrorMessageData clonedData;
+  // If clonedData is nullptr, it indicates an error state.
+  nullable StructuredCloneData clonedData;
 };
 
 struct ServiceWorkerFetchEventOpArgsCommon {

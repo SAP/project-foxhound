@@ -5,6 +5,7 @@
 
 const httpServer = createTestHTTPServer();
 httpServer.registerPathHandler(`/`, function (request, response) {
+  response.setHeader("Content-Type", "text/html");
   response.setStatusLine(request.httpVersion, 200, "OK");
   response.write(`
     <meta charset=utf8>
@@ -40,6 +41,8 @@ const PREF_MESSAGE_TIMESTAMP = "devtools.webconsole.timestampMessages";
 
 add_task(async function () {
   await pushPref(PREF_MESSAGE_TIMESTAMP, true);
+  // Enable net messages in the console for this test.
+  await pushPref("devtools.browserconsole.filter.netxhr", true);
 
   const hud = await openNewTabAndConsole(TEST_URI);
 
@@ -62,6 +65,9 @@ add_task(async function () {
 
   info("Test copy menu item without timestamp");
   await testMessagesCopy(hud, false);
+
+  info("Test copy menu item for network requests");
+  await testNetworkMessageCopy(hud);
 });
 
 async function testMessagesCopy(hud, timestamp) {
@@ -202,6 +208,35 @@ async function testMessagesCopy(hud, timestamp) {
   );
 }
 
+async function testNetworkMessageCopy(hud) {
+  const onNetworkMessage = waitForMessageByType(
+    hud,
+    "test-console.html",
+    ".network"
+  );
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async () => {
+    await content.wrappedJSObject.fetch("./test-console.html");
+  });
+  const networkMessage = await onNetworkMessage;
+  const clipboardText = await copyMessageContent(hud, networkMessage.node);
+  ok(true, "Clipboard text was found and saved");
+
+  info("Check copied text for simple log message");
+  const lines = clipboardText.split("\n");
+  is(lines.length, 4, "There are 4 lines in the copied text");
+  is(lines[0], "XHR GET", "First line of network message has expected text");
+  is(
+    lines[1],
+    TEST_URI + "test-console.html",
+    "Second line of network message has expected text"
+  );
+  ok(
+    /\[HTTP\/1.1 404 Not Found( \d+ms)?\]/.test(lines[2]),
+    `Third line of network message has expected text (Got "${lines[2]}")`
+  );
+  is(lines[3], "", "The last line is an empty new line");
+}
+
 function getTimestampText(messageEl) {
   return getSelectionTextFromElement(messageEl.querySelector(".timestamp"));
 }
@@ -229,7 +264,7 @@ async function copyMessageContent(hud, messageEl) {
  * using the Selection API.
  *
  * @param {HTMLElement} el
- * @returns {String} the text representation of the element.
+ * @returns {string} the text representation of the element.
  */
 function getSelectionTextFromElement(el) {
   const doc = el.ownerDocument;

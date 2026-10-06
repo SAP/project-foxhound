@@ -5,86 +5,67 @@
 package org.mozilla.fenix.onboarding.store
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.mockk.MockKAnnotations
+import io.mockk.Runs
+import io.mockk.confirmVerified
+import io.mockk.every
+import io.mockk.impl.annotations.MockK
+import io.mockk.just
+import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.flow.emptyFlow
-import mozilla.components.lib.state.MiddlewareContext
-import mozilla.components.support.test.mock
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
+import kotlinx.coroutines.test.runTest
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.Mock
-import org.mockito.Mockito.verify
-import org.mockito.Mockito.verifyNoMoreInteractions
-import org.mockito.Mockito.`when`
-import org.mockito.MockitoAnnotations
-import org.mozilla.fenix.onboarding.view.ThemeOptionType
 import org.mozilla.fenix.onboarding.view.ToolbarOptionType
 
 @RunWith(AndroidJUnit4::class)
 class OnboardingPreferencesMiddlewareTest {
 
-    @get:Rule
-    val mainCoroutineTestRule = MainCoroutineRule()
-
-    @Mock
+    @MockK
     private lateinit var repository: OnboardingPreferencesRepository
-
-    @Mock
-    private lateinit var context: MiddlewareContext<OnboardingState, OnboardingAction>
-
-    private lateinit var middleware: OnboardingPreferencesMiddleware
 
     @Before
     fun setup() {
-        MockitoAnnotations.openMocks(this)
-        repository = mock()
-        middleware = OnboardingPreferencesMiddleware(repository)
+        MockKAnnotations.init(this)
     }
 
     @Test
     fun `GIVEN init action WHEN middleware is invoked THEN the repo is initialized`() =
-        runTestOnMain {
-            `when`(repository.onboardingPreferenceUpdates).thenReturn(emptyFlow())
-            middleware.invoke(context = context, next = {}, action = OnboardingAction.Init)
+        runTest {
+            val middleware = OnboardingPreferencesMiddleware(repository, this)
 
-            verify(repository).init()
-            verify(repository).onboardingPreferenceUpdates
-            verifyNoMoreInteractions(repository)
-        }
+            every { repository.onboardingPreferenceUpdates } returns emptyFlow()
+            every { repository.init() } just Runs
+            middleware.invoke(store = mockk(), next = {}, action = OnboardingAction.Init)
+            testScheduler.advanceUntilIdle()
 
-    @Test
-    fun `GIVEN update selected theme action with WHEN middleware is invoked THEN the repo update function is called with the selected theme`() =
-        runTestOnMain {
-            middleware.invoke(
-                context = context,
-                next = {},
-                action = OnboardingAction.OnboardingThemeAction.UpdateSelected(ThemeOptionType.THEME_DARK),
-            )
-
-            verify(repository).updateOnboardingPreference(
-                OnboardingPreferencesRepository.OnboardingPreferenceUpdate(
-                    OnboardingPreferencesRepository.OnboardingPreference.DarkTheme,
-                ),
-            )
-            verifyNoMoreInteractions(repository)
+            verify { repository.init() }
+            verify { repository.onboardingPreferenceUpdates }
+            confirmVerified(repository)
         }
 
     @Test
     fun `GIVEN update selected toolbar action with WHEN middleware is invoked THEN the repo update function is called with the selected toolbar`() =
-        runTestOnMain {
+        runTest {
+            val middleware = OnboardingPreferencesMiddleware(repository, this)
+
+            every { repository.updateOnboardingPreference(any()) } just Runs
             middleware.invoke(
-                context = context,
+                store = mockk(),
                 next = {},
                 action = OnboardingAction.OnboardingToolbarAction.UpdateSelected(ToolbarOptionType.TOOLBAR_BOTTOM),
             )
+            testScheduler.advanceUntilIdle()
 
-            verify(repository).updateOnboardingPreference(
-                OnboardingPreferencesRepository.OnboardingPreferenceUpdate(
-                    OnboardingPreferencesRepository.OnboardingPreference.BottomToolbar,
-                ),
-            )
-            verifyNoMoreInteractions(repository)
+            verify {
+                repository.updateOnboardingPreference(
+                    OnboardingPreferencesRepository.OnboardingPreferenceUpdate(
+                        OnboardingPreferencesRepository.OnboardingPreference.BottomToolbar,
+                    ),
+                )
+            }
+            confirmVerified(repository)
         }
 }

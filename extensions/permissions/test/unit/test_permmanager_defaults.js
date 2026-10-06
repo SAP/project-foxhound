@@ -170,6 +170,54 @@ add_task(async function do_test() {
     pm.testPermissionFromPrincipal(principal3, TEST_PERMISSION)
   );
 
+  // removeAllSinceWithTypeExceptions should not get rid of defaults
+  pm.removeAllSinceWithTypeExceptions(since / 1000, ["unrelated-type"]);
+
+  Assert.equal(
+    Ci.nsIPermissionManager.ALLOW_ACTION,
+    pm.testPermissionFromPrincipal(principal, TEST_PERMISSION)
+  );
+  Assert.equal(
+    Ci.nsIPermissionManager.ALLOW_ACTION,
+    pm.testPermissionFromPrincipal(principal3, TEST_PERMISSION)
+  );
+
+  // removeAllExceptTypes should not get rid of defaults
+  pm.removeAllExceptTypes(["unrelated-type"]);
+
+  Assert.equal(
+    Ci.nsIPermissionManager.ALLOW_ACTION,
+    pm.testPermissionFromPrincipal(principal, TEST_PERMISSION)
+  );
+  Assert.equal(
+    Ci.nsIPermissionManager.ALLOW_ACTION,
+    pm.testPermissionFromPrincipal(principal3, TEST_PERMISSION)
+  );
+
+  // removeByType should not get rid of defaults
+  pm.removeByType(TEST_PERMISSION);
+
+  Assert.equal(
+    Ci.nsIPermissionManager.ALLOW_ACTION,
+    pm.testPermissionFromPrincipal(principal, TEST_PERMISSION)
+  );
+  Assert.equal(
+    Ci.nsIPermissionManager.ALLOW_ACTION,
+    pm.testPermissionFromPrincipal(principal3, TEST_PERMISSION)
+  );
+
+  // removeByTypeSince should not get rid of defaults
+  pm.removeByTypeSince(TEST_PERMISSION, since);
+
+  Assert.equal(
+    Ci.nsIPermissionManager.ALLOW_ACTION,
+    pm.testPermissionFromPrincipal(principal, TEST_PERMISSION)
+  );
+  Assert.equal(
+    Ci.nsIPermissionManager.ALLOW_ACTION,
+    pm.testPermissionFromPrincipal(principal3, TEST_PERMISSION)
+  );
+
   // remove all should not throw and the default should remain
   pm.removeAll();
 

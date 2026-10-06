@@ -578,7 +578,7 @@ fn update_local_items_in_places<'t>(
                      END),
                     b.dateAdded,
                     v.dateAdded * 1000,
-                    MAX(v.dateAdded * 1000, {}),
+                    v.serverModified * 1000,
                     b.title, v.title, b.fk,
                     (SELECT h.id FROM moz_places h
                      JOIN urls u ON u.hash = h.url_hash
@@ -599,7 +599,6 @@ fn update_local_items_in_places<'t>(
             mozISyncedBookmarksMerger::KIND_LIVEMARK,
             nsINavBookmarksService::TYPE_FOLDER,
             nsINavBookmarksService::TYPE_SEPARATOR,
-            now,
         ))?;
         for (index, op) in chunk.iter().enumerate() {
             controller.err_if_aborted()?;
@@ -673,12 +672,11 @@ fn update_local_items_in_places<'t>(
     {
         let mut statement = db.prepare(format!(
             "INSERT INTO applyNewLocalStructureOps(mergedGuid, mergedParentGuid,
-                                                   position, level,
-                                                   lastModifiedMicroseconds)
+                                                   position, level)
              VALUES {}",
             repeat_display(chunk.len(), ",", |index, f| {
                 let op = &chunk[index];
-                write!(f, "(?, ?, {}, {}, {})", op.position, op.level, now)
+                write!(f, "(?, ?, {}, {})", op.position, op.level)
             })
         ))?;
         for (index, op) in chunk.iter().enumerate() {

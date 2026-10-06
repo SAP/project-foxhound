@@ -1,21 +1,20 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SVGTextContentElement.h"
 
-#include "mozilla/dom/SVGLengthBinding.h"
-#include "mozilla/dom/SVGTextContentElementBinding.h"
-#include "mozilla/dom/SVGRect.h"
-#include "nsBidiUtils.h"
 #include "DOMSVGPoint.h"
+#include "SVGTextFrame.h"
+#include "mozilla/dom/CharacterDataBuffer.h"
+#include "mozilla/dom/DOMPoint.h"
+#include "mozilla/dom/SVGLengthBinding.h"
+#include "mozilla/dom/SVGRect.h"
+#include "mozilla/dom/SVGTextContentElementBinding.h"
+#include "nsBidiUtils.h"
 #include "nsLayoutUtils.h"
-#include "nsTextFragment.h"
 #include "nsTextFrameUtils.h"
 #include "nsTextNode.h"
-#include "SVGTextFrame.h"
 
 namespace mozilla::dom {
 
@@ -31,7 +30,7 @@ SVGElement::EnumInfo SVGTextContentElement::sEnumInfo[1] = {
 
 SVGElement::LengthInfo SVGTextContentElement::sLengthInfo[1] = {
     {nsGkAtoms::textLength, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::XY}};
+     SVGLength::Axis::XY}};
 
 SVGTextFrame* SVGTextContentElement::GetSVGTextFrame() {
   nsIFrame* frame = GetPrimaryFrame(FlushType::Layout);
@@ -83,15 +82,16 @@ Maybe<int32_t> SVGTextContentElement::GetNonLayoutDependentNumberOfChars() {
       return Nothing();
     }
 
-    const nsTextFragment* text = &n->AsText()->TextFragment();
-    uint32_t length = text->GetLength();
+    const CharacterDataBuffer* characterDataBuffer = &n->AsText()->DataBuffer();
+    uint32_t length = characterDataBuffer->GetLength();
 
-    if (text->Is2b()) {
-      if (FragmentHasSkippableCharacter(text->Get2b(), length)) {
+    if (characterDataBuffer->Is2b()) {
+      if (FragmentHasSkippableCharacter(characterDataBuffer->Get2b(), length)) {
         return Nothing();
       }
     } else {
-      auto buffer = reinterpret_cast<const uint8_t*>(text->Get1b());
+      const auto* buffer =
+          reinterpret_cast<const uint8_t*>(characterDataBuffer->Get1b());
       if (FragmentHasSkippableCharacter(buffer, length)) {
         return Nothing();
       }
@@ -197,7 +197,9 @@ float SVGTextContentElement::GetRotationOfChar(uint32_t charnum,
 int32_t SVGTextContentElement::GetCharNumAtPosition(
     const DOMPointInit& aPoint) {
   SVGTextFrame* textFrame = GetSVGTextFrame();
-  return textFrame ? textFrame->GetCharNumAtPosition(this, aPoint) : -1;
+  return textFrame ? textFrame->GetCharNumAtPosition(
+                         this, DOMPointReadOnly::ToPoint(aPoint))
+                   : -1;
 }
 
 }  // namespace mozilla::dom

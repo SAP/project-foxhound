@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +6,6 @@
 #define mozilla_net_CookieCommons_h
 
 #include <cstdint>
-#include <functional>
 #include "mozIThirdPartyUtil.h"
 #include "prtime.h"
 #include "nsString.h"
@@ -174,18 +172,22 @@ class CookieCommons final {
       mozilla::dom::Document* aDocument, nsIPrincipal** aCookiePrincipal,
       nsIPrincipal** aCookiePartitionedPrincipal);
 
-  // Return a reduced expiry attribute value if needed. Parameters are in
-  // milliseconds.
+  // Return a reduced expiry attribute value if needed.
   static int64_t MaybeCapExpiry(int64_t aCurrentTimeInMSec,
                                 int64_t aExpiryInMSec);
+
+  // Return a reduced expiry value starting from the max-age attribute and the
+  // current time.
+  static int64_t MaybeCapMaxAge(int64_t aCurrentTimeInMSec,
+                                int64_t aMaxAgeInSec);
 
   // returns true if 'a' is equal to or a subdomain of 'b',
   // assuming no leading dots are present.
   static bool IsSubdomainOf(const nsACString& a, const nsACString& b);
 
-  // Returns the current time in msecs using a nsIChannel, which corresponds to
+  // Returns the current time in USecs using a nsIChannel, which corresponds to
   // the response start time.
-  static int64_t GetCurrentTimeFromChannel(nsIChannel* aChannel);
+  static int64_t GetCurrentTimeInUSecFromChannel(nsIChannel* aChannel);
 };
 
 }  // namespace net

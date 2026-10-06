@@ -1,5 +1,7 @@
 [DEFAULT]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 support-files = ["data/**"]
 
 ["test_kvstore.js"]

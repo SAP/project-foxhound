@@ -117,10 +117,10 @@ add_task(async function test_changeUPLoginOnPUpdateForm_accept() {
 
   // cleanup
   login1.password = "pass2";
-  Services.logins.removeLogin(login1);
+  await Services.logins.removeLoginAsync(login1);
   login1.password = "notifyp1";
 
-  Services.logins.removeLogin(login1B);
+  await Services.logins.removeLoginAsync(login1B);
 });
 
 add_task(async function test_changeUPLoginOnPUpdateForm_cancel() {
@@ -178,6 +178,6 @@ add_task(async function test_changeUPLoginOnPUpdateForm_cancel() {
   Assert.equal(login.timesUsed, 1, "Check times used");
 
   // cleanup
-  Services.logins.removeLogin(login1);
-  Services.logins.removeLogin(login1B);
+  await Services.logins.removeLoginAsync(login1);
+  await Services.logins.removeLoginAsync(login1B);
 });

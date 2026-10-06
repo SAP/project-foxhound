@@ -1,0 +1,107 @@
+{
+  "background": {
+    "color": {
+      "@base": {
+        "value": "{button.background.color.@base}"
+      },
+      "hover": {
+        "value": "{button.background.color.hover}"
+      },
+      "active": {
+        "value": "{button.background.color.active}"
+      },
+      "pressed": {
+        "@base": {
+          "value": "{color.accent.primary.@base}"
+        },
+        "hover": {
+          "value": "{color.accent.primary.hover}"
+        },
+        "active": {
+          "value": "{color.accent.primary.active}"
+        }
+      }
+    }
+  },
+  "border": {
+    "color": {
+      "@base": {
+        "value": "{border.color.interactive.@base}"
+      },
+      "hover": {
+        "value": {
+          "default": "{toggle.border.color.@base}",
+          "forcedColors": "{border.color.interactive.hover}"
+        }
+      },
+      "active": {
+        "value": {
+          "default": "{toggle.border.color.@base}",
+          "forcedColors": "{border.color.interactive.active}"
+        }
+      }
+    },
+    "radius": {
+      "value": "{border.radius.circle}"
+    },
+    "width": {
+      "value": "{border.width}"
+    }
+  },
+  "height": {
+    "value": "{size.item.small}"
+  },
+  "width": {
+    "value": "{size.item.large}"
+  },
+  "dot": {
+    "background": {
+      "color": {
+        "@base": {
+          "value": {
+            "default": "{toggle.border.color.@base}",
+            "forcedColors": "{color.accent.primary.@base}"
+          }
+        },
+        "hover": {
+          "value": {
+            "default": "{toggle.dot.background.color.@base}",
+            "forcedColors": "{color.accent.primary.hover}"
+          }
+        },
+        "active": {
+          "value": {
+            "default": "{toggle.dot.background.color.@base}",
+            "forcedColors": "{color.accent.primary.active}"
+          }
+        },
+        "on-pressed": {
+          "value": {
+            "default": "{background.color.canvas}",
+            "forcedColors": "{button.background.color.@base}"
+          }
+        }
+      }
+    },
+    "margin": {
+      "value": "1px"
+    },
+    "height": {
+      "value": "calc({toggle.height} - 2 * {toggle.dot.margin} - 2 * {toggle.border.width})"
+    },
+    "width": {
+      "value": "{toggle.dot.height}"
+    },
+    "transform-x": {
+      "value": "calc({toggle.width} - 2 * {toggle.dot.margin} - 2px - {toggle.dot.width})"
+    }
+  },
+  "inset": {
+    "value": "calc(-1 * {dimension.2})"
+  },
+  "opacity": {
+    "disabled": {
+      "value": "{button.opacity.disabled}"
+    }
+  }
+}

@@ -12,7 +12,7 @@ add_task(async function () {
   info("Checking close button in header of animation detail");
   await clickOnAnimation(animationInspector, panel, 0);
   const detailEl = panel.querySelector("#animation-container .controlled");
-  const win = panel.ownerGlobal;
+  const win = panel.documentGlobal;
   isnot(
     win.getComputedStyle(detailEl).display,
     "none",

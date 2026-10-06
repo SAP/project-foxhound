@@ -138,6 +138,16 @@ async function synthKeyAndTestSelectionChanged(
     `selection has correct value (${expectedSelectionString})`
   );
 
+  let rangeBounds = inputEvent.macIface.getParameterizedAttributeValue(
+    "AXBoundsForTextMarkerRange",
+    inputEvent.data.AXSelectedTextMarkerRange
+  );
+
+  ok(
+    rangeBounds.origin && rangeBounds.size && rangeBounds.size[0],
+    "Selection range has bounds"
+  );
+
   is(
     webareaEvent.macIface.getAttributeValue("AXDOMIdentifier"),
     "body",

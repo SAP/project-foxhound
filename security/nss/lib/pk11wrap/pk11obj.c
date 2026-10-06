@@ -16,6 +16,7 @@
 #include "pkcs11t.h"
 #include "pk11func.h"
 #include "keyhi.h"
+#include "keyi.h"
 #include "secitem.h"
 #include "secerr.h"
 #include "sslerr.h"
@@ -552,6 +553,7 @@ PK11_SignatureLen(SECKEYPrivateKey *key)
     SECItem attributeItem = { siBuffer, NULL, 0 };
     SECStatus rv;
     int length;
+    SECOidTag paramSet;
 
     switch (key->keyType) {
         case rsaKey:
@@ -590,6 +592,13 @@ PK11_SignatureLen(SECKEYPrivateKey *key)
                 }
             }
             return pk11_backupGetSignLength(key);
+        case mldsaKey:
+            paramSet = seckey_GetParameterSet(key);
+            if (paramSet == SEC_OID_UNKNOWN) {
+                break;
+            }
+
+            return SECKEY_MLDSAOidParamsToLen(paramSet, SECKEYSignatureType);
         default:
             break;
     }
@@ -760,19 +769,35 @@ PK11_VerifyWithMechanism(SECKEYPublicKey *key, CK_MECHANISM_TYPE mechanism,
     session = pk11_GetNewSession(slot, &owner);
     if (!owner || !(slot->isThreadSafe))
         PK11_EnterSlotMonitor(slot);
-    crv = PK11_GETTAB(slot)->C_VerifyInit(session, &mech, id);
-    if (crv != CKR_OK) {
-        if (!owner || !(slot->isThreadSafe))
-            PK11_ExitSlotMonitor(slot);
-        pk11_CloseSession(slot, session, owner);
-        PK11_FreeSlot(slot);
-        PORT_SetError(PK11_MapError(crv));
-        return SECFailure;
+    if (PK11_CheckPKCS11Version(slot, 3, 2, PR_TRUE) >= 0) {
+        crv = PK11_GETTAB(slot)->C_VerifySignatureInit(session, &mech, id,
+                                                       sig->data, sig->len);
+        if (crv != CKR_OK) {
+            if (!owner || !(slot->isThreadSafe))
+                PK11_ExitSlotMonitor(slot);
+            pk11_CloseSession(slot, session, owner);
+            PK11_FreeSlot(slot);
+            PORT_SetError(PK11_MapError(crv));
+            return SECFailure;
+        }
+        crv = PK11_GETTAB(slot)->C_VerifySignature(session, hash->data,
+                                                   hash->len);
+    } else {
+        crv = PK11_GETTAB(slot)->C_VerifyInit(session, &mech, id);
+        if (crv != CKR_OK) {
+            if (!owner || !(slot->isThreadSafe))
+                PK11_ExitSlotMonitor(slot);
+            pk11_CloseSession(slot, session, owner);
+            PK11_FreeSlot(slot);
+            PORT_SetError(PK11_MapError(crv));
+            return SECFailure;
+        }
+        crv = PK11_GETTAB(slot)->C_Verify(session, hash->data,
+                                          hash->len, sig->data, sig->len);
     }
-    crv = PK11_GETTAB(slot)->C_Verify(session, hash->data,
-                                      hash->len, sig->data, sig->len);
     if (!owner || !(slot->isThreadSafe))
         PK11_ExitSlotMonitor(slot);
+
     pk11_CloseSession(slot, session, owner);
     PK11_FreeSlot(slot);
     if (crv != CKR_OK) {
@@ -843,11 +868,11 @@ PK11_SignWithMechanism(SECKEYPrivateKey *key, CK_MECHANISM_TYPE mechanism,
     if (haslock)
         PK11_ExitSlotMonitor(slot);
     pk11_CloseSession(slot, session, owner);
-    sig->len = len;
     if (crv != CKR_OK) {
         PORT_SetError(PK11_MapError(crv));
         return SECFailure;
     }
+    sig->len = len;
     return SECSuccess;
 }
 
@@ -1193,7 +1218,7 @@ SECKEYPrivateKey *
 PK11_UnwrapPrivKey(PK11SlotInfo *slot, PK11SymKey *wrappingKey,
                    CK_MECHANISM_TYPE wrapType, SECItem *param,
                    SECItem *wrappedKey, SECItem *label,
-                   SECItem *idValue, PRBool perm, PRBool sensitive,
+                   const SECItem *idValue, PRBool perm, PRBool sensitive,
                    CK_KEY_TYPE keyType, CK_ATTRIBUTE_TYPE *usage,
                    int usageCount, void *wincx)
 {
@@ -1209,16 +1234,26 @@ PK11_UnwrapPrivKey(PK11SlotInfo *slot, PK11SymKey *wrappingKey,
     CK_RV crv;
     CK_SESSION_HANDLE rwsession;
     PK11SymKey *newKey = NULL;
+    SECKEYPrivateKey *privKey = NULL;
+    SECKEYPublicKey *pubKey = NULL;
     int i;
 
-    if (!slot || !wrappedKey || !idValue) {
-        /* SET AN ERROR!!! */
+    if (!slot || !wrappedKey) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return NULL;
     }
 
-    ck_id = PK11_MakeIDFromPubKey(idValue);
-    if (!ck_id) {
+    if (usageCount < 0 ||
+        usageCount > (int)(PR_ARRAY_SIZE(keyTemplate) - 8)) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return NULL;
+    }
+
+    if (idValue) {
+        ck_id = PK11_MakeIDFromPubKey(idValue);
+        if (!ck_id) {
+            return NULL;
+        }
     }
 
     PK11_SETATTRS(attrs, CKA_TOKEN, perm ? &cktrue : &ckfalse,
@@ -1238,14 +1273,16 @@ PK11_UnwrapPrivKey(PK11SlotInfo *slot, PK11SymKey *wrappingKey,
         PK11_SETATTRS(attrs, CKA_LABEL, label->data, label->len);
         attrs++;
     }
-    PK11_SETATTRS(attrs, CKA_ID, ck_id->data, ck_id->len);
-    attrs++;
+    if (ck_id) {
+        PK11_SETATTRS(attrs, CKA_ID, ck_id->data, ck_id->len);
+        attrs++;
+    }
     for (i = 0; i < usageCount; i++) {
         PK11_SETATTRS(attrs, usage[i], &cktrue, sizeof(cktrue));
         attrs++;
     }
 
-    if (PK11_IsInternal(slot)) {
+    if (idValue && PK11_IsInternal(slot)) {
         PK11_SETATTRS(attrs, CKA_NSS_DB, idValue->data,
                       idValue->len);
         attrs++;
@@ -1314,10 +1351,10 @@ PK11_UnwrapPrivKey(PK11SlotInfo *slot, PK11SymKey *wrappingKey,
         PK11SlotInfo *int_slot = PK11_GetInternalSlot();
 
         if (int_slot && (slot != int_slot)) {
-            SECKEYPrivateKey *privKey = PK11_UnwrapPrivKey(int_slot,
-                                                           wrappingKey, wrapType, param, wrappedKey, label,
-                                                           idValue, PR_FALSE, PR_FALSE,
-                                                           keyType, usage, usageCount, wincx);
+            privKey = PK11_UnwrapPrivKey(int_slot, wrappingKey, wrapType,
+                                         param, wrappedKey, label,
+                                         idValue, PR_FALSE, PR_FALSE,
+                                         keyType, usage, usageCount, wincx);
             if (privKey) {
                 SECKEYPrivateKey *newPrivKey = PK11_LoadPrivKey(slot, privKey,
                                                                 NULL, perm, sensitive);
@@ -1334,13 +1371,115 @@ PK11_UnwrapPrivKey(PK11SlotInfo *slot, PK11SymKey *wrappingKey,
         return NULL;
     }
     SECITEM_FreeItem(param_free, PR_TRUE);
-    return PK11_MakePrivKey(slot, nullKey, PR_FALSE, privKeyID, wincx);
+    privKey = pk11_MakePrivKey(slot, nullKey, PR_FALSE, privKeyID, wincx);
+    if (!privKey) {
+        goto loser;
+    }
+    /* we weren't given the public key, get it from the key itself so we
+     * can set the CKA_ID */
+    if (idValue == NULL) {
+        SECStatus rv;
+        pubKey = SECKEY_ConvertToPublicKey(privKey);
+        if (pubKey == NULL) {
+            goto loser;
+        }
+        idValue = PK11_GetPublicValueFromPublicKey(pubKey);
+        if (idValue == NULL) {
+            goto loser;
+        }
+        ck_id = PK11_MakeIDFromPubKey(idValue);
+        if (ck_id == NULL) {
+            goto loser;
+        }
+        rv = PK11_WriteRawAttribute(PK11_TypePrivKey, privKey, CKA_ID, ck_id);
+        if (rv != SECSuccess) {
+            goto loser;
+        }
+        if (pubKey->pkcs11Slot) {
+            rv = PK11_WriteRawAttribute(PK11_TypePubKey, pubKey, CKA_ID, ck_id);
+            if (rv != SECSuccess) {
+                goto loser;
+            }
+        }
+        /* try to import the public key but if it doesn't work,
+         * it's not fatal */
+        if (!pubKey->pkcs11Slot ||
+            !PK11_IsPermObject(pubKey->pkcs11Slot, pubKey->pkcs11ID)) {
+            (void)PK11_ImportPublicKey(privKey->pkcs11Slot, pubKey, PR_TRUE);
+        }
+        SECKEY_DestroyPublicKey(pubKey);
+        SECITEM_FreeItem(ck_id, PR_TRUE);
+    }
+    return privKey;
 
 loser:
-    PK11_FreeSymKey(newKey);
+    if (newKey) {
+        PK11_FreeSymKey(newKey);
+    }
+    if (privKey)
+        SECKEY_DestroyPrivateKey(privKey);
+    if (pubKey)
+        SECKEY_DestroyPublicKey(pubKey);
     SECITEM_FreeItem(ck_id, PR_TRUE);
     SECITEM_FreeItem(param_free, PR_TRUE);
     return NULL;
+}
+
+/*
+ * PK11_UnwrapPrivKeyByKeyType is like PK11_UnwrapPrivKey but uses the
+ * keyType and the keyUsage to determine what usage attributes to set.
+ */
+#define _MAX_USAGE 6
+SECKEYPrivateKey *
+PK11_UnwrapPrivKeyByKeyType(PK11SlotInfo *slot, PK11SymKey *wrappingKey,
+                            CK_MECHANISM_TYPE wrapType, SECItem *param,
+                            SECItem *wrappedKey, SECItem *label,
+                            const SECItem *idValue, PRBool perm, PRBool sensitive,
+                            KeyType keyType, unsigned int keyUsage, void *wincx)
+{
+    CK_KEY_TYPE pk11KeyType = pk11_getPKCS11KeyTypeFromKeyType(keyType);
+    CK_ATTRIBUTE_TYPE usage[_MAX_USAGE];
+    int usageCount = 0;
+    PRBool needKeyUsage = PR_FALSE;
+
+    /* RSA and ecKeys can be used in more than one usage, use the
+     * key usage to determine which usage to actual set */
+    if ((keyType == rsaKey) || (keyType == ecKey)) {
+        needKeyUsage = PR_TRUE;
+    }
+
+    /* use the pk11_mapXXXXKeyType functions to determine what kind
+     * of attributes to set on the key. Using these functions reduces
+     * the number of places we need to update to add new key types */
+    if ((pk11_mapWrapKeyType(keyType) != CKM_INVALID_MECHANISM) &&
+        (!needKeyUsage || keyUsage & KU_KEY_ENCIPHERMENT)) {
+        usage[usageCount++] = CKA_UNWRAP;
+        usage[usageCount++] = CKA_DECRYPT;
+    }
+    if ((pk11_mapKemKeyType(keyType) != CKM_INVALID_MECHANISM) &&
+        (!needKeyUsage || keyUsage & KU_KEY_AGREEMENT)) {
+        usage[usageCount++] = CKA_DECAPSULATE;
+    }
+    if ((PK11_MapSignKeyType(keyType) != CKM_INVALID_MECHANISM) &&
+        (!needKeyUsage || keyUsage & KU_DIGITAL_SIGNATURE)) {
+        usage[usageCount++] = CKA_SIGN;
+        if (keyType == rsaKey) {
+            usage[usageCount++] = CKA_SIGN_RECOVER;
+        }
+    }
+    if ((pk11_mapDeriveKeyType(keyType) != CKM_INVALID_MECHANISM) &&
+        (!needKeyUsage || keyUsage & KU_KEY_AGREEMENT)) {
+        usage[usageCount++] = CKA_DERIVE;
+    }
+
+    PORT_Assert(usageCount <= _MAX_USAGE);
+
+    if (usageCount == 0) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+    }
+    return PK11_UnwrapPrivKey(slot, wrappingKey, wrapType, param, wrappedKey,
+                              label, idValue, perm, sensitive, pk11KeyType,
+                              usage, usageCount, wincx);
 }
 
 /*

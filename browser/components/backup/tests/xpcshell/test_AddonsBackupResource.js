@@ -12,7 +12,6 @@ const { AddonsBackupResource } = ChromeUtils.importESModule(
  */
 add_task(async function test_measure() {
   Services.fog.testResetFOG();
-  Services.telemetry.clearScalars();
 
   const EXPECTED_KILOBYTES_FOR_EXTENSIONS_JSON = 250;
   const EXPECTED_KILOBYTES_FOR_EXTENSIONS_STORE = 500;
@@ -212,45 +211,6 @@ add_task(async function test_measure() {
     extensionsStorageSizeMeasurement,
     EXPECTED_KILOBYTES_FOR_EXTENSIONS_STORAGE,
     "Should have collected the correct measurement of all the extensions storage"
-  );
-
-  // Compare glean vs telemetry measurements
-  let scalars = TelemetryTestUtils.getProcessScalars("parent", false, false);
-  TelemetryTestUtils.assertScalar(
-    scalars,
-    "browser.backup.extensions_json_size",
-    extensionsJsonSizeMeasurement,
-    "Glean and telemetry measurements for extensions JSON should be equal"
-  );
-  TelemetryTestUtils.assertScalar(
-    scalars,
-    "browser.backup.extension_store_permissions_data_size",
-    extensionStorePermissionsDataSizeMeasurement,
-    "Glean and telemetry measurements for extension store permissions data should be equal"
-  );
-  TelemetryTestUtils.assertScalar(
-    scalars,
-    "browser.backup.storage_sync_size",
-    storageSyncSizeMeasurement,
-    "Glean and telemetry measurements for storage sync database should be equal"
-  );
-  TelemetryTestUtils.assertScalar(
-    scalars,
-    "browser.backup.extensions_xpi_directory_size",
-    extensionsXPIDirectorySizeMeasurement,
-    "Glean and telemetry measurements for extensions directory should be equal"
-  );
-  TelemetryTestUtils.assertScalar(
-    scalars,
-    "browser.backup.browser_extension_data_size",
-    browserExtensionDataSizeMeasurement,
-    "Glean and telemetry measurements for browser extension data should be equal"
-  );
-  TelemetryTestUtils.assertScalar(
-    scalars,
-    "browser.backup.extensions_storage_size",
-    extensionsStorageSizeMeasurement,
-    "Glean and telemetry measurements for extensions storage should be equal"
   );
 
   await maybeRemovePath(tempDir);

@@ -19,7 +19,7 @@ add_task(async function testIframe() {
 
   is(
     iframeNodeFront.useChildTargetToFetchChildren,
-    isEveryFrameTargetEnabled(),
+    true,
     "useChildTargetToFetchChildren has expected value"
   );
   is(
@@ -40,13 +40,11 @@ add_task(async function testIframe() {
     "#document",
     "The child is the #document element"
   );
-  if (isEveryFrameTargetEnabled()) {
-    Assert.notStrictEqual(
-      documentNodeFront.walkerFront,
-      walker,
-      "The child walker is different from the top level document one when EFT is enabled"
-    );
-  }
+  Assert.notStrictEqual(
+    documentNodeFront.walkerFront,
+    walker,
+    "The child walker is different from the top level document one"
+  );
   is(
     documentNodeFront.parentNode(),
     iframeNodeFront,

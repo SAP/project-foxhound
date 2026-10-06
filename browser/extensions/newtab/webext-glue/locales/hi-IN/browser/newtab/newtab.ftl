@@ -9,6 +9,38 @@ newtab-page-title = नया टैब
 newtab-settings-button =
     .title = अपने नए टैब पृष्ठ को अनुकूलित करें
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = नया टैब
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } row
+           *[other] { $num } rows
+        }
+home-restore-defaults-srd =
+    .label = डिफ़ॉल्ट पुनः स्थापित करें
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = संशोधित URLs
+home-mode-choice-blank-srd =
+    .label = खाली पृष्ठ
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = प्रायोजित कहानियां
+home-prefs-highlights-option-visited-pages-srd =
+    .label = देखे गए पृष्ठ
+home-prefs-highlights-options-bookmarks-srd =
+    .label = बुकमार्क
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = सबसे हालिया डाउनलोड
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -19,7 +51,7 @@ newtab-search-box-input =
     .placeholder = वेब पर खोजें
     .aria-label = वेब पर खोजें
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = खोज ईंजन जोड़ें
 newtab-topsites-add-shortcut-header = नया शॉर्टकट
@@ -49,9 +81,6 @@ newtab-topsites-add-button = जोड़ें
 newtab-confirm-delete-history-p1 = क्या वाकई आप इस पृष्ठ का हर उदाहरण के अपने इतिहास से हटाना चाहते हैं?
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = इस क्रिया को पहले जैसा नहीं किया जा सकता है.
-
-## Top Sites - Sponsored label
-
 
 ## Context Menu - Action Tooltips.
 
@@ -87,9 +116,6 @@ newtab-menu-save-to-pocket = { -pocket-brand-name } में सहेजें
 newtab-menu-delete-pocket = { -pocket-brand-name } से हटाएं
 newtab-menu-archive-pocket = { -pocket-brand-name } में संग्रहित करें
 newtab-menu-show-privacy-info = हमारे प्रायोजक और आपकी गोपनीयता
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -198,23 +224,11 @@ newtab-pocket-learn-more = अधिक जानें
 newtab-pocket-cta-button = { -pocket-brand-name } प्राप्त करें
 newtab-pocket-cta-text = अपने पसंदीद कहानियाँ { -pocket-brand-name } में सहेजें, और आकर्षक पढ़ाई के साथ अपने दिमाग को शक्ति दें।
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
 newtab-error-fallback-info = उफ़, कुछ गलत इस सामग्री लोड हो गया ।
 newtab-error-fallback-refresh-link = पुन: प्रयास करने के लिए पृष्ठ ताज़ा करें ।
-
-## Customization Menu
-
-
-## New Tab Wallpapers
-
 
 ## Solid Colors
 
@@ -229,51 +243,8 @@ newtab-wallpaper-light-pink = हल्का गुलाबी
 newtab-wallpaper-red = लाल
 newtab-wallpaper-brown = भूरा
 
-## Abstract
-
-
-## Celestial
+## Firefox
 
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

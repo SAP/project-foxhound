@@ -14,13 +14,13 @@ data.
 For the treemaps shown in the Memory tool, things on the heap are
 divided at the top level into four categories:
 
--   **objects**: JavaScript and DOM objects, such as `Function`,
-    `Object`, or `Array`, and DOM types like `Window` and
-    `HTMLDivElement`.
--   **scripts**: JavaScript sources loaded by the page.
--   **strings**
--   **other**: this includes internal
-    [SpiderMonkey](https://developer.mozilla.org/en-US/docs/Tools/Tools_Toolbox#settings/en-US/docs/Mozilla/Projects/SpiderMonkey) objects.
+- **objects**: JavaScript and DOM objects, such as `Function`,
+  `Object`, or `Array`, and DOM types like `Window` and
+  `HTMLDivElement`.
+- **scripts**: JavaScript sources loaded by the page.
+- **strings**
+- **other**: this includes internal
+  [SpiderMonkey](https://developer.mozilla.org/en-US/docs/Tools/Tools_Toolbox#settings/en-US/docs/Mozilla/Projects/SpiderMonkey) objects.
 
 Each category is represented with a rectangle, and the size of the
 rectangle corresponds to the proportion of the heap occupied by items in
@@ -29,11 +29,11 @@ sorts of things allocated by your site are using the most memory.
 
 Within top-level categories:
 
--   **objects** is further divided by the object's type.
--   **scripts** is further subdivided by the script's origin. It also
-    includes a separate rectangle for code that can't be correlated
-    with a file, such as JIT-optimized code.
--   **other** is further subdivided by the object's type.
+- **objects** is further divided by the object's type.
+- **scripts** is further subdivided by the script's origin. It also
+  includes a separate rectangle for code that can't be correlated
+  with a file, such as JIT-optimized code.
+- **other** is further subdivided by the object's type.
 
 Here are some example snapshots, as they appear in the Tree map view:
 

@@ -5,13 +5,13 @@ use super::core::Module;
 use crate::validator::component::ComponentState;
 #[cfg(feature = "component-model")]
 use crate::validator::component_types::{ComponentTypeAlloc, ComponentTypeList};
-use crate::{collections::map::Entry, AbstractHeapType};
-use crate::{prelude::*, CompositeInnerType};
+use crate::{AbstractHeapType, collections::map::Entry};
+use crate::{CompositeInnerType, prelude::*};
 use crate::{
     Export, ExternalKind, GlobalType, Import, Matches, MemoryType, PackedIndex, RecGroup, RefType,
     Result, SubType, TableType, TypeRef, UnpackedIndex, ValType, WithRecGroup,
 };
-use crate::{HeapType, ValidatorId};
+use crate::{FuncType, HeapType, ValidatorId};
 use alloc::sync::Arc;
 use core::ops::{Deref, DerefMut, Index, Range};
 use core::{hash::Hash, mem};
@@ -46,11 +46,14 @@ pub trait TypeIdentifier: core::fmt::Debug + Copy + Eq + Sized + 'static {
 
 /// A trait shared by all types within a `Types`.
 ///
-/// This is the data that can be retreived by indexing with the associated
+/// This is the data that can be retrieved by indexing with the associated
 /// [`TypeIdentifier`].
 pub trait TypeData: core::fmt::Debug {
     /// The identifier for this type data.
     type Id: TypeIdentifier<Data = Self>;
+
+    /// Is this type a core sub type (or rec group of sub types)?
+    const IS_CORE_SUB_TYPE: bool;
 
     /// Get the info for this type.
     #[doc(hidden)]
@@ -89,6 +92,7 @@ macro_rules! define_type_id {
             }
         }
 
+
         // The size of type IDs was seen to have a large-ish impact in #844, so
         // this assert ensures that it stays relatively small.
         const _: () = {
@@ -96,6 +100,7 @@ macro_rules! define_type_id {
         };
     };
 }
+#[cfg(feature = "component-model")]
 pub(crate) use define_type_id;
 
 /// Represents a unique identifier for a core type type known to a
@@ -106,9 +111,10 @@ pub struct CoreTypeId {
     index: u32,
 }
 
-const _: () = {
+#[test]
+fn assert_core_type_id_small() {
     assert!(core::mem::size_of::<CoreTypeId>() <= 4);
-};
+}
 
 impl TypeIdentifier for CoreTypeId {
     type Data = SubType;
@@ -132,7 +138,7 @@ impl TypeIdentifier for CoreTypeId {
 
 impl TypeData for SubType {
     type Id = CoreTypeId;
-
+    const IS_CORE_SUB_TYPE: bool = true;
     fn type_info(&self, _types: &TypeList) -> TypeInfo {
         // TODO(#1036): calculate actual size for func, array, struct.
         let size = 1 + match &self.composite_type.inner {
@@ -154,7 +160,7 @@ define_type_id!(
 
 impl TypeData for Range<CoreTypeId> {
     type Id = RecGroupId;
-
+    const IS_CORE_SUB_TYPE: bool = true;
     fn type_info(&self, _types: &TypeList) -> TypeInfo {
         let size = self.end.index() - self.start.index();
         TypeInfo::core(u32::try_from(size).unwrap())
@@ -243,7 +249,7 @@ impl TypeInfo {
 }
 
 /// The entity type for imports and exports of a module.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntityType {
     /// The entity is a function.
     Func(CoreTypeId),
@@ -255,6 +261,8 @@ pub enum EntityType {
     Global(GlobalType),
     /// The entity is a tag.
     Tag(CoreTypeId),
+    /// The entity is a function with exact type.
+    FuncExact(CoreTypeId),
 }
 
 impl EntityType {
@@ -266,12 +274,13 @@ impl EntityType {
             Self::Memory(_) => "memory",
             Self::Global(_) => "global",
             Self::Tag(_) => "tag",
+            Self::FuncExact(_) => "func_exact",
         }
     }
 
     pub(crate) fn info(&self, types: &TypeList) -> TypeInfo {
         match self {
-            Self::Func(id) | Self::Tag(id) => types[*id].type_info(types),
+            Self::Func(id) | Self::Tag(id) | Self::FuncExact(id) => types[*id].type_info(types),
             Self::Table(_) | Self::Memory(_) | Self::Global(_) => TypeInfo::new(),
         }
     }
@@ -542,6 +551,7 @@ impl<'a> TypesRef<'a> {
         match &self.kind {
             TypesRefKind::Module(module) => Some(match import.ty {
                 TypeRef::Func(idx) => EntityType::Func(*module.types.get(idx as usize)?),
+                TypeRef::FuncExact(idx) => EntityType::FuncExact(*module.types.get(idx as usize)?),
                 TypeRef::Table(ty) => EntityType::Table(ty),
                 TypeRef::Memory(ty) => EntityType::Memory(ty),
                 TypeRef::Global(ty) => EntityType::Global(ty),
@@ -556,7 +566,7 @@ impl<'a> TypesRef<'a> {
     pub fn entity_type_from_export(&self, export: &Export) -> Option<EntityType> {
         match &self.kind {
             TypesRefKind::Module(module) => Some(match export.kind {
-                ExternalKind::Func => EntityType::Func(
+                ExternalKind::Func | ExternalKind::FuncExact => EntityType::Func(
                     module.types[*module.functions.get(export.index as usize)? as usize],
                 ),
                 ExternalKind::Table => {
@@ -568,9 +578,7 @@ impl<'a> TypesRef<'a> {
                 ExternalKind::Global => {
                     EntityType::Global(*module.globals.get(export.index as usize)?)
                 }
-                ExternalKind::Tag => EntityType::Tag(
-                    module.types[*module.functions.get(export.index as usize)? as usize],
-                ),
+                ExternalKind::Tag => EntityType::Tag(*module.tags.get(export.index as usize)?),
             }),
             #[cfg(feature = "component-model")]
             TypesRefKind::Component(_) => None,
@@ -778,7 +786,13 @@ impl<T> Index<usize> for SnapshotList<T> {
 
     #[inline]
     fn index(&self, index: usize) -> &T {
-        self.get(index).unwrap()
+        match self.get(index) {
+            Some(x) => x,
+            None => panic!(
+                "out-of-bounds indexing into `SnapshotList`: index is {index}, but length is {}",
+                self.len()
+            ),
+        }
     }
 }
 
@@ -866,45 +880,63 @@ impl TypeList {
     /// Intern the given recursion group (that has already been canonicalized)
     /// and return its associated id and whether this was a new recursion group
     /// or not.
-    pub fn intern_canonical_rec_group(&mut self, rec_group: RecGroup) -> (bool, RecGroupId) {
-        let canonical_rec_groups = self
-            .canonical_rec_groups
-            .as_mut()
-            .expect("cannot intern into a committed list");
-        let entry = match canonical_rec_groups.entry(rec_group) {
-            Entry::Occupied(e) => return (false, *e.get()),
-            Entry::Vacant(e) => e,
-        };
-
+    ///
+    /// If the `needs_type_canonicalization` flag is provided then the type will
+    /// be intern'd here and its indices will be canonicalized to `CoreTypeId`
+    /// from the previous `RecGroup`-based indices.
+    ///
+    /// If the `needs_type_canonicalization` flag is `false` then it must be
+    /// required that `RecGroup` doesn't have any rec-group-relative references
+    /// and it will additionally not be intern'd.
+    pub fn intern_canonical_rec_group(
+        &mut self,
+        needs_type_canonicalization: bool,
+        mut rec_group: RecGroup,
+    ) -> (bool, RecGroupId) {
         let rec_group_id = self.rec_group_elements.len();
         let rec_group_id = u32::try_from(rec_group_id).unwrap();
         let rec_group_id = RecGroupId::from_index(rec_group_id);
+
+        if needs_type_canonicalization {
+            let canonical_rec_groups = self
+                .canonical_rec_groups
+                .as_mut()
+                .expect("cannot intern into a committed list");
+            let entry = match canonical_rec_groups.entry(rec_group) {
+                Entry::Occupied(e) => return (false, *e.get()),
+                Entry::Vacant(e) => e,
+            };
+            rec_group = entry.key().clone();
+            entry.insert(rec_group_id);
+        }
 
         let start = self.core_types.len();
         let start = u32::try_from(start).unwrap();
         let start = CoreTypeId::from_index(start);
 
-        for ty in entry.key().types() {
+        for mut ty in rec_group.into_types() {
             debug_assert_eq!(self.core_types.len(), self.core_type_to_supertype.len());
             debug_assert_eq!(self.core_types.len(), self.core_type_to_rec_group.len());
 
             self.core_type_to_supertype
-                .push(ty.supertype_idx.map(|idx| match idx.unpack() {
-                    UnpackedIndex::RecGroup(offset) => CoreTypeId::from_index(start.index + offset),
-                    UnpackedIndex::Id(id) => id,
-                    UnpackedIndex::Module(_) => unreachable!("in canonical form"),
-                }));
-            let mut ty = ty.clone();
-            ty.remap_indices(&mut |index| {
-                match index.unpack() {
-                    UnpackedIndex::Id(_) => {}
-                    UnpackedIndex::Module(_) => unreachable!(),
+                .push(ty.supertype_idx.and_then(|idx| match idx.unpack() {
                     UnpackedIndex::RecGroup(offset) => {
-                        *index = UnpackedIndex::Id(CoreTypeId::from_index(start.index + offset))
-                            .pack()
-                            .unwrap();
+                        Some(CoreTypeId::from_index(start.index + offset))
                     }
-                };
+                    UnpackedIndex::Id(id) => Some(id),
+                    // Only invalid wasm has this, at this point, so defer the
+                    // error to later.
+                    UnpackedIndex::Module(_) => None,
+                }));
+            ty.remap_indices(&mut |index| {
+                // Note that `UnpackedIndex::Id` is unmodified and
+                // `UnpackedIndex::Module` means that this is invalid wasm which
+                // will get an error returned later.
+                if let UnpackedIndex::RecGroup(offset) = index.unpack() {
+                    *index = UnpackedIndex::Id(CoreTypeId::from_index(start.index + offset))
+                        .pack()
+                        .unwrap();
+                }
                 Ok(())
             })
             .expect("cannot fail");
@@ -920,7 +952,6 @@ impl TypeList {
 
         self.rec_group_elements.push(range.clone());
 
-        entry.insert(rec_group_id);
         return (true, rec_group_id);
     }
 
@@ -928,8 +959,14 @@ impl TypeList {
     /// [`Self::intern_canonical_rec_group`].
     pub fn intern_sub_type(&mut self, sub_ty: SubType, offset: usize) -> CoreTypeId {
         let (_is_new, group_id) =
-            self.intern_canonical_rec_group(RecGroup::implicit(offset, sub_ty));
+            self.intern_canonical_rec_group(true, RecGroup::implicit(offset, sub_ty));
         self[group_id].start
+    }
+
+    /// Helper for interning a function type as a rec group; see
+    /// [`Self::intern_sub_type`].
+    pub fn intern_func_type(&mut self, ty: FuncType, offset: usize) -> CoreTypeId {
+        self.intern_sub_type(SubType::func(ty, false), offset)
     }
 
     /// Get the `CoreTypeId` for a local index into a rec group.
@@ -970,7 +1007,7 @@ impl TypeList {
         let depth = self
             .core_type_to_depth
             .as_ref()
-            .expect("cannot get subtype depth from a committed list")[id.index()];
+            .expect("cannot get subtype depth from a committed list")[&id];
         debug_assert!(usize::from(depth) <= crate::limits::MAX_WASM_SUBTYPING_DEPTH);
         depth
     }
@@ -1104,7 +1141,8 @@ impl TypeList {
                 },
             ) => a_shared == b_shared && a_ty.is_subtype_of(b_ty),
 
-            (HT::Concrete(a), HT::Abstract { shared, ty }) => {
+            (HT::Concrete(a), HT::Abstract { shared, ty })
+            | (HT::Exact(a), HT::Abstract { shared, ty }) => {
                 let a_ty = &subtype(a_group, a).composite_type;
                 if a_ty.shared != shared {
                     return false;
@@ -1121,7 +1159,8 @@ impl TypeList {
                 }
             }
 
-            (HT::Abstract { shared, ty }, HT::Concrete(b)) => {
+            (HT::Abstract { shared, ty }, HT::Concrete(b))
+            | (HT::Abstract { shared, ty }, HT::Exact(b)) => {
                 let b_ty = &subtype(b_group, b).composite_type;
                 if shared != b_ty.shared {
                     return false;
@@ -1137,9 +1176,13 @@ impl TypeList {
                 }
             }
 
-            (HT::Concrete(a), HT::Concrete(b)) => {
+            (HT::Concrete(a), HT::Concrete(b)) | (HT::Exact(a), HT::Concrete(b)) => {
                 self.id_is_subtype(core_type_id(a_group, a), core_type_id(b_group, b))
             }
+
+            (HT::Exact(a), HT::Exact(b)) => core_type_id(a_group, a) == core_type_id(b_group, b),
+
+            (HT::Concrete(_), HT::Exact(_)) => false,
         }
     }
 
@@ -1174,7 +1217,7 @@ impl TypeList {
     pub fn reftype_is_shared(&self, ty: RefType) -> bool {
         match ty.heap_type() {
             HeapType::Abstract { shared, .. } => shared,
-            HeapType::Concrete(index) => {
+            HeapType::Concrete(index) | HeapType::Exact(index) => {
                 self[index.as_core_type_id().unwrap()].composite_type.shared
             }
         }
@@ -1187,7 +1230,7 @@ impl TypeList {
     pub fn top_type(&self, heap_type: &HeapType) -> HeapType {
         use AbstractHeapType::*;
         match *heap_type {
-            HeapType::Concrete(idx) => {
+            HeapType::Concrete(idx) | HeapType::Exact(idx) => {
                 let ty = &self[idx.as_core_type_id().unwrap()].composite_type;
                 let shared = ty.shared;
                 match ty.inner {

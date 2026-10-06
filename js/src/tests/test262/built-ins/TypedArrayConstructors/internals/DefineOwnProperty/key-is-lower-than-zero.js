@@ -18,8 +18,8 @@ includes: [testTypedArray.js]
 features: [Reflect, TypedArray]
 ---*/
 
-testWithTypedArrayConstructors(function(TA) {
-  var sample = new TA([42, 43]);
+testWithTypedArrayConstructors(function(TA, makeCtorArg) {
+  var sample = new TA(makeCtorArg([42, 43]));
 
   assert.sameValue(
     Reflect.defineProperty(sample, "-1", {
@@ -31,6 +31,6 @@ testWithTypedArrayConstructors(function(TA) {
     false,
     "-1"
   );
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

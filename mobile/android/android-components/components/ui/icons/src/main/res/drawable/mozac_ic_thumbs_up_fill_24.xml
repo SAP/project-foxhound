@@ -1,0 +1,12 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@color/mozac_ui_icons_fill"
+        android:pathData="M21.308,11.291A2.5,2.5 0,0 0,18.936 8h-4.999V4.875A1.874,1.874 0,0 0,12.062 3h-0.003a0.863,0.863 0,0 0,-0.818 0.59l-0.951,2.852c-0.068,0.205 -0.163,0.4 -0.281,0.58L8,10.086v9.164h8.853a2.5,2.5 0,0 0,2.372 -1.709l2.083,-6.25zM3.25,9h2a1,1 0,0 1,1 1v9a1,1 0,0 1,-1 1h-2a1,1 0,0 1,-1 -1v-9a1,1 0,0 1,1 -1z" />
+</vector>

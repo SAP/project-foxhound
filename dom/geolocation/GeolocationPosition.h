@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,12 +5,12 @@
 #ifndef mozilla_dom_GeolocationPosition_h
 #define mozilla_dom_GeolocationPosition_h
 
-#include "nsIDOMGeoPositionCoords.h"
-#include "nsIDOMGeoPosition.h"
+#include "js/TypeDecls.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsIDOMGeoPosition.h"
+#include "nsIDOMGeoPositionCoords.h"
 #include "nsWrapperCache.h"
-#include "js/TypeDecls.h"
 
 ////////////////////////////////////////////////////
 // nsGeoPositionCoords
@@ -30,7 +28,7 @@ class nsGeoPositionCoords final : public nsIDOMGeoPositionCoords {
                       double aVError, double aHeading, double aSpeed);
 
  private:
-  ~nsGeoPositionCoords();
+  ~nsGeoPositionCoords() = default;
   const double mLat, mLong, mAlt, mHError, mVError, mHeading, mSpeed;
 };
 
@@ -67,7 +65,7 @@ class GeolocationPosition final : public nsISupports, public nsWrapperCache {
   ~GeolocationPosition();
 
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(GeolocationPosition)
 
  public:

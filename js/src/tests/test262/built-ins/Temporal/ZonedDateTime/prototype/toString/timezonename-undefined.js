@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2021 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -20,6 +20,6 @@ const datetime = new Temporal.ZonedDateTime(1_000_000_000_987_654_321n, "UTC");
 const explicit = datetime.toString({ timeZoneName: undefined });
 assert.sameValue(explicit, "2001-09-09T01:46:40.987654321+00:00[UTC]", "default timeZoneName option is auto");
 
-// See options-object.js for {} and options-undefined.js for absent
+// See options-object.js for {} and () => {}
 
 reportCompare(0, 0);

@@ -21,7 +21,7 @@ on Firefox and finding a bug that's a good fit for your skills can be a
 challenge, and we're always looking for ways to improve this process: making
 Mozilla more open, accessible, and easier to participate with. If you're
 having any trouble following this documentation, or hit a barrier you
-can't get around, please join us in the the Introduction room on Matrix.
+can't get around, please join us in the Introduction room on Matrix.
 
 What skills do I need?
 ----------------------
@@ -34,20 +34,21 @@ very diverse skills:
    Firefox and many other Mozilla projects.
 -  If you know **Rust**, you can also contribute to the `Rust programming
    language <https://github.com/rust-lang/rust>`_ itself, numerous crates like `grcov <https://github.com/mozilla/grcov/>`_
-   or `Servo <https://servo.org/>`_, the web browser engine designed for parallelism and safety.
--  If you know **Kotlin**, you can contribute to :ref:`Firefox for Android <Firefox Contributors' Quick Reference>` (code name: "Fenix"). `Fenix's code <https://searchfox.org/mozilla-central/source/mobile/android/>`_ is integrated into the same repository as Firefox Desktop.
--  If you know **Swift**, you can contribute to `Firefox for
-   iOS <https://github.com/mozilla-mobile/firefox-ios>`_ and `Firefox
-   Focus for iOS <https://github.com/mozilla-mobile/focus-ios>`_.
+   or `Stylo </layout/StyleSystemOverview.html>`_, Firefox's parallel CSS engine, :searchfox:`WebRender <gfx/wr/>`, Firefox's GPU-based 2D rendering engine, and `Neqo <https://github.com/mozilla/neqo>`_, our QUIC/HTTP3 networking stack.
+-  If you know **Kotlin**, you can contribute to :ref:`Firefox for Android <Firefox Contributors' Quick Reference>` (code name: "Fenix"). :searchfox:`Fenix's code <mobile/android/>` is integrated into the same repository as Firefox Desktop.
+-  If you know **Swift**, you can contribute to `Firefox and Firefox Focus for
+   iOS <https://github.com/mozilla-mobile/firefox-ios>`_.
 -  If you know **C++**, you can contribute to our `VPN client <https://github.com/mozilla-mobile/mozilla-vpn-client>`_.
--  If you know **Python**, you can contribute to our web services,
-   including Firefox Sync and Firefox Accounts.
+-  If you know **C++** and programming language implementations, you can contribute to `SpiderMonkey <https://spidermonkey.dev/>`_, our JavaScript engine.
+-  If you know **JavaScript**, you can contribute to `PDF.js <https://github.com/mozilla/pdf.js>`_, the PDF viewer shipped with Firefox.
+-  If you know **C++**, **JavaScript** or **machine learning**, you can contribute to `Firefox Translations <https://github.com/mozilla/translations>`_, our local, privacy-preserving translation engine.
 -  If you know **Make**, **shell**, **Perl**, or **Python**, you can
    contribute to our build systems, release engineering, and automation.
--  If you know **Go** or **JavaScript**, you can contribute to `TaskCluster
-   <https://github.com/taskcluster/taskcluster>`_  our CI infrastructure.
--  If you know **C**, you can contribute to `NSS <https://developer.mozilla.org/docs/Mozilla/Projects/NSS>`_,
-   `Opus <https://opus-codec.org/>`_, and `Daala <https://wiki.xiph.org/Daala>`_.
+   If you know **Rust**, you can also contribute to `sccache <https://github.com/mozilla/sccache/>`_,
+   our compiler caching tool used to speed up Firefox builds.
+-  If you know **Go** or **JavaScript**, you can contribute to `Taskcluster
+   <https://github.com/taskcluster/taskcluster>`_, our CI infrastructure.
+-  If you know **C**, you can contribute to `NSS </security/nss/index.html>`_, our cryptography library.
 -  There are even many ways to contribute to the Mozilla mission without
    programming. If getting involved in design, support, translation,
    testing, or other types of contributions sparks your interest please

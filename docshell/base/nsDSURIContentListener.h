@@ -1,18 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsDSURIContentListener_h__
-#define nsDSURIContentListener_h__
+#ifndef nsDSURIContentListener_h_
+#define nsDSURIContentListener_h_
 
 #include "nsCOMPtr.h"
 #include "nsIURIContentListener.h"
 #include "nsWeakReference.h"
 #include "nsITimer.h"
+#include "mozilla/WeakPtr.h"
+#include "nsDocShell.h"
 
-class nsDocShell;
 class nsIInterfaceRequestor;
 class nsIWebNavigationInfo;
 class nsPIDOMWindowOuter;
@@ -85,7 +84,7 @@ class nsDSURIContentListener final : public nsIURIContentListener,
   }
 
  protected:
-  nsDocShell* mDocShell;
+  mozilla::MainThreadWeakPtr<nsDocShell> mDocShell;
   // Hack to handle multipart images without creating a new viewer
   nsCOMPtr<nsIStreamListener> mExistingJPEGStreamListener;
   nsCOMPtr<nsIChannel> mExistingJPEGRequest;
@@ -97,4 +96,4 @@ class nsDSURIContentListener final : public nsIURIContentListener,
   nsIURIContentListener* mParentContentListener;
 };
 
-#endif /* nsDSURIContentListener_h__ */
+#endif /* nsDSURIContentListener_h_ */

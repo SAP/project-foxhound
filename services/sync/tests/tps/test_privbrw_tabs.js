@@ -20,49 +20,24 @@ var phases = {
  */
 
 var tabs1 = [
-  {
-    uri: "data:text/html,<html><head><title>Firefox</title></head><body>Firefox</body></html>",
-    title: "Firefox",
-    profile: "profile1",
-  },
-  {
-    uri: "data:text/html,<html><head><title>Weave</title></head><body>Weave</body></html>",
-    title: "Weave",
-    profile: "profile1",
-  },
-  {
-    uri: "data:text/html,<html><head><title>Apple</title></head><body>Apple</body></html>",
-    title: "Apple",
-    profile: "profile1",
-  },
-  {
-    uri: "data:text/html,<html><head><title>IRC</title></head><body>IRC</body></html>",
-    title: "IRC",
-    profile: "profile1",
-  },
+  { uri: "https://example.com/", title: "Example Domain", profile: "profile1" },
+  { uri: "https://example.org/", title: "Example Domain", profile: "profile1" },
+  { uri: "https://example.net/", title: "Example Domain", profile: "profile1" },
 ];
 
 var tabs2 = [
   {
-    uri: "data:text/html,<html><head><title>Tinderbox</title></head><body>Tinderbox</body></html>",
-    title: "Tinderbox",
+    uri: "https://www.mozilla.com",
+    title: "Get Firefox -- Firefox.com",
     profile: "profile2",
   },
-  {
-    uri: "data:text/html,<html><head><title>Fox</title></head><body>Fox</body></html>",
-    title: "Fox",
-    profile: "profile2",
-  },
+  { uri: "https://example.com/fox", title: "IETF", profile: "profile2" },
 ];
 
 var tabs3 = [
+  { uri: "https://example.com/jetpack", title: "Jetpack", profile: "profile1" },
   {
-    uri: "data:text/html,<html><head><title>Jetpack</title></head><body>Jetpack</body></html>",
-    title: "Jetpack",
-    profile: "profile1",
-  },
-  {
-    uri: "data:text/html,<html><head><title>Selenium</title></head><body>Selenium</body></html>",
+    uri: "https://example.com/selenium",
     title: "Selenium",
     profile: "profile1",
   },

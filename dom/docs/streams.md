@@ -22,7 +22,7 @@ The stream creation can be generally done by calling `CreateNative()`. You may n
 
 * Wants a byte stream and uses the term "Set up with byte reading support". In that case you need to call `ByteNative` variant.
 * Defines a new interface that inherits the base stream interfaces. In this case you need to define a subclass and call `SetUpNative()` inside its init method.
-   * To make the cycle collection happy, you need to pass `HoldDropJSObjectsCaller::Explicit` to the superclass constructor and call `mozilla::HoldJSObjects(this)`/`mozilla::DropJSObjects(this)` respectively in the constructor/destructor.
+  * To make the cycle collection happy, you need to pass `HoldDropJSObjectsCaller::Explicit` to the superclass constructor and call `mozilla::HoldJSObjects(this)`/`mozilla::DropJSObjects(this)` respectively in the constructor/destructor.
 
 Both `CreateNative()`/`SetUpNative()` functions require an argument to implement custom algorithms for callbacks, whose corresponding spec phrases could be:
 
@@ -183,17 +183,17 @@ already_AddRefed<ReadableStream> ConvertOutputStreamToWritableStream(
 1. [ReadableStream](https://streams.spec.whatwg.org/#other-specs-rs)
    * [Set up](https://streams.spec.whatwg.org/#readablestream-set-up): [`CreateNative()`](https://searchfox.org/mozilla-central/rev/31f5847a4494b3646edabbdd7ea39cb88509afe2/dom/streams/ReadableStream.h#132)
    * [Set up with byte reading support](https://streams.spec.whatwg.org/#readablestream-set-up-with-byte-reading-support):
-      - [`CreateByteNative()`](https://searchfox.org/mozilla-central/rev/31f5847a4494b3646edabbdd7ea39cb88509afe2/dom/streams/ReadableStream.h#143): You can call this when the spec uses the term with `new ReadableStream`.
-      - [`SetUpByteNative()`](https://searchfox.org/mozilla-central/rev/31f5847a4494b3646edabbdd7ea39cb88509afe2/dom/streams/ReadableStream.h#150): You need to use this instead when the spec uses the term with a subclass of `ReadableStream`. Call this inside the constructor of the subclass.
+     * [`CreateByteNative()`](https://searchfox.org/mozilla-central/rev/31f5847a4494b3646edabbdd7ea39cb88509afe2/dom/streams/ReadableStream.h#143): You can call this when the spec uses the term with `new ReadableStream`.
+     * [`SetUpByteNative()`](https://searchfox.org/mozilla-central/rev/31f5847a4494b3646edabbdd7ea39cb88509afe2/dom/streams/ReadableStream.h#150): You need to use this instead when the spec uses the term with a subclass of `ReadableStream`. Call this inside the constructor of the subclass.
    * [Close](https://streams.spec.whatwg.org/#readablestream-close): [`CloseNative()`](https://searchfox.org/mozilla-central/rev/31f5847a4494b3646edabbdd7ea39cb88509afe2/dom/streams/ReadableStream.h#160)
    * [Error](https://streams.spec.whatwg.org/#readablestream-error): [`ErrorNative()`](https://searchfox.org/mozilla-central/rev/31f5847a4494b3646edabbdd7ea39cb88509afe2/dom/streams/ReadableStream.h#163)
    * [Enqueue](https://streams.spec.whatwg.org/#readablestream-enqueue): [`EnqueueNative()`](https://searchfox.org/mozilla-central/rev/31f5847a4494b3646edabbdd7ea39cb88509afe2/dom/streams/ReadableStream.h#167)
    * [Get a reader](https://streams.spec.whatwg.org/#readablestream-get-a-reader): [`GetReader()`](https://searchfox.org/mozilla-central/rev/31f5847a4494b3646edabbdd7ea39cb88509afe2/dom/streams/ReadableStream.h#177)
-      * [Read a chunk](https://streams.spec.whatwg.org/#readablestreamdefaultreader-read-a-chunk) on reader: [`ReadChunk()`](https://searchfox.org/mozilla-central/rev/31f5847a4494b3646edabbdd7ea39cb88509afe2/dom/streams/ReadableStreamDefaultReader.h#81) on ReadableStreamDefaultReader
+     * [Read a chunk](https://streams.spec.whatwg.org/#readablestreamdefaultreader-read-a-chunk) on reader: [`ReadChunk()`](https://searchfox.org/mozilla-central/rev/31f5847a4494b3646edabbdd7ea39cb88509afe2/dom/streams/ReadableStreamDefaultReader.h#81) on ReadableStreamDefaultReader
 2. [WritableStream](https://streams.spec.whatwg.org/#other-specs-ws)
    * [Set up](https://streams.spec.whatwg.org/#writablestream-set-up):
-      - [`CreateNative()`](https://searchfox.org/mozilla-central/rev/31f5847a4494b3646edabbdd7ea39cb88509afe2/dom/streams/WritableStream.h#182): You can call this when the spec uses the term with `new WritableStream`.
-      - [`SetUpNative()`](https://searchfox.org/mozilla-central/rev/31f5847a4494b3646edabbdd7ea39cb88509afe2/dom/streams/WritableStream.h#174): You need to use this instead when the spec uses the term with a subclass of `WritableStream`. Call this inside the constructor of the subclass.
+     * [`CreateNative()`](https://searchfox.org/mozilla-central/rev/31f5847a4494b3646edabbdd7ea39cb88509afe2/dom/streams/WritableStream.h#182): You can call this when the spec uses the term with `new WritableStream`.
+     * [`SetUpNative()`](https://searchfox.org/mozilla-central/rev/31f5847a4494b3646edabbdd7ea39cb88509afe2/dom/streams/WritableStream.h#174): You need to use this instead when the spec uses the term with a subclass of `WritableStream`. Call this inside the constructor of the subclass.
    * [Error](https://streams.spec.whatwg.org/#writablestream-error): [`ErrorNative()`](https://searchfox.org/mozilla-central/rev/31f5847a4494b3646edabbdd7ea39cb88509afe2/dom/streams/WritableStream.h#192)
 3. [TransformStream](https://streams.spec.whatwg.org/#other-specs-ts): For now this just uses the functions in TransfromStreamDefaultController, which will be provided as an argument of transform or flush algorithms.
    * [Enqueue](https://streams.spec.whatwg.org/#transformstream-enqueue): [`Enqueue()`](https://searchfox.org/mozilla-central/rev/31f5847a4494b3646edabbdd7ea39cb88509afe2/dom/streams/TransformStreamDefaultController.h#47) on TransformStreamDefaultController

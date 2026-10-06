@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>CSP sandbox blob PDF opener</title></head>
+<body>
+<button id="go">open</button>
+<script>
+document.getElementById("go").addEventListener("click", async () => {
+  const resp = await fetch("file_pdfjs_test.pdf");
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank");
+});
+</script>
+</body>
+</html>

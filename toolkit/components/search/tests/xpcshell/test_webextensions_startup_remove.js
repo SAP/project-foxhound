@@ -38,17 +38,14 @@ add_setup(async function () {
 add_task(async function test_removeAddonOnStartup() {
   let promise = promiseAfterSettings();
   await SearchTestUtils.initXPCShellAddonManager();
-  await Services.search.init();
+  await SearchService.init();
 
-  let engine = Services.search.getEngineByName("Test Engine");
-  let allEngines = await Services.search.getEngines();
+  let engine = SearchService.getEngineByName("Test Engine");
+  let allEngines = await SearchService.getEngines();
 
   Assert.ok(!!engine, "Should have installed the test engine");
 
-  await Services.search.setDefault(
-    engine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-  );
+  await SearchService.setDefault(engine, SearchService.CHANGE_REASON.UNKNOWN);
   await promise;
 
   await AddonTestUtils.promiseShutdownManager();
@@ -64,23 +61,23 @@ add_task(async function test_removeAddonOnStartup() {
     SearchUtils.MODIFIED_TYPE.REMOVED,
     SearchUtils.TOPIC_ENGINE_MODIFIED
   );
-  Services.search.wrappedJSObject.reset();
+  SearchService.reset();
   await AddonTestUtils.promiseStartupManager();
-  await Services.search.init();
+  await SearchService.init();
   await removePromise;
 
   Assert.ok(
-    !Services.search.getEngineByName("Test Engine"),
+    !SearchService.getEngineByName("Test Engine"),
     "Should have removed the test engine"
   );
 
-  let newEngines = await Services.search.getEngines();
+  let newEngines = await SearchService.getEngines();
   Assert.deepEqual(
     newEngines.map(e => e.name),
     allEngines.map(e => e.name).filter(n => n != "Test Engine"),
     "Should no longer have the test engine in the full list"
   );
-  let newDefault = await Services.search.getDefault();
+  let newDefault = await SearchService.getDefault();
   Assert.equal(
     newDefault.name,
     "appDefault",

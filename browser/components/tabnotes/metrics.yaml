@@ -1,0 +1,122 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Adding a new metric? We have docs for that!
+# https://firefox-source-docs.mozilla.org/toolkit/components/glean/user/new_definitions_file.html
+
+---
+$schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
+$tags:
+  - 'Firefox :: Tabbed Browser'
+
+tab_notes:
+  added:
+    type: event
+    description: >
+      Recorded when a user creates a new note for a tab.
+    notification_emails:
+      - sthompson@mozilla.com
+    bugs:
+      - https://bugzil.la/2003702
+      - https://bugzil.la/2027827
+    data_reviews:
+      - https://bugzil.la/2003702
+      - https://bugzil.la/2027827
+    data_sensitivity:
+      - interaction
+    extra_keys:
+      source:
+        description: >
+          Identifies the user interface entry point that resulted in this tab
+          note being added. Expected values:
+            - `context_menu` # Tab context menu's "Add Note" menu item
+            - `hover_menu` # Tab hover preview panel's "Add Note" button
+        type: string
+      note_length:
+        description: >
+          JavaScript string length (number of Unicode code units) of the note text. Note that
+          this value can be higher than the number of characters (Unicode code points) or the
+          number of graphemes (what a human perceives as a single visual character).
+          For example, 👨‍👩‍👧‍👧 would count as 11 string length, 7 characters, and 1 grapheme.
+        type: quantity
+    expires: never
+  edited:
+    type: event
+    description: >
+      Recorded when a user edits an existing tab note.
+    notification_emails:
+      - sthompson@mozilla.com
+      - jswinarton@mozilla.com
+    bugs:
+      - https://bugzil.la/2003703
+      - https://bugzil.la/2027827
+    data_reviews:
+      - https://bugzil.la/2003703
+      - https://bugzil.la/2027827
+    data_sensitivity:
+      - interaction
+    extra_keys:
+      source:
+        description: >
+          Identifies the user interface entry point that resulted in this tab
+          note being edited. Expected values:
+            - `context_menu` # Tab context menu's "Edit Note" menu item
+            - `note_preview` # Tab note preview panel's edit icon or double-click
+        type: string
+      note_length:
+        description: >
+          JavaScript string length (number of Unicode code units) of the note text. Note that
+          this value can be higher than the number of characters (Unicode code points) or the
+          number of graphemes (what a human perceives as a single visual character).
+          For example, 👨‍👩‍👧‍👧 would count as 11 string length, 7 characters, and 1 grapheme.
+        type: quantity
+    expires: never
+  deleted:
+    type: event
+    description: >
+      Recorded when a user deletes an existing note for a tab.
+    notification_emails:
+      - sthompson@mozilla.com
+      - jswinarton@mozilla.com
+    bugs:
+      - https://bugzil.la/2003705
+    data_reviews:
+      - https://bugzil.la/2003705
+    data_sensitivity:
+      - interaction
+    extra_keys:
+      source:
+        description: >
+          Identifies the user interface entry point that resulted in this tab
+          note being deleted. Expected values:
+            - `context_menu` # Tab context menu's "Edit Note" menu item
+            - `note_preview` # Tab note preview panel's edit icon or double-click
+        type: string
+      note_age_hours:
+        description: >
+          Number of hours that elapsed since the tab note was first created,
+          expressed as an integer (rounded to the nearest full hour).
+        type: quantity
+    expires: never
+  expanded:
+    type: event
+    description: >
+      Recorded when a user clicks "read more" to expand a truncated note in the tab hover preview
+    notification_emails:
+      - sthompson@mozilla.com
+    bugs:
+      - https://bugzil.la/2003707
+    data_reviews:
+      - https://bugzil.la/2003707
+    data_sensitivity:
+      - interaction
+    extra_keys:
+      note_length:
+        description: >
+          JavaScript string length (number of Unicode code units) of the note text. Note that
+          this value can be higher than the number of characters (Unicode code points) or the
+          number of graphemes (what a human perceives as a single visual character).
+          For example, 👨‍👩‍👧‍👧 would count as 11 string length, 7 characters, and 1 grapheme.
+        type: quantity
+    expires: never

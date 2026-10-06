@@ -94,21 +94,21 @@ support-files = [
 ["test_WebAudioMemoryReporting.html"]
 
 ["test_analyserNode.html"]
-run-if = ["os == 'android'"] # These are tested in web-platform-tests, except on Android which don't run WPT.
-
-["test_analyserNodeMinimum.html"]
-run-if = ["os == 'android'"] # These are tested in web-platform-tests, except on Android which don't run WPT.
-
-["test_analyserNodeOutput.html"]
-run-if = ["os == 'android'"] # These are tested in web-platform-tests, except on Android which don't run WPT.
+run-if = [
+  "os == 'android'", # Tested in web-platform-tests test-analysernode.html, but times out on Android.
+]
 
 ["test_analyserNodePassThrough.html"]
 
 ["test_analyserNodeWithGain.html"]
-run-if = ["os == 'android'"] # These are tested in web-platform-tests, except on Android which don't run WPT.
+run-if = [
+  "os == 'android'", # Tested in web-platform-tests test-analyser-gain.html, but times out on Android.
+]
 
 ["test_analyserScale.html"]
-run-if = ["os == 'android'"] # These are tested in web-platform-tests, except on Android which don't run WPT.
+run-if = [
+  "os == 'android'", # Tested in web-platform-tests test-analyser-scale.html, but times out on Android.
+]
 
 ["test_audioContextParams_recordNonDefaultSampleRate.html"]
 
@@ -126,7 +126,9 @@ run-if = ["os == 'android'"] # These are tested in web-platform-tests, except on
 # This is a copy of
 # testing/web-platform/tests/webaudio/the-audio-api/the-convolvernode-interface/convolver-upmixing-1-channel-response.html,
 # but WPT are not run with Android builds.
-run-if = ["os == 'android'"]
+run-if = [
+  "os == 'android'",
+]
 
 ["test_convolverNode.html"]
 
@@ -161,10 +163,17 @@ skip-if = [
 ["test_decodeAudioError.html"]
 
 ["test_decodeMultichannel.html"]
+skip-if = [
+  "isolated_process", # Bug 1709948
+]
 
 ["test_decodeOpusTail.html"]
 
 ["test_decoderDelay.html"]
+skip-if = [
+  "isolated_process", # Bug 1709948
+  "os == 'android'", # Bug 2018243
+]
 
 ["test_delayNode.html"]
 
@@ -192,7 +201,9 @@ skip-if = [
 # This is a copy of
 # testing/web-platform/tests/webaudio/the-audio-api/the-delaynode-interface/delaynode-channel-count-1.html
 # but WPT are not run with Android builds.
-run-if = ["os == 'android'"]
+run-if = [
+  "os == 'android'",
+]
 
 ["test_disconnectAll.html"]
 
@@ -329,8 +340,7 @@ run-if = ["os == 'android'"]
 ["test_webAudio_muteTab.html"]
 scheme = "https"
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
-  "os == 'win'",
   "os == 'android'", # Bug 1404995, no loopback devices on some platforms
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'win'",
 ]

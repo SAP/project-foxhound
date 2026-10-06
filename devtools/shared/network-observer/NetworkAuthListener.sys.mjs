@@ -44,7 +44,7 @@ export class NetworkAuthListener {
     channel.notificationCallbacks = this;
   }
 
-  // See https://searchfox.org/mozilla-central/source/netwerk/base/nsIAuthPrompt2.idl
+  // See https://searchfox.org/firefox-main/source/netwerk/base/nsIAuthPrompt2.idl
   asyncPromptAuth(channel, callback, context, level, authInfo) {
     const isProxy = !!(authInfo.flags & authInfo.AUTH_PROXY);
     const cancelAuthPrompt = () => {
@@ -115,7 +115,7 @@ export class NetworkAuthListener {
     throw Components.Exception("", Cr.NS_ERROR_NO_INTERFACE);
   }
 
-  // See https://searchfox.org/mozilla-central/source/netwerk/base/nsIAuthPromptProvider.idl
+  // See https://searchfox.org/firefox-main/source/netwerk/base/nsIAuthPromptProvider.idl
   getAuthPrompt(reason, iid) {
     // This should never get called without getInterface having been called first.
     if (iid.equals(Ci.nsIAuthPrompt2)) {
@@ -127,7 +127,7 @@ export class NetworkAuthListener {
     );
   }
 
-  // See https://searchfox.org/mozilla-central/source/netwerk/base/nsIAuthPrompt2.idl
+  // See https://searchfox.org/firefox-main/source/netwerk/base/nsIAuthPrompt2.idl
   promptAuth(channel, level, authInfo) {
     this.#getForwardedInterface(Ci.nsIAuthPrompt2).promptAuth(
       channel,

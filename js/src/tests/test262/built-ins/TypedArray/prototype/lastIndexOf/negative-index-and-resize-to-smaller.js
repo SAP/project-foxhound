@@ -54,6 +54,6 @@ testWithTypedArrayConstructors(function(TA) {
       "For index " + index
     );
   }
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

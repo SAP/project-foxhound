@@ -1,16 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SVGFragmentIdentifier.h"
 
+#include "SVGAnimatedTransformList.h"
+#include "mozilla/MediaFragmentURIParser.h"
+#include "mozilla/SVGOuterSVGFrame.h"
 #include "mozilla/dom/SVGSVGElement.h"
 #include "mozilla/dom/SVGViewElement.h"
-#include "mozilla/SVGOuterSVGFrame.h"
 #include "nsCharSeparatedTokenizer.h"
-#include "SVGAnimatedTransformList.h"
 
 namespace mozilla {
 
@@ -25,36 +24,79 @@ static bool IsMatchingParameter(const nsAString& aString,
 }
 
 // Handles setting/clearing the root's mSVGView pointer.
-class MOZ_RAII AutoSVGViewHandler {
+class MOZ_RAII AutoFragmentHandler {
  public:
-  explicit AutoSVGViewHandler(SVGSVGElement* aRoot)
-      : mRoot(aRoot), mValid(false) {
-    mWasOverridden = mRoot->UseCurrentView();
-    mRoot->mSVGView = nullptr;
-    mRoot->mCurrentViewID = nullptr;
+  explicit AutoFragmentHandler(SVGSVGElement* aRoot) : mRoot(aRoot) {}
+
+  ~AutoFragmentHandler() {
+    if (!mValid) {
+      mStartTime = Nothing();
+      mEndTime = Nothing();
+      mCurrentViewID = VoidString();
+      mSVGView = nullptr;
+    }
+    if (mStartTime) {
+      mRoot->SetCurrentTime(mStartTime.value());
+    }
+    if (mEndTime) {
+      mRoot->PauseAnimationsAt(mEndTime.value());
+    }
+    if (mCurrentViewID.IsVoid()) {
+      mRoot->SetViewSpec(std::move(mSVGView));
+    } else {
+      mRoot->SetCurrentView(mCurrentViewID);
+    }
+    if (nsIFrame* f = mRoot->GetPrimaryFrame()) {
+      if (SVGOuterSVGFrame* osf = do_QueryFrame(f)) {
+        osf->MaybeSendIntrinsicSizeAndRatioToEmbedder();
+      }
+    }
   }
 
-  ~AutoSVGViewHandler() {
-    if (!mWasOverridden && !mValid) {
-      // we weren't overridden before and we aren't
-      // overridden now so nothing has changed.
-      return;
+  bool StopProcessing() const {
+    // If we're an svgView()-style fragment identifier, return true so the
+    // caller knows it doesn't need to match any :target pseudo elements
+    return mValid && mViewSpecProcessed;
+  }
+
+  void CreateSVGView(bool aFromViewSpec) {
+    if (!mSVGView) {
+      mSVGView = std::make_unique<SVGView>();
+    }
+    if (aFromViewSpec) {
+      mViewSpecProcessed = true;
+    }
+  }
+
+  void SetCurrentViewID(const nsAString& aCurrentViewID) {
+    mCurrentViewID = aCurrentViewID;
+    mValid = true;
+  }
+
+  bool SetViewBox(const gfx::Rect& aRect) {
+    mValid = mCurrentViewID.IsVoid() && !mViewSpecProcessed;
+    if (mValid) {
+      CreateSVGView(false);
+      SVGViewBox viewBox(aRect.x, aRect.y, aRect.width, aRect.height);
+      mSVGView->mViewBox.SetBaseValue(viewBox, mRoot, false);
+    }
+    mMediaFragmentProcessed = true;
+    return mValid;
+  }
+
+  bool SetStartAndEndTime(Maybe<float> aStartTime, Maybe<float> aEndTime) {
+    if (!mMediaFragmentProcessed) {
+      mValid = true;
+      mMediaFragmentProcessed = true;
     }
     if (mValid) {
-      mRoot->mSVGView = std::move(mSVGView);
+      mStartTime = aStartTime;
+      mEndTime = aEndTime;
     }
-    mRoot->DidChangeSVGView();
-    if (SVGOuterSVGFrame* osf = do_QueryFrame(mRoot->GetPrimaryFrame())) {
-      osf->MaybeSendIntrinsicSizeAndRatioToEmbedder();
-    }
+    return mValid;
   }
 
-  void CreateSVGView() {
-    MOZ_ASSERT(!mSVGView, "CreateSVGView should not be called multiple times");
-    mSVGView = MakeUnique<SVGView>();
-  }
-
-  bool ProcessAttr(const nsAString& aToken, const nsAString& aParams) {
+  bool ProcessViewSpecAttr(const nsAString& aToken, const nsAString& aParams) {
     MOZ_ASSERT(mSVGView, "CreateSVGView should have been called");
 
     // SVGViewAttributes may occur in any order, but each type may only occur
@@ -78,7 +120,7 @@ class MOZ_RAII AutoSVGViewHandler {
       if (mSVGView->mTransforms) {
         return false;
       }
-      mSVGView->mTransforms = MakeUnique<SVGAnimatedTransformList>();
+      mSVGView->mTransforms = std::make_unique<SVGAnimatedTransformList>();
       if (NS_FAILED(
               mSVGView->mTransforms->SetBaseValueString(aParams, mRoot))) {
         return false;
@@ -97,19 +139,31 @@ class MOZ_RAII AutoSVGViewHandler {
     return true;
   }
 
-  void SetValid() { mValid = true; }
+  SVGSVGElement* RootElement() const { return mRoot; }
+
+  void SetValid(bool aValid = true) { mValid = aValid; }
 
  private:
-  SVGSVGElement* mRoot;
-  UniquePtr<SVGView> mSVGView;
-  bool mValid;
-  bool mWasOverridden;
+  RefPtr<SVGSVGElement> mRoot;
+  nsString mCurrentViewID = VoidString();
+  std::unique_ptr<SVGView> mSVGView;
+  Maybe<float> mStartTime, mEndTime;
+  bool mViewSpecProcessed = false;
+  bool mMediaFragmentProcessed = false;
+  bool mValid = false;
 };
 
-bool SVGFragmentIdentifier::ProcessSVGViewSpec(const nsAString& aViewSpec,
-                                               SVGSVGElement* aRoot) {
-  AutoSVGViewHandler viewHandler(aRoot);
+static bool ProcessCurrentView(Document* aDocument, const nsAString& aID,
+                               AutoFragmentHandler& aViewHandler) {
+  if (!SVGViewElement::FromNodeOrNull(aDocument->GetElementById(aID))) {
+    return false;
+  }
+  aViewHandler.SetCurrentViewID(aID);
+  return true;
+}
 
+static bool ProcessSVGViewSpec(const nsAString& aViewSpec,
+                               AutoFragmentHandler& aViewHandler) {
   if (!IsMatchingParameter(aViewSpec, u"svgView"_ns)) {
     return false;
   }
@@ -123,7 +177,7 @@ bool SVGFragmentIdentifier::ProcessSVGViewSpec(const nsAString& aViewSpec,
   if (!tokenizer.hasMoreTokens()) {
     return false;
   }
-  viewHandler.CreateSVGView();
+  aViewHandler.CreateSVGView(true);
 
   do {
     nsAutoString token(tokenizer.nextToken());
@@ -137,44 +191,92 @@ bool SVGFragmentIdentifier::ProcessSVGViewSpec(const nsAString& aViewSpec,
     const nsAString& params =
         Substring(token, bracketPos + 1, token.Length() - bracketPos - 2);
 
-    if (!viewHandler.ProcessAttr(token, params)) {
+    if (!aViewHandler.ProcessViewSpecAttr(token, params)) {
       return false;
     }
 
   } while (tokenizer.hasMoreTokens());
 
-  viewHandler.SetValid();
+  aViewHandler.SetValid();
   return true;
+}
+
+static bool ProcessMediaFragment(const nsAString& aMediaFragment,
+                                 AutoFragmentHandler& aViewHandler) {
+  NS_ConvertUTF16toUTF8 mediaFragment(aMediaFragment);
+  MediaFragmentURIParser parser(mediaFragment);
+
+  SVGSVGElement* root = aViewHandler.RootElement();
+
+  Maybe<float> startTime, endTime;
+  if (parser.HasStartTime()) {
+    startTime = Some(parser.GetStartTime());
+  }
+  if (parser.HasEndTime()) {
+    endTime = Some(parser.GetEndTime());
+  }
+  if (startTime || endTime) {
+    MOZ_ASSERT(!parser.HasClip(), "Clip should be a separate parameter");
+    return aViewHandler.SetStartAndEndTime(startTime, endTime);
+  }
+  if (parser.HasClip()) {
+    gfx::Rect rect = IntRectToRect(parser.GetClip());
+    gfx::Size size = root->GetIntrinsicSizeWithFallback();
+    if (parser.GetClipUnit() == eClipUnit_Percent) {
+      rect.Scale(size.width / 100.0f, size.height / 100.0f);
+    }
+    if (rect.XMost() > size.width) {
+      rect.width = size.width - rect.x;
+    }
+    if (rect.YMost() > size.height) {
+      rect.height = size.height - rect.y;
+    }
+    if (!rect.IsEmpty()) {
+      return aViewHandler.SetViewBox(rect);
+    }
+  }
+
+  aViewHandler.SetValid(false);
+  return false;
+}
+
+static bool ProcessFirstParameter(Document* aDocument,
+                                  const nsAString& aParameter,
+                                  AutoFragmentHandler& aViewHandler) {
+  if (ProcessCurrentView(aDocument, aParameter, aViewHandler)) {
+    return true;
+  }
+  if (ProcessSVGViewSpec(aParameter, aViewHandler)) {
+    return true;
+  }
+  if (ProcessMediaFragment(aParameter, aViewHandler)) {
+    return true;
+  }
+  return false;
 }
 
 bool SVGFragmentIdentifier::ProcessFragmentIdentifier(
     Document* aDocument, const nsAString& aAnchorName) {
-  MOZ_ASSERT(aDocument->GetRootElement()->IsSVGElement(nsGkAtoms::svg),
-             "expecting an SVG root element");
+  MOZ_ASSERT(aDocument->GetSVGRootElement(), "expecting an SVG root element");
 
-  auto* rootElement = SVGSVGElement::FromNode(aDocument->GetRootElement());
-
-  const auto* viewElement =
-      SVGViewElement::FromNodeOrNull(aDocument->GetElementById(aAnchorName));
-
-  if (viewElement) {
-    if (!rootElement->mCurrentViewID) {
-      rootElement->mCurrentViewID = MakeUnique<nsString>();
-    }
-    *rootElement->mCurrentViewID = aAnchorName;
-    rootElement->mSVGView = nullptr;
-    rootElement->InvalidateTransformNotifyFrame();
-    if (nsIFrame* f = rootElement->GetPrimaryFrame()) {
-      if (SVGOuterSVGFrame* osf = do_QueryFrame(f)) {
-        osf->MaybeSendIntrinsicSizeAndRatioToEmbedder();
-      }
-    }
-    // not an svgView()-style fragment identifier, return false so the caller
-    // continues processing to match any :target pseudo elements
+  nsCharSeparatedTokenizerTemplate<NS_TokenizerIgnoreNothing> specTokenizer(
+      aAnchorName, '&');
+  if (!specTokenizer.hasMoreTokens()) {
     return false;
   }
+  nsAutoString parameter(specTokenizer.nextToken());
 
-  return ProcessSVGViewSpec(aAnchorName, rootElement);
+  RefPtr rootElement = SVGSVGElement::FromNode(aDocument->GetRootElement());
+  AutoFragmentHandler fragmentHandler(rootElement);
+
+  if (!ProcessFirstParameter(aDocument, parameter, fragmentHandler)) {
+    return false;
+  }
+  while (specTokenizer.hasMoreTokens()) {
+    parameter = specTokenizer.nextToken();
+    ProcessMediaFragment(parameter, fragmentHandler);
+  }
+  return fragmentHandler.StopProcessing();
 }
 
 }  // namespace mozilla

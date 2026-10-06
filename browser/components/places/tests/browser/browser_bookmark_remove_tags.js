@@ -216,41 +216,25 @@ add_task(async function test_remove_tags_from_Library() {
   PlacesUtils.tagging.tagURI(TEST_URI, [TEST_TAG]);
   const getTags = () => PlacesUtils.tagging.getTagsForURI(TEST_URI);
 
-  // Open the Library and select the tag.
-  const library = await promiseLibrary("place:tag=" + TEST_TAG);
+  await withLibraryWindow("place:tag=" + TEST_TAG, async ({ right }) => {
+    let doc = right.ownerDocument;
+    const contextMenu = doc.getElementById("placesContext");
+    const contextMenuDeleteTag = doc.getElementById("placesContext_removeTag");
 
-  registerCleanupFunction(async function () {
-    await promiseLibraryClosed(library);
+    right.view.selection.select(0);
+    await synthesizeClickOnSelectedTreeCell(right, {
+      type: "contextmenu",
+      button: 2,
+    });
+
+    await BrowserTestUtils.waitForEvent(contextMenu, "popupshown");
+
+    ok(getTags().includes(TEST_TAG), "Test tag exists before delete.");
+
+    contextMenu.activateItem(contextMenuDeleteTag, {});
+
+    await PlacesTestUtils.waitForNotification("bookmark-tags-changed");
   });
-
-  const contextMenu = library.document.getElementById("placesContext");
-  const contextMenuDeleteTag = library.document.getElementById(
-    "placesContext_removeTag"
-  );
-
-  let firstColumn = library.ContentTree.view.columns[0];
-  let firstBookmarkRect = library.ContentTree.view.getCoordsForCellItem(
-    0,
-    firstColumn,
-    "bm0"
-  );
-
-  EventUtils.synthesizeMouse(
-    library.ContentTree.view.body,
-    firstBookmarkRect.x,
-    firstBookmarkRect.y,
-    { type: "contextmenu", button: 2 },
-    library
-  );
-
-  await BrowserTestUtils.waitForEvent(contextMenu, "popupshown");
-
-  ok(getTags().includes(TEST_TAG), "Test tag exists before delete.");
-
-  contextMenu.activateItem(contextMenuDeleteTag, {});
-
-  await PlacesTestUtils.waitForNotification("bookmark-tags-changed");
-  await promiseLibraryClosed(library);
 
   ok(
     await PlacesUtils.bookmarks.fetch({ url: TEST_URL }),

@@ -1,9 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsISerialEventTarget.idl"
 #include "nsISupports.idl"
 
 %{C++
@@ -21,13 +21,12 @@ interface nsINSSComponent : nsISupports {
    * When we log out of a PKCS#11 token, any TLS connections that may have
    * involved a client certificate stored on that token must be closed. Since we
    * don't have a fine-grained way to do this, we basically cancel everything.
-   * More speficially, this clears all temporary certificate exception overrides
-   * and any remembered client authentication certificate decisions, and then
+   * More speficially, this clears the TLS session cache and then
    * cancels all network connections (strictly speaking, this last part is
    * overzealous - we only need to cancel all https connections (see bug
    * 1446645)).
    */
-  [noscript] void logoutAuthenticatedPK11();
+  void clearTLSCacheAndCancelAllConnections();
 
   /**
    * Used to determine if the given certificate (represented as an array of
@@ -69,13 +68,6 @@ interface nsINSSComponent : nsISupports {
   [noscript] void blockUntilLoadableCertsLoaded();
 
   /**
-   * In theory a token on a PKCS#11 module can be inserted or removed at any
-   * time. Operations that may depend on resources on external tokens should
-   * call this to ensure they have a recent view of the token.
-   */
-  [noscript] void checkForSmartCardChanges();
-
-  /**
    * Used to potentially detect when a user's internet connection is being
    * intercepted. When doing an update ping, if certificate verification fails,
    * we make a note of the issuer distinguished name of that certificate.
@@ -104,4 +96,21 @@ interface nsINSSComponent : nsISupports {
    */
   [implicit_jscontext]
   Promise asyncClearSSLExternalAndInternalSessionCache();
+
+  /**
+   * Remove TLS session resumption tokens matching the given
+   * OriginAttributesPattern (serialized as JSON).  Used by the clear-data
+   * service to honour per-partition site-data clearing.
+   */
+  void removeSSLTokensByHostAndOriginAttributesPattern(in ACString aHost,
+                                                       in AString aPattern);
+  void removeSSLTokensBySiteAndOriginAttributesPattern(in ACString aSite,
+                                                       in AString aPattern);
+
+  /**
+   * Provides a common background serial event target on which to do any
+   * operations that modify the NSS module DB.
+   * Only available from the main thread.
+   */
+  readonly attribute nsISerialEventTarget nssTaskQueue;
 };

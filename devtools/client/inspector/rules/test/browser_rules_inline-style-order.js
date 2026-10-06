@@ -67,7 +67,7 @@ add_task(async function () {
       });
 
     info("Checking the content of the rule-view");
-    const ruleEditor = getRuleViewRuleEditor(view, 0);
+    const ruleEditor = getRuleViewRuleEditorAt(view, 0);
     const propertiesEls = ruleEditor.propertyList.children;
 
     parsedStyleAttr.forEach((expected, i) => {

@@ -1,5 +1,5 @@
 /**
- * Adapted from https://searchfox.org/mozilla-central/source/layout/reftests/backgrounds/delay-image-response.sjs
+ * Adapted from https://searchfox.org/firefox-main/source/layout/reftests/backgrounds/delay-image-response.sjs
  */
 "use strict";
 

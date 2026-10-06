@@ -1,3 +1,5 @@
+// |jit-test| skip-if: !wasmJSPromiseIntegrationEnabled()
+
 // New API experiments.
 // Example from the proposal.
 

@@ -12,13 +12,6 @@ const { Downloader } = ChromeUtils.importESModule(
   "resource://services-settings/Attachments.sys.mjs"
 );
 
-const { TelemetryController } = ChromeUtils.importESModule(
-  "resource://gre/modules/TelemetryController.sys.mjs"
-);
-const { TelemetryTestUtils } = ChromeUtils.importESModule(
-  "resource://testing-common/TelemetryTestUtils.sys.mjs"
-);
-
 const OLDEST_STASH = { stash: { blocked: [], unblocked: [] }, stash_time: 2e6 };
 const NEWEST_STASH = { stash: { blocked: [], unblocked: [] }, stash_time: 5e6 };
 const RECORDS_WITH_STASHES_AND_MLBF = [
@@ -30,24 +23,6 @@ const RECORDS_WITH_STASHES_AND_MLBF = [
 
 const ExtensionBlocklistMLBF = getExtensionBlocklistMLBF();
 
-function assertTelemetryScalars(expectedScalars) {
-  // On Android, we only report to the Glean system telemetry system.
-  if (IS_ANDROID_BUILD) {
-    info(
-      `Skip assertions on collected samples for ${expectedScalars} on android builds`
-    );
-    return;
-  }
-  let scalars = TelemetryTestUtils.getProcessScalars("parent");
-  for (const scalarName of Object.keys(expectedScalars || {})) {
-    equal(
-      scalars[scalarName],
-      expectedScalars[scalarName],
-      `Got the expected value for ${scalarName} scalar`
-    );
-  }
-}
-
 add_setup(async function setup() {
   if (!IS_ANDROID_BUILD) {
     // FOG needs a profile directory to put its data in.
@@ -55,7 +30,6 @@ add_setup(async function setup() {
     // FOG needs to be initialized in order for data to flow.
     Services.fog.initializeFOG();
   }
-  await TelemetryController.testSetup();
   await promiseStartupManager();
 
   // Disable the packaged record and attachment to make sure that the test
@@ -76,11 +50,6 @@ add_task(async function test_initialization() {
   Assert.equal(undefined, Glean.blocklist.mlbfGenerationTime.testGetValue());
   Assert.equal(undefined, Glean.blocklist.mlbfStashTimeOldest.testGetValue());
   Assert.equal(undefined, Glean.blocklist.mlbfStashTimeNewest.testGetValue());
-
-  assertTelemetryScalars({
-    "blocklist.mlbf_source": undefined,
-    "blocklist.mlbf_softblocks_source": undefined,
-  });
 });
 
 // Test what happens if there is no blocklist data at all.
@@ -96,11 +65,6 @@ add_task(async function test_without_mlbf() {
   Assert.equal(0, Glean.blocklist.mlbfGenerationTime.testGetValue().getTime());
   Assert.equal(0, Glean.blocklist.mlbfStashTimeOldest.testGetValue().getTime());
   Assert.equal(0, Glean.blocklist.mlbfStashTimeNewest.testGetValue().getTime());
-
-  assertTelemetryScalars({
-    "blocklist.mlbf_source": "unknown",
-    "blocklist.mlbf_softblocks_source": "unknown",
-  });
 });
 
 // Test the telemetry that would be recorded in the common case.
@@ -139,10 +103,6 @@ add_task(async function test_common_good_case_with_stashes() {
     NEWEST_STASH.stash_time,
     Glean.blocklist.mlbfStashTimeNewest.testGetValue().getTime()
   );
-  assertTelemetryScalars({
-    "blocklist.mlbf_source": "cache_match",
-    "blocklist.mlbf_softblocks_source": "cache_match",
-  });
 
   // The records and cached attachment carries over to the next tests.
 });
@@ -170,11 +130,6 @@ add_task(async function test_without_stashes() {
 
   Assert.equal(0, Glean.blocklist.mlbfStashTimeOldest.testGetValue().getTime());
   Assert.equal(0, Glean.blocklist.mlbfStashTimeNewest.testGetValue().getTime());
-
-  assertTelemetryScalars({
-    "blocklist.mlbf_source": "cache_match",
-    "blocklist.mlbf_softblocks_source": "cache_match",
-  });
 });
 
 // Test what happens when the collection was inadvertently emptied,
@@ -204,9 +159,4 @@ add_task(async function test_without_collection_but_cache() {
 
   Assert.equal(0, Glean.blocklist.mlbfStashTimeOldest.testGetValue().getTime());
   Assert.equal(0, Glean.blocklist.mlbfStashTimeNewest.testGetValue().getTime());
-
-  assertTelemetryScalars({
-    "blocklist.mlbf_source": "cache_fallback",
-    "blocklist.mlbf_softblocks_source": "cache_fallback",
-  });
 });

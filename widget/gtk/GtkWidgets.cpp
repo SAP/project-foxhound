@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -554,10 +552,6 @@ style_path_print(GtkStyleContext *context)
 void Refresh() { ResetWidgetCache(); }
 
 static void DrawWindowDecoration(cairo_t* cr, const DrawingParams& aParams) {
-  if (GdkIsWaylandDisplay()) {
-    // Doesn't seem to be needed.
-    return;
-  }
   GtkStyleContext* decorationStyle =
       GetStyle(Type::WindowDecoration, aParams.image_scale, aParams.state);
 
@@ -570,8 +564,6 @@ static void DrawWindowDecoration(cairo_t* cr, const DrawingParams& aParams) {
 
 /* cairo_t *cr argument has to be a system-cairo. */
 void Draw(cairo_t* cr, const DrawingParams* aParams) {
-  /* A workaround for https://bugzilla.gnome.org/show_bug.cgi?id=694086 */
-  cairo_new_path(cr);
   switch (aParams->widget) {
     case Type::WindowDecoration:
       return DrawWindowDecoration(cr, *aParams);

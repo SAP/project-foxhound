@@ -1,29 +1,26 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "LocalStorageManager.h"
+
 #include "LocalStorage.h"
 #include "StorageDBThread.h"
 #include "StorageIPC.h"
 #include "StorageUtils.h"
-
-#include "nsIEffectiveTLDService.h"
-
-#include "nsPIDOMWindow.h"
-#include "nsNetUtil.h"
-#include "nsNetCID.h"
-#include "nsPrintfCString.h"
-#include "nsXULAppAPI.h"
-#include "nsThreadUtils.h"
-#include "nsIObserverService.h"
-#include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/LocalStorageCommon.h"
+#include "mozilla/ipc/BackgroundChild.h"
+#include "mozilla/ipc/PBackgroundChild.h"
+#include "nsIEffectiveTLDService.h"
+#include "nsIObserverService.h"
+#include "nsNetCID.h"
+#include "nsNetUtil.h"
+#include "nsPIDOMWindow.h"
+#include "nsPrintfCString.h"
+#include "nsThreadUtils.h"
+#include "nsXULAppAPI.h"
 
 namespace mozilla::dom {
 
@@ -152,6 +149,13 @@ nsresult LocalStorageManager::GetStorageInternal(
   nsAutoCString originAttrSuffix;
   nsAutoCString originKey;
   nsAutoCString quotaKey;
+
+  // Throw if this process shouldn't have local storage access for this origin.
+  if (!mozilla::ipc::BackgroundChild::ValidatePrincipal(aStoragePrincipal,
+                                                        {})) {
+    MOZ_ASSERT_UNREACHABLE("ValidatePrincipal failure in GetStorageInternal");
+    return NS_ERROR_NOT_AVAILABLE;
+  }
 
   aStoragePrincipal->OriginAttributesRef().CreateSuffix(originAttrSuffix);
 
@@ -377,7 +381,8 @@ nsresult LocalStorageManager::Observe(const char* aTopic,
     return NS_OK;
   }
 
-  if (!strcmp(aTopic, "browser:purge-sessionStorage")) {
+  if (!strcmp(aTopic, "browser:purge-sessionStorage") ||
+      !strcmp(aTopic, "extension:purge-sessionStorage")) {
     // This is only meant for SessionStorageManager.
     return NS_OK;
   }

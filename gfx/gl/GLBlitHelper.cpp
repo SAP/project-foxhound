@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,7 +13,6 @@
 #include "ImageContainer.h"
 #include "ScopedGLHelpers.h"
 #include "GLUploadHelpers.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Casting.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_gfx.h"
@@ -279,6 +276,9 @@ extern const char* const kFragConvertYUVP010 = R"(
 const char* const kFragMixin_AlphaMultColors = R"(
   #define MIXIN_ALPHA_MULT_COLORS
 )";
+const char* const kFragMixin_AlphaUnpremultColors = R"(
+  #define MIXIN_ALPHA_UNPREMULT_COLORS
+)";
 const char* const kFragMixin_AlphaClampColors = R"(
   #define MIXIN_ALPHA_CLAMP_COLORS
 )";
@@ -295,6 +295,9 @@ static const char kFragBody[] = R"(
 
   #ifdef MIXIN_ALPHA_MULT_COLORS
     dst.rgb *= dst.a;
+  #endif
+  #ifdef MIXIN_ALPHA_UNPREMULT_COLORS
+    dst.rgb = dst.a != 0.0 ? dst.rgb / dst.a : dst.rgb;
   #endif
   #ifdef MIXIN_ALPHA_CLAMP_COLORS
     dst.rgb = min(dst.rgb, vec3(dst.a)); // Ensure valid premult-alpha colors.
@@ -359,7 +362,7 @@ ScopedSaveMultiTex::ScopedSaveMultiTex(GLContext* const gl,
       mTexUnits(texUnits),
       mTexTarget(texTarget),
       mOldTexUnit(mGL.GetIntAs<GLenum>(LOCAL_GL_ACTIVE_TEXTURE)) {
-  MOZ_RELEASE_ASSERT(texUnits >= 1);
+  MOZ_RELEASE_ASSERT(texUnits >= 1 && texUnits <= std::size(mOldTex));
 
   GLenum texBinding;
   switch (mTexTarget) {
@@ -467,7 +470,7 @@ class ScopedDrawBlitState final {
   GLint viewport[4];
 
  public:
-  ScopedDrawBlitState(GLContext* const gl, const gfx::IntSize& destSize)
+  ScopedDrawBlitState(GLContext* const gl, const gfx::IntSize& fbSize)
       : mGL(*gl),
         blend(mGL.PushEnabled(LOCAL_GL_BLEND, false)),
         cullFace(mGL.PushEnabled(LOCAL_GL_CULL_FACE, false)),
@@ -493,8 +496,8 @@ class ScopedDrawBlitState final {
     }
 
     mGL.fGetIntegerv(LOCAL_GL_VIEWPORT, viewport);
-    MOZ_ASSERT(destSize.width && destSize.height);
-    mGL.fViewport(0, 0, destSize.width, destSize.height);
+    MOZ_ASSERT(fbSize.width && fbSize.height);
+    mGL.fViewport(0, 0, fbSize.width, fbSize.height);
   }
 
   ~ScopedDrawBlitState() {
@@ -573,14 +576,19 @@ void DrawBlitProg::Draw(const BaseArgs& args,
 
   // --
 
+  gfx::IntSize fbSize = args.fbSize;
   Mat3 destMatrix;
-  if (args.destRect) {
-    const auto& destRect = args.destRect.value();
-    destMatrix = SubRectMat3(destRect.X() / args.destSize.width,
-                             destRect.Y() / args.destSize.height,
-                             destRect.Width() / args.destSize.width,
-                             destRect.Height() / args.destSize.height);
+  if (!args.destRect.IsEmpty()) {
+    const gfx::IntRect& destRect = args.destRect;
+    if (fbSize.IsEmpty()) {
+      fbSize = destRect.Size();
+    }
+    destMatrix = SubRectMat3(float(destRect.X()) / fbSize.width,
+                             float(destRect.Y()) / fbSize.height,
+                             float(destRect.Width()) / fbSize.width,
+                             float(destRect.Height()) / fbSize.height);
   } else {
+    MOZ_ASSERT(!fbSize.IsEmpty());
     destMatrix = Mat3::I();
   }
 
@@ -591,12 +599,27 @@ void DrawBlitProg::Draw(const BaseArgs& args,
     destMatrix.at(1, 1) *= -1.0f;
   }
 
+  Mat3 texScale = Mat3::I();
+  if (!args.texSize.IsEmpty()) {
+    const gfx::IntSize clipSize =
+        args.destRect.IsEmpty() ? fbSize : args.destRect.Size();
+    const gfx::IntSize& texSize = args.texSize;
+    texScale = SubRectMat3(
+        gfx::IntRect(
+            gfx::IntPoint(0, args.yFlip ? texSize.height - clipSize.height : 0),
+            clipSize),
+        texSize);
+  }
+
   gl->fUniformMatrix3fv(mLoc_uDestMatrix, 1, false, destMatrix.m);
-  gl->fUniformMatrix3fv(mLoc_uTexMatrix0, 1, false, args.texMatrix0.m);
+
+  Mat3 texMatrix0 = args.texMatrix0 * texScale;
+  gl->fUniformMatrix3fv(mLoc_uTexMatrix0, 1, false, texMatrix0.m);
 
   MOZ_ASSERT(bool(argsYUV) == (mLoc_uColorMatrix != -1));
   if (argsYUV) {
-    gl->fUniformMatrix3fv(mLoc_uTexMatrix1, 1, false, argsYUV->texMatrix1.m);
+    Mat3 texMatrix1 = argsYUV->texMatrix1 * texScale;
+    gl->fUniformMatrix3fv(mLoc_uTexMatrix1, 1, false, texMatrix1.m);
 
     if (mLoc_uColorMatrix != -1) {
       const auto& colorMatrix =
@@ -623,7 +646,7 @@ void DrawBlitProg::Draw(const BaseArgs& args,
 
   // --
 
-  const ScopedDrawBlitState drawState(gl, args.destSize);
+  const ScopedDrawBlitState drawState(gl, fbSize);
 
   GLuint oldVAO;
   GLint vaa0Enabled;
@@ -649,7 +672,7 @@ void DrawBlitProg::Draw(const BaseArgs& args,
 
     gl->fEnableVertexAttribArray(0);
     const ScopedBindArrayBuffer bindVBO(gl, mParent.mQuadVBO);
-    gl->fVertexAttribPointer(0, 2, LOCAL_GL_FLOAT, false, 0, 0);
+    gl->fVertexAttribPointer(0, 2, LOCAL_GL_FLOAT, false, 0, nullptr);
   }
 
   gl->fDrawArrays(LOCAL_GL_TRIANGLE_STRIP, 0, 4);
@@ -693,7 +716,7 @@ GLBlitHelper::GLBlitHelper(GLContext* const gl)
       mGL->fGenVertexArrays(1, &mQuadVAO);
       mGL->fBindVertexArray(mQuadVAO);
       mGL->fEnableVertexAttribArray(0);
-      mGL->fVertexAttribPointer(0, 2, LOCAL_GL_FLOAT, false, 0, 0);
+      mGL->fVertexAttribPointer(0, 2, LOCAL_GL_FLOAT, false, 0, nullptr);
 
       mGL->fBindVertexArray(prev);
     }
@@ -808,7 +831,7 @@ std::unique_ptr<const DrawBlitProg> GLBlitHelper::CreateDrawBlitProg(
     if (key.fragHeader) {
       parts.push_back(key.fragHeader);
     }
-    parts.push_back(precisionLine.BeginReading());
+    parts.push_back(precisionLine.get());
     parts.push_back(kFragDeclHeader);
     for (const auto& part : key.fragParts) {
       if (part) {
@@ -890,14 +913,19 @@ std::unique_ptr<const DrawBlitProg> GLBlitHelper::CreateDrawBlitProg(
 #ifdef XP_MACOSX
 static RefPtr<MacIOSurface> LookupSurface(
     const layers::SurfaceDescriptorMacIOSurface& sd) {
-  return MacIOSurface::LookupSurface(sd.surfaceId(), !sd.isOpaque(),
-                                     sd.yUVColorSpace());
+  MacIOSurface::AllowAlpha allowAlpha = sd.isOpaque()
+                                            ? MacIOSurface::AllowAlpha::No
+                                            : MacIOSurface::AllowAlpha::Yes;
+  return MacIOSurface::LookupSurface(sd.surfaceId(), sd.yUVColorSpace(),
+                                     gfx::TransferFunction::SRGB, allowAlpha);
 }
 #endif
 
 bool GLBlitHelper::BlitSdToFramebuffer(const layers::SurfaceDescriptor& asd,
-                                       const gfx::IntSize& destSize,
-                                       const OriginPos destOrigin) {
+                                       const gfx::IntRect& destRect,
+                                       const OriginPos destOrigin,
+                                       const gfx::IntSize& fbSize,
+                                       Maybe<gfxAlphaType> convertAlpha) {
   const auto sdType = asd.type();
   switch (sdType) {
     case layers::SurfaceDescriptor::TSurfaceDescriptorBuffer: {
@@ -908,16 +936,17 @@ bool GLBlitHelper::BlitSdToFramebuffer(const layers::SurfaceDescriptor& asd,
                            "PlanarYCbCrData::From failed";
         return false;
       }
-      return BlitPlanarYCbCr(*yuvData, destSize, destOrigin);
+      return BlitPlanarYCbCr(*yuvData, destRect, destOrigin, fbSize,
+                             convertAlpha);
     }
 #ifdef XP_WIN
     case layers::SurfaceDescriptor::TSurfaceDescriptorD3D10: {
       const auto& sd = asd.get_SurfaceDescriptorD3D10();
-      return BlitDescriptor(sd, destSize, destOrigin);
+      return BlitDescriptor(sd, destRect, destOrigin, fbSize, convertAlpha);
     }
     case layers::SurfaceDescriptor::TSurfaceDescriptorDXGIYCbCr: {
       const auto& sd = asd.get_SurfaceDescriptorDXGIYCbCr();
-      return BlitDescriptor(sd, destSize, destOrigin);
+      return BlitDescriptor(sd, destRect, destOrigin, fbSize, convertAlpha);
     }
 #endif
 #ifdef XP_MACOSX
@@ -930,21 +959,30 @@ bool GLBlitHelper::BlitSdToFramebuffer(const layers::SurfaceDescriptor& asd,
         // now.
         return false;
       }
-      return BlitImage(surf, destSize, destOrigin);
+      return BlitImage(surf, destRect, destOrigin, fbSize, convertAlpha);
     }
 #endif
 #ifdef MOZ_WIDGET_ANDROID
     case layers::SurfaceDescriptor::TSurfaceTextureDescriptor: {
       const auto& sd = asd.get_SurfaceTextureDescriptor();
       auto surfaceTexture = java::GeckoSurfaceTexture::Lookup(sd.handle());
-      return Blit(surfaceTexture, destSize, destOrigin);
+      return Blit(surfaceTexture, sd.size(), destRect, destOrigin, fbSize,
+                  convertAlpha);
+    }
+    case layers::SurfaceDescriptor::TEGLImageDescriptor: {
+      const auto& sd = asd.get_EGLImageDescriptor();
+      return Blit((EGLImage)sd.image(), (EGLSync)sd.fence(), sd.size(),
+                  destRect, destOrigin, fbSize, convertAlpha);
     }
 #endif
 #ifdef MOZ_WIDGET_GTK
     case layers::SurfaceDescriptor::TSurfaceDescriptorDMABuf: {
       const auto& sd = asd.get_SurfaceDescriptorDMABuf();
       RefPtr<DMABufSurface> surface = DMABufSurface::CreateDMABufSurface(sd);
-      return Blit(surface, destSize, destOrigin);
+      if (!surface) {
+        return false;
+      }
+      return Blit(surface, destRect, destOrigin, fbSize, convertAlpha);
     }
 #endif
     default:
@@ -953,13 +991,14 @@ bool GLBlitHelper::BlitSdToFramebuffer(const layers::SurfaceDescriptor& asd,
 }
 
 bool GLBlitHelper::BlitImageToFramebuffer(layers::Image* const srcImage,
-                                          const gfx::IntSize& destSize,
-                                          const OriginPos destOrigin) {
+                                          const gfx::IntRect& destRect,
+                                          const OriginPos destOrigin,
+                                          const gfx::IntSize& fbSize) {
   switch (srcImage->GetFormat()) {
     case ImageFormat::PLANAR_YCBCR: {
       const auto srcImage2 = static_cast<PlanarYCbCrImage*>(srcImage);
       const auto data = srcImage2->GetData();
-      return BlitPlanarYCbCr(*data, destSize, destOrigin);
+      return BlitPlanarYCbCr(*data, destRect, destOrigin, fbSize);
     }
 
     case ImageFormat::SURFACE_TEXTURE: {
@@ -968,7 +1007,8 @@ bool GLBlitHelper::BlitImageToFramebuffer(layers::Image* const srcImage,
       MOZ_ASSERT(image);
       auto surfaceTexture =
           java::GeckoSurfaceTexture::Lookup(image->GetHandle());
-      return Blit(surfaceTexture, destSize, destOrigin);
+      return Blit(surfaceTexture, image->GetSize(), destRect, destOrigin,
+                  fbSize);
 #else
       MOZ_ASSERT(false);
       return false;
@@ -976,23 +1016,24 @@ bool GLBlitHelper::BlitImageToFramebuffer(layers::Image* const srcImage,
     }
     case ImageFormat::MAC_IOSURFACE:
 #ifdef XP_MACOSX
-      return BlitImage(srcImage->AsMacIOSurfaceImage(), destSize, destOrigin);
+      return BlitImage(srcImage->AsMacIOSurfaceImage(), destRect, destOrigin,
+                       fbSize);
 #else
       MOZ_ASSERT(false);
       return false;
 #endif
 
     case ImageFormat::GPU_VIDEO:
-      return BlitImage(static_cast<layers::GPUVideoImage*>(srcImage), destSize,
-                       destOrigin);
+      return BlitImage(static_cast<layers::GPUVideoImage*>(srcImage), destRect,
+                       destOrigin, fbSize);
 #ifdef XP_WIN
     case ImageFormat::D3D11_SHARE_HANDLE_TEXTURE:
       return BlitImage(static_cast<layers::D3D11ShareHandleImage*>(srcImage),
-                       destSize, destOrigin);
+                       destRect, destOrigin, fbSize);
     case ImageFormat::D3D11_TEXTURE_ZERO_COPY:
       return BlitImage(
-          static_cast<layers::D3D11ZeroCopyTextureImage*>(srcImage), destSize,
-          destOrigin);
+          static_cast<layers::D3D11ZeroCopyTextureImage*>(srcImage), destRect,
+          destOrigin, fbSize);
     case ImageFormat::D3D9_RGB32_TEXTURE:
       return false;  // todo
     case ImageFormat::DCOMP_SURFACE:
@@ -1008,7 +1049,7 @@ bool GLBlitHelper::BlitImageToFramebuffer(layers::Image* const srcImage,
     case ImageFormat::DMABUF:
 #ifdef MOZ_WIDGET_GTK
       return BlitImage(static_cast<layers::DMABUFSurfaceImage*>(srcImage),
-                       destSize, destOrigin);
+                       destRect, destOrigin, fbSize);
 #else
       return false;
 #endif
@@ -1024,10 +1065,29 @@ bool GLBlitHelper::BlitImageToFramebuffer(layers::Image* const srcImage,
 
 // -------------------------------------
 
+const char* GLBlitHelper::GetAlphaMixin(
+    Maybe<gfxAlphaType> convertAlpha) const {
+  if (!convertAlpha) {
+    return nullptr;
+  }
+  switch (convertAlpha.value()) {
+    case gfxAlphaType::Premult:
+      return kFragMixin_AlphaMultColors;
+    case gfxAlphaType::NonPremult:
+      return kFragMixin_AlphaUnpremultColors;
+    case gfxAlphaType::Opaque:
+      return kFragMixin_AlphaOne;
+    default:
+      return nullptr;
+  }
+}
+
 #ifdef MOZ_WIDGET_ANDROID
 bool GLBlitHelper::Blit(const java::GeckoSurfaceTexture::Ref& surfaceTexture,
-                        const gfx::IntSize& destSize,
-                        const OriginPos destOrigin) const {
+                        const gfx::IntSize& texSize,
+                        const gfx::IntRect& destRect,
+                        const OriginPos destOrigin, const gfx::IntSize& fbSize,
+                        Maybe<gfxAlphaType> convertAlpha) const {
   if (!surfaceTexture) {
     return false;
   }
@@ -1056,17 +1116,48 @@ bool GLBlitHelper::Blit(const java::GeckoSurfaceTexture::Ref& surfaceTexture,
   MOZ_DIAGNOSTIC_ASSERT(transform.Is2D());
   const auto transform3 = MatrixToMat3(transform.As2D());
 
+  // The origin is top-left here due to the transform supplied in the surface.
   const auto srcOrigin = OriginPos::TopLeft;
   const bool yFlip = (srcOrigin != destOrigin);
   const auto& prog = GetDrawBlitProg(
-      {kFragHeader_TexExt, {kFragSample_OnePlane, kFragConvert_None}});
-  const DrawBlitProg::BaseArgs baseArgs = {transform3, yFlip, destSize,
-                                           Nothing()};
+      {kFragHeader_TexExt,
+       {kFragSample_OnePlane, kFragConvert_None, GetAlphaMixin(convertAlpha)}});
+  const DrawBlitProg::BaseArgs baseArgs = {transform3, yFlip, fbSize, destRect,
+                                           texSize};
   prog.Draw(baseArgs, nullptr);
 
   if (surfaceTexture->IsSingleBuffer()) {
     surfaceTexture->ReleaseTexImage();
   }
+
+  return true;
+}
+
+bool GLBlitHelper::Blit(EGLImage image, EGLSync fence,
+                        const gfx::IntSize& texSize,
+                        const gfx::IntRect& destRect,
+                        const OriginPos destOrigin, const gfx::IntSize& fbSize,
+                        Maybe<gfxAlphaType> convertAlpha) const {
+  if (!image) {
+    return false;
+  }
+
+  GLenum target = mGL->GetPreferredEGLImageTextureTarget();
+  const ScopedBindTextureUnit boundTU(mGL, LOCAL_GL_TEXTURE0);
+  ScopedTexture tex(mGL);
+  ScopedBindTexture bindTex(mGL, tex.Texture(), target);
+
+  mGL->TexParams_SetClampNoMips(target);
+  mGL->fEGLImageTargetTexture2D(target, image);
+
+  const auto srcOrigin = OriginPos::BottomLeft;
+  const bool yFlip = (srcOrigin != destOrigin);
+  const auto& prog = GetDrawBlitProg(
+      {target == LOCAL_GL_TEXTURE_2D ? kFragHeader_Tex2D : kFragHeader_TexExt,
+       {kFragSample_OnePlane, kFragConvert_None, GetAlphaMixin(convertAlpha)}});
+  const DrawBlitProg::BaseArgs baseArgs = {SubRectMat3(0, 0, 1, 1), yFlip,
+                                           fbSize, destRect, texSize};
+  prog.Draw(baseArgs);
 
   return true;
 }
@@ -1087,19 +1178,23 @@ bool GuessDivisors(const gfx::IntSize& ySize, const gfx::IntSize& uvSize,
 }
 
 bool GLBlitHelper::BlitPlanarYCbCr(const PlanarYCbCrData& yuvData,
-                                   const gfx::IntSize& destSize,
-                                   const OriginPos destOrigin) {
-  const auto& prog = GetDrawBlitProg(
-      {kFragHeader_Tex2D, {kFragSample_ThreePlane, kFragConvert_ColorMatrix}});
+                                   const gfx::IntRect& destRect,
+                                   const OriginPos destOrigin,
+                                   const gfx::IntSize& fbSize,
+                                   Maybe<gfxAlphaType> convertAlpha) {
+  const auto& prog =
+      GetDrawBlitProg({kFragHeader_Tex2D,
+                       {kFragSample_ThreePlane, kFragConvert_ColorMatrix,
+                        GetAlphaMixin(convertAlpha)}});
 
   if (!mYuvUploads[0]) {
     mGL->fGenTextures(3, mYuvUploads);
-    const ScopedBindTexture bindTex(mGL, mYuvUploads[0]);
-    mGL->TexParams_SetClampNoMips();
+    const ScopedBindTexture bindTex(mGL, mYuvUploads[0], LOCAL_GL_TEXTURE_2D);
+    mGL->TexParams_SetClampNoMips(LOCAL_GL_TEXTURE_2D);
     mGL->fBindTexture(LOCAL_GL_TEXTURE_2D, mYuvUploads[1]);
-    mGL->TexParams_SetClampNoMips();
+    mGL->TexParams_SetClampNoMips(LOCAL_GL_TEXTURE_2D);
     mGL->fBindTexture(LOCAL_GL_TEXTURE_2D, mYuvUploads[2]);
-    mGL->TexParams_SetClampNoMips();
+    mGL->TexParams_SetClampNoMips(LOCAL_GL_TEXTURE_2D);
   }
 
   // --
@@ -1201,7 +1296,8 @@ bool GLBlitHelper::BlitPlanarYCbCr(const PlanarYCbCrData& yuvData,
   const bool yFlip = (destOrigin != srcOrigin);
 
   const DrawBlitProg::BaseArgs baseArgs = {SubRectMat3(clipRect, yTexSize),
-                                           yFlip, destSize, Nothing()};
+                                           yFlip, fbSize, destRect,
+                                           clipRect.Size()};
   const DrawBlitProg::YUVArgs yuvArgs = {
       SubRectMat3(clipRect, uvTexSize, divisors), Some(yuvData.mYUVColorSpace)};
   prog.Draw(baseArgs, &yuvArgs);
@@ -1212,9 +1308,10 @@ bool GLBlitHelper::BlitPlanarYCbCr(const PlanarYCbCrData& yuvData,
 
 #ifdef XP_MACOSX
 bool GLBlitHelper::BlitImage(layers::MacIOSurfaceImage* const srcImage,
-                             const gfx::IntSize& destSize,
-                             const OriginPos destOrigin) const {
-  return BlitImage(srcImage->GetSurface(), destSize, destOrigin);
+                             const gfx::IntRect& destRect,
+                             const OriginPos destOrigin,
+                             const gfx::IntSize& fbSize) const {
+  return BlitImage(srcImage->GetSurface(), destRect, destOrigin, fbSize);
 }
 
 static std::string IntAsAscii(const int x) {
@@ -1231,8 +1328,10 @@ static std::string IntAsAscii(const int x) {
 }
 
 bool GLBlitHelper::BlitImage(MacIOSurface* const iosurf,
-                             const gfx::IntSize& destSize,
-                             const OriginPos destOrigin) const {
+                             const gfx::IntRect& destRect,
+                             const OriginPos destOrigin,
+                             const gfx::IntSize& fbSize,
+                             Maybe<gfxAlphaType> convertAlpha) const {
   if (!iosurf) {
     gfxCriticalError() << "Null MacIOSurface for GLBlitHelper::BlitImage";
     return false;
@@ -1246,27 +1345,18 @@ bool GLBlitHelper::BlitImage(MacIOSurface* const iosurf,
 
   DrawBlitProg::BaseArgs baseArgs;
   baseArgs.yFlip = (destOrigin != srcOrigin);
-  baseArgs.destSize = destSize;
+  baseArgs.fbSize = fbSize;
+  baseArgs.destRect = destRect;
 
   // TODO: The colorspace is known by the IOSurface, why override it?
   // See GetYUVColorSpace/GetFullRange()
   DrawBlitProg::YUVArgs yuvArgs;
   yuvArgs.colorSpaceForMatrix = Some(iosurf->GetYUVColorSpace());
 
-  const DrawBlitProg::YUVArgs* pYuvArgs = nullptr;
-
   auto planes = iosurf->GetPlaneCount();
   if (!planes) {
     planes = 1;  // Bad API. No cookie.
   }
-
-  const GLenum texTarget = LOCAL_GL_TEXTURE_RECTANGLE;
-
-  const ScopedSaveMultiTex saveTex(mGL, planes, texTarget);
-  const ScopedTexture tex0(mGL);
-  const ScopedTexture tex1(mGL);
-  const ScopedTexture tex2(mGL);
-  const GLuint texs[3] = {tex0, tex1, tex2};
 
   const auto pixelFormat = iosurf->GetPixelFormat();
   if (mGL->ShouldSpew()) {
@@ -1275,7 +1365,8 @@ bool GLBlitHelper::BlitImage(MacIOSurface* const iosurf,
                   pixelFormat);
   }
 
-  const char* fragSample;
+  const char* fragSample = nullptr;
+  bool yuv = true;
   switch (planes) {
     case 1:
       switch (pixelFormat) {
@@ -1288,11 +1379,11 @@ bool GLBlitHelper::BlitImage(MacIOSurface* const iosurf,
         case kCVPixelFormatType_64ARGB:
         case kCVPixelFormatType_48RGB:
           fragSample = kFragSample_OnePlane;
+          yuv = false;
           break;
         case kCVPixelFormatType_422YpCbCr8:
         case kCVPixelFormatType_422YpCbCr8_yuvs:
           fragSample = kFragSample_OnePlane_YUV_via_GBR;
-          pYuvArgs = &yuvArgs;
           break;
         default: {
           std::string str;
@@ -1304,27 +1395,29 @@ bool GLBlitHelper::BlitImage(MacIOSurface* const iosurf,
           gfxCriticalError() << "Unhandled kCVPixelFormatType_*: " << str;
           // Probably YUV though
           fragSample = kFragSample_OnePlane_YUV_via_GBR;
-          pYuvArgs = &yuvArgs;
           break;
         }
       }
       break;
     case 2:
       fragSample = kFragSample_TwoPlane;
-      pYuvArgs = &yuvArgs;
       break;
     case 3:
       fragSample = kFragSample_ThreePlane;
-      pYuvArgs = &yuvArgs;
       break;
     default:
       gfxCriticalError() << "Unexpected plane count: " << planes;
       return false;
   }
 
+  const GLenum texTarget = LOCAL_GL_TEXTURE_RECTANGLE;
+  const ScopedSaveMultiTex saveTex(mGL, planes, texTarget);
+  Maybe<ScopedTexture> texs[3];
+
   for (uint32_t p = 0; p < planes; p++) {
+    texs[p].emplace(mGL);
     mGL->fActiveTexture(LOCAL_GL_TEXTURE0 + p);
-    mGL->fBindTexture(texTarget, texs[p]);
+    mGL->fBindTexture(texTarget, texs[p]->Texture());
     mGL->TexParams_SetClampNoMips(texTarget);
 
     if (!iosurf->BindTexImage(mGL, p)) {
@@ -1335,26 +1428,27 @@ bool GLBlitHelper::BlitImage(MacIOSurface* const iosurf,
       const auto width = iosurf->GetDevicePixelWidth(p);
       const auto height = iosurf->GetDevicePixelHeight(p);
       baseArgs.texMatrix0 = SubRectMat3(0, 0, width, height);
+      baseArgs.texSize = gfx::IntSize(width, height);
       yuvArgs.texMatrix1 = SubRectMat3(0, 0, width / 2.0, height / 2.0);
     }
   }
 
+  const char* fragConvert = yuv ? kFragConvert_ColorMatrix : kFragConvert_None;
   const auto& prog = GetDrawBlitProg({
       kFragHeader_Tex2DRect,
-      {fragSample, kFragConvert_ColorMatrix},
+      {fragSample, fragConvert, GetAlphaMixin(convertAlpha)},
   });
-  prog.Draw(baseArgs, pYuvArgs);
+  prog.Draw(baseArgs, yuv ? &yuvArgs : nullptr);
   return true;
 }
 #endif
 
 // -----------------------------------------------------------------------------
 
-void GLBlitHelper::DrawBlitTextureToFramebuffer(const GLuint srcTex,
-                                                const gfx::IntSize& srcSize,
-                                                const gfx::IntSize& destSize,
-                                                const GLenum srcTarget,
-                                                const bool srcIsBGRA) const {
+void GLBlitHelper::DrawBlitTextureToFramebuffer(
+    const GLuint srcTex, const gfx::IntSize& srcSize,
+    const gfx::IntSize& destSize, const GLenum srcTarget, const bool srcIsBGRA,
+    const bool yFlip, const Maybe<gfxAlphaType> convertAlpha) const {
   const char* fragHeader = nullptr;
   Mat3 texMatrix0;
   switch (srcTarget) {
@@ -1371,18 +1465,15 @@ void GLBlitHelper::DrawBlitTextureToFramebuffer(const GLuint srcTex,
       return;
   }
   const auto fragConvert = srcIsBGRA ? kFragConvert_BGR : kFragConvert_None;
-  const auto& prog = GetDrawBlitProg({
-      fragHeader,
-      {kFragSample_OnePlane, fragConvert},
-  });
+  const auto& prog = GetDrawBlitProg(
+      {fragHeader,
+       {kFragSample_OnePlane, fragConvert, GetAlphaMixin(convertAlpha)}});
 
   const ScopedSaveMultiTex saveTex(mGL, 1, srcTarget);
   mGL->fActiveTexture(LOCAL_GL_TEXTURE0);
   mGL->fBindTexture(srcTarget, srcTex);
 
-  const bool yFlip = false;
-  const DrawBlitProg::BaseArgs baseArgs = {texMatrix0, yFlip, destSize,
-                                           Nothing()};
+  const DrawBlitProg::BaseArgs baseArgs = {texMatrix0, yFlip, destSize, {}};
   prog.Draw(baseArgs);
 }
 
@@ -1471,8 +1562,9 @@ void GLBlitHelper::BlitTextureToTexture(GLuint srcTex, GLuint destTex,
 // -------------------------------------
 
 bool GLBlitHelper::BlitImage(layers::GPUVideoImage* const srcImage,
-                             const gfx::IntSize& destSize,
-                             const OriginPos destOrigin) const {
+                             const gfx::IntRect& destRect,
+                             const OriginPos destOrigin,
+                             const gfx::IntSize& fbSize) const {
   const auto& data = srcImage->GetData();
   if (!data) return false;
 
@@ -1489,30 +1581,34 @@ bool GLBlitHelper::BlitImage(layers::GPUVideoImage* const srcImage,
       const auto& subdesc = subdescUnion.get_SurfaceDescriptorDMABuf();
       RefPtr<DMABufSurface> surface =
           DMABufSurface::CreateDMABufSurface(subdesc);
-      return Blit(surface, destSize, destOrigin);
+      return Blit(surface, destRect, destOrigin, fbSize);
     }
 #endif
 #ifdef XP_WIN
     case layers::RemoteDecoderVideoSubDescriptor::TSurfaceDescriptorD3D10: {
       const auto& subdesc = subdescUnion.get_SurfaceDescriptorD3D10();
-      return BlitDescriptor(subdesc, destSize, destOrigin);
+      return BlitDescriptor(subdesc, destRect, destOrigin, fbSize);
     }
     case layers::RemoteDecoderVideoSubDescriptor::TSurfaceDescriptorDXGIYCbCr: {
       const auto& subdesc = subdescUnion.get_SurfaceDescriptorDXGIYCbCr();
-      return BlitDescriptor(subdesc, destSize, destOrigin);
+      return BlitDescriptor(subdesc, destRect, destOrigin, fbSize);
     }
 #endif
 #ifdef XP_MACOSX
     case layers::RemoteDecoderVideoSubDescriptor::
         TSurfaceDescriptorMacIOSurface: {
       const auto& subdesc = subdescUnion.get_SurfaceDescriptorMacIOSurface();
+      MacIOSurface::AllowAlpha allowAlpha = subdesc.isOpaque()
+                                                ? MacIOSurface::AllowAlpha::No
+                                                : MacIOSurface::AllowAlpha::Yes;
       RefPtr<MacIOSurface> surface = MacIOSurface::LookupSurface(
-          subdesc.surfaceId(), !subdesc.isOpaque(), subdesc.yUVColorSpace());
+          subdesc.surfaceId(), subdesc.yUVColorSpace(),
+          subdesc.transferFunction(), allowAlpha);
       MOZ_ASSERT(surface);
       if (!surface) {
         return false;
       }
-      return BlitImage(surface, destSize, destOrigin);
+      return BlitImage(surface, destRect, destOrigin, fbSize);
     }
 #endif
     case layers::RemoteDecoderVideoSubDescriptor::Tnull_t:
@@ -1528,13 +1624,15 @@ bool GLBlitHelper::BlitImage(layers::GPUVideoImage* const srcImage,
 
 // -------------------------------------
 #ifdef MOZ_WIDGET_GTK
-bool GLBlitHelper::Blit(DMABufSurface* surface, const gfx::IntSize& destSize,
-                        OriginPos destOrigin) const {
+bool GLBlitHelper::Blit(DMABufSurface* surface, const gfx::IntRect& destRect,
+                        OriginPos destOrigin, const gfx::IntSize& fbSize,
+                        Maybe<gfxAlphaType> convertAlpha) const {
   const auto& srcOrigin = OriginPos::BottomLeft;
 
   DrawBlitProg::BaseArgs baseArgs;
   baseArgs.yFlip = (destOrigin != srcOrigin);
-  baseArgs.destSize = destSize;
+  baseArgs.fbSize = fbSize;
+  baseArgs.destRect = destRect;
 
   // TODO: The colorspace is known by the DMABUFSurface, why override it?
   // See GetYUVColorSpace/GetFullRange()
@@ -1543,6 +1641,12 @@ bool GLBlitHelper::Blit(DMABufSurface* surface, const gfx::IntSize& destSize,
 
   const DrawBlitProg::YUVArgs* pYuvArgs = nullptr;
   const auto planes = surface->GetTextureCount();
+
+  // The shaders used below currently only support 1-3 planes.
+  if (planes < 1 || planes > 3) {
+    gfxCriticalError() << "Unexpected DMABuf planes count: " << planes;
+    return false;
+  }
 
   // -
   // Ensure textures for all planes have been created.
@@ -1583,7 +1687,7 @@ bool GLBlitHelper::Blit(DMABufSurface* surface, const gfx::IntSize& destSize,
   const ScopedSaveMultiTex saveTex(mGL, planes, texTarget);
   const auto pixelFormat = surface->GetSurfaceType();
 
-  const char* fragSample;
+  const char* fragSample = nullptr;
   auto fragConvert = kFragConvert_None;
   switch (pixelFormat) {
     case DMABufSurface::SURFACE_RGBA:
@@ -1615,24 +1719,26 @@ bool GLBlitHelper::Blit(DMABufSurface* surface, const gfx::IntSize& destSize,
   // We support only NV12/YUV420 formats only with 1/2 texture scale.
   // We don't set cliprect as DMABus textures are created without padding.
   baseArgs.texMatrix0 = SubRectMat3(0, 0, 1, 1);
+  baseArgs.texSize = gfx::IntSize(surface->GetWidth(), surface->GetHeight());
   yuvArgs.texMatrix1 = SubRectMat3(0, 0, 1, 1);
 
   const auto& prog =
-      GetDrawBlitProg({kFragHeader_Tex2D, {fragSample, fragConvert}});
+      GetDrawBlitProg({kFragHeader_Tex2D,
+                       {fragSample, fragConvert, GetAlphaMixin(convertAlpha)}});
   prog.Draw(baseArgs, pYuvArgs);
 
   return true;
 }
 
 bool GLBlitHelper::BlitImage(layers::DMABUFSurfaceImage* srcImage,
-                             const gfx::IntSize& destSize,
-                             OriginPos destOrigin) const {
+                             const gfx::IntRect& destRect, OriginPos destOrigin,
+                             const gfx::IntSize& fbSize) const {
   DMABufSurface* surface = srcImage->GetSurface();
   if (!surface) {
     gfxCriticalError() << "Null DMABUFSurface for GLBlitHelper::BlitImage";
     return false;
   }
-  return Blit(surface, destSize, destOrigin);
+  return Blit(surface, destRect, destOrigin, fbSize);
 }
 
 bool GLBlitHelper::BlitYCbCrImageToDMABuf(const PlanarYCbCrData& yuvData,
@@ -1678,12 +1784,12 @@ bool GLBlitHelper::BlitYCbCrImageToDMABuf(const PlanarYCbCrData& yuvData,
 
   if (!mYuvUploads[0]) {
     mGL->fGenTextures(3, mYuvUploads);
-    const ScopedBindTexture bindTex(mGL, mYuvUploads[0]);
-    mGL->TexParams_SetClampNoMips();
+    const ScopedBindTexture bindTex(mGL, mYuvUploads[0], LOCAL_GL_TEXTURE_2D);
+    mGL->TexParams_SetClampNoMips(LOCAL_GL_TEXTURE_2D);
     mGL->fBindTexture(LOCAL_GL_TEXTURE_2D, mYuvUploads[1]);
-    mGL->TexParams_SetClampNoMips();
+    mGL->TexParams_SetClampNoMips(LOCAL_GL_TEXTURE_2D);
     mGL->fBindTexture(LOCAL_GL_TEXTURE_2D, mYuvUploads[2]);
-    mGL->TexParams_SetClampNoMips();
+    mGL->TexParams_SetClampNoMips(LOCAL_GL_TEXTURE_2D);
   }
 
   // --
@@ -1756,7 +1862,7 @@ bool GLBlitHelper::BlitYCbCrImageToDMABuf(const PlanarYCbCrData& yuvData,
     }
     const ScopedBindFramebuffer bindFB(mGL, autoFBForTex.FB());
 
-    baseArgs.destSize = gfx::IntSize(surface->GetWidth(), surface->GetHeight());
+    baseArgs.fbSize = gfx::IntSize(surface->GetWidth(), surface->GetHeight());
     const auto& prog = GetDrawBlitProg(
         {kFragHeader_Tex2D, {kFragSample_OnePlane, fragConvert}});
     prog.Draw(baseArgs);
@@ -1772,8 +1878,7 @@ bool GLBlitHelper::BlitYCbCrImageToDMABuf(const PlanarYCbCrData& yuvData,
     }
     const ScopedBindFramebuffer bindFB(mGL, autoFBForTex.FB());
 
-    baseArgs.destSize =
-        gfx::IntSize(surface->GetWidth(1), surface->GetHeight(1));
+    baseArgs.fbSize = gfx::IntSize(surface->GetWidth(1), surface->GetHeight(1));
     const auto& prog = GetDrawBlitProg(
         {kFragHeader_Tex2D, {kFragSample_TwoPlaneUV, fragConvert}});
     prog.Draw(baseArgs);
@@ -1816,7 +1921,7 @@ color::ColorspaceDesc ToColorspaceDesc(const gfx::YUVRangedColorSpace cs) {
     case gfx::YUVRangedColorSpace::BT601_Narrow:
       return {
           .chrom = color::Chromaticities::Rec601_525_Ntsc(),
-          .tf = color::PiecewiseGammaDesc::Rec709(),
+          .tf = color::TransferFunctionDesc::Rec709(),
           .yuv =
               color::YuvDesc{
                   .yCoeffs = color::YuvLumaCoeffs::Rec709(),
@@ -1826,7 +1931,7 @@ color::ColorspaceDesc ToColorspaceDesc(const gfx::YUVRangedColorSpace cs) {
     case gfx::YUVRangedColorSpace::BT601_Full:
       return {
           .chrom = color::Chromaticities::Rec601_525_Ntsc(),
-          .tf = color::PiecewiseGammaDesc::Rec709(),
+          .tf = color::TransferFunctionDesc::Rec709(),
           .yuv =
               color::YuvDesc{
                   .yCoeffs = color::YuvLumaCoeffs::Rec709(),
@@ -1836,7 +1941,7 @@ color::ColorspaceDesc ToColorspaceDesc(const gfx::YUVRangedColorSpace cs) {
     case gfx::YUVRangedColorSpace::BT709_Narrow:
       return {
           .chrom = color::Chromaticities::Rec709(),
-          .tf = color::PiecewiseGammaDesc::Rec709(),
+          .tf = color::TransferFunctionDesc::Rec709(),
           .yuv =
               color::YuvDesc{
                   .yCoeffs = color::YuvLumaCoeffs::Rec709(),
@@ -1846,7 +1951,7 @@ color::ColorspaceDesc ToColorspaceDesc(const gfx::YUVRangedColorSpace cs) {
     case gfx::YUVRangedColorSpace::BT709_Full:
       return {
           .chrom = color::Chromaticities::Rec709(),
-          .tf = color::PiecewiseGammaDesc::Rec709(),
+          .tf = color::TransferFunctionDesc::Rec709(),
           .yuv =
               color::YuvDesc{
                   .yCoeffs = color::YuvLumaCoeffs::Rec709(),
@@ -1856,7 +1961,7 @@ color::ColorspaceDesc ToColorspaceDesc(const gfx::YUVRangedColorSpace cs) {
     case gfx::YUVRangedColorSpace::BT2020_Narrow:
       return {
           .chrom = color::Chromaticities::Rec2020(),
-          .tf = color::PiecewiseGammaDesc::Rec2020_12bit(),
+          .tf = color::TransferFunctionDesc::Rec2020_12bit(),
           .yuv =
               color::YuvDesc{
                   .yCoeffs = color::YuvLumaCoeffs::Rec709(),
@@ -1866,7 +1971,47 @@ color::ColorspaceDesc ToColorspaceDesc(const gfx::YUVRangedColorSpace cs) {
     case gfx::YUVRangedColorSpace::BT2020_Full:
       return {
           .chrom = color::Chromaticities::Rec2020(),
-          .tf = color::PiecewiseGammaDesc::Rec2020_12bit(),
+          .tf = color::TransferFunctionDesc::Rec2020_12bit(),
+          .yuv =
+              color::YuvDesc{
+                  .yCoeffs = color::YuvLumaCoeffs::Rec2020(),
+                  .ycbcr = color::YcbcrDesc::Full8(),
+              },
+      };
+    case gfx::YUVRangedColorSpace::BT2100_PQ_Narrow:
+      return {
+          .chrom = color::Chromaticities::Rec2020(),
+          .tf = color::TransferFunctionDesc::Rec2100_PQ(),
+          .yuv =
+              color::YuvDesc{
+                  .yCoeffs = color::YuvLumaCoeffs::Rec709(),
+                  .ycbcr = color::YcbcrDesc::Narrow8(),
+              },
+      };
+    case gfx::YUVRangedColorSpace::BT2100_PQ_Full:
+      return {
+          .chrom = color::Chromaticities::Rec2020(),
+          .tf = color::TransferFunctionDesc::Rec2100_PQ(),
+          .yuv =
+              color::YuvDesc{
+                  .yCoeffs = color::YuvLumaCoeffs::Rec2020(),
+                  .ycbcr = color::YcbcrDesc::Full8(),
+              },
+      };
+    case gfx::YUVRangedColorSpace::BT2100_HLG_Narrow:
+      return {
+          .chrom = color::Chromaticities::Rec2020(),
+          .tf = color::TransferFunctionDesc::Rec2100_HLG(),
+          .yuv =
+              color::YuvDesc{
+                  .yCoeffs = color::YuvLumaCoeffs::Rec709(),
+                  .ycbcr = color::YcbcrDesc::Narrow8(),
+              },
+      };
+    case gfx::YUVRangedColorSpace::BT2100_HLG_Full:
+      return {
+          .chrom = color::Chromaticities::Rec2020(),
+          .tf = color::TransferFunctionDesc::Rec2100_HLG(),
           .yuv =
               color::YuvDesc{
                   .yCoeffs = color::YuvLumaCoeffs::Rec2020(),
@@ -1876,7 +2021,7 @@ color::ColorspaceDesc ToColorspaceDesc(const gfx::YUVRangedColorSpace cs) {
     case gfx::YUVRangedColorSpace::GbrIdentity:
       return {
           .chrom = color::Chromaticities::Rec709(),
-          .tf = color::PiecewiseGammaDesc::Rec709(),
+          .tf = color::TransferFunctionDesc::Rec709(),
           .yuv =
               color::YuvDesc{
                   .yCoeffs = color::YuvLumaCoeffs::Gbr(),
@@ -1899,8 +2044,15 @@ namespace gl {
 
 /* static */
 std::optional<color::ColorProfileDesc> GLBlitHelper::ToColorProfileDesc(
-    const gfx::ColorSpace2 cspace) {
+    const gfx::ColorSpace2 cspace, const gfx::TransferFunction tf) {
   color::ColorspaceDesc cspaceDesc;
+
+  const bool rec709GammaAsSrgb =
+      StaticPrefs::gfx_color_management_rec709_gamma_as_srgb();
+  const bool rec2020GammaAsRec709 =
+      StaticPrefs::gfx_color_management_rec2020_gamma_as_rec709();
+
+  // Pairings of Colorspace2 and TransferFunction have a few unique interactions
   switch (cspace) {
     case gfx::ColorSpace2::Display:
       if (kIsWindows) {
@@ -1911,24 +2063,132 @@ std::optional<color::ColorProfileDesc> GLBlitHelper::ToColorProfileDesc(
       return {};
 
     case gfx::ColorSpace2::SRGB:
-      cspaceDesc = {.chrom = color::Chromaticities::Srgb(),
-                    .tf = color::PiecewiseGammaDesc::Srgb()};
+      cspaceDesc.chrom = color::Chromaticities::Srgb();
+      cspaceDesc.tf = color::TransferFunctionDesc::Srgb();
+      switch (tf) {
+        case gfx::TransferFunction::SRGB:
+          cspaceDesc.tf = color::TransferFunctionDesc::Srgb();
+          break;
+        case gfx::TransferFunction::BT709:
+          if (rec709GammaAsSrgb) {
+            cspaceDesc.tf = color::TransferFunctionDesc::Srgb();
+          } else {
+            cspaceDesc.tf = color::TransferFunctionDesc::Rec709();
+          }
+          break;
+        case gfx::TransferFunction::HLG:
+          cspaceDesc.tf = color::TransferFunctionDesc::Rec2100_HLG();
+          break;
+        case gfx::TransferFunction::PQ:
+          cspaceDesc.tf = color::TransferFunctionDesc::Rec2100_PQ();
+          break;
+        case gfx::TransferFunction::LINEAR:
+          cspaceDesc.tf = color::TransferFunctionDesc::Linear();
+          break;
+      }
       break;
     case gfx::ColorSpace2::DISPLAY_P3:
-      cspaceDesc = {.chrom = color::Chromaticities::DisplayP3(),
-                    .tf = color::PiecewiseGammaDesc::DisplayP3()};
+      cspaceDesc.chrom = color::Chromaticities::DisplayP3();
+      cspaceDesc.tf = color::TransferFunctionDesc::DisplayP3();
+      switch (tf) {
+        case gfx::TransferFunction::SRGB:
+          cspaceDesc.tf = color::TransferFunctionDesc::DisplayP3();
+          break;
+        case gfx::TransferFunction::BT709:
+          if (rec709GammaAsSrgb) {
+            cspaceDesc.tf = color::TransferFunctionDesc::Srgb();
+          } else {
+            cspaceDesc.tf = color::TransferFunctionDesc::Rec709();
+          }
+          break;
+        case gfx::TransferFunction::HLG:
+          cspaceDesc.tf = color::TransferFunctionDesc::Rec2100_HLG();
+          break;
+        case gfx::TransferFunction::PQ:
+          cspaceDesc.tf = color::TransferFunctionDesc::Rec2100_PQ();
+          break;
+        case gfx::TransferFunction::LINEAR:
+          cspaceDesc.tf = color::TransferFunctionDesc::Linear();
+          break;
+      }
       break;
     case gfx::ColorSpace2::BT601_525:  // aka smpte170m NTSC
-      cspaceDesc = {.chrom = color::Chromaticities::Rec601_525_Ntsc(),
-                    .tf = color::PiecewiseGammaDesc::Rec709()};
+      cspaceDesc.chrom = color::Chromaticities::Rec601_525_Ntsc();
+      cspaceDesc.tf = color::TransferFunctionDesc::Rec709();
+      switch (tf) {
+        case gfx::TransferFunction::SRGB:
+          cspaceDesc.tf = color::TransferFunctionDesc::Srgb();
+          break;
+        case gfx::TransferFunction::BT709:
+          if (rec709GammaAsSrgb) {
+            cspaceDesc.tf = color::TransferFunctionDesc::Srgb();
+          } else {
+            cspaceDesc.tf = color::TransferFunctionDesc::Rec709();
+          }
+          break;
+        case gfx::TransferFunction::HLG:
+          cspaceDesc.tf = color::TransferFunctionDesc::Rec2100_HLG();
+          break;
+        case gfx::TransferFunction::PQ:
+          cspaceDesc.tf = color::TransferFunctionDesc::Rec2100_PQ();
+          break;
+        case gfx::TransferFunction::LINEAR:
+          cspaceDesc.tf = color::TransferFunctionDesc::Linear();
+          break;
+      }
       break;
     case gfx::ColorSpace2::BT709:  // Same gamut as SRGB, but different gamma.
-      cspaceDesc = {.chrom = color::Chromaticities::Rec709(),
-                    .tf = color::PiecewiseGammaDesc::Rec709()};
+      cspaceDesc.chrom = color::Chromaticities::Rec709();
+      cspaceDesc.tf = color::TransferFunctionDesc::Rec709();
+      switch (tf) {
+        case gfx::TransferFunction::SRGB:
+          cspaceDesc.tf = color::TransferFunctionDesc::Srgb();
+          break;
+        case gfx::TransferFunction::BT709:
+          if (rec709GammaAsSrgb) {
+            cspaceDesc.tf = color::TransferFunctionDesc::Srgb();
+          } else {
+            cspaceDesc.tf = color::TransferFunctionDesc::Rec709();
+          }
+          break;
+        case gfx::TransferFunction::HLG:
+          cspaceDesc.tf = color::TransferFunctionDesc::Rec2100_HLG();
+          break;
+        case gfx::TransferFunction::PQ:
+          cspaceDesc.tf = color::TransferFunctionDesc::Rec2100_PQ();
+          break;
+        case gfx::TransferFunction::LINEAR:
+          cspaceDesc.tf = color::TransferFunctionDesc::Linear();
+          break;
+      }
       break;
     case gfx::ColorSpace2::BT2020:
-      cspaceDesc = {.chrom = color::Chromaticities::Rec2020(),
-                    .tf = color::PiecewiseGammaDesc::Rec2020_12bit()};
+      cspaceDesc.chrom = color::Chromaticities::Rec2020();
+      cspaceDesc.tf = color::TransferFunctionDesc::Rec2020_12bit();
+      switch (tf) {
+        case gfx::TransferFunction::SRGB:
+          cspaceDesc.tf = color::TransferFunctionDesc::Srgb();
+          break;
+        case gfx::TransferFunction::BT709:
+          // BT2020 uses a higher precision version of BT709/BT1886 values.
+          if (rec2020GammaAsRec709 && rec709GammaAsSrgb) {
+            cspaceDesc.tf = color::TransferFunctionDesc::Srgb();
+          } else if (rec2020GammaAsRec709) {
+            cspaceDesc.tf = color::TransferFunctionDesc::Rec709();
+          } else {
+            cspaceDesc.tf = color::TransferFunctionDesc::Rec2020_12bit();
+          }
+          break;
+        case gfx::TransferFunction::HLG:
+          cspaceDesc.tf = color::TransferFunctionDesc::Rec2100_HLG();
+          break;
+        case gfx::TransferFunction::PQ:
+          cspaceDesc.tf = color::TransferFunctionDesc::Rec2100_PQ();
+          break;
+        case gfx::TransferFunction::LINEAR:
+          cspaceDesc.tf = color::TransferFunctionDesc::Linear();
+          break;
+      }
       break;
   }
   const auto profileDesc = color::ColorProfileDesc::From(cspaceDesc);
@@ -1939,7 +2199,7 @@ std::optional<color::ColorProfileDesc> GLBlitHelper::ToColorProfileDesc(
 
 // For std::visit
 template <class... Ts>
-struct overloaded : Ts... {
+struct MOZ_EMPTY_BASES overloaded : Ts... {
   using Ts::operator()...;
 };
 // explicit deduction guide (not needed as of C++20)
@@ -1972,10 +2232,10 @@ std::shared_ptr<gl::Texture> GLBlitHelper::GetColorLutTex(
 
     const std::optional<color::ColorProfileDesc> srcProfile =
         std::visit(overloaded{
-                       [&](const gfx::ColorSpace2& cs)
+                       [&](const GLBlitHelper::CSTF& cs)
                            -> std::optional<color::ColorProfileDesc> {
                          MOZ_ASSERT(cs != request.dst);
-                         const auto cpd = ToColorProfileDesc(cs);
+                         const auto cpd = ToColorProfileDesc(cs.cs, cs.tf);
                          return cpd;
                        },
                        [&](const gfx::YUVRangedColorSpace& cs)
@@ -1988,7 +2248,7 @@ std::shared_ptr<gl::Texture> GLBlitHelper::GetColorLutTex(
                    request.src);
     MOZ_ASSERT(srcProfile);
 
-    const auto dstProfile = ToColorProfileDesc(request.dst);
+    const auto dstProfile = ToColorProfileDesc(request.dst.cs, request.dst.tf);
     if (kIsWindows) {
       MOZ_ASSERT(dstProfile);
     }

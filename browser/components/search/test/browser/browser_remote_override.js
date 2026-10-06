@@ -69,16 +69,30 @@ add_setup(async () => {
     TEST_CONFIG_OVERRIDE
   );
   Services.fog.testResetFOG();
-
-  // Sanity check that the search engine is set as default.
-  Assert.equal(
-    Services.search.defaultEngine.identifier,
-    "override-tsfx",
-    "Should have the expected engine set as default"
-  );
 });
 
 add_task(async function test_remote_override() {
+  // Sanity check that the search engine is set as default.
+  let defaultEngine = SearchService.defaultEngine;
+  Assert.equal(
+    defaultEngine.id,
+    "override",
+    "Should have the expected engine set as default"
+  );
+
+  Assert.equal(
+    defaultEngine.telemetryId,
+    "override-tsfx",
+    "Should have the expected telemtry id"
+  );
+
+  Assert.equal(
+    defaultEngine.partnerCode,
+    "new_partner_code",
+    "Should have the correct partner code"
+  );
+
+  // Now check the search query.
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({

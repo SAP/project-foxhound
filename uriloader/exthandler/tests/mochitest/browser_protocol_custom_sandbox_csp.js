@@ -8,10 +8,6 @@
 "use strict";
 
 add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [["dom.block_external_protocol_navigation_from_sandbox", true]],
-  });
-
   await setupMailHandler();
 });
 

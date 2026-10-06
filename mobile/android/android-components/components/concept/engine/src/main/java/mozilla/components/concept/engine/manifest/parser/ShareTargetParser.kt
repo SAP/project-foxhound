@@ -122,6 +122,7 @@ internal object ShareTargetParser {
             accept = when (accept) {
                 is String -> listOf(accept)
                 is JSONArray -> accept.asSequence { i -> getString(i) }.toList()
+                null -> emptyList()
                 else -> emptyList()
             },
         )

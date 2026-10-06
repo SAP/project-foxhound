@@ -1,4 +1,3 @@
-// |reftest| skip-if(!Intl.Segmenter) -- Intl.Segmenter is not enabled unconditionally
 // Copyright 2018 Igalia S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 

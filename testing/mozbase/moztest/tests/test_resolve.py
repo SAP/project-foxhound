@@ -95,109 +95,107 @@ def create_tests(topsrcdir):
 
 @pytest.fixture(scope="module")
 def all_tests(create_tests):
-    return create_tests(
-        *[
-            (
-                "apple/test_a11y.html",
-                {
-                    "expected": "pass",
-                    "manifest": "apple/a11y.toml",
-                    "flavor": "a11y",
-                },
-            ),
-            (
-                "banana/currant/test_xpcshell_A.js",
-                {
-                    "firefox-appdir": "browser",
-                    "flavor": "xpcshell",
-                    "head": "head_global.js head_helpers.js head_http.js",
-                },
-            ),
-            (
-                "banana/currant/test_xpcshell_B.js",
-                {
-                    "firefox-appdir": "browser",
-                    "flavor": "xpcshell",
-                    "head": "head_global.js head_helpers.js head_http.js",
-                },
-            ),
-            (
-                "carrot/test_included.js",
-                {
-                    "ancestor_manifest": "carrot/xpcshell-one.toml",
-                    "manifest": "carrot/xpcshell-shared.toml",
-                    "flavor": "xpcshell",
-                    "stick": "one",
-                },
-            ),
-            (
-                "carrot/test_included.js",
-                {
-                    "ancestor_manifest": "carrot/xpcshell-two.toml",
-                    "manifest": "carrot/xpcshell-shared.toml",
-                    "flavor": "xpcshell",
-                    "stick": "two",
-                },
-            ),
-            (
-                "dragonfruit/elderberry/test_xpcshell_C.js",
-                {
-                    "flavor": "xpcshell",
-                    "generated-files": "head_update.js",
-                    "head": "head_update.js",
-                    "manifest": "dragonfruit/xpcshell.toml",
-                    "reason": "busted",
-                    "run-sequentially": "Launches application.",
-                    "skip-if": "os == 'android'",
-                },
-            ),
-            (
-                "dragonfruit/elderberry/test_xpcshell_C.js",
-                {
-                    "flavor": "xpcshell",
-                    "generated-files": "head_update.js",
-                    "head": "head_update.js head2.js",
-                    "manifest": "dragonfruit/elderberry/xpcshell_updater.toml",
-                    "reason": "don't work",
-                    "run-sequentially": "Launches application.",
-                    "skip-if": "os == 'android'",
-                },
-            ),
-            (
-                "fig/grape/src/TestInstrumentationA.java",
-                {
-                    "flavor": "instrumentation",
-                    "manifest": "fig/grape/instrumentation.toml",
-                    "subsuite": "background",
-                },
-            ),
-            (
-                "fig/huckleberry/src/TestInstrumentationB.java",
-                {
-                    "flavor": "instrumentation",
-                    "manifest": "fig/huckleberry/instrumentation.toml",
-                    "subsuite": "browser",
-                },
-            ),
-            (
-                "juniper/browser_chrome.js",
-                {
-                    "flavor": "browser-chrome",
-                    "manifest": "juniper/browser.toml",
-                    "skip-if": "e10s  # broken",
-                },
-            ),
-            (
-                "kiwi/browser_devtools.js",
-                {
-                    "flavor": "browser-chrome",
-                    "manifest": "kiwi/browser.toml",
-                    "subsuite": "devtools",
-                    "tags": "devtools",
-                },
-            ),
-        ]
-    )
+    return create_tests(*[
+        (
+            "apple/test_a11y.html",
+            {
+                "expected": "pass",
+                "manifest": "apple/a11y.toml",
+                "flavor": "a11y",
+            },
+        ),
+        (
+            "banana/currant/test_xpcshell_A.js",
+            {
+                "firefox-appdir": "browser",
+                "flavor": "xpcshell",
+                "head": "head_global.js head_helpers.js head_http.js",
+            },
+        ),
+        (
+            "banana/currant/test_xpcshell_B.js",
+            {
+                "firefox-appdir": "browser",
+                "flavor": "xpcshell",
+                "head": "head_global.js head_helpers.js head_http.js",
+            },
+        ),
+        (
+            "carrot/test_included.js",
+            {
+                "ancestor_manifest": "carrot/xpcshell-one.toml",
+                "manifest": "carrot/xpcshell-shared.toml",
+                "flavor": "xpcshell",
+                "stick": "one",
+            },
+        ),
+        (
+            "carrot/test_included.js",
+            {
+                "ancestor_manifest": "carrot/xpcshell-two.toml",
+                "manifest": "carrot/xpcshell-shared.toml",
+                "flavor": "xpcshell",
+                "stick": "two",
+            },
+        ),
+        (
+            "dragonfruit/elderberry/test_xpcshell_C.js",
+            {
+                "flavor": "xpcshell",
+                "generated-files": "head_update.js",
+                "head": "head_update.js",
+                "manifest": "dragonfruit/xpcshell.toml",
+                "reason": "busted",
+                "run-sequentially": "Launches application.",
+                "skip-if": "os == 'android'",
+            },
+        ),
+        (
+            "dragonfruit/elderberry/test_xpcshell_C.js",
+            {
+                "flavor": "xpcshell",
+                "generated-files": "head_update.js",
+                "head": "head_update.js head2.js",
+                "manifest": "dragonfruit/elderberry/xpcshell_updater.toml",
+                "reason": "don't work",
+                "run-sequentially": "Launches application.",
+                "skip-if": "os == 'android'",
+            },
+        ),
+        (
+            "fig/grape/src/TestInstrumentationA.java",
+            {
+                "flavor": "instrumentation",
+                "manifest": "fig/grape/instrumentation.toml",
+                "subsuite": "background",
+            },
+        ),
+        (
+            "fig/huckleberry/src/TestInstrumentationB.java",
+            {
+                "flavor": "instrumentation",
+                "manifest": "fig/huckleberry/instrumentation.toml",
+                "subsuite": "browser",
+            },
+        ),
+        (
+            "juniper/browser_chrome.js",
+            {
+                "flavor": "browser-chrome",
+                "manifest": "juniper/browser.toml",
+                "skip-if": "e10s  # broken",
+            },
+        ),
+        (
+            "kiwi/browser_devtools.js",
+            {
+                "flavor": "browser-chrome",
+                "manifest": "kiwi/browser.toml",
+                "subsuite": "devtools",
+                "tags": "devtools",
+            },
+        ),
+    ])
 
 
 @pytest.fixture(scope="module")
@@ -324,6 +322,71 @@ def test_load(resolver):
     assert "/_mozilla/html" in resolver.tests_by_manifest
 
 
+def _setup_stale_backend_loader(tmpdir, topsrcdir, all_tests, defaults, monkeypatch):
+    topobjdir = tmpdir.strpath
+    with open(os.path.join(topobjdir, "all-tests.pkl"), "wb") as fh:
+        pickle.dump(all_tests, fh)
+    with open(os.path.join(topobjdir, "test-defaults.pkl"), "wb") as fh:
+        pickle.dump(defaults, fh)
+
+    calls = []
+
+    def fake_gen_test_backend():
+        calls.append("gen")
+
+    def fake_install_test_files(srcdir, objdir, tests_root):
+        calls.append(("install", srcdir, objdir, tests_root))
+
+    class BuildBackendLoaderAlwaysOutOfDate(BuildBackendLoader):
+        def backend_out_of_date(self, backend_file):
+            return True
+
+    monkeypatch.setattr(
+        "mozbuild.gen_test_backend.gen_test_backend", fake_gen_test_backend
+    )
+    monkeypatch.setattr("moztest.resolve.install_test_files", fake_install_test_files)
+
+    return (
+        BuildBackendLoaderAlwaysOutOfDate(topsrcdir, None, None, topobjdir=topobjdir),
+        calls,
+        topobjdir,
+    )
+
+
+def test_build_backend_loader_stale_backend_installs_tests(
+    monkeypatch, tmpdir, topsrcdir, all_tests, defaults
+):
+    loader, calls, topobjdir = _setup_stale_backend_loader(
+        tmpdir.mkdir("objdir"), topsrcdir, all_tests, defaults, monkeypatch
+    )
+
+    # Simulate a prior full build by creating the harness install manifest.
+    manifests_dir = os.path.join(topobjdir, "_build_manifests", "install")
+    os.makedirs(manifests_dir)
+    with open(os.path.join(manifests_dir, "_tests"), "w") as fh:
+        fh.write("")
+
+    assert list(loader())
+    assert calls[0] == "gen"
+    assert calls[1][0] == "install"
+    assert os.path.normpath(calls[1][1]) == os.path.normpath(loader.topsrcdir)
+    assert os.path.normpath(calls[1][2]) == os.path.normpath(topobjdir)
+    assert calls[1][3] == "_tests"
+
+
+def test_build_backend_loader_skips_install_without_harness_manifest(
+    monkeypatch, tmpdir, topsrcdir, all_tests, defaults
+):
+    loader, calls, _ = _setup_stale_backend_loader(
+        tmpdir.mkdir("objdir"), topsrcdir, all_tests, defaults, monkeypatch
+    )
+
+    # No _build_manifests/install/_tests was created; install must be skipped
+    # to avoid leaving a half-populated _tests/ tree.
+    assert list(loader())
+    assert calls == ["gen"]
+
+
 def test_resolve_all(resolver):
     assert len(list(resolver._resolve())) == 13
 
@@ -446,14 +509,40 @@ def test_resolve_metadata(resolver):
     assert suites == {"mochitest-browser-chrome"}
     assert tests == []
 
-    suites, tests = resolver.resolve_metadata(
-        ["mochitest-a11y", "/browser", "xpcshell"]
-    )
+    suites, tests = resolver.resolve_metadata([
+        "mochitest-a11y",
+        "/browser",
+        "xpcshell",
+    ])
     assert suites == {"mochitest-a11y", "xpcshell"}
     assert sorted(t["file_relpath"] for t in tests) == [
         "juniper/browser_chrome.js",
         "kiwi/browser_devtools.js",
     ]
+
+
+def test_resolve_metadata_root_path(resolver):
+    """Test that a suite's root_path resolves as a suite dispatch."""
+    suites, tests = resolver.resolve_metadata(["mobile/android/fenix"])
+    assert suites == {"fenix"}
+    assert tests == []
+
+
+def test_resolve_metadata_subdir_not_suite(resolver):
+    """Test that a subdirectory within a suite root resolves individual tests."""
+    suites, tests = resolver.resolve_metadata(["banana/currant"])
+    assert suites == set()
+    assert len(tests) == 2
+    for t in tests:
+        assert t["file_relpath"].startswith("banana/currant")
+
+
+def test_resolve_metadata_file_not_suite(resolver):
+    """Test that a specific file within a suite root resolves as a test."""
+    suites, tests = resolver.resolve_metadata(["apple/test_a11y.html"])
+    assert suites == set()
+    assert len(tests) == 1
+    assert tests[0]["file_relpath"] == "apple/test_a11y.html"
 
 
 def test_ancestor_manifest_defaults(resolver, topsrcdir, defaults):

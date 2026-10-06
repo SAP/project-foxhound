@@ -10,6 +10,7 @@ import mozilla.components.feature.downloads.DownloadEstimator
 import mozilla.components.feature.downloads.FileSizeFormatter
 import org.mozilla.fenix.R
 import org.mozilla.fenix.downloads.listscreen.store.FileItem
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getBaseDomainUrl
 import kotlin.time.Duration.Companion.seconds
 
@@ -23,7 +24,7 @@ interface FileItemDescriptionProvider {
      *
      * @param downloadState The download state of the file item.
      */
-    fun getDescription(
+    suspend fun getDescription(
         downloadState: DownloadState,
     ): String
 }
@@ -41,12 +42,12 @@ class DefaultFileItemDescriptionProvider(
     private val downloadEstimator: DownloadEstimator,
 ) : FileItemDescriptionProvider {
 
-    override fun getDescription(
+    override suspend fun getDescription(
         downloadState: DownloadState,
     ): String = when (downloadState.status) {
         DownloadState.Status.COMPLETED -> {
             val formattedContentLength = fileSizeFormatter.formatSizeInBytes(downloadState.contentLength ?: 0)
-            "$formattedContentLength • ${downloadState.url.getBaseDomainUrl()}"
+            "$formattedContentLength • ${downloadState.url.getBaseDomainUrl(context.components.publicSuffixList)}"
         }
         DownloadState.Status.FAILED -> context.getString(R.string.download_item_status_failed)
         DownloadState.Status.CANCELLED -> "" // Cancelled downloads are not shown

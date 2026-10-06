@@ -1,0 +1,94 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+loader: taskgraph.loader.transform:loader
+
+transforms:
+    - taskgraph.transforms.from_deps
+    - gecko_taskgraph.transforms.update_integrity
+    - gecko_taskgraph.transforms.job
+    - gecko_taskgraph.transforms.task
+
+kind-dependencies:
+    - build-signing
+    - mar-signing
+    - mar-signing-l10n
+    - partials-signing
+    - repackage
+    - repackage-l10n
+    - shippable-l10n-signing
+    - toolchain
+
+only-for-build-platforms:
+    - linux64-shippable/opt
+    - linux64-aarch64-shippable/opt
+    - macosx64-shippable/opt
+    - win32-shippable/opt
+    - win64-shippable/opt
+    - win64-aarch64-shippable/opt
+
+tasks:
+    test-update-integrity:
+        run-on-repo-type: [hg]
+        description: verify update integrity
+        worker-type: b-linux
+        from-deps:
+            kinds: [mar-signing, mar-signing-l10n, partials-signing, repackage, repackage-l10n, build-signing, shippable-l10n-signing]
+            group-by: single-locale
+            copy-attributes: true
+            fetches:
+                # partials not listed here because the number and naming of them
+                # are dynamic
+                # repackage and build-signing fetches contain platform-specific names,
+                # and thus not listed here
+                # fetches for these kinds are added in a transform
+                mar-signing:
+                    - artifact: target.complete.mar
+                mar-signing-l10n:
+                    - artifact: "{locale}/target.complete.mar"
+
+        cert-overrides:
+            by-project:
+                # when running staging release, we must override the certs in the
+                # updater with dep certs, because that's what the mars we're applying
+                # will be signed with
+                try:
+                    - nightly_aurora_level3_primary.der|dep1.der
+                    - nightly_aurora_level3_secondary.der|dep2.der
+                    - release_primary.der|dep1.der
+                    - release_secondary.der|dep2.der
+                # no cert overriding is necessary for other releases
+                default: null
+
+        archive-prefix:
+            by-project:
+                try: ftp.stage.mozaws.net/pub
+                default: archive.mozilla.org/pub
+
+        treeherder:
+            symbol: UpInt({locale})
+            kind: other
+            tier: 3
+        worker:
+            artifacts:
+                - name: public/build
+                  type: directory
+                  path: /builds/worker/artifacts
+            docker-image:
+                in-tree: "update-verify"
+            chain-of-trust: true
+            max-run-time: 600
+        run:
+            using: run-task
+            sparse-profile: "update-verify"
+            cwd: "{checkout}"
+        use-python: default
+        fetches:
+            toolchain:
+                by-build-platform:
+                    mac.*:
+                        - linux64-marannon
+                        - linux64-libdmg
+                    default:
+                        - linux64-marannon

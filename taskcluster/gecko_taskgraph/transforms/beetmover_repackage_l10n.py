@@ -5,7 +5,6 @@
 Transform the signing task into an actual task description.
 """
 
-
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
 from taskgraph.util.treeherder import join_symbol
@@ -40,5 +39,6 @@ def make_beetmover_description(config, jobs):
             "treeherder": treeherder,
             "locale": locale,
             "shipping-phase": job["shipping-phase"],
+            "run-on-repo-type": job.get("run-on-repo-type", ["git", "hg"]),
         }
         yield beet_description

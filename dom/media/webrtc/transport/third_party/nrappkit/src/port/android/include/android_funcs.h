@@ -50,7 +50,6 @@
 
 #define STDIO_BYTES_BUFFERED(fp) (fp->_IO_read_end - fp->_IO_read_ptr)
 
-size_t strlcat(char *dst, const char *src, size_t siz);
 #ifndef strlcpy
 #define strlcpy(a,b,c) \
 	(strncpy((a),(b),(c)), \

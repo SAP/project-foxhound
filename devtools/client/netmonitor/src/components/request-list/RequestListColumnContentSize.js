@@ -29,7 +29,11 @@ class RequestListColumnContentSize extends Component {
     const size =
       typeof contentSize === "number" ? getFormattedSize(contentSize) : null;
     return dom.td(
-      { className: "requests-list-column requests-list-size", title: size },
+      {
+        className:
+          "requests-list-column requests-list-number-column requests-list-size",
+        title: size,
+      },
       size
     );
   }

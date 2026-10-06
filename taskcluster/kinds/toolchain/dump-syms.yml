@@ -6,7 +6,7 @@ task-defaults:
     attributes:
         local-toolchain: true
     description: "dump_syms toolchain build"
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     worker:
         max-run-time: 1800
     run:
@@ -30,7 +30,7 @@ linux64-dump_syms:
 macosx64-dump_syms:
     treeherder:
         symbol: TM(dump_syms)
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     run:
         arguments: ['x86_64-apple-darwin']
     fetches:

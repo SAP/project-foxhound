@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,11 +11,11 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/fallible.h"
 #include "mozilla/Likely.h"
+#include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryChecking.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/OperatorNewExtensions.h"
 #include "mozilla/Poison.h"
-#include "mozilla/TemplateLib.h"
 #include "nsDebug.h"
 
 namespace mozilla {
@@ -42,9 +40,9 @@ template <size_t ArenaSize, size_t Alignment = 1>
 class ArenaAllocator {
  public:
   constexpr ArenaAllocator() : mHead(), mCurrent(nullptr) {
-    static_assert(mozilla::tl::FloorLog2<Alignment>::value ==
-                      mozilla::tl::CeilingLog2<Alignment>::value,
-                  "ArenaAllocator alignment must be a power of two");
+    static_assert(
+        mozilla::FloorLog2(Alignment) == mozilla::CeilingLog2(Alignment),
+        "ArenaAllocator alignment must be a power of two");
   }
 
   ArenaAllocator(const ArenaAllocator&) = delete;

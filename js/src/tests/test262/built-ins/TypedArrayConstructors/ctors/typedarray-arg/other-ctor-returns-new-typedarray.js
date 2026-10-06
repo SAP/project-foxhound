@@ -25,6 +25,6 @@ testWithTypedArrayConstructors(function(TA) {
   assert.notSameValue(typedArray, sample);
   assert.sameValue(typedArray.constructor, TA);
   assert.sameValue(Object.getPrototypeOf(typedArray), TA.prototype);
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

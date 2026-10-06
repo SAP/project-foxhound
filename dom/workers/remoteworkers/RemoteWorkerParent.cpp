@@ -1,16 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RemoteWorkerParent.h"
+
 #include "RemoteWorkerController.h"
 #include "RemoteWorkerServiceParent.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/PFetchEventOpProxyParent.h"
 #include "mozilla/ipc/BackgroundParent.h"
-#include "mozilla/Unused.h"
 
 namespace mozilla {
 
@@ -19,7 +17,7 @@ using namespace ipc;
 namespace dom {
 
 RemoteWorkerParent::RemoteWorkerParent(
-    UniqueThreadsafeContentParentKeepAlive aKeepAlive)
+    UniqueThreadsafeContentParentKeepAlive&& aKeepAlive)
     : mContentParentKeepAlive(std::move(aKeepAlive)) {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(XRE_IsParentProcess());
@@ -112,7 +110,7 @@ void RemoteWorkerParent::MaybeSendDelete() {
   // For some reason, if the following two lines are swapped, ASan says there's
   // a UAF...
   mDeleteSent = true;
-  Unused << Send__delete__(this);
+  (void)Send__delete__(this);
 }
 
 IPCResult RemoteWorkerParent::RecvClose() {

@@ -24,6 +24,6 @@ testWithTypedArrayConstructors(function(TA) {
   assert.sameValue(Reflect.has(sample, "0"), false, 'Reflect.has(sample, "0") must return false');
   assert.sameValue(Reflect.has(sample, "-0"), false, 'Reflect.has(sample, "-0") must return false');
   assert.sameValue(Reflect.has(sample, "1.1"), false, 'Reflect.has(sample, "1.1") must return false');
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

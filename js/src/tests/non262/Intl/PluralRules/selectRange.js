@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl'))
-
 // Any combination returns "other" for "en-US".
 {
   let numbers = [0, 0.5, 1.2, 1.5, 1.7, -1, 1, "1", 123456789.123456789, Infinity, -Infinity];
@@ -71,13 +69,15 @@
   assertEq(ordinal.selectRange(10, 10), "other");
 }
 
-// BigInt inputs aren't allowed.
+// BigInt inputs are allowed.
 {
   let pr = new Intl.PluralRules("en-US");
 
-  assertThrowsInstanceOf(() => pr.selectRange(0, 0n), TypeError);
-  assertThrowsInstanceOf(() => pr.selectRange(0n, 0), TypeError);
-  assertThrowsInstanceOf(() => pr.selectRange(0n, 0n), TypeError);
+  let zero = pr.selectRange(0, 0);
+
+  assertEq(pr.selectRange(0, 0n), zero);
+  assertEq(pr.selectRange(0n, 0), zero);
+  assertEq(pr.selectRange(0n, 0n), zero);
 }
 
 if (typeof reportCompare === "function")

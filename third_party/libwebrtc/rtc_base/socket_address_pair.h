@@ -40,10 +40,5 @@ class SocketAddressPair {
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::SocketAddressPair;
-}  // namespace rtc
 
 #endif  // RTC_BASE_SOCKET_ADDRESS_PAIR_H_

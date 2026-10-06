@@ -8,6 +8,7 @@ import mozilla.components.browser.state.action.LastAccessAction
 import mozilla.components.browser.state.action.LastAccessAction.ResetLastMediaSessionAction
 import mozilla.components.browser.state.action.LastAccessAction.UpdateLastAccessAction
 import mozilla.components.browser.state.action.LastAccessAction.UpdateLastMediaAccessAction
+import mozilla.components.browser.state.action.LastAccessAction.UpdateLastVisibleAtAction
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.TabSessionState
 
@@ -19,6 +20,11 @@ internal object LastAccessReducer {
         is UpdateLastAccessAction -> {
             state.updateTabState(action.tabId) { sessionState ->
                 sessionState.copy(lastAccess = action.lastAccess)
+            }
+        }
+        is UpdateLastVisibleAtAction -> {
+            state.updateTabState(action.tabId) { sessionState ->
+                sessionState.copy(lastVisibleAt = action.lastVisibleAt)
             }
         }
         is UpdateLastMediaAccessAction -> {

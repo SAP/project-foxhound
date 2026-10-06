@@ -522,7 +522,7 @@ function setScrollPosition(bc, x, y) {
       content.addEventListener(
         "mozvisualscroll",
         function onScroll(event) {
-          if (content.document.ownerGlobal.visualViewport == event.target) {
+          if (content.document.documentGlobal.visualViewport == event.target) {
             content.removeEventListener("mozvisualscroll", onScroll, {
               mozSystemGroup: true,
             });
@@ -570,36 +570,38 @@ function setPropertyOfFormField(browserContext, selector, propName, newValue) {
       node[propNameChild] = newValueChild;
 
       let event = node.ownerDocument.createEvent("UIEvents");
-      event.initUIEvent("input", true, true, node.ownerGlobal, 0);
+      event.initUIEvent("input", true, true, node.documentGlobal, 0);
       node.dispatchEvent(event);
     }
   );
 }
 
 function promiseOnHistoryReplaceEntry(browser) {
-  return new Promise(resolve => {
+  return new Promise((resolve, reject) => {
     let sessionHistory = browser.browsingContext?.sessionHistory;
-    if (sessionHistory) {
-      var historyListener = {
-        OnHistoryNewEntry() {},
-        OnHistoryGotoIndex() {},
-        OnHistoryPurge() {},
-        OnHistoryReload() {
-          return true;
-        },
-
-        OnHistoryReplaceEntry() {
-          resolve();
-        },
-
-        QueryInterface: ChromeUtils.generateQI([
-          "nsISHistoryListener",
-          "nsISupportsWeakReference",
-        ]),
-      };
-
-      sessionHistory.addSHistoryListener(historyListener);
+    if (!sessionHistory) {
+      reject("No session history?");
     }
+
+    var historyListener = {
+      OnHistoryNewEntry() {},
+      OnHistoryGotoIndex() {},
+      OnHistoryPurge() {},
+      OnHistoryReload() {
+        return true;
+      },
+
+      OnHistoryReplaceEntry() {
+        resolve();
+      },
+
+      QueryInterface: ChromeUtils.generateQI([
+        "nsISHistoryListener",
+        "nsISupportsWeakReference",
+      ]),
+    };
+
+    sessionHistory.addSHistoryListener(historyListener);
   });
 }
 
@@ -670,7 +672,7 @@ async function openTabMenuFor(tab) {
   EventUtils.synthesizeMouseAtCenter(
     tab,
     { type: "contextmenu" },
-    tab.ownerGlobal
+    tab.documentGlobal
   );
   await tabMenuShown;
 

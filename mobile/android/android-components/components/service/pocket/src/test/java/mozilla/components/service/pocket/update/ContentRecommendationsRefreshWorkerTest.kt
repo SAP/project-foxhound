@@ -8,28 +8,21 @@ import androidx.concurrent.futures.await
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.work.ListenableWorker
 import androidx.work.testing.TestListenableWorkerBuilder
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.runTest
 import mozilla.components.service.pocket.GlobalDependencyProvider
 import mozilla.components.service.pocket.recommendations.ContentRecommendationsUseCases
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.Assert.assertEquals
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.doReturn
 
-@ExperimentalCoroutinesApi // for runTestOnMain
 @RunWith(AndroidJUnit4::class)
 class ContentRecommendationsRefreshWorkerTest {
 
-    @get:Rule
-    val mainCoroutineRule = MainCoroutineRule()
-
     @Test
-    fun `WHEN content recommendations are refreshed successfully THEN return success`() = runTestOnMain {
+    fun `WHEN content recommendations are refreshed successfully THEN return success`() = runTest {
         val useCases: ContentRecommendationsUseCases = mock()
         val fetchContentRecommendations: ContentRecommendationsUseCases.FetchContentRecommendations = mock()
         doReturn(true).`when`(fetchContentRecommendations).invoke()
@@ -43,7 +36,7 @@ class ContentRecommendationsRefreshWorkerTest {
     }
 
     @Test
-    fun `WHEN content recommendations are refreshed unsuccessfully THEN worker should retry`() = runTestOnMain {
+    fun `WHEN content recommendations are refreshed unsuccessfully THEN worker should retry`() = runTest {
         val useCases: ContentRecommendationsUseCases = mock()
         val fetchContentRecommendations: ContentRecommendationsUseCases.FetchContentRecommendations = mock()
         doReturn(false).`when`(fetchContentRecommendations).invoke()

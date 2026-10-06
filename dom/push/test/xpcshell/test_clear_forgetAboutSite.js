@@ -13,7 +13,7 @@ function promiseUnregister(keyID) {
 }
 
 function run_test() {
-  do_get_profile();
+  do_get_profile(true);
   setPrefs({
     userAgentID,
   });

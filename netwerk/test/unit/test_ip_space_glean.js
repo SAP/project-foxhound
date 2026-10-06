@@ -10,6 +10,10 @@ const certOverrideService = Cc[
   "@mozilla.org/security/certoverride;1"
 ].getService(Ci.nsICertOverrideService);
 
+const { NodeHTTPServer, NodeHTTPSServer } = ChromeUtils.importESModule(
+  "resource://testing-common/NodeServer.sys.mjs"
+);
+
 const DOMAIN = "example.org";
 
 function makeChan(url) {
@@ -82,6 +86,7 @@ function verifyGleanValues(aDescription, aExpected) {
 }
 
 async function do_test(ip, expected, srcPort, dstPort) {
+  await Services.fog.testFlushAllChildren();
   Services.fog.testResetFOG();
 
   override.addIPOverride(DOMAIN, ip);

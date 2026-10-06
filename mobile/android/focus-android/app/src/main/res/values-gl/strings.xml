@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s dálle o control.</p> <p>Úseo como navegador privado: <ul> <li>Buscar e navegar directamente na aplicación</li> <li>Bloquear rastrexadores (ou actualizar a configuración para permitir rastrexadores)</li> <li>Borrar para eliminar as cookies, así como o historial de busca e navegación</li> </ul> </p> <p>%1$s é producido por Mozilla. A nosa misión é fomentar unha Internet saudable e aberta.<br/> <a href=\"%2$s\">Máis información</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s dálle o control.</p>\n<p>Úseo como navegador privado:\n<ul>\n<li>Buscar e navegar directamente na aplicación</li>\n<li>Bloquear rastrexadores (ou actualizar a configuración para permitir rastrexadores)</li>\n<li>Borrar para eliminar as cookies, así como o historial de busca e navegación</li>\n</ul> </p>\n<p>%1$s é producido por Mozilla. A nosa misión é fomentar unha Internet saudable e aberta.<br/>\n<a href=\"%2$s\">Máis información</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Máis información</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -244,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Pegar ou escribir URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Exemplo: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Exemplo: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Exemplo: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -316,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Definir %1$s como navegador predeterminado</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Enviar datos de uso</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Máis información</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla esforzase por recoller só os datos necesarios para fornecer e mellorar %1$s para todos.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla esforzase por recoller só os datos necesarios para fornecer e mellorar %1$s para todos.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Ping de uso diario</string>
-  <string name="preference_daily_usage_ping_description">Isto axuda a Mozilla a estimar os usuarios activos.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Isto axuda a Mozilla a estimar os usuarios activos.</string>
   <string name="preference_daily_usage_ping_learn_more">Máis información</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Política de privacidade</string>
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Ao continuar, aceptas os %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Ao continuar, aceptas os %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Condicións de uso de Firefox.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Condicións de uso de Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox preocúpase pola túa privacidade. Máis información no noso %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox preocúpase pola túa privacidade. Máis información no noso %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Política de privacidade.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">Política de privacidade</string>
   <!-- New Onboarding flow first screen button label -->
@@ -813,7 +812,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Pechar lapela</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Enviar informe de quebra a Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Enviar informe de quebra a Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->
@@ -883,7 +882,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Isto pode ser un problema coa configuración do servidor ou pode ser alguén que intente suplantar a identidade do servidor. <br/><br/> Se se conectou a este servidor correctamente no pasado, o erro pode ser temporal.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Alguén podería tentar suplantar a identidade do sitio e continuar pode ser arriscado.</label> <br><br> <label>%1$s non confía en <b>%2$s</b> porque o emisor do seu certificado é descoñecido, o certificado está asinado por si mesmo ou o servidor non está a enviar os certificados intermedios correctos.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Alguén podería tentar suplantar a identidade do sitio e continuar pode ser arriscado.</label> <br><br>\n<label>%1$s non confía en <b>%2$s</b> porque o emisor do seu certificado é descoñecido, o certificado está asinado por si mesmo ou o servidor non está a enviar os certificados intermedios correctos.</label>]]></string>
   <!--
     Sessions List
 

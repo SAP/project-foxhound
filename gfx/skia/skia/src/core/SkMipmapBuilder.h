@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Google Inc.
+ * Copyright 2020 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -17,7 +17,7 @@ struct SkImageInfo;
 
 class SkMipmapBuilder {
 public:
-    SkMipmapBuilder(const SkImageInfo&);
+    explicit SkMipmapBuilder(const SkImageInfo&);
     ~SkMipmapBuilder();
 
     int countLevels() const;

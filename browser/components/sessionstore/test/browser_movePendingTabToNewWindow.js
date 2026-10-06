@@ -55,7 +55,7 @@ add_task(async function test_movePendingTabToNewWindow() {
 
   info("Waiting for new window");
   let newWindow = await promiseNewWindow;
-  isnot(newWindow, gBrowser.ownerGlobal, "Tab moved to new window");
+  isnot(newWindow, gBrowser.documentGlobal, "Tab moved to new window");
 
   let newWindowTabs = newWindow.gBrowser.visibleTabs;
   await TestUtils.waitForCondition(() => {

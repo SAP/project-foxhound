@@ -51,40 +51,40 @@ loader.lazyRequireGetter(
  * send information over RDP, and TimelineActor for using more light-weight
  * utilities like GC events and measuring memory consumption.
  */
-function Memory(parent, frameCache = new StackFrameCache()) {
-  EventEmitter.decorate(this);
+class Memory extends EventEmitter {
+  constructor(parent, frameCache = new StackFrameCache()) {
+    super();
 
-  this.parent = parent;
-  this._mgr = Cc["@mozilla.org/memory-reporter-manager;1"].getService(
-    Ci.nsIMemoryReporterManager
-  );
-  this.state = "detached";
-  this._dbg = null;
-  this._frameCache = frameCache;
+    this.parent = parent;
+    this._mgr = Cc["@mozilla.org/memory-reporter-manager;1"].getService(
+      Ci.nsIMemoryReporterManager
+    );
+    this.state = "detached";
+    this._dbg = null;
+    this._frameCache = frameCache;
 
-  this._onGarbageCollection = this._onGarbageCollection.bind(this);
-  this._emitAllocations = this._emitAllocations.bind(this);
-  this._onWindowReady = this._onWindowReady.bind(this);
+    this._onGarbageCollection = this._onGarbageCollection.bind(this);
+    this._emitAllocations = this._emitAllocations.bind(this);
+    this._onWindowReady = this._onWindowReady.bind(this);
 
-  EventEmitter.on(this.parent, "window-ready", this._onWindowReady);
-}
+    this.parent.on("window-ready", this._onWindowReady);
+  }
 
-Memory.prototype = {
   destroy() {
-    EventEmitter.off(this.parent, "window-ready", this._onWindowReady);
+    this.parent.off("window-ready", this._onWindowReady);
 
     this._mgr = null;
     if (this.state === "attached") {
       this.detach();
     }
-  },
+  }
 
   get dbg() {
     if (!this._dbg) {
       this._dbg = this.parent.makeDebugger();
     }
     return this._dbg;
-  },
+  }
 
   /**
    * Attach to this MemoryBridge.
@@ -103,12 +103,12 @@ Memory.prototype = {
     this.dbg.memory.onGarbageCollection = this._onGarbageCollection.bind(this);
     this.state = "attached";
     return this.state;
-  },
+  }
 
   /**
    * Detach from this MemoryBridge.
    */
-  detach: expectState(
+  detach = expectState(
     "attached",
     function () {
       this._clearDebuggees();
@@ -118,14 +118,14 @@ Memory.prototype = {
       return this.state;
     },
     "detaching from the debugger"
-  ),
+  );
 
   /**
    * Gets the current MemoryBridge attach/detach state.
    */
   getState() {
     return this.state;
-  },
+  }
 
   _clearDebuggees() {
     if (this._dbg) {
@@ -135,13 +135,13 @@ Memory.prototype = {
       this._clearFrames();
       this.dbg.removeAllDebuggees();
     }
-  },
+  }
 
   _clearFrames() {
     if (this.isRecordingAllocations()) {
       this._frameCache.clearFrames();
     }
-  },
+  }
 
   /**
    * Handler for the parent actor's "window-ready" event.
@@ -154,7 +154,7 @@ Memory.prototype = {
       }
       this.dbg.addDebuggees();
     }
-  },
+  }
 
   /**
    * Returns a boolean indicating whether or not allocation
@@ -162,17 +162,17 @@ Memory.prototype = {
    */
   isRecordingAllocations() {
     return this.dbg.memory.trackingAllocationSites;
-  },
+  }
 
   /**
    * Save a heap snapshot scoped to the current debuggees' portion of the heap
    * graph.
    *
-   * @param {Object|null} boundaries
+   * @param {object | null} boundaries
    *
-   * @returns {String} The snapshot id.
+   * @returns {string} The snapshot id.
    */
-  saveHeapSnapshot: expectState(
+  saveHeapSnapshot = expectState(
     "attached",
     function (boundaries = null) {
       // If we are observing the whole process, then scope the snapshot
@@ -190,19 +190,19 @@ Memory.prototype = {
       return ChromeUtils.saveHeapSnapshotGetId(boundaries);
     },
     "saveHeapSnapshot"
-  ),
+  );
 
   /**
    * Take a census of the heap. See js/src/doc/Debugger/Debugger.Memory.md for
    * more information.
    */
-  takeCensus: expectState(
+  takeCensus = expectState(
     "attached",
     function () {
       return this.dbg.memory.takeCensus();
     },
     "taking census"
-  ),
+  );
 
   /**
    * Start recording allocation sites.
@@ -219,7 +219,7 @@ Memory.prototype = {
    *                 event gets emitted (and drained), and also emits and drains on every
    *                 GC event, resetting the timer.
    */
-  startRecordingAllocations: expectState(
+  startRecordingAllocations = expectState(
     "attached",
     function (options = {}) {
       if (this.isRecordingAllocations()) {
@@ -253,12 +253,12 @@ Memory.prototype = {
       return this._getCurrentTime();
     },
     "starting recording allocations"
-  ),
+  );
 
   /**
    * Stop recording allocation sites.
    */
-  stopRecordingAllocations: expectState(
+  stopRecordingAllocations = expectState(
     "attached",
     function () {
       if (!this.isRecordingAllocations()) {
@@ -275,13 +275,13 @@ Memory.prototype = {
       return this._getCurrentTime();
     },
     "stopping recording allocations"
-  ),
+  );
 
   /**
    * Return settings used in `startRecordingAllocations` for `probability`
    * and `maxLogLength`. Currently only uses in tests.
    */
-  getAllocationsSettings: expectState(
+  getAllocationsSettings = expectState(
     "attached",
     function () {
       return {
@@ -290,7 +290,7 @@ Memory.prototype = {
       };
     },
     "getting allocations settings"
-  ),
+  );
 
   /**
    * Get a list of the most recent allocations since the last time we got
@@ -348,7 +348,7 @@ Memory.prototype = {
    *          usage to build the packet, and it should, of course, be guided by
    *          profiling and done only when necessary.
    */
-  getAllocations: expectState(
+  getAllocations = expectState(
     "attached",
     function () {
       if (this.dbg.memory.allocationsLogOverflowed) {
@@ -390,7 +390,7 @@ Memory.prototype = {
       return this._frameCache.updateFramePacket(packet);
     },
     "getting allocations"
-  ),
+  );
 
   /*
    * Force a browser-wide GC.
@@ -399,7 +399,7 @@ Memory.prototype = {
     for (let i = 0; i < 3; i++) {
       Cu.forceGC();
     }
-  },
+  }
 
   /**
    * Force an XPCOM cycle collection. For more information on XPCOM cycle
@@ -408,7 +408,7 @@ Memory.prototype = {
    */
   forceCycleCollection() {
     Cu.forceCC();
-  },
+  }
 
   /**
    * A method that returns a detailed breakdown of the memory consumption of the
@@ -456,11 +456,11 @@ Memory.prototype = {
     }
 
     return result;
-  },
+  }
 
   residentUnique() {
     return this._mgr.residentUnique;
-  },
+  }
 
   /**
    * Handler for GC events on the Debugger.Memory instance.
@@ -474,7 +474,7 @@ Memory.prototype = {
       this._poller.disarm();
       this._emitAllocations();
     }
-  },
+  }
 
   /**
    * Called on `drainAllocationsTimeoutTimer` interval if and only if set
@@ -485,7 +485,7 @@ Memory.prototype = {
   _emitAllocations() {
     this.emit("allocations", this.getAllocations());
     this._poller.arm();
-  },
+  }
 
   /**
    * Accesses the docshell to return the current process time.
@@ -498,9 +498,9 @@ Memory.prototype = {
       return docShell.now();
     }
     // When used from the ContentProcessTargetActor, parent has no docShell,
-    // so fallback to Cu.now
-    return Cu.now();
-  },
-};
+    // so fallback to ChromeUtils.now
+    return ChromeUtils.now();
+  }
+}
 
 exports.Memory = Memory;

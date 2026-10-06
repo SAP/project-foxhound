@@ -15,8 +15,8 @@ import androidx.core.content.getSystemService
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.registerForActivityResult
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.settings.requirePreference
 
 /**
@@ -113,7 +113,7 @@ abstract class BiometricPromptPreferenceFragment : PreferenceFragmentCompat() {
             showPinVerification(manager)
         } else {
             // Warn that the device has not been secured
-            if (context.settings().shouldShowSecurityPinWarning) {
+            if (context.components.settings.shouldShowSecurityPinWarning) {
                 showPinDialogWarning(context)
             } else {
                 navigateOnSuccess()

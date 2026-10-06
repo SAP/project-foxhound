@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -13,7 +11,6 @@
 #define js_experimental_TypedData_h
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT, MOZ_CRASH
-#include "mozilla/Casting.h"     // mozilla::AssertedCast
 #include "mozilla/Span.h"
 
 #include <stddef.h>  // size_t
@@ -21,7 +18,7 @@
 
 #include "jstypes.h"  // JS_PUBLIC_API
 
-#include "js/Object.h"  // JS::GetClass, JS::GetReservedSlot, JS::GetMaybePtrFromReservedSlot
+#include "js/Object.h"  // JS::GetClass, JS::GetNativeObjectReservedSlot, JS::GetMaybePtrFromNativeObjectReservedSlot
 #include "js/RootingAPI.h"  // JS::Handle, JS_DECLARE_IS_HEAP_CONSTRUCTIBLE_TYPE
 #include "js/ScalarType.h"  // JS::Scalar::Type
 #include "js/Wrapper.h"     // js::CheckedUnwrapStatic
@@ -644,11 +641,11 @@ ArrayBufferView ArrayBufferView::fromObject(JSObject* unwrapped) {
                                             bool* isSharedMemory,          \
                                             ExternalType** data) {         \
     MOZ_ASSERT(JS::TypedArray<JS::Scalar::Name>::fromObject(unwrapped));   \
-    const JS::Value& lenSlot =                                             \
-        JS::GetReservedSlot(unwrapped, detail::TypedArrayLengthSlot);      \
+    const JS::Value& lenSlot = JS::GetNativeObjectReservedSlot(            \
+        unwrapped, detail::TypedArrayLengthSlot);                          \
     *length = size_t(lenSlot.toPrivate());                                 \
     *isSharedMemory = JS_GetTypedArraySharedness(unwrapped);               \
-    *data = JS::GetMaybePtrFromReservedSlot<ExternalType>(                 \
+    *data = JS::GetMaybePtrFromNativeObjectReservedSlot<ExternalType>(     \
         unwrapped, detail::TypedArrayDataSlot);                            \
   }                                                                        \
                                                                            \

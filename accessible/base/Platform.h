@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,7 +11,6 @@
 
 #if defined(ANDROID)
 #  include "nsTArray.h"
-#  include "nsRect.h"
 #endif
 
 #ifdef MOZ_WIDGET_COCOA
@@ -64,6 +61,12 @@ bool GetInstantiator(nsIFile** aOutInstantiator);
 #endif
 
 /**
+ * Return a string describing the platform a11y instantiators.
+ * Exposed through nsIXULRuntime.accessibilityInstantiator.
+ */
+void GetHumanReadableInstantiatorStr(nsAString& aResult);
+
+/**
  * Called to initialize platform specific accessibility support.
  * Note this is called after internal accessibility support is initialized.
  */
@@ -95,11 +98,9 @@ void PlatformEvent(Accessible* aTarget, uint32_t aEventType);
 void PlatformStateChangeEvent(Accessible* aTarget, uint64_t aState,
                               bool aEnabled);
 
-void PlatformFocusEvent(Accessible* aTarget,
-                        const LayoutDeviceIntRect& aCaretRect);
+void PlatformFocusEvent(Accessible* aTarget);
 void PlatformCaretMoveEvent(Accessible* aTarget, int32_t aOffset,
                             bool aIsSelectionCollapsed, int32_t aGranularity,
-                            const LayoutDeviceIntRect& aCaretRect,
                             bool aFromUser);
 void PlatformTextChangeEvent(Accessible* aTarget, const nsAString& aStr,
                              int32_t aStart, uint32_t aLen, bool aIsInsert,
@@ -109,14 +110,14 @@ void PlatformShowHideEvent(Accessible* aTarget, Accessible* aParent,
 void PlatformSelectionEvent(Accessible* aTarget, Accessible* aWidget,
                             uint32_t aType);
 
+void PlatformAnnouncementEvent(Accessible* aTarget,
+                               const nsAString& aAnnouncement,
+                               uint16_t aPriority);
+
 #if defined(ANDROID)
 void PlatformScrollingEvent(Accessible* aTarget, uint32_t aEventType,
                             uint32_t aScrollX, uint32_t aScrollY,
                             uint32_t aMaxScrollX, uint32_t aMaxScrollY);
-
-void PlatformAnnouncementEvent(Accessible* aTarget,
-                               const nsAString& aAnnouncement,
-                               uint16_t aPriority);
 
 bool LocalizeString(const nsAString& aToken, nsAString& aLocalized);
 #endif
@@ -128,6 +129,10 @@ void PlatformTextSelectionChangeEvent(Accessible* aTarget,
 
 void PlatformRoleChangedEvent(Accessible* aTarget, const a11y::role& aRole,
                               uint8_t aRoleMapEntryIndex);
+
+void PlatformFocusedAccLocationChanged(Accessible* aFocusedAcc);
+
+bool PlatformShouldTrackFocusedAccLocation();
 #endif
 
 // Get the cache domains needed by any known clients interacting with Gecko. If

@@ -4,11 +4,10 @@
 
 #include "MediaConduitInterface.h"
 
-#include "nsTArray.h"
-#include "mozilla/Assertions.h"
 #include "MainThreadUtils.h"
 #include "SystemTime.h"
-
+#include "mozilla/Assertions.h"
+#include "nsTArray.h"
 #include "system_wrappers/include/clock.h"
 
 namespace mozilla {

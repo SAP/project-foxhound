@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +5,6 @@
 #ifndef mozilla_AvailableMemoryWatcherUtils_h
 #define mozilla_AvailableMemoryWatcherUtils_h
 
-#include "mozilla/Attributes.h"
 #include "nsISupportsUtils.h"  // For nsresult
 
 namespace mozilla {
@@ -18,7 +15,7 @@ struct MemoryInfo {
 };
 // Check /proc/meminfo for low memory. Largely C method for reading
 // /proc/meminfo.
-MOZ_MAYBE_UNUSED
+[[maybe_unused]]
 static nsresult ReadMemoryFile(const char* meminfoPath, MemoryInfo& aResult) {
   FILE* fd;
   if ((fd = fopen(meminfoPath, "r")) == nullptr) {

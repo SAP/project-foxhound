@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +6,6 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/Document.h"
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
@@ -63,24 +61,26 @@ void nsSecureBrowserUI::RecomputeSecurityFlags() {
   // secure - e.g. h2/alt-svc or by visiting an http URI over an https proxy).
   nsCOMPtr<nsITransportSecurityInfo> securityInfo;
   if (win && win->GetIsSecure()) {
-    securityInfo = win->GetSecurityInfo();
-    if (securityInfo) {
-      MOZ_LOG(gSecureBrowserUILog, LogLevel::Debug,
-              ("  we have a security info %p", securityInfo.get()));
-
-      nsresult rv = securityInfo->GetSecurityState(&mState);
-
-      // If the security state is STATE_IS_INSECURE, the TLS handshake never
-      // completed. Don't set any further state.
-      if (NS_SUCCEEDED(rv) &&
-          mState != nsIWebProgressListener::STATE_IS_INSECURE) {
+    if (nsCOMPtr<nsIChannel> chan = win->GetDocumentChannel()) {
+      nsresult rv = chan->GetSecurityInfo(getter_AddRefs(securityInfo));
+      if (NS_SUCCEEDED(rv) && securityInfo) {
         MOZ_LOG(gSecureBrowserUILog, LogLevel::Debug,
-                ("  set mTopLevelSecurityInfo"));
-        bool isEV;
-        rv = securityInfo->GetIsExtendedValidation(&isEV);
-        if (NS_SUCCEEDED(rv) && isEV) {
-          MOZ_LOG(gSecureBrowserUILog, LogLevel::Debug, ("  is EV"));
-          mState |= nsIWebProgressListener::STATE_IDENTITY_EV_TOPLEVEL;
+                ("  we have a security info %p", securityInfo.get()));
+
+        rv = securityInfo->GetSecurityState(&mState);
+
+        // If the security state is STATE_IS_INSECURE, the TLS handshake never
+        // completed. Don't set any further state.
+        if (NS_SUCCEEDED(rv) &&
+            mState != nsIWebProgressListener::STATE_IS_INSECURE) {
+          MOZ_LOG(gSecureBrowserUILog, LogLevel::Debug,
+                  ("  set mTopLevelSecurityInfo"));
+          bool isEV;
+          rv = securityInfo->GetIsExtendedValidation(&isEV);
+          if (NS_SUCCEEDED(rv) && isEV) {
+            MOZ_LOG(gSecureBrowserUILog, LogLevel::Debug, ("  is EV"));
+            mState |= nsIWebProgressListener::STATE_IDENTITY_EV_TOPLEVEL;
+          }
         }
       }
     }
@@ -152,10 +152,12 @@ nsSecureBrowserUI::GetSecInfo(nsITransportSecurityInfo** result) {
   NS_ENSURE_ARG_POINTER(result);
 
   if (WindowGlobalParent* parent = GetCurrentWindow()) {
-    *result = parent->GetSecurityInfo();
+    if (nsCOMPtr<nsIChannel> chan = parent->GetDocumentChannel()) {
+      return chan->GetSecurityInfo(result);
+    }
   }
-  NS_IF_ADDREF(*result);
 
+  *result = nullptr;
   return NS_OK;
 }
 

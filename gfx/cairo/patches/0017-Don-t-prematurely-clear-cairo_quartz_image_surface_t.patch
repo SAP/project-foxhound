@@ -1,0 +1,35 @@
+From 5fe2d6049ead047d721b7fcd11fee98c6bd5dc30 Mon Sep 17 00:00:00 2001
+From: Jonathan Kew <jkew@mozilla.com>
+Date: Wed, 22 Apr 2026 13:00:22 -0700
+Subject: [PATCH 17/29] Don't prematurely clear cairo_quartz_image_surface_t's
+ imageSurface field
+
+It still needs to hold a reference to the wrapped image surface. Without this,
+we end up leaking the DataSourceSurfaceRawData that backs the quartz image
+surface created during surface-pattern rendering, because the imageSurface
+pointer holds a strong reference and then gets cleared without releasing it.
+---
+ src/cairo-quartz-surface.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/src/cairo-quartz-surface.c b/src/cairo-quartz-surface.c
+index 67ad5c7aa..1f9dcae9f 100644
+--- a/src/cairo-quartz-surface.c
++++ b/src/cairo-quartz-surface.c
+@@ -759,7 +759,12 @@ _cairo_surface_to_cgimage (cairo_surface_t       *source,
+ 
+     if (acquired) {
+ 	_cairo_surface_release_source_image (source, image_surface->imageSurface, image_extra);
+-	image_surface->imageSurface = NULL;
++	/* If source itself is an image surface, _cairo_surface_release_source_image
++	   does not release it, and image_surface->imageSurface still owns a reference
++	   to it. So we don't clear that field here; _cairo_quartz_image_surface_finish
++	   will take care of it. */
++	if (source->type != CAIRO_SURFACE_TYPE_IMAGE)
++	    image_surface->imageSurface = NULL;
+     }
+     cairo_surface_destroy (&image_surface->base);
+ 
+-- 
+2.53.0
+

@@ -26,7 +26,7 @@ function waitForOnSpellCheck(aTextArea) {
   return new Promise(resolve => maybeOnSpellCheck(aTextArea, resolve));
 }
 
-/** Test for Bug 1729653 **/
+/** Test for Bug 1729653 */
 SimpleTest.waitForExplicitFinish();
 SimpleTest.waitForFocus(async () => {
   const textarea = document.querySelector("textarea");

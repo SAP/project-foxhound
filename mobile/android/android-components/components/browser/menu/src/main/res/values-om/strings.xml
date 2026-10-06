@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!-- Content description (not visible, for screen readers etc.): Description for the overflow menu button in the browser toolbar. -->
+  <string name="mozac_browser_menu_button">Baafata</string>
+  <!-- Content description (not visible, for screen readers etc.): Indicates the overflow menu has a highlight -->
+  <string name="mozac_browser_menu_highlighted">Kan calaqqisiifame</string>
+  <!-- Label for extensions submenu section -->
+  <string name="mozac_browser_menu_extensions">Eertoowwan</string>
+  <!-- Label for extensions sub menu item for extensions manager -->
+  <string name="mozac_browser_menu_extensions_manager">Hogganaa Eertoowwanii</string>
+  <!-- Content description for the action bar "up" button of the extensions sub menu item -->
+  <string name="mozac_browser_menu_extensions_content_description">Eekisteenshinii, asii ol xuwaarsi</string>
+</resources>

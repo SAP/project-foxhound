@@ -1,0 +1,24 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+---
+$schema: moz://mozilla.org/schemas/glean/pings/2-0-0
+
+addons:
+  description: |
+    Instrumentation related to the list of add-ons managed by the AddonManager.
+  include_client_id: true
+  reasons:
+    startup: |
+      AddonManager is fully started and initialized as part of the application startup.
+    daily: |
+      Recurring daily ping.
+    updated: |
+      The list of active addons/theme/GMPlugins has been updated.
+  bugs:
+    - https://bugzilla.mozilla.org/2000866
+  data_reviews:
+    - https://bugzilla.mozilla.org/2000866
+  notification_emails:
+    - addons-dev-internal@mozilla.com

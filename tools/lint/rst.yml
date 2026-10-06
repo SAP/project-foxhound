@@ -2,6 +2,8 @@
 rst:
     description: RST linter
     include: [.]
+    exclude:
+        - testing/web-platform/tests
     extensions:
         - rst
     support-files:

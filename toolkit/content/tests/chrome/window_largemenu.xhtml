@@ -93,13 +93,41 @@ async function nextTest()
   popup.openPopupAtScreen(100, y, false);
 }
 
+async function assertItemsOcclusionState(popup) {
+  info("Checking intersection state");
+  let items = popup.querySelectorAll("menuitem");
+  isnot(items.length, 0, "Should have items");
+  let {promise, resolve} = Promise.withResolvers();
+  let io = new IntersectionObserver(function(entries) {
+    resolve(entries)
+  });
+  for (let item of items) {
+    io.observe(item);
+  }
+  let entries = await promise;
+  io.disconnect();
+  is(entries.length, items.length, "Should have an entry per element");
+
+  let scrollbox = popup.scrollBox.scrollbox;
+  let scrollBoxRect = scrollbox.getBoundingClientRect();
+  let borderTop = parseFloat(getComputedStyle(scrollbox).borderTop);
+  let borderBottom = parseFloat(getComputedStyle(scrollbox).borderBottom);
+
+  for (let entry of entries) {
+    let itemRect = entry.boundingClientRect;
+    // Importantly, we don't consider the page's viewport.
+    let shouldIntersect = itemRect.bottom >= scrollBoxRect.top + borderTop && itemRect.top <= scrollBoxRect.bottom - borderBottom;
+    is(entry.isIntersecting, shouldIntersect, `${entry.target.outerHTML} intersection state matches`);
+  }
+}
+
 async function popupShown() {
   // This is needed for overflow events to run.
   await nextFrame();
   startTest();
 }
 
-function startTest()
+async function startTest()
 {
   if (gTests[gTestIndex] == "menu movement")
     return testPopupMovement();
@@ -113,6 +141,8 @@ function startTest()
   var marginBottom = parseFloat(getComputedStyle(popup).marginBottom);
   var scrollbox = popup.scrollBox.scrollbox;
   var expectedScrollPos = 0;
+
+  await assertItemsOcclusionState(popup);
 
   info(`${gTests[gTestIndex]}: ${JSON.stringify(rect)} | ${screen.width}x${screen.height} | ${gScreenY}`);
   if (gTestIndex == 0) {

@@ -3,9 +3,12 @@
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 1767581</title>
-  <script id="script" src="https://example.com/browser/dom/security/test/general/file_1767581.js"></script>
 </head>
 <body>
   Just an about page that loads in the privileged about process!
+
+  <script>window.ran = "inline1";</script>
+  <script src="https://example.com/browser/dom/security/test/general/file_1767581.js"></script>
+  <script>window.ran += "inline2";</script>
 </body>
 </html>

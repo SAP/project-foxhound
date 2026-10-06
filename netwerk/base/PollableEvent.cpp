@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,6 +19,34 @@
 #  include <fcntl.h>
 #  define USEPIPE 1
 #endif
+
+// PRFilePrivate is defined in a private header of NSPR (primpl.h) we can't
+// include. We need this to be able to set nonblocking=true which PR_CreatePipe
+// fails to do. We can remove this after bug 1993248 is fixed.
+// Note that nsLocalFileWin.cpp also redefines this in order to change the
+// appendMode.
+//-----------------------------------------------------------------------------
+typedef enum {
+  _PR_TRI_TRUE = 1,
+  _PR_TRI_FALSE = 0,
+  _PR_TRI_UNKNOWN = -1
+} _PRTriStateBool;
+
+struct _MDFileDesc {
+  PROsfd osfd;
+};
+
+struct PRFilePrivate {
+  int32_t state;
+  bool nonblocking;
+  _PRTriStateBool inheritable;
+  PRFileDesc* next;
+  int lockCount; /*   0: not locked
+                  *  -1: a native lockfile call is in progress
+                  * > 0: # times the file is locked */
+  bool appendMode;
+  _MDFileDesc md;
+};
 
 namespace mozilla {
 namespace net {
@@ -157,6 +183,12 @@ PollableEvent::PollableEvent()
     fd = PR_FileDesc2NativeHandle(mWriteFD);
     flags = fcntl(fd, F_GETFL, 0);
     (void)fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+    // Bug 1993248 - PR_CreatePipe doesn't set this flag, so we need to do it
+    // manually to ensure read operations are not blocking. This hack can be
+    // removed once this is fixed in NSPR.
+    mReadFD->secret->nonblocking = true;
+    mWriteFD->secret->nonblocking = true;
   } else {
     mReadFD = nullptr;
     mWriteFD = nullptr;
@@ -239,38 +271,24 @@ PollableEvent::~PollableEvent() {
   }
 }
 
-// we do not record signals on the socket thread
-// because the socket thread can reliably look at its
-// own runnable queue before selecting a poll time
-// this is the "service the network without blocking" comment in
-// nsSocketTransportService2.cpp
-bool PollableEvent::Signal() {
+// The socket thread can reliably look at its own runnable queue before
+// selecting a poll time, so signaling from the socket thread is a no-op.
+bool PollableEvent::Signal(bool aForce) {
   SOCKET_LOG(("PollableEvent::Signal\n"));
 
   if (!mWriteFD) {
     SOCKET_LOG(("PollableEvent::Signal Failed on no FD\n"));
     return false;
   }
-#ifndef XP_WIN
-  // On windows poll can hang and this became worse when we introduced the
-  // patch for bug 698882 (see also bug 1292181), therefore we reverted the
-  // behavior on windows to be as before bug 698882, e.g. write to the socket
-  // also if an event dispatch is on the socket thread and writing to the
-  // socket for each event. See bug 1292181.
+
   if (OnSocketThread()) {
     SOCKET_LOG(("PollableEvent::Signal OnSocketThread nop\n"));
     return true;
   }
-#endif
 
-#ifndef XP_WIN
-  // To wake up the poll writing once is enough, but for Windows that can cause
-  // hangs so we will write for every event.
-  // For non-Windows systems it is enough to write just once.
-  if (mSignaled) {
+  if (mSignaled && !aForce) {
     return true;
   }
-#endif
 
   if (!mSignaled) {
     mSignaled = true;
@@ -280,7 +298,7 @@ bool PollableEvent::Signal() {
   int32_t status = PR_Write(mWriteFD, "M", 1);
   SOCKET_LOG(("PollableEvent::Signal PR_Write %d\n", status));
   if (status != 1) {
-    NS_WARNING("PollableEvent::Signal Failed\n");
+    NS_WARNING("PollableEvent::Signal Failed");
     SOCKET_LOG(("PollableEvent::Signal Failed\n"));
     mSignaled = false;
     mWriteFailed = true;

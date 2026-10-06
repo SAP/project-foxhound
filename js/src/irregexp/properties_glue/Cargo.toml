@@ -1,0 +1,10 @@
+[package]
+name = "properties_glue"
+version = "0.1.0"
+edition = "2021"
+rust-version.workspace = true
+
+[dependencies]
+icu_properties = "2.1.2"
+icu_collections = "2"
+icu_casemap = "2"

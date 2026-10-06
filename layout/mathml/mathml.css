@@ -31,8 +31,12 @@ math {
   letter-spacing: normal;
   text-rendering: optimizeLegibility;
   -moz-float-edge: margin-box;
+  math-shift: normal;
   math-style: compact;
   math-depth: 0;
+  @media -moz-pref("mathml.font_family_math.enabled") {
+    font-family: math;
+  }
 }
 math[display="block" i] {
   display: block;
@@ -272,6 +276,38 @@ munderover > :not(:first-child) {
 }
 
 /*
+   https://w3c.github.io/mathml-core/#user-agent-stylesheet
+
+   A `math-shift: compact` value is applied to secondary elements like
+   denominators, roots, subscripts and specific multi-script parts to render
+   them at a reduced, "cramped" size.
+
+   For certain sub-elements within `mmultiscripts`, `math-shift: inherit` is
+   used to ensure they adopt the scaling of their parent.
+*/
+mfrac > :nth-child(2) {
+  math-shift: compact;
+}
+
+mroot,
+msqrt {
+  math-shift: compact;
+}
+
+msub > :nth-child(2),
+msubsup > :nth-child(2),
+mmultiscripts > :nth-child(even),
+mmultiscripts > mprescripts ~ :nth-child(odd),
+mover[accent="true" i] > :first-child,
+munderover[accent="true" i] > :first-child {
+  math-shift: compact;
+}
+
+mmultiscripts > mprescripts ~ :nth-child(even) {
+  math-shift: inherit;
+}
+
+/*
    The displaystyle attribute is allowed on the mtable element to set the
    inherited value of the attribute. If the attribute is not present, the
    mtable element sets displaystyle to "false" within the table elements.
@@ -307,7 +343,6 @@ semantics > :not(:first-child) {
   display: none;
 }
 
-/* stylelint-disable-next-line media-query-no-invalid */
 @media -moz-pref("mathml.legacy_mathvariant_attribute.disabled") {
   /* Implement MathML Core's automatic italic on mi.
      https://w3c.github.io/mathml-core/#the-mathvariant-attribute */

@@ -2,80 +2,87 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import org.apache.tools.ant.filters.ReplaceTokens
+import javax.inject.Inject
+
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
 
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-    }
-
-    sourceSets {
-        main {
-            assets {
-                srcDir layout.buildDirectory.dir("generated/assets/")
-            }
-        }
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     namespace = 'mozilla.components.feature.webcompat'
 }
 
-// We copy the webcompat extension from `browser/extensions/webcompat/` to
-// `assets/extensions/webcompat/` by first copying the extension into the
-// build directory, which is registered as the assets source directory.
-//
-// There is an `extensions/` folder in between, which is needed to access
-// the extension at: `resource://android/assets/extensions/webcompat/`.
-tasks.register("syncWebcompatExtension", Sync) {
-    def topsrcdir = gradle.mozconfig.topsrcdir
-    from "$topsrcdir/browser/extensions/webcompat"
-    into layout.buildDirectory.dir("generated/assets/extensions/webcompat/")
-    exclude "**/tests/**", "**/components.conf", "**/moz.build"
+// The webcompat extension is copied from `browser/extensions/webcompat/` into a generated assets
+// directory registered via the variant Sources API. The `extensions/webcompat/` subpath keeps the
+// extension accessible at `resource://android/assets/extensions/webcompat/`.
+abstract class SyncWebcompatExtension extends DefaultTask {
+    @InputFiles
+    @PathSensitive(PathSensitivity.RELATIVE)
+    @IgnoreEmptyDirectories
+    abstract ConfigurableFileCollection getSources()
 
-    // webcompat adopted #include directives in Bug 1936031, which are only
-    // processed for Desktop builds. The filter below pre-processes the files
-    // that include these directives.
+    @Internal
+    abstract Property<String> getExtensionDir()
 
-    // configuration-cache doesn't allow calling file() from a groovy closure,
-    // in this case filesMatching callback, so we call file before the closure.
-    def interventionsJson = file("$topsrcdir/browser/extensions/webcompat/data/interventions.json")
-    filesMatching([
-        '**/run.js',
-    ]) {
-        filter(ReplaceTokens, beginToken: '', endToken: '', tokens: [
-            '#include data/interventions.json': interventionsJson.text.trim(),
-        ])
+    @Internal
+    abstract Property<String> getGeneratedFilesDir()
+
+    @OutputDirectory
+    abstract DirectoryProperty getOutputDir()
+
+    @Inject
+    abstract FileSystemOperations getFs()
+
+    @TaskAction
+    void sync() {
+        fs.sync { spec ->
+            spec.from(extensionDir.get()) {
+                exclude "run.js"
+            }
+            spec.from(generatedFilesDir.get())
+            spec.into(outputDir.get().dir("extensions/webcompat"))
+            spec.exclude "**/tests/**", "**/components.conf", "**/moz.build", "**/codegen.py", "**/data/interventions", "**/templates"
+        }
     }
+}
+
+def syncWebcompatExtension = tasks.register("syncWebcompatExtension", SyncWebcompatExtension) {
+    def extension = "${gradle.mozconfig.topsrcdir}/browser/extensions/webcompat".toString()
+    def generated = "${gradle.mozconfig.topobjdir}/mobile/android/webcompat_addon_generated_files".toString()
+    extensionDir.set(extension)
+    generatedFilesDir.set(generated)
+    sources.from(extension, generated)
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.sources.assets.addGeneratedSourceDirectory(syncWebcompatExtension) { it.outputDir }
+    }
+}
+
+// DAGP explodes asset sources directly, so make that happen after the extension is synced.
+tasks.matching { it.name.startsWith("explodeAssetSource") }.configureEach { t ->
+    t.dependsOn(syncWebcompatExtension)
 }
 
 dependencies {
     implementation project(':components:concept-engine')
 
     implementation libs.androidx.core.ktx
-
-    implementation libs.kotlin.coroutines
+    implementation libs.kotlinx.coroutines
 
     testImplementation project(':components:support-test')
     testImplementation project(':components:support-webextensions')
+
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.robolectric
-    testImplementation libs.testing.coroutines
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.robolectric
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)
-preBuild.dependsOn syncWebcompatExtension

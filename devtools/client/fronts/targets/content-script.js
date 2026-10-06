@@ -30,4 +30,4 @@ class ContentScriptTargetFront extends TargetMixin(
 }
 
 exports.ContentScriptTargetFront = ContentScriptTargetFront;
-registerFront(exports.ContentScriptTargetFront);
+registerFront(ContentScriptTargetFront);

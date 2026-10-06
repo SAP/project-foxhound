@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,9 +10,10 @@ var histsvc = Cc["@mozilla.org/browser/nav-history-service;1"].getService(
 /**
  * Checks to see that a URI is in the database.
  *
- * @param aURI
- *        The URI to check.
- * @returns true if the URI is in the DB, false otherwise.
+ * @param {nsIURI} aURI
+ *   The URI to check.
+ * @returns {boolean}
+ *   true if the URI is in the DB, false otherwise.
  */
 function uri_in_db(aURI) {
   var options = histsvc.getNewQueryOptions();
@@ -132,16 +131,10 @@ add_task(async function test_execute() {
   Assert.ok(uri_in_db(testURI));
 
   // test for schema changes in bug 373239
-  // get direct db connection
-  var db = histsvc.DBConnection;
-  var q = "SELECT id FROM moz_bookmarks";
-  var statement;
-  try {
-    statement = db.createStatement(q);
-  } catch (ex) {
-    do_throw("bookmarks table does not have id field, schema is too old!");
-  } finally {
-    statement.finalize();
+  {
+    let db = await PlacesUtils.promiseDBConnection();
+    let rows = await db.execute("SELECT id FROM moz_bookmarks LIMIT 1");
+    Assert.notStrictEqual(rows, undefined, "bookmarks table has id field");
   }
 
   // bug 394741 - regressed history text searches

@@ -1,19 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsIScriptContext_h__
-#define nsIScriptContext_h__
+#ifndef nsIScriptContext_h_
+#define nsIScriptContext_h_
 
-#include "nscore.h"
-#include "nsString.h"
-#include "nsISupports.h"
-#include "nsCOMPtr.h"
-#include "jspubtd.h"
 #include "js/experimental/JSStencil.h"
-#include "mozilla/RefPtr.h"
+#include "jspubtd.h"
+#include "nsCOMPtr.h"
+#include "nsISupports.h"
+#include "nsString.h"
+#include "nscore.h"
 
 class nsIScriptGlobalObject;
 
@@ -77,4 +74,4 @@ class nsIOffThreadScriptReceiver : public nsISupports {
                                      nsresult aStatus) = 0;
 };
 
-#endif  // nsIScriptContext_h__
+#endif  // nsIScriptContext_h_

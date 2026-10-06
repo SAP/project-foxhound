@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,7 +17,6 @@
 #include "nsGenericHTMLElement.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/MutationEventBinding.h"
 #include "nsContentUtils.h"
 #include "nsIImageLoadingContent.h"
 #include "nsPIDOMWindow.h"
@@ -49,7 +47,7 @@ ImageAccessible::ImageAccessible(nsIContent* aContent, DocAccessible* aDoc)
   }
 }
 
-ImageAccessible::~ImageAccessible() {}
+ImageAccessible::~ImageAccessible() = default;
 
 ////////////////////////////////////////////////////////////////////////////////
 // LocalAccessible public
@@ -101,15 +99,14 @@ ENameValueFlag ImageAccessible::NativeName(nsString& aName) const {
 role ImageAccessible::NativeRole() const { return roles::GRAPHIC; }
 
 void ImageAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
-                                          nsAtom* aAttribute, int32_t aModType,
+                                          nsAtom* aAttribute,
+                                          AttrModType aModType,
                                           const nsAttrValue* aOldValue,
                                           uint64_t aOldState) {
   LinkableAccessible::DOMAttributeChanged(aNameSpaceID, aAttribute, aModType,
                                           aOldValue, aOldState);
 
-  if (aAttribute == nsGkAtoms::longdesc &&
-      (aModType == dom::MutationEvent_Binding::ADDITION ||
-       aModType == dom::MutationEvent_Binding::REMOVAL)) {
+  if (aAttribute == nsGkAtoms::longdesc && IsAdditionOrRemoval(aModType)) {
     mDoc->QueueCacheUpdate(this, CacheDomain::Actions);
   }
 }
@@ -241,7 +238,7 @@ void ImageAccessible::Notify(imgIRequest* aRequest, int32_t aType,
   if ((status ^ mImageRequestStatus) & imgIRequest::STATUS_SIZE_AVAILABLE) {
     nsIFrame* frame = GetFrame();
     if (frame && !frame->HasAnyStateBits(IMAGE_SIZECONSTRAINED)) {
-      RefPtr<AccEvent> event = new AccStateChangeEvent(
+      auto event = MakeRefPtr<AccStateChangeEvent>(
           this, states::INVISIBLE,
           !(status & imgIRequest::STATUS_SIZE_AVAILABLE));
       mDoc->FireDelayedEvent(event);
@@ -249,7 +246,7 @@ void ImageAccessible::Notify(imgIRequest* aRequest, int32_t aType,
   }
 
   if ((status ^ mImageRequestStatus) & imgIRequest::STATUS_IS_ANIMATED) {
-    RefPtr<AccEvent> event = new AccStateChangeEvent(
+    auto event = MakeRefPtr<AccStateChangeEvent>(
         this, states::ANIMATED, (status & imgIRequest::STATUS_IS_ANIMATED));
     mDoc->FireDelayedEvent(event);
   }

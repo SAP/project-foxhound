@@ -6,7 +6,7 @@ There are common concepts used throughout Telemetry:
 
 * :doc:`pings <pings>` - the packets we use to submit data
 * :doc:`sessions & subsessions <sessions>` - how we slice a users' time in the browser
-* *measurements* - how we :doc:`collect data <../collection/index>`
+* *measurements* - how we collect data
 * *opt-in* & *opt-out* - the different sets of data we collect
 * :doc:`submission <submission>` - how we send data to the servers
 * :doc:`archiving <archiving>` - retaining ping data locally

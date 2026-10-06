@@ -263,8 +263,7 @@ def WebIDLTest(parser, harness):
         threw = True
     harness.ok(
         threw,
-        "Should not allow a name collision between partial interface "
-        "and other object",
+        "Should not allow a name collision between partial interface and other object",
     )
 
     parser = parser.reset()
@@ -284,7 +283,7 @@ def WebIDLTest(parser, harness):
     except WebIDL.WebIDLError:
         threw = True
     harness.ok(
-        threw, "Should not allow a name collision between interface " "and other object"
+        threw, "Should not allow a name collision between interface and other object"
     )
 
     parser = parser.reset()
@@ -303,8 +302,7 @@ def WebIDLTest(parser, harness):
         threw = True
     harness.ok(
         threw,
-        "Should not allow a name collision between external interface "
-        "and other object",
+        "Should not allow a name collision between external interface and other object",
     )
 
     parser = parser.reset()
@@ -323,7 +321,7 @@ def WebIDLTest(parser, harness):
         threw = True
     harness.ok(
         threw,
-        "Should not allow a name collision between external interface " "and interface",
+        "Should not allow a name collision between external interface and interface",
     )
 
     parser = parser.reset()
@@ -336,7 +334,7 @@ def WebIDLTest(parser, harness):
     results = parser.finish()
     harness.ok(
         len(results) == 1 and isinstance(results[0], WebIDL.IDLExternalInterface),
-        "Should allow name collisions between external interface " "declarations",
+        "Should allow name collisions between external interface declarations",
     )
 
     parser = parser.reset()

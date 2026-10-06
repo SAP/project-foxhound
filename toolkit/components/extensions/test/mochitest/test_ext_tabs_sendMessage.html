@@ -277,6 +277,147 @@ add_task(async function test_tabs_sendMessage_opaqueOrigin() {
   await extension.unload();
 });
 
+// Verifies that tabs.sendMessage() with documentId triggers onMessage in frame
+// iff documentId matches. The tabs.connect() version of this test is in
+// test_ext_tabs_connect.html at test_tabs_connect_using_documentId.
+add_task(async function test_tabs_sendMessage_using_documentId() {
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      content_scripts: [
+        {
+          matches: [
+            // Note: for broader coverage this tests cross-origin frames, and
+            // test_tabs_connect_using_documentId tests same-origin frame.
+            "*://*/*/file_with_xorigin_frame.html?tabs.sendMessage",
+            "*://*/*/file_sample.html",
+          ],
+          all_frames: true,
+          js: ["cs.js"],
+        },
+      ],
+    },
+
+    background() {
+      browser.runtime.onMessage.addListener(async (msg, sender) => {
+        // runtime.onMessage is called for the top frame, and the sub frame.
+        browser.test.assertEq("cs_ready", msg, `Message from: ${sender.url}`);
+        const documentId = sender.documentId;
+        const tabId = sender.tab.id;
+        browser.test.assertTrue(!!documentId, "sender.documentId is set");
+
+        try {
+          // Parsed by onMessage in cs.js to verify that the target matches.
+          let msg = `to_document_id:${documentId}`;
+          let response = await browser.tabs.sendMessage(tabId, msg, {
+            documentId,
+          });
+          browser.test.assertEq(sender.url, response, "Got response");
+
+          await browser.test.assertRejects(
+            browser.tabs.sendMessage(tabId, "msg", {
+              documentId: "00000000-0000-0000-0000-000000000000",
+            }),
+            "Could not establish connection. Receiving end does not exist.",
+            "Error when trying to sendMessage() with invalid documentId"
+          );
+          browser.test.log("Testing tabs.connect() with invalid documentId");
+        } catch (e) {
+          browser.test.fail(`Error: ${e} :: ${e.stack}`);
+        }
+        browser.test.sendMessage(sender.frameId ? "done:frame" : "done:top");
+      });
+    },
+
+    files: {
+      "cs.js"() {
+        browser.runtime.onMessage.addListener(msg => {
+          browser.test.assertEq(
+            msg.replace(/^to_document_id:/, ""),
+            browser.runtime.getDocumentId(window),
+            `sendMessage() for documentId reached onMessage of ${document.URL}`
+          );
+          return Promise.resolve(document.URL);
+        });
+        browser.runtime.sendMessage("cs_ready");
+      },
+    },
+  });
+
+  await extension.startup();
+
+  // We want a document with an iframe to make sure that passing documentId
+  // causes the message to be sent to that frame only, instead of all frames.
+  let win = window.open("file_with_xorigin_frame.html?tabs.sendMessage");
+  await Promise.all([
+    extension.awaitMessage("done:frame"),
+    extension.awaitMessage("done:top"),
+  ]);
+  win.close();
+
+  await extension.unload();
+});
+
+add_task(async function test_tabs_sendMessage_documentId_bfcache() {
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      content_scripts: [
+        {
+          matches: [
+            "http://mochi.test/*/file_sample.html?bfcache-page1",
+            "http://mochi.test/*/file_sample.html?bfcache-page2",
+          ],
+          js: ["cs.js"],
+        },
+      ],
+    },
+
+    background() {
+      let page1DocumentId, tabId;
+
+      browser.runtime.onMessage.addListener((msg, sender) => {
+        if (msg === "page1_ready") {
+          page1DocumentId = sender.documentId;
+          tabId = sender.tab.id;
+          return Promise.resolve("navigate");
+        }
+
+        if (msg === "page2_ready") {
+          browser.test.assertRejects(
+            browser.tabs.sendMessage(tabId, "ping", {
+              documentId: page1DocumentId,
+            }),
+            "Could not establish connection. Receiving end does not exist.",
+            "sendMessage to bfcached document's documentId is rejected"
+          ).then(() => browser.test.sendMessage("done"));
+        }
+      });
+    },
+
+    files: {
+      "cs.js"() {
+        browser.runtime.onMessage.addListener(async () => "pong");
+        if (location.search === "?bfcache-page2") {
+          browser.runtime.sendMessage("page2_ready");
+        } else {
+          browser.runtime.sendMessage("page1_ready").then(signal => {
+            if (signal === "navigate") {
+              window.location.href = "?bfcache-page2";
+            }
+          });
+        }
+      },
+    },
+  });
+
+  await extension.startup();
+
+  let win = window.open("file_sample.html?bfcache-page1");
+  await extension.awaitMessage("done");
+  win.close();
+
+  await extension.unload();
+});
+
 add_task(async function test_tabs_sendMessage_blob() {
   // See: https://bugzilla.mozilla.org/show_bug.cgi?id=1724099
   if (!WebExtensionPolicy.useRemoteWebExtensions) {

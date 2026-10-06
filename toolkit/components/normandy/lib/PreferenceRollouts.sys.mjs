@@ -8,7 +8,7 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   CleanupManager: "resource://normandy/lib/CleanupManager.sys.mjs",
   IndexedDB: "resource://gre/modules/IndexedDB.sys.mjs",
-  PrefUtils: "resource://normandy/lib/PrefUtils.sys.mjs",
+  PrefUtils: "moz-src:///toolkit/modules/PrefUtils.sys.mjs",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   TelemetryEvents: "resource://normandy/lib/TelemetryEvents.sys.mjs",
 });
@@ -17,6 +17,7 @@ const log = LogManager.getLogger("recipe-runner");
 
 /**
  * PreferenceRollouts store info about an active or expired preference rollout.
+ *
  * @typedef {object} PreferenceRollout
  * @property {string} slug
  *   Unique slug of the experiment
@@ -32,6 +33,7 @@ const log = LogManager.getLogger("recipe-runner");
 
 /**
  * PreferenceSpec describe how a preference should change during a rollout.
+ *
  * @typedef {object} PreferenceSpec
  * @property {string} preferenceName
  *   The preference to modify.
@@ -75,7 +77,7 @@ function getDatabase() {
  * Get a transaction for interacting with the rollout store.
  *
  * @param {IDBDatabase} db
- * @param {String} mode Either "readonly" or "readwrite"
+ * @param {string} mode Either "readonly" or "readwrite"
  *
  * NOTE: Methods on the store returned by this function MUST be called
  * synchronously, otherwise the transaction with the store will expire.
@@ -116,6 +118,7 @@ export var PreferenceRollouts = {
 
   /**
    * Update the rollout database with changes that happened during early startup.
+   *
    * @param {object} rolloutPrefsChanged Map from pref name to previous pref value
    */
   async recordOriginalValues(originalPreferences) {
@@ -204,6 +207,7 @@ export var PreferenceRollouts = {
 
   /**
    * Add a new rollout
+   *
    * @param {PreferenceRollout} rollout
    */
   async add(rollout) {
@@ -213,6 +217,7 @@ export var PreferenceRollouts = {
 
   /**
    * Update an existing rollout
+   *
    * @param {PreferenceRollout} rollout
    * @throws If a matching rollout does not exist.
    */
@@ -229,6 +234,7 @@ export var PreferenceRollouts = {
   /**
    * Update many existing rollouts. More efficient than calling `update` many
    * times in a row.
+   *
    * @param {Array<PreferenceRollout>} rollouts
    * @throws If any of the passed rollouts have a slug that doesn't exist in the database already.
    */
@@ -262,6 +268,7 @@ export var PreferenceRollouts = {
 
   /**
    * Test whether there is a rollout in storage with the given slug.
+   *
    * @param {string} slug
    * @returns {boolean}
    */
@@ -273,6 +280,7 @@ export var PreferenceRollouts = {
 
   /**
    * Get a rollout by slug
+   *
    * @param {string} slug
    */
   async get(slug) {

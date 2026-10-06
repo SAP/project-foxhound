@@ -46,7 +46,7 @@ async function idbCheckFunc() {
 
 async function workerDriverFunc() {
   const resultPromise = idbCheckFunc();
-  /* eslint-env worker */
+
   // (SharedWorker)
   if (!("postMessage" in self)) {
     addEventListener("connect", function (evt) {

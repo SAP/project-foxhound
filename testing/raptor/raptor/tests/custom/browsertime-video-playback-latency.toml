@@ -26,6 +26,7 @@ preferences = [
 repository = "https://github.com/mozilla/perf-automation"
 repository_revision = "e3d0295c15cfdd6f32e6d4270de0ed5d6c1632cd"
 repository_path = "benchmarks/video-playback-latency"
+sparse_checkout = true
 
 ["vpl-h264"]
 test_url = "http://<host>:<port>/h264_1080p.html"

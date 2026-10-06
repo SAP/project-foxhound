@@ -1,21 +1,20 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebGLShader.h"
 
-#include "GLSLANG/ShaderLang.h"
 #include "GLContext.h"
-#include "mozilla/dom/WebGLRenderingContextBinding.h"
-#include "mozilla/MemoryReporting.h"
-#include "nsPrintfCString.h"
-#include "nsString.h"
-#include "prenv.h"
+#include "GLSLANG/ShaderLang.h"
 #include "WebGLContext.h"
 #include "WebGLObjectModel.h"
 #include "WebGLShaderValidator.h"
 #include "WebGLValidateStrings.h"
+#include "mozilla/MemoryReporting.h"
+#include "mozilla/dom/WebGLRenderingContextBinding.h"
+#include "nsPrintfCString.h"
+#include "nsString.h"
+#include "prenv.h"
 
 namespace mozilla {
 
@@ -89,7 +88,7 @@ void WebGLShader::CompileShader() {
   gl::GLContext* gl = mContext->gl;
 
   static const bool kDumpShaders = PR_GetEnv("MOZ_WEBGL_DUMP_SHADERS");
-  if (MOZ_UNLIKELY(kDumpShaders)) {
+  if (kDumpShaders) [[unlikely]] {
     printf_stderr("==== begin MOZ_WEBGL_DUMP_SHADERS ====\n");
     PrintLongString(mSource.c_str(), mSource.size());
   }
@@ -101,10 +100,10 @@ void WebGLShader::CompileShader() {
     mCompileResults = validator->ValidateAndTranslate(mSource.c_str());
   }
 
-  mCompilationLog = mCompileResults->mInfoLog.c_str();
+  mCompilationLog = mCompileResults->mInfoLog;
   const auto& success = mCompileResults->mValid;
 
-  if (MOZ_UNLIKELY(kDumpShaders)) {
+  if (kDumpShaders) [[unlikely]] {
     printf_stderr("\n==== \\/ \\/ \\/ ====\n");
     if (success) {
       const auto& translated = mCompileResults->mObjectCode;

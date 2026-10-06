@@ -1,14 +1,13 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SVGFETurbulenceElement.h"
-#include "mozilla/dom/SVGFETurbulenceElementBinding.h"
+
 #include "mozilla/SVGFilterInstance.h"
-#include "mozilla/dom/Document.h"
 #include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/SVGFETurbulenceElementBinding.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(FETurbulence)
 
@@ -17,10 +16,10 @@ using namespace mozilla::gfx;
 namespace mozilla::dom {
 
 // Stitch Options
-static const unsigned short SVG_STITCHTYPE_STITCH = 1;
-static const unsigned short SVG_STITCHTYPE_NOSTITCH = 2;
+constexpr uint16_t SVG_STITCHTYPE_STITCH = 1;
+constexpr uint16_t SVG_STITCHTYPE_NOSTITCH = 2;
 
-static const int32_t MAX_OCTAVES = 10;
+static constexpr int32_t MAX_OCTAVES = 10;
 
 JSObject* SVGFETurbulenceElement::WrapNode(JSContext* aCx,
                                            JS::Handle<JSObject*> aGivenProto) {
@@ -31,14 +30,14 @@ SVGElement::NumberInfo SVGFETurbulenceElement::sNumberInfo[1] = {
     {nsGkAtoms::seed, 0}};
 
 SVGElement::NumberPairInfo SVGFETurbulenceElement::sNumberPairInfo[1] = {
-    {nsGkAtoms::baseFrequency, 0, 0}};
+    {nsGkAtoms::baseFrequency, 0}};
 
 SVGElement::IntegerInfo SVGFETurbulenceElement::sIntegerInfo[1] = {
     {nsGkAtoms::numOctaves, 1}};
 
 SVGEnumMapping SVGFETurbulenceElement::sTypeMap[] = {
-    {nsGkAtoms::fractalNoise, SVG_TURBULENCE_TYPE_FRACTALNOISE},
-    {nsGkAtoms::turbulence, SVG_TURBULENCE_TYPE_TURBULENCE},
+    {nsGkAtoms::fractalNoise, uint8_t(SVGTurbulenceType::FractalNoise)},
+    {nsGkAtoms::turbulence, uint8_t(SVGTurbulenceType::Turbulence)},
     {nullptr, 0}};
 
 SVGEnumMapping SVGFETurbulenceElement::sStitchTilesMap[] = {
@@ -47,7 +46,7 @@ SVGEnumMapping SVGFETurbulenceElement::sStitchTilesMap[] = {
     {nullptr, 0}};
 
 SVGElement::EnumInfo SVGFETurbulenceElement::sEnumInfo[2] = {
-    {nsGkAtoms::type, sTypeMap, SVG_TURBULENCE_TYPE_TURBULENCE},
+    {nsGkAtoms::type, sTypeMap, uint8_t(SVGTurbulenceType::Turbulence)},
     {nsGkAtoms::stitchTiles, sStitchTilesMap, SVG_STITCHTYPE_NOSTITCH}};
 
 SVGElement::StringInfo SVGFETurbulenceElement::sStringInfo[1] = {
@@ -63,13 +62,13 @@ NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGFETurbulenceElement)
 already_AddRefed<DOMSVGAnimatedNumber>
 SVGFETurbulenceElement::BaseFrequencyX() {
   return mNumberPairAttributes[BASE_FREQ].ToDOMAnimatedNumber(
-      SVGAnimatedNumberPair::eFirst, this);
+      SVGAnimatedNumberPairWhichOne::First, this);
 }
 
 already_AddRefed<DOMSVGAnimatedNumber>
 SVGFETurbulenceElement::BaseFrequencyY() {
   return mNumberPairAttributes[BASE_FREQ].ToDOMAnimatedNumber(
-      SVGAnimatedNumberPair::eSecond, this);
+      SVGAnimatedNumberPairWhichOne::Second, this);
 }
 
 already_AddRefed<DOMSVGAnimatedInteger> SVGFETurbulenceElement::NumOctaves() {
@@ -94,19 +93,20 @@ FilterPrimitiveDescription SVGFETurbulenceElement::GetPrimitiveDescription(
     const nsTArray<bool>& aInputsAreTainted,
     nsTArray<RefPtr<SourceSurface>>& aInputImages) {
   float fX = mNumberPairAttributes[BASE_FREQ].GetAnimValue(
-      SVGAnimatedNumberPair::eFirst);
+      SVGAnimatedNumberPairWhichOne::First);
   float fY = mNumberPairAttributes[BASE_FREQ].GetAnimValue(
-      SVGAnimatedNumberPair::eSecond);
+      SVGAnimatedNumberPairWhichOne::Second);
   float seed = mNumberAttributes[OCTAVES].GetAnimValue();
   uint32_t octaves =
       std::clamp(mIntegerAttributes[OCTAVES].GetAnimValue(), 0, MAX_OCTAVES);
-  uint32_t type = mEnumAttributes[TYPE].GetAnimValue();
+  SVGTurbulenceType type =
+      SVGTurbulenceType(mEnumAttributes[TYPE].GetAnimValue());
   uint16_t stitch = mEnumAttributes[STITCHTILES].GetAnimValue();
 
   if (fX == 0 && fY == 0) {
     // A base frequency of zero results in transparent black for
     // type="turbulence" and in 50% alpha 50% gray for type="fractalNoise".
-    if (type == SVG_TURBULENCE_TYPE_TURBULENCE) {
+    if (type == SVGTurbulenceType::Turbulence) {
       return FilterPrimitiveDescription();
     }
     FloodAttributes atts;

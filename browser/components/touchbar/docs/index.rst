@@ -53,7 +53,7 @@ JavaScript API
 
 ``browser/components/touchbar/MacTouchBar.sys.mjs`` defines what specific inputs are
 available to the user, what icon they will have, what action they will perform,
-and so on. Inputs are defined in the ``gBuiltInInputs`` object `in that file`_.
+and so on. Inputs are defined in the ``gBuiltInInputs`` object :searchfox:`in that file <mozilla-central/rev/669fac9888b173c02baa4c036e980c0c204dfe02:browser/components/touchbar/MacTouchBar.sys.mjs#76>`.
 When creating a new object in ``gBuiltInInputs``, the available properties are
 documented in the JSDoc for ``TouchBarInput``:
 
@@ -97,8 +97,6 @@ Clarification on some of these properties is warranted.
   ``kInputTypes.BUTTON``. When used with an input of type
   ``kInputTypes.POPOVER``, any input type except another ``kInputTypes.POPOVER``
   can be used.
-
-.. _in that file: https://searchfox.org/mozilla-central/rev/669fac9888b173c02baa4c036e980c0c204dfe02/browser/components/touchbar/MacTouchBar.sys.mjs#76
 
 Input types
 -----------
@@ -194,7 +192,7 @@ The search popover
               type: kInputTypes.BUTTON,
               callback: () =>
                 gTouchBarHelper.insertRestrictionInUrlbar(
-                  UrlbarTokenizer.RESTRICT.BOOKMARK
+                  UrlbarShared.RESTRICT_TOKENS.BOOKMARK
                 ),
             },
             History: {
@@ -202,7 +200,7 @@ The search popover
               type: kInputTypes.BUTTON,
               callback: () =>
                 gTouchBarHelper.insertRestrictionInUrlbar(
-                  UrlbarTokenizer.RESTRICT.HISTORY
+                  UrlbarShared.RESTRICT_TOKENS.HISTORY
                 ),
             },
             OpenTabs: {
@@ -210,7 +208,7 @@ The search popover
               type: kInputTypes.BUTTON,
               callback: () =>
                 gTouchBarHelper.insertRestrictionInUrlbar(
-                  UrlbarTokenizer.RESTRICT.OPENPAGE
+                  UrlbarShared.RESTRICT_TOKENS.OPENPAGE
                 ),
             },
             Tags: {
@@ -218,7 +216,7 @@ The search popover
               type: kInputTypes.BUTTON,
               callback: () =>
                 gTouchBarHelper.insertRestrictionInUrlbar(
-                  UrlbarTokenizer.RESTRICT.TAG
+                  UrlbarShared.RESTRICT_TOKENS.TAG
                 ),
             },
           },
@@ -238,11 +236,9 @@ will make the input available in the Touch Bar customization window (accessible
 from the Firefox menu bar item).
 
 If you want to to add your new input to the default set, add its identifier
-here_, where ``type`` is a value from ``kAllowedInputTypes`` in that
+:searchfox:`here <mozilla-central/rev/ebe492edacc75bb122a2b380e4cafcca3470864c:widget/cocoa/nsTouchBar.mm#100>`, where ``type`` is a value from ``kAllowedInputTypes`` in that
 file and ``key`` is the value you set for ``title`` in ``gBuiltInInputs``.
 You should request approval from UX before changing the default set of inputs.
-
-.. _here: https://searchfox.org/mozilla-central/rev/ebe492edacc75bb122a2b380e4cafcca3470864c/widget/cocoa/nsTouchBar.mm#100
 
 If you are interested in adding new features to Firefox's implementation of the
 Touch Bar API, read on!
@@ -259,7 +255,7 @@ The best resource to understand the Touch Bar API is Apple's
 these APIs and how one might extend ``nsTouchBar`` to enable new Touch Bar
 features.
 
-Every new Firefox window initializes ``nsTouchBar`` (link_). The function
+Every new Firefox window initializes ``nsTouchBar`` (:searchfox:`link <mozilla-central/rev/ebe492edacc75bb122a2b380e4cafcca3470864c:widget/cocoa/nsCocoaWindow.mm#2877>`). The function
 ``makeTouchBar`` is looked for automatically on every new instance of an
 ``NSWindow*``. If ``makeTouchBar`` is defined, that window will own a new
 instance of ``nsTouchBar``.
@@ -277,7 +273,6 @@ created containing a default set of inputs. ``initWithInputs`` can also take an
 initialized with only those inputs available.
 
 .. _official documentation: https://developer.apple.com/documentation/appkit/nstouchbar?language=objc
-.. _link: https://searchfox.org/mozilla-central/rev/ebe492edacc75bb122a2b380e4cafcca3470864c/widget/cocoa/nsCocoaWindow.mm#2877
 
 NSTouchBarItemIdentifiers
 -------------------------
@@ -304,7 +299,7 @@ If you need to generate an identifier, use the convenience method
 
 .. warning::
 
-  ``NSTouchBarItemIdentifier`` `is used in one other place`_: setting
+  ``NSTouchBarItemIdentifier`` :searchfox:`is used in one other place <mozilla-central/rev/ebe492edacc75bb122a2b380e4cafcca3470864c:widget/cocoa/nsTouchBar.mm#71>`: setting
   ``customizationIdentifier``. Do not ever change this string. If it is changed,
   any customizations users have made to the layout of their Touch Bar in Firefox
   will be erased.
@@ -315,8 +310,6 @@ that holds the properties specified for each input in ``gBuiltInInputs``.
 which are the actual objects used by Apple's Touch Bar API and displayed in the
 Touch Bar. It is important to understand the difference between
 ``TouchBarInput`` and ``NSTouchBarItem``!
-
-.. _is used in one other place: https://searchfox.org/mozilla-central/rev/ebe492edacc75bb122a2b380e4cafcca3470864c/widget/cocoa/nsTouchBar.mm#71
 
 TouchBarInput creation flow
 ---------------------------

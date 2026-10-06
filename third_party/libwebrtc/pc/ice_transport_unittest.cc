@@ -13,7 +13,7 @@
 #include <memory>
 #include <utility>
 
-#include "api/environment/environment_factory.h"
+#include "api/environment/environment.h"
 #include "api/ice_transport_factory.h"
 #include "api/ice_transport_interface.h"
 #include "api/make_ref_counted.h"
@@ -22,38 +22,39 @@
 #include "p2p/test/fake_port_allocator.h"
 #include "rtc_base/internal/default_socket_server.h"
 #include "rtc_base/socket_server.h"
-#include "rtc_base/thread.h"
+#include "test/create_test_environment.h"
 #include "test/gtest.h"
+#include "test/run_loop.h"
 
 namespace webrtc {
 
 class IceTransportTest : public ::testing::Test {
  protected:
   IceTransportTest()
-      : socket_server_(rtc::CreateDefaultSocketServer()),
+      : socket_server_(CreateDefaultSocketServer()),
         main_thread_(socket_server_.get()) {}
 
   SocketServer* socket_server() const { return socket_server_.get(); }
 
  private:
   std::unique_ptr<SocketServer> socket_server_;
-  AutoSocketServerThread main_thread_;
+  test::RunLoop main_thread_;
 };
 
 TEST_F(IceTransportTest, CreateNonSelfDeletingTransport) {
   auto cricket_transport =
-      std::make_unique<cricket::FakeIceTransport>("name", 0, nullptr);
+      std::make_unique<FakeIceTransportInternal>("name", 0, nullptr);
   auto ice_transport =
-      rtc::make_ref_counted<IceTransportWithPointer>(cricket_transport.get());
+      make_ref_counted<IceTransportWithPointer>(cricket_transport.get());
   EXPECT_EQ(ice_transport->internal(), cricket_transport.get());
   ice_transport->Clear();
   EXPECT_NE(ice_transport->internal(), cricket_transport.get());
 }
 
 TEST_F(IceTransportTest, CreateSelfDeletingTransport) {
-  cricket::FakePortAllocator port_allocator(CreateEnvironment(),
-                                            socket_server());
-  IceTransportInit init;
+  Environment env = CreateTestEnvironment();
+  FakePortAllocator port_allocator(env, socket_server());
+  IceTransportInit init(env);
   init.set_port_allocator(&port_allocator);
   auto ice_transport = CreateIceTransport(std::move(init));
   EXPECT_NE(nullptr, ice_transport->internal());

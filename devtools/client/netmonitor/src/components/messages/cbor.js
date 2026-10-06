@@ -208,7 +208,7 @@ function decode(data, tagger, simpleValue) {
           return fullArray;
         }
         return readArrayBuffer(length);
-      case 3:
+      case 3: {
         const utf16data = [];
         if (length < 0) {
           while ((length = readIndefiniteStringLength(majorType)) >= 0) {
@@ -218,7 +218,8 @@ function decode(data, tagger, simpleValue) {
           appendUtf16Data(utf16data, length);
         }
         return String.fromCharCode.apply(null, utf16data);
-      case 4:
+      }
+      case 4: {
         let retArray;
         if (length < 0) {
           retArray = [];
@@ -232,13 +233,15 @@ function decode(data, tagger, simpleValue) {
           }
         }
         return retArray;
-      case 5:
+      }
+      case 5: {
         const retObject = {};
         for (i = 0; i < length || (length < 0 && !readBreak()); ++i) {
           const key = decodeItem();
           retObject[key] = decodeItem();
         }
         return retObject;
+      }
       case 6:
         return tagger(decodeItem(), length);
       case 7:

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -44,7 +43,8 @@ NS_IMPL_CYCLE_COLLECTING_NATIVE_RELEASE_WITH_LAST_RELEASE(TransactionItem,
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(TransactionItem)
 
-    NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(TransactionItem) tmp->CleanUp();
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(TransactionItem)
+  tmp->CleanUp();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(TransactionItem)

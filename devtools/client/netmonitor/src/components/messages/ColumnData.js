@@ -39,7 +39,7 @@ class ColumnData extends Component {
       ? dom.img({
           alt: typeLabel,
           className: `message-list-type-icon message-list-type-icon-${type}`,
-          src: `chrome://devtools/content/netmonitor/src/assets/icons/arrow-up.svg`,
+          src: `chrome://devtools/content/shared/components/images/arrow-up.svg`,
         })
       : null;
 

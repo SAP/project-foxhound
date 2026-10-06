@@ -1,0 +1,188 @@
+{
+  "actions": {
+    "button": {
+      "padding": {
+        "value": "{space.xsmall} {space.large}"
+      }
+    },
+    "gap": {
+      "value": "{space.small}"
+    }
+  },
+  "background": {
+    "color": {
+      "@base": {
+        "value": "{background.color.information}"
+      },
+      "warning": {
+        "value": "{background.color.warning}"
+      },
+      "success": {
+        "value": "{background.color.success}"
+      },
+      "critical": {
+        "value": "{background.color.critical}"
+      }
+    }
+  },
+  "border": {
+    "color": {
+      "value": {
+        "default": "oklch(from {message-bar.icon.color} l c h / 20%)",
+        "prefersContrast": "{border.color.@base}"
+      }
+    },
+    "radius": {
+      "value": "{border.radius.medium}"
+    },
+    "width": {
+      "value": "{border.width}"
+    }
+  },
+  "container": {
+    "gap": {
+      "value": "{space.small}"
+    },
+    "min-height": {
+      "value": "{size.item.large}"
+    },
+    "padding": {
+      "block": {
+        "value": "{space.small}"
+      },
+      "inline": {
+        "value": "{space.medium} {space.small}"
+      }
+    }
+  },
+  "content": {
+    "gap": {
+      "value": "{space.small} {space.medium}"
+    }
+  },
+  "icon": {
+    "background": {
+      "color": {
+        "@base": {
+          "value": "{background.color.information}"
+        },
+        "warning": {
+          "value": "{background.color.warning}"
+        },
+        "success": {
+          "value": "{background.color.success}"
+        },
+        "critical": {
+          "value": "{background.color.critical}"
+        }
+      }
+    },
+    "color": {
+      "value": "{icon.color.information}"
+    },
+    "container": {
+      "border": {
+        "@base": {
+          "value": "none"
+        },
+        "color": {
+          "value": "transparent"
+        },
+        "radius": {
+          "value": "{border.radius.circle}"
+        }
+      },
+      "height": {
+        "value": "min-content"
+      },
+      "margin": {
+        "block-start": {
+          "value": "calc({space.small} + 2px)"
+        }
+      },
+      "padding": {
+        "value": "0"
+      }
+    },
+    "size": {
+      "value": "{icon.size.@base}"
+    }
+  },
+  "message": {
+    "margin": {
+      "inline-end": {
+        "value": "{space.xsmall}"
+      }
+    }
+  },
+  "text": {
+    "color": {
+      "value": "{text.color.@base}"
+    },
+    "container": {
+      "gap": {
+        "value": "{space.xsmall} {space.small}"
+      },
+      "padding": {
+        "block": {
+          "value": "calc(({message-bar.container.min-height} - {message-bar.icon.size}) / 2)"
+        }
+      }
+    },
+    "content": {
+      "gap": {
+        "value": "{space.xsmall} {space.small}"
+      }
+    }
+  },
+  "nova": {
+    "background": {
+      "color": {
+        "warning": {
+          "value": "{message-bar.background.color.@base}"
+        },
+        "success": {
+          "value": "{message-bar.background.color.@base}"
+        },
+        "critical": {
+          "value": "{message-bar.background.color.@base}"
+        }
+      }
+    },
+    "container": {
+      "padding": {
+        "inline": {
+          "comment": "Using rem-based space tokens ends up causing subpixel rendering issues that cause the icon to look uncentered",
+          "value": "8px"
+        }
+      }
+    },
+    "icon": {
+      "container": {
+        "border": {
+          "@base": {
+            "value": "1px solid {message-bar.icon.container.border.color}"
+          },
+          "color": {
+            "value": {
+              "default": "transparent",
+              "forcedColors": "{message-bar.icon.color}"
+            }
+          }
+        },
+        "height": {
+          "value": "{message-bar.icon.size}"
+        },
+        "margin-block-start": {
+          "value": "0"
+        },
+        "padding": {
+          "value": "calc({space.small} - 1px)"
+        }
+      }
+    },
+    "text-container-padding-block": {
+      "value": "0"
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "label": "sekowf.wns.com",
+  "bugs": {
+    "1898917": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://sekowf.wns.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

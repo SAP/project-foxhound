@@ -1,8 +1,10 @@
-use crate::errors::AndroidError;
-use crate::maps_reader::MappingInfo;
-use crate::ptrace_dumper::PtraceDumper;
-use crate::Pid;
-use goblin::elf;
+use {
+    super::{
+        Pid, maps_reader::MappingInfo, minidump_writer::MinidumpWriter,
+        process_inspection::ProcessInspector, process_reader::CopyFromProcessError,
+    },
+    goblin::elf,
+};
 
 cfg_if::cfg_if! {
     if #[cfg(target_pointer_width = "32")] {
@@ -26,17 +28,36 @@ cfg_if::cfg_if! {
 
 type Result<T> = std::result::Result<T, AndroidError>;
 
+#[derive(Debug, thiserror::Error, serde::Serialize)]
+pub enum AndroidError {
+    #[error("Failed to copy memory from process")]
+    CopyFromProcessError(#[from] CopyFromProcessError),
+    #[error("Failed slice conversion")]
+    TryFromSliceError(
+        #[from]
+        #[serde(skip)]
+        std::array::TryFromSliceError,
+    ),
+    #[error("No Android rel found")]
+    NoRelFound,
+}
+
 struct DynVaddresses {
     min_vaddr: usize,
     dyn_vaddr: usize,
     dyn_count: usize,
 }
 
-fn has_android_packed_relocations(pid: Pid, load_bias: usize, vaddrs: DynVaddresses) -> Result<()> {
+fn has_android_packed_relocations(
+    process_inspector: &ProcessInspector,
+    pid: Pid,
+    load_bias: usize,
+    vaddrs: DynVaddresses,
+) -> Result<()> {
     let dyn_addr = load_bias + vaddrs.dyn_vaddr;
     for idx in 0..vaddrs.dyn_count {
         let addr = dyn_addr + SIZEOF_DYN * idx;
-        let dyn_data = PtraceDumper::copy_from_process(pid, addr, SIZEOF_DYN)?;
+        let dyn_data = MinidumpWriter::copy_from_process(process_inspector, pid, addr, SIZEOF_DYN)?;
         // TODO: Couldn't find a nice way to use goblin for that, to avoid the unsafe-block
         let dyn_obj: Dyn;
         unsafe {
@@ -50,14 +71,19 @@ fn has_android_packed_relocations(pid: Pid, load_bias: usize, vaddrs: DynVaddres
     Err(AndroidError::NoRelFound)
 }
 
-fn get_effective_load_bias(pid: Pid, ehdr: &elf_header::Header, address: usize) -> usize {
-    let ph = parse_loaded_elf_program_headers(pid, ehdr, address);
+fn get_effective_load_bias(
+    process_inspector: &ProcessInspector,
+    pid: Pid,
+    ehdr: &elf_header::Header,
+    address: usize,
+) -> usize {
+    let ph = parse_loaded_elf_program_headers(process_inspector, pid, ehdr, address);
     // If |min_vaddr| is non-zero and we find Android packed relocation tags,
     // return the effective load bias.
 
     if ph.min_vaddr != 0 {
         let load_bias = address - ph.min_vaddr;
-        if has_android_packed_relocations(pid, load_bias, ph).is_ok() {
+        if has_android_packed_relocations(process_inspector, pid, load_bias, ph).is_ok() {
             return load_bias;
         }
     }
@@ -67,6 +93,7 @@ fn get_effective_load_bias(pid: Pid, ehdr: &elf_header::Header, address: usize) 
 }
 
 fn parse_loaded_elf_program_headers(
+    process_inspector: &ProcessInspector,
     pid: Pid,
     ehdr: &elf_header::Header,
     address: usize,
@@ -76,7 +103,8 @@ fn parse_loaded_elf_program_headers(
     let mut dyn_vaddr = 0;
     let mut dyn_count = 0;
 
-    let phdr_opt = PtraceDumper::copy_from_process(
+    let phdr_opt = MinidumpWriter::copy_from_process(
+        process_inspector,
         pid,
         phdr_addr,
         elf_header::SIZEOF_EHDR * ehdr.e_phnum as usize,
@@ -106,17 +134,25 @@ fn parse_loaded_elf_program_headers(
     }
 }
 
-pub fn late_process_mappings(pid: Pid, mappings: &mut [MappingInfo]) -> Result<()> {
+pub fn late_process_mappings(
+    process_inspector: &ProcessInspector,
+    pid: Pid,
+    mappings: &mut [MappingInfo],
+) -> Result<()> {
     // Only consider exec mappings that indicate a file path was mapped, and
     // where the ELF header indicates a mapped shared library.
     for map in mappings
         .iter_mut()
         .filter(|m| m.is_executable() && m.name_is_path())
     {
-        let ehdr_opt =
-            PtraceDumper::copy_from_process(pid, map.start_address, elf_header::SIZEOF_EHDR)
-                .ok()
-                .and_then(|x| elf_header::Header::parse(&x).ok());
+        let ehdr_opt = MinidumpWriter::copy_from_process(
+            process_inspector,
+            pid,
+            map.start_address,
+            elf_header::SIZEOF_EHDR,
+        )
+        .ok()
+        .and_then(|x| elf_header::Header::parse(&x).ok());
 
         if let Some(ehdr) = ehdr_opt {
             if ehdr.e_type == elf_header::ET_DYN {
@@ -126,7 +162,8 @@ pub fn late_process_mappings(pid: Pid, mappings: &mut [MappingInfo]) -> Result<(
                 // the library does not contain Android packed relocations,
                 // GetEffectiveLoadBias() returns |start_addr| and the mapping entry
                 // is not changed.
-                let load_bias = get_effective_load_bias(pid, &ehdr, map.start_address);
+                let load_bias =
+                    get_effective_load_bias(process_inspector, pid, &ehdr, map.start_address);
                 map.size += map.start_address - load_bias;
                 map.start_address = load_bias;
             }

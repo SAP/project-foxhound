@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -61,6 +60,10 @@ bool HTMLSelectListAccessible::UnselectAll() {
   return mContent->AsElement()->HasAttr(nsGkAtoms::multiple)
              ? AccessibleWrap::UnselectAll()
              : false;
+}
+
+void HTMLSelectListAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
+  if (aIndex == eAction_Click) aName.AssignLiteral("click");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -138,7 +141,7 @@ ENameValueFlag HTMLSelectOptionAccessible::NativeName(nsString& aName) const {
 }
 
 void HTMLSelectOptionAccessible::DOMAttributeChanged(
-    int32_t aNameSpaceID, nsAtom* aAttribute, int32_t aModType,
+    int32_t aNameSpaceID, nsAtom* aAttribute, AttrModType aModType,
     const nsAttrValue* aOldValue, uint64_t aOldState) {
   HyperTextAccessible::DOMAttributeChanged(aNameSpaceID, aAttribute, aModType,
                                            aOldValue, aOldState);
@@ -319,16 +322,23 @@ uint64_t HTMLComboboxAccessible::NativeState() const {
   return state;
 }
 
-void HTMLComboboxAccessible::Description(nsString& aDescription) const {
+EDescriptionValueFlag HTMLComboboxAccessible::Description(
+    nsString& aDescription) const {
   aDescription.Truncate();
   // First check to see if combo box itself has a description, perhaps through
   // tooltip (title attribute) or via aria-describedby
-  LocalAccessible::Description(aDescription);
-  if (!aDescription.IsEmpty()) return;
+  EDescriptionValueFlag descFlag = LocalAccessible::Description(aDescription);
+  if (!aDescription.IsEmpty()) {
+    return descFlag;
+  }
 
   // Otherwise use description of selected option.
   LocalAccessible* option = SelectedOption();
-  if (option) option->Description(aDescription);
+  if (option) {
+    return option->Description(aDescription);
+  }
+
+  return eDescriptionOK;
 }
 
 void HTMLComboboxAccessible::Value(nsString& aValue) const {

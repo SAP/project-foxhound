@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<body>
+<script>
+async function run() {
+  const b = atob("AAAAHGZ0eXBpc29tAAACAGlzb21pc28ybXA0MQAAAj1tb292AAAAbG12aGQAAAAAAAAAAAAAAAAAALuAAAAAAAABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAByXRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAWVtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAALuAAAAAAFXEAAAAAAAtaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAFNvdW5kSGFuZGxlcgAAAAEQbWluZgAAABBzbWhkAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAADUc3RibAAAAIhzdHNkAAAAAAAAAAIAAABBT3B1cwAAAAAAAAABAAAAAAAAAAAACAAQAAAAALuAAAAAAAAdZE9wcwAIATgAALuAAAABCAQAAQIDBAUGBwAAADdPcHVzAAAAAAAAAAEAAAAAAAAAAAACABAAAAAAu4AAAAAAABNkT3BzAAICcAAAu4AAAAAAAAAQc3R0cwAAAAAAAAAAAAAAEHN0c2MAAAAAAAAAAAAAABRzdHN6AAAAAAAAAAAAAAAAAAAAEHN0Y28AAAAAAAAAAAAAABBtZGF0AAAAAAAAAAA=");
+  const u = new Uint8Array(b.length);
+  for(let i=0; i<b.length; i++) {
+    u[i]=b.charCodeAt(i);
+  }
+  const blob = new Blob([u], {type:'audio/mp4'});
+  const url = URL.createObjectURL(blob);
+
+  const promises = [];
+  for(let j=0; j<5; j++) {
+    const a = document.createElement('audio');
+    a.src = url;
+    a.load();
+    document.body.appendChild(a);
+    promises.push(Promise.race([a.play(), new Promise(r => a.onerror = r)]));
+  }
+
+  await Promise.all(promises);
+}
+
+(async () => {
+  try {
+    await run();
+  } finally {
+    document.documentElement.classList.remove('reftest-wait');
+  }
+})();
+</script>
+</body>
+</html>

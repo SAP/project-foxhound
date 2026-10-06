@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -43,6 +42,14 @@ WIN_LIBS=                                       \
 
 #include <windows.h>
 #include <winspool.h>
+
+// winspool.h pollutes the global namespace, failing unified builds in e.g.
+// nsIFormControl::SetForm. Undo the damage.
+#undef AddForm
+#undef DeleteForm
+#undef EnumForms
+#undef GetForm
+#undef SetForm
 
 // For Localization
 

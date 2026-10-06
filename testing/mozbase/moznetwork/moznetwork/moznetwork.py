@@ -127,12 +127,10 @@ def _parse_powershell():
             "v1.0",
             "powershell.exe",
         )
-        output = subprocess.check_output(
-            [
-                cmd,
-                "(Get-NetIPAddress -AddressFamily IPv4 -AddressState Preferred | Format-List -Property IPAddress)",
-            ]
-        ).decode("ascii")
+        output = subprocess.check_output([
+            cmd,
+            "(Get-NetIPAddress -AddressFamily IPv4 -AddressState Preferred | Format-List -Property IPAddress)",
+        ]).decode("ascii")
         ips = re.findall(r"IPAddress : (\d+.\d+.\d+.\d+)", output)
         for ip in ips:
             logger.debug("IPAddress: %s" % ip)

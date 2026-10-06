@@ -25,6 +25,7 @@ export class SafeAnchor extends React.PureComponent {
               this.props.referrer || "https://getpocket.com/recommendations",
             // Use the anchor's url, which could have been cleaned up
             url: event.currentTarget.href,
+            is_sponsored: this.props.isSponsored,
           },
         })
       );
@@ -53,7 +54,7 @@ export class SafeAnchor extends React.PureComponent {
   }
 
   render() {
-    const { url, className, title } = this.props;
+    const { url, className, title, isSponsored, onFocus } = this.props;
 
     let anchor = (
       <a
@@ -61,12 +62,14 @@ export class SafeAnchor extends React.PureComponent {
         title={title}
         className={className}
         onClick={this.onClick}
+        data-is-sponsored-link={!!isSponsored}
         {...(this.props.tabIndex === 0 || this.props.tabIndex
           ? {
               ref: this.props.setRef,
               tabIndex: this.props.tabIndex,
             }
           : {})}
+        {...(onFocus ? { onFocus } : {})}
       >
         {this.props.children}
       </a>

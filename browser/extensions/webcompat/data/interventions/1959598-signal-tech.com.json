@@ -1,0 +1,17 @@
+{
+  "label": "signal-tech.com",
+  "bugs": {
+    "1959598": {
+      "issue": "broken-scrolling",
+      "matches": ["*://www.signal-tech.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "content_scripts": {
+        "js": ["round_pageYOffset.js"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+From 298326653701d8e4a0b13ea2a12381401f7d459a Mon Sep 17 00:00:00 2001
+From: Jonathan Kew <jkew@mozilla.com>
+Date: Wed, 22 Apr 2026 13:00:22 -0700
+Subject: [PATCH 23/29] Catch potential failure during add_polygon
+
+---
+ src/cairo-tor-scan-converter.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/cairo-tor-scan-converter.c b/src/cairo-tor-scan-converter.c
+index f29359ce4..cbe88cf88 100644
+--- a/src/cairo-tor-scan-converter.c
++++ b/src/cairo-tor-scan-converter.c
+@@ -1830,6 +1830,7 @@ _cairo_tor_scan_converter_add_polygon (void		*converter,
+ 				       const cairo_polygon_t *polygon)
+ {
+     cairo_tor_scan_converter_t *self = converter;
++    cairo_status_t status;
+     int i;
+ 
+ #if 0
+@@ -1838,6 +1839,9 @@ _cairo_tor_scan_converter_add_polygon (void		*converter,
+     fclose (file);
+ #endif
+ 
++    if ((status = setjmp (self->jmp)))
++	return _cairo_scan_converter_set_error (self, _cairo_error (status));
++
+     for (i = 0; i < polygon->num_edges; i++)
+ 	 glitter_scan_converter_add_edge (self->converter, &polygon->edges[i]);
+ 
+-- 
+2.53.0
+

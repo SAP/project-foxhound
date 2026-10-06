@@ -128,6 +128,59 @@ add_task(async function test_content_analysis_blocked_file() {
   await task_resetState();
 });
 
+add_task(async function test_safebrowsing_allowOverride_false() {
+  await task_resetState();
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.safebrowsing.allowOverride", false]],
+  });
+
+  await task_addDownloads([
+    makeDownload(Downloads.Error.BLOCK_VERDICT_UNCOMMON),
+  ]);
+
+  await task_openPanel();
+
+  let item = DownloadsView.richListBox.lastElementChild;
+
+  info("Open the blocked subview.");
+  let viewPromise = promiseViewShown(DownloadsBlockedSubview.subview);
+  EventUtils.synthesizeMouseAtCenter(item, {});
+  await viewPromise;
+
+  ok(
+    DownloadsBlockedSubview.elements.unblockButton.hidden,
+    "Unblock button hidden when allowOverride is false"
+  );
+  ok(
+    !DownloadsBlockedSubview.elements.deleteButton.hidden,
+    "Remove button still visible when allowOverride is false"
+  );
+
+  info("Go back and open context menu.");
+  viewPromise = promiseViewShown(DownloadsBlockedSubview.mainView);
+  DownloadsBlockedSubview.panelMultiView.goBack();
+  await viewPromise;
+
+  let contextMenu = await openContextMenu(item);
+  let unblockItem = contextMenu.querySelector(".downloadUnblockMenuItem");
+  ok(
+    unblockItem.hidden,
+    "Unblock context menu item hidden when allowOverride is false"
+  );
+
+  let hidePromise = BrowserTestUtils.waitForEvent(contextMenu, "popuphidden");
+  contextMenu.hidePopup();
+  await hidePromise;
+
+  hidePromise = promisePanelHidden();
+  DownloadsPanel.hidePanel();
+  await hidePromise;
+
+  await SpecialPowers.popPrefEnv();
+  await task_resetState();
+});
+
 function promisePanelHidden() {
   return BrowserTestUtils.waitForEvent(DownloadsPanel.panel, "popuphidden");
 }

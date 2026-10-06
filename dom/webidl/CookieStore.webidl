@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -59,6 +58,7 @@ dictionary CookieInit {
   USVString path = "/";
   CookieSameSite sameSite = "strict";
   boolean partitioned = false;
+  long long? maxAge = null;
 };
 
 dictionary CookieStoreDeleteOptions {
@@ -73,24 +73,6 @@ dictionary CookieListItem {
 
   UTF8String name;
   UTF8String value;
-
-  [Pref="dom.cookieStore.extra.enabled"]
-  UTF8String path;
-
-  [Pref="dom.cookieStore.extra.enabled"]
-  UTF8String? domain;
-
-  [Pref="dom.cookieStore.extra.enabled"]
-  DOMHighResTimeStamp? expires;
-
-  [Pref="dom.cookieStore.extra.enabled"]
-  boolean secure;
-
-  [Pref="dom.cookieStore.extra.enabled"]
-  CookieSameSite sameSite;
-
-  [Pref="dom.cookieStore.extra.enabled"]
-  boolean partitioned;
 };
 
 typedef sequence<CookieListItem> CookieList;

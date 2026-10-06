@@ -20,6 +20,7 @@ const {
   loadSourceMap,
   clearSourceMaps,
   setSourceMapForGeneratedSources,
+  clearSourceMapForGeneratedSources,
 } = require("resource://devtools/client/shared/source-map-loader/source-map.js");
 
 const {
@@ -46,5 +47,6 @@ self.onmessage = workerHandler({
   getFileGeneratedRange,
   loadSourceMap,
   setSourceMapForGeneratedSources,
+  clearSourceMapForGeneratedSources,
   clearSourceMaps,
 });

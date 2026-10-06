@@ -10,6 +10,7 @@ const { SiteDataTestUtils } = ChromeUtils.importESModule(
 /**
  * Registers a console listener and waits for the cookie banner handled message
  * to be logged.
+ *
  * @returns {Promise} - Promise which resolves once the message has been logged.
  */
 async function waitForCookieBannerHandledConsoleMsg() {

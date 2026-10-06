@@ -25,7 +25,7 @@ add_task(async function test_focus_on_search_shouldnt_close_popup() {
   );
   searchInput.scrollIntoView();
   let searchFocused = BrowserTestUtils.waitForEvent(searchInput, "focus", true);
-  await EventUtils.synthesizeMouseAtCenter(searchInput, {}, window);
+  EventUtils.synthesizeMouseAtCenter(searchInput, {}, window);
   await searchFocused;
 
   is(

@@ -124,6 +124,7 @@ async function measureCanvasCaptureFrameRate(captureRate) {
       ["dom.min_background_timeout_value", 0],
       ["dom.min_background_timeout_value_without_budget_throttling", 0],
       ["browser.link.open_newwindow", 3], // window.open in new tab
+      ["media.peerconnection.ice.obfuscate_host_addresses", false],
     ],
   });
   // Throttle the canvas' refresh driver by opening a new foreground tab

@@ -68,7 +68,6 @@ add_task(async function test_contentscript_cache() {
   if (appinfo.processType === appinfo.PROCESS_TYPE_CONTENT) {
     /* globals addMessageListener, assert */
     chromeScript = SpecialPowers.loadChromeScript(() => {
-      /* eslint-env mozilla/chrome-script */
       addMessageListener("check-script-cache", extensionId => {
         const { ExtensionProcessScript } = ChromeUtils.importESModule(
           "resource://gre/modules/ExtensionProcessScript.sys.mjs"

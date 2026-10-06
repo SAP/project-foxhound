@@ -1,4 +1,7 @@
 [DEFAULT]
+skip-if = [
+  "isolated_process", # Bug 1709948
+]
 subsuite = "media"
 tags = "media-gpu"
 support-files = [
@@ -197,6 +200,8 @@ support-files = [
   "avc3/segment1.m4s^headers^",
   "tags_before_cluster.webm",
   "tags_before_cluster.webm^header^",
+  "bug1341228_init.webm",
+  "bug1341228_cluster.webm",
   "1516754.webm 1516754.webm^headers^",
   "init-trackid2.mp4",
   "init-trackid3.mp4",
@@ -222,6 +227,8 @@ support-files = [
 
 ["test_BufferingWait_mp4.html"]
 
+["test_BufferingWait_OffsetTimestamps_mp4.html"]
+
 ["test_ChangeType.html"]
 
 ["test_ChangeWhileWaitingOnMissingData_mp4.html"]
@@ -236,14 +243,17 @@ support-files = [
 
 ["test_FrameSelection_mp4.html"]
 skip-if = [
+  "os == 'android' && arch == 'aarch64' && debug", # Bug 1776960 - android aarch64 debug
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # mac due to bug 1487973
   "os == 'win'", # bug 1487973,
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # mac due to bug 1487973
-  "os == 'android' && processor == 'aarch64' && debug", # Bug 1776960 - android aarch64 debug
 ]
 
 ["test_HEAAC_extradata.html"]
 
 ["test_NoAudioLoopBackData.html"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt",
+]
 
 ["test_NoAudioLoopBackData_Muted.html"]
 
@@ -252,6 +262,10 @@ skip-if = [
 ["test_PlayEvents.html"]
 
 ["test_Resolution_change_should_not_cause_video_freeze.html"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && opt && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && opt && verify-standalone",
+]
 
 ["test_ResumeAfterClearing_mp4.html"]
 

@@ -1,0 +1,46 @@
+.. _mozilla_projects_nss_nss_3_90_6_release_notes:
+
+NSS 3.90.6 release notes
+========================
+
+`Introduction <#introduction>`__
+--------------------------------
+
+.. container::
+
+   Network Security Services (NSS) 3.90.6 was released on *13 April 2026*.
+
+`Distribution Information <#distribution_information>`__
+--------------------------------------------------------
+
+.. container::
+
+   The HG tag is NSS_3_90_6_RTM. NSS 3.90.6 requires NSPR 4.35 or newer.
+
+   NSS 3.90.6 source distributions are available on ftp.mozilla.org for secure HTTPS download:
+
+   -  Source tarballs:
+      https://ftp.mozilla.org/pub/mozilla.org/security/nss/releases/NSS_3_90_6_RTM/src/
+
+   Other releases are available :ref:`mozilla_projects_nss_releases`.
+
+.. _changes_in_nss_3.90.6:
+
+`Changes in NSS 3.90.6 <#changes_in_nss_3.90.6>`__
+------------------------------------------------------------------
+
+.. container::
+
+   - Bug 2030135 - improve error handling in PK11_ImportPrivateKeyInfoAndReturnKey (NSS 3.90.5).
+   - Bug 2029462 - store email on subject cache_entry in NSS trust domain.
+   - Bug 2029425 - Heap use-after-free in cert_VerifyCertChainOld via dangling certsList[] entry on NameConstraints violation.
+   - Bug 2029323 - Improve size calculations in CMS content buffering.
+   - Bug 2028001 - avoid integer overflow while escaping RFC822 Names.
+   - Bug 2027378 - Reject excessively large ASN.1 SEQUENCE OF in quickder.
+   - Bug 2027365 - Deep copy profile data in CERT_FindSMimeProfile.
+   - Bug 2027345 - Improve input validation in DSAU signature decoding.
+   - Bug 2026089 - Clarify extension negotiation mechanism for TLS Handshakes (NSS 3.90.5).
+   - Bug 2023209 - ensure permittedSubtrees don't match wildcards that could be outside the permitted tree.
+   - Bug 2009552 - avoid integer overflow in platform-independent ghash.
+   - Bug 1935995 - make ss->ssl3.hs.cookie an owned-copy of the cookie.
+

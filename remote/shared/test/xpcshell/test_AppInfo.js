@@ -21,6 +21,9 @@ add_task(function test_custom_properties() {
     "isLinux",
     "isMac",
     "isWindows",
+    // display
+    "isHeadless",
+    "isWayland",
     // applications
     "isFirefox",
     "isThunderbird",

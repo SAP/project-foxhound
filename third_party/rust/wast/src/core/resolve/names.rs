@@ -1,8 +1,8 @@
+use crate::Error;
 use crate::core::resolve::Ns;
 use crate::core::*;
-use crate::names::{resolve_error, Namespace};
+use crate::names::{Namespace, resolve_error};
 use crate::token::{Id, Index};
-use crate::Error;
 use std::collections::HashMap;
 
 pub fn resolve<'a>(fields: &mut Vec<ModuleField<'a>>) -> Result<Resolver<'a>, Error> {
@@ -85,13 +85,20 @@ impl<'a> Resolver<'a> {
 
     fn register(&mut self, item: &ModuleField<'a>) -> Result<(), Error> {
         match item {
-            ModuleField::Import(i) => match &i.item.kind {
-                ItemKind::Func(_) => self.funcs.register(i.item.id, "func")?,
-                ItemKind::Memory(_) => self.memories.register(i.item.id, "memory")?,
-                ItemKind::Table(_) => self.tables.register(i.item.id, "table")?,
-                ItemKind::Global(_) => self.globals.register(i.item.id, "global")?,
-                ItemKind::Tag(_) => self.tags.register(i.item.id, "tag")?,
-            },
+            ModuleField::Import(imports) => {
+                for sig in imports.item_sigs() {
+                    match &sig.kind {
+                        ItemKind::Func(_) | ItemKind::FuncExact(_) => {
+                            self.funcs.register(sig.id, "func")?
+                        }
+                        ItemKind::Memory(_) => self.memories.register(sig.id, "memory")?,
+                        ItemKind::Table(_) => self.tables.register(sig.id, "table")?,
+                        ItemKind::Global(_) => self.globals.register(sig.id, "global")?,
+                        ItemKind::Tag(_) => self.tags.register(sig.id, "tag")?,
+                    };
+                }
+                return Ok(());
+            }
             ModuleField::Global(i) => self.globals.register(i.id, "global")?,
             ModuleField::Memory(i) => self.memories.register(i.id, "memory")?,
             ModuleField::Func(i) => self.funcs.register(i.id, "func")?,
@@ -112,7 +119,7 @@ impl<'a> Resolver<'a> {
 
             // These fields don't define any items in any index space.
             ModuleField::Export(_) | ModuleField::Start(_) | ModuleField::Custom(_) => {
-                return Ok(())
+                return Ok(());
             }
         };
 
@@ -121,8 +128,10 @@ impl<'a> Resolver<'a> {
 
     fn resolve_field(&self, field: &mut ModuleField<'a>) -> Result<(), Error> {
         match field {
-            ModuleField::Import(i) => {
-                self.resolve_item_sig(&mut i.item)?;
+            ModuleField::Import(imports) => {
+                for sig in imports.unique_sigs_mut() {
+                    self.resolve_item_sig(sig)?;
+                }
                 Ok(())
             }
 
@@ -267,7 +276,7 @@ impl<'a> Resolver<'a> {
 
     fn resolve_item_sig(&self, item: &mut ItemSig<'a>) -> Result<(), Error> {
         match &mut item.kind {
-            ItemKind::Func(t) | ItemKind::Tag(TagType::Exception(t)) => {
+            ItemKind::Func(t) | ItemKind::FuncExact(t) | ItemKind::Tag(TagType::Exception(t)) => {
                 self.resolve_type_use(t)?;
             }
             ItemKind::Global(t) => self.resolve_valtype(&mut t.ty)?,
@@ -673,6 +682,26 @@ impl<'a, 'b> ExprResolver<'a, 'b> {
                 self.resolver.resolve(&mut s.tag_index, Ns::Tag)?;
             }
 
+            StructNewDesc(i) | StructNewDefaultDesc(i) => {
+                self.resolver.resolve(i, Ns::Type)?;
+            }
+            RefGetDesc(i) => {
+                self.resolver.resolve(i, Ns::Type)?;
+            }
+            RefCastDesc(i) => {
+                self.resolver.resolve_reftype(&mut i.r#type)?;
+            }
+            BrOnCastDesc(i) => {
+                self.resolve_label(&mut i.label)?;
+                self.resolver.resolve_reftype(&mut i.to_type)?;
+                self.resolver.resolve_reftype(&mut i.from_type)?;
+            }
+            BrOnCastDescFail(i) => {
+                self.resolve_label(&mut i.label)?;
+                self.resolver.resolve_reftype(&mut i.to_type)?;
+                self.resolver.resolve_reftype(&mut i.from_type)?;
+            }
+
             _ => {}
         }
         Ok(())
@@ -681,14 +710,11 @@ impl<'a, 'b> ExprResolver<'a, 'b> {
     fn resolve_resume_table(&self, table: &mut ResumeTable<'a>) -> Result<(), Error> {
         for handle in &mut table.handlers {
             match handle {
-                Handle::OnLabel {
-                    ref mut tag,
-                    ref mut label,
-                } => {
+                Handle::OnLabel { tag, label } => {
                     self.resolver.resolve(tag, Ns::Tag)?;
                     self.resolve_label(label)?;
                 }
-                Handle::OnSwitch { ref mut tag } => {
+                Handle::OnSwitch { tag } => {
                     self.resolver.resolve(tag, Ns::Tag)?;
                 }
             }
@@ -751,7 +777,18 @@ impl<'a> TypeReference<'a> for FunctionType<'a> {
         };
         let (params, results) = match cx.type_info.get(n as usize) {
             Some(TypeInfo::Func { params, results }) => (params, results),
-            _ => return Ok(()),
+            Some(_) => {
+                return Err(Error::new(
+                    idx.span(),
+                    format!("invalid type: not a function type"),
+                ));
+            }
+            _ => {
+                return Err(Error::new(
+                    idx.span(),
+                    format!("unknown type: type index out of bounds"),
+                ));
+            }
         };
 
         // Here we need to check that the inline type listed (ourselves) matches
@@ -805,6 +842,12 @@ pub(crate) trait ResolveCoreType<'a> {
         if let Some(parent) = &mut ty.parent {
             self.resolve_type_name(parent)?;
         }
+        if let Some(descriptor) = &mut ty.descriptor {
+            self.resolve_type_name(descriptor)?;
+        }
+        if let Some(describes) = &mut ty.describes {
+            self.resolve_type_name(describes)?;
+        }
         match &mut ty.kind {
             InnerTypeKind::Func(func) => self.resolve_type_func(func),
             InnerTypeKind::Struct(struct_) => {
@@ -845,7 +888,7 @@ pub(crate) trait ResolveCoreType<'a> {
 
     fn resolve_heaptype(&mut self, ty: &mut HeapType<'a>) -> Result<(), Error> {
         match ty {
-            HeapType::Concrete(i) => {
+            HeapType::Concrete(i) | HeapType::Exact(i) => {
                 self.resolve_type_name(i)?;
             }
             HeapType::Abstract { .. } => {}

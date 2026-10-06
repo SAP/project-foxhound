@@ -1,4 +1,4 @@
-// |jit-test| --setpref=wasm_relaxed_simd=true; skip-if: !wasmRelaxedSimdEnabled()
+// |jit-test| skip-if: !wasmRelaxedSimdEnabled()
 /* Copyright 2021 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 
 // ./test/core/relaxed-simd/relaxed_dot_product.wast
 
-// ./test/core/relaxed-simd/relaxed_dot_product.wast:4
+// ./test/core/relaxed-simd/relaxed_dot_product.wast:3
 let $0 = instantiate(`(module
     (func (export "i16x8.relaxed_dot_i8x16_i7x16_s") (param v128 v128) (result v128) (i16x8.relaxed_dot_i8x16_i7x16_s (local.get 0) (local.get 1)))
     (func (export "i32x4.relaxed_dot_i8x16_i7x16_add_s") (param v128 v128 v128) (result v128) (i32x4.relaxed_dot_i8x16_i7x16_add_s (local.get 0) (local.get 1) (local.get 2)))
@@ -31,7 +31,7 @@ let $0 = instantiate(`(module
             (i32x4.relaxed_dot_i8x16_i7x16_add_s (local.get 0) (local.get 1) (local.get 2))))
 )`);
 
-// ./test/core/relaxed-simd/relaxed_dot_product.wast:19
+// ./test/core/relaxed-simd/relaxed_dot_product.wast:18
 assert_return(
   () => invoke($0, `i16x8.relaxed_dot_i8x16_i7x16_s`, [
     i8x16([0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf]),
@@ -40,7 +40,7 @@ assert_return(
   [i16x8([0x1, 0xd, 0x29, 0x55, 0x91, 0xdd, 0x139, 0x1a5])],
 );
 
-// ./test/core/relaxed-simd/relaxed_dot_product.wast:25
+// ./test/core/relaxed-simd/relaxed_dot_product.wast:24
 assert_return(
   () => invoke($0, `i16x8.relaxed_dot_i8x16_i7x16_s`, [
     i8x16([0x80, 0x80, 0x7f, 0x7f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0]),
@@ -49,7 +49,7 @@ assert_return(
   [i16x8([0x8100, 0x7e02, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0])],
 );
 
-// ./test/core/relaxed-simd/relaxed_dot_product.wast:33
+// ./test/core/relaxed-simd/relaxed_dot_product.wast:32
 assert_return(
   () => invoke($0, `i16x8.relaxed_dot_i8x16_i7x16_s`, [
     i8x16([0x80, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0]),
@@ -64,7 +64,7 @@ assert_return(
   ],
 );
 
-// ./test/core/relaxed-simd/relaxed_dot_product.wast:42
+// ./test/core/relaxed-simd/relaxed_dot_product.wast:41
 assert_return(
   () => invoke($0, `i32x4.relaxed_dot_i8x16_i7x16_add_s`, [
     i8x16([0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf]),
@@ -74,7 +74,7 @@ assert_return(
   [i32x4([0xe, 0x7f, 0x170, 0x2e1])],
 );
 
-// ./test/core/relaxed-simd/relaxed_dot_product.wast:50
+// ./test/core/relaxed-simd/relaxed_dot_product.wast:49
 assert_return(
   () => invoke($0, `i32x4.relaxed_dot_i8x16_i7x16_add_s`, [
     i8x16([0x80, 0x80, 0x80, 0x80, 0x7f, 0x7f, 0x7f, 0x7f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0]),
@@ -84,7 +84,7 @@ assert_return(
   [i32x4([0xffff0201, 0xfc06, 0x3, 0x4])],
 );
 
-// ./test/core/relaxed-simd/relaxed_dot_product.wast:63
+// ./test/core/relaxed-simd/relaxed_dot_product.wast:62
 assert_return(
   () => invoke($0, `i32x4.relaxed_dot_i8x16_i7x16_add_s`, [
     i8x16([0x80, 0x80, 0x80, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0]),
@@ -101,7 +101,7 @@ assert_return(
   ],
 );
 
-// ./test/core/relaxed-simd/relaxed_dot_product.wast:76
+// ./test/core/relaxed-simd/relaxed_dot_product.wast:75
 assert_return(
   () => invoke($0, `i16x8.relaxed_dot_i8x16_i7x16_s_cmp`, [
     i8x16([0x80, 0x80, 0x7f, 0x7f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0]),
@@ -110,7 +110,7 @@ assert_return(
   [i16x8([0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff])],
 );
 
-// ./test/core/relaxed-simd/relaxed_dot_product.wast:82
+// ./test/core/relaxed-simd/relaxed_dot_product.wast:81
 assert_return(
   () => invoke($0, `i32x4.relaxed_dot_i8x16_i7x16_add_s_cmp`, [
     i8x16([0x80, 0x80, 0x80, 0x80, 0x7f, 0x7f, 0x7f, 0x7f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0]),
@@ -120,7 +120,7 @@ assert_return(
   [i32x4([0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff])],
 );
 
-// ./test/core/relaxed-simd/relaxed_dot_product.wast:92
+// ./test/core/relaxed-simd/relaxed_dot_product.wast:91
 assert_return(
   () => invoke($0, `i16x8.relaxed_dot_i8x16_i7x16_s_cmp`, [
     i8x16([0x80, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0]),
@@ -129,7 +129,7 @@ assert_return(
   [i16x8([0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff])],
 );
 
-// ./test/core/relaxed-simd/relaxed_dot_product.wast:103
+// ./test/core/relaxed-simd/relaxed_dot_product.wast:102
 assert_return(
   () => invoke($0, `i32x4.relaxed_dot_i8x16_i7x16_add_s_cmp`, [
     i8x16([0x80, 0x80, 0x80, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0]),

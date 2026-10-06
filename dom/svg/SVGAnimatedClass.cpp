@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,7 +21,7 @@ void SVGAnimatedClass::SetBaseValue(const nsAString& aValue,
   if (aDoSetAttr) {
     aSVGElement->SetAttr(kNameSpaceID_None, nsGkAtoms::_class, aValue, true);
   }
-  if (mAnimVal) {
+  if (!mAnimVal.IsVoid()) {
     aSVGElement->AnimationNeedsResample();
   }
 }
@@ -35,8 +33,8 @@ void SVGAnimatedClass::GetBaseValue(nsAString& aValue,
 
 void SVGAnimatedClass::GetAnimValue(nsAString& aResult,
                                     const SVGElement* aSVGElement) const {
-  if (mAnimVal) {
-    aResult = *mAnimVal;
+  if (!mAnimVal.IsVoid()) {
+    aResult = mAnimVal;
     return;
   }
 
@@ -45,19 +43,18 @@ void SVGAnimatedClass::GetAnimValue(nsAString& aResult,
 
 void SVGAnimatedClass::SetAnimValue(const nsAString& aValue,
                                     SVGElement* aSVGElement) {
-  if (mAnimVal && mAnimVal->Equals(aValue)) {
+  if (!mAnimVal.IsVoid() && mAnimVal.Equals(aValue)) {
     return;
   }
-  if (!mAnimVal) {
-    mAnimVal = MakeUnique<nsString>();
-  }
-  *mAnimVal = aValue;
+  aSVGElement->WillAnimateClass();
+  mAnimVal = aValue;
   aSVGElement->SetMayHaveClass();
   aSVGElement->DidAnimateClass();
 }
 
-UniquePtr<SMILAttr> SVGAnimatedClass::ToSMILAttr(SVGElement* aSVGElement) {
-  return MakeUnique<SMILString>(this, aSVGElement);
+std::unique_ptr<SMILAttr> SVGAnimatedClass::ToSMILAttr(
+    SVGElement* aSVGElement) {
+  return std::make_unique<SMILString>(this, aSVGElement);
 }
 
 nsresult SVGAnimatedClass::SMILString::ValueFromString(
@@ -78,8 +75,9 @@ SMILValue SVGAnimatedClass::SMILString::GetBaseValue() const {
 }
 
 void SVGAnimatedClass::SMILString::ClearAnimValue() {
-  if (mVal->mAnimVal) {
-    mVal->mAnimVal = nullptr;
+  if (!mVal->mAnimVal.IsVoid()) {
+    mSVGElement->WillAnimateClass();
+    mVal->mAnimVal = VoidString();
     mSVGElement->DidAnimateClass();
   }
 }

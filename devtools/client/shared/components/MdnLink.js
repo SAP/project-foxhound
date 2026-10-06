@@ -17,7 +17,9 @@ loader.lazyRequireGetter(
 
 function MDNLink({ url, title }) {
   return a({
-    className: "devtools-button learn-more-link",
+    className:
+      "devtools-button learn-more-link" +
+      (url.startsWith("https://developer.mozilla.org") ? " mdn-link" : ""),
     title,
     onClick: e => onLearnMoreClick(e, url),
   });

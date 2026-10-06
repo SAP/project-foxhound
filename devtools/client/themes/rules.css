@@ -82,6 +82,10 @@
   user-select: none;
   display: flex;
   align-items: center;
+
+  &:has(input:disabled) {
+    color: var(--theme-text-color-inactive);
+  }
 }
 
 #pseudo-class-panel,
@@ -91,12 +95,25 @@
 
 /* Pseudo Class toggle panel */
 
-#pseudo-class-panel {
+#pseudo-class-panel:not([hidden]) {
+  display: grid;
+}
+
+.pseudo-classes {
+  display: grid;
   grid-template-columns: repeat(auto-fit, minmax(100px, max-content));
 }
 
-#pseudo-class-panel:not([hidden]) {
-  display: grid;
+#pseudo-classes-element-specific-heading {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: normal;
+  margin-block: 8px 0;
+  user-select: none;
+}
+
+#pseudo-classes-element-specific label:has(input:disabled) {
+  display: none;
 }
 
 /* Class toggle panel */
@@ -198,16 +215,17 @@
 
 .ruleview-computedlist,
 [hidden]:is(
-    .ruleview-expandable-container,
-    .ruleview-overridden-items,
-    .ruleview-overridden-rule-filter,
-    .ruleview-warning,
-    .ruleview-unused-warning,
-    .ruleview-compatibility-warning,
-    .ruleview-used,
-    .ruleview-invalid-at-computed-value-time-warning,
+  .ruleview-header,
+  .ruleview-expandable-container,
+  .ruleview-overridden-items,
+  .ruleview-overridden-rule-filter,
+  .ruleview-warning,
+  .ruleview-inactive-css-warning,
+  .ruleview-compatibility-warning,
+  .ruleview-used,
+  .ruleview-invalid-at-computed-value-time-warning,
 
-  ),
+),
 .ruleview-overridden .inspector-grid {
   display: none;
 }
@@ -344,11 +362,16 @@
 
 /**
  * Display rules that don't match the current selected element and uneditable
- * user agent styles differently
+ * user agent styles differently.
+ * Use :where() to get a 0-specificity rule so the background-color can be overridden
+ * if needed (e.g. when highlighted by `.theme-bg-contrast`)
  */
-.ruleview-rule.unmatched,
-.ruleview-rule[unmatched="true"],
-.ruleview-rule[uneditable="true"] {
+/* prettier-ignore */
+:where(
+  .ruleview-rule.unmatched,
+  .ruleview-rule[unmatched="true"],
+  .ruleview-rule[uneditable="true"]
+) {
   background: var(--theme-tab-toolbar-background);
 }
 
@@ -509,7 +532,7 @@
 }
 
 .ruleview-warning,
-.ruleview-unused-warning,
+.ruleview-inactive-css-warning,
 .ruleview-compatibility-warning,
 .ruleview-invalid-at-computed-value-time-warning {
   display: inline-block;
@@ -530,7 +553,7 @@
   fill: var(--invalid-at-computed-value-time-fill-color);
 }
 
-.ruleview-unused-warning {
+.ruleview-inactive-css-warning {
   background-image: url(resource://devtools-shared-images/info-small.svg);
   background-color: var(--theme-sidebar-background);
   fill: var(--theme-icon-dimmed-color);
@@ -542,7 +565,7 @@
   fill: var(--theme-icon-dimmed-color);
 }
 
-.ruleview-unused-warning:hover,
+.ruleview-inactive-css-warning:hover,
 .ruleview-compatibility-warning:hover {
   fill: var(--theme-icon-color);
   stroke: var(--theme-icon-color);
@@ -571,6 +594,11 @@
   transform: rotate(-90deg);
 }
 
+.ruleview-propertycontainer .ruleview-variable-link {
+  /* Prevent line break when copy/pasting an entire rule */
+  user-select: auto;
+}
+
 .ruleview-newproperty {
   /* As we don't have the checkbox displayed before the input, we need to align it
      with the property name above it. */
@@ -586,6 +614,7 @@
 
 .ruleview-computedlist {
   list-style: none;
+  margin: 0;
   padding: 0;
 }
 
@@ -631,7 +660,8 @@
   margin-left: 0;
 }
 
-.ruleview-overridden {
+.ruleview-overridden,
+.ruleview-invalid {
   text-decoration: line-through solid var(--theme-text-color-inactive);
 }
 
@@ -687,7 +717,6 @@
   vertical-align: middle;
 }
 
-.ruleview-property.ruleview-changed,
 .ruleview-property[dirty] {
   border-left-color: var(--theme-highlight-green);
 }
@@ -717,7 +746,7 @@
 
   &.ruleview-selector.unmatched,
   & .inspector-unmatched,
-  .ruleview-property:is(.unused, .ruleview-overridden) & :is(.ruleview-propertyname, .ruleview-propertyvalue) {
+  .ruleview-property:is(.inactive-css, .ruleview-overridden) & :is(.ruleview-propertyname, .ruleview-propertyvalue) {
     color: var(--rule-highlight-unmatched-unused-color);
   }
 
@@ -757,7 +786,7 @@
   max-width: max-content;
 }
 
-.ruleview-rule-ancestor-data [role="listitem"].has-tooltip:hover .container-query-declaration {
+.ruleview-rule-ancestor-data [role="listitem"] .container-condition:is(:hover, .tooltip-anchor) {
   text-decoration: underline;
   text-decoration-color: var(--theme-highlight-blue);
   text-decoration-style: dotted;
@@ -784,7 +813,13 @@
 
 .ruleview-rule:is(.unmatched, [unmatched="true"]) .ruleview-selector,
 .ruleview-selector.unmatched,
-.ruleview-property:is(.unused, .ruleview-overridden) :is(.ruleview-propertyname, .ruleview-propertyvalue) {
+.container-condition.unmatched,
+/* prettier-ignore */
+.ruleview-property:is(
+  .inactive-css,
+  .ruleview-overridden,
+  .ruleview-invalid
+) :is(.ruleview-propertyname, .ruleview-propertyvalue) {
   color: var(--theme-text-color-inactive);
 }
 
@@ -795,9 +830,11 @@
   .inspector-unmatched,
   .ruleview-invalid-at-computed-value-time,
   .ruleview-rule:is(.unmatched, [unmatched=true]) .ruleview-selector,
+  .container-condition.unmatched,
 ):not(
   /* don't show the strike through when the element is hovered so it's more legible */
-  :hover
+  :hover,
+  .tooltip-anchor
 ) {
   text-decoration: line-through solid currentColor;
 }
@@ -929,4 +966,37 @@
 
 .ruleview-propertyvalue-break-spaces {
   white-space: break-spaces;
+}
+
+.ruleview-propertyvalue .inspector-attr-param:not(.inspector-unmatched) .inspector-attr-name {
+  color: var(--theme-highlight-blue);
+}
+
+.ruleview-show-unused-custom-css-properties {
+  margin-block: 4px;
+  /* Align the button with the properties above it. */
+  /* prettier-ignore */
+  margin-inline-start: calc(
+    var(--rule-enableproperty-size) +
+    var(--rule-enableproperty-margin-inline-start) +
+    var(--rule-enableproperty-margin-inline-end)
+  );
+}
+
+[data-function-expression] .css-explainers-function-name {
+  text-decoration: 1px solid underline;
+  text-underline-offset: 2px;
+}
+
+[data-function-expression].tooltip-anchor {
+  text-decoration: underline;
+  text-decoration-color: var(--theme-highlight-blue);
+  text-decoration-style: dotted;
+  text-decoration-skip-ink: none;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
+
+  .css-explainers-function-name {
+    text-decoration: none;
+  }
 }

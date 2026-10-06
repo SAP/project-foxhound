@@ -1,21 +1,18 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/ResponsiveImageSelector.h"
+
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/ServoStyleSetInlines.h"
-#include "mozilla/TextUtils.h"
-#include "nsIURI.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
-#include "nsContentUtils.h"
-#include "nsPresContext.h"
-
 #include "nsCSSProps.h"
+#include "nsContentUtils.h"
+#include "nsIURI.h"
+#include "nsPresContext.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -293,7 +290,8 @@ bool ResponsiveImageSelector::SelectImage(bool aReselect) {
     displayDensity = overrideDPPX;
   }
   if (doc->ShouldResistFingerprinting(RFPTarget::WindowDevicePixelRatio)) {
-    displayDensity = nsRFPService::GetDevicePixelRatioAtZoom(1);
+    displayDensity =
+        nsRFPService::GetDevicePixelRatioAtZoom(pctx->GetFullZoom());
   }
 
   // Per spec, "In a UA-specific manner, choose one image source"
@@ -363,6 +361,9 @@ bool ResponsiveImageSelector::ComputeFinalWidthForCurrentViewport(
   }
   nscoord effectiveWidth =
       presShell->StyleSet()->EvaluateSourceSizeList(mServoSourceSizeList.get());
+  if (mAutoWidth != -1) {
+    effectiveWidth = mAutoWidth;
+  }
 
   *aWidth =
       nsPresContext::AppUnitsToDoubleCSSPixels(std::max(effectiveWidth, 0));
@@ -489,7 +490,7 @@ void ResponsiveImageDescriptors::AddDescriptor(const nsAString& aDescriptor) {
             nsContentUtils::ParseHTMLFloatingPointNumber(valueStr)) {
       if (*possibleDensity >= 0.0 && mWidth.isNothing() &&
           mDensity.isNothing() && mFutureCompatHeight.isNothing()) {
-        mDensity = possibleDensity;
+        mDensity = std::move(possibleDensity);
       } else {
         // Valid density descriptor, but height or width or density were already
         // seen, or it parsed to less than zero, which is an error per spec

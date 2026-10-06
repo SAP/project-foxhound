@@ -50,7 +50,7 @@ add_task(async function () {
     "selector highlighter icon is not pressed by default"
   );
   selectorContainerEl.focus();
-  EventUtils.synthesizeKey("VK_TAB", {}, selectorContainerEl.ownerGlobal);
+  EventUtils.synthesizeKey("VK_TAB", {}, selectorContainerEl.documentGlobal);
   await waitFor(
     () =>
       selectorContainerEl.ownerDocument.activeElement ===
@@ -61,7 +61,7 @@ add_task(async function () {
   const onHighlighterShown = waitForHighlighterTypeShown(
     inspector.highlighters.TYPES.SELECTOR
   );
-  EventUtils.synthesizeKey("VK_RETURN", {}, selectorContainerEl.ownerGlobal);
+  EventUtils.synthesizeKey("VK_RETURN", {}, selectorContainerEl.documentGlobal);
   data = await onHighlighterShown;
 
   ok(true, "The selector highlighter was shown from the keyboard");
@@ -75,7 +75,7 @@ add_task(async function () {
   const onHighlighterHidden = waitForHighlighterTypeHidden(
     inspector.highlighters.TYPES.SELECTOR
   );
-  EventUtils.synthesizeKey("VK_RETURN", {}, selectorContainerEl.ownerGlobal);
+  EventUtils.synthesizeKey("VK_RETURN", {}, selectorContainerEl.documentGlobal);
   await onHighlighterHidden;
   ok(true, "The selector highlighter was hidden from the keyboard");
   is(

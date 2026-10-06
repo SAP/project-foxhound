@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -17,6 +17,7 @@ const args = [
   Symbol(),
   2020,
   2020n,
+  NaN,
 ];
 for (const argument of args) {
   assert.throws(TypeError, () => instance.with(argument), `Does not support ${typeof argument}`);

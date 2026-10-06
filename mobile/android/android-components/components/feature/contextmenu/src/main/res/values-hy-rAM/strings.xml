@@ -1,9 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- Text for context menu item to open the link in a new tab. -->
   <string name="mozac_feature_contextmenu_open_link_in_new_tab">Բացել հղումը նոր ներդիրում</string>
   <!-- Text for context menu item to open the link in a private tab. -->
-  <string name="mozac_feature_contextmenu_open_link_in_private_tab">Բացել հղումը Մասնավոր ներդիրում</string>
+  <string name="mozac_feature_contextmenu_open_link_in_private_tab">Բացել հղումը գաղտնի ներդիրում</string>
   <!-- Text for context menu item to open the image in a new tab. -->
   <string name="mozac_feature_contextmenu_open_image_in_new_tab">Բացել պատկերը նոր ներդիրում</string>
   <!-- Text for context menu item to save / download the link. -->
@@ -14,6 +21,8 @@
   <string name="mozac_feature_contextmenu_share_image">Տարածել նկարը</string>
   <!-- Text for context menu item to copy the link to the clipboard. -->
   <string name="mozac_feature_contextmenu_copy_link">Պատճենել հղումը</string>
+  <!-- Text for context menu item to copy the link text to the clipboard. -->
+  <string name="mozac_feature_contextmenu_copy_link_text">Պատճենել հղման տեքստը</string>
   <!-- Text for context menu item to copy the URL pointing to the image to the clipboard. -->
   <string name="mozac_feature_contextmenu_copy_image_location">Պատճենել պատկերի հասցեն</string>
   <!-- Text for context menu item to save / download the image. -->
@@ -28,6 +37,8 @@
   <string name="mozac_feature_contextmenu_snackbar_new_private_tab_opened">Նոր գաղտնի ներդիրը բացվեց</string>
   <!-- Text for confirmation "snackbar" shown after copying a link or image URL to the clipboard. -->
   <string name="mozac_feature_contextmenu_snackbar_link_copied">Հղումը պատճենվել է սեղմատախտակին</string>
+  <!-- Text for confirmation "snackbar" shown after copying a link text to the clipboard. -->
+  <string name="mozac_feature_contextmenu_snackbar_link_text_copied">Հղման տեքստը պատճենվեց սեղմատախտակին</string>
   <!-- Action shown in a "snacbkar" after opening a new/private tab. Clicking this action will switch to the newly opened tab. -->
   <string name="mozac_feature_contextmenu_snackbar_action_switch">Անցնել</string>
   <!-- Text for context menu item to open the link in an external app. -->
@@ -43,11 +54,11 @@
   <!-- Action shown in a text selection context menu. This will prompt a search using the selected text. -->
   <string name="mozac_selection_context_menu_search_2">Որոնում</string>
   <!-- Action shown in a text selection context menu. This will prompt a search in a private tab using the selected text -->
-  <string name="mozac_selection_context_menu_search_privately_2">Մասնավոր որոնում</string>
+  <string name="mozac_selection_context_menu_search_privately_2">Գաղտնի որոնում</string>
   <!-- Action shown in a text selection context menu. This will prompt a share of the selected text. -->
   <string name="mozac_selection_context_menu_share">Տարածել</string>
   <!-- Action shown in a text selection context menu. This will prompt a new email from the selected text. -->
   <string name="mozac_selection_context_menu_email">Էլ. փոստ</string>
   <!-- Action shown in a text selection context menu. This will prompt a new call from the selected text. -->
-  <string name="mozac_selection_context_menu_call">Զանգ</string>
+  <string name="mozac_selection_context_menu_call">Զանգահարել</string>
 </resources>

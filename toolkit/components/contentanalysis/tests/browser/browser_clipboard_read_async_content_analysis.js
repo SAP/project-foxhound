@@ -7,7 +7,6 @@ add_setup(async function test_setup() {
   mockCA = await mockContentAnalysisService(mockCA);
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["dom.events.asyncClipboard.readText", true],
       // This pref turns off the "Paste" popup
       ["dom.events.testing.asyncClipboard", true],
     ],

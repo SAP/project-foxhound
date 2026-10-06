@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<resources>
+    <!-- Description for the sport suggestion card when the game is live. -->
+    <string name="mozac_browser_awesomebar_sport_suggestion_live" translatable="false">LIVE</string>
+    <!-- Description for the sport suggestion card when the game is scheduled. -->
+    <string name="mozac_browser_awesomebar_sport_suggestion_scheduled" translatable="false">Scheduled</string>
+    <!-- Description for the sport suggestion card when the game is delayed. -->
+    <string name="mozac_browser_awesomebar_sport_suggestion_delayed" translatable="false">Delayed</string>
+    <!-- Description for the sport suggestion card when the game is postponed. -->
+    <string name="mozac_browser_awesomebar_sport_suggestion_postponed" translatable="false">Postponed</string>
+    <!-- Description for the sport suggestion card when the game is in progress. -->
+    <string name="mozac_browser_awesomebar_sport_suggestion_in_progress" translatable="false">In Progress</string>
+    <!-- Description for the sport suggestion card when the game is suspended. -->
+    <string name="mozac_browser_awesomebar_sport_suggestion_suspended" translatable="false">Suspended</string>
+    <!-- Description for the sport suggestion card when the game is canceled. -->
+    <string name="mozac_browser_awesomebar_sport_suggestion_canceled" translatable="false">Canceled</string>
+    <!-- Description for the sport suggestion card when the game is final. -->
+    <string name="mozac_browser_awesomebar_sport_suggestion_final" translatable="false">Final</string>
+    <!-- Description for the sport suggestion card when the game was forfeited. -->
+    <string name="mozac_browser_awesomebar_sport_suggestion_forfeited" translatable="false">Forfeited</string>
+    <!-- Description for the sport suggestion card's date when the game will hold today. -->
+    <string name="mozac_browser_awesomebar_sport_suggestion_date_today" translatable="false">Today</string>
+    <!--
+      The description for the sport suggestion card's date when the game will hold tomorrow.
+      %s is a placeholder that will be replaced by the time e.g. 5:00 PM or 17:00 depending on the locale
+    -->
+    <string name="mozac_browser_awesomebar_sport_suggestion_date_tomorrow" translatable="false">Tomorrow at %s</string>
+    <!--
+      The description for the sport suggestion teams to be read by talkback when there are no sports scores displayed.
+      %1$s and %2$s are placeholders that will be replaced by the team names e.g. Yankees versus Lakers.
+    -->
+    <string name="mozac_browser_awesomebar_sport_suggestion_talkback_team_description_no_score" translatable="false">%1$s versus %2$s</string>
+    <!-- Description for the flight suggestion card when the flight is delayed. -->
+    <string name="mozac_browser_awesomebar_flight_suggestion_delayed" translatable="false">DELAYED</string>
+    <!-- Description for the flight suggestion card when the flight is canceled. -->
+    <string name="mozac_browser_awesomebar_flight_suggestion_canceled" translatable="false">CANCELED</string>
+    <!-- Description for the flight suggestion card when the flight is on time. -->
+    <string name="mozac_browser_awesomebar_flight_suggestion_on_time" translatable="false">ON TIME</string>
+    <!-- Description for the flight suggestion card when the flight is in the air. -->
+    <string name="mozac_browser_awesomebar_flight_suggestion_in_flight" translatable="false">IN FLIGHT</string>
+    <!-- Description for the flight suggestion card when the flight has arrived. -->
+    <string name="mozac_browser_awesomebar_flight_suggestion_arrived" translatable="false">ARRIVED</string>
+    <!--
+      The description for the flight suggestion card to be read by talkback when a flight is en route.
+      %s is a placeholder that will be replaced by the flight progress percentage.
+    -->
+    <string name="mozac_browser_awesomebar_flight_suggestion_progress" translatable="false">%s percent complete</string>
+    <!--
+      The description for the flight schedule to be read by talkback when a flight is canceled and the text is struck through.
+      %1$s is a placeholder that will be replaced by the flight time e.g. 5:00 PM or 17:00 depending on the locale.
+      %2$s is a placeholder that will be replaced by the flight date.
+    -->
+    <string name="mozac_browser_awesomebar_flight_suggestion_canceled_schedule" translatable="false">Strike-through on %1$s and %2$s</string>
+</resources>

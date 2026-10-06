@@ -118,7 +118,7 @@ export var ClipboardContextMenu = {
 
       let mouseXInCSSPixels = {};
       let mouseYInCSSPixels = {};
-      document.ownerGlobal.windowUtils.getLastOverWindowPointerLocationInCSSPixels(
+      document.documentGlobal.windowUtils.getLastOverWindowPointerLocationInCSSPixels(
         mouseXInCSSPixels,
         mouseYInCSSPixels
       );
@@ -164,6 +164,7 @@ export var ClipboardContextMenu = {
     let menupopup = aChromeDoc.createXULElement("menupopup");
     menupopup.id = this.MENU_POPUP_ID;
     menupopup.setAttribute("tabspecific", "true");
+    menupopup.setAttribute("locationspecific", "true");
     menupopup.appendChild(menuitem);
     return menupopup;
   },
@@ -200,7 +201,7 @@ export var ClipboardContextMenu = {
 
   _clearDelayTimer() {
     if (this._delayTimer) {
-      let window = this._menuitem.ownerGlobal;
+      let window = this._menuitem.documentGlobal;
       window.clearTimeout(this._delayTimer);
       this._delayTimer = null;
     }
@@ -209,7 +210,7 @@ export var ClipboardContextMenu = {
   _refreshDelayTimer() {
     this._clearDelayTimer();
 
-    let window = this._menuitem.ownerGlobal;
+    let window = this._menuitem.documentGlobal;
     let delay = Services.prefs.getIntPref("security.dialog_enable_delay");
     this._delayTimer = window.setTimeout(() => {
       this._menuitem.disabled = false;

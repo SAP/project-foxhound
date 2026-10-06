@@ -32,7 +32,6 @@ add_task(async () => {
     t.url.startsWith("https://example.net")
   );
 
-  // The iframe only has a dedicated target when Fission or EFT is enabled
   const orgIframeHighlighterTestFront = orgIframeTarget
     ? await orgIframeTarget.getFront("highlighterTest")
     : null;
@@ -59,48 +58,32 @@ add_task(async () => {
   is(tabbingOrderCheckbox.checked, true, "Checkbox is checked");
   tabbingOrderHighlighterData =
     await topLevelFrameHighlighterTestFront.getTabbingOrderHighlighterData();
-  if (isFissionEnabled()) {
-    // ⚠️ We don't get the highlighter for the <html> node of the iframe when Fission is enabled.
-    // This should be fix as part of Bug 1740509.
-    is(
-      JSON.stringify(tabbingOrderHighlighterData),
-      JSON.stringify([`button#top-btn-1 : 1`, `button#top-btn-2 : 4`]),
-      "Tabbing order is visible for the top level target after clicking the checkbox"
-    );
+  // ⚠️ We don't get the highlighter for the <html> node of the iframe when Fission is enabled.
+  // This should be fix as part of Bug 1740509.
+  is(
+    JSON.stringify(tabbingOrderHighlighterData),
+    JSON.stringify([`button#top-btn-1 : 1`, `button#top-btn-2 : 4`]),
+    "Tabbing order is visible for the top level target after clicking the checkbox"
+  );
 
-    const orgIframeTabingOrderHighlighterData =
-      await orgIframeHighlighterTestFront.getTabbingOrderHighlighterData();
-    is(
-      JSON.stringify(orgIframeTabingOrderHighlighterData),
-      JSON.stringify([
-        `button#iframe-org-btn-1 : 2`,
-        `button#iframe-org-btn-2 : 3`,
-      ]),
-      "Tabbing order is visible for the org iframe after clicking the checkbox"
-    );
+  const orgIframeTabingOrderHighlighterData =
+    await orgIframeHighlighterTestFront.getTabbingOrderHighlighterData();
+  is(
+    JSON.stringify(orgIframeTabingOrderHighlighterData),
+    JSON.stringify([
+      `button#iframe-org-btn-1 : 2`,
+      `button#iframe-org-btn-2 : 3`,
+    ]),
+    "Tabbing order is visible for the org iframe after clicking the checkbox"
+  );
 
-    const netIframeTabingOrderHighlighterData =
-      await netIframeHighlighterTestFront.getTabbingOrderHighlighterData();
-    is(
-      JSON.stringify(netIframeTabingOrderHighlighterData),
-      JSON.stringify([`button#iframe-net-btn-1 : 5`]),
-      "Tabbing order is visible for the net iframe after clicking the checkbox"
-    );
-  } else {
-    is(
-      JSON.stringify(tabbingOrderHighlighterData),
-      JSON.stringify([
-        `button#top-btn-1 : 1`,
-        `html : 2`,
-        `button#iframe-org-btn-1 : 3`,
-        `button#iframe-org-btn-2 : 4`,
-        `button#top-btn-2 : 5`,
-        `html : 6`,
-        `button#iframe-net-btn-1 : 7`,
-      ]),
-      "Tabbing order is visible for the top level target after clicking the checkbox"
-    );
-  }
+  const netIframeTabingOrderHighlighterData =
+    await netIframeHighlighterTestFront.getTabbingOrderHighlighterData();
+  is(
+    JSON.stringify(netIframeTabingOrderHighlighterData),
+    JSON.stringify([`button#iframe-net-btn-1 : 5`]),
+    "Tabbing order is visible for the net iframe after clicking the checkbox"
+  );
 
   info(`Clicking on the checkbox again hides the highlighter`);
   tabbingOrderCheckbox.click();
@@ -118,22 +101,20 @@ add_task(async () => {
     "Tabbing order is not visible anymore after unchecking the checkbox"
   );
 
-  if (isFissionEnabled()) {
-    const orgIframeTabingOrderHighlighterData =
-      await orgIframeHighlighterTestFront.getTabbingOrderHighlighterData();
-    is(
-      orgIframeTabingOrderHighlighterData.length,
-      0,
-      "Tabbing order is also hidden on the org iframe target"
-    );
-    const netIframeTabingOrderHighlighterData =
-      await netIframeHighlighterTestFront.getTabbingOrderHighlighterData();
-    is(
-      netIframeTabingOrderHighlighterData.length,
-      0,
-      "Tabbing order is also hidden on the net iframe target"
-    );
-  }
+  const orgIframeTabingOrderHighlighterDataAfter =
+    await orgIframeHighlighterTestFront.getTabbingOrderHighlighterData();
+  is(
+    orgIframeTabingOrderHighlighterDataAfter.length,
+    0,
+    "Tabbing order is also hidden on the org iframe target"
+  );
+  const netIframeTabingOrderHighlighterDataAfter =
+    await netIframeHighlighterTestFront.getTabbingOrderHighlighterData();
+  is(
+    netIframeTabingOrderHighlighterDataAfter.length,
+    0,
+    "Tabbing order is also hidden on the net iframe target"
+  );
 
   await closeTabToolboxAccessibility(tab);
 });

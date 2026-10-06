@@ -51,14 +51,16 @@ add_task(async function test_fullscreen_display_none() {
       </html>`,
     },
     async function (browser) {
-      let warning = document.getElementById("fullscreen-warning");
-      checkWarningState(
-        warning,
+      DOMFullscreenTestUtils.checkWarningState(
+        browser,
         "hidden",
         "Should not show full screen warning initially"
       );
 
-      let warningShownPromise = waitForWarningState(warning, "onscreen");
+      let warningShownPromise = DOMFullscreenTestUtils.waitForWarningState(
+        browser,
+        "onscreen"
+      );
       // Enter fullscreen
       await SpecialPowers.spawn(browser, [], async () => {
         let frame = content.document.querySelector("iframe");
@@ -70,7 +72,10 @@ add_task(async function test_fullscreen_display_none() {
       await warningShownPromise;
       ok(true, "Fullscreen warning shown");
       // Exit fullscreen
-      let warningHiddenPromise = waitForWarningState(warning, "hidden");
+      let warningHiddenPromise = DOMFullscreenTestUtils.waitForWarningState(
+        browser,
+        "hidden"
+      );
       let exitFullscreenPromise = BrowserTestUtils.waitForEvent(
         document,
         "fullscreenchange",
@@ -85,11 +90,10 @@ add_task(async function test_fullscreen_display_none() {
 
 add_task(async function test_fullscreen_pointerlock_conflict() {
   await BrowserTestUtils.withNewTab("https://example.com", async browser => {
-    let fsWarning = document.getElementById("fullscreen-warning");
     let plWarning = document.getElementById("pointerlock-warning");
 
-    checkWarningState(
-      fsWarning,
+    DOMFullscreenTestUtils.checkWarningState(
+      browser,
       "hidden",
       "Should not show full screen warning initially"
     );
@@ -99,7 +103,10 @@ add_task(async function test_fullscreen_pointerlock_conflict() {
       "Should not show pointer lock warning initially"
     );
 
-    let fsWarningShownPromise = waitForWarningState(fsWarning, "onscreen");
+    let fsWarningShownPromise = DOMFullscreenTestUtils.waitForWarningState(
+      browser,
+      "onscreen"
+    );
     info("Entering full screen and pointer lock.");
     await SpecialPowers.spawn(browser, [], async () => {
       await content.document.body.requestFullscreen();
@@ -118,8 +125,8 @@ add_task(async function test_fullscreen_pointerlock_conflict() {
       await content.document.exitPointerLock();
     });
 
-    checkWarningState(
-      fsWarning,
+    DOMFullscreenTestUtils.checkWarningState(
+      browser,
       "onscreen",
       "Should still show full screen warning"
     );
@@ -139,13 +146,15 @@ add_task(async function test_fullscreen_pointerlock_conflict() {
 add_task(async function test_reshow_fullscreen_notification() {
   await BrowserTestUtils.withNewTab("https://example.com", async browser => {
     let newWin = await BrowserTestUtils.openNewBrowserWindow();
-    let fsWarning = document.getElementById("fullscreen-warning");
 
     info("Entering full screen and wait for the fullscreen warning to appear.");
     await SimpleTest.promiseFocus(window);
     await Promise.all([
-      waitForWarningState(fsWarning, "onscreen"),
-      BrowserTestUtils.waitForEvent(fsWarning, "transitionend"),
+      DOMFullscreenTestUtils.waitForWarningState(browser, "onscreen"),
+      BrowserTestUtils.waitForEvent(
+        document.getElementById("fullscreen-warning"),
+        "transitionend"
+      ),
       SpecialPowers.spawn(browser, [], async () => {
         content.document.body.requestFullscreen();
       }),
@@ -155,7 +164,7 @@ add_task(async function test_reshow_fullscreen_notification() {
       "Switch focus away from the fullscreen window, the fullscreen warning should still hide automatically."
     );
     await Promise.all([
-      waitForWarningState(fsWarning, "hidden"),
+      DOMFullscreenTestUtils.waitForWarningState(browser, "hidden"),
       SimpleTest.promiseFocus(newWin),
     ]);
 
@@ -163,12 +172,12 @@ add_task(async function test_reshow_fullscreen_notification() {
       "Switch focus back to the fullscreen window, the fullscreen warning should show again."
     );
     await Promise.all([
-      waitForWarningState(fsWarning, "onscreen"),
+      DOMFullscreenTestUtils.waitForWarningState(browser, "onscreen"),
       SimpleTest.promiseFocus(window),
     ]);
 
     info("Wait for fullscreen warning timed out.");
-    await waitForWarningState(fsWarning, "hidden");
+    await DOMFullscreenTestUtils.waitForWarningState(browser, "hidden");
 
     info("The fullscreen warning should not show again.");
     await SimpleTest.promiseFocus(newWin);
@@ -178,8 +187,8 @@ add_task(async function test_reshow_fullscreen_notification() {
         requestAnimationFrame(resolve);
       });
     });
-    checkWarningState(
-      fsWarning,
+    DOMFullscreenTestUtils.checkWarningState(
+      browser,
       "hidden",
       "The fullscreen warning should not show."
     );
@@ -194,29 +203,27 @@ add_task(async function test_reshow_fullscreen_notification() {
 
 add_task(async function test_fullscreen_reappear() {
   await BrowserTestUtils.withNewTab("https://example.com", async browser => {
-    let fsWarning = document.getElementById("fullscreen-warning");
-
     info("Entering full screen and wait for the fullscreen warning to appear.");
     await Promise.all([
-      waitForWarningState(fsWarning, "onscreen"),
+      DOMFullscreenTestUtils.waitForWarningState(browser, "onscreen"),
       SpecialPowers.spawn(browser, [], async () => {
         content.document.body.requestFullscreen();
       }),
     ]);
 
     info("Wait for fullscreen warning timed out.");
-    await waitForWarningState(fsWarning, "hidden");
+    await DOMFullscreenTestUtils.waitForWarningState(browser, "hidden");
 
     info("Move mouse to the top of screen.");
     await Promise.all([
-      waitForWarningState(fsWarning, "ontop"),
+      DOMFullscreenTestUtils.waitForWarningState(browser, "ontop"),
       EventUtils.synthesizeMouse(document.documentElement, 100, 0, {
         type: "mousemove",
       }),
     ]);
 
     info("Wait for fullscreen warning timed out again.");
-    await waitForWarningState(fsWarning, "hidden");
+    await DOMFullscreenTestUtils.waitForWarningState(browser, "hidden");
 
     info("Exit fullscreen.");
     await document.exitFullscreen();

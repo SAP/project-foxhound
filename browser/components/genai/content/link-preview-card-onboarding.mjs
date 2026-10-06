@@ -7,7 +7,7 @@
 import { html } from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 
-window.MozXULElement.insertFTLIfNeeded("preview/linkPreview.ftl");
+window.MozXULElement.insertFTLIfNeeded("browser/genai.ftl");
 
 /**
  * Class representing a link preview onboarding card element.
@@ -24,7 +24,7 @@ class LinkPreviewCardOnboarding extends MozLitElement {
 
   constructor() {
     super();
-    this.onboardingType = "shiftKey";
+    this.onboardingType = "longPress";
   }
 
   /**
@@ -51,19 +51,11 @@ class LinkPreviewCardOnboarding extends MozLitElement {
    * @returns {import('lit').TemplateResult} The rendered HTML template.
    */
   render() {
-    const titleL10nId =
-      this.onboardingType === "longPress"
-        ? "link-preview-onboarding-title-long-press"
-        : "link-preview-onboarding-title-shift";
-    const descriptionL10nId =
-      this.onboardingType === "longPress"
-        ? "link-preview-onboarding-description-long-press"
-        : "link-preview-onboarding-description-shift";
+    const titleL10nId = "link-preview-onboarding-title-long-press";
+    const descriptionL10nId = "link-preview-onboarding-description-long-press";
 
     const imageSrc =
-      this.onboardingType === "longPress"
-        ? "chrome://browser/content/genai/assets/onboarding-link-preview-image-longpress.svg"
-        : "chrome://browser/content/genai/assets/onboarding-link-preview-image-shift.svg";
+      "chrome://browser/content/genai/assets/onboarding-link-preview-image-longpress.svg";
 
     return html`
       <link

@@ -27,44 +27,44 @@ add_task(async function () {
         /**
          * Get whether or not infobar container is hidden.
          *
-         * @param  {Object} infobar
+         * @param  {object} infobar
          *         Accessible highlighter's infobar component.
-         * @return {String|null} If the infobar container is hidden.
+         * @return {string | null} If the infobar container is hidden.
          */
         function isContainerHidden(infobar) {
           return !!infobar
-            .getElement("infobar-container")
+            .getElement("accessible-infobar-container")
             .getAttribute("hidden");
         }
 
         /**
          * Get name of accessible object.
          *
-         * @param  {Object} infobar
+         * @param  {object} infobar
          *         Accessible highlighter's infobar component.
-         * @return {String} The text content of the infobar-name element.
+         * @return {string} The text content of the infobar-name element.
          */
         function getName(infobar) {
-          return infobar.getTextContent("infobar-name");
+          return infobar.getTextContent("accessible-infobar-name");
         }
 
         /**
          * Get role of accessible object.
          *
-         * @param  {Object} infobar
+         * @param  {object} infobar
          *         Accessible highlighter's infobar component.
-         * @return {String} The text content of the infobar-role element.
+         * @return {string} The text content of the infobar-role element.
          */
         function getRole(infobar) {
-          return infobar.getTextContent("infobar-role");
+          return infobar.getTextContent("accessible-infobar-role");
         }
 
         /**
          * Checks for updated content for an infobar with valid bounds.
          *
-         * @param  {Object} infobar
+         * @param  {object} infobar
          *         Accessible highlighter's infobar component.
-         * @param  {Object} options
+         * @param  {object} options
          *         Options to pass for the highlighter's show method.
          *         Available options:
          *         - {String} role
@@ -98,7 +98,7 @@ add_task(async function () {
          *
          * @param  {Element} node
          *         Node to check infobar content on.
-         * @param  {Object}  highlighter
+         * @param  {object}  highlighter
          *         Accessible highlighter.
          */
         function testInfobar(node, highlighter) {

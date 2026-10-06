@@ -30,8 +30,8 @@ pub enum NumeratorMetric {
     Child(ChildMetricMeta),
 }
 
-crate::define_metric_metadata_getter!(NumeratorMetric, NUMERATOR_MAP);
-crate::define_metric_namer!(NumeratorMetric);
+define_metric_metadata_getter!(NumeratorMetric, NUMERATOR_MAP);
+define_metric_namer!(NumeratorMetric);
 
 impl NumeratorMetric {
     /// The public constructor used by automatically generated metrics.
@@ -85,7 +85,7 @@ impl Numerator for NumeratorMetric {
         };
 
         #[cfg(feature = "with_gecko")]
-        if gecko_profiler::can_accept_markers() {
+        if gecko_profiler::current_thread_is_being_profiled_for_markers() {
             gecko_profiler::add_marker(
                 "Rate::addToNumerator",
                 super::profiler_utils::TelemetryProfilerCategory,
@@ -99,25 +99,29 @@ impl Numerator for NumeratorMetric {
         }
     }
 
-    pub fn test_get_value<'a, S: Into<Option<&'a str>>>(&self, ping_name: S) -> Option<Rate> {
-        let ping_name = ping_name.into().map(|s| s.to_string());
-        match self {
-            NumeratorMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
-            NumeratorMetric::Child(meta) => {
-                panic!(
-                    "Cannot get test value for {:?} in non-parent process!",
-                    meta.id
-                );
-            }
-        }
-    }
-
     pub fn test_get_num_recorded_errors(&self, error: glean::ErrorType) -> i32 {
         match self {
             NumeratorMetric::Parent { inner, .. } => inner.test_get_num_recorded_errors(error),
             NumeratorMetric::Child(meta) => {
                 panic!(
                     "Cannot get the number of recorded errors for {:?} in non-parent process!",
+                    meta.id
+                );
+            }
+        }
+    }
+}
+
+#[inherent]
+impl glean::TestGetValue for NumeratorMetric {
+    type Output = Rate;
+
+    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<Rate> {
+        match self {
+            NumeratorMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
+            NumeratorMetric::Child(meta) => {
+                panic!(
+                    "Cannot get test value for {:?} in non-parent process!",
                     meta.id
                 );
             }
@@ -136,7 +140,13 @@ mod test {
         let metric = &metrics::test_only_ipc::rate_with_external_denominator;
         metric.add_to_numerator(1);
 
-        assert_eq!(1, metric.test_get_value("test-ping").unwrap().numerator);
+        assert_eq!(
+            1,
+            metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap()
+                .numerator
+        );
     }
 
     #[test]
@@ -169,7 +179,10 @@ mod test {
         assert!(ipc::replay_from_buf(&ipc::take_buf().unwrap()).is_ok());
 
         assert!(
-            45 == parent_metric.test_get_value("test-ping").unwrap().numerator,
+            45 == parent_metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap()
+                .numerator,
             "Values from the 'processes' should be summed"
         );
     }

@@ -15,18 +15,20 @@
 
 #include "absl/functional/any_invocable.h"
 #include "api/sequence_checker.h"
+#include "api/task_queue/task_queue_base.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/network/received_packet.h"
 #include "rtc_base/network_route.h"
 #include "rtc_base/socket.h"
 
-namespace rtc {
+namespace webrtc {
 
-PacketTransportInternal::PacketTransportInternal() = default;
+PacketTransportInternal::PacketTransportInternal(TaskQueueBase* attached_queue)
+    : network_checker_(attached_queue) {}
 
 PacketTransportInternal::~PacketTransportInternal() = default;
 
-bool PacketTransportInternal::GetOption(webrtc::Socket::Option /* opt */,
+bool PacketTransportInternal::GetOption(Socket::Option /* opt */,
                                         int* /* value */) {
   return false;
 }
@@ -37,8 +39,8 @@ std::optional<NetworkRoute> PacketTransportInternal::network_route() const {
 
 void PacketTransportInternal::RegisterReceivedPacketCallback(
     void* id,
-    absl::AnyInvocable<void(PacketTransportInternal*,
-                            const rtc::ReceivedPacket&)> callback) {
+    absl::AnyInvocable<void(PacketTransportInternal*, const ReceivedIpPacket&)>
+        callback) {
   RTC_DCHECK_RUN_ON(&network_checker_);
   received_packet_callback_list_.AddReceiver(id, std::move(callback));
 }
@@ -56,7 +58,7 @@ void PacketTransportInternal::SetOnCloseCallback(
 }
 
 void PacketTransportInternal::NotifyPacketReceived(
-    const rtc::ReceivedPacket& packet) {
+    const ReceivedIpPacket& packet) {
   RTC_DCHECK_RUN_ON(&network_checker_);
   received_packet_callback_list_.Send(this, packet);
 }
@@ -69,4 +71,69 @@ void PacketTransportInternal::NotifyOnClose() {
   }
 }
 
-}  // namespace rtc
+void PacketTransportInternal::SubscribeWritableState(
+    void* tag,
+    absl::AnyInvocable<void(PacketTransportInternal*)> callback) {
+  RTC_DCHECK_RUN_ON(&network_checker_);
+  writable_state_callbacks_.AddReceiver(tag, std::move(callback));
+}
+void PacketTransportInternal::UnsubscribeWritableState(void* tag) {
+  RTC_DCHECK_RUN_ON(&network_checker_);
+  writable_state_callbacks_.RemoveReceivers(tag);
+}
+void PacketTransportInternal::NotifyWritableState(
+    PacketTransportInternal* packet_transport) {
+  RTC_DCHECK_RUN_ON(&network_checker_);
+  writable_state_callbacks_.Send(packet_transport);
+}
+
+void PacketTransportInternal::SubscribeReadyToSend(
+    void* tag,
+    absl::AnyInvocable<void(PacketTransportInternal*)> callback) {
+  RTC_DCHECK_RUN_ON(&network_checker_);
+  ready_to_send_callbacks_.AddReceiver(tag, std::move(callback));
+}
+void PacketTransportInternal::UnsubscribeReadyToSend(void* tag) {
+  RTC_DCHECK_RUN_ON(&network_checker_);
+  ready_to_send_callbacks_.RemoveReceivers(tag);
+}
+void PacketTransportInternal::NotifyReadyToSend(
+    PacketTransportInternal* packet_transport) {
+  RTC_DCHECK_RUN_ON(&network_checker_);
+  ready_to_send_callbacks_.Send(packet_transport);
+}
+
+void PacketTransportInternal::SubscribeReceivingState(
+    absl::AnyInvocable<void(PacketTransportInternal*)> callback) {
+  RTC_DCHECK_RUN_ON(&network_checker_);
+  receiving_state_callbacks_.AddReceiver(std::move(callback));
+}
+void PacketTransportInternal::SubscribeReceivingState(
+    void* tag,
+    absl::AnyInvocable<void(PacketTransportInternal*)> callback) {
+  RTC_DCHECK_RUN_ON(&network_checker_);
+  receiving_state_callbacks_.AddReceiver(tag, std::move(callback));
+}
+void PacketTransportInternal::NotifyReceivingState(
+    PacketTransportInternal* packet_transport) {
+  RTC_DCHECK_RUN_ON(&network_checker_);
+  receiving_state_callbacks_.Send(packet_transport);
+}
+
+void PacketTransportInternal::SubscribeNetworkRouteChanged(
+    void* tag,
+    absl::AnyInvocable<void(std::optional<NetworkRoute>)> callback) {
+  RTC_DCHECK_RUN_ON(&network_checker_);
+  network_route_changed_callbacks_.AddReceiver(tag, std::move(callback));
+}
+void PacketTransportInternal::UnsubscribeNetworkRouteChanged(void* tag) {
+  RTC_DCHECK_RUN_ON(&network_checker_);
+  network_route_changed_callbacks_.RemoveReceivers(tag);
+}
+void PacketTransportInternal::NotifyNetworkRouteChanged(
+    std::optional<webrtc::NetworkRoute> network_route) {
+  RTC_DCHECK_RUN_ON(&network_checker_);
+  network_route_changed_callbacks_.Send(network_route);
+}
+
+}  // namespace webrtc

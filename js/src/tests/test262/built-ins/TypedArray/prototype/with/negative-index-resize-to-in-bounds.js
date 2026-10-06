@@ -34,6 +34,6 @@ testWithTypedArrayConstructors(function(TA) {
   assert.throws(RangeError, function() {
     ta.with(-1, value);
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

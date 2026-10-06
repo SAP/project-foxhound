@@ -61,7 +61,6 @@ export default class EnableBackupEncryption extends MozLitElement {
 
     // managed by BackupUIChild
     enableEncryptionErrorCode: { type: Number },
-    rerunEncryptionErrorCode: { type: Number },
   };
 
   static get queries() {
@@ -83,7 +82,6 @@ export default class EnableBackupEncryption extends MozLitElement {
     this._inputPassValue = "";
     this._passwordsMatch = false;
     this.enableEncryptionErrorCode = 0;
-    this.rerunEncryptionErrorCode = 0;
   }
 
   connectedCallback() {
@@ -111,7 +109,6 @@ export default class EnableBackupEncryption extends MozLitElement {
         composed: true,
       })
     );
-    this.reset();
   }
 
   reset() {
@@ -122,28 +119,14 @@ export default class EnableBackupEncryption extends MozLitElement {
   }
 
   handleConfirm() {
-    switch (this.type) {
-      case VALID_TYPES.SET_PASSWORD:
-        this.dispatchEvent(
-          new CustomEvent("BackupUI:EnableEncryption", {
-            bubbles: true,
-            detail: {
-              password: this._inputPassValue,
-            },
-          })
-        );
-        break;
-      case VALID_TYPES.CHANGE_PASSWORD:
-        this.dispatchEvent(
-          new CustomEvent("BackupUI:RerunEncryption", {
-            bubbles: true,
-            detail: {
-              password: this._inputPassValue,
-            },
-          })
-        );
-        break;
-    }
+    this.dispatchEvent(
+      new CustomEvent("BackupUI:EnableEncryption", {
+        bubbles: true,
+        detail: {
+          password: this._inputPassValue,
+        },
+      })
+    );
   }
 
   descriptionTemplate() {
@@ -151,15 +134,15 @@ export default class EnableBackupEncryption extends MozLitElement {
       <div id="backup-enable-encryption-description">
         <span
           id="backup-enable-encryption-description-span"
-          data-l10n-id="enable-backup-encryption-description"
+          data-l10n-id="settings-sensitive-data-encryption-description"
         >
-          <!--TODO: finalize support page links (bug 1900467)-->
         </span>
         <a
           id="backup-enable-encryption-learn-more-link"
           is="moz-support-link"
-          support-page="todo-backup"
+          support-page="firefox-backup"
           data-l10n-id="enable-backup-encryption-support-link"
+          utm-content="add-password"
         ></a>
       </div>
     `;
@@ -185,9 +168,7 @@ export default class EnableBackupEncryption extends MozLitElement {
   }
 
   errorTemplate() {
-    let messageId = this.enableEncryptionErrorCode
-      ? getErrorL10nId(this.enableEncryptionErrorCode)
-      : getErrorL10nId(this.rerunEncryptionErrorCode);
+    let messageId = getErrorL10nId(this.enableEncryptionErrorCode);
     return html`
       <moz-message-bar
         id="enable-backup-encryption-error"
@@ -219,9 +200,7 @@ export default class EnableBackupEncryption extends MozLitElement {
           >
           </password-validation-inputs>
 
-          ${this.enableEncryptionErrorCode || this.rerunEncryptionErrorCode
-            ? this.errorTemplate()
-            : null}
+          ${this.enableEncryptionErrorCode ? this.errorTemplate() : null}
         </div>
         ${this.buttonGroupTemplate()}
       </div>

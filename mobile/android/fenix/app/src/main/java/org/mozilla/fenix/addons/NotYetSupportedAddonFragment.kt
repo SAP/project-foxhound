@@ -16,8 +16,10 @@ import mozilla.components.feature.addons.ui.UnsupportedAddonsAdapter
 import mozilla.components.feature.addons.ui.UnsupportedAddonsAdapterDelegate
 import org.mozilla.fenix.R
 import org.mozilla.fenix.databinding.FragmentNotYetSupportedAddonsBinding
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.showToolbar
+import mozilla.components.feature.addons.R as addonsR
 
 private const val LEARN_MORE_URL =
     "https://support.mozilla.org/kb/add-compatibility-firefox-preview"
@@ -26,7 +28,7 @@ private const val LEARN_MORE_URL =
  * Fragment for displaying and managing add-ons that are not yet supported by the browser.
  */
 class NotYetSupportedAddonFragment :
-    Fragment(R.layout.fragment_not_yet_supported_addons), UnsupportedAddonsAdapterDelegate {
+    Fragment(R.layout.fragment_not_yet_supported_addons), UnsupportedAddonsAdapterDelegate, SystemInsetsPaddedFragment {
 
     private val args by navArgs<NotYetSupportedAddonFragmentArgs>()
     private var unsupportedAddonsAdapter: UnsupportedAddonsAdapter? = null
@@ -55,12 +57,12 @@ class NotYetSupportedAddonFragment :
 
     override fun onResume() {
         super.onResume()
-        showToolbar(getString(R.string.mozac_feature_addons_unavailable_section))
+        showToolbar(getString(addonsR.string.mozac_feature_addons_unavailable_section))
     }
 
     override fun onUninstallError(addonId: String, throwable: Throwable) {
         this@NotYetSupportedAddonFragment.view?.let { view ->
-            showSnackBar(view, getString(R.string.mozac_feature_addons_failed_to_remove, ""))
+            showSnackBar(view, getString(addonsR.string.mozac_feature_addons_failed_to_remove, ""))
         }
 
         if (unsupportedAddonsAdapter?.itemCount == 0) {
@@ -70,7 +72,7 @@ class NotYetSupportedAddonFragment :
 
     override fun onUninstallSuccess() {
         this@NotYetSupportedAddonFragment.view?.let { view ->
-            showSnackBar(view, getString(R.string.mozac_feature_addons_successfully_removed, ""))
+            showSnackBar(view, getString(addonsR.string.mozac_feature_addons_successfully_removed, ""))
         }
     }
 }

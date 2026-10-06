@@ -1,15 +1,11 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "AudioInputSource.h"
-
+#include "MockCubeb.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-
-#include "MockCubeb.h"
 #include "mozilla/Result.h"
 #include "mozilla/gtest/WaitFor.h"
 #include "nsContentUtils.h"
@@ -27,16 +23,16 @@ using testing::ContainerEq;
   while (NS_ProcessNextEvent(nullptr, false)) { \
   }
 
-class MockEventListener : public AudioInputSource::EventListener {
+class MockAudioEventListener : public AudioInputSource::EventListener {
  public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MockEventListener, override);
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MockAudioEventListener, override);
   MOCK_METHOD1(AudioDeviceChanged, void(AudioInputSource::Id));
   MOCK_METHOD2(AudioStateCallback,
                void(AudioInputSource::Id,
                     AudioInputSource::EventListener::State));
 
  private:
-  ~MockEventListener() = default;
+  ~MockAudioEventListener() = default;
 };
 
 TEST(TestAudioInputSource, StartAndStop)
@@ -52,7 +48,7 @@ TEST(TestAudioInputSource, StartAndStop)
   const TrackRate sourceRate = 44100;
   const TrackRate targetRate = 48000;
 
-  auto listener = MakeRefPtr<MockEventListener>();
+  auto listener = MakeRefPtr<MockAudioEventListener>();
   EXPECT_CALL(*listener,
               AudioStateCallback(
                   sourceId, AudioInputSource::EventListener::State::Started))
@@ -80,10 +76,10 @@ TEST(TestAudioInputSource, StartAndStop)
     EXPECT_EQ(stream->InputChannels(), channels);
     EXPECT_EQ(stream->SampleRate(), static_cast<uint32_t>(sourceRate));
 
-    Unused << WaitFor(stream->FramesProcessedEvent());
+    (void)WaitFor(stream->FramesProcessedEvent());
 
     DispatchFunction([&] { ais->Stop(); });
-    Unused << WaitFor(cubeb->StreamDestroyEvent());
+    (void)WaitFor(cubeb->StreamDestroyEvent());
   }
 
   // Make sure restart is ok.
@@ -99,10 +95,10 @@ TEST(TestAudioInputSource, StartAndStop)
     EXPECT_EQ(stream->InputChannels(), channels);
     EXPECT_EQ(stream->SampleRate(), static_cast<uint32_t>(sourceRate));
 
-    Unused << WaitFor(stream->FramesProcessedEvent());
+    (void)WaitFor(stream->FramesProcessedEvent());
 
     DispatchFunction([&] { ais->Stop(); });
-    Unused << WaitFor(cubeb->StreamDestroyEvent());
+    (void)WaitFor(cubeb->StreamDestroyEvent());
   }
 
   ais = nullptr;  // Drop the SharedThreadPool here.
@@ -123,7 +119,7 @@ TEST(TestAudioInputSource, DataOutputBeforeStartAndAfterStop)
 
   const TrackTime requestFrames = 2 * WEBAUDIO_BLOCK_SIZE;
 
-  auto listener = MakeRefPtr<MockEventListener>();
+  auto listener = MakeRefPtr<MockAudioEventListener>();
   EXPECT_CALL(*listener,
               AudioStateCallback(
                   sourceId, AudioInputSource::EventListener::State::Started));
@@ -156,10 +152,10 @@ TEST(TestAudioInputSource, DataOutputBeforeStartAndAfterStop)
 
   stream->SetInputRecordingEnabled(true);
 
-  Unused << WaitFor(stream->FramesProcessedEvent());
+  (void)WaitFor(stream->FramesProcessedEvent());
 
   DispatchFunction([&] { ais->Stop(); });
-  Unused << WaitFor(cubeb->StreamDestroyEvent());
+  (void)WaitFor(cubeb->StreamDestroyEvent());
 
   // Check the data output
   {
@@ -204,7 +200,7 @@ TEST(TestAudioInputSource, ErrorCallback)
   const TrackRate sourceRate = 44100;
   const TrackRate targetRate = 48000;
 
-  auto listener = MakeRefPtr<MockEventListener>();
+  auto listener = MakeRefPtr<MockAudioEventListener>();
   EXPECT_CALL(*listener,
               AudioStateCallback(
                   sourceId, AudioInputSource::EventListener::State::Started));
@@ -230,13 +226,13 @@ TEST(TestAudioInputSource, ErrorCallback)
   EXPECT_FALSE(stream->mHasOutput);
   EXPECT_EQ(stream->InputChannels(), channels);
 
-  Unused << WaitFor(stream->FramesProcessedEvent());
+  (void)WaitFor(stream->FramesProcessedEvent());
 
   DispatchFunction([&] { stream->ForceError(); });
   WaitFor(stream->ErrorForcedEvent());
 
   DispatchFunction([&] { ais->Stop(); });
-  Unused << WaitFor(cubeb->StreamDestroyEvent());
+  (void)WaitFor(cubeb->StreamDestroyEvent());
 
   ais = nullptr;  // Drop the SharedThreadPool here.
 }
@@ -254,7 +250,7 @@ TEST(TestAudioInputSource, DeviceChangedCallback)
   const TrackRate sourceRate = 44100;
   const TrackRate targetRate = 48000;
 
-  auto listener = MakeRefPtr<MockEventListener>();
+  auto listener = MakeRefPtr<MockAudioEventListener>();
   EXPECT_CALL(*listener, AudioDeviceChanged(sourceId));
   EXPECT_CALL(*listener,
               AudioStateCallback(
@@ -278,13 +274,13 @@ TEST(TestAudioInputSource, DeviceChangedCallback)
   EXPECT_FALSE(stream->mHasOutput);
   EXPECT_EQ(stream->InputChannels(), channels);
 
-  Unused << WaitFor(stream->FramesProcessedEvent());
+  (void)WaitFor(stream->FramesProcessedEvent());
 
   DispatchFunction([&] { stream->ForceDeviceChanged(); });
   WaitFor(stream->DeviceChangeForcedEvent());
 
   DispatchFunction([&] { ais->Stop(); });
-  Unused << WaitFor(cubeb->StreamDestroyEvent());
+  (void)WaitFor(cubeb->StreamDestroyEvent());
 
   ais = nullptr;  // Drop the SharedThreadPool here.
 }
@@ -304,7 +300,7 @@ TEST(TestAudioInputSource, InputProcessing)
   using ProcessingPromise =
       AudioInputSource::SetRequestedProcessingParamsPromise;
 
-  auto listener = MakeRefPtr<MockEventListener>();
+  auto listener = MakeRefPtr<MockAudioEventListener>();
   EXPECT_CALL(*listener,
               AudioStateCallback(
                   sourceId, AudioInputSource::EventListener::State::Started))
@@ -330,7 +326,7 @@ TEST(TestAudioInputSource, InputProcessing)
         EXPECT_EQ(WaitFor(p), aExpected);
 
         DispatchFunction([&] { ais->Stop(); });
-        Unused << WaitFor(cubeb->StreamDestroyEvent());
+        (void)WaitFor(cubeb->StreamDestroyEvent());
       };
 
   // Not supported by backend.

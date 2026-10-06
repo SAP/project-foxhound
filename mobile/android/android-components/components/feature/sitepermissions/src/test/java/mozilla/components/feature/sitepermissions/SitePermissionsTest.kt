@@ -13,6 +13,8 @@ import mozilla.components.concept.engine.permission.SitePermissionsStorage.Permi
 import mozilla.components.concept.engine.permission.SitePermissionsStorage.Permission.AUTOPLAY_INAUDIBLE
 import mozilla.components.concept.engine.permission.SitePermissionsStorage.Permission.BLUETOOTH
 import mozilla.components.concept.engine.permission.SitePermissionsStorage.Permission.CAMERA
+import mozilla.components.concept.engine.permission.SitePermissionsStorage.Permission.LOCAL_DEVICE_ACCESS
+import mozilla.components.concept.engine.permission.SitePermissionsStorage.Permission.LOCAL_NETWORK_ACCESS
 import mozilla.components.concept.engine.permission.SitePermissionsStorage.Permission.LOCAL_STORAGE
 import mozilla.components.concept.engine.permission.SitePermissionsStorage.Permission.LOCATION
 import mozilla.components.concept.engine.permission.SitePermissionsStorage.Permission.MICROPHONE
@@ -31,6 +33,8 @@ class SitePermissionsTest {
         assertEquals(NO_DECISION, sitePermissions[MICROPHONE])
         assertEquals(NO_DECISION, sitePermissions[BLUETOOTH])
         assertEquals(NO_DECISION, sitePermissions[CAMERA])
+        assertEquals(NO_DECISION, sitePermissions[LOCAL_DEVICE_ACCESS])
+        assertEquals(NO_DECISION, sitePermissions[LOCAL_NETWORK_ACCESS])
         assertEquals(BLOCKED, sitePermissions[AUTOPLAY_AUDIBLE])
         assertEquals(ALLOWED, sitePermissions[AUTOPLAY_INAUDIBLE])
 
@@ -40,6 +44,8 @@ class SitePermissionsTest {
             microphone = NO_DECISION,
             autoplayAudible = AutoplayStatus.ALLOWED,
             autoplayInaudible = AutoplayStatus.BLOCKED,
+            localDeviceAccess = ALLOWED,
+            localNetworkAccess = ALLOWED,
         )
 
         assertEquals(BLOCKED, sitePermissions[NOTIFICATION])
@@ -48,6 +54,8 @@ class SitePermissionsTest {
         assertEquals(NO_DECISION, sitePermissions[BLUETOOTH])
         assertEquals(NO_DECISION, sitePermissions[CAMERA])
         assertEquals(NO_DECISION, sitePermissions[LOCAL_STORAGE])
+        assertEquals(ALLOWED, sitePermissions[LOCAL_DEVICE_ACCESS])
+        assertEquals(ALLOWED, sitePermissions[LOCAL_NETWORK_ACCESS])
         assertEquals(ALLOWED, sitePermissions[AUTOPLAY_AUDIBLE])
         assertEquals(BLOCKED, sitePermissions[AUTOPLAY_INAUDIBLE])
     }

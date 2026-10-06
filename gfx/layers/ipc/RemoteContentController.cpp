@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,7 +15,6 @@
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/MatrixMessage.h"
 #include "mozilla/gfx/GPUProcessManager.h"
-#include "mozilla/Unused.h"
 #include "Units.h"
 #ifdef MOZ_WIDGET_ANDROID
 #  include "mozilla/jni/Utils.h"
@@ -50,7 +47,7 @@ void RemoteContentController::NotifyLayerTransforms(
   }
 
   if (mCanSend) {
-    Unused << SendLayerTransforms(aTransforms);
+    (void)SendLayerTransforms(aTransforms);
   }
 }
 
@@ -59,7 +56,7 @@ void RemoteContentController::RequestContentRepaint(
   MOZ_ASSERT(IsRepaintThread());
 
   if (mCanSend) {
-    Unused << SendRequestContentRepaint(aRequest);
+    (void)SendRequestContentRepaint(aRequest);
   }
 }
 
@@ -71,7 +68,9 @@ void RemoteContentController::HandleTapOnParentProcessMainThread(
           ("HandleTapOnMainThread(%d)", (int)aTapType));
   MOZ_ASSERT(NS_IsMainThread());
 
-  dom::BrowserParent* tab =
+  // Hold strong reference to BrowserParent because SendHandleTap
+  // can run script via SetFocus.
+  RefPtr<dom::BrowserParent> tab =
       dom::BrowserParent::GetBrowserParentFromLayersId(aGuid.mLayersId);
   if (tab) {
     tab->SendHandleTap(aTapType, aPoint, aModifiers, aGuid, aInputBlockId,
@@ -87,11 +86,11 @@ void RemoteContentController::HandleTapOnGPUProcessMainThread(
   MOZ_ASSERT(NS_IsMainThread());
 
   // Send a message to the controller thread to handle the single-tap gesture.
-  APZInputBridgeParent* apzib =
+  auto apzib =
       CompositorBridgeParent::GetApzInputBridgeParentForRoot(aGuid.mLayersId);
   if (apzib) {
-    Unused << apzib->SendHandleTap(aTapType, aPoint, aModifiers, aGuid,
-                                   aInputBlockId, aDoubleTapToZoomMetrics);
+    (void)apzib->SendHandleTap(aTapType, aPoint, aModifiers, aGuid,
+                               aInputBlockId, aDoubleTapToZoomMetrics);
   }
 }
 
@@ -158,11 +157,11 @@ void RemoteContentController::NotifyPinchGestureOnCompositorThread(
 
   // The raw pointer to APZCTreeManagerParent is ok here because we are on
   // the compositor thread.
-  APZCTreeManagerParent* apzctmp =
+  auto apzctmp =
       CompositorBridgeParent::GetApzcTreeManagerParentForRoot(aGuid.mLayersId);
   if (apzctmp) {
-    Unused << apzctmp->SendNotifyPinchGesture(aType, aGuid, aFocusPoint,
-                                              aSpanChange, aModifiers);
+    (void)apzctmp->SendNotifyPinchGesture(aType, aGuid, aFocusPoint,
+                                          aSpanChange, aModifiers);
   }
 }
 
@@ -234,7 +233,7 @@ void RemoteContentController::NotifyAPZStateChange(
   }
 
   if (mCanSend) {
-    Unused << SendNotifyAPZStateChange(aGuid, aChange, aArg, aInputBlockId);
+    (void)SendNotifyAPZStateChange(aGuid, aChange, aArg, aInputBlockId);
   }
 }
 
@@ -276,9 +275,8 @@ void RemoteContentController::UpdateOverscrollVelocity(
             aGuid.mLayersId);
     if (rootController) {
       MOZ_RELEASE_ASSERT(rootController->IsRemote());
-      Unused << static_cast<RemoteContentController*>(rootController)
-                    ->SendUpdateOverscrollVelocity(aGuid, aX, aY,
-                                                   aIsRootContent);
+      (void)static_cast<RemoteContentController*>(rootController)
+          ->SendUpdateOverscrollVelocity(aGuid, aX, aY, aIsRootContent);
     }
   }
 }
@@ -321,8 +319,8 @@ void RemoteContentController::UpdateOverscrollOffset(
             aGuid.mLayersId);
     if (rootController) {
       MOZ_RELEASE_ASSERT(rootController->IsRemote());
-      Unused << static_cast<RemoteContentController*>(rootController)
-                    ->SendUpdateOverscrollOffset(aGuid, aX, aY, aIsRootContent);
+      (void)static_cast<RemoteContentController*>(rootController)
+          ->SendUpdateOverscrollOffset(aGuid, aX, aY, aIsRootContent);
     }
   }
 }
@@ -362,8 +360,8 @@ void RemoteContentController::HideDynamicToolbar(
             aGuid.mLayersId);
     if (rootController) {
       MOZ_RELEASE_ASSERT(rootController->IsRemote());
-      Unused << static_cast<RemoteContentController*>(rootController)
-                    ->SendHideDynamicToolbar();
+      (void)static_cast<RemoteContentController*>(rootController)
+          ->SendHideDynamicToolbar();
     }
   }
 }
@@ -381,7 +379,7 @@ void RemoteContentController::NotifyMozMouseScrollEvent(
   }
 
   if (mCanSend) {
-    Unused << SendNotifyMozMouseScrollEvent(aScrollId, aEvent);
+    (void)SendNotifyMozMouseScrollEvent(aScrollId, aEvent);
   }
 }
 
@@ -389,7 +387,7 @@ void RemoteContentController::NotifyFlushComplete() {
   MOZ_ASSERT(IsRepaintThread());
 
   if (mCanSend) {
-    Unused << SendNotifyFlushComplete();
+    (void)SendNotifyFlushComplete();
   }
 }
 
@@ -409,8 +407,8 @@ void RemoteContentController::NotifyAsyncScrollbarDragInitiated(
   }
 
   if (mCanSend) {
-    Unused << SendNotifyAsyncScrollbarDragInitiated(aDragBlockId, aScrollId,
-                                                    aDirection);
+    (void)SendNotifyAsyncScrollbarDragInitiated(aDragBlockId, aScrollId,
+                                                aDirection);
   }
 }
 
@@ -426,7 +424,7 @@ void RemoteContentController::NotifyAsyncScrollbarDragRejected(
   }
 
   if (mCanSend) {
-    Unused << SendNotifyAsyncScrollbarDragRejected(aScrollId);
+    (void)SendNotifyAsyncScrollbarDragRejected(aScrollId);
   }
 }
 
@@ -441,7 +439,7 @@ void RemoteContentController::NotifyAsyncAutoscrollRejected(
   }
 
   if (mCanSend) {
-    Unused << SendNotifyAsyncAutoscrollRejected(aScrollId);
+    (void)SendNotifyAsyncAutoscrollRejected(aScrollId);
   }
 }
 
@@ -457,15 +455,9 @@ void RemoteContentController::CancelAutoscroll(
 void RemoteContentController::CancelAutoscrollInProcess(
     const ScrollableLayerGuid& aGuid) {
   MOZ_ASSERT(XRE_IsParentProcess());
-
-  if (!NS_IsMainThread()) {
-    NS_DispatchToMainThread(NewRunnableMethod<ScrollableLayerGuid>(
-        "layers::RemoteContentController::CancelAutoscrollInProcess", this,
-        &RemoteContentController::CancelAutoscrollInProcess, aGuid));
-    return;
-  }
-
-  APZCCallbackHelper::CancelAutoscroll(aGuid.mScrollId);
+  NS_DispatchToMainThread(NewRunnableFunction(
+      "layers::CancelAutoScroll", &APZCCallbackHelper::CancelAutoscroll,
+      aGuid.mScrollId));
 }
 
 void RemoteContentController::CancelAutoscrollCrossProcess(
@@ -479,12 +471,9 @@ void RemoteContentController::CancelAutoscrollCrossProcess(
     return;
   }
 
-  // The raw pointer to APZCTreeManagerParent is ok here because we are on
-  // the compositor thread.
-  if (APZCTreeManagerParent* parent =
-          CompositorBridgeParent::GetApzcTreeManagerParentForRoot(
-              aGuid.mLayersId)) {
-    Unused << parent->SendCancelAutoscroll(aGuid.mScrollId);
+  if (auto parent = CompositorBridgeParent::GetApzcTreeManagerParentForRoot(
+          aGuid.mLayersId)) {
+    (void)parent->SendCancelAutoscroll(aGuid.mScrollId);
   }
 }
 
@@ -533,12 +522,9 @@ void RemoteContentController::NotifyScaleGestureCompleteCrossProcess(
     return;
   }
 
-  // The raw pointer to APZCTreeManagerParent is ok here because we are on
-  // the compositor thread.
-  if (APZCTreeManagerParent* parent =
-          CompositorBridgeParent::GetApzcTreeManagerParentForRoot(
-              aGuid.mLayersId)) {
-    Unused << parent->SendNotifyScaleGestureComplete(aGuid.mScrollId, aScale);
+  if (auto parent = CompositorBridgeParent::GetApzcTreeManagerParentForRoot(
+          aGuid.mLayersId)) {
+    (void)parent->SendNotifyScaleGestureComplete(aGuid.mScrollId, aScale);
   }
 }
 
@@ -551,7 +537,7 @@ void RemoteContentController::ActorDestroy(ActorDestroyReason aWhy) {
 void RemoteContentController::Destroy() {
   if (mCanSend) {
     mCanSend = false;
-    Unused << SendDestroy();
+    (void)SendDestroy();
   }
 }
 

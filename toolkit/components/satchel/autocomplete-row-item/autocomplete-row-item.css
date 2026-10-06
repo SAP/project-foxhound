@@ -1,0 +1,51 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.row-item {
+  display: flex;
+  align-items: center;
+  column-gap: var(--space-small);
+  padding: var(--space-small);
+  border-radius: var(--border-radius-large);
+
+  &:hover {
+    background-color: var(--button-background-color-ghost-hover);
+
+    > .secondary-action {
+      visibility: visible;
+    }
+  }
+
+  &:active:hover {
+    background-color: var(--button-background-color-active);
+  }
+}
+
+.labels-container {
+  display: flex;
+  flex-direction: column;
+
+  > .label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  > .description {
+    color: var(--text-color-deemphasized);
+  }
+}
+
+.icon {
+  height: var(--icon-size-medium);
+  width: var(--icon-size-medium);
+  -moz-context-properties: fill, fill-opacity, stroke;
+  fill: var(--button-icon-fill);
+  stroke: var(--button-icon-stroke);
+}
+
+.secondary-action {
+  visibility: hidden;
+  margin-inline-start: auto;
+}

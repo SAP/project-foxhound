@@ -10,9 +10,9 @@ diff --git a/sandbox/win/src/sandbox_types.h b/sandbox/win/src/sandbox_types.h
 --- a/sandbox/win/src/sandbox_types.h
 +++ b/sandbox/win/src/sandbox_types.h
 @@ -5,16 +5,22 @@
- #ifndef SANDBOX_WIN_SRC_SANDBOX_TYPES_H_
  #define SANDBOX_WIN_SRC_SANDBOX_TYPES_H_
  
+ #include "base/memory/raw_ptr.h"
  #include "base/process/kill.h"
  #include "base/process/launch.h"
  
@@ -28,7 +28,7 @@ diff --git a/sandbox/win/src/sandbox_types.h b/sandbox/win/src/sandbox_types.h
  //
  // Note: These codes are listed in a histogram and any new codes should be added
  // at the end. If the underlying type is changed then the forward declaration in
- // sandbox_init.h must be updated.
+ // sandbox_init_win.h must be updated.
  //
  enum ResultCode : int {
    SBOX_ALL_OK = 0,

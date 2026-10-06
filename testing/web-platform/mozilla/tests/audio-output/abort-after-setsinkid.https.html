@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<title>Abort during stream init for setSinkId() crashtest for bug 2046555
+</title>
+<script src='/resources/testharness.js'></script>
+<script src='/resources/testharnessreport.js'></script>
+<body>
+  <audio controls loop src='/media/sound_5.oga'>
+  </audio>
+</body>
+<script>
+// This would be a crashtest but SpecialPowers is not defined in crashtests.
+promise_test(async t => {
+  const a = document.getElementsByTagName('audio')[0];
+  a.load();
+  await new Promise(r => a.oncanplaythrough = r);
+  await SpecialPowers.pushPrefEnv({'set': [
+    // CubebStreamInit() longer than twice 250ms timeupdate interval.
+    ['media.cubeb.slow_stream_init_ms', 3 * 250],
+    // Skip selectAudioOutput/getUserMedia permission prompt.
+    ['media.navigator.permission.disabled', true],
+  ]});
+  // Same purpose as test_driver.bless(), but functional even on reload.
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+
+  const {deviceId} = await navigator.mediaDevices.selectAudioOutput();
+  await a.play();
+  await new Promise(r => a.ontimeupdate = r);
+  const setSinkPromise = a.setSinkId(deviceId);
+  await new Promise(r => a.ontimeupdate = r);
+  // Abort the load.
+  a.src = '';
+
+  await setSinkPromise;
+  document.documentElement.removeAttribute('class');
+});
+</script>
+</html>

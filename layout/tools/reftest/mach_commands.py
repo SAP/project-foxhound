@@ -10,6 +10,8 @@ from argparse import Namespace
 from mach.decorators import Command
 from mozbuild.base import MachCommandConditions as conditions
 from mozbuild.base import MozbuildObject
+from mozlog.commandline import setup_logging
+from mozlog.handlers import ResourceHandler, StreamHandler
 
 parser = None
 
@@ -259,8 +261,25 @@ def run_crashtest(command_context, **kwargs):
 
 
 def _run_reftest(command_context, **kwargs):
+    from output import ReftestFormatter
+
     kwargs["topsrcdir"] = command_context.topsrcdir
     process_test_objects(kwargs)
+
+    created_logger = False
+    if not kwargs.get("log"):
+        level = command_context._mach_context.settings["test"]["level"]
+        if os.environ.get("MOZ_REFTEST_VERBOSE"):
+            level = "debug"
+        format_args = {"level": level}
+        log = setup_logging("mach-reftest", kwargs, {"tbpl": sys.stdout}, format_args)
+        kwargs["log"] = log
+        created_logger = True
+        for handler in log.handlers:
+            if isinstance(handler, StreamHandler):
+                handler.formatter.inner = ReftestFormatter()
+        log.add_handler(ResourceHandler(command_context))
+
     reftest = command_context._spawn(ReftestRunner)
     # Unstructured logging must be enabled prior to calling
     # adb which uses an unstructured logger in its constructor.
@@ -289,5 +308,11 @@ def _run_reftest(command_context, **kwargs):
             device_serial=kwargs["deviceSerial"],
             verbose=verbose,
         )
-        return reftest.run_android_test(**kwargs)
-    return reftest.run_desktop_test(**kwargs)
+        rv = reftest.run_android_test(**kwargs)
+    else:
+        rv = reftest.run_desktop_test(**kwargs)
+
+    if created_logger:
+        kwargs["log"].shutdown()
+
+    return rv

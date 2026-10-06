@@ -10,19 +10,18 @@
   > richlistbox > richlistitem {
     &[originaltype="autofill"] {
       display: block;
-      margin: 0;
-      padding: 0;
+      margin-inline: 0;
       height: auto;
       min-height: auto;
 
-      /* Treat @collpased="true" as display: none similar to how it is for XUL elements.
-      * https://developer.mozilla.org/en-US/docs/Web/CSS/visibility#Values */
-      &[collapsed="true"] {
+      /* Treat collapsed as display: none similar to how it is for XUL elements.
+       * https://developer.mozilla.org/en-US/docs/Web/CSS/visibility#Values */
+      &[collapsed] {
         display: none;
       }
     }
 
-    &[disabled="true"] {
+    &[disabled] {
       opacity: 0.5;
     }
   }

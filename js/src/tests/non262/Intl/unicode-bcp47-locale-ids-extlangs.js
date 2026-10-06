@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // Unicode BCP 47 locale identifiers don't support extlang subtags.
 const invalid = [
     // Two letter language code followed by extlang subtags.

@@ -1,0 +1,13 @@
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  // Test ByteCount overflow - NO try/catch so crash propagates
+  const frame = new VideoFrame(new Uint8Array(64), {
+    format: "RGBA",
+    codedWidth: 2147483647,
+    codedHeight: 2147483647,
+    visibleRect: { x: 0, y: 0, width: 4, height: 4 },
+    timestamp: 0
+  });
+  frame.close();
+});
+</script>

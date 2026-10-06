@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,10 +5,10 @@
 #ifndef EncodedFrame_h_
 #define EncodedFrame_h_
 
-#include "nsISupportsImpl.h"
-#include "mozilla/media/MediaUtils.h"
 #include "TimeUnits.h"
 #include "VideoUtils.h"
+#include "mozilla/media/MediaUtils.h"
+#include "nsISupportsImpl.h"
 
 namespace mozilla {
 

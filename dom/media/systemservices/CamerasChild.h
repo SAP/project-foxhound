@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -44,6 +42,10 @@ class CamerasChild;
 // Helper class in impl that we friend.
 template <class T>
 class LockAndDispatch;
+
+static constexpr int kSuccess = 0;
+static constexpr int kError = -1;
+static constexpr int kIpcError = -2;
 
 // We emulate the sync webrtc.org API with the help of singleton
 // CamerasSingleton, which manages a pointer to an IPC object, a thread
@@ -114,8 +116,6 @@ class CamerasSingleton {
 // it will set up the CamerasSingleton.
 CamerasChild* GetCamerasChild();
 
-CamerasChild* GetCamerasChildIfExists();
-
 // Shut down the IPC channel and everything associated, like WebRTC.
 // This is a static call because the CamerasChild object may not even
 // be alive when we're called.
@@ -146,10 +146,12 @@ class CamerasChild final : public PCamerasChild {
 
   // IPC messages recevied, received on the PBackground thread
   // these are the actual callbacks with data
-  mozilla::ipc::IPCResult RecvCaptureEnded(const int&) override;
+  mozilla::ipc::IPCResult RecvCaptureEnded(
+      nsTArray<int>&& aCaptureIds) override;
   mozilla::ipc::IPCResult RecvDeliverFrame(
-      const int&, mozilla::ipc::Shmem&&,
-      const VideoFrameProperties& prop) override;
+      const int& aCaptureId, nsTArray<int>&& aStreamIds,
+      mozilla::ipc::Shmem&& aShmem,
+      const VideoFrameProperties& aProps) override;
 
   mozilla::ipc::IPCResult RecvDeviceChange() override;
 
@@ -161,7 +163,7 @@ class CamerasChild final : public PCamerasChild {
       const VideoCaptureCapability& capability) override;
   mozilla::ipc::IPCResult RecvReplyGetCaptureDevice(
       const nsACString& device_name, const nsACString& device_id,
-      const bool& scary, const bool& device_is_placeholder) override;
+      const bool& scary) override;
   mozilla::ipc::IPCResult RecvReplyFailure(void) override;
   mozilla::ipc::IPCResult RecvReplySuccess(void) override;
   void ActorDestroy(ActorDestroyReason aWhy) override;
@@ -175,6 +177,8 @@ class CamerasChild final : public PCamerasChild {
   int ReleaseCapture(CaptureEngine aCapEngine, const int capture_id);
   int StartCapture(CaptureEngine aCapEngine, const int capture_id,
                    const webrtc::VideoCaptureCapability& capability,
+                   const NormalizedConstraints& constraints,
+                   const dom::VideoResizeModeEnum& resize_mode,
                    FrameRelay* func);
   int FocusOnSelectedSource(CaptureEngine aCapEngine, const int capture_id);
   int StopCapture(CaptureEngine aCapEngine, const int capture_id);
@@ -188,8 +192,7 @@ class CamerasChild final : public PCamerasChild {
                        char* device_nameUTF8,
                        const unsigned int device_nameUTF8Length,
                        char* unique_idUTF8,
-                       const unsigned int unique_idUTF8Length, bool* scary,
-                       bool* device_is_placeholder);
+                       const unsigned int unique_idUTF8Length, bool* scary);
   int EnsureInitialized(CaptureEngine aCapEngine);
 
   template <typename This>
@@ -215,12 +218,23 @@ class CamerasChild final : public PCamerasChild {
 
   FrameRelay* Callback(int capture_id);
 
+  // Remove a FrameRelay callback by capture_id if a CamerasChild exists.
+  static void RemoveCallbackIfExists(int capture_id);
+
+  void ClearAllCallbacks();
+
  private:
   CamerasChild();
   ~CamerasChild();
   // Dispatch a Runnable to the PCamerasParent, by executing it on the
   // decidecated Cameras IPC/PBackground thread.
-  bool DispatchToParent(nsIRunnable* aRunnable, MonitorAutoLock& aMonitor);
+  enum class DispatchToParentResult : int8_t {
+    SUCCESS = 0,
+    FAILURE = -1,
+    DISCONNECTED = -2,
+  };
+  DispatchToParentResult DispatchToParent(nsIRunnable* aRunnable,
+                                          MonitorAutoLock& aMonitor);
   void AddCallback(int capture_id, FrameRelay* render);
   void RemoveCallback(int capture_id);
 
@@ -247,13 +261,11 @@ class CamerasChild final : public PCamerasChild {
   bool mReceivedReply;
   // Async responses data contents;
   bool mReplySuccess;
-  const int mZero;
   int mReplyInteger;
   webrtc::VideoCaptureCapability* mReplyCapability = nullptr;
   nsCString mReplyDeviceName;
   nsCString mReplyDeviceID;
   bool mReplyScary;
-  bool mReplyDeviceIsPlaceholder;
   MediaEventProducer<void> mDeviceListChangeEvent;
 };
 

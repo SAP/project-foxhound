@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -27,13 +26,4 @@ interface ChildSHistory {
    */
   [Throws]
   undefined reload(unsigned long aReloadFlags);
-
-  /**
-   * Getter for the legacy nsISHistory implementation.
-   *
-   * legacySHistory has been deprecated. Don't use it, but instead handle
-   * the interaction with nsISHistory in the parent process.
-   */
-  [Throws]
-  readonly attribute nsISHistory legacySHistory;
 };

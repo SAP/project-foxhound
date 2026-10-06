@@ -28,7 +28,9 @@ interface MenuButton : Observable<MenuButton.Observer> {
     /**
      * Sets the tint of the 3-dot menu icon.
      */
-    fun setColorFilter(@ColorInt color: Int)
+    fun setColorFilter(
+        @ColorInt color: Int,
+    )
 
     /**
      * Observer for the menu button.

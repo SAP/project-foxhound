@@ -26,11 +26,11 @@ class SimulatorActor extends Actor {
   /**
    * Simulates a type of visual impairment (i.e. color blindness or contrast loss).
    *
-   * @param  {Object} options
+   * @param  {object} options
    *         Properties: {Array} types
    *                     Contains the types of visual impairment(s) to be simulated.
    *                     Set default color matrix if array is empty.
-   * @return {Boolean}
+   * @return {boolean}
    *         True if matrix was successfully applied, false otherwise.
    */
   simulate(options) {

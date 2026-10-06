@@ -1,6 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * vim: sw=4 ts=4 sts=4 et
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -58,7 +56,8 @@ add_setup(async () => {
   taskProfD.append("test_backgroundtask_experiments_task");
   taskProfile = profileService.createUniqueProfile(
     taskProfD,
-    "test_backgroundtask_experiments_task"
+    "test_backgroundtask_experiments_task",
+    "tests"
   );
 
   registerCleanupFunction(() => {
@@ -450,6 +449,25 @@ add_task(async function test_backgroundtask_Messaging_targeting() {
       );
     }
   }
+});
+
+// Verify that the background task emits color scheme and motion preference
+// values for use by ToastNotification's image variant selection. The exact
+// values depend on the user's default profile prefs and OS settings, so we
+// only assert that they are present and have the correct type.
+add_task(async function test_backgroundtask_system_color_scheme_and_motion() {
+  let { infoMap } = await doMessage({});
+
+  Assert.equal(
+    typeof infoMap.chromeColorSchemeIsDark,
+    "boolean",
+    "Background task emits boolean chromeColorSchemeIsDark"
+  );
+  Assert.equal(
+    typeof infoMap.prefersReducedMotion,
+    "boolean",
+    "Background task emits boolean prefersReducedMotion"
+  );
 });
 
 // Verify that `RemoteSettingsClient.sync` is invoked before any

@@ -9,10 +9,10 @@ support-files = [
   "webchannel.html",
   "webchannel-favicons.html",
   "webchannel-open-script-in-debugger_assets/*",
+  "webchannel-js-sources.html",
 ]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && tsan", # Bug 1804081, timeouts and data races in various tests
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && tsan", # Bug 1804081
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # Bug 1804081, timeouts and data races in various tests
 ]
 
 ["browser_aboutprofiling-entries.js"]
@@ -64,6 +64,8 @@ skip-if = [
 ["browser_webchannel-enable-menu-button-preset.js"]
 
 ["browser_webchannel-enable-menu-button.js"]
+
+["browser_webchannel-get-js-sources.js"]
 
 ["browser_webchannel-open-script-in-debugger.js"]
 

@@ -19,26 +19,15 @@ const PREFERENCES = [
       "hosted from another domain, it will run in another process",
   ],
   [
-    "devtools.every-frame-target.enabled",
-    "When enabled, targets will be created for all iframes, no matter if " +
-      "they are remote or not, independently of Fission being enabled or not",
-  ],
-  [
     "fission.bfcacheInParent",
     "Enable bfcache navigation in parent process (requires Fission and involve " +
       "more top level target switching",
   ],
-  [
-    "devtools.debugger.features.javascript-tracing",
-    "Enable the JavaScript tracer. (You need to restart Firefox / the Browser Toolbox to apply this setting)",
-  ],
 ];
 
 /**
- * Temporary module to show a Tooltip with the currently enabled preferences
- * relevant for DevTools ongoing architectural work (e.g. Fission, EFT, …).
- *
- * This module should be deleted once all experimental prefs are preffed on in Nightly.
+ * Show a Tooltip with the currently enabled preferences relevant for DevTools
+ * ongoing experiments (new features, refactors, migrations).
  */
 function showTooltip(toolbox) {
   if (!toolbox._experimentalPrefsTooltip) {

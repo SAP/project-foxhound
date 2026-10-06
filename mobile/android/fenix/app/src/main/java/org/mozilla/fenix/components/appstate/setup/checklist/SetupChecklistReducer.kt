@@ -19,6 +19,7 @@ internal object SetupChecklistReducer {
      * @param action The [SetupChecklistAction] being reduced.
      * @return The resulting [AppState] after the given [action] has been reduced.
      */
+    @Suppress("CognitiveComplexMethod")
     fun reduce(state: AppState, action: SetupChecklistAction): AppState = when (action) {
         is SetupChecklistAction.Init -> state
         is SetupChecklistAction.Closed -> state.copy(

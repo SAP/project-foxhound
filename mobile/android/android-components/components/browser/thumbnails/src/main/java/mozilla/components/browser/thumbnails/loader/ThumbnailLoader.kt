@@ -8,6 +8,7 @@ import android.graphics.drawable.Drawable
 import android.widget.ImageView
 import androidx.annotation.MainThread
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -22,7 +23,12 @@ import java.lang.ref.WeakReference
 /**
  * An implementation of [ImageLoader] for loading thumbnails into a [ImageView].
  */
-class ThumbnailLoader(private val storage: ThumbnailStorage) : ImageLoader {
+class ThumbnailLoader(
+    private val storage: ThumbnailStorage,
+    mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+) : ImageLoader {
+
+    private val scope = CoroutineScope(mainDispatcher)
 
     override fun loadIntoView(
         view: ImageView,
@@ -30,7 +36,7 @@ class ThumbnailLoader(private val storage: ThumbnailStorage) : ImageLoader {
         placeholder: Drawable?,
         error: Drawable?,
     ) {
-        CoroutineScope(Dispatchers.Main).launch {
+        scope.launch {
             loadIntoViewInternal(WeakReference(view), request, placeholder, error)
         }
     }

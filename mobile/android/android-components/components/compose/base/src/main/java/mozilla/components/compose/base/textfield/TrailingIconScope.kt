@@ -5,22 +5,21 @@
 package mozilla.components.compose.base.textfield
 
 import androidx.annotation.DrawableRes
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import mozilla.components.compose.base.R
@@ -28,6 +27,8 @@ import mozilla.components.compose.base.button.IconButton
 import mozilla.components.compose.base.text.Text
 import mozilla.components.compose.base.text.value
 import mozilla.components.compose.base.theme.AcornTheme
+import mozilla.components.compose.base.theme.acornPrivateColorScheme
+import mozilla.components.compose.base.theme.privateColorPalette
 import mozilla.components.ui.icons.R as iconsR
 
 /**
@@ -45,7 +46,6 @@ class TrailingIconScope(rowScope: RowScope) : RowScope by rowScope {
     ) = TrailingIconButton(
         iconId = iconsR.drawable.mozac_ic_eye_24,
         contentDescription = contentDescription,
-        tint = AcornTheme.colors.textPrimary,
         onTrailingIconClick = onTrailingIconClick,
     )
 
@@ -59,7 +59,6 @@ class TrailingIconScope(rowScope: RowScope) : RowScope by rowScope {
     ) = TrailingIconButton(
         iconId = iconsR.drawable.mozac_ic_cross_circle_fill_24,
         contentDescription = contentDescription,
-        tint = AcornTheme.colors.textPrimary,
         onTrailingIconClick = onTrailingIconClick,
     )
 
@@ -67,7 +66,6 @@ class TrailingIconScope(rowScope: RowScope) : RowScope by rowScope {
     private fun TrailingIconButton(
         @DrawableRes iconId: Int,
         contentDescription: Text?,
-        tint: Color,
         onTrailingIconClick: () -> Unit,
     ) {
         IconButton(
@@ -77,7 +75,6 @@ class TrailingIconScope(rowScope: RowScope) : RowScope by rowScope {
             Icon(
                 painter = painterResource(id = iconId),
                 contentDescription = null,
-                tint = tint,
             )
         }
     }
@@ -90,11 +87,7 @@ private fun EyeTextFieldButtonPreview() {
     var isPasswordVisible by remember { mutableStateOf(false) }
 
     AcornTheme {
-        Column(
-            modifier = Modifier
-                .background(color = AcornTheme.colors.layer1)
-                .padding(8.dp),
-        ) {
+        Surface {
             TextField(
                 value = textFieldInput,
                 onValueChange = {
@@ -102,9 +95,44 @@ private fun EyeTextFieldButtonPreview() {
                 },
                 placeholder = "",
                 errorText = "",
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
                 label = "Eye",
-                trailingIcons = { EyeTextFieldButton { isPasswordVisible = !isPasswordVisible } },
+                trailingIcon = { EyeTextFieldButton { isPasswordVisible = !isPasswordVisible } },
+                visualTransformation = if (isPasswordVisible) {
+                    VisualTransformation.None
+                } else {
+                    PasswordVisualTransformation()
+                },
+            )
+        }
+    }
+}
+
+@Preview
+@Composable
+private fun EyeTextFieldButtonPrivatePreview() {
+    var textFieldInput by remember { mutableStateOf("password") }
+    var isPasswordVisible by remember { mutableStateOf(false) }
+
+    AcornTheme(
+        colors = privateColorPalette,
+        colorScheme = acornPrivateColorScheme(),
+    ) {
+        Surface {
+            TextField(
+                value = textFieldInput,
+                onValueChange = {
+                    textFieldInput = it
+                },
+                placeholder = "",
+                errorText = "",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
+                label = "Eye",
+                trailingIcon = { EyeTextFieldButton { isPasswordVisible = !isPasswordVisible } },
                 visualTransformation = if (isPasswordVisible) {
                     VisualTransformation.None
                 } else {
@@ -121,11 +149,7 @@ private fun CrossTextFieldButtonPreview() {
     var textFieldInput by remember { mutableStateOf("Delete me") }
 
     AcornTheme {
-        Column(
-            modifier = Modifier
-                .background(color = AcornTheme.colors.layer1)
-                .padding(8.dp),
-        ) {
+        Surface {
             TextField(
                 value = textFieldInput,
                 onValueChange = {
@@ -133,9 +157,38 @@ private fun CrossTextFieldButtonPreview() {
                 },
                 placeholder = "",
                 errorText = "",
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
                 label = "Cross",
-                trailingIcons = { CrossTextFieldButton { textFieldInput = "" } },
+                trailingIcon = { CrossTextFieldButton { textFieldInput = "" } },
+            )
+        }
+    }
+}
+
+@Preview
+@Composable
+private fun CrossTextFieldButtonPrivatePreview() {
+    var textFieldInput by remember { mutableStateOf("Delete me") }
+
+    AcornTheme(
+        colors = privateColorPalette,
+        colorScheme = acornPrivateColorScheme(),
+    ) {
+        Surface {
+            TextField(
+                value = textFieldInput,
+                onValueChange = {
+                    textFieldInput = it
+                },
+                placeholder = "",
+                errorText = "",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
+                label = "Cross",
+                trailingIcon = { CrossTextFieldButton { textFieldInput = "" } },
             )
         }
     }

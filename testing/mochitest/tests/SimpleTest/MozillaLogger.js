@@ -52,8 +52,10 @@ class MozillaLogger {
  * intended to be run from chrome space
  */
 
-/** Init the file logger with the absolute path to the file.
-    It will create and append if the file already exists **/
+/**
+ * Init the file logger with the absolute path to the file.
+ * It will create and append if the file already exists.
+ */
 class MozillaFileLogger extends MozillaLogger {
   constructor(aPath) {
     super();

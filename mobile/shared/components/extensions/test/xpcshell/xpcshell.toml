@@ -2,7 +2,9 @@
 head = "head.js"
 firefox-appdir = "browser"
 tags = "webextensions in-process-webextensions"
-run-if = ["os == 'android'"]
+run-if = [
+  "os == 'android'",
+]
 
 ["test_ext_native_messaging_geckoview.js"]
 

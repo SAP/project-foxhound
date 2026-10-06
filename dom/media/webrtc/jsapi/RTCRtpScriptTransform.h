@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -7,12 +5,11 @@
 #ifndef MOZILLA_DOM_MEDIA_WEBRTC_JSAPI_RTCRTPSCRIPTTRANSFORM_H_
 #define MOZILLA_DOM_MEDIA_WEBRTC_JSAPI_RTCRTPSCRIPTTRANSFORM_H_
 
-#include "nsISupports.h"
-#include "nsWrapperCache.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/Maybe.h"
 #include "js/RootingAPI.h"
+#include "mozilla/RefPtr.h"
+#include "nsISupports.h"
 #include "nsTArray.h"
+#include "nsWrapperCache.h"
 
 class nsPIDOMWindowInner;
 

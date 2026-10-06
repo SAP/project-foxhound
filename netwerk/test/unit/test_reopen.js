@@ -13,9 +13,6 @@ const BinaryInputStream = Components.Constructor(
   "setInputStream"
 );
 
-const NS_ERROR_IN_PROGRESS = 0x804b000f;
-const NS_ERROR_ALREADY_OPENED = 0x804b0049;
-
 var chan = null;
 var httpserv = null;
 
@@ -68,24 +65,24 @@ function check_async_open_throws(error) {
 
 var listener = {
   onStartRequest: function test_onStartR() {
-    check_async_open_throws(NS_ERROR_IN_PROGRESS);
+    check_async_open_throws(Cr.NS_ERROR_IN_PROGRESS);
   },
 
   onDataAvailable: function test_ODA(request, inputStream, offset, count) {
     new BinaryInputStream(inputStream).readByteArray(count); // required by API
-    check_async_open_throws(NS_ERROR_IN_PROGRESS);
+    check_async_open_throws(Cr.NS_ERROR_IN_PROGRESS);
   },
 
   onStopRequest: function test_onStopR() {
     // Once onStopRequest is reached, the channel is marked as having been
     // opened
-    check_async_open_throws(NS_ERROR_ALREADY_OPENED);
+    check_async_open_throws(Cr.NS_ERROR_ALREADY_OPENED);
     do_timeout(0, after_channel_closed);
   },
 };
 
 function after_channel_closed() {
-  check_async_open_throws(NS_ERROR_ALREADY_OPENED);
+  check_async_open_throws(Cr.NS_ERROR_ALREADY_OPENED);
 
   run_next_test();
 }
@@ -94,14 +91,17 @@ function test_channel(createChanClosure) {
   // First, synchronous reopening test
   chan = createChanClosure();
   chan.open();
-  check_open_throws(NS_ERROR_IN_PROGRESS);
-  check_async_open_throws([NS_ERROR_IN_PROGRESS, NS_ERROR_ALREADY_OPENED]);
+  check_open_throws(Cr.NS_ERROR_IN_PROGRESS);
+  check_async_open_throws([
+    Cr.NS_ERROR_IN_PROGRESS,
+    Cr.NS_ERROR_ALREADY_OPENED,
+  ]);
 
   // Then, asynchronous one
   chan = createChanClosure();
   chan.asyncOpen(listener);
-  check_open_throws(NS_ERROR_IN_PROGRESS);
-  check_async_open_throws(NS_ERROR_IN_PROGRESS);
+  check_open_throws(Cr.NS_ERROR_IN_PROGRESS);
+  check_async_open_throws(Cr.NS_ERROR_IN_PROGRESS);
 }
 
 function test_data_channel() {

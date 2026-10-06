@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,7 +11,7 @@
 #include <type_traits>
 
 #include "mozilla/Assertions.h"
-#include "mozilla/FloatingPoint.h"
+#include "mozilla/Saturate.h"
 #include "mozilla/gfx/ScaleFactors2D.h"
 #include "Types.h"
 
@@ -329,7 +327,7 @@ struct BaseRect {
       x = limit - aDx < x ? limit : x + aDx;
       width = (limit - aDx < x2 ? limit : x2 + aDx) - x;
     } else {
-      T limit = std::numeric_limits<T>::min();
+      T limit = std::numeric_limits<T>::lowest();
       x = limit - aDx > x ? limit : x + aDx;
       width = (limit - aDx > x2 ? limit : x2 + aDx) - x;
     }
@@ -341,7 +339,7 @@ struct BaseRect {
       y = limit - aDy < y ? limit : y + aDy;
       height = (limit - aDy < y2 ? limit : y2 + aDy) - y;
     } else {
-      T limit = std::numeric_limits<T>::min();
+      T limit = std::numeric_limits<T>::lowest();
       y = limit - aDy > y ? limit : y + aDy;
       height = (limit - aDy > y2 ? limit : y2 + aDy) - y;
     }
@@ -499,8 +497,21 @@ struct BaseRect {
   MOZ_ALWAYS_INLINE T Y() const { return y; }
   MOZ_ALWAYS_INLINE T Width() const { return width; }
   MOZ_ALWAYS_INLINE T Height() const { return height; }
-  MOZ_ALWAYS_INLINE T XMost() const { return x + width; }
-  MOZ_ALWAYS_INLINE T YMost() const { return y + height; }
+
+  MOZ_ALWAYS_INLINE T XMost() const {
+    if constexpr (std::is_integral<T>::value) {
+      return (Saturate<T>(x) + width).value();
+    } else {
+      return x + width;
+    }
+  }
+  MOZ_ALWAYS_INLINE T YMost() const {
+    if constexpr (std::is_integral<T>::value) {
+      return (Saturate<T>(y) + height).value();
+    } else {
+      return y + height;
+    }
+  }
 
   // Set width and height. SizeTo() sets them together.
   MOZ_ALWAYS_INLINE void SetWidth(T aWidth) { width = aWidth; }

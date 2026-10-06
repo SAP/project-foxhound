@@ -17,8 +17,8 @@ ICU4XDangiCalendar::ICU4XDangiCalendar(const icu::TimeZone& timeZone,
     : ICU4XChineseBasedCalendar(icu4x::capi::CalendarKind_Dangi, timeZone,
                                 locale, success) {}
 
-ICU4XDangiCalendar::ICU4XDangiCalendar(const ICU4XDangiCalendar& other)
-    : ICU4XChineseBasedCalendar(other) {}
+ICU4XDangiCalendar::ICU4XDangiCalendar(const ICU4XDangiCalendar& other) =
+    default;
 
 ICU4XDangiCalendar::~ICU4XDangiCalendar() = default;
 

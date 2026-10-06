@@ -1,0 +1,7 @@
+# Any copyright is dedicated to the Public Domain.
+# http://creativecommons.org/publicdomain/zero/1.0/
+
+GENERATED_FILES += ["producer.c"]
+
+producer = GENERATED_FILES["producer.c"]
+producer.script = "generate-producer.py"

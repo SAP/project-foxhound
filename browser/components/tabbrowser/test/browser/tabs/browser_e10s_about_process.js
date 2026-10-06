@@ -126,37 +126,12 @@ add_task(async function test_remote() {
   });
 });
 
-add_task(async function test_privileged_remote_true() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.tabs.remote.separatePrivilegedContentProcess", true]],
-  });
-
-  // This shouldn't be taken literally. We will always use the privleged about
-  // content type if the URI_CAN_LOAD_IN_PRIVILEGEDABOUT_PROCESS flag is enabled and
-  // the pref is turned on.
+add_task(async function test_privileged_remote() {
   test_url_for_process_types({
     url: "about:" + CANPRIVILEGEDREMOTE.path,
     chromeResult: false,
     webContentResult: false,
     privilegedAboutContentResult: true,
-    privilegedMozillaContentResult: false,
-    extensionProcessResult: false,
-  });
-});
-
-add_task(async function test_privileged_remote_false() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.tabs.remote.separatePrivilegedContentProcess", false]],
-  });
-
-  // This shouldn't be taken literally. We will always use the privleged about
-  // content type if the URI_CAN_LOAD_IN_PRIVILEGEDABOUT_PROCESS flag is enabled and
-  // the pref is turned on.
-  test_url_for_process_types({
-    url: "about:" + CANPRIVILEGEDREMOTE.path,
-    chromeResult: false,
-    webContentResult: true,
-    privilegedAboutContentResult: false,
     privilegedMozillaContentResult: false,
     extensionProcessResult: false,
   });

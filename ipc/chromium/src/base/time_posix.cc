@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -68,8 +66,8 @@ Time Time::FromExploded(bool is_local, const Exploded& exploded) {
   timestruct.tm_yday = 0;                     // mktime/timegm ignore this
   timestruct.tm_isdst = -1;                   // attempt to figure it out
 #ifndef XP_SOLARIS
-  timestruct.tm_gmtoff = 0;   // not a POSIX field, so mktime/timegm ignore
-  timestruct.tm_zone = NULL;  // not a POSIX field, so mktime/timegm ignore
+  timestruct.tm_gmtoff = 0;      // not a POSIX field, so mktime/timegm ignore
+  timestruct.tm_zone = nullptr;  // not a POSIX field, so mktime/timegm ignore
 #endif
 
   time_t seconds;

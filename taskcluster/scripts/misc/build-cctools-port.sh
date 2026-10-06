@@ -16,14 +16,20 @@ CROSSTOOLS_CCTOOLS_DIR=$CROSSTOOLS_SOURCE_DIR/cctools
 CROSSTOOLS_BUILD_DIR=$WORKSPACE/cctools
 LIBTAPI_SOURCE_DIR=$MOZ_FETCHES_DIR/apple-libtapi
 LIBTAPI_BUILD_DIR=$WORKSPACE/libtapi-build
+LIBDISPATCH_SOURCE_DIR=$MOZ_FETCHES_DIR/apple-libdispatch
+LIBDISPATCH_BUILD_DIR=$WORKSPACE/libdispatch-build
 LDID_SOURCE_DIR=$MOZ_FETCHES_DIR/ldid
 CLANG_DIR=$MOZ_FETCHES_DIR/clang
 
 # Create our directories
-mkdir -p $CROSSTOOLS_BUILD_DIR $LIBTAPI_BUILD_DIR
+mkdir -p $CROSSTOOLS_BUILD_DIR $LIBTAPI_BUILD_DIR $LIBDISPATCH_BUILD_DIR
 
-cd $GECKO_PATH
+# Apply a minor libtapi tweak so cmake from outside of the srcdir works.
+cd $LIBTAPI_SOURCE_DIR
+patch -p1 < $GECKO_PATH/taskcluster/scripts/misc/libtapi.patch
 
+# Build libtapi; the included build.sh is not sufficient for our purposes.
+cd $LIBTAPI_BUILD_DIR
 # Common setup for libtapi and cctools
 export CC=$CLANG_DIR/bin/clang
 export CXX=$CLANG_DIR/bin/clang++
@@ -31,30 +37,35 @@ export CXX=$CLANG_DIR/bin/clang++
 # clang build tools, and then executes those tools.
 export LD_LIBRARY_PATH=$CLANG_DIR/lib
 
-# Build libtapi; the included build.sh is not sufficient for our purposes.
-cd $LIBTAPI_BUILD_DIR
+# Value taken from build.sh
+TAPI_VERSION=1600.0.11.8
 
-# Values taken from build.sh
-TAPI_REPOSITORY=tapi-1000.10.8
-TAPI_VERSION=10.0.0
-
-INCLUDE_FIX="-I $LIBTAPI_SOURCE_DIR/src/llvm/projects/clang/include -I $PWD/projects/clang/include"
-
-cmake $LIBTAPI_SOURCE_DIR/src/llvm \
-      -GNinja \
-      -DCMAKE_CXX_FLAGS="$INCLUDE_FIX" \
+cmake -G Ninja $LIBTAPI_SOURCE_DIR/src/llvm \
       -DLLVM_INCLUDE_TESTS=OFF \
       -DCMAKE_BUILD_TYPE=RELEASE \
+      -DLLVM_ENABLE_PROJECTS="tapi;clang" \
+      -DLLVM_ENABLE_ZSTD=OFF \
       -DCMAKE_INSTALL_PREFIX=$CROSSTOOLS_BUILD_DIR \
       -DCMAKE_SYSROOT=$MOZ_FETCHES_DIR/sysroot \
       -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld \
       -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld \
       -DLLVM_TARGETS_TO_BUILD="X86;ARM;AArch64" \
-      -DTAPI_REPOSITORY_STRING=$TAPI_REPOSITORY \
+      -DTAPI_REPOSITORY_STRING=$TAPI_VERSION \
       -DTAPI_FULL_VERSION=$TAPI_VERSION
 
-ninja clangBasic -v
+ninja clangBasic vt_gen -v
 ninja libtapi install-libtapi install-tapi-headers -v
+
+cd $LIBDISPATCH_BUILD_DIR
+cmake -G Ninja $LIBDISPATCH_SOURCE_DIR \
+      -DCMAKE_BUILD_TYPE=RELEASE \
+      -DCMAKE_INSTALL_PREFIX=$CROSSTOOLS_BUILD_DIR \
+      -DCMAKE_SYSROOT=$MOZ_FETCHES_DIR/sysroot \
+      -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld \
+      -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld
+
+ninja -v
+ninja install -v
 
 # Setup LDFLAGS late so run-at-build-time tools in the basic clang build don't
 # pick up the possibly-incompatible libstdc++ from clang.
@@ -68,7 +79,6 @@ export CXX="$CXX --sysroot=$MOZ_FETCHES_DIR/sysroot"
 
 # Configure crosstools-port
 cd $CROSSTOOLS_CCTOOLS_DIR
-patch -p2 < $GECKO_PATH/taskcluster/scripts/misc/cctools.patch
 
 # Force re-libtoolization to overwrite files with the new libtool bits.
 perl -pi -e 's/(LIBTOOLIZE -c)/\1 -f/' autogen.sh
@@ -79,7 +89,9 @@ perl -pi -e 's/(LIBTOOLIZE -c)/\1 -f/' autogen.sh
     --with-llvm-config=$CLANG_DIR/bin/llvm-config \
     --enable-lto-support \
     --enable-tapi-support \
-    --with-libtapi=$CROSSTOOLS_BUILD_DIR
+    --with-libtapi=$CROSSTOOLS_BUILD_DIR \
+    --with-libdispatch=$CROSSTOOLS_BUILD_DIR \
+    --with-libblocksruntime=$CROSSTOOLS_BUILD_DIR
 
 # Build cctools
 make -j `nproc --all` install

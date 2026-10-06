@@ -2,6 +2,14 @@
 
 // This test checks whether the new tab page color properties work per-window.
 
+// @nova-cleanup(remove-conditional): Remove novaEnabled check; always use .nova-outer-wrapper
+const outerWrapperClass = Services.prefs.getBoolPref(
+  "browser.newtabpage.activity-stream.nova.enabled",
+  false
+)
+  ? ".nova-outer-wrapper"
+  : ".outer-wrapper";
+
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["test.wait300msAfterTabSwitch", true]],
@@ -21,13 +29,17 @@ add_setup(async function () {
 
 function waitForAboutNewTabReady(browser, url) {
   // Stop-gap fix for https://bugzilla.mozilla.org/show_bug.cgi?id=1697196#c24
-  return SpecialPowers.spawn(browser, [url], async url => {
-    let doc = content.document;
-    await ContentTaskUtils.waitForCondition(
-      () => doc.querySelector(".outer-wrapper"),
-      `Waiting for page wrapper to be initialized at ${url}`
-    );
-  });
+  return SpecialPowers.spawn(
+    browser,
+    [url, outerWrapperClass],
+    async (url, wrapperClass) => {
+      let doc = content.document;
+      await ContentTaskUtils.waitForCondition(
+        () => doc.querySelector(wrapperClass),
+        `Waiting for page wrapper to be initialized at ${url}`
+      );
+    }
+  );
 }
 
 /**
@@ -48,9 +60,16 @@ function test_ntp_theme(browser, theme, isBrightText) {
         background: hexToCSS(theme.colors.ntp_background),
         card_background: hexToCSS(theme.colors.ntp_card_background),
         color: hexToCSS(theme.colors.ntp_text),
+        wrapperClass: outerWrapperClass,
       },
     ],
-    function ({ isBrightText, background, card_background, color }) {
+    function ({
+      isBrightText,
+      background,
+      card_background,
+      color,
+      wrapperClass,
+    }) {
       let doc = content.document;
       ok(
         doc.documentElement.hasAttribute("lwt-newtab"),
@@ -80,7 +99,7 @@ function test_ntp_theme(browser, theme, isBrightText) {
         "New tab page card background should be set."
       );
       is(
-        content.getComputedStyle(doc.querySelector(".outer-wrapper")).color,
+        content.getComputedStyle(doc.querySelector(wrapperClass)).color,
         color,
         "New tab page text color should be set."
       );
@@ -92,19 +111,28 @@ function test_ntp_theme(browser, theme, isBrightText) {
  * Test whether a given browser has the default theme applied
  *
  * @param {object} browser to test against
+ * @param {object} defaultColors colors and attributes captured before any theme was applied
+ * @param {string} defaultColors.background
+ * @param {string} defaultColors.color
+ * @param {boolean} defaultColors.hasLwtNewtabBrighttext
  * @returns {Promise} The task as a promise
  */
-function test_ntp_default_theme(browser) {
+function test_ntp_default_theme(
+  browser,
+  { background, color, hasLwtNewtabBrighttext }
+) {
   Services.ppmm.sharedData.flush();
   return SpecialPowers.spawn(
     browser,
     [
       {
-        background: hexToCSS("#F9F9FB"),
-        color: hexToCSS("#15141A"),
+        background,
+        color,
+        hasLwtNewtabBrighttext,
+        wrapperClass: outerWrapperClass,
       },
     ],
-    function ({ background, color }) {
+    function ({ background, color, hasLwtNewtabBrighttext, wrapperClass }) {
       let doc = content.document;
       ok(
         !doc.documentElement.hasAttribute("lwt-newtab"),
@@ -114,9 +142,10 @@ function test_ntp_default_theme(browser) {
         !doc.documentElement.hasAttribute("lwtheme"),
         "New tab page should not have lwtheme attribute"
       );
-      ok(
-        !doc.documentElement.hasAttribute("lwt-newtab-brighttext"),
-        `New tab page should not have lwt-newtab-brighttext attribute`
+      is(
+        doc.documentElement.hasAttribute("lwt-newtab-brighttext"),
+        hasLwtNewtabBrighttext,
+        "New tab page lwt-newtab-brighttext attribute should be reset to default."
       );
 
       is(
@@ -125,7 +154,7 @@ function test_ntp_default_theme(browser) {
         "New tab page background should be reset."
       );
       is(
-        content.getComputedStyle(doc.querySelector(".outer-wrapper")).color,
+        content.getComputedStyle(doc.querySelector(wrapperClass)).color,
         color,
         "New tab page text color should be reset."
       );
@@ -134,6 +163,36 @@ function test_ntp_default_theme(browser) {
 }
 
 add_task(async function test_per_window_ntp_theme() {
+  // BrowserTestUtils.withNewTab waits for about:newtab to load
+  // so we disable preloading before running the test.
+  await SpecialPowers.setBoolPref("browser.newtab.preload", false);
+  registerCleanupFunction(() => {
+    SpecialPowers.clearUserPref("browser.newtab.preload");
+  });
+
+  let defaultColors;
+  await BrowserTestUtils.withNewTab(
+    { gBrowser, url: "about:newtab" },
+    async browser => {
+      await waitForAboutNewTabReady(browser, "about:newtab");
+      defaultColors = await SpecialPowers.spawn(
+        browser,
+        [outerWrapperClass],
+        wrapperClass => {
+          let doc = content.document;
+          return {
+            background: content.getComputedStyle(doc.body).backgroundColor,
+            color: content.getComputedStyle(doc.querySelector(wrapperClass))
+              .color,
+            hasLwtNewtabBrighttext: doc.documentElement.hasAttribute(
+              "lwt-newtab-brighttext"
+            ),
+          };
+        }
+      );
+    }
+  );
+
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       permissions: ["theme"],
@@ -242,7 +301,7 @@ add_task(async function test_per_window_ntp_theme() {
             if (theme) {
               await test_ntp_theme(browser, theme, isBrightText);
             } else {
-              await test_ntp_default_theme(browser, url);
+              await test_ntp_default_theme(browser, defaultColors);
             }
           }
         );
@@ -250,13 +309,6 @@ add_task(async function test_per_window_ntp_theme() {
       extension.sendMessage("checked-window");
     }
   );
-
-  // BrowserTestUtils.withNewTab waits for about:newtab to load
-  // so we disable preloading before running the test.
-  await SpecialPowers.setBoolPref("browser.newtab.preload", false);
-  registerCleanupFunction(() => {
-    SpecialPowers.clearUserPref("browser.newtab.preload");
-  });
 
   await extension.startup();
   await extension.awaitFinish("perwindow-ntp-theme");

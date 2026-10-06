@@ -11,18 +11,19 @@ your code you are allocating memory.
 ------------------------------------------------------------------------
 
 ## The basics
--   Opening [the memory
-    tool](basic_operations.md#opening-the-memory-tool)
--   [Taking a heap
-    snapshot](basic_operations.md#saving-and-loading-snapshots)
--   [Comparing two
-    snapshots](basic_operations.md#comparing-snapshots)
--   [Deleting
-    snapshots](basic_operations.md#clearing-a-snapshot)
--   [Saving and loading
-    snapshots](basic_operations.md#saving-and-loading-snapshots)
--   [Recording call
-    stacks](basic_operations.md#recording-call-stacks)
+
+- Opening [the memory
+  tool](basic_operations.md#opening-the-memory-tool)
+- [Taking a heap
+  snapshot](basic_operations.md#saving-and-loading-snapshots)
+- [Comparing two
+  snapshots](basic_operations.md#comparing-snapshots)
+- [Deleting
+  snapshots](basic_operations.md#clearing-a-snapshot)
+- [Saving and loading
+  snapshots](basic_operations.md#saving-and-loading-snapshots)
+- [Recording call
+  stacks](basic_operations.md#recording-call-stacks)
 
 ------------------------------------------------------------------------
 
@@ -34,15 +35,15 @@ in Firefox 46.
 Once you've taken a snapshot, there are three main views the Memory
 tool provides:
 
--   [the Tree map view](tree_map_view.md) shows
-    memory usage as a
-    [treemap](https://en.wikipedia.org/wiki/Treemapping).
--   [the Aggregate view](aggregate_view.md) shows
-    memory usage as a table of allocated types.
--   [the Dominators view](dominators_view.md)
-    shows the "retained size" of objects: that is, the size of objects
-    plus the size of other objects that they keep alive through
-    references.
+- [the Tree map view](tree_map_view.md) shows
+  memory usage as a
+  [treemap](https://en.wikipedia.org/wiki/Treemapping).
+- [the Aggregate view](aggregate_view.md) shows
+  memory usage as a table of allocated types.
+- [the Dominators view](dominators_view.md)
+  shows the "retained size" of objects: that is, the size of objects
+  plus the size of other objects that they keep alive through
+  references.
 
 If you've opted to record allocation stacks for the snapshot, the
 Aggregate and Dominators views can show you exactly where in your code
@@ -52,7 +53,7 @@ allocations are happening.
 
 ## Concepts
 
--   What are [Dominators](dominators.md)?
+- What are [Dominators](dominators.md)?
 
 ------------------------------------------------------------------------
 
@@ -60,5 +61,5 @@ allocations are happening.
 
 Examples used in the Memory tool documentation.
 
--   The [Monster example](monster_example.md)
--   The [DOM allocation example](DOM_allocation_example.md)
+- The [Monster example](monster_example.md)
+- The [DOM allocation example](DOM_allocation_example.md)

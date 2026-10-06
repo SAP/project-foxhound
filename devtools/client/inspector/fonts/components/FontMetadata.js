@@ -37,8 +37,8 @@ class FontMetadata extends PureComponent {
    * If the string is larger than MAX_STRING_LENGTH, the string gets truncated
    * and we display a twisty button to reveal the full text.
    *
-   * @param {String} fontProperty: The font property to render
-   * @returns {String|Array<ReactElement>}
+   * @param {string} fontProperty: The font property to render
+   * @returns {string | Array<ReactElement>}
    */
   renderExpandableString(fontProperty) {
     const str = this.props.font[fontProperty];

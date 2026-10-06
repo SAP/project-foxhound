@@ -44,37 +44,58 @@ add_task(async function test() {
 
   clear_fake_crashes(crD, crashes);
   const pendingCrash = addPendingCrashreport(crD, Date.now(), { foo: "bar" });
+  const ignoredCrash = addPendingCrashreport(
+    crD,
+    Date.now(),
+    { foo: "baz" },
+    "",
+    true
+  );
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: "about:crashes" },
     browser => {
       info("about:crashes loaded");
-      return SpecialPowers.spawn(browser, [pendingCrash], pendingCrash => {
-        const doc = content.document;
+      return SpecialPowers.spawn(
+        browser,
+        [pendingCrash, ignoredCrash],
+        (pendingCrash, ignoredCrash) => {
+          const doc = content.document;
 
-        const submitted = doc.getElementById("reportListSubmitted");
-        Assert.ok(
-          submitted.classList.contains("hidden"),
-          "the submitted crash list is hidden"
-        );
-        const unsubmitted = doc.getElementById("reportListUnsubmitted");
-        Assert.ok(
-          !unsubmitted.classList.contains("hidden"),
-          "the unsubmitted crash list is visible"
-        );
+          const submitted = doc.getElementById("reportListSubmitted");
+          Assert.ok(
+            submitted.classList.contains("hidden"),
+            "the submitted crash list is hidden"
+          );
+          const unsubmitted = doc.getElementById("reportListUnsubmitted");
+          Assert.ok(
+            !unsubmitted.classList.contains("hidden"),
+            "the unsubmitted crash list is visible"
+          );
 
-        const crashIds = doc.getElementsByClassName("crash-id");
-        Assert.equal(
-          crashIds.length,
-          1,
-          "about:crashes lists correct number of crash reports"
-        );
-        const pendingRow = doc.getElementById(pendingCrash.id);
-        Assert.equal(
-          pendingRow.cells[0].textContent,
-          pendingCrash.id,
-          "about:crashes lists pending crash IDs correctly"
-        );
-      });
+          const crashIds = doc.getElementsByClassName("crash-id");
+          Assert.equal(
+            crashIds.length,
+            2,
+            "about:crashes lists correct number of crash reports"
+          );
+          const pendingRow = doc.getElementById(pendingCrash.id);
+          Assert.equal(
+            pendingRow.cells[0].textContent,
+            pendingCrash.id,
+            "about:crashes lists pending crash IDs correctly"
+          );
+          const ignoredRow = doc.getElementById(ignoredCrash.id);
+          Assert.equal(
+            ignoredRow.cells[0].textContent,
+            ignoredCrash.id,
+            "about:crashes lists ignored crash IDs correctly"
+          );
+          Assert.ok(
+            ignoredRow.classList.contains("ignored"),
+            "Ignored pending crashes are correctly identified"
+          );
+        }
+      );
     }
   );
 

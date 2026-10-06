@@ -12,7 +12,7 @@ if (shouldDelay) {
 
   Services.tm.spinEventLoopUntil(
     "Test(crasher_subprocess_tail.js:shouldDelay)",
-    () => shouldCrashNow
+    () => shouldCrashNow && !shouldWaitSetup
   );
 }
 

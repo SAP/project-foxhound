@@ -1,0 +1,143 @@
+---
+# This file contains rules for which configurations should run as part of the
+# "os-integration" suite. Each list item is a set of kwargs that will be passed
+# into the `attrmatch` utility function. As long as a task's attributes satisfy
+# at least *one* of the kwarg sets, it will be selected.
+#
+# For each key, if it is a string the task's attribute must match exactly. If
+# it is a list, the task's attribute must be a value contained in the list.
+# For more information, see the `attrmatch` function in `taskgraph.util.attributes`.
+
+### Unittests
+- kind: &unittest-kinds
+      - test
+      - mochitest
+  test_platform:
+      - android-em-14-x86_64-lite/opt
+      - android-em-14-x86_64/debug
+      - linux2404-64/debug
+      - macosx1015-64-qr/debug
+      - macosx1500-aarch64/debug
+      - macosx1470-64/debug
+      - windows10-64-2009-qr/debug
+      - windows11-32-25h2/opt
+      - windows11-32-25h2/debug
+      - windows11-64-25h2/opt
+      - windows11-64-25h2/debug
+  unittest_suite: &unittest-suites
+      - marionette-integration
+      - mochitest-browser-chrome
+      - mochitest-browser-media
+      - mochitest-chrome
+      - mochitest-media
+      - mochitest-plain
+      - mochitest-remote
+      - mochitest-webgl1-core
+      - mochitest-webgl2-core
+      - mochitest-webgpu
+      - xpcshell
+  unittest_variant:
+      - null
+      - 1proc
+      - msix
+      - no-fission
+      - socketprocess
+      - xorigin
+
+# android isolated-process
+- kind: test
+  test_platform: android-em.*/debug-isolated-process
+  unittest_suite: xpcshell
+  unittest_variant: null
+
+# linux wayland
+- kind: *unittest-kinds
+  test_platform:
+      - linux2204-64-wayland/opt
+      - linux2204-64-wayland/debug
+  unittest_suite:
+      - mochitest-browser-media
+      - mochitest-plain
+      - mochitest-remote
+      - mochitest-webgl1-core
+      - mochitest-webgpu
+  unittest_variant: null
+
+# linux 24.04 wayland snap (basic only — Bug 1941642)
+- kind: snap-upstream-test
+  snap_test_release: "2404"
+  snap_test_type: basic
+  primary-dependency-label: snap-upstream-build-amd64-nightly/opt
+
+# win/gpu
+- kind: web-platform-tests
+  test_platform:
+      - windows11-64-25h2/opt
+      - windows11-64-25h2/debug
+  unittest_suite:
+      - web-platform-tests-reftest
+  unittest_variant: null
+
+# asan
+- kind: *unittest-kinds
+  test_platform:
+      - linux2404-64-asan/opt
+  unittest_suite: *unittest-suites
+  unittest_variant:
+      - null
+
+- kind: *unittest-kinds
+  test_platform:
+      - windows11-64-25h2-asan/opt
+  unittest_suite: *unittest-suites
+  unittest_variant:
+      - null
+
+### Performance tests
+- kind: perftest
+  perftest_name:
+      - service-worker
+      - startup-geckoview
+
+- kind: browsertime
+  test_platform: &perf-platforms
+      - android-em-14-x86_64-shippable-qr/opt
+      - linux1804-64-shippable-qr/opt
+      - linux2404-64-shippable/opt
+      - macosx1470-64-shippable/opt
+      - windows11-64-24h2-shippable/opt
+      - windows11-64-shippable-qr/opt
+  unittest_suite: raptor
+  raptor_try_name:
+      - browsertime-benchmark-custom-car-speedometer3
+      - browsertime-benchmark-firefox-speedometer3
+      - browsertime-responsiveness-firefox-reddit-billgates-ama
+      - browsertime-youtube-playback-firefox-youtube-playback-widevine-h264-sfr
+      - browsertime-youtube-playback-firefox-youtube-playback-widevine-hfr
+      - browsertime-youtube-playback-firefox-youtube-playback-widevine-vp9-sfr
+      - browsertime-tp6-essential-firefox-amazon
+
+- kind: test
+  test_platform: *perf-platforms
+  unittest_suite: talos
+  talos_try_name:
+      - xperf
+      - other
+      - webgl
+
+### Source tests
+- kind: source-test
+  job_try_name:
+      - condprof
+      - featuregates
+      - firefox-ci
+      - manifest
+      - mozbase
+      - mozbuild
+      - mozharness
+      - taskgraph-tests
+      - telemetry-python
+      - tryselect
+
+### Startup tests
+- kind: startup-test

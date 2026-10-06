@@ -37,19 +37,10 @@ add_task(async function () {
   const cb = originalLocation => cbCalls.push(originalLocation);
   const expectedArg = { url: ORIGINAL_URL, line: ORIGINAL_LINE, column: 0 };
 
-  // Wait for the sources to fully populate so that waitForSubscriptionsToSettle
-  // can be guaranteed that all actions have been queued.
-  await service._ensureAllSourcesPopulated();
-
   const unsubscribe1 = service.subscribeByURL(JS_URL, GENERATED_LINE, 1, cb);
 
-  // Wait for the query to finish and populate so that all of the later
-  // logic with this position will run synchronously, and the subscribe has run.
-  for (const map of service._mapsById.values()) {
-    for (const query of map.queries.values()) {
-      await query.action;
-    }
-  }
+  // Wait for pending source map queries to resolve so later assertions run synchronously.
+  await service.waitForPendingQueries();
 
   is(
     cbCalls.length,

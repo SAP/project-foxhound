@@ -1,0 +1,15 @@
+{
+  "label": "selecionases.saude.pe.gov.br",
+  "bugs": {
+    "1899929": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://selecionases.saude.pe.gov.br/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

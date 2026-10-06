@@ -18,7 +18,10 @@ add_task(async function run_test() {
       // Refresh updated extra data
       extra = await IOUtils.readJSON(extraFile.path);
 
-      Assert.equal(extra.StackTraces.crash_info.type, "STATUS_HEAP_CORRUPTION");
+      Assert.equal(
+        JSON.parse(extra.StackTraces).crash_type,
+        "STATUS_HEAP_CORRUPTION"
+      );
       Assert.equal(extra.TestKey, "TestValue");
     },
     // process will exit with a zero exit status

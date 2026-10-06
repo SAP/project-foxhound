@@ -6,9 +6,16 @@
 
 #include <string>
 
+#if !defined(_WIN32) && defined(__LP64__)
+#include <cstring>
+#include <sys/mman.h>
+#endif
+
 #include "gtest/gtest.h"
 
+#include "der_encode.h"
 #include "scoped_ptrs_smime.h"
+#include "secoid.h"
 #include "smime.h"
 
 namespace nss_test {
@@ -132,6 +139,154 @@ TEST_F(SMimeTest, SlightlyTruncatedCmsSignature) {
 
 TEST_F(SMimeTest, IsSignedNull) {
   ASSERT_FALSE(NSS_CMSMessage_IsSigned(nullptr));
+}
+
+// Verify that the CMS streaming decoder rejects content large enough to
+// trigger integer truncation in the buffer-growth path of work_data.
+// This bug only manifests on LP64 where unsigned long is 64-bit and the
+// 64-bit product is truncated when assigned to int.
+#if !defined(_WIN32) && defined(__LP64__)
+TEST_F(SMimeTest, CmsDecoderRejectsOversizeContent) {
+  const size_t kLenA = 0x3F800000;
+  const size_t kLenB = 0x42000000;
+
+  // CMS SignedData with a constructed indefinite-length OCTET STRING
+  // containing two large primitive substrings.
+  static const uint8_t kHeader[] = {
+      0x30,
+      0x80,
+      0x06,
+      0x09,
+      0x2A,
+      0x86,
+      0x48,
+      0x86,
+      0xF7,
+      0x0D,
+      0x01,
+      0x07,
+      0x02,
+      0xA0,
+      0x80,
+      0x30,
+      0x80,
+      0x02,
+      0x01,
+      0x01,
+      0x31,
+      0x00,
+      0x30,
+      0x80,
+      0x06,
+      0x09,
+      0x2A,
+      0x86,
+      0x48,
+      0x86,
+      0xF7,
+      0x0D,
+      0x01,
+      0x07,
+      0x01,
+      0xA0,
+      0x80,
+      0x24,
+      0x80,
+      0x04,
+      0x84,
+      (uint8_t)(kLenA >> 24),
+      (uint8_t)(kLenA >> 16),
+      (uint8_t)(kLenA >> 8),
+      (uint8_t)(kLenA),
+  };
+  static const uint8_t kMid[] = {
+      0x04,
+      0x84,
+      (uint8_t)(kLenB >> 24),
+      (uint8_t)(kLenB >> 16),
+      (uint8_t)(kLenB >> 8),
+      (uint8_t)(kLenB),
+  };
+  static const uint8_t kFooter[] = {
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x31,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  };
+
+  const size_t total =
+      sizeof(kHeader) + kLenA + sizeof(kMid) + kLenB + sizeof(kFooter);
+
+  void* m = mmap(nullptr, total, PROT_READ | PROT_WRITE,
+                 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  ASSERT_NE(MAP_FAILED, m) << "mmap of " << total << " bytes failed";
+
+  uint8_t* p = static_cast<uint8_t*>(m);
+  memcpy(p, kHeader, sizeof(kHeader));
+  memcpy(p + sizeof(kHeader) + kLenA, kMid, sizeof(kMid));
+  memcpy(p + sizeof(kHeader) + kLenA + sizeof(kMid) + kLenB, kFooter,
+         sizeof(kFooter));
+
+  NSSCMSDecoderContext* dcx = NSS_CMSDecoder_Start(
+      nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+  ASSERT_NE(nullptr, dcx);
+
+  SECStatus rv =
+      NSS_CMSDecoder_Update(dcx, reinterpret_cast<const char*>(p), total);
+
+  NSSCMSMessage* msg = NSS_CMSDecoder_Finish(dcx);
+  munmap(m, total);
+
+  EXPECT_NE(SECSuccess, rv);
+  if (msg) {
+    NSS_CMSMessage_Destroy(msg);
+  }
+}
+#endif  // !defined(_WIN32) && defined(__LP64__)
+
+// Helper functions for DeepNestingRejected and ShallowNestingNotRejected
+static Bytes NssOid(SECOidTag tag) {
+  const SECOidData* od = SECOID_FindOIDByTag(tag);
+  return OidVal(od->oid.data, od->oid.len);
+}
+
+static Bytes MakeNestedDigestedData(int levels) {
+  Bytes alg = Seq(NssOid(SEC_OID_SHA1));
+
+  // Innermost DigestedData: version 0 (NSS_CMS_DIGESTED_DATA_VERSION_DATA),
+  // eContentType=id-data so nss_cms_before_data() returns early without
+  // creating a child decoder.
+  Bytes encap = Seq(Cat({NssOid(SEC_OID_PKCS7_DATA), Ctx0(OctetStr({0x00}))}));
+  Bytes dd = Seq(
+      Cat({Bytes{0x02, 0x01, 0x00}, alg, encap, OctetStr(Bytes(20, 0x00))}));
+
+  // Each wrapper level uses version 2 (NSS_CMS_DIGESTED_DATA_VERSION_ENCAP)
+  // because its eContentType is id-digestedData, not id-data.
+  for (int i = 1; i < levels; i++) {
+    encap = Seq(Cat({NssOid(SEC_OID_PKCS7_DIGESTED_DATA), Ctx0(OctetStr(dd))}));
+    dd = Seq(
+        Cat({Bytes{0x02, 0x01, 0x02}, alg, encap, OctetStr(Bytes(20, 0x00))}));
+  }
+
+  // Root ContentInfo wrapper (not itself a DigestedData level).
+  return Seq(Cat({NssOid(SEC_OID_PKCS7_DIGESTED_DATA), Ctx0(dd)}));
+}
+
+// Bug 2023208: a CMS message whose nesting depth exceeds
+// NSS_CMS_MAX_NESTING_DEPTH must be rejected cleanly by the setup-time check in
+// nss_cms_before_data().
+TEST_F(SMimeTest, DeepNestingRejected) {
+  Bytes der = MakeNestedDigestedData(40);
+  SECItem item = {siBuffer, der.data(), static_cast<unsigned int>(der.size())};
+  ScopedNSSCMSMessage msg(NSS_CMSMessage_CreateFromDER(
+      &item, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr));
+  EXPECT_EQ(nullptr, msg.get());
+}
+
+TEST_F(SMimeTest, ShallowNestingNotRejected) {
+  Bytes der = MakeNestedDigestedData(3);
+  SECItem item = {siBuffer, der.data(), static_cast<unsigned int>(der.size())};
+  ScopedNSSCMSMessage msg(NSS_CMSMessage_CreateFromDER(
+      &item, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr));
+  EXPECT_NE(nullptr, msg.get());
 }
 
 }  // namespace nss_test

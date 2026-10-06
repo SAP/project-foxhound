@@ -39,6 +39,10 @@ const SHARED_DATA_KEY = "PictureInPicture:SiteOverrides";
 // Used for clearing the size and location of the PiP window
 const PLAYER_URI = "chrome://global/content/pictureinpicture/player.xhtml";
 const ACCEPTABLE_DIFFERENCE = 2;
+const AUTO_CLOSE_ENABLED_PREF =
+  "media.videocontrols.picture-in-picture.auto-close.enabled";
+const AUTO_CLOSE_TIMEOUT_PREF =
+  "media.videocontrols.picture-in-picture.auto-close.timeoutMs";
 
 /**
  * We currently ship with a few different variations of the
@@ -106,14 +110,14 @@ const DEFAULT_TOGGLE_STYLES = {
  * @param {Element,BrowsingContext} browser The <xul:browser> or
  * BrowsingContext hosting the <video>
  *
- * @param {String} videoID The ID of the video to trigger
+ * @param {string} videoID The ID of the video to trigger
  * Picture-in-Picture on.
  *
  * @param {boolean} triggerFn Use the given function to open the pip window,
  *                  which runs in the parent process.
  *
- * @return Promise
- * @resolves With the Picture-in-Picture window when ready.
+ * @returns {Promise}
+ *   Resolves to the Picture-in-Picture window when ready.
  */
 async function triggerPictureInPicture(browser, videoID, triggerFn) {
   let domWindowOpened = BrowserTestUtils.domWindowOpenedAndLoaded(null);
@@ -139,7 +143,7 @@ async function triggerPictureInPicture(browser, videoID, triggerFn) {
       let event = new content.CustomEvent("MozTogglePictureInPicture", {
         bubbles: true,
       });
-      video.dispatchEvent(event);
+      content.windowUtils.dispatchEventToChromeOnly(video, event);
       await ContentTaskUtils.waitForCondition(() => {
         return video.isCloningElementVisually;
       }, "Video is being cloned visually.");
@@ -162,13 +166,13 @@ async function triggerPictureInPicture(browser, videoID, triggerFn) {
  * @param {Element,BrowsingContext} browser The <xul:browser> or
  * BrowsingContext hosting the <video>
  *
- * @param {String} videoID The ID of the video to trigger
+ * @param {string} videoID The ID of the video to trigger
  * Picture-in-Picture on.
  *
  * @param {bool} expected True if we expect the message to be showing.
  *
- * @return Promise
- * @resolves When the checks have completed.
+ * @returns {Promise<void>}
+ *   Resolves when the checks have completed.
  */
 async function assertShowingMessage(browser, videoID, expected) {
   let showing = await SpecialPowers.spawn(browser, [videoID], async videoID => {
@@ -214,8 +218,8 @@ function assertVideoIsBeingCloned(browser, selector) {
  *
  * @param {Element} browser The <xul:browser> hosting the <video>(s) or the browsing context
  *
- * @return Promise
- * @resolves When each <video> is in the HAVE_ENOUGH_DATA readyState.
+ * @returns {Promise<void>}
+ *   Resolves when each <video> is in the HAVE_ENOUGH_DATA readyState.
  */
 async function ensureVideosReady(browser) {
   // PictureInPictureToggleChild waits for videos to fire their "canplay"
@@ -239,15 +243,15 @@ async function ensureVideosReady(browser) {
  * a reasonable time.
  *
  * @param {Element} browser The <xul:browser> that has the <video> in it.
- * @param {String} videoID The ID of the video element that we expect the toggle
+ * @param {string} videoID The ID of the video element that we expect the toggle
  * to appear on.
- * @param {String} stage The stage for which the opacity is going to change. This
+ * @param {string} stage The stage for which the opacity is going to change. This
  * should be one of "hoverVideo" or "hoverToggle".
- * @param {Object} toggleStyles Optional argument. See the documentation for the
+ * @param {object} toggleStyles Optional argument. See the documentation for the
  * DEFAULT_TOGGLE_STYLES object for a sense of what styleRules is expected to be.
  *
- * @return Promise
- * @resolves When the check has completed.
+ * @returns {Promise<void>}
+ *   Resolves when the check has completed.
  */
 async function toggleOpacityReachesThreshold(
   browser,
@@ -307,14 +311,14 @@ async function toggleOpacityReachesThreshold(
  * will soon be visible.
  *
  * @param {Element} browser The <xul:browser> that has the <video> in it.
- * @param {String} videoID The ID of the video element that we expect the toggle
+ * @param {string} videoID The ID of the video element that we expect the toggle
  * to appear on.
- * @param {Number} policy Optional argument. If policy is defined, then it should
+ * @param {number} policy Optional argument. If policy is defined, then it should
  * be one of the values in the TOGGLE_POLICIES from PictureInPictureControls.sys.mjs.
  * If undefined, this function will ensure no policy attribute is set.
  *
- * @return Promise
- * @resolves When the check has completed.
+ * @returns {Promise<void>}
+ *   Resolves when the check has completed.
  */
 async function assertTogglePolicy(
   browser,
@@ -368,8 +372,8 @@ async function assertTogglePolicy(
  * mouse button events to fire. False if we expect none of them to fire.
  * @param {bool} isExpectingClick True if the mouse events should include the
  * "click" event, which is only included when the primary mouse button is pressed.
- * @return Promise
- * @resolves When the check has completed.
+ * @returns {Promise<void>}
+ *   Resolves when the check has completed.
  */
 async function assertSawMouseEvents(
   browser,
@@ -407,8 +411,8 @@ async function assertSawMouseEvents(
  *
  * @param {Element} browser The <xul:browser> that will receive the mouse
  * events.
- * @return Promise
- * @resolves When the check has completed.
+ * @returns {Promise<void>}
+ *   Resolves when the check has completed.
  */
 async function assertSawClickEventOnly(browser) {
   let mouseEvents = await SpecialPowers.spawn(browser, [], async () => {
@@ -427,16 +431,16 @@ async function assertSawClickEventOnly(browser) {
  * as whether or not the <video> element is showing the built-in controls.
  *
  * @param {Element} browser The <xul:browser> that has the <video> loaded in it.
- * @param {String} videoID The ID of the video that has the toggle.
+ * @param {string} videoID The ID of the video that has the toggle.
  *
- * @return Promise
- * @resolves With the following Object structure:
+ * @returns {Promise}
+ *   Resolves with the following Object structure:
  *   {
  *     controls: <Boolean>,
  *   }
  *
- * Where controls represents whether or not the video has the default control set
- * displayed.
+ *   Where controls represents whether or not the video has the default control
+ *   set displayed.
  */
 async function prepareForToggleClick(browser, videoID) {
   // Synthesize a mouse move just outside of the video to ensure that
@@ -504,10 +508,10 @@ async function prepareForToggleClick(browser, videoID) {
  * associated ID.
  *
  * @param {Element} browser The <xul:browser> that has the <video> loaded in it.
- * @param {String} videoID The ID of the video that has the toggle.
+ * @param {string} videoID The ID of the video that has the toggle.
  *
- * @return Promise
- * @resolves With the following Object structure:
+ * @returns {Promise}
+ *   Resolves with the following Object structure:
  *   {
  *     top: <Number>,
  *     left: <Number>,
@@ -521,7 +525,7 @@ async function getToggleClientRect(
   toggleStyles = DEFAULT_TOGGLE_STYLES
 ) {
   let args = { videoID, toggleID: toggleStyles.rootID };
-  return ContentTask.spawn(browser, args, async args => {
+  return SpecialPowers.spawn(browser, [args], async args => {
     const { Rect } = ChromeUtils.importESModule(
       "resource://gre/modules/Geometry.sys.mjs"
     );
@@ -554,6 +558,7 @@ async function getToggleClientRect(
 /**
  * This function will hover over the middle of the video and then
  * hover over the toggle.
+ *
  * @param browser The current browser
  * @param videoID The video element id
  */
@@ -608,8 +613,8 @@ async function hoverToggle(browser, videoID) {
  * tests the provided video elements for the toggle both appearing and
  * opening the Picture-in-Picture window in the expected cases.
  *
- * @param {String} testURL The URL of the page with the <video> elements.
- * @param {Object} expectations An object with the following schema:
+ * @param {string} testURL The URL of the page with the <video> elements.
+ * @param {object} expectations An object with the following schema:
  *   <video-element-id>: {
  *     canToggle: {Boolean}
  *     policy: {Number} (optional)
@@ -631,9 +636,9 @@ async function hoverToggle(browser, videoID) {
  * before running the toggle test. The function is passed the opened
  * <xul:browser> as its only argument once the testURL has finished loading.
  *
- * @return Promise
- * @resolves When the test is complete and the tab with the loaded page is
- * removed.
+ * @returns {Promise<void>}
+ *   Resolves when the test is complete and the tab with the loaded page is
+ *   removed.
  */
 async function testToggle(testURL, expectations, prepFn = async () => {}) {
   await BrowserTestUtils.withNewTab(
@@ -671,16 +676,16 @@ async function testToggle(testURL, expectations, prepFn = async () => {}) {
  * with by the mouse.
  *
  * @param {Element} browser The <xul:browser> that has the <video> loaded in it.
- * @param {String} videoID The ID of the video that has the toggle.
- * @param {Boolean} canToggle True if we expect the toggle to be visible and
+ * @param {string} videoID The ID of the video that has the toggle.
+ * @param {boolean} canToggle True if we expect the toggle to be visible and
  * clickable by the mouse for the associated video.
- * @param {Number} policy Optional argument. If policy is defined, then it should
+ * @param {number} policy Optional argument. If policy is defined, then it should
  * be one of the values in the TOGGLE_POLICIES from PictureInPictureControls.sys.mjs.
- * @param {Object} toggleStyles Optional argument. See the documentation for the
+ * @param {object} toggleStyles Optional argument. See the documentation for the
  * DEFAULT_TOGGLE_STYLES object for a sense of what styleRules is expected to be.
  *
- * @return Promise
- * @resolves When the check for the toggle is complete.
+ * @returns {Promise<void>}
+ *   Resolves when the check for the toggle is complete.
  */
 async function testToggleHelper(
   browser,
@@ -859,8 +864,8 @@ async function testToggleHelper(
  *   The window that is expected to enter fullscreen mode.
  * @param asyncFn (Async Function)
  *   The async function to run to trigger the fullscreen switch.
- * @return Promise
- * @resolves When the fullscreen entering transition completes.
+ * @returns {Promise<void>}
+ *   Resolves when the fullscreen entering transition completes.
  */
 async function promiseFullscreenEntered(window, asyncFn) {
   let entered = BrowserTestUtils.waitForEvent(
@@ -898,8 +903,8 @@ async function promiseFullscreenEntered(window, asyncFn) {
  *   The window that is expected to exit fullscreen mode.
  * @param asyncFn (Async Function)
  *   The async function to run to trigger the fullscreen switch.
- * @return Promise
- * @resolves When the fullscreen exiting transition completes.
+ * @returns {Promise<void>}
+ *   Resolves when the fullscreen exiting transition completes.
  */
 async function promiseFullscreenExited(window, asyncFn) {
   let exited = BrowserTestUtils.waitForEvent(window, "MozDOMFullscreen:Exited");
@@ -931,9 +936,9 @@ async function promiseFullscreenExited(window, asyncFn) {
  * then closes the player window
  *
  * @param {Element} browser The <xul:browser> that has the <video> loaded in it.
- * @param {String} videoID The ID of the video that has the toggle.
+ * @param {string} videoID The ID of the video that has the toggle.
  * @param {Element} pipWin The Picture-in-Picture window that was opened
- * @param {Boolean} iframe True if the test is on an Iframe, which modifies
+ * @param {boolean} iframe True if the test is on an Iframe, which modifies
  * the test behavior
  */
 async function ensureMessageAndClosePiP(browser, videoID, pipWin, isIframe) {
@@ -966,7 +971,7 @@ async function ensureMessageAndClosePiP(browser, videoID, pipWin, isIframe) {
  * and False if the specified video is not paused.
  *
  * @param {Element} browser The <xul:browser> that has the <video> loaded in it.
- * @param {String} videoID The ID of the video to check.
+ * @param {string} videoID The ID of the video to check.
  */
 async function isVideoPaused(browser, videoID) {
   return SpecialPowers.spawn(browser, [videoID], async videoID => {
@@ -979,7 +984,7 @@ async function isVideoPaused(browser, videoID) {
  * and False if the specified video is not muted.
  *
  * @param {Element} browser The <xul:browser> that has the <video> loaded in it.
- * @param {String} videoID The ID of the video to check.
+ * @param {string} videoID The ID of the video to check.
  */
 async function isVideoMuted(browser, videoID) {
   return SpecialPowers.spawn(browser, [videoID], async videoID => {
@@ -992,10 +997,11 @@ async function isVideoMuted(browser, videoID) {
  * First track is the default track to be loaded onto the video.
  * Once initialization is done, play then pause the requested video.
  * so that text tracks are loaded.
+ *
  * @param {Element} browser The <xul:browser> hosting the <video>
- * @param {String} videoID The ID of the video being checked
+ * @param {string} videoID The ID of the video being checked
  * @param {Integer} defaultTrackIndex The index of the track to be loaded, or none if -1
- * @param {String} trackMode the mode that the video's textTracks should be set to
+ * @param {string} trackMode the mode that the video's textTracks should be set to
  */
 async function prepareVideosAndWebVTTTracks(
   browser,
@@ -1035,8 +1041,9 @@ async function prepareVideosAndWebVTTTracks(
 /**
  * Plays originating video until the next cue is loaded.
  * Once the next cue is loaded, pause the video.
+ *
  * @param {Element} browser The <xul:browser> hosting the <video>
- * @param {String} videoID The ID of the video being checked
+ * @param {string} videoID The ID of the video being checked
  * @param {Integer} textTrackIndex The index of the track to be loaded, or none if -1
  */
 async function waitForNextCue(browser, videoID, textTrackIndex = 0) {
@@ -1085,75 +1092,6 @@ function overrideSavedPosition(left, top, width, height) {
   xulStore.setValue(PLAYER_URI, "picture-in-picture", "top", top);
   xulStore.setValue(PLAYER_URI, "picture-in-picture", "width", width);
   xulStore.setValue(PLAYER_URI, "picture-in-picture", "height", height);
-}
-
-/**
- * Function used to filter events when waiting for the correct number
- * telemetry events.
- * @param {String} expected The expected string or undefined
- * @param {String} actual The actual string
- * @returns true if the expected is undefined or if expected matches actual
- */
-function matches(expected, actual) {
-  if (expected === undefined) {
-    return true;
-  }
-  return expected === actual;
-}
-
-/**
- * Function that waits for the expected number of events aftering filtering.
- * @param {Object} filter An object containing optional filters
- *  {
- *    category: (optional) The category of the event. Ex. "pictureinpicture"
- *    method: (optional) The method of the event. Ex. "create"
- *    object: (optional) The object of the event. Ex. "player"
- *  }
- * @param {Number} length The number of events to wait for
- * @param {String} process Should be "content" or "parent" depending on the event
- */
-async function waitForTelemeryEvents(filter, length, process) {
-  let {
-    category: filterCategory,
-    method: filterMethod,
-    object: filterObject,
-  } = filter;
-
-  let events = [];
-  await TestUtils.waitForCondition(
-    () => {
-      events = Services.telemetry.snapshotEvents(
-        Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
-        false
-      )[process];
-      if (!events) {
-        return false;
-      }
-
-      let filtered = events
-        .map(([, /* timestamp */ category, method, object, value, extra]) => {
-          // We don't care about the `timestamp` value.
-          // Tests that examine that value should use `snapshotEvents` directly.
-          return [category, method, object, value, extra];
-        })
-        .filter(([category, method, object]) => {
-          return (
-            matches(filterCategory, category) &&
-            matches(filterMethod, method) &&
-            matches(filterObject, object)
-          );
-        });
-      info(JSON.stringify(filtered, null, 2));
-      return filtered && filtered.length >= length;
-    },
-    `Waiting for ${length} pictureinpicture telemetry event(s) with filter ${JSON.stringify(
-      filter,
-      null,
-      2
-    )}`,
-    200,
-    100
-  );
 }
 
 /**

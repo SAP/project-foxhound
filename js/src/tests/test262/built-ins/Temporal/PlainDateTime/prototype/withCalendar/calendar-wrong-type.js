@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -15,7 +15,7 @@ const instance = new Temporal.PlainDateTime(1976, 11, 18, 15, 23, 30, 123, 456, 
 const wrongTypeTests = [
   [null, "null"],
   [true, "boolean"],
-  [1, "number that doesn't convert to a valid ISO string"],
+  [1, "number"],
   [1n, "bigint"],
   [19970327, "large number"],
   [-19970327, "negative number"],
@@ -29,7 +29,7 @@ for (const [arg, description] of wrongTypeTests) {
   assert.throws(
     TypeError,
     () => instance.withCalendar(arg),
-    `${description} does not convert to a valid ISO string`
+    `${description} is not a valid calendar`
   );
 }
 

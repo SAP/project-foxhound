@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,6 +27,8 @@ const olderthansixmonths = today - DAY_MICROSEC * 31 * 7;
  * the database.  It does NOT do any checking to see that the input is
  * appropriate.  This function is an asynchronous task, it can be called using
  * "Task.spawn" or using the "yield" function inside another task.
+ *
+ * @param {object} aArray
  */
 async function task_populateDB(aArray) {
   // Iterate over aArray and execute all instructions.
@@ -153,6 +153,8 @@ async function task_populateDB(aArray) {
  * For ex:
  * var myobj = new queryData({isVisit: true, uri:"http://mozilla.com", title="foo"});
  * Note that it doesn't do any input checking on that object.
+ *
+ * @param {object} obj
  */
 function queryData(obj) {
   this.isVisit = obj.isVisit ? obj.isVisit : false;
@@ -199,6 +201,9 @@ queryData.prototype = {};
  * It assumes the array of query objects contains the SAME SORT as the result
  * set.  It checks the the uri, title, time, and bookmarkIndex properties of
  * the results, where appropriate.
+ *
+ * @param {object[]} aArray
+ * @param {nsINavHistoryContainerResultNode} aRoot
  */
 function compareArrayToResult(aArray, aRoot) {
   info("Comparing Array to Results");
@@ -214,8 +219,6 @@ function compareArrayToResult(aArray, aRoot) {
   }).length;
   if (expectedResultCount != aRoot.childCount) {
     // Debugging code for failures.
-    dump_table("moz_places");
-    dump_table("moz_historyvisits");
     info("Found children:");
     for (let i = 0; i < aRoot.childCount; i++) {
       info(aRoot.getChild(i).uri);
@@ -239,7 +242,6 @@ function compareArrayToResult(aArray, aRoot) {
           "testing testData[" + aArray[i].uri + "] vs result[" + child.uri + "]"
         );
         if (aArray[i].uri != child.uri) {
-          dump_table("moz_places");
           do_throw("Expected " + aArray[i].uri + " found " + child.uri);
         }
       }
@@ -277,6 +279,9 @@ function compareArrayToResult(aArray, aRoot) {
  * result set.  It can accept either a queryData object or an array of queryData
  * objects.  If it gets an array, it only compares the first object in the array
  * to see if it is in the result set.
+ *
+ * @param {object} aQueryData
+ * @param {nsINavHistoryContainerResultNode} aRoot
  * @returns {nsINavHistoryResultNode}: Either the node, if found, or null.
  *          If input is an array, returns a result only for the first node.
  *          To compare entire array, use the function above.
@@ -313,6 +318,8 @@ function nodeInResult(aQueryData, aRoot) {
 /**
  * A nice helper function for debugging things. It prints the contents of a
  * result set.
+ *
+ * @param {nsINavHistoryContainerResultNode} aRoot
  */
 function displayResultSet(aRoot) {
   var wasOpen = aRoot.containerOpen;

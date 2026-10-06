@@ -41,4 +41,5 @@ following ``run-using`` are available
   * ``fetch-url``
   * ``python-test``
   * ``gradlew``
+  * ``mach-gradle``
   * ``run-commands``

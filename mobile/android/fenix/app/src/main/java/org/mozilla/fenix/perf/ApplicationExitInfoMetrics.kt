@@ -17,6 +17,7 @@ import androidx.core.content.edit
 import org.mozilla.fenix.GleanMetrics.AppExitInfo
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.getPreferenceKey
+import org.mozilla.fenix.perf.ApplicationExitInfoMetrics.recordProcessExits
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -43,6 +44,26 @@ object ApplicationExitInfoMetrics {
 
     @VisibleForTesting(otherwise = PRIVATE)
     internal const val PREFERENCE_NAME = "app_exit_info"
+
+    /**
+     * Returns all historical process exits mapped to [ProcessExitRecord] for display purposes.
+     * Unlike [recordProcessExits], this does not apply timestamp deduplication and returns the
+     * full contents of the ring buffer.
+     *
+     * @param context Application [Context]
+     */
+    @RequiresApi(Build.VERSION_CODES.R)
+    fun getProcessExitsForDisplay(context: Context): List<ProcessExitRecord> =
+        getHistoricalProcessExits(context).map { exit ->
+            ProcessExitRecord(
+                date = exit.timestamp.toDateTimeFormat(),
+                reason = exit.toProcessExitReason() ?: "unknown",
+                processType = exit.processName.toProcessType(),
+                importance = exit.importance.toProcessImportance() ?: "unknown",
+                pssInMb = exit.pss.toValueInMB(),
+                rssInMb = exit.rss.toValueInMB(),
+            )
+        }
 
     /**
      * Records process exits.
@@ -86,6 +107,15 @@ object ApplicationExitInfoMetrics {
         for (historicalExit in historicalExitReasons) {
             // only record process exits happened after lastTimeHandled
             if (lastTimeHandled < historicalExit.timestamp) {
+                // We intentionally exclude recording the `historicalExit.description` and
+                // `historicalExit.status` values.
+                //
+                // - `description` was removed after prior analysis showed low value due to
+                // OEM-specific, non-standardized data that cannot be aggregated.
+                // - `status` (e.g., SIGNALED exits) was not useful for the metric’s goal.
+                //
+                // This metric focuses on actionable tab reload causes (e.g., low memory),
+                // while crashes/ANRs are covered by dedicated tooling.
                 AppExitInfo.processExited.record(
                     AppExitInfo.ProcessExitedExtra(
                         date = historicalExit.timestamp.toSimpleDateFormat(),
@@ -93,7 +123,7 @@ object ApplicationExitInfoMetrics {
                         processType = historicalExit.processName.toProcessType(),
                         pss = historicalExit.pss.toValueInMB(),
                         rss = historicalExit.rss.toValueInMB(),
-                        reason = historicalExit.reason.toProcessExitReason(),
+                        reason = historicalExit.toProcessExitReason(),
                     ),
                 )
             }
@@ -159,15 +189,22 @@ object ApplicationExitInfoMetrics {
         return (this / KILOBYTES_TO_MEGABYTES_CONVERSION).toInt()
     }
 
-    private fun Int.toProcessExitReason(): String? {
-        return when (this) {
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun ApplicationExitInfo.toProcessExitReason(): String? {
+        return when (reason) {
             ApplicationExitInfo.REASON_ANR -> "anr"
             ApplicationExitInfo.REASON_CRASH -> "crash"
             ApplicationExitInfo.REASON_CRASH_NATIVE -> "crash_native"
             ApplicationExitInfo.REASON_LOW_MEMORY -> "low_memory"
             ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "excessive_resource"
             ApplicationExitInfo.REASON_SIGNALED -> "signaled"
-            ApplicationExitInfo.REASON_OTHER -> "other"
+            ApplicationExitInfo.REASON_OTHER ->
+                if (description?.contains("MemoryLimiter:AnonSwap") == true) {
+                    "memory_limiter"
+                } else {
+                    "other"
+                }
+
             else -> null
         }
     }
@@ -190,6 +227,11 @@ object ApplicationExitInfoMetrics {
     private fun Long.toSimpleDateFormat(): String {
         val date = Date(this)
         return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(date)
+    }
+
+    private fun Long.toDateTimeFormat(): String {
+        val date = Date(this)
+        return SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(date)
     }
 
     private fun preferences(context: Context): SharedPreferences =

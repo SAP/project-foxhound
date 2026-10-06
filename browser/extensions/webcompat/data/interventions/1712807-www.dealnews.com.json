@@ -1,0 +1,15 @@
+{
+  "label": "www.dealnews.com",
+  "bugs": {
+    "1712807": {
+      "issue": "desktop-layout-not-mobile",
+      "matches": ["*://www.dealnews.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

@@ -14,6 +14,11 @@ import org.mozilla.focus.ext.components
 import org.mozilla.focus.state.AppAction
 import org.mozilla.focus.utils.SupportUtils
 
+/**
+ * [RequestInterceptor] implementation for the application.
+ *
+ * Handles special URIs like `about:crashes` and provides custom error pages.
+ */
 class AppContentInterceptor(
     private val context: Context,
 ) : RequestInterceptor {

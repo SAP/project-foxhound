@@ -2,7 +2,7 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 add_setup(async function () {
-  /** Test for Bug 625016 - Restore windows closed in succession to quit (non-OSX only) **/
+  /** Test for Bug 625016 - Restore windows closed in succession to quit (non-OSX only) */
 
   // We'll test this by opening a new window, waiting for the save
   // event, then closing that window. We'll observe the

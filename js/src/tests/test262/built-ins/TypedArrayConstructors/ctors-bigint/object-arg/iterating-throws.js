@@ -15,7 +15,7 @@ info: |
   ...
   4. Let arrayLike be ? IterableToArrayLike(object).
   ...
-includes: [testBigIntTypedArray.js]
+includes: [testTypedArray.js]
 features: [BigInt, TypedArray]
 ---*/
 
@@ -28,6 +28,6 @@ testWithBigIntTypedArrayConstructors(function(TA) {
   assert.throws(Test262Error, function() {
     new TA(obj);
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

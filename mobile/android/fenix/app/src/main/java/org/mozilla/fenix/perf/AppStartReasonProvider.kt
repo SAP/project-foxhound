@@ -12,10 +12,10 @@ import android.os.Looper
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import mozilla.components.support.base.android.ProcessInfoProvider
 import mozilla.components.support.base.log.logger.Logger
 import org.mozilla.fenix.GleanMetrics.Metrics
 import org.mozilla.fenix.android.DefaultActivityLifecycleCallbacks
-import org.mozilla.fenix.perf.AppStartReasonProvider.StartReason
 
 private val logger = Logger("AppStartReasonProvider")
 
@@ -28,8 +28,13 @@ private val logger = Logger("AppStartReasonProvider")
  * This class relies on specific lifecycle method call orders and main thread Runnable scheduling
  * that could potentially change between OEMs and OS versions: **be careful when using it.** This
  * implementation was tested on the Moto G5 Android 8.1.0 and the Pixel 2 Android 11.
+ *
+ * @param processInfoProvider [ProcessInfoProvider] that we use to determine if the process start
+ * is of foreground importance.
  */
-class AppStartReasonProvider {
+class AppStartReasonProvider(
+    private val processInfoProvider: ProcessInfoProvider,
+) {
 
     enum class StartReason {
         /** We don't know yet what caused this [Application] instance to be started. */
@@ -65,11 +70,23 @@ class AppStartReasonProvider {
     private inner class ProcessLifecycleObserver : DefaultLifecycleObserver {
         override fun onCreate(owner: LifecycleOwner) {
             Handler(Looper.getMainLooper()).post {
-                // If the Application was started by an Activity, this Runnable should execute
-                // after we learn the Activity was created. If the App was started by a Service,
-                // this Runnable should execute before the first Activity is created.
+                // If the Application was started by an Activity, we expect the process to be of
+                // foreground importance.
+                //
+                // if the process does not have foreground importance (e.g if the process was started
+                // by a broadcast receiver or work manager, etc, then we immediately flag it as a
+                // NON_ACTIVITY start reason.
+                //
+                // if however, the process has foreground importance, we flag it as TO_BE_DETERMINED
+                // which is then mapped to ACTIVITY in the ActivityLifecycleCallbacks
                 reason = when (reason) {
-                    StartReason.TO_BE_DETERMINED -> StartReason.NON_ACTIVITY
+                    StartReason.TO_BE_DETERMINED -> {
+                        if (processInfoProvider.isForegroundImportance()) {
+                            StartReason.TO_BE_DETERMINED
+                        } else {
+                            StartReason.NON_ACTIVITY
+                        }
+                    }
                     StartReason.ACTIVITY -> reason // the start reason is already known: do nothing.
                     StartReason.NON_ACTIVITY -> {
                         Metrics.startReasonProcessError.set(true)

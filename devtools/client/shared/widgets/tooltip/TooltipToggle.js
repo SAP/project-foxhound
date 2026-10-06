@@ -15,20 +15,17 @@ const DEFAULT_TOGGLE_DELAY = 50;
  * provided to the start() method to know whether or not the node being
  * hovered over should indeed receive the tooltip.
  */
-function TooltipToggle(tooltip) {
-  this.tooltip = tooltip;
-  this.win = tooltip.doc.defaultView;
+class TooltipToggle {
+  constructor(tooltip) {
+    this.tooltip = tooltip;
+    this.win = tooltip.doc.defaultView;
 
-  this._onMouseMove = this._onMouseMove.bind(this);
-  this._onMouseOut = this._onMouseOut.bind(this);
+    this._onMouseMove = this._onMouseMove.bind(this);
+    this._onMouseOut = this._onMouseOut.bind(this);
 
-  this._onTooltipMouseOver = this._onTooltipMouseOver.bind(this);
-  this._onTooltipMouseOut = this._onTooltipMouseOut.bind(this);
-}
-
-module.exports.TooltipToggle = TooltipToggle;
-
-TooltipToggle.prototype = {
+    this._onTooltipMouseOver = this._onTooltipMouseOver.bind(this);
+    this._onTooltipMouseOut = this._onTooltipMouseOut.bind(this);
+  }
   /**
    * Start tracking mouse movements on the provided baseNode to show the
    * tooltip.
@@ -55,7 +52,7 @@ TooltipToggle.prototype = {
    *        The function can also return a promise that will resolve to one of
    *        the values listed above.
    *        If omitted, the tooltip will be shown everytime.
-   * @param {Object} options
+   * @param {object} options
             Set of optional arguments:
    *        - {Number} toggleDelay
    *          An optional delay (in ms) that will be observed before showing
@@ -92,7 +89,7 @@ TooltipToggle.prototype = {
     } else {
       target.classList.add("non-interactive-toggle");
     }
-  },
+  }
 
   /**
    * If the start() function has been used previously, and you want to get rid
@@ -120,7 +117,7 @@ TooltipToggle.prototype = {
     this._baseNode = null;
     this._targetNodeCb = null;
     this._lastHovered = null;
-  },
+  }
 
   _onMouseMove(event) {
     if (event.target !== this._lastHovered) {
@@ -146,11 +143,12 @@ TooltipToggle.prototype = {
         );
       }, this._toggleDelay);
     }
-  },
+  }
 
   /**
    * Is the given target DOMNode a valid node for toggling the tooltip on hover.
    * This delegates to the user-defined _targetNodeCb callback.
+   *
    * @return {Promise} a promise that will resolve the anchor to use for the
    *         tooltip or null if no valid target was found.
    */
@@ -161,7 +159,7 @@ TooltipToggle.prototype = {
     }
 
     return null;
-  },
+  }
 
   _onMouseOut(event) {
     // Only hide the tooltip if the mouse leaves baseNode.
@@ -178,20 +176,22 @@ TooltipToggle.prototype = {
     this.toggleTimer = this.win.setTimeout(() => {
       this.tooltip.hide();
     }, this._toggleDelay);
-  },
+  }
 
   _onTooltipMouseOver() {
     this.win.clearTimeout(this.toggleTimer);
-  },
+  }
 
   _onTooltipMouseOut() {
     this.win.clearTimeout(this.toggleTimer);
     this.toggleTimer = this.win.setTimeout(() => {
       this.tooltip.hide();
     }, this._toggleDelay);
-  },
+  }
 
   destroy() {
     this.stop();
-  },
-};
+  }
+}
+
+module.exports.TooltipToggle = TooltipToggle;

@@ -29,14 +29,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=364461
 
 SimpleTest.waitForExplicitFinish();
 
-SpecialPowers.pushPrefEnv({
-  "set":[["security.data_uri.block_toplevel_data_uri_navigations", false]]
-}, runTests);
-
-function runTests() {
-  window.openDialog("bug364461_window.xhtml", "bug364461",
-                    "chrome,width=600,height=600,noopener", window);
-}
+window.openDialog("bug364461_window.xhtml", "bug364461",
+                  "chrome,width=600,height=600,noopener", window);
 ]]>
 </script>
 

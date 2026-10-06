@@ -4,9 +4,6 @@
 
 "use strict";
 
-// This is the same value used by CustomizableUI tests.
-const kForceOverflowWidthPx = 450;
-
 function isActive() {
   return Services.profiler.IsActive();
 }
@@ -96,26 +93,31 @@ add_task(async function click_dropmarker() {
 add_task(async function click_overflowed_icon() {
   info("Test that the profiler icon opens the panel when overflowed.");
 
+  const toolbaritem = button.parentNode;
+  const chevron = document.getElementById("nav-bar-overflow-button");
   const overflowMenu = document.getElementById("widget-overflow");
   const profilerPanel = document.getElementById("PanelUI-profiler");
+  const originalPlacement = CustomizableUI.getPlacementOfWidget(toolbaritem.id);
 
   ok(!dropmarker.hasAttribute("open"), "should start with the panel closed");
   ok(!isActive(), "should start with the profiler inactive");
-
-  const navbar = document.getElementById(CustomizableUI.AREA_NAVBAR);
   ok(
-    !navbar.hasAttribute("overflowing"),
-    "Should start with a non-overflowing toolbar."
+    BrowserTestUtils.isHidden(chevron),
+    "Should start with the overflow button hidden."
   );
 
-  info("Force the toolbar to overflow.");
-  const originalWindowWidth = window.outerWidth;
-  window.resizeTo(kForceOverflowWidthPx, window.outerHeight);
-  await TestUtils.waitForCondition(() => navbar.hasAttribute("overflowing"));
-  ok(navbar.hasAttribute("overflowing"), "Should have an overflowing toolbar.");
+  info("Pinning button to overflow panel.");
+  CustomizableUI.addWidgetToArea(
+    toolbaritem.id,
+    CustomizableUI.AREA_FIXED_OVERFLOW_PANEL,
+    0
+  );
+  await TestUtils.waitForCondition(
+    () => BrowserTestUtils.isVisible(chevron),
+    "Waiting for the overflow button to become visible"
+  );
 
   info("Open the overflow menu.");
-  const chevron = document.getElementById("nav-bar-overflow-button");
   chevron.click();
   await TestUtils.waitForCondition(() => overflowMenu.state == "open");
 
@@ -135,9 +137,12 @@ add_task(async function click_overflowed_icon() {
   await TestUtils.waitForCondition(() => overflowMenu.state == "closed");
   ok(!dropmarker.hasAttribute("open"), "panel should be closed");
 
-  info("Undo the forced toolbar overflow.");
-  window.resizeTo(originalWindowWidth, window.outerHeight);
-  return TestUtils.waitForCondition(() => !navbar.hasAttribute("overflowing"));
+  info("Removing button from overflow panel.");
+  CustomizableUI.addWidgetToArea(
+    toolbaritem.id,
+    originalPlacement.area,
+    originalPlacement.position
+  );
 });
 
 add_task(async function space_key() {

@@ -9,8 +9,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.filters.MediumTest
 import mozilla.components.browser.engine.gecko.fetch.GeckoViewFetchClient
 import mozilla.components.concept.fetch.Client
-import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.test.assertIs
 
 @MediumTest
 class GeckoViewFetchTestCases : mozilla.components.tooling.fetch.tests.FetchTestCases() {
@@ -19,7 +19,7 @@ class GeckoViewFetchTestCases : mozilla.components.tooling.fetch.tests.FetchTest
     @Test
     @UiThreadTest
     fun clientInstance() {
-        assertTrue(createNewClient() is GeckoViewFetchClient)
+        assertIs<GeckoViewFetchClient>(createNewClient())
     }
 
     @Test

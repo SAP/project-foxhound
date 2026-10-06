@@ -4,4 +4,5 @@
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 <resources>
     <dimen name="mozac_feature_applinks_confirm_dialog_checkbox_margin">18dp</dimen>
+    <dimen name="mozac_feature_applinks_confirm_dialog_checkbox_vertical_padding">15dp</dimen>
 </resources>

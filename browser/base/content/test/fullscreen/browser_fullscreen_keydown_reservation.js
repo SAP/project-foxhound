@@ -30,84 +30,95 @@ add_task(async function test_keydown_event_reservation_toggling_fullscreen() {
       aShortcutKey.metaKey ? "Meta + " : ""
     }${aShortcutKey.shiftKey ? "Shift + " : ""}${aShortcutKey.ctrlKey ? "Ctrl + " : ""}${aShortcutKey.key.replace("KEY_", "")}`;
   }
-  for (const shortcutKey of shortcutKeys) {
-    const tab = await BrowserTestUtils.openNewForegroundTab(
-      gBrowser,
-      "https://example.org/browser/browser/base/content/test/fullscreen/fullscreen.html"
-    );
+  for (const useRequestFullscreen of [true, false]) {
+    for (const shortcutKey of shortcutKeys) {
+      const tab = await BrowserTestUtils.openNewForegroundTab(
+        gBrowser,
+        "https://example.org/browser/browser/base/content/test/fullscreen/fullscreen.html"
+      );
 
-    await SimpleTest.promiseFocus(tab.linkedBrowser);
+      await SimpleTest.promiseFocus(tab.linkedBrowser);
 
-    const fullScreenEntered = BrowserTestUtils.waitForEvent(
-      window,
-      "fullscreen"
-    );
+      const fullScreenEntered = BrowserTestUtils.waitForEvent(
+        window,
+        "fullscreen"
+      );
 
-    await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
-      content.wrappedJSObject.keydown = null;
-      content.window.addEventListener("keydown", event => {
-        switch (event.key) {
-          case "Shift":
-          case "Meta":
-          case "Control":
-            break;
-          default:
-            content.wrappedJSObject.keydown = event;
-        }
+      await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
+        content.wrappedJSObject.keydown = null;
+        content.window.addEventListener("keydown", event => {
+          switch (event.key) {
+            case "Shift":
+            case "Meta":
+            case "Control":
+              break;
+            default:
+              content.wrappedJSObject.keydown = event;
+          }
+        });
       });
-    });
 
-    EventUtils.synthesizeKey(shortcutKey.key, shortcutKey.modifiers);
+      if (useRequestFullscreen) {
+        info(
+          `Waiting for entering the fullscreen mode with requestFullscreen()...`
+        );
+        await DOMFullscreenTestUtils.changeFullscreen(tab.linkedBrowser, true);
+      } else {
+        info(
+          `Waiting for entering the fullscreen mode with synthesizing ${shortcutDescription(
+            shortcutKey
+          )}...`
+        );
+        EventUtils.synthesizeKey(shortcutKey.key, shortcutKey.modifiers);
+      }
 
-    info(
-      `Waiting for entering the fullscreen mode with synthesizing ${shortcutDescription(
-        shortcutKey
-      )}...`
-    );
-    await fullScreenEntered;
+      await fullScreenEntered;
 
-    info("Retrieving the result...");
-    Assert.ok(
-      await SpecialPowers.spawn(
-        tab.linkedBrowser,
-        [],
-        async () => !!content.wrappedJSObject.keydown
-      ),
-      `Entering the fullscreen mode with ${shortcutDescription(
-        shortcutKey
-      )} should cause "keydown" event`
-    );
+      info("Retrieving the result...");
+      if (!useRequestFullscreen) {
+        Assert.ok(
+          await SpecialPowers.spawn(
+            tab.linkedBrowser,
+            [],
+            async () => !!content.wrappedJSObject.keydown
+          ),
+          `Entering the fullscreen mode with ${shortcutDescription(
+            shortcutKey
+          )} should cause "keydown" event`
+        );
+      }
 
-    const fullScreenExited = BrowserTestUtils.waitForEvent(
-      window,
-      "fullscreen"
-    );
+      const fullScreenExited = BrowserTestUtils.waitForEvent(
+        window,
+        "fullscreen"
+      );
 
-    await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
-      content.wrappedJSObject.keydown = null;
-    });
+      await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
+        content.wrappedJSObject.keydown = null;
+      });
 
-    EventUtils.synthesizeKey(shortcutKey.key, shortcutKey.modifiers);
+      EventUtils.synthesizeKey(shortcutKey.key, shortcutKey.modifiers);
 
-    info(
-      `Waiting for exiting from the fullscreen mode with synthesizing ${shortcutDescription(
-        shortcutKey
-      )}...`
-    );
-    await fullScreenExited;
+      info(
+        `Waiting for exiting from the fullscreen mode with synthesizing ${shortcutDescription(
+          shortcutKey
+        )}...`
+      );
+      await fullScreenExited;
 
-    info("Retrieving the result...");
-    Assert.ok(
-      await SpecialPowers.spawn(
-        tab.linkedBrowser,
-        [],
-        async () => !content.wrappedJSObject.keydown
-      ),
-      `Exiting from the fullscreen mode with ${shortcutDescription(
-        shortcutKey
-      )} should not cause "keydown" event`
-    );
+      info("Retrieving the result...");
+      Assert.ok(
+        await SpecialPowers.spawn(
+          tab.linkedBrowser,
+          [],
+          async () => !content.wrappedJSObject.keydown
+        ),
+        `Exiting from the fullscreen mode with ${shortcutDescription(
+          shortcutKey
+        )} should not cause "keydown" event`
+      );
 
-    BrowserTestUtils.removeTab(tab);
+      BrowserTestUtils.removeTab(tab);
+    }
   }
 });

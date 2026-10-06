@@ -419,7 +419,7 @@ function testNullShortcut(shortcuts) {
   const shortcut = KeyShortcuts.parseElectronKey(null);
   ok(!shortcut, "Passing a null object should return a null object");
 
-  const stringified = KeyShortcuts.stringify(shortcut);
+  const stringified = KeyShortcuts.stringifyShortcut(shortcut);
   is(stringified, "", "A null object should be stringified as an empty string");
 
   shortcuts.on(null, function () {});

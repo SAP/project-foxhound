@@ -56,5 +56,12 @@ add_task(async function blank_page__by_script() {
   await doTestWithNewWindow({
     link: "blank-page--by-script",
     expectedSetURICalled: false,
+    async actionWhileLoading(_onTabLoaded) {
+      // window.open("about:blank") will cause a synchronous load that cannot
+      // be caught by listeners attached afterwards
+      info("Skip waiting for link target to load");
+      // catch a possible window unloaded while waiting for load error
+      _onTabLoaded.catch(() => {});
+    },
   });
 });

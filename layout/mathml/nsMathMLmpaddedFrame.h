@@ -1,13 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsMathMLmpaddedFrame_h___
-#define nsMathMLmpaddedFrame_h___
+#ifndef nsMathMLmpaddedFrame_h_
+#define nsMathMLmpaddedFrame_h_
 
-#include "mozilla/Attributes.h"
 #include "nsCSSValue.h"
 #include "nsMathMLContainerFrame.h"
 
@@ -34,8 +31,8 @@ class nsMathMLmpaddedFrame final : public nsMathMLContainerFrame {
     return TransmitAutomaticDataForMrowLikeElement();
   }
 
-  nsresult Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
-                 ReflowOutput& aDesiredSize) override;
+  void Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
+             ReflowOutput& aDesiredSize) override;
 
   bool IsMrowLike() override {
     return mFrames.FirstChild() != mFrames.LastChild() || !mFrames.FirstChild();
@@ -88,7 +85,7 @@ class nsMathMLmpaddedFrame final : public nsMathMLContainerFrame {
   Attribute mVerticalOffset;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) final;
+                            AttrModType aModType) final;
   void ParseAttribute(nsAtom* aAtom, Attribute& aAttribute);
   bool ParseAttribute(nsString& aString, Attribute& aAttribute);
 
@@ -97,4 +94,4 @@ class nsMathMLmpaddedFrame final : public nsMathMLContainerFrame {
                    float aFontSizeInflation);
 };
 
-#endif /* nsMathMLmpaddedFrame_h___ */
+#endif /* nsMathMLmpaddedFrame_h_ */

@@ -38,7 +38,7 @@ async function testPositionAndStyle(test, inspector, highlighterTestFront) {
   );
 
   info("Scroll down");
-  SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     return new Promise(resolve => {
       content.addEventListener("scroll", () => resolve(), { once: true });
       content.scrollTo({ top: 500 });

@@ -5,12 +5,19 @@
 :root[inDOMFullscreen] #navigator-toolbox,
 :root[inDOMFullscreen] #fullscr-toggler,
 :root[inDOMFullscreen] #sidebar-box,
-:root[inDOMFullscreen] #sidebar-main,
+:root[inDOMFullscreen] #sidebar-container,
 :root[inDOMFullscreen] #sidebar-splitter,
 :root[inDOMFullscreen] #sidebar-launcher-splitter,
-:root[inFullscreen]:not([macOSNativeFullscreen]) toolbar:not([fullscreentoolbar="true"]),
-:root[inFullscreen] .global-notificationbox {
+:root[inFullscreen]:not([macOSNativeFullscreen]) toolbar:not([fullscreentoolbar="true"]) {
   visibility: collapse;
+}
+
+/* AI window splitter and box use visibility:collapse, not display:none, so
+ * they are separated by flexbox gaps even when invisible. Use display:none
+ * here so the gaps disappear in DOM fullscreen. */
+:root[inDOMFullscreen] #ai-window-box,
+:root[inDOMFullscreen] #ai-window-splitter {
+  display: none;
 }
 
 #fullscr-toggler {
@@ -37,12 +44,14 @@
   max-width: 95%;
 
   font: message-box;
+  font-size: 21px;
 
   align-items: center;
+  color-scheme: dark;
   background-color: rgba(45, 62, 72, 0.9);
   color: #fafafa;
   box-shadow: 0 0 5px 2px rgba(0, 0, 0, 0.5);
-  border-radius: 8px;
+  border-radius: var(--border-radius-medium);
   border: 2px solid currentColor;
   padding: 24px 16px;
 
@@ -88,7 +97,6 @@
 
 .pointerlockfswarning-domain-text,
 .pointerlockfswarning-generic-text {
-  font-size: 21px;
   margin: 0 16px;
   word-wrap: break-word;
   /* We must specify a min-width, otherwise word-wrap:break-word doesn't work. Bug 630864. */
@@ -100,7 +108,7 @@
 }
 
 .pointerlockfswarning-domain {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
   margin: 0;
 }
 

@@ -1,0 +1,26 @@
+Silence nontrivial-memcall warning. See bug 1980053 comment 4 for details.
+
+This is already suppressed upstream.
+
+diff --git a/base/containers/vector_buffer.h b/base/containers/vector_buffer.h
+--- a/base/containers/vector_buffer.h
++++ b/base/containers/vector_buffer.h
+@@ -132,17 +132,17 @@ class VectorBuffer {
+       std::is_trivially_copyable_v<T2> || IS_TRIVIALLY_RELOCATABLE(T2);
+ 
+   template <typename T2 = T,
+             std::enable_if_t<is_trivially_copyable_or_relocatable<T2>, int> = 0>
+   static void MoveRange(T* from_begin, T* from_end, T* to) {
+     CHECK(!RangesOverlap(from_begin, from_end, to));
+ 
+     memcpy(
+-        to, from_begin,
++        static_cast<void*>(to), from_begin,
+         CheckSub(get_uintptr(from_end), get_uintptr(from_begin)).ValueOrDie());
+   }
+ 
+   // Not trivially copyable, but movable: call the move constructor and
+   // destruct the original.
+   template <typename T2 = T,
+             std::enable_if_t<std::is_move_constructible_v<T2> &&
+                                  !is_trivially_copyable_or_relocatable<T2>,

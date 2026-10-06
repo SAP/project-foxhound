@@ -1,4 +1,3 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 4; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -222,7 +221,7 @@ class DXInterop2Device : public RefCounted<DXInterop2Device> {
           "wglDXCloseDevice(0x%p) failed:"
           " GetLastError(): %u\n",
           mInteropDevice, error);
-      gfxCriticalError() << errorMessage.BeginReading();
+      gfxCriticalError() << errorMessage.get();
     }
   }
 
@@ -240,7 +239,7 @@ class DXInterop2Device : public RefCounted<DXInterop2Device> {
         "wglDXRegisterObject(0x%p, 0x%p, %u, 0x%04x,"
         " 0x%04x) failed: GetLastError(): %u\n",
         mInteropDevice, d3dObject, name, type, access, error);
-    gfxCriticalNote << errorMessage.BeginReading();
+    gfxCriticalNote << errorMessage.get();
     return nullptr;
   }
 
@@ -258,7 +257,7 @@ class DXInterop2Device : public RefCounted<DXInterop2Device> {
           "wglDXUnregisterObject(0x%p, 0x%p) failed:"
           " GetLastError(): %u\n",
           mInteropDevice, lockHandle, error);
-      gfxCriticalError() << errorMessage.BeginReading();
+      gfxCriticalError() << errorMessage.get();
     }
     return false;
   }
@@ -282,7 +281,7 @@ class DXInterop2Device : public RefCounted<DXInterop2Device> {
         "wglDXLockObjects(0x%p, 1, {0x%p}) failed:"
         " GetLastError(): %u\n",
         mInteropDevice, lockHandle, error);
-    gfxCriticalError() << errorMessage.BeginReading();
+    gfxCriticalError() << errorMessage.get();
     return false;
   }
 
@@ -305,7 +304,7 @@ class DXInterop2Device : public RefCounted<DXInterop2Device> {
         "wglDXUnlockObjects(0x%p, 1, {0x%p}) failed:"
         " GetLastError(): %u\n",
         mInteropDevice, lockHandle, error);
-    gfxCriticalError() << errorMessage.BeginReading();
+    gfxCriticalError() << errorMessage.get();
     return false;
   }
 };
@@ -451,7 +450,9 @@ SharedSurface_D3D11Interop::ToSurfaceDescriptor() {
   return Some(layers::SurfaceDescriptorD3D10(
       mData.dxgiHandle, /* gpuProcessTextureId */ Nothing(),
       /* arrayIndex */ 0, format, mDesc.size, mDesc.colorSpace,
-      gfx::ColorRange::FULL, /* hasKeyedMutex */ true,
+      gfx::ColorRange::FULL, mDesc.transferFunction,
+      /* hdrMetadata */ Nothing(),
+      /* hasKeyedMutex */ true,
       /* fencesHolderId */ Nothing()));
 }
 

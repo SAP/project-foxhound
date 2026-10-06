@@ -1,0 +1,36 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+webidl Element;
+webidl PictureInPictureWindow;
+
+[scriptable, uuid(b6d8b8d7-8b81-493d-806d-fb10072e3afd)]
+interface nsIMediaPictureInPictureProvider : nsISupports {
+    /**
+     * Open a picture in picture window. The video element argument shall be used by the platform specific
+     * implementation to call cloneElementVisually to clone it's contents onto the video element inside the
+     * created PIP window.
+     *
+     * This method shall resolve only when a PIP Window has been created and setup completely or reject if some error
+     * occured.
+     * @param videoElement - The video element that shall be cloned in the picture in picture window.
+     * @param pictureInPictureWindow - The picture in picture window instance that will be resolved to web content.
+     *                                 The platform implementation shall use this to notify of resize changes.
+     */
+    [implicit_jscontext]
+    Promise openMediaPictureInPictureWindow(in Element videoElement, in PictureInPictureWindow pictureInPictureWindow);
+
+    /**
+     * Close the picture in picture window associated with videoElement.
+     *
+     * This method shall resolve only when the PIP Window has exited completely or reject if some error occured.
+     * @param videoElement
+     */
+    [implicit_jscontext]
+    Promise closeMediaPictureInPictureWindow(in Element videoElement);
+};

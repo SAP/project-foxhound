@@ -80,48 +80,6 @@ add_task(async function test_nonremote_window_open_aboutBlank() {
 });
 
 /**
- * Check if data: URI inherits firstPartyDomain from about:blank correctly.
- */
-add_task(async function test_remote_window_open_data_uri() {
-  // allow top level data: URI navigations, otherwise
-  // <a href="data:" would fail.
-  await SpecialPowers.pushPrefEnv({
-    set: [["security.data_uri.block_toplevel_data_uri_navigations", false]],
-  });
-  let win = await BrowserTestUtils.openNewBrowserWindow({ remote: true });
-  let browser = win.gBrowser.selectedBrowser;
-
-  await SpecialPowers.spawn(browser, [], () => {
-    content.document.body.innerHTML = `
-      <a href="data:text/plain,hello" id="test">hello</a>`;
-
-    let element = content.document.getElementById("test");
-    element.click();
-  });
-
-  await BrowserTestUtils.browserLoaded(browser, false, function (url) {
-    return url == "data:text/plain,hello";
-  });
-
-  await SpecialPowers.spawn(browser, [], async function () {
-    Assert.ok(true, "origin: " + content.document.nodePrincipal.origin);
-
-    Assert.ok(
-      content.document.nodePrincipal.isNullPrincipal,
-      "The principal of data: document should be a NullPrincipal."
-    );
-
-    Assert.notEqual(
-      content.document.nodePrincipal.originAttributes.firstPartyDomain,
-      "",
-      "data: URI should have firstPartyDomain set."
-    );
-  });
-
-  win.close();
-});
-
-/**
  * data: document contains an iframe, and we test that iframe should inherit
  * origin attributes from the data: document.
  */

@@ -1,0 +1,27 @@
+{
+  "label": "quezoncity.gov.ph",
+  "bugs": {
+    "1886566": {
+      "issue": "broken-layout",
+      "matches": ["*://qceservices.quezoncity.gov.ph/qcvaxeasy*"]
+    }
+  },
+  "css": {
+    "fix_invisible_iframe": "iframe#qcid_iframe { height: 100% !important; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "max_version": 145,
+      "css": ["fix_invisible_iframe"]
+    },
+    {
+      "platforms": ["all"],
+      "min_version": 146,
+      "pref_check": {
+        "layout.css.webkit-fill-available.enabled": false
+      },
+      "css": ["fix_invisible_iframe"]
+    }
+  ]
+}

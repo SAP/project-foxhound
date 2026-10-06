@@ -58,12 +58,12 @@ COPY topsrcdir/taskcluster/docker/recipes/hgrc /etc/mercurial/hgrc.d/mozilla.rc
 
 # Add pip configuration, among other things.
 # %include taskcluster/docker/recipes/dot-config
-COPY topsrcdir/taskcluster/docker/recipes/dot-config /builds/worker/.config
+COPY --chown=worker topsrcdir/taskcluster/docker/recipes/dot-config /builds/worker/.config
 
 # %include taskcluster/scripts/run-task
-COPY topsrcdir/taskcluster/scripts/run-task /builds/worker/bin/run-task
+COPY topsrcdir/taskcluster/scripts/run-task /builds/worker/bin/run-task-hg
 
-# %include third_party/python/taskcluster_taskgraph/taskgraph/run-task/fetch-content
-ADD topsrcdir/third_party/python/taskcluster_taskgraph/taskgraph/run-task/fetch-content /builds/worker/bin/fetch-content
+# Setup upstream `run-task` and `fetch-content`
+# %include-run-task
 
 RUN chown -R worker:worker /builds/worker/bin && chmod 755 /builds/worker/bin/*

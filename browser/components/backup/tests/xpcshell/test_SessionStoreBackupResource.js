@@ -72,23 +72,7 @@ add_task(async function test_measure() {
     Glean.browserBackup.sessionStoreBackupsDirectorySize.testGetValue();
   let sessionStoreMeasurement =
     Glean.browserBackup.sessionStoreSize.testGetValue();
-  let scalars = TelemetryTestUtils.getProcessScalars("parent", false, false);
 
-  // Compare glean vs telemetry measurements
-  TelemetryTestUtils.assertScalar(
-    scalars,
-    "browser.backup.session_store_backups_directory_size",
-    sessionStoreBackupsDirectoryMeasurement,
-    "Glean and telemetry measurements for session store backups directory should be equal"
-  );
-  TelemetryTestUtils.assertScalar(
-    scalars,
-    "browser.backup.session_store_size",
-    sessionStoreMeasurement,
-    "Glean and telemetry measurements for session store should be equal"
-  );
-
-  // Compare glean measurements vs actual file sizes
   Assert.equal(
     sessionStoreBackupsDirectoryMeasurement,
     EXPECTED_KILOBYTES_FOR_BACKUPS_DIR,
@@ -184,10 +168,14 @@ async function testBackupHelper(isEncrypted) {
   delete sessionStoreStateStaged.session.lastUpdate;
   delete sessionStoreState.session.lastUpdate;
 
-  if (!isEncrypted) {
-    // If we're not encrypting, then we expect the cookies array to be empty.
-    sessionStoreState.cookies = [];
-  }
+  // Expect that the copy does not include cookies.
+  Assert.equal(
+    sessionStoreStateStaged.cookies.length,
+    0,
+    "expected no cookies in copied session state"
+  );
+  // Delete the cookies from the original, to allow comparison with deepEqual
+  sessionStoreState.cookies = [];
 
   Assert.deepEqual(
     sessionStoreStateStaged,

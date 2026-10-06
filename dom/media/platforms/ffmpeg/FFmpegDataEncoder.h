@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -46,6 +44,7 @@ class FFmpegDataEncoder<LIBAV_VER> : public MediaDataEncoder {
   // All methods run on the task queue, except for GetDescriptionName.
   RefPtr<InitPromise> Init() override = 0;  // Implemented in the sub-classes.
   RefPtr<EncodePromise> Encode(const MediaData* aSample) override;
+  RefPtr<EncodePromise> Encode(nsTArray<RefPtr<MediaData>>&& aSamples) override;
   RefPtr<ReconfigurationPromise> Reconfigure(
       const RefPtr<const EncoderConfigurationChangeList>& aConfigurationChanges)
       override;
@@ -62,7 +61,7 @@ class FFmpegDataEncoder<LIBAV_VER> : public MediaDataEncoder {
       AVPacket* aPacket);
 
   // Methods only called on mTaskQueue.
-  RefPtr<EncodePromise> ProcessEncode(RefPtr<const MediaData> aSample);
+  RefPtr<EncodePromise> ProcessEncode(nsTArray<RefPtr<MediaData>>&& aSamples);
   RefPtr<ReconfigurationPromise> ProcessReconfigure(
       const RefPtr<const EncoderConfigurationChangeList>&
           aConfigurationChanges);
@@ -76,7 +75,7 @@ class FFmpegDataEncoder<LIBAV_VER> : public MediaDataEncoder {
   void ShutdownInternal();
   int OpenCodecContext(const AVCodec* aCodec, AVDictionary** aOptions)
       MOZ_EXCLUDES(sMutex);
-  void CloseCodecContext() MOZ_EXCLUDES(sMutex);
+  void ReleaseCodecContext() MOZ_EXCLUDES(sMutex);
   bool PrepareFrame();
   void DestroyFrame();
 #if LIBAVCODEC_VERSION_MAJOR >= 58

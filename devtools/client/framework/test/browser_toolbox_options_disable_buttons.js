@@ -25,6 +25,7 @@ const TOGGLE_BUTTONS = [
   "command-button-rulers",
   "command-button-responsive",
   "command-button-pick",
+  "command-button-jstracer",
 ];
 
 add_task(async function test() {
@@ -146,7 +147,16 @@ async function testToggleToolboxButtons(toolbox, optionsPanelWin) {
     const isVisible = getBoolPref(tool.visibilityswitch);
 
     testPreferenceAndUIStateIsConsistent(toolbox, optionsPanelWin);
+    const onTracerPrefApplied = toolbox.once("new-configuration-applied");
     node.click();
+
+    // Toggling the devtools.command-button-jstracer.enabled preference
+    // will trigger the update of thread configuration from the toolbox module
+    // and we need to wait for its completion to avoid pending request at end of test
+    if (node.id == "command-button-jstracer") {
+      await onTracerPrefApplied;
+    }
+
     testPreferenceAndUIStateIsConsistent(toolbox, optionsPanelWin);
 
     const isVisibleAfterClick = getBoolPref(tool.visibilityswitch);

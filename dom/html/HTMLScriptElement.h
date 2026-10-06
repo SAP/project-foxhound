@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,8 +8,8 @@
 #ifndef mozilla_dom_HTMLScriptElement_h
 #define mozilla_dom_HTMLScriptElement_h
 
-#include "mozilla/dom/FetchPriority.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/ScriptElement.h"
 #include "nsGenericHTMLElement.h"
 #include "nsStringFwd.h"
@@ -30,9 +28,9 @@ class TrustedScriptURLOrUSVString;
 class HTMLScriptElement final : public nsGenericHTMLElement,
                                 public ScriptElement {
  public:
-  using Element::GetText;
+  using Element::GetCharacterDataBuffer;
 
-  HTMLScriptElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+  HTMLScriptElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
                     FromParser aFromParser);
 
   // nsISupports
@@ -185,9 +183,10 @@ class HTMLScriptElement final : public nsGenericHTMLElement,
   [[nodiscard]] static bool Supports(const GlobalObject& aGlobal,
                                      const nsAString& aType);
 
-  virtual void SetTextContentInternal(const nsAString& aTextContent,
-                                      nsIPrincipal* aSubjectPrincipal,
-                                      ErrorResult& aError) override;
+  virtual void SetTextContentInternal(
+      const nsAString& aTextContent, nsIPrincipal* aSubjectPrincipal,
+      mozilla::ErrorResult& aError,
+      MutationEffectOnScript aMutationEffectOnScript) override;
  protected:
   virtual ~HTMLScriptElement();
 

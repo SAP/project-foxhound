@@ -11,7 +11,6 @@ support-files = [
   "helper-mocks.js",
   "helper-real-usb.js",
   "helper-serviceworker.js",
-  "helper-telemetry.js",
   "mocks/*",
   "resources/bad-extensions/*",
   "resources/packaged-extension/*",
@@ -23,7 +22,6 @@ support-files = [
   "test-tab-favicons.html",
   "!/devtools/client/debugger/test/mochitest/shared-head.js",
   "!/devtools/client/shared/test/shared-head.js",
-  "!/devtools/client/shared/test/telemetry-test-helpers.js",
   "!/devtools/client/webconsole/test/browser/shared-head.js",
 ]
 
@@ -50,7 +48,9 @@ tags = "webextensions"
 
 ["browser_aboutdebugging_addons_debug_storage.js"]
 tags = "webextensions"
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt"] # Bug 1767695
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1767695
+]
 
 ["browser_aboutdebugging_addons_debug_toolbox.js"]
 tags = "webextensions"
@@ -76,6 +76,9 @@ tags = "webextensions"
 ["browser_aboutdebugging_addons_temporary_install_error.js"]
 
 ["browser_aboutdebugging_addons_temporary_install_path.js"]
+skip-if = [
+  "debug && standalone", # Bug 2026756
+]
 
 ["browser_aboutdebugging_addons_temporary_reload_error.js"]
 
@@ -88,10 +91,14 @@ tags = "webextensions"
 ["browser_aboutdebugging_connection_prompt_setting.js"]
 
 ["browser_aboutdebugging_debug-target-pane_collapsibilities_interaction.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_aboutdebugging_debug-target-pane_collapsibilities_preference.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_aboutdebugging_debug-target-pane_empty.js"]
 
@@ -120,16 +127,25 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_aboutdebugging_devtoolstoolbox_navigate_to_url.js"]
 
 ["browser_aboutdebugging_devtoolstoolbox_reload.js"]
-skip-if = ["verify"] # test loads the toolbox 2 times for each panel, might timeout or OOM
+skip-if = [
+  "verify", # test loads the toolbox 2 times for each panel, might timeout or OOM
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2019466
+]
 
 ["browser_aboutdebugging_devtoolstoolbox_shortcuts.js"]
 
 ["browser_aboutdebugging_devtoolstoolbox_splitconsole_key.js"]
 
 ["browser_aboutdebugging_devtoolstoolbox_target_destroyed.js"]
+skip-if = [
+  "os == 'win' && opt && standalone", # Bug 2026757
+  "debug && standalone", # Bug 2026757
+]
 
 ["browser_aboutdebugging_devtoolstoolbox_tooltip_markupview.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_aboutdebugging_devtoolstoolbox_zoom.js"]
 
@@ -153,7 +169,9 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 
 ["browser_aboutdebugging_profiler_dialog.js"]
 support-files = ["!/devtools/client/performance-new/test/browser/helpers.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_aboutdebugging_real_usb_runtime_page_runtime_info.js"]
 
@@ -191,8 +209,8 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 
 ["browser_aboutdebugging_serviceworker_start.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && tsan", # Bug 1947358
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && tsan", # Bug 1947358
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # Bug 1947358
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1980084
 ]
 
 ["browser_aboutdebugging_serviceworker_status.js"]

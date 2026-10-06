@@ -1,0 +1,49 @@
+<!doctype html>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<html data-l10n-sync="true">
+  <head>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src chrome:; object-src 'none'"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <title data-l10n-id="restricted-page-title"></title>
+    <link
+      rel="stylesheet"
+      href="chrome://global/content/aboutRestricted/aboutRestricted.css"
+      type="text/css"
+      media="all"
+    />
+    <link
+      rel="icon"
+      id="favicon"
+      href="chrome://global/skin/icons/warning.svg"
+    />
+    <link rel="localization" href="branding/brand.ftl" />
+    <link rel="localization" href="locales-preview/aboutRestricted.ftl" />
+  </head>
+  <body>
+    <div class="container">
+      <div id="text-container">
+        <div class="title">
+          <h1 class="title-text" data-l10n-id="restricted-page-heading"></h1>
+        </div>
+        <p id="errorShortDesc" data-l10n-id="restricted-page-explain-what"></p>
+        <p id="errorShortDesc2" data-l10n-id="restricted-page-explain-why"></p>
+      </div>
+      <div class="button-container">
+        <button
+          id="goBack"
+          class="primary"
+          data-l10n-id="restricted-go-back-button"
+        ></button>
+      </div>
+    </div>
+    <script
+      type="module"
+      src="chrome://global/content/aboutRestricted/aboutRestricted.mjs"
+    ></script>
+  </body>
+</html>

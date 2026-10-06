@@ -65,6 +65,26 @@ for commit in $COMMITS; do
   fi
 
   CHERRY_PICK_COMMIT=`git show $commit | grep "cherry picked from commit" | tr -d "()" | awk '{ print $5; }'`
+
+  # I didn't think this was possible due to the automated tooling on
+  # Google's end, but upstream commit
+  # 847fe7905954f3ae883de2936415ff567aa9039b lists that it cherry-picks
+  # 602b06b1125ea4d107fbfbda7d314b4157c4c74b.  However,
+  # 602b06b1125ea4d107fbfbda7d314b4157c4c74b doesn't exist in the repo.
+  # That means we need to verify that we have a valid commit before
+  # processing further.  If not found we'll add it to the list of
+  # commits that need manual intervention/verification.
+  CHERRY_PICK_COMMIT_FOUND=`(git cat-file -e $CHERRY_PICK_COMMIT && echo "commit-found") || true`
+  if [ "x$CHERRY_PICK_COMMIT_FOUND" != "xcommit-found" ]; then
+    # record the commit to list at the end of this script as
+    # 'needing intervention'
+    echo "    cherry-pick sha ($CHERRY_PICK_COMMIT) in commit message,"
+    echo "    but, the sha is not found in the libwebrtc repo."
+    echo "    skipping commit $commit"
+    echo "$commit" >> $MANUAL_INTERVENTION_COMMIT_FILE
+    continue
+  fi
+
   SHORT_SHA=`git show --name-only $CHERRY_PICK_COMMIT --format='%h' | head -1`
   echo "    commit $commit cherry-picks $SHORT_SHA"
 
@@ -117,6 +137,26 @@ for commit in $NEW_COMMITS; do
   fi
 
   CHERRY_PICK_COMMIT=`git show $commit | grep "cherry picked from commit" | tr -d "()" | awk '{ print $5; }'`
+
+  # I didn't think this was possible due to the automated tooling on
+  # Google's end, but upstream commit
+  # 847fe7905954f3ae883de2936415ff567aa9039b lists that it cherry-picks
+  # 602b06b1125ea4d107fbfbda7d314b4157c4c74b.  However,
+  # 602b06b1125ea4d107fbfbda7d314b4157c4c74b doesn't exist in the repo.
+  # That means we need to verify that we have a valid commit before
+  # processing further.  If not found we'll add it to the list of
+  # commits that need manual intervention/verification.
+  CHERRY_PICK_COMMIT_FOUND=`(git cat-file -e $CHERRY_PICK_COMMIT && echo "commit-found") || true`
+  if [ "x$CHERRY_PICK_COMMIT_FOUND" != "xcommit-found" ]; then
+    # record the commit to list at the end of this script as
+    # 'needing intervention'
+    echo "    cherry-pick sha ($CHERRY_PICK_COMMIT) found in commit"
+    echo "    message, but the sha is not found in the libwebrtc repo."
+    echo "    skipping commit $commit"
+    echo "$commit" >> $MANUAL_INTERVENTION_COMMIT_FILE
+    continue
+  fi
+
   SHORT_SHA=`git show --name-only $CHERRY_PICK_COMMIT --format='%h' | head -1`
 
   # The trick here is that we only want to include no-op processing for the
@@ -143,6 +183,10 @@ verify the source of the cherry-pick or there may be errors
 reported during the fast-forward processing.  Without this
 intervention, the common symptom is that the vendored commit
 file count (0) will not match the upstream commit file count.
+
+In some cases, these commits may be listed because invalid
+cherry-pick info (not simply missing info) is present in the
+commit message.
 "
 
 for commit in `cat $MANUAL_INTERVENTION_COMMIT_FILE`; do

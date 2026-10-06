@@ -21,8 +21,6 @@ task-defaults:
         checkout:
             nss:
                 path: nss
-            nspr:
-                path: nspr
     worker:
         max-run-time: 3600
 

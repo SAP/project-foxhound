@@ -21,11 +21,11 @@ export const OpenInTabsUtils = {
    */
   confirmOpenInTabs(numTabsToOpen, aWindow) {
     const WARN_ON_OPEN_PREF = "browser.tabs.warnOnOpen";
-    const MAX_OPNE_PREF = "browser.tabs.maxOpenBeforeWarn";
+    const MAX_OPEN_PREF = "browser.tabs.maxOpenBeforeWarn";
     if (!Services.prefs.getBoolPref(WARN_ON_OPEN_PREF)) {
       return true;
     }
-    if (numTabsToOpen < Services.prefs.getIntPref(MAX_OPNE_PREF)) {
+    if (numTabsToOpen < Services.prefs.getIntPref(MAX_OPEN_PREF)) {
       return true;
     }
 

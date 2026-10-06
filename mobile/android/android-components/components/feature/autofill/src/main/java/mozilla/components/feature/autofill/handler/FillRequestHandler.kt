@@ -7,10 +7,8 @@ package mozilla.components.feature.autofill.handler
 import android.annotation.SuppressLint
 import android.app.assist.AssistStructure
 import android.content.Context
-import android.os.Build
 import android.service.autofill.FillRequest
 import android.service.autofill.FillResponse
-import androidx.annotation.RequiresApi
 import mozilla.components.feature.autofill.AutofillConfiguration
 import mozilla.components.feature.autofill.facts.emitAutofillRequestFact
 import mozilla.components.feature.autofill.response.dataset.DatasetBuilder
@@ -32,7 +30,6 @@ internal const val MAX_LOGINS = 10
 /**
  * Class responsible for handling [FillRequest]s and returning [FillResponse]s.
  */
-@RequiresApi(Build.VERSION_CODES.O)
 internal class FillRequestHandler(
     private val context: Context,
     private val configuration: AutofillConfiguration,

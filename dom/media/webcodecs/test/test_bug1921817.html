@@ -7,9 +7,6 @@
 </head>
 <body>
 <script>
-// Bug 1924775 - ESLint doesn't yet know about `ImageDecoder`.
-/* globals ImageDecoder:false */
-
 async function test() {
   const imgResponse = await fetch("bug1921817.jpg");
   const decoder = new ImageDecoder({

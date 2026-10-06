@@ -20,4 +20,11 @@ interface nsIMLUtils : nsISupports {
    */
   octet getOptimalCPUConcurrency();
 
+  /**
+   * Checks llama.cpp is usable. This always returns true on aarch64.
+   *
+   * CPUs that don't support AVX2 return false.
+   */
+  boolean canUseLlamaCpp();
+
 };

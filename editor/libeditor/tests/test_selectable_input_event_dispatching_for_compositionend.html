@@ -1,0 +1,108 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Test for block list of dispatching `input` event around `compositionend`</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/EventUtils.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css">
+<script>
+"use strict";
+
+SimpleTest.waitForExplicitFinish();
+SimpleTest.waitForFocus(async () => {
+  for (const pref of [
+    "editor.texteditor.inputevent.hack.no_dispatch_before_compositionend",
+    "editor.htmleditor.inputevent.hack.no_dispatch_before_compositionend",
+    "editor.texteditor.inputevent.hack.no_dispatch_before_compositionend.addl",
+    "editor.htmleditor.inputevent.hack.no_dispatch_before_compositionend.addl",
+    "editor.texteditor.inputevent.hack.no_dispatch_after_compositionend",
+    "editor.htmleditor.inputevent.hack.no_dispatch_after_compositionend",
+    "editor.texteditor.inputevent.hack.no_dispatch_after_compositionend.addl",
+    "editor.htmleditor.inputevent.hack.no_dispatch_after_compositionend.addl",
+  ]) {
+    for (const selector of ["input", "textarea", "div[contenteditable]"]) {
+      const element = document.querySelector(selector);
+      const isTextEditor = !selector.includes("[contenteditable]");
+      if (isTextEditor) {
+        element.value = "";
+      } else {
+        element.innerHTML = "<br>";
+      }
+      element.focus();
+      synthesizeCompositionChange({
+        composition: {
+          string: "abc",
+          clauses: [
+            { length: 3, attr: COMPOSITION_ATTR_RAW_CLAUSE },
+          ]
+        },
+        caret: {
+          start: 3,
+          length: 0,
+        }
+      });
+      const events = [];
+      function recordEvent(aEvent) {
+        events.push(aEvent);
+      }
+      element.addEventListener("compositionend", recordEvent);
+      element.addEventListener("input", recordEvent);
+
+      await SpecialPowers.pushPrefEnv({
+        set: [[pref, document.domain]],
+      });
+      synthesizeComposition({type: "compositioncommitasis"});
+      await SpecialPowers.clearUserPref(pref);
+
+      element.removeEventListener("compositionend", recordEvent);
+      element.removeEventListener("input", recordEvent);
+
+      const expectInputBeforeCompositionEnd =
+        !pref.startsWith(
+          `editor.${isTextEditor ? "texteditor" : "htmleditor"}.inputevent.hack.no_dispatch_before_compositionend`
+        );
+      const expectInputAfterCompositionEnd =
+        !pref.startsWith(
+          `editor.${isTextEditor ? "texteditor" : "htmleditor"}.inputevent.hack.no_dispatch_after_compositionend`
+        );
+      const expectedEvents = [];
+      if (expectInputBeforeCompositionEnd) {
+        expectedEvents.push({type: "input", inputType: "insertCompositionText", isComposing: true});
+      }
+      expectedEvents.push({type: "compositionend"});
+      if (expectInputAfterCompositionEnd) {
+        expectedEvents.push({type: "input", inputType: "insertCompositionText", isComposing: false});
+      }
+      function stringifyEvents(aEvents) {
+        function stringifyEvent(aEvent) {
+          return aEvent.type == "input"
+            ? `input(inputType=${aEvent.inputType},isComposing=${aEvent.isComposing})`
+            : aEvent.type;
+        }
+        let ret = "[";
+        for (const e of aEvents) {
+          if (ret != "[") {
+            ret += ","
+          }
+          ret += stringifyEvent(e);
+        }
+        return ret + "]";
+      }
+      is(
+        stringifyEvents(events),
+        stringifyEvents(expectedEvents),
+        `Events should be dispatched as expected on ${selector} when ${pref} has current domain`
+      );
+    }
+  }
+  SimpleTest.finish();
+});
+</script>
+</head>
+<body>
+  <input>
+  <textarea></textarea>
+  <div contenteditable><br></div>
+</body>
+</html>

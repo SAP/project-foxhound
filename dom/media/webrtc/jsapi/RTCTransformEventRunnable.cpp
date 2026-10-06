@@ -1,30 +1,28 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "RTCTransformEventRunnable.h"
 
-#include "nsIGlobalObject.h"
 #include "ErrorList.h"
-#include "nsError.h"
-#include "nsDebug.h"
-#include "nsLiteralString.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/RefPtr.h"
+#include "nsDebug.h"
+#include "nsError.h"
+#include "nsIGlobalObject.h"
+#include "nsLiteralString.h"
 // This needs to come before RTCTransformEvent.h, since webidl codegen doesn't
 // include-what-you-use or forward declare.
-#include "mozilla/dom/RTCRtpScriptTransformer.h"
-#include "mozilla/dom/RTCTransformEvent.h"
-#include "mozilla/dom/RTCTransformEventBinding.h"
-#include "mozilla/dom/EventWithOptionsRunnable.h"
-#include "mozilla/dom/Event.h"
-#include "mozilla/dom/EventTarget.h"
-#include "mozilla/dom/RootedDictionary.h"
 #include "js/RootingAPI.h"
 #include "js/Value.h"
 #include "libwebrtcglue/FrameTransformerProxy.h"
+#include "mozilla/dom/Event.h"
+#include "mozilla/dom/EventTarget.h"
+#include "mozilla/dom/EventWithOptionsRunnable.h"
+#include "mozilla/dom/RTCRtpScriptTransformer.h"
+#include "mozilla/dom/RTCTransformEvent.h"
+#include "mozilla/dom/RTCTransformEventBinding.h"
+#include "mozilla/dom/RootedDictionary.h"
 
 namespace mozilla::dom {
 
@@ -55,8 +53,7 @@ already_AddRefed<Event> RTCTransformEventRunnable::BuildEvent(
   // Set transformer.[[readable]] to readable.
 
   // Set transformer.[[writable]] to writable.
-  RefPtr<RTCRtpScriptTransformer> transformer =
-      new RTCRtpScriptTransformer(aGlobal);
+  RefPtr transformer = MakeRefPtr<RTCRtpScriptTransformer>(aGlobal);
   nsresult nrv = transformer->Init(aCx, aTransformerOptions,
                                    GetCurrentThreadWorkerPrivate(), mProxy);
   if (NS_WARN_IF(NS_FAILED(nrv))) {

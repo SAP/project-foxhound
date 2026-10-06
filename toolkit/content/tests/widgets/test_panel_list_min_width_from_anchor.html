@@ -72,8 +72,8 @@
 
         panelWidth = panelList.getBoundingClientRect().width;
         is(
-          anchorWidth,
           panelWidth,
+          Math.round(anchorWidth),
           "With min-width-from-anchor, panel should have anchor width."
         );
 

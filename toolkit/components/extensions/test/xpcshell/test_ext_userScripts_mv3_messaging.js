@@ -28,7 +28,6 @@ async function grantUserScriptsPermission(extensionId) {
 }
 
 add_setup(async () => {
-  Services.prefs.setBoolPref("extensions.userScripts.mv3.enabled", true);
   await ExtensionTestUtils.startAddonManager();
 });
 

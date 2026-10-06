@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,8 +5,8 @@
 #include "WebGLSync.h"
 
 #include "GLContext.h"
-#include "mozilla/dom/WebGL2RenderingContextBinding.h"
 #include "WebGLContext.h"
+#include "mozilla/dom/WebGL2RenderingContextBinding.h"
 
 namespace mozilla {
 
@@ -21,12 +20,14 @@ WebGLSync::WebGLSync(WebGLContext* webgl, GLenum condition, GLbitfield flags)
 WebGLSync::~WebGLSync() {
   if (!mContext) return;
   mContext->gl->fDeleteSync(mGLName);
+  mGLName = 0;
 }
 
 ClientWaitSyncResult WebGLSync::ClientWaitSync(const GLbitfield flags,
                                                const GLuint64 timeout) {
   if (!mContext) return ClientWaitSyncResult::WAIT_FAILED;
   if (IsKnownComplete()) return ClientWaitSyncResult::ALREADY_SIGNALED;
+  if (!mGLName) return ClientWaitSyncResult::WAIT_FAILED;
 
   auto ret = ClientWaitSyncResult::WAIT_FAILED;
   bool newlyComplete = false;

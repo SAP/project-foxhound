@@ -1,0 +1,28 @@
+---
+$schema: moz://mozilla.org/schemas/glean/pings/2-0-0
+
+gecko-trace:
+  description: >
+    A telemetry ping that transmits distributed tracing data collected during
+    Firefox browser operation from the gecko-trace component. This ping contains
+    OpenTelemetry-compatible spans, events, and their associated attributes
+    captured by the GeckoTrace instrumentation component.
+  include_client_id: false
+  send_if_empty: false
+  notification_emails:
+    - mvanstraten@mozilla.com
+  bugs:
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=1930954
+  data_reviews:
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=1930954
+  reasons:
+    # This reason is currently never triggered
+    idle: |
+      Sent when the user has been idle for a configured period, allowing
+      trace data collection to be transmitted during periods of low activity.
+    buffer_full: |
+      Sent when the internal trace buffer has reached its capacity limit and
+      needs to be flushed to prevent data loss.
+    shutdown: |
+      Sent during Firefox shutdown to capture any remaining trace data before
+      the browser exits.

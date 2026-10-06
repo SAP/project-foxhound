@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -109,8 +107,8 @@ function getTagRoot() {
  * in aTags.  aTags may be empty, in which case this function ensures that no
  * tags exist.
  *
- * @param aTags
- *        An array of tags (strings)
+ * @param {string[]} aTags
+ *   An array of tags.
  */
 function ensureTagsExist(aTags) {
   var query = histsvc.getNewQuery();

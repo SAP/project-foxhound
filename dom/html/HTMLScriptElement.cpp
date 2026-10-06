@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,33 +5,34 @@
  * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
  */
 
-#include "nsAttrValue.h"
-#include "nsAttrValueOrString.h"
-#include "nsGenericHTMLElement.h"
-#include "nsGkAtoms.h"
-#include "nsStyleConsts.h"
-#include "mozilla/dom/Document.h"
-#include "nsAttrValueOrString.h"
-#include "nsNetUtil.h"
-#include "nsContentUtils.h"
-#include "nsUnicharUtils.h"  // for nsCaseInsensitiveStringComparator()
-#include "nsIScriptContext.h"
-#include "nsIScriptGlobalObject.h"
-#include "nsServiceManagerUtils.h"
-#include "nsError.h"
-#include "nsTArray.h"
-#include "nsDOMJSUtils.h"
-#include "nsIScriptError.h"
-#include "nsISupportsImpl.h"
-#include "nsDOMTokenList.h"
-#include "nsTaintingUtils.h"
-#include "mozilla/dom/FetchPriority.h"
+
+
 #include "mozilla/dom/HTMLScriptElement.h"
+
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/HTMLScriptElementBinding.h"
 #include "mozilla/dom/TrustedTypeUtils.h"
 #include "mozilla/dom/TrustedTypesConstants.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/StaticPrefs_dom.h"
+#include "nsAttrValue.h"
+#include "nsAttrValueOrString.h"
+#include "nsContentUtils.h"
+#include "nsDOMJSUtils.h"
+#include "nsDOMTokenList.h"
+#include "nsError.h"
+#include "nsGenericHTMLElement.h"
+#include "nsGkAtoms.h"
+#include "nsIScriptContext.h"
+#include "nsIScriptError.h"
+#include "nsIScriptGlobalObject.h"
+#include "nsISupportsImpl.h"
+#include "nsNetUtil.h"
+#include "nsServiceManagerUtils.h"
+#include "nsStyleConsts.h"
+#include "nsTaintingUtils.h"
+#include "nsTArray.h"
+#include "nsUnicharUtils.h"  // for nsCaseInsensitiveStringComparator()
 
 NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(Script)
 
@@ -47,8 +46,7 @@ JSObject* HTMLScriptElement::WrapNode(JSContext* aCx,
 }
 
 HTMLScriptElement::HTMLScriptElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
-    FromParser aFromParser)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo, FromParser aFromParser)
     : nsGenericHTMLElement(std::move(aNodeInfo)), ScriptElement(aFromParser) {
   AddMutationObserver(this);
 }
@@ -70,7 +68,7 @@ nsresult HTMLScriptElement::BindToTree(BindContext& aContext,
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (IsInComposedDoc()) {
-    MaybeProcessScript();
+    MaybeProcessScript(nullptr /* aParser */);
   }
 
   return NS_OK;
@@ -128,14 +126,15 @@ nsresult HTMLScriptElement::Clone(dom::NodeInfo* aNodeInfo,
   return NS_OK;
 }
 
-void HTMLScriptElement::SetTextContentInternal(const nsAString& aTextContent,
-  nsIPrincipal* aSubjectPrincipal,
-  ErrorResult& aError) {
-    if(aTextContent.isTainted()) {
-      ReportTaintSink(aTextContent, "script.textContent", this);
-    }
-    FragmentOrElement::SetTextContentInternal(aTextContent, aSubjectPrincipal, aError);
+void HTMLScriptElement::SetTextContentInternal(
+    const nsAString& aTextContent, nsIPrincipal* aSubjectPrincipal,
+    ErrorResult& aError, MutationEffectOnScript aMutationEffectOnScript) {
+  if (aTextContent.isTainted()) {
+    ReportTaintSink(aTextContent, "script.textContent", this);
   }
+  FragmentOrElement::SetTextContentInternal(aTextContent, aSubjectPrincipal,
+                                            aError, aMutationEffectOnScript);
+}
 
 nsresult HTMLScriptElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                                   const nsAString& aValue) {
@@ -156,8 +155,7 @@ void HTMLScriptElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
   }
   if (nsGkAtoms::src == aName && kNameSpaceID_None == aNamespaceID) {
     mSrcTriggeringPrincipal = nsContentUtils::GetAttrTriggeringPrincipal(
-        this, aValue ? aValue->GetStringValue() : EmptyString(),
-        aMaybeScriptedPrincipal);
+        this, nsAttrValueOrString(aValue).String(), aMaybeScriptedPrincipal);
   }
   return nsGenericHTMLElement::AfterSetAttr(
       aNamespaceID, aName, aValue, aOldValue, aMaybeScriptedPrincipal, aNotify);
@@ -176,6 +174,8 @@ void HTMLScriptElement::GetInnerHTML(nsAString& aInnerHTML,
 void HTMLScriptElement::SetInnerHTMLTrusted(const nsAString& aInnerHTML,
                                             nsIPrincipal* aSubjectPrincipal,
                                             ErrorResult& aError) {
+  // aInnerHTML is trusted HTML, but not trusted script so we must not preserve
+  // trustworthiness.
   aError = nsContentUtils::SetNodeTextContent(this, aInnerHTML, true);
   // Foxhound: script.innerHTML sink
   ReportTaintSink(aInnerHTML, "script.innerHTML", this); 
@@ -208,9 +208,11 @@ void HTMLScriptElement::SetText(const TrustedScriptOrString& aValue,
   }
 
   // Foxhound: script.text sink
-  ReportTaintSink(*compliantString, "script.text", this);      
+  ReportTaintSink(*compliantString, "script.text", this);
 
-  aRv = nsContentUtils::SetNodeTextContent(this, *compliantString, true);
+  aRv = nsContentUtils::SetNodeTextContent(
+      this, *compliantString, true,
+      MutationEffectOnScript::KeepTrustWorthiness);
 }
 
 void HTMLScriptElement::GetInnerText(
@@ -220,7 +222,7 @@ void HTMLScriptElement::GetInnerText(
   if (aError.Failed()) {
     return;
   }
-  aValue.SetAsNullIsEmptyString() = innerText.AsAString();
+  aValue.SetAsNullIsEmptyString() = std::move(innerText);
 }
 
 void HTMLScriptElement::SetInnerText(
@@ -236,7 +238,8 @@ void HTMLScriptElement::SetInnerText(
   if (aError.Failed()) {
     return;
   }
-  nsGenericHTMLElement::SetInnerText(*compliantString);
+  nsGenericHTMLElement::SetInnerTextInternal(
+      *compliantString, MutationEffectOnScript::KeepTrustWorthiness);
 }
 
 void HTMLScriptElement::GetTrustedScriptOrStringTextContent(
@@ -264,7 +267,8 @@ void HTMLScriptElement::SetTrustedScriptOrStringTextContent(
   if (aError.Failed()) {
     return;
   }
-  SetTextContentInternal(*compliantString, aSubjectPrincipal, aError);
+  SetTextContentInternal(*compliantString, aSubjectPrincipal, aError,
+                         MutationEffectOnScript::KeepTrustWorthiness);
 }
 
 void HTMLScriptElement::GetSrc(OwningTrustedScriptURLOrUSVString& aSrc) {
@@ -320,18 +324,18 @@ void HTMLScriptElement::FreezeExecutionAttrs(const Document* aOwnerDoc) {
                                                 OwnerDoc(), GetBaseURI());
 
       if (!mUri) {
-        AutoTArray<nsString, 2> params = {u"src"_ns, src};
+        AutoTArray<nsString, 2> params = {u"src"_ns, std::move(src)};
 
         nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "HTML"_ns,
                                         OwnerDoc(),
-                                        nsContentUtils::eDOM_PROPERTIES,
+                                        PropertiesFile::DOM_PROPERTIES,
                                         "ScriptSourceInvalidUri", params, loc);
       }
     } else {
       AutoTArray<nsString, 1> params = {u"src"_ns};
       nsContentUtils::ReportToConsole(
           nsIScriptError::warningFlag, "HTML"_ns, OwnerDoc(),
-          nsContentUtils::eDOM_PROPERTIES, "ScriptSourceEmpty", params, loc);
+          PropertiesFile::DOM_PROPERTIES, "ScriptSourceEmpty", params, loc);
     }
 
     // At this point mUri will be null for invalid URLs.

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +5,7 @@
 #ifndef DOM_SMIL_SMILKEYSPLINE_H_
 #define DOM_SMIL_SMILKEYSPLINE_H_
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/PodOperations.h"
+#include <cstdint>
 
 namespace mozilla {
 
@@ -96,10 +93,11 @@ class SMILKeySpline {
     double mX2;
     double mY2;
 
-    enum { kSplineTableSize = 11 };
+    static constexpr uint32_t kSplineTableSize = 11;
     double mSampleValues[kSplineTableSize] = {};
 
-    static const double kSampleStepSize;
+    static constexpr double kSampleStepSize =
+        1.0 / double(kSplineTableSize - 1);
 };
 
 }  // namespace mozilla

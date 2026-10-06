@@ -161,13 +161,14 @@ ServerWBO.prototype = {
           response.newModified = self.modified;
           break;
 
-        case "DELETE":
+        case "DELETE": {
           self.delete();
           let ts = new_timestamp();
           body = JSON.stringify(ts);
           response.setHeader("Content-Type", "application/json");
           response.newModified = ts;
           break;
+        }
       }
       response.setHeader("X-Weave-Timestamp", "" + new_timestamp(), false);
       response.setStatusLine(request.httpVersion, statusCode, status);
@@ -214,7 +215,6 @@ ServerWBO.prototype = {
  *        collection. This should be in the format returned by new_timestamp().
  *
  * @return the new ServerCollection instance.
- *
  */
 function ServerCollection(wbos, acceptNew, timestamp) {
   this._wbos = wbos || {};
@@ -545,7 +545,7 @@ ServerCollection.prototype = {
       }
 
       switch (request.method) {
-        case "GET":
+        case "GET": {
           body = self.get(options, request);
           // see http://moz-services-docs.readthedocs.io/en/latest/storage/apis-1.5.html
           // for description of these headers.
@@ -560,8 +560,9 @@ ServerCollection.prototype = {
           }
           response.setHeader("X-Last-Modified", "" + self.timestamp);
           break;
+        }
 
-        case "POST":
+        case "POST": {
           let res = self.post(
             readBytesFromInputStream(request.bodyInputStream),
             request
@@ -569,8 +570,9 @@ ServerCollection.prototype = {
           body = JSON.stringify(res);
           response.newModified = res.modified;
           break;
+        }
 
-        case "DELETE":
+        case "DELETE": {
           self._log.debug("Invoking ServerCollection.DELETE.");
           let deleted = self.delete(options, request);
           let ts = new_timestamp();
@@ -578,6 +580,7 @@ ServerCollection.prototype = {
           response.newModified = ts;
           response.deleted = deleted;
           break;
+        }
       }
       response.setHeader("X-Weave-Timestamp", "" + new_timestamp(), false);
 
@@ -762,7 +765,6 @@ SyncServer.prototype = {
    *
    * @param cb
    *        A callback function. Invoked after the server has been stopped.
-   *
    */
   stop: function stop(cb) {
     if (!this.started) {
@@ -1230,12 +1232,13 @@ SyncServer.prototype = {
 
     info: function handleInfo(handler, req, resp, version, username, rest) {
       switch (rest) {
-        case "collections":
+        case "collections": {
           let body = JSON.stringify(this.infoCollections(username));
           this.respond(req, resp, 200, "OK", body, {
             "Content-Type": "application/json",
           });
           return;
+        }
         case "collection_usage":
         case "collection_counts":
         case "quota":

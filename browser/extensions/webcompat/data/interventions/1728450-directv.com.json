@@ -1,0 +1,15 @@
+{
+  "label": "directv.com",
+  "bugs": {
+    "1728450": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.directv.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

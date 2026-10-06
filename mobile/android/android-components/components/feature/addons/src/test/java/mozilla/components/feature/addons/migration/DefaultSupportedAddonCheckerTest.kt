@@ -16,15 +16,13 @@ import androidx.work.testing.WorkManagerTestInitHelper
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertFalse
 import junit.framework.TestCase.assertTrue
+import kotlinx.coroutines.test.runTest
 import mozilla.components.feature.addons.migration.DefaultSupportedAddonsChecker.Companion.CHECKER_UNIQUE_PERIODIC_WORK_NAME
 import mozilla.components.feature.addons.migration.DefaultSupportedAddonsChecker.Companion.WORK_TAG_PERIODIC
 import mozilla.components.support.base.worker.Frequency
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.ArgumentMatchers
@@ -34,9 +32,6 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class DefaultSupportedAddonCheckerTest {
-
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
 
     lateinit var context: Context
 
@@ -56,7 +51,7 @@ class DefaultSupportedAddonCheckerTest {
     }
 
     @Test
-    fun `registerForChecks - schedule work for future checks`() = runTestOnMain {
+    fun `registerForChecks - schedule work for future checks`() = runTest {
         val frequency = Frequency(1, TimeUnit.DAYS)
         val checker = DefaultSupportedAddonsChecker(context, frequency)
 
@@ -75,7 +70,7 @@ class DefaultSupportedAddonCheckerTest {
     }
 
     @Test
-    fun `unregisterForChecks - will remove scheduled work for future checks`() = runTestOnMain {
+    fun `unregisterForChecks - will remove scheduled work for future checks`() = runTest {
         val frequency = Frequency(1, TimeUnit.DAYS)
         val checker = DefaultSupportedAddonsChecker(context, frequency)
 

@@ -14,9 +14,9 @@ As of now, there is no easy way to do this. Raptor was not built for debugging f
 To debug a functional failure in Raptor you can follow these steps:
 
 #. If bug 1653617 has not landed yet, apply the patch.
-#. Add the --verbose flag to the extra-options list `here <https://searchfox.org/mozilla-central/source/taskcluster/kinds/test/raptor.yml#98-101>`__.
-#. If the --setenv doesn't exist yet (`bug 1494669 <https://bugzilla.mozilla.org/show_bug.cgi?id=1494669>`_), then add your MOZ_LOG environment variables to enable additional logging `here <https://searchfox.org/mozilla-central/source/testing/raptor/raptor/webextension/desktop.py#42>`_.
-#. If the flag does exist, then you can add the MOZ_LOG variables to the `raptor.yml <https://searchfox.org/mozilla-central/source/taskcluster/kinds/test/raptor.yml>`_ configuration file.
+#. Add the --verbose flag to the extra-options list :searchfox:`here <taskcluster/kinds/test/raptor.yml#98-101>`.
+#. If the --setenv doesn't exist yet (`bug 1494669 <https://bugzilla.mozilla.org/show_bug.cgi?id=1494669>`_), then add your MOZ_LOG environment variables to enable additional logging :searchfox:`here <testing/raptor/raptor/webextension/desktop.py#42>`.
+#. If the flag does exist, then you can add the MOZ_LOG variables to the :searchfox:`raptor.yml <taskcluster/kinds/test/raptor.yml>` configuration file.
 #. Push to try if you cannot reproduce the failure locally.
 
 You can follow `bug 1655554 <https://bugzilla.mozilla.org/show_bug.cgi?id=1655554>`_ as we work on improving this workflow.
@@ -26,7 +26,7 @@ In some cases, you might not be able to get logging for what you are debugging (
 Debugging the Raptor Web Extension
 **********************************
 
-When developing on Raptor and debugging, there's often a need to look at the output coming from the `Raptor Web Extension <https://searchfox.org/mozilla-central/source/testing/raptor/webext/raptor>`_. Here are some pointers to help.
+When developing on Raptor and debugging, there's often a need to look at the output coming from the :searchfox:`Raptor Web Extension <testing/raptor/webext/raptor>`. Here are some pointers to help.
 
 Raptor Debug Mode
 -----------------
@@ -54,7 +54,7 @@ Running Raptor with debug mode will:
 Manual Debugging on Firefox Desktop
 -----------------------------------
 
-The main Raptor runner is '`runner.js <https://searchfox.org/mozilla-central/source/testing/raptor/webext/raptor/runner.js>`_' which is inside the web extension. The code that actually captures the performance measures is in the web extension content code '`measure.js <https://searchfox.org/mozilla-central/source/testing/raptor/webext/raptor/measure.js>`_'.
+The main Raptor runner is ':searchfox:`runner.js <testing/raptor/webext/raptor/runner.js>`' which is inside the web extension. The code that actually captures the performance measures is in the web extension content code ':searchfox:`measure.js <testing/raptor/webext/raptor/measure.js>`'.
 
 In order to retrieve the console.log() output from the Raptor runner, do the following:
 
@@ -71,10 +71,10 @@ To retrieve the console.log() output from the Raptor content 'measure.js' code:
 
 Raptor automatically closes the test tab and the entire browser after test completion; which will close any open debug consoles. In order to have more time to review the console logs, Raptor can be temporarily hacked locally in order to prevent the test tab and browser from being closed. Currently this must be done manually, as follows:
 
-#. In the Raptor web extension runner, comment out the line that closes the test tab in the test clean-up. That line of `code is here <https://searchfox.org/mozilla-central/rev/3c85ea2f8700ab17e38b82d77cd44644b4dae703/testing/raptor/webext/raptor/runner.js#357>`_.
-#. Add a return statement at the top of the Raptor control server method that shuts-down the browser, the browser shutdown `method is here <https://searchfox.org/mozilla-central/rev/924e3d96d81a40d2f0eec1db5f74fc6594337128/testing/raptor/raptor/control_server.py#120>`_.
+#. In the Raptor web extension runner, comment out the line that closes the test tab in the test clean-up. That line of :searchfox:`code is here <mozilla-central/rev/3c85ea2f8700ab17e38b82d77cd44644b4dae703:testing/raptor/webext/raptor/runner.js#357>`.
+#. Add a return statement at the top of the Raptor control server method that shuts-down the browser, the browser shutdown :searchfox:`method is here <mozilla-central/rev/924e3d96d81a40d2f0eec1db5f74fc6594337128:testing/raptor/raptor/control_server.py#120>`.
 
-For **benchmark type tests** (i.e. speedometer, motionmark, etc.) Raptor doesn't inject 'measure.js' into the test page content; instead it injects '`benchmark-relay.js <https://searchfox.org/mozilla-central/source/testing/raptor/webext/raptor/benchmark-relay.js>`_' into the benchmark test content. Benchmark-relay is as it sounds; it basically relays the test results coming from the benchmark test, to the Raptor web extension runner. Viewing the console.log() output from benchmark-relay is done the same was as noted for the 'measure.js' content above.
+For **benchmark type tests** (i.e. speedometer, motionmark, etc.) Raptor doesn't inject 'measure.js' into the test page content; instead it injects ':searchfox:`benchmark-relay.js <testing/raptor/webext/raptor/benchmark-relay.js>`' into the benchmark test content. Benchmark-relay is as it sounds; it basically relays the test results coming from the benchmark test, to the Raptor web extension runner. Viewing the console.log() output from benchmark-relay is done the same was as noted for the 'measure.js' content above.
 
 Note, `Bug 1470450 <https://bugzilla.mozilla.org/show_bug.cgi?id=1470450>`_ is on file to add a debug mode to Raptor that will automatically grab the web extension console output and dump it to the terminal (if possible) that will make debugging much easier.
 

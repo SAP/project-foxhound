@@ -12,7 +12,7 @@ add_task(async function () {
   let menubar = document.getElementById("toolbar-menubar");
   // Force the menu to be shown.
   const kAutohide = menubar.getAttribute("autohide");
-  menubar.setAttribute("autohide", "false");
+  menubar.removeAttribute("autohide");
   simulateItemDrag(menuItems, CustomizableUI.getCustomizationTarget(navbar));
 
   is(

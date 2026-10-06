@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,29 +16,27 @@ namespace mozilla {
 LazyLogModule gDriftControllerGraphsLog("DriftControllerGraphs");
 extern LazyLogModule gMediaTrackGraphLog;
 
-#define LOG_CONTROLLER(level, controller, format, ...)             \
-  MOZ_LOG(gMediaTrackGraphLog, level,                              \
-          ("DriftController %p: (plot-id %u) " format, controller, \
-           (controller)->mPlotId, ##__VA_ARGS__))
-#define LOG_PLOT_NAMES()                                                     \
-  MOZ_LOG(                                                                   \
-      gDriftControllerGraphsLog, LogLevel::Verbose,                          \
-      ("id,t,buffering,avgbuffered,desired,buffersize,inlatency,outlatency," \
-       "inframesavg,outframesavg,inrate,outrate,steadystaterate,"            \
-       "nearthreshold,corrected,hysteresiscorrected,configured"))
-#define LOG_PLOT_VALUES(id, t, buffering, avgbuffered, desired, buffersize, \
-                        inlatency, outlatency, inframesavg, outframesavg,   \
-                        inrate, outrate, steadystaterate, nearthreshold,    \
-                        corrected, hysteresiscorrected, configured)         \
-  MOZ_LOG(gDriftControllerGraphsLog, LogLevel::Verbose,                     \
-          ("DriftController %u,%.3f,%u,%.5f,%" PRId64 ",%u,%" PRId64 ","    \
-           "%" PRId64 ",%.5f,%.5f,%u,%u,"                                   \
-           "%.5f,%" PRId64 ",%.5f,%.5f,"                                    \
-           "%ld",                                                           \
-           id, t, buffering, avgbuffered, desired, buffersize, inlatency,   \
-           outlatency, inframesavg, outframesavg, inrate, outrate,          \
-           steadystaterate, nearthreshold, corrected, hysteresiscorrected,  \
-           configured))
+#define LOG_CONTROLLER(level, controller, format, ...)    \
+  MOZ_LOG_FMT(gMediaTrackGraphLog, level,                 \
+              "DriftController {}: (plot-id {}) " format, \
+              fmt::ptr(controller), (controller)->mPlotId, ##__VA_ARGS__)
+#define LOG_PLOT_NAMES()                                                    \
+  MOZ_LOG_FMT(                                                              \
+      gDriftControllerGraphsLog, LogLevel::Verbose,                         \
+      "id,t,buffering,avgbuffered,desired,buffersize,inlatency,outlatency," \
+      "inframesavg,outframesavg,inrate,outrate,steadystaterate,"            \
+      "nearthreshold,corrected,hysteresiscorrected,configured")
+#define LOG_PLOT_VALUES(id, t, buffering, avgbuffered, desired, buffersize,   \
+                        inlatency, outlatency, inframesavg, outframesavg,     \
+                        inrate, outrate, steadystaterate, nearthreshold,      \
+                        corrected, hysteresiscorrected, configured)           \
+  MOZ_LOG_FMT(gDriftControllerGraphsLog, LogLevel::Verbose,                   \
+              "DriftController {},{:.3f},{},{:.5f},{},{},{},{},{:.5f},"       \
+              "{:.5f},{},{},{:.5f},{},{:.5f},{:.5f},{}",                      \
+              id, t, buffering, avgbuffered, desired, buffersize, inlatency,  \
+              outlatency, inframesavg, outframesavg, inrate, outrate,         \
+              steadystaterate, nearthreshold, corrected, hysteresiscorrected, \
+              configured)
 
 static uint8_t GenerateId() {
   static std::atomic<uint8_t> id{0};
@@ -57,14 +54,15 @@ DriftController::DriftController(uint32_t aSourceRate, uint32_t aTargetRate,
       mMeasuredTargetLatency(5) {
   LOG_CONTROLLER(
       LogLevel::Info, this,
-      "Created. Resampling %uHz->%uHz. Initial desired buffering: %.2fms.",
+      "Created. Resampling {}Hz->{}Hz. Initial desired buffering: {:.2f}ms.",
       mSourceRate, mTargetRate, mDesiredBuffering.ToSeconds() * 1000.0);
   static std::once_flag sOnceFlag;
   std::call_once(sOnceFlag, [] { LOG_PLOT_NAMES(); });
 }
 
 void DriftController::SetDesiredBuffering(media::TimeUnit aDesiredBuffering) {
-  LOG_CONTROLLER(LogLevel::Debug, this, "SetDesiredBuffering %.2fms->%.2fms",
+  LOG_CONTROLLER(LogLevel::Debug, this,
+                 "SetDesiredBuffering {:.2f}ms->{:.2f}ms",
                  mDesiredBuffering.ToSeconds() * 1000.0,
                  aDesiredBuffering.ToSeconds() * 1000.0);
   mLastDesiredBufferingChangeTime = mTotalTargetClock;
@@ -255,9 +253,9 @@ void DriftController::CalculateCorrection(uint32_t aBufferedFrames,
     if (std::lround(mCorrectedSourceRate) != std::lround(cappedRate)) {
       LOG_CONTROLLER(
           LogLevel::Verbose, this,
-          "Updating Correction: Nominal: %uHz->%uHz, Corrected: "
-          "%.2fHz->%uHz  (diff %.2fHz), error: %.2fms (nearThreshold: "
-          "%.2fms), buffering: %.2fms, desired buffering: %.2fms",
+          "Updating Correction: Nominal: {}Hz->{}Hz, Corrected: "
+          "{:.2f}Hz->{}Hz  (diff {:.2f}Hz), error: {:.2f}ms (nearThreshold: "
+          "{:.2f}ms), buffering: {:.2f}ms, desired buffering: {:.2f}ms",
           mSourceRate, mTargetRate, cappedRate, mTargetRate,
           cappedRate - mCorrectedSourceRate,
           media::TimeUnit(CheckedInt64(aBufferedFrames) - desiredBufferedFrames,

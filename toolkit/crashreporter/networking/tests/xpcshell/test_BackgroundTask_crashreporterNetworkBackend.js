@@ -1,6 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * vim: sw=4 ts=4 sts=4 et
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -38,7 +36,7 @@ async function sendRequest(path, request) {
     {
       extraArgs: [
         `http://localhost:${server.identity.primaryPort}${path}`,
-        "testUserAgent/1",
+        "testUserAgent/1 (foo bar)",
         request,
       ],
     }
@@ -56,7 +54,7 @@ const EXTRA_DATA = JSON.stringify({
 server.registerPathHandler("/mime_post", (request, response) => {
   response.processAsync();
   (async () => {
-    Assert.equal(request.getHeader("User-Agent"), "testUserAgent/1");
+    Assert.equal(request.getHeader("User-Agent"), "testUserAgent/1 (foo bar)");
     Assert.equal(request.method, "POST");
     const body = CommonUtils.readBytesFromInputStream(request.bodyInputStream);
     const data = await new Response(body, {
@@ -115,7 +113,7 @@ add_task(async function test_mime_post() {
 server.registerPathHandler("/post", (request, response) => {
   response.processAsync();
   Assert.equal(request.method, "POST");
-  Assert.equal(request.getHeader("User-Agent"), "testUserAgent/1");
+  Assert.equal(request.getHeader("User-Agent"), "testUserAgent/1 (foo bar)");
   Assert.equal(request.getHeader("Foo"), "Bar");
   const body = CommonUtils.readBytesFromInputStream(request.bodyInputStream);
   Assert.deepEqual(Array.from(new TextEncoder().encode(body)), [1, 2, 3, 4, 5]);

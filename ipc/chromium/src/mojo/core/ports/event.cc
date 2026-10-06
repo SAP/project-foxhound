@@ -5,7 +5,6 @@
 #include "mojo/core/ports/event.h"
 
 #include <stdint.h>
-#include <string.h>
 
 #include "base/logging.h"
 #include "mojo/core/ports/name.h"

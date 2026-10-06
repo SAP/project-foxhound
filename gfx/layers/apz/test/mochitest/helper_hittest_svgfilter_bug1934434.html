@@ -1,0 +1,60 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Test that APZ respects touch-action inside an SVG filter</title>
+  <script type="application/javascript" src="apz_test_utils.js"></script>
+  <script type="application/javascript" src="apz_test_native_event_utils.js"></script>
+  <script src="/tests/SimpleTest/paint_listener.js"></script>
+  <meta name="viewport" content="width=device-width"/>
+  <style>
+    body {
+      /* Make page scrollable. */
+      height: 200vh;
+    }
+    #with-svg-filter {
+      filter: url('#underwater');
+      touch-action: none;
+      width: 100px;
+      height: 100px;
+      background-color: green;
+    }
+  </style>
+</head>
+<body>
+  <div id="with-svg-filter">
+    Text subject to SVG filter -- touch-action should prevent scrolling over this
+  </div>
+  <svg xmlns="http://www.w3.org/2000/svg">
+    <filter height="200%" id="underwater" width="200%">
+      <feTurbulence baseFrequency=".03" numOctaves="1" result="Texture_10" seed="0" stitchTiles="stitch" type="fractalNoise">
+      </feTurbulence>
+      <feOffset dx="0" dy="-100" in="Texture_10" result="Texture_11">
+      </feOffset>
+      <feDisplacementMap in="SourceGraphic" in2="Texture_11" result="OUTLINE_30" scale="5">
+      </feDisplacementMap>
+    </filter>
+  </svg>
+</body>
+<script type="application/javascript">
+
+var config = getHitTestConfig();
+
+async function test() {
+  var scrollId = config.utils.getViewId(document.scrollingElement);
+  var layersId = config.utils.getLayersId();
+
+  checkHitResult(
+      hitTest(centerOf("with-svg-filter")),
+      APZHitResultFlags.VISIBLE |
+      APZHitResultFlags.IRREGULAR_AREA,
+      scrollId,
+      layersId,
+      "Element with `touch-action: none` subject to SVG filter");
+}
+
+waitUntilApzStable()
+  .then(test)
+  .then(subtestDone, subtestFailed);
+
+</script>
+</html>

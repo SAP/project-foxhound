@@ -17,7 +17,7 @@ import mozilla.components.concept.engine.permission.SitePermissions
 /**
  * Internal database for saving site permissions.
  */
-@Database(entities = [SitePermissionsEntity::class], version = 8)
+@Database(entities = [SitePermissionsEntity::class], version = 9)
 @TypeConverters(StatusConverter::class)
 internal abstract class SitePermissionsDatabase : RoomDatabase() {
     abstract fun sitePermissionsDao(): SitePermissionsDao
@@ -48,6 +48,8 @@ internal abstract class SitePermissionsDatabase : RoomDatabase() {
                 Migrations.migration_6_7,
             ).addMigrations(
                 Migrations.migration_7_8,
+            ).addMigrations(
+                Migrations.migration_8_9,
             ).build().also { instance = it }
         }
     }
@@ -185,6 +187,17 @@ internal object Migrations {
                 // default is NO_DECISION
                 db.execSQL("UPDATE site_permissions SET cross_origin_storage_access = 0")
             }
+        }
+    }
+
+    val migration_8_9 = object : Migration(8, 9) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE site_permissions ADD COLUMN local_device_access INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE site_permissions ADD COLUMN local_network_access INTEGER NOT NULL DEFAULT 0")
+
+            // update default value
+            db.execSQL("UPDATE site_permissions SET local_device_access = 0")
+            db.execSQL("UPDATE site_permissions SET local_network_access = 0")
         }
     }
 }

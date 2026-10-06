@@ -1,5 +1,3 @@
-/* -*- Mode: Java; c-basic-offset: 2; tab-width: 20; indent-tabs-mode: nil; -*- */
-/* vim: set ts=2 et sw=2: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,9 +8,17 @@ import android.text.TextUtils;
 import java.util.Locale;
 
 public class LocaleUtils {
-  // Locale.getLanguage() may return legacy language code until Java 17
-  // https://developer.android.com/reference/java/util/Locale#legacy_language_codes
-  public static String getLanguageTagForAcceptLanguage(final Locale locale) {
+  /**
+   * Function normalizes BCP-47 language tags to use non-legacy language codes and only return
+   * 'language-region' style codes for use with Accept-Language and Requested Locales.
+   *
+   * <p>Locale.getLanguage() may return legacy language code until Java 17
+   * https://developer.android.com/reference/java/util/Locale#legacy_language_codes
+   *
+   * @param locale The BCP-47 locale to normalize. e.g., iw-IL, zn-Hans-CN, en-US-u-mu-celsius,
+   * @return A normalized BCP-47 language code with only language-region, e.g., he-IL, zn-CN, en-US.
+   */
+  public static String getLanguageRegionLocale(final Locale locale) {
     String language = locale.getLanguage();
     if (language.equals("in")) {
       language = "id";

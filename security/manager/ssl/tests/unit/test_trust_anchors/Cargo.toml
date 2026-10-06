@@ -19,6 +19,7 @@ mozilla-central-workspace-hack = { version = "0.1", features = ["test-trust-anch
 bindgen = { default-features = false, features = ["runtime"], version = "0.69" }
 mozbuild = "0.1"
 nom = "7.1.1"
+sha2 = "0.10"
 
 [lib]
 crate-type = ["staticlib"]

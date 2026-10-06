@@ -815,12 +815,6 @@ ClientEngine.prototype = {
         flow_id: telemetryExtra.flowID,
         reason: telemetryExtra.reason,
       });
-      this.service.recordTelemetryEvent(
-        "sendcommand",
-        command,
-        undefined,
-        telemetryExtra
-      );
     } else {
       this._log.trace(`Client ${clientId} got a duplicate action`, [
         command,
@@ -860,13 +854,6 @@ ClientEngine.prototype = {
           command,
           flow_id: flowID,
         });
-        this.service.recordTelemetryEvent(
-          "processcommand",
-          command,
-          undefined,
-          { flowID }
-        );
-
         let engines = [args[0]];
         switch (command) {
           case "resetAll":

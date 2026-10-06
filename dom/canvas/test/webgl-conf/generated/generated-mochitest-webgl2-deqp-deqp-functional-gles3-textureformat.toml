@@ -1,0 +1,98 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-deqp"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/closure-library/**",
+  "../checkout/deqp/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_deqp__functional__gles3__textureformat__compressed_2d.html"]
+
+["test_2_deqp__functional__gles3__textureformat__compressed_cube.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_2d_array_npot_00.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_2d_array_npot_01.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_2d_array_npot_02.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_2d_array_npot_03.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_2d_array_pot_00.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_2d_array_pot_01.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_2d_array_pot_02.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_2d_array_pot_03.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_2d_npot_00.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_2d_npot_01.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_2d_npot_02.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_2d_npot_03.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_2d_pot_00.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_2d_pot_01.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_2d_pot_02.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_2d_pot_03.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_3d_npot_00.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_3d_npot_01.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_3d_npot_02.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_3d_npot_03.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_3d_pot_00.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_3d_pot_01.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_3d_pot_02.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_3d_pot_03.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_cube_npot_00.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_cube_npot_01.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_cube_npot_02.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_cube_npot_03.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_cube_pot_00.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_cube_pot_01.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_cube_pot_02.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_color_cube_pot_03.html"]
+
+["test_2_deqp__functional__gles3__textureformat__sized_depth_stencil.html"]
+
+["test_2_deqp__functional__gles3__textureformat__unsized_2d.html"]
+
+["test_2_deqp__functional__gles3__textureformat__unsized_2d_array.html"]
+
+["test_2_deqp__functional__gles3__textureformat__unsized_3d.html"]

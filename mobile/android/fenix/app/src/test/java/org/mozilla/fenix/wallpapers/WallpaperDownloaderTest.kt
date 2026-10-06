@@ -6,7 +6,7 @@ package org.mozilla.fenix.wallpapers
 
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.fetch.Client
 import mozilla.components.concept.fetch.Request
@@ -20,7 +20,6 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.mozilla.fenix.BuildConfig
 import java.io.File
-import java.lang.IllegalStateException
 
 class WallpaperDownloaderTest {
     @Rule
@@ -36,7 +35,7 @@ class WallpaperDownloaderTest {
     private val mockLandscapeResponse = mockk<Response>()
     private val mockClient = mockk<Client>()
 
-    private val dispatcher = UnconfinedTestDispatcher()
+    private val dispatcher = StandardTestDispatcher()
 
     private val wallpaperCollection = Wallpaper.Collection(
         name = "collection",
@@ -56,7 +55,7 @@ class WallpaperDownloaderTest {
     }
 
     @Test
-    fun `GIVEN that asset request is successful WHEN downloading assets THEN both files are created in expected location`() = runTest {
+    fun `GIVEN that asset request is successful WHEN downloading assets THEN both files are created in expected location`() = runTest(dispatcher) {
         val wallpaper = generateWallpaper()
         val portraitRequest = wallpaper.generateRequest("portrait")
         val landscapeRequest = wallpaper.generateRequest("landscape")
@@ -76,7 +75,7 @@ class WallpaperDownloaderTest {
     }
 
     @Test
-    fun `GIVEN that thumbnail request is successful WHEN downloading THEN file is created in expected location`() = runTest {
+    fun `GIVEN that thumbnail request is successful WHEN downloading THEN file is created in expected location`() = runTest(dispatcher) {
         val wallpaper = generateWallpaper()
         val thumbnailRequest = wallpaper.generateRequest("thumbnail")
         val mockThumbnailResponse = mockk<Response>()
@@ -92,7 +91,7 @@ class WallpaperDownloaderTest {
     }
 
     @Test
-    fun `GIVEN that request fails WHEN downloading THEN file is not created`() = runTest {
+    fun `GIVEN that request fails WHEN downloading THEN file is not created`() = runTest(dispatcher) {
         val wallpaper = generateWallpaper()
         val portraitRequest = wallpaper.generateRequest("portrait")
         val landscapeRequest = wallpaper.generateRequest("landscape")
@@ -110,7 +109,7 @@ class WallpaperDownloaderTest {
     }
 
     @Test
-    fun `GIVEN that copying the file fails WHEN downloading THEN file is not created`() = runTest {
+    fun `GIVEN that copying the file fails WHEN downloading THEN file is not created`() = runTest(dispatcher) {
         val wallpaper = generateWallpaper()
         val portraitRequest = wallpaper.generateRequest("portrait")
         val landscapeRequest = wallpaper.generateRequest("landscape")

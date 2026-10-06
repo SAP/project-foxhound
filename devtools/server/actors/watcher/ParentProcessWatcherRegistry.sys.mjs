@@ -132,7 +132,7 @@ export const ParentProcessWatcherRegistry = {
   /**
    * Return an array of the watcher actors that match the passed browserId
    *
-   * @param {Number} browserId
+   * @param {number} browserId
    * @returns {Array<WatcherActor>} An array of the matching watcher actors
    */
   getWatchersForBrowserId(browserId) {

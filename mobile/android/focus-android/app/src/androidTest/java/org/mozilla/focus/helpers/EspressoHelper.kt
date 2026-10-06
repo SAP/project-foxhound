@@ -50,7 +50,9 @@ object EspressoHelper {
     }
 
     @JvmStatic
-    fun assertToolbarMatchesText(@StringRes titleResource: Int) {
+    fun assertToolbarMatchesText(
+        @StringRes titleResource: Int,
+    ) {
         Espresso.onView(
             Matchers.allOf(
                 ViewMatchers.withClassName(Matchers.endsWith("TextView")),

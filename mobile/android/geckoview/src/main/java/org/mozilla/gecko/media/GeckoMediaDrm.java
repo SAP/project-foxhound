@@ -37,4 +37,6 @@ public interface GeckoMediaDrm {
   MediaCrypto getMediaCrypto();
 
   void setServerCertificate(final byte[] cert);
+
+  void setOriginID(final String originID);
 }

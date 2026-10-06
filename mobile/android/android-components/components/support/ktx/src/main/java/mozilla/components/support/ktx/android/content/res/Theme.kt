@@ -16,7 +16,9 @@ import androidx.annotation.AttrRes
  * context.theme.resolveAttribute(R.attr.textColor) == R.color.light_text_color
  */
 @AnyRes
-fun Resources.Theme.resolveAttribute(@AttrRes attribute: Int): Int {
+fun Resources.Theme.resolveAttribute(
+    @AttrRes attribute: Int,
+): Int {
     val outValue = TypedValue()
     resolveAttribute(attribute, outValue, true)
     return outValue.resourceId

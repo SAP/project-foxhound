@@ -37,6 +37,7 @@ function _getUriForModulePath(modulePath) {
 
 /**
  * Assign a mock object to the provided module path.
+ *
  * @param mock
  *        Plain JavaScript object that will implement the expected API for the mocked
  *        module.

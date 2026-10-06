@@ -46,13 +46,6 @@ add_task(async function test_content_process_type_search_click_suggestion() {
     {
       impression: {
         provider: "example1",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
       },
       engagements: [
         {
@@ -76,13 +69,7 @@ add_task(async function test_content_process_type_search_click_suggestion() {
     {
       impression: {
         provider: "example1",
-        tagged: "true",
-        partner_code: "ff",
         source: "follow_on_from_refine_on_incontent_search",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -121,13 +108,6 @@ add_task(
       {
         impression: {
           provider: "example1",
-          tagged: "true",
-          partner_code: "ff",
-          source: "unknown",
-          is_shopping_page: "false",
-          is_private: "false",
-          shopping_tab_displayed: "false",
-          is_signed_in: "false",
         },
         engagements: [
           {
@@ -151,13 +131,6 @@ add_task(
       {
         impression: {
           provider: "example1",
-          tagged: "true",
-          partner_code: "ff",
-          source: "unknown",
-          is_shopping_page: "false",
-          is_private: "false",
-          shopping_tab_displayed: "false",
-          is_signed_in: "false",
         },
         adImpressions: [
           {
@@ -195,13 +168,6 @@ add_task(async function test_content_process_engagement() {
     {
       impression: {
         provider: "example1",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
       },
       engagements: [
         {
@@ -245,13 +211,6 @@ add_task(async function test_content_process_engagement_that_changes_page() {
     {
       impression: {
         provider: "example1",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
       },
       engagements: [
         {
@@ -271,13 +230,7 @@ add_task(async function test_content_process_engagement_that_changes_page() {
     {
       impression: {
         provider: "example1",
-        tagged: "true",
-        partner_code: "ff",
         source: "follow_on_from_refine_on_incontent_search",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -320,13 +273,6 @@ add_task(
       {
         impression: {
           provider: "example1",
-          tagged: "true",
-          partner_code: "ff",
-          source: "unknown",
-          is_shopping_page: "false",
-          is_private: "false",
-          shopping_tab_displayed: "false",
-          is_signed_in: "false",
         },
         engagements: [
           {
@@ -346,13 +292,6 @@ add_task(
       {
         impression: {
           provider: "example1",
-          tagged: "true",
-          partner_code: "ff",
-          source: "unknown",
-          is_shopping_page: "false",
-          is_private: "false",
-          shopping_tab_displayed: "false",
-          is_signed_in: "false",
         },
         engagements: [
           {
@@ -372,13 +311,7 @@ add_task(
       {
         impression: {
           provider: "example1",
-          tagged: "true",
-          partner_code: "ff",
           source: "follow_on_from_refine_on_incontent_search",
-          is_shopping_page: "false",
-          is_private: "false",
-          shopping_tab_displayed: "false",
-          is_signed_in: "false",
         },
         adImpressions: [
           {
@@ -421,13 +354,6 @@ add_task(async function test_unload_listeners_single_tab() {
     {
       impression: {
         provider: "example1",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
       },
       engagements: [
         {
@@ -481,13 +407,6 @@ add_task(async function test_unload_listeners_multi_tab() {
     {
       impression: {
         provider: "example1",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
       },
       engagements: [
         {
@@ -507,13 +426,6 @@ add_task(async function test_unload_listeners_multi_tab() {
     {
       impression: {
         provider: "example1",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
       },
       engagements: [
         {

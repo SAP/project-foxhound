@@ -347,6 +347,7 @@ Rect.prototype = {
 
   /**
    * Blends two rectangles together.
+   *
    * @param rect Rectangle to blend this one with
    * @param scalar Ratio from 0 (returns a clone of this rect) to 1 (clone of rect).
    * @return New blended rectangle.

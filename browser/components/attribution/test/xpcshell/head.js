@@ -4,7 +4,7 @@
 "use strict";
 
 const { AttributionCode } = ChromeUtils.importESModule(
-  "resource:///modules/AttributionCode.sys.mjs"
+  "moz-src:///browser/components/attribution/AttributionCode.sys.mjs"
 );
 
 let validAttrCodes = [
@@ -68,6 +68,39 @@ let validAttrCodes = [
       dlsource: "some-dl-source",
     },
   },
+  // Microsoft Store Ads attribution is not URL encoded, and instead provides a
+  // Microsoft Click ID in the format `storeBingAd_uuid` when requesting the
+  // Campaign ID. When retrieving this we append an additional key
+  // `&msstoresignedin=bool` as we would for a URL encoded campaign.
+  //
+  // At present we have not found a documented schema for Campaign IDs
+  // associated to Microsoft Store Ads, therefore don't test additional
+  // key/value combinations as `%26` is not guaranteed to be the key seperator
+  // if additional keys were added.
+  {
+    code: "storeBingAd_45cbbf091fb541f0ae959d50ffb8c5b8%26msstoresignedin%3Dtrue",
+    parsed: {
+      msclkid: "45cbbf091fb541f0ae959d50ffb8c5b8",
+      msstoresignedin: true,
+    },
+    doesNotRoundtrip: true, // `storeBingAd_uuid` becomes `msclkid=uuid`.
+  },
+  {
+    code: "storeBingAd_45cbbf091fb541f0ae959d50ffb8c5b8%26msstoresignedin%3Dfalse",
+    parsed: {
+      msclkid: "45cbbf091fb541f0ae959d50ffb8c5b8",
+      msstoresignedin: false,
+    },
+    doesNotRoundtrip: true, // `storeBingAd_uuid` becomes `msclkid=uuid`.
+  },
+  {
+    code: "storeBingAd_%26msstoresignedin%3Dfalse",
+    parsed: {
+      msclkid: "",
+      msstoresignedin: false,
+    },
+    doesNotRoundtrip: true, // `storeBingAd_uuid` becomes `msclkid=uuid`.
+  },
 ];
 
 let invalidAttrCodes = [
@@ -118,7 +151,7 @@ async function setupStubs() {
   if (AppConstants.platform == "macosx") {
     // We're implicitly using the fact that modules are shared between importers here.
     const { MacAttribution } = ChromeUtils.importESModule(
-      "resource:///modules/MacAttribution.sys.mjs"
+      "moz-src:///browser/components/attribution/MacAttribution.sys.mjs"
     );
     sinon
       .stub(MacAttribution, "applicationPath")

@@ -53,8 +53,8 @@ class TestLastUsedSidebarPanel(MarionetteTestCase):
         self.assertFalse(
             self.is_sidebar_panel_visible(), "The sidebar panel is not initially shown"
         )
-        self.assertEqual(
-            self.get_current_sidebar_id(), None, "The sidebar panel has no current ID"
+        self.assertFalse(
+            self.get_current_sidebar_id(), "The sidebar panel has no current ID"
         )
 
         # Open the history sidebar

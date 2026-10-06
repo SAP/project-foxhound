@@ -76,9 +76,9 @@ async function test_screen_content(
   expectedSelectors = [],
   unexpectedSelectors = []
 ) {
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    { expectedSelectors, experiment, unexpectedSelectors },
+    [{ expectedSelectors, experiment, unexpectedSelectors }],
     async ({
       expectedSelectors: expected,
       experiment: experimentName,
@@ -99,6 +99,12 @@ async function test_screen_content(
     }
   );
 }
+
+add_setup(async () => {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.backup.restore.enabled", false]],
+  });
+});
 
 /**
  * Test the RTAMO welcome UI
@@ -144,13 +150,13 @@ add_task(async function test_rtamo_aboutwelcome() {
 
   Assert.strictEqual(
     callCount,
-    4,
-    `${callCount} Stub called four times to send telemetry, set url, install extension and verify install`
+    3,
+    `${callCount} Stub called three times to send telemetry, install extension, and verify install`
   );
 
   const sendTelemetryCall = aboutWelcomeActor.onContentMessage.getCall(0);
-  const setUrlCall = aboutWelcomeActor.onContentMessage.getCall(1);
-  const installExtensionCall = aboutWelcomeActor.onContentMessage.getCall(2);
+  const installExtensionCall = aboutWelcomeActor.onContentMessage.getCall(1);
+  const verifyCall = aboutWelcomeActor.onContentMessage.getCall(2);
 
   Assert.equal(
     sendTelemetryCall.args[0],
@@ -160,12 +166,12 @@ add_task(async function test_rtamo_aboutwelcome() {
   Assert.equal(
     sendTelemetryCall.args[1].event,
     "CLICK_BUTTON",
-    "Telemetry event sent as INSTALL"
+    "Telemetry event sent as CLICK_BUTTON"
   );
   Assert.equal(
-    setUrlCall.args[0],
-    "AWPage:SPECIAL_ACTION",
-    "send special action to set extension URL"
+    sendTelemetryCall.args[1].message_id,
+    "MR_WELCOME_DEFAULT_0_RETURN_TO_AMO",
+    "Telemetry event sent with correct message_id"
   );
   Assert.equal(
     installExtensionCall.args[0],
@@ -181,6 +187,11 @@ add_task(async function test_rtamo_aboutwelcome() {
     installExtensionCall.args[1].data.url,
     "https://test.xpi",
     "Install add on url"
+  );
+  Assert.equal(
+    verifyCall.args[0],
+    "AWPage:ENSURE_ADDON_INSTALLED",
+    "Send verify event"
   );
 
   sandbox.restore();

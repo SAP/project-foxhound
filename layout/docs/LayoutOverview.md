@@ -1,5 +1,3 @@
-<!-- -*- mode: Markdown; fill-column: 72; -*- -->
-
 (layout-overview)=
 
 # Layout Overview
@@ -181,21 +179,21 @@ Code (note that most files in base and generic have useful one line
 descriptions at the top that show up when browsing a directory in
 searchfox):
 
-- [layout/base/](http://searchfox.org/mozilla-central/source/layout/base/)
+- [layout/base/](http://searchfox.org/firefox-main/source/layout/base/)
   contains objects that coordinate everything and a bunch of other
   miscellaneous things
-- [layout/generic/](http://searchfox.org/mozilla-central/source/layout/generic/)
+- [layout/generic/](http://searchfox.org/firefox-main/source/layout/generic/)
   contains the basic frame classes as well as support code for their
   reflow methods (`ReflowInput`, `ReflowOutput`, `nsReflowStatus`)
-- [layout/forms/](http://searchfox.org/mozilla-central/source/layout/forms/)
+- [layout/forms/](http://searchfox.org/firefox-main/source/layout/forms/)
   contains frame classes for HTML form controls
-- [layout/tables/](http://searchfox.org/mozilla-central/source/layout/tables/)
+- [layout/tables/](http://searchfox.org/firefox-main/source/layout/tables/)
   contains frame classes for CSS/HTML tables
-- [layout/mathml/](http://searchfox.org/mozilla-central/source/layout/mathml/)
+- [layout/mathml/](http://searchfox.org/firefox-main/source/layout/mathml/)
   contains frame classes for MathML
-- [layout/svg/](http://searchfox.org/mozilla-central/source/layout/svg/)
+- [layout/svg/](http://searchfox.org/firefox-main/source/layout/svg/)
   contains frame classes for SVG
-- [layout/xul/](http://searchfox.org/mozilla-central/source/layout/xul/)
+- [layout/xul/](http://searchfox.org/firefox-main/source/layout/xul/)
   contains frame classes for the XUL box model and for various XUL
   widgets
 
@@ -203,13 +201,14 @@ Bugzilla: all of the components whose names begin with "Layout" in the
 "Core" product.
 
 Further documentation:
+
 - Talk: [An Overview of Gecko Layout](https://mozilla.hosted.panopto.com/Panopto/Pages/Viewer.aspx?id=34ff8151-353a-40c4-89e3-ac3201363608) (Cameron McCormack :heycam, 2018-06-13)
 
 ## Frame Construction
 
 Frame construction is the process of creating frames, which is handled
 by
-[`nsCSSFrameConstructor`](http://searchfox.org/mozilla-central/source/layout/base/nsCSSFrameConstructor.h).
+[`nsCSSFrameConstructor`](http://searchfox.org/firefox-main/source/layout/base/nsCSSFrameConstructor.h).
 This is done when styles change in ways that require frames to be
 created or recreated or when nodes are inserted into the document. The
 content tree and the frame tree don't have quite the same shape, and the
@@ -347,17 +346,18 @@ options:
 
 - `None` indicates that no intrinsic inline sizes are dirty
 - `FrameAndAncestors` indicates that intrinsic inline sizes on it and
-   its ancestors are dirty (which happens, for example, if new children
-   are added to it)
+  its ancestors are dirty (which happens, for example, if new children
+  are added to it)
 - `FrameAncestorsAndDescendants` indicates that intrinsic inline sizes
-   on it, its ancestors, and its descendants are dirty (for example, if
-   the font-size changes)
+  on it, its ancestors, and its descendants are dirty (for example, if
+  the font-size changes)
 
 ## Painting
 
 See [](#rendering-overview).
 
 (layout-fragmentation)=
+
 ## Fragmentation
 
 Fragmentation (or pagination) is a concept used in printing,
@@ -372,22 +372,28 @@ described by the CSS specs. Simple elements are often representable with
 exactly one frame, but sometimes an element needs to be represented with
 more than one frame. For example, text breaking across lines:
 
-      xxxxxx AAAA
-      AAA xxxxxxx
+```
+  xxxxxx AAAA
+  AAA xxxxxxx
+```
 
 The A element is a single DOM node but obviously a single rectangular
 frame isn't going to represent its layout precisely.
 
 Similarly, consider text breaking across pages:
 
-      | BBBBBBBBBB |
-      | BBBBBBBBBB |
-      +------------+
+```
+  | BBBBBBBBBB |
+  | BBBBBBBBBB |
+  +------------+
+```
 
-      +------------+
-      | BBBBBBBBBB |
-      | BBBBBBBBBB |
-      |            |
+```
+  +------------+
+  | BBBBBBBBBB |
+  | BBBBBBBBBB |
+  |            |
+```
 
 Again, a single rectangular frame cannot represent the layout of the
 node. A multi-column container with multiple columns is similar.
@@ -422,14 +428,16 @@ The following diagram shows the relationship between the original frame
 tree considering just primary frames, and a possible layout with
 breaking and continuations:
 
-    Original frame tree       Frame tree with A broken into three parts
-        Root                      Root
-         |                      /  |  \
-         A                     A1  A2  A3
-        / \                   / |  |    |
-       B   C                 B  C1 C2   C3
-       |  /|\                |  |  | \   |
-       D E F G               D  E  F G1  G2
+```
+Original frame tree       Frame tree with A broken into three parts
+    Root                      Root
+     |                      /  |  \
+     A                     A1  A2  A3
+    / \                   / |  |    |
+   B   C                 B  C1 C2   C3
+   |  /|\                |  |  | \   |
+   D E F G               D  E  F G1  G2
+```
 
 Certain kinds of frames create multiple child frames for the same
 content element:

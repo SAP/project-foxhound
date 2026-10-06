@@ -33,7 +33,6 @@ class GeckoWebContentIsolationMapperTest {
         assertEquals(
             WebContentIsolationStrategy.ISOLATE_HIGH_VALUE,
             8.intoWebContentIsolationStrategy(),
-
         )
     }
 

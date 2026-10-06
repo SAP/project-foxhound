@@ -567,9 +567,9 @@ function PC_LOCAL_REMOVE_ALL_BUT_H264_FROM_OFFER(test) {
     -1,
     "H.264 should be present in the SDP offer"
   );
-  test.originalOffer.sdp = sdputils.removeCodecs(
+  test.originalOffer.sdp = sdputils.removeAllButCodec(
     test.originalOffer.sdp,
-    [120, 121, 97]
+    "H264"
   );
   info("Updated H264 only offer: " + JSON.stringify(test.originalOffer));
 }
@@ -580,12 +580,10 @@ function PC_LOCAL_REMOVE_ALL_BUT_AV1_FROM_OFFER(test) {
     -1,
     "AV1 should be present in the SDP offer"
   );
-  for (const codec of [103, 105, 120, 121, 126, 97]) {
-    test.originalOffer.sdp = sdputils.removeCodec(
-      test.originalOffer.sdp,
-      codec
-    );
-  }
+  test.originalOffer.sdp = sdputils.removeAllButCodec(
+    test.originalOffer.sdp,
+    "AV1"
+  );
   info("Updated AV1 only offer: " + JSON.stringify(test.originalOffer));
 }
 
@@ -594,9 +592,9 @@ function PC_LOCAL_REMOVE_BUNDLE_FROM_OFFER(test) {
   info("Updated no bundle offer: " + JSON.stringify(test.originalOffer));
 }
 
-function PC_LOCAL_REMOVE_RTCPMUX_FROM_OFFER(test) {
-  test.originalOffer.sdp = sdputils.removeRtcpMux(test.originalOffer.sdp);
-  info("Updated no RTCP-Mux offer: " + JSON.stringify(test.originalOffer));
+function PC_REMOTE_REMOVE_RTCPMUX_FROM_OFFER(test) {
+  test._local_offer.sdp = sdputils.removeRtcpMux(test._local_offer.sdp);
+  info("Updated no RTCP-Mux offer: " + JSON.stringify(test._local_offer));
 }
 
 function PC_LOCAL_REMOVE_SSRC_FROM_OFFER(test) {

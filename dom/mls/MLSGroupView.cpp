@@ -1,23 +1,20 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MLSGroupView.h"
-#include "mozilla/dom/MLSBinding.h"
-#include "mozilla/dom/TypedArray.h"
-#include "mozilla/dom/Promise.h"
-#include "nsTArray.h"
-#include "mozilla/dom/MLSTransactionChild.h"
-#include "mozilla/dom/MLSTransactionMessage.h"
+
+#include "MLSTypeUtils.h"
 #include "ipc/IPCMessageUtilsSpecializations.h"
 #include "mozilla/BasePrincipal.h"
-#include "nsTArray.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Span.h"
+#include "mozilla/dom/MLSBinding.h"
+#include "mozilla/dom/MLSTransactionChild.h"
+#include "mozilla/dom/MLSTransactionMessage.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/TypedArray.h"
 #include "nsDebug.h"
-#include "MLSTypeUtils.h"
+#include "nsTArray.h"
 namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_WITH_JS_MEMBERS(MLSGroupView, (mMLS),

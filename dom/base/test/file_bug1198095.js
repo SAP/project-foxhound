@@ -1,5 +1,3 @@
-/* eslint-env mozilla/chrome-script */
-
 // eslint-disable-next-line mozilla/reject-importGlobalProperties
 Cu.importGlobalProperties(["File"]);
 

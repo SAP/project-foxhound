@@ -1,0 +1,45 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+/**
+ * Maps 53-bit integers to opaque UUID strings and back.
+ * (The actual type is a 64-bit integer, but JS cannot represent numbers with
+ * precision beyond MAX_SAFE_INTEGER, 2^53-1).
+ *
+ * Each integer maps to a unique UUID that reveals nothing about the
+ * original value to anyone who does not hold the key. Call init() once
+ * with a random 16-byte key, then use toUUID/fromUUID freely.
+ */
+[scriptable, builtinclass, uuid(424ecfce-456d-42ce-8d22-ee934f53a43f)]
+interface nsIKeyedUUIDMapper : nsISupports {
+  /**
+   * Generate a random 16-byte key suitable for use with init().
+   *
+   * This uses the OS's CSPRNG instead of NSS to avoid early initialization of
+   * NSS for callers at early browser startup (bug 2050882).
+   */
+  Array<uint8_t> generateKey();
+
+  /**
+   * Initialize with a 16-byte key. May be called again to change the key.
+   * This may initialize NSS as needed.
+   *
+   * Throws NS_ERROR_INVALID_ARG if aKey is not 16 bytes.
+   */
+  void init(in Array<uint8_t> aKey);
+
+  /**
+   * Throws NS_ERROR_INVALID_ARG if aValue is 2^53 or larger.
+   */
+  AUTF8String toUUID(in unsigned long long aValue);
+
+  /**
+   * Throws NS_ERROR_INVALID_ARG if aUUID is not a valid UUID string,
+   * or not a value that fromUUID could have produced for the key,
+   * i.e. if the UUID maps to a number outside the 53-bit range.
+   */
+  unsigned long long fromUUID(in AUTF8String aUUID);
+};

@@ -1,6 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
-
 const TEST_HTTP = httpURL("dummy_page.html");
 
 // Test for Bug 1634272

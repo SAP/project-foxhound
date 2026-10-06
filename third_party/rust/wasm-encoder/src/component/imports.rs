@@ -1,7 +1,8 @@
 use crate::{
-    encode_section, ComponentExportKind, ComponentSection, ComponentSectionId, ComponentValType,
-    Encode,
+    ComponentExportKind, ComponentSection, ComponentSectionId, ComponentValType, Encode,
+    encode_section,
 };
+use alloc::vec::Vec;
 
 /// Represents the possible type bounds for type references.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -95,7 +96,7 @@ impl Encode for ComponentTypeRef {
 ///       ("b", PrimitiveValType::String)
 ///     ]
 ///   )
-///   .result(PrimitiveValType::String);
+///   .result(Some(PrimitiveValType::String.into()));
 ///
 /// // This imports a function named `f` with the type defined above
 /// let mut imports = ComponentImportSection::new();

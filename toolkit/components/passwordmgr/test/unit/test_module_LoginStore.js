@@ -203,6 +203,8 @@ add_task(async function test_load_bad_dates() {
     timesUsed: 1,
     usernameField: "email",
   };
+  // dismissedBreachAlertsByLoginGUID simulates pre-migration data;
+  // the post-processor will migrate it into per-login fields and delete it.
   let rawStoreData = {
     dismissedBreachAlertsByLoginGUID: {},
     logins: [],

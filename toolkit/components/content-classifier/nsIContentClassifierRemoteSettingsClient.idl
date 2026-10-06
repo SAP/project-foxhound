@@ -1,0 +1,40 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+interface nsIContentClassifierService;
+
+/**
+ * RemoteSettings client for the content classifier. Owns the filter
+ * list bytes (via the RS attachments cache on disk), notifies the C++
+ * service when lists change, and serves the bytes back on demand.
+ */
+[scriptable, uuid(C7DDDBF2-8BC4-41A1-AC90-5144BEC5ABDF)]
+interface nsIContentClassifierRemoteSettingsClient : nsISupports {
+    /**
+     * Initialize the client. Registers the sync listener, ensures
+     * existing attachments are downloaded into the local cache, and
+     * notifies the service of every list found via onListUpdated.
+     * Resolves once the initial import has finished (or failed).
+     */
+    Promise init(in nsIContentClassifierService aService);
+
+    /**
+     * Shut down the client and unregister sync listeners.
+     */
+    void shutdown();
+
+    /**
+     * Return a Promise that resolves to a Uint8Array containing the
+     * raw attachment bytes for the named list, sourced from the RS
+     * attachments cache. Rejects if no record with that name exists
+     * or its attachment cannot be obtained.
+     */
+    Promise getListBytes(in ACString aName);
+};
+
+%{C++
+#define NS_CONTENTCLASSIFIERREMOTESETTINGSCLIENT_CONTRACTID "@mozilla.org/content-classifier-rs-client;1"
+%}

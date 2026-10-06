@@ -28,6 +28,7 @@ class PropertyBagConverter {
 
   /**
    * Converts from a PropertyBag to a JS value.
+   *
    * @param {nsIPropertyBag} bag The PropertyBag to convert.
    * @returns {jsval} A JS value.
    */
@@ -63,9 +64,10 @@ class PropertyBagConverter {
 
   /**
    * Converts from a JS value to a PropertyBag.
+   *
    * @param {jsval} val JS value to convert.
    * @returns {nsIPropertyBag} A PropertyBag.
-   * @note function is converted to "(function)" and undefined to null.
+   * Note: function is converted to "(function)" and undefined to null.
    */
   jsValueToPropertyBag(val) {
     let bag = Cc["@mozilla.org/hash-property-bag;1"].createInstance(
@@ -102,7 +104,7 @@ class PropertyBagConverter {
  * @param {object} moduleClient A client, as returned from the `client`
  * property of an instance of `AsyncShutdown.Barrier`. This client will
  * serve as back-end for methods `addBlocker` and `removeBlocker`.
- * @constructor
+ * @class
  */
 function nsAsyncShutdownClient(moduleClient) {
   if (!moduleClient) {
@@ -179,7 +181,7 @@ nsAsyncShutdownClient.prototype = {
  * @param {object} moduleBarrier an instance if
  * `AsyncShutdown.Barrier`. This instance will serve as back-end for
  * all methods.
- * @constructor
+ * @class
  */
 function nsAsyncShutdownBarrier(moduleBarrier) {
   this._client = new nsAsyncShutdownClient(moduleBarrier.client);

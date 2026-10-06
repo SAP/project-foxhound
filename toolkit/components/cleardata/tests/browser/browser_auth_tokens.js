@@ -14,9 +14,9 @@ const TEST_PRINCIPAL =
   );
 const TEST_CLEAR_DATA_FLAGS = Services.clearData.CLEAR_AUTH_TOKENS;
 
-const pk11db = Cc["@mozilla.org/security/pk11tokendb;1"].getService(
-  Ci.nsIPK11TokenDB
-);
+const internalKeyToken = Cc[
+  "@mozilla.org/security/internalkeytoken;1"
+].createInstance(Ci.nsIPKCS11Token);
 
 const { LoginTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/LoginTestUtils.sys.mjs"
@@ -24,11 +24,10 @@ const { LoginTestUtils } = ChromeUtils.importESModule(
 
 function testLoggedIn(isLoggedIn) {
   Assert.equal(
-    pk11db.getInternalKeyToken().isLoggedIn(),
+    internalKeyToken.isLoggedIn,
     isLoggedIn,
     `Should ${isLoggedIn ? "" : "not "}be logged in`
   );
-  pk11db.getInternalKeyToken().isLoggedIn();
 }
 
 function clearData({ deleteBy = "all", hasUserInput = false } = {}) {

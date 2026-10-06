@@ -11,7 +11,10 @@ const {
 
 function UiState() {
   return {
-    selectedPage: DEFAULT_PAGE,
+    selectedPage: Services.prefs.getCharPref(
+      "devtools.application.selectedSidebar",
+      DEFAULT_PAGE
+    ),
   };
 }
 

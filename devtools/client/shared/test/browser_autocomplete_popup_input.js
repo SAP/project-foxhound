@@ -225,8 +225,8 @@ function hasFocus(node) {
  *
  * @param {AutocompletePopup} popup
  * @param {HTMLInput} input
- * @param {Object} expectedSelectedItem
- * @param {String} info
+ * @param {object} expectedSelectedItem
+ * @param {string} info
  */
 function checkPopupSelectedItem(popup, input, expectedSelectedItem, info) {
   is(popup.selectedItem.label, expectedSelectedItem.label, info);
@@ -237,7 +237,7 @@ function checkPopupSelectedItem(popup, input, expectedSelectedItem, info) {
 function checkActiveDescendant(popup, input) {
   const activeElement = input.ownerDocument.activeElement;
   const descendantId = activeElement.getAttribute("aria-activedescendant");
-  const popupItem = popup._tooltip.panel.querySelector(`#${descendantId}`);
+  const popupItem = popup.tooltip.panel.querySelector(`#${descendantId}`);
   const cloneItem = input.ownerDocument.querySelector(`#${descendantId}`);
 
   ok(popupItem, "Active descendant is found in the popup list");

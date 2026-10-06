@@ -53,10 +53,10 @@ add_task(async function () {
   pressKey(dbg, "ShiftEnter");
   // And validate
   pressKey(dbg, "Enter");
-  await waitForCondition(dbg, "1\n2");
+  await waitForCondition(dbg, "1\n  2");
 
   bp = findBreakpoint(dbg, "simple2.js", 5);
-  is(bp.options.condition, "1\n2", "Hit 'Shift+Enter' adds a new line");
+  is(bp.options.condition, "1\n  2", "Hit 'Shift+Enter' adds a new line");
 
   info("The condition can be removed using the ConditionalPanel");
   dblClickElement(dbg, "conditionalBreakpointInSecPane");

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -78,9 +76,9 @@ interface JSWindowActorChild {
 JSWindowActorChild includes JSActor;
 
 /**
- * Used by ChromeUtils.registerWindowActor() to register JS window actor.
+ * Used by `ChromeUtils.registerWindowActor()` to register actors.
  */
-dictionary WindowActorOptions {
+dictionary WindowActorOptions : JSActorOptions {
   /**
    * If this is set to `true`, allow this actor to be created for subframes,
    * and not just toplevel window globals.
@@ -97,21 +95,11 @@ dictionary WindowActorOptions {
   /**
    * An array of URL match patterns (as accepted by the MatchPattern
    * class in MatchPattern.webidl) which restrict which pages the actor
-   * may be instantiated for. If this is defined, only documents URL which match
-   * are allowed to have the given actor created for them. Other
-   * documents will fail to have their actor constructed, returning nullptr.
+   * may be instantiated for. If this is defined, only document URLs which match
+   * are allowed to have the given actor created for them. Other documents will
+   * fail to have their actor constructed, returning nullptr.
    */
   sequence<DOMString> matches;
-
-  /**
-   * An array of remote type which restricts the actor is allowed to instantiate
-   * in specific process type. If this is defined, the prefix of process type
-   * matches the remote type by prefix match is allowed to instantiate, ex: if
-   * Fission is enabled, the prefix of process type will be `webIsolated`, it
-   * can prefix match remote type either `web` or `webIsolated`. If not passed,
-   * all content processes are allowed to instantiate the actor.
-   */
-  sequence<UTF8String> remoteTypes;
 
   /**
    * An array of MessageManagerGroup values which restrict which type
@@ -119,25 +107,17 @@ dictionary WindowActorOptions {
    */
   sequence<DOMString> messageManagerGroups;
 
-  /** This fields are used for configuring individual sides of the actor. */
-  WindowActorSidedOptions parent;
-  WindowActorChildOptions child;
-};
-
-dictionary WindowActorSidedOptions {
   /**
-   * The ESM path which should be loaded for the actor on this side.
-   *
-   * If this is not is passed, the specified side cannot receive messages, but
-   * may send them using `sendAsyncMessage` or `sendQuery`.
+   * These fields are used to configure the individual sides of the actor.
    */
-  ByteString esModuleURI;
+  JSActorSidedOptions parent;
+  WindowActorChildOptions child;
 };
 
 dictionary WindowActorEventListenerOptions : AddEventListenerOptions {
   /**
    * If this attribute is set to true (the default), this event will cause the
-   * actor to be created when it is fired. If the attribute is set false, the
+   * actor to be created when it is fired. If the attribute is set to false, the
    * actor will not receive the event unless it had already been created through
    * some other mechanism.
    *
@@ -148,26 +128,26 @@ dictionary WindowActorEventListenerOptions : AddEventListenerOptions {
   boolean createActor = true;
 };
 
-dictionary WindowActorChildOptions : WindowActorSidedOptions {
+dictionary WindowActorChildOptions : JSActorSidedOptions {
   /**
    * Events which this actor wants to be listening to. When these events fire,
-   * it will trigger actor creation, and then forward the event to the actor.
+   * they will trigger actor creation, and then forward the event to the actor.
    *
    * NOTE: Listeners are not attached for windows loaded in chrome docshells.
    *
-   * NOTE: `once` option is not support due to we register listeners in a shared
-   * location.
+   * NOTE: The `once` option is not supported because we register listeners in
+   * a shared location.
    */
   record<DOMString, WindowActorEventListenerOptions> events;
 
- /**
-  * An array of observer topics to listen to. An observer will be added for each
-  * topic in the list.
-  *
-  * Observer notifications in the list use nsGlobalWindowInner or
-  * nsGlobalWindowOuter object as their subject, and the events will only be
-  * dispatched to the corresponding window actor. If additional observer
-  * notification's subjects are needed, please file a bug for that.
-  */
+  /**
+   * An array of observer topics to listen to. An observer will be added for
+   * each topic in the list.
+   *
+   * Observer notifications in the list use nsGlobalWindowInner or
+   * nsGlobalWindowOuter object as their subject, and the events will only be
+   * dispatched to the corresponding window actor. If additional observer
+   * notification's subjects are needed, please file a bug for that.
+   */
   sequence<ByteString> observers;
 };

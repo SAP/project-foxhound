@@ -12,6 +12,7 @@ import io.mockk.verify
 import io.mockk.verifyAll
 import mozilla.components.feature.autofill.facts.AutofillFacts
 import mozilla.components.feature.awesomebar.facts.AwesomeBarFacts
+import mozilla.components.feature.awesomebar.facts.SuggestionCardType
 import mozilla.components.feature.awesomebar.provider.BookmarksStorageSuggestionProvider
 import mozilla.components.feature.awesomebar.provider.ClipboardSuggestionProvider
 import mozilla.components.feature.awesomebar.provider.HistoryStorageSuggestionProvider
@@ -22,6 +23,8 @@ import mozilla.components.feature.media.facts.MediaFacts
 import mozilla.components.feature.prompts.dialog.GeneratedPasswordFacts
 import mozilla.components.feature.prompts.dialog.LoginDialogFacts
 import mozilla.components.feature.prompts.facts.CreditCardAutofillDialogFacts
+import mozilla.components.feature.protection.dashboard.TrackerCategory
+import mozilla.components.feature.protection.dashboard.facts.ProtectionDashboardFacts
 import mozilla.components.feature.pwa.ProgressiveWebAppFacts
 import mozilla.components.feature.search.telemetry.ads.AdsTelemetry
 import mozilla.components.feature.search.telemetry.incontent.InContentTelemetry
@@ -35,7 +38,6 @@ import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.webextensions.facts.WebExtensionFacts
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Rule
@@ -53,11 +55,12 @@ import org.mozilla.fenix.GleanMetrics.PerfAwesomebar
 import org.mozilla.fenix.GleanMetrics.ProgressiveWebApp
 import org.mozilla.fenix.GleanMetrics.SitePermissions
 import org.mozilla.fenix.GleanMetrics.SyncedTabs
+import org.mozilla.fenix.GleanMetrics.TrackingProtection
 import org.mozilla.fenix.components.metrics.ReleaseMetricController.Companion
 import org.mozilla.fenix.helpers.FenixGleanTestRule
-import org.mozilla.fenix.search.awesomebar.ShortcutsSuggestionProvider
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 import mozilla.components.compose.browser.awesomebar.AwesomeBarFacts as ComposeAwesomeBarFacts
 
 @RunWith(RobolectricTestRunner::class)
@@ -308,22 +311,6 @@ class MetricControllerTest {
         }
 
         assertNotNull(PerfAwesomebar.clipboardSuggestions.testGetValue())
-
-        // Verify shortcut based suggestions
-        metadata = mapOf(
-            ComposeAwesomeBarFacts.MetadataKeys.DURATION_PAIR to Pair(
-                mockk<ShortcutsSuggestionProvider>(),
-                duration,
-            ),
-        )
-        fact = fact.copy(metadata = metadata)
-        assertNull(PerfAwesomebar.shortcutsSuggestions.testGetValue())
-
-        with(controller) {
-            fact.process()
-        }
-
-        assertNotNull(PerfAwesomebar.shortcutsSuggestions.testGetValue())
     }
 
     @Test
@@ -518,6 +505,36 @@ class MetricControllerTest {
         assertNotNull(MediaNotification.pause.testGetValue())
         assertEquals(1, MediaNotification.pause.testGetValue()!!.size)
         assertNull(MediaNotification.pause.testGetValue()!!.single().extra)
+    }
+
+    @Test
+    fun `WHEN processing a FEATURE_PROTECTION_DASHBOARD tracker category fact THEN the matching metric is recorded`() {
+        val controller = createReleaseMetricController()
+
+        fun process(category: TrackerCategory) = controller.run {
+            Fact(
+                Component.FEATURE_PROTECTION_DASHBOARD,
+                Action.CLICK,
+                ProtectionDashboardFacts.Items.TRACKER_CATEGORY,
+                value = category.name,
+            ).process()
+        }
+
+        assertNull(TrackingProtection.privacyReportTrackingCookiesTapped.testGetValue())
+        process(TrackerCategory.CROSS_SITE_COOKIES)
+        assertNotNull(TrackingProtection.privacyReportTrackingCookiesTapped.testGetValue())
+
+        assertNull(TrackingProtection.privacyReportSocialTapped.testGetValue())
+        process(TrackerCategory.SOCIAL_MEDIA_TRACKERS)
+        assertNotNull(TrackingProtection.privacyReportSocialTapped.testGetValue())
+
+        assertNull(TrackingProtection.privacyReportFingerprintsTapped.testGetValue())
+        process(TrackerCategory.FINGERPRINTERS)
+        assertNotNull(TrackingProtection.privacyReportFingerprintsTapped.testGetValue())
+
+        assertNull(TrackingProtection.privacyReportTrackingContentTapped.testGetValue())
+        process(TrackerCategory.TRACKING_CONTENT)
+        assertNotNull(TrackingProtection.privacyReportTrackingContentTapped.testGetValue())
     }
 
     @Test
@@ -876,6 +893,44 @@ class MetricControllerTest {
         assertNotNull(Awesomebar.recentSearchSuggestionsDisplayed.testGetValue())
         assertNotNull(Awesomebar.recentSearchSuggestionsDisplayed.testGetValue()!![0].extra)
         assertEquals("4", Awesomebar.recentSearchSuggestionsDisplayed.testGetValue()!![0].extra!!["count"])
+
+        // Verify optimized suggestion cards displayed
+        assertNull(Awesomebar.optimizedSuggestionCardDisplayed.testGetValue())
+        fact = Fact(
+            Component.FEATURE_AWESOMEBAR,
+            Action.DISPLAY,
+            AwesomeBarFacts.Items.OPTIMIZED_SUGGESTION_CARD_DISPLAYED,
+            SuggestionCardType.SPORTS.value,
+            mapOf("extra" to "basketball"),
+        )
+
+        with(controller) {
+            fact.process()
+        }
+
+        assertNotNull(Awesomebar.optimizedSuggestionCardDisplayed.testGetValue())
+        assertNotNull(Awesomebar.optimizedSuggestionCardDisplayed.testGetValue()!![0].extra)
+        assertEquals("sports", Awesomebar.optimizedSuggestionCardDisplayed.testGetValue()!![0].extra!!["card_type"])
+        assertEquals("basketball", Awesomebar.optimizedSuggestionCardDisplayed.testGetValue()!![0].extra!!["extra"])
+
+        // Verify optimized suggestion cards clicked
+        assertNull(Awesomebar.optimizedSuggestionCardClicked.testGetValue())
+        fact = Fact(
+            Component.FEATURE_AWESOMEBAR,
+            Action.CLICK,
+            AwesomeBarFacts.Items.OPTIMIZED_SUGGESTION_CARD_CLICKED,
+            SuggestionCardType.STOCKS.value,
+            mapOf("extra" to "up"),
+        )
+
+        with(controller) {
+            fact.process()
+        }
+
+        assertNotNull(Awesomebar.optimizedSuggestionCardClicked.testGetValue())
+        assertNotNull(Awesomebar.optimizedSuggestionCardClicked.testGetValue()!![0].extra)
+        assertEquals("stocks", Awesomebar.optimizedSuggestionCardClicked.testGetValue()!![0].extra!!["card_type"])
+        assertEquals("up", Awesomebar.optimizedSuggestionCardClicked.testGetValue()!![0].extra!!["extra"])
     }
 
     @Test

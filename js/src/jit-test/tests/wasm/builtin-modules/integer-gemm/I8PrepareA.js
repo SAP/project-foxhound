@@ -14,15 +14,15 @@ function testInvalidSize() {
 
   // row: 0
   invalidSize = 0;
-  assertErrorMessage(() => int8_prepare_a(VALID.input, VALID.scale, VALID.zeroPoint, invalidSize, VALID.cols, VALID.output), WebAssembly.RuntimeError, /unreachable/);
+  assertErrorMessage(() => int8_prepare_a(VALID.input, VALID.scale, VALID.zeroPoint, invalidSize, VALID.cols, VALID.output), WebAssembly.RuntimeError, /index out of bounds/);
 
   // col: 0
   invalidSize = 0;
-  assertErrorMessage(() => int8_prepare_a(VALID.input, VALID.scale, VALID.zeroPoint, VALID.rows, invalidSize, VALID.output), WebAssembly.RuntimeError, /unreachable/);
+  assertErrorMessage(() => int8_prepare_a(VALID.input, VALID.scale, VALID.zeroPoint, VALID.rows, invalidSize, VALID.output), WebAssembly.RuntimeError, /index out of bounds/);
 
   // col: Not an integral multiple of COLUMNS_A_MULTIPLIER
   invalidSize = COLUMNS_A_MULTIPLIER + 1;
-  assertErrorMessage(() => int8_prepare_a(VALID.input, VALID.scale, VALID.zeroPoint, VALID.rows, invalidSize, VALID.output), WebAssembly.RuntimeError, /unreachable/);
+  assertErrorMessage(() => int8_prepare_a(VALID.input, VALID.scale, VALID.zeroPoint, VALID.rows, invalidSize, VALID.output), WebAssembly.RuntimeError, /index out of bounds/);
 }
 
 function testInvalidAlignment() {

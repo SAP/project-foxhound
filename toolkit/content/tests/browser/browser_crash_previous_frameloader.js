@@ -7,7 +7,7 @@
  *        The subject passed through the ipc:content-shutdown
  *        observer notification when a content process crash has
  *        occurred.
- * @returns {String} The crash dump id.
+ * @returns {string} The crash dump id.
  */
 function getCrashDumpId(subject) {
   Assert.ok(
@@ -15,7 +15,7 @@ function getCrashDumpId(subject) {
     "Subject needs to be a nsIPropertyBag2 to clean up properly"
   );
 
-  return subject.getPropertyAsAString("dumpID");
+  return subject.get("dumpID");
 }
 
 /**

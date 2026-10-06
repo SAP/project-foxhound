@@ -19,7 +19,7 @@ function run_test() {
   run_next_test();
 }
 
-/** * Tests ***/
+/*** Tests ***/
 
 /**
  * This tests a one-way bulk transfer at the transport layer.
@@ -124,7 +124,7 @@ var test_bulk_transfer_transport = async function (transportFactory) {
   return Promise.all([clientDeferred, serverDeferred]);
 };
 
-/** * Test Utils ***/
+/*** Test Utils ***/
 
 function verify() {
   const reallyLong = really_long();

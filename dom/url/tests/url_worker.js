@@ -1,5 +1,3 @@
-/* eslint-env worker */
-
 onmessage = function (event) {
   if (event.data != 0) {
     var worker = new Worker("url_worker.js");

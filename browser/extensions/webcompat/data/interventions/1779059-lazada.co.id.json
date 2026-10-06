@@ -1,0 +1,15 @@
+{
+  "label": "lazada.co.id",
+  "bugs": {
+    "1779059": {
+      "issue": "broken-map",
+      "matches": ["*://member-m.lazada.co.id/address/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

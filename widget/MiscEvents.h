@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_MiscEvents_h__
-#define mozilla_MiscEvents_h__
+#ifndef mozilla_MiscEvents_h_
+#define mozilla_MiscEvents_h_
 
 #include <stdint.h>
 
@@ -27,11 +26,9 @@ class PBrowserChild;
  * mozilla::WidgetContentCommandEvent
  ******************************************************************************/
 
-class WidgetContentCommandEvent : public WidgetGUIEvent {
+class WidgetContentCommandEvent final : public WidgetGUIEvent {
  public:
-  virtual WidgetContentCommandEvent* AsContentCommandEvent() override {
-    return this;
-  }
+  NS_DEFINE_AS_EVENT_OVERRIDE(Widget, ContentCommandEvent);
 
   WidgetContentCommandEvent(bool aIsTrusted, EventMessage aMessage,
                             nsIWidget* aWidget, bool aOnlyEnabledCheck = false)
@@ -40,6 +37,10 @@ class WidgetContentCommandEvent : public WidgetGUIEvent {
         mOnlyEnabledCheck(aOnlyEnabledCheck),
         mSucceeded(false),
         mIsEnabled(false) {}
+
+  NS_DEFINE_VIRTUAL_DESTRUCTOR_CHECKING_CLASS_VALUE(WidgetContentCommandEvent,
+                                                    eContentCommandEventClass,
+                                                    eGUIEventClass)
 
   virtual WidgetEvent* Duplicate() const override {
     // This event isn't an internal event of any DOM event.
@@ -116,9 +117,9 @@ class WidgetContentCommandEvent : public WidgetGUIEvent {
  * XXX Should be |WidgetChromeCommandEvent|?
  ******************************************************************************/
 
-class WidgetCommandEvent : public WidgetGUIEvent {
+class WidgetCommandEvent final : public WidgetGUIEvent {
  public:
-  virtual WidgetCommandEvent* AsCommandEvent() override { return this; }
+  NS_DEFINE_AS_EVENT_OVERRIDE(Widget, CommandEvent);
 
  protected:
   WidgetCommandEvent(bool aIsTrusted, nsAtom* aEventType, nsAtom* aCommand,
@@ -145,6 +146,10 @@ class WidgetCommandEvent : public WidgetGUIEvent {
   WidgetCommandEvent()
       : WidgetCommandEvent(false, nullptr, nullptr, nullptr, nullptr) {}
 
+  NS_DEFINE_VIRTUAL_DESTRUCTOR_CHECKING_CLASS_VALUE(WidgetCommandEvent,
+                                                    eCommandEventClass,
+                                                    eGUIEventClass)
+
   virtual WidgetEvent* Duplicate() const override {
     MOZ_ASSERT(mClass == eCommandEventClass,
                "Duplicate() must be overridden by sub class");
@@ -169,4 +174,4 @@ class WidgetCommandEvent : public WidgetGUIEvent {
 
 }  // namespace mozilla
 
-#endif  // mozilla_MiscEvents_h__
+#endif  // mozilla_MiscEvents_h_

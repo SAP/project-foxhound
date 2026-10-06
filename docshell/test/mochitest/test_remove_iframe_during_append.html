@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test removing iframe on content-document-global-created</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+
+<script>
+function onNotify(topic, cb) {
+  const observer = {
+    observe() {
+      cb();
+      SpecialPowers.removeObserver(observer, topic);
+    }
+  };
+  SpecialPowers.addObserver(observer, topic);
+}
+
+for (const topic of ["content-document-global-created", "webnavigation-create"]) {
+  add_task(async function test() {
+    const iframe = document.createElement("iframe");
+    const notification = Promise.withResolvers();
+
+    onNotify(topic, () => {
+      iframe.remove();
+      notification.resolve();
+    });
+
+    document.body.append(iframe);
+    await notification.promise;
+
+    ok(true, "Did not crash");
+  });
+}
+</script>
+</body>
+</html>

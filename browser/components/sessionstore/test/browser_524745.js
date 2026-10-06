@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 function test() {
-  /** Test for Bug 524745 **/
+  /** Test for Bug 524745 */
 
   let uniqKey = "bug524745";
   let uniqVal = Date.now().toString();

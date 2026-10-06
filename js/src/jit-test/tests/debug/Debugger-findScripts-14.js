@@ -20,11 +20,11 @@ var scripts;
 // When we're doing 'innermost' queries, we don't have to worry about finding
 // random eval scripts: we should get exactly one script, for the function
 // covering that line.
-scripts = dbg.findScripts({url:url, line:4, innermost:true});
+scripts = dbg.findScripts({url:url, line:2, innermost:true});
 assertEq(arrayIsOnly(scripts, script(g.f)), true);
 
-scripts = dbg.findScripts({url:url, line:6, innermost:true});
+scripts = dbg.findScripts({url:url, line:4, innermost:true});
 assertEq(arrayIsOnly(scripts, script(g.f())), true);
 
-scripts = dbg.findScripts({url:url, line:8, innermost:true});
+scripts = dbg.findScripts({url:url, line:6, innermost:true});
 assertEq(arrayIsOnly(scripts, script(g.f()())), true);

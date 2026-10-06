@@ -3,8 +3,6 @@
 
 "use strict";
 
-setExpectedFailuresForSelfTest(5);
-
 function rejectOnNextTick(error) {
   return new Promise((resolve, reject) => executeSoon(() => reject(error)));
 }

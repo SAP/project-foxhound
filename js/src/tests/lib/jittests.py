@@ -288,12 +288,12 @@ class JitTest:
                             else:
                                 test.expect_status = status
                         except ValueError:
-                            print("warning: couldn't parse exit status" f" {value}")
+                            print(f"warning: couldn't parse exit status {value}")
                     elif name == "thread-count":
                         try:
                             test.jitflags.append(f"--thread-count={int(value, 0)}")
                         except ValueError:
-                            print("warning: couldn't parse thread-count" f" {value}")
+                            print(f"warning: couldn't parse thread-count {value}")
                     elif name == "include":
                         test.other_lib_includes.append(value)
                     elif name == "local-include":
@@ -310,59 +310,48 @@ class JitTest:
                             print("warning: couldn't parse skip-variant-if")
                     else:
                         print(
-                            f"{path}: warning: unrecognized |jit-test| attribute"
-                            f" {part}"
+                            f"{path}: warning: unrecognized |jit-test| attribute {part}"
                         )
+                elif name == "slow":
+                    test.slow = True
+                elif name == "heavy":
+                    test.heavy = True
+                elif name == "allow-oom":
+                    test.allow_oom = True
+                elif name == "allow-unhandlable-oom":
+                    test.allow_unhandlable_oom = True
+                elif name == "allow-overrecursed":
+                    test.allow_overrecursed = True
+                elif name == "valgrind":
+                    test.valgrind = options.valgrind
+                elif name == "tz-pacific":
+                    test.tz_pacific = True
+                elif name.startswith("test-also="):
+                    test.test_also.append(re.split(r"\s+", name[len("test-also=") :]))
+                elif name.startswith("test-join="):
+                    test.test_join.append(re.split(r"\s+", name[len("test-join=") :]))
+                elif name == "module":
+                    test.is_module = True
+                elif name == "crash":
+                    # Crashes are only allowed in self-test, as it is
+                    # intended to verify that our testing infrastructure
+                    # works, and not meant as a way to accept temporary
+                    # failing tests. These tests should either be fixed or
+                    # skipped.
+                    assert "self-test" in path, (
+                        f"{path}: has an unexpected crash annotation."
+                    )
+                    test.expect_crash = True
+                elif name.startswith("--"):
+                    # // |jit-test| --ion-gvn=off; --no-sse4
+                    test.jitflags.append(name)
+                elif name.startswith("-P"):
+                    prefAndValue = name.split()
+                    assert len(prefAndValue) == 2, f"{name}: failed to parse preference"
+                    # // |jit-test| -P pref(=value)?
+                    test.jitflags.append("--setpref=" + prefAndValue[1])
                 else:
-                    if name == "slow":
-                        test.slow = True
-                    elif name == "heavy":
-                        test.heavy = True
-                    elif name == "allow-oom":
-                        test.allow_oom = True
-                    elif name == "allow-unhandlable-oom":
-                        test.allow_unhandlable_oom = True
-                    elif name == "allow-overrecursed":
-                        test.allow_overrecursed = True
-                    elif name == "valgrind":
-                        test.valgrind = options.valgrind
-                    elif name == "tz-pacific":
-                        test.tz_pacific = True
-                    elif name.startswith("test-also="):
-                        test.test_also.append(
-                            re.split(r"\s+", name[len("test-also=") :])
-                        )
-                    elif name.startswith("test-join="):
-                        test.test_join.append(
-                            re.split(r"\s+", name[len("test-join=") :])
-                        )
-                    elif name == "module":
-                        test.is_module = True
-                    elif name == "crash":
-                        # Crashes are only allowed in self-test, as it is
-                        # intended to verify that our testing infrastructure
-                        # works, and not meant as a way to accept temporary
-                        # failing tests. These tests should either be fixed or
-                        # skipped.
-                        assert (
-                            "self-test" in path
-                        ), f"{path}: has an unexpected crash annotation."
-                        test.expect_crash = True
-                    elif name.startswith("--"):
-                        # // |jit-test| --ion-gvn=off; --no-sse4
-                        test.jitflags.append(name)
-                    elif name.startswith("-P"):
-                        prefAndValue = name.split()
-                        assert (
-                            len(prefAndValue) == 2
-                        ), f"{name}: failed to parse preference"
-                        # // |jit-test| -P pref(=value)?
-                        test.jitflags.append("--setpref=" + prefAndValue[1])
-                    else:
-                        print(
-                            f"{path}: warning: unrecognized |jit-test| attribute"
-                            f" {part}"
-                        )
+                    print(f"{path}: warning: unrecognized |jit-test| attribute {part}")
 
         if options.valgrind_all:
             test.valgrind = True
@@ -465,7 +454,7 @@ def find_tests(substring=None):
             if filename in ("shell.js", "browser.js"):
                 continue
             test = os.path.join(dirpath, filename)
-            if substring is None or substring in os.path.relpath(test, TEST_DIR):
+            if substring is None or substring in os.path.relpath(test, TOP_SRC_DIR):
                 ans.append(test)
     return ans
 
@@ -516,7 +505,7 @@ def check_output(out, err, rc, timed_out, test, options):
         # When running jittests on Android, SEGV results in a return code of
         # 128 + 11 = 139. Due to a bug in tinybox, we have to check for 138 as
         # well.
-        if rc == 139 or rc == 138:
+        if rc in {139, 138}:
             return OutputStatus.OK
 
         # Crashing test should always crash as expected, otherwise this is an

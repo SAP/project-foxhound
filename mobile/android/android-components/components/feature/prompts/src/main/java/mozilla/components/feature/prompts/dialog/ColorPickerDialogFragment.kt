@@ -13,10 +13,10 @@ import android.view.LayoutInflater
 import android.view.View
 import androidx.annotation.ColorInt
 import androidx.annotation.VisibleForTesting
-import androidx.appcompat.app.AlertDialog
 import androidx.core.graphics.toColorInt
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import mozilla.components.feature.prompts.R
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 
@@ -42,7 +42,7 @@ internal class ColorPickerDialogFragment : PromptDialogFragment(), DialogInterfa
         }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog =
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setCancelable(true)
             .setTitle(R.string.mozac_feature_prompts_choose_a_color)
             .setNegativeButton(R.string.mozac_feature_prompts_cancel, this)

@@ -36,16 +36,14 @@ os.path.exists(chromiumsrc) and rmtree(chromiumsrc)
 def doexport(svnpath):
     localpath = os.path.join(chromiumsrc, svnpath)
     os.makedirs(os.path.dirname(localpath))
-    check_call(
-        [
-            "svn",
-            "export",
-            "-r",
-            "BASE",
-            os.path.join(chromiumtree, "src", svnpath),
-            localpath,
-        ]
-    )
+    check_call([
+        "svn",
+        "export",
+        "-r",
+        "BASE",
+        os.path.join(chromiumtree, "src", svnpath),
+        localpath,
+    ])
 
 
 doexport("base")

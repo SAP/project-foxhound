@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 var otherGlobal = newGlobal();
 
 var pluralRules = new Intl.PluralRules();

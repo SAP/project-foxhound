@@ -11,7 +11,7 @@ const { sinon } = ChromeUtils.importESModule(
   "resource://testing-common/Sinon.sys.mjs"
 );
 const { AttributionCode } = ChromeUtils.importESModule(
-  "resource:///modules/AttributionCode.sys.mjs"
+  "moz-src:///browser/components/attribution/AttributionCode.sys.mjs"
 );
 const { AddonRepository } = ChromeUtils.importESModule(
   "resource://gre/modules/addons/AddonRepository.sys.mjs"

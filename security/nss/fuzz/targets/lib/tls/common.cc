@@ -57,12 +57,11 @@ void DoHandshake(PRFileDesc* fd, bool isServer) {
     rv = SSL_ForceHandshake(fd);
   } while (rv != SECSuccess && PR_GetError() == PR_WOULD_BLOCK_ERROR);
 
-  // If the handshake succeeds, let's read some data from the server, if any.
+  // If the handshake succeeds, read application data and echo it back.
   if (rv == SECSuccess) {
     uint8_t block[1024];
     int32_t nb;
 
-    // Read application data and echo it back.
     while ((nb = PR_Read(fd, block, sizeof(block))) > 0) {
       PR_Write(fd, block, nb);
     }

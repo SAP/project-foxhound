@@ -1,0 +1,14 @@
+{
+  "deemphasized-strong": {
+    "value": {
+      "default": "0.6",
+      "prefersContrast": "1"
+    }
+  },
+  "deemphasized": {
+    "value": {
+      "default": "0.8",
+      "prefersContrast": "1"
+    }
+  }
+}

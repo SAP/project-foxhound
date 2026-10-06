@@ -9,6 +9,7 @@
 /* global tabTracker */
 
 ChromeUtils.defineESModuleGetters(this, {
+  ExtensionDocumentId: "resource://gre/modules/ExtensionDocumentId.sys.mjs",
   MatchURLFilters: "resource://gre/modules/MatchURLFilters.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   WebNavigation: "resource://gre/modules/WebNavigation.sys.mjs",
@@ -136,6 +137,12 @@ this.webNavigation = class extends ExtensionAPIPersistent {
         if (data.frameId != undefined) {
           data2.frameId = data.frameId;
           data2.parentFrameId = data.parentFrameId;
+          if (data.documentId != undefined) {
+            data2.documentId = data.documentId;
+          }
+          if (data.parentDocumentId != undefined) {
+            data2.parentDocumentId = data.parentDocumentId;
+          }
         }
 
         if (data.sourceFrameId != undefined) {
@@ -144,7 +151,7 @@ this.webNavigation = class extends ExtensionAPIPersistent {
 
         // Do not send a webNavigation event when the data.browser is related to a tab from a
         // new window opened to adopt an existent tab (See Bug 1443221 for a rationale).
-        const chromeWin = data.browser.ownerGlobal;
+        const chromeWin = data.browser.documentGlobal;
 
         if (
           chromeWin &&
@@ -167,9 +174,10 @@ this.webNavigation = class extends ExtensionAPIPersistent {
         }
 
         if (data.sourceTabBrowser) {
-          data2.sourceTabId = tabTracker.getBrowserData(
-            data.sourceTabBrowser
-          ).tabId;
+          const sourceTab = tabTracker.getTabForBrowser(data.sourceTabBrowser);
+          if (sourceTab) {
+            data2.sourceTabId = tabTracker.getId(sourceTab);
+          }
         }
 
         fillTransitionProperties(event, data, data2);
@@ -259,7 +267,42 @@ this.webNavigation = class extends ExtensionAPIPersistent {
           let frames = WebNavigationFrames.getAllFrames(tab.browsingContext);
           return frames.map(fd => ({ tabId, ...fd }));
         },
-        getFrame({ tabId, frameId }) {
+        getFrame({ tabId, frameId, documentId }) {
+          if (documentId != null) {
+            const bc =
+              ExtensionDocumentId.getBrowsingContextForDocumentId(documentId);
+            if (!bc) {
+              // Invalid ID, no longer existing (e.g. discarded), etc.
+              return null;
+            }
+            const browser = bc.top.embedderElement;
+            const tab = browser && tabTracker.getTabForBrowser(browser);
+            if (!tab || !tabManager.canAccessTab(tab)) {
+              // Note: If we wanted to, we could return details for non-tabs,
+              // but we do not fire webNavigation events for non-tabs either.
+              return null;
+            }
+            const fd = {
+              tabId: tabTracker.getId(tab),
+              ...WebNavigationFrames.getFrameDetail(bc),
+            };
+            if (
+              // If tabId/frameId are set, check for mismatches.
+              (tabId != null && fd.tabId != tabId) ||
+              (frameId != null && fd.frameId != frameId)
+            ) {
+              // Unlike the non-documentId branch, we return null instead of
+              // throwing an error, because an error would allow extensions to
+              // distinguish between a valid documentId (early return for !bc
+              // above) vs a documentId in a browser that they cannot access.
+              return null;
+            }
+            return fd;
+          } else if (tabId == null || frameId == null) {
+            throw new ExtensionError(
+              "Either documentId or both tabId and frameId must be specified."
+            );
+          }
           let tab = tabManager.get(tabId);
           if (tab.discarded) {
             return null;

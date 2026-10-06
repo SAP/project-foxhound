@@ -12,13 +12,20 @@
 #include "av1/encoder/encoder.h"
 #include "av1/encoder/level.h"
 
-#define UNDEFINED_LEVEL                                                 \
-  {                                                                     \
-    .level = SEQ_LEVEL_MAX, .max_picture_size = 0, .max_h_size = 0,     \
-    .max_v_size = 0, .max_display_rate = 0, .max_decode_rate = 0,       \
-    .max_header_rate = 0, .main_mbps = 0, .high_mbps = 0, .main_cr = 0, \
-    .high_cr = 0, .max_tiles = 0, .max_tile_cols = 0                    \
-  }
+#define UNDEFINED_LEVEL     \
+  { .level = SEQ_LEVEL_MAX, \
+    .max_picture_size = 0,  \
+    .max_h_size = 0,        \
+    .max_v_size = 0,        \
+    .max_display_rate = 0,  \
+    .max_decode_rate = 0,   \
+    .max_header_rate = 0,   \
+    .main_mbps = 0,         \
+    .high_mbps = 0,         \
+    .main_cr = 0,           \
+    .high_cr = 0,           \
+    .max_tiles = 0,         \
+    .max_tile_cols = 0 }
 
 static const AV1LevelSpec av1_level_defs[SEQ_LEVELS] = {
   { .level = SEQ_LEVEL_2_0,
@@ -1032,14 +1039,7 @@ static TARGET_LEVEL_FAIL_ID check_level_constraints(
       break;
     }
 
-#if CONFIG_CWG_C013
-    const int max_tile_size = (level >= SEQ_LEVEL_7_0 && level <= SEQ_LEVEL_8_3)
-                                  ? MAX_TILE_AREA_LEVEL_7_AND_ABOVE
-                                  : MAX_TILE_AREA;
-#else
-    const int max_tile_size = MAX_TILE_AREA;
-#endif
-    if (level_stats->max_tile_size > max_tile_size) {
+    if (level_stats->max_tile_size > MAX_TILE_AREA) {
       fail_id = TILE_TOO_LARGE;
       break;
     }

@@ -695,7 +695,7 @@ function gen_grain_uv_420_lag0_4_neon
         str             x30, [sp, #-16]!
         ld1             {v16.4h, v17.4h}, [x19]
         ld1             {v18.4h, v19.4h}, [x12]
-        add             x19,  x19,  #32
+        add             x19, x19, #32
         addp            v16.4h,  v16.4h,  v17.4h
         addp            v17.4h,  v18.4h,  v19.4h
         add             v16.4h,  v16.4h,  v17.4h
@@ -708,7 +708,7 @@ function gen_grain_uv_422_lag0_4_neon
         AARCH64_SIGN_LINK_REGISTER
         str             x30, [sp, #-16]!
         ld1             {v16.4h, v17.4h}, [x19]
-        add             x19,  x19,  #32
+        add             x19, x19, #32
         addp            v16.4h,  v16.4h,  v17.4h
         srshr           v4.4h,   v16.4h,  #1
         get_grain_4     v0

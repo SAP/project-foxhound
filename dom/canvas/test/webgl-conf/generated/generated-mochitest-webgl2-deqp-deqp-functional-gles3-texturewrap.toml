@@ -1,0 +1,66 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-deqp"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/closure-library/**",
+  "../checkout/deqp/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_deqp__functional__gles3__texturewrap__eac_r11_npot.html"]
+
+["test_2_deqp__functional__gles3__texturewrap__eac_r11_pot.html"]
+
+["test_2_deqp__functional__gles3__texturewrap__eac_rg11_npot.html"]
+
+["test_2_deqp__functional__gles3__texturewrap__eac_rg11_pot.html"]
+
+["test_2_deqp__functional__gles3__texturewrap__eac_signed_r11_npot.html"]
+
+["test_2_deqp__functional__gles3__texturewrap__eac_signed_r11_pot.html"]
+
+["test_2_deqp__functional__gles3__texturewrap__eac_signed_rg11_npot.html"]
+
+["test_2_deqp__functional__gles3__texturewrap__eac_signed_rg11_pot.html"]
+
+["test_2_deqp__functional__gles3__texturewrap__etc2_eac_rgba8_npot.html"]
+
+["test_2_deqp__functional__gles3__texturewrap__etc2_eac_rgba8_pot.html"]
+
+["test_2_deqp__functional__gles3__texturewrap__etc2_eac_srgb8_alpha8_npot.html"]
+
+["test_2_deqp__functional__gles3__texturewrap__etc2_eac_srgb8_alpha8_pot.html"]
+
+["test_2_deqp__functional__gles3__texturewrap__etc2_rgb8_npot.html"]
+
+["test_2_deqp__functional__gles3__texturewrap__etc2_rgb8_pot.html"]
+
+["test_2_deqp__functional__gles3__texturewrap__etc2_rgb8_punchthrough_alpha1_npot.html"]
+
+["test_2_deqp__functional__gles3__texturewrap__etc2_rgb8_punchthrough_alpha1_pot.html"]
+
+["test_2_deqp__functional__gles3__texturewrap__etc2_srgb8_npot.html"]
+
+["test_2_deqp__functional__gles3__texturewrap__etc2_srgb8_pot.html"]
+
+["test_2_deqp__functional__gles3__texturewrap__etc2_srgb8_punchthrough_alpha1_npot.html"]
+
+["test_2_deqp__functional__gles3__texturewrap__etc2_srgb8_punchthrough_alpha1_pot.html"]
+
+["test_2_deqp__functional__gles3__texturewrap__rgba8_npot.html"]
+
+["test_2_deqp__functional__gles3__texturewrap__rgba8_pot.html"]

@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __nsAppShellService_h
-#define __nsAppShellService_h
+#ifndef _nsAppShellService_h
+#define _nsAppShellService_h
 
 #include "nsIAppShellService.h"
 #include "nsIObserver.h"
@@ -13,7 +12,6 @@
 #include "AppWindow.h"
 #include "nsStringFwd.h"
 #include "nsIRemoteTab.h"
-#include "mozilla/Attributes.h"
 
 // {0099907D-123C-4853-A46A-43098B5FB68C}
 #define NS_APPSHELLSERVICE_CID \

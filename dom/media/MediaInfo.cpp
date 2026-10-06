@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -136,6 +134,21 @@ nsCString VideoInfo::ToString() const {
   }
   rv.AppendPrintf(", color range: %s",
                   ColorRangeStrings[static_cast<int>(mColorRange)]);
+  if (mHDRMetadata) {
+    if (const auto& s = mHDRMetadata->mSmpte2086) {
+      rv.AppendPrintf(
+          ", smpte2086 R(%.4f,%.4f) G(%.4f,%.4f)"
+          " B(%.4f,%.4f) WP(%.4f,%.4f) lum(%.4f,%.4f)",
+          s->displayPrimaryRed.x, s->displayPrimaryRed.y,
+          s->displayPrimaryGreen.x, s->displayPrimaryGreen.y,
+          s->displayPrimaryBlue.x, s->displayPrimaryBlue.y, s->whitePoint.x,
+          s->whitePoint.y, s->maxLuminance, s->minLuminance);
+    }
+    if (const auto& cll = mHDRMetadata->mContentLightLevel) {
+      rv.AppendPrintf(", MaxCLL=%u MaxFALL=%u", cll->maxContentLightLevel,
+                      cll->maxFrameAverageLightLevel);
+    }
+  }
   if (mImageRect) {
     rv.AppendPrintf(", image rect: %dx%d", mImageRect->Width(),
                     mImageRect->Height());

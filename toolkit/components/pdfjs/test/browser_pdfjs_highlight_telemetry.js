@@ -33,6 +33,9 @@ add_task(async function test() {
         set: [
           ["pdfjs.annotationEditorMode", 0],
           ["pdfjs.enableHighlight", true],
+          // Disable right-click on images to avoid opening the context menu
+          // during tests because of some pointer issues when selecting text.
+          ["pdfjs.imagesRightClickMinSize", -1],
         ],
       });
 
@@ -218,7 +221,7 @@ add_task(async function test() {
       );
 
       telemetryPromise = waitForTelemetry(browser);
-      await EventUtils.synthesizeKey("KEY_Delete");
+      await click(browser, ".highlightEditor button.deleteButton");
       await telemetryPromise;
 
       await Services.fog.testFlushAllChildren();

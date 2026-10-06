@@ -1,4 +1,4 @@
-// |reftest| skip -- source-phase-imports,source-phase-imports-module-source is not supported
+// |reftest| shell-option(--enable-source-phase-imports) shell-option(--enable-source-phase-imports-test262-module-source) skip-if(!(this.hasOwnProperty('getBuildConfiguration')&&getBuildConfiguration('source-phase-imports'))||!(this.hasOwnProperty('wasmIsSupported')&&wasmIsSupported())||!xulRuntime.shell) -- source-phase-imports,source-phase-imports-module-source is not enabled unconditionally, requires shell-options
 // This file was procedurally generated from the following sources:
 // - src/dynamic-import/import-source-script-code-valid.case
 // - src/dynamic-import/syntax/valid/top-level.template

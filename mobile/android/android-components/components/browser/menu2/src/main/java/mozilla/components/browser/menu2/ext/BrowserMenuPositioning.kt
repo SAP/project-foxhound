@@ -18,7 +18,7 @@ import kotlin.math.roundToInt
 
 const val HALF_MENU_ITEM = 0.5
 
-@Suppress("ComplexMethod")
+@Suppress("CyclomaticComplexMethod")
 internal fun inferMenuPositioningData(
     containerView: View,
     anchor: View,
@@ -238,22 +238,18 @@ data class MenuPositioningData(
      * Android View that the PopupWindow should be anchored to.
      */
     val anchor: View,
-
     /**
      * [WindowManager#LayoutParams#x] of params the menu will be added with.
      */
     @param:Px val x: Int = 0,
-
     /**
      * [WindowManager#LayoutParams#y] of params the menu will be added with.
      */
     @param:Px val y: Int = 0,
-
     /**
      * [View#measuredHeight] of the menu.
      */
     @param:Px val containerHeight: Int = 0,
-
     /**
      * [PopupWindow#animationStyle] of the menu.
      */

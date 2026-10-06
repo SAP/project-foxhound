@@ -20,6 +20,7 @@ import mozilla.components.service.fxa.manager.FxaAccountManager
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.bitmapForUrl
 import org.mozilla.fenix.settings.requirePreference
+import mozilla.components.ui.icons.R as iconsR
 
 class AccountUiView(
     fragment: PreferenceFragmentCompat,
@@ -101,7 +102,7 @@ class AccountUiView(
      * Returns generic avatar for accounts.
      */
     private fun genericAvatar(context: Context) =
-        AppCompatResources.getDrawable(context, R.drawable.ic_account)
+        AppCompatResources.getDrawable(context, iconsR.drawable.mozac_ic_avatar_circle_24)
 
     /**
      * Gets a rounded drawable from a URL if possible, else null.

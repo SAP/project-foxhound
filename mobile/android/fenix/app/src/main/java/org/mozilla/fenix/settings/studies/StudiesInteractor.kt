@@ -6,8 +6,6 @@ package org.mozilla.fenix.settings.studies
 
 import mozilla.components.service.nimbus.NimbusApi
 import org.mozilla.experiments.nimbus.internal.EnrolledExperiment
-import org.mozilla.fenix.BrowserDirection
-import org.mozilla.fenix.HomeActivity
 
 interface StudiesInteractor {
     /**
@@ -21,16 +19,18 @@ interface StudiesInteractor {
     fun removeStudy(experiment: EnrolledExperiment)
 }
 
+/**
+ * Default implementation of [StudiesInteractor].
+ *
+ * @param openUrlInBrowser Callback to open a URL in the browser.
+ * @param experiments The Nimbus API for managing experiments.
+ */
 class DefaultStudiesInteractor(
-    private val homeActivity: HomeActivity,
+    private val openUrlInBrowser: (String) -> Unit,
     private val experiments: NimbusApi,
 ) : StudiesInteractor {
     override fun openWebsite(url: String) {
-        homeActivity.openToBrowserAndLoad(
-            searchTermOrURL = url,
-            newTab = true,
-            from = BrowserDirection.FromStudiesFragment,
-        )
+        openUrlInBrowser(url)
     }
 
     override fun removeStudy(experiment: EnrolledExperiment) {

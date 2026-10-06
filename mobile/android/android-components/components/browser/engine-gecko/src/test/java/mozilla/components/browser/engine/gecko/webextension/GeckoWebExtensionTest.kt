@@ -4,6 +4,7 @@
 
 package mozilla.components.browser.engine.gecko.webextension
 
+import android.os.Looper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.browser.engine.gecko.GeckoEngineSession
 import mozilla.components.concept.engine.DefaultSettings
@@ -22,7 +23,6 @@ import mozilla.components.support.test.whenever
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -31,11 +31,14 @@ import org.junit.runner.RunWith
 import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
+import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.Image
 import org.mozilla.geckoview.WebExtension
 import org.mozilla.geckoview.WebExtensionController
+import org.robolectric.Shadows.shadowOf
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class GeckoWebExtensionTest {
@@ -341,20 +344,7 @@ class GeckoWebExtensionTest {
         assertNotNull(engineSessionCaptor.value)
 
         tabDelegateCaptor.value.onOpenOptionsPage(nativeGeckoWebExt)
-        verify(tabHandler, never()).onNewTab(eq(extension), any(), eq(false), eq("http://options-page.moz"))
-
-        val nativeGeckoWebExtWithMetadata =
-            mockNativeWebExtension(id = "id", location = "uri", metaData = mockNativeWebExtensionMetaData())
-        tabDelegateCaptor.value.onOpenOptionsPage(nativeGeckoWebExtWithMetadata)
-        verify(tabHandler, never()).onNewTab(eq(extension), any(), eq(false), eq("http://options-page.moz"))
-
-        val nativeGeckoWebExtWithOptionsPageUrl = mockNativeWebExtension(
-            id = "id",
-            location = "uri",
-            metaData = mockNativeWebExtensionMetaData(optionsPageUrl = "http://options-page.moz"),
-        )
-        tabDelegateCaptor.value.onOpenOptionsPage(nativeGeckoWebExtWithOptionsPageUrl)
-        verify(tabHandler).onNewTab(eq(extension), any(), eq(false), eq("http://options-page.moz"))
+        verify(tabHandler).onOpenOptionsPage(eq(extension))
     }
 
     @Test
@@ -586,21 +576,45 @@ class GeckoWebExtensionTest {
     }
 
     @Test
-    fun `loadIcon tries to load icon from metadata`() {
+    fun `GIVEN a request to load the extension icon THEN load it from the extension metadata`() {
         val runtime: GeckoRuntime = mock()
         whenever(runtime.webExtensionController).thenReturn(mock())
-
         val iconMock: Image = mock()
-        whenever(iconMock.getBitmap(48)).thenReturn(mock())
+        whenever(iconMock.getBitmap(48)).thenReturn(GeckoResult.fromValue(mock()))
         val nativeWebExtensionWithIcon = mockNativeWebExtension(
             id = "id",
             location = "uri",
             metaData = mockNativeWebExtensionMetaData(icon = iconMock),
         )
-
         val webExtensionWithIcon = GeckoWebExtension(nativeWebExtensionWithIcon, runtime)
-        webExtensionWithIcon.getIcon(48)
+
+        val result = webExtensionWithIcon.getIcon(48)
+        val mainLooper = Looper.getMainLooper()
+        shadowOf(mainLooper).idle()
+
         verify(iconMock).getBitmap(48)
+        assertNotNull(result.poll(1000))
+    }
+
+    @Test
+    fun `GIVEN a request to load the extension icon WHEN loading it from the extension metadata completes exceptionally THEN use a null icon`() {
+        val runtime: GeckoRuntime = mock()
+        whenever(runtime.webExtensionController).thenReturn(mock())
+        val iconMock: Image = mock()
+        whenever(iconMock.getBitmap(48)).thenReturn(GeckoResult.fromException(Image.ImageProcessingException("")))
+        val nativeWebExtensionWithIcon = mockNativeWebExtension(
+            id = "id",
+            location = "uri",
+            metaData = mockNativeWebExtensionMetaData(icon = iconMock),
+        )
+        val webExtensionWithIcon = GeckoWebExtension(nativeWebExtensionWithIcon, runtime)
+
+        val result = webExtensionWithIcon.getIcon(48)
+        val mainLooper = Looper.getMainLooper()
+        shadowOf(mainLooper).idle()
+
+        verify(iconMock).getBitmap(48)
+        assertNull(result.poll(1000))
     }
 
     @Test

@@ -1,0 +1,104 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>Readback from HTMLCanvasElement after transferControlToOffscreen</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" href="/tests/SimpleTest/test.css">
+</head>
+<body>
+<canvas id="c" width="64" height="64"></canvas>
+<script>
+
+SimpleTest.waitForExplicitFinish();
+
+const W = 64, H = 64;
+
+const EXPECTED_PIXELS = [
+  { x: 0,  y: 0,  r: 0xEE, g: 0x22, b: 0x22 },
+  { x: 32, y: 32, r: 0x22, g: 0x22, b: 0xEE },
+  { x: 48, y: 48, r: 0x22, g: 0xEE, b: 0x22 },
+];
+
+function checkPixels(label, imageData) {
+  for (const { x, y, r, g, b } of EXPECTED_PIXELS) {
+    const i = (y * W + x) * 4;
+    is(imageData[i],   r, `${label} pixel (${x},${y}) red`);
+    is(imageData[i+1], g, `${label} pixel (${x},${y}) green`);
+    is(imageData[i+2], b, `${label} pixel (${x},${y}) blue`);
+    is(imageData[i+3], 255, `${label} pixel (${x},${y}) alpha`);
+  }
+}
+
+  async function runTest() {
+      await SpecialPowers.pushPrefEnv({ set: [["gfx.canvas.accelerated", false]] });
+  const htmlCanvas = document.getElementById("c");
+
+  const offscreen = htmlCanvas.transferControlToOffscreen();
+
+  const workerCode = `
+    self.onmessage = function(e) {
+      var c = e.data.canvas;
+      var ctx = c.getContext('2d');
+      ctx.fillStyle = '#EE2222';
+      ctx.fillRect(0, 0, ${W}, ${H});
+      ctx.fillStyle = '#2222EE';
+      ctx.fillRect(20, 20, ${W - 20}, ${H - 20});
+      ctx.fillStyle = '#22EE22';
+      ctx.fillRect(40, 40, ${W - 40}, ${H - 40});
+      self.postMessage('done');
+    };
+  `;
+
+  const worker = new Worker(
+    URL.createObjectURL(new Blob([workerCode], { type: "text/javascript" }))
+  );
+
+  await new Promise(resolve => {
+    worker.onmessage = () => resolve();
+    worker.postMessage({ canvas: offscreen }, [offscreen]);
+  });
+
+  // toDataURL readback
+  const dataURL = htmlCanvas.toDataURL("image/png");
+  isnot(dataURL, "data:,", "toDataURL should not return empty data");
+
+  const img = new Image();
+  await new Promise((resolve, reject) => {
+    img.onload = resolve;
+    img.onerror = () => reject(new Error("Failed to load data URL image"));
+    img.src = dataURL;
+  });
+
+  const tmp = document.createElement("canvas");
+  tmp.width = W;
+  tmp.height = H;
+  tmp.getContext("2d").drawImage(img, 0, 0);
+  const pixels = tmp.getContext("2d").getImageData(0, 0, W, H).data;
+  checkPixels("toDataURL", pixels);
+
+  // toBlob readback
+  const blob = await new Promise((resolve, reject) => {
+    htmlCanvas.toBlob(b => b ? resolve(b) : reject(new Error("toBlob null")), "image/png");
+  });
+  ok(blob, "toBlob should return a non-null blob");
+
+  const img2 = await createImageBitmap(blob);
+  const tmp2 = document.createElement("canvas");
+  tmp2.width = W;
+  tmp2.height = H;
+  tmp2.getContext("2d").drawImage(img2, 0, 0);
+  const pixels2 = tmp2.getContext("2d").getImageData(0, 0, W, H).data;
+  checkPixels("toBlob", pixels2);
+
+  worker.terminate();
+  SimpleTest.finish();
+}
+
+runTest().catch(e => {
+  ok(false, "Test threw: " + e);
+  SimpleTest.finish();
+});
+
+</script>
+</body>
+</html>

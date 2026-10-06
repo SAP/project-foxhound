@@ -1,5 +1,3 @@
-/* vim: et ts=4 sw=4 tw=80
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -33,7 +31,7 @@ interface nsINetAddr : nsISupports
     /**
      * @return Either the IP address (FAMILY_INET, FAMILY_INET6) or the path
      * (FAMILY_LOCAL) in string form. IP addresses are in the format produced by
-     * mozilla::net::NetAddr::ToStringBuffer.
+     * mozilla::net::NetAddr::ToString.
      *
      * Note: Paths for FAMILY_LOCAL may have length limitations which are
      * implementation dependent and not documented as part of this interface.

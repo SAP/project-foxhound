@@ -1,4 +1,3 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -147,6 +146,14 @@ export class AboutReaderParent extends JSWindowActorParent {
     return undefined;
   }
 
+  static onLocationChange(_window, _locationURI, webProgress, _flags) {
+    const browser = webProgress.browsingContext.embedderElement;
+    if (!browser) {
+      return;
+    }
+    AboutReaderParent.updateReaderButton(browser);
+  }
+
   static updateReaderButton(browser) {
     let windowGlobal = browser.browsingContext.currentWindowGlobal;
     let actor = windowGlobal.getActor("AboutReader");
@@ -159,7 +166,7 @@ export class AboutReaderParent extends JSWindowActorParent {
       return;
     }
 
-    let doc = browser.ownerGlobal.document;
+    let doc = browser.documentGlobal.document;
     let button = doc.getElementById("reader-mode-button");
     let menuitem = doc.getElementById("menu_readerModeItem");
     let key = doc.getElementById("key_toggleReaderMode");
@@ -173,7 +180,7 @@ export class AboutReaderParent extends JSWindowActorParent {
       menuitem.hidden = false;
       doc.l10n.setAttributes(menuitem, "menu-view-close-readerview");
 
-      key.setAttribute("disabled", false);
+      key.removeAttribute("disabled");
 
       Services.obs.notifyObservers(null, "reader-mode-available");
     } else {
@@ -184,7 +191,7 @@ export class AboutReaderParent extends JSWindowActorParent {
       menuitem.hidden = !browser.isArticle;
       doc.l10n.setAttributes(menuitem, "menu-view-enter-readerview");
 
-      key.setAttribute("disabled", !browser.isArticle);
+      key.toggleAttribute("disabled", !browser.isArticle);
 
       if (browser.isArticle) {
         Services.obs.notifyObservers(null, "reader-mode-available");
@@ -202,7 +209,7 @@ export class AboutReaderParent extends JSWindowActorParent {
   }
 
   static toggleReaderMode(event) {
-    let win = event.target.ownerGlobal;
+    let win = event.target.documentGlobal;
     if (win.gBrowser) {
       let browser = win.gBrowser.selectedBrowser;
 
@@ -218,16 +225,13 @@ export class AboutReaderParent extends JSWindowActorParent {
   }
 
   hasReaderModeEntryAtOffset(url, offset) {
-    if (Services.appinfo.sessionHistoryInParent) {
-      let browsingContext = this.browsingContext;
-      if (browsingContext.childSessionHistory.canGo(offset)) {
-        let shistory = browsingContext.sessionHistory;
-        let nextEntry = shistory.getEntryAtIndex(shistory.index + offset);
-        let nextURL = nextEntry.URI.spec;
-        return nextURL && (nextURL == url || !url);
-      }
+    let browsingContext = this.browsingContext;
+    if (browsingContext.childSessionHistory.canGo(offset)) {
+      let shistory = browsingContext.sessionHistory;
+      let nextEntry = shistory.getEntryAtIndex(shistory.index + offset);
+      let nextURL = nextEntry.URI.spec;
+      return nextURL && (nextURL == url || !url);
     }
-
     return false;
   }
 
@@ -258,9 +262,9 @@ export class AboutReaderParent extends JSWindowActorParent {
    * Gets an article for a given URL. This method will download and parse a document.
    *
    * @param url The article URL.
-   * @param browser The browser where the article is currently loaded.
-   * @return {Promise}
-   * @resolves JS object representing the article, or null if no article is found.
+   * @return {Promise<?object>}
+   *   Resolves to the JS object representing the article, or null if no article
+   *   is found.
    */
   async _getArticle(url) {
     return lazy.ReaderMode.downloadAndParseDocument(url).catch(e => {

@@ -81,7 +81,7 @@ Class Reference
     around ``nsBaseHashtable``. See the methods defined on that class for
     more detailed documentation.
 
-    https://searchfox.org/mozilla-central/source/xpcom/ds/nsBaseHashtable.h
+    :searchfox:`xpcom/ds/nsBaseHashtable.h`
 
     .. cpp:function:: uint32_t Count() const
 
@@ -111,4 +111,4 @@ Class Reference
     around ``nsTBaseHashSet``. See the methods defined on that class for
     more detailed documentation.
 
-    https://searchfox.org/mozilla-central/source/xpcom/ds/nsTHashSet.h
+    :searchfox:`xpcom/ds/nsTHashSet.h`

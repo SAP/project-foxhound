@@ -11,7 +11,7 @@ const URL =
   RAND;
 
 const HAS_FIRST_PARTY_DOMAIN = [
-  Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+  Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
 ].includes(Services.prefs.getIntPref("network.cookie.cookieBehavior"));
 const OUTER_ORIGIN = "http://mochi.test:8888";
 const FIRST_PARTY_DOMAIN = escape("(http,mochi.test)");
@@ -85,7 +85,12 @@ add_task(async function session_storage() {
   // Test that duplicating a tab works.
   let tab2 = gBrowser.duplicateTab(tab);
   let browser2 = tab2.linkedBrowser;
-  await promiseTabRestored(tab2);
+  // See bug 2001322, need to wait for iframe of tab2 to finish loading
+  const subframeLoaded = BrowserTestUtils.browserLoaded(tab2.linkedBrowser, {
+    includeSubFrames: true,
+    wantLoad: url => url.startsWith("http://example.com"),
+  });
+  await Promise.all([promiseTabRestored(tab2), subframeLoaded]);
 
   // Flush to make sure chrome received all data.
   await TabStateFlusher.flush(browser2);
@@ -248,7 +253,12 @@ add_task(async function respect_privacy_level() {
   tab = BrowserTestUtils.addTab(gBrowser, URL + "&secure");
   await promiseBrowserLoaded(tab.linkedBrowser);
   let tab2 = gBrowser.duplicateTab(tab);
-  await promiseTabRestored(tab2);
+  // See bug 2001322, need to wait for iframe of tab2 to finish loading
+  const subframeLoaded = BrowserTestUtils.browserLoaded(tab2.linkedBrowser, {
+    includeSubFrames: true,
+    wantLoad: url => url.startsWith("https://example.com"),
+  });
+  await Promise.all([promiseTabRestored(tab2), subframeLoaded]);
   await promiseRemoveTabAndSessionState(tab);
 
   // With privacy_level=2 the |tab| shouldn't have any sessionStorage data.

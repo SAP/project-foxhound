@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,8 +10,8 @@
 #include "gmp-video-codec.h"
 #include "mozIGeckoMediaPluginService.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/gmp/GMPTypes.h"
 #include "mozilla/MozPromise.h"
+#include "mozilla/gmp/GMPTypes.h"
 #include "nsCOMPtr.h"
 #include "nsClassHashtable.h"
 #include "nsIObserver.h"
@@ -101,9 +100,11 @@ class GeckoMediaPluginService : public mozIGeckoMediaPluginService,
       GMPCrashHelper* aHelper, const NodeIdVariant& aNodeIdVariant,
       const nsACString& aAPI, const nsTArray<nsCString>& aTags) = 0;
 
-  nsresult GMPDispatch(nsIRunnable* event, uint32_t flags = NS_DISPATCH_NORMAL);
-  nsresult GMPDispatch(already_AddRefed<nsIRunnable> event,
-                       uint32_t flags = NS_DISPATCH_NORMAL);
+  nsresult GMPDispatch(nsIRunnable* event, nsIEventTarget::DispatchFlags flags =
+                                               NS_DISPATCH_NORMAL);
+  nsresult GMPDispatch(
+      already_AddRefed<nsIRunnable> event,
+      nsIEventTarget::DispatchFlags flags = NS_DISPATCH_NORMAL);
   void ShutdownGMPThread();
 
   static nsCOMPtr<nsIAsyncShutdownClient> GetShutdownBarrier();

@@ -13,8 +13,10 @@ package org.webrtc;
 /** Factory for creating webrtc::AudioProcessing instances. */
 public interface AudioProcessingFactory {
   /**
-   * Dynamically allocates a webrtc::AudioProcessing instance and returns a pointer to it.
-   * The caller takes ownership of the object.
+   * Dynamically allocates a {@code webrtc::AudioProcessing} instance.
+   *
+   * @param webrtcEnvRef non-null non-owning pointer to {@code webrtc::Environment}
+   * @return non-null owning scoped_refptr pointer to {@code webrtc::AudioProcessing}
    */
-  public long createNative();
+  long createNative(long webrtcEnvRef);
 }

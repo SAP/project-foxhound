@@ -1,0 +1,32 @@
+From: Michael Froman <mfroman@mozilla.com>
+Date: Thu, 10 Jul 2025 20:03:00 +0000
+Subject: Bug 1975060 - improve build file generation regarding x11 usage.
+ r=dbaker
+
+Upstream will be removing use_x11. We override the use_x11 settings
+from within gn_processor.py anyway, so we can remove our hack in
+third_party/libwebrtc/webrtc.gni, and then make gn_processor.py modify
+ozone_platform_x11 rather than use_x11.
+
+Note: these changes produce identical moz.build files for libwebrtc
+and abseil-cpp.
+
+Differential Revision: https://phabricator.services.mozilla.com/D255713
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/c8cf67108972d5caefbfbb66146e26e5358493c2
+---
+ webrtc.gni | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/webrtc.gni b/webrtc.gni
+index 366755e02f..d242bc314b 100644
+--- a/webrtc.gni
++++ b/webrtc.gni
+@@ -128,7 +128,7 @@ declare_args() {
+   rtc_build_tools = false
+ 
+   # Set this to false to skip building code that requires X11.
+-  rtc_use_x11 = use_x11
++  rtc_use_x11 = ozone_platform_x11
+ 
+   # Set this to use PipeWire on the Wayland display server.
+   # By default it's only enabled on desktop Linux (excludes ChromeOS) and

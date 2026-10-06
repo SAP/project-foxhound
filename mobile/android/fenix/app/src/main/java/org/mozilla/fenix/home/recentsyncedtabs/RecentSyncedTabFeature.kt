@@ -5,10 +5,13 @@
 package org.mozilla.fenix.home.recentsyncedtabs
 
 import android.content.Context
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.withContext
 import mozilla.components.browser.storage.sync.Tab
 import mozilla.components.concept.storage.HistoryStorage
 import mozilla.components.concept.sync.Device
@@ -18,7 +21,7 @@ import mozilla.components.lib.state.ext.flow
 import mozilla.components.service.fxa.SyncEngine
 import mozilla.components.service.fxa.manager.FxaAccountManager
 import mozilla.components.service.fxa.manager.SyncEnginesStorage
-import mozilla.components.service.fxa.manager.ext.withConstellation
+import mozilla.components.service.fxa.manager.ext.withConstellationIfExists
 import mozilla.components.service.fxa.store.SyncStatus
 import mozilla.components.service.fxa.store.SyncStore
 import mozilla.components.service.fxa.sync.SyncReason
@@ -40,6 +43,7 @@ import java.util.concurrent.TimeUnit
  * @param accountManager Account manager to initiate Syncs and refresh devices.
  * @param historyStorage Storage for searching history for preview image URLs matching synced tab.
  * @param coroutineScope The scope to collect Sync state Flow updates in.
+ * @param ioDispatcher The dispatcher to be used for background IO work.
  */
 @Suppress("LongParameterList")
 class RecentSyncedTabFeature(
@@ -50,6 +54,7 @@ class RecentSyncedTabFeature(
     private val accountManager: FxaAccountManager,
     private val historyStorage: HistoryStorage,
     private val coroutineScope: CoroutineScope,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : LifecycleAwareFeature {
 
     private var syncStartId: GleanTimerId? = null
@@ -71,7 +76,7 @@ class RecentSyncedTabFeature(
                     dispatchLoading()
                     // Sync tabs storage will fail to retrieve tabs aren't refreshed, as that action
                     // is what populates the device constellation state
-                    accountManager.withConstellation { refreshDevices() }
+                    accountManager.withConstellationIfExists { refreshDevices() }
                     accountManager.syncNow(
                         reason = SyncReason.User,
                         debounce = true,
@@ -183,8 +188,8 @@ class RecentSyncedTabFeature(
         }
     }
 
-    private fun isSyncedTabsEngineEnabled(): Boolean {
-        return SyncEnginesStorage(context).getStatus()[SyncEngine.Tabs] ?: true
+    private suspend fun isSyncedTabsEngineEnabled(): Boolean = withContext(ioDispatcher) {
+        SyncEnginesStorage(context).getStatus()[SyncEngine.Tabs] ?: true
     }
 
     companion object {

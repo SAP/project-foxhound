@@ -8,7 +8,7 @@
     <script type="text/javascript" src="head.js"></script>
     <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   </head>
-  <body>
+  <body onload="runTest()">
     <p id="display"></p>
 
     <script class="testbody" type="text/javascript">
@@ -17,36 +17,40 @@
       const videoWidth = 320;
       const videoHeight = 240;
 
+      var popup = null;
+
       function getMediaElement(aWindow) {
         return aWindow.document.getElementsByTagName("video")[0];
       }
 
-      var popup = window.open("seek_with_sound.webm");
-      popup.addEventListener(
-        "load",
-        function () {
-          var video = getMediaElement(popup);
+      function runTest() {
+        popup = window.open("seek_with_sound.webm");
+        popup.addEventListener(
+          "load",
+          function () {
+            var video = getMediaElement(popup);
 
-          is(
-            popup.document.activeElement,
-            video,
-            "Document should load with focus moved to the video element."
-          );
-
-          if (!video.paused) {
-            runTestVideo(video);
-          } else {
-            video.addEventListener(
-              "play",
-              function () {
-                runTestVideo(video);
-              },
-              { once: true }
+            is(
+              popup.document.activeElement,
+              video,
+              "Document should load with focus moved to the video element."
             );
-          }
-        },
-        { once: true }
-      );
+
+            if (!video.paused) {
+              runTestVideo(video);
+            } else {
+              video.addEventListener(
+                "play",
+                function () {
+                  runTestVideo(video);
+                },
+                { once: true }
+              );
+            }
+          },
+          { once: true }
+        );
+      }
 
       function runTestVideo(aVideo) {
         var condition = function () {

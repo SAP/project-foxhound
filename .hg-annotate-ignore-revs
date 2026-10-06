@@ -430,3 +430,9 @@ aa74a8261c8b8f38d2c523eb6cfb1a3ed0c9489d - mcarare - [components] For https://gi
 292fe93bbed06ddbbc94a1183213ea81e3cfc1f7 - Alexandru2909 - [components] For https://github.com/mozilla-mobile/android-components/issues/12151 - Fix ktlint issues for GeckoPromptDelegate.kt
 dbd0e6f8d5b8a00de1ac340cd454ff039099ea7c - Gabriel Luong - [fenix] For https://github.com/mozilla-mobile/fenix/issues/27667 - Remove import-ordering from the list of disabled ktlint rules
 422049f09fc2fa9463b31faa5a0f6cb7a7a21814 - mcarare - [fenix] For https://github.com/mozilla-mobile/fenix/issues/26844: Fix ktlint issues and remove them from baseline.
+b707187501d1dbf9beb32f27a54f4cfeb86cadd8 - Serge Guelton - Bug 1994397 - Remove obsolete Unused.h header
+03ba746b86d0fa5978ca76d68aac756878eeb3a0 - Serge Guelton - Bug 1994397 - Remove obsolete Unused.h header
+5650c180278daedd68fae9c2632da89ddc25abc7 - Serge Guelton - Bug 1994397 - Remove obsolete Unused.h header
+692fc033323b7607874648dd5581b71a9fc36e4c - Serge Guelton - Backed out Bug 1994397 - Remove obsolete Unused.h header
+e77459c91018e32b011a52b8da7ab9b8694153ef - Serge Guelton - Backed out Bug 1994397 - Remove obsolete Unused.h header
+62dbe7e243150b1fee1fc9e9523a10606a093fbb - Serge Guelton - Backed out Bug 1994397 - Remove obsolete Unused.h header

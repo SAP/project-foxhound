@@ -662,3 +662,28 @@ addAccessibleTask(
     ok(!queryOk, "No nsIAccessibleTableCell on invalid cell b");
   }
 );
+
+/**
+ * Test that a nested table's cells aren't included in the parent table if there
+ * is no intervening cell. This is incorrect authoring, but we should handle it
+ * gracefully.
+ */
+addAccessibleTask(
+  `
+<div id="outer" role="table">
+  <table id="inner"><tr><th>a</th></tr></table>
+</div>
+  `,
+  async function testDirectChildTable(browser, docAcc) {
+    const outer = findAccessibleChildByID(docAcc, "outer", [
+      nsIAccessibleTable,
+    ]);
+    is(outer.rowCount, 0, "outer rowCount correct");
+    is(outer.columnCount, 0, "outer columnCount correct");
+    const inner = findAccessibleChildByID(docAcc, "inner", [
+      nsIAccessibleTable,
+    ]);
+    is(inner.rowCount, 1, "inner rowCount correct");
+    is(inner.columnCount, 1, "inner columnCount correct");
+  }
+);

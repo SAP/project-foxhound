@@ -142,7 +142,7 @@ Password.prototype = {
    *
    * @return nothing
    */
-  Update() {
+  async Update() {
     let oldlogin = new nsLoginInfo(
       this.props.hostname,
       this.props.submitURL,
@@ -161,7 +161,7 @@ Password.prototype = {
       this.updateProps.usernameField,
       this.updateProps.passwordField
     );
-    Services.logins.modifyLogin(oldlogin, newlogin);
+    await Services.logins.modifyLoginAsync(oldlogin, newlogin);
   },
 
   /**
@@ -172,7 +172,7 @@ Password.prototype = {
    *
    * @return nothing
    */
-  Remove() {
+  async Remove() {
     let login = new nsLoginInfo(
       this.props.hostname,
       this.props.submitURL,
@@ -182,6 +182,6 @@ Password.prototype = {
       this.props.usernameField,
       this.props.passwordField
     );
-    Services.logins.removeLogin(login);
+    await Services.logins.removeLoginAsync(login);
   },
 };

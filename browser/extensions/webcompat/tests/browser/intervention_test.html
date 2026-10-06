@@ -1,0 +1,25 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf8" />
+    <meta name="viewport" content="interactive-widget=not-overridden, minimum-scale=1.0, initial-scale=2.0, maximum-scale=2.0" />
+    <script>
+      const need_alerts = new URLSearchParams(location.search).get("alerts") == "1";
+      if (need_alerts) {
+        alert("blocked alert 1");
+      }
+      window.addEventListener("load", () => {
+        if (need_alerts) {
+          alert("blocked alert 2");
+        }
+        document.body.innerHTML += `<div>message to hide</div>`;
+      });
+    </script>
+  </head>
+  <body>
+    <script>
+      document.write(`<iframe src="intervention_test_frame.html?alerts=${need_alerts ? 1 : 0}"></iframe>`);
+    </script>
+    <div id="message_container1">not message to hide</div>
+  </body>
+</html>

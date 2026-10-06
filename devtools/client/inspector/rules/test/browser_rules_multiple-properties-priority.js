@@ -13,7 +13,7 @@ add_task(async function () {
   const { inspector, view } = await openRuleView();
   await selectNode("div", inspector);
 
-  const ruleEditor = getRuleViewRuleEditor(view, 0);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 0);
   // Note that we wait for a markup mutation here because this new rule will end
   // up creating a style attribute on the node shown in the markup-view.
   // (we also wait for the rule-view to refresh).

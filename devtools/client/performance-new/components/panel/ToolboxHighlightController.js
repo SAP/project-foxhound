@@ -4,12 +4,12 @@
 // @ts-check
 
 /**
- * @typedef {Object} StateProps
+ * @typedef {object} StateProps
  * @property {RecordingState} recordingState
  */
 
 /**
- * @typedef {Object} OwnProps
+ * @typedef {object} OwnProps
  * @property {any} toolbox
  */
 
@@ -30,7 +30,7 @@ const {
 const selectors = require("resource://devtools/client/performance-new/store/selectors.js");
 
 /**
- * @extends {React.PureComponent<Props>}
+ * @augments {React.PureComponent<Props>}
  */
 class ToolboxHighlightController extends PureComponent {
   /** @param {Props} prevProps */

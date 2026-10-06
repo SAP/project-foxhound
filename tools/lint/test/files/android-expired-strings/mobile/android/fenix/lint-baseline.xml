@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<issues format="6" by="lint">
+    <issue id="UnusedResources" message="The resource R.string.fenix_deprecated appears to be unused">
+        <location file="app/src/main/res/values/strings.xml" line="4"/>
+    </issue>
+</issues>

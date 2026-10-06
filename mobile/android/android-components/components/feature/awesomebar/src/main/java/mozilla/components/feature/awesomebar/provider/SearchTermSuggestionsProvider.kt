@@ -124,6 +124,7 @@ private fun Iterable<HistoryMetadata>.into(
             title = result.key.searchTerm,
             description = null,
             editSuggestion = if (showEditSuggestion) safeSearchTerm else null,
+            isRemovalAllowed = true,
             // Reducing MAX_VALUE by 2: To allow SearchActionProvider to go above and
             // still have one additional spot above available.
             score = Int.MAX_VALUE - (index + 2),

@@ -8,12 +8,10 @@ import android.media.MediaCodec;
 import android.media.MediaCodec.BufferInfo;
 import android.media.MediaCodec.CryptoInfo;
 import android.media.MediaFormat;
-import android.os.Build;
 import android.os.DeadObjectException;
 import android.os.RemoteException;
 import android.util.Log;
 import android.util.SparseArray;
-import androidx.annotation.RequiresApi;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Queue;
@@ -443,8 +441,12 @@ public final class CodecProxy {
     try {
       mRemote.releaseOutput(sample, render);
     } catch (final RemoteException e) {
-      Log.e(LOGTAG, "remote fail to release output:" + sample.info.presentationTimeUs);
-      e.printStackTrace();
+      Log.e(LOGTAG, "remote fail to release output:" + sample.info.presentationTimeUs, e);
+    } catch (final NullPointerException npe) {
+      // Sometimes NPE happens when unmarshalling IPC reply, but it's fine because
+      // releasing/rendering has been done remotely already.
+      Log.d(
+          LOGTAG, "ignore NPE when " + (render ? "render" : "release") + " output: " + sample, npe);
     }
     sample.dispose();
 
@@ -484,17 +486,9 @@ public final class CodecProxy {
   }
 
   @WrapForJNI
-  public static boolean supportsCBCS() {
-    // Android N/API-24 supports CBCS but there seems to be a bug.
-    // See https://github.com/google/ExoPlayer/issues/4022
-    return Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1;
-  }
-
-  @RequiresApi(api = Build.VERSION_CODES.N_MR1)
-  @WrapForJNI
   public static boolean setCryptoPatternIfNeeded(
       final CryptoInfo info, final int blocksToEncrypt, final int blocksToSkip) {
-    if (supportsCBCS() && (blocksToEncrypt > 0 || blocksToSkip > 0)) {
+    if (blocksToEncrypt > 0 || blocksToSkip > 0) {
       info.setPattern(new CryptoInfo.Pattern(blocksToEncrypt, blocksToSkip));
       return true;
     }

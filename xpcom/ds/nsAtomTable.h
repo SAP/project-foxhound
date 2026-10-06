@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAtomTable_h__
-#define nsAtomTable_h__
+#ifndef nsAtomTable_h_
+#define nsAtomTable_h_
 
 #include "mozilla/MemoryReporting.h"
 #include "nsAtom.h"
@@ -27,4 +25,4 @@ struct AtomsSizes {
 void NS_AddSizeOfAtoms(mozilla::MallocSizeOf aMallocSizeOf,
                        mozilla::AtomsSizes& aSizes);
 
-#endif  // nsAtomTable_h__
+#endif  // nsAtomTable_h_

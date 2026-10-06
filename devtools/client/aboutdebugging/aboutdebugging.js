@@ -17,6 +17,9 @@ const {
 const Provider = createFactory(
   require("resource://devtools/client/shared/vendor/react-redux.js").Provider
 );
+const {
+  START_IGNORE_ACTION,
+} = require("resource://devtools/client/shared/redux/middleware/ignore.js");
 
 const FluentReact = require("resource://devtools/client/shared/vendor/fluent-react.js");
 const LocalizationProvider = createFactory(FluentReact.LocalizationProvider);
@@ -160,6 +163,9 @@ const AboutDebugging = {
 
     // Remove all client listeners.
     this.actions.removeRuntimeListeners();
+
+    // Prevents any further action from being dispatched
+    this.store.dispatch(START_IGNORE_ACTION);
 
     removeNetworkLocationsObserver(this.onNetworkLocationsUpdated);
     removeUSBRuntimesObserver(this.onUSBRuntimesUpdated);

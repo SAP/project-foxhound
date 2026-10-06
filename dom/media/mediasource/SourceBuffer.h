@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,15 +5,14 @@
 #ifndef mozilla_dom_SourceBuffer_h_
 #define mozilla_dom_SourceBuffer_h_
 
-#include "mozilla/MozPromise.h"
 #include "MediaContainerType.h"
 #include "MediaSource.h"
+#include "SourceBufferTask.h"
+#include "TrackBuffersManager.h"
 #include "js/RootingAPI.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
-#include "mozilla/UniquePtr.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/dom/SourceBufferBinding.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/mozalloc.h"
@@ -24,8 +21,6 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupports.h"
 #include "nscore.h"
-#include "TrackBuffersManager.h"
-#include "SourceBufferTask.h"
 
 class JSObject;
 struct JSContext;

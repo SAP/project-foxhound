@@ -207,13 +207,11 @@ add_task(async function test_blob_url() {
     SUBRESOURCE_URL
   );
 
-  // The partitionKey of the blob url is empty because the principal of the
-  // blob url is the JS principal of the global, which doesn't have
-  // partitionKey. And ChromeUtils.getPartitionKeyFromURL() will get
-  // partitionKey from that principal. So, we will get an empty partitionKey
-  // here.
-  // XXX: The behavior here is debatable.
-  Assert.equal(partitionKey, "", "The partitionKey of blob url is correct.");
+  Assert.equal(
+    partitionKey,
+    "(http,foo.com)",
+    "The partitionKey of blob url is correct."
+  );
 
   await contentPage.close();
 });

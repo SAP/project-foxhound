@@ -20,7 +20,7 @@ function* testSteps() {
     // - storage/default/chrome/cache,
     // - storage/default/http+++www.mozilla.org/cache
     // The file create_cache.js in the package was run locally, specifically it
-    // was temporarily added to xpcshell.ini and then executed:
+    // was temporarily added to xpcshell.toml and then executed:
     //   mach xpcshell-test --interactive dom/quota/test/xpcshell/create_cache.js
     // Note: it only creates the directory "storage/default/chrome/cache".
     // To make it become the profile in the test, two more manual steps are

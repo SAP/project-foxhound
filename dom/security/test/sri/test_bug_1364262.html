@@ -9,11 +9,11 @@
       SimpleTest.waitForExplicitFinish();
       SimpleTest.setExpected(["pass", 1]);
 
-      function good_correctlyBlockedStylesheet() {
-        ok(true, "Non-base64 hash blocked the load.")
+      function bad_incorrectlyBlockedStylesheet() {
+        ok(false, "Non-base64 hash should not block the load!")
       };
-      function bad_shouldNotLoadStylesheet() {
-        ok(false, "Non-base64 hashes should not load!")
+      function good_shouldLoadStylesheet() {
+        ok(true, "Non-base64 hashes should load")
       }
       window.onload = function() {
         SimpleTest.finish();
@@ -22,8 +22,8 @@
       let link = document.createElement('link');
       document.head.appendChild(link);
       link.setAttribute('rel', 'stylesheet');
-      link.onerror = good_correctlyBlockedStylesheet;
-      link.onload = bad_shouldNotLoadStylesheet;
+      link.onerror = bad_incorrectlyBlockedStylesheet;
+      link.onload = good_shouldLoadStylesheet;
       link.integrity = 'sha512-\uD89D\uDF05\uD89D\uDEE6';
       link.setAttribute('href', 'data:text/css;small[contenteditable^="false"], summary { }');
     </script>

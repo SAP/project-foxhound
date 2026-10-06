@@ -1,0 +1,631 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+# Each key in this file specifies a set of tests to run.  Different test sets
+# may, for example, be bound to different test platforms.
+#
+# Note that set does not depend on the tree; tree-dependent job selection
+# should be performed in the target task selection phase of task-graph
+# generation.
+#
+# A test set has a name, and a list of tests that it contains.
+#
+# Test names given here reference tests.yml.
+
+### Feature-specific test groups
+
+webgpu:
+    - mochitest-webgpu
+    - web-platform-tests-webgpu
+    - web-platform-tests-webgpu-long
+    - web-platform-tests-webgpu-backlog
+    - web-platform-tests-webgpu-backlog-long
+
+web-platform-tests:
+    - web-platform-tests
+    - web-platform-tests-crashtest
+    - web-platform-tests-print-reftest
+    - web-platform-tests-reftest
+    - web-platform-tests-wdspec
+    - web-platform-tests-canvas
+    - web-platform-tests-webcodecs
+    - web-platform-tests-eme
+
+web-platform-tests-2404-tsan:
+    - web-platform-tests
+    - web-platform-tests-crashtest
+    - web-platform-tests-print-reftest
+    - web-platform-tests-reftest
+    - web-platform-tests-wdspec
+    - web-platform-tests-canvas
+    - web-platform-tests-webcodecs
+    - web-platform-tests-eme
+
+web-platform-tests-backlog:
+    - web-platform-tests-backlog
+    - web-platform-tests-reftest-backlog
+
+mochitest-devtools-chrome:
+    - mochitest-devtools-chrome
+
+talos:
+    - talos-bcv
+    - talos-chrome
+    - talos-damp-inspector
+    - talos-damp-webconsole
+    - talos-damp-other
+    - talos-dromaeojs
+    - talos-g1
+    - talos-g3
+    - talos-g4
+    - talos-g5
+    - talos-other
+    - talos-sessionrestore-many-windows
+    - talos-svgr
+    - talos-tp5o
+    - talos-perf-reftest
+    - talos-perf-reftest-singletons
+    - talos-tabswitch
+    - talos-realworld-webextensions
+    - talos-webgl
+    - talos-pdfpaint
+    # - talos-h1 Bug 1487031 - Disabled for not finding actionable regressions
+    # - talos-h2 Bug 1487031 - Disabled for not finding actionable regressions
+
+talos-profiling:
+    - talos-bcv-profiling
+    - talos-chrome-profiling
+    # - talos-damp-profiling - Disabled b/c of Bug 1597734
+    - talos-dromaeojs-profiling
+    - talos-g1-profiling
+    - talos-g3-profiling
+    - talos-g4-profiling
+    - talos-g5-profiling
+    - talos-motionmark-profiling
+    - talos-other-profiling
+    - talos-sessionrestore-many-windows-profiling
+    - talos-perf-reftest-profiling
+    - talos-perf-reftest-singletons-profiling
+    - talos-svgr-profiling
+    - talos-tp5o-profiling
+    - talos-tabswitch-profiling
+    - talos-realworld-webextensions-profiling
+    - talos-webgl-profiling
+
+browsertime:
+    - browsertime-tp6
+    - browsertime-tp7
+    - browsertime-tp6-essential
+    - browsertime-tp6-bytecode
+    - browsertime-tp6-live
+    - browsertime-tp6-live-sheriffed
+    - browsertime-tp6-webextensions
+    - browsertime-benchmark
+    - browsertime-benchmark-wasm
+    - browsertime-youtube-playback
+    - browsertime-youtube-playback-power
+    - browsertime-custom
+    - browsertime-first-install
+    - browsertime-responsiveness
+    - browsertime-regression-tests
+    - browsertime-upload
+    - browsertime-speculation-rules
+    - browsertime-speculative
+    - browsertime-throttled
+    - browsertime-pageload-benchmark
+    - browsertime-indexeddb
+    - browsertime-video-playback-latency
+    - browsertime-network-bench
+    - browsertime-webcodecs
+    - browsertime-trr-performance
+
+browsertime-clang:
+    - browsertime-tp6
+    - browsertime-tp6-essential
+    - browsertime-tp6-bytecode
+    - browsertime-tp6-live
+    - browsertime-tp6-live-sheriffed
+    - browsertime-tp6-webextensions
+    - browsertime-benchmark
+    - browsertime-benchmark-wasm
+    - browsertime-youtube-playback
+    - browsertime-responsiveness
+
+browsertime-profiling:
+    - browsertime-tp6-profiling
+
+browsertime-high-priority:
+    - browsertime-benchmark
+    - browsertime-tp6
+
+browsertime-ref-hw:
+    - browsertime-benchmark
+
+awsy:
+    - awsy
+    - awsy-base
+    - awsy-dmd
+    - awsy-base-dmd
+    - awsy-tp6
+
+ccov-code-coverage-tests:
+    - test-coverage
+    - test-coverage-wpt
+
+mochitest-valgrind:
+    - mochitest-valgrind
+
+desktop-screenshot-capture:
+    - mochitest-browser-screenshots
+
+artifact-tests:
+    - mochitest-browser-chrome
+    - mochitest-chrome
+    - mochitest-devtools-chrome
+    - mochitest-plain
+    - xpcshell
+
+### Specific platform test sets
+
+# Linux
+linux-tests:
+    - cppunittest
+    - crashtest
+    - firefox-ui-functional
+    - gtest
+    # - jittest  # See comment in linux-ccov-tests set.
+    - jsreftest
+    - marionette-integration
+    - marionette-unittest
+    - mochitest-a11y
+    - mochitest-browser-a11y
+    - mochitest-browser-chrome
+    - mochitest-browser-media
+    - mochitest-browser-translations
+    - mochitest-chrome
+    - mochitest-chrome-gpu
+    - mochitest-devtools-chrome
+    - mochitest-media
+    - mochitest-plain
+    - mochitest-plain-gpu
+    - mochitest-remote
+    - mochitest-webgl1-core
+    - mochitest-webgl1-ext
+    - mochitest-webgl2-core
+    - mochitest-webgl2-ext
+    - reftest
+    - telemetry-tests-client
+    - test-verify
+    - test-verify-gpu
+    - test-verify-wpt
+    - xpcshell
+
+linux-2404-tsan-tests:
+    - cppunittest
+    - crashtest
+    - firefox-ui-functional
+    - gtest
+    # - jittest  # See comment in linux-ccov-tests set.
+    - jsreftest
+    - marionette-integration
+    - marionette-unittest
+    - mochitest-a11y
+    - mochitest-browser-a11y
+    - mochitest-browser-chrome
+    - mochitest-browser-media
+    - mochitest-browser-translations
+    - mochitest-chrome
+    - mochitest-chrome-gpu
+    - mochitest-devtools-chrome
+    - mochitest-media
+    - mochitest-plain
+    - mochitest-plain-gpu
+    - mochitest-remote
+    - mochitest-webgl1-core
+    - mochitest-webgl1-ext
+    - mochitest-webgl2-core
+    - mochitest-webgl2-ext
+    - reftest
+    - telemetry-tests-client
+    - test-verify
+    - test-verify-gpu
+    - test-verify-wpt
+    - xpcshell
+
+linux-ccov-tests:
+    # jittest run on regular linux builds is redundant with SM(p), so we omit it
+    # from the linux2404-tests set. But, we still want
+    # to run it on ccov builds, so we have this set that has it and which runs
+    # on ccov builds.
+    - jittest
+
+linux2204-wayland-tests:
+    - mochitest-plain
+    - cppunittest
+    - crashtest
+    - firefox-ui-functional
+    - gtest
+    - jsreftest
+    - marionette-integration
+    - marionette-unittest
+    - mochitest-a11y
+    - mochitest-browser-a11y
+    - mochitest-browser-chrome
+    - mochitest-browser-chrome-failures
+    - mochitest-browser-media
+    - mochitest-browser-translations
+    - mochitest-chrome
+    - mochitest-chrome-gpu
+    - mochitest-devtools-chrome
+    - mochitest-media
+    - mochitest-plain
+    - mochitest-plain-gpu
+    - mochitest-remote
+    - mochitest-webgl1-core
+    - mochitest-webgl1-ext
+    - mochitest-webgl2-core
+    - mochitest-webgl2-ext
+    - reftest
+    - telemetry-tests-client
+    - test-verify
+    - test-verify-gpu
+    - test-verify-wpt
+    - xpcshell
+
+# Windows
+windows32-tests:
+    - cppunittest
+    - crashtest
+    - gtest
+    - firefox-ui-functional
+    - jsreftest
+    - marionette-integration
+    - marionette-unittest
+    - mochitest-a11y
+    - mochitest-browser-a11y
+    - mochitest-browser-chrome
+    - mochitest-browser-media
+    - mochitest-chrome
+    - mochitest-media
+    - reftest
+    - test-verify
+    - test-verify-gpu
+    - test-verify-wpt
+    - xpcshell
+    - web-platform-tests
+    - web-platform-tests-crashtest
+
+windows-aarch64-tests:
+    - cppunittest
+
+windows10-2009-tests:
+    - cppunittest
+    - gtest
+    - mochitest-chrome
+    - mochitest-chrome-gpu
+    - mochitest-plain
+    - mochitest-plain-gpu
+    - xpcshell
+
+windows11-64-2009-ccov-tests:
+    - jittest
+    - test-coverage
+    - web-platform-tests
+    - web-platform-tests-crashtest
+    - web-platform-tests-print-reftest
+    - web-platform-tests-reftest
+    - web-platform-tests-wdspec
+    - web-platform-tests-webcodecs
+    - web-platform-tests-eme
+
+windows11-24h2-tests:
+    - crashtest
+    - jsreftest
+    - reftest
+
+windows11-25h2-tests:
+    - cppunittest
+    - gtest
+    - marionette-integration
+    - marionette-unittest
+    - mochitest-a11y
+    - mochitest-browser-a11y
+    - mochitest-browser-chrome
+    - mochitest-browser-media
+    - mochitest-browser-translations
+    - mochitest-chrome
+    - mochitest-chrome-gpu
+    - mochitest-devtools-chrome
+    - mochitest-media
+    - mochitest-plain
+    - mochitest-plain-gpu
+    - mochitest-remote
+    - mochitest-webgl1-core
+    - mochitest-webgl1-ext
+    - mochitest-webgl2-core
+    - mochitest-webgl2-ext
+    - telemetry-tests-client
+    - test-verify
+    - test-verify-gpu
+    - test-verify-wpt
+    - xpcshell
+
+mingwclang-tests-debug:
+    - cppunittest
+    - firefox-ui-functional
+    - mochitest-a11y
+    - mochitest-chrome-gpu
+    - mochitest-plain-gpu
+    - mochitest-webgl1-core
+    - mochitest-webgl1-ext
+    - mochitest-webgl2-core
+    - mochitest-webgl2-ext
+    - telemetry-tests-client
+    - reftest
+
+# The following is the same as the above block, minus reftests.
+# Reftests were disabled due to frequent hangs; see bug 1642719
+# for re-enabling.
+mingwclang-win32-tests-debug:
+    - cppunittest
+    - firefox-ui-functional
+    - mochitest-a11y
+    - mochitest-chrome-gpu
+    - mochitest-plain-gpu
+    - mochitest-webgl1-core
+    - mochitest-webgl1-ext
+    - mochitest-webgl2-core
+    - mochitest-webgl2-ext
+    # - reftest - disabled, see bug 1642719
+    - telemetry-tests-client
+
+mingwclang-tests-opt:
+    - cppunittest
+    - mochitest-chrome-gpu
+    - mochitest-plain-gpu
+
+windows-talos-webgl:
+    - talos-webgl
+
+windows-talos:
+    - talos-bcv
+    - talos-chrome
+    - talos-damp-inspector
+    - talos-damp-webconsole
+    - talos-damp-other
+    - talos-dromaeojs
+    - talos-g1
+    - talos-g4
+    - talos-g5
+    - talos-other
+    - talos-sessionrestore-many-windows
+    - talos-perf-reftest
+    - talos-perf-reftest-singletons
+    - talos-svgr
+    - talos-tp5o
+    - talos-tabswitch
+    - talos-realworld-webextensions
+    - talos-pdfpaint
+
+windows-ref-hw-tests:
+    - browsertime-video-playback-latency
+    - mochitest-media
+
+talos-xperf:
+    - talos-xperf
+
+# macOS
+macosx1500-64-jittests:
+    - jittest
+
+macosx1500-64-tests:
+    - cppunittest
+    - crashtest
+    - firefox-ui-functional
+    - gtest
+    - jsreftest
+    - marionette-integration
+    - marionette-unittest
+    - mochitest-a11y
+    - mochitest-browser-a11y
+    - mochitest-browser-chrome
+    - mochitest-browser-media
+    - mochitest-browser-translations
+    - mochitest-chrome
+    - mochitest-chrome-gpu
+    - mochitest-devtools-chrome
+    - mochitest-media
+    - mochitest-plain
+    - mochitest-plain-gpu
+    - mochitest-remote
+    - mochitest-webgl1-core
+    - mochitest-webgl1-ext
+    - mochitest-webgl2-core
+    - mochitest-webgl2-ext
+    - reftest
+    - telemetry-tests-client
+    - test-verify
+    - test-verify-gpu
+    - test-verify-wpt
+    - xpcshell
+    - web-platform-tests-crashtest
+    - web-platform-tests-print-reftest
+    - web-platform-tests-reftest
+    - web-platform-tests-wdspec
+    - web-platform-tests-canvas
+    - web-platform-tests-webcodecs
+    - web-platform-tests-eme
+
+macosx1500-aarch64-tests:
+    - cppunittest
+    - firefox-ui-functional
+    - jsreftest
+    - marionette-integration
+    - marionette-unittest
+    - crashtest
+    - jittest
+    - mochitest-a11y
+    - mochitest-browser-a11y
+    - mochitest-browser-media
+    - mochitest-browser-translations
+    - mochitest-chrome
+    - mochitest-chrome-gpu
+    - mochitest-devtools-chrome
+    - mochitest-media
+    - mochitest-plain
+    - mochitest-plain-gpu
+    - mochitest-remote
+    - mochitest-webgl1-core
+    - mochitest-webgl1-ext
+    - mochitest-webgl2-core
+    - mochitest-webgl2-ext
+    - reftest
+    - telemetry-tests-client
+    - test-verify
+    - test-verify-gpu
+    - test-verify-wpt
+    - web-platform-tests
+    - web-platform-tests-canvas
+    - web-platform-tests-crashtest
+    - web-platform-tests-eme
+    - web-platform-tests-print-reftest
+    - web-platform-tests-reftest
+    - web-platform-tests-wdspec
+    - web-platform-tests-webcodecs
+    - xpcshell
+
+# Test set for ARM64 VMs (VirtualMac2,1). No GPU, no display, no perf hardware.
+# Limited to suites empirically validated on these workers; tests that need
+# a real WindowServer (focus management, accessibility hierarchy, browser
+# windows, fullscreen, compositor hooks) hang or timeout and are intentionally
+# omitted. web-platform-tests is also omitted pending Bug 2038639 (GPU process
+# leak in APZCTreeManager::CheckerboardFlushObservers on headless macOS).
+# Suites can be re-added as headless support improves.
+macosx1500-aarch64-vms-tests:
+    - cppunittest
+    - crashtest
+    - jittest
+    - jsreftest
+    - marionette-integration
+    - marionette-unittest
+    - mochitest-chrome
+    - mochitest-plain
+    - mochitest-remote
+    - telemetry-tests-client
+    - xpcshell
+
+macosx1470-64-tests:
+    - cppunittest
+    - gtest
+
+macosx1015-64-qr-tests:
+    - cppunittest
+    - crashtest
+    - jittest
+    - mochitest-browser-chrome
+    - mochitest-media
+    - mochitest-webgl1-core
+    - mochitest-webgl1-ext
+    - mochitest-webgl2-core
+    - mochitest-webgl2-ext
+    - xpcshell
+
+macosx64-talos:
+    - talos-bcv
+    - talos-chrome
+    - talos-damp-inspector
+    - talos-damp-webconsole
+    - talos-damp-other
+    - talos-dromaeojs
+    - talos-g1
+    - talos-g4
+    - talos-g5
+    - talos-other
+    - talos-sessionrestore-many-windows
+    - talos-svgr
+    - talos-tp5o
+    - talos-perf-reftest
+    - talos-perf-reftest-singletons
+    - talos-realworld-webextensions
+    - talos-webgl
+    - talos-tabswitch
+    - talos-pdfpaint
+    # - talos-h1 # too long to unpack profile- Bug 1442893
+
+macosx1500-64-perftests:
+    - browsertime-benchmark
+    - browsertime-tp6-essential
+
+# Android
+
+android14-x86_64-tests:
+    - cppunittest
+    - crashtest
+    - geckoview-junit
+    - gtest
+    - mochitest-media
+    - mochitest-plain
+    - mochitest-plain-gpu
+    # - mochitest-webgl1-core # Harness issues?
+    # - mochitest-webgl1-ext
+    # - mochitest-webgl2-core # Emulator not creating ES3?
+    # - mochitest-webgl2-ext
+    - reftest
+    - test-verify
+    - web-platform-tests
+    - web-platform-tests-crashtest
+    - web-platform-tests-reftest
+    - web-platform-tests-wdspec
+    - web-platform-tests-webcodecs
+    - web-platform-tests-eme
+    - xpcshell
+
+android-hw-aarch64-opt-unittests:
+    - jittest
+
+android-hw-aarch64-pgo-unittests:
+    - jittest
+
+android-hw-aarch64-debug-unittests:
+    - jittest
+
+android-hw-arm7-pgo-unittests:
+    - jittest-all
+
+android-hw-arm7-debug-unittests:
+    - jittest
+
+android-hw-aarch64:
+    - crashtest-qr
+    - reftest-qr
+    - mochitest-media
+    - mochitest-webgl1-core
+    - mochitest-webgl1-ext
+    - mochitest-webgl2-core
+
+android-hw-browsertime:
+    - browsertime-tp6m
+    - browsertime-tp6m-essential
+    - browsertime-tp6m-webextensions
+    - browsertime-tp6m-live
+    - browsertime-benchmark-speedometer2-mobile
+    - browsertime-benchmark-speedometer3-mobile
+    - browsertime-youtube-playback-mobile
+    - browsertime-benchmark-unity-webgl-mobile
+    - browsertime-benchmark-motionmark-1-3
+    - browsertime-benchmark-jetstream2
+    - browsertime-benchmark-jetstream3
+    - browsertime-video-playback-latency-mobile
+    - browsertime-youtube-playback-power-mobile
+    - browsertime-trr-performance-m
+
+android-hw-browsertime-profiling:
+    - browsertime-tp6m-profiling
+
+android-hw-speedometer-tests:
+    - browsertime-benchmark-speedometer2-mobile
+    - browsertime-benchmark-speedometer3-mobile
+
+android-hw-power-tests:
+    - browsertime-youtube-playback-power-mobile

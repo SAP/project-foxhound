@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef WinGesture_h__
-#define WinGesture_h__
+#ifndef WinGesture_h_
+#define WinGesture_h_
 
 /*
  * nsWinGesture - Touch input handling for tablet displays.
@@ -62,8 +61,8 @@ class nsWinGesture {
   bool IsPanEvent(LPARAM lParam);
   bool ProcessPanMessage(HWND hWnd, WPARAM wParam, LPARAM lParam);
   bool PanDeltaToPixelScroll(mozilla::WidgetWheelEvent& aWheelEvent);
-  void UpdatePanFeedbackX(HWND hWnd, int32_t scrollOverflow, bool& endFeedback);
-  void UpdatePanFeedbackY(HWND hWnd, int32_t scrollOverflow, bool& endFeedback);
+  void UpdatePanFeedbackX(HWND hWnd, bool scrollOverflow, bool& endFeedback);
+  void UpdatePanFeedbackY(HWND hWnd, bool scrollOverflow, bool& endFeedback);
   void PanFeedbackFinalize(HWND hWnd, bool endFeedback);
 
  private:
@@ -88,4 +87,4 @@ class nsWinGesture {
   double mRotateIntermediate;
 };
 
-#endif /* WinGesture_h__ */
+#endif /* WinGesture_h_ */

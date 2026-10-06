@@ -80,7 +80,7 @@ Adjusting when and how a test runs
         // |reftest| <failure-type> -- <comment>
 
     Where <failure-type> is a standard reftest <failure-type> string, as documented by:
-        http://searchfox.org/mozilla-central/source/layout/tools/reftest/README.txt
+        http://searchfox.org/firefox-main/source/layout/tools/reftest/README.txt
 
     Example:
         // |reftest| skip-if(!xulRuntime.shell) -- does not always dismiss alert

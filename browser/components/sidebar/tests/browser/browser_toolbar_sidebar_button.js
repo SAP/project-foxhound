@@ -17,9 +17,10 @@ add_setup(async () => {
     set: [
       [VERTICAL_TABS_PREF, true],
       [SIDEBAR_BUTTON_INTRODUCED_PREF, false],
+      ["sidebar.main.tools", "aichat,passwords,syncedtabs,history"],
     ],
   });
-  await waitForTabstripOrientation("vertical");
+  await SidebarTestUtils.waitForTabstripOrientation(window, "vertical");
   Assert.equal(
     Services.prefs.getStringPref(SIDEBAR_VISIBILITY_PREF),
     "always-show",
@@ -84,7 +85,7 @@ add_task(async function test_toolbar_sidebar_button() {
 });
 
 add_task(async function test_expanded_state_for_always_show() {
-  await waitForTabstripOrientation("vertical");
+  await SidebarTestUtils.waitForTabstripOrientation(window, "vertical");
   const { sidebarMain, toolbarButton } = SidebarController;
 
   const checkExpandedState = async (
@@ -140,7 +141,7 @@ add_task(async function test_expanded_state_for_always_show() {
   await checkExpandedState(false);
 
   info("Don't collapse the sidebar by loading a tool.");
-  await SidebarController.initializeUIState({
+  await SidebarController.updateUIState({
     launcherExpanded: true,
     command: "",
   });
@@ -157,7 +158,7 @@ add_task(async function test_expanded_state_for_always_show() {
   SidebarController.hide();
 
   info("Load and unload a tool with the sidebar collapsed to begin with.");
-  await SidebarController.initializeUIState({
+  await SidebarController.updateUIState({
     launcherExpanded: false,
     command: "",
   });
@@ -172,7 +173,7 @@ add_task(async function test_expanded_state_for_always_show() {
   await checkExpandedState(false);
   SidebarController.hide();
 
-  await SidebarController.initializeUIState({
+  await SidebarController.updateUIState({
     launcherExpanded: true,
     command: "",
   });
@@ -185,7 +186,7 @@ add_task(async function test_expanded_state_for_always_show() {
 
   info("Check expanded state on a new window.");
   const newWin = await BrowserTestUtils.openNewBrowserWindow();
-  await waitForTabstripOrientation("vertical", newWin);
+  await SidebarTestUtils.waitForTabstripOrientation(newWin, "vertical");
   await checkExpandedState(
     true,
     newWin.SidebarController.sidebarMain,
@@ -200,7 +201,7 @@ add_task(async function test_states_for_hide_sidebar() {
   await SpecialPowers.pushPrefEnv({
     set: [[VERTICAL_TABS_PREF, false]],
   });
-  await waitForTabstripOrientation("horizontal");
+  await SidebarTestUtils.waitForTabstripOrientation(window, "horizontal");
 
   const { sidebarContainer, sidebarMain, toolbarButton } = SidebarController;
 
@@ -215,8 +216,8 @@ add_task(async function test_states_for_hide_sidebar() {
     "The launcher is initially visible"
   );
   Assert.ok(
-    SidebarController.toolbarButton.checked,
-    "The toolbar button is initially checked"
+    !SidebarController.toolbarButton.checked,
+    "The toolbar button is not checked in horizontal tabs mode even when the launcher is visible"
   );
 
   const checkStates = async (
@@ -242,17 +243,15 @@ add_task(async function test_states_for_hide_sidebar() {
       () => !component.expanded
     );
     ok(true, "Sidebar should not be expanded");
-    info(
-      `Waiting for button to be ${hidden ? "not highlighted" : "highlighted"}`
-    );
+    info("Waiting for button to never be highlighted in horizontal tabs mode");
     await BrowserTestUtils.waitForMutationCondition(
       button,
       { attributes: true, attributeFilter: ["checked", "expanded"] },
-      () => button.checked == !hidden && !button.hasAttribute("expanded")
+      () => !button.checked && !button.hasAttribute("expanded")
     );
     ok(
       true,
-      "Toolbar button checked state is correct and expanded attribute is absent."
+      "Toolbar button is not checked in horizontal tabs mode and expanded attribute is absent."
     );
     Assert.deepEqual(
       document.l10n.getAttributes(button),
@@ -278,12 +277,12 @@ add_task(async function test_states_for_hide_sidebar() {
   await checkStates({ hidden: true });
   Assert.ok(
     !toolbarButton.checked,
-    "The toolbar button becomes unchecked when clicking it hides the launcher"
+    "The toolbar button is unchecked after hiding the launcher"
   );
 
   info("Check states on a new window.");
   const newWin = await BrowserTestUtils.openNewBrowserWindow();
-  await waitForTabstripOrientation("horizontal", newWin);
+  await SidebarTestUtils.waitForTabstripOrientation(newWin, "horizontal");
   await checkStates(
     { hidden: true },
     newWin.SidebarController.sidebarContainer,
@@ -297,25 +296,25 @@ add_task(async function test_states_for_hide_sidebar() {
 
   await BrowserTestUtils.closeWindow(newWin);
   await SpecialPowers.popPrefEnv();
-  await waitForTabstripOrientation("vertical");
+  await SidebarTestUtils.waitForTabstripOrientation(window, "vertical");
 });
 
 add_task(async function test_toolbar_sidebar_badges() {
   const SIDEBAR_COMMAND_ID = "viewGenaiChatSidebar";
 
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["sidebar.notification.badge.aichat", true],
-      [VERTICAL_TABS_PREF, false],
-    ],
+    set: [["sidebar.notification.badge.aichat", true]],
   });
-  await waitForTabstripOrientation("horizontal");
+  await SpecialPowers.pushPrefEnv({
+    set: [[VERTICAL_TABS_PREF, false]],
+  });
+  await SidebarTestUtils.waitForTabstripOrientation(window, "horizontal");
 
   let toolbarButton = document.getElementById("sidebar-button");
   let badgeEl = toolbarButton?.querySelector(".toolbarbutton-badge");
   let toolEntry = SidebarController.toolsAndExtensions.get(SIDEBAR_COMMAND_ID);
 
-  await SidebarController.initializeUIState({ launcherExpanded: true });
+  await SidebarController.updateUIState({ launcherExpanded: true });
   Assert.ok(
     !badgeEl.classList.contains("feature-callout"),
     "Toolbar badge should not be visible when sidebar is open"
@@ -341,15 +340,42 @@ add_task(async function test_toolbar_sidebar_badges() {
     "Toolbar badge and sidebar badge should clear when pref is false"
   );
 
+  // Test that disabled tools don't show badges
   await SpecialPowers.pushPrefEnv({
-    set: [[VERTICAL_TABS_PREF, true]],
+    set: [
+      ["sidebar.main.tools", "history"],
+      ["sidebar.notification.badge.aichat", true],
+    ],
   });
-  await waitForTabstripOrientation("vertical");
+  Assert.ok(
+    !badgeEl.classList.contains("feature-callout"),
+    "Toolbar badge should not appear for disabled tools"
+  );
+  await SpecialPowers.popPrefEnv();
+
+  // Test that hidden tools don't show badges
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.ml.chat.enabled", false],
+      ["sidebar.notification.badge.aichat", true],
+    ],
+  });
+  Assert.ok(
+    !badgeEl.classList.contains("feature-callout"),
+    "Toolbar badge should not appear for hidden tools"
+  );
+  await SpecialPowers.popPrefEnv();
+
+  await SpecialPowers.popPrefEnv();
+  await SpecialPowers.popPrefEnv();
+  await SidebarTestUtils.waitForTabstripOrientation(window, "vertical");
 
   Assert.ok(
     !badgeEl.classList.contains("feature-callout"),
     "Toolbar button don't appear a badge in vertical sidebar"
   );
+
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function test_states_for_hide_sidebar_vertical() {
@@ -357,7 +383,7 @@ add_task(async function test_states_for_hide_sidebar_vertical() {
     `starting test with pref values: verticalTabs: ${Services.prefs.getBoolPref(VERTICAL_TABS_PREF)},
     visibility: ${Services.prefs.getStringPref(SIDEBAR_VISIBILITY_PREF)}`
   );
-  await waitForTabstripOrientation("vertical", window);
+  await SidebarTestUtils.waitForTabstripOrientation(window, "vertical");
   await SpecialPowers.pushPrefEnv({
     set: [[SIDEBAR_VISIBILITY_PREF, "hide-sidebar"]],
   });
@@ -369,7 +395,7 @@ add_task(async function test_states_for_hide_sidebar_vertical() {
 
   info("Initial state ok, opening a new browser window");
   const win = await BrowserTestUtils.openNewBrowserWindow();
-  await waitForTabstripOrientation("vertical", win);
+  await SidebarTestUtils.waitForTabstripOrientation(win, "vertical");
   const { SidebarController } = win;
   const { sidebarContainer, sidebarMain, toolbarButton } = SidebarController;
 
@@ -435,7 +461,7 @@ add_task(async function test_states_for_hide_sidebar_vertical() {
   await SidebarController.waitUntilStable();
 
   info("Don't collapse the sidebar by loading a tool.");
-  const toolButton = sidebarMain.toolButtons[1];
+  const toolButton = sidebarMain.toolButtons[2];
   EventUtils.synthesizeMouseAtCenter(toolButton, {}, win);
 
   await checkStates({ hidden: false, expanded: true });
@@ -506,7 +532,10 @@ add_task(async function test_sidebar_button_runtime_pref_enabled() {
 
   button.doCommand();
   await SidebarController.waitUntilStable();
-  Assert.ok(button.checked, "Sidebar button should be checked");
+  Assert.ok(
+    !button.checked,
+    "Sidebar button should not be checked in horizontal tabs mode"
+  );
   Assert.ok(
     BrowserTestUtils.isVisible(document.querySelector("sidebar-main")),
     "The sidebar launcher is visible"
@@ -533,7 +562,7 @@ add_task(async function test_keyboard_shortcut() {
   await SpecialPowers.pushPrefEnv({
     set: [[SIDEBAR_VISIBILITY_PREF, "always-show"]],
   });
-  await SidebarController.initializeUIState({ launcherExpanded: false });
+  await SidebarController.updateUIState({ launcherExpanded: false });
 
   const sidebar = document.querySelector("sidebar-main");
   const key = document.getElementById("toggleSidebarKb");

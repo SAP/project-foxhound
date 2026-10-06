@@ -9,6 +9,8 @@ support-files = [
   "VacuumParticipant.sys.mjs",
 ]
 
+["test_attach_database_uri_encoded_path.js"]
+
 ["test_bindArray.js"]
 
 ["test_bug-365166.js"]
@@ -23,7 +25,9 @@ support-files = [
 
 ["test_chunk_growth.js"]
 # Bug 676981: test fails consistently on Android
-fail-if = ["os == 'android'"]
+fail-if = [
+  "os == 'android'",
+]
 
 ["test_connection_asyncClose.js"]
 
@@ -34,13 +38,17 @@ fail-if = ["os == 'android'"]
 ["test_connection_failsafe_close.js"]
 # The failsafe close mechanism asserts when performing SpinningSynchronousClose
 # on debug builds, so we can only test on non-debug builds.
-run-if = ["!debug"]
+run-if = [
+  "opt",
+]
 
 ["test_connection_interrupt.js"]
 
 ["test_connection_online_backup.js"]
 
 ["test_default_journal_size_limit.js"]
+
+["test_encryption_rejects_plaintext.js"]
 
 ["test_js_helpers.js"]
 
@@ -59,6 +67,10 @@ run-if = ["!debug"]
 ["test_persist_journal.js"]
 
 ["test_readonly-immutable-nolock_vfs.js"]
+# obfsvfs (the SQLite at-rest encryption VFS) replaces the readonly/immutable/
+# nolock VFS this test exercises and forces its own WAL/page layout, so the
+# test's journal expectations do not hold under encryption.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_retry_on_busy.js"]
 
@@ -70,17 +82,25 @@ run-if = ["!debug"]
 
 ["test_storage_connection.js"]
 # Bug 676981: test fails consistently on Android
-fail-if = ["os == 'android'"]
+fail-if = [
+  "os == 'android'",
+]
 
 ["test_storage_ext.js"]
 
 ["test_storage_ext_fts3.js"]
-skip-if = ["appname != 'thunderbird' && appname != 'seamonkey'"]
+skip-if = [
+  "appname != 'thunderbird' && appname != 'seamonkey'",
+]
 
 ["test_storage_ext_fts5.js"]
 
+["test_storage_ext_percentile.js"]
+
 ["test_storage_ext_vec.js"]
-run-if = ["buildapp == 'browser'"]
+run-if = [
+  "buildapp == 'browser'",
+]
 
 ["test_storage_function.js"]
 

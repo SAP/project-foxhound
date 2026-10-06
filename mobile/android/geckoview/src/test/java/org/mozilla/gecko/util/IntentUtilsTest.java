@@ -68,5 +68,12 @@ public class IntentUtilsTest {
   public void unsafeFidoUri() {
     final String uri = "fido:/12345678";
     assertFalse(IntentUtils.isUriSafeForScheme(uri));
+
+    final String uriWithScheme = "intent:foo#Intent;package=org.mozilla.fenix;scheme=fido;end;";
+    assertFalse(IntentUtils.isUriSafeForScheme(uriWithScheme));
+
+    final String uriWithSchemeAsUpperCase =
+        "intent:foo#Intent;package=org.mozilla.fenix;scheme=FIDO;end;";
+    assertFalse(IntentUtils.isUriSafeForScheme(uriWithSchemeAsUpperCase));
   }
 }

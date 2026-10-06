@@ -56,23 +56,6 @@ add_task(function test_HomePage() {
   );
 });
 
-add_task(function test_readLocalizedHomepage() {
-  let newvalue = "data:text/plain,browser.startup.homepage%3Dabout%3Alocalized";
-  let complexvalue = Cc["@mozilla.org/pref-localizedstring;1"].createInstance(
-    Ci.nsIPrefLocalizedString
-  );
-  complexvalue.data = newvalue;
-  Services.prefs
-    .getDefaultBranch(null)
-    .setComplexValue(
-      "browser.startup.homepage",
-      Ci.nsIPrefLocalizedString,
-      complexvalue
-    );
-  Assert.ok(!HomePage.overridden, "Complex value only works as default");
-  Assert.equal(HomePage.get(), "about:localized", "Get value from bundle");
-});
-
 add_task(function test_recoverEmptyHomepage() {
   Assert.ok(
     !HomePage.overridden,

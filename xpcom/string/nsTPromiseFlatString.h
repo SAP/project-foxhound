@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -84,20 +82,13 @@ class MOZ_STACK_CLASS nsTPromiseFlatString : public nsTString<T> {
   typedef typename base_string_type::DataFlags DataFlags;
   typedef typename base_string_type::ClassFlags ClassFlags;
 
+  void operator=(const self_type&) = delete;
+  nsTPromiseFlatString(const self_type&) = delete;
+  nsTPromiseFlatString() = delete;
+  nsTPromiseFlatString(const string_type& aStr) = delete;
+
  private:
   void Init(const substring_type&);
-
-  // NOT TO BE IMPLEMENTED
-  void operator=(const self_type&) = delete;
-
-  // NOT TO BE IMPLEMENTED
-  nsTPromiseFlatString(const self_type&) = delete;
-
-  // NOT TO BE IMPLEMENTED
-  nsTPromiseFlatString() = delete;
-
-  // NOT TO BE IMPLEMENTED
-  nsTPromiseFlatString(const string_type& aStr) = delete;
 
  public:
   explicit nsTPromiseFlatString(const substring_type& aStr) : string_type() {

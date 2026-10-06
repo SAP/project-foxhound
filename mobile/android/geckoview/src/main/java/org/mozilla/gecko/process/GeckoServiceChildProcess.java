@@ -1,13 +1,14 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.gecko.process;
 
+import android.app.Application;
 import android.app.Service;
 import android.content.Intent;
 import android.os.Binder;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.ParcelFileDescriptor;
@@ -53,7 +54,12 @@ public class GeckoServiceChildProcess extends Service {
   @Override
   public void onCreate() {
     super.onCreate();
-    Log.i(LOGTAG, "onCreate");
+
+    final StringBuilder sb = new StringBuilder("onCreate");
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+      sb.append(", process name: ").append(Application.getProcessName());
+    }
+    Log.i(LOGTAG, sb.toString());
 
     if (sState != ProcessState.NEW) {
       // We don't support reusing processes, and this could get us in a really weird state,
@@ -162,7 +168,7 @@ public class GeckoServiceChildProcess extends Service {
     }
 
     @Override
-    public ISurfaceAllocator getSurfaceAllocator(final int allocatorId) {
+    public ISurfaceAllocator getSurfaceAllocator(final int allocatorId, final IBinder client) {
       Log.e(LOGTAG, "Invalid call to IChildProcess.getSurfaceAllocator for non-GPU process");
       throw new AssertionError(
           "Invalid call to IChildProcess.getSurfaceAllocator for non-GPU process.");
@@ -204,7 +210,7 @@ public class GeckoServiceChildProcess extends Service {
    * Returns the surface allocator interface that should be used by this process to allocate
    * Surfaces, for consumption in either the GPU process or parent process.
    */
-  public static ISurfaceAllocator getSurfaceAllocator() throws RemoteException {
-    return sProcessManager.getSurfaceAllocator();
+  public static ISurfaceAllocator getSurfaceAllocator(final IBinder client) throws RemoteException {
+    return sProcessManager.getSurfaceAllocator(client);
   }
 }

@@ -12,13 +12,13 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gClassifier",
   "@mozilla.org/url-classifier/dbservice;1",
-  "nsIURIClassifier"
+  Ci.nsIURIClassifier
 );
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gStorageActivityService",
   "@mozilla.org/storage/activity-service;1",
-  "nsIStorageActivityService"
+  Ci.nsIStorageActivityService
 );
 
 ChromeUtils.defineLazyGetter(lazy, "gClassifierFeature", () => {
@@ -52,15 +52,25 @@ PurgeTrackerService.prototype = {
   // protection list, so we cache the result for faster future lookups.
   _trackingState: new Map(),
 
+  // Tracks if purgeTrackingCookieJars has not yet finished.
+  _purgeRunning: false,
+
   observe(aSubject, aTopic) {
     switch (aTopic) {
       case "idle-daily":
         // only allow one idle-daily listener to trigger until the list has been fully parsed.
-        Services.obs.removeObserver(this, "idle-daily");
-        this.purgeTrackingCookieJars();
+        if (!this._purgeRunning) {
+          this._purgeRunning = true;
+          this.purgeTrackingCookieJars();
+        }
         break;
       case "profile-after-change":
         Services.obs.addObserver(this, "idle-daily");
+        Services.obs.addObserver(this, "quit-application");
+        break;
+      case "quit-application":
+        Services.obs.removeObserver(this, "idle-daily");
+        Services.obs.removeObserver(this, "quit-application");
         break;
     }
   },
@@ -211,9 +221,8 @@ PurgeTrackerService.prototype = {
   },
 
   resetPurgeList() {
-    // We've reached the end of the cookies.
-    // Restore the idle-daily listener so it will purge again tomorrow.
-    Services.obs.addObserver(this, "idle-daily");
+    // We've reached the end of the cookies. Accept new idle-daily triggers.
+    this._purgeRunning = false;
     // Set the date to 0 so we will start at the beginning of the list next time.
     Services.prefs.setStringPref(
       "privacy.purge_trackers.date_in_cookie_database",
@@ -326,15 +335,14 @@ PurgeTrackerService.prototype = {
     //   * BEHAVIOR_REJECT_FOREIGN
     //   * BEHAVIOR_LIMIT_FOREIGN
     //   * BEHAVIOR_REJECT_TRACKER (ETP)
-    //   * BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN (dFPI)
+    //   * BEHAVIOR_PARTITION_FOREIGN (dFPI)
     let cookieBehavior = Services.cookies.getCookieBehavior(false);
 
     let activeWithCookieBehavior =
       cookieBehavior == Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN ||
       cookieBehavior == Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN ||
       cookieBehavior == Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER ||
-      cookieBehavior ==
-        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
+      cookieBehavior == Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN;
 
     if (!activeWithCookieBehavior || !purgeEnabled) {
       lazy.logger.log(
@@ -373,13 +381,13 @@ PurgeTrackerService.prototype = {
     // Record how long this iteration took for telemetry.
     // This is a tuple of start and end time, the second
     // part will be added at the end of this function.
-    let duration = [Cu.now()];
+    let duration = [ChromeUtils.now()];
 
     /**
      * We record the creationTime of the last cookie we looked at and
      * start from there next time. This way even if new cookies are added or old ones are deleted we
      * have a reliable way of finding our spot.
-     **/
+     */
     let saved_date = Services.prefs.getStringPref(
       "privacy.purge_trackers.date_in_cookie_database",
       "0"
@@ -494,7 +502,7 @@ PurgeTrackerService.prototype = {
       saved_date
     );
 
-    duration.push(Cu.now());
+    duration.push(ChromeUtils.now());
     this._telemetryData.durationIntervals.push(duration);
 
     // We've reached the end, no need to repeat again until next idle-daily.
@@ -510,8 +518,10 @@ PurgeTrackerService.prototype = {
 
     lazy.logger.log("Batch finished, queueing next batch.");
     this._firstIteration = false;
-    Services.tm.idleDispatchToMainThread(() => {
-      this.purgeTrackingCookieJars();
+    await new Promise((resolve, reject) => {
+      Services.tm.idleDispatchToMainThread(() => {
+        this.purgeTrackingCookieJars().then(resolve, reject);
+      });
     });
   },
 };

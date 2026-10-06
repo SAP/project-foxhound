@@ -63,11 +63,12 @@ add_task(async function test_newtab_tab_close_sends_ping() {
     );
     Assert.ok(Glean.newtabSearch.enabled.testGetValue());
     Assert.ok(Glean.topsites.enabled.testGetValue());
+    // Highlights ("Recent Activity") is off by default.
+    Assert.ok(!Glean.newtab.highlightsEnabled.testGetValue());
     // Sponsored topsites are turned off in tests to avoid making remote requests.
     Assert.ok(!Glean.topsites.sponsoredEnabled.testGetValue());
     Assert.ok(Glean.pocket.enabled.testGetValue());
     Assert.ok(Glean.pocket.sponsoredStoriesEnabled.testGetValue());
-    Assert.equal(false, Glean.pocket.isSignedIn.testGetValue());
   });
 
   BrowserTestUtils.removeTab(tab);
@@ -122,11 +123,12 @@ add_task(async function test_newtab_tab_nav_sends_ping() {
     );
     Assert.ok(Glean.newtabSearch.enabled.testGetValue());
     Assert.ok(Glean.topsites.enabled.testGetValue());
+    // Highlights ("Recent Activity") is off by default.
+    Assert.ok(!Glean.newtab.highlightsEnabled.testGetValue());
     // Sponsored topsites are turned off in tests to avoid making remote requests.
     Assert.ok(!Glean.topsites.sponsoredEnabled.testGetValue());
     Assert.ok(Glean.pocket.enabled.testGetValue());
     Assert.ok(Glean.pocket.sponsoredStoriesEnabled.testGetValue());
-    Assert.equal(false, Glean.pocket.isSignedIn.testGetValue());
   });
 
   BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, "about:mozilla");
@@ -205,6 +207,52 @@ add_task(async function test_newtab_categorization_sends_ping() {
   });
   await TelemetryFeed.sendPageTakeoverData();
   Assert.ok(pingSent, "ping was sent");
+
+  await SpecialPowers.popPrefEnv();
+});
+
+/**
+ * Tests that we set Glean.newtab.highlightsEnabled to true if the highlights
+ * section is enabled.
+ */
+add_task(async function test_newtab_highlights_enabled_pref() {
+  Services.fog.testResetFOG();
+  sendTriggerMessageSpy.resetHistory();
+  await GleanPings.newtab.testSubmission(
+    () => {
+      Assert.ok(
+        Glean.newtab.highlightsEnabled.testGetValue(),
+        "Highlights are reported as being enabled."
+      );
+    },
+    async () => {
+      await SpecialPowers.pushPrefEnv({
+        set: [
+          ["browser.newtabpage.activity-stream.feeds.section.highlights", true],
+          ["browser.newtabpage.activity-stream.telemetry", true],
+        ],
+      });
+      let tab = await BrowserTestUtils.openNewForegroundTab(
+        gBrowser,
+        "about:newtab",
+        false // waitForLoad; about:newtab is cached so this would never resolve
+      );
+
+      await BrowserTestUtils.waitForCondition(
+        () => sendTriggerMessageSpy.called,
+        "After about:newtab finishes loading"
+      );
+      sendTriggerMessageSpy.resetHistory();
+
+      await BrowserTestUtils.waitForCondition(
+        () => !!Glean.newtab.opened.testGetValue("newtab"),
+        "We expect the newtab open to be recorded"
+      );
+
+      BrowserTestUtils.removeTab(tab);
+    },
+    5000 /* timeout to send the ping */
+  );
 
   await SpecialPowers.popPrefEnv();
 });

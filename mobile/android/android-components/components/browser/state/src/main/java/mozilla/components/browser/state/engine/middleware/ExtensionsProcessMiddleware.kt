@@ -9,7 +9,7 @@ import mozilla.components.browser.state.action.ExtensionsProcessAction
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.concept.engine.Engine
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 
 /**
  * [Middleware] implementation responsible for enabling and disabling the extensions process (spawning).
@@ -21,7 +21,7 @@ internal class ExtensionsProcessMiddleware(
 ) : Middleware<BrowserState, BrowserAction> {
 
     override fun invoke(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         next: (BrowserAction) -> Unit,
         action: BrowserAction,
     ) {

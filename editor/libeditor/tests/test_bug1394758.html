@@ -23,7 +23,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1394758
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 611182 **/
+/** Test for Bug 611182 */
 SimpleTest.waitForExplicitFinish();
 SimpleTest.waitForFocus(function() {
   var editable = document.getElementById("editable");
@@ -33,7 +33,6 @@ SimpleTest.waitForFocus(function() {
   editable.focus();
   window.getSelection().collapse(span.nextSibling, 0);
 
-  synthesizeKey("KEY_ArrowRight");
   synthesizeKey("KEY_ArrowRight");
   synthesizeKey("KEY_ArrowRight");
   synthesizeKey("KEY_Backspace");

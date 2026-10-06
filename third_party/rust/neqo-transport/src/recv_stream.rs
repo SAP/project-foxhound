@@ -17,11 +17,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use neqo_common::{qtrace, Buffer, Role};
+use neqo_common::{Buffer, Role, qtrace};
 use smallvec::SmallVec;
 use strum::Display;
 
 use crate::{
+    AppError, Error, Res,
     events::ConnectionEvents,
     fc::ReceiverFlowControl,
     frame::FrameType,
@@ -30,28 +31,14 @@ use crate::{
     send_stream::SendStreams,
     stats::FrameStats,
     stream_id::StreamId,
-    AppError, Error, Res,
 };
-
-pub const INITIAL_RECV_WINDOW_SIZE: usize = 1024 * 1024;
-
-/// Limit for the maximum amount of bytes active on a single stream, i.e. limit
-/// for the size of the stream receive window.
-///
-/// A value of 10 MiB allows for:
-///
-/// - 10ms rtt and 8.3 GBit/s
-/// - 20ms rtt and 4.2 GBit/s
-/// - 40ms rtt and 2.1 GBit/s
-/// - 100ms rtt and 0.8 GBit/s
-///
-/// Keep in sync with [`crate::send_stream::MAX_SEND_BUFFER_SIZE`].
-pub const MAX_RECV_WINDOW_SIZE: u64 = 10 * 1024 * 1024;
 
 #[derive(Debug, Default)]
 pub struct RecvStreams {
     streams: BTreeMap<StreamId, RecvStream>,
     keep_alive: Weak<()>,
+    /// Set when any stream has ended; cleared by `remove_ended`.
+    has_ended: bool,
 }
 
 impl RecvStreams {
@@ -109,13 +96,69 @@ impl RecvStreams {
 
     pub fn clear(&mut self) {
         self.streams.clear();
+        self.has_ended = false;
     }
 
-    pub fn clear_terminal(&mut self, send_streams: &SendStreams, role: Role) -> (u64, u64) {
+    pub(crate) const fn set_ended(&mut self, ended: bool) {
+        self.has_ended |= ended;
+    }
+
+    /// Read from a stream, noting when it ends.
+    ///
+    /// # Errors
+    /// When the stream does not exist or has no more data.
+    pub fn read(&mut self, stream_id: StreamId, data: &mut [u8]) -> Res<(usize, bool)> {
+        let (n, fin) = self.get_mut(stream_id)?.read(data)?;
+        self.set_ended(fin);
+        Ok((n, fin))
+    }
+
+    /// Stop sending on a stream, noting when it ends.
+    ///
+    /// # Errors
+    /// When the stream does not exist.
+    pub fn stop_sending(&mut self, stream_id: StreamId, err: AppError) -> Res<()> {
+        let ended = self.get_mut(stream_id)?.stop_sending(err);
+        self.set_ended(ended);
+        Ok(())
+    }
+
+    /// Reset a stream, noting if it ended.
+    ///
+    /// # Errors
+    /// When flow control is violated.
+    pub fn reset(
+        &mut self,
+        stream_id: StreamId,
+        application_error_code: AppError,
+        final_size: u64,
+    ) -> Res<()> {
+        if let Ok(rs) = self.get_mut(stream_id) {
+            let ended = rs.reset(application_error_code, final_size)?;
+            self.set_ended(ended);
+        }
+        Ok(())
+    }
+
+    /// Note whether a stop-sending ack ended the stream.
+    pub fn stop_sending_acked(&mut self, stream_id: StreamId) {
+        if let Ok(rs) = self.get_mut(stream_id) {
+            let ended = rs.stop_sending_acked();
+            self.set_ended(ended);
+        }
+    }
+
+    pub fn remove_ended(&mut self, send_streams: &SendStreams, role: Role) -> (u64, u64) {
+        if !self.has_ended {
+            return (0, 0);
+        }
+        self.has_ended = false;
+        // Note: retained ended bidi streams (send counterpart alive) will be re-flagged
+        // when their send side is removed via `cleanup_closed_streams`.
         let mut removed_bidi = 0;
         let mut removed_uni = 0;
         self.streams.retain(|id, s| {
-            let dead = s.is_terminal() && (id.is_uni() || !send_streams.exists(*id));
+            let dead = s.is_ended() && (id.is_uni() || !send_streams.exists(*id));
             if dead && id.is_remote_initiated(role) {
                 if id.is_bidi() {
                     removed_bidi += 1;
@@ -554,10 +597,9 @@ impl RecvStream {
             mem::discriminant(&new_state)
         );
         qtrace!(
-            "RecvStream {} state {} -> {}",
+            "RecvStream {} state {} -> {new_state}",
             self.stream_id.as_u64(),
-            self.state,
-            new_state
+            self.state
         );
 
         match new_state {
@@ -689,7 +731,11 @@ impl RecvStream {
 
     /// # Errors
     /// When the reset occurs at an invalid point.
-    pub fn reset(&mut self, application_error_code: AppError, final_size: u64) -> Res<()> {
+    ///
+    /// # Returns
+    /// `true` when the stream transitions to `ResetRecvd` (ended).
+    /// `false` if the stream is already in a terminal state and the reset is a no-op.
+    pub fn reset(&mut self, application_error_code: AppError, final_size: u64) -> Res<bool> {
         self.state.flow_control_consume_data(final_size, true)?;
         match &mut self.state {
             RecvStreamState::Recv {
@@ -712,6 +758,7 @@ impl RecvStream {
                     final_received: received,
                     final_read: read,
                 });
+                Ok(true)
             }
             RecvStreamState::AbortReading {
                 fc,
@@ -736,12 +783,10 @@ impl RecvStream {
                     final_received: received,
                     final_read: read,
                 });
+                Ok(true)
             }
-            _ => {
-                // Ignore reset if in DataRecvd, DataRead, or ResetRecvd
-            }
+            _ => Ok(false), // Ignore reset if in DataRecvd, DataRead, or ResetRecvd
         }
-        Ok(())
     }
 
     fn flow_control_retire_data(
@@ -758,20 +803,20 @@ impl RecvStream {
     /// Send a flow control update.
     /// This is used when a peer declares that they are blocked.
     /// This sends `MAX_STREAM_DATA` if there is any increase possible.
-    pub fn send_flowc_update(&mut self) {
+    pub const fn send_flowc_update(&mut self) {
         if let RecvStreamState::Recv { fc, .. } = &mut self.state {
             fc.send_flowc_update();
         }
     }
 
-    pub fn set_stream_max_data(&mut self, max_data: u64) {
+    pub const fn set_stream_max_data(&mut self, max_data: u64) {
         if let RecvStreamState::Recv { fc, .. } = &mut self.state {
             fc.set_max_active(max_data);
         }
     }
 
     #[must_use]
-    pub const fn is_terminal(&self) -> bool {
+    pub const fn is_ended(&self) -> bool {
         matches!(
             self.state,
             RecvStreamState::ResetRecvd { .. } | RecvStreamState::DataRead { .. }
@@ -836,7 +881,12 @@ impl RecvStream {
         }
     }
 
-    pub fn stop_sending(&mut self, err: AppError) {
+    /// # Returns
+    /// `true` if the stream transitions to `DataRead` (ended).
+    /// `false` if the stream transitions to `AbortReading` or was already
+    /// in a terminal or aborting state.
+    #[must_use]
+    pub fn stop_sending(&mut self, err: AppError) -> bool {
         qtrace!("stop_sending called when in state {}", self.state);
         match &mut self.state {
             RecvStreamState::Recv {
@@ -864,6 +914,7 @@ impl RecvStream {
                     final_received: received,
                     final_read: read,
                 });
+                false
             }
             RecvStreamState::DataRecvd {
                 fc,
@@ -877,13 +928,12 @@ impl RecvStream {
                     final_received: received,
                     final_read: read,
                 });
+                true
             }
             RecvStreamState::DataRead { .. }
             | RecvStreamState::AbortReading { .. }
             | RecvStreamState::WaitForReset { .. }
-            | RecvStreamState::ResetRecvd { .. } => {
-                // Already in terminal state
-            }
+            | RecvStreamState::ResetRecvd { .. } => false,
         }
     }
 
@@ -902,38 +952,40 @@ impl RecvStream {
             // Maybe send STOP_SENDING
             RecvStreamState::AbortReading {
                 frame_needed, err, ..
-            } => {
-                if *frame_needed
-                    && builder.write_varint_frame(&[
-                        FrameType::StopSending.into(),
-                        self.stream_id.as_u64(),
-                        *err,
-                    ])
-                {
-                    tokens.push(recovery::Token::Stream(StreamRecoveryToken::StopSending {
-                        stream_id: self.stream_id,
-                    }));
-                    stats.stop_sending += 1;
-                    *frame_needed = false;
-                }
+            } if *frame_needed
+                && builder.write_varint_frame(&[
+                    FrameType::StopSending.into(),
+                    self.stream_id.as_u64(),
+                    *err,
+                ]) =>
+            {
+                tokens.push(recovery::Token::Stream(StreamRecoveryToken::StopSending {
+                    stream_id: self.stream_id,
+                }));
+                stats.stop_sending += 1;
+                *frame_needed = false;
             }
             _ => {}
         }
     }
 
-    pub fn max_stream_data_lost(&mut self, maximum_data: u64) {
+    pub const fn max_stream_data_lost(&mut self, maximum_data: u64) {
         if let RecvStreamState::Recv { fc, .. } = &mut self.state {
             fc.frame_lost(maximum_data);
         }
     }
 
-    pub fn stop_sending_lost(&mut self) {
+    pub const fn stop_sending_lost(&mut self) {
         if let RecvStreamState::AbortReading { frame_needed, .. } = &mut self.state {
             *frame_needed = true;
         }
     }
 
-    pub fn stop_sending_acked(&mut self) {
+    /// # Returns
+    /// `true` if the stream transitions to `ResetRecvd` (ended) because
+    /// the final size was already known.
+    #[must_use]
+    pub fn stop_sending_acked(&mut self) -> bool {
         if let RecvStreamState::AbortReading {
             fc,
             session_fc,
@@ -952,17 +1004,18 @@ impl RecvStream {
                     final_received: received,
                     final_read: read,
                 });
-            } else {
-                let fc_copy = mem::take(fc);
-                let session_fc_copy = mem::take(session_fc);
-                self.set_state(RecvStreamState::WaitForReset {
-                    fc: fc_copy,
-                    session_fc: session_fc_copy,
-                    final_received: received,
-                    final_read: read,
-                });
+                return true;
             }
+            let fc_copy = mem::take(fc);
+            let session_fc_copy = mem::take(session_fc);
+            self.set_state(RecvStreamState::WaitForReset {
+                fc: fc_copy,
+                session_fc: session_fc_copy,
+                final_received: received,
+                final_read: read,
+            });
         }
+        false
     }
 
     #[cfg(test)]
@@ -990,25 +1043,20 @@ impl RecvStream {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    use std::{
-        cell::RefCell,
-        fmt::Debug,
-        ops::Range,
-        rc::Rc,
-        time::{Duration, Instant},
-    };
+    use std::{cell::RefCell, fmt::Debug, ops::Range, rc::Rc, time::Duration};
 
-    use neqo_common::{qtrace, Encoder};
+    use neqo_common::{Encoder, qtrace};
+    use test_fixture::now;
 
     use super::RecvStream;
     use crate::{
+        ConnectionEvents, Error, INITIAL_LOCAL_MAX_STREAM_DATA, StreamId,
         fc::{ReceiverFlowControl, WINDOW_UPDATE_FRACTION},
-        packet::{self, PACKET_LIMIT},
-        recovery,
+        packet, recovery,
         recv_stream::RxStreamOrderer,
         stats::FrameStats,
-        ConnectionEvents, Error, StreamId, INITIAL_RECV_WINDOW_SIZE,
     };
 
     const SESSION_WINDOW: usize = 1024;
@@ -1034,6 +1082,46 @@ mod tests {
                 break;
             }
         }
+    }
+
+    /// A buffer of exactly 4096 bytes has reached the extension limit and must not be extended.
+    #[test]
+    fn inbound_frame_no_extend_at_4096() {
+        let mut s = RxStreamOrderer::default();
+        // Fill to the extend threshold.
+        s.inbound_frame(0, &[0u8; 4096]);
+        assert_eq!(s.data_ranges[&0].len(), 4096);
+        // The next byte must not be merged; the threshold has been reached.
+        s.inbound_frame(4096, &[1u8]);
+        assert_eq!(
+            s.data_ranges.len(),
+            2,
+            "a 4096-byte buffer must not be extended further"
+        );
+    }
+
+    /// A buffer of 4095 bytes IS extended when the next frame is contiguous.
+    #[test]
+    fn inbound_frame_extends_below_4096() {
+        let mut s = RxStreamOrderer::default();
+        s.inbound_frame(0, &[0u8; 4095]);
+        s.inbound_frame(4095, &[1u8]);
+        assert_eq!(s.data_ranges.len(), 1);
+        assert_eq!(s.data_ranges[&0].len(), 4096);
+    }
+
+    /// Reading exactly `available` bytes frees the range so the next read can proceed.
+    #[test]
+    fn read_exact_available_removes_range() {
+        let mut s = RxStreamOrderer::default();
+        s.inbound_frame(0, &[1u8; 5]);
+        s.inbound_frame(5, &[2u8; 5]);
+
+        let mut buf = [0u8; 5];
+        assert_eq!(s.read(&mut buf), 5);
+        assert_eq!(buf, [1u8; 5]);
+        assert_eq!(s.read(&mut buf), 5);
+        assert_eq!(buf, [2u8; 5]);
     }
 
     #[test]
@@ -1458,14 +1546,17 @@ mod tests {
 
     #[test]
     fn stream_flowc_update() {
-        let mut s = create_stream(1024 * INITIAL_RECV_WINDOW_SIZE as u64);
-        let mut buf = vec![0u8; INITIAL_RECV_WINDOW_SIZE + 100]; // Make it overlarge
+        let mut s = create_stream(1024 * INITIAL_LOCAL_MAX_STREAM_DATA as u64);
+        let mut buf = vec![0u8; INITIAL_LOCAL_MAX_STREAM_DATA + 100]; // Make it overlarge
 
         assert!(!s.has_frames_to_write());
-        let big_buf = vec![0; INITIAL_RECV_WINDOW_SIZE];
+        let big_buf = vec![0; INITIAL_LOCAL_MAX_STREAM_DATA];
         s.inbound_stream_frame(false, 0, &big_buf).unwrap();
         assert!(!s.has_frames_to_write());
-        assert_eq!(s.read(&mut buf).unwrap(), (INITIAL_RECV_WINDOW_SIZE, false));
+        assert_eq!(
+            s.read(&mut buf).unwrap(),
+            (INITIAL_LOCAL_MAX_STREAM_DATA, false)
+        );
         assert!(!s.data_ready());
 
         // flow msg generated!
@@ -1473,13 +1564,13 @@ mod tests {
 
         // consume it
         let mut builder =
-            packet::Builder::short(Encoder::new(), false, None::<&[u8]>, PACKET_LIMIT);
+            packet::Builder::short(Encoder::default(), false, None::<&[u8]>, packet::LIMIT);
         let mut token = recovery::Tokens::new();
         s.write_frame(
             &mut builder,
             &mut token,
             &mut FrameStats::default(),
-            Instant::now(),
+            now(),
             Duration::from_millis(100),
         );
 
@@ -1491,7 +1582,7 @@ mod tests {
         let conn_events = ConnectionEvents::default();
         RecvStream::new(
             StreamId::from(67),
-            INITIAL_RECV_WINDOW_SIZE as u64,
+            INITIAL_LOCAL_MAX_STREAM_DATA as u64,
             Rc::new(RefCell::new(ReceiverFlowControl::new((), session_fc))),
             conn_events,
         )
@@ -1499,11 +1590,11 @@ mod tests {
 
     #[test]
     fn stream_max_stream_data() {
-        let mut s = create_stream(1024 * INITIAL_RECV_WINDOW_SIZE as u64);
+        let mut s = create_stream(1024 * INITIAL_LOCAL_MAX_STREAM_DATA as u64);
         assert!(!s.has_frames_to_write());
-        let big_buf = vec![0; INITIAL_RECV_WINDOW_SIZE];
+        let big_buf = vec![0; INITIAL_LOCAL_MAX_STREAM_DATA];
         s.inbound_stream_frame(false, 0, &big_buf).unwrap();
-        s.inbound_stream_frame(false, INITIAL_RECV_WINDOW_SIZE as u64, &[1; 1])
+        s.inbound_stream_frame(false, INITIAL_LOCAL_MAX_STREAM_DATA as u64, &[1; 1])
             .unwrap_err();
     }
 
@@ -1544,14 +1635,14 @@ mod tests {
 
     #[test]
     fn no_stream_flowc_event_after_exiting_recv() {
-        let mut s = create_stream(1024 * INITIAL_RECV_WINDOW_SIZE as u64);
-        let mut buf = vec![0; INITIAL_RECV_WINDOW_SIZE];
+        let mut s = create_stream(1024 * INITIAL_LOCAL_MAX_STREAM_DATA as u64);
+        let mut buf = vec![0; INITIAL_LOCAL_MAX_STREAM_DATA];
         // Write from buf at first.
         s.inbound_stream_frame(false, 0, &buf).unwrap();
         // Then read into it.
         s.read(&mut buf).unwrap();
         assert!(s.has_frames_to_write());
-        s.inbound_stream_frame(true, INITIAL_RECV_WINDOW_SIZE as u64, &[])
+        s.inbound_stream_frame(true, INITIAL_LOCAL_MAX_STREAM_DATA as u64, &[])
             .unwrap();
         assert!(!s.has_frames_to_write());
     }
@@ -1569,13 +1660,13 @@ mod tests {
     }
 
     fn create_stream_session_flow_control() -> (RecvStream, Rc<RefCell<ReceiverFlowControl<()>>>) {
-        static_assertions::const_assert!(INITIAL_RECV_WINDOW_SIZE > SESSION_WINDOW);
+        static_assertions::const_assert!(INITIAL_LOCAL_MAX_STREAM_DATA > SESSION_WINDOW);
         let session_fc = Rc::new(RefCell::new(ReceiverFlowControl::new(
             (),
             u64::try_from(SESSION_WINDOW).unwrap(),
         )));
         (
-            create_stream_with_fc(Rc::clone(&session_fc), INITIAL_RECV_WINDOW_SIZE as u64),
+            create_stream_with_fc(Rc::clone(&session_fc), INITIAL_LOCAL_MAX_STREAM_DATA as u64),
             session_fc,
         )
     }
@@ -1594,11 +1685,15 @@ mod tests {
         assert!(session_fc.borrow().frame_needed());
         // consume it
         let mut builder =
-            packet::Builder::short(Encoder::new(), false, None::<&[u8]>, PACKET_LIMIT);
+            packet::Builder::short(Encoder::default(), false, None::<&[u8]>, packet::LIMIT);
         let mut token = recovery::Tokens::new();
-        session_fc
-            .borrow_mut()
-            .write_frames(&mut builder, &mut token, &mut FrameStats::default());
+        session_fc.borrow_mut().write_frames(
+            &mut builder,
+            &mut token,
+            &mut FrameStats::default(),
+            now(),
+            Duration::from_millis(100),
+        );
 
         // Switch to SizeKnown state
         s.inbound_stream_frame(true, 2 * u64::try_from(SESSION_WINDOW).unwrap() - 1, &[0])
@@ -1616,11 +1711,15 @@ mod tests {
         assert!(session_fc.borrow().frame_needed());
         // consume it
         let mut builder =
-            packet::Builder::short(Encoder::new(), false, None::<&[u8]>, PACKET_LIMIT);
+            packet::Builder::short(Encoder::default(), false, None::<&[u8]>, packet::LIMIT);
         let mut token = recovery::Tokens::new();
-        session_fc
-            .borrow_mut()
-            .write_frames(&mut builder, &mut token, &mut FrameStats::default());
+        session_fc.borrow_mut().write_frames(
+            &mut builder,
+            &mut token,
+            &mut FrameStats::default(),
+            now(),
+            Duration::from_millis(100),
+        );
 
         // Test DataRecvd state
         let session_fc = Rc::new(RefCell::new(ReceiverFlowControl::new(
@@ -1629,7 +1728,7 @@ mod tests {
         )));
         let mut s = RecvStream::new(
             StreamId::from(567),
-            INITIAL_RECV_WINDOW_SIZE as u64,
+            INITIAL_LOCAL_MAX_STREAM_DATA as u64,
             Rc::clone(&session_fc),
             ConnectionEvents::default(),
         );
@@ -1921,17 +2020,22 @@ mod tests {
 
         // Write the fc update frame
         let mut builder =
-            packet::Builder::short(Encoder::new(), false, None::<&[u8]>, PACKET_LIMIT);
+            packet::Builder::short(Encoder::default(), false, None::<&[u8]>, packet::LIMIT);
         let mut token = recovery::Tokens::new();
         let mut stats = FrameStats::default();
-        fc.borrow_mut()
-            .write_frames(&mut builder, &mut token, &mut stats);
+        fc.borrow_mut().write_frames(
+            &mut builder,
+            &mut token,
+            &mut stats,
+            now(),
+            Duration::from_millis(100),
+        );
         assert_eq!(stats.max_data, 0);
         s.write_frame(
             &mut builder,
             &mut token,
             &mut stats,
-            Instant::now(),
+            now(),
             Duration::from_millis(100),
         );
         assert_eq!(stats.max_stream_data, 1);
@@ -1952,14 +2056,19 @@ mod tests {
         );
         assert!(fc.borrow().frame_needed());
         assert!(!s.fc().unwrap().frame_needed());
-        fc.borrow_mut()
-            .write_frames(&mut builder, &mut token, &mut stats);
+        fc.borrow_mut().write_frames(
+            &mut builder,
+            &mut token,
+            &mut stats,
+            now(),
+            Duration::from_millis(100),
+        );
         assert_eq!(stats.max_data, 1);
         s.write_frame(
             &mut builder,
             &mut token,
             &mut stats,
-            Instant::now(),
+            now(),
             Duration::from_millis(100),
         );
         assert_eq!(stats.max_stream_data, 1);
@@ -2121,7 +2230,7 @@ mod tests {
         check_fc(&fc.borrow(), SW / 2, 0);
         check_fc(s.fc().unwrap(), SW / 2, 0);
 
-        s.stop_sending(Error::None.code());
+        assert!(!s.stop_sending(Error::None.code()));
         // All data will de retired
         check_fc(&fc.borrow(), SW / 2, SW / 2);
         check_fc(s.fc().unwrap(), SW / 2, SW / 2);
@@ -2162,7 +2271,7 @@ mod tests {
         check_fc(&fc.borrow(), SW / 2, 0);
         check_fc(s.fc().unwrap(), SW / 2, 0);
 
-        s.stop_sending(Error::None.code());
+        assert!(!s.stop_sending(Error::None.code()));
         // All data will de retired
         check_fc(&fc.borrow(), SW / 2, SW / 2);
         check_fc(s.fc().unwrap(), SW / 2, SW / 2);
@@ -2220,11 +2329,11 @@ mod tests {
         check_fc(&fc.borrow(), SW / 2, 0);
         check_fc(s.fc().unwrap(), SW / 2, 0);
 
-        s.stop_sending(Error::None.code());
+        assert!(!s.stop_sending(Error::None.code()));
         check_fc(&fc.borrow(), SW / 2, SW / 2);
         check_fc(s.fc().unwrap(), SW / 2, SW / 2);
 
-        s.stop_sending_acked();
+        assert!(!s.stop_sending_acked());
         check_fc(&fc.borrow(), SW / 2, SW / 2);
         check_fc(s.fc().unwrap(), SW / 2, SW / 2);
 

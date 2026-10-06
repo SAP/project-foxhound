@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,20 +6,23 @@
 #define mozilla_dom_serviceworkerinfo_h
 
 #include "MainThreadUtils.h"
+#include "mozilla/OriginAttributes.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/dom/ServiceWorkerBinding.h"  // For ServiceWorkerState
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
 #include "mozilla/dom/ServiceWorkerLifetimeExtension.h"
 #include "mozilla/dom/WorkerCommon.h"
-#include "mozilla/OriginAttributes.h"
-#include "mozilla/TimeStamp.h"
 #include "nsIServiceWorkerManager.h"
 
 namespace mozilla::dom {
 
 class ClientInfo;
 class PostMessageSource;
-class ServiceWorkerCloneData;
 class ServiceWorkerPrivate;
+
+namespace ipc {
+class StructuredCloneData;
+}
 
 /*
  * Wherever the spec treats a worker instance and a description of said worker
@@ -78,7 +79,7 @@ class ServiceWorkerInfo final : public nsIServiceWorkerInfo {
   NS_DECL_ISUPPORTS
   NS_DECL_NSISERVICEWORKERINFO
 
-  void PostMessage(RefPtr<ServiceWorkerCloneData>&& aData,
+  void PostMessage(ipc::StructuredCloneData* aData,
                    const PostMessageSource& aSource);
 
   class ServiceWorkerPrivate* WorkerPrivate() const {
@@ -91,7 +92,7 @@ class ServiceWorkerInfo final : public nsIServiceWorkerInfo {
   const nsCString& ScriptSpec() const { return mDescriptor.ScriptURL(); }
 
   const nsCString& Scope() const { return mDescriptor.Scope(); }
-
+  WorkerType Type() const { return mDescriptor.Type(); }
   Maybe<ClientInfo> GetClientInfo();
 
   // Pass-through of ServiceWorkerPrivate::GetLifetimeDeadline(); note that
@@ -114,7 +115,8 @@ class ServiceWorkerInfo final : public nsIServiceWorkerInfo {
   }
 
   ServiceWorkerInfo(nsIPrincipal* aPrincipal, const nsACString& aScope,
-                    uint64_t aRegistrationId, uint64_t aRegistrationVersion,
+                    const WorkerType& aType, uint64_t aRegistrationId,
+                    uint64_t aRegistrationVersion,
                     const nsACString& aScriptSpec, const nsAString& aCacheName,
                     nsLoadFlags aImportsLoadFlags);
 

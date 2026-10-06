@@ -37,8 +37,8 @@ class nsTransportEventSinkProxy : public nsITransportEventSink {
  public:
   nsCOMPtr<nsITransportEventSink> mSink;
   nsCOMPtr<nsIEventTarget> mTarget;
-  Mutex mLock MOZ_UNANNOTATED;
-  RefPtr<nsTransportStatusEvent> mLastEvent;
+  Mutex mLock;
+  RefPtr<nsTransportStatusEvent> mLastEvent MOZ_GUARDED_BY(mLock);
 };
 
 class nsTransportStatusEvent : public Runnable {

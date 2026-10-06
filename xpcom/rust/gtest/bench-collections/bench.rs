@@ -5,10 +5,10 @@
 #![allow(non_snake_case)]
 
 extern crate fnv;
-extern crate fxhash;
+extern crate rustc_hash;
 
 use fnv::FnvHashSet;
-use fxhash::FxHashSet;
+use rustc_hash::FxHashSet;
 use std::collections::HashSet;
 use std::os::raw::{c_char, c_void};
 use std::slice;

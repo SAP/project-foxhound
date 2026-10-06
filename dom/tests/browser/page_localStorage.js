@@ -38,7 +38,7 @@
  * Both of these involve mutateStorage writing the sentinel value at the end of
  * the batch.  All of our result-returning methods accordingly filter out the
  * sentinel key/value pair.
- **/
+ */
 
 var pageName = document.location.search.substring(1);
 window.addEventListener("load", () => {

@@ -1,0 +1,23 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+openh264-source:
+    description: OpenH264 source
+    attributes:
+        # Must match FULL_VERSION in the OpenH264 Makefile at the revision below,
+        # as it is used to construct artifact paths in signing and symbol-upload tasks.
+        openh264_version: '2.6.0'
+    fetch:
+        type: git
+        repo: https://github.com/cisco/openh264
+        revision: 652bdb7719f30b52b08e506645a7322ff1b2cc6f
+        path-prefix: openh264
+
+gmp-api:
+    description: GMP API headers
+    fetch:
+        type: git
+        repo: https://github.com/mozilla/gmp-api
+        revision: 1f5a2f07a565a9465c14d3a8b12f3202f83c775e
+        path-prefix: gmp-api

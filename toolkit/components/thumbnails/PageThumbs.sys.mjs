@@ -33,14 +33,14 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gUpdateTimerManager",
   "@mozilla.org/updates/timer-manager;1",
-  "nsIUpdateTimerManager"
+  Ci.nsIUpdateTimerManager
 );
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "PageThumbsStorageService",
   "@mozilla.org/thumbnails/pagethumbs-service;1",
-  "nsIPageThumbsStorageService"
+  Ci.nsIPageThumbsStorageService
 );
 
 /**
@@ -50,9 +50,10 @@ const TaskUtils = {
   /**
    * Read the bytes from a blob, asynchronously.
    *
-   * @return {Promise}
-   * @resolve {ArrayBuffer} In case of success, the bytes contained in the blob.
-   * @reject {DOMException} In case of error, the underlying DOMException.
+   * @return {Promise<ArrayBuffer>}
+   *   Resolves to the bytes contained in the blob.
+   * @rejects {DOMException}
+   *   In case of error, the underlying DOMException.
    */
   readBlob: function readBlob(blob) {
     return new Promise((resolve, reject) => {
@@ -146,6 +147,7 @@ export var PageThumbs = {
 
   /**
    * Gets the thumbnail image's url for a given web page's url.
+   *
    * @param aUrl The web page's url that is depicted in the thumbnail.
    * @return The thumbnail image's url.
    */
@@ -179,8 +181,8 @@ export var PageThumbs = {
    *
    * @param aBrowser The <browser> to capture a thumbnail from.
    * @param aArgs See captureToCanvas for accepted arguments.
-   * @return {Promise}
-   * @resolve {Blob} The thumbnail, as a Blob.
+   * @return {Promise<Blob>}
+   *   Resolves to the thumbnail, as a Blob.
    */
   captureToBlob: function PageThumbs_captureToBlob(aBrowser, aArgs) {
     if (!this._prefEnabled()) {
@@ -188,7 +190,7 @@ export var PageThumbs = {
     }
 
     return new Promise(resolve => {
-      let canvas = this.createCanvas(aBrowser.ownerGlobal);
+      let canvas = this.createCanvas(aBrowser.documentGlobal);
       this.captureToCanvas(aBrowser, canvas, aArgs)
         .then(() => {
           canvas.toBlob(blob => {
@@ -204,6 +206,7 @@ export var PageThumbs = {
    * Note, when dealing with remote content, this api draws into the passed
    * canvas asynchronously. Pass aCallback to receive an async callback after
    * canvas painting has completed.
+   *
    * @param aBrowser The browser to capture a thumbnail from.
    * @param aCanvas The canvas to draw to. The thumbnail will be scaled to match
    *   the dimensions of this canvas. If callers pass a 0x0 canvas, the canvas
@@ -360,7 +363,7 @@ export var PageThumbs = {
       thumbnail.width = contentWidth;
       thumbnail.height = contentHeight;
 
-      let imageData = new aBrowser.ownerGlobal.ImageData(
+      let imageData = new aBrowser.documentGlobal.ImageData(
         contentInfo.imageData,
         contentWidth,
         contentHeight
@@ -412,6 +415,7 @@ export var PageThumbs = {
 
   /**
    * Captures a thumbnail for the given browser and stores it to the cache.
+   *
    * @param aBrowser The browser to capture a thumbnail for.
    */
   captureAndStore: async function PageThumbs_captureAndStore(aBrowser) {
@@ -607,6 +611,7 @@ export var PageThumbs = {
 
   /**
    * Unregister an expiration filter.
+   *
    * @param aFilter A filter that was previously passed to addExpirationFilter.
    */
   removeExpirationFilter: function PageThumbs_removeExpirationFilter(aFilter) {
@@ -615,6 +620,7 @@ export var PageThumbs = {
 
   /**
    * Creates a new hidden canvas element.
+   *
    * @param aWindow The document of this window will be used to create the
    *                canvas.  If not given, the hidden window will be used.
    * @return The newly created canvas.
@@ -666,7 +672,7 @@ export var PageThumbsStorage = {
   // If two thumbnails with the same URL and revision are in cache at the
   // same time, the image loader may pick the stale thumbnail in some cases.
   // Therefore _revisionRange must be large enough to prevent this, e.g.
-  // in the pathological case image.cache.size (5MB by default) could fill
+  // in the pathological case image.cache.size (20MB by default) could fill
   // with (abnormally small) 10KB thumbnail images if the browser session
   // runs long enough (though this is unlikely as thumbnails are usually
   // only updated every MAX_THUMBNAIL_AGE_SECS).

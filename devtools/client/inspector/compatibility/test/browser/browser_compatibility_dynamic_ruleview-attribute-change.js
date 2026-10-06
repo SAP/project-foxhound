@@ -13,18 +13,18 @@ const {
 
 // Test the behavior rules are dynamically added
 
-const ISSUE_OUTLINE_RADIUS = {
+const ISSUE_DEPRECATED = {
   type: COMPATIBILITY_ISSUE_TYPE.CSS_PROPERTY,
-  property: "-moz-user-input",
-  url: "https://developer.mozilla.org/docs/Web/CSS/-moz-user-input",
+  property: "-moz-user-focus",
+  url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/-moz-user-focus",
   deprecated: true,
   experimental: false,
 };
 
-const ISSUE_SCROLLBAR_COLOR = {
+const ISSUE_NOT_DEPRECATED = {
   type: COMPATIBILITY_ISSUE_TYPE.CSS_PROPERTY,
-  property: "scrollbar-color",
-  url: "https://developer.mozilla.org/docs/Web/CSS/scrollbar-color",
+  property: "overflow-anchor",
+  url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/overflow-anchor",
   deprecated: false,
   experimental: false,
 };
@@ -32,7 +32,7 @@ const ISSUE_SCROLLBAR_COLOR = {
 const TEST_URI = `
   <style>
     .issue {
-      -moz-user-input: none;
+      -moz-user-focus: none;
     }
   </style>
   <body>
@@ -58,23 +58,23 @@ add_task(async function () {
 
   info("Check initial issues");
   await checkPanelIssues(selectedElementPane, allElementsPane, [
-    ISSUE_OUTLINE_RADIUS,
+    ISSUE_DEPRECATED,
   ]);
 
   await addNewRule(
-    "scrollbar-color",
+    "overflow-anchor",
     "auto",
     inspector,
     selectedElementPane,
     allElementsPane,
-    [ISSUE_OUTLINE_RADIUS, ISSUE_SCROLLBAR_COLOR]
+    [ISSUE_DEPRECATED, ISSUE_NOT_DEPRECATED]
   );
 
   info("Toggle the inline issue rendering it disable");
   await togglePropStatusOnRuleView(inspector, 0, 0);
   info("Check the issues listed in panel");
   await checkPanelIssues(selectedElementPane, allElementsPane, [
-    ISSUE_OUTLINE_RADIUS,
+    ISSUE_DEPRECATED,
   ]);
 
   info("Toggle the class rule rendering it disabled");

@@ -14,57 +14,38 @@ Frontend
 --------
 
 The frontend part of the bookmarking experience includes various kind of views:
-  * `Trees`_
-  * `Menus`_
-  * `Toolbars`_
+  * :searchfox:`Trees <browser/components/places/content/places-tree.js>`
+  * :searchfox:`Menus <mozilla-central/rev/4c184ca81b28f1ccffbfd08f465709b95bcb4aa1:browser/components/places/content/browserPlacesViews.js#1990>`
+  * :searchfox:`Toolbars <mozilla-central/rev/4c184ca81b28f1ccffbfd08f465709b95bcb4aa1:browser/components/places/content/browserPlacesViews.js#894>`
 
-  .. _Trees: https://searchfox.org/mozilla-central/source/browser/components/places/content/places-tree.js
-  .. _Menus: https://searchfox.org/mozilla-central/rev/4c184ca81b28f1ccffbfd08f465709b95bcb4aa1/browser/components/places/content/browserPlacesViews.js#1990
-  .. _Toolbars: https://searchfox.org/mozilla-central/rev/4c184ca81b28f1ccffbfd08f465709b95bcb4aa1/browser/components/places/content/browserPlacesViews.js#894
+All the views share a common :searchfox:`Controller <browser/components/places/content/controller.js>` that is responsible to handle operations and commands required by the views. Each view creates a Result object and receives notifications about changes from it.
 
-All the views share a common `Controller`_ that is responsible to handle operations and commands required by the views. Each view creates a Result object and receives notifications about changes from it.
+As an example, removing a bookmark from a view will call into the controller that calls into PlacesTransactions to actually do the removal. The removal will notify a :searchfox:`Places event <dom/chrome-webidl/PlacesEvent.webidl>`, that is caught by the Result, that will immediately update its internal representation of the bookmarks tree. Then the Result sends a notification to the view that will handle it, updating what the user is seeing. The system works according to the classical `Model-View-Controller`_ pattern.
 
-As an example, removing a bookmark from a view will call into the controller that calls into PlacesTransactions to actually do the removal. The removal will notify a `Places event`_, that is caught by the Result, that will immediately update its internal representation of the bookmarks tree. Then the Result sends a notification to the view that will handle it, updating what the user is seeing. The system works according to the classical `Model-View-Controller`_ pattern.
+Fronted dialogs and panels are written using xhtml and shadow DOM. The bookmark dialogs in particular are wrappers around a common template, :searchfox:`editBookmarkPanel.inc.xhtml <browser/components/places/content/editBookmarkPanel.inc.xhtml>`, it could be extended or overloaded like an object (overlay, similar to Web Component).
 
-Fronted dialogs and panels are written using xhtml and shadow DOM. The bookmark dialogs in particular are wrappers around a common template, `editBookmarkPanel.inc.xhtml`_, it could be extended or overloaded like an object (overlay, similar to Web Component).
+Most of the logic for the edit bookmark overlay lives in the generic script :searchfox:`editBookmark.js <browser/components/places/content/editBookmark.js>`.
 
-Most of the logic for the edit bookmark overlay lives in the generic script `editBookmark.js`_.
-
-.. _Controller: https://searchfox.org/mozilla-central/source/browser/components/places/content/controller.js
-.. _Places event: https://searchfox.org/mozilla-central/source/dom/chrome-webidl/PlacesEvent.webidl
 .. _Model-View-Controller: https://en.wikipedia.org/wiki/Model–view–controller
-.. _editBookmarkPanel.inc.xhtml: https://searchfox.org/mozilla-central/source/browser/components/places/content/editBookmarkPanel.inc.xhtml
-.. _editBookmark.js: https://searchfox.org/mozilla-central/source/browser/components/places/content/editBookmark.js
 
 Structure of Frontend
 ^^^^^^^^^^^^^^^^^^^^^
 
-Most part of frontend code is located in : `Browser/Components/Places/Content`_:
+Most part of frontend code is located in : :searchfox:`Browser/Components/Places/Content <browser/components/places/content>`:
 
-  - `BookmarkProperties`_ , BookmarkProperties.xhtml - responsible for editBookmarks & newBookmark Dialog. The panel is initialized based on data given in the js object passed as ``window.arguments[0]``. ``Window.arguments[0]`` is set to the guid of the item, if the dialog is accepted.
+  - :searchfox:`BookmarkProperties <browser/components/places/content/bookmarkProperties.js>` , BookmarkProperties.xhtml - responsible for editBookmarks & newBookmark Dialog. The panel is initialized based on data given in the js object passed as ``window.arguments[0]``. ``Window.arguments[0]`` is set to the guid of the item, if the dialog is accepted.
   - BookmarksHistoyTooltip.xhtml - code responsible for tooltip
-  - `BookmarksSidebar`_, bookmarksSidebar.xhtml - code responsible for sidebar window. Searches through existing bookmarks tree for desired bookmark.
-  - `BrowserPlacesViews`_ - controls most views (menu, panels, toolbox). The base view implements everything that's common to the toolbar and menu views.
-  - `Controller`_ - controller shared by all places views. Connect UI and actual operations.
-  - `EditBookmark`_, editBookmarkPanel.inc.xhtml - controls edit bookmark panel. Observes changes for bookmarks and connects all UI manipulations with backend.
-  - `HistorySidebar`_, historySidebar.xhtml - code responsible for history sidebar window. Searches through existing tree for requested History.
-  - `Places-menupopup`_ - custom element definition for Places menus
-  - `Places-tree`_ - class ``MozPlacesTree`` - builds a custom element definition for the places tree. This is loaded into all XUL windows. Has to be wrapped in a block to prevent leaking to a window scope.
+  - :searchfox:`BookmarksSidebar <browser/components/places/content/bookmarksSidebar.js>`, bookmarksSidebar.xhtml - code responsible for sidebar window. Searches through existing bookmarks tree for desired bookmark.
+  - :searchfox:`BrowserPlacesViews <browser/components/places/content/browserPlacesViews.js>` - controls most views (menu, panels, toolbox). The base view implements everything that's common to the toolbar and menu views.
+  - :searchfox:`Controller <browser/components/places/content/controller.js>` - controller shared by all places views. Connect UI and actual operations.
+  - :searchfox:`EditBookmark <browser/components/places/content/editBookmark.js>`, editBookmarkPanel.inc.xhtml - controls edit bookmark panel. Observes changes for bookmarks and connects all UI manipulations with backend.
+  - :searchfox:`HistorySidebar <browser/components/places/content/historySidebar.js>`, historySidebar.xhtml - code responsible for history sidebar window. Searches through existing tree for requested History.
+  - :searchfox:`Places-menupopup <browser/components/places/content/places-menupopup.js>` - custom element definition for Places menus
+  - :searchfox:`Places-tree <browser/components/places/content/places-tree.js>` - class ``MozPlacesTree`` - builds a custom element definition for the places tree. This is loaded into all XUL windows. Has to be wrapped in a block to prevent leaking to a window scope.
   - Places.css, places.js, places.xhtml - responsible for Library window
   - PlacesCommands.inc.xhtml - commands for multiple windows
   - PlacesContextMenu.inc.xhtml - definition for context menu
-  - `TreeView`_ - implementation of the tree view
-
-  .. _Browser/Components/Places/Content: https://searchfox.org/mozilla-central/source/browser/components/places/content
-  .. _BookmarkProperties: https://searchfox.org/mozilla-central/source/browser/components/places/content/bookmarkProperties.js
-  .. _BookmarksSidebar: https://searchfox.org/mozilla-central/source/browser/components/places/content/bookmarksSidebar.js
-  .. _BrowserPlacesViews: https://searchfox.org/mozilla-central/source/browser/components/places/content/browserPlacesViews.js
-  .. _EditBookmark: https://searchfox.org/mozilla-central/source/browser/components/places/content/editBookmark.js
-  .. _HistorySidebar: https://searchfox.org/mozilla-central/source/browser/components/places/content/historySidebar.js
-  .. _Places-menupopup: https://searchfox.org/mozilla-central/source/browser/components/places/content/places-menupopup.js
-  .. _Places-tree: https://searchfox.org/mozilla-central/source/browser/components/places/content/places-tree.js
-  .. _TreeView: https://searchfox.org/mozilla-central/source/browser/components/places/content/treeView.js
-
+  - :searchfox:`TreeView <browser/components/places/content/treeView.js>` - implementation of the tree view
 
 Backend
 -------
@@ -78,21 +59,18 @@ Toolkit Places also provides a way to query bookmarks, through Results. This is 
 Structure of Backend
 ^^^^^^^^^^^^^^^^^^^^
 
-Most part of backend code is located in : `Toolkit/Components/Places`_:
+Most part of backend code is located in : :searchfox:`Toolkit/Components/Places <toolkit/components/places>`:
 
   - :doc:`Bookmarks` - Asynchronous API for managing bookmarks
   - :doc:`History` - Asynchronous API for managing history
-  - `PlacesUtils`_ - This module exports functions for Sync to use when applying remote records
+  - :searchfox:`PlacesUtils <toolkit/components/places/PlacesUtils.sys.mjs>` - This module exports functions for Sync to use when applying remote records
   - :doc:`PlacesTransactions` - This module serves as the transactions manager for Places
-
-  .. _Toolkit/Components/Places: https://searchfox.org/mozilla-central/source/toolkit/components/places
-  .. _PlacesUtils: https://searchfox.org/mozilla-central/source/toolkit/components/places/PlacesUtils.sys.mjs
 
 Storage
 -------
 
 Places uses `SQLite`_ (C-language library with a stable, cross-platform, and backwards compatible file format) as its data storage backend.
-All the data is contained in a places.sqlite file, in the roaming Firefox profile folder. The database is accessed using a wrapper of the SQLite library called `mozStorage`_.
+All the data is contained in a places.sqlite file, in the roaming Firefox profile folder. The database is accessed using a wrapper of the SQLite library called :searchfox:`mozStorage <storage>`.
 For storing our favicons we use favicons.sqlite which is represented as ATTACH-ed to places.sqlite. That makes it easier to use our two separate sqlites as one single database.
 
 Synchronization
@@ -101,5 +79,4 @@ Synchronization
 Places works in strict contact with `Firefox Sync`_, to synchronize bookmarks and history across devices, thus you can meet Sync specific code in various parts of the Places codebase. Some of the code may refer to Weave, the old project name for Sync.
 
 .. _SQLite: https://www.sqlite.org/index.html
-.. _mozStorage: https://searchfox.org/mozilla-central/source/storage
 .. _Firefox Sync: https://www.mozilla.org/en-US/firefox/sync/

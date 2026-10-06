@@ -29,5 +29,5 @@ add_task(async function () {
   is(getWatchExpressionValue(dbg, 4), "2");
 
   await toggleExpressionNode(dbg, 1);
-  is(findAllElements(dbg, "expressionNodes").length, 37);
+  is(findAllElements(dbg, "expressionNodes").length, 39);
 });

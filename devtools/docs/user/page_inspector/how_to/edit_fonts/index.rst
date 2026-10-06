@@ -5,10 +5,6 @@ Edit fonts
 
 This article provides a tour of the Font tools available in the Firefox DevTools. This tool contains several useful features for viewing and manipulating fonts applied to any document loaded in the browser including inspection of all fonts applied to the page, and precise adjustment of variable font axis values.
 
-.. note::
-
-  The updated Font tools as shown in this article are available in Firefox 63 onwards; if you are using an older version of Firefox the tools will not look or behave quite the same, but they will be similar (most notably the Font Editor will not be available).
-
 
 The Fonts tab
 *************
@@ -26,8 +22,8 @@ The Fonts tab is located on the right-hand side of the :doc:`Page Inspector <../
 The Fonts tab has three major sections:
 
 - "Fonts used" by the currently inspected element.
-- The new Fonts Editor. In Firefox 61 and 62, this section does not exist.
-- "All fonts on page" — This section lists all of the fonts in use on the page. In Firefox 61 and 62, this area is labeled "Other fonts in page" and doesn't include the fonts mentioned in the "Fonts used" section.
+- The Fonts Editor.
+- "All fonts on page" — This section lists all of the fonts in use on the page.
 
 
 Fonts used
@@ -52,7 +48,7 @@ Fonts will be included in this section for one of the following reasons:
 Fonts Editor
 ************
 
-Firefox 63 adds the Font Editor — a new area below "Fonts used" with additional controls for editing the fonts’ characteristics.
+The Font Editor has additional controls for editing the fonts’ characteristics.
 
 .. image:: fonts-editor-closeup-63-cropped.png
   :class: border
@@ -64,7 +60,7 @@ For standard (static) fonts, you will be able to change the settings listed belo
 Size
 ----
 
-The `font-size <https://developer.mozilla.org/en-US/docs/Web/CSS/font-size>`_ for the inspected element.
+The `font-size <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/font-size>`_ for the inspected element.
 
 .. image:: font-size_cropped.png
   :class: border
@@ -84,7 +80,7 @@ Example: If ``1rem`` is equivalent to 10 pixels, when you change the unit of mea
 Line height
 -----------
 
-The `line-height <https://developer.mozilla.org/en-US/docs/Web/CSS/line-height>`_ of the inspected element.
+The `line-height <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/line-height>`_ of the inspected element.
 
 .. image:: line-height_cropped.png
   :class: border
@@ -100,7 +96,7 @@ Example: If the font is 20 pixels high and the line-height is ``1.5em``, when yo
 Weight
 ------
 
-The `font-weight <https://developer.mozilla.org/en-US/docs/Web/CSS/font-weight>`_ for the inspected element.
+The `font-weight <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/font-weight>`_ for the inspected element.
 
 .. image:: font-weight_cropped.png
   :alt: Font weight setting
@@ -110,13 +106,13 @@ The `font-weight <https://developer.mozilla.org/en-US/docs/Web/CSS/font-weight>`
 You can select values using the slider or enter a numeric value directly into the text box. For non-variable fonts the slider ranges from 100 to 900 in increments of 100.
 
 .. note::
-  For `variable fonts <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Fonts/Variable_Fonts_Guide>`_ (see below) that define a ``wght`` variation axis, this range is custom.
+  For `variable fonts <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Fonts/Variable_fonts>`_ (see below) that define a ``wght`` variation axis, this range is custom.
 
 
 Italic
 ------
 
-The `font-style <https://developer.mozilla.org/en-US/docs/Web/CSS/font-style>`_ for the inspected element.
+The `font-style <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/font-style>`_ for the inspected element.
 
 .. image:: font-italic_cropped.png
   :class: border
@@ -145,25 +141,25 @@ Each font listed in this section shows you:
 
 - The ``font-family`` identifier and full name of the font.
 - The URL to the font file in the case of web fonts not available on your system, or "System" in the case of fonts loaded from your computer (either default system fonts, or web fonts that you've also got installed on your system). You can copy the URL to the font file by clicking on the icon to the right of the URL.
-- The `@font-face <https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face>`_ descriptor that loads the font into the page, in the case of web fonts. The descriptor is expandable — when opened it shows its full syntax as defined in the stylesheet.
+- The `@font-face <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@font-face>`_ descriptor that loads the font into the page, in the case of web fonts. The descriptor is expandable — when opened it shows its full syntax as defined in the stylesheet.
 - A text sample, to give you an idea of what the font looks like when rendered. The default text for the sample is "Abc" but the preview text can be edited by clicking on the input field at the top of the section and entering a new value. Once entered, all of the sample text will be set to the same custom value.
 
 
 Variable font support in Firefox Developer Tools
 ************************************************
 
-Firefox 62 added support for variable fonts and Firefox 63 features support for editing the properties of variable fonts in the Font Editor.
+You can editing the properties of variable fonts in the Font Editor.
 
 What are variable fonts?
 ------------------------
 
-`Variable Fonts <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Fonts/Variable_Fonts_Guide>`_, or **OpenType Font Variations**, define a new font file format that allows the font designer to include multiple variations of a typeface inside a single font file. That means you no longer have to apply several different web fonts to a single page to represent a complete typeface for which a variable font is available, provided it includes the desired values for the different characteristics you want to vary.
+`Variable Fonts <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Fonts/Variable_fonts>`_, or **OpenType Font Variations**, define a new font file format that allows the font designer to include multiple variations of a typeface inside a single font file. That means you no longer have to apply several different web fonts to a single page to represent a complete typeface for which a variable font is available, provided it includes the desired values for the different characteristics you want to vary.
 
-Variable fonts make it easy to vary font characteristics in a much more granular fashion because their allowable ranges are defined by **axes of variation** (see `Introducing the 'variation axis' <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Fonts/Variable_Fonts_Guide#introducing_the_'variation_axis'>`_ for more information). For example, `font-weight <https://developer.mozilla.org/en-US/docs/Web/CSS/font-weight>`_ can be set to any value between 1 and 1000 in variable fonts (although it is not guaranteed that a variable font will support this entire range).
+Variable fonts make it easy to vary font characteristics in a much more granular fashion because their allowable ranges are defined by **axes of variation** (see `Introducing the 'variation axis' <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Fonts/Variable_fonts#introducing_the_variation_axis>`_ for more information). For example, `font-weight <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/font-weight>`_ can be set to any value between 1 and 1000 in variable fonts (although it is not guaranteed that a variable font will support this entire range).
 
 There are several registered axes. Although it isn't required that these axes be defined for every font, if the font designer *does* implement a registered axis, its behavior *must* follow the defined behavior.
 
-All variable font axes have a four-character axis tag. The CSS `font-variation-settings <https://developer.mozilla.org/en-US/docs/Web/CSS/font-variation-settings>`_ property uses the tag as part of the key-value pair. For example, to set `font-weight <https://developer.mozilla.org/en-US/docs/Web/CSS/font-weight>`_ using ``font-variation-settings``, you could do something like this:
+All variable font axes have a four-character axis tag. The CSS `font-variation-settings <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/font-variation-settings>`_ property uses the tag as part of the key-value pair. For example, to set `font-weight <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/font-weight>`_ using ``font-variation-settings``, you could do something like this:
 
 
 .. code-block:: css
@@ -188,19 +184,19 @@ Here are the registered axes along with their corresponding CSS properties:
     - CSS Property
 
   * - "wght"
-    - `font-weight <https://developer.mozilla.org/en-US/docs/Web/CSS/font-weight>`_
+    - `font-weight <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/font-weight>`_
 
   * - "wdth"
-    - `font-stretch <https://developer.mozilla.org/en-US/docs/Web/CSS/font-stretch>`_
+    - `font-stretch <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/font-stretch>`_
 
   * - "slnt" (slant)
-    - `font-style <https://developer.mozilla.org/en-US/docs/Web/CSS/font-style>`_: ``oblique + angle``
+    - `font-style <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/font-style>`_: ``oblique + angle``
 
   * - "ital"
-    - `font-style <https://developer.mozilla.org/en-US/docs/Web/CSS/font-style>`_: ``italic``
+    - `font-style <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/font-style>`_: ``italic``
 
   * - "opsz"
-    - `font-optical-sizing <https://developer.mozilla.org/en-US/docs/Web/CSS/font-optical-sizing>`_
+    - `font-optical-sizing <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/font-optical-sizing>`_
 
 
 Any axis that is not on the list of registered axes is considered a custom axis. Custom axes do not have corresponding CSS font properties. Font designers can define whatever axis they want; each one needs to be given a unique four-character tag. The axis name and its range is up to the font designer.
@@ -249,7 +245,7 @@ Finally, here are a few tips for making effective use of the Fonts tab:
 
 
 - When using the Page Inspector's :doc:`3-pane mode <../../3-pane_mode/index>`, you can view the CSS rules for the inspected element simultaneously alongside the Fonts tab.
-- If you hover over the `font-family <https://developer.mozilla.org/en-US/docs/Web/CSS/font-family>`_ property in the Rules view, a tooltip shows a sample of the font:
+- If you hover over the `font-family <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/font-family>`_ property in the Rules view, a tooltip shows a sample of the font:
 
   .. image:: fonts_62_tooltip_cropped.png
     :class: border

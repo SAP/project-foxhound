@@ -10,9 +10,11 @@ import mozilla.components.concept.engine.permission.SitePermissions
 import mozilla.components.concept.engine.permission.SitePermissions.AutoplayStatus
 import mozilla.components.lib.state.State
 import org.mozilla.fenix.R
+import org.mozilla.fenix.components.menu.store.IPProtectionMenuState
 import org.mozilla.fenix.settings.PhoneFeature
 import org.mozilla.fenix.trackingprotection.TrackerBuckets
 import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory
+import java.security.cert.X509Certificate
 
 typealias WebsitePermissionsState = Map<PhoneFeature, WebsitePermission>
 
@@ -20,7 +22,7 @@ typealias WebsitePermissionsState = Map<PhoneFeature, WebsitePermission>
  * Value type that represents the state of the unified trust panel.
  *
  * @property baseDomain The base domain of the current site used to display the clear site data dialog.
- * @property isTrackingProtectionEnabled Flag indicating whether enhanced tracking protection is enabled.
+ * @property isTrackingProtectionEnabled Flag indicating whether enhanced tracking protection is enabled for a site.
  * @property numberOfTrackersBlocked The numbers of trackers blocked by enhanced tracking protection.
  * @property bucketedTrackers Mapping of trackers sorted into different tracking protection categories.
  * @property detailedTrackerCategory The [TrackingProtectionCategory] which will be shown in the tracker
@@ -30,6 +32,7 @@ typealias WebsitePermissionsState = Map<PhoneFeature, WebsitePermission>
  * for the current site.
  * @property websiteInfoState [State] containing information about the website connection.
  * @property websitePermissionsState Mapping of [PhoneFeature]s to [WebsitePermission]s.
+ * @property ipProtectionMenuState The current [IPProtectionMenuState] for the IP protection menu item.
  */
 data class TrustPanelState(
     val baseDomain: String? = null,
@@ -41,6 +44,7 @@ data class TrustPanelState(
     val sitePermissions: SitePermissions? = null,
     val websiteInfoState: WebsiteInfoState = WebsiteInfoState(),
     val websitePermissionsState: WebsitePermissionsState = mapOf(),
+    val ipProtectionMenuState: IPProtectionMenuState = IPProtectionMenuState(),
 ) : State
 
 /**
@@ -49,13 +53,15 @@ data class TrustPanelState(
  * @property isSecured Whether the website connection is secured or not.
  * @property websiteUrl The URL of the current web page.
  * @property websiteTitle The title of the current web page.
- * @property certificateName the certificate name of the current web page.
+ * @property certificate The certificate presented by the current web page.
+ * @property qwac The Qualified Website Authentication Certificate presented by the current web page.
  */
 data class WebsiteInfoState(
     val isSecured: Boolean = true,
     val websiteUrl: String = "",
     val websiteTitle: String = "",
-    val certificateName: String = "",
+    val certificate: X509Certificate? = null,
+    val qwac: X509Certificate? = null,
 )
 
 /**

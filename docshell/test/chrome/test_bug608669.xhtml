@@ -49,12 +49,13 @@ function* doTest() {
   is(notificationCount, 0, "initial count");
 
   // create a new window
-  var testWin = chromeWindow.open("", "bug 608669", "chrome,width=600,height=600");
+  var testWin = chromeWindow.open("bug608669.xhtml", "bug 608669", "chrome,width=600,height=600");
+  // Synchronously modify the transient about:blank window
   testWin.x = "y";
-  is(notificationCount, 1, "after created window");
+  is(testWin.location.href, 'about:blank');
+  is(notificationCount, 0, "after created window");
 
-  // Try loading in the window
-  testWin.location = "bug608669.xhtml";
+  // Wait for the window to load
   chromeWindow.onmessage = nextTest;
   yield undefined;
   is(notificationCount, 1, "after first load");

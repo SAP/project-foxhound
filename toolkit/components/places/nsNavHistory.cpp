@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +5,6 @@
 #include <stdio.h>
 
 #include "mozilla/Components.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/intl/LocaleService.h"
 #include "mozilla/StaticPrefs_places.h"
@@ -60,57 +57,6 @@ using namespace mozilla::places;
 #define PREF_HISTORY_ENABLED "places.history.enabled"
 #define PREF_MATCH_DIACRITICS "places.search.matchDiacritics"
 
-#define PREF_FREC_NUM_VISITS "places.frecency.numVisits"
-#define PREF_FREC_NUM_VISITS_DEF 10
-#define PREF_FREC_FIRST_BUCKET_CUTOFF "places.frecency.firstBucketCutoff"
-#define PREF_FREC_FIRST_BUCKET_CUTOFF_DEF 4
-#define PREF_FREC_SECOND_BUCKET_CUTOFF "places.frecency.secondBucketCutoff"
-#define PREF_FREC_SECOND_BUCKET_CUTOFF_DEF 14
-#define PREF_FREC_THIRD_BUCKET_CUTOFF "places.frecency.thirdBucketCutoff"
-#define PREF_FREC_THIRD_BUCKET_CUTOFF_DEF 31
-#define PREF_FREC_FOURTH_BUCKET_CUTOFF "places.frecency.fourthBucketCutoff"
-#define PREF_FREC_FOURTH_BUCKET_CUTOFF_DEF 90
-#define PREF_FREC_FIRST_BUCKET_WEIGHT "places.frecency.firstBucketWeight"
-#define PREF_FREC_FIRST_BUCKET_WEIGHT_DEF 100
-#define PREF_FREC_SECOND_BUCKET_WEIGHT "places.frecency.secondBucketWeight"
-#define PREF_FREC_SECOND_BUCKET_WEIGHT_DEF 70
-#define PREF_FREC_THIRD_BUCKET_WEIGHT "places.frecency.thirdBucketWeight"
-#define PREF_FREC_THIRD_BUCKET_WEIGHT_DEF 50
-#define PREF_FREC_FOURTH_BUCKET_WEIGHT "places.frecency.fourthBucketWeight"
-#define PREF_FREC_FOURTH_BUCKET_WEIGHT_DEF 30
-#define PREF_FREC_DEFAULT_BUCKET_WEIGHT "places.frecency.defaultBucketWeight"
-#define PREF_FREC_DEFAULT_BUCKET_WEIGHT_DEF 10
-#define PREF_FREC_EMBED_VISIT_BONUS "places.frecency.embedVisitBonus"
-#define PREF_FREC_EMBED_VISIT_BONUS_DEF 0
-#define PREF_FREC_FRAMED_LINK_VISIT_BONUS "places.frecency.framedLinkVisitBonus"
-#define PREF_FREC_FRAMED_LINK_VISIT_BONUS_DEF 0
-#define PREF_FREC_LINK_VISIT_BONUS "places.frecency.linkVisitBonus"
-#define PREF_FREC_LINK_VISIT_BONUS_DEF 100
-#define PREF_FREC_TYPED_VISIT_BONUS "places.frecency.typedVisitBonus"
-#define PREF_FREC_TYPED_VISIT_BONUS_DEF 2000
-#define PREF_FREC_BOOKMARK_VISIT_BONUS "places.frecency.bookmarkVisitBonus"
-#define PREF_FREC_BOOKMARK_VISIT_BONUS_DEF 75
-#define PREF_FREC_DOWNLOAD_VISIT_BONUS "places.frecency.downloadVisitBonus"
-#define PREF_FREC_DOWNLOAD_VISIT_BONUS_DEF 0
-#define PREF_FREC_PERM_REDIRECT_VISIT_BONUS \
-  "places.frecency.permRedirectVisitBonus"
-#define PREF_FREC_PERM_REDIRECT_VISIT_BONUS_DEF 0
-#define PREF_FREC_TEMP_REDIRECT_VISIT_BONUS \
-  "places.frecency.tempRedirectVisitBonus"
-#define PREF_FREC_TEMP_REDIRECT_VISIT_BONUS_DEF 0
-#define PREF_FREC_REDIR_SOURCE_VISIT_BONUS \
-  "places.frecency.redirectSourceVisitBonus"
-#define PREF_FREC_REDIR_SOURCE_VISIT_BONUS_DEF 25
-#define PREF_FREC_DEFAULT_VISIT_BONUS "places.frecency.defaultVisitBonus"
-#define PREF_FREC_DEFAULT_VISIT_BONUS_DEF 0
-#define PREF_FREC_UNVISITED_BOOKMARK_BONUS \
-  "places.frecency.unvisitedBookmarkBonus"
-#define PREF_FREC_UNVISITED_BOOKMARK_BONUS_DEF 140
-#define PREF_FREC_UNVISITED_TYPED_BONUS "places.frecency.unvisitedTypedBonus"
-#define PREF_FREC_UNVISITED_TYPED_BONUS_DEF 200
-#define PREF_FREC_RELOAD_VISIT_BONUS "places.frecency.reloadVisitBonus"
-#define PREF_FREC_RELOAD_VISIT_BONUS_DEF 0
-
 // In order to avoid calling PR_now() too often we use a cached "now" value
 // for repeating stuff.  These are milliseconds between "now" cache refreshes.
 #define RENEW_CACHED_NOW_TIMEOUT ((int32_t)3 * PR_MSEC_PER_SEC)
@@ -136,31 +82,10 @@ using namespace mozilla::places;
 #define TOPIC_PROFILE_CHANGE "profile-before-change"
 #define TOPIC_APP_LOCALES_CHANGED "intl:app-locales-changed"
 
+#define USEC_PER_DAY 86400000000LL
+
 static const char* kObservedPrefs[] = {PREF_HISTORY_ENABLED,
-                                       PREF_MATCH_DIACRITICS,
-                                       PREF_FREC_NUM_VISITS,
-                                       PREF_FREC_FIRST_BUCKET_CUTOFF,
-                                       PREF_FREC_SECOND_BUCKET_CUTOFF,
-                                       PREF_FREC_THIRD_BUCKET_CUTOFF,
-                                       PREF_FREC_FOURTH_BUCKET_CUTOFF,
-                                       PREF_FREC_FIRST_BUCKET_WEIGHT,
-                                       PREF_FREC_SECOND_BUCKET_WEIGHT,
-                                       PREF_FREC_THIRD_BUCKET_WEIGHT,
-                                       PREF_FREC_FOURTH_BUCKET_WEIGHT,
-                                       PREF_FREC_DEFAULT_BUCKET_WEIGHT,
-                                       PREF_FREC_EMBED_VISIT_BONUS,
-                                       PREF_FREC_FRAMED_LINK_VISIT_BONUS,
-                                       PREF_FREC_LINK_VISIT_BONUS,
-                                       PREF_FREC_TYPED_VISIT_BONUS,
-                                       PREF_FREC_BOOKMARK_VISIT_BONUS,
-                                       PREF_FREC_DOWNLOAD_VISIT_BONUS,
-                                       PREF_FREC_PERM_REDIRECT_VISIT_BONUS,
-                                       PREF_FREC_TEMP_REDIRECT_VISIT_BONUS,
-                                       PREF_FREC_REDIR_SOURCE_VISIT_BONUS,
-                                       PREF_FREC_DEFAULT_VISIT_BONUS,
-                                       PREF_FREC_UNVISITED_BOOKMARK_BONUS,
-                                       PREF_FREC_UNVISITED_TYPED_BONUS,
-                                       nullptr};
+                                       PREF_MATCH_DIACRITICS, nullptr};
 
 NS_IMPL_ADDREF(nsNavHistory)
 NS_IMPL_RELEASE(nsNavHistory)
@@ -268,7 +193,6 @@ nsNavHistory::nsNavHistory()
       mRecentBookmark(RECENT_EVENTS_INITIAL_CACHE_LENGTH),
       mHistoryEnabled(true),
       mMatchDiacritics(false),
-      mNumVisitsForFrecency(10),
       mTagsFolder(-1),
       mLastCachedStartOfDay(INT64_MAX),
       mLastCachedEndOfDay(0) {
@@ -424,36 +348,6 @@ void nsNavHistory::LoadPrefs() {
   // History preferences.
   mHistoryEnabled = Preferences::GetBool(PREF_HISTORY_ENABLED, true);
   mMatchDiacritics = Preferences::GetBool(PREF_MATCH_DIACRITICS, false);
-
-  // Frecency preferences.
-#define FRECENCY_PREF(_prop, _pref) \
-  _prop = Preferences::GetInt(_pref, _pref##_DEF)
-
-  FRECENCY_PREF(mNumVisitsForFrecency, PREF_FREC_NUM_VISITS);
-  FRECENCY_PREF(mFirstBucketCutoffInDays, PREF_FREC_FIRST_BUCKET_CUTOFF);
-  FRECENCY_PREF(mSecondBucketCutoffInDays, PREF_FREC_SECOND_BUCKET_CUTOFF);
-  FRECENCY_PREF(mThirdBucketCutoffInDays, PREF_FREC_THIRD_BUCKET_CUTOFF);
-  FRECENCY_PREF(mFourthBucketCutoffInDays, PREF_FREC_FOURTH_BUCKET_CUTOFF);
-  FRECENCY_PREF(mEmbedVisitBonus, PREF_FREC_EMBED_VISIT_BONUS);
-  FRECENCY_PREF(mFramedLinkVisitBonus, PREF_FREC_FRAMED_LINK_VISIT_BONUS);
-  FRECENCY_PREF(mLinkVisitBonus, PREF_FREC_LINK_VISIT_BONUS);
-  FRECENCY_PREF(mTypedVisitBonus, PREF_FREC_TYPED_VISIT_BONUS);
-  FRECENCY_PREF(mBookmarkVisitBonus, PREF_FREC_BOOKMARK_VISIT_BONUS);
-  FRECENCY_PREF(mDownloadVisitBonus, PREF_FREC_DOWNLOAD_VISIT_BONUS);
-  FRECENCY_PREF(mPermRedirectVisitBonus, PREF_FREC_PERM_REDIRECT_VISIT_BONUS);
-  FRECENCY_PREF(mTempRedirectVisitBonus, PREF_FREC_TEMP_REDIRECT_VISIT_BONUS);
-  FRECENCY_PREF(mRedirectSourceVisitBonus, PREF_FREC_REDIR_SOURCE_VISIT_BONUS);
-  FRECENCY_PREF(mDefaultVisitBonus, PREF_FREC_DEFAULT_VISIT_BONUS);
-  FRECENCY_PREF(mUnvisitedBookmarkBonus, PREF_FREC_UNVISITED_BOOKMARK_BONUS);
-  FRECENCY_PREF(mUnvisitedTypedBonus, PREF_FREC_UNVISITED_TYPED_BONUS);
-  FRECENCY_PREF(mReloadVisitBonus, PREF_FREC_RELOAD_VISIT_BONUS);
-  FRECENCY_PREF(mFirstBucketWeight, PREF_FREC_FIRST_BUCKET_WEIGHT);
-  FRECENCY_PREF(mSecondBucketWeight, PREF_FREC_SECOND_BUCKET_WEIGHT);
-  FRECENCY_PREF(mThirdBucketWeight, PREF_FREC_THIRD_BUCKET_WEIGHT);
-  FRECENCY_PREF(mFourthBucketWeight, PREF_FREC_FOURTH_BUCKET_WEIGHT);
-  FRECENCY_PREF(mDefaultWeight, PREF_FREC_DEFAULT_BUCKET_WEIGHT);
-
-#undef FRECENCY_PREF
 }
 
 void nsNavHistory::UpdateDaysOfHistory(PRTime visitTime) {
@@ -505,7 +399,6 @@ mozilla::Maybe<nsCString> nsNavHistory::GetTargetFolderGuid(
 
 Atomic<int64_t> nsNavHistory::sLastInsertedPlaceId(0);
 Atomic<int64_t> nsNavHistory::sLastInsertedVisitId(0);
-Atomic<bool> nsNavHistory::sIsFrecencyDecaying(false);
 Atomic<bool> nsNavHistory::sShouldStartFrecencyRecalculation(false);
 
 void  // static
@@ -572,7 +465,7 @@ PRTime nsNavHistory::GetNow() {
     if (mExpireNowTimer)
       mExpireNowTimer->InitWithNamedFuncCallback(
           expireNowTimerCallback, this, RENEW_CACHED_NOW_TIMEOUT,
-          nsITimer::TYPE_ONE_SHOT, "nsNavHistory::GetNow");
+          nsITimer::TYPE_ONE_SHOT, "nsNavHistory::GetNow"_ns);
   }
   return mCachedNow;
 }
@@ -791,7 +684,7 @@ nsNavHistory::ExecuteQuery(nsINavHistoryQuery* aQuery,
 
 // determine from our nsNavHistoryQuery array and nsNavHistoryQueryOptions
 // if this is the place query from the history menu.
-// from browser-menubar.inc, our history menu query is:
+// from browser-menubar.inc.xhtml, our history menu query is:
 // place:sort=4&maxResults=10
 // note, any maxResult > 0 will still be considered a history menu query
 // or if this is the place query from the old "Most Visited" item in some
@@ -1819,19 +1712,6 @@ nsNavHistory::MarkPageAsFollowedLink(nsIURI* aURI) {
 }
 
 NS_IMETHODIMP
-nsNavHistory::GetIsFrecencyDecaying(bool* _out) {
-  NS_ENSURE_ARG_POINTER(_out);
-  *_out = nsNavHistory::sIsFrecencyDecaying;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsNavHistory::SetIsFrecencyDecaying(bool aVal) {
-  nsNavHistory::sIsFrecencyDecaying = aVal;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 nsNavHistory::GetIsAlternativeFrecencyEnabled(bool* _out) {
   *_out =
       StaticPrefs::places_frecency_pages_alternative_featureGate_AtStartup();
@@ -1849,6 +1729,79 @@ NS_IMETHODIMP
 nsNavHistory::SetShouldStartFrecencyRecalculation(bool aVal) {
   nsNavHistory::sShouldStartFrecencyRecalculation = aVal;
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsNavHistory::PageFrecencyThreshold(int32_t aVisitAgeInDays, int32_t aNumVisits,
+                                    bool aBookmarked, int64_t* aFrecency) {
+  NS_ENSURE_ARG_POINTER(aFrecency);
+  NS_ENSURE_TRUE(aNumVisits >= 0, NS_ERROR_INVALID_ARG);
+  NS_ENSURE_TRUE(aVisitAgeInDays >= 0, NS_ERROR_INVALID_ARG);
+
+  // Calculate the frecency threshold based on the input parameters.
+  *aFrecency = CalculateFrecency(aVisitAgeInDays, aNumVisits, aBookmarked);
+  return NS_OK;
+}
+
+int64_t nsNavHistory::CalculateFrecency(int32_t aVisitAgeInDays,
+                                        int32_t aNumVisits,
+                                        bool aBookmarked) const {
+  bool useAlternative =
+      StaticPrefs::places_frecency_pages_alternative_featureGate_AtStartup();
+  int32_t halfLifeDays =
+      (useAlternative
+           ? StaticPrefs::
+                 places_frecency_pages_alternative_halfLifeDays_AtStartup()
+           : StaticPrefs::places_frecency_pages_halfLifeDays_AtStartup());
+  int32_t maxSamples =
+      (useAlternative
+           ? StaticPrefs::
+                 places_frecency_pages_alternative_numSampledVisits_AtStartup()
+           : StaticPrefs::places_frecency_pages_numSampledVisits_AtStartup());
+  int32_t highWeight =
+      (useAlternative
+           ? StaticPrefs::
+                 places_frecency_pages_alternative_highWeight_AtStartup()
+           : StaticPrefs::places_frecency_pages_highWeight_AtStartup());
+  int32_t mediumWeight =
+      (useAlternative
+           ? StaticPrefs::
+                 places_frecency_pages_alternative_mediumWeight_AtStartup()
+           : StaticPrefs::places_frecency_pages_mediumWeight_AtStartup());
+
+  int32_t samplesCount = 0;
+  if (aNumVisits > 0) {
+    // The frecency algorithm only samples a maximum number of visits.
+    samplesCount = std::min(aNumVisits, maxSamples);
+  } else if (aBookmarked) {
+    // An unvisited bookmark is considered a single sample.
+    samplesCount = 1;
+  }
+
+  if (samplesCount == 0) {
+    return 0;
+  }
+
+  PRTime now = PR_Now();
+  int32_t todayInDaysFromEpoch = static_cast<int32_t>(now / USEC_PER_DAY);
+  int32_t refTimeInDaysFromEpoch = todayInDaysFromEpoch - aVisitAgeInDays;
+
+  int32_t visitWeight = aBookmarked ? highWeight : mediumWeight;
+  double lambda = log(2.0) / static_cast<double>(halfLifeDays);
+  double decayedWeight =
+      static_cast<double>(visitWeight) *
+      exp(-lambda *
+          static_cast<double>(todayInDaysFromEpoch - refTimeInDaysFromEpoch));
+
+  // Note: Since all samples have equal weight in this simplified version,
+  // we can use decayedWeight directly instead of computing the average.
+  double logCountAdjustedScore =
+      log(decayedWeight * std::max(samplesCount, aNumVisits));
+  // The future date when the score would decay to a value of 1.
+  int32_t frecency = refTimeInDaysFromEpoch +
+                     static_cast<int32_t>(logCountAdjustedScore / lambda);
+
+  return static_cast<int64_t>(std::max(frecency, 0));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2797,29 +2750,6 @@ void ParseSearchTermsFromQuery(const RefPtr<nsNavHistoryQuery>& aQuery,
 }
 
 }  // namespace
-
-const mozilla::intl::Collator* nsNavHistory::GetCollator() {
-  if (mCollator) {
-    return mCollator.get();
-  }
-
-  auto result = mozilla::intl::LocaleService::TryCreateComponent<
-      mozilla::intl::Collator>();
-  NS_ENSURE_TRUE(result.isOk(), nullptr);
-  auto collator = result.unwrap();
-
-  // Sort in a case-insensitive way, where "base" letters are considered
-  // equal, e.g: a = á, a = A, a ≠ b.
-  using mozilla::intl::Collator;
-  Collator::Options options{};
-  options.sensitivity = Collator::Sensitivity::Base;
-  auto optResult = collator->SetOptions(options);
-  NS_ENSURE_TRUE(optResult.isOk(), nullptr);
-
-  mCollator = UniquePtr<const Collator>(collator.release());
-
-  return mCollator.get();
-}
 
 nsIStringBundle* nsNavHistory::GetBundle() {
   if (!mBundle) {

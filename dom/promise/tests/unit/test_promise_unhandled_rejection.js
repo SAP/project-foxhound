@@ -14,7 +14,7 @@ PromiseTestUtils.expectUncaughtRejection(/could not be cloned/);
 PromiseTestUtils.expectUncaughtRejection(/An exception was thrown/);
 PromiseTestUtils.expectUncaughtRejection(/Bleah/);
 
-const filename = "resource://foo/Bar.jsm";
+const filename = "resource://foo/Bar.sys.mjs";
 
 async function getSandboxMessages(sandbox, code) {
   let { messages } = await AddonTestUtils.promiseConsoleOutput(async () => {

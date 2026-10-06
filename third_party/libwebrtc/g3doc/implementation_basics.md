@@ -32,7 +32,7 @@ varies by platform, but they all have the [webrtc::TaskQueueBase][3] API.
 
 This API offers primitives for posting tasks, with or without delay.
 
-Some core parts use the [rtc::Thread][2], which is a subclass of TaskQueueBase.
+Some core parts use the [webrtc::Thread][2], which is a subclass of TaskQueueBase.
 This may contain a SocketServer for processing I/O, and is used for policing
 certain calling pattern between a few core threads (the NetworkThread cannot
 do Invoke on the Worker thread, for instance).
@@ -47,7 +47,7 @@ behave as follows:
 
 * FooFactory: Has a Create function that creates a Foo object and returns the
   object or an owning reference to it (for instance std::unique_ptr or
-  rtc::scoped_refptr<Foo>). The Create function should NOT alter the factory
+  webrtc::scoped_refptr<Foo>). The Create function should NOT alter the factory
   state; ideally, it is marked const. Ownership of the returned object is only
   with the caller.
 
@@ -58,7 +58,7 @@ behave as follows:
   Build() &&```), which means it is invoked as ```std::move(builder).Build()```,
   and C++ will ensure that it is not used again.
 
-* FooManager: Has a Create function that returns an rtc::scoped_refptr<Foo> (if
+* FooManager: Has a Create function that returns an webrtc::scoped_refptr<Foo> (if
   shared ownership) or a Foo* (if the Manager retains sole ownership). If
   Create() cannot fail, consider returning a Foo&. The Manager is responsible
   for keeping track of the object; if the Create function returns a Foo*, the
@@ -112,16 +112,15 @@ the webrtc::Mutex can be used. Such variables MUST be marked up with
 RTC_GUARDED_BY(mutex), to allow static analysis that lessens the chance of
 deadlocks or unintended consequences.
 
+Avoid mixing use of Mutex and TaskQueue. Prefer lock-free programming.
+
 ### Synchronization primitives that are being removed
 The following non-exhaustive list of synchronization primitives are
 in the (slow) process of being removed from the codebase.
 
-* sigslot. Use [webrtc::CallbackList][4] instead, or, when there's only one
-  signal consumer, a single std::function.
-  
-* AsyncInvoker.
-
 * RecursiveCriticalSection. Try to use [webrtc::Mutex][6] instead, and don't recurse.
+
+* std::atomic. See [the abseil article about the subject][7] for why.
 
 ## Enum-To-String functions
 If there is a need to convert an enum to a string representation, such as for
@@ -139,3 +138,39 @@ If the enum is not defined within a class, the "static" keyword is not needed.
 [4]: https://source.chromium.org/chromium/chromium/src/+/main:third_party/webrtc/rtc_base/callback_list.h;drc=54b91412de3f579a2d5ccdead6e04cc2cc5ca3a1;l=162
 [5]: https://source.chromium.org/chromium/chromium/src/+/main:third_party/webrtc/rtc_base/task_utils/pending_task_safety_flag.h;drc=86ee89f73e4f4799b3ebcc0b5c65837c9601fe6d;l=117
 [6]: https://source.chromium.org/chromium/chromium/src/+/main:third_party/webrtc/rtc_base/synchronization/mutex.h;drc=0d3c09a8fe5f12dfbc9f1bcd5790fda8830624ec;l=40
+[7]: https://abseil.io/docs/cpp/atomic_danger
+
+## Namespaces
+`cricket` and `rtc` namespaces do not exist; they were removed in 2025. All WebRTC types
+are in the `webrtc` namespace.
+
+## Verification of changes
+When making changes to the source code, it is not enough to only build the test binary that
+covers the modified code.
+
+Before uploading changes to gerrit for review, make sure to complete the following steps:
+
+* Ensure that your branch is up to date.
+* Run `git cl format`. This will format source code and build (.gn) files.
+* Check for and fix any IWYU errors.
+* Check for and fix any gn errors.
+* Ensure that a *full build* of all binaries passes. This will save time and resources.
+* If at any of the above steps changes had to be made, go back the first step and repeat
+  until no changes are required at every step.
+
+## Pointer Nullability Annotations
+To ensure high-quality, machine-checkable C++ code in WebRTC, adhere to the following rules regarding pointer nullability.
+
+* **Core Principle**: Prevent accidental use of invalid null values by explicitly declaring the nullability contract of all raw and smart pointers.
+
+* **Classify Every Pointer**: Avoid leaving pointers in the "Unknown" (unannotated) state. Actively classify whether null is a valid semantic state for every pointer you write or modify.
+
+* **Annotate Nullable Exceptions (`absl_nullable`)**: When null is a valid and expected value at the point of use, you must explicitly annotate the pointer.
+    * Raw Pointers: Use the format `T* absl_nullable` (e.g., `Widget* absl_nullable widget`).
+    * Smart Pointers: Use the format `absl_nullable std::unique_ptr<T>` (e.g., `absl_nullable std::unique_ptr<Widget> widget`).
+
+* **Enforce Strict Requirements (`absl_nonnull`)**: When a pointer must fundamentally never be null, enforce this contract explicitly.
+    * Raw Pointers: Use the format `T* absl_nonnull` but for non-null raw pointers prefer to use a reference instead.
+    * Smart Pointers: Use the format `absl_nonnull std::unique_ptr<T>`.
+
+* **Leverage Machine Checking**: Treat these annotations as strict contracts. Rely on them to surface potential null-dereference errors or contract violations during static analysis and compilation.

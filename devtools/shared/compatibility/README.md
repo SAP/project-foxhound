@@ -17,6 +17,12 @@ In order to download up-to-date data, you need to run the following commands:
 
 This should save the `css-properties.json` JSON file directly in `devtools/shared/compatibility/dataset/`.
 
+Before submitting for review, run our internal tests:
+- `./mach xpcshell-test --tag devtools-compat-data`
+- `./mach mochitest --subsuite devtools --tag devtools-compat-data`
+
+## Reviewing browser data updates (RemoteSettings)
+
 The browsers data are stored in a RemoteSettings collection, and updates are handled by a script in https://github.com/firefox-devtools/remote-settings-mdn-browser-compat-data .
 The script is run every day in automation, and if the data are updated, the team should receive a data review email.
 

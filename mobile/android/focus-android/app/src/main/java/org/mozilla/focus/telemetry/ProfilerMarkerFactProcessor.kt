@@ -79,6 +79,14 @@ constructor(
     }
 
     companion object {
+        /**
+         * Creates a [ProfilerMarkerFactProcessor].
+         *
+         * @param profilerProvider A provider for the [Profiler] instance. This allows deferring
+         * access to the profiler until it's needed, which is important because the profiler is
+         * often a child of an engine component that shouldn't be initialized prematurely.
+         * @return A new instance of [ProfilerMarkerFactProcessor].
+         */
         fun create(profilerProvider: () -> Profiler?) =
             ProfilerMarkerFactProcessor(profilerProvider)
     }

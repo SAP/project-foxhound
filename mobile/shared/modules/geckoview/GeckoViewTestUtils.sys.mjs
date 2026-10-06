@@ -18,10 +18,10 @@ export const GeckoViewTabUtil = {
    * @throws {Error} Throws an error if the tab cannot be created.
    */
   async createNewTab(url = "about:blank") {
-    let sessionId = "";
+    let sessionId = undefined;
     const windowPromise = new Promise(resolve => {
       const openingObserver = subject => {
-        if (subject.name === sessionId) {
+        if (sessionId !== undefined && subject.name === sessionId) {
           Services.obs.removeObserver(
             openingObserver,
             "browser-delayed-startup-finished"
@@ -36,10 +36,12 @@ export const GeckoViewTabUtil = {
     });
 
     try {
-      sessionId = await lazy.EventDispatcher.instance.sendRequestForResult({
-        type: "GeckoView:Test:NewTab",
-        url,
-      });
+      sessionId = await lazy.EventDispatcher.instance.sendRequestForResult(
+        "GeckoView:Test:NewTab",
+        {
+          url,
+        }
+      );
     } catch (errorMessage) {
       throw new Error(
         errorMessage + " GeckoView:Test:NewTab is not supported."
@@ -56,7 +58,7 @@ export const GeckoViewTabUtil = {
     // load into. This isn't done from the Java side to align with the
     // ServiceWorkerOpenWindow infrastructure which this is built on top of.
     window.browser.fixupAndLoadURIString(url, {
-      flags: Ci.nsIWebNavigation.LOAD_FLAGS_NONE,
+      loadFlags: Ci.nsIWebNavigation.LOAD_FLAGS_NONE,
       triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
     });
 

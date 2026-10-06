@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2021 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -20,5 +20,7 @@ const explicit = datetime.with({ minute: 31 }, { offset: undefined });
 assert.sameValue(explicit.epochNanoseconds, 1572757261_000_000_000n, "default offset is prefer");
 const implicit = datetime.with({ minute: 31 }, {});
 assert.sameValue(implicit.epochNanoseconds, 1572757261_000_000_000n, "default offset is prefer");
+const lambda = datetime.with({ minute: 31 }, () => {});
+assert.sameValue(lambda.epochNanoseconds, 1572757261_000_000_000n, "default offset is prefer");
 
 reportCompare(0, 0);

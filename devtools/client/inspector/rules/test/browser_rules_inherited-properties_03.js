@@ -23,8 +23,8 @@ add_task(async function () {
 });
 
 function elementStyleInherit(inspector, view) {
-  const elementStyle = view._elementStyle;
-  is(elementStyle.rules.length, 2, "Should have 2 rules.");
+  const elementStyle = view.elementStyle;
+  assertDisplayedRulesCount(view, 2);
 
   const elementRule = elementStyle.rules[0];
   ok(

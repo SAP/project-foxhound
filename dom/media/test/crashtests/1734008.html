@@ -7,7 +7,7 @@
       const video = document.createElementNS("http://www.w3.org/1999/xhtml", "video")
       document.documentElement.appendChild(video)
       video.setAttribute("src", "1734008.webm")
-      video.mozCaptureStream()
+      video.captureStream?.() || video.mozCaptureStream();
       const xhr = new XMLHttpRequest()
       xhr.open("POST", "FOOBAR", false)
       xhr.send()

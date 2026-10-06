@@ -2,5 +2,18 @@
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" width="12" height="12" fill="context-fill" fill-opacity="context-fill-opacity">
+<style>
+.nova { display: none; }
+
+@media -moz-pref("browser.nova.enabled") {
+  .proton { display: none; }
+  .nova { display: revert; }
+}
+</style>
+<g class="proton">
   <path d="m6.24 4.001 3.614 3.613a.498.498 0 0 1 0 .707.5.5 0 0 1-.707 0L5.999 5.174 2.854 8.32a.5.5 0 0 1-.707-.707L5.759 4l.481.001z"/>
+</g>
+<g class="nova">
+  <path d="M6.5 3.999c.367 0 .712.143.972.403l3.345 3.345a.626.626 0 0 1-.884.884L6.588 5.286c-.042-.042-.135-.042-.177 0L3.066 8.631A.626.626 0 0 1 2 8.189c0-.16.062-.32.184-.442l3.345-3.345c.26-.26.605-.403.972-.403" />
+</g>
 </svg>

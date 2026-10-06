@@ -11,32 +11,40 @@
 #include "modules/video_coding/generic_decoder.h"
 
 #include <cstdint>
-#include <memory>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
-#include "api/array_view.h"
+#include "api/field_trials.h"
 #include "api/rtp_packet_infos.h"
 #include "api/scoped_refptr.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
+#include "api/video/color_space.h"
+#include "api/video/corruption_detection/frame_instrumentation_data.h"
+#include "api/video/encoded_frame.h"
 #include "api/video/i420_buffer.h"
+#include "api/video/video_codec_type.h"
 #include "api/video/video_content_type.h"
 #include "api/video/video_frame.h"
 #include "api/video/video_frame_type.h"
+#include "api/video/video_timing.h"
 #include "api/video_codecs/video_decoder.h"
-#include "common_video/frame_instrumentation_data.h"
 #include "common_video/include/corruption_score_calculator.h"
 #include "common_video/test/utilities.h"
+#include "modules/video_coding/include/video_coding_defines.h"
 #include "modules/video_coding/timing/timing.h"
 #include "system_wrappers/include/clock.h"
+#include "test/create_test_field_trials.h"
 #include "test/fake_decoder.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
-#include "test/scoped_key_value_config.h"
 #include "test/time_controller/simulated_time_controller.h"
 
+using ::testing::Eq;
+using ::testing::Field;
+using ::testing::Property;
 using ::testing::Return;
 
 namespace webrtc {
@@ -44,10 +52,11 @@ namespace video_coding {
 
 class MockCorruptionScoreCalculator : public CorruptionScoreCalculator {
  public:
-  MOCK_METHOD(std::optional<double>,
+  MOCK_METHOD(void,
               CalculateCorruptionScore,
               (const VideoFrame& frame,
-               const FrameInstrumentationData& frame_instrumentation_data),
+               FrameInstrumentationData frame_instrumentation_data,
+               VideoContentType content_type),
               (override));
 };
 
@@ -55,7 +64,6 @@ class ReceiveCallback : public VCMReceiveCallback {
  public:
   int32_t OnFrameToRender(const FrameToRender& arguments) override {
     frames_.push_back(arguments.video_frame);
-    last_corruption_score_ = arguments.corruption_score;
     return 0;
   }
 
@@ -67,22 +75,17 @@ class ReceiveCallback : public VCMReceiveCallback {
     return ret;
   }
 
-  rtc::ArrayView<const VideoFrame> GetAllFrames() const { return frames_; }
+  std::span<const VideoFrame> GetAllFrames() const { return frames_; }
 
-  void OnDroppedFrames(uint32_t frames_dropped) {
+  void OnDroppedFrames(uint32_t frames_dropped) override {
     frames_dropped_ += frames_dropped;
   }
 
   uint32_t frames_dropped() const { return frames_dropped_; }
 
-  std::optional<double> last_corruption_score() const {
-    return last_corruption_score_;
-  }
-
  private:
   std::vector<VideoFrame> frames_;
   uint32_t frames_dropped_ = 0;
-  std::optional<double> last_corruption_score_;
 };
 
 class GenericDecoderTest : public ::testing::Test {
@@ -90,6 +93,7 @@ class GenericDecoderTest : public ::testing::Test {
   GenericDecoderTest()
       : time_controller_(Timestamp::Zero()),
         clock_(time_controller_.GetClock()),
+        field_trials_(CreateTestFieldTrials()),
         timing_(time_controller_.GetClock(), field_trials_),
         decoder_(time_controller_.GetTaskQueueFactory()),
         vcm_callback_(&timing_,
@@ -110,9 +114,9 @@ class GenericDecoderTest : public ::testing::Test {
 
   GlobalSimulatedTimeController time_controller_;
   Clock* const clock_;
-  test::ScopedKeyValueConfig field_trials_;
+  FieldTrials field_trials_;
   VCMTiming timing_;
-  webrtc::test::FakeDecoder decoder_;
+  test::FakeDecoder decoder_;
   VCMDecodedFrameCallback vcm_callback_;
   VCMGenericDecoder generic_decoder_;
   ReceiveCallback user_callback_;
@@ -215,17 +219,13 @@ TEST_F(GenericDecoderTest, IsLowLatencyStreamActivatedByPlayoutDelay) {
 }
 
 TEST_F(GenericDecoderTest, CallCalculateCorruptionScoreInDecoded) {
-  constexpr double kCorruptionScore = 0.76;
-
-  EXPECT_CALL(corruption_score_calculator_, CalculateCorruptionScore)
-      .WillOnce(Return(kCorruptionScore));
-
   constexpr uint32_t kRtpTimestamp = 1;
   FrameInfo frame_info;
-  frame_info.frame_instrumentation_data = FrameInstrumentationData{};
+  frame_info.frame_instrumentation_data.emplace();
+  frame_info.frame_instrumentation_data->SetSequenceIndex(1);
   frame_info.rtp_timestamp = kRtpTimestamp;
   frame_info.decode_start = Timestamp::Zero();
-  frame_info.content_type = VideoContentType::UNSPECIFIED;
+  frame_info.content_type = VideoContentType::SCREENSHARE;
   frame_info.frame_type = VideoFrameType::kVideoFrameDelta;
   VideoFrame video_frame = VideoFrame::Builder()
                                .set_video_frame_buffer(I420Buffer::Create(5, 5))
@@ -233,9 +233,112 @@ TEST_F(GenericDecoderTest, CallCalculateCorruptionScoreInDecoded) {
                                .build();
   vcm_callback_.Map(std::move(frame_info));
 
+  EXPECT_CALL(corruption_score_calculator_,
+              CalculateCorruptionScore(
+                  Property(&VideoFrame::rtp_timestamp, Eq(kRtpTimestamp)),
+                  Property(&FrameInstrumentationData::sequence_index, Eq(1)),
+                  VideoContentType::SCREENSHARE));
+  vcm_callback_.Decoded(video_frame);
+}
+
+TEST_F(GenericDecoderTest, UsesMappedColorSpaceIfSet) {
+  constexpr uint32_t kRtpTimestamp = 1;
+  const ColorSpace kMappedColorSpace(webrtc::ColorSpace::PrimaryID::kSMPTE240M,
+                                     webrtc::ColorSpace::TransferID::kSMPTE240M,
+                                     webrtc::ColorSpace::MatrixID::kSMPTE240M,
+                                     webrtc::ColorSpace::RangeID::kLimited);
+  const ColorSpace kDecoderColorSpace(
+      webrtc::ColorSpace::PrimaryID::kBT2020,
+      webrtc::ColorSpace::TransferID::kBT2020_10,
+      webrtc::ColorSpace::MatrixID::kBT2020_CL,
+      webrtc::ColorSpace::RangeID::kFull);
+
+  FrameInfo frame_info;
+  frame_info.rtp_timestamp = kRtpTimestamp;
+  frame_info.decode_start = Timestamp::Zero();
+  frame_info.content_type = VideoContentType::UNSPECIFIED;
+  frame_info.frame_type = VideoFrameType::kVideoFrameKey;
+  frame_info.color_space = kMappedColorSpace;
+
+  VideoFrame video_frame = VideoFrame::Builder()
+                               .set_video_frame_buffer(I420Buffer::Create(5, 5))
+                               .set_rtp_timestamp(kRtpTimestamp)
+                               .set_color_space(kDecoderColorSpace)
+                               .build();
+  vcm_callback_.Map(std::move(frame_info));
   vcm_callback_.Decoded(video_frame);
 
-  EXPECT_EQ(user_callback_.last_corruption_score(), kCorruptionScore);
+  std::optional<VideoFrame> decoded_frame = user_callback_.PopLastFrame();
+  ASSERT_TRUE(decoded_frame.has_value());
+  EXPECT_EQ(decoded_frame->color_space(), kMappedColorSpace);
+}
+
+TEST_F(GenericDecoderTest, SetsScreenshareContentTypeIfSetInFrameInfo) {
+  constexpr uint32_t kRtpTimestamp = 1;
+  FrameInfo frame_info;
+  frame_info.rtp_timestamp = kRtpTimestamp;
+  frame_info.decode_start = Timestamp::Zero();
+  frame_info.content_type = VideoContentType::SCREENSHARE;
+  frame_info.frame_type = VideoFrameType::kVideoFrameKey;
+
+  VideoFrame video_frame = VideoFrame::Builder()
+                               .set_video_frame_buffer(I420Buffer::Create(5, 5))
+                               .set_rtp_timestamp(kRtpTimestamp)
+                               .build();
+  vcm_callback_.Map(std::move(frame_info));
+  vcm_callback_.Decoded(video_frame);
+
+  std::optional<VideoFrame> decoded_frame = user_callback_.PopLastFrame();
+  ASSERT_TRUE(decoded_frame.has_value());
+  EXPECT_EQ(decoded_frame->content_type(), VideoContentType::SCREENSHARE);
+}
+
+TEST_F(GenericDecoderTest, SetsUnspecifiedContentTypeIfSetInFrameInfo) {
+  constexpr uint32_t kRtpTimestamp = 1;
+  FrameInfo frame_info;
+  frame_info.rtp_timestamp = kRtpTimestamp;
+  frame_info.decode_start = Timestamp::Zero();
+  frame_info.content_type = VideoContentType::UNSPECIFIED;
+  frame_info.frame_type = VideoFrameType::kVideoFrameKey;
+
+  VideoFrame video_frame = VideoFrame::Builder()
+                               .set_video_frame_buffer(I420Buffer::Create(5, 5))
+                               .set_rtp_timestamp(kRtpTimestamp)
+                               .build();
+  vcm_callback_.Map(std::move(frame_info));
+  vcm_callback_.Decoded(video_frame);
+
+  std::optional<VideoFrame> decoded_frame = user_callback_.PopLastFrame();
+  ASSERT_TRUE(decoded_frame.has_value());
+  EXPECT_EQ(decoded_frame->content_type(), VideoContentType::UNSPECIFIED);
+}
+
+TEST_F(GenericDecoderTest, UsesDecoderColorSpaceIfNoneMapped) {
+  constexpr uint32_t kRtpTimestamp = 1;
+  const ColorSpace kDecoderColorSpace(
+      webrtc::ColorSpace::PrimaryID::kBT2020,
+      webrtc::ColorSpace::TransferID::kBT2020_10,
+      webrtc::ColorSpace::MatrixID::kBT2020_CL,
+      webrtc::ColorSpace::RangeID::kFull);
+
+  FrameInfo frame_info;
+  frame_info.rtp_timestamp = kRtpTimestamp;
+  frame_info.decode_start = Timestamp::Zero();
+  frame_info.content_type = VideoContentType::UNSPECIFIED;
+  frame_info.frame_type = VideoFrameType::kVideoFrameKey;
+  frame_info.color_space = std::nullopt;
+
+  VideoFrame video_frame = VideoFrame::Builder()
+                               .set_video_frame_buffer(I420Buffer::Create(5, 5))
+                               .set_rtp_timestamp(kRtpTimestamp)
+                               .set_color_space(kDecoderColorSpace)
+                               .build();
+  vcm_callback_.Map(std::move(frame_info));
+  vcm_callback_.Decoded(video_frame);
+
+  std::optional<VideoFrame> decoded_frame = user_callback_.PopLastFrame();
+  ASSERT_TRUE(decoded_frame.has_value());
+  EXPECT_EQ(decoded_frame->color_space(), kDecoderColorSpace);
 }
 
 }  // namespace video_coding

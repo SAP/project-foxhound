@@ -4,8 +4,9 @@
 
 #include "CompositorWidget.h"
 #include "GLConsts.h"
-#include "nsBaseWidget.h"
+#include "nsIWidget.h"
 #include "VsyncDispatcher.h"
+#include "mozilla/gfx/2D.h"
 
 namespace mozilla {
 namespace widget {

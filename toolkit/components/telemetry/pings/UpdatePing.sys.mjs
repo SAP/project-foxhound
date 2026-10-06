@@ -1,4 +1,3 @@
-/* -*- js-indent-level: 2; indent-tabs-mode: nil -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,6 +24,7 @@ const UPDATE_STAGED_TOPIC = "update-staged";
  */
 export var UpdatePing = {
   _enabled: false,
+  _observerRegistered: false,
 
   earlyInit() {
     this._log = Log.repository.getLoggerWithMessagePrefix(
@@ -42,17 +42,20 @@ export var UpdatePing = {
       return;
     }
 
-    Services.obs.addObserver(this, UPDATE_DOWNLOADED_TOPIC);
-    Services.obs.addObserver(this, UPDATE_STAGED_TOPIC);
+    if (!this._observerRegistered) {
+      Services.obs.addObserver(this, UPDATE_DOWNLOADED_TOPIC);
+      Services.obs.addObserver(this, UPDATE_STAGED_TOPIC);
+      this._observerRegistered = true;
+    }
   },
 
   /**
    * Generate an "update" ping with reason "success" and dispatch it
    * to the Telemetry system.
    *
-   * @param {String} aPreviousVersion The browser version we updated from.
-   * @param {String} aPreviousBuildId The browser build id we updated from.
-   * @param {String} progress An object to measure the progress of handleUpdateSuccess
+   * @param {string} aPreviousVersion The browser version we updated from.
+   * @param {string} aPreviousBuildId The browser build id we updated from.
+   * @param {string} progress An object to measure the progress of handleUpdateSuccess
    *                          to provide to the shutdown blocker (Bug 1917651)
    */
   async handleUpdateSuccess(aPreviousVersion, aPreviousBuildId, progress) {
@@ -114,7 +117,7 @@ export var UpdatePing = {
    * Generate an "update" ping with reason "ready" and dispatch it
    * to the Telemetry system.
    *
-   * @param {String} aUpdateState The state of the downloaded patch. See
+   * @param {string} aUpdateState The state of the downloaded patch. See
    *        nsIUpdateService.idl for a list of possible values.
    */
   async _handleUpdateReady(aUpdateState) {
@@ -186,7 +189,10 @@ export var UpdatePing = {
     if (!this._enabled) {
       return;
     }
-    Services.obs.removeObserver(this, UPDATE_DOWNLOADED_TOPIC);
-    Services.obs.removeObserver(this, UPDATE_STAGED_TOPIC);
+    if (this._observerRegistered) {
+      Services.obs.removeObserver(this, UPDATE_DOWNLOADED_TOPIC);
+      Services.obs.removeObserver(this, UPDATE_STAGED_TOPIC);
+      this._observerRegistered = false;
+    }
   },
 };

@@ -147,6 +147,7 @@ export function showFilePicker(
 
 /**
  * Returns a Popup Menu for the Options ("gear") Button
+ *
  * @param {function} toggleOrigSources
  *        To toggle the original source pref
  * @param {function} toggleAtRulesSidebar

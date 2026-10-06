@@ -1,0 +1,5 @@
+package test {
+  public class TestClass {
+    method @A @B @C @D @E @F void testMethod();
+  }
+}

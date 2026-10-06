@@ -12,6 +12,11 @@ ChromeUtils.defineESModuleGetters(this, {
 // Set the content pref to make it available across tests
 const ABOUT_WELCOME_OVERRIDE_CONTENT_PREF = "browser.aboutwelcome.screens";
 
+const { MockFilePicker } = SpecialPowers;
+const { BackupService } = ChromeUtils.importESModule(
+  "resource:///modules/backup/BackupService.sys.mjs"
+);
+
 function popPrefs() {
   return SpecialPowers.popPrefEnv();
 }
@@ -39,7 +44,7 @@ async function openMRAboutWelcome() {
     "about:welcome",
     true
   );
-  await ContentTask.spawn(gBrowser.selectedBrowser, {}, async function () {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
     // Mark the first entry as having been interacted with.
     content.document.notifyUserGestureActivation();
   });
@@ -72,9 +77,9 @@ async function openAboutWelcome(json) {
 }
 
 async function onButtonClick(browser, elementId) {
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    { elementId },
+    [{ elementId }],
     async ({ elementId: buttonId }) => {
       let button = await ContentTaskUtils.waitForCondition(
         () => content.document.querySelector(buttonId),
@@ -100,9 +105,9 @@ async function test_screen_content(
   expectedSelectors = [],
   unexpectedSelectors = []
 ) {
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    { expectedSelectors, experiment, unexpectedSelectors },
+    [{ expectedSelectors, experiment, unexpectedSelectors }],
     async ({
       expectedSelectors: expected,
       experiment: experimentName,
@@ -144,10 +149,10 @@ async function test_element_styles(
   expectedStyles = {},
   unexpectedStyles = {}
 ) {
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
     [elementSelector, expectedStyles, unexpectedStyles],
-    async ([selector, expected, unexpected]) => {
+    async (selector, expected, unexpected) => {
       const element = await ContentTaskUtils.waitForCondition(() =>
         content.document.querySelector(selector)
       );

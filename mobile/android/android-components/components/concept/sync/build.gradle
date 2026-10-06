@@ -2,36 +2,27 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     namespace = 'mozilla.components.concept.sync'
 }
 
 dependencies {
+    // Observables are part of the public API of this module.
+    api project(':components:support-base')
+
     // Necessary because we use 'suspend'. Fun fact: this module will compile just fine without this
     // dependency, but it will crash at runtime.
     // Included via 'api' because this module is unusable without coroutines.
-    api libs.kotlin.coroutines
-
-    // Observables are part of the public API of this module.
-    api project(':components:support-base')
+    api libs.kotlinx.coroutines
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

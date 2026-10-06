@@ -1,21 +1,20 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ImageCapture.h"
+
+#include "CaptureTask.h"
+#include "MediaEngineSource.h"
 #include "mozilla/dom/BlobEvent.h"
 #include "mozilla/dom/DOMException.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/ImageCaptureError.h"
 #include "mozilla/dom/ImageCaptureErrorEvent.h"
 #include "mozilla/dom/ImageCaptureErrorEventBinding.h"
 #include "mozilla/dom/VideoStreamTrack.h"
-#include "mozilla/dom/Document.h"
-#include "CaptureTask.h"
-#include "MediaEngineSource.h"
 #include "nsGlobalWindowInner.h"
 
 namespace mozilla {

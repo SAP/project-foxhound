@@ -11,17 +11,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
 });
 
-let XPCOMUtils = ChromeUtils.importESModule(
-  "resource://gre/modules/XPCOMUtils.sys.mjs"
-).XPCOMUtils;
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "maxRowsPref",
-  "browser.firefox-view.max-history-rows",
-  -1
-);
-
 const HISTORY_MAP_L10N_IDS = {
   sidebar: {
     "history-date-today": "sidebar-history-date-today",
@@ -67,13 +56,30 @@ export class HistoryController {
   #todaysDate;
   #yesterdaysDate;
 
-  constructor(host, options) {
+  /**
+   * Construct a new HistoryController.
+   *
+   * @param {ReactiveControllerHost} host
+   *   The component that this controller is connected to.
+   * @param {object} [options]
+   * @param {string} [options.sortOption]
+   * @param {number} [options.searchResultsLimit]
+   * @param {string} [options.component]
+   */
+  constructor(
+    host,
+    {
+      sortOption = "date",
+      searchResultsLimit = 300,
+      component = "firefoxview",
+    } = {}
+  ) {
     this.placesQuery = new lazy.PlacesQuery();
     this.searchQuery = "";
-    this.sortOption = "date";
-    this.searchResultsLimit = options?.searchResultsLimit || 300;
-    this.component = HISTORY_MAP_L10N_IDS?.[options?.component]
-      ? options?.component
+    this.sortOption = sortOption;
+    this.searchResultsLimit = searchResultsLimit;
+    this.component = HISTORY_MAP_L10N_IDS[component]
+      ? component
       : "firefoxview";
     this.historyCache = {
       entries: null,
@@ -155,18 +161,15 @@ export class HistoryController {
     }
     for (const { items } of entries) {
       for (const item of items) {
-        switch (sortOption) {
-          case "datesite": {
-            // item is a [ domain, visit[] ] entry.
-            const [, visits] = item;
-            for (const visit of visits) {
-              this.#normalizeVisit(visit);
-            }
-            break;
+        if (sortOption === "datesite" && !searchQuery) {
+          // item is a [ domain, visit[] ] entry.
+          const [, visits] = item;
+          for (const visit of visits) {
+            this.#normalizeVisit(visit);
           }
-          default:
-            // item is a single visit.
-            this.#normalizeVisit(item);
+        } else {
+          // item is a single visit.
+          this.#normalizeVisit(item);
         }
       }
     }
@@ -182,6 +185,8 @@ export class HistoryController {
    */
   #normalizeVisit(visit) {
     visit.time = visit.date.getTime();
+    visit.pageGuid = visit.guid;
+    visit.guid = `${visit.guid}|${visit.time}`;
     visit.title = visit.title || visit.url;
     visit.icon = `page-icon:${visit.url}`;
     visit.primaryL10nId = "fxviewtabrow-tabs-list-tab";
@@ -506,7 +511,7 @@ export class HistoryController {
   async #fetchHistory() {
     return this.placesQuery.getHistory({
       daysOld: 60,
-      limit: lazy.maxRowsPref,
+      limit: -1,
       sortBy: this.sortOption,
     });
   }

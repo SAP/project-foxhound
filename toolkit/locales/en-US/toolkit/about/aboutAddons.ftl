@@ -172,6 +172,9 @@ private-browsing-description2 =
     there. We’ve made this change to keep your private browsing private.
     <label data-l10n-name="private-browsing-learn-more">Learn how to manage extension settings</label>
 
+aboutaddons-sidebar =
+    .heading = Add-ons
+
 addon-category-discover = Recommendations
 addon-category-discover-title =
     .title = Recommendations
@@ -199,6 +202,7 @@ addon-category-recent-updates-title =
 addon-category-sitepermission = Site Permissions
 addon-category-sitepermission-title =
     .title = Site Permissions
+
 # String displayed in about:addons in the Site Permissions section
 # Variables:
 #  $host (string) - DNS host name for which the webextension enables permissions
@@ -206,8 +210,8 @@ addon-sitepermission-host = Site Permissions for { $host }
 
 ## These are global warnings
 
-extensions-warning-safe-mode2 =
-    .message = All add-ons have been disabled by safe mode.
+extensions-warning-safe-mode3 =
+    .message = All add-ons have been disabled by Troubleshoot Mode.
 extensions-warning-check-compatibility2 =
     .message = Add-on compatibility checking is disabled. You may have incompatible add-ons.
 extensions-warning-check-compatibility-button = Enable
@@ -343,6 +347,11 @@ colorway-removal-notice-message =
         the add-ons site.
 colorway-removal-notice-learn-more = Learn more
 colorway-removal-notice-button = Get updated colorways themes
+
+# Notice to make user aware that themes are not applied in forced colors mode.
+# This notice is only visible on Windows.
+forced-colors-theme-notice =
+    .message = Your Windows contrast settings are overriding { -brand-short-name } themes. Turn off these settings to use themes in { -brand-short-name }.
 
 privacy-policy = Privacy Policy
 
@@ -509,10 +518,15 @@ recent-updates-heading = Recent Updates
 release-notes-loading = Loading…
 release-notes-error = Sorry, but there was an error loading the release notes.
 
+addon-permissions-heading = Permissions
 addon-permissions-empty2 = This extension doesn’t require any permissions.
-addon-permissions-required = Required permissions for core functionality:
-addon-permissions-optional = Optional permissions for added functionality:
+addon-permissions-required-label = Required:
+addon-permissions-optional-label = Optional:
 addon-permissions-learnmore = Learn more about permissions
+# Shown above the permissions list when one or more permissions for this
+# extension are controlled by an enterprise policy and cannot be changed by
+# the user.
+addon-permissions-managed-by-policy = Some permissions are managed by your organization.
 
 recommended-extensions-heading = Recommended Extensions
 recommended-themes-heading = Recommended Themes
@@ -568,14 +582,14 @@ details-notification-hard-blocked-other =
     .message = This add-on is blocked for violating Mozilla’s policies and has been disabled.
 details-notification-blocked-link2 = See Details
 
-details-notification-soft-blocked-extension-disabled =
-    .message = This extension is restricted for violating Mozilla’s policies and has been disabled. You can enable it, but this may be risky.
-details-notification-soft-blocked-extension-enabled =
-    .message = This extension violates Mozilla’s policies. Using it may be risky.
-details-notification-soft-blocked-other-disabled =
-    .message = This add-on is restricted for violating Mozilla’s policies and has been disabled. You can enable it, but this may be risky.
-details-notification-soft-blocked-other-enabled =
-    .message = This add-on violates Mozilla’s policies. Using it may be risky.
+details-notification-soft-blocked-extension-disabled2 =
+    .message = This extension is restricted and has been disabled. You can enable it, but this may be risky.
+details-notification-soft-blocked-extension-enabled2 =
+    .message = This extension is restricted. Using it may be risky.
+details-notification-soft-blocked-other-disabled2 =
+    .message = This add-on is restricted and has been disabled. You can enable it, but this may be risky.
+details-notification-soft-blocked-other-enabled2 =
+    .message = This add-on is restricted. Using it may be risky.
 details-notification-softblocked-link2 = See Details
 
 details-notification-gmp-pending2 =
@@ -595,8 +609,10 @@ plugins-widevine-description = This plugin enables playback of encrypted media i
 ## Headings for the Permissions tab in `about:addons` when the data collection
 ## feature is enabled.
 
-addon-permissions-required-data-collection = Required data collection:
-addon-permissions-optional-data-collection = Optional data collection:
+addon-permissions-data-collection-heading = Data Collection
+addon-permissions-data-collection-empty = The developer says this extension doesn’t require data collection.
+addon-data-collection-provided = Info provided by the extension developer
+addon-data-collection-learnmore = Learn more about data collection
 
 # Name of the Permissions tab in `about:addons` when the data collection feature is enabled.
 permissions-data-addon-button = Permissions and data
@@ -613,6 +629,8 @@ mlmodel-link-preview = { -brand-short-name } uses this to generate key points wh
 mlmodel-pdfjs = { -brand-short-name } uses this to create alt text for images you add to PDFs
 mlmodel-smart-tab-topic-engine = { -brand-short-name } uses this to suggest names for your tab groups
 mlmodel-smart-tab-embedding-engine = { -brand-short-name } uses this to suggest tabs for your tab groups
+
+mlmodel-formfill-engine = { -brand-short-name } uses this to help fill in address forms
 
 # AI Model will be downloaded on the users device and used locally
 addon-category-mlmodel = On-device AI

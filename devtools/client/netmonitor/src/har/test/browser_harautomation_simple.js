@@ -22,15 +22,19 @@ add_task(async function () {
     toolId: "inspector",
   });
 
-  await reloadBrowser();
-
   info("Wait until the HAR file is created in the profile directory");
   const harFile = new FileUtils.File(
     PathUtils.join(PathUtils.profileDir, ...HAR_PATH)
   );
+  ok(!harFile.exists(), "HAR file doesn't exists before reload");
+
+  await reloadSelectedTab();
 
   await waitUntil(() => harFile.exists());
   ok(harFile.exists(), "HAR file was automatically created");
+
+  // Remove the test file so that we can re-run this test without resolving right away.
+  harFile.remove(false);
 
   await toolbox.destroy();
   await removeTab(tab);

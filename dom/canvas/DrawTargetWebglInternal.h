@@ -1,14 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _MOZILLA_GFX_DRAWTARGETWEBGL_INTERNAL_H
-#define _MOZILLA_GFX_DRAWTARGETWEBGL_INTERNAL_H
+#ifndef MOZILLA_GFX_DRAWTARGETWEBGL_INTERNAL_H
+#define MOZILLA_GFX_DRAWTARGETWEBGL_INTERNAL_H
 
 #include "DrawTargetWebgl.h"
-
 #include "mozilla/HashFunctions.h"
 #include "mozilla/WeakPtr.h"
 #include "mozilla/gfx/Etagere.h"
@@ -475,4 +472,4 @@ class PathCache : public CacheImpl<PathCacheEntry, true> {
 
 }  // namespace mozilla::gfx
 
-#endif  // _MOZILLA_GFX_DRAWTARGETWEBGL_INTERNAL_H
+#endif  // MOZILLA_GFX_DRAWTARGETWEBGL_INTERNAL_H

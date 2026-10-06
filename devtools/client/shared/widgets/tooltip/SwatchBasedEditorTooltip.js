@@ -26,9 +26,9 @@ loader.lazyRequireGetter(
  *        toolbox document
  */
 
-class SwatchBasedEditorTooltip {
+class SwatchBasedEditorTooltip extends EventEmitter {
   constructor(document) {
-    EventEmitter.decorate(this);
+    super();
 
     // This one will consume outside clicks as it makes more sense to let the user
     // close the tooltip by clicking out
@@ -63,8 +63,8 @@ class SwatchBasedEditorTooltip {
       event.preventDefault();
     });
 
-    // All target swatches are kept in a map, indexed by swatch DOM elements
-    this.swatches = new Map();
+    // All target swatches are kept in a WeakMap, indexed by swatch DOM elements
+    this.swatches = new WeakMap();
 
     // When a swatch is clicked, and for as long as the tooltip is shown, the
     // activeSwatch property will hold the reference to the swatch DOM element
@@ -78,7 +78,7 @@ class SwatchBasedEditorTooltip {
   /**
    * Reports if the tooltip is currently shown
    *
-   * @return {Boolean} True if the tooltip is displayed.
+   * @return {boolean} True if the tooltip is displayed.
    */
   isVisible() {
     return this.tooltip.isVisible();
@@ -87,7 +87,7 @@ class SwatchBasedEditorTooltip {
   /**
    * Reports if the tooltip is currently editing the targeted value
    *
-   * @return {Boolean} True if the tooltip is editing.
+   * @return {boolean} True if the tooltip is editing.
    */
   isEditing() {
     return this.isVisible();
@@ -153,8 +153,12 @@ class SwatchBasedEditorTooltip {
    *        - onRevert: will be called when the user ESCapes out of the tooltip
    *        - onCommit: will be called when the user presses ENTER or clicks
    *        outside the tooltip.
+   * @param {node|undefined} previousSwatchEl
+   *        If we are updating an already rendered property value,
+   *        the previously registered swatch element (previous call to addSwatch's `swatchEl`
+   *        argument).
    */
-  addSwatch(swatchEl, callbacks = {}) {
+  addSwatch(swatchEl, callbacks = {}, previousSwatchEl) {
     if (!callbacks.onShow) {
       callbacks.onShow = function () {};
     }
@@ -168,6 +172,21 @@ class SwatchBasedEditorTooltip {
       callbacks.onCommit = function () {};
     }
 
+    // If we are updating an already rendered swatch:
+    // * unregister the old element in favor of the new one
+    // * remove event listener from the old element
+    // * if the swatch was active, automatically flag the new
+    //   element as active.
+    if (previousSwatchEl) {
+      this.swatches.delete(previousSwatchEl);
+
+      previousSwatchEl.removeEventListener("click", this._onSwatchClick);
+      previousSwatchEl.removeEventListener("keydown", this._onSwatchKeyDown);
+
+      if (this.activeSwatch == previousSwatchEl) {
+        this.activeSwatch = swatchEl;
+      }
+    }
     this.swatches.set(swatchEl, {
       callbacks,
     });
@@ -259,7 +278,6 @@ class SwatchBasedEditorTooltip {
   }
 
   destroy() {
-    this.swatches.clear();
     this.activeSwatch = null;
     this.tooltip.off("keydown", this._onTooltipKeydown);
     this.tooltip.destroy();

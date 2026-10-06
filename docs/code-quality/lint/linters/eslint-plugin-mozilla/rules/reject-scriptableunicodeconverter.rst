@@ -7,7 +7,7 @@ If modifying old code, please consider swapping it in if possible; if this is tr
 a bug is on file.
 
 .. |TextEncoder| replace:: ``TextEncoder``
-.. _TextEncoder: https://searchfox.org/mozilla-central/source/dom/webidl/TextEncoder.webidl
+.. _TextEncoder: :searchfox:`dom/webidl/TextEncoder.webidl`
 
 .. |TextDecoder| replace:: ``TextDecoder``
-.. _TextDecoder: https://searchfox.org/mozilla-central/source/dom/webidl/TextDecoder.webidl
+.. _TextDecoder: :searchfox:`dom/webidl/TextDecoder.webidl`

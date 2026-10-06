@@ -20,7 +20,8 @@ const XPI_ADDON_ID = "amosigned-xpi@tests.mozilla.org";
 const ID = "amosigned-xpi@tests.mozilla.org";
 // Actual XPI file size and hash are computed in the add_setup callback.
 let XPI_LEN = -1;
-let XPI_SHA =
+let XPI_SHA = null;
+let XPI_INVALID_SHA =
   "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 AddonTestUtils.initMochitest(this);
@@ -302,6 +303,68 @@ add_task(async function test_install_successfully_with_filehash() {
     { url: XPI_URL, addonId, hash: XPI_SHA },
     "install with hash works"
   );
+});
+add_task(async function test_install_successfully_with_filehash_uppercase() {
+  await makeRegularTest(
+    { url: XPI_URL, addonId, hash: XPI_SHA.toUpperCase() },
+    "install with uppercase hash works"
+  );
+});
+
+add_task(async function test_invalid_hash() {
+  let steps = [
+    { action: "install", expectError: true },
+    {
+      event: "onDownloadStarted",
+      props: { state: "STATE_DOWNLOADING" },
+    },
+    { event: "onDownloadProgress" },
+    {
+      event: "onDownloadFailed",
+      props: {
+        state: "STATE_DOWNLOAD_FAILED",
+        error: "ERROR_INCORRECT_HASH",
+      },
+    },
+  ];
+
+  info("Verify install failure on invalid hash type");
+  await makeInstallTest(async function (browser) {
+    await testInstall(
+      browser,
+      { url: XPI_URL, hash: "foo:bar" },
+      steps,
+      "install with invalid hash fails"
+    );
+
+    let addons = await promiseAddonsByIDs([ID]);
+    is(addons[0], null, "The addon was not installed");
+
+    Assert.greater(
+      AddonManager.webAPI.installs.size,
+      0,
+      "webAPI is tracking the AddonInstall"
+    );
+  });
+
+  info("Verify install failure on invalid hash value");
+  await makeInstallTest(async function (browser) {
+    await testInstall(
+      browser,
+      { url: XPI_URL, hash: XPI_INVALID_SHA },
+      steps,
+      "install with invalid hash fails"
+    );
+
+    let addons = await promiseAddonsByIDs([ID]);
+    is(addons[0], null, "The addon was not installed");
+
+    Assert.greater(
+      AddonManager.webAPI.installs.size,
+      0,
+      "webAPI is tracking the AddonInstall"
+    );
+  });
 });
 
 add_task(

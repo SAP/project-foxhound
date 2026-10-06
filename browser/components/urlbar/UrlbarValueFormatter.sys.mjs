@@ -2,13 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const lazy = {};
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-ChromeUtils.defineESModuleGetters(lazy, {
+const lazy = XPCOMUtils.declareLazy({
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
 /**
@@ -21,77 +22,107 @@ export class UrlbarValueFormatter {
    *   The parent instance of UrlbarInput
    */
   constructor(urlbarInput) {
-    this.urlbarInput = urlbarInput;
-    this.window = this.urlbarInput.window;
-    this.document = this.window.document;
+    this.#urlbarInput = urlbarInput;
 
-    // This is used only as an optimization to avoid removing formatting in
-    // the _remove* format methods when no formatting is actually applied.
-    this._formattingApplied = false;
-
-    this.window.addEventListener("resize", this);
-  }
-
-  get inputField() {
-    return this.urlbarInput.inputField;
-  }
-
-  get scheme() {
-    return this.urlbarInput.querySelector("#urlbar-scheme");
+    this.#window.addEventListener("resize", this);
   }
 
   async update() {
-    let instance = (this._updateInstance = {});
+    let instance = (this.#updateInstance = {});
 
-    // _getUrlMetaData does URI fixup, which depends on the search service, so
+    // #getUrlMetaData does URI fixup, which depends on the search service, so
     // make sure it's initialized, or URIFixup may force synchronous
     // initialization. It can be uninitialized here on session restore. Skip
     // this if the service is already initialized in order to avoid the async
     // call in the common case. However, we can't access Service.search before
     // first paint (delayed startup) because there's a performance test that
     // prohibits it, so first await delayed startup.
-    if (!this.window.gBrowserInit.delayedStartupFinished) {
-      await this.window.delayedStartupPromise;
-      if (this._updateInstance != instance) {
+    if (!this.#window.gBrowserInit.delayedStartupFinished) {
+      await this.#window.delayedStartupPromise;
+      if (this.#updateInstance != instance) {
         return;
       }
     }
-    if (!Services.search.isInitialized) {
+    if (!lazy.SearchService.isInitialized) {
       try {
-        await Services.search.init();
+        await lazy.SearchService.init();
       } catch {}
 
-      if (this._updateInstance != instance) {
+      if (this.#updateInstance != instance) {
         return;
       }
     }
 
     // If this window is being torn down, stop here
-    if (!this.window.docShell) {
+    if (!this.#window.docShell) {
       return;
     }
 
     // Cleanup that must be done in any case, even if there's no value.
-    this.urlbarInput.removeAttribute("domaindir");
-    this.scheme.value = "";
+    this.#urlbarInput.removeAttribute("domaindir");
+    this.#scheme.value = "";
 
-    if (!this.urlbarInput.value) {
+    if (!this.#urlbarInput.value) {
       return;
     }
 
     // Remove the current formatting.
-    this._removeURLFormat();
-    this._removeSearchAliasFormat();
+    this.#removeURLFormat();
+    this.#removeSearchAliasFormat();
 
     // Apply new formatting.  Formatter methods should return true if they
     // successfully formatted the value and false if not.  We apply only
     // one formatter at a time, so we stop at the first successful one.
-    this.window.requestAnimationFrame(() => {
-      if (this._updateInstance != instance) {
+    this.#window.requestAnimationFrame(() => {
+      if (this.#updateInstance != instance) {
         return;
       }
-      this._formattingApplied = this._formatURL() || this._formatSearchAlias();
+      this.#formattingApplied = this.#formatURL() || this.#formatSearchAlias();
     });
+  }
+
+  /**
+   * The parent instance of UrlbarInput
+   */
+  #urlbarInput;
+
+  #hostRange = null;
+
+  get #document() {
+    return this.#urlbarInput.document;
+  }
+
+  get #inputField() {
+    return this.#urlbarInput.inputField;
+  }
+
+  get #window() {
+    return this.#urlbarInput.window;
+  }
+
+  get #scheme() {
+    return /** @type {HTMLInputElement} */ (
+      this.#urlbarInput.querySelector("#urlbar-scheme")
+    );
+  }
+
+  #scrollHostIntoView(isRTL) {
+    if (this.#hostRange) {
+      const hostRect = this.#hostRange.getBoundingClientRect();
+      const urlbarRect = this.#inputField.getBoundingClientRect();
+
+      const scrollDelta = isRTL
+        ? hostRect.left - urlbarRect.left
+        : hostRect.right - urlbarRect.right;
+
+      const scrollTarget = this.#inputField.scrollLeft + scrollDelta;
+
+      this.#inputField.scrollLeft = isRTL
+        ? Math.min(this.#inputField.scrollLeftMax, scrollTarget)
+        : Math.max(0, scrollTarget);
+    } else {
+      this.#inputField.scrollLeft = isRTL ? this.#inputField.scrollLeftMax : 0;
+    }
   }
 
   #ensureFormattedHostVisible(urlMetaData) {
@@ -102,39 +133,39 @@ export class UrlbarValueFormatter {
     // In the future, for example in bug 525831, we may add a forceRTL
     // char just after the domain, and in such a case we should not
     // scroll to the left.
-    urlMetaData = urlMetaData || this._getUrlMetaData();
+    urlMetaData = urlMetaData || this.#getUrlMetaData();
     if (!urlMetaData) {
-      this.urlbarInput.removeAttribute("domaindir");
+      this.#urlbarInput.removeAttribute("domaindir");
       return;
     }
     let { url, preDomain, domain } = urlMetaData;
-    let directionality = this.window.windowUtils.getDirectionFromText(domain);
+    let directionality = this.#window.windowUtils.getDirectionFromText(domain);
     if (
-      directionality == this.window.windowUtils.DIRECTION_RTL &&
+      directionality == this.#window.windowUtils.DIRECTION_RTL &&
       url[preDomain.length + domain.length] != "\u200E"
     ) {
-      this.urlbarInput.setAttribute("domaindir", "rtl");
-      this.inputField.scrollLeft = this.inputField.scrollLeftMax;
+      this.#urlbarInput.setAttribute("domaindir", "rtl");
+      this.#scrollHostIntoView(true);
     } else {
-      this.urlbarInput.setAttribute("domaindir", "ltr");
-      this.inputField.scrollLeft = 0;
+      this.#urlbarInput.setAttribute("domaindir", "ltr");
+      this.#scrollHostIntoView(false);
     }
-    this.urlbarInput.updateTextOverflow();
+    this.#urlbarInput.updateTextOverflow();
   }
 
-  _getUrlMetaData() {
-    if (this.urlbarInput.focused) {
+  #getUrlMetaData() {
+    if (this.#urlbarInput.focused) {
       return null;
     }
 
-    let inputValue = this.urlbarInput.value;
+    let inputValue = this.#urlbarInput.value;
     // getFixupURIInfo logs an error if the URL is empty. Avoid that by
     // returning early.
     if (!inputValue) {
       return null;
     }
-    let browser = this.window.gBrowser.selectedBrowser;
-    let browserState = this.urlbarInput.getBrowserState(browser);
+    let browser = this.#window.gBrowser.selectedBrowser;
+    let browserState = this.#urlbarInput.getBrowserState(browser);
 
     // Since doing a full URIFixup and offset calculations is expensive, we
     // keep the metadata cached in the browser itself, so when switching tabs
@@ -142,40 +173,52 @@ export class UrlbarValueFormatter {
     if (
       browserState.urlMetaData &&
       browserState.urlMetaData.inputValue == inputValue &&
-      browserState.urlMetaData.untrimmedValue == this.urlbarInput.untrimmedValue
+      browserState.urlMetaData.untrimmedValue ==
+        this.#urlbarInput.untrimmedValue
     ) {
       return browserState.urlMetaData.data;
     }
     browserState.urlMetaData = {
       inputValue,
-      untrimmedValue: this.urlbarInput.untrimmedValue,
+      untrimmedValue: this.#urlbarInput.untrimmedValue,
       data: null,
     };
 
-    // Get the URL from the fixup service:
-    let flags =
-      Services.uriFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS |
-      Services.uriFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
-    if (lazy.PrivateBrowsingUtils.isWindowPrivate(this.window)) {
-      flags |= Services.uriFixup.FIXUP_FLAG_PRIVATE_CONTEXT;
-    }
-
+    // For already-schemed http(s) URLs we can parse directly, avoiding the
+    // cost of getFixupURIInfo. For schemeless input, scheme typos, and
+    // potential search queries, we need the fixup service.
+    const untrimmedValue = this.#urlbarInput.untrimmedValue;
+    let uri;
     let uriInfo;
-    try {
-      uriInfo = Services.uriFixup.getFixupURIInfo(
-        this.urlbarInput.untrimmedValue,
-        flags
-      );
-    } catch (ex) {}
-    // Ignore if we couldn't make a URI out of this, the URI resulted in a search,
-    // or the URI has a non-http(s)/ftp protocol.
     if (
-      !uriInfo ||
-      !uriInfo.fixedURI ||
-      uriInfo.keywordProviderName ||
-      !["http", "https", "ftp"].includes(uriInfo.fixedURI.scheme)
+      untrimmedValue.startsWith("http://") ||
+      untrimmedValue.startsWith("https://")
     ) {
-      return null;
+      try {
+        uri = Services.io.newURI(untrimmedValue);
+      } catch (e) {}
+    }
+    if (!uri) {
+      let flags =
+        Services.uriFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS |
+        Services.uriFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
+      if (lazy.PrivateBrowsingUtils.isWindowPrivate(this.#window)) {
+        flags |= Services.uriFixup.FIXUP_FLAG_PRIVATE_CONTEXT;
+      }
+      try {
+        uriInfo = Services.uriFixup.getFixupURIInfo(untrimmedValue, flags);
+      } catch (ex) {}
+      // Ignore if we couldn't make a URI out of this, the URI resulted in a
+      // search, or the URI has a non-http(s) protocol.
+      if (
+        !uriInfo ||
+        !uriInfo.fixedURI ||
+        uriInfo.keywordProviderId ||
+        !["http", "https"].includes(uriInfo.fixedURI.scheme)
+      ) {
+        return null;
+      }
+      uri = uriInfo.fixedURI;
     }
 
     // We must ensure the protocol is present in the parsed string, so we don't
@@ -187,19 +230,19 @@ export class UrlbarValueFormatter {
     let trimmedLength = 0;
     let trimmedProtocol = lazy.BrowserUIUtils.trimURLProtocol;
     if (
-      this.urlbarInput.untrimmedValue.startsWith(trimmedProtocol) &&
+      untrimmedValue.startsWith(trimmedProtocol) &&
       !inputValue.startsWith(trimmedProtocol)
     ) {
       // The protocol has been trimmed, so we add it back.
       url = trimmedProtocol + inputValue;
       trimmedLength = trimmedProtocol.length;
     } else if (
-      uriInfo.schemelessInput == Ci.nsILoadInfo.SchemelessInputTypeSchemeless
+      uriInfo?.schemelessInput == Ci.nsILoadInfo.SchemelessInputTypeSchemeless
     ) {
       // The original string didn't have a protocol, but it was identified as
       // a URL. It's not important which scheme we use for parsing, so we'll
       // just copy URIFixup.
-      let scheme = uriInfo.fixedURI.scheme + "://";
+      let scheme = uri.scheme + "://";
       url = scheme + url;
       trimmedLength = scheme.length;
     }
@@ -215,35 +258,34 @@ export class UrlbarValueFormatter {
     }
     let [, preDomain, schemeWSlashes, domain] = matchedURL;
 
-    // If the found host differs from the fixed URI one, we can't properly
-    // highlight it. To stay on the safe side, we clobber user's input with
-    // the fixed URI and apply highlight to that one instead.
+    // If the host extracted by the regex differs from the actual host of the
+    // URL, we can't safely highlight it; then we clobber the input with the
+    // fixed URI, and apply highlight to that one instead.
     let replaceUrl = false;
     try {
       replaceUrl =
-        Services.io.newURI("http://" + domain).displayHost !=
-        uriInfo.fixedURI.displayHost;
+        Services.io.newURI("http://" + domain).displayHost != uri.displayHost;
     } catch (ex) {
       return null;
     }
     if (replaceUrl) {
-      if (this._inGetUrlMetaData) {
+      if (this.#inGetUrlMetaData) {
         // Protect from infinite recursion.
         return null;
       }
       try {
-        this._inGetUrlMetaData = true;
-        this.window.gBrowser.userTypedValue = null;
-        this.urlbarInput.setURI(uriInfo.fixedURI);
-        return this._getUrlMetaData();
+        this.#inGetUrlMetaData = true;
+        this.#window.gBrowser.userTypedValue = null;
+        this.#urlbarInput.setURI({ uri });
+        return this.#getUrlMetaData();
       } finally {
-        this._inGetUrlMetaData = false;
+        this.#inGetUrlMetaData = false;
       }
     }
 
     return (browserState.urlMetaData.data = {
       domain,
-      origin: uriInfo.fixedURI.host,
+      origin: uri.host,
       preDomain,
       schemeWSlashes,
       trimmedLength,
@@ -251,18 +293,19 @@ export class UrlbarValueFormatter {
     });
   }
 
-  _removeURLFormat() {
-    if (!this._formattingApplied) {
+  #removeURLFormat() {
+    this.#hostRange = null;
+    if (!this.#formattingApplied) {
       return;
     }
-    let controller = this.urlbarInput.editor.selectionController;
+    let controller = this.#urlbarInput.editor.selectionController;
     let strikeOut = controller.getSelection(controller.SELECTION_URLSTRIKEOUT);
     strikeOut.removeAllRanges();
     let selection = controller.getSelection(controller.SELECTION_URLSECONDARY);
     selection.removeAllRanges();
-    this._formatScheme(controller.SELECTION_URLSTRIKEOUT, true);
-    this._formatScheme(controller.SELECTION_URLSECONDARY, true);
-    this.inputField.style.setProperty("--urlbar-scheme-size", "0px");
+    this.#formatScheme(controller.SELECTION_URLSTRIKEOUT, true);
+    this.#formatScheme(controller.SELECTION_URLSECONDARY, true);
+    this.#inputField.style.setProperty("--urlbar-scheme-size", "0px");
   }
 
   /**
@@ -288,10 +331,53 @@ export class UrlbarValueFormatter {
       this.formattingEnabled &&
       !lazy.UrlbarPrefs.get("security.insecure_connection_text.enabled") &&
       val.startsWith("https://") &&
-      val == this.urlbarInput.value &&
+      val == this.#urlbarInput.value &&
       this.#showingMixedContentLoadedPageUrl
     );
   }
+
+  /**
+   * This is used only as an optimization to avoid removing formatting in
+   * the _remove* format methods when no formatting is actually applied.
+   *
+   * @type {boolean}
+   */
+  #formattingApplied = false;
+
+  /**
+   * An empty object, which is used as a lock to avoid updating old instances.
+   *
+   * @type {?object}
+   */
+  #updateInstance;
+
+  /**
+   * The previously selected result.
+   *
+   * @type {?UrlbarResult}
+   */
+  #selectedResult;
+
+  /**
+   * The timer handling the resize throttling.
+   *
+   * @type {?number}
+   */
+  #resizeThrottleTimeout;
+
+  /**
+   * An empty object, which is used to avoid updating old instances.
+   *
+   * @type {?object}
+   */
+  #resizeInstance;
+
+  /**
+   * Used to protect against re-entry in getUrlMetaData.
+   *
+   * @type {boolean}
+   */
+  #inGetUrlMetaData = false;
 
   /**
    * Whether the currently loaded page is in mixed content mode.
@@ -300,9 +386,11 @@ export class UrlbarValueFormatter {
    */
   get #showingMixedContentLoadedPageUrl() {
     return (
-      this.urlbarInput.getAttribute("pageproxystate") == "valid" &&
-      this.window.gBrowser.securityUI.state &
+      this.#urlbarInput.getAttribute("pageproxystate") == "valid" &&
+      !!(
+        this.#window.gBrowser.securityUI.state &
         Ci.nsIWebProgressListener.STATE_LOADED_MIXED_ACTIVE_CONTENT
+      )
     );
   }
 
@@ -315,13 +403,13 @@ export class UrlbarValueFormatter {
    * @returns {boolean}
    *   True if formatting was applied and false if not.
    */
-  _formatURL() {
-    let urlMetaData = this._getUrlMetaData();
+  #formatURL() {
+    let urlMetaData = this.#getUrlMetaData();
     if (!urlMetaData) {
       return false;
     }
-    let state = this.urlbarInput.getBrowserState(
-      this.window.gBrowser.selectedBrowser
+    let state = this.#urlbarInput.getBrowserState(
+      this.#window.gBrowser.selectedBrowser
     );
     if (state.searchTerms) {
       return false;
@@ -343,13 +431,27 @@ export class UrlbarValueFormatter {
     if (
       !lazy.UrlbarPrefs.get("security.insecure_connection_text.enabled") &&
       !isUnformattedMixedContent &&
-      this.urlbarInput.value.startsWith(schemeWSlashes)
+      this.#urlbarInput.value.startsWith(schemeWSlashes)
     ) {
-      this.scheme.value = schemeWSlashes;
-      this.inputField.style.setProperty(
+      this.#scheme.value = schemeWSlashes;
+      this.#inputField.style.setProperty(
         "--urlbar-scheme-size",
         schemeWSlashes.length + "ch"
       );
+    }
+
+    let editor = this.#urlbarInput.editor;
+    let textNode = editor.rootElement.firstChild;
+
+    const hostStart = preDomain.length - trimmedLength;
+    const hostEnd = hostStart + domain.length;
+
+    if (hostStart < hostEnd) {
+      this.#hostRange = this.#document.createRange();
+      this.#hostRange.setStart(textNode, hostStart);
+      this.#hostRange.setEnd(textNode, hostEnd);
+    } else {
+      this.#hostRange = null;
     }
 
     this.#ensureFormattedHostVisible(urlMetaData);
@@ -358,24 +460,21 @@ export class UrlbarValueFormatter {
       return false;
     }
 
-    let editor = this.urlbarInput.editor;
     let controller = editor.selectionController;
 
-    this._formatScheme(controller.SELECTION_URLSECONDARY);
-
-    let textNode = editor.rootElement.firstChild;
+    this.#formatScheme(controller.SELECTION_URLSECONDARY);
 
     // Strike out the "https" part if mixed active content status should be
     // shown.
-    if (this.willShowFormattedMixedContentProtocol(this.urlbarInput.value)) {
-      let range = this.document.createRange();
+    if (this.willShowFormattedMixedContentProtocol(this.#urlbarInput.value)) {
+      let range = this.#document.createRange();
       range.setStart(textNode, 0);
       range.setEnd(textNode, 5);
       let strikeOut = controller.getSelection(
         controller.SELECTION_URLSTRIKEOUT
       );
       strikeOut.addRange(range);
-      this._formatScheme(controller.SELECTION_URLSTRIKEOUT);
+      this.#formatScheme(controller.SELECTION_URLSTRIKEOUT);
     }
 
     let baseDomain = domain;
@@ -383,13 +482,13 @@ export class UrlbarValueFormatter {
     try {
       baseDomain = Services.eTLD.getBaseDomainFromHost(origin);
       if (!domain.endsWith(baseDomain)) {
-        // getBaseDomainFromHost converts its resultant to ACE.
+        // The domain may be displayed in a different encoding (e.g., mixed
+        // punycode/unicode) than the ACE baseDomain from origin. Get the
+        // baseDomain in the same encoding as the displayed domain.
         let IDNService = Cc["@mozilla.org/network/idn-service;1"].getService(
           Ci.nsIIDNService
         );
-        // XXX This should probably convert to display IDN instead.
-        // https://bugzilla.mozilla.org/show_bug.cgi?id=1906048
-        baseDomain = IDNService.convertACEtoUTF8(baseDomain);
+        baseDomain = IDNService.domainToDisplay(baseDomain);
       }
     } catch (e) {}
     if (baseDomain != domain) {
@@ -400,7 +499,7 @@ export class UrlbarValueFormatter {
 
     let rangeLength = preDomain.length + subDomain.length - trimmedLength;
     if (rangeLength) {
-      let range = this.document.createRange();
+      let range = this.#document.createRange();
       range.setStart(textNode, 0);
       range.setEnd(textNode, rangeLength);
       selection.addRange(range);
@@ -408,7 +507,7 @@ export class UrlbarValueFormatter {
 
     let startRest = preDomain.length + domain.length - trimmedLength;
     if (startRest < url.length - trimmedLength) {
-      let range = this.document.createRange();
+      let range = this.#document.createRange();
       range.setStart(textNode, startRest);
       range.setEnd(textNode, url.length - trimmedLength);
       selection.addRange(range);
@@ -417,26 +516,26 @@ export class UrlbarValueFormatter {
     return true;
   }
 
-  _formatScheme(selectionType, clear) {
-    let editor = this.scheme.editor;
+  #formatScheme(selectionType, clear) {
+    let editor = this.#scheme.editor;
     let controller = editor.selectionController;
     let textNode = editor.rootElement.firstChild;
     let selection = controller.getSelection(selectionType);
     if (clear) {
       selection.removeAllRanges();
     } else {
-      let r = this.document.createRange();
+      let r = this.#document.createRange();
       r.setStart(textNode, 0);
       r.setEnd(textNode, textNode.textContent.length);
       selection.addRange(r);
     }
   }
 
-  _removeSearchAliasFormat() {
-    if (!this._formattingApplied) {
+  #removeSearchAliasFormat() {
+    if (!this.#formattingApplied) {
       return;
     }
-    let selection = this.urlbarInput.editor.selectionController.getSelection(
+    let selection = this.#urlbarInput.editor.selectionController.getSelection(
       Ci.nsISelectionController.SELECTION_FIND
     );
     selection.removeAllRanges();
@@ -448,25 +547,24 @@ export class UrlbarValueFormatter {
    * @returns {boolean}
    *   True if formatting was applied and false if not.
    */
-  _formatSearchAlias() {
+  #formatSearchAlias() {
     if (!this.formattingEnabled) {
       return false;
     }
 
-    let editor = this.urlbarInput.editor;
+    let editor = this.#urlbarInput.editor;
     let textNode = editor.rootElement.firstChild;
     let value = textNode.textContent;
     let trimmedValue = value.trim();
 
     if (
       !trimmedValue.startsWith("@") ||
-      (this.urlbarInput.popup || this.urlbarInput.view).oneOffSearchButtons
-        .selectedButton
+      this.#urlbarInput.view.oneOffSearchButtons.selectedButton
     ) {
       return false;
     }
 
-    let alias = this._findEngineAliasOrRestrictKeyword();
+    let alias = this.#findEngineAliasOrRestrictKeyword();
     if (!alias) {
       return false;
     }
@@ -491,7 +589,7 @@ export class UrlbarValueFormatter {
       Ci.nsISelectionController.SELECTION_FIND
     );
 
-    let range = this.document.createRange();
+    let range = this.#document.createRange();
     range.setStart(textNode, index);
     range.setEnd(textNode, index + alias.length);
     selection.addRange(range);
@@ -511,8 +609,8 @@ export class UrlbarValueFormatter {
     // them, which we can do by passing "currentColor".  See
     // nsTextPaintStyle::GetHighlightColors for details.
     if (
-      this.document.documentElement.hasAttribute("lwtheme") ||
-      this.window.matchMedia("(prefers-contrast)").matches
+      this.#document.documentElement.hasAttribute("lwtheme") ||
+      this.#window.matchMedia("(prefers-contrast)").matches
     ) {
       // non-default theme(s)
       selection.setColors(fg, bg, "currentColor", "currentColor");
@@ -524,24 +622,24 @@ export class UrlbarValueFormatter {
     return true;
   }
 
-  _findEngineAliasOrRestrictKeyword() {
+  #findEngineAliasOrRestrictKeyword() {
     // To determine whether the input contains a valid alias, check if the
     // selected result is a search result with an alias. If there is no selected
     // result, we check the first result in the view, for cases when we do not
     // highlight token alias results. The selected result is null when the popup
     // is closed, but we want to continue highlighting the alias when the popup
     // is closed, and that's why we keep around the previously selected result
-    // in _selectedResult.
-    this._selectedResult =
-      this.urlbarInput.view.selectedResult ||
-      this.urlbarInput.view.getResultAtIndex(0) ||
-      this._selectedResult;
+    // in #selectedResult.
+    this.#selectedResult =
+      this.#urlbarInput.view.selectedResult ||
+      this.#urlbarInput.view.getResultAtIndex(0) ||
+      this.#selectedResult;
 
-    if (!this._selectedResult) {
+    if (!this.#selectedResult) {
       return null;
     }
 
-    let { type, payload } = this._selectedResult;
+    let { type, payload } = this.#selectedResult;
 
     if (type === lazy.UrlbarUtils.RESULT_TYPE.SEARCH) {
       return payload.keyword || null;
@@ -570,21 +668,30 @@ export class UrlbarValueFormatter {
   }
 
   _on_resize(event) {
-    if (event.target != this.window) {
+    if (event.target != this.#window) {
       return;
     }
     // Make sure the host remains visible in the input field when the window is
     // resized.  We don't want to hurt resize performance though, so do this
     // only after resize events have stopped and a small timeout has elapsed.
-    if (this._resizeThrottleTimeout) {
-      this.window.clearTimeout(this._resizeThrottleTimeout);
+    if (this.#resizeThrottleTimeout) {
+      this.#window.clearTimeout(this.#resizeThrottleTimeout);
     }
-    this._resizeThrottleTimeout = this.window.setTimeout(() => {
-      this._resizeThrottleTimeout = null;
-      let instance = (this._resizeInstance = {});
-      this.window.requestAnimationFrame(() => {
-        if (instance == this._resizeInstance) {
-          this.#ensureFormattedHostVisible();
+    this.#resizeThrottleTimeout = this.#window.setTimeout(() => {
+      this.#resizeThrottleTimeout = null;
+      let instance = (this.#resizeInstance = {});
+      this.#window.requestAnimationFrame(() => {
+        if (instance == this.#resizeInstance) {
+          if (
+            this.#hostRange &&
+            !this.#hostRange.commonAncestorContainer.isConnected
+          ) {
+            // The host range is no longer valid.
+            this.#removeURLFormat();
+            this.#formatURL();
+          } else {
+            this.#ensureFormattedHostVisible();
+          }
         }
       });
     }, 100);

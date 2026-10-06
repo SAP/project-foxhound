@@ -24,7 +24,7 @@ const focusableSelector = [
  *         focusable elements inside a container
  * @param  {DOMNode} current
  *         currently focused element inside containter
- * @param  {Boolean} back
+ * @param  {boolean} back
  *         direction
  * @return {DOMNode}
  *         newly focused element

@@ -9,16 +9,18 @@ skip-if = [
 
 ["test_remove_skip2.html"]
 skip-if = [
-  "os == 'macosx' && os_version == '14.70' && processor == 'x86'", #  Bug 333
-  "os == 'linux' && os_version == '22.04' && processor == 'x86'", #  Bug 222
+  "os == 'mac' && os_version == '14.70' && arch == 'x86'", #  Bug 333
+  "os == 'linux' && os_version == '24.04' && arch == 'x86'", #  Bug 111
 ]
 
 ["test_remove_skip3.html"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'armv7'", #  Bug 111
-  "os == 'linux' && os_version == '22.04' && processor == 'x86' && debug", #  Bug 222
+  "os == 'linux' && os_version == '22.04' && arch == 'armv7'", #  Bug 222
+  "os == 'linux' && os_version == '24.04' && arch == 'x86' && debug", #  Bug 333
 ]
 other-key = "test"
 
 ["test_remove_skip4.html"]
-skip-if = ["os == 'mac'"] #  Bug 111
+skip-if = [
+  "os == 'mac'", #  Bug 111
+]

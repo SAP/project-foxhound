@@ -380,7 +380,13 @@
             states: STATE_EXPANDED,
             actions: "collapse",
          },
-         { role: ROLE_PARAGRAPH },
+         { role: ROLE_TEXT_CONTAINER,
+           children: [
+             {
+               role: ROLE_PARAGRAPH,
+             },
+           ],
+         },
         ],
       };
       testElm("details", obj);

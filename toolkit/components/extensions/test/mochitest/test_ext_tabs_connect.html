@@ -1,0 +1,123 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Test tabs.connect</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
+  <script type="text/javascript" src="head.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script>
+"use strict";
+
+// Verifies that tabs.connect() with documentId triggers onConnect in frame
+// iff documentId matches. The tabs.sendMessage() version of this test is in
+// test_ext_tabs_sendMessage.html at test_tabs_sendMessage_using_documentId.
+add_task(async function test_tabs_connect_using_documentId() {
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      content_scripts: [
+        {
+          matches: [
+            // Note: for broader coverage this tests same-origin frames, and
+            // test_tabs_sendMessage_documentId tests cross-origin frame.
+            "*://*/*/file_with_same_origin_frame.html?tabs.connect",
+            "*://*/*/file_sample.html",
+          ],
+          all_frames: true,
+          js: ["cs.js"],
+        },
+      ],
+    },
+
+    background() {
+      browser.runtime.onMessage.addListener(async (msg, sender) => {
+        // runtime.onMessage is called for the top frame, and the sub frame.
+        browser.test.assertEq("cs_ready", msg, `Message from: ${sender.url}`);
+        const documentId = sender.documentId;
+        const tabId = sender.tab.id;
+        browser.test.assertTrue(!!documentId, "sender.documentId is set");
+
+        try {
+          await new Promise(resolve => {
+            let port = browser.tabs.connect(tabId, {
+              documentId,
+              name: `to_document_id:${documentId}`,
+            });
+            port.onDisconnect.addListener(() => {
+              // Should never be called: other side triggers us when there is
+              // an onConnect listener, so connect (by documentId) should
+              // succeed. And we disconnect() from this side in the end.
+              browser.test.fail("Unexpected onDisconnect for valid documentId");
+              resolve();
+            });
+            port.onMessage.addListener(response => {
+              browser.test.assertEq(
+                "pong",
+                response,
+                `Got pong on port with correct documentId from ${sender.url}`
+              );
+              port.disconnect();
+              resolve();
+            });
+            port.postMessage("ping");
+          });
+
+          browser.test.log("Testing tabs.connect() with invalid documentId");
+          await new Promise(resolve => {
+            let port = browser.tabs.connect(tabId, {
+              documentId: "00000000-0000-0000-0000-000000000000",
+            });
+            port.onDisconnect.addListener(p => {
+              browser.test.assertEq(
+                "Could not establish connection. Receiving end does not exist.",
+                p.error?.message,
+                "Error when trying to connect() with invalid documentId"
+              );
+              resolve();
+            });
+            port.onMessage.addListener(() => {
+              browser.test.fail("Unexpected port.onMessage on invalid port");
+              resolve();
+            });
+          });
+        } catch (e) {
+          browser.test.fail(`Error: ${e} :: ${e.stack}`);
+        }
+        browser.test.sendMessage(sender.frameId ? "done:frame" : "done:top");
+      });
+    },
+
+    files: {
+      "cs.js"() {
+        browser.runtime.onConnect.addListener(port => {
+          browser.test.assertEq(
+            port.name?.replace(/^to_document_id:/, ""),
+            browser.runtime.getDocumentId(window),
+            `connect() for documentId reached onConnect of ${document.URL}`
+          );
+          port.onMessage.addListener(() => port.postMessage("pong"));
+        });
+        browser.runtime.sendMessage("cs_ready");
+      },
+    },
+  });
+
+  await extension.startup();
+
+  // We want a document with an iframe to make sure that passing documentId
+  // causes the message to be sent to that frame only, instead of all frames.
+  let win = window.open("file_with_same_origin_frame.html?tabs.connect");
+  await Promise.all([
+    extension.awaitMessage("done:frame"),
+    extension.awaitMessage("done:top"),
+  ]);
+  win.close();
+
+  await extension.unload();
+});
+
+</script>
+</body>
+</html>

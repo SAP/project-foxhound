@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -56,7 +55,7 @@ void nsSandboxViolationSink::ViolationHandler() {
 
   // Only get reports that were generated very recently.
   char query_time[30] = {0};
-  SprintfLiteral(query_time, "%li", time(NULL) - 2);
+  SprintfLiteral(query_time, "%li", time(nullptr) - 2);
   asl_set_query(query, ASL_KEY_TIME, query_time,
                 ASL_QUERY_OP_NUMERIC | ASL_QUERY_OP_GREATER_EQUAL);
 
@@ -71,7 +70,7 @@ void nsSandboxViolationSink::ViolationHandler() {
     // be better to make the chrome process log all the other processes'
     // violations.
     char query_pid[20] = {0};
-    SprintfLiteral(query_pid, "%u", getpid());
+    SprintfLiteral(query_pid, "%d", getpid());
     asl_set_query(query, ASL_KEY_REF_PID, query_pid, ASL_QUERY_OP_EQUAL);
   }
 

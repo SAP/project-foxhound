@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,7 @@
 
 #include "gfxContext.h"
 #include "mozilla/CaretAssociationHint.h"
+#include "mozilla/Likely.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/TextControlElement.h"
 #include "mozilla/dom/HTMLBRElement.h"
@@ -16,7 +15,6 @@
 #include "nsComputedDOMStyle.h"
 #include "nsContainerFrame.h"
 #include "nsFontMetrics.h"
-#include "nsGkAtoms.h"
 #include "nsHTMLParts.h"
 #include "nsIFrame.h"
 #include "nsLayoutUtils.h"
@@ -137,9 +135,14 @@ void BRFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
       // normal inline frame.  That line-height is used is important
       // here for cases where the line-height is less than 1.
       RefPtr<nsFontMetrics> fm =
-          nsLayoutUtils::GetInflatedFontMetricsForFrame(this);
+          nsLayoutUtils::GetInflatedFontMetricsForFrame(GetParent());
       if (fm) {
-        nscoord logicalHeight = aReflowInput.GetLineHeight();
+        nscoord logicalHeight;
+        if (MOZ_LIKELY(aReflowInput.mParentReflowInput)) {
+          logicalHeight = aReflowInput.mParentReflowInput->GetLineHeight();
+        } else {
+          logicalHeight = aReflowInput.GetLineHeight();
+        }
         finalSize.BSize(wm) = logicalHeight;
         aMetrics.SetBlockStartAscent(nsLayoutUtils::GetCenteredFontBaseline(
             fm, logicalHeight, wm.IsLineInverted()));

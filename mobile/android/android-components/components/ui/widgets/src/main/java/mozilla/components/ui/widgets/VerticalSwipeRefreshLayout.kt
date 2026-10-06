@@ -46,7 +46,7 @@ class VerticalSwipeRefreshLayout @JvmOverloads constructor(
     @VisibleForTesting
     internal var disallowInterceptTouchEvent = false
 
-    @Suppress("ComplexMethod", "ReturnCount")
+    @Suppress("ReturnCount")
     override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
         // Setting "isEnabled = false" is recommended for users of this ViewGroup
         // who who are not interested in the pull to refresh functionality

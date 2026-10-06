@@ -8,9 +8,13 @@
 newtab-page-title = Nova kartica
 newtab-settings-button =
     .title = Prilagodi stranicu za nove kartice
+#  (developer note): @nova-cleanup(remove-string): Remove newtab-customize-panel-icon-button once Nova lands, will be using newtab-customize-panel-label instead
 newtab-customize-panel-icon-button =
     .title = Prilagodi ovu stranicu
+#  (developer note): @nova-cleanup(remove-string): Remove newtab-customize-panel-icon-button-label once Nova lands, will be using newtab-customize-panel-label instead
 newtab-customize-panel-icon-button-label = Prilagodi
+newtab-customize-panel-label =
+    .label = Prilagodi
 newtab-personalize-settings-icon-label =
     .title = Personaliziraj novu karticu
     .aria-label = Postavke
@@ -23,6 +27,120 @@ newtab-personalize-dialog-label =
     .aria-label = Personaliziraj
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
+newtab-card-dismiss-button =
+    .title = Odbaci
+    .aria-label = Odbaci
+
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-title =
+    .label = Početna stranica
+home-homepage-new-windows =
+    .label = Novi prozori
+home-homepage-new-tabs =
+    .label = Nove kartice
+# This option leads to the "Custom Homepage" subpage
+home-homepage-custom-homepage-button =
+    .label = Odaberi određenu web-stranicu
+
+## Custom URLs subpage
+
+# Subheader on the Custom Homepage subpage. Followed by a form to enter URLs and a list of URLs already saved, if any.
+home-custom-homepage-card-header =
+    .label = Adrese web-stranica
+home-custom-homepage-address =
+    .placeholder = Upiši adresu
+home-custom-homepage-address-button =
+    .label = Dodaj adresu
+# Shown when no custom websites/URLs to use as a homepage have been added yet
+home-custom-homepage-no-results =
+    .label = Nema dodanih web-stranica.
+home-custom-homepage-delete-address-button =
+    .aria-label = Izbriši adresu
+    .title = Izbriši adresu
+# Further options to use when setting the home page. Two action buttons are placed in line with this prompt
+# to replace the current home page with a currently open page or bookmark.
+home-custom-homepage-replace-with-prompt =
+    .label = Zamijeni s
+# Button that appears in-line after text "Replace with" (home-custom-homepage-replace-with-prompt)
+home-custom-homepage-current-pages-button =
+    .label = Trenutačno otvorene stranice
+# Button that appears in-line after text "Replace with" (home-custom-homepage-replace-with-prompt)
+home-custom-homepage-bookmarks-button =
+    .label = Zabilješke …
+
+## Firefox Home content
+
+home-prefs-content-header =
+    .label = { -firefox-home-brand-name }
+home-prefs-search-header2 =
+    .label = Pretraga
+home-prefs-stories-header2 =
+    .label = Priče
+    .description = Izvanredni sadržaj kojeg je odabrala obitelj { -brand-product-name }
+home-prefs-widgets-header =
+    .label = Widgeti
+# Lists is a widget on New Tab, similar to a to-do widget
+home-prefs-lists-header =
+    .label = Popisi
+# Timer is a widget on New Tab, similar to the Pomodoro timer.
+home-prefs-timer-header =
+    .label = Timer
+home-prefs-mission-message2 =
+    .message = Naši sponzori podržavaju našu misiju u izgradnji boljeg weba.
+home-prefs-manage-topics-link2 =
+    .label = Upravljaj temama
+home-prefs-choose-wallpaper-link2 =
+    .label = Odaberi pozadinu
+home-prefs-firefox-logo-header =
+    .label = { -brand-short-name } logotip
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } redak
+            [few] { $num } retka
+           *[other] { $num } redaka
+        }
+# Dropdown option shown when an extension replaces the contents of new windows or tabs.
+# Variables:
+#   $extension (string) - Name of the extension
+home-prefs-homepage-extension-option =
+    .label = Dodatak ({ $extension })
+home-restore-defaults-srd =
+    .label = Obnovi standardne postavke
+    .accesskey = O
+home-mode-choice-default-fx-srd =
+    .label = { -firefox-home-brand-name } (standardno)
+home-mode-choice-custom-srd =
+    .label = Prilagođeni URL-ovi …
+home-mode-choice-blank-srd =
+    .label = Prazna stranica
+home-prefs-shortcuts-header-srd =
+    .label = Prečaci
+home-prefs-shortcuts-select =
+    .aria-label = Prečaci
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = Sponzorirani prečaci
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Sponzorirane priče
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Posjećene stranice
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Zabilješke
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Najnovije preuzimanje
+home-prefs-recent-activity-header-srd =
+    .label = Nedavna aktivnost
+home-prefs-recent-activity-select =
+    .aria-label = Nedavna aktivnost
+home-prefs-weather-header-srd =
+    .label = Vremenska prognoza
+home-prefs-support-firefox-header-srd =
+    .label = { -brand-product-name } podrška
+home-prefs-mission-message-learn-more-link-srd = Saznaj kako
 
 ## Search box component.
 
@@ -49,13 +167,16 @@ newtab-search-box-input =
     .placeholder = Pretraži web
     .aria-label = Pretraži web
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Dodaj tražilicu
 newtab-topsites-add-shortcut-header = Novi prečac
 newtab-topsites-edit-topsites-header = Uredi najbolju stranicu
 newtab-topsites-edit-shortcut-header = Uredi prečac
 newtab-topsites-add-shortcut-label = Dodaj prečac
+newtab-topsites-add-shortcut-title =
+    .title = Dodaj prečac
+    .aria-label = Dodaj prečac
 newtab-topsites-title-label = Naslov
 newtab-topsites-title-input =
     .placeholder = Upiši naslov
@@ -66,6 +187,11 @@ newtab-topsites-url-validation = Potrebno je unijeti ispravan URL
 newtab-topsites-image-url-label = Prilagođeni URL slike
 newtab-topsites-use-image-link = Koristi prilagođenu sliku…
 newtab-topsites-image-validation = Neuspjelo učitavanje slike. Pokušaj jedan drugi URL.
+
+## Clear text button for the URL and image URL input fields in the Top Sites form.
+
+newtab-topsites-clear-input =
+    .aria-label = Očisti tekst
 
 ## Top Sites - General form dialog buttons. These are verbs/actions.
 
@@ -79,11 +205,19 @@ newtab-topsites-add-button = Dodaj
 
 newtab-confirm-delete-history-p1 = Stvarno želiš izbrisati sve primjere ove stranice iz povijesti?
 # "This action" refers to deleting a page from history.
-newtab-confirm-delete-history-p2 = Ova se radnja ne može poništiti.
+newtab-confirm-delete-history-p2 = Ovo je nepovratna radnja.
 
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = Sponzorirano
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title } (prikvačeno)
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -125,6 +259,11 @@ newtab-menu-report = Prijavi
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = Blokiraj
+# "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
+# e.g. Following the travel section of stories.
+newtab-menu-section-unfollow-topic = Prestani pratiti
+# Context menu option to open a support page explaining the New Tab personalization features and privacy controls.
+newtab-menu-section-learn-more = Saznaj više
 # "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
 # e.g. Following the travel section of stories.
 newtab-menu-section-unfollow = Prestani pratiti temu
@@ -210,7 +349,7 @@ newtab-section-menu-add-topsite = Dodaj najbolju stranicu
 newtab-section-menu-add-search-engine = Dodaj tražilicu
 newtab-section-menu-move-up = Pomakni gore
 newtab-section-menu-move-down = Pomakni dolje
-newtab-section-menu-privacy-notice = Napomena o privatnosti
+newtab-section-menu-privacy-notice = Napomene o privatnosti
 
 ## Section aria-labels
 
@@ -232,7 +371,7 @@ newtab-section-header-todays-picks = Današnji preporučeni članci za tebe
 
 ## Empty Section States: These show when there are no more items in a section. Ex. When there are no more Pocket story recommendations, in the space where there would have been stories, this is shown instead.
 
-newtab-empty-section-highlights = Započni pregledavanje i pokazat ćemo ti neke od izvrsnih članaka, videa i drugih web stranica prema tvojim nedavno posjećenim stranicama ili zabilješkama.
+newtab-empty-section-highlights = Započni pregledavanje i pokazat ćemo ti neke izvrsne članke, videa i druge stranice koje si nedavno posjetio/la ili zabilježio/la.
 # Ex. When there are no more Pocket story recommendations, in the space where there would have been stories, this is shown instead.
 # Variables:
 #   $provider (string) - Name of the content provider for this section, e.g "Pocket".
@@ -292,9 +431,24 @@ newtab-error-fallback-refresh-link = Osvježi stranicu za ponovni pokušaj.
 
 newtab-custom-shortcuts-title = Prečaci
 newtab-custom-shortcuts-subtitle = Stranice koje spremiš ili posjetiš
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = Prečaci
     .description = Stranice koje spremiš ili posjetiš
+newtab-custom-shortcuts-nova =
+    .label = Prečaci
+newtab-custom-row-description =
+    .description = Broj redaka
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } redak
+            [few] { $num } retka
+           *[other] { $num } redaka
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =
@@ -306,22 +460,38 @@ newtab-custom-row-selector =
 newtab-custom-sponsored-sites = Sponzorirani prečaci
 newtab-custom-pocket-title = Preporuke iz { -pocket-brand-name(case: "gen") }
 newtab-custom-pocket-subtitle = Izuzetan sadržaj kojeg odabire { -pocket-brand-name }, dio obitelji { -brand-product-name }
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be having a description under "Recommended stories" anymore
 newtab-custom-stories-toggle =
     .label = Preporučene priče
     .description = Izvanredni sadržaj odabran od { -brand-product-name } obitelji
+newtab-recommended-stories-toggle =
+    .label = Preporučene priče
+newtab-custom-stories-personalized-toggle =
+    .label = Priče
+newtab-custom-stories-personalized-checkbox-label = Personalizirane priče temeljene na tvojoj aktivnosti
 newtab-custom-pocket-sponsored = Sponzorirane priče
 newtab-custom-pocket-show-recent-saves = Prikaži nedavna spremanja
 newtab-custom-recent-title = Nedavna aktivnost
 newtab-custom-recent-subtitle = Izbor nedavno posjećenih stranica i sadržaja
-newtab-custom-recent-toggle =
-    .label = Nedavna aktivnost
-    .description = Izbor nedavno posjećenih stranica i sadržaja
 newtab-custom-weather-toggle =
     .label = Vrijeme
     .description = Današnja prognoza
-newtab-custom-trending-search-toggle =
-    .label = Popularne pretrage
-    .description = Popularne i često tražene teme
+newtab-custom-widget-weather-toggle =
+    .label = Vrijeme
+newtab-custom-widget-lists-toggle =
+    .label = Popisi
+newtab-custom-widget-timer-toggle =
+    .label = Odbrojavanje
+newtab-custom-widget-section-title = Widgeti
+newtab-custom-widget-section-toggle =
+    .label = Widgeti
+newtab-widget-manage-title = Widgeti
+newtab-widget-manage-widget-button =
+    .label = Upravljaj widgetima
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = Zatvori
+    .aria-label = Zatvori izbornik
 newtab-custom-close-button = Zatvori
 newtab-custom-settings = Upravljaj dodatnim postavkama
 
@@ -329,11 +499,16 @@ newtab-custom-settings = Upravljaj dodatnim postavkama
 
 newtab-wallpaper-title = Pozadine
 newtab-wallpaper-reset = Obnovi na standardnu pozadinu
+#  (developer note): @nova-cleanup(remove-string): Remove old "Upload an image" string once Nova lands. The new "Add an image"  string will take over
 newtab-wallpaper-upload-image = Prenesi sliku
+newtab-wallpaper-add-an-image = Dodaj sliku
 newtab-wallpaper-custom-color = Odaberi boju
+newtab-wallpaper-toggle-title =
+    .label = Pozadine
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = Slika premašuje ograničenje veličine datoteke od { $file_size } MB. Pokušaj prenijeti manju datoteku.
+newtab-wallpaper-error-upload-file-type = Ne možemo prenijeti tvoju datoteka. Pokušaj ponovo sa slikovnom datotekom.
 newtab-wallpaper-error-file-type = Nismo mogli prenijeti tvoju datoteku. Pokušaj ponovo s jednom drugom vrstom datoteke.
 newtab-wallpaper-light-red-panda = Crvena panda
 newtab-wallpaper-light-mountain = Bijela planina
@@ -352,7 +527,9 @@ newtab-wallpaper-light-fox-anniversary = Lisica u travnatom polju s maglovitim p
 
 ## Solid Colors
 
+#  (developer note): @nova-cleanup(remove-string): Remove old "Solid colors" string once Nova lands. The simplified "Colors" string will take over
 newtab-wallpaper-category-title-colors = Jednobojne
+newtab-wallpaper-colors = Boje
 newtab-wallpaper-blue = Plava
 newtab-wallpaper-light-blue = Svijetloplava
 newtab-wallpaper-light-purple = Svijetloljubičasta
@@ -383,7 +560,7 @@ newtab-wallpaper-abstract-purple-green = Gradijent ljubičaste boje i zelenog sv
 newtab-wallpaper-abstract-blue-purple-waves = Plavi i ljubičasti valoviti oblici
 newtab-wallpaper-abstract-black-waves = Crni valoviti oblici
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotografije
 newtab-wallpaper-beach-at-sunrise = Plaža pri izlasku sunca
@@ -413,6 +590,10 @@ feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
 
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
+
 ## Celestial
 
 # “Celestial” referring to astronomy; positioned in or relating to the sky,
@@ -435,12 +616,13 @@ newtab-weather-see-forecast =
 # Variables:
 #   $provider (string) - Service provider for weather data
 newtab-weather-sponsored = { $provider } ∙ Sponzorirano
-newtab-weather-menu-change-location = Promijeni mjesto
+newtab-weather-menu-change-location = Promijeni lokaciju
 newtab-weather-change-location-search-input-placeholder =
-    .placeholder = Traži mjesto
-    .aria-label = Traži mjesto
-newtab-weather-change-location-search-input = Traži mjesto
+    .placeholder = Traži lokaciju
+    .aria-label = Traži lokaciju
 newtab-weather-menu-weather-display = Prikaz vremena
+newtab-weather-todays-forecast = Današnja vremenska prognoza
+newtab-weather-see-full-forecast = Pogledaj cijelu vremensku prognozu
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
 # - Detailed: Include simple information plus a short text summary: e.g. "Mostly cloudy"
@@ -455,8 +637,31 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Prebaci na Fahrenheit
 newtab-weather-menu-change-temperature-units-celsius = Prebaci na Celzijeve stupnjeve
 newtab-weather-menu-hide-weather = Sakrij vremensku prognozu na novoj kartici
 newtab-weather-menu-learn-more = Saznaj više
+newtab-weather-menu-detect-my-location = Otkrij moju lokaciju
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Podaci o vremenu trenutačno nisu dostupni.
+newtab-weather-opt-in-see-weather = Želiš li vidjeti vremensku prognozu za svoju lokaciju?
+newtab-weather-opt-in-not-now =
+    .label = Ne sada
+newtab-weather-opt-in-yes =
+    .label = Da
+newtab-weather-opt-in-headline = Dobij svoju lokalnu vremensku prognozu
+newtab-weather-opt-in-use-location =
+    .label = Koristi lokaciju
+newtab-weather-opt-in-choose-location = Odaberi lokaciju
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = New York City
+# "Highest" here refers to the highest temperature of the day
+newtab-weather-high =
+    .aria-label = Najviša
+# "Lowest" here refers to the lowest temperature of the day
+newtab-weather-low =
+    .aria-label = Najniža
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = Pogledajte prognozu u { $provider }
+    .aria-description = { $provider } ∙ Sponzorirano
 
 ## Topic Labels
 
@@ -525,6 +730,7 @@ newtab-section-confirm-block-topic-p2 = Blokirane teme se više neće pojavljiva
 # Variables:
 #   $topic (string) - Name of topic that user is blocking
 newtab-section-block-topic-button = Blokiraj temu „{ $topic }”
+newtab-section-block-cancel-button = Odustani
 
 ## Strings for custom wallpaper highlight
 
@@ -540,6 +746,12 @@ newtab-custom-wallpaper-title = Isprobaj prilagođene slike pozadine
 newtab-custom-wallpaper-subtitle = Prenesi vlastitu sliku pozadine ili odaberi prilagođenu boju za tvoj { -brand-product-name }.
 newtab-custom-wallpaper-cta = Isprobaj
 
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title = Odaberi pozadinu te prilagodi { -brand-product-name } sebi
+newtab-new-user-custom-wallpaper-subtitle = Neka svaka nova kartice pruža osjećaj doma uz prilagođene pozadine i boje.
+newtab-new-user-custom-wallpaper-cta = Isprobajte sada
+
 ## Strings for download mobile highlight
 
 newtab-download-mobile-highlight-title = Preuzmi { -brand-product-name } za mobilne uređaje
@@ -552,8 +764,10 @@ newtab-download-mobile-highlight-image =
 
 ## Strings for shortcuts highlight
 
+newtab-shortcuts-highlight-title = Vaši favoriti na dohvat ruke
+newtab-shortcuts-highlight-subtitle = Dodajte prečac kako biste svoje omiljene stranice imali nadohvat ruke.
 
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
     .label = Zašto ovo prijavljuješ?
@@ -571,20 +785,148 @@ newtab-report-content-inappropriate-offensive =
     .label = Neprikladno ili uvredljivo
 newtab-report-content-spam-misleading =
     .label = Nametljivo ili obmanjujuće
+newtab-report-content-requires-payment-subscription =
+    .label = Zahtijeva plaćanje ili pretplatu
+newtab-report-content-requires-payment-subscription-learn-more = Saznaj više
 newtab-report-cancel = Odustani
 newtab-report-submit = Pošalji
 newtab-toast-thanks-for-reporting =
     .message = Hvala na prijavi!
+newtab-toast-widgets-hidden =
+    .message = Odaberi ikonu olovke za ponovno dodavanje widgeta.
+# Variables:
+#   $topic (string) - Topic that the user has followed
+newtab-section-toast-follow =
+    .message = Sada pratiš { $topic }.
+# Variables:
+#   $topic (string) - Topic that the user has unfollowed
+newtab-section-toast-unfollow =
+    .message = Više ne pratiš { $topic }.
+# Variables:
+#   $topic (string) - Topic that the user has blocked
+newtab-section-toast-block =
+    .message = Priče o { $topic } više nećeš vidjeti.
 
-## Strings for trending searches
+## Strings for task / to-do list productivity widget
 
-# "Trending on Google" refers to the trending topics coming from Google Search, usually seen when a user is focused on the search bar
-newtab-trending-searches-trending-on-google = Popularne teme na Google tražilici
-newtab-trending-searches-show-trending =
-    .title = Prikaži popularne pretrage
-newtab-trending-searches-hide-trending =
-    .title = Sakrij popularne pretrage
-newtab-trending-searches-learn-more = Saznaj više
-newtab-trending-searches-dismiss = Sakrij popularne pretrage
-# "Trending searches refers to popular searches from search engines
-newtab-trending-searches-title = Popularne pretrage
+# "Add one" means adding a new task to the list (e.g., "Walk the dog")
+newtab-widget-lists-empty-cta = Mogućnosti su beskrajne. Dodajte jednu.
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = Novi
+newtab-widget-lists-label-beta =
+    .label = Beta
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = Završeno ({ $number })
+newtab-widget-task-list-menu-copy = Kopiraj
+newtab-widget-lists-menu-edit = Uredi naziv popisa
+newtab-widget-lists-menu-edit2 =
+    .aria-label = Uredi naziv popisa
+newtab-widget-lists-menu-create = Stvori novi popis
+newtab-widget-lists-menu-delete = Obriši ovaj popis
+newtab-widget-lists-menu-copy = Kopiraj popis u međuspremnik
+newtab-widget-lists-menu-learn-more = Saznaj više
+newtab-widget-lists-button-add-item = Dodaj stavku
+newtab-widget-lists-input-add-an-item2 =
+    .placeholder = Dodaj stavku
+    .aria-label = Dodaj stavku
+newtab-widget-lists-input-error = Molimo uključite tekst za dodavanje stavke.
+newtab-widget-lists-input-menu-open-link = Otvori poveznicu
+newtab-widget-lists-input-menu-move-up = Pomakni gore
+newtab-widget-lists-input-menu-move-down = Pomakni dolje
+newtab-widget-lists-input-menu-delete = Obriši
+newtab-widget-lists-input-menu-edit = Uredi
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Stvori novi popis
+newtab-widget-lists-name-label-default =
+    .label = Popis zadataka
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = Popis zadataka
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new2 =
+    .placeholder = Novi popis
+    .aria-label = Uredi naziv popisa
+newtab-widget-section-title = Widgeti
+newtab-widget-menu-hide = Sakrij widget
+newtab-widget-menu-change-size = Promijeni veličinu
+newtab-widget-size-small = Mali
+newtab-widget-size-medium = Srednji
+newtab-widget-size-large = Veliki
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = Sakrij widgete
+    .aria-label = Sakrij sve widgete
+newtab-widget-section-maximize =
+    .title = Proširi widgete
+    .aria-label = Proširi sve widgete na punu veličinu
+newtab-widget-section-minimize =
+    .title = Smanji widgete
+    .aria-label = Smanji sve widgete na kompaktnu veličinu
+newtab-widget-section-menu-manage = Upravljaj widgetima
+newtab-widget-section-feedback = Reci nam svoje mišljenje
+
+## Strings introduced by the Nova redesign of the Timer widget
+
+newtab-widget-timer-notification-title = Odbrojavanje
+newtab-widget-timer-notification-focus = Vrijeme za koncentraciju je isteklo. Dobar posao. Trebaš pauzu?
+newtab-widget-timer-notification-break = Tvoja pauza je gotova. Spreman/na za koncentraciju?
+newtab-widget-timer-notification-warning = Obavijesti su isključene
+newtab-widget-timer-mode-focus =
+    .label = Fokus
+newtab-widget-timer-mode-break =
+    .label = Pauza
+newtab-widget-timer-label-play =
+    .label = Pokreni
+newtab-widget-timer-label-pause =
+    .label = Pauziraj
+newtab-widget-timer-reset =
+    .title = Poništi
+newtab-widget-timer-menu-notifications = Isključi obavijesti
+newtab-widget-timer-menu-notifications-on = Uključi obavijesti
+newtab-widget-timer-menu-learn-more = Saznaj više
+# The title displays above a set of top news headlines.
+newtab-daily-briefing-card-title = Najnovije vijesti
+newtab-daily-briefing-card-menu-dismiss = Odbaci
+# Variables:
+#   $minutes (number) - Time since the feed has been refreshed
+newtab-daily-briefing-card-timestamp = Aktualizirano prije { $minutes } min
+newtab-widget-message-title = Ostanite fokusirani uz popise i ugrađeno odbrojavanje
+# to-dos stands for "things to do".
+newtab-widget-message-copy = Od brzih podsjetnika do dnevnih obaveza, sesija za fokusiranje do pauza za istezanje — ostanite usredotočeni na zadatak i na vrijeme.
+# "Make Firefox yours" refers to about:newtab. The call to action here ("Try it now")
+# is to customize the new tab page with a background image or color from
+# the built-in wallpaper collection or uploading your own image.
+newtab-promo-card-title-addons = Prilagodi { -brand-product-name } svojim potrebama
+newtab-promo-card-body-addons = Odaberi pozadinu iz naše zbirke ili stvori vlastitu.
+newtab-promo-card-cta-addons = Isprobaj sada
+newtab-promo-card-title = Podrži { -brand-product-name }
+newtab-promo-card-body = Naši sponzori podržavaju našu misiju u izgradnji boljeg weba
+newtab-promo-card-cta = Saznajte više
+newtab-promo-card-dismiss-button =
+    .title = Odbaci
+    .aria-label = Odbaci
+
+## Strings for activation window message variants. In certain experiment configurations,
+## the strings from these variants may be displayed in a message below the search input
+## for the first 48 hours of a new profile's lifetime. Some messages include buttons with
+## labels, but not all.
+
+newtab-activation-window-message-dismiss-button =
+    .title = Odbaci
+    .aria-label = Odbaci
+# "This space" refers to about:newtab. The call to action here ("make it your own")
+# is to customize newtab with a background image or colour, or by tweaking the
+# existing widgetry that appears on it.
+newtab-activation-window-message-customization-focus-header = Prilagodi ovaj prostor sebi
+newtab-activation-window-message-customization-focus-message = Odaberi novu pozadinu, dodaj prečace do svojih omiljenih web-stranica i budi u tijeku s pričama koje te zanimaju.
+newtab-activation-window-message-customization-focus-primary-button =
+    .label = Započni prilagođavanje
+# "This space" refers to about:newtab. The sentiment of "plays by your rules" is
+# meant to evoke the idea that newtab is malleable and customizable. The call to
+# action is to customize newtab with a background image or colour, or by tweaking
+# the existing widgetry that appears on it.
+newtab-activation-window-message-values-focus-header = Ovaj se prostor prilagođava tvojim pravilima
+newtab-activation-window-message-values-focus-message = { -brand-product-name } omogućuje pregledavanje na način koji ti se sviđa, s osobnijim načinom za početak dana na internetu. Prilagodi { -brand-product-name } svom ukusu.

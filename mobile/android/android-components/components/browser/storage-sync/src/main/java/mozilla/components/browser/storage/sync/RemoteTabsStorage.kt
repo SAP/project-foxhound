@@ -156,6 +156,7 @@ class RemoteTabsCommandQueue(
             }
         }
 
+    @Suppress("CognitiveComplexMethod")
     override suspend fun flush(): DeviceCommandQueue.FlushResult = withContext(scope.coroutineContext) {
         api.getUnsentCommands()
             .groupBy {

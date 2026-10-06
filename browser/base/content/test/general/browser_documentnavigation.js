@@ -266,12 +266,20 @@ add_task(async function () {
     true,
     "back focus with sidebar open content"
   );
+
+  // Bug 2006225: sidebar.revamp introduces a regression where the "X" button receives
+  // focus instead of the search input.
+  let expectedSidebarFocusElement = Services.prefs.getBoolPref("sidebar.revamp")
+    ? sidebar.contentDocument
+        .getElementById("sidebar-panel-close")
+        .shadowRoot.querySelector("#main-button")
+    : sidebar.contentDocument
+        .getElementById("search-box")
+        .shadowRoot.querySelector("input");
   await expectFocusOnF6(
     true,
     "bookmarksPanel",
-    sidebar.contentDocument
-      .getElementById("search-box")
-      .shadowRoot.querySelector("input"),
+    expectedSidebarFocusElement,
     false,
     "back focus with sidebar open sidebar"
   );

@@ -1,6 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * vim: ts=4 sw=4 expandtab:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 package org.mozilla.geckoview;
@@ -26,6 +24,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import org.mozilla.gecko.util.ThreadUtils;
 
+/** Print document adapter for GeckoView content. */
 public class GeckoViewPrintDocumentAdapter extends PrintDocumentAdapter {
   private static final String LOGTAG = "GVPrintDocumentAdapter";
   private static final String PRINT_NAME_DEFAULT = "Document";
@@ -136,6 +135,7 @@ public class GeckoViewPrintDocumentAdapter extends PrintDocumentAdapter {
       final Bundle bundle) {
     if (cancellationSignal.isCanceled()) {
       layoutResultCallback.onLayoutCancelled();
+      deleteTempPdf();
       return;
     }
     final PrintDocumentInfo pdi =
@@ -208,7 +208,19 @@ public class GeckoViewPrintDocumentAdapter extends PrintDocumentAdapter {
 
   @Override
   public void onFinish() {
-    // Remove the temporary file when the printing system is finished.
+    deleteTempPdf();
+    if (this.mPrintDialogFinish != null) {
+      mPrintDialogFinish.complete(true);
+    }
+  }
+
+  /**
+   * Handles deletion of the temporary (ephemeral) PDF created during PrintDocumentAdapter
+   * operations.
+   */
+  @AnyThread
+  private void deleteTempPdf() {
+    // Remove the temporary file when we finish printing, or on abort or cancellation.
     try {
       if (mDoDeleteTmpPdf) {
         if (mPdfFile != null) {
@@ -225,9 +237,6 @@ public class GeckoViewPrintDocumentAdapter extends PrintDocumentAdapter {
     } catch (final NullPointerException npe) {
       // Silence the exception. We only want to delete a real file. We don't
       // care if the file doesn't exist.
-    }
-    if (this.mPrintDialogFinish != null) {
-      mPrintDialogFinish.complete(true);
     }
   }
 }

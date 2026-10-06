@@ -20,11 +20,11 @@ origin:
 
   # Human-readable identifier for this version/release
   # Generally "version NNN", "tag SSS", "bookmark SSS"
-  release: 72d175c9edbc8e00c550dee610a8dac6204f4383 (2023-01-15T09:12:35Z).
+  release: c9fd2bc8f028bc4fa8528dc6cbf48eddbf382d6e (2025-11-03T08:43:07Z).
 
   # Revision to pull in
   # Must be a long or short commit SHA (long preferred)
-  revision: 72d175c9edbc8e00c550dee610a8dac6204f4383
+  revision: c9fd2bc8f028bc4fa8528dc6cbf48eddbf382d6e
 
   # The package's license, where possible using the mnemonic from
   # https://spdx.org/licenses/
@@ -67,6 +67,7 @@ vendoring:
     - examples/
     - test/
     - typedoc.json
+    - website/
 
   keep:
     - make_bundle.sh
@@ -79,7 +80,7 @@ vendoring:
 
     - action: move-file
       from: 'build/index.es.js'
-      to: '../../../toolkit/components/certviewer/content/vendor/pkijs.js'
+      to: '{topsrcdir}/toolkit/components/certviewer/content/vendor/pkijs.js'
 
     - action: delete-path
       path: 'build'

@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "EventListenerService.h"
+
 #include "mozilla/BasicEvents.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventListenerManager.h"
@@ -14,12 +13,12 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/EventListenerBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "nsArray.h"
 #include "nsArrayUtils.h"
 #include "nsCOMArray.h"
 #include "nsINode.h"
 #include "nsJSUtils.h"
 #include "nsServiceManagerUtils.h"
-#include "nsArray.h"
 #include "nsThreadUtils.h"
 
 namespace mozilla {
@@ -325,9 +324,8 @@ void EventListenerService::NotifyPendingChanges() {
   mPendingListenerChanges.swap(changes);
   mPendingListenerChangesSet.Clear();
 
-  for (nsCOMPtr<nsIListenerChangeListener> listener :
-       mChangeListeners.EndLimitedRange()) {
-    listener->ListenersChanged(changes);
+  for (auto const& listener : mChangeListeners.EndLimitedRange()) {
+    nsCOMPtr<nsIListenerChangeListener>{listener}->ListenersChanged(changes);
   }
 }
 

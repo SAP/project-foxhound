@@ -1,10 +1,9 @@
-/* -*- Mode: c++; tab-width: 2; indent-tabs-mode: nil; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAppShellSingleton_h__
-#define nsAppShellSingleton_h__
+#ifndef nsAppShellSingleton_h_
+#define nsAppShellSingleton_h_
 
 /**
  * This file is designed to be included into the file that provides the
@@ -57,4 +56,4 @@ nsresult nsAppShellConstructor(const nsIID& iid, void** result) {
   return sAppShell->QueryInterface(iid, result);
 }
 
-#endif  // nsAppShellSingleton_h__
+#endif  // nsAppShellSingleton_h_

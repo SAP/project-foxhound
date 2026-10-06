@@ -11,19 +11,30 @@
 #ifndef TEST_VIDEO_ENCODER_PROXY_FACTORY_H_
 #define TEST_VIDEO_ENCODER_PROXY_FACTORY_H_
 
+#include <algorithm>
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "api/environment/environment.h"
+#include "api/fec_controller_override.h"
+#include "api/units/data_rate.h"
+#include "api/video/render_resolution.h"
+#include "api/video/video_frame.h"
+#include "api/video/video_frame_type.h"
+#include "api/video_codecs/sdp_video_format.h"
+#include "api/video_codecs/video_codec.h"
 #include "api/video_codecs/video_encoder.h"
 #include "api/video_codecs/video_encoder_factory.h"
+#include "rtc_base/checks.h"
 
 namespace webrtc {
 namespace test {
 
 namespace {
 const VideoEncoder::Capabilities kCapabilities(false);
-}
+}  // namespace
 
 // An encoder factory with a single underlying VideoEncoder object,
 // intended for test purposes. Each call to CreateVideoEncoder returns
@@ -81,7 +92,7 @@ class VideoEncoderProxyFactory : public VideoEncoderFactory {
     explicit EncoderProxy(VideoEncoder* encoder,
                           VideoEncoderProxyFactory* encoder_factory)
         : encoder_(encoder), encoder_factory_(encoder_factory) {}
-    ~EncoderProxy() { encoder_factory_->OnDestroyVideoEncoder(); }
+    ~EncoderProxy() override { encoder_factory_->OnDestroyVideoEncoder(); }
 
    private:
     void SetFecControllerOverride(

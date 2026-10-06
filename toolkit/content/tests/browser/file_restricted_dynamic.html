@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>restricted</title>
+</head>
+<body>
+  <iframe id="frame"></iframe>
+  <script>
+    let meta = document.createElement("meta");
+    meta.name = "rating";
+    meta.content = "adult";
+    document.head.appendChild(meta);
+    var event = new CustomEvent("TestKeepsRunningScripts");
+    document.dispatchEvent(event, {bubbles:true});
+  </script>
+</body>
+</html>

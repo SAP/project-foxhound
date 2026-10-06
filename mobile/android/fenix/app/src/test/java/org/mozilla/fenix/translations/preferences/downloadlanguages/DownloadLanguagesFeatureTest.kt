@@ -4,33 +4,31 @@
 package org.mozilla.fenix.translations.preferences.downloadlanguages
 
 import android.net.ConnectivityManager
-import android.os.Build
 import androidx.core.net.ConnectivityManagerCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
-import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.Mockito
 import org.mozilla.fenix.wifi.WifiConnectionMonitor
-import org.robolectric.annotation.Config
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class DownloadLanguagesFeatureTest {
     private lateinit var downloadLanguagesFeature: DownloadLanguagesFeature
     private lateinit var wifiConnectionMonitor: WifiConnectionMonitor
-    private lateinit var dataSaverAndWifiChanged: ((Boolean) -> Unit)
+    private val dataSaverAndWifiChangedCalls = mutableListOf<Boolean>()
+    private val dataSaverAndWifiChanged: (Boolean) -> Unit = { dataSaverAndWifiChangedCalls.add(it) }
     private lateinit var connectivityManager: ConnectivityManager
 
     @Before
     fun setUp() {
         wifiConnectionMonitor = mockk(relaxed = true)
-        dataSaverAndWifiChanged = mock()
         connectivityManager = mockk()
         downloadLanguagesFeature =
             DownloadLanguagesFeature(
@@ -54,7 +52,7 @@ class DownloadLanguagesFeatureTest {
                 downloadLanguagesFeature.wifiConnectedListener,
             )
         }
-        Assert.assertNotNull(downloadLanguagesFeature.connectivityManager)
+        assertNotNull(downloadLanguagesFeature.connectivityManager)
     }
 
     @Test
@@ -73,7 +71,6 @@ class DownloadLanguagesFeatureTest {
     }
 
     @Test
-    @Config(sdk = [Build.VERSION_CODES.N])
     fun `GIVEN wifi is connected WHEN wifi changes to not connected and restrictBackgroundStatus is RESTRICT_BACKGROUND_STATUS_ENABLED THEN onDataSaverAndWifiChanged callback should return true`() {
         every { connectivityManager.restrictBackgroundStatus } returns
             ConnectivityManagerCompat.RESTRICT_BACKGROUND_STATUS_ENABLED
@@ -82,11 +79,10 @@ class DownloadLanguagesFeatureTest {
 
         downloadLanguagesFeature.wifiConnectedListener(false)
 
-        Mockito.verify(dataSaverAndWifiChanged).invoke(true)
+        assertEquals(listOf(true), dataSaverAndWifiChangedCalls)
     }
 
     @Test
-    @Config(sdk = [Build.VERSION_CODES.N])
     fun `GIVEN wifi is connected WHEN wifi changes to not connected and restrictBackgroundStatus is RESTRICT_BACKGROUND_STATUS_WHITELISTED THEN onDataSaverAndWifiChanged callback should return true`() {
         every { connectivityManager.restrictBackgroundStatus } returns
             ConnectivityManagerCompat.RESTRICT_BACKGROUND_STATUS_WHITELISTED
@@ -95,11 +91,10 @@ class DownloadLanguagesFeatureTest {
 
         downloadLanguagesFeature.wifiConnectedListener(false)
 
-        Mockito.verify(dataSaverAndWifiChanged).invoke(true)
+        assertEquals(listOf(true), dataSaverAndWifiChangedCalls)
     }
 
     @Test
-    @Config(sdk = [Build.VERSION_CODES.N])
     fun `GIVEN wifi is connected WHEN wifi changes to connected and restrictBackgroundStatus is RESTRICT_BACKGROUND_STATUS_WHITELISTED THEN onDataSaverAndWifiChanged callback should return false`() {
         every { connectivityManager.restrictBackgroundStatus } returns
             ConnectivityManagerCompat.RESTRICT_BACKGROUND_STATUS_WHITELISTED
@@ -108,11 +103,10 @@ class DownloadLanguagesFeatureTest {
 
         downloadLanguagesFeature.wifiConnectedListener(true)
 
-        Mockito.verify(dataSaverAndWifiChanged).invoke(false)
+        assertEquals(listOf(false), dataSaverAndWifiChangedCalls)
     }
 
     @Test
-    @Config(sdk = [Build.VERSION_CODES.N])
     fun `GIVEN wifi is connected WHEN wifi changes to connected and restrictBackgroundStatus is RESTRICT_BACKGROUND_STATUS_DISABLED THEN onDataSaverAndWifiChanged callback should return false`() {
         every { connectivityManager.restrictBackgroundStatus } returns
             ConnectivityManagerCompat.RESTRICT_BACKGROUND_STATUS_DISABLED
@@ -121,6 +115,6 @@ class DownloadLanguagesFeatureTest {
 
         downloadLanguagesFeature.wifiConnectedListener(true)
 
-        Mockito.verify(dataSaverAndWifiChanged).invoke(false)
+        assertEquals(listOf(false), dataSaverAndWifiChangedCalls)
     }
 }

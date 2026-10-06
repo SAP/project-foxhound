@@ -60,11 +60,9 @@ async function testPressingEnterCommitsChanges(swatch, ruleView) {
   );
 
   info("Sending RETURN key within the tooltip document");
-  // Pressing RETURN ends up doing 2 rule-view updates, one for the preview and
-  // one for the commit when the tooltip closes.
-  const onRuleViewChanged = waitForNEvents(ruleView, "ruleview-changed", 2);
+  const onModifications = ruleView.once("property-value-updated");
   focusAndSendKey(widget.parent.ownerDocument.defaultView, "RETURN");
-  await onRuleViewChanged;
+  await onModifications;
 
   const style = await getComputedStyleProperty(
     "body",

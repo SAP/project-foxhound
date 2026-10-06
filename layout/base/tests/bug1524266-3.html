@@ -8,14 +8,13 @@
     outline: 3px solid blue;
   }
   span {
-    -moz-user-select: none;
     user-select: none;
   }
 </style>
 <div contenteditable="true" spellcheck="false">
   xx
   <span>
-    NOT EDITABLE
+    SELECTABLE
   </span>
   xxx
 </div>
@@ -27,7 +26,7 @@ SimpleTest.waitForFocus(function() {
     for (let i = 0; i < 2; ++i)
       synthesizeKey("KEY_ArrowRight");
     // Select whitespace + <span>
-    for (let i = 0; i < 2; ++i)
+    for (let i = 0; i < " SELECTABLE ".length; ++i)
       synthesizeKey("KEY_ArrowRight", { shiftKey: true });
     // Rip it off.
     synthesizeKey("KEY_Delete");

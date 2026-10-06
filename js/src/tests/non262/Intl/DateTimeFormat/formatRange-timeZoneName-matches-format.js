@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // Test DateTimeFormat.prototype.format and DateTimeFormat.prototype.formatRange
 // use the same formatting for the "timeZoneName" option.
 

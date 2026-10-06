@@ -7,24 +7,6 @@
  * algorithms which have NIST algorithm Certificates.
  */
 
-/* handle special cases. Classes require existing code to already be
- * in place for that class */
-typedef enum {
-    SFTKFIPSNone = 0,
-    SFTKFIPSDH,   /* allow only specific primes */
-    SFTKFIPSECC,  /* not just keys but specific curves */
-    SFTKFIPSAEAD, /* single shot AEAD functions not allowed in FIPS mode */
-    SFTKFIPSRSAPSS
-} SFTKFIPSSpecialClass;
-
-typedef struct SFTKFIPSAlgorithmListStr SFTKFIPSAlgorithmList;
-struct SFTKFIPSAlgorithmListStr {
-    CK_MECHANISM_TYPE type;
-    CK_MECHANISM_INFO info;
-    CK_ULONG step;
-    SFTKFIPSSpecialClass special;
-};
-
 SFTKFIPSAlgorithmList sftk_fips_mechs[] = {
 /* A sample set of algorithms to allow basic testing in our continous
  * testing infrastructure. The vendor version should replace this with
@@ -147,7 +129,7 @@ SFTKFIPSAlgorithmList sftk_fips_mechs[] = {
     { CKM_SHA512_KEY_DERIVATION, { 256, 512, CKF_KDF }, 1, SFTKFIPSNone },
     { CKM_TLS12_MASTER_KEY_DERIVE, { 384, 384, CKF_KDF }, 1, SFTKFIPSNone },
     { CKM_TLS12_MASTER_KEY_DERIVE_DH, { DH_FB_KEY, CKF_KDF }, 1, SFTKFIPSNone },
-    { CKM_TLS12_KEY_AND_MAC_DERIVE, { 384, 384, CKF_KDF }, 1, SFTKFIPSNone },
+    { CKM_TLS12_KEY_AND_MAC_DERIVE, { 384, 384, CKF_KDF }, 1, SFTKFIPSTlsKeyCheck },
     { CKM_TLS_PRF_GENERAL, { 8, 512, CKF_SGN }, 1, SFTKFIPSNone },
     { CKM_TLS_MAC, { 8, 512, CKF_SGN }, 1, SFTKFIPSNone },
     /* sigh, is this algorithm really tested. ssl doesn't seem to have a

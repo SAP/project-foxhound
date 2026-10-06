@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef dom_xul_XULButtonElement_h__
-#define dom_xul_XULButtonElement_h__
+#ifndef dom_xul_XULButtonElement_h_
+#define dom_xul_XULButtonElement_h_
 
 #include "mozilla/Attributes.h"
 #include "nsINode.h"
@@ -24,8 +22,7 @@ class XULMenuParentElement;
 
 class XULButtonElement : public nsXULElement {
  public:
-  explicit XULButtonElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+  explicit XULButtonElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
   ~XULButtonElement() override;
 
@@ -71,7 +68,7 @@ class XULButtonElement : public nsXULElement {
   bool IsMenu() const;
 
   nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
-                                      int32_t aModType) const override;
+                                      AttrModType aModType) const override;
   void AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
                     const nsAttrValue* aValue, const nsAttrValue* aOldValue,
                     nsIPrincipal* aSubjectPrincipal, bool aNotify) override;
@@ -91,8 +88,6 @@ class XULButtonElement : public nsXULElement {
   XULPopupElement* GetMenuPopupContent() const;
   int32_t MenuOpenCloseDelay() const;
 
-  bool IsDisabled() const { return GetXULBoolAttr(nsGkAtoms::disabled); }
-
  private:
   XULMenuBarElement* GetMenuBar() const;
   void Blurred();
@@ -109,10 +104,14 @@ class XULButtonElement : public nsXULElement {
   void KillMenuOpenTimer();
   MOZ_CAN_RUN_SCRIPT void PassMenuCommandEventToPopupManager();
 
+  nsAtom* GetCheckedStateAttribute() const;
+
   bool mIsHandlingKeyEvent = false;
 
   // Whether this is a XULMenuElement.
-  const bool mIsAlwaysMenu;
+  const bool mIsAlwaysMenu : 1;
+  // Whether this supports the `checked` attribute.
+  const bool mCheckable : 1;
   RefPtr<nsXULMenuCommandEvent> mDelayedMenuCommandEvent;
   nsCOMPtr<nsITimer> mMenuOpenTimer;
   nsCOMPtr<nsITimer> mMenuBlinkTimer;

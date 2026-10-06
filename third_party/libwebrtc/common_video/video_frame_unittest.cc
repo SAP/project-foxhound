@@ -10,9 +10,13 @@
 
 #include "api/video/video_frame.h"
 
-#include <math.h>
-#include <string.h>
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <utility>
+#include <vector>
 
+#include "api/scoped_refptr.h"
 #include "api/video/i010_buffer.h"
 #include "api/video/i210_buffer.h"
 #include "api/video/i410_buffer.h"
@@ -20,7 +24,8 @@
 #include "api/video/i422_buffer.h"
 #include "api/video/i444_buffer.h"
 #include "api/video/nv12_buffer.h"
-#include "rtc_base/time_utils.h"
+#include "api/video/video_frame_buffer.h"
+#include "api/video/video_rotation.h"
 #include "test/fake_texture_frame.h"
 #include "test/frame_utils.h"
 #include "test/gtest.h"
@@ -58,8 +63,8 @@ SubSampling SubSamplingForType(VideoFrameBuffer::Type type) {
 // Helper function to create a buffer and fill it with a gradient for
 // PlanarYuvBuffer based buffers.
 template <class T>
-rtc::scoped_refptr<T> CreateGradient(int width, int height) {
-  rtc::scoped_refptr<T> buffer(T::Create(width, height));
+scoped_refptr<T> CreateGradient(int width, int height) {
+  scoped_refptr<T> buffer(T::Create(width, height));
   // Initialize with gradient, Y = 128(x/w + y/h), U = 256 x/w, V = 256 y/h
   for (int x = 0; x < width; x++) {
     for (int y = 0; y < height; y++) {
@@ -81,9 +86,8 @@ rtc::scoped_refptr<T> CreateGradient(int width, int height) {
 }
 
 // Helper function to create a buffer and fill it with a gradient.
-rtc::scoped_refptr<NV12BufferInterface> CreateNV12Gradient(int width,
-                                                           int height) {
-  rtc::scoped_refptr<NV12Buffer> buffer(NV12Buffer::Create(width, height));
+scoped_refptr<NV12BufferInterface> CreateNV12Gradient(int width, int height) {
+  scoped_refptr<NV12Buffer> buffer(NV12Buffer::Create(width, height));
   // Initialize with gradient, Y = 128(x/w + y/h), U = 256 x/w, V = 256 y/h
   for (int x = 0; x < width; x++) {
     for (int y = 0; y < height; y++) {
@@ -147,7 +151,7 @@ void CheckCrop(const T& frame,
 template <class T>
 void CheckRotate(int width,
                  int height,
-                 webrtc::VideoRotation rotation,
+                 VideoRotation rotation,
                  const T& rotated) {
   int rotated_width = width;
   int rotated_height = height;
@@ -205,7 +209,7 @@ TEST(TestVideoFrame, WidthHeightValues) {
   VideoFrame frame =
       VideoFrame::Builder()
           .set_video_frame_buffer(I420Buffer::Create(10, 10, 10, 14, 90))
-          .set_rotation(webrtc::kVideoRotation_0)
+          .set_rotation(kVideoRotation_0)
           .set_timestamp_ms(789)
           .build();
   const int valid_value = 10;
@@ -252,10 +256,8 @@ TEST(TestVideoFrame, ShallowCopy) {
   VideoFrame frame2(frame1);
 
   EXPECT_EQ(frame1.video_frame_buffer(), frame2.video_frame_buffer());
-  const webrtc::I420BufferInterface* yuv1 =
-      frame1.video_frame_buffer()->GetI420();
-  const webrtc::I420BufferInterface* yuv2 =
-      frame2.video_frame_buffer()->GetI420();
+  const I420BufferInterface* yuv1 = frame1.video_frame_buffer()->GetI420();
+  const I420BufferInterface* yuv2 = frame2.video_frame_buffer()->GetI420();
   EXPECT_EQ(yuv1->DataY(), yuv2->DataY());
   EXPECT_EQ(yuv1->DataU(), yuv2->DataU());
   EXPECT_EQ(yuv1->DataV(), yuv2->DataV());
@@ -277,8 +279,8 @@ TEST(TestVideoFrame, ShallowCopy) {
 }
 
 TEST(TestVideoFrame, TextureInitialValues) {
-  VideoFrame frame = test::FakeNativeBuffer::CreateFrame(
-      640, 480, 100, 10, webrtc::kVideoRotation_0);
+  VideoFrame frame =
+      test::FakeNativeBuffer::CreateFrame(640, 480, 100, 10, kVideoRotation_0);
   EXPECT_EQ(640, frame.width());
   EXPECT_EQ(480, frame.height());
   EXPECT_EQ(100u, frame.rtp_timestamp());
@@ -298,7 +300,7 @@ class TestPlanarYuvBuffer : public ::testing::Test {};
 TYPED_TEST_SUITE_P(TestPlanarYuvBuffer);
 
 template <class T>
-rtc::scoped_refptr<T> CreateAndFillBuffer() {
+scoped_refptr<T> CreateAndFillBuffer() {
   auto buf = T::Create(20, 10);
   memset(buf->MutableDataY(), 1, 200);
 
@@ -319,43 +321,43 @@ rtc::scoped_refptr<T> CreateAndFillBuffer() {
 }
 
 TYPED_TEST_P(TestPlanarYuvBuffer, Copy) {
-  rtc::scoped_refptr<TypeParam> buf1 = CreateAndFillBuffer<TypeParam>();
-  rtc::scoped_refptr<TypeParam> buf2 = TypeParam::Copy(*buf1);
+  scoped_refptr<TypeParam> buf1 = CreateAndFillBuffer<TypeParam>();
+  scoped_refptr<TypeParam> buf2 = TypeParam::Copy(*buf1);
   EXPECT_TRUE(test::FrameBufsEqual(buf1, buf2));
 }
 
 TYPED_TEST_P(TestPlanarYuvBuffer, CropXCenter) {
-  rtc::scoped_refptr<TypeParam> buf = CreateGradient<TypeParam>(200, 100);
+  scoped_refptr<TypeParam> buf = CreateGradient<TypeParam>(200, 100);
 
   // Pure center cropping, no scaling.
-  rtc::scoped_refptr<TypeParam> scaled_buffer = TypeParam::Create(100, 100);
+  scoped_refptr<TypeParam> scaled_buffer = TypeParam::Create(100, 100);
   scaled_buffer->CropAndScaleFrom(*buf, 50, 0, 100, 100);
   CheckCrop<TypeParam>(*scaled_buffer, 0.25, 0.0, 0.5, 1.0);
 }
 
 TYPED_TEST_P(TestPlanarYuvBuffer, CropXNotCenter) {
-  rtc::scoped_refptr<TypeParam> buf = CreateGradient<TypeParam>(200, 100);
+  scoped_refptr<TypeParam> buf = CreateGradient<TypeParam>(200, 100);
 
   // Non-center cropping, no scaling.
-  rtc::scoped_refptr<TypeParam> scaled_buffer = TypeParam::Create(100, 100);
+  scoped_refptr<TypeParam> scaled_buffer = TypeParam::Create(100, 100);
   scaled_buffer->CropAndScaleFrom(*buf, 25, 0, 100, 100);
   CheckCrop<TypeParam>(*scaled_buffer, 0.125, 0.0, 0.5, 1.0);
 }
 
 TYPED_TEST_P(TestPlanarYuvBuffer, CropYCenter) {
-  rtc::scoped_refptr<TypeParam> buf = CreateGradient<TypeParam>(100, 200);
+  scoped_refptr<TypeParam> buf = CreateGradient<TypeParam>(100, 200);
 
   // Pure center cropping, no scaling.
-  rtc::scoped_refptr<TypeParam> scaled_buffer = TypeParam::Create(100, 100);
+  scoped_refptr<TypeParam> scaled_buffer = TypeParam::Create(100, 100);
   scaled_buffer->CropAndScaleFrom(*buf, 0, 50, 100, 100);
   CheckCrop<TypeParam>(*scaled_buffer, 0.0, 0.25, 1.0, 0.5);
 }
 
 TYPED_TEST_P(TestPlanarYuvBuffer, CropYNotCenter) {
-  rtc::scoped_refptr<TypeParam> buf = CreateGradient<TypeParam>(100, 200);
+  scoped_refptr<TypeParam> buf = CreateGradient<TypeParam>(100, 200);
 
   // Pure center cropping, no scaling.
-  rtc::scoped_refptr<TypeParam> scaled_buffer = TypeParam::Create(100, 100);
+  scoped_refptr<TypeParam> scaled_buffer = TypeParam::Create(100, 100);
   scaled_buffer->CropAndScaleFrom(*buf, 0, 25, 100, 100);
   CheckCrop<TypeParam>(*scaled_buffer, 0.0, 0.125, 1.0, 0.5);
 }
@@ -365,14 +367,14 @@ TYPED_TEST_P(TestPlanarYuvBuffer, CropAndScale16x9) {
   const int buffer_height = 480;
   const int crop_width = 320;
   const int crop_height = 180;
-  rtc::scoped_refptr<TypeParam> buf = CreateGradient<TypeParam>(640, 480);
+  scoped_refptr<TypeParam> buf = CreateGradient<TypeParam>(640, 480);
 
   // Pure center cropping, no scaling.
   const int out_width =
       std::min(buffer_width, crop_width * buffer_height / crop_height);
   const int out_height =
       std::min(buffer_height, crop_height * buffer_width / crop_width);
-  rtc::scoped_refptr<TypeParam> scaled_buffer =
+  scoped_refptr<TypeParam> scaled_buffer =
       TypeParam::Create(out_width, out_height);
   scaled_buffer->CropAndScaleFrom(*buf, (buffer_width - out_width) / 2,
                                   (buffer_height - out_height) / 2, out_width,
@@ -401,10 +403,10 @@ class TestPlanarYuvBufferScale : public ::testing::Test {};
 TYPED_TEST_SUITE_P(TestPlanarYuvBufferScale);
 
 TYPED_TEST_P(TestPlanarYuvBufferScale, Scale) {
-  rtc::scoped_refptr<TypeParam> buf = CreateGradient<TypeParam>(200, 100);
+  scoped_refptr<TypeParam> buf = CreateGradient<TypeParam>(200, 100);
 
   // Pure scaling, no cropping.
-  rtc::scoped_refptr<TypeParam> scaled_buffer = TypeParam::Create(150, 75);
+  scoped_refptr<TypeParam> scaled_buffer = TypeParam::Create(150, 75);
   scaled_buffer->ScaleFrom(*buf);
   CheckCrop<TypeParam>(*scaled_buffer, 0.0, 0.0, 1.0, 1.0);
 }
@@ -426,9 +428,9 @@ class TestPlanarYuvBufferRotate : public ::testing::Test {
 TYPED_TEST_SUITE_P(TestPlanarYuvBufferRotate);
 
 TYPED_TEST_P(TestPlanarYuvBufferRotate, Rotates) {
-  for (const webrtc::VideoRotation& rotation : this->RotationParams) {
-    rtc::scoped_refptr<TypeParam> buffer = CreateGradient<TypeParam>(640, 480);
-    rtc::scoped_refptr<TypeParam> rotated_buffer =
+  for (const VideoRotation& rotation : this->RotationParams) {
+    scoped_refptr<TypeParam> buffer = CreateGradient<TypeParam>(640, 480);
+    scoped_refptr<TypeParam> rotated_buffer =
         TypeParam::Rotate(*buffer, rotation);
     CheckRotate(640, 480, rotation, *rotated_buffer);
   }
@@ -452,10 +454,10 @@ TEST(TestNV12Buffer, CropAndScale) {
   const int kCropRight = 0;
   const int kCropBottom = 30;
 
-  rtc::scoped_refptr<VideoFrameBuffer> buf =
+  scoped_refptr<VideoFrameBuffer> buf =
       CreateNV12Gradient(kSourceWidth, kSourceHeight);
 
-  rtc::scoped_refptr<VideoFrameBuffer> scaled_buffer = buf->CropAndScale(
+  scoped_refptr<VideoFrameBuffer> scaled_buffer = buf->CropAndScale(
       kCropLeft, kCropTop, kSourceWidth - kCropLeft - kCropRight,
       kSourceHeight - kCropTop - kCropBottom, kScaledWidth, kScaledHeight);
 
@@ -472,20 +474,28 @@ TEST(TestNV12Buffer, CropAndScale) {
 }
 
 TEST(TestUpdateRect, CanCompare) {
-  VideoFrame::UpdateRect a = {0, 0, 100, 200};
-  VideoFrame::UpdateRect b = {0, 0, 100, 200};
-  VideoFrame::UpdateRect c = {1, 0, 100, 200};
-  VideoFrame::UpdateRect d = {0, 1, 100, 200};
+  VideoFrame::UpdateRect a = {
+      .offset_x = 0, .offset_y = 0, .width = 100, .height = 200};
+  VideoFrame::UpdateRect b = {
+      .offset_x = 0, .offset_y = 0, .width = 100, .height = 200};
+  VideoFrame::UpdateRect c = {
+      .offset_x = 1, .offset_y = 0, .width = 100, .height = 200};
+  VideoFrame::UpdateRect d = {
+      .offset_x = 0, .offset_y = 1, .width = 100, .height = 200};
   EXPECT_TRUE(a == b);
   EXPECT_FALSE(a == c);
   EXPECT_FALSE(a == d);
 }
 
 TEST(TestUpdateRect, ComputesIsEmpty) {
-  VideoFrame::UpdateRect a = {0, 0, 0, 0};
-  VideoFrame::UpdateRect b = {0, 0, 100, 200};
-  VideoFrame::UpdateRect c = {1, 100, 0, 0};
-  VideoFrame::UpdateRect d = {1, 100, 100, 200};
+  VideoFrame::UpdateRect a = {
+      .offset_x = 0, .offset_y = 0, .width = 0, .height = 0};
+  VideoFrame::UpdateRect b = {
+      .offset_x = 0, .offset_y = 0, .width = 100, .height = 200};
+  VideoFrame::UpdateRect c = {
+      .offset_x = 1, .offset_y = 100, .width = 0, .height = 0};
+  VideoFrame::UpdateRect d = {
+      .offset_x = 1, .offset_y = 100, .width = 100, .height = 200};
   EXPECT_TRUE(a.IsEmpty());
   EXPECT_FALSE(b.IsEmpty());
   EXPECT_TRUE(c.IsEmpty());
@@ -493,43 +503,55 @@ TEST(TestUpdateRect, ComputesIsEmpty) {
 }
 
 TEST(TestUpdateRectUnion, NonIntersecting) {
-  VideoFrame::UpdateRect a = {0, 0, 10, 20};
-  VideoFrame::UpdateRect b = {100, 200, 10, 20};
+  VideoFrame::UpdateRect a = {
+      .offset_x = 0, .offset_y = 0, .width = 10, .height = 20};
+  VideoFrame::UpdateRect b = {
+      .offset_x = 100, .offset_y = 200, .width = 10, .height = 20};
   a.Union(b);
   EXPECT_EQ(a, VideoFrame::UpdateRect({0, 0, 110, 220}));
 }
 
 TEST(TestUpdateRectUnion, Intersecting) {
-  VideoFrame::UpdateRect a = {0, 0, 10, 10};
-  VideoFrame::UpdateRect b = {5, 5, 30, 20};
+  VideoFrame::UpdateRect a = {
+      .offset_x = 0, .offset_y = 0, .width = 10, .height = 10};
+  VideoFrame::UpdateRect b = {
+      .offset_x = 5, .offset_y = 5, .width = 30, .height = 20};
   a.Union(b);
   EXPECT_EQ(a, VideoFrame::UpdateRect({0, 0, 35, 25}));
 }
 
 TEST(TestUpdateRectUnion, OneInsideAnother) {
-  VideoFrame::UpdateRect a = {0, 0, 100, 100};
-  VideoFrame::UpdateRect b = {5, 5, 30, 20};
+  VideoFrame::UpdateRect a = {
+      .offset_x = 0, .offset_y = 0, .width = 100, .height = 100};
+  VideoFrame::UpdateRect b = {
+      .offset_x = 5, .offset_y = 5, .width = 30, .height = 20};
   a.Union(b);
   EXPECT_EQ(a, VideoFrame::UpdateRect({0, 0, 100, 100}));
 }
 
 TEST(TestUpdateRectIntersect, NonIntersecting) {
-  VideoFrame::UpdateRect a = {0, 0, 10, 20};
-  VideoFrame::UpdateRect b = {100, 200, 10, 20};
+  VideoFrame::UpdateRect a = {
+      .offset_x = 0, .offset_y = 0, .width = 10, .height = 20};
+  VideoFrame::UpdateRect b = {
+      .offset_x = 100, .offset_y = 200, .width = 10, .height = 20};
   a.Intersect(b);
   EXPECT_EQ(a, VideoFrame::UpdateRect({0, 0, 0, 0}));
 }
 
 TEST(TestUpdateRectIntersect, Intersecting) {
-  VideoFrame::UpdateRect a = {0, 0, 10, 10};
-  VideoFrame::UpdateRect b = {5, 5, 30, 20};
+  VideoFrame::UpdateRect a = {
+      .offset_x = 0, .offset_y = 0, .width = 10, .height = 10};
+  VideoFrame::UpdateRect b = {
+      .offset_x = 5, .offset_y = 5, .width = 30, .height = 20};
   a.Intersect(b);
   EXPECT_EQ(a, VideoFrame::UpdateRect({5, 5, 5, 5}));
 }
 
 TEST(TestUpdateRectIntersect, OneInsideAnother) {
-  VideoFrame::UpdateRect a = {0, 0, 100, 100};
-  VideoFrame::UpdateRect b = {5, 5, 30, 20};
+  VideoFrame::UpdateRect a = {
+      .offset_x = 0, .offset_y = 0, .width = 100, .height = 100};
+  VideoFrame::UpdateRect b = {
+      .offset_x = 5, .offset_y = 5, .width = 30, .height = 20};
   a.Intersect(b);
   EXPECT_EQ(a, VideoFrame::UpdateRect({5, 5, 30, 20}));
 }
@@ -537,7 +559,8 @@ TEST(TestUpdateRectIntersect, OneInsideAnother) {
 TEST(TestUpdateRectScale, NoScale) {
   const int width = 640;
   const int height = 480;
-  VideoFrame::UpdateRect a = {100, 50, 100, 200};
+  VideoFrame::UpdateRect a = {
+      .offset_x = 100, .offset_y = 50, .width = 100, .height = 200};
   VideoFrame::UpdateRect scaled =
       a.ScaleWithFrame(width, height, 0, 0, width, height, width, height);
   EXPECT_EQ(scaled, VideoFrame::UpdateRect({100, 50, 100, 200}));
@@ -546,7 +569,8 @@ TEST(TestUpdateRectScale, NoScale) {
 TEST(TestUpdateRectScale, CropOnly) {
   const int width = 640;
   const int height = 480;
-  VideoFrame::UpdateRect a = {100, 50, 100, 200};
+  VideoFrame::UpdateRect a = {
+      .offset_x = 100, .offset_y = 50, .width = 100, .height = 200};
   VideoFrame::UpdateRect scaled = a.ScaleWithFrame(
       width, height, 10, 10, width - 20, height - 20, width - 20, height - 20);
   EXPECT_EQ(scaled, VideoFrame::UpdateRect({90, 40, 100, 200}));
@@ -555,7 +579,8 @@ TEST(TestUpdateRectScale, CropOnly) {
 TEST(TestUpdateRectScale, CropOnlyToOddOffset) {
   const int width = 640;
   const int height = 480;
-  VideoFrame::UpdateRect a = {100, 50, 100, 200};
+  VideoFrame::UpdateRect a = {
+      .offset_x = 100, .offset_y = 50, .width = 100, .height = 200};
   VideoFrame::UpdateRect scaled = a.ScaleWithFrame(
       width, height, 5, 5, width - 10, height - 10, width - 10, height - 10);
   EXPECT_EQ(scaled, VideoFrame::UpdateRect({94, 44, 102, 202}));
@@ -564,7 +589,8 @@ TEST(TestUpdateRectScale, CropOnlyToOddOffset) {
 TEST(TestUpdateRectScale, ScaleByHalf) {
   const int width = 640;
   const int height = 480;
-  VideoFrame::UpdateRect a = {100, 60, 100, 200};
+  VideoFrame::UpdateRect a = {
+      .offset_x = 100, .offset_y = 60, .width = 100, .height = 200};
   VideoFrame::UpdateRect scaled = a.ScaleWithFrame(
       width, height, 0, 0, width, height, width / 2, height / 2);
   // Scaled by half and +2 pixels in all directions.
@@ -574,7 +600,8 @@ TEST(TestUpdateRectScale, ScaleByHalf) {
 TEST(TestUpdateRectScale, CropToUnchangedRegionBelowUpdateRect) {
   const int width = 640;
   const int height = 480;
-  VideoFrame::UpdateRect a = {100, 60, 100, 200};
+  VideoFrame::UpdateRect a = {
+      .offset_x = 100, .offset_y = 60, .width = 100, .height = 200};
   VideoFrame::UpdateRect scaled = a.ScaleWithFrame(
       width, height, (width - 10) / 2, (height - 10) / 2, 10, 10, 10, 10);
   // Update is out of the cropped frame.
@@ -584,7 +611,8 @@ TEST(TestUpdateRectScale, CropToUnchangedRegionBelowUpdateRect) {
 TEST(TestUpdateRectScale, CropToUnchangedRegionAboveUpdateRect) {
   const int width = 640;
   const int height = 480;
-  VideoFrame::UpdateRect a = {600, 400, 10, 10};
+  VideoFrame::UpdateRect a = {
+      .offset_x = 600, .offset_y = 400, .width = 10, .height = 10};
   VideoFrame::UpdateRect scaled = a.ScaleWithFrame(
       width, height, (width - 10) / 2, (height - 10) / 2, 10, 10, 10, 10);
   // Update is out of the cropped frame.
@@ -594,7 +622,8 @@ TEST(TestUpdateRectScale, CropToUnchangedRegionAboveUpdateRect) {
 TEST(TestUpdateRectScale, CropInsideUpdate) {
   const int width = 640;
   const int height = 480;
-  VideoFrame::UpdateRect a = {300, 200, 100, 100};
+  VideoFrame::UpdateRect a = {
+      .offset_x = 300, .offset_y = 200, .width = 100, .height = 100};
   VideoFrame::UpdateRect scaled = a.ScaleWithFrame(
       width, height, (width - 10) / 2, (height - 10) / 2, 10, 10, 10, 10);
   // Cropped frame is inside the update rect.
@@ -604,13 +633,42 @@ TEST(TestUpdateRectScale, CropInsideUpdate) {
 TEST(TestUpdateRectScale, CropAndScaleByHalf) {
   const int width = 640;
   const int height = 480;
-  VideoFrame::UpdateRect a = {100, 60, 100, 200};
+  VideoFrame::UpdateRect a = {
+      .offset_x = 100, .offset_y = 60, .width = 100, .height = 200};
   VideoFrame::UpdateRect scaled =
       a.ScaleWithFrame(width, height, 10, 10, width - 20, height - 20,
                        (width - 20) / 2, (height - 20) / 2);
   // Scaled by half and +3 pixels in all directions, because of odd offset after
   // crop and scale.
   EXPECT_EQ(scaled, VideoFrame::UpdateRect({42, 22, 56, 106}));
+}
+
+TEST(TestVideoFrame, IsRepeatFrame) {
+  // Defaults to false.
+  VideoFrame frame1 = VideoFrame::Builder()
+                          .set_video_frame_buffer(I420Buffer::Create(10, 10))
+                          .set_rotation(kVideoRotation_0)
+                          .set_timestamp_ms(123)
+                          .build();
+  EXPECT_FALSE(frame1.is_repeat_frame());
+
+  // Set to true.
+  VideoFrame frame2 = VideoFrame::Builder()
+                          .set_video_frame_buffer(I420Buffer::Create(10, 10))
+                          .set_rotation(kVideoRotation_0)
+                          .set_timestamp_ms(456)
+                          .set_is_repeat_frame(true)
+                          .build();
+  EXPECT_TRUE(frame2.is_repeat_frame());
+
+  // Set to false.
+  VideoFrame frame3 = VideoFrame::Builder()
+                          .set_video_frame_buffer(I420Buffer::Create(10, 10))
+                          .set_rotation(kVideoRotation_0)
+                          .set_timestamp_ms(789)
+                          .set_is_repeat_frame(false)
+                          .build();
+  EXPECT_FALSE(frame3.is_repeat_frame());
 }
 
 }  // namespace webrtc

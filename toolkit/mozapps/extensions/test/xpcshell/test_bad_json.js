@@ -5,6 +5,11 @@
 // Tests that we rebuild the database correctly if it contains
 // JSON data that parses correctly but doesn't contain required fields
 
+add_setup(() => {
+  do_get_profile();
+  Services.fog.initializeFOG();
+});
+
 add_task(async function () {
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
 
@@ -38,4 +43,6 @@ add_task(async function () {
   let data = await IOUtils.readJSON(gExtensionsJSON.path);
   Assert.ok("schemaVersion" in data);
   Assert.equal(data.addons[0].id, ID);
+
+  Assert.equal(Glean.xpiDatabase.startupError.testGetValue(), "other");
 });

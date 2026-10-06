@@ -10,7 +10,8 @@ export LD_LIBRARY_PATH=$PWD/dist/Debug/lib/
 export RUST_LOG=warn
 export RUSTFLAGS="-C instrument-coverage"
 
-cp -a "${VCS_PATH}/nss" "${VCS_PATH}/nspr" .
+cp -a "${VCS_PATH}/nss" .
+[ -d nspr ] || git clone https://github.com/mozilla/nspr nspr
 
 if [[ -f nss/nspr.patch && "$ALLOW_NSPR_PATCH" == "1" ]]; then
     cd nspr
@@ -19,14 +20,15 @@ if [[ -f nss/nspr.patch && "$ALLOW_NSPR_PATCH" == "1" ]]; then
 fi
 
 cd nss
-CC=clang-15 CXX=clang++-15 ./build.sh -g -v --sourcecov --static --disable-tests
+CC=clang-19 CXX=clang++-19 ./build.sh -g -v --sourcecov --static --disable-tests
 
-TEST_DIRECTORY=$NSS_SOURCES_PATH/tests/acvp
+TEST_DIRECTORY=${NSS_SOURCES_PATH}/tests/acvp
 
 git clone --depth=1 https://gitlab.com/nisec/nss-project/acvp-rust.git
 cd acvp-rust
+patch -p1 < ${NSS_SOURCES_PATH}/taskcluster/docker/acvp/acvp-rust.patch
 cargo build
-TESTRUN="cargo run --bin test -- --profdata-command llvm-profdata-15"
+TESTRUN="cargo run --bin test -- --profdata-command llvm-profdata-19"
 echo "Big Number (fuzzed):"
 $TESTRUN $TEST_DIRECTORY/fuzzed/bn.json bn nss
 echo "AES-GCM (acvp-server):"

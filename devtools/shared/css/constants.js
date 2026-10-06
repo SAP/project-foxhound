@@ -33,6 +33,14 @@ exports.PSEUDO_CLASSES = [
   ":focus",
   ":focus-visible",
   ":focus-within",
-  ":visited",
   ":target",
 ];
+
+/**
+ * Element-specific pseudo-class locks that only apply to certain elements.
+ * Maps pseudo-class name to the set of element types that support it.
+ */
+exports.ELEMENT_SPECIFIC_PSEUDO_CLASSES = {
+  ":open": new Set(["details", "dialog", "input", "select"]),
+  ":visited": new Set(["a", "area"]),
+};

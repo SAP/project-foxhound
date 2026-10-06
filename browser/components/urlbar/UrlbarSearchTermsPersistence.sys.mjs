@@ -4,10 +4,14 @@
 
 const lazy = {};
 
-import { UrlbarUtils } from "resource:///modules/UrlbarUtils.sys.mjs";
+import { UrlbarUtils } from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
+  ConfigSearchEngine:
+    "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
 });
 
 /**
@@ -17,9 +21,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
 /**
  * @typedef {object} PersistedTermsProviderInfo
  * @property {string} providerId
+ *   The search engine provider id associated with the persisted terms.
  * @property {RegExp} [searchPageRegexp]
+ *   The regular expression for determining if the search page URL matches.
  * @property {{key: string, values: string[], canBeMissing: boolean}[]} includeParams
+ *   The parameters that should be included in determining if the search page URL matches.
  * @property {{key: string, values: string[]}[]} excludeParams
+ *   The parameters that should be excluded in determining if the search page URL matches.
  */
 
 ChromeUtils.defineLazyGetter(lazy, "logger", () =>
@@ -62,6 +70,11 @@ class _UrlbarSearchTermsPersistence {
       return;
     }
 
+    this.QueryInterface = ChromeUtils.generateQI([
+      "nsIObserver",
+      "nsISupportsWeakReference",
+    ]);
+
     this.#urlbarSearchTermsPersistenceSettings = lazy.RemoteSettings(
       URLBAR_PERSISTENCE_SETTINGS_KEY
     );
@@ -81,6 +94,8 @@ class _UrlbarSearchTermsPersistence {
 
     this.#originalProviderInfo = rawProviderInfo;
     this.#setSearchProviderInfo(rawProviderInfo);
+
+    Services.obs.addObserver(this, "urlbar-searchmodechanged", true);
 
     this.#initialized = true;
   }
@@ -104,7 +119,18 @@ class _UrlbarSearchTermsPersistence {
     this.#urlbarSearchTermsPersistenceSettings = null;
     this.#urlbarSearchTermsPersistenceSettingsSync = null;
 
+    Services.obs.removeObserver(this, "urlbar-searchmodechanged");
+
     this.#initialized = false;
+  }
+
+  observe(_subject, topic, _data) {
+    switch (topic) {
+      case "urlbar-searchmodechanged": {
+        this.onSearchModeChanged();
+        break;
+      }
+    }
   }
 
   getSearchProviderInfo() {
@@ -124,8 +150,8 @@ class _UrlbarSearchTermsPersistence {
   }
 
   /**
-   * Determines if the URIs represent an application provided search
-   * engine results page (SERP) and retrieves the search terms used.
+   * Determines if the URIs represent an config search engine
+   * results page (SERP) and retrieves the search terms used.
    *
    * @param {nsIURI} uri
    *   The primary URI that is checked to determine if it matches the expected
@@ -137,7 +163,7 @@ class _UrlbarSearchTermsPersistence {
    *   or the default engine hasn't been initialized.
    */
   getSearchTerm(uri) {
-    if (!Services.search.hasSuccessfullyInitialized || !uri?.spec) {
+    if (!lazy.SearchService.hasSuccessfullyInitialized || !uri?.spec) {
       return "";
     }
 
@@ -152,14 +178,17 @@ class _UrlbarSearchTermsPersistence {
     // understand changes to params.
     let provider = this.#getProviderInfoForURL(uri.spec);
     if (provider) {
-      let result = Services.search.parseSubmissionURL(uri.spec);
-      if (!result.engine?.isAppProvided || !this.isDefaultPage(uri, provider)) {
+      let result = lazy.SearchService.parseSubmissionURL(uri.spec);
+      if (
+        !(result.engine instanceof lazy.ConfigSearchEngine) ||
+        !this.isDefaultPage(uri, provider)
+      ) {
         return "";
       }
       searchTerm = result.terms;
     } else {
-      let result = Services.search.parseSubmissionURL(uri.spec);
-      if (!result.engine?.isAppProvided) {
+      let result = lazy.SearchService.parseSubmissionURL(uri.spec);
+      if (!(result.engine instanceof lazy.ConfigSearchEngine)) {
         return "";
       }
       searchTerm = result.engine.searchTermFromResult(uri);
@@ -349,7 +378,8 @@ class _UrlbarSearchTermsPersistence {
     return false;
   }
 
-  onSearchModeChanged(window) {
+  onSearchModeChanged() {
+    let window = lazy.BrowserWindowTracker.getTopWindow();
     let urlbar = window.gURLBar;
     if (!urlbar) {
       return;
@@ -391,16 +421,16 @@ class _UrlbarSearchTermsPersistence {
    */
   #searchModeForUrl(url) {
     // If there's no default engine, no engines are available.
-    if (!Services.search.defaultEngine) {
+    if (!lazy.SearchService.defaultEngine) {
       return null;
     }
-    let result = Services.search.parseSubmissionURL(url);
-    if (!result.engine?.isAppProvided) {
+    let result = lazy.SearchService.parseSubmissionURL(url);
+    if (!(result.engine instanceof lazy.ConfigSearchEngine)) {
       return null;
     }
     return {
       engineName: result.engine.name,
-      isDefaultEngine: result.engine === Services.search.defaultEngine,
+      isDefaultEngine: result.engine === lazy.SearchService.defaultEngine,
     };
   }
 
@@ -452,7 +482,8 @@ class _UrlbarSearchTermsPersistence {
     if (!searchParams.size) {
       return false;
     }
-    if (provider.includeParams) {
+
+    if (provider.includeParams?.length) {
       let foundMatch = false;
       for (let param of provider.includeParams) {
         // The param might not be present on page load.

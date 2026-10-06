@@ -1,0 +1,69 @@
+<!DOCTYPE HTML>
+<meta charset="utf-8">
+<script src="apz_test_utils.js"></script>
+<script src="/tests/SimpleTest/paint_listener.js"></script>
+<style>
+#scroller {
+  overflow: scroll;
+  width: 300px;
+  height: 300px;
+}
+#content {
+  height: 3000px;
+}
+</style>
+<div id="scroller">
+  <div id="content"></div>
+</div>
+<script>
+"use strict";
+
+// The scenario:
+//   APZ performs a smooth scroll toward the top of a subframe.  While the
+//   animation is in progress, the main thread is a frame or two behind APZ's
+//   actual visual scroll position.  If a large instant scrollBy() that overshoots
+//   the top boundary fires during this window, the main thread builds a
+//   Relative ScrollPositionUpdate whose delta is large enough that, when APZ
+//   applies it to its current (advanced) visual offset, the result is negative.
+//
+// Without the fix in FrameMetrics::ApplyRelativeScrollUpdateFrom the visual
+// scroll offset in APZ would go negative, producing a blank gap at the top of
+// the scroll container and a hit-test misalignment equal to the gap height.
+
+async function test() {
+  const scroller = document.getElementById("scroller");
+
+  scroller.scrollTop = 500;
+  await promiseApzFlushedRepaints();
+
+  const scrollendPromise = promiseOneEvent(scroller, "scrollend");
+  scroller.scrollTo({ top: 0, behavior: "smooth" });
+
+  // Wait for APZ to advance and deliver one repaint, updating mApzScrollPos
+  // to some position Q while APZ has already moved past Q toward 0.
+  await promiseOneEvent(scroller, "scroll");
+  await promiseFrame();
+
+  // The main thread emits NewRelativeScroll(source=Q, dest=0, delta=-Q).
+  // APZ applies: visual_offset(< Q) + (-Q) < 0 without the fix.
+  scroller.scrollBy({ top: -1000, behavior: "instant" });
+
+  await scrollendPromise;
+  await promiseApzFlushedRepaints();
+
+  // All APZ-sampled scroll offsets accumulated during the scroll must be >= 0.
+  const sampledData = collectSampledScrollOffsets(scroller);
+  ok(!!sampledData.length, "should have at least one sampled APZ offset");
+  for (const data of sampledData) {
+    const offsetY = SpecialPowers.wrap(data).scrollOffsetY;
+    ok(offsetY >= 0,
+       `APZ scroll offset must not be negative (got ${offsetY})`);
+  }
+
+  is(scroller.scrollTop, 0, "final scroll position should be at the top");
+}
+
+waitUntilApzStable()
+  .then(test)
+  .then(subtestDone, subtestFailed);
+</script>

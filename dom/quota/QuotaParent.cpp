@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,20 +5,21 @@
 #include "QuotaParent.h"
 
 #include <mozilla/Assertions.h>
+
+#include "OriginOperations.h"
+#include "QuotaRequestBase.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/quota/ErrorHandling.h"
-#include "mozilla/dom/quota/PrincipalUtils.h"
-#include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/quota/PQuota.h"
 #include "mozilla/dom/quota/PQuotaRequestParent.h"
 #include "mozilla/dom/quota/PQuotaUsageRequestParent.h"
+#include "mozilla/dom/quota/PrincipalUtils.h"
+#include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/quota/QuotaUsageRequestParent.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "nsDebug.h"
 #include "nsError.h"
-#include "OriginOperations.h"
-#include "QuotaRequestBase.h"
 
 // CUF == CRASH_UNLESS_FUZZING
 #define QM_CUF_AND_IPC_FAIL(actor)                           \
@@ -139,14 +138,11 @@ already_AddRefed<PQuotaParent> AllocPQuotaParent() {
   return actor.forget();
 }
 
-Quota::Quota()
 #ifdef DEBUG
-    : mActorDestroyed(false)
-#endif
-{
-}
-
 Quota::~Quota() { MOZ_ASSERT(mActorDestroyed); }
+#else
+Quota::~Quota() = default;
+#endif
 
 bool Quota::TrustParams() const {
 #ifdef DEBUG

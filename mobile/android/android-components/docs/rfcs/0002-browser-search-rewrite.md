@@ -114,7 +114,7 @@ We have implemented similar functionality a lot of times:
 * [SearchEngineManager in Android Components](https://github.com/mozilla-mobile/android-components/blob/08880314f56d73691b3cd909d5dee199bba4ed0b/components/browser/search/src/main/java/mozilla/components/browser/search/SearchEngineManager.kt#L28)
 * Focus had its own implementation of `SearchEngineManager` too, but was migrated to use `browser-search` already.
 * [FenixSearchEngineProvider](https://github.com/mozilla-mobile/fenix/blob/master/app/src/main/java/org/mozilla/fenix/components/searchengine/FenixSearchEngineProvider.kt) in Fenix
-* [SearchService](https://searchfox.org/mozilla-central/source/toolkit/components/search/SearchService.jsm) in Firefox (desktop)
+* [SearchService](https://searchfox.org/firefox-main/source/toolkit/components/search/SearchService.jsm) in Firefox (desktop)
 * [SearchEngines.swift](https://github.com/mozilla-mobile/firefox-ios/blob/main/Client/Frontend/Browser/SearchEngines.swift) in Firefox for iOS
 
 ## Unresolved questions

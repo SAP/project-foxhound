@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +7,6 @@
 #include "ClientSource.h"
 #include "ClientSourceChild.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Unused.h"
 
 namespace mozilla::dom {
 
@@ -32,7 +29,7 @@ void ClientSourceOpChild::DoSourceOp(Method aMethod, Args&&... aArgs) {
     if (!source) {
       CopyableErrorResult rv;
       rv.ThrowAbortError("Unknown Client");
-      Unused << PClientSourceOpChild::Send__delete__(this, rv);
+      (void)PClientSourceOpChild::Send__delete__(this, rv);
       return;
     }
 
@@ -61,11 +58,11 @@ void ClientSourceOpChild::DoSourceOp(Method aMethod, Args&&... aArgs) {
           target, __func__,
           [this, promise](const mozilla::dom::ClientOpResult& aResult) {
             mPromiseRequestHolder.Complete();
-            Unused << PClientSourceOpChild::Send__delete__(this, aResult);
+            (void)PClientSourceOpChild::Send__delete__(this, aResult);
           },
           [this, promise](const CopyableErrorResult& aRv) {
             mPromiseRequestHolder.Complete();
-            Unused << PClientSourceOpChild::Send__delete__(this, aRv);
+            (void)PClientSourceOpChild::Send__delete__(this, aRv);
           })
       ->Track(mPromiseRequestHolder);
 }

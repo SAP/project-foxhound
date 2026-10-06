@@ -1,0 +1,35 @@
+[DEFAULT]
+support-files = ["head.js"]
+prefs = ["dom.documentpip.enabled=true"]
+
+["browser_move_pip_for_fullscreen.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
+
+["browser_parent_has_pip_flag.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
+
+["browser_pip_closes_once.js"]
+
+["browser_pip_fullscreen_disallowed.js"]
+
+["browser_pip_remembers_position.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
+tags = "vertical-tabs" # Might collapse tabs toolbar, changing outer size
+
+["browser_pip_throttling.js"]
+
+["browser_pip_ui.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
+tags = "vertical-tabs" # Could change visibility of browser UI elements
+
+["browser_return_to_opener.js"]
+
+["browser_sessionstore_ignore_dpip.js"]

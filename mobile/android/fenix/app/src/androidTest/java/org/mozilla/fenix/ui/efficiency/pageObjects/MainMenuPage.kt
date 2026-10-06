@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.fenix.ui.efficiency.pageObjects
 
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
@@ -6,6 +10,8 @@ import org.mozilla.fenix.ui.efficiency.helpers.BasePage
 import org.mozilla.fenix.ui.efficiency.helpers.Selector
 import org.mozilla.fenix.ui.efficiency.navigation.NavigationRegistry
 import org.mozilla.fenix.ui.efficiency.navigation.NavigationStep
+import org.mozilla.fenix.ui.efficiency.selectors.BookmarksSelectors
+import org.mozilla.fenix.ui.efficiency.selectors.BrowserPageSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.HomeSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.MainMenuSelectors
 
@@ -18,6 +24,14 @@ class MainMenuPage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRul
             to = pageName,
             steps = listOf(
                 NavigationStep.Click(HomeSelectors.MAIN_MENU_BUTTON),
+            ),
+        )
+
+        NavigationRegistry.register(
+            from = "BrowserPage",
+            to = pageName,
+            steps = listOf(
+                NavigationStep.Click(BrowserPageSelectors.MAIN_MENU_BUTTON),
             ),
         )
     }

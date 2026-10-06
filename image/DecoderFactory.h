@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +7,6 @@
 #define mozilla_image_DecoderFactory_h
 
 #include "DecoderFlags.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/gfx/2D.h"
@@ -30,9 +28,6 @@ class DecoderFactory {
  public:
   /// @return the type of decoder which is appropriate for @aMimeType.
   static DecoderType GetDecoderType(const char* aMimeType);
-
-  /// @return the default flags to use when creating a decoder of @aType.
-  static DecoderFlags GetDefaultDecoderFlagsForType(DecoderType aType);
 
   /**
    * Creates and initializes a decoder for non-animated images of type @aType.

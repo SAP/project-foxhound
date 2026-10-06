@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=2 et lcs=trail\:.,tab\:>~ :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -49,6 +47,7 @@ nsresult convertResultCode(int aSQLiteResultCode) {
     case SQLITE_PERM:
     case SQLITE_CANTOPEN:
       return NS_ERROR_FILE_ACCESS_DENIED;
+    case SQLITE_PROTOCOL:  // WAL locking race; transient like SQLITE_BUSY.
     case SQLITE_BUSY:
       return NS_ERROR_STORAGE_BUSY;
     case SQLITE_LOCKED:
@@ -58,11 +57,14 @@ nsresult convertResultCode(int aSQLiteResultCode) {
     case SQLITE_IOERR:
       return NS_ERROR_STORAGE_IOERR;
     case SQLITE_FULL:
+    case SQLITE_NOLFS:
     case SQLITE_TOOBIG:
       return NS_ERROR_FILE_NO_DEVICE_SPACE;
     case SQLITE_NOMEM:
       return NS_ERROR_OUT_OF_MEMORY;
+    case SQLITE_MISMATCH:
     case SQLITE_MISUSE:
+    case SQLITE_RANGE:
       return NS_ERROR_UNEXPECTED;
     case SQLITE_ABORT:
     case SQLITE_INTERRUPT:
@@ -99,66 +101,86 @@ void checkAndLogStatementPerformance(sqlite3_stmt* aStatement) {
     return;
   }
 
-  nsAutoCString message("Suboptimal indexes for the SQL statement ");
+#define STORAGE_WARNINGS_URL \
+  "https://firefox-source-docs.mozilla.org/storage/warnings.html"
 #ifdef MOZ_STORAGE_SORTWARNING_SQL_DUMP
-  message.Append('`');
-  message.Append(sql);
-  message.AppendLiteral("` [");
-  message.AppendInt(count);
-  message.AppendLiteral(" sort operation(s)]");
+  NS_WARNING(nsPrintfCString("Suboptimal indexes for the SQL statement `%s` "
+                             "[%d sort operation(s)] (" STORAGE_WARNINGS_URL
+                             ").",
+                             sql, count)
+                 .get());
 #else
-  nsPrintfCString address("0x%p", aStatement);
-  message.Append(address);
+  NS_WARNING(nsPrintfCString("Suboptimal indexes for the SQL statement 0x%p "
+                             "(" STORAGE_WARNINGS_URL ").",
+                             aStatement)
+                 .get());
 #endif
-  message.AppendLiteral(" (http://mzl.la/1FuID0j).");
-  NS_WARNING(message.get());
+#undef STORAGE_WARNINGS_URL
 }
 
-nsIVariant* convertJSValToVariant(JSContext* aCtx, const JS::Value& aValue) {
-  if (aValue.isInt32()) return new IntegerVariant(aValue.toInt32());
+already_AddRefed<nsIVariant> convertJSValToVariant(JSContext* aCtx,
+                                                   const JS::Value& aValue) {
+  if (aValue.isInt32()) {
+    return MakeAndAddRef<IntegerVariant>(aValue.toInt32());
+  }
 
-  if (aValue.isDouble()) return new FloatVariant(aValue.toDouble());
+  if (aValue.isDouble()) {
+    return MakeAndAddRef<FloatVariant>(aValue.toDouble());
+  }
 
   if (aValue.isString()) {
     nsAutoJSString value;
-    if (!value.init(aCtx, aValue.toString())) return nullptr;
-    return new TextVariant(value);
+    if (!value.init(aCtx, aValue.toString())) {
+      return nullptr;
+    }
+    return MakeAndAddRef<TextVariant>(value);
   }
 
-  if (aValue.isBoolean()) return new IntegerVariant(aValue.isTrue() ? 1 : 0);
+  if (aValue.isBoolean()) {
+    return MakeAndAddRef<IntegerVariant>(aValue.isTrue() ? 1 : 0);
+  }
 
-  if (aValue.isNull()) return new NullVariant();
+  if (aValue.isNull()) {
+    return MakeAndAddRef<NullVariant>();
+  }
 
   if (aValue.isObject()) {
     JS::Rooted<JSObject*> obj(aCtx, &aValue.toObject());
     // We only support Date instances, all others fail.
     bool valid;
-    if (!js::DateIsValid(aCtx, obj, &valid) || !valid) return nullptr;
+    if (!js::DateIsValid(aCtx, obj, &valid) || !valid) {
+      return nullptr;
+    }
 
     double msecd;
-    if (!js::DateGetMsecSinceEpoch(aCtx, obj, &msecd)) return nullptr;
+    if (!js::DateGetMsecSinceEpoch(aCtx, obj, &msecd)) {
+      return nullptr;
+    }
 
     msecd *= 1000.0;
     int64_t msec = msecd;
 
-    return new IntegerVariant(msec);
+    return MakeAndAddRef<IntegerVariant>(msec);
   }
 
   return nullptr;
 }
 
-Variant_base* convertVariantToStorageVariant(nsIVariant* aVariant) {
+already_AddRefed<Variant_base> convertVariantToStorageVariant(
+    nsIVariant* aVariant) {
   nsCOMPtr<nsIInterfaceRequestor> variant = do_QueryInterface(aVariant);
   if (variant) {
     // JS helpers already convert the JS representation to a Storage Variant,
     // in such a case there's nothing left to do here, so just pass-through.
     RefPtr<Variant_base> variantObj = do_GetInterface(variant);
     if (variantObj) {
-      return variantObj;
+      return variantObj.forget();
     }
   }
 
-  if (!aVariant) return new NullVariant();
+  if (!aVariant) {
+    return MakeAndAddRef<NullVariant>();
+  }
 
   uint16_t dataType = aVariant->GetDataType();
 
@@ -175,14 +197,14 @@ Variant_base* convertVariantToStorageVariant(nsIVariant* aVariant) {
       int64_t v;
       nsresult rv = aVariant->GetAsInt64(&v);
       NS_ENSURE_SUCCESS(rv, nullptr);
-      return new IntegerVariant(v);
+      return MakeAndAddRef<IntegerVariant>(v);
     }
     case nsIDataType::VTYPE_FLOAT:
     case nsIDataType::VTYPE_DOUBLE: {
       double v;
       nsresult rv = aVariant->GetAsDouble(&v);
       NS_ENSURE_SUCCESS(rv, nullptr);
-      return new FloatVariant(v);
+      return MakeAndAddRef<FloatVariant>(v);
     }
     case nsIDataType::VTYPE_CHAR:
     case nsIDataType::VTYPE_CHAR_STR:
@@ -192,7 +214,7 @@ Variant_base* convertVariantToStorageVariant(nsIVariant* aVariant) {
       nsCString v;
       nsresult rv = aVariant->GetAsAUTF8String(v);
       NS_ENSURE_SUCCESS(rv, nullptr);
-      return new UTF8TextVariant(v);
+      return MakeAndAddRef<UTF8TextVariant>(v);
     }
     case nsIDataType::VTYPE_WCHAR:
     case nsIDataType::VTYPE_WCHAR_STR:
@@ -201,12 +223,12 @@ Variant_base* convertVariantToStorageVariant(nsIVariant* aVariant) {
       nsString v;
       nsresult rv = aVariant->GetAsAString(v);
       NS_ENSURE_SUCCESS(rv, nullptr);
-      return new TextVariant(v);
+      return MakeAndAddRef<TextVariant>(v);
     }
     case nsIDataType::VTYPE_EMPTY:
     case nsIDataType::VTYPE_EMPTY_ARRAY:
     case nsIDataType::VTYPE_VOID:
-      return new NullVariant();
+      return MakeAndAddRef<NullVariant>();
     case nsIDataType::VTYPE_ARRAY: {
       uint16_t type;
       nsIID iid;
@@ -218,7 +240,7 @@ Variant_base* convertVariantToStorageVariant(nsIVariant* aVariant) {
       if (type == nsIDataType::VTYPE_UINT8) {
         std::pair<uint8_t*, int> v(static_cast<uint8_t*>(rawArray), len);
         // Take ownership of the data avoiding a further copy.
-        return new AdoptedBlobVariant(v);
+        return MakeAndAddRef<AdoptedBlobVariant>(v);
       }
       // We don't convert other kind of arrays because it makes the API more
       // error prone, especially on the javascript side where it may not be
@@ -255,8 +277,7 @@ class CallbackEvent : public Runnable {
 already_AddRefed<nsIRunnable> newCompletionEvent(
     mozIStorageCompletionCallback* aCallback) {
   NS_ASSERTION(aCallback, "Passing a null callback is a no-no!");
-  nsCOMPtr<nsIRunnable> event = new CallbackEvent(aCallback);
-  return event.forget();
+  return MakeAndAddRef<CallbackEvent>(aCallback);
 }
 
 }  // namespace storage

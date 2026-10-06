@@ -1,8 +1,9 @@
 /**
  * Return a web-based URL for a given file based on the testing directory.
- * @param {String} fileName
+ *
+ * @param {string} fileName
  *        file that caller wants its web-based url
- * @param {Boolean} crossOrigin [optional]
+ * @param {boolean} crossOrigin [optional]
  *        if set, then return a url with different origin. The default value is
  *        false.
  */
@@ -16,6 +17,7 @@ function GetTestWebBasedURL(fileName, { crossOrigin = false } = {}) {
 
 /**
  * Runs a content script that creates an autoplay video.
+ *
  * @param {browserElement} browser
  *        the browser to run the script in
  * @param {object} args
@@ -80,6 +82,7 @@ function loadAutoplayVideo(browser, args) {
 /**
  * Runs a content script that checks whether the video created by
  * loadAutoplayVideo() started playing.
+ *
  * @param {browserElement} browser
  *        the browser to run the script in
  * @param {object} args
@@ -111,6 +114,7 @@ function checkVideoDidPlay(browser, args) {
  * Create a tab that will load the given url, and define an autoplay policy
  * check function inside the content window in that tab. This function should
  * only be used when `dom.media.autoplay-policy-detection.enabled` is true.
+ *
  * @param {url} url
  *        the url which the created tab should load
  */

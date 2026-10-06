@@ -10,7 +10,7 @@ add_task(async function () {
   let file = do_get_file("noise.png");
   let icon = {
     file,
-    uri: NetUtil.newURI(file),
+    uri: Services.io.newFileURI(file),
     data: readFileData(file),
     mimetype: "image/png",
   };

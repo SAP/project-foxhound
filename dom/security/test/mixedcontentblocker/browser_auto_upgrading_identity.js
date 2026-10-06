@@ -9,15 +9,12 @@ const TEST_TOPLEVEL_URI = TEST_PATH + "auto_upgrading_identity.html";
 // auto upgrading mixed content should not indicate passive mixed content loaded
 add_task(async () => {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["security.mixed_content.upgrade_display_content", true],
-      ["security.mixed_content.upgrade_display_content.image", true],
-    ],
+    set: [["security.mixed_content.upgrade_display_content", true]],
   });
   await BrowserTestUtils.withNewTab(
     TEST_TOPLEVEL_URI,
     async function (browser) {
-      await ContentTask.spawn(browser, {}, async function () {
+      await SpecialPowers.spawn(browser, [], async function () {
         let testImg = content.document.getElementById("testimage");
         ok(
           testImg.src.includes("auto_upgrading_identity.png"),
@@ -41,7 +38,7 @@ add_task(async () => {
   await BrowserTestUtils.withNewTab(
     TEST_TOPLEVEL_URI,
     async function (browser) {
-      await ContentTask.spawn(browser, {}, async function () {
+      await SpecialPowers.spawn(browser, [], async function () {
         let testImg = content.document.getElementById("testimage");
         ok(
           testImg.src.includes("auto_upgrading_identity.png"),

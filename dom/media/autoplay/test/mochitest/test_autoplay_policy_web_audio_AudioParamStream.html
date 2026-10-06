@@ -75,33 +75,43 @@ async function audioContextShouldBeBlocked() {
 
 function createAudioParams(nodeType) {
   switch (nodeType) {
-    case "audioBufferSource":
+    case "audioBufferSource": {
       let buffer = ac.createBufferSource();
       return [buffer.playbackRate, buffer.detune];
-    case "biquadFilter":
+    }
+    case "biquadFilter": {
       let bf = ac.createBiquadFilter();
       return [bf.frequency, bf.detune, bf.Q, bf.gain];
-    case "constantSource":
+    }
+    case "constantSource": {
       return [ac.createConstantSource().offset];
-    case "dynamicsCompressor":
+    }
+    case "dynamicsCompressor": {
       let dc = ac.createDynamicsCompressor();
       return [dc.threshold, dc.knee, dc.ratio, dc.attack, dc.release];
-    case "delay":
+    }
+    case "delay": {
       return [ac.createDelay(5.0).delayTime];
-    case "gain":
+    }
+    case "gain": {
       return [ac.createGain().gain];
-    case "oscillator":
+    }
+    case "oscillator": {
       let osc = ac.createOscillator();
       return [osc.frequency, osc.detune];
-    case "panner":
+    }
+    case "panner": {
       let panner = ac.createPanner();
       return [panner.positionX, panner.positionY, panner.positionZ,
               panner.orientationX, panner.orientationY, panner.orientationZ];
-    case "stereoPanner":
+    }
+    case "stereoPanner": {
       return [ac.createStereoPanner().pan];
-    default:
+    }
+    default: {
       ok(false, `non-defined node type ${nodeType}.`);
       return [];
+    }
   }
 }
 

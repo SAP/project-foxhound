@@ -4,8 +4,12 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
+  NetworkHelper:
+    "resource://devtools/shared/network-observer/NetworkHelper.sys.mjs",
   NetworkObserver:
     "resource://devtools/shared/network-observer/NetworkObserver.sys.mjs",
+  NetworkUtils:
+    "resource://devtools/shared/network-observer/NetworkUtils.sys.mjs",
 });
 
 const TEST_DIR = gTestPath.substr(0, gTestPath.lastIndexOf("/"));
@@ -21,7 +25,7 @@ const URL_ROOT = CHROME_URL_ROOT.replace(
  *
  * @param {Browser} browser
  *     The browser element where the URL should be loaded.
- * @param {String} url
+ * @param {string} url
  *     The URL to load in the new tab
  */
 async function loadURL(browser, url) {
@@ -34,7 +38,7 @@ async function loadURL(browser, url) {
  * Create a new foreground tab loading the provided url.
  * Returns a promise which will resolve when the page is loaded.
  *
- * @param {String} url
+ * @param {string} url
  *     The URL to load in the new tab
  */
 async function addTab(url) {
@@ -55,6 +59,7 @@ class NetworkEventOwner {
   hasRawHeaders = false;
   hasResponseCache = false;
   hasResponseContent = false;
+  hasResponseContentComplete = false;
   hasResponseStart = false;
   hasSecurityInfo = false;
   hasServerTimings = false;
@@ -73,6 +78,9 @@ class NetworkEventOwner {
   }
   addResponseContent() {
     this.hasResponseContent = true;
+  }
+  addResponseContentComplete() {
+    this.hasResponseContentComplete = true;
   }
   addResponseStart() {
     this.hasResponseStart = true;
@@ -128,4 +136,79 @@ async function waitForNetworkEvents(expectedUrl = null, expectedRequestsCount) {
     () => events.length >= expectedRequestsCount
   );
   return events;
+}
+
+/**
+ * NetworkEventOwner class which can be used to assert the response content of
+ * a network event.
+ */
+class ResponseContentOwner extends NetworkEventOwner {
+  addResponseContent(response) {
+    super.addResponseContent();
+    this.compressionEncodings = response.compressionEncodings;
+    this.contentCharset = response.contentCharset;
+    this.decodedBodySize = response.decodedBodySize;
+    this.encodedBodySize = response.encodedBodySize;
+    this.encodedData = response.encodedData;
+    this.encoding = response.encoding;
+    this.isContentEncoded = response.isContentEncoded;
+    this.text = response.text;
+  }
+
+  addResponseContentComplete({ truncated }) {
+    super.addResponseContentComplete();
+    this.truncated = truncated;
+  }
+
+  /**
+   * Simple helper to decode the content of a response from a network event.
+   */
+  async getDecodedContent() {
+    if (!this.isContentEncoded) {
+      // If the content is not encoded we can directly return the text property.
+      return this.text;
+    }
+
+    // Otherwise call the dedicated NetworkUtils decodeResponseChunks helper.
+    return NetworkUtils.decodeResponseChunks(this.encodedData, {
+      charset: this.contentCharset,
+      compressionEncodings: this.compressionEncodings,
+      encodedBodySize: this.encodedBodySize,
+      encoding: this.encoding,
+    });
+  }
+}
+
+/**
+ * Helper to compress a string using gzip.
+ */
+function gzipCompressString(string) {
+  return new Promise(resolve => {
+    const observer = {
+      onStreamComplete(loader, context, status, length, result) {
+        resolve(String.fromCharCode.apply(this, result));
+      },
+    };
+
+    const scs = Cc["@mozilla.org/streamConverters;1"].getService(
+      Ci.nsIStreamConverterService
+    );
+    const listener = Cc["@mozilla.org/network/stream-loader;1"].createInstance(
+      Ci.nsIStreamLoader
+    );
+    listener.init(observer);
+    const converter = scs.asyncConvertData(
+      "uncompressed",
+      "gzip",
+      listener,
+      null
+    );
+    const stringStream = Cc[
+      "@mozilla.org/io/string-input-stream;1"
+    ].createInstance(Ci.nsIStringInputStream);
+    stringStream.setByteStringData(string);
+    converter.onStartRequest(null, null);
+    converter.onDataAvailable(null, stringStream, 0, string.length);
+    converter.onStopRequest(null, null, null);
+  });
 }

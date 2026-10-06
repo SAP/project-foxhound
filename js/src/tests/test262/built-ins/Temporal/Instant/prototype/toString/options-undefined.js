@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2020 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -18,6 +18,12 @@ assert.sameValue(
 
 assert.sameValue(
   instant.toString(undefined),
+  "1975-02-02T14:25:36.12345Z",
+  "default time zone is none, precision is auto, and rounding is trunc"
+);
+
+assert.sameValue(
+  instant.toString(() => {}),
   "1975-02-02T14:25:36.12345Z",
   "default time zone is none, precision is auto, and rounding is trunc"
 );

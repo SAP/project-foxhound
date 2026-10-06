@@ -7,9 +7,9 @@
 // Test dynamic updates in the storage inspector for localStorage.
 
 add_task(async function () {
-  const TEST_HOST = "https://test1.example.org";
+  const TEST_HOST = MAIN_ORIGIN_SECURED;
 
-  await openTabAndSetupStorage(MAIN_DOMAIN_SECURED + "storage-updates.html");
+  await openTabAndSetupStorage(MAIN_URL_SECURED + "storage-updates.html");
 
   gUI.tree.expandAll();
 

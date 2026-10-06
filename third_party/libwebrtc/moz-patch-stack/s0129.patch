@@ -1,0 +1,30 @@
+From: Michael Froman <mfroman@mozilla.com>
+Date: Fri, 30 Jan 2026 18:55:00 +0000
+Subject: Bug 2005262 - better logging in
+ ModuleRtpRtcpImpl2::RegisterRtpHeaderExtension. r=ng
+
+Differential Revision: https://phabricator.services.mozilla.com/D281051
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/b44955c4c033ebaf31b40701f12f7cb0dc035ba8
+---
+ modules/rtp_rtcp/source/rtp_rtcp_impl2.cc | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/modules/rtp_rtcp/source/rtp_rtcp_impl2.cc b/modules/rtp_rtcp/source/rtp_rtcp_impl2.cc
+index c12f80e3d5..baeddc0da7 100644
+--- a/modules/rtp_rtcp/source/rtp_rtcp_impl2.cc
++++ b/modules/rtp_rtcp/source/rtp_rtcp_impl2.cc
+@@ -586,9 +586,13 @@ void ModuleRtpRtcpImpl2::SetExtmapAllowMixed(bool extmap_allow_mixed) {
+ 
+ void ModuleRtpRtcpImpl2::RegisterRtpHeaderExtension(absl::string_view uri,
+                                                     int id) {
++  RTC_LOG(LS_INFO) << "RegisterRtpHeaderExtension uri:'" << uri << "' id: " << id;
+   bool registered =
+       rtp_sender_->packet_generator.RegisterRtpHeaderExtension(uri, id);
+-  RTC_CHECK(registered);
++  if (!registered) {
++    RTC_LOG(LS_WARNING) << "RegisterRtpHeaderExtension failed to register uri:'" << uri << "' id: " << id;
++  }
++  RTC_DCHECK(registered);
+ }
+ 
+ void ModuleRtpRtcpImpl2::DeregisterSendRtpHeaderExtension(

@@ -1,13 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* State that is passed down to BindToTree. */
 
-#ifndef mozilla_dom_BindContext_h__
-#define mozilla_dom_BindContext_h__
+#ifndef mozilla_dom_BindContext_h_
+#define mozilla_dom_BindContext_h_
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/Element.h"
@@ -81,12 +79,19 @@ struct MOZ_STACK_CLASS BindContext final {
     MOZ_ASSERT(mInComposedDoc, "Binding NAC in a disconnected subtree?");
   }
 
+  void SetIsMove(bool aIsMove) { mIsMove = aIsMove; }
+
+  bool IsMove() const { return mIsMove; }
+
  private:
   // Returns true iff the document is in the same origin as the top level
   // document.
   bool IsSameOriginAsTop() const;
 
   Document& mDoc;
+
+  // If set, we're moving the shadow-including inclusive ancestor.
+  bool mIsMove = false;
 
   const bool mInComposedDoc;
   const bool mInUncomposedDoc;

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,7 +5,7 @@
 #ifndef mozilla_RegistryMessageUtils_h
 #define mozilla_RegistryMessageUtils_h
 
-#include "mozilla/ipc/IPDLParamTraits.h"
+#include "ipc/IPCMessageUtilsSpecializations.h"
 #include "nsString.h"
 
 struct SerializedURI {
@@ -93,10 +92,10 @@ struct ParamTraits<ChromePackage> {
     if (ReadParam(aReader, &package) && ReadParam(aReader, &contentBaseURI) &&
         ReadParam(aReader, &localeBaseURI) &&
         ReadParam(aReader, &skinBaseURI) && ReadParam(aReader, &flags)) {
-      aResult->package = package;
-      aResult->contentBaseURI = contentBaseURI;
-      aResult->localeBaseURI = localeBaseURI;
-      aResult->skinBaseURI = skinBaseURI;
+      aResult->package = std::move(package);
+      aResult->contentBaseURI = std::move(contentBaseURI);
+      aResult->localeBaseURI = std::move(localeBaseURI);
+      aResult->skinBaseURI = std::move(skinBaseURI);
       aResult->flags = flags;
       return true;
     }
@@ -122,9 +121,9 @@ struct ParamTraits<SubstitutionMapping> {
 
     if (ReadParam(aReader, &scheme) && ReadParam(aReader, &path) &&
         ReadParam(aReader, &resolvedURI) && ReadParam(aReader, &flags)) {
-      aResult->scheme = scheme;
-      aResult->path = path;
-      aResult->resolvedURI = resolvedURI;
+      aResult->scheme = std::move(scheme);
+      aResult->path = std::move(path);
+      aResult->resolvedURI = std::move(resolvedURI);
       aResult->flags = flags;
       return true;
     }
@@ -146,8 +145,8 @@ struct ParamTraits<OverrideMapping> {
     SerializedURI overrideURI;
 
     if (ReadParam(aReader, &originalURI) && ReadParam(aReader, &overrideURI)) {
-      aResult->originalURI = originalURI;
-      aResult->overrideURI = overrideURI;
+      aResult->originalURI = std::move(originalURI);
+      aResult->overrideURI = std::move(overrideURI);
       return true;
     }
     return false;

@@ -5,9 +5,9 @@
 import PropTypes from "resource://devtools/client/shared/vendor/react-prop-types.mjs";
 import { span } from "resource://devtools/client/shared/vendor/react-dom-factories.mjs";
 
-import { wrapRender } from "resource://devtools/client/shared/components/reps/reps/rep-utils.mjs";
+import { wrapRender } from "./rep-utils.mjs";
 
-import { rep as StringRep } from "resource://devtools/client/shared/components/reps/reps/string.mjs";
+import { rep as StringRep } from "./string.mjs";
 
 /**
  * Renders a grip object with textual data. This is used for objects like

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -168,6 +166,9 @@ class Performance : public DOMEventTargetHelper {
 
   virtual bool IsGlobalObjectWindow() const { return false; };
 
+  virtual void RecordModalFallbackTime() {}
+  virtual DOMHighResTimeStamp GetLastModalFallbackTime() const { return 0; }
+
  protected:
   Performance(nsIGlobalObject* aGlobal);
   Performance(nsPIDOMWindowInner* aWindow);
@@ -179,7 +180,7 @@ class Performance : public DOMEventTargetHelper {
   void ClearUserEntries(const Optional<nsAString>& aEntryName,
                         const nsAString& aEntryType);
 
-  virtual void DispatchBufferFullEvent() = 0;
+  virtual void DispatchResourceTimingBufferFullEvent() = 0;
 
   virtual DOMHighResTimeStamp CreationTime() const = 0;
 
@@ -222,7 +223,7 @@ class Performance : public DOMEventTargetHelper {
 
  private:
   MOZ_ALWAYS_INLINE bool CanAddResourceTimingEntry();
-  void BufferEvent();
+  void ResourceTimingBufferFullEvent();
   void MaybeEmitExternalProfilerMarker(
       const nsAString& aName, Maybe<const PerformanceMeasureOptions&> aOptions,
       Maybe<const nsAString&> aStartMark, const Optional<nsAString>& aEndMark);

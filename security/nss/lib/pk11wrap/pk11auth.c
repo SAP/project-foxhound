@@ -39,6 +39,14 @@ static struct PK11GlobalStruct {
     PRBool(PR_CALLBACK *isLoggedIn)(PK11SlotInfo *, void *);
 } PK11_Global = { 1, PR_FALSE, NULL, NULL, NULL };
 
+/* Internal variant of PK11_IsLoggedIn. When alreadyLocked is true the caller
+ * already holds the slot monitor, so we must not re-enter it (the monitor is a
+ * non-recursive PR_Lock; for non-thread-safe modules it is the shared module
+ * lock). See PK11_DoPassword, which calls this while holding the monitor on
+ * behalf of PK11_SignWithMechanism and friends. */
+static PRBool pk11_IsLoggedIn(PK11SlotInfo *slot, void *wincx,
+                              PRBool alreadyLocked);
+
 /***********************************************************
  * Password Utilities
  ***********************************************************/
@@ -352,6 +360,7 @@ PK11_CheckSSOPassword(PK11SlotInfo *slot, char *ssopw)
     CK_SESSION_HANDLE rwsession;
     CK_RV crv;
     SECStatus rv = SECFailure;
+    PRBool haveMonitor;
     int len = 0;
 
     /* get a rwsession */
@@ -360,6 +369,7 @@ PK11_CheckSSOPassword(PK11SlotInfo *slot, char *ssopw)
         PORT_SetError(SEC_ERROR_BAD_DATA);
         return rv;
     }
+    haveMonitor = PK11_RWSessionHasLock(slot, rwsession);
 
     if (slot->protectedAuthPath) {
         len = 0;
@@ -374,7 +384,11 @@ PK11_CheckSSOPassword(PK11SlotInfo *slot, char *ssopw)
     /* check the password */
     crv = PK11_GETTAB(slot)->C_Login(rwsession, CKU_SO,
                                      (unsigned char *)ssopw, len);
+    if (!haveMonitor)
+        PK11_EnterSlotMonitor(slot);
     slot->lastLoginCheck = 0;
+    if (!haveMonitor)
+        PK11_ExitSlotMonitor(slot);
     switch (crv) {
         /* if we're already logged in, we're good to go */
         case CKR_OK:
@@ -389,7 +403,11 @@ PK11_CheckSSOPassword(PK11SlotInfo *slot, char *ssopw)
             rv = SECFailure; /* some failure we can't fix by retrying */
     }
     PK11_GETTAB(slot)->C_Logout(rwsession);
+    if (!haveMonitor)
+        PK11_EnterSlotMonitor(slot);
     slot->lastLoginCheck = 0;
+    if (!haveMonitor)
+        PK11_ExitSlotMonitor(slot);
 
     /* release rwsession */
     PK11_RestoreROSession(slot, rwsession);
@@ -420,6 +438,7 @@ PK11_InitPin(PK11SlotInfo *slot, const char *ssopw, const char *userpw)
     CK_SESSION_HANDLE rwsession = CK_INVALID_HANDLE;
     CK_RV crv;
     SECStatus rv = SECFailure;
+    PRBool haveMonitor;
     int len;
     int ssolen;
 
@@ -435,9 +454,12 @@ PK11_InitPin(PK11SlotInfo *slot, const char *ssopw, const char *userpw)
     rwsession = PK11_GetRWSession(slot);
     if (rwsession == CK_INVALID_HANDLE) {
         PORT_SetError(SEC_ERROR_BAD_DATA);
+        PK11_EnterSlotMonitor(slot);
         slot->lastLoginCheck = 0;
+        PK11_ExitSlotMonitor(slot);
         return rv;
     }
+    haveMonitor = PK11_RWSessionHasLock(slot, rwsession);
 
     if (slot->protectedAuthPath) {
         len = 0;
@@ -449,7 +471,11 @@ PK11_InitPin(PK11SlotInfo *slot, const char *ssopw, const char *userpw)
     /* check the password */
     crv = PK11_GETTAB(slot)->C_Login(rwsession, CKU_SO,
                                      (unsigned char *)ssopw, ssolen);
+    if (!haveMonitor)
+        PK11_EnterSlotMonitor(slot);
     slot->lastLoginCheck = 0;
+    if (!haveMonitor)
+        PK11_ExitSlotMonitor(slot);
     if (crv != CKR_OK) {
         PORT_SetError(PK11_MapError(crv));
         goto done;
@@ -464,7 +490,11 @@ PK11_InitPin(PK11SlotInfo *slot, const char *ssopw, const char *userpw)
 
 done:
     PK11_GETTAB(slot)->C_Logout(rwsession);
+    if (!haveMonitor)
+        PK11_EnterSlotMonitor(slot);
     slot->lastLoginCheck = 0;
+    if (!haveMonitor)
+        PK11_ExitSlotMonitor(slot);
     PK11_RestoreROSession(slot, rwsession);
     if (rv == SECSuccess) {
         /* update our view of the world */
@@ -513,16 +543,17 @@ PK11_ChangePW(PK11SlotInfo *slot, const char *oldpw, const char *newpw)
 
     crv = PK11_GETTAB(slot)->C_SetPIN(rwsession,
                                       (unsigned char *)oldpw, oldLen, (unsigned char *)newpw, newLen);
-    if (crv == CKR_OK) {
-        rv = SECSuccess;
-    } else {
-        PORT_SetError(PK11_MapError(crv));
-    }
 
     PK11_RestoreROSession(slot, rwsession);
 
     /* update our view of the world */
     PK11_InitToken(slot, PR_TRUE);
+
+    if (crv == CKR_OK) {
+        rv = SECSuccess;
+    } else {
+        PORT_SetError(PK11_MapError(crv));
+    }
     return rv;
 }
 
@@ -583,7 +614,7 @@ PK11_DoPassword(PK11SlotInfo *slot, CK_SESSION_HANDLE session,
      * server code that it should now verify the clients password and tell us
      * the results.
      */
-    if (PK11_IsLoggedIn(slot, NULL) &&
+    if (pk11_IsLoggedIn(slot, NULL, alreadyLocked) &&
         (PK11_Global.verifyPass != NULL)) {
         if (!PK11_Global.verifyPass(slot, wincx)) {
             PORT_SetError(SEC_ERROR_BAD_PASSWORD);
@@ -734,6 +765,12 @@ pk11_InDelayPeriod(PRIntervalTime lastTime, PRIntervalTime delayTime,
 PRBool
 PK11_IsLoggedIn(PK11SlotInfo *slot, void *wincx)
 {
+    return pk11_IsLoggedIn(slot, wincx, PR_FALSE);
+}
+
+static PRBool
+pk11_IsLoggedIn(PK11SlotInfo *slot, void *wincx, PRBool alreadyLocked)
+{
     CK_SESSION_INFO sessionInfo;
     int askpw = slot->askpw;
     int timeout = slot->timeout;
@@ -773,16 +810,19 @@ PK11_IsLoggedIn(PK11SlotInfo *slot, void *wincx)
         LL_MUL(result, result, mult);
         LL_ADD(result, result, slot->authTime);
         if (LL_CMP(result, <, currtime)) {
-            PK11_EnterSlotMonitor(slot);
+            if (!alreadyLocked)
+                PK11_EnterSlotMonitor(slot);
             PK11_GETTAB(slot)->C_Logout(slot->session);
             slot->lastLoginCheck = 0;
-            PK11_ExitSlotMonitor(slot);
+            if (!alreadyLocked)
+                PK11_ExitSlotMonitor(slot);
         } else {
             slot->authTime = currtime;
         }
     }
 
-    PK11_EnterSlotMonitor(slot);
+    if (!alreadyLocked)
+        PK11_EnterSlotMonitor(slot);
     if (pk11_InDelayPeriod(slot->lastLoginCheck, login_delay_time, &curTime)) {
         sessionInfo.state = slot->lastState;
         crv = CKR_OK;
@@ -793,7 +833,8 @@ PK11_IsLoggedIn(PK11SlotInfo *slot, void *wincx)
             slot->lastLoginCheck = curTime;
         }
     }
-    PK11_ExitSlotMonitor(slot);
+    if (!alreadyLocked)
+        PK11_ExitSlotMonitor(slot);
     /* if we can't get session info, something is really wrong */
     if (crv != CKR_OK) {
         slot->session = CK_INVALID_HANDLE;

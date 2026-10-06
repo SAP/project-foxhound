@@ -1,17 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_PerformanceEntry_h___
-#define mozilla_dom_PerformanceEntry_h___
+#ifndef mozilla_dom_PerformanceEntry_h_
+#define mozilla_dom_PerformanceEntry_h_
 
+#include "mozilla/dom/PerformanceObserverBinding.h"
+#include "nsAtom.h"
 #include "nsDOMNavigationTiming.h"
 #include "nsString.h"
 #include "nsWrapperCache.h"
-#include "nsAtom.h"
-#include "mozilla/dom/PerformanceObserverBinding.h"
 
 class nsISupports;
 
@@ -25,7 +23,7 @@ class PerformanceEntry : public nsISupports, public nsWrapperCache {
 
  public:
   PerformanceEntry(nsISupports* aParent, const nsAString& aName,
-                   const nsAString& aEntryType);
+                   const nsStaticAtom* aEntryType);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(PerformanceEntry)
@@ -47,10 +45,9 @@ class PerformanceEntry : public nsISupports, public nsWrapperCache {
   }
 
   const nsAtom* GetEntryType() const { return mEntryType; }
+  const nsStaticAtom* GetEntryTypeAsStaticAtom() const { return mEntryType; }
 
-  void SetEntryType(const nsAString& aEntryType) {
-    mEntryType = NS_Atomize(aEntryType);
-  }
+  void SetEntryType(nsStaticAtom* aEntryType) { mEntryType = aEntryType; }
 
   virtual DOMHighResTimeStamp StartTime() const { return 0; }
 
@@ -80,7 +77,7 @@ class PerformanceEntry : public nsISupports, public nsWrapperCache {
  private:
   nsCOMPtr<nsISupports> mParent;
   RefPtr<nsAtom> mName;
-  RefPtr<nsAtom> mEntryType;
+  const nsStaticAtom* mEntryType;
 };
 
 // Helper classes
@@ -101,4 +98,4 @@ class MOZ_STACK_CLASS PerformanceEntryComparator final {
 
 }  // namespace mozilla::dom
 
-#endif /* mozilla_dom_PerformanceEntry_h___ */
+#endif /* mozilla_dom_PerformanceEntry_h_ */

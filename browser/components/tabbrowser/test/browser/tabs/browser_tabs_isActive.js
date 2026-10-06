@@ -24,9 +24,9 @@ function getParentTabState(aTab) {
 }
 
 function getChildTabState(aTab) {
-  return ContentTask.spawn(
+  return SpecialPowers.spawn(
     aTab.linkedBrowser,
-    null,
+    [],
     () => content.browsingContext.isActive
   );
 }

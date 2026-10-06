@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 const tests = {
   "America/Los_Angeles": {
     date: Date.UTC(2021, 5-1, 20, 12, 0, 0),

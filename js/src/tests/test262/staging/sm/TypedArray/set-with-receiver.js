@@ -2,9 +2,7 @@
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
-includes: [sm/non262.js, sm/non262-shell.js, sm/non262-TypedArray-shell.js]
-flags:
-  - noStrict
+includes: [sm/non262-TypedArray-shell.js, detachArrayBuffer.js]
 description: |
   pending
 esid: pending
@@ -24,10 +22,8 @@ for (var constructor of anyTypedArrayConstructors) {
     assert.sameValue(Object.hasOwn(receiver, 10), false);
 
     // Detached
-    if (typeof $262.detachArrayBuffer === "function" &&
-        !isSharedConstructor(constructor))
-    {
-        $262.detachArrayBuffer(ta.buffer)
+    if (!isSharedConstructor(constructor)) {
+        $DETACHBUFFER(ta.buffer)
 
         assert.sameValue(ta[0], undefined);
         assert.sameValue(Reflect.set(ta, 0, 42, receiver), true);

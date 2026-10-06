@@ -338,7 +338,7 @@ add_task(async function () {
 
         info(`Checking interaction for ${hintTarget}`);
         interactionEl.scrollIntoView(false);
-        const win = hintEl.ownerGlobal;
+        const win = hintEl.documentGlobal;
         // Mouse over the pathEl.
         ok(
           isStrokeChangedByMouseOver(interactionEl, displayedEl, win),

@@ -2,17 +2,17 @@
 CSS Grid Inspector: Examine grid layouts
 ========================================
 
-The **Grid Inspector** allows you to examine `CSS Grid Layouts <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Grid_Layout>`_ using the Firefox DevTools, discovering grids present on a page, examining and modifying them, debugging layout issues, and more.
+The **Grid Inspector** allows you to examine `CSS Grid Layouts <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Grid_layout>`_ using the Firefox DevTools, discovering grids present on a page, examining and modifying them, debugging layout issues, and more.
 
 .. note::
 
-  The examples shown in the screenshots appearing in this article are Jen Simmons' `Futurismo <https://labs.jensimmons.com/2016/examples/futurismo-1.html>`_ and `Variations on a grid <https://labs.jensimmons.com/2017/01-003.html>`_ experiments, and a `live named grid area example <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Grid_Layout/Grid_Template_Areas#naming_a_grid_area>`_ from Rachel Andrew.
+  The examples shown in the screenshots appearing in this article are Jen Simmons' `Futurismo <https://labs.jensimmons.com/2016/examples/futurismo-1.html>`_ and `Variations on a grid <https://labs.jensimmons.com/2017/01-003.html>`_ experiments, and a `live named grid area example <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Grid_layout/Grid_template_areas#naming_a_grid_area>`_ from Rachel Andrew.
 
 
 Discovering CSS grids
 *********************
 
-When an HTML element on your page has `display: grid <https://developer.mozilla.org/en-US/docs/Web/CSS/display>`_ applied to it, a number of features are made available in the DevTools to provide easy access to grid features.
+When an HTML element on your page has `display: grid <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/display>`_ applied to it, a number of features are made available in the DevTools to provide easy access to grid features.
 
 
 In the HTML pane
@@ -31,7 +31,7 @@ In the CSS pane
 .. |image1| image:: screen_shot_2016-12-16_at_10.51.15_am.png
   :width: 20
 
-In the :ref:`CSS pane <page_inspector_ui_tour_rules_view>`'s Rules view, any instance of a `display: grid <https://developer.mozilla.org/en-US/docs/Web/CSS/display>`_ declaration gets a grid icon included within it: |image1|.
+In the :ref:`CSS pane <page_inspector_ui_tour_rules_view>`'s Rules view, any instance of a `display: grid <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/display>`_ declaration gets a grid icon included within it: |image1|.
 
 .. image:: css-pane.png
   :alt: The CSS pane of the Firefox devtools, showing the CSS for a grid layout with a grid icon included next to display: grid
@@ -186,4 +186,4 @@ See also
 
 - `labs.jensimmons.com <https://labs.jensimmons.com/>`_ — lots of interesting grid examples.
 - `Grid by Example <https://gridbyexample.com/>`_ — CSS Grid learning resources from Rachel Andrew.
-- `CSS Grid Layout <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Grid_Layout>`_ — MDN CSS Grid Layout references and tutorials.
+- `CSS Grid Layout <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Grid_layout>`_ — MDN CSS Grid Layout references and tutorials.

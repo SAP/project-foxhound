@@ -1,10 +1,11 @@
-//! Methods on [`TypeInner`], [`Scalar`], and [`ScalarKind`].
+//! Methods on or related to [`TypeInner`], [`Scalar`], [`ScalarKind`], and [`VectorSize`].
 //!
 //! [`TypeInner`]: crate::TypeInner
 //! [`Scalar`]: crate::Scalar
 //! [`ScalarKind`]: crate::ScalarKind
+//! [`VectorSize`]: crate::VectorSize
 
-use crate::ir;
+use crate::{ir, valid::MAX_TYPE_SIZE};
 
 use super::TypeResolution;
 
@@ -22,6 +23,14 @@ impl crate::ScalarKind {
 }
 
 impl crate::Scalar {
+    pub const I16: Self = Self {
+        kind: crate::ScalarKind::Sint,
+        width: 2,
+    };
+    pub const U16: Self = Self {
+        kind: crate::ScalarKind::Uint,
+        width: 2,
+    };
     pub const I32: Self = Self {
         kind: crate::ScalarKind::Sint,
         width: 4,
@@ -97,6 +106,33 @@ impl crate::Scalar {
     }
 }
 
+/// Produce all concrete integer [`ir::Scalar`]s.
+///
+/// Note that `I32` and `U32` must come first; this represents conversion rank
+/// in overload resolution.
+pub fn concrete_int_scalars() -> impl Iterator<Item = ir::Scalar> {
+    [
+        ir::Scalar::I32,
+        ir::Scalar::U32,
+        ir::Scalar::I16,
+        ir::Scalar::U16,
+        ir::Scalar::I64,
+        ir::Scalar::U64,
+    ]
+    .into_iter()
+}
+
+/// Produce all vector sizes.
+pub fn vector_sizes() -> impl Iterator<Item = ir::VectorSize> + Clone {
+    static SIZES: [ir::VectorSize; 3] = [
+        ir::VectorSize::Bi,
+        ir::VectorSize::Tri,
+        ir::VectorSize::Quad,
+    ];
+
+    SIZES.iter().cloned()
+}
+
 const POINTER_SPAN: u32 = 4;
 
 impl crate::TypeInner {
@@ -115,6 +151,7 @@ impl crate::TypeInner {
         match *self {
             Ti::Scalar(scalar) | Ti::Vector { scalar, .. } => Some(scalar),
             Ti::Matrix { scalar, .. } => Some(scalar),
+            Ti::CooperativeMatrix { scalar, .. } => Some(scalar),
             _ => None,
         }
     }
@@ -182,26 +219,33 @@ impl crate::TypeInner {
 
     pub fn is_atomic_pointer(&self, types: &crate::UniqueArena<crate::Type>) -> bool {
         match *self {
-            crate::TypeInner::Pointer { base, .. } => match types[base].inner {
-                crate::TypeInner::Atomic { .. } => true,
+            Self::Pointer { base, .. } => match types[base].inner {
+                Self::Atomic { .. } => true,
                 _ => false,
             },
             _ => false,
         }
     }
 
-    /// Get the size of this type.
-    pub fn size(&self, gctx: super::GlobalCtx) -> u32 {
+    /// Attempt to calculate the size of this type. Returns `None` if the size
+    /// exceeds the limit of [`crate::valid::MAX_TYPE_SIZE`].
+    pub fn try_size(&self, gctx: super::GlobalCtx) -> Option<u32> {
         match *self {
-            Self::Scalar(scalar) | Self::Atomic(scalar) => scalar.width as u32,
-            Self::Vector { size, scalar } => size as u32 * scalar.width as u32,
+            Self::Scalar(scalar) | Self::Atomic(scalar) => Some(scalar.width as u32),
+            Self::Vector { size, scalar } => Some(size as u32 * scalar.width as u32),
             // matrices are treated as arrays of aligned columns
             Self::Matrix {
                 columns,
                 rows,
                 scalar,
-            } => super::Alignment::from(rows) * scalar.width as u32 * columns as u32,
-            Self::Pointer { .. } | Self::ValuePointer { .. } => POINTER_SPAN,
+            } => Some(super::Alignment::from(rows) * scalar.width as u32 * columns as u32),
+            Self::CooperativeMatrix {
+                columns,
+                rows,
+                scalar,
+                role: _,
+            } => Some(columns as u32 * rows as u32 * scalar.width as u32),
+            Self::Pointer { .. } | Self::ValuePointer { .. } => Some(POINTER_SPAN),
             Self::Array {
                 base: _,
                 size,
@@ -215,15 +259,33 @@ impl crate::TypeInner {
                     // A dynamically-sized array has to have at least one element
                     Ok(crate::proc::IndexableLength::Dynamic) => 1,
                 };
-                count * stride
+                if count > MAX_TYPE_SIZE {
+                    // It shouldn't be possible to have an array of a zero-sized type, but
+                    // let's check just in case.
+                    None
+                } else {
+                    count
+                        .checked_mul(stride)
+                        .filter(|size| *size <= MAX_TYPE_SIZE)
+                }
             }
-            Self::Struct { span, .. } => span,
+            Self::Struct { span, .. } => Some(span),
             Self::Image { .. }
             | Self::Sampler { .. }
             | Self::AccelerationStructure { .. }
             | Self::RayQuery { .. }
-            | Self::BindingArray { .. } => 0,
+            | Self::BindingArray { .. } => Some(0),
         }
+    }
+
+    /// Get the size of this type.
+    ///
+    /// Panics if the size exceeds the limit of [`crate::valid::MAX_TYPE_SIZE`].
+    /// Validated modules should not contain such types. Code working with
+    /// modules prior to validation should use [`Self::try_size`] and handle the
+    /// error appropriately.
+    pub fn size(&self, gctx: super::GlobalCtx) -> u32 {
+        self.try_size(gctx).expect("type is too large")
     }
 
     /// Return the canonical form of `self`, or `None` if it's already in
@@ -292,10 +354,18 @@ impl crate::TypeInner {
         left.as_ref().unwrap_or(self) == right.as_ref().unwrap_or(rhs)
     }
 
+    /// Returns true if `self` is runtime- or override-sized.
     pub fn is_dynamically_sized(&self, types: &crate::UniqueArena<crate::Type>) -> bool {
         use crate::TypeInner as Ti;
         match *self {
-            Ti::Array { size, .. } => size == crate::ArraySize::Dynamic,
+            Ti::Array {
+                size: crate::ArraySize::Constant(_),
+                ..
+            } => false,
+            Ti::Array {
+                size: crate::ArraySize::Pending(_) | crate::ArraySize::Dynamic,
+                ..
+            } => true,
             Ti::Struct { ref members, .. } => members
                 .last()
                 .map(|last| types[last.ty].inner.is_dynamically_sized(types))
@@ -304,7 +374,36 @@ impl crate::TypeInner {
         }
     }
 
-    pub fn components(&self) -> Option<u32> {
+    /// Returns true if `self` is a constructible type.
+    pub fn is_constructible(&self, types: &crate::UniqueArena<crate::Type>) -> bool {
+        use crate::TypeInner as Ti;
+        match *self {
+            Ti::Array { base, size, .. } => {
+                let fixed_size = match size {
+                    ir::ArraySize::Constant(_) => true,
+                    ir::ArraySize::Pending(_) | ir::ArraySize::Dynamic => false,
+                };
+                fixed_size && types[base].inner.is_constructible(types)
+            }
+            Ti::Struct { ref members, .. } => members
+                .iter()
+                .all(|member| types[member.ty].inner.is_constructible(types)),
+            Ti::Atomic(_)
+            | Ti::Pointer { .. }
+            | Ti::ValuePointer { .. }
+            | Ti::Image { .. }
+            | Ti::Sampler { .. }
+            | Ti::AccelerationStructure { .. }
+            | Ti::BindingArray { .. } => false,
+            Ti::Scalar(_)
+            | Ti::Vector { .. }
+            | Ti::Matrix { .. }
+            | Ti::RayQuery { .. }
+            | Ti::CooperativeMatrix { .. } => true,
+        }
+    }
+
+    pub const fn components(&self) -> Option<u32> {
         Some(match *self {
             Self::Vector { size, .. } => size as u32,
             Self::Matrix { columns, .. } => columns as u32,
@@ -333,8 +432,8 @@ impl crate::TypeInner {
         })
     }
 
-    /// If the type is a Vector or a Scalar return a tuple of the vector size (or None
-    /// for Scalars), and the scalar kind. Returns (None, None) for other types.
+    /// If the type is a scalar or vector (not a matrix), return a tuple of the vector
+    /// size (or `None` for scalars), and the scalar kind. Returns `None` for other types.
     pub const fn vector_size_and_scalar(
         &self,
     ) -> Option<(Option<crate::VectorSize>, crate::Scalar)> {
@@ -342,6 +441,7 @@ impl crate::TypeInner {
             crate::TypeInner::Scalar(scalar) => Some((None, scalar)),
             crate::TypeInner::Vector { size, scalar } => Some((Some(size), scalar)),
             crate::TypeInner::Matrix { .. }
+            | crate::TypeInner::CooperativeMatrix { .. }
             | crate::TypeInner::Atomic(_)
             | crate::TypeInner::Pointer { .. }
             | crate::TypeInner::ValuePointer { .. }
@@ -366,7 +466,8 @@ impl crate::TypeInner {
             | crate::TypeInner::Matrix { scalar, .. }
             | crate::TypeInner::Atomic(scalar) => scalar.is_abstract(),
             crate::TypeInner::Array { base, .. } => types[base].inner.is_abstract(types),
-            crate::TypeInner::ValuePointer { .. }
+            crate::TypeInner::CooperativeMatrix { .. }
+            | crate::TypeInner::ValuePointer { .. }
             | crate::TypeInner::Pointer { .. }
             | crate::TypeInner::Struct { .. }
             | crate::TypeInner::Image { .. }
@@ -510,6 +611,15 @@ macro_rules! define_int_float_limits {
     };
 }
 
+// i16 range [-32768, 32767] fits exactly in f16 (max 65504), f32, and f64.
+// u16 range [0, 65535] fits exactly in f32 and f64. For f16, max exactly
+// representable is 65504 (f16::MAX).
+define_int_float_limits!(i16, half::f16, half::f16::MIN, half::f16::MAX);
+define_int_float_limits!(u16, half::f16, half::f16::ZERO, half::f16::MAX);
+define_int_float_limits!(i16, f32, -32768.0f32, 32767.0f32);
+define_int_float_limits!(u16, f32, 0.0f32, 65535.0f32);
+define_int_float_limits!(i16, f64, -32768.0f64, 32767.0f64);
+define_int_float_limits!(u16, f64, 0.0f64, 65535.0f64);
 define_int_float_limits!(i32, half::f16, half::f16::MIN, half::f16::MAX);
 define_int_float_limits!(u32, half::f16, half::f16::ZERO, half::f16::MAX);
 define_int_float_limits!(i64, half::f16, half::f16::MIN, half::f16::MAX);
@@ -536,12 +646,20 @@ define_int_float_limits!(u64, f64, 0.0f64, 18446744073709549568.0f64);
 /// Returns a tuple of [`crate::Literal`]s representing the minimum and maximum
 /// float values exactly representable by the provided float and integer types.
 /// Panics if `float` is not one of `F16`, `F32`, or `F64`, or `int` is
-/// not one of `I32`, `U32`, `I64`, or `U64`.
+/// not one of `I16`, `U16`, `I32`, `U32`, `I64`, or `U64`.
 pub fn min_max_float_representable_by(
     float: crate::Scalar,
     int: crate::Scalar,
 ) -> (crate::Literal, crate::Literal) {
     match (float, int) {
+        (crate::Scalar::F16, crate::Scalar::I16) => (
+            crate::Literal::F16(i16::min_float()),
+            crate::Literal::F16(i16::max_float()),
+        ),
+        (crate::Scalar::F16, crate::Scalar::U16) => (
+            crate::Literal::F16(u16::min_float()),
+            crate::Literal::F16(u16::max_float()),
+        ),
         (crate::Scalar::F16, crate::Scalar::I32) => (
             crate::Literal::F16(i32::min_float()),
             crate::Literal::F16(i32::max_float()),
@@ -558,6 +676,14 @@ pub fn min_max_float_representable_by(
             crate::Literal::F16(u64::min_float()),
             crate::Literal::F16(u64::max_float()),
         ),
+        (crate::Scalar::F32, crate::Scalar::I16) => (
+            crate::Literal::F32(i16::min_float()),
+            crate::Literal::F32(i16::max_float()),
+        ),
+        (crate::Scalar::F32, crate::Scalar::U16) => (
+            crate::Literal::F32(u16::min_float()),
+            crate::Literal::F32(u16::max_float()),
+        ),
         (crate::Scalar::F32, crate::Scalar::I32) => (
             crate::Literal::F32(i32::min_float()),
             crate::Literal::F32(i32::max_float()),
@@ -573,6 +699,14 @@ pub fn min_max_float_representable_by(
         (crate::Scalar::F32, crate::Scalar::U64) => (
             crate::Literal::F32(u64::min_float()),
             crate::Literal::F32(u64::max_float()),
+        ),
+        (crate::Scalar::F64, crate::Scalar::I16) => (
+            crate::Literal::F64(i16::min_float()),
+            crate::Literal::F64(i16::max_float()),
+        ),
+        (crate::Scalar::F64, crate::Scalar::U16) => (
+            crate::Literal::F64(u16::min_float()),
+            crate::Literal::F64(u16::max_float()),
         ),
         (crate::Scalar::F64, crate::Scalar::I32) => (
             crate::Literal::F64(i32::min_float()),
@@ -591,5 +725,14 @@ pub fn min_max_float_representable_by(
             crate::Literal::F64(u64::max_float()),
         ),
         _ => unreachable!(),
+    }
+}
+
+/// Helper function that returns the string corresponding to the [`VectorSize`](crate::VectorSize)
+pub const fn vector_size_str(size: crate::VectorSize) -> &'static str {
+    match size {
+        crate::VectorSize::Bi => "2",
+        crate::VectorSize::Tri => "3",
+        crate::VectorSize::Quad => "4",
     }
 }

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -42,11 +41,13 @@ static const char SandboxPolicyRDD[] = R"SANDBOX_LITERAL(
     (subpath "/Library/GPUBundles")
     (subpath app-path))
 
+  ; bug 2045105 - required for initializing video encoders.
+  (allow file-read-metadata (subpath "/"))
+
   (if (string? crashPort)
     (allow mach-lookup (global-name crashPort)))
 
   (allow signal (target self))
-  (allow sysctl-read)
   (allow file-read*
     (literal "/dev/random")
     (literal "/dev/urandom")

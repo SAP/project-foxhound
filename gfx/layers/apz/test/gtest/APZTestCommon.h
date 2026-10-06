@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,7 +13,6 @@
 #include "gtest/gtest.h"
 #include "gmock/gmock.h"
 
-#include "mozilla/Attributes.h"
 #include "mozilla/layers/GeckoContentController.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/DoubleTapToZoom.h"
@@ -125,6 +122,8 @@ static inline constexpr auto kDefaultTouchBehavior =
 
 class MockContentController : public GeckoContentController {
  public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MockContentController, final);
+
   MOCK_METHOD1(NotifyLayerTransforms, void(nsTArray<MatrixMessage>&&));
   MOCK_METHOD1(RequestContentRepaint, void(const RepaintRequest&));
   MOCK_METHOD6(HandleTap, void(TapType, const LayoutDevicePoint&, Modifiers,
@@ -160,6 +159,9 @@ class MockContentController : public GeckoContentController {
                void(const ScrollableLayerGuid&, float, float, bool));
   MOCK_METHOD4(UpdateOverscrollOffset,
                void(const ScrollableLayerGuid&, float, float, bool));
+
+ protected:
+  virtual ~MockContentController() = default;
 };
 
 class MockContentControllerDelayed : public MockContentController {
@@ -280,7 +282,6 @@ class TestAPZCTreeManager : public APZCTreeManager {
 
   SampleTime GetFrameTime() override { return mcc->GetSampleTime(); }
 
- private:
   RefPtr<MockContentControllerDelayed> mcc;
 };
 
@@ -366,14 +367,14 @@ class TestAsyncPanZoomController : public AsyncPanZoomController {
     EXPECT_EQ(FLING, mState);
   }
 
-  void AssertStateIsSmoothScroll() const {
+  void AssertInSmoothScroll() const {
     RecursiveMutexAutoLock lock(mRecursiveMutex);
-    EXPECT_EQ(SMOOTH_SCROLL, mState);
+    EXPECT_TRUE(InScrollAnimation(ScrollAnimationKind::Smooth));
   }
 
-  void AssertStateIsSmoothMsdScroll() const {
+  void AssertInSmoothMsdScroll() const {
     RecursiveMutexAutoLock lock(mRecursiveMutex);
-    EXPECT_EQ(SMOOTHMSD_SCROLL, mState);
+    EXPECT_TRUE(InScrollAnimation(ScrollAnimationKind::SmoothMsd));
   }
 
   void AssertStateIsPanningLockedY() {
@@ -396,9 +397,14 @@ class TestAsyncPanZoomController : public AsyncPanZoomController {
     EXPECT_EQ(PAN_MOMENTUM, mState);
   }
 
-  void AssertStateIsWheelScroll() {
+  void AssertInWheelScroll() {
     RecursiveMutexAutoLock lock(mRecursiveMutex);
-    EXPECT_EQ(WHEEL_SCROLL, mState);
+    EXPECT_TRUE(InScrollAnimation(ScrollAnimationKind::Wheel));
+  }
+
+  void AssertInKeyboardScroll() {
+    RecursiveMutexAutoLock lock(mRecursiveMutex);
+    EXPECT_TRUE(InScrollAnimation(ScrollAnimationKind::Keyboard));
   }
 
   void AssertStateIsAutoscroll() {
@@ -469,7 +475,7 @@ class TestAsyncPanZoomController : public AsyncPanZoomController {
   }
 
   bool IsWheelScrollAnimationRunning() const {
-    return mState == PanZoomState::WHEEL_SCROLL;
+    return InScrollAnimation(ScrollAnimationKind::Wheel);
   }
 
  private:
@@ -769,7 +775,7 @@ void APZCTesterBase::Pan(const RefPtr<InputReceiver>& aTarget,
   auto stepVector = (aTouchEnd - aTouchStart) / numSteps;
   for (int k = 1; k < numSteps; k++) {
     auto stepPoint = aTouchStart + stepVector * k;
-    Unused << TouchMove(aTarget, stepPoint, mcc->Time());
+    (void)TouchMove(aTarget, stepPoint, mcc->Time());
 
     mcc->AdvanceBy(TIME_BETWEEN_TOUCH_EVENT);
   }
@@ -971,7 +977,7 @@ void APZCTesterBase::PinchWithTouchInput(const RefPtr<InputReceiver>& aTarget,
         CreateSingleTouchData(inputId, stepPoint1));
     mtiMoveStep.mTouches.AppendElement(
         CreateSingleTouchData(inputId + 1, stepPoint2));
-    Unused << aTarget->ReceiveInputEvent(mtiMoveStep);
+    (void)aTarget->ReceiveInputEvent(mtiMoveStep);
 
     mcc->AdvanceBy(aOptions.mTimeBetweenTouchEvents);
   }

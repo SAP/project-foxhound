@@ -21,6 +21,9 @@ async function run() {
       let [supportsDuplex, supportsColor] = await Promise.all([printer.supportsDuplex, printer.supportsColor]);
       info(`* supportsDuplex: ${supportsDuplex}`);
       info(`* supportsColor: ${supportsColor}`);
+      is(typeof printer.sortAfterLocal, "boolean",
+         "sortAfterLocal is a boolean");
+      info(`* sortAfterLocal: ${printer.sortAfterLocal}`);
     }
 
     ok(true, "Retrieved printer basic attributes successfully.");

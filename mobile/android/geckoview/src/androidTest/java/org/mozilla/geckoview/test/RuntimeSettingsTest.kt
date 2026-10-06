@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * Any copyright is dedicated to the Public Domain.
+/* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 package org.mozilla.geckoview.test
@@ -249,6 +248,28 @@ class RuntimeSettingsTest : BaseSessionTest() {
     }
 
     @Test
+    fun firefoxRelay() {
+        val geckoRuntimeSettings = sessionRule.runtime.settings
+
+        geckoRuntimeSettings.setFirefoxRelay(GeckoRuntimeSettings.FIREFOX_RELAY_ENABLED)
+
+        assertThat(
+            "Firefox Relay was set to enabled.",
+            geckoRuntimeSettings.firefoxRelay,
+            equalTo(GeckoRuntimeSettings.FIREFOX_RELAY_ENABLED),
+        )
+
+        val geckoPreference =
+            (sessionRule.getPrefs("signon.firefoxRelay.feature").get(0)) as String
+
+        assertThat(
+            "Firefox Relay pref value should be enabled.",
+            geckoPreference,
+            equalTo(GeckoRuntimeSettings.FIREFOX_RELAY_ENABLED),
+        )
+    }
+
+    @Test
     fun largeKeepaliveFactor() {
         val defaultLargeKeepaliveFactor = 10
         val settings = sessionRule.runtime.settings
@@ -273,10 +294,8 @@ class RuntimeSettingsTest : BaseSessionTest() {
 
         val sanitizedDefaultLargeKeepaliveFactor = 1
 
-        /**
-         * Setting an invalid factor will cause an exception to be throw in debug build.
-         * otherwise, the factor will be reset to default when an invalid factor is given.
-         */
+        // Setting an invalid factor will cause an exception to be throw in debug build.
+        // otherwise, the factor will be reset to default when an invalid factor is given.
         try {
             settings.setLargeKeepaliveFactor(128)
             prefValue = (sessionRule.getPrefs(largeKeepaliveFactorPref)[0] as Int)
@@ -718,26 +737,26 @@ class RuntimeSettingsTest : BaseSessionTest() {
         val geckoRuntimeSettings = sessionRule.runtime.settings
 
         assertThat(
-            "Certificate Transparency mode should default to 0",
-            geckoRuntimeSettings.certificateTransparencyMode,
-            equalTo(0),
-        )
-
-        geckoRuntimeSettings.setCertificateTransparencyMode(2)
-
-        assertThat(
-            "Certificate Transparency mode should be set to 2",
+            "Certificate Transparency mode should default to 2",
             geckoRuntimeSettings.certificateTransparencyMode,
             equalTo(2),
+        )
+
+        geckoRuntimeSettings.setCertificateTransparencyMode(0)
+
+        assertThat(
+            "Certificate Transparency mode should be set to 0",
+            geckoRuntimeSettings.certificateTransparencyMode,
+            equalTo(0),
         )
 
         val preference =
             (sessionRule.getPrefs("security.pki.certificate_transparency.mode").get(0)) as Int
 
         assertThat(
-            "Certificate Transparency mode pref should be set to 2",
+            "Certificate Transparency mode pref should be set to 0",
             preference,
-            equalTo(2),
+            equalTo(0),
         )
     }
 
@@ -1005,6 +1024,322 @@ class RuntimeSettingsTest : BaseSessionTest() {
             "Pref value should match setting",
             ports,
             equalTo("12345,23456"),
+        )
+    }
+
+    @Test
+    fun switchCRLiteChannel() {
+        val geckoRuntimeSettings = sessionRule.runtime.settings
+        val crliteChannel = "test"
+
+        assertThat(
+            "CRLite channel should not be set",
+            geckoRuntimeSettings.crliteChannel,
+            equalTo(null),
+        )
+
+        geckoRuntimeSettings.setCrliteChannel(crliteChannel)
+
+        assertThat(
+            "Runtime settings crliteChannel should match the string passed above",
+            geckoRuntimeSettings.crliteChannel,
+            equalTo(crliteChannel),
+        )
+
+        val crlitePreference =
+            (sessionRule.getPrefs("security.pki.crlite_channel").get(0)) as String
+        assertThat(
+            "The security.pki.crlite_channel preference should be set to the correct string",
+            crlitePreference,
+            equalTo(crliteChannel),
+        )
+    }
+
+    @Test
+    fun safeBrowsingV5Enabled() {
+        val geckoRuntimeSettings = sessionRule.runtime.settings
+
+        // Read the default pref value.
+        var defaultPrefValue =
+            (sessionRule.getPrefs("browser.safebrowsing.provider.google5.enabled").get(0)) as Boolean
+
+        // Verify the Safe Browsing V5 enabled setting matches the default
+        // pref value.
+        assertThat(
+            "Safe Browsing V5 enabled pref should match setting",
+            geckoRuntimeSettings.contentBlocking.safeBrowsingV5Enabled,
+            equalTo(defaultPrefValue),
+        )
+
+        // Set the Safe Browsing V5 setting.
+        geckoRuntimeSettings.contentBlocking.setSafeBrowsingV5Enabled(!defaultPrefValue)
+
+        // Verify the Safe Browsing V5 enabled setting does change.
+        assertThat(
+            "Safe Browsing V5 enabled pref should match setting",
+            geckoRuntimeSettings.contentBlocking.safeBrowsingV5Enabled,
+            equalTo(!defaultPrefValue),
+        )
+
+        // Verify the Safe Browsing V5 enabled pref does change.
+        var enabled =
+            (sessionRule.getPrefs("browser.safebrowsing.provider.google5.enabled").get(0)) as Boolean
+
+        assertThat(
+            "Safe Browsing V5 enabled pref should match setting",
+            enabled,
+            equalTo(!defaultPrefValue),
+        )
+    }
+
+    @Test
+    fun safeBrowsingGlobalCacheEnabled() {
+        val geckoRuntimeSettings = sessionRule.runtime.settings
+
+        var defaultPrefValue =
+            (sessionRule.getPrefs("browser.safebrowsing.globalCache.enabled").get(0)) as Boolean
+
+        assertThat(
+            "Global cache enabled pref should match setting",
+            geckoRuntimeSettings.contentBlocking.safeBrowsingGlobalCacheEnabled,
+            equalTo(defaultPrefValue),
+        )
+
+        geckoRuntimeSettings.contentBlocking.setSafeBrowsingGlobalCacheEnabled(!defaultPrefValue)
+
+        assertThat(
+            "Global cache enabled setting should match after change",
+            geckoRuntimeSettings.contentBlocking.safeBrowsingGlobalCacheEnabled,
+            equalTo(!defaultPrefValue),
+        )
+
+        var prefValue =
+            (sessionRule.getPrefs("browser.safebrowsing.globalCache.enabled").get(0)) as Boolean
+
+        assertThat(
+            "Global cache enabled pref should match after change",
+            prefValue,
+            equalTo(!defaultPrefValue),
+        )
+    }
+
+    @Test
+    fun safeBrowsingRealTimeEnabled() {
+        val geckoRuntimeSettings = sessionRule.runtime.settings
+
+        var defaultPrefValue =
+            (sessionRule.getPrefs("browser.safebrowsing.realTime.enabled").get(0)) as Boolean
+
+        assertThat(
+            "Real-time enabled pref should match setting",
+            geckoRuntimeSettings.contentBlocking.safeBrowsingRealTimeEnabled,
+            equalTo(defaultPrefValue),
+        )
+
+        geckoRuntimeSettings.contentBlocking.setSafeBrowsingRealTimeEnabled(!defaultPrefValue)
+
+        assertThat(
+            "Real-time enabled setting should match after change",
+            geckoRuntimeSettings.contentBlocking.safeBrowsingRealTimeEnabled,
+            equalTo(!defaultPrefValue),
+        )
+
+        var prefValue =
+            (sessionRule.getPrefs("browser.safebrowsing.realTime.enabled").get(0)) as Boolean
+
+        assertThat(
+            "Real-time enabled pref should match after change",
+            prefValue,
+            equalTo(!defaultPrefValue),
+        )
+    }
+
+    @Test
+    fun safeBrowsingRealTimeSimulationEnabled() {
+        val geckoRuntimeSettings = sessionRule.runtime.settings
+
+        var defaultPrefValue =
+            (sessionRule.getPrefs("browser.safebrowsing.realTime.simulation.enabled").get(0)) as Boolean
+
+        assertThat(
+            "Real-time simulation enabled pref should match setting",
+            geckoRuntimeSettings.contentBlocking.safeBrowsingRealTimeSimulationEnabled,
+            equalTo(defaultPrefValue),
+        )
+
+        geckoRuntimeSettings.contentBlocking.setSafeBrowsingRealTimeSimulationEnabled(!defaultPrefValue)
+
+        assertThat(
+            "Real-time simulation enabled setting should match after change",
+            geckoRuntimeSettings.contentBlocking.safeBrowsingRealTimeSimulationEnabled,
+            equalTo(!defaultPrefValue),
+        )
+
+        var prefValue =
+            (sessionRule.getPrefs("browser.safebrowsing.realTime.simulation.enabled").get(0)) as Boolean
+
+        assertThat(
+            "Real-time simulation enabled pref should match after change",
+            prefValue,
+            equalTo(!defaultPrefValue),
+        )
+    }
+
+    @Test
+    fun safeBrowsingRealTimeSimulationHitProbability() {
+        val geckoRuntimeSettings = sessionRule.runtime.settings
+
+        var defaultPrefValue =
+            (sessionRule.getPrefs("browser.safebrowsing.realTime.simulation.hitProbability").get(0)) as Int
+
+        assertThat(
+            "Hit probability pref should match setting",
+            geckoRuntimeSettings.contentBlocking.safeBrowsingRealTimeSimulationHitProbability,
+            equalTo(defaultPrefValue),
+        )
+
+        val newValue = 100
+        geckoRuntimeSettings.contentBlocking.setSafeBrowsingRealTimeSimulationHitProbability(newValue)
+
+        assertThat(
+            "Hit probability setting should match after change",
+            geckoRuntimeSettings.contentBlocking.safeBrowsingRealTimeSimulationHitProbability,
+            equalTo(newValue),
+        )
+
+        var prefValue =
+            (sessionRule.getPrefs("browser.safebrowsing.realTime.simulation.hitProbability").get(0)) as Int
+
+        assertThat(
+            "Hit probability pref should match after change",
+            prefValue,
+            equalTo(newValue),
+        )
+    }
+
+    @Test
+    fun safeBrowsingRealTimeSimulationCacheTTLSec() {
+        val geckoRuntimeSettings = sessionRule.runtime.settings
+
+        var defaultPrefValue =
+            (sessionRule.getPrefs("browser.safebrowsing.realTime.simulation.cacheTTLSec").get(0)) as Int
+
+        assertThat(
+            "Cache TTL pref should match setting",
+            geckoRuntimeSettings.contentBlocking.safeBrowsingRealTimeSimulationCacheTTLSec,
+            equalTo(defaultPrefValue),
+        )
+
+        val newValue = 600
+        geckoRuntimeSettings.contentBlocking.setSafeBrowsingRealTimeSimulationCacheTTLSec(newValue)
+
+        assertThat(
+            "Cache TTL setting should match after change",
+            geckoRuntimeSettings.contentBlocking.safeBrowsingRealTimeSimulationCacheTTLSec,
+            equalTo(newValue),
+        )
+
+        var prefValue =
+            (sessionRule.getPrefs("browser.safebrowsing.realTime.simulation.cacheTTLSec").get(0)) as Int
+
+        assertThat(
+            "Cache TTL pref should match after change",
+            prefValue,
+            equalTo(newValue),
+        )
+    }
+
+    @Test
+    fun safeBrowsingRealTimeSimulationNegativeCacheEnabled() {
+        val geckoRuntimeSettings = sessionRule.runtime.settings
+
+        var defaultPrefValue =
+            (sessionRule.getPrefs("browser.safebrowsing.realTime.simulation.negativeCacheEnabled").get(0)) as Boolean
+
+        assertThat(
+            "Negative cache enabled pref should match setting",
+            geckoRuntimeSettings.contentBlocking.safeBrowsingRealTimeSimulationNegativeCacheEnabled,
+            equalTo(defaultPrefValue),
+        )
+
+        geckoRuntimeSettings.contentBlocking.setSafeBrowsingRealTimeSimulationNegativeCacheEnabled(!defaultPrefValue)
+
+        assertThat(
+            "Negative cache enabled setting should match after change",
+            geckoRuntimeSettings.contentBlocking.safeBrowsingRealTimeSimulationNegativeCacheEnabled,
+            equalTo(!defaultPrefValue),
+        )
+
+        var prefValue =
+            (sessionRule.getPrefs("browser.safebrowsing.realTime.simulation.negativeCacheEnabled").get(0)) as Boolean
+
+        assertThat(
+            "Negative cache enabled pref should match after change",
+            prefValue,
+            equalTo(!defaultPrefValue),
+        )
+    }
+
+    @Test
+    fun safeBrowsingRealTimeSimulationNegativeCacheTTLSec() {
+        val geckoRuntimeSettings = sessionRule.runtime.settings
+
+        var defaultPrefValue =
+            (sessionRule.getPrefs("browser.safebrowsing.realTime.simulation.negativeCacheTTLSec").get(0)) as Int
+
+        assertThat(
+            "Negative cache TTL pref should match setting",
+            geckoRuntimeSettings.contentBlocking.safeBrowsingRealTimeSimulationNegativeCacheTTLSec,
+            equalTo(defaultPrefValue),
+        )
+
+        val newValue = 600
+        geckoRuntimeSettings.contentBlocking.setSafeBrowsingRealTimeSimulationNegativeCacheTTLSec(newValue)
+
+        assertThat(
+            "Negative cache TTL setting should match after change",
+            geckoRuntimeSettings.contentBlocking.safeBrowsingRealTimeSimulationNegativeCacheTTLSec,
+            equalTo(newValue),
+        )
+
+        var prefValue =
+            (sessionRule.getPrefs("browser.safebrowsing.realTime.simulation.negativeCacheTTLSec").get(0)) as Int
+
+        assertThat(
+            "Negative cache TTL pref should match after change",
+            prefValue,
+            equalTo(newValue),
+        )
+    }
+
+    @Test
+    fun contentBlockingDatabaseStatus() {
+        val geckoRuntimeSettings = sessionRule.runtime.settings
+        val preferenceKey = "browser.contentblocking.database.enabled"
+
+        val defaultPrefValue = (sessionRule.getPrefs(preferenceKey).get(0)) as Boolean
+
+        assertThat(
+            "Content blocking database status should match gecko setting",
+            geckoRuntimeSettings.contentBlocking.contentBlockingDatabaseStatus,
+            equalTo(defaultPrefValue),
+        )
+
+        val newValue = true
+        geckoRuntimeSettings.contentBlocking.setContentBlockingDatabaseStatus(newValue)
+
+        assertThat(
+            "Content blocking database status should match change",
+            geckoRuntimeSettings.contentBlocking.contentBlockingDatabaseStatus,
+            equalTo(newValue),
+        )
+
+        val prefValue = (sessionRule.getPrefs(preferenceKey).get(0)) as Boolean
+
+        assertThat(
+            "Content blocking database preference should match after change",
+            prefValue,
+            equalTo(newValue),
         )
     }
 }

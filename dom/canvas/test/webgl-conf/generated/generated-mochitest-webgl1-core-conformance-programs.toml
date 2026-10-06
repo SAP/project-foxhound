@@ -1,0 +1,45 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl1-core"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/conformance/programs/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_conformance__programs__get-active-test.html"]
+
+["test_conformance__programs__gl-bind-attrib-location-long-names-test.html"]
+
+["test_conformance__programs__gl-bind-attrib-location-test.html"]
+
+["test_conformance__programs__gl-get-active-attribute.html"]
+
+["test_conformance__programs__gl-get-active-uniform.html"]
+
+["test_conformance__programs__gl-getshadersource.html"]
+
+["test_conformance__programs__gl-shader-test.html"]
+
+["test_conformance__programs__invalid-UTF-16.html"]
+
+["test_conformance__programs__program-handling.html"]
+
+["test_conformance__programs__program-infolog.html"]
+
+["test_conformance__programs__program-test.html"]
+
+["test_conformance__programs__use-program-crash-with-discard-in-fragment-shader.html"]

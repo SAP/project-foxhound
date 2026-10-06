@@ -10,14 +10,14 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "sss",
   "@mozilla.org/ssservice;1",
-  "nsISiteSecurityService"
+  Ci.nsISiteSecurityService
 );
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "certOverrideService",
   "@mozilla.org/security/certoverride;1",
-  "nsICertOverrideService"
+  Ci.nsICertOverrideService
 );
 
 const CERT_PINNING_ENFORCEMENT_PREF = "security.cert_pinning.enforcement_level";

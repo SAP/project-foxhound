@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -344,7 +343,8 @@ nsresult HTMLEditorEventListener::HandleSecondaryMouseButtonDown(
 
   // Select entire element clicked on if NOT within an existing selection
   //   and not the entire body, or table-related elements
-  if (HTMLEditUtils::IsImage(eventTargetElement)) {
+  if (eventTargetElement &&
+      HTMLEditUtils::IsImageElement(*eventTargetElement)) {
     // MOZ_KnownLive(eventTargetElement): Guaranteed by eventTarget.
     DebugOnly<nsresult> rvIgnored =
         aHTMLEditor.SelectElement(MOZ_KnownLive(eventTargetElement));

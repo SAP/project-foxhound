@@ -58,7 +58,9 @@ async function reloadAndGetCounter(tab, type) {
 
 async function doTest(useNavigationCache, type) {
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.script_loader.navigation_cache", useNavigationCache]],
+    set: [
+      ["dom.script_loader.experimental.navigation_cache", useNavigationCache],
+    ],
   });
   registerCleanupFunction(() => SpecialPowers.popPrefEnv());
 

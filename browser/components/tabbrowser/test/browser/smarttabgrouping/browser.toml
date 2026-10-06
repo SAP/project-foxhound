@@ -12,6 +12,8 @@ support-files = [
 
 ["browser_tab_grouping_search.js"]
 
+["browser_tab_grouping_suggestions_checkbox.js"]
+
 ["browser_tab_grouping_telemetry.js"]
 
 ["browser_tab_grouping_utils.js"]

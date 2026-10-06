@@ -25,12 +25,10 @@ async function checkPasteHelper(event) {
   let filePasteAllowed = document.getElementById("pasteAllowed").checked;
   let pasteIsDir = document.getElementById("pasteIsDir").checked;
 
-  is(dt.types.length, filePasteAllowed ? 2 : 0, "Correct number of types");
+  is(dt.types.length, filePasteAllowed ? 1 : 0, "Correct number of types");
 
   if (filePasteAllowed) {
-    // TODO: Remove application/x-moz-file from content.
-    is(dt.types[0], "application/x-moz-file", "First type")
-    is(dt.types[1], "Files", "Last type must be Files");
+    is(dt.types[0], "Files", "Last type must be Files");
   }
 
   is(dt.getData("text/plain"), "", "text/plain found with getData");

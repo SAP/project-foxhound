@@ -6,9 +6,8 @@ package org.mozilla.fenix.microsurvey.ui.ext
 
 import androidx.annotation.DrawableRes
 import mozilla.components.service.nimbus.messaging.Message
-import mozilla.components.service.nimbus.messaging.MicrosurveyAnswer
 import mozilla.components.service.nimbus.messaging.MicrosurveyConfig
-import org.mozilla.fenix.R
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * UI model for [MicrosurveyConfig].
@@ -17,7 +16,7 @@ import org.mozilla.fenix.R
  * @property promptTitle The title to display on the 'prompt'.
  * @property icon The survey icon.
  * @property question The survey question.
- * @property answers The list of survey answers in Asc order based on [MicrosurveyAnswer.ordering].
+ * @property answers The list of survey answers in randomized order.
  * @property utmContent Optional utm content parameter to specify the surveyed feature in a URL.
  */
 data class MicrosurveyUIData(
@@ -31,7 +30,7 @@ data class MicrosurveyUIData(
 
 /**
  * @returns a [MicrosurveyUIData] derived from the given [Message].
- * [MicrosurveyUIData.answers] are sorted in Asc order based on [MicrosurveyAnswer.ordering].
+ * [MicrosurveyUIData.answers] are in randomized order.
  */
 fun Message.toMicrosurveyUIData() = if (hasValidMicrosurveyConfig()) {
     MicrosurveyUIData(
@@ -39,10 +38,10 @@ fun Message.toMicrosurveyUIData() = if (hasValidMicrosurveyConfig()) {
         // title null checked in hasValidMicrosurveyConfig
         promptTitle = title!!,
         // microsurvey null checked in hasValidMicrosurveyConfig
-        icon = microsurvey!!.icon?.resourceId ?: R.drawable.mozac_ic_lightbulb_24,
+        icon = microsurvey!!.icon?.resourceId ?: iconsR.drawable.mozac_ic_lightbulb_24,
         question = text,
         // microsurvey null checked in hasValidMicrosurveyConfig
-        answers = microsurvey!!.toSortedAnswers(),
+        answers = microsurvey!!.toShuffledAnswers(),
         utmContent = microsurvey?.utmContent,
     )
 } else {
@@ -53,7 +52,7 @@ private fun Message.hasValidMicrosurveyConfig() =
     title != null && microsurvey != null && microsurvey!!.answers.isNotEmpty()
 
 /**
- * @return a list of text answers derived from the given [MicrosurveyConfig.answers] sorted in
- * Asc order based on [MicrosurveyAnswer.ordering].
+ * @return a list of text answers derived from the given [MicrosurveyConfig.answers] in
+ * randomized order.
  */
-private fun MicrosurveyConfig.toSortedAnswers() = answers.sortedBy { it.ordering }.map { it.text }
+private fun MicrosurveyConfig.toShuffledAnswers() = answers.shuffled().map { it.text }

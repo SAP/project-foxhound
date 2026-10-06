@@ -8,8 +8,6 @@ import androidx.annotation.GuardedBy
 import mozilla.appservices.places.PlacesApi
 import mozilla.appservices.places.PlacesReaderConnection
 import mozilla.appservices.places.PlacesWriterConnection
-import mozilla.appservices.syncmanager.SyncTelemetry
-import mozilla.components.concept.sync.SyncAuthInfo
 import java.io.Closeable
 import java.io.File
 
@@ -48,11 +46,6 @@ internal interface Connection : Closeable {
      * All calls are queued and synchronized at lower levels. Only one writer is recommended.
      */
     fun writer(): PlacesWriterConnection
-
-    // Until we get a real SyncManager in application-services libraries, we'll have to live with this
-    // strange split that doesn't quite map all that well to our internal storage model.
-    fun syncHistory(syncInfo: SyncAuthInfo)
-    fun syncBookmarks(syncInfo: SyncAuthInfo)
 }
 
 /**
@@ -99,20 +92,6 @@ internal object RustPlacesConnection : Connection {
         val api = safeGetApi()
         check(api != null) { "must call init first" }
         return api.getWriter()
-    }
-
-    override fun syncHistory(syncInfo: SyncAuthInfo) {
-        val api = safeGetApi()
-        check(api != null) { "must call init first" }
-        val ping = api.syncHistory(syncInfo.into())
-        SyncTelemetry.processHistoryPing(ping)
-    }
-
-    override fun syncBookmarks(syncInfo: SyncAuthInfo) {
-        val api = safeGetApi()
-        check(api != null) { "must call init first" }
-        val ping = api.syncBookmarks(syncInfo.into())
-        SyncTelemetry.processBookmarksPing(ping)
     }
 
     override fun close() = synchronized(this) {

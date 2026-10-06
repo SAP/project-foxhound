@@ -12,10 +12,22 @@ function testUiaRelationArray(id, prop, targets) {
   );
 }
 
+function testCustomUiaRelationArray(id, prop, targets) {
+  return isUiaElementArray(
+    `
+      findUiaByDomId(doc, "${id}")
+      .GetCurrentPropertyValue(uia${prop}PropertyId)
+      .QueryInterface(IUIAutomationElementArray)
+    `,
+    targets,
+    `${id} has correct ${prop} targets`
+  );
+}
+
 /**
  * Test the ControllerFor property.
  */
-addUiaTask(
+addAccessibleTask(
   `
 <input id="controls" aria-controls="t1 t2">
 <input id="error" aria-errormessage="t3 t4" aria-invalid="true">
@@ -29,16 +41,13 @@ addUiaTask(
   async function testControllerFor() {
     await definePyVar("doc", `getDocUia()`);
     await testUiaRelationArray("controls", "ControllerFor", ["t1", "t2"]);
-    // The IA2 -> UIA proxy doesn't support IA2_RELATION_ERROR.
-    if (gIsUiaEnabled) {
-      await testUiaRelationArray("error", "ControllerFor", ["t3", "t4"]);
-      await testUiaRelationArray("controlsError", "ControllerFor", [
-        "t1",
-        "t2",
-        "t3",
-        "t4",
-      ]);
-    }
+    await testUiaRelationArray("error", "ControllerFor", ["t3", "t4"]);
+    await testUiaRelationArray("controlsError", "ControllerFor", [
+      "t1",
+      "t2",
+      "t3",
+      "t4",
+    ]);
     await testUiaRelationArray("none", "ControllerFor", []);
   }
 );
@@ -46,7 +55,7 @@ addUiaTask(
 /**
  * Test the DescribedBy property.
  */
-addUiaTask(
+addAccessibleTask(
   `
 <input id="describedby" aria-describedby="t1 t2">
 <input id="details" aria-details="t3 t4">
@@ -60,16 +69,13 @@ addUiaTask(
   async function testDescribedBy() {
     await definePyVar("doc", `getDocUia()`);
     await testUiaRelationArray("describedby", "DescribedBy", ["t1", "t2"]);
-    // The IA2 -> UIA proxy doesn't support IA2_RELATION_DETAILS.
-    if (gIsUiaEnabled) {
-      await testUiaRelationArray("details", "DescribedBy", ["t3", "t4"]);
-      await testUiaRelationArray("describedbyDetails", "DescribedBy", [
-        "t1",
-        "t2",
-        "t3",
-        "t4",
-      ]);
-    }
+    await testUiaRelationArray("details", "DescribedBy", ["t3", "t4"]);
+    await testUiaRelationArray("describedbyDetails", "DescribedBy", [
+      "t1",
+      "t2",
+      "t3",
+      "t4",
+    ]);
     await testUiaRelationArray("none", "DescribedBy", []);
   }
 );
@@ -77,7 +83,7 @@ addUiaTask(
 /**
  * Test the FlowsFrom and FlowsTo properties.
  */
-addUiaTask(
+addAccessibleTask(
   `
 <div id="t1" aria-flowto="t2">t1</div>
 <div id="t2">t2</div>
@@ -95,7 +101,7 @@ addUiaTask(
 /**
  * Test the LabeledBy property.
  */
-addUiaTask(
+addAccessibleTask(
   `
 <label id="label">label</label>
 <input id="input" aria-labelledby="label">
@@ -137,7 +143,63 @@ addUiaTask(
       )),
       "noLabel has no LabeledBy"
     );
-  },
-  // The IA2 -> UIA proxy doesn't expose LabeledBy properly.
-  { uiaEnabled: true, uiaDisabled: false }
+  }
+);
+
+/**
+ * Test the AccessibleActions property.
+ */
+addAccessibleTask(
+  `
+<dialog aria-actions="btn" id="dlg" onclick="" open>
+  Dialog with its own click listener
+  <form method="dialog">
+    <button id="btn">Close</button>
+  </form>
+</dialog>
+  `,
+  async function testActions() {
+    await definePyVar("doc", `getDocUia()`);
+    await testCustomUiaRelationArray("dlg", "AccessibleActions", ["btn"]);
+    await testCustomUiaRelationArray("btn", "AccessibleActions", []);
+  }
+);
+
+/**
+ * Test exposure of AriaProperties.hasactions.
+ */
+addAccessibleTask(
+  `
+<button id="button">button</button>
+<div role="tablist">
+  <div id="tab1" role="tab" tabindex="0" aria-actions="tab1Button">
+    tab1
+    <button id="tab1Button">tab1Button</button>
+  </div>
+  <div id="tab2" role="tab" aria-actions="tab2Button">
+    tab2
+    <button id="tab2Button" hidden>tab2Button</button>
+  </div>
+</div>
+  `,
+  async function testHasActions() {
+    await definePyVar("doc", `getDocUia()`);
+    is(
+      await runPython(`findUiaByDomId(doc, "button").CurrentAriaProperties`),
+      "",
+      "button missing hasactions"
+    );
+    // tab1 has a visible action.
+    is(
+      await runPython(`findUiaByDomId(doc, "tab1").CurrentAriaProperties`),
+      "hasactions=true",
+      "tab1 hasactions=true"
+    );
+    // tab2 has an action, but it's hidden.
+    is(
+      await runPython(`findUiaByDomId(doc, "tab2").CurrentAriaProperties`),
+      "hasactions=true",
+      "tab2 hasactions=true"
+    );
+  }
 );

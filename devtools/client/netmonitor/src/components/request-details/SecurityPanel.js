@@ -92,6 +92,15 @@ const SHA1_FINGERPRINT_LABEL = L10N.getStr(
   "certmgr.certdetail.sha1fingerprint"
 );
 
+const USED_ECH_LABEL = L10N.getStr("netmonitor.security.usedEch");
+const USED_DELEGATED_CREDENTIALS_LABEL = L10N.getStr(
+  "netmonitor.security.usedDelegatedCredentials"
+);
+const USED_OCSP_LABEL = L10N.getStr("netmonitor.security.usedOcsp");
+const USED_PRIVATE_DNS_LABEL = L10N.getStr(
+  "netmonitor.security.usedPrivateDns"
+);
+
 /*
  * Localize special values for key exchange group name,
  * certificate signature scheme, and certificate
@@ -148,6 +157,10 @@ const getConnectionLabel = securityInfo => ({
   [CIPHER_SUITE_LABEL]: securityInfo.cipherSuite || NOT_AVAILABLE,
   [KEA_GROUP_LABEL]: securityInfo.keaGroupName || NOT_AVAILABLE,
   [SIGNATURE_SCHEME_LABEL]: securityInfo.signatureSchemeName || NOT_AVAILABLE,
+  [USED_ECH_LABEL]: securityInfo.usedEch,
+  [USED_DELEGATED_CREDENTIALS_LABEL]: securityInfo.usedDelegatedCredentials,
+  [USED_OCSP_LABEL]: securityInfo.usedOcsp,
+  [USED_PRIVATE_DNS_LABEL]: securityInfo.usedPrivateDns,
 });
 
 const getHostHeaderLabel = securityInfo => ({
@@ -183,7 +196,10 @@ const getCertificateLabel = securityInfo => {
 };
 
 const getObject = ({ securityInfo, url }) => {
-  if (securityInfo.state !== "secure" && securityInfo.state !== "weak") {
+  if (
+    !securityInfo.state.startsWith("secure") &&
+    securityInfo.state !== "weak"
+  ) {
     return {
       [ERROR_LABEL]: securityInfo.errorMessage || NOT_AVAILABLE,
     };

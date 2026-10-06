@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 et tw=78: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -325,62 +323,6 @@ nsChromeRegistry::AllowContentToAccess(nsIURI* aURI, bool* aResult) {
 
   if (NS_SUCCEEDED(rv)) {
     *aResult = !!(flags & CONTENT_ACCESSIBLE);
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsChromeRegistry::CanLoadURLRemotely(nsIURI* aURI, bool* aResult) {
-  nsresult rv;
-
-  *aResult = false;
-
-  NS_ASSERTION(aURI->SchemeIs("chrome"),
-               "Non-chrome URI passed to CanLoadURLRemotely!");
-
-  nsCOMPtr<nsIURL> url = do_QueryInterface(aURI);
-  if (!url) {
-    NS_ERROR("Chrome URL doesn't implement nsIURL.");
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  nsAutoCString package;
-  rv = url->GetHostPort(package);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  uint32_t flags;
-  rv = GetFlagsFromPackage(package, &flags);
-
-  if (NS_SUCCEEDED(rv)) {
-    *aResult = !!(flags & REMOTE_ALLOWED);
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsChromeRegistry::MustLoadURLRemotely(nsIURI* aURI, bool* aResult) {
-  nsresult rv;
-
-  *aResult = false;
-
-  NS_ASSERTION(aURI->SchemeIs("chrome"),
-               "Non-chrome URI passed to MustLoadURLRemotely!");
-
-  nsCOMPtr<nsIURL> url = do_QueryInterface(aURI);
-  if (!url) {
-    NS_ERROR("Chrome URL doesn't implement nsIURL.");
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  nsAutoCString package;
-  rv = url->GetHostPort(package);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  uint32_t flags;
-  rv = GetFlagsFromPackage(package, &flags);
-
-  if (NS_SUCCEEDED(rv)) {
-    *aResult = !!(flags & REMOTE_REQUIRED);
   }
   return NS_OK;
 }

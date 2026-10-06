@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +7,6 @@
 
 #include "PDMFactory.h"
 #include "PlatformDecoderModule.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/UniquePtr.h"
 
@@ -80,6 +77,13 @@ class MediaChangeMonitor final
     return ConversionRequired::kNeedNone;
   }
 
+  Maybe<PropertyValue> GetDecodeProperty(PropertyName aName) const override {
+    if (RefPtr<MediaDataDecoder> decoder = GetDecoderOnNonOwnerThread()) {
+      return decoder->GetDecodeProperty(aName);
+    }
+    return MediaDataDecoder::GetDecodeProperty(aName);
+  }
+
   class CodecChangeMonitor {
    public:
     virtual bool CanBeInstantiated() const = 0;
@@ -131,7 +135,11 @@ class MediaChangeMonitor final
   UniquePtr<TrackInfo> mCurrentConfig;
   nsCOMPtr<nsISerialEventTarget> mThread;
   RefPtr<MediaDataDecoder> mDecoder;
-  MozPromiseRequestHolder<CreateDecoderPromise> mDecoderRequest;
+  MozPromiseRequestHolder<CreateDecoderPromise> mCreateAndInitRequest;
+  MozPromiseRequestHolder<PlatformDecoderModule::CreateDecoderPromise>
+      mCreateDecoderRequest;
+  MozPromiseHolder<CreateDecoderPromise> mCreateDecoderHolder;
+  MozPromiseHolder<ShutdownPromise> mShutdownWhileCreationPromise;
   MozPromiseRequestHolder<InitPromise> mInitPromiseRequest;
   MozPromiseHolder<InitPromise> mInitPromise;
   MozPromiseRequestHolder<DecodePromise> mDecodePromiseRequest;

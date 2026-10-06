@@ -29,10 +29,10 @@ STEPS = {
     "jj": [
         # snapshot, since mach's jj integration avoids doing this automatically
         """
-        jj new -m "commit 1"
         echo bar >> bar
-        jj commit -m "commit 2"
+        jj commit -m "commit 1"
         echo baz > baz
+        jj commit -m "commit 2"
         jj log -n0
         """
     ],

@@ -1,4 +1,3 @@
-/* vim:set ts=2 sw=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -78,17 +77,21 @@ void TLSServerSocket::CreateClientTransport(PRFileDesc* aClientFD,
   SSL_AuthCertificateHook(aClientFD, AuthCertificateHook, nullptr);
   // Once the TLS handshake has completed, the server consumer is notified and
   // has access to various TLS state details.
-  // It's safe to pass info here because the socket transport holds it as
-  // |mSecInfo| which keeps it alive for the lifetime of the socket.
+  trans->mFDDetachCallback = [aliveRef = RefPtr{info}](PRFileDesc* fd) {
+    SSL_HandshakeCallback(fd, nullptr, nullptr);
+  };
   SSL_HandshakeCallback(aClientFD, TLSServerConnectionInfo::HandshakeCallback,
-                        info);
+                        info.get());
 
   // Notify the consumer of the new client so it can manage the streams.
   // Security details aren't known yet.  The security observer will be notified
   // later when they are ready.
   nsCOMPtr<nsIServerSocket> serverSocket =
       do_QueryInterface(NS_ISUPPORTS_CAST(nsITLSServerSocket*, this));
-  mListener->OnSocketAccepted(serverSocket, trans);
+  nsCOMPtr<nsIServerSocketListener> listener = GetListener();
+  if (listener) {
+    listener->OnSocketAccepted(serverSocket, trans);
+  }
 }
 
 nsresult TLSServerSocket::OnSocketListen() {
@@ -143,7 +146,7 @@ NS_IMETHODIMP
 TLSServerSocket::SetServerCert(nsIX509Cert* aCert) {
   // If AsyncListen was already called (and set mListener), it's too late to set
   // this.
-  if (NS_WARN_IF(mListener)) {
+  if (NS_WARN_IF(HasListener())) {
     return NS_ERROR_IN_PROGRESS;
   }
   mServerCert = aCert;
@@ -154,7 +157,7 @@ NS_IMETHODIMP
 TLSServerSocket::SetSessionTickets(bool aEnabled) {
   // If AsyncListen was already called (and set mListener), it's too late to set
   // this.
-  if (NS_WARN_IF(mListener)) {
+  if (NS_WARN_IF(HasListener())) {
     return NS_ERROR_IN_PROGRESS;
   }
   SSL_OptionSet(mFD, SSL_ENABLE_SESSION_TICKETS, aEnabled);
@@ -165,7 +168,7 @@ NS_IMETHODIMP
 TLSServerSocket::SetRequestClientCertificate(uint32_t aMode) {
   // If AsyncListen was already called (and set mListener), it's too late to set
   // this.
-  if (NS_WARN_IF(mListener)) {
+  if (NS_WARN_IF(HasListener())) {
     return NS_ERROR_IN_PROGRESS;
   }
   SSL_OptionSet(mFD, SSL_REQUEST_CERTIFICATE, aMode != REQUEST_NEVER);
@@ -190,7 +193,7 @@ NS_IMETHODIMP
 TLSServerSocket::SetVersionRange(uint16_t aMinVersion, uint16_t aMaxVersion) {
   // If AsyncListen was already called (and set mListener), it's too late to set
   // this.
-  if (NS_WARN_IF(mListener)) {
+  if (NS_WARN_IF(HasListener())) {
     return NS_ERROR_IN_PROGRESS;
   }
 
@@ -376,9 +379,11 @@ TLSServerConnectionInfo::GetInterface(const nsIID& aIID, void** aResult) {
 
 // static
 void TLSServerConnectionInfo::HandshakeCallback(PRFileDesc* aFD, void* aArg) {
+  // aArg is a raw pointer kept alive by the ref captured in
+  // the transport's mFDDetachCallback (set in CreateClientTransport).
   RefPtr<TLSServerConnectionInfo> info =
       static_cast<TLSServerConnectionInfo*>(aArg);
-  nsISocketTransport* transport = info->mTransport;
+  RefPtr<nsISocketTransport> transport = info->mTransport;
   // No longer needed outside this function, so clear the weak ref
   info->mTransport = nullptr;
   nsresult rv = info->HandshakeCallback(aFD);

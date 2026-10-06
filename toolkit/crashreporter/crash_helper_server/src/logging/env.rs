@@ -39,7 +39,7 @@ fn guess_user_app_data_dir() -> Option<PathBuf> {
             let data_path = if std::env::var_os("MOZ_LEGACY_HOME").is_some() || exists(&legacy_data).ok()? {
                 legacy_data
             } else {
-                dirs::config_dir()?.join(".mozilla").join(config::MOZ_APP_NAME)
+                dirs::config_dir()?.join("mozilla").join(config::MOZ_APP_NAME)
             };
             Some(data_path)
         } else if #[cfg(target_os = "macos")] {

@@ -1,21 +1,19 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/DOMJSProxyHandler.h"
-#include "xpcpublic.h"
-#include "xpcprivate.h"
-#include "XPCWrapper.h"
-#include "WrapperFactory.h"
-#include "nsWrapperCacheInlines.h"
-#include "mozilla/dom/BindingUtils.h"
 
-#include "jsapi.h"
-#include "js/friend/DOMProxy.h"  // JS::DOMProxyShadowsResult, JS::ExpandoAndGeneration, JS::SetDOMProxyInformation
-#include "js/PropertyAndElement.h"  // JS_AlreadyHasOwnPropertyById, JS_DefineProperty, JS_DefinePropertyById, JS_DeleteProperty, JS_DeletePropertyById
+#include "WrapperFactory.h"
+#include "XPCWrapper.h"
 #include "js/Object.h"              // JS::GetCompartment
+#include "js/PropertyAndElement.h"  // JS_AlreadyHasOwnPropertyById, JS_DefineProperty, JS_DefinePropertyById, JS_DeleteProperty, JS_DeletePropertyById
+#include "js/friend/DOMProxy.h"  // JS::DOMProxyShadowsResult, JS::ExpandoAndGeneration, JS::SetDOMProxyInformation
+#include "jsapi.h"
+#include "mozilla/dom/BindingUtils.h"
+#include "nsWrapperCacheInlines.h"
+#include "xpcprivate.h"
+#include "xpcpublic.h"
 
 using namespace JS;
 
@@ -112,32 +110,6 @@ static inline void CheckDOMProxy(JSObject* proxy) {
   CallQueryInterface(native, &cache);
   MOZ_ASSERT(cache->GetWrapperPreserveColor() == proxy);
 #endif
-}
-
-// static
-JSObject* DOMProxyHandler::GetAndClearExpandoObject(JSObject* obj) {
-  CheckDOMProxy(obj);
-
-  JS::Value v = js::GetProxyPrivate(obj);
-  if (v.isUndefined()) {
-    return nullptr;
-  }
-
-  if (v.isObject()) {
-    js::SetProxyPrivate(obj, UndefinedValue());
-  } else {
-    auto* expandoAndGeneration =
-        static_cast<JS::ExpandoAndGeneration*>(v.toPrivate());
-    v = expandoAndGeneration->expando;
-    if (v.isUndefined()) {
-      return nullptr;
-    }
-    expandoAndGeneration->expando = UndefinedValue();
-  }
-
-  CheckExpandoObject(obj, v);
-
-  return &v.toObject();
 }
 
 // static

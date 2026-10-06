@@ -14,7 +14,7 @@ class CreditCardUtilsTest {
     fun `GIVEN a list of recognized card numbers and their respective card type WHEN creditCardIIN is called for a given a card number THEN the correct cardType name is returned`() {
         /**
          * Test cases based on
-         * https://searchfox.org/mozilla-central/source/toolkit/modules/tests/xpcshell/test_CreditCard.js
+         * https://searchfox.org/firefox-main/source/toolkit/modules/tests/xpcshell/test_CreditCard.js
          */
         val recognizedCards = listOf(
             // Edge cases

@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -200,12 +199,6 @@ public final class SessionTextInput {
       final View view = session.getTextInput().getView();
       final InputMethodManager imm = getInputMethodManager(view);
       if (imm != null) {
-        if (view.hasFocus() && !imm.isActive(view)) {
-          // Marshmallow workaround: The view has focus but it is not the active
-          // view for the input method. (Bug 1211848)
-          view.clearFocus();
-          view.requestFocus();
-        }
         imm.showSoftInput(view, 0);
       }
     }
@@ -286,21 +279,7 @@ public final class SessionTextInput {
   }
 
   /**
-   * Get a Handler for the background input method thread. In order to use a background thread for
-   * input method operations on systems prior to Nougat, first override {@code View.getHandler()}
-   * for the View returning the InputConnection instance, and then call this method from the
-   * overridden method.
-   *
-   * <p>For example:
-   *
-   * <pre>
-   * &#64;Override
-   * public Handler getHandler() {
-   *     if (Build.VERSION.SDK_INT &gt;= 24) {
-   *         return super.getHandler();
-   *     }
-   *     return getSession().getTextInput().getHandler(super.getHandler());
-   * }</pre>
+   * Get a Handler for the background input method thread.
    *
    * @param defHandler Handler returned by the system {@code getHandler} implementation.
    * @return Handler to return to the system through {@code getHandler}.

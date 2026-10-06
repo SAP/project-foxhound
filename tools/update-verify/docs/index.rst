@@ -14,9 +14,9 @@ Both Balrog and the Linux updater binary are currently used as part of running u
 ------------
 How it works
 ------------
-At a high level, update verify simulates what happens when an update MAR is applied on a user machine. The result of that is compared against the full installer for the same version. If there are any differences (aside from a `small set of expected and known OK ones <https://searchfox.org/mozilla-central/source/tools/update-verify/release/compare-directories.py#25-99>`__), the test fails.
+At a high level, update verify simulates what happens when an update MAR is applied on a user machine. The result of that is compared against the full installer for the same version. If there are any differences (aside from a :searchfox:`small set of expected and known OK ones <tools/update-verify/release/compare-directories.py#25-99>`), the test fails.
 
-This test is run for all older builds (back to the `last watershed update <https://searchfox.org/mozilla-central/source/taskcluster/kinds/release-update-verify-config/kind.yml#53-59>`__ on all platforms. This means that we apply the same MARs over and over again, to different older versions of Firefox.
+This test is run for all older builds (back to the :searchfox:`last watershed update <taskcluster/kinds/release-update-verify-config/kind.yml#53-59>` on all platforms. This means that we apply the same MARs over and over again, to different older versions of Firefox.
 
 All tests are performed on Linux, with the `updater` from the older version's Linux package. For example, when testing 128.0 -> 129.0 mac updates, we will apply a 129.0 MAR to a 128.0 mac build with the 128.0 Linux updater binary.
 
@@ -28,4 +28,4 @@ With these details in mind, this is what the process looks like for testing a 12
 * Download the 129.0 en-US macOS complete MAR
 * Run the `updater` binary from the unpacked Linux build to apply it to the `source` directory
 * Diff the `source` and `target` directories
-* Compare the result against `expected differences <https://searchfox.org/mozilla-central/source/tools/update-verify/release/compare-directories.py#25-99>`__ to determine pass or fail
+* Compare the result against :searchfox:`expected differences <tools/update-verify/release/compare-directories.py#25-99>` to determine pass or fail

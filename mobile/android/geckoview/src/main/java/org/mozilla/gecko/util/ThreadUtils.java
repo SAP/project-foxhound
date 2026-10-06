@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -87,6 +86,20 @@ public final class ThreadUtils {
   @RobocopTarget
   public static void assertOnGeckoThread() {
     assertOnThread(sGeckoThread, AssertBehavior.THROW);
+  }
+
+  /** Throws when ran on a thread without a handler. */
+  public static void assertOnHandlerThread() {
+    if (Looper.myLooper() == null) {
+      throw new IllegalThreadStateException("Must be ran on a thread with a Handler!");
+    }
+  }
+
+  /** Warns when ran on a thread without a handler. */
+  public static void warnOnHandlerThread() {
+    if (Looper.myLooper() == null) {
+      Log.w(LOGTAG, "The GeckoResult cannot be checked on this thread!");
+    }
   }
 
   public static void assertOnThread(final Thread expectedThread, final AssertBehavior behavior) {

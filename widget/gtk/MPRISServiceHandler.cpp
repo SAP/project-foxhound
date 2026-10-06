@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,14 +6,12 @@
 #include "MPRISServiceHandler.h"
 
 #include <stdint.h>
-#include <inttypes.h>
 #include <unordered_map>
 
 #include "MPRISInterfaceDescription.h"
 #include "mozilla/dom/MediaControlUtils.h"
 #include "mozilla/GRefPtr.h"
 #include "mozilla/GUniquePtr.h"
-#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Sprintf.h"
@@ -75,7 +72,7 @@ static void HandleMethodCall(GDBusConnection* aConnection, const gchar* aSender,
     return;
   }
 
-  dom::SeekDetails seekDetails{};
+  dom::MediaControlActionParams actionParams{};
   if (key.value() == dom::MediaControlKey::Seekto ||
       key.value() == dom::MediaControlKey::Seekforward) {
     RefPtr<GVariant> child = dont_AddRef(g_variant_get_child_value(
@@ -91,17 +88,18 @@ static void HandleMethodCall(GDBusConnection* aConnection, const gchar* aSender,
       return;
     }
     if (key.value() == dom::MediaControlKey::Seekto) {
-      seekDetails = dom::SeekDetails(seekValue, false /* fast seek */);
+      actionParams =
+          dom::MediaControlActionParams(seekValue, false /* fast seek */);
     } else if (seekValue > 0.0) {
-      seekDetails = dom::SeekDetails(seekValue);
+      actionParams = dom::MediaControlActionParams(seekValue);
     } else {
       key = Some(dom::MediaControlKey::Seekbackward);
-      seekDetails = dom::SeekDetails(-1 * seekValue);
+      actionParams = dom::MediaControlActionParams(-1 * seekValue);
     }
   }
 
   MPRISServiceHandler* handler = static_cast<MPRISServiceHandler*>(aUserData);
-  if (handler->PressKey(dom::MediaControlAction(key.value(), seekDetails))) {
+  if (handler->PressKey(dom::MediaControlAction(key.value(), actionParams))) {
     g_dbus_method_invocation_return_value(aInvocation, nullptr);
   } else {
     g_dbus_method_invocation_return_error(
@@ -129,6 +127,7 @@ enum class Property : uint8_t {
   eGetMetadata,
   eGetPosition,
   eGetRate,
+  eVolume,
 };
 
 static inline Maybe<dom::MediaControlKey> GetPairedKey(Property aProperty) {
@@ -170,7 +169,8 @@ static inline Maybe<Property> GetProperty(const gchar* aPropertyName) {
       {"PlaybackStatus", Property::eGetPlaybackStatus},
       {"Metadata", Property::eGetMetadata},
       {"Position", Property::eGetPosition},
-      {"Rate", Property::eGetRate}};
+      {"Rate", Property::eGetRate},
+      {"Volume", Property::eVolume}};
 
   auto it = map.find(aPropertyName);
   return (it == map.end() ? Nothing() : Some(it->second));
@@ -210,6 +210,8 @@ static GVariant* HandleGetProperty(GDBusConnection* aConnection,
     }
     case Property::eGetRate:
       return g_variant_new_double(handler->GetPlaybackRate());
+    case Property::eVolume:
+      return g_variant_new_double(handler->GetVolume());
     case Property::eIdentity:
       return g_variant_new_string(handler->Identity());
     case Property::eDesktopEntry:
@@ -243,9 +245,34 @@ static gboolean HandleSetProperty(GDBusConnection* aConnection,
                                   GError** aError, gpointer aUserData) {
   MOZ_ASSERT(aUserData);
   MOZ_ASSERT(NS_IsMainThread());
-  g_set_error(aError, G_IO_ERROR, G_IO_ERROR_FAILED,
-              "%s:%s setting is not supported", aInterfaceName, aPropertyName);
-  return false;
+
+  Maybe<Property> property = GetProperty(aPropertyName);
+  if (property.isNothing()) {
+    g_set_error(aError, G_DBUS_ERROR, G_DBUS_ERROR_NOT_SUPPORTED,
+                "%s.%s %s is not supported", aObjectPath, aInterfaceName,
+                aPropertyName);
+    return false;
+  }
+
+  MPRISServiceHandler* handler = static_cast<MPRISServiceHandler*>(aUserData);
+  switch (property.value()) {
+    case Property::eVolume: {
+      if (!g_variant_is_of_type(aValue, G_VARIANT_TYPE_DOUBLE)) {
+        g_set_error(aError, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS,
+                    "Invalid arguments for %s.%s.%s", aObjectPath,
+                    aInterfaceName, aPropertyName);
+        return false;
+      }
+      double volume = g_variant_get_double(aValue);
+      handler->SetVolume(volume);
+      return true;
+    }
+    default:
+      g_set_error(aError, G_IO_ERROR, G_IO_ERROR_FAILED,
+                  "%s:%s setting is not supported", aInterfaceName,
+                  aPropertyName);
+      return false;
+  }
 }
 
 static const GDBusInterfaceVTable gInterfaceVTable = {
@@ -513,7 +540,7 @@ void MPRISServiceHandler::SetPlaybackState(
       "(sa{sv}as)", DBUS_MPRIS_PLAYER_INTERFACE, &builder, nullptr);
 
   LOGMPRIS("Emitting MPRIS property changes for 'PlaybackStatus'");
-  Unused << EmitPropertiesChangedSignal(parameters);
+  (void)EmitPropertiesChangedSignal(parameters);
 }
 
 GVariant* MPRISServiceHandler::GetPlaybackStatus() const {
@@ -532,38 +559,38 @@ GVariant* MPRISServiceHandler::GetPlaybackStatus() const {
 
 void MPRISServiceHandler::SetMediaMetadata(
     const dom::MediaMetadataBase& aMetadata) {
-  // Reset the index of the next available image to be fetched in the artwork,
-  // before checking the fetching process should be started or not. The image
-  // fetching process could be skipped if the image being fetching currently is
-  // in the artwork. If the current image fetching fails, the next availabe
-  // candidate should be the first image in the latest artwork
-  mNextImageIndex = 0;
+  SetMediaMetadataInternal(aMetadata);
 
-  // No need to fetch a MPRIS image if
-  // 1) MPRIS image is being fetched, and the one in fetching is in the artwork
-  // 2) MPRIS image is not being fetched, and the one in use is in the artwork
-  if (!mFetchingUrl.IsEmpty()) {
-    if (dom::IsImageIn(aMetadata.mArtwork, mFetchingUrl)) {
-      LOGMPRIS(
-          "No need to load MPRIS image. The one being processed is in the "
-          "artwork");
-      // Set MPRIS without the image first. The image will be loaded to MPRIS
-      // asynchronously once it's fetched and saved into a local file
-      SetMediaMetadataInternal(aMetadata);
-      return;
+  for (const dom::MediaImageData& image : aMetadata.mArtwork) {
+    if (!image.mDataSurface) {
+      continue;
     }
-  } else if (!mCurrentImageUrl.IsEmpty()) {
-    if (dom::IsImageIn(aMetadata.mArtwork, mCurrentImageUrl)) {
-      LOGMPRIS("No need to load MPRIS image. The one in use is in the artwork");
-      SetMediaMetadataInternal(aMetadata, false);
-      return;
+
+    if (mCurrentImageUrl == image.mSrc) {
+      LOGMPRIS("Artwork image URL did not change");
+      break;
+    }
+
+    uint32_t size = 0;
+    char* data = nullptr;
+    // Only used to hold the image data
+    nsCOMPtr<nsIInputStream> inputStream;
+
+    nsresult rv =
+        dom::GetEncodedImageBuffer(image.mDataSurface, mMimeType,
+                                   getter_AddRefs(inputStream), &size, &data);
+    if (NS_FAILED(rv) || !inputStream || size == 0 || !data) {
+      LOGMPRIS("Failed to get the image buffer info. Try next image");
+      continue;
+    }
+
+    if (SetImageToDisplay(data, size)) {
+      mCurrentImageUrl = image.mSrc;
+      LOGMPRIS("The MPRIS image is updated to the image from: %s",
+               NS_ConvertUTF16toUTF8(mCurrentImageUrl).get());
+      break;
     }
   }
-
-  // Set MPRIS without the image first then load the image to MPRIS
-  // asynchronously
-  SetMediaMetadataInternal(aMetadata);
-  LoadImageAtIndex(mNextImageIndex++);
 }
 
 bool MPRISServiceHandler::EmitMetadataChanged() const {
@@ -589,74 +616,10 @@ void MPRISServiceHandler::SetMediaMetadataInternal(
 
 void MPRISServiceHandler::ClearMetadata() {
   mMPRISMetadata.Clear();
-  mImageFetchRequest.DisconnectIfExists();
   RemoveAllLocalImages();
   mCurrentImageUrl.Truncate();
-  mFetchingUrl.Truncate();
-  mNextImageIndex = 0;
   mSupportedKeys = 0;
   EmitMetadataChanged();
-}
-
-void MPRISServiceHandler::LoadImageAtIndex(const size_t aIndex) {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  if (aIndex >= mMPRISMetadata.mArtwork.Length()) {
-    LOGMPRIS("Stop loading image to MPRIS. No available image");
-    mImageFetchRequest.DisconnectIfExists();
-    return;
-  }
-
-  const dom::MediaImage& image = mMPRISMetadata.mArtwork[aIndex];
-
-  if (!dom::IsValidImageUrl(image.mSrc)) {
-    LOGMPRIS("Skip the image with invalid URL. Try next image");
-    LoadImageAtIndex(mNextImageIndex++);
-    return;
-  }
-
-  mImageFetchRequest.DisconnectIfExists();
-  mFetchingUrl = image.mSrc;
-
-  mImageFetcher = MakeUnique<dom::FetchImageHelper>(image);
-  RefPtr<MPRISServiceHandler> self = this;
-  mImageFetcher->FetchImage()
-      ->Then(
-          AbstractThread::MainThread(), __func__,
-          [this, self](const nsCOMPtr<imgIContainer>& aImage) {
-            LOGMPRIS("The image is fetched successfully");
-            mImageFetchRequest.Complete();
-
-            uint32_t size = 0;
-            char* data = nullptr;
-            // Only used to hold the image data
-            nsCOMPtr<nsIInputStream> inputStream;
-            nsresult rv = dom::GetEncodedImageBuffer(
-                aImage, mMimeType, getter_AddRefs(inputStream), &size, &data);
-            if (NS_FAILED(rv) || !inputStream || size == 0 || !data) {
-              LOGMPRIS("Failed to get the image buffer info. Try next image");
-              LoadImageAtIndex(mNextImageIndex++);
-              return;
-            }
-
-            if (SetImageToDisplay(data, size)) {
-              mCurrentImageUrl = mFetchingUrl;
-              LOGMPRIS("The MPRIS image is updated to the image from: %s",
-                       NS_ConvertUTF16toUTF8(mCurrentImageUrl).get());
-            } else {
-              LOGMPRIS("Failed to set image to MPRIS");
-              mCurrentImageUrl.Truncate();
-            }
-
-            mFetchingUrl.Truncate();
-          },
-          [this, self](bool) {
-            LOGMPRIS("Failed to fetch image. Try next image");
-            mImageFetchRequest.Complete();
-            mFetchingUrl.Truncate();
-            LoadImageAtIndex(mNextImageIndex++);
-          })
-      ->Track(mImageFetchRequest);
 }
 
 bool MPRISServiceHandler::SetImageToDisplay(const char* aImageData,
@@ -880,17 +843,33 @@ struct InterfaceProperty {
   const char* interface;
   const char* property;
 };
-MOZ_RUNINIT static const std::unordered_map<dom::MediaControlKey,
-                                            InterfaceProperty>
-    gKeyProperty = {
-        {dom::MediaControlKey::Focus, {DBUS_MPRIS_INTERFACE, "CanRaise"}},
-        {dom::MediaControlKey::Nexttrack,
-         {DBUS_MPRIS_PLAYER_INTERFACE, "CanGoNext"}},
-        {dom::MediaControlKey::Previoustrack,
-         {DBUS_MPRIS_PLAYER_INTERFACE, "CanGoPrevious"}},
-        {dom::MediaControlKey::Play, {DBUS_MPRIS_PLAYER_INTERFACE, "CanPlay"}},
-        {dom::MediaControlKey::Pause,
-         {DBUS_MPRIS_PLAYER_INTERFACE, "CanPause"}}};
+
+class MediaControlKeyToInterfaceProperty {
+  static constexpr std::pair<dom::MediaControlKey, InterfaceProperty>
+      mapping[] = {
+          {dom::MediaControlKey::Focus, {DBUS_MPRIS_INTERFACE, "CanRaise"}},
+          {dom::MediaControlKey::Nexttrack,
+           {DBUS_MPRIS_PLAYER_INTERFACE, "CanGoNext"}},
+          {dom::MediaControlKey::Previoustrack,
+           {DBUS_MPRIS_PLAYER_INTERFACE, "CanGoPrevious"}},
+          {dom::MediaControlKey::Play,
+           {DBUS_MPRIS_PLAYER_INTERFACE, "CanPlay"}},
+          {dom::MediaControlKey::Pause,
+           {DBUS_MPRIS_PLAYER_INTERFACE, "CanPause"}},
+  };
+
+ public:
+  auto find(dom::MediaControlKey Value) const {
+    // Linear scan has we have only a few entries. Could move to a LUT if that
+    // number were to grow.
+    return std::find_if(std::begin(mapping), std::end(mapping),
+                        [Value](const auto& kv) { return kv.first == Value; });
+  }
+  auto begin() const { return std::begin(mapping); }
+  auto end() const { return std::end(mapping); }
+};
+
+constexpr MediaControlKeyToInterfaceProperty gKeyProperty;
 
 void MPRISServiceHandler::SetSupportedMediaKeys(
     const MediaKeysArray& aSupportedKeys) {
@@ -958,6 +937,23 @@ double MPRISServiceHandler::GetPlaybackRate() const {
   }
   return 1.0;
 }
+
+void MPRISServiceHandler::SetVolume(double aVolume) {
+  if (mVolume == aVolume) {
+    return;
+  }
+  mVolume = aVolume;
+  LOGMPRIS("SetVolume: %f", mVolume);
+
+  EmitEvent(dom::MediaControlAction(
+      dom::MediaControlKey::Setvolume,
+      dom::MediaControlActionParams::FromVolume(mVolume)));
+  if (mVolume > 0.0) {
+    EmitEvent(dom::MediaControlAction(dom::MediaControlKey::Unmute));
+  }
+}
+
+double MPRISServiceHandler::GetVolume() const { return mVolume; }
 
 bool MPRISServiceHandler::IsMediaKeySupported(dom::MediaControlKey aKey) const {
   return mSupportedKeys & GetMediaKeyMask(aKey);

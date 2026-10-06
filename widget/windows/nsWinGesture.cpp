@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,7 +15,6 @@
 #include "mozilla/dom/SimpleGestureEventBinding.h"
 #include "mozilla/dom/WheelEventBinding.h"
 
-#include <cmath>
 #include <uxtheme.h>
 
 using namespace mozilla;
@@ -286,11 +284,11 @@ inline bool TestTransition(int32_t a, int32_t b) {
   return (a < 0) == (b < 0);
 }
 
-void nsWinGesture::UpdatePanFeedbackX(HWND hWnd, int32_t scrollOverflow,
+void nsWinGesture::UpdatePanFeedbackX(HWND hWnd, bool scrollOverflow,
                                       bool& endFeedback) {
   // If scroll overflow was returned indicating we panned past the bounds of
   // the scrollable view port, start feeback.
-  if (scrollOverflow != 0) {
+  if (scrollOverflow) {
     if (!mFeedbackActive) {
       BeginPanningFeedback(hWnd);
       mFeedbackActive = true;
@@ -316,11 +314,11 @@ void nsWinGesture::UpdatePanFeedbackX(HWND hWnd, int32_t scrollOverflow,
   }
 }
 
-void nsWinGesture::UpdatePanFeedbackY(HWND hWnd, int32_t scrollOverflow,
+void nsWinGesture::UpdatePanFeedbackY(HWND hWnd, bool scrollOverflow,
                                       bool& endFeedback) {
   // If scroll overflow was returned indicating we panned past the bounds of
   // the scrollable view port, start feeback.
-  if (scrollOverflow != 0) {
+  if (scrollOverflow) {
     if (!mFeedbackActive) {
       BeginPanningFeedback(hWnd);
       mFeedbackActive = true;

@@ -11,6 +11,7 @@ l10n-%:
 	@$(MAKE) -C ../../security/manager/locales/ l10n AB_CD=$* XPI_NAME=locale-$*
 	@$(MAKE) -C ../../devtools/shared/locales/ l10n AB_CD=$* XPI_NAME=locale-$*
 	@$(MAKE) l10n AB_CD=$* XPI_NAME=locale-$*
+	$(call INSTALL_L10N_COVERAGE,$(DIST)/xpi-stage/locale-$*)
 
 # target to be used by multi-locale l10n builds, just add this locale
 # like regular chrome code
@@ -19,4 +20,6 @@ chrome-%:
 	@$(MAKE) -C $(DEPTH)/netwerk/locales/ chrome AB_CD=$*
 	@$(MAKE) -C $(DEPTH)/dom/locales/ chrome AB_CD=$*
 	@$(MAKE) -C $(DEPTH)/security/manager/locales/ chrome AB_CD=$*
+	@$(MAKE) -C $(DEPTH)/devtools/shared/locales/ chrome AB_CD=$*
 	@$(MAKE) chrome AB_CD=$*
+	$(call INSTALL_L10N_COVERAGE,$(FINAL_TARGET))

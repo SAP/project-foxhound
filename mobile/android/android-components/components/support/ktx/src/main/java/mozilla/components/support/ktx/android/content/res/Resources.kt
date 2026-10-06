@@ -5,8 +5,6 @@
 package mozilla.components.support.ktx.android.content.res
 
 import android.content.res.Resources
-import android.os.Build
-import android.os.Build.VERSION.SDK_INT
 import android.text.SpannableStringBuilder
 import android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
 import android.text.SpannedString
@@ -18,12 +16,7 @@ import java.util.Locale
  * Returns the primary locale according to the user's preference.
  */
 val Resources.locale: Locale
-    get() = if (SDK_INT >= Build.VERSION_CODES.N) {
-        configuration.locales[0]
-    } else {
-        @Suppress("Deprecation")
-        configuration.locale
-    }
+    get() = configuration.locales[0]
 
 /**
  * Returns the character sequence associated with a given resource [id],

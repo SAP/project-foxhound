@@ -9,7 +9,24 @@
 // 2. Pocket header and section are visible and not collapsed on load.
 // 3. Recent activity section and header are visible and not collapsed on load.
 test_newtab({
-  test: async function test_render_customizeMenu() {
+  async before({ pushPrefs }) {
+    await pushPrefs(
+      [
+        "browser.newtabpage.activity-stream.discoverystream.config",
+        JSON.stringify({ collapsible: true, enabled: true }),
+      ],
+      ["browser.newtabpage.activity-stream.feeds.system.topstories", true]
+    );
+    // @nova-cleanup(remove-pref): Remove this return block; delete the novaEnabled parameter
+    // from test_render_customizeMenu and remove the selector branch — always use ".section-title"
+    return {
+      novaEnabled: Services.prefs.getBoolPref(
+        "browser.newtabpage.activity-stream.nova.enabled",
+        false
+      ),
+    };
+  },
+  test: async function test_render_customizeMenu({ novaEnabled }) {
     // Top sites section
     await ContentTaskUtils.waitForCondition(
       () => content.document.querySelector(".top-sites"),
@@ -21,7 +38,8 @@ test_newtab({
       ".section-title-container"
     );
     ok(
-      titleContainer && titleContainer.style.visibility === "hidden",
+      !titleContainer ||
+        (titleContainer && titleContainer.style.visibility === "hidden"),
       "Top sites header should  not be visible"
     );
 
@@ -45,9 +63,12 @@ test_newtab({
       "Pocket section should not be collapsed on load"
     );
 
-    let pocketHeader = content.document.querySelector(
-      "section[data-section-id='topstories'] .section-title"
-    );
+    // @nova-cleanup(remove-conditional): Remove this branch; always use ".section-title"
+    // In Nova, CollapsibleSection hides its .section-title; CardGrid renders .ds-header instead
+    const pocketHeaderSelector = novaEnabled
+      ? "section[data-section-id='topstories'] .ds-header"
+      : "section[data-section-id='topstories'] .section-title";
+    let pocketHeader = content.document.querySelector(pocketHeaderSelector);
     ok(
       pocketHeader && !pocketHeader.style.visibility,
       "Pocket header should be visible"

@@ -1,14 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gtest/gtest.h"
-
-#include "mozilla/dom/IntegrityPolicy.h"
 #include "mozilla/Preferences.h"
-
+#include "mozilla/dom/IntegrityPolicy.h"
 #include "nsCOMPtr.h"
 #include "nsLiteralString.h"
 #include "nsSerializationHelper.h"
@@ -52,10 +48,6 @@ void AssertSerializationForHeadersForIntegrityPolicy(
 
 TEST(IntegrityPolicy, Serialization)
 {
-  const auto* prefKey = "security.integrity_policy.enabled";
-  bool oldPref = Preferences::GetBool(prefKey);
-  Preferences::SetBool(prefKey, true);
-
   // Test serialization for an empty policy
   AssertSerializationForHeadersForIntegrityPolicy(
       ""_ns, ""_ns, "SBL/Mhv/QjuX/EClaW2tIgAAAAAAAAAAwAAAAAAAAEYAAAABAAA="_ns);
@@ -88,6 +80,4 @@ TEST(IntegrityPolicy, Serialization)
       "blocked-destinations=(script), endpoints=(endpoint1 endpoint2)"_ns,
       "blocked-destinations=(script), endpoints=(endpoint1 endpoint2)"_ns,
       "SBL/Mhv/QjuX/EClaW2tIgAAAAAAAAAAwAAAAAAAAEYAAAABAQAAAAEAAAABAAAAAgAAAAllbmRwb2ludDEAAAAJZW5kcG9pbnQyAQAAAAEAAAABAAAAAgAAAAllbmRwb2ludDEAAAAJZW5kcG9pbnQy"_ns);
-
-  Preferences::SetBool(prefKey, oldPref);
 }

@@ -1,17 +1,15 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/WindowsProcessMitigations.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/ParentProcessChannelHandle.h"
 #include "mozilla/ipc/ByteBuf.h"
 
 #include "nsComponentManagerUtils.h"
@@ -479,7 +477,7 @@ static nsresult GetIconHandleFromURLBlocking(nsIMozIconURI* aUrl,
 }
 
 static RefPtr<HIconPromise> GetIconHandleFromURLAsync(nsIMozIconURI* aUrl) {
-  RefPtr<HIconPromise::Private> promise = new HIconPromise::Private(__func__);
+  auto promise = MakeRefPtr<HIconPromise::Private>(__func__);
 
   nsAutoCString stockIcon;
   aUrl->GetStockIcon(stockIcon);
@@ -524,8 +522,7 @@ static RefPtr<HIconPromise> GetIconHandleFromURLAsync(nsIMozIconURI* aUrl) {
 
 static RefPtr<nsIconChannel::ByteBufPromise> GetIconBufferFromURLAsync(
     nsIMozIconURI* aUrl) {
-  RefPtr<nsIconChannel::ByteBufPromise::Private> promise =
-      new nsIconChannel::ByteBufPromise::Private(__func__);
+  auto promise = MakeRefPtr<nsIconChannel::ByteBufPromise::Private>(__func__);
 
   GetIconHandleFromURLAsync(aUrl)->Then(
       GetCurrentSerialEventTarget(), __func__,
@@ -941,6 +938,26 @@ nsIconChannel::SetLoadInfo(nsILoadInfo* aLoadInfo) {
 }
 
 NS_IMETHODIMP
+nsIconChannel::GetParentProcessChannelHandle(
+    mozilla::dom::ParentProcessChannelHandle** aValue) {
+  NS_IF_ADDREF(*aValue = mParentProcessChannelHandle);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsIconChannel::SetParentProcessChannelHandle(
+    mozilla::dom::ParentProcessChannelHandle* aValue) {
+  if (XRE_IsParentProcess()) {
+    MOZ_ASSERT_UNREACHABLE(
+        "SetParentProcessChannelHandle in the parent process would leak");
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  mParentProcessChannelHandle = aValue;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsIconChannel::GetNotificationCallbacks(
     nsIInterfaceRequestor** aNotificationCallbacks) {
   *aNotificationCallbacks = mCallbacks.get();
@@ -963,16 +980,16 @@ nsIconChannel::GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo) {
 
 // nsIRequestObserver methods
 NS_IMETHODIMP nsIconChannel::OnStartRequest(nsIRequest* aRequest) {
-  if (mListener) {
-    return mListener->OnStartRequest(this);
+  if (nsCOMPtr<nsIStreamListener> listener = mListener) {
+    return listener->OnStartRequest(this);
   }
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsIconChannel::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
-  if (mListener) {
-    mListener->OnStopRequest(this, aStatus);
+  if (nsCOMPtr<nsIStreamListener> listener = mListener) {
+    listener->OnStopRequest(this, aStatus);
     mListener = nullptr;
   }
 
@@ -991,8 +1008,8 @@ nsIconChannel::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
 NS_IMETHODIMP
 nsIconChannel::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aStream,
                                uint64_t aOffset, uint32_t aCount) {
-  if (mListener) {
-    return mListener->OnDataAvailable(this, aStream, aOffset, aCount);
+  if (nsCOMPtr<nsIStreamListener> listener = mListener) {
+    return listener->OnDataAvailable(this, aStream, aOffset, aCount);
   }
   return NS_OK;
 }

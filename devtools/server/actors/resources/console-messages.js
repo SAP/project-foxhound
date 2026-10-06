@@ -89,8 +89,14 @@ class ConsoleMessageWatcher {
 
     // It can happen that the targetActor does not have a window reference (e.g. in worker
     // thread, targetActor exposes a targetGlobal property which isn't a Window object)
-    const winStartTime =
-      targetActor.window?.performance?.timing?.navigationStart || 0;
+    let winStartTime = 0;
+
+    // Do not try to access performance if window is a remote proxy, it would
+    // throw a security error.
+    if (targetActor.window && !Cu.isRemoteProxy(targetActor.window)) {
+      winStartTime =
+        targetActor.window.performance?.timing?.navigationStart || 0;
+    }
 
     const cachedMessages = listener.getCachedMessages(!targetActor.isRootActor);
     const messages = [];
@@ -163,8 +169,8 @@ module.exports = ConsoleMessageWatcher;
  * sub-properties we might need.
  *
  * @param {TargetActor} targetActor: The Target Actor from which this object originates.
- * @param {Object} result: The console.table message.
- * @returns {Object} An object containing the properties of the first argument of the
+ * @param {object} result: The console.table message.
+ * @returns {object} An object containing the properties of the first argument of the
  *                   console.table call.
  */
 function getConsoleTableMessageItems(targetActor, result) {

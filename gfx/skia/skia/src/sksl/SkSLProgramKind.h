@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Google LLC.
+ * Copyright 2021 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -21,8 +21,6 @@ enum class ProgramKind : int8_t {
     kCompute,
     kGraphiteFragment,
     kGraphiteVertex,
-    kGraphiteFragmentES2,
-    kGraphiteVertexES2,
     kRuntimeColorFilter,        // Runtime effect only suitable as SkColorFilter
     kRuntimeShader,             //   "       "     "      "     "  SkShader
     kRuntimeBlender,            //   "       "     "      "     "  SkBlender

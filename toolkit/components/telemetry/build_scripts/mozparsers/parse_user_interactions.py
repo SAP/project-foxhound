@@ -204,8 +204,7 @@ def load_user_interactions(filename):
         ParserError("Error opening " + filename + ": " + str(e)).handle_now()
     except ValueError as e:
         ParserError(
-            f"Error parsing UserInteractions in {filename}: {e}"
-            f".\nSee: {BASE_DOC_URL}"
+            f"Error parsing UserInteractions in {filename}: {e}.\nSee: {BASE_DOC_URL}"
         ).handle_now()
 
     user_interaction_list = []
@@ -242,5 +241,4 @@ def from_files(filenames):
     for filename in filenames:
         all_user_interactions += load_user_interactions(filename)
 
-    for user_interaction in all_user_interactions:
-        yield user_interaction
+    yield from all_user_interactions

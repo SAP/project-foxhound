@@ -4,29 +4,23 @@
 
 package mozilla.components.compose.browser.awesomebar.internal
 
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.awesomebar.AwesomeBar
 import mozilla.components.concept.awesomebar.AwesomeBar.SuggestionProvider
 import mozilla.components.concept.awesomebar.AwesomeBar.SuggestionProviderGroup
 import mozilla.components.support.test.any
 import mozilla.components.support.test.mock
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.Assert.assertEquals
-import org.junit.Rule
 import org.junit.Test
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.spy
 
-@ExperimentalCoroutinesApi // for runTestOnMain
 class SuggestionFetcherTest {
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
 
     @Test
-    fun `GIVEN a new fetch request THEN all previous queries are cancelled`() = runTestOnMain {
+    fun `GIVEN a new fetch request THEN all previous queries are cancelled`() = runTest {
         val provider: SuggestionProvider = mock()
         val providerGroup = SuggestionProviderGroup(listOf(provider))
         val fetcher = spy(SuggestionFetcher(listOf(providerGroup), null))
@@ -42,7 +36,7 @@ class SuggestionFetcherTest {
     }
 
     @Test
-    fun `GIVEN a suggestion group THEN the group's priority becomes highest suggestions' score within the group`() = runTestOnMain {
+    fun `GIVEN a suggestion group THEN the group's priority becomes highest suggestions' score within the group`() = runTest {
         val provider: SuggestionProvider = mock()
         val providerGroup = SuggestionProviderGroup(listOf(provider))
         val suggestions = listOf(

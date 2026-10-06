@@ -15,7 +15,7 @@ const ruleTester = new RuleTester();
 // ------------------------------------------------------------------------------
 
 function invalidError() {
-  return [{ messageId: "rejectRelativeRequires", type: "CallExpression" }];
+  return [{ messageId: "rejectRelativeRequires" }];
 }
 
 ruleTester.run("reject-relative-requires", rule, {

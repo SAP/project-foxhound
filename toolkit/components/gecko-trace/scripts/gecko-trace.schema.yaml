@@ -1,0 +1,96 @@
+---
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://example.com/schemas/gecko-trace.schema.json"
+$title: Gecko Trace-Events Specification
+$comment: >
+  A definition file describing traces collected by Gecko.
+
+type: object
+description: Top-level container object.
+required: [events]
+additionalProperties: false
+
+properties:
+  events:
+    type: object
+    description: Map of event identifiers => event definition objects.
+    minProperties: 1
+    propertyNames:
+      type: string
+      pattern: "^[a-z][a-z0-9._]*$"
+      description: Lower-snake-case dotted event identifier
+    additionalProperties: false
+    patternProperties:
+      "^[a-z][a-z0-9._]*$": { $ref: "#/$defs/event" }
+
+$defs:
+  event:
+    type: object
+    required: [description]
+    properties:
+      display_name:
+        type: string
+        description: >
+          Display name that appears in Telemetry.
+          If omitted the enclosing map key is used.
+      description:
+        type: string
+        minLength: 1
+        description: Human-readable description of the event.
+      inherits_from:
+        type: array
+        items:
+          type: string
+          pattern: "^[a-z][a-z0-9._]*$"
+        minItems: 1
+        uniqueItems: true
+        description: Other events this one extends.
+      attributes:
+        type: object
+        minProperties: 1
+        description: Event-specific attribute declarations.
+        propertyNames:
+          type: string
+          pattern: "^[a-z][a-z0-9._]*$"
+        additionalProperties: false
+        patternProperties:
+          "^[a-z][a-z0-9._]*$": { $ref: "#/$defs/attribute" }
+    additionalProperties: false
+
+  attribute:
+    type: object
+    required: [type, description]
+    properties:
+      type:
+        description: >
+          Allowed value type(s) for this attribute (scalar or array of scalars).
+        oneOf:
+          # single primitive
+          - $ref: "#/$defs/attributeValue"
+          # array of ONE primitive
+          - const: array
+      items:
+        type: object
+        properties:
+          type:
+            $ref: "#/$defs/attributeValue"
+        required: [type]
+        additionalProperties: false
+      description:
+        type: string
+        minLength: 1
+        description: Human-readable description of the attribute.
+    additionalProperties: false
+    if:
+      properties:
+        type: { const: array }
+    then:
+      required: [items]
+    else:
+      properties:
+        items: false
+
+  attributeValue:
+    $anchor: attributeValue
+    type: string
+    enum: ["boolean", "integer", "string"]

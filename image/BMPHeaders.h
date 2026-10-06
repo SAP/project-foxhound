@@ -20,6 +20,13 @@ struct InfoHeaderLength {
   enum {
     WIN_V2 = 12,
     WIN_V3 = 40,
+    // BITMAPV2INFOHEADER (Adobe extension): WIN_V3 followed by 12 bytes of
+    // RGB bitfield masks embedded inside the info header itself (rather than
+    // appended after, as WIN_V3 with BITFIELDS compression does).
+    BITMAPV2INFOHEADER = 52,
+    // BITMAPV3INFOHEADER (Adobe extension): BITMAPV2INFOHEADER plus a 4-byte
+    // alpha mask, also embedded inside the info header.
+    BITMAPV3INFOHEADER = 56,
     WIN_V4 = 108,
     WIN_V5 = 124,
 

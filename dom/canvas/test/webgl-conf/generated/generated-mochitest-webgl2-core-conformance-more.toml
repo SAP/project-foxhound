@@ -1,0 +1,136 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-core"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/conformance/more/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_conformance__more__conformance__constants.html"]
+
+["test_2_conformance__more__conformance__getContext.html"]
+
+["test_2_conformance__more__conformance__methods.html"]
+
+["test_2_conformance__more__conformance__quickCheckAPI-A.html"]
+
+["test_2_conformance__more__conformance__quickCheckAPI-B1.html"]
+
+["test_2_conformance__more__conformance__quickCheckAPI-B2.html"]
+
+["test_2_conformance__more__conformance__quickCheckAPI-B3.html"]
+
+["test_2_conformance__more__conformance__quickCheckAPI-B4.html"]
+
+["test_2_conformance__more__conformance__quickCheckAPI-C.html"]
+
+["test_2_conformance__more__conformance__quickCheckAPI-D_G.html"]
+
+["test_2_conformance__more__conformance__quickCheckAPI-G_I.html"]
+
+["test_2_conformance__more__conformance__quickCheckAPI-L_S.html"]
+
+["test_2_conformance__more__conformance__quickCheckAPI-S_V.html"]
+
+["test_2_conformance__more__conformance__webGLArrays.html"]
+
+["test_2_conformance__more__functions__bindBuffer.html"]
+
+["test_2_conformance__more__functions__bindBufferBadArgs.html"]
+
+["test_2_conformance__more__functions__bindFramebufferLeaveNonZero.html"]
+
+["test_2_conformance__more__functions__bufferData.html"]
+
+["test_2_conformance__more__functions__bufferDataBadArgs.html"]
+
+["test_2_conformance__more__functions__bufferSubData.html"]
+
+["test_2_conformance__more__functions__bufferSubDataBadArgs.html"]
+
+["test_2_conformance__more__functions__copyTexImage2D.html"]
+
+["test_2_conformance__more__functions__copyTexImage2DBadArgs.html"]
+
+["test_2_conformance__more__functions__copyTexSubImage2D.html"]
+
+["test_2_conformance__more__functions__copyTexSubImage2DBadArgs.html"]
+
+["test_2_conformance__more__functions__deleteBufferBadArgs.html"]
+
+["test_2_conformance__more__functions__drawArrays.html"]
+
+["test_2_conformance__more__functions__drawElements.html"]
+
+["test_2_conformance__more__functions__isTests.html"]
+
+["test_2_conformance__more__functions__isTestsBadArgs.html"]
+
+["test_2_conformance__more__functions__readPixels.html"]
+
+["test_2_conformance__more__functions__readPixelsBadArgs.html"]
+skip-if = [
+  "true",
+]
+
+["test_2_conformance__more__functions__texImage2D.html"]
+
+["test_2_conformance__more__functions__texImage2DBadArgs.html"]
+
+["test_2_conformance__more__functions__texImage2DHTML.html"]
+skip-if = [
+  "true",
+]
+
+["test_2_conformance__more__functions__texImage2DHTMLBadArgs.html"]
+
+["test_2_conformance__more__functions__texSubImage2D.html"]
+
+["test_2_conformance__more__functions__texSubImage2DBadArgs.html"]
+
+["test_2_conformance__more__functions__texSubImage2DHTML.html"]
+skip-if = [
+  "true",
+]
+
+["test_2_conformance__more__functions__texSubImage2DHTMLBadArgs.html"]
+
+["test_2_conformance__more__functions__uniformMatrix.html"]
+
+["test_2_conformance__more__functions__uniformMatrixBadArgs.html"]
+
+["test_2_conformance__more__functions__uniformf.html"]
+
+["test_2_conformance__more__functions__uniformfArrayLen1.html"]
+
+["test_2_conformance__more__functions__uniformfBadArgs.html"]
+
+["test_2_conformance__more__functions__uniformi.html"]
+
+["test_2_conformance__more__functions__uniformiBadArgs.html"]
+
+["test_2_conformance__more__functions__vertexAttrib.html"]
+
+["test_2_conformance__more__functions__vertexAttribBadArgs.html"]
+
+["test_2_conformance__more__functions__vertexAttribPointer.html"]
+
+["test_2_conformance__more__functions__vertexAttribPointerBadArgs.html"]
+
+["test_2_conformance__more__glsl__arrayOutOfBounds.html"]
+
+["test_2_conformance__more__glsl__uniformOutOfBounds.html"]

@@ -10,9 +10,9 @@ use neqo_transport::{CloseReason, ConnectionParameters, Error, State};
 use test_fixture::{
     boxed,
     sim::{
+        Simulator,
         connection::{Node, ReachState, ReceiveData, SendData},
         network::{Drop, RandomDelay, TailDrop},
-        Simulator,
     },
     simulate,
 };
@@ -179,6 +179,16 @@ simulate!(
         Node::default_server(boxed![ReceiveData::new(TRANSFER_AMOUNT)]),
         TailDrop::dsl_uplink(),
         RandomDelay::new(ZERO..JITTER),
+    ],
+);
+
+simulate!(
+    transfer_taildrop_ecn,
+    [
+        Node::default_client(boxed![SendData::new(TRANSFER_AMOUNT)]),
+        TailDrop::new(1_000_000, 65_536, true, Duration::from_millis(50)),
+        Node::default_server(boxed![ReceiveData::new(TRANSFER_AMOUNT)]),
+        TailDrop::new(200_000, 16_384, true, Duration::from_millis(50))
     ],
 );
 

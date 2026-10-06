@@ -452,7 +452,7 @@ def test_add_tests(mock_runner):
 
 
 def test_repeat(mock_runner):
-    def update_result(test, expected):
+    def update_result(test, expected, **kwargs):
         mock_runner.failed += 1
 
     fake_tests = ["test_1.py"]
@@ -466,7 +466,7 @@ def test_repeat(mock_runner):
 
 
 def test_run_until_failure(mock_runner):
-    def update_result(test, expected):
+    def update_result(test, expected, **kwargs):
         mock_runner.failed += 1
 
     fake_tests = ["test_1.py"]

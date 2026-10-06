@@ -39,14 +39,14 @@ class SrtpTransport : public RtpTransport {
  public:
   SrtpTransport(bool rtcp_mux_enabled, const FieldTrialsView& field_trials);
 
-  virtual ~SrtpTransport() = default;
+  ~SrtpTransport() override = default;
 
-  bool SendRtpPacket(rtc::CopyOnWriteBuffer* packet,
-                     const rtc::PacketOptions& options,
+  bool SendRtpPacket(CopyOnWriteBuffer* packet,
+                     const AsyncSocketPacketOptions& options,
                      int flags) override;
 
-  bool SendRtcpPacket(rtc::CopyOnWriteBuffer* packet,
-                      const rtc::PacketOptions& options,
+  bool SendRtcpPacket(CopyOnWriteBuffer* packet,
+                      const AsyncSocketPacketOptions& options,
                       int flags) override;
 
   // The transport becomes active if the send_session_ and recv_session_ are
@@ -59,48 +59,26 @@ class SrtpTransport : public RtpTransport {
   // packet encryption. The keys can either come from SDES negotiation or DTLS
   // handshake.
   bool SetRtpParams(int send_crypto_suite,
-                    const rtc::ZeroOnFreeBuffer<uint8_t>& send_key,
+                    const ZeroOnFreeBuffer<uint8_t>& send_key,
                     const std::vector<int>& send_extension_ids,
                     int recv_crypto_suite,
-                    const rtc::ZeroOnFreeBuffer<uint8_t>& recv_key,
+                    const ZeroOnFreeBuffer<uint8_t>& recv_key,
                     const std::vector<int>& recv_extension_ids);
 
   // Create new send/recv sessions and set the negotiated crypto keys for RTCP
   // packet encryption. The keys can either come from SDES negotiation or DTLS
   // handshake.
   bool SetRtcpParams(int send_crypto_suite,
-                     const rtc::ZeroOnFreeBuffer<uint8_t>& send_key,
+                     const ZeroOnFreeBuffer<uint8_t>& send_key,
                      const std::vector<int>& send_extension_ids,
                      int recv_crypto_suite,
-                     const rtc::ZeroOnFreeBuffer<uint8_t>& recv_key,
+                     const ZeroOnFreeBuffer<uint8_t>& recv_key,
                      const std::vector<int>& recv_extension_ids);
 
   void ResetParams();
 
-  // If external auth is enabled, SRTP will write a dummy auth tag that then
-  // later must get replaced before the packet is sent out. Only supported for
-  // non-GCM crypto suites and can be checked through "IsExternalAuthActive"
-  // if it is actually used. This method is only valid before the RTP params
-  // have been set.
-  void EnableExternalAuth();
-  bool IsExternalAuthEnabled() const;
-
-  // A SrtpTransport supports external creation of the auth tag if a non-GCM
-  // cipher is used. This method is only valid after the RTP params have
-  // been set.
-  bool IsExternalAuthActive() const;
-
   // Returns srtp overhead for rtp packets.
   bool GetSrtpOverhead(int* srtp_overhead) const;
-
-  // Returns rtp auth params from srtp context.
-  bool GetRtpAuthParams(uint8_t** key, int* key_len, int* tag_len);
-
-  // Cache RTP Absoulute SendTime extension header ID. This is only used when
-  // external authentication is enabled.
-  void CacheRtpAbsSendTimeHeaderExtension(int rtp_abs_sendtime_extn_id) {
-    rtp_abs_sendtime_extn_id_ = rtp_abs_sendtime_extn_id;
-  }
 
   // In addition to unregistering the sink, the SRTP transport
   // disassociates all SSRCs of the sink from libSRTP.
@@ -114,41 +92,39 @@ class SrtpTransport : public RtpTransport {
   void ConnectToRtpTransport();
   void CreateSrtpSessions();
 
-  void OnRtpPacketReceived(const rtc::ReceivedPacket& packet) override;
-  void OnRtcpPacketReceived(const rtc::ReceivedPacket& packet) override;
+  void OnRtpPacketReceived(const ReceivedIpPacket& packet) override;
+  void OnRtcpPacketReceived(const ReceivedIpPacket& packet) override;
   void OnNetworkRouteChanged(
-      std::optional<rtc::NetworkRoute> network_route) override;
+      std::optional<NetworkRoute> network_route) override;
 
   // Override the RtpTransport::OnWritableState.
-  void OnWritableState(rtc::PacketTransportInternal* packet_transport) override;
+  void OnWritableState(PacketTransportInternal* packet_transport) override;
 
-  bool ProtectRtp(rtc::CopyOnWriteBuffer& buffer);
+  bool ProtectRtp(CopyOnWriteBuffer& buffer);
   // Overloaded version, outputs packet index.
-  bool ProtectRtp(rtc::CopyOnWriteBuffer& buffer, int64_t* index);
-  bool ProtectRtcp(rtc::CopyOnWriteBuffer& buffer);
+  bool ProtectRtp(CopyOnWriteBuffer& buffer, int64_t* index);
+  bool ProtectRtcp(CopyOnWriteBuffer& buffer);
 
   // Decrypts/verifies an invidiual RTP/RTCP packet.
   // If an HMAC is used, this will decrease the packet size.
-  bool UnprotectRtp(rtc::CopyOnWriteBuffer& buffer);
-  bool UnprotectRtcp(rtc::CopyOnWriteBuffer& buffer);
+  bool UnprotectRtp(CopyOnWriteBuffer& buffer);
+  bool UnprotectRtcp(CopyOnWriteBuffer& buffer);
 
   const std::string content_name_;
 
-  std::unique_ptr<cricket::SrtpSession> send_session_;
-  std::unique_ptr<cricket::SrtpSession> recv_session_;
-  std::unique_ptr<cricket::SrtpSession> send_rtcp_session_;
-  std::unique_ptr<cricket::SrtpSession> recv_rtcp_session_;
+  std::unique_ptr<SrtpSession> send_session_;
+  std::unique_ptr<SrtpSession> recv_session_;
+  // Non-muxed RTCP requires different SRTP sessions as it leads to
+  // separate DTLS handshakes.
+  std::unique_ptr<SrtpSession> send_rtcp_session_;
+  std::unique_ptr<SrtpSession> recv_rtcp_session_;
 
   std::optional<int> send_crypto_suite_;
   std::optional<int> recv_crypto_suite_;
-  rtc::ZeroOnFreeBuffer<uint8_t> send_key_;
-  rtc::ZeroOnFreeBuffer<uint8_t> recv_key_;
+  ZeroOnFreeBuffer<uint8_t> send_key_;
+  ZeroOnFreeBuffer<uint8_t> recv_key_;
 
   bool writable_ = false;
-
-  bool external_auth_enabled_ = false;
-
-  int rtp_abs_sendtime_extn_id_ = -1;
 
   int decryption_failure_count_ = 0;
 

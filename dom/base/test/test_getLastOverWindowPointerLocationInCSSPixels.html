@@ -51,7 +51,7 @@ add_setup(async function() {
   await waitUntilApzStable();
 });
 
-/** Test for Bug 1778486 **/
+/** Test for Bug 1778486 */
 add_task(async function test_mouse() {
   let target = document.getElementById("target_mouse");
   let promise = waitForEvent(target, "click");

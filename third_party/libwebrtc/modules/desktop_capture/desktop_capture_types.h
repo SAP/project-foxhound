@@ -13,10 +13,6 @@
 
 #include <stdint.h>
 
-#ifdef XP_WIN      // Moving this into the global namespace
-typedef int pid_t; // matching what used to be in
-#endif             // video_capture_defines.h
-
 namespace webrtc {
 
 enum class CaptureType { kWindow, kScreen, kAnyScreenContent };

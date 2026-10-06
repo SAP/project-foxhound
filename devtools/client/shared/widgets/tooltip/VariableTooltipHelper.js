@@ -28,26 +28,26 @@ loader.lazyGetter(this, "L10N_COMPUTED_VALUE", function () {
  *         The tooltip instance on which the text preview content should be set.
  * @param  {Document} doc
  *         A document element to create the HTML elements needed for the tooltip.
- * @param  {Object} params
- * @param  {String} params.computed
+ * @param  {object} params
+ * @param  {string} params.computed
  *         The computed value for the variable.
- * @param  {Object} params.outputParserOptions
+ * @param  {object} params.outputParserOptions
  *         Options to pass to the OutputParser. At the moment, this is the same object that
  *         we use in the Rules view, so we have the same output in the variable tooltip
  *         than in the Rules view.
- * @param  {Object} params.registeredProperty
+ * @param  {object} params.registeredProperty
  *         Contains the registered property data, if the variable was registered (@property or CSS.registerProperty)
- * @param  {String} params.registeredProperty.syntax
+ * @param  {string} params.registeredProperty.syntax
  *         The registered property `syntax` value
- * @param  {Boolean} params.registeredProperty.inherits
+ * @param  {boolean} params.registeredProperty.inherits
  *         The registered property `inherits` value
- * @param  {String} params.registeredProperty.initialValue
+ * @param  {string} params.registeredProperty.initialValue
  *         The registered property `initial-value`
- * @param  {String} params.startingStyle
+ * @param  {string} params.startingStyle
  *         The text for @starting-style value (e.g. `red`)
- * @param  {String} params.topSectionText
+ * @param  {string} params.topSectionText
  *         Text to display in the top section of tooltip (e.g. "blue" or "--x is not defined").
- * @param  {String} params.variableName
+ * @param  {string} params.variableName
  *         The name of the variable we're showing the tooltip for
  */
 function setVariableTooltip(
@@ -72,6 +72,8 @@ function setVariableTooltip(
     outputParser.parseCssProperty(variableName, value, {
       ...outputParserOptions,
       colorSwatchReadOnly: true,
+      // At the moment, we can't hover the tooltip, so the button couldn't be clicked/activated
+      showJumpToVariableButton: false,
     });
 
   const valueEl = doc.createElementNS(XHTML_NS, "section");
@@ -172,7 +174,7 @@ function setVariableTooltip(
  *
  * @param {Document} doc: A document that will be used to create elements
  * @param {Element} el: The element into which the rendered value will be appended
- * @param {String} value: The value we want to append
+ * @param {string} value: The value we want to append
  * @param {Function} parse: An optional function that will be called with `value`, and whose
  *                   result will be appended to `el`. If not passed, `value` will be appended
  *                   as is in `el`, as a text node (if it's not empty).

@@ -1,0 +1,17 @@
+{
+  "label": "rok.lilith.com",
+  "bugs": {
+    "2034355": {
+      "issue": "page-fails-to-load",
+      "matches": ["*://rok.lilith.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "content_scripts": {
+        "js": ["bug2034355-rok.lilith.com-prevent-blank-page.js"]
+      }
+    }
+  ]
+}

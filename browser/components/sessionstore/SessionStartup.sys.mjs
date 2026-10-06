@@ -330,6 +330,7 @@ export var SessionStartup = {
    * launch of the browser. This does not include crash restoration. In
    * particular, if session restore is configured to restore only in case of
    * crash, this method returns false.
+   *
    * @returns bool
    */
   isAutomaticRestoreEnabled() {
@@ -348,6 +349,7 @@ export var SessionStartup = {
 
   /**
    * Determines whether there is a pending session restore.
+   *
    * @returns bool
    */
   willRestore() {
@@ -360,6 +362,7 @@ export var SessionStartup = {
   /**
    * Determines whether there is a pending session restore and if that will refer
    * back to a crash.
+   *
    * @returns bool
    */
   willRestoreAsCrashed() {

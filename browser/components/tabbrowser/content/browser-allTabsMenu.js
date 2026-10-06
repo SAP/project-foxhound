@@ -2,14 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// This file is loaded into the browser window scope.
-/* eslint-env mozilla/browser-window */
-
 ChromeUtils.defineESModuleGetters(this, {
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
   GroupsPanel: "moz-src:///browser/components/tabbrowser/GroupsList.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   TabsPanel: "moz-src:///browser/components/tabbrowser/TabsList.sys.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
 });
 
 var gTabsPanel = {
@@ -94,15 +92,11 @@ var gTabsPanel = {
       document.getElementById("allTabsMenu-hiddenTabsSeparator").hidden =
         !hasHiddenTabs;
 
-      let closeDuplicateEnabled = Services.prefs.getBoolPref(
-        "browser.tabs.context.close-duplicate.enabled"
-      );
       let closeDuplicateTabsItem = document.getElementById(
         "allTabsMenu-closeDuplicateTabs"
       );
-      closeDuplicateTabsItem.hidden = !closeDuplicateEnabled;
       closeDuplicateTabsItem.disabled =
-        !closeDuplicateEnabled || !gBrowser.getAllDuplicateTabsToClose().length;
+        !gBrowser.getAllDuplicateTabsToClose().length;
 
       let syncedTabs = document.getElementById("allTabsMenu-syncedTabs");
       syncedTabs.hidden =
@@ -117,12 +111,16 @@ var gTabsPanel = {
 
     this.allTabsView.addEventListener("command", event => {
       let { target } = event;
-      let { PanelUI } = target.ownerGlobal;
+      let { PanelUI } = target.documentGlobal;
       switch (target.id) {
         case "allTabsMenu-searchTabs":
+          Glean.browserUiInteraction.listAllTabsAction.search_tabs.add(1);
           this.searchTabs();
           break;
         case "allTabsMenu-closeDuplicateTabs":
+          Glean.browserUiInteraction.listAllTabsAction.close_all_duplicates.add(
+            1
+          );
           gBrowser.removeAllDuplicateTabs();
           break;
         case "allTabsMenu-containerTabsButton":
@@ -132,6 +130,7 @@ var gTabsPanel = {
           PanelUI.showSubView(this.kElements.hiddenTabsView, target);
           break;
         case "allTabsMenu-syncedTabs":
+          Glean.browserUiInteraction.listAllTabsAction.tabs_from_devices.add(1);
           SidebarController.show("viewTabsSidebar");
           break;
         case "allTabsMenu-groupsViewShowMore":
@@ -245,7 +244,7 @@ var gTabsPanel = {
   },
 
   searchTabs() {
-    gURLBar.search(UrlbarTokenizer.RESTRICT.OPENPAGE, {
+    gURLBar.search(UrlbarShared.RESTRICT_TOKENS.OPENPAGE, {
       searchModeEntry: "tabmenu",
     });
   },

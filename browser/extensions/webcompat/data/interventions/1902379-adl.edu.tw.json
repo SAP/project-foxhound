@@ -1,0 +1,17 @@
+{
+  "label": "adl.edu.tw",
+  "bugs": {
+    "1902379": {
+      "issue": "unsupported-warning",
+      "matches": ["*://adl.edu.tw/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "content_scripts": {
+        "js": ["use_chrome_useragent.js", "use_chrome_vendor.js"]
+      }
+    }
+  ]
+}

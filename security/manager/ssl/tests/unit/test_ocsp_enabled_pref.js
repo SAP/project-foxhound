@@ -1,4 +1,3 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 // Any copyright is dedicated to the Public Domain.
 // http://creativecommons.org/publicdomain/zero/1.0/
 "use strict";
@@ -40,14 +39,14 @@ async function testOff() {
   Services.prefs.setIntPref("security.OCSP.enabled", 0);
   info("Setting security.OCSP.enabled to 0");
 
-  // EV chains should verify successfully but never get EV status.
+  // EV chains should verify successfully and get EV status.
   clearOCSPCache();
   let ocspResponder = getFailingOCSPResponder();
   await checkEVStatus(
     gCertDB,
     certFromFile("test-oid-path-ee"),
     Ci.nsIX509CertDB.verifyUsageTLSServer,
-    false
+    gEVExpected
   );
   await stopOCSPResponder(ocspResponder);
 
@@ -68,8 +67,7 @@ async function testOn() {
   Services.prefs.setIntPref("security.OCSP.enabled", 1);
   info("Setting security.OCSP.enabled to 1");
 
-  // If a successful OCSP response is fetched, then an EV chain should verify
-  // successfully and get EV status as well.
+  // EV chains should verify successfully and get EV status.
   clearOCSPCache();
   let ocspResponder = getOCSPResponder(["test-oid-path-ee"]);
   await checkEVStatus(
@@ -121,8 +119,10 @@ async function testCRLiteEnforced() {
     return;
   }
 
-  // When CRLite is enforced, OCSP requests should not be made for DV certs
-  // that chain to a builtin root.
+  // When CRLite is enforced and OCSP is not required, OCSP requests should not
+  // be made for DV certs that chain to a builtin root.
+  Services.prefs.setBoolPref("security.OCSP.require", false);
+  info("Setting security.OCSP.require to false");
   let nonEVRootCert = certFromFile("non-evroot-ca");
   Services.prefs.setCharPref(
     "security.test.built_in_root_hash",
@@ -143,6 +143,29 @@ async function testCRLiteEnforced() {
   );
   await stopOCSPResponder(ocspResponder);
 
+  // When CRLite is enforced and OCSP is not required, OCSP requests should not
+  // be made for EV certs that chain to a builtin root.
+  Services.prefs.setBoolPref("security.OCSP.require", false);
+  info("Setting security.OCSP.require to false");
+  let evroot = certFromFile("evroot");
+  Services.prefs.setCharPref(
+    "security.test.built_in_root_hash",
+    evroot.sha256Fingerprint
+  );
+  info(
+    "Setting security.test.built_in_root_hash to " + evroot.sha256Fingerprint
+  );
+
+  clearOCSPCache();
+  ocspResponder = getOCSPResponder([]);
+  await checkEVStatus(
+    gCertDB,
+    certFromFile("test-oid-path-ee"),
+    Ci.nsIX509CertDB.verifyUsageTLSServer,
+    gEVExpected
+  );
+  await stopOCSPResponder(ocspResponder);
+
   // When CRLite is enforced and OCSP is required, OCSP requests should be made
   // for DV certs.
   Services.prefs.setBoolPref("security.OCSP.require", true);
@@ -157,10 +180,10 @@ async function testCRLiteEnforced() {
   );
   await stopOCSPResponder(ocspResponder);
 
-  // When CRLite is enforced, OCSP requests should be made for EV certs.
+  // When CRLite is enforced and OCSP is required, OCSP requests should be made
+  // for EV certs.
   Services.prefs.setBoolPref("security.OCSP.require", true);
   info("Setting security.OCSP.require to true");
-  let evroot = certFromFile("evroot");
   Services.prefs.setCharPref(
     "security.test.built_in_root_hash",
     evroot.sha256Fingerprint

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,19 +7,20 @@
 // local includes
 #include "DatabaseFileInfo.h"
 #include "DatabaseFileManager.h"
+#include "IndexedDBCipherKeyManager.h"
+#include "IndexedDBCommon.h"
 #include "IndexedDatabase.h"  // for StructuredCloneFile...
 #include "IndexedDatabaseInlines.h"
 #include "IndexedDatabaseManager.h"
-#include "IndexedDBCipherKeyManager.h"
-#include "IndexedDBCommon.h"
 #include "ReportInternalError.h"
 
 // global includes
 #include <stdlib.h>
 #include <string.h>
+
 #include <algorithm>
 #include <numeric>
-#include <type_traits>
+
 #include "MainThreadUtils.h"
 #include "SafeRefPtr.h"
 #include "js/RootingAPI.h"
@@ -64,7 +63,7 @@ class nsIFile;
 
 namespace mozilla::dom::indexedDB {
 
-static_assert(SNAPPY_VERSION == 0x010200);
+static_assert(SNAPPY_VERSION == 0x010202);
 
 using mozilla::ipc::IsOnBackgroundThread;
 

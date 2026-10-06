@@ -1,0 +1,108 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+tab-groups-list:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+
+  /* emulate a <toolbarbutton> */
+  .subviewbutton {
+    border: none;
+    text-align: start;
+    color: var(--button-text-color-menu);
+    background-color: var(--button-background-color-menu);
+
+    &:not([disabled]):hover {
+      color: var(--button-text-color-menu-hover);
+      background-color: var(--button-background-color-menu-hover);
+
+      &:active {
+        color: var(--button-text-color-menu-active);
+        background-color: var(--button-background-color-menu-active);
+      }
+    }
+
+    &:focus-visible {
+      outline: var(--focus-outline);
+      outline-offset: var(--focus-outline-inset);
+    }
+  }
+
+  /* emulate a <toolbarseparator> */
+  hr {
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    width: -moz-available;
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    margin: var(--panel-separator-padding);
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    border-width: 1px 0 0 0;
+    border-style: solid;
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    color: var(--panel-separator-color);
+  }
+}
+
+.tab-group-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+  flex: 1;
+}
+
+.tab-group-row-icon {
+  width: var(--icon-size-small);
+  height: var(--icon-size-small);
+  flex-shrink: 0;
+  pointer-events: none;
+  -moz-context-properties: fill, stroke;
+  /* These variable values are set inline by the TabGroupsList component */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  fill: light-dark(var(--tab-group-color), var(--tab-group-color-invert));
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  stroke: light-dark(var(--tab-group-color), var(--tab-group-color-invert));
+  @media -moz-pref("browser.nova.enabled") {
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    fill: var(--tab-group-background-color);
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    stroke: var(--tab-group-background-color);
+  }
+
+  &.tab-group-icon-closed {
+    fill: transparent;
+  }
+}
+
+.tab-group-row-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.tab-groups-list-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+
+  /* Apply panel menuitem spacing to all children to emulate the spacing
+   * of menuitems within a subview body. */
+  > img,
+  > p,
+  > moz-button {
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    margin: var(--panel-menuitem-margin);
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    padding: var(--panel-menuitem-padding);
+  }
+}
+
+.tab-groups-list-empty-state-header {
+  font-size: larger;
+}
+
+.tab-groups-list-empty-state-description {
+  color: var(--text-color-deemphasized);
+}

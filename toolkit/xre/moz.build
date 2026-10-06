@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -72,15 +70,14 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
     ]
 elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
     EXPORTS.mozilla += [
+        "MacAutoreleasePool.h",
         "MacRunFromDmgUtils.h",
-        "MacUtils.h",
     ]
     UNIFIED_SOURCES += [
         "MacApplicationDelegate.mm",
         "MacAutoreleasePool.mm",
         "MacLaunchHelper.mm",
         "MacRunFromDmgUtils.mm",
-        "MacUtils.mm",
         "nsCommandLineServiceMac.mm",
         "nsNativeAppSupportCocoa.mm",
         "updaterfileutils_osx.mm",
@@ -210,8 +207,6 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
     DEFINES["UNICODE"] = True
     DEFINES["_UNICODE"] = True
 
-if CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
-    DEFINES["ANDROID_PACKAGE_NAME"] = '"%s"' % CONFIG["ANDROID_PACKAGE_NAME"]
 
 DEFINES["MOZ_DISTRIBUTION_ID"] = '"%s"' % CONFIG["MOZ_DISTRIBUTION_ID"]
 
@@ -281,6 +276,9 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
 
 DEFINES["TOPOBJDIR"] = TOPOBJDIR
 FINAL_TARGET_PP_FILES += ["platform.ini"]
+# `platform.ini` does `#include @TOPOBJDIR@/source-repo.h` and
+# `#include @TOPOBJDIR@/buildid.h`. The preprocessor opens those at
+# build time so they must exist before the preprocess step runs.
+PP_FILES_EXTRA_DEPS += ["!/buildid.h", "!/source-repo.h"]
 
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += ["test/gtest"]
+TEST_DIRS += ["test/gtest"]

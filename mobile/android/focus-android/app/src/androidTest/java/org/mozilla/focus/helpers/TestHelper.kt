@@ -14,7 +14,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.os.Build
-import android.os.Build.VERSION.SDK_INT
 import android.os.storage.StorageManager
 import android.os.storage.StorageVolume
 import android.util.Log
@@ -39,8 +38,7 @@ import androidx.test.platform.app.InstrumentationRegistry.getInstrumentation
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiSelector
 import junit.framework.AssertionFailedError
-import mozilla.components.support.utils.PendingIntentUtils
-import mozilla.components.support.utils.ext.getApplicationInfoCompat
+import mozilla.components.support.utils.ext.packageManagerCompatHelper
 import okio.Buffer
 import org.hamcrest.Matchers
 import org.hamcrest.Matchers.allOf
@@ -55,7 +53,6 @@ import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.TimeUnit
 
-@Suppress("TooManyFunctions")
 object TestHelper {
     @JvmField
     var mDevice = UiDevice.getInstance(getInstrumentation())
@@ -104,7 +101,7 @@ object TestHelper {
 
     fun isPackageInstalled(packageName: String): Boolean {
         return try {
-            val packageManager = getInstrumentation().context.packageManager
+            val packageManager = getInstrumentation().context.packageManagerCompatHelper
             packageManager.getApplicationInfoCompat(packageName, 0).enabled
         } catch (exception: PackageManager.NameNotFoundException) {
             Log.d("TestLog", exception.message.toString())
@@ -188,19 +185,17 @@ object TestHelper {
 
     // Method for granting app permission to access location/camera/mic
     fun grantAppPermission() {
-        if (SDK_INT >= 23) {
-            val permissionOption =
-                mDevice.findObject(
-                    UiSelector().textContains(
-                        when {
-                            SDK_INT >= 30 -> "While using the app"
-                            else -> "Allow"
-                        },
-                    ),
-                )
-            permissionOption.waitForExists(waitingTime)
-            permissionOption.click()
-        }
+        val permissionOption =
+            mDevice.findObject(
+                UiSelector().textContains(
+                    when {
+                        Build.VERSION.SDK_INT >= 30 -> "While using the app"
+                        else -> "Allow"
+                    },
+                ),
+            )
+        permissionOption.waitForExists(waitingTime)
+        permissionOption.click()
     }
 
     fun UiAutomation.executeShellCommandBlocking(command: String) {
@@ -231,7 +226,7 @@ object TestHelper {
         val appContext = getInstrumentation()
             .targetContext
             .applicationContext
-        val pendingIntent = PendingIntent.getActivity(appContext, 0, Intent(), PendingIntentUtils.defaultFlags)
+        val pendingIntent = PendingIntent.getActivity(appContext, 0, Intent(), PendingIntent.FLAG_IMMUTABLE)
 
         val customTabColorSchemeBuilder = CustomTabColorSchemeParams.Builder()
         customTabColorSchemeBuilder.setToolbarColor(Color.MAGENTA)

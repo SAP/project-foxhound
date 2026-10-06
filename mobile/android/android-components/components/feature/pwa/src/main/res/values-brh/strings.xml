@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!-- Default shortcut label used if website has no title -->
+  <string name="mozac_feature_pwa_default_shortcut_label">ویب سائٹ</string>
+  <!-- Text shown on the second row of the site controls notification. -->
+  <string name="mozac_feature_pwa_site_controls_notification_text">لِنک دوٹی اتینک کن اور خلبو</string>
+  <!-- Refresh button in site controls notification. -->
+  <string name="mozac_feature_pwa_site_controls_refresh">تازہ کبو</string>
+  <!-- Toast displayed when the website URL is copied. -->
+  <string name="mozac_feature_pwa_copy_success">لِنک دوٹی بس</string>
+</resources>

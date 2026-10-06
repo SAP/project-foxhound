@@ -1,0 +1,52 @@
+<!DOCTYPE HTML>
+<html class="reftest-wait">
+<head>
+<title>Missing-font notifications from OffscreenCanvas2d</title>
+</head>
+<body>
+</body>
+<script>
+// Workaround for bug 1962172: this will cause the CJK fallback order
+// to be loaded on the main thread, before the worker tries to use it.
+// (Can be removed when bug 1962172 is resolved.)
+let canvas = new OffscreenCanvas(100, 100);
+let ctx = canvas.getContext("2d");
+ctx.measureText("\u4567\u9876");
+
+// Try measuring a selection of characters from across the
+// Unicode space; almost certainly this will hit some codepoints
+// for which font support is lacking.
+const blob = new Blob([`
+  self.onmessage = (evt) => {
+    let ctx = evt.data.canvas.getContext("2d");
+    // Sampling planes 0 and 1 is enough; plane 2 just adds more CJK, not new scripts.
+    for (plane = 0; plane < 2; ++plane) {
+      let txt = "Plane " + plane + " text: ";
+      for (block = 0; block < 256; ++block) {
+        for (ch = 0; ch < 256; ch += 64) {
+          txt += String.fromCodePoint(plane * 0x10000 + block * 0x100 + ch);
+        }
+      }
+      ctx.measureText(txt);
+      postMessage(txt);
+    }
+    postMessage("Done");
+  }
+`], {
+  type: "application/typescript",
+});
+
+const url = URL.createObjectURL(blob);
+const worker = new Worker(url);
+
+worker.onmessage = (msg) => {
+  console.log(msg.data);
+  if (msg.data == "Done") {
+    document.documentElement.classList.remove("reftest-wait")
+  }
+};
+
+let offscreen = new OffscreenCanvas(100, 100);
+worker.postMessage({ canvas: offscreen }, [offscreen]);
+</script>
+</html>

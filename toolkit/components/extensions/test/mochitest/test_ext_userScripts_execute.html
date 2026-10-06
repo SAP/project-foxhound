@@ -1,0 +1,1029 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Tests userScripts.execute()</title>
+  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
+  <script type="text/javascript" src="head.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+
+<iframe src="https://example.com/tests/toolkit/components/extensions/test/mochitest/file_sample.html"></iframe>
+
+<script type="text/javascript">
+
+"use strict";
+
+const MOCHITEST_HOST_PERMISSIONS = [
+  "*://mochi.test/",
+  "*://mochi.xorigin-test/",
+  "*://test1.example.com/",
+];
+
+const makeExtension = ({ manifest: manifestProps, ...otherProps }) => {
+  return ExtensionTestUtils.loadExtension({
+    manifest: {
+      manifest_version: 3,
+      optional_permissions: ["userScripts"],
+      host_permissions: [
+        ...MOCHITEST_HOST_PERMISSIONS,
+        "https://example.com/",
+        // Used in `file_contains_iframe.html`
+        "https://example.org/",
+      ],
+      granted_host_permissions: true,
+      ...manifestProps,
+    },
+    useAddonManager: "temporary",
+    ...otherProps,
+  });
+};
+
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.webextOptionalPermissionPrompts", false]],
+  });
+});
+
+add_task(async function test_execute_params_validation() {
+  let extension = makeExtension({
+    async background() {
+      const tabs = await browser.tabs.query({ active: true });
+      const tabId = tabs[0].id;
+
+      await new Promise(resolve => {
+        browser.test.withHandlingUserInput(() => {
+          resolve(
+            browser.permissions.request({ permissions: ["userScripts"] })
+          );
+        });
+      });
+
+      browser.test.assertThrows(
+        () =>
+          browser.userScripts.execute({
+            target: {},
+            js: [{ code: "" }],
+          }),
+        /Property "tabId" is required/,
+        `expected error when no tab id specified`
+      );
+
+      browser.test.assertThrows(
+        () =>
+          browser.userScripts.execute({
+            target: { tabId },
+            js: [{}],
+          }),
+        /Value must either: contain the required "file" property, or contain the required "code" property/,
+        `expected error when no file and no code`
+      );
+
+      browser.test.assertThrows(
+        () =>
+          browser.userScripts.execute({
+            target: { tabId },
+            js: [{ file: "script.js", code: "" }],
+          }),
+        /Value must either: not contain an unexpected "code" property, or not contain an unexpected "file" property/,
+        `expected error when both file and code are passed`
+      );
+
+      browser.test.assertThrows(
+        () =>
+          browser.userScripts.execute({
+            target: { tabId },
+            js: [{ file: "https://example.com/script.js" }],
+          }),
+        /file must match the format "unresolvedRelativeUrl"/,
+        "expected error when file is an external URL"
+      );
+
+      await browser.test.assertRejects(
+        browser.userScripts.execute({
+          target: { tabId },
+          js: [{ code: "" }],
+          world: "MAIN",
+          worldId: "CUSTOM_WORLD",
+        }),
+        "worldId cannot be used with MAIN world.",
+        "expected error when both world MAIN and worldId are passed"
+      );
+
+      await browser.test.assertRejects(
+        browser.userScripts.execute({
+          target: {
+            tabId,
+            allFrames: true,
+            frameIds: [1, 2, 3],
+          },
+          js: [{ file: "script.js" }],
+        }),
+        "Cannot specify both 'allFrames' and 'frameIds'.",
+        `expected error when both allFrames and frameIds are passed`
+      );
+
+      await browser.test.assertRejects(
+        browser.userScripts.execute({
+          target: {
+            tabId,
+            documentIds: ["xxx", "yyy"],
+            frameIds: [1, 2, 3],
+          },
+          js: [{ file: "script.js" }],
+        }),
+        "Cannot specify both 'documentIds' and 'frameIds'.",
+        `expected error when both documentIds and frameIds are passed`
+      );
+
+      await browser.test.assertRejects(
+        browser.userScripts.execute({
+          target: {
+            tabId,
+            documentIds: ["xxx", "yyy"],
+            allFrames: true,
+          },
+          js: [{ file: "script.js" }],
+        }),
+        "Cannot specify both 'allFrames' and 'documentIds'.",
+        "expected error when both allFrames and documentIds are passed"
+      );
+
+      // This tab ID should not exist.
+      const invalidTabId = 123456789;
+      await browser.test.assertRejects(
+        browser.userScripts.execute({
+          target: { tabId: invalidTabId },
+          js: [{ code: "" }],
+        }),
+        `Invalid tab ID: ${invalidTabId}`,
+        `expected error when invalid tab id specified`
+      );
+
+      await browser.test.assertRejects(
+        browser.userScripts.execute({
+          target: { tabId, frameIds: [0, 1, 2] },
+          js: [{ code: "" }],
+        }),
+        "Invalid frame IDs: [1, 2].",
+        `expected error on invalid IDs in frameIds`
+      );
+
+      browser.test.notifyPass("execute-script");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitFinish("execute-script");
+  await extension.unload();
+});
+
+add_task(async function test_execute_order_of_execution() {
+  const extension = makeExtension({
+    async background() {
+      const tabs = await browser.tabs.query({ active: true });
+
+      browser.test.assertEq(1, tabs.length, "expected 1 tab");
+
+      await new Promise(resolve => {
+        browser.test.withHandlingUserInput(() => {
+          resolve(
+            browser.permissions.request({ permissions: ["userScripts"] })
+          );
+        });
+      });
+
+      const results = await browser.userScripts.execute({
+        target: { tabId: tabs[0].id },
+        js: [
+          {
+            code: `globalThis.order = '1';`,
+          },
+          {
+            file: "second_script.js",
+          },
+          {
+            code: `globalThis.order += '3';`,
+          },
+          {
+            file: "final_script.js",
+          },
+        ],
+      });
+
+      browser.test.assertEq(
+        1,
+        results.length,
+        "got expected number of results"
+      );
+      browser.test.assertEq(0, results[0].frameId, "got the expected frameId");
+      browser.test.assertEq(
+        "123",
+        results[0]?.result,
+        "got the expected order"
+      );
+
+      browser.test.notifyPass("execute-script");
+    },
+    files: {
+      "second_script.js": function () {
+        globalThis.order += "2";
+      },
+      "final_script.js": function () {
+        return globalThis.order;
+      },
+    },
+  });
+
+  const tab = await AppTestDelegate.openNewForegroundTab(
+    window,
+    "https://test1.example.com/tests/toolkit/components/extensions/test/mochitest/file_sample.html",
+    true
+  );
+
+  await extension.startup();
+  await extension.awaitFinish("execute-script");
+  await extension.unload();
+
+  await AppTestDelegate.removeTab(window, tab);
+});
+
+add_task(async function test_execute_runtime_errors() {
+  const extension = makeExtension({
+    manifest: {
+      permissions: ["webNavigation"],
+    },
+    async background() {
+      const tabs = await browser.tabs.query({ active: true });
+      browser.test.assertEq(1, tabs.length, "expected 1 tab");
+
+      const tabId = tabs[0].id;
+      const frames = await browser.webNavigation.getAllFrames({ tabId });
+      // 1. Top-level frame that loads `file_contains_iframe.html`
+      // 2. Frame that loads `file_contains_img.html`
+      browser.test.assertEq(2, frames.length, "expected 2 frames");
+
+      await new Promise(resolve => {
+        browser.test.withHandlingUserInput(() => {
+          resolve(
+            browser.permissions.request({ permissions: ["userScripts"] })
+          );
+        });
+      });
+
+      const TEST_CASES = [
+        {
+          title: "reference error",
+          executeParams: {
+            target: { tabId },
+            js: [{ code: "String(e);" }],
+          },
+          expectedErrors: [
+            { type: "Error", stringRepr: "ReferenceError: e is not defined" },
+          ],
+        },
+        {
+          title: "eval error",
+          executeParams: {
+            target: { tabId },
+            js: [{ code: "eval('');" }],
+          },
+          expectedErrors: [
+            {
+              type: "Error",
+              stringRepr: "EvalError: call to eval() blocked by CSP",
+            },
+          ],
+        },
+        {
+          title: "errors thrown in allFrames",
+          executeParams: {
+            target: { tabId, allFrames: true },
+            js: [
+              {
+                code: "throw new Error(`Thrown at ${location.pathname.split('/').pop()}`);",
+              },
+            ],
+          },
+          expectedErrors: [
+            {
+              type: "Error",
+              stringRepr: "Error: Thrown at file_contains_iframe.html",
+            },
+            {
+              type: "Error",
+              stringRepr: "Error: Thrown at file_contains_img.html",
+            },
+          ],
+        },
+        {
+          title: "custom error",
+          executeParams: {
+            target: { tabId },
+            js: [
+              {
+                code: `
+                class CustomError extends Error {
+                  constructor(message) {
+                    super(message);
+                    this.name = 'CustomError';
+                  }
+                }
+                throw new CustomError("a custom error message");
+              `,
+              },
+            ],
+          },
+          // See Bug 1556604 for why a custom (derived) error looks like a
+          // normal error object after cloning.
+          expectedErrors: [
+            { type: "Error", stringRepr: "Error: a custom error message" },
+          ],
+        },
+        {
+          title: "promise rejection with a string value",
+          executeParams: {
+            target: { tabId },
+            js: [{ code: "throw 'an error message';" }],
+          },
+          expectedErrors: [{ type: "String", stringRepr: "an error message" }],
+        },
+        {
+          title: "promise rejection with an error",
+          executeParams: {
+            target: { tabId },
+            js: [{ code: "throw new Error('ooops');" }],
+          },
+          expectedErrors: [{ type: "Error", stringRepr: "Error: ooops" }],
+        },
+        {
+          title: "promise rejection with null",
+          executeParams: {
+            target: { tabId },
+            js: [{ code: "throw null;" }],
+          },
+          expectedErrors: [
+            // This means we would receive `error: null`.
+            { type: "Null", stringRepr: "null" },
+          ],
+        },
+        {
+          title: "promise rejection with undefined",
+          executeParams: {
+            target: { tabId },
+            js: [
+              {
+                code: "new Promise((_, reject) => reject(undefined));",
+              },
+            ],
+          },
+          expectedErrors: [
+            // This means we would receive `error: undefined`.
+            { type: "Undefined", stringRepr: "undefined" },
+          ],
+        },
+        {
+          title: "promise rejection with empty string",
+          executeParams: {
+            target: { tabId },
+            js: [{ code: "throw '';" }],
+          },
+          expectedErrors: [{ type: "String", stringRepr: "" }],
+        },
+        {
+          title: "promise rejection with zero",
+          executeParams: {
+            target: { tabId },
+            js: [{ code: "throw 0;" }],
+          },
+          expectedErrors: [{ type: "Number", stringRepr: "0" }],
+        },
+        {
+          title: "promise rejection with false",
+          executeParams: {
+            target: { tabId },
+            js: [{ code: "throw false;" }],
+          },
+          expectedErrors: [{ type: "Boolean", stringRepr: "false" }],
+        },
+        {
+          title: "promise rejection for 2 files with one error",
+          executeParams: {
+            target: { tabId },
+            js: [{ file: "error.js" }, { file: "noerror.js" }],
+          },
+          expectedErrors: [
+            {
+              type: "Error",
+              stringRepr: "Error: Thrown at file_contains_iframe.html",
+            },
+          ],
+        },
+        {
+          title: "promise rejection for code and file with error",
+          executeParams: {
+            target: { tabId },
+            js: [{ file: "error.js" }, { code: "" }],
+          },
+          expectedErrors: [
+            {
+              type: "Error",
+              stringRepr: "Error: Thrown at file_contains_iframe.html",
+            },
+          ],
+        },
+        {
+          title: "promise rejection for 2 code fragments with one error",
+          executeParams: {
+            target: { tabId },
+            js: [
+              {
+                code: 'throw new Error(`Thrown at ${location.pathname.split("/").pop()}`);',
+              },
+              { code: "" },
+            ],
+          },
+          expectedErrors: [
+            {
+              type: "Error",
+              stringRepr: "Error: Thrown at file_contains_iframe.html",
+            },
+          ],
+        },
+        {
+          title: "promise rejection for file and code with error",
+          executeParams: {
+            target: { tabId },
+            js: [
+              {
+                code: 'throw new Error(`Thrown at ${location.pathname.split("/").pop()}`);',
+              },
+              { file: "noerror.js" },
+            ],
+          },
+          expectedErrors: [
+            {
+              type: "Error",
+              stringRepr: "Error: Thrown at file_contains_iframe.html",
+            },
+          ],
+        },
+      ];
+
+      for (const { title, executeParams, expectedErrors } of TEST_CASES) {
+        const results = await browser.userScripts.execute(executeParams);
+        // Sort injection results by frameId to always assert the results in
+        // the same order.
+        results.sort((a, b) => a.frameId - b.frameId);
+
+        browser.test.assertEq(
+          expectedErrors.length,
+          results.length,
+          `expected ${expectedErrors.length} results`
+        );
+
+        for (const [i, { type, stringRepr }] of expectedErrors.entries()) {
+          browser.test.assertTrue(
+            "error" in results[i],
+            `${title} - expected error property to be set`
+          );
+          browser.test.assertFalse(
+            "result" in results[i],
+            `${title} - expected result property to be unset`
+          );
+
+          const { frameId, error } = results[i];
+
+          browser.test.assertEq(
+            `[object ${type}]`,
+            Object.prototype.toString.call(error),
+            `${title} - expected instance of ${type} - ${frameId}`
+          );
+          browser.test.assertEq(
+            stringRepr,
+            String(error),
+            `${title} - got expected errors - ${frameId}`
+          );
+        }
+      }
+
+      // TODO bug 1930776: raise a meaningful error
+      // Expected error: `Unable to load script: ${browser.runtime.getURL("/path/to/void.js")}`
+      // Explanation: https://bugzilla.mozilla.org/show_bug.cgi?id=1824896#c4
+      await browser.test.assertRejects(
+        browser.userScripts.execute({
+          target: { tabId },
+          js: [{ file: "/path/to/void.js" }],
+        }),
+        /result is non-structured-clonable data/,
+        "promise rejection with file not found error"
+      );
+
+      // TODO bug 2041680: the promises is currently rejected
+      // Expected behaviour: return individual error messages per frame in the result array
+      await browser.test.assertRejects(
+        browser.userScripts.execute({
+          target: {
+            tabId,
+            allFrames: true,
+          },
+          js: [{ code: "throw window" }],
+        }),
+        /Script '<anonymous code>' result is non-structured-clonable data/,
+        "throw non-structurally cloneable data in all frames"
+      );
+
+      browser.test.notifyPass("execute-script");
+    },
+    files: {
+      "error.js": function () {
+        throw new Error(`Thrown at ${location.pathname.split("/").pop()}`);
+      },
+      "noerror.js": function () {},
+    },
+  });
+
+  const tab = await AppTestDelegate.openNewForegroundTab(
+    window,
+    "https://test1.example.com/tests/toolkit/components/extensions/test/mochitest/file_contains_iframe.html",
+    true
+  );
+
+  await extension.startup();
+  await extension.awaitFinish("execute-script");
+  await extension.unload();
+
+  await AppTestDelegate.removeTab(window, tab);
+});
+
+add_task(async function test_execute_with_wrong_host_permissions() {
+  const extension = makeExtension({
+    manifest: {
+      host_permissions: [],
+    },
+    async background() {
+      const tabs = await browser.tabs.query({ active: true });
+
+      browser.test.assertEq(1, tabs.length, "expected 1 tab");
+
+      await new Promise(resolve => {
+        browser.test.withHandlingUserInput(() => {
+          resolve(
+            browser.permissions.request({ permissions: ["userScripts"] })
+          );
+        });
+      });
+
+      await browser.test.assertRejects(
+        browser.userScripts.execute({
+          target: { tabId: tabs[0].id },
+          js: [{ code: "'Unexpected execution';" }],
+        }),
+        "Missing host permission for the tab",
+        "expected host permission error"
+      );
+
+      browser.test.notifyPass("execute-script");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitFinish("execute-script");
+  await extension.unload();
+});
+
+add_task(async function test_execute_in_frames_with_host_permission() {
+  const extension = makeExtension({
+    manifest: {
+      permissions: ["webNavigation"],
+    },
+    async background() {
+      const tabs = await browser.tabs.query({ active: true });
+      browser.test.assertEq(1, tabs.length, "expected 1 tab");
+
+      const tabId = tabs[0].id;
+      const frames = await browser.webNavigation.getAllFrames({ tabId });
+      // 1. Top-level frame that loads `file_contains_iframe.html`
+      // 2. Frame that loads `file_contains_img.html`
+      browser.test.assertEq(2, frames.length, "expected 2 frames");
+      const frameIds = frames.map(frame => frame.frameId);
+      const documentIds = frames.map(frame => frame.documentId);
+
+      await new Promise(resolve => {
+        browser.test.withHandlingUserInput(() => {
+          resolve(
+            browser.permissions.request({ permissions: ["userScripts"] })
+          );
+        });
+      });
+
+      const TEST_CASES = [
+        {
+          title: "allFrames set to true",
+          executeParams: {
+            target: { tabId, allFrames: true },
+            js: [{ code: "document.title" }],
+          },
+          expectedResults: [
+            {
+              frameId: frameIds[0],
+              documentId: documentIds[0],
+              result: "file contains iframe",
+            },
+            {
+              frameId: frameIds[1],
+              documentId: documentIds[1],
+              result: "file contains img",
+            },
+          ],
+        },
+        {
+          title: "allFrames set to false",
+          executeParams: {
+            target: { tabId, allFrames: false },
+            js: [{ code: "document.title" }],
+          },
+          expectedResults: [
+            {
+              frameId: frameIds[0],
+              documentId: documentIds[0],
+              result: "file contains iframe",
+            },
+          ],
+        },
+        {
+          title: "all frameIds set",
+          executeParams: {
+            target: { tabId, frameIds },
+            js: [{ code: "document.title" }],
+          },
+          expectedResults: [
+            {
+              frameId: frameIds[0],
+              documentId: documentIds[0],
+              result: "file contains iframe",
+            },
+            {
+              frameId: frameIds[1],
+              documentId: documentIds[1],
+              result: "file contains img",
+            },
+          ],
+        },
+        {
+          title: "main frame of frameIds set",
+          executeParams: {
+            target: { tabId, frameIds: [frameIds[0]] },
+            js: [{ code: "document.title" }],
+          },
+          expectedResults: [
+            {
+              frameId: frameIds[0],
+              documentId: documentIds[0],
+              result: "file contains iframe",
+            },
+          ],
+        },
+        {
+          title: "sub frame of frameIds set",
+          executeParams: {
+            target: { tabId, frameIds: [frameIds[1]] },
+            js: [{ code: "document.title" }],
+          },
+          expectedResults: [
+            {
+              frameId: frameIds[1],
+              documentId: documentIds[1],
+              result: "file contains img",
+            },
+          ],
+        },
+        {
+          title: "all documentIds set",
+          executeParams: {
+            target: { tabId, documentIds },
+            js: [{ code: "document.title" }],
+          },
+          expectedResults: [
+            {
+              frameId: frameIds[0],
+              documentId: documentIds[0],
+              result: "file contains iframe",
+            },
+            {
+              frameId: frameIds[1],
+              documentId: documentIds[1],
+              result: "file contains img",
+            },
+          ],
+        },
+        {
+          title: "main frame of documentIds set",
+          executeParams: {
+            target: { tabId, documentIds: [documentIds[0]] },
+            js: [{ code: "document.title" }],
+          },
+          expectedResults: [
+            {
+              frameId: frameIds[0],
+              documentId: documentIds[0],
+              result: "file contains iframe",
+            },
+          ],
+        },
+        {
+          title: "sub frame of documentIds set",
+          executeParams: {
+            target: { tabId, documentIds: [documentIds[1]] },
+            js: [{ code: "document.title" }],
+          },
+          expectedResults: [
+            {
+              frameId: frameIds[1],
+              documentId: documentIds[1],
+              result: "file contains img",
+            },
+          ],
+        },
+      ];
+
+      for (const { title, executeParams, expectedResults } of TEST_CASES) {
+        const results = await browser.userScripts.execute(executeParams);
+        // Sort injection results by frameId to always assert the results in
+        // the same order.
+        results.sort((a, b) => a.frameId - b.frameId);
+
+        browser.test.assertDeepEq(
+          expectedResults,
+          results,
+          `${title} - got expected results`
+        );
+
+        // Make sure the `error` prop is never set.
+        for (const result of results) {
+          browser.test.assertFalse(
+            "error" in result,
+            `${title} - expected error property to be unset`
+          );
+        }
+      }
+
+      browser.test.notifyPass("execute-script");
+    },
+  });
+
+  const tab = await AppTestDelegate.openNewForegroundTab(
+    window,
+    "https://test1.example.com/tests/toolkit/components/extensions/test/mochitest/file_contains_iframe.html",
+    true
+  );
+
+  await extension.startup();
+  await extension.awaitFinish("execute-script");
+  await extension.unload();
+
+  await AppTestDelegate.removeTab(window, tab);
+});
+
+add_task(async function test_execute_in_frames_with_wrong_host_permission() {
+  const extension = makeExtension({
+    manifest: {
+      host_permissions: MOCHITEST_HOST_PERMISSIONS,
+      permissions: ["webNavigation"],
+    },
+    async background() {
+      const tabs = await browser.tabs.query({ active: true });
+      browser.test.assertEq(1, tabs.length, "expected 1 tab");
+
+      const tabId = tabs[0].id;
+      const frames = await browser.webNavigation.getAllFrames({ tabId });
+      // 1. Top-level frame with the MochiTest runner
+      // 2. Frame for this file
+      // 3. Frame that loads `file_sample.html` at the top of this file
+      browser.test.assertEq(3, frames.length, "expected 3 frames");
+
+      const frameIds = frames.map(frame => frame.frameId);
+
+      await new Promise(resolve => {
+        browser.test.withHandlingUserInput(() => {
+          resolve(
+            browser.permissions.request({ permissions: ["userScripts"] })
+          );
+        });
+      });
+
+      // test allFrames = true
+      {
+        const results = await browser.userScripts.execute({
+          target: { tabId, allFrames: true },
+          js: [{ code: "" }],
+        });
+        // We get 2 results because we cannot inject into the 3rd frame.
+        browser.test.assertEq(
+          2,
+          results.length,
+          "got expected number of results"
+        );
+        browser.test.assertDeepEq(
+          undefined,
+          results[0].error,
+          "expected no error in results[0]"
+        );
+        browser.test.assertDeepEq(
+          undefined,
+          results[1].error,
+          "expected no error in results[1]"
+        );
+      }
+
+      // test with all frameIds
+      {
+        const results = await browser.userScripts.execute({
+          target: { tabId, frameIds },
+          js: [{ code: "" }],
+        });
+        // We get 2 results because we cannot inject into the 3rd frame.
+        browser.test.assertEq(
+          2,
+          results.length,
+          "got expected number of results"
+        );
+        browser.test.assertDeepEq(
+          undefined,
+          results[0].error,
+          "expected no error in results[0]"
+        );
+        browser.test.assertDeepEq(
+          undefined,
+          results[1].error,
+          "expected no error in results[1]"
+        );
+      }
+
+      // test with restricted frameId
+      await browser.test.assertRejects(
+        browser.userScripts.execute({
+          target: { tabId, frameIds: [frameIds[2]] },
+          js: [{ code: "'Unexpected execution';" }],
+        }),
+        "Missing host permission for the tab or frames",
+        "got the expected error message"
+      );
+
+      browser.test.notifyPass("execute-script");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitFinish("execute-script");
+  await extension.unload();
+});
+
+add_task(async function test_execute_with_iframe_srcdoc_and_aboutblank() {
+  const iframe = document.createElement("iframe");
+  iframe.srcdoc = `<!DOCTYPE html>
+    <html>
+      <head><title>iframe with srcdoc</title></head>
+    </html>`;
+  await new Promise(resolve => {
+    iframe.onload = resolve;
+    document.body.appendChild(iframe);
+  });
+
+  let iframeAboutBlank = document.createElement("iframe");
+  iframeAboutBlank.src = "about:blank";
+  await new Promise(resolve => {
+    iframeAboutBlank.onload = resolve;
+    document.body.appendChild(iframeAboutBlank);
+  });
+
+  const extension = makeExtension({
+    manifest: {
+      permissions: ["webNavigation"],
+    },
+    async background() {
+      const tabs = await browser.tabs.query({ active: true });
+      browser.test.assertEq(1, tabs.length, "expected 1 tab");
+
+      const tabId = tabs[0].id;
+      const frames = await browser.webNavigation.getAllFrames({ tabId });
+      // 1. Top-level frame with the MochiTest runner
+      // 2. Frame for this file
+      // 3. Frame that loads `file_sample.html` at the top of this file
+      // 4. Frame that loads the `srcdoc`
+      // 5. Frame for `about:blank`
+      browser.test.assertEq(5, frames.length, "expected 5 frames");
+
+      const frameIds = frames.map(frame => frame.frameId);
+      const documentIds = frames.map(frame => frame.documentId);
+
+      await new Promise(resolve => {
+        browser.test.withHandlingUserInput(() => {
+          resolve(
+            browser.permissions.request({ permissions: ["userScripts"] })
+          );
+        });
+      });
+
+      const TEST_CASES = [
+        {
+          title: "with frameIds for all frames",
+          params: {
+            target: { tabId, frameIds },
+          },
+          expectedResults: {
+            count: 5,
+            entriesAtIndex: {
+              3: {
+                frameId: frameIds[3],
+                documentId: documentIds[3],
+                result: "iframe with srcdoc",
+              },
+              4: {
+                frameId: frameIds[4],
+                documentId: documentIds[4],
+                result: "about:blank",
+              },
+            },
+          },
+        },
+        {
+          title: "with allFrames: true",
+          params: {
+            target: { tabId, allFrames: true },
+          },
+          expectedResults: {
+            count: 5,
+            entriesAtIndex: {
+              3: {
+                frameId: frameIds[3],
+                documentId: documentIds[3],
+                result: "iframe with srcdoc",
+              },
+              4: {
+                frameId: frameIds[4],
+                documentId: documentIds[4],
+                result: "about:blank",
+              },
+            },
+          },
+        },
+        {
+          title: "with a single frame specified",
+          params: {
+            target: { tabId, frameIds: [frameIds[3]] },
+          },
+          expectedResults: {
+            count: 1,
+            entriesAtIndex: {
+              0: {
+                frameId: frameIds[3],
+                documentId: documentIds[3],
+                result: "iframe with srcdoc",
+              },
+            },
+          },
+        },
+      ];
+
+      for (const { title, params, expectedResults } of TEST_CASES) {
+        const results = await browser.userScripts.execute({
+          ...params,
+          js: [{ code: "document.title || document.URL" }],
+        });
+        // Sort injection results by frameId to always assert the results in
+        // the same order.
+        results.sort((a, b) => a.frameId - b.frameId);
+
+        browser.test.assertEq(
+          expectedResults.count,
+          results.length,
+          `${title} - got the expected number of results`
+        );
+        Object.keys(expectedResults.entriesAtIndex).forEach(index => {
+          browser.test.assertEq(
+            JSON.stringify(expectedResults.entriesAtIndex[index]),
+            JSON.stringify(results[index]),
+            `${title} - got expected results[${index}]`
+          );
+        });
+      }
+
+      browser.test.notifyPass("execute-script");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitFinish("execute-script");
+  await extension.unload();
+
+  iframe.remove();
+  iframeAboutBlank.remove();
+});
+
+</script>
+
+</body>
+</html>

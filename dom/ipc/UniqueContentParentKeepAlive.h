@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +5,6 @@
 #ifndef mozilla_dom_UniqueContentParentKeepAlive_h
 #define mozilla_dom_UniqueContentParentKeepAlive_h
 
-#include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "nsIDOMProcessParent.h"
 
@@ -34,15 +31,15 @@ using UniqueThreadsafeContentParentKeepAlive =
     UniquePtr<ThreadsafeContentParentHandle, ContentParentKeepAliveDeleter>;
 
 UniqueContentParentKeepAlive UniqueContentParentKeepAliveFromThreadsafe(
-    UniqueThreadsafeContentParentKeepAlive aKeepAlive);
+    UniqueThreadsafeContentParentKeepAlive&& aKeepAlive);
 UniqueThreadsafeContentParentKeepAlive UniqueContentParentKeepAliveToThreadsafe(
-    UniqueContentParentKeepAlive aKeepAlive);
+    UniqueContentParentKeepAlive&& aKeepAlive);
 
 // Wrap a UniqueContentParentKeepAlive to make it usable from JS.
 //
 // Should not be called on a KeepAlive for a still-launching ContentParent.
 already_AddRefed<nsIContentParentKeepAlive> WrapContentParentKeepAliveForJS(
-    UniqueContentParentKeepAlive aKeepAlive);
+    UniqueContentParentKeepAlive&& aKeepAlive);
 
 }  // namespace mozilla::dom
 

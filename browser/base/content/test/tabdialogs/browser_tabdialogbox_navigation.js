@@ -61,7 +61,7 @@ add_task(async function test_tabdialogbox_close_on_content_nav() {
       await dialog._dialogReady;
 
       // Trigger a same origin navigation by the content
-      await ContentTask.spawn(browser, {}, () => {
+      await SpecialPowers.spawn(browser, [], () => {
         // eslint-disable-next-line @microsoft/sdl/no-insecure-url
         content.location = "http://example.com/1";
       });
@@ -89,7 +89,7 @@ add_task(async function test_tabdialogbox_close_on_content_nav() {
       ]);
 
       // Trigger a same origin navigation by the content
-      await ContentTask.spawn(browser, {}, () => {
+      await SpecialPowers.spawn(browser, [], () => {
         // eslint-disable-next-line @microsoft/sdl/no-insecure-url
         content.location = "http://example.com/test";
       });
@@ -101,7 +101,7 @@ add_task(async function test_tabdialogbox_close_on_content_nav() {
       );
 
       // Trigger a cross origin navigation by the content
-      await ContentTask.spawn(browser, {}, () => {
+      await SpecialPowers.spawn(browser, [], () => {
         // eslint-disable-next-line @microsoft/sdl/no-insecure-url
         content.location = "http://example.org/test2";
       });

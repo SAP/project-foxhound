@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 const { PrintUtils, Services, AppConstants } =
-  window.docShell.chromeEventHandler.ownerGlobal;
+  window.docShell.chromeEventHandler.documentGlobal;
 
 ChromeUtils.defineESModuleGetters(this, {
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
@@ -959,12 +959,22 @@ var PrintEventHandler = {
       lastUsedPrinter = saveToPdfPrinter;
     }
 
+    for (let printer of printers) {
+      printer.QueryInterface(Ci.nsIPrinter);
+    }
+    const collator = new Intl.Collator(undefined, { sensitivity: "base" });
+    printers.sort((a, b) => {
+      if (a.sortAfterLocal !== b.sortAfterLocal) {
+        return a.sortAfterLocal ? 1 : -1;
+      }
+      return collator.compare(a.name, b.name);
+    });
+
     let destinations = [
       saveToPdfPrinter,
       ...printers.map(printer => {
-        printer.QueryInterface(Ci.nsIPrinter);
         const { name } = printer;
-        printersByName[printer.name] = { printer };
+        printersByName[name] = { printer };
         const destination = { name, value: name };
 
         if (name == lastUsedPrinterName) {
@@ -1297,7 +1307,7 @@ var PrintSettingsViewProxy = {
         return paperId && this.availablePaperSizes[paperId];
       }
 
-      case "marginPresets":
+      case "marginPresets": {
         let paperWrapper = this.get(target, "currentPaper");
         return {
           none: PrintEventHandler.getMarginPresets("none", paperWrapper),
@@ -1305,6 +1315,7 @@ var PrintSettingsViewProxy = {
           default: PrintEventHandler.getMarginPresets("default", paperWrapper),
           custom: PrintEventHandler.getMarginPresets("custom", paperWrapper),
         };
+      }
 
       case "marginOptions": {
         let allMarginPresets = this.get(target, "marginPresets");
@@ -1323,7 +1334,7 @@ var PrintSettingsViewProxy = {
         return marginsEnabled;
       }
 
-      case "margins":
+      case "margins": {
         let marginSettings = {
           marginTop: target.marginTop,
           marginLeft: target.marginLeft,
@@ -1363,6 +1374,7 @@ var PrintSettingsViewProxy = {
 
         // Fall back to custom for other values
         return "custom";
+      }
 
       case "defaultMargins":
         return PrintEventHandler.getMarginPresets(
@@ -1439,7 +1451,7 @@ var PrintSettingsViewProxy = {
 
   set(target, name, value) {
     switch (name) {
-      case "margins":
+      case "margins": {
         if (!["default", "minimum", "none", "custom"].includes(value)) {
           logger.warn("Unexpected margin preset name: ", value);
           value = "default";
@@ -1455,6 +1467,7 @@ var PrintSettingsViewProxy = {
         target.honorPageRuleMargins = value == "default";
         target.ignoreUnwriteableMargins = value == "none";
         break;
+      }
 
       case "paperId": {
         let paperId = value;
@@ -1532,7 +1545,7 @@ var PrintSettingsViewProxy = {
       case "customMarginTop":
       case "customMarginBottom":
       case "customMarginLeft":
-      case "customMarginRight":
+      case "customMarginRight": {
         let customMarginName = "margin" + name.substring(12);
         this.set(
           target,
@@ -1542,6 +1555,7 @@ var PrintSettingsViewProxy = {
           })
         );
         break;
+      }
 
       case "sourceVersion":
         this._sourceVersion = value;
@@ -2792,7 +2806,7 @@ async function pickFileName(contentTitle, currentURI) {
   filename = DownloadPaths.sanitize(filename);
 
   picker.init(
-    window.docShell.chromeEventHandler.ownerGlobal.browsingContext,
+    window.docShell.chromeEventHandler.documentGlobal.browsingContext,
     title,
     Ci.nsIFilePicker.modeSave
   );

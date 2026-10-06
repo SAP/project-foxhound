@@ -51,7 +51,7 @@ add_task(async function checkCaptivePortalCertErrorUI() {
 
     Assert.ok(true, "openPortalLoginPageButton has focus");
     info("Clicking the Open Login Page button");
-    await EventUtils.synthesizeMouseAtCenter(loginButton, {}, content);
+    EventUtils.synthesizeMouseAtCenter(loginButton, {}, content);
   });
 
   let portalTab = await portalTabPromise;
@@ -74,7 +74,7 @@ add_task(async function checkCaptivePortalCertErrorUI() {
     let loginButton = content.document.getElementById(
       "openPortalLoginPageButton"
     );
-    await EventUtils.synthesizeMouseAtCenter(loginButton, {}, content);
+    EventUtils.synthesizeMouseAtCenter(loginButton, {}, content);
   });
 
   info("Opening captive portal login page");
@@ -132,7 +132,7 @@ add_task(async function testCaptivePortalAdvancedPanel() {
       !ContentTaskUtils.isVisible(advPanel),
       "Advanced panel is not yet visible"
     );
-    await EventUtils.synthesizeMouseAtCenter(advancedButton, {}, content);
+    EventUtils.synthesizeMouseAtCenter(advancedButton, {}, content);
     ok(ContentTaskUtils.isVisible(advPanel), "Advanced panel is now visible");
 
     let advPanelContent = doc.getElementById("badCertTechnicalInfo");
@@ -161,11 +161,7 @@ add_task(async function testCaptivePortalAdvancedPanel() {
       advPanelExceptionButton.disabled,
       "Exception button should start disabled"
     );
-    await EventUtils.synthesizeMouseAtCenter(
-      advPanelExceptionButton,
-      {},
-      content
-    ); // Click
+    EventUtils.synthesizeMouseAtCenter(advPanelExceptionButton, {}, content); // Click
     const clickTime = content.performance.now();
     ok(
       isOnCertErrorPage(),
@@ -193,11 +189,7 @@ add_task(async function testCaptivePortalAdvancedPanel() {
       `Exception button should stay disabled for ${msSinceClick} > 1000 ms`
     );
 
-    await EventUtils.synthesizeMouseAtCenter(
-      advPanelExceptionButton,
-      {},
-      content
-    ); // Click
+    EventUtils.synthesizeMouseAtCenter(advPanelExceptionButton, {}, content); // Click
     info("Clicked");
   });
   await waitForLocationChange;

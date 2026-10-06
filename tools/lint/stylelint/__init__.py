@@ -1,5 +1,3 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -13,7 +11,7 @@ import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "eslint"))
 from eslint import prettier_utils, setup_helper
-from mozbuild.nodeutil import find_node_executable
+from mozbuild.nodeutil import check_node_executables_valid, find_node_executable
 from mozlint import result
 
 STYLELINT_ERROR_MESSAGE = """
@@ -38,7 +36,7 @@ FILE_EXT_REGEX = re.compile(r"\.[a-z0-9_]{2,10}$", re.IGNORECASE)
 def setup(root, **lintargs):
     setup_helper.set_project_root(root)
 
-    if not setup_helper.check_node_executables_valid():
+    if not check_node_executables_valid():
         return 1
 
     return setup_helper.eslint_maybe_setup()
@@ -83,9 +81,10 @@ def lint(paths, config, binary=None, fix=None, rules=[], setup=None, **lintargs)
     if not lintargs.get("formatonly", False):
         exclude_args = []
         for path in config.get("exclude", []):
-            exclude_args.extend(
-                ["--ignore-pattern", os.path.relpath(path, lintargs["root"])]
-            )
+            exclude_args.extend([
+                "--ignore-pattern",
+                os.path.relpath(path, lintargs["root"]),
+            ])
 
         # Default to $topsrcdir/.stylelintrc.js, but allow override in stylelint.yml
         stylelint_rc = config.get("stylelint-rc", ".stylelintrc.js")
@@ -113,7 +112,12 @@ def lint(paths, config, binary=None, fix=None, rules=[], setup=None, **lintargs)
 
         log.debug("Stylelint command: {}".format(" ".join(cmd_args)))
 
-        result = run(cmd_args, config, fix)
+        # Set up environment for stylelint subprocess
+        env = os.environ.copy()
+        if lintargs.get("skip_rollouts", False):
+            env["STYLELINT_SKIP_ROLLOUTS"] = "1"
+
+        result = run(cmd_args, config, fix, env)
         if result == 1:
             return result
 
@@ -147,7 +151,7 @@ def lint(paths, config, binary=None, fix=None, rules=[], setup=None, **lintargs)
     return result
 
 
-def run(cmd_args, config, fix):
+def run(cmd_args, config, fix, env):
     shell = False
     if prettier_utils.is_windows():
         # The stylelint binary needs to be run from a shell with msys
@@ -156,7 +160,7 @@ def run(cmd_args, config, fix):
 
     orig = signal.signal(signal.SIGINT, signal.SIG_IGN)
     proc = subprocess.Popen(
-        cmd_args, shell=shell, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        cmd_args, shell=shell, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env
     )
     signal.signal(signal.SIGINT, orig)
 
@@ -171,7 +175,7 @@ def run(cmd_args, config, fix):
 
     # 0 is success, 2 is there was at least 1 rule violation. Anything else
     # is more serious.
-    if proc.returncode != 0 and proc.returncode != 2:
+    if proc.returncode not in {0, 2}:
         if proc.returncode == 78:
             print("Stylelint reported an issue with its configuration file.")
             print(errors)
@@ -205,15 +209,13 @@ def run(cmd_args, config, fix):
                 # All mozlint formatters that include the error message also already
                 # separately include the rule id, so that leads to duplication. Fix:
                 msg = msg.replace("(" + err.get("rule") + ")", "").strip()
-            err.update(
-                {
-                    "message": msg,
-                    "level": err.get("severity") or "error",
-                    "lineno": err.get("line") or 0,
-                    "path": obj["source"],
-                    "rule": err.get("rule") or "parseError",
-                }
-            )
+            err.update({
+                "message": msg,
+                "level": err.get("severity") or "error",
+                "lineno": err.get("line") or 0,
+                "path": obj["source"],
+                "rule": err.get("rule") or "parseError",
+            })
             results.append(result.from_config(config, **err))
 
     return {"results": results, "fixed": fixed}

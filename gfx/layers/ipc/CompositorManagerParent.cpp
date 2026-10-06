@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,8 +12,6 @@
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/RemoteTextureMap.h"
 #include "mozilla/layers/SharedSurfacesParent.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include "gfxPlatform.h"
 #include "VsyncSource.h"
 
@@ -108,9 +104,9 @@ CompositorManagerParent::CreateSameProcessWidgetCompositorBridge(
   TimeDuration vsyncRate =
       gfxPlatform::GetPlatform()->GetGlobalVsyncDispatcher()->GetVsyncRate();
 
-  RefPtr<CompositorBridgeParent> bridge = new CompositorBridgeParent(
-      sInstance, aScale, vsyncRate, aOptions, aUseExternalSurfaceSize,
-      aSurfaceSize, aInnerWindowId);
+  RefPtr bridge = MakeRefPtr<CompositorBridgeParent>(
+      sInstance, /* aNamespace */ 0, aScale, vsyncRate, aOptions,
+      aUseExternalSurfaceSize, aSurfaceSize, aInnerWindowId);
 
   sInstance->mPendingCompositorBridges.AppendElement(bridge);
   return bridge.forget();
@@ -227,11 +223,11 @@ void CompositorManagerParent::Shutdown() {
 
 already_AddRefed<PCompositorBridgeParent>
 CompositorManagerParent::AllocPCompositorBridgeParent(
-    const CompositorBridgeOptions& aOpt) {
+    const CompositorBridgeOptions& aOpt, const uint32_t& aNamespace) {
   switch (aOpt.type()) {
     case CompositorBridgeOptions::TContentCompositorOptions: {
-      RefPtr<ContentCompositorBridgeParent> bridge =
-          new ContentCompositorBridgeParent(this);
+      RefPtr bridge =
+          MakeRefPtr<ContentCompositorBridgeParent>(this, aNamespace);
       return bridge.forget();
     }
     case CompositorBridgeOptions::TWidgetCompositorOptions: {
@@ -244,8 +240,8 @@ CompositorManagerParent::AllocPCompositorBridgeParent(
       }
 
       const WidgetCompositorOptions& opt = aOpt.get_WidgetCompositorOptions();
-      RefPtr<CompositorBridgeParent> bridge = new CompositorBridgeParent(
-          this, opt.scale(), opt.vsyncRate(), opt.options(),
+      RefPtr bridge = MakeRefPtr<CompositorBridgeParent>(
+          this, aNamespace, opt.scale(), opt.vsyncRate(), opt.options(),
           opt.useExternalSurfaceSize(), opt.surfaceSize(), opt.innerWindowId());
       return bridge.forget();
     }
@@ -266,6 +262,7 @@ CompositorManagerParent::AllocPCompositorBridgeParent(
       }
 
       RefPtr<CompositorBridgeParent> bridge = mPendingCompositorBridges[0];
+      bridge->SetNamespace(aNamespace);
       mPendingCompositorBridges.RemoveElementAt(0);
       return bridge.forget();
     }
@@ -390,7 +387,7 @@ void CompositorManagerParent::NotifyWebRenderError(wr::WebRenderError aError) {
   if (NS_WARN_IF(!sInstance)) {
     return;
   }
-  Unused << sInstance->SendNotifyWebRenderError(aError);
+  (void)sInstance->SendNotifyWebRenderError(aError);
 }
 
 }  // namespace layers

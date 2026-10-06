@@ -7,7 +7,8 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  PageDataSchema: "resource:///modules/pagedata/PageDataSchema.sys.mjs",
+  PageDataSchema:
+    "moz-src:///browser/components/pagedata/PageDataSchema.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 });
 

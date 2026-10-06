@@ -27,7 +27,6 @@ class ProtectionsStoreTest {
                 true,
             ),
         )
-            .join()
         assertNotSame(initialState, store.state)
         assertEquals(
             store.state.mode,
@@ -41,7 +40,7 @@ class ProtectionsStoreTest {
         val initialState = detailsState()
         val store = ProtectionsStore(initialState)
 
-        store.dispatch(ProtectionsAction.ExitDetailsMode).join()
+        store.dispatch(ProtectionsAction.ExitDetailsMode)
         assertNotSame(initialState, store.state)
         assertEquals(
             store.state.mode,
@@ -56,7 +55,7 @@ class ProtectionsStoreTest {
         val store = ProtectionsStore(initialState)
         val tracker = TrackerLog("url", listOf())
 
-        store.dispatch(ProtectionsAction.TrackerLogChange(listOf(tracker))).join()
+        store.dispatch(ProtectionsAction.TrackerLogChange(listOf(tracker)))
         assertNotSame(initialState, store.state)
         assertEquals(
             listOf(tracker),
@@ -69,7 +68,7 @@ class ProtectionsStoreTest {
         val initialState = defaultState()
         val store = ProtectionsStore(initialState)
 
-        store.dispatch(ProtectionsAction.UrlChange("newURL")).join()
+        store.dispatch(ProtectionsAction.UrlChange("newURL"))
         assertNotSame(initialState, store.state)
         assertEquals(
             "newURL",
@@ -94,7 +93,7 @@ class ProtectionsStoreTest {
                     true,
                 ),
             ),
-        ).join()
+        )
         assertNotSame(initialState, store.state)
         assertEquals(
             "newURL",
@@ -127,7 +126,7 @@ class ProtectionsStoreTest {
             ProtectionsAction.ToggleCookieBannerHandlingProtectionEnabled(
                 cookieBannerUIMode = CookieBannerUIMode.ENABLE,
             ),
-        ).join()
+        )
 
         assertEquals(
             CookieBannerUIMode.ENABLE,
@@ -144,7 +143,7 @@ class ProtectionsStoreTest {
             ProtectionsAction.RequestReportSiteDomain(
                 url = "youtube.com",
             ),
-        ).join()
+        )
 
         assertEquals(
             "youtube.com",
@@ -161,7 +160,7 @@ class ProtectionsStoreTest {
             ProtectionsAction.UpdateCookieBannerMode(
                 cookieBannerUIMode = CookieBannerUIMode.DISABLE,
             ),
-        ).join()
+        )
 
         assertEquals(
             CookieBannerUIMode.DISABLE,

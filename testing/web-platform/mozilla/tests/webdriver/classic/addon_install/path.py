@@ -4,7 +4,7 @@ from support.addons import (
     is_addon_private_browsing_allowed,
     is_addon_temporary_installed,
 )
-from tests.support.asserts import assert_error, assert_success
+from tests.support.classic.asserts import assert_error, assert_success
 from tests.support.helpers import get_extension_path
 
 from . import ADDON_ID, install_addon, uninstall_addon

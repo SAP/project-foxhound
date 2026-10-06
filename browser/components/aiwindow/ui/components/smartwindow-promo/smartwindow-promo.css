@@ -1,0 +1,53 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:host {
+  display: block;
+  width: 100%;
+}
+
+moz-promo {
+  width: 100%;
+  --promo-heading-text-color-vibrant: light-dark(var(--color-violet-90), var(--color-violet-0));
+  --promo-message-text-color-vibrant: light-dark(var(--color-violet-80), var(--color-violet-0));
+}
+
+moz-button[type="primary"] {
+  --button-background-color-primary: light-dark(var(--color-violet-50), var(--color-violet-40));
+  --button-background-color-primary-hover: light-dark(var(--color-violet-60), var(--color-violet-30));
+  --button-background-color-primary-active: light-dark(var(--color-violet-70), var(--color-violet-20));
+  --button-border-color-primary: transparent;
+  --button-border-color-primary-hover: transparent;
+  --button-border-color-primary-active: transparent;
+  --button-text-color-primary: var(--color-white);
+  --button-text-color-primary-hover: var(--color-white);
+  --button-text-color-primary-active: var(--color-white);
+}
+
+moz-button[type="ghost"] {
+  --button-background-color-ghost: var(--button-background-color);
+  --button-background-color-ghost-active: var(--button-background-color-active);
+  --button-background-color-ghost-hover: var(--button-background-color-hover);
+  --button-background-color-ghost-selected: var(--button-background-color-selected);
+  --button-text-color-ghost: light-dark(var(--color-violet-90), var(--color-violet-0));
+  --button-text-color-ghost-active: var(--button-text-color-ghost);
+  --button-text-color-ghost-hover: var(--button-text-color-ghost);
+  --button-text-color-ghost-selected: var(--button-text-color-ghost);
+
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media -moz-pref("browser.nova.enabled") {
+    --button-background-color-ghost: transparent;
+    --button-background-color-ghost-hover: var(--smartwindow-panel-item-background-color-hover);
+    --button-background-color-ghost-active: var(--smartwindow-panel-item-background-color-active);
+    --button-background-color-ghost-selected: var(--smartwindow-panel-item-background-color-active);
+    --button-text-color-ghost: var(--smartwindow-text-color-accent-primary);
+    --button-text-color-ghost-hover: var(--button-text-color-ghost);
+    --button-text-color-ghost-active: var(--button-text-color-ghost);
+    --button-text-color-ghost-selected: var(--button-text-color-ghost);
+    --button-border-color-ghost: light-dark(var(--color-violet-30), var(--color-violet-40));
+    --button-border-color-ghost-hover: var(--button-border-color-ghost);
+    --button-border-color-ghost-active: var(--button-border-color-ghost);
+    --button-border-color-ghost-selected: var(--button-border-color-ghost);
+  }
+}

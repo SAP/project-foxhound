@@ -131,7 +131,7 @@
    */
   background-blend-mode: overlay;
   background-color: var(--theme-button-background);
-  background-image: linear-gradient(var(--theme-sidebar-background), var(--theme-sidebar-background));
+  background-image: image(var(--theme-sidebar-background));
   border-radius: 8px;
   border: none;
   color: var(--theme-body-color);

@@ -6,7 +6,7 @@ Firefox has multiple different sets of "branding" that are used to hold channel-
 * Product names (eg: "Mozilla Firefox", "Firefox Developer Edition")
 * Channel-specific preferences (eg: ``app.update.interval``)
 
-Brandings are stored in the `branding subdirectory <https://searchfox.org/mozilla-central/source/browser/branding>`_ and map to builds as follows:
+Brandings are stored in the :searchfox:`branding subdirectory <browser/branding>` and map to builds as follows:
 
 - ``official`` is used for Release and Beta builds
 - ``aurora`` is used for Developer Edition builds

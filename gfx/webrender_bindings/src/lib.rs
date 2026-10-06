@@ -2,17 +2,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#![allow(unknown_lints, mismatched_lifetime_syntaxes)]
 #![deny(warnings)]
 
 extern crate app_units;
 extern crate bincode;
 extern crate euclid;
-extern crate fxhash;
 extern crate gecko_profiler;
 extern crate gleam;
 extern crate nsstring;
 extern crate num_cpus;
 extern crate rayon;
+extern crate rustc_hash;
 extern crate swgl;
 extern crate thin_vec;
 extern crate tracy_rs;

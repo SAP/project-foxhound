@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?><!-- This Source Code Form is subject to the terms of the Mozilla Public
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
-<resources xmlns:moz="http://schemas.android.com/apk/res-auto" xmlns:tools="http://schemas.android.com/tools">
+<resources>
     <string name="pref_key_make_default_browser" translatable="false">pref_key_make_default_browser</string>
     <string name="pref_key_search_settings" translatable="false">pref_key_search_settings</string>
     <string name="pref_key_search_engine" translatable="false">pref_key_search_engine</string>
@@ -16,8 +16,17 @@
     <string name="pref_key_accessibility_font_scale" translatable="false">pref_key_accessibility_font_scale</string>
     <string name="pref_key_accessibility_force_enable_zoom" translatable="false">pref_key_accessibility_force_enable_zoom</string>
     <string name="pref_key_advanced" translatable="false">pref_key_advanced</string>
+    <string name="pref_key_firefox_labs" translatable="false">pref_key_firefox_labs</string>
     <string name="pref_key_language" translatable="false">pref_key_language</string>
     <string name="pref_key_translation" translatable="false">pref_key_translation</string>
+    <string name="pref_key_ai_controls" translatable="false">pref_key_ai_controls</string>
+    <string name="pref_key_import_bookmarks" translatable="false">pref_key_import_bookmarks</string>
+    <string name="pref_key_enable_ai_controls" translatable="false">pref_key_enable_ai_controls</string>
+    <string name="pref_key_enable_import_bookmarks" translatable="false">pref_key_enable_import_bookmarks</string>
+    <string name="pref_key_enable_ip_protection" translatable="false">pref_key_enable_ip_protection</string>
+    <string name="pref_key_has_used_ip_protection" translatable="false">pref_key_has_used_vpn</string>
+    <string name="pref_key_has_shown_ip_protection_prompt" translatable="false">pref_key_has_shown_ip_protection_prompt</string>
+    <string name="pref_key_ip_protection_settings" translatable="false">pref_key_ip_protection_settings</string>
     <string name="pref_key_data_choices" translatable="false">pref_key_data_choices</string>
     <string name="pref_key_delete_browsing_data" translatable="false">pref_key_delete_browsing_data</string>
     <string name="pref_key_delete_browsing_data_on_quit_preference" translatable="false">pref_key_delete_browsing_data_on_quit_preference</string>
@@ -56,23 +65,32 @@
     <string name="pref_key_sync_debug_network_error" translatable="false">pref_key_sync_debug_network_error</string>
     <string name="pref_key_sync_debug_temporary_auth_error" translatable="false">pref_key_sync_debug_temporary_auth_error</string>
     <string name="pref_key_sync_debug_permanent_auth_error" translatable="false">pref_key_sync_debug_permanent_auth_error</string>
+    <string name="pref_key_sync_debug_scope_authorization_scopes" translatable="false">pref_key_sync_debug_scope_authorization_scopes</string>
+    <string name="pref_key_sync_debug_scope_authorization_entrypoint" translatable="false">pref_key_sync_debug_scope_authorization_entrypoint</string>
+    <string name="pref_key_sync_debug_scope_authorization_start" translatable="false">pref_key_sync_debug_scope_authorization_start</string>
+    <string name="pref_key_sync_debug_oauth_token_scopes" translatable="false">pref_key_sync_debug_oauth_token_scopes</string>
+    <string name="pref_key_sync_debug_oauth_token_fetch" translatable="false">pref_key_sync_debug_oauth_token_fetch</string>
+    <string name="pref_key_sync_debug_oauth_token_result" translatable="false">pref_key_sync_debug_oauth_token_result</string>
     <string name="pref_key_customize" translatable="false">pref_key_customize</string>
     <string name="pref_key_private_browsing" translatable="false">pref_key_private_browsing</string>
     <string name="pref_key_leakcanary" translatable="false">pref_key_leakcanary</string>
     <string name="pref_key_remote_debugging" translatable="false">pref_key_remote_debugging</string>
+    <string name="pref_key_remote_improvements" translatable="false">pref_key_remote_improvements</string>
     <string name="pref_key_crash_reporting_choice" translatable="false">pref_key_crash_reporting_choice</string>
     <string name="pref_key_experimentation_v2" translatable="false">pref_key_experimentation_v2</string>
+    <string name="pref_key_rollouts" translatable="false">pref_key_rollouts</string>
+    <string name="pref_key_rollouts_learn_more" translatable="false">pref_key_rollouts_learn_more</string>
     <string name="pref_key_user_disabled_experimentation" translatable="false">pref_key_user_disabled_experimentation</string>
     <string name="pref_key_private_mode_opened" translatable="false">pref_key_private_mode_opened</string>
     <string name="pref_key_open_in_app_opened" translatable="false">pref_key_open_in_app_opened</string>
     <string name="pref_key_install_pwa_opened" translatable="false">pref_key_install_pwa_opened</string>
     <string name="pref_key_install_pwa_visits" translatable="false">pref_key_install_pwa_visits</string>
     <string name="pref_key_times_app_opened" translatable="false">pref_key_times_app_opened</string>
-    <string name="pref_key_last_review_prompt_shown_time" translatable="false">pref_key_last_review_prompt_shown_time</string>
+    <string name="pref_key_custom_review_prompt_enabled" translatable="false">pref_key_custom_review_prompt_enabled</string>
+    <string name="pref_key_custom_review_prompt_ui_enabled" translatable="false">pref_key_custom_review_prompt_ui_enabled</string>
     <string name="pref_key_last_browse_activity_time" translatable="false">pref_key_last_browse_activity_time</string>
+    <string name="pref_key_last_home_activity_time" translatable="false">pref_key_last_home_activity_time</string>
     <string name="pref_key_last_cfr_shown_time" translatable="false">pref_key_last_cfr_shown_time</string>
-    <string name="pref_key_re_engagement_notification_shown" translatable="false">pref_key_re_engagement_notification_shown</string>
-    <string name="pref_key_re_engagement_notification_enabled" translatable="false">pref_key_re_engagement_notification_enabled</string>
     <string name="pref_key_is_first_run" translatable="false">pref_key_is_first_run</string>
     <string name="pref_key_is_first_splash_screen_shown" translatable="false">pref_key_is_first_splash_screen_shown</string>
     <string name="pref_key_nimbus_last_fetch" translatable="false">pref_key_nimbus_last_fetch</string>
@@ -83,10 +101,30 @@
     <string name="pref_key_show_first_time_translation" translatable="false">pref_key_show_first_time_translation</string>
     <string name="pref_key_translations_offer" translatable="false">pref_key_translations_offer</string>
     <string name="pref_key_terms_accepted" translatable="false">pref_key_terms_accepted</string>
+    <string name="pref_key_terms_accepted_date" translatable="false">pref_key_terms_accepted_date</string>
+    <string name="pref_key_terms_accepted_version" translatable="false">pref_key_terms_accepted_version</string>
+    <string name="pref_key_terms_prompt_enabled" translatable="false">pref_key_terms_prompt_enabled</string>
+    <string name="pref_key_terms_prompt_drag_handle_enabled" translatable="false">pref_key_terms_prompt_drag_handle_enabled</string>
+    <string name="pref_key_terms_prompt_displayed_count" translatable="false">pref_key_terms_prompt_displayed_count</string>
+    <string name="pref_key_terms_prompt_content_option" translatable="false">pref_key_terms_prompt_content_option</string>
+    <string name="pref_key_terms_last_prompt_time" translatable="false">pref_key_terms_last_prompt_time</string>
     <string name="pref_key_terms_postponed" translatable="false">pref_key_terms_postponed</string>
+    <string name="pref_key_terms_latest_date" translatable="false">pref_key_terms_latest_date</string>
+    <string name="pref_key_debug_terms_trigger_time" translatable="false">pref_key_debug_terms_trigger_time</string>
     <string name="pref_key_should_show_marketing_onboarding" translatable="false">pref_key_should_show_marketing_onboarding</string>
     <string name="pref_key_crash_pull_never_show_again" translatable="false">pref_key_crash_pull_never_show_again</string>
     <string name="pref_key_crash_pull_dont_show_before" translatable="false">pref_key_crash_pull_dont_show_before</string>
+    <string name="pref_key_privacy_notice_banner_last_displayed_time" translatable="false">pref_key_privacy_notice_banner_last_displayed_time</string>
+    <string name="pref_cfr_popups_enabled" translatable="false">pref_cfr_popups_enabled</string>
+    <string name="pref_in_app_messages_enabled" translatable="false">pref_in_app_messages_enabled</string>
+    <string name="pref_key_onboarding_completed_timestamp" translatable="false">pref_key_onboarding_completed_timestamp</string>
+    <string name="pref_key_enable_import_passwords" translatable="false">pref_key_enable_import_passwords</string>
+
+    <!-- Continuous onboarding -->
+    <string name="pref_key_continuous_onboarding_enabled" translatable="false">pref_key_continuous_onboarding_enabled</string>
+    <string name="pref_key_continuous_onboarding_day_two_completed_timestamp" translatable="false">pref_key_continuous_onboarding_day_two_completed_timestamp</string>
+    <string name="pref_key_continuous_onboarding_day_three_completed_timestamp" translatable="false">pref_key_continuous_onboarding_day_three_completed_timestamp</string>
+    <string name="pref_key_continuous_onboarding_day_seven_completed_timestamp" translatable="false">pref_key_continuous_onboarding_day_seven_completed_timestamp</string>
 
     <!-- Data Choices -->
     <string name="pref_key_telemetry" translatable="false">pref_key_telemetry</string>
@@ -109,7 +147,6 @@
     <string name="pref_key_sync_sign_in" translatable="false">pref_key_sync_sign_in</string>
     <string name="pref_key_push_project_id" translatable="false">project_id</string>
     <string name="pref_key_search_widget_installed_2" translatable="false">pref_key_search_widget_installed_2</string>
-    <string name="pref_key_saved_logins_sorting_strategy" translatable="false">pref_key_saved_logins_sorting_strategy</string>
     <!-- Key for credit cards sync preference in the account settings fragment -->
     <string name="pref_key_sync_credit_cards" translatable="false">pref_key_sync_credit_cards</string>
     <!-- Key for Address sync preference in the account settings fragment -->
@@ -119,12 +156,11 @@
 
     <!-- Search Settings -->
     <string name="pref_key_search_engine_list" translatable="false">pref_key_search_engine_list</string>
-    <string name="pref_key_show_search_engine_shortcuts" translatable="false">pref_key_show_search_engine_shortcuts</string>
+    <string name="pref_key_private_search_engine_list" translatable="false">pref_key_private_search_engine_list</string>
     <string name="pref_key_show_search_suggestions" translatable="false">pref_key_show_search_suggestions</string>
     <string name="pref_key_show_clipboard_suggestions" translatable="false">pref_key_show_clipboard_suggestions</string>
     <string name="pref_key_search_browsing_history" translatable="false">pref_key_search_browsing_history</string>
     <string name="pref_key_search_bookmarks" translatable="false">pref_key_search_bookmarks</string>
-    <string name="pref_key_show_shortcuts_suggestions" translatable="false">pref_key_show_shortcuts_suggestions</string>
     <string name="pref_key_search_synced_tabs" translatable="false">pref_key_search_synced_tabs</string>
     <string name="pref_key_show_search_suggestions_in_private" translatable="false">pref_key_show_search_suggestions_in_private</string>
     <string name="pref_key_show_search_suggestions_in_private_onboarding" translatable="false">pref_key_show_search_suggestions_in_privateonboarding</string>
@@ -137,11 +173,7 @@
     <string name="pref_key_learn_about_fx_suggest" translatable="false">pref_key_learn_about_fx_suggest</string>
     <string name="pref_key_use_remote_search_configuration" translatable="false">pref_key_use_remote_search_configuration</string>
 
-    <!-- Searchbar Settings -->
-    <string name="pref_key_should_searchbar_cfr">pref_key_should_show_searchbar_cfr</string>
-
     <!-- Site Permissions Settings -->
-    <string name="pref_key_site_permissions_description" translatable="false">pref_key_site_permissions_description</string>
     <string name="pref_key_show_site_exceptions" translatable="false">pref_key_show_site_exceptions</string>
     <string name="pref_key_browser_feature_autoplay_v2" translatable="false">pref_key_browser_feature_autoplay_v2</string>
     <string name="pref_key_browser_feature_autoplay_audible_v2" translatable="false">pref_key_browser_feature_autoplay_v2</string>
@@ -149,6 +181,8 @@
     <string name="pref_key_browser_feature_persistent_storage" translatable="false">pref_key_browser_feature_persistent_storage</string>
     <string name="pref_key_browser_feature_cross_origin_storage_access" translatable="false">pref_key_browser_feature_cross_origin_storage_access</string>
     <string name="pref_key_browser_feature_media_key_system_access" translatable="false">pref_key_browser_feature_media_key_system_access</string>
+    <string name="pref_key_browser_feature_local_device_access" translatable="false">pref_key_browser_feature_local_device_access</string>
+    <string name="pref_key_browser_feature_local_network_access" translatable="false">pref_key_browser_feature_local_network_access</string>
     <string name="pref_key_phone_feature_camera" translatable="false">pref_key_phone_feature_camera</string>
     <string name="pref_key_phone_feature_location" translatable="false">pref_key_phone_feature_location</string>
     <string name="pref_key_phone_feature_microphone" translatable="false">pref_key_phone_feature_microphone</string>
@@ -164,14 +198,18 @@
 
     <!-- App icon settings-->
     <string name="pref_key_app_icon">pref_key_app_icon</string>
-    <!-- Menu -->
+
+    <!-- Cfr -->
     <string name="pref_key_menu_cfr" translatable="false">pref_key_menu_cfr</string>
 
-    <!-- Privacy Pop Window -->
-    <string name="pref_key_privacy_pop_window" translatable="false">pref_key_privacy_pop_window</string>
-
     <!-- Remote Server Settings -->
-    <string name="pref_key_remote_server_prod" translatable="false">pref_key_remote_server_prod</string>
+    <string name="pref_key_remote_settings_server" translatable="false">pref_key_remote_settings_server</string>
+    <string name="pref_key_remote_settings_server_prod" translatable="false">pref_key_remote_settings_server_prod</string>
+    <string name="pref_key_remote_settings_server_stage" translatable="false">pref_key_remote_settings_server_stage</string>
+    <string name="pref_key_remote_settings_server_dev" translatable="false">pref_key_remote_settings_server_dev</string>
+    <string name="pref_key_remote_settings_server_stage_v2" translatable="false">pref_key_remote_settings_server_stage_v2</string>
+    <string name="pref_key_remote_settings_server_prod_v2" translatable="false">pref_key_remote_settings_server_prod_v2</string>
+    <string name="pref_key_remote_settings_server_dev_v2" translatable="false">pref_key_remote_settings_server_dev_v2</string>
 
     <!-- Theme Settings -->
     <string name="pref_key_light_theme" translatable="false">pref_key_light_theme</string>
@@ -185,13 +223,21 @@
     <string name="pref_key_tab_strip_show" translatable="false">pref_key_tab_strip_show</string>
     <string name="pref_key_tab_strip_message" translatable="false">pref_key_tab_strip_message</string>
     <string name="pref_key_dynamic_toolbar" translatable="false">pref_key_dynamic_toolbar</string>
+    <string name="pref_key_use_scroll_data_for_dynamic_toolbar" translatable="false">pref_key_use_scroll_data_for_dynamic_toolbar</string>
     <string name="pref_key_swipe_toolbar_switch_tabs" translatable="false">pref_key_swipe_toolbar_switch_tabs</string>
     <string name="pref_key_swipe_toolbar_show_tabs" translatable="false">pref_key_swipe_toolbar_show_tabs</string>
     <string name="pref_key_recent_tabs" translatable="false">pref_key_recent_tabs</string>
+    <string name="pref_key_privacy_report" translatable="false">pref_key_privacy_report</string>
+    <string name="pref_key_privacy_report_metric" translatable="false">privacy_report</string>
+    <string name="pref_key_privacy_report_tab_manager" translatable="false">pref_key_privacy_report_tab_manager</string>
     <string name="pref_key_customization_bookmarks" translatable="false">pref_key_recent_bookmarks</string>
     <string name="pref_key_customization_category_toolbar" translatable="false">pref_key_customization_category_toolbar</string>
     <string name="pref_key_customization_category_toolbar_layout" translatable="false">pref_key_customization_category_toolbar_layout</string>
     <string name="pref_key_customization_category_app_icon" translatable="false">pref_key_customization_category_app_icon</string>
+    <string name="pref_key_customization_category_toolbar_shortcut" translatable="false">pref_key_customization_category_toolbar_shortcut</string>
+    <string name="pref_key_toolbar_simple_shortcut" translatable="false">pref_key_toolbar_simple_shortcut</string>
+    <string name="pref_key_toolbar_simple_no_shortcut" translatable="false">pref_key_toolbar_simple_no_shortcut</string>
+    <string name="pref_key_toolbar_expanded_shortcut" translatable="false">pref_key_toolbar_expanded_shortcut</string>
 
     <!-- HTTPS Only Settings -->
     <string name="pref_key_https_only_settings" translatable="false">pref_key_https_only_settings</string>
@@ -216,8 +262,10 @@
     <string name="pref_key_tracking_protection_exceptions" translatable="false">pref_key_tracking_protection_exceptions</string>
     <string name="pref_key_tracking_protection_standard_option" translatable="false">pref_key_tracking_protection_standard_option</string>
     <string name="pref_key_tracking_protection_strict_default" translatable="false">pref_key_tracking_protection_strict_default</string>
+    <string name="pref_key_tracking_protection_strict_allow_list_subheader" translatable="false">pref_key_tracking_protection_strict_allow_list_subheader</string>
     <string name="pref_key_tracking_protection_strict_allow_list_baseline" translatable="false">pref_key_tracking_protection_strict_allow_list_baseline</string>
     <string name="pref_key_tracking_protection_strict_allow_list_convenience" translatable="false">pref_key_tracking_protection_strict_allow_list_convenience</string>
+    <string name="pref_key_tracking_protection_custom_allow_list_subheader" translatable="false">pref_key_tracking_protection_custom_allow_list_subheader</string>
     <string name="pref_key_tracking_protection_custom_allow_list_baseline" translatable="false">pref_key_tracking_protection_custom_allow_list_baseline</string>
     <string name="pref_key_tracking_protection_custom_allow_list_convenience" translatable="false">pref_key_tracking_protection_custom_allow_list_convenience</string>
     <string name="pref_key_tracking_protection_custom_option" translatable="false">pref_key_tracking_protection_custom_option</string>
@@ -241,6 +289,16 @@
     <string name="pref_key_logins_secure_warning_sync" translatable="false">pref_key_logins_secure_warning_sync</string>
     <string name="pref_key_secure_warning" translatable="false">pref_key_secure_warning</string>
 
+    <!-- Email masks -->
+    <!-- Key for the "Email masks" preference in the "Settings" fragment -->
+    <string name="pref_key_email_masks" translatable="false">pref_key_email_masks</string>
+    <!-- Key for the feature flag that controls whether the Email Masks feature is visible in Settings -->
+    <string name="pref_key_enable_email_masks" translatable="false">pref_key_enable_email_masks</string>
+    <!-- Key for the user preference controlling whether Email Masks suggestions should be shown -->
+    <string name="pref_key_email_mask_suggestion" translatable="false">pref_key_relay_email_masks_suggestions</string>
+    <!-- A value of `true` means the email mask CFR has not been shown and dismissed yet -->
+    <string name="pref_key_should_show_email_mask_cfr" translatable="false">pref_key_should_show_email_mask_cfr</string>
+
     <!-- Autofill Settings -->
     <!-- Key for the "Credit cards" preference in the "Settings" fragment -->
     <string name="pref_key_credit_cards" translatable="false">pref_key_credit_cards</string>
@@ -256,6 +314,8 @@
     <string name="pref_key_addresses_save_and_autofill_addresses" translatable="false">pref_key_addresses_save_and_autofill_addresses</string>
     <!-- Key for the "Sync addresses across devices" preference in the "Autofill" fragment -->
     <string name="pref_key_addresses_sync_cards_across_devices" translatable="false">pref_key_addresses_sync_cards_across_devices</string>
+    <!-- Key for the enabling compose autofill preference in settings -->
+    <string name="pref_key_enable_compose_autofill_settings" translatable="false">pref_key_enable_compose_autofill_settings</string>
 
     <!-- Privacy Settings -->
     <string name="pref_key_privacy_security_category" translatable="false">pref_key_privacy_security_category</string>
@@ -268,6 +328,7 @@
     <string name="pref_key_open_links_in_apps_ask" translatable="false">pref_key_open_links_in_apps_ask</string>
     <string name="pref_key_open_links_in_apps_never" translatable="false">pref_key_open_links_in_apps_never</string>
     <string name="pref_key_allow_screenshots_in_private_mode" translatable="false">pref_key_allow_screenshots_in_private_mode</string>
+    <string name="pref_key_dev_debug_allow_capture_of_secure_screens" translatable="false">pref_key_dev_debug_allow_capture_of_secure_screens</string>
     <!-- This preference controls behaviour that corresponds to the private browsing mode lock feature being enabled. -->
     <string name="pref_key_private_browsing_locked_enabled" translatable="false">pref_key_private_browsing_locked_enabled</string>
     <string name="pref_key_private_browsing_locked" translatable="false">pref_key_private_browsing_locked</string>
@@ -287,6 +348,15 @@
     <string name="pref_key_utm_campaign" translatable="false">pref_key_utm_campaign</string>
     <string name="pref_key_utm_term" translatable="false">pref_key_utm_term</string>
     <string name="pref_key_utm_content" translatable="false">pref_key_utm_content</string>
+    <string name="pref_key_is_user_meta_attributed" translatable="false">pref_key_is_user_meta_attributed</string>
+    <string name="pref_key_is_user_tiktok_attributed" translatable="false">pref_key_is_user_tiktok_attributed</string>
+    <string name="pref_key_is_user_reddit_attributed" translatable="false">pref_key_is_user_reddit_attributed</string>
+    <string name="pref_key_is_user_x_twitter_attributed" translatable="false">pref_key_is_user_x_twitter_attributed</string>
+
+    <!-- Return to AMO - addon to install at the first app launch -->
+    <string name="pref_key_rtamo_addon_download_url" translatable="false">pref_key_rtamo_addon_download_url</string>
+    <string name="pref_key_rtamo_addon_image_url" translatable="false">pref_key_rtamo_addon_image_url</string>
+    <string name="pref_key_rtamo_addon_name" translatable="false">pref_key_rtamo_addon_name</string>
 
     <string name="pref_key_contile_context_id" translatable="false">pref_key_contile_context_id</string>
 
@@ -302,10 +372,6 @@
 
     <string name="pref_key_encryption_key_generated" translatable="false">pref_key_encryption_key_generated</string>
 
-    <!-- Homepage -->
-    <string name="pref_key_override_user_specified_homepage_sections" translatable="false">pref_key_override_user_specified_homepage_sections</string>
-    <string name="pref_key_enable_homepage_header" translatable="false">pref_key_enable_homepage_header</string>
-
     <!-- Top Sites -->
     <string name="default_top_sites_added" translatable="false">pref_key_pocket_top_site_added</string>
     <string name="pref_key_top_sites_size" translatable="false">pref_key_top_sites_size</string>
@@ -317,6 +383,8 @@
     <string name="pref_key_enable_contile" translatable="false">pref_key_enable_contile</string>
     <!-- Query containing the search parameters to be hidden from the top frecent sites  -->
     <string name="pref_key_frecency_filter_query" translatable="false">pref_key_frecency_filter_query</string>
+    <!-- Whether or not the sponsored tiles should be shown to user. -->
+    <string name="pref_key_suppress_sponsored_tiles" translatable="false">pref_key_suppress_sponsored_tiles</string>
 
     <!-- A value  of `true` means the PWA dialog has been showed or user already has PWAs installed -->
     <string name="pref_key_user_knows_about_pwa" translatable="false">pref_key_user_knows_about_pwa</string>
@@ -360,14 +428,10 @@
 
     <string name="pref_key_login_exceptions" translatable="false">pref_key_login_exceptions</string>
 
-    <string name="pref_key_show_collections_placeholder_home" translatable="false">pref_key_show_collections_home</string>
-
     <string name="pref_key_num_font_list_sent"  translatable="false">pref_key_num_font_list_sent</string>
 
     <!-- Adjust Activated User values-->
     <string name="pref_key_growth_user_activated_sent" translatable="false">pref_key_growth_user_activated_sent</string>
-    <string name="pref_key_growth_early_browse_count" translatable="false">pref_key_growth_early_browse_count</string>
-    <string name="pref_key_growth_early_browse_count_last_increment" translatable="false">pref_key_growth_early_browse_count_last_increment</string>
     <string name="pref_key_growth_early_search" translatable="false">pref_key_growth_early_search</string>
 
     <!-- Tabs Settings -->
@@ -394,11 +458,8 @@
     <!-- Pocket -->
     <string name="pref_key_pocket_homescreen_recommendations" translatable="false">pref_key_pocket_homescreen_recommendations</string>
     <string name="pref_key_pocket_sponsored_stories" translatable="false">pref_key_pocket_sponsored_stories</string>
-    <string name="pref_key_pocket_sponsored_stories_profile" translatable="false">pref_key_pocket_sponsored_stories_profile</string>
-    <string name="pref_key_pocket_sponsored_stories_profile_migrated" translatable="false">pref_key_pocket_sponsored_stories_profile_migrated</string>
 
     <!-- Secret Info Setting Keys -->
-    <string name="pref_key_secret_debug_info" translatable="false">pref_key_secret_debug_info</string>
     <string name="pref_key_start_profiler" translatable="false">pref_key_start_profiler</string>
 
     <!-- Secret Settings -->
@@ -407,24 +468,53 @@
     <string name="pref_key_nimbus_use_preview" translatable="false">pref_key_nimbus_use_preview</string>
     <string name="pref_key_history_metadata_feature" translatable="false">pref_key_history_metadata_feature</string>
     <string name="pref_key_custom_glean_server_url" translatable="false">pref_key_custom_glean_server_url</string>
-    <string name="pref_key_custom_sponsored_stories_parameters" translatable="false">pref_key_custom_sponsored_stories_parameters</string>
-    <string name="pref_key_custom_sponsored_stories_parameters_enabled" translatable="false">pref_key_custom_sponsored_stories_parameters_enabled</string>
-    <string name="pref_key_custom_sponsored_stories_site_id" translatable="false">pref_key_custom_sponsored_stories_site_id</string>
-    <string name="pref_key_custom_sponsored_stories_country" translatable="false">pref_key_custom_sponsored_stories_country</string>
-    <string name="pref_key_custom_sponsored_stories_city" translatable="false">pref_key_custom_sponsored_stories_city</string>
-    <string name="pref_key_enable_homepage_searchbar" translatable="false">pref_key_enable_homepage_searchbar</string>
-    <string name="pref_key_enable_menu_redesign" translatable="false">pref_key_enable_menu_redesign</string>
+    <string name="pref_key_enable_homepage_searchbar2" translatable="false">pref_key_enable_homepage_searchbar2</string>
+    <string name="pref_key_should_show_custom_tab_extensions" translatable="false">pref_key_should_show_custom_tab_extensions</string>
     <string name="pref_key_enable_homepage_as_new_tab" translatable="false">pref_key_enable_homepage_as_new_tab</string>
+    <string name="pref_key_enable_homepage_sports_widget" translatable="false">pref_key_enable_homepage_sports_widget</string>
+    <string name="pref_key_show_homepage_sports_widget" translatable="false">pref_key_show_homepage_sports_widget</string>
+    <string name="pref_key_show_homepage_countdown_widget" translatable="false">pref_key_show_homepage_countdown_widget</string>
+    <string name="pref_key_enable_mozilla_ads_client" translatable="false">pref_key_enable_mozilla_ads_client</string>
+    <string name="pref_key_enable_firefox_labs" translatable="false">pref_key_enable_firefox_labs</string>
+    <string name="pref_key_top_sites_pager" translatable="false">pref_key_top_sites_pager</string>
+    <string name="pref_key_enable_add_shortcuts_improvement" translatable="false">pref_key_enable_add_shortcuts_improvement</string>
+    <string name="pref_key_enable_merino_client" translatable="false">pref_key_enable_merino_client</string>
+    <string name="pref_key_enable_merino_manifest" translatable="false">pref_key_enable_merino_manifest</string>
     <string name="pref_key_enable_unified_trust_panel" translatable="false">pref_key_enable_unified_trust_panel</string>
-    <string name="pref_key_enable_trending_searches" translatable="false">pref_key_enable_trending_searches</string>
-    <string name="pref_key_enable_recent_searches" translatable="false">pref_key_enable_recent_searches</string>
-    <string name="pref_key_enable_shortcuts_suggestions" translatable="false">pref_key_enable_shortcuts_suggestions</string>
-    <string name="pref_key_enable_composable_toolbar" translatable="false">pref_key_enable_composable_toolbar</string>"
-    <string name="pref_key_enable_toolbar_redesign" translatable="false">pref_key_enable_toolbar_redesign</string>"
+    <string name="pref_key_use_minimal_bottom_toolbar_while_entering_text" translatable="false">pref_key_use_minimal_bottom_toolbar_while_entering_text</string>"
     <string name="pref_key_enable_address_sync" translatable="false">pref_key_enable_address_sync</string>"
+    <string name="pref_key_enable_lna_blocking_enabled" translatable="false">pref_key_enable_lna_blocking_enabled</string>
+    <string name="pref_key_enable_lna_tracker_blocking_enabled" translatable="false">pref_key_enable_lna_tracker_blocking_enabled</string>
+    <string name="pref_key_enable_lna_feature_enabled" translatable="false">pref_key_enable_lna_feature_enabled</string>
+    <string name="pref_key_enable_isolated_process" translatable="false">pref_key_enable_isolated_process</string>
+    <string name="pref_key_enable_app_zygote_process" translatable="false">pref_key_enable_app_zygote_process</string>
+    <string name="pref_key_enable_persistent_onboarding" translatable="false">pref_key_enable_persistent_onboarding</string>
+    <!-- Preference for the feature flag -->
+    <string name="pref_key_enable_shake_to_summarize" translatable="false">pref_key_enable_shake_to_summarize</string>
+    <string name="pref_key_page_summaries" translatable="false">pref_key_page_summaries</string>
+
+    <!-- Summarize feature: preference key to track if the user has turned off the shake gesture or not -->
+    <string name="pref_key_shake_gesture_enabled" translatable="false">pref_key_shake_gesture_enabled</string>
+
+    <!-- Summarize feature: preference key to track how many times we have shown the "Summarize page" menu item to the user.
+        We use it to know when to remove the highlight from the menu item.
+    -->
+    <string name="pref_key_summarize_highlight_menu_item_exposure_count" translatable="false">pref_key_summarize_highlight_menu_item_exposure_count</string>
+
+    <!-- Summarize feature: preference key to track the interactions with the "more" browser menu item.
+        We use it to know when to remove the highlight from the "more" item in the browser menu
+     -->
+    <string name="pref_key_summarize_highlight_more_item_interaction_count" translatable="false">pref_key_summarize_highlight_more_item_interaction_count</string>
+
+    <!-- Summarize feature: preference key to track the interactions with the toolbar.
+        We use it to know when to remove the highlight from the menu item in the toolbar
+     -->
+    <string name="pref_key_summarize_highlight_toolbar_interaction_count" translatable="false">pref_key_summarize_highlight_toolbar_interaction_count</string>
+
+    <!-- Summarize feature: preference key to track if the user has seen the shake to summarize toolbar CFR-->
+    <string name="pref_key_summarize_toolbar_cfr_shown" translatable="false">pref_key_summarize_toolbar_cfr_shown</string>
 
     <!-- Logins -->
-    <string name="pref_key_enable_compose_logins" translatable="false">pref_key_enable_compose_logins</string>
     <string name="pref_key_logins_list_sort_order" translatable="false">pref_key_logins_list_sort_order</string>
 
     <!-- Growth Data -->
@@ -436,6 +526,12 @@
     <string name="pref_key_growth_usage_time_sent" translatable="false">pref_key_growth_usage_time_sent</string>
     <string name="pref_key_growth_resume_last_sent" translatable="false">pref_key_growth_last_resumed</string>
     <string name="pref_key_growth_uri_load_last_sent" translatable="false">pref_key_growth_uri_load_last_sent</string>
+
+    <!-- Post Install Data -->
+    <string name="pref_key_first_week_post_install_last_three_days_activity_sent" translatable="false">pref_key_first_week_post_install_last_three_days_activity_sent</string>
+    <string name="pref_key_first_week_post_install_recurrent_activity_sent" translatable="false">pref_key_first_week_post_install_recurrent_activity_sent</string>
+    <string name="pref_key_first_week_post_install_everyday_activity_and_set_to_default_sent" translatable="false">pref_key_first_week_post_install_everyday_activity_and_set_to_default_sent</string>
+    <string name="pref_key_first_week_post_install_is_browser_set_to_default_during_first_four_days" translatable="false">pref_key_first_week_post_install_is_browser_set_to_default_during_first_four_days</string>
 
     <!--Translations -->
     <string name="pref_key_ignore_translations_data_saver_warning" translatable="false">pref_key_ignore_translations_data_saver_warning</string>
@@ -452,16 +548,16 @@
     <string name="pref_key_number_of_set_as_default_prompt_shown_times" translatable="false">pref_key_number_of_set_as_default_prompt_shown_times</string>
     <string name="pref_key_app_cold_start_count" translatable="false">pref_key_app_cold_start_count</string>
     <string name="pref_key_app_is_onboarding_set_as_default_displayed" translatable="false">pref_key_app_is_onboarding_set_as_default_displayed</string>
+    <string name="pref_key_last_set_as_default_prompt_request_time" translatable="false">pref_key_last_set_as_default_prompt_request_time</string>
 
     <string name="pref_key_desktop_browsing" translatable="false">pref_key_desktop_browsing</string>
 
     <!-- Crash reporting -->
-    <string name="pref_key_crash_reporting_cutoff_date" translatable="false">pref_key_crash_reporting_cutoff_date</string>
+    <string name="pref_key_crash_reporting_cutoff_date" translatable="false">pref_key_crash_reporting_cutoff_date_2025_09_08</string>
     <string name="pref_key_crash_reporting_deferred_until" translatable="false">pref_key_crash_reporting_deferred_until</string>
     <string name="pref_key_use_new_crash_reporter" translatable="false">pref_key_use_new_crash_reporter</string>
 
     <!-- Bookmarks -->
-    <string name="pref_key_use_new_bookmarks_ui" translatable="false">pref_key_use_new_bookmarks_ui</string>
     <string name="pref_last_folder_saved_in" translatable="false">pref_last_folder_saved_in</string>
     <string name="pref_key_bookmark_list_sort_order" translatable="false">pref_key_bookmark_list_sort_order</string>
 
@@ -481,7 +577,61 @@
     <string name="pref_key_distribution_id" translatable="false">pref_key_distribution_id</string>
 
     <!-- Downloads Settings-->
+    <string name="pref_key_downloads_default_location" translatable="false">pref_key_downloads_default_location</string>
+    <string name="pref_key_downloads_storage_category" translatable="false">pref_key_downloads_storage_category</string>
     <string name="pref_key_downloads" translatable="false">pref_key_downloads</string>
     <string name="pref_key_external_download_manager" translatable="false">pref_key_external_download_manager</string>
     <string name="pref_key_downloads_clean_up_files_automatically" translatable="false">pref_key_downloads_clean_up_files_automatically</string>
+
+    <!-- Downloads Settings Radio Button-->
+    <string name="pref_key_downloads_delete_or_remove_downloads_category" translatable="false">pref_key_downloads_delete_or_remove_downloads_category</string>
+    <!-- pref_key_downloads_delete_behavior was replaced by pref_key_downloads_delete_behavior_v2 with Bug 2041355,
+      to reset the default value to "Ask when I delete files" for all users.
+      -->
+    <string name="pref_key_downloads_delete_behavior_v2" translatable="false">pref_key_downloads_delete_behavior_v2</string>
+
+    <!-- Tab Manager-->
+    <string name="pref_key_tab_manager_opening_animation" translatable="false">pref_key_tab_manager_opening_animation</string>
+
+    <!-- Private Mode and Stories Entry Point -->
+    <string name="pref_key_private_mode_and_stories_entry_point" translatable="false">pref_key_private_mode_and_stories_entry_point</string>
+    <string name="pref_key_news_button_foreground_count" translatable="false">pref_key_news_button_foreground_count</string>
+    <string name="pref_key_news_button_animation_last_shown" translatable="false">pref_key_news_button_animation_last_shown</string>
+
+    <!-- Tab Groups -->
+    <string name="pref_key_tab_groups" translatable="false">pref_key_tab_groups_feature</string>
+    <string name="pref_key_tab_groups_drag_and_drop" translatable="false">pref_key_tab_groups_drag_and_drop</string>
+    <string name="pref_key_tab_groups_onboarding" translatable="false">pref_key_tab_groups_onboarding</string>
+
+    <!-- Native Share Sheet -->
+    <string name="pref_key_native_share_sheet" translatable="false">pref_key_native_share_sheet</string>
+
+    <!-- Longfox -->
+    <string name="pref_key_enable_longfox" translatable="false">pref_key_enable_longfox</string>
+    <string name="pref_key_app_launch_count" translatable="false">pref_key_app_launch_count</string>
+    <string name="pref_key_longfox_peek_animation_shown_count" translatable="false">pref_key_longfox_peek_animation_shown_count</string>
+
+    <!-- Sports Widget -->
+    <string name="pref_key_sports_selected_countries" translatable="false">pref_key_sports_selected_countries</string>
+    <string name="pref_key_sports_has_skipped_follow_team" translatable="false">pref_key_sports_has_skipped_follow_team</string>
+    <string name="pref_key_use_mock_world_cup_server" translatable="false">pref_key_use_mock_world_cup_server</string>
+    <string name="pref_key_mock_world_cup_server_session" translatable="false">pref_key_mock_world_cup_server_session</string>
+
+    <!-- Google Lens Integration -->
+    <string name="pref_key_google_lens_integration" translatable="false">pref_key_google_lens_integration</string>
+    <string name="pref_key_google_lens_integration_user_enabled" translatable="false">pref_key_google_lens_integration_user_enabled</string>
+
+    <!-- Voice Search in Display Toolbar -->
+    <string name="pref_key_show_voice_search_in_display_toolbar" translatable="false">pref_key_show_voice_search_in_display_toolbar</string>
+    <!--  Search Optimization Cards  -->
+    <string name="pref_key_search_optimization" translatable="false">pref_key_search_optimization</string>
+    <string name="pref_key_search_optimization_feature" translatable="false">pref_key_search_optimization_feature</string>
+    <string name="pref_key_search_optimization_cards" translatable="false">pref_key_search_optimization_cards</string>
+    <string name="pref_key_search_optimization_stocks" translatable="false">pref_key_search_optimization_stocks</string>
+    <string name="pref_key_search_optimization_flights" translatable="false">pref_key_search_optimization_flights</string>
+    <string name="pref_key_search_optimization_sports" translatable="false">pref_key_search_optimization_sports</string>
+
+    <!--  WebCompat Reporter Enhancements  -->
+    <string name="pref_key_webcompat_reporter_enhancements" translatable="false">pref_key_webcompat_reporter_enhancements</string>
+
 </resources>

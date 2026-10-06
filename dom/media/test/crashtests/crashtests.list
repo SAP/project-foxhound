@@ -1,3 +1,5 @@
+defaults pref(media.navigator.permission.disabled,true) pref(media.devices.insecure.enabled,true) pref(media.getusermedia.insecure.enabled,true)
+
 skip-if(cocoaWidget) skip-if(gtkWidget&&/^24\.04$/.test(os_version)) load 1185191.html # this needs to run near the beginning of the test suite
 load 0-timescale.html # bug 1229166
 skip-if(Android) pref(media.autoplay.default,0) load 459439-1.html # bug 888557
@@ -72,8 +74,8 @@ load 990794.html
 load 995289.html
 load 1012609.html
 load 1015662.html
-skip-if(Android) test-pref(media.navigator.permission.disabled,true) load 1028458.html # bug 1048863
-skip-if(cocoaWidget&&/^15\.30$/.test(os_version)) load 1041466.html
+load 1028458.html
+load 1041466.html
 load 1045650.html
 load 1080986.html
 load 1180881.html # bug 1409365
@@ -113,11 +115,11 @@ HTTP load media-element-source-seek-1.html
 load offline-buffer-source-ended-1.html
 skip-if(gtkWidget&&/^24\.04$/.test(os_version)) load oscillator-ended-1.html
 skip-if(gtkWidget&&/^24\.04$/.test(os_version)) load oscillator-ended-2.html
-load video-replay-after-audio-end.html # bug 1315125, bug 1358876
+skip-if(macosVm) load video-replay-after-audio-end.html # bug 1315125, bug 1358876, Bug 2037084 hangs on no-display macOS VMs
 # This needs to run at the end to avoid leaking busted state into other tests.
 skip-if(Android||ThreadSanitizer) load 691096-1.html # Bug 1365451
 load 1236639.html
-test-pref(media.navigator.permission.disabled,true) test-pref(media.devices.insecure.enabled,true) test-pref(media.getusermedia.insecure.enabled,true) load 1388372.html
+load 1388372.html
 load 1414444.mp4
 load 1494073.html
 skip-if(Android) load 1526044.html # Bug 1528391
@@ -171,6 +173,7 @@ load invalidfmt.html
 load 1848660.html
 load 1835118.adts
 load trimming_needed_and_last_sample_invalid_duration.ogg
+load ogg-skeleton-index-negative-time-denominator-release-assert.html
 load 1839193.html
 load 1850453.html
 test-pref(media.hevc.enabled,true) load 1859384.mp4
@@ -180,8 +183,41 @@ load 1864450.html
 load 1872787.html
 load small-timebase.html
 load vp9cake_corrupt.webm
+load vpx_alpha_mismatch.webm
 load 1903669.html
 load 1905234.html
 load 1905231.webm
 load 1917627.mp4
 skip-if(Android) load audioworkletprocessor-recursion.html
+load 1987790.webm
+load 1999307.html
+load 2014845.html
+load dynamics-compressor-extreme-value.html
+load 2014824.html
+load 2014827.html
+load 2014849.html
+load 2014841.html
+load 2014856.html
+load 2014865.html
+load 2014894.html
+load 2014895.html
+load 2014898.html
+load 2014860.html
+load 2014874.html
+load 2014870.html
+load 2014861.html
+skip-if(Android) load 2016504.html
+skip-if(Android) load 2016883.html
+skip-if(Android) load 2016497.html
+load 2017511.html
+HTTP load 2014878.html
+load 2014896.html
+load 2022746.html
+load 2027433.html
+pref(media.decoder-doctor.testing,true) load 2024424.html
+skip-if(!winWidget) pref(media.hevc.enabled,true) load 1859400.html
+load 1603271.html
+load 1536243.html
+load 2027160.html
+load 2035081.html
+pref(media.autoplay.default,0) load bug2032944.html

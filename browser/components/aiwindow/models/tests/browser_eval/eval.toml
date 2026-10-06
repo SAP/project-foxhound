@@ -1,0 +1,17 @@
+[DEFAULT]
+skip-if = [
+  "true", # eval tests are run manually, not in CI
+]
+subsuite = "aiwindow/models"
+support-files = [
+  "head.js",
+  "pages/mylocalweather.html",
+  "prompts/basic_quality.sys.mjs",
+  "tests/basic_quality.sys.mjs",
+]
+
+["browser_eval_basic_quality_gemini25flashlite.js"]
+
+["browser_eval_basic_quality_gptoss120b.js"]
+
+["browser_eval_basic_quality_qwen3_235b_a22b_instruct2507.js"]

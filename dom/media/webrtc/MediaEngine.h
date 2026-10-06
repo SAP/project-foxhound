@@ -7,12 +7,11 @@
 
 #include "DOMMediaStream.h"
 #include "MediaEventSource.h"
-#include "MediaTrackGraph.h"
 #include "MediaTrackConstraints.h"
+#include "MediaTrackGraph.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/MediaStreamTrackBinding.h"
 #include "mozilla/dom/VideoStreamTrack.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/ThreadSafeWeakPtr.h"
 
 namespace mozilla {
 
@@ -49,6 +48,13 @@ class MediaEngine {
 
   virtual RefPtr<MediaEngineSource> CreateSource(
       const MediaDevice* aDevice) = 0;
+
+  /**
+   * Like CreateSource but in addition copies over capabilities and settings
+   * from another source.
+   */
+  virtual RefPtr<MediaEngineSource> CreateSourceFrom(
+      const MediaEngineSource* aSource, const MediaDevice* aDevice) = 0;
 
   virtual MediaEventSource<void>& DeviceListChangeEvent() = 0;
   /**

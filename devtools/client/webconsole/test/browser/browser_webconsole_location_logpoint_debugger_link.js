@@ -9,9 +9,11 @@
 // Allow more time since we now wait for CM6 document updates to complete
 requestLongerTimeout(2);
 
-const TEST_URI =
-  "https://example.com/browser/devtools/client/webconsole/" +
-  "test/browser/test-location-debugger-link-logpoint.html";
+const BASE_URI =
+  "https://example.com/browser/devtools/client/webconsole/test/browser/";
+const TEST_URI = BASE_URI + "test-location-debugger-link-logpoint.html";
+const TEST_JS_URI = BASE_URI + "test-location-debugger-link-logpoint-1.js";
+const TEST_JS_URI2 = BASE_URI + "test-location-debugger-link-logpoint-2.js";
 
 add_task(async function () {
   // On e10s, the exception thrown in test-location-debugger-link-errors.js
@@ -56,9 +58,9 @@ add_task(async function () {
   await testOpenInDebugger(hud, {
     text: "undefinedVariable is not defined",
     typeSelector: ".logPointError",
-    expectUrl: true,
-    expectLine: true,
-    expectColumn: true,
+    url: TEST_JS_URI,
+    line: 7,
+    column: 13,
     logPointExpr: "undefinedVariable",
   });
 
@@ -67,9 +69,9 @@ add_task(async function () {
   await testOpenInDebugger(hud, {
     text: "a is 1",
     typeSelector: ".logPoint",
-    expectUrl: true,
-    expectLine: true,
-    expectColumn: true,
+    url: TEST_JS_URI,
+    line: 8,
+    column: 13,
     logPointExpr: "`a is ${a}`",
   });
 
@@ -89,9 +91,9 @@ add_task(async function () {
   await testOpenInDebugger(hud, {
     text: "undefinedVariable is not defined",
     typeSelector: ".logPointError",
-    expectUrl: true,
-    expectLine: true,
-    expectColumn: true,
+    url: TEST_JS_URI,
+    line: 7,
+    column: 13,
   });
 
   info("Selecting the console again");
@@ -99,9 +101,9 @@ add_task(async function () {
   await testOpenInDebugger(hud, {
     text: "a is 1",
     typeSelector: ".logPoint",
-    expectUrl: true,
-    expectLine: true,
-    expectColumn: true,
+    url: TEST_JS_URI,
+    line: 8,
+    column: 13,
   });
 });
 
@@ -141,9 +143,9 @@ add_task(async function () {
   await testOpenInDebugger(hud, {
     text: "a is 1",
     typeSelector: ".logPoint",
-    expectUrl: true,
-    expectLine: false,
-    expectColumn: false,
+    url: TEST_JS_URI,
+    line: 8,
+    column: 13,
     logPointExpr: "`a is ${a}`",
   });
 
@@ -158,9 +160,9 @@ add_task(async function () {
   await testOpenInDebugger(hud, {
     text: "c is 1",
     typeSelector: ".logPoint",
-    expectUrl: true,
-    expectLine: false,
-    expectColumn: false,
+    url: TEST_JS_URI2,
+    line: 8,
+    column: 13,
     logPointExpr: "`c is ${c}`",
   });
 });

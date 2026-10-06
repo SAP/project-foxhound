@@ -5,13 +5,13 @@
 import {
   ActionsProvider,
   ActionsResult,
-} from "resource:///modules/ActionsProvider.sys.mjs";
+} from "moz-src:///browser/components/urlbar/ActionsProvider.sys.mjs";
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
   SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
   TabMetrics: "moz-src:///browser/components/tabbrowser/TabMetrics.sys.mjs",
 });
@@ -28,6 +28,7 @@ class ProviderTabGroups extends ActionsProvider {
 
   isActive(queryContext) {
     return (
+      queryContext.sapName == "urlbar" &&
       Services.prefs.getBoolPref("browser.tabs.groups.enabled") &&
       (!queryContext.restrictSource ||
         queryContext.restrictSource == lazy.UrlbarUtils.RESULT_SOURCE.TABS) &&
@@ -38,7 +39,11 @@ class ProviderTabGroups extends ActionsProvider {
   }
 
   async queryActions(queryContext) {
-    let window = lazy.BrowserWindowTracker.getTopWindow();
+    // We need a non-private window here to call gBrowser.getAllTabGroups()
+    // on, and it's OK if it's not on the current workspace.
+    let window = lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
     if (!window) {
       // We're likely running xpcshell tests if this happens in automation.
       if (!Cu.isInAutomation) {
@@ -53,7 +58,7 @@ class ProviderTabGroups extends ActionsProvider {
       sortByLastSeenActive: true,
     })) {
       if (
-        group.ownerGlobal == window &&
+        group.documentGlobal == window &&
         window.gBrowser.selectedTab.group == group
       ) {
         // This group is already the active group, so don't offer switching to it.
@@ -62,14 +67,13 @@ class ProviderTabGroups extends ActionsProvider {
       if (!this.#matches(group.label, queryContext)) {
         continue;
       }
+
       results.push(
         this.#makeResult({
           key: `tabgroup-${i++}`,
           l10nId: "urlbar-result-action-switch-to-tabgroup",
           l10nArgs: { group: group.label },
-          onPick: (_queryContext, _controller) => {
-            this.#switchToGroup(group);
-          },
+          dataset: { groupId: group.id },
           color: group.color,
         })
       );
@@ -84,27 +88,39 @@ class ProviderTabGroups extends ActionsProvider {
       if (!this.#matches(savedGroup.name, queryContext)) {
         continue;
       }
-      results.push(
-        this.#makeResult({
-          key: `tabgroup-${i++}`,
-          l10nId: "urlbar-result-action-open-saved-tabgroup",
-          l10nArgs: { group: savedGroup.name },
-          onPick: (_queryContext, _controller) => {
-            let group = lazy.SessionStore.openSavedTabGroup(
-              savedGroup.id,
-              window,
-              {
-                source: lazy.TabMetrics.METRIC_SOURCE.SUGGEST,
-              }
-            );
-            this.#switchToGroup(group);
-          },
-          color: savedGroup.color,
-        })
-      );
+      let result = this.#makeResult({
+        key: `tabgroup-${i++}`,
+        l10nId: "urlbar-result-action-open-saved-tabgroup",
+        l10nArgs: { group: savedGroup.name },
+        color: savedGroup.color,
+        dataset: { savedGroupId: savedGroup.id },
+      });
+      results.push(result);
     }
 
     return results;
+  }
+
+  onPick(_queryContext, controller, action) {
+    let group;
+    if (action.dataset.savedGroupId) {
+      group = lazy.SessionStore.openSavedTabGroup(
+        action.dataset.savedGroupId,
+        controller.browserWindow,
+        {
+          source: lazy.TabMetrics.METRIC_SOURCE.SUGGEST,
+        }
+      );
+    } else {
+      group = controller.browserWindow.gBrowser.getTabGroupById(
+        action.dataset.groupId
+      );
+    }
+
+    if (group) {
+      group.select();
+      group.documentGlobal.focus();
+    }
   }
 
   #matches(groupName, queryContext) {
@@ -117,26 +133,24 @@ class ProviderTabGroups extends ActionsProvider {
     );
   }
 
-  #makeResult({ key, l10nId, l10nArgs, onPick, color }) {
+  #makeResult({ key, l10nId, l10nArgs, color, dataset }) {
     return new ActionsResult({
       key,
       l10nId,
       l10nArgs,
-      onPick,
       icon: "chrome://browser/skin/tabbrowser/tab-groups.svg",
       dataset: {
+        ...dataset,
         style: {
           "--tab-group-color": `var(--tab-group-color-${color})`,
           "--tab-group-color-invert": `var(--tab-group-color-${color}-invert)`,
           "--tab-group-color-pale": `var(--tab-group-color-${color}-pale)`,
+          "--tab-group-background-color": `var(--tab-group-${color})`,
+          "--tab-group-text-color": `var(--tab-group-${color}-text)`,
+          "--tab-group-background-color-hover": `var(--tab-group-${color}-hover)`,
         },
       },
     });
-  }
-
-  #switchToGroup(group) {
-    group.select();
-    group.ownerGlobal.focus();
   }
 }
 

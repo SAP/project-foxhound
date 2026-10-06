@@ -26,6 +26,8 @@ async function test_navigation(nextPage, shouldCancel) {
     opening: TEST_PAGE,
   });
 
+  // TODO: Switch to SpecialPowers.spawn
+  // eslint-disable-next-line mozilla/reject-contenttask-spawn
   const loopEnded = ContentTask.spawn(tab.linkedBrowser, [], async function () {
     await new Promise(resolve => {
       content.addEventListener("LongLoopEnded", resolve, {
@@ -35,6 +37,8 @@ async function test_navigation(nextPage, shouldCancel) {
   });
 
   // Wait for the test page's long-running JS loop to start.
+  // TODO: Switch to SpecialPowers.spawn
+  // eslint-disable-next-line mozilla/reject-contenttask-spawn
   await ContentTask.spawn(tab.linkedBrowser, [], function () {
     content.dispatchEvent(new content.Event("StartLongLoop"));
   });

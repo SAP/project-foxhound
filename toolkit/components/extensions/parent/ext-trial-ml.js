@@ -32,7 +32,7 @@ function ensureInferenceEnabled() {
     return;
   }
   throw new ExtensionError(
-    `Trial ML is only available when "${PREF_EXTENSIONS_ML_ENABLED}" and ${PREF_BROWSER_ML_ENABLE}" preferences are set to true.`
+    `Trial ML API is disabled. This API is only available when "${PREF_EXTENSIONS_ML_ENABLED}" and ${PREF_BROWSER_ML_ENABLE}" preferences are set to true.`
   );
 }
 
@@ -142,8 +142,6 @@ class TrialML extends ExtensionAPI {
    * @returns {object} API for creating and running ML pipelines, and listening for progress events.
    */
   getAPI(context) {
-    ensureInferenceEnabled();
-
     return {
       trial: {
         ml: {
@@ -155,6 +153,8 @@ class TrialML extends ExtensionAPI {
            * @returns {Promise} The result of the pipeline creation.
            */
           createEngine: async request => {
+            ensureInferenceEnabled();
+
             if (!SUPPORTED_TASKS.includes(request.taskName)) {
               throw new ExtensionError(`Unsupported task ${request.taskName}`);
             }
@@ -176,6 +176,8 @@ class TrialML extends ExtensionAPI {
            * @returns {Promise} The result of the pipeline run.
            */
           runEngine: async request => {
+            ensureInferenceEnabled();
+
             if (this.#engine?.engineStatus === "closed") {
               // Engine closed for inactivity, re-create it with saved options.
               try {
@@ -192,6 +194,8 @@ class TrialML extends ExtensionAPI {
            * Deletes all the models downloaded for this extension.
            */
           deleteCachedModels: async () => {
+            ensureInferenceEnabled();
+
             await modelHub.deleteFilesByEngine({
               engineId: this.#pipelineId,
               deletedBy: "webextensions-api",
@@ -209,6 +213,10 @@ class TrialML extends ExtensionAPI {
             name: "trial.ml.onProgress",
             register: fire => {
               const callback = (_evtName, progressData) => {
+                // NOTE: as long as these events are only informational, we don't
+                // need to gate the event callback with the `ensureInferenceEnabled()`
+                // check, the events would only be sent for work that did technically
+                // start before the API was globally disabled.
                 fire.async(progressData);
               };
               this.extension.on(ENGINE_EVENT, callback);

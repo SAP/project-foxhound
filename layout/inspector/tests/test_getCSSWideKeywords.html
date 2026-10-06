@@ -1,0 +1,38 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Test InspectorUtils.getCSSWideKeywords</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<code>InspectorUtils.getCSSWideKeywords</code>
+
+<script>
+  /** Test for InspectorUtils.getCSSWideKeywords */
+  const { Assert } = SpecialPowers.ChromeUtils.importESModule(
+    "resource://testing-common/Assert.sys.mjs"
+  );
+
+  Assert.deepEqual(
+    SpecialPowers.InspectorUtils
+      .getCSSWideKeywords()
+      // getCSSWideKeywords returns unsorted results
+      .sort(),
+    [
+      "inherit",
+      "initial",
+      "revert",
+      "revert-layer",
+      "revert-rule",
+      "unset",
+    ].sort(),
+    `Got expected CSS-wide keywords`
+  );
+
+  // Test needs at least one `ok/is` call
+  ok(true, "Success!")
+</script>
+</pre>
+</body>
+</html>

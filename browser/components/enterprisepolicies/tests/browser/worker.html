@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+</head>
+<body>
+  <div id="service-worker-status">service-worker-pending</div>
+  <div id="shared-worker-status">shared-worker-pending</div>
+
+  <script>
+    async function testServiceWorker() {
+      const statusEl = document.getElementById('service-worker-status');
+      try {
+        if (!('serviceWorker' in navigator)) {
+          statusEl.textContent = 'service-worker-not-supported';
+          return;
+        }
+
+        const registration = await navigator.serviceWorker.register('service-worker.js');
+
+        navigator.serviceWorker.addEventListener('message', (event) => {
+          if (event.data && event.data.type === 'service-worker-response') {
+            statusEl.textContent = event.data.message;
+          }
+        });
+
+        await navigator.serviceWorker.ready;
+
+        if (navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({ type: 'test' });
+        } else {
+          registration.active.postMessage({ type: 'test' });
+        }
+      } catch (error) {
+        statusEl.textContent = 'service-worker-error';
+      }
+    }
+
+    function testSharedWorker() {
+      const statusEl = document.getElementById('shared-worker-status');
+      try {
+        const worker = new SharedWorker('shared-worker.js');
+
+        worker.port.onmessage = (event) => {
+          if (event.data && event.data.type === 'shared-worker-response') {
+            statusEl.textContent = event.data.message;
+          }
+        };
+
+        worker.port.start();
+        worker.port.postMessage({ type: 'test' });
+      } catch (error) {
+        statusEl.textContent = 'shared-worker-error';
+      }
+    }
+
+    testServiceWorker();
+    testSharedWorker();
+  </script>
+</body>
+</html>

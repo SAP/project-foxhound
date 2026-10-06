@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,7 +15,6 @@
 #include "nsDisplayList.h"
 #include "nsIFrame.h"
 #include "nsTHashSet.h"
-#include "DisplayItemCache.h"
 #include "ImgDrawResult.h"
 
 namespace mozilla {
@@ -138,22 +135,29 @@ class WebRenderCommandBuilder final {
   already_AddRefed<T> CreateOrRecycleWebRenderUserData(
       nsDisplayItem* aItem, bool* aOutIsRecycled = nullptr) {
     MOZ_ASSERT(aItem);
-    nsIFrame* frame = aItem->Frame();
+    return CreateOrRecycleWebRenderUserData<T>(aItem->GetPerFrameKey(),
+                                               aItem->Frame());
+  }
+  template <class T>
+  already_AddRefed<T> CreateOrRecycleWebRenderUserData(
+      uint32_t aDisplayItemKey, nsIFrame* aFrame,
+      bool* aOutIsRecycled = nullptr) {
     if (aOutIsRecycled) {
       *aOutIsRecycled = true;
     }
 
     WebRenderUserDataTable* userDataTable =
-        frame->GetProperty(WebRenderUserDataProperty::Key());
+        aFrame->GetProperty(WebRenderUserDataProperty::Key());
 
     if (!userDataTable) {
       userDataTable = new WebRenderUserDataTable();
-      frame->AddProperty(WebRenderUserDataProperty::Key(), userDataTable);
+      aFrame->AddProperty(WebRenderUserDataProperty::Key(), userDataTable);
     }
 
     RefPtr<WebRenderUserData>& data = userDataTable->LookupOrInsertWith(
-        WebRenderUserDataKey(aItem->GetPerFrameKey(), T::Type()), [&] {
-          auto data = MakeRefPtr<T>(GetRenderRootStateManager(), aItem);
+        WebRenderUserDataKey(aDisplayItemKey, T::Type()), [&] {
+          auto data = MakeRefPtr<T>(GetRenderRootStateManager(),
+                                    aDisplayItemKey, aFrame);
           mWebRenderUserDatas.Insert(data);
           if (aOutIsRecycled) {
             *aOutIsRecycled = false;
@@ -222,7 +226,11 @@ class WebRenderCommandBuilder final {
 
   bool mComputingOpaqueRegion;
 
-  nsPoint mOpaqueRegionOffset;
+  // The wrapping items we compute opaque regions against. The point is the
+  // offset from the item to the global coordinate space (since we only support
+  // translations).
+  AutoTArray<std::pair<nsDisplayItem*, nsPoint>, 3> mOpaqueRegionWrappers;
+  struct AutoOpaqueRegionStateTracker;
 
  public:
   // Whether consecutive inactive display items should be grouped into one

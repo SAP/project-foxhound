@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,7 +27,9 @@ class QuicSocketControl final : public CommonSocketControl {
   NS_IMETHOD GetSSLVersionOffered(int16_t* aSSLVersionOffered) override;
 
   QuicSocketControl(const nsCString& aHostName, int32_t aPort,
-                    uint32_t aProviderFlags, Http3Session* aHttp3Session);
+                    uint32_t aProviderFlags,
+                    const mozilla::OriginAttributes& aOriginAttributes,
+                    Http3Session* aHttp3Session);
 
   void SetNegotiatedNPN(const nsACString& aValue);
   void SetInfo(uint16_t aCipherSuite, uint16_t aProtocolVersion,

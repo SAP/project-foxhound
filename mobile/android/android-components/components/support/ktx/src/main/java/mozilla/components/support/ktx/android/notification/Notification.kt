@@ -9,7 +9,6 @@ package mozilla.components.support.ktx.android.notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.os.Build
 import androidx.annotation.StringRes
 import androidx.core.content.getSystemService
 
@@ -28,17 +27,15 @@ fun ensureNotificationChannelExists(
     onSetupChannel: NotificationChannel.() -> Unit = {},
     onCreateChannel: NotificationManager.() -> Unit = {},
 ): String {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        val notificationManager = requireNotNull(context.getSystemService<NotificationManager>())
-        val channel = NotificationChannel(
-            channelDate.id,
-            context.getString(channelDate.name),
-            channelDate.importance,
-        )
-        onSetupChannel(channel)
-        notificationManager.createNotificationChannel(channel)
-        onCreateChannel(notificationManager)
-    }
+    val notificationManager = requireNotNull(context.getSystemService<NotificationManager>())
+    val channel = NotificationChannel(
+        channelDate.id,
+        context.getString(channelDate.name),
+        channelDate.importance,
+    )
+    onSetupChannel(channel)
+    notificationManager.createNotificationChannel(channel)
+    onCreateChannel(notificationManager)
 
     return channelDate.id
 }
@@ -46,4 +43,8 @@ fun ensureNotificationChannelExists(
 /**
  * Wraps the data of a NotificationChannel as this class is available after API 26.
  */
-class ChannelData(val id: String, @param:StringRes val name: Int, val importance: Int)
+class ChannelData(
+    val id: String,
+    @param:StringRes val name: Int,
+    val importance: Int,
+)

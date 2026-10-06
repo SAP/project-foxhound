@@ -12,9 +12,6 @@ const { ClientEnvironment } = ChromeUtils.importESModule(
 const { PreferenceExperiments } = ChromeUtils.importESModule(
   "resource://normandy/lib/PreferenceExperiments.sys.mjs"
 );
-const { Uptake } = ChromeUtils.importESModule(
-  "resource://normandy/lib/Uptake.sys.mjs"
-);
 const { BaseAction } = ChromeUtils.importESModule(
   "resource://normandy/actions/BaseAction.sys.mjs"
 );
@@ -72,24 +69,8 @@ function prefExperimentRecipeFactory(args) {
 
 decorate_task(
   withStudiesEnabled(),
-  withStub(Uptake, "reportRecipe"),
-  async function run_without_errors({ reportRecipeStub }) {
-    const action = new PreferenceExperimentAction();
-    const recipe = prefExperimentRecipeFactory();
-    await action.processRecipe(recipe, BaseAction.suitability.FILTER_MATCH);
-    await action.finalize();
-    // Errors thrown in actions are caught and silenced, so instead check for an
-    // explicit success here.
-    Assert.deepEqual(reportRecipeStub.args, [[recipe, Uptake.RECIPE_SUCCESS]]);
-  }
-);
-
-decorate_task(
-  withStudiesEnabled(),
-  withStub(Uptake, "reportRecipe"),
-  withStub(Uptake, "reportAction"),
   withPrefEnv({ set: [["app.shield.optoutstudies.enabled", false]] }),
-  async function checks_disabled({ reportRecipeStub, reportActionStub }) {
+  async function checks_disabled() {
     const action = new PreferenceExperimentAction();
     action.log = mockLogger();
 
@@ -111,12 +92,6 @@ decorate_task(
     Assert.strictEqual(action.log.debug.args.length, 2);
     Assert.deepEqual(action.log.debug.args[1], [
       "Skipping post-execution hook for PreferenceExperimentAction because it is disabled.",
-    ]);
-    Assert.deepEqual(reportRecipeStub.args, [
-      [recipe, Uptake.RECIPE_ACTION_DISABLED],
-    ]);
-    Assert.deepEqual(reportActionStub.args, [
-      [action.name, Uptake.ACTION_SUCCESS],
     ]);
   }
 );
@@ -302,7 +277,6 @@ decorate_task(
 decorate_task(
   withStudiesEnabled(),
   withStub(PreferenceExperiments, "start"),
-  withStub(Uptake, "reportRecipe"),
   PreferenceExperiments.withMockExperiments([
     {
       slug: "conflict",
@@ -314,7 +288,6 @@ decorate_task(
   ]),
   async function do_nothing_if_preference_is_already_being_tested({
     startStub,
-    reportRecipeStub,
   }) {
     const action = new PreferenceExperimentAction();
     const recipe = prefExperimentRecipeFactory({
@@ -334,9 +307,6 @@ decorate_task(
     await action.processRecipe(recipe, BaseAction.suitability.FILTER_MATCH);
     await action.finalize();
 
-    Assert.deepEqual(reportRecipeStub.args, [
-      [recipe, Uptake.RECIPE_EXECUTION_ERROR],
-    ]);
     Assert.deepEqual(startStub.args, [], "start not called");
     // No way to get access to log message/Error thrown
   }

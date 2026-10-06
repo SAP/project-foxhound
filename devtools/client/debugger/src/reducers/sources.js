@@ -4,10 +4,10 @@
 
 /**
  * Sources reducer
+ *
  * @module reducers/sources
  */
 
-import { originalToGeneratedId } from "devtools/client/shared/source-map-loader/index";
 import { prefs } from "../utils/prefs";
 import { createPendingSelectedLocation } from "../utils/location";
 
@@ -178,6 +178,16 @@ function update(state = initialSourcesState(), action) {
       };
     }
 
+    case "SET_GENERATED_SELECTED_LOCATION": {
+      if (action.location != state.selectedLocation) {
+        return state;
+      }
+      return {
+        ...state,
+        selectedGeneratedLocation: action.generatedLocation,
+      };
+    }
+
     case "SET_DEFAULT_SELECTED_LOCATION": {
       if (
         state.shouldSelectOriginalLocation ==
@@ -241,7 +251,7 @@ function update(state = initialSourcesState(), action) {
       };
     }
 
-    case "REMOVE_THREAD": {
+    case "REMOVE_SOURCES": {
       return removeSourcesAndActors(state, action);
     }
   }
@@ -271,7 +281,7 @@ function addSources(state, sources) {
 
     // In case of original source, maintain the mapping of generated source to original sources map.
     if (source.isOriginal) {
-      const generatedSourceId = originalToGeneratedId(source.id);
+      const generatedSourceId = source.generatedSource.id;
       let originalSourceIds =
         state.mutableOriginalSources.get(generatedSourceId);
       if (!originalSourceIds) {
@@ -330,18 +340,49 @@ function removeSourcesAndActors(state, action) {
 
     if (removedSource.isOriginal) {
       mutableOriginalBreakableLines.delete(sourceId);
+      // Also ensure removing this original source id in the array specific to its
+      // generated source
+      const generatedSourceId = removedSource.generatedSource.id;
+      let originalSourceIds = mutableOriginalSources.get(generatedSourceId);
+      if (originalSourceIds) {
+        originalSourceIds = originalSourceIds.filter(id => id != sourceId);
+        mutableOriginalSources.set(generatedSourceId, originalSourceIds);
+      }
+
+      // We should also remove the mapped location from the breakpoint positions
+      //
+      // `mutableBreakpointPositions` is a Map keyed per generated source id
+      //   `generatedBreakpointPositions` is a Array
+      //     `position` is an object with `location` and `generatedLocation` attributes
+      const generatedBreakpointPositions =
+        mutableBreakpointPositions.get(generatedSourceId);
+      if (generatedBreakpointPositions) {
+        for (const line in generatedBreakpointPositions) {
+          for (const position of generatedBreakpointPositions[line]) {
+            // Only clear the original mapped location if that's a breakpoint
+            // for the currently removed original source. This generated/bundle source
+            // may have breakpoints for many original sources.
+            if (position.location.source == removedSource) {
+              position.location = position.generatedLocation;
+            }
+          }
+        }
+      }
     }
 
     mutableBreakpointPositions.delete(sourceId);
 
-    if (newState.selectedLocation?.source == removedSource) {
+    if (
+      action.resetSelectedLocation &&
+      newState.selectedLocation?.source == removedSource
+    ) {
       newState.selectedLocation = null;
       newState.selectedOriginalLocation = UNDEFINED_LOCATION;
     }
   }
 
   for (const removedActor of action.actors) {
-    const sourceId = removedActor.source;
+    const sourceId = removedActor.sourceObject.id;
     const actorsForSource = mutableSourceActors.get(sourceId);
     // actors may have already been cleared by the previous for..loop
     if (!actorsForSource) {
@@ -359,7 +400,10 @@ function removeSourcesAndActors(state, action) {
       mutableSourceActors.delete(sourceId);
     }
 
-    if (newState.selectedLocation?.sourceActor == removedActor) {
+    if (
+      action.resetSelectedLocation &&
+      newState.selectedLocation?.sourceActor == removedActor
+    ) {
       newState.selectedLocation = null;
       newState.selectedOriginalLocation = UNDEFINED_LOCATION;
     }
@@ -375,7 +419,7 @@ function insertSourceActors(state, action) {
   // The `sourceActor` objects are defined from `newGeneratedSources` action:
   // https://searchfox.org/mozilla-central/rev/4646b826a25d3825cf209db890862b45fa09ffc3/devtools/client/debugger/src/actions/sources/newSources.js#300-314
   for (const sourceActor of sourceActors) {
-    const sourceId = sourceActor.source;
+    const sourceId = sourceActor.sourceObject.id;
     // We always clone the array of source actors as we return it from selectors.
     // So the map is mutable, but its values are considered immutable and will change
     // anytime there is a new actor added per source ID.
@@ -393,8 +437,8 @@ function insertSourceActors(state, action) {
   if (scriptActors.length) {
     // If new HTML sources are being added, we need to clear the breakpoint
     // positions since the new source is a <script> with new breakpoints.
-    for (const { source } of scriptActors) {
-      state.mutableBreakpointPositions.delete(source);
+    for (const { sourceObject } of scriptActors) {
+      state.mutableBreakpointPositions.delete(sourceObject.id);
     }
   }
 

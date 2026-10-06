@@ -17,7 +17,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 ChromeUtils.defineLazyGetter(lazy, "Crypto", () => {
   let { WeaveCrypto } = ChromeUtils.importESModule(
-    "resource://services-crypto/WeaveCrypto.sys.mjs"
+    "moz-src:///services/crypto/modules/WeaveCrypto.sys.mjs"
   );
   return new WeaveCrypto();
 });

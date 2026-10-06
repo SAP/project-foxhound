@@ -74,10 +74,10 @@ def transform_platform(
         platform_id = "win"
     elif config_platform == "mac":
         # Bug 1920821
-        # If we are using mitmproxy 11 we need to ensure platform_id is configured
+        # If we are using mitmproxy 12 we need to ensure platform_id is configured
         # correctly for the folder structure. Having this check also keeps the ability to
         # playback on older versions which don't have ARM support
-        if config_processor == "arm" and mitmproxy_version == "11.0.0":
+        if config_processor == "arm" and mitmproxy_version == "12.2.1":
             platform_id = "osx-arm64"
         else:
             platform_id = "osx"

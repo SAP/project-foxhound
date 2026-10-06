@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<!--
+https://bugzilla.mozilla.org/show_bug.cgi?id=1894251
+-->
+<title>Test for CSSStyleDeclaration::hasLonghandProperty</title>
+<script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
+
+<div
+  id="target"
+  align="right"
+  style="
+    --in-style-attribute:red;
+    --in-style-attribute-empty: ;
+    color: blue;
+    outline: 1px solid lime;
+    caret-color: var(--in-style-attribute);"
+></div>
+
+<style>
+  #target {
+      --in-rule: hotpink;
+      --in-rule-empty: ;
+      background-color: peachpuff;
+      text-decoration-color: var(--in-rule);
+      padding: 1em;
+  }
+
+  @property --my-color {
+    syntax: "<color>";
+    inherits: false;
+    initial-value: #c0ffee;
+  }
+</style>
+
+<script>
+add_task(async () => {
+  const InspectorUtils = SpecialPowers.InspectorUtils;
+  const el = document.querySelector("#target");
+  // Use InspectorUtils.getMatchingCSSRules so we get InspectorDeclaration instances, like
+  // we do in DevTools.
+  const rules = InspectorUtils.getMatchingCSSRules(el);
+
+  info("Check that hasProperty returns expected values for regular rule CSSStyleProperties")
+  const targetRule = rules.find(r => r.selectorText === "#target");
+  ok(
+    targetRule.style.hasLonghandProperty("background-color"),
+    `hasProperty returned true for "background-color" property on #target rule`
+  );
+  ok(
+    targetRule.style.hasLonghandProperty("text-decoration-color"),
+    `hasProperty returned true for property with a CSS variable value on #target rule`
+  );
+  ok(
+    !targetRule.style.hasLonghandProperty("caret-color"),
+    `hasProperty returned false for non-defined "caret-color" property on #target rule`
+  );
+  ok(
+    !targetRule.style.hasLonghandProperty("my-amazing-property"),
+    `hasProperty returned false for invalid property on #target rule`
+  );
+  ok(
+    targetRule.style.hasLonghandProperty("--in-rule"),
+    `hasProperty returned true for "--in-rule" property on #target rule`
+  );
+  ok(
+    targetRule.style.hasLonghandProperty("--in-rule-empty"),
+    `hasProperty returned true for "--in-rule-empty" property on #target rule`
+  );
+  ok(
+    !targetRule.style.hasLonghandProperty("--my-color"),
+    `hasProperty returned false for registered but unset "--my-color" property on #target rule`
+  );
+  ok(
+    !targetRule.style.hasLonghandProperty("--unknown"),
+    `hasProperty returned false for "--unknown" property on #target rule`
+  );
+  ok(
+    !targetRule.style.hasLonghandProperty("padding"),
+    `hasProperty returned false for shorthand property (padding) on #target rule`
+  );
+  ok(
+    targetRule.style.hasLonghandProperty("padding-top"),
+    `hasProperty returned true for longhand property (padding-top) on #target rule`
+  );
+
+  info("Check that hasProperty returns expected values for style attribute InspectorDeclaration CSSStyleProperties")
+  const styleAttributeInspectorDeclaration = rules.find(r => r.declarationOrigin === "style-attribute");
+  ok(
+    styleAttributeInspectorDeclaration.style.hasLonghandProperty("color"),
+    `hasProperty returned true for "color" property on style attribute`
+  );
+  ok(
+    styleAttributeInspectorDeclaration.style.hasLonghandProperty("caret-color"),
+    `hasProperty returned true for property with a CSS variable value on style attribute`
+  );
+  ok(
+    !styleAttributeInspectorDeclaration.style.hasLonghandProperty("background-color"),
+    `hasProperty returned false for non-defined "background-color" property on style attribute`
+  );
+  ok(
+    styleAttributeInspectorDeclaration.style.hasLonghandProperty("--in-style-attribute"),
+    `hasProperty returned true for "--in-style-attribute" property on style attribute`
+  );
+  ok(
+    styleAttributeInspectorDeclaration.style.hasLonghandProperty("--in-style-attribute-empty"),
+    `hasProperty returned true for "--in-style-attribute-empty" property on style attribute`
+  );
+  ok(
+    !styleAttributeInspectorDeclaration.style.hasLonghandProperty("--my-color"),
+    `hasProperty returned false for registered but unset "--my-color" property on style attribute`
+  );
+  ok(
+    !styleAttributeInspectorDeclaration.style.hasLonghandProperty("--unknown"),
+    `hasProperty returned false for "--unknown" property on style attribute`
+  );
+  ok(
+    !styleAttributeInspectorDeclaration.style.hasLonghandProperty("outline"),
+    `hasProperty returned false for shorthand property (outline) on style attribute`
+  );
+  ok(
+    styleAttributeInspectorDeclaration.style.hasLonghandProperty("outline-color"),
+    `hasProperty returned true for longhand property (outline-color) on style attribute`
+  );
+
+  info("Check that hasProperty returns expected values for pres hints InspectorDeclaration CSSStyleProperties")
+  const presHintsInspectorDeclaration = rules.find(r => r.declarationOrigin === "pres-hints");
+  ok(
+      presHintsInspectorDeclaration.style.hasLonghandProperty("text-align"),
+      `hasProperty returned true for "text-align" property on pres-hints style`
+    );
+    ok(
+      !presHintsInspectorDeclaration.style.hasLonghandProperty("background-color"),
+      `hasProperty returned false for non-defined "background-color" property on pres-hints style`
+    );
+    ok(
+      !presHintsInspectorDeclaration.style.hasLonghandProperty("--my-color"),
+      `hasProperty returned false for registered but unset "--my-color" property on pres-hints style`
+    );
+    ok(
+      !presHintsInspectorDeclaration.style.hasLonghandProperty("--unknown"),
+      `hasProperty returned false for "--unknown" property on pres-hints style`
+    );
+});
+</script>

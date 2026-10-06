@@ -19,7 +19,8 @@ async function test() {
   var targetElement = elementForTarget(window);
   var w = {},
     h = {};
-  utilsForTarget(window).getScrollbarSizes(targetElement, w, h);
+  var utils = utilsForTarget(window);
+  utils.getScrollbarSizes(targetElement, w, h);
   var verticalScrollbarWidth = w.value;
   var mouseX = targetElement.clientWidth + verticalScrollbarWidth / 2;
   var mouseY = targetElement.clientHeight - 100; // 100 pixels above the bottom of the scrollbar track
@@ -44,15 +45,13 @@ async function test() {
   // Wait for scrolling to complete
   await scrollEndPromise;
 
-  // Work around bug 1825879: we may get an extra scrollend
-  // event too early.
-  if (window.scrollY < (window.scrollMaxY / 2)) {
-    scrollEndPromise = promiseScrollend();
-    await scrollEndPromise;
-  }
-
   // Flush everything just to be safe
   await promiseOnlyApzControllerFlushed();
+
+  // Give WebRender a chance to sample any remaining async scroll offset
+  // that affects the scrollbar position.
+  utils.advanceTimeAndRefresh(16);
+  utils.restoreNormalRefresh();
 
   var result = hitTest({x: mouseX, y: mouseY});
 
@@ -69,17 +68,17 @@ async function test() {
   });
 }
 
+// Note: on Linux, if the gtk-primary-button-warps-slider setting
+// is enabled, this test will not exercise the codepath it intends
+// to test (the thumb will jump immediately under the cursor, causing
+// the test to pass trivially). However, the test should still not fail.
 if (getPlatform() == "mac") {
   ok(true, "Skipping test on Mac (bug 1851423)");
   subtestDone();
 } else {
-  // Note: on Linux, if the gtk-primary-button-warps-slider setting
-  // is enabled, this test will not exercise the codepath it intends
-  // to test (the thumb will jump immediately under the cursor, causing
-  // the test to pass trivially). However, the test should still not fail.
-  waitUntilApzStable()
-  .then(test)
-  .then(subtestDone, subtestFailed);
+waitUntilApzStable()
+ .then(test)
+ .then(subtestDone, subtestFailed);
 }
 
   </script>

@@ -80,11 +80,6 @@ class MockLocationUpdatesRule : ExternalResource() {
      * @param modifyLocation optional callback for modifying the constructed location before setting it.
      */
     fun setMockLocation(modifyLocation: (Location.() -> Unit)? = null) {
-        check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            "MockLocationUpdatesRule is supported only on Android devices " +
-                "running version >= Build.VERSION_CODES.M"
-        }
-
         val location = Location(MOCK_PROVIDER_NAME)
         location.time = Date().time
         location.elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
@@ -94,11 +89,9 @@ class MockLocationUpdatesRule : ExternalResource() {
         location.speed = 5f
         location.latitude = latitude
         location.longitude = longitude
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            location.verticalAccuracyMeters = 5f
-            location.bearingAccuracyDegrees = 5f
-            location.speedAccuracyMetersPerSecond = 5f
-        }
+        location.verticalAccuracyMeters = 5f
+        location.bearingAccuracyDegrees = 5f
+        location.speedAccuracyMetersPerSecond = 5f
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             location.elapsedRealtimeUncertaintyNanos = 0.0

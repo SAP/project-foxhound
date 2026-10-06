@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef TelemetryScalarInfo_h__
-#define TelemetryScalarInfo_h__
+#ifndef TelemetryScalarInfo_h_
+#define TelemetryScalarInfo_h_
 
 #include "TelemetryCommon.h"
 
@@ -88,4 +87,4 @@ struct ScalarInfo : BaseScalarInfo {
 
 }  // namespace
 
-#endif  // TelemetryScalarInfo_h__
+#endif  // TelemetryScalarInfo_h_

@@ -28,7 +28,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=423523
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
-/** Test for Bug 423523 **/
+/** Test for Bug 423523 */
   SimpleTest.waitForExplicitFinish();
   SimpleTest.requestFlakyTimeout("untriaged");
 
@@ -55,12 +55,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=423523
   function selectionOffsetIs(expectedOffset) {
     return window.getSelection().focusOffset == expectedOffset;
   }
-  
+
   function sendMouseClick() {
-    var rect=document.getElementById('div1').getBoundingClientRect();
-    var utils = SpecialPowers.getDOMWindowUtils(window);
-    utils.sendMouseEvent('mousedown', rect.left+1, rect.top+1, 0, 1, 0);
-    utils.sendMouseEvent('mouseup', rect.left+1, rect.top+1, 0, 1, 0);
+    synthesizeMouse(document.getElementById('div1'), 1, 1, {});
   }
  
   function runtests() {

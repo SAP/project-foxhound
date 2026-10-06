@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,6 +19,26 @@
 #define NANOPERSEC 1000000000.
 
 namespace mozilla {
+
+nsresult GetCurrentProcessMemoryUsage(uint64_t* aResult) {
+  if (!aResult) {
+    return NS_ERROR_INVALID_ARG;
+  }
+  FILE* f = fopen("/proc/self/statm", "r");
+  if (!f) {
+    return NS_ERROR_FAILURE;
+  }
+  size_t vmSize = 0, resident = 0, shared = 0;
+  const int kExpected = 3;
+  int nread = fscanf(f, "%zu %zu %zu", &vmSize, &resident, &shared);
+  fclose(f);
+
+  if (nread != kExpected) {
+    return NS_ERROR_FAILURE;
+  }
+  *aResult = uint64_t(resident - shared) * getpagesize();
+  return NS_OK;
+}
 
 int GetCycleTimeFrequencyMHz() { return 0; }
 

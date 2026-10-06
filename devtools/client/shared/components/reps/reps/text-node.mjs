@@ -12,12 +12,9 @@ import {
   appendRTLClassNameIfNeeded,
   cropString,
   wrapRender,
-} from "resource://devtools/client/shared/components/reps/reps/rep-utils.mjs";
-import { MODE } from "resource://devtools/client/shared/components/reps/reps/constants.mjs";
-import {
-  rep as StringRep,
-  isLongString,
-} from "resource://devtools/client/shared/components/reps/reps/string.mjs";
+} from "./rep-utils.mjs";
+import { MODE } from "./constants.mjs";
+import { rep as StringRep, isLongString } from "./string.mjs";
 
 /**
  * Renders DOM #text node.

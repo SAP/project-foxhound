@@ -29,10 +29,10 @@ This job is configured as `tier 2 <https://wiki.mozilla.org/Sheriffing/Job_Visib
 Autofix
 -------
 
-This linter provides a ``--fix`` option. The python script is doing the change itself.
+This linter provides a ``--fix`` option.
 
 Sources
 -------
 
 * :searchfox:`Configuration (YAML) <tools/lint/file-whitespace.yml>`
-* :searchfox:`Source <tools/lint/file-whitespace/__init__.py>`
+* :searchfox:`Source (Rust) <tools/lint/mozcheck/src/file_whitespace.rs>`

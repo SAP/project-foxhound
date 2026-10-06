@@ -17,6 +17,7 @@ sealed class AcornSpace {
      * A palette defining the static whitespace and arrangement between visual elements
      * styled by the Acorn Design System.
      */
+    val static25: Dp = 2.dp
     val static50: Dp = 4.dp
     val static100: Dp = 8.dp
     val static150: Dp = 12.dp

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -241,29 +239,33 @@ ffi::RawNumberFormatter* FluentBuiltInNumberFormatterCreate(
   NumberFormatOptions options;
   switch (aOptions->style) {
     case ffi::FluentNumberStyleRaw::Decimal:
+      options.mStyle = NumberFormatOptions::Style::Decimal;
       break;
     case ffi::FluentNumberStyleRaw::Currency: {
+      options.mStyle = NumberFormatOptions::Style::Currency;
+
       std::string currency = aOptions->currency.get();
+      NumberFormatOptions::CurrencyDisplay display;
       switch (aOptions->currency_display) {
         case ffi::FluentNumberCurrencyDisplayStyleRaw::Symbol:
-          options.mCurrency = Some(std::make_pair(
-              currency, NumberFormatOptions::CurrencyDisplay::Symbol));
+          display = NumberFormatOptions::CurrencyDisplay::Symbol;
           break;
         case ffi::FluentNumberCurrencyDisplayStyleRaw::Code:
-          options.mCurrency = Some(std::make_pair(
-              currency, NumberFormatOptions::CurrencyDisplay::Code));
+          display = NumberFormatOptions::CurrencyDisplay::Code;
           break;
         case ffi::FluentNumberCurrencyDisplayStyleRaw::Name:
-          options.mCurrency = Some(std::make_pair(
-              currency, NumberFormatOptions::CurrencyDisplay::Name));
+          display = NumberFormatOptions::CurrencyDisplay::Name;
           break;
         default:
           MOZ_ASSERT_UNREACHABLE();
           break;
       }
+
+      options.mCurrency = Some(std::make_tuple(
+          currency, display, NumberFormatOptions::CurrencySign::Standard));
     } break;
     case ffi::FluentNumberStyleRaw::Percent:
-      options.mPercent = true;
+      options.mStyle = NumberFormatOptions::Style::Percent;
       break;
     default:
       MOZ_ASSERT_UNREACHABLE();

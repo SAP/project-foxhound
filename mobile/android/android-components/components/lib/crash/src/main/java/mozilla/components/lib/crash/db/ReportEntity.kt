@@ -23,19 +23,16 @@ internal data class ReportEntity(
     @PrimaryKey(autoGenerate = true)
     @ColumnInfo(name = "id")
     var id: Long? = null,
-
     /**
      * UUID of the crash that was reported.
      */
     @ColumnInfo(name = "crash_uuid")
     var crashUuid: String,
-
     /**
      * Id of the service the crash was reported to (matching [CrashReporterService.id].
      */
     @ColumnInfo(name = "service_id")
     var serviceId: String,
-
     /**
      * The id of the crash report as returned by [CrashReporterService.report].
      */

@@ -24,7 +24,7 @@ const docRow = {
   name: `"Accessibility Panel Test"`,
 };
 const headingRow = {
-  role: "heading",
+  role: "heading (level 1)",
   name: `"header"`,
 };
 const textLeafRow = {

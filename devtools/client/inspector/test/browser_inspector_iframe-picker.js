@@ -82,9 +82,6 @@ add_task(async function () {
   info("Select the iframe");
   frames[0].click();
 
-  if (!isEveryFrameTargetEnabled()) {
-    await willNavigate;
-  }
   await newRoot;
 
   info("The iframe is selected, check that the markup view was updated");

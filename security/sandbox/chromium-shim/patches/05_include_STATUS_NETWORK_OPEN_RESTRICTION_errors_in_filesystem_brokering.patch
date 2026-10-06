@@ -1,0 +1,109 @@
+# User Bob Owen <bobowencode@gmail.com>
+This changes the read only related status checks in filesystem_interception.cc
+to include STATUS_NETWORK_OPEN_RESTRICTION (0xC0000201), which gets returned in
+some cases (like network shares) and fails because we never ask the broker.
+
+diff --git a/sandbox/win/src/filesystem_interception.cc b/sandbox/win/src/filesystem_interception.cc
+--- a/sandbox/win/src/filesystem_interception.cc
++++ b/sandbox/win/src/filesystem_interception.cc
+@@ -11,16 +11,20 @@
+ #include "sandbox/win/src/ipc_tags.h"
+ #include "sandbox/win/src/policy_params.h"
+ #include "sandbox/win/src/policy_target.h"
+ #include "sandbox/win/src/sandbox_factory.h"
+ #include "sandbox/win/src/sandbox_nt_util.h"
+ #include "sandbox/win/src/sharedmem_ipc_client.h"
+ #include "sandbox/win/src/target_services.h"
+ 
++// This status occurs when trying to access a network share on the machine from
++// which it is shared.
++#define STATUS_NETWORK_OPEN_RESTRICTION ((NTSTATUS)0xC0000201L)
++
+ namespace sandbox {
+ 
+ namespace {
+ // This checks for three conditions on whether to ask the broker.
+ // - The path looks like a DOS device path (namely \??\something).
+ // - The path looks like a short-name path.
+ // - Whether the details match the policy.
+ bool ShouldAskBroker(IpcTag ipc_tag,
+@@ -29,17 +33,18 @@ NTSTATUS WINAPI TargetNtCreateFile(NtCre
+                                    ULONG disposition,
+                                    ULONG options,
+                                    PVOID ea_buffer,
+                                    ULONG ea_length) {
+   // Check if the process can open it first.
+   NTSTATUS status = orig_CreateFile(
+       file, desired_access, object_attributes, io_status, allocation_size,
+       file_attributes, sharing, disposition, options, ea_buffer, ea_length);
+-  if (STATUS_ACCESS_DENIED != status) {
++  if (STATUS_ACCESS_DENIED != status &&
++      STATUS_NETWORK_OPEN_RESTRICTION != status) {
+     return status;
+   }
+ 
+   // We don't trust that the IPC can work this early.
+   if (!SandboxFactory::GetTargetServices()->GetState()->InitCalled()) {
+     return status;
+   }
+ 
+@@ -106,17 +111,18 @@ NTSTATUS WINAPI TargetNtOpenFile(NtOpenF
+                                  ACCESS_MASK desired_access,
+                                  POBJECT_ATTRIBUTES object_attributes,
+                                  PIO_STATUS_BLOCK io_status,
+                                  ULONG sharing,
+                                  ULONG options) {
+   // Check if the process can open it first.
+   NTSTATUS status = orig_OpenFile(file, desired_access, object_attributes,
+                                   io_status, sharing, options);
+-  if (STATUS_ACCESS_DENIED != status)
++  if (STATUS_ACCESS_DENIED != status &&
++      STATUS_NETWORK_OPEN_RESTRICTION != status)
+     return status;
+ 
+   // We don't trust that the IPC can work this early.
+   if (!SandboxFactory::GetTargetServices()->GetState()->InitCalled())
+     return status;
+ 
+   do {
+     if (!ValidParameter(file, sizeof(HANDLE), WRITE))
+@@ -176,17 +182,18 @@ NTSTATUS WINAPI TargetNtOpenFile(NtOpenF
+ }
+ 
+ NTSTATUS WINAPI
+ TargetNtQueryAttributesFile(NtQueryAttributesFileFunction orig_QueryAttributes,
+                             POBJECT_ATTRIBUTES object_attributes,
+                             PFILE_BASIC_INFORMATION file_attributes) {
+   // Check if the process can query it first.
+   NTSTATUS status = orig_QueryAttributes(object_attributes, file_attributes);
+-  if (STATUS_ACCESS_DENIED != status)
++  if (STATUS_ACCESS_DENIED != status &&
++      STATUS_NETWORK_OPEN_RESTRICTION != status)
+     return status;
+ 
+   // We don't trust that the IPC can work this early.
+   if (!SandboxFactory::GetTargetServices()->GetState()->InitCalled())
+     return status;
+ 
+   do {
+     if (!ValidParameter(file_attributes, sizeof(FILE_BASIC_INFORMATION), WRITE))
+@@ -232,17 +239,18 @@ TargetNtQueryAttributesFile(NtQueryAttri
+ 
+ NTSTATUS WINAPI TargetNtQueryFullAttributesFile(
+     NtQueryFullAttributesFileFunction orig_QueryFullAttributes,
+     POBJECT_ATTRIBUTES object_attributes,
+     PFILE_NETWORK_OPEN_INFORMATION file_attributes) {
+   // Check if the process can query it first.
+   NTSTATUS status =
+       orig_QueryFullAttributes(object_attributes, file_attributes);
+-  if (STATUS_ACCESS_DENIED != status)
++  if (STATUS_ACCESS_DENIED != status &&
++      STATUS_NETWORK_OPEN_RESTRICTION != status)
+     return status;
+ 
+   // We don't trust that the IPC can work this early.
+   if (!SandboxFactory::GetTargetServices()->GetState()->InitCalled())
+     return status;
+ 
+   do {
+     if (!ValidParameter(file_attributes, sizeof(FILE_NETWORK_OPEN_INFORMATION),

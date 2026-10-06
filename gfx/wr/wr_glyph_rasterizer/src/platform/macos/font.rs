@@ -787,6 +787,7 @@ impl FontContext {
                 GlyphType::Vector => font.get_glyph_format(),
             },
             bytes: rasterized_pixels,
+            is_packed_glyph: false,
         })})
     }
 }

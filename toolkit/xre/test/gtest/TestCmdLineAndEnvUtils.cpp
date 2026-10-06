@@ -1,13 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <memory>
 #include <ostream>
 #include <string>
-#include <string_view>
-#include <type_traits>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -331,14 +327,14 @@ TEST(CmdLineAndEnvUtils, strimatch)
   using mozilla::strimatch;
   for (auto const& [result, data] : kStrMatches8) {
     auto const& [left, right] = data;
-    EXPECT_EQ(strimatch(left, right), result)
-        << '<' << left << "> !~ <" << right << '>';
+    auto match = strimatch(left, right);
+    EXPECT_EQ(match, result) << '<' << left << "> !~ <" << right << '>';
 
 #ifdef XP_WIN
     wchar_t right_wide[200];
     ::mbstowcs(right_wide, right, 200);
-    EXPECT_EQ(strimatch(left, right_wide), result)
-        << '<' << left << "> !~ L<" << right << '>';
+    auto match_wide = strimatch(left, right_wide);
+    EXPECT_EQ(match_wide, result) << '<' << left << "> !~ L<" << right << '>';
 #endif
   }
 
@@ -351,6 +347,65 @@ TEST(CmdLineAndEnvUtils, strimatch)
 #endif
 }
 
+TEST(CmdLineAndEnvUtils, ArgStartsWith)
+{
+  using mozilla::ArgStartsWith;
+  // Should match and point to '='
+  auto match = ArgStartsWith("flag=value", "flag");
+  ASSERT_TRUE(match);
+  // Should match and point to '\0' for exact match
+  auto match2 = ArgStartsWith("flag", "flag");
+  ASSERT_TRUE(match2);
+  // Should not match
+  auto match3 = ArgStartsWith("flog=value", "flag");
+  EXPECT_FALSE(match3);
+}
+
+TEST(CmdLineAndEnvUtils, flagValue)
+{
+  using mozilla::ARG_BAD;
+  using mozilla::ARG_FOUND;
+  using mozilla::ARG_NONE;
+  using mozilla::CheckArg;
+  int argc;
+  const char* argv1[] = {"prog", "--flag=value", nullptr};
+  argc = 2;
+  const char* param = nullptr;
+  EXPECT_EQ(CheckArg(argc, const_cast<char**>(argv1), "flag", &param),
+            ARG_FOUND);
+  ASSERT_TRUE(param);
+  EXPECT_STREQ(param, "value");
+
+  const char* argv2[] = {"prog", "-flag=foo", nullptr};
+  argc = 2;
+  param = nullptr;
+  EXPECT_EQ(CheckArg(argc, const_cast<char**>(argv2), "flag", &param),
+            ARG_FOUND);
+  ASSERT_TRUE(param);
+  EXPECT_STREQ(param, "foo");
+
+  // Should still work for --flag value
+  const char* argv3[] = {"prog", "--flag", "bar", nullptr};
+  argc = 3;
+  param = nullptr;
+  EXPECT_EQ(CheckArg(argc, const_cast<char**>(argv3), "flag", &param),
+            ARG_FOUND);
+  ASSERT_TRUE(param);
+  EXPECT_STREQ(param, "bar");
+
+  // Should not match for --flog=value
+  const char* argv4[] = {"prog", "--flog=value", nullptr};
+  argc = 2;
+  param = nullptr;
+  EXPECT_EQ(CheckArg(argc, const_cast<char**>(argv4), "flag", &param),
+            ARG_NONE);
+
+  const char* argv5[] = {"prog", "-flag=foo", nullptr};
+  argc = 2;
+  EXPECT_EQ(CheckArg(argc, const_cast<char**>(argv5), "flag", nullptr),
+            ARG_BAD);
+}
+
 TEST(CmdLineAndEnvUtils, ensureSafe)
 {
   using namespace testzilla;
@@ -359,7 +414,7 @@ TEST(CmdLineAndEnvUtils, ensureSafe)
     TestCommandLine(result, cl, NoOptionalArgs);
   }
   for (auto const& [_unused, data] : kCommandLinesOpt) {
-    MOZ_UNUSED(_unused);  // silence gcc
+    (void)_unused;  // silence gcc
     CommandLine const cl(data);
     TestCommandLine(FAIL, cl, NoOptionalArgs);
   }

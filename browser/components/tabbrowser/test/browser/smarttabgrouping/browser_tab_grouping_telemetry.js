@@ -19,6 +19,7 @@ async function setup({
   enableSmartTab = true,
   optIn = true,
   userEnabled = true,
+  mlSwitchEnabled = true,
   labelReason = "DEFAULT",
 } = {}) {
   await SpecialPowers.pushPrefEnv({
@@ -27,6 +28,7 @@ async function setup({
       ["browser.tabs.groups.smart.enabled", enableSmartTab],
       ["browser.tabs.groups.smart.optin", optIn],
       ["browser.tabs.groups.smart.userEnabled", userEnabled],
+      ["browser.ml.enable", mlSwitchEnabled],
     ],
   });
   sinon
@@ -506,6 +508,63 @@ add_task(async function test_enabling_smart_tab_bool_prefs() {
     events[0].extra.enabled,
     "true",
     "if the preference is changed for any reason, we should get the correct value"
+  );
+  cleanup();
+});
+
+add_task(
+  async function test_master_ml_switch_off_should_not_show_ui_and_send_events() {
+    let { tab, cleanup } = await setup({ mlSwitchEnabled: false });
+    let tabgroupEditor = document.getElementById("tab-group-editor");
+    let tabgroupPanel = tabgroupEditor.panel;
+    let nameField = tabgroupPanel.querySelector("#tab-group-name");
+
+    await openCreatePanel(tabgroupPanel, tab);
+    // below should not be visible
+    const isVisible = tabgroupPanel
+      .querySelector("#tab-group-create-suggestions-button")
+      .checkVisibility();
+    Assert.ok(!isVisible, "ML button should be hidden if master switch if off");
+
+    nameField.focus();
+    nameField.value = "Random Non-ML Label"; // user label matching suggested label
+    tabgroupEditor.mlLabel = "Random Non-ML Label"; // suggested label
+    tabgroupPanel.querySelector("#tab-group-editor-button-create").click();
+    let panelHidden = BrowserTestUtils.waitForPopupEvent(
+      tabgroupPanel,
+      "hidden"
+    );
+    tabgroupPanel.querySelector("#tab-group-editor-button-create"); // save
+    await panelHidden;
+
+    Assert.equal(
+      Glean.tabgroup.smartTabTopic.testGetValue() ?? "none",
+      "none",
+      "No event if the feature is off"
+    );
+    cleanup();
+  }
+);
+
+add_task(async function test_backend_field_sent_as_part_of_telemetry() {
+  let { tab, cleanup } = await setup();
+  let tabgroupEditor = document.getElementById("tab-group-editor");
+  let tabgroupPanel = tabgroupEditor.panel;
+  let nameField = tabgroupPanel.querySelector("#tab-group-name");
+
+  await openCreatePanel(tabgroupPanel, tab);
+  nameField.focus();
+  nameField.value = "Random Non-ML Label"; // user label matching suggested label
+  tabgroupEditor.mlLabel = ""; // empty label
+  tabgroupPanel.querySelector("#tab-group-editor-button-create").click();
+  let panelHidden = BrowserTestUtils.waitForPopupEvent(tabgroupPanel, "hidden");
+  await panelHidden;
+
+  const events = Glean.tabgroup.smartTabTopic.testGetValue();
+  Assert.equal(
+    events[0].extra.backend,
+    "onnx-native",
+    "Check that the field is present in the telemetry"
   );
   cleanup();
 });

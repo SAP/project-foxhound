@@ -4,7 +4,6 @@
 
 #[diplomat::bridge]
 #[diplomat::abi_rename = "icu4x_{0}_mv1"]
-#[diplomat::attr(auto, namespace = "icu4x")]
 pub mod ffi {
     use alloc::boxed::Box;
     use icu_segmenter::scaffold::{Latin1, PotentiallyIllFormedUtf8, Utf16};
@@ -16,7 +15,10 @@ pub mod ffi {
 
     #[diplomat::enum_convert(icu_segmenter::options::WordType, needs_wildcard)]
     #[diplomat::rust_link(icu::segmenter::options::WordType, Enum)]
+    #[non_exhaustive]
     pub enum SegmenterWordType {
+        // This is an output type, so the default mostly impacts deferred initialization.
+        #[diplomat::attr(auto, default)]
         None = 0,
         Number = 1,
         Letter = 2,
@@ -26,22 +28,25 @@ pub mod ffi {
     /// An ICU4X word-break segmenter, capable of finding word breakpoints in strings.
     #[diplomat::rust_link(icu::segmenter::WordSegmenter, Struct)]
     #[diplomat::rust_link(icu::segmenter::WordSegmenterBorrowed, Struct, hidden)]
-    #[diplomat::demo(custom_func = "../../npm/demo_gen_custom/WordSegmenter.mjs")]
+    #[diplomat::demo(custom_func = "../../../tools/web-demo/custom/WordSegmenter.mjs")]
     pub struct WordSegmenter(icu_segmenter::WordSegmenter);
 
     #[diplomat::opaque]
     #[diplomat::rust_link(icu::segmenter::iterators::WordBreakIterator, Struct)]
+    #[diplomat::attr(demo_gen, disable)] // iterator type
     pub struct WordBreakIteratorUtf8<'a>(
         icu_segmenter::iterators::WordBreakIterator<'a, 'a, PotentiallyIllFormedUtf8>,
     );
 
     #[diplomat::opaque]
     #[diplomat::rust_link(icu::segmenter::iterators::WordBreakIterator, Struct)]
+    #[diplomat::attr(demo_gen, disable)] // iterator type
     pub struct WordBreakIteratorUtf16<'a>(
         icu_segmenter::iterators::WordBreakIterator<'a, 'a, Utf16>,
     );
     #[diplomat::opaque]
     #[diplomat::rust_link(icu::segmenter::iterators::WordBreakIterator, Struct)]
+    #[diplomat::attr(demo_gen, disable)] // iterator type
     pub struct WordBreakIteratorLatin1<'a>(
         icu_segmenter::iterators::WordBreakIterator<'a, 'a, Latin1>,
     );

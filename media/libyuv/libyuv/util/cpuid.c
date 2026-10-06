@@ -15,13 +15,6 @@
 #ifdef __linux__
 #include <ctype.h>
 #include <sys/utsname.h>
-#include <unistd.h>  // for sysconf
-#endif
-#if defined(_WIN32)
-#include <windows.h>  // for GetSystemInfo
-#endif
-#if defined(__APPLE__)
-#include <sys/sysctl.h>  // for sysctlbyname
 #endif
 
 #include "libyuv/cpu_id.h"
@@ -58,23 +51,6 @@ int main(int argc, const char* argv[]) {
     printf("Kernel Version %d.%d\n", kernelversion[0], kernelversion[1]);
   }
 #endif  // defined(__linux__)
-#if defined(_WIN32)
-  SYSTEM_INFO sysInfo;
-  GetSystemInfo(&sysInfo);
-  int num_cpus = (int)sysInfo.dwNumberOfProcessors;
-#elif defined(__linux__)
-  int num_cpus = sysconf(_SC_NPROCESSORS_ONLN);
-#elif defined(__APPLE__)
-  int num_cpus = 0;
-  size_t num_cpus_len = sizeof(num_cpus);
-  // Get the number of logical CPU cores
-  if (sysctlbyname("hw.logicalcpu", &num_cpus, &num_cpus_len, NULL, 0) == -1) {
-    printf("sysctlbyname failed to get hw.logicalcpu\n");
-  }
-#else
-  int num_cpus = 0;  // unknown OS
-#endif
-  printf("Number of cpus: %d\n", num_cpus);
 
 #if defined(__arm__) || defined(__aarch64__)
   int has_arm = TestCpuFlag(kCpuHasARM);
@@ -84,6 +60,7 @@ int main(int argc, const char* argv[]) {
     int has_neon_i8mm = TestCpuFlag(kCpuHasNeonI8MM);
     int has_sve = TestCpuFlag(kCpuHasSVE);
     int has_sve2 = TestCpuFlag(kCpuHasSVE2);
+    int has_sve_f32mm = TestCpuFlag(kCpuHasSVEF32MM);
     int has_sme = TestCpuFlag(kCpuHasSME);
     int has_sme2 = TestCpuFlag(kCpuHasSME2);
     printf("Has Arm 0x%x\n", has_arm);
@@ -92,6 +69,7 @@ int main(int argc, const char* argv[]) {
     printf("Has Neon I8MM 0x%x\n", has_neon_i8mm);
     printf("Has SVE 0x%x\n", has_sve);
     printf("Has SVE2 0x%x\n", has_sve2);
+    printf("Has SVE F32MM 0x%x\n", has_sve_f32mm);
     printf("Has SME 0x%x\n", has_sme);
     printf("Has SME2 0x%x\n", has_sme2);
 
@@ -137,15 +115,6 @@ int main(int argc, const char* argv[]) {
   }
 #endif  // defined(__riscv)
 
-#if defined(__mips__)
-  int has_mips = TestCpuFlag(kCpuHasMIPS);
-  if (has_mips) {
-    int has_msa = TestCpuFlag(kCpuHasMSA);
-    printf("Has MIPS 0x%x\n", has_mips);
-    printf("Has MSA 0x%x\n", has_msa);
-  }
-#endif  // defined(__mips__)
-
 #if defined(__loongarch__)
   int has_loongarch = TestCpuFlag(kCpuHasLOONGARCH);
   if (has_loongarch) {
@@ -178,13 +147,6 @@ int main(int argc, const char* argv[]) {
     cpu_info[1] = cpu_info[3];
     cpu_info[3] = 0;
     printf("Cpu Vendor: %s\n", (char*)(&cpu_info[0]));
-
-    for (int n = 0; n < num_cpus; ++n) {
-      // Check EDX bit 15 for hybrid design indication
-      CpuId(7, n, &cpu_info[0]);
-      int hybrid = (cpu_info[3] >> 15) & 1;
-      printf("  Cpu %d Hybrid %d\n", n, hybrid);
-    }
 
     // CPU Family and Model
     // 3:0 - Stepping

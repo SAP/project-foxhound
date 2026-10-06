@@ -40,10 +40,7 @@ async function waitForPaintAfterLoad() {
  * Test the Preference Read markers.
  */
 add_task(async function test_profile_preferencereads_markers() {
-  Assert.ok(
-    !Services.profiler.IsActive(),
-    "The profiler is not currently active"
-  );
+  await ProfilerTestUtils.assertProfilerInactive();
 
   await ProfilerTestUtils.startProfiler({ features: ["js"] });
 

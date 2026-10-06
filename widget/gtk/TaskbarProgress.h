@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=4:tabstop=4:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,7 +22,7 @@ class TaskbarProgress final : public nsIGtkTaskbarProgress {
 
   // We track the progress value so we can avoid updating the X window property
   // unnecessarily.
-  unsigned long mCurrentProgress;
+  unsigned long mCurrentProgress = 0;
 
   RefPtr<nsWindow> mPrimaryWindow;
 };

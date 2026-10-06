@@ -5,25 +5,45 @@ support-files = [
   "head.js",
 ]
 
+["browser_pdfjs_aifeature_settings.js"]
+
 ["browser_pdfjs_alttext_load_engine.js"]
-run-if = ["nightly_build"] # Bug 1890946
+run-if = [
+  "nightly_build", # Bug 1890946
+]
 
 ["browser_pdfjs_alttext_telemetry.js"]
-run-if = ["nightly_build"] # Bug 1890946
+run-if = [
+  "nightly_build", # Bug 1890946
+]
 
 ["browser_pdfjs_alttext_two_tabs.js"]
-run-if = ["nightly_build"] # Bug 1890946
+run-if = [
+  "nightly_build", # Bug 1890946
+]
 
 ["browser_pdfjs_caret_browsing_mode.js"]
 
-["browser_pdfjs_check_alttext_en.js"]
-
 ["browser_pdfjs_chrome_events.js"]
+
+["browser_pdfjs_comment.js"]
+
+["browser_pdfjs_comment_telemetry.js"]
+run-if = [
+  "!headless",
+]
+
+["browser_pdfjs_csp.js"]
 
 ["browser_pdfjs_download_button.js"]
 
 ["browser_pdfjs_editing_contextmenu.js"]
-run-if = ["!headless"] # the headless clipboard only recognizes unicode mime type
+run-if = [
+  "!headless", # the headless clipboard only recognizes unicode mime type
+]
+
+["browser_pdfjs_pages_contextmenu.js"]
+support-files = ["file_pdfjs_numbered_pages.pdf"]
 
 ["browser_pdfjs_editing_telemetry.js"]
 
@@ -50,13 +70,20 @@ support-files = ["file_pdfjs_form.pdf"]
 support-files = ["file_pdfjs_hcm.pdf"]
 
 ["browser_pdfjs_highlight_telemetry.js"]
-skip-if = ["true"]
+run-if = [
+  "!headless",
+]
 
 ["browser_pdfjs_jpeg2000.js"]
 support-files = ["file_pdfjs_jp2_image.pdf"]
 
 ["browser_pdfjs_js.js"]
 support-files = ["file_pdfjs_js.pdf"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+  "tsan",
+  "os == 'linux' && debug && standalone", # Bug 2028655
+]
 
 ["browser_pdfjs_load_telemetry.js"]
 
@@ -75,6 +102,9 @@ support-files = [
   "file_pdfjs_object_stream.pdf^headers^",
 ]
 
+["browser_pdfjs_organize_telemetry.js"]
+support-files = ["file_pdfjs_numbered_pages.pdf"]
+
 ["browser_pdfjs_octet_stream.js"]
 support-files = [
   "file_pdfjs_object_stream.pdf",
@@ -84,6 +114,18 @@ support-files = [
 ["browser_pdfjs_print_enabled.js"]
 
 ["browser_pdfjs_properties.js"]
+
+["browser_pdfjs_response_link.js"]
+support-files = ["pdf_response_link.sjs"]
+
+["browser_pdfjs_rfp_exemption.js"]
+
+["browser_pdfjs_sandboxed_iframe.js"]
+support-files = [
+  "file_pdfjs_csp_sandbox_opener.html",
+  "file_pdfjs_csp_sandbox_opener.html^headers^",
+  "file_pdfjs_csp.sjs",
+]
 
 ["browser_pdfjs_saveas.js"]
 support-files = [
@@ -101,6 +143,11 @@ support-files = [
 
 ["browser_pdfjs_stamp_telemetry.js"]
 support-files = ["moz.png"]
+
+["browser_pdfjs_tagged_telemetry.js"]
+support-files = [
+  "file_pdfjs_tagged.pdf",
+]
 
 ["browser_pdfjs_toolbar_density.js"]
 

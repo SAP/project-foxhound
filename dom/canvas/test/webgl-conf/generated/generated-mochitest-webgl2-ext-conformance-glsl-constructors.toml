@@ -1,0 +1,57 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-ext"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/conformance/glsl/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_conformance__glsl__constructors__glsl-construct-bvec2.html"]
+
+["test_2_conformance__glsl__constructors__glsl-construct-bvec3.html"]
+
+["test_2_conformance__glsl__constructors__glsl-construct-bvec4.html"]
+
+["test_2_conformance__glsl__constructors__glsl-construct-ivec2.html"]
+
+["test_2_conformance__glsl__constructors__glsl-construct-ivec3.html"]
+
+["test_2_conformance__glsl__constructors__glsl-construct-ivec4.html"]
+
+["test_2_conformance__glsl__constructors__glsl-construct-mat2.html"]
+
+["test_2_conformance__glsl__constructors__glsl-construct-mat3.html"]
+
+["test_2_conformance__glsl__constructors__glsl-construct-mat4.html"]
+
+["test_2_conformance__glsl__constructors__glsl-construct-vec-mat-corner-cases.html"]
+
+["test_2_conformance__glsl__constructors__glsl-construct-vec-mat-index.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_2_conformance__glsl__constructors__glsl-construct-vec2.html"]
+
+["test_2_conformance__glsl__constructors__glsl-construct-vec3.html"]
+
+["test_2_conformance__glsl__constructors__glsl-construct-vec4.html"]

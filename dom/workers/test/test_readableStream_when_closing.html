@@ -8,36 +8,13 @@
 </head>
 <body>
   <script>
-
-function workerCode() {
-  onmessage = () => {
-    const BIG_BUFFER_SIZE = 1000000;
-    const fibStream = new ReadableStream({
-        start(controller) {},
-
-        pull(controller) {
-          const buffer = new Uint8Array(BIG_BUFFER_SIZE);
-          buffer.fill(42);
-          controller.enqueue(buffer);
-        }
-    });
-
-    const r = new Response(fibStream);
-
-    const p = r.blob();
-    self.postMessage("reading");
-
-    p.then(() => {
-      // really?
-    });
-  }
-}
-
 SimpleTest.waitForExplicitFinish();
 
-const b = new Blob([workerCode+'workerCode();']);
-const url = URL.createObjectURL(b);
-const w = new Worker(url);
+info("Starting test");
+
+const WORKER_URL = "chrome://mochitests/content/chrome/dom/workers/test/file_readableStream_when_closing_worker.js";
+
+const w = new Worker(WORKER_URL);
 w.onmessage = function(e) {
   ok(true, 'Worker is reading');
 
@@ -45,8 +22,8 @@ w.onmessage = function(e) {
               getService(Ci.nsIWorkerDebuggerManager);
   wdm.addListener({
     onUnregister (dbg) {
-      if (dbg.url == url) {
-        ok(true, "Debugger with url " + url + " should be unregistered.");
+      if (dbg.url == WORKER_URL) {
+        ok(true, "Debugger with url " + WORKER_URL + " should be unregistered.");
         wdm.removeListener(this);
         SimpleTest.finish();
       }

@@ -5,7 +5,7 @@
 package org.mozilla.fenix.reviewprompt
 
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.CustomReviewPrompt
 
@@ -13,7 +13,7 @@ internal class CustomReviewPromptTelemetryMiddleware :
     Middleware<CustomReviewPromptState, CustomReviewPromptAction> {
 
     override fun invoke(
-        context: MiddlewareContext<CustomReviewPromptState, CustomReviewPromptAction>,
+        store: Store<CustomReviewPromptState, CustomReviewPromptAction>,
         next: (CustomReviewPromptAction) -> Unit,
         action: CustomReviewPromptAction,
     ) {
@@ -37,7 +37,7 @@ internal class CustomReviewPromptTelemetryMiddleware :
             }
 
             CustomReviewPromptAction.LeaveFeedbackButtonClicked -> {
-                CustomReviewPrompt.openMozillaConnectClicked.record(NoExtras())
+                CustomReviewPrompt.leaveFeedbackClicked.record(NoExtras())
             }
 
             CustomReviewPromptAction.Dismissed -> {

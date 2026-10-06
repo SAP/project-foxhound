@@ -25,7 +25,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=816298
 <script type="application/javascript">
   "use strict";
 
-/** Test for Bug 166235 **/
+/** Test for Bug 166235 */
   var Cc = SpecialPowers.Cc;
   var Ci = SpecialPowers.Ci;
 
@@ -101,13 +101,16 @@ var originalStrings = [
 ];
 
 // expected results for clipboard text/html
+const includeCommonAncestor = SpecialPowers.getBoolPref(
+  "dom.serializer.includeCommonAncestor.enabled"
+);
 var clipboardHTML = [
-  '<p id=\"test0\">This text should be copied.</p>',
-  '<p id=\"test1\">This text should be copied.</p>',
-  '<p id=\"test2\">This<span style=\"user-select: text\"> text should</span> be copied.</p>',
-  '<p id=\"test3\">This text should be copied.</p>',
-  '<p id=\"test4\">This<span style=\"user-select: text\"> text should</span> be copied.</p>',
-  '<p id=\"test5\">This<span style=\"user-select: all\"> text should</span> be copied.</p>',
+  `${includeCommonAncestor ? "<p id=\"test0\">" : ""}This text should be copied.${includeCommonAncestor ? "</p>" : ""}`,
+  `${includeCommonAncestor ? "<p id=\"test1\">" : ""}This text should be copied.${includeCommonAncestor ? "</p>" : ""}`,
+  `${includeCommonAncestor ? "<p id=\"test2\">" : ""}This<span style=\"user-select: text\"> text should</span> be copied.${includeCommonAncestor ? "</p>" : ""}`,
+  `${includeCommonAncestor ? "<p id=\"test3\">" : ""}This text should be copied.${includeCommonAncestor ? "</p>" : ""}`,
+  `${includeCommonAncestor ? "<p id=\"test4\">" : ""}This<span style=\"user-select: text\"> text should</span> be copied.${includeCommonAncestor ? "</p>" : ""}`,
+  `${includeCommonAncestor ? "<p id=\"test5\">" : ""}This<span style=\"user-select: all\"> text should</span> be copied.${includeCommonAncestor ? "</p>" : ""}`,
 ];
 
 // expected results for clipboard text/plain

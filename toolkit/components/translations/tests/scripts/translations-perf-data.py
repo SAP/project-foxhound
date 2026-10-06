@@ -8,8 +8,8 @@ description:
 
 example:
   ❯ python3 toolkit/components/translations/tests/scripts/translations-perf-data.py \\
-    --page_path="toolkit/components/translations/tests/browser/translations-bencher-es.html" \\
-    --model_path="~/Downloads/cab5e093-7b55-47ea-a247-9747cc0109e3.spm"
+    --page_path="toolkit/components/translations/tests/browser/translations-bencher-en.html" \\
+    --model_path="~/Downloads/vocab.spm"
 
 note:
   The vocab model file can be downloaded from the following page:

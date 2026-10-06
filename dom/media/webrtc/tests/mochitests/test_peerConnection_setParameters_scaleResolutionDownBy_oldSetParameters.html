@@ -33,57 +33,65 @@ async function checkScaleDownBy(scale) {
 }
 
 runNetworkTest(async function (options) {
-  await pushPrefs(['media.peerconnection.video.lock_scaling', true]);
+  const prefs = [
+    ['media.peerconnection.video.lock_scaling', true],
+    ["media.peerconnection.allow_old_setParameters", true],
+  ];
   if (navigator.userAgent.includes("Android")) {
-    await pushPrefs(
-        // [TODO] re-enable HW decoder after bug 1526207 is fixed.
-        ["media.navigator.mediadatadecoder_vpx_enabled", false],
-        // Use libwebrtc VP8 encoder to avoid unexpected resolution alignment on
-        // some devices.
-        ["media.webrtc.encoder_creation_strategy", 0],
-        ["media.webrtc.hw.h264.enabled", false],
-      );
+    prefs.push(
+      // [TODO] re-enable HW decoder after bug 1526207 is fixed.
+      ["media.navigator.mediadatadecoder_vpx_enabled", false],
+      // Use libwebrtc VP8 encoder to avoid unexpected resolution alignment on
+      // some devices.
+      ["media.webrtc.encoder_creation_strategy", 0],
+      ["media.webrtc.hw.h264.enabled", false],
+    );
   }
 
-  let test = new PeerConnectionTest(options);
-  test.setMediaConstraints([{video: true}], []);
-  test.chain.append([
-    function CHECK_PRECONDITIONS() {
-      is(test.pcLocal._pc.getSenders().length, 1,
-          "Should have 1 local sender");
-      is(test.pcLocal.localMediaElements.length, 1,
-          "Should have 1 local sending media element");
-      is(test.pcRemote.remoteMediaElements.length, 1,
-          "Should have 1 remote media element");
+  await withPrefs(prefs,
+    async () => {
+      let test = new PeerConnectionTest(options);
+      test.setMediaConstraints([{video: true}], []);
+      test.chain.append([
+        function CHECK_PRECONDITIONS() {
+          is(test.pcLocal._pc.getSenders().length, 1,
+            "Should have 1 local sender");
+          is(test.pcLocal.localMediaElements.length, 1,
+            "Should have 1 local sending media element");
+          is(test.pcRemote.remoteMediaElements.length, 1,
+            "Should have 1 remote media element");
 
-      sender = test.pcLocal._pc.getSenders()[0];
-      localElem = test.pcLocal.localMediaElements[0];
-      remoteElem = test.pcRemote.remoteMediaElements[0];
+          sender = test.pcLocal._pc.getSenders()[0];
+          localElem = test.pcLocal.localMediaElements[0];
+          remoteElem = test.pcRemote.remoteMediaElements[0];
 
-      remoteElem.addEventListener("resize", () =>
-        info(`Video resized to ${remoteElem.videoWidth}x${remoteElem.videoHeight}`));
+          remoteElem.addEventListener("resize", () =>
+            info(`Video resized to ${remoteElem.videoWidth}x${remoteElem.videoHeight}`));
 
-      originalWidth = localElem.videoWidth;
-      originalHeight = localElem.videoHeight;
-      info(`Original width is ${originalWidth}`);
-    },
-    function PC_LOCAL_SCALEDOWNBY_2() {
-      return checkScaleDownBy(2);
-    },
-    function PC_LOCAL_SCALEDOWNBY_4() {
-      return checkScaleDownBy(4);
-    },
-    function PC_LOCAL_SCALEDOWNBY_15() {
-      return checkScaleDownBy(15);
-    },
-    function PC_LOCAL_SCALEDOWNBY_8() {
-      return checkScaleDownBy(8);
-    },
-    function PC_LOCAL_SCALEDOWNBY_1() {
-      return checkScaleDownBy(1);
-    },
-  ]);
-  await test.run();
+          originalWidth = localElem.videoWidth;
+          originalHeight = localElem.videoHeight;
+          info(`Original width is ${originalWidth}`);
+        },
+        function PC_LOCAL_SCALEDOWNBY_2() {
+          return checkScaleDownBy(2);
+        },
+        function PC_LOCAL_SCALEDOWNBY_4() {
+          return checkScaleDownBy(4);
+        },
+        function PC_LOCAL_SCALEDOWNBY_15() {
+          return checkScaleDownBy(15);
+        },
+        function PC_LOCAL_SCALEDOWNBY_8() {
+          return checkScaleDownBy(8);
+        },
+        function PC_LOCAL_SCALEDOWNBY_1() {
+          return checkScaleDownBy(1);
+        },
+      ]);
+
+      await test.run();
+    }
+  );
 });
 </script>
 </pre>

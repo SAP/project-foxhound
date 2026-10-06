@@ -36,9 +36,9 @@ add_task(async function test() {
       const prefs = {
         enableGuessAltText: {
           type: "Bool",
-          initialValue: true,
-          newValue: false,
-          expectedValue: false,
+          initialValue: false,
+          newValue: true,
+          expectedValue: true,
           listenForUpdate: true,
         },
         pdfBugEnabled: {

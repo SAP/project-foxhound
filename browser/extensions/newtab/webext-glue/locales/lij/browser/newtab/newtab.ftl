@@ -9,6 +9,38 @@ newtab-page-title = Neuvo feuggio
 newtab-settings-button =
     .title = Personalizza a teu pagina Neuvo feuggio
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Neuvi feuggi
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } riga
+           *[other] { $num } righe
+        }
+home-restore-defaults-srd =
+    .label = Repiggia predefinii
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = Indirissi cliénti...
+home-mode-choice-blank-srd =
+    .label = Pagina gianca
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Stöie sponsorizæ
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Pagine vixitæ
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Segnalibbri
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Urtimi descaregamenti
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +48,7 @@ newtab-search-box-search-button =
     .title = Çerca
     .aria-label = Çerca
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Azonzi motô de riçerca
 newtab-topsites-edit-topsites-header = Cangia scito prinçipâ
@@ -44,9 +76,6 @@ newtab-topsites-add-button = Azonzi
 newtab-confirm-delete-history-p1 = Te seguo de scancelâ tutte e ripetiçioin de sta pagina da stöia?
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = Sta açion a no se peu anulâ.
-
-## Top Sites - Sponsored label
-
 
 ## Context Menu - Action Tooltips.
 
@@ -77,12 +106,6 @@ newtab-menu-delete-history = Scancella da-a stöia
 newtab-menu-save-to-pocket = Sarva in { -pocket-brand-name }
 newtab-menu-delete-pocket = Scancella da { -pocket-brand-name }
 newtab-menu-archive-pocket = Archivia in { -pocket-brand-name }
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
-
-## Message displayed in a modal window to explain privacy and provide context for sponsored content.
-
 
 ##
 
@@ -178,12 +201,6 @@ newtab-pocket-cta-text = Sarva e stöie che te piaxan into { -pocket-brand-name 
 newtab-pocket-save = Sarva
 newtab-pocket-saved = Sarvòu
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
@@ -195,6 +212,15 @@ newtab-error-fallback-refresh-link = Agiorna pagina pe provâ torna.
 newtab-custom-shortcuts-title = Scorsaieu
 # Variables
 #   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } riga
+           *[other] { $num } righe
+        }
+# Variables
+#   $num (number) - Number of rows to display
 newtab-custom-row-selector =
     { $num ->
         [one] { $num } riga
@@ -202,55 +228,3 @@ newtab-custom-row-selector =
     }
 newtab-custom-sponsored-sites = Scorsaieu sponsorizæ
 newtab-custom-pocket-title = Consegiou da { -pocket-brand-name }
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

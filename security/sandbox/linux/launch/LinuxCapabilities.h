@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -77,14 +75,14 @@ class LinuxCapabilities final {
   }
 
   void Normalize() {
-    for (size_t i = 0; i < _LINUX_CAPABILITY_U32S_3; ++i) {
-      mBits[i].permitted |= mBits[i].effective | mBits[i].inheritable;
+    for (auto& mBit : mBits) {
+      mBit.permitted |= mBit.effective | mBit.inheritable;
     }
   }
 
   bool AnyEffective() const {
-    for (size_t i = 0; i < _LINUX_CAPABILITY_U32S_3; ++i) {
-      if (mBits[i].effective != 0) {
+    for (auto mBit : mBits) {
+      if (mBit.effective != 0) {
         return true;
       }
     }

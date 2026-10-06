@@ -27,6 +27,6 @@ testWithTypedArrayConstructors(function(TA) {
   assert.throws(RangeError, function() {
     new TA(obj);
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

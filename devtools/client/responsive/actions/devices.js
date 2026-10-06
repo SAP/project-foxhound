@@ -42,7 +42,7 @@ const DISPLAYED_DEVICES_PREF = "devtools.responsive.html.displayedDeviceList";
 /**
  * Returns an object containing the user preference of displayed devices.
  *
- * @return {Object} containing two Sets:
+ * @return {object} containing two Sets:
  * - added: Names of the devices that were explicitly enabled by the user
  * - removed: Names of the devices that were explicitly removed by the user
  */
@@ -71,7 +71,7 @@ function loadPreferredDevices() {
 /**
  * Update the displayed device list preference with the given device list.
  *
- * @param {Object} containing two Sets:
+ * @param {object} containing two Sets:
  * - added: Names of the devices that were explicitly enabled by the user
  * - removed: Names of the devices that were explicitly removed by the user
  */

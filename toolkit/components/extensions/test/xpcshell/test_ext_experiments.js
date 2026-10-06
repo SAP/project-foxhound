@@ -93,7 +93,9 @@ let fooExperimentFiles = {
   "child.js": () => {
     this.foo = class extends ExtensionAPI {
       getAPI(context) {
-        const EventManagerWithAssertions = class extends ExtensionCommon.EventManager {
+        const EventManagerWithAssertions = class
+          extends ExtensionCommon.EventManager
+        {
           constructor(...args) {
             super(...args);
             this.assertResetOnIdleOnEvent();

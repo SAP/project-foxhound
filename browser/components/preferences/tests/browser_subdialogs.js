@@ -325,7 +325,7 @@ add_task(async function check_reopening_dialog() {
     );
     Assert.equal(
       win.getComputedStyle(topDialog._overlay).backgroundColor,
-      "rgba(0, 0, 0, 0.5)",
+      "oklch(0 0 0 / 0.5)",
       "The top dialog should have a semi-transparent overlay"
     );
     Assert.equal(

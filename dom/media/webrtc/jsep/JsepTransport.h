@@ -2,16 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _JSEPTRANSPORT_H_
-#define _JSEPTRANSPORT_H_
+#ifndef JSEPTRANSPORT_H_
+#define JSEPTRANSPORT_H_
+
+#include <mozilla/RefPtr.h>
+#include <mozilla/UniquePtr.h>
 
 #include <string>
 #include <vector>
 
-#include <mozilla/RefPtr.h>
-#include <mozilla/UniquePtr.h>
 #include "nsISupportsImpl.h"
-
 #include "sdp/SdpAttribute.h"
 
 namespace mozilla {

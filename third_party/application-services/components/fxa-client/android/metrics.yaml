@@ -1,0 +1,10 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Empty metrics file that we keep around since we used to have metrics defined and removing the file
+# entirely caused issues with the Glean pipeline:
+# https://github.com/mozilla/probe-scraper/pull/990
+
+---
+$schema: moz://mozilla.org/schemas/glean/metrics/2-0-0

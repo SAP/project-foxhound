@@ -831,6 +831,11 @@ void                    pixman_region64f_translate         (pixman_region64f_t *
 							    int                 y);
 
 PIXMAN_API
+void                    pixman_region64f_translatef        (pixman_region64f_t *region,
+							    double              x,
+							    double              y);
+
+PIXMAN_API
 pixman_bool_t           pixman_region64f_copy              (pixman_region64f_t       *dest,
 							    const pixman_region64f_t *source);
 
@@ -890,6 +895,12 @@ PIXMAN_API
 pixman_bool_t           pixman_region64f_contains_point    (const pixman_region64f_t *region,
 							    int                       x,
 							    int                       y,
+							    pixman_box64f_t          *box);
+
+PIXMAN_API
+pixman_bool_t           pixman_region64f_contains_pointf   (const pixman_region64f_t *region,
+							    double                    x,
+							    double                    y,
 							    pixman_box64f_t          *box);
 
 PIXMAN_API

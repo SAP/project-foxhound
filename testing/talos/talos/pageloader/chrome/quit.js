@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; -*- */
 /*
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
  *

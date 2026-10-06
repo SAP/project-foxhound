@@ -58,3 +58,34 @@ add_task(async function test_createTargetingContext() {
 
   Assert.ok(context.isFirstStartup, "should set the first startup flag");
 });
+
+add_task(async function test_isNonStubFirstRun() {
+  Assert.ok(
+    !Services.prefs.getBoolPref("nimbus.firstUpdateComplete", false),
+    "nimbus.firstUpdateComplete should be false on a new profile"
+  );
+
+  const { loader, cleanup } = await NimbusTestUtils.setupTest();
+
+  Assert.ok(
+    Services.prefs.getBoolPref("nimbus.firstUpdateComplete", false),
+    "nimbus.firstUpdateComplete should be true after the first updateRecipes call"
+  );
+  Assert.ok(
+    !loader.manager.createTargetingContext().isNonStubFirstRun,
+    "isNonStubFirstRun should be false after the first updateRecipes call"
+  );
+
+  await loader.updateRecipes("test");
+
+  Assert.ok(
+    Services.prefs.getBoolPref("nimbus.firstUpdateComplete", false),
+    "nimbus.firstUpdateComplete should remain true after subsequent updateRecipes calls"
+  );
+  Assert.ok(
+    !loader.manager.createTargetingContext().isNonStubFirstRun,
+    "isNonStubFirstRun should remain false after subsequent updateRecipes calls"
+  );
+
+  await cleanup();
+});

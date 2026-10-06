@@ -1,13 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef DOM_BASE_NSOPENURIINFRAMEPARAMS_H_
+#define DOM_BASE_NSOPENURIINFRAMEPARAMS_H_
+
 #include "mozilla/BasePrincipal.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsIBrowserDOMWindow.h"
 #include "nsFrameLoaderOwner.h"
+#include "nsIBrowserDOMWindow.h"
 #include "nsIPrincipal.h"
 #include "nsIReferrerInfo.h"
 #include "nsString.h"
@@ -24,7 +25,7 @@ class Element;
 class nsOpenURIInFrameParams final : public nsIOpenURIInFrameParams {
  public:
   NS_DECL_CYCLE_COLLECTION_CLASS(nsOpenURIInFrameParams)
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_NSIOPENURIINFRAMEPARAMS
 
   explicit nsOpenURIInFrameParams(nsIOpenWindowInfo* aOpenWindowInfo,
@@ -39,3 +40,5 @@ class nsOpenURIInFrameParams final : public nsIOpenURIInFrameParams {
   nsCOMPtr<nsIPrincipal> mTriggeringPrincipal;
   nsCOMPtr<nsIPolicyContainer> mPolicyContainer;
 };
+
+#endif  // DOM_BASE_NSOPENURIINFRAMEPARAMS_H_

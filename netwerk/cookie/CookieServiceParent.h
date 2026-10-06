@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,6 +30,38 @@ class CookieServiceParent : public PCookieServiceParent {
   friend class PCookieServiceParent;
 
  public:
+  // A RAII class to set and unset the cookie processing flag.
+  class MOZ_STACK_CLASS CookieProcessingGuard final {
+   public:
+    explicit CookieProcessingGuard(CookieServiceParent* aActor = nullptr) {
+      if (aActor) {
+        Initialize(aActor);
+      }
+    }
+
+    void Initialize(CookieServiceParent* aActor) {
+      MOZ_ASSERT(!mProxy && aActor);
+
+      mProxy = aActor->GetLifecycleProxy();
+      if (mProxy && mProxy->Get()) {
+        auto* actor = static_cast<CookieServiceParent*>(mProxy->Get());
+        MOZ_ASSERT(!actor->mProcessingCookie);
+        actor->mProcessingCookie = true;
+      }
+    }
+
+    ~CookieProcessingGuard() {
+      if (mProxy && mProxy->Get()) {
+        auto* actor = static_cast<CookieServiceParent*>(mProxy->Get());
+        MOZ_ASSERT(actor->mProcessingCookie);
+        actor->mProcessingCookie = false;
+      }
+    }
+
+   private:
+    RefPtr<mozilla::ipc::ActorLifecycleProxy> mProxy;
+  };
+
   explicit CookieServiceParent(dom::ContentParent* aContentParent);
   virtual ~CookieServiceParent() = default;
 
@@ -59,8 +90,7 @@ class CookieServiceParent : public PCookieServiceParent {
 
   mozilla::ipc::IPCResult SetCookies(
       const nsCString& aBaseDomain, const OriginAttributes& aOriginAttributes,
-      nsIURI* aHost, bool aFromHttp, bool aIsThirdParty,
-      const nsTArray<CookieStruct>& aCookies,
+      nsIURI* aHost, bool aIsThirdParty, const nsTArray<CookieStruct>& aCookies,
       dom::BrowsingContext* aBrowsingContext = nullptr);
 
  protected:
@@ -68,7 +98,7 @@ class CookieServiceParent : public PCookieServiceParent {
 
   mozilla::ipc::IPCResult RecvSetCookies(
       const nsCString& aBaseDomain, const OriginAttributes& aOriginAttributes,
-      nsIURI* aHost, bool aFromHttp, bool aIsThirdParty,
+      nsIURI* aHost, bool aIsThirdParty,
       const nsTArray<CookieStruct>& aCookies);
 
   mozilla::ipc::IPCResult RecvGetCookieList(

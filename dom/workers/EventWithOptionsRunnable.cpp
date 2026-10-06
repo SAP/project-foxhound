@@ -1,34 +1,33 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "EventWithOptionsRunnable.h"
-#include "WorkerScope.h"
-#include "mozilla/dom/WorkerRunnable.h"
-#include "mozilla/dom/StructuredCloneHolder.h"
-#include "js/StructuredClone.h"
-#include "js/RootingAPI.h"
-#include "js/Value.h"
-#include "nsJSPrincipals.h"
-#include "nsContentUtils.h"
-#include "nsDebug.h"
+
 #include "MainThreadUtils.h"
+#include "WorkerScope.h"
+#include "js/GlobalObject.h"
+#include "js/RootingAPI.h"
+#include "js/StructuredClone.h"
+#include "js/Value.h"
 #include "mozilla/Assertions.h"
-#include "nsGlobalWindowInner.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/ErrorResult.h"
-#include "nsIGlobalObject.h"
-#include "nsCOMPtr.h"
-#include "js/GlobalObject.h"
-#include "xpcpublic.h"
-#include "mozilla/dom/MessagePortBinding.h"
-#include "mozilla/dom/MessagePort.h"
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/Event.h"
+#include "mozilla/dom/MessagePort.h"
+#include "mozilla/dom/MessagePortBinding.h"
+#include "mozilla/dom/StructuredCloneHolder.h"
 #include "mozilla/dom/WorkerCommon.h"
+#include "mozilla/dom/WorkerRunnable.h"
+#include "nsCOMPtr.h"
+#include "nsContentUtils.h"
+#include "nsDebug.h"
+#include "nsGlobalWindowInner.h"
+#include "nsIGlobalObject.h"
+#include "nsJSPrincipals.h"
+#include "xpcpublic.h"
 
 namespace mozilla::dom {
 EventWithOptionsRunnable::EventWithOptionsRunnable(Worker& aWorker,
@@ -104,7 +103,7 @@ bool EventWithOptionsRunnable::BuildAndFireEvent(
     cloneDataPolicy.allowSharedMemoryObjects();
   }
 
-  Read(parent, aCx, &options, cloneDataPolicy, rv);
+  Read(aCx, &options, cloneDataPolicy, rv);
 
   if (NS_WARN_IF(rv.Failed())) {
     OptionsDeserializeFailed(rv);

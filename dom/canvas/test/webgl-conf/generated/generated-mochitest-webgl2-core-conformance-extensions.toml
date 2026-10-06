@@ -1,0 +1,72 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-core"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/conformance/extensions/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_conformance__extensions__ext-clip-control.html"]
+
+["test_2_conformance__extensions__ext-color-buffer-half-float.html"]
+
+["test_2_conformance__extensions__ext-depth-clamp.html"]
+
+["test_2_conformance__extensions__ext-disjoint-timer-query.html"]
+
+["test_2_conformance__extensions__ext-float-blend.html"]
+
+["test_2_conformance__extensions__ext-polygon-offset-clamp.html"]
+
+["test_2_conformance__extensions__ext-texture-compression-bptc.html"]
+
+["test_2_conformance__extensions__ext-texture-compression-rgtc.html"]
+
+["test_2_conformance__extensions__ext-texture-filter-anisotropic.html"]
+
+["test_2_conformance__extensions__ext-texture-mirror-clamp-to-edge.html"]
+
+["test_2_conformance__extensions__get-extension.html"]
+
+["test_2_conformance__extensions__khr-parallel-shader-compile.html"]
+
+["test_2_conformance__extensions__oes-texture-float-linear.html"]
+
+["test_2_conformance__extensions__s3tc-and-rgtc.html"]
+
+["test_2_conformance__extensions__webgl-compressed-texture-astc.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64' && debug",
+]
+
+["test_2_conformance__extensions__webgl-compressed-texture-etc.html"]
+
+["test_2_conformance__extensions__webgl-compressed-texture-etc1.html"]
+
+["test_2_conformance__extensions__webgl-compressed-texture-pvrtc.html"]
+
+["test_2_conformance__extensions__webgl-compressed-texture-s3tc-srgb.html"]
+
+["test_2_conformance__extensions__webgl-compressed-texture-size-limit.html"]
+
+["test_2_conformance__extensions__webgl-debug-renderer-info.html"]
+
+["test_2_conformance__extensions__webgl-debug-shaders.html"]
+
+["test_2_conformance__extensions__webgl-multi-draw.html"]
+
+["test_2_conformance__extensions__webgl-polygon-mode.html"]

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,8 +8,8 @@
  * via XMLHttpRequest).
  */
 
-#ifndef nsDataDocumentContentPolicy_h__
-#define nsDataDocumentContentPolicy_h__
+#ifndef nsDataDocumentContentPolicy_h_
+#define nsDataDocumentContentPolicy_h_
 
 /* 1147d32c-215b-4014-b180-07fe7aedf915 */
 #define NS_DATADOCUMENTCONTENTPOLICY_CID \
@@ -20,7 +18,6 @@
   "@mozilla.org/data-document-content-policy;1"
 
 #include "nsIContentPolicy.h"
-#include "mozilla/Attributes.h"
 
 class nsDataDocumentContentPolicy final : public nsIContentPolicy {
   ~nsDataDocumentContentPolicy() = default;
@@ -32,4 +29,4 @@ class nsDataDocumentContentPolicy final : public nsIContentPolicy {
   nsDataDocumentContentPolicy() = default;
 };
 
-#endif /* nsDataDocumentContentPolicy_h__ */
+#endif /* nsDataDocumentContentPolicy_h_ */

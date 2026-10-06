@@ -19,7 +19,7 @@ let tempDir = createTemporarySaveDirectory();
 
 add_setup(async function test_setup() {
   mockCA = await mockContentAnalysisService(mockCA);
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
   MockFilePicker.returnValue = MockFilePicker.returnOK;
   MockFilePicker.displayDirectory = tempDir;
 

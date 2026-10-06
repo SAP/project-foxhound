@@ -101,6 +101,7 @@ struct OpusMSEncoder {
    int arch;
    int lfe_stream;
    int application;
+   opus_int32 Fs;
    int variable_duration;
    MappingType mapping_type;
    opus_int32 bitrate_bps;
@@ -160,16 +161,16 @@ typedef void (*opus_copy_channel_out_func)(
   *
   * @param[in] x <tt>int</tt>:   Voice percentage in the range 0-100, inclusive.
   * @hideinitializer */
-#define OPUS_SET_VOICE_RATIO(x) OPUS_SET_VOICE_RATIO_REQUEST, __opus_check_int(x)
+#define OPUS_SET_VOICE_RATIO(x) OPUS_SET_VOICE_RATIO_REQUEST, opus_check_int(x)
 /** Gets the encoder's configured voice ratio value, @see OPUS_SET_VOICE_RATIO
   *
   * @param[out] x <tt>int*</tt>:  Voice percentage in the range 0-100, inclusive.
   * @hideinitializer */
-#define OPUS_GET_VOICE_RATIO(x) OPUS_GET_VOICE_RATIO_REQUEST, __opus_check_int_ptr(x)
+#define OPUS_GET_VOICE_RATIO(x) OPUS_GET_VOICE_RATIO_REQUEST, opus_check_int_ptr(x)
 
 
 #define OPUS_SET_FORCE_MODE_REQUEST    11002
-#define OPUS_SET_FORCE_MODE(x) OPUS_SET_FORCE_MODE_REQUEST, __opus_check_int(x)
+#define OPUS_SET_FORCE_MODE(x) OPUS_SET_FORCE_MODE_REQUEST, opus_check_int(x)
 
 typedef void (*downmix_func)(const void *, opus_val32 *, int, int, int, int, int);
 void downmix_float(const void *_x, opus_val32 *sub, int subframe, int offset, int c1, int c2, int C);
@@ -181,7 +182,7 @@ void opus_pcm_soft_clip_impl(float *_x, int N, int C, float *declip_mem, int arc
 
 int encode_size(int size, unsigned char *data);
 
-opus_int32 frame_size_select(opus_int32 frame_size, int variable_duration, opus_int32 Fs);
+opus_int32 frame_size_select(int application, opus_int32 frame_size, int variable_duration, opus_int32 Fs);
 
 opus_int32 opus_encode_native(OpusEncoder *st, const opus_res *pcm, int frame_size,
       unsigned char *data, opus_int32 out_data_bytes, int lsb_depth,

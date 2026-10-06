@@ -4,4 +4,7 @@
 
 import { RemotePageChild } from "resource://gre/actors/RemotePageChild.sys.mjs";
 
+/**
+ * Empty child actor as the Profiles page is handled in the parent.
+ */
 export class ProfilesChild extends RemotePageChild {}

@@ -26,8 +26,7 @@ export class GeckoViewPrintDelegateParent extends GeckoViewActorParent {
 
   printRequest() {
     if (this.browserStaticClone != null) {
-      this.eventDispatcher.sendRequest({
-        type: "GeckoView:DotPrintRequest",
+      this.eventDispatcher.sendRequest("GeckoView:DotPrintRequest", {
         canonicalBrowsingContextId: this.browserStaticClone.browsingContext.id,
       });
     }

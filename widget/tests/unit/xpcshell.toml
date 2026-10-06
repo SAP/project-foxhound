@@ -3,11 +3,17 @@ head = ""
 tags = "os_integration"
 
 ["test_JumpListBuilder_obtainAndCacheFaviconAsync.js"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 support-files = ["favicon.ico"]
 
 ["test_macsharingservice.js"]
-run-if = ["os == 'mac'"]
+run-if = [
+  "os == 'mac'",
+]
 
 ["test_macwebapputils.js"]
-run-if = ["os == 'mac'"]
+run-if = [
+  "os == 'mac'",
+]

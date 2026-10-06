@@ -46,8 +46,8 @@ def test_transform_platform_processor(processor):
     [
         ("mac", None, None),
         ("mac", "arm", None),
-        ("mac", "arm", "11.0.0"),
-        ("mac", None, "11.0.0"),
+        ("mac", "arm", "12.2.1"),
+        ("mac", None, "12.2.1"),
         ("mac", None, "8.1.1"),
     ],
 )
@@ -57,17 +57,17 @@ def test_transform_platform_macos_arm(platform, processor, version):
         "mitmproxy-rel-bin-{platform}.manifest", platform, processor, version
     )
     assert "{platform}" not in transformed
-    if processor == "arm" and version != "11.0.0":
+    if processor == "arm" and version != "12.2.1":
         assert "osx-arm64" not in transformed
-    if processor == "arm" and version == "11.0.0":
+    if processor == "arm" and version == "12.2.1":
         assert "osx-arm64" in transformed
     if not processor and not version:
         # include check for .manifest extension so no ambiguity
         assert "osx.manifest" in transformed
-    if not processor and version == "11.0.0":
+    if not processor and version == "12.2.1":
         # E.g. intel macs using latest mitmproxy
         assert "osx.manifest" in transformed
-    if not processor and version != "11.0.0":
+    if not processor and version != "12.2.1":
         assert "osx.manifest" in transformed
 
 

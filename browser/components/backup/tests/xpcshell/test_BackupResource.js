@@ -7,6 +7,14 @@ const { bytesToFuzzyKilobytes } = ChromeUtils.importESModule(
   "resource:///modules/backup/BackupResource.sys.mjs"
 );
 
+const { BookmarksBackupResource } = ChromeUtils.importESModule(
+  "resource:///modules/backup/BookmarksBackupResource.sys.mjs"
+);
+
+const { PlacesBackupResource } = ChromeUtils.importESModule(
+  "resource:///modules/backup/PlacesBackupResource.sys.mjs"
+);
+
 const EXPECTED_KILOBYTES_FOR_XULSTORE = 1;
 
 /**
@@ -61,7 +69,7 @@ add_task(async function test_getDirectorySize() {
 
 /**
  * Tests that bytesToFuzzyKilobytes will convert bytes to kilobytes
- * and round up to the nearest tenth kilobyte.
+ * and round to the nearest tenth kilobyte.
  */
 add_task(async function test_bytesToFuzzyKilobytes() {
   let largeSize = bytesToFuzzyKilobytes(1234000);
@@ -69,7 +77,7 @@ add_task(async function test_bytesToFuzzyKilobytes() {
   Assert.equal(
     largeSize,
     1230,
-    "1234 bytes is rounded up to the nearest tenth kilobyte, 1230"
+    "1234 bytes is rounded to the nearest mulitple of ten kilobytes, 1230"
   );
 
   let smallSize = bytesToFuzzyKilobytes(3);
@@ -247,4 +255,33 @@ add_task(async function test_copyFiles() {
 
   await maybeRemovePath(sourcePath);
   await maybeRemovePath(destPath);
+});
+
+add_task(async function test_bookmarks_places_backup_relation() {
+  // If places can be backed up, we don't need to backup bookmarks separately
+  Services.prefs.setBoolPref(HISTORY_ENABLED_PREF, true);
+  Services.prefs.setBoolPref(SANITIZE_ON_SHUTDOWN_PREF, false);
+
+  Assert.ok(PlacesBackupResource.canBackupResource, "Places can be backed up");
+
+  Assert.ok(
+    !BookmarksBackupResource.canBackupResource,
+    "Bookmarks won't be backed up separately"
+  );
+
+  // If places can't be backed up, we need to backup bookmarks separately
+  Services.prefs.setBoolPref(SANITIZE_ON_SHUTDOWN_PREF, true);
+
+  Assert.ok(
+    !PlacesBackupResource.canBackupResource,
+    "Places can not be backed up"
+  );
+
+  Assert.ok(
+    BookmarksBackupResource.canBackupResource,
+    "Bookmarks will be backed up separately"
+  );
+
+  Services.prefs.clearUserPref(HISTORY_ENABLED_PREF);
+  Services.prefs.clearUserPref(SANITIZE_ON_SHUTDOWN_PREF);
 });

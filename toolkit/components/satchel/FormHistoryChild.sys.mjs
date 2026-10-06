@@ -47,7 +47,7 @@ export class FormHistoryChild extends JSWindowActorChild {
   #onDOMFormBeforeSubmit(form) {
     if (
       !lazy.gEnabled ||
-      lazy.PrivateBrowsingUtils.isContentWindowPrivate(form.ownerGlobal)
+      lazy.PrivateBrowsingUtils.isContentWindowPrivate(form.documentGlobal)
     ) {
       return;
     }

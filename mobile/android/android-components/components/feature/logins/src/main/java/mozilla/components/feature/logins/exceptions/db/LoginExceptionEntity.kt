@@ -16,7 +16,6 @@ internal data class LoginExceptionEntity(
     @PrimaryKey(autoGenerate = true)
     @ColumnInfo(name = "id")
     var id: Long? = null,
-
     @ColumnInfo(name = "origin")
     var origin: String,
 )

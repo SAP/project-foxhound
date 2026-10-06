@@ -34,6 +34,22 @@ class LastAccessReducerTest {
     }
 
     @Test
+    fun `WHEN the reducer is called for UpdateLastVisibleAtAction THEN a new state with updated lastVisibleAt is returned`() {
+        val tab1 = TabSessionState(id = "tab1", lastVisibleAt = 111, content = mock())
+        val tab2 = TabSessionState(id = "tab2", lastVisibleAt = 222, content = mock())
+        val browserState = BrowserState(tabs = listOf(tab1, tab2))
+
+        val updatedState = LastAccessReducer.reduce(
+            browserState,
+            LastAccessAction.UpdateLastVisibleAtAction(tabId = "tab1", lastVisibleAt = 345),
+        )
+
+        assertEquals(2, updatedState.tabs.size)
+        assertEquals(345, updatedState.tabs[0].lastVisibleAt)
+        assertEquals(222, updatedState.tabs[1].lastVisibleAt)
+    }
+
+    @Test
     fun `WHEN the reducer is called for UpdateLastMediaAccessAction THEN a new state with updated LastMediaAccessState is returned`() {
         val tab1 = TabSessionState(id = "tab1", content = ContentState("https://mozilla.org"))
         val tab2 = TabSessionState(id = "tab2", content = mock())

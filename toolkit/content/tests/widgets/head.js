@@ -36,6 +36,7 @@ function getElementWithinVideo(video, aValue) {
 
 /**
  * Runs querySelectorAll on an element's shadow root.
+ *
  * @param {Element} element
  * @param {string} selector
  */

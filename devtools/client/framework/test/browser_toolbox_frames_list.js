@@ -55,29 +55,14 @@ add_task(async function () {
   });
 
   info("Check that the content of the frames list was updated");
-  try {
-    await checkFramesList(toolbox, [
-      TEST_COM_URL,
-      "https://example.com/document-builder.sjs?html=example.com iframe",
-      "https://example.org/document-builder.sjs?html=example.org iframe",
-    ]);
-
-    // If Fission is enabled and EFT is not, we shouldn't hit this line as `checkFramesList`
-    // should throw (as remote frames are only displayed when EFT is enabled).
-    ok(
-      !isFissionEnabled() || isEveryFrameTargetEnabled(),
-      "iframe picker should only display remote frames when EFT is enabled"
-    );
-  } catch (e) {
-    ok(
-      isFissionEnabled() && !isEveryFrameTargetEnabled(),
-      "iframe picker displays remote frames only when EFT is enabled"
-    );
-    return;
-  }
+  await checkFramesList(toolbox, [
+    TEST_COM_URL,
+    "https://example.com/document-builder.sjs?html=example.com iframe",
+    "https://example.org/document-builder.sjs?html=example.org iframe",
+  ]);
 
   info("Reload and check that the frames list is cleared");
-  await reloadBrowser();
+  await reloadSelectedTab();
   await waitFor(() => !getFramesButton(toolbox));
   ok(
     true,
@@ -111,7 +96,7 @@ add_task(async function () {
   await checkFramesList(toolbox, []);
 
   info("Check that the list does have expected items after reloading");
-  await reloadBrowser();
+  await reloadSelectedTab();
   await waitFor(() => getFramesButton(toolbox));
   ok(true, "button is displayed after reloading");
   await checkFramesList(toolbox, [

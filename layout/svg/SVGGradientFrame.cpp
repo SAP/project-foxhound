@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -49,7 +47,7 @@ NS_QUERYFRAME_TAIL_INHERITING(SVGPaintServerFrame)
 
 nsresult SVGGradientFrame::AttributeChanged(int32_t aNameSpaceID,
                                             nsAtom* aAttribute,
-                                            int32_t aModType) {
+                                            AttrModType aModType) {
   if (aNameSpaceID == kNameSpaceID_None &&
       (aAttribute == nsGkAtoms::gradientUnits ||
        aAttribute == nsGkAtoms::gradientTransform ||
@@ -142,8 +140,8 @@ gfxMatrix SVGGradientFrame::GetGradientTransform(
     gfxRect bbox = aOverrideBounds
                        ? *aOverrideBounds
                        : SVGUtils::GetBBox(
-                             aSource, SVGUtils::eUseFrameBoundsForOuterSVG |
-                                          SVGUtils::eBBoxIncludeFillGeometry);
+                             aSource, {SVGBBoxFlag::UseFrameBoundsForOuterSVG,
+                                       SVGBBoxFlag::IncludeFillGeometry});
     bboxMatrix =
         gfxMatrix(bbox.Width(), 0, 0, bbox.Height(), bbox.X(), bbox.Y());
   }
@@ -266,13 +264,13 @@ already_AddRefed<gfxPattern> SVGGradientFrame::GetPaintServerPattern(
   // SVG specification says that no stops should be treated like
   // the corresponding fill or stroke had "none" specified.
   if (nStops == 0) {
-    return do_AddRef(new gfxPattern(DeviceColor()));
+    return MakeAndAddRef<gfxPattern>(DeviceColor());
   }
 
   if (nStops == 1 || GradientVectorLengthIsZero()) {
     // The gradient paints a single colour, using the stop-color of the last
     // gradient step if there are more than one.
-    return do_AddRef(new gfxPattern(ToDeviceColor(stops.LastElement().mColor)));
+    return MakeAndAddRef<gfxPattern>(ToDeviceColor(stops.LastElement().mColor));
   }
 
   // Get the transform list (if there is one). We do this after the returns
@@ -328,6 +326,28 @@ already_AddRefed<gfxPattern> SVGGradientFrame::GetPaintServerPattern(
 }
 
 // Private (helper) methods
+
+float SVGGradientFrame::GetLengthValue(const SVGAnimatedLength& aLength) {
+  // Object bounding box units are handled by setting the appropriate
+  // transform in GetGradientTransform, but we need to handle user
+  // space units as part of the individual Get* routines.  Fixes 323669.
+
+  uint16_t gradientUnits = GetGradientUnits();
+  if (gradientUnits == SVG_UNIT_TYPE_USERSPACEONUSE) {
+    return SVGUtils::UserSpace(mSource, &aLength);
+  }
+
+  NS_ASSERTION(gradientUnits == SVG_UNIT_TYPE_OBJECTBOUNDINGBOX,
+               "Unknown gradientUnits type");
+
+  if (aLength.IsPercentage()) {
+    // We want the percentage of the objectBoundingBox rather than
+    // the percentage of the nearest viewport.
+    return aLength.GetAnimValInSpecifiedUnits() / 100.0f;
+  }
+  return aLength.GetAnimValueWithZoom(
+      static_cast<dom::SVGElement*>(GetContent()));
+}
 
 SVGGradientFrame* SVGGradientFrame::GetReferencedGradient() {
   if (mNoHRefURI) {
@@ -407,7 +427,7 @@ void SVGLinearGradientFrame::Init(nsIContent* aContent,
 
 nsresult SVGLinearGradientFrame::AttributeChanged(int32_t aNameSpaceID,
                                                   nsAtom* aAttribute,
-                                                  int32_t aModType) {
+                                                  AttrModType aModType) {
   if (aNameSpaceID == kNameSpaceID_None &&
       (aAttribute == nsGkAtoms::x1 || aAttribute == nsGkAtoms::y1 ||
        aAttribute == nsGkAtoms::x2 || aAttribute == nsGkAtoms::y2)) {
@@ -426,21 +446,8 @@ float SVGLinearGradientFrame::GetLengthValue(uint32_t aIndex) {
   // return value should also be non-null.
   MOZ_ASSERT(lengthElement,
              "Got unexpected null element from GetLinearGradientWithLength");
-  const SVGAnimatedLength& length = lengthElement->mLengthAttributes[aIndex];
 
-  // Object bounding box units are handled by setting the appropriate
-  // transform in GetGradientTransform, but we need to handle user
-  // space units as part of the individual Get* routines.  Fixes 323669.
-
-  uint16_t gradientUnits = GetGradientUnits();
-  if (gradientUnits == SVG_UNIT_TYPE_USERSPACEONUSE) {
-    return SVGUtils::UserSpace(mSource, &length);
-  }
-
-  NS_ASSERTION(gradientUnits == SVG_UNIT_TYPE_OBJECTBOUNDINGBOX,
-               "Unknown gradientUnits type");
-
-  return length.GetAnimValueWithZoom(static_cast<SVGViewportElement*>(nullptr));
+  return GetLengthValue(lengthElement->mLengthAttributes[aIndex]);
 }
 
 dom::SVGLinearGradientElement*
@@ -470,7 +477,7 @@ already_AddRefed<gfxPattern> SVGLinearGradientFrame::CreateGradient() {
   float x2 = GetLengthValue(dom::SVGLinearGradientElement::ATTR_X2);
   float y2 = GetLengthValue(dom::SVGLinearGradientElement::ATTR_Y2);
 
-  return do_AddRef(new gfxPattern(x1, y1, x2, y2));
+  return MakeAndAddRef<gfxPattern>(x1, y1, x2, y2);
 }
 
 // -------------------------------------------------------------------------
@@ -494,7 +501,7 @@ void SVGRadialGradientFrame::Init(nsIContent* aContent,
 
 nsresult SVGRadialGradientFrame::AttributeChanged(int32_t aNameSpaceID,
                                                   nsAtom* aAttribute,
-                                                  int32_t aModType) {
+                                                  AttrModType aModType) {
   if (aNameSpaceID == kNameSpaceID_None &&
       (aAttribute == nsGkAtoms::r || aAttribute == nsGkAtoms::cx ||
        aAttribute == nsGkAtoms::cy || aAttribute == nsGkAtoms::fx ||
@@ -507,42 +514,21 @@ nsresult SVGRadialGradientFrame::AttributeChanged(int32_t aNameSpaceID,
 
 //----------------------------------------------------------------------
 
-float SVGRadialGradientFrame::GetLengthValue(uint32_t aIndex) {
-  dom::SVGRadialGradientElement* lengthElement = GetRadialGradientWithLength(
-      aIndex, static_cast<dom::SVGRadialGradientElement*>(GetContent()));
-  // We passed in mContent as a fallback, so, assuming mContent is non-null,
-  // the return value should also be non-null.
-  MOZ_ASSERT(lengthElement,
-             "Got unexpected null element from GetRadialGradientWithLength");
-  return GetLengthValueFromElement(aIndex, *lengthElement);
-}
-
 float SVGRadialGradientFrame::GetLengthValue(uint32_t aIndex,
-                                             float aDefaultValue) {
-  dom::SVGRadialGradientElement* lengthElement =
-      GetRadialGradientWithLength(aIndex, nullptr);
+                                             Maybe<float> aDefaultValue) {
+  dom::SVGRadialGradientElement* lengthElement = GetRadialGradientWithLength(
+      aIndex, aDefaultValue.isNothing()
+                  ? static_cast<dom::SVGRadialGradientElement*>(GetContent())
+                  : nullptr);
 
-  return lengthElement ? GetLengthValueFromElement(aIndex, *lengthElement)
-                       : aDefaultValue;
-}
+  // If we passed our content as a fallback, then assuming that is non-null,
+  // the return value should also be non-null.
+  MOZ_ASSERT(aDefaultValue.isSome() || lengthElement,
+             "Got unexpected null element from GetRadialGradientWithLength");
 
-float SVGRadialGradientFrame::GetLengthValueFromElement(
-    uint32_t aIndex, dom::SVGRadialGradientElement& aElement) {
-  const SVGAnimatedLength& length = aElement.mLengthAttributes[aIndex];
-
-  // Object bounding box units are handled by setting the appropriate
-  // transform in GetGradientTransform, but we need to handle user
-  // space units as part of the individual Get* routines.  Fixes 323669.
-
-  uint16_t gradientUnits = GetGradientUnits();
-  if (gradientUnits == SVG_UNIT_TYPE_USERSPACEONUSE) {
-    return SVGUtils::UserSpace(mSource, &length);
-  }
-
-  NS_ASSERTION(gradientUnits == SVG_UNIT_TYPE_OBJECTBOUNDINGBOX,
-               "Unknown gradientUnits type");
-
-  return length.GetAnimValueWithZoom(static_cast<SVGViewportElement*>(nullptr));
+  return lengthElement
+             ? GetLengthValue(lengthElement->mLengthAttributes[aIndex])
+             : aDefaultValue.value();
 }
 
 dom::SVGRadialGradientElement*
@@ -579,7 +565,7 @@ already_AddRefed<gfxPattern> SVGRadialGradientFrame::CreateGradient() {
   float fy = GetLengthValue(dom::SVGRadialGradientElement::ATTR_FY, cy);
   float fr = GetLengthValue(dom::SVGRadialGradientElement::ATTR_FR);
 
-  return do_AddRef(new gfxPattern(fx, fy, fr, cx, cy, r));
+  return MakeAndAddRef<gfxPattern>(fx, fy, fr, cx, cy, r);
 }
 
 }  // namespace mozilla

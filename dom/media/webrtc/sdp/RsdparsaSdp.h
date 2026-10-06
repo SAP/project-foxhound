@@ -1,20 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _RSDPARSA_SDP_H_
-#define _RSDPARSA_SDP_H_
+#ifndef DOM_MEDIA_WEBRTC_SDP_RSDPARSASDP_H_
+#define DOM_MEDIA_WEBRTC_SDP_RSDPARSASDP_H_
 
 #include "mozilla/UniquePtr.h"
-
-#include "sdp/Sdp.h"
-
-#include "sdp/RsdparsaSdpMediaSection.h"
 #include "sdp/RsdparsaSdpAttributeList.h"
-#include "sdp/RsdparsaSdpInc.h"
 #include "sdp/RsdparsaSdpGlue.h"
+#include "sdp/RsdparsaSdpInc.h"
+#include "sdp/RsdparsaSdpMediaSection.h"
+#include "sdp/Sdp.h"
 
 namespace mozilla {
 
@@ -27,7 +23,7 @@ class RsdparsaSdp final : public Sdp {
  public:
   explicit RsdparsaSdp(RsdparsaSessionHandle session, const SdpOrigin& origin);
 
-  Sdp* Clone() const override;
+  UniquePtr<Sdp> Clone() const override;
 
   const SdpOrigin& GetOrigin() const override;
 
@@ -48,11 +44,11 @@ class RsdparsaSdp final : public Sdp {
 
   SdpMediaSection& GetMediaSection(size_t level) override;
 
-  SdpMediaSection& AddMediaSection(SdpMediaSection::MediaType media,
-                                   SdpDirectionAttribute::Direction dir,
-                                   uint16_t port,
-                                   SdpMediaSection::Protocol proto,
-                                   sdp::AddrType addrType,
+  SdpMediaSection& AddMediaSection(const SdpMediaSection::MediaType media,
+                                   const SdpDirectionAttribute::Direction dir,
+                                   const uint16_t port,
+                                   const SdpMediaSection::Protocol proto,
+                                   const sdp::AddrType addrType,
                                    const std::string& addr) override;
 
   void Serialize(std::ostream&) const override;

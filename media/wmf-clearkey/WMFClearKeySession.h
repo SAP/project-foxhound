@@ -57,6 +57,12 @@ class WMFClearKeySession final
   void OnKeyStatusChanged(const cdm::KeyInformation* aKeysInfo,
                           uint32_t aKeysInfoCount);
 
+#ifdef ENABLE_TESTS
+  void SetSessionIdForTesting(std::string aSessionId) {
+    mSessionId = std::move(aSessionId);
+  }
+#endif
+
  private:
   cdm::SessionType mSessionType;
   std::string mSessionId;

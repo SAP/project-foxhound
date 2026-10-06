@@ -127,12 +127,8 @@ class Linter(visitor.Visitor):
         self.state["node_can_be_resource_comment"] = self.state[
             "node_can_be_resource_comment"
         ] and (
-            # This is the root node.
-            node_name == "Resource"
-            # Empty space is allowed.
-            or node_name == "Span"
-            # Comments are allowed
-            or node_name == "Comment"
+            # This is the root node, empty space is allowed, comments are allowed
+            node_name in {"Resource", "Span", "Comment"}
         )
 
         if self.debug_print_json:
@@ -142,7 +138,7 @@ class Linter(visitor.Visitor):
             # Only debug print the root node.
             self.debug_print_json = False
 
-        super(Linter, self).generic_visit(node)
+        super().generic_visit(node)
 
     def visit_Attribute(self, node):
         # Only visit values for Attribute nodes, the identifier comes from dom.
@@ -475,9 +471,9 @@ def get_exclusions(root):
     ) as f:
         exclusions = list(yaml.safe_load_all(f))[0]
         for error_type in exclusions:
-            exclusions[error_type]["files"] = set(
-                [mozpath.join(root, x) for x in exclusions[error_type]["files"]]
-            )
+            exclusions[error_type]["files"] = set([
+                mozpath.join(root, x) for x in exclusions[error_type]["files"]
+            ])
         return exclusions
 
 

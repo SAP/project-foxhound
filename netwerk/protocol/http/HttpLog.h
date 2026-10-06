@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef HttpLog_h__
-#define HttpLog_h__
+#ifndef HttpLog_h_
+#define HttpLog_h_
 
 /*******************************************************************************
  *  This file should ONLY be #included by source (.cpp) files in the /http
@@ -41,6 +39,7 @@ void LogCallingScriptLocation(void* instance,
                               const Maybe<nsCString>& aLogLocation);
 extern LazyLogModule gHttpLog;
 extern LazyLogModule gHttpIOLog;
+extern LazyLogModule gDictionaryLog;
 }  // namespace net
 }  // namespace mozilla
 
@@ -71,4 +70,7 @@ extern LazyLogModule gHttpIOLog;
   MOZ_LOG_TEST(mozilla::net::gHttpLog, mozilla::LogLevel::Verbose)
 #define LOG_ENABLED() LOG4_ENABLED()
 
-#endif  // HttpLog_h__
+#define LOG_DICTIONARIES(args) \
+  MOZ_LOG(mozilla::net::gDictionaryLog, mozilla::LogLevel::Debug, args)
+
+#endif  // HttpLog_h_

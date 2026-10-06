@@ -26,7 +26,7 @@ class TalosRunner(MozbuildObject):
         3. Run mozharness
         """
         # Validate that the user is using a supported python version before doing anything else
-        max_py_major, max_py_minor = 3, 12
+        max_py_major, max_py_minor = 3, 13
         sys_maj, sys_min = sys.version_info.major, sys.version_info.minor
         if sys_min > max_py_minor:
             raise PythonVersionException(
@@ -68,12 +68,10 @@ class TalosRunner(MozbuildObject):
 
     def make_config(self):
         default_actions = ["populate-webroot"]
-        default_actions.extend(
-            [
-                "create-virtualenv",
-                "run-tests",
-            ]
-        )
+        default_actions.extend([
+            "create-virtualenv",
+            "run-tests",
+        ])
         self.config = {
             "run_local": True,
             "talos_json": self.talos_json,

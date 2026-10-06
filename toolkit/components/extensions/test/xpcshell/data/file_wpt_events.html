@@ -1,0 +1,45 @@
+<!doctype html>
+<meta charset="utf-8">
+
+Testing browser.test.* events from a page hosted on web-platform.test.
+
+<script>
+"use strict";
+
+function send(detail) {
+  dispatchEvent(new CustomEvent("testEvent", { detail }));
+}
+
+let handlers = {
+  onTestStarted: data => send({ event: "onTestStarted", data }),
+  onTestFinished: data => send({ event: "onTestFinished", data }),
+  onAssertEquality: data => send({ event: "onAssertEquality", data }),
+  onAssert: data => send({ event: "onAssert", data }),
+};
+
+window.subscribe = () => {
+  if (!window.browser) {
+    send({ error: "Missing browser namespace." });
+    return;
+  }
+  if (!browser.test?.onTestFinished?.addListener) {
+    send({ error: "Missing browser.test.onTestFinished.addListener." });
+    return;
+  }
+
+  for (let [event, handler] of Object.entries(handlers)) {
+    browser.test[event].addListener(handler);
+  }
+
+  // If other things don't resolve collection of events, explicit timeout.
+  setTimeout(() => send({ error: "timeout" }), 5_000);
+}
+
+window.unsubscribe = () => {
+  for (let [event, handler] of Object.entries(handlers)) {
+    browser.test[event].removeListener(handler);
+  }
+  send({ done: "unsubscribed" });
+}
+
+</script>

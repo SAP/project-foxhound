@@ -1,4 +1,4 @@
-"use strict"; // -*- js-indent-level: 2; indent-tabs-mode: nil -*-
+"use strict";
 
 Services.scriptloader.loadSubScript(
   "chrome://mochikit/content/tests/SimpleTest/WindowSnapshot.js",

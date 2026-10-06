@@ -3,18 +3,16 @@
 
 "use strict";
 
+ChromeUtils.defineESModuleGetters(this, {
+  SponsorProtection:
+    "moz-src:///browser/components/newtab/SponsorProtection.sys.mjs",
+});
+
 // Test whether a visit information is annotated correctly when picking a result.
 
 if (AppConstants.platform === "macosx") {
   requestLongerTimeout(2);
 }
-
-const FRECENCY = {
-  ORGANIC: 2000,
-  SPONSORED: -1,
-  BOOKMARKED: 2075,
-  SEARCHED: 100,
-};
 
 const {
   VISIT_SOURCE_ORGANIC,
@@ -35,14 +33,7 @@ async function waitForVisitNotification(href) {
   );
 }
 
-async function assertDatabase({ targetURL, expected }) {
-  const frecency = await PlacesTestUtils.getDatabaseValue(
-    "moz_places",
-    "frecency",
-    { url: targetURL }
-  );
-  Assert.equal(frecency, expected.frecency, "Frecency is correct");
-
+async function assertDatabaseAndGetFrecency({ targetURL, expected }) {
   const placesId = await PlacesTestUtils.getDatabaseValue("moz_places", "id", {
     url: targetURL,
   });
@@ -65,22 +56,28 @@ async function assertDatabase({ targetURL, expected }) {
     expectedTriggeringPlaceId,
     `The triggeringPlaceId in database is correct for ${targetURL}`
   );
+  const frecency = await PlacesTestUtils.getDatabaseValue(
+    "moz_places",
+    "frecency",
+    { url: targetURL }
+  );
+  Assert.greater(frecency, 0, "Frecency is non-zero ");
+  return frecency;
 }
 
 function registerProvider(payload) {
   const provider = new UrlbarTestUtils.TestProvider({
     results: [
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.SEARCH,
-        ...UrlbarResult.payloadAndSimpleHighlights([], {
-          ...payload,
-        })
-      ),
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+        payload,
+      }),
     ],
     priority: Infinity,
   });
-  UrlbarProvidersManager.registerProvider(provider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(provider);
   return provider;
 }
 
@@ -126,7 +123,6 @@ add_task(async function basic() {
       },
       expected: {
         source: VISIT_SOURCE_SPONSORED,
-        frecency: FRECENCY.SPONSORED,
       },
     },
     {
@@ -144,7 +140,6 @@ add_task(async function basic() {
       ],
       expected: {
         source: VISIT_SOURCE_BOOKMARKED,
-        frecency: FRECENCY.BOOKMARKED,
       },
     },
     {
@@ -163,7 +158,6 @@ add_task(async function basic() {
       ],
       expected: {
         source: VISIT_SOURCE_SPONSORED,
-        frecency: FRECENCY.BOOKMARKED,
       },
     },
     {
@@ -174,11 +168,11 @@ add_task(async function basic() {
       },
       expected: {
         source: VISIT_SOURCE_ORGANIC,
-        frecency: FRECENCY.ORGANIC,
       },
     },
   ];
 
+  const databaseResults = [];
   for (const { description, input, payload, bookmarks, expected } of testData) {
     info(description);
     const provider = registerProvider(payload);
@@ -187,19 +181,55 @@ add_task(async function basic() {
       await PlacesUtils.bookmarks.insert(bookmark);
     }
 
-    await BrowserTestUtils.withNewTab("about:blank", async () => {
+    await BrowserTestUtils.withNewTab("about:blank", async browser => {
       info("Pick result");
       let promiseVisited = waitForVisitNotification(payload.url);
       await pickResult({ input, payloadURL: payload.url });
       await promiseVisited;
       info("Check database");
-      await assertDatabase({ targetURL: payload.url, expected });
+      let frecency = await assertDatabaseAndGetFrecency({
+        targetURL: payload.url,
+        expected,
+      });
+      databaseResults.push({ description, frecency });
+      Assert.ok(
+        !SponsorProtection.isProtectedBrowser(browser),
+        "Navigations from the URL bar do not cause sponsor protection at this time."
+      );
     });
 
-    UrlbarProvidersManager.unregisterProvider(provider);
+    ProvidersManager.getInstanceForSap("urlbar").unregisterProvider(provider);
     await PlacesUtils.history.clear();
     await PlacesUtils.bookmarks.eraseEverything();
   }
+
+  // Since the bookmark and organic result are typed, they are in a higher
+  // bucket. Sponsored results belong to a lower bucket.
+  databaseResults.sort((a, b) => b.frecency - a.frecency);
+  Assert.equal(databaseResults[0].description, "Bookmarked result");
+  Assert.equal(databaseResults[1].description, "Organic result");
+  Assert.equal(
+    databaseResults[0].frecency,
+    databaseResults[1].frecency,
+    "Organic and bookmarked results should have the same frecency."
+  );
+
+  Assert.equal(databaseResults[2].description, "Sponsored result");
+  Assert.equal(
+    databaseResults[3].description,
+    "Sponsored and bookmarked result"
+  );
+  Assert.equal(
+    databaseResults[2].frecency,
+    databaseResults[3].frecency,
+    "Sponsored results should have the same frecency."
+  );
+
+  Assert.greater(
+    databaseResults[1].frecency,
+    databaseResults[2].frecency,
+    "Non-sponsored results should have a higher frecency than sponsored results."
+  );
 });
 
 add_task(async function redirection() {
@@ -221,30 +251,33 @@ add_task(async function redirection() {
     await Promise.all(promises);
 
     info("Check database");
-    await assertDatabase({
+    let frecency1 = await assertDatabaseAndGetFrecency({
       targetURL: payload.url,
       expected: {
         source: VISIT_SOURCE_SPONSORED,
-        frecency: FRECENCY.SPONSORED,
       },
     });
-    await assertDatabase({
+    let frecency2 = await assertDatabaseAndGetFrecency({
       targetURL: redirectTo,
       expected: {
         source: VISIT_SOURCE_SPONSORED,
         triggerURL: payload.url,
-        frecency: FRECENCY.SPONSORED,
       },
     });
+    Assert.equal(
+      frecency1,
+      frecency2,
+      "Sponsored visits should have the same frecency."
+    );
   });
 
   await PlacesUtils.history.clear();
   await PlacesUtils.bookmarks.eraseEverything();
-  UrlbarProvidersManager.unregisterProvider(provider);
+  ProvidersManager.getInstanceForSap("urlbar").unregisterProvider(provider);
 });
 
 add_task(async function search() {
-  const originalDefaultEngine = await Services.search.getDefault();
+  const originalDefaultEngine = await SearchService.getDefault();
   await SearchTestUtils.installSearchExtension({
     name: "test engine",
     keyword: "@test",
@@ -257,7 +290,6 @@ add_task(async function search() {
       resultURL: "https://example.com/?q=abc",
       expected: {
         source: VISIT_SOURCE_SEARCHED,
-        frecency: FRECENCY.SEARCHED,
       },
     },
     {
@@ -273,7 +305,6 @@ add_task(async function search() {
       ],
       expected: {
         source: VISIT_SOURCE_BOOKMARKED,
-        frecency: FRECENCY.BOOKMARKED,
       },
     },
   ];
@@ -304,7 +335,10 @@ add_task(async function search() {
       EventUtils.synthesizeKey("KEY_Enter");
       await onLoad;
       await promiseVisited;
-      await assertDatabase({ targetURL: resultURL, expected });
+      let frecency1 = await assertDatabaseAndGetFrecency({
+        targetURL: resultURL,
+        expected,
+      });
 
       // Open another URL to check whther the source is not inherited.
       const payload = { url: "https://example.com/" };
@@ -312,22 +346,36 @@ add_task(async function search() {
       promiseVisited = waitForVisitNotification(payload.url);
       await pickResult({ input, payloadURL: payload.url });
       await promiseVisited;
-      await assertDatabase({
+      let frecency2 = await assertDatabaseAndGetFrecency({
         targetURL: payload.url,
         expected: {
           source: VISIT_SOURCE_ORGANIC,
-          frecency: FRECENCY.ORGANIC,
         },
       });
-      UrlbarProvidersManager.unregisterProvider(provider);
+
+      if (expected.source === VISIT_SOURCE_SEARCHED) {
+        Assert.less(
+          frecency1,
+          frecency2,
+          "Frecency of searched result is less than organic result."
+        );
+      } else if (expected.source === VISIT_SOURCE_BOOKMARKED) {
+        Assert.equal(
+          frecency1,
+          frecency2,
+          "Frecency of bookmarked result is equal to organic result."
+        );
+      }
+
+      ProvidersManager.getInstanceForSap("urlbar").unregisterProvider(provider);
 
       await PlacesUtils.history.clear();
       await PlacesUtils.bookmarks.eraseEverything();
     });
   }
 
-  await Services.search.setDefault(
+  await SearchService.setDefault(
     originalDefaultEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    SearchService.CHANGE_REASON.UNKNOWN
   );
 });

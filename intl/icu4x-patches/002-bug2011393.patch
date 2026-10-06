@@ -1,0 +1,38 @@
+diff --git a/intl/icu_capi/bindings/cpp/icu4x/diplomat_runtime.hpp b/intl/icu_capi/bindings/cpp/icu4x/diplomat_runtime.hpp
+index 2ef428fe024b..2d036b1d4ea5 100644
+--- a/intl/icu_capi/bindings/cpp/icu4x/diplomat_runtime.hpp
++++ b/intl/icu_capi/bindings/cpp/icu4x/diplomat_runtime.hpp
+@@ -372,17 +372,21 @@ struct diplomat_c_span_convert {
+   struct diplomat_c_span_convert<T, std::enable_if_t<std::is_same_v<T, span<const c_ty>>>> { \
+     using type = diplomat::capi::Diplomat##name##View; \
+   }; \
+   template<typename T> \
+   struct diplomat_c_span_convert<T, std::enable_if_t<std::is_same_v<T, span<c_ty>>>> { \
+     using type = diplomat::capi::Diplomat##name##ViewMut; \
+   }; \
+ 
++#if !defined(__sun) || !defined(_CHAR_IS_SIGNED)
++// int8_t and char are the same type on Solaris. Guard this definition to avoid
++// conflicts. https://github.com/rust-diplomat/diplomat/issues/1015
+ MAKE_SLICE_CONVERTERS(I8, int8_t)
++#endif
+ MAKE_SLICE_CONVERTERS(U8, uint8_t)
+ MAKE_SLICE_CONVERTERS(I16, int16_t)
+ MAKE_SLICE_CONVERTERS(U16, uint16_t)
+ MAKE_SLICE_CONVERTERS(I32, int32_t)
+ MAKE_SLICE_CONVERTERS(U32, uint32_t)
+ MAKE_SLICE_CONVERTERS(I64, int64_t)
+ MAKE_SLICE_CONVERTERS(U64, uint64_t)
+ MAKE_SLICE_CONVERTERS(F32, float)
+@@ -559,9 +563,9 @@ struct next_to_iter_helper {
+   }
+ 
+   std::shared_ptr<T> _ptr; // shared to satisfy the copyable requirement
+   next_type _curr;
+ };
+ 
+ } // namespace diplomat
+ } // namespace icu4x
+-#endif
+\ No newline at end of file
++#endif

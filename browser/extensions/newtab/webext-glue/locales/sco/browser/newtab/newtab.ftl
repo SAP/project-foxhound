@@ -14,6 +14,48 @@ newtab-personalize-icon-label =
 newtab-personalize-dialog-label =
     .aria-label = Personalise
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = New tabs
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } row
+           *[other] { $num } rows
+        }
+home-restore-defaults-srd =
+    .label = Restore Staunarts
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = Custom URLs…
+home-mode-choice-blank-srd =
+    .label = Blank Page
+home-prefs-shortcuts-header-srd =
+    .label = Shortcuts
+home-prefs-shortcuts-select =
+    .aria-label = Shortcuts
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = Sponsored shortcuts
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Sponsored Stories
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Veesitit Pages
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Buikmerks
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Maist Recent Doonload
+home-prefs-recent-activity-header-srd =
+    .label = Recent activity
+home-prefs-recent-activity-select =
+    .aria-label = Recent activity
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -39,7 +81,7 @@ newtab-search-box-input =
     .placeholder = Sairch the wab
     .aria-label = Sairch the wab
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Eik On Airt-oot Engine
 newtab-topsites-add-shortcut-header = New Shortcut
@@ -108,9 +150,6 @@ newtab-menu-save-to-pocket = Save tae { -pocket-brand-name }
 newtab-menu-delete-pocket = Dicht fae { -pocket-brand-name }
 newtab-menu-archive-pocket = Archive in { -pocket-brand-name }
 newtab-menu-show-privacy-info = Oor sponsors & yer privacy
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -229,12 +268,6 @@ newtab-pocket-cta-button = Get { -pocket-brand-name }
 newtab-pocket-cta-text = Save the stories ye're intae wi { -pocket-brand-name }, and nourish yer mind wi some wunnerfu reads.
 newtab-pocket-pocket-firefox-family = { -pocket-brand-name } is pairt o the { -brand-product-name } faimily
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
@@ -245,9 +278,21 @@ newtab-error-fallback-refresh-link = Refresh page fur tae gie it anither shottie
 
 newtab-custom-shortcuts-title = Shortcuts
 newtab-custom-shortcuts-subtitle = Sites ye save or veesit
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = Shortcuts
     .description = Sites ye save or veesit
+newtab-custom-shortcuts-nova =
+    .label = Shortcuts
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } row
+           *[other] { $num } rows
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =
@@ -261,60 +306,5 @@ newtab-custom-pocket-subtitle = By-ordinar content pit thegither by { -pocket-br
 newtab-custom-pocket-sponsored = Sponsored stories
 newtab-custom-recent-title = Recent activity
 newtab-custom-recent-subtitle = A walin o recent sites and content
-newtab-custom-recent-toggle =
-    .label = Recent activity
-    .description = A walin o recent sites and content
 newtab-custom-close-button = Sneck
 newtab-custom-settings = Manage mair settins
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

@@ -11,8 +11,6 @@
 var values_with_unchanged_specified_value_serialization = [
   "var(--a)",
   "var(--a)",
-  "var(--a) ",
-  "var( --a ) ",
   "var(--a, )",
   "var(--a,/**/a)",
   "1px var(--a)",
@@ -33,9 +31,12 @@ var values_with_unchanged_specified_value_serialization = [
   "var(--\\ffffff)",
 ];
 
-// Values that serialize differently, due to additional implied closing
-// characters at EOF.
 var values_with_changed_specified_value_serialization = [
+  // Values expected to be removed during the serialization process.
+  ["var(--a) ",                     "var(--a)"],
+  ["var( --a ) ",                   "var( --a )"],
+  // Values that serialize differently, due to additional implied closing
+  // characters at EOF.
   ["var(--a",                       "var(--a)"],
   ["var(--a , ",                    "var(--a , )"],
   ["var(--a, ",                     "var(--a, )"],

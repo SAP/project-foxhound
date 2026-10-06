@@ -1,0 +1,15 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.pinned-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xsmall);
+  padding-block: var(--space-small);
+  padding-inline: var(--space-small);
+}
+
+.sidebar-panel .sidebar-panel-scrollable-content {
+  padding-inline: 0;
+}

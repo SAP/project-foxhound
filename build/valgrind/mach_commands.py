@@ -4,6 +4,7 @@
 
 import logging
 import os
+import pathlib
 import time
 
 import mozinfo
@@ -196,6 +197,11 @@ def valgrind_test(command_context, suppressions):
                     {"data": json.dumps(data)},
                     "PERFHERDER_DATA: {data}",
                 )
+                upload_path = pathlib.Path(os.environ.get("MOZ_PERFHERDER_UPLOAD"))
+                upload_path.parent.mkdir(parents=True, exist_ok=True)
+                with upload_path.open("w", encoding="utf-8") as f:
+                    json.dump(data, f)
+
         except BinaryNotFoundException as e:
             binary_not_found_exception = e
         finally:

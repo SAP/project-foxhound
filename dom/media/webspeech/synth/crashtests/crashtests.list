@@ -1,1 +1,4 @@
 skip-if(!cocoaWidget) pref(media.webspeech.synth.enabled,true) load 1230428.html # bug 1230428
+pref(media.webspeech.synth.enabled,true) pref(media.webspeech.synth.test,true) load 2024470.html
+pref(media.webspeech.synth.enabled,true) pref(media.webspeech.synth.test,true) load 2024774.html
+pref(media.webspeech.synth.enabled,true) pref(media.webspeech.synth.test,true) pref(fuzzing.enabled,true) pref(browser.tabs.remote.autostart,false) pref(fission.autostart,false) load 2024771.html

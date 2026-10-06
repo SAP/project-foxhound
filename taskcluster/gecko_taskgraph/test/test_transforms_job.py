@@ -6,7 +6,6 @@
 Tests for the 'job' transform subsystem.
 """
 
-
 import os
 from copy import deepcopy
 
@@ -36,15 +35,13 @@ TASK_DEFAULTS = {
 @pytest.fixture(scope="module")
 def config():
     graph_config = load_graph_config(os.path.join(GECKO, "taskcluster"))
-    params = FakeParameters(
-        {
-            "base_repository": "http://hg.example.com",
-            "head_repository": "http://hg.example.com",
-            "head_rev": "abcdef",
-            "level": 1,
-            "project": "example",
-        }
-    )
+    params = FakeParameters({
+        "base_repository": "http://hg.example.com",
+        "head_repository": "http://hg.example.com",
+        "head_rev": "abcdef",
+        "level": 1,
+        "project": "example",
+    })
     return TransformConfig(
         "job_test", here, {}, params, {}, graph_config, write_artifacts=False
     )
@@ -85,14 +82,14 @@ def transform(monkeypatch, config):
     [
         pytest.param("M", "Mochitests", id="no_variants"),
         pytest.param(
-            "M-spi-nw",
-            "Mochitests with networking on socket process enabled",
-            id="spi-nw variant",
+            "M-spi",
+            "Mochitests with socket process enabled",
+            id="spi variant",
         ),
         pytest.param(
-            "M-spi-nw-http3",
-            "Mochitests with networking on socket process enabled with http3 server",
-            id="spi-nw and http3 variants",
+            "M-spi-nofis",
+            "Mochitests without fission enabled with socket process enabled",
+            id="spi and nofis variants",
         ),
         pytest.param("M-fake", "", id="invalid group name"),
     ],

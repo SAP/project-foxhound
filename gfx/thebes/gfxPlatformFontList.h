@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -21,7 +20,6 @@
 
 #include "base/process.h"
 #include "nsIMemoryReporter.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/MemoryReporting.h"
@@ -35,14 +33,31 @@ namespace fontlist {
 struct AliasData;
 }
 }  // namespace mozilla
+class FontVisibilityProvider;
+
+// Lookup key for the shared-cmap hashtable. The hash is carried separately
+// from the gfxCharacterMap pointer so that MaybeRemoveCmap can look up an
+// entry without dereferencing the (potentially already freed) pointer.
+struct CharMapLookup {
+  // The cmap to look up. In pointer-compare mode this may be dangling and is
+  // used for pointer-equality only; in content-compare mode it must be alive.
+  gfxCharacterMap* mCharMap;
+  // The cmap's mHash, captured while the object was known to be alive.
+  uint32_t mHash;
+  // If true, KeyEquals compares by pointer identity (no deref of mCharMap).
+  // If false, KeyEquals compares by content (derefs mCharMap; must be alive).
+  bool mCompareByPointer;
+};
 
 class CharMapHashKey : public PLDHashEntryHdr {
  public:
-  typedef gfxCharacterMap* KeyType;
-  typedef const gfxCharacterMap* KeyTypePointer;
+  typedef CharMapLookup KeyType;
+  typedef const CharMapLookup* KeyTypePointer;
 
-  explicit CharMapHashKey(const gfxCharacterMap* aCharMap)
-      : mCharMap(const_cast<gfxCharacterMap*>(aCharMap)) {
+  explicit CharMapHashKey(const CharMapLookup* aLookup)
+      : mCharMap(aLookup->mCharMap) {
+    // Only content-compare lookups (FindCharMap) insert; the cmap is alive.
+    MOZ_ASSERT(!aLookup->mCompareByPointer);
     MOZ_COUNT_CTOR(CharMapHashKey);
   }
   CharMapHashKey(const CharMapHashKey& toCopy) : mCharMap(toCopy.mCharMap) {
@@ -50,23 +65,29 @@ class CharMapHashKey : public PLDHashEntryHdr {
   }
   MOZ_COUNTED_DTOR(CharMapHashKey)
 
-  gfxCharacterMap* GetKey() const { return mCharMap.get(); }
+  gfxCharacterMap* GetCharMap() const { return mCharMap.get(); }
 
-  bool KeyEquals(const gfxCharacterMap* aCharMap) const {
-    MOZ_ASSERT(!aCharMap->mBuildOnTheFly && !mCharMap->mBuildOnTheFly,
+  bool KeyEquals(const CharMapLookup* aLookup) const {
+    if (aLookup->mCompareByPointer) {
+      // Pointer-identity compare for MaybeRemoveCmap. Does not dereference
+      // aLookup->mCharMap, which may be dangling.
+      return mCharMap.get() == aLookup->mCharMap;
+    }
+    // Content compare for FindCharMap. aLookup->mCharMap must be alive.
+    MOZ_ASSERT(!aLookup->mCharMap->mBuildOnTheFly && !mCharMap->mBuildOnTheFly,
                "custom cmap used in shared cmap hashtable");
-    // cmaps built on the fly never match
-    if (aCharMap->mHash != mCharMap->mHash) {
+    if (aLookup->mHash != mCharMap->mHash) {
       return false;
     }
-    return mCharMap->Equals(aCharMap);
+    return mCharMap->Equals(aLookup->mCharMap);
   }
 
-  static const gfxCharacterMap* KeyToPointer(gfxCharacterMap* aCharMap) {
-    return aCharMap;
+  static const CharMapLookup* KeyToPointer(const CharMapLookup& aLookup) {
+    return &aLookup;
   }
-  static PLDHashNumber HashKey(const gfxCharacterMap* aCharMap) {
-    return aCharMap->mHash;
+  static PLDHashNumber HashKey(const CharMapLookup* aLookup) {
+    // Use the captured hash; never dereference aLookup->mCharMap.
+    return aLookup->mHash;
   }
 
   enum { ALLOW_MEMMOVE = true };
@@ -198,6 +219,10 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
       return mFontNameList.ConstIter();
     }
 
+    const nsTArray<eFontPrefLang>& CJKPrefLangs() const {
+      return mCJKPrefLangs;
+    }
+
    private:
     static constexpr char kNamePrefix[] = "font.name.";
     static constexpr char kNameListPrefix[] = "font.name-list.";
@@ -206,6 +231,7 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
 
     HashMap mFontName;
     HashMap mFontNameList;
+    nsTArray<eFontPrefLang> mCJKPrefLangs;
     bool mEmojiHasUserValue = false;
   };
 
@@ -247,6 +273,18 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   }
 
   FontVisibility GetFontVisibility(nsCString& aFont, bool& aFound);
+
+  // Given a test string and ordered font list, determine which fonts would
+  // render each character (CSS font-fallback simulation). Returns fonts used
+  // in order of first use.
+  // Assumes x_western langGroup and normal emoji variant.
+  // aMaxVisibility filters fonts: only fonts with visibility <= aMaxVisibility
+  // are considered. Default is User which includes Base, LangPack, and User.
+  void ListFontsUsedForString(
+      const nsAString& aText, const nsTArray<nsCString>& aFontList,
+      nsTArray<nsCString>& aFontsUsed,
+      FontVisibility aMaxVisibility = FontVisibility::User);
+
   bool GetMissingFonts(nsTArray<nsCString>& aMissingFonts);
   void GetMissingFonts(nsCString& aMissingFonts);
 
@@ -295,8 +333,8 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   void GetFontFamilyList(nsTArray<RefPtr<gfxFontFamily>>& aFamilyArray);
 
   already_AddRefed<gfxFont> SystemFindFontForChar(
-      nsPresContext* aPresContext, uint32_t aCh, uint32_t aNextCh,
-      Script aRunScript, FontPresentation aPresentation,
+      FontVisibilityProvider* aFontVisibilityProvider, uint32_t aCh,
+      uint32_t aNextCh, Script aRunScript, FontPresentation aPresentation,
       const gfxFontStyle* aStyle, FontVisibility* aVisibility);
 
   // Flags to control optional behaviors in FindAndAddFamilies. The sense
@@ -331,25 +369,28 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   // Find family(ies) matching aFamily and append to the aOutput array
   // (there may be multiple results in the case of fontconfig aliases, etc).
   // Return true if any match was found and appended, false if none.
-  bool FindAndAddFamilies(
-      nsPresContext* aPresContext, mozilla::StyleGenericFontFamily aGeneric,
-      const nsACString& aFamily, nsTArray<FamilyAndGeneric>* aOutput,
-      FindFamiliesFlags aFlags, gfxFontStyle* aStyle = nullptr,
-      nsAtom* aLanguage = nullptr, gfxFloat aDevToCssSize = 1.0);
+  bool FindAndAddFamilies(FontVisibilityProvider* aFontVisibilityProvider,
+                          mozilla::StyleGenericFontFamily aGeneric,
+                          const nsACString& aFamily,
+                          nsTArray<FamilyAndGeneric>* aOutput,
+                          FindFamiliesFlags aFlags,
+                          gfxFontStyle* aStyle = nullptr,
+                          nsAtom* aLanguage = nullptr,
+                          gfxFloat aDevToCssSize = 1.0);
 
   virtual bool FindAndAddFamiliesLocked(
-      nsPresContext* aPresContext, mozilla::StyleGenericFontFamily aGeneric,
-      const nsACString& aFamily, nsTArray<FamilyAndGeneric>* aOutput,
-      FindFamiliesFlags aFlags, gfxFontStyle* aStyle = nullptr,
-      nsAtom* aLanguage = nullptr, gfxFloat aDevToCssSize = 1.0)
-      MOZ_REQUIRES(mLock);
+      FontVisibilityProvider* aFontVisibilityProvider,
+      mozilla::StyleGenericFontFamily aGeneric, const nsACString& aFamily,
+      nsTArray<FamilyAndGeneric>* aOutput, FindFamiliesFlags aFlags,
+      gfxFontStyle* aStyle = nullptr, nsAtom* aLanguage = nullptr,
+      gfxFloat aDevToCssSize = 1.0) MOZ_REQUIRES(mLock);
 
-  gfxFontEntry* FindFontForFamily(nsPresContext* aPresContext,
-                                  const nsACString& aFamily,
-                                  const gfxFontStyle* aStyle);
+  gfxFontEntry* FindFontForFamily(
+      FontVisibilityProvider* aFontVisibilityProvider,
+      const nsACString& aFamily, const gfxFontStyle* aStyle);
 
   mozilla::fontlist::FontList* SharedFontList() const {
-    return mSharedFontList.get();
+    return mSharedFontList;
   }
 
   // Create a handle for a single shmem block (identified by index) ready to
@@ -434,11 +475,11 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   // pure virtual functions, to be provided by concrete subclasses
 
   // get the system default font family
-  FontFamily GetDefaultFont(nsPresContext* aPresContext,
+  FontFamily GetDefaultFont(FontVisibilityProvider* aFontVisibilityProvider,
                             const gfxFontStyle* aStyle);
-  FontFamily GetDefaultFontLocked(nsPresContext* aPresContext,
-                                  const gfxFontStyle* aStyle)
-      MOZ_REQUIRES(mLock);
+  FontFamily GetDefaultFontLocked(
+      FontVisibilityProvider* aFontVisibilityProvider,
+      const gfxFontStyle* aStyle) MOZ_REQUIRES(mLock);
 
   // get the "ultimate" default font, for use if the font list is otherwise
   // unusable (e.g. in the middle of being updated)
@@ -454,11 +495,10 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
    * selecting the platform font, which is looked up by name only; these are
    * values to be recorded in the new font entry.
    */
-  virtual gfxFontEntry* LookupLocalFont(nsPresContext* aPresContext,
-                                        const nsACString& aFontName,
-                                        WeightRange aWeightForEntry,
-                                        StretchRange aStretchForEntry,
-                                        SlantStyleRange aStyleForEntry) = 0;
+  virtual already_AddRefed<gfxFontEntry> LookupLocalFont(
+      FontVisibilityProvider* aFontVisibilityProvider,
+      const nsACString& aFontName, WeightRange aWeightForEntry,
+      StretchRange aStretchForEntry, SlantStyleRange aStyleForEntry) = 0;
 
   /**
    * Create a new platform font from downloaded data (@font-face).
@@ -471,12 +511,10 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
    * This method takes ownership of the data block passed in as aFontData,
    * and must ensure it is free()'d when no longer required.
    */
-  virtual gfxFontEntry* MakePlatformFont(const nsACString& aFontName,
-                                         WeightRange aWeightForEntry,
-                                         StretchRange aStretchForEntry,
-                                         SlantStyleRange aStyleForEntry,
-                                         const uint8_t* aFontData,
-                                         uint32_t aLength) = 0;
+  virtual already_AddRefed<gfxFontEntry> MakePlatformFont(
+      const nsACString& aFontName, WeightRange aWeightForEntry,
+      StretchRange aStretchForEntry, SlantStyleRange aStyleForEntry,
+      const uint8_t* aFontData, uint32_t aLength) = 0;
 
   // get the standard family name on the platform for a given font name
   // (platforms may override, eg Mac)
@@ -510,8 +548,9 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   already_AddRefed<gfxCharacterMap> FindCharMap(gfxCharacterMap* aCmap);
 
   // Remove the cmap from the shared cmap set if it holds the only remaining
-  // reference to the object.
-  void MaybeRemoveCmap(gfxCharacterMap* aCharMap);
+  // reference to the object. aCharMap may be dangling; aHash is its mHash
+  // captured while it was known alive.
+  void MaybeRemoveCmap(gfxCharacterMap* aCharMap, uint32_t aHash);
 
   // Keep track of userfont sets to notify when global fontlist changes occur.
   void AddUserFontSet(gfxUserFontSet* aUserFontSet) {
@@ -531,7 +570,7 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
     aLoaderState = (uint32_t)mState;
   }
 
-  virtual void AddGenericFonts(nsPresContext* aPresContext,
+  virtual void AddGenericFonts(FontVisibilityProvider* aFontVisibilityProvider,
                                mozilla::StyleGenericFontFamily aGenericType,
                                nsAtom* aLanguage,
                                nsTArray<FamilyAndGeneric>& aFamilyList);
@@ -561,14 +600,16 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   }
 
   PrefFontList* GetPrefFontsLangGroup(
-      nsPresContext* aPresContext, mozilla::StyleGenericFontFamily aGenericType,
-      eFontPrefLang aPrefLang) {
+      FontVisibilityProvider* aFontVisibilityProvider,
+      mozilla::StyleGenericFontFamily aGenericType, eFontPrefLang aPrefLang) {
     AutoLock lock(mLock);
-    return GetPrefFontsLangGroupLocked(aPresContext, aGenericType, aPrefLang);
+    return GetPrefFontsLangGroupLocked(aFontVisibilityProvider, aGenericType,
+                                       aPrefLang);
   }
   PrefFontList* GetPrefFontsLangGroupLocked(
-      nsPresContext* aPresContext, mozilla::StyleGenericFontFamily aGenericType,
-      eFontPrefLang aPrefLang) MOZ_REQUIRES(mLock);
+      FontVisibilityProvider* aFontVisibilityProvider,
+      mozilla::StyleGenericFontFamily aGenericType, eFontPrefLang aPrefLang)
+      MOZ_REQUIRES(mLock);
 
   // in some situations, need to make decisions about ambiguous characters, may
   // need to look at multiple pref langs
@@ -639,7 +680,7 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   // existing references to shared font family or face objects and character
   // maps will no longer be valid.
   // (The legacy (non-shared) list just returns 0 here.)
-  uint32_t GetGeneration() const;
+  uint32_t GetGeneration() const { return mFontListGeneration; }
 
   // Sometimes we need to know if we're on the InitFontList startup thread.
   static bool IsInitFontListThread() {
@@ -755,13 +796,15 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
    * is ready for use.
    */
   mozilla::fontlist::Family* FindSharedFamily(
-      nsPresContext* aPresContext, const nsACString& aFamily,
+      FontVisibilityProvider* aFontVisibilityProvider,
+      const nsACString& aFamily,
       FindFamiliesFlags aFlags = FindFamiliesFlags(0),
       gfxFontStyle* aStyle = nullptr, nsAtom* aLanguage = nullptr,
       gfxFloat aDevToCssSize = 1.0) MOZ_REQUIRES(mLock);
 
   gfxFontFamily* FindUnsharedFamily(
-      nsPresContext* aPresContext, const nsACString& aFamily,
+      FontVisibilityProvider* aFontVisibilityProvider,
+      const nsACString& aFamily,
       FindFamiliesFlags aFlags = FindFamiliesFlags(0),
       gfxFontStyle* aStyle = nullptr, nsAtom* aLanguage = nullptr,
       gfxFloat aDevToCssSize = 1.0) MOZ_REQUIRES(mLock) {
@@ -770,24 +813,27 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
     }
     AutoTArray<FamilyAndGeneric, 1> families;
     if (FindAndAddFamiliesLocked(
-            aPresContext, mozilla::StyleGenericFontFamily::None, aFamily,
-            &families, aFlags, aStyle, aLanguage, aDevToCssSize)) {
+            aFontVisibilityProvider, mozilla::StyleGenericFontFamily::None,
+            aFamily, &families, aFlags, aStyle, aLanguage, aDevToCssSize)) {
       return families[0].mFamily.mUnshared;
     }
     return nullptr;
   }
 
-  FontFamily FindFamily(nsPresContext* aPresContext, const nsACString& aFamily,
+  FontFamily FindFamily(FontVisibilityProvider* aFontVisibilityProvider,
+                        const nsACString& aFamily,
                         FindFamiliesFlags aFlags = FindFamiliesFlags(0),
                         gfxFontStyle* aStyle = nullptr,
                         nsAtom* aLanguage = nullptr,
                         gfxFloat aDevToCssSize = 1.0) MOZ_REQUIRES(mLock) {
     if (SharedFontList()) {
-      return FontFamily(FindSharedFamily(aPresContext, aFamily, aFlags, aStyle,
-                                         aLanguage, aDevToCssSize));
+      return FontFamily(FindSharedFamily(aFontVisibilityProvider, aFamily,
+                                         aFlags, aStyle, aLanguage,
+                                         aDevToCssSize));
     }
-    return FontFamily(FindUnsharedFamily(aPresContext, aFamily, aFlags, aStyle,
-                                         aLanguage, aDevToCssSize));
+    return FontFamily(FindUnsharedFamily(aFontVisibilityProvider, aFamily,
+                                         aFlags, aStyle, aLanguage,
+                                         aDevToCssSize));
   }
 
   // Lookup family name in global family list without substitutions or
@@ -804,18 +850,16 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   }
 
   // returns default font for a given character, null otherwise
-  already_AddRefed<gfxFont> CommonFontFallback(nsPresContext* aPresContext,
-                                               uint32_t aCh, uint32_t aNextCh,
-                                               Script aRunScript,
-                                               FontPresentation aPresentation,
-                                               const gfxFontStyle* aMatchStyle,
-                                               FontFamily& aMatchedFamily)
+  already_AddRefed<gfxFont> CommonFontFallback(
+      FontVisibilityProvider* aFontVisibilityProvider, uint32_t aCh,
+      uint32_t aNextCh, Script aRunScript, FontPresentation aPresentation,
+      const gfxFontStyle* aMatchStyle, FontFamily& aMatchedFamily)
       MOZ_REQUIRES(mLock);
 
   // Search fonts system-wide for a given character, null if not found.
   already_AddRefed<gfxFont> GlobalFontFallback(
-      nsPresContext* aPresContext, uint32_t aCh, uint32_t aNextCh,
-      Script aRunScript, FontPresentation aPresentation,
+      FontVisibilityProvider* aFontVisibilityProvider, uint32_t aCh,
+      uint32_t aNextCh, Script aRunScript, FontPresentation aPresentation,
       const gfxFontStyle* aMatchStyle, uint32_t& aCmapCount,
       FontFamily& aMatchedFamily) MOZ_REQUIRES(mLock);
 
@@ -823,8 +867,9 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   // this may return nullptr in which case the default cmap-based fallback
   // will be performed.
   virtual gfxFontEntry* PlatformGlobalFontFallback(
-      nsPresContext* aPresContext, const uint32_t aCh, Script aRunScript,
-      const gfxFontStyle* aMatchStyle, FontFamily& aMatchedFamily) {
+      FontVisibilityProvider* aFontVisibilityProvider, const uint32_t aCh,
+      Script aRunScript, const gfxFontStyle* aMatchStyle,
+      FontFamily& aMatchedFamily) {
     return nullptr;
   }
 
@@ -859,11 +904,10 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   virtual gfxFontEntry* LookupInFaceNameLists(const nsACString& aFaceName)
       MOZ_REQUIRES(mLock);
 
-  gfxFontEntry* LookupInSharedFaceNameList(nsPresContext* aPresContext,
-                                           const nsACString& aFaceName,
-                                           WeightRange aWeightForEntry,
-                                           StretchRange aStretchForEntry,
-                                           SlantStyleRange aStyleForEntry)
+  already_AddRefed<gfxFontEntry> LookupInSharedFaceNameList(
+      FontVisibilityProvider* aFontVisibilityProvider,
+      const nsACString& aFaceName, WeightRange aWeightForEntry,
+      StretchRange aStretchForEntry, SlantStyleRange aStyleForEntry)
       MOZ_REQUIRES(mLock);
 
   // Add an entry for aName to the local names table, but only if it is not
@@ -906,25 +950,26 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   // because they may no longer be valid.
   void RebuildLocalFonts(bool aForgetLocalFaces = false) MOZ_REQUIRES(mLock);
 
-  void ResolveGenericFontNames(nsPresContext* aPresContext,
+  void ResolveGenericFontNames(FontVisibilityProvider* aFontVisibilityProvider,
                                mozilla::StyleGenericFontFamily aGenericType,
                                eFontPrefLang aPrefLang,
                                PrefFontList* aGenericFamilies)
       MOZ_REQUIRES(mLock);
 
-  void ResolveEmojiFontNames(nsPresContext* aPresContext,
+  void ResolveEmojiFontNames(FontVisibilityProvider* aFontVisibilityProvider,
                              PrefFontList* aGenericFamilies)
       MOZ_REQUIRES(mLock);
 
   void GetFontFamiliesFromGenericFamilies(
-      nsPresContext* aPresContext, mozilla::StyleGenericFontFamily aGenericType,
+      FontVisibilityProvider* aFontVisibilityProvider,
+      mozilla::StyleGenericFontFamily aGenericType,
       nsTArray<nsCString>& aGenericNameFamilies, nsAtom* aLangGroup,
       PrefFontList* aFontFamilies) MOZ_REQUIRES(mLock);
 
   virtual nsresult InitFontListForPlatform() MOZ_REQUIRES(mLock) = 0;
   virtual void InitSharedFontListForPlatform() MOZ_REQUIRES(mLock) {}
 
-  virtual gfxFontEntry* CreateFontEntry(
+  virtual already_AddRefed<gfxFontEntry> CreateFontEntry(
       mozilla::fontlist::Face* aFace,
       const mozilla::fontlist::Family* aFamily) {
     return nullptr;
@@ -942,8 +987,8 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
 
   // Create a new gfxFontFamily of the appropriate subclass for the platform,
   // used when AddWithLegacyFamilyName needs to create a new family.
-  virtual gfxFontFamily* CreateFontFamily(const nsACString& aName,
-                                          FontVisibility aVisibility) const = 0;
+  virtual already_AddRefed<gfxFontFamily> CreateFontFamily(
+      const nsACString& aName, FontVisibility aVisibility) const = 0;
 
   /**
    * For the post-startup font info loader task.
@@ -969,9 +1014,9 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
       const FontEntryTable& aTable, mozilla::MallocSizeOf aMallocSizeOf);
 
   // Platform-specific helper for GetDefaultFont(...).
-  virtual FontFamily GetDefaultFontForPlatform(nsPresContext* aPresContext,
-                                               const gfxFontStyle* aStyle,
-                                               nsAtom* aLanguage = nullptr)
+  virtual FontFamily GetDefaultFontForPlatform(
+      FontVisibilityProvider* aFontVisibilityProvider,
+      const gfxFontStyle* aStyle, nsAtom* aLanguage = nullptr)
       MOZ_REQUIRES(mLock) = 0;
 
   // canonical family name ==> family entry (unique, one name per family entry)
@@ -1055,14 +1100,15 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
 
   nsLanguageAtomService* mLangService = nullptr;
 
-  nsTArray<uint32_t> mCJKPrefLangs MOZ_GUARDED_BY(mLock);
   nsTArray<mozilla::StyleGenericFontFamily> mDefaultGenericsLangGroup
       MOZ_GUARDED_BY(mLock);
 
   nsTArray<nsCString> mEnabledFontsList;
   nsTHashSet<nsCString> mIconFontsSet;
 
-  mozilla::UniquePtr<mozilla::fontlist::FontList> mSharedFontList;
+  // This is an owning reference; we are responsible to delete the FontList at
+  // appropriate times.
+  std::atomic<mozilla::fontlist::FontList*> mSharedFontList = nullptr;
 
   nsClassHashtable<nsCStringHashKey, mozilla::fontlist::AliasData> mAliasTable;
   nsTHashMap<nsCStringHashKey, mozilla::fontlist::LocalFaceRec::InitData>
@@ -1077,6 +1123,9 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
 
   RefPtr<LoadCmapsRunnable> mLoadCmapsRunnable;
   uint32_t mStartedLoadingCmapsFrom MOZ_GUARDED_BY(mLock) = 0xffffffffu;
+
+  // Cached value of mSharedFontList->GetGeneration(), updated by InitFontList.
+  std::atomic<uint32_t> mFontListGeneration = 0;
 
   bool mFontFamilyWhitelistActive = false;
 

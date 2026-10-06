@@ -1,0 +1,15 @@
+{
+  "label": "vuemotion.santacasaba.org.br",
+  "bugs": {
+    "1916900": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://vuemotion.santacasaba.org.br/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

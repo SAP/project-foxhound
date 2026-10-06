@@ -369,7 +369,7 @@ function allMechanisms(aCb, aClipOverride, aNegateAll) {
   function testStep(n) {
     gTestN1 = n;
     switch (n) {
-      /** Test for Bug 1012662 **/
+      /** Test for Bug 1012662 */
       case 0:
         // Keyboard issued
         cutCopyAll(
@@ -434,7 +434,7 @@ function allMechanisms(aCb, aClipOverride, aNegateAll) {
         );
         return;
 
-      /** Test for Bug 1597857 **/
+      /** Test for Bug 1597857 */
       case 3:
         // Button issued async
         cutCopyAll(

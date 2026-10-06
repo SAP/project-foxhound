@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsGlobalWindowCommands_h__
-#define nsGlobalWindowCommands_h__
+#ifndef nsGlobalWindowCommands_h_
+#define nsGlobalWindowCommands_h_
 
+#include "nsStringFwd.h"
 #include "nscore.h"
 
 namespace mozilla::layers {
@@ -17,8 +16,7 @@ class nsControllerCommandTable;
 
 class nsWindowCommandRegistration {
  public:
-  static nsresult RegisterWindowCommands(
-      nsControllerCommandTable* aCommandTable);
+  static void RegisterWindowCommands(nsControllerCommandTable* aCommandTable);
 };
 
 class nsGlobalWindowCommands {
@@ -34,8 +32,8 @@ class nsGlobalWindowCommands {
    * null
    * @returns whether a keyboard action was found or not
    */
-  static bool FindScrollCommand(const char* aCommandName,
+  static bool FindScrollCommand(const nsACString& aCommandName,
                                 KeyboardScrollAction* aOutAction);
 };
 
-#endif  // nsGlobalWindowCommands_h__
+#endif  // nsGlobalWindowCommands_h_

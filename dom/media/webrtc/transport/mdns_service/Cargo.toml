@@ -10,5 +10,5 @@ byteorder = "1.3.1"
 dns-parser = "0.8.0"
 gecko-profiler = { path = "../../../../../tools/profiler/rust-api" }
 log = "0.4"
-socket2 = { version = "0.5", features = ["all"] }
+socket2 = { version = "0.6", features = ["all"] }
 uuid = { version = "1.0", features = ["v4"] }

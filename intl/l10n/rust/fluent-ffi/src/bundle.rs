@@ -32,11 +32,11 @@ pub struct L10nArg<'s> {
     pub value: FluentArgument<'s>,
 }
 
-fn transform_accented(s: &str) -> Cow<str> {
+fn transform_accented(s: &str) -> Cow<'_, str> {
     transform_dom(s, false, true, true)
 }
 
-fn transform_bidi(s: &str) -> Cow<str> {
+fn transform_bidi(s: &str) -> Cow<'_, str> {
     transform_dom(s, false, false, false)
 }
 

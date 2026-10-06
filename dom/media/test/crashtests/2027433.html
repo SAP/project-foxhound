@@ -1,0 +1,55 @@
+<!doctype html>
+<html class="reftest-wait">
+<head>
+  <meta charset="utf-8">
+  <title>Channel count change with playback rate</title>
+</head>
+<script>
+  async function fetchMedia(url) {
+    const request = new XMLHttpRequest();
+    request.open("GET", url);
+    request.responseType = "arraybuffer";
+    request.send();
+    await new Promise(r => request.onload = r);
+    return new Uint8Array(request.response);
+  }
+
+  async function run() {
+    const audio = document.createElement('audio');
+    const ms = new MediaSource();
+    audio.src = URL.createObjectURL(ms);
+    audio.playbackRate = 8.0;
+    const metadataPromise = new Promise(r => audio.onloadedmetadata = r);
+    await new Promise(r => ms.onsourceopen = r);
+    const sb = ms.addSourceBuffer('audio/webm;codecs="opus"');
+
+    const fourChannelUrl = "../opus-mapping2.webm";
+    // HAVE_FUTURE_DATA (canplay) is not reached until the entire
+    // second SimpleBlock is available.
+    const fourChannelThirdBlockStart = 0x007B8;
+    const fourChannelData = await fetchMedia(fourChannelUrl);
+
+    sb.appendBuffer(fourChannelData.subarray(0, fourChannelThirdBlockStart));
+    await new Promise(r => sb.onupdateend = r);
+
+    const twoChannelUrl = "../detodos-short.webm";
+    const twoChannelData = await fetchMedia(twoChannelUrl);
+
+    sb.appendBuffer(twoChannelData);
+    await new Promise(r => sb.onupdateend = r);
+    // for tracks, as required by MediaStreamAudioSourceNode constructor
+    await metadataPromise;
+
+    const mediaStream = audio.captureStream();
+    var ctx = new AudioContext();
+    var srcNode = new MediaStreamAudioSourceNode(ctx, {mediaStream});
+    var gain = new GainNode(ctx, {gain: 0.01}); // Low volume
+    srcNode.connect(gain).connect(ctx.destination);
+
+    ms.endOfStream();
+    await audio.play();
+    await new Promise(r => audio.onended = r);
+    document.documentElement.removeAttribute("class");
+  }
+  run();
+</script>

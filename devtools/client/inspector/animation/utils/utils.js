@@ -14,9 +14,9 @@ const OPTIMAL_TIME_INTERVAL_MULTIPLES = [1, 2.5, 5];
  * Find the optimal interval between time graduations in the animation timeline
  * graph based on a minimum time interval.
  *
- * @param {Number} minTimeInterval
+ * @param {number} minTimeInterval
  *                 Minimum time in ms in one interval
- * @return {Number} The optimal interval time in ms
+ * @return {number} The optimal interval time in ms
  */
 function findOptimalTimeInterval(minTimeInterval) {
   if (!minTimeInterval) {
@@ -48,7 +48,7 @@ function findOptimalTimeInterval(minTimeInterval) {
  * Check whether or not the given list of animations has an iteration count of infinite.
  *
  * @param {Array} animations.
- * @return {Boolean} true if there is an animation in the  list of animations
+ * @return {boolean} true if there is an animation in the  list of animations
  *                   whose animation iteration count is infinite.
  */
 function hasAnimationIterationCountInfinite(animations) {
@@ -59,7 +59,7 @@ function hasAnimationIterationCountInfinite(animations) {
  * Check wether the animations are running at least one.
  *
  * @param {Array} animations.
- * @return {Boolean} true: running
+ * @return {boolean} true: running
  */
 function hasRunningAnimation(animations) {
   return animations.some(({ state }) => state.playState === "running");

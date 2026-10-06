@@ -12,13 +12,16 @@ def assert_tab_order(session, expected_context_ids):
     with using_context(session, "chrome"):
         context_ids = session.execute_script(
             """
-            const contextId = arguments[0];
+            const { NavigableManager } =
+                ChromeUtils.importESModule("chrome://remote/content/shared/NavigableManager.sys.mjs");
             const { TabManager } =
                 ChromeUtils.importESModule("chrome://remote/content/shared/TabManager.sys.mjs");
-            const browsingContext = TabManager.getBrowsingContextById(contextId);
-            const chromeWindow = browsingContext.embedderElement.ownerGlobal;
+
+            const contextId = arguments[0];
+            const browsingContext = NavigableManager.getBrowsingContextById(contextId);
+            const chromeWindow = browsingContext.top.embedderWindowGlobal.browsingContext.window;
             const tabBrowser = TabManager.getTabBrowser(chromeWindow);
-            return tabBrowser.browsers.map(browser => TabManager.getIdForBrowser(browser));
+            return tabBrowser.browsers.map(browser => NavigableManager.getIdForBrowser(browser));
             """,
             args=(expected_context_ids[0],),
         )

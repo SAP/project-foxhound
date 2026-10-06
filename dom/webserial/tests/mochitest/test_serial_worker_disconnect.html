@@ -1,0 +1,64 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Web Serial API - Worker Disconnect Events</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="serial_test_utils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script>
+"use strict";
+
+SimpleTest.waitForExplicitFinish();
+
+SimpleTest.registerCleanupFunction(async function() {
+  await cleanupSerialPorts();
+  await navigator.serial.resetToDefaultMockDevices();
+});
+
+add_task(async function testWorkerReceivesDisconnectEvent() {
+  await navigator.serial.removeAllMockDevices();
+
+  await simulateDeviceConnection(
+    "worker-disconnect-test", "/dev/ttyUSB50", 0x1234, 0x5678
+  );
+
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  ok(port, "Should be able to request the simulated port");
+  ok(port.connected, "Port should be connected in window");
+
+  const worker = new Worker("serial_worker_disconnect.js");
+
+  const testPromise = new Promise((resolve, reject) => {
+    worker.onmessage = (e) => {
+      if (e.data.type === "test") {
+        const { result, message } = e.data;
+        ok(result, message);
+      } else if (e.data.type === "ready") {
+        info("Worker is ready, simulating device disconnection");
+        simulateDeviceDisconnection("worker-disconnect-test");
+      } else if (e.data.type === "done") {
+        resolve();
+      } else if (e.data.type === "error") {
+        reject(new Error(e.data.message));
+      }
+    };
+
+    worker.onerror = (e) => {
+      reject(new Error(`Worker error: ${e.message}`));
+    };
+  });
+
+  try {
+    await testPromise;
+  } finally {
+    worker.terminate();
+  }
+});
+
+</script>
+</body>
+</html>

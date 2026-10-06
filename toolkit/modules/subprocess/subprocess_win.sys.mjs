@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,20 +29,35 @@ class WinPromiseWorker extends PromiseWorker {
   constructor(...args) {
     super(...args);
 
-    this.signalEvent = libc.CreateSemaphoreW(null, 0, 32, null);
+    // Used by the worker thread to block until any I/O completes. Used on this
+    // side to unblock the worker to receive messages from postMessage below.
+    const iocp = libc.CreateIoCompletionPort(
+      win32.INVALID_HANDLE_VALUE,
+      win32.NULL_HANDLE_VALUE,
+      0,
+      1 // The worker thread is the only consumer of IOCP.
+    );
+    if (!iocp) {
+      throw new Error(`Failed to create IOCP: ${ctypes.winLastError}`);
+    }
+    // Wrap in Handle to ensure that CloseHandle is called after worker exits.
+    this.iocpHandle = win32.Handle(iocp);
 
     this.call("init", [
       {
         comspec: Services.env.get("COMSPEC"),
-        signalEvent: String(
-          ctypes.cast(this.signalEvent, ctypes.uintptr_t).value
-        ),
+        iocpCompletionPort: String(ctypes.cast(iocp, ctypes.uintptr_t).value),
       },
     ]);
   }
 
   signalWorker() {
-    libc.ReleaseSemaphore(this.signalEvent, 1, null);
+    libc.PostQueuedCompletionStatus(
+      this.iocpHandle,
+      0,
+      win32.IOCP_COMPLETION_KEY_WAKE_WORKER,
+      win32.OVERLAPPED.ptr(0)
+    );
   }
 
   postMessage(...args) {

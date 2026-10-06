@@ -21,7 +21,6 @@
 #include <vector>
 
 #include "absl/base/nullability.h"
-#include "absl/strings/string_view.h"
 #include "api/audio/audio_processing.h"
 #include "api/scoped_refptr.h"
 #include "common_audio/channel_buffer.h"
@@ -32,6 +31,7 @@
 #include "modules/audio_processing/test/test_utils.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/task_queue_for_test.h"
+#include "third_party/tflite/src/tensorflow/lite/model_builder.h"
 
 namespace webrtc {
 namespace test {
@@ -41,8 +41,7 @@ static const int kChunksPerSecond = 1000 / AudioProcessing::kChunkSizeMs;
 struct Int16Frame {
   void SetFormat(int sample_rate_hz, int num_channels) {
     sample_rate_hz_ = sample_rate_hz;
-    samples_per_channel_ =
-        rtc::CheckedDivExact(sample_rate_hz, kChunksPerSecond);
+    samples_per_channel_ = CheckedDivExact(sample_rate_hz, kChunksPerSecond);
     num_channels_ = num_channels;
     config = StreamConfig(sample_rate_hz, num_channels);
     data.resize(num_channels * samples_per_channel_);
@@ -99,7 +98,6 @@ struct SimulationSettings {
   std::optional<std::string> artificial_nearend_filename;
   std::optional<std::string> linear_aec_output_filename;
   std::optional<bool> use_aec;
-  std::optional<bool> use_aecm;
   std::optional<bool> use_ed;  // Residual Echo Detector.
   std::optional<std::string> ed_graph_output_filename;
   std::optional<bool> use_agc;
@@ -153,20 +151,25 @@ struct SimulationSettings {
   std::optional<std::string> call_order_input_filename;
   std::optional<std::string> call_order_output_filename;
   std::optional<std::string> aec_settings_filename;
-  std::optional<absl::string_view> aec_dump_input_string;
-  std::vector<float>* processed_capture_samples = nullptr;
   bool analysis_only = false;
   std::optional<int> dump_start_frame;
   std::optional<int> dump_end_frame;
   std::optional<int> init_to_process;
+  std::optional<std::string> neural_echo_residual_estimator_model;
+  std::optional<bool> use_adaptive_stereo_downmixing_for_aec;
 };
 
+// State used by the audio processor, but not owned by it.
+// This state must outlive the audio processor.
+struct AudioProcessingBuilderState {
+  std::unique_ptr<tflite::FlatBufferModel> model;
+};
 // Provides common functionality for performing audioprocessing simulations.
 class AudioProcessingSimulator {
  public:
   AudioProcessingSimulator(
       const SimulationSettings& settings,
-      absl::Nonnull<scoped_refptr<AudioProcessing>> audio_processing);
+      absl_nonnull scoped_refptr<AudioProcessing> audio_processing);
 
   AudioProcessingSimulator() = delete;
   AudioProcessingSimulator(const AudioProcessingSimulator&) = delete;
@@ -210,7 +213,7 @@ class AudioProcessingSimulator {
                                     int capture_frames_since_init) const;
 
   const SimulationSettings settings_;
-  rtc::scoped_refptr<AudioProcessing> ap_;
+  scoped_refptr<AudioProcessing> ap_;
 
   std::unique_ptr<ChannelBuffer<float>> in_buf_;
   std::unique_ptr<ChannelBuffer<float>> out_buf_;
@@ -238,7 +241,6 @@ class AudioProcessingSimulator {
   size_t num_reverse_process_stream_calls_ = 0;
   std::unique_ptr<ChannelBufferWavWriter> buffer_file_writer_;
   std::unique_ptr<ChannelBufferWavWriter> reverse_buffer_file_writer_;
-  std::unique_ptr<ChannelBufferVectorWriter> buffer_memory_writer_;
   std::unique_ptr<WavWriter> linear_aec_output_file_writer_;
   ApiCallStatistics api_call_statistics_;
   std::ofstream residual_echo_likelihood_graph_writer_;

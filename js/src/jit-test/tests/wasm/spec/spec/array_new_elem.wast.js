@@ -142,3 +142,22 @@ let $3 = instantiate(`(module
 
 // ./test/core/gc/array_new_elem.wast:103
 assert_return(() => invoke($3, `array-new-elem-contents`, []), [value("i32", 187), value("i32", 204)]);
+
+// ./test/core/gc/array_new_elem.wast:106
+let $4 = instantiate(`(module
+  (type \$arr (array (mut arrayref)))
+  (elem \$elem arrayref (item (array.new_default \$arr (i32.const 0))))
+  (func (export "run") (result i32)
+    (local \$a (ref null \$arr))
+    (local \$b (ref null \$arr))
+
+    (local.set \$a (array.new_elem \$arr \$elem (i32.const 0) (i32.const 1)))
+    (local.set \$b (array.new_elem \$arr \$elem (i32.const 0) (i32.const 1)))
+
+    (ref.eq (array.get \$arr (local.get \$a) (i32.const 0))
+            (array.get \$arr (local.get \$b) (i32.const 0)))
+  )
+)`);
+
+// ./test/core/gc/array_new_elem.wast:121
+assert_return(() => invoke($4, `run`, []), [value("i32", 1)]);

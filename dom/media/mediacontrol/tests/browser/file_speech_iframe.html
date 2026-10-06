@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Web Speech iframe</title>
+</head>
+<body>
+<script>
+let utt;
+
+// The test fake-synth voice "it-IT-noend" fires "start" but never auto-fires
+// "end", so the utterance stays audible across the lifetime of the test. See
+// dom/media/webspeech/synth/test/nsFakeSynthServices.cpp.
+window.startSpeech = () => {
+  utt = new SpeechSynthesisUtterance("audio focus competition test");
+  utt.lang = "it-IT-noend";
+  speechSynthesis.speak(utt);
+  return new Promise(resolve => {
+    utt.addEventListener("start", () => resolve(true), { once: true });
+  });
+};
+
+window.cancelSpeech = () => {
+  if (utt) {
+    speechSynthesis.cancel();
+    utt = null;
+  }
+};
+</script>
+</body>
+</html>

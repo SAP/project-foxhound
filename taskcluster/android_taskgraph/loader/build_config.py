@@ -9,16 +9,18 @@ from taskgraph.util.templates import merge
 from ..build_config import get_apk_based_projects, get_components
 
 
-def components_loader(kind, path, config, params, loaded_tasks):
+def components_loader(kind, path, config, params, loaded_tasks, write_artifacts):
     """Loader that yields one task per android-component.
 
     Android-components are read from android-component/.buildconfig.yml
     """
     config["tasks"] = _get_components_tasks(config)
-    return base_loader(kind, path, config, params, loaded_tasks)
+    return base_loader(kind, path, config, params, loaded_tasks, write_artifacts)
 
 
-def components_and_apks_loader(kind, path, config, params, loaded_tasks):
+def components_and_apks_loader(
+    kind, path, config, params, loaded_tasks, write_artifacts
+):
     """Loader that yields one task per android-component and per apk-based project.
 
     For instance focus-android yields one task.
@@ -30,7 +32,7 @@ def components_and_apks_loader(kind, path, config, params, loaded_tasks):
     components_tasks = _get_components_tasks(config, for_build_type="regular")
     apks_tasks = _get_apks_tasks(config)
     config["tasks"] = merge(config["tasks"], components_tasks, apks_tasks)
-    return base_loader(kind, path, config, params, loaded_tasks)
+    return base_loader(kind, path, config, params, loaded_tasks, write_artifacts)
 
 
 def get_component_name(component):

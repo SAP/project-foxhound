@@ -8,12 +8,13 @@
  */
 add_task(async function test_browser_translations_full_page_multiple_windows() {
   const window1 = window;
+  await focusWindow(window1);
   const testPage1 = await loadTestPage({
     page: SPANISH_PAGE_URL,
     languagePairs: LANGUAGE_PAIRS,
   });
 
-  const window2 = await BrowserTestUtils.openNewBrowserWindow();
+  const window2 = await openNewFocusedBrowserWindow();
 
   const testPage2 = await loadTestPage({
     win: window2,

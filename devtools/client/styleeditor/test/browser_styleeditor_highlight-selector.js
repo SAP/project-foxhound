@@ -172,7 +172,7 @@ function querySelectorCodeMirror(stylesheetEditor, selector) {
  *        The last CSS selector of the array is for the node in its frame doc.
  *        The before-last CSS selector is for the frame in its parent frame, etc...
  *        Ex: ["frame.first-frame", ..., "frame.last-frame", ".target-node"]
- * @returns {Object} with left/top/width/height properties representing the node bounds
+ * @returns {object} with left/top/width/height properties representing the node bounds
  */
 async function getElementNodeRectWithinTarget(selectors) {
   // Retrieve the browsing context in which the element is
@@ -199,13 +199,9 @@ async function getElementNodeRectWithinTarget(selectors) {
   );
 
   // Then we need to offset the element bounds from a frame bounds
-  // When fission/EFT is enabled, the highlighter is only shown within the iframe bounds.
-  // So we only need to retrieve the element bounds within the iframe.
-  // Otherwise, we retrieve the top frame bounds
-  const relativeBrowsingContext =
-    isFissionEnabled() || isEveryFrameTargetEnabled()
-      ? bc
-      : gBrowser.selectedBrowser.browsingContext;
+  // The highlighter is only shown within the iframe bounds.  So we only need to
+  // retrieve the element bounds within the iframe.
+  const relativeBrowsingContext = bc;
   const relativeDocumentBounds = await SpecialPowers.spawn(
     relativeBrowsingContext,
     [],

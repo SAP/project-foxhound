@@ -97,6 +97,7 @@ void av1_twopass_zero_stats(FIRSTPASS_STATS *section) {
   section->log_intra_error = 0.0;
   section->log_coded_error = 0.0;
   section->sr_coded_error = 0.0;
+  section->lt_coded_error = 0.0;
   section->pcnt_inter = 0.0;
   section->pcnt_motion = 0.0;
   section->pcnt_second_ref = 0.0;
@@ -129,6 +130,7 @@ void av1_accumulate_stats(FIRSTPASS_STATS *section,
   section->frame_avg_wavelet_energy += frame->frame_avg_wavelet_energy;
   section->coded_error += frame->coded_error;
   section->sr_coded_error += frame->sr_coded_error;
+  section->lt_coded_error += frame->lt_coded_error;
   section->pcnt_inter += frame->pcnt_inter;
   section->pcnt_motion += frame->pcnt_motion;
   section->pcnt_second_ref += frame->pcnt_second_ref;
@@ -254,7 +256,8 @@ static unsigned int highbd_get_prediction_error(BLOCK_SIZE bsize,
 // for first pass test.
 static int get_search_range(int width, int height) {
   int sr = 0;
-  const int dim = AOMMIN(width, height);
+  int dim = AOMMIN(width, height);
+  dim = AOMMAX(dim, MI_SIZE);
 
   while ((dim << sr) < MAX_FULL_PEL_VAL) ++sr;
   return sr;
@@ -520,6 +523,7 @@ static int firstpass_intra_prediction(
   xd->lossless[xd->mi[0]->segment_id] = (qindex == 0);
   xd->mi[0]->mode = DC_PRED;
   xd->mi[0]->tx_size = TX_4X4;
+  xd->mi[0]->skip_txfm = 0;
 
   if (cpi->sf.fp_sf.disable_recon)
     first_pass_predict_intra_block_for_luma_plane(seq_params, x, bsize);
@@ -679,10 +683,10 @@ static void accumulate_mv_stats(const MV best_mv, const FULLPEL_MV mv,
 //   golden_frame: the frame buffer of the golden frame.
 //   unit_row: row index in the unit of first pass block size.
 //   unit_col: column index in the unit of first pass block size.
-//   recon_yoffset: the y offset of the reconstructed  frame buffer,
+//   recon_yoffset: the y offset of the reconstructed frame buffer,
 //                  indicating the starting point of the current block.
-//   recont_uvoffset: the u/v offset of the reconstructed frame buffer,
-//                    indicating the starting point of the current block.
+//   recon_uvoffset: the u/v offset of the reconstructed frame buffer,
+//                   indicating the starting point of the current block.
 //   src_yoffset: the y offset of the source frame buffer.
 //   fp_block_size: first pass block size.
 //   this_intra_error: the intra prediction error of this block.
@@ -701,7 +705,8 @@ static void accumulate_mv_stats(const MV best_mv, const FULLPEL_MV mv,
 //    this_inter_error
 static int firstpass_inter_prediction(
     AV1_COMP *cpi, ThreadData *td, const YV12_BUFFER_CONFIG *const last_frame,
-    const YV12_BUFFER_CONFIG *const golden_frame, const int unit_row,
+    const YV12_BUFFER_CONFIG *const golden_frame,
+    const YV12_BUFFER_CONFIG *const last2_frame, const int unit_row,
     const int unit_col, const int recon_yoffset, const int recon_uvoffset,
     const int src_yoffset, const BLOCK_SIZE fp_block_size,
     const int this_intra_error, const int raw_motion_err_counts,
@@ -767,6 +772,19 @@ static int firstpass_inter_prediction(
         mv = tmp_mv;
       }
     }
+  }
+
+  int last2_motion_error = motion_error;
+  if ((current_frame->frame_number > 2) && last2_frame != NULL) {
+    FULLPEL_MV tmp_mv = kZeroFullMv;
+    // Assume 0,0 motion with no mv overhead.
+    av1_setup_pre_planes(xd, 0, last2_frame, 0, 0, NULL, 1);
+    xd->plane[0].pre[0].buf += recon_yoffset;
+    last2_motion_error =
+        get_prediction_error_bitdepth(is_high_bitdepth, bitdepth, bsize,
+                                      &x->plane[0].src, &xd->plane[0].pre[0]);
+    first_pass_motion_search(cpi, x, &kZeroMv, &tmp_mv, &last2_motion_error);
+    stats->lt_coded_error += AOMMIN(last2_motion_error, this_intra_error);
   }
 
   // Motion search in 2nd reference frame.
@@ -858,6 +876,7 @@ static void normalize_firstpass_stats(FIRSTPASS_STATS *fps,
                                       double f_h) {
   fps->coded_error /= num_mbs_16x16;
   fps->sr_coded_error /= num_mbs_16x16;
+  fps->lt_coded_error /= num_mbs_16x16;
   fps->intra_error /= num_mbs_16x16;
   fps->frame_avg_wavelet_energy /= num_mbs_16x16;
   fps->log_coded_error = log1p(fps->coded_error);
@@ -913,6 +932,7 @@ static void update_firstpass_stats(AV1_COMP *cpi,
   fps.frame = frame_number;
   fps.coded_error = (double)(stats->coded_error >> 8) + min_err;
   fps.sr_coded_error = (double)(stats->sr_coded_error >> 8) + min_err;
+  fps.lt_coded_error = (double)(stats->lt_coded_error >> 8) + min_err;
   fps.intra_error = (double)(stats->intra_error >> 8) + min_err;
   fps.frame_avg_wavelet_energy = (double)stats->frame_avg_wavelet_energy;
   fps.count = 1.0;
@@ -984,6 +1004,19 @@ static void update_firstpass_stats(AV1_COMP *cpi,
          twopass->stats_buf_ctx->stats_in_buf_end)) {
       twopass->stats_buf_ctx->stats_in_end =
           twopass->stats_buf_ctx->stats_in_start;
+    } else if (cpi->ppi->lap_enabled &&
+               (twopass->stats_buf_ctx->stats_in_end >=
+                twopass->stats_buf_ctx->stats_in_buf_end)) {
+      const int num_valid = (int)(twopass->stats_buf_ctx->stats_in_end -
+                                  cpi->twopass_frame.stats_in);
+      if (num_valid > 0) {
+        memmove(twopass->stats_buf_ctx->stats_in_start,
+                cpi->twopass_frame.stats_in,
+                num_valid * sizeof(FIRSTPASS_STATS));
+      }
+      cpi->twopass_frame.stats_in = twopass->stats_buf_ctx->stats_in_start;
+      twopass->stats_buf_ctx->stats_in_end =
+          twopass->stats_buf_ctx->stats_in_start + num_valid;
     }
   }
 }
@@ -1032,6 +1065,7 @@ static FRAME_STATS accumulate_frame_stats(FRAME_STATS *mb_stats, int mb_rows,
       stats.new_mv_count += mb_stat.new_mv_count;
       stats.second_ref_count += mb_stat.second_ref_count;
       stats.sr_coded_error += mb_stat.sr_coded_error;
+      stats.lt_coded_error += mb_stat.lt_coded_error;
       stats.sum_in_vectors += mb_stat.sum_in_vectors;
       stats.sum_mvc += mb_stat.sum_mvc;
       stats.sum_mvc_abs += mb_stat.sum_mvc_abs;
@@ -1125,8 +1159,8 @@ void av1_first_pass_row(AV1_COMP *cpi, ThreadData *td, TileDataEnc *tile_data,
   MACROBLOCKD *const xd = &x->e_mbd;
   TileInfo *tile = &tile_data->tile_info;
   const int qindex = find_fp_qindex(seq_params->bit_depth);
-  const int fp_block_size_width = block_size_high[fp_block_size];
-  const int fp_block_size_height = block_size_wide[fp_block_size];
+  const int fp_block_size_width = block_size_wide[fp_block_size];
+  const int fp_block_size_height = block_size_high[fp_block_size];
   const int unit_width = mi_size_wide[fp_block_size];
   const int unit_width_log2 = mi_size_wide_log2[fp_block_size];
   const int unit_height_log2 = mi_size_high_log2[fp_block_size];
@@ -1149,6 +1183,10 @@ void av1_first_pass_row(AV1_COMP *cpi, ThreadData *td, TileDataEnc *tile_data,
   if (!golden_frame) {
     golden_frame = get_ref_frame_yv12_buf(cm, GOLDEN_FRAME);
   }
+  const YV12_BUFFER_CONFIG *last2_frame =
+      av1_get_scaled_ref_frame(cpi, LAST2_FRAME);
+  if (!last2_frame) last2_frame = get_ref_frame_yv12_buf(cm, LAST2_FRAME);
+
   YV12_BUFFER_CONFIG *const this_frame = &cm->cur_frame->buf;
 
   PICK_MODE_CONTEXT *ctx = td->firstpass_ctx;
@@ -1169,6 +1207,8 @@ void av1_first_pass_row(AV1_COMP *cpi, ThreadData *td, TileDataEnc *tile_data,
   const int src_y_stride = cpi->source->y_stride;
   const int recon_y_stride = this_frame->y_stride;
   const int recon_uv_stride = this_frame->uv_stride;
+  const int uv_mb_width =
+      fp_block_size_width >> (this_frame->y_width > this_frame->uv_width);
   const int uv_mb_height =
       fp_block_size_height >> (this_frame->y_height > this_frame->uv_height);
 
@@ -1182,7 +1222,7 @@ void av1_first_pass_row(AV1_COMP *cpi, ThreadData *td, TileDataEnc *tile_data,
   int src_yoffset = (unit_row * src_y_stride * fp_block_size_height) +
                     (unit_col_start * fp_block_size_width);
   int recon_uvoffset = (unit_row * recon_uv_stride * uv_mb_height) +
-                       (unit_col_start * uv_mb_height);
+                       (unit_col_start * uv_mb_width);
 
   // Set up limit values for motion vectors to prevent them extending
   // outside the UMV borders.
@@ -1222,10 +1262,10 @@ void av1_first_pass_row(AV1_COMP *cpi, ThreadData *td, TileDataEnc *tile_data,
 
     if (!frame_is_intra_only(cm)) {
       const int this_inter_error = firstpass_inter_prediction(
-          cpi, td, last_frame, golden_frame, unit_row, unit_col, recon_yoffset,
-          recon_uvoffset, src_yoffset, fp_block_size, this_intra_error,
-          raw_motion_err_counts, raw_motion_err_list, best_ref_mv, &best_ref_mv,
-          &last_mv, mb_stats);
+          cpi, td, last_frame, golden_frame, last2_frame, unit_row, unit_col,
+          recon_yoffset, recon_uvoffset, src_yoffset, fp_block_size,
+          this_intra_error, raw_motion_err_counts, raw_motion_err_list,
+          best_ref_mv, &best_ref_mv, &last_mv, mb_stats);
       if (unit_col_in_tile == 0) {
         *first_top_mv = last_mv;
       }
@@ -1234,18 +1274,19 @@ void av1_first_pass_row(AV1_COMP *cpi, ThreadData *td, TileDataEnc *tile_data,
     } else {
       mb_stats->sr_coded_error += this_intra_error;
       mb_stats->coded_error += this_intra_error;
+      mb_stats->lt_coded_error += this_intra_error;
     }
 
     // Adjust to the next column of MBs.
     x->plane[0].src.buf += fp_block_size_width;
     if (num_planes > 1) {
-      x->plane[1].src.buf += uv_mb_height;
-      x->plane[2].src.buf += uv_mb_height;
+      x->plane[1].src.buf += uv_mb_width;
+      x->plane[2].src.buf += uv_mb_width;
     }
 
     recon_yoffset += fp_block_size_width;
     src_yoffset += fp_block_size_width;
-    recon_uvoffset += uv_mb_height;
+    recon_uvoffset += uv_mb_width;
     mb_stats++;
 
     enc_row_mt->sync_write_ptr(row_mt_sync, unit_row_in_tile, unit_col_in_tile,
@@ -1288,7 +1329,8 @@ void av1_first_pass(AV1_COMP *cpi, const int64_t ts_duration) {
   const int qindex = find_fp_qindex(seq_params->bit_depth);
   const int ref_frame_flags_backup = cpi->ref_frame_flags;
   cpi->ref_frame_flags = av1_ref_frame_flag_list[LAST_FRAME] |
-                         av1_ref_frame_flag_list[GOLDEN_FRAME];
+                         av1_ref_frame_flag_list[GOLDEN_FRAME] |
+                         av1_ref_frame_flag_list[LAST2_FRAME];
 
   // Detect if the key frame is screen content type.
   if (frame_is_intra_only(cm)) {
@@ -1334,7 +1376,7 @@ void av1_first_pass(AV1_COMP *cpi, const int64_t ts_duration) {
 
   const int tile_cols = cm->tiles.cols;
   const int tile_rows = cm->tiles.rows;
-  if (cpi->allocated_tiles < tile_cols * tile_rows) {
+  if (cpi->allocated_tiles != tile_cols * tile_rows) {
     av1_alloc_tile_data(cpi);
   }
 
@@ -1342,6 +1384,8 @@ void av1_first_pass(AV1_COMP *cpi, const int64_t ts_duration) {
 
   const YV12_BUFFER_CONFIG *last_frame = NULL;
   const YV12_BUFFER_CONFIG *golden_frame = NULL;
+  const YV12_BUFFER_CONFIG *last2_frame = NULL;
+
   if (!frame_is_intra_only(cm)) {
     av1_scale_references(cpi, EIGHTTAP_REGULAR, 0, 0);
     last_frame = av1_is_scaled(get_ref_scale_factors_const(cm, LAST_FRAME))
@@ -1350,6 +1394,9 @@ void av1_first_pass(AV1_COMP *cpi, const int64_t ts_duration) {
     golden_frame = av1_is_scaled(get_ref_scale_factors_const(cm, GOLDEN_FRAME))
                        ? av1_get_scaled_ref_frame(cpi, GOLDEN_FRAME)
                        : get_ref_frame_yv12_buf(cm, GOLDEN_FRAME);
+    last2_frame = av1_is_scaled(get_ref_scale_factors_const(cm, LAST2_FRAME))
+                      ? av1_get_scaled_ref_frame(cpi, LAST2_FRAME)
+                      : get_ref_frame_yv12_buf(cm, LAST2_FRAME);
   }
 
   YV12_BUFFER_CONFIG *const this_frame = &cm->cur_frame->buf;
@@ -1439,6 +1486,12 @@ void av1_first_pass(AV1_COMP *cpi, const int64_t ts_duration) {
                          current_frame->frame_number, ts_duration,
                          fp_block_size);
 
+  if (this_frame_stats->pcnt_inter < 0.2 && last2_frame != NULL) {
+    assign_frame_buffer_p(
+        &cm->ref_frame_map[get_ref_frame_map_idx(cm, LAST2_FRAME)],
+        cm->ref_frame_map[get_ref_frame_map_idx(cm, GOLDEN_FRAME)]);
+  }
+
   // Copy the previous Last Frame back into gf buffer if the prediction is good
   // enough... but also don't allow it to lag too far.
   if ((twopass->sr_update_lag > 3) ||
@@ -1468,6 +1521,13 @@ void av1_first_pass(AV1_COMP *cpi, const int64_t ts_duration) {
       get_ref_frame_map_idx(cm, GOLDEN_FRAME) != INVALID_IDX) {
     assign_frame_buffer_p(
         &cm->ref_frame_map[get_ref_frame_map_idx(cm, GOLDEN_FRAME)],
+        cm->ref_frame_map[get_ref_frame_map_idx(cm, LAST_FRAME)]);
+  }
+
+  if (current_frame->frame_number == 0 &&
+      get_ref_frame_map_idx(cm, LAST2_FRAME) != INVALID_IDX) {
+    assign_frame_buffer_p(
+        &cm->ref_frame_map[get_ref_frame_map_idx(cm, LAST2_FRAME)],
         cm->ref_frame_map[get_ref_frame_map_idx(cm, LAST_FRAME)]);
   }
 

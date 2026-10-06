@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC.
+// Copyright 2022 Google LLC
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
 #ifndef SkContainers_DEFINED
@@ -24,7 +24,7 @@ public:
     // Rounds a requested capacity up towards `kCapacityMultiple` in a constexpr-friendly fashion.
     template <typename T>
     static constexpr size_t RoundUp(size_t capacity) {
-        return SkAlignTo(capacity * sizeof(T), kCapacityMultiple) / sizeof(T);
+        return SkAlignTo(capacity * sizeof(T), (size_t) kCapacityMultiple) / sizeof(T);
     }
 
 private:

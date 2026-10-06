@@ -19,7 +19,7 @@ const DEFAULT_LAUNCHER_VISIBLE = false;
  *
  * @typedef {object} SidebarStateProps
  *
- * @property {boolean} command
+ * @property {string} command
  *   The id of the current sidebar panel. The panel may be closed and still have a command value.
  *   Re-opening the sidebar panel will then load the current command id.
  * @property {boolean} panelOpen
@@ -76,6 +76,8 @@ export class SidebarState {
     ...SidebarState.defaultProperties,
   };
   #launcherEverVisible = false;
+  bookmarksExpandedFolders = [];
+  #fullscreen = false;
 
   /** @type {SidebarStateProps} */
   static defaultProperties = Object.freeze({
@@ -126,6 +128,15 @@ export class SidebarState {
   }
 
   /**
+   * Get the splitter sibling for the sidebar launcher.
+   *
+   * @returns {XULElement}
+   */
+  get #launcherSplitterEl() {
+    return this.#controller.launcherSplitter;
+  }
+
+  /**
    * Get the sidebar panel element.
    *
    * @returns {XULElement}
@@ -169,6 +180,15 @@ export class SidebarState {
    * @returns {XULElement}
    */
   get #toolsContainer() {
+    return this.#controller.sidebarMain?.buttonsWrapper;
+  }
+
+  /**
+   * Get the tools button-group element.
+   *
+   * @returns {XULElement}
+   */
+  get #toolsButtonGroup() {
     return this.#controller.sidebarMain?.buttonGroup;
   }
 
@@ -176,7 +196,7 @@ export class SidebarState {
    * Get window object from the controller.
    */
   get #controllerGlobal() {
-    return this.#launcherContainerEl.ownerGlobal;
+    return this.#launcherContainerEl.documentGlobal;
   }
 
   /**
@@ -206,7 +226,7 @@ export class SidebarState {
    * @param {SidebarStateProps} props
    *   New properties to overwrite the default state with.
    */
-  loadInitialState(props) {
+  loadCurrentState(props) {
     // Override any initial launcher visible state when the new sidebar has not been
     // made visible yet
     let hasPreviousVisibleState = false;
@@ -230,7 +250,12 @@ export class SidebarState {
       !hasSidebarLauncherBeenVisible
     ) {
       props.launcherVisible = this.defaultLauncherVisible;
+    } else if (this.revampVisibility == "always-show") {
+      props.launcherVisible = true;
     }
+    const hasExplicitHiddenLauncher =
+      hasPreviousVisibleState && !props.launcherVisible;
+
     for (const [key, value] of Object.entries(props)) {
       if (value === undefined) {
         // `undefined` means we should use the default value.
@@ -272,9 +297,15 @@ export class SidebarState {
     if (!this.command) {
       props.panelOpen = false;
     }
+
     this.panelOpen = !!props.panelOpen;
+    if (hasExplicitHiddenLauncher) {
+      this.launcherVisible = false;
+    }
     if (this.command && this.panelOpen) {
-      this.launcherVisible = true;
+      if (!hasExplicitHiddenLauncher) {
+        this.launcherVisible = true;
+      }
       // show() is async, so make sure we return its promise here
       return this.#controller.showInitially(this.command);
     }
@@ -303,6 +334,7 @@ export class SidebarState {
       command: this.command,
       panelOpen: this.panelOpen,
       panelWidth: this.panelWidth,
+      bookmarksExpandedFolders: this.bookmarksExpandedFolders,
       launcherWidth: convertToInt(this.launcherWidth),
       expandedLauncherWidth: convertToInt(this.expandedLauncherWidth),
       launcherExpanded: this.launcherExpanded,
@@ -411,6 +443,19 @@ export class SidebarState {
     return DEFAULT_LAUNCHER_VISIBLE;
   }
 
+  get fullscreen() {
+    return this.#fullscreen;
+  }
+
+  set fullscreen(val) {
+    if (this.#fullscreen === val) {
+      return;
+    }
+    this.#fullscreen = val;
+    // Re-run the update logic every time the fullscreen state changes.
+    this.#updateTabbrowser(this.launcherVisible);
+  }
+
   get launcherVisible() {
     return this.#props.launcherVisible;
   }
@@ -451,14 +496,22 @@ export class SidebarState {
     if (!this.revampEnabled) {
       // Launcher not supported in legacy sidebar.
       this.#props.launcherVisible = false;
+      this.#launcherSplitterEl.hidden = true;
       this.#launcherContainerEl.hidden = true;
+      this.#controller._disableLauncherDragging();
+      this.#updateTabbrowser(false);
       return;
     }
     this.#props.launcherVisible = visible;
+    this.#launcherContainerEl.hidden = !visible;
+    this.#launcherSplitterEl.hidden = !visible;
     if (visible) {
       this.#launcherEverVisible = true;
+      this.#controller._enableLauncherDragging();
+    } else {
+      this.#controller._disableLauncherDragging();
     }
-    this.#launcherContainerEl.hidden = !visible;
+    this.#launcherEl.requestUpdate();
     this.#updateTabbrowser(visible);
     this.#sidebarBoxEl.style.paddingInlineStart =
       this.panelOpen && !visible ? "var(--space-small)" : "unset";
@@ -484,7 +537,6 @@ export class SidebarState {
     // and selectors considerably.
     const { tabContainer } = this.#controllerGlobal.gBrowser;
     const mainEl = this.#controller.sidebarContainer;
-    const splitterEl = this.#controller._launcherSplitter;
     const boxEl = this.#controller._box;
     const contentAreaEl =
       this.#controllerGlobal.document.getElementById("tabbrowser-tabbox");
@@ -492,7 +544,10 @@ export class SidebarState {
     if (mainEl?.toggleAttribute) {
       mainEl.toggleAttribute("sidebar-launcher-expanded", expanded);
     }
-    splitterEl?.toggleAttribute("sidebar-launcher-expanded", expanded);
+    this.#launcherSplitterEl?.toggleAttribute(
+      "sidebar-launcher-expanded",
+      expanded
+    );
     boxEl?.toggleAttribute("sidebar-launcher-expanded", expanded);
     contentAreaEl.toggleAttribute("sidebar-launcher-expanded", expanded);
     this.#controller.updateToolbarButton();
@@ -588,6 +643,12 @@ export class SidebarState {
         ).height;
       this.toolsHeight =
         buttonGroupHeight > maxToolsHeight ? maxToolsHeight : buttonGroupHeight;
+      if (
+        buttonGroupHeight > maxToolsHeight &&
+        this.#controller.sidebarRevampVisibility !== "expand-on-hover"
+      ) {
+        this.#launcherEl.shouldShowOverflowButton = false;
+      }
       // Store the user-preferred tools height.
       if (this.#props.launcherExpanded) {
         this.expandedToolsHeight = this.toolsHeight;
@@ -598,29 +659,29 @@ export class SidebarState {
   }
 
   get maxToolsHeight() {
-    const INLINE_PADDING = 8.811; // The inline padding for the tools button-group
-    const GAP_SIZE = 1.4685; // The size of the gap between each row of tools
-    if (!this.#toolsContainer) {
+    const FIRST_LAST_TAB_PADDING = 5.8833;
+    if (!this.#toolsButtonGroup) {
       return null;
     }
-    let toolRect = this.#controllerGlobal.windowUtils.getBoundsWithoutFlushing(
-      this.#toolsContainer.children[0]
-    );
-    let sidebarRect =
+    let referenceToolButton;
+    if (this.#toolsButtonGroup.children.length > 1) {
+      referenceToolButton = this.#toolsButtonGroup.children[1];
+    } else {
+      referenceToolButton = this.#toolsButtonGroup.children[0];
+    }
+    let toolRect =
       this.#controllerGlobal.windowUtils.getBoundsWithoutFlushing(
-        this.#launcherEl
+        referenceToolButton
       );
-    let numRows;
-    if (this.#props.launcherExpanded) {
-      let availableWidth =
-        (sidebarRect.width - INLINE_PADDING) / toolRect.width;
-      numRows = Math.ceil(
-        this.#toolsContainer.children.length / availableWidth
-      );
+    let extraPadding = 0;
+    if (this.#toolsButtonGroup.children.length >= 3) {
+      extraPadding = FIRST_LAST_TAB_PADDING * 2;
+    } else if (this.#toolsButtonGroup.children.length === 2) {
+      extraPadding = FIRST_LAST_TAB_PADDING;
     }
     return this.#props.launcherExpanded
-      ? toolRect.height * numRows + (numRows - 1) * GAP_SIZE
-      : toolRect.height * this.#toolsContainer.children.length;
+      ? "unset"
+      : toolRect.height * this.#toolsButtonGroup.children.length + extraPadding;
   }
 
   get launcherHoverActive() {
@@ -763,9 +824,13 @@ export class SidebarState {
   }
 
   #updateTabbrowser(isSidebarShown) {
-    this.#controllerGlobal.document
-      .getElementById("tabbrowser-tabbox")
-      .toggleAttribute("sidebar-shown", isSidebarShown);
+    const doc = this.#controllerGlobal.document;
+    const tabbox = doc.getElementById("tabbrowser-tabbox");
+    if (!tabbox || !doc.documentElement) {
+      return;
+    }
+    const inFullscreen = doc.documentElement.hasAttribute("inDOMFullscreen");
+    tabbox.toggleAttribute("sidebar-shown", isSidebarShown && !inFullscreen);
   }
 
   get command() {

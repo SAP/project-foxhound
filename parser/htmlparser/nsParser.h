@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -38,8 +37,8 @@
  *
  */
 
-#ifndef NS_PARSER__
-#define NS_PARSER__
+#ifndef NS_PARSER_
+#define NS_PARSER_
 
 #include "nsIParser.h"
 #include "nsDeque.h"
@@ -52,7 +51,7 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/UniquePtr.h"
 
-class nsIDTD;
+class nsExpatDriver;
 class nsIRunnable;
 
 #ifdef _MSC_VER
@@ -223,6 +222,11 @@ class nsParser final : public nsIParser,
   virtual bool IsScriptCreated() override;
 
   /**
+   * Always false.
+   */
+  virtual bool IsAboutBlankMode() override;
+
+  /**
    * This is called when the final chunk has been
    * passed to the parser and the content sink has
    * interrupted token processing. It schedules
@@ -239,8 +243,6 @@ class nsParser final : public nsIParser,
   void HandleParserContinueEvent(class nsParserContinueEvent*);
 
   void Reset() {
-    MOZ_ASSERT(!mIsAboutBlank,
-               "Only the XML fragment parsing case is supposed to call this.");
     Cleanup();
     mUnusedInput.Truncate();
     Initialize();
@@ -293,7 +295,9 @@ class nsParser final : public nsIParser,
   //*********************************************
 
   mozilla::UniquePtr<CParserContext> mParserContext;
-  nsCOMPtr<nsIDTD> mDTD;
+  // mExpatDriver probably should be UniquePtr, but not changing
+  // for now due to cycle collection.
+  RefPtr<nsExpatDriver> mExpatDriver;
   nsCOMPtr<nsIContentSink> mSink;
   nsIRunnable* mContinueEvent;  // weak ref
 
@@ -311,7 +315,6 @@ class nsParser final : public nsIParser,
 
   bool mProcessingNetworkData;
   bool mOnStopPending;
-  bool mIsAboutBlank;
 };
 
 #endif

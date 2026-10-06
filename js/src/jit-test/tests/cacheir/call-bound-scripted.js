@@ -82,3 +82,21 @@ function testReturnsItself() {
     }
 }
 testReturnsItself();
+
+function testManyArgs() {
+  var fun = function(a, b, c, d, e, f, g, h, i, j) {
+    return [a, b, c, d, e, f, g, h, i, j].join(",");
+  };
+  var boundFun1 = fun.bind(null, 1, 2);
+  var boundFun2 = fun.bind(null, 1, 2, 3, 4, 5, 6);
+  for (var i = 0; i < 60; i++) {
+    assertEq(boundFun1(), "1,2,,,,,,,,");
+    assertEq(boundFun1(10, 11, 12, 13, 14), "1,2,10,11,12,13,14,,,");
+    assertEq(boundFun1(10, 11, 12, 13, 14, 15, 16, 17), "1,2,10,11,12,13,14,15,16,17");
+
+    assertEq(boundFun2(), "1,2,3,4,5,6,,,,");
+    assertEq(boundFun2(10, 11), "1,2,3,4,5,6,10,11,,");
+    assertEq(boundFun2(10, 11, 12, 13, 14, 15, 16, 17), "1,2,3,4,5,6,10,11,12,13");
+  }
+}
+testManyArgs();

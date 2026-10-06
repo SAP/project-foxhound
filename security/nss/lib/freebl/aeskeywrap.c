@@ -9,6 +9,7 @@
 #include "stubs.h"
 #endif
 
+#include <limits.h>
 #include <stddef.h>
 
 #include "prcpucfg.h"
@@ -488,6 +489,16 @@ AESKeyWrap_EncryptKWP(AESKeyWrapContext *cx, unsigned char *output,
                       unsigned int *pOutputLen, unsigned int maxOutputLen,
                       const unsigned char *input, unsigned int inputLen)
 {
+    /*
+    **    inputLen + padLen + AES_KEY_WRAP_BLOCK_SIZE <= UINT_MAX;
+    **    padLen <= AES_KEY_WRAP_BLOCK_SIZE - 1;
+    **    =>
+    **    inputLen <= UINT_MAX - (2 * AES_KEY_WRAP_BLOCK_SIZE - 1)
+    */
+    if (inputLen > UINT_MAX - (2 * AES_KEY_WRAP_BLOCK_SIZE - 1)) {
+        PORT_SetError(SEC_ERROR_INPUT_LEN);
+        return SECFailure;
+    }
     unsigned int padLen = BLOCK_PAD_POWER2(inputLen, AES_KEY_WRAP_BLOCK_SIZE);
     unsigned int paddedInputLen = inputLen + padLen;
     unsigned int outLen = paddedInputLen + AES_KEY_WRAP_BLOCK_SIZE;

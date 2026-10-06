@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,12 +24,11 @@ class xpcAccessibleImage : public xpcAccessibleGeneric,
                               int32_t* aY) final;
   NS_IMETHOD GetImageSize(int32_t* aWidth, int32_t* aHeight) final;
 
- protected:
-  virtual ~xpcAccessibleImage() {}
-
- private:
   xpcAccessibleImage(const xpcAccessibleImage&) = delete;
   xpcAccessibleImage& operator=(const xpcAccessibleImage&) = delete;
+
+ protected:
+  virtual ~xpcAccessibleImage() = default;
 };
 
 }  // namespace a11y

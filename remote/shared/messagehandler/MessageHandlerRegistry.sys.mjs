@@ -61,10 +61,10 @@ export function getMessageHandlerClass(type) {
  * after crossing a technical boundary (eg process, thread...).
  */
 export class MessageHandlerRegistry extends EventEmitter {
-  /*
-   * @param {String} type
+  /**
+   * @param {string} type
    *     MessageHandler type, one of MessageHandler.type.
-   * @param {Object} context
+   * @param {object} context
    *     The context object, which depends on the type.
    */
   constructor(type, context) {
@@ -148,30 +148,6 @@ export class MessageHandlerRegistry extends EventEmitter {
     }
 
     return messageHandler;
-  }
-
-  /**
-   * Retrieve an already registered RootMessageHandler instance matching the
-   * provided sessionId.
-   *
-   * @param {string} sessionId
-   *     ID of the session the handler is used for.
-   * @returns {RootMessageHandler}
-   *     A RootMessageHandler instance.
-   * @throws {Error}
-   *     If no root MessageHandler can be found for the provided session id.
-   */
-  getRootMessageHandler(sessionId) {
-    const rootMessageHandler = this.getExistingMessageHandler(
-      sessionId,
-      lazy.RootMessageHandler.type
-    );
-    if (!rootMessageHandler) {
-      throw new Error(
-        `Unable to find a root MessageHandler for session id ${sessionId}`
-      );
-    }
-    return rootMessageHandler;
   }
 
   toString() {

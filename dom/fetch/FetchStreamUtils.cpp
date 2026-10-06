@@ -65,7 +65,7 @@ ParentToChildStream ToParentToChildStream(
   } else {
     nsCOMPtr<nsIInputStream> stream(aStream.get());
     mozilla::ipc::IPCStream ipcStream;
-    Unused << NS_WARN_IF(
+    (void)NS_WARN_IF(
         !mozilla::ipc::SerializeIPCStream(stream.forget(), ipcStream, false));
     result = ipcStream;
   }

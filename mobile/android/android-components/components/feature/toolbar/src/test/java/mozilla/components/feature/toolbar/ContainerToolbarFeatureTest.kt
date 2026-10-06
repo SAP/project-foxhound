@@ -4,6 +4,8 @@
 
 package mozilla.components.feature.toolbar
 
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.action.TabListAction
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.ContainerState
@@ -12,11 +14,8 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.toolbar.Toolbar
 import mozilla.components.support.test.any
 import mozilla.components.support.test.argumentCaptor
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.mock
-import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Assert.assertEquals
-import org.junit.Rule
 import org.junit.Test
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.times
@@ -31,28 +30,25 @@ class ContainerToolbarFeatureTest {
         icon = ContainerState.Icon.FINGERPRINT,
     )
 
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
+    private val testDispatcher = StandardTestDispatcher()
 
     @Test
-    fun `render a container action from browser state`() {
+    fun `render a container action from browser state`() = runTest(testDispatcher) {
         val toolbar: Toolbar = mock()
-        val store = spy(
-            BrowserStore(
-                BrowserState(
-                    tabs = listOf(
-                        createTab("https://www.example.org", id = "tab1", contextId = "1"),
-                    ),
-                    selectedTabId = "tab1",
-                    containers = mapOf(
-                        container.contextId to container,
-                    ),
+        val store = BrowserStore(
+            BrowserState(
+                tabs = listOf(
+                    createTab("https://www.example.org", id = "tab1", contextId = "1"),
+                ),
+                selectedTabId = "tab1",
+                containers = mapOf(
+                    container.contextId to container,
                 ),
             ),
         )
         val containerToolbarFeature = getContainerToolbarFeature(toolbar, store)
+        testDispatcher.scheduler.advanceUntilIdle()
 
-        verify(store).observeManually(any())
         verify(containerToolbarFeature).renderContainerAction(any(), any())
 
         val pageActionCaptor = argumentCaptor<ContainerToolbarAction>()
@@ -61,27 +57,24 @@ class ContainerToolbarFeatureTest {
     }
 
     @Test
-    fun `remove container page action when selecting a normal tab`() {
+    fun `remove container page action when selecting a normal tab`() = runTest(testDispatcher) {
         val toolbar: Toolbar = mock()
-        val store = spy(
-            BrowserStore(
-                BrowserState(
-                    tabs = listOf(
-                        createTab("https://www.example.org", id = "tab1", contextId = "1"),
-                        createTab("https://www.mozilla.org", id = "tab2"),
-                    ),
-                    selectedTabId = "tab1",
-                    containers = mapOf(
-                        container.contextId to container,
-                    ),
+        val store = BrowserStore(
+            BrowserState(
+                tabs = listOf(
+                    createTab("https://www.example.org", id = "tab1", contextId = "1"),
+                    createTab("https://www.mozilla.org", id = "tab2"),
+                ),
+                selectedTabId = "tab1",
+                containers = mapOf(
+                    container.contextId to container,
                 ),
             ),
         )
         val containerToolbarFeature = getContainerToolbarFeature(toolbar, store)
-        store.dispatch(TabListAction.SelectTabAction("tab2")).joinBlocking()
-        coroutinesTestRule.testDispatcher.scheduler.advanceUntilIdle()
+        store.dispatch(TabListAction.SelectTabAction("tab2"))
+        testDispatcher.scheduler.advanceUntilIdle()
 
-        verify(store).observeManually(any())
         verify(containerToolbarFeature, times(2)).renderContainerAction(any(), any())
         verify(toolbar).removePageAction(any())
     }
@@ -90,8 +83,10 @@ class ContainerToolbarFeatureTest {
         toolbar: Toolbar = mock(),
         store: BrowserStore = BrowserStore(),
     ): ContainerToolbarFeature {
-        val containerToolbarFeature = spy(ContainerToolbarFeature(toolbar, store))
+        val containerToolbarFeature = spy(ContainerToolbarFeature(toolbar, store, testDispatcher))
         containerToolbarFeature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
+
         return containerToolbarFeature
     }
 }

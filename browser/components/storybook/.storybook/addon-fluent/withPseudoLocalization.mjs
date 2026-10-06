@@ -18,7 +18,7 @@ import { provideFluent } from "../fluent-utils.mjs";
  * Storybook iframe.
  *
  * @param {Function} StoryFn - Provided by Storybook, used to render the story.
- * @param {Object} context - Provided by Storybook, data about the story.
+ * @param {object} context - Provided by Storybook, data about the story.
  * @returns {Function} StoryFn with a modified "dir" attr set.
  */
 export const withPseudoLocalization = (StoryFn, context) => {
@@ -51,7 +51,7 @@ export const withPseudoLocalization = (StoryFn, context) => {
  * event to update the Fluent strings shown in the Fluent panel.
  *
  * @param {Function} StoryFn - Provided by Storybook, used to render the story.
- * @param {Object} context - Provided by Storybook, data about the story.
+ * @param {object} context - Provided by Storybook, data about the story.
  * @returns {Function} StoryFn unmodified.
  */
 export const withFluentStrings = (StoryFn, context) => {

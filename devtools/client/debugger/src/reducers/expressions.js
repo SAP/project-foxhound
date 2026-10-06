@@ -4,6 +4,7 @@
 
 /**
  * Expressions reducer
+ *
  * @module reducers/expressions
  */
 
@@ -24,13 +25,14 @@ function update(state = initialExpressionState(), action) {
         updating: true,
       });
 
-    case "UPDATE_EXPRESSION":
+    case "UPDATE_EXPRESSION": {
       const key = action.expression.input;
       return updateExpressionInList(state, key, {
         input: action.input,
         value: null,
         updating: true,
       });
+    }
 
     case "EVALUATE_EXPRESSION":
       return updateExpressionInList(state, action.input, {
@@ -39,7 +41,7 @@ function update(state = initialExpressionState(), action) {
         updating: false,
       });
 
-    case "EVALUATE_EXPRESSIONS":
+    case "EVALUATE_EXPRESSIONS": {
       const { inputs, results } = action;
 
       return inputs.reduce(
@@ -51,11 +53,12 @@ function update(state = initialExpressionState(), action) {
           }),
         state
       );
+    }
 
     case "DELETE_EXPRESSION":
       return deleteExpression(state, action.input);
 
-    case "AUTOCOMPLETE":
+    case "AUTOCOMPLETE": {
       const { matchProp, matches } = action.result;
 
       return {
@@ -66,6 +69,7 @@ function update(state = initialExpressionState(), action) {
           [matchProp]: matches,
         },
       };
+    }
 
     case "CLEAR_AUTOCOMPLETE":
       return {

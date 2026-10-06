@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,32 +12,36 @@
 #include "MediaTrackGraph.h"
 #include "VideoUtils.h"
 #include "mozilla/DOMEventTargetHelper.h"
-#include "mozilla/dom/AudioStreamTrack.h"
-#include "mozilla/dom/BlobEvent.h"
-#include "mozilla/dom/EmptyBlobImpl.h"
-#include "mozilla/dom/File.h"
-#include "mozilla/dom/MediaRecorderErrorEvent.h"
-#include "mozilla/dom/VideoStreamTrack.h"
-#include "mozilla/media/MediaUtils.h"
+#include "mozilla/DefineEnum.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TaskQueue.h"
+#include "mozilla/ToString.h"
+#include "mozilla/dom/AudioStreamTrack.h"
+#include "mozilla/dom/BlobEvent.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/EmptyBlobImpl.h"
+#include "mozilla/dom/File.h"
+#include "mozilla/dom/MediaRecorderErrorEvent.h"
+#include "mozilla/dom/VideoStreamTrack.h"
+#include "mozilla/glean/DomMediaMetrics.h"
+#include "mozilla/media/MediaUtils.h"
 #include "nsContentTypeParser.h"
 #include "nsContentUtils.h"
 #include "nsDocShell.h"
 #include "nsError.h"
-#include "mozilla/dom/Document.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIPrincipal.h"
 #include "nsIScriptError.h"
 #include "nsMimeTypes.h"
 #include "nsProxyRelease.h"
-#include "nsGlobalWindowInner.h"
 #include "nsServiceManagerUtils.h"
 #include "nsTArray.h"
 
 mozilla::LazyLogModule gMediaRecorderLog("MediaRecorder");
-#define LOG(type, msg) MOZ_LOG(gMediaRecorderLog, type, msg)
+#define LOG(type, ...) \
+  MOZ_LOG_FMT(gMediaRecorderLog, type, MOZ_LOG_EXPAND_ARGS __VA_ARGS__)
 
 constexpr int MIN_VIDEO_BITRATE_BPS = 10e3;        // 10kbps
 constexpr int DEFAULT_VIDEO_BITRATE_BPS = 2500e3;  // 2.5Mbps
@@ -427,13 +429,233 @@ TypeSupport CanRecordWith(MediaStreamTrack* aTrack,
   MOZ_CRASH("Unexpected track type");
 }
 
+struct ParsedMIMEType {
+  MOZ_DEFINE_ENUM_CLASS_WITH_TOSTRING_AT_CLASS_SCOPE(MediaType,
+                                                     (Audio, Video, Unknown));
+  MediaType mMediaType = MediaType::Unknown;
+  MOZ_DEFINE_ENUM_CLASS_WITH_TOSTRING_AT_CLASS_SCOPE(Container, (MP4, MKV, WebM,
+                                                                 Ogg, Unknown));
+  Container mContainer = Container::Unknown;
+  nsTArray<CodecType> mCodecs;
+};
+
+constexpr std::array<std::array<CodecType, 5>, 5> kValidAudioCodecs = {{
+    // MP4
+    {{CodecType::AAC, CodecType::Flac, CodecType::Opus}},
+    // MKV
+    {{CodecType::AAC, CodecType::Flac, CodecType::Opus, CodecType::PCM,
+      CodecType::Vorbis}},
+    // WebM
+    {{CodecType::Opus, CodecType::Vorbis}},
+    // Ogg
+    {{CodecType::Flac, CodecType::Opus, CodecType::Vorbis}},
+    // Unknown
+    {{}},
+}};
+
+constexpr std::array<std::array<CodecType, 5>, 5> kValidVideoOnlyCodecs = {{
+    // MP4
+    {{CodecType::AV1, CodecType::H264, CodecType::H265, CodecType::VP9}},
+    // MKV
+    {{CodecType::AV1, CodecType::H264, CodecType::H265, CodecType::VP8,
+      CodecType::VP9}},
+    // WebM
+    {{CodecType::AV1, CodecType::VP8, CodecType::VP9}},
+    // Ogg
+    {{CodecType::VP8, CodecType::VP9}},
+    // Unknown
+    {{}},
+}};
+
+constexpr auto kValidContainerCodecPairs = []() constexpr {
+  std::array<
+      std::array<std::array<CodecType, UnderlyingValue(kHighestCodecType) + 1>,
+                 UnderlyingValue(ParsedMIMEType::sHighestContainer) + 1>,
+      UnderlyingValue(ParsedMIMEType::sHighestMediaType) + 1>
+      result{};
+
+  // Generate valid audio container-codec pairs
+  for (size_t c = 0; c < kValidAudioCodecs.size(); ++c) {
+    for (size_t i = 0;
+         i < kValidAudioCodecs[c].size() && IsAudio(kValidAudioCodecs[c][i]);
+         ++i) {
+      result[UnderlyingValue(ParsedMIMEType::MediaType::Audio)][c][i] =
+          kValidAudioCodecs[c][i];
+    }
+  }
+
+  // Generate valid video container-codec pairs
+  for (size_t c = 0; c < kValidVideoOnlyCodecs.size(); ++c) {
+    size_t k = 0;
+    // Add video-only codecs
+    for (size_t i = 0; i < kValidVideoOnlyCodecs[c].size() &&
+                       IsVideo(kValidVideoOnlyCodecs[c][i]);
+         ++i) {
+      result[UnderlyingValue(ParsedMIMEType::MediaType::Video)][c][k++] =
+          kValidVideoOnlyCodecs[c][i];
+    }
+    // Add audio-only codecs
+    for (size_t i = 0;
+         i < kValidAudioCodecs[c].size() && IsAudio(kValidAudioCodecs[c][i]);
+         ++i) {
+      result[UnderlyingValue(ParsedMIMEType::MediaType::Video)][c][k++] =
+          kValidAudioCodecs[c][i];
+    }
+  }
+
+  return result;
+}();
+
+static ParsedMIMEType::Container GetContainerFromMimeType(
+    const MediaMIMEType& aType) {
+  if (aType == MEDIAMIMETYPE(VIDEO_MP4) || aType == MEDIAMIMETYPE(AUDIO_MP4)) {
+    return ParsedMIMEType::Container::MP4;
+  }
+  if (aType == MEDIAMIMETYPE(VIDEO_MATROSKA) ||
+      aType == MEDIAMIMETYPE(VIDEO_MATROSKA_LEGACY) ||
+      aType == MEDIAMIMETYPE(AUDIO_MATROSKA) ||
+      aType == MEDIAMIMETYPE(AUDIO_MATROSKA_LEGACY)) {
+    return ParsedMIMEType::Container::MKV;
+  }
+  if (aType == MEDIAMIMETYPE(VIDEO_WEBM) ||
+      aType == MEDIAMIMETYPE(AUDIO_WEBM)) {
+    return ParsedMIMEType::Container::WebM;
+  }
+  if (aType == MEDIAMIMETYPE(VIDEO_OGG) || aType == MEDIAMIMETYPE(AUDIO_OGG)) {
+    return ParsedMIMEType::Container::Ogg;
+  }
+  return ParsedMIMEType::Container::Unknown;
+}
+
+static CodecType GetCodecTypeFromString(const nsAString& aCodec) {
+  if (IsVP8CodecString(aCodec)) {
+    return CodecType::VP8;
+  }
+  if (IsVP9CodecString(aCodec)) {
+    return CodecType::VP9;
+  }
+  if (IsAV1CodecString(aCodec)) {
+    return CodecType::AV1;
+  }
+  if (IsH264CodecString(aCodec)) {
+    return CodecType::H264;
+  }
+  if (IsH265CodecString(aCodec)) {
+    return CodecType::H265;
+  }
+  if (IsAACCodecString(aCodec)) {
+    return CodecType::AAC;
+  }
+  if (aCodec.EqualsLiteral("flac")) {
+    return CodecType::Flac;
+  }
+  if (aCodec.EqualsLiteral("pcm")) {
+    return CodecType::PCM;
+  }
+  if (aCodec.EqualsLiteral("opus")) {
+    return CodecType::Opus;
+  }
+  if (aCodec.EqualsLiteral("vorbis")) {
+    return CodecType::Vorbis;
+  }
+  return CodecType::Unknown;
+}
+
+static ParsedMIMEType ParseMimeType(const Maybe<MediaContainerType>& aType) {
+  ParsedMIMEType result;
+
+  if (!aType) {
+    return result;
+  }
+
+  result.mMediaType = [&] {
+    if (aType->Type().HasAudioMajorType()) {
+      return ParsedMIMEType::MediaType::Audio;
+    }
+    if (aType->Type().HasVideoMajorType()) {
+      return ParsedMIMEType::MediaType::Video;
+    }
+    return ParsedMIMEType::MediaType::Unknown;
+  }();
+  result.mContainer = GetContainerFromMimeType(aType->Type());
+  for (const auto& codec : aType->ExtendedType().Codecs().Range()) {
+    result.mCodecs.AppendElement(GetCodecTypeFromString(codec));
+  }
+  return result;
+}
+
+static bool IsValidContainerCodecPair(ParsedMIMEType::MediaType aMediaType,
+                                      ParsedMIMEType::Container aContainer,
+                                      CodecType aCodec) {
+  const auto& validCodecs =
+      kValidContainerCodecPairs[UnderlyingValue(aMediaType)]
+                               [UnderlyingValue(aContainer)];
+  return std::find(validCodecs.begin(), validCodecs.end(), aCodec) !=
+         validCodecs.end();
+}
+
+static nsTArray<nsCString> GetMIMELabelStrings(const ParsedMIMEType& aType) {
+  nsTArray<nsCString> labels;
+  if (aType.mContainer == ParsedMIMEType::Container::Unknown ||
+      aType.mMediaType == ParsedMIMEType::MediaType::Unknown) {
+    labels.AppendElement("others"_ns);
+    return labels;
+  }
+  nsCString baseLabel(ParsedMIMEType::EnumValueToString(aType.mContainer));
+  ToLowerCase(baseLabel);
+  if (aType.mCodecs.IsEmpty()) {
+    nsCString label = baseLabel;
+    label.AppendLiteral("_unspecified");
+    labels.AppendElement(std::move(label));
+    return labels;
+  }
+  for (const auto& codec : aType.mCodecs) {
+    nsCString label = baseLabel;
+    if (IsValidContainerCodecPair(aType.mMediaType, aType.mContainer, codec)) {
+      label.AppendLiteral("_");
+      label.Append(EnumValueToString(codec));
+      ToLowerCase(label);
+    } else {
+      label.AppendLiteral("_others");
+    }
+    LOG(LogLevel::Verbose,
+        ("GetMIMELabelStrings: type: {}, container: {}, codec: {} => label: {}",
+         ToString(aType.mMediaType).c_str(), ToString(aType.mContainer).c_str(),
+         ToString(codec).c_str(), label.get()));
+    labels.AppendElement(std::move(label));
+  }
+  return labels;
+}
+
+// The primary goal is to measure how frequently the MP4 container is requested,
+// while also collecting data on other container/codec combinations as a
+// secondary benefit.
+static void RecordQueriedMIMEType(const Maybe<MediaContainerType>& aMimeType,
+                                  const nsAString& aMimeTypeString) {
+  LOG(LogLevel::Verbose, ("RecordQueriedMIMEType: {}",
+                          NS_ConvertUTF16toUTF8(aMimeTypeString).get()));
+  if (aMimeTypeString.IsEmpty()) {
+    LOG(LogLevel::Verbose, ("MIME queried is empty"));
+    glean::media_recorder::mime_type_query.Get("empty"_ns).Add(1);
+    return;
+  }
+  ParsedMIMEType aType = ParseMimeType(aMimeType);
+  nsTArray<nsCString> labels = GetMIMELabelStrings(aType);
+  for (const auto& label : labels) {
+    LOG(LogLevel::Verbose, ("MIME queried: {}", label.get()));
+    glean::media_recorder::mime_type_query.Get(label).Add(1);
+  }
+}
+
 TypeSupport IsTypeSupportedImpl(const nsAString& aMIMEType) {
   if (aMIMEType.IsEmpty()) {
+    RecordQueriedMIMEType(Nothing(), aMIMEType);
     // Lie and return true even if no container/codec support is enabled,
     // because the spec mandates it.
     return TypeSupport::Supported;
   }
   Maybe<MediaContainerType> mime = MakeMediaContainerType(aMIMEType);
+  RecordQueriedMIMEType(mime, aMIMEType);
   TypeSupport audioSupport = CanRecordAudioTrackWith(mime, aMIMEType);
   TypeSupport videoSupport = CanRecordVideoTrackWith(mime, aMIMEType);
   return std::max(audioSupport, videoSupport);
@@ -615,8 +837,8 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
 
   void NotifyTrackAdded(const RefPtr<MediaStreamTrack>& aTrack) override {
     LOG(LogLevel::Warning,
-        ("Session.NotifyTrackAdded %p Raising error due to track set change",
-         this));
+        ("Session.NotifyTrackAdded {} Raising error due to track set change",
+         fmt::ptr(this)));
     // There's a chance we have a sensible JS stack here.
     if (!mRecorder->mOtherDomException) {
       mRecorder->mOtherDomException = DOMException::Create(
@@ -633,8 +855,8 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
       return;
     }
     LOG(LogLevel::Warning,
-        ("Session.NotifyTrackRemoved %p Raising error due to track set change",
-         this));
+        ("Session.NotifyTrackRemoved {} Raising error due to track set change",
+         fmt::ptr(this)));
     // There's a chance we have a sensible JS stack here.
     if (!mRecorder->mOtherDomException) {
       mRecorder->mOtherDomException = DOMException::Create(
@@ -646,7 +868,7 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
   }
 
   void Start(TimeDuration aTimeslice) {
-    LOG(LogLevel::Debug, ("Session.Start %p", this));
+    LOG(LogLevel::Debug, ("Session.Start {}", fmt::ptr(this)));
     MOZ_ASSERT(NS_IsMainThread());
 
     if (mRecorder->mStream) {
@@ -670,7 +892,7 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
         t->AddPrincipalChangeObserver(this);
       }
 
-      LOG(LogLevel::Debug, ("Session.Start track types = (%d)", trackTypes));
+      LOG(LogLevel::Debug, ("Session.Start track types = ({})", trackTypes));
       InitEncoder(trackTypes, mMediaStreamTracks[0]->Graph()->GraphRate(),
                   aTimeslice);
       return;
@@ -689,7 +911,7 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
   }
 
   void Stop() {
-    LOG(LogLevel::Debug, ("Session.Stop %p", this));
+    LOG(LogLevel::Debug, ("Session.Stop {}", fmt::ptr(this)));
     MOZ_ASSERT(NS_IsMainThread());
 
     if (mEncoder) {
@@ -710,7 +932,8 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
 
     if (mRunningState.isOk() &&
         mRunningState.inspect() == RunningState::Idling) {
-      LOG(LogLevel::Debug, ("Session.Stop Explicit end task %p", this));
+      LOG(LogLevel::Debug,
+          ("Session.Stop Explicit end task {}", fmt::ptr(this)));
       // End the Session directly if there is no encoder.
       DoSessionEndTask(NS_OK);
     } else if (mRunningState.isOk() &&
@@ -796,12 +1019,12 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
     MOZ_ASSERT(NS_IsMainThread());
     MOZ_ASSERT(mShutdownPromise);
     MOZ_ASSERT(!mShutdownBlocker);
-    LOG(LogLevel::Debug, ("Session.~Session (%p)", this));
+    LOG(LogLevel::Debug, ("Session.~Session ({})", fmt::ptr(this)));
   }
 
   void InitEncoder(uint8_t aTrackTypes, TrackRate aTrackRate,
                    TimeDuration aTimeslice) {
-    LOG(LogLevel::Debug, ("Session.InitEncoder %p", this));
+    LOG(LogLevel::Debug, ("Session.InitEncoder {}", fmt::ptr(this)));
     MOZ_ASSERT(NS_IsMainThread());
 
     if (!mRunningState.isOk() ||
@@ -815,9 +1038,9 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
     RefPtr<SharedThreadPool> pool =
         GetMediaThreadPool(MediaThreadType::WEBRTC_WORKER);
     if (!pool) {
-      LOG(LogLevel::Debug, ("Session.InitEncoder %p Failed to create "
+      LOG(LogLevel::Debug, ("Session.InitEncoder {} Failed to create "
                             "MediaRecorderReadThread thread pool",
-                            this));
+                            fmt::ptr(this)));
       DoSessionEndTask(NS_ERROR_FAILURE);
       return;
     }
@@ -843,7 +1066,8 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
     nsCOMPtr<nsIAsyncShutdownClient> barrier = GetShutdownBarrier();
     if (!barrier) {
       LOG(LogLevel::Error,
-          ("Session.InitEncoder %p Failed to get shutdown barrier", this));
+          ("Session.InitEncoder {} Failed to get shutdown barrier",
+           fmt::ptr(this)));
       DoSessionEndTask(NS_ERROR_FAILURE);
       return;
     }
@@ -864,7 +1088,8 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
         aTrackTypes, aTrackRate, maxMemory, aTimeslice);
 
     if (!mEncoder) {
-      LOG(LogLevel::Error, ("Session.InitEncoder !mEncoder %p", this));
+      LOG(LogLevel::Error,
+          ("Session.InitEncoder !mEncoder {}", fmt::ptr(this)));
       DoSessionEndTask(NS_ERROR_ABORT);
       return;
     }
@@ -1033,7 +1258,8 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
     }
     if (NS_WARN_IF(NS_FAILED(mRecorder->CreateAndDispatchBlobEvent(aBlob)))) {
       LOG(LogLevel::Warning,
-          ("MediaRecorder %p Creating or dispatching BlobEvent failed", this));
+          ("MediaRecorder {} Creating or dispatching BlobEvent failed",
+           fmt::ptr(this)));
       DoSessionEndTask(NS_OK);
     }
   }
@@ -1050,7 +1276,7 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
 
   RefPtr<ShutdownPromise> Shutdown() {
     MOZ_ASSERT(NS_IsMainThread());
-    LOG(LogLevel::Debug, ("Session Shutdown %p", this));
+    LOG(LogLevel::Debug, ("Session Shutdown {}", fmt::ptr(this)));
 
     if (mShutdownPromise) {
       return mShutdownPromise;
@@ -1172,7 +1398,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(MediaRecorder::Session)
 NS_INTERFACE_MAP_END_INHERITING(DOMMediaStream::TrackListener)
 
 MediaRecorder::~MediaRecorder() {
-  LOG(LogLevel::Debug, ("~MediaRecorder (%p)", this));
+  LOG(LogLevel::Debug, ("~MediaRecorder ({})", fmt::ptr(this)));
   UnRegisterActivityObserver();
 }
 
@@ -1203,7 +1429,7 @@ void MediaRecorder::GetMimeType(nsString& aMimeType) { aMimeType = mMimeType; }
 
 void MediaRecorder::Start(const Optional<uint32_t>& aTimeslice,
                           ErrorResult& aResult) {
-  LOG(LogLevel::Debug, ("MediaRecorder.Start %p", this));
+  LOG(LogLevel::Debug, ("MediaRecorder.Start {}", fmt::ptr(this)));
 
   InitializeDomExceptions();
 
@@ -1257,7 +1483,8 @@ void MediaRecorder::Start(const Optional<uint32_t>& aTimeslice,
   }
   if (mAudioNode && !AudioNodePrincipalSubsumes(this, mAudioNode)) {
     LOG(LogLevel::Warning,
-        ("MediaRecorder %p Start AudioNode principal check failed", this));
+        ("MediaRecorder {} Start AudioNode principal check failed",
+         fmt::ptr(this)));
     aResult.ThrowSecurityError(
         "The AudioNode's isolation properties disallow access from "
         "MediaRecorder");
@@ -1379,7 +1606,7 @@ void MediaRecorder::Start(const Optional<uint32_t>& aTimeslice,
 }
 
 void MediaRecorder::Stop(ErrorResult& aResult) {
-  LOG(LogLevel::Debug, ("MediaRecorder.Stop %p", this));
+  LOG(LogLevel::Debug, ("MediaRecorder.Stop {}", fmt::ptr(this)));
   MediaRecorderReporter::RemoveMediaRecorder(this);
 
   // When a MediaRecorder object’s stop() method is invoked, the UA MUST run the
@@ -1409,7 +1636,7 @@ void MediaRecorder::Stop(ErrorResult& aResult) {
 }
 
 void MediaRecorder::Pause(ErrorResult& aResult) {
-  LOG(LogLevel::Debug, ("MediaRecorder.Pause %p", this));
+  LOG(LogLevel::Debug, ("MediaRecorder.Pause {}", fmt::ptr(this)));
 
   // When a MediaRecorder object’s pause() method is invoked, the UA MUST run
   // the following steps:
@@ -1448,7 +1675,7 @@ void MediaRecorder::Pause(ErrorResult& aResult) {
 }
 
 void MediaRecorder::Resume(ErrorResult& aResult) {
-  LOG(LogLevel::Debug, ("MediaRecorder.Resume %p", this));
+  LOG(LogLevel::Debug, ("MediaRecorder.Resume {}", fmt::ptr(this)));
 
   // When a MediaRecorder object’s resume() method is invoked, the UA MUST run
   // the following steps:
@@ -1486,7 +1713,7 @@ void MediaRecorder::Resume(ErrorResult& aResult) {
 }
 
 void MediaRecorder::RequestData(ErrorResult& aResult) {
-  LOG(LogLevel::Debug, ("MediaRecorder.RequestData %p", this));
+  LOG(LogLevel::Debug, ("MediaRecorder.RequestData {}", fmt::ptr(this)));
 
   // When a MediaRecorder object’s requestData() method is invoked, the UA MUST
   // run the following steps:
@@ -1717,12 +1944,12 @@ bool MediaRecorder::IsTypeSupported(const nsAString& aMIMEType) {
 nsresult MediaRecorder::CreateAndDispatchBlobEvent(BlobImpl* aBlobImpl) {
   MOZ_ASSERT(NS_IsMainThread(), "Not running on main thread");
 
-  if (!GetOwnerGlobal()) {
+  if (!GetRelevantGlobal()) {
     // This MediaRecorder has been disconnected in the meantime.
     return NS_ERROR_FAILURE;
   }
 
-  RefPtr<Blob> blob = Blob::Create(GetOwnerGlobal(), aBlobImpl);
+  RefPtr<Blob> blob = Blob::Create(GetRelevantGlobal(), aBlobImpl);
   if (NS_WARN_IF(!blob)) {
     return NS_ERROR_FAILURE;
   }
@@ -1750,8 +1977,8 @@ void MediaRecorder::DispatchSimpleEvent(const nsAString& aStr) {
   rv = DOMEventTargetHelper::DispatchTrustedEvent(aStr);
   if (NS_FAILED(rv)) {
     LOG(LogLevel::Error,
-        ("MediaRecorder.DispatchSimpleEvent: DispatchTrustedEvent failed  %p",
-         this));
+        ("MediaRecorder.DispatchSimpleEvent: DispatchTrustedEvent failed  {}",
+         fmt::ptr(this)));
     NS_ERROR("Failed to dispatch the event!!!");
   }
 }
@@ -1780,7 +2007,7 @@ void MediaRecorder::NotifyError(nsresult aRv) {
     default:
       if (mOtherDomException && aRv == mOtherDomException->GetResult()) {
         LOG(LogLevel::Debug, ("MediaRecorder.NotifyError: "
-                              "mOtherDomException being fired for aRv: %X",
+                              "mOtherDomException being fired for aRv: {:X}",
                               uint32_t(aRv)));
         init.mError = std::move(mOtherDomException);
         break;
@@ -1791,7 +2018,7 @@ void MediaRecorder::NotifyError(nsresult aRv) {
         mUnknownDomException = DOMException::Create(NS_ERROR_DOM_UNKNOWN_ERR);
       }
       LOG(LogLevel::Debug, ("MediaRecorder.NotifyError: "
-                            "mUnknownDomException being fired for aRv: %X",
+                            "mUnknownDomException being fired for aRv: {:X}",
                             uint32_t(aRv)));
       init.mError = std::move(mUnknownDomException);
       break;
@@ -1809,7 +2036,8 @@ void MediaRecorder::NotifyError(nsresult aRv) {
 }
 
 void MediaRecorder::RemoveSession(Session* aSession) {
-  LOG(LogLevel::Debug, ("MediaRecorder.RemoveSession (%p)", aSession));
+  LOG(LogLevel::Debug,
+      ("MediaRecorder.RemoveSession ({})", fmt::ptr(aSession)));
   mSessions.RemoveElement(aSession);
 }
 
@@ -1819,10 +2047,10 @@ void MediaRecorder::NotifyOwnerDocumentActivityChanged() {
   Document* doc = window->GetExtantDoc();
   NS_ENSURE_TRUE_VOID(doc);
 
-  LOG(LogLevel::Debug, ("MediaRecorder %p NotifyOwnerDocumentActivityChanged "
-                        "IsActive=%d, "
-                        "IsVisible=%d, ",
-                        this, doc->IsActive(), doc->IsVisible()));
+  LOG(LogLevel::Debug, ("MediaRecorder {} NotifyOwnerDocumentActivityChanged "
+                        "IsActive={}, "
+                        "IsVisible={}, ",
+                        fmt::ptr(this), doc->IsActive(), doc->IsVisible()));
   if (!doc->IsActive() || !doc->IsVisible()) {
     // Stop the session.
     ErrorResult result;
@@ -1832,7 +2060,7 @@ void MediaRecorder::NotifyOwnerDocumentActivityChanged() {
 }
 
 void MediaRecorder::Inactivate() {
-  LOG(LogLevel::Debug, ("MediaRecorder.Inactivate %p", this));
+  LOG(LogLevel::Debug, ("MediaRecorder.Inactivate {}", fmt::ptr(this)));
   // The Inactivate the recorder algorithm given a recorder, is as follows:
 
   // 1. Set recorder’s mimeType attribute to the value of the

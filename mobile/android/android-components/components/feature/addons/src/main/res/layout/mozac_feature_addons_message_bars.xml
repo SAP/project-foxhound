@@ -55,7 +55,7 @@
                     android:layout_height="wrap_content"
                     android:textColor="?attr/mozac_primary_text_color"
                     android:textSize="14sp"
-                    tools:text="@string/mozac_feature_addons_status_softblocked_1"
+                    tools:text="@string/mozac_feature_addons_status_softblocked_2"
                     tools:textColor="@color/photonDarkGrey90" />
 
                 <TextView

@@ -57,7 +57,7 @@ function runDeletionTask(rootDir, localDir, timeout) {
 // Test that in-process file deletion works.
 add_task(async () => {
   let service = getProfileService();
-  let profile = service.createProfile(null, "Test2");
+  let profile = service.createProfile(null, "Test2", "tests");
 
   // Basic test that file deletion works.
   await service.removeProfileFilesByPath(profile.rootDir, profile.localDir, 0);
@@ -79,7 +79,7 @@ add_task(
   },
   async () => {
     let service = getProfileService();
-    let profile = service.createProfile(null, "Test3");
+    let profile = service.createProfile(null, "Test3", "tests");
 
     let testRootFile = PathUtils.join(profile.rootDir.path, "test.txt");
     await IOUtils.writeUTF8(testRootFile, "hello");
@@ -111,7 +111,7 @@ add_task(
   },
   async () => {
     let service = getProfileService();
-    let profile = service.createProfile(null, "Test4");
+    let profile = service.createProfile(null, "Test4", "tests");
 
     let testRootFile = PathUtils.join(profile.rootDir.path, "test.txt");
     await IOUtils.writeUTF8(testRootFile, "hello");
@@ -165,7 +165,7 @@ add_task(
   },
   async () => {
     let service = getProfileService();
-    let profile = service.createProfile(null, "Test5");
+    let profile = service.createProfile(null, "Test5", "tests");
 
     let testRootFile = PathUtils.join(profile.rootDir.path, "test.txt");
     await IOUtils.writeUTF8(testRootFile, "hello");

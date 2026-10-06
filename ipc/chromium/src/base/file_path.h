@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2008 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -112,18 +110,15 @@ class FilePath {
   // The character used to identify a file extension.
   static const CharType kExtensionSeparator;
 
-  FilePath() {}
-  FilePath(const FilePath& that) : path_(that.path_) {}
+  FilePath() = default;
+  FilePath(const FilePath& that) = default;
   explicit FilePath(const StringType& path) : path_(path) {}
 
 #if defined(XP_WIN)
   explicit FilePath(const wchar_t* path) : path_(path) {}
 #endif
 
-  FilePath& operator=(const FilePath& that) {
-    path_ = that.path_;
-    return *this;
-  }
+  FilePath& operator=(const FilePath& that) = default;
 
   bool operator==(const FilePath& that) const { return path_ == that.path_; }
 

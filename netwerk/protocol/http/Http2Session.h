@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +9,6 @@
 // https://www.rfc-editor.org/rfc/rfc7540.txt
 
 #include "ASpdySession.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Queue.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
@@ -91,6 +89,11 @@ class Http2Session final : public ASpdySession,
 
   [[nodiscard]] bool AddStream(nsAHttpTransaction*, int32_t,
                                nsIInterfaceRequestor*) override;
+
+  // Same semantics as Http3Session::SwapTransaction. Used by the HE /
+  // 0-RTT adopt path to re-key an existing stream from the
+  // HappyEyeballsTransaction shim to the real nsHttpTransaction.
+  void SwapTransaction(nsAHttpTransaction* aOld, nsAHttpTransaction* aNew);
   bool CanReuse() override { return !mShouldGoAway && !mClosed; }
   bool RoomForMoreStreams() override;
   enum SpdyVersion SpdyVersion() override;
@@ -208,8 +211,6 @@ class Http2Session final : public ASpdySession,
   const static uint32_t kQueueTailRoom = 4096;
   const static uint32_t kQueueReserved = 1024;
 
-  const static uint32_t kMaxStreamID = 0x7800000;
-
   // This is a sentinel for a deleted stream. It is not a valid
   // 31 bit stream ID.
   const static uint32_t kDeadStreamID = 0xffffdead;
@@ -322,7 +323,7 @@ class Http2Session final : public ASpdySession,
                                            uint32_t*, bool*) final;
   [[nodiscard]] nsresult WriteSegmentsAgain(nsAHttpSegmentWriter*, uint32_t,
                                             uint32_t*, bool*) final;
-  [[nodiscard]] bool Do0RTT() final { return true; }
+  [[nodiscard]] bool Do0RTT(bool aCanSendEarlyData) final { return true; }
   [[nodiscard]] nsresult Finish0RTT(bool aRestart, bool aAlpnChanged) final;
 
   // For use by an HTTP2Stream
@@ -346,7 +347,7 @@ class Http2Session final : public ASpdySession,
   Http2Session(nsISocketTransport*, enum SpdyVersion version,
                bool attemptingEarlyData);
 
-  static Http2StreamTunnel* CreateTunnelStreamFromConnInfo(
+  static already_AddRefed<Http2StreamTunnel> CreateTunnelStreamFromConnInfo(
       Http2Session* session, uint64_t bcId, nsHttpConnectionInfo* connInfo,
       ExtendedCONNECTType aType);
 
@@ -413,7 +414,7 @@ class Http2Session final : public ASpdySession,
   void UpdateLocalSessionWindow(uint32_t bytes);
 
   void MaybeDecrementConcurrent(Http2StreamBase* stream);
-  bool RoomForMoreConcurrent();
+  uint32_t RoomForMoreConcurrent();
   void IncrementConcurrent(Http2StreamBase* stream);
   void QueueStream(Http2StreamBase* stream);
 
@@ -440,7 +441,7 @@ class Http2Session final : public ASpdySession,
   // further up the stack.
   RefPtr<nsAHttpSegmentReader> mSegmentReader;
   nsAHttpSegmentWriter* mSegmentWriter;
-
+  const uint32_t kMaxStreamID;
   uint32_t mSendingChunkSize;    /* the transmission chunk size */
   uint32_t mNextStreamID;        /* 24 bits */
   uint32_t mConcurrentHighWater; /* max parallelism on session */
@@ -657,6 +658,7 @@ class Http2Session final : public ASpdySession,
  private:
   TimeStamp mLastTRRResponseTime;  // Time of the last successful TRR response
   uint32_t mTrrStreams;
+  nsCString mTrrHost;
 
   // Whether we allow websockets, based on a pref
   bool mEnableWebsockets = false;

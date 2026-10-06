@@ -470,6 +470,16 @@ sftk_ike_prf(CK_SESSION_HANDLE hSession, const SFTKAttribute *inKey,
     CK_RV crv = CKR_OK;
     prfContext context;
 
+    /* Bound the caller-supplied nonce lengths so that ulNiLen + ulNrLen can
+     * never overflow or be truncated when stored in the unsigned-int
+     * newInKeySize used to size the Ni||Nr concatenation buffer below.
+     * IKE nonces are at most 256 octets (RFC 7296 section 2.10) and IKE
+     * payload length fields are 16-bit, so 0xffff is far above any
+     * legitimate value. */
+    if (params->ulNiLen > 0xffff || params->ulNrLen > 0xffff) {
+        return CKR_MECHANISM_PARAM_INVALID;
+    }
+
     crv = prf_setup(&context, params->prfMechanism);
     if (crv != CKR_OK) {
         return crv;
@@ -516,6 +526,12 @@ sftk_ike_prf(CK_SESSION_HANDLE hSession, const SFTKAttribute *inKey,
             goto fail;
         }
     } else {
+        /* ikev1 isn't validated, if we use this function in ikev1 mode,
+         * mark the resulting key as not FIPS */
+        if (!params->bRekey) {
+            sftk_setFIPS(outKey, PR_FALSE);
+        }
+
         crv = prf_init(&context, inKey->attrib.pValue,
                        inKey->attrib.ulValueLen);
         if (crv != CKR_OK) {
@@ -773,6 +789,12 @@ sftk_ike1_appendix_b_prf(CK_SESSION_HANDLE hSession, const SFTKAttribute *inKey,
     }
 
     outKeySize = PR_ROUNDUP(keySize, macSize);
+    /* Reject if PR_ROUNDUP overflowed 32-bit unsigned arithmetic, which
+     * would yield an undersized allocation for the loop below. */
+    if (outKeySize < keySize) {
+        crv = CKR_KEY_SIZE_RANGE;
+        goto fail;
+    }
     outKeyData = PORT_Alloc(outKeySize);
     if (outKeyData == NULL) {
         crv = CKR_HOST_MEMORY;
@@ -915,6 +937,12 @@ sftk_ike_prf_plus_raw(CK_SESSION_HANDLE hSession,
         goto fail;
     }
     macSize = prf_length(&context);
+    /* RFC 7296 limits prf+ to 255 blocks; enforcing this up front also
+     * prevents 32-bit overflow in PR_ROUNDUP below. */
+    if (keySize > 255 * macSize) {
+        crv = CKR_KEY_SIZE_RANGE;
+        goto fail;
+    }
     outKeySize = PR_ROUNDUP(keySize, macSize);
     outKeyData = PORT_Alloc(outKeySize);
     if (outKeyData == NULL) {

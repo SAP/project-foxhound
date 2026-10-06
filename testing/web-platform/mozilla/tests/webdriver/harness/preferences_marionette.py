@@ -1,5 +1,5 @@
 import pytest
-from support.fixtures import get_pref
+from support.helpers import get_pref
 
 
 @pytest.mark.allow_system_access

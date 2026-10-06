@@ -38,7 +38,7 @@ add_task(async function test_PIN_PRIVATE_FIREFOX_TO_TASKBAR() {
         },
       },
       {
-        ownerGlobal: {
+        documentGlobal: {
           getShellService: () => shell,
         },
       }

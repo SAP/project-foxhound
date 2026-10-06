@@ -103,7 +103,7 @@ export class FileMigratorBase {
    * @property {string} title
    *   The title for the filter. Example: "CSV Files"
    * @property {string} extensionPattern
-   *   A matching pattern for the filter. Example: "*.csv"
+   *   A matching pattern for the filter. Example: ``*.csv``
    */
 
   /**

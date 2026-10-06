@@ -48,7 +48,7 @@ class LoginFragment : Fragment() {
                     val code = uri.getQueryParameter("code")
                     val state = uri.getQueryParameter("state")
                     val action = uri.getQueryParameter("action")
-                    if (code != null && state != null && action != null) {
+                    if (code != null && state != null) {
                         listener?.onLoginComplete(code, state, action, this@LoginFragment)
                     }
                 }
@@ -90,7 +90,10 @@ class LoginFragment : Fragment() {
     }
 
     interface OnLoginCompleteListener {
-        fun onLoginComplete(code: String, state: String, action: String, fragment: LoginFragment)
+        /**
+         * A callback invoked when we get a successful redirect from the auth server.
+         */
+        fun onLoginComplete(code: String, state: String, action: String?, fragment: LoginFragment)
     }
 
     companion object {

@@ -6,12 +6,11 @@
 #define GLLIBRARYLOADER_H_
 
 #include <array>
-#include <stdio.h>
 
 #include "GLDefs.h"
 #include "nscore.h"
+#include "prlink.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/SharedLibrary.h"
 
 namespace mozilla {
 namespace gl {
@@ -27,8 +26,8 @@ class SymbolLoader final {
  public:
   typedef PRFuncPtr(GLAPIENTRY* GetProcAddressT)(const char*);
 
-  GetProcAddressT mPfn = nullptr;  // Try this first, if not null.
-  PRLibrary* mLib = nullptr;
+  PRLibrary* mLib = nullptr;       // Try this first, if not null.
+  GetProcAddressT mPfn = nullptr;  // Fall back to this, if not null.
 
   explicit SymbolLoader(void*(GLAPIENTRY* pfn)(const char*))
       : mPfn(GetProcAddressT(pfn)) {

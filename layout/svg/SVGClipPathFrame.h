@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +6,6 @@
 #define LAYOUT_SVG_SVGCLIPPATHFRAME_H_
 
 #include "gfxMatrix.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/SVGContainerFrame.h"
 
 class gfxContext;
@@ -109,7 +106,7 @@ class SVGClipPathFrame final : public SVGContainerFrame {
 
   // nsIFrame interface:
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
 #ifdef DEBUG
   void Init(nsIContent* aContent, nsContainerFrame* aParent,
@@ -123,7 +120,8 @@ class SVGClipPathFrame final : public SVGContainerFrame {
 #endif
 
   SVGBBox GetBBoxForClipPathFrame(const SVGBBox& aBBox,
-                                  const gfxMatrix& aMatrix, uint32_t aFlags);
+                                  const gfxMatrix& aMatrix,
+                                  SVGBBoxFlags aFlags);
 
   /**
    * If the clipPath element transforms its children due to

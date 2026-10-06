@@ -2,108 +2,111 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import okhttp3.OkHttpClient
-import okhttp3.Request
+package mozilla.components.gradle.plugins
+
+import com.android.build.api.variant.AndroidComponentsExtension
+import com.android.build.gradle.LibraryPlugin
+import okio.Buffer
 import okio.ByteString
 import okio.ByteString.Companion.encodeUtf8
-import okio.buffer
-import okio.sink
+import org.gradle.api.DefaultTask
+import org.gradle.api.GradleException
+import org.gradle.api.InvalidUserDataException
 import org.gradle.api.Plugin
 import org.gradle.api.Project
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.TaskAction
+import org.gradle.kotlin.dsl.withType
 import java.io.File
 import java.util.TreeSet
 
 /**
- * Gradle plugin to update the public suffix list used by the `lib-publicsuffixlist` component.
- *
- * Base on PublicSuffixListGenerator from OkHttp:
- * https://github.com/square/okhttp/blob/master/okhttp/src/test/java/okhttp3/internal/publicsuffix/PublicSuffixListGenerator.java
+ * A self-contained, configuration-cache-compatible Gradle task to generate the Public Suffix List asset.
  */
-class PublicSuffixListPlugin : Plugin<Project> {
-    override fun apply(project: Project) {
-        project.tasks.register("updatePSL") {
-            doLast {
-                val filename = project.projectDir.absolutePath + "/src/main/assets/publicsuffixes"
-                updatePublicSuffixList(filename)
-            }
+abstract class GeneratePslAssetTask : DefaultTask() {
+
+    @get:InputFile
+    abstract val sourceFile: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        val source = sourceFile.get().asFile
+        if (!source.exists()) {
+            throw GradleException("Public Suffix List source file not found: ${source.absolutePath}")
         }
+
+        val startTime = System.currentTimeMillis()
+        logger.info("PublicSuffixList> Executing generatePslAsset: Reading Public Suffix List from ${source.path}")
+
+        val listData = parsePublicSuffixList(source)
+        val newContent = buildBinaryContent(listData)
+        val destination = outputDir.file("publicsuffixes").get().asFile
+
+        logger.info("PublicSuffixList> Writing new Public Suffix List asset...")
+        destination.parentFile.mkdirs()
+        destination.writeBytes(newContent.toByteArray())
+
+        val duration = System.currentTimeMillis() - startTime
+        logger.info("PublicSuffixList> Public Suffix List asset generation complete in ${duration}ms.")
     }
 
-    private fun updatePublicSuffixList(destination: String) {
-        val list = fetchPublicSuffixList()
-        writeListToDisk(destination, list)
-    }
-
-    private fun writeListToDisk(destination: String, data: PublicSuffixListData) {
-        val fileSink = File(destination).sink()
-
-        fileSink.buffer().use { sink ->
-            sink.writeInt(data.totalRuleBytes)
-
-            for (domain in data.sortedRules) {
-                sink.write(domain).writeByte('\n'.code)
-            }
-
-            sink.writeInt(data.totalExceptionRuleBytes)
-
-            for (domain in data.sortedExceptionRules) {
-                sink.write(domain).writeByte('\n'.code)
-            }
+    private fun buildBinaryContent(data: PublicSuffixListData): ByteString {
+        val buffer = Buffer()
+        buffer.writeInt(data.totalRuleBytes)
+        for (domain in data.sortedRules) {
+            buffer.write(domain).writeByte('\n'.code)
         }
-    }
-
-    private fun fetchPublicSuffixList(): PublicSuffixListData {
-        val client = OkHttpClient.Builder().build()
-
-        val request = Request.Builder()
-            .url("https://publicsuffix.org/list/public_suffix_list.dat")
-            .build()
-
-        client.newCall(request).execute().use { response ->
-            val source = response.body!!.source()
-
-            val data = PublicSuffixListData()
-
-            while (!source.exhausted()) {
-                val line = source.readUtf8LineStrict()
-
-                if (line.trim { it <= ' ' }.isEmpty() || line.startsWith("//")) {
-                    continue
-                }
-
-                if (line.contains(WILDCARD_CHAR)) {
-                    assertWildcardRule(line)
-                }
-
-                var rule = line.encodeUtf8()
-
-                if (rule.startsWith(EXCEPTION_RULE_MARKER)) {
-                    rule = rule.substring(1)
-                    // We use '\n' for end of value.
-                    data.totalExceptionRuleBytes += rule.size + 1
-                    data.sortedExceptionRules.add(rule)
-                } else {
-                    data.totalRuleBytes += rule.size + 1 // We use '\n' for end of value.
-                    data.sortedRules.add(rule)
-                }
-            }
-
-            return data
+        buffer.writeInt(data.totalExceptionRuleBytes)
+        for (domain in data.sortedExceptionRules) {
+            buffer.write(domain).writeByte('\n'.code)
         }
+        return buffer.readByteString()
     }
 
-    @Suppress("TooGenericExceptionThrown", "ThrowsCount")
+    private fun parsePublicSuffixList(sourceFile: File): PublicSuffixListData {
+        val data = PublicSuffixListData()
+
+        sourceFile.useLines { lines ->
+            lines.filter { it.isNotBlank() && !it.startsWith("//") }
+                .forEach { line ->
+                    if (line.contains(WILDCARD_CHAR)) {
+                        assertWildcardRule(line)
+                    }
+
+                    var rule = line.encodeUtf8()
+                    if (rule.startsWith(EXCEPTION_RULE_MARKER)) {
+                        rule = rule.substring(1)
+                        // We use '\n' for end of value.
+                        data.sortedExceptionRules.add(rule)
+                        data.totalExceptionRuleBytes += rule.size + 1
+                    } else {
+                        data.sortedRules.add(rule)
+                        // We use '\n' for end of value.
+                        data.totalRuleBytes += rule.size + 1
+                    }
+                }
+        }
+
+        return data
+    }
+
+    @Suppress("ThrowsCount")
     private fun assertWildcardRule(rule: String) {
-        if (rule.indexOf(WILDCARD_CHAR) != 0) {
-            throw RuntimeException("Wildcard is not not in leftmost position")
+        if (!rule.startsWith(WILDCARD_CHAR)) {
+            throw InvalidUserDataException("Wildcard is not in leftmost position")
         }
-
-        if (rule.indexOf(WILDCARD_CHAR, 1) != -1) {
-            throw RuntimeException("Rule contains multiple wildcards")
+        if (rule.lastIndexOf(WILDCARD_CHAR) > 0) {
+            throw InvalidUserDataException("Rule contains multiple wildcards")
         }
 
         if (rule.length == 1) {
-            throw RuntimeException("Rule wildcards the first level")
+            throw InvalidUserDataException("Rule wildcards the first level")
         }
     }
 
@@ -113,10 +116,32 @@ class PublicSuffixListPlugin : Plugin<Project> {
     }
 }
 
-data class PublicSuffixListData(
+abstract class PublicSuffixListExtension {
+    @get:InputFile
+    abstract val sourceFile: RegularFileProperty
+}
+
+class PublicSuffixListPlugin : Plugin<Project> {
+    override fun apply(project: Project) {
+        project.plugins.withType<LibraryPlugin>().configureEach {
+            val extension = project.extensions.create("publicSuffixList", PublicSuffixListExtension::class.java)
+
+            val generateTaskProvider = project.tasks.register("generatePslAsset", GeneratePslAssetTask::class.java) {
+                outputDir.set(project.layout.buildDirectory.dir("generated/assets/publicsuffixlist"))
+                sourceFile.set(extension.sourceFile)
+            }
+
+            val androidComponents = project.extensions.getByType(AndroidComponentsExtension::class.java)
+            androidComponents.onVariants(androidComponents.selector().all()) { variant ->
+                variant.sources.assets?.addGeneratedSourceDirectory(generateTaskProvider, GeneratePslAssetTask::outputDir)
+            }
+        }
+    }
+}
+
+private data class PublicSuffixListData(
     var totalRuleBytes: Int = 0,
     var totalExceptionRuleBytes: Int = 0,
-
     val sortedRules: TreeSet<ByteString> = TreeSet(),
     val sortedExceptionRules: TreeSet<ByteString> = TreeSet(),
 )

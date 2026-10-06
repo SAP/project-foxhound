@@ -1,30 +1,31 @@
 diff --git a/expat/lib/expat_external.h b/expat/lib/expat_external.h
 --- a/expat/lib/expat_external.h
 +++ b/expat/lib/expat_external.h
-@@ -137,6 +137,9 @@ extern "C" {
+@@ -138,6 +138,9 @@ extern "C" {
+ #    endif
  #  endif
- #endif
  
 +/* BEGIN MOZILLA CHANGE (typedef XML_Char to char16_t) */
 +#if 0
 +
- #ifdef XML_UNICODE /* Information is UTF-16 encoded. */
- #  ifdef XML_UNICODE_WCHAR_T
+ #  ifdef XML_UNICODE /* Information is UTF-16 encoded. */
+ #    ifdef XML_UNICODE_WCHAR_T
  typedef wchar_t XML_Char;
-@@ -150,6 +153,9 @@ typedef char XML_Char;
+@@ -151,6 +154,9 @@ typedef char XML_Char;
  typedef char XML_LChar;
- #endif   /* XML_UNICODE */
+ #  endif   /* XML_UNICODE */
  
 +#endif
 +/* END MOZILLA CHANGE */
 +
- #ifdef XML_LARGE_SIZE /* Use large integers for file/stream positions. */
+ #  ifdef XML_LARGE_SIZE /* Use large integers for file/stream positions. */
  typedef long long XML_Index;
  typedef unsigned long long XML_Size;
 diff --git a/expat/lib/xmlparse.c b/expat/lib/xmlparse.c
+index a187a3a18f19..3a3bb9aa45e2 100644
 --- a/expat/lib/xmlparse.c
 +++ b/expat/lib/xmlparse.c
-@@ -194,6 +194,9 @@ typedef char ICHAR;
+@@ -195,6 +195,9 @@ typedef char ICHAR;
  
  #endif
  
@@ -34,7 +35,7 @@ diff --git a/expat/lib/xmlparse.c b/expat/lib/xmlparse.c
  #ifdef XML_UNICODE
  
  #  ifdef XML_UNICODE_WCHAR_T
-@@ -211,6 +214,9 @@ typedef char ICHAR;
+@@ -212,6 +215,9 @@ typedef char ICHAR;
  
  #endif
  

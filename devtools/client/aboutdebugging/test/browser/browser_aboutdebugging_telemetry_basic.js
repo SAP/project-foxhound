@@ -3,43 +3,33 @@
 
 "use strict";
 
-/* import-globals-from helper-telemetry.js */
-Services.scriptloader.loadSubScript(
-  CHROME_URL_ROOT + "helper-telemetry.js",
-  this
-);
-
 /**
  * Check that telemetry events are recorded when opening and closing about debugging.
  */
 add_task(async function () {
-  setupTelemetryTest();
+  Services.fog.testResetFOG();
 
   const { tab } = await openAboutDebugging();
 
-  const openEvents = readAboutDebuggingEvents().filter(
-    e => e.method === "open_adbg"
-  );
+  const openEvents = Glean.devtoolsMain.openAdbgAboutdebugging.testGetValue();
   is(
     openEvents.length,
     1,
     "Exactly one open event was logged for about:debugging"
   );
-  const sessionId = openEvents[0].extras.session_id;
+  const sessionId = openEvents[0].extra.session_id;
   ok(!isNaN(sessionId), "Open event has a valid session id");
 
   await removeTab(tab);
 
-  const closeEvents = readAboutDebuggingEvents().filter(
-    e => e.method === "close_adbg"
-  );
+  const closeEvents = Glean.devtoolsMain.closeAdbgAboutdebugging.testGetValue();
   is(
     closeEvents.length,
     1,
     "Exactly one close event was logged for about:debugging"
   );
   is(
-    closeEvents[0].extras.session_id,
+    closeEvents[0].extra.session_id,
     sessionId,
     "Close event has the same session id as the open event"
   );

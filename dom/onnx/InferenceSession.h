@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,12 +12,12 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/IOUtilsBinding.h"
 #include "mozilla/dom/ONNXBinding.h"
-#include "mozilla/dom/onnxruntime_c_api.h"
-#include "nsISupports.h"
-#include "nsCycleCollectionParticipant.h"
-#include "nsWrapperCache.h"
 #include "mozilla/dom/Record.h"
+#include "mozilla/dom/onnxruntime_c_api.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsIGlobalObject.h"
+#include "nsISupports.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 OrtApi* GetOrtAPI();
@@ -32,7 +30,7 @@ class InferenceSession final : public nsISupports, public nsWrapperCache {
   explicit InferenceSession(GlobalObject& aGlobal) {
     nsCOMPtr<nsIGlobalObject> global =
         do_QueryInterface(aGlobal.GetAsSupports());
-    mGlobal = global;
+    mGlobal = std::move(global);
     mCtx = aGlobal.Context();
   }
 
@@ -42,7 +40,7 @@ class InferenceSession final : public nsISupports, public nsWrapperCache {
   virtual ~InferenceSession() { Destroy(); }
 
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS;
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL;
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(InferenceSession);
 
   static RefPtr<Promise> Create(GlobalObject& aGlobal,

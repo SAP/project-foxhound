@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,6 +19,7 @@ namespace mozilla {
 
 namespace gl {
 class GLContext;
+class MozFramebuffer;
 }  // namespace gl
 
 namespace wr {
@@ -31,10 +31,12 @@ namespace layers {
 class GpuFence;
 class NativeLayer;
 class NativeLayerCA;
+class NativeLayerRemoteMac;
 class NativeLayerWayland;
 class NativeLayerRootCA;
 class NativeLayerRootWayland;
 class NativeLayerRootSnapshotter;
+class NativeLayerWayland;
 class SurfacePoolHandle;
 
 // NativeLayerRoot and NativeLayer allow building up a flat layer "tree" of
@@ -60,6 +62,8 @@ class NativeLayerRoot {
     return nullptr;
   }
 
+  virtual void LayerDestroyed(NativeLayer* aLayer) {}
+
   virtual void AppendLayer(NativeLayer* aLayer) = 0;
   virtual void RemoveLayer(NativeLayer* aLayer) = 0;
   virtual void SetLayers(const nsTArray<RefPtr<NativeLayer>>& aLayers) = 0;
@@ -70,6 +74,10 @@ class NativeLayerRoot {
   // Publish the layer changes to the screen. Returns whether the commit was
   // successful.
   virtual bool CommitToScreen() = 0;
+
+  // When called on a remote instance, synchronously wait until the other side
+  // has processed any previous commits.
+  virtual void WaitUntilCommitToScreenHasBeenProcessed() {}
 
   // Returns a new NativeLayerRootSnapshotter that can be used to read back the
   // visual output of this NativeLayerRoot. The snapshotter needs to be
@@ -131,6 +139,7 @@ class NativeLayer {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(NativeLayer)
 
   virtual NativeLayerCA* AsNativeLayerCA() { return nullptr; }
+  virtual NativeLayerRemoteMac* AsNativeLayerRemoteMac() { return nullptr; }
   virtual NativeLayerWayland* AsNativeLayerWayland() { return nullptr; }
 
   // The size and opaqueness of a layer are supplied during layer creation and
@@ -175,6 +184,9 @@ class NativeLayer {
   virtual bool SurfaceIsFlipped() = 0;
 
   virtual void SetSamplingFilter(gfx::SamplingFilter aSamplingFilter) = 0;
+  virtual gfx::SamplingFilter SamplingFilter() {
+    return gfx::SamplingFilter::POINT;
+  };
 
   // Returns a DrawTarget. The size of the DrawTarget will be the same as the
   // size of this layer. The caller should draw to that DrawTarget, then drop
@@ -245,6 +257,50 @@ class NativeLayer {
 
  protected:
   virtual ~NativeLayer() = default;
+};
+
+// Utility classes for NativeLayerRootSnapshotter (NLRS) profiler screenshots.
+
+class RenderSourceNLRS : public profiler_screenshots::RenderSource {
+ public:
+  explicit RenderSourceNLRS(UniquePtr<gl::MozFramebuffer>&& aFramebuffer);
+  auto& FB() { return *mFramebuffer; }
+
+ protected:
+  UniquePtr<gl::MozFramebuffer> mFramebuffer;
+};
+
+class DownscaleTargetNLRS : public profiler_screenshots::DownscaleTarget {
+ public:
+  DownscaleTargetNLRS(gl::GLContext* aGL,
+                      UniquePtr<gl::MozFramebuffer>&& aFramebuffer);
+  already_AddRefed<profiler_screenshots::RenderSource> AsRenderSource()
+      override {
+    return do_AddRef(mRenderSource);
+  };
+  bool DownscaleFrom(profiler_screenshots::RenderSource* aSource,
+                     const gfx::IntRect& aSourceRect,
+                     const gfx::IntRect& aDestRect) override;
+
+ protected:
+  RefPtr<gl::GLContext> mGL;
+  RefPtr<RenderSourceNLRS> mRenderSource;
+};
+
+class AsyncReadbackBufferNLRS
+    : public profiler_screenshots::AsyncReadbackBuffer {
+ public:
+  AsyncReadbackBufferNLRS(gl::GLContext* aGL, const gfx::IntSize& aSize,
+                          GLuint aBufferHandle, bool aYFlip);
+  void CopyFrom(profiler_screenshots::RenderSource* aSource) override;
+  bool MapAndCopyInto(gfx::DataSourceSurface* aSurface,
+                      const gfx::IntSize& aReadSize) override;
+
+ protected:
+  virtual ~AsyncReadbackBufferNLRS();
+  RefPtr<gl::GLContext> mGL;
+  GLuint mBufferHandle = 0;
+  bool mYFlip;
 };
 
 }  // namespace layers

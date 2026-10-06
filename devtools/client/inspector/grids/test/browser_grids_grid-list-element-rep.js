@@ -79,7 +79,7 @@ add_task(async function () {
   nodeFront = await highlightAndSelectNode(inspector, pseudoRep);
   is(
     nodeFront.displayName,
-    "_moz_generated_content_after",
+    "::after",
     "The expected node was highlighted/selected"
   );
   is(
@@ -123,7 +123,7 @@ async function highlightAndSelectNode(inspector, repEl) {
     10,
     5,
     { type: "mouseover" },
-    openInspectorButton.ownerGlobal
+    openInspectorButton.documentGlobal
   );
   const { nodeFront } = await onHighlight;
 
@@ -137,7 +137,7 @@ async function highlightAndSelectNode(inspector, repEl) {
   EventUtils.sendMouseEvent(
     { type: "click" },
     openInspectorButton,
-    openInspectorButton.ownerGlobal
+    openInspectorButton.documentGlobal
   );
   await onSelection;
   await onHighlight;

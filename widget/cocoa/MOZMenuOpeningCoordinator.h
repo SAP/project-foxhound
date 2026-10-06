@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,8 +7,6 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "mozilla/RefPtr.h"
-
 namespace mozilla {
 class Runnable;
 }
@@ -17,9 +14,9 @@ class Runnable;
 /*
  * MOZMenuOpeningCoordinator is a workaround for the fact that opening an NSMenu
  * creates a nested event loop. This event loop is only exited after the menu is
- * closed. The caller of NativeMenuMac::ShowAsContextMenu does not expect
- * ShowAsContextMenu to create a nested event loop, so we need to make sure to
- * open the NSMenu asynchronously.
+ * closed. The caller of NativeMenuMac::ShowMenuAnchored or
+ * NativeMenuMac::ShowMenuAtPosition does not expect it to create a nested event
+ * loop, so we need to make sure to open the NSMenu asynchronously.
  */
 
 @interface MOZMenuOpeningCoordinator : NSObject
@@ -36,7 +33,12 @@ class Runnable;
                    atScreenPosition:(NSPoint)aPosition
                             forView:(NSView*)aView
                      withAppearance:(NSAppearance*)aAppearance
-                      asContextMenu:(BOOL)aIsContextMenu;
+                       withFontSize:(CGFloat)aFontSize
+                      asContextMenu:(BOOL)aIsContextMenu
+                     asAnchoredMenu:(BOOL)aIsAnchoredMenu
+                         anchorRect:(NSRect)aAnchorRect
+                         anchorEdge:(NSRectEdge)aAnchorEdge
+                          pullsDown:(BOOL)aPullsDown;
 
 // If the menu opening request for aHandle hasn't been processed yet, cancel it.
 // Can only be called on the main thread.

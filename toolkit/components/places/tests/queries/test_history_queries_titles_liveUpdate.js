@@ -62,7 +62,7 @@ add_task(async function pages_query() {
   for (let i = 0; i < root.childCount; i++) {
     let node = root.getChild(i);
     Assert.equal(node.title, gTestData[i].title);
-    let uri = NetUtil.newURI(node.uri);
+    let uri = Services.io.newURI(node.uri);
     await PlacesTestUtils.addVisits({ uri, title: "changedTitle" });
     Assert.equal(node.title, "changedTitle");
     await PlacesTestUtils.addVisits({ uri, title: gTestData[i].title });
@@ -84,7 +84,7 @@ add_task(async function visits_query() {
   compareArrayToResult([gTestData[0], gTestData[1], gTestData[2]], root);
 
   for (let testData of gTestData) {
-    let uri = NetUtil.newURI(testData.uri);
+    let uri = Services.io.newURI(testData.uri);
     let node = searchNodeHavingUrl(root, testData.uri);
     Assert.equal(node.title, testData.title);
     await PlacesTestUtils.addVisits({ uri, title: "changedTitle" });
@@ -110,7 +110,7 @@ add_task(async function pages_searchterm_query() {
   compareArrayToResult([gTestData[0], gTestData[1], gTestData[2]], root);
   for (let i = 0; i < root.childCount; i++) {
     let node = root.getChild(i);
-    let uri = NetUtil.newURI(node.uri);
+    let uri = Services.io.newURI(node.uri);
     Assert.equal(node.title, gTestData[i].title);
     await PlacesTestUtils.addVisits({ uri, title: "changedTitle" });
     Assert.equal(node.title, "changedTitle");
@@ -133,7 +133,7 @@ add_task(async function visits_searchterm_query() {
 
   compareArrayToResult([gTestData[0], gTestData[1], gTestData[2]], root);
   for (let testData of gTestData) {
-    let uri = NetUtil.newURI(testData.uri);
+    let uri = Services.io.newURI(testData.uri);
     let node = searchNodeHavingUrl(root, testData.uri);
     Assert.equal(node.title, testData.title);
     await PlacesTestUtils.addVisits({ uri, title: "changedTitle" });
@@ -157,7 +157,7 @@ add_task(async function pages_searchterm_is_title_query() {
   root.containerOpen = true;
   compareArrayToResult([], root);
   for (let data of gTestData) {
-    let uri = NetUtil.newURI(data.uri);
+    let uri = Services.io.newURI(data.uri);
     let origTitle = data.title;
     data.title = "match";
     await PlacesTestUtils.addVisits({
@@ -189,7 +189,7 @@ add_task(async function visits_searchterm_is_title_query() {
   root.containerOpen = true;
   compareArrayToResult([], root);
   for (let data of gTestData) {
-    let uri = NetUtil.newURI(data.uri);
+    let uri = Services.io.newURI(data.uri);
     let origTitle = data.title;
     data.title = "match";
 

@@ -13,9 +13,9 @@
  * limitations under the License.
  */
 
-// ./test/core/endianness64.wast
+// ./test/core/memory64/endianness64.wast
 
-// ./test/core/endianness64.wast:1
+// ./test/core/memory64/endianness64.wast:1
 let $0 = instantiate(`(module
   (memory i64 1)
 
@@ -148,133 +148,133 @@ let $0 = instantiate(`(module
   )
 )`);
 
-// ./test/core/endianness64.wast:133
+// ./test/core/memory64/endianness64.wast:133
 assert_return(() => invoke($0, `i32_load16_s`, [-1]), [value("i32", -1)]);
 
-// ./test/core/endianness64.wast:134
+// ./test/core/memory64/endianness64.wast:134
 assert_return(() => invoke($0, `i32_load16_s`, [-4242]), [value("i32", -4242)]);
 
-// ./test/core/endianness64.wast:135
+// ./test/core/memory64/endianness64.wast:135
 assert_return(() => invoke($0, `i32_load16_s`, [42]), [value("i32", 42)]);
 
-// ./test/core/endianness64.wast:136
+// ./test/core/memory64/endianness64.wast:136
 assert_return(() => invoke($0, `i32_load16_s`, [12816]), [value("i32", 12816)]);
 
-// ./test/core/endianness64.wast:138
+// ./test/core/memory64/endianness64.wast:138
 assert_return(() => invoke($0, `i32_load16_u`, [-1]), [value("i32", 65535)]);
 
-// ./test/core/endianness64.wast:139
+// ./test/core/memory64/endianness64.wast:139
 assert_return(() => invoke($0, `i32_load16_u`, [-4242]), [value("i32", 61294)]);
 
-// ./test/core/endianness64.wast:140
+// ./test/core/memory64/endianness64.wast:140
 assert_return(() => invoke($0, `i32_load16_u`, [42]), [value("i32", 42)]);
 
-// ./test/core/endianness64.wast:141
+// ./test/core/memory64/endianness64.wast:141
 assert_return(() => invoke($0, `i32_load16_u`, [51966]), [value("i32", 51966)]);
 
-// ./test/core/endianness64.wast:143
+// ./test/core/memory64/endianness64.wast:143
 assert_return(() => invoke($0, `i32_load`, [-1]), [value("i32", -1)]);
 
-// ./test/core/endianness64.wast:144
+// ./test/core/memory64/endianness64.wast:144
 assert_return(() => invoke($0, `i32_load`, [-42424242]), [value("i32", -42424242)]);
 
-// ./test/core/endianness64.wast:145
+// ./test/core/memory64/endianness64.wast:145
 assert_return(() => invoke($0, `i32_load`, [42424242]), [value("i32", 42424242)]);
 
-// ./test/core/endianness64.wast:146
+// ./test/core/memory64/endianness64.wast:146
 assert_return(() => invoke($0, `i32_load`, [-1414717974]), [value("i32", -1414717974)]);
 
-// ./test/core/endianness64.wast:148
+// ./test/core/memory64/endianness64.wast:148
 assert_return(() => invoke($0, `i64_load16_s`, [-1n]), [value("i64", -1n)]);
 
-// ./test/core/endianness64.wast:149
+// ./test/core/memory64/endianness64.wast:149
 assert_return(() => invoke($0, `i64_load16_s`, [-4242n]), [value("i64", -4242n)]);
 
-// ./test/core/endianness64.wast:150
+// ./test/core/memory64/endianness64.wast:150
 assert_return(() => invoke($0, `i64_load16_s`, [42n]), [value("i64", 42n)]);
 
-// ./test/core/endianness64.wast:151
+// ./test/core/memory64/endianness64.wast:151
 assert_return(() => invoke($0, `i64_load16_s`, [12816n]), [value("i64", 12816n)]);
 
-// ./test/core/endianness64.wast:153
+// ./test/core/memory64/endianness64.wast:153
 assert_return(() => invoke($0, `i64_load16_u`, [-1n]), [value("i64", 65535n)]);
 
-// ./test/core/endianness64.wast:154
+// ./test/core/memory64/endianness64.wast:154
 assert_return(() => invoke($0, `i64_load16_u`, [-4242n]), [value("i64", 61294n)]);
 
-// ./test/core/endianness64.wast:155
+// ./test/core/memory64/endianness64.wast:155
 assert_return(() => invoke($0, `i64_load16_u`, [42n]), [value("i64", 42n)]);
 
-// ./test/core/endianness64.wast:156
+// ./test/core/memory64/endianness64.wast:156
 assert_return(() => invoke($0, `i64_load16_u`, [51966n]), [value("i64", 51966n)]);
 
-// ./test/core/endianness64.wast:158
+// ./test/core/memory64/endianness64.wast:158
 assert_return(() => invoke($0, `i64_load32_s`, [-1n]), [value("i64", -1n)]);
 
-// ./test/core/endianness64.wast:159
+// ./test/core/memory64/endianness64.wast:159
 assert_return(() => invoke($0, `i64_load32_s`, [-42424242n]), [value("i64", -42424242n)]);
 
-// ./test/core/endianness64.wast:160
+// ./test/core/memory64/endianness64.wast:160
 assert_return(() => invoke($0, `i64_load32_s`, [42424242n]), [value("i64", 42424242n)]);
 
-// ./test/core/endianness64.wast:161
+// ./test/core/memory64/endianness64.wast:161
 assert_return(() => invoke($0, `i64_load32_s`, [305419896n]), [value("i64", 305419896n)]);
 
-// ./test/core/endianness64.wast:163
+// ./test/core/memory64/endianness64.wast:163
 assert_return(() => invoke($0, `i64_load32_u`, [-1n]), [value("i64", 4294967295n)]);
 
-// ./test/core/endianness64.wast:164
+// ./test/core/memory64/endianness64.wast:164
 assert_return(() => invoke($0, `i64_load32_u`, [-42424242n]), [value("i64", 4252543054n)]);
 
-// ./test/core/endianness64.wast:165
+// ./test/core/memory64/endianness64.wast:165
 assert_return(() => invoke($0, `i64_load32_u`, [42424242n]), [value("i64", 42424242n)]);
 
-// ./test/core/endianness64.wast:166
+// ./test/core/memory64/endianness64.wast:166
 assert_return(() => invoke($0, `i64_load32_u`, [2880249322n]), [value("i64", 2880249322n)]);
 
-// ./test/core/endianness64.wast:168
+// ./test/core/memory64/endianness64.wast:168
 assert_return(() => invoke($0, `i64_load`, [-1n]), [value("i64", -1n)]);
 
-// ./test/core/endianness64.wast:169
+// ./test/core/memory64/endianness64.wast:169
 assert_return(() => invoke($0, `i64_load`, [-42424242n]), [value("i64", -42424242n)]);
 
-// ./test/core/endianness64.wast:170
+// ./test/core/memory64/endianness64.wast:170
 assert_return(() => invoke($0, `i64_load`, [2880249322n]), [value("i64", 2880249322n)]);
 
-// ./test/core/endianness64.wast:171
+// ./test/core/memory64/endianness64.wast:171
 assert_return(
   () => invoke($0, `i64_load`, [-6075977126246539798n]),
   [value("i64", -6075977126246539798n)],
 );
 
-// ./test/core/endianness64.wast:173
+// ./test/core/memory64/endianness64.wast:173
 assert_return(() => invoke($0, `f32_load`, [value("f32", -1)]), [value("f32", -1)]);
 
-// ./test/core/endianness64.wast:174
+// ./test/core/memory64/endianness64.wast:174
 assert_return(() => invoke($0, `f32_load`, [value("f32", 0.01234)]), [value("f32", 0.01234)]);
 
-// ./test/core/endianness64.wast:175
+// ./test/core/memory64/endianness64.wast:175
 assert_return(() => invoke($0, `f32_load`, [value("f32", 4242.4243)]), [value("f32", 4242.4243)]);
 
-// ./test/core/endianness64.wast:176
+// ./test/core/memory64/endianness64.wast:176
 assert_return(
   () => invoke($0, `f32_load`, [value("f32", 340282350000000000000000000000000000000)]),
   [value("f32", 340282350000000000000000000000000000000)],
 );
 
-// ./test/core/endianness64.wast:178
+// ./test/core/memory64/endianness64.wast:178
 assert_return(() => invoke($0, `f64_load`, [value("f64", -1)]), [value("f64", -1)]);
 
-// ./test/core/endianness64.wast:179
+// ./test/core/memory64/endianness64.wast:179
 assert_return(() => invoke($0, `f64_load`, [value("f64", 1234.56789)]), [value("f64", 1234.56789)]);
 
-// ./test/core/endianness64.wast:180
+// ./test/core/memory64/endianness64.wast:180
 assert_return(
   () => invoke($0, `f64_load`, [value("f64", 424242.424242)]),
   [value("f64", 424242.424242)],
 );
 
-// ./test/core/endianness64.wast:181
+// ./test/core/memory64/endianness64.wast:181
 assert_return(
   () => invoke($0, `f64_load`, [
     value("f64", 179769313486231570000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000),
@@ -284,97 +284,97 @@ assert_return(
   ],
 );
 
-// ./test/core/endianness64.wast:184
+// ./test/core/memory64/endianness64.wast:184
 assert_return(() => invoke($0, `i32_store16`, [-1]), [value("i32", 65535)]);
 
-// ./test/core/endianness64.wast:185
+// ./test/core/memory64/endianness64.wast:185
 assert_return(() => invoke($0, `i32_store16`, [-4242]), [value("i32", 61294)]);
 
-// ./test/core/endianness64.wast:186
+// ./test/core/memory64/endianness64.wast:186
 assert_return(() => invoke($0, `i32_store16`, [42]), [value("i32", 42)]);
 
-// ./test/core/endianness64.wast:187
+// ./test/core/memory64/endianness64.wast:187
 assert_return(() => invoke($0, `i32_store16`, [51966]), [value("i32", 51966)]);
 
-// ./test/core/endianness64.wast:189
+// ./test/core/memory64/endianness64.wast:189
 assert_return(() => invoke($0, `i32_store`, [-1]), [value("i32", -1)]);
 
-// ./test/core/endianness64.wast:190
+// ./test/core/memory64/endianness64.wast:190
 assert_return(() => invoke($0, `i32_store`, [-4242]), [value("i32", -4242)]);
 
-// ./test/core/endianness64.wast:191
+// ./test/core/memory64/endianness64.wast:191
 assert_return(() => invoke($0, `i32_store`, [42424242]), [value("i32", 42424242)]);
 
-// ./test/core/endianness64.wast:192
+// ./test/core/memory64/endianness64.wast:192
 assert_return(() => invoke($0, `i32_store`, [-559035650]), [value("i32", -559035650)]);
 
-// ./test/core/endianness64.wast:194
+// ./test/core/memory64/endianness64.wast:194
 assert_return(() => invoke($0, `i64_store16`, [-1n]), [value("i64", 65535n)]);
 
-// ./test/core/endianness64.wast:195
+// ./test/core/memory64/endianness64.wast:195
 assert_return(() => invoke($0, `i64_store16`, [-4242n]), [value("i64", 61294n)]);
 
-// ./test/core/endianness64.wast:196
+// ./test/core/memory64/endianness64.wast:196
 assert_return(() => invoke($0, `i64_store16`, [42n]), [value("i64", 42n)]);
 
-// ./test/core/endianness64.wast:197
+// ./test/core/memory64/endianness64.wast:197
 assert_return(() => invoke($0, `i64_store16`, [51966n]), [value("i64", 51966n)]);
 
-// ./test/core/endianness64.wast:199
+// ./test/core/memory64/endianness64.wast:199
 assert_return(() => invoke($0, `i64_store32`, [-1n]), [value("i64", 4294967295n)]);
 
-// ./test/core/endianness64.wast:200
+// ./test/core/memory64/endianness64.wast:200
 assert_return(() => invoke($0, `i64_store32`, [-4242n]), [value("i64", 4294963054n)]);
 
-// ./test/core/endianness64.wast:201
+// ./test/core/memory64/endianness64.wast:201
 assert_return(() => invoke($0, `i64_store32`, [42424242n]), [value("i64", 42424242n)]);
 
-// ./test/core/endianness64.wast:202
+// ./test/core/memory64/endianness64.wast:202
 assert_return(() => invoke($0, `i64_store32`, [3735931646n]), [value("i64", 3735931646n)]);
 
-// ./test/core/endianness64.wast:204
+// ./test/core/memory64/endianness64.wast:204
 assert_return(() => invoke($0, `i64_store`, [-1n]), [value("i64", -1n)]);
 
-// ./test/core/endianness64.wast:205
+// ./test/core/memory64/endianness64.wast:205
 assert_return(() => invoke($0, `i64_store`, [-42424242n]), [value("i64", -42424242n)]);
 
-// ./test/core/endianness64.wast:206
+// ./test/core/memory64/endianness64.wast:206
 assert_return(() => invoke($0, `i64_store`, [2880249322n]), [value("i64", 2880249322n)]);
 
-// ./test/core/endianness64.wast:207
+// ./test/core/memory64/endianness64.wast:207
 assert_return(
   () => invoke($0, `i64_store`, [-6075977126246539798n]),
   [value("i64", -6075977126246539798n)],
 );
 
-// ./test/core/endianness64.wast:209
+// ./test/core/memory64/endianness64.wast:209
 assert_return(() => invoke($0, `f32_store`, [value("f32", -1)]), [value("f32", -1)]);
 
-// ./test/core/endianness64.wast:210
+// ./test/core/memory64/endianness64.wast:210
 assert_return(() => invoke($0, `f32_store`, [value("f32", 0.01234)]), [value("f32", 0.01234)]);
 
-// ./test/core/endianness64.wast:211
+// ./test/core/memory64/endianness64.wast:211
 assert_return(() => invoke($0, `f32_store`, [value("f32", 4242.4243)]), [value("f32", 4242.4243)]);
 
-// ./test/core/endianness64.wast:212
+// ./test/core/memory64/endianness64.wast:212
 assert_return(
   () => invoke($0, `f32_store`, [value("f32", 340282350000000000000000000000000000000)]),
   [value("f32", 340282350000000000000000000000000000000)],
 );
 
-// ./test/core/endianness64.wast:214
+// ./test/core/memory64/endianness64.wast:214
 assert_return(() => invoke($0, `f64_store`, [value("f64", -1)]), [value("f64", -1)]);
 
-// ./test/core/endianness64.wast:215
+// ./test/core/memory64/endianness64.wast:215
 assert_return(() => invoke($0, `f64_store`, [value("f64", 1234.56789)]), [value("f64", 1234.56789)]);
 
-// ./test/core/endianness64.wast:216
+// ./test/core/memory64/endianness64.wast:216
 assert_return(
   () => invoke($0, `f64_store`, [value("f64", 424242.424242)]),
   [value("f64", 424242.424242)],
 );
 
-// ./test/core/endianness64.wast:217
+// ./test/core/memory64/endianness64.wast:217
 assert_return(
   () => invoke($0, `f64_store`, [
     value("f64", 179769313486231570000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000),

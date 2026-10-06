@@ -12,15 +12,12 @@ async function test_pdfjs_print(enabled, browser) {
   });
 
   await waitForPdfJS(browser, TESTROOT + "file_pdfjs_test.pdf");
-  await SpecialPowers.spawn(browser, [enabled], async enabled => {
-    const printButton = content.document.querySelector("#printButton");
-    const displayed = content.getComputedStyle(printButton).display !== "none";
-    Assert.equal(
-      displayed,
-      enabled,
-      `Print button is ${enabled ? "enabled" : "disabled"}`
-    );
-  });
+  await waitForSelector(
+    browser,
+    `#printButton${enabled ? ":not(.hidden)" : ".hidden"}`,
+    "Print button must be present",
+    enabled
+  );
 
   await waitForPdfJSClose(browser);
   await SpecialPowers.popPrefEnv();

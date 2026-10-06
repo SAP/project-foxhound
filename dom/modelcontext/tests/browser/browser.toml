@@ -1,0 +1,4 @@
+[DEFAULT]
+prefs = ["dom.modelcontext.enabled=true", "dom.modelcontext.testing.enabled=true"]
+
+["browser_modelContext_xpcom.js"]

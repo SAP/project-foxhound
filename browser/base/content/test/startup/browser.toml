@@ -1,4 +1,6 @@
 [DEFAULT]
 
 ["browser_preXULSkeletonUIRegistry.js"]
-run-if = ["os == 'win'"] # We only enable the skele UI on Win10
+run-if = [
+  "os == 'win'", # We only enable the skele UI on Win10
+]

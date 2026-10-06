@@ -180,3 +180,96 @@ function testDateGetSeconds() {
   }
 }
 testDateGetSeconds();
+
+function testDateNow() {
+  for (var i = 0; i < 250; ++i) {
+    var now = Date.now();
+    assertEq(Number.isInteger(now), true);
+    assertEq(Math.abs(now) <= 8.64e15, true);
+  }
+}
+testDateNow();
+
+function testDateParse() {
+  const offset = new Date(0).getTimezoneOffset() * 60 * 1000;
+
+  var strings = [
+    "1970-01-01",       // UTC time
+    "1970-01-01T00:00", // local time
+    "+275760-09-15",    // too large
+    "invalid date",     // UTC time
+  ];
+  var expected = [
+    0,
+    offset,
+    NaN,
+    NaN,
+  ];
+
+  for (var i = 0; i < 250; ++i) {
+    var t = Date.parse(strings[i & 3]);
+    assertEq(t, expected[i & 3]);
+  }
+}
+testDateParse();
+
+function testDateConstructor() {
+  for (var i = 0; i < 250; ++i) {
+    // No arguments.
+    var d1 = new Date();
+
+    // Single number argument.
+    var d2 = new Date(d1.getTime());
+
+    // Single string argument.
+    var d3 = new Date(d1.toISOString());
+
+    assertEq(d1.getTime(), d2.getTime());
+    assertEq(d1.getTime(), d3.getTime());
+  }
+}
+testDateConstructor();
+
+function testDateConstructorNumber() {
+  var numbers = [
+    -Number.MIN_VALUE,
+    123.456,
+    -8.65e15,
+    NaN,
+  ];
+  var expected = [
+    0,
+    123,
+    NaN,
+    NaN,
+  ];
+
+  for (var i = 0; i < 250; ++i) {
+    var d = new Date(numbers[i & 3]);
+    assertEq(d.getTime(), expected[i & 3]);
+  }
+}
+testDateConstructorNumber();
+
+function testDateConstructorString() {
+  const offset = new Date(0).getTimezoneOffset() * 60 * 1000;
+
+  var strings = [
+    "1970-01-01",       // UTC time
+    "1970-01-01T00:00", // local time
+    "+275760-09-15",    // too large
+    "invalid date",     // UTC time
+  ];
+  var expected = [
+    0,
+    offset,
+    NaN,
+    NaN,
+  ];
+
+  for (var i = 0; i < 250; ++i) {
+    var d = new Date(strings[i & 3]);
+    assertEq(d.getTime(), expected[i & 3]);
+  }
+}
+testDateConstructorString();

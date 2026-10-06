@@ -4,7 +4,7 @@
 
 package org.mozilla.fenix.tabstray.browser
 
-import org.mozilla.fenix.tabstray.Page
+import org.mozilla.fenix.tabstray.redux.state.Page
 
 /**
  * Interactor for all things related to the floating action button in the tabs tray.

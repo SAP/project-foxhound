@@ -20,6 +20,7 @@
 #include "prio.h"
 #include "secerr.h"
 #include "ssl.h"
+#include "sslexp.h"
 
 namespace mozilla {
 
@@ -54,13 +55,39 @@ SECStatus ConfigSecureServerWithNamedCert(
 
 SECStatus InitializeNSS(const char* nssCertDBDir);
 
+// Per-accepted-connection context. Exposed so alternate connection
+// handlers supplied to StartServer can do their own TLS setup and I/O
+// without re-implementing the boilerplate.
+struct Connection {
+  PRFileDesc* mSocket;
+  char mByte;
+
+  explicit Connection(PRFileDesc* aSocket);
+  ~Connection();
+};
+
+nsresult SetupTLS(Connection* aConn, PRFileDesc* aModelSocket);
+nsresult SendAll(PRFileDesc* aSocket, const char* aData, size_t aDataLen);
+
+// Anti-replay context created in StartServer when MOZ_TLS_SERVER_0RTT is
+// set; null otherwise. Connection handlers that inline their own
+// SetupTLS need to call SSL_SetAntiReplayContext on each per-connection
+// socket or NSS will refuse incoming early-data bytes.
+SSLAntiReplayContext* GetAntiReplayContext();
+
+// Signature of a per-connection handler supplied to StartServer.
+using ConnectionHandlerFunc = void (*)(PRFileDesc* aSocket,
+                                       const UniquePRFileDesc& aModelSocket);
+
 // StartServer initializes NSS, sockets, the SNI callback, and a default
 // certificate. configFunc (optional) is a pointer to an implementation-
 // defined configuration function, which is called on the model socket
-// prior to handling any connections.
+// prior to handling any connections. connectionHandler (optional) is
+// invoked for each accepted connection; if null, the default 1-byte-
+// echo behavior is used.
 int StartServer(int argc, char* argv[], SSLSNISocketConfig sniSocketConfig,
-                void* sniSocketConfigArg,
-                ServerConfigFunc configFunc = nullptr);
+                void* sniSocketConfigArg, ServerConfigFunc configFunc = nullptr,
+                ConnectionHandlerFunc connectionHandler = nullptr);
 
 template <typename Host>
 inline const Host* GetHostForSNI(const SECItem* aSrvNameArr,

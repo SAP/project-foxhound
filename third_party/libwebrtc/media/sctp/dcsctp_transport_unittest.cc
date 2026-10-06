@@ -31,6 +31,7 @@
 #include "system_wrappers/include/clock.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
+#include "test/run_loop.h"
 
 using ::testing::_;
 using ::testing::ByMove;
@@ -55,14 +56,16 @@ class MockDataChannelSink : public DataChannelSink {
   MOCK_METHOD(void, OnConnected, ());
 
   // DataChannelSink
+  MOCK_METHOD(void, OnTransportConnected, (), (override));
   MOCK_METHOD(void,
               OnDataReceived,
-              (int, DataMessageType, const rtc::CopyOnWriteBuffer&));
+              (int, DataMessageType, const CopyOnWriteBuffer&));
   MOCK_METHOD(void, OnChannelClosing, (int));
   MOCK_METHOD(void, OnChannelClosed, (int));
   MOCK_METHOD(void, OnReadyToSend, ());
   MOCK_METHOD(void, OnTransportClosed, (RTCError));
   MOCK_METHOD(void, OnBufferedAmountLow, (int channel_id), (override));
+  MOCK_METHOD(void, OnMaxMessageSize, (int max_message_size), (override));
 };
 
 static_assert(!std::is_abstract_v<MockDataChannelSink>);
@@ -82,7 +85,7 @@ class Peer {
         .Times(1)
         .WillOnce(Return(ByMove(std::move(socket_ptr))));
 
-    sctp_transport_ = std::make_unique<webrtc::DcSctpTransport>(
+    sctp_transport_ = std::make_unique<DcSctpTransport>(
         env_, Thread::Current(), &fake_dtls_transport_,
         std::move(mock_dcsctp_socket_factory));
     sctp_transport_->SetDataChannelSink(&sink_);
@@ -90,16 +93,16 @@ class Peer {
   }
 
   FakeDtlsTransport fake_dtls_transport_;
-  webrtc::SimulatedClock simulated_clock_;
+  SimulatedClock simulated_clock_;
   Environment env_;
   dcsctp::MockDcSctpSocket* socket_;
-  std::unique_ptr<webrtc::DcSctpTransport> sctp_transport_;
+  std::unique_ptr<DcSctpTransport> sctp_transport_;
   NiceMock<MockDataChannelSink> sink_;
 };
 }  // namespace
 
 TEST(DcSctpTransportTest, OpenSequence) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   Peer peer_a;
   peer_a.fake_dtls_transport_.SetWritable(true);
 
@@ -109,15 +112,15 @@ TEST(DcSctpTransportTest, OpenSequence) {
                        &dcsctp::DcSctpSocketCallbacks::OnConnected));
   EXPECT_CALL(peer_a.sink_, OnReadyToSend);
   EXPECT_CALL(peer_a.sink_, OnConnected);
-  peer_a.sctp_transport_->Start({.local_port = 5000,
-                                 .remote_port = 5000,
-                                 .max_message_size = 256 * 1024});
+  EXPECT_CALL(peer_a.sink_, OnMaxMessageSize(32 * 1024));
+  peer_a.sctp_transport_->Start(
+      {.local_port = 5000, .remote_port = 5000, .max_message_size = 32 * 1024});
 }
 
 // Tests that the close sequence invoked from one end results in the stream to
 // be reset from both ends and all the proper signals are sent.
 TEST(DcSctpTransportTest, CloseSequence) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   Peer peer_a;
   Peer peer_b;
   peer_a.fake_dtls_transport_.SetDestination(&peer_b.fake_dtls_transport_,
@@ -167,7 +170,7 @@ TEST(DcSctpTransportTest, CloseSequence) {
 // terminates properly. Both peers will think they initiated it, so no
 // OnClosingProcedureStartedRemotely should be called.
 TEST(DcSctpTransportTest, CloseSequenceSimultaneous) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   Peer peer_a;
   Peer peer_b;
   peer_a.fake_dtls_transport_.SetDestination(&peer_b.fake_dtls_transport_,
@@ -211,7 +214,7 @@ TEST(DcSctpTransportTest, CloseSequenceSimultaneous) {
 }
 
 TEST(DcSctpTransportTest, SetStreamPriority) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   Peer peer_a;
 
   {
@@ -235,7 +238,7 @@ TEST(DcSctpTransportTest, SetStreamPriority) {
 }
 
 TEST(DcSctpTransportTest, DiscardMessageClosedChannel) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   Peer peer_a;
 
   EXPECT_CALL(*peer_a.socket_, Send(_, _)).Times(0);
@@ -245,13 +248,13 @@ TEST(DcSctpTransportTest, DiscardMessageClosedChannel) {
                                  .max_message_size = 256 * 1024});
 
   SendDataParams params;
-  rtc::CopyOnWriteBuffer payload;
+  CopyOnWriteBuffer payload;
   EXPECT_EQ(peer_a.sctp_transport_->SendData(1, params, payload).type(),
             RTCErrorType::INVALID_STATE);
 }
 
 TEST(DcSctpTransportTest, DiscardMessageClosingChannel) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   Peer peer_a;
 
   EXPECT_CALL(*peer_a.socket_, Send(_, _)).Times(0);
@@ -263,13 +266,13 @@ TEST(DcSctpTransportTest, DiscardMessageClosingChannel) {
   peer_a.sctp_transport_->ResetStream(1);
 
   SendDataParams params;
-  rtc::CopyOnWriteBuffer payload;
+  CopyOnWriteBuffer payload;
   EXPECT_EQ(peer_a.sctp_transport_->SendData(1, params, payload).type(),
             RTCErrorType::INVALID_STATE);
 }
 
 TEST(DcSctpTransportTest, SendDataOpenChannel) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   Peer peer_a;
   dcsctp::DcSctpOptions options;
 
@@ -282,16 +285,15 @@ TEST(DcSctpTransportTest, SendDataOpenChannel) {
                                  .max_message_size = 256 * 1024});
 
   SendDataParams params;
-  rtc::CopyOnWriteBuffer payload;
+  CopyOnWriteBuffer payload;
   EXPECT_TRUE(peer_a.sctp_transport_->SendData(1, params, payload).ok());
 }
 
 TEST(DcSctpTransportTest, DeliversMessage) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   Peer peer_a;
 
-  EXPECT_CALL(peer_a.sink_,
-              OnDataReceived(1, webrtc::DataMessageType::kBinary, _))
+  EXPECT_CALL(peer_a.sink_, OnDataReceived(1, DataMessageType::kBinary, _))
       .Times(1);
 
   peer_a.sctp_transport_->OpenStream(1, kDefaultPriority);
@@ -305,7 +307,7 @@ TEST(DcSctpTransportTest, DeliversMessage) {
 }
 
 TEST(DcSctpTransportTest, DropMessageWithUnknownPpid) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   Peer peer_a;
 
   EXPECT_CALL(peer_a.sink_, OnDataReceived(_, _, _)).Times(0);

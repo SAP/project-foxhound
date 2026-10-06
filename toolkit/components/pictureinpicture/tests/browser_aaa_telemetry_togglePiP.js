@@ -3,14 +3,6 @@
 
 "use strict";
 
-function getTelemetryToggleEnabled() {
-  const scalarData = Services.telemetry.getSnapshotForScalars(
-    "main",
-    false
-  ).parent;
-  return scalarData["pictureinpicture.toggle_enabled"];
-}
-
 /**
  * Tests telemetry for user toggling on or off PiP.
  */
@@ -41,28 +33,20 @@ add_task(async () => {
 
       Assert.equal(enabled, false, "PiP is disabled.");
 
-      await TestUtils.waitForCondition(() => {
-        return getTelemetryToggleEnabled() === false;
-      });
-
       Assert.equal(
-        getTelemetryToggleEnabled(),
+        Glean.pictureinpicture.toggleEnabled.testGetValue(),
         false,
-        "PiP is disabled according to Telemetry."
+        "PiP is disabled according to Glean."
       );
 
       await SpecialPowers.pushPrefEnv({
         set: [[TOGGLE_PIP_ENABLED_PREF, true]],
       });
 
-      await TestUtils.waitForCondition(() => {
-        return getTelemetryToggleEnabled() === true;
-      });
-
       Assert.equal(
-        getTelemetryToggleEnabled(),
+        Glean.pictureinpicture.toggleEnabled.testGetValue(),
         true,
-        "PiP is enabled according to Telemetry."
+        "PiP is enabled according to Glean."
       );
     }
   );

@@ -1,13 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/cache/Context.h"
-#include "CacheCommon.h"
 
+#include "CacheCommon.h"
+#include "NotifyUtils.h"
+#include "QuotaClientImpl.h"
+#include "mozIStorageConnection.h"
 #include "mozilla/AutoRestore.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/SafeRefPtr.h"
 #include "mozilla/dom/cache/Action.h"
@@ -22,14 +24,10 @@
 #include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozilla/dom/quota/ThreadUtils.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "mozilla/Maybe.h"
-#include "mozIStorageConnection.h"
-#include "NotifyUtils.h"
 #include "nsIPrincipal.h"
 #include "nsIRunnable.h"
 #include "nsIThread.h"
 #include "nsThreadUtils.h"
-#include "QuotaClientImpl.h"
 
 namespace {
 

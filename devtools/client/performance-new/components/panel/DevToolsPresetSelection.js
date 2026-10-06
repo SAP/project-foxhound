@@ -9,7 +9,7 @@
  */
 
 /**
- * @typedef {Object} StateProps
+ * @typedef {object} StateProps
  * @property {string} presetName
  * @property {number} interval
  * @property {string[]} threads
@@ -18,12 +18,12 @@
  */
 
 /**
- * @typedef {Object} ThunkDispatchProps
+ * @typedef {object} ThunkDispatchProps
  * @property {typeof actions.changePreset} changePreset
  */
 
 /**
- * @typedef {Object} OwnProps
+ * @typedef {object} OwnProps
  * @property {() => void} onEditSettingsLinkClicked
  */
 
@@ -67,7 +67,7 @@ const Localized = createFactory(
  * is written using vanilla JS and browser chrome elements in order to be more
  * performant.
  *
- * @extends {React.PureComponent<Props>}
+ * @augments {React.PureComponent<Props>}
  */
 class DevToolsPresetSelection extends PureComponent {
   /** @param {Props} props */
@@ -76,6 +76,7 @@ class DevToolsPresetSelection extends PureComponent {
 
     /**
      * Create an object map to easily look up feature description.
+     *
      * @type {{[key: string]: FeatureDescription}}
      */
     this.featureDescriptionMap = {};
@@ -86,6 +87,7 @@ class DevToolsPresetSelection extends PureComponent {
 
   /**
    * Handle the select change.
+   *
    * @param {React.ChangeEvent<HTMLSelectElement>} event
    */
   onPresetChange = event => {

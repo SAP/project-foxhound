@@ -11,13 +11,14 @@ import android.view.View.GONE
 import android.view.ViewGroup
 import androidx.annotation.VisibleForTesting
 import org.mozilla.fenix.databinding.InfoBannerBinding
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.utils.Settings
 
 /**
  * Displays an Info Banner in the specified container with a message and an optional action.
  * The container can be a placeholder layout inserted in the original screen, or an existing layout.
  *
  * @param context A [Context] for accessing system resources.
+ * @param settings [Settings] used to update lastCfrShownTimeInMillis.
  * @param container The layout where the banner will be shown.
  * @param message The message displayed in the banner.
  * @param dismissText The text on the dismiss button.
@@ -28,6 +29,7 @@ import org.mozilla.fenix.ext.settings
  */
 open class InfoBanner(
     private val context: Context,
+    private val settings: Settings,
     private val container: ViewGroup,
     private val message: String,
     private val dismissText: String,
@@ -61,7 +63,7 @@ open class InfoBanner(
             actionToPerform?.invoke()
         }
 
-        context.settings().lastCfrShownTimeInMillis = System.currentTimeMillis()
+        settings.lastCfrShownTimeInMillis = System.currentTimeMillis()
     }
 
     internal fun dismiss() {

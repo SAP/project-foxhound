@@ -1,6 +1,3 @@
-/* -*- Mode: C; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,22 +12,32 @@
 namespace mozilla::widget {
 
 WaylandSurfaceLock::WaylandSurfaceLock(RefPtr<WaylandSurface> aWaylandSurface,
-                                       bool aForceCommit) {
+                                       bool aSkipCommit) {
 #ifdef MOZ_WAYLAND
   MOZ_DIAGNOSTIC_ASSERT(aWaylandSurface);
   mWaylandSurface = std::move(aWaylandSurface);
-  mForceCommit = aForceCommit;
+  mSkipCommit = aSkipCommit;
   if (GdkIsWaylandDisplay()) {
     mSurface = mWaylandSurface->Lock(this);
   }
 #endif
 }
 
-WaylandSurfaceLock::~WaylandSurfaceLock() {
 #ifdef MOZ_WAYLAND
+void WaylandSurfaceLock::Commit() {
   if (GdkIsWaylandDisplay()) {
     mWaylandSurface->Commit(this, mForceCommit,
                             /* flush display */ false);
+  }
+}
+#endif
+
+WaylandSurfaceLock::~WaylandSurfaceLock() {
+#ifdef MOZ_WAYLAND
+  if (GdkIsWaylandDisplay()) {
+    if (mForceCommit || !mSkipCommit) {
+      Commit();
+    }
     mWaylandSurface->Unlock(&mSurface, this);
   }
 #endif

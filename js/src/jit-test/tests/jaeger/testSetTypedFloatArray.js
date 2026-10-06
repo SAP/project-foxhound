@@ -1,5 +1,3 @@
-// vim: set ts=8 sts=4 et sw=4 tw=99:
-
 function testSetTypedFloat32Array(k) {
     var ar = new Float32Array(8);
     ar[k+5] = { };

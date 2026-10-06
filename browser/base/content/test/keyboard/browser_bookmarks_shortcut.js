@@ -23,15 +23,14 @@ add_task(async function testBookmarksToolbarShortcut() {
 
   info("Toggle toolbar visibility on");
   let toolbar = document.getElementById("PersonalToolbar");
-  is(
-    toolbar.getAttribute("collapsed"),
-    "true",
+  ok(
+    toolbar.hasAttribute("collapsed"),
     "Toolbar bar should already be collapsed"
   );
 
   EventUtils.synthesizeKey("b", { shiftKey: true, accelKey: true });
   toolbar = document.getElementById("PersonalToolbar");
-  await BrowserTestUtils.waitForAttribute("collapsed", toolbar, "false");
+  await BrowserTestUtils.waitForAttributeRemoval("collapsed", toolbar);
   ok(true, "bookmarks toolbar is visible");
 
   await testIsBookmarksMenuItemStateChecked("always");
@@ -39,7 +38,7 @@ add_task(async function testBookmarksToolbarShortcut() {
   info("Toggle toolbar visibility off");
   EventUtils.synthesizeKey("b", { shiftKey: true, accelKey: true });
   toolbar = document.getElementById("PersonalToolbar");
-  await BrowserTestUtils.waitForAttribute("collapsed", toolbar, "true");
+  await BrowserTestUtils.waitForAttribute("collapsed", toolbar, "");
   ok(true, "bookmarks toolbar is not visible");
 
   await testIsBookmarksMenuItemStateChecked("never");
@@ -83,7 +82,7 @@ async function testIsBookmarksMenuItemStateChecked(expected) {
     document.querySelector(`menuitem[data-visibility-enum="${e}"]`)
   );
 
-  let checkedItem = menuitems.filter(m => m.getAttribute("checked") == "true");
+  let checkedItem = menuitems.filter(m => m.hasAttribute("checked"));
   is(checkedItem.length, 1, "should have only one menuitem checked");
   is(
     checkedItem[0].dataset.visibilityEnum,

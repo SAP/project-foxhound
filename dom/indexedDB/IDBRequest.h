@@ -1,24 +1,21 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_idbrequest_h__
-#define mozilla_dom_idbrequest_h__
+#ifndef mozilla_dom_idbrequest_h_
+#define mozilla_dom_idbrequest_h_
 
+#include "ReportInternalError.h"
+#include "SafeRefPtr.h"
 #include "js/RootingAPI.h"
-#include "mozilla/Attributes.h"
+#include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/EventForwards.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/SourceLocation.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/IDBRequestBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/DOMEventTargetHelper.h"
-#include "mozilla/HoldDropJSObjects.h"
 #include "nsCycleCollectionParticipant.h"
-#include "ReportInternalError.h"
-#include "SafeRefPtr.h"
 
 #define PRIVATE_IDBREQUEST_IID \
   {0xe68901e5, 0x1d50, 0x4ee9, {0xaf, 0x49, 0x90, 0x99, 0x4a, 0xff, 0xc8, 0x39}}
@@ -100,7 +97,7 @@ class IDBRequest : public DOMEventTargetHelper {
     MOZ_ASSERT(!mError);
 
     // Already disconnected from the owner.
-    if (!GetOwnerGlobal()) {
+    if (!GetRelevantGlobal()) {
       SetError(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
       return;
     }
@@ -112,7 +109,7 @@ class IDBRequest : public DOMEventTargetHelper {
     }
 
     AutoJSAPI autoJS;
-    if (!autoJS.Init(GetOwnerGlobal())) {
+    if (!autoJS.Init(GetRelevantGlobal())) {
       IDB_WARNING("Failed to initialize AutoJSAPI!");
       SetError(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
       return;
@@ -176,7 +173,7 @@ class IDBRequest : public DOMEventTargetHelper {
 
   void SetLoggingSerialNumber(uint64_t aLoggingSerialNumber);
 
-  nsIGlobalObject* GetParentObject() const { return GetOwnerGlobal(); }
+  nsIGlobalObject* GetParentObject() const { return GetRelevantGlobal(); }
 
   void GetResult(JS::MutableHandle<JS::Value> aResult, ErrorResult& aRv) const;
 
@@ -280,4 +277,4 @@ class IDBOpenDBRequest final : public IDBRequest {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_idbrequest_h__
+#endif  // mozilla_dom_idbrequest_h_

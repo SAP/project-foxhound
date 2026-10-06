@@ -22,7 +22,7 @@ add_task(async function run_test() {
       extra = await IOUtils.readJSON(extraFile.path);
 
       // Check unloaded modules
-      const unloadedModules = extra.StackTraces.unloaded_modules;
+      const unloadedModules = JSON.parse(extra.StackTraces).unloaded_modules;
       Assert.ok(!!unloadedModules, "The unloaded_modules field exists");
       Assert.notEqual(unloadedModules.find(e => e.filename == "wininet.DLL"));
 

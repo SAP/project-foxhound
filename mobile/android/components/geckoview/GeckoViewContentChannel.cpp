@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,6 +17,8 @@ NS_IMETHODIMP
 GeckoViewContentChannel::OpenContentStream(bool aAsync,
                                            nsIInputStream** aResult,
                                            nsIChannel** aChannel) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+
   nsCOMPtr<nsIURI> uri;
   nsresult rv = GetURI(getter_AddRefs(uri));
   NS_ENSURE_SUCCESS(rv, NS_ERROR_MALFORMED_URI);

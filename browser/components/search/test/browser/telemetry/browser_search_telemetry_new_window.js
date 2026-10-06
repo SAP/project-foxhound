@@ -71,16 +71,6 @@ add_task(async function load_serp_in_new_window_with_pref_and_click_ad() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
@@ -137,16 +127,6 @@ add_task(async function load_serp_in_new_window_with_pref_and_click_organic() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
@@ -204,16 +184,6 @@ add_task(async function load_serp_in_new_window_with_context_menu() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
@@ -294,16 +264,6 @@ add_task(
 
     assertSERPTelemetry([
       {
-        impression: {
-          provider: "example",
-          tagged: "true",
-          partner_code: "ff",
-          source: "unknown",
-          is_shopping_page: "false",
-          is_private: "false",
-          shopping_tab_displayed: "false",
-          is_signed_in: "false",
-        },
         adImpressions: [
           {
             component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
@@ -314,16 +274,6 @@ add_task(
         ],
       },
       {
-        impression: {
-          provider: "example",
-          tagged: "true",
-          partner_code: "ff",
-          source: "unknown",
-          is_shopping_page: "false",
-          is_private: "false",
-          shopping_tab_displayed: "false",
-          is_signed_in: "false",
-        },
         engagements: [
           {
             action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
@@ -347,5 +297,108 @@ add_task(
     BrowserTestUtils.removeTab(tab2);
     await BrowserTestUtils.closeWindow(newWindow);
     resetTelemetry();
+  }
+);
+
+// After clicking an ad that opens in a new tab, navigating within that new
+// tab should not record additional engagements or ad clicks, since the
+// requests originate from a non-SERP page.
+add_task(
+  async function test_navigation_in_opened_ad_tab_not_attributed_to_serp() {
+    resetTelemetry();
+
+    info("Load SERP in a new tab.");
+    let url = getSERPUrl("searchTelemetryAd.html");
+    let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, url);
+    await waitForPageWithAdImpressions();
+
+    info("Click ad link to open in a new tab.");
+    let newTabPromise = BrowserTestUtils.waitForNewTab(
+      gBrowser,
+      "https://example.com/ad",
+      true
+    );
+    await BrowserTestUtils.synthesizeMouseAtCenter(
+      "#ad1",
+      { button: 1 },
+      tab.linkedBrowser
+    );
+    let adTab = await newTabPromise;
+    await promiseWaitForAdLinkCheck();
+
+    info("Verify initial ad click engagement was recorded.");
+    await assertSearchSourcesTelemetry(
+      {},
+      {
+        "browser.search.content.unknown": { "example:tagged:ff": 1 },
+        "browser.search.withads.unknown": { "example:tagged": 1 },
+        "browser.search.adclicks.unknown": { "example:tagged": 1 },
+      }
+    );
+
+    assertSERPTelemetry([
+      {
+        engagements: [
+          {
+            action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
+            target: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
+          },
+        ],
+        adImpressions: [
+          {
+            component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
+            ads_loaded: "2",
+            ads_visible: "2",
+            ads_hidden: "0",
+          },
+        ],
+      },
+    ]);
+
+    info("Navigate within the ad tab to another URL matching ad regexps.");
+    let browserLoadedPromise = BrowserTestUtils.browserLoaded(
+      adTab.linkedBrowser,
+      false,
+      "https://example.com/ad2"
+    );
+    BrowserTestUtils.startLoadingURIString(
+      adTab.linkedBrowser,
+      "https://example.com/ad2"
+    );
+    await browserLoadedPromise;
+    await promiseWaitForAdLinkCheck();
+
+    info("Verify no additional engagement or ad click was recorded.");
+    await assertSearchSourcesTelemetry(
+      {},
+      {
+        "browser.search.content.unknown": { "example:tagged:ff": 1 },
+        "browser.search.withads.unknown": { "example:tagged": 1 },
+        "browser.search.adclicks.unknown": { "example:tagged": 1 },
+      }
+    );
+
+    assertSERPTelemetry([
+      {
+        engagements: [
+          {
+            action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
+            target: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
+          },
+        ],
+        adImpressions: [
+          {
+            component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
+            ads_loaded: "2",
+            ads_visible: "2",
+            ads_hidden: "0",
+          },
+        ],
+      },
+    ]);
+
+    // Clean-up.
+    BrowserTestUtils.removeTab(adTab);
+    BrowserTestUtils.removeTab(tab);
   }
 );

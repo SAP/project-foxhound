@@ -70,13 +70,13 @@ async function clickSettingsMenu(toolbox) {
     const menuItem = toolbox.doc.getElementById(
       "toolbox-meatball-menu-settings"
     );
-    EventUtils.synthesizeMouseAtCenter(menuItem, {}, menuItem.ownerGlobal);
+    EventUtils.synthesizeMouseAtCenter(menuItem, {}, menuItem.documentGlobal);
   };
   toolbox.doc.addEventListener("popupshown", onPopupShown);
 
   const button = toolbox.doc.getElementById("toolbox-meatball-menu-button");
   await waitUntil(() => button.style.pointerEvents !== "none");
-  EventUtils.synthesizeMouseAtCenter(button, {}, button.ownerGlobal);
+  EventUtils.synthesizeMouseAtCenter(button, {}, button.documentGlobal);
 
   await toolbox.once("select");
 }

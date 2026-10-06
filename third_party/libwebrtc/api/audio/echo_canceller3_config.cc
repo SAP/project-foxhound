@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 
 #include "rtc_base/checks.h"
 #include "rtc_base/numerics/safe_minmax.h"
@@ -271,8 +272,32 @@ bool EchoCanceller3Config::Validate(EchoCanceller3Config* config) {
   res = res & Limit(&c->suppressor.high_bands_suppression.anti_howling_gain,
                     0.f, 1.f);
 
+  res =
+      res & Limit(&c->suppressor.high_frequency_suppression.limiting_gain_band,
+                  1, 64);
+  res =
+      res &
+      Limit(&c->suppressor.high_frequency_suppression.bands_in_limiting_gain, 0,
+            64 - c->suppressor.high_frequency_suppression.limiting_gain_band);
+
   res = res & Limit(&c->suppressor.floor_first_increase, 0.f, 1000000.f);
 
   return res;
 }
+
+EchoCanceller3Config EchoCanceller3Config::CreateDefaultMultichannelConfig() {
+  EchoCanceller3Config cfg;
+  // Use shorter and more rapidly adapting coarse filter to compensate for
+  // the increased number of total filter parameters to adapt.
+  cfg.filter.coarse.length_blocks = 11;
+  cfg.filter.coarse.rate = 0.95f;
+  cfg.filter.coarse_initial.length_blocks = 11;
+  cfg.filter.coarse_initial.rate = 0.95f;
+
+  // Use more conservative suppressor behavior for non-nearend speech.
+  cfg.suppressor.normal_tuning.max_dec_factor_lf = 0.35f;
+  cfg.suppressor.normal_tuning.max_inc_factor = 1.5f;
+  return cfg;
+}
+
 }  // namespace webrtc

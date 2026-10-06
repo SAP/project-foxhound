@@ -76,41 +76,41 @@ DevToolsUtils.defineLazyGetter(this, "socketTransportService", () => {
   );
 });
 
-var DebuggerSocket = {};
-
-/**
- * Connects to a devtools server socket.
- *
- * @param host string
- *        The host name or IP address of the devtools server.
- * @param port number
- *        The port number of the devtools server.
- * @param webSocket boolean (optional)
- *        Whether to use WebSocket protocol to connect. Defaults to false.
- * @param authenticator Authenticator (optional)
- *        |Authenticator| instance matching the mode in use by the server.
- *        Defaults to a PROMPT instance if not supplied.
- * @return promise
- *         Resolved to a DebuggerTransport instance.
- */
-DebuggerSocket.connect = async function (settings) {
-  // Default to PROMPT |Authenticator| instance if not supplied
-  if (!settings.authenticator) {
-    settings.authenticator = new (Authenticators.get().Client)();
+class DebuggerSocket {
+  /**
+   * Connects to a devtools server socket.
+   *
+   * @param {object} settings
+   * @param {string} settings.host
+   *        The host name or IP address of the devtools server.
+   * @param {number} settings.port
+   *        The port number of the devtools server.
+   * @param {boolean} [settings.webSocket]
+   *        Whether to use WebSocket protocol to connect. Defaults to false.
+   * @param {Authenticator} [settings.authenticator]
+   *        |Authenticator| instance matching the mode in use by the server.
+   *        Defaults to a PROMPT instance if not supplied.
+   * @return {Promise}
+   *         Resolved to a DebuggerTransport instance.
+   */
+  static async connect(settings) {
+    // Default to PROMPT |Authenticator| instance if not supplied
+    if (!settings.authenticator) {
+      settings.authenticator = new (Authenticators.get().Client)();
+    }
+    _validateSettings(settings);
+    // eslint-disable-next-line no-shadow
+    const { host, port, authenticator } = settings;
+    const transport = await _getTransport(settings);
+    await authenticator.authenticate({
+      host,
+      port,
+      transport,
+    });
+    transport.connectionSettings = settings;
+    return transport;
   }
-  _validateSettings(settings);
-  // eslint-disable-next-line no-shadow
-  const { host, port, authenticator } = settings;
-  const transport = await _getTransport(settings);
-  await authenticator.authenticate({
-    host,
-    port,
-    transport,
-  });
-  transport.connectionSettings = settings;
-  return transport;
-};
-
+}
 /**
  * Validate that the connection settings have been set to a supported configuration.
  */
@@ -224,6 +224,7 @@ var _attemptTransport = async function (settings) {
  * Typically, this will only fail if the host / port is unreachable.  Other
  * problems, such as security errors, will allow this stage to succeed, but then
  * fail later when the streams are actually used.
+ *
  * @return s nsISocketTransport
  *         Underlying socket transport, in case more details are needed.
  * @return input nsIAsyncInputStream
@@ -313,68 +314,69 @@ function _isInputAlive(input) {
  * are particular to one given listener mechanism vs. another.
  * This can be closed at any later time by calling |close|.
  * If remote connections are disabled, an error is thrown.
- *
- * @param {DevToolsServer} devToolsServer
- * @param {Object} socketOptions
- *        options of socket as follows
- *        {
- *          authenticator:
- *            Controls the |Authenticator| used, which hooks various socket steps to
- *            implement an authentication policy.  It is expected that different use
- *            cases may override pieces of the |Authenticator|.  See auth.js.
- *            We set the default |Authenticator|, which is |Prompt|.
- *          discoverable:
- *            Controls whether this listener is announced via the service discovery
- *            mechanism. Defaults is false.
- *          fromBrowserToolbox:
- *            Should only be passed when opening a socket for a Browser Toolbox
- *            session. DevToolsSocketStatus will track the socket separately to
- *            avoid triggering the visual cue in the URL bar.
- *          portOrPath:
- *            The port or path to listen on.
- *            If given an integer, the port to listen on.  Use -1 to choose any available
- *            port. Otherwise, the path to the unix socket domain file to listen on.
- *            Defaults is null.
- *          webSocket:
- *            Whether to use WebSocket protocol. Defaults is false.
- *        }
  */
-function SocketListener(devToolsServer, socketOptions) {
-  this._devToolsServer = devToolsServer;
+class SocketListener extends EventEmitter {
+  /**
+   * @param {DevToolsServer} devToolsServer
+   * @param {object} socketOptions
+   *        options of socket as follows
+   *        {
+   *          authenticator:
+   *            Controls the |Authenticator| used, which hooks various socket steps to
+   *            implement an authentication policy.  It is expected that different use
+   *            cases may override pieces of the |Authenticator|.  See auth.js.
+   *            We set the default |Authenticator|, which is |Prompt|.
+   *          discoverable:
+   *            Controls whether this listener is announced via the service discovery
+   *            mechanism. Defaults is false.
+   *          fromBrowserToolbox:
+   *            Should only be passed when opening a socket for a Browser Toolbox
+   *            session. DevToolsSocketStatus will track the socket separately to
+   *            avoid triggering the visual cue in the URL bar.
+   *          portOrPath:
+   *            The port or path to listen on.
+   *            If given an integer, the port to listen on.  Use -1 to choose any available
+   *            port. Otherwise, the path to the unix socket domain file to listen on.
+   *            Defaults is null.
+   *          webSocket:
+   *            Whether to use WebSocket protocol. Defaults is false.
+   *        }
+   */
+  constructor(devToolsServer, socketOptions) {
+    super();
 
-  // Set socket options with default value
-  this._socketOptions = {
-    authenticator:
-      socketOptions.authenticator || new (Authenticators.get().Server)(),
-    discoverable: !!socketOptions.discoverable,
-    fromBrowserToolbox: !!socketOptions.fromBrowserToolbox,
-    portOrPath: socketOptions.portOrPath || null,
-    webSocket: !!socketOptions.webSocket,
-  };
+    this._devToolsServer = devToolsServer;
 
-  EventEmitter.decorate(this);
-}
+    // Set socket options with default value
+    this._socketOptions = {
+      authenticator:
+        socketOptions.authenticator || new (Authenticators.get().Server)(),
+      discoverable: !!socketOptions.discoverable,
+      fromBrowserToolbox: !!socketOptions.fromBrowserToolbox,
+      portOrPath: socketOptions.portOrPath || null,
+      webSocket: !!socketOptions.webSocket,
+    };
+  }
 
-SocketListener.prototype = {
   get authenticator() {
     return this._socketOptions.authenticator;
-  },
+  }
 
   get discoverable() {
     return this._socketOptions.discoverable;
-  },
+  }
 
   get fromBrowserToolbox() {
     return this._socketOptions.fromBrowserToolbox;
-  },
+  }
 
   get portOrPath() {
     return this._socketOptions.portOrPath;
-  },
+  }
 
   get webSocket() {
     return this._socketOptions.webSocket;
-  },
+  }
 
   /**
    * Validate that all options have been set to a supported configuration.
@@ -386,7 +388,7 @@ SocketListener.prototype = {
     if (this.discoverable && !Number(this.portOrPath)) {
       throw new Error("Discovery only supported for TCP sockets.");
     }
-  },
+  }
 
   /**
    * Listens on the given port or socket file for remote debugger connections.
@@ -436,7 +438,7 @@ SocketListener.prototype = {
         );
         this.close();
       });
-  },
+  }
 
   _advertise() {
     if (!this.discoverable || !this.port) {
@@ -450,13 +452,13 @@ SocketListener.prototype = {
     this.authenticator.augmentAdvertisement(this, advertisement);
 
     discovery.addService("devtools", advertisement);
-  },
+  }
 
   _createSocketInstance() {
     return Cc["@mozilla.org/network/server-socket;1"].createInstance(
       Ci.nsIServerSocket
     );
-  },
+  }
 
   /**
    * Closes the SocketListener.  Notifies the server to remove the listener from
@@ -475,7 +477,7 @@ SocketListener.prototype = {
       });
     }
     this._devToolsServer.removeSocketListener(this);
-  },
+  }
 
   get host() {
     if (!this._socket) {
@@ -485,14 +487,14 @@ SocketListener.prototype = {
       return "127.0.0.1";
     }
     return "0.0.0.0";
-  },
+  }
 
   /**
    * Gets whether this listener uses a port number vs. a path.
    */
   get isPortBased() {
     return !!Number(this.portOrPath);
-  },
+  }
 
   /**
    * Gets the port that a TCP socket listener is listening on, or null if this
@@ -503,55 +505,55 @@ SocketListener.prototype = {
       return null;
     }
     return this._socket.port;
-  },
+  }
 
   onAllowedConnection(transport) {
     dumpn("onAllowedConnection, transport: " + transport);
     this.emit("accepted", transport, this);
-  },
+  }
 
   // nsIServerSocketListener implementation
 
-  onSocketAccepted: DevToolsUtils.makeInfallible(function (
+  onSocketAccepted = DevToolsUtils.makeInfallible(function (
     socket,
     socketTransport
   ) {
     const connection = new ServerSocketConnection(this, socketTransport);
     connection.once("allowed", this.onAllowedConnection.bind(this));
-  }, "SocketListener.onSocketAccepted"),
+  }, "SocketListener.onSocketAccepted");
 
   onStopListening(socket, status) {
     dumpn("onStopListening, status: " + status);
-  },
-};
+  }
+}
 
 /**
  * A |ServerSocketConnection| is created by a |SocketListener| for each accepted
  * incoming socket.
  */
-function ServerSocketConnection(listener, socketTransport) {
-  this._listener = listener;
-  this._socketTransport = socketTransport;
-  this._handle();
-  EventEmitter.decorate(this);
-}
+class ServerSocketConnection extends EventEmitter {
+  constructor(listener, socketTransport) {
+    super();
 
-ServerSocketConnection.prototype = {
+    this._listener = listener;
+    this._socketTransport = socketTransport;
+    this._handle();
+  }
   get authentication() {
     return this._listener.authenticator.mode;
-  },
+  }
 
   get host() {
     return this._socketTransport.host;
-  },
+  }
 
   get port() {
     return this._socketTransport.port;
-  },
+  }
 
   get address() {
     return this.host + ":" + this.port;
-  },
+  }
 
   get client() {
     const client = {
@@ -559,7 +561,7 @@ ServerSocketConnection.prototype = {
       port: this.port,
     };
     return client;
-  },
+  }
 
   get server() {
     const server = {
@@ -567,7 +569,7 @@ ServerSocketConnection.prototype = {
       port: this._listener.port,
     };
     return server;
-  },
+  }
 
   /**
    * This is the main authentication workflow.  If any pieces reject a promise,
@@ -583,7 +585,7 @@ ServerSocketConnection.prototype = {
     } catch (e) {
       this.deny(e);
     }
-  },
+  }
 
   /**
    * We need to open the streams early on, as that is required in the case of
@@ -612,7 +614,7 @@ ServerSocketConnection.prototype = {
       },
     };
     this._transport.ready();
-  },
+  }
 
   async _authenticate() {
     const result = await this._listener.authenticator.authenticate({
@@ -637,7 +639,7 @@ ServerSocketConnection.prototype = {
     // If we got an error (DISABLE_ALL, DENY, …), let's throw a NS_ERROR_CONNECTION_REFUSED
     // exception
     throw Components.Exception("", Cr.NS_ERROR_CONNECTION_REFUSED);
-  },
+  }
 
   deny(result) {
     if (this._destroyed) {
@@ -659,7 +661,7 @@ ServerSocketConnection.prototype = {
     }
     this._socketTransport.close(result);
     this.destroy();
-  },
+  }
 
   allow() {
     if (this._destroyed) {
@@ -668,15 +670,15 @@ ServerSocketConnection.prototype = {
     dumpn("Debugging connection allowed on " + this.address);
     this.emit("allowed", this._transport);
     this.destroy();
-  },
+  }
 
   destroy() {
     this._destroyed = true;
     this._listener = null;
     this._socketTransport = null;
     this._transport = null;
-  },
-};
+  }
+}
 
 exports.DebuggerSocket = DebuggerSocket;
 exports.SocketListener = SocketListener;

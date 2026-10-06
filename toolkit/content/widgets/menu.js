@@ -24,7 +24,7 @@
 
       // nsIDOMXULSelectControlItemElement
       get selected() {
-        return this.getAttribute("selected") == "true";
+        return this.hasAttribute("selected");
       }
 
       // nsIDOMXULSelectControlItemElement
@@ -133,7 +133,6 @@
   class MozMenuCaption extends MozMenuBaseMixin(MozXULElement) {
     static get inheritedAttributes() {
       return {
-        ".menu-icon": "src=image,validate,src",
         ".menu-text": "value=label,crop",
       };
     }
@@ -142,7 +141,6 @@
       this.textContent = "";
       this.appendChild(
         MozXULElement.parseXULToFragment(`
-      <image class="menu-icon" aria-hidden="true"></image>
       <label class="menu-text" crop="end" aria-hidden="true"/>
     `)
       );
@@ -174,7 +172,7 @@
     }
 
     attributeChangedCallback(name, oldValue, newValue) {
-      if (name == "acceltext") {
+      if (name == "acceltext" && this.renderedOnce) {
         if (this._ignoreAccelTextChange) {
           this._ignoreAccelTextChange = false;
         } else {
@@ -182,7 +180,7 @@
           this._computeAccelTextFromKeyIfNeeded();
         }
       }
-      if (name == "key") {
+      if (name == "key" && this.renderedOnce) {
         this._computeAccelTextFromKeyIfNeeded();
       }
       super.attributeChangedCallback(name, oldValue, newValue);
@@ -195,8 +193,7 @@
         // find-in-page in preferences, it really sucks. We can't use
         // text=label everywhere because we rely on the accesskey...
         ".menu-highlightable-text": "text=label,crop,accesskey",
-        ".menu-icon":
-          "src=image,validate,triggeringprincipal=iconloadingprincipal",
+        ".menu-icon": "srcset=image",
         ".menu-accel": "value=acceltext",
       };
     }
@@ -204,7 +201,7 @@
     static get fragment() {
       let frag = document.importNode(
         MozXULElement.parseXULToFragment(`
-      <image class="menu-icon" aria-hidden="true"/>
+      <html:img loading="lazy" class="menu-icon" aria-hidden="true"/>
       <label class="menu-text" crop="end" aria-hidden="true"/>
       <label class="menu-highlightable-text" crop="end" aria-hidden="true"/>
       <label class="menu-accel" aria-hidden="true"/>
@@ -301,8 +298,7 @@
     static get inheritedAttributes() {
       return {
         ".menu-text": "value=label,accesskey,crop",
-        ".menu-icon":
-          "src=image,triggeringprincipal=iconloadingprincipal,validate",
+        ".menu-icon": "srcset=image",
         ".menu-accel": "value=acceltext",
       };
     }
@@ -328,7 +324,7 @@
     get fragment() {
       let frag = document.importNode(
         MozXULElement.parseXULToFragment(`
-      <image class="menu-icon"/>
+      <html:img loading="lazy" class="menu-icon" aria-hidden="true"/>
       <label class="menu-text" flex="1" crop="end" aria-hidden="true"/>
       <label class="menu-accel" aria-hidden="true"/>
     `),

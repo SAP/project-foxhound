@@ -6,7 +6,7 @@
       Bug 1802215 - Allow <panel-list> to be anchored to shadow DOM nodes
     </title>
     <script src="/tests/SimpleTest/SimpleTest.js"></script>
-    <script src="./panel-list.js"></script>
+    <script src="./panel-list.mjs" type="module"></script>
     <link rel="stylesheet" href="/tests/SimpleTest/test.css" />
     <link rel="stylesheet" href="./panel-list.css" />
     <link rel="stylesheet" href="./panel-item.css" />
@@ -74,11 +74,9 @@
         // Recalculate the <panel-list> rect top value relative to the top-left
         // of the anchorRect. We expect the <panel-list> to be tightly anchored
         // to the bottom of the <button>, so we expect this new value to be 0.
-        let panelTopLeftRelativeToAnchorTopLeft =
-          panelRect.top - anchorRect.top - anchorRect.height;
         is(
-          panelTopLeftRelativeToAnchorTopLeft,
-          0,
+          Math.round(panelRect.top),
+          Math.round(anchorRect.top + anchorRect.height),
           "Panel should be tightly anchored to the bottom of the button shadow node."
         );
       });

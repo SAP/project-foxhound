@@ -2,8 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef TOOLKIT_COMPONENTS_CTYPES_TESTS_JSCTYPES_TEST_FINALIZER_H_
+#define TOOLKIT_COMPONENTS_CTYPES_TESTS_JSCTYPES_TEST_FINALIZER_H_
+
 #include "jsctypes-test.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Types.h"
 
 #define EXPORT_CDECL(type) MOZ_EXPORT type
@@ -56,3 +58,5 @@ EXPORT_CDECL(void) test_finalizer_rel_size_t_set_errno(size_t i);
 EXPORT_CDECL(void) reset_errno();
 
 MOZ_END_EXTERN_C
+
+#endif  // TOOLKIT_COMPONENTS_CTYPES_TESTS_JSCTYPES_TEST_FINALIZER_H_

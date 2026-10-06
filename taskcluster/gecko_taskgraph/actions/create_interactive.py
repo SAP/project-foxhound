@@ -12,6 +12,7 @@ from taskgraph.util.taskcluster import get_root_url, get_task_definition
 
 from gecko_taskgraph.actions.registry import register_callback_action
 from gecko_taskgraph.actions.util import create_tasks, fetch_graph_and_labels
+from gecko_taskgraph.util.constants import TEST_KINDS
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +71,9 @@ def context(params):
     # test tasks on level 3 (level-3 builders are firewalled off)
     if int(params["level"]) < 3:
         return [{"worker-implementation": "docker-worker"}]
-    return [{"worker-implementation": "docker-worker", "kind": "test"}]
+    return [
+        {"worker-implementation": "docker-worker", "kind": kind} for kind in TEST_KINDS
+    ]
     # Windows is not supported by one-click loaners yet. See
     # https://wiki.mozilla.org/ReleaseEngineering/How_To/Self_Provision_a_TaskCluster_Windows_Instance
     # for instructions for using them.
@@ -156,7 +159,7 @@ def create_interactive_action(parameters, graph_config, input, task_group_id, ta
         if email and email != "noreply@noreply.mozilla.org":
             info = {
                 "url": taskcluster_urls.ui(
-                    get_root_url(False), "tasks/${status.taskId}/connect"
+                    get_root_url(block_proxy=True), "tasks/${status.taskId}/connect"
                 ),
                 "label": label,
                 "revision": parameters["head_rev"],

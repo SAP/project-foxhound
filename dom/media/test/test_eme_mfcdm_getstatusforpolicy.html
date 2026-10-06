@@ -24,8 +24,6 @@ add_task(async function setupTestingPrefs() {
       ["media.eme.wmf.clearkey.enabled", true],
       // Use the mock clearkey CDM to create cdm for all other key systems.
       ["media.eme.wmf.use-mock-cdm-for-external-cdms", true],
-      // Our mock CDM doesn't implement 'IsTypeSupportedEx()', only 'IsTypeSupported()'
-      ["media.eme.playready.istypesupportedex", false],
     ],
   });
 });
@@ -92,7 +90,7 @@ add_task(async function testGetStatusForPolicy() {
           .catch(() => ok(false, "getStatusForPolicy failed!"));
       info(`getStatusForPolicy for HDCP ${result.minHdcpVersion} : ${keyStatus}`);
       is(keyStatus, result.expectedResult,
-          `Expected ${result.expectedResult}, got ${keyStatus}`);
+          `For ${keySystem}-${result.minHdcpVersion} : expected ${result.expectedResult}, got ${keyStatus}`);
     }
   }
 });

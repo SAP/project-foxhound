@@ -26,6 +26,10 @@ class WMFCDMProxyCallback final {
 
   void OnSessionKeyExpiration(const MFCDMKeyExpiration& aExpiration);
 
+  void OnSessionClosed(const MFCDMSessionClosedResult& aResult);
+
+  void OnRemoteProcessCrashed();
+
   void Shutdown();
 
  private:

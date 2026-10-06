@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,7 @@
 #define mozilla_glean_GleanBoolean_h
 
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/glean/bindings/BooleanStandalone.h"
 #include "mozilla/glean/bindings/GleanMetric.h"
 #include "mozilla/Result.h"
 #include "nsString.h"
@@ -18,16 +17,9 @@ namespace glean {
 
 namespace impl {
 
-class BooleanMetric {
+class BooleanMetric : public BooleanStandalone {
  public:
-  constexpr explicit BooleanMetric(uint32_t id) : mId(id) {}
-
-  /**
-   * Set to the specified boolean value.
-   *
-   * @param aValue the value to set.
-   */
-  void Set(bool aValue) const;
+  constexpr explicit BooleanMetric(uint32_t id) : BooleanStandalone(id) {}
 
   /**
    * **Test-only API**
@@ -48,9 +40,6 @@ class BooleanMetric {
    */
   Result<Maybe<bool>, nsCString> TestGetValue(
       const nsACString& aPingName = nsCString()) const;
-
- private:
-  const uint32_t mId;
 };
 
 }  // namespace impl

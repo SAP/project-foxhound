@@ -58,7 +58,7 @@ async function testSecondPage(inspector, boxmodel, browser) {
   await selectNode("p", inspector);
 
   info("Checking that the box model view shows the right value");
-  const sizeElt = boxmodel.document.querySelector(".boxmodel-size > span");
+  const sizeElt = boxmodel.document.querySelector(".boxmodel-size");
   is(sizeElt.textContent, "100" + "\u00D7" + "100");
 
   info("Listening for box model view changes and modifying the size");

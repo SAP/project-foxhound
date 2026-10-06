@@ -5,6 +5,7 @@
 package mozilla.components.browser.engine.gecko.activity
 
 import mozilla.components.concept.engine.activity.OrientationDelegate
+import mozilla.components.concept.engine.activity.OrientationDelegate.LockResult
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.AllowOrDeny.ALLOW
 import org.mozilla.geckoview.AllowOrDeny.DENY
@@ -22,8 +23,11 @@ internal class GeckoScreenOrientationDelegate(
         val result = GeckoResult<AllowOrDeny>()
 
         when (delegate.onOrientationLock(requestedOrientation)) {
-            true -> result.complete(ALLOW)
-            false -> result.complete(DENY)
+            LockResult.SUCCESS -> result.complete(ALLOW)
+            LockResult.REJECTED -> result.complete(DENY)
+            LockResult.NOT_SUPPORTED -> result.completeExceptionally(
+                UnsupportedOperationException("Not supported"),
+            )
         }
 
         return result

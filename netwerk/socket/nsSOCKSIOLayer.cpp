@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set expandtab ts=4 sw=2 sts=2 cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,7 +21,6 @@
 #include "mozilla/Components.h"
 #include "mozilla/Logging.h"
 #include "mozilla/net/DNS.h"
-#include "mozilla/Unused.h"
 
 using mozilla::LogLevel;
 using namespace mozilla::net;
@@ -172,8 +169,8 @@ class nsSOCKSSocketInfo : public nsIDNSListener {
     strcpy(aProxyAddr->local.path, PromiseFlatCString(aLocalProxyPath).get());
     return NS_OK;
 #else
-    mozilla::Unused << aLocalProxyPath;
-    mozilla::Unused << aProxyAddr;
+    (void)aLocalProxyPath;
+    (void)aProxyAddr;
     return NS_ERROR_NOT_IMPLEMENTED;
 #endif
   }
@@ -494,12 +491,9 @@ PRStatus nsSOCKSSocketInfo::ConnectToProxy(PRFileDesc* fd) {
         return PR_FAILURE;
       }
 
-      if (MOZ_LOG_TEST(gSOCKSLog, LogLevel::Debug)) {
-        char buf[kIPv6CStrBufSize];
-        mInternalProxyAddr.ToStringBuffer(buf, sizeof(buf));
-        LOGDEBUG(("socks: trying proxy server, %s:%hu", buf,
-                  ntohs(mInternalProxyAddr.inet.port)));
-      }
+      LOGDEBUG(("socks: trying proxy server, %s:%hu",
+                mInternalProxyAddr.ToString().get(),
+                ntohs(mInternalProxyAddr.inet.port)));
     }
 
     NetAddr proxy = mInternalProxyAddr;

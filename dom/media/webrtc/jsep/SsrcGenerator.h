@@ -2,9 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _SSRCGENERATOR_H_
-#define _SSRCGENERATOR_H_
+#ifndef SSRCGENERATOR_H_
+#define SSRCGENERATOR_H_
 
+#include <cstdint>
 #include <set>
 
 namespace mozilla {
@@ -17,4 +18,4 @@ class SsrcGenerator {
 };
 }  // namespace mozilla
 
-#endif  // _SSRCGENERATOR_H_
+#endif  // SSRCGENERATOR_H_

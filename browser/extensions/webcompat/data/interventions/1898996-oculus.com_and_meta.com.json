@@ -1,0 +1,18 @@
+{
+  "label": "oculus.com and meta.com",
+  "bugs": {
+    "1898996": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.oculus.com/cast*", "*://horizon.meta.com/casting*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "content_scripts": {
+        "js": ["use_chrome_vendor.js", "define_minimal_window_chrome.js"]
+      },
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

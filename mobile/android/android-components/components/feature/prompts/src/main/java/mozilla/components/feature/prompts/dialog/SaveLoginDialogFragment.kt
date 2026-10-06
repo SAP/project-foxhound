@@ -46,7 +46,7 @@ import mozilla.components.support.ktx.android.view.hideKeyboard
 import mozilla.components.support.ktx.android.view.toScope
 import mozilla.components.support.utils.ext.getParcelableCompat
 import kotlin.reflect.KProperty
-import com.google.android.material.R as MaterialR
+import com.google.android.material.R as materialR
 
 private const val KEY_LOGIN_HINT = "KEY_LOGIN_HINT"
 private const val KEY_LOGIN_USERNAME = "KEY_LOGIN_USERNAME"
@@ -106,8 +106,7 @@ internal class SaveLoginDialogFragment : PromptDialogFragment() {
                 CoroutineScope(IO).launch {
                     delay(KEYBOARD_HIDING_DELAY)
                     launch(Main) {
-                        val bottomSheet =
-                            findViewById<View>(MaterialR.id.design_bottom_sheet) as FrameLayout
+                        val bottomSheet = findViewById<View>(materialR.id.design_bottom_sheet) as FrameLayout
                         val behavior = BottomSheetBehavior.from(bottomSheet)
                         behavior.state = BottomSheetBehavior.STATE_EXPANDED
                     }
@@ -295,6 +294,7 @@ internal class SaveLoginDialogFragment : PromptDialogFragment() {
      * Check current state then update view state to match.
      */
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+    @Suppress("CognitiveComplexMethod")
     fun update() = view?.toScope()?.launch(IO) {
         val entry = LoginEntry(
             origin = origin,
@@ -319,7 +319,7 @@ internal class SaveLoginDialogFragment : PromptDialogFragment() {
             val validationDelegate =
                 feature?.loginValidationDelegate ?: return@validate
             validateDeferred = validationDelegate.shouldUpdateOrCreateAsync(entry)
-            val result = validateDeferred?.await()
+            val result = validateDeferred.await()
             withContext(Main) {
                 when (result) {
                     Result.CanBeCreated -> {
@@ -345,14 +345,11 @@ internal class SaveLoginDialogFragment : PromptDialogFragment() {
                             context?.getString(R.string.mozac_feature_prompt_update_confirmation),
                         )
                     }
-                    else -> {
-                        // no-op
-                    }
                 }
             }
             validateStateUpdate?.invokeOnCompletion {
                 if (it is CancellationException) {
-                    validateDeferred?.cancel()
+                    validateDeferred.cancel()
                 }
             }
         }

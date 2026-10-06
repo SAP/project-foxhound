@@ -1,11 +1,8 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <climits>
-#include <cmath>
 #include "FuzzingTraits.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
@@ -213,9 +210,10 @@ bool MessageManagerFuzzer::MutateValue(
 }
 
 /* static */
-bool MessageManagerFuzzer::Mutate(JSContext* aCx, const nsAString& aMessageName,
-                                  ipc::StructuredCloneData* aData,
-                                  const JS::Value& aTransfer) {
+bool MessageManagerFuzzer::Mutate(
+    JSContext* aCx, const nsAString& aMessageName,
+    NotNull<RefPtr<ipc::StructuredCloneData>>& aData,
+    const JS::Value& aTransfer) {
   MSGMGR_FUZZER_LOG("Message: %s in process: %d",
                     NS_ConvertUTF16toUTF8(aMessageName).get(),
                     XRE_GetProcessType());
@@ -238,17 +236,17 @@ bool MessageManagerFuzzer::Mutate(JSContext* aCx, const nsAString& aMessageName,
       MutateValue(aCx, scdContent, &scdMutationContent, aRecursionCounter);
 
   /* Write mutated StructuredCloneData. */
-  ipc::StructuredCloneData mutatedStructuredCloneData;
-  mutatedStructuredCloneData.Write(aCx, scdMutationContent, t,
-                                   JS::CloneDataPolicy(), rv);
+  auto mutatedStructuredCloneData =
+      MakeNotNull<RefPtr<ipc::StructuredCloneData>>();
+  mutatedStructuredCloneData->Write(aCx, scdMutationContent, t,
+                                    JS::CloneDataPolicy(), rv);
   if (NS_WARN_IF(rv.Failed())) {
     rv.SuppressException();
     JS_ClearPendingException(aCx);
     return false;
   }
 
-  // See: https://bugzilla.mozilla.org/show_bug.cgi?id=1346040
-  aData->Copy(mutatedStructuredCloneData);
+  aData = mutatedStructuredCloneData;
 
   /* Mutated and successfully written to StructuredCloneData object. */
   if (isMutated) {
@@ -306,10 +304,10 @@ bool MessageManagerFuzzer::IsEnabled() {
 }
 
 /* static */
-void MessageManagerFuzzer::TryMutate(JSContext* aCx,
-                                     const nsAString& aMessageName,
-                                     ipc::StructuredCloneData* aData,
-                                     const JS::Value& aTransfer) {
+void MessageManagerFuzzer::TryMutate(
+    JSContext* aCx, const nsAString& aMessageName,
+    NotNull<RefPtr<ipc::StructuredCloneData>>& aData,
+    const JS::Value& aTransfer) {
   if (!IsEnabled()) {
     return;
   }

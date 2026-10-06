@@ -1,24 +1,35 @@
 /* Any copyright is dedicated to the Public Domain.
- *  * http://creativecommons.org/publicdomain/zero/1.0/ */
-/*
- * Test searching for the selected text using the context menu
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
+
+/**
+ * This test searches for selected text with the context menu using both the
+ * default and default-private engines in both non-private and private windows.
  */
 
 const { AddonTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/AddonTestUtils.sys.mjs"
 );
 
+requestLongerTimeout(3);
 AddonTestUtils.initMochitest(this);
 
+const ENGINE_ITEM_ID = "context-searchselect";
+const PRIVATE_ENGINE_ITEM_ID = "context-searchselect-private";
+
 const ENGINE_NAME = "mozSearch";
+const ENGINE_URL =
+  "https://example.com/browser/browser/components/search/test/browser/mozsearch.sjs";
+
 const PRIVATE_ENGINE_NAME = "mozPrivateSearch";
+const PRIVATE_ENGINE_URL = "https://example.com/browser/";
+
 const ENGINE_DATA = new Map([
-  [
-    ENGINE_NAME,
-    "https://example.com/browser/browser/components/search/test/browser/mozsearch.sjs",
-  ],
-  [PRIVATE_ENGINE_NAME, "https://example.com:443/browser/"],
+  [ENGINE_NAME, ENGINE_URL],
+  [PRIVATE_ENGINE_NAME, PRIVATE_ENGINE_URL],
 ]);
+
+const TEST_PAGE_URL =
+  "https://example.com/browser/browser/components/search/test/browser/test_search.html";
 
 let engine;
 let privateEngine;
@@ -28,14 +39,10 @@ let oldDefaultPrivateEngine;
 
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["test.wait300msAfterTabSwitch", true],
-      ["browser.search.separatePrivateDefault", true],
-      ["browser.search.separatePrivateDefault.ui.enabled", true],
-    ],
+    set: [["test.wait300msAfterTabSwitch", true]],
   });
 
-  await Services.search.init();
+  await SearchService.init();
 
   for (let [name, search_url] of ENGINE_DATA) {
     let extension = ExtensionTestUtils.loadExtension({
@@ -55,36 +62,43 @@ add_setup(async function () {
     extensions.push(extension);
   }
 
-  engine = await Services.search.getEngineByName(ENGINE_NAME);
+  engine = await SearchService.getEngineByName(ENGINE_NAME);
   Assert.ok(engine, "Got a search engine");
-  oldDefaultEngine = await Services.search.getDefault();
-  await Services.search.setDefault(
-    engine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-  );
+  oldDefaultEngine = await SearchService.getDefault();
+  await SearchService.setDefault(engine, SearchService.CHANGE_REASON.UNKNOWN);
 
-  privateEngine = await Services.search.getEngineByName(PRIVATE_ENGINE_NAME);
+  privateEngine = await SearchService.getEngineByName(PRIVATE_ENGINE_NAME);
   Assert.ok(privateEngine, "Got a search engine");
-  oldDefaultPrivateEngine = await Services.search.getDefaultPrivate();
-  await Services.search.setDefaultPrivate(
-    privateEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-  );
+  oldDefaultPrivateEngine = await SearchService.getDefaultPrivate();
 });
 
-async function checkContextMenu(
+/**
+ * Selects some text in the current tab, opens the context menu, and checks the
+ * given menuitem.
+ *
+ * @param {object} options
+ *   Options object.
+ * @param {Window} options.win
+ *   The context menu will be opened in the current tab in this browser window.
+ * @param {string} options.itemIdToCheck
+ *   The menuitem element ID to check.
+ * @param {boolean} options.expectedShown
+ *   Whether the menuitem is expected to be visible.
+ * @param {string} options.expectedLabel
+ *   The expected label of the menuitem.
+ * @returns {object}
+ *   An object: `{ contextMenu, item }`
+ */
+async function checkContextMenu({
   win,
-  expectedName,
-  expectedBaseUrl,
-  expectedPrivateName
-) {
+  itemIdToCheck,
+  expectedShown,
+  expectedLabel,
+}) {
   let contextMenu = win.document.getElementById("contentAreaContextMenu");
   Assert.ok(contextMenu, "Got context menu XUL");
 
-  let tab = await BrowserTestUtils.openNewForegroundTab(
-    win.gBrowser,
-    "https://example.com/browser/browser/components/search/test/browser/test_search.html"
-  );
+  let tab = win.gBrowser.selectedTab;
 
   await SpecialPowers.spawn(tab.linkedBrowser, [""], async function () {
     return new Promise(resolve => {
@@ -102,56 +116,28 @@ async function checkContextMenu(
   let eventDetails = { type: "contextmenu", button: 2 };
 
   let popupPromise = BrowserTestUtils.waitForEvent(contextMenu, "popupshown");
+
+  info("Synthesizing context menu mouse event");
   BrowserTestUtils.synthesizeMouseAtCenter(
     "body",
     eventDetails,
     win.gBrowser.selectedBrowser
   );
+
+  info("Waiting for context menu to open");
   await popupPromise;
+  info("Context menu opened");
 
-  info("checkContextMenu");
-  let searchItem = contextMenu.getElementsByAttribute(
-    "id",
-    "context-searchselect"
-  )[0];
+  let searchItem = win.document.getElementById(itemIdToCheck);
   Assert.ok(searchItem, "Got search context menu item");
+
   Assert.equal(
-    searchItem.label,
-    "Search " + expectedName + " for \u201ctest%20search\u201d",
-    "Check context menu label"
-  );
-  Assert.equal(
-    searchItem.disabled,
-    false,
-    "Check that search context menu item is enabled"
+    !searchItem.hidden,
+    expectedShown,
+    "Search item should be shown or hidden as expected"
   );
 
-  let loaded = BrowserTestUtils.waitForNewTab(
-    win.gBrowser,
-    expectedBaseUrl + "?test=test%2520search",
-    true
-  );
-  contextMenu.activateItem(searchItem);
-  let searchTab = await loaded;
-  let browser = win.gBrowser.selectedBrowser;
-  await SpecialPowers.spawn(browser, [], async function () {
-    Assert.ok(
-      !/error/.test(content.document.body.innerHTML),
-      "Ensure there were no errors loading the search page"
-    );
-  });
-
-  searchItem = contextMenu.getElementsByAttribute(
-    "id",
-    "context-searchselect-private"
-  )[0];
-  Assert.ok(searchItem, "Got search in private window context menu item");
-  if (PrivateBrowsingUtils.isWindowPrivate(win)) {
-    Assert.ok(searchItem.hidden, "Search in private window should be hidden");
-  } else {
-    let expectedLabel = expectedPrivateName
-      ? "Search with " + expectedPrivateName + " in a Private Window"
-      : "Search in a Private Window";
+  if (!searchItem.hidden) {
     Assert.equal(searchItem.label, expectedLabel, "Check context menu label");
     Assert.equal(
       searchItem.disabled,
@@ -160,84 +146,304 @@ async function checkContextMenu(
     );
   }
 
-  contextMenu.hidePopup();
-
-  BrowserTestUtils.removeTab(searchTab);
-  BrowserTestUtils.removeTab(tab);
+  return { contextMenu, item: searchItem };
 }
 
-add_task(async function test_normalWindow() {
-  await checkContextMenu(
-    window,
-    ENGINE_NAME,
-    "https://example.com/browser/browser/components/search/test/browser/mozsearch.sjs",
-    PRIVATE_ENGINE_NAME
+/**
+ * Opens a new tab and calls `checkContextMenu()`. If the menuitem is expected
+ * to be visible, then this function also clicks it and verifies that a SERP is
+ * loaded, either in a new tab or in a new private window.
+ *
+ * @param {object} options
+ *   Options object.
+ * @param {Window} options.win
+ *   The new tab and `checkContextMenu()` will be called on this window.
+ * @param {string} options.itemIdToCheck
+ *   The menuitem element ID to check.
+ * @param {boolean} options.expectedShown
+ *   Whether the menuitem is expected to be visible.
+ * @param {string} options.expectedLabel
+ *   The expected label of the menuitem.
+ * @param {string} options.expectedBaseUrl
+ *   The expected base URL of the SERP loaded by the menuitem.
+ * @param {boolean} options.expectedOpensNewPrivateWindow
+ *   Whether the SERP is expected to load in a new private window.
+ */
+async function checkContextMenuAndClickItem({
+  win,
+  itemIdToCheck,
+  expectedShown,
+  expectedLabel,
+  expectedBaseUrl,
+  expectedOpensNewPrivateWindow,
+}) {
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser: win.gBrowser,
+      url: TEST_PAGE_URL,
+    },
+    async () => {
+      let { contextMenu, item } = await checkContextMenu({
+        win,
+        itemIdToCheck,
+        expectedShown,
+        expectedLabel,
+      });
+
+      if (item.hidden) {
+        let hiddenPromise = BrowserTestUtils.waitForEvent(
+          contextMenu,
+          "popuphidden"
+        );
+        info("Closing context menu");
+        contextMenu.hidePopup();
+        info("Waiting for context menu to close");
+        await hiddenPromise;
+        info("Context menu closed");
+        return;
+      }
+
+      let expectedUrl = expectedBaseUrl + "?test=test%2520search";
+      let loadPromise = expectedOpensNewPrivateWindow
+        ? BrowserTestUtils.waitForNewWindow({ url: expectedUrl })
+        : BrowserTestUtils.waitForNewTab(win.gBrowser, expectedUrl, true);
+
+      info("Clicking search item");
+      contextMenu.activateItem(item);
+
+      let message = expectedOpensNewPrivateWindow
+        ? "Waiting for new SERP private window to load"
+        : "Waiting for new SERP tab to load";
+      info(`${message}: ${expectedUrl}`);
+      let serpTabOrWin = await loadPromise;
+
+      info("SERP loaded");
+      let isSerpWin = serpTabOrWin instanceof Ci.nsIDOMWindow;
+      let serpWin = isSerpWin ? serpTabOrWin : win;
+      let browser = serpWin.gBrowser.selectedBrowser;
+      await SpecialPowers.spawn(browser, [], async function () {
+        Assert.ok(
+          !/error/.test(content.document.body.innerHTML),
+          "Ensure there were no errors loading the search page"
+        );
+      });
+
+      if (isSerpWin) {
+        await BrowserTestUtils.closeWindow(serpTabOrWin);
+      } else {
+        BrowserTestUtils.removeTab(serpTabOrWin);
+      }
+    }
   );
+}
+
+// The main test task. Runs through all possible combinations of the relevant
+// variables.
+add_task(async function test() {
+  for (let separatePrivateDefault of [false, true]) {
+    for (let separatePrivateDefaultUiEnabled of [false, true]) {
+      for (let inPrivateWindow of [false, true]) {
+        for (let checkPrivateItem of [false, true]) {
+          for (let defaultPrivateEngine of [engine, privateEngine]) {
+            await computeExpectedAndDoTest({
+              separatePrivateDefault,
+              separatePrivateDefaultUiEnabled,
+              defaultPrivateEngine,
+              inPrivateWindow,
+              checkPrivateItem,
+            });
+          }
+        }
+      }
+    }
+  }
 });
 
-add_task(async function test_privateWindow() {
-  const win = await BrowserTestUtils.openNewBrowserWindow({ private: true });
+/**
+ * Figures out the expected behavior based on some initial conditions and calls
+ * `doTest()`.
+ *
+ * @param {object} options
+ *   Options object.
+ * @param {boolean} options.separatePrivateDefault
+ *   The value to set for the `separatePrivateDefault` pref.
+ * @param {boolean} options.separatePrivateDefaultUiEnabled
+ *   The value to set for the `separatePrivateDefault.ui.enabled` pref.
+ * @param {SearchEngine} options.defaultPrivateEngine
+ *   The engine to set as the default private engine.
+ * @param {boolean} options.inPrivateWindow
+ *   Whether the test should start in a private window.
+ * @param {boolean} options.checkPrivateItem
+ *   Which menuitem to check. False means the non-private search menuitem, and
+ *   true means the private search menuitem.
+ */
+async function computeExpectedAndDoTest({
+  separatePrivateDefault,
+  separatePrivateDefaultUiEnabled,
+  defaultPrivateEngine,
+  inPrivateWindow,
+  checkPrivateItem,
+}) {
+  // When `separatePrivateDefault.ui.enabled` is false, `setDefaultPrivate()`
+  // will set the non-private default, which would make this test more complex
+  // and isn't the point anyway, so avoid that by just not setting the default
+  // private engine in that case.
+  if (!separatePrivateDefaultUiEnabled) {
+    defaultPrivateEngine = null;
+  }
 
-  registerCleanupFunction(async () => {
-    await BrowserTestUtils.closeWindow(win);
+  let expectedShown =
+    !checkPrivateItem || (!inPrivateWindow && separatePrivateDefaultUiEnabled);
+
+  let expectedLabel;
+  let expectedBaseUrl;
+  let expectedOpensNewPrivateWindow;
+  if (expectedShown) {
+    let shouldUsePrivateEngine =
+      defaultPrivateEngine && defaultPrivateEngine != engine;
+
+    if (checkPrivateItem) {
+      expectedLabel =
+        !inPrivateWindow && shouldUsePrivateEngine
+          ? "Search with " + PRIVATE_ENGINE_NAME + " in a Private Window"
+          : "Search in a Private Window";
+      expectedOpensNewPrivateWindow = !inPrivateWindow;
+    } else {
+      shouldUsePrivateEngine &&= inPrivateWindow;
+      let expectedName = shouldUsePrivateEngine
+        ? PRIVATE_ENGINE_NAME
+        : ENGINE_NAME;
+      expectedLabel =
+        "Search " + expectedName + " for \u201ctest%20search\u201d";
+      expectedOpensNewPrivateWindow = false;
+    }
+
+    expectedBaseUrl = shouldUsePrivateEngine ? PRIVATE_ENGINE_URL : ENGINE_URL;
+  }
+
+  let itemIdToCheck = checkPrivateItem
+    ? PRIVATE_ENGINE_ITEM_ID
+    : ENGINE_ITEM_ID;
+
+  await doTest({
+    separatePrivateDefault,
+    separatePrivateDefaultUiEnabled,
+    defaultPrivateEngine,
+    inPrivateWindow,
+    itemIdToCheck,
+    expectedShown,
+    expectedLabel,
+    expectedBaseUrl,
+    expectedOpensNewPrivateWindow,
   });
+}
 
-  await checkContextMenu(
-    win,
-    PRIVATE_ENGINE_NAME,
-    "https://example.com/browser/"
+/**
+ * Does one test: Sets prefs to the requested values, sets a default private
+ * engine, opens a private window to run the test in if requested, and checks
+ * and clicks the given context menu item.
+ *
+ * @param {object} options
+ *   Options object.
+ * @param {boolean} options.separatePrivateDefault
+ *   The value to set for the `separatePrivateDefault` pref.
+ * @param {boolean} options.separatePrivateDefaultUiEnabled
+ *   The value to set for the `separatePrivateDefault.ui.enabled` pref.
+ * @param {SearchEngine} options.defaultPrivateEngine
+ *   The engine to set as the default private engine.
+ * @param {boolean} options.inPrivateWindow
+ *   Whether the test should start in a private window.
+ * @param {string} options.itemIdToCheck
+ *   The menuitem element ID to check.
+ * @param {boolean} options.expectedShown
+ *   Whether the menuitem is expected to be visible.
+ * @param {string} options.expectedLabel
+ *   The expected label of the menuitem.
+ * @param {string} options.expectedBaseUrl
+ *   The expected base URL of the SERP loaded by the menuitem.
+ * @param {boolean} options.expectedOpensNewPrivateWindow
+ *   Whether the SERP is expected to load in a new private window.
+ */
+async function doTest({
+  separatePrivateDefault,
+  separatePrivateDefaultUiEnabled,
+  defaultPrivateEngine,
+  inPrivateWindow,
+  itemIdToCheck,
+  expectedShown,
+  expectedLabel,
+  expectedBaseUrl,
+  expectedOpensNewPrivateWindow,
+}) {
+  info(
+    "Doing test: " +
+      JSON.stringify(
+        {
+          separatePrivateDefault,
+          separatePrivateDefaultUiEnabled,
+          defaultPrivateEngine: defaultPrivateEngine?.name,
+          inPrivateWindow,
+          itemIdToCheck,
+          expectedShown,
+          expectedLabel,
+          expectedBaseUrl,
+          expectedOpensNewPrivateWindow,
+        },
+        null,
+        2
+      )
   );
-});
 
-add_task(async function test_normalWindow_sameDefaults() {
-  // Set the private default engine to be the same as the current default engine
-  // in 'normal' mode.
-  await Services.search.setDefaultPrivate(
-    await Services.search.getDefault(),
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-  );
-
-  await checkContextMenu(
-    window,
-    ENGINE_NAME,
-    "https://example.com/browser/browser/components/search/test/browser/mozsearch.sjs"
-  );
-});
-
-add_task(async function test_privateWindow_no_separate_engine() {
   await SpecialPowers.pushPrefEnv({
     set: [
-      // We want select events to be fired.
-      ["browser.search.separatePrivateDefault", false],
+      ["browser.search.separatePrivateDefault", separatePrivateDefault],
+      [
+        "browser.search.separatePrivateDefault.ui.enabled",
+        separatePrivateDefaultUiEnabled,
+      ],
     ],
   });
 
-  const win = await BrowserTestUtils.openNewBrowserWindow({ private: true });
+  if (defaultPrivateEngine) {
+    await SearchService.setDefaultPrivate(
+      defaultPrivateEngine,
+      SearchService.CHANGE_REASON.UNKNOWN
+    );
+  }
 
-  registerCleanupFunction(async () => {
-    await BrowserTestUtils.closeWindow(win);
+  let win = inPrivateWindow
+    ? await BrowserTestUtils.openNewBrowserWindow({ private: true })
+    : window;
+
+  await checkContextMenuAndClickItem({
+    win,
+    itemIdToCheck,
+    expectedShown,
+    expectedLabel,
+    expectedBaseUrl,
+    expectedOpensNewPrivateWindow,
   });
 
-  await checkContextMenu(
-    win,
-    ENGINE_NAME,
-    "https://example.com/browser/browser/components/search/test/browser/mozsearch.sjs"
-  );
-});
+  if (inPrivateWindow) {
+    await BrowserTestUtils.closeWindow(win);
+  }
+
+  await SpecialPowers.popPrefEnv();
+}
 
 // We can't do the unload within registerCleanupFunction as that's too late for
 // the test to be happy. Do it into a cleanup "test" here instead.
 add_task(async function cleanup() {
-  await Services.search.setDefault(
+  await SearchService.setDefault(
     oldDefaultEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    SearchService.CHANGE_REASON.UNKNOWN
   );
-  await Services.search.setDefaultPrivate(
+  await SearchService.setDefaultPrivate(
     oldDefaultPrivateEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    SearchService.CHANGE_REASON.UNKNOWN
   );
-  await Services.search.removeEngine(engine);
-  await Services.search.removeEngine(privateEngine);
+  await SearchService.removeEngine(engine);
+  await SearchService.removeEngine(privateEngine);
 
   for (let extension of extensions) {
     await extension.unload();

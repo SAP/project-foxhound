@@ -9,13 +9,13 @@ function run_test() {
   const { require } = ChromeUtils.importESModule(
     "resource://devtools/shared/loader/Loader.sys.mjs"
   );
+  const { getMdnLinkParams } = ChromeUtils.importESModule(
+    "resource://devtools/shared/mdn.mjs"
+  );
+
   const MDN_URL = "https://developer.mozilla.org/docs/";
-  const GTM_PARAMS_NM =
-    "?utm_source=mozilla" +
-    "&utm_medium=devtools-netmonitor&utm_campaign=default";
-  const GTM_PARAMS_WC =
-    "?utm_source=mozilla" +
-    "&utm_medium=devtools-webconsole&utm_campaign=default";
+  const GTM_PARAMS_NM = `?${getMdnLinkParams("devtools-netmonitor")}`;
+  const GTM_PARAMS_WC = `?${getMdnLinkParams("devtools-webconsole")}`;
   const USER_DOC_URL = "https://firefox-source-docs.mozilla.org/devtools-user/";
 
   const {

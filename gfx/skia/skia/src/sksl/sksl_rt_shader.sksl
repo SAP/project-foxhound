@@ -22,7 +22,7 @@ half4 sk_displacement(shader displMap,
                       half2 scale,
                       half4 xSelect,  // Only one of RGBA will be 1, the rest are 0
                       half4 ySelect) {
-    half4 displColor = unpremul(displMap.eval(coord));
+    half4 displColor = saturate(unpremul(displMap.eval(coord)));
     half2 displ = half2(dot(displColor, xSelect), dot(displColor, ySelect));
     displ = scale * (displ - 0.5);
     return colorMap.eval(coord + displ);
@@ -156,14 +156,19 @@ $pure half4 $compute_lighting(half3 color, half shininess, half materialType, ha
         color *= $spotlight_scale(lightDir, surfaceToLight, cosCutoffAngle, spotFalloff);
     }
 
-    // Diffuse and specular reflections scale the light's color differently
-    if (materialType == 0) {
+    // Scale color by material type
+    if (materialType == 0) { // diffuse
         half coeff = dot(normal, surfaceToLight);
         color = saturate(coeff * color);
         return half4(color, 1.0);
-    } else {
+    } else if (materialType == 1) { // specular
         half3 halfDir = normalize(surfaceToLight + half3(0, 0, 1));
         half coeff = pow(dot(normal, halfDir), shininess);
+        color = saturate(coeff * color);
+        return half4(color, max(max(color.r, color.g), color.b));
+    } else { // emboss
+        half hilite = (2 * dot(normal, surfaceToLight) - surfaceToLight.z) * surfaceToLight.z;
+        half coeff = pow(hilite, shininess);
         color = saturate(coeff * color);
         return half4(color, max(max(color.r, color.g), color.b));
     }

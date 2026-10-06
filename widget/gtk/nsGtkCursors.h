@@ -1,12 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsGtkCursors_h__
-#define nsGtkCursors_h__
+#ifndef nsGtkCursors_h_
+#define nsGtkCursors_h_
 
 typedef struct {
   const unsigned char* bits;
@@ -413,4 +410,4 @@ static const nsGtkCursor GtkCursors[] = {
      "38c5dff7c7b8962045400281044508d2"},
     {moz_none_bits, moz_none_mask_bits, 0, 0, nullptr}};
 
-#endif /* nsGtkCursors_h__ */
+#endif /* nsGtkCursors_h_ */

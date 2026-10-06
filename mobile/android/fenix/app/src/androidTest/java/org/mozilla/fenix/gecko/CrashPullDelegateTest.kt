@@ -13,10 +13,10 @@ import kotlinx.coroutines.runBlocking
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.storage.CreditCardsAddressesStorage
 import mozilla.components.concept.storage.LoginsStorage
-import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
 import org.mozilla.fenix.helpers.TestHelper
+import kotlin.test.assertNotNull
 
 class CrashPullDelegateTest {
     private lateinit var context: Context

@@ -7,7 +7,8 @@
 var excluded = getBuildConfiguration("arm64") ||
                getBuildConfiguration("arm64-simulator") ||
                getBuildConfiguration("arm") ||
-               getBuildConfiguration("arm-simulator");
+               getBuildConfiguration("arm-simulator") ||
+               getBuildConfiguration("riscv64");
 var thirtytwobit = getBuildConfiguration("pointer-byte-size") == 4;
 
 const RuntimeError = WebAssembly.RuntimeError;

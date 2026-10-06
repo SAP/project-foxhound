@@ -1914,17 +1914,18 @@ add_task(async function test_boolint_enum() {
  * Validates a value against a schema and asserts that the result is as
  * expected.
  *
- * @param {*} value
+ * @param {object} params
+ * @param {*} params.value
  *   The value to validate.
- * @param {object} schema
+ * @param {object} params.schema
  *   The schema to validate against.
- * @param {object} expectedResult
+ * @param {object} params.expectedResult
  *   The expected result.  See JsonSchemaValidator.validate for what this object
  *   should look like.  If the expected result is invalid, then this object
  *   should have an `error` property with all the properties of validation
  *   errors, including `message`, except that `rootValue` and `rootSchema` are
  *   unnecessary because this function will add them for you.
- * @param {object} options
+ * @param {object} [params.options]
  *   Options to pass to JsonSchemaValidator.validate.
  * @return {object} The return value of JsonSchemaValidator.validate, which is
  *   a result.

@@ -47,6 +47,7 @@ let testRules = [
 
 /**
  * Insert an iframe and wait for it to load.
+ *
  * @param {BrowsingContext} parentBC - The BC the frame to insert under.
  * @param {string} uri - The URI to load in the frame.
  * @returns {Promise} - A Promise which resolves once the frame has loaded.

@@ -1,5 +1,5 @@
-#ifndef icu4x_CalendarError_D_HPP
-#define icu4x_CalendarError_D_HPP
+#ifndef ICU4X_CalendarError_D_HPP
+#define ICU4X_CalendarError_D_HPP
 
 #include <stdio.h>
 #include <stdint.h>
@@ -9,7 +9,7 @@
 #include <functional>
 #include <optional>
 #include <cstdlib>
-#include "../diplomat_runtime.hpp"
+#include "diplomat_runtime.hpp"
 
 
 namespace icu4x {
@@ -27,29 +27,30 @@ namespace capi {
 
 namespace icu4x {
 /**
- * Additional information: [1](https://docs.rs/icu/latest/icu/calendar/struct.RangeError.html), [2](https://docs.rs/icu/latest/icu/calendar/enum.DateError.html)
+ * Additional information: [1](https://docs.rs/icu/2.1.1/icu/calendar/struct.RangeError.html), [2](https://docs.rs/icu/2.1.1/icu/calendar/enum.DateError.html)
  */
 class CalendarError {
 public:
-  enum Value {
-    Unknown = 0,
-    OutOfRange = 1,
-    UnknownEra = 2,
-    UnknownMonthCode = 3,
-  };
+    enum Value {
+        Unknown = 0,
+        OutOfRange = 1,
+        UnknownEra = 2,
+        UnknownMonthCode = 3,
+    };
 
-  CalendarError() = default;
-  // Implicit conversions between enum and ::Value
-  constexpr CalendarError(Value v) : value(v) {}
-  constexpr operator Value() const { return value; }
-  // Prevent usage as boolean value
-  explicit operator bool() const = delete;
+    CalendarError(): value(Value::Unknown) {}
 
-  inline icu4x::capi::CalendarError AsFFI() const;
-  inline static icu4x::CalendarError FromFFI(icu4x::capi::CalendarError c_enum);
+    // Implicit conversions between enum and ::Value
+    constexpr CalendarError(Value v) : value(v) {}
+    constexpr operator Value() const { return value; }
+    // Prevent usage as boolean value
+    explicit operator bool() const = delete;
+
+    inline icu4x::capi::CalendarError AsFFI() const;
+    inline static icu4x::CalendarError FromFFI(icu4x::capi::CalendarError c_enum);
 private:
     Value value;
 };
 
 } // namespace
-#endif // icu4x_CalendarError_D_HPP
+#endif // ICU4X_CalendarError_D_HPP

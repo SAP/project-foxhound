@@ -40,7 +40,7 @@ add_task(async function () {
     "The request params doesn't have the indended visibility."
   );
   is(
-    tabpanel.querySelector(".CodeMirror-code") === null,
+    tabpanel.querySelector(".cm-content") === null,
     true,
     "The request post data doesn't have the indended visibility."
   );
@@ -68,7 +68,7 @@ add_task(async function () {
   is(values[0].textContent, "1", "The JSON var value was incorrect.");
 
   // Toggle the raw data display. This should hide the formatted display.
-  waitForContent = waitForDOM(document, "#request-panel .CodeMirror-code");
+  waitForContent = waitForDOM(document, "#request-panel .cm-content");
   const rawDataToggle = document.querySelector(
     "#request-panel .raw-data-toggle-input .devtools-checkbox-toggle"
   );
@@ -93,7 +93,7 @@ add_task(async function () {
   );
   // Bug 1514750 - Show JSON request in plain text view also
   ok(
-    tabpanel.querySelector(".CodeMirror-code"),
+    tabpanel.querySelector(".cm-content"),
     "The request post data doesn't have the indended visibility."
   );
   ok(

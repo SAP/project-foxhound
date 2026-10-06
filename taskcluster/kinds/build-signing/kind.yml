@@ -12,6 +12,7 @@ transforms:
     - gecko_taskgraph.transforms.task
 
 kind-dependencies:
+    - artifact-build
     - build
     - build-fat-aar
 
@@ -25,6 +26,7 @@ not-for-build-platforms:
     - macosx64-devedition/opt
     - macosx64/opt
     - macosx64/debug
+    - macosx64-aarch64/opt
     - macosx64-aarch64/debug
 
 tasks:

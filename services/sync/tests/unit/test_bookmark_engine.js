@@ -18,16 +18,6 @@ const { SyncedRecordsTelemetry } = ChromeUtils.importESModule(
   "resource://services-sync/telemetry.sys.mjs"
 );
 
-var recordedEvents = [];
-
-function checkRecordedEvents(object, expected, message) {
-  // Ignore event telemetry from the merger.
-  let checkEvents = recordedEvents.filter(event => event.object == object);
-  deepEqual(checkEvents, expected, message);
-  // and clear the list so future checks are easier to write.
-  recordedEvents = [];
-}
-
 async function fetchAllRecordIds() {
   let db = await PlacesUtils.promiseDBConnection();
   let rows = await db.executeCached(`
@@ -70,12 +60,8 @@ add_setup(async function () {
   await generateNewKeys(Service.collectionKeys);
   await Service.engineManager.unregister("bookmarks");
 
-  do_get_profile; // FOG needs a profile dir
+  do_get_profile(); // FOG needs a profile dir
   Services.fog.initializeFOG();
-
-  Service.recordTelemetryEvent = (object, method, value, extra = undefined) => {
-    recordedEvents.push({ object, method, value, extra });
-  };
 });
 
 add_task(async function test_buffer_timeout() {
@@ -175,18 +161,6 @@ add_bookmark_test(async function test_maintenance_after_failure(engine) {
       sync_engine_and_validate_telem(engine, true),
       ex => ex == syncError
     );
-    checkRecordedEvents(
-      "maintenance",
-      [
-        {
-          object: "maintenance",
-          method: "run",
-          value: "bookmarks",
-          extra: undefined,
-        },
-      ],
-      "Should record event for first maintenance run"
-    );
     Assert.equal(Glean.sync.maintenanceRunBookmarks.testGetValue().length, 1);
     Services.fog.testResetFOG();
 
@@ -194,11 +168,6 @@ add_bookmark_test(async function test_maintenance_after_failure(engine) {
     await Assert.rejects(
       sync_engine_and_validate_telem(engine, true),
       ex => ex == syncError
-    );
-    checkRecordedEvents(
-      "maintenance",
-      [],
-      "Should not record event if maintenance didn't run"
     );
     Assert.equal(Glean.sync.maintenanceRunBookmarks.testGetValue(), null);
     Services.fog.testResetFOG();
@@ -212,45 +181,16 @@ add_bookmark_test(async function test_maintenance_after_failure(engine) {
       sync_engine_and_validate_telem(engine, true),
       ex => ex == syncError
     );
-    checkRecordedEvents(
-      "maintenance",
-      [
-        {
-          object: "maintenance",
-          method: "run",
-          value: "bookmarks",
-          extra: undefined,
-        },
-      ],
-      "Should record event for second maintenance run"
-    );
     Assert.equal(Glean.sync.maintenanceRunBookmarks.testGetValue().length, 1);
     Services.fog.testResetFOG();
 
     _("Fix sync failure; ensure we report success after maintenance");
     engine._syncStartup = syncStartup;
     await sync_engine_and_validate_telem(engine, false);
-    checkRecordedEvents(
-      "maintenance",
-      [
-        {
-          object: "maintenance",
-          method: "fix",
-          value: "bookmarks",
-          extra: undefined,
-        },
-      ],
-      "Should record event for successful sync after second maintenance"
-    );
     Assert.equal(Glean.sync.maintenanceFixBookmarks.testGetValue().length, 1);
     Services.fog.testResetFOG();
 
     await sync_engine_and_validate_telem(engine, false);
-    checkRecordedEvents(
-      "maintenance",
-      [],
-      "Should not record maintenance events after successful sync"
-    );
     Assert.equal(Glean.sync.maintenanceFixBookmarks.testGetValue(), null);
     Services.fog.testResetFOG();
   } finally {

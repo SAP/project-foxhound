@@ -9,8 +9,10 @@ import { createFactories } from "resource://devtools/client/shared/react-utils.m
 
 import MainTabbedAreaClass from "resource://devtools/client/jsonview/components/MainTabbedArea.mjs";
 import TreeViewClass from "resource://devtools/client/shared/components/tree/TreeView.mjs";
+import { ObjectProvider } from "resource://devtools/client/shared/components/tree/ObjectProvider.mjs";
 import { JSON_NUMBER } from "resource://devtools/client/shared/components/reps/reps/constants.mjs";
 import { parseJsonLossless } from "resource://devtools/client/shared/components/reps/reps/rep-utils.mjs";
+import { createSizeProfile } from "resource://devtools/client/jsonview/json-size-profiler.mjs";
 
 const { MainTabbedArea } = createFactories(MainTabbedAreaClass);
 
@@ -20,6 +22,7 @@ window.dispatchEvent(new CustomEvent("AppReadyStateChange"));
 
 const AUTO_EXPAND_MAX_SIZE = 100 * 1024;
 const AUTO_EXPAND_MAX_LEVEL = 7;
+const EXPAND_ALL_MAX_NODES = 100000;
 const TABS = {
   JSON: 0,
   RAW_DATA: 1,
@@ -38,6 +41,103 @@ const input = {
   prettified: false,
   expandedNodes: new Set(),
 };
+
+/**
+ * Recursively walk the tree and expand all nodes including buckets.
+ * Similar to TreeViewClass.getExpandedNodes but includes buckets.
+ */
+function expandAllNodes(data, { maxNodes = Infinity } = {}) {
+  const expandedNodes = new Set();
+
+  function walkTree(object, path = "") {
+    const children = ObjectProvider.getChildren(object, {
+      bucketLargeArrays: true,
+    });
+
+    // Check if adding these children would exceed the limit
+    if (expandedNodes.size + children.length > maxNodes) {
+      // Avoid having children half expanded
+      return;
+    }
+
+    for (const child of children) {
+      const key = ObjectProvider.getKey(child);
+      const childPath = TreeViewClass.subPath(path, key);
+
+      // Expand this node
+      expandedNodes.add(childPath);
+
+      // Recursively walk children
+      if (ObjectProvider.hasChildren(child)) {
+        walkTree(child, childPath);
+      }
+    }
+  }
+
+  // Start walking from the root if it's not a primitive
+  if (
+    data &&
+    typeof data === "object" &&
+    !(data instanceof Error) &&
+    data.type !== JSON_NUMBER
+  ) {
+    walkTree(data);
+  }
+
+  return expandedNodes;
+}
+
+/**
+ * Recursively walk the tree and expand buckets that contain matches.
+ */
+function expandBucketsWithMatches(data, searchFilter) {
+  const expandedNodes = new Set(input.expandedNodes);
+
+  function walkTree(object, path = "") {
+    const children = ObjectProvider.getChildren(object, {
+      bucketLargeArrays: true,
+    });
+
+    for (const child of children) {
+      const key = ObjectProvider.getKey(child);
+      const childPath = TreeViewClass.subPath(path, key);
+
+      // Check if this is a bucket
+      if (ObjectProvider.getType(child) === "bucket") {
+        // Check if any children in the bucket match the filter
+        const { object: array, startIndex, endIndex } = child;
+        let hasMatch = false;
+
+        for (let i = startIndex; i <= endIndex; i++) {
+          const childJson = JSON.stringify(array[i]);
+          if (childJson.toLowerCase().includes(searchFilter)) {
+            hasMatch = true;
+            break;
+          }
+        }
+
+        if (hasMatch) {
+          expandedNodes.add(childPath);
+        }
+      } else if (ObjectProvider.hasChildren(child)) {
+        // Recursively walk non-bucket nodes
+        walkTree(child, childPath);
+      }
+    }
+  }
+
+  // Start walking from the root if it's not a primitive
+  if (
+    data &&
+    typeof data === "object" &&
+    !(data instanceof Error) &&
+    data.type !== JSON_NUMBER
+  ) {
+    walkTree(data);
+  }
+
+  return expandedNodes;
+}
 
 /**
  * Application actions/commands. This list implements all commands
@@ -81,7 +181,10 @@ input.actions = {
   },
 
   onSearch(value) {
-    theApp.setState({ searchFilter: value });
+    const expandedNodes = value
+      ? expandBucketsWithMatches(input.json, value.toLowerCase())
+      : input.expandedNodes;
+    theApp.setState({ searchFilter: value, expandedNodes });
   },
 
   onPrettify() {
@@ -124,15 +227,76 @@ input.actions = {
   },
 
   onExpand() {
-    input.expandedNodes = TreeViewClass.getExpandedNodes(input.json);
+    input.expandedNodes = expandAllNodes(input.json, {
+      maxNodes: EXPAND_ALL_MAX_NODES,
+    });
     theApp.setState({ expandedNodes: input.expandedNodes });
+  },
+
+  async onProfileSize() {
+    // Get the raw JSON string
+    const jsonString = input.jsonText.textContent;
+
+    // Get profiler URL from preferences and open window immediately
+    // to avoid popup blocker (profile creation may take several seconds)
+    const origin = JSONView.profilerUrl;
+    const profilerURL = origin + "/from-post-message/";
+    const profilerWindow = window.open(profilerURL, "_blank");
+
+    if (!profilerWindow) {
+      console.error("Failed to open profiler window");
+      return;
+    }
+
+    // Extract filename from URL
+    let filename;
+    try {
+      const pathname = window.location.pathname;
+      const lastSlash = pathname.lastIndexOf("/");
+      if (lastSlash !== -1 && lastSlash < pathname.length - 1) {
+        filename = decodeURIComponent(pathname.substring(lastSlash + 1));
+      }
+    } catch (e) {
+      // Invalid URL encoding, leave filename undefined
+    }
+
+    const profile = createSizeProfile(jsonString, filename);
+
+    // Wait for profiler to be ready and send the profile
+    let isReady = false;
+    const messageHandler = function (event) {
+      if (event.origin !== origin) {
+        return;
+      }
+      if (event.data && event.data.name === "ready:response") {
+        window.removeEventListener("message", messageHandler);
+        isReady = true;
+      }
+    };
+    window.addEventListener("message", messageHandler);
+
+    // Poll until the profiler window is ready. We need to poll because the
+    // postMessage will not be received if we send it before the profiler
+    // tab has finished loading.
+    while (!isReady) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      profilerWindow.postMessage({ name: "ready:request" }, origin);
+    }
+
+    profilerWindow.postMessage(
+      {
+        name: "inject-profile",
+        profile,
+      },
+      origin
+    );
   },
 };
 
 /**
  * Helper for copying a string to the clipboard.
  *
- * @param {String} string The text to be copied.
+ * @param {string} string The text to be copied.
  */
 function copyString(string) {
   document.addEventListener(
@@ -150,8 +314,8 @@ function copyString(string) {
 /**
  * Helper for dispatching an event. It's handled in chrome scope.
  *
- * @param {String} type Event detail type
- * @param {Object} value Event detail value
+ * @param {string} type Event detail type
+ * @param {object} value Event detail value
  */
 function dispatchEvent(type, value) {
   const data = {
@@ -194,6 +358,44 @@ const promise = (async function parseJSON() {
   const jsonString = input.jsonText.textContent;
   try {
     input.json = parseJsonLossless(jsonString);
+
+    // Expose a clean public API for accessing JSON data from the console
+    // This is not tied to internal implementation details
+    window.$json = {
+      // The parsed JSON data
+      get data() {
+        return input.json;
+      },
+      // The original JSON text
+      get text() {
+        return jsonString;
+      },
+      // HTTP headers
+      get headers() {
+        return JSONView.headers;
+      },
+    };
+
+    // Log a welcome message to the console
+    const intro = "font-size: 130%;";
+    const bold = "font-family: monospace; font-weight: bold;";
+    const reset = "";
+    console.log(
+      "%cData available from the console:%c\n\n" +
+        "%c$json.data%c - The parsed JSON object\n" +
+        "%c$json.text%c - The original JSON text\n" +
+        "%c$json.headers%c - HTTP request and response headers\n\n" +
+        "The JSON Viewer is documented here:\n" +
+        "https://firefox-source-docs.mozilla.org/devtools-user/json_viewer/",
+      intro,
+      reset,
+      bold,
+      reset,
+      bold,
+      reset,
+      bold,
+      reset
+    );
   } catch (err) {
     input.json = err;
     // Display the raw data tab for invalid json

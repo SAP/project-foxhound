@@ -21,7 +21,7 @@ EXTRA_JS_MODULES.backgroundtasks += [
 
 ## Implementing a background task
 
-In `BackgroundTask_TASKNAME.sys.mjs`, define a function `runBackgroundTask` that returns a `Promise`.  `runBackgroundTask` will be awaited and the integer value it resolves to will be used as the exit code of the `--backgroundtask TASKNAME` invocation.  Optionally, `runBackgroundTask` can take an [`nsICommandLine` instance](https://searchfox.org/mozilla-central/source/toolkit/components/commandlines/nsICommandLine.idl) as a parameter.  For example:
+In `BackgroundTask_TASKNAME.sys.mjs`, define a function `runBackgroundTask` that returns a `Promise`.  `runBackgroundTask` will be awaited and the integer value it resolves to will be used as the exit code of the `--backgroundtask TASKNAME` invocation.  Optionally, `runBackgroundTask` can take an [`nsICommandLine` instance](https://searchfox.org/firefox-main/source/toolkit/components/commandlines/nsICommandLine.idl) as a parameter.  For example:
 
 ```javascript
 export async function runBackgroundTask(commandLine) {
@@ -41,7 +41,7 @@ The exit codes 2-4 have special meaning:
 * Exit code 3 (`EXIT_CODE.EXCEPTION`) means the background task invocation rejected with an exception.
 * Exit code 4 (`EXIT_CODE.TIMEOUT`) means that the background task timed out before it could complete.
 
-See [`EXIT_CODE`](https://searchfox.org/mozilla-central/source/toolkit/components/backgroundtasks/BackgroundTasksManager.sys.mjs) for details.
+See [`EXIT_CODE`](https://searchfox.org/firefox-main/source/toolkit/components/backgroundtasks/BackgroundTasksManager.sys.mjs) for details.
 
 ## Test-only background tasks
 
@@ -79,7 +79,7 @@ Use `BackgroundTasksRunner::RunInDetachedProcess` is a helper to open a new back
 
 ### Most background tasks run in ephemeral temporary profiles
 
-Background tasks are intended for periodic maintenance tasks, especially global/per-installation maintenance tasks.  To allow background tasks to run at the same time as regular, headed Firefox browsing sessions, by default they run with an ephemeral temporary profile.  This ephemeral profile is deleted when the background task main process exits.  Every background task applies the preferences in [`backgroundtasks/defaults/backgroundtasks.js`](https://searchfox.org/mozilla-central/source/toolkit/components/backgroundtasks/defaults/backgroundtasks.js), but any additional preference configuration must be handled by the individual task.  Over time, we anticipate a small library of background task functionality to grow to make it easier to lock and read specific prefs from the default browsing profile, to declare per-installation prefs, etc.
+Background tasks are intended for periodic maintenance tasks, especially global/per-installation maintenance tasks.  To allow background tasks to run at the same time as regular, headed Firefox browsing sessions, by default they run with an ephemeral temporary profile.  This ephemeral profile is deleted when the background task main process exits.  Every background task applies the preferences in [`backgroundtasks/defaults/backgroundtasks.js`](https://searchfox.org/firefox-main/source/toolkit/components/backgroundtasks/defaults/backgroundtasks.js), but any additional preference configuration must be handled by the individual task.  Over time, we anticipate a small library of background task functionality to grow to make it easier to lock and read specific prefs from the default browsing profile, to declare per-installation prefs, etc.
 
 It is possible to run background tasks in non-emphemeral, i.e., persistent, profiles.  See [Bug 1775132](https://bugzilla.mozilla.org/show_bug.cgi?id=1775132) for details.
 
@@ -87,13 +87,13 @@ It is possible to run background tasks in non-emphemeral, i.e., persistent, prof
 
 The technical mechanism that keeps background tasks "lightweight" is very simple.  XPCOM declares a number of observer notifications for loosely coupling components via the observer service.   Some of those observer notifications are declared as category notifications which allow consumers to register themselves in static components.conf registration files (or in now deprecated chrome.manifest files).  In background task mode, category notifications are not registered by default.
 
-For Firefox in particular, this means that [`BrowserContentHandler.sys.mjs`](https://searchfox.org/mozilla-central/source/browser/components/BrowserContentHandler.sys.mjs) is not registered as a command-line-handler.  This means that [`BrowserGlue.sys.mjs`](https://searchfox.org/mozilla-central/source/browser/components/BrowserGlue.sys.mjs) is not loaded, and this short circuits regular headed browsing startup.
+For Firefox in particular, this means that [`BrowserContentHandler.sys.mjs`](https://searchfox.org/firefox-main/source/browser/components/BrowserContentHandler.sys.mjs) is not registered as a command-line-handler.  This means that [`BrowserGlue.sys.mjs`](https://searchfox.org/firefox-main/source/browser/components/BrowserGlue.sys.mjs) is not loaded, and this short circuits regular headed browsing startup.
 
 See the [documentation for defining static components](https://firefox-source-docs.mozilla.org/build/buildsystem/defining-xpcom-components.html) for how to change this default behaviour, and [Bug 1675848](https://bugzilla.mozilla.org/show_bug.cgi?id=1675848) for details of the implementation.
 
 ### Most background tasks do not process updates
 
-To prevent unexpected interactions between background tasks and the Firefox runtime lifecycle, such as those uncovered by [Bug 1736373](https://bugzilla.mozilla.org/show_bug.cgi?id=1736373), most background tasks do not process application updates.  The startup process decides whether to process updates in [`::ShouldProcessUpdates`](https://searchfox.org/mozilla-central/source/toolkit/xre/nsAppRunner.cpp) and the predicate that determines whether a particular background task *does* process updates is [`BackgroundTasks::IsUpdatingTaskName`](https://searchfox.org/mozilla-central/source/toolkit/components/backgroundtasks/BackgroundTasks.h).
+To prevent unexpected interactions between background tasks and the Firefox runtime lifecycle, such as those uncovered by [Bug 1736373](https://bugzilla.mozilla.org/show_bug.cgi?id=1736373), most background tasks do not process application updates.  The startup process decides whether to process updates in [`::ShouldProcessUpdates`](https://searchfox.org/firefox-main/source/toolkit/xre/nsAppRunner.cpp) and the predicate that determines whether a particular background task *does* process updates is [`BackgroundTasks::IsUpdatingTaskName`](https://searchfox.org/firefox-main/source/toolkit/components/backgroundtasks/BackgroundTasks.h).
 
 Background tasks that are launched at shutdown (and that are not updating) do not prevent Firefox from updating.  However, this can result in Firefox updating out from underneath a running background task: see [this summary of the issue](https://bugzilla.mozilla.org/show_bug.cgi?id=1480452#c8).  Generally, background tasks should be minimal and short-lived and are unlikely to launch additional child subprocesses after startup, so they should not witness this issue, but it is still possible.  See the diagram below visualizing process lifetimes.
 
@@ -111,7 +111,7 @@ Background tasks that are launched at shutdown (and that are not updating) do no
 
 ### Most background tasks produce console output
 
-Background tasks are usually scheduled in situations where their output is not user-visible: by the Windows Task Scheduler, at shutdown, etc.  Therefore, it's usually safe to always produce console output.  But some tasks, especially shutdown tasks executed during developer builds, can "pollute" the console even after the Firefox main process has exited.  To avoid this, background tasks can opt-in to producing no output; the predicate that determines whether a particular background task *does* produce output is [`BackgroundTasks::IsNoOutputTaskName`](https://searchfox.org/mozilla-central/source/toolkit/components/backgroundtasks/BackgroundTasks.h).  This predicate can be overridden by providing the `--attach-console` command line flag or by setting the `MOZ_BACKGROUNDTASKS_IGNORE_NO_OUTPUT` environment variable to a non-empty value.
+Background tasks are usually scheduled in situations where their output is not user-visible: by the Windows Task Scheduler, at shutdown, etc.  Therefore, it's usually safe to always produce console output.  But some tasks, especially shutdown tasks executed during developer builds, can "pollute" the console even after the Firefox main process has exited.  To avoid this, background tasks can opt-in to producing no output; the predicate that determines whether a particular background task *does* produce output is [`BackgroundTasks::IsNoOutputTaskName`](https://searchfox.org/firefox-main/source/toolkit/components/backgroundtasks/BackgroundTasks.h).  This predicate can be overridden by providing the `--attach-console` command line flag or by setting the `MOZ_BACKGROUNDTASKS_IGNORE_NO_OUTPUT` environment variable to a non-empty value.
 
 The `pingsender` background task opts to produce no output: see [Bug 1736623](https://bugzilla.mozilla.org/show_bug.cgi?id=1736623).
 

@@ -29,9 +29,6 @@ const { sinon } = ChromeUtils.importESModule(
 const { FeatureCalloutMessages } = ChromeUtils.importESModule(
   "resource:///modules/asrouter/FeatureCalloutMessages.sys.mjs"
 );
-const { TelemetryTestUtils } = ChromeUtils.importESModule(
-  "resource://testing-common/TelemetryTestUtils.sys.mjs"
-);
 const { NonPrivateTabs } = ChromeUtils.importESModule(
   "resource:///modules/OpenTabs.sys.mjs"
 );
@@ -117,18 +114,6 @@ const syncedTabsData1 = [
     ],
   },
 ];
-
-async function clearAllParentTelemetryEvents() {
-  // Clear everything.
-  await TestUtils.waitForCondition(() => {
-    Services.telemetry.clearEvents();
-    let events = Services.telemetry.snapshotEvents(
-      Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
-      true
-    ).parent;
-    return !events || !events.length;
-  });
-}
 
 function testVisibility(browser, expected) {
   const { document } = browser.contentWindow;
@@ -397,7 +382,7 @@ registerCleanupFunction(() => {
 async function navigateToViewAndWait(document, view) {
   info(`navigateToViewAndWait, for ${view}`);
   const navigation = document.querySelector("moz-page-nav");
-  const win = document.ownerGlobal;
+  const win = document.documentGlobal;
   SimpleTest.promiseFocus(win);
   let navButton = Array.from(navigation.pageNavButtons).find(pageNavButton => {
     return pageNavButton.view === view;
@@ -457,39 +442,12 @@ async function clickFirefoxViewButton(win) {
   );
 }
 
-/**
- * Wait for and assert telemetry events.
- *
- * @param {Array} eventDetails
- *   Nested array of event details
- */
-async function telemetryEvent(eventDetails) {
-  await TestUtils.waitForCondition(
-    () => {
-      let events = Services.telemetry.snapshotEvents(
-        Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
-        false
-      ).parent;
-      return events && events.length >= 1;
-    },
-    "Waiting for firefoxview_next telemetry event.",
-    200,
-    100
-  );
-
-  TelemetryTestUtils.assertEvents(
-    eventDetails,
-    { category: "firefoxview_next" },
-    { clear: true, process: "parent" }
-  );
-}
-
 function setSortOption(component, value) {
   info(`Sort by ${value}.`);
   const el = component.optionsContainer.querySelector(
     `input[value='${value}']`
   );
-  EventUtils.synthesizeMouseAtCenter(el, {}, el.ownerGlobal);
+  EventUtils.synthesizeMouseAtCenter(el, {}, el.documentGlobal);
 }
 
 /**
@@ -542,7 +500,7 @@ async function click_recently_closed_tab_item(itemElem, itemProperty = "") {
   const closedObjectsChangePromise = TestUtils.topicObserved(
     "sessionstore-closed-objects-changed"
   );
-  EventUtils.synthesizeMouseAtCenter(clickTarget, {}, itemElem.ownerGlobal);
+  EventUtils.synthesizeMouseAtCenter(clickTarget, {}, itemElem.documentGlobal);
   await closedObjectsChangePromise;
 }
 
@@ -553,14 +511,14 @@ async function waitForRecentlyClosedTabsList(doc) {
   // Check that the tabs list is rendered
   await TestUtils.waitForCondition(() => {
     return recentlyClosedComponent.cardEl;
-  });
+  }, "Waiting for the recently closed component to have a card element");
   let cardContainer = recentlyClosedComponent.cardEl;
   let cardMainSlotNode = Array.from(
     cardContainer?.mainSlot?.assignedNodes()
   )[0];
   await TestUtils.waitForCondition(() => {
     return cardMainSlotNode.rowEls.length;
-  });
+  }, "Waiting for the card main slot node to have row elements");
   return [cardMainSlotNode, cardMainSlotNode.rowEls];
 }
 

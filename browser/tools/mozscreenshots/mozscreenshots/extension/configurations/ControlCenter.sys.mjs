@@ -233,7 +233,7 @@ export var ControlCenter = {
           false,
           TRACKING_PAGE
         );
-        gBrowser.ownerGlobal.gProtectionsHandler.disableForCurrentPage();
+        gBrowser.documentGlobal.gProtectionsHandler.disableForCurrentPage();
         await loaded;
         await openProtectionsPopup();
       },
@@ -251,7 +251,7 @@ async function loadPage(url) {
 async function openIdentityPopup(expand) {
   let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
   let gBrowser = browserWindow.gBrowser;
-  let { gIdentityHandler } = gBrowser.ownerGlobal;
+  let { gIdentityHandler } = gBrowser.documentGlobal;
   // Ensure the popup is available, if it's never been opened.
   gIdentityHandler._initializePopup();
   gIdentityHandler._identityPopup.hidePopup();
@@ -272,7 +272,7 @@ async function openIdentityPopup(expand) {
 async function openProtectionsPopup() {
   let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
   let gBrowser = browserWindow.gBrowser;
-  let { gProtectionsHandler } = gBrowser.ownerGlobal;
+  let { gProtectionsHandler } = gBrowser.documentGlobal;
   // Force initializing the popup; we can't add classes otherwise.
   gProtectionsHandler._initializePopup();
   gProtectionsHandler._protectionsPopup.hidePopup();

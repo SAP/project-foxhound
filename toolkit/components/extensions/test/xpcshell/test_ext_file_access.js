@@ -1,5 +1,9 @@
 "use strict";
 
+ChromeUtils.defineESModuleGetters(this, {
+  ExtensionPermissions: "resource://gre/modules/ExtensionPermissions.sys.mjs",
+});
+
 const FILE_DUMMY_URL = Services.io.newFileURI(
   do_get_file("data/dummy_page.html")
 ).spec;
@@ -7,6 +11,48 @@ const FILE_DUMMY_URL = Services.io.newFileURI(
 // ExtensionContent.sys.mjs needs to know when it's running from xpcshell,
 // to use the right timeout for content scripts executed at document_idle.
 ExtensionTestUtils.mockAppInfo();
+
+// Force opt in to true to verify the permission requirement across the test.
+Services.prefs.setBoolPref(
+  "extensions.webextensions.fileSchemeAccess.requireOptIn",
+  true
+);
+
+async function grantInternalFileSchemePermission(extension) {
+  await ExtensionPermissions.add(
+    extension.id,
+    { permissions: ["internal:fileSchemeAllowed"], origins: [] },
+    // Note: Extension instance is required to be included here to enable the
+    // permission change to be detected and be propagated to the child.
+    extension.extension
+  );
+}
+
+add_task(async function test_no_content_scripts_without_internal_permission() {
+  let extensionWithoutPermission = ExtensionTestUtils.loadExtension({
+    manifest: {
+      content_scripts: [
+        {
+          matches: ["file:///*"],
+          js: ["content_script_without_access.js"],
+        },
+      ],
+    },
+    files: {
+      "content_script_without_access.js": () => {
+        browser.test.fail("Should not run without internal file permission");
+      },
+    },
+  });
+  await extensionWithoutPermission.startup();
+
+  // It is often tricky to verify that a content script has not run for the
+  // right reasons. We will rely on the other tests in this test file to open
+  // FILE_DUMMY_URL; if these other tests and extensions managed to run their
+  // content scripts in FILE_DUMMY_URL and we do not, then that is conclusive
+  // evidence that this extension was disallowed from running content scripts.
+  registerCleanupFunction(() => extensionWithoutPermission.unload());
+});
 
 // XHR/fetch from content script to the page itself is allowed.
 add_task(async function content_script_xhr_to_self() {
@@ -39,6 +85,7 @@ add_task(async function content_script_xhr_to_self() {
   });
 
   await extension.startup();
+  await grantInternalFileSchemePermission(extension);
 
   let contentPage = await ExtensionTestUtils.loadContentPage(FILE_DUMMY_URL);
   await extension.awaitMessage("done");
@@ -87,6 +134,7 @@ add_task(async function content_script_xhr_to_other_file_not_allowed() {
   });
 
   await extension.startup();
+  await grantInternalFileSchemePermission(extension);
 
   let contentPage = await ExtensionTestUtils.loadContentPage(FILE_DUMMY_URL);
   await extension.awaitMessage("done");
@@ -108,6 +156,17 @@ add_task(async function file_access_from_extension_page_not_allowed() {
       await browser.test.assertRejects(
         fetch(FILE_DUMMY_URL),
         /NetworkError when attempting to fetch resource/,
+        "block request to file from background page without internal permission"
+      );
+
+      await new Promise(resolve => {
+        browser.test.onMessage.addListener(resolve);
+        browser.test.sendMessage("wait_for_internal_permission_granted");
+      });
+
+      await browser.test.assertRejects(
+        fetch(FILE_DUMMY_URL),
+        /NetworkError when attempting to fetch resource/,
         "block request to file from background page despite file permission"
       );
 
@@ -123,6 +182,10 @@ add_task(async function file_access_from_extension_page_not_allowed() {
   });
 
   await extension.startup();
+
+  await extension.awaitMessage("wait_for_internal_permission_granted");
+  await grantInternalFileSchemePermission(extension);
+  extension.sendMessage("wait_for_internal_permission_granted:done");
 
   await extension.awaitMessage("done");
 
@@ -178,7 +241,14 @@ add_task(async function webRequest_script_request_from_file_principals() {
   });
 
   await extensionWithoutFilePermission.startup();
+  // Granting the internal permission to make sure that the lack of access is
+  // attributed to the lack of "file:" or "<all_urls>" permission, not due to
+  // the lack of the internal permission:
+  await grantInternalFileSchemePermission(extensionWithoutFilePermission);
   await extension.startup();
+  // We are purposefully avoiding grantInternalFileSchemePermission(extension)
+  // here, to verify that webRequest can observe requests initiated from
+  // file:-URLs without requiring file access.
 
   let contentPage = await ExtensionTestUtils.loadContentPage(
     Services.io.newFileURI(

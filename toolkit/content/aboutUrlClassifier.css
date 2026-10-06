@@ -8,7 +8,7 @@
   margin-block: 2em 1em;
   font-size: large;
   text-align: start;
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 #provider-table > tbody > tr > td:last-child,

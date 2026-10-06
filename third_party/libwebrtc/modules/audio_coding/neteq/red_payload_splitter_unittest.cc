@@ -12,14 +12,18 @@
 
 #include "modules/audio_coding/neteq/red_payload_splitter.h"
 
-#include <memory>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <utility>  // pair
 
-#include "api/audio_codecs/builtin_audio_decoder_factory.h"
+#include "api/audio_codecs/audio_format.h"
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
+#include "api/make_ref_counted.h"
 #include "modules/audio_coding/neteq/decoder_database.h"
 #include "modules/audio_coding/neteq/packet.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/numerics/safe_conversions.h"
 #include "test/gtest.h"
 #include "test/mock_audio_decoder_factory.h"
@@ -298,8 +302,8 @@ TEST(RedPayloadSplitter, CheckRedPayloads) {
   // Use a real DecoderDatabase object here instead of a mock, since it is
   // easier to just register the payload types and let the actual implementation
   // do its job.
-  DecoderDatabase decoder_database(
-      env, make_ref_counted<MockAudioDecoderFactory>(), std::nullopt);
+  DecoderDatabase decoder_database(env,
+                                   make_ref_counted<MockAudioDecoderFactory>());
   decoder_database.RegisterPayload(0, SdpAudioFormat("cn", 8000, 1));
   decoder_database.RegisterPayload(1, SdpAudioFormat("pcmu", 8000, 1));
   decoder_database.RegisterPayload(2,
@@ -334,8 +338,8 @@ TEST(RedPayloadSplitter, CheckRedPayloadsRecursiveRed) {
   // Use a real DecoderDatabase object here instead of a mock, since it is
   // easier to just register the payload types and let the actual implementation
   // do its job.
-  DecoderDatabase decoder_database(
-      env, make_ref_counted<MockAudioDecoderFactory>(), std::nullopt);
+  DecoderDatabase decoder_database(env,
+                                   make_ref_counted<MockAudioDecoderFactory>());
   decoder_database.RegisterPayload(kRedPayloadType,
                                    SdpAudioFormat("red", 8000, 1));
 

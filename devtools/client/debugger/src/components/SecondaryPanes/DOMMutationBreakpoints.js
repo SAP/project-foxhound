@@ -4,6 +4,8 @@
 
 import React, { Component } from "devtools/client/shared/vendor/react";
 import {
+  br,
+  button,
   div,
   input,
   li,
@@ -28,7 +30,7 @@ import {
 import actions from "../../actions/index";
 import { connect } from "devtools/client/shared/vendor/react-redux";
 
-import { CloseButton } from "../shared/Button/index";
+import CloseButton from "devtools/client/shared/components/CloseButton";
 
 const localizationTerms = {
   subtree: L10N.getStr("domMutationTypes.subtree"),
@@ -109,23 +111,21 @@ class DOMMutationBreakpointsContents extends Component {
     );
   }
 
-  /* eslint-disable react/no-danger */
   renderEmpty() {
     const { openInspector } = this.props;
-    const text = L10N.getFormatStr(
-      "noDomMutationBreakpoints",
-      `<a>${L10N.getStr("inspectorTool")}</a>`
-    );
     return div(
       {
         className: "dom-mutation-empty",
       },
-      div({
-        onClick: () => openInspector(),
-        dangerouslySetInnerHTML: {
-          __html: text,
+      L10N.getStr("noDomMutationBreakpoints.notice"),
+      br(),
+      button(
+        {
+          className: "devtools-button devtools-button-standalone",
+          onClick: () => openInspector(),
         },
-      })
+        L10N.getStr("noDomMutationBreakpoints.openInspectorButton")
+      )
     );
   }
 

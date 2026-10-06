@@ -23,7 +23,7 @@
 
 ## Code
 
-The source for `moz-input-folder` can be found under [toolkit/content/widgets/moz-input-folder/](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/moz-input-folder)
+The source for `moz-input-folder` can be found under [toolkit/content/widgets/moz-input-folder/](https://searchfox.org/firefox-main/source/toolkit/content/widgets/moz-input-folder)
 
 ## How to use `moz-input-folder`
 
@@ -148,6 +148,24 @@ In order to disable the `moz-input-folder`, add `disabled=""` or `disabled` to t
 ```html story
 <div style={{width: '500px'}} onClickCapture={e => e.stopPropagation()}>
   <moz-input-folder label="Label with accesskey" accesskey="L"></moz-input-folder>
+</div>
+```
+
+### Adding additional actions
+
+The `actions` slot can be used in cases where we need to support additional buttons beyond the built-in folder picker button, or other interactive content.
+
+```html
+<moz-input-folder label="Label">
+  <moz-button slot="actions">More actions</moz-button>
+</moz-input-folder>
+```
+
+```html story
+<div style={{width: '500px'}} onClickCapture={e => e.stopPropagation()}>
+  <moz-input-folder label="Label">
+    <moz-button slot="actions">More actions</moz-button>
+  </moz-input-folder>
 </div>
 ```
 

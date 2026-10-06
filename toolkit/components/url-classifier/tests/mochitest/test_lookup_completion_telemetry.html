@@ -1,0 +1,130 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Bug 1975198 - Test lookup and completion telemetry</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/ChromeTask.js"></script>
+  <script src="/tests/SimpleTest/GleanTest.js"></script>
+  <script type="text/javascript" src="classifierHelper.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+
+<body>
+<p id="display"></p>
+<div id="content" style="display: none">
+</div>
+<pre id="test">
+<iframe id="testFrame" onload=""></iframe>
+
+<script src="head.js"></script>
+<script class="testbody" type="text/javascript">
+
+const MALWARE_LIST = "test-malware-simple";
+const MALWARE_HOST = "malware.example.com/";
+
+const UNWANTED_LIST = "test-unwanted-simple";
+const UNWANTED_HOST = "unwanted.example.com/";
+
+const GETHASH_URL = "http://mochi.test:8888/tests/toolkit/components/url-classifier/tests/mochitest/gethash.sjs";
+
+async function gleanResetTestValues() {
+  return SpecialPowers.spawnChrome([], async () => {
+    await Services.fog.testFlushAllChildren();
+    Services.fog.testResetFOG();
+  });
+};
+
+function loadTestFrame(id) {
+  return new Promise(function(resolve) {
+    var iframe = document.getElementById(id);
+    iframe.setAttribute("src", "telemetryFrame.html");
+
+    iframe.onload = function() {
+      resolve();
+    };
+  });
+}
+
+function addPrefixToDB(list, url) {
+  var testData = [{ db: list, url, len: 4 }];
+
+  return classifierHelper.addUrlToDB(testData)
+    .catch(function(err) {
+      ok(false, "Couldn't update classifier. Error code: " + err);
+      // Abort test.
+      SimpleTest.finish();
+    });
+}
+
+add_setup(async function setup() {
+
+  await SpecialPowers.pushPrefEnv({"set": [
+    ["browser.safebrowsing.malware.enabled", true],
+    ["urlclassifier.malwareTable", "test-malware-simple,test-unwanted-simple"],
+    ["browser.safebrowsing.realTime.enabled", false],
+    ["urlclassifier.gethash.timeout_ms", 30000],
+  ]});
+
+  await classifierHelper.waitForInit();
+
+  // Reset the state on the completion server.
+  await resetStateOnCompletionServer(GETHASH_URL, MALWARE_LIST);
+  await resetStateOnCompletionServer(GETHASH_URL, MALWARE_LIST);
+  await resetStateOnCompletionServer(GETHASH_URL, "lists");
+  await resetStateOnCompletionServer(GETHASH_URL, "counter");
+
+  await classifierHelper.allowCompletion([
+  MALWARE_LIST, UNWANTED_LIST], GETHASH_URL);
+});
+
+add_task(async function test_telemetry() {
+  info(" Cleaning up the glean test values");
+  await gleanResetTestValues();
+
+  info(" Adding prefixes to the database to allow lookup");
+  await addPrefixToDB(MALWARE_LIST, MALWARE_HOST);
+  await addPrefixToDB(UNWANTED_LIST, UNWANTED_HOST);
+
+  info(" Adding completion for malware to the server");
+  await addCompletionToServer(MALWARE_LIST, MALWARE_HOST, GETHASH_URL);
+
+  info(" Loading the test frame");
+  await loadTestFrame("testFrame");
+
+  info(" Getting the glean test values");
+  let lookupHitMalware = await GleanTest.urlclassifier.lookupHit[MALWARE_LIST].testGetValue();
+  let lookupHitUnwanted = await GleanTest.urlclassifier.lookupHit[UNWANTED_LIST].testGetValue();
+  let lookupMissMalware = await GleanTest.urlclassifier.lookupMiss[MALWARE_LIST].testGetValue();
+  let lookupMissUnwanted = await GleanTest.urlclassifier.lookupMiss[UNWANTED_LIST].testGetValue();
+
+  // The test frame loads one malware URL and one unwanted URL. Verifying
+  // the lookup hits. The conditions use >= to tolerate different speculative
+  // load timings.
+  ok(lookupHitMalware >= 1, "Lookup hit should be at least 1 for malware");
+  ok(lookupHitUnwanted >= 1, "Lookup hit should be at least 1 for unwanted");
+
+  // Loading the test frame also makes requests to URLs that are not in the
+  // database. Verifying the lookup misses are not null.
+  ok(lookupMissMalware > 0, "Lookup miss should be greater than 0 for malware");
+  ok(lookupMissUnwanted > 0, "Lookup miss should be greater than 0 for unwanted");
+
+  // Verifying the completion. There should be one confirmed for malware and one
+  // not confirmed for malware.
+  let completion_events = await GleanTest.urlclassifier.completion.testGetValue();
+  ok(completion_events.length >= 2, "There should be at least 2 completion events");
+
+  for (let event of completion_events) {
+    if (event.extra.table_name == MALWARE_LIST) {
+      is(event.extra.hit, "true", "The completion event for malware should be a hit");
+    } else if (event.extra.table_name == UNWANTED_LIST) {
+      is(event.extra.hit, "false", "The completion event for unwanted should be a miss");
+    } else {
+      ok(false, "Got unexpected table name in the completion event: " + event.extra.table_name);
+    }
+  }
+});
+
+</script>
+</pre>
+</body>
+</html>

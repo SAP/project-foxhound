@@ -9,7 +9,9 @@ import sys
 from os import path
 from tempfile import mkstemp
 
-sys.path.append(path.join(path.dirname(__file__), "../python"))
+UV_SRC = os.environ.get("UV_SRC", path.dirname(path.dirname(__file__)))
+
+sys.path.append(path.join(UV_SRC, "python"))
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
 
@@ -17,8 +19,12 @@ from async_download import download_from_config
 from mozrelease.update_verify import UpdateVerifyConfig
 from util.commands import run_cmd
 
-UPDATE_VERIFY_COMMAND = ["bash", "verify.sh", "-c"]
-UPDATE_VERIFY_DIR = path.join(path.dirname(__file__), "../release/updates")
+UPDATE_VERIFY_COMMAND = [
+    "bash",
+    path.join(UV_SRC, "release/updates/verify.sh"),
+    "-c",
+]
+WORKSPACE_DIR = os.environ.get("WORKSPACE_DIR", path.join(os.getcwd(), "workspace"))
 
 
 if __name__ == "__main__":
@@ -46,7 +52,7 @@ if __name__ == "__main__":
     fh = os.fdopen(fd, "wb")
     try:
         verifyConfig = UpdateVerifyConfig()
-        verifyConfig.read(path.join(UPDATE_VERIFY_DIR, verifyConfigFile))
+        verifyConfig.read(verifyConfigFile)
         myVerifyConfig = verifyConfig.getChunk(options.chunks, options.thisChunk)
         # override the channel if explicitly set
         if options.verify_channel:
@@ -58,9 +64,10 @@ if __name__ == "__main__":
         # Before verifying, we want to download and cache all required files
         download_from_config(myVerifyConfig)
 
+        os.makedirs(WORKSPACE_DIR, exist_ok=True)
         run_cmd(
             UPDATE_VERIFY_COMMAND + [configFile],
-            cwd=UPDATE_VERIFY_DIR,
+            cwd=WORKSPACE_DIR,
             env={"DIFF_SUMMARY_LOG": path.abspath(options.diff_summary)},
         )
     finally:

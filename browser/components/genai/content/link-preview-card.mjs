@@ -14,6 +14,7 @@ import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
+  FaviconUtils: "moz-src:///toolkit/modules/FaviconUtils.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(
@@ -35,7 +36,7 @@ ChromeUtils.importESModule(
   }
 );
 
-window.MozXULElement.insertFTLIfNeeded("preview/linkPreview.ftl");
+window.MozXULElement.insertFTLIfNeeded("browser/genai.ftl");
 
 /**
  * Class representing a link preview element.
@@ -53,10 +54,10 @@ class LinkPreviewCard extends MozLitElement {
     isMissingDataErrorState: { type: Boolean },
     generationError: { type: Object }, // null = no error, otherwise contains error info
     keyPoints: { type: Array },
+    canShowKeyPoints: { type: Boolean },
     optin: { type: Boolean },
     pageData: { type: Object },
     progress: { type: Number }, // -1 = off, 0-100 = download progress
-    regionSupported: { type: Boolean },
   };
 
   constructor() {
@@ -65,10 +66,11 @@ class LinkPreviewCard extends MozLitElement {
     this.generationError = null;
     this.isMissingDataErrorState = false;
     this.keyPoints = [];
+    this.canShowKeyPoints = true;
     this.optin = false;
     this.optinRef = createRef();
+    this.firstTimeModalRef = createRef();
     this.progress = -1;
-    this.regionSupported = true;
   }
 
   /**
@@ -80,7 +82,7 @@ class LinkPreviewCard extends MozLitElement {
    * @param {MouseEvent} _event - The click event from the settings button.
    */
   handleSettingsClick(_event) {
-    const win = this.ownerGlobal;
+    const win = this.documentGlobal;
     win.openPreferences("general-link-preview");
     this.dispatchEvent(
       new CustomEvent("LinkPreviewCard:dismiss", {
@@ -105,7 +107,7 @@ class LinkPreviewCard extends MozLitElement {
     const anchor = event.target.closest("a");
     const url = anchor.href;
 
-    const win = this.ownerGlobal;
+    const win = this.documentGlobal;
     const params = {
       triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal(
         {}
@@ -141,6 +143,10 @@ class LinkPreviewCard extends MozLitElement {
    * @param {MouseEvent} _event - The click event
    */
   toggleKeyPoints(_event) {
+    // Do not allow collapsing while a download is in progress.
+    if (this.progress >= 0) {
+      return;
+    }
     Services.prefs.setBoolPref(
       "browser.ml.linkPreview.collapsed",
       !this.collapsed
@@ -153,21 +159,19 @@ class LinkPreviewCard extends MozLitElement {
     }
   }
 
-  updated(properties) {
+  updated(_properties) {
     if (this.optinRef.value) {
       this.optinRef.value.headingIcon = LinkPreviewCard.AI_ICON;
     }
 
-    if (properties.has("generating")) {
-      if (this.generating > 0) {
-        // Count up to 4 so that we can show 0 to 3 dots.
-        this.dotsTimeout = setTimeout(
-          () => (this.generating = (this.generating % 4) + 1),
-          500
-        );
-      } else {
-        // Setting to false or 0 means we're done generating.
-        clearTimeout(this.dotsTimeout);
+    if (this.firstTimeModalRef.value) {
+      this.firstTimeModalRef.value.headingIcon = LinkPreviewCard.AI_ICON;
+      this.firstTimeModalRef.value.iconAtEnd = true;
+      this.firstTimeModalRef.value.footerMessageL10nId = "";
+
+      if (this.progress >= 0) {
+        this.firstTimeModalRef.value.isLoading = true;
+        this.firstTimeModalRef.value.progressStatus = this.progress;
       }
     }
   }
@@ -179,7 +183,7 @@ class LinkPreviewCard extends MozLitElement {
    */
   get errorMessageL10nId() {
     if (this.isMissingDataErrorState) {
-      return "link-preview-generation-error-missing-data";
+      return "link-preview-generation-error-missing-data-v2";
     } else if (this.generationError) {
       return "link-preview-generation-error-unexpected";
     }
@@ -237,7 +241,7 @@ class LinkPreviewCard extends MozLitElement {
           aria-expanded=${!this.collapsed}
         >
           <div class="chevron-icon"></div>
-          Key points
+          <span data-l10n-id="link-preview-key-points-header"></span>
           <img
             class="icon"
             xmlns="http://www.w3.org/1999/xhtml"
@@ -276,7 +280,7 @@ class LinkPreviewCard extends MozLitElement {
   renderNormalGenerationCard(pageUrl) {
     // Extract the links section into its own variable
     const linksSection = html`
-      <p>Key points are AI-generated and may have mistakes.</p>
+      <p data-l10n-id="link-preview-key-points-disclaimer"></p>
     `;
 
     return html`
@@ -288,8 +292,7 @@ class LinkPreviewCard extends MozLitElement {
           role="button"
           aria-expanded=${!this.collapsed}
         >
-          <div class="chevron-icon"></div>
-          Key points
+          <span data-l10n-id="link-preview-key-points-header"></span>
           <img
             class="icon"
             xmlns="http://www.w3.org/1999/xhtml"
@@ -307,7 +310,7 @@ class LinkPreviewCard extends MozLitElement {
             }
             ${
               /* Loading placeholders with three divs each */
-              this.generating
+              this.generating || this.progress >= 0
                 ? Array(
                     Math.max(
                       0,
@@ -317,7 +320,11 @@ class LinkPreviewCard extends MozLitElement {
                     .fill()
                     .map(
                       () =>
-                        html` <li class="content-item loading">
+                        html` <li
+                          class="content-item loading ${this.progress >= 0
+                            ? "static"
+                            : ""}"
+                        >
                           <div></div>
                           <div></div>
                           <div></div>
@@ -326,7 +333,7 @@ class LinkPreviewCard extends MozLitElement {
                 : []
             }
           </ul>
-          ${!this.generating
+          ${!(this.generating || this.progress >= 0)
             ? html`
                 <div class="visit-link-container">
                   <a
@@ -335,24 +342,13 @@ class LinkPreviewCard extends MozLitElement {
                     href=${pageUrl}
                     class="visit-link"
                   >
-                    Visit page
-                    <img
-                      class="icon"
-                      xmlns="http://www.w3.org/1999/xhtml"
-                      role="presentation"
-                      src="chrome://global/skin/icons/open-in-new.svg"
-                    />
+                    <span data-l10n-id="link-preview-visit-link"></span>
                   </a>
                 </div>
               `
             : ""}
-          ${this.progress >= 0
-            ? html`
-                <p>First-time setup • <strong>${this.progress}%</strong></p>
-                <p>You'll see key points more quickly next time.</p>
-              `
-            : ""}
-          ${!this.generating
+          ${this.renderModalFirstTime()}
+          ${!(this.generating || this.progress >= 0)
             ? html`
                 <hr />
                 ${linksSection}
@@ -386,6 +382,29 @@ class LinkPreviewCard extends MozLitElement {
   }
 
   /**
+   * Renders the first-time setup modal with progress bar.
+   * Shows a modal-style component when progress is being tracked (this.progress >= 0).
+   *
+   * @returns {import('lit').TemplateResult} The first-time setup modal HTML
+   */
+  renderModalFirstTime() {
+    if (this.progress < 0) {
+      return "";
+    }
+
+    return html`
+      <model-optin
+        ${ref(this.firstTimeModalRef)}
+        headingL10nId="link-preview-first-time-setup-title"
+        messageL10nId="link-preview-first-time-setup-message"
+        progressStatus=${this.progress}
+        @MlModelOptinCancelDownload=${this._handleCancelDownload}
+      >
+      </model-optin>
+    `;
+  }
+
+  /**
    * Handles the user confirming the opt-in prompt for link preview.
    * Sets preference values to enable the feature, hides the prompt for future sessions,
    * and triggers a retry to generate the preview.
@@ -394,6 +413,13 @@ class LinkPreviewCard extends MozLitElement {
     Services.prefs.setBoolPref("browser.ml.linkPreview.optin", true);
 
     this.dispatchEvent(new CustomEvent("LinkPreviewCard:generate"));
+  }
+
+  /**
+   * Handles the user canceling the first-time model download.
+   */
+  _handleCancelDownload() {
+    this.dispatchEvent(new CustomEvent("LinkPreviewCard:cancelDownload"));
   }
 
   /**
@@ -415,7 +441,7 @@ class LinkPreviewCard extends MozLitElement {
    * @returns {import('lit').TemplateResult} The content card HTML
    */
   renderKeyPointsSection(pageUrl) {
-    if (!this.regionSupported) {
+    if (!this.canShowKeyPoints) {
       return "";
     }
 
@@ -449,6 +475,14 @@ class LinkPreviewCard extends MozLitElement {
 
     const { title, description, imageUrl } = this.pageData.meta;
 
+    const inDarkMode = window.matchMedia(
+      "(prefers-color-scheme: dark)"
+    ).matches;
+    const colorScheme = inDarkMode ? "dark" : "light";
+    const ogImageUrl = lazy.FaviconUtils.getMozRemoteImageURL(imageUrl, {
+      colorScheme,
+    });
+
     const readingTimeMinsFast = articleData.readingTimeMinsFast || "";
     const readingTimeMinsSlow = articleData.readingTimeMinsSlow || "";
     const readingTimeMinsFastStr =
@@ -472,7 +506,7 @@ class LinkPreviewCard extends MozLitElement {
           <div class="og-error-content">
             <p
               class="og-error-message"
-              data-l10n-id="link-preview-error-message"
+              data-l10n-id="link-preview-error-message-v2"
             ></p>
             <a
               class="og-card-title"
@@ -492,7 +526,7 @@ class LinkPreviewCard extends MozLitElement {
       <div class="og-card">
         <div class="og-card-content">
           ${imageUrl.startsWith("https://")
-            ? html` <img class="og-card-img" src=${imageUrl} alt=${title} /> `
+            ? html` <img class="og-card-img" src=${ogImageUrl} alt=${title} /> `
             : ""}
           ${siteName
             ? html`

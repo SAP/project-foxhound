@@ -27,6 +27,7 @@
 #define HAVE_DSPR2 0
 #define HAVE_MSA 0
 #define HAVE_MIPS64 0
+#define HAVE_X86_ASM 0
 #define HAVE_MMX 0
 #define HAVE_SSE 0
 #define HAVE_SSE2 0
@@ -42,6 +43,7 @@
 #define HAVE_LASX 1
 #define HAVE_VPX_PORTS 1
 #define HAVE_PTHREAD_H 1
+#define HAVE_PTHREAD_SETNAME_NP 1
 #define CONFIG_DEPENDENCY_TRACKING 1
 #define CONFIG_EXTERNAL_BUILD 1
 #define CONFIG_INSTALL_DOCS 0

@@ -43,11 +43,11 @@ const COUNT_LABEL = L10N.getStr("tree-map.node-count");
 /**
  * Setup and start drawing the treemap visualization
  *
- * @param  {Object} report
- * @param  {Object} canvases
+ * @param  {object} report
+ * @param  {object} canvases
  *         A CanvasUtils object that contains references to the main and zoom
  *         canvases and contexts
- * @param  {Object} dragZoom
+ * @param  {object} dragZoom
  *         A DragZoom object representing the current state of the dragging
  *         and zooming behavior
  */
@@ -102,7 +102,7 @@ const configureD3Treemap = (exports.configureD3Treemap = function (canvas) {
   /**
    * Create treemap nodes from a census report that are sorted by depth
    *
-   * @param  {Object} report
+   * @param  {object} report
    * @return {Array} An array of d3 treemap nodes
    *         // https://github.com/mbostock/d3/wiki/Treemap-Layout
    *         parent - the parent node, or null for the root.
@@ -128,11 +128,11 @@ const configureD3Treemap = (exports.configureD3Treemap = function (canvas) {
  * it's smaller than the "..." text.
  *
  * @param  {CanvasRenderingContext2D} ctx
- * @param  {Number} x
+ * @param  {number} x
  *         the position of the text
- * @param  {Number} y
+ * @param  {number} y
  *         the position of the text
- * @param  {Number} innerWidth
+ * @param  {number} innerWidth
  *         the inner width of the containing treemap cell
  * @param  {Text} name
  */
@@ -164,9 +164,9 @@ const drawTruncatedName = (exports.drawTruncatedName = function (
  * ...
  *
  * @param  {CanvasRenderingContext2D} ctx
- * @param  {Object} node
- * @param  {Number} borderWidth
- * @param  {Object} dragZoom
+ * @param  {object} node
+ * @param  {number} borderWidth
+ * @param  {object} dragZoom
  * @param  {Array}  padding
  */
 const drawText = (exports.drawText = function (
@@ -228,10 +228,10 @@ const drawText = (exports.drawText = function (
  * Draw a box given a node
  *
  * @param  {CanvasRenderingContext2D} ctx
- * @param  {Object} node
- * @param  {Number} borderWidth
- * @param  {Number} ratio
- * @param  {Object} dragZoom
+ * @param  {object} node
+ * @param  {number} borderWidth
+ * @param  {number} ratio
+ * @param  {object} dragZoom
  * @param  {Array}  padding
  */
 const drawBox = (exports.drawBox = function (
@@ -305,7 +305,7 @@ const drawTreemap = (exports.drawTreemap = function (
  * essentially reversing the transform of the containing element.
  *
  * @param  {HTMLCanvasElement} canvas
- * @param  {Object} dragZoom
+ * @param  {object} dragZoom
  */
 const positionZoomedCanvas = function (canvas, dragZoom) {
   const scale = 1 / (1 + dragZoom.zoom);

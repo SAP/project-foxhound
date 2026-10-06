@@ -46,11 +46,9 @@ class ClipboardHandler(val context: Context) {
         }
         set(value) {
             val clipData = ClipData.newPlainText("Text", value)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                clipData.apply {
-                    description.extras = PersistableBundle().apply {
-                        putBoolean("android.content.extra.IS_SENSITIVE", false)
-                    }
+            clipData.apply {
+                description.extras = PersistableBundle().apply {
+                    putBoolean("android.content.extra.IS_SENSITIVE", false)
                 }
             }
             clipboard.setPrimaryClip(clipData)
@@ -70,11 +68,9 @@ class ClipboardHandler(val context: Context) {
         }
         set(value) {
             val clipData = ClipData.newPlainText("Text", value)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                clipData.apply {
-                    description.extras = PersistableBundle().apply {
-                        putBoolean("android.content.extra.IS_SENSITIVE", true)
-                    }
+            clipData.apply {
+                description.extras = PersistableBundle().apply {
+                    putBoolean("android.content.extra.IS_SENSITIVE", true)
                 }
             }
             clipboard.setPrimaryClip(clipData)

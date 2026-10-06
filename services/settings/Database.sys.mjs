@@ -329,7 +329,7 @@ export class Database {
    * Since we run the pruning logic after syncing, any attachment without a
    * matching record can be discarded as they will be unreachable forever.
    *
-   * @param {Array<String>} excludeIds List of attachments IDs to exclude from pruning.
+   * @param {Array<string>} excludeIds List of attachments IDs to exclude from pruning.
    */
   async pruneAttachments(excludeIds) {
     const _cid = this.identifier;
@@ -496,11 +496,11 @@ const gPendingWriteOperations = new Set();
  * Helper to wrap some IDBObjectStore operations into a promise.
  *
  * @param {IDBDatabase} db
- * @param {String|String[]} storeNames - either a string or an array of strings.
+ * @param {string | string[]} storeNames - either a string or an array of strings.
  * @param {function} callback
- * @param {Object} options
- * @param {String} options.mode
- * @param {String} options.desc   for shutdown tracking.
+ * @param {object} options
+ * @param {string} options.mode
+ * @param {string} options.desc   for shutdown tracking.
  */
 async function executeIDB(storeNames, callback, options = {}) {
   if (!gDB) {
@@ -620,7 +620,6 @@ Database._cancelShutdown = () => {
 let gShutdownBlocker = false;
 Database._shutdownHandler = () => {
   gShutdownStarted = true;
-  const NS_ERROR_DOM_INDEXEDDB_NOT_ALLOWED_ERR = 0x80660006;
   // Duplicate the list (to avoid it being modified) and then
   // abort all read-only transactions.
   for (let transaction of Array.from(gPendingReadOnlyTransactions)) {
@@ -633,7 +632,7 @@ Database._shutdownHandler = () => {
       // is complete, ie if we manage to get called in between the
       // transaction completing, and our completion handler being called
       // to remove the item from the set. We don't care about that.
-      if (ex.result != NS_ERROR_DOM_INDEXEDDB_NOT_ALLOWED_ERR) {
+      if (ex.result != Cr.NS_ERROR_DOM_INDEXEDDB_NOT_ALLOWED_ERR) {
         // Report any other errors:
         console.error(ex);
       }

@@ -19,7 +19,7 @@ export const DevToolsSocketStatus = {
   /**
    * Check if there are opened DevTools sockets.
    *
-   * @param {Object=} options
+   * @param {object=} options
    * @param {boolean=} options.excludeBrowserToolboxSockets
    *     Exclude sockets opened by local Browser Toolbox sessions. Defaults to
    *     false.

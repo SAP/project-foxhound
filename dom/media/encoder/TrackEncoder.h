@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -219,7 +218,7 @@ class AudioTrackEncoder : public TrackEncoder {
     if (aInput.Length() < aOutputChannels) {
       // Up-mix. This might make the mChannelData have more than aChannels.
       AudioChannelsUpMix(&aInput, aOutputChannels,
-                         SilentChannel::ZeroChannel<T>());
+                         static_cast<const T*>(nullptr));
     }
 
     if (aInput.Length() > aOutputChannels) {

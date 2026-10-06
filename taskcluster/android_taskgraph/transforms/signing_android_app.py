@@ -30,7 +30,7 @@ def resolve_keys(config, tasks):
         for key in (
             "index",
             "signing-format",
-            "notify",
+            "notifications",
             "treeherder.platform",
         ):
             resolve_keyed_by(
@@ -92,18 +92,4 @@ def set_signing_format(config, tasks):
         signing_format = task.pop("signing-format")
         for upstream_artifact in task["worker"]["upstream-artifacts"]:
             upstream_artifact["formats"] = [signing_format]
-        yield task
-
-
-@transforms.add
-def format_email(config, tasks):
-    version = config.params["version"]
-
-    for task in tasks:
-        if "notify" in task:
-            email = task["notify"].get("email")
-            if email:
-                email["subject"] = email["subject"].format(version=version)
-                email["content"] = email["content"].format(version=version)
-
         yield task

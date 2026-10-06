@@ -3,7 +3,6 @@ https://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
 
-// const { Services } = ChromeUtils.importESModule("resource://gre/modules/Services.sys.mjs");
 const { Sqlite } = ChromeUtils.importESModule(
   "resource://gre/modules/Sqlite.sys.mjs"
 );
@@ -13,6 +12,7 @@ let databasePath;
 
 /**
  * Count the number of entries in the database.
+ *
  * @returns {number} The number of entries in the database.
  */
 async function countDatabaseEntries() {
@@ -29,6 +29,7 @@ const MAX_PENDING_UPDATES = Services.prefs.getIntPref(
 
 /**
  * Wait for an observer message.
+ *
  * @param {string} topic The topic to wait for.
  * @returns {Promise<{subject: any, topic: string, data: string}>} A promise that resolves to the subject, topic, and data of the message.
  */
@@ -55,6 +56,7 @@ async function waitForDBFlush() {
 
 /**
  * Wait for the database flush to be skipped because the buffer isn't full yet.
+ *
  * @returns {number} The number of pending updates when the flush was skipped.
  */
 async function waitForDBSkipFlush() {
@@ -65,10 +67,6 @@ async function waitForDBSkipFlush() {
 }
 
 add_setup(async function () {
-  // BTP storage needs a profile directory to work. That's where the sqlite
-  // database file is stored.
-  do_get_profile();
-
   // Get the sqlite database file path.
   let profileDir = Services.dirsvc.get("ProfD", Ci.nsIFile);
   let dbFile = profileDir.clone();

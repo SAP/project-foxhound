@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_OBSERVER_LIST_H__
-#define BASE_OBSERVER_LIST_H__
+#ifndef BASE_OBSERVER_LIST_H_
+#define BASE_OBSERVER_LIST_H_
 
 #include <algorithm>
 #include <limits>
@@ -177,4 +175,4 @@ class ObserverList {
     while ((obs = it.GetNext()) != NULL) obs->func;               \
   } while (0)
 
-#endif  // BASE_OBSERVER_LIST_H__
+#endif  // BASE_OBSERVER_LIST_H_

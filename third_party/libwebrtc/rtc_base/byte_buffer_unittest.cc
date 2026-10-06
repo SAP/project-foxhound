@@ -10,16 +10,19 @@
 
 #include "rtc_base/byte_buffer.h"
 
-#include <string.h>
-
 #include <cstdint>
+#include <cstring>
+#include <span>
+#include <string>
+#include <utility>
 
-#include "rtc_base/arraysize.h"
+#include "absl/strings/string_view.h"
+#include "rtc_base/buffer.h"
 #include "rtc_base/byte_order.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
-namespace rtc {
+namespace webrtc {
 
 using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
@@ -42,35 +45,47 @@ TEST(ByteBufferTest, TestByteOrder) {
   uint32_t n32 = 1;
   uint64_t n64 = 1;
 
-  EXPECT_EQ(n16, webrtc::NetworkToHost16(webrtc::HostToNetwork16(n16)));
-  EXPECT_EQ(n32, webrtc::NetworkToHost32(webrtc::HostToNetwork32(n32)));
-  EXPECT_EQ(n64, webrtc::NetworkToHost64(webrtc::HostToNetwork64(n64)));
+  EXPECT_EQ(n16, NetworkToHost16(HostToNetwork16(n16)));
+  EXPECT_EQ(n32, NetworkToHost32(HostToNetwork32(n32)));
+  EXPECT_EQ(n64, NetworkToHost64(HostToNetwork64(n64)));
 
-  if (webrtc::IsHostBigEndian()) {
+  if (IsHostBigEndian()) {
     // The host is the network (big) endian.
-    EXPECT_EQ(n16, webrtc::HostToNetwork16(n16));
-    EXPECT_EQ(n32, webrtc::HostToNetwork32(n32));
-    EXPECT_EQ(n64, webrtc::HostToNetwork64(n64));
+    EXPECT_EQ(n16, HostToNetwork16(n16));
+    EXPECT_EQ(n32, HostToNetwork32(n32));
+    EXPECT_EQ(n64, HostToNetwork64(n64));
 
     // GetBE converts big endian to little endian here.
-    EXPECT_EQ(n16 >> 8, webrtc::GetBE16(&n16));
-    EXPECT_EQ(n32 >> 24, webrtc::GetBE32(&n32));
-    EXPECT_EQ(n64 >> 56, webrtc::GetBE64(&n64));
+    EXPECT_EQ(n16 >> 8, GetBE16(std::span<const uint8_t>(
+                            reinterpret_cast<const uint8_t*>(&n16), 2)));
+    EXPECT_EQ(n32 >> 24, GetBE32(std::span<const uint8_t>(
+                             reinterpret_cast<const uint8_t*>(&n32), 4)));
+    EXPECT_EQ(n64 >> 56, GetBE64(std::span<const uint8_t>(
+                             reinterpret_cast<const uint8_t*>(&n64), 8)));
   } else {
     // The host is little endian.
-    EXPECT_NE(n16, webrtc::HostToNetwork16(n16));
-    EXPECT_NE(n32, webrtc::HostToNetwork32(n32));
-    EXPECT_NE(n64, webrtc::HostToNetwork64(n64));
+    EXPECT_NE(n16, HostToNetwork16(n16));
+    EXPECT_NE(n32, HostToNetwork32(n32));
+    EXPECT_NE(n64, HostToNetwork64(n64));
 
     // GetBE converts little endian to big endian here.
-    EXPECT_EQ(webrtc::GetBE16(&n16), webrtc::HostToNetwork16(n16));
-    EXPECT_EQ(webrtc::GetBE32(&n32), webrtc::HostToNetwork32(n32));
-    EXPECT_EQ(webrtc::GetBE64(&n64), webrtc::HostToNetwork64(n64));
+    EXPECT_EQ(GetBE16(std::span<const uint8_t>(
+                  reinterpret_cast<const uint8_t*>(&n16), 2)),
+              HostToNetwork16(n16));
+    EXPECT_EQ(GetBE32(std::span<const uint8_t>(
+                  reinterpret_cast<const uint8_t*>(&n32), 4)),
+              HostToNetwork32(n32));
+    EXPECT_EQ(GetBE64(std::span<const uint8_t>(
+                  reinterpret_cast<const uint8_t*>(&n64), 8)),
+              HostToNetwork64(n64));
 
     // GetBE converts little endian to big endian here.
-    EXPECT_EQ(n16 << 8, webrtc::GetBE16(&n16));
-    EXPECT_EQ(n32 << 24, webrtc::GetBE32(&n32));
-    EXPECT_EQ(n64 << 56, webrtc::GetBE64(&n64));
+    EXPECT_EQ(n16 << 8, GetBE16(std::span<const uint8_t>(
+                            reinterpret_cast<const uint8_t*>(&n16), 2)));
+    EXPECT_EQ(n32 << 24, GetBE32(std::span<const uint8_t>(
+                             reinterpret_cast<const uint8_t*>(&n32), 4)));
+    EXPECT_EQ(n64 << 56, GetBE64(std::span<const uint8_t>(
+                             reinterpret_cast<const uint8_t*>(&n64), 8)));
   }
 }
 
@@ -102,7 +117,7 @@ TEST(ByteBufferTest, TestBufferLength) {
 
 TEST(ByteBufferTest, TestReadWriteBuffer) {
   ByteBufferWriter buffer;
-  ByteBufferReader read_buf(rtc::ArrayView<const uint8_t>(nullptr, 0));
+  ByteBufferReader read_buf(std::span<const uint8_t>{});
   uint8_t ru8;
   EXPECT_FALSE(read_buf.ReadUInt8(&ru8));
 
@@ -168,7 +183,7 @@ TEST(ByteBufferTest, TestReadWriteBuffer) {
 
   // Write and read bytes
   uint8_t write_bytes[] = {3, 2, 1};
-  buffer.Write(webrtc::ArrayView<const uint8_t>(write_bytes, 3));
+  buffer.Write(std::span<const uint8_t>(write_bytes, 3));
   ByteBufferReader read_buf7(buffer);
   uint8_t read_bytes[3];
   EXPECT_TRUE(read_buf7.ReadBytes(read_bytes));
@@ -245,10 +260,10 @@ TEST(ByteBufferTest, TestWriteBuffer) {
   EXPECT_EQ(read_buf11.Length(), 0U);
 }
 
-TEST(ByteBufferTest, TestWriteArrayView) {
+TEST(ByteBufferTest, TestWriteSpan) {
   const uint8_t write_data[3] = {3, 2, 1};
-  // Write and read arrayview
-  ArrayView<const uint8_t> write_view(write_data);
+  // Write and read std::span
+  std::span<const uint8_t> write_view(write_data);
   ByteBufferWriter buffer;
   buffer.Write(write_view);
   ByteBufferReader read_buf12(buffer);
@@ -273,8 +288,8 @@ TEST(ByteBufferTest, TestReadStringView) {
   for (const auto& test : tests)
     buffer += test;
 
-  rtc::ArrayView<const uint8_t> bytes(
-      reinterpret_cast<const uint8_t*>(&buffer[0]), buffer.size());
+  std::span<const uint8_t> bytes(reinterpret_cast<const uint8_t*>(&buffer[0]),
+                                 buffer.size());
 
   ByteBufferReader read_buf(bytes);
   size_t consumed = 0;
@@ -344,9 +359,9 @@ TEST(ByteBufferTest, TestReadWriteUVarint) {
   EXPECT_EQ(size, read_buffer.Length());
 }
 
-TEST(ByteBufferTest, ReadFromArrayView) {
+TEST(ByteBufferTest, ReadFromSpan) {
   const uint8_t buf[] = {'a', 'b', 'c'};
-  ArrayView<const uint8_t> view(buf, 3);
+  std::span<const uint8_t> view(buf, 3);
 
   ByteBufferReader read_buffer(view);
   uint8_t val;
@@ -359,18 +374,18 @@ TEST(ByteBufferTest, ReadFromArrayView) {
   EXPECT_FALSE(read_buffer.ReadUInt8(&val));
 }
 
-TEST(ByteBufferTest, ReadToArrayView) {
+TEST(ByteBufferTest, ReadToSpan) {
   const uint8_t buf[] = {'a', 'b', 'c'};
-  ArrayView<const uint8_t> stored_view(buf, 3);
+  std::span<const uint8_t> stored_view(buf, 3);
   ByteBufferReader read_buffer(stored_view);
   uint8_t result[] = {'1', '2', '3'};
-  EXPECT_TRUE(read_buffer.ReadBytes(rtc::MakeArrayView(result, 2)));
+  EXPECT_TRUE(read_buffer.ReadBytes(std::span(result, 2)));
   EXPECT_EQ(result[0], 'a');
   EXPECT_EQ(result[1], 'b');
   EXPECT_EQ(result[2], '3');
-  EXPECT_TRUE(read_buffer.ReadBytes(rtc::MakeArrayView(&result[2], 1)));
+  EXPECT_TRUE(read_buffer.ReadBytes(std::span(&result[2], 1)));
   EXPECT_EQ(result[2], 'c');
-  EXPECT_FALSE(read_buffer.ReadBytes(rtc::MakeArrayView(result, 1)));
+  EXPECT_FALSE(read_buffer.ReadBytes(std::span(result, 1)));
 }
 
-}  // namespace rtc
+}  // namespace webrtc

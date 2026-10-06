@@ -1,5 +1,3 @@
-/* -*- Mode: C++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 8 -*- */
-/* vim: set sw=2 ts=8 et tw=80 ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,20 +10,20 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/dom/ClientInfo.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ClientIPCTypes.h"
+#include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/PWindowGlobalParent.h"
 #include "mozilla/dom/WindowContext.h"
-#include "mozilla/dom/WindowGlobalActorsBinding.h"
-#include "nsTHashMap.h"
-#include "nsRefPtrHashtable.h"
-#include "nsWrapperCache.h"
-#include "nsISupports.h"
-#include "nsIDOMProcessParent.h"
 #include "mozilla/dom/WindowGlobalActor.h"
-#include "mozilla/dom/CanonicalBrowsingContext.h"
+#include "mozilla/dom/WindowGlobalActorsBinding.h"
 #include "mozilla/net/CookieJarSettings.h"
+#include "nsIDOMProcessParent.h"
+#include "nsISupports.h"
+#include "nsRefPtrHashtable.h"
+#include "nsTHashMap.h"
+#include "nsWrapperCache.h"
 
 class nsIPrincipal;
 class nsIURI;
@@ -47,6 +45,7 @@ struct PageUseCounters;
 class WindowSessionStoreState;
 struct WindowSessionStoreUpdate;
 class SSCacheQueryResult;
+enum class FullscreenKeyboardLock : uint8_t;
 
 /**
  * A handle in the parent process to a specific nsGlobalWindowInner object.
@@ -102,7 +101,7 @@ class WindowGlobalParent final : public WindowContext,
 
   // Get this actor's manager if it is not an in-process actor. Returns
   // |nullptr| if the actor has been torn down, or is in-process.
-  BrowserParent* GetBrowserParent();
+  BrowserParent* GetBrowserParent() const;
 
   ContentParent* GetContentParent();
 
@@ -157,22 +156,29 @@ class WindowGlobalParent final : public WindowContext,
     return mIsInitialDocument.isSome() && mIsInitialDocument.value();
   }
 
+  bool IsUncommittedInitialDocument() { return mIsUncommittedInitialDocument; }
+
   already_AddRefed<mozilla::dom::Promise> PermitUnload(
       PermitUnloadAction aAction, uint32_t aTimeout, mozilla::ErrorResult& aRv);
 
-  void PermitUnload(std::function<void(bool)>&& aResolver);
+  void PermitUnload(
+      std::function<void(nsIDocumentViewer::PermitUnloadResult)>&& aResolver);
 
-  void PermitUnloadTraversable(const SessionHistoryInfo& aInfo,
-                               std::function<void(bool)>&& aResolver);
+  void CheckIfUnloadingIsCanceledForTraversable(
+      nsDocShellLoadState* aDocShellLoadState,
+      nsIDocumentViewer::PermitUnloadAction aAction,
+      std::function<void(nsIDocumentViewer::PermitUnloadResult)>&& aResolver);
 
-  void PermitUnloadChildNavigables(std::function<void(bool)>&& aResolver);
+  void PermitUnloadChildNavigables(
+      nsIDocumentViewer::PermitUnloadAction aAction,
+      std::function<void(nsIDocumentViewer::PermitUnloadResult)>&& aResolver);
 
   already_AddRefed<mozilla::dom::Promise> DrawSnapshot(
       const DOMRect* aRect, double aScale, const nsACString& aBackgroundColor,
       bool aResetScrollPosition, mozilla::ErrorResult& aRv);
 
   static already_AddRefed<WindowGlobalParent> CreateDisconnected(
-      const WindowGlobalInit& aInit);
+      const WindowGlobalInit& aInit, ContentParent* aForProcess);
 
   // Initialize the mFrameLoader fields for a created WindowGlobalParent. Must
   // be called after setting the Manager actor.
@@ -189,11 +195,24 @@ class WindowGlobalParent final : public WindowContext,
       const Maybe<
           ContentBlockingNotifier::StorageAccessPermissionGrantedReason>&
           aReason,
-      const Maybe<ContentBlockingNotifier::CanvasFingerprinter>&
-          aCanvasFingerprinter,
-      const Maybe<bool> aCanvasFingerprinterKnownText);
+      const Maybe<CanvasFingerprintingEvent>& aCanvasFingerprintingEvent);
 
   ContentBlockingLog* GetContentBlockingLog() { return &mContentBlockingLog; }
+
+  // Apply the existing content-blocking gates (out-of-process, non-private,
+  // top-level content) and, if they pass, flush the in-memory
+  // ContentBlockingLog to the tracking database. Safe to call repeatedly;
+  // ContentBlockingLog::ReportLog() emits only the delta since the last
+  // flush, so no double-counting occurs.
+  void MaybeReportContentBlockingLog();
+
+  // Flush every live top-level WindowGlobalParent's content-blocking log to
+  // the tracking database. Exposed to chrome JS via WebIDL so
+  // TrackingDBService can force ingestion before a read query.
+  static void FlushAllContentBlockingLogs(const GlobalObject& aGlobal) {
+    FlushAllContentBlockingLogs();
+  }
+  static void FlushAllContentBlockingLogs();
 
   nsIDOMProcessParent* GetDomProcess();
 
@@ -220,9 +239,8 @@ class WindowGlobalParent final : public WindowContext,
   void AddSecurityState(uint32_t aStateFlags);
   uint32_t GetSecurityFlags() { return mSecurityState; }
 
-  nsITransportSecurityInfo* GetSecurityInfo() { return mSecurityInfo; }
-
-  const nsACString& GetRemoteType() override;
+  const nsACString& GetRemoteType() const override;
+  void GetRemoteType(nsACString& aRemoteType) const;
 
   void NotifySessionStoreUpdatesComplete(Element* aEmbedder);
 
@@ -239,6 +257,13 @@ class WindowGlobalParent final : public WindowContext,
 
   void SetShouldReportHasBlockedOpaqueResponse(
       nsContentPolicyType aContentPolicy);
+
+  // Get the nsIChannel which led to this document being loaded, if known.
+  already_AddRefed<nsIChannel> GetDocumentChannel();
+
+  // Get the nsIChannel which failed, leading to this error document being
+  // loaded, if known.
+  already_AddRefed<nsIChannel> GetFailedChannel();
 
  protected:
   already_AddRefed<JSActor> InitJSActor(JS::Handle<JSObject*> aMaybeActor,
@@ -270,16 +295,23 @@ class WindowGlobalParent final : public WindowContext,
     }
 
     mIsInitialDocument = Some(aIsInitialDocument);
+    mIsUncommittedInitialDocument = aIsInitialDocument;
     return IPC_OK();
   }
-  mozilla::ipc::IPCResult RecvUpdateDocumentSecurityInfo(
-      nsITransportSecurityInfo* aSecurityInfo);
+  mozilla::ipc::IPCResult RecvCommitToInitialDocument() {
+    MOZ_ASSERT(mIsInitialDocument.isSome() && mIsInitialDocument.value());
+    mIsUncommittedInitialDocument = false;
+    return IPC_OK();
+  }
+  mozilla::ipc::IPCResult RecvUpdateChannels(
+      ParentProcessChannelHandle* aDocumentHandle,
+      ParentProcessChannelHandle* aFailedHandle);
   mozilla::ipc::IPCResult RecvSetClientInfo(
       const IPCClientInfo& aIPCClientInfo);
   mozilla::ipc::IPCResult RecvDestroy();
-  mozilla::ipc::IPCResult RecvRawMessage(
-      const JSActorMessageMeta& aMeta, const Maybe<ClonedMessageData>& aData,
-      const Maybe<ClonedMessageData>& aStack);
+  mozilla::ipc::IPCResult RecvRawMessage(const JSActorMessageMeta& aMeta,
+                                         JSIPCValue&& aData,
+                                         StructuredCloneData* aStack);
 
   mozilla::ipc::IPCResult RecvGetContentBlockingEvents(
       GetContentBlockingEventsResolver&& aResolver);
@@ -290,7 +322,8 @@ class WindowGlobalParent final : public WindowContext,
 
   void DrawSnapshotInternal(gfx::CrossProcessPaint* aPaint,
                             const Maybe<IntRect>& aRect, float aScale,
-                            nscolor aBackgroundColor, uint32_t aFlags);
+                            nscolor aBackgroundColor,
+                            gfx::CrossProcessPaintFlags aFlags);
 
   // WebShare API - try to share
   mozilla::ipc::IPCResult RecvShare(IPCWebShareData&& aData,
@@ -321,6 +354,13 @@ class WindowGlobalParent final : public WindowContext,
 
   mozilla::ipc::IPCResult RecvSetDocumentDomain(NotNull<nsIURI*> aDomain);
 
+  mozilla::ipc::IPCResult RecvSetSiteIntegrityProtected(
+      NotNull<nsIURI*> aSourceURI, uint64_t aMaxAge);
+
+  nsresult DoAddCertException(bool aTemporary);
+  mozilla::ipc::IPCResult RecvAddCertException(
+      bool aTemporary, AddCertExceptionResolver&& aResolver);
+
   mozilla::ipc::IPCResult RecvReloadWithHttpsOnlyException();
 
   mozilla::ipc::IPCResult RecvGetStorageAccessPermission(
@@ -329,17 +369,30 @@ class WindowGlobalParent final : public WindowContext,
 
   mozilla::ipc::IPCResult RecvSetCookies(
       const nsCString& aBaseDomain, const OriginAttributes& aOriginAttributes,
-      nsIURI* aHost, bool aFromHttp, bool aIsThirdParty,
+      nsIURI* aHost, bool aIsThirdParty,
       const nsTArray<CookieStruct>& aCookies);
 
-  mozilla::ipc::IPCResult RecvOnInitialStorageAccess();
-
   mozilla::ipc::IPCResult RecvRecordUserActivationForBTP();
+
+  mozilla::ipc::IPCResult RecvRecordUserInteractionForPermissions();
+
+  mozilla::ipc::IPCResult RecvNotifyAudioSessionTypeOverride(
+      const dom::AudioSessionType& aType);
+
+  already_AddRefed<dom::PSerialManagerParent> AllocPSerialManagerParent();
+
+  mozilla::ipc::IPCResult RecvPSerialManagerConstructor(
+      PSerialManagerParent* aActor) override;
 
   already_AddRefed<dom::PWebAuthnTransactionParent>
   AllocPWebAuthnTransactionParent();
 
   already_AddRefed<dom::PWebIdentityParent> AllocPWebIdentityParent();
+
+  already_AddRefed<dom::PDigitalCredentialParent>
+  AllocPDigitalCredentialParent();
+
+  void UpdateFullscreenKeyboardLockStatus(FullscreenKeyboardLock aStatus);
 
  private:
   WindowGlobalParent(CanonicalBrowsingContext* aBrowsingContext,
@@ -374,7 +427,11 @@ class WindowGlobalParent final : public WindowContext,
   nsCOMPtr<nsIURI> mDocumentURI;
   Maybe<nsString> mDocumentTitle;
 
+  RefPtr<WindowGlobalParent> mStaticCloneOf;
+
   Maybe<bool> mIsInitialDocument;
+
+  bool mIsUncommittedInitialDocument;
 
   // True if this window has a "beforeunload" event listener.
   bool mHasBeforeUnload;
@@ -389,7 +446,14 @@ class WindowGlobalParent final : public WindowContext,
   Maybe<ClientInfo> mClientInfo;
   // Fields being mirrored from the corresponding document
   nsCOMPtr<nsICookieJarSettings> mCookieJarSettings;
-  nsCOMPtr<nsITransportSecurityInfo> mSecurityInfo;
+
+  // The parent process channel which was used to create the current document.
+  // May not match the channel in the content process in some cases.
+  nsCOMPtr<nsIChannel> mDocumentChannel;
+
+  // The failed parent process channel which led to an error page load.
+  // May not match the channel in the content process in some cases.
+  nsCOMPtr<nsIChannel> mFailedChannel;
 
   uint32_t mSandboxFlags;
 
@@ -450,6 +514,8 @@ class WindowGlobalParent final : public WindowContext,
 
   bool mShouldReportHasBlockedOpaqueResponse = false;
 };
+
+nsCString BFCacheStatusToString(uint32_t aFlags);
 
 }  // namespace dom
 }  // namespace mozilla

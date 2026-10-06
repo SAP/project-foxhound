@@ -54,7 +54,7 @@ def WebIDLTest(parser, harness):
 
     harness.ok(
         threw,
-        "Attribute type must not be a union with a nullable sequence " "member type",
+        "Attribute type must not be a union with a nullable sequence member type",
     )
 
     parser.reset()

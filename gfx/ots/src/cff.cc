@@ -214,7 +214,7 @@ bool ParseDictDataBcd(ots::Buffer &table, std::vector<Operand> &operands) {
 
     // check number format
     uint8_t nibbles[2];
-    nibbles[0] = (nibble & 0xf0) >> 8;
+    nibbles[0] = (nibble & 0xf0) >> 4;
     nibbles[1] = (nibble & 0x0f);
     for (unsigned i = 0; i < 2; ++i) {
       if (nibbles[i] == 0xd) {  // reserved number
@@ -311,7 +311,7 @@ bool ParseDictDataNumber(ots::Buffer &table, uint8_t b0,
     if (!table.ReadU8(&b1)) {
       return OTS_FAILURE();
     }
-    result = -(b0 - 251) * 256 + b1 - 108;
+    result = -(b0 - 251) * 256 - b1 - 108;
   } else {
     return OTS_FAILURE();
   }
@@ -556,7 +556,7 @@ bool ParsePrivateDictData(
           return OTS_FAILURE();
         }
         uint16_t k = out_cff->region_index_count.at(vsindex);
-          
+
         if (operands.back().first > static_cast<uint16_t>(0xffff) || operands.back().first < 0){
           return OTS_FAILURE();
         }
@@ -899,6 +899,11 @@ bool ParseDictData(ots::Buffer& table, ots::Buffer& dict,
         if (type != DICT_DATA_TOPLEVEL) {
           return OTS_FAILURE();
         }
+        // A CID-keyed font must have exactly one FDSelect; fail if we already
+        // encountered one.
+        if (!out_cff->fd_select.empty()) {
+          return OTS_FAILURE();
+        }
         if (operands.size() != 1) {
           return OTS_FAILURE();
         }
@@ -1050,21 +1055,20 @@ bool ParseDictData(ots::Buffer& table, ots::Buffer& dict,
         if (operands.size() != 2) {
           return OTS_FAILURE();
         }
-        if (operands.back().second != DICT_OPERAND_INTEGER) {
+        // We pass table.length() + 1 here because it's OK for private_offset to be equal to
+        // table.length(), provided private_length turns out to be zero.
+        if (!CheckOffset(operands.back(), table.length() + 1)) {
           return OTS_FAILURE();
         }
         const int32_t private_offset = operands.back().first;
         operands.pop_back();
-        if (operands.back().second != DICT_OPERAND_INTEGER) {
+        // The next operand is a length, not an offset, but we can usefully apply the same check:
+        // if it is negative or exceeds the table length, it cannot be valid.
+        if (!CheckOffset(operands.back(), table.length())) {
           return OTS_FAILURE();
         }
         const int32_t private_length = operands.back().first;
-        if (private_offset > static_cast<int32_t>(table.length())) {
-          return OTS_FAILURE();
-        }
-        if (private_length >= static_cast<int32_t>(table.length()) || private_length < 0) {
-          return OTS_FAILURE();
-        }
+        // The offset & length were individually plausible; check that the combination doesn't overflow the table.
         if (private_length + private_offset > static_cast<int32_t>(table.length()) || private_length + private_offset < 0) {
           return OTS_FAILURE();
         }

@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
 http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -20,7 +19,7 @@ add_setup(async function () {
  * as more and more value types are supported.
  */
 add_task(
-  async function test_extension_toolbox_only_supported_values_editable() {
+  async function test_extension_toolbox_only_supported_values_editable_in_local() {
     async function background() {
       browser.test.onMessage.addListener(async (msg, ...args) => {
         switch (msg) {
@@ -138,7 +137,10 @@ add_task(
     const { toolbox } = await openStoragePanelForAddon(extension.id);
 
     await selectTreeItem(["extensionStorage", host]);
-    await waitForStorageData("str", "hi");
+    await waitForStorageData(
+      getExtensionStorageUniqueKey("local", "str"),
+      "hi"
+    );
 
     info("Verify that values are displayed as expected in the sidebar");
     const expectedRenderedData = {
@@ -243,14 +245,16 @@ add_task(
       expectedRenderedData
     )) {
       info(`Verify "${id}" entry`);
-      await selectTableItem(id);
+      await selectTableItem(getExtensionStorageUniqueKey("local", id));
       await findVariableViewProperties(sidebarItems, parsed);
     }
 
     info("Verify that value types supported by the storage actor are editable");
     let validate = true;
     const newValue = "anotherValue";
-    const supportedIds = Object.keys(itemsSupported);
+    const supportedIds = Object.keys(itemsSupported).map(key =>
+      getExtensionStorageUniqueKey("local", key)
+    );
 
     for (const id of supportedIds) {
       startCellEdit(id, "value", newValue);
@@ -284,9 +288,10 @@ add_task(
     };
     validate = false;
     for (const id of Object.keys(itemsUnsupported)) {
-      startCellEdit(id, "value", validate);
-      checkCellUneditable(id, "value");
-      checkCell(id, "value", expectedValStrings[id]);
+      const rowId = getExtensionStorageUniqueKey("local", id);
+      startCellEdit(rowId, "value", validate);
+      checkCellUneditable(rowId, "value");
+      checkCell(rowId, "value", expectedValStrings[id]);
     }
 
     info("Shut down the test");

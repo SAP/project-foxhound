@@ -17,6 +17,9 @@ only-for-attributes:
     - nightly
     - shippable
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 tasks:
     beetmover-checksums:
         from-deps:
@@ -26,5 +29,5 @@ tasks:
             artifact_prefix: public
             artifact_map:
                 by-release-type:
-                    beta|release.*|esr.*: taskcluster/gecko_taskgraph/manifests/firefox_candidates_checksums.yml
+                    beta|release|esr.*: taskcluster/gecko_taskgraph/manifests/firefox_candidates_checksums.yml
                     default: taskcluster/gecko_taskgraph/manifests/firefox_nightly_checksums.yml

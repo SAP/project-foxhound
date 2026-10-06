@@ -64,11 +64,11 @@ test_artifacts/
 
 # Secrets files, e.g. tokens
 .adjust_token
+.gps_integrity_token
 .sentry_token
 .mls_token
 .nimbus
 .wallpaper_url
-.pocket_consumer_key
 fenix/app/src/**/res/values/fenix_firebase_push_credentials.xml
 
 # Python Byte-compiled / optimized / DLL files
@@ -94,4 +94,3 @@ DerivedData
 *.xcuserstate
 *.xcscmblueprint
 .build
-

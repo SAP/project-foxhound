@@ -29,7 +29,9 @@ add_task(async function testOpenDebuggerReload() {
 
   const { document, tab, window } = await openAboutDebugging();
   await selectThisFirefoxPage(document, window.AboutDebugging.store);
-
+  const isStylesheetsInDebuggerEnabled = Services.prefs.getBoolPref(
+    "devtools.debugger.features.stylesheets-in-debugger"
+  );
   await installTemporaryExtensionFromXPI(
     {
       background() {
@@ -54,6 +56,7 @@ add_task(async function testOpenDebuggerReload() {
   );
   const toolbox = getToolbox(devtoolsWindow);
   const { panelWin } = toolbox.getCurrentPanel();
+  const dbg = createDebuggerContext(toolbox);
 
   info("Check the state of redux");
   ok(
@@ -97,7 +100,11 @@ add_task(async function testOpenDebuggerReload() {
   synthesizeKeyShortcut(L10N.getStr("toolbox.reload.key"), toolbox.win);
 
   await onDomCompleteResource;
-
+  if (isStylesheetsInDebuggerEnabled) {
+    // The background page is now the 5 entry in the source tree because
+    // of the added styles to the tree, and is no longer automatically expanded.
+    await clickElement(dbg, "sourceDirectoryLabel", 5);
+  }
   info("Wait until a new background log message is logged");
   await waitFor(() => {
     // As React may re-create a new sources-list element,
@@ -138,6 +145,9 @@ add_task(async function testAddAndRemoveBreakpoint() {
     window,
     EXTENSION_NAME
   );
+  const isStylesheetsInDebuggerEnabled = Services.prefs.getBoolPref(
+    "devtools.debugger.features.stylesheets-in-debugger"
+  );
   const toolbox = getToolbox(devtoolsWindow);
   const dbg = createDebuggerContext(toolbox);
 
@@ -145,11 +155,11 @@ add_task(async function testAddAndRemoveBreakpoint() {
   const sourceTreeThreads = findAllElements(dbg, "sourceTreeThreads");
   is(
     sourceTreeThreads.length,
-    1,
-    "There is only one thread with source in the Source Tree"
+    isStylesheetsInDebuggerEnabled ? 2 : 1,
+    "There are two threads with source in the Source Tree"
   );
   is(
-    sourceTreeThreads[0].textContent,
+    sourceTreeThreads[sourceTreeThreads.length - 1].textContent,
     "/_generated_background_page.html",
     "That thread is the background page"
   );
@@ -160,10 +170,13 @@ add_task(async function testAddAndRemoveBreakpoint() {
   is(threadLabels[1].textContent, "/_generated_background_page.html");
 
   info("Select the source and add a breakpoint");
-  // Note: the background script filename is dynamically generated id, so we
-  // simply get the first source from the list.
+  // Note: Style sheet sources are included and the background script filename is dynamically generated id, so we
+  // use a regex pattern to match it.
   const displayedSources = dbg.selectors.getDisplayedSourcesList();
-  const backgroundScript = displayedSources[0];
+  const backgroundScriptRegex = /source-url-moz-extension:\/\/.+\.js/g;
+  const backgroundScript = displayedSources.find(source =>
+    backgroundScriptRegex.test(source.id)
+  );
   await selectSource(dbg, backgroundScript);
   await addBreakpoint(dbg, backgroundScript, 3);
 

@@ -23,8 +23,8 @@ declare namespace MockedExports {
   interface KnownModules {
     Services: typeof import("Services");
     "resource://gre/modules/AppConstants.sys.mjs": typeof import("resource://gre/modules/AppConstants.sys.mjs");
-    "resource:///modules/CustomizableUI.sys.mjs": typeof import("resource:///modules/CustomizableUI.sys.mjs");
-    "resource:///modules/CustomizableWidgets.sys.mjs": typeof import("resource:///modules/CustomizableWidgets.sys.mjs");
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs": typeof import("moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs");
+    "moz-src:///browser/components/customizableui/CustomizableWidgets.sys.mjs": typeof import("moz-src:///browser/components/customizableui/CustomizableWidgets.sys.mjs");
     "resource://devtools/shared/loader/Loader.sys.mjs": typeof import("resource://devtools/shared/loader/Loader.sys.mjs");
     "resource://devtools/shared/performance-new/errors.sys.mjs": typeof import("resource://devtools/shared/performance-new/errors.sys.mjs");
     "resource://devtools/shared/performance-new/prefs-presets.sys.mjs": typeof import("resource://devtools/shared/performance-new/prefs-presets.sys.mjs");
@@ -35,8 +35,17 @@ declare namespace MockedExports {
     "resource://devtools/client/performance-new/popup/menu-button.sys.mjs": typeof import("resource://devtools/client/performance-new/popup/menu-button.sys.mjs");
     "resource://devtools/client/performance-new/shared/typescript-lazy-load.sys.mjs": typeof import("resource://devtools/client/performance-new/shared/typescript-lazy-load.sys.mjs");
     "resource://devtools/client/performance-new/popup/logic.sys.mjs": typeof import("resource://devtools/client/performance-new/popup/logic.sys.mjs");
-    "resource:///modules/PanelMultiView.sys.mjs": typeof import("resource:///modules/PanelMultiView.sys.mjs");
+    "moz-src:///browser/components/customizableui/PanelMultiView.sys.mjs": typeof import("moz-src:///browser/components/customizableui/PanelMultiView.sys.mjs");
     "resource://gre/modules/PlacesUtils.sys.mjs": typeof import("resource://gre/modules/PlacesUtils.sys.mjs");
+  }
+
+  type ImportESModuleTargetGlobal =
+    | "contextual"
+    | "current"
+    | "devtools"
+    | "shared";
+  interface ImportESModuleOptionsDictionary {
+    global?: ImportESModuleTargetGlobal;
   }
 
   interface ChromeUtils {
@@ -50,9 +59,14 @@ declare namespace MockedExports {
      * Then add the file path to the KnownModules above.
      */
     importESModule: <S extends keyof KnownModules>(
-      module: S
+      module: S,
+      options?: ImportESModuleOptionsDictionary
     ) => KnownModules[S];
-    defineESModuleGetters: (target: any, mappings: any) => void;
+    defineESModuleGetters: (
+      target: any,
+      mappings: any,
+      options?: ImportESModuleOptionsDictionary
+    ) => void;
   }
 
   interface MessageManager {
@@ -62,7 +76,7 @@ declare namespace MockedExports {
   }
 
   // This is the thing in window.gBrowser, defined in
-  // https://searchfox.org/mozilla-central/source/browser/base/content/tabbrowser.js
+  // https://searchfox.org/firefox-main/source/browser/components/tabbrowser/content/tabbrowser.js
   interface Browser {
     addWebTab: (url: string, options: any) => BrowserTab;
     contentPrincipal: any;
@@ -74,7 +88,7 @@ declare namespace MockedExports {
   }
 
   // This is a tab in a browser, defined in
-  // https://searchfox.org/mozilla-central/rev/6b8a3f804789fb865f42af54e9d2fef9dd3ec74d/browser/base/content/tabbrowser.js#2580
+  // https://searchfox.org/firefox-main/source/browser/components/tabbrowser/content/tabbrowser.js#2580
   interface BrowserTab {
     linkedBrowser: ChromeBrowser;
   }
@@ -84,7 +98,7 @@ declare namespace MockedExports {
     focus(): void;
   }
 
-  // The thing created in https://searchfox.org/mozilla-central/rev/6b8a3f804789fb865f42af54e9d2fef9dd3ec74d/browser/base/content/tabbrowser.js#2088
+  // The thing created in https://searchfox.org/firefox-main/source/browser/components/tabbrowser/content/tabbrowser.js#2088
   // This is linked to BrowserTab.
   interface ChromeBrowser {
     browsingContext?: BrowsingContext;
@@ -146,8 +160,13 @@ declare namespace MockedExports {
     arch: string;
   }
 
+  type JSSources = Partial<{
+    [sourceUuid: string]: string;
+  }>;
+
   interface ProfileGenerationAdditionalInformation {
     sharedLibraries: SharedLibrary[];
+    jsSources: JSSources;
   }
 
   interface ProfileAndAdditionalInformation {
@@ -193,6 +212,7 @@ declare namespace MockedExports {
       removeObserver: (observer: object, type: string) => void;
     };
     wm: {
+      getMostRecentBrowserWindow: () => BrowserWindow;
       getMostRecentWindow: (name: string) => BrowserWindow;
       getMostRecentNonPBWindow: (name: string) => BrowserWindow;
     };
@@ -216,6 +236,7 @@ declare namespace MockedExports {
 
   const AppConstantsSYSMJS: {
     AppConstants: {
+      MOZ_APP_NAME: string;
       platform: string;
     };
   };
@@ -365,15 +386,15 @@ declare module "resource://devtools/shared/performance-new/symbolication.sys.mjs
   export = PerfSymbolication;
 }
 
-declare module "resource:///modules/CustomizableUI.sys.mjs" {
+declare module "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs" {
   export = MockedExports.CustomizableUISYSMJS;
 }
 
-declare module "resource:///modules/CustomizableWidgets.sys.mjs" {
+declare module "moz-src:///browser/components/customizableui/CustomizableWidgets.sys.mjs" {
   export = MockedExports.CustomizableWidgetsSYSMJS;
 }
 
-declare module "resource:///modules/PanelMultiView.sys.mjs" {
+declare module "moz-src:///browser/components/customizableui/PanelMultiView.sys.mjs" {
   export = MockedExports.PanelMultiViewSYSMJS;
 }
 

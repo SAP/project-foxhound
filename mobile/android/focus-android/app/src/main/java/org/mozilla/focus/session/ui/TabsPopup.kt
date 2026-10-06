@@ -17,6 +17,13 @@ import org.mozilla.focus.GleanMetrics.TabCount
 import org.mozilla.focus.databinding.PopupTabsBinding
 import org.mozilla.focus.state.AppAction
 
+/**
+ * A [PopupWindow] that displays a list of open tabs, allowing the user to switch between,
+ * close, or create new browser sessions.
+ *
+ * @param parentView The [ViewGroup] used to provide context for layout inflation.
+ * @param components The app's [Components] instance used to access state, use cases, and dispatch actions.
+ */
 class TabsPopup(
     private val parentView: ViewGroup,
     private val components: Components,
@@ -37,6 +44,7 @@ class TabsPopup(
             selectSession = { tab -> selectSession(tab) },
             closeSession = { tab -> closeSession(tab) },
             closeOtherSessions = { closeOtherSessions() },
+            addNewTab = { addNewTab() },
         )
 
         binding.sessions.apply {
@@ -83,6 +91,17 @@ class TabsPopup(
         val tabsToDelete = openedTabsIDs.filter { it != components.store.state.selectedTabId }
         components.tabsUseCases.removeTabs.invoke(tabsToDelete)
         TabCount.sessionCloseOthersTapped.record(TabCount.SessionCloseOthersTappedExtra(tabsToDelete.size))
+        dismiss()
+    }
+
+    private fun addNewTab() {
+        val openedTabs = components.store.state.tabs.size
+
+        val tabId = components.tabsUseCases.addTab(url = "", private = true)
+
+        components.appStore.dispatch(AppAction.EditAction(tabId))
+
+        TabCount.sessionAddNewTabTapped.record(TabCount.SessionAddNewTabTappedExtra(openedTabs))
         dismiss()
     }
 }

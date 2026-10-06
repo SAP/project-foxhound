@@ -104,9 +104,9 @@ function continueToNextStep() {
 
 function errorHandler(event) {
   try {
-    dump("indexedDB error: " + event.target.error.name);
+    dump("indexedDB error: " + event.target.error.name + "\n");
   } catch (e) {
-    dump("indexedDB error: " + e);
+    dump("indexedDB error: " + e + "\n");
   }
   Assert.ok(false);
   finishTest();

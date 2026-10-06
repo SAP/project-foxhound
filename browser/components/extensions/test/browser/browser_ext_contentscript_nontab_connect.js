@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 // This script is loaded in a non-tab extension context, and starts the test by
@@ -13,6 +11,11 @@ function extensionScript() {
   browser.runtime.onConnect.addListener(port => {
     browser.test.assertEq(port.sender.tab, undefined, "Sender is not a tab");
     browser.test.assertEq(port.sender.frameId, undefined, "frameId unset");
+    browser.test.assertEq(
+      port.sender.documentId,
+      port.name,
+      "documentId matches getDocumentId(window)"
+    );
     browser.test.assertEq(port.sender.url, FRAME_URL, "Expected sender URL");
     browser.test.assertEq(
       port.sender.origin,
@@ -36,7 +39,9 @@ function extensionScript() {
 function contentScript() {
   browser.test.log(`Running content script at ${document.URL}`);
 
-  let port = browser.runtime.connect();
+  let port = browser.runtime.connect({
+    name: browser.runtime.getDocumentId(window),
+  });
   port.onMessage.addListener(msg => {
     browser.test.assertEq("ping", msg, "Expected message to content script");
     port.postMessage("pong");

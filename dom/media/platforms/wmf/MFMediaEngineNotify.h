@@ -7,8 +7,8 @@
 
 #include <wrl.h>
 
-#include "MediaEventSource.h"
 #include "MFMediaEngineExtra.h"
+#include "MediaEventSource.h"
 #include "mozilla/Maybe.h"
 
 namespace mozilla {

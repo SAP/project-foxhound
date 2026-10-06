@@ -69,10 +69,6 @@ const TEST_ADDRESS_EMPTY_AFTER_NORMALIZE = {
   country: "XXXXXX",
 };
 
-ChromeUtils.defineESModuleGetters(this, {
-  Preferences: "resource://gre/modules/Preferences.sys.mjs",
-});
-
 let do_check_record_matches = (recordWithMeta, record) => {
   for (let key in record) {
     Assert.equal(recordWithMeta[key], record[key]);
@@ -221,11 +217,13 @@ add_task(async function test_update() {
   // Test assumes that when an entry is saved a second time, it's last modified date will
   // be different from the first. With high values of precision reduction, we execute too
   // fast for that to be true.
-  let timerPrecision = Preferences.get("privacy.reduceTimerPrecision");
-  Preferences.set("privacy.reduceTimerPrecision", false);
+  let timerPrecision = Services.prefs.getBoolPref(
+    "privacy.reduceTimerPrecision"
+  );
+  Services.prefs.setBoolPref("privacy.reduceTimerPrecision", false);
 
   registerCleanupFunction(function () {
-    Preferences.set("privacy.reduceTimerPrecision", timerPrecision);
+    Services.prefs.setBoolPref("privacy.reduceTimerPrecision", timerPrecision);
   });
 
   let profileStorage = await initProfileStorage(TEST_STORE_FILE_NAME, [

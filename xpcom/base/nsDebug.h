@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsDebug_h___
-#define nsDebug_h___
+#ifndef nsDebug_h_
+#define nsDebug_h_
 
 #include "nscore.h"
 #include "nsError.h"
@@ -13,9 +11,7 @@
 #include "nsXPCOM.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/glue/Debug.h"
-#include "mozilla/DbgMacro.h"
 #include "mozilla/Likely.h"
-#include <stdarg.h>
 
 #ifdef DEBUG
 #  include "mozilla/ErrorNames.h"
@@ -38,9 +34,9 @@
  * This macro can also be used outside of conditions just to issue a warning,
  * like so:
  *
- *   Unused << NS_WARN_IF(NS_FAILED(FnWithSideEffects());
+ *   (void)NS_WARN_IF(NS_FAILED(FnWithSideEffects());
  *
- * (The |Unused <<| is necessary because of the [[nodiscard]] annotation.)
+ * (The |(void)| is necessary because of the [[nodiscard]] annotation.)
  *
  * However, note that the argument to this macro is evaluated in all builds. If
  * you just want a warning assertion, it is better to use NS_WARNING_ASSERTION
@@ -327,4 +323,4 @@ void NS_ABORT_OOM(size_t aSize);
 inline void NS_ABORT_OOM(size_t) { MOZ_CRASH(); }
 #endif
 
-#endif /* nsDebug_h___ */
+#endif /* nsDebug_h_ */

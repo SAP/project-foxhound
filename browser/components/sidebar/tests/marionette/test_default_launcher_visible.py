@@ -2,23 +2,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from marionette_driver import Wait
-from marionette_driver.by import By
-from marionette_harness import MarionetteTestCase
+from pathlib import Path
 
-initial_prefs = {
-    "sidebar.revamp": False,
-    # Set browser restore previous session pref
-    # we'll need to examine behavior using restored sidebar properties
-    "browser.startup.page": 3,
-}
+from marionette_driver import Wait
+from marionette_harness import MarionetteTestCase
+from mozfile import json
 
 
 class TestDefaultLauncherVisible(MarionetteTestCase):
-
     def setUp(self):
         MarionetteTestCase.setUp(self)
-
         self.marionette.set_context("chrome")
 
     def tearDown(self):
@@ -33,14 +26,28 @@ class TestDefaultLauncherVisible(MarionetteTestCase):
         # allow closing the very last tab.
         self.marionette.execute_script("window.close()")
 
-    def restart_with_prefs(self, prefs):
-        # set the prefs then restart the browser
-        self.marionette.enforce_gecko_prefs(prefs)
+    def restart_with_default_prefs(self, prefs, clean=False, in_app=True):
+        pref_path = Path(self.marionette.profile_path) / "prefs.js"
+        # shutdown the browser so we can update prefs while at rest and not trigger any pref observers
+        self.marionette.quit(clean=clean, in_app=in_app)
 
-        # Restore the context as used before the restart
-        self.marionette.set_context("chrome")
+        # remove any prefs with None as value
+        remove_prefs = [
+            f'user_pref("{name}"' for name, value in prefs.items() if value is None
+        ]
+        if len(remove_prefs) > 0:
+            with open(pref_path, encoding="utf-8") as prefs_file:
+                lines = prefs_file.readlines()
+            keep_lines = [
+                line for line in lines if not any(s in line for s in remove_prefs)
+            ]
+            with open(pref_path, "w", encoding="utf-8") as prefs_file:
+                prefs_file.writelines(keep_lines)
 
-        self.wait_for_sidebar_initialized()
+        with open(pref_path, "a") as prefs_file:
+            for name, value in prefs.items():
+                prefs_file.write(f'user_pref("{name}", {json.dumps(value)});')
+        self.marionette.start_session()
 
     def is_launcher_visible(self):
         hidden = self.marionette.execute_script(
@@ -90,10 +97,15 @@ class TestDefaultLauncherVisible(MarionetteTestCase):
         )
 
     def test_first_use_default_visible_pref_false(self):
-        # We test with the default pref values, then flip sidebar.revamp to true,
+        # We test with the default pre-148 pref values, then flip sidebar.revamp to true,
         # for a profile that has never enabled or seen the sidebar launcher.
         # We want to ensure the sidebar state is correctly persisted and restored
 
+        self.restart_with_default_prefs({
+            "sidebar.revamp": False,
+            "browser.uiCustomization.state": None,
+        })
+        self.marionette.set_context("chrome")
         self.wait_for_sidebar_initialized()
 
         self.assertFalse(
@@ -106,16 +118,17 @@ class TestDefaultLauncherVisible(MarionetteTestCase):
         )
 
         # Mimic an update which enables sidebar.revamp for the first time
-        self.restart_with_prefs(
-            {
-                "sidebar.revamp": True,
-                "browser.startup.page": 3,
-            }
-        )
+        self.restart_with_default_prefs({
+            "sidebar.revamp": True,
+        })
+        self.marionette.set_context("chrome")
+        self.wait_for_sidebar_initialized()
 
-        self.assertTrue(
-            self.is_button_visible(),
-            "Sidebar button should be visible",
+        # The sidebar-button is placed and rendered by CustomizableUI, which is
+        # independent of the sidebar's initialization path. Just wait for it to show up.
+        Wait(self.marionette).until(
+            lambda _: self.is_button_visible(),
+            message="Sidebar button should be visible",
         )
 
         self.assertFalse(
@@ -140,7 +153,16 @@ class TestDefaultLauncherVisible(MarionetteTestCase):
         )
 
     def test_new_sidebar_enabled_via_settings(self):
+        self.restart_with_default_prefs({
+            "sidebar.revamp": False,
+            "browser.uiCustomization.state": None,
+        })
+        self.marionette.set_context("chrome")
         self.wait_for_sidebar_initialized()
+        self.assertFalse(
+            self.marionette.get_pref("sidebar.revamp"),
+            "Before enabling, sidebar.revamp pref should be false",
+        )
         self.assertFalse(
             self.is_launcher_visible(),
             "Sidebar launcher is not visible",
@@ -152,11 +174,24 @@ class TestDefaultLauncherVisible(MarionetteTestCase):
 
         # Navigate to about:preferences and enable the new sidebar
         self.marionette.set_context("content")
-        self.marionette.navigate("about:preferences")
+        srd_enabled = self.marionette.get_pref("browser.settings-redesign.enabled")
+        self.marionette.navigate(
+            "about:preferences#tabsBrowsing" if srd_enabled else "about:preferences"
+        )
 
-        self.marionette.find_element(By.ID, "browserLayoutShowSidebar").click()
+        self.marionette.execute_script(
+            """
+            let el = document.getElementById("browserLayoutShowSidebar");
+            el.click();
+            """
+        )
 
         self.marionette.set_context("chrome")
+        self.assertTrue(
+            self.marionette.get_pref("sidebar.revamp"),
+            "The sidebar.revamp pref should now be true",
+        )
+
         # We expect that to add the button to the toolbar
         Wait(self.marionette).until(
             lambda _: self.is_button_visible(),
@@ -176,85 +211,30 @@ class TestDefaultLauncherVisible(MarionetteTestCase):
         self.wait_for_sidebar_initialized()
 
         self.assertTrue(
+            self.marionette.get_pref("sidebar.revamp"),
+            "The sidebar.revamp pref should still be true",
+        )
+
+        self.assertTrue(
             self.is_launcher_visible(),
             "Sidebar launcher should still be shown after restart",
         )
 
-    def test_new_sidebar_enabled_at_runtime_via_nimbus(self):
-        self.wait_for_sidebar_initialized()
-        self.assertFalse(
-            self.is_launcher_visible(),
-            "Sidebar launcher is not visible",
-        )
-        self.assertFalse(
-            self.is_button_visible(),
-            "Sidebar toolbar button is not visible",
-        )
-
-        # stub the getVariable function to return false so sidebar code thinks
-        # we're enrolled in an experiment
-        self.marionette.execute_script(
-            """
-            const window = BrowserWindowTracker.getTopWindow();
-            window.NimbusFeatures.sidebar.getVariable = () => false;
-            """
-        )
-
-        showLauncherOnEnabled = self.marionette.execute_script(
-            """
-            const window = BrowserWindowTracker.getTopWindow();
-            return window.SidebarController.SidebarManager.showLauncherOnEnabled;
-            """
-        )
-        self.assertFalse(
-            showLauncherOnEnabled,
-            "showLauncherOnEnabled should be false when with the mocked NimbusFeatures getVariable",
-        )
-
-        # This mocks the enrollment in which Nimbus sets the following prefs
-        self.marionette.set_prefs(
-            {
-                "sidebar.revamp": True,
-                "sidebar.revamp.defaultLauncherVisible": False,
-            }
-        )
-
-        # We expect enabling the pref to add the button to the toolbar
-        Wait(self.marionette).until(
-            lambda _: self.is_button_visible(),
-            message="The toolbar button is visible",
-        )
-
-        # In this scenario, we expect the launcher visibility to be determined by the nimbus variable
-        self.assertFalse(
-            self.is_launcher_visible(),
-            "The launcher is hidden when revamp is not initiated by the user",
-        )
-
-        # And it should stay hidden on restart
-        self.marionette.restart()
+    def test_vertical_tabs_default_hidden(self):
+        # Verify initial sidebar launcher visibility when starting with:
+        # - verticalTabs enabled, sidebar.visibility of always-show
+        # - verticalTabs enabled, sidebar.visibility of hide-sidebar
+        self.restart_with_default_prefs({
+            "sidebar.revamp": True,
+            "sidebar.verticalTabs": True,
+            "sidebar.visibility": "always-show",
+        })
         self.marionette.set_context("chrome")
         self.wait_for_sidebar_initialized()
 
-        self.assertFalse(
+        self.assertTrue(
             self.is_launcher_visible(),
-            "The launcher is remains hidden after a restart",
-        )
-
-    def test_vertical_tabs_default_hidden(self):
-        # Verify that starting with verticalTabs enabled and default visibility false results in a visible
-        # launcher with the vertical tabstrip
-        self.restart_with_prefs(
-            {
-                "sidebar.revamp": True,
-                "sidebar.verticalTabs": True,
-                "sidebar.visibility": "always-show",
-            }
-        )
-
-        Wait(self.marionette).until(
-            lambda _: self.is_launcher_visible(),
-            message="Sidebar launcher should be initially visible",
+            "Sidebar launcher should be initially visible",
         )
         tabsWidth = self.marionette.execute_script(
             """

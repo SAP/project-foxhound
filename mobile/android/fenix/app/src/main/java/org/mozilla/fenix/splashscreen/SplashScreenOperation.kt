@@ -31,6 +31,11 @@ interface SplashScreenOperation {
      * Executes the splash screen operation.
      */
     suspend fun run()
+
+    /**
+     * Releases any observers associated with the operation.
+     */
+    fun dispose()
 }
 
 /**
@@ -85,6 +90,9 @@ class FetchExperimentsOperation(
                 }
             }
         }
+    }
+
+    override fun dispose() {
         fetchNimbusObserver?.let { nimbus.unregister(it) }
     }
 }
@@ -133,7 +141,9 @@ class ApplyExperimentsOperation(
                 nimbus.register(this)
             }
         }
+    }
 
+    override fun dispose() {
         fetchNimbusObserver?.let { nimbus.unregister(it) }
         applyNimbusObserver?.let { nimbus.unregister(it) }
     }

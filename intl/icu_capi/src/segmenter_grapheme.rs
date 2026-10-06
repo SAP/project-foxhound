@@ -4,7 +4,6 @@
 
 #[diplomat::bridge]
 #[diplomat::abi_rename = "icu4x_{0}_mv1"]
-#[diplomat::attr(auto, namespace = "icu4x")]
 pub mod ffi {
     use alloc::boxed::Box;
     use icu_segmenter::scaffold::{Latin1, PotentiallyIllFormedUtf8, Utf16};
@@ -21,18 +20,21 @@ pub mod ffi {
 
     #[diplomat::opaque]
     #[diplomat::rust_link(icu::segmenter::iterators::GraphemeClusterBreakIterator, Struct)]
+    #[diplomat::attr(demo_gen, disable)] // iterator type
     pub struct GraphemeClusterBreakIteratorUtf8<'a>(
         icu_segmenter::iterators::GraphemeClusterBreakIterator<'a, 'a, PotentiallyIllFormedUtf8>,
     );
 
     #[diplomat::opaque]
     #[diplomat::rust_link(icu::segmenter::iterators::GraphemeClusterBreakIterator, Struct)]
+    #[diplomat::attr(demo_gen, disable)] // iterator type
     pub struct GraphemeClusterBreakIteratorUtf16<'a>(
         icu_segmenter::iterators::GraphemeClusterBreakIterator<'a, 'a, Utf16>,
     );
 
     #[diplomat::opaque]
     #[diplomat::rust_link(icu::segmenter::iterators::GraphemeClusterBreakIterator, Struct)]
+    #[diplomat::attr(demo_gen, disable)] // iterator type
     pub struct GraphemeClusterBreakIteratorLatin1<'a>(
         icu_segmenter::iterators::GraphemeClusterBreakIterator<'a, 'a, Latin1>,
     );

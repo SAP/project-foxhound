@@ -7,7 +7,7 @@
     <androidx.preference.Preference
         android:key="@string/pref_key_sync_sign_in"
         android:title="@string/preferences_sync_sign_in_to_reconnect"
-        android:icon="@drawable/ic_sign_in" />
+        android:icon="@drawable/mozac_ic_avatar_circle_fill_24" />
     <androidx.preference.Preference
         android:key="@string/pref_key_sign_out"
         android:title="@string/preferences_sync_remove_account"/>

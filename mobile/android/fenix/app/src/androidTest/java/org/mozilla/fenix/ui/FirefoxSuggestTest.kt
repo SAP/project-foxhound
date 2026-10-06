@@ -4,29 +4,32 @@
 
 package org.mozilla.fenix.ui
 
-import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.helpers.AppAndSystemHelper.runWithCondition
 import org.mozilla.fenix.helpers.DataGenerationHelper.getSponsoredFxSuggestPlaceHolder
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityTestRule
 import org.mozilla.fenix.helpers.TestHelper
-import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
+import org.mozilla.fenix.ui.robots.homeScreen
 import org.mozilla.fenix.ui.robots.navigationToolbar
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
 /**
  *  Tests for verifying the Firefox suggest search fragment
  *
  */
 
-class FirefoxSuggestTest : TestSetup() {
+class FirefoxSuggestTest {
+    @get:Rule(order = 0)
+    val fenixTestRule: FenixTestRule = FenixTestRule()
 
-    @get:Rule
-    val activityTestRule = AndroidComposeTestRule(
+    @get:Rule(order = 1)
+    val composeTestRule = AndroidComposeTestRuleV2(
         HomeActivityTestRule(
             skipOnboarding = true,
             isPocketEnabled = false,
@@ -35,8 +38,8 @@ class FirefoxSuggestTest : TestSetup() {
         ),
     ) { it.activity }
 
-    @get:Rule
-    val memoryLeaksRule = DetectMemoryLeaksRule()
+    @get:Rule(order = 2)
+    val memoryLeaksRule = DetectMemoryLeaksRule(composeTestRule = { composeTestRule })
 
     private val sponsoredKeyWords: Map<String, List<String>> =
         mapOf(
@@ -108,12 +111,11 @@ class FirefoxSuggestTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifyFirefoxSuggestSponsoredSearchResultsTest() {
-        runWithCondition(TestHelper.appContext.settings().enableFxSuggest) {
-            navigationToolbar {
-            }.clickUrlbar {
+        runWithCondition(TestHelper.appContext.components.settings.enableFxSuggest) {
+            homeScreen(composeTestRule) {
+            }.openSearch {
                 typeSearch(searchTerm = sponsoredKeyWord)
                 verifySponsoredSuggestionsResults(
-                    rule = activityTestRule,
                     searchSuggestions = arrayOf(
                         "Firefox Suggest",
                         sponsoredKeyWords.getValue(sponsoredKeyWord)[0],
@@ -130,12 +132,11 @@ class FirefoxSuggestTest : TestSetup() {
     @Ignore("Failing, see: https://bugzilla.mozilla.org/show_bug.cgi?id=1898435")
     @Test
     fun verifyFirefoxSuggestSponsoredSearchResultsWithPartialKeywordTest() {
-        runWithCondition(TestHelper.appContext.settings().enableFxSuggest) {
-            navigationToolbar {
-            }.clickUrlbar {
+        runWithCondition(TestHelper.appContext.components.settings.enableFxSuggest) {
+            homeScreen(composeTestRule) {
+            }.openSearch {
                 typeSearch(searchTerm = sponsoredKeyWord.dropLast(1))
                 verifySponsoredSuggestionsResults(
-                    rule = activityTestRule,
                     searchSuggestions = arrayOf(
                         "Firefox Suggest",
                         sponsoredKeyWords.getValue(sponsoredKeyWord)[0],
@@ -152,12 +153,11 @@ class FirefoxSuggestTest : TestSetup() {
     @Ignore("Failing, see: https://bugzilla.mozilla.org/show_bug.cgi?id=1898435")
     @Test
     fun openFirefoxSuggestSponsoredSearchResultsTest() {
-        runWithCondition(TestHelper.appContext.settings().enableFxSuggest) {
-            navigationToolbar {
-            }.clickUrlbar {
+        runWithCondition(TestHelper.appContext.components.settings.enableFxSuggest) {
+            homeScreen(composeTestRule) {
+            }.openSearch {
                 typeSearch(searchTerm = sponsoredKeyWord)
                 verifySponsoredSuggestionsResults(
-                    rule = activityTestRule,
                     searchSuggestions = arrayOf(
                         "Firefox Suggest",
                         sponsoredKeyWords.getValue(sponsoredKeyWord)[0],
@@ -177,13 +177,12 @@ class FirefoxSuggestTest : TestSetup() {
     @Ignore("Failing, see: https://bugzilla.mozilla.org/show_bug.cgi?id=1898435")
     @Test
     fun verifyFirefoxSuggestSponsoredSearchResultsWithEditedKeywordTest() {
-        runWithCondition(TestHelper.appContext.settings().enableFxSuggest) {
-            navigationToolbar {
-            }.clickUrlbar {
+        runWithCondition(TestHelper.appContext.components.settings.enableFxSuggest) {
+            homeScreen(composeTestRule) {
+            }.openSearch {
                 typeSearch(searchTerm = sponsoredKeyWord)
                 deleteSearchKeywordCharacters(numberOfDeletionSteps = 1)
                 verifySponsoredSuggestionsResults(
-                    rule = activityTestRule,
                     searchSuggestions = arrayOf(
                         "Firefox Suggest",
                         sponsoredKeyWords.getValue(sponsoredKeyWord)[0],
@@ -203,12 +202,11 @@ class FirefoxSuggestTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifyFirefoxSuggestNonSponsoredSearchResultsTest() {
-        runWithCondition(TestHelper.appContext.settings().enableFxSuggest) {
-            navigationToolbar {
-            }.clickUrlbar {
+        runWithCondition(TestHelper.appContext.components.settings.enableFxSuggest) {
+            homeScreen(composeTestRule) {
+            }.openSearch {
                 typeSearch(searchTerm = nonSponsoredKeyWord)
                 verifySponsoredSuggestionsResults(
-                    rule = activityTestRule,
                     searchSuggestions = arrayOf(
                         "Firefox Suggest",
                         nonSponsoredKeyWords.getValue(nonSponsoredKeyWord)[0],
@@ -216,7 +214,6 @@ class FirefoxSuggestTest : TestSetup() {
                     searchTerm = nonSponsoredKeyWord,
                 )
                 verifySuggestionsAreNotDisplayed(
-                    rule = activityTestRule,
                     searchSuggestions = arrayOf(
                         "Sponsored",
                     ),
@@ -230,12 +227,11 @@ class FirefoxSuggestTest : TestSetup() {
     @Ignore("Failing, see: https://bugzilla.mozilla.org/show_bug.cgi?id=1882035")
     @Test
     fun verifyFirefoxSuggestNonSponsoredSearchResultsWithPartialKeywordTest() {
-        runWithCondition(TestHelper.appContext.settings().enableFxSuggest) {
-            navigationToolbar {
-            }.clickUrlbar {
+        runWithCondition(TestHelper.appContext.components.settings.enableFxSuggest) {
+            homeScreen(composeTestRule) {
+            }.openSearch {
                 typeSearch(searchTerm = nonSponsoredKeyWord.dropLast(1))
                 verifySponsoredSuggestionsResults(
-                    rule = activityTestRule,
                     searchSuggestions = arrayOf(
                         "Firefox Suggest",
                         nonSponsoredKeyWords.getValue(nonSponsoredKeyWord)[0],
@@ -251,12 +247,11 @@ class FirefoxSuggestTest : TestSetup() {
     @Ignore("Failing, see: https://bugzilla.mozilla.org/show_bug.cgi?id=1882035")
     @Test
     fun openFirefoxSuggestNonSponsoredSearchResultsTest() {
-        runWithCondition(TestHelper.appContext.settings().enableFxSuggest) {
-            navigationToolbar {
-            }.clickUrlbar {
+        runWithCondition(TestHelper.appContext.components.settings.enableFxSuggest) {
+            homeScreen(composeTestRule) {
+            }.openSearch {
                 typeSearch(searchTerm = nonSponsoredKeyWord)
                 verifySponsoredSuggestionsResults(
-                    rule = activityTestRule,
                     searchSuggestions = arrayOf(
                         "Firefox Suggest",
                         nonSponsoredKeyWords.getValue(nonSponsoredKeyWord)[0],

@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl'))
-
 function assertProperty(object, name, desc) {
     assertEq(desc === undefined || (typeof desc === "object" && desc !== null), true,
              "desc is a property descriptor");

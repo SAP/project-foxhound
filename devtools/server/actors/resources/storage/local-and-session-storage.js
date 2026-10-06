@@ -102,7 +102,7 @@ class LocalOrSessionStorageActor extends BaseStorageActor {
   /**
    * Edit localStorage or sessionStorage fields.
    *
-   * @param {Object} data
+   * @param {object} data
    *        See editCookie() for format details.
    */
   async editItem({ host, field, oldValue, items }) {

@@ -8,6 +8,12 @@ This also helps to breakdown the work for different reviewers.
 As it can be complex for newcomers, this documentation explains the
 various commands.
 
+.. note::
+
+   This page documents the Git workflow, which is the default. If you
+   prefer Jujutsu, see :ref:`Introduction to Jujutsu` for the equivalent
+   commands.
+
 In Phabricator, the stack can be seen in the `Revision Contents` section.
 The top of the stack (most recent change) is first in the list.
 
@@ -52,7 +58,15 @@ just want to submit the first one. For this, you can use:
 .. code-block:: shell
 
     $ moz-phab submit .
+    # or
+    $ moz-phab submit -s HEAD
 
+To submit the last X patches:
+
+.. code-block:: shell
+
+    # This example will submit the last 3 patches
+    $ moz-phab submit HEAD~3
 
 Reorder the stack
 -----------------
@@ -102,7 +116,7 @@ mozilla-central before landing the changes.
 .. code-block:: shell
 
     $ git remote update
-    $ git rebase mozilla/central
+    $ git rebase origin/main
 
 
 Reorganizing the stack in Phabricator

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,14 +9,13 @@
 
 // Global includes
 #include "mozilla/ErrorNames.h"
-#include "mozilla/MacroForEach.h"
+#include "mozilla/dom/quota/QuotaUsageRequestChild.h"
 #include "nsDebug.h"
 #include "nsIQuotaCallbacks.h"
 #include "nsISupportsUtils.h"
 #include "nsIVariant.h"
 #include "nsStringFwd.h"
 #include "nscore.h"
-#include "mozilla/dom/quota/QuotaUsageRequestChild.h"
 
 namespace mozilla {
 class Runnable;

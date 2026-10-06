@@ -1,14 +1,16 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
+#include "nrinterfaceprioritizer.h"
+
 #include <algorithm>
 #include <map>
 #include <set>
 #include <string>
 #include <vector>
+
 #include "logging.h"
 #include "nr_api.h"
-#include "nrinterfaceprioritizer.h"
 
 MOZ_MTLOG_MODULE("mtransport")
 
@@ -169,7 +171,7 @@ class InterfacePrioritizer {
       return R_FAILED;
     }
     std::pair<std::set<LocalAddress>::iterator, bool> r =
-        local_addrs_.insert(addr);
+        local_addrs_.insert(std::move(addr));
     if (!r.second) {
       return R_ALREADY;  // This address is already in the set.
     }

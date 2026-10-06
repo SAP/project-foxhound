@@ -8,6 +8,7 @@ package org.mozilla.fenix.ui.robots
 
 import android.content.Context
 import android.util.Log
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.assertion.ViewAssertions.matches
@@ -136,31 +137,31 @@ class SettingsSubMenuLoginsAndPasswordRobot {
             return SettingsRobot.Transition()
         }
 
-        fun openSavedLogins(interact: SettingsSubMenuLoginsAndPasswordsSavedLoginsRobot.() -> Unit): SettingsSubMenuLoginsAndPasswordsSavedLoginsRobot.Transition {
+        fun openSavedLogins(composeTestRule: ComposeTestRule, interact: SettingsSubMenuLoginsAndPasswordsSavedLoginsRobot.() -> Unit): SettingsSubMenuLoginsAndPasswordsSavedLoginsRobot.Transition {
             Log.i(TAG, "openSavedLogins: Trying to click the \"Saved logins\" button")
             savedLoginsButton().click()
             Log.i(TAG, "openSavedLogins: Clicked the \"Saved logins\" button")
 
-            SettingsSubMenuLoginsAndPasswordsSavedLoginsRobot().interact()
-            return SettingsSubMenuLoginsAndPasswordsSavedLoginsRobot.Transition()
+            SettingsSubMenuLoginsAndPasswordsSavedLoginsRobot(composeTestRule).interact()
+            return SettingsSubMenuLoginsAndPasswordsSavedLoginsRobot.Transition(composeTestRule)
         }
 
-        fun openLoginExceptions(interact: SettingsSubMenuLoginsAndPasswordsSavedLoginsRobot.() -> Unit): SettingsSubMenuLoginsAndPasswordsSavedLoginsRobot.Transition {
+        fun openLoginExceptions(composeTestRule: ComposeTestRule, interact: SettingsSubMenuLoginsAndPasswordsSavedLoginsRobot.() -> Unit): SettingsSubMenuLoginsAndPasswordsSavedLoginsRobot.Transition {
             Log.i(TAG, "openLoginExceptions: Trying to click the \"Exceptions\" button")
             loginExceptionsButton().click()
             Log.i(TAG, "openLoginExceptions: Clicked the \"Exceptions\" button")
 
-            SettingsSubMenuLoginsAndPasswordsSavedLoginsRobot().interact()
-            return SettingsSubMenuLoginsAndPasswordsSavedLoginsRobot.Transition()
+            SettingsSubMenuLoginsAndPasswordsSavedLoginsRobot(composeTestRule).interact()
+            return SettingsSubMenuLoginsAndPasswordsSavedLoginsRobot.Transition(composeTestRule)
         }
 
-        fun openSyncLogins(interact: SettingsTurnOnSyncRobot.() -> Unit): SettingsTurnOnSyncRobot.Transition {
+        fun openSyncLogins(composeTestRule: ComposeTestRule, interact: SettingsSignInToSyncRobot.() -> Unit): SettingsSignInToSyncRobot.Transition {
             Log.i(TAG, "openSyncLogins: Trying to click the \"Sync logins across devices\" button")
             syncLoginsButton().click()
             Log.i(TAG, "openSyncLogins: Clicked the \"Sync logins across devices\" button")
 
-            SettingsTurnOnSyncRobot().interact()
-            return SettingsTurnOnSyncRobot.Transition()
+            SettingsSignInToSyncRobot().interact()
+            return SettingsSignInToSyncRobot.Transition(composeTestRule)
         }
 
         fun openSaveLoginsAndPasswordsOptions(interact: SettingsSubMenuLoginsAndPasswordOptionsToSaveRobot.() -> Unit): SettingsSubMenuLoginsAndPasswordOptionsToSaveRobot.Transition {

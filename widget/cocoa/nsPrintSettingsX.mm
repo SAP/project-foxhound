@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,7 +28,7 @@ nsPrintSettingsX::nsPrintSettingsX() {
 
 already_AddRefed<nsIPrintSettings> CreatePlatformPrintSettings(
     const PrintSettingsInitializer& aSettings) {
-  RefPtr<nsPrintSettings> settings = new nsPrintSettingsX();
+  auto settings = MakeRefPtr<nsPrintSettingsX>();
   settings->InitWithInitializer(aSettings);
   settings->SetDefaultFileName();
   return settings.forget();
@@ -130,15 +129,8 @@ NSPrintInfo* nsPrintSettingsX::CreateOrCopyPrintInfo(bool aWithScaling) {
   // following `setPrinter` call will fail silently, since macOS doesn't know
   // anything about it. That's OK, because mPrinter is our canonical source of
   // truth.
-  // Actually, it seems Mac OS X 10.12 (the oldest version of Mac that we
-  // support) hangs if the printer name is not recognized. For now we explicitly
-  // check for our print-to-PDF printer, but that is not ideal since we should
-  // really localize the name of this printer at some point. Once we drop
-  // support for 10.12 we should remove this check.
-  if (!mPrinter.EqualsLiteral("Mozilla Save to PDF")) {
-    [printInfo setPrinter:[NSPrinter printerWithName:nsCocoaUtils::ToNSString(
-                                                         mPrinter)]];
-  }
+  [printInfo setPrinter:[NSPrinter printerWithName:nsCocoaUtils::ToNSString(
+                                                       mPrinter)]];
 
   // Scaling is handled by gecko, we do NOT want the cocoa printing system to
   // add a second scaling on top of that. So we only set the true scaling factor
@@ -221,7 +213,11 @@ NSPrintInfo* nsPrintSettingsX::CreateOrCopyPrintInfo(bool aWithScaling) {
     }
   }
 
-  if (StaticPrefs::print_cups_monochrome_enabled() && !GetPrintInColor()) {
+  [printSettings
+      setObject:(GetPrintInColor() ? @"" CUPS_PRINT_COLOR_MODE_COLOR
+                                   : @"" CUPS_PRINT_COLOR_MODE_MONOCHROME)
+         forKey:@"" CUPS_PRINT_COLOR_MODE];
+  if (!GetPrintInColor()) {
     for (const auto& setting : kKnownMonochromeSettings) {
       [printSettings setObject:setting.mValue forKey:setting.mName];
     }
@@ -352,15 +348,22 @@ void nsPrintSettingsX::SetFromPrintInfo(NSPrintInfo* aPrintInfo,
   }
 
   const bool color = [&] {
-    if (StaticPrefs::print_cups_monochrome_enabled()) {
-      for (const auto& setting : kKnownMonochromeSettings) {
-        NSString* value = [printSettings objectForKey:setting.mName];
-        if (!value) {
-          continue;
-        }
-        if ([setting.mValue isEqualToString:value]) {
-          return false;
-        }
+    if (NSString* value =
+            [printSettings objectForKey:@"" CUPS_PRINT_COLOR_MODE]) {
+      if ([value isEqualToString:@"" CUPS_PRINT_COLOR_MODE_COLOR]) {
+        return true;
+      }
+      if ([value isEqualToString:@"" CUPS_PRINT_COLOR_MODE_MONOCHROME]) {
+        return false;
+      }
+    }
+    for (const auto& setting : kKnownMonochromeSettings) {
+      NSString* value = [printSettings objectForKey:setting.mName];
+      if (!value) {
+        continue;
+      }
+      if ([setting.mValue isEqualToString:value]) {
+        return false;
       }
     }
     return true;

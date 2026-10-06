@@ -53,10 +53,8 @@ describe("ToolbarBadgeHub", () => {
     setTimeoutStub = sandbox.stub();
     fakeWindow = {
       MozXULElement: { insertFTLIfNeeded: sandbox.stub() },
-      ownerGlobal: {
-        gBrowser: {
-          selectedBrowser: "browser",
-        },
+      gBrowser: {
+        selectedBrowser: "browser",
       },
     };
     addObserverStub = sandbox.stub();

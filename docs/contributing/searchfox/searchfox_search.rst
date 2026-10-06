@@ -1,3 +1,5 @@
+.. _searchfox_search:
+
 Searchfox Query Language Documentation
 ======================================
 
@@ -165,156 +167,16 @@ Treat remainder of query as regular expression
 
    re:get\w+Value
 
-Diagramming Features
---------------------
-
-**Important**: These diagramming features use the ``/query`` endpoint, not
-``/search``. If you type this syntax in the regular search box, it won't work.
-It's easiest to access these features through context menus.
-
-**Enabling Diagramming**: To use diagramming features, visit the `settings page
-<https://searchfox.org/mozilla-central/pages/settings.html>`_ and change the
-"Default feature gate" from "Release" to "Alpha", or use the "Diagramming
-feature gate" setting.
-
-**Language Support**: Diagramming currently works for C++ and languages with
-SCIP indexing support (Java/Kotlin/Python), but not JavaScript/TypeScript.
-
-**Accessibility Note**: The diagrams currently do not generate a usable
-accessibility tree and are considered alpha quality.
-
-Basic Diagramming Queries
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Inheritance diagram (alpha)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-::
-
-    inheritance-diagram:'nsIInputStream' depth:4
-
-https://searchfox.org/mozilla-central/query/default?q=inheritance-diagram%3A%27nsIInputStream%27%20depth%3A4
-
-Class diagram (alpha)
-^^^^^^^^^^^^^^^^^^^^^
-
-::
-
-    class-diagram:'mozilla::GraphDriver' depth:3
-
-https://searchfox.org/mozilla-central/query/default?q=class-diagram%3A%27mozilla%3A%3AGraphDriver%27+depth%3A3
-
-Function call diagram (alpha)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-This works both directions.
-
-::
-
-    calls-from:'mozilla::dom::AudioContext::CreateDynamicsCompressor' depth:2
-    calls-to:'mozilla::dom::AudioContext::CreateDynamicsCompressor' depth:4
-
-https://searchfox.org/mozilla-central/query/default?q=calls-from%3A%27mozilla%3A%3Adom%3A%3AAudioContext%3A%3ACreateDynamicsCompressor%27+depth%3A2
-https://searchfox.org/mozilla-central/query/default?q=calls-to%3A%27mozilla%3A%3Adom%3A%3ADynamicsCompressorNode%3A%3AThreshold%27+depth%3A4
-
-**Note**: ``calls-from`` now avoids traversing into methods like
-``NS_DebugBreak`` that would otherwise clutter diagrams. Similarly, ``calls-to``
-and ``calls-between`` avoid problematic interfaces like ``nsIObserver::Observe``
-and ``nsISupports`` methods.
-
-Class layout (alpha)
-^^^^^^^^^^^^^^^^^^^^
-
-Displays the layout of a class or struct, including inherited members, and holes.
-
-::
-
-    field-layout:'nsTString'
-
-https://searchfox.org/mozilla-central/query/default?q=field-layout%3A%27nsTString%27
-
-Advanced Diagramming: Calls Between
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The ``calls-between`` functionality allows you to discover how different classes
-or methods interact with each other. This is particularly useful for
-understanding complex code relationships.
-
-Basic calls-between
-^^^^^^^^^^^^^^^^^^^
-
-Find paths between any methods of two classes:
-
-::
-
-    calls-between:'mozilla::ProcessPriorityManager' calls-between:'nsTimer'
-
-https://searchfox.org/mozilla-central/query/default?q=calls-between-source%3A%27mozilla%3A%3AProcessPriorityManager%27%20calls-between-target%3A%27nsTimer%27
-
-Directional calls-between
-^^^^^^^^^^^^^^^^^^^^^^^^^
-
-For more precise control, use ``calls-between-source`` and ``calls-between-target``:
-
-::
-
-    calls-between-source:'nsDocShell' calls-between-target:'nsExternalHelperAppService' depth:10
-
-https://searchfox.org/mozilla-central/query/default?q=calls-between-source%3AnsDocShell%20calls-between-target%3AnsExternalHelperAppService%20depth%3A10
-
-Specific method targeting
-^^^^^^^^^^^^^^^^^^^^^^^^^
-
-When you know specific methods, you can target them directly:
-
-::
-
-    calls-between-source:'nsGlobalWindowInner::SetTimeout' calls-between-source:'nsGlobalWindowInner::ClearTimeout' calls-between-target:'nsTimer' depth:9
-
-https://searchfox.org/mozilla-central/query/default?q=calls-between-source%3A%27nsGlobalWindowInner%3A%3ASetTimeout%27+calls-between-source%3A%27nsGlobalWindowInner%3A%3AClearTimeout%27+calls-between-target%3A%27nsTimer%27+depth%3A9+paths-between-node-limit%3A12000
-
-**Note**: You must now provide absolute pretty identifiers. If your class is
-``foo::Bar``, you can't just use ``Bar`` - you need the full path to avoid
-ambiguity.
-
-Include Graph Visualization
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-There's a synthetic "(file symbol)" at the end of file path breadcrumbs.
-Diagrams triggered on this symbol visualize the header include file graph. This
-is most useful with ``calls-between`` queries.
-
-Diagram Customization Parameters
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Hierarchy Control
-^^^^^^^^^^^^^^^^^
-
-- ``hier:pretty`` - Default hierarchy based on pretty symbol name
-- ``hier:flat`` - Disable hierarchy, use old flat layout
-- ``hier:subsystem`` - Group by bugzilla component mapping
-- ``hier:file`` - Fine-grained file-level hierarchy
-- ``hier:dir`` - Group by directories
-
-Graph Layout
+``nresult:``
 ^^^^^^^^^^^^
 
-- ``graph-layout:dot`` - Default orderly layout (recommended)
-- ``graph-layout:neato`` - Force-directed layout for less orderly appearance
-- ``graph-layout:fdp`` - Force-directed with variable edge lengths
+Show the `nsresult` definition for given hex or decimal notation.
 
-Limits and Depth
-^^^^^^^^^^^^^^^^
+::
 
-- ``depth:N`` - Limit graph traversal to N levels of depth (1-based)
-- ``node-limit:N`` - Maximum nodes in resulting graph (up to 1k)
-- ``path-limit:N`` - Nodes with more than N in-edges will be excluded (default: 96)
-- ``paths-between-node-limit:N`` - Maximum nodes for path-finding algorithm (up to 16k)
-
-Advanced Options
-^^^^^^^^^^^^^^^^
-
-- ``fmus-through-depth:N`` - Include "field member uses" for pointer relationships (use 0 for depth 0 nodes only)
+   nsresult:0x80004005
+   nsresult:80004005
+   nsresult:2147500037
 
 Sharing and Collaboration
 -------------------------

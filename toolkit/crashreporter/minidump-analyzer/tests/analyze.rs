@@ -143,7 +143,9 @@ fn analyze_basic_minidump() {
             .expect("failed to read extra json file");
 
         let extra = json::parse(&extra_content).expect("failed to parse extra json");
-        let stack_traces = &extra["StackTraces"];
+        assert!(extra["StackTraces"].is_str());
+        let stack_traces = json::parse(&extra["StackTraces"].as_str().unwrap())
+            .expect("failed to parse StackTraces json");
         assert!(stack_traces.is_object());
         let modules = &stack_traces["modules"];
         assert!(modules.is_array());

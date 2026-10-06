@@ -8,51 +8,62 @@ transformations is generic to any kind of task, but abstracts away some of the
 complexities of worker implementations, scopes, and treeherder annotations.
 """
 
-
 import datetime
+import functools
 import hashlib
 import os
 import re
 import time
+import typing
+from pathlib import Path
+from typing import Literal, Union
+from typing import Optional as TOptional
+from urllib.parse import quote
 
-from mozbuild.util import memoize
+import msgspec
+import taskgraph
 from mozilla_taskgraph.util.signed_artifacts import get_signed_artifacts
 from taskcluster.utils import fromNow
 from taskgraph import MAX_DEPENDENCIES
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.transforms.task import payload_builder, payload_builders
 from taskgraph.util.copy import deepcopy
-from taskgraph.util.keyed_by import evaluate_keyed_by
+from taskgraph.util.keyed_by import evaluate_keyed_by, keymatch
 from taskgraph.util.schema import (
+    LegacySchema,
     Schema,
     optionally_keyed_by,
     resolve_keyed_by,
-    taskref_or_string,
+    taskref_or_string_msgspec,
     validate_schema,
 )
 from taskgraph.util.treeherder import split_symbol
-from voluptuous import All, Any, Extra, Match, NotIn, Optional, Required
 
 from gecko_taskgraph import GECKO
-from gecko_taskgraph.optimize.schema import OptimizationSchema
+from gecko_taskgraph.optimize.schema import (
+    OptimizationSchema,
+)
 from gecko_taskgraph.transforms.job.common import get_expiration
 from gecko_taskgraph.util import docker as dockerutil
-from gecko_taskgraph.util.attributes import TRUNK_PROJECTS, is_try, release_level
+from gecko_taskgraph.util.attributes import TRUNK_PROJECTS, release_level
 from gecko_taskgraph.util.chunking import TEST_VARIANTS
 from gecko_taskgraph.util.hash import hash_path
 from gecko_taskgraph.util.partners import get_partners_to_be_published
 from gecko_taskgraph.util.scriptworker import BALROG_ACTIONS, get_release_config
 from gecko_taskgraph.util.workertypes import get_worker_type, worker_type_implementation
 
-RUN_TASK = os.path.join(GECKO, "taskcluster", "scripts", "run-task")
+RUN_TASK_HG = Path(GECKO, "taskcluster", "scripts", "run-task")
+RUN_TASK_GIT = Path(taskgraph.__file__).parent / "run-task" / "run-task"
 
 SCCACHE_GCS_PROJECT = "sccache-3"
 
 
-@memoize
-def _run_task_suffix():
+@functools.cache
+def _run_task_suffix(repo_type):
     """String to append to cache names under control of run-task."""
-    return hash_path(RUN_TASK)[0:20]
+    if repo_type == "hg":
+        return hash_path(str(RUN_TASK_HG))[0:20]
+    return hash_path(str(RUN_TASK_GIT))[0:20]
 
 
 def _compute_geckoview_version(app_version, moz_build_date):
@@ -63,148 +74,151 @@ def _compute_geckoview_version(app_version, moz_build_date):
     return f"{parts[0]}.{parts[1]}.{moz_build_date}"
 
 
-# A task description is a general description of a TaskCluster task
-task_description_schema = Schema(
-    {
-        # the label for this task
-        Required("label"): str,
-        # description of the task (for metadata)
-        Required("description"): str,
-        # attributes for this task
-        Optional("attributes"): {str: object},
-        # relative path (from config.path) to the file task was defined in
-        Optional("task-from"): str,
-        # dependencies of this task, keyed by name; these are passed through
-        # verbatim and subject to the interpretation of the Task's get_dependencies
-        # method.
-        Optional("dependencies"): {
-            All(
-                str,
-                NotIn(
-                    ["self", "decision"],
-                    "Can't use 'self` or 'decision' as depdency names.",
-                ),
-            ): object,
-        },
-        # Soft dependencies of this task, as a list of tasks labels
-        Optional("soft-dependencies"): [str],
-        # Dependencies that must be scheduled in order for this task to run.
-        Optional("if-dependencies"): [str],
-        Optional("requires"): Any("all-completed", "all-resolved"),
-        # expiration and deadline times, relative to task creation, with units
-        # (e.g., "14 days").  Defaults are set based on the project.
-        Optional("expires-after"): str,
-        Optional("deadline-after"): str,
-        Optional("expiration-policy"): str,
-        # custom routes for this task; the default treeherder routes will be added
-        # automatically
-        Optional("routes"): [str],
-        # custom scopes for this task; any scopes required for the worker will be
-        # added automatically. The following parameters will be substituted in each
-        # scope:
-        #  {level} -- the scm level of this push
-        #  {project} -- the project of this push
-        Optional("scopes"): [str],
-        # Tags
-        Optional("tags"): {str: str},
-        # custom "task.extra" content
-        Optional("extra"): {str: object},
-        # treeherder-related information; see
-        # https://firefox-ci-tc.services.mozilla.com/schemas/taskcluster-treeherder/v1/task-treeherder-config.json
-        # If not specified, no treeherder extra information or routes will be
-        # added to the task
-        Optional("treeherder"): {
-            # either a bare symbol, or "grp(sym)".
-            "symbol": str,
-            # the job kind
-            "kind": Any("build", "test", "other"),
-            # tier for this task
-            "tier": int,
-            # task platform, in the form platform/collection, used to set
-            # treeherder.machine.platform and treeherder.collection or
-            # treeherder.labels
-            "platform": Match("^[A-Za-z0-9_-]{1,50}/[A-Za-z0-9_-]{1,50}$"),
-        },
-        # information for indexing this build so its artifacts can be discovered;
-        # if omitted, the build will not be indexed.
-        Optional("index"): {
-            # the name of the product this build produces
-            "product": str,
-            # the names to use for this job in the TaskCluster index
-            "job-name": str,
-            # Type of gecko v2 index to use
-            "type": Any(
-                "generic",
-                "l10n",
-                "shippable",
-                "shippable-l10n",
-                "android-shippable",
-                "android-shippable-with-multi-l10n",
-                "shippable-with-multi-l10n",
-            ),
-            # The rank that the task will receive in the TaskCluster
-            # index.  A newly completed task supercedes the currently
-            # indexed task iff it has a higher rank.  If unspecified,
-            # 'by-tier' behavior will be used.
-            "rank": Any(
-                # Rank is equal the timestamp of the build_date for tier-1
-                # tasks, and one for non-tier-1.  This sorts tier-{2,3}
-                # builds below tier-1 in the index, but above eager-index.
-                "by-tier",
-                # Rank is given as an integer constant (e.g. zero to make
-                # sure a task is last in the index).
-                int,
-                # Rank is equal to the timestamp of the build_date.  This
-                # option can be used to override the 'by-tier' behavior
-                # for non-tier-1 tasks.
-                "build_date",
-            ),
-        },
-        # The `run_on_projects` attribute, defaulting to "all".  This dictates the
-        # projects on which this task should be included in the target task set.
-        # See the attributes documentation for details.
-        Optional("run-on-projects"): optionally_keyed_by("build-platform", [str]),
-        # Like `run_on_projects`, `run-on-hg-branches` defaults to "all".
-        Optional("run-on-hg-branches"): optionally_keyed_by("project", [str]),
-        # The `shipping_phase` attribute, defaulting to None. This specifies the
-        # release promotion phase that this task belongs to.
-        Required("shipping-phase"): Any(
-            None,
-            "build",
-            "promote",
-            "push",
-            "ship",
-        ),
-        # The `shipping_product` attribute, defaulting to None. This specifies the
-        # release promotion product that this task belongs to.
-        Required("shipping-product"): Any(None, str),
-        # The `always-target` attribute will cause the task to be included in the
-        # target_task_graph regardless of filtering. Tasks included in this manner
-        # will be candidates for optimization even when `optimize_target_tasks` is
-        # False, unless the task was also explicitly chosen by the target_tasks
-        # method.
-        Required("always-target"): bool,
-        # Optimization to perform on this task during the optimization phase.
-        # Optimizations are defined in taskcluster/gecko_taskgraph/optimize.py.
-        Required("optimization"): OptimizationSchema,
-        # the provisioner-id/worker-type for the task.  The following parameters will
-        # be substituted in this string:
-        #  {level} -- the scm level of this push
-        "worker-type": str,
-        # Whether the job should use sccache compiler caching.
-        Required("use-sccache"): bool,
-        # information specific to the worker implementation that will run this task
-        Optional("worker"): {
-            Required("implementation"): str,
-            Extra: object,
-        },
-        # Override the default priority for the project
-        Optional("priority"): str,
-        # Override the default 5 retries
-        Optional("retries"): int,
-    }
-)
+class TreeherderSchema(Schema, kw_only=True):
+    # either a bare symbol, or "grp(sym)".
+    symbol: TOptional[str] = None
+    # the job kind
+    kind: TOptional[Literal["build", "test", "other"]] = None
+    # tier for this task
+    tier: TOptional[int] = None
+    # task platform, in the form platform/collection, used to set
+    # treeherder.machine.platform and treeherder.collection or
+    # treeherder.labels
+    platform: TOptional[str] = None
 
+    def __post_init__(self):
+        super().__post_init__()
+        if self.platform and not re.match(
+            r"^[A-Za-z0-9_-]{1,50}/[A-Za-z0-9_-]{1,50}$", self.platform
+        ):
+            raise ValueError(f"Invalid treeherder platform: {self.platform!r}")
+
+
+class IndexSchema(Schema, kw_only=True):
+    # the name of the product this build produces
+    product: TOptional[str] = None
+    # the names to use for this job in the TaskCluster index
+    job_name: TOptional[str] = None
+    # Type of gecko v2 index to use
+    type: Literal[
+        "generic",
+        "l10n",
+        "shippable",
+        "shippable-l10n",
+        "android-shippable",
+        "android-shippable-with-multi-l10n",
+        "shippable-with-multi-l10n",
+    ] = "generic"
+    # The rank that the task will receive in the TaskCluster
+    # index.  A newly completed task supercedes the currently
+    # indexed task iff it has a higher rank.  If unspecified,
+    # 'by-tier' behavior will be used.
+    rank: Union[Literal["by-tier", "build_date"], int] = "by-tier"
+
+
+class TaskWorkerSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    implementation: str
+
+
+class TaskDescriptionSchema(Schema, kw_only=True):
+    # the label for this task
+    label: str
+    # description of the task (for metadata)
+    description: str
+    # attributes for this task
+    attributes: TOptional[dict[str, object]] = None
+    # relative path (from config.path) to the file task was defined in
+    task_from: TOptional[str] = None
+    # dependencies of this task, keyed by name; these are passed through
+    # verbatim and subject to the interpretation of the Task's get_dependencies
+    # method.
+    dependencies: TOptional[dict[str, object]] = None
+    # Soft dependencies of this task, as a list of tasks labels
+    soft_dependencies: TOptional[list[str]] = None
+    # Dependencies that must be scheduled in order for this task to run.
+    if_dependencies: TOptional[list[str]] = None
+    requires: TOptional[Literal["all-completed", "all-resolved"]] = None
+    # expiration and deadline times, relative to task creation, with units
+    # (e.g., "14 days").  Defaults are set based on the project.
+    expires_after: TOptional[str] = None
+    deadline_after: TOptional[str] = None
+    expiration_policy: TOptional[str] = None
+    # custom routes for this task; the default treeherder routes will be added
+    # automatically
+    routes: TOptional[list[str]] = None
+    # custom scopes for this task; any scopes required for the worker will be
+    # added automatically. The following parameters will be substituted in each
+    # scope:
+    #  {level} -- the scm level of this push
+    #  {project} -- the project of this push
+    scopes: TOptional[list[str]] = None
+    # Tags
+    tags: TOptional[dict[str, str]] = None
+    # custom "task.extra" content
+    extra: TOptional[dict[str, object]] = None
+    # treeherder-related information; see
+    # https://firefox-ci-tc.services.mozilla.com/schemas/taskcluster-treeherder/v1/task-treeherder-config.json
+    # If not specified, no treeherder extra information or routes will be
+    # added to the task
+    treeherder: TOptional[TreeherderSchema] = None
+    # information for indexing this build so its artifacts can be discovered;
+    # if omitted, the build will not be indexed.
+    index: TOptional[IndexSchema] = None
+    # The `run_on_repo_type` attribute, defaulting to "hg".  This dictates
+    # the types of repositories on which this task should be included in
+    # the target task set. See the attributes documentation for details.
+    run_on_repo_type: TOptional[list[Literal["git", "hg"]]] = None
+    # The `run_on_projects` attribute, defaulting to "all".  This dictates the
+    # projects on which this task should be included in the target task set.
+    # See the attributes documentation for details.
+    run_on_projects: TOptional[  # type: ignore
+        optionally_keyed_by("build-platform", list[str], use_msgspec=True)
+    ] = None
+    # Like `run_on_projects`, `run-on-hg-branches` defaults to "all".
+    run_on_hg_branches: TOptional[  # type: ignore
+        optionally_keyed_by("project", list[str], use_msgspec=True)
+    ] = None
+    # Specifies git branches for which this task should run.
+    run_on_git_branches: TOptional[list[str]] = None
+    # The `shipping_phase` attribute, defaulting to None. This specifies the
+    # release promotion phase that this task belongs to.
+    shipping_phase: TOptional[Literal["build", "promote", "push", "ship"]] = None
+    # The `shipping_product` attribute, defaulting to None. This specifies the
+    # release promotion product that this task belongs to.
+    shipping_product: TOptional[str] = None
+    # The `always-target` attribute will cause the task to be included in the
+    # target_task_graph regardless of filtering. Tasks included in this manner
+    # will be candidates for optimization even when `optimize_target_tasks` is
+    # False, unless the task was also explicitly chosen by the target_tasks
+    # method.
+    always_target: bool = False
+    # Optimization to perform on this task during the optimization phase.
+    # Optimizations are defined in taskcluster/gecko_taskgraph/optimize.py.
+    optimization: TOptional[OptimizationSchema] = None
+    # the provisioner-id/worker-type for the task.  The following parameters will
+    # be substituted in this string:
+    #  {level} -- the scm level of this push
+    worker_type: TOptional[str] = None
+    # Whether the job should use sccache compiler caching.
+    use_sccache: bool = False
+    # information specific to the worker implementation that will run this task
+    worker: TOptional[TaskWorkerSchema] = None
+    # Override the default priority for the project
+    priority: TOptional[str] = None
+    # Override the default 5 retries
+    retries: TOptional[int] = None
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.dependencies:
+            for key in self.dependencies:
+                if key in ("self", "decision"):
+                    raise ValueError(
+                        "Can't use 'self` or 'decision' as depdency names."
+                    )
+
+
+TREEHERDER_ROOT_URL = "https://treeherder.mozilla.org"
 TC_TREEHERDER_SCHEMA_URL = (
     "https://github.com/taskcluster/taskcluster-treeherder/"
     "blob/master/schemas/task-treeherder-config.yml"
@@ -212,16 +226,16 @@ TC_TREEHERDER_SCHEMA_URL = (
 
 
 UNKNOWN_GROUP_NAME = (
-    "Treeherder group {} (from {}) has no name; " "add it to taskcluster/config.yml"
+    "Treeherder group {} (from {}) has no name; add it to taskcluster/config.yml"
 )
 
 V2_ROUTE_TEMPLATES = [
-    "index.{trust-domain}.v2.{project}.latest.{product}.{job-name}",
-    "index.{trust-domain}.v2.{project}.pushdate.{build_date_long}.{product}.{job-name}",
-    "index.{trust-domain}.v2.{project}.pushdate.{build_date}.latest.{product}.{job-name}",
-    "index.{trust-domain}.v2.{project}.pushlog-id.{pushlog_id}.{product}.{job-name}",
-    "index.{trust-domain}.v2.{project}.revision.{branch_rev}.{product}.{job-name}",
-    "index.{trust-domain}.v2.{project}.revision.{branch_git_rev}.{product}.{job-name}",
+    "index.{trust-domain}.v2.{project}{head_ref}.latest.{product}.{job-name}",
+    "index.{trust-domain}.v2.{project}{head_ref}.pushdate.{build_date_long}.{product}.{job-name}",
+    "index.{trust-domain}.v2.{project}{head_ref}.pushdate.{build_date}.latest.{product}.{job-name}",
+    "index.{trust-domain}.v2.{project}{head_ref}.pushlog-id.{pushlog_id}.{product}.{job-name}",
+    "index.{trust-domain}.v2.{project}{head_ref}.revision.{branch_rev}.{product}.{job-name}",
+    "index.{trust-domain}.v2.{project}{head_ref}.revision.{branch_git_rev}.{product}.{job-name}",
 ]
 
 # {central, inbound, autoland} write to a "trunk" index prefix. This facilitates
@@ -231,30 +245,30 @@ V2_TRUNK_ROUTE_TEMPLATES = [
 ]
 
 V2_SHIPPABLE_TEMPLATES = [
-    "index.{trust-domain}.v2.{project}.shippable.latest.{product}.{job-name}",
-    "index.{trust-domain}.v2.{project}.shippable.{build_date}.revision.{branch_rev}.{product}.{job-name}",  # noqa - too long
-    "index.{trust-domain}.v2.{project}.shippable.{build_date}.latest.{product}.{job-name}",
-    "index.{trust-domain}.v2.{project}.shippable.revision.{branch_rev}.{product}.{job-name}",
-    "index.{trust-domain}.v2.{project}.shippable.revision.{branch_git_rev}.{product}.{job-name}",
+    "index.{trust-domain}.v2.{project}{head_ref}.shippable.latest.{product}.{job-name}",
+    "index.{trust-domain}.v2.{project}{head_ref}.shippable.{build_date}.revision.{branch_rev}.{product}.{job-name}",  # noqa - too long
+    "index.{trust-domain}.v2.{project}{head_ref}.shippable.{build_date}.latest.{product}.{job-name}",
+    "index.{trust-domain}.v2.{project}{head_ref}.shippable.revision.{branch_rev}.{product}.{job-name}",
+    "index.{trust-domain}.v2.{project}{head_ref}.shippable.revision.{branch_git_rev}.{product}.{job-name}",
 ]
 
 V2_SHIPPABLE_L10N_TEMPLATES = [
-    "index.{trust-domain}.v2.{project}.shippable.latest.{product}-l10n.{job-name}.{locale}",
-    "index.{trust-domain}.v2.{project}.shippable.{build_date}.revision.{branch_rev}.{product}-l10n.{job-name}.{locale}",  # noqa - too long
-    "index.{trust-domain}.v2.{project}.shippable.{build_date}.latest.{product}-l10n.{job-name}.{locale}",  # noqa - too long
-    "index.{trust-domain}.v2.{project}.shippable.revision.{branch_rev}.{product}-l10n.{job-name}.{locale}",  # noqa - too long
+    "index.{trust-domain}.v2.{project}{head_ref}.shippable.latest.{product}-l10n.{job-name}.{locale}",
+    "index.{trust-domain}.v2.{project}{head_ref}.shippable.{build_date}.revision.{branch_rev}.{product}-l10n.{job-name}.{locale}",  # noqa - too long
+    "index.{trust-domain}.v2.{project}{head_ref}.shippable.{build_date}.latest.{product}-l10n.{job-name}.{locale}",  # noqa - too long
+    "index.{trust-domain}.v2.{project}{head_ref}.shippable.revision.{branch_rev}.{product}-l10n.{job-name}.{locale}",  # noqa - too long
 ]
 
 V2_L10N_TEMPLATES = [
-    "index.{trust-domain}.v2.{project}.revision.{branch_rev}.{product}-l10n.{job-name}.{locale}",
-    "index.{trust-domain}.v2.{project}.pushdate.{build_date_long}.{product}-l10n.{job-name}.{locale}",  # noqa - too long
-    "index.{trust-domain}.v2.{project}.pushlog-id.{pushlog_id}.{product}-l10n.{job-name}.{locale}",
-    "index.{trust-domain}.v2.{project}.latest.{product}-l10n.{job-name}.{locale}",
+    "index.{trust-domain}.v2.{project}{head_ref}.revision.{branch_rev}.{product}-l10n.{job-name}.{locale}",
+    "index.{trust-domain}.v2.{project}{head_ref}.pushdate.{build_date_long}.{product}-l10n.{job-name}.{locale}",  # noqa - too long
+    "index.{trust-domain}.v2.{project}{head_ref}.pushlog-id.{pushlog_id}.{product}-l10n.{job-name}.{locale}",
+    "index.{trust-domain}.v2.{project}{head_ref}.latest.{product}-l10n.{job-name}.{locale}",
 ]
 
 # This index is specifically for builds that include geckoview releases,
 # so we can hard-code the project to "geckoview"
-V2_GECKOVIEW_RELEASE = "index.{trust-domain}.v2.{project}.geckoview-version.{geckoview-version}.{product}.{job-name}"  # noqa - too long
+V2_GECKOVIEW_RELEASE = "index.{trust-domain}.v2.{project}{head_ref}.geckoview-version.{geckoview-version}.{product}.{job-name}"  # noqa - too long
 
 # the roots of the treeherder routes
 TREEHERDER_ROUTE_ROOT = "tc-treeherder"
@@ -280,7 +294,98 @@ def get_branch_repo(config):
     ]
 
 
-@memoize
+def get_project_alias(config):
+    if config.params["tasks_for"].startswith("github-pull-request"):
+        return f"{config.params['project']}-pr"
+    return config.params["project"]
+
+
+def get_head_ref(config) -> tuple[str, typing.Optional[str]]:
+    """
+    Extract the head_ref without its prefix and determine its type.
+
+    Args:
+        config (TransformConfig): The configuration for the kind being transformed.
+
+    Returns:
+        tuple: A tuple of (head_ref_name, ref_type) where ref_type is 'heads',
+            'tags', or None if the type cannot be determined.
+    """
+    if config.params["repository_type"] == "hg":
+        return "", None
+
+    if config.params["tasks_for"].startswith("github-pull-request"):
+        return "", None
+
+    head_ref = config.params["head_ref"]
+
+    for prefix in ("refs/heads", "refs/tags"):
+        if head_ref.startswith(prefix):
+            return head_ref[len(prefix) + 1 :], prefix.split("/", 1)[-1]
+
+    # Unable to determine whether it's a branch or a tag, return None to denote
+    # the type is unknown.
+    # TODO We should probably enforce passing 'head_ref' with a prefix.
+    return head_ref, None
+
+
+def get_head_ref_index(config) -> str:
+    """Build a URL-encoded index string for the head_ref with namespace prefix.
+
+    Args:
+        config (TransformConfig): The configuration for the kind being transformed.
+
+    Returns:
+        str: The URL-encoded index path (e.g., '.branch.main' or '.tag.v1.0')
+            with appropriate namespace prefix, or empty string if no head_ref.
+    """
+    head_ref, ref_type = get_head_ref(config)
+    if not head_ref:
+        return ""
+
+    if ref_type == "heads":
+        index = f".branch.{head_ref}"
+    elif ref_type == "tags":
+        index = f".tag.{head_ref}"
+    else:
+        # Unsure, just stick it in a 'ref' namespace.
+        index = f".ref.{head_ref}"
+
+    # Ensure head_ref conforms to TC route schema. The `safe` flag ensures '/'
+    # is also quoted.
+    return quote(index, safe="")
+
+
+def get_treeherder_project(config) -> str:
+    """Resolve and retrieve the Treeherder project name.
+
+    Args:
+        config (TransformConfig): The configuration for the kind being transformed.
+
+    Returns:
+        str: The Treeherder project identifier.
+    """
+    th_branch_map = resolve_keyed_by(
+        config.graph_config["treeherder"],
+        "branch-map",
+        "Treeherder Link",
+        project=config.params["project"],
+    ).get("branch-map", {})
+
+    head_ref, _ = get_head_ref(config)
+    if head_ref and (matches := keymatch(th_branch_map, head_ref)):
+        return matches[0]
+
+    return get_project_alias(config)
+
+
+def get_treeherder_link(config) -> str:
+    branch_rev = get_branch_rev(config)
+    th_project = get_treeherder_project(config)
+    return f"{TREEHERDER_ROOT_URL}/#/jobs?repo={th_project}&revision={branch_rev}&selectedTaskRun=<self>"
+
+
+@functools.cache
 def get_default_priority(graph_config, project):
     return evaluate_keyed_by(
         graph_config["task-priority"], "Graph Config", {"project": project}
@@ -312,94 +417,89 @@ def verify_index(config, index):
         raise Exception(UNSUPPORTED_INDEX_PRODUCT_ERROR.format(product=product))
 
 
-@payload_builder(
-    "docker-worker",
-    schema={
-        Required("os"): "linux",
-        # For tasks that will run in docker-worker, this is the
-        # name of the docker image or in-tree docker image to run the task in.  If
-        # in-tree, then a dependency will be created automatically.  This is
-        # generally `desktop-test`, or an image that acts an awful lot like it.
-        Required("docker-image"): Any(
-            # a raw Docker image path (repo/image:tag)
-            str,
-            # an in-tree generated docker image (from `taskcluster/docker/<name>`)
-            {"in-tree": str},
-            # an indexed docker image
-            {"indexed": str},
-        ),
-        # worker features that should be enabled
-        Required("chain-of-trust"): bool,
-        Required("taskcluster-proxy"): bool,
-        Required("allow-ptrace"): bool,
-        Required("loopback-video"): bool,
-        Required("loopback-audio"): bool,
-        Required("docker-in-docker"): bool,  # (aka 'dind')
-        Required("privileged"): bool,
-        Optional("kvm"): bool,
-        # Paths to Docker volumes.
-        #
-        # For in-tree Docker images, volumes can be parsed from Dockerfile.
-        # This only works for the Dockerfile itself: if a volume is defined in
-        # a base image, it will need to be declared here. Out-of-tree Docker
-        # images will also require explicit volume annotation.
-        #
-        # Caches are often mounted to the same path as Docker volumes. In this
-        # case, they take precedence over a Docker volume. But a volume still
-        # needs to be declared for the path.
-        Optional("volumes"): [str],
-        Optional(
-            "required-volumes",
-            description=(
-                "Paths that are required to be volumes for performance reasons. "
-                "For in-tree images, these paths will be checked to verify that they "
-                "are defined as volumes."
-            ),
-        ): [str],
-        # caches to set up for the task
-        Optional("caches"): [
-            {
-                # only one type is supported by any of the workers right now
-                "type": "persistent",
-                # name of the cache, allowing re-use by subsequent tasks naming the
-                # same cache
-                "name": str,
-                # location in the task image where the cache will be mounted
-                "mount-point": str,
-                # Whether the cache is not used in untrusted environments
-                # (like the Try repo).
-                Optional("skip-untrusted"): bool,
-            }
-        ],
-        # artifacts to extract from the task image after completion
-        Optional("artifacts"): [
-            {
-                # type of artifact -- simple file, or recursive directory
-                "type": Any("file", "directory"),
-                # task image path from which to read artifact
-                "path": str,
-                # name of the produced artifact (root of the names for
-                # type=directory)
-                "name": str,
-                "expires-after": str,
-            }
-        ],
-        # environment variables
-        Required("env"): {str: taskref_or_string},
-        # the command to run; if not given, docker-worker will default to the
-        # command in the docker image
-        Optional("command"): [taskref_or_string],
-        # the maximum time to run, in seconds
-        Required("max-run-time"): int,
-        # the exit status code(s) that indicates the task should be retried
-        Optional("retry-exit-status"): [int],
-        # the exit status code(s) that indicates the caches used by the task
-        # should be purged
-        Optional("purge-caches-exit-status"): [int],
-        # Whether any artifacts are assigned to this worker
-        Optional("skip-artifacts"): bool,
-    },
-)
+RUN_TASK_RE = re.compile(r"run-task(-(git|hg))?$")
+
+
+def is_run_task(cmd: str) -> bool:
+    return bool(re.search(RUN_TASK_RE, cmd))
+
+
+class DockerImageDictSchema(Schema, forbid_unknown_fields=True, kw_only=True):
+    # a raw Docker image path (repo/image:tag) is handled by the str branch of the union
+    # an in-tree generated docker image (from `taskcluster/docker/<name>`)
+    in_tree: TOptional[str] = None
+    # an indexed docker image
+    indexed: TOptional[str] = None
+
+    def __post_init__(self):
+        if (self.in_tree is None) == (self.indexed is None):
+            raise ValueError(
+                "Exactly one of 'in-tree' or 'indexed' must be set in docker-image"
+            )
+
+
+class DockerCacheSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    # only one type is supported by any of the workers right now
+    type: Literal["persistent"]
+    # name of the cache, allowing re-use by subsequent tasks naming the same cache
+    name: str
+    # location in the task image where the cache will be mounted
+    mount_point: str
+    # Whether the cache is not used in untrusted environments (like the Try repo).
+    skip_untrusted: TOptional[bool] = None
+
+
+class DockerArtifactSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    # type of artifact -- simple file, or recursive directory
+    type: Literal["file", "directory"]
+    # task image path from which to read artifact
+    path: str
+    # name of the produced artifact (root of the names for type=directory)
+    name: str
+    expires_after: TOptional[str] = None
+
+
+class DockerWorkerSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    os: Literal["linux"]
+    # For tasks that will run in docker-worker, this is the
+    # name of the docker image or in-tree docker image to run the task in.  If
+    # in-tree, then a dependency will be created automatically.  This is
+    # generally `desktop-test`, or an image that acts an awful lot like it.
+    docker_image: Union[str, DockerImageDictSchema]
+    # worker features that should be enabled
+    chain_of_trust: bool
+    taskcluster_proxy: bool
+    allow_ptrace: bool
+    loopback_video: bool
+    loopback_audio: bool
+    docker_in_docker: bool  # (aka 'dind')
+    privileged: bool
+    kvm: TOptional[bool] = None
+    # Paths to Docker volumes.
+    volumes: TOptional[list[str]] = None
+    # Paths that are required to be volumes for performance reasons.
+    required_volumes: TOptional[list[str]] = None
+    # caches to set up for the task
+    caches: TOptional[list[DockerCacheSchema]] = None
+    # artifacts to extract from the task image after completion
+    artifacts: TOptional[list[DockerArtifactSchema]] = None
+    # environment variables
+    env: dict[str, taskref_or_string_msgspec]
+    # the command to run; if not given, docker-worker will default to the
+    # command in the docker image
+    command: TOptional[list[taskref_or_string_msgspec]] = None
+    # the maximum time to run, in seconds
+    max_run_time: int
+    # the exit status code(s) that indicates the task should be retried
+    retry_exit_status: TOptional[list[int]] = None
+    # the exit status code(s) that indicates the caches used by the task
+    # should be purged
+    purge_caches_exit_status: TOptional[list[int]] = None
+    # Whether any artifacts are assigned to this worker
+    skip_artifacts: TOptional[bool] = None
+
+
+@payload_builder("docker-worker", schema=DockerWorkerSchema)
 def build_docker_worker_payload(config, task, task_def):
     worker = task["worker"]
     level = int(config.params["level"])
@@ -499,7 +599,7 @@ def build_docker_worker_payload(config, task, task_def):
     if "max-run-time" in worker:
         payload["maxRunTime"] = worker["max-run-time"]
 
-    run_task = payload.get("command", [""])[0].endswith("run-task")
+    run_task = is_run_task(payload.get("command", [""])[0])
 
     # run-task exits EXIT_PURGE_CACHES if there is a problem with caches.
     # Automatically retry the tasks and purge caches if we see this exit
@@ -563,7 +663,9 @@ def build_docker_worker_payload(config, task, task_def):
         cache_version = "v3"
 
         if run_task:
-            suffix = f"{cache_version}-{_run_task_suffix()}"
+            suffix = (
+                f"{cache_version}-{_run_task_suffix(config.params['repository_type'])}"
+            )
 
             if out_of_tree_image:
                 name_hash = hashlib.sha256(
@@ -574,12 +676,10 @@ def build_docker_worker_payload(config, task, task_def):
         else:
             suffix = cache_version
 
-        skip_untrusted = is_try(config.params) or level == 1
-
         for cache in worker["caches"]:
             # Some caches aren't enabled in environments where we can't
             # guarantee certain behavior. Filter those out.
-            if cache.get("skip-untrusted") and skip_untrusted:
+            if cache.get("skip-untrusted") and level == 1:
                 continue
 
             name = "{trust_domain}-level-{level}-{name}-{suffix}".format(
@@ -602,7 +702,7 @@ def build_docker_worker_payload(config, task, task_def):
     if run_task and worker.get("volumes"):
         payload["env"]["TASKCLUSTER_VOLUMES"] = ";".join(sorted(worker["volumes"]))
 
-    if payload.get("cache") and skip_untrusted:
+    if payload.get("cache") and level == 1:
         payload["env"]["TASKCLUSTER_UNTRUSTED_CACHES"] = "1"
 
     if features:
@@ -614,86 +714,66 @@ def build_docker_worker_payload(config, task, task_def):
     check_required_volumes(task)
 
 
-@payload_builder(
-    "generic-worker",
-    schema={
-        Required("os"): Any(
-            "windows", "macosx", "linux", "linux-bitbar", "linux-lambda"
-        ),
-        # see http://schemas.taskcluster.net/generic-worker/v1/payload.json
-        # and https://docs.taskcluster.net/reference/workers/generic-worker/payload
-        # command is a list of commands to run, sequentially
-        # on Windows, each command is a string, on OS X and Linux, each command is
-        # a string array
-        Required("command"): Any(
-            [taskref_or_string], [[taskref_or_string]]  # Windows  # Linux / OS X
-        ),
-        # artifacts to extract from the task image after completion; note that artifacts
-        # for the generic worker cannot have names
-        Optional("artifacts"): [
-            {
-                # type of artifact -- simple file, or recursive directory
-                "type": Any("file", "directory"),
-                # filesystem path from which to read artifact
-                "path": str,
-                # if not specified, path is used for artifact name
-                Optional("name"): str,
-                "expires-after": str,
-            }
-        ],
-        # Directories and/or files to be mounted.
-        # The actual allowed combinations are stricter than the model below,
-        # but this provides a simple starting point.
-        # See https://docs.taskcluster.net/reference/workers/generic-worker/payload
-        Optional("mounts"): [
-            {
-                # A unique name for the cache volume, implies writable cache directory
-                # (otherwise mount is a read-only file or directory).
-                Optional("cache-name"): str,
-                # Optional content for pre-loading cache, or mandatory content for
-                # read-only file or directory. Pre-loaded content can come from either
-                # a task artifact or from a URL.
-                Optional("content"): {
-                    # *** Either (artifact and task-id) or url must be specified. ***
-                    # Artifact name that contains the content.
-                    Optional("artifact"): str,
-                    # Task ID that has the artifact that contains the content.
-                    Optional("task-id"): taskref_or_string,
-                    # URL that supplies the content in response to an unauthenticated
-                    # GET request.
-                    Optional("url"): str,
-                },
-                # *** Either file or directory must be specified. ***
-                # If mounting a cache or read-only directory, the filesystem location of
-                # the directory should be specified as a relative path to the task
-                # directory here.
-                Optional("directory"): str,
-                # If mounting a file, specify the relative path within the task
-                # directory to mount the file (the file will be read only).
-                Optional("file"): str,
-                # Required if and only if `content` is specified and mounting a
-                # directory (not a file). This should be the archive format of the
-                # content (either pre-loaded cache or read-only directory).
-                Optional("format"): Any("rar", "tar.bz2", "tar.gz", "zip", "tar.xz"),
-            }
-        ],
-        # environment variables
-        Required("env"): {str: taskref_or_string},
-        # the maximum time to run, in seconds
-        Required("max-run-time"): int,
-        # os user groups for test task workers
-        Optional("os-groups"): [str],
-        # feature for test task to run as administarotr
-        Optional("run-as-administrator"): bool,
-        # optional features
-        Required("chain-of-trust"): bool,
-        Optional("taskcluster-proxy"): bool,
-        # the exit status code(s) that indicates the task should be retried
-        Optional("retry-exit-status"): [int],
-        # Wether any artifacts are assigned to this worker
-        Optional("skip-artifacts"): bool,
-    },
-)
+class GenericArtifactSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    # type of artifact -- simple file, or recursive directory
+    type: Literal["file", "directory"]
+    # filesystem path from which to read artifact
+    path: str
+    # if not specified, path is used for artifact name
+    name: TOptional[str] = None
+    expires_after: TOptional[str] = None
+
+
+class GenericMountContentSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    # Artifact name that contains the content.
+    artifact: TOptional[str] = None
+    # Task ID that has the artifact that contains the content.
+    task_id: TOptional[taskref_or_string_msgspec] = None
+    # URL that supplies the content in response to an unauthenticated GET request.
+    url: TOptional[str] = None
+
+
+class GenericMountSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    # A unique name for the cache volume, implies writable cache directory.
+    cache_name: TOptional[str] = None
+    # Optional content for pre-loading cache, or mandatory content for read-only file/dir.
+    content: TOptional[GenericMountContentSchema] = None
+    # Filesystem location of the directory as a relative path to the task directory.
+    directory: TOptional[str] = None
+    # Relative path within the task directory to mount the file (read only).
+    file: TOptional[str] = None
+    # Archive format of the content if mounting a directory.
+    format: TOptional[Literal["rar", "tar.bz2", "tar.gz", "zip", "tar.xz"]] = None
+
+
+class GenericWorkerSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    os: Literal["windows", "macosx", "linux", "linux-bitbar", "linux-lambda"]
+    # command is a list of commands to run, sequentially
+    # on Windows, each command is a string, on OS X and Linux, each command is a string array
+    command: list[Union[taskref_or_string_msgspec, list[taskref_or_string_msgspec]]]
+    # artifacts to extract from the task image after completion
+    artifacts: TOptional[list[GenericArtifactSchema]] = None
+    # Directories and/or files to be mounted.
+    mounts: TOptional[list[GenericMountSchema]] = None
+    # environment variables
+    env: dict[str, taskref_or_string_msgspec]
+    # the maximum time to run, in seconds
+    max_run_time: int
+    # os user groups for test task workers
+    os_groups: TOptional[list[str]] = None
+    # feature for test task to run as administrator
+    run_as_administrator: TOptional[bool] = None
+    # optional features
+    chain_of_trust: bool
+    taskcluster_proxy: TOptional[bool] = None
+    hide_cmd_window: TOptional[bool] = None
+    # the exit status code(s) that indicates the task should be retried
+    retry_exit_status: TOptional[list[int]] = None
+    # Whether any artifacts are assigned to this worker
+    skip_artifacts: TOptional[bool] = None
+
+
+@payload_builder("generic-worker", schema=GenericWorkerSchema)
 def build_generic_worker_payload(config, task, task_def):
     worker = task["worker"]
     features = {}
@@ -788,12 +868,10 @@ def build_generic_worker_payload(config, task, task_def):
 
     if worker.get("os-groups"):
         task_def["payload"]["osGroups"] = worker["os-groups"]
-        task_def["scopes"].extend(
-            [
-                "generic-worker:os-group:{}/{}".format(task["worker-type"], group)
-                for group in worker["os-groups"]
-            ]
-        )
+        task_def["scopes"].extend([
+            "generic-worker:os-group:{}/{}".format(task["worker-type"], group)
+            for group in worker["os-groups"]
+        ])
 
     if worker.get("chain-of-trust"):
         features["chainOfTrust"] = True
@@ -807,61 +885,74 @@ def build_generic_worker_payload(config, task, task_def):
             "generic-worker:run-as-administrator:{}".format(task["worker-type"]),
         )
 
+    if worker.get("hide-cmd-window"):
+        features["hideCmdWindow"] = True
+
     if features:
         task_def["payload"]["features"] = features
 
 
-@payload_builder(
-    "iscript",
-    schema={
-        Required("signing-type"): str,
-        # the maximum time to run, in seconds
-        Required("max-run-time"): int,
-        # list of artifact URLs for the artifacts that should be signed
-        Required("upstream-artifacts"): [
-            {
-                # taskId of the task with the artifact
-                Required("taskId"): taskref_or_string,
-                # type of signing task (for CoT)
-                Required("taskType"): str,
-                # Paths to the artifacts to sign
-                Required("paths"): [str],
-                # Signing formats to use on each of the paths
-                Required("formats"): [str],
-                Optional("singleFileGlobs"): [str],
-            }
-        ],
-        # behavior for mac iscript
-        Optional("mac-behavior"): Any(
+class IscriptArtifactSchema(
+    msgspec.Struct, kw_only=True, rename="camel", forbid_unknown_fields=True
+):
+    # taskId of the task with the artifact
+    task_id: taskref_or_string_msgspec
+    # type of signing task (for CoT)
+    task_type: str
+    # Paths to the artifacts to sign
+    paths: list[str]
+    # Signing formats to use on each of the paths
+    formats: list[str]
+    single_file_globs: TOptional[list[str]] = None
+
+
+class IscriptProvisioningProfileSchema(
+    Schema, forbid_unknown_fields=False, kw_only=True, rename=None
+):
+    profile_name: str
+    target_path: str
+
+
+class IscriptHardenedSignConfigSchema(
+    Schema, forbid_unknown_fields=False, kw_only=True
+):
+    deep: TOptional[bool] = None
+    runtime: TOptional[bool] = None
+    force: TOptional[bool] = None
+    entitlements: TOptional[str] = None
+    requirements: TOptional[str] = None
+    globs: list[str]
+
+
+class IscriptSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    signing_type: str
+    # the maximum time to run, in seconds
+    max_run_time: int
+    # list of artifact URLs for the artifacts that should be signed
+    upstream_artifacts: list[IscriptArtifactSchema]
+    # behavior for mac iscript
+    mac_behavior: TOptional[
+        Literal[
             "apple_notarization",
             "apple_notarization_stacked",
             "mac_sign_and_pkg",
+            "mac_sign_pkg",
             "mac_sign_and_pkg_hardened",
             "mac_geckodriver",
             "mac_notarize_geckodriver",
             "mac_single_file",
             "mac_notarize_single_file",
-        ),
-        Optional("entitlements-url"): str,
-        Optional("requirements-plist-url"): str,
-        Optional("provisioning-profile-config"): [
-            {
-                Required("profile_name"): str,
-                Required("target_path"): str,
-            }
-        ],
-        Optional("hardened-sign-config"): [
-            {
-                Optional("deep"): bool,
-                Optional("runtime"): bool,
-                Optional("force"): bool,
-                Optional("entitlements"): str,
-                Optional("requirements"): str,
-                Required("globs"): [str],
-            }
-        ],
-    },
-)
+        ]
+    ] = None
+    entitlements_url: TOptional[str] = None
+    requirements_plist_url: TOptional[str] = None
+    provisioning_profile_config: TOptional[list[IscriptProvisioningProfileSchema]] = (
+        None
+    )
+    hardened_sign_config: TOptional[list[IscriptHardenedSignConfigSchema]] = None
+
+
+@payload_builder("iscript", schema=IscriptSchema)
 def build_iscript_payload(config, task, task_def):
     worker = task["worker"]
 
@@ -899,37 +990,42 @@ def build_iscript_payload(config, task, task_def):
     task["attributes"]["release_artifacts"] = sorted(list(artifacts))
 
 
-@payload_builder(
-    "beetmover",
-    schema={
-        # the maximum time to run, in seconds
-        Required("max-run-time"): int,
-        # locale key, if this is a locale beetmover job
-        Optional("locale"): str,
-        Required("release-properties"): {
-            "app-name": str,
-            "app-version": str,
-            "branch": str,
-            "build-id": str,
-            "hash-type": str,
-            "platform": str,
-        },
-        # list of artifact URLs for the artifacts that should be beetmoved
-        Required("upstream-artifacts"): [
-            {
-                # taskId of the task with the artifact
-                Required("taskId"): taskref_or_string,
-                # type of signing task (for CoT)
-                Required("taskType"): str,
-                # Paths to the artifacts to sign
-                Required("paths"): [str],
-                # locale is used to map upload path and allow for duplicate simple names
-                Required("locale"): str,
-            }
-        ],
-        Optional("artifact-map"): object,
-    },
-)
+class BeetmoverReleasePropertiesSchema(
+    Schema, forbid_unknown_fields=False, kw_only=True
+):
+    app_name: str
+    app_version: str
+    branch: str
+    build_id: str
+    hash_type: str
+    platform: str
+
+
+class BeetmoverArtifactSchema(
+    msgspec.Struct, kw_only=True, rename="camel", forbid_unknown_fields=True
+):
+    # taskId of the task with the artifact
+    task_id: taskref_or_string_msgspec
+    # type of signing task (for CoT)
+    task_type: str
+    # Paths to the artifacts to sign
+    paths: list[str]
+    # locale is used to map upload path and allow for duplicate simple names
+    locale: str
+
+
+class BeetmoverSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    # the maximum time to run, in seconds
+    max_run_time: TOptional[int] = None
+    # locale key, if this is a locale beetmover job
+    locale: TOptional[str] = None
+    release_properties: BeetmoverReleasePropertiesSchema
+    # list of artifact URLs for the artifacts that should be beetmoved
+    upstream_artifacts: list[BeetmoverArtifactSchema]
+    artifact_map: TOptional[object] = None
+
+
+@payload_builder("beetmover", schema=BeetmoverSchema)
 def build_beetmover_payload(config, task, task_def):
     worker = task["worker"]
     release_config = get_release_config(config)
@@ -955,14 +1051,13 @@ def build_beetmover_payload(config, task, task_def):
         task_def["payload"].update(release_config)
 
 
-@payload_builder(
-    "beetmover-push-to-release",
-    schema={
-        # the maximum time to run, in seconds
-        Required("max-run-time"): int,
-        Required("product"): str,
-    },
-)
+class BeetmoverPushToReleaseSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    # the maximum time to run, in seconds
+    max_run_time: TOptional[int] = None
+    product: str
+
+
+@payload_builder("beetmover-push-to-release", schema=BeetmoverPushToReleaseSchema)
 def build_beetmover_push_to_release_payload(config, task, task_def):
     worker = task["worker"]
     release_config = get_release_config(config)
@@ -976,13 +1071,15 @@ def build_beetmover_push_to_release_payload(config, task, task_def):
     }
 
 
+class BeetmoverImportFromGcsSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    max_run_time: TOptional[int] = None
+    gcs_sources: list[str]
+    product: str
+
+
 @payload_builder(
     "beetmover-import-from-gcs-to-artifact-registry",
-    schema={
-        Required("max-run-time"): int,
-        Required("gcs-sources"): [str],
-        Required("product"): str,
-    },
+    schema=BeetmoverImportFromGcsSchema,
 )
 def build_import_from_gcs_to_artifact_registry_payload(config, task, task_def):
     task_def["payload"] = {
@@ -991,30 +1088,35 @@ def build_import_from_gcs_to_artifact_registry_payload(config, task, task_def):
     }
 
 
-@payload_builder(
-    "beetmover-maven",
-    schema={
-        Required("max-run-time"): int,
-        Required("release-properties"): {
-            "app-name": str,
-            "app-version": str,
-            "branch": str,
-            "build-id": str,
-            "artifact-id": str,
-            "hash-type": str,
-            "platform": str,
-        },
-        Required("upstream-artifacts"): [
-            {
-                Required("taskId"): taskref_or_string,
-                Required("taskType"): str,
-                Required("paths"): [str],
-                Optional("zipExtract"): bool,
-            }
-        ],
-        Optional("artifact-map"): object,
-    },
-)
+class BeetmoverMavenReleasePropertiesSchema(
+    Schema, forbid_unknown_fields=False, kw_only=True
+):
+    app_name: str
+    app_version: str
+    branch: str
+    build_id: str
+    artifact_id: str
+    hash_type: str
+    platform: str
+
+
+class BeetmoverMavenArtifactSchema(
+    msgspec.Struct, kw_only=True, rename="camel", forbid_unknown_fields=True
+):
+    task_id: taskref_or_string_msgspec
+    task_type: str
+    paths: list[str]
+    zip_extract: TOptional[bool] = None
+
+
+class BeetmoverMavenSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    max_run_time: TOptional[int] = None
+    release_properties: BeetmoverMavenReleasePropertiesSchema
+    upstream_artifacts: list[BeetmoverMavenArtifactSchema]
+    artifact_map: TOptional[object] = None
+
+
+@payload_builder("beetmover-maven", schema=BeetmoverMavenSchema)
 def build_beetmover_maven_payload(config, task, task_def):
     build_beetmover_payload(config, task, task_def)
 
@@ -1033,50 +1135,70 @@ def build_beetmover_maven_payload(config, task, task_def):
     del task_def["payload"]["releaseProperties"]["platform"]
 
 
-@payload_builder(
-    "balrog",
-    schema={
-        Required("balrog-action"): Any(*BALROG_ACTIONS),
-        Optional("product"): str,
-        Optional("platforms"): [str],
-        Optional("release-eta"): str,
-        Optional("channel-names"): optionally_keyed_by("release-type", [str]),
-        Optional("require-mirrors"): bool,
-        Optional("publish-rules"): optionally_keyed_by(
-            "release-type", "release-level", [int]
-        ),
-        Optional("rules-to-update"): optionally_keyed_by(
-            "release-type", "release-level", [str]
-        ),
-        Optional("archive-domain"): optionally_keyed_by("release-level", str),
-        Optional("download-domain"): optionally_keyed_by("release-level", str),
-        Optional("blob-suffix"): str,
-        Optional("complete-mar-filename-pattern"): str,
-        Optional("complete-mar-bouncer-product-pattern"): str,
-        Optional("update-line"): object,
-        Optional("suffixes"): [str],
-        Optional("background-rate"): optionally_keyed_by(
-            "release-type", "beta-number", Any(int, None)
-        ),
-        Optional("force-fallback-mapping-update"): optionally_keyed_by(
-            "release-type", "beta-number", bool
-        ),
-        Optional("pin-channels"): optionally_keyed_by(
-            "release-type", "release-level", [str]
-        ),
-        # list of artifact URLs for the artifacts that should be beetmoved
-        Optional("upstream-artifacts"): [
-            {
-                # taskId of the task with the artifact
-                Required("taskId"): taskref_or_string,
-                # type of signing task (for CoT)
-                Required("taskType"): str,
-                # Paths to the artifacts to sign
-                Required("paths"): [str],
-            }
-        ],
-    },
-)
+class _UpstreamArtifactSchema(
+    msgspec.Struct, kw_only=True, rename="camel", forbid_unknown_fields=True
+):
+    task_id: taskref_or_string_msgspec
+    task_type: str
+    paths: list[str]
+
+
+class BalrogSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    balrog_action: str
+    product: TOptional[str] = None
+    platforms: TOptional[list[str]] = None
+    release_eta: TOptional[str] = None
+    channel_names: TOptional[  # type: ignore
+        optionally_keyed_by("release-type", list[str], use_msgspec=True)
+    ] = None
+    require_mirrors: TOptional[bool] = None
+    publish_rules: TOptional[  # type: ignore
+        optionally_keyed_by(
+            "release-type", "release-level", list[int], use_msgspec=True
+        )
+    ] = None
+    rules_to_update: TOptional[  # type: ignore
+        optionally_keyed_by(
+            "release-type", "release-level", list[str], use_msgspec=True
+        )
+    ] = None
+    archive_domain: TOptional[  # type: ignore
+        optionally_keyed_by("release-level", str, use_msgspec=True)
+    ] = None
+    download_domain: TOptional[  # type: ignore
+        optionally_keyed_by("release-level", str, use_msgspec=True)
+    ] = None
+    blob_suffix: TOptional[str] = None
+    complete_mar_filename_pattern: TOptional[str] = None
+    complete_mar_bouncer_product_pattern: TOptional[str] = None
+    update_line: TOptional[object] = None
+    suffixes: TOptional[list[str]] = None
+    background_rate: TOptional[  # type: ignore
+        optionally_keyed_by(
+            "release-type", "beta-number", TOptional[int], use_msgspec=True
+        )
+    ] = None
+    force_fallback_mapping_update: TOptional[  # type: ignore
+        optionally_keyed_by("release-type", "beta-number", bool, use_msgspec=True)
+    ] = None
+    pin_channels: TOptional[  # type: ignore
+        optionally_keyed_by(
+            "release-type", "release-level", list[str], use_msgspec=True
+        )
+    ] = None
+    # list of artifact URLs for the artifacts that should be beetmoved
+    upstream_artifacts: TOptional[list[_UpstreamArtifactSchema]] = None
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.balrog_action not in BALROG_ACTIONS:
+            raise ValueError(
+                f"Invalid balrog-action {self.balrog_action!r}; "
+                f"must be one of {list(BALROG_ACTIONS)}"
+            )
+
+
+@payload_builder("balrog", schema=BalrogSchema)
 def build_balrog_payload(config, task, task_def):
     worker = task["worker"]
     release_config = get_release_config(config)
@@ -1092,12 +1214,10 @@ def build_balrog_payload(config, task, task_def):
         worker["balrog-action"] == "submit-locale"
         or worker["balrog-action"] == "v2-submit-locale"
     ):
-        task_def["payload"].update(
-            {
-                "upstreamArtifacts": worker["upstream-artifacts"],
-                "suffixes": worker["suffixes"],
-            }
-        )
+        task_def["payload"].update({
+            "upstreamArtifacts": worker["upstream-artifacts"],
+            "suffixes": worker["suffixes"],
+        })
     else:
         for prop in (
             "archive-domain",
@@ -1116,17 +1236,15 @@ def build_balrog_payload(config, task, task_def):
                     task["description"],
                     **{
                         "release-type": config.params["release_type"],
-                        "release-level": release_level(config.params["project"]),
+                        "release-level": release_level(config.params),
                         "beta-number": beta_number,
                     },
                 )
-        task_def["payload"].update(
-            {
-                "build_number": release_config["build_number"],
-                "product": worker["product"],
-                "version": release_config["version"],
-            }
-        )
+        task_def["payload"].update({
+            "build_number": release_config["build_number"],
+            "product": worker["product"],
+            "version": release_config["version"],
+        })
         for prop in (
             "blob-suffix",
             "complete-mar-filename-pattern",
@@ -1139,29 +1257,25 @@ def build_balrog_payload(config, task, task_def):
             worker["balrog-action"] == "submit-toplevel"
             or worker["balrog-action"] == "v2-submit-toplevel"
         ):
-            task_def["payload"].update(
-                {
-                    "app_version": release_config["appVersion"],
-                    "archive_domain": worker["archive-domain"],
-                    "channel_names": worker["channel-names"],
-                    "download_domain": worker["download-domain"],
-                    "partial_versions": release_config.get("partial_versions", ""),
-                    "platforms": worker["platforms"],
-                    "rules_to_update": worker["rules-to-update"],
-                    "require_mirrors": worker["require-mirrors"],
-                    "update_line": worker["update-line"],
-                }
-            )
+            task_def["payload"].update({
+                "app_version": release_config["appVersion"],
+                "archive_domain": worker["archive-domain"],
+                "channel_names": worker["channel-names"],
+                "download_domain": worker["download-domain"],
+                "partial_versions": release_config.get("partial_versions", ""),
+                "platforms": worker["platforms"],
+                "rules_to_update": worker["rules-to-update"],
+                "require_mirrors": worker["require-mirrors"],
+                "update_line": worker["update-line"],
+            })
         else:  # schedule / ship
-            task_def["payload"].update(
-                {
-                    "publish_rules": worker["publish-rules"],
-                    "release_eta": worker.get(
-                        "release-eta", config.params.get("release_eta")
-                    )
-                    or "",
-                }
-            )
+            task_def["payload"].update({
+                "publish_rules": worker["publish-rules"],
+                "release_eta": worker.get(
+                    "release-eta", config.params.get("release_eta")
+                )
+                or "",
+            })
             if worker.get("force-fallback-mapping-update"):
                 task_def["payload"]["force_fallback_mapping_update"] = worker[
                     "force-fallback-mapping-update"
@@ -1170,25 +1284,64 @@ def build_balrog_payload(config, task, task_def):
                 task_def["payload"]["background_rate"] = worker["background-rate"]
 
 
-@payload_builder(
-    "bouncer-aliases",
-    schema={
-        Required("entries"): object,
-    },
-)
+class BouncerAliasesSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    entries: object
+
+
+class BouncerLocationsSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    implementation: Literal["bouncer-locations"]
+    bouncer_products: list[str]
+
+
+class BouncerSubmissionSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    locales: list[str]
+    entries: object
+
+
+class PushFlatpakSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    channel: str
+    upstream_artifacts: list[_UpstreamArtifactSchema]
+
+
+class PushMsixSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    channel: str
+    publish_mode: TOptional[str] = None
+    upstream_artifacts: list[_UpstreamArtifactSchema]
+
+
+class ShipitUpdateProductChannelVersionSchema(
+    Schema, forbid_unknown_fields=False, kw_only=True
+):
+    product: str
+    channel: str
+    version: str
+
+
+class ShipitShippedSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    release_name: str
+
+
+class ShipitMergedSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    merge_automation_id: int
+
+
+class ShipitMaybeReleaseSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    phase: str
+
+
+class PushAddonsSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    channel: Literal["listed", "unlisted"]
+    upstream_artifacts: list[_UpstreamArtifactSchema]
+
+
+@payload_builder("bouncer-aliases", schema=BouncerAliasesSchema)
 def build_bouncer_aliases_payload(config, task, task_def):
     worker = task["worker"]
 
     task_def["payload"] = {"aliases_entries": worker["entries"]}
 
 
-@payload_builder(
-    "bouncer-locations",
-    schema={
-        Required("implementation"): "bouncer-locations",
-        Required("bouncer-products"): [str],
-    },
-)
+@payload_builder("bouncer-locations", schema=BouncerLocationsSchema)
 def build_bouncer_locations_payload(config, task, task_def):
     worker = task["worker"]
     release_config = get_release_config(config)
@@ -1200,13 +1353,7 @@ def build_bouncer_locations_payload(config, task, task_def):
     }
 
 
-@payload_builder(
-    "bouncer-submission",
-    schema={
-        Required("locales"): [str],
-        Required("entries"): object,
-    },
-)
+@payload_builder("bouncer-submission", schema=BouncerSubmissionSchema)
 def build_bouncer_submission_payload(config, task, task_def):
     worker = task["worker"]
 
@@ -1216,19 +1363,7 @@ def build_bouncer_submission_payload(config, task, task_def):
     }
 
 
-@payload_builder(
-    "push-flatpak",
-    schema={
-        Required("channel"): str,
-        Required("upstream-artifacts"): [
-            {
-                Required("taskId"): taskref_or_string,
-                Required("taskType"): str,
-                Required("paths"): [str],
-            }
-        ],
-    },
-)
+@payload_builder("push-flatpak", schema=PushFlatpakSchema)
 def build_push_flatpak_payload(config, task, task_def):
     worker = task["worker"]
 
@@ -1238,20 +1373,7 @@ def build_push_flatpak_payload(config, task, task_def):
     }
 
 
-@payload_builder(
-    "push-msix",
-    schema={
-        Required("channel"): str,
-        Optional("publish-mode"): str,
-        Required("upstream-artifacts"): [
-            {
-                Required("taskId"): taskref_or_string,
-                Required("taskType"): str,
-                Required("paths"): [str],
-            }
-        ],
-    },
-)
+@payload_builder("push-msix", schema=PushMsixSchema)
 def build_push_msix_payload(config, task, task_def):
     worker = task["worker"]
 
@@ -1265,11 +1387,7 @@ def build_push_msix_payload(config, task, task_def):
 
 @payload_builder(
     "shipit-update-product-channel-version",
-    schema={
-        Required("product"): str,
-        Required("channel"): str,
-        Required("version"): str,
-    },
+    schema=ShipitUpdateProductChannelVersionSchema,
 )
 def build_ship_it_update_product_channel_version_payload(config, task, task_def):
     worker = task["worker"]
@@ -1280,24 +1398,21 @@ def build_ship_it_update_product_channel_version_payload(config, task, task_def)
     }
 
 
-@payload_builder(
-    "shipit-shipped",
-    schema={
-        Required("release-name"): str,
-    },
-)
+@payload_builder("shipit-shipped", schema=ShipitShippedSchema)
 def build_ship_it_shipped_payload(config, task, task_def):
     worker = task["worker"]
 
     task_def["payload"] = {"release_name": worker["release-name"]}
 
 
-@payload_builder(
-    "shipit-maybe-release",
-    schema={
-        Required("phase"): str,
-    },
-)
+@payload_builder("shipit-merged", schema=ShipitMergedSchema)
+def build_ship_it_merged_payload(config, task, task_def):
+    worker = task["worker"]
+
+    task_def["payload"] = {"automation_id": worker["merge-automation-id"]}
+
+
+@payload_builder("shipit-maybe-release", schema=ShipitMaybeReleaseSchema)
 def build_ship_it_maybe_release_payload(config, task, task_def):
     # expect branch name, including path
     branch = config.params["head_repository"][len("https://hg.mozilla.org/") :]
@@ -1313,19 +1428,7 @@ def build_ship_it_maybe_release_payload(config, task, task_def):
     }
 
 
-@payload_builder(
-    "push-addons",
-    schema={
-        Required("channel"): Any("listed", "unlisted"),
-        Required("upstream-artifacts"): [
-            {
-                Required("taskId"): taskref_or_string,
-                Required("taskType"): str,
-                Required("paths"): [str],
-            }
-        ],
-    },
-)
+@payload_builder("push-addons", schema=PushAddonsSchema)
 def build_push_addons_payload(config, task, task_def):
     worker = task["worker"]
 
@@ -1335,57 +1438,64 @@ def build_push_addons_payload(config, task, task_def):
     }
 
 
-@payload_builder(
-    "treescript",
-    schema={
-        Required("tags"): [Any("buildN", "release", None)],
-        Required("bump"): bool,
-        Optional("bump-files"): [str],
-        Optional("repo-param-prefix"): str,
-        Optional("dontbuild"): bool,
-        Optional("ignore-closed-tree"): bool,
-        Optional("force-dry-run"): bool,
-        Optional("push"): bool,
-        Optional("source-repo"): str,
-        Optional("ssh-user"): str,
-        Optional("l10n-bump-info"): [
-            {
-                Required("name"): str,
-                Required("path"): str,
-                Required("version-path"): str,
-                Optional("l10n-repo-url"): str,
-                Optional("l10n-repo-target-branch"): str,
-                Optional("ignore-config"): object,
-                Required("platform-configs"): [
-                    {
-                        Required("platforms"): [str],
-                        Required("path"): str,
-                        Optional("format"): str,
-                    }
-                ],
-            }
-        ],
-        Optional("actions"): object,
-        Optional("merge-info"): object,
-        Optional("android-l10n-import-info"): {
-            Required("from-repo-url"): str,
-            Required("toml-info"): [
-                {
-                    Required("toml-path"): str,
-                    Required("dest-path"): str,
-                }
-            ],
-        },
-        Optional("android-l10n-sync-info"): {
-            Required("from-repo-url"): str,
-            Required("toml-info"): [
-                {
-                    Required("toml-path"): str,
-                }
-            ],
-        },
-    },
-)
+class L10nBumpPlatformConfigSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    platforms: list[str]
+    path: str
+    format: TOptional[str] = None
+
+
+class AndroidL10nTomlInfoSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    toml_path: str
+    dest_path: str
+
+
+class AndroidL10nSyncTomlInfoSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    toml_path: str
+
+
+class TreescriptL10nBumpInfoSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    name: str
+    path: str
+    version_path: str
+    l10n_repo_url: TOptional[str] = None
+    l10n_repo_target_branch: TOptional[str] = None
+    ignore_config: TOptional[object] = None
+    platform_configs: list[L10nBumpPlatformConfigSchema]
+
+
+class TreescriptAndroidL10nImportInfoSchema(
+    Schema, forbid_unknown_fields=False, kw_only=True
+):
+    from_repo_url: str
+    toml_info: list[AndroidL10nTomlInfoSchema]
+
+
+class TreescriptAndroidL10nSyncInfoSchema(
+    Schema, forbid_unknown_fields=False, kw_only=True
+):
+    from_repo_url: str
+    toml_info: list[AndroidL10nSyncTomlInfoSchema]
+
+
+class TreescriptSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    tags: list[TOptional[Literal["buildN", "release"]]]
+    bump: bool
+    bump_files: TOptional[list[str]] = None
+    repo_param_prefix: TOptional[str] = None
+    dontbuild: TOptional[bool] = None
+    ignore_closed_tree: TOptional[bool] = None
+    force_dry_run: TOptional[bool] = None
+    push: TOptional[bool] = None
+    source_repo: TOptional[str] = None
+    ssh_user: TOptional[str] = None
+    l10n_bump_info: TOptional[list[TreescriptL10nBumpInfoSchema]] = None
+    actions: TOptional[object] = None
+    merge_info: TOptional[object] = None
+    android_l10n_import_info: TOptional[TreescriptAndroidL10nImportInfoSchema] = None
+    android_l10n_sync_info: TOptional[TreescriptAndroidL10nSyncInfoSchema] = None
+
+
+@payload_builder("treescript", schema=TreescriptSchema)
 def build_treescript_payload(config, task, task_def):
     worker = task["worker"]
     release_config = get_release_config(config)
@@ -1398,11 +1508,9 @@ def build_treescript_payload(config, task, task_def):
         version = release_config["version"].replace(".", "_")
         buildnum = release_config["build_number"]
         if "buildN" in worker["tags"]:
-            tag_names.extend(
-                [
-                    f"{product}_{version}_BUILD{buildnum}",
-                ]
-            )
+            tag_names.extend([
+                f"{product}_{version}_BUILD{buildnum}",
+            ])
         if "release" in worker["tags"]:
             tag_names.extend([f"{product}_{version}_RELEASE"])
         tag_info = {
@@ -1432,7 +1540,7 @@ def build_treescript_payload(config, task, task_def):
             if "l10n-repo-url" in lbi:
                 l10n_repo_urls.add(lbi["l10n-repo-url"])
             for k, v in lbi.items():
-                new_lbi[k.replace("-", "_")] = lbi[k]
+                new_lbi[k.replace("-", "_")] = v
             l10n_bump_info.append(new_lbi)
 
         task_def["payload"]["l10n_bump_info"] = l10n_bump_info
@@ -1513,53 +1621,45 @@ def build_treescript_payload(config, task, task_def):
         task_def["payload"]["ssh_user"] = worker["ssh-user"]
 
 
-@payload_builder(
-    "landoscript",
-    schema={
-        Required("lando-repo"): str,
-        Optional("hg-repo-url"): str,
-        Optional("ignore-closed-tree"): bool,
-        Optional("dontbuild"): bool,
-        Optional("tags"): [Any("buildN", "release", None)],
-        Optional("force-dry-run"): bool,
-        Optional("push"): bool,
-        Optional("android-l10n-import-info"): {
-            Required("from-repo-url"): str,
-            Required("toml-info"): [
-                {
-                    Required("toml-path"): str,
-                    Required("dest-path"): str,
-                }
-            ],
-        },
-        Optional("android-l10n-sync-info"): {
-            Required("from-branch"): str,
-            Required("toml-info"): [
-                {
-                    Required("toml-path"): str,
-                }
-            ],
-        },
-        Optional("l10n-bump-info"): [
-            {
-                Required("name"): str,
-                Required("path"): str,
-                Optional("l10n-repo-url"): str,
-                Optional("l10n-repo-target-branch"): str,
-                Optional("ignore-config"): object,
-                Required("platform-configs"): [
-                    {
-                        Required("platforms"): [str],
-                        Required("path"): str,
-                        Optional("format"): str,
-                    }
-                ],
-            }
-        ],
-        Optional("bump-files"): [str],
-        Optional("merge-info"): object,
-    },
-)
+class LandoscriptL10nBumpInfoSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    name: str
+    path: str
+    l10n_repo_url: TOptional[str] = None
+    l10n_repo_target_branch: TOptional[str] = None
+    ignore_config: TOptional[object] = None
+    platform_configs: list[L10nBumpPlatformConfigSchema]
+
+
+class LandoscriptAndroidL10nImportInfoSchema(
+    Schema, forbid_unknown_fields=False, kw_only=True
+):
+    from_repo_url: str
+    toml_info: list[AndroidL10nTomlInfoSchema]
+
+
+class LandoscriptAndroidL10nSyncInfoSchema(
+    Schema, forbid_unknown_fields=False, kw_only=True
+):
+    from_branch: str
+    toml_info: list[AndroidL10nSyncTomlInfoSchema]
+
+
+class LandoscriptSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+    lando_repo: str
+    hg_repo_url: TOptional[str] = None
+    ignore_closed_tree: TOptional[bool] = None
+    dontbuild: TOptional[bool] = None
+    tags: TOptional[list[TOptional[Literal["buildN", "release"]]]] = None
+    force_dry_run: TOptional[bool] = None
+    push: TOptional[bool] = None
+    android_l10n_import_info: TOptional[LandoscriptAndroidL10nImportInfoSchema] = None
+    android_l10n_sync_info: TOptional[LandoscriptAndroidL10nSyncInfoSchema] = None
+    l10n_bump_info: TOptional[list[LandoscriptL10nBumpInfoSchema]] = None
+    bump_files: TOptional[list[str]] = None
+    merge_info: TOptional[object] = None
+
+
+@payload_builder("landoscript", schema=LandoscriptSchema)
 def build_landoscript_payload(config, task, task_def):
     worker = task["worker"]
     release_config = get_release_config(config)
@@ -1615,7 +1715,7 @@ def build_landoscript_payload(config, task, task_def):
             if "l10n-repo-url" in lbi:
                 l10n_repo_urls.add(lbi["l10n-repo-url"])
             for k, v in lbi.items():
-                new_lbi[k.replace("-", "_")] = lbi[k]
+                new_lbi[k.replace("-", "_")] = v
             l10n_bump_info.append(new_lbi)
 
         task_def["payload"]["l10n_bump_info"] = l10n_bump_info
@@ -1632,11 +1732,9 @@ def build_landoscript_payload(config, task, task_def):
         version = release_config["version"].replace(".", "_")
         buildnum = release_config["build_number"]
         if "buildN" in worker["tags"]:
-            tag_names.extend(
-                [
-                    f"{product}_{version}_BUILD{buildnum}",
-                ]
-            )
+            tag_names.extend([
+                f"{product}_{version}_BUILD{buildnum}",
+            ])
         if "release" in worker["tags"]:
             tag_names.extend([f"{product}_{version}_RELEASE"])
         tag_info = {
@@ -1769,14 +1867,7 @@ def set_defaults(config, tasks):
                     "Windows and Linux, not on {}".format(worker["os"])
                 )
             worker.setdefault("chain-of-trust", False)
-        elif worker["implementation"] in (
-            "beetmover",
-            "beetmover-push-to-release",
-            "beetmover-maven",
-            "beetmover-import-from-gcs-to-artifact-registry",
-            "iscript",
-            "scriptworker-signing",
-        ):
+        elif worker["implementation"] in ("iscript",):
             worker.setdefault("max-run-time", 600)
         elif worker["implementation"] == "push-apk":
             worker.setdefault("commit", False)
@@ -1830,12 +1921,27 @@ def validate_shipping_product(config, product):
 def validate(config, tasks):
     for task in tasks:
         validate_schema(
-            task_description_schema,
+            TaskDescriptionSchema,
             task,
             "In task {!r}:".format(task.get("label", "?no-label?")),
         )
+        worker_schema = payload_builders[task["worker"]["implementation"]].schema
+        if isinstance(worker_schema, dict):
+            from voluptuous import ALLOW_EXTRA
+
+            worker_schema = LegacySchema(worker_schema, extra=ALLOW_EXTRA)
+        elif isinstance(worker_schema, type) and issubclass(
+            worker_schema, msgspec.Struct
+        ):
+            worker_schema = type(
+                worker_schema.__name__,
+                (worker_schema,),
+                {},
+                forbid_unknown_fields=False,
+                kw_only=True,
+            )
         validate_schema(
-            payload_builders[task["worker"]["implementation"]].schema,
+            worker_schema,
             task["worker"],
             "In task.run {!r}:".format(task.get("label", "?no-label?")),
         )
@@ -1866,6 +1972,9 @@ def add_generic_index_routes(config, task):
         subs["branch_git_rev"] = get_branch_git_rev(config)
     except KeyError:
         pass
+
+    subs["project"] = get_project_alias(config)
+    subs["head_ref"] = get_head_ref_index(config)
 
     project = config.params.get("project")
 
@@ -1907,6 +2016,8 @@ def add_shippable_index_routes(config, task):
         subs["branch_git_rev"] = get_branch_git_rev(config)
     except KeyError:
         pass
+    subs["project"] = get_project_alias(config)
+    subs["head_ref"] = get_head_ref_index(config)
 
     for tpl in V2_SHIPPABLE_TEMPLATES:
         try:
@@ -1943,6 +2054,8 @@ def add_l10n_index_routes(config, task, force_locale=None):
     subs["product"] = index["product"]
     subs["trust-domain"] = config.graph_config["trust-domain"]
     subs["branch_rev"] = get_branch_rev(config)
+    subs["project"] = get_project_alias(config)
+    subs["head_ref"] = get_head_ref_index(config)
 
     locales = task["attributes"].get(
         "chunk_locales", task["attributes"].get("all_locales")
@@ -1985,6 +2098,8 @@ def add_shippable_l10n_index_routes(config, task, force_locale=None):
     subs["product"] = index["product"]
     subs["trust-domain"] = config.graph_config["trust-domain"]
     subs["branch_rev"] = get_branch_rev(config)
+    subs["project"] = get_project_alias(config)
+    subs["head_ref"] = get_head_ref_index(config)
 
     locales = task["attributes"].get(
         "chunk_locales", task["attributes"].get("all_locales")
@@ -2021,9 +2136,10 @@ def add_geckoview_index_routes(config, task):
 
     subs = {
         "geckoview-version": geckoview_version,
+        "head_ref": get_head_ref_index(config),
         "job-name": index["job-name"],
         "product": index["product"],
-        "project": config.params["project"],
+        "project": get_project_alias(config),
         "trust-domain": config.graph_config["trust-domain"],
     }
     routes.append(V2_GECKOVIEW_RELEASE.format(**subs))
@@ -2079,6 +2195,23 @@ def add_index_routes(config, tasks):
 
 
 @transforms.add
+def add_github_checks_route(config, tasks):
+    """Add the Github 'checks' route to code review tasks."""
+    if config.params["repository_type"] != "git":
+        yield from tasks
+        return
+
+    for task in tasks:
+        if task.get("attributes", {}).get("code-review"):
+            routes = task.setdefault("routes", [])
+            tier = task.get("treeherder", {}).get("tier", 3)
+            if "checks" not in routes and tier == 1:
+                routes.append("checks")
+
+        yield task
+
+
+@transforms.add
 def try_task_config_env(config, tasks):
     """Set environment variables in the task."""
     env = config.params["try_task_config"].get("env")
@@ -2090,7 +2223,9 @@ def try_task_config_env(config, tasks):
     implementations = {
         name
         for name, builder in payload_builders.items()
-        if "env" in builder.schema.schema
+        if isinstance(builder.schema, type)
+        and issubclass(builder.schema, msgspec.Struct)
+        and any(f.name == "env" for f in msgspec.structs.fields(builder.schema))
     }
     for task in tasks:
         if task["worker"]["implementation"] in implementations:
@@ -2099,16 +2234,15 @@ def try_task_config_env(config, tasks):
 
 
 @transforms.add
-def try_task_config_chemspill_prio(config, tasks):
-    """Increase the priority from lowest and very-low -> low, but leave others unchanged."""
-    chemspill_prio = config.params["try_task_config"].get("chemspill-prio")
-    if not chemspill_prio:
+def try_task_config_priority(config, tasks):
+    """Change priority based on the try_task_config."""
+    priority = config.params["try_task_config"].get("priority")
+    if not priority:
         yield from tasks
         return
 
     for task in tasks:
-        if task.get("priority") in (None, "lowest", "very-low"):
-            task["priority"] = "low"
+        task["priority"] = priority
         yield task
 
 
@@ -2132,17 +2266,8 @@ def set_task_and_artifact_expiry(config, jobs):
     now = datetime.datetime.utcnow()
     # We don't want any configuration leading to anything with an expiry longer
     # than 28 days on try.
-    cap = "28 days" if is_try(config.params) else None
+    cap = "28 days" if config.params["level"] == "1" else None
     cap_from_now = fromNow(cap, now) if cap else None
-    if cap:
-        for policy, expires in config.graph_config["expiration-policy"]["by-project"][
-            "try"
-        ].items():
-            if fromNow(expires, now) > cap_from_now:
-                raise Exception(
-                    f'expiration-policy "{policy}" is larger than {cap} '
-                    f'for {config.params["project"]}'
-                )
     for job in jobs:
         expires = get_expiration(config, job.get("expiration-policy", "default"))
         job_expiry = job.setdefault("expires-after", expires)
@@ -2267,11 +2392,7 @@ def build_task(config, tasks):
             branch_rev = get_branch_rev(config)
 
             routes.append(
-                "{}.v2.{}.{}".format(
-                    TREEHERDER_ROUTE_ROOT,
-                    config.params["project"],
-                    branch_rev,
-                )
+                f"{TREEHERDER_ROUTE_ROOT}.v2.{get_treeherder_project(config)}.{branch_rev}"
             )
 
         if "deadline-after" not in task:
@@ -2285,16 +2406,14 @@ def build_task(config, tasks):
         tags = task.get("tags", {})
         attributes = task.get("attributes", {})
 
-        tags.update(
-            {
-                "createdForUser": config.params["owner"],
-                "kind": config.kind,
-                "label": task["label"],
-                "retrigger": "true" if attributes.get("retrigger", False) else "false",
-                "project": config.params["project"],
-                "trust-domain": config.graph_config["trust-domain"],
-            }
-        )
+        tags.update({
+            "createdForUser": config.params["owner"],
+            "kind": config.kind,
+            "label": task["label"],
+            "retrigger": "true" if attributes.get("retrigger", False) else "false",
+            "project": config.params["project"],
+            "trust-domain": config.graph_config["trust-domain"],
+        })
 
         task_def = {
             "provisionerId": provisioner_id,
@@ -2322,9 +2441,7 @@ def build_task(config, tasks):
 
         if task_th:
             # link back to treeherder in description
-            th_job_link = (
-                "https://treeherder.mozilla.org/#/jobs?repo={}&revision={}&selectedTaskRun=<self>"
-            ).format(config.params["project"], branch_rev)
+            th_job_link = get_treeherder_link(config)
             task_def["metadata"]["description"] = {
                 "task-reference": "{description} ([Treeherder job]({th_job_link}))".format(
                     description=task_def["metadata"]["description"],
@@ -2345,7 +2462,14 @@ def build_task(config, tasks):
             item_name=task["label"],
             **{"build-platform": build_platform},
         )
+        attributes["run_on_repo_type"] = task.get("run-on-repo-type", ["git", "hg"])
         attributes["run_on_projects"] = task.get("run-on-projects", ["all"])
+
+        # We don't want to pollute non git repos with this attribute. Moreover, target_tasks
+        # already assumes the default value is ['all']
+        if task.get("run-on-git-branches"):
+            attributes["run_on_git_branches"] = task["run-on-git-branches"]
+
         attributes["always_target"] = task["always-target"]
         # This logic is here since downstream tasks don't always match their
         # upstream dependency's shipping_phase.
@@ -2380,15 +2504,13 @@ def build_task(config, tasks):
             payload = task_def.get("payload")
             if payload:
                 env = payload.setdefault("env", {})
-                env.update(
-                    {
-                        "MOZ_AUTOMATION": "1",
-                        "MOZ_BUILD_DATE": config.params["moz_build_date"],
-                        "MOZ_SCM_LEVEL": config.params["level"],
-                        "MOZ_SOURCE_CHANGESET": get_branch_rev(config),
-                        "MOZ_SOURCE_REPO": get_branch_repo(config),
-                    }
-                )
+                env.update({
+                    "MOZ_AUTOMATION": "1",
+                    "MOZ_BUILD_DATE": config.params["moz_build_date"],
+                    "MOZ_SCM_LEVEL": config.params["level"],
+                    "MOZ_SOURCE_CHANGESET": get_branch_rev(config),
+                    "MOZ_SOURCE_REPO": get_branch_repo(config),
+                })
 
         dependencies = task.get("dependencies", {})
         if_dependencies = task.get("if-dependencies", [])
@@ -2465,6 +2587,19 @@ def check_task_dependencies(config, tasks):
         yield task
 
 
+@transforms.add
+def check_perf_task_fission_filtering(config, tasks):
+    for task in tasks:
+        if (
+            ("chrome-m" in task["label"] or "cstm-car-m" in task["label"])
+            and "nofis" not in task["label"]
+            and "android" in task["label"]
+            and "startup" not in task["label"]
+        ):
+            continue
+        yield task
+
+
 def check_caches_are_volumes(task):
     """Ensures that all cache paths are defined as volumes.
 
@@ -2533,24 +2668,29 @@ def check_run_task_caches(config, tasks):
         re.VERBOSE,
     )
 
+    re_checkout_cache = re.compile("^checkouts")
     re_sparse_checkout_cache = re.compile("^checkouts-sparse")
+    re_shallow_checkout_cache = re.compile("^checkouts-git-shallow")
 
     cache_prefix = "{trust_domain}-level-{level}-".format(
         trust_domain=config.graph_config["trust-domain"],
         level=config.params["level"],
     )
 
-    suffix = _run_task_suffix()
+    suffix = _run_task_suffix(config.params["repository_type"])
 
     for task in tasks:
         payload = task["task"].get("payload", {})
         command = payload.get("command") or [""]
 
         main_command = command[0] if isinstance(command[0], str) else ""
-        run_task = main_command.endswith("run-task")
+        run_task = is_run_task(main_command)
 
         require_sparse_cache = False
+        require_shallow_cache = False
+        have_checkout_cache = False
         have_sparse_cache = False
+        have_shallow_cache = False
 
         if run_task:
             for arg in command[1:]:
@@ -2577,6 +2717,10 @@ def check_run_task_caches(config, tasks):
                     require_sparse_cache = True
                     break
 
+                if arg == "--gecko-shallow-clone":
+                    require_shallow_cache = True
+                    break
+
         for cache in payload.get("cache", {}):
             if not cache.startswith(cache_prefix):
                 raise Exception(
@@ -2588,8 +2732,14 @@ def check_run_task_caches(config, tasks):
 
             cache = cache[len(cache_prefix) :]
 
+            if re_checkout_cache.match(cache):
+                have_checkout_cache = True
+
             if re_sparse_checkout_cache.match(cache):
                 have_sparse_cache = True
+
+            if re_shallow_checkout_cache.match(cache):
+                have_shallow_cache = True
 
             if not re_reserved_caches.match(cache):
                 continue
@@ -2609,11 +2759,18 @@ def check_run_task_caches(config, tasks):
                     "naming requirements" % (task["label"], cache)
                 )
 
-        if require_sparse_cache and not have_sparse_cache:
+        if have_checkout_cache and require_sparse_cache and not have_sparse_cache:
             raise Exception(
                 "%s is using a sparse checkout but not using "
                 "a sparse checkout cache; change the checkout "
                 "cache name so it is sparse aware" % task["label"]
+            )
+
+        if have_checkout_cache and require_shallow_cache and not have_shallow_cache:
+            raise Exception(
+                "%s is using a shallow clone but not using "
+                "a shallow checkout cache; change the checkout "
+                "cache name so it is shallow aware" % task["label"]
             )
 
         yield task

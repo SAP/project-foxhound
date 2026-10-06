@@ -3,13 +3,17 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 [DEFAULT]
+tags = "urlbar"
 support-files = [
   "head.js",
   "searchSuggestionEngine.xml",
   "searchSuggestionEngine.sjs",
   "subdialog.xhtml",
 ]
-prefs = ["browser.bookmarks.testing.skipDefaultBookmarksImport=true"]
+prefs = [
+  "browser.bookmarks.testing.skipDefaultBookmarksImport=true",
+  "layout.css.attr.enabled=true",
+]
 
 ["browser_quicksuggest.js"]
 
@@ -22,8 +26,6 @@ prefs = ["browser.bookmarks.testing.skipDefaultBookmarksImport=true"]
 ["browser_quicksuggest_contextual_optin.js"]
 
 ["browser_quicksuggest_dynamicSuggestions.js"]
-
-["browser_quicksuggest_fakespot.js"]
 
 ["browser_quicksuggest_indexes.js"]
 
@@ -40,6 +42,20 @@ tags = "search-telemetry"
 ["browser_quicksuggest_ping_merinoAndNullValues.js"]
 tags = "search-telemetry"
 
+["browser_quicksuggest_realtime_flight_status.js"]
+
+["browser_quicksuggest_realtime_market.js"]
+
+["browser_quicksuggest_realtime_optin.js"]
+
+["browser_quicksuggest_realtime_yelp.js"]
+
+["browser_quicksuggest_sports.js"]
+support-files = [
+  "moz.png",
+  "moz-flipped.png",
+]
+
 ["browser_quicksuggest_yelp.js"]
 
 ["browser_telemetry_environment.js"]
@@ -47,5 +63,8 @@ tags = "search-telemetry"
 
 ["browser_telemetry_suggestMetrics.js"]
 tags = "search-telemetry"
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1971091
+]
 
 ["browser_weather.js"]

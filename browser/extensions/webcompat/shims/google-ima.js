@@ -15,7 +15,7 @@ if (!window.google?.ima?.VERSION) {
   const VERSION = "3.517.2";
 
   const CheckCanAutoplay = (function () {
-    // Sourced from: https://searchfox.org/mozilla-central/source/dom/media/gtest/negative_duration.mp4
+    // Sourced from: https://searchfox.org/firefox-main/source/dom/media/gtest/negative_duration.mp4
     const TEST_VIDEO = new Blob(
       [
         new Uint32Array([

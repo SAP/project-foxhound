@@ -111,7 +111,7 @@ export default [
   {
     // TODO: Bug 1773467 - Move these to .mjs or figure out a generic way
     // to identify these as modules.
-    files: ["test/schemas/**/*.js", "test/unit/**/*.js"],
+    files: ["test/schemas/**/*.js", "test/unit/**/*.js", "test/jest/**/*.js"],
     languageOptions: {
       sourceType: "module",
     },
@@ -124,7 +124,6 @@ export default [
       "content-src/components/CollapsibleSection/CollapsibleSection.jsx",
       "content-src/components/DiscoveryStreamComponents/DSCard/DSCard.jsx",
       "content-src/components/DiscoveryStreamComponents/DSEmptyState/DSEmptyState.jsx",
-      "content-src/components/DiscoveryStreamComponents/DSPrivacyModal/DSPrivacyModal.jsx",
       "content-src/components/CustomizeMenu/**",
       "content-src/components/DiscoveryStreamComponents/TopicSelection/TopicSelection.jsx",
       "content-src/components/DiscoveryStreamComponents/InterestPicker/InterestPicker.jsx",
@@ -145,6 +144,7 @@ export default [
       "loaders/**",
       "tools/**",
       "test/unit/**",
+      "test/jest/**",
     ],
     languageOptions: { globals: globals.node },
   },
@@ -157,10 +157,18 @@ export default [
     },
   },
   {
-    files: ["content-src/**", "test/unit/**"],
+    files: ["content-src/**", "test/unit/**", "test/jest/**"],
     rules: {
       // Disallow commonjs in these directories.
       "import/no-commonjs": 2,
+    },
+  },
+  {
+    // vendor.mjs is a webpack entry point and jest-setup.mjs is loaded by Jest;
+    // their npm imports are resolved by webpack/Jest, not Node's module resolver.
+    files: ["content-src/vendor.mjs", "test/jest/jest-setup.mjs"],
+    rules: {
+      "import/no-unresolved": "off",
     },
   },
   {
@@ -174,6 +182,17 @@ export default [
         chai: "readonly",
         sinon: "readonly",
       },
+    },
+  },
+  {
+    files: "test/jest/**",
+    languageOptions: {
+      globals: {
+        ...globals.jest,
+      },
+    },
+    rules: {
+      "no-shadow": "off",
     },
   },
   {

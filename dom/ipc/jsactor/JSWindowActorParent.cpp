@@ -1,16 +1,17 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/JSWindowActorBinding.h"
 #include "mozilla/dom/JSWindowActorParent.h"
+
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/JSIPCValue.h"
+#include "mozilla/dom/JSIPCValueUtils.h"
+#include "mozilla/dom/JSWindowActorBinding.h"
+#include "mozilla/dom/MessageManagerBinding.h"
 #include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/dom/WindowGlobalParent.h"
-#include "mozilla/dom/MessageManagerBinding.h"
 
 namespace mozilla::dom {
 
@@ -31,12 +32,13 @@ void JSWindowActorParent::Init(const nsACString& aName,
                                WindowGlobalParent* aManager) {
   MOZ_ASSERT(!mManager, "Cannot Init() a JSWindowActorParent twice!");
   mManager = aManager;
-  JSActor::Init(aName);
+  JSActor::Init(aName, /* aSendTyped= */ false);
 }
 
-void JSWindowActorParent::SendRawMessage(
-    const JSActorMessageMeta& aMeta, Maybe<ipc::StructuredCloneData>&& aData,
-    Maybe<ipc::StructuredCloneData>&& aStack, ErrorResult& aRv) {
+void JSWindowActorParent::SendRawMessage(const JSActorMessageMeta& aMeta,
+                                         JSIPCValue&& aData,
+                                         ipc::StructuredCloneData* aStack,
+                                         ErrorResult& aRv) {
   if (NS_WARN_IF(!CanSend() || !mManager || !mManager->CanSend())) {
     aRv.ThrowInvalidStateError("JSWindowActorParent cannot send at the moment");
     return;
@@ -49,27 +51,7 @@ void JSWindowActorParent::SendRawMessage(
     return;
   }
 
-  Maybe<ClonedMessageData> msgData;
-  if (aData) {
-    msgData.emplace();
-    if (NS_WARN_IF(!aData->BuildClonedMessageData(*msgData))) {
-      aRv.ThrowDataCloneError(
-          nsPrintfCString("JSWindowActorParent serialization error: cannot "
-                          "clone, in actor '%s'",
-                          PromiseFlatCString(aMeta.actorName()).get()));
-      return;
-    }
-  }
-
-  Maybe<ClonedMessageData> stackData;
-  if (aStack) {
-    stackData.emplace();
-    if (!aStack->BuildClonedMessageData(*stackData)) {
-      stackData.reset();
-    }
-  }
-
-  if (NS_WARN_IF(!mManager->SendRawMessage(aMeta, msgData, stackData))) {
+  if (NS_WARN_IF(!mManager->SendRawMessage(aMeta, aData, aStack))) {
     aRv.ThrowOperationError(
         nsPrintfCString("JSWindowActorParent send error in actor '%s'",
                         PromiseFlatCString(aMeta.actorName()).get()));

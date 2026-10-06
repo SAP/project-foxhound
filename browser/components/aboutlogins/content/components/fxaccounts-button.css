@@ -57,7 +57,7 @@
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;
-  border-radius: 1000px;
+  border-radius: var(--border-radius-circle);
   width: 32px;
   height: 32px;
 }

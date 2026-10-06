@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -50,13 +49,13 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "_idle",
   "@mozilla.org/widget/useridleservice;1",
-  "nsIUserIdleService"
+  Ci.nsIUserIdleService
 );
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "_taskbarService",
   "@mozilla.org/windows-taskbar;1",
-  "nsIWinTaskbar"
+  Ci.nsIWinTaskbar
 );
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -182,8 +181,15 @@ var Builder = class {
       return;
     }
 
+    if (!this._showRecent) {
+      // Clear the recents list, so it won't appear if we disable frequents
+      // and tasks.  Recents will only appear if we disable frequents and
+      // tasks _and_ we do not clear the list here.
+      this._clearRecentsList();
+    }
+
     // anything to build?
-    if (!this._showFrequent && !this._showRecent && !this._showTasks) {
+    if (!this._showFrequent && !this._showTasks) {
       // don't leave the last list hanging on the taskbar.
       this._deleteActiveJumpList();
       return;
@@ -282,6 +288,10 @@ var Builder = class {
     } finally {
       this._isBuilding = false;
     }
+  }
+
+  _clearRecentsList() {
+    this._builder.clearRecentsList();
   }
 
   _deleteActiveJumpList() {

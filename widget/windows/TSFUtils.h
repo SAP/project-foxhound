@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,9 +40,6 @@ namespace mozilla::widget {
 class TSFEmptyTextStore;
 class TSFTextStore;
 class TSFTextStoreBase;
-struct IMENotificationRequests;
-struct InputContext;
-struct InputContextAction;
 
 class TSFUtils final {
  public:
@@ -250,6 +246,12 @@ class TSFUtils final {
         .acpStart = 0,
         .acpEnd = 0,
         .style = {.ase = TS_AE_NONE, .fInterimChar = FALSE}};
+  }
+
+  static TS_SELECTION_ACP SelectionACPCollapsedAtStart() {
+    return TS_SELECTION_ACP{.acpStart = 0,
+                            .acpEnd = 0,
+                            .style = {.ase = TS_AE_END, .fInterimChar = FALSE}};
   }
 
  private:

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 et tw=78: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,14 +6,14 @@
 #define mozilla_dom_TextTrackCue_h
 
 #include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/StateWatching.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/dom/DocumentFragment.h"
+#include "mozilla/dom/HTMLDivElement.h"
+#include "mozilla/dom/TextTrack.h"
 #include "mozilla/dom/VTTCueBinding.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIWebVTTParserWrapper.h"
-#include "mozilla/StaticPtr.h"
-#include "mozilla/dom/HTMLDivElement.h"
-#include "mozilla/dom/TextTrack.h"
-#include "mozilla/StateWatching.h"
 
 namespace mozilla::dom {
 

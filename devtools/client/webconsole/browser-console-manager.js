@@ -17,7 +17,7 @@ loader.lazyRequireGetter(
 loader.lazyRequireGetter(
   this,
   "l10n",
-  "resource://devtools/client/webconsole/utils/l10n.js"
+  "resource://devtools/shared/webconsole/l10n.js"
 );
 loader.lazyRequireGetter(
   this,

@@ -26,23 +26,30 @@ import androidx.test.espresso.action.ViewActions.typeText
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.contrib.RecyclerViewActions
 import androidx.test.espresso.matcher.ViewMatchers
+import androidx.test.espresso.matcher.ViewMatchers.Visibility
 import androidx.test.espresso.matcher.ViewMatchers.hasDescendant
 import androidx.test.espresso.matcher.ViewMatchers.hasSibling
+import androidx.test.espresso.matcher.ViewMatchers.isDescendantOfA
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withChild
 import androidx.test.espresso.matcher.ViewMatchers.withClassName
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.espresso.matcher.ViewMatchers.withEffectiveVisibility
 import androidx.test.espresso.matcher.ViewMatchers.withId
+import androidx.test.espresso.matcher.ViewMatchers.withTagValue
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.By.desc
 import androidx.test.uiautomator.UiSelector
+import androidx.test.uiautomator.Until
+import mozilla.components.browser.state.state.selectedOrDefaultSearchEngine
 import org.hamcrest.CoreMatchers
 import org.hamcrest.Matchers.allOf
 import org.hamcrest.Matchers.endsWith
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.mozilla.fenix.R
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.helpers.Constants.RETRY_COUNT
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.DataGenerationHelper.getAvailableSearchEngines
@@ -52,13 +59,16 @@ import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectExists
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdAndText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdContainingText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithText
+import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeShort
+import org.mozilla.fenix.helpers.TestHelper.appContext
 import org.mozilla.fenix.helpers.TestHelper.hasCousin
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.packageName
 import org.mozilla.fenix.helpers.click
 import org.mozilla.fenix.helpers.isChecked
 import org.mozilla.fenix.helpers.isEnabled
+import androidx.preference.R as preferenceR
 
 /**
  * Implementation of Robot Pattern for the settings search sub menu.
@@ -140,7 +150,9 @@ class SettingsSubMenuSearchRobot {
     }
 
     fun verifyManageShortcutsList(testRule: ComposeTestRule) {
-        val availableShortcutsEngines = getRegionSearchEnginesList() + getAvailableSearchEngines()
+        val defaultEngineId = appContext.components.core.store.state.search.selectedOrDefaultSearchEngine?.id
+        val availableShortcutsEngines = (getRegionSearchEnginesList() + getAvailableSearchEngines())
+            .filter { it.id != defaultEngineId }
 
         availableShortcutsEngines.forEach {
             Log.i(TAG, "verifyManageShortcutsList: Trying to verify that the ${it.name} alternative search engine is displayed")
@@ -488,6 +500,42 @@ class SettingsSubMenuSearchRobot {
         Log.i(TAG, "verifyErrorConnectingToSearchString: Verified that the \"Error connecting to $searchEngineName\" error message is displayed")
     }
 
+    fun verifyTheHomeScreenWidgetOption() {
+        Log.i(TAG, "verifyTheHomeScreenWidgetOption: Trying to verify that the \"Home screen widget\" option is visible")
+        homeScreenWidgetOption()
+            .check(matches(withEffectiveVisibility(Visibility.VISIBLE)))
+        Log.i(TAG, "verifyTheHomeScreenWidgetOption: Verified that the \"Home screen widget\" option is visible")
+    }
+
+    fun verifyTheHomeScreenWidgetToggle(enabled: Boolean) {
+        Log.i(TAG, "verifyTheHomeScreenWidgetToggle: Trying to verify that the \"Home screen widget\" toggle is checked: $enabled")
+        homeScreenWidgetOption()
+            .check(matches(hasCousin(allOf(withClassName(endsWith("Switch")), isChecked(enabled)))))
+        Log.i(TAG, "verifyTheHomeScreenWidgetToggle: Verified that the \"Home screen widget\" toggle is checked: $enabled")
+    }
+
+    fun clickTheHomeScreenWidgetToggle() {
+        Log.i(TAG, "clickTheHomeScreenWidgetToggle: Trying to click the \"Home screen widget\" toggle")
+        homeScreenWidgetOption().click()
+        Log.i(TAG, "clickTheHomeScreenWidgetToggle: Clicked the \"Home screen widget\" toggle")
+        mDevice.waitForIdle()
+    }
+
+    fun verifySearchWidgetExistsOnHomeScreen(): Boolean {
+        Log.i(TAG, "verifySearchWidgetExistsOnHomeScreen: Pressing device home button")
+        mDevice.pressHome()
+
+        Log.i(TAG, "verifySearchWidgetExistsOnHomeScreen: Waiting for $waitingTime ms for search widget to exist")
+        mDevice.wait(Until.findObject(desc(getStringResource(R.string.widget_picket_description))), waitingTime)
+        Log.i(TAG, "verifySearchWidgetExistsOnHomeScreen: Waited for $waitingTime ms for search widget to exist")
+
+        Log.i(TAG, "verifySearchWidgetExistsOnHomeScreen: Trying to verify search widget exists")
+        val exists = mDevice.hasObject(desc(getStringResource(R.string.widget_picket_description)))
+        Log.i(TAG, "verifySearchWidgetExistsOnHomeScreen: Verified search widget exists: $exists")
+
+        return exists
+    }
+
     class Transition {
         fun goBack(interact: SettingsRobot.() -> Unit): SettingsRobot.Transition {
             Log.i(TAG, "goBack: Waiting for device to be idle")
@@ -513,22 +561,32 @@ class SettingsSubMenuSearchRobot {
             return SettingsSubMenuSearchRobot.Transition()
         }
 
-        fun clickCustomSearchStringLearnMoreLink(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
+        fun clickCustomSearchStringLearnMoreLink(composeTestRule: ComposeTestRule, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
             Log.i(TAG, "clickCustomSearchStringLearnMoreLink: Trying to click the \"Search string URL\" learn more link")
             onView(withId(R.id.custom_search_engines_learn_more)).click()
             Log.i(TAG, "clickCustomSearchStringLearnMoreLink: Clicked the \"Search string URL\" learn more link")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
-        fun clickCustomSearchSuggestionsLearnMoreLink(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
+        fun clickCustomSearchSuggestionsLearnMoreLink(composeTestRule: ComposeTestRule, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
             Log.i(TAG, "clickCustomSearchSuggestionsLearnMoreLink: Trying to click the \"Search suggestions API\" learn more link")
             onView(withId(R.id.custom_search_suggestions_learn_more)).click()
             Log.i(TAG, "clickCustomSearchSuggestionsLearnMoreLink: Clicked the \"Search suggestions API\" learn more link")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
+        }
+
+        fun clickSearchWidgetOnHomeScreen(composeTestRule: ComposeTestRule, interact: SearchRobot.() -> Unit): SearchRobot.Transition {
+            Log.i(TAG, "clickSearchWidgetOnHomeScreen: Trying to click voice search on the search widget")
+            mDevice.findObject(UiSelector().description(getStringResource(R.string.search_widget_voice))).clickAndWaitForNewWindow(waitingTime)
+            Log.i(TAG, "clickSearchWidgetOnHomeScreen: Clicked the voice search on the search widget")
+            mDevice.waitForIdle()
+
+            SearchRobot(composeTestRule).interact()
+            return SearchRobot.Transition(composeTestRule)
         }
     }
 }
@@ -556,7 +614,7 @@ private val manageSearchShortcutsHeader = onView(withText("Manage alternative se
 
 private fun searchHistorySwitchButton(): ViewInteraction {
     Log.i(TAG, "searchHistorySwitchButton: Trying to perform scroll action to the \"Search browsing history\" option")
-    onView(withId(androidx.preference.R.id.recycler_view)).perform(
+    onView(withId(preferenceR.id.recycler_view)).perform(
         RecyclerViewActions.scrollTo<RecyclerView.ViewHolder>(
             hasDescendant(withText("Search browsing history")),
         ),
@@ -567,7 +625,7 @@ private fun searchHistorySwitchButton(): ViewInteraction {
 
 private fun searchBookmarksSwitchButton(): ViewInteraction {
     Log.i(TAG, "searchBookmarksSwitchButton: Trying to perform scroll action to the \"Search bookmarks\" option")
-    onView(withId(androidx.preference.R.id.recycler_view)).perform(
+    onView(withId(preferenceR.id.recycler_view)).perform(
         RecyclerViewActions.scrollTo<RecyclerView.ViewHolder>(
             hasDescendant(withText("Search bookmarks")),
         ),
@@ -578,7 +636,7 @@ private fun searchBookmarksSwitchButton(): ViewInteraction {
 
 private fun searchSyncedTabsSwitchButton(): ViewInteraction {
     Log.i(TAG, "searchSyncedTabsSwitchButton: Trying to perform scroll action to the \"Search synced tabs\" option")
-    onView(withId(androidx.preference.R.id.recycler_view)).perform(
+    onView(withId(preferenceR.id.recycler_view)).perform(
         RecyclerViewActions.scrollTo<RecyclerView.ViewHolder>(
             hasDescendant(withText("Search synced tabs")),
         ),
@@ -589,7 +647,7 @@ private fun searchSyncedTabsSwitchButton(): ViewInteraction {
 
 private fun voiceSearchSwitchButton(): ViewInteraction {
     Log.i(TAG, "voiceSearchSwitchButton: Trying to perform scroll action to the \"Show voice search\" option")
-    onView(withId(androidx.preference.R.id.recycler_view)).perform(
+    onView(withId(preferenceR.id.recycler_view)).perform(
         RecyclerViewActions.scrollTo<RecyclerView.ViewHolder>(
             hasDescendant(withText("Show voice search")),
         ),
@@ -600,7 +658,7 @@ private fun voiceSearchSwitchButton(): ViewInteraction {
 
 private fun autocompleteSwitchButton(): ViewInteraction {
     Log.i(TAG, "autocompleteSwitchButton: Trying to perform scroll action to the \"Autocomplete URLs\" option")
-    onView(withId(androidx.preference.R.id.recycler_view)).perform(
+    onView(withId(preferenceR.id.recycler_view)).perform(
         RecyclerViewActions.scrollTo<RecyclerView.ViewHolder>(
             hasDescendant(withText(getStringResource(R.string.preferences_enable_autocomplete_urls))),
         ),
@@ -611,7 +669,7 @@ private fun autocompleteSwitchButton(): ViewInteraction {
 
 private fun showSearchSuggestionSwitchButton(): ViewInteraction {
     Log.i(TAG, "showSearchSuggestionSwitchButton: Trying to perform scroll action to the \"Show search suggestions\" option")
-    onView(withId(androidx.preference.R.id.recycler_view)).perform(
+    onView(withId(preferenceR.id.recycler_view)).perform(
         RecyclerViewActions.scrollTo<RecyclerView.ViewHolder>(
             hasDescendant(withText("Show search suggestions")),
         ),
@@ -622,7 +680,7 @@ private fun showSearchSuggestionSwitchButton(): ViewInteraction {
 
 private fun showClipboardSuggestionSwitch(): ViewInteraction {
     Log.i(TAG, "showClipboardSuggestionSwitch: Trying to perform scroll action to the \"Show clipboard suggestions\" option")
-    onView(withId(androidx.preference.R.id.recycler_view)).perform(
+    onView(withId(preferenceR.id.recycler_view)).perform(
         RecyclerViewActions.scrollTo<RecyclerView.ViewHolder>(
             hasDescendant(withText(getStringResource(R.string.preferences_show_clipboard_suggestions))),
         ),
@@ -633,7 +691,7 @@ private fun showClipboardSuggestionSwitch(): ViewInteraction {
 
 private fun showSuggestionsInPrivateModeSwitch(): ViewInteraction {
     Log.i(TAG, "showSuggestionsInPrivateModeSwitch: Trying to perform scroll action to the \"Show in private sessions\" option")
-    onView(withId(androidx.preference.R.id.recycler_view)).perform(
+    onView(withId(preferenceR.id.recycler_view)).perform(
         RecyclerViewActions.scrollTo<RecyclerView.ViewHolder>(
             hasDescendant(withText(getStringResource(R.string.preferences_show_search_suggestions_in_private))),
         ),
@@ -658,8 +716,12 @@ private fun defaultSearchEngineOption(searchEngineName: String) =
         allOf(
             withId(R.id.radio_button),
             hasSibling(withText(searchEngineName)),
+            isDescendantOfA(withTagValue(CoreMatchers.equalTo(getStringResource(R.string.pref_key_search_engine_list)))),
         ),
     )
 
 private fun overflowMenuWithSiblingText(text: String): SemanticsMatcher =
     hasAnySibling(hasText(text)) and hasContentDescription("More options")
+
+private fun homeScreenWidgetOption() =
+    onView(CoreMatchers.allOf(withText(R.string.preferences_add_search_widget_from_settings)))

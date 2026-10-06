@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -81,13 +79,14 @@ already_AddRefed<TextureClient> DXGIYCbCrTextureAllocationHelper::Allocate(
   hr = mDevice->CreateTexture2D(&newDesc, nullptr, getter_AddRefs(textureCr));
   NS_ENSURE_TRUE(SUCCEEDED(hr), nullptr);
 
-  TextureForwarder* forwarder =
+  RefPtr<TextureForwarder> forwarder =
       aAllocator ? aAllocator->GetTextureForwarder() : nullptr;
 
   return TextureClient::CreateWithData(
-      DXGIYCbCrTextureData::Create(
-          textureY, textureCb, textureCr, mData.mPictureRect.Size(), ySize,
-          cbcrSize, mData.mColorDepth, mData.mYUVColorSpace, mData.mColorRange),
+      DXGIYCbCrTextureData::Create(textureY, textureCb, textureCr,
+                                   mData.mPictureRect.Size(), ySize, cbcrSize,
+                                   mData.mColorDepth, mData.mYUVColorSpace,
+                                   mData.mColorRange, mData.mTransferFunction),
       mTextureFlags, forwarder);
 }
 

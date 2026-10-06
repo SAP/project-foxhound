@@ -5,18 +5,21 @@ Firefox supports both the `prefers-contrast` and `forced-colors` media queries. 
 ## What activates these queries?
 
 ### Forced Colors
+
 The `forced-colors` media query has two values: `active` and `none`. The resolved value of this media query is determined by the browser based on user settings (OS and Firefox).
+
 * The `none` state indicates documents can use any colors to render content.
 * The `active` state indicates a user has OS or browser settings that limit the color palette available to the User Agent.
 
 In Firefox's default configuration, the `active` state is triggered when a user has enabled Windows High Contrast Mode or [Firefox High Contrast Mode](https://firefox-source-docs.mozilla.org/accessible/ColorsAndHighContrastMode.html#the-colors-dialog) (FF HCM). Both of these forced-colors modes offer users a limited amount of color customisation. In Windows, users can override seven colors, and with Firefox High Contrast Mode users can override four. MacOS's "Increase Contrast" setting does **not** trigger `forced-colors: active` because it does not limit the color palette available to UA's.
-> **NOTE:** MacOS's "Increase Contrast" setting **will** trigger `forced-colors: active` (in non-chrome web content) if it is enabled in combination with FF HCM's "Only with High Contrast Themes" option. This is also true on Linux. Because [FF HCM defaults to "Never" on non-Windows platforms](https://searchfox.org/mozilla-central/rev/896042a1a71066254ceb5291f016ca3dbca21cb7/modules/libpref/init/StaticPrefList.yaml#1195-1199), enabling  "Increase Contrast" or Linux High Contrast Themes alone will not trigger `forced-colors: active`. Similarly, if a user disables FF HCM while Win HCM is enabled, `forced-colors` (in content) will evaluate to `none`.
+> **NOTE:** MacOS's "Increase Contrast" setting **will** trigger `forced-colors: active` (in non-chrome web content) if it is enabled in combination with FF HCM's "Only with High Contrast Themes" option. This is also true on Linux. Because [FF HCM defaults to "Never" on non-Windows platforms](https://searchfox.org/mozilla-central/rev/896042a1a71066254ceb5291f016ca3dbca21cb7/modules/libpref/init/StaticPrefList.yaml#1195-1199), enabling "Increase Contrast" or Linux High Contrast Themes alone will not trigger `forced-colors: active`. Similarly, if a user disables FF HCM while Win HCM is enabled, `forced-colors` (in content) will evaluate to `none`.
 
 #### CSS System Colors
 
 Colors that are overridden by the forced-colors modes list above are inherited into the browser's [CSS System Colors](https://www.w3.org/TR/css-color-4/#css-system-colors). Designers must use these colors exclusively in their designs when designing for forced-colors modes. CSS System Colors are intended to be used in pairs: for example the `ButtonFace` and `ButtonText` colors should be used together to create styling for interactive controls. The full pairings are listed in the [system color pairings](https://www.w3.org/TR/css-color-4/#system-color-pairings) section of the CSS spec. Mozilla has additional design guidance for using CSS System Colors in our [HCM Design Guide](https://wiki.mozilla.org/Accessibility/Design_Guide). You can also check out our other docs to [learn more about color overriding](https://firefox-source-docs.mozilla.org/accessible/ColorsAndHighContrastMode.html).
 
 ### Prefers Contrast
+
 The `prefers-contrast` media query has four values: `more`, `less`, `custom`, and `no-preference`.
 
 * The `more` state is triggered when a user has macOS's "Increase Contrast" setting enabled, or when a forced-colors mode is active **and** the ratio between a user's [chosen foreground and background](https://searchfox.org/mozilla-central/rev/655f49c541108e3d0a232aa7173fbcb9af88d80b/layout/style/PreferenceSheet.cpp#123-126) is higher than 7:1. This check is done [in our style system](https://searchfox.org/mozilla-central/rev/655f49c541108e3d0a232aa7173fbcb9af88d80b/layout/style/nsMediaFeatures.cpp#287-308).
@@ -49,13 +52,13 @@ In forced-colors modes, we require that designs reduce their palettes for compat
 
 > **NOTE:** Firefox's chrome style sheets are subject to different rules than web-author style sheets.
 
-Firefox's chrome style sheets (including those in our `about:` pages) are not prevented from using colors that aren't system colors, even if a forced colors mode is enabled. In webpages, however, Firefox forces CSS System Colors regardless of the author's original specification. This is a safety mechanism to ensure pages render appropriately even if no `@media (prefers-contrast)` or `@media (forced-colors)` styling was specified.  To avoid this overriding, web authors can use the [forced-color-adjust: none;](https://developer.mozilla.org/en-US/docs/Web/CSS/forced-color-adjust) CSS property.
+Firefox's chrome style sheets (including those in our `about:` pages) are not prevented from using colors that aren't system colors, even if a forced colors mode is enabled. In webpages, however, Firefox forces CSS System Colors regardless of the author's original specification. This is a safety mechanism to ensure pages render appropriately even if no `@media (prefers-contrast)` or `@media (forced-colors)` styling was specified. To avoid this overriding, web authors can use the [forced-color-adjust: none;](https://developer.mozilla.org/en-US/docs/Web/CSS/forced-color-adjust) CSS property.
 
 ## Writing Maintainable Frontend Code
 
 Where possible, we prefer color overriding for `prefers-contrast` and `forced-colors` take place in one block at the `root` level rather than in many blocks on an element-by-element basis. We encourage developers to use [design systems tokens](https://searchfox.org/mozilla-central/rev/c130c69b7b863d5e28ab9524b65c27c7a9507c48/toolkit/themes/shared/design-system/tokens-shared.css) with semantic naming when overriding. Consider the following.
 
-```css
+```text
 :root {
   --page-background: #cccccc;
   --page-text-color: #000000;
@@ -76,7 +79,7 @@ Here, we've defined one set of color variables on `:root` and subsequently overr
 
 Though `forced-colors` overriding doesn't happen in Firefox chrome style sheets, our style system _does_ force all instances of `transparent` to the [default color](https://searchfox.org/mozilla-central/rev/655f49c541108e3d0a232aa7173fbcb9af88d80b/servo/components/style/properties/cascade.rs#468-481) for a color attribute (usually `CanvasText`). This allows us to specify styles that appear only in forced-colors mode without an additional CSS keyword. It is also sometimes beneficial to define vars at the `:root` level with an initial value (eg. `transparent`, `0px`, `none`) so the vars exist for HCM overriding later (see: `--dialog-border-width`).
 
-```css
+```text
 :root {
   /* ... */
   --dialog-background: #ffffff;
@@ -105,7 +108,7 @@ Though `forced-colors` overriding doesn't happen in Firefox chrome style sheets,
 
 In general, it is best to do overriding at the `:root` level, even if additional variables are required. It is _not_ recommended to do overriding on a class-by-class or element-by-element basis, like below:
 
-```css
+```text
 :root {
   /* ... */
   --button-background: #ffffff;
@@ -129,7 +132,9 @@ In general, it is best to do overriding at the `:root` level, even if additional
 }
 
 @media (not (forced-colors)) {
-  /* BAD: These rules are generic and should be outside of a @media block */
+  /* BAD: Element-level styling should not be placed in media query blocks.
+   * See "Scoping token overrides with @media (not (forced-colors))" below
+   * for when this pattern IS appropriate. */
   .destroyButton {
     color: var(--light-grey-20);
     background-color: var(--red-60);
@@ -138,13 +143,54 @@ In general, it is best to do overriding at the `:root` level, even if additional
 /*...*/
 ```
 
-## Putting it all together!
+## Scoping token overrides with `@media (not (forced-colors))`
+
+When you introduce a custom override for a CSS variable that **already has a `@media (forced-colors)` value in the design system token layer**, wrapping your override in `@media (not (forced-colors))` prevents it from replacing that value. When forced-colors is active, the scoped declaration does not apply at all, leaving the token layer's system-color value as the only one in effect — no extra forced-colors handling required.
+
+Consider a variable that already has a forced-colors override in the token layer:
+
+```css
+:root {
+  --page-background: #f0f0f0;
+
+  @media (forced-colors) {
+    --page-background: Canvas;
+  }
+}
+```
+
+A component author later adds a dark-mode-aware override:
+
+```text
+/* BAD: replaces the token layer's Canvas value for forced-colors users */
+:root {
+  --page-background: light-dark(#f0f0f0, #1a1a1a);
+}
+
+/* GOOD: only applies when forced-colors is not active, so forced-colors
+ * users still get the Canvas value from the token layer above */
+@media (not (forced-colors)) {
+  :root {
+    --page-background: light-dark(#f0f0f0, #1a1a1a);
+  }
+}
+```
+
+When choosing between `@media (not (forced-colors))` and `@media (not (prefers-contrast))` you need to consider a few things:
+
+* Do defaults exist for the tokens you're overriding in _both_ the prefers-contrast layer and the forced-colors layer? Or are defaults only specified in a single layer? Remember: the goal of this override strategy is to reveal the defeault token values.
+* Do your new token values increase contrast? If so, they could be more valuable to `prefers-contrast` users than the existing token defaults. You should consider exempting `forced-colors` users only.
+
+In most cases, `(not (forced-colors))` is the right choice: it leaves the existing token layer's forced-colors handling in effect, while users who have only a contrast preference (and no active forced-colors mode) continue to benefit from non-system-color visual enhancements.
+
+## Putting it all together
 
 Let's walk through an example on this sample website.
 
 <iframe src="https://mreschenberg.com/sample_site.html" style="width: 100%; height: 60vh;"></iframe>
 
 The majority of our site styling is done via color overriding on the root block.
+
 ```css
 :root {
   /* General */
@@ -171,7 +217,8 @@ The majority of our site styling is done via color overriding on the root block.
 How might we adapt this website for users who prefer increased contrast? What about for users with forced colors?
 
 Let's start with users who prefer increased contrast. We might decide to make the background and foreground easier to read by making the foreground text lighter, increasing the contrast ratio. We might also remove the note's opacity and darken its text color. We don't need to remove the note's golden background, since prefers-contrast doesn't require a reduced color palette.
-```css
+
+```text
 :root {
   /* ... */
   @media (prefers-contrast) and (not (forced-colors)) {
@@ -184,8 +231,10 @@ Let's start with users who prefer increased contrast. We might decide to make th
   }
 }
 ```
+
 To address these same issues in forced-colors mode, we should replace the colors with the semantically appropriate system color. Unlike our work in the `prefers-contrast` block above, we do need to modify the note's background, since `gold` is not a system color. We might end up with something like this:
-```css
+
+```text
 :root {
   /* ... */
   @media (forced-colors) {
@@ -203,7 +252,8 @@ To address these same issues in forced-colors mode, we should replace the colors
 ```
 
 After this change, you'll notice our page background, table background, and note background all share the same color. This makes them difficult to differentiate. To address this, we can add a contrasting border and override the previously transparent `--border-color` variable and its corresponding `--border-size`. This var applies to content areas but not controls.
-```css
+
+```text
 :root {
   /* ... */
   @media (forced-colors) {
@@ -223,7 +273,8 @@ After this change, you'll notice our page background, table background, and note
 ```
 
 Next, let's look at the controls this page uses for the web form. We've got an input, a checkbox, a submit button, and a clear button. In the prefers-contrast case, we should ensure the controls contrast from the background as much as possible. It's possible to do this via color alone, but it can help to add borders for additional contrast. Here, again, we don't need to get rid of the clear button's `tomato` background, but we can update it to something brighter.
-```css
+
+```text
 :root {
   /* ... */
   @media (prefers-contrast) and (not (forced-colors)) {
@@ -242,7 +293,8 @@ Next, let's look at the controls this page uses for the web form. We've got an i
 ```
 
 Finally, let's style the page's controls for `forced-colors`. Unlike in prefers-contrast, we can't use color to differentiate between the submit button and the clear form button -- both should inherit from our button CSS system colors.
-```css
+
+```text
 :root {
   /* ... */
   @media (forced-colors) {
@@ -268,7 +320,8 @@ Finally, let's style the page's controls for `forced-colors`. Unlike in prefers-
 ```
 
 If we wanted to make the submit button stand out as a primary button, we could invert the styling on that button in particular. Something like:
-```css
+
+```text
 :root {
   /* ... */
   @media (forced-colors) {
@@ -301,6 +354,7 @@ If we wanted to make the submit button stand out as a primary button, we could i
 
 Now we've got a site that functions in multiple HCM scenerios :) Visit the <a href="https://mreschenberg.com/sample_site.html">live site</a> with HCM or Increase Contrast enabled to test it for yourself.
 A few takeaways:
-- `prefers-contrast` and `forced-colors` are not mutually exclusive. If you write two independent `forced-colors` and `prefers-contrast` media query blocks, they'll both apply when FF HCM is enabled (assuming your foreground/background contrast ratio is high, which it is by default). Adding an `and (not (forced-colors))` clause to your `@media (prefers-contrast)` declaration can help make the two blocks distinct if you'd like mac-centric styling in one and `forced-colors` styling in the other.
-- `prefers-contrast` requires specific, case-by-case overriding, whereas `forced-colors` is largely about inheretince. In the former, page regions that are differentiated with color should stay that way (albeit with more contrasting colors). In `forced-colors` all page regions that aren't interactive should use `Canvas`/`CanvasText` and rely on borders for distinction. Once you've set `--background: Canvas;` at the root level, for ex. subsequent background vars should inherit from it.
-- Where possible, aim to do overriding at the `:root` level using CSS variables, this makes it easier to update code in the future.
+
+* `prefers-contrast` and `forced-colors` are not mutually exclusive. If you write two independent `forced-colors` and `prefers-contrast` media query blocks, they'll both apply when FF HCM is enabled (assuming your foreground/background contrast ratio is high, which it is by default). Adding an `and (not (forced-colors))` clause to your `@media (prefers-contrast)` declaration can help make the two blocks distinct if you'd like mac-centric styling in one and `forced-colors` styling in the other.
+* `prefers-contrast` requires specific, case-by-case overriding, whereas `forced-colors` is largely about inheretince. In the former, page regions that are differentiated with color should stay that way (albeit with more contrasting colors). In `forced-colors` all page regions that aren't interactive should use `Canvas`/`CanvasText` and rely on borders for distinction. Once you've set `--background: Canvas;` at the root level, for ex. subsequent background vars should inherit from it.
+* Where possible, aim to do overriding at the `:root` level using CSS variables, this makes it easier to update code in the future.

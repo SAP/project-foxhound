@@ -144,7 +144,10 @@ abstract class TemporaryDownloadFeature(
     @VisibleForTesting
     internal fun cleanupCache() {
         logger.debug("Deleting previous cache of shared files")
-        getCacheDirectory().listFiles()?.forEach { it.delete() }
+        val success = getCacheDirectory().listFiles()?.all { it.deleteRecursively() } ?: true
+        if (!success) {
+            logger.debug("Cleanup incomplete: some files were locked or could not be removed.")
+        }
     }
 
     protected fun coroutineExceptionHandler(action: String) =

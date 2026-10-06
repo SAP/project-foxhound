@@ -8,6 +8,10 @@ const {
   applyMiddleware,
   createStore,
 } = require("resource://devtools/client/shared/vendor/redux.js");
+
+const {
+  ignore,
+} = require("resource://devtools/client/shared/redux/middleware/ignore.js");
 const {
   thunk,
 } = require("resource://devtools/client/shared/redux/middleware/thunk.js");
@@ -54,6 +58,7 @@ function configureStore() {
   };
 
   const middleware = applyMiddleware(
+    ignore,
     thunk(),
     simpleConsoleLogger,
     debugTargetListenerMiddleware,

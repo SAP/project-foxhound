@@ -6,13 +6,13 @@ package org.mozilla.fenix.settings.datachoices
 
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.Reducer
-import mozilla.components.lib.state.UiStore
+import mozilla.components.lib.state.Store
 
 internal class DataChoicesStore(
     initialState: DataChoicesState,
     reducer: Reducer<DataChoicesState, DataChoicesAction> = ::dataChoicesReducer,
     middleware: List<Middleware<DataChoicesState, DataChoicesAction>> = listOf(),
-) : UiStore<DataChoicesState, DataChoicesAction>(
+) : Store<DataChoicesState, DataChoicesAction>(
     initialState = initialState,
     reducer = reducer,
     middleware = middleware,

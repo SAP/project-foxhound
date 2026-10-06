@@ -60,7 +60,7 @@ private val Event.wrapper: EventWrapper<*>?
  */
 class GleanMetricsService(
     private val context: Context,
-    private val runWhenReadyQueue: RunWhenReadyQueue = context.components.performance.visualCompletenessQueue.queue,
+    private val runWhenReadyQueue: RunWhenReadyQueue = context.components.performance.visualCompletenessQueue,
 ) : MetricsService {
     override val type = MetricServiceType.Data
 

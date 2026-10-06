@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,7 +16,6 @@
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/InputStreamLengthHelper.h"
 #include "mozilla/RemoteLazyInputStreamParent.h"
-#include "mozilla/Unused.h"
 #include "nsIMIMEInputStream.h"
 #include "nsNetCID.h"
 
@@ -188,4 +185,31 @@ bool IPC::ParamTraits<nsIInputStream*>::Read(IPC::MessageReader* aReader,
 
   *aResult = mozilla::ipc::DeserializeIPCStream(ipcStream);
   return true;
+}
+
+void IPC::ParamTraits<mozilla::ipc::EagerIPCStream>::Write(
+    IPC::MessageWriter* aWriter, const paramType& aParam) {
+  mozilla::ipc::IPCStream stream;
+  if (!mozilla::ipc::SerializeIPCStream(do_AddRef(aParam.mStream.get()), stream,
+                                        /* aAllowLazy */ false)) {
+    MOZ_CRASH("Failed to serialize EagerIPCStream");
+  }
+
+  WriteParam(aWriter, stream);
+}
+
+IPC::ReadResult<mozilla::ipc::EagerIPCStream> IPC::ParamTraits<
+    mozilla::ipc::EagerIPCStream>::Read(IPC::MessageReader* aReader) {
+  mozilla::ipc::IPCStream ipcStream;
+  if (!ReadParam(aReader, &ipcStream)) {
+    return {};
+  }
+
+  nsCOMPtr<nsIInputStream> stream =
+      mozilla::ipc::DeserializeIPCStream(ipcStream);
+  if (!stream) {
+    return {};
+  }
+
+  return paramType{mozilla::WrapNotNull(stream)};
 }

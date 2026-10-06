@@ -33,3 +33,91 @@ add_task(async function test_shouldLog_maxLogLevelPref() {
     "Should return true for logging a lower level after pref update"
   );
 });
+
+add_task(async function test_shouldLog_env() {
+  // https://searchfox.org/firefox-main/rev/a4d90d145864bee938bb23cb2684d64bff032431/mozglue/misc/LoggingCore.h#31-38
+  //
+  //   +---------+------------------+-----------------+
+  //   | Numeric | NSPR Logging     | Mozilla Logging |
+  //   +---------+------------------+-----------------+
+  //   |       0 | PR_LOG_NONE      | Disabled        |
+  //   |       1 | PR_LOG_ALWAYS    | Error           |
+  //   |       2 | PR_LOG_ERROR     | Warning         |
+  //   |       3 | PR_LOG_WARNING   | Info            |
+  //   |       4 | PR_LOG_DEBUG     | Debug           |
+  //   |       5 | PR_LOG_DEBUG + 1 | Verbose         |
+  //   +---------+------------------+-----------------+
+
+  const tests = [
+    {
+      mozLogLevel: 0,
+      maxLogLevel: "Off",
+      shouldLog: [],
+      shouldNotLog: ["Error", "Warn", "Info", "Debug", "Trace"],
+    },
+    {
+      mozLogLevel: 1,
+      maxLogLevel: "Off",
+      shouldLog: ["Error"],
+      shouldNotLog: ["Warn", "Info", "Debug", "Trace"],
+    },
+    {
+      mozLogLevel: 2,
+      maxLogLevel: "Off",
+      shouldLog: ["Error", "Warn"],
+      shouldNotLog: ["Info", "Debug", "Trace"],
+    },
+    {
+      mozLogLevel: 3,
+      maxLogLevel: "Off",
+      shouldLog: ["Error", "Warn", "Info"],
+      shouldNotLog: ["Debug", "Trace"],
+    },
+    {
+      mozLogLevel: 4,
+      maxLogLevel: "Off",
+      shouldLog: ["Error", "Warn", "Info", "Debug"],
+      shouldNotLog: ["Trace"],
+    },
+    {
+      mozLogLevel: 5,
+      maxLogLevel: "Off",
+      shouldLog: ["Error", "Warn", "Info", "Debug", "Trace"],
+      shouldNotLog: [],
+    },
+    // Also check that MOZ_LOG doesn't prevent regular logging
+    {
+      mozLogLevel: 0,
+      maxLogLevel: "All",
+      shouldLog: ["Error", "Warn", "Info", "Debug", "Trace"],
+      shouldNotLog: [],
+    },
+    {
+      mozLogLevel: 0,
+      maxLogLevel: "Warn",
+      shouldLog: ["Error", "Warn"],
+      shouldNotLog: ["Info", "Debug", "Trace"],
+    },
+  ];
+
+  for (const test of tests) {
+    let mozLogCi = console.createInstance({
+      prefix: "shouldlogtest_" + test.mozLogLevel,
+      maxLogLevel: test.maxLogLevel,
+    });
+
+    for (const level of test.shouldNotLog) {
+      Assert.ok(
+        !mozLogCi.shouldLog(level),
+        `Should return false for "${level}" with MOZ_LOG=${test.mozLogLevel} and maxLogLevel=${test.maxLogLevel}`
+      );
+    }
+
+    for (const level of test.shouldLog) {
+      Assert.ok(
+        mozLogCi.shouldLog(level),
+        `Should return true for "${level}" with MOZ_LOG=${test.mozLogLevel} and maxLogLevel=${test.maxLogLevel}`
+      );
+    }
+  }
+});

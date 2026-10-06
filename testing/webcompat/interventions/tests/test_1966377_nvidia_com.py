@@ -5,7 +5,7 @@ URL = "https://nvidia.com/en-eu"
 
 async def is_content_offscreen(client):
     await client.navigate(URL)
-    return client.execute_script("return document.body.scrollWidth > window.innerWidth")
+    return client.execute_script("return document.body.scrollWidth > screen.width")
 
 
 @pytest.mark.only_platforms("android")

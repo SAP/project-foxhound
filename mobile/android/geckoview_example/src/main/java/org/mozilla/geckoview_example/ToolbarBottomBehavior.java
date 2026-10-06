@@ -10,10 +10,16 @@ import android.view.View;
 import androidx.coordinatorlayout.widget.CoordinatorLayout;
 import androidx.core.view.ViewCompat;
 import org.mozilla.geckoview.PanZoomController;
+import org.mozilla.geckoview_example.utils.EdgeToEdgeUtils;
 
 public class ToolbarBottomBehavior extends CoordinatorLayout.Behavior<View> {
   public ToolbarBottomBehavior(Context context, AttributeSet attributeSet) {
     super(context, attributeSet);
+  }
+
+  private static void updateToolbarVisibility(final View child) {
+    final boolean toolbarHidden = (child.getTranslationY() == child.getHeight());
+    EdgeToEdgeUtils.onToolbarVisibilityChanged(toolbarHidden);
   }
 
   @Override
@@ -33,6 +39,7 @@ public class ToolbarBottomBehavior extends CoordinatorLayout.Behavior<View> {
     if (geckoView.getInputResult() == PanZoomController.INPUT_RESULT_UNHANDLED) {
       // Restore the toolbar to the original (visible) state, this is what A-C does.
       child.setTranslationY(0f);
+      updateToolbarVisibility(child);
     }
 
     return false;
@@ -47,6 +54,7 @@ public class ToolbarBottomBehavior extends CoordinatorLayout.Behavior<View> {
     } else {
       child.setTranslationY(0f);
     }
+    updateToolbarVisibility(child);
   }
 
   @Override
@@ -60,5 +68,6 @@ public class ToolbarBottomBehavior extends CoordinatorLayout.Behavior<View> {
       int type) {
     super.onNestedPreScroll(coordinatorLayout, child, target, dx, dy, consumed, type);
     child.setTranslationY(Math.max(0f, Math.min(child.getHeight(), child.getTranslationY() + dy)));
+    updateToolbarVisibility(child);
   }
 }

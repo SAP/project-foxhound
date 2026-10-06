@@ -1,20 +1,19 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CaptureTask.h"
+
+#include "VideoSegment.h"
 #include "gfxUtils.h"
+#include "mozilla/SchedulerGroup.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/ImageCapture.h"
 #include "mozilla/dom/ImageCaptureError.h"
 #include "mozilla/dom/ImageEncoder.h"
 #include "mozilla/dom/MediaStreamTrack.h"
 #include "mozilla/dom/VideoStreamTrack.h"
-#include "mozilla/SchedulerGroup.h"
 #include "nsThreadUtils.h"
-#include "VideoSegment.h"
 
 namespace mozilla {
 
@@ -51,7 +50,7 @@ nsresult CaptureTask::TaskComplete(already_AddRefed<dom::BlobImpl> aBlobImpl,
   // one.
   RefPtr<dom::Blob> blob;
   if (blobImpl) {
-    blob = dom::Blob::Create(mImageCapture->GetOwnerGlobal(), blobImpl);
+    blob = dom::Blob::Create(mImageCapture->GetRelevantGlobal(), blobImpl);
     if (NS_WARN_IF(!blob)) {
       return NS_ERROR_FAILURE;
     }
@@ -160,7 +159,8 @@ void CaptureTask::NotifyRealtimeTrackData(MediaTrackGraph* aGraph,
     nsAutoString type(u"image/jpeg"_ns);
     nsAutoString options;
     rv = dom::ImageEncoder::ExtractDataFromLayersImageAsync(
-        type, options, false, image, false, new EncodeComplete(this));
+        type, options, false, image, CanvasUtils::ImageExtraction::Unrestricted,
+        VoidCString(), new EncodeComplete(this));
     if (NS_FAILED(rv)) {
       PostTrackEndEvent();
     }

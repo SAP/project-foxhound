@@ -6,20 +6,12 @@
 
 "use strict";
 
-const { TelemetryTestUtils } = ChromeUtils.importESModule(
-  "resource://testing-common/TelemetryTestUtils.sys.mjs"
-);
-
 const TEST_URI = `data:text/html,<!DOCTYPE html><meta charset=utf8>Test reverse_search telemetry event`;
-const ALL_CHANNELS = Ci.nsITelemetry.DATASET_ALL_CHANNELS;
 const isMacOS = AppConstants.platform === "macosx";
 
 add_task(async function () {
   // Let's reset the counts.
-  Services.telemetry.clearEvents();
-
-  // Ensure no events have been logged
-  TelemetryTestUtils.assertNumberOfEvents(0);
+  Services.fog.testResetFOG();
 
   const hud = await openNewTabAndConsole(TEST_URI);
 
@@ -63,15 +55,31 @@ add_task(async function () {
   await onMessage;
 
   info("Check reverse search telemetry");
-  checkEventTelemetry([
-    getTelemetryEventData("editor-toolbar-icon", { functionality: "open" }),
-    getTelemetryEventData("keyboard", { functionality: "open" }),
-    getTelemetryEventData("keyboard", { functionality: "navigate next" }),
-    getTelemetryEventData("keyboard", { functionality: "navigate previous" }),
-    getTelemetryEventData("click", { functionality: "navigate next" }),
-    getTelemetryEventData("click", { functionality: "navigate previous" }),
-    getTelemetryEventData(null, { functionality: "evaluate expression" }),
-  ]);
+  const events = Glean.devtoolsMain.reverseSearchWebconsole.testGetValue();
+  is(7, events.length);
+  const values = [
+    "editor-toolbar-icon",
+    "keyboard",
+    "keyboard",
+    "keyboard",
+    "click",
+    "click",
+    undefined,
+  ];
+  const funcs = [
+    "open",
+    "open",
+    "navigate next",
+    "navigate previous",
+    "navigate next",
+    "navigate previous",
+    "evaluate expression",
+  ];
+  for (const [ev, value, func] of Iterator.zip([events, values, funcs])) {
+    is(value, ev.extra.value);
+    is(func, ev.extra.functionality);
+    Assert.greater(Number(ev.extra.session_id), 0);
+  }
 
   info("Revert to inline layout");
   await toggleLayout(hud);
@@ -135,37 +143,5 @@ function navigateReverseSearch(access, direction, hud) {
     } else {
       clickNextButton(hud);
     }
-  }
-}
-
-function getTelemetryEventData(value, extra) {
-  return {
-    timestamp: null,
-    category: "devtools.main",
-    method: "reverse_search",
-    object: "webconsole",
-    value,
-    extra,
-  };
-}
-
-function checkEventTelemetry(expectedData) {
-  const snapshot = Services.telemetry.snapshotEvents(ALL_CHANNELS, true);
-  const events = snapshot.parent.filter(event => event[2] === "reverse_search");
-
-  for (const [i, expected] of expectedData.entries()) {
-    const [timestamp, category, method, object, value, extra] = events[i];
-
-    Assert.greater(timestamp, 0, "timestamp is greater than 0");
-    is(category, expected.category, "'category' is correct");
-    is(method, expected.method, "'method' is correct");
-    is(object, expected.object, "'object' is correct");
-    is(value, expected.value, "'value' is correct");
-    is(
-      extra.functionality,
-      expected.extra.functionality,
-      "'functionality' is correct"
-    );
-    Assert.greater(Number(extra.session_id), 0, "'session_id' is correct");
   }
 }

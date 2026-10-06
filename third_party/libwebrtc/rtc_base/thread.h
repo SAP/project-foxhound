@@ -11,9 +11,10 @@
 #ifndef RTC_BASE_THREAD_H_
 #define RTC_BASE_THREAD_H_
 
-#include <stdint.h>
-
-#include <list>
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <deque>
 #include <map>
 #include <memory>
 #include <queue>
@@ -23,23 +24,22 @@
 #include <utility>
 #include <vector>
 
-#include "absl/strings/string_view.h"
-
-#if defined(WEBRTC_POSIX)
-#include <pthread.h>
-#endif
-#include "absl/base/attributes.h"
 #include "absl/functional/any_invocable.h"
+#include "absl/strings/string_view.h"
 #include "api/function_view.h"
 #include "api/location.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/units/time_delta.h"
+#include "api/units/timestamp.h"  // IWYU pragma: keep
 #include "rtc_base/checks.h"
-#include "rtc_base/platform_thread_types.h"
 #include "rtc_base/socket_server.h"
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/system/rtc_export.h"
 #include "rtc_base/thread_annotations.h"
+
+#if defined(WEBRTC_POSIX)
+#include <pthread.h>  // IWYU pragma: keep
+#endif
 
 #if defined(WEBRTC_WIN)
 #include "rtc_base/win32.h"
@@ -48,30 +48,54 @@
 #if RTC_DCHECK_IS_ON
 // Counts how many `Thread::BlockingCall` are made from within a scope and logs
 // the number of blocking calls at the end of the scope.
-#define RTC_LOG_THREAD_BLOCK_COUNT()                                        \
-  webrtc::Thread::ScopedCountBlockingCalls blocked_call_count_printer(      \
-      [func = __func__](uint32_t actual_block, uint32_t could_block) {      \
-        auto total = actual_block + could_block;                            \
-        if (total) {                                                        \
-          RTC_LOG(LS_WARNING) << "Blocking " << func << ": total=" << total \
-                              << " (actual=" << actual_block                \
-                              << ", could=" << could_block << ")";          \
-        }                                                                   \
+// The reported duration is the time from entering the block-counting scope
+// until exiting it. This includes time spent executing the calling thread,
+// executing the called thread, and waiting.
+#define RTC_LOG_THREAD_BLOCK_COUNT()                                      \
+  webrtc::Thread::ScopedCountBlockingCalls blocked_call_count_printer(    \
+      [func = __func__](uint32_t actual_block, uint32_t could_block,      \
+                        webrtc::TimeDelta duration) {                     \
+        auto total = actual_block + could_block;                          \
+        if (total) {                                                      \
+          RTC_LOG(LS_WARNING)                                             \
+              << "Blocking " << func << ": total=" << total               \
+              << " (actual=" << actual_block << ", could=" << could_block \
+              << ", duration=" << duration.us() << "us)";                 \
+        }                                                                 \
       })
+
+// For situations where an implementation decides that logging information about
+// blocking calls is actually not useful, such as when a test is fundamentally
+// single threaded and that may affect the behavior of blocking calls, or if a
+// test purposely changes this behavior, this macro can disable an already
+// initialized block-count logger object on the stack.
+#define RTC_IGNORE_THREAD_BLOCK_COUNT()   \
+  do {                                    \
+    blocked_call_count_printer.Disable(); \
+  } while (0)
 
 // Adds an RTC_DCHECK_LE that checks that the number of blocking calls are
 // less than or equal to a specific value. Use to avoid regressing in the
 // number of blocking thread calls.
 // Note: Use of this macro, requires RTC_LOG_THREAD_BLOCK_COUNT() to be called
 // first.
-#define RTC_DCHECK_BLOCK_COUNT_NO_MORE_THAN(x)                               \
-  do {                                                                       \
-    blocked_call_count_printer.set_minimum_call_count_for_callback(x + 1);   \
-    RTC_DCHECK_LE(blocked_call_count_printer.GetTotalBlockedCallCount(), x); \
+#define RTC_DCHECK_BLOCK_COUNT_NO_MORE_THAN(x)                                 \
+  do {                                                                         \
+    if (blocked_call_count_printer.is_enabled()) {                             \
+      blocked_call_count_printer.set_minimum_call_count_for_callback(x + 1);   \
+      RTC_DCHECK_LE(blocked_call_count_printer.GetTotalBlockedCallCount(), x); \
+    }                                                                          \
   } while (0)
+
+// Use to disallow calls to Thread::BlockingCall() within a scope/function.
+#define RTC_DCHECK_DISALLOW_THREAD_BLOCKING_CALLS() \
+  webrtc::Thread::ScopedDisallowBlockingCalls no_blocking_thread_calls
+
 #else
 #define RTC_LOG_THREAD_BLOCK_COUNT()
+#define RTC_IGNORE_THREAD_BLOCK_COUNT()
 #define RTC_DCHECK_BLOCK_COUNT_NO_MORE_THAN(x)
+#define RTC_DCHECK_DISALLOW_THREAD_BLOCKING_CALLS()
 #endif
 
 namespace webrtc {
@@ -209,26 +233,32 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public TaskQueueBase {
     ~ScopedDisallowBlockingCalls();
 
    private:
+#if RTC_DCHECK_IS_ON
     Thread* const thread_;
     const bool previous_state_;
+#endif
   };
 
 #if RTC_DCHECK_IS_ON
   class ScopedCountBlockingCalls {
    public:
-    ScopedCountBlockingCalls(std::function<void(uint32_t, uint32_t)> callback);
-    ScopedCountBlockingCalls(const ScopedDisallowBlockingCalls&) = delete;
-    ScopedCountBlockingCalls& operator=(const ScopedDisallowBlockingCalls&) =
+    ScopedCountBlockingCalls(
+        absl::AnyInvocable<void(uint32_t, uint32_t, TimeDelta) &&> callback);
+    ScopedCountBlockingCalls(const ScopedCountBlockingCalls&) = delete;
+    ScopedCountBlockingCalls& operator=(const ScopedCountBlockingCalls&) =
         delete;
     ~ScopedCountBlockingCalls();
 
     uint32_t GetBlockingCallCount() const;
     uint32_t GetCouldBeBlockingCallCount() const;
     uint32_t GetTotalBlockedCallCount() const;
+    void Disable();
 
     void set_minimum_call_count_for_callback(uint32_t minimum) {
       min_blocking_calls_for_callback_ = minimum;
     }
+
+    bool is_enabled() const { return result_callback_ != nullptr; }
 
    private:
     Thread* const thread_;
@@ -239,7 +269,8 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public TaskQueueBase {
     // tame log spam.
     // By default we always issue the callback, regardless of callback count.
     uint32_t min_blocking_calls_for_callback_ = 0;
-    std::function<void(uint32_t, uint32_t)> result_callback_;
+    absl::AnyInvocable<void(uint32_t, uint32_t, TimeDelta) &&> result_callback_;
+    const int64_t start_time_ns_ = 0;
   };
 
   uint32_t GetBlockingCallCount() const;
@@ -271,6 +302,7 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public TaskQueueBase {
     return messages_.size() + delayed_messages_.size();
   }
 
+  absl::string_view queue_name() const override { return name_; }
   bool IsCurrent() const;
 
   // Sleeps the calling thread for the specified number of milliseconds, during
@@ -301,6 +333,13 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public TaskQueueBase {
   // work, override Run().  To receive and dispatch messages, call
   // ProcessMessages occasionally.
   virtual void Run();
+
+  // Returns true if there are pending tasks in the message queue.
+  // Cooperative tasks can use this to know if they should yield.
+  // If a task yields, it is up to the task itself how or if to
+  // continue the ongoing operation. Typically this can be handled
+  // by using PostTask() to queue up a continuation task.
+  bool HasPendingTasks() const;
 
   // Convenience method to invoke a functor on another thread.
   // Blocks the current thread until execution is complete.
@@ -366,7 +405,7 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public TaskQueueBase {
   // These functions are public to avoid injecting test hooks. Don't call them
   // outside of tests.
   // This method should be called when thread is created using non standard
-  // method, like derived implementation of rtc::Thread and it can not be
+  // method, like derived implementation of Thread and it can not be
   // started by calling Start(). This will set started flag to true and
   // owned to false. This must be called from the current thread.
   bool WrapCurrent();
@@ -483,7 +522,7 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public TaskQueueBase {
   // Called by the ThreadManager when being unset as the current thread.
   void ClearCurrentTaskQueue();
 
-  std::queue<absl::AnyInvocable<void() &&>> messages_ RTC_GUARDED_BY(mutex_);
+  std::deque<absl::AnyInvocable<void() &&>> messages_ RTC_GUARDED_BY(mutex_);
   std::priority_queue<DelayedMessage> delayed_messages_ RTC_GUARDED_BY(mutex_);
   uint32_t delayed_next_num_ RTC_GUARDED_BY(mutex_);
 #if RTC_DCHECK_IS_ON
@@ -538,8 +577,13 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public TaskQueueBase {
 // _not already_ associated with the current OS thread.
 //
 // NOTE: *** This class should only be used by tests ***
+// NOTE: Use test::RunLoop instead of AutoThread as it also adopts the current
+// thread, and provides utilities for testing with threads. It also does not
+// expose a direct dependency on webrtc::Thread.
 //
-class AutoThread : public Thread {
+class [[deprecated(
+    "Use test::RunLoop or GlobalSimulatedTimeController")]] AutoThread
+    : public Thread {
  public:
   AutoThread();
   ~AutoThread() override;
@@ -552,8 +596,13 @@ class AutoThread : public Thread {
 // construction and uninstalls at destruction. If a Thread object is
 // already associated with the current OS thread, it is temporarily
 // disassociated and restored by the destructor.
-
-class AutoSocketServerThread : public Thread {
+//
+// NOTE: Use test::RunLoop instead of AutoSocketServerThread as it also adopts
+// the current thread, and provides utilities for testing with threads. It also
+// does not expose a direct dependency on webrtc::Thread.
+class [[deprecated(
+    "Use test::RunLoop or "
+    "GlobalSimulatedTimeController")]] AutoSocketServerThread : public Thread {
  public:
   explicit AutoSocketServerThread(SocketServer* ss);
   ~AutoSocketServerThread() override;
@@ -565,14 +614,5 @@ class AutoSocketServerThread : public Thread {
   Thread* old_thread_;
 };
 }  //  namespace webrtc
-
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::AutoSocketServerThread;
-using ::webrtc::AutoThread;
-using ::webrtc::Thread;
-using ::webrtc::ThreadManager;
-}  // namespace rtc
 
 #endif  // RTC_BASE_THREAD_H_

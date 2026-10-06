@@ -1,0 +1,15 @@
+{
+  "label": "tibi.be",
+  "bugs": {
+    "2013906": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://tibi.monconteneur.be/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "color": {
+    "darker": {
+      "layer-1": {
+        "value": {
+          "light": "rgba(0, 0, 0, 0.15)",
+          "dark": "rgba(0, 0, 0, 0.2)",
+          "forcedColors": "transparent"
+        }
+      },
+      "layer-2": {
+        "value": {
+          "light": "rgba(0, 0, 0, 0.2)",
+          "dark": "rgba(0, 0, 0, 0.4)",
+          "forcedColors": "transparent"
+        }
+      }
+    },
+    "lighter": {
+      "layer-1": {
+        "value": {
+          "light": "rgba(0, 0, 0, 0.02)",
+          "dark": "rgba(0, 0, 0, 0.06)",
+          "forcedColors": "transparent"
+        }
+      },
+      "layer-2": {
+        "value": {
+          "light": "rgba(0, 0, 0, 0.04)",
+          "dark": "rgba(0, 0, 0, 0.12)",
+          "forcedColors": "transparent"
+        }
+      }
+    }
+  }
+}

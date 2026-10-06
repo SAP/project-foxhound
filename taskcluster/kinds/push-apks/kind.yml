@@ -16,6 +16,9 @@ kind-dependencies:
     - signing-apk
     - android-startup-test
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 tasks:
     push-bundle:
         description: Publish Fenix and Focus APKs

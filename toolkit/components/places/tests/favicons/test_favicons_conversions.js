@@ -14,20 +14,18 @@ var isWindows = "@mozilla.org/windows-registry-key;1" in Cc;
 /**
  * Checks the conversion of the given test image file.
  *
- * @param aFileName
+ * @param {string} aFileName
  *        File that contains the favicon image, located in the test folder.
- * @param aFileMimeType
+ * @param {string} aFileMimeType
  *        MIME type of the image contained in the file.
- * @param aFileLength
+ * @param {number} aFileLength
  *        Expected length of the file.
- * @param aExpectConversion
+ * @param {boolean} aExpectConversion
  *        If false, the icon should be stored as is.  If true, the expected data
  *        is loaded from a file named "expected-" + aFileName + ".png".
- * @param aVaryOnWindows
+ * @param {boolean} aVaryOnWindows
  *        Indicates that the content of the converted image can be different on
  *        Windows and should not be checked on that platform.
- * @param aCallback
- *        This function is called after the check finished.
  */
 async function checkFaviconDataConversion(
   aFileName,
@@ -36,12 +34,12 @@ async function checkFaviconDataConversion(
   aExpectConversion,
   aVaryOnWindows
 ) {
-  let pageURI = NetUtil.newURI("http://places.test/page/" + aFileName);
+  let pageURI = Services.io.newURI("http://places.test/page/" + aFileName);
   await PlacesTestUtils.addVisits({
     uri: pageURI,
     transition: TRANSITION_TYPED,
   });
-  let faviconURI = NetUtil.newURI("http://places.test/icon/" + aFileName);
+  let faviconURI = Services.io.newURI("http://places.test/icon/" + aFileName);
   let fileData = readFileOfLength(aFileName, aFileLength);
   let fileDataURL = await PlacesTestUtils.fileDataToDataURL(
     fileData,

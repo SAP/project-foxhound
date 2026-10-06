@@ -1,0 +1,102 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+#locations-list-wrapper {
+  padding-block-end: var(--space-xlarge);
+}
+
+#locations-list-description {
+  display: flex;
+  padding-inline-start: calc(var(--panel-menuitem-margin-inline) + var(--panel-menuitem-padding-inline) + var(--icon-size) + var(--space-small));
+  padding-block: var(--space-small);
+  color: var(--text-color-deemphasized);
+}
+
+#locations-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+
+  > li {
+    display: flex;
+  }
+}
+
+.location-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+  flex: 1;
+  border: none;
+  color: var(--button-text-color-menu);
+  background-color: var(--button-background-color-menu);
+  text-align: start;
+
+  &:not([disabled]):hover {
+    color: var(--button-text-color-menu-hover);
+    background-color: var(--button-background-color-menu-hover);
+
+    &:active {
+      color: var(--button-text-color-menu-active);
+      background-color: var(--button-background-color-menu-active);
+    }
+  }
+
+  &:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: var(--focus-outline-inset);
+  }
+
+  &[aria-checked="true"] {
+    background-color: var(--button-background-color-selected);
+    color: var(--button-text-color-menu-selected);
+    .location-check {
+      visibility: visible;
+    }
+    .location-label {
+      font-weight: var(--font-weight-bold);
+    }
+
+    /* TODO: (Bug 2046583) Clean up use of --button-text-color-menu
+     * for forced colors once Bug 2011528 is fixed. */
+    @media (forced-colors) {
+      color: var(--button-text-color-menu);
+    }
+  }
+
+  &[disabled] {
+    .location-label,
+    .location-description,
+    .location-unavailable-label {
+      color: var(--text-color-deemphasized);
+    }
+  }
+}
+
+#location-label-recommended {
+  font-weight: var(--font-weight-bold);
+}
+
+.location-check {
+  visibility: hidden;
+  -moz-context-properties: fill;
+  fill: currentColor;
+  height: var(--icon-size);
+  width: var(--icon-size);
+}
+
+.location-label-group {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-xxsmall);
+}
+
+.location-description {
+  font-size: var(--font-size-small);
+}
+
+#locations-subview-promo {
+  margin-inline: var(--space-medium);
+}

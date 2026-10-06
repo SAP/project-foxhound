@@ -43,7 +43,6 @@ impl Example for App {
         let space_and_clip = SpaceAndClipInfo::root_scroll(pipeline_id);
 
         builder.push_simple_stacking_context(
-            bounds.min,
             space_and_clip.spatial_id,
             PrimitiveFlags::IS_BACKFACE_VISIBLE,
         );
@@ -86,13 +85,13 @@ impl Example for App {
     ) -> bool {
         match event {
             winit::event::WindowEvent::KeyboardInput {
-                input: winit::event::KeyboardInput {
+                event: winit::event::KeyEvent {
                     state: winit::event::ElementState::Pressed,
-                    virtual_keycode: Some(winit::event::VirtualKeyCode::Space),
+                    ref logical_key,
                     ..
                 },
                 ..
-            } => {
+            } if *logical_key == winit::keyboard::Key::Character(" ".into()) => {
                 let mut image_data = Vec::new();
                 for y in 0 .. 64 {
                     for x in 0 .. 64 {

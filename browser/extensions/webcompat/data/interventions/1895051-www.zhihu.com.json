@@ -1,0 +1,18 @@
+{
+  "label": "www.zhihu.com",
+  "bugs": {
+    "1895051": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://www.zhihu.com/question/*"]
+    }
+  },
+  "css": {
+    "fix_unclickable_directory_buttons": ".css-376mun { display: block; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": ["fix_unclickable_directory_buttons"]
+    }
+  ]
+}

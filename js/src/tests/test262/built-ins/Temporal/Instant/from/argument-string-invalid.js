@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -57,6 +57,9 @@ const invalidStrings = [
   // valid, but outside the supported range:
   "-999999-01-01T00:00Z",
   "+999999-01-01T00:00Z",
+  // "00:0000" is invalid (the hour/minute and minute/second separator
+  // or lack thereof needs to match).
+  "2025-01-01T00:00:00+00:0000",
 ];
 for (const arg of invalidStrings) {
   assert.throws(

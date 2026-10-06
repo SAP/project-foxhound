@@ -66,7 +66,7 @@ bool ParamTraits<nsIX509Cert*>::Read(MessageReader* aReader,
     return true;
   }
 
-  RefPtr<nsIX509Cert> cert = new nsNSSCertificate();
+  RefPtr cert = mozilla::MakeRefPtr<nsNSSCertificate>();
   if (!cert->DeserializeFromIPC(aReader)) {
     return false;
   }

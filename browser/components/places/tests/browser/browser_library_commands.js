@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +6,7 @@
  *  Test enabled commands in the left pane folder of the Library.
  */
 
-const TEST_URI = NetUtil.newURI("https://www.mozilla.org/");
+const TEST_URI = Services.io.newURI("https://www.mozilla.org/");
 
 registerCleanupFunction(async function () {
   await PlacesUtils.bookmarks.eraseEverything();
@@ -256,7 +254,9 @@ add_task(async function test_tags() {
     parentGuid: PlacesUtils.bookmarks.unfiledGuid,
     index: 0,
   });
-  PlacesUtils.tagging.tagURI(NetUtil.newURI("https://example.com/"), ["test"]);
+  PlacesUtils.tagging.tagURI(Services.io.newURI("https://example.com/"), [
+    "test",
+  ]);
 
   let library = await promiseLibrary();
   info("Ensure query contents can be cut or deleted");

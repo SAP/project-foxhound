@@ -13,10 +13,12 @@ To create a logpoint:
   .. image:: add_logpoint.png
     :class: center
 
-2. Create an expression inline. The result is logged in the console panel every time the line with the logpoint executes. You can use any variable or function available in the current scope.
+2. Create an expression inline. The result is logged in the console panel every time the line with the logpoint executes. You can use any variable or function available in the current scope. Multiple expressions can be added in a logpoint, separated with commas (you can think of it as what you would put inside a `console.log()` call).
 
   .. image:: creating_the_log_point.png
     :class: center
+
+When the **Show stacktrace** checkbox is checked, the frames that led to that specific line being executed are displayed in the Console, which can be useful when a function can be called from multiple places.
 
 Working with logpoints
 **********************

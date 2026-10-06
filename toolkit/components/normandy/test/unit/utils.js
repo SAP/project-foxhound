@@ -4,9 +4,6 @@
 // Loaded into the same scope as head_xpc.js
 /* import-globals-from head_xpc.js */
 
-const { Preferences } = ChromeUtils.importESModule(
-  "resource://gre/modules/Preferences.sys.mjs"
-);
 const { HttpServer } = ChromeUtils.importESModule(
   "resource://testing-common/httpd.sys.mjs"
 );
@@ -123,6 +120,7 @@ const CryptoUtils = {
 
   /**
    * Get the computed hash for a given file
+   *
    * @param {nsIFile} file The file to be hashed
    * @param {string} [algorithm] The hashing algorithm to use
    */

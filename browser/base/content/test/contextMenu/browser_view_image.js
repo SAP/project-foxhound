@@ -49,7 +49,7 @@ async function test_view_image_works({ page, selector, urlChecker }) {
         return browser;
       },
       async cleanup(browser) {
-        return BrowserTestUtils.closeWindow(browser.ownerGlobal);
+        return BrowserTestUtils.closeWindow(browser.documentGlobal);
       },
     },
     tab_default: {

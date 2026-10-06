@@ -1,0 +1,48 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src resource: chrome:; object-src 'none'; img-src data: chrome:;"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <title data-l10n-id="sidebar-history-title"></title>
+    <link rel="localization" href="branding/brand.ftl" />
+    <link rel="localization" href="browser/firefoxView.ftl" />
+    <link rel="localization" href="browser/sidebar.ftl" />
+    <link rel="localization" href="toolkit/branding/brandings.ftl" />
+    <link rel="localization" href="browser/places.ftl" />
+    <link
+      rel="stylesheet"
+      href="chrome://browser/content/sidebar/sidebar.css"
+    />
+    <script
+      type="module"
+      src="chrome://browser/content/firefoxview/fxview-tab-list.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://browser/content/firefoxview/fxview-empty-state.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://browser/content/sidebar/sidebar-tab-list.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://browser/content/sidebar/sidebar-bookmarks.mjs"
+    ></script>
+    <script src="chrome://browser/content/contentTheme.js"></script>
+    <script src="chrome://global/content/globalOverlay.js"></script>
+    <script src="chrome://global/content/editMenuOverlay.js"></script>
+  </head>
+
+  <body>
+    <sidebar-bookmarks></sidebar-bookmarks>
+  </body>
+</html>

@@ -28,12 +28,12 @@
 
 #include "Biquad.h"
 
-#include "DenormalDisabler.h"
-
 #include <float.h>
-#include <algorithm>
 #include <math.h>
 
+#include <algorithm>
+
+#include "DenormalDisabler.h"
 #include "fdlibm.h"
 
 namespace WebCore {
@@ -44,8 +44,6 @@ Biquad::Biquad() {
 
   reset();  // clear filter memory
 }
-
-Biquad::~Biquad() = default;
 
 void Biquad::process(const float* sourceP, float* destP,
                      size_t framesToProcess) {

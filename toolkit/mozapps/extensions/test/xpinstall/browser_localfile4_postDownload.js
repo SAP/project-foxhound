@@ -2,9 +2,6 @@
 // Tests installing an add-on from a local file with file origins disabled.
 // This should be blocked by the origin allowed check.
 function test() {
-  // This test currently depends on InstallTrigger.install availability.
-  setInstallTriggerPrefs();
-
   Harness.installBlockedCallback = allow_blocked;
   Harness.installsCompletedCallback = finish_test;
   // Prevent the Harness from ending the test on download cancel.
@@ -27,15 +24,10 @@ function test() {
   } catch (ex) {
     // scenario where we are running from a .jar and already extracted
   }
-  var triggers = encodeURIComponent(
-    JSON.stringify({
-      "Unsigned XPI": TESTROOT + "amosigned.xpi",
-    })
-  );
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
   BrowserTestUtils.startLoadingURIString(
     gBrowser,
-    xpipath + "installtrigger.html?" + triggers
+    xpipath + "navigate.html?amosigned.xpi"
   );
 }
 

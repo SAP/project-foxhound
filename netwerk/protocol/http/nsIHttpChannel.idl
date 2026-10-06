@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +9,12 @@ interface nsIReferrerInfo;
 
 %{C++
 #include "GeckoProfiler.h"
+namespace mozilla::net {
+class DictionaryCacheEntry;
+}
 %}
+
+[ptr] native DictionaryCacheEntry(mozilla::net::DictionaryCacheEntry);
 
 native UniqueProfileChunkedBuffer(mozilla::UniquePtr<mozilla::ProfileChunkedBuffer>);
 
@@ -397,15 +401,6 @@ interface nsIHttpChannel : nsIIdentChannel
     [must_use] boolean isNoCacheResponse();
 
     /**
-     * Returns true if the server sent a "Cache-Control: private" response
-     * header.
-     *
-     * @throws NS_ERROR_NOT_AVAILABLE if called before the response
-     *         has been received (before onStartRequest).
-     */
-    [must_use] boolean isPrivateResponse();
-
-    /**
      * Instructs the channel to immediately redirect to a new destination.
      * Can only be called on channels that have not yet called their
      * listener's OnStartRequest(). Generally that means the latest time
@@ -502,4 +497,14 @@ interface nsIHttpChannel : nsIIdentChannel
      * request such as `method` or `body` as late as possible.
      */
     [must_use] attribute boolean requestObserversCalled;
+
+    /**
+     * Used to indicate that user agent was overridden or override was reset
+     * and user agent on the channel is outdated.
+     */
+    [noscript, must_use] attribute boolean isUserAgentHeaderOutdated;
+    /**
+     * Dictionary for decompression, if any
+     */
+    [noscript] attribute DictionaryCacheEntry decompressDictionary;
 };

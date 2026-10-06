@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla__ipdltest_IPDLUnitTestParent_h
-#define mozilla__ipdltest_IPDLUnitTestParent_h
+#ifndef mozilla_ipdltest_IPDLUnitTestParent_h
+#define mozilla_ipdltest_IPDLUnitTestParent_h
 
 #include "mozilla/_ipdltest/PIPDLUnitTestParent.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
@@ -47,4 +45,4 @@ class IPDLUnitTestParent : public PIPDLUnitTestParent {
 
 }  // namespace mozilla::_ipdltest
 
-#endif  // mozilla__ipdltest_IPDLUnitTestParent_h
+#endif  // mozilla_ipdltest_IPDLUnitTestParent_h

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,14 +9,13 @@
 #include "ClientPrincipalUtils.h"
 #include "ClientSourceParent.h"
 #include "mozilla/dom/ClientIPCTypes.h"
-#include "mozilla/Unused.h"
 
 namespace mozilla::dom {
 
 using mozilla::ipc::IPCResult;
 
 IPCResult ClientHandleParent::RecvTeardown() {
-  Unused << Send__delete__(this);
+  (void)Send__delete__(this);
   return IPC_OK();
 }
 
@@ -78,7 +75,7 @@ void ClientHandleParent::Init(const IPCClientInfo& aClientInfo) {
           },
           [self = RefPtr{this}](const CopyableErrorResult&) {
             self->mSourcePromiseRequestHolder.Complete();
-            Unused << Send__delete__(self);
+            (void)Send__delete__(self);
           })
       ->Track(mSourcePromiseRequestHolder);
 }
@@ -103,7 +100,7 @@ void ClientHandleParent::FoundSource(ClientSourceParent* aSource) {
       rv.ThrowAbortError("Client aborted");
       mSourcePromiseHolder.Reject(rv, __func__);
     }
-    Unused << Send__delete__(this);
+    (void)Send__delete__(this);
     return;
   }
 

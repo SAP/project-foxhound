@@ -60,9 +60,7 @@ Java Coding style
       a fixed indent), may require shifting the code every time the line
       changes, resulting in spurious whitespace changes.
 
--  For additional specifics on Firefox for Android, see the `Coding
-   Style guide for Firefox on
-   Android <https://wiki.mozilla.org/Mobile/Fennec/Android#Coding_Style>`__.
--  The `Android Coding
-   Style <https://source.android.com/source/code-style.html>`__ has some
+-  NOTE: Geckoview uses the `Google Java Style <https://google.github.io/styleguide/javaguide.html>`__ instead of the Java Coding Style.
+-  However, the `Android Coding
+   Style Documentation <https://source.android.com/source/code-style.html>`__ has some
    useful guidelines too.

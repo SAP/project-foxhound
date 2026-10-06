@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,19 +5,20 @@
 #ifndef mozilla_dom_gamepad_Gamepad_h
 #define mozilla_dom_gamepad_Gamepad_h
 
+#include <stdint.h>
+
 #include "mozilla/dom/GamepadBinding.h"
 #include "mozilla/dom/GamepadButton.h"
 #include "mozilla/dom/GamepadHandle.h"
-#include "mozilla/dom/GamepadPose.h"
 #include "mozilla/dom/GamepadHapticActuator.h"
 #include "mozilla/dom/GamepadLightIndicator.h"
+#include "mozilla/dom/GamepadPose.h"
 #include "mozilla/dom/GamepadTouch.h"
 #include "mozilla/dom/Performance.h"
-#include <stdint.h>
 #include "nsCOMPtr.h"
-#include "nsTHashMap.h"
 #include "nsString.h"
 #include "nsTArray.h"
+#include "nsTHashMap.h"
 #include "nsWrapperCache.h"
 
 namespace mozilla::dom {
@@ -46,7 +45,7 @@ class Gamepad final : public nsISupports, public nsWrapperCache {
           uint32_t aNumButtons, uint32_t aNumAxes, uint32_t aNumHaptics,
           uint32_t aNumLightIndicator, uint32_t aNumTouchEvents);
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Gamepad)
 
   void SetConnected(bool aConnected);

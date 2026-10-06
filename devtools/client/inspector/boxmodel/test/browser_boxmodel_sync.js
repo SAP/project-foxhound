@@ -33,7 +33,7 @@ add_task(async function () {
 
   info("Check that the property was synced with the rule view");
   const ruleView = selectRuleView(inspector);
-  const ruleEditor = getRuleViewRuleEditor(ruleView, 0);
+  const ruleEditor = getRuleViewRuleEditorAt(ruleView, 0);
   const textProp = ruleEditor.rule.textProps[0];
   is(textProp.value, "7px", "The property has the right value");
 });

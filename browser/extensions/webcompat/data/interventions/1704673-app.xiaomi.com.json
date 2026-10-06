@@ -1,0 +1,15 @@
+{
+  "label": "app.xiaomi.com",
+  "bugs": {
+    "1704673": {
+      "issue": "broken-redirect",
+      "matches": ["*://app.xiaomi.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

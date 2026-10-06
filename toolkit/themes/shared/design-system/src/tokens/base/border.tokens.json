@@ -1,0 +1,111 @@
+{
+  "color": {
+    "@base": {
+      "value": {
+        "brand": {
+          "light": "{color.gray.50}",
+          "dark": "{color.gray.70}"
+        },
+        "prefersContrast": "CanvasText",
+        "platform": {
+          "default": "color-mix(in srgb, currentColor 50%, transparent)"
+        }
+      }
+    },
+    "transparent": {
+      "value": {
+        "default": "transparent",
+        "prefersContrast": "CanvasText"
+      }
+    },
+    "deemphasized": {
+      "@base": {
+        "value": {
+          "brand": {
+            "light": "{color.gray.30}",
+            "dark": "{color.gray.70}"
+          },
+          "platform": {
+            "default": "color-mix(in srgb, currentColor 24%, transparent)"
+          },
+          "prefersContrast": "currentColor",
+          "forcedColors": "ButtonText"
+        }
+      }
+    },
+    "interactive": {
+      "@base": {
+        "value": {
+          "prefersContrast": "{text.color.@base}",
+          "forcedColors": "ButtonText",
+          "brand": {
+            "light": "{color.gray.60}",
+            "dark": "{color.gray.50}"
+          },
+          "platform": {
+            "default": "color-mix(in srgb, currentColor 15%, {color.gray.60})"
+          }
+        }
+      },
+      "hover": {
+        "value": {
+          "default": "{border.color.interactive.@base}",
+          "forcedColors": "SelectedItem"
+        }
+      },
+      "active": {
+        "value": {
+          "default": "{border.color.interactive.@base}",
+          "forcedColors": "ButtonText"
+        }
+      },
+      "disabled": {
+        "value": {
+          "default": "{border.color.interactive.@base}",
+          "forcedColors": "GrayText"
+        }
+      }
+    },
+    "selected": {
+      "value": {
+        "default": "{color.accent.primary.@base}",
+        "forcedColors": "SelectedItem"
+      }
+    },
+    "error": {
+      "value": {
+        "light": "{color.red.70}",
+        "dark": "{color.red.20}",
+        "prefersContrast": "{border.color.@base}"
+      }
+    }
+  },
+  "radius": {
+    "circle": {
+      "value": "9999px"
+    },
+    "xsmall": {
+      "value": "2px"
+    },
+    "small": {
+      "value": "4px"
+    },
+    "medium": {
+      "value": "8px"
+    },
+    "large": {
+      "value": "16px"
+    },
+    "xlarge": {
+      "override": true,
+      "value": "0"
+    },
+    "xxlarge": {
+      "override": true,
+      "value": "0"
+    }
+  },
+  "width": {
+    "value": "1px"
+  }
+}

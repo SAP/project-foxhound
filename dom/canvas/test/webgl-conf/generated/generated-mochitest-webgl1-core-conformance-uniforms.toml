@@ -1,0 +1,94 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl1-core"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/conformance/uniforms/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_conformance__uniforms__gl-get-uniform-non-current-program.html"]
+
+["test_conformance__uniforms__gl-uniform-arrays.html"]
+
+["test_conformance__uniforms__gl-uniform-bool.html"]
+
+["test_conformance__uniforms__gl-uniformmatrix4fv.html"]
+
+["test_conformance__uniforms__gl-unknown-uniform.html"]
+
+["test_conformance__uniforms__no-over-optimization-on-uniform-array-00.html"]
+
+["test_conformance__uniforms__no-over-optimization-on-uniform-array-01.html"]
+
+["test_conformance__uniforms__no-over-optimization-on-uniform-array-02.html"]
+
+["test_conformance__uniforms__no-over-optimization-on-uniform-array-03.html"]
+
+["test_conformance__uniforms__no-over-optimization-on-uniform-array-04.html"]
+
+["test_conformance__uniforms__no-over-optimization-on-uniform-array-05.html"]
+
+["test_conformance__uniforms__no-over-optimization-on-uniform-array-06.html"]
+
+["test_conformance__uniforms__no-over-optimization-on-uniform-array-07.html"]
+
+["test_conformance__uniforms__no-over-optimization-on-uniform-array-08.html"]
+
+["test_conformance__uniforms__no-over-optimization-on-uniform-array-09.html"]
+
+["test_conformance__uniforms__no-over-optimization-on-uniform-array-10.html"]
+
+["test_conformance__uniforms__no-over-optimization-on-uniform-array-11.html"]
+
+["test_conformance__uniforms__no-over-optimization-on-uniform-array-12.html"]
+
+["test_conformance__uniforms__no-over-optimization-on-uniform-array-13.html"]
+
+["test_conformance__uniforms__no-over-optimization-on-uniform-array-14.html"]
+
+["test_conformance__uniforms__no-over-optimization-on-uniform-array-15.html"]
+
+["test_conformance__uniforms__no-over-optimization-on-uniform-array-16.html"]
+
+["test_conformance__uniforms__no-over-optimization-on-uniform-array-17.html"]
+
+["test_conformance__uniforms__null-uniform-location.html"]
+
+["test_conformance__uniforms__out-of-bounds-uniform-array-access.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
+]
+
+["test_conformance__uniforms__uniform-default-values.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_conformance__uniforms__uniform-location.html"]
+
+["test_conformance__uniforms__uniform-samplers-test.html"]
+
+["test_conformance__uniforms__uniform-values-per-program.html"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]

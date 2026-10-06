@@ -10,39 +10,58 @@
 
 #include "include/core/SkImage.h"
 #include "include/core/SkRefCnt.h"
-#include "include/core/SkShader.h"
-#include "include/gpu/graphite/ContextOptions.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkSpan.h"
+#include "include/core/SkTypes.h"
 #include "include/gpu/graphite/GraphiteTypes.h"
-#include "include/gpu/graphite/Recorder.h"
+#include "include/gpu/graphite/Recorder.h"  // IWYU pragma: keep
 #include "include/private/base/SingleOwner.h"
+#include "include/private/base/SkThreadAnnotations.h"
 
 #if defined(GPU_TEST_UTILS)
 #include "include/private/base/SkMutex.h"
 #endif
 
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <vector>
 
+class SkColorInfo;
+class SkSurface;
+class SkCapture;
+enum SkYUVColorSpace : int;
 class SkColorSpace;
-class SkRuntimeEffect;
 class SkTraceMemoryDump;
+struct SkIRect;
+struct SkImageInfo;
+
+namespace skcpu {
+class ContextImpl;
+class Recorder;
+}  // namespace skcpu
+
+namespace skgpu {
+enum class BackendApi : unsigned int;
+enum class GpuStatsFlags : uint32_t;
+}
 
 namespace skgpu::graphite {
 
 class BackendTexture;
 class Buffer;
 class ClientMappedBufferManager;
-class Context;
 class ContextPriv;
-class GlobalCache;
-class PaintOptions;
+struct ContextOptions;
+class PersistentPipelineStorage;
 class PrecompileContext;
 class QueueManager;
-class Recording;
 class ResourceProvider;
 class SharedContext;
 class TextureProxy;
+class TextureProxyView;
 
 class SK_API Context final {
 public:
@@ -56,17 +75,21 @@ public:
     BackendApi backend() const;
 
     std::unique_ptr<Recorder> makeRecorder(const RecorderOptions& = {});
+    std::unique_ptr<skcpu::Recorder> makeCPURecorder();
 
     /** Creates a helper object that can be moved to a different thread and used
      *  for precompilation.
      */
     std::unique_ptr<PrecompileContext> makePrecompileContext();
 
-    bool insertRecording(const InsertRecordingInfo&);
-    bool submit(SyncToCpu = SyncToCpu::kNo);
+    InsertStatus insertRecording(const InsertRecordingInfo&);
+    bool submit(SubmitInfo submitInfo = {});
 
     /** Returns true if there is work that was submitted to the GPU that has not finished. */
     bool hasUnfinishedGpuWork() const;
+
+    /** Returns true if there is pending GPU work that needs to be submitted. */
+    bool hasPendingGPUWork() const;
 
     /** Makes image pixel data available to caller, possibly asynchronously. It can also rescale
         the image pixels.
@@ -207,9 +230,12 @@ public:
     /**
      * Purge GPU resources on the Context that haven't been used in the past 'msNotUsed'
      * milliseconds or are otherwise marked for deletion, regardless of whether the context is under
-     * budget.
+     * budget. Optionally provide a `microsMaxPurgingDur` after which Skia should stop purging
+     * resources.
      */
-    void performDeferredCleanup(std::chrono::milliseconds msNotUsed);
+    void performDeferredCleanup(
+            std::chrono::milliseconds msNotUsed,
+            std::optional<std::chrono::microseconds> microsMaxPurgingDur = std::nullopt);
 
     /**
      * Returns the number of bytes of the Context's gpu memory cache budget that are currently in
@@ -260,6 +286,29 @@ public:
      */
     GpuStatsFlags supportedGpuStats() const;
 
+    /**
+     * If supported by the backend, stores the current pipeline cache data into the
+     * PersistentPipelineStorage-derived object passed into Graphite via
+     * ContextOptions::fPersistentPipelineStorage. The amount stored is limited to 'maxSize'.
+     *
+     * Skia attempts to only call store() on the PersistentPipelineStorage object when the data
+     * is likely to be different from what was last sync'ed.
+     */
+    void syncPipelineData(size_t maxSize = SIZE_MAX);
+
+    /*
+     * TODO (b/412351769): Do not use startCapture() or endCapture() as the feature is still under
+     * development.
+     *
+     * Starts the SkCapture. Must have set ContextOptions::fEnableCapture to start.
+     */
+    void startCapture();
+
+    /*
+     * Ends the SkCapture and returns the collected draws and surface creation.
+     */
+    sk_sp<SkCapture> endCapture();
+
     // Provides access to functions that aren't part of the public API.
     ContextPriv priv();
     const ContextPriv priv() const;  // NOLINT(readability-const-return-type)
@@ -291,6 +340,12 @@ private:
     friend class ContextCtorAccessor;
 
     struct PixelTransferResult {
+        PixelTransferResult();
+        PixelTransferResult(const PixelTransferResult&);
+        PixelTransferResult(PixelTransferResult&&);
+        PixelTransferResult& operator=(const PixelTransferResult&);
+        ~PixelTransferResult();
+
         using ConversionFn = void(void* dst, const void* mappedBuffer);
         // If null then the transfer could not be performed. Otherwise this buffer will contain
         // the pixel data when the transfer is complete.
@@ -334,14 +389,14 @@ private:
     // Like asyncReadPixels() except it performs no fallbacks, and requires that the texture be
     // readable. However, the texture does not need to be sampleable.
     void asyncReadTexture(std::unique_ptr<Recorder>,
-                          const AsyncParams<TextureProxy>&,
+                          const AsyncParams<TextureProxyView>&,
                           const SkColorInfo& srcColorInfo);
 
     // Inserts a texture to buffer transfer task, used by asyncReadPixels methods. If the
     // Recorder is non-null, tasks will be added to the Recorder's list; otherwise the transfer
     // tasks will be added to the queue manager directly.
     PixelTransferResult transferPixels(Recorder*,
-                                       const TextureProxy* srcProxy,
+                                       const TextureProxyView& srcView,
                                        const SkColorInfo& srcColorInfo,
                                        const SkColorInfo& dstColorInfo,
                                        const SkIRect& srcRect);
@@ -355,8 +410,11 @@ private:
 
     sk_sp<SharedContext> fSharedContext;
     std::unique_ptr<ResourceProvider> fResourceProvider;
-    std::unique_ptr<QueueManager> fQueueManager;
     std::unique_ptr<ClientMappedBufferManager> fMappedBufferManager;
+    std::unique_ptr<QueueManager> fQueueManager;
+    std::unique_ptr<const skcpu::ContextImpl> fCPUContext;
+
+    PersistentPipelineStorage* fPersistentPipelineStorage;
 
     // In debug builds we guard against improper thread handling. This guard is passed to the
     // ResourceCache for the Context.

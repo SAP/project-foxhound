@@ -430,3 +430,45 @@ function finish_cache2_test() {
   });
   do_test_finished();
 }
+
+// Returns the on-disk HTTP cache directory (the "cache2" folder), resolved the
+// same way CacheFileIOManager::OnProfile() does. This is needed because the
+// cache does not always live under the profile: on Android it lives under the
+// CACHE_DIRECTORY environment variable (with the profile leaf name appended),
+// so assuming ProfLD/cache2 only works on desktop.
+function getDiskCacheDirectory() {
+  let dir;
+
+  // 1. Explicit browser.cache.disk.parent_directory override, if set.
+  try {
+    dir = Services.prefs.getComplexValue(
+      "browser.cache.disk.parent_directory",
+      Ci.nsIFile
+    );
+  } catch (e) {}
+
+  // 2. On Android, the CACHE_DIRECTORY env var with the profile leaf appended.
+  if (!dir && Services.appinfo.OS == "Android") {
+    let cachePath = Services.env.get("CACHE_DIRECTORY");
+    if (cachePath) {
+      dir = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
+      dir.initWithPath(cachePath);
+      dir.append(Services.dirsvc.get("ProfD", Ci.nsIFile).leafName);
+    }
+  }
+
+  // 3. NS_APP_CACHE_PARENT_DIR.
+  if (!dir) {
+    try {
+      dir = Services.dirsvc.get("cachePDir", Ci.nsIFile);
+    } catch (e) {}
+  }
+
+  // 4. Profile-local directory.
+  if (!dir) {
+    dir = Services.dirsvc.get("ProfLD", Ci.nsIFile);
+  }
+
+  dir.append("cache2");
+  return dir;
+}

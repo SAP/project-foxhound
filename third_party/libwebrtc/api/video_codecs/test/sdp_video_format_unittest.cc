@@ -85,6 +85,15 @@ TEST(SdpVideoFormatTest, SameCodecNameDifferentParameters) {
                    .IsSameCodec(Sdp("AV1", Params{{"profile", "1"}})));
   EXPECT_FALSE(Sdp("AV1", Params{{"profile", "1"}})
                    .IsSameCodec(Sdp("AV1", Params{{"profile", "2"}})));
+  // AV1 entries with same profile and different tier are seen as equal.
+  EXPECT_TRUE(
+      Sdp("AV1", Params{{"profile", "1"}, {"tier", "1"}})
+          .IsSameCodec(Sdp("AV1", Params{{"profile", "1"}, {"tier", "2"}})));
+  // AV1 entries with same profile and different level are seen as equal.
+  EXPECT_TRUE(Sdp("AV1", Params{{"profile", "1"}, {"level-idx", "1"}})
+                  .IsSameCodec(Sdp(
+                      "AV1", Params{{"profile", "1"}, {"level-idx", "2"}})));
+
 #ifdef RTC_ENABLE_H265
   EXPECT_FALSE(Sdp("H265").IsSameCodec(Sdp(
       "H265",
@@ -141,14 +150,13 @@ TEST(SdpVideoFormatTest, DifferentCodecNameSameParameters) {
 
 TEST(SdpVideoFormatTest, H264PacketizationMode) {
   // The default packetization mode is 0.
-  EXPECT_TRUE(Sdp("H264", Params{{cricket::kH264FmtpPacketizationMode, "0"}})
+  EXPECT_TRUE(Sdp("H264", Params{{kH264FmtpPacketizationMode, "0"}})
                   .IsSameCodec(Sdp("H264")));
-  EXPECT_FALSE(Sdp("H264", Params{{cricket::kH264FmtpPacketizationMode, "1"}})
+  EXPECT_FALSE(Sdp("H264", Params{{kH264FmtpPacketizationMode, "1"}})
                    .IsSameCodec(Sdp("H264")));
 
   EXPECT_TRUE(
-      Sdp("H264", Params{{cricket::kH264FmtpPacketizationMode, "1"}})
-          .IsSameCodec(
-              Sdp("H264", Params{{cricket::kH264FmtpPacketizationMode, "1"}})));
+      Sdp("H264", Params{{kH264FmtpPacketizationMode, "1"}})
+          .IsSameCodec(Sdp("H264", Params{{kH264FmtpPacketizationMode, "1"}})));
 }
 }  // namespace webrtc

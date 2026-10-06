@@ -67,10 +67,5 @@ class EventBasedExponentialMovingAverage {
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::EventBasedExponentialMovingAverage;
-}  // namespace rtc
 
 #endif  // RTC_BASE_NUMERICS_EVENT_BASED_EXPONENTIAL_MOVING_AVERAGE_H_

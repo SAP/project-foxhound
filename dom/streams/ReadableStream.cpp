@@ -1,22 +1,24 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/ReadableStream.h"
-
 #include "ReadIntoRequest.h"
+#include "ReadableByteStreamControllerAbstract.h"
+#include "ReadableStreamAbstract.h"
+#include "ReadableStreamBYOBReaderAbstract.h"
+#include "ReadableStreamDefaultControllerAbstract.h"
+#include "ReadableStreamDefaultReaderAbstract.h"
 #include "ReadableStreamPipeTo.h"
 #include "ReadableStreamTee.h"
 #include "StreamUtils.h"
 #include "TeeState.h"
+#include "WritableStreamAbstract.h"
 #include "js/Array.h"
 #include "js/Exception.h"
+#include "js/Iterator.h"
 #include "js/PropertyAndElement.h"
 #include "js/TypeDecls.h"
 #include "js/Value.h"
-#include "js/Iterator.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
@@ -25,25 +27,19 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/BindingCallContext.h"
 #include "mozilla/dom/ByteStreamHelpers.h"
+#include "mozilla/dom/Promise-inl.h"
 #include "mozilla/dom/QueueWithSizes.h"
 #include "mozilla/dom/QueuingStrategyBinding.h"
 #include "mozilla/dom/ReadRequest.h"
-#include "mozilla/dom/ReadableByteStreamController.h"
-#include "mozilla/dom/ReadableStreamBYOBReader.h"
 #include "mozilla/dom/ReadableStreamBYOBRequest.h"
 #include "mozilla/dom/ReadableStreamBinding.h"
 #include "mozilla/dom/ReadableStreamControllerBase.h"
-#include "mozilla/dom/ReadableStreamDefaultController.h"
-#include "mozilla/dom/ReadableStreamDefaultReader.h"
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/UnderlyingSourceBinding.h"
 #include "mozilla/dom/UnderlyingSourceCallbackHelpers.h"
-#include "mozilla/dom/WritableStream.h"
 #include "mozilla/dom/WritableStreamDefaultWriter.h"
 #include "nsCOMPtr.h"
-
-#include "mozilla/dom/Promise-inl.h"
 #include "nsIGlobalObject.h"
 #include "nsISupports.h"
 
@@ -110,6 +106,16 @@ ReadableStream::~ReadableStream() {
 JSObject* ReadableStream::WrapObject(JSContext* aCx,
                                      JS::Handle<JSObject*> aGivenProto) {
   return ReadableStream_Binding::Wrap(aCx, this, aGivenProto);
+}
+
+void ReadableStream::GetStoredError(JSContext* aCx,
+                                    JS::MutableHandle<JS::Value> aStoredError,
+                                    ErrorResult& aRv) const {
+  aStoredError.set(mStoredError);
+  if (!JS_WrapValue(aCx, aStoredError)) {
+    aStoredError.setUndefined();
+    aRv.StealExceptionFromJSContext(aCx);
+  }
 }
 
 ReadableStreamDefaultReader* ReadableStream::GetDefaultReader() {
@@ -586,7 +592,12 @@ already_AddRefed<Promise> ReadableStreamCancel(JSContext* aCx,
 
   // Step 3.
   if (aStream->State() == ReadableStream::ReaderState::Errored) {
-    JS::Rooted<JS::Value> storedError(aCx, aStream->StoredError());
+    JS::Rooted<JS::Value> storedError(aCx);
+    aStream->GetStoredError(aCx, &storedError, aRv);
+    if (aRv.Failed()) {
+      return nullptr;
+    }
+
     return Promise::CreateRejected(aStream->GetParentObject(), storedError,
                                    aRv);
   }
@@ -892,13 +903,21 @@ ReadableStreamDefaultTeeSourceAlgorithms::CancelCallback(
       return nullptr;
     }
 
-    JS::Rooted<JS::Value> reason1(aCx, mTeeState->Reason1());
+    JS::Rooted<JS::Value> reason1(aCx);
+    mTeeState->GetReason1(aCx, &reason1, aRv);
+    if (aRv.Failed()) {
+      return nullptr;
+    }
     if (!JS_SetElement(aCx, compositeReason, 0, reason1)) {
       aRv.StealExceptionFromJSContext(aCx);
       return nullptr;
     }
 
-    JS::Rooted<JS::Value> reason2(aCx, mTeeState->Reason2());
+    JS::Rooted<JS::Value> reason2(aCx);
+    mTeeState->GetReason2(aCx, &reason2, aRv);
+    if (aRv.Failed()) {
+      return nullptr;
+    }
     if (!JS_SetElement(aCx, compositeReason, 1, reason2)) {
       aRv.StealExceptionFromJSContext(aCx);
       return nullptr;
@@ -1523,6 +1542,15 @@ void ReadableStream::GetCurrentBYOBRequestView(
 already_AddRefed<mozilla::dom::ReadableStreamDefaultReader>
 ReadableStream::GetReader(ErrorResult& aRv) {
   return AcquireReadableStreamDefaultReader(this, aRv);
+}
+
+// https://streams.spec.whatwg.org/#readablestream-cancel
+// To cancel a ReadableStream stream with reason, return !
+// ReadableStreamCancel(stream, reason). The return value will be a promise that
+// either fulfills with undefined, or rejects with a failure reason.
+already_AddRefed<Promise> ReadableStream::CancelNative(
+    JSContext* aCx, JS::Handle<JS::Value> aReason, ErrorResult& aRv) {
+  return ReadableStreamCancel(aCx, this, aReason, aRv);
 }
 
 }  // namespace mozilla::dom

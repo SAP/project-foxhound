@@ -11,6 +11,11 @@ import mozilla.components.lib.crash.Crash
  */
 interface CrashTelemetryService {
     /**
+     * Set whether telemetry is enabled or not.
+     */
+    fun setTelemetryEnabled(enabled: Boolean)
+
+    /**
      * Records telemetry for this [Crash.UncaughtExceptionCrash].
      */
     fun record(crash: Crash.UncaughtExceptionCrash)

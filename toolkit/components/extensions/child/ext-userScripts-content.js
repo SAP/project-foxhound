@@ -1,26 +1,12 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
 
-var USERSCRIPT_PREFNAME = "extensions.webextensions.userScripts.enabled";
-var USERSCRIPT_DISABLED_ERRORMSG = `userScripts APIs are currently experimental and must be enabled with the ${USERSCRIPT_PREFNAME} preference.`;
-
 ChromeUtils.defineESModuleGetters(this, {
   Schemas: "resource://gre/modules/Schemas.sys.mjs",
 });
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  this,
-  "userScriptsEnabled",
-  USERSCRIPT_PREFNAME,
-  false
-);
-
-var { ExtensionError } = ExtensionUtils;
 
 const TYPEOF_PRIMITIVES = ["bigint", "boolean", "number", "string", "symbol"];
 
@@ -371,10 +357,6 @@ this.userScriptsContent = class extends ExtensionAPI {
           context,
           name: "userScripts.onBeforeScript",
           register: fire => {
-            if (!userScriptsEnabled) {
-              throw new ExtensionError(USERSCRIPT_DISABLED_ERRORMSG);
-            }
-
             let handler = (event, metadata, scriptSandbox) => {
               const us = new UserScript({
                 context,

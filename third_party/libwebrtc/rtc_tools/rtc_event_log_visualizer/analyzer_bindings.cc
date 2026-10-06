@@ -18,10 +18,10 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"
+#include "api/environment/environment_factory.h"
 #include "api/units/time_delta.h"
 #include "logging/rtc_event_log/rtc_event_log_parser.h"
 #include "rtc_base/numerics/safe_conversions.h"
-#include "rtc_base/protobuf_utils.h"
 #include "rtc_tools/rtc_event_log_visualizer/analyzer.h"
 #include "rtc_tools/rtc_event_log_visualizer/analyzer_common.h"
 #include "rtc_tools/rtc_event_log_visualizer/plot_base.h"
@@ -64,16 +64,10 @@ void analyze_rtc_event_log(const char* log_contents,
     return;
   }
 
-  webrtc::AnalyzerConfig config;
+  webrtc::AnalyzerConfig config(webrtc::CreateEnvironment(), parsed_log,
+                                /*normalize_time=*/true);
   config.window_duration_ = webrtc::TimeDelta::Millis(250);
   config.step_ = webrtc::TimeDelta::Millis(10);
-  if (!parsed_log.start_log_events().empty()) {
-    config.rtc_to_utc_offset_ = parsed_log.start_log_events()[0].utc_time() -
-                                parsed_log.start_log_events()[0].log_time();
-  }
-  config.normalize_time_ = true;
-  config.begin_time_ = parsed_log.first_timestamp();
-  config.end_time_ = parsed_log.last_timestamp();
   if (config.end_time_ < config.begin_time_) {
     std::cerr << "Log end time " << config.end_time_.ms()
               << " not after begin time " << config.begin_time_.ms()
@@ -96,7 +90,7 @@ void analyze_rtc_event_log(const char* log_contents,
   webrtc::analytics::ChartCollection proto_charts;
   collection.ExportProtobuf(&proto_charts);
   std::string serialized_charts = proto_charts.SerializeAsString();
-  if (rtc::checked_cast<uint32_t>(serialized_charts.size()) > *output_size) {
+  if (webrtc::checked_cast<uint32_t>(serialized_charts.size()) > *output_size) {
     std::cerr << "Serialized charts larger than available output buffer: "
               << serialized_charts.size() << " vs " << *output_size
               << std::endl;
@@ -105,5 +99,5 @@ void analyze_rtc_event_log(const char* log_contents,
   }
 
   memcpy(output, serialized_charts.data(), serialized_charts.size());
-  *output_size = rtc::checked_cast<uint32_t>(serialized_charts.size());
+  *output_size = webrtc::checked_cast<uint32_t>(serialized_charts.size());
 }

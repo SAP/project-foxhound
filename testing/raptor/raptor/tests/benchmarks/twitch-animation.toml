@@ -12,6 +12,7 @@ subtest_unit = "ms"
 test_url = "http://<host>:<port>/index.html"
 type = "benchmark"
 unit = "ms"
+sparse_checkout = true
 # Bug 1972620 Perfstats failing for twitch-animation on macOS after updating browsertime
 perfstats = false
 

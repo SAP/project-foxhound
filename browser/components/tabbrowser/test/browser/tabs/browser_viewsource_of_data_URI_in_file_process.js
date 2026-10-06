@@ -1,6 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
-
 const DUMMY_FILE = "dummy_page.html";
 const DATA_URI = "data:text/html,Hi";
 const DATA_URI_SOURCE = "view-source:" + DATA_URI;

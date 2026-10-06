@@ -1,0 +1,7 @@
+package test {
+  public abstract static class Test.TestClass<Settings extends java.lang.String & not_allowed.TestClass> {
+    public void testGoodMethod(Settings);
+  }
+}
+
+

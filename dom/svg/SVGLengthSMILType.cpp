@@ -1,15 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SVGLengthSMILType.h"
 
-#include "mozilla/SMILValue.h"
-#include "SVGAnimatedLengthList.h"
-#include "nsDebug.h"
 #include <math.h>
+
+#include "mozilla/SMILValue.h"
+#include "mozilla/dom/SVGAnimatedLength.h"
+#include "nsDebug.h"
 
 namespace mozilla {
 
@@ -75,9 +74,9 @@ nsresult SVGLengthSMILType::ComputeDistance(const SMILValue& aFrom,
   dom::SVGElementMetrics metrics(from.Element());
 
   // Normalize both to pixels in case they're different units:
-  aDistance = fabs(to.ValueInPixels(metrics) - from.ValueInPixels(metrics));
+  aDistance = std::abs(to.ValueInPixels(metrics) - from.ValueInPixels(metrics));
 
-  return NS_OK;
+  return std::isfinite(aDistance) ? NS_OK : NS_ERROR_FAILURE;
 }
 
 nsresult SVGLengthSMILType::Interpolate(const SMILValue& aStartVal,

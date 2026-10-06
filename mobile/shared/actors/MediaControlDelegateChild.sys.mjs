@@ -34,11 +34,13 @@ export class MediaControlDelegateChild extends GeckoViewActorChild {
       debug`No fullscreen media element found.`;
     }
 
-    const activated = await this.eventDispatcher.sendRequestForResult({
-      type: "GeckoView:MediaSession:Fullscreen",
-      metadata: lazy.MediaUtils.getMetadata(mediaElement) ?? {},
-      enabled: !!element,
-    });
+    const activated = await this.sendQuery(
+      "GeckoView:MediaSession:Fullscreen",
+      {
+        metadata: lazy.MediaUtils.getMetadata(mediaElement) ?? {},
+        enabled: !!element,
+      }
+    );
     if (activated) {
       return;
     }

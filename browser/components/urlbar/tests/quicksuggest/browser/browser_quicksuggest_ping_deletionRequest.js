@@ -34,8 +34,13 @@ if (ContextId.rotationEnabled) {
     sandbox.stub(ContextId, "forceRotation");
 
     UrlbarPrefs.set("suggest.quicksuggest.sponsored", false);
+    // Bug 1982437: When this test folder is run in series, it appears that
+    // setting suggest.quicksuggest.sponsored to `false` here will cause the
+    // UrlbarPrefs preference observer to fire multiple times, which will
+    // mean that forceRotation will get called multiple times. We work around
+    // this for now by using `called` rather than `calledOnce`.
     Assert.ok(
-      ContextId.forceRotation.calledOnce,
+      ContextId.forceRotation.called,
       "Should have forced context ID rotation upon disabling sponsored suggest"
     );
 

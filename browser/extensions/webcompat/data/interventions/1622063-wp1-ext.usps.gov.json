@@ -1,0 +1,15 @@
+{
+  "label": "wp1-ext.usps.gov",
+  "bugs": {
+    "1622063": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://wp1-ext.usps.gov/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

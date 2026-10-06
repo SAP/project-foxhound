@@ -24,12 +24,6 @@ add_task(async function test_match_beginning() {
   let uri2 = Services.io.newURI("http://d.e.f/g-h_i/h/t/p");
   let uri3 = Services.io.newURI("http://g.h.i/j-k_l/h/t/p");
   let uri4 = Services.io.newURI("http://j.k.l/m-n_o/h/t/p");
-  await PlacesTestUtils.addVisits([
-    { uri: uri4, title: "f(o)o b<a>r" },
-    { uri: uri3, title: "f(o)o b<a>r" },
-    { uri: uri2, title: "b(a)r b<a>z" },
-    { uri: uri1, title: "f(o)o b<a>r" },
-  ]);
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: uri3,
     title: "f(o)o b<a>r",
@@ -38,6 +32,12 @@ add_task(async function test_match_beginning() {
     uri: uri4,
     title: "b(a)r b<a>z",
   });
+  await PlacesTestUtils.addVisits([
+    { uri: uri4, title: "f(o)o b<a>r" },
+    { uri: uri3, title: "f(o)o b<a>r" },
+    { uri: uri2, title: "b(a)r b<a>z" },
+    { uri: uri1, title: "f(o)o b<a>r" },
+  ]);
 
   await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 

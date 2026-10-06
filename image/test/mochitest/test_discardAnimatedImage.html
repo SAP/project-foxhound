@@ -42,7 +42,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=686905
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
-/** Test for Bug 686905. **/
+/** Test for Bug 686905. */
 SimpleTest.waitForExplicitFinish();
 
 var gFinished = false;
@@ -52,8 +52,7 @@ var gNumDiscards = 0;
 window.onload = function() {
   // Enable discarding for the test.
   SpecialPowers.pushPrefEnv({
-    'set':[['image.mem.discardable',true],
-           ['image.avif.sequence.enabled',true]]
+    'set':[['image.mem.discardable',true]]
   }, runTest);
 }
 

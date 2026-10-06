@@ -1,0 +1,15 @@
+{
+  "label": "kancelaria.kros.sk",
+  "bugs": {
+    "1955529": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://kancelaria.kros.sk/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

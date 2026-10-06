@@ -1,0 +1,15 @@
+{
+  "label": "carelink.minimed.eu",
+  "bugs": {
+    "1898943": {
+      "issue": "unsupported-warning",
+      "matches": ["*://carelink.minimed.eu/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "ua_string": ["Safari_with_FxQuantum"]
+    }
+  ]
+}

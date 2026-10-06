@@ -5,7 +5,7 @@
 //! A frontend for memory testing.
 
 use {
-    crate::std::{env, mem::size_of},
+    crate::std::{env, io::Write, mem::size_of},
     anyhow::Context,
     memtest::{Outcome, Runner, RunnerArgs, TestKind},
     rand::{seq::SliceRandom, thread_rng},
@@ -18,13 +18,27 @@ use {
 #[link(name = "propsys")]
 extern "C" {}
 
+// Writing to stdout/stderr should only fail with parent fatal errors (like BrokenPipe), in which
+// case there's no point in trying to print related error information, panicking, etc.
+macro_rules! quiet_println {
+    ( $($e:expr),* ) => {{
+        let _ = writeln!(std::io::stdout(), $($e),*);
+    }};
+}
+
+macro_rules! quiet_eprintln {
+    ( $($e:expr),* ) => {{
+        let _ = writeln!(std::io::stderr(), $($e),*);
+    }};
+}
+
 /// Usage: crashreporter --memtest <memsize_mb> <json formatted memtest_runner_args>
 ///        Set the env var `MOZ_CRASHREPORTER_MEMTEST_KINDS` to specify prioritized memtest kinds
 pub fn main() {
     let (mem_usize_count, memtest_runner_args, memtest_kinds) = match parse_args() {
         Ok(parsed) => parsed,
         Err(e) => {
-            eprintln!("Error: {e:?}");
+            quiet_eprintln!("Error: {e:?}");
             std::process::exit(1);
         }
     };
@@ -41,7 +55,7 @@ pub fn main() {
         .any(|report| matches!(report.outcome, Ok(Outcome::Fail(_))))
         .into();
 
-    println!("{}", output_json.to_string());
+    quiet_println!("{}", output_json.to_string());
 }
 
 /// Parse command line arguments and environment to return the parameters for running memtest,
@@ -166,6 +180,7 @@ pub mod child {
             if let Err(e) = self.child.wait() {
                 log::warn!("failed to wait on memtest process after kill: {e}");
             }
+            unsafe { ManuallyDrop::drop(&mut self.child) };
         }
     }
 

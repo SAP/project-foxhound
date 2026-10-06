@@ -4,7 +4,7 @@
 const TEST_URL =
   "data:text/html,test for dynamically registering and unregistering tools";
 
-var toolbox;
+var gToolbox;
 
 function test() {
   addTab(TEST_URL).then(async tab => {
@@ -12,8 +12,8 @@ function test() {
   });
 }
 
-function testRegister(aToolbox) {
-  toolbox = aToolbox;
+function testRegister(toolbox) {
+  gToolbox = toolbox;
   gDevTools.once("tool-registered", toolRegistered);
 
   gDevTools.registerTool({
@@ -31,7 +31,7 @@ function toolRegistered(toolId) {
   ok(gDevTools.getToolDefinitionMap().has(toolId), "tool added to map");
 
   // test that it appeared in the UI
-  const doc = toolbox.doc;
+  const doc = gToolbox.doc;
   const tab = getToolboxTab(doc, toolId);
   ok(tab, "new tool's tab exists in toolbox UI");
 
@@ -63,7 +63,7 @@ function toolUnregistered(toolId) {
   ok(!gDevTools.getToolDefinitionMap().has(toolId), "tool removed from map");
 
   // test that it disappeared from the UI
-  const doc = toolbox.doc;
+  const doc = gToolbox.doc;
   const tab = getToolboxTab(doc, toolId);
   ok(!tab, "tool's tab was removed from the toolbox UI");
 
@@ -79,8 +79,8 @@ function toolUnregistered(toolId) {
 }
 
 function cleanup() {
-  toolbox.destroy().then(() => {
-    toolbox = null;
+  gToolbox.destroy().then(() => {
+    gToolbox = null;
     gBrowser.removeCurrentTab();
     finish();
   });

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<head>
+<meta charset="utf-8">
+</head>
+<body>
+<script>
+const WEBM_RATE_OVERFLOW = "GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQRChYECGFOAZwEAAAAAAAM9EU2bdLpNu4tTq4QVSalmU6yBoU27i1OrhBZUrmtTrIHYTbuMU6uEElTDZ1OsggE/TbuMU6uEHFO7a1OsggMn7AEAAAAAAABZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmsirXsYMPQkBNgI1MYXZmNTguNzYuMTAwV0GNTGF2ZjU4Ljc2LjEwMESJiEAxAAAAAAAAFlSua+KuAQAAAAAAAFnXgQFzxYiAyy0iNQm6BpyBACK1nIN1bmSGhkFfT1BVU1aqg2MuoFa7hATEtACDgQLhkZ+BAbWIQfKgXyAAAABiZIEQY6KTT3B1c0hlYWQBATgBgLsAAAAAABJUw2dAm3NzAQAAAAAAACdjwIBnyAEAAAAAAAAaRaOHRU5DT0RFUkSHjUxhdmY1OC43Ni4xMDBzcwEAAAAAAABgY8CLY8WIgMstIjUJugZnyAEAAAAAAAAjRaOHRU5DT0RFUkSHlkxhdmM1OC4xMzQuMTAwIGxpYm9wdXNnyKJFo4hEVVJBVElPTkSHlDAwOjAwOjAwLjAxNzAwMDAwMAAAH0O2dUFB54EAoAEAAAAAAAE1oUEsgQAAAPh/jC/8n352WcnRTzmy2LOFsg1kZPR6pUBJPcFL8OdDqoYxiWVntUTTMH2PQ6S/iFPKdKbq3TqqXzteHGFyo0MNUGHG5D6j557g3WZcs/A3mPoKYM0+2JMOKeA47Mku+HFfUB1f/nUzF+5g0i5YFlWMW790nfxVt3j/7tUsU8ZGJGVYSQaoVjAgdXbJmPHsispo64BLBJbcFvNhzMnbr8wh6VcfBfZ2DbyJe4Ix2n8vHCZTX4eY4yPgzUMsWutWnD2ctLegkG+xWTdVrwMRccJrKnjPL9R21xLqdViLI8x/C+Deo0RTz5J1FAlnyWudRwvVwx2S3k7CiwIN8L8zeVm1RxsHkyjkWdwRRFFIDe7GdVlFC5VK83jwHhuV7dQz+m2SMvepJ3X6daKDNWfgHFO7a5G7j7OBALeK94EB8YIB4PCBAw==";
+
+function b64ToArrayBuffer(b64) {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+}
+
+const webmBuf = b64ToArrayBuffer(WEBM_RATE_OVERFLOW);
+
+const ms = new MediaSource();
+const el = document.createElement('audio');
+el.src = URL.createObjectURL(ms);
+
+ms.addEventListener('sourceopen', () => {
+    try {
+        const sb = ms.addSourceBuffer('audio/webm; codecs=opus');
+        sb.appendBuffer(webmBuf);
+    } catch(e) {}
+    setTimeout(() => { document.documentElement.className = ''; }, 1000);
+});
+
+document.body.appendChild(el);
+</script>
+</body>
+</html>

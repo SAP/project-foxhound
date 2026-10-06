@@ -1,3 +1,11 @@
+# Affix file for en_US-custom Hunspell Dictionary.
+#
+# Version rel-2026.02.25
+# Wed Feb 25 15:37:24 2026 -0500 [7e99eda]
+# 
+# https://wordlist.aspell.net
+# 
+
 SET UTF-8
 TRY esianrtolcdugmphbyfvkwzESIANRTOLCDUGMPHBYFVKWZ'
 ICONV 1
@@ -14,7 +22,7 @@ ONLYINCOMPOUND c
 COMPOUNDRULE 2
 COMPOUNDRULE n*1t
 COMPOUNDRULE n*mp
-WORDCHARS 0123456789
+WORDCHARS 0123456789’
 
 PFX A Y 1
 PFX A   0     re         .

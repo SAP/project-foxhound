@@ -1,4 +1,4 @@
-defaults pref(image.avif.enabled,true) pref(image.avif.apply_transforms,true)
+defaults pref(image.avif.apply_transforms,true)
 
 == img_irot0_imir1.avif 2-flipped-horizontally.avif
 == img_irot0_imir0.avif 4-flipped-vertically.avif

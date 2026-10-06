@@ -1,0 +1,56 @@
+{
+  "text": {
+    "color": {
+      "@base": {
+        "value": {
+          "default": "{text.color.deemphasized}",
+          "forcedColors": "CanvasText"
+        }
+      },
+      "filled": {
+        "value": {
+          "light": "{color.white.@base}",
+          "dark": "{color.gray.100}",
+          "forcedColors": "AccentColorText"
+        }
+      }
+    }
+  },
+  "background": {
+    "color": {
+      "@base": {
+        "value": {
+          "default": "transparent",
+          "forcedColors": "Canvas"
+        }
+      },
+      "filled": {
+        "value": {
+          "light": "{color.green.70}",
+          "dark": "{color.green.40}",
+          "forcedColors": "AccentColor"
+        }
+      }
+    }
+  },
+  "border": {
+    "color": {
+      "@base": {
+        "value": "{border.color.@base}"
+      },
+      "filled": {
+        "value": {
+          "light": "rgba(251, 251, 254, 0.4)",
+          "dark": "rgba(21, 20, 26, 0.4)",
+          "forcedColors": "CanvasText"
+        }
+      }
+    },
+    "radius": {
+      "value": "{border.radius.small}"
+    },
+    "width": {
+      "value": "1px"
+    }
+  }
+}

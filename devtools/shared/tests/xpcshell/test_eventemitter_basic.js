@@ -314,7 +314,7 @@ function onConsoleWarningLogged(warningMessage) {
 /**
  * Create a runnable tests based on the tests descriptor given.
  *
- * @param {Object} tests
+ * @param {object} tests
  *  The tests descriptor object, contains the tests to run.
  */
 const runnable = tests =>

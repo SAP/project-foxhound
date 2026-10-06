@@ -22,6 +22,10 @@ sys.stdout = sys.stderr
 REPO_ROOT = Path(__file__).parent.parent.parent
 
 def main():
+    # Disable mach's build telemetry for this process because it can cause large
+    # slowdowns when linting a large number of files. See bug 2009419.
+    os.environ["DISABLE_TELEMETRY"] = "1"
+
     mach_path = REPO_ROOT / "mach"
     loader = importlib.machinery.SourceFileLoader("mach", str(mach_path))
     spec = importlib.util.spec_from_loader("mach", loader)

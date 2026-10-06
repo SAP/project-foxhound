@@ -1,11 +1,10 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 include("/dom/media/webrtc/third_party_build/webrtc.mozbuild")
 
 LOCAL_INCLUDES += [
+    "!/dist/include/libwebrtc_overrides",
     "/dom/media/webrtc",
     "/media/webrtc",
     "/third_party/abseil-cpp",
@@ -13,6 +12,9 @@ LOCAL_INCLUDES += [
     "/third_party/sipcc",
 ]
 
-UNIFIED_SOURCES += ["JsepSessionImpl.cpp", "JsepTrack.cpp", "SsrcGenerator.cpp"]
+UNIFIED_SOURCES += ["JsepSessionImpl.cpp", "SsrcGenerator.cpp"]
+
+# Can not be built in unified build because of MOZ_MTLOG
+SOURCES += ["JsepTrack.cpp"]
 
 FINAL_LIBRARY = "xul"

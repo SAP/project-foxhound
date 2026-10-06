@@ -1,0 +1,35 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+loader: taskgraph.loader.transform:loader
+
+transforms:
+    - taskgraph.transforms.from_deps
+    - gecko_taskgraph.transforms.name_sanity
+    - gecko_taskgraph.transforms.beetmover_repackage_rpm
+    - gecko_taskgraph.transforms.task
+
+kind-dependencies:
+    - repackage-rpm-signing
+    - shippable-l10n-signing
+    - l10n
+
+only-for-build-platforms:
+    - linux64-shippable/opt
+    - linux64-aarch64-shippable/opt
+    - linux64-devedition/opt
+    - linux64-aarch64-devedition/opt
+
+tasks:
+    beetmover-repackage-rpm:
+        from-deps:
+            group-by: platform
+            unique-kinds: false
+            copy-attributes: true
+        shipping-phase: promote
+        attributes:
+            artifact_map:
+                by-release-type:
+                    beta|release|esr.*: taskcluster/gecko_taskgraph/manifests/firefox_candidates.yml
+                    default: taskcluster/gecko_taskgraph/manifests/firefox_nightly.yml

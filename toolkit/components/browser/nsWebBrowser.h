@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsWebBrowser_h__
-#define nsWebBrowser_h__
+#ifndef nsWebBrowser_h_
+#define nsWebBrowser_h_
 
 // Local Includes
 #include "nsDocShellTreeOwner.h"
@@ -32,6 +30,8 @@
 #include "mozilla/BasePrincipal.h"
 #include "nsTArray.h"
 #include "nsIWeakReferenceUtils.h"
+
+class nsIOpenWindowInfo;
 
 class nsWebBrowserInitInfo {
  public:
@@ -87,10 +87,12 @@ class nsWebBrowser final : public nsIWebBrowser,
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void FocusDeactivate(uint64_t aActionId);
   void SetWillChangeProcess();
 
-  static already_AddRefed<nsWebBrowser> Create(
-      nsIWebBrowserChrome* aContainerWindow, nsIWidget* aParentWidget,
-      mozilla::dom::BrowsingContext* aBrowsingContext,
-      mozilla::dom::WindowGlobalChild* aInitialWindowChild);
+  static nsresult Create(nsIWebBrowserChrome* aContainerWindow,
+                         nsIWidget* aParentWidget,
+                         mozilla::dom::BrowsingContext* aBrowsingContext,
+                         mozilla::dom::WindowGlobalChild* aInitialWindowChild,
+                         nsIOpenWindowInfo* aOpenWindowInfo,
+                         nsWebBrowser** aWebBrowser);
 
  protected:
   virtual ~nsWebBrowser();
@@ -128,4 +130,4 @@ class nsWebBrowser final : public nsIWebBrowser,
   nsIWidget* mParentWidget;
 };
 
-#endif /* nsWebBrowser_h__ */
+#endif /* nsWebBrowser_h_ */

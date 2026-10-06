@@ -11,8 +11,8 @@ origin:
   url: "http://www.surina.net/soundtouch"
   license: "LGPL-2.1"
 
-  release: 17a63e99d58053b0fbde8b69d7cc76a38119ce70 (2021-03-03T18:11:45+02:00).
-  revision: 17a63e99d58053b0fbde8b69d7cc76a38119ce70
+  release: d994965fbbcf0f6ceeed0e72516968130c2912f0 (2025-04-06T20:22:15+03:00).
+  revision: d994965fbbcf0f6ceeed0e72516968130c2912f0
 
 vendoring:
   url: https://codeberg.org/soundtouch/soundtouch
@@ -59,6 +59,8 @@ vendoring:
 
   patches:
     - moz-libsoundtouch.patch
+    - firfilter-max-channels.patch
+    - ratetransposer-clamp-dest-size.patch
 
   update-actions:
     - action: move-file

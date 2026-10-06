@@ -88,6 +88,10 @@ export class TestSupportChild extends GeckoViewActorChild {
         }
         return Promise.resolve();
       }
+      case "NotifyUserGestureActivation": {
+        this.document.notifyUserGestureActivation();
+        return Promise.resolve();
+      }
     }
     return null;
   }

@@ -1,0 +1,48 @@
+From 57ad7909547f10d22c8d1a359a44a3ac57a9e06c Mon Sep 17 00:00:00 2001
+From: Jamie Nicol <jnicol@mozilla.com>
+Date: Wed, 20 Aug 2025 14:03:28 +0100
+Subject: [PATCH] Override baseResourcePath for Firefox's WebGPU CTS vendoring
+ scheme
+
+Firefox generates test files as a separate HTML file per test, each
+located in the same relative directory as the corresponding spec.ts
+file. Since these are *not* in the root CTS directory, the default
+`baseResourcePath` is incorrect. This patch overrides baseResourcePath
+to the correct absolute directory within the vendored CTS tree.
+
+The path is overridden at runtime when running worker tests, therefore
+we must ensure the correct value is used for those as well.
+---
+ src/common/framework/resources.ts               | 2 +-
+ src/common/runtime/helper/test_worker-worker.ts | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/common/framework/resources.ts b/src/common/framework/resources.ts
+index c926aaa280c..762bb5bdaf2 100644
+--- a/src/common/framework/resources.ts
++++ b/src/common/framework/resources.ts
+@@ -3,7 +3,7 @@
+  * workers must access resources using a different base path, so this is overridden in
+  * `test_worker-worker.ts` and `standalone.ts`.
+  */
+-let baseResourcePath = './resources';
++let baseResourcePath = '/_mozilla/webgpu/resources';
+ let crossOriginHost = '';
+ 
+ function getAbsoluteBaseResourcePath(path: string) {
+diff --git a/src/common/runtime/helper/test_worker-worker.ts b/src/common/runtime/helper/test_worker-worker.ts
+index 48bb7b0e3c8..a72cab7129a 100644
+--- a/src/common/runtime/helper/test_worker-worker.ts
++++ b/src/common/runtime/helper/test_worker-worker.ts
+@@ -12,7 +12,7 @@ declare const self: any;
+ 
+ const loader = new DefaultTestFileLoader();
+ 
+-setBaseResourcePath('../../../resources');
++setBaseResourcePath('/_mozilla/webgpu/resources');
+ 
+ // MessagePort, DedicatedWorkerGlobalScope, etc.
+ type Sender = { postMessage: (x: unknown) => void };
+-- 
+2.50.1
+

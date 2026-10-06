@@ -23,6 +23,11 @@ pub struct BreakpadData {
 }
 
 impl BreakpadData {
+    /// Creates a new BreakpadData object from a C string
+    ///
+    /// # Safety
+    ///
+    /// The `raw` argument must point to a valid NUL-terminated C string
     pub unsafe fn new(raw: BreakpadRawData) -> BreakpadData {
         BreakpadData {
             data: <OsString as BreakpadString>::from_ptr(raw),

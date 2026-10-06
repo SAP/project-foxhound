@@ -15,7 +15,8 @@
 #include <utility>
 #include <vector>
 
-#include "modules/video_coding/include/video_codec_interface.h"
+#include "api/video/encoded_image.h"
+#include "api/video_codecs/video_codec.h"
 #include "modules/video_coding/utility/ivf_file_writer.h"
 
 namespace webrtc {
@@ -41,7 +42,7 @@ class EncodedImageFileWriter final {
   int temporal_layers_ = 0;
   InterLayerPredMode inter_layer_pred_mode_ = InterLayerPredMode::kOff;
 
-  bool is_base_layer_key_frame = false;
+  bool is_base_layer_key_frame_ = false;
   std::vector<IvfWriterPair> decode_target_writers_;
 };
 

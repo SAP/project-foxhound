@@ -1,6 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * vim: sw=4 ts=4 sts=4 et
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -31,6 +29,26 @@ add_task(async function test_default_profile_does_not_exist() {
       MOZ_BACKGROUNDTASKS_NO_DEFAULT_PROFILE: "1",
     },
   });
+
+  // Useful diagnostics for the test failure case in bug 1760099.
+  if (exitCode == EXIT_CODE.OTHER_INSTANCE && AppConstants.platform === "win") {
+    let lockPath = syncManager.getUpdateLockFilePath();
+    try {
+      let windowsTestDebug = Cc["@mozilla.org/win-test-debug;1"].getService(
+        Ci.nsIWindowsTestDebug
+      );
+      let processes = windowsTestDebug.processesThatOpenedFile(lockPath);
+      info(`Number of processes holding lock: ${processes.length}`);
+      for (let proc of processes) {
+        info(
+          `Lock held by ${proc.name} (PID ${proc.pid}): ${proc.executablePath}`
+        );
+      }
+    } catch (e) {
+      info(`Could not enumerate lock holder processes: ${e}`);
+    }
+  }
+
   Assert.equal(EXIT_CODE.DEFAULT_PROFILE_DOES_NOT_EXIST, exitCode);
   Assert.equal(11, exitCode);
 });
@@ -46,7 +64,8 @@ add_task(async function test_default_profile_cannot_be_locked() {
 
   let profile = profileService.createUniqueProfile(
     file,
-    "test_default_profile"
+    "test_default_profile",
+    "tests"
   );
   let lock = profile.lock({});
 

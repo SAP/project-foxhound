@@ -48,11 +48,11 @@ The function has the following parameters:
    fd parameter. The value for the ``whence`` parameter can be one of
    the following:
 
-    - :ref:`PR_SEEK_SET`. Sets the file pointer to the value of the
+    - ``PR_SEEK_SET``. Sets the file pointer to the value of the
       ``offset`` parameter.
-    - :ref:`PR_SEEK_CUR`. Sets the file pointer to its current location
+    - ``PR_SEEK_CUR``. Sets the file pointer to its current location
       plus the value of the ``offset`` parameter.
-    - :ref:`PR_SEEK_END`. Sets the file pointer to the size of the file
+    - ``PR_SEEK_END``. Sets the file pointer to the size of the file
       plus the value of the ``offset`` parameter.
 
 

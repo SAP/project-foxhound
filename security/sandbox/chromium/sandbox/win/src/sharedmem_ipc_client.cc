@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright 2006-2008 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "base/logging.h"
+#include "base/check_op.h"
 #include "sandbox/win/src/crosscall_client.h"
 #include "sandbox/win/src/crosscall_params.h"
 #include "sandbox/win/src/sandbox.h"
@@ -16,41 +16,29 @@
 
 namespace sandbox {
 
-SANDBOX_INTERCEPT NtExports g_nt;
-
 namespace {
 
 DWORD SignalObjectAndWaitWrapper(HANDLE object_to_signal,
                                  HANDLE object_to_wait_on,
-                                 DWORD millis,
-                                 BOOL alertable) {
-  // Not running in a sandboxed process so can call directly.
-  if (!g_nt.SignalAndWaitForSingleObject)
-    return SignalObjectAndWait(object_to_signal, object_to_wait_on, millis,
-                               alertable);
-  // Don't support alertable.
-  CHECK_NT(!alertable);
+                                 DWORD millis) {
   LARGE_INTEGER timeout;
   timeout.QuadPart = millis * -10000LL;
-  NTSTATUS status = g_nt.SignalAndWaitForSingleObject(
-      object_to_signal, object_to_wait_on, alertable,
+  NTSTATUS status = GetNtExports()->SignalAndWaitForSingleObject(
+      object_to_signal, object_to_wait_on, FALSE,
       millis == INFINITE ? nullptr : &timeout);
   if (!NT_SUCCESS(status))
     return WAIT_FAILED;
-  return status;
+  return static_cast<DWORD>(status);
 }
 
 DWORD WaitForSingleObjectWrapper(HANDLE handle, DWORD millis) {
-  // Not running in a sandboxed process so can call directly.
-  if (!g_nt.WaitForSingleObject)
-    return WaitForSingleObject(handle, millis);
   LARGE_INTEGER timeout;
   timeout.QuadPart = millis * -10000LL;
-  NTSTATUS status = g_nt.WaitForSingleObject(
+  NTSTATUS status = GetNtExports()->WaitForSingleObject(
       handle, FALSE, millis == INFINITE ? nullptr : &timeout);
   if (!NT_SUCCESS(status))
     return WAIT_FAILED;
-  return status;
+  return static_cast<DWORD>(status);
 }
 
 }  // namespace
@@ -61,8 +49,9 @@ DWORD WaitForSingleObjectWrapper(HANDLE handle, DWORD millis) {
 void* SharedMemIPCClient::GetBuffer() {
   bool failure = false;
   size_t ix = LockFreeChannel(&failure);
-  if (failure)
+  if (failure) {
     return nullptr;
+  }
   return reinterpret_cast<char*>(control_) +
          control_->channels[ix].channel_base;
 }
@@ -109,9 +98,8 @@ ResultCode SharedMemIPCClient::DoCall(CrossCallParams* params,
 
   // While the atomic signaling and waiting is not a requirement, it
   // is nice because we save a trip to kernel.
-  DWORD wait = SignalObjectAndWaitWrapper(channel[num].ping_event,
-                                          channel[num].pong_event,
-                                          kIPCWaitTimeOut1, false);
+  DWORD wait = SignalObjectAndWaitWrapper(
+      channel[num].ping_event, channel[num].pong_event, kIPCWaitTimeOut1);
   if (WAIT_TIMEOUT == wait) {
     // The server is taking too long. Enter a loop were we check if the
     // server_alive mutex has been abandoned which would signal a server crash
@@ -185,7 +173,8 @@ size_t SharedMemIPCClient::LockFreeChannel(bool* severe_failure) {
 // Find out which channel we are from the pointer returned by GetBuffer.
 size_t SharedMemIPCClient::ChannelIndexFromBuffer(const void* buffer) {
   ptrdiff_t d = reinterpret_cast<const char*>(buffer) - first_base_;
-  size_t num = d / kIPCChannelSize;
+  DCHECK_GE(d, 0);
+  size_t num = static_cast<size_t>(d) / kIPCChannelSize;
   DCHECK_LT(num, control_->channels_count);
   return (num);
 }

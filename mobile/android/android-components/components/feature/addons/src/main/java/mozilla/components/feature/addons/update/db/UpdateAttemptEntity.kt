@@ -26,16 +26,12 @@ internal data class UpdateAttemptEntity(
     @PrimaryKey
     @ColumnInfo(name = "addon_id")
     var addonId: String,
-
     @ColumnInfo(name = "date")
     var date: Long,
-
     @ColumnInfo(name = "status")
     var status: Int,
-
     @ColumnInfo(name = "error_message")
     var errorMessage: String = "",
-
     @ColumnInfo(name = "error_trace")
     var errorTrace: String = "",
 ) {

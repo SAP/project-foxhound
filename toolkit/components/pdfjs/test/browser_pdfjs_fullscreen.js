@@ -17,7 +17,7 @@ function waitForFullScreenState(browser, state) {
     };
     Services.obs.addObserver(observe, "fullscreen-painted");
 
-    browser.ownerGlobal.addEventListener(
+    browser.documentGlobal.addEventListener(
       `MozDOMFullscreen:${state ? "Entered" : "Exited"}`,
       () => {
         eventReceived = true;

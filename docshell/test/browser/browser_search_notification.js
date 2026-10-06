@@ -1,6 +1,9 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+const { SearchService } = ChromeUtils.importESModule(
+  "moz-src:///toolkit/components/search/SearchService.sys.mjs"
+);
 const { SearchTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/SearchTestUtils.sys.mjs"
 );
@@ -15,20 +18,20 @@ add_task(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.fixup.dns_first_for_single_words", true]],
   });
-  const kSearchEngineID = "test_urifixup_search_engine";
+  const kSearchEngineName = "test_urifixup_search_engine";
   await SearchTestUtils.installSearchExtension(
     {
-      name: kSearchEngineID,
+      name: kSearchEngineName,
       search_url: "http://localhost/",
       search_url_get_params: "search={searchTerms}",
     },
     { setAsDefault: true }
   );
 
-  let selectedName = (await Services.search.getDefault()).name;
+  let defaultEngine = await SearchService.getDefault();
   Assert.equal(
-    selectedName,
-    kSearchEngineID,
+    defaultEngine.name,
+    kSearchEngineName,
     "Check fake search engine is selected"
   );
 
@@ -40,9 +43,9 @@ add_task(async function () {
 
   let [subject, data] = await TestUtils.topicObserved("keyword-search");
 
-  let engine = subject.QueryInterface(Ci.nsISupportsString).data;
+  let engineId = subject.QueryInterface(Ci.nsISupportsString).data;
 
-  Assert.equal(engine, kSearchEngineID, "Should be the search engine id");
+  Assert.equal(engineId, defaultEngine.id, "Should be the search engine id");
   Assert.equal(data, "firefox", "Notification data is search term.");
 
   gBrowser.removeTab(tab);

@@ -56,7 +56,10 @@ class TabHistoryAdapterTest {
 
     @Test
     fun `creates and binds view holder`() {
-        every { testContext.components.core.icons } returns BrowserIcons(testContext, mockk(relaxed = true))
+        every { testContext.components.core.icons } returns BrowserIcons(
+            testContext,
+            mockk(relaxed = true),
+        )
         adapter.submitList(listOf(selectedItem, unselectedItem))
 
         val holder = spyk(adapter.createViewHolder(parent, 0))

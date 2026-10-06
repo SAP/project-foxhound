@@ -16,7 +16,7 @@ nimbus-targeting-context:
     - https://bugzilla.mozilla.org/show_bug.cgi?id=1928107
   notification_emails:
     - beth@mozilla.com
-    - nimbus-team@mozilla.com
+    - project-nimbus@mozilla.com
 
 heartbeat:
   description: |

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,7 +30,7 @@ using namespace mozilla::psm;
 // We would like to move away from this binary compatibility requirement
 // in service workers.  See bug 1248628.
 void deserializeAndVerify(const nsCString& serializedSecInfo,
-                          Maybe<size_t> failedCertChainLength = Nothing(),
+                          Maybe<size_t> handshakeCertificatesLength = Nothing(),
                           Maybe<size_t> succeededCertChainLength = Nothing()) {
   nsCOMPtr<nsITransportSecurityInfo> securityInfo;
   nsresult rv = TransportSecurityInfo::Read(serializedSecInfo,
@@ -45,18 +43,19 @@ void deserializeAndVerify(const nsCString& serializedSecInfo,
   ASSERT_EQ(NS_OK, rv);
   ASSERT_TRUE(cert);
 
-  nsTArray<RefPtr<nsIX509Cert>> failedCertArray;
-  rv = securityInfo->GetFailedCertChain(failedCertArray);
+  nsTArray<RefPtr<nsIX509Cert>> handshakeCertificatesArray;
+  rv = securityInfo->GetHandshakeCertificates(handshakeCertificatesArray);
   ASSERT_EQ(NS_OK, rv);
 
-  if (failedCertChainLength) {
-    ASSERT_FALSE(failedCertArray.IsEmpty());
-    for (const auto& cert : failedCertArray) {
+  if (handshakeCertificatesLength) {
+    ASSERT_FALSE(handshakeCertificatesArray.IsEmpty());
+    for (const auto& cert : handshakeCertificatesArray) {
       ASSERT_TRUE(cert);
     }
-    ASSERT_EQ(*failedCertChainLength, failedCertArray.Length());
+    ASSERT_EQ(*handshakeCertificatesLength,
+              handshakeCertificatesArray.Length());
   } else {
-    ASSERT_TRUE(failedCertArray.IsEmpty());
+    ASSERT_TRUE(handshakeCertificatesArray.IsEmpty());
   }
 
   nsTArray<RefPtr<nsIX509Cert>> succeededCertArray;
@@ -193,7 +192,7 @@ TEST(psm_DeserializeCert, preSSLStatusConsolidation)
   deserializeAndVerify(base64Serialization, Nothing(), Some(2));
 }
 
-TEST(psm_DeserializeCert, preSSLStatusConsolidationFailedCertChain)
+TEST(psm_DeserializeCert, preSSLStatusConsolidationHandshakeCertificates)
 {
   // clang-format off
   // Generated using serialized output of test "expired.example.com"

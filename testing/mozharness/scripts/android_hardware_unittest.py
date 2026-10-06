@@ -13,6 +13,7 @@ import sys
 # load modules from parent dir
 sys.path.insert(1, os.path.dirname(sys.path[0]))
 
+from mozfile import load_source
 from mozharness.base.log import WARNING
 from mozharness.base.script import BaseScript, PreScriptAction
 from mozharness.mozilla.automation import TBPL_RETRY
@@ -138,7 +139,7 @@ class AndroidHardwareTest(
     ] + copy.deepcopy(testing_config_options)
 
     def __init__(self, require_config_file=False):
-        super(AndroidHardwareTest, self).__init__(
+        super().__init__(
             config_options=self.config_options,
             all_actions=[
                 "clobber",
@@ -181,7 +182,7 @@ class AndroidHardwareTest(
     def query_abs_dirs(self):
         if self.abs_dirs:
             return self.abs_dirs
-        abs_dirs = super(AndroidHardwareTest, self).query_abs_dirs()
+        abs_dirs = super().query_abs_dirs()
         dirs = {}
         dirs["abs_test_install_dir"] = os.path.join(abs_dirs["abs_work_dir"], "tests")
         dirs["abs_test_bin_dir"] = os.path.join(
@@ -327,10 +328,6 @@ class AndroidHardwareTest(
 
         cmd.extend([f"--tag={t}" for t in self.test_tags])
 
-        try_options, try_tests = self.try_args(self.test_suite)
-        if try_options:
-            cmd.extend(try_options)
-
         if user_paths:
             # reftest on android-hw uses a subset (reftest-qr) of tests,
             # but scheduling only knows about 'reftest'
@@ -351,7 +348,6 @@ class AndroidHardwareTest(
                 self.query_tests_args(
                     self.config["suite_definitions"][self.test_suite].get("tests"),
                     None,
-                    try_tests,
                 )
             )
 
@@ -417,9 +413,7 @@ class AndroidHardwareTest(
         """
         Download and extract product APK, tests.zip, and host utils.
         """
-        super(AndroidHardwareTest, self).download_and_extract(
-            suite_categories=self._query_suite_categories()
-        )
+        super().download_and_extract(suite_categories=self._query_suite_categories())
         dirs = self.query_abs_dirs()
         self.xre_path = dirs["abs_xre_dir"]
 
@@ -433,9 +427,9 @@ class AndroidHardwareTest(
         if install_needed is False:
             self.info("Skipping apk installation for %s" % self.test_suite)
             return
-        assert (
-            self.installer_path is not None
-        ), "Either add installer_path to the config or use --installer-path."
+        assert self.installer_path is not None, (
+            "Either add installer_path to the config or use --installer-path."
+        )
         self.uninstall_android_app()
         self.install_android_app(self.installer_path)
         self.info("Finished installing apps for %s" % self.device_name)
@@ -500,6 +494,16 @@ class AndroidHardwareTest(
                     log_obj=self.log_obj,
                     error_list=[],
                 )
+
+                if "reftest" in suite_category:
+                    ref_formatter = load_source(
+                        "ReftestFormatter",
+                        os.path.join(
+                            self.query_abs_dirs()["abs_reftest_dir"], "output.py"
+                        ),
+                    )
+                    parser.formatter = ref_formatter.ReftestFormatter()
+
                 self.run_command(final_cmd, cwd=cwd, env=env, output_parser=parser)
                 tbpl_status, log_level, summary = parser.evaluate_parser(0, summary)
                 parser.append_tinderboxprint_line(self.test_suite)

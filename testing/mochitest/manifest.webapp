@@ -25,7 +25,7 @@
     "idle":{},
     "network-events":{},
     "audio-channel-content":{},
-    "audio-channel-alarm":{},
+    "audio-channel-alarm":{}
   },
   "locales": {
     "en-US": {

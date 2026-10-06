@@ -77,7 +77,7 @@ def before_iterations(kw):
                 ):
                     print(
                         f"Skipping login test `{test.get('name')}` "
-                        f"Because SCM = `{os.environ.get('MOZ_SCM_LEVEL') }`"
+                        f"Because SCM = `{os.environ.get('MOZ_SCM_LEVEL')}`"
                         f"and there is no secret available at this level"
                     )
                     return False
@@ -95,8 +95,7 @@ def before_iterations(kw):
         raise Exception("No tests were selected for recording!")
 
     def next_site():
-        for site in sites:
-            yield site
+        yield from sites
 
     next_site = next_site()
 
@@ -106,7 +105,6 @@ def before_iterations(kw):
 
 
 def before_runs(env):
-    global next_site
     print("Running before_runs")
     add_options(env, options)
 
@@ -123,7 +121,7 @@ def before_runs(env):
 
         # bug 1883701 linux uses a different version for now
         name = [
-            "mitm8" if platform_name == "linux" else "mitm11",
+            "mitm8" if platform_name == "linux" else "mitm12",
             platform_name,
             "gve" if app_name == "geckoview_example" else app_name,
             test_site["name"],

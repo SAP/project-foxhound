@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Inline Script Test</title>
+</head>
+<body>
+  <script>
+    function inlineFunction1() {
+      // Busy wait to ensure we get sampled.
+      const startTime = Date.now();
+      while (Date.now() - startTime < 100) {
+        // Busy loop.
+      }
+      return "test1";
+    }
+    inlineFunction1();
+  </script>
+  <h1>Test Page</h1>
+  <script>
+    function inlineFunction2() {
+      // Busy wait to ensure we get sampled.
+      const startTime = Date.now();
+      while (Date.now() - startTime < 100) {
+        // Busy loop.
+      }
+      return "test2";
+    }
+    inlineFunction2();
+  </script>
+</body>
+</html>

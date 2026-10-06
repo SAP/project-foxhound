@@ -6,10 +6,10 @@ package mozilla.components.concept.engine.utils
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.test.assertNotNull
 
 class EngineVersionTest {
     @Test
@@ -172,7 +172,7 @@ private fun EngineVersion?.assertIs(
     patch: Long,
     metadata: String? = null,
 ) {
-    assertNotNull(this!!)
+    assertNotNull(this)
 
     assertEquals(major, this.major)
     assertEquals(minor, this.minor)

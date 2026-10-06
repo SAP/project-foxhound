@@ -1,4 +1,4 @@
-// |jit-test| test-join=--spectre-mitigations=off
+// |jit-test| test-join=--spectre-mitigations=on
 
 // These do not test atomicity, just that code generation for BigInt values
 // works correctly.

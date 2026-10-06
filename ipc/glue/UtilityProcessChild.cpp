@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -88,7 +86,7 @@ RefPtr<UtilityProcessChild> UtilityProcessChild::Get() {
 
 bool UtilityProcessChild::Init(mozilla::ipc::UntypedEndpoint&& aEndpoint,
                                const nsCString& aParentBuildID,
-                               uint64_t aSandboxingKind) {
+                               SandboxingKind aSandboxingKind) {
   MOZ_ASSERT(NS_IsMainThread());
 
   // Initialize the thread manager before starting IPC. Otherwise, messages
@@ -119,7 +117,7 @@ bool UtilityProcessChild::Init(mozilla::ipc::UntypedEndpoint&& aEndpoint,
     return false;
   }
 
-  mSandbox = (SandboxingKind)aSandboxingKind;
+  mSandbox = aSandboxingKind;
 
   // At the moment, only ORB uses JSContext in the
   // Utility Process and ORB uses GENERIC_UTILITY
@@ -227,11 +225,25 @@ mozilla::ipc::IPCResult UtilityProcessChild::RecvRequestMemoryReport(
   mozilla::dom::MemoryReportRequestClient::Start(
       aGeneration, aAnonymize, aMinimizeMemoryUsage, aDMDFile, processName,
       [&](const MemoryReport& aReport) {
-        Unused << GetSingleton()->SendAddMemoryReport(aReport);
+        (void)GetSingleton()->SendAddMemoryReport(aReport);
       },
       aResolver);
   return IPC_OK();
 }
+
+#if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
+IPCResult UtilityProcessChild::RecvStartPKCS11ModuleService(
+    Endpoint<PPKCS11ModuleChild>&& aEndpoint, nsCString&& aProfilePath) {
+  auto child = MakeRefPtr<psm::PKCS11ModuleChild>();
+  if (!child ||
+      NS_FAILED(child->Start(std::move(aEndpoint), std::move(aProfilePath)))) {
+    return IPC_FAIL(this, "Failed to create and start PKCS11ModuleChild");
+  }
+
+  mPKCS11ModuleInstance = std::move(child);
+  return IPC_OK();
+}
+#endif  // NIGHTLY_BUILD && !MOZ_NO_SMART_CARDS
 
 #if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
 mozilla::ipc::IPCResult UtilityProcessChild::RecvInitSandboxTesting(
@@ -386,6 +398,10 @@ void UtilityProcessChild::ActorDestroy(ActorDestroyReason aWhy) {
 #  ifdef XP_WIN
   mWindowsUtilsInstance = nullptr;
 #  endif
+
+#  if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
+  mPKCS11ModuleInstance = nullptr;
+#  endif  // NIGHTLY_BUILD && !MOZ_NO_SMART_CARDS
 
   // Wait until all RemoteMediaManagerParent have closed.
   // It is still possible some may not have clean up yet, and we might hit

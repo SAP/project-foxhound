@@ -18,7 +18,7 @@ const { TYPE_ONE_SHOT, TYPE_REPEATING_SLACK } = Ci.nsITimer;
 /**
  * Runs a Promise-like function off the main thread until it is resolved
  * through ``resolve`` or ``rejected`` callbacks.  The function is
- * guaranteed to be run at least once, irregardless of the timeout.
+ * guaranteed to be run at least once, regardless of the timeout.
  *
  * The ``func`` is evaluated every ``interval`` for as long as its
  * runtime duration does not exceed ``interval``.  Evaluations occur
@@ -157,7 +157,7 @@ export function Sleep(timeout) {
     const timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
     timer.init(
       () => {
-        // Bug 1663880 - Explicitely cancel the timer for now to prevent a hang
+        // Bug 1663880 - Explicitly cancel the timer for now to prevent a hang
         timer.cancel();
         resolve();
       },
@@ -214,7 +214,7 @@ export function MessageManagerDestroyedPromise(messageManager) {
  * events fire.
  *
  * This class implements the {@link EventListener} interface,
- * which means it can be used interchangably with `addEventHandler`.
+ * which means it can be used interchangeably with `addEventHandler`.
  *
  * Debouncing events can be useful when dealing with e.g. DOM events
  * that fire at a high rate.  It is generally advisable to avoid
@@ -335,6 +335,9 @@ export function waitForMessage(
  *     if the notification is the expected one, or false if it should be
  *     ignored and listening should continue. If not specified, the first
  *     notification for the specified topic resolves the returned promise.
+ * @param {boolean=} options.logging
+ *     Flag indicating whether the observer notification should be logged
+ *     when received. Defaults to `true`.
  * @param {number=} options.timeout
  *     Timeout duration in milliseconds, if provided.
  *     If specified, then the returned promise will be rejected with
@@ -350,16 +353,19 @@ export function waitForMessage(
  * @throws {RangeError}
  */
 export function waitForObserverTopic(topic, options = {}) {
-  const { checkFn = null, timeout = null } = options;
+  const { checkFn = null, logging = true, timeout = null } = options;
+
   if (typeof topic != "string") {
     throw new TypeError();
   }
+
   if (
     (checkFn != null && typeof checkFn != "function") ||
     (timeout !== null && typeof timeout != "number")
   ) {
     throw new TypeError();
   }
+
   if (timeout && (!Number.isInteger(timeout) || timeout < 0)) {
     throw new RangeError();
   }
@@ -373,7 +379,10 @@ export function waitForObserverTopic(topic, options = {}) {
     }
 
     function observer(subject, _topic, data) {
-      lazy.logger.trace(`Received observer notification ${_topic}`);
+      if (logging) {
+        lazy.logger.trace(`Received observer notification ${_topic}`);
+      }
+
       try {
         if (checkFn && !checkFn(subject, data)) {
           return;

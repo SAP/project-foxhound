@@ -10,24 +10,31 @@ add_task(async function test() {
     "http://mochi.test:8888/browser/js/xpconnect/tests/browser/browser_deadObjectOnUnload.html";
   let newTab = await BrowserTestUtils.openNewForegroundTab(gBrowser, url);
   let browser = gBrowser.selectedBrowser;
-  let innerWindowId = browser.innerWindowID;
-  let contentDocDead = await ContentTask.spawn(
+
+  let contentDocDead = await SpecialPowers.spawn(
     browser,
-    { innerWindowId },
-    async function (args) {
-      let doc = content.document;
+    [],
+    async function () {
+      let iframe = content.document.createElement("iframe");
+      content.document.body.appendChild(iframe);
+
+      let doc = iframe.contentDocument;
+      let innerWindowId = iframe.contentWindow.windowGlobalChild.innerWindowId;
+
       let { TestUtils } = ChromeUtils.importESModule(
         "resource://testing-common/TestUtils.sys.mjs"
       );
       let promise = TestUtils.topicObserved("inner-window-nuked", subject => {
         let id = subject.QueryInterface(Ci.nsISupportsPRUint64).data;
-        return id == args.innerWindowId;
+        return id == innerWindowId;
       });
-      content.location = "http://mochi.test:8888/";
+
+      iframe.remove();
       await promise;
       return Cu.isDeadWrapper(doc);
     }
   );
+
   is(contentDocDead, true, "wrapper is dead");
   BrowserTestUtils.removeTab(newTab);
 });

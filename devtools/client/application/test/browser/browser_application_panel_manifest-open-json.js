@@ -16,7 +16,7 @@ add_task(async function () {
   const { panel, tab } = await openNewTabAndApplicationPanel(url);
   const doc = panel.panelWin.document;
 
-  selectPage(panel, "manifest");
+  await selectPage(panel, "manifest");
 
   info("Waiting for the manifest JSON link");
   await waitUntil(() => doc.querySelector(".js-manifest-json-link") !== null);
@@ -50,7 +50,7 @@ add_task(async function () {
   const { panel, tab } = await openNewTabAndApplicationPanel(url);
   const doc = panel.panelWin.document;
 
-  selectPage(panel, "manifest");
+  await selectPage(panel, "manifest");
 
   info("Waiting for the manifest to load");
   await waitUntil(() => doc.querySelector(".js-manifest") !== null);

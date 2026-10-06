@@ -3,7 +3,7 @@ The Sync engines in the tree
 ============================
 
 Unless otherwise specified, the engine implementations can be found
-`here <https://searchfox.org/mozilla-central/source/services/sync/modules/engines>`_
+:searchfox:`here <services/sync/modules/engines>`
 
 Please read the :doc:`overview`.
 
@@ -80,7 +80,7 @@ are open on other devices. There's no database - if we haven't synced yet we
 don't know what other tabs are open, and when we do know, the list is just
 stored in memory.
 
-The `SyncedTabs module <https://searchfox.org/mozilla-central/source/services/sync/modules/SyncedTabs.sys.mjs>`_
+The :searchfox:`SyncedTabs module <services/sync/modules/SyncedTabs.sys.mjs>`
 is the main interface the browser uses to get the list of tabs from other
 devices.
 
@@ -111,7 +111,7 @@ treat them as a single engine in practice.
 
 As a result, only a shim is in the `services/sync/modules/engines/` directory,
 while the actual logic is
-`next to the storage implementation <https://searchfox.org/mozilla-central/source/toolkit/components/formautofill/FormAutofillSync.sys.mjs>`_.
+:searchfox:`next to the storage implementation <toolkit/components/formautofill/FormAutofillSync.sys.mjs>`.
 
 This engine has a unique twist on the "mirror" concept described above -
 whenever a change is made to a fields, the original value of the field is

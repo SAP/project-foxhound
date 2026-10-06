@@ -1,18 +1,16 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #if !defined(AOMDecoder_h_)
 #  define AOMDecoder_h_
 
+#  include <aom/aom_decoder.h>
 #  include <stdint.h>
 
 #  include "PerformanceRecorder.h"
 #  include "PlatformDecoderModule.h"
-#  include <aom/aom_decoder.h>
-#  include "mozilla/Span.h"
 #  include "VideoUtils.h"
+#  include "mozilla/Span.h"
 
 namespace mozilla {
 
@@ -38,6 +36,9 @@ class AOMDecoder final : public MediaDataDecoder,
   // Return true if aMimeType is a one of the strings used
   // by our demuxers to identify AV1 streams.
   static bool IsAV1(const nsACString& aMimeType);
+
+  // Return true if uses AV1 main profile.
+  static bool IsMainProfile(const MediaByteBuffer* aBox);
 
   // Return true if a sample is a keyframe.
   static bool IsKeyframe(Span<const uint8_t> aBuffer);
@@ -237,6 +238,13 @@ class AOMDecoder final : public MediaDataDecoder,
   //    Other errors will indicate that the data was corrupt.
   static MediaResult ReadSequenceHeaderInfo(const Span<const uint8_t>& aSample,
                                             AV1SequenceInfo& aDestInfo);
+
+  // Parse SMPTE ST 2086 mastering display and CTA-861.3 content light level
+  // from an AV1 sample's Metadata OBUs.
+  // Returns Nothing if neither metadata type is present.
+  static mozilla::Maybe<mozilla::gfx::HDRMetadata> ReadMetadataOBUHDR(
+      const Span<const uint8_t>& aSample);
+
   // Writes a sequence header OBU to the buffer.
   static already_AddRefed<MediaByteBuffer> CreateSequenceHeader(
       const AV1SequenceInfo& aInfo, nsresult& aResult);

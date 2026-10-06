@@ -143,6 +143,17 @@ impl Clone for TypeResolution {
                     columns,
                     scalar,
                 },
+                Ti::CooperativeMatrix {
+                    columns,
+                    rows,
+                    scalar,
+                    role,
+                } => Ti::CooperativeMatrix {
+                    columns,
+                    rows,
+                    scalar,
+                    role,
+                },
                 Ti::Pointer { base, space } => Ti::Pointer { base, space },
                 Ti::ValuePointer {
                     size,
@@ -296,7 +307,7 @@ impl<'a> ResolveContext<'a> {
                         },
                         Ti::BindingArray { base, .. } => Ti::Pointer { base, space },
                         ref other => {
-                            log::error!("Access sub-type {:?}", other);
+                            log::error!("Access sub-type {other:?}");
                             return Err(ResolveError::InvalidSubAccess {
                                 ty: base,
                                 indexed: false,
@@ -306,7 +317,7 @@ impl<'a> ResolveContext<'a> {
                 }
                 Ti::BindingArray { base, .. } => TypeResolution::Handle(base),
                 ref other => {
-                    log::error!("Access type {:?}", other);
+                    log::error!("Access type {other:?}");
                     return Err(ResolveError::InvalidAccess {
                         expr: base,
                         indexed: false,
@@ -392,7 +403,7 @@ impl<'a> ResolveContext<'a> {
                         }
                         Ti::BindingArray { base, .. } => Ti::Pointer { base, space },
                         ref other => {
-                            log::error!("Access index sub-type {:?}", other);
+                            log::error!("Access index sub-type {other:?}");
                             return Err(ResolveError::InvalidSubAccess {
                                 ty: ty_base,
                                 indexed: true,
@@ -401,7 +412,7 @@ impl<'a> ResolveContext<'a> {
                     }),
                     Ti::BindingArray { base, .. } => TypeResolution::Handle(base),
                     ref other => {
-                        log::error!("Access index type {:?}", other);
+                        log::error!("Access index type {other:?}");
                         return Err(ResolveError::InvalidAccess {
                             expr: base,
                             indexed: true,
@@ -412,7 +423,7 @@ impl<'a> ResolveContext<'a> {
             crate::Expression::Splat { size, value } => match *past(value)?.inner_with(types) {
                 Ti::Scalar(scalar) => TypeResolution::Value(Ti::Vector { size, scalar }),
                 ref other => {
-                    log::error!("Scalar type {:?}", other);
+                    log::error!("Scalar type {other:?}");
                     return Err(ResolveError::InvalidScalar(value));
                 }
             },
@@ -425,7 +436,7 @@ impl<'a> ResolveContext<'a> {
                     TypeResolution::Value(Ti::Vector { size, scalar })
                 }
                 ref other => {
-                    log::error!("Vector type {:?}", other);
+                    log::error!("Vector type {other:?}");
                     return Err(ResolveError::InvalidVector(vector));
                 }
             },
@@ -476,7 +487,7 @@ impl<'a> ResolveContext<'a> {
                     None => Ti::Scalar(scalar),
                 }),
                 ref other => {
-                    log::error!("Pointer type {:?}", other);
+                    log::error!("Pointer {pointer:?} type {other:?}");
                     return Err(ResolveError::InvalidPointer(pointer));
                 }
             },
@@ -496,7 +507,7 @@ impl<'a> ResolveContext<'a> {
                     size: crate::VectorSize::Quad,
                 }),
                 ref other => {
-                    log::error!("Image type {:?}", other);
+                    log::error!("Image type {other:?}");
                     return Err(ResolveError::InvalidImage(image));
                 }
             },
@@ -512,9 +523,13 @@ impl<'a> ResolveContext<'a> {
                         scalar: format.into(),
                         size: crate::VectorSize::Quad,
                     },
+                    crate::ImageClass::External => Ti::Vector {
+                        scalar: crate::Scalar::F32,
+                        size: crate::VectorSize::Quad,
+                    },
                 }),
                 ref other => {
-                    log::error!("Image type {:?}", other);
+                    log::error!("Image type {other:?}");
                     return Err(ResolveError::InvalidImage(image));
                 }
             },
@@ -532,7 +547,7 @@ impl<'a> ResolveContext<'a> {
                         },
                     },
                     ref other => {
-                        log::error!("Image type {:?}", other);
+                        log::error!("Image type {other:?}");
                         return Err(ResolveError::InvalidImage(image));
                     }
                 },
@@ -583,6 +598,20 @@ impl<'a> ResolveContext<'a> {
                         (&Ti::Scalar { .. }, _) => res_right.clone(),
                         (_, &Ti::Scalar { .. }) => res_left.clone(),
                         (&Ti::Vector { .. }, &Ti::Vector { .. }) => res_left.clone(),
+                        (
+                            &Ti::CooperativeMatrix {
+                                columns: _,
+                                rows,
+                                scalar,
+                                role,
+                            },
+                            &Ti::CooperativeMatrix { columns, .. },
+                        ) => TypeResolution::Value(Ti::CooperativeMatrix {
+                            columns,
+                            rows,
+                            scalar,
+                            role,
+                        }),
                         (tl, tr) => {
                             return Err(ResolveError::IncompatibleOperands(format!(
                                 "{tl:?} * {tr:?}"
@@ -772,6 +801,25 @@ impl<'a> ResolveContext<'a> {
                 scalar: crate::Scalar::U32,
                 size: crate::VectorSize::Quad,
             }),
+            crate::Expression::CooperativeLoad {
+                columns,
+                rows,
+                role,
+                ref data,
+            } => {
+                let scalar = past(data.pointer)?
+                    .inner_with(types)
+                    .pointer_base_type()
+                    .and_then(|tr| tr.inner_with(types).scalar())
+                    .ok_or(ResolveError::InvalidPointer(data.pointer))?;
+                TypeResolution::Value(Ti::CooperativeMatrix {
+                    columns,
+                    rows,
+                    scalar,
+                    role,
+                })
+            }
+            crate::Expression::CooperativeMultiplyAdd { a: _, b: _, c } => past(c)?.clone(),
         })
     }
 }

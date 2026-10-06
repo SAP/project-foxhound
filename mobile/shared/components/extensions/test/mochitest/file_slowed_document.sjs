@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80 ft=javascript: */
 "use strict";
 
 // This script slows the load of an HTML document so that we can reliably test

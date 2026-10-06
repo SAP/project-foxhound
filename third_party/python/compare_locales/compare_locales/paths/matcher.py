@@ -7,7 +7,6 @@ import re
 import itertools
 from compare_locales import mozpath
 
-
 # Android uses non-standard locale codes, these are the mappings
 # back and forth
 ANDROID_LEGACY_MAP = {"he": "iw", "id": "in", "yi": "ji"}

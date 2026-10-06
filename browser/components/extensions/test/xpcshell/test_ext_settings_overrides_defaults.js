@@ -1,10 +1,11 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
-
 "use strict";
 
 const { AddonTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/AddonTestUtils.sys.mjs"
+);
+
+const { SearchService } = ChromeUtils.importESModule(
+  "moz-src:///toolkit/components/search/SearchService.sys.mjs"
 );
 
 const { SearchTestUtils } = ChromeUtils.importESModule(
@@ -133,7 +134,7 @@ add_task(async function setup() {
   AddonTestUtils.overrideCertDB();
   await AddonTestUtils.promiseStartupManager();
   await SearchTestUtils.setRemoteSettingsConfig(CONFIG);
-  await Services.search.init();
+  await SearchService.init();
   registerCleanupFunction(async () => {
     await AddonTestUtils.promiseShutdownManager();
   });
@@ -145,7 +146,7 @@ function assertEngineParameters({
   suggestionURL,
   messageSnippet,
 }) {
-  let engine = Services.search.getEngineByName(name);
+  let engine = SearchService.getEngineByName(name);
   Assert.ok(engine, `Should have found ${name}`);
 
   Assert.equal(
@@ -184,7 +185,7 @@ add_task(async function test_extension_changing_to_app_provided_default() {
   await AddonTestUtils.waitForSearchProviderStartup(ext1);
 
   Assert.equal(
-    Services.search.defaultEngine.name,
+    SearchService.defaultEngine.name,
     "MozParamsTest2",
     "Should have switched the default engine."
   );
@@ -203,7 +204,7 @@ add_task(async function test_extension_changing_to_app_provided_default() {
   await promiseDefaultBrowserChange;
 
   Assert.equal(
-    Services.search.defaultEngine.name,
+    SearchService.defaultEngine.name,
     "MozParamsTest",
     "Should have reverted to the original default engine."
   );
@@ -253,7 +254,7 @@ add_task(async function test_extension_overriding_app_provided_default() {
   await AddonTestUtils.waitForSearchProviderStartup(ext1);
 
   Assert.equal(
-    Services.search.defaultEngine.name,
+    SearchService.defaultEngine.name,
     "MozParamsTest2",
     "Should have switched the default engine."
   );
@@ -274,7 +275,7 @@ add_task(async function test_extension_overriding_app_provided_default() {
   await promiseDefaultBrowserChange;
 
   Assert.equal(
-    Services.search.defaultEngine.name,
+    SearchService.defaultEngine.name,
     "MozParamsTest",
     "Should have reverted to the original default engine."
   );
@@ -294,7 +295,7 @@ add_task(async function test_extension_overriding_app_provided_default() {
   await promiseDefaultBrowserChange;
 
   Assert.equal(
-    Services.search.defaultEngine.name,
+    SearchService.defaultEngine.name,
     "MozParamsTest2",
     "Should have switched the default engine."
   );
@@ -316,7 +317,7 @@ add_task(async function test_extension_overriding_app_provided_default() {
   await promiseDefaultBrowserChange;
 
   Assert.equal(
-    Services.search.defaultEngine.name,
+    SearchService.defaultEngine.name,
     "MozParamsTest",
     "Should have reverted to the original default engine."
   );

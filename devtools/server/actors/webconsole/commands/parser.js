@@ -84,7 +84,6 @@ function createToken(string) {
 /**
  * returns a command Tree object for a set of tokens
  *
- *
  * @param Array Tokens tokens
  *                     An array of Token objects
  *

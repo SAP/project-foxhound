@@ -2,9 +2,7 @@
 Dominators view
 ===============
 
-The Dominators view is new in Firefox 46.
-
-Starting in Firefox 46, the Memory tool includes a new view called the Dominators view. This is useful for understanding the "retained size" of objects allocated by your site: that is, the size of the objects themselves plus the size of the objects that they keep alive through references.
+The Memory tool includes a new view called the Dominators view. This is useful for understanding the "retained size" of objects allocated by your site: that is, the size of the objects themselves plus the size of the objects that they keep alive through references.
 
 If you already know what shallow size, retained size, and dominators are, skip to the Dominators UI section. Otherwise, you might want to review the article on :doc:`Dominators concepts <../dominators/index>`.
 
@@ -20,7 +18,7 @@ To see the Dominators view for a snapshot, select "Dominators" in the "View" dro
 The Dominators view consists of two panels:
 
 - the :ref:`Dominators Tree panel <memory-dominators-view-dominators-tree-panel>` shows you which nodes in the snapshot are retaining the most memory
-- the :ref:`Retaining Paths panel <memory-dominators-view-retaining-paths-panel>` (new in Firefox 47) shows the 5 shortest retaining paths for a single node.
+- the :ref:`Retaining Paths panel <memory-dominators-view-retaining-paths-panel>` shows the 5 shortest retaining paths for a single node.
 
 .. image:: dominators-2.png
   :class: center
@@ -78,10 +76,6 @@ In the toolbar at the top of the tool is a dropdown called "Label by":
 
 By default, this is set to "Type". However, you can set it instead to "Call Stack" to see exactly where in your code the objects are being allocated.
 
-.. note::
-
-  This option is called "Allocation Stack" in Firefox 46.
-
 
 To enable this, you must check the box labeled "Record call stacks" *before* you run the code that allocates the objects. Then take a snapshot, then select "Call Stack" in the "Label by" drop-down.
 
@@ -97,8 +91,6 @@ Now the node's name will contain the name of the function that allocated it, and
 
 Retaining Paths panel
 *********************
-
-The Retaining Paths panel is new in Firefox 47.
 
 The Retaining Paths panel shows you, for a given node, the 5 shortest paths back from this node to a GC root. This enables you to see all the nodes that are keeping the given node from being garbage-collected. If you suspect that an object is being leaked, this will show you exactly which objects are holding a reference to it.
 

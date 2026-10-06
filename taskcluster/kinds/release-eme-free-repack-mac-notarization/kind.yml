@@ -6,7 +6,7 @@ loader: taskgraph.loader.transform:loader
 
 transforms:
     - taskgraph.transforms.from_deps
-    - gecko_taskgraph.transforms.mac_notarization
+    - gecko_taskgraph.transforms.filter_notarization
     - gecko_taskgraph.transforms.chunk_partners
     - gecko_taskgraph.transforms.partner_signing
     - gecko_taskgraph.transforms.signing
@@ -14,6 +14,9 @@ transforms:
 
 kind-dependencies:
     - release-eme-free-repack-mac-signing
+
+task-defaults:
+    run-on-repo-type: [hg]
 
 only-for-build-platforms:
     - macosx64-shippable/opt

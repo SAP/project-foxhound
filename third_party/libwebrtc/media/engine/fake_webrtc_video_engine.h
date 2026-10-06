@@ -22,6 +22,7 @@
 #include "api/environment/environment.h"
 #include "api/fec_controller_override.h"
 #include "api/video/encoded_image.h"
+#include "api/video/resolution.h"
 #include "api/video/video_frame.h"
 #include "api/video/video_frame_type.h"
 #include "api/video_codecs/scalability_mode.h"
@@ -40,11 +41,11 @@ namespace webrtc {
 class FakeWebRtcVideoDecoderFactory;
 class FakeWebRtcVideoEncoderFactory;
 
-// Fake class for mocking out webrtc::VideoDecoder
+// Fake class for mocking out VideoDecoder
 class FakeWebRtcVideoDecoder : public VideoDecoder {
  public:
   explicit FakeWebRtcVideoDecoder(FakeWebRtcVideoDecoderFactory* factory);
-  ~FakeWebRtcVideoDecoder();
+  ~FakeWebRtcVideoDecoder() override;
 
   bool Configure(const Settings& settings) override;
   int32_t Decode(const EncodedImage&, int64_t) override;
@@ -58,7 +59,7 @@ class FakeWebRtcVideoDecoder : public VideoDecoder {
   FakeWebRtcVideoDecoderFactory* factory_;
 };
 
-// Fake class for mocking out webrtc::VideoDecoderFactory.
+// Fake class for mocking out VideoDecoderFactory.
 class FakeWebRtcVideoDecoderFactory : public VideoDecoderFactory {
  public:
   FakeWebRtcVideoDecoderFactory();
@@ -79,11 +80,11 @@ class FakeWebRtcVideoDecoderFactory : public VideoDecoderFactory {
   int num_created_decoders_;
 };
 
-// Fake class for mocking out webrtc::VideoEnoder
+// Fake class for mocking out VideoEnoder
 class FakeWebRtcVideoEncoder : public VideoEncoder {
  public:
   explicit FakeWebRtcVideoEncoder(FakeWebRtcVideoEncoderFactory* factory);
-  ~FakeWebRtcVideoEncoder();
+  ~FakeWebRtcVideoEncoder() override;
 
   void SetFecControllerOverride(
       FecControllerOverride* fec_controller_override) override;
@@ -109,19 +110,20 @@ class FakeWebRtcVideoEncoder : public VideoEncoder {
   FakeWebRtcVideoEncoderFactory* factory_;
 };
 
-// Fake class for mocking out webrtc::VideoEncoderFactory.
+// Fake class for mocking out VideoEncoderFactory.
 class FakeWebRtcVideoEncoderFactory : public VideoEncoderFactory {
  public:
   FakeWebRtcVideoEncoderFactory();
 
+  using VideoEncoderFactory::QueryCodecSupport;
   std::vector<SdpVideoFormat> GetSupportedFormats() const override;
   VideoEncoderFactory::CodecSupport QueryCodecSupport(
       const SdpVideoFormat& format,
-      std::optional<std::string> scalability_mode) const override;
+      std::optional<std::string> scalability_mode,
+      std::optional<Resolution> resolution) const override;
   std::unique_ptr<VideoEncoder> Create(const Environment& env,
                                        const SdpVideoFormat& format) override;
 
-  bool WaitForCreatedVideoEncoders(int num_encoders);
   void EncoderDestroyed(FakeWebRtcVideoEncoder* encoder);
   void set_encoders_have_internal_sources(bool internal_source);
   void AddSupportedVideoCodec(const SdpVideoFormat& format);
@@ -133,7 +135,6 @@ class FakeWebRtcVideoEncoderFactory : public VideoEncoderFactory {
 
  private:
   Mutex mutex_;
-  Event created_video_encoder_event_;
   std::vector<SdpVideoFormat> formats_;
   std::vector<FakeWebRtcVideoEncoder*> encoders_ RTC_GUARDED_BY(mutex_);
   int num_created_encoders_ RTC_GUARDED_BY(mutex_);
@@ -142,13 +143,5 @@ class FakeWebRtcVideoEncoderFactory : public VideoEncoderFactory {
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace cricket {
-using ::webrtc::FakeWebRtcVideoDecoder;
-using ::webrtc::FakeWebRtcVideoDecoderFactory;
-using ::webrtc::FakeWebRtcVideoEncoder;
-using ::webrtc::FakeWebRtcVideoEncoderFactory;
-}  // namespace cricket
 
 #endif  // MEDIA_ENGINE_FAKE_WEBRTC_VIDEO_ENGINE_H_

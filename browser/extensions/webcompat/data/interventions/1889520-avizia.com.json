@@ -1,0 +1,15 @@
+{
+  "label": "avizia.com",
+  "bugs": {
+    "1889520": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.avizia.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

@@ -26,45 +26,9 @@
 
   <script type="application/javascript">
   <![CDATA[
-    ////////////////////////////////////////////////////////////////////////////
-    // Accessible tree testers
+    /* global testAction */
 
-    function focusChecker(aAcc, aStates)
-    {
-      this.type = EVENT_FOCUS;
-      this.target = aAcc;
-      this.getID = function focusChecker_getID()
-      {
-        return "focus handling";
-      }
-      this.check = function focusChecker_check()
-      {
-        var states = aStates ? aStates : 0;
-        testStates(this.target, STATE_FOCUSED | STATE_SELECTED | states);
-      }
-    }
-
-    function stateChangeChecker(aAcc, aIsEnabled)
-    {
-      this.type = EVENT_STATE_CHANGE;
-      this.target = aAcc;
-      this.getID = function stateChangeChecker_getID()
-      {
-        return "state change handling";
-      }
-      this.check = function stateChangeChecker_check()
-      {
-        if (aIsEnabled)
-          testStates(this.target, STATE_CHECKED);
-        else
-          testStates(this.target, STATE_CHECKABLE, 0, STATE_CHECKED);
-      }
-    }
-
-    ////////////////////////////////////////////////////////////////////////////
-    // Test
-
-    function doTestActions()
+    async function doTestActions()
     {
       var treeNode = getNode("tabletree");
 
@@ -78,78 +42,78 @@
       var cycleCell = expandedTreeItem.getChildAt(0);
       var checkableCell = expandedTreeItem.getChildAt(3);
 
-      var actions = [
-        {
-          ID: expandedTreeItem,
-          actionName: "activate",
-          actionIndex: 0,
-          events: CLICK_EVENTS,
-          targetID: treeBodyNode,
-          eventSeq: [
-            new focusChecker(expandedTreeItem, STATE_EXPANDED)
-          ]
-        },
-        {
-          ID: collapsedTreeItem,
-          actionName: "expand",
-          actionIndex: 1,
-          events: CLICK_EVENTS,
-          targetID: treeBodyNode,
-          check: function check()
-          {
-            testStates(this.ID, STATE_EXPANDED);
-          }
-        },
-        {
-          ID: collapsedTreeItem,
-          actionName: "collapse",
-          actionIndex: 1,
-          events: CLICK_EVENTS,
-          targetID: treeBodyNode,
-          check: function check()
-          {
-            testStates(this.ID, STATE_COLLAPSED);
-          }
-        },
-        {
-          ID: cycleCell,
-          actionName: "cycle",
-          actionIndex: 0,
-          events: CLICK_EVENTS,
-          targetID: treeBodyNode
-        },
-        {
-          ID: checkableCell,
-          actionName: "uncheck",
-          actionIndex: 0,
-          events: CLICK_EVENTS,
-          targetID: treeBodyNode,
-          eventSeq: [
-            new stateChangeChecker(checkableCell, false)
-          ]
-        },
-        {
-          ID: checkableCell,
-          actionName: "check",
-          actionIndex: 0,
-          events: CLICK_EVENTS,
-          targetID: treeBodyNode,
-          eventSeq: [
-            new stateChangeChecker(checkableCell, true)
-          ]
-        }
-      ];
+      await testAction({
+        id: expandedTreeItem,
+        actionName: "activate",
+        actionIndex: 0,
+        events: CLICK_EVENTS,
+        targetId: treeBodyNode,
+        eventSeq: [
+          [EVENT_FOCUS, expandedTreeItem,
+           () => testStates(expandedTreeItem, STATE_FOCUSED | STATE_SELECTED | STATE_EXPANDED)]
+        ]
+      });
 
-      testActions(actions); // Will call SimpleTest.finish();
+      await testAction({
+        id: collapsedTreeItem,
+        actionName: "expand",
+        actionIndex: 1,
+        events: CLICK_EVENTS,
+        targetId: treeBodyNode
+      });
+      testStates(collapsedTreeItem, STATE_EXPANDED);
+
+      await testAction({
+        id: collapsedTreeItem,
+        actionName: "collapse",
+        actionIndex: 1,
+        events: CLICK_EVENTS,
+        targetId: treeBodyNode
+      });
+      testStates(collapsedTreeItem, STATE_COLLAPSED);
+
+      await testAction({
+        id: cycleCell,
+        actionName: "cycle",
+        actionIndex: 0,
+        events: CLICK_EVENTS,
+        targetId: treeBodyNode
+      });
+
+      await testAction({
+        id: checkableCell,
+        actionName: "uncheck",
+        actionIndex: 0,
+        events: CLICK_EVENTS,
+        targetId: treeBodyNode,
+        eventSeq: [
+          [EVENT_STATE_CHANGE, checkableCell,
+           () => testStates(checkableCell, STATE_CHECKABLE, 0, STATE_CHECKED)]
+        ]
+      });
+
+      await testAction({
+        id: checkableCell,
+        actionName: "check",
+        actionIndex: 0,
+        events: CLICK_EVENTS,
+        targetId: treeBodyNode,
+        eventSeq: [
+          [EVENT_STATE_CHANGE, checkableCell,
+           () => testStates(checkableCell, STATE_CHECKED)]
+        ]
+      });
+
+      SimpleTest.finish();
     }
 
-    // gA11yEventDumpID = "debug";
-
-    function doTest()
+    async function doTest()
     {
       var treeNode = getNode("tabletree");
-      waitForEvent(EVENT_REORDER, treeNode, doTestActions);
+      let reordered = waitForEvent(EVENT_REORDER, treeNode);
       treeNode.view = new nsTreeTreeView();
+      await reordered;
+      await doTestActions();
     }
 
     SimpleTest.waitForExplicitFinish();

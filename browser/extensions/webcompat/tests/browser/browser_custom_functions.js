@@ -35,9 +35,9 @@ async function testResponseHeaderValue({
   useServer,
 }) {
   let server = useServer ?? "https://example.com";
-  const results = await ContentTask.spawn(
+  const results = await SpecialPowers.spawn(
     browser,
-    { server, serverSends, expect },
+    [{ server, serverSends, expect }],
     async function (args) {
       const send = JSON.stringify(Object.entries(args.serverSends ?? {}));
       const url = `${args.server}/browser/browser/extensions/webcompat/tests/browser/download_server.sjs?${send}`;

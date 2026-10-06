@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 requestLongerTimeout(2);
@@ -174,7 +172,7 @@ add_task(
           );
           browser.test.assertFalse(
             "url" in win.tabs[1],
-            "The second tab with empty.xpi has no url field due to empty history."
+            "The second tab with HTTP 204 has no url field due to empty history."
           );
           browser.test.assertEq(
             "https://example.com/",
@@ -194,7 +192,7 @@ add_task(
 
     // Test with a window with empty history.
     let xpi =
-      "https://example.com/browser/browser/components/extensions/test/browser/empty.xpi";
+      "https://example.com/browser/browser/components/extensions/test/browser/204.sjs";
     let newWin = await BrowserTestUtils.openNewBrowserWindow();
     await BrowserTestUtils.openNewForegroundTab({
       gBrowser: newWin.gBrowser,
@@ -213,3 +211,43 @@ add_task(
     await extension.unload();
   }
 );
+
+add_task(async function test_sessions_get_recently_closed_no_default_cap() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.sessionstore.max_tabs_undo", 40]],
+  });
+
+  function background() {
+    browser.test.onMessage.addListener(async msg => {
+      if (msg == "get-all") {
+        let recentlyClosed = await browser.sessions.getRecentlyClosed();
+        browser.test.sendMessage("all-results", recentlyClosed.length);
+      }
+    });
+  }
+
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: { permissions: ["sessions", "tabs"] },
+    background,
+  });
+  await extension.startup();
+
+  for (let i = 0; i < 30; i++) {
+    let tab = await BrowserTestUtils.openNewForegroundTab(
+      gBrowser,
+      "https://example.com/"
+    );
+    BrowserTestUtils.removeTab(tab);
+  }
+
+  extension.sendMessage("get-all");
+  let count = await extension.awaitMessage("all-results");
+  Assert.greaterOrEqual(
+    count,
+    30,
+    "getRecentlyClosed() with no filter returns more than the old 25-entry cap"
+  );
+
+  await extension.unload();
+  await SpecialPowers.popPrefEnv();
+});

@@ -5,9 +5,8 @@
 #ifndef DOM_MEDIA_GVAUTOPLAYREQUESTSTATUSIPC_H_
 #define DOM_MEDIA_GVAUTOPLAYREQUESTSTATUSIPC_H_
 
-#include "ipc/EnumSerializer.h"
-
 #include "GVAutoplayRequestUtils.h"
+#include "ipc/EnumSerializer.h"
 
 namespace IPC {
 

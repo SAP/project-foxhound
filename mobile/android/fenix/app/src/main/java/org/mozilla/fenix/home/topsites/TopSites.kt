@@ -4,9 +4,7 @@
 
 package org.mozilla.fenix.home.topsites
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -21,12 +19,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,41 +34,52 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import mozilla.components.compose.base.PagerIndicator
+import mozilla.components.compose.base.annotation.FlexibleWindowPreview
 import mozilla.components.compose.base.modifier.rightClickable
 import mozilla.components.feature.top.sites.TopSite
+import mozilla.components.ui.colors.PhotonColors
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.ContextualMenu
 import org.mozilla.fenix.compose.Favicon
 import org.mozilla.fenix.compose.MenuItem
-import org.mozilla.fenix.compose.PagerIndicator
 import org.mozilla.fenix.home.fake.FakeHomepagePreview
-import org.mozilla.fenix.home.sessioncontrol.TopSiteInteractor
 import org.mozilla.fenix.home.topsites.TopSitesTestTag.TOP_SITE_CARD_FAVICON
+import org.mozilla.fenix.home.topsites.interactor.TopSiteInteractor
+import org.mozilla.fenix.home.topsites.ui.AddShortcutItem
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.PreviewThemeProvider
+import org.mozilla.fenix.theme.Theme
 import org.mozilla.fenix.wallpapers.WallpaperState
-import kotlin.math.ceil
+import mozilla.components.ui.icons.R as iconsR
 
-private const val TOP_SITES_PER_PAGE = 8
-private const val TOP_SITES_PER_ROW = 4
-private const val TOP_SITES_ITEM_SIZE = 84
+/**
+ * The size of a top site item.
+ */
+const val TOP_SITES_ITEM_SIZE = 84
+
+internal const val TOP_SITES_TO_SHOW = 8
+internal const val TOP_SITES_PER_ROW = 4
 private const val TOP_SITES_ROW_WIDTH = TOP_SITES_PER_ROW * TOP_SITES_ITEM_SIZE
-private const val TOP_SITES_FAVICON_CARD_SIZE = 60
-private const val TOP_SITES_FAVICON_SIZE = 36
+internal const val TOP_SITES_FAVICON_CARD_SIZE = 60
+internal const val TOP_SITES_FAVICON_SIZE = 36
 
 /**
  * A list of top sites.
@@ -78,6 +88,9 @@ private const val TOP_SITES_FAVICON_SIZE = 36
  * @param topSiteColors The color set defined by [TopSiteColors] used to style a top site.
  * @param interactor The interactor which handles user actions with the widget.
  * @param onTopSitesItemBound Invoked during the composition of a top site item.
+ * @param onAddShortcutClicked Invoked when the user clicks on the "Add shortcut" tile.
+ * @param isPager Whether the top sites should be rendered as a horizontally pageable pager.
+ * @param showAddShortcut Whether to display the "Add shortcut" tile after the top sites.
  */
 @Composable
 fun TopSites(
@@ -85,6 +98,9 @@ fun TopSites(
     topSiteColors: TopSiteColors = TopSiteColors.colors(),
     interactor: TopSiteInteractor,
     onTopSitesItemBound: () -> Unit,
+    onAddShortcutClicked: () -> Unit,
+    isPager: Boolean = false,
+    showAddShortcut: Boolean = false,
 ) {
     TopSites(
         topSites = topSites,
@@ -103,6 +119,9 @@ fun TopSites(
         onSettingsClicked = interactor::onSettingsClicked,
         onSponsorPrivacyClicked = interactor::onSponsorPrivacyClicked,
         onTopSitesItemBound = onTopSitesItemBound,
+        onAddShortcutClicked = onAddShortcutClicked,
+        isPager = isPager,
+        showAddShortcut = showAddShortcut,
     )
 }
 
@@ -122,10 +141,12 @@ fun TopSites(
  * @param onSponsorPrivacyClicked Invoked when the user clicks on the "Our sponsors & your privacy"
  * menu item.
  * @param onTopSitesItemBound Invoked during the composition of a top site item.
+ * @param onAddShortcutClicked Invoked when the user clicks on the "Add shortcut" tile.
+ * @param isPager Whether the top sites should be rendered as a horizontally pageable pager.
+ * @param showAddShortcut Whether to display the "Add shortcut" tile after the top sites.
  */
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
-@Suppress("LongParameterList", "LongMethod")
+@Suppress("LongParameterList")
 fun TopSites(
     topSites: List<TopSite>,
     topSiteColors: TopSiteColors = TopSiteColors.colors(),
@@ -138,13 +159,10 @@ fun TopSites(
     onSettingsClicked: () -> Unit,
     onSponsorPrivacyClicked: () -> Unit,
     onTopSitesItemBound: () -> Unit,
+    onAddShortcutClicked: () -> Unit,
+    isPager: Boolean = false,
+    showAddShortcut: Boolean = false,
 ) {
-    val numberOfTopSites = topSites.size.toDouble()
-    val pageCount = ceil((numberOfTopSites / TOP_SITES_PER_PAGE)).toInt()
-
-    val needsInvisibleRow =
-        numberOfTopSites > TOP_SITES_PER_PAGE && numberOfTopSites <= (TOP_SITES_PER_PAGE + TOP_SITES_PER_ROW)
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -154,91 +172,230 @@ fun TopSites(
             .testTag(TopSitesTestTag.TOP_SITES),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        val pagerState = rememberPagerState(
-            pageCount = { pageCount },
-        )
+        if (isPager) {
+            TopSitesPager(
+                topSites = topSites,
+                topSiteColors = topSiteColors,
+                onTopSiteClick = onTopSiteClick,
+                onTopSiteLongClick = onTopSiteLongClick,
+                onTopSiteImpression = onTopSiteImpression,
+                onOpenInPrivateTabClicked = onOpenInPrivateTabClicked,
+                onEditTopSiteClicked = onEditTopSiteClicked,
+                onRemoveTopSiteClicked = onRemoveTopSiteClicked,
+                onSettingsClicked = onSettingsClicked,
+                onSponsorPrivacyClicked = onSponsorPrivacyClicked,
+                onTopSitesItemBound = onTopSitesItemBound,
+            )
+        } else {
+            TopSitesGrid(
+                topSites = topSites,
+                topSiteColors = topSiteColors,
+                showAddShortcut = showAddShortcut,
+                onTopSiteClick = onTopSiteClick,
+                onTopSiteLongClick = onTopSiteLongClick,
+                onTopSiteImpression = onTopSiteImpression,
+                onOpenInPrivateTabClicked = onOpenInPrivateTabClicked,
+                onEditTopSiteClicked = onEditTopSiteClicked,
+                onRemoveTopSiteClicked = onRemoveTopSiteClicked,
+                onSettingsClicked = onSettingsClicked,
+                onSponsorPrivacyClicked = onSponsorPrivacyClicked,
+                onTopSitesItemBound = onTopSitesItemBound,
+                onAddShortcutClicked = onAddShortcutClicked,
+            )
+        }
+    }
+}
 
-        Box(
+@Suppress("LongParameterList")
+@Composable
+private fun TopSitesGrid(
+    topSites: List<TopSite>,
+    topSiteColors: TopSiteColors,
+    showAddShortcut: Boolean,
+    onTopSiteClick: (TopSite) -> Unit,
+    onTopSiteLongClick: (TopSite) -> Unit,
+    onTopSiteImpression: (TopSite.Provided, Int) -> Unit,
+    onOpenInPrivateTabClicked: (TopSite) -> Unit,
+    onEditTopSiteClicked: (TopSite) -> Unit,
+    onRemoveTopSiteClicked: (TopSite) -> Unit,
+    onSettingsClicked: () -> Unit,
+    onSponsorPrivacyClicked: () -> Unit,
+    onTopSitesItemBound: () -> Unit,
+    onAddShortcutClicked: () -> Unit,
+) {
+    val topSiteRows = topSites.take(TOP_SITES_TO_SHOW).chunked(TOP_SITES_PER_ROW)
+    val addShortcutInCurrentRow = showAddShortcut &&
+        topSiteRows.isNotEmpty() && topSiteRows.last().size < TOP_SITES_PER_ROW
+    val addShortcutInNewRow = showAddShortcut && !addShortcutInCurrentRow
+
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            contentAlignment = Alignment.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            HorizontalPager(
-                state = pagerState,
-            ) { page ->
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    val topSitesWindows = topSites.windowed(
-                        size = TOP_SITES_PER_PAGE,
-                        step = TOP_SITES_PER_PAGE,
-                        partialWindows = true,
-                    )[page].chunked(TOP_SITES_PER_ROW)
+            topSiteRows.forEachIndexed { rowIndex, items ->
+                val isLastRow = rowIndex == topSiteRows.lastIndex
 
-                    for (items in topSitesWindows) {
-                        Row(modifier = Modifier.defaultMinSize(minWidth = TOP_SITES_ROW_WIDTH.dp)) {
-                            items.forEachIndexed { position, topSite ->
-                                TopSiteItem(
-                                    topSite = topSite,
-                                    menuItems = getMenuItems(
-                                        topSite = topSite,
-                                        onOpenInPrivateTabClicked = onOpenInPrivateTabClicked,
-                                        onEditTopSiteClicked = onEditTopSiteClicked,
-                                        onRemoveTopSiteClicked = onRemoveTopSiteClicked,
-                                        onSettingsClicked = onSettingsClicked,
-                                        onSponsorPrivacyClicked = onSponsorPrivacyClicked,
-                                    ),
-                                    position = position,
-                                    topSiteColors = topSiteColors,
-                                    onTopSiteClick = { item -> onTopSiteClick(item) },
-                                    onTopSiteLongClick = onTopSiteLongClick,
-                                    onTopSiteImpression = onTopSiteImpression,
-                                    onTopSitesItemBound = onTopSitesItemBound,
-                                )
-                            }
-                        }
+                TopSiteGridRow(
+                    items = items,
+                    topSiteColors = topSiteColors,
+                    showAddShortcut = isLastRow && addShortcutInCurrentRow,
+                    onTopSiteClick = onTopSiteClick,
+                    onTopSiteLongClick = onTopSiteLongClick,
+                    onTopSiteImpression = onTopSiteImpression,
+                    onOpenInPrivateTabClicked = onOpenInPrivateTabClicked,
+                    onEditTopSiteClicked = onEditTopSiteClicked,
+                    onRemoveTopSiteClicked = onRemoveTopSiteClicked,
+                    onSettingsClicked = onSettingsClicked,
+                    onSponsorPrivacyClicked = onSponsorPrivacyClicked,
+                    onTopSitesItemBound = onTopSitesItemBound,
+                    onAddShortcutClicked = onAddShortcutClicked,
+                )
 
-                        if (items != topSitesWindows.last()) {
-                            Spacer(modifier = Modifier.height(12.dp))
-                        }
-                    }
+                if (!isLastRow || addShortcutInNewRow) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+            }
 
-                    if (needsInvisibleRow && page > 0) {
-                        InvisibleRow()
-                    }
+            if (addShortcutInNewRow) {
+                Row(modifier = Modifier.defaultMinSize(minWidth = TOP_SITES_ROW_WIDTH.dp)) {
+                    AddShortcutItem(
+                        topSiteColors = topSiteColors,
+                        onClick = onAddShortcutClicked,
+                    )
                 }
             }
         }
+    }
+}
 
-        if (pagerState.pageCount > 1) {
-            PagerIndicator(
-                pagerState = pagerState,
-                modifier = Modifier.padding(horizontal = 16.dp),
-                spacing = 4.dp,
+@Suppress("LongParameterList")
+@Composable
+private fun TopSiteGridRow(
+    items: List<TopSite>,
+    topSiteColors: TopSiteColors,
+    showAddShortcut: Boolean,
+    onTopSiteClick: (TopSite) -> Unit,
+    onTopSiteLongClick: (TopSite) -> Unit,
+    onTopSiteImpression: (TopSite.Provided, Int) -> Unit,
+    onOpenInPrivateTabClicked: (TopSite) -> Unit,
+    onEditTopSiteClicked: (TopSite) -> Unit,
+    onRemoveTopSiteClicked: (TopSite) -> Unit,
+    onSettingsClicked: () -> Unit,
+    onSponsorPrivacyClicked: () -> Unit,
+    onTopSitesItemBound: () -> Unit,
+    onAddShortcutClicked: () -> Unit,
+) {
+    Row(modifier = Modifier.defaultMinSize(minWidth = TOP_SITES_ROW_WIDTH.dp)) {
+        items.forEachIndexed { position, topSite ->
+            TopSiteItem(
+                topSite = topSite,
+                menuItems = getMenuItems(
+                    topSite = topSite,
+                    onOpenInPrivateTabClicked = onOpenInPrivateTabClicked,
+                    onEditTopSiteClicked = onEditTopSiteClicked,
+                    onRemoveTopSiteClicked = onRemoveTopSiteClicked,
+                    onSettingsClicked = onSettingsClicked,
+                    onSponsorPrivacyClicked = onSponsorPrivacyClicked,
+                ),
+                position = position,
+                topSiteColors = topSiteColors,
+                onTopSiteClick = onTopSiteClick,
+                onTopSiteLongClick = onTopSiteLongClick,
+                onTopSiteImpression = onTopSiteImpression,
+                onTopSitesItemBound = onTopSitesItemBound,
+            )
+        }
+
+        if (showAddShortcut) {
+            AddShortcutItem(
+                topSiteColors = topSiteColors,
+                onClick = onAddShortcutClicked,
             )
         }
     }
 }
 
 /**
- * Workaround for when the second pager page only has one row, and the pager shrinks to fit. This
- * invisible row mimics top sites items to match the correct height.
+ * A horizontal pager of top sites.
+ *
+ * @param topSites List of [TopSite] to display.
+ * @param topSiteColors The color set defined by [TopSiteColors] used to style a top site.
+ * @param onTopSiteClick Invoked when the user clicks on a top site.
+ * @param onTopSiteLongClick Invoked when the user long clicks on a top site.
+ * @param onTopSiteImpression Invoked when the user sees a provided top site.
+ * @param onOpenInPrivateTabClicked Invoked when the user clicks on the "Open in private tab"
+ * menu item.
+ * @param onEditTopSiteClicked Invoked when the user clicks on the "Edit" menu item.
+ * @param onRemoveTopSiteClicked Invoked when the user clicks on the "Remove" menu item.
+ * @param onSettingsClicked Invoked when the user clicks on the "Settings" menu item.
+ * @param onSponsorPrivacyClicked Invoked when the user clicks on the "Our sponsors & your privacy"
+ * menu item.
+ * @param onTopSitesItemBound Invoked during the composition of a top site item.
  */
+@Suppress("LongParameterList")
 @Composable
-private fun InvisibleRow() {
-    Spacer(modifier = Modifier.height(4.dp + TOP_SITES_FAVICON_CARD_SIZE.dp + 6.dp))
+private fun TopSitesPager(
+    topSites: List<TopSite>,
+    topSiteColors: TopSiteColors = TopSiteColors.colors(),
+    onTopSiteClick: (TopSite) -> Unit,
+    onTopSiteLongClick: (TopSite) -> Unit,
+    onTopSiteImpression: (TopSite.Provided, Int) -> Unit,
+    onOpenInPrivateTabClicked: (TopSite) -> Unit,
+    onEditTopSiteClicked: (TopSite) -> Unit,
+    onRemoveTopSiteClicked: (TopSite) -> Unit,
+    onSettingsClicked: () -> Unit,
+    onSponsorPrivacyClicked: () -> Unit,
+    onTopSitesItemBound: () -> Unit,
+) {
+    val pages = remember(topSites) {
+        topSites.take(TOP_SITES_TO_SHOW)
+            .chunked(TOP_SITES_PER_ROW)
+    }
+    val pagerState = rememberPagerState(pageCount = { pages.size })
 
-    Text(
-        text = "",
-        style = FirefoxTheme.typography.caption,
-    )
+    HorizontalPager(
+        state = pagerState,
+        modifier = Modifier.fillMaxWidth(),
+    ) { pageIndex ->
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            pages[pageIndex].forEachIndexed { colIndex, topSite ->
+                TopSiteItem(
+                    topSite = topSite,
+                    menuItems = getMenuItems(
+                        topSite = topSite,
+                        onOpenInPrivateTabClicked = onOpenInPrivateTabClicked,
+                        onEditTopSiteClicked = onEditTopSiteClicked,
+                        onRemoveTopSiteClicked = onRemoveTopSiteClicked,
+                        onSettingsClicked = onSettingsClicked,
+                        onSponsorPrivacyClicked = onSponsorPrivacyClicked,
+                    ),
+                    position = topSites.indexOf(topSite),
+                    topSiteColors = topSiteColors,
+                    onTopSiteClick = onTopSiteClick,
+                    onTopSiteLongClick = onTopSiteLongClick,
+                    onTopSiteImpression = onTopSiteImpression,
+                    onTopSitesItemBound = onTopSitesItemBound,
+                )
+            }
+        }
+    }
 
-    Text(
-        text = "",
-        fontSize = 10.sp,
-    )
-
-    Spacer(modifier = Modifier.height(12.dp))
+    if (pages.size > 1) {
+        PagerIndicator(
+            pagerState = pagerState,
+            modifier = Modifier
+                .padding(top = 8.dp)
+                .testTag(TopSitesTestTag.TOP_SITES_PAGER_INDICATOR),
+            spacing = 6.dp,
+        )
+    }
 }
 
 /**
@@ -255,9 +412,9 @@ data class TopSiteColors(
          */
         @Composable
         fun colors(
-            titleTextColor: Color = FirefoxTheme.colors.textPrimary,
-            sponsoredTextColor: Color = FirefoxTheme.colors.textSecondary,
-            faviconCardBackgroundColor: Color = FirefoxTheme.colors.layer2,
+            titleTextColor: Color = MaterialTheme.colorScheme.onSurface,
+            sponsoredTextColor: Color = MaterialTheme.colorScheme.onSurface,
+            faviconCardBackgroundColor: Color = MaterialTheme.colorScheme.surfaceBright,
         ) = TopSiteColors(
             titleTextColor = titleTextColor,
             sponsoredTextColor = sponsoredTextColor,
@@ -272,7 +429,7 @@ data class TopSiteColors(
         fun colors(wallpaperState: WallpaperState): TopSiteColors {
             val textColor: Long? = wallpaperState.currentWallpaper.textColor
             val (titleTextColor, sponsoredTextColor) = if (textColor == null) {
-                FirefoxTheme.colors.textPrimary to FirefoxTheme.colors.textSecondary
+                MaterialTheme.colorScheme.onSurface to MaterialTheme.colorScheme.onSurface
             } else {
                 Color(textColor) to Color(textColor)
             }
@@ -280,7 +437,7 @@ data class TopSiteColors(
             return TopSiteColors(
                 titleTextColor = titleTextColor,
                 sponsoredTextColor = sponsoredTextColor,
-                faviconCardBackgroundColor = FirefoxTheme.colors.layer2,
+                faviconCardBackgroundColor = MaterialTheme.colorScheme.surfaceBright,
             )
         }
     }
@@ -298,10 +455,13 @@ data class TopSiteColors(
  * @param onTopSiteImpression Invoked when the user sees a provided top site.
  * @param onTopSitesItemBound Invoked during the composition of a top site item.
  */
-@Suppress("LongMethod", "LongParameterList", "Deprecation") // https://bugzilla.mozilla.org/show_bug.cgi?id=1927713
-@OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
+@Suppress(
+    "LongMethod",
+    "LongParameterList",
+    "Deprecation",
+) // https://bugzilla.mozilla.org/show_bug.cgi?id=1927713
 @Composable
-private fun TopSiteItem(
+fun TopSiteItem(
     topSite: TopSite,
     menuItems: List<MenuItem>,
     position: Int,
@@ -342,10 +502,29 @@ private fun TopSiteItem(
         ) {
             Spacer(modifier = Modifier.height(4.dp))
 
-            TopSiteFaviconCard(
-                topSite = topSite,
-                backgroundColor = topSiteColors.faviconCardBackgroundColor,
-            )
+            Box(
+                modifier = Modifier.wrapContentSize(),
+                contentAlignment = AbsoluteAlignment.TopLeft,
+            ) {
+                TopSiteFaviconCard(
+                    topSite = topSite,
+                    backgroundColor = topSiteColors.faviconCardBackgroundColor,
+                )
+
+                if (topSite is TopSite.Pinned || topSite is TopSite.Default) {
+                    Box(
+                        modifier = Modifier
+                            .size(16.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Image(
+                            painter = painterResource(id = iconsR.drawable.mozac_ic_pin_8),
+                            colorFilter = ColorFilter.tint(PhotonColors.LightGrey80),
+                            contentDescription = null,
+                        )
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(6.dp))
 
@@ -354,38 +533,31 @@ private fun TopSiteItem(
                 horizontalArrangement = Arrangement.Absolute.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (topSite is TopSite.Pinned || topSite is TopSite.Default) {
-                    Image(
-                        painter = painterResource(id = R.drawable.ic_new_pin),
-                        contentDescription = null,
-                    )
-
-                    Spacer(modifier = Modifier.width(2.dp))
-                }
-
                 Text(
                     modifier = Modifier
                         .semantics {
                             testTagsAsResourceId = true
                         }
+                        .padding(horizontal = 4.dp)
                         .testTag(TopSitesTestTag.TOP_SITE_TITLE),
                     text = topSite.title ?: topSite.url,
                     color = topSiteColors.titleTextColor,
+                    textAlign = TextAlign.Center,
                     overflow = TextOverflow.Ellipsis,
-                    maxLines = 1,
-                    style = FirefoxTheme.typography.caption,
+                    maxLines = topSite.getMaxLinesForTitle(),
+                    style = FirefoxTheme.typography.caption.copy(fontWeight = FontWeight.W700),
                 )
             }
 
             Text(
                 text = if (topSite is TopSite.Provided) stringResource(id = R.string.top_sites_sponsored_label) else "",
-                modifier = Modifier
-                    .width(TOP_SITES_ITEM_SIZE.dp),
+                modifier = Modifier.width(TOP_SITES_ITEM_SIZE.dp),
                 color = topSiteColors.sponsoredTextColor,
                 fontSize = 10.sp,
                 textAlign = TextAlign.Center,
                 overflow = TextOverflow.Ellipsis,
                 maxLines = 1,
+                style = FirefoxTheme.typography.caption,
             )
         }
 
@@ -415,7 +587,6 @@ private fun TopSiteItem(
  * @param topSite The [TopSite] to display.
  * @param backgroundColor The background [Color] of the card.
  */
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun TopSiteFaviconCard(
     topSite: TopSite,
@@ -439,25 +610,32 @@ private fun TopSiteFaviconCard(
             Surface(
                 modifier = Modifier.size(TOP_SITES_FAVICON_SIZE.dp),
                 color = backgroundColor,
-                shape = RoundedCornerShape(4.dp),
+                shape = MaterialTheme.shapes.extraSmall,
             ) {
-                if (topSite is TopSite.Provided) {
-                    TopSiteFavicon(topSite.url, topSite.imageUrl)
-                } else {
-                    TopSiteFavicon(topSite.url)
-                }
+                TopSiteFavicon(topSite = topSite)
             }
         }
     }
 }
 
 @Composable
-private fun TopSiteFavicon(url: String, imageUrl: String? = null) {
-    Favicon(url = url, size = TOP_SITES_FAVICON_SIZE.dp, imageUrl = imageUrl)
+private fun TopSiteFavicon(topSite: TopSite) {
+    when (val favicon = getTopSitesFavicon(topSite)) {
+        is TopSitesFavicon.ImageUrl -> Favicon(
+            url = topSite.url,
+            size = TOP_SITES_FAVICON_SIZE.dp,
+            imageUrl = favicon.imageUrl,
+        )
+
+        is TopSitesFavicon.Drawable -> Favicon(
+            size = TOP_SITES_FAVICON_SIZE.dp,
+            imageResource = favicon.drawableResId,
+        )
+    }
 }
 
 @Composable
-private fun getMenuItems(
+internal fun getMenuItems(
     topSite: TopSite,
     onOpenInPrivateTabClicked: (topSite: TopSite) -> Unit,
     onEditTopSiteClicked: (topSite: TopSite) -> Unit,
@@ -508,11 +686,6 @@ private fun getMenuItems(
         result.addAll(
             listOf(
                 MenuItem(
-                    title = stringResource(id = R.string.delete_from_history),
-                    testTag = TopSitesTestTag.REMOVE,
-                    onClick = { onRemoveTopSiteClicked(topSite) },
-                ),
-                MenuItem(
                     title = stringResource(id = R.string.top_sites_menu_settings),
                     onClick = onSettingsClicked,
                 ),
@@ -527,23 +700,37 @@ private fun getMenuItems(
     return result
 }
 
+/**
+ * Returns the maximum number of lines for a top site title based on its type.
+ */
+private fun TopSite.getMaxLinesForTitle(): Int {
+    return if (this is TopSite.Provided) 1 else 2
+}
+
+@FlexibleWindowPreview
 @Composable
-@PreviewLightDark
-private fun TopSitesPreview() {
-    FirefoxTheme {
-        Box(modifier = Modifier.background(color = FirefoxTheme.colors.layer1).padding(16.dp)) {
-            TopSites(
-                topSites = FakeHomepagePreview.topSites(),
-                onTopSiteClick = {},
-                onTopSiteLongClick = {},
-                onTopSiteImpression = { _, _ -> },
-                onOpenInPrivateTabClicked = {},
-                onEditTopSiteClicked = {},
-                onRemoveTopSiteClicked = {},
-                onSettingsClicked = {},
-                onSponsorPrivacyClicked = {},
-                onTopSitesItemBound = {},
-            )
+private fun TopSitesPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
+        Surface {
+            Box(
+                modifier = Modifier.padding(all = FirefoxTheme.layout.space.static200),
+            ) {
+                TopSites(
+                    topSites = FakeHomepagePreview.topSites(),
+                    onTopSiteClick = {},
+                    onTopSiteLongClick = {},
+                    onTopSiteImpression = { _, _ -> },
+                    onOpenInPrivateTabClicked = {},
+                    onEditTopSiteClicked = {},
+                    onRemoveTopSiteClicked = {},
+                    onSettingsClicked = {},
+                    onSponsorPrivacyClicked = {},
+                    onTopSitesItemBound = {},
+                    onAddShortcutClicked = {},
+                )
+            }
         }
     }
 }

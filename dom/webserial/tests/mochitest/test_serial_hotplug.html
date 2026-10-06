@@ -1,0 +1,456 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Web Serial API - Device Hotplug</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="serial_test_utils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script>
+/* global SerialPort */
+"use strict";
+
+SimpleTest.waitForExplicitFinish();
+
+// Cleanup function specific to hotplug tests
+async function removeAllDevices() {
+  await cleanupSerialPorts();
+  await navigator.serial.removeAllMockDevices();
+}
+
+// Restore default mock devices after all hotplug tests complete
+SimpleTest.registerCleanupFunction(async function restoreDefaultDevices() {
+  await cleanupSerialPorts();
+  await navigator.serial.resetToDefaultMockDevices();
+});
+
+async function waitForSerialConnect(operation) {
+  let eventProperties = null;
+
+  const connectPromise = new Promise(resolve => {
+    navigator.serial.addEventListener("connect", event => {
+      eventProperties = {
+        type: event.type,
+        target: event.target,
+        currentTarget: event.currentTarget,
+        bubbles: event.bubbles,
+        cancelable: event.cancelable
+      };
+      resolve();
+    }, { once: true });
+  });
+  await operation();
+
+  await connectPromise;
+  info('got serial connect');
+  return eventProperties;
+}
+
+async function waitForSerialDisconnect(operation) {
+  let eventProperties = null;
+
+  const disconnectPromise = new Promise(resolve => {
+    navigator.serial.addEventListener("disconnect", event => {
+      eventProperties = {
+        type: event.type,
+        target: event.target,
+        currentTarget: event.currentTarget,
+        bubbles: event.bubbles,
+        cancelable: event.cancelable
+      };
+      resolve();
+    }, { once: true });
+  });
+  await operation();
+
+  await disconnectPromise;
+  info('got serial disconnect');
+  return eventProperties;
+}
+
+async function waitForPortConnect(port, operation) {
+  const connectPromise = new Promise(resolve => {
+    port.addEventListener("connect", () => {
+      resolve();
+    }, { once: true });
+  });
+  await operation();
+
+  await connectPromise;
+  info('got port connect');
+}
+
+async function waitForPortDisconnect(port, operation) {
+  const disconnectPromise = new Promise(resolve => {
+    port.addEventListener("disconnect", () => {
+      resolve();
+    }, { once: true });
+  });
+  await operation();
+
+  await disconnectPromise;
+  info('got port disconnect');
+}
+
+add_task(async function testDeviceConnectionWithoutPermission() {
+  await removeAllDevices();
+
+  let connectEventFired = false;
+
+  navigator.serial.addEventListener("connect", () => {
+    connectEventFired = true;
+  }, { once: true });
+
+  await simulateDeviceConnection("test-hotplug-1", "/dev/ttyUSB99", 0x1234, 0x5678);
+
+  SimpleTest.requestFlakyTimeout("Wait to ensure we don't get a connect event");
+  await new Promise(resolve => setTimeout(resolve, 500));
+
+  ok(!connectEventFired, "connect event should NOT have fired without permission");
+
+  const ports = await navigator.serial.getPorts();
+  const foundPort = ports.some(p => {
+    const info = p.getInfo();
+    return info.usbVendorId === 0x1234 && info.usbProductId === 0x5678;
+  });
+  ok(!foundPort, "Port without permission should NOT appear in getPorts()");
+});
+
+add_task(async function testDeviceConnectionWithPermission() {
+  await removeAllDevices();
+
+  await simulateDeviceConnection("test-hotplug-2", "/dev/ttyUSB98", 0xABCD, 0xEF01);
+
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  ok(port, "Should be able to request the simulated port");
+
+  // Verify the granted port info before disconnecting
+  const portInfo = port.getInfo();
+  is(portInfo.usbVendorId, 0xABCD, "check vendorId for connected device");
+  is(portInfo.usbProductId, 0xEF01, "check productId for connected device");
+  let ports = await navigator.serial.getPorts();
+  let foundPort = ports.some(p => {
+    const info = p.getInfo();
+    return info.usbVendorId === 0xABCD && info.usbProductId === 0xEF01;
+  });
+  ok(foundPort, "getPorts() should return connected port");
+
+  // Now disconnect the device (permission is still granted)
+  info('disconnecting test-hotplug-2');
+  await waitForSerialDisconnect(() => simulateDeviceDisconnection("test-hotplug-2"));
+
+  ports = await navigator.serial.getPorts();
+  foundPort = ports.some(p => {
+    const info = p.getInfo();
+    return info.usbVendorId === 0xABCD && info.usbProductId === 0xEF01;
+  });
+  ok(!foundPort, "getPorts() shouldn't return disconnected port");
+
+  info('reconnecting test-hotplug-2');
+  // Reconnect the same device (we still have permission)
+  const eventProperties = await waitForSerialConnect(() => simulateDeviceConnection("test-hotplug-2", "/dev/ttyUSB98", 0xABCD, 0xEF01));
+
+  ok(eventProperties.target, "event should contain SerialPort");
+
+  ports = await navigator.serial.getPorts();
+  foundPort = ports.some(p => {
+    const info = p.getInfo();
+    return info.usbVendorId === 0xABCD && info.usbProductId === 0xEF01;
+  });
+  ok(foundPort, "Permitted port should appear in getPorts()");
+});
+
+add_task(async function testDisconnectionWhilePortOpen() {
+  await removeAllDevices();
+
+  await simulateDeviceConnection("test-hotplug-3", "/dev/ttyUSB97", 0x9999, 0x8888);
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  await port.open({ baudRate: 9600 });
+  ok(port.connected, "Port should be connected");
+
+  await waitForPortDisconnect(port, () => simulateDeviceDisconnection("test-hotplug-3"));
+  ok(!port.connected, "Port should be disconnected");
+});
+
+add_task(async function testDisconnectAfterClose() {
+  await removeAllDevices();
+
+  await simulateDeviceConnection("test-close-disconnect-1", "/dev/ttyUSB95", 0xFEDC, 0xBA98);
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  ok(port, "Should be able to request the simulated port");
+
+  const portInfo = port.getInfo();
+  is(portInfo.usbVendorId, 0xFEDC, "Vendor ID should match");
+  is(portInfo.usbProductId, 0xBA98, "Product ID should match");
+
+  await port.open({ baudRate: 9600 });
+  ok(port.connected, "Port should be connected after opening");
+
+  await port.close();
+  ok(port.connected, "Port should still report connected after close (device still physically present)");
+
+  await waitForSerialDisconnect(() => simulateDeviceDisconnection("test-close-disconnect-1"));
+  ok(!port.connected, "Port should report disconnected after physical disconnection");
+});
+
+add_task(async function testDisconnectAfterCloseWithPortListener() {
+  await removeAllDevices();
+
+  await simulateDeviceConnection("test-close-disconnect-2", "/dev/ttyUSB94", 0xABCD, 0xEF01);
+
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  ok(port, "Should be able to request the simulated port");
+
+  await port.open({ baudRate: 115200 });
+  ok(port.connected, "Port should be connected");
+
+  await port.close();
+  ok(port.connected, "Port should still be connected (device physically present)");
+
+  await waitForPortDisconnect(port, () => simulateDeviceDisconnection("test-close-disconnect-2"));
+  ok(!port.connected, "Port should be disconnected");
+});
+
+add_task(async function testDeviceReconnectionFiresEventOnPort() {
+  await removeAllDevices();
+
+  await simulateDeviceConnection("test-hotplug-3", "/dev/ttyUSB97", 0x9999, 0x8888);
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  ok(port.connected, "Port should be connected");
+
+  await waitForPortDisconnect(port, () => simulateDeviceDisconnection("test-hotplug-3"));
+  ok(!port.connected, "Port should be disconnected");
+
+  await waitForPortConnect(port, () => simulateDeviceConnection("test-hotplug-3", "/dev/ttyUSB97", 0x9999, 0x8888));
+  ok(port.connected, "Port should be reconnected");
+});
+
+add_task(async function testMultipleDeviceChanges() {
+  await removeAllDevices();
+
+  await simulateDeviceConnection("hotplug-device", "/dev/ttyUSB96", 0x1111, 0x2222);
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  await navigator.serial.requestPort({ filters: [] });
+
+  // Disconnect device (permission persists)
+  await waitForSerialDisconnect(() => simulateDeviceDisconnection("hotplug-device"));
+  info("Received first disconnect");
+
+  // Reconnect device multiple times
+  await waitForSerialConnect(() => simulateDeviceConnection("hotplug-device", "/dev/ttyUSB96", 0x1111, 0x2222));
+  info("Received first reconnect");
+
+  // Disconnect and reconnect again
+  await waitForSerialDisconnect(() => simulateDeviceDisconnection("hotplug-device"));
+  info("Received second disconnect");
+
+  await waitForSerialConnect(() => simulateDeviceConnection("hotplug-device", "/dev/ttyUSB96", 0x1111, 0x2222));
+  info("Received second reconnect");
+
+  // Verify port is in getPorts()
+  const ports = await navigator.serial.getPorts();
+  const foundDevice = ports.some(p => {
+    const info = p.getInfo();
+    return info.usbVendorId === 0x1111 && info.usbProductId === 0x2222;
+  });
+  ok(foundDevice, "Device should be present in getPorts()");
+});
+
+add_task(async function testConnectEventProperties() {
+  await removeAllDevices();
+
+  await simulateDeviceConnection("test-event-props", "/dev/ttyUSB93", 0xAAAA, 0xBBBB);
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  await navigator.serial.requestPort({ filters: [] });
+
+  // Disconnect device (permission persists)
+  await simulateDeviceDisconnection("test-event-props");
+
+  // Reconnect device - event should fire now
+  const eventProperties = await waitForSerialConnect(() => simulateDeviceConnection("test-event-props", "/dev/ttyUSB93", 0xAAAA, 0xBBBB));
+
+  ok(eventProperties, "Event properties should be captured");
+  is(eventProperties.type, "connect", "Event type should be 'connect'");
+  ok(eventProperties.target, "Event should have a target");
+  ok(eventProperties.target instanceof SerialPort, "Event target should be a SerialPort");
+  is(eventProperties.currentTarget, navigator.serial, "Event currentTarget should be navigator.serial");
+  ok(eventProperties.bubbles, "Event should bubble");
+  ok(!eventProperties.cancelable, "Event should not be cancelable");
+});
+
+add_task(async function testDisconnectEventProperties() {
+  await removeAllDevices();
+
+  // Connect device and grant permission
+  await simulateDeviceConnection("test-disconnect-props", "/dev/ttyUSB92", 0xCCCC, 0xDDDD);
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  await navigator.serial.requestPort({ filters: [] });
+
+  // Disconnect device - event should fire because we have permission
+  const eventProperties = await waitForSerialDisconnect(() => simulateDeviceDisconnection("test-disconnect-props"));
+
+  ok(eventProperties, "Event properties should be captured");
+  is(eventProperties.type, "disconnect", "Event type should be 'disconnect'");
+  ok(eventProperties.target, "Event should have a target");
+  ok(eventProperties.target instanceof SerialPort, "Event target should be a SerialPort");
+  is(eventProperties.currentTarget, navigator.serial, "Event currentTarget should be navigator.serial");
+  ok(eventProperties.bubbles, "Event should bubble");
+  ok(!eventProperties.cancelable, "Event should not be cancelable");
+});
+
+add_task(async function testEventBubblesFromPortToSerial() {
+  await removeAllDevices();
+
+  await simulateDeviceConnection("test-bubble", "/dev/ttyUSB91", 0xBBBB, 0xCCCC);
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  // Disconnect and reconnect to trigger events
+  await waitForSerialDisconnect(() => simulateDeviceDisconnection("test-bubble"));
+
+  {
+    // Listen on both the port and navigator.serial for the connect event
+    let portEvent = null;
+    let serialEvent = null;
+
+    const portPromise = new Promise(resolve => {
+      port.addEventListener("connect", event => {
+        portEvent = {
+          type: event.type,
+          target: event.target,
+          currentTarget: event.currentTarget,
+          bubbles: event.bubbles,
+          eventPhase: event.eventPhase,
+        };
+        resolve();
+      }, { once: true });
+    });
+
+    const serialPromise = new Promise(resolve => {
+      navigator.serial.addEventListener("connect", event => {
+        serialEvent = {
+          type: event.type,
+          target: event.target,
+          currentTarget: event.currentTarget,
+          bubbles: event.bubbles,
+          eventPhase: event.eventPhase,
+        };
+        resolve();
+      }, { once: true });
+    });
+
+    await simulateDeviceConnection("test-bubble", "/dev/ttyUSB91", 0xBBBB, 0xCCCC);
+
+    await Promise.all([portPromise, serialPromise]);
+
+    // Verify the event fired on the port
+    ok(portEvent, "connect event should fire on port");
+    is(portEvent.type, "connect", "Event type on port should be 'connect'");
+    is(portEvent.target, port, "Event target on port should be the port itself");
+    is(portEvent.currentTarget, port, "Event currentTarget on port should be the port");
+    is(portEvent.eventPhase, Event.AT_TARGET, "Event on port should be AT_TARGET phase");
+
+    // Verify the event bubbled to navigator.serial
+    ok(serialEvent, "connect event should bubble to navigator.serial");
+    is(serialEvent.type, "connect", "Event type on serial should be 'connect'");
+    is(serialEvent.target, port, "Event target on serial should still be the port");
+    is(serialEvent.currentTarget, navigator.serial, "Event currentTarget on serial should be navigator.serial");
+    is(serialEvent.eventPhase, Event.BUBBLING_PHASE, "Event on serial should be BUBBLING_PHASE");
+  }
+
+  {
+    // Verify disconnect also bubbles
+    let portEvent = null;
+    let serialEvent = null;
+
+    const portPromise = new Promise(resolve => {
+      port.addEventListener("disconnect", event => {
+        portEvent = {
+          type: event.type,
+          target: event.target,
+          currentTarget: event.currentTarget,
+          eventPhase: event.eventPhase,
+        };
+        resolve();
+      }, { once: true });
+    });
+
+    const serialPromise = new Promise(resolve => {
+      navigator.serial.addEventListener("disconnect", event => {
+        serialEvent = {
+          type: event.type,
+          target: event.target,
+          currentTarget: event.currentTarget,
+          eventPhase: event.eventPhase,
+        };
+        resolve();
+      }, { once: true });
+    });
+
+    await simulateDeviceDisconnection("test-bubble");
+
+    await Promise.all([portPromise, serialPromise]);
+
+    ok(portEvent, "disconnect event should fire on port");
+    is(portEvent.type, "disconnect", "Event type on port should be 'disconnect'");
+    is(portEvent.target, port, "Disconnect target on port should be the port");
+    is(portEvent.currentTarget, port, "Disconnect currentTarget on port should be the port");
+    is(portEvent.eventPhase, Event.AT_TARGET, "Disconnect on port should be AT_TARGET phase");
+
+    ok(serialEvent, "disconnect event should bubble to navigator.serial");
+    is(serialEvent.type, "disconnect", "Event type on serial should be 'disconnect'");
+    is(serialEvent.target, port, "Disconnect target on serial should be the port");
+    is(serialEvent.currentTarget, navigator.serial, "Disconnect currentTarget should be navigator.serial");
+    is(serialEvent.eventPhase, Event.BUBBLING_PHASE, "Disconnect on serial should be BUBBLING_PHASE");
+  }
+});
+
+add_task(async function testMultipleOpenCloseDisconnect() {
+  await removeAllDevices();
+
+  await simulateDeviceConnection("test-multi-cycle", "/dev/ttyUSB93", 0x9999, 0x8888);
+
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  await port.open({ baudRate: 9600 });
+  ok(port.connected, "Port should be connected after first open");
+
+  await port.close();
+  ok(port.connected, "Port should still be connected after first close");
+
+  await port.open({ baudRate: 115200 });
+  ok(port.connected, "Port should be connected after second open");
+
+  await port.close();
+  ok(port.connected, "Port should still be connected after second close");
+
+  await waitForPortDisconnect(port, () => simulateDeviceDisconnection("test-multi-cycle"));
+  ok(!port.connected, "Port should be disconnected after physical removal");
+});
+
+add_task(async function testDisconnectWithoutOpening() {
+  await removeAllDevices();
+
+  await simulateDeviceConnection("test-no-open", "/dev/ttyUSB92", 0x1111, 0x2222);
+
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  ok(port, "Should be able to request the simulated port");
+  ok(port.connected, "Port should be connected even without opening");
+
+  await waitForPortDisconnect(port, () => simulateDeviceDisconnection("test-no-open"));
+  ok(!port.connected, "Port should be disconnected");
+});
+
+</script>
+</body>
+</html>

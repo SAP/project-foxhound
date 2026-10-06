@@ -68,7 +68,6 @@ aiohttp/worker.py
 aiohttp.egg-info/PKG-INFO
 aiohttp.egg-info/SOURCES.txt
 aiohttp.egg-info/dependency_links.txt
-aiohttp.egg-info/not-zip-safe
 aiohttp.egg-info/requires.txt
 aiohttp.egg-info/top_level.txt
 aiohttp/.hash/_cparser.pxd.hash
@@ -172,6 +171,8 @@ examples/web_srv_route_deco.py
 examples/web_srv_route_table.py
 examples/web_ws.py
 examples/websocket.html
+requirements/base-ft.in
+requirements/base-ft.txt
 requirements/base.in
 requirements/base.txt
 requirements/constraints.in
@@ -191,6 +192,10 @@ requirements/multidict.txt
 requirements/runtime-deps.in
 requirements/runtime-deps.txt
 requirements/sync-direct-runtime-deps.py
+requirements/test-common.in
+requirements/test-common.txt
+requirements/test-ft.in
+requirements/test-ft.txt
 requirements/test.in
 requirements/test.txt
 requirements/.hash/cython.txt.hash

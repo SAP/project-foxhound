@@ -1,18 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_docshell_message_utils_h__
-#define mozilla_dom_docshell_message_utils_h__
+#ifndef mozilla_dom_docshell_message_utils_h_
+#define mozilla_dom_docshell_message_utils_h_
 
 #include "ipc/EnumSerializer.h"
+#include "mozilla/ScrollbarPreferences.h"
+#include "mozilla/dom/BindingIPCUtils.h"
 #include "nsCOMPtr.h"
 #include "nsDocShellLoadState.h"
 #include "nsIDocumentViewer.h"
-#include "mozilla/ScrollbarPreferences.h"
-#include "mozilla/ipc/IPDLParamTraits.h"
 
 namespace IPC {
 
@@ -33,8 +31,8 @@ template <>
 struct ParamTraits<mozilla::dom::PermitUnloadResult>
     : public ContiguousEnumSerializerInclusive<
           mozilla::dom::PermitUnloadResult,
-          mozilla::dom::PermitUnloadResult::eAllowNavigation,
-          mozilla::dom::PermitUnloadResult::eRequestBlockNavigation> {};
+          mozilla::dom::PermitUnloadResult::eContinue,
+          mozilla::dom::PermitUnloadResult::eCanceledByNavigate> {};
 
 template <>
 struct ParamTraits<mozilla::dom::XPCOMPermitUnloadAction>
@@ -43,6 +41,11 @@ struct ParamTraits<mozilla::dom::XPCOMPermitUnloadAction>
           mozilla::dom::XPCOMPermitUnloadAction::ePrompt,
           mozilla::dom::XPCOMPermitUnloadAction::eDontPromptAndUnload> {};
 
+template <>
+struct ParamTraits<mozilla::dom::ForceMediaDocument>
+    : public mozilla::dom::WebIDLEnumSerializer<
+          mozilla::dom::ForceMediaDocument> {};
+
 }  // namespace IPC
 
-#endif  // mozilla_dom_docshell_message_utils_h__
+#endif  // mozilla_dom_docshell_message_utils_h_

@@ -1,0 +1,18 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+/**
+ * Test-only interface for SSLTokensCache round-trip tests.
+ * Implemented by nsNSSComponent (@mozilla.org/psm;1) when ENABLE_TESTS is set.
+ */
+[scriptable, uuid(7b3c4e2a-1d8f-4a5b-9c6d-2e0f1a3b5c7d)]
+interface nsISSLTokensCacheTest : nsISupports {
+  /** Returns the number of distinct cache keys currently in SSLTokensCache. */
+  uint32_t countSSLTokens();
+
+  /** Inserts a dummy token for aKey, for use by clearing tests. */
+  void putSSLTokenForTest(in ACString aKey);
+};

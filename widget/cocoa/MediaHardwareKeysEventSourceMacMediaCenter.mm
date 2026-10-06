@@ -79,9 +79,9 @@ MediaCenterEventHandler MediaHardwareKeysEventSourceMacMediaCenter::
   return Block_copy(^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent* event) {
     MPChangePlaybackPositionCommandEvent* changePosEvent =
         (MPChangePlaybackPositionCommandEvent*)event;
-    HandleEvent(
-        MediaControlAction(MediaControlKey::Seekto,
-                           SeekDetails(changePosEvent.positionTime, false)));
+    HandleEvent(MediaControlAction(
+        MediaControlKey::Seekto,
+        MediaControlActionParams(changePosEvent.positionTime, false)));
     return MPRemoteCommandHandlerStatusSuccess;
   });
 }
@@ -156,10 +156,7 @@ bool MediaHardwareKeysEventSourceMacMediaCenter::Open() {
 void MediaHardwareKeysEventSourceMacMediaCenter::Close() {
   LOG("Close MediaHardwareKeysEventSourceMacMediaCenter");
   SetPlaybackState(MediaSessionPlaybackState::None);
-  mImageFetchRequest.DisconnectIfExists();
   mCurrentImageUrl.Truncate();
-  mFetchingUrl.Truncate();
-  mNextImageIndex = 0;
   EndListeningForEvents();
   mOpened = false;
   MediaControlKeySource::Close();
@@ -205,20 +202,55 @@ void MediaHardwareKeysEventSourceMacMediaCenter::SetMediaMetadata(
                      forKey:MPMediaItemPropertyArtist];
   [nowPlayingInfo setObject:nsCocoaUtils::ToNSString(aMetadata.mAlbum)
                      forKey:MPMediaItemPropertyAlbumTitle];
-  if (mCurrentImageUrl.IsEmpty() ||
-      !IsImageIn(aMetadata.mArtwork, mCurrentImageUrl)) {
-    [nowPlayingInfo removeObjectForKey:MPMediaItemPropertyArtwork];
 
-    if (mFetchingUrl.IsEmpty() ||
-        !IsImageIn(aMetadata.mArtwork, mFetchingUrl)) {
-      mNextImageIndex = 0;
-      LoadImageAtIndex(mNextImageIndex++);
+  bool remove = true;
+  for (const dom::MediaImageData& imageData : aMetadata.mArtwork) {
+    if (!imageData.mDataSurface) {
+      continue;
     }
+
+    if (mCurrentImageUrl == imageData.mSrc) {
+      LOG("Artwork image url did not change.");
+      remove = false;
+      break;
+    }
+
+    auto drawable = MakeRefPtr<gfxSurfaceDrawable>(
+        imageData.mDataSurface, imageData.mDataSurface->GetSize());
+    nsCOMPtr<imgIContainer> imageContainer =
+        image::ImageOps::CreateFromDrawable(drawable);
+
+    NSImage* image = nil;
+    nsresult rv =
+        nsCocoaUtils::CreateDualRepresentationNSImageFromImageContainer(
+            imageContainer, imgIContainer::FRAME_CURRENT, nullptr,
+            NSMakeSize(0, 0), &image);
+    if (NS_FAILED(rv) || !image) {
+      LOG("Failed to create cocoa image. Try next image");
+      continue;
+    }
+
+    MPMediaItemArtwork* artwork = [[MPMediaItemArtwork alloc]
+        initWithBoundsSize:image.size
+            requestHandler:^NSImage* _Nonnull(CGSize aSize) {
+              return image;
+            }];
+    [nowPlayingInfo setObject:artwork forKey:MPMediaItemPropertyArtwork];
+    [artwork release];
+    [image release];
+
+    mCurrentImageUrl = imageData.mSrc;
+    remove = false;
+    break;
+  }
+
+  if (remove) {
+    [nowPlayingInfo removeObjectForKey:MPMediaItemPropertyArtwork];
   }
 
   // The procedure of updating `nowPlayingInfo` is actually an async operation
   // from our testing, Apple's documentation doesn't mention that though. So be
-  // aware that checking `nowPlayingInfo` immedately after setting it might not
+  // aware that checking `nowPlayingInfo` immediately after setting it might not
   // yield the expected result.
   center.nowPlayingInfo = nowPlayingInfo;
 }
@@ -262,78 +294,6 @@ void MediaHardwareKeysEventSourceMacMediaCenter::SetPositionState(
                        forKey:MPNowPlayingInfoPropertyPlaybackRate];
     center.nowPlayingInfo = nowPlayingInfo;
   }
-}
-
-void MediaHardwareKeysEventSourceMacMediaCenter::LoadImageAtIndex(
-    const size_t aIndex) {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  if (aIndex >= mMediaMetadata.mArtwork.Length()) {
-    LOG("Stop loading image. No available image");
-    mImageFetchRequest.DisconnectIfExists();
-    mFetchingUrl.Truncate();
-    return;
-  }
-
-  const MediaImage& image = mMediaMetadata.mArtwork[aIndex];
-
-  if (!IsValidImageUrl(image.mSrc)) {
-    LOG("Skip the image with invalid URL. Try next image");
-    LoadImageAtIndex(mNextImageIndex++);
-    return;
-  }
-
-  mImageFetchRequest.DisconnectIfExists();
-  mFetchingUrl = image.mSrc;
-
-  mImageFetcher = MakeUnique<dom::FetchImageHelper>(image);
-  RefPtr<MediaHardwareKeysEventSourceMacMediaCenter> self = this;
-  mImageFetcher->FetchImage()
-      ->Then(
-          AbstractThread::MainThread(), __func__,
-          [this, self](const nsCOMPtr<imgIContainer>& aImage) {
-            LOG("The image is fetched successfully");
-            mImageFetchRequest.Complete();
-
-            NSImage* image;
-            nsresult rv =
-                nsCocoaUtils::CreateDualRepresentationNSImageFromImageContainer(
-                    aImage, imgIContainer::FRAME_CURRENT, nullptr,
-                    NSMakeSize(0, 0), &image);
-            if (NS_FAILED(rv) || !image) {
-              LOG("Failed to create cocoa image. Try next image");
-              LoadImageAtIndex(mNextImageIndex++);
-              return;
-            }
-            mCurrentImageUrl = mFetchingUrl;
-
-            MPNowPlayingInfoCenter* center =
-                [MPNowPlayingInfoCenter defaultCenter];
-            NSMutableDictionary* nowPlayingInfo =
-                [[center.nowPlayingInfo mutableCopy] autorelease]
-                    ?: [NSMutableDictionary dictionary];
-
-            MPMediaItemArtwork* artwork = [[MPMediaItemArtwork alloc]
-                initWithBoundsSize:image.size
-                    requestHandler:^NSImage* _Nonnull(CGSize aSize) {
-                      return image;
-                    }];
-            [nowPlayingInfo setObject:artwork
-                               forKey:MPMediaItemPropertyArtwork];
-            [artwork release];
-            [image release];
-
-            center.nowPlayingInfo = nowPlayingInfo;
-
-            mFetchingUrl.Truncate();
-          },
-          [this, self](bool) {
-            LOG("Failed to fetch image. Try next image");
-            mImageFetchRequest.Complete();
-            mFetchingUrl.Truncate();
-            LoadImageAtIndex(mNextImageIndex++);
-          })
-      ->Track(mImageFetchRequest);
 }
 
 }  // namespace widget

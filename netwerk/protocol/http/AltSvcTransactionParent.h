@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef AltSvcTransactionParent_h__
-#define AltSvcTransactionParent_h__
+#ifndef AltSvcTransactionParent_h_
+#define AltSvcTransactionParent_h_
 
 #include "mozilla/net/PAltSvcTransactionParent.h"
 #include "mozilla/net/SpeculativeTransaction.h"
@@ -42,4 +41,4 @@ class AltSvcTransactionParent final : public PAltSvcTransactionParent,
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // AltSvcTransactionParent_h__
+#endif  // AltSvcTransactionParent_h_

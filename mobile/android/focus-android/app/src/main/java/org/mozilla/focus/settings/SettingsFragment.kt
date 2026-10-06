@@ -4,41 +4,25 @@
 
 package org.mozilla.focus.settings
 
-import android.os.Bundle
+import androidx.compose.runtime.Composable
 import org.mozilla.focus.R
 import org.mozilla.focus.ext.requireComponents
-import org.mozilla.focus.ext.showToolbar
 import org.mozilla.focus.state.AppAction
-import org.mozilla.focus.state.Screen
 
-class SettingsFragment : BaseSettingsFragment() {
+/**
+ * A fragment that displays the main settings screen.
+ * It uses Jetpack Compose to render its UI.
+ *
+ * When a user interacts with a setting that requires navigating to a sub-page (e.g., "Search"),
+ * this fragment dispatches an [AppAction.OpenSettings] action to handle the navigation logic.
+ */
+class SettingsFragment : BaseComposeFragment() {
+    override val titleRes: Int = R.string.menu_settings
 
-    override fun onCreatePreferences(bundle: Bundle?, s: String?) {
-        addPreferencesFromResource(R.xml.settings)
-    }
-
-    override fun onResume() {
-        super.onResume()
-
-        showToolbar(getString(R.string.menu_settings))
-    }
-
-    override fun onPreferenceTreeClick(preference: androidx.preference.Preference): Boolean {
-        val resources = resources
-
-        val page = when (preference.key) {
-            resources.getString(R.string.pref_key_general_screen) -> Screen.Settings.Page.General
-            resources.getString(R.string.pref_key_privacy_security_screen) -> Screen.Settings.Page.Privacy
-            resources.getString(R.string.pref_key_search_screen) -> Screen.Settings.Page.Search
-            resources.getString(R.string.pref_key_advanced_screen) -> Screen.Settings.Page.Advanced
-            resources.getString(R.string.pref_key_mozilla_screen) -> Screen.Settings.Page.Mozilla
-            else -> throw IllegalStateException("Unknown preference: ${preference.key}")
+    @Composable
+    override fun Content() {
+        SettingsScreen { page ->
+            requireComponents.appStore.dispatch(AppAction.OpenSettings(page))
         }
-
-        requireComponents.appStore.dispatch(
-            AppAction.OpenSettings(page),
-        )
-
-        return super.onPreferenceTreeClick(preference)
     }
 }

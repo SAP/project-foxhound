@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=4 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +5,6 @@
 #include "DomainPolicy.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/ipc/URIUtils.h"
-#include "mozilla/Unused.h"
 #include "nsIURIMutator.h"
 #include "nsScriptSecurityManager.h"
 
@@ -31,7 +28,7 @@ static nsresult BroadcastDomainSetChange(DomainSetType aSetType,
   }
 
   for (uint32_t i = 0; i < parents.Length(); i++) {
-    Unused << parents[i]->SendDomainSetChanged(aSetType, aChangeType, aDomain);
+    (void)parents[i]->SendDomainSetChanged(aSetType, aChangeType, aDomain);
   }
   return NS_OK;
 }

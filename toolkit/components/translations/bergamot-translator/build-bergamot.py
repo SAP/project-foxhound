@@ -21,17 +21,20 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+import zstandard as zstd
 
 DIR_PATH = Path(__file__).parent
 ROOT_PATH = (DIR_PATH / "../../../..").resolve()
 
 MOZ_YAML_PATH = DIR_PATH / "moz.yaml"
 FINAL_JS_PATH = DIR_PATH / "bergamot-translator.js"
+PATCHES_PATH = DIR_PATH / "patches"
 
 THIRD_PARTY_PATH = DIR_PATH / "thirdparty"
-REPO_PATH = DIR_PATH / "thirdparty/translations"
-BUILD_PATH = DIR_PATH / "thirdparty/translations/inference/build-wasm"
+REPO_PATH = THIRD_PARTY_PATH / "translations"
+BUILD_PATH = REPO_PATH / "inference/build-wasm"
 JS_PATH = BUILD_PATH / "bergamot-translator.js"
+WASM_PATH = BUILD_PATH / "bergamot-translator.wasm"
 
 parser = argparse.ArgumentParser(
     description=__doc__,
@@ -120,9 +123,9 @@ def fetch_bergamot_source(translations_repo: Path | None):
     maybe_remove_repo_path()
 
     if translations_repo:
-        assert (
-            translations_repo.is_dir()
-        ), f"The translations repo must be a directory: {translations_repo}"
+        assert translations_repo.is_dir(), (
+            f"The translations repo must be a directory: {translations_repo}"
+        )
 
         logger.info(f"Using local mozilla/translations repo: {translations_repo}")
 
@@ -191,6 +194,11 @@ def build_bergamot(args: Any):
     using the Docker image specified by the repository.
     """
 
+    if WASM_PATH.exists() and JS_PATH.exists() and not args.force_rebuild:
+        logger.info("The build artifacts already exist: skipping build step...")
+        logger.info("Use the --force_rebuild flag to build them again.")
+        return
+
     task_args = []
     if args.clobber:
         task_args.append("--clobber")
@@ -227,6 +235,33 @@ def write_final_bergamot_js_file():
         logger.info(f"Writing out final Bergamot file: {FINAL_JS_PATH}")
         shutil.move(temp_path, FINAL_JS_PATH)
 
+    if PATCHES_PATH.exists():
+        for patch_file in PATCHES_PATH.iterdir():
+            if patch_file.is_file() and patch_file.suffix == ".diff":
+                logger.info(f"Applying patch: {patch_file.name}")
+                subprocess.check_call(
+                    ["git", "apply", "--reject", str(patch_file)], cwd=DIR_PATH
+                )
+
+
+def compress_wasm_file():
+    """
+    Compresses the generated .wasm file using zstd and saves it as .wasm.zst.
+    """
+    if not WASM_PATH.exists():
+        logger.error(f"WASM file not found: {WASM_PATH}")
+        return
+
+    compressed_path = WASM_PATH.with_suffix(".wasm.zst")
+
+    logger.info(f"Compressing WASM file: {compressed_path}")
+
+    with open(WASM_PATH, "rb") as f_in, open(compressed_path, "wb") as f_out:
+        compressor = zstd.ZstdCompressor(19)
+        f_out.write(compressor.compress(f_in.read()))
+
+    logger.info(f"Compressed WASM saved to: {compressed_path}")
+
 
 def main():
     args = parser.parse_args()
@@ -237,6 +272,7 @@ def main():
     fetch_bergamot_source(args.translations_repo)
     build_bergamot(args)
     write_final_bergamot_js_file()
+    compress_wasm_file()
 
     logger.info(
         "Uncomment the line in toolkit/components/translations/jar.mn to test the wasm artifact locally"

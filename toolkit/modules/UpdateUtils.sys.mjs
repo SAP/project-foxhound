@@ -381,7 +381,7 @@ export var UpdateUtils = {
    *                      branch values reset when Firefox shuts down.
    * @return A Promise that, once the setting has been saved, resolves with the
    *         value that was saved.
-   * @throw  If there is an I/O error when attempting to write to the config
+   * @throws If there is an I/O error when attempting to write to the config
    *         file, the returned Promise will reject with a DOMException.
    */
   writeUpdateConfigSetting(prefName, value, options) {
@@ -876,7 +876,7 @@ async function readUpdateConfig() {
  * @param  config
  *           The configuration object to write.
  * @return The configuration object written.
- * @throw  A DOMException will be thrown on I/O error.
+ * @throws A DOMException will be thrown on I/O error.
  */
 async function writeUpdateConfig(config) {
   let path = UpdateUtils.getConfigFilePath();

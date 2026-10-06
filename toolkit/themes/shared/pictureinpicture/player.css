@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+@import url("chrome://global/skin/design-system/tokens-platform.css");
+
 :root {
   --player-bg-color: #000;
   --player-control-icon-fill: #fff;
@@ -152,7 +154,7 @@ browser {
 
 .control-button {
   background-color: transparent;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   /**
    * Make the button dimensions a square proportional to one
    * dimension of the window - in this case, the width dimension,
@@ -190,9 +192,9 @@ body:not(:fullscreen) #controls:hover .control-button:disabled {
   width: max-content;
   position: relative;
   padding: 0.4em 0.5em;
-  background: #000000;
+  background: black;
   color: #ffffff;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   pointer-events: none;
 }
 
@@ -345,8 +347,8 @@ body:not(:fullscreen) #controls:hover #timestamp {
   margin: 0;
 
   &::-moz-range-thumb {
-    border-radius: 8px;
-    background-color: #ffffff;
+    border-radius: var(--border-radius-medium);
+    background-color: white;
     width: 8px;
     height: 8px;
     padding: 0;
@@ -357,14 +359,14 @@ body:not(:fullscreen) #controls:hover #timestamp {
   }
 
   &::-moz-range-progress {
-    background-color: #ffffff;
+    background-color: white;
   }
 
   &,
   &::-moz-range-track,
   &::-moz-range-progress {
     height: 2px;
-    border-radius: 10px;
+    border-radius: var(--border-radius-medium);
   }
 }
 
@@ -423,7 +425,7 @@ body:not(:fullscreen) #fullscreen {
   width: 186px;
   padding: 0 8px;
   margin: 0;
-  border-radius: 8px;
+  border-radius: var(--border-radius-medium);
 }
 
 :root:dir(rtl) .box {
@@ -440,7 +442,7 @@ body:not(:fullscreen) #fullscreen {
 }
 
 .bold {
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
 }
 
 .box > input[type="radio"] {
@@ -514,7 +516,7 @@ body:not(:fullscreen) #fullscreen {
   width: 16px;
   height: 16px;
   border: 1px solid #8f8f9d;
-  border-radius: 50%;
+  border-radius: var(--border-radius-circle);
   margin: 0;
   margin-inline-end: 6px;
 }
@@ -550,7 +552,7 @@ body:not(:fullscreen) #fullscreen {
   position: absolute;
   inset: 0;
   transition: transform 250ms;
-  border-radius: 13px;
+  border-radius: var(--border-radius-large);
   background-color: #55545f;
 }
 
@@ -563,7 +565,7 @@ body:not(:fullscreen) #fullscreen {
   bottom: 2px;
   background-color: #2b2a33;
   transition: transform 250ms;
-  border-radius: 50%;
+  border-radius: var(--border-radius-circle);
 }
 
 input:checked + .slider {
@@ -606,7 +608,7 @@ input:checked + .slider::before {
   padding: 6px 2px;
 
   &::-moz-range-thumb {
-    border-radius: 14px;
+    border-radius: var(--border-radius-large);
     background-color: #bfbfc9;
     width: 8px;
     height: 8px;
@@ -619,14 +621,14 @@ input:checked + .slider::before {
   }
 
   &::-moz-range-progress {
-    background-color: #ffffff;
+    background-color: white;
   }
 
   &,
   &::-moz-range-track,
   &::-moz-range-progress {
     height: 4px;
-    border-radius: 10px;
+    border-radius: var(--border-radius-medium);
   }
 }
 

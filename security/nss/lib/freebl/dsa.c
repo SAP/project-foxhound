@@ -14,7 +14,6 @@
 #include "prtypes.h"
 #include "prinit.h"
 #include "blapi.h"
-#include "nssilock.h"
 #include "secitem.h"
 #include "blapit.h"
 #include "mpi.h"
@@ -259,7 +258,7 @@ DSA_NewRandom(PLArenaPool *arena, const SECItem *q, SECItem *seed)
     if (!good) {
         PORT_SetError(SEC_ERROR_NEED_RANDOM);
     loser:
-        if (arena != NULL) {
+        if (arena == NULL) {
             SECITEM_ZfreeItem(seed, PR_FALSE);
         }
         return SECFailure;
@@ -337,7 +336,9 @@ dsa_SignDigest(DSAPrivateKey *key, SECItem *signature, const SECItem *digest,
 
     dsa_subprime_len = PQG_GetLength(&key->params.subPrime);
     dsa_signature_len = dsa_subprime_len * 2;
-    if ((signature->len < dsa_signature_len) ||
+    if ((dsa_subprime_len == 0) ||
+        (dsa_subprime_len > DSA_MAX_SUBPRIME_LEN) ||
+        (signature->len < dsa_signature_len) ||
         (digest->len > HASH_LENGTH_MAX) ||
         (digest->len < SHA1_LENGTH)) {
         PORT_SetError(SEC_ERROR_INVALID_ARGS);
@@ -575,7 +576,9 @@ DSA_VerifyDigest(DSAPublicKey *key, const SECItem *signature,
 
     dsa_subprime_len = PQG_GetLength(&key->params.subPrime);
     dsa_signature_len = dsa_subprime_len * 2;
-    if ((signature->len != dsa_signature_len) ||
+    if ((dsa_subprime_len == 0) ||
+        (dsa_subprime_len > DSA_MAX_SUBPRIME_LEN) ||
+        (signature->len != dsa_signature_len) ||
         (digest->len > HASH_LENGTH_MAX) ||
         (digest->len < SHA1_LENGTH)) {
         PORT_SetError(SEC_ERROR_INVALID_ARGS);

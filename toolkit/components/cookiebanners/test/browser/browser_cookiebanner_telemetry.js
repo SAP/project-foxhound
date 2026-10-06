@@ -35,9 +35,9 @@ function convertModeToTelemetryString(mode) {
 /**
  * A helper function to verify the reload telemetry.
  *
- * @param {Number} length The expected length of the telemetry array.
- * @param {Number} idx The index of the telemetry to be verified.
- * @param {Object} expected An object that describe the expected value.
+ * @param {number} length The expected length of the telemetry array.
+ * @param {number} idx The index of the telemetry to be verified.
+ * @param {object} expected An object that describe the expected value.
  */
 function verifyReloadTelemetry(length, idx, expected) {
   let events = Glean.cookieBanners.reload.testGetValue();
@@ -65,7 +65,7 @@ function verifyReloadTelemetry(length, idx, expected) {
  * A helper function to reload the browser and wait until it loads.
  *
  * @param {Browser} browser The browser object.
- * @param {String} url The URL to be loaded.
+ * @param {string} url The URL to be loaded.
  */
 async function reloadBrowser(browser, url) {
   let reloaded = BrowserTestUtils.browserLoaded(browser, false, url);
@@ -80,8 +80,8 @@ async function reloadBrowser(browser, url) {
  *
  * @param {browser} browser The browser element
  * @param {boolean} testInTop To indicate the page should be opened in top level
- * @param {String} page The url of the testing page
- * @param {String} domain The domain of the testing page
+ * @param {string} page The url of the testing page
+ * @param {string} domain The domain of the testing page
  */
 async function openLookUpTelemetryTestPage(browser, testInTop, page, domain) {
   let clickFinishPromise = promiseBannerClickingFinish(domain);

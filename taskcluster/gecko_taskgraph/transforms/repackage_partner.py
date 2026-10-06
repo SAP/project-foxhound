@@ -5,19 +5,18 @@
 Transform the repackage task into an actual task description.
 """
 
-
 import copy
+from typing import Optional
 
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
 from taskgraph.util.schema import Schema, optionally_keyed_by, resolve_keyed_by
 from taskgraph.util.taskcluster import get_artifact_prefix
-from voluptuous import Optional, Required
 
 from gecko_taskgraph.transforms.repackage import (
     PACKAGE_FORMATS as PACKAGE_FORMATS_VANILLA,
 )
-from gecko_taskgraph.transforms.task import task_description_schema
+from gecko_taskgraph.transforms.task import TaskDescriptionSchema
 from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 from gecko_taskgraph.util.partners import get_partner_config_by_kind
 from gecko_taskgraph.util.platforms import archive_format, executable_extension
@@ -29,38 +28,40 @@ PACKAGE_FORMATS = copy.deepcopy(PACKAGE_FORMATS_VANILLA)
 PACKAGE_FORMATS["installer-stub"]["inputs"]["package"] = "target-stub{archive_format}"
 PACKAGE_FORMATS["installer-stub"]["args"].extend(["--package-name", "{package-name}"])
 
-packaging_description_schema = Schema(
-    {
-        # unique label to describe this repackaging task
-        Optional("label"): str,
-        # Routes specific to this task, if defined
-        Optional("routes"): [str],
-        # passed through directly to the job description
-        Optional("extra"): task_description_schema["extra"],
-        # Shipping product and phase
-        Optional("shipping-product"): task_description_schema["shipping-product"],
-        Optional("shipping-phase"): task_description_schema["shipping-phase"],
-        Required("package-formats"): optionally_keyed_by(
-            "build-platform", "build-type", [str]
-        ),
-        # All l10n jobs use mozharness
-        Required("mozharness"): {
-            # Config files passed to the mozharness script
-            Required("config"): optionally_keyed_by("build-platform", [str]),
-            # Additional paths to look for mozharness configs in. These should be
-            # relative to the base of the source checkout
-            Optional("config-paths"): [str],
-            # if true, perform a checkout of a comm-central based branch inside the
-            # gecko checkout
-            Optional("comm-checkout"): bool,
-        },
-        # Override the default priority for the project
-        Optional("priority"): task_description_schema["priority"],
-        Optional("task-from"): task_description_schema["task-from"],
-        Optional("attributes"): task_description_schema["attributes"],
-        Optional("dependencies"): task_description_schema["dependencies"],
-    }
-)
+
+class MozharnessSchema(Schema, kw_only=True):
+    # Config files passed to the mozharness script
+    config: optionally_keyed_by("build-platform", list[str], use_msgspec=True)  # type: ignore
+    # Additional paths to look for mozharness configs in. These should be
+    # relative to the base of the source checkout
+    config_paths: Optional[list[str]] = None
+    # if true, perform a checkout of a comm-central based branch inside the
+    # gecko checkout
+    comm_checkout: Optional[bool] = None
+
+
+class PackagingDescriptionSchema(Schema, kw_only=True):
+    # unique label to describe this repackaging task
+    label: Optional[str] = None
+    # Routes specific to this task, if defined
+    routes: Optional[list[str]] = None
+    # passed through directly to the job description
+    extra: TaskDescriptionSchema.__annotations__["extra"] = None
+    # Shipping product and phase
+    shipping_product: TaskDescriptionSchema.__annotations__["shipping_product"] = None
+    shipping_phase: TaskDescriptionSchema.__annotations__["shipping_phase"] = None
+    package_formats: optionally_keyed_by(
+        "build-platform", "build-type", list[str], use_msgspec=True
+    )  # type: ignore  # noqa: F821
+    # All l10n jobs use mozharness
+    mozharness: MozharnessSchema  # noqa: F821
+    # Override the default priority for the project
+    priority: TaskDescriptionSchema.__annotations__["priority"] = None
+    task_from: TaskDescriptionSchema.__annotations__["task_from"] = None
+    attributes: TaskDescriptionSchema.__annotations__["attributes"] = None
+    dependencies: TaskDescriptionSchema.__annotations__["dependencies"] = None
+    run_on_repo_type: TaskDescriptionSchema.__annotations__["run_on_repo_type"] = None
+
 
 transforms = TransformSequence()
 
@@ -73,7 +74,7 @@ def remove_name(config, jobs):
         yield job
 
 
-transforms.add_validate(packaging_description_schema)
+transforms.add_validate(PackagingDescriptionSchema)
 
 
 @transforms.add
@@ -164,17 +165,15 @@ def make_job_description(config, jobs):
             repackage_config.append(command)
 
         run = job.get("mozharness", {})
-        run.update(
-            {
-                "using": "mozharness",
-                "script": "mozharness/scripts/repackage.py",
-                "job-script": "taskcluster/scripts/builder/repackage.sh",
-                "actions": ["setup", "repackage"],
-                "extra-config": {
-                    "repackage_config": repackage_config,
-                },
-            }
-        )
+        run.update({
+            "using": "mozharness",
+            "script": "mozharness/scripts/repackage.py",
+            "job-script": "taskcluster/scripts/builder/repackage.sh",
+            "actions": ["setup", "repackage"],
+            "extra-config": {
+                "repackage_config": repackage_config,
+            },
+        })
 
         worker = {
             "chain-of-trust": True,
@@ -187,7 +186,7 @@ def make_job_description(config, jobs):
             "skip-artifacts": True,
         }
 
-        worker_type = "b-linux-gcp"
+        worker_type = "b-linux"
 
         worker["artifacts"] = _generate_task_output_files(
             dep_job,
@@ -231,12 +230,14 @@ def make_job_description(config, jobs):
         if job.get("priority"):
             task["priority"] = job["priority"]
         if build_platform.startswith("macosx"):
-            task.setdefault("fetches", {}).setdefault("toolchain", []).extend(
-                [
-                    "linux64-libdmg",
-                    "linux64-hfsplus",
-                    "linux64-node",
-                ]
+            task.setdefault("fetches", {}).setdefault("toolchain", []).extend([
+                "linux64-libdmg",
+                "linux64-hfsplus",
+                "linux64-node",
+            ])
+        elif build_platform.startswith("win"):
+            task.setdefault("fetches", {}).setdefault("toolchain", []).append(
+                "linux64-7zz"
             )
         yield task
 
@@ -269,15 +270,13 @@ def _generate_download_config(
             f"{locale_path}setup.exe",
         ]
         if build_platform.startswith("win32") and repack_stub_installer:
-            download_config.extend(
-                [
-                    {
-                        "artifact": f"{locale_path}target-stub.zip",
-                        "extract": False,
-                    },
-                    f"{locale_path}setup-stub.exe",
-                ]
-            )
+            download_config.extend([
+                {
+                    "artifact": f"{locale_path}target-stub.zip",
+                    "extract": False,
+                },
+                f"{locale_path}setup-stub.exe",
+            ])
         return {signing_task: download_config}
 
     raise NotImplementedError(f'Unsupported build_platform: "{build_platform}"')
@@ -302,15 +301,13 @@ def _generate_task_output_files(task, worker_implementation, repackage_config, p
 
     output_files = []
     for config in repackage_config:
-        output_files.append(
-            {
-                "type": "file",
-                "path": "{}outputs/{}{}".format(
-                    local_prefix, partner_output_path, config["output"]
-                ),
-                "name": "{}/{}{}".format(
-                    artifact_prefix, partner_output_path, config["output"]
-                ),
-            }
-        )
+        output_files.append({
+            "type": "file",
+            "path": "{}outputs/{}{}".format(
+                local_prefix, partner_output_path, config["output"]
+            ),
+            "name": "{}/{}{}".format(
+                artifact_prefix, partner_output_path, config["output"]
+            ),
+        })
     return output_files

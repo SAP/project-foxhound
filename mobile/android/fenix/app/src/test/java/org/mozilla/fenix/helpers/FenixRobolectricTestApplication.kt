@@ -10,9 +10,14 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.components.Components
 
 /**
- * An override of our application for use in Robolectric-based unit tests. We're forced to override
- * because our standard application fails to initialize in Robolectric with exceptions like:
- * "Crash handler service must run in a separate process".
+ * An override of our application for use in Robolectric-based unit tests. This bypasses standard
+ * process initialization of native code (Glean, Nimbus, Gecko, etc) as well mocking `components`
+ * which is the primary service repository for our Kotlin code used by Fenix. Unit tests should
+ * avoid relying global subsystems being available to them.
+ *
+ * Note: Robolectric runs on a host machine JVM, so if you want native code your packages must
+ *       include binaries for host platform. For example the [glean-native-forUnitTests] package
+ *       is used for some unit tests, but we don't provide this in the default Application.
  */
 class FenixRobolectricTestApplication : FenixApplication() {
 
@@ -21,17 +26,8 @@ class FenixRobolectricTestApplication : FenixApplication() {
         setApplicationTheme()
     }
 
-    override val components = mockk<Components>()
-
-    override fun initializeNimbus() = Unit
-
-    override fun initializeGlean() = Unit
-
-    override fun setupInAllProcesses() = Unit
-
-    override fun setupInMainProcessOnly() = Unit
-
-    override fun downloadWallpapers() = Unit
+    override val components = mockk<Components>(relaxed = true)
+    override fun initializeFenixProcess() = Unit
 
     private fun setApplicationTheme() {
         // According to the Robolectric devs, the application context will not have the <application>'s

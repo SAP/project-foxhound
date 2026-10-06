@@ -1,0 +1,160 @@
+namespace autofill {
+    // We expose the crypto primitives on the namespace
+
+    /// Create a new, random, encryption key.
+    [Throws=AutofillApiError]
+    string create_autofill_key();
+
+    /// Encrypt an arbitrary string - `key` must have come from `create_key()`
+    [Throws=AutofillApiError]
+    string encrypt_string(string key, string cleartext);
+
+    /// Decrypt an arbitrary string - `key` must have come from `create_key()`
+    /// and `ciphertext` must have come from `encrypt_string()`
+    [Throws=AutofillApiError]
+    string decrypt_string(string key, string ciphertext);
+};
+
+/// What you pass to create or update a credit-card.
+dictionary UpdatableCreditCardFields {
+    string cc_name;
+    string cc_number_enc;
+    string cc_number_last_4;
+    i64 cc_exp_month;
+    i64 cc_exp_year;
+    string cc_type;
+};
+
+/// What you get back as a credit-card.
+dictionary CreditCard {
+    string guid;
+    string cc_name;
+    string cc_number_enc;
+    string cc_number_last_4;
+    i64 cc_exp_month;
+    i64 cc_exp_year;
+    string cc_type;
+
+    i64 time_created;
+    i64? time_last_used;
+    i64 time_last_modified;
+    i64 times_used;
+};
+
+/// What you pass to create or update an address.
+dictionary UpdatableAddressFields {
+    string name;
+    string organization;
+    string street_address;
+    string address_level3;
+    string address_level2;
+    string address_level1;
+    string postal_code;
+    string country;
+    string tel;
+    string email;
+};
+
+/// What you get back as an address.
+dictionary Address {
+    string guid;
+    string name;
+    string organization;
+    string street_address;
+    string address_level3;
+    string address_level2;
+    string address_level1;
+    string postal_code;
+    string country;
+    string tel;
+    string email;
+
+    i64 time_created;
+    i64? time_last_used;
+    i64 time_last_modified;
+    i64 times_used;
+};
+
+/// Metrics tracking scrubbing of credit cards that cannot be decrypted, see
+// `scrub_undecryptable_credit_card_data_for_remote_replacement` for more details
+dictionary CreditCardsDeletionMetrics {
+    u64 total_scrubbed_records;
+};
+
+[Error]
+interface AutofillApiError {
+    SqlError(string reason);
+    InterruptedError();
+    CryptoError(string reason);
+    NoSuchRecord(string guid);
+    UnexpectedAutofillApiError(string reason);
+};
+
+interface Store {
+    [Throws=AutofillApiError]
+    constructor(string dbpath);
+
+    [Throws=AutofillApiError]
+    CreditCard add_credit_card(UpdatableCreditCardFields cc);
+
+    [Throws=AutofillApiError]
+    CreditCard get_credit_card(string guid);
+
+    [Throws=AutofillApiError]
+    sequence<CreditCard> get_all_credit_cards();
+
+    [Throws=AutofillApiError]
+    i64 count_all_credit_cards();
+
+    [Throws=AutofillApiError]
+    void update_credit_card(string guid, UpdatableCreditCardFields cc);
+
+    [Throws=AutofillApiError]
+    boolean delete_credit_card(string guid);
+
+    [Throws=AutofillApiError]
+    void touch_credit_card(string guid);
+
+    [Throws=AutofillApiError]
+    Address add_address(UpdatableAddressFields a);
+
+    [Throws=AutofillApiError]
+    Address get_address(string guid);
+
+    [Throws=AutofillApiError]
+    sequence<Address> get_all_addresses();
+
+    [Throws=AutofillApiError]
+    i64 count_all_addresses();
+
+    [Throws=AutofillApiError]
+    void update_address(string guid, UpdatableAddressFields a);
+
+    [Throws=AutofillApiError]
+    boolean delete_address(string guid);
+
+    [Throws=AutofillApiError]
+    void touch_address(string guid);
+
+    [Throws=AutofillApiError, Self=ByArc]
+    void scrub_encrypted_data();
+
+    /// The `scrub_undecryptable_credit_card_data_for_remote_replacement` function locally scrubs credit cards
+    /// that cannot be decrypted, sets the record's metadata to their default values, and resets the credit card
+    /// engine so any existing server records can overwrite the locally scrubbed records.
+    ///
+    /// NB: This function was created to unblock iOS credit card users who are unable to sync records and should not be used
+    /// outside of this use case.
+    [Throws=AutofillApiError, Self=ByArc]
+    CreditCardsDeletionMetrics scrub_undecryptable_credit_card_data_for_remote_replacement(string local_encryption_key);
+
+    /// Run maintenance on the DB
+    ///
+    /// This is intended to be run during idle time and will take steps / to clean up / shrink the
+    /// database.
+    [Throws=AutofillApiError]
+    void run_maintenance();
+
+    [Self=ByArc]
+    void register_with_sync_manager();
+};

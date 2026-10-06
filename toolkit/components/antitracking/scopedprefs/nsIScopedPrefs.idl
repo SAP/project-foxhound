@@ -1,0 +1,36 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+webidl BrowsingContext;
+
+[scriptable, builtinclass, uuid(63a0e445-e1ff-41ef-9f8c-0af5b30f894c)]
+interface nsIScopedPrefs : nsISupports {
+    cenum Pref: 8 {
+        // Represent the tracking protection control prefs. It's comparable to the
+        // privacy.trackingprotection.enabled pref and privacy.trackingprotection.pbmode.enabled
+        // depending on whether we are in private mode.
+        PRIVACY_TRACKINGPROTECTION_ENABLED = 0,
+        // `privacy.trackingprotection.cryptomining.enabled` pref
+        PRIVACY_TRACKINGPROTECTION_CRYPTOMINING_ENABLED = 1,
+        // `privacy.trackingprotection.fingerprinting.enabled` pref
+        PRIVACY_TRACKINGPROTECTION_FINGERPRINTING_ENABLED = 2,
+        // `privacy.trackingprotection.socialtracking.enabled` pref
+        PRIVACY_TRACKINGPROTECTION_SOCIALTRACKING_ENABLED = 3,
+        // Comparable to privacy.trackingprotection.emailtracking.enabled and
+        // privacy.trackingprotection.emailtracking.pbmode.enabled.
+        PRIVACY_TRACKINGPROTECTION_EMAILTRACKING_ENABLED = 4,
+        NUM_SCOPED_BOOL_PREFS = 5,
+    };
+
+    void setBoolPrefScoped(in nsIScopedPrefs_Pref pref, in BrowsingContext bc, in boolean value);
+    boolean getBoolPrefScoped(in nsIScopedPrefs_Pref pref, in BrowsingContext bc);
+
+    // resets all prefs scoped by the attached browsingContext
+    void clearScoped();
+    void clearScopedPref(in nsIScopedPrefs_Pref pref);
+    void clearScopedByHost(in AUTF8String aHost);
+    void clearScopedPrefByHost(in nsIScopedPrefs_Pref pref, in AUTF8String aHost);
+};

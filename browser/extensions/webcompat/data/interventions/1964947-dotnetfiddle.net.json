@@ -1,0 +1,15 @@
+{
+  "label": "dotnetfiddle.net",
+  "bugs": {
+    "1964947": {
+      "issue": "desktop-layout-not-mobile",
+      "matches": ["*://dotnetfiddle.net/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

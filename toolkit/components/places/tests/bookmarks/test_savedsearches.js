@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -94,15 +92,17 @@ add_task(async function test_savedsearches_bookmarks() {
       var item = node.getChild(0);
       Assert.equal(item.bookmarkGuid, bookmark.guid);
 
-      // XXX - FAILING - test live-update of query results - add a bookmark that matches the query
-      // var tmpBmId = PlacesUtils.bookmarks.insertBookmark(
-      //  root, uri("http://" + searchTerm + ".com"),
-      //  PlacesUtils.bookmarks.DEFAULT_INDEX, searchTerm + "blah");
-      // do_check_eq(query.childCount, 2);
+      // test live-update of query results - add a bookmark that matches the query
+      let newBookmark = await PlacesUtils.bookmarks.insert({
+        parentGuid: PlacesUtils.bookmarks.menuGuid,
+        title: searchTerm + "blah",
+        url: "http://" + searchTerm + ".com",
+      });
+      Assert.equal(node.childCount, 2);
 
-      // XXX - test live-update of query results - delete a bookmark that matches the query
-      // PlacesUtils.bookmarks.removeItem(tmpBMId);
-      // do_check_eq(query.childCount, 1);
+      // test live-update of query results - delete a bookmark that matches the query
+      await PlacesUtils.bookmarks.remove(newBookmark);
+      Assert.equal(node.childCount, 1);
 
       // test live-update of query results - add a folder that matches the query
       await PlacesUtils.bookmarks.insert({

@@ -1,12 +1,12 @@
-/* vim:set ts=2 sw=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsUDPSocket_h__
-#define nsUDPSocket_h__
+#ifndef nsUDPSocket_h_
+#define nsUDPSocket_h_
 
 #include "nsIUDPSocket.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/net/DNS.h"
 #include "nsIOutputStream.h"
@@ -34,10 +34,22 @@ class nsUDPSocket final : public nsASocketHandler, public nsIUDPSocket {
   uint64_t ByteCountSent() override { return mByteWriteCount; }
   uint64_t ByteCountReceived() override { return mByteReadCount; }
 
+  bool IsTRRConnection() override;
+
   nsUDPSocket();
+
+  PRFileDesc* GetFD() {
+    MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+    return mFD;
+  }
 
  private:
   virtual ~nsUDPSocket();
+
+  already_AddRefed<nsIUDPSocketListener> GetListener() {
+    MutexAutoLock lock(mLock);
+    return do_AddRef(mListener.get());
+  }
 
   void OnMsgClose();
   void OnMsgAttach();
@@ -57,19 +69,28 @@ class nsUDPSocket final : public nsASocketHandler, public nsIUDPSocket {
 
   // lock protects access to mListener;
   // so mListener is not cleared while being used/locked.
-  Mutex mLock MOZ_UNANNOTATED{"nsUDPSocket.mLock"};
+  Mutex mLock{"nsUDPSocket.mLock"};
   PRFileDesc* mFD{nullptr};
   NetAddr mAddr;
-  OriginAttributes mOriginAttributes;
-  nsCOMPtr<nsIUDPSocketListener> mListener;
+  nsCOMPtr<nsIUDPSocketListener> mListener MOZ_GUARDED_BY(mLock);
   nsCOMPtr<nsIUDPSocketSyncListener> mSyncListener;
-  nsCOMPtr<nsIEventTarget> mListenerTarget;
-  bool mAttached{false};
+  nsCOMPtr<nsIEventTarget> mListenerTarget MOZ_GUARDED_BY(mLock);
+  Atomic<bool, ReleaseAcquire> mAttached{false};
   RefPtr<nsSocketTransportService> mSts;
 
   uint64_t mByteReadCount{0};
   uint64_t mByteWriteCount{0};
+  bool mIsTRRServiceChannel{false};
 };
+
+inline bool nsUDPSocket::IsSocketClosed() {
+#ifdef DEBUG
+  bool onSTSThread = false;
+  mSts->IsOnCurrentThread(&onSTSThread);
+  MOZ_ASSERT(onSTSThread);
+#endif
+  return !mFD;
+}
 
 //-----------------------------------------------------------------------------
 
@@ -98,14 +119,12 @@ class nsUDPOutputStream : public nsIOutputStream {
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIOUTPUTSTREAM
 
-  nsUDPOutputStream(nsUDPSocket* aSocket, PRFileDesc* aFD,
-                    PRNetAddr& aPrClientAddr);
+  nsUDPOutputStream(nsUDPSocket* aSocket, PRNetAddr& aPrClientAddr);
 
  private:
   virtual ~nsUDPOutputStream() = default;
 
   RefPtr<nsUDPSocket> mSocket;
-  PRFileDesc* mFD;
   PRNetAddr mPrClientAddr;
   bool mIsClosed;
 };
@@ -113,4 +132,4 @@ class nsUDPOutputStream : public nsIOutputStream {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // nsUDPSocket_h__
+#endif  // nsUDPSocket_h_

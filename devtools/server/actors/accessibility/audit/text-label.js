@@ -35,10 +35,11 @@ const {
 
 /**
  * Check if the accessible is visible to the assistive technology.
+ *
  * @param {nsIAccessible} accessible
  *        Accessible object to be tested for visibility.
  *
- * @returns {Boolean}
+ * @returns {boolean}
  *         True if accessible object is visible to assistive technology.
  */
 function isVisible(accessible) {
@@ -50,6 +51,7 @@ function isVisible(accessible) {
 /**
  * Get related accessible objects that are targets of labelled by relation e.g.
  * labels.
+ *
  * @param {nsIAccessible} accessible
  *        Accessible objects to get labels for.
  *
@@ -69,7 +71,7 @@ function getLabels(accessible) {
  * @param {nsIAccessible} accessible
  *        Accessible objects to get a name for.
  *
- * @returns {null|String}
+ * @returns {null | string}
  *          Trimmed name of the accessible object if available.
  */
 function getAccessibleName(accessible) {
@@ -80,7 +82,7 @@ function getAccessibleName(accessible) {
  * A text label rule for accessible objects that must have a non empty
  * accessible name.
  *
- * @returns {null|Object}
+ * @returns {null | object}
  *          Failure audit report if accessible object has no or empty name, null
  *          otherwise.
  */
@@ -93,7 +95,7 @@ const mustHaveNonEmptyNameRule = function (issue, accessible) {
  * A text label rule for accessible objects that should have a non empty
  * accessible name as a best practice.
  *
- * @returns {null|Object}
+ * @returns {null | object}
  *          Best practices audit report if accessible object has no or empty
  *          name, null otherwise.
  */
@@ -106,7 +108,7 @@ const shouldHaveNonEmptyNameRule = function (issue, accessible) {
  * A text label rule for accessible objects that can be activated via user
  * action and must have a non-empty name.
  *
- * @returns {null|Object}
+ * @returns {null | object}
  *          Failure audit report if interactive accessible object has no or
  *          empty name, null otherwise.
  */
@@ -119,7 +121,7 @@ const interactiveRule = mustHaveNonEmptyNameRule.bind(
  * A text label rule for accessible objects that correspond to dialogs and thus
  * should have a non-empty name.
  *
- * @returns {null|Object}
+ * @returns {null | object}
  *          Best practices audit report if dialog accessible object has no or
  *          empty name, null otherwise.
  */
@@ -130,7 +132,7 @@ const dialogRule = shouldHaveNonEmptyNameRule.bind(null, DIALOG_NO_NAME);
  * (images, canvas, etc.) and must have a defined name (that can be empty, e.g.
  * "").
  *
- * @returns {null|Object}
+ * @returns {null | object}
  *          Failure audit report if interactive accessible object has no name,
  *          null otherwise.
  */
@@ -143,7 +145,7 @@ const imageRule = function (accessible) {
  * A text label rule for accessible objects that correspond to form elements.
  * These objects must have a non-empty name and must have a visible label.
  *
- * @returns {null|Object}
+ * @returns {null | object}
  *          Failure audit report if form element accessible object has no name,
  *          warning if the name does not come from a visible label, null
  *          otherwise.
@@ -169,7 +171,7 @@ const formRule = function (accessible) {
  * * <FIELDSET> must have a non-empty name and must be provided via the
  *   corresponding <LEGEND> element.
  *
- * @returns {null|Object}
+ * @returns {null | object}
  *          Failure audit report if form grouping accessible object has no name,
  *          or has a name that is not derived from a required location, null
  *          otherwise.
@@ -186,7 +188,7 @@ const formGroupingRule = function (accessible) {
             score: FAIL,
             issue: FORM_OPTGROUP_NO_NAME_FROM_LABEL,
           };
-    case "FIELDSET":
+    case "FIELDSET": {
       if (!name) {
         return { score: FAIL, issue: FORM_FIELDSET_NO_NAME };
       }
@@ -206,6 +208,7 @@ const formGroupingRule = function (accessible) {
             score: WARNING,
             issue: FORM_FIELDSET_NO_NAME_FROM_LEGEND,
           };
+    }
     default:
       return null;
   }
@@ -217,7 +220,7 @@ const formGroupingRule = function (accessible) {
  *   the visible label. Note: Will only work when bug 559770 is resolved (right
  *   now, unlabelled meters are not mapped to an accessible object).
  *
- * @returns {null|Object}
+ * @returns {null | object}
  *          Failure audit report depending on requirements for dialogs or form
  *          meter element, null otherwise.
  */
@@ -243,7 +246,7 @@ const textContainerRule = function (accessible) {
  *  * <FRAME> and <IFRAME> map to ROLE_INTERNAL_FRAME and must have a non-empty
  *    title attribute.
  *
- * @returns {null|Object}
+ * @returns {null | object}
  *          Failure audit report if the internal frame accessible object name is
  *          not provided or if it is not derived from a required location, null
  *          otherwise.
@@ -253,13 +256,14 @@ const internalFrameRule = function (accessible) {
   switch (DOMNode.nodeName) {
     case "FRAME":
       return mustHaveNonEmptyNameRule(FRAME_NO_NAME, accessible);
-    case "IFRAME":
+    case "IFRAME": {
       const name = getAccessibleName(accessible);
       const title = DOMNode.title && DOMNode.title.trim();
 
       return title && title === name
         ? null
         : { score: FAIL, issue: IFRAME_NO_NAME_FROM_TITLE };
+    }
     case "OBJECT": {
       const type = DOMNode.getAttribute("type");
       if (!type || !type.startsWith("image/")) {
@@ -284,7 +288,7 @@ const internalFrameRule = function (accessible) {
  * A text label rule for accessible objects that represent documents and should
  * have title element provided.
  *
- * @returns {null|Object}
+ * @returns {null | object}
  *          Failure audit report if document accessible object has no or empty
  *          title, null otherwise.
  */
@@ -297,7 +301,7 @@ const documentRule = function (accessible) {
  * A text label rule for accessible objects that correspond to headings and thus
  * must be non-empty.
  *
- * @returns {null|Object}
+ * @returns {null | object}
  *          Failure audit report if heading accessible object has no or
  *          empty name or if its text content is empty, null otherwise.
  */
@@ -316,7 +320,7 @@ const headingRule = function (accessible) {
  * A text label rule for accessible objects that represent toolbars and must
  * have a non-empty name if there is more than one toolbar present.
  *
- * @returns {null|Object}
+ * @returns {null | object}
  *          Failure audit report if toolbar accessible object is not the only
  *          toolbar in the document and has no or empty title, null otherwise.
  */
@@ -333,7 +337,7 @@ const toolbarRule = function (accessible) {
  * A text label rule for accessible objects that represent link (anchors, areas)
  * and must have a non-empty name.
  *
- * @returns {null|Object}
+ * @returns {null | object}
  *          Failure audit report if link accessible object has no or empty name,
  *          or in case when it's an <area> element with href attribute the name
  *          is not specified by an alt attribute, null otherwise.
@@ -356,7 +360,7 @@ const linkRule = function (accessible) {
  * non-standard symbols where existing Unicode characters are not available and
  * must have a non-empty name.
  *
- * @returns {null|Object}
+ * @returns {null | object}
  *          Failure audit report if mglyph accessible object has no or empty
  *          name, and no or empty alt attribute, null otherwise.
  */
@@ -420,11 +424,12 @@ const RULES = {
 /**
  * Perform audit for WCAG 1.1 criteria related to providing alternative text
  * depending on the type of content.
+ *
  * @param {nsIAccessible} accessible
  *        Accessible object to be tested to determine if it requires and has
  *        an appropriate text alternative.
  *
- * @return {null|Object}
+ * @return {null | object}
  *         Null if accessible does not need or has the right text alternative,
  *         audit data otherwise. This data is used in the accessibility panel
  *         for its audit filters, audit badges, sidebar checks section and

@@ -1,4 +1,6 @@
 [DEFAULT]
+subsuite = "integration"
+tags = "os_integration"
 
 ["test_service_workers_at_startup.py"]
 

@@ -24,7 +24,8 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
-        app:srcCompat="@drawable/ic_multiple_tabs" />
+        app:srcCompat="@drawable/mozac_ic_tab_tray_24"
+        app:tint="?attr/colorOnSurface" />
 
     <TextView
         android:id="@+id/recently_closed_tabs_header"
@@ -35,7 +36,7 @@
         android:singleLine="true"
         android:text="@string/library_recently_closed_tabs"
         android:textAlignment="viewStart"
-        android:textColor="?attr/textPrimary"
+        android:textColor="?attr/colorOnSurface"
         android:textSize="16sp"
         app:layout_constraintBottom_toTopOf="@+id/recently_closed_tabs_description"
         app:layout_constraintEnd_toEndOf="parent"
@@ -52,7 +53,7 @@
         android:ellipsize="end"
         android:singleLine="true"
         android:textAlignment="viewStart"
-        android:textColor="?attr/textSecondary"
+        android:textColor="?attr/colorOnSurfaceVariant"
         android:textSize="14sp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"

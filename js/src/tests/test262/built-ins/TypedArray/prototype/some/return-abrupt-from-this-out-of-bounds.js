@@ -56,6 +56,6 @@ testWithTypedArrayConstructors(TA => {
     array.some(() => {});
     throw new Test262Error('some completed successfully');
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -176,14 +174,11 @@ bool Platform::CreateFreezable(FreezableHandle& aHandle, size_t aSize) {
 }
 
 PlatformHandle Platform::CloneHandle(const PlatformHandle& aHandle) {
-  HANDLE h = INVALID_HANDLE_VALUE;
-  if (::DuplicateHandle(::GetCurrentProcess(), aHandle.get(),
-                        ::GetCurrentProcess(), &h, 0, false,
-                        DUPLICATE_SAME_ACCESS)) {
-    return PlatformHandle(h);
+  auto rv = DuplicateFileHandle(aHandle);
+  if (!rv) {
+    NS_WARNING("DuplicateHandle Failed!");
   }
-  NS_WARNING("DuplicateHandle Failed!");
-  return nullptr;
+  return rv;
 }
 
 bool Platform::Freeze(FreezableHandle& aHandle) {

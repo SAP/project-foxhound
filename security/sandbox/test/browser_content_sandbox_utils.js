@@ -44,10 +44,22 @@ function sanityChecks() {
   }
 }
 
+function isXdgEnabled() {
+  try {
+    return Services.prefs.getBoolPref("widget.support-xdg-config");
+  } catch (ex) {
+    // if the pref is not there it means we dont have XDG support
+    if (ex.name === "NS_ERROR_UNEXPECTED") {
+      return false;
+    }
+    throw ex;
+  }
+}
+
 // Creates file at |path| and returns a promise that resolves with an object
 // with .ok boolean to indicate true if the file was successfully created,
 // otherwise false. Include imports so this can be safely serialized and run
-// remotely by ContentTask.spawn.
+// remotely by SpecialPowers.spawn.
 //
 // Report the exception's error code in .code as well.
 function createFile(path) {
@@ -87,7 +99,7 @@ function createFile(path) {
 // Creates a symlink at |path| and returns a promise that resolves with an
 // object with .ok boolean to indicate true if the symlink was successfully
 // created, otherwise false. Include imports so this can be safely serialized
-// and run remotely by ContentTask.spawn.
+// and run remotely by SpecialPowers.spawn.
 //
 // Report the exception's error code in .code as well.
 // Report errno in .code if syscall returns -1.
@@ -127,7 +139,7 @@ function createSymlink(path) {
 // Deletes file at |path| and returns a promise that resolves with an object
 // with .ok boolean to indicate true if the file was successfully deleted,
 // otherwise false. Include imports so this can be safely serialized and run
-// remotely by ContentTask.spawn.
+// remotely by SpecialPowers.spawn.
 //
 // Report the exception's error code in .code as well.
 function deleteFile(path) {
@@ -376,6 +388,7 @@ function GetProfileEntry(name) {
 }
 
 function GetDir(path) {
+  info(`GetDir(${path})`);
   let dir = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
   dir.initWithPath(path);
   Assert.ok(dir.isDirectory(), `${path} is a directory`);
@@ -459,9 +472,9 @@ async function runTestsList(tests) {
       ok(test.file.exists(), `${test.file.path} exists`);
     }
 
-    let result = await ContentTask.spawn(
+    let result = await SpecialPowers.spawn(
       test.browser,
-      test.file.path,
+      [test.file.path],
       test.func
     );
 

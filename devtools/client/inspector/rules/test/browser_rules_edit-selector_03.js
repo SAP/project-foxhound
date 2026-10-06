@@ -22,31 +22,18 @@ add_task(async function () {
   await testEditSelector(view, "asd@:::!");
 });
 
-async function testEditSelector(view, name) {
+async function testEditSelector(view, newSelector) {
   info("Test editing existing selector fields");
 
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
 
-  info("Focusing an existing selector name in the rule-view");
-  const editor = await focusEditableField(view, ruleEditor.selectorText);
+  await editSelectorForRuleEditor(view, ruleEditor, newSelector);
 
+  assertDisplayedRulesCount(view, 2);
   is(
-    inplaceEditor(ruleEditor.selectorText),
-    editor,
-    "The selector editor got focused"
-  );
-
-  info("Entering a new selector name and committing");
-  editor.input.value = name;
-  const onRuleViewChanged = once(view, "ruleview-invalid-selector");
-  EventUtils.synthesizeKey("KEY_Enter");
-  await onRuleViewChanged;
-
-  is(view._elementStyle.rules.length, 2, "Should have 2 rules.");
-  is(
-    getRuleViewRule(view, name),
+    getRuleViewRule(view, newSelector),
     undefined,
-    "Rule with " + name + " selector should not exist."
+    `Rule with ${newSelector} selector should not exist.`
   );
   ok(
     getRuleViewRule(view, ".testclass"),

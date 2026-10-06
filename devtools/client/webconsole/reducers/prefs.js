@@ -5,7 +5,7 @@
 
 const {
   EAGER_EVALUATION_TOGGLE,
-  WARNING_GROUPS_TOGGLE,
+  GROUP_SIMILAR_MESSAGES_TOGGLE,
   AUTOCOMPLETE_TOGGLE,
 } = require("resource://devtools/client/webconsole/constants.js");
 
@@ -15,7 +15,7 @@ const PrefState = overrides =>
       {
         logLimit: 1000,
         sidebarToggle: false,
-        groupWarnings: false,
+        groupSimilar: false,
         autocomplete: false,
         eagerEvaluation: false,
         historyCount: 50,
@@ -26,7 +26,7 @@ const PrefState = overrides =>
 
 const dict = {
   [EAGER_EVALUATION_TOGGLE]: "eagerEvaluation",
-  [WARNING_GROUPS_TOGGLE]: "groupWarnings",
+  [GROUP_SIMILAR_MESSAGES_TOGGLE]: "groupSimilar",
   [AUTOCOMPLETE_TOGGLE]: "autocomplete",
 };
 

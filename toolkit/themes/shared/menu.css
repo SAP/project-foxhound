@@ -2,28 +2,38 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-@namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
+@import url("chrome://global/content/elements/moz-badge.tokens.css");
 
 menupopup,
 panel {
-  --menu-icon-opacity: 1;
+  --menu-arrow-opacity: 1;
   --menu-arrow-size: 1em;
-  --menuitem-border-radius: 3px;
-  --menuitem-margin: 0px;
+  --menuitem-border-radius: var(--border-radius-xsmall);
+  --menuitem-margin: 0;
   --menuitem-padding: 0.5em 1em;
+  --menuitem-max-width: 42em;
 
   @media (-moz-platform: linux) {
     --menuitem-padding: 0.25em 0.5em;
   }
   @media (-moz-platform: macos) {
+    /* Space tokens don't match native macOS dimensions. */
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
     --menuitem-padding: 3px 9px;
+
+    @media (-moz-mac-tahoe-theme) {
+      /* Space tokens don't match native macOS dimensions. */
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+      --menuitem-padding: 4px 11px;
+      --menuitem-border-radius: var(--border-radius-medium);
+    }
   }
 
   @media (-moz-platform: windows) {
-    --menu-arrow-size: max(1em, 16px);
+    --menu-arrow-size: max(1em, var(--size-item-small));
 
     @media (prefers-color-scheme: light) {
-      --menu-icon-opacity: 0.7;
+      --menu-arrow-opacity: var(--opacity-deemphasized);
     }
   }
 }
@@ -31,6 +41,7 @@ panel {
 menupopup {
   font: menu;
 
+  --menuitem-icon-fill: currentColor;
   /* Also apply the padding in the inline axis for menus */
   --panel-padding: var(--panel-padding-block);
 
@@ -39,18 +50,28 @@ menupopup {
     -moz-default-appearance: menupopup;
     /* The mica backdrop takes care of our shadow, border, and border-radius */
     --panel-border-color: transparent;
-    --panel-shadow-margin: 0px;
+    --panel-box-shadow-margin: 0px;
     --panel-border-radius: 0px;
   }
 
   @media (-moz-platform: macos) {
     /* stylelint-disable-next-line font-family-no-missing-generic-family-keyword */
     font: -moz-pull-down-menu;
+
+    /* On macOS, native menu icons should always be black by default so that
+       they are considered template images. Template images should be used
+       whenever possible so that the OS can manage the icon color, as the OS
+       theme may differ from our theme. */
+    menubar[native] &,
+    &:not([nonnative]) {
+      --menuitem-icon-fill: black;
+    }
   }
 
   > menu > menupopup {
     /* Vertically align nested menupopups: the shadow plus the top padding plus top border */
-    margin-top: calc(-1 * (var(--panel-shadow-margin) + var(--panel-padding-block) + 1px));
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    margin-top: calc(-1 * (var(--panel-box-shadow-margin) + var(--panel-padding-block) + 1px));
   }
 }
 
@@ -63,7 +84,7 @@ menulist > menupopup {
     color: FieldText;
 
     &:not([position]) {
-      margin-inline-start: -13px;
+      margin-inline-start: calc(-1 * var(--space-medium));
       margin-top: -1px;
     }
   }
@@ -81,8 +102,8 @@ menulist > menupopup {
   }
 
   @media (-moz-platform: windows) {
-    > menuitem[_moz-menuactive][disabled="true"] {
-      color: GrayText;
+    > menuitem[_moz-menuactive][disabled] {
+      color: var(--text-color-disabled);
     }
   }
 }
@@ -93,11 +114,11 @@ menuseparator {
   /* Using padding instead of margin to increase the hit area, as some
      separators (e.g. in bookmarks menus) can be dragged or have a context
      menu. */
-  padding-block: 4px;
+  padding-block: var(--space-xsmall);
 
   @media (-moz-platform: macos) {
-    padding-block: 5px;
-    margin-inline: 9px;
+    padding-block: var(--space-xsmall);
+    margin-inline: var(--space-small);
   }
 
   @media (-moz-platform: windows) {
@@ -106,6 +127,8 @@ menuseparator {
   }
 
   &::before {
+    /* Color of border-top derived from currentColor */
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
     border-top: 1px solid var(--panel-separator-color);
     content: "";
     display: block;
@@ -121,26 +144,31 @@ menuseparator {
   display: none;
 }
 
-.menupopup-arrowscrollbox::part(scrollbox) {
-  /* This makes the padding / margin trick below work */
-  overflow-clip-box-block: content-box;
-}
-
 /* Prevent the scrolled contents of the menupopup from jumping vertically when
  * the arrow buttons appear / disappear, by positioning ::part(scrollbox) in
  * such a way that its edges are at the same position as the edges of
  * arrowscrollbox regardless of scroll button visibility.
  */
+
+.menupopup-arrowscrollbox {
+  /* Scrollbutton height derived from toolbarbutton list-style-image SVG width
+   * of 12px and padding-block of 2px as defined in arrowscrollbox.css.
+   */
+  --scrollbutton-height: calc(12px + 2px + 2px);
+}
+
 .menupopup-arrowscrollbox:not([scrolledtostart])::part(scrollbox) {
   /* scrollbutton-up is visible; shift our top edge up by its height. */
-  margin-top: -16px;
-  padding-top: 16px;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  margin-top: calc(-1 * var(--scrollbutton-height));
+  border-top: var(--scrollbutton-height) solid transparent;
 }
 
 .menupopup-arrowscrollbox:not([scrolledtoend])::part(scrollbox) {
   /* scrollbutton-down is visible; shift our bottom edge down by its height. */
-  margin-bottom: -16px;
-  padding-bottom: 16px;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  margin-bottom: calc(-1 * var(--scrollbutton-height));
+  border-bottom: var(--scrollbutton-height) solid transparent;
 }
 
 menubar {
@@ -162,31 +190,22 @@ menubar > menu {
   }
 
   @media (-moz-platform: macos) {
-    padding-block: 2px;
-    padding-inline: 7px 5px;
+    padding-block: var(--space-xxsmall);
+    padding-inline: var(--space-small) var(--space-xsmall);
     margin: 1px 0;
-
-    &[_moz-menuactive] {
-      color: inherit;
-      background-color: transparent;
-    }
-
-    &[open] {
-      color: -moz-menuhovertext;
-      background-color: -moz-menuhover;
-    }
   }
+
   @media (-moz-platform: windows) {
-    padding: 1px 6px 2px;
+    padding: 1px var(--space-small) var(--space-xxsmall);
 
     &:-moz-window-inactive {
-      color: ThreeDShadow;
+      color: var(--text-color-deemphasized);
     }
 
-    &:not([disabled="true"]) {
+    &:not([disabled]) {
       color: inherit;
     }
-    &[_moz-menuactive]:not([disabled="true"]) {
+    &[_moz-menuactive]:not([disabled]) {
       color: -moz-menubarhovertext;
 
       *|*:root[lwtheme] & {
@@ -208,34 +227,41 @@ menu,
 menuitem,
 menucaption {
   border-radius: var(--menuitem-border-radius);
+  /* --menuitem-padding uses px values on macOS to match native menus. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   padding: var(--menuitem-padding);
   margin: var(--menuitem-margin);
   align-items: center;
   flex-shrink: 0;
   list-style-image: none;
-  max-width: 42em;
+  max-width: var(--menuitem-max-width);
+  /* Prevents the icon from being inherited to submenus. */
+  --menuitem-icon: normal;
 }
 
 menu,
 menuitem {
-  &:where([disabled="true"]) {
+  -moz-context-properties: fill;
+  fill: var(--menuitem-icon-fill);
+
+  &:where([disabled]) {
     color: var(--text-color-disabled);
     text-shadow: none;
   }
 
-  &:where([_moz-menuactive]:not([disabled="true"])) {
+  &:where([_moz-menuactive]:not([disabled])) {
     color: -moz-menuhovertext;
     background-color: -moz-menuhover;
   }
 
-  &:where([_moz-menuactive][disabled="true"]) {
+  &:where([_moz-menuactive][disabled]) {
     background-color: -moz-menuhoverdisabled;
   }
 }
 
 menuitem:is([default="true"], .spell-suggestion),
 menucaption {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .menu-icon,
@@ -257,14 +283,14 @@ menupopup > menu::after {
 
   -moz-context-properties: fill, fill-opacity;
   fill: currentColor;
-  fill-opacity: var(--menu-icon-opacity);
+  fill-opacity: var(--menu-arrow-opacity);
 
   margin-inline: 1em 0;
   @media (-moz-platform: linux) {
     margin-inline: 0.5em 0;
   }
   @media (-moz-platform: macos) {
-    margin-inline: 22px -3px;
+    margin-inline: var(--space-xlarge) calc(-1 * var(--space-xxsmall));
   }
 }
 
@@ -279,6 +305,10 @@ menupopup > menu:-moz-locale-dir(rtl)::after {
     padding: 1px 0;
   }
   @media (-moz-platform: linux) {
+    /* --space-xxsmall (0.125rem) only equals 2px at a 16px root font, causing
+     * rounding differences in layout at other font sizes.
+     */
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
     margin-inline: 0 2px;
   }
 }
@@ -288,11 +318,13 @@ menupopup > menu:-moz-locale-dir(rtl)::after {
 .menu-accel {
   margin-inline: 0.74em 0.35em;
   @media (-moz-platform: macos) {
+    /* margin-inline mimics natively-rendered menus */
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
     margin-inline: 25px 0;
   }
   @media (-moz-platform: linux) {
     /* Matches the margin-inline-end on iconic-left */
-    margin-inline: 0.5em 0;
+    margin-inline: var(--space-small) 0;
   }
 
   @media not (prefers-contrast) {
@@ -317,25 +349,36 @@ menuitem[highlightable] > .menu-text {
 }
 
 .menu-icon {
-  width: 16px;
-  height: 16px;
+  width: var(--icon-size);
+  height: var(--icon-size);
+  box-sizing: border-box;
+
+  /* Empty icons shouldn't take up any space */
+  display: none;
+  /* This avoids showing the broken image border for non-iconic items when
+   * adding a gutter */
+  visibility: hidden;
 
   @media (-moz-platform: linux) {
     /* Matches inline menuitem padding */
     margin-inline-end: 0.5em;
   }
   @media (-moz-platform: windows) {
-    margin-top: 2px;
-    margin-inline-end: 8px;
+    margin-top: var(--space-xxsmall);
+    margin-inline-end: var(--space-small);
   }
   @media (-moz-platform: macos) {
-    margin-block: -2px;
-    margin-inline-end: 6px;
+    margin-block: calc(-1 * var(--space-xxsmall));
+    margin-inline-end: var(--space-small);
   }
-  /* Empty icons shouldn't take up any space */
-  menuitem:not(.menuitem-iconic, [image]) > &,
-  menu:not(.menu-iconic) > & {
-    display: none;
+
+  menuitem:where(.menuitem-iconic, [image]) > &,
+  menu:where(.menu-iconic) > & {
+    &:where(:not([srcset])) {
+      content: var(--menuitem-icon);
+    }
+    display: revert;
+    visibility: inherit;
   }
 }
 
@@ -343,12 +386,14 @@ menuitem[highlightable] > .menu-text {
 
 /* On linux, we use regular checkboxes and radio buttons */
 @media (-moz-platform: linux) {
-  menuitem:is([type="checkbox"], [checked="true"]) .menu-icon {
+  menuitem:is([type="checkbox"], [checked]) > .menu-icon {
+    visibility: inherit;
     appearance: auto;
     -moz-default-appearance: checkbox;
   }
 
-  menuitem[type="radio"] .menu-icon {
+  menuitem[type="radio"] > .menu-icon {
+    visibility: inherit;
     appearance: auto;
     -moz-default-appearance: radio;
   }
@@ -360,11 +405,12 @@ menuitem[highlightable] > .menu-text {
      checkboxes and radio buttons because the native drawing we use on other
      Windows versions looks pretty bad with the Win10 styles, so for now we'll
      insert a generic checkmark icon for both types. */
-  menuitem[checked="true"] > .menu-icon {
+  menuitem[checked] > .menu-icon {
+    visibility: inherit;
     -moz-context-properties: fill, fill-opacity;
     fill: currentColor;
-    fill-opacity: var(--menu-icon-opacity);
-    list-style-image: url("chrome://global/skin/icons/menu-check.svg");
+    fill-opacity: var(--menu-arrow-opacity);
+    content: url("chrome://global/skin/icons/menu-check.svg");
   }
 }
 
@@ -389,12 +435,12 @@ menupopup[needsgutter] {
         vertical-align: middle;
         line-height: 0;
         visibility: hidden;
-        padding-inline: 4px;
-        font-weight: bold;
+        padding-inline: var(--space-xsmall);
+        font-weight: var(--font-weight-bold);
       }
     }
 
-    > menuitem:is([checked="true"], [selected="true"])::before {
+    > menuitem:is([checked], [selected])::before {
       visibility: inherit;
     }
   }
@@ -402,9 +448,16 @@ menupopup[needsgutter] {
 
 menuitem[badge]::after {
   border-radius: var(--border-radius-small);
-  border: 1px solid;
-  color: var(--text-color-deemphasized);
+  border: 1px solid var(--badge-border-color);
+  color: var(--badge-text-color);
+  background-color: var(--badge-background-color);
   content: attr(badge);
   margin-inline-start: var(--space-small);
   padding: var(--space-xxsmall) var(--space-small);
+}
+
+menuitem.badge-new::after {
+  border-color: var(--badge-border-color-filled);
+  color: var(--badge-text-color-filled);
+  background-color: var(--badge-background-color-filled);
 }

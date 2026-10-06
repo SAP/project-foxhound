@@ -35,7 +35,7 @@ const EVENT_TYPES = [
  * they need to read style or layout information, like other code normally does.
  */
 function is_visible(element) {
-  let win = element.ownerGlobal;
+  let win = element.documentGlobal;
   let style = win.getComputedStyle(element);
   if (style.display == "none") {
     return false;

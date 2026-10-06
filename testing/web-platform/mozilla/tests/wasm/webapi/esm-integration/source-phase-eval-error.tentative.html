@@ -1,0 +1,18 @@
+<!doctype html>
+<title>Evaluation phase import of source phase wasm throws SyntaxError</title>
+
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script type=module>
+import source mod from "./resources/empty.wasm";
+
+test(() => {
+  assert_true(mod instanceof WebAssembly.Module,
+    "source phase import produces a WebAssembly.Module");
+}, "Source phase import of wasm module");
+
+promise_test(async t => {
+  await promise_rejects_js(t, SyntaxError, import("./resources/empty.wasm"),
+    "evaluation phase import of a source phase wasm module throws SyntaxError");
+}, "Evaluation phase import after source phase import of wasm module");
+</script>

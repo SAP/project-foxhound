@@ -1,23 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gtest/gtest.h"
-
 #include <algorithm>
 #include <cstdint>
-#include <cstdlib>
 #include <new>
 #include <numeric>
-#include <ostream>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <vector>
+
 #include "ErrorList.h"
-#include "mozilla/AlreadyAddRefed.h"
+#include "gtest/gtest.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/FixedBufferOutputStream.h"
@@ -31,7 +25,6 @@
 #include "mozilla/dom/quota/EncryptedBlock.h"
 #include "mozilla/dom/quota/EncryptingOutputStream_impl.h"
 #include "mozilla/dom/quota/NSSCipherStrategy.h"
-#include "mozilla/fallible.h"
 #include "nsCOMPtr.h"
 #include "nsError.h"
 #include "nsICloneableInputStream.h"
@@ -266,10 +259,12 @@ class DOM_Quota_EncryptedStream : public ::testing::Test {
   struct NSSInitContextDeleter {
     void operator()(NSSInitContext* p) { NSS_ShutdownContext(p); }
   };
-  MOZ_RUNINIT inline static std::unique_ptr<NSSInitContext,
-                                            NSSInitContextDeleter>
-      sNssContext;
+  static std::unique_ptr<NSSInitContext, NSSInitContextDeleter> sNssContext;
 };
+
+constinit std::unique_ptr<NSSInitContext,
+                          DOM_Quota_EncryptedStream::NSSInitContextDeleter>
+    DOM_Quota_EncryptedStream::sNssContext;
 
 enum struct FlushMode { AfterEachChunk, Never };
 enum struct ChunkSize { SingleByte, Unaligned, DataSize };

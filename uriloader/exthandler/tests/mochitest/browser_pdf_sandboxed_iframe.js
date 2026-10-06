@@ -57,7 +57,7 @@ add_setup(async function () {
 async function onFilePickerShown(test) {
   const { MockFilePicker } = SpecialPowers;
 
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
   MockFilePicker.returnValue = MockFilePicker.returnOK;
 
   const promise = new Promise(resolve => {

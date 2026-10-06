@@ -83,7 +83,7 @@ loader.lazyGetter(this, "ChromeDebugToolbar", () =>
   )
 );
 
-const l10n = require("resource://devtools/client/webconsole/utils/l10n.js");
+const l10n = require("resource://devtools/shared/webconsole/l10n.js");
 const {
   Utils: WebConsoleUtils,
 } = require("resource://devtools/client/webconsole/utils.js");
@@ -124,6 +124,8 @@ class App extends Component {
     };
   }
 
+  #abortController = new AbortController();
+
   constructor(props) {
     super(props);
 
@@ -134,7 +136,13 @@ class App extends Component {
   }
 
   componentDidMount() {
-    window.addEventListener("blur", this.onBlur);
+    window.addEventListener("blur", this.onBlur, {
+      signal: this.#abortController.signal,
+    });
+  }
+
+  componentWillUnmount() {
+    this.#abortController.abort();
   }
 
   onBlur() {
@@ -149,7 +157,7 @@ class App extends Component {
       (isMacOS && event.key === "r" && event.ctrlKey === true)
     ) {
       const initialValue =
-        webConsoleUI.jsterm && webConsoleUI.jsterm.getSelectedText();
+        webConsoleUI.jsterm && webConsoleUI.jsterm.editor.getSelectedText();
 
       dispatch(
         actions.reverseSearchInputToggle({ initialValue, access: "keyboard" })
@@ -274,7 +282,9 @@ class App extends Component {
       }
     };
 
-    input.addEventListener("keyup", pasteKeyUpHandler);
+    input.addEventListener("keyup", pasteKeyUpHandler, {
+      signal: this.#abortController.signal,
+    });
   }
 
   renderChromeDebugToolbar() {

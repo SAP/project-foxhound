@@ -14,6 +14,10 @@ const GL_UNMASKED_VENDOR_WEBGL: u32 = 0x9245;
 const GL_UNMASKED_RENDERER_WEBGL: u32 = 0x9246;
 
 impl super::Adapter {
+    pub fn get_glsl_version(&self) -> naga::back::glsl::Version {
+        self.shared.shading_language_version
+    }
+
     /// Note that this function is intentionally lenient in regards to parsing,
     /// and will try to recover at least the first two version numbers without
     /// resulting in an `Err`.
@@ -184,11 +188,8 @@ impl super::Adapter {
         wgt::AdapterInfo {
             name: renderer_orig,
             vendor: vendor_id,
-            device: 0,
-            device_type: inferred_device_type,
-            driver: "".to_owned(),
             driver_info: version,
-            backend: wgt::Backend::Gl,
+            ..wgt::AdapterInfo::new(inferred_device_type, wgt::Backend::Gl)
         }
     }
 
@@ -220,9 +221,9 @@ impl super::Adapter {
         let vendor = unsafe { gl.get_parameter_string(vendor_const) };
         let renderer = unsafe { gl.get_parameter_string(renderer_const) };
         let version = unsafe { gl.get_parameter_string(glow::VERSION) };
-        log::debug!("Vendor: {}", vendor);
-        log::debug!("Renderer: {}", renderer);
-        log::debug!("Version: {}", version);
+        log::debug!("Vendor: {vendor}");
+        log::debug!("Renderer: {renderer}");
+        log::debug!("Version: {version}");
 
         let full_ver = Self::parse_full_version(&version).ok();
         let es_ver = full_ver.map_or_else(|| Self::parse_version(&version).ok(), |_| None);
@@ -293,7 +294,7 @@ impl super::Adapter {
             }
         };
 
-        log::debug!("Supported GL Extensions: {:#?}", extensions);
+        log::debug!("Supported GL Extensions: {extensions:#?}");
 
         let supported = |(req_es_major, req_es_minor), (req_full_major, req_full_minor)| {
             let es_supported = es_ver
@@ -325,7 +326,7 @@ impl super::Adapter {
                 // Windows doesn't recognize `GL_MAX_VERTEX_ATTRIB_STRIDE`.
                 let new = (unsafe { gl.get_parameter_i32(glow::MAX_COMPUTE_SHADER_STORAGE_BLOCKS) }
                     as u32);
-                log::warn!("Max vertex shader storage blocks is zero, but GL_ARB_shader_storage_buffer_object is specified. Assuming the compute value {new}");
+                log::debug!("Max vertex shader storage blocks is zero, but GL_ARB_shader_storage_buffer_object is specified. Assuming the compute value {new}");
                 new
             } else {
                 value
@@ -364,7 +365,7 @@ impl super::Adapter {
             vertex_shader_storage_blocks == 0 && vertex_shader_storage_textures != 0;
         if vertex_ssbo_false_zero {
             // We only care about fragment here as the 0 is a lie.
-            log::warn!("Max vertex shader SSBO == 0 and SSTO != 0. Interpreting as false zero.");
+            log::debug!("Max vertex shader SSBO == 0 and SSTO != 0. Interpreting as false zero.");
         }
 
         let max_storage_buffers_per_shader_stage = if vertex_shader_storage_blocks == 0 {
@@ -380,11 +381,18 @@ impl super::Adapter {
         // NOTE: GL_ARB_compute_shader adds support for indirect dispatch
         let indirect_execution = supported((3, 1), (4, 3))
             || (extensions.contains("GL_ARB_draw_indirect") && supports_compute);
+        let supports_cube_array = supported((3, 2), (4, 0))
+            || (supported((3, 1), (4, 0)) && extensions.contains("GL_EXT_texture_cube_map_array"));
 
         let mut downlevel_flags = wgt::DownlevelFlags::empty()
             | wgt::DownlevelFlags::NON_POWER_OF_TWO_MIPMAPPED_TEXTURES
-            | wgt::DownlevelFlags::CUBE_ARRAY_TEXTURES
-            | wgt::DownlevelFlags::COMPARISON_SAMPLERS;
+            | wgt::DownlevelFlags::COMPARISON_SAMPLERS
+            | wgt::DownlevelFlags::SHADER_F16_IN_F32
+            | wgt::DownlevelFlags::MSL2_1;
+        downlevel_flags.set(
+            wgt::DownlevelFlags::CUBE_ARRAY_TEXTURES,
+            supports_cube_array,
+        );
         downlevel_flags.set(wgt::DownlevelFlags::COMPUTE_SHADERS, supports_compute);
         downlevel_flags.set(
             wgt::DownlevelFlags::FRAGMENT_WRITABLE_STORAGE,
@@ -440,8 +448,9 @@ impl super::Adapter {
         let mut features = wgt::Features::empty()
             | wgt::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
             | wgt::Features::CLEAR_TEXTURE
-            | wgt::Features::PUSH_CONSTANTS
-            | wgt::Features::DEPTH32FLOAT_STENCIL8;
+            | wgt::Features::IMMEDIATES
+            | wgt::Features::DEPTH32FLOAT_STENCIL8
+            | wgt::Features::PASSTHROUGH_SHADERS;
         features.set(
             wgt::Features::ADDRESS_MODE_CLAMP_TO_BORDER | wgt::Features::ADDRESS_MODE_CLAMP_TO_ZERO,
             extensions.contains("GL_EXT_texture_border_clamp")
@@ -470,7 +479,7 @@ impl super::Adapter {
             full_ver.is_some() || extensions.contains("GL_EXT_clip_cull_distance"),
         );
         features.set(
-            wgt::Features::SHADER_PRIMITIVE_INDEX,
+            wgt::Features::PRIMITIVE_INDEX,
             supported((3, 2), (3, 2))
                 || extensions.contains("OES_geometry_shader")
                 || extensions.contains("GL_ARB_geometry_shader4"),
@@ -479,8 +488,6 @@ impl super::Adapter {
             wgt::Features::SHADER_EARLY_DEPTH_TEST,
             supported((3, 1), (4, 2)) || extensions.contains("GL_ARB_shader_image_load_store"),
         );
-        // We emulate MDI with a loop of draw calls.
-        features.set(wgt::Features::MULTI_DRAW_INDIRECT, indirect_execution);
         if extensions.contains("GL_ARB_timer_query") {
             features.set(wgt::Features::TIMESTAMP_QUERY, true);
             features.set(wgt::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS, true);
@@ -567,6 +574,15 @@ impl super::Adapter {
             );
         }
 
+        downlevel_flags.set(
+            wgt::DownlevelFlags::TEXTURE_COMPRESSION,
+            features.contains(wgt::Features::TEXTURE_COMPRESSION_BC)
+                || features.contains(
+                    wgt::Features::TEXTURE_COMPRESSION_ETC2
+                        | wgt::Features::TEXTURE_COMPRESSION_ASTC,
+                ),
+        );
+
         features.set(
             wgt::Features::FLOAT32_FILTERABLE,
             extensions.contains("GL_ARB_color_buffer_float")
@@ -629,7 +645,13 @@ impl super::Adapter {
             super::PrivateCapabilities::TEXTURE_STORAGE,
             supported((3, 0), (4, 2)),
         );
-        private_caps.set(super::PrivateCapabilities::DEBUG_FNS, gl.supports_debug());
+        let is_mali = renderer.to_lowercase().contains("mali");
+        let debug_fns_enabled = match backend_options.debug_fns {
+            wgt::GlDebugFns::Auto => gl.supports_debug() && !is_mali,
+            wgt::GlDebugFns::ForceEnabled => gl.supports_debug(),
+            wgt::GlDebugFns::Disabled => false,
+        };
+        private_caps.set(super::PrivateCapabilities::DEBUG_FNS, debug_fns_enabled);
         private_caps.set(
             super::PrivateCapabilities::INVALIDATE_FRAMEBUFFER,
             supported((3, 0), (4, 3)),
@@ -648,6 +670,17 @@ impl super::Adapter {
             // We only support indirect first instance when we also have ARB_shader_draw_parameters as
             // that's the only way to get gl_InstanceID to work correctly.
             features.set(wgt::Features::INDIRECT_FIRST_INSTANCE, supported);
+        }
+        private_caps.set(
+            super::PrivateCapabilities::MULTISAMPLED_RENDER_TO_TEXTURE,
+            extensions.contains("GL_EXT_multisampled_render_to_texture"),
+        );
+
+        // GLSL ES 3.10+ / GLSL 4.30+ natively support coherent/volatile qualifiers
+        // on storage buffers. These were introduced alongside storage buffer support.
+        if supports_storage {
+            features |= wgt::Features::MEMORY_DECORATION_COHERENT
+                | wgt::Features::MEMORY_DECORATION_VOLATILE;
         }
 
         let max_texture_size = unsafe { gl.get_parameter_i32(glow::MAX_TEXTURE_SIZE) } as u32;
@@ -676,23 +709,25 @@ impl super::Adapter {
 
         let max_color_attachments = unsafe {
             gl.get_parameter_i32(glow::MAX_COLOR_ATTACHMENTS)
-                .min(gl.get_parameter_i32(glow::MAX_DRAW_BUFFERS))
-                .min(crate::MAX_COLOR_ATTACHMENTS as i32) as u32
+                .min(gl.get_parameter_i32(glow::MAX_DRAW_BUFFERS)) as u32
         };
 
         // 16 bytes per sample is the maximum size of a color attachment.
         let max_color_attachment_bytes_per_sample =
             max_color_attachments * wgt::TextureFormat::MAX_TARGET_PIXEL_BYTE_COST;
 
-        let limits = wgt::Limits {
+        let limits = crate::auxil::adjust_raw_limits(wgt::Limits {
             max_texture_dimension_1d: max_texture_size,
             max_texture_dimension_2d: max_texture_size,
             max_texture_dimension_3d: max_texture_3d_size,
             max_texture_array_layers: unsafe {
                 gl.get_parameter_i32(glow::MAX_ARRAY_TEXTURE_LAYERS)
             } as u32,
-            max_bind_groups: crate::MAX_BIND_GROUPS as u32,
-            max_bindings_per_bind_group: 65535,
+            max_bind_groups: u32::MAX,
+            // No limit.
+            max_bind_groups_plus_vertex_buffers: u32::MAX,
+            // No limit.
+            max_bindings_per_bind_group: u32::MAX,
             max_dynamic_uniform_buffers_per_pipeline_layout: max_uniform_buffers_per_shader_stage,
             max_dynamic_storage_buffers_per_pipeline_layout: max_storage_buffers_per_shader_stage,
             max_sampled_textures_per_shader_stage: super::MAX_TEXTURE_SLOTS as u32,
@@ -702,22 +737,22 @@ impl super::Adapter {
             max_uniform_buffers_per_shader_stage,
             max_binding_array_elements_per_shader_stage: 0,
             max_binding_array_sampler_elements_per_shader_stage: 0,
+            max_binding_array_acceleration_structure_elements_per_shader_stage: 0,
             max_uniform_buffer_binding_size: unsafe {
                 gl.get_parameter_i32(glow::MAX_UNIFORM_BLOCK_SIZE)
-            } as u32,
+            } as u64,
             max_storage_buffer_binding_size: if supports_storage {
                 unsafe { gl.get_parameter_i32(glow::MAX_SHADER_STORAGE_BLOCK_SIZE) }
             } else {
                 0
-            } as u32,
+            } as u64,
             max_vertex_buffers: if private_caps
                 .contains(super::PrivateCapabilities::VERTEX_BUFFER_LAYOUT)
             {
                 (unsafe { gl.get_parameter_i32(glow::MAX_VERTEX_ATTRIB_BINDINGS) } as u32)
             } else {
                 16 // should this be different?
-            }
-            .min(crate::MAX_VERTEX_BUFFERS as u32),
+            },
             max_vertex_attributes: (unsafe { gl.get_parameter_i32(glow::MAX_VERTEX_ATTRIBS) }
                 as u32)
                 .min(super::MAX_VERTEX_ATTRIBUTES as u32),
@@ -735,13 +770,13 @@ impl super::Adapter {
                             // This should be at least 2048, but the driver for AMD Radeon HD 5870 on
                             // Windows doesn't recognize `GL_MAX_VERTEX_ATTRIB_STRIDE`.
 
-                            log::warn!("Max vertex attribute stride is 0. Assuming it is 2048");
+                            log::debug!("Max vertex attribute stride is 0. Assuming it is the OpenGL minimum spec 2048");
                             2048
                         } else {
                             value
                         }
                     } else {
-                        log::warn!("Max vertex attribute stride unknown. Assuming it is 2048");
+                        log::debug!("Max vertex attribute stride unknown. Assuming it is the OpenGL minimum spec 2048");
                         2048
                     }
                 } else {
@@ -750,22 +785,20 @@ impl super::Adapter {
             } else {
                 !0
             },
-            min_subgroup_size: 0,
-            max_subgroup_size: 0,
-            max_push_constant_size: super::MAX_PUSH_CONSTANTS as u32 * 4,
+            max_immediate_size: super::MAX_IMMEDIATES as u32 * 4,
             min_uniform_buffer_offset_alignment,
             min_storage_buffer_offset_alignment,
-            max_inter_stage_shader_components: {
+            max_inter_stage_shader_variables: {
                 // MAX_VARYING_COMPONENTS may return 0, because it is deprecated since OpenGL 3.2 core,
                 // and an OpenGL Context with the core profile and with forward-compatibility=true,
                 // will make deprecated constants unavailable.
                 let max_varying_components =
                     unsafe { gl.get_parameter_i32(glow::MAX_VARYING_COMPONENTS) } as u32;
                 if max_varying_components == 0 {
-                    // default value for max_inter_stage_shader_components
-                    60
+                    // default value for max_inter_stage_shader_variables
+                    15
                 } else {
-                    max_varying_components
+                    max_varying_components / 4
                 }
             },
             max_color_attachments,
@@ -801,11 +834,28 @@ impl super::Adapter {
             max_compute_workgroups_per_dimension,
             max_buffer_size: i32::MAX as u64,
             max_non_sampler_bindings: u32::MAX,
+
+            max_task_workgroup_total_count: 0,
+            max_task_workgroups_per_dimension: 0,
+            max_mesh_workgroup_total_count: 0,
+            max_mesh_workgroups_per_dimension: 0,
+            max_task_invocations_per_workgroup: 0,
+            max_task_invocations_per_dimension: 0,
+            max_mesh_invocations_per_workgroup: 0,
+            max_mesh_invocations_per_dimension: 0,
+            max_task_payload_size: 0,
+            max_mesh_output_vertices: 0,
+            max_mesh_output_primitives: 0,
+            max_mesh_output_layers: 0,
+            max_mesh_multiview_view_count: 0,
+
             max_blas_primitive_count: 0,
             max_blas_geometry_count: 0,
             max_tlas_instance_count: 0,
             max_acceleration_structures_per_shader_stage: 0,
-        };
+
+            max_multiview_view_count: 0,
+        });
 
         let mut workarounds = super::Workarounds::empty();
 
@@ -823,7 +873,7 @@ impl super::Adapter {
             && r.split(&[' ', '(', ')'][..])
                 .any(|substr| substr.len() == 3 && substr.chars().nth(2) == Some('l'))
         {
-            log::warn!(
+            log::debug!(
                 "Detected skylake derivative running on mesa i915. Clears to srgb textures will \
                 use manual shader clears."
             );
@@ -880,6 +930,7 @@ impl super::Adapter {
                     raw_tlas_instance_size: 0,
                     ray_tracing_scratch_buffer_alignment: 0,
                 },
+                cooperative_matrix_properties: Vec::new(),
             },
         })
     }
@@ -909,7 +960,7 @@ impl super::Adapter {
         if !unsafe { gl.get_shader_compile_status(shader) } {
             let msg = unsafe { gl.get_shader_info_log(shader) };
             if !msg.is_empty() {
-                log::error!("\tShader compile error: {}", msg);
+                log::error!("\tShader compile error: {msg}");
             }
             unsafe { gl.delete_shader(shader) };
             None
@@ -946,7 +997,7 @@ impl super::Adapter {
         let linked_ok = unsafe { gl.get_program_link_status(program) };
         let msg = unsafe { gl.get_program_info_log(program) };
         if !msg.is_empty() {
-            log::warn!("Shader link error: {}", msg);
+            log::error!("Shader link error: {msg}");
         }
         if !linked_ok {
             return None;
@@ -1159,6 +1210,7 @@ impl crate::Adapter for super::Adapter {
             | Tf::Depth24Plus
             | Tf::Depth24PlusStencil8 => depth,
             Tf::NV12 => empty,
+            Tf::P010 => empty,
             Tf::Rgb9e5Ufloat => filterable,
             Tf::Bc1RgbaUnorm
             | Tf::Bc1RgbaUnormSrgb
@@ -1245,6 +1297,17 @@ impl crate::Adapter for super::Adapter {
     unsafe fn get_presentation_timestamp(&self) -> wgt::PresentationTimestamp {
         wgt::PresentationTimestamp::INVALID_TIMESTAMP
     }
+
+    fn get_ordered_buffer_usages(&self) -> wgt::BufferUses {
+        wgt::BufferUses::INCLUSIVE | wgt::BufferUses::MAP_WRITE
+    }
+
+    // Don't put barriers between inclusive uses
+    fn get_ordered_texture_usages(&self) -> wgt::TextureUses {
+        wgt::TextureUses::INCLUSIVE
+            | wgt::TextureUses::COLOR_TARGET
+            | wgt::TextureUses::DEPTH_STENCIL_WRITE
+    }
 }
 
 impl super::AdapterShared {
@@ -1263,14 +1326,17 @@ impl super::AdapterShared {
         } else {
             log::error!("Fake map");
             let length = dst_data.len();
-            let buffer_mapping =
-                unsafe { gl.map_buffer_range(target, offset, length as _, glow::MAP_READ_BIT) };
+            // glMapBufferRange throws an error if length is 0.
+            if length != 0 {
+                let buffer_mapping =
+                    unsafe { gl.map_buffer_range(target, offset, length as _, glow::MAP_READ_BIT) };
 
-            unsafe {
-                core::ptr::copy_nonoverlapping(buffer_mapping, dst_data.as_mut_ptr(), length)
-            };
+                unsafe {
+                    core::ptr::copy_nonoverlapping(buffer_mapping, dst_data.as_mut_ptr(), length)
+                };
 
-            unsafe { gl.unmap_buffer(target) };
+                unsafe { gl.unmap_buffer(target) };
+            }
         }
     }
 }

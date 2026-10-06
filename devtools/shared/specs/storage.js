@@ -59,6 +59,7 @@ types.addDictType("cookieobject", {
   isSecure: "boolean",
   isHttpOnly: "boolean",
   creationTime: "number",
+  updateTime: "number",
   lastAccessed: "number",
   expires: "number",
 });
@@ -190,6 +191,7 @@ createStorageSpec({
 });
 
 types.addDictType("extensionobject", {
+  uniqueKey: "string",
   name: "nullable:string",
   value: "nullable:longstring",
   area: "string",

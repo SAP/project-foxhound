@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,7 +21,6 @@
 #include "mozilla/dom/FileList.h"
 #include "mozilla/dom/HTMLButtonElement.h"
 #include "mozilla/dom/HTMLInputElement.h"
-#include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/NodeInfo.h"
 #include "mozilla/dom/UnionTypes.h"
 #include "nsCOMPtr.h"
@@ -91,11 +88,11 @@ static already_AddRefed<Element> MakeAnonButton(
   // NOTE: SetIsNativeAnonymousRoot() has to be called before setting any
   // attribute.
   button->SetIsNativeAnonymousRoot();
-  button->SetPseudoElementType(PseudoStyleType::fileSelectorButton);
+  button->SetPseudoElementType(PseudoStyleType::FileSelectorButton);
 
   // Set the file picking button text depending on the current locale.
   nsAutoString buttonTxt;
-  nsContentUtils::GetMaybeLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
+  nsContentUtils::GetMaybeLocalizedString(PropertiesFile::FORMS_PROPERTIES,
                                           labelKey, aDoc, buttonTxt);
 
   auto* nim = aDoc->NodeInfoManager();
@@ -134,8 +131,8 @@ nsresult nsFileControlFrame::CreateAnonymousContent(
   // NOTE: SetIsNativeAnonymousRoot() has to be called before setting any
   // attribute.
   mTextContent->SetIsNativeAnonymousRoot();
-  RefPtr<nsTextNode> text =
-      new (doc->NodeInfoManager()) nsTextNode(doc->NodeInfoManager());
+  mTextContent->SetPseudoElementType(PseudoStyleType::MozFileContent);
+  RefPtr<nsTextNode> text = doc->CreateEmptyTextNode();
   mTextContent->AppendChildTo(text, false, IgnoreErrors());
 
   aElements.AppendElement(mTextContent);
@@ -373,7 +370,8 @@ void nsFileControlFrame::SyncDisabledState() {
 
 void nsFileControlFrame::ElementStateChanged(ElementState aStates) {
   if (aStates.HasState(ElementState::DISABLED)) {
-    nsContentUtils::AddScriptRunner(new SyncDisabledStateEvent(this));
+    nsContentUtils::AddScriptRunner(
+        MakeAndAddRef<SyncDisabledStateEvent>(this));
   }
 }
 

@@ -129,7 +129,7 @@ impl PrefFile {
         self.prefs.contains_key(key)
     }
 
-    pub fn iter(&self) -> Iter<String, Pref> {
+    pub fn iter(&self) -> Iter<'_, String, Pref> {
         self.prefs.iter()
     }
 }

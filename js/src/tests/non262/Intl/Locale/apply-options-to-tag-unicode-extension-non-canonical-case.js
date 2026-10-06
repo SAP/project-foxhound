@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl'))
-
 // "U" is not in canonical case.
 let loc1 = new Intl.Locale("en-U-nu-latn", {numberingSystem: "thai"});
 assertEq(loc1.toString(), "en-u-nu-thai");

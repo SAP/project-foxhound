@@ -1,0 +1,15 @@
+{
+  "label": "onvideo.kuaishou.com",
+  "bugs": {
+    "1902454": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://onvideo.kuaishou.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

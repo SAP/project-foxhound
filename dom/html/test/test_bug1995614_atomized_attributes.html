@@ -1,0 +1,682 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test for Bug 1995614 - Single digit attribute atomization</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1995614">Mozilla Bug 1995614</a>
+<p id="display"></p>
+<div id="content" style="display: none">
+</div>
+<pre id="test">
+<script type="application/javascript">
+
+SimpleTest.waitForExplicitFinish();
+
+function testBasicHTMLElements(container) {
+  let passed = 0;
+
+  // Test 1: HTMLLinkElement with all possible single digit attributes
+  try {
+    container.innerHTML = '<link href="1" rel="2" type="3" media="4" hreflang="5" as="6" crossorigin="7" ' +
+      'referrerpolicy="8" integrity="9" sizes="0" fetchpriority="1" blocking="2" class="3" id="4" ' +
+      'title="5" lang="6" dir="7" nonce="8">';
+    ok(true, "HTMLLinkElement with all single digit attributes doesn't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "HTMLLinkElement crashed: " + e);
+  }
+
+  // Test 2: HTMLSourceElement with all possible single digit attributes
+  try {
+    container.innerHTML = '<picture>' +
+      '<source srcset="2" media="3" src="4" type="5" sizes="6" width="7" height="8" class="9" id="0" ' +
+      'title="1" lang="2" dir="3">' +
+      '<img src="5"></picture>';
+    ok(true, "HTMLSourceElement with all single digit attributes doesn't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "HTMLSourceElement crashed: " + e);
+  }
+
+  // Test 3: HTMLInputElement with extensive single digit attributes
+  try {
+    container.innerHTML = '<input type="image" src="6" alt="7" width="8" height="9" ' +
+      'name="0" value="1" placeholder="2" autocomplete="3" ' +
+      'maxlength="4" minlength="5" size="6" pattern="7" ' +
+      'min="8" max="9" step="0" list="1" ' +
+      'dirname="2" form="3" formaction="4" formmethod="5" formtarget="6" formenctype="7" ' +
+      'accept="8" multiple="9" readonly="0" disabled="1" required="2" ' +
+      'inputmode="3" enterkeyhint="4" autocorrect="5" autocapitalize="6" spellcheck="7" ' +
+      'class="8" id="9" title="0" lang="1" dir="2" tabindex="3" accesskey="4">';
+    ok(true, "HTMLInputElement with extensive single digit attributes doesn't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "HTMLInputElement crashed: " + e);
+  }
+
+  // Test 4: HTMLScriptElement with all possible single digit attributes
+  try {
+    container.innerHTML = '<script src="7" type="8" async="9" defer="0" crossorigin="1" ' +
+      'integrity="2" referrerpolicy="3" nonce="4" nomodule="5" fetchpriority="6" blocking="7" ' +
+      'class="8" id="9"></' + 'script>';
+    ok(true, "HTMLScriptElement with all single digit attributes doesn't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "HTMLScriptElement crashed: " + e);
+  }
+
+  // Test 5: HTMLButtonElement with all possible single digit attributes
+  try {
+    container.innerHTML = '<button command="8" commandfor="9" type="0" name="1" value="2" ' +
+      'form="3" formaction="4" formmethod="5" formtarget="6" formenctype="7" formnovalidate="8" ' +
+      'popovertarget="9" popovertargetaction="0" disabled="1" autofocus="2" ' +
+      'class="3" id="4" title="5" tabindex="6" accesskey="7">Test</button>';
+    ok(true, "HTMLButtonElement with all single digit attributes doesn't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "HTMLButtonElement crashed: " + e);
+  }
+
+  // Test 6: HTMLMediaElement (audio/video) with all possible single digit attributes
+  try {
+    container.innerHTML = '<audio src="1" preload="2" controls="3" autoplay="4" loop="5" muted="6" ' +
+      'crossorigin="7" volume="8" class="9" id="0"></audio>' +
+      '<video src="1" poster="2" width="3" height="4" preload="5" controls="6" autoplay="7" ' +
+      'loop="8" muted="9" crossorigin="0" playsinline="1" disablepictureinpicture="2" ' +
+      'class="3" id="4" title="5"></video>';
+    ok(true, "HTMLMediaElement with all single digit attributes doesn't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "HTMLMediaElement crashed: " + e);
+  }
+
+  return passed;
+}
+
+function testSpecificAttributes(container) {
+  let passed = 0;
+
+  // Test 7: Elements with nonce attribute
+  try {
+    container.innerHTML = '<div nonce="9">Test</div><script nonce="1"></' + 'script>';
+    ok(true, "Elements with single digit nonce don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Nonce attribute crashed: " + e);
+  }
+
+  // Test 8: class attribute (specifically atomized)
+  try {
+    container.innerHTML = '<div class="1">A</div><span class="2">B</span>';
+    ok(true, "Elements with single digit class don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Class attribute crashed: " + e);
+  }
+
+  // Test 9: type attribute (specifically atomized)
+  try {
+    container.innerHTML = '<input type="3"><button type="4">Test</button>';
+    ok(true, "Elements with single digit type don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Type attribute crashed: " + e);
+  }
+
+  // Test 10: Dynamic attribute setting
+  try {
+    let link = document.createElement("link");
+    link.setAttribute("href", "5");
+    container.appendChild(link);
+    ok(true, "Dynamic setAttribute with single digit doesn't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Dynamic setAttribute crashed: " + e);
+  }
+
+  // Test 11: Event handlers
+  try {
+    let div = document.createElement("div");
+    div.setAttribute("onclick", "console.log('test')");
+    container.appendChild(div);
+    ok(true, "Event handler attribute doesn't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Event handler crashed: " + e);
+  }
+
+  return passed;
+}
+
+function testFormElements(container) {
+  let passed = 0;
+
+  // Test 12: HTMLFontElement with all possible single digit attributes
+  try {
+    container.innerHTML = '<font face="6" size="7" color="8" class="9" id="0" ' +
+      'title="1" lang="2" dir="3">Test</font>';
+    ok(true, "HTMLFontElement with all single digit attributes doesn't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "HTMLFontElement crashed: " + e);
+  }
+
+  // Test 12a: HTMLFrameSetElement with all possible single digit attributes
+  try {
+    container.innerHTML = '<frameset rows="1" cols="2" border="3" bordercolor="4" ' +
+      'frameborder="5" framespacing="6" class="7" id="8">' +
+      '<frame src="9" name="0" scrolling="1" noresize="2" marginwidth="3" marginheight="4" ' +
+      'frameborder="5" bordercolor="6" longdesc="7">' +
+      '</frameset>';
+    ok(true, "HTMLFrameSetElement with all single digit attributes doesn't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "HTMLFrameSetElement crashed: " + e);
+  }
+
+  // Test 12b: Textarea with all possible single digit attributes
+  try {
+    container.innerHTML = '<textarea name="8" rows="9" cols="0" wrap="1" maxlength="2" minlength="3" ' +
+      'placeholder="4" form="5" dirname="6" readonly="7" disabled="8" required="9" ' +
+      'autocomplete="0" inputmode="1" spellcheck="2" autocorrect="3" autocapitalize="4" ' +
+      'class="5" id="6" tabindex="7">Text</textarea>';
+    ok(true, "Textarea with all single digit attributes doesn't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Textarea crashed: " + e);
+  }
+
+  // Test 12c: Select and option with all possible attributes
+  try {
+    container.innerHTML = '<select name="8" size="9" form="0" autocomplete="1" multiple="2" ' +
+      'disabled="3" required="4" autofocus="5" class="6" id="7">' +
+      '<option value="8" selected="9" disabled="0" label="1" class="2">A</option>' +
+      '<option value="3" class="4">B</option>' +
+      '<optgroup label="5" disabled="6" class="7">' +
+      '<option value="8">C</option>' +
+      '</optgroup>' +
+      '</select>';
+    ok(true, "Select/option with all single digit attributes don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Select/option crashed: " + e);
+  }
+
+  // Test 12d: Form elements (label, fieldset, output, progress, meter)
+  try {
+    container.innerHTML = '<form action="9" method="0" name="1" target="2" autocomplete="3" ' +
+      'enctype="4" accept-charset="5" novalidate="6" class="7" id="8">' +
+      '<label for="9" form="0" class="1">Label</label>' +
+      '<fieldset name="2" form="3" disabled="4" class="5"><legend>6</legend></fieldset>' +
+      '<output name="7" for="8" form="9" class="0">Output</output>' +
+      '<progress value="1" max="2" class="3">4</progress>' +
+      '<meter value="5" min="6" max="7" low="8" high="9" optimum="0" class="1">2</meter>' +
+      '</form>';
+    ok(true, "Form/label/fieldset/output/progress/meter with single digits don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Form elements crashed: " + e);
+  }
+
+  // Test 12e: Details and dialog
+  try {
+    container.innerHTML = '<details name="3" open="4" class="5"><summary class="6">7</summary>8</details>' +
+      '<dialog open="9" class="0">1</dialog>';
+    ok(true, "Details/dialog with single digit attributes don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Details/dialog crashed: " + e);
+  }
+
+  return passed;
+}
+
+function testARIAAndDataAttributes(container) {
+  let passed = 0;
+
+  // Test 13: ARIA attributes with single digits
+  try {
+    container.innerHTML = `
+      <div role="1" aria-label="2" aria-describedby="3" aria-labelledby="4" aria-controls="5">A</div>
+      <div aria-hidden="6" aria-live="7" aria-atomic="8" aria-busy="9" aria-disabled="0">B</div>
+      <div aria-checked="1" aria-pressed="2" aria-selected="3" aria-expanded="4" aria-level="5">C</div>
+      <div aria-valuemin="6" aria-valuemax="7" aria-valuenow="8" aria-valuetext="9">D</div>
+      <div aria-colcount="0" aria-colindex="1" aria-colspan="2" aria-rowcount="3" aria-rowindex="4" aria-rowspan="5">E</div>
+      <div aria-posinset="6" aria-setsize="7" aria-owns="8" aria-activedescendant="9">F</div>
+    `;
+    ok(true, "ARIA attributes with single digits don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "ARIA attributes crashed: " + e);
+  }
+
+  // Test 14: data-* attributes with single digits
+  try {
+    container.innerHTML = `
+      <div data-id="1" data-value="2" data-index="3" data-count="4" data-level="5">A</div>
+      <div data-priority="6" data-size="7" data-width="8" data-height="9">B</div>
+      <div data-0="0" data-1="1" data-2="2" data-3="3">C</div>
+    `;
+    ok(true, "data-* attributes with single digits don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "data-* attributes crashed: " + e);
+  }
+
+  // Test 15: Global attributes with single digits
+  try {
+    container.innerHTML = `
+      <div id="4" title="5" lang="6" dir="7" tabindex="8" accesskey="9">A</div>
+      <div contenteditable="0" spellcheck="1" translate="2" hidden="3" draggable="4">B</div>
+      <div enterkeyhint="5" inputmode="6" autocapitalize="7" autocorrect="8">C</div>
+    `;
+    ok(true, "Global attributes with single digits don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Global attributes crashed: " + e);
+  }
+
+  // Test 16: Microdata attributes with single digits
+  try {
+    container.innerHTML = `
+      <div itemscope itemtype="1" itemprop="2" itemid="3" itemref="4">A</div>
+      <div itemprop="5">B</div>
+    `;
+    ok(true, "Microdata attributes with single digits don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Microdata attributes crashed: " + e);
+  }
+
+  return passed;
+}
+
+function testResourceAndLayoutAttributes(container) {
+  let passed = 0;
+
+  // Test 17: Form-related attributes with single digits
+  try {
+    container.innerHTML = `
+      <input name="1" value="2" placeholder="3" pattern="4" maxlength="5" minlength="6">
+      <input min="7" max="8" step="9" size="0">
+      <textarea rows="1" cols="2" maxlength="3" minlength="4">5</textarea>
+      <select name="6" size="7"><option value="8">9</option></select>
+    `;
+    ok(true, "Form attributes with single digits don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Form attributes crashed: " + e);
+  }
+
+  // Test 18: Resource loading attributes with single digits
+  try {
+    container.innerHTML = '<img loading="1" decoding="2" fetchpriority="3" crossorigin="4" referrerpolicy="5" src="6">' +
+      '<iframe loading="7" src="8"></iframe>' +
+      '<link rel="preload" as="9" href="0" fetchpriority="1">' +
+      '<script blocking="2" src="3"></' + 'script>';
+    ok(true, "Resource loading attributes with single digits don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Resource loading attributes crashed: " + e);
+  }
+
+  // Test 19: Table attributes with single digits
+  try {
+    container.innerHTML = `
+      <table border="1" cellpadding="2" cellspacing="3">
+        <tr>
+          <td colspan="4" rowspan="5" width="6" height="7" align="8" valign="9">A</td>
+        </tr>
+      </table>
+    `;
+    ok(true, "Table attributes with single digits don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Table attributes crashed: " + e);
+  }
+
+  // Test 20: List attributes with single digits
+  try {
+    container.innerHTML = `
+      <ol type="0" start="1" reversed="2">
+        <li value="3">A</li>
+        <li value="4">B</li>
+      </ol>
+    `;
+    ok(true, "List attributes with single digits don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "List attributes crashed: " + e);
+  }
+
+  // Test 21: Link attributes with single digits
+  try {
+    container.innerHTML = `
+      <a href="5" target="6" rel="7" hreflang="8" type="9" download="0" ping="1" referrerpolicy="2">Link</a>
+      <area href="3" alt="4" coords="5" shape="6">
+    `;
+    ok(true, "Link attributes with single digits don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Link attributes crashed: " + e);
+  }
+
+  return passed;
+}
+
+function testMediaElements(container) {
+  let passed = 0;
+
+  // Test 22: Media attributes with single digits
+  try {
+    container.innerHTML = '<video width="7" height="8" poster="9" preload="0" controls="1" autoplay="2" loop="3" muted="4">' +
+      '<source src="5" type="6" media="7">' +
+      '<track kind="8" src="9" srclang="0" label="1" default="2">' +
+      '</video>' +
+      '<audio src="3" preload="4" controls="5" autoplay="6" loop="7" muted="8" crossorigin="9"></audio>';
+    ok(true, "Media attributes with single digits don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Media attributes crashed: " + e);
+  }
+
+  // Test 22a: Picture element with srcset and sizes
+  try {
+    container.innerHTML = '<picture>' +
+      '<source srcset="1" media="2" type="3" sizes="4" width="5" height="6">' +
+      '<source srcset="7" media="8">' +
+      '<img src="9" srcset="0" sizes="1" alt="2" width="3" height="4">' +
+      '</picture>';
+    ok(true, "Picture/source with srcset/sizes single digits don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Picture element crashed: " + e);
+  }
+
+  // Test 22b: Iframe with various attributes
+  try {
+    container.innerHTML = '<iframe src="5" srcdoc="6" name="7" width="8" height="9" sandbox="0" allow="1" loading="2" referrerpolicy="3"></iframe>';
+    ok(true, "Iframe attributes with single digits don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Iframe attributes crashed: " + e);
+  }
+
+  // Test 22c: Embed and object elements
+  try {
+    container.innerHTML = '<embed src="4" type="5" width="6" height="7">' +
+      '<object data="8" type="9" name="0" width="1" height="2" form="3">' +
+      '<param name="4" value="5">' +
+      '</object>';
+    ok(true, "Embed/object attributes with single digits don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Embed/object crashed: " + e);
+  }
+
+  // Test 22d: Canvas element
+  try {
+    container.innerHTML = '<canvas width="6" height="7" class="8">9</canvas>';
+    ok(true, "Canvas attributes with single digits don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Canvas crashed: " + e);
+  }
+
+  return passed;
+}
+
+function testModernHTMLFeatures(container) {
+  let passed = 0;
+
+  // Test 23: Popover and command attributes with single digits
+  try {
+    container.innerHTML = `
+      <div popover="3" id="p1">Popover</div>
+      <button popovertarget="4" popovertargetaction="5">Toggle</button>
+      <button commandfor="6" command="7">Command</button>
+    `;
+    ok(true, "Popover and command attributes with single digits don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Popover/command attributes crashed: " + e);
+  }
+
+  // Test 24: Shadow DOM attributes with single digits
+  try {
+    container.innerHTML = `
+      <div slot="8" part="9">Slotted</div>
+      <template shadowrootmode="0">Shadow</template>
+    `;
+    ok(true, "Shadow DOM attributes with single digits don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Shadow DOM attributes crashed: " + e);
+  }
+
+  // Test 25: Deprecated element attributes with single digits
+  try {
+    container.innerHTML = '<marquee behavior="1" direction="2" scrollamount="3" scrolldelay="4" loop="5">Text</marquee>' +
+      '<frameset rows="6" cols="7" border="8"></frameset>';
+    ok(true, "Deprecated element attributes with single digits don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Deprecated element attributes crashed: " + e);
+  }
+
+  return passed;
+}
+
+function testSVGElements(container) {
+  let passed = 0;
+
+  // Test 26: SVGAnimationElement with single digit attributes
+  try {
+    container.innerHTML = '<svg><animate href="#t" attributeName="x" from="1" to="2" dur="3s"/></svg>';
+    ok(true, "SVGAnimationElement with single digit href/from/to doesn't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "SVGAnimationElement crashed: " + e);
+  }
+
+  // Test 27: animateMotion with path attribute
+  try {
+    container.innerHTML = '<svg><animateMotion path="M 1 2 L 3 4" dur="5s"/></svg>';
+    ok(true, "animateMotion with path containing digits doesn't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "animateMotion crashed: " + e);
+  }
+
+  // Test 28: animateMotion with values/by attributes
+  try {
+    container.innerHTML = '<svg><animateMotion values="1;2;3" dur="4s"/><animateMotion by="5" dur="6s"/></svg>';
+    ok(true, "animateMotion with values/by containing digits doesn't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "animateMotion values/by crashed: " + e);
+  }
+
+  // Test 29: SVG elements with nonce and event handlers
+  try {
+    container.innerHTML = '<svg><rect nonce="7" onclick="console.log(\'8\')" class="9" width="10" height="10"/></svg>';
+    ok(true, "SVG elements with single digit nonce/onclick/class don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "SVG nonce/onclick/class crashed: " + e);
+  }
+
+  // Test 30: SVG with various single digit attributes
+  try {
+    container.innerHTML = `
+      <svg width="1" height="2" viewBox="3">
+        <rect x="4" y="5" width="6" height="7" fill="8" stroke="9" opacity="0"/>
+        <circle cx="1" cy="2" r="3" class="4"/>
+        <text x="5" y="6" font-size="7">Text</text>
+        <use href="#8" x="9" y="0"/>
+      </svg>
+    `;
+    ok(true, "SVG geometry attributes with single digits don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "SVG geometry attributes crashed: " + e);
+  }
+
+  return passed;
+}
+
+function testMathMLElements(container) {
+  let passed = 0;
+
+  // Test 31: MathML elements with width attribute
+  try {
+    container.innerHTML = '<math><mspace width="1" height="2"/></math>';
+    ok(true, "MathML mspace with single digit width/height doesn't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "MathML width/height crashed: " + e);
+  }
+
+  // Test 32: MathML scriptlevel attribute (commonly uses single digits)
+  try {
+    container.innerHTML = `
+      <math>
+        <mstyle scriptlevel="0"><mi>a</mi></mstyle>
+        <mstyle scriptlevel="1"><mi>b</mi></mstyle>
+        <mstyle scriptlevel="2"><mi>c</mi></mstyle>
+        <mstyle scriptlevel="+1"><mi>d</mi></mstyle>
+        <mstyle scriptlevel="-1"><mi>e</mi></mstyle>
+      </math>
+    `;
+    ok(true, "MathML scriptlevel with single digits doesn't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "MathML scriptlevel crashed: " + e);
+  }
+
+  // Test 33: MathML mathsize and mathvariant
+  try {
+    container.innerHTML = `
+      <math>
+        <mstyle mathsize="3"><mi mathvariant="4">x</mi></mstyle>
+        <mi mathvariant="5">y</mi>
+      </math>
+    `;
+    ok(true, "MathML mathsize/mathvariant with single digits don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "MathML mathsize/mathvariant crashed: " + e);
+  }
+
+  // Test 34: MathML dir, displaystyle, href
+  try {
+    container.innerHTML = '<math dir="6"><mstyle displaystyle="7"><mtext href="8">Link</mtext></mstyle></math>';
+    ok(true, "MathML dir/displaystyle/href with single digits don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "MathML dir/displaystyle/href crashed: " + e);
+  }
+
+  // Test 35: MathML event handlers, nonce, class
+  try {
+    container.innerHTML = '<math><mi onclick="console.log(\'9\')" nonce="0" class="1">x</mi></math>';
+    ok(true, "MathML elements with onclick/nonce/class don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "MathML onclick/nonce/class crashed: " + e);
+  }
+
+  return passed;
+}
+
+function testDigitCoverage(container) {
+  let passed = 0;
+
+  // Test 36: All single digits 0-9 with class attribute
+  try {
+    container.innerHTML = `
+      <div class="0">0</div>
+      <div class="1">1</div>
+      <div class="2">2</div>
+      <div class="3">3</div>
+      <div class="4">4</div>
+      <div class="5">5</div>
+      <div class="6">6</div>
+      <div class="7">7</div>
+      <div class="8">8</div>
+      <div class="9">9</div>
+    `;
+    ok(true, "All single digits 0-9 as class values don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Digits 0-9 crashed: " + e);
+  }
+
+  // Test 37: All single digits 0-9 with type attribute
+  try {
+    container.innerHTML = '<input type="0">' +
+      '<input type="1">' +
+      '<input type="2">' +
+      '<input type="3">' +
+      '<button type="4">A</button>' +
+      '<button type="5">B</button>' +
+      '<link type="6" href="test">' +
+      '<script type="7"></' + 'script>' +
+      '<style type="8"></style>';
+    ok(true, "All single digits with type attribute don't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Type attribute digits crashed: " + e);
+  }
+
+  // Test 38: Re-parsing via innerHTML (original crash scenario)
+  try {
+    let tempDiv = document.createElement("div");
+    tempDiv.innerHTML = `
+      <link href="1">
+      <source srcset="2">
+      <input type="image" src="3">
+      <svg><animate href="#x" from="4" to="5"/></svg>
+      <math><mstyle scriptlevel="6" mathsize="7"><mi>x</mi></mstyle></math>
+    `;
+    container.appendChild(tempDiv);
+    // eslint-disable-next-line no-self-assign
+    container.innerHTML = container.innerHTML;
+    ok(true, "Re-parsing innerHTML with atomized attributes doesn't crash");
+    passed++;
+  } catch (e) {
+    ok(false, "Re-parsing innerHTML crashed: " + e);
+  }
+
+  return passed;
+}
+
+function runTests() {
+  let container = document.getElementById("content");
+  let testsPassed = 0;
+
+  testsPassed += testBasicHTMLElements(container);
+  testsPassed += testSpecificAttributes(container);
+  testsPassed += testFormElements(container);
+  testsPassed += testARIAAndDataAttributes(container);
+  testsPassed += testResourceAndLayoutAttributes(container);
+  testsPassed += testMediaElements(container);
+  testsPassed += testModernHTMLFeatures(container);
+  testsPassed += testSVGElements(container);
+  testsPassed += testMathMLElements(container);
+  testsPassed += testDigitCoverage(container);
+
+  is(testsPassed, 47, "All 47 atomization tests passed");
+  SimpleTest.finish();
+}
+
+addLoadEvent(runTests);
+
+</script>
+</pre>
+</body>
+</html>

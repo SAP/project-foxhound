@@ -1,0 +1,15 @@
+{
+  "label": "digital.alinmacapital.com",
+  "bugs": {
+    "2044341": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://digital.alinmacapital.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

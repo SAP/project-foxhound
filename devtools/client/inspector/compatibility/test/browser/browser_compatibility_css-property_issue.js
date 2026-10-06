@@ -13,10 +13,9 @@ const TEST_URI = `
   <style>
   body {
     color: blue;
-    scrollbar-color: gold;
+    text-box-edge: text;
     user-modify: read-only;
-    object-view-box: inset(0% 19% -33% 57%);
-    overflow-clip-box: padding-box;
+    stroke-color: red;
   }
   div {
     overflow-anchor: auto;
@@ -30,35 +29,28 @@ const TEST_URI = `
 const TEST_DATA_SELECTED = [
   {
     type: COMPATIBILITY_ISSUE_TYPE.CSS_PROPERTY,
-    property: "scrollbar-color",
-    url: "https://developer.mozilla.org/docs/Web/CSS/scrollbar-color",
+    property: "text-box-edge",
+    url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/text-box-edge",
     deprecated: false,
     experimental: false,
   },
   {
     type: COMPATIBILITY_ISSUE_TYPE.CSS_PROPERTY_ALIASES,
     property: "user-modify",
-    url: "https://developer.mozilla.org/docs/Web/CSS/user-modify",
+    url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/user-modify",
     aliases: ["user-modify"],
     deprecated: true,
     experimental: false,
   },
   {
     type: COMPATIBILITY_ISSUE_TYPE.CSS_PROPERTY,
-    property: "object-view-box",
-    // No MDN url but a spec one
-    specUrl: "https://drafts.csswg.org/css-images-5/#propdef-object-view-box",
+    property: "stroke-color",
+    // No MDN url, but a spec one
+    specUrl: "https://drafts.csswg.org/fill-stroke-3/#stroke-color",
     deprecated: false,
     experimental: true,
   },
-  // TODO: Re-enable it when we have another property with no MDN url nor spec url Bug 1840910
-  /*{
-    // No MDN url nor spec url
-    type: COMPATIBILITY_ISSUE_TYPE.CSS_PROPERTY,
-    property: "overflow-clip-box",
-    deprecated: false,
-    experimental: false,
-  },*/
+  // TODO: Write a test for it when we have a property with no MDN url nor spec url Bug 1840910
 ];
 
 const TEST_DATA_ALL = [
@@ -66,7 +58,7 @@ const TEST_DATA_ALL = [
   {
     type: COMPATIBILITY_ISSUE_TYPE.CSS_PROPERTY,
     property: "overflow-anchor",
-    url: "https://developer.mozilla.org/docs/Web/CSS/overflow-anchor",
+    url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/overflow-anchor",
     deprecated: false,
     experimental: false,
   },

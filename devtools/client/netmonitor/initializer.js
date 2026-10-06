@@ -29,7 +29,7 @@ EventEmitter.decorate(window);
 /**
  * This is the initialization point for the Network monitor.
  *
- * @param {Object} api Allows reusing existing API object.
+ * @param {object} api Allows reusing existing API object.
  */
 function initialize(api) {
   const app = new NetMonitorApp(api);
@@ -46,7 +46,6 @@ function initialize(api) {
 
 /**
  * The following code is used to open Network monitor in a tab.
- * Like the Launchpad, but without Launchpad.
  *
  * For example:
  * chrome://devtools/content/netmonitor/index.html?type=process

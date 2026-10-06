@@ -1,0 +1,97 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1">
+  <title>Test that the last snap target ids are updated when a snap resolves to the current scroll position</title>
+  <script type="application/javascript" src="apz_test_native_event_utils.js"></script>
+  <script type="application/javascript" src="apz_test_utils.js"></script>
+  <script src="/tests/SimpleTest/paint_listener.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+</head>
+<style>
+html {
+  scroll-snap-type: y mandatory;
+  overflow-y: scroll;
+}
+body {
+  margin: 0;
+}
+.target {
+  position: absolute;
+  width: 100%;
+  height: 10px;
+  scroll-snap-align: start;
+  background: lightblue;
+}
+</style>
+<div class="target"></div>
+<div class="target" style="top: 100px;"></div>
+<div style="height: 2000vh"></div>
+<script type="application/javascript">
+// Synthesize a touch drag that scrolls the second snap target to its aligned
+// position. Scroll snapping after this touch drag is a no-op. If we don't
+// propagate snap target ids in this case (e.g. by early-returning from
+// SmoothScrollTo), a subsequent layout change to the snapped target won't
+// trigger a re-snap
+async function test() {
+  synthesizeTouchAtPoint(100, 100, {
+    type: "touchstart",
+    id: 0,
+    asyncEnabled: true,
+  });
+  await promiseApzFlushedRepaints();
+
+  synthesizeTouchAtPoint(100, 100, {
+    type: "touchmove",
+    id: 0,
+    asyncEnabled: true,
+  });
+  await promiseApzFlushedRepaints();
+
+  synthesizeTouchAtPoint(100, 50, {
+    type: "touchmove",
+    id: 0,
+    asyncEnabled: true,
+  });
+  await promiseApzFlushedRepaints();
+
+  synthesizeTouchAtPoint(100, 0, {
+    type: "touchmove",
+    id: 0,
+    asyncEnabled: true,
+  });
+  await promiseApzFlushedRepaints();
+
+  // The pan moved the second snap target (at top: 100px) under the touch.
+  await promiseApzFlushedRepaints();
+  is(window.scrollY, 100, "Pan should land on the second snap target");
+
+  const touchEndPromise = new Promise(resolve => {
+    window.addEventListener("touchend", resolve);
+  });
+  synthesizeTouchAtPoint(100, 0, {
+    type: "touchend",
+    id: 0,
+    asyncEnabled: true,
+  });
+  await promiseApzFlushedRepaints();
+  await touchEndPromise;
+  await promiseFrame();
+
+  is(window.scrollY, 100, "Touch-end snap should not change the scroll position");
+
+  // Move the snapped target so that a re-snap is required.
+  const targets = document.querySelectorAll(".target");
+  targets[1].style.top = "10px";
+
+  await promiseFrame();
+  await promiseFrame();
+  is(window.scrollY, 10, "Re-snap should follow the moved target");
+}
+
+waitUntilApzStable()
+.then(test)
+.then(subtestDone, subtestFailed);
+</script>
+</html>

@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsKeychainMigrationUtils_h__
-#define nsKeychainMigrationUtils_h__
+#ifndef nsKeychainMigrationUtils_h_
+#define nsKeychainMigrationUtils_h_
 
 #include <CoreFoundation/CoreFoundation.h>
 

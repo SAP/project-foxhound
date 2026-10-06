@@ -5,22 +5,26 @@ prefs = ["devtools.inspector.activeSidebar=fontinspector"]
 support-files = [
   "devtools-mono.otf",
   "doc_browser_fontinspector.html",
+  "doc_browser_fontinspector-variable.html",
   "doc_browser_fontinspector_iframe.html",
   "test_iframe.html",
   "ostrich-black.ttf",
   "ostrich-regular.ttf",
+  "Inter.var.subset.ttf",
+  "FloatPrecisionTest.ttf",
   "head.js",
   "!/devtools/client/inspector/test/head.js",
   "!/devtools/client/inspector/test/shared-head.js",
   "!/devtools/client/shared/test/shared-head.js",
-  "!/devtools/client/shared/test/telemetry-test-helpers.js",
   "!/devtools/client/shared/test/highlighter-test-actor.js",
 ]
 
 ["browser_fontinspector.js"]
 
 ["browser_fontinspector_all-fonts.js"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt"] # Bug 1963212
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1963212
+]
 
 ["browser_fontinspector_copy-URL.js"]
 
@@ -33,6 +37,8 @@ skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && d
 ["browser_fontinspector_editor-letter-spacing-conversion.js"]
 
 ["browser_fontinspector_editor-values.js"]
+
+["browser_fontinspector_editor-variable.js"]
 
 ["browser_fontinspector_expand-css-code.js"]
 

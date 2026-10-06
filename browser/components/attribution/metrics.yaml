@@ -29,12 +29,17 @@ glean.attribution:
                            and was able to retrieve the "campaign ID" it was first installed with.
                            This value is "true" if the user was signed into the Microsoft Store
                            when they first installed, and false otherwise.
-      * `dlsource`: identifier that indicate where installations of Firefox originate
+      * `msclkid`: only present if the installation was done through the Microsoft Store, and the
+                   install is attributable to a Microsoft Store Ads Campaign ID. This differs
+                   from a Campaign ID originating from a Microsoft Store URL containing attribution.
+      * `dlsource`: identifier that indicate where installations of Firefox originate.
     # yamllint enable
     bugs:
       - https://bugzilla.mozilla.org/1955429
+      - https://bugzilla.mozilla.org/2004494
     data_reviews:
       - https://bugzilla.mozilla.org/1955429
+      - https://phabricator.services.mozilla.com/D275328
     notification_emails:
       - chutten@mozilla.com
     send_in_pings:
@@ -42,8 +47,6 @@ glean.attribution:
       - baseline
       - events
     expires: never
-    no_lint:
-      - BASELINE_PING
     structure:
       type: object
       properties:
@@ -57,11 +60,17 @@ glean.attribution:
           type: string
         msstoresignedin:
           type: boolean
+        msclkid:
+          type: string
         dlsource:
           type: string
     send_in_pings:
       - metrics
       - update
+      - baseline
+      - events
+    no_lint:
+      - BASELINE_PING
 
 glean.distribution:
   ext:
@@ -86,8 +95,6 @@ glean.distribution:
       - baseline
       - events
     expires: never
-    no_lint:
-      - BASELINE_PING
     structure:
       type: object
       properties:
@@ -106,3 +113,7 @@ glean.distribution:
     send_in_pings:
       - metrics
       - update
+      - baseline
+      - events
+    no_lint:
+      - BASELINE_PING

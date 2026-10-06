@@ -9,6 +9,9 @@ import mozilla.components.feature.customtabs.AbstractCustomTabsService
 import mozilla.components.feature.customtabs.store.CustomTabsServiceStore
 import org.mozilla.focus.ext.components
 
+/**
+ * Service for handling Android Custom Tabs.
+ */
 class CustomTabsService : AbstractCustomTabsService() {
     override val customTabsServiceStore: CustomTabsServiceStore by lazy { components.customTabsStore }
     override val engine: Engine by lazy { components.engine }

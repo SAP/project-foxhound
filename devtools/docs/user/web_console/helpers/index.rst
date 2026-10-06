@@ -33,7 +33,7 @@ $x(xpath, element, resultType)
   Evaluates the `XPath <https://developer.mozilla.org/en-US/docs/Web/XPath>`_ ``xpath`` expression in the context of ``element`` and returns an array of matching nodes. If unspecified, ``element`` defaults to ``document``. The resultType parameter specifies the type of result to return; it can be an `XPathResult constant <https://developer.mozilla.org/en-US/docs/Web/API/XPathResult#constants>`_, or a corresponding string: ``"number"``, ``"string"``, ``"bool"``, ``"node"``, or ``"nodes"``; if not provided, ``ANY_TYPE`` is used.
 
 :block
-  (Starting in Firefox 80) Followed by an unquoted string, blocks requests where the URL contains that string. In the :doc:`Network Monitor <../../network_monitor/index>`, the string now appears and is selected in the :ref:`Request Blocking sidebar <network_monitor_blocking_specific_urls>`. Unblock with ``:unblock``.
+  Followed by an unquoted string, blocks requests where the URL contains that string. In the :doc:`Network Monitor <../../network_monitor/index>`, the string now appears and is selected in the :ref:`Request Blocking sidebar <network_monitor_blocking_specific_urls>`. Unblock with ``:unblock``.
 
 clear()
   Clears the console output area.
@@ -103,7 +103,7 @@ pprint() (deprecated)
 
 
 :unblock
-  (Starting in Firefox 80) Followed by an unquoted string, removes blocking for URLs containing that string. In the :doc:`Network Monitor <../../network_monitor/index>`, the string is removed from the :ref:`Request Blocking sidebar <network_monitor_blocking_specific_urls>`. No error is given if the string was not previously blocked.
+  Followed by an unquoted string, removes blocking for URLs containing that string. In the :doc:`Network Monitor <../../network_monitor/index>`, the string is removed from the :ref:`Request Blocking sidebar <network_monitor_blocking_specific_urls>`. No error is given if the string was not previously blocked.
 
 values()
   Given an object, returns a list of the values on that object; serves as a companion to ``keys()``.

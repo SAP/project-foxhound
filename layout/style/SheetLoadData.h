@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,7 +12,6 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/SharedSubResourceCache.h"
 #include "mozilla/css/Loader.h"
-#include "mozilla/css/SheetParsingMode.h"
 #include "mozilla/dom/CacheExpirationTime.h"
 #include "nsProxyRelease.h"
 
@@ -36,11 +33,6 @@ namespace mozilla::css {
 /*********************************************
  * Data needed to properly load a stylesheet *
  *********************************************/
-
-static_assert(eAuthorSheetFeatures == 0 && eUserSheetFeatures == 1 &&
-                  eAgentSheetFeatures == 2,
-              "sheet parsing mode constants won't fit "
-              "in SheetLoadData::mParsingMode");
 
 enum class SyncLoad : bool { No, Yes };
 
@@ -67,14 +59,14 @@ class SheetLoadData final
       nsICSSLoaderObserver* aObserver, nsIPrincipal* aTriggeringPrincipal,
       nsIReferrerInfo*, const nsAString& aNonce,
       dom::FetchPriority aFetchPriority,
-      already_AddRefed<SubResourceNetworkMetadataHolder>&& aNetworkMetadata);
+      already_AddRefed<SubResourceNetworkMetadataHolder> aNetworkMetadata);
 
   // Data for loading a sheet linked from an @import rule
   SheetLoadData(
       css::Loader*, nsIURI*, StyleSheet*, SheetLoadData* aParentData,
       nsICSSLoaderObserver* aObserver, nsIPrincipal* aTriggeringPrincipal,
       nsIReferrerInfo*,
-      already_AddRefed<SubResourceNetworkMetadataHolder>&& aNetworkMetadata);
+      already_AddRefed<SubResourceNetworkMetadataHolder> aNetworkMetadata);
 
   // Data for loading a non-document sheet
   SheetLoadData(
@@ -83,7 +75,7 @@ class SheetLoadData final
       nsICSSLoaderObserver* aObserver, nsIPrincipal* aTriggeringPrincipal,
       nsIReferrerInfo*, const nsAString& aNonce,
       dom::FetchPriority aFetchPriority,
-      already_AddRefed<SubResourceNetworkMetadataHolder>&& aNetworkMetadata);
+      already_AddRefed<SubResourceNetworkMetadataHolder> aNetworkMetadata);
 
   nsIReferrerInfo* ReferrerInfo() const { return mReferrerInfo; }
 
@@ -198,18 +190,6 @@ class SheetLoadData final
   // If true, this SheetLoadData is being used as a way to handle
   // async observer notification for an already-complete sheet.
   bool mSheetAlreadyComplete : 1;
-
-  // If true, the sheet is being loaded cross-origin without CORS permissions.
-  // This is completely normal and CORS isn't needed for such loads.  This
-  // flag is simply useful in determining whether to set mBlockResourceTiming
-  // for a child sheet.
-  bool mIsCrossOriginNoCORS : 1;
-
-  // If this flag is true, LoadSheet will call SetReportResourceTiming(false)
-  // on the timedChannel. This is to mark resources that are loaded by a
-  // cross-origin stylesheet with a no-cors policy.
-  // https://www.w3.org/TR/resource-timing/#processing-model
-  bool mBlockResourceTiming : 1;
 
   // Boolean flag indicating whether the load has failed.  This will be set
   // to true if this load, or the load of any descendant import, fails.

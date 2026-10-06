@@ -9,21 +9,20 @@
  */
 
 #include <array>
+#include <cstdlib>
 #include <memory>
-#include <string>
+#include <span>
 #include <vector>
 
 #include "common_audio/resampler/push_sinc_resampler.h"
 #include "modules/audio_processing/agc2/cpu_features.h"
+#include "modules/audio_processing/agc2/rnn_vad/common.h"
 #include "modules/audio_processing/agc2/rnn_vad/features_extraction.h"
 #include "modules/audio_processing/agc2/rnn_vad/rnn.h"
 #include "modules/audio_processing/agc2/rnn_vad/test_utils.h"
 #include "modules/audio_processing/test/performance_timer.h"
-#include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "test/gtest.h"
-#include "third_party/rnnoise/src/rnn_activations.h"
-#include "third_party/rnnoise/src/rnn_vad_weights.h"
 
 namespace webrtc {
 namespace rnn_vad {
@@ -76,9 +75,9 @@ TEST_P(RnnVadProbabilityParametrization, RnnVadProbabilityWithinTolerance) {
   const int num_frames = samples_reader->size() / kFrameSize10ms48kHz;
 
   // Init buffers.
-  std::vector<float> samples_48k(kFrameSize10ms48kHz);
-  std::vector<float> samples_24k(kFrameSize10ms24kHz);
-  std::vector<float> feature_vector(kFeatureVectorSize);
+  std::array<float, kFrameSize10ms48kHz> samples_48k = {};
+  std::array<float, kFrameSize10ms24kHz> samples_24k = {};
+  std::array<float, kFeatureVectorSize> feature_vector = {};
   std::vector<float> computed_vad_prob(num_frames);
   std::vector<float> expected_vad_prob(num_frames);
 
@@ -92,10 +91,9 @@ TEST_P(RnnVadProbabilityParametrization, RnnVadProbabilityWithinTolerance) {
     decimator.Resample(samples_48k.data(), samples_48k.size(),
                        samples_24k.data(), samples_24k.size());
     bool is_silence = features_extractor.CheckSilenceComputeFeatures(
-        {samples_24k.data(), kFrameSize10ms24kHz},
-        {feature_vector.data(), kFeatureVectorSize});
-    computed_vad_prob[i] = rnn_vad.ComputeVadProbability(
-        {feature_vector.data(), kFeatureVectorSize}, is_silence);
+        samples_24k, feature_vector);
+    computed_vad_prob[i] =
+        rnn_vad.ComputeVadProbability(feature_vector, is_silence);
     EXPECT_NEAR(computed_vad_prob[i], expected_vad_prob[i], 1e-3f);
     cumulative_error += std::abs(computed_vad_prob[i] - expected_vad_prob[i]);
   }
@@ -135,7 +133,7 @@ TEST_P(RnnVadProbabilityParametrization, DISABLED_RnnVadPerformance) {
   std::array<float, kFeatureVectorSize> feature_vector;
   RnnVad rnn_vad(cpu_features);
   constexpr int number_of_tests = 100;
-  ::webrtc::test::PerformanceTimer perf_timer(number_of_tests);
+  test::PerformanceTimer perf_timer(number_of_tests);
   for (int k = 0; k < number_of_tests; ++k) {
     features_extractor.Reset();
     rnn_vad.Reset();
@@ -143,8 +141,9 @@ TEST_P(RnnVadProbabilityParametrization, DISABLED_RnnVadPerformance) {
     perf_timer.StartTimer();
     for (int i = 0; i < num_frames; ++i) {
       bool is_silence = features_extractor.CheckSilenceComputeFeatures(
-          {&prefetched_decimated_samples[i * kFrameSize10ms24kHz],
-           kFrameSize10ms24kHz},
+          std::span<const float, kFrameSize10ms24kHz>(
+              &prefetched_decimated_samples[i * kFrameSize10ms24kHz],
+              kFrameSize10ms24kHz),
           feature_vector);
       rnn_vad.ComputeVadProbability(feature_vector, is_silence);
     }

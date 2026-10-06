@@ -77,9 +77,6 @@ const APIS = {
   ClearHSTSState() {
     return browser.test.clearHSTSState();
   },
-  IsSessionHistoryInParentRunning() {
-    return browser.test.isSessionHistoryInParentRunning();
-  },
   IsFissionRunning() {
     return browser.test.isFissionRunning();
   },
@@ -100,6 +97,24 @@ const APIS = {
   },
   GetWebExtensionSchemaPermissionNames({ typeNames }) {
     return browser.test.getWebExtensionsSchemaPermissionNames(typeNames);
+  },
+  TeardownAlertsService() {
+    return browser.test.teardownAlertsService();
+  },
+  NotifyUserGestureActivation({ tab }) {
+    return browser.test.notifyUserGestureActivation(tab.id);
+  },
+  SaveTrackingDBEvents({ log }) {
+    return browser.test.saveTrackingDBEvents(log);
+  },
+  ClearTrackingDB() {
+    return browser.test.clearTrackingDB();
+  },
+  AddVirtualAuthenticator() {
+    return browser.test.addVirtualAuthenticator();
+  },
+  RemoveVirtualAuthenticator({ authenticatorId }) {
+    return browser.test.removeVirtualAuthenticator(authenticatorId);
   },
 };
 

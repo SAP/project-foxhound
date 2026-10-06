@@ -55,7 +55,7 @@ add_task(async function () {
   );
 
   // reload the tab
-  await reloadBrowser();
+  await reloadSelectedTab();
 
   // check principals in loadInfo are still correct
   await SpecialPowers.spawn(

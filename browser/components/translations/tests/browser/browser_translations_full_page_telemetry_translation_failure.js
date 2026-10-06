@@ -25,6 +25,24 @@ add_task(
     await FullPageTranslationsTestUtils.assertPageIsNotTranslated(runInPage);
 
     await TestTranslationsTelemetry.assertEvent(
+      Glean.translations.identifyPageLanguage,
+      {
+        expectedEventCount: 1,
+        assertForMostRecentEvent: {
+          html_lang_attribute: "es",
+          identified_language: "es",
+          lang_tags_match: true,
+          is_lang_attribute_valid: true,
+          extracted_code_units: 2132,
+          extraction_time: ms => 0 < ms,
+          identification_time: ms => 0 < ms,
+          total_time: ms => 0 < ms,
+          confident: true,
+        },
+      }
+    );
+
+    await TestTranslationsTelemetry.assertEvent(
       Glean.translations.translationRequest,
       {
         expectedEventCount: 0,
@@ -100,7 +118,6 @@ add_task(
           to_language: "en",
           auto_translate: false,
           document_language: "es",
-          top_preferred_language: "en-US",
           request_target: "full_page",
         },
       }
@@ -109,6 +126,24 @@ add_task(
     await TestTranslationsTelemetry.assertTranslationsEnginePerformance({
       expectedEventCount: 0,
     });
+
+    await TestTranslationsTelemetry.assertEvent(
+      Glean.translations.identifyPageLanguage,
+      {
+        expectedEventCount: 1,
+        assertForMostRecentEvent: {
+          html_lang_attribute: "es",
+          identified_language: "es",
+          lang_tags_match: true,
+          is_lang_attribute_valid: true,
+          extracted_code_units: 2132,
+          extraction_time: ms => 0 < ms,
+          identification_time: ms => 0 < ms,
+          total_time: ms => 0 < ms,
+          confident: true,
+        },
+      }
+    );
 
     await cleanup();
   }
@@ -131,6 +166,24 @@ add_task(async function test_translations_telemetry_auto_translation_failure() {
   });
 
   await FullPageTranslationsTestUtils.assertPageIsNotTranslated(runInPage);
+
+  await TestTranslationsTelemetry.assertEvent(
+    Glean.translations.identifyPageLanguage,
+    {
+      expectedEventCount: 1,
+      assertForMostRecentEvent: {
+        html_lang_attribute: "es",
+        identified_language: "es",
+        lang_tags_match: true,
+        is_lang_attribute_valid: true,
+        extracted_code_units: 2132,
+        extraction_time: ms => 0 < ms,
+        identification_time: ms => 0 < ms,
+        total_time: ms => 0 < ms,
+        confident: true,
+      },
+    }
+  );
 
   await TestTranslationsTelemetry.assertEvent(Glean.translationsPanel.open, {
     expectedEventCount: 1,
@@ -170,7 +223,6 @@ add_task(async function test_translations_telemetry_auto_translation_failure() {
         to_language: "en",
         auto_translate: true,
         document_language: "es",
-        top_preferred_language: "en-US",
         request_target: "full_page",
       },
     }
@@ -192,6 +244,24 @@ add_task(async function test_translations_telemetry_auto_translation_failure() {
   await TestTranslationsTelemetry.assertTranslationsEnginePerformance({
     expectedEventCount: 0,
   });
+
+  await TestTranslationsTelemetry.assertEvent(
+    Glean.translations.identifyPageLanguage,
+    {
+      expectedEventCount: 1,
+      assertForMostRecentEvent: {
+        html_lang_attribute: "es",
+        identified_language: "es",
+        lang_tags_match: true,
+        is_lang_attribute_valid: true,
+        extracted_code_units: 2132,
+        extraction_time: ms => 0 < ms,
+        identification_time: ms => 0 < ms,
+        total_time: ms => 0 < ms,
+        confident: true,
+      },
+    }
+  );
 
   await cleanup();
 });

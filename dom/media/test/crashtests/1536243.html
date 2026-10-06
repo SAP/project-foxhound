@@ -1,0 +1,12 @@
+<html class="reftest-wait">
+<video id='v'>
+  <source src='1536243.mp4'>
+</video>
+<script>
+  function done() {
+    document.documentElement.removeAttribute("class");
+  }
+  v.addEventListener('error', done, true);
+  v.addEventListener('ended', done, true);
+  v.play();
+</script>

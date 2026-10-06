@@ -5,6 +5,16 @@ Services.scriptloader.loadSubScript(
   this
 );
 
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      // Disabled so focusing a filled field reliably re-identifies it instead
+      // of being suppressed during the dynamic-form-change threshold window.
+      ["extensions.formautofill.heuristics.fillOnDynamicFormChanges", false],
+    ],
+  });
+});
+
 add_task(async function test_submit_creditCard_autofill() {
   if (!OSKeyStoreTestUtils.canTestOSKeyStoreLogin()) {
     todo(
@@ -40,7 +50,6 @@ add_task(async function test_submit_creditCard_autofill() {
       buildccFormv2Extra({ cc_exp: "unavailable" }, "autofilled")
     ),
   ];
-  await assertTelemetry(undefined, expectedFormEvents);
 
   assertFormInteractionEventsInGlean(expectedFormEvents);
   assertDetectedCcNumberFieldsCountInGlean([
@@ -83,14 +92,13 @@ add_task(async function test_clear_creditCard_autofill() {
       buildccFormv2Extra({ cc_exp: "unavailable" }, "filled")
     ),
   ];
-  await assertTelemetry(undefined, expectedFormEvents);
 
   assertFormInteractionEventsInGlean(expectedFormEvents);
   assertDetectedCcNumberFieldsCountInGlean([
     { label: "cc_number_fields_1", count: 1 },
   ]);
 
-  await clearTelemetry();
+  await clearGleanTelemetry();
 
   let browser = tab.linkedBrowser;
 
@@ -109,10 +117,8 @@ add_task(async function test_clear_creditCard_autofill() {
   expectedFormEvents = [
     ccFormArgsv2("popup_shown", { field_name: "cc-number" }),
   ];
-  await assertTelemetry(undefined, expectedFormEvents);
   assertFormInteractionEventsInGlean(expectedFormEvents);
 
-  Services.telemetry.clearEvents();
   await clearGleanTelemetry();
 
   let popupHidden = BrowserTestUtils.waitForPopupEvent(
@@ -142,8 +148,6 @@ add_task(async function test_clear_creditCard_autofill() {
     // we automatically triggers the popup.
     ccFormArgsv2("popup_shown", { field_name: "cc-number" }),
   ];
-
-  await assertTelemetry(undefined, expectedFormEvents);
 
   assertFormInteractionEventsInGlean(expectedFormEvents);
 

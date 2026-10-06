@@ -1,0 +1,218 @@
+[DEFAULT]
+tags = "devtools"
+subsuite = "devtools"
+support-files = [
+  "examples/*",
+  "head.js",
+  "shared-head.js",
+  "!/devtools/client/framework/browser-toolbox/test/helpers-browser-toolbox.js",
+  "!/devtools/client/inspector/test/head.js",
+  "!/devtools/client/inspector/test/shared-head.js",
+  "!/devtools/client/shared/test/shared-head.js",
+  "!/devtools/client/shared/test/highlighter-test-actor.js",
+  "!/devtools/client/webconsole/test/browser/shared-head.js",
+]
+prefs = [
+ "dom.ipc.processPrelaunch.enabled=false", # Disable randomly spawning processes during tests. After enabling windowless service workers, a process spawning will trigger an update of the service workers list which can fail the test if it occurs during shutdown (unhandled promise rejection).
+ "devtools.debugger.features.javascript-tracing=true", # This pref has to be set before the process starts
+ "javascript.options.experimental.explicit_resource_management=true", # This pref has to be set before the process starts
+]
+
+["browser_dbg-gc-breakpoint-positions.js"]
+
+["browser_dbg-gc-sources.js"]
+
+["browser_dbg-go-to-line.js"]
+
+["browser_dbg-html-breakpoints.js"]
+
+["browser_dbg-idb-run-to-completion.js"]
+
+["browser_dbg-iframes.js"]
+
+["browser_dbg-inline-cache.js"]
+
+["browser_dbg-inline-exceptions-inline-script.js"]
+
+["browser_dbg-inline-exceptions-position.js"]
+
+["browser_dbg-inline-exceptions.js"]
+
+["browser_dbg-inline-preview.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # Bug 1607636
+]
+
+["browser_dbg-inline-script-offset.js"]
+
+["browser_dbg-keyboard-navigation.js"]
+
+["browser_dbg-keyboard-shortcuts-modal.js"]
+
+["browser_dbg-keyboard-shortcuts.js"]
+
+["browser_dbg-layout-changes.js"]
+
+["browser_dbg-link-reload.js"]
+
+["browser_dbg-log-events.js"]
+
+["browser_dbg-log-point-mapping.js"]
+
+["browser_dbg-log-points-workers.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-log-points.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-many-breakpoints-same-line.js"]
+
+["browser_dbg-merge-scopes.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-message-run-to-completion.js"]
+
+["browser_dbg-minified.js"]
+
+["browser_dbg-navigation-when-paused.js"]
+
+["browser_dbg-navigation.js"]
+
+["browser_dbg-no-duplicate-breakpoints-on-frame-reload.js"]
+
+["browser_dbg-old-breakpoint.js"]
+
+["browser_dbg-outline-filter.js"]
+
+["browser_dbg-outline-focus.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-outline-pretty.js"]
+
+["browser_dbg-outline.js"]
+
+["browser_dbg-overrides-original.js"]
+
+["browser_dbg-overrides.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-pause-exceptions.js"]
+
+["browser_dbg-pause-on-next.js"]
+
+["browser_dbg-pause-on-unload.js"]
+
+["browser_dbg-pause-points.js"]
+
+["browser_dbg-pause-ux.js"]
+
+["browser_dbg-paused-overlay-iframe.js"]
+
+["browser_dbg-paused-overlay-loading.js"]
+
+["browser_dbg-paused-overlay.js"]
+
+["browser_dbg-pretty-print-auto.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-pretty-print-breakpoints-columns.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-pretty-print-breakpoints-delete.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-pretty-print-breakpoints.js"]
+
+["browser_dbg-pretty-print-console.js"]
+
+["browser_dbg-pretty-print-flow.js"]
+
+["browser_dbg-pretty-print-inline-scripts.js"]
+
+["browser_dbg-pretty-print-line-breaks.js"]
+
+["browser_dbg-pretty-print-paused-anonymous.js"]
+
+["browser_dbg-pretty-print-paused.js"]
+
+["browser_dbg-pretty-print-sourcemap.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1817966
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && ccov", # Bug 1817966
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && ccov", # Bug 1817966
+]
+
+["browser_dbg-pretty-print-stylesheet.js"]
+
+["browser_dbg-pretty-print.js"]
+
+["browser_dbg-preview-bucketed-array.js"]
+
+["browser_dbg-preview-frame.js"]
+
+["browser_dbg-preview-getter.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-preview-invalid-tokens.js"]
+skip-if = [
+  "debug", # Bug 1958748 intermittent toolbox documents leaks
+]
+
+["browser_dbg-preview-jump-to-definition.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-preview-module.js"]
+
+["browser_dbg-preview-moving-token.js"]
+
+["browser_dbg-preview-multiple-frames.js"]
+
+["browser_dbg-preview-multiple-threads.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 .threads-pane .thread is not accessible
+]
+
+["browser_dbg-preview-source-maps.js"]
+
+["browser_dbg-preview-switch.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug 1849028 .theme-twisty is inconsistently not accessible
+]
+
+["browser_dbg-preview-wrapped-lines.js"]
+skip-if = [
+  "true", # Bug 1985564 the test is flaky
+]
+# fail-if = ["a11y_checks"] # Bug 1860733 splitter element is not focusable
+
+["browser_dbg-preview.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-project-root.js"]
+
+["browser_dbg-project-search.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]

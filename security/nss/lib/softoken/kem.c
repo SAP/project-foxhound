@@ -11,42 +11,89 @@
 #include "secport.h"
 #include "softoken.h"
 
+/* change to the largest KEM Secret Bytes value supported */
+#define MAX_SHARED_SECRET_BYTES KYBER_SHARED_SECRET_BYTES
+
+CK_ML_KEM_PARAMETER_SET_TYPE
+sftk_kyber_InternalToPK11Param(KyberParams params)
+{
+    switch (params) {
+#ifndef NSS_DISABLE_KYBER
+        case params_kyber768_round3:
+        case params_kyber768_round3_test_mode:
+            return CKP_NSS_KYBER_768_ROUND3;
+#endif
+        case params_ml_kem768:
+        case params_ml_kem768_test_mode:
+            return CKP_ML_KEM_768;
+        case params_ml_kem1024:
+        case params_ml_kem1024_test_mode:
+            return CKP_ML_KEM_1024;
+        default:
+            return CKP_INVALID_ID;
+    }
+}
 KyberParams
-sftk_kyber_PK11ParamToInternal(CK_NSS_KEM_PARAMETER_SET_TYPE pk11ParamSet)
+sftk_kyber_PK11ParamToInternal(CK_ML_KEM_PARAMETER_SET_TYPE pk11ParamSet)
 {
     switch (pk11ParamSet) {
+#ifndef NSS_DISABLE_KYBER
         case CKP_NSS_KYBER_768_ROUND3:
             return params_kyber768_round3;
+#endif
         case CKP_NSS_ML_KEM_768:
+        case CKP_ML_KEM_768:
             return params_ml_kem768;
+        case CKP_ML_KEM_1024:
+            return params_ml_kem1024;
         default:
             return params_kyber_invalid;
+    }
+}
+
+size_t
+sftk_kyber_pubKeyLen(KyberParams params)
+{
+    switch (params) {
+#ifndef NSS_DISABLE_KYBER
+        case params_kyber768_round3:
+        case params_kyber768_round3_test_mode:
+#endif
+        case params_ml_kem768:
+        case params_ml_kem768_test_mode:
+            return KYBER768_PUBLIC_KEY_BYTES;
+        case params_ml_kem1024:
+        case params_ml_kem1024_test_mode:
+            return MLKEM1024_PUBLIC_KEY_BYTES;
+        default:
+            return 0;
     }
 }
 
 SECItem *
 sftk_kyber_AllocPubKeyItem(KyberParams params, SECItem *pubkey)
 {
-    switch (params) {
-        case params_kyber768_round3:
-        case params_kyber768_round3_test_mode:
-        case params_ml_kem768:
-        case params_ml_kem768_test_mode:
-            return SECITEM_AllocItem(NULL, pubkey, KYBER768_PUBLIC_KEY_BYTES);
-        default:
-            return NULL;
+    size_t pubKeyLen = sftk_kyber_pubKeyLen(params);
+    if (pubKeyLen == 0) {
+        return NULL;
     }
+    return SECITEM_AllocItem(NULL, pubkey, (int)pubKeyLen);
 }
 
 SECItem *
 sftk_kyber_AllocPrivKeyItem(KyberParams params, SECItem *privkey)
 {
     switch (params) {
+#ifndef NSS_DISABLE_KYBER
         case params_kyber768_round3:
         case params_kyber768_round3_test_mode:
+#endif
         case params_ml_kem768:
         case params_ml_kem768_test_mode:
             return SECITEM_AllocItem(NULL, privkey, KYBER768_PRIVATE_KEY_BYTES);
+        case params_ml_kem1024:
+        case params_ml_kem1024_test_mode:
+            return SECITEM_AllocItem(NULL, privkey, MLKEM1024_PRIVATE_KEY_BYTES);
         default:
             return NULL;
     }
@@ -56,28 +103,18 @@ SECItem *
 sftk_kyber_AllocCiphertextItem(KyberParams params, SECItem *ciphertext)
 {
     switch (params) {
+#ifndef NSS_DISABLE_KYBER
         case params_kyber768_round3:
         case params_kyber768_round3_test_mode:
+#endif
         case params_ml_kem768:
         case params_ml_kem768_test_mode:
             return SECITEM_AllocItem(NULL, ciphertext, KYBER768_CIPHERTEXT_BYTES);
+        case params_ml_kem1024:
+        case params_ml_kem1024_test_mode:
+            return SECITEM_AllocItem(NULL, ciphertext, MLKEM1024_CIPHERTEXT_BYTES);
         default:
             return NULL;
-    }
-}
-
-static PRBool
-sftk_kyber_ValidateParams(const CK_NSS_KEM_PARAMETER_SET_TYPE *params)
-{
-    if (!params) {
-        return PR_FALSE;
-    }
-    switch (*params) {
-        case CKP_NSS_KYBER_768_ROUND3:
-        case CKP_NSS_ML_KEM_768:
-            return PR_TRUE;
-        default:
-            return PR_FALSE;
     }
 }
 
@@ -88,60 +125,122 @@ sftk_kem_ValidateMechanism(CK_MECHANISM_PTR pMechanism)
         return PR_FALSE;
     }
     switch (pMechanism->mechanism) {
+#ifndef NSS_DISABLE_KYBER
         case CKM_NSS_KYBER:
+#endif
         case CKM_NSS_ML_KEM:
-            return pMechanism->ulParameterLen == sizeof(CK_NSS_KEM_PARAMETER_SET_TYPE) && sftk_kyber_ValidateParams(pMechanism->pParameter);
+        case CKM_ML_KEM:
+            return PR_TRUE;
         default:
             return PR_FALSE;
     }
 }
 
-static CK_ULONG
-sftk_kem_CiphertextLen(CK_MECHANISM_PTR pMechanism)
+/* this is a generic call the returns the paramSet as a CKU_LONG. if the
+ * param set is in a different attribute or mechanism structure, that would
+ * be based on the mechanism. The meaning of the paramter set is alway
+ * mechanism specific */
+static CK_RV
+sftk_kem_getParamSet(CK_MECHANISM_PTR pMechanism, SFTKObject *key,
+                     CK_ULONG *paramSet)
 {
-#ifdef DEBUG
-    if (!sftk_kem_ValidateMechanism(pMechanism)) {
-        PORT_Assert(0);
-        return 0;
-    }
-#endif
+    CK_RV crv = CKR_MECHANISM_INVALID;
 
-    /* Assumes pMechanism has been validated with sftk_kem_ValidateMechanism */
-    CK_NSS_KEM_PARAMETER_SET_TYPE *pParameterSet = pMechanism->pParameter;
-    switch (*pParameterSet) {
-        case CKP_NSS_KYBER_768_ROUND3:
-        case CKP_NSS_ML_KEM_768:
-            return KYBER768_CIPHERTEXT_BYTES;
+    switch (pMechanism->mechanism) {
+#ifndef NSS_DISABLE_KYBER
+        case CKM_NSS_KYBER:
+#endif
+        case CKM_NSS_ML_KEM:
+            /* CKM_NSS_KYBER and CKM_NSS_ML_KEM has cases were we were
+             * given parameters form the application. Retain that symantic for
+             * compatibility */
+            if ((pMechanism->pParameter) &&
+                pMechanism->ulParameterLen == sizeof(CK_ML_KEM_PARAMETER_SET_TYPE)) {
+                PR_STATIC_ASSERT(sizeof(CK_ML_KEM_PARAMETER_SET_TYPE) == sizeof(CK_LONG));
+                *paramSet = *(CK_ULONG *)pMechanism->pParameter;
+                crv = CKR_OK;
+                break;
+            }
+            /* fall through to the official PKCS #11 way of getting the
+             * parameter set */
+        case CKM_ML_KEM:
+            crv = sftk_GetULongAttribute(key, CKA_PARAMETER_SET, paramSet);
+            if (crv == CKR_OK) {
+                break;
+            }
+            /* we accept all key types a equivalent here, so the parameter
+             * set could be attached to the old vendor specific attribute.
+             * We might use the vendor specific key when bypassing pairwise
+             * consistency checks */
+            crv = sftk_GetULongAttribute(key, CKA_NSS_PARAMETER_SET, paramSet);
+            break;
         default:
-            /* unreachable if pMechanism has been validated */
-            PORT_Assert(0);
-            return 0;
+            break;
     }
+    return crv;
+}
+
+static CK_ULONG
+sftk_kem_CiphertextLen(CK_MECHANISM_PTR pMechanism, CK_ULONG paramSet)
+{
+    /* the switch here is redundant now, but we will eventually have
+     * other unrelated KEM operations and the meaning of paramSet
+     * is dependent of the mechanism type (in general). Since there
+     * is not overlap between the Vendor specific mechanisms here
+     * and the stand ones, we'll just accept them all here. */
+    switch (pMechanism->mechanism) {
+#ifndef NSS_DISABLE_KYBER
+        case CKM_NSS_KYBER:
+#endif
+        case CKM_NSS_ML_KEM:
+        case CKM_ML_KEM:
+            switch (paramSet) {
+#ifndef NSS_DISABLE_KYBER
+                case CKP_NSS_KYBER_768_ROUND3:
+#endif
+                case CKP_NSS_ML_KEM_768:
+                case CKP_ML_KEM_768:
+                    return KYBER768_CIPHERTEXT_BYTES;
+                case CKP_ML_KEM_1024:
+                    return MLKEM1024_CIPHERTEXT_BYTES;
+                default:
+                    break;
+            }
+        default:
+            break;
+    }
+    return 0;
 }
 
 /* C_Encapsulate takes a public encapsulation key hPublicKey, a secret
  * phKey, and outputs a ciphertext (i.e. encapsulaton) of this secret in
  * pCiphertext. */
 CK_RV
-NSC_Encapsulate(CK_SESSION_HANDLE hSession,
-                CK_MECHANISM_PTR pMechanism,
-                CK_OBJECT_HANDLE hPublicKey,
-                CK_ATTRIBUTE_PTR pTemplate,
-                CK_ULONG ulAttributeCount,
-                /* out */ CK_OBJECT_HANDLE_PTR phKey,
-                /* out */ CK_BYTE_PTR pCiphertext,
-                /* out */ CK_ULONG_PTR pulCiphertextLen)
+NSC_EncapsulateKey(CK_SESSION_HANDLE hSession,
+                   CK_MECHANISM_PTR pMechanism,
+                   CK_OBJECT_HANDLE hPublicKey,
+                   CK_ATTRIBUTE_PTR pTemplate,
+                   CK_ULONG ulAttributeCount,
+                   /* out */ CK_BYTE_PTR pCiphertext,
+                   /* out */ CK_ULONG_PTR pulCiphertextLen,
+                   /* out */ CK_OBJECT_HANDLE_PTR phKey)
 {
     SFTKSession *session = NULL;
     SFTKSlot *slot = NULL;
 
     SFTKObject *key = NULL;
+    CK_OBJECT_CLASS ckclass = CKO_SECRET_KEY;
+    CK_KEY_TYPE ckkeyType = CKK_GENERIC_SECRET;
 
     SFTKObject *encapsulationKeyObject = NULL;
     SFTKAttribute *encapsulationKey = NULL;
 
     CK_RV crv;
     SFTKFreeStatus status;
+    CK_ULONG paramSet = 0; /* use a generic U_LONG so we can handle
+                            * different param set types based on the
+                            * Mechanism value */
+    KyberParams kyberParams;
 
     CHECK_FORK();
 
@@ -151,12 +250,6 @@ NSC_Encapsulate(CK_SESSION_HANDLE hSession,
 
     if (!sftk_kem_ValidateMechanism(pMechanism)) {
         return CKR_MECHANISM_INVALID;
-    }
-
-    CK_ULONG ciphertextLen = sftk_kem_CiphertextLen(pMechanism);
-    if (!pCiphertext || *pulCiphertextLen < ciphertextLen) {
-        *pulCiphertextLen = ciphertextLen;
-        return CKR_KEY_SIZE_RANGE;
     }
     *phKey = CK_INVALID_HANDLE;
 
@@ -182,9 +275,22 @@ NSC_Encapsulate(CK_SESSION_HANDLE hSession,
         }
     }
 
+    crv = sftk_defaultAttribute(key, CKA_CLASS, &ckclass, sizeof(ckclass));
+    if (crv != CKR_OK) {
+        goto cleanup;
+    }
+    crv = sftk_defaultAttribute(key, CKA_KEY_TYPE, &ckkeyType, sizeof(ckkeyType));
+    if (crv != CKR_OK) {
+        goto cleanup;
+    }
+
     encapsulationKeyObject = sftk_ObjectFromHandle(hPublicKey, session);
     if (encapsulationKeyObject == NULL) {
         crv = CKR_KEY_HANDLE_INVALID;
+        goto cleanup;
+    }
+    if (encapsulationKeyObject->objclass != CKO_PUBLIC_KEY) {
+        crv = CKR_KEY_TYPE_INCONSISTENT;
         goto cleanup;
     }
     encapsulationKey = sftk_FindAttribute(encapsulationKeyObject, CKA_VALUE);
@@ -193,20 +299,39 @@ NSC_Encapsulate(CK_SESSION_HANDLE hSession,
         goto cleanup;
     }
 
+    crv = sftk_kem_getParamSet(pMechanism, encapsulationKeyObject, &paramSet);
+    if (crv != CKR_OK) {
+        goto cleanup;
+    }
+
+    CK_ULONG ciphertextLen = sftk_kem_CiphertextLen(pMechanism, paramSet);
+    if (!pCiphertext || *pulCiphertextLen < ciphertextLen || ciphertextLen == 0) {
+        *pulCiphertextLen = ciphertextLen;
+        crv = CKR_BUFFER_TOO_SMALL;
+        goto cleanup;
+    }
+
     SECItem ciphertext = { siBuffer, pCiphertext, ciphertextLen };
     SECItem pubKey = { siBuffer, encapsulationKey->attrib.pValue, encapsulationKey->attrib.ulValueLen };
 
-    /* The length of secretBuf can be increased if we ever support other KEMs */
-    uint8_t secretBuf[KYBER_SHARED_SECRET_BYTES] = { 0 };
+    /* The length of secretBuf can be increased if we ever support other KEMs
+     * by changing the define at the top of this file */
+    uint8_t secretBuf[MAX_SHARED_SECRET_BYTES] = { 0 };
     SECItem secret = { siBuffer, secretBuf, sizeof secretBuf };
 
+    sftk_setFIPS(key, sftk_operationIsFIPS(slot, pMechanism, CKA_ENCAPSULATE,
+                                           encapsulationKeyObject, 0));
+    key->source = SFTK_SOURCE_KEA;
     switch (pMechanism->mechanism) {
+#ifndef NSS_DISABLE_KYBER
         case CKM_NSS_KYBER:
+#endif
         case CKM_NSS_ML_KEM:
-            PORT_Assert(secret.len == KYBER_SHARED_SECRET_BYTES);
-            CK_NSS_KEM_PARAMETER_SET_TYPE *pParameter = pMechanism->pParameter;
-            KyberParams kyberParams = sftk_kyber_PK11ParamToInternal(*pParameter);
-            SECStatus rv = Kyber_Encapsulate(kyberParams, /* seed */ NULL, &pubKey, &ciphertext, &secret);
+        case CKM_ML_KEM:
+            PORT_Assert(secret.len >= KYBER_SHARED_SECRET_BYTES);
+            kyberParams = sftk_kyber_PK11ParamToInternal(paramSet);
+            SECStatus rv = Kyber_Encapsulate(kyberParams, /* seed */ NULL,
+                                             &pubKey, &ciphertext, &secret);
             if (rv != SECSuccess) {
                 crv = (PORT_GetError() == SEC_ERROR_INVALID_ARGS) ? CKR_ARGUMENTS_BAD : CKR_FUNCTION_FAILED;
                 goto cleanup;
@@ -232,6 +357,7 @@ NSC_Encapsulate(CK_SESSION_HANDLE hSession,
     }
 
 cleanup:
+    PORT_SafeZero(secretBuf, sizeof(secretBuf));
     if (session) {
         sftk_FreeSession(session);
     }
@@ -241,38 +367,44 @@ cleanup:
             return CKR_DEVICE_ERROR;
         }
     }
+    if (encapsulationKey) {
+        sftk_FreeAttribute(encapsulationKey);
+    }
     if (encapsulationKeyObject) {
         status = sftk_FreeObject(encapsulationKeyObject);
         if (status == SFTK_DestroyFailure) {
             return CKR_DEVICE_ERROR;
         }
     }
-    if (encapsulationKey) {
-        sftk_FreeAttribute(encapsulationKey);
-    }
     return crv;
 }
 
 CK_RV
-NSC_Decapsulate(CK_SESSION_HANDLE hSession,
-                CK_MECHANISM_PTR pMechanism,
-                CK_OBJECT_HANDLE hPrivateKey,
-                CK_BYTE_PTR pCiphertext,
-                CK_ULONG ulCiphertextLen,
-                CK_ATTRIBUTE_PTR pTemplate,
-                CK_ULONG ulAttributeCount,
-                /* out */ CK_OBJECT_HANDLE_PTR phKey)
+NSC_DecapsulateKey(CK_SESSION_HANDLE hSession,
+                   CK_MECHANISM_PTR pMechanism,
+                   CK_OBJECT_HANDLE hPrivateKey,
+                   CK_ATTRIBUTE_PTR pTemplate,
+                   CK_ULONG ulAttributeCount,
+                   CK_BYTE_PTR pCiphertext,
+                   CK_ULONG ulCiphertextLen,
+                   /* out */ CK_OBJECT_HANDLE_PTR phKey)
 {
     SFTKSession *session = NULL;
     SFTKSlot *slot = NULL;
 
     SFTKObject *key = NULL;
+    CK_OBJECT_CLASS ckclass = CKO_SECRET_KEY;
+    CK_KEY_TYPE ckkeyType = CKK_GENERIC_SECRET;
 
     SFTKObject *decapsulationKeyObject = NULL;
     SFTKAttribute *decapsulationKey = NULL;
+    CK_ULONG paramSet = 0; /* use a generic U_LONG so we can handle
+                            * different param set types based on the
+                            * Mechanism value */
 
     CK_RV crv;
     SFTKFreeStatus status;
+    KyberParams kyberParams;
 
     CHECK_FORK();
 
@@ -282,11 +414,6 @@ NSC_Decapsulate(CK_SESSION_HANDLE hSession,
 
     if (!sftk_kem_ValidateMechanism(pMechanism)) {
         return CKR_MECHANISM_INVALID;
-    }
-
-    CK_ULONG ciphertextLen = sftk_kem_CiphertextLen(pMechanism);
-    if (ulCiphertextLen < ciphertextLen) {
-        return CKR_ARGUMENTS_BAD;
     }
     *phKey = CK_INVALID_HANDLE;
 
@@ -312,9 +439,22 @@ NSC_Decapsulate(CK_SESSION_HANDLE hSession,
         }
     }
 
+    crv = sftk_defaultAttribute(key, CKA_CLASS, &ckclass, sizeof(ckclass));
+    if (crv != CKR_OK) {
+        goto cleanup;
+    }
+    crv = sftk_defaultAttribute(key, CKA_KEY_TYPE, &ckkeyType, sizeof(ckkeyType));
+    if (crv != CKR_OK) {
+        goto cleanup;
+    }
+
     decapsulationKeyObject = sftk_ObjectFromHandle(hPrivateKey, session);
     if (decapsulationKeyObject == NULL) {
         crv = CKR_KEY_HANDLE_INVALID;
+        goto cleanup;
+    }
+    if (decapsulationKeyObject->objclass != CKO_PRIVATE_KEY) {
+        crv = CKR_KEY_TYPE_INCONSISTENT;
         goto cleanup;
     }
     decapsulationKey = sftk_FindAttribute(decapsulationKeyObject, CKA_VALUE);
@@ -323,20 +463,38 @@ NSC_Decapsulate(CK_SESSION_HANDLE hSession,
         goto cleanup;
     }
 
-    SECItem privKey = { siBuffer, decapsulationKey->attrib.pValue, decapsulationKey->attrib.ulValueLen };
+    crv = sftk_kem_getParamSet(pMechanism, decapsulationKeyObject, &paramSet);
+    if (crv != CKR_OK) {
+        goto cleanup;
+    }
+
+    CK_ULONG ciphertextLen = sftk_kem_CiphertextLen(pMechanism, paramSet);
+    if (!pCiphertext || ulCiphertextLen != ciphertextLen || ciphertextLen == 0) {
+        crv = CKR_ARGUMENTS_BAD;
+        goto cleanup;
+    }
+
+    SECItem privKey = { siBuffer, decapsulationKey->attrib.pValue,
+                        decapsulationKey->attrib.ulValueLen };
     SECItem ciphertext = { siBuffer, pCiphertext, ulCiphertextLen };
 
-    /* The length of secretBuf can be increased if we ever support other KEMs */
-    uint8_t secretBuf[KYBER_SHARED_SECRET_BYTES] = { 0 };
+    /* The length of secretBuf can be increased if we ever support other KEMs
+     * by changing the define at the top of this file */
+    uint8_t secretBuf[MAX_SHARED_SECRET_BYTES] = { 0 };
     SECItem secret = { siBuffer, secretBuf, sizeof secretBuf };
-
+    sftk_setFIPS(key, sftk_operationIsFIPS(slot, pMechanism, CKA_DECAPSULATE,
+                                           decapsulationKeyObject, 0));
+    key->source = SFTK_SOURCE_KEA;
     switch (pMechanism->mechanism) {
+#ifndef NSS_DISABLE_KYBER
         case CKM_NSS_KYBER:
+#endif
         case CKM_NSS_ML_KEM:
-            PORT_Assert(secret.len == KYBER_SHARED_SECRET_BYTES);
-            CK_NSS_KEM_PARAMETER_SET_TYPE *pParameter = pMechanism->pParameter;
-            KyberParams kyberParams = sftk_kyber_PK11ParamToInternal(*pParameter);
-            SECStatus rv = Kyber_Decapsulate(kyberParams, &privKey, &ciphertext, &secret);
+        case CKM_ML_KEM:
+            kyberParams = sftk_kyber_PK11ParamToInternal(paramSet);
+            PORT_Assert(secret.len >= KYBER_SHARED_SECRET_BYTES);
+            SECStatus rv = Kyber_Decapsulate(kyberParams, &privKey,
+                                             &ciphertext, &secret);
             if (rv != SECSuccess) {
                 crv = (PORT_GetError() == SEC_ERROR_INVALID_ARGS) ? CKR_ARGUMENTS_BAD : CKR_FUNCTION_FAILED;
                 goto cleanup;
@@ -359,6 +517,7 @@ NSC_Decapsulate(CK_SESSION_HANDLE hSession,
     }
 
 cleanup:
+    PORT_SafeZero(secretBuf, sizeof(secretBuf));
     if (session) {
         sftk_FreeSession(session);
     }
@@ -368,14 +527,47 @@ cleanup:
             return CKR_DEVICE_ERROR;
         }
     }
+    if (decapsulationKey) {
+        sftk_FreeAttribute(decapsulationKey);
+    }
     if (decapsulationKeyObject) {
         status = sftk_FreeObject(decapsulationKeyObject);
         if (status == SFTK_DestroyFailure) {
             return CKR_DEVICE_ERROR;
         }
     }
-    if (decapsulationKey) {
-        sftk_FreeAttribute(decapsulationKey);
-    }
     return crv;
+}
+
+/* PKCS #11 final spec moved som the the arguments around (to make
+ * NSC_EncapsulateKey and NSC_DecapsulateKey match, keep the old version for
+ * the vendor defined for backward compatibility */
+CK_RV
+NSC_Encapsulate(CK_SESSION_HANDLE hSession,
+                CK_MECHANISM_PTR pMechanism,
+                CK_OBJECT_HANDLE hPublicKey,
+                CK_ATTRIBUTE_PTR pTemplate,
+                CK_ULONG ulAttributeCount,
+                /* out */ CK_OBJECT_HANDLE_PTR phKey,
+                /* out */ CK_BYTE_PTR pCiphertext,
+                /* out */ CK_ULONG_PTR pulCiphertextLen)
+{
+    return NSC_EncapsulateKey(hSession, pMechanism, hPublicKey,
+                              pTemplate, ulAttributeCount,
+                              pCiphertext, pulCiphertextLen, phKey);
+}
+
+CK_RV
+NSC_Decapsulate(CK_SESSION_HANDLE hSession,
+                CK_MECHANISM_PTR pMechanism,
+                CK_OBJECT_HANDLE hPrivateKey,
+                CK_BYTE_PTR pCiphertext,
+                CK_ULONG ulCiphertextLen,
+                CK_ATTRIBUTE_PTR pTemplate,
+                CK_ULONG ulAttributeCount,
+                /* out */ CK_OBJECT_HANDLE_PTR phKey)
+{
+    return NSC_DecapsulateKey(hSession, pMechanism, hPrivateKey, pTemplate,
+                              ulAttributeCount, pCiphertext, ulCiphertextLen,
+                              phKey);
 }

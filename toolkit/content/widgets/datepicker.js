@@ -19,7 +19,8 @@ function DatePicker(context) {
   DatePicker.prototype = {
     /**
      * Initializes the date picker. Set the default states and properties.
-     * @param  {Object} props
+     *
+     * @param  {object} props
      *         {
      *           {Number} year [optional]
      *           {Number} month [optional]
@@ -36,6 +37,10 @@ function DatePicker(context) {
      *         }
      */
     init(props = {}) {
+      if (props.type == "time") {
+        return;
+      }
+      this.context.root.hidden = false;
       this.props = props;
       this._setDefaultState();
       this._createComponents();
@@ -99,7 +104,9 @@ function DatePicker(context) {
           });
           this._update();
           this._dispatchState();
-          this._closePopup();
+          if (this.props.type !== "datetime-local") {
+            this._closePopup();
+          }
         },
         setMonthByOffset: offset => {
           dateKeeper.setMonthByOffset(offset);
@@ -260,7 +267,8 @@ function DatePicker(context) {
       document.addEventListener("mouseup", this, { passive: true });
       document.addEventListener("pointerdown", this, { passive: true });
       document.addEventListener("mousedown", this);
-      document.addEventListener("keydown", this);
+      // Only listen to events in #date-picker (not in a timepicker)
+      this.context.root.addEventListener("keydown", this);
     },
 
     /**
@@ -372,51 +380,18 @@ function DatePicker(context) {
      */
     handleMessage(event) {
       switch (event.data.name) {
-        case "PickerSetValue": {
-          this.set(event.data.detail);
-          break;
-        }
         case "PickerInit": {
           this.init(event.data.detail);
           break;
         }
       }
     },
-
-    /**
-     * Set the date state and update the components with the new state.
-     *
-     * @param {Object} dateState
-     *        {
-     *          {Number} year [optional]
-     *          {Number} month [optional]
-     *          {Number} date [optional]
-     *        }
-     */
-    set({ year, month, day }) {
-      if (!this.state) {
-        return;
-      }
-
-      const { dateKeeper } = this.state;
-
-      dateKeeper.setCalendarMonth({
-        year,
-        month,
-      });
-      dateKeeper.setSelection({
-        year,
-        month,
-        day,
-      });
-      this._update({ noSmoothScroll: true });
-    },
   };
 
   /**
    * MonthYear is a component that handles the month & year spinners
    *
-   * @param {Object} options
+   * @param {object} options
    *        {
    *          {String} locale
    *          {Function} setYear
@@ -484,7 +459,7 @@ function DatePicker(context) {
     /**
      * Set new properties and pass them to components
      *
-     * @param {Object} props
+     * @param {object} props
      *        {
      *          {Boolean} isVisible
      *          {Date} dateObj
@@ -542,6 +517,7 @@ function DatePicker(context) {
 
     /**
      * Handle events
+     *
      * @param  {DOMEvent} event
      */
     handleEvent(event) {
@@ -574,19 +550,19 @@ function DatePicker(context) {
         "date-spinner-year"
       );
       document.l10n.setAttributes(
-        this.components.month.elements.up,
+        this.components.month.elements.prev,
         "date-spinner-month-previous"
       );
       document.l10n.setAttributes(
-        this.components.month.elements.down,
+        this.components.month.elements.next,
         "date-spinner-month-next"
       );
       document.l10n.setAttributes(
-        this.components.year.elements.up,
+        this.components.year.elements.prev,
         "date-spinner-year-previous"
       );
       document.l10n.setAttributes(
-        this.components.year.elements.down,
+        this.components.year.elements.next,
         "date-spinner-year-next"
       );
       document.l10n.translateRoots();
@@ -607,6 +583,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // by the "PickerInit" message.
   const root = document.getElementById("date-picker");
   new DatePicker({
+    root,
     monthYearNav: root.querySelector(".month-year-nav"),
     monthYear: root.querySelector(".month-year"),
     monthYearView: root.querySelector(".month-year-view"),

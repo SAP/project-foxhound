@@ -1,0 +1,150 @@
+.promo-card-wrapper {
+  @include newtab-card-style;
+
+  display: none; // hidden by default
+  box-shadow: var(--card-box-shadow);
+  border-radius: var(--border-radius-large);
+  height: 298px;
+  width: 228px;
+  position: relative;
+  padding: var(--space-large);
+  color: var(--newtab-contextual-text-primary-color);
+
+  .promo-card-inner {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-large);
+    height: 100%;
+  }
+
+  .promo-card-content {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .promo-card-dismiss-button {
+    position: absolute;
+    inset-block-start: var(--space-small);
+    inset-inline-end: var(--space-small);
+    margin: 0;
+  }
+
+  .promo-card-copy {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--space-xxsmall);
+  }
+
+  .promo-card-title-wrapper {
+    display: flex;
+    align-items: center;
+    gap: var(--space-small);
+  }
+
+  .promo-card-title {
+    display: block;
+    font-size: var(--font-size-root, 15px);
+    font-style: normal;
+    font-weight: var(--font-weight-heading);
+    line-height: normal;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .promo-card-body {
+    display: block;
+    font-size: var(--font-size-small);
+    font-style: normal;
+    font-weight: var(--font-weight);
+    line-height: normal;
+    margin: 0;
+  }
+
+  .promo-card-cta-wrapper {
+    display: flex;
+    width: 100%;
+    justify-content: flex-end;
+    margin-block-start: auto;
+  }
+
+  .img-wrapper {
+    height: 132px;
+    overflow: hidden;
+    width: 196px;
+
+    img {
+      display: block;
+      height: 100%;
+      object-fit: contain;
+      object-position: center;
+      width: 100%;
+    }
+  }
+}
+
+.nova-enabled .promo-card-wrapper {
+  display: flex;
+  height: 276px;
+  justify-content: center;
+  align-items: center;
+  padding-block-start: 0;
+  width: 332px;
+  border-radius: var(--border-radius-large);
+
+  .promo-card-inner {
+    width: 100%;
+  }
+
+  .img-wrapper {
+    display: flex;
+    height: 155px;
+    justify-content: center;
+    align-items: flex-end;
+    width: 100%;
+
+    img {
+      height: auto;
+      flex-shrink: 0;
+      object-fit: initial;
+      object-position: initial;
+      width: 80%;
+    }
+  }
+
+  .promo-card-content {
+    margin-block-start: calc(-1 * (var(--space-xsmall) + var(--space-xxsmall)));
+    width: 100%;
+  }
+}
+
+.nova-enabled {
+  .ds-card-grid .promo-card-wrapper,
+  .ds-section-wrapper .promo-card-wrapper {
+    display: none;
+
+    @include at-content-cols(16) {
+      display: flex;
+    }
+  }
+}
+
+// Card grid and sections have different breakpoints where we move to 3 columns.
+.ds-card-grid {
+  .promo-card-wrapper {
+    @media (min-width: $break-point-ultra-wide) {
+      display: block; // only visible in 4 column layout
+    }
+  }
+}
+
+// Card grid and sections have different breakpoints where we move to 3 columns.
+.ds-section-wrapper{
+  .promo-card-wrapper {
+    @media (min-width: $break-point-sections-variant) {
+      display: block; // only visible in 4 column layout
+    }
+  }
+}

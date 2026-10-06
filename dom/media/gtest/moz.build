@@ -1,15 +1,14 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 include("/dom/media/webrtc/third_party_build/webrtc.mozbuild")
 
-DEFINES["ENABLE_SET_CUBEB_BACKEND"] = True
 DEFINES["VISIBLE_TIMEUNIT_INTERNALS"] = True
 
 LOCAL_INCLUDES += [
+    "!/dist/include/libwebrtc_overrides",
+    "!/xpcom/components",
     "/dom/media/driftcontrol",
     "/dom/media/mediasink",
     "/dom/media/systemservices",
@@ -17,15 +16,20 @@ LOCAL_INCLUDES += [
     "/dom/media/webrtc/common",
     "/third_party/abseil-cpp",
     "/third_party/libwebrtc",
+    "/xpcom/build",
+    "/xpcom/components",
 ]
 
 UNIFIED_SOURCES += [
-    "MockCubeb.cpp",
     "MockMediaResource.cpp",
+    "TestAOMDecoder.cpp",
+    "TestAsyncLogger.cpp",
     "TestAudioBuffer.cpp",
+    "TestAudioBufferAddWithScale.cpp",
     "TestAudioBuffers.cpp",
     "TestAudioCallbackDriver.cpp",
     "TestAudioCompactor.cpp",
+    "TestAudioData.cpp",
     "TestAudioDecoderInputTrack.cpp",
     "TestAudioInputSource.cpp",
     "TestAudioMixer.cpp",
@@ -38,16 +42,22 @@ UNIFIED_SOURCES += [
     "TestAudioTrackGraph.cpp",
     "TestBitWriter.cpp",
     "TestBlankVideoDataCreator.cpp",
+    "TestBufferMediaResource.cpp",
     "TestBufferReader.cpp",
     "TestCubebInputStream.cpp",
     "TestDataMutex.cpp",
+    "TestDecodedStream.cpp",
     "TestDeviceInputTrack.cpp",
     "TestDriftCompensation.cpp",
     "TestGMPUtils.cpp",
+    "TestGMPVideoi420Frame.cpp",
     "TestGroupId.cpp",
+    "TestHDRUtils.cpp",
     "TestImageConversion.cpp",
     "TestIntervalSet.cpp",
+    "TestMediaCapabilities.cpp",
     "TestMediaCodecsSupport.cpp",
+    "TestMediaDataDecoder.cpp",
     "TestMediaDataEncoder.cpp",
     "TestMediaEventSource.cpp",
     "TestMediaFormatReader.cpp",
@@ -59,10 +69,16 @@ UNIFIED_SOURCES += [
     "TestMP3Demuxer.cpp",
     "TestMP4Demuxer.cpp",
     "TestMuxer.cpp",
+    "TestOfflineClockDriver.cpp",
     "TestOggWriter.cpp",
     "TestOpusParser.cpp",
+    "TestPDMFactorySupport.cpp",
+    "TestRemoteImageHolder.cpp",
     "TestRust.cpp",
+    "TestSimpleMap.cpp",
     "TestTimeUnit.cpp",
+    "TestUnboundedMPSCQueue.cpp",
+    "TestVideoData.cpp",
     "TestVideoFrameContainer.cpp",
     "TestVideoSegment.cpp",
     "TestVideoSink.cpp",
@@ -70,6 +86,7 @@ UNIFIED_SOURCES += [
     "TestVideoUtils.cpp",
     "TestVPXDecoding.cpp",
     "TestWebMBuffered.cpp",
+    "TestWebMDemuxer.cpp",
     "TestWebMWriter.cpp",
     "YUVBufferGenerator.cpp",
 ]
@@ -81,6 +98,8 @@ if CONFIG["MOZ_WEBRTC"]:
 
     UNIFIED_SOURCES += [
         "TestAudioInputProcessing.cpp",
+        "TestCamerasParent.cpp",
+        "TestH264FmtpParser.cpp",
         "TestRTCStatsTimestampMaker.cpp",
         "TestWebrtcTaskQueueWrapper.cpp",
     ]
@@ -92,11 +111,23 @@ if CONFIG["OS_TARGET"] != "Android":
         "TestGMPRemoveAndDelete.cpp",
     ]
 
+if CONFIG["OS_TARGET"] == "WINNT":
+    LOCAL_INCLUDES += [
+        "/dom/media/platforms/wmf",
+    ]
+    # Not in UNIFIED_SOURCES: WMF.h pulls in <windows.h> which defines a
+    # StrCat macro that conflicts with absl::StrCat in WebRTC unified units.
+    SOURCES += [
+        "TestWMFDeadlock.cpp",
+    ]
+
 if CONFIG["MOZ_WEBRTC"] and CONFIG["OS_TARGET"] != "Android":
     UNIFIED_SOURCES += [
         "TestAudioDeviceEnumerator.cpp",
         "TestPacer.cpp",
         "TestVideoFrameConverter.cpp",
+        "TestWebRTCCodecInfo.cpp",
+        "TestWebrtcGmpCodec.cpp",
     ]
 
 TEST_HARNESS_FILES.gtest += [
@@ -126,6 +157,8 @@ TEST_HARNESS_FILES.gtest += [
     "test_ValidLargeEBMLMaxIdLength.webm",
     "test_ValidSmallEBMLMaxSizeLength.webm",
     "test_vbri.mp3",
+    "tos-vp9-hdr-cll.webm",
+    "truncated-xing-placeholder.mp3",
 ]
 
 TEST_DIRS += [
@@ -138,9 +171,12 @@ LOCAL_INCLUDES += [
     "/dom/media",
     "/dom/media/encoder",
     "/dom/media/gmp",
+    "/dom/media/mediacapabilities",
     "/dom/media/mp4",
     "/dom/media/platforms",
     "/dom/media/platforms/agnostic",
+    "/dom/media/webaudio",
+    "/dom/media/webm",
     "/dom/media/webrtc",
     "/gfx/2d/",
     "/security/certverifier",
@@ -151,5 +187,4 @@ FINAL_LIBRARY = "xul-gtest"
 if CONFIG["CC_TYPE"] in ("clang", "clang-cl"):
     CXXFLAGS += [
         "-Wno-inconsistent-missing-override",
-        "-Wno-unused-private-field",
     ]

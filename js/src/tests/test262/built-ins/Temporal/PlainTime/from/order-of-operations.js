@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2020 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -16,7 +16,7 @@ const expectedOptionsReading = [
   "call options.overflow.toString",
 ];
 
-const expected = [
+const expectedOpsForPrimitiveOptions = [
   // ToTemporalTimeRecord
   "get fields.hour",
   "get fields.hour.valueOf",
@@ -36,7 +36,8 @@ const expected = [
   "get fields.second",
   "get fields.second.valueOf",
   "call fields.second.valueOf",
-].concat(expectedOptionsReading);
+];
+const expected = expectedOpsForPrimitiveOptions.concat(expectedOptionsReading);
 const actual = [];
 
 const fields = TemporalHelpers.propertyBagObserver(actual, {
@@ -75,5 +76,13 @@ actual.splice(0);
 
 Temporal.PlainTime.from("12:34", options);
 assert.compareArray(actual, expectedOptionsReading, "order of operations when parsing a string");
+
+actual.splice(0);
+
+assert.throws(TypeError, () => Temporal.PlainTime.from(fields, null));
+assert.compareArray(actual, expectedOpsForPrimitiveOptions,
+  "item fields are read before TypeError is thrown for primitive options");
+
+actual.splice(0); // clear
 
 reportCompare(0, 0);

@@ -7,6 +7,8 @@ package mozilla.components.service.sync.autofill
 import android.content.Context
 import androidx.annotation.GuardedBy
 import androidx.annotation.VisibleForTesting
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.WorkManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.withContext
@@ -18,6 +20,8 @@ import mozilla.components.concept.storage.CreditCardsAddressesStorage
 import mozilla.components.concept.storage.NewCreditCardFields
 import mozilla.components.concept.storage.UpdatableAddressFields
 import mozilla.components.concept.storage.UpdatableCreditCardFields
+import mozilla.components.concept.storage.constraints
+import mozilla.components.concept.storage.periodicStorageWorkRequest
 import mozilla.components.concept.sync.SyncableStore
 import mozilla.components.lib.dataprotect.SecureAbove22Preferences
 import mozilla.components.support.base.log.logger.Logger
@@ -36,7 +40,7 @@ const val AUTOFILL_DB_NAME = "autofill.sqlite"
  * Used for storing encryption key material.
  */
 class AutofillCreditCardsAddressesStorage(
-    context: Context,
+    private val context: Context,
     securePrefs: Lazy<SecureAbove22Preferences>,
 ) : CreditCardsAddressesStorage, SyncableStore, AutoCloseable {
     private val logger = Logger("AutofillCCAddressesStorage")
@@ -54,9 +58,13 @@ class AutofillCreditCardsAddressesStorage(
     /**
      * "Warms up" this storage layer by establishing the database connection.
      */
-    suspend fun warmUp() = withContext(coroutineContext) {
+    override suspend fun warmUp() = withContext(coroutineContext) {
         logElapsedTime(logger, "Warming up storage") { conn }
         Unit
+    }
+
+    override suspend fun runMaintenance(dbSizeLimit: UInt) {
+        conn.getStorage().runMaintenance()
     }
 
     override suspend fun addCreditCard(
@@ -127,6 +135,10 @@ class AutofillCreditCardsAddressesStorage(
         conn.getStorage().getAllCreditCards().map { it.into() }
     }
 
+    override suspend fun countAllCreditCards(): Long = withContext(coroutineContext) {
+        conn.getStorage().countAllCreditCards()
+    }
+
     override suspend fun deleteCreditCard(guid: String): Boolean = withContext(coroutineContext) {
         conn.getStorage().deleteCreditCard(guid)
     }
@@ -150,6 +162,10 @@ class AutofillCreditCardsAddressesStorage(
 
     override suspend fun getAllAddresses(): List<Address> = withContext(coroutineContext) {
         conn.getStorage().getAllAddresses().map { it.into() }
+    }
+
+    override suspend fun countAllAddresses(): Long = withContext(coroutineContext) {
+        conn.getStorage().countAllAddresses()
     }
 
     override suspend fun updateAddress(guid: String, address: UpdatableAddressFields) =
@@ -180,6 +196,31 @@ class AutofillCreditCardsAddressesStorage(
     override fun close() {
         coroutineContext.cancel()
         conn.close()
+    }
+
+    /**
+     * Enqueues a periodic storage maintenance worker to WorkManager.
+     */
+    override fun registerStorageMaintenanceWorker() {
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            AutofillStorageWorker.UNIQUE_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            periodicStorageWorkRequest<AutofillStorageWorker>(
+                tag = AutofillStorageWorker.UNIQUE_NAME,
+            ) {
+                constraints {
+                    setRequiresBatteryNotLow(true)
+                    setRequiresDeviceIdle(true)
+                }
+            },
+        )
+    }
+
+    override fun unregisterStorageMaintenanceWorker(uniqueWorkName: String) {
+        WorkManager.getInstance(context).also {
+            it.cancelUniqueWork(AutofillStorageWorker.UNIQUE_NAME)
+            it.cancelAllWorkByTag(AutofillStorageWorker.UNIQUE_NAME)
+        }
     }
 }
 

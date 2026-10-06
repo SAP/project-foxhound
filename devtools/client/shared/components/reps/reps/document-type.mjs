@@ -7,10 +7,7 @@
 import PropTypes from "resource://devtools/client/shared/vendor/react-prop-types.mjs";
 import { span } from "resource://devtools/client/shared/vendor/react-dom-factories.mjs";
 
-import {
-  getGripType,
-  wrapRender,
-} from "resource://devtools/client/shared/components/reps/reps/rep-utils.mjs";
+import { getGripType, wrapRender } from "./rep-utils.mjs";
 
 /**
  * Renders DOM documentType object.

@@ -21,7 +21,7 @@ add_task(async function testInvalidMimeTypeDoesNotCrash() {
   store.dispatch(Actions.batchEnable(false));
 
   const onNetworkEvents = waitForNetworkEvents(monitor, 1);
-  reloadBrowser({ waitForLoad: false });
+  reloadSelectedTab({ waitForLoad: false });
   await onNetworkEvents;
 
   const firstItem = document.querySelector(".request-list-item");
@@ -63,7 +63,7 @@ add_task(async function testUpperCaseMimeType() {
   store.dispatch(Actions.batchEnable(false));
 
   const onNetworkEvents = waitForNetworkEvents(monitor, 1);
-  reloadBrowser({ waitForLoad: false });
+  reloadSelectedTab({ waitForLoad: false });
   await onNetworkEvents;
 
   const firstItem = document.querySelector(".request-list-item");

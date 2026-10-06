@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "api/audio/audio_device.h"
+#include "api/field_trials_view.h"
 #include "api/rtp_parameters.h"
 #include "api/rtp_transceiver_direction.h"
 #include "api/scoped_refptr.h"
@@ -32,7 +33,7 @@ using ::webrtc::RtpExtension;
 using ::webrtc::RtpHeaderExtensionCapability;
 using ::webrtc::RtpTransceiverDirection;
 
-namespace cricket {
+namespace webrtc {
 namespace {
 
 class MockRtpHeaderExtensionQueryInterface
@@ -40,7 +41,7 @@ class MockRtpHeaderExtensionQueryInterface
  public:
   MOCK_METHOD(std::vector<RtpHeaderExtensionCapability>,
               GetRtpHeaderExtensions,
-              (),
+              (const FieldTrialsView*),
               (const, override));
 };
 
@@ -60,7 +61,7 @@ TEST(MediaEngineTest, ReturnsNotStoppedHeaderExtensions) {
        RtpHeaderExtensionCapability("uri5", 5,
                                     RtpTransceiverDirection::kRecvOnly)});
   EXPECT_CALL(mock, GetRtpHeaderExtensions).WillOnce(Return(extensions));
-  EXPECT_THAT(GetDefaultEnabledRtpHeaderExtensions(mock),
+  EXPECT_THAT(GetDefaultEnabledRtpHeaderExtensions(mock, nullptr),
               ElementsAre(Field(&RtpExtension::uri, StrEq("uri1")),
                           Field(&RtpExtension::uri, StrEq("uri2")),
                           Field(&RtpExtension::uri, StrEq("uri4")),
@@ -72,26 +73,24 @@ TEST(MediaEngineTest, ReturnsNotStoppedHeaderExtensions) {
 // functions with default implementations are not mocked.
 class MostlyMockVoiceEngineInterface : public VoiceEngineInterface {
  public:
-  MOCK_METHOD(std::vector<webrtc::RtpHeaderExtensionCapability>,
+  MOCK_METHOD(std::vector<RtpHeaderExtensionCapability>,
               GetRtpHeaderExtensions,
-              (),
+              (const FieldTrialsView*),
               (const, override));
   MOCK_METHOD(void, Init, (), (override));
-  MOCK_METHOD(rtc::scoped_refptr<webrtc::AudioState>,
-              GetAudioState,
-              (),
-              (const, override));
+  MOCK_METHOD(void, Terminate, (), (override));
+  MOCK_METHOD(scoped_refptr<AudioState>, GetAudioState, (), (const, override));
   MOCK_METHOD(std::vector<Codec>&, LegacySendCodecs, (), (const, override));
   MOCK_METHOD(std::vector<Codec>&, LegacyRecvCodecs, (), (const, override));
   MOCK_METHOD(bool,
               StartAecDump,
-              (webrtc::FileWrapper file, int64_t max_size_bytes),
+              (FileWrapper file, int64_t max_size_bytes),
               (override));
   MOCK_METHOD(void, StopAecDump, (), (override));
-  MOCK_METHOD(std::optional<webrtc::AudioDeviceModule::Stats>,
+  MOCK_METHOD(std::optional<AudioDeviceModule::Stats>,
               GetAudioDeviceStats,
               (),
               (override));
 };
 
-}  // namespace cricket
+}  // namespace webrtc

@@ -9,6 +9,7 @@ from gecko_taskgraph.util.bugbug import BUGBUG_BASE_URL, push_schedules
 
 
 def test_group_translation(responses):
+    push_schedules.cache_clear()
     branch = ("integration/autoland",)
     rev = "abcdef"
     query = f"/push/{branch}/{rev}/schedules"
@@ -32,7 +33,7 @@ def test_group_translation(responses):
         status=200,
     )
 
-    assert len(push_schedules) == 0
+    assert push_schedules.cache_info().currsize == 0
     data = push_schedules(branch, rev)
     print(data)
     assert sorted(data["groups"]) == [
@@ -45,12 +46,12 @@ def test_group_translation(responses):
         "/IndexedDB": ["label3"],
         "/_mozilla/IndexedDB": ["label4"],
     }
-    assert len(push_schedules) == 1
+    assert push_schedules.cache_info().currsize == 1
 
-    # Value is memoized.
+    # Value is cached.
     responses.reset()
     push_schedules(branch, rev)
-    assert len(push_schedules) == 1
+    assert push_schedules.cache_info().currsize == 1
 
 
 if __name__ == "__main__":

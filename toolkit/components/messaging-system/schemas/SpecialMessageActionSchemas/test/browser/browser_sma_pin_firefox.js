@@ -36,7 +36,7 @@ add_task(async function test_PIN_FIREFOX_TO_TASKBAR() {
     SMATestUtils.executeAndValidateAction(
       { type: "PIN_FIREFOX_TO_TASKBAR" },
       {
-        ownerGlobal: {
+        documentGlobal: {
           getShellService: () => shell,
         },
       }

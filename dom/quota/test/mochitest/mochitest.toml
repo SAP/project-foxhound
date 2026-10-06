@@ -4,12 +4,14 @@ support-files = ["helpers.js"]
 
 ["test_simpledb.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_storage_manager_persist_allow.html"]
-fail-if = ["xorigin"]
+fail-if = [
+  "xorigin",
+]
 scheme = "https"
 
 ["test_storage_manager_persist_deny.html"]

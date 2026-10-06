@@ -8,10 +8,10 @@ import android.graphics.Bitmap
 import android.os.Bundle
 import androidx.annotation.ColorRes
 import androidx.annotation.VisibleForTesting
-import androidx.appcompat.app.AppCompatDialogFragment
 import androidx.appcompat.widget.AppCompatImageView
 import androidx.core.graphics.drawable.toDrawable
 import mozilla.components.feature.addons.Addon
+import mozilla.components.support.base.android.NoObscuredTouchesDialogFragment
 import mozilla.components.support.utils.ext.getParcelableCompat
 
 @VisibleForTesting
@@ -20,7 +20,7 @@ internal const val KEY_ICON = "KEY_ICON"
 /**
  * A generic [Addon] dialog which has an [Addon]'s icon.
  */
-open class AddonDialogFragment : AppCompatDialogFragment() {
+open class AddonDialogFragment : NoObscuredTouchesDialogFragment() {
     init {
         arguments = arguments ?: Bundle()
     }

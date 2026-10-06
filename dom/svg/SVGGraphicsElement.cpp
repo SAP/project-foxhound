@@ -1,22 +1,20 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SVGGraphicsElement.h"
 
-#include "mozilla/dom/BindContext.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/SVGGraphicsElementBinding.h"
-#include "mozilla/dom/SVGMatrix.h"
-#include "mozilla/dom/SVGRect.h"
-#include "mozilla/dom/SVGSVGElement.h"
 #include "mozilla/ISVGDisplayableFrame.h"
 #include "mozilla/SVGContentUtils.h"
 #include "mozilla/SVGTextFrame.h"
 #include "mozilla/SVGUtils.h"
-
+#include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/SVGAnimatedLength.h"
+#include "mozilla/dom/SVGGraphicsElementBinding.h"
+#include "mozilla/dom/SVGMatrix.h"
+#include "mozilla/dom/SVGRect.h"
+#include "mozilla/dom/SVGSVGElement.h"
 #include "nsIContentInlines.h"
 #include "nsLayoutUtils.h"
 
@@ -36,7 +34,7 @@ NS_INTERFACE_MAP_END_INHERITING(SVGGraphicsElementBase)
 // Implementation
 
 SVGGraphicsElement::SVGGraphicsElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : SVGGraphicsElementBase(std::move(aNodeInfo)) {}
 
 static already_AddRefed<SVGRect> ZeroBBox(SVGGraphicsElement& aOwner) {
@@ -83,37 +81,37 @@ already_AddRefed<SVGRect> SVGGraphicsElement::GetBBox(
     rec.x += float(text->GetPosition().x) / AppUnitsPerCSSPixel();
     rec.y += float(text->GetPosition().y) / AppUnitsPerCSSPixel();
 
-    return do_AddRef(new SVGRect(this, ToRect(rec)));
+    rec.Scale(1 / dom::UserSpaceMetrics::GetZoom(this));
+
+    return MakeAndAddRef<SVGRect>(this, ToRect(rec));
   }
 
   if (!NS_SVGNewGetBBoxEnabled()) {
-    return do_AddRef(new SVGRect(
-        this, ToRect(SVGUtils::GetBBox(
-                  frame, SVGUtils::eBBoxIncludeFillGeometry |
-                             SVGUtils::eUseUserSpaceOfUseElement))));
+    return MakeAndAddRef<SVGRect>(
+        this,
+        ToRect(SVGUtils::GetBBox(frame, {SVGBBoxFlag::IncludeFillGeometry,
+                                         SVGBBoxFlag::UseUserSpaceOfUseElement,
+                                         SVGBBoxFlag::DisregardCSSZoom})));
   }
-  uint32_t flags = 0;
+  SVGBBoxFlags flags;
   if (aOptions.mFill) {
-    flags |= SVGUtils::eBBoxIncludeFillGeometry;
+    flags += SVGBBoxFlag::IncludeFillGeometry;
   }
   if (aOptions.mStroke) {
-    flags |= SVGUtils::eBBoxIncludeStroke;
+    flags += SVGBBoxFlag::IncludeStroke;
   }
   if (aOptions.mMarkers) {
-    flags |= SVGUtils::eBBoxIncludeMarkers;
+    flags += {SVGBBoxFlag::IncludeFillGeometry, SVGBBoxFlag::IncludeMarkers};
   }
   if (aOptions.mClipped) {
-    flags |= SVGUtils::eBBoxIncludeClipped;
+    flags += {SVGBBoxFlag::IncludeFillGeometry, SVGBBoxFlag::IncludeClipped};
   }
-  if (flags == 0) {
-    return do_AddRef(new SVGRect(this, {}));
+  if (flags.isEmpty()) {
+    return MakeAndAddRef<SVGRect>(this, gfx::Rect());
   }
-  if (flags == SVGUtils::eBBoxIncludeMarkers ||
-      flags == SVGUtils::eBBoxIncludeClipped) {
-    flags |= SVGUtils::eBBoxIncludeFillGeometry;
-  }
-  flags |= SVGUtils::eUseUserSpaceOfUseElement;
-  return do_AddRef(new SVGRect(this, ToRect(SVGUtils::GetBBox(frame, flags))));
+  flags +=
+      {SVGBBoxFlag::UseUserSpaceOfUseElement, SVGBBoxFlag::DisregardCSSZoom};
+  return MakeAndAddRef<SVGRect>(this, ToRect(SVGUtils::GetBBox(frame, flags)));
 }
 
 already_AddRefed<SVGMatrix> SVGGraphicsElement::GetCTM() {
@@ -122,9 +120,10 @@ already_AddRefed<SVGMatrix> SVGGraphicsElement::GetCTM() {
     currentDoc->FlushPendingNotifications(FlushType::Layout);
   }
   gfx::Matrix m = SVGContentUtils::GetCTM(this);
-  RefPtr<SVGMatrix> mat =
-      m.IsSingular() ? nullptr : new SVGMatrix(ThebesMatrix(m));
-  return mat.forget();
+  if (m.IsSingular()) {
+    m = {};
+  }
+  return MakeAndAddRef<SVGMatrix>(ThebesMatrix(m));
 }
 
 already_AddRefed<SVGMatrix> SVGGraphicsElement::GetScreenCTM() {
@@ -133,9 +132,10 @@ already_AddRefed<SVGMatrix> SVGGraphicsElement::GetScreenCTM() {
     currentDoc->FlushPendingNotifications(FlushType::Layout);
   }
   gfx::Matrix m = SVGContentUtils::GetScreenCTM(this);
-  RefPtr<SVGMatrix> mat =
-      m.IsSingular() ? nullptr : new SVGMatrix(ThebesMatrix(m));
-  return mat.forget();
+  if (m.IsSingular()) {
+    m = {};
+  }
+  return MakeAndAddRef<SVGMatrix>(ThebesMatrix(m));
 }
 
 bool SVGGraphicsElement::IsSVGFocusable(bool* aIsFocusable,

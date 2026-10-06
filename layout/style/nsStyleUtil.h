@@ -1,13 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsStyleUtil_h___
-#define nsStyleUtil_h___
+#ifndef nsStyleUtil_h_
+#define nsStyleUtil_h_
 
+#include "NonCustomCSSPropertyId.h"
 #include "nsCRT.h"
-#include "nsCSSPropertyID.h"
 #include "nsColor.h"
 #include "nsCoord.h"
 #include "nsGkAtoms.h"
@@ -43,11 +41,10 @@ class nsStyleUtil {
                             const nsAString& aValue,
                             const nsStringComparator& aComparator);
 
-  // Append a quoted (with 'quoteChar') and escaped version of aString
-  // to aResult.  'quoteChar' must be ' or ".
-  static void AppendEscapedCSSString(const nsAString& aString,
-                                     nsAString& aResult,
-                                     char16_t quoteChar = '"');
+  // Append a quoted (with 'quoteChar') version of aString to aResult.
+  // 'aQuoteChar' must be ' or ".
+  static void AppendQuotedCSSString(const nsACString& aString,
+                                    nsACString& aResult, char aQuoteChar = '"');
 
   // Append the identifier given by |aIdent| to |aResult|, with
   // appropriate escaping so that it can be reparsed to the same
@@ -171,4 +168,4 @@ class nsStyleUtil {
   }
 };
 
-#endif /* nsStyleUtil_h___ */
+#endif /* nsStyleUtil_h_ */

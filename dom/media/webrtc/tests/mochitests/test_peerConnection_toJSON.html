@@ -12,7 +12,7 @@
   });
 
   runNetworkTest(function () {
-    /** Test for Bug 872377 **/
+    /** Test for Bug 872377 */
 
     var rtcSession = new RTCSessionDescription({ sdp: "Picklechips!",
                                                  type: "offer" });
@@ -22,7 +22,7 @@
       is(rtcSession[key], jsonCopy[key], "key " + key + " should match.");
     }
 
-    /** Test for Bug 928304 **/
+    /** Test for Bug 928304 */
 
     var rtcIceCandidate = new RTCIceCandidate({ candidate: "dummy",
                                                    sdpMid: "test",

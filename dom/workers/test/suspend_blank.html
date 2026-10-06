@@ -2,7 +2,7 @@
 <script>
   var interval;
   var finish = false;
-  var bc = new BroadcastChannel("suspendBlank");
+  var bc = SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel("suspendBlank");
   bc.onmessage = (msgEvent) => {
     var msg = msgEvent.data;
     var command = msg.command;

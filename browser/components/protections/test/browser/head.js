@@ -46,9 +46,9 @@ const mockGetLoginDataWithSyncedDevices = (
   potentiallyBreachedLogins = 0
 ) => {
   return {
-    getLoginData: () => {
+    getLoginData: async () => {
       return {
-        numLogins: Services.logins.countLogins("", "", ""),
+        numLogins: await Services.logins.countLoginsAsync("", "", ""),
         potentiallyBreachedLogins,
         mobileDeviceConnected,
       };
@@ -76,8 +76,8 @@ const mockGetMonitorData = data => {
   };
 };
 
-registerCleanupFunction(function head_cleanup() {
-  Services.logins.removeAllUserFacingLogins();
+registerCleanupFunction(async function head_cleanup() {
+  await Services.logins.removeAllUserFacingLoginsAsync();
 });
 
 // Used to replace AboutProtectionsParent.VPNSubStatus

@@ -1,6 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
-
 const ADDON_INSTALL_ID = "addon-webext-permissions";
 
 let fileurl1 = get_addon_file_url("browser_dragdrop1.xpi");

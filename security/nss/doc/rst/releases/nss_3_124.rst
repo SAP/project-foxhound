@@ -1,0 +1,72 @@
+.. _mozilla_projects_nss_nss_3_124_release_notes:
+
+NSS 3.124 release notes
+=======================
+
+`Introduction <#introduction>`__
+--------------------------------
+
+.. container::
+
+   Network Security Services (NSS) 3.124 was released on *15 May 2026*.
+
+`Distribution Information <#distribution_information>`__
+--------------------------------------------------------
+
+.. container::
+
+   The HG tag is NSS_3_124_RTM. NSS 3.124 requires NSPR 4.38.2 or newer.
+
+   NSS 3.124 source distributions are available on ftp.mozilla.org for secure HTTPS download:
+
+   -  Source tarballs:
+      https://ftp.mozilla.org/pub/mozilla.org/security/nss/releases/NSS_3_124_RTM/src/
+
+   Other releases are available :ref:`mozilla_projects_nss_releases`.
+
+.. _changes_in_nss_3.124:
+
+`Changes in NSS 3.124 <#changes_in_nss_3.124>`__
+------------------------------------------------------------------
+
+.. container::
+
+   - Bug 2032562 - Add test for PKCS7 digest array alignment.
+   - Bug 2030093 - Add test for rejection of excessively large ASN.1 SEQUENCE OF in quickder.
+   - Bug 2030994 - Add test for CMS content size validation.
+   - Bug 2030995 - Add regression tests for DSAU signature decoding.
+   - Bug 2031030 - Add test for S/MIME profile lookup on temp certs.
+   - Bug 2031343 - Test case for post-handshake auth and many certificate requests.
+   - Bug 2019233 - Add test for intra-arena ASan redzones.
+   - Bug 2033058 - update nss_status flags one at a time.
+   - Bug 2029803 - add defensive info->len check in PK11_HPKE_SetupS and PK11_HPKE_SetupR.
+   - Bug 2029403 - avoid PORT_Strdup in ssl_DecodeResumptionToken.
+   - Bug 2020596 - add runtime check on decoded resumption token session id.
+   - Bug 2035882 - improve mach try error handling.
+   - Bug 2030798 - clang format.
+   - Bug 2030798 - add comprehensive SECItem and SECItemArray tests.
+   - Bug 2033058 - add bugzilla_cf_status_nss.py script.
+   - Bug 2033057 - regenerate some recent release notes.
+   - Bug 2033057 - fix bug list output by release note and email scripts.
+   - Bug 2031190 - test removal from trust domain email cache.
+   - Bug 2033208 - fix "testing if key corruption is detected in attribute" failures with sqlite-3.53.0.
+   - Bug 2035348 - build sqlite3 shell for Windows CI runners.
+   - Bug 2030366 - avoid race with module unloading in NSSTrustDomain_FindTokensByURI.
+   - Bug 2030192 - add ImportEd25519WithNonEmptyAlgorithmParams test.
+   - Bug 2034258 - add CLAUDE.md and .mcp.json.
+   - Bug 2034244 - add a mach try command.
+   - Bug 2031042 - remove dead condition in sec_asn1d_check_and_subtract_length.
+   - Bug 2030374 - avoid integer truncation in nssCKObject_GetAttributes.
+   - Bug 2030564 - add defensive input validation to sftk_compute_ANSI_X9_63_kdf.
+   - Bug 2029765 - avoid refcount over-release in nssTokenObjectCache error path [@ nssToken_Destroy].
+   - Bug 2029883 - sdb: enforce that metaData's id key is unique when reading.
+   - Bug 2023478 - improve handling of escape sequences in pk11uri_ParseAttributes.
+   - Bug 2030570 - use correct data for ID comparison in transfer_uri_certs_to_collection.
+   - Bug 2030573 - fix truncation of ulValueLen in sdb_FindObjectsInit.
+   - Bug 2033783 - reject DTLS 1.3 Server Hello after HVR without capping ss->vrange.max.
+   - Bug 2034157 - set previous-nss-release for abicheck.
+   - Bug 2032389 - Skip `PR_Sleep` yield for non-blocking sockets in `ssl3_SendApplicationData`.
+   - Bug 2033650 - consistently protect PK11SlotInfo::maxKeyCount with freeListLock.
+   - Bug 2030985 - Remove CRMF from testing and manifests.
+   - Bug 2026711 - Remove unused RSA blind signature implementation from freebl.
+

@@ -19,7 +19,6 @@ DevToolsModules(
     "MonitorPanel.js",
     "NetworkActionBar.js",
     "SecurityState.js",
-    "SourceEditor.js",
     "StatisticsPanel.js",
     "StatusBar.js",
     "StatusCode.js",

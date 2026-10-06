@@ -41,7 +41,6 @@ namespace webrtc {
 struct GoogCcConfig {
   std::unique_ptr<NetworkStateEstimator> network_state_estimator = nullptr;
   std::unique_ptr<NetworkStatePredictor> network_state_predictor = nullptr;
-  bool feedback_only = false;
 };
 
 class GoogCcNetworkController : public NetworkControllerInterface {
@@ -86,22 +85,20 @@ class GoogCcNetworkController : public NetworkControllerInterface {
   void SetNetworkStateEstimate(std::optional<NetworkStateEstimate> estimate);
 
   const Environment env_;
-  const bool packet_feedback_only_;
   FieldTrialFlag safe_reset_on_route_change_;
   FieldTrialFlag safe_reset_acknowledged_rate_;
   const bool use_min_allocatable_as_lower_bound_;
   const bool ignore_probes_lower_than_network_estimate_;
   const bool limit_probes_lower_than_throughput_estimate_;
   const RateControlSettings rate_control_settings_;
-  const bool pace_at_max_of_bwe_and_lower_link_capacity_;
   const bool limit_pacingfactor_by_upper_link_capacity_estimate_;
 
   const std::unique_ptr<ProbeController> probe_controller_;
   const std::unique_ptr<CongestionWindowPushbackController>
       congestion_window_pushback_controller_;
 
-  std::unique_ptr<SendSideBandwidthEstimation> bandwidth_estimation_;
-  std::unique_ptr<AlrDetector> alr_detector_;
+  SendSideBandwidthEstimation bandwidth_estimation_;
+  AlrDetector alr_detector_;
   std::unique_ptr<ProbeBitrateEstimator> probe_bitrate_estimator_;
   std::unique_ptr<NetworkStateEstimator> network_estimator_;
   std::unique_ptr<NetworkStatePredictor> network_state_predictor_;
@@ -117,24 +114,21 @@ class GoogCcNetworkController : public NetworkControllerInterface {
   std::optional<DataRate> starting_rate_;
 
   bool first_packet_sent_ = false;
+  bool first_transport_feedback_received_ = false;
 
   std::optional<NetworkStateEstimate> estimate_;
-
-  Timestamp next_loss_update_ = Timestamp::MinusInfinity();
-  int lost_packets_since_last_loss_update_ = 0;
-  int expected_packets_since_last_loss_update_ = 0;
 
   std::deque<int64_t> feedback_max_rtts_;
 
   DataRate last_loss_based_target_rate_;
   DataRate last_pushback_target_rate_;
-  DataRate last_stable_target_rate_;
   LossBasedState last_loss_base_state_;
 
   std::optional<uint8_t> last_estimated_fraction_loss_ = 0;
   TimeDelta last_estimated_round_trip_time_ = TimeDelta::PlusInfinity();
 
-  double pacing_factor_;
+  std::optional<double> pacing_factor_;
+  TimeDelta pacing_time_window_;
   DataRate min_total_allocated_bitrate_;
   DataRate max_padding_rate_;
 

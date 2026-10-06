@@ -37,7 +37,7 @@ class ResponsiveActor extends Actor {
   }
 
   get win() {
-    return this.docShell.chromeEventHandler.ownerGlobal;
+    return this.docShell.chromeEventHandler.documentGlobal;
   }
 
   /* Touch events override */
@@ -63,22 +63,11 @@ class ResponsiveActor extends Actor {
    * too, then we could add code in here to detect the picker mode as described in
    * https://bugzilla.mozilla.org/show_bug.cgi?id=1409085#c3
 
-   * @param {Boolean} state
-   * @param {String} pickerType
+   * @param {boolean} state
+   * @param {string} pickerType
    */
   setElementPickerState(state, pickerType) {
     this.targetActor.touchSimulator.setElementPickerState(state, pickerType);
-  }
-
-  /**
-   * Dispatches an "orientationchange" event and an "change" event
-   * on `window.screen.orientation`.
-   */
-  async dispatchOrientationChangeEvent() {
-    const { CustomEvent } = this.win;
-    const orientationChangeEvent = new CustomEvent("orientationchange");
-    this.win.dispatchEvent(orientationChangeEvent);
-    this.win.screen.orientation.dispatchEvent(new CustomEvent("change"));
   }
 }
 

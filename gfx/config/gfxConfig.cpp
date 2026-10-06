@@ -1,15 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gfxConfig.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/Unused.h"
 #include "mozilla/gfx/GPUParent.h"
 #include "mozilla/gfx/GraphicsMessages.h"
-#include "plstr.h"
 
 namespace mozilla {
 namespace gfx {
@@ -168,9 +164,6 @@ void gfxConfig::Inherit(EnumSet<Feature> aFeatures,
       case Feature::OPENGL_COMPOSITING:
         status = aDevicePrefs.oglCompositing();
         break;
-      case Feature::DIRECT2D:
-        status = aDevicePrefs.useD2D1();
-        break;
       default:
         break;
     }
@@ -196,7 +189,7 @@ void gfxConfig::EnableFallback(Fallback aFallback, const char* aMessage) {
 
   if (XRE_IsGPUProcess()) {
     nsCString message(aMessage);
-    Unused << GPUParent::GetSingleton()->SendUsedFallback(aFallback, message);
+    (void)GPUParent::GetSingleton()->SendUsedFallback(aFallback, message);
     return;
   }
 
@@ -215,7 +208,10 @@ void gfxConfig::EnableFallbackImpl(Fallback aFallback, const char* aMessage) {
     mNumFallbackLogEntries++;
 
     entry.mFallback = aFallback;
-    PL_strncpyz(entry.mMessage, aMessage, sizeof(entry.mMessage));
+    MOZ_ASSERT(aMessage);
+    strncpy(entry.mMessage, aMessage, sizeof(entry.mMessage) - 1);
+    // ensure we end up with a null-terminated string
+    entry.mMessage[sizeof(entry.mMessage) - 1] = 0;
   }
   mFallbackBits |= (uint64_t(1) << uint64_t(aFallback));
 }

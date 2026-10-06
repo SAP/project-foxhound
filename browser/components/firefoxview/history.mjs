@@ -13,11 +13,14 @@ import { ViewPage } from "./viewpage.mjs";
 import "chrome://browser/content/migration/migration-wizard.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://global/content/elements/moz-button.mjs";
+// eslint-disable-next-line import/no-unassigned-import
+import "chrome://global/content/elements/moz-label.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   HistoryController: "resource:///modules/HistoryController.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
 });
 
@@ -149,6 +152,21 @@ class HistoryInView extends ViewPage {
     }
   }
 
+  async forgetAboutThisSite(e) {
+    let host = Services.io.newURI(this.triggerNode.url).host;
+    let baseDomain;
+    try {
+      baseDomain = Services.eTLD.getBaseDomainFromHost(host);
+    } catch (ex) {
+      // If there is no baseDomain we fall back to host
+    }
+    await this.getWindow().gDialogBox.open(
+      "chrome://browser/content/places/clearDataForSite.xhtml",
+      { host, hostOrBaseDomain: baseDomain ?? host }
+    );
+    this.recordContextMenuTelemetry("forget-about-this-site", e, "history");
+  }
+
   onSecondaryAction(e) {
     this.triggerNode = e.originalTarget;
     this.panelList.toggle(e.detail.originalEvent);
@@ -219,7 +237,8 @@ class HistoryInView extends ViewPage {
     return (
       this.profileAge < 8 &&
       !this.hasImportedHistoryPref &&
-      !this.importHistoryDismissedPref
+      !this.importHistoryDismissedPref &&
+      Services.policies.isAllowed("profileImport")
     );
   }
 
@@ -242,6 +261,11 @@ class HistoryInView extends ViewPage {
           data-l10n-id="firefoxview-history-context-delete"
           data-l10n-attrs="accesskey"
         ></panel-item>
+        <panel-item
+          @click=${this.forgetAboutThisSite}
+          data-l10n-id="firefoxview-history-context-forget-site"
+          data-l10n-attrs="accesskey"
+        ></panel-item>
         <hr />
         <panel-item
           @click=${this.openInNewWindow}
@@ -252,6 +276,7 @@ class HistoryInView extends ViewPage {
           @click=${this.openInNewPrivateWindow}
           data-l10n-id="fxviewtabrow-open-in-private-window"
           data-l10n-attrs="accesskey"
+          ?hidden=${!lazy.PrivateBrowsingUtils.enabled}
         ></panel-item>
         <hr />
         <panel-item
@@ -435,6 +460,7 @@ class HistoryInView extends ViewPage {
               @click=${this.onChangeSortOption}
             />
             <label
+              is="moz-label"
               for="sort-by-date"
               data-l10n-id="firefoxview-sort-history-by-date-label"
             ></label>
@@ -449,6 +475,7 @@ class HistoryInView extends ViewPage {
               @click=${this.onChangeSortOption}
             />
             <label
+              is="moz-label"
               for="sort-by-site"
               data-l10n-id="firefoxview-sort-history-by-site-label"
             ></label>
@@ -476,11 +503,12 @@ class HistoryInView extends ViewPage {
               ></span>
             </div>
             <div class="buttons">
-              <button
-                class="primary choose-browser"
+              <moz-button
+                type="primary"
+                class="choose-browser"
                 data-l10n-id="firefoxview-choose-browser-button"
                 @click=${this.openMigrationWizard}
-              ></button>
+              ></moz-button>
               <moz-button
                 class="close"
                 type="icon ghost"
@@ -496,12 +524,12 @@ class HistoryInView extends ViewPage {
         class="show-all-history-footer"
         ?hidden=${this.controller.isHistoryEmpty}
       >
-        <button
+        <moz-button
           class="show-all-history-button"
           data-l10n-id="firefoxview-show-all-history"
           @click=${this.showAllHistory}
           ?hidden=${this.controller.searchResults}
-        ></button>
+        ></moz-button>
       </div>
     `;
   }

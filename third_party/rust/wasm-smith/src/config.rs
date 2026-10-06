@@ -1,6 +1,7 @@
 //! Configuring the shape of generated Wasm modules.
 
 use crate::InstructionKinds;
+use anyhow::bail;
 use arbitrary::{Arbitrary, Result, Unstructured};
 
 macro_rules! define_config {
@@ -54,7 +55,7 @@ macro_rules! define_config {
             /// module. The implementation (e.g. function bodies, global
             /// initializers) of each export in the generated module will be
             /// random and unrelated to the implementation in the provided
-            /// module. Only globals and functions are supported.
+            /// module.
             ///
             ///
             /// Defaults to `None` which means arbitrary exports will be
@@ -72,12 +73,13 @@ macro_rules! define_config {
             ///
             /// # Module Limits
             ///
-            /// All types, functions, globals, and exports that are needed to
-            /// provide the required exports will be generated, even if it
-            /// causes the resulting module to exceed the limits defined in
-            /// [`Self::max_type_size`], [`Self::max_types`],
-            /// [`Self::max_funcs`], [`Self::max_globals`], or
-            /// [`Self::max_exports`].
+            /// All types, functions, globals, memories, tables, tags, and exports
+            /// that are needed to provide the required exports will be generated,
+            /// even if it causes the resulting module to exceed the limits defined
+            /// in [`Self::max_type_size`], [`Self::max_types`],
+            /// [`Self::max_funcs`], [`Self::max_globals`],
+            /// [`Self::max_memories`], [`Self::max_tables`],
+            /// [`Self::max_tags`], or [`Self::max_exports`].
             ///
             /// # Example
             ///
@@ -89,10 +91,54 @@ macro_rules! define_config {
             ///     (module
             ///         (func (export "foo") (param i32) (result i64) unreachable)
             ///         (global (export "bar") f32 f32.const 0)
+            ///         (memory (export "baz") 1 10)
+            ///         (table (export "qux") 5 10 (ref null extern))
+            ///         (tag (export "quux") (param f32))
             ///     )
             /// "#));
             /// ```
             pub exports: Option<Vec<u8>>,
+
+            /// If provided, the generated module will have imports and exports
+            /// with exactly the same names and types as those in the provided
+            /// WebAssembly module.
+            ///
+            /// Defaults to `None` which means arbitrary imports and exports will be
+            /// generated.
+            ///
+            /// Note that [`Self::available_imports`] and [`Self::exports`] are
+            /// ignored when `module_shape` is enabled.
+            ///
+            /// The provided value must be a valid binary encoding of a
+            /// WebAssembly module. `wasm-smith` will panic if the module cannot
+            /// be parsed.
+            ///
+            /// # Module Limits
+            ///
+            /// All types, functions, globals, memories, tables, tags, imports, and exports
+            /// that are needed to provide the required imports and exports will be generated,
+            /// even if it causes the resulting module to exceed the limits defined in
+            /// [`Self::max_type_size`], [`Self::max_types`], [`Self::max_funcs`],
+            /// [`Self::max_globals`], [`Self::max_memories`], [`Self::max_tables`],
+            /// [`Self::max_tags`], [`Self::max_imports`], or [`Self::max_exports`].
+            ///
+            /// # Example
+            ///
+            /// As for [`Self::available_imports`] and [`Self::exports`], the
+            /// `wat` crate can be used to provide a human-readable description of the
+            /// module shape:
+            ///
+            /// ```rust
+            /// Some(wat::parse_str(r#"
+            ///     (module
+            ///         (import "env" "ping" (func (param i32)))
+            ///         (import "env" "memory" (memory 1))
+            ///         (func (export "foo") (param anyref) (result structref) unreachable)
+            ///         (global (export "bar") arrayref (ref.null array))
+            ///     )
+            /// "#));
+            /// ```
+            pub module_shape: Option<Vec<u8>>,
 
             $(
                 $(#[$field_attr])*
@@ -105,6 +151,7 @@ macro_rules! define_config {
                 Config {
                     available_imports: None,
                     exports: None,
+                    module_shape: None,
 
                     $(
                         $field: $default,
@@ -113,10 +160,11 @@ macro_rules! define_config {
             }
         }
 
-        #[cfg(feature = "_internal_cli")]
         #[doc(hidden)]
-        #[derive(Clone, Debug, Default, clap::Parser, serde_derive::Deserialize)]
-        #[serde(rename_all = "kebab-case", deny_unknown_fields)]
+        #[derive(Clone, Debug, Default)]
+        #[cfg_attr(feature = "clap", derive(clap::Parser))]
+        #[cfg_attr(feature = "serde", derive(serde_derive::Deserialize, serde_derive::Serialize))]
+        #[cfg_attr(feature = "serde", serde(rename_all = "kebab-case", deny_unknown_fields))]
         pub struct InternalOptionalConfig {
             /// The imports that may be used when generating the module.
             ///
@@ -139,7 +187,7 @@ macro_rules! define_config {
             /// module. The implementation (e.g. function bodies, global
             /// initializers) of each export in the generated module will be
             /// random and unrelated to the implementation in the provided
-            /// module. Only globals and functions are supported.
+            /// module.
             ///
             /// Defaults to `None` which means arbitrary exports will be
             /// generated.
@@ -156,15 +204,41 @@ macro_rules! define_config {
             ///
             /// # Module Limits
             ///
-            /// All types, functions, globals, and exports that are needed to
-            /// provide the required exports will be generated, even if it
-            /// causes the resulting module to exceed the limits defined in
-            /// [`Self::max_type_size`], [`Self::max_types`],
-            /// [`Self::max_funcs`], [`Self::max_globals`], or
-            /// [`Self::max_exports`].
+            /// All types, functions, globals, memories, tables, tags, and exports
+            /// that are needed to provide the required exports will be generated,
+            /// even if it causes the resulting module to exceed the limits defined
+            /// in [`Self::max_type_size`], [`Self::max_types`],
+            /// [`Self::max_funcs`], [`Self::max_globals`],
+            /// [`Self::max_memories`], [`Self::max_tables`],
+            /// [`Self::max_tags`], or [`Self::max_exports`].
             ///
             #[cfg_attr(feature = "clap", clap(long))]
             exports: Option<std::path::PathBuf>,
+
+            /// If provided, the generated module will have imports and exports
+            /// with exactly the same names and types as those in the provided
+            /// WebAssembly module.
+            ///
+            /// Defaults to `None` which means arbitrary imports and exports will be
+            /// generated.
+            ///
+            /// Note that [`Self::available_imports`] and [`Self::exports`] are
+            /// ignored when `module_shape` is enabled.
+            ///
+            /// The provided value must be a valid binary encoding of a
+            /// WebAssembly module. `wasm-smith` will panic if the module cannot
+            /// be parsed.
+            ///
+            /// # Module Limits
+            ///
+            /// All types, functions, globals, memories, tables, tags, imports, and exports
+            /// that are needed to provide the required imports and exports will be generated,
+            /// even if it causes the resulting module to exceed the limits defined in
+            /// [`Self::max_type_size`], [`Self::max_types`], [`Self::max_funcs`],
+            /// [`Self::max_globals`], [`Self::max_memories`], [`Self::max_tables`],
+            /// [`Self::max_tags`], [`Self::max_imports`], or [`Self::max_exports`].
+            #[cfg_attr(feature = "clap", clap(long))]
+            module_shape: Option<std::path::PathBuf>,
 
             $(
                 $(#[$field_attr])*
@@ -173,12 +247,12 @@ macro_rules! define_config {
             )*
         }
 
-        #[cfg(feature = "_internal_cli")]
         impl InternalOptionalConfig {
             pub fn or(self, other: Self) -> Self {
                 Self {
                     available_imports: self.available_imports.or(other.available_imports),
                     exports: self.exports.or(other.exports),
+                    module_shape: self.module_shape.or(other.module_shape),
 
                     $(
                         $field: self.$field.or(other.$field),
@@ -187,7 +261,7 @@ macro_rules! define_config {
             }
         }
 
-        #[cfg(feature = "_internal_cli")]
+        #[cfg(feature = "serde")]
         impl TryFrom<InternalOptionalConfig> for Config {
             type Error = anyhow::Error;
             fn try_from(config: InternalOptionalConfig) -> anyhow::Result<Config> {
@@ -207,10 +281,38 @@ macro_rules! define_config {
                         } else {
                             None
                         },
+                    module_shape: if let Some(file) = config
+                        .module_shape
+                        .as_ref() {
+                            Some(wat::parse_file(file)?)
+                        } else {
+                            None
+                        },
 
                     $(
                         $field: config.$field.unwrap_or(default.$field),
                     )*
+                })
+            }
+        }
+
+        impl TryFrom<&Config> for InternalOptionalConfig {
+            type Error = anyhow::Error;
+            fn try_from(config: &Config) -> anyhow::Result<InternalOptionalConfig> {
+                if config.available_imports.is_some() {
+                    bail!("cannot serialize configuration with `available_imports`");
+                }
+                if config.exports.is_some() {
+                    bail!("cannot serialize configuration with `exports`");
+                }
+                if config.module_shape.is_some() {
+                    bail!("cannot serialize configuration with `module_shape`");
+                }
+                Ok(InternalOptionalConfig {
+                    available_imports: None,
+                    exports: None,
+                    module_shape: None,
+                    $( $field: Some(config.$field.clone()), )*
                 })
             }
         }
@@ -263,6 +365,9 @@ define_config! {
         /// `allowed_instruction()` does not include vector instructions, the
         /// generated programs will not include these instructions but could
         /// contain vector types.
+        ///
+        /// [`InstructionKind::Numeric`]: crate::InstructionKind::Numeric
+        /// [`InstructionKind::NumericInt`]: crate::InstructionKind::NumericInt
         pub allowed_instructions: InstructionKinds = InstructionKinds::all(),
 
         /// Determines whether we generate floating point instructions and types.
@@ -273,8 +378,8 @@ define_config! {
         /// Determines whether the bulk memory proposal is enabled for
         /// generating instructions.
         ///
-        /// Defaults to `false`.
-        pub bulk_memory_enabled: bool = false,
+        /// Defaults to `true`.
+        pub bulk_memory_enabled: bool = true,
 
         /// Returns whether NaN values are canonicalized after all f32/f64
         /// operation. Defaults to false.
@@ -322,6 +427,12 @@ define_config! {
         ///
         /// Defaults to `true`.
         pub gc_enabled: bool = true,
+
+        /// Determines whether the custom descriptors proposal is enabled when
+        /// generating a Wasm module.
+        ///
+        /// Defaults to `true`.
+        pub custom_descriptors_enabled: bool = false,
 
         /// Determines whether the custom-page-sizes proposal is enabled when
         /// generating a Wasm module.
@@ -455,10 +566,10 @@ define_config! {
         /// Note that this is irrelevant unless value model support is enabled.
         pub max_values: usize = 10,
 
-        /// Returns whether 64-bit memories are allowed. Defaults to false.
+        /// Returns whether 64-bit memories are allowed. Defaults to true.
         ///
         /// Note that this is the gate for the memory64 proposal to WebAssembly.
-        pub memory64_enabled: bool = false,
+        pub memory64_enabled: bool = true,
 
         /// Whether every Wasm memory must have a maximum size
         /// specified. Defaults to `false`.
@@ -551,16 +662,29 @@ define_config! {
         /// Defaults to `true`.
         pub relaxed_simd_enabled: bool = true,
 
-        /// Determines whether the nontrapping-float-to-int-conversions propsal
-        /// is enabled.
+        /// Determines whether the non-trapping float-to-int conversions
+        /// proposal is enabled.
         ///
         /// Defaults to `true`.
         pub saturating_float_to_int_enabled: bool = true,
 
-        /// Determines whether the sign-extension-ops propsal is enabled.
+        /// Determines whether the sign-extension-ops proposal is enabled.
         ///
         /// Defaults to `true`.
         pub sign_extension_ops_enabled: bool = true,
+
+        /// Determines whether the shared-everything-threads proposal is
+        /// enabled.
+        ///
+        /// The [shared-everything-threads] proposal, among other things,
+        /// extends `shared` attributes to all WebAssembly objects; it builds on
+        /// the [threads] proposal.
+        ///
+        /// [shared-everything-threads]: https://github.com/WebAssembly/shared-everything-threads
+        /// [threads]: https://github.com/WebAssembly/threads
+        ///
+        /// Defaults to `false`.
+        pub shared_everything_threads_enabled: bool = false,
 
         /// Determines whether the SIMD proposal is enabled for generating
         /// instructions.
@@ -606,6 +730,13 @@ define_config! {
         ///
         /// Defaults to `false`.
         pub wide_arithmetic_enabled: bool = false,
+
+        /// Determines whether the [extended-const proposal] is enabled.
+        ///
+        /// [extended-const proposal]: https://github.com/WebAssembly/extended-const
+        ///
+        /// Defaults to `true`.
+        pub extended_const_enabled: bool = true,
     }
 }
 
@@ -631,7 +762,10 @@ define_config! {
 ///
 /// The default is `(90, 9, 1)`.
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde_derive", derive(serde_derive::Deserialize))]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde_derive::Deserialize, serde_derive::Serialize)
+)]
 pub struct MemoryOffsetChoices(pub u32, pub u32, pub u32);
 
 impl Default for MemoryOffsetChoices {
@@ -640,7 +774,6 @@ impl Default for MemoryOffsetChoices {
     }
 }
 
-#[cfg(feature = "_internal_cli")]
 impl std::str::FromStr for MemoryOffsetChoices {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -698,6 +831,7 @@ impl<'a> Arbitrary<'a> for Config {
             threads_enabled: u.arbitrary()?,
             tail_call_enabled: u.arbitrary()?,
             gc_enabled: u.arbitrary()?,
+            memory64_enabled: u.arbitrary()?,
             allowed_instructions: {
                 use flagset::Flags;
                 let mut allowed = Vec::new();
@@ -712,6 +846,7 @@ impl<'a> Arbitrary<'a> for Config {
             max_table_elements: u.int_in_range(0..=1_000_000)?,
             disallow_traps: u.arbitrary()?,
             allow_floats: u.arbitrary()?,
+            extended_const_enabled: u.arbitrary()?,
 
             // These fields, unlike the ones above, are less useful to set.
             // They either make weird inputs or are for features not widely
@@ -738,14 +873,16 @@ impl<'a> Arbitrary<'a> for Config {
             canonicalize_nans: false,
             available_imports: None,
             exports: None,
+            module_shape: None,
             export_everything: false,
             generate_custom_sections: false,
             allow_invalid_funcs: false,
 
             // Proposals that are not stage4+ are disabled by default.
-            memory64_enabled: false,
             custom_page_sizes_enabled: false,
             wide_arithmetic_enabled: false,
+            shared_everything_threads_enabled: false,
+            custom_descriptors_enabled: false,
         };
         config.sanitize();
         Ok(config)
@@ -771,12 +908,113 @@ impl Config {
         if !self.reference_types_enabled {
             self.max_tables = self.max_tables.min(1);
             self.gc_enabled = false;
+            self.shared_everything_threads_enabled = false;
+        }
+
+        // shared-everything-threads depends on GC, so if gc is disabled then
+        // also disable shared-everything-threads.
+        if !self.gc_enabled {
+            self.shared_everything_threads_enabled = false;
+            self.custom_descriptors_enabled = false;
         }
 
         // If simd is disabled then disable all relaxed simd instructions as
         // well.
         if !self.simd_enabled {
             self.relaxed_simd_enabled = false;
+        }
+
+        // It is impossible to use the shared-everything-threads proposal
+        // without threads, which it is built on.
+        if !self.threads_enabled {
+            self.shared_everything_threads_enabled = false;
+        }
+
+        // If module_shape is present then disable available_imports and exports.
+        if self.module_shape.is_some() {
+            self.available_imports = None;
+            self.exports = None;
+        }
+    }
+
+    /// Returns the set of features that are necessary for validating against
+    /// this `Config`.
+    #[cfg(feature = "wasmparser")]
+    pub fn features(&self) -> wasmparser::WasmFeatures {
+        use wasmparser::WasmFeatures;
+
+        // Currently wasm-smith doesn't have knobs for the MVP (floats) or
+        // `mutable-global`. These are unconditionally enabled.
+        let mut features = WasmFeatures::MUTABLE_GLOBAL | WasmFeatures::WASM1;
+
+        // All other features that can be generated by wasm-smith are gated by
+        // configuration fields. Conditionally set each feature based on the
+        // status of the fields in `self`.
+        features.set(
+            WasmFeatures::SATURATING_FLOAT_TO_INT,
+            self.saturating_float_to_int_enabled,
+        );
+        features.set(
+            WasmFeatures::SIGN_EXTENSION,
+            self.sign_extension_ops_enabled,
+        );
+        features.set(WasmFeatures::REFERENCE_TYPES, self.reference_types_enabled);
+        features.set(WasmFeatures::MULTI_VALUE, self.multi_value_enabled);
+        features.set(WasmFeatures::BULK_MEMORY, self.bulk_memory_enabled);
+        features.set(WasmFeatures::SIMD, self.simd_enabled);
+        features.set(WasmFeatures::RELAXED_SIMD, self.relaxed_simd_enabled);
+        features.set(WasmFeatures::MULTI_MEMORY, self.max_memories > 1);
+        features.set(WasmFeatures::EXCEPTIONS, self.exceptions_enabled);
+        features.set(WasmFeatures::MEMORY64, self.memory64_enabled);
+        features.set(WasmFeatures::TAIL_CALL, self.tail_call_enabled);
+        features.set(WasmFeatures::FUNCTION_REFERENCES, self.gc_enabled);
+        features.set(WasmFeatures::GC, self.gc_enabled);
+        features.set(WasmFeatures::THREADS, self.threads_enabled);
+        features.set(
+            WasmFeatures::SHARED_EVERYTHING_THREADS,
+            self.shared_everything_threads_enabled,
+        );
+        features.set(
+            WasmFeatures::CUSTOM_PAGE_SIZES,
+            self.custom_page_sizes_enabled,
+        );
+        features.set(WasmFeatures::EXTENDED_CONST, self.extended_const_enabled);
+        features.set(WasmFeatures::WIDE_ARITHMETIC, self.wide_arithmetic_enabled);
+        features.set(
+            WasmFeatures::CUSTOM_DESCRIPTORS,
+            self.custom_descriptors_enabled,
+        );
+
+        features
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Config {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+    {
+        use serde::de::Error;
+
+        match Config::try_from(InternalOptionalConfig::deserialize(deserializer)?) {
+            Ok(config) => Ok(config),
+            Err(e) => Err(D::Error::custom(e)),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for Config {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::Error;
+
+        match InternalOptionalConfig::try_from(self) {
+            Ok(result) => result.serialize(serializer),
+            Err(e) => Err(S::Error::custom(e)),
         }
     }
 }

@@ -49,152 +49,78 @@
 
 nsHtml5HtmlAttributes* nsHtml5HtmlAttributes::EMPTY_ATTRIBUTES = nullptr;
 
-nsHtml5HtmlAttributes::nsHtml5HtmlAttributes(int32_t aMode) : mMode(aMode) {
+nsHtml5HtmlAttributes::nsHtml5HtmlAttributes(int32_t aMode) {
   MOZ_COUNT_CTOR(nsHtml5HtmlAttributes);
 }
 
 nsHtml5HtmlAttributes::~nsHtml5HtmlAttributes() {
   MOZ_COUNT_DTOR(nsHtml5HtmlAttributes);
-  clear(0);
-}
-
-int32_t nsHtml5HtmlAttributes::getIndex(nsHtml5AttributeName* aName) {
-  size_t len = mStorage.Length();
-  for (size_t i = 0; i < len; i++) {
-    if (mStorage.Elements()[i].GetLocal(nsHtml5AttributeName::HTML) ==
-        aName->getLocal(nsHtml5AttributeName::HTML)) {
-      // It's release asserted elsewhere that i can't be too large.
-      return i;
-    }
-  }
-  return -1;
 }
 
 nsHtml5String nsHtml5HtmlAttributes::getValue(nsHtml5AttributeName* aName) {
-  int32_t index = getIndex(aName);
-  if (index == -1) {
-    return nullptr;
-  } else {
-    return getValueNoBoundsCheck(index);
+  MOZ_ASSERT(!mMovedFrom);
+  uintptr_t nameBits = nsHtml5AttributeEntry::BitsFromKnownName(aName);
+  for (nsHtml5AttributeEntry& entry : *this) {
+    if (entry.NameBitsMatch(nameBits)) {
+      return entry.Value();
+    }
   }
+  return nullptr;
 }
 
 int32_t nsHtml5HtmlAttributes::getLength() { return mStorage.Length(); }
 
-nsAtom* nsHtml5HtmlAttributes::getLocalNameNoBoundsCheck(int32_t aIndex) {
-  MOZ_ASSERT(aIndex < int32_t(mStorage.Length()) && aIndex >= 0,
-             "Index out of bounds");
-  return mStorage.Elements()[aIndex].GetLocal(mMode);
-}
-
-int32_t nsHtml5HtmlAttributes::getURINoBoundsCheck(int32_t aIndex) {
-  MOZ_ASSERT(aIndex < int32_t(mStorage.Length()) && aIndex >= 0,
-             "Index out of bounds");
-  return mStorage.Elements()[aIndex].GetUri(mMode);
-}
-
-nsAtom* nsHtml5HtmlAttributes::getPrefixNoBoundsCheck(int32_t aIndex) {
-  MOZ_ASSERT(aIndex < int32_t(mStorage.Length()) && aIndex >= 0,
-             "Index out of bounds");
-  return mStorage.Elements()[aIndex].GetPrefix(mMode);
-}
-
-nsHtml5String nsHtml5HtmlAttributes::getValueNoBoundsCheck(int32_t aIndex) {
-  MOZ_ASSERT(aIndex < int32_t(mStorage.Length()) && aIndex >= 0,
-             "Index out of bounds");
-  return mStorage.Elements()[aIndex].GetValue();
-}
-
-int32_t nsHtml5HtmlAttributes::getLineNoBoundsCheck(int32_t aIndex) {
-  MOZ_ASSERT(aIndex < int32_t(mStorage.Length()) && aIndex >= 0,
-             "Index out of bounds");
-  return mStorage.Elements()[aIndex].GetLine();
-}
-
 void nsHtml5HtmlAttributes::addAttribute(nsHtml5AttributeName* aName,
                                          nsHtml5String aValue, int32_t aLine) {
-  mStorage.AppendElement(nsHtml5AttributeEntry(aName, aValue, aLine));
-  MOZ_RELEASE_ASSERT(mStorage.Length() <= INT32_MAX,
-                     "Can't handle this many attributes.");
-}
-
-// Isindex-only, so doesn't need to deal with SVG and MathML
-void nsHtml5HtmlAttributes::AddAttributeWithLocal(nsAtom* aName,
-                                                  nsHtml5String aValue,
-                                                  int32_t aLine) {
-  mStorage.AppendElement(nsHtml5AttributeEntry(aName, aValue, aLine));
+  MOZ_ASSERT(!mMovedFrom);
+  mStorage.AppendElement(nsHtml5AttributeEntry(aName, aValue));
   MOZ_RELEASE_ASSERT(mStorage.Length() <= INT32_MAX,
                      "Can't handle this many attributes.");
 }
 
 void nsHtml5HtmlAttributes::clear(int32_t aMode) {
-  size_t len = mStorage.Length();
-  for (size_t i = 0; i < len; ++i) {
-    nsHtml5AttributeEntry& entry = mStorage.Elements()[i];
-    entry.ReleaseValue();
-  }
-  mStorage.TruncateLength(0);
-  mMode = aMode;
+  mStorage.ClearAndRetainStorage();
   mDuplicateAttributeError = false;
-}
-
-void nsHtml5HtmlAttributes::releaseValue(int32_t aIndex) {
-  MOZ_ASSERT(aIndex < int32_t(mStorage.Length()) && aIndex >= 0,
-             "Index out of bounds");
-  mStorage.Elements()[aIndex].ReleaseValue();
-}
-
-void nsHtml5HtmlAttributes::clearWithoutReleasingContents() {
-  mStorage.TruncateLength(0);
+#ifdef DEBUG
+  mMovedFrom = false;
+#endif
 }
 
 bool nsHtml5HtmlAttributes::contains(nsHtml5AttributeName* aName) {
-  size_t len = mStorage.Length();
-  for (size_t i = 0; i < len; i++) {
-    if (mStorage.Elements()[i].GetLocal(nsHtml5AttributeName::HTML) ==
-        aName->getLocal(nsHtml5AttributeName::HTML)) {
+  MOZ_ASSERT(!mMovedFrom);
+  uintptr_t nameBits = nsHtml5AttributeEntry::BitsFromName(aName);
+  for (nsHtml5AttributeEntry& entry : *this) {
+    if (entry.NameBitsMatch(nameBits)) {
       return true;
     }
   }
   return false;
 }
 
-void nsHtml5HtmlAttributes::adjustForMath() {
-  mMode = nsHtml5AttributeName::MATHML;
-}
-
-void nsHtml5HtmlAttributes::adjustForSvg() {
-  mMode = nsHtml5AttributeName::SVG;
-}
-
 nsHtml5HtmlAttributes* nsHtml5HtmlAttributes::cloneAttributes() {
-  MOZ_ASSERT(mStorage.IsEmpty() || !mMode);
+  MOZ_ASSERT(!mMovedFrom);
   nsHtml5HtmlAttributes* clone =
       new nsHtml5HtmlAttributes(nsHtml5AttributeName::HTML);
-  size_t len = mStorage.Length();
-  for (size_t i = 0; i < len; ++i) {
-    nsHtml5AttributeEntry& entry = mStorage.Elements()[i];
-    clone->AddEntry(entry.Clone());
+  clone->mStorage.SetCapacity(mStorage.Length());
+  for (nsHtml5AttributeEntry& entry : *this) {
+    clone->mStorage.AppendElement(entry.Clone());
   }
   return clone;
 }
 
 bool nsHtml5HtmlAttributes::equalsAnother(nsHtml5HtmlAttributes* aOther) {
-  MOZ_ASSERT(!mMode, "Trying to compare attributes in foreign content.");
-  size_t len = mStorage.Length();
-  size_t lenOther = aOther->mStorage.Length();
+  MOZ_ASSERT(!mMovedFrom);
   if (mStorage.Length() != aOther->mStorage.Length()) {
     return false;
   }
-  for (size_t i = 0; i < len; ++i) {
-    nsHtml5AttributeEntry& entry = mStorage.Elements()[i];
+  for (nsHtml5AttributeEntry& entry : *this) {
+    // Need a flag, since C++ can't `continue` outer
+    // iterator loop from within an inner loop.
     bool found = false;
-    nsAtom* ownLocal = entry.GetLocal(nsHtml5AttributeName::HTML);
-    for (size_t j = 0; j < lenOther; ++j) {
-      nsHtml5AttributeEntry& otherEntry = aOther->mStorage.Elements()[j];
-      if (ownLocal == otherEntry.GetLocal(nsHtml5AttributeName::HTML)) {
+    for (nsHtml5AttributeEntry& otherEntry : *aOther) {
+      if (entry.NameMatches(otherEntry)) {
         found = true;
-        if (!entry.GetValue().Equals(otherEntry.GetValue())) {
+        if (!entry.ValueMatches(otherEntry)) {
           return false;
         }
         break;
@@ -205,10 +131,6 @@ bool nsHtml5HtmlAttributes::equalsAnother(nsHtml5HtmlAttributes* aOther) {
     }
   }
   return true;
-}
-
-void nsHtml5HtmlAttributes::AddEntry(nsHtml5AttributeEntry&& aEntry) {
-  mStorage.AppendElement(aEntry);
 }
 
 void nsHtml5HtmlAttributes::initializeStatics() {

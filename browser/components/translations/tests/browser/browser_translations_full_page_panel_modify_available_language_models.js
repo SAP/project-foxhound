@@ -41,8 +41,14 @@ add_task(
 
     await FullPageTranslationsTestUtils.clickCancelButton();
 
-    const recordsForEnJa = createRecordsForLanguagePair("en", "ja");
-    const recordsForJaEn = createRecordsForLanguagePair("ja", "en");
+    const recordsForEnJa = createRecordsForLanguagePair({
+      sourceLanguage: "en",
+      targetLanguage: "ja",
+    });
+    const recordsForJaEn = createRecordsForLanguagePair({
+      sourceLanguage: "ja",
+      targetLanguage: "en",
+    });
 
     info("Publishing Japanese as a source language in Remote Settings.");
     await modifyRemoteSettingsRecords(remoteClients.translationModels.client, {

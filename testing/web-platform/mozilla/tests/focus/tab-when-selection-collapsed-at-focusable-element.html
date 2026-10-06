@@ -19,8 +19,8 @@ addEventListener("load", () => {
   const third = document.querySelector("span + span + span");
 
   promise_test(async () => {
-    getSelection().collapse(second.parentNode, 1);
     document.activeElement?.blur();
+    getSelection().collapse(second.parentNode, 1);
     await new test_driver.Actions()
       .keyDown(tab)
       .keyUp(tab)
@@ -29,8 +29,8 @@ addEventListener("load", () => {
   }, "Tab when Selection collapsed at focusable 2nd element should make it focused");
 
   promise_test(async () => {
-    getSelection().collapse(second.parentNode, 1);
     document.activeElement?.blur();
+    getSelection().collapse(second.parentNode, 1);
     await new test_driver.Actions()
       .keyDown(shift)
       .keyDown(tab)
@@ -41,8 +41,8 @@ addEventListener("load", () => {
   }, "Shift+Tab when Selection collapsed at 2nd focusable element should make it focused");
 
   promise_test(async () => {
-    getSelection().collapse(third.parentNode, 2);
     document.activeElement?.blur();
+    getSelection().collapse(third.parentNode, 2);
     await new test_driver.Actions()
       .keyDown(tab)
       .keyUp(tab)
@@ -51,8 +51,8 @@ addEventListener("load", () => {
   }, "Tab when Selection collapsed at focusable 3rd element should make it focused");
 
   promise_test(async () => {
-    getSelection().collapse(first.parentNode, 0);
     document.activeElement?.blur();
+    getSelection().collapse(first.parentNode, 0);
     await new test_driver.Actions()
       .keyDown(shift)
       .keyDown(tab)

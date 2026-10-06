@@ -58,7 +58,7 @@ add_task(async function testOpenBrowserWindow() {
  *
  * @param {Element} newWindowItem - The "new window" item to check.
  * @param {Element} privateWindowItem - The "new private window" item to check.
- * @param {Object} expect - The expected properties.
+ * @param {object} expect - The expected properties.
  * @param {boolean} expect.privateVisible - Whether we expect the private item
  *   to be visible or not.
  * @param {string} expect.newWindowL10nId - The expected string ID used by the

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,14 +5,14 @@
 #ifndef DOM_SVG_SVGLENGTHLIST_H_
 #define DOM_SVG_SVGLENGTHLIST_H_
 
+#include "SVGElement.h"
+#include "SVGLength.h"
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
 #include "nsIContent.h"
 #include "nsINode.h"
 #include "nsIWeakReferenceUtils.h"
-#include "SVGElement.h"
 #include "nsTArray.h"
-#include "SVGLength.h"
 
 namespace mozilla {
 
@@ -44,7 +42,7 @@ class SVGLengthList {
   SVGLengthList& operator=(const SVGLengthList& aOther) {
     mLengths.ClearAndRetainStorage();
     // Best-effort, really.
-    Unused << mLengths.AppendElements(aOther.mLengths, fallible);
+    (void)mLengths.AppendElements(aOther.mLengths, fallible);
     return *this;
   }
 
@@ -173,15 +171,17 @@ class SVGLengthList {
  */
 class SVGLengthListAndInfo : public SVGLengthList {
  public:
-  SVGLengthListAndInfo() : mElement(nullptr), mAxis(0), mCanZeroPadList(true) {}
+  SVGLengthListAndInfo()
+      : mElement(nullptr), mAxis(SVGLength::Axis::XY), mCanZeroPadList(true) {}
 
-  SVGLengthListAndInfo(dom::SVGElement* aElement, uint8_t aAxis,
+  SVGLengthListAndInfo(dom::SVGElement* aElement, SVGLength::Axis aAxis,
                        bool aCanZeroPadList)
       : mElement(do_GetWeakReference(static_cast<nsINode*>(aElement))),
         mAxis(aAxis),
         mCanZeroPadList(aCanZeroPadList) {}
 
-  void SetInfo(dom::SVGElement* aElement, uint8_t aAxis, bool aCanZeroPadList) {
+  void SetInfo(dom::SVGElement* aElement, SVGLength::Axis aAxis,
+               bool aCanZeroPadList) {
     mElement = do_GetWeakReference(static_cast<nsINode*>(aElement));
     mAxis = aAxis;
     mCanZeroPadList = aCanZeroPadList;
@@ -205,7 +205,7 @@ class SVGLengthListAndInfo : public SVGLengthList {
     return false;
   }
 
-  uint8_t Axis() const {
+  SVGLength::Axis Axis() const {
     MOZ_ASSERT(mElement, "Axis() isn't valid");
     return mAxis;
   }
@@ -280,7 +280,7 @@ class SVGLengthListAndInfo : public SVGLengthList {
   // https://bugzilla.mozilla.org/show_bug.cgi?id=515116#c15
   // See also https://bugzilla.mozilla.org/show_bug.cgi?id=653497
   nsWeakPtr mElement;
-  uint8_t mAxis;
+  SVGLength::Axis mAxis;
   bool mCanZeroPadList;
 };
 
@@ -300,10 +300,11 @@ class SVGLengthListAndInfo : public SVGLengthList {
  */
 class MOZ_STACK_CLASS SVGUserUnitList {
  public:
-  SVGUserUnitList() : mList(nullptr), mElement(nullptr), mAxis(0) {}
+  SVGUserUnitList()
+      : mList(nullptr), mElement(nullptr), mAxis(SVGLength::Axis::XY) {}
 
   void Init(const SVGLengthList* aList, const dom::SVGElement* aElement,
-            uint8_t aAxis) {
+            SVGLength::Axis aAxis) {
     mList = aList;
     mElement = aElement;
     mAxis = aAxis;
@@ -325,7 +326,7 @@ class MOZ_STACK_CLASS SVGUserUnitList {
  private:
   const SVGLengthList* mList;
   const dom::SVGElement* mElement;
-  uint8_t mAxis;
+  SVGLength::Axis mAxis;
 };
 
 }  // namespace mozilla

@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 const numSystems = Intl.supportedValuesOf("numberingSystem");
 
 assertEq(new Set(numSystems).size, numSystems.length, "No duplicates are present");

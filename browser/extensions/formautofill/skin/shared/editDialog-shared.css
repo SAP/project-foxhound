@@ -66,14 +66,14 @@ form :is(label, div) .label-text[field-populated] {
 }
 
 form :is(input, select, textarea):focus ~ .label-text {
-  color: var(--in-content-item-selected);
+  color: var(--color-accent-primary-selected);
   opacity: 1;
 }
 
 /* Focused error fields should get a darker text but not the blue one since it
  * doesn't look good with the red error outline. */
 form :is(input, select, textarea):focus:user-invalid ~ .label-text {
-  color: var(--in-content-text-color);
+  color: var(--text-color);
 }
 
 form div[required] > label .label-text::after,

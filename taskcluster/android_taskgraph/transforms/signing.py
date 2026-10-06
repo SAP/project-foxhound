@@ -27,7 +27,7 @@ def resolve_keys(config, tasks):
                 **{
                     "build-type": task["attributes"]["build-type"],
                     "level": config.params["level"],
-                }
+                },
             )
         yield task
 
@@ -65,8 +65,7 @@ _DETACHED_SIGNATURE_EXTENSION = ".asc"
 def set_detached_signature_artifacts(config, tasks):
     for task in tasks:
         task["attributes"]["artifacts"] = {
-            extension
-            + _DETACHED_SIGNATURE_EXTENSION: path
+            extension + _DETACHED_SIGNATURE_EXTENSION: path
             + _DETACHED_SIGNATURE_EXTENSION
             for extension, path in task["attributes"]["artifacts"].items()
         }

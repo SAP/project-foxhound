@@ -42,7 +42,7 @@
     onerror.catch(e => ok(false, e));
     setupEnvironment();
     await testConfigured;
-    const stream = video.mozCaptureStream();
+    const stream = video.captureStream?.() || video.mozCaptureStream();
     const test = new PeerConnectionTest(
       {
         config_local: { label_suffix: media.name },

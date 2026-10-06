@@ -9,7 +9,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=841466
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" href="/tests/SimpleTest/test.css">
   <script>
-  /** Test for Bug 841466 **/
+  /** Test for Bug 841466 */
 var els = ['button', 'fieldset', 'input', 'object', 'output', 'select', 'textarea'];
 var code = "try { is(foo, 'bar', 'expected value bar from expando on element ' + localName); } catch (e) { ok(false, String(e)); }";
 els.forEach(function(el) {

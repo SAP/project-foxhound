@@ -38,7 +38,26 @@ export default [
       "react/no-did-update-set-state": "error",
       "react/no-direct-mutation-state": "error",
       "react/no-is-mounted": "error",
-      "react/no-unknown-property": "error",
+      "react/no-unknown-property": [
+        "error",
+        {
+          // Custom HTML attributes used in aboutwelcome React components.
+          ignore: [
+            "flow",
+            "alignment",
+            "button-size",
+            "layout",
+            "pos",
+            "hide-secondary-section",
+            "reverse-split",
+            "no-rdm",
+            "above-button",
+            "fullscreen",
+            "narrow",
+            "srcset",
+          ],
+        },
+      ],
       "react/require-render-return": "error",
 
       "accessor-pairs": [
@@ -53,7 +72,6 @@ export default [
       "guard-for-in": "error",
       "max-nested-callbacks": ["error", 4],
       "max-params": ["error", 6],
-      "max-statements": ["error", 50],
       "new-cap": ["error", { newIsCap: true, capIsNew: false }],
       "no-alert": "error",
       "no-div-regex": "error",
@@ -108,7 +126,7 @@ export default [
   {
     // TODO: Bug 1773467 - Move these to .mjs or figure out a generic way
     // to identify these as modules.
-    files: ["tests/unit/*.js"],
+    files: ["tests/unit/**/*.js"],
     languageOptions: {
       sourceType: "module",
     },

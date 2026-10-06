@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,14 +7,13 @@
 #ifndef DOM_SMIL_SMILCSSVALUETYPE_H_
 #define DOM_SMIL_SMILCSSVALUETYPE_H_
 
-#include "mozilla/Attributes.h"
+#include "NonCustomCSSPropertyId.h"
 #include "mozilla/SMILType.h"
-#include "nsCSSPropertyID.h"
 #include "nsStringFwd.h"
 
 namespace mozilla {
 struct AnimationValue;
-class DeclarationBlock;
+struct StyleLockedDeclarationBlock;
 namespace dom {
 class Element;
 }  // namespace dom
@@ -56,7 +53,7 @@ class SMILCSSValueType : public SMILType {
    * On failure, this method leaves aValue.mType == SMILNullType::sSingleton.
    * Otherwise, this method leaves aValue.mType == this class's singleton.
    *
-   * @param       aPropID         The property for which we're parsing a value.
+   * @param       aPropId         The property for which we're parsing a value.
    * @param       aTargetElement  The target element to whom the property/value
    *                              setting applies.
    * @param       aString         The string to be parsed as a CSS value.
@@ -71,7 +68,7 @@ class SMILCSSValueType : public SMILType {
    * @pre  aValue.IsNull()
    * @post aValue.IsNull() || aValue.mType == SMILCSSValueType::sSingleton
    */
-  static void ValueFromString(nsCSSPropertyID aPropID,
+  static void ValueFromString(NonCustomCSSPropertyId aPropId,
                               dom::Element* aTargetElement,
                               const nsAString& aString, SMILValue& aValue,
                               bool* aIsContextSensitive);
@@ -79,7 +76,7 @@ class SMILCSSValueType : public SMILType {
   /**
    * Creates a SMILValue to wrap the given animation value.
    *
-   * @param aPropID         The property that |aValue| corresponds to.
+   * @param aPropId         The property that |aValue| corresponds to.
    * @param aTargetElement  The target element to which the animation value
    *                        applies.
    * @param aValue          The animation value to use.
@@ -87,7 +84,7 @@ class SMILCSSValueType : public SMILType {
    *                        SMILValue with the null type (i.e. rv.IsNull()
    *                        returns true).
    */
-  static SMILValue ValueFromAnimationValue(nsCSSPropertyID aPropID,
+  static SMILValue ValueFromAnimationValue(NonCustomCSSPropertyId aPropId,
                                            dom::Element* aTargetElement,
                                            const AnimationValue& aValue);
 
@@ -96,18 +93,18 @@ class SMILCSSValueType : public SMILType {
    *
    * Returns whether the declaration changed.
    */
-  static bool SetPropertyValues(nsCSSPropertyID, const SMILValue&,
-                                mozilla::DeclarationBlock&);
+  static bool SetPropertyValues(NonCustomCSSPropertyId, const SMILValue&,
+                                mozilla::StyleLockedDeclarationBlock&);
 
   /**
    * Return the CSS property animated by the specified value.
    *
    * @param   aValue   The SMILValue to examine.
-   * @return           The nsCSSPropertyID enum value of the property animated
-   *                   by |aValue|, or eCSSProperty_UNKNOWN if the type of
-   *                   |aValue| is not SMILCSSValueType.
+   * @return           The NonCustomCSSPropertyId enum value of the property
+   *                   animated by |aValue|, or eCSSProperty_UNKNOWN if the
+   *                   type of |aValue| is not SMILCSSValueType.
    */
-  static nsCSSPropertyID PropertyFromValue(const SMILValue& aValue);
+  static NonCustomCSSPropertyId PropertyFromValue(const SMILValue& aValue);
 
   /**
    * If |aValue| is an empty value, converts it to a suitable zero value by

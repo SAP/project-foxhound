@@ -4,13 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsJARINPUTSTREAM_h__
-#define nsJARINPUTSTREAM_h__
+#ifndef nsJARINPUTSTREAM_h_
+#define nsJARINPUTSTREAM_h_
 
 #include "nsIInputStream.h"
 #include "nsJAR.h"
 #include "nsTArray.h"
-#include "mozilla/Attributes.h"
 
 /*-------------------------------------------------------------------------
  * Class nsJARInputStream declaration. This class defines the type of the
@@ -70,4 +69,4 @@ class nsJARInputStream final : public nsIInputStream {
   uint32_t CopyDataToBuffer(char*& aBuffer, uint32_t& aCount);
 };
 
-#endif /* nsJARINPUTSTREAM_h__ */
+#endif /* nsJARINPUTSTREAM_h_ */

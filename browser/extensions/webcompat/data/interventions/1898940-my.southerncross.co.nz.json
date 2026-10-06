@@ -1,0 +1,15 @@
+{
+  "label": "my.southerncross.co.nz",
+  "bugs": {
+    "1898940": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://my.southerncross.co.nz/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

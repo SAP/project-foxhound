@@ -1,0 +1,88 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-deqp"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/closure-library/**",
+  "../checkout/deqp/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_deqp__functional__gles3__shadermatrix__add_assign.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__add_const.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__add_dynamic.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__add_uniform.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__determinant.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__div_assign.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__div_const.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__div_dynamic.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__div_uniform.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__inverse.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__matrixcompmult.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__mul_assign.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__mul_const_highp.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__mul_const_lowp.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__mul_const_mediump.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__mul_dynamic_highp.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__mul_dynamic_lowp.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__mul_dynamic_mediump.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__mul_uniform_highp.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__mul_uniform_lowp.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__mul_uniform_mediump.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__negation.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__outerproduct.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__post_decrement.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__post_increment.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__pre_decrement.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__pre_increment.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__sub_assign.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__sub_const.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__sub_dynamic.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__sub_uniform.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__transpose.html"]
+
+["test_2_deqp__functional__gles3__shadermatrix__unary_addition.html"]

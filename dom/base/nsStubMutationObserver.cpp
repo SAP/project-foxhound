@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,9 +10,10 @@
  */
 
 #include "nsStubMutationObserver.h"
+
 #include "mozilla/RefCountType.h"
-#include "nsISupports.h"
 #include "nsINode.h"
+#include "nsISupports.h"
 
 /******************************************************************************
  * nsStubMutationObserver
@@ -58,13 +57,13 @@ class MutationObserverWrapper final : public nsIMutationObserver {
 
   void AttributeWillChange(mozilla::dom::Element* aElement,
                            int32_t aNameSpaceID, nsAtom* aAttribute,
-                           int32_t aModType) override {
+                           AttrModType aModType) override {
     MOZ_ASSERT(mOwner);
     mOwner->AttributeWillChange(aElement, aNameSpaceID, aAttribute, aModType);
   }
 
   void AttributeChanged(mozilla::dom::Element* aElement, int32_t aNameSpaceID,
-                        nsAtom* aAttribute, int32_t aModType,
+                        nsAtom* aAttribute, AttrModType aModType,
                         const nsAttrValue* aOldValue) override {
     MOZ_ASSERT(mOwner);
     mOwner->AttributeChanged(aElement, aNameSpaceID, aAttribute, aModType,
@@ -109,20 +108,6 @@ class MutationObserverWrapper final : public nsIMutationObserver {
   void ParentChainChanged(nsIContent* aContent) override {
     MOZ_ASSERT(mOwner);
     mOwner->ParentChainChanged(aContent);
-  }
-
-  void ARIAAttributeDefaultWillChange(mozilla::dom::Element* aElement,
-                                      nsAtom* aAttribute,
-                                      int32_t aModType) override {
-    MOZ_ASSERT(mOwner);
-    mOwner->ARIAAttributeDefaultWillChange(aElement, aAttribute, aModType);
-  }
-
-  void ARIAAttributeDefaultChanged(mozilla::dom::Element* aElement,
-                                   nsAtom* aAttribute,
-                                   int32_t aModType) override {
-    MOZ_ASSERT(mOwner);
-    mOwner->ARIAAttributeDefaultChanged(aElement, aAttribute, aModType);
   }
 
   MozExternalRefCountType AddRefWrapper() {

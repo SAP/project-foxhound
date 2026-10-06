@@ -1,0 +1,64 @@
+[DEFAULT]
+dupe-manifest = true
+prefs = [
+  "browser.settings-redesign.enabled=false",
+  # Push BackupService idle observer past test runtime; otherwise
+  # takeMeasurements -> PathUtils.join throws on empty
+  # DEFAULT_PARENT_DIR_PATH in headless test environments, surfacing
+  # an unhandled rejection in whatever test happens to be running.
+  "browser.backup.scheduled.idle-threshold-seconds=86400",
+]
+support-files = [
+  "head.js",
+  "privacypane_tests_perwindow.js",
+]
+tags = "os_integration"
+
+["browser_containers_name_input.js"]
+
+["browser_privacy_allowListPreference.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # Bug 1984525
+]
+
+["browser_privacy_allowListPreference_dialog.js"]
+
+["browser_privacy_allowListPreference_reload.js"]
+
+["browser_privacy_allowListPreference_telemetry.js"]
+
+["browser_privacy_dnsoverhttps.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug", # Bug 2009120
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug", # Bug 2009120
+]
+
+["browser_privacy_gpc.js"]
+
+["browser_privacy_ipprotection.js"]
+
+["browser_privacy_passwordGenerationAndAutofill.js"]
+
+["browser_privacy_relayIntegration.js"]
+
+["browser_privacy_segmentation_pref.js"]
+
+["browser_privacy_status_card.js"]
+
+["browser_privacy_syncDataClearing_v2.js"]
+
+["browser_privacy_uploadEnabled.js"]
+
+["browser_privacypane_2.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks",
+]
+
+["browser_privacypane_3.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks",
+]
+
+["browser_sanitizeOnShutdown_prefLocked.js"]
+
+["browser_warning_permanent_private_browsing.js"]

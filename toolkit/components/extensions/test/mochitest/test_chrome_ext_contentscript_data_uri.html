@@ -65,6 +65,7 @@ add_task(async function test_contentscript_data_uri() {
   // Hold on to the tab by the browser, as extension loads are COOP loads, and
   // will break WindowProxy references.
   let win = window.open();
+  await scripts.awaitMessage("tab-ready");
   const browserFrame = win.browsingContext.embedderElement;
   win.location.href = page;
 

@@ -1,4 +1,3 @@
-// |reftest| skip-if(!Intl.hasOwnProperty('DurationFormat')) -- Intl.DurationFormat is not enabled unconditionally
 // Copyright 2024 Google Inc.  All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 

@@ -29,5 +29,4 @@ class PreferenceFront extends FrontClassWithSpec(preferenceSpec) {
   }
 }
 
-exports.PreferenceFront = PreferenceFront;
 registerFront(PreferenceFront);

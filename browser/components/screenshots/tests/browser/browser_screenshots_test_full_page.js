@@ -72,36 +72,14 @@ add_task(async function test_fullpageScreenshot() {
       Assert.equal(result.width, expectedWidth, "Widths should be equal");
       Assert.equal(result.height, expectedHeight, "Heights should be equal");
 
-      // Due to https://bugzil.la/1396587, the pasted image colors differ from
-      // the original image on macOS. Once that bug is fixed, we can remove the
-      // special check for macOS.
-      if (AppConstants.platform === "macosx") {
-        assertPixel(result.color.topLeft, [130, 130, 130], "Top left pixel");
-        assertPixel(result.color.topRight, [66, 170, 171], "Top right pixel");
-        assertPixel(
-          result.color.bottomLeft,
-          [125, 75, 125],
-          "Bottom left pixel"
-        );
-        assertPixel(
-          result.color.bottomRight,
-          [64, 145, 169],
-          "Bottom right pixel"
-        );
-      } else {
-        assertPixel(result.color.topLeft, [111, 111, 111], "Top left pixel");
-        assertPixel(result.color.topRight, [55, 155, 155], "Top right pixel");
-        assertPixel(
-          result.color.bottomLeft,
-          [105, 55, 105],
-          "Bottom left pixel"
-        );
-        assertPixel(
-          result.color.bottomRight,
-          [52, 127, 152],
-          "Bottom right pixel"
-        );
-      }
+      assertPixel(result.color.topLeft, [111, 111, 111], "Top left pixel");
+      assertPixel(result.color.topRight, [55, 155, 155], "Top right pixel");
+      assertPixel(result.color.bottomLeft, [105, 55, 105], "Bottom left pixel");
+      assertPixel(
+        result.color.bottomRight,
+        [52, 127, 152],
+        "Bottom right pixel"
+      );
     }
   );
 });
@@ -167,36 +145,14 @@ add_task(async function test_fullpageScreenshotScrolled() {
       Assert.equal(result.width, expectedWidth, "Widths should be equal");
       Assert.equal(result.height, expectedHeight, "Heights should be equal");
 
-      // Due to https://bugzil.la/1396587, the pasted image colors differ from
-      // the original image on macOS. Once that bug is fixed, we can remove the
-      // special check for macOS.
-      if (AppConstants.platform === "macosx") {
-        assertPixel(result.color.topLeft, [130, 130, 130], "Top left pixel");
-        assertPixel(result.color.topRight, [66, 170, 171], "Top right pixel");
-        assertPixel(
-          result.color.bottomLeft,
-          [125, 75, 125],
-          "Bottom left pixel"
-        );
-        assertPixel(
-          result.color.bottomRight,
-          [64, 145, 169],
-          "Bottom right pixel"
-        );
-      } else {
-        assertPixel(result.color.topLeft, [111, 111, 111], "Top left pixel");
-        assertPixel(result.color.topRight, [55, 155, 155], "Top right pixel");
-        assertPixel(
-          result.color.bottomLeft,
-          [105, 55, 105],
-          "Bottom left pixel"
-        );
-        assertPixel(
-          result.color.bottomRight,
-          [52, 127, 152],
-          "Bottom right pixel"
-        );
-      }
+      assertPixel(result.color.topLeft, [111, 111, 111], "Top left pixel");
+      assertPixel(result.color.topRight, [55, 155, 155], "Top right pixel");
+      assertPixel(result.color.bottomLeft, [105, 55, 105], "Bottom left pixel");
+      assertPixel(
+        result.color.bottomRight,
+        [52, 127, 152],
+        "Bottom right pixel"
+      );
     }
   );
 });

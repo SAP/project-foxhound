@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 add_task(async function browser_test_profile_slow_capture() {
-  Assert.ok(!Services.profiler.IsActive());
+  await ProfilerTestUtils.assertProfilerInactive();
   info("Clear the previous pages just in case we still some open tabs.");
   await Services.profiler.ClearAllPages();
 
@@ -73,7 +73,7 @@ add_task(async function browser_test_profile_very_slow_capture() {
     set: [["devtools.performance.recording.child.timeout_s", 1]],
   });
 
-  Assert.ok(!Services.profiler.IsActive());
+  await ProfilerTestUtils.assertProfilerInactive();
   info("Clear the previous pages just in case we still some open tabs.");
   await Services.profiler.ClearAllPages();
 

@@ -8,84 +8,120 @@ import androidx.core.net.toUri
 import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
-import org.mozilla.fenix.R
+import org.mozilla.fenix.customannotations.Converted
 import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.helpers.AppAndSystemHelper.setNetworkEnabled
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
 import org.mozilla.fenix.helpers.RetryTestRule
+import org.mozilla.fenix.helpers.RetryableComposeTestRule
 import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
-import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.browserScreen
 import org.mozilla.fenix.ui.robots.clickPageObject
 import org.mozilla.fenix.ui.robots.navigationToolbar
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
+import mozilla.components.browser.errorpages.R as errorpagesR
 
 /**
  * Tests that verify errors encountered while browsing websites: unsafe pages, connection errors, etc
  */
-class BrowsingErrorPagesTest : TestSetup() {
-    private val malwareWarning = getStringResource(R.string.mozac_browser_errorpages_safe_browsing_malware_uri_title)
-    private val phishingWarning = getStringResource(R.string.mozac_browser_errorpages_safe_phishing_uri_title)
+class BrowsingErrorPagesTest {
+    private val malwareWarning =
+        getStringResource(errorpagesR.string.mozac_browser_errorpages_safe_browsing_malware_uri_title)
+    private val phishingWarning =
+        getStringResource(errorpagesR.string.mozac_browser_errorpages_safe_phishing_uri_title)
     private val unwantedSoftwareWarning =
-        getStringResource(R.string.mozac_browser_errorpages_safe_browsing_unwanted_uri_title)
-    private val harmfulSiteWarning = getStringResource(R.string.mozac_browser_errorpages_safe_harmful_uri_title)
+        getStringResource(errorpagesR.string.mozac_browser_errorpages_safe_browsing_unwanted_uri_title)
+    private val harmfulSiteWarning =
+        getStringResource(errorpagesR.string.mozac_browser_errorpages_safe_harmful_uri_title)
 
-    @get:Rule
-    val mActivityTestRule = HomeActivityTestRule.withDefaultSettingsOverrides()
+    @get:Rule(order = 0)
+    val fenixTestRule: FenixTestRule = FenixTestRule()
 
-    @get:Rule
-    val memoryLeaksRule = DetectMemoryLeaksRule()
+    private val mockWebServer get() = fenixTestRule.mockWebServer
 
-    @Rule
-    @JvmField
+    @get:Rule(order = 1)
     val retryTestRule = RetryTestRule(3)
 
+    @get:Rule(order = 2)
+    val retryableComposeTestRule = RetryableComposeTestRule {
+        AndroidComposeTestRuleV2(
+            HomeActivityTestRule.withDefaultSettingsOverrides(),
+        ) { it.activity }
+    }
+
+    private val composeTestRule get() = retryableComposeTestRule.current
+
+    @get:Rule(order = 3)
+    val memoryLeaksRule = DetectMemoryLeaksRule(composeTestRule = { composeTestRule })
+
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2326774
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.BrowsingErrorPagesTest#verifyMalwareWebsiteWarningMessageTest"],
+        bug = 2045673,
+        since = "2026-06",
+    )
     @SmokeTest
     @Test
     fun verifyMalwareWebsiteWarningMessageTest() {
         val malwareURl = "http://itisatrap.org/firefox/its-an-attack.html"
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(malwareURl.toUri()) {
             verifyPageContent(malwareWarning)
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2326773
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.BrowsingErrorPagesTest#verifyPhishingWebsiteWarningMessageTest"],
+        bug = 2045673,
+        since = "2026-06",
+    )
     @SmokeTest
     @Test
     fun verifyPhishingWebsiteWarningMessageTest() {
         val phishingURl = "http://itisatrap.org/firefox/its-a-trap.html"
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(phishingURl.toUri()) {
             verifyPageContent(phishingWarning)
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2326772
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.BrowsingErrorPagesTest#verifyUnwantedSoftwareWebsiteWarningMessageTest"],
+        bug = 2045673,
+        since = "2026-06",
+    )
     @SmokeTest
     @Test
     fun verifyUnwantedSoftwareWebsiteWarningMessageTest() {
         val unwantedURl = "http://itisatrap.org/firefox/unwanted.html"
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(unwantedURl.toUri()) {
             verifyPageContent(unwantedSoftwareWarning)
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/329877
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.BrowsingErrorPagesTest#verifyHarmfulWebsiteWarningMessageTest"],
+        bug = 2045673,
+        since = "2026-06",
+    )
     @SmokeTest
     @Test
     fun verifyHarmfulWebsiteWarningMessageTest() {
         val harmfulURl = "https://itisatrap.org/firefox/harmful.html"
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(harmfulURl.toUri()) {
             verifyPageContent(harmfulSiteWarning)
         }
@@ -96,16 +132,16 @@ class BrowsingErrorPagesTest : TestSetup() {
     // This tests the server ERROR_CONNECTION_REFUSED
     @Test
     fun verifyConnectionInterruptedErrorMessageTest() {
-        val testUrl = getGenericAsset(mockWebServer, 1)
+        val testUrl = mockWebServer.getGenericAsset(1)
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(testUrl.url) {
             waitForPageToLoad()
             verifyPageContent(testUrl.content)
             // Disconnecting the server
-            mockWebServer.shutdown()
+            mockWebServer.close()
         }.openThreeDotMenu {
-        }.refreshPage {
+        }.clickRefreshButton {
             waitForPageToLoad()
             verifyConnectionErrorMessage()
         }
@@ -116,32 +152,32 @@ class BrowsingErrorPagesTest : TestSetup() {
     fun verifyAddressNotFoundErrorMessageTest() {
         val url = "ww.example.com"
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(url.toUri()) {
             waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
             verifyAddressNotFoundErrorMessage()
-            clickPageObject(itemWithResId("errorTryAgain"))
+            clickPageObject(composeTestRule, itemWithResId("errorTryAgain"))
             verifyAddressNotFoundErrorMessage()
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2140588
-    @Ignore("Failing, see https://bugzilla.mozilla.org/show_bug.cgi?id=1964989")
+    @Ignore("Failing, see https://bugzilla.mozilla.org/show_bug.cgi?id=1987355")
     @Test
     fun verifyNoInternetConnectionErrorMessageTest() {
         val url = "www.example.com"
 
         setNetworkEnabled(false)
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(url.toUri()) {
             verifyNoInternetConnectionErrorMessage()
         }
 
         setNetworkEnabled(true)
 
-        browserScreen {
-            clickPageObject(itemWithResId("errorTryAgain"))
+        browserScreen(composeTestRule) {
+            clickPageObject(composeTestRule, itemWithResId("errorTryAgain"))
             waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
             verifyPageContent("Example Domain")
         }

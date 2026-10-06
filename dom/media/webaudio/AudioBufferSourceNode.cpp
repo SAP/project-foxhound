@@ -1,24 +1,23 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AudioBufferSourceNode.h"
-#include "nsDebug.h"
-#include "mozilla/dom/AudioBufferSourceNodeBinding.h"
-#include "mozilla/dom/AudioParam.h"
-#include "mozilla/FloatingPoint.h"
-#include "nsContentUtils.h"
-#include "nsMathUtils.h"
+
+#include <algorithm>
+#include <limits>
+
 #include "AlignmentUtils.h"
+#include "AudioDestinationNode.h"
 #include "AudioNodeEngine.h"
 #include "AudioNodeTrack.h"
-#include "AudioDestinationNode.h"
 #include "AudioParamTimeline.h"
-#include <limits>
-#include <algorithm>
 #include "Tracing.h"
+#include "mozilla/dom/AudioBufferSourceNodeBinding.h"
+#include "mozilla/dom/AudioParam.h"
+#include "nsContentUtils.h"
+#include "nsDebug.h"
+#include "nsMathUtils.h"
 
 namespace mozilla::dom {
 
@@ -138,7 +137,9 @@ class AudioBufferSourceNodeEngine final : public AudioNodeEngine {
         NS_ERROR("Bad AudioBufferSourceNodeEngine Int32Parameter");
     }
   }
-  void SetBuffer(AudioChunk&& aBuffer) override { mBuffer = aBuffer; }
+  void SetBuffer(AudioChunk&& aBuffer) override {
+    mBuffer = std::move(aBuffer);
+  }
 
   bool BegunResampling() { return mBeginProcessing == -TRACK_TIME_MAX; }
 
@@ -165,14 +166,21 @@ class AudioBufferSourceNodeEngine final : public AudioNodeEngine {
       mChannels = aChannels;
       mResampler = speex_resampler_init(mChannels, mBufferSampleRate, aOutRate,
                                         SPEEX_RESAMPLER_QUALITY_MIN, nullptr);
+      if (!mResampler) {
+        return;
+      }
     } else {
       if (mResamplerOutRate == aOutRate) {
         return;
       }
-      if (speex_resampler_set_rate(mResampler, mBufferSampleRate, aOutRate) !=
-          RESAMPLER_ERR_SUCCESS) {
-        NS_ASSERTION(false, "speex_resampler_set_rate failed");
-        return;
+      int result =
+          speex_resampler_set_rate(mResampler, mBufferSampleRate, aOutRate);
+      if (result != RESAMPLER_ERR_SUCCESS) {
+        WEB_AUDIO_API_LOG("speex_resampler_set_rate failed: {}", result);
+        // mResampler den_rate and num_rate might have been updated, despite
+        // the error, in which case the resampler will output zeros but
+        // still consume input.  Continue below to update mBeginProcessing
+        // for any change in resampler behavior.
       }
     }
 
@@ -442,10 +450,13 @@ class AudioBufferSourceNodeEngine final : public AudioNodeEngine {
 
   int32_t ComputeFinalOutSampleRate(float aPlaybackRate, float aDetune) {
     float computedPlaybackRate = aPlaybackRate * fdlibm_exp2f(aDetune / 1200.f);
-    // Make sure the playback rate is something our resampler can work with.
+    if (std::isnan(computedPlaybackRate)) {
+      computedPlaybackRate = 1.0f;
+    }
+    // Make sure the playback rate is something our resampler can work with
     int32_t rate = WebAudioUtils::TruncateFloatToInt<int32_t>(
         mSource->mSampleRate / computedPlaybackRate);
-    return rate ? rate : mBufferSampleRate;
+    return rate > 0 ? rate : mBufferSampleRate;
   }
 
   void UpdateSampleRateIfNeeded(uint32_t aChannels, TrackTime aTrackPosition) {
@@ -469,9 +480,6 @@ class AudioBufferSourceNodeEngine final : public AudioNodeEngine {
       detune = mDetuneTimeline.GetValue();
     } else {
       detune = mDetuneTimeline.GetComplexValueAtTime(aTrackPosition);
-    }
-    if (playbackRate <= 0 || std::isnan(playbackRate)) {
-      playbackRate = 1.0f;
     }
 
     int32_t outRate = ComputeFinalOutSampleRate(playbackRate, detune);
@@ -581,7 +589,7 @@ class AudioBufferSourceNodeEngine final : public AudioNodeEngine {
   uint32_t mLoopEnd;
   uint32_t mBufferPosition;
   int32_t mBufferSampleRate;
-  int32_t mResamplerOutRate;
+  int32_t mResamplerOutRate;  // used if mResampler is set or mChannels == 0
   uint32_t mChannels;
   RefPtr<AudioNodeTrack> mDestination;
 
@@ -697,7 +705,7 @@ void AudioBufferSourceNode::Start(double aWhen, double aOffset,
   mDuration = aDuration.WasPassed() ? aDuration.Value()
                                     : std::numeric_limits<double>::min();
 
-  WEB_AUDIO_API_LOG("%f: %s %u Start(%f, %g, %g)", Context()->CurrentTime(),
+  WEB_AUDIO_API_LOG("{:f}: {} {} Start({:f}, {}, {})", Context()->CurrentTime(),
                     NodeType(), Id(), aWhen, aOffset, mDuration);
 
   // We can't send these parameters without a buffer because we don't know the
@@ -774,8 +782,8 @@ void AudioBufferSourceNode::Stop(double aWhen, ErrorResult& aRv) {
     return;
   }
 
-  WEB_AUDIO_API_LOG("%f: %s %u Stop(%f)", Context()->CurrentTime(), NodeType(),
-                    Id(), aWhen);
+  WEB_AUDIO_API_LOG("{:f}: {} {} Stop({:f})", Context()->CurrentTime(),
+                    NodeType(), Id(), aWhen);
 
   AudioNodeTrack* ns = mTrack;
   if (!ns || !Context()) {

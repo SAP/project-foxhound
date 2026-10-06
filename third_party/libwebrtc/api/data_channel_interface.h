@@ -32,6 +32,10 @@ namespace webrtc {
 
 // C++ version of: https://www.w3.org/TR/webrtc/#idl-def-rtcdatachannelinit
 // TODO(deadbeef): Use std::optional for the "-1 if unset" things.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
 struct DataChannelInit {
   // Deprecated. Reliability is assumed, and channel will be unreliable if
   // maxRetransmitTime or MaxRetransmits is set.
@@ -69,19 +73,22 @@ struct DataChannelInit {
   // https://w3c.github.io/webrtc-priority/#new-rtcdatachannelinit-member
   std::optional<PriorityValue> priority;
 };
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 // At the JavaScript level, data can be passed in as a string or a blob, so
 // this structure's `binary` flag tells whether the data should be interpreted
 // as binary or text.
 struct DataBuffer {
-  DataBuffer(const rtc::CopyOnWriteBuffer& data, bool binary)
+  DataBuffer(const CopyOnWriteBuffer& data, bool binary)
       : data(data), binary(binary) {}
   // For convenience for unit tests.
   explicit DataBuffer(const std::string& text)
       : data(text.data(), text.length()), binary(false) {}
   size_t size() const { return data.size(); }
 
-  rtc::CopyOnWriteBuffer data;
+  CopyOnWriteBuffer data;
   // Indicates if the received data contains UTF-8 or binary data.
   // Note that the upper layers are left to verify the UTF-8 encoding.
   // TODO(jiayl): prefer to use an enum instead of a bool.
@@ -100,6 +107,7 @@ class DataChannelObserver {
   virtual void OnMessage(const DataBuffer& buffer) = 0;
   // The data channel's buffered_amount has changed.
   virtual void OnBufferedAmountChange(uint64_t /* sent_data_size */) {}
+  virtual void OnMaxMessageSize(int /* max_message_size */) {}
 
   // Override this to get callbacks directly on the network thread.
   // An implementation that does that must not block the network thread
@@ -193,8 +201,8 @@ class RTC_EXPORT DataChannelInterface : public RefCountInterface {
   // Sends `data` to the remote peer. If the data can't be sent at the SCTP
   // level (due to congestion control), it's buffered at the data channel level,
   // up to a maximum of MaxSendQueueSize().
-  // Returns false if the data channel is not in open state or if the send
-  // buffer is full.
+  // Returns false if the data channel is not in open state or if the message is
+  // not sent due to other errors (e.g. full buffer, oversized message)
   // TODO(webrtc:13289): Return an RTCError with information about the failure.
   // TODO(tommi): Remove this method once downstream implementations don't refer
   // to it.

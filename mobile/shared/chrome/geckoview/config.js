@@ -148,7 +148,7 @@ var NewPrefDialog = {
   // New prefs create dialog only allows creating a non-existing preference, doesn't allow for
   // Changing an existing one on-the-fly, tap existing/displayed line item pref for that
   create: function AC_create() {
-    if (this._positiveButton.getAttribute("disabled") == "true") {
+    if (this._positiveButton.hasAttribute("disabled")) {
       return;
     }
 

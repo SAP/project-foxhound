@@ -1,4 +1,3 @@
-// -*- Mode: javascript; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -26,23 +25,19 @@
 
 {
   "chromium_data" : {
-    "cert_file_url": "https://chromium.googlesource.com/chromium/src/+/refs/heads/main/net/http/transport_security_state_static.pins?format=TEXT",
-    "json_file_url": "https://chromium.googlesource.com/chromium/src/+/refs/heads/main/net/http/transport_security_state_static_pins.json?format=TEXT",
+    "cert_file_url": "https://raw.githubusercontent.com/chromium/chromium/refs/heads/main/net/http/transport_security_state_static.pins",
+    "json_file_url": "https://raw.githubusercontent.com/chromium/chromium/refs/heads/main/net/http/transport_security_state_static_pins.json",
     "substitute_pinsets": {
       // Use the larger google_root_pems pinset instead of google
       "google": "google_root_pems"
     },
     "production_pinsets": [
-      "google_root_pems",
-      "facebook",
-      "ncsccs"
+      "google_root_pems"
     ],
     "production_domains": [
       // Chrome's test domains.
       "pinningtest.appspot.com",
-      "pinning-test.badssl.com",
-      // SpiderOak
-      "spideroak.com"
+      "pinning-test.badssl.com"
     ],
     "exclude_domains" : []
    },

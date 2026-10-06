@@ -7,7 +7,7 @@ package org.mozilla.fenix.components.metrics
 import android.content.Context
 import android.content.pm.PackageManager
 import mozilla.components.support.utils.BrowsersCache
-import mozilla.components.support.utils.ext.getPackageInfoCompat
+import mozilla.components.support.utils.ext.packageManagerCompatHelper
 
 object MozillaProductDetector {
     enum class MozillaProducts(val productName: String) {
@@ -46,7 +46,7 @@ object MozillaProductDetector {
 
     fun packageIsInstalled(context: Context, packageName: String): Boolean {
         try {
-            context.packageManager.getPackageInfoCompat(packageName, 0)
+            context.packageManagerCompatHelper.getPackageInfoCompat(packageName, 0)
         } catch (e: PackageManager.NameNotFoundException) {
             return false
         }

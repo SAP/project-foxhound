@@ -11,7 +11,7 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "standardTreeWalkerFilter",
+  "getTreeWalkerFilter",
   "resource://devtools/server/actors/inspector/utils.js",
   true
 );
@@ -28,7 +28,7 @@ class DocumentWalker {
    *
    * @param {DOMNode} node
    * @param {Window} rootWin
-   * @param {Object}
+   * @param {object}
    *        - {Function} filter
    *          A custom filter function Taking in a DOMNode and returning an Int. See
    *          WalkerActor.nodeFilter for an example.
@@ -46,7 +46,11 @@ class DocumentWalker {
     node,
     rootWin,
     {
-      filter = standardTreeWalkerFilter,
+      filter = getTreeWalkerFilter({
+        includeNativeAnonymousContent: false,
+        includePseudoElements: true,
+        includeComments: true,
+      }),
       skipTo = SKIP_TO_PARENT,
       showAnonymousContent = true,
     } = {}

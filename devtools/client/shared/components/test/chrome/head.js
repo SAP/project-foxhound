@@ -342,9 +342,10 @@ async function waitFor(condition = () => true, delay = 50) {
 /**
  * Matches a component tree rendererd using TestRenderer to a given expected JSON
  * snapshot.
- * @param  {String} name
+ *
+ * @param  {string} name
  *         Name of the function derived from a test [step] name.
- * @param  {Object} el
+ * @param  {object} el
  *         React element to be rendered using TestRenderer.
  */
 function matchSnapshot(name, el) {

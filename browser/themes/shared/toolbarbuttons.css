@@ -5,68 +5,136 @@
 @namespace html url("http://www.w3.org/1999/xhtml");
 
 :root {
-  --toolbar-start-end-padding: 8px;
-  --toolbarbutton-outer-padding: 2px;
-  --toolbarbutton-inner-padding: 8px;
-
-  --toolbarbutton-hover-background: color-mix(in srgb, currentColor 17%, transparent);
-  --toolbarbutton-active-background: color-mix(in srgb, currentColor 30%, transparent);
-  --toolbarbutton-outline-color: transparent;
-  --toolbarbutton-hover-outline-color: transparent;
-  --toolbarbutton-active-outline-color: transparent;
-  --toolbarbutton-selected-outline-color: var(--toolbarbutton-active-outline-color);
-  --toolbarbutton-outline: 1px solid var(--toolbarbutton-outline-color);
-  --toolbarbutton-outline-offset: -1px;
-
-  @media (prefers-contrast) {
-    --toolbarbutton-hover-outline-color: currentColor;
-    --toolbarbutton-active-outline-color: currentColor;
-  }
-
-  @media (forced-colors) {
-    --toolbarbutton-outline-color: ButtonText;
-    --toolbarbutton-hover-outline-color: SelectedItem;
-    --toolbarbutton-active-outline-color: ButtonText;
-    --toolbarbutton-selected-outline-color: SelectedItem;
-
-    &[lwtheme] {
-      --toolbarbutton-outline-color: currentColor;
-    }
-  }
-
-  --toolbarseparator-color: color-mix(in srgb, currentColor 60%, transparent);
-
+  /*** Button size adjustments for small windows and uidensity modes. ***/
+  /*** Base toolbarbutton variables are located in toolkit/themes/shared/design-system/src/toolbar.css ***/
   --bookmark-block-padding: 4px;
 
-  &[uidensity="compact"] {
-    --toolbarbutton-outer-padding: 3px;
-    --toolbarbutton-inner-padding: 6px;
+  &:where([uidensity="touch"]) {
+    --toolbarbutton-padding-inner: var(--toolbarbutton-padding-inner-touch);
+    --bookmark-block-padding: 7px;
+  }
+  @media (width <= 900px) {
+    --toolbarbutton-padding-outer: var(--toolbarbutton-padding-outer-narrow);
+  }
+  @media (width <= 800px) {
+    --toolbarbutton-padding-inner: var(--toolbarbutton-padding-inner-narrow);
+    &:where([uidensity="touch"]) {
+      --toolbarbutton-padding-inner: var(--toolbarbutton-padding-inner-touch-narrow);
+    }
+  }
+  /* 700px is just above half of the popular 1366px screen width, so two browser
+     windows put next to each other will be below this threshold. */
+  @media (width <= 700px) {
+    --toolbarbutton-padding-inner: var(--toolbarbutton-padding-inner-compact);
+  }
+  &:where([uidensity="compact"]) {
+    --toolbarbutton-padding-inner: var(--toolbarbutton-padding-inner-compact);
     --bookmark-block-padding: 1px;
   }
 
-  &[uidensity="touch"] {
-    --toolbarbutton-inner-padding: 9px;
-    --bookmark-block-padding: 7px;
+  /* Smart window properties */
+  --smartwindow-ai-toggle-padding: 4px;
+  --smartwindow-ask-btn-gradient: linear-gradient(
+    117deg,
+    rgba(50, 27, 253, 0.3) -17.87%,
+    rgba(207, 48, 226, 0.3) 52.93%,
+    rgba(255, 153, 0, 0.3) 89.02%,
+    rgba(245, 196, 81, 0.3) 109.44%
+  );
+  --smartwindow-ask-btn-bg-opened: transparent;
+  --smartwindow-ask-btn-bg-opened-dark: #321342; /* color of the chrome to simulate a transparent background - needed due to gradient borders */
+  --smartwindow-ask-btn-bg-opened-hover: var(--color-violet-20);
+  --smartwindow-ask-btn-bg-opened-hover-dark: image(color-mix(in srgb, var(--smartwindow-ask-btn-bg-opened-dark) 85%, white));
+  --smartwindow-ask-btn-text-color: light-dark(var(--color-violet-80), var(--color-white));
+  --smartwindow-ask-btn-text-color-opened: light-dark(var(--color-violet-80), var(--color-violet-10));
+  --smartwindow-ask-btn-border-color: light-dark(var(--color-white), transparent);
+  --smartwindow-ask-btn-border-color-opened: light-dark(var(--color-violet-80), transparent);
+  --smartwindow-ask-btn-border-color-hover: light-dark(var(--color-violet-80), var(--color-white));
+  --smartwindow-ask-btn-border-color-active: var(--smartwindow-ask-btn-border-color-hover);
+  --smartwindow-ask-btn-border-color-opened-hover: var(--smartwindow-ask-btn-border-color-hover);
+  --smartwindow-ask-btn-bg-opened-clip: border-box;
+  --smartwindow-ask-btn-icon-stroke-color: light-dark(#ecbcea, var(--color-violet-40));
+  --smartwindow-ask-btn-bg-color: transparent;
+  --smartwindow-ask-btn-text-color-hover: var(--smartwindow-ask-btn-text-color);
+  --smartwindow-ask-btn-bg-hover: transparent;
+  --smartwindow-ask-btn-text-color-opened-hover: var(--smartwindow-ask-btn-text-color-opened);
+  --smartwindow-ask-btn-bg-opened-image: image(var(--smartwindow-ask-btn-bg-opened));
+  --smartwindow-ask-btn-bg-opened-hover-image: none;
+  --smartwindow-ask-btn-bg-image-opened-active: var(--smartwindow-ask-btn-gradient);
+  --smartwindow-ask-btn-text-color-opened-active: var(--smartwindow-ask-btn-text-color);
+  --smartwindow-ask-btn-bg-active: var(--smartwindow-ask-btn-bg-opened);
+  --smartwindow-ask-btn-text-color-active: var(--smartwindow-ask-btn-text-color-opened);
+  --smartwindow-ask-btn-icon-height: var(--size-item-small);
+  --smartwindow-ask-btn-icon-width: var(--size-item-small);
+  /* could instead use --size-item-small (OS-specific 6, 7, or 8) */
+  --smartwindow-ask-btn-inner-padding-inline: 8px;
+
+  --smartwindow-ask-btn-inline-start-padding: 4px;
+  --smartwindow-ask-btn-text-icon-gap: 6px;
+  --smartwindow-toggle-shadow-color: light-dark(
+    color-mix(in srgb, var(--color-violet-60) 20%, transparent),
+    color-mix(in srgb, var(--color-violet-40) 20%, transparent)
+  );
+
+  @media (prefers-color-scheme: dark) {
+    --smartwindow-ask-btn-gradient: linear-gradient(83deg, #5119dc 0.73%, var(--color-violet-30) 98.05%);
+    --smartwindow-ask-btn-bg-opened-image: image(var(--smartwindow-ask-btn-bg-opened-dark)), var(--smartwindow-ask-btn-gradient);
+    --smartwindow-ask-btn-bg-opened-hover-image: var(--smartwindow-ask-btn-bg-opened-hover-dark), var(--smartwindow-ask-btn-gradient);
+    --smartwindow-ask-btn-bg-opened-clip: padding-box, border-box;
+  }
+
+  @media (prefers-contrast) and (not (forced-colors)) {
+    --smartwindow-ask-btn-gradient: none;
+    --smartwindow-ask-btn-border-color: currentColor;
+    --smartwindow-ask-btn-border-color-opened: currentColor;
+  }
+
+  @media (forced-colors) {
+    --smartwindow-ask-btn-gradient: none;
+    --smartwindow-ask-btn-bg-opened-image: none;
+    --smartwindow-ask-btn-bg-opened-hover-image: none;
+    --smartwindow-ask-btn-bg-opened-clip: border-box;
+    --smartwindow-ask-btn-bg-color: var(--button-background-color);
+    --smartwindow-ask-btn-text-color: var(--button-text-color);
+    --smartwindow-ask-btn-text-color-hover: var(--button-text-color-hover);
+    --smartwindow-ask-btn-bg-hover: var(--button-background-color-hover);
+    --smartwindow-ask-btn-text-color-opened: var(--button-text-color-primary);
+    --smartwindow-ask-btn-bg-opened: var(--button-background-color-primary);
+    --smartwindow-ask-btn-bg-opened-dark: var(--button-background-color-primary);
+    --smartwindow-ask-btn-bg-opened-hover: var(--button-background-color-primary-hover);
+    --smartwindow-ask-btn-text-color-opened-hover: var(--button-text-color-primary-hover);
+    --smartwindow-ask-btn-border-color: var(--button-border-color);
+    --smartwindow-ask-btn-border-color-opened: var(--button-border-color-primary);
+    --smartwindow-ask-btn-border-color-hover: var(--border-color-interactive-hover);
+    --smartwindow-ask-btn-border-color-active: var(--border-color-interactive-active);
+    --smartwindow-ask-btn-border-color-opened-hover: var(--button-border-color-primary-hover);
+    --smartwindow-ask-btn-bg-image-opened-active: none;
+    --smartwindow-ask-btn-text-color-opened-active: var(--button-text-color-primary-active);
+    --smartwindow-ask-btn-bg-active: var(--button-background-color-active);
+    --smartwindow-ask-btn-text-color-active: var(--button-text-color-active);
+    --smartwindow-ask-btn-icon-stroke-color: var(--button-text-color);
   }
 }
 
 #TabsToolbar {
   /* Override the inner padding to ensure the dimensions match the tabs, but also making sure
      different types of buttons (combined-buttons-dropmarker or text) still look correct. */
-  --toolbarbutton-inner-padding: calc((var(--tab-min-height) - 16px) / 2);
+  @media (width > 900px) {
+    --toolbarbutton-padding-inner: calc((var(--tab-min-height) - 16px) / 2);
+  }
 }
 
 /* Primary toolbar buttons */
 
 .toolbarbutton-1 {
   :root:not([customizing]) &[disabled] {
-    opacity: var(--toolbarbutton-disabled-opacity);
+    opacity: var(--toolbarbutton-opacity-disabled);
   }
 
   /* Special-case the overflow and the hamburger button so they show up disabled
      in customize mode. */
   &:is(#nav-bar-overflow-button, #PanelUI-menu-button)[disabled] {
-    fill-opacity: var(--toolbarbutton-disabled-opacity);
+    fill-opacity: var(--toolbarbutton-opacity-disabled);
   }
 
   > .toolbarbutton-icon,
@@ -85,7 +153,6 @@
   #forward-button,
   #stop-reload-button,
   #customizableui-special-spring1,
-  #vertical-spacer,
   #customizableui-special-spring2,
   #downloads-button,
   #unified-extensions-button,
@@ -99,6 +166,7 @@
   #email-link-button,
   #screenshot-button,
   #nav-bar-overflow-button,
+  #taskbar-tabs-audio:is([soundplaying], [muted]),
   #fullscreen-button {
     display: revert;
   }
@@ -107,16 +175,17 @@
 toolbar .toolbarbutton-1 {
   appearance: none;
   margin: 0;
-  padding: 0 var(--toolbarbutton-outer-padding);
+  padding: 0 var(--toolbarbutton-padding-outer);
   justify-content: center;
 
   > .toolbarbutton-icon,
   > .toolbarbutton-text,
   > .toolbarbutton-badge-stack {
-    padding: var(--toolbarbutton-inner-padding);
+    padding: var(--toolbarbutton-padding-inner);
     border-radius: var(--toolbarbutton-border-radius);
     outline: var(--toolbarbutton-outline);
     outline-offset: var(--toolbarbutton-outline-offset);
+    overflow-clip-margin: padding-box;
   }
 
   &:focus-visible {
@@ -132,68 +201,58 @@ toolbar .toolbarbutton-1 {
 
   > .toolbarbutton-icon {
     /* horizontal padding + actual icon width */
-    width: calc(2 * var(--toolbarbutton-inner-padding) + 16px);
-    height: calc(2 * var(--toolbarbutton-inner-padding) + 16px);
+    width: calc(2 * var(--toolbarbutton-padding-inner) + 16px);
+    height: calc(2 * var(--toolbarbutton-padding-inner) + 16px);
   }
 
   > .toolbarbutton-text {
-    padding-top: calc(var(--toolbarbutton-inner-padding) - 1px);
+    padding-top: calc(var(--toolbarbutton-padding-inner) - 1px);
     padding-bottom: 0;
     /* To make the hover feedback line up with sibling buttons, it needs the same
      * height as the button icons and the same vertical padding, but as a minimum,
      * because otherwise an increase in text sizes would break things.
      */
-    min-height: calc(16px + 2 * var(--toolbarbutton-inner-padding));
+    min-height: calc(16px + 2 * var(--toolbarbutton-padding-inner));
 
     @media (-moz-platform: macos) {
-      padding-top: calc(var(--toolbarbutton-inner-padding) + 1px);
+      padding-top: calc(var(--toolbarbutton-padding-inner) + 1px);
     }
   }
 
   &:not([disabled]) {
     &:hover > :is(.toolbarbutton-icon, .toolbarbutton-text, .toolbarbutton-badge-stack) {
-      background-color: var(--toolbarbutton-hover-background);
+      background-color: var(--toolbarbutton-background-color-hover);
       color: inherit;
     }
 
     &:is(:hover:active, [open], [checked]) > :is(.toolbarbutton-icon, .toolbarbutton-text, .toolbarbutton-badge-stack) {
-      background-color: var(--toolbarbutton-active-background);
+      background-color: var(--toolbarbutton-background-color-active);
       color: inherit;
     }
 
     &:not(:focus-visible) {
       &:hover > :is(.toolbarbutton-icon, .toolbarbutton-text, .toolbarbutton-badge-stack) {
-        outline-color: var(--toolbarbutton-hover-outline-color);
+        outline-color: var(--toolbarbutton-outline-color-hover);
       }
 
       &:hover:active > :is(.toolbarbutton-icon, .toolbarbutton-text, .toolbarbutton-badge-stack) {
-        outline-color: var(--toolbarbutton-active-outline-color);
+        outline-color: var(--toolbarbutton-outline-color-active);
       }
 
       &:is([open], [checked]) > :is(.toolbarbutton-icon, .toolbarbutton-text, .toolbarbutton-badge-stack) {
-        outline-color: var(--toolbarbutton-selected-outline-color);
+        outline-color: var(--toolbarbutton-outline-color-selected);
       }
     }
   }
 
   &.avatar-button-background > .toolbarbutton-badge-stack {
-    border: 1px solid var(--border-color-card);
-  }
-}
-
-#TabsToolbar .toolbarbutton-1 {
-  margin: 0;
-
-  > .toolbarbutton-icon,
-  > .toolbarbutton-text,
-  > .toolbarbutton-badge-stack {
-    border-radius: var(--tab-border-radius);
+    border: 1px solid var(--card-border-color);
   }
 }
 
 #PanelUI-menu-button {
   /* Adds padding to end of toolbar while making that space click the first button */
-  padding-inline-end: var(--toolbar-start-end-padding);
+  padding-inline-end: var(--toolbar-padding-inline);
 }
 
 toolbar .toolbaritem-combined-buttons {
@@ -206,7 +265,7 @@ toolbar .toolbaritem-combined-buttons {
   > .toolbarbutton-combined-buttons-dropmarker > .toolbarbutton-icon {
     /* same height as regular buttons, but narrower, and for a 12x12 image */
     padding-inline: 2px;
-    padding-block: calc(var(--toolbarbutton-inner-padding) + (16px - 12px) / 2);
+    padding-block: calc(var(--toolbarbutton-padding-inner) + (16px - 12px) / 2);
     width: calc(2 * 2px + 12px);
   }
 }
@@ -223,6 +282,10 @@ toolbar .toolbaritem-combined-buttons {
       content: "";
       border-inline-start: 1px solid currentColor;
     }
+
+    toolbar & {
+      color: light-dark(color-mix(in srgb, currentColor 20%, transparent), color-mix(in srgb, currentColor 30%, transparent));
+    }
   }
 
   > separator:has(+ toolbarbutton:not([disabled]):hover),
@@ -231,8 +294,11 @@ toolbar .toolbaritem-combined-buttons {
   }
 }
 
-toolbar .toolbaritem-combined-buttons > separator {
-  color: light-dark(color-mix(in srgb, currentColor 20%, transparent), color-mix(in srgb, currentColor 30%, transparent));
+.toolbarbutton-combined-buttons-dropmarker {
+  appearance: none;
+  -moz-context-properties: fill;
+  fill: currentColor;
+  list-style-image: url("chrome://global/skin/icons/arrow-down-12.svg");
 }
 
 /* Toolbar button animations */
@@ -262,7 +328,7 @@ toolbar .toolbaritem-combined-buttons > separator {
 
   /* The button should look both disabled and open in customize mode. */
   #nav-bar[customizing] > & > .toolbarbutton-icon {
-    background-color: var(--toolbarbutton-active-background);
+    background-color: var(--toolbarbutton-background-color-active);
   }
 
   > .toolbarbutton-animatable-box {
@@ -449,11 +515,11 @@ toolbarbutton.bookmark-item:not(.subviewbutton) {
 #PersonalToolbar {
   /* These should match the sizing of the bookmark-items in the inline axis
    * (padding and margin, respectively) */
-  --toolbarbutton-inner-padding: 4px;
-  --toolbarbutton-outer-padding: 2px;
+  --toolbarbutton-padding-inner: 4px;
+  --toolbarbutton-padding-outer: 2px;
 
   :root[uidensity="compact"] & {
-    --toolbarbutton-outer-padding: 1px;
+    --toolbarbutton-padding-outer: 1px;
   }
 
   .toolbarbutton-1 {
@@ -482,16 +548,16 @@ toolbarbutton.bookmark-item:not(.subviewbutton) {
   outline-offset: var(--toolbarbutton-outline-offset);
 
   &:not([disabled], [open]):hover {
-    background-color: var(--toolbarbutton-hover-background);
+    background-color: var(--toolbarbutton-background-color-hover);
     color: inherit;
-    outline-color: var(--toolbarbutton-hover-outline-color);
+    outline-color: var(--toolbarbutton-outline-color-hover);
   }
 
   &:hover:active:not([disabled]),
   &[open="true"] {
-    background-color: var(--toolbarbutton-active-background);
+    background-color: var(--toolbarbutton-background-color-active);
     color: inherit;
-    outline-color: var(--toolbarbutton-active-outline-color);
+    outline-color: var(--toolbarbutton-outline-color-active);
   }
 
   &:focus-visible {
@@ -563,7 +629,7 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
 
 #personal-bookmarks {
   /* Make sure there's at least space for the chevron */
-  min-width: calc(16px + 2 * var(--toolbarbutton-inner-padding) + 2 * var(--toolbarbutton-outer-padding));
+  min-width: calc(16px + 2 * var(--toolbarbutton-padding-inner) + 2 * var(--toolbarbutton-padding-outer));
 }
 
 #managed-bookmarks > .toolbarbutton-icon,
@@ -576,33 +642,22 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
   margin-inline-end: 4px;
 }
 
+/* The wrapper selector hides the item in the customize palette, where each
+   widget is wrapped in a toolbarpaletteitem with id wrapper-<widget-id>. */
+:root[disableprofileimport] :is(#import-button, #wrapper-import-button) {
+  display: none;
+}
+
 /* Separators */
 
-/* Override the toolkit styles, and make sure separators are draggable by
- * making them wider, and using a pseudo-element for the visual separator.
- * TODO(bug 1971526): consider actually pushing this down to toolkit */
-#PlacesToolbarItems > toolbarseparator {
-  margin: 0;
-  padding-inline: 4px;
+toolbarseparator {
+  color: var(--toolbarseparator-color);
+  padding-block: var(--toolbarbutton-padding-inner);
 
-  /* When adjacent to the bookmarks items, give the bookmarks items a leading separator. */
-  &::before {
-    content: "";
-    display: block;
-    border-inline-start: 1px solid;
-    border-image-source: linear-gradient(
-      transparent 3.75px,
-      var(--toolbarseparator-color) 3.75px,
-      var(--toolbarseparator-color) calc(100% - 3.75px),
-      transparent calc(100% - 3.75px)
-    );
-    border-image-slice: 1;
-  }
-
-  @media (resolution >= 2x) {
-    &::before {
-      border-inline-start-width: 0.5px;
-    }
+  #PlacesToolbarItems > & {
+    /* Make separators wider so they're easier to drag. Make them also a bit
+     * smaller visually on the vertical axis */
+    padding: 4px;
   }
 }
 
@@ -648,7 +703,7 @@ toolbarspring {
   min-width: 28px;
   max-width: 112px;
 
-  #nav-bar &:not(#vertical-spacer) {
+  #nav-bar &:where(:not(#vertical-spacer)) {
     flex: 80 80;
     /* Ensure flexible spacers don't shrink to nothing so they can be
      * manipulated in customize mode. */
@@ -663,8 +718,155 @@ toolbarspring {
 
 /* Keyboard navigation */
 
-toolbar[keyNav]:not([collapsed="true"], [customizing]) toolbartabstop,
+toolbar[keyNav]:not([collapsed], [customizing]) toolbartabstop,
 #tabbrowser-tabs[orient="vertical"] #tabs-newtab-button,
 #vertical-tabs-newtab-button {
   -moz-user-focus: normal;
+}
+
+/* IP Protection */
+#ipprotection-button {
+  --panel-and-palette-icon-size: var(--size-image-small);
+
+  &:not(:is([overflowedItem="true"], [cui-areatype="panel"])) {
+    > .toolbarbutton-icon {
+      width: calc(2 * var(--toolbarbutton-padding-inner) + var(--size-image-small));
+      max-width: var(--size-image-large);
+      padding-block: 0;
+    }
+
+    > .toolbarbutton-badge-stack > .toolbarbutton-icon {
+      width: var(--size-image-small);
+    }
+  }
+
+  toolbarpaletteitem[place="palette"] > & > .toolbarbutton-icon,
+  toolbarpaletteitem[place="palette"] > & > .toolbarbutton-badge-stack > .toolbarbutton-icon {
+    min-height: 16px;
+    max-height: 16px;
+    max-width: var(--size-image-small);
+  }
+}
+
+/* Smart Window toolbar ask button */
+#smartwindow-ask-button {
+  align-items: center;
+  padding-inline-start: var(--smartwindow-ask-btn-inline-start-padding);
+  padding-inline-end: var(--toolbar-padding-inline);
+}
+
+#smartwindow-ask-button-inner {
+  -moz-user-focus: normal;
+  align-self: center;
+  background-color: var(--smartwindow-ask-btn-bg-color);
+  background-image: var(--smartwindow-ask-btn-gradient);
+  background-origin: border-box;
+  border: 1px solid var(--smartwindow-ask-btn-border-color);
+  border-radius: var(--border-radius-circle);
+  color: var(--smartwindow-ask-btn-text-color);
+  flex-direction: row-reverse;
+  font-weight: var(--font-weight-semibold);
+  gap: var(--smartwindow-ask-btn-text-icon-gap);
+  height: var(--size-item-medium);
+  padding-inline: var(--smartwindow-ask-btn-inner-padding-inline);
+  --toolbarbutton-outline-color-hover: none;
+  --toolbarbutton-background-color-hover: transparent;
+  --toolbarbutton-background-color-active: transparent;
+  --toolbarbutton-border-radius: 0;
+  --toolbarbutton-padding-outer: var(--space-small);
+
+  #smartwindow-ask-button:hover > & {
+    color: var(--smartwindow-ask-btn-text-color-hover);
+    background-color: var(--smartwindow-ask-btn-bg-hover);
+    border-color: var(--smartwindow-ask-btn-border-color-hover);
+    > :is(.toolbarbutton-icon, .toolbarbutton-text) {
+      background-color: transparent;
+      outline-color: transparent;
+    }
+  }
+
+  #smartwindow-ask-button:hover:active > & {
+    background-clip: var(--smartwindow-ask-btn-bg-opened-clip);
+    background-color: var(--smartwindow-ask-btn-bg-active);
+    background-image: var(--smartwindow-ask-btn-bg-opened-image);
+    color: var(--smartwindow-ask-btn-text-color-active);
+    border-color: var(--smartwindow-ask-btn-border-color-active);
+  }
+
+  &:focus-visible {
+    outline: var(--focus-outline);
+
+    @media (forced-colors) {
+      outline-offset: var(--focus-outline-offset);
+    }
+  }
+
+  & > .toolbarbutton-icon {
+    -moz-context-properties: fill, stroke;
+    height: var(--smartwindow-ask-btn-icon-height);
+    stroke: var(--smartwindow-ask-btn-icon-stroke-color);
+    width: var(--smartwindow-ask-btn-icon-width);
+    --toolbarbutton-padding-inner: 0;
+    --focus-outline: none;
+
+    [checked] > & {
+      padding: var(--space-xxsmall);
+    }
+  }
+
+  & > .toolbarbutton-text {
+    display: block;
+    padding-inline-end: var(--space-xsmall);
+    --focus-outline: none;
+    --toolbarbutton-padding-inner: 0;
+  }
+
+  &[aria-expanded="true"] {
+    background-clip: var(--smartwindow-ask-btn-bg-opened-clip);
+    background-color: var(--smartwindow-ask-btn-bg-opened);
+    background-image: var(--smartwindow-ask-btn-bg-opened-image);
+    color: var(--smartwindow-ask-btn-text-color-opened);
+    border-color: var(--smartwindow-ask-btn-border-color-opened);
+  }
+
+  &[aria-expanded="true"] {
+    #smartwindow-ask-button:hover > & {
+      color: var(--smartwindow-ask-btn-text-color-opened-hover);
+      background-color: var(--smartwindow-ask-btn-bg-opened-hover);
+      background-image: var(--smartwindow-ask-btn-bg-opened-hover-image);
+      border-color: var(--smartwindow-ask-btn-border-color-opened-hover);
+
+      &:active {
+        background-clip: border-box;
+        background-image: var(--smartwindow-ask-btn-bg-image-opened-active);
+        color: var(--smartwindow-ask-btn-text-color-opened-active);
+        border-color: var(--smartwindow-ask-btn-border-color-active);
+      }
+    }
+  }
+
+  @media (prefers-contrast) {
+    > .toolbarbutton-icon,
+    > .toolbarbutton-text {
+      outline: none;
+    }
+  }
+}
+
+/* Document Picture-in-Picture API window */
+
+@media (display-mode: picture-in-picture) {
+  #PanelUI-button {
+    display: none;
+  }
+}
+
+#document-pip-return-to-opener-button {
+  @media not (display-mode: picture-in-picture) {
+    display: none;
+  }
+
+  :root[disallowReturnToOpener] & {
+    display: none;
+  }
 }

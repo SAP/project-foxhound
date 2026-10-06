@@ -2,9 +2,6 @@
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
-includes: [sm/non262.js, sm/non262-shell.js]
-flags:
-  - noStrict
 description: |
   pending
 esid: pending
@@ -19,7 +16,7 @@ function f(x) {
 var obj = f(1);
 assert.sameValue(obj[0], undefined);
 assert.sameValue(Object.getOwnPropertyDescriptor(obj, 0).set, undefined);
-assertThrowsInstanceOf(() => { "use strict"; obj[0] = 1; }, TypeError);
+assert.throws(TypeError, () => { "use strict"; obj[0] = 1; });
 
 
 reportCompare(0, 0);

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,30 +10,31 @@
  * attribute.
  */
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/DebugOnly.h"
-#include "mozilla/HashFunctions.h"
-
 #include "nsAttrValue.h"
-#include "nsAttrValueInlines.h"
-#include "nsUnicharUtils.h"
+
+#include <algorithm>
+
+#include "ReferrerInfo.h"
+#include "mozilla/ArrayUtils.h"
 #include "mozilla/AttributeStyles.h"
-#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/BloomFilter.h"
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/DebugOnly.h"
 #include "mozilla/DeclarationBlock.h"
+#include "mozilla/HashFunctions.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/SVGAttrValueWrapper.h"
 #include "mozilla/ServoBindingTypes.h"
 #include "mozilla/ServoUtils.h"
 #include "mozilla/ShadowParts.h"
-#include "mozilla/SVGAttrValueWrapper.h"
 #include "mozilla/URLExtraData.h"
 #include "mozilla/dom/Document.h"
+#include "nsAttrValueInlines.h"
 #include "nsContentUtils.h"
+#include "nsIURI.h"
 #include "nsReadableUtils.h"
 #include "nsStyledElement.h"
-#include "nsIURI.h"
-#include "ReferrerInfo.h"
-#include <algorithm>
+#include "nsUnicharUtils.h"
 
 using namespace mozilla;
 
@@ -418,12 +417,23 @@ void nsAttrValue::SetTo(const nsAString& aValue) {
   }
 }
 
+void nsAttrValue::SetToAssumeUnset(
+    already_AddRefed<mozilla::StringBuffer> aValue) {
+  MOZ_ASSERT(!mBits);
+  SetPtrValueAndType(aValue.take(), eStringBase);
+}
+
 void nsAttrValue::SetTo(nsAtom* aValue) {
   ResetIfSet();
   if (aValue) {
     NS_ADDREF(aValue);
     SetPtrValueAndType(aValue, eAtomBase);
   }
+}
+
+void nsAttrValue::SetToAssumeUnset(already_AddRefed<nsAtom> aValue) {
+  MOZ_ASSERT(!mBits);
+  SetPtrValueAndType(aValue.take(), eAtomBase);
 }
 
 void nsAttrValue::SetTo(int16_t aInt) {
@@ -622,6 +632,11 @@ void nsAttrValue::ToString(nsAString& aResult) const {
     cont = GetMiscContainer();
 
     if (cont->GetString(aResult)) {
+      // Foxhound: the cached serialization is shared between elements, so any
+      // taint for it lives on this nsAttrValue rather than in the container.
+      if (mTaint.hasTaint()) {
+        aResult.AssignTaint(mTaint);
+      }
       return;
     }
   }
@@ -645,7 +660,7 @@ void nsAttrValue::ToString(nsAString& aResult) const {
     case eInteger: {
       nsAutoString intStr;
       intStr.AppendInt(GetIntegerValue());
-      aResult = intStr;
+      aResult = std::move(intStr);
 
       break;
     }
@@ -1347,7 +1362,11 @@ void nsAttrValue::ParseAtom(const nsAString& aValue) {
 void nsAttrValue::ParseAtomArray(nsAtom* aValue) {
   if (MiscContainer* cont = AtomArrayCache::Lookup(aValue)) {
     // Set our MiscContainer to the cached one.
+    // AddRef must happen before ResetIfSet: the cache does not hold a strong
+    // reference, and ResetIfSet could release the last reference to cont if
+    // this nsAttrValue is already holding it.
     NS_ADDREF(cont);
+    ResetIfSet();
     SetPtrValueAndType(cont, eOtherBase);
     return;
   }
@@ -1532,6 +1551,10 @@ nsAtom* nsAttrValue::GetStoredAtom() const {
 
 StringTaint nsAttrValue::GetAtomTaint() const {
   return mTaint;
+}
+
+void nsAttrValue::SetAtomTaint(const StringTaint& aTaint) {
+  mTaint = aTaint;
 }
 
 mozilla::StringBuffer* nsAttrValue::GetStoredStringBuffer() const {
@@ -1951,15 +1974,19 @@ bool nsAttrValue::ParseStyleAttribute(const nsAString& aString,
   if (cachingAllowed) {
     if (MiscContainer* cont = attrStyles->LookupStyleAttr(aString)) {
       // Set our MiscContainer to the cached one.
+      // AddRef must happen before ResetIfSet: the cache does not hold a strong
+      // reference, and ResetIfSet could release the last reference to cont if
+      // this nsAttrValue is already holding it.
       NS_ADDREF(cont);
+      ResetIfSet();
       SetPtrValueAndType(cont, eOtherBase);
       return true;
     }
   }
 
-  RefPtr<DeclarationBlock> decl =
-      DeclarationBlock::FromCssText(aString, data, doc->GetCompatibilityMode(),
-                                    doc->CSSLoader(), StyleCssRuleType::Style);
+  RefPtr<DeclarationBlock> decl = DeclarationBlock::FromCssText(
+      aString, data, doc->GetCompatibilityMode(), doc->GetExistingCSSLoader(),
+      StyleCssRuleType::Style);
   if (!decl) {
     return false;
   }

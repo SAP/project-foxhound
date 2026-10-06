@@ -686,6 +686,14 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
     // Desktop GLSL shaders don't have precision, so don't expect them to be specified.
     mValidateASTOptions.validatePrecision = !IsDesktopGLSpec(mShaderSpec);
 
+    // Disallow expressions deemed too complex.
+    // This needs to be checked before other functions that will traverse the AST
+    // to prevent potential stack overflow crashes.
+    if (compileOptions.limitExpressionComplexity && !limitExpressionComplexity(root))
+    {
+        return false;
+    }
+
     if (!validateAST(root))
     {
         return false;
@@ -707,12 +715,6 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
             mDiagnostics.globalError("internal compiler error translating pixel local storage");
             return false;
         }
-    }
-
-    // Disallow expressions deemed too complex.
-    if (compileOptions.limitExpressionComplexity && !limitExpressionComplexity(root))
-    {
-        return false;
     }
 
     if (shouldRunLoopAndIndexingValidation(compileOptions) &&
@@ -1334,6 +1336,8 @@ void TCompiler::setResourceString()
         << ":MaxFragmentInputVectors:" << mResources.MaxFragmentInputVectors
         << ":MinProgramTexelOffset:" << mResources.MinProgramTexelOffset
         << ":MaxProgramTexelOffset:" << mResources.MaxProgramTexelOffset
+        << ":MaxFragmentUniformBlocks:" << mResources.MaxFragmentUniformBlocks
+        << ":MaxVertexUniformBlocks:" << mResources.MaxVertexUniformBlocks
         << ":MaxDualSourceDrawBuffers:" << mResources.MaxDualSourceDrawBuffers
         << ":MaxViewsOVR:" << mResources.MaxViewsOVR
         << ":NV_draw_buffers:" << mResources.NV_draw_buffers
@@ -1377,6 +1381,7 @@ void TCompiler::setResourceString()
         << ":MaxFragmentAtomicCounterBuffers:" << mResources.MaxFragmentAtomicCounterBuffers
         << ":MaxCombinedAtomicCounterBuffers:" << mResources.MaxCombinedAtomicCounterBuffers
         << ":MaxAtomicCounterBufferSize:" << mResources.MaxAtomicCounterBufferSize
+        << ":MaxComputeUnformBlocks:" << mResources.MaxComputeUniformBlocks
         << ":MaxGeometryUniformComponents:" << mResources.MaxGeometryUniformComponents
         << ":MaxGeometryUniformBlocks:" << mResources.MaxGeometryUniformBlocks
         << ":MaxGeometryInputComponents:" << mResources.MaxGeometryInputComponents
@@ -1400,6 +1405,7 @@ void TCompiler::setResourceString()
         << ":MaxTessControlImageUniforms:" << mResources.MaxTessControlImageUniforms
         << ":MaxTessControlAtomicCounters:" << mResources.MaxTessControlAtomicCounters
         << ":MaxTessControlAtomicCounterBuffers:" << mResources.MaxTessControlAtomicCounterBuffers
+        << ":MaxTessControlUniformBlocks:" << mResources.MaxTessControlUniformBlocks
         << ":MaxTessPatchComponents:" << mResources.MaxTessPatchComponents
         << ":MaxPatchVertices:" << mResources.MaxPatchVertices
         << ":MaxTessGenLevel:" << mResources.MaxTessGenLevel
@@ -1409,7 +1415,9 @@ void TCompiler::setResourceString()
         << ":MaxTessEvaluationUniformComponents:" << mResources.MaxTessEvaluationUniformComponents
         << ":MaxTessEvaluationImageUniforms:" << mResources.MaxTessEvaluationImageUniforms
         << ":MaxTessEvaluationAtomicCounters:" << mResources.MaxTessEvaluationAtomicCounters
-        << ":MaxTessEvaluationAtomicCounterBuffers:" << mResources.MaxTessEvaluationAtomicCounterBuffers;
+        << ":MaxTessEvaluationAtomicCounterBuffers:" << mResources.MaxTessEvaluationAtomicCounterBuffers
+        << ":MaxTessEvaluationUniformBlocks:" << mResources.MaxTessEvaluationUniformBlocks
+    ;
     // clang-format on
 
     mBuiltInResourcesString = strstream.str();

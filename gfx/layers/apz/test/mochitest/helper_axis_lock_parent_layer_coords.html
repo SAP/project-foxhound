@@ -1,0 +1,80 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width; initial-scale=1.0">
+  <title>Axis lock direction detection uses parent-layer coordinates</title>
+  <script type="application/javascript" src="apz_test_native_event_utils.js"></script>
+  <script type="application/javascript" src="apz_test_utils.js"></script>
+  <script src="/tests/SimpleTest/paint_listener.js"></script>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+    }
+    /* Rotating the container 90 degrees clockwise makes a horizontal pan
+       gesture in screen space correspond to a vertical displacement in the
+       scroller's parent-layer coordinate space.  HandlePanning() determines
+       the axis lock direction from the pan gesture displacement.
+         - With the fix: the parent-layer vertical direction is detected,
+           PANNING_LOCKED_Y is set, Y panning proceeds, and the scroller scrolls.
+         - Without the fix: the screen horizontal direction is detected,
+           PANNING_LOCKED_X is set, the Y axis is locked, and the vertical
+           parent-layer displacement is blocked so the scroller does not scroll.
+       The scroller must be scrollable in both X and Y so that HandlePanning()
+       reaches the direction-detection branches instead of the first branch that
+       fires when only one axis is scrollable. */
+    #rotated {
+      transform: rotate(90deg);
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 400px;
+      height: 400px;
+    }
+    #scroller {
+      overflow: scroll;
+      width: 200px;
+      height: 200px;
+      position: absolute;
+      top: 100px;
+      left: 100px;
+    }
+  </style>
+</head>
+<body>
+  <div id="rotated">
+    <div id="scroller">
+      <div style="width: 2000px; height: 2000px;"></div>
+    </div>
+  </div>
+</body>
+<script type="application/javascript">
+async function test() {
+  let scroller = document.getElementById("scroller");
+
+  // A horizontal pan in screen space maps to a vertical displacement in the
+  // scroller's parent-layer space via the 90-degree rotation transform.
+  let scrollEventPromise = waitForScrollEvent(scroller);
+  await panLeftToRight(scroller, 100, 100, 1);
+  await scrollEventPromise;
+
+  ok(scroller.scrollTop > 0,
+     "Horizontal screen pan scrolled the Y axis of the rotated scroller (parent-layer coords used for axis lock)");
+  is(scroller.scrollLeft, 0,
+     "Horizontal screen pan did not scroll the scroller horizontally");
+}
+
+window.onload = async () => {
+  if (getPlatform() == "linux") {
+    // SpecialPowers.isHeadless is broken on Linux (bug 1889039).
+    ok(true, "Skipping test on Linux because of bug 1889039");
+    subtestDone();
+  } else {
+    waitUntilApzStable()
+    .then(async () => test())
+    .then(subtestDone, subtestFailed);
+  }
+};
+</script>
+</html>

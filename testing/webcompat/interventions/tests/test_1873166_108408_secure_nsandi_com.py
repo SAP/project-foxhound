@@ -21,7 +21,7 @@ async def is_warning_shown(client):
 @pytest.mark.asyncio
 @pytest.mark.with_interventions
 async def test_enabled(client):
-    assert await is_warning_shown(client)
+    assert not await is_warning_shown(client)
 
 
 @pytest.mark.only_platforms("android")

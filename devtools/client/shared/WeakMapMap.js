@@ -31,9 +31,9 @@ class WeakMapMap {
    * Returns the value associated to the key and nestedKey, or undefined if
    * there is none.
    *
-   * @param {Object} key
+   * @param {object} key
    *        The key associated with the desired value.
-   * @param {String} nestedKey
+   * @param {string} nestedKey
    *        The nested key associated with the desired value.
    */
   get(key, nestedKey) {
@@ -48,9 +48,9 @@ class WeakMapMap {
    * Returns the value associated to the key and nestedKey, or undefined if
    * there is none.
    *
-   * @param {Object} key
+   * @param {object} key
    *        The key associated with the desired value.
-   * @param {String} nestedKey
+   * @param {string} nestedKey
    *        The nested key associated with the desired value.
    */
   has(key, nestedKey) {
@@ -61,9 +61,9 @@ class WeakMapMap {
 
   /**
    *
-   * @param {Object} key
+   * @param {object} key
    *        The key associated with the value.
-   * @param {String} nestedKey
+   * @param {string} nestedKey
    *        The nested key associated with the value.
    * @param {any} value
    *        The value to add.
@@ -80,9 +80,9 @@ class WeakMapMap {
   /**
    * Removes the value associated to the key and nestedKey.
    *
-   * @param {Object} key
+   * @param {object} key
    *        The key associated with the desired value.
-   * @param {String} nestedKey
+   * @param {string} nestedKey
    *        The nested key associated with the desired value.
    *
    * @returns True if an element in the store has been removed successfully.

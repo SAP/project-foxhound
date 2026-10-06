@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * Any copyright is dedicated to the Public Domain.
+/* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 package org.mozilla.geckoview.test.util
@@ -8,9 +7,9 @@ import android.graphics.Bitmap
 import android.util.Base64
 import android.util.Log
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import java.io.ByteArrayOutputStream
 import kotlin.math.min
+import kotlin.test.assertNotNull
 
 object AssertUtils {
     private val lineLength = 1024
@@ -26,8 +25,8 @@ object AssertUtils {
     @JvmStatic
     fun assertScreenshotResult(result: Bitmap, comparisonImage: Bitmap) {
         assertNotNull(
-            "Screenshot is not null",
             result,
+            "Screenshot is not null",
         )
         assertEquals("Widths are the same", comparisonImage.width, result.width)
         assertEquals("Heights are the same", comparisonImage.height, result.height)

@@ -72,3 +72,6 @@ fuzzy(0-14,0-4) == clipped-text.html clipped-text-ref.html
 fails-if(useDrawSnapshot) needs-focus != caret-right.html caret-right-notref.html
 fails-if(useDrawSnapshot) needs-focus != caret-left-rtl.html caret-left-rtl-notref.html
 fails-if(useDrawSnapshot) needs-focus != caret-right-vertical.html caret-right-vertical-notref.html
+
+# Expected to fail on android because we disable the spinboxes there.
+fails-if(Android) != number-spinbox-padding.html number-spinbox-padding-notref.html

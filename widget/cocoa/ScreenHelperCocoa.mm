@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -138,18 +136,18 @@ static already_AddRefed<Screen> MakeScreen(NSScreen* aScreen) {
     dpi = rect.height / (heightMM / MM_PER_INCH_FLOAT);
   }
   MOZ_LOG(sScreenLog, LogLevel::Debug,
-          ("New screen [%d %d %d %d (%d %d %d %d) %d %f %f %f]", rect.x, rect.y,
+          ("New screen [%d %d %d %d (%d %d %d %d) %u %f %f %f]", rect.x, rect.y,
            rect.width, rect.height, availRect.x, availRect.y, availRect.width,
            availRect.height, pixelDepth, contentsScaleFactor.scale,
            defaultCssScaleFactor.scale, dpi));
 
-  // Getting the refresh rate is a little hard on OS X. We could use
+  // Getting the refresh rate is a little hard on macOS. We could use
   // CVDisplayLinkGetNominalOutputVideoRefreshPeriod, but that's a little
   // involved. Ideally we could query it from vsync. For now, we leave it out.
-  RefPtr<Screen> screen =
-      new Screen(rect, availRect, pixelDepth, pixelDepth, 0,
-                 contentsScaleFactor, defaultCssScaleFactor, dpi,
-                 Screen::IsPseudoDisplay::No, Screen::IsHDR(isHDR));
+  auto screen =
+      MakeRefPtr<Screen>(rect, availRect, pixelDepth, pixelDepth, 0,
+                         contentsScaleFactor, defaultCssScaleFactor, dpi,
+                         Screen::IsPseudoDisplay::No, Screen::IsHDR(isHDR));
   return screen.forget();
 
   NS_OBJC_END_TRY_BLOCK_RETURN(nullptr);

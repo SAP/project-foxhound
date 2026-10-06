@@ -28,7 +28,6 @@ console.error = function (msg, ...args) {
 };
 
 const req = require.context(".", true, /\.test\.jsx?$/);
-const files = req.keys();
 
 // This exposes sinon assertions to chai.assert
 sinon.assert.expose(assert, { prefix: "" });
@@ -174,6 +173,9 @@ const TEST_GLOBAL = {
   ContentSearchUIController: function () {},
   // eslint-disable-next-line object-shorthand
   ContentSearchHandoffUIController: function () {},
+  ContextId: {
+    request: () => "ContextId",
+  },
   Cc: {
     "@mozilla.org/browser/nav-bookmarks-service;1": {
       addObserver() {},
@@ -195,6 +197,7 @@ const TEST_GLOBAL = {
       insert() {},
       markPageAsTyped() {},
       removeObserver() {},
+      pageFrecencyThreshold() {},
     },
     "@mozilla.org/io/string-input-stream;1": {
       createInstance() {
@@ -221,6 +224,11 @@ const TEST_GLOBAL = {
         return {};
       },
     },
+    "@mozilla.org/network/protocol;1?name=http": {
+      getService() {
+        return this;
+      },
+    },
   },
   Ci: {
     nsICryptoHash: {},
@@ -241,6 +249,7 @@ const TEST_GLOBAL = {
       MODE_REJECT_OR_ACCEPT: 2,
       MODE_UNSET: 3,
     },
+    nsIProtocolProxyChannelFilter: {},
   },
   Cu: {
     importGlobalProperties() {},
@@ -250,6 +259,15 @@ const TEST_GLOBAL = {
   console: {
     ...console,
     error() {},
+    createInstance() {
+      return {
+        log() {},
+        debug() {},
+        info() {},
+        warn() {},
+        error() {},
+      };
+    },
   },
   dump() {},
   EveryWindow: {
@@ -360,6 +378,22 @@ const TEST_GLOBAL = {
     home: "US",
     REGION_TOPIC: "browser-region-updated",
   },
+  SearchService: {
+    init() {
+      return Promise.resolve();
+    },
+    getVisibleEngines: () =>
+      Promise.resolve([{ identifier: "google" }, { identifier: "bing" }]),
+    defaultEngine: {
+      identifier: "google",
+      aliases: ["@google"],
+    },
+    defaultPrivateEngine: {
+      identifier: "bing",
+      aliases: ["@bing"],
+    },
+    getEngineByAlias: async () => null,
+  },
   Services: {
     dirsvc: {
       get: () => ({ parent: { parent: { path: "appPath" } } }),
@@ -417,25 +451,24 @@ const TEST_GLOBAL = {
         spec,
       }),
     },
-    search: {
-      init() {
-        return Promise.resolve();
-      },
-      getVisibleEngines: () =>
-        Promise.resolve([{ identifier: "google" }, { identifier: "bing" }]),
-      defaultEngine: {
-        identifier: "google",
-        aliases: ["@google"],
-      },
-      defaultPrivateEngine: {
-        identifier: "bing",
-        aliases: ["@bing"],
-      },
-      getEngineByAlias: async () => null,
-    },
+
     scriptSecurityManager: {
       createNullPrincipal() {},
       getSystemPrincipal() {},
+    },
+    vc: {
+      compare(a, b) {
+        // Rather than re-write Services.vc.compare completely, do
+        // a simple comparison of the major version.
+        // This means this function will give the wrong output for differences
+        // in minor versions, but should be sufficient for unit tests.
+        let majorA = parseInt(a, 10);
+        let majorB = parseInt(b, 10);
+        if (majorA === majorB) {
+          return 0;
+        }
+        return majorA > majorB ? 1 : -1;
+      },
     },
     wm: {
       getMostRecentWindow: () => window,
@@ -497,12 +530,15 @@ const TEST_GLOBAL = {
   FX_MONITOR_OAUTH_CLIENT_ID: "fake_client_id",
   ExperimentAPI: {},
   NimbusFeatures: FakeNimbusFeatures([
+    "adsBackend",
     "glean",
     "newtab",
+    "newtabTrainhop",
     "pocketNewtab",
     "newtabSmartShortcuts",
     "newtabInferredPersonalization",
     "newtabWidgets",
+    "newtabOhttpImages",
     "cookieBannerHandling",
   ]),
   TelemetryEnvironment: {
@@ -542,6 +578,9 @@ const TEST_GLOBAL = {
 
   getFxAccountsSingleton() {},
   AboutNewTab: {},
+  AboutHomeStartupCache: {
+    onPreloadedNewTabMessage() {},
+  },
   Glean: {
     activityStream: {
       eventClick: {
@@ -677,14 +716,19 @@ const TEST_GLOBAL = {
       submit() {},
     },
   },
+  userAgent: "",
   Utils: {
     SERVER_URL: "bogus://foo",
   },
   NewTabContentPing,
+  ProxyService: {
+    registerChannelFilter() {},
+    unregisterChannelFilter() {},
+  },
 };
 overrider.set(TEST_GLOBAL);
 
 describe("activity-stream", () => {
   after(() => overrider.restore());
-  files.forEach(file => req(file));
+  req.keys().forEach(file => req(file));
 });

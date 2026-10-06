@@ -7,7 +7,10 @@ const MODULE_PATH = getRootDirectory(gTestPath) + "file_csp_module.sys.mjs";
 
 async function test_in_module(fun, directive, blockedURI) {
   await SpecialPowers.pushPrefEnv({
-    set: [["security.csp.testing.allow_internal_csp_violation", true]],
+    set: [
+      ["security.csp.testing.allow_internal_csp_violation", true],
+      ["security.chrome_baseline_csp.enabled", true],
+    ],
   });
 
   let violationPromise = BrowserTestUtils.waitForEvent(

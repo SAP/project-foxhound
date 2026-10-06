@@ -839,6 +839,12 @@ bool TIntermAggregate::isConstantNullValue() const
 
 const TConstantUnion *TIntermAggregate::getConstantValue() const
 {
+    // Cap constant-fold allocations.  This runs during parsing, before the
+    // post-parse ValidateTypeSizeLimitations check that uses the configurable
+    // ShBuiltInResources limits (which are not accessible here).  Firefox
+    // defaults to MaxPrivateVariableSizeInBytes = 1 MB, so 256K floats.
+    constexpr size_t kMaxConstantFoldElements = 256 * 1024;
+
     if (!hasConstantValue())
     {
         return nullptr;
@@ -850,14 +856,25 @@ const TConstantUnion *TIntermAggregate::getConstantValue() const
     if (isArray())
     {
         size_t elementSize = mArguments.front()->getAsTyped()->getType().getObjectSize();
-        constArray         = new TConstantUnion[elementSize * getOutermostArraySize()];
+        angle::CheckedNumeric<size_t> checkedArraySize = elementSize;
+        checkedArraySize *= getOutermostArraySize();
+        size_t arraySize = 0;
+        if (!checkedArraySize.AssignIfValid(&arraySize) || arraySize > kMaxConstantFoldElements)
+        {
+            return nullptr;
+        }
+        constArray = new TConstantUnion[arraySize];
 
         size_t elementOffset = 0u;
         for (TIntermNode *constructorArg : mArguments)
         {
             const TConstantUnion *elementConstArray =
                 constructorArg->getAsTyped()->getConstantValue();
-            ASSERT(elementConstArray);
+            if (!elementConstArray)
+            {
+                delete[] constArray;
+                return nullptr;
+            }
             size_t elementSizeBytes = sizeof(TConstantUnion) * elementSize;
             memcpy(static_cast<void *>(&constArray[elementOffset]),
                    static_cast<const void *>(elementConstArray), elementSizeBytes);
@@ -866,8 +883,12 @@ const TConstantUnion *TIntermAggregate::getConstantValue() const
         return constArray;
     }
 
-    size_t resultSize    = getType().getObjectSize();
-    constArray           = new TConstantUnion[resultSize];
+    size_t resultSize = getType().getObjectSize();
+    if (resultSize > kMaxConstantFoldElements)
+    {
+        return nullptr;
+    }
+    constArray = new TConstantUnion[resultSize];
     TBasicType basicType = getBasicType();
 
     size_t resultIndex = 0u;
@@ -877,6 +898,11 @@ const TConstantUnion *TIntermAggregate::getConstantValue() const
         TIntermNode *argument                       = mArguments.front();
         TIntermTyped *argumentTyped                 = argument->getAsTyped();
         const TConstantUnion *argumentConstantValue = argumentTyped->getConstantValue();
+        if (!argumentConstantValue)
+        {
+            delete[] constArray;
+            return nullptr;
+        }
         // Check the special case of constructing a matrix diagonal from a single scalar,
         // or a vector from a single scalar.
         if (argumentTyped->getType().getObjectSize() == 1u)
@@ -949,6 +975,11 @@ const TConstantUnion *TIntermAggregate::getConstantValue() const
         TIntermTyped *argumentTyped                 = argument->getAsTyped();
         size_t argumentSize                         = argumentTyped->getType().getObjectSize();
         const TConstantUnion *argumentConstantValue = argumentTyped->getConstantValue();
+        if (!argumentConstantValue)
+        {
+            delete[] constArray;
+            return nullptr;
+        }
         for (size_t i = 0u; i < argumentSize; ++i)
         {
             if (resultIndex >= resultSize)
@@ -2239,8 +2270,17 @@ const TConstantUnion *TIntermBinary::getConstantValue() const
         return nullptr;
     }
 
-    const TConstantUnion *leftConstantValue   = mLeft->getConstantValue();
-    int index                                 = mRight->getConstantValue()->getIConst();
+    const TConstantUnion *leftConstantValue = mLeft->getConstantValue();
+    if (!leftConstantValue)
+    {
+        return nullptr;
+    }
+    const TConstantUnion *rightConstantValue = mRight->getConstantValue();
+    if (!rightConstantValue)
+    {
+        return nullptr;
+    }
+    int index = rightConstantValue->getIConst();
     const TConstantUnion *constIndexingResult = nullptr;
     if (mOp == EOpIndexDirect)
     {

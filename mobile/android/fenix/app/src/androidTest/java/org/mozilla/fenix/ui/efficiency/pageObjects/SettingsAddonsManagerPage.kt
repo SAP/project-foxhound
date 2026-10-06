@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.fenix.ui.efficiency.pageObjects
 
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
@@ -30,6 +34,14 @@ class SettingsAddonsManagerPage(composeRule: AndroidComposeTestRule<HomeActivity
                 NavigationStep.Click(HomeSelectors.MAIN_MENU_BUTTON),
                 NavigationStep.Click(MainMenuSelectors.EXTENSIONS_BUTTON),
                 // Click the add-on to be able to open the details
+            ),
+        )
+
+        NavigationRegistry.register(
+            from = pageName,
+            to = "HomePage",
+            steps = listOf(
+                NavigationStep.Click(SettingsAddonsManagerSelectors.NAVIGATE_BACK_TOOLBAR_BUTTON),
             ),
         )
     }

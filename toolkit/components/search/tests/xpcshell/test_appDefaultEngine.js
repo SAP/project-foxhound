@@ -34,9 +34,9 @@ add_setup(async function () {
 });
 
 add_task(async function test_appDefaultEngine() {
-  await Promise.all([Services.search.init(), promiseAfterSettings()]);
+  await Promise.all([SearchService.init(), promiseAfterSettings()]);
   Assert.equal(
-    Services.search.appDefaultEngine.name,
+    SearchService.appDefaultEngine.name,
     "an-engine",
     "Should have returned the correct app default engine"
   );
@@ -52,7 +52,7 @@ add_task(async function test_changeRegion() {
   await promiseSetHomeRegion("tr");
 
   Assert.equal(
-    Services.search.appDefaultEngine.name,
+    SearchService.appDefaultEngine.name,
     // Very important this default is not the first one in the list (which is
     // the next fallback if the config one can't be found).
     "tr-engine",

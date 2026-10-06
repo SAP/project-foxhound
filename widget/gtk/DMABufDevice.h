@@ -1,17 +1,13 @@
-/* -*- Mode: C; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __MOZ_DMABUF_LIB_WRAPPER_H__
-#define __MOZ_DMABUF_LIB_WRAPPER_H__
+#ifndef MOZ_DMABUF_LIB_WRAPPER_H_
+#define MOZ_DMABUF_LIB_WRAPPER_H_
 
 #include "mozilla/StaticMutex.h"
 #include "mozilla/widget/DMABufFormats.h"
 #include <gbm.h>
-#include <mutex>
 
 #undef LOGDMABUF
 #ifdef MOZ_LOGGING
@@ -182,7 +178,7 @@ class GbmLib {
                                            uint32_t width, uint32_t height,
                                            uint32_t format, uint32_t flags) {
     if (!gbm) {
-      return 0;
+      return nullptr;
     }
     return sCreateSurface(gbm, width, height, format, flags);
   }
@@ -223,6 +219,8 @@ class DRMFormat;
 class DMABufDeviceLock;
 
 class DMABufDevice final {
+  friend class DMABufDeviceLock;
+
  public:
   bool Init();
 
@@ -262,6 +260,8 @@ class MOZ_RAII DMABufDeviceLock final {
   DMABufDeviceLock();
   ~DMABufDeviceLock();
 
+  static void Shutdown();
+
   gbm_device* GetGBMDevice() {
     sMutex.AssertCurrentThreadOwns();
     return mGBMDevice;
@@ -283,4 +283,4 @@ class MOZ_RAII DMABufDeviceLock final {
 }  // namespace widget
 }  // namespace mozilla
 
-#endif  // __MOZ_DMABUF_LIB_WRAPPER_H__
+#endif  // MOZ_DMABUF_LIB_WRAPPER_H_

@@ -1,0 +1,84 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Web Serial API - IPC Security Hardening</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="serial_test_utils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script>
+
+"use strict";
+
+SimpleTest.waitForExplicitFinish();
+
+SimpleTest.registerCleanupFunction(async () => {
+  await navigator.serial.resetToDefaultMockDevices();
+  await cleanupSerialPorts();
+});
+
+// Test that opening a port whose device has been disconnected fails.
+// This exercises the parent-side enumeration check in OpenRunnable that
+// validates the portId against the currently-enumerated device list.
+add_task(async function testOpenAfterDeviceRemoved() {
+  await navigator.serial.removeAllMockDevices();
+  await simulateDeviceConnection(
+    "security-test-device", "/dev/ttySEC0", 0x2345, 0xBCDE
+  );
+
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  ok(port, "Should get a port");
+  const info = port.getInfo();
+  is(info.usbVendorId, 0x2345, "expected usbVendorId from port");
+  is(info.usbProductId, 0xBCDE, "expected usbProductId from port");
+
+  // Disconnect the device while we still hold the port reference.
+  await navigator.serial.simulateDeviceDisconnection("security-test-device");
+
+  // Opening should fail because the device is no longer enumerated.
+  await Assert.rejects(
+    port.open({ baudRate: 9600 }),
+    /NetworkError/,
+    "Opening a disconnected device should throw NetworkError"
+  );
+
+  await navigator.serial.resetToDefaultMockDevices();
+});
+
+// Test that re-adding a device after disconnect allows reopening.
+add_task(async function testReconnectAfterDisconnect() {
+  await navigator.serial.removeAllMockDevices();
+  await simulateDeviceConnection(
+    "reconnect-device", "/dev/ttyRCN", 0x1111, 0x2222
+  );
+
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  // Disconnect and try to open - should fail.
+  await navigator.serial.simulateDeviceDisconnection("reconnect-device");
+  await Assert.rejects(
+    port.open({ baudRate: 9600 }),
+    /NetworkError/,
+    "Should get NetworkError after disconnect"
+  );
+
+  // Re-add the same device and request a new port - should work.
+  await simulateDeviceConnection(
+    "reconnect-device", "/dev/ttyRCN", 0x1111, 0x2222
+  );
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port2 = await navigator.serial.requestPort({ filters: [] });
+  await port2.open({ baudRate: 9600 });
+  ok(true, "Should be able to open after device reconnects");
+  await port2.close();
+
+  await navigator.serial.resetToDefaultMockDevices();
+});
+
+</script>
+</body>
+</html>

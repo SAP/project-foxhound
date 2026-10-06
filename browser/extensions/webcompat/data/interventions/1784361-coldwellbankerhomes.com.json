@@ -1,0 +1,15 @@
+{
+  "label": "coldwellbankerhomes.com",
+  "bugs": {
+    "1784361": {
+      "issue": "broken-images",
+      "matches": ["*://*.coldwellbankerhomes.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

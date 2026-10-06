@@ -263,7 +263,7 @@ const kTeststr_nl_Latn =
   " a als volgt te werk om een configuratiebestand te maken sitemap gen py ebruik filters om de s op te geven die moeten worden toegevoegd of uitgesloten op basis van de opmaaktaal elke sitemap mag alleen de s bevatten voor een bepaalde opmaaktaal dit";
 const kTeststr_nn_Latn =
   " a for verktylina til å hjelpa deg å nå oss merk at pagerank syninga ikkje automatisk kjem til å henta inn informasjon frå sider med argument dvs frå sider med eit i en dersom datamaskina di er plassert bak ein mellomtenar for vevsider kan det verka";
-const kTeststr_no_Latn =
+const kTeststr_nb_Latn =
   " a er obligatorisk tidsforskyvning plassering av katalogsøk planinformasjon loggfilbane gruppenavn kontoinformasjon passord domene gruppeinformasjon alle kampanjesporing alternativ bruker grupper oppgaveplanlegger oppgavehistorikk kontosammendrag antall";
 const kTeststr_nr_Latn =
   "ikomiti elawulako yegatja  emhlanganweni walo ]imithetho mgomo ye anc ibekwa malunga wayo begodu ubudosiphambili kugandelela lokho okutjhiwo yi  lokha nayithi abantu ngibo  ";
@@ -523,7 +523,7 @@ const kTestPairs = [
   ["mt", "MALTESE", kTeststr_mt_Latn],
   ["mr", "MARATHI", kTeststr_mr_Deva, [false, 0, "te", 3]],
   ["ne", "NEPALI", kTeststr_ne_Deva],
-  ["no", "NORWEGIAN", kTeststr_no_Latn],
+  ["nb", "NORWEGIAN", kTeststr_nb_Latn],
   ["fa", "PERSIAN", kTeststr_fa_Arab],
   ["pl", "POLISH", kTeststr_pl_Latn],
   ["pt", "PORTUGUESE", kTeststr_pt_Latn],

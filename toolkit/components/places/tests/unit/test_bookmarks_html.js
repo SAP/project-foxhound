@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -212,11 +210,11 @@ add_task(async function test_import_chromefavicon() {
   // 8. export to bookmarks.exported.html
   // 9. empty bookmarks db and continue
 
-  const PAGE_URI = NetUtil.newURI("http://example.com/chromefavicon_page");
-  const CHROME_FAVICON_URI = NetUtil.newURI(
+  const PAGE_URI = Services.io.newURI("http://example.com/chromefavicon_page");
+  const CHROME_FAVICON_URI = Services.io.newURI(
     "chrome://global/skin/icons/delete.svg"
   );
-  const CHROME_FAVICON_URI_2 = NetUtil.newURI(
+  const CHROME_FAVICON_URI_2 = Services.io.newURI(
     "chrome://global/skin/icons/error.svg"
   );
 

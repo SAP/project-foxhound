@@ -19,7 +19,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=396843
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
-/** Test for Bug 396843 **/
+/** Test for Bug 396843 */
 SimpleTest.waitForExplicitFinish();
 
 var allNodes = [];
@@ -30,7 +30,7 @@ function HTML_TAG(name) {
   allNodes.push(document.createElement(name));
 }
 
-/* List copy/pasted from nsHTMLTagList.h */
+/* List copy/pasted from nsHTMLTagList.inc */
 HTML_TAG("a", "Anchor")
 HTML_TAG("abbr", "Span")
 HTML_TAG("acronym", "Span")

@@ -21,6 +21,7 @@
                 android:id="@+id/input_label"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:textColor="?android:attr/textColorPrimary"
                 tools:text="Please enter your name"
                 android:labelFor="@+id/input_value"
                 android:contentDescription="@string/mozac_feature_prompts_content_description_input_label"/>

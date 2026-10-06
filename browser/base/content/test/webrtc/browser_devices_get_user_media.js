@@ -16,6 +16,32 @@ function clearPermissions() {
   PermissionTestUtils.remove(gBrowser.contentPrincipal, "microphone");
 }
 
+async function addTabAndLoadBrowser() {
+  const tab = BrowserTestUtils.addTab(gBrowser, "https://example.com");
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  return tab;
+}
+
+async function checkSplitViewPanelVisible(tab, isVisible) {
+  const panel = document.getElementById(tab.linkedPanel);
+  await BrowserTestUtils.waitForMutationCondition(
+    panel,
+    { attributes: true },
+    () => panel.classList.contains("split-view-panel") == isVisible
+  );
+  if (isVisible) {
+    Assert.ok(
+      gBrowser.splitViewBrowsers.includes(tab.linkedBrowser),
+      "Split view panel is active."
+    );
+  } else {
+    Assert.ok(
+      !gBrowser.splitViewBrowsers.includes(tab.linkedBrowser),
+      "Split view panel is inactive."
+    );
+  }
+}
+
 var gTests = [
   {
     desc: "getUserMedia audio+video",
@@ -142,6 +168,132 @@ var gTests = [
       is(getPerm("camera"), Services.perms.PROMPT_ACTION, "cam once");
       clearPermissions();
       await closeStream();
+    },
+  },
+
+  {
+    desc: "getUserMedia video only popup notification with split view",
+    run: async function checkVideoOnlyWithSplitView() {
+      const tab1 = gBrowser.selectedTab;
+      const tab2 = await addTabAndLoadBrowser();
+      const urlbarButton = document.getElementById("split-view-button");
+
+      info("Activate split view.");
+      const splitView = gBrowser.addTabSplitView([tab1, tab2]);
+      for (const tab of splitView.tabs) {
+        await checkSplitViewPanelVisible(tab, true);
+      }
+
+      info("Select tabs using tab panels.");
+      await SimpleTest.promiseFocus(tab1.linkedBrowser);
+      let panel = document.getElementById(tab1.linkedPanel);
+      Assert.ok(
+        panel.classList.contains("deck-selected"),
+        "First panel is selected."
+      );
+
+      let observerPromise = expectObserverCalled("getUserMedia:request");
+      let promise = promisePopupNotificationShown("webRTC-shareDevices");
+      await promiseRequestDevice(false, true);
+      await promise;
+      await observerPromise;
+      Assert.ok(
+        PopupNotifications.getNotification("webRTC-shareDevices"),
+        "webRTC-shareDevices popup notification is present"
+      );
+
+      await SimpleTest.promiseFocus(tab2.linkedBrowser);
+      panel = document.getElementById(tab2.linkedPanel);
+      Assert.ok(
+        panel.classList.contains("deck-selected"),
+        "Second panel is selected."
+      );
+
+      // Notification should only be present on the splitview panel it affects
+      Assert.ok(
+        !PopupNotifications.getNotification("webRTC-shareDevices"),
+        "webRTC-shareDevices popup notification is not present"
+      );
+
+      info("Switch back to original split view tab.");
+      await BrowserTestUtils.switchTab(gBrowser, tab1);
+      for (const tab of splitView.tabs) {
+        await checkSplitViewPanelVisible(tab, true);
+      }
+
+      // Check we are able to go back to the original splitview panel and see notification
+      Assert.ok(
+        PopupNotifications.getNotification("webRTC-shareDevices"),
+        "webRTC-shareDevices popup notification is present"
+      );
+
+      info("Select tabs using tabs");
+      await BrowserTestUtils.switchTab(gBrowser, tab2);
+      panel = document.getElementById(tab2.linkedPanel);
+      Assert.ok(
+        panel.classList.contains("deck-selected"),
+        "Second panel is selected."
+      );
+
+      Assert.ok(
+        !PopupNotifications.getNotification("webRTC-shareDevices"),
+        "webRTC-shareDevices popup notification is not present"
+      );
+
+      info("Switch back to original split view tab.");
+      await BrowserTestUtils.switchTab(gBrowser, tab1);
+      for (const tab of splitView.tabs) {
+        await checkSplitViewPanelVisible(tab, true);
+      }
+
+      Assert.ok(
+        PopupNotifications.getNotification("webRTC-shareDevices"),
+        "webRTC-shareDevices popup notification is present"
+      );
+
+      await BrowserTestUtils.waitForMutationCondition(
+        PopupNotifications.panel,
+        { childList: true },
+        () => PopupNotifications.panel?.firstElementChild
+      );
+      await BrowserTestUtils.waitForMutationCondition(
+        PopupNotifications.panel.firstElementChild,
+        { childList: true },
+        () => PopupNotifications.panel.firstElementChild?.button
+      );
+      let indicator = promiseIndicatorWindow();
+      let observerPromise1 = expectObserverCalled(
+        "getUserMedia:response:allow"
+      );
+      let observerPromise2 = expectObserverCalled("recording-device-events");
+      await promiseMessage("ok", () => {
+        PopupNotifications.panel.firstElementChild.button.click();
+      });
+      await observerPromise1;
+      await observerPromise2;
+      Assert.deepEqual(
+        await getMediaCaptureState(),
+        { video: true },
+        "expected camera to be shared"
+      );
+
+      await indicator;
+      await checkSharingUI({ video: true });
+      is(getPerm("microphone"), Services.perms.UNKNOWN_ACTION, "no mic once");
+      is(getPerm("camera"), Services.perms.PROMPT_ACTION, "cam once");
+      clearPermissions();
+      await closeStream();
+
+      info("Remove the split view, keeping tabs intact.");
+      splitView.unsplitTabs();
+      await checkSplitViewPanelVisible(tab1, false);
+      await checkSplitViewPanelVisible(tab2, false);
+      await BrowserTestUtils.waitForMutationCondition(
+        urlbarButton,
+        { attributes: true },
+        () => BrowserTestUtils.isHidden(urlbarButton)
+      );
+      BrowserTestUtils.removeTab(tab2);
     },
   },
 

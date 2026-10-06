@@ -18,7 +18,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=156716
 <pre id="test">
 <script class="testbody" type="application/javascript">
 
-/** Test for Bug 156716 **/
+/** Test for Bug 156716 */
 
 // Note that many other tests are in test_acid3_test46.html .
 
@@ -281,6 +281,12 @@ function run() {
   mediatypes.forEach(function(type) {
     expression_should_be_known("display-mode: " + type);
   });
+
+  if (SpecialPowers.getBoolPref("dom.documentpip.enabled")) {
+    expression_should_be_known("display-mode: picture-in-picture");
+  } else {
+    expression_should_not_be_known("display-mode: picture-in-picture");
+  }
 
   expression_should_not_be_known("display-mode: invalid")
 

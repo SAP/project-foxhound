@@ -3,6 +3,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Generic types for CSS values related to effects.
+use crate::derives::*;
+
+use crate::values::generics::{NonNegative, ZeroToOne};
 
 /// A generic value for a single `box-shadow`.
 #[derive(
@@ -18,8 +21,10 @@
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C)]
+#[typed(todo_derive_fields)]
 pub struct GenericBoxShadow<Color, SizeLength, BlurShapeLength, ShapeLength> {
     /// The base shadow.
     pub base: GenericSimpleShadow<Color, SizeLength, BlurShapeLength>,
@@ -47,37 +52,39 @@ pub use self::GenericBoxShadow as BoxShadow;
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[animation(no_bound(U))]
 #[repr(C, u8)]
-pub enum GenericFilter<Angle, NonNegativeFactor, ZeroToOneFactor, Length, Shadow, U> {
+#[typed(todo_derive_fields)]
+pub enum GenericFilter<Angle, Factor, Length, Shadow, U> {
     /// `blur(<length>)`
     #[css(function)]
-    Blur(Length),
+    Blur(#[animation(field_bound)] NonNegative<Length>),
     /// `brightness(<factor>)`
     #[css(function)]
-    Brightness(NonNegativeFactor),
+    Brightness(#[animation(field_bound)] NonNegative<Factor>),
     /// `contrast(<factor>)`
     #[css(function)]
-    Contrast(NonNegativeFactor),
+    Contrast(#[animation(field_bound)] NonNegative<Factor>),
     /// `grayscale(<factor>)`
     #[css(function)]
-    Grayscale(ZeroToOneFactor),
+    Grayscale(#[animation(field_bound)] ZeroToOne<Factor>),
     /// `hue-rotate(<angle>)`
     #[css(function)]
     HueRotate(Angle),
     /// `invert(<factor>)`
     #[css(function)]
-    Invert(ZeroToOneFactor),
+    Invert(#[animation(field_bound)] ZeroToOne<Factor>),
     /// `opacity(<factor>)`
     #[css(function)]
-    Opacity(ZeroToOneFactor),
+    Opacity(#[animation(field_bound)] ZeroToOne<Factor>),
     /// `saturate(<factor>)`
     #[css(function)]
-    Saturate(NonNegativeFactor),
+    Saturate(#[animation(field_bound)] NonNegative<Factor>),
     /// `sepia(<factor>)`
     #[css(function)]
-    Sepia(ZeroToOneFactor),
+    Sepia(#[animation(field_bound)] ZeroToOne<Factor>),
     /// `drop-shadow(...)`
     #[css(function)]
     DropShadow(Shadow),
@@ -105,8 +112,10 @@ pub use self::GenericFilter as Filter;
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C)]
+#[typed(todo_derive_fields)]
 pub struct GenericSimpleShadow<Color, SizeLength, ShapeLength> {
     /// Color.
     pub color: Color,

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>MSE: synthetic HEVC hev1 SPS-less CMAF chunked playback must not drop frames (bug 2039853)</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script type="text/javascript" src="mediasource.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+<script class="testbody" type="text/javascript">
+
+// The fixture is an ffmpeg testsrc clip encoded as hev1 with in-band parameter
+// sets, a single GOP, fragmented mid-GOP into CMAF chunks. It is produced by
+// generate_hevc_synth_fixtures.py in this directory:
+//
+//   python3 generate_hevc_synth_fixtures.py \
+//       --tag hev1 --in-band-params --sps-less \
+//       --name-prefix bug2039853_hevc_
+//
+// That script holds the exact ffmpeg invocation, the libx265 parameters, and
+// the post-processing that zeros the hvcC numOfArrays byte and splits the
+// moof+mdat pairs into chunks.
+//   - bug2039853_hevc_init.mp4: init segment whose hvcC has numOfArrays == 0
+//     (NumSPS() == 0) -- the spec-valid SPS-less out-of-band record of a hev1
+//     stream whose VPS/SPS/PPS travel in-band.
+//   - bug2039853_hevc_chunk0.m4s: the keyframe chunk (in-band VPS/SPS/PPS + IDR).
+//   - bug2039853_hevc_chunk1..4.m4s: non-keyframe TRAIL chunks, no in-band params.
+//
+// The init segment is appended ONCE; the chunks are appended individually (the
+// low-latency delivery pattern). The MSE pipeline hands the samples of each
+// separately-appended media segment a pointer-distinct (but byte-identical)
+// SPS-less out-of-band extradata buffer.
+
+SimpleTest.waitForExplicitFinish();
+
+// Maximum tolerated fraction of expected frames missing from decode.
+const MAX_DROP_RATIO = 0.1;
+
+const INIT = "bug2039853_hevc_init.mp4";
+const CHUNKS = [
+  "bug2039853_hevc_chunk0.m4s",
+  "bug2039853_hevc_chunk1.m4s",
+  "bug2039853_hevc_chunk2.m4s",
+  "bug2039853_hevc_chunk3.m4s",
+  "bug2039853_hevc_chunk4.m4s",
+];
+const CODECS = [
+  'video/mp4; codecs="hev1.1.6.L60.90"',
+  'video/mp4; codecs="hev1.1.6.L63.90"',
+  'video/mp4; codecs="hev1.1.6.L93.90"',
+  'video/mp4; codecs="hev1.1.6.L123.B0"',
+];
+
+// Count coded frames in a CMAF segment by summing trun.sample_count across
+// every moof/traf/trun. The init segment has no moof and contributes 0. This
+// derives the expected frame total directly from the fixture bytes so the test
+// has no magic numbers.
+function countSamplesInSegment(arrayBuffer) {
+  const bytes = new Uint8Array(arrayBuffer);
+  const view = new DataView(arrayBuffer);
+  function fourcc(off) {
+    return String.fromCharCode(
+      bytes[off], bytes[off + 1], bytes[off + 2], bytes[off + 3]
+    );
+  }
+  function walk(start, end) {
+    let off = start;
+    let count = 0;
+    while (off + 8 <= end) {
+      const size = view.getUint32(off);
+      if (size < 8 || off + size > end) {
+        break;
+      }
+      const type = fourcc(off + 4);
+      if (type === "moof" || type === "traf") {
+        count += walk(off + 8, off + size);
+      } else if (type === "trun") {
+        // FullBox(version:1 + flags:3) then sample_count:uint32.
+        count += view.getUint32(off + 12);
+      }
+      off += size;
+    }
+    return count;
+  }
+  return walk(0, bytes.length);
+}
+
+runWithMSE(async (ms, el) => {
+  el.controls = true;
+  await once(ms, "sourceopen");
+  ok(true, "Received a sourceopen event");
+
+  const supported = CODECS.find(c => MediaSource.isTypeSupported(c));
+  if (!supported) {
+    ok(
+      SpecialPowers.Services.appinfo.OS != "WINNT" &&
+        SpecialPowers.Services.appinfo.OS != "Darwin" &&
+        SpecialPowers.Services.appinfo.OS != "Android",
+      "HEVC is not supported on the current platform; skipping"
+    );
+    SimpleTest.finish();
+    return;
+  }
+
+  const sb = ms.addSourceBuffer(supported);
+  ok(sb, `Created a SourceBuffer for ${supported}`);
+
+  // Fetch each segment, count its samples from trun, then append. The expected
+  // frame total is the sum across init (0) and all chunks.
+  let expectedFrames = 0;
+  for (const uri of [INIT, ...CHUNKS]) {
+    const buffer = await fetchWithXHR(uri);
+    expectedFrames += countSamplesInSegment(buffer);
+    await loadSegment(sb, buffer);
+  }
+  ok(
+    expectedFrames > 0,
+    `Counted ${expectedFrames} coded frame(s) across init + ${CHUNKS.length} chunks via trun.sample_count`
+  );
+
+  ms.endOfStream();
+  // Live DASH-style timestamps may not start at 0; seek into the buffered range.
+  el.currentTime = sb.buffered.start(0);
+
+  const endedPromise = once(el, "ended");
+  el.play();
+  await endedPromise;
+  ok(el.ended, "Playback ended normally");
+
+  const q = el.getVideoPlaybackQuality();
+  info(
+    `totalVideoFrames=${q.totalVideoFrames} droppedVideoFrames=${q.droppedVideoFrames} expected=${expectedFrames} currentTime=${el.currentTime}`
+  );
+
+  const minRequired = Math.ceil(expectedFrames * (1 - MAX_DROP_RATIO));
+  ok(
+    q.totalVideoFrames >= minRequired,
+    `Decoded ${q.totalVideoFrames} frames of ${expectedFrames} frames. (minimum required: ${minRequired})`
+  );
+
+  SimpleTest.finish();
+});
+
+</script>
+</body>
+</html>

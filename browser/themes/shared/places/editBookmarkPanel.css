@@ -11,11 +11,11 @@
 #editBMPanel_newFolderButton {
   appearance: none;
   margin: 0;
-  border: 0;
-  border-radius: 4px;
+  border: var(--button-border);
+  border-radius: var(--button-border-radius);
   background-color: var(--button-background-color);
   color: var(--button-text-color);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   min-width: 0;
   padding: 8px 16px;
 
@@ -25,10 +25,14 @@
 
   &:hover {
     background-color: var(--button-background-color-hover);
+    border-color: var(--button-border-color-hover);
+    color: var(--button-text-color-hover);
   }
 
   &:hover:active {
     background-color: var(--button-background-color-active);
+    border-color: var(--button-border-color-active);
+    color: var(--button-text-color-active);
   }
 }
 
@@ -42,7 +46,7 @@
 }
 
 #editBookmarkPanelContent > label:not(.editBMPanel_nameRow) {
-  padding-top: var(--arrowpanel-padding);
+  padding-top: var(--panel-padding);
 }
 
 #editBookmarkPanelContent > #editBMPanel_folderTreeRow,
@@ -61,7 +65,7 @@
 }
 
 #editBookmarkPanelContent {
-  padding: 0.8em var(--arrowpanel-padding) var(--arrowpanel-padding);
+  padding: 0.8em var(--panel-padding) var(--panel-padding);
 }
 
 #editBMPanel_selectionCount {
@@ -69,7 +73,7 @@
 }
 
 #editBookmarkPanelBottomContent {
-  padding: 0 var(--arrowpanel-padding) calc(var(--arrowpanel-padding) / 2);
+  padding: 0 var(--panel-padding) calc(var(--panel-padding) / 2);
 }
 
 #editBookmarkPanelBottomContent > checkbox {
@@ -96,14 +100,19 @@
   min-height: 32px;
   color: var(--button-text-color);
   background-color: var(--button-background-color);
-  border-radius: 4px;
+  border: var(--button-border);
+  border-radius: var(--button-border-radius);
 
   &:hover {
     background-color: var(--button-background-color-hover);
+    border-color: var(--button-border-color-hover);
+    color: var(--button-text-color-hover);
   }
 
   &:hover:active {
-    background-color: var(--button-background-color-hover);
+    background-color: var(--button-background-color-active);
+    border-color: var(--button-border-color-active);
+    color: var(--button-text-color-active);
   }
 }
 

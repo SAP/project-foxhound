@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -127,7 +125,7 @@ IAPZHitTester::HitTestResult WRHitTester::GetAPZCAtPoint(
       // to fire (see bug 1634763), which is fixed in Fission mode and not
       // worth fixing in non-Fission mode.
       layersIdExists =
-          CompositorBridgeParent::HasIndirectShadowTree(result.mLayersId);
+          CompositorBridgeParent::HasLayerTreeState(result.mLayersId);
       if (FissionAutostart()) {
         MOZ_ASSERT(result.mScrollId == ScrollableLayerGuid::NULL_SCROLL_ID ||
                    !layersIdExists);

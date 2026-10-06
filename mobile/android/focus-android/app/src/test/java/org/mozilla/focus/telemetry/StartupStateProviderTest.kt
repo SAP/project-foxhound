@@ -287,7 +287,6 @@ class StartupStateProviderTest {
                 LogEntry.ActivityCreated(mainActivityClass),
                 LogEntry.ActivityStarted(mainActivityClass),
                 LogEntry.AppStarted,
-
                 // VIEW: open non-drawing IntentReceiverActivity, then HomeActivity.
             ),
             listOf(
@@ -314,7 +313,6 @@ class StartupStateProviderTest {
                 LogEntry.ActivityCreated(mainActivityClass),
                 LogEntry.ActivityStarted(mainActivityClass),
                 LogEntry.AppStarted,
-
                 // untruncated MAIN: open MainActivity directly.
             ),
             listOf(
@@ -326,7 +324,6 @@ class StartupStateProviderTest {
                 LogEntry.ActivityCreated(mainActivityClass),
                 LogEntry.ActivityStarted(mainActivityClass),
                 LogEntry.AppStarted,
-
                 // truncated VIEW: open non-drawing IntentReceiverActivity, then MainActivity.
             ),
             listOf(
@@ -336,7 +333,6 @@ class StartupStateProviderTest {
                 LogEntry.ActivityCreated(mainActivityClass),
                 LogEntry.ActivityStarted(mainActivityClass),
                 LogEntry.AppStarted,
-
                 // untruncated VIEW: open non-drawing IntentReceiverActivity, then MainActivity.
             ),
             listOf(
@@ -368,7 +364,6 @@ class StartupStateProviderTest {
                 LogEntry.ActivityStopped(mainActivityClass),
                 LogEntry.ActivityStarted(mainActivityClass),
                 LogEntry.AppStarted,
-
                 // untruncated MAIN: open HomeActivity directly.
             ),
             listOf(
@@ -379,7 +374,6 @@ class StartupStateProviderTest {
                 LogEntry.ActivityStopped(mainActivityClass),
                 LogEntry.ActivityStarted(mainActivityClass),
                 LogEntry.AppStarted,
-
                 // truncated VIEW: open non-drawing IntentReceiverActivity, then HomeActivity.
             ),
             listOf(
@@ -388,7 +382,6 @@ class StartupStateProviderTest {
                 LogEntry.ActivityCreated(irActivityClass),
                 LogEntry.ActivityStarted(mainActivityClass),
                 LogEntry.AppStarted,
-
                 // untruncated VIEW: open non-drawing IntentReceiverActivity, then HomeActivity.
             ),
             listOf(

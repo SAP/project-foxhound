@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozIServicesLogSink.idl"
 #include "nsISupports.idl"
 
 interface mozIPlacesPendingOperation;
@@ -38,22 +37,6 @@ interface mozISyncedBookmarksMirrorCallback : nsISupports {
   void handleError(in nsresult code, in AString message);
 };
 
-[scriptable, uuid(37485984-a6ab-46e3-9b0c-e8b613413ef3)]
-interface mozISyncedBookmarksMirrorLogger : nsISupports {
-  const short LEVEL_OFF = 0;
-  const short LEVEL_ERROR = 1;
-  const short LEVEL_WARN = 2;
-  const short LEVEL_DEBUG = 3;
-  const short LEVEL_TRACE = 4;
-
-  attribute short maxLevel;
-
-  void error(in AString message);
-  void warn(in AString message);
-  void debug(in AString message);
-  void trace(in AString message);
-};
-
 [scriptable, builtinclass, uuid(f0a6217d-8344-4e68-9995-bbf5554be86e)]
 interface mozISyncedBookmarksMerger : nsISupports {
   // Synced item kinds. These are stored in the mirror database.
@@ -82,9 +65,6 @@ interface mozISyncedBookmarksMerger : nsISupports {
   // triggers must be set up before calling `merge`.
   attribute mozIStorageConnection db;
 
-  // Optional; used for logging.
-  attribute mozIServicesLogSink logger;
-
   // Merges the local and remote bookmark trees, applies the merged tree to
   // Places, and stages locally changed and reconciled items for upload. When
   // the merge finishes, either `callback.handleSuccess` or
@@ -98,7 +78,7 @@ interface mozISyncedBookmarksMerger : nsISupports {
     in mozISyncedBookmarksMirrorCallback callback
   );
 
-  // Resets the database connection and logger. This does _not_ automatically
+  // Resets the database connection. This does _not_ automatically
   // close the database connection.
   void reset();
 };

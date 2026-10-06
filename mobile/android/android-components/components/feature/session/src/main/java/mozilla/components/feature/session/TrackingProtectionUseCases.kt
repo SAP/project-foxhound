@@ -10,6 +10,7 @@ import mozilla.components.browser.state.selector.findTabOrCustomTabOrSelectedTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.engine.content.blocking.TrackerLog
+import mozilla.components.concept.engine.content.blocking.TrackingProtectionEvent
 import mozilla.components.concept.engine.content.blocking.TrackingProtectionException
 import mozilla.components.support.base.log.logger.Logger
 import java.lang.Exception
@@ -173,8 +174,83 @@ class TrackingProtectionUseCases(
         }
     }
 
+    /**
+     * Use case for fetching the tracking protection events from the database.
+     */
+    class FetchTrackingEventsUseCase internal constructor(
+        private val engine: Engine,
+    ) {
+        /**
+         * Fetch the tracking protection events from the database for a given date range.
+         *
+         * @param dateFrom start of the date range, in milliseconds since epoch.
+         * @param dateTo end of the date range, in milliseconds since epoch.
+         * @param onSuccess callback informing about the trackers that have been blocked in the
+         * given [dateFrom]-[dateTo] timeframe.
+         * @param onError (optional) callback invoked if fetching the data caused an exception.
+         */
+        operator fun invoke(
+            dateFrom: Long,
+            dateTo: Long,
+            onSuccess: (List<TrackingProtectionEvent>) -> Unit,
+            onError: (Throwable) -> Unit = {},
+        ) {
+            engine.getTrackingProtectionEventsByDateRange(dateFrom, dateTo, onSuccess, onError)
+        }
+    }
+
+    /**
+     * Use case for fetching the total number of tracking protection events from the database.
+     */
+    class FetchTotalTrackersBlockedUseCase internal constructor(
+        private val engine: Engine,
+    ) {
+        /**
+         * Fetch the total number of tracking protection events from the database.
+         *
+         * @param onSuccess callback informing about the absolute total number of blocked trackers.
+         * @param onError (optional) callback invoked if fetching the data caused an exception.
+         */
+        operator fun invoke(
+            onSuccess: (Int) -> Unit,
+            onError: (Throwable) -> Unit = {},
+        ) {
+            engine.sumAllTrackingProtectionEvents(onSuccess, onError)
+        }
+    }
+
+    /**
+     * Use case for fetching the earliest recorded date in the tracking protection database.
+     */
+    class FetchEarliestTrackingDateUseCase internal constructor(
+        private val engine: Engine,
+    ) {
+        /**
+         * Fetch the earliest recorded date in the tracking protection database.
+         *
+         * @param onSuccess callback informing about the earliest epoch time (rounded to the earliest hour)
+         * from which we have recorded data about blocked trackers.
+         * @param onError (optional) callback invoked if fetching the data caused an exception.
+         */
+        operator fun invoke(
+            onSuccess: (Long?) -> Unit,
+            onError: (Throwable) -> Unit = {},
+        ) {
+            engine.getEarliestTrackingProtectionDate(onSuccess, onError)
+        }
+    }
+
     val fetchTrackingLogs: FetchTrackingLogUserCase by lazy {
         FetchTrackingLogUserCase(store, engine)
+    }
+    val fetchTrackingEvents: FetchTrackingEventsUseCase by lazy {
+        FetchTrackingEventsUseCase(engine)
+    }
+    val fetchTotalTrackersBlocked: FetchTotalTrackersBlockedUseCase by lazy {
+        FetchTotalTrackersBlockedUseCase(engine)
+    }
+    val fetchEarliestTrackingDate: FetchEarliestTrackingDateUseCase by lazy {
+        FetchEarliestTrackingDateUseCase(engine)
     }
     val addException: AddExceptionUseCase by lazy {
         AddExceptionUseCase(store, engine)

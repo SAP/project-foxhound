@@ -10,12 +10,16 @@
 
 #include "test/pc/e2e/analyzer/video/single_process_encoded_image_data_injector.h"
 
-#include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <optional>
+#include <vector>
 
-#include "absl/memory/memory.h"
 #include "api/video/encoded_image.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/synchronization/mutex.h"
+#include "test/pc/e2e/analyzer/video/encoded_image_data_injector.h"
 
 namespace webrtc {
 namespace webrtc_pc_e2e {
@@ -145,7 +149,8 @@ EncodedImageExtractionResult SingleProcessEncodedImageDataInjector::ExtractData(
     for (size_t i = 0; i <= max_spatial_index; ++i) {
       out.SetSpatialLayerFrameSize(i, 0);
     }
-    return EncodedImageExtractionResult{*id, out, true};
+    return EncodedImageExtractionResult{
+        .id = *id, .image = out, .discard = true};
   }
 
   // Make a pass from begin to end to restore origin payload and erase discarded
@@ -175,7 +180,8 @@ EncodedImageExtractionResult SingleProcessEncodedImageDataInjector::ExtractData(
   }
   out.set_size(pos);
 
-  return EncodedImageExtractionResult{*id, out, discard};
+  return EncodedImageExtractionResult{
+      .id = *id, .image = out, .discard = discard};
 }
 
 SingleProcessEncodedImageDataInjector::ExtractionInfoVector::

@@ -20,8 +20,10 @@
 //!
 //! See the file named [COPYRIGHT](https://github.com/hsivonen/chardetng_c/blob/master/COPYRIGHT).
 
-use encoding_rs::Encoding;
 use chardetng::EncodingDetector;
+use chardetng::Iso2022JpDetection;
+use chardetng::Utf8Detection;
+use encoding_rs::Encoding;
 
 /// Instantiates a Web browser-oriented detector for guessing what
 /// character encoding a stream of bytes is encoded in.
@@ -39,8 +41,14 @@ use chardetng::EncodingDetector;
 /// The instantiated detector must be freed after use using
 /// `chardetng_detectordetector_free`.
 #[no_mangle]
-pub unsafe extern "C" fn chardetng_encoding_detector_new() -> *mut EncodingDetector {
-    Box::into_raw(Box::new(EncodingDetector::new()))
+pub unsafe extern "C" fn chardetng_encoding_detector_new(
+    allow_iso_2022_jp: bool,
+) -> *mut EncodingDetector {
+    Box::into_raw(Box::new(EncodingDetector::new(if allow_iso_2022_jp {
+        Iso2022JpDetection::Allow
+    } else {
+        Iso2022JpDetection::Deny
+    })))
 }
 
 /// Deallocates a detector obtained from `chardetng_encodingdetector_new`.
@@ -50,6 +58,16 @@ pub unsafe extern "C" fn chardetng_encoding_detector_free(detector: *mut Encodin
 }
 
 /// Queries whether the TLD is considered non-generic and could affect the guess.
+///
+/// # Panics
+///
+/// If `tld` is `NULL` but `tld_len` is not zero.
+///
+/// If `tld` contains non-ASCII, period, or upper-case letters. (The panic
+/// condition is intentionally limited to signs of failing to extract the
+/// label correctly, failing to provide it in its Punycode form, and failure
+/// to lower-case it. Full DNS label validation is intentionally not performed
+/// to avoid panics when the reality doesn't match the specs.)
 ///
 /// # Undefined Behavior
 ///
@@ -119,7 +137,7 @@ pub unsafe extern "C" fn chardetng_encoding_detector_feed(
 }
 
 /// Guess the encoding given the bytes pushed to the detector so far
-/// (via `chardetng_encoding_detector_feed()`), the top-level domain name 
+/// (via `chardetng_encoding_detector_feed()`), the top-level domain name
 /// from which the bytes were loaded, and an indication of whether to
 /// consider UTF-8 as a permissible guess.
 ///
@@ -128,7 +146,7 @@ pub unsafe extern "C" fn chardetng_encoding_detector_feed(
 /// the label is an internationalized top-level domain name, it must be
 /// provided in its Punycode form. If the TLD that the stream was loaded
 /// from is unavalable, `NULL` may be passed instead (and 0 as `tld_len`),
-/// which is equivalent to passing pointer to "com" as `tld` and 3 as 
+/// which is equivalent to passing pointer to "com" as `tld` and 3 as
 /// `tld_len`.
 ///
 /// If the `allow_utf8` argument is set to `false`, the return value of
@@ -166,11 +184,18 @@ pub unsafe extern "C" fn chardetng_encoding_detector_guess(
     tld_len: usize,
     allow_utf8: bool,
 ) -> *const Encoding {
-	let tld_opt = if tld.is_null() {
-		assert_eq!(tld_len, 0);
-		None
-	} else {
-		Some(::std::slice::from_raw_parts(tld, tld_len))
-	};
-	(*detector).guess(tld_opt, allow_utf8)
+    let tld_opt = if tld.is_null() {
+        assert_eq!(tld_len, 0);
+        None
+    } else {
+        Some(::std::slice::from_raw_parts(tld, tld_len))
+    };
+    (*detector).guess(
+        tld_opt,
+        if allow_utf8 {
+            Utf8Detection::Allow
+        } else {
+            Utf8Detection::Deny
+        },
+    )
 }

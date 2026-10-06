@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,6 +12,7 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/CheckedArithmetic.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
@@ -316,7 +315,7 @@ class PLDHashTable {
     }
 
    public:
-    EntryStore() : mEntryStore(nullptr) {}
+    constexpr EntryStore() : mEntryStore(nullptr) {}
 
     ~EntryStore() {
       free(mEntryStore);
@@ -346,7 +345,7 @@ class PLDHashTable {
 
     template <typename F>
     void ForEachSlot(uint32_t aCapacity, uint32_t aEntrySize, F&& aFunc) {
-      ForEachSlot(Get(), aCapacity, aEntrySize, std::move(aFunc));
+      ForEachSlot(Get(), aCapacity, aEntrySize, std::forward<F>(aFunc));
     }
 
     template <typename F>
@@ -376,13 +375,13 @@ class PLDHashTable {
   // constuctor.
   // Increased mEntrySize to 16 bit and shifted variables to help alignment.
   //
-  const PLDHashTableOps* const mOps;  // Virtual operations; see below.
-  EntryStore mEntryStore;             // (Lazy) entry storage and generation.
-  uint16_t mGeneration;               // The storage generation.
-  const uint16_t mEntrySize;          // Number of bytes in an entry.
-  uint32_t mEntryCount;               // Number of entries in table.
-  uint32_t mRemovedCount;             // Removed entry sentinels in table.
-  uint8_t mHashShift;                 // Multiplicative hash shift.
+  const PLDHashTableOps* const mOps = nullptr;  // Virtual operations; see below.
+  EntryStore mEntryStore;                        // (Lazy) entry storage and generation.
+  uint16_t mGeneration = 0;                      // The storage generation.
+  const uint16_t mEntrySize = 0;                 // Number of bytes in an entry.
+  uint32_t mEntryCount = 0;                      // Number of entries in table.
+  uint32_t mRemovedCount = 0;                    // Removed entry sentinels in table.
+  uint8_t mHashShift = 0;                        // Multiplicative hash shift.
 
 #ifdef MOZ_HASH_TABLE_CHECKS_ENABLED
   mutable Checker mChecker;
@@ -414,17 +413,31 @@ class PLDHashTable {
   // to that the capacity will be zero.
   //
   // This will crash if |aEntrySize| and/or |aLength| are too large.
-  PLDHashTable(const PLDHashTableOps* aOps, uint32_t aEntrySize,
-               uint32_t aLength = kDefaultInitialLength);
+  constexpr PLDHashTable(const PLDHashTableOps* aOps, uint32_t aEntrySize,
+                         uint32_t aLength = kDefaultInitialLength)
+      : mOps(aOps),
+        mEntrySize(static_cast<uint16_t>(aEntrySize)),
+        mHashShift(HashShift(aEntrySize, aLength)) {
+    // An entry size greater than 0xffff is unlikely, but let's check anyway.
+    // If you hit this, your hashtable would waste lots of space for unused
+    // entries and you should change your hash table's entries to pointers.
+    if (aEntrySize > std::numeric_limits<uint16_t>::max()) {
+      MOZ_CRASH("Entry size is too large");
+    }
+  }
 
   PLDHashTable(PLDHashTable&& aOther)
-      // Initialize fields which are checked by the move assignment operator
-      // and the destructor (which the move assignment operator calls).
-      : mOps(nullptr), mGeneration(0), mEntrySize(0) {
+  // Rely on default-initialize of fields which are checked by the move
+  // assignment operator and the destructor (which the move assignment
+  // operator calls).
+  {
     *this = std::move(aOther);
   }
 
   PLDHashTable& operator=(PLDHashTable&& aOther);
+
+  PLDHashTable(const PLDHashTable& aOther) = delete;
+  PLDHashTable& operator=(const PLDHashTable& aOther) = delete;
 
   ~PLDHashTable();
 
@@ -493,6 +506,13 @@ class PLDHashTable {
   // This function is equivalent to
   // ClearAndPrepareForLength(kDefaultInitialLength).
   void Clear();
+
+  // Removes all entries from the table but keeps the entry storage allocated,
+  // so the table retains its current capacity. Use this instead of Clear()
+  // when the table is about to be re-populated and the repeated free/realloc
+  // of the entry store would be wasteful (e.g. a cache that is invalidated and
+  // rebuilt frequently). Unlike Clear(), the capacity is never reduced.
+  void ClearAndRetainStorage();
 
   // This function clears the table's contents and frees its entry storage,
   // leaving it in a empty state ready to be used again. Afterwards, when the
@@ -647,6 +667,10 @@ class PLDHashTable {
   class Iterator {
    public:
     explicit Iterator(PLDHashTable* aTable);
+    Iterator() = delete;
+    Iterator& operator=(const Iterator&) = delete;
+    Iterator& operator=(const Iterator&&) = delete;
+
     struct EndIteratorTag {};
     Iterator(PLDHashTable* aTable, EndIteratorTag aTag);
     Iterator(Iterator&& aOther);
@@ -691,10 +715,7 @@ class PLDHashTable {
 
     void MoveToNextLiveEntry();
 
-    Iterator() = delete;
     Iterator(const Iterator&);
-    Iterator& operator=(const Iterator&) = delete;
-    Iterator& operator=(const Iterator&&) = delete;
   };
 
   Iterator Iter() { return Iterator(this); }
@@ -706,7 +727,55 @@ class PLDHashTable {
   }
 
  private:
-  static uint32_t HashShift(uint32_t aEntrySize, uint32_t aLength);
+  // Compute the minimum capacity (and the Log2 of that capacity) for a table
+  // containing |aLength| elements while respecting the following constraints:
+  // - table must be at most 75% full;
+  // - capacity must be a power of two;
+  // - capacity cannot be too small.
+  static constexpr std::tuple<uint32_t, uint32_t> BestCapacity(
+      uint32_t aLength) {
+    // Callers should ensure this is true.
+    MOZ_ASSERT(aLength <= PLDHashTable::kMaxInitialLength);
+
+    // Compute the smallest capacity allowing |aLength| elements to be inserted
+    // without rehashing.
+    uint32_t capacity =
+        (aLength * 4 + (3 - 1)) / 3;  // == ceil(aLength * 4 / 3)
+    if (capacity < PLDHashTable::kMinCapacity) {
+      capacity = PLDHashTable::kMinCapacity;
+    }
+
+    // Round up capacity to next power-of-two.
+    uint32_t log2 = mozilla::CeilingLog2(capacity);
+    capacity = 1u << log2;
+    MOZ_ASSERT(capacity <= PLDHashTable::kMaxCapacity);
+
+    return std::make_tuple(capacity, log2);
+  }
+
+  static constexpr bool SizeOfEntryStore(uint32_t aCapacity,
+                                         uint32_t aEntrySize,
+                                         uint32_t* aNbytes) {
+    uint32_t slotSize = aEntrySize + sizeof(PLDHashNumber);
+    return mozilla::SafeMul(aCapacity, slotSize, aNbytes);
+  }
+
+  static constexpr uint8_t HashShift(uint32_t aEntrySize, uint32_t aLength) {
+    if (aLength > kMaxInitialLength) {
+      MOZ_CRASH("Initial length is too large");
+    }
+
+    auto [capacity, log2] = BestCapacity(aLength);
+
+    // Detect overflow.
+    [[maybe_unused]] uint32_t nbytes;
+    if (!SizeOfEntryStore(capacity, aEntrySize, &nbytes)) {
+      MOZ_CRASH("Initial entry store size is too large");
+    }
+
+    // Compute the hashShift value.
+    return static_cast<uint8_t>(kPLDHashNumberBits - log2);
+  }
 
   static const PLDHashNumber kCollisionFlag = 1;
 
@@ -744,9 +813,6 @@ class PLDHashTable {
                                               const mozilla::fallible_t&);
 
   EntryHandle MakeEntryHandle(const void* aKey);
-
-  PLDHashTable(const PLDHashTable& aOther) = delete;
-  PLDHashTable& operator=(const PLDHashTable& aOther) = delete;
 };
 
 // Compute the hash code for a given key to be looked up, added, or removed.

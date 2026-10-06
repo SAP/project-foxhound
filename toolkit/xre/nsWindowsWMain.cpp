@@ -118,8 +118,7 @@ int wmain(int argc, WCHAR** argv) {
   // Only run this code if LauncherProcessWin.h was included beforehand, thus
   // signalling that the hosting process should support launcher mode.
 #if defined(mozilla_LauncherProcessWin_h)
-  mozilla::Maybe<int> launcherResult =
-      mozilla::LauncherMain(argc, argv, sAppData);
+  mozilla::Maybe<int> launcherResult = mozilla::LauncherMain(argc, argv);
   if (launcherResult) {
     return launcherResult.value();
   }

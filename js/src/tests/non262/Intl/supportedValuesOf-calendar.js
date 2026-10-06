@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 const calendars = Intl.supportedValuesOf("calendar");
 
 assertEq(new Set(calendars).size, calendars.length, "No duplicates are present");

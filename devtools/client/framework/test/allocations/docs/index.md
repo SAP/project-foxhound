@@ -1,9 +1,9 @@
 # Allocation tests
 
-The [allocations](https://searchfox.org/mozilla-central/source/devtools/client/framework/test/allocations) folder contains special mochitests which are meant to record data about the memory usage of DevTools.
+The [allocations](https://searchfox.org/firefox-main/source/devtools/client/framework/test/allocations) folder contains special mochitests which are meant to record data about the memory usage of DevTools.
 This uses Spidermonkey's Memory API implemented next to the debugger API.
 For more info, see the following doc:
-<https://searchfox.org/mozilla-central/source/js/src/doc/Debugger/Debugger.Memory.md>
+<https://searchfox.org/firefox-main/source/js/src/doc/Debugger/Debugger.Memory.md>
 
 # Test example
 

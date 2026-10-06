@@ -1,17 +1,13 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ImageCacheKey.h"
 
-#include <utility>
-
 #include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/StoragePrincipalHelper.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
 #include "mozilla/StaticPrefs_privacy.h"
@@ -82,7 +78,7 @@ void ImageCacheKey::EnsureHash() const {
   // NOTE(emilio): Not adding the partition principal to the hash, since it
   // can mutate (see bug 1955775).
   nsAutoCString spec;
-  Unused << mURI->GetSpec(spec);
+  (void)mURI->GetSpec(spec);
   mHash.emplace(
       AddToHash(HashString(spec), mControlledDocument, mAppType, mCORSMode));
 }

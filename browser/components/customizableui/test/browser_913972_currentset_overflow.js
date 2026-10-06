@@ -10,33 +10,23 @@ registerCleanupFunction(async function asyncCleanup() {
   await resetCustomization();
 });
 
-// Resize to a small window, resize back, shouldn't affect default state.
+// Default state no longer overflows at minimum window width (bug 1960002).
+// Add buttons to trigger overflow, resize to a small window, resize back,
+// shouldn't change state.
 add_task(async function () {
-  let originalWindowWidth = window.outerWidth;
   ok(
     !navbar.hasAttribute("overflowing"),
     "Should start with a non-overflowing toolbar."
   );
-  ok(CustomizableUI.inDefaultState, "Should start in default state.");
+  let originalWindowWidth = ensureToolbarOverflow(window, false);
   let navbarTarget = CustomizableUI.getCustomizationTarget(navbar);
   let oldChildCount = navbarTarget.childElementCount;
   let placements = [...navbarTarget.children].map(node => node.id);
-
-  window.resizeTo(kForceOverflowWidthPx, window.outerHeight);
   await TestUtils.waitForCondition(
     () => navbar.hasAttribute("overflowing"),
     "Navbar has a overflowing attribute"
   );
   ok(navbar.hasAttribute("overflowing"), "Should have an overflowing toolbar.");
-  ok(
-    CustomizableUI.inDefaultState,
-    "Should still be in default state when overflowing."
-  );
-  Assert.less(
-    navbarTarget.childElementCount,
-    oldChildCount,
-    "Should have fewer children."
-  );
   window.resizeTo(originalWindowWidth, window.outerHeight);
   await TestUtils.waitForCondition(
     () => !navbar.hasAttribute("overflowing"),
@@ -45,10 +35,6 @@ add_task(async function () {
   ok(
     !navbar.hasAttribute("overflowing"),
     "Should no longer have an overflowing toolbar."
-  );
-  ok(
-    CustomizableUI.inDefaultState,
-    "Should still be in default state now we're no longer overflowing."
   );
 
   // Verify actual physical placements match those of the placement array:
@@ -73,6 +59,7 @@ add_task(async function () {
     oldChildCount,
     "Number of nodes should match"
   );
+  await CustomizableUI.reset();
 });
 
 // Enter and exit customization mode, check that default state is correct.

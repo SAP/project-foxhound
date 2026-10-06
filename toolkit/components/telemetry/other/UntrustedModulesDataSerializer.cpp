@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,11 +8,11 @@
 #include "js/Array.h"               // JS::NewArrayObject
 #include "js/PropertyAndElement.h"  // JS_DefineElement, JS_DefineProperty, JS_GetProperty
 #include "jsapi.h"
+#include "mozilla/SharedLibraries.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "nsITelemetry.h"
 #include "nsUnicharUtils.h"
 #include "nsXULAppAPI.h"
-#include "SharedLibraries.h"
 
 namespace mozilla {
 namespace Telemetry {
@@ -167,11 +165,10 @@ static bool SerializeModule(JSContext* aCx,
     }
   }
 
-#if defined(MOZ_GECKO_PROFILER)
   if (aModule->mResolvedDosName) {
     nsAutoString path;
     if (aModule->mResolvedDosName->GetPath(path) == NS_OK) {
-      SharedLibraryInfo info = SharedLibraryInfo::GetInfoFromPath(path.Data());
+      SharedLibraryInfo info = SharedLibraryInfo::GetInfoFromPath(path.get());
       if (info.GetSize() > 0) {
         nsString breakpadId =
             NS_ConvertUTF8toUTF16(info.GetEntry(0).GetBreakpadId());
@@ -181,7 +178,6 @@ static bool SerializeModule(JSContext* aCx,
       }
     }
   }
-#endif  // MOZ_GECKO_PROFILER
 
   if (aModule->mVendorInfo.isSome()) {
     const char* propName;
@@ -247,7 +243,7 @@ bool UntrustedModulesDataSerializer::SerializeEvent(
 
   if (event.mLoadDurationMS) {
     JS::Rooted<JS::Value> jsLoadDurationMS(aCx);
-    jsLoadDurationMS.setNumber(event.mLoadDurationMS.value());
+    jsLoadDurationMS.set(JS_NumberValue(event.mLoadDurationMS.value()));
     if (!JS_DefineProperty(aCx, obj, "loadDurationMS", jsLoadDurationMS,
                            JSPROP_ENUMERATE)) {
       return false;
@@ -350,14 +346,14 @@ nsresult UntrustedModulesDataSerializer::GetPerProcObject(
   }
 
   JS::Rooted<JS::Value> jsElapsed(mCx);
-  jsElapsed.setNumber(aData.mElapsed.ToSecondsSigDigits());
+  jsElapsed.set(JS_NumberValue(aData.mElapsed.ToSeconds()));
   if (!JS_DefineProperty(mCx, aObj, "elapsed", jsElapsed, JSPROP_ENUMERATE)) {
     return NS_ERROR_FAILURE;
   }
 
   if (aData.mXULLoadDurationMS.isSome()) {
     JS::Rooted<JS::Value> jsXulLoadDurationMS(mCx);
-    jsXulLoadDurationMS.setNumber(aData.mXULLoadDurationMS.value());
+    jsXulLoadDurationMS.set(JS_NumberValue(aData.mXULLoadDurationMS.value()));
     if (!JS_DefineProperty(mCx, aObj, "xulLoadDurationMS", jsXulLoadDurationMS,
                            JSPROP_ENUMERATE)) {
       return NS_ERROR_FAILURE;

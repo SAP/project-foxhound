@@ -38,6 +38,9 @@ export const AggregateResultKeys = {
 // Clicks feature is handled in certain ways by the model
 export const SPECIAL_FEATURE_CLICK = "clicks";
 
+// This is largely a placeholder when there are no impressions or clicks
+export const DEFAULT_USER_CTR = 0.002;
+
 export const DEFAULT_INFERRED_MODEL_DATA = {
   model_type: MODEL_TYPE.CLICKS,
   rescale: true,
@@ -47,43 +50,43 @@ export const DEFAULT_INFERRED_MODEL_DATA = {
   },
   interest_vector: {
     parenting: {
-      features: { parenting: 1 },
+      features: { t_parenting: 1 },
       thresholds: [0.3, 0.4],
       diff_p: 0.75,
       diff_q: 0.25,
     },
     arts: {
-      features: { arts: 1 },
+      features: { t_arts: 1 },
       thresholds: [0.3, 0.4],
       diff_p: 0.75,
       diff_q: 0.25,
     },
     health: {
-      features: { arts: 1 },
+      features: { t_health: 1 },
       thresholds: [0.3, 0.4],
       diff_p: 0.75,
       diff_q: 0.25,
     },
     sports: {
-      features: { sports: 1 },
+      features: { t_sports: 1 },
       thresholds: [0.3, 0.4],
       diff_p: 0.75,
       diff_q: 0.25,
     },
     society: {
-      features: { society: 1 },
+      features: { t_society: 1 },
       thresholds: [0.3, 0.4],
       diff_p: 0.75,
       diff_q: 0.25,
     },
     education: {
-      features: { education: 1 },
+      features: { t_education: 1 },
       thresholds: [0.3, 0.4],
       diff_p: 0.75,
       diff_q: 0.25,
     },
     government: {
-      features: { government: 1 },
+      features: { t_government: 1 },
       thresholds: [0.3, 0.4],
       diff_p: 0.75,
       diff_q: 0.25,

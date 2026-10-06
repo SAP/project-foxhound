@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,9 +10,7 @@
 // shellapi.h is needed to build with WIN32_LEAN_AND_MEAN
 #include <shellapi.h>
 
-#include <functional>
 #include <thread>
-#include <chrono>
 
 #ifdef ACCESSIBILITY
 #  include "mozilla/a11y/Compatibility.h"
@@ -75,6 +72,17 @@ UINT nsClipboard::GetCustomClipboardFormat() {
   static UINT format =
       ::RegisterClipboardFormatW(L"application/x-moz-custom-clipdata");
   return format;
+}
+
+static inline nsresult CheckClipboardByteSize(HGLOBAL aHGlobal,
+                                              uint64_t aByteThreshold) {
+  // GlobalSize returns the size of the heap allocation backing aHGlobal,
+  // which may be slightly larger than the actual clipboard data.
+  if (::GlobalSize(aHGlobal) > aByteThreshold) {
+    return NS_ERROR_CLIPBOARD_TOO_BIG;
+  }
+
+  return NS_OK;
 }
 
 //-------------------------------------------------------------------------
@@ -163,7 +171,7 @@ nsresult nsClipboard::CreateNativeDataObject(
   }
 
   // Create our native DataObject that implements the OLE IDataObject interface
-  RefPtr<nsDataObj> dataObj = new nsDataObj(aUri);
+  auto dataObj = mozilla::MakeRefPtr<nsDataObj>(aUri);
 
   // Now set it up with all the right data flavors & enums
   nsresult res =
@@ -639,7 +647,8 @@ nsresult nsClipboard::GetGlobalData(HGLOBAL aHGBL, void** aData,
 //-------------------------------------------------------------------------
 nsresult nsClipboard::GetNativeDataOffClipboard(nsIWidget* aWidget,
                                                 UINT /*aIndex*/, UINT aFormat,
-                                                void** aData, uint32_t* aLen) {
+                                                void** aData, uint32_t* aLen,
+                                                uint64_t aThreshold) {
   MOZ_CLIPBOARD_LOG("%s: overload taking nsIWidget*.", __FUNCTION__);
 
   HGLOBAL hglb;
@@ -648,6 +657,15 @@ nsresult nsClipboard::GetNativeDataOffClipboard(nsIWidget* aWidget,
   HWND nativeWin = nullptr;
   if (::OpenClipboard(nativeWin)) {
     hglb = ::GetClipboardData(aFormat);
+
+    if (aThreshold) {
+      if (aFormat == CF_TEXT) {
+        MOZ_TRY(CheckClipboardByteSize(hglb, aThreshold + 1));
+      } else if (aFormat == CF_UNICODETEXT) {
+        MOZ_TRY(CheckClipboardByteSize(hglb, aThreshold + sizeof(wchar_t)));
+      }
+    }
+
     result = GetGlobalData(hglb, aData, aLen);
     ::CloseClipboard();
   }
@@ -706,7 +724,8 @@ HRESULT nsClipboard::FillSTGMedium(IDataObject* aDataObject, UINT aFormat,
 nsresult nsClipboard::GetNativeDataOffClipboard(IDataObject* aDataObject,
                                                 UINT aIndex, UINT aFormat,
                                                 const char* aMIMEImageFormat,
-                                                void** aData, uint32_t* aLen) {
+                                                void** aData, uint32_t* aLen,
+                                                uint64_t aThreshold) {
   MOZ_CLIPBOARD_LOG("%s: overload taking IDataObject*.", __FUNCTION__);
 
   *aData = nullptr;
@@ -764,6 +783,10 @@ nsresult nsClipboard::GetNativeDataOffClipboard(IDataObject* aDataObject,
   // compile-time-constant format indicators:
   switch (fe.cfFormat) {
     case CF_TEXT: {
+      if (aThreshold > 0) {
+        MOZ_TRY(CheckClipboardByteSize(stm.hGlobal, aThreshold + 1));
+      }
+
       // Get the data out of the global data handle. The size we
       // return should not include the null because the other
       // platforms don't use nulls, so just return the length we get
@@ -778,6 +801,11 @@ nsresult nsClipboard::GetNativeDataOffClipboard(IDataObject* aDataObject,
     }
 
     case CF_UNICODETEXT: {
+      if (aThreshold > 0) {
+        MOZ_TRY(
+            CheckClipboardByteSize(stm.hGlobal, aThreshold + sizeof(wchar_t)));
+      }
+
       // Get the data out of the global data handle. The size we
       // return should not include the null because the other
       // platforms don't use nulls, so just return the length we get
@@ -958,12 +986,11 @@ nsresult nsClipboard::GetNativeDataOffClipboard(IDataObject* aDataObject,
   }
   return NS_OK;
 }
-
 //-------------------------------------------------------------------------
 mozilla::Result<nsCOMPtr<nsISupports>, nsresult>
 nsClipboard::GetDataFromDataObject(IDataObject* aDataObject, UINT anIndex,
-                                   nsIWidget* aWindow,
-                                   const nsCString& aFlavor) {
+                                   nsIWidget* aWindow, const nsCString& aFlavor,
+                                   uint64_t aThreshold) {
   MOZ_CLIPBOARD_LOG("%s", __FUNCTION__);
 
   UINT format = GetFormat(aFlavor.get());
@@ -974,15 +1001,20 @@ nsClipboard::GetDataFromDataObject(IDataObject* aDataObject, UINT anIndex,
   uint32_t dataLen = 0;
   bool dataFound = false;
   if (nullptr != aDataObject) {
-    if (NS_SUCCEEDED(GetNativeDataOffClipboard(
-            aDataObject, anIndex, format, aFlavor.get(), &data, &dataLen))) {
-      dataFound = true;
+    nsresult rv =
+        GetNativeDataOffClipboard(aDataObject, anIndex, format, aFlavor.get(),
+                                  &data, &dataLen, aThreshold);
+    if (rv == NS_ERROR_CLIPBOARD_TOO_BIG) {
+      return mozilla::Err(NS_ERROR_CLIPBOARD_TOO_BIG);
     }
+    dataFound = NS_SUCCEEDED(rv);
   } else if (nullptr != aWindow) {
-    if (NS_SUCCEEDED(GetNativeDataOffClipboard(aWindow, anIndex, format, &data,
-                                               &dataLen))) {
-      dataFound = true;
+    nsresult rv = GetNativeDataOffClipboard(aWindow, anIndex, format, &data,
+                                            &dataLen, aThreshold);
+    if (rv == NS_ERROR_CLIPBOARD_TOO_BIG) {
+      return mozilla::Err(NS_ERROR_CLIPBOARD_TOO_BIG);
     }
+    dataFound = NS_SUCCEEDED(rv);
   }
 
   // This is our second chance to try to find some data, having not found it
@@ -1081,7 +1113,8 @@ nsClipboard::GetDataFromDataObject(IDataObject* aDataObject, UINT anIndex,
 
 nsresult nsClipboard::GetDataFromDataObject(IDataObject* aDataObject,
                                             UINT anIndex, nsIWidget* aWindow,
-                                            nsITransferable* aTransferable) {
+                                            nsITransferable* aTransferable,
+                                            uint64_t aThreshold) {
   MOZ_CLIPBOARD_LOG("%s", __FUNCTION__);
 
   // make sure we have a good transferable
@@ -1102,8 +1135,8 @@ nsresult nsClipboard::GetDataFromDataObject(IDataObject* aDataObject,
   for (uint32_t i = 0; i < flavors.Length(); i++) {
     const nsCString& flavorStr = flavors[i];
 
-    auto dataOrError =
-        GetDataFromDataObject(aDataObject, anIndex, aWindow, flavorStr);
+    auto dataOrError = GetDataFromDataObject(aDataObject, anIndex, aWindow,
+                                             flavorStr, aThreshold);
     if (dataOrError.isErr() || !dataOrError.inspect()) {
       continue;
     }
@@ -1386,7 +1419,8 @@ bool nsClipboard ::IsInternetShortcut(const nsAString& inFileName) {
 //-------------------------------------------------------------------------
 mozilla::Result<nsCOMPtr<nsISupports>, nsresult>
 nsClipboard::GetNativeClipboardData(const nsACString& aFlavor,
-                                    ClipboardType aWhichClipboard) {
+                                    ClipboardType aWhichClipboard,
+                                    uint64_t aThreshold) {
   MOZ_DIAGNOSTIC_ASSERT(
       nsIClipboard::IsClipboardTypeSupported(aWhichClipboard));
 
@@ -1414,12 +1448,12 @@ nsClipboard::GetNativeClipboardData(const nsACString& aFlavor,
     }
 
     return GetDataFromDataObject(dataObj, 0, nullptr,
-                                 PromiseFlatCString(aFlavor));
+                                 PromiseFlatCString(aFlavor), aThreshold);
   }
 
   // do it the old manual way
-  return GetDataFromDataObject(nullptr, 0, mWindow,
-                               PromiseFlatCString(aFlavor));
+  return GetDataFromDataObject(nullptr, 0, mWindow, PromiseFlatCString(aFlavor),
+                               aThreshold);
 }
 
 nsresult nsClipboard::EmptyNativeClipboardData(ClipboardType aWhichClipboard) {
@@ -1495,6 +1529,8 @@ nsresult nsClipboard::SaveStorageOrStream(IDataObject* aDataObject, UINT aIndex,
     return NS_ERROR_FAILURE;
   }
 
+  nsPromiseFlatString flatFileName(aFileName);
+
   auto releaseMediumGuard =
       mozilla::MakeScopeExit([&] { ReleaseStgMedium(&stm); });
 
@@ -1514,7 +1550,7 @@ nsresult nsClipboard::SaveStorageOrStream(IDataObject* aDataObject, UINT aIndex,
 
     RefPtr<IStorage> file;
     hres = StgCreateStorageEx(
-        aFileName.Data(), STGM_CREATE | STGM_READWRITE | STGM_SHARE_EXCLUSIVE,
+        flatFileName.get(), STGM_CREATE | STGM_READWRITE | STGM_SHARE_EXCLUSIVE,
         STGFMT_STORAGE, 0, NULL, NULL, IID_IStorage, getter_AddRefs(file));
     if (FAILED(hres)) {
       return NS_ERROR_FAILURE;
@@ -1537,12 +1573,17 @@ nsresult nsClipboard::SaveStorageOrStream(IDataObject* aDataObject, UINT aIndex,
     return NS_ERROR_FAILURE;
   }
 
-  HANDLE handle = CreateFile(aFileName.Data(), GENERIC_WRITE, FILE_SHARE_READ,
+  HANDLE handle = CreateFile(flatFileName.get(), GENERIC_WRITE, FILE_SHARE_READ,
                              NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
   if (handle == INVALID_HANDLE_VALUE) {
     return NS_ERROR_FAILURE;
   }
 
+  // Don't leave a partially-written file behind if we bail out on a read or
+  // write error below.
+  // NB: This must initialize before/run after fileCloseGuard.
+  auto fileDeleteGuard =
+      mozilla::MakeScopeExit([&] { DeleteFile(flatFileName.get()); });
   auto fileCloseGuard = mozilla::MakeScopeExit([&] { CloseHandle(handle); });
 
   const ULONG bufferSize = 4096;
@@ -1554,6 +1595,10 @@ nsresult nsClipboard::SaveStorageOrStream(IDataObject* aDataObject, UINT aIndex,
     if (FAILED(result)) {
       return NS_ERROR_FAILURE;
     }
+    if (bytesRead > bufferSize) {
+      // It obviously couldn't legitimately write more than the buffer holds.
+      return NS_ERROR_FAILURE;
+    }
     if (bytesRead == 0) {
       break;
     }
@@ -1562,5 +1607,6 @@ nsresult nsClipboard::SaveStorageOrStream(IDataObject* aDataObject, UINT aIndex,
       return NS_ERROR_FAILURE;
     }
   }
+  fileDeleteGuard.release();
   return NS_OK;
 }

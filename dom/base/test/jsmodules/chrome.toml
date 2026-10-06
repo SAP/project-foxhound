@@ -1,6 +1,7 @@
 [DEFAULT]
 support-files = [
   "ambiguous_export.mjs",
+  "import_404.mjs",
   "import_ambiguous.mjs",
   "import_ambiguous_indirect_export.mjs",
   "import_ambiguous_export.mjs",
@@ -9,6 +10,11 @@ support-files = [
   "import_circular_1.mjs",
   "import_no_export.mjs",
   "import_no_indirect_export.mjs",
+  "import_parse_error.mjs",
+  "import_parse_error_1.mjs",
+  "import_parse_error_2.mjs",
+  "import_parse_error_3.mjs",
+  "large_module_import_404.mjs",
   "exportA1.mjs",
   "exportA2.mjs",
   "export_ambiguous.mjs",
@@ -34,6 +40,7 @@ support-files = [
   "module_multiLargeImports.mjs",
   "no_export.mjs",
   "no_indirect_export.mjs",
+  "parse_error.js",
   "script_simple2.js",
   "module_large1.mjs",
   "module_large2.mjs",
@@ -49,6 +56,12 @@ support-files = [
 
 ["test_dynamicImportErrorMessage.html"]
 
+["test_dynamicImport_link_failure.html"]
+
+["test_fetchedModuleHasErrorToRethrow.html"]
+
+["test_fetchedModuleHasErrorToRethrow_dynamic.html"]
+
 ["test_importIntroType.html"]
 
 ["test_importNotFound.html"]
@@ -62,6 +75,8 @@ support-files = [
 ["test_import_meta_resolve.html"]
 
 ["test_importedModuleMemoization.html"]
+
+["test_large_module_import_404.html"]
 
 ["test_linkErrorInCommon1.html"]
 

@@ -1,0 +1,43 @@
+[DEFAULT]
+tags = "urlbar"
+support-files = [
+  "../browser/head-common.js",
+  "head.js",
+]
+
+["browser_adaptive_origin_fallback.js"]
+
+["browser_backspace_dismissal.js"]
+
+["browser_backspace_dismissal_guards.js"]
+
+["browser_backspace_dismissal_reintegration.js"]
+
+["browser_backspaced.js"]
+
+["browser_canonize.js"]
+https_first_disabled = true
+
+["browser_caretNotAtEnd.js"]
+
+["browser_clear_properly_on_accent_char.js"]
+
+["browser_firstResult.js"]
+
+["browser_originToAdaptive.js"]
+
+["browser_paste.js"]
+
+["browser_placeholder.js"]
+
+["browser_preserve.js"]
+
+["browser_reintegration_telemetry.js"]
+
+["browser_resultMenu_dismissal.js"]
+
+["browser_trimURLs.js"]
+
+["browser_typed.js"]
+
+["browser_undo.js"]

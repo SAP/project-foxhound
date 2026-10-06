@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,9 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s дае вам кантроль.</p> <p>Выкарыстоўвайце яго як прыватны браўзер: <ul> <li>Шукайце і аглядайце наўпрост з праграмы</li> <li>Блакіруйце трэкеры (або змяніце налады, каб дазволіць трэкеры)</li> <li>Сцірайце сеанс, каб выдаліць кукі разам з пошукамі і гісторыяй аглядання</li> </ul> </p> <p>%1$s створаны Mozilla. Наша місія — спрыяць здароваму, адкрытаму Інтэрнэту.<br/> <a href=\"%2$s\">Даведацца больш</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s дае вам кантроль.</p>\n<p>Выкарыстоўвайце яго як прыватны браўзер:\n<ul>\n<li>Шукайце і аглядайце наўпрост з праграмы</li>\n<li>Блакіруйце трэкеры (або змяніце налады, каб дазволіць трэкеры)</li>\n<li>Сцірайце сеанс, каб выдаліць кукі разам з пошукамі і гісторыяй аглядання</li>\n</ul> </p>\n<p>%1$s створаны Mozilla. Наша місія — спрыяць здароваму, адкрытаму Інтэрнэту.<br/>\n<a href=\"%2$s\">Даведацца больш</a></p>]]></string>
+  <!-- A link to SUMO at the bottom of About Focus screen. -->
+  <string name="about_screen_learn_more">Падрабязней</string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Прыватнасць і бяспека</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -242,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Устаўце або ўвядзіце URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Прыклад: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Прыклад: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Прыклад: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -314,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Зрабіць %1$s прадвызначаным браўзерам</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Адпраўляць даныя аб выкарыстанні</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Падрабязней</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla імкнецца збіраць толькі тыя звесткі, якія патрэбны для работы і паляпшэння %1$s для ўсіх.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla імкнецца збіраць толькі тыя звесткі, якія патрэбны для работы і паляпшэння %1$s для ўсіх.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Пінг штодзённага выкарыстання</string>
-  <string name="preference_daily_usage_ping_description">Гэта дапамагае Mozilla ацэньваць актыўных карыстальнікаў.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Гэта дапамагае Mozilla ацэньваць актыўных карыстальнікаў.</string>
   <string name="preference_daily_usage_ping_learn_more">Падрабязней</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Паведамленне аб прыватнасці</string>
@@ -462,21 +471,21 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Працягваючы, вы згаджаецеся з %1$s</string>
+  <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Працягваючы, вы згаджаецеся з %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Умовы выкарыстання Firefox.</string>
+  <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Умовы выкарыстання Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox клапоціцца аб вашай прыватнасці. Даведайцеся больш у нашых %1$s</string>
+  <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox клапоціцца аб вашай прыватнасці. Даведайцеся больш у нашых %1$s.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Паведамленне аб прыватнасці.</string>
+  <string name="onboarding_first_screen_privacy_notice_link_2">Паведамленне аб прыватнасці</string>
   <!-- New Onboarding flow first screen button label -->
   <string name="onboarding_first_screen_button_agree_and_continue_2">Працягнуць</string>
   <!-- In the first screen of new onboarding flow, additional accessibility description for content that contain urls. -->
@@ -553,6 +562,8 @@
   <string name="tabs_tray_action_erase">Сцерці гісторыю аглядання</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Закрыць іншыя карткі</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Дадаць новую картку</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -573,6 +584,21 @@
   <string name="security_popup_security_verified">Пацверджана: %1$s</string>
   <!-- Content Description of Security Icon in toolbar -->
   <string name="site_security_icon_content_description">Бяспека сайта</string>
+  <!--
+    %1$s will be replaced with the organization for which the certificate
+    used by the site was issued. For example, the certificate in use by
+    the site https://eidas.ec.europa.eu/ was issued to "The European
+    Commission".
+  -->
+  <string name="qualified_identity">Сертыфікат выдадзены %1$s</string>
+  <!--
+    The European Union eIDAS Regulation specifies a type of certificate
+    called a "qualified website authentication certificate" (QWAC) and
+    requires that browsers identify and indicate such certificates. This
+    text was paraphrased from ETSI TS 119 411-5 V2.1.1 section 6.3 and
+    indicates that the website uses a QWAC.
+  -->
+  <string name="qualified_text">Кваліфікаваны, як пазначана ў Рэгламенце (ЕС) 2024/1183.</string>
   <string name="preference_autocomplete_duplicate_url_error">URL ўжо існуе</string>
   <!-- Label for the Find in page button -->
   <string name="find_in_page">Знайсці на старонцы</string>
@@ -803,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Закрыць картку</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Адправіць справаздачу аб збоі ў Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Адправіць справаздачу аб збоі ў Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->
@@ -873,7 +899,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Гэта можа быць праблемай наладкі сервера ці, магчыма, хтосьці спрабуе прыкінуцца гэтым серверам. <br/><br/> Калі вы паспяхова злучаліся з гэтым серверам раней, памылка можа быць часовай.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Хтосьці можа спрабаваць падмяніць гэты сайт, і працягваць можа быць рызыкоўна.</label> <br><br> <label>%1$s не давярае <b>%2$s</b>, таму што выдавец яго сертыфіката нявызначаны, сертыфікат самападпісаны, або сервер не дае спраўных прамежкавых сертыфікатаў.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Хтосьці можа спрабаваць падмяніць гэты сайт, і працягваць можа быць рызыкоўна.</label> <br><br>\n<label>%1$s не давярае <b>%2$s</b>, таму што выдавец яго сертыфіката нявызначаны, сертыфікат самападпісаны, або сервер не дае спраўных прамежкавых сертыфікатаў.</label>]]></string>
   <!--
     Sessions List
 

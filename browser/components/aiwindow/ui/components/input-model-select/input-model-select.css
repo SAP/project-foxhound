@@ -1,0 +1,82 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:host {
+  --button-border-radius: var(--border-radius-circle);
+  --button-font-weight: var(--font-weight);
+  --button-font-size: var(--font-size-small);
+  --model-item-icon-background-color: light-dark(var(--color-white), var(--color-violet-110));
+
+  display: inline-flex;
+}
+
+.input-model-select-button::part(button) {
+  padding-inline-end: var(--space-small);
+}
+
+panel-list {
+  padding-inline: var(--space-small);
+}
+
+panel-item:not(.panel-section-header)::part(button) {
+  margin-inline: 0;
+}
+
+moz-badge {
+  --badge-background-color-filled: var(--smartwindow-text-color-accent-deemphasized);
+  --badge-text-color-filled: var(--color-white);
+
+  margin-inline-start: auto;
+}
+
+.model-item {
+  align-items: center;
+  background: transparent;
+  border-radius: var(--border-radius-medium);
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: var(--space-small);
+  padding: var(--space-small);
+  text-align: start;
+  width: 100%;
+
+  &:hover {
+    background-color: var(--button-background-color-hover);
+  }
+
+  &:active {
+    background-color: var(--button-background-color-active);
+  }
+}
+
+.model-item-icon {
+  background: var(--model-item-icon-background-color);
+  border-radius: var(--border-radius-circle);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  border: var(--border-width) solid light-dark(var(--color-violet-desaturated-10), var(--color-violet-desaturated-50));
+  flex-shrink: 0;
+  width: var(--size-item-large);
+  height: var(--size-item-large);
+}
+
+.model-item-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.model-item-label {
+  font-size: var(--font-size-root);
+}
+
+.model-item-details {
+  color: var(--text-color-deemphasized);
+  font-size: var(--font-size-small);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

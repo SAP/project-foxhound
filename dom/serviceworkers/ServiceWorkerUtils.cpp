@@ -1,12 +1,8 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ServiceWorkerUtils.h"
-
-#include "nsContentPolicyUtils.h"
 
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ErrorResult.h"
@@ -15,8 +11,8 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/ClientIPCTypes.h"
+#include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Navigator.h"
 #include "mozilla/dom/ServiceWorkerGlobalScopeBinding.h"
@@ -24,6 +20,7 @@
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "nsCOMPtr.h"
+#include "nsContentPolicyUtils.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIGlobalObject.h"
 #include "nsIPrincipal.h"
@@ -280,13 +277,13 @@ void ServiceWorkerScopeAndScriptAreValid(const ClientInfo& aClientInfo,
   // The refs should really be empty coming in here, but if someone
   // injects bad data into IPC, who knows.  So let's revalidate that.
   nsAutoCString ref;
-  Unused << aScopeURI->GetRef(ref);
+  (void)aScopeURI->GetRef(ref);
   if (NS_WARN_IF(!ref.IsEmpty())) {
     aRv.ThrowSecurityError("Non-empty fragment on scope URL");
     return;
   }
 
-  Unused << aScriptURI->GetRef(ref);
+  (void)aScriptURI->GetRef(ref);
   if (NS_WARN_IF(!ref.IsEmpty())) {
     aRv.ThrowSecurityError("Non-empty fragment on script URL");
     return;

@@ -10,7 +10,7 @@ const { Preferences } = ChromeUtils.importESModule(
 );
 
 const SEARCH_TIMEOUT_MS = 100;
-const SEARCH_AUTO_MIN_CRARACTERS = 3;
+const SEARCH_AUTO_MIN_CHARACTERS = 3;
 
 const GETTERS_BY_PREF_TYPE = {
   [Ci.nsIPrefBranch.PREF_BOOL]: "getBoolPref",
@@ -373,7 +373,9 @@ class PrefRow {
   }
 
   toggle() {
+    this.#notifyWillChange();
     Services.prefs.setBoolPref(this.name, !this.value);
+    this.#notifyChanged();
   }
 
   editOrToggle() {
@@ -385,14 +387,20 @@ class PrefRow {
   }
 
   save() {
+    if (this.type == "Number" && !this.inputField.reportValidity()) {
+      return;
+    }
+
+    this.#notifyWillChange();
+
     if (this.type == "Number") {
-      if (!this.inputField.reportValidity()) {
-        return;
-      }
       Services.prefs.setIntPref(this.name, parseInt(this.inputField.value));
     } else {
       Services.prefs.setStringPref(this.name, this.inputField.value);
     }
+
+    this.#notifyChanged();
+
     this.refreshValue();
     this.endEdit();
     this.editButton.focus();
@@ -402,6 +410,18 @@ class PrefRow {
     this.editing = false;
     this.refreshElement();
     gPrefInEdit = null;
+  }
+
+  #notifyWillChange() {
+    Services.obs.notifyObservers(
+      null,
+      "about-config-will-change-pref",
+      this.name
+    );
+  }
+
+  #notifyChanged() {
+    Services.obs.notifyObservers(null, "about-config-changed-pref", this.name);
   }
 }
 
@@ -490,7 +510,7 @@ function loadPrefs() {
   search.addEventListener("input", () => {
     // We call "disarm" to restart the timer at every input.
     gFilterPrefsTask.disarm();
-    if (search.value.trim().length < SEARCH_AUTO_MIN_CRARACTERS) {
+    if (search.value.trim().length < SEARCH_AUTO_MIN_CHARACTERS) {
       // Return immediately to the empty page if the search string is short.
       filterPrefs();
     } else {
@@ -584,7 +604,7 @@ function filterPrefs(options = {}) {
   gDeletedPrefs.clear();
 
   let searchName = gSearchInput.value.trim();
-  if (searchName.length < SEARCH_AUTO_MIN_CRARACTERS && !options.shortString) {
+  if (searchName.length < SEARCH_AUTO_MIN_CHARACTERS && !options.shortString) {
     searchName = "";
   }
 

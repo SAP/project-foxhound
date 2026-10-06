@@ -1,0 +1,234 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>MozSelect Panel-List Tests</title>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
+    <link
+      rel="stylesheet"
+      href="chrome://mochikit/content/tests/SimpleTest/test.css"
+    />
+    <script src="lit-test-helpers.js"></script>
+    <script>
+      let testHelpers = new InputTestHelpers();
+
+      add_setup(async function setup() {
+        await testHelpers.setupLit();
+        let templateFn = (attrs, children) => testHelpers.html`
+        <moz-select ${attrs}>
+          <moz-option value="1" label="One" iconSrc="chrome://global/skin/icons/info.svg"></moz-option>
+          <moz-option value="2" label="Two" iconSrc="chrome://global/skin/icons/warning.svg"></moz-option>
+          <moz-option value="3" label="Three" iconSrc="chrome://global/skin/icons/error.svg"></moz-option>
+          ${children}
+        </moz-select>
+      `;
+        testHelpers.setupTests({ templateFn });
+      });
+
+      add_task(async function testMozSelectProperties() {
+        await testHelpers.testCommonInputProperties("moz-select", {
+          type: "button",
+        });
+      });
+
+      add_task(async function testPanelListMousedownOpensPanel() {
+        let target = await testHelpers.renderTemplate();
+        let select = target.querySelector("moz-select");
+        await select.updateComplete;
+
+        ok(
+          select.usePanelList,
+          "Select should use panel-list for icon options"
+        );
+        ok(!select.panelList?.open, "Panel should be closed initially");
+
+        let panelButton = select.shadowRoot.querySelector(".panel-trigger");
+        ok(panelButton, "Panel trigger button should exist");
+
+        let shown = BrowserTestUtils.waitForEvent(select.panelList, "shown");
+        synthesizeMouseAtCenter(panelButton, {});
+        await shown;
+
+        ok(select.panelList.open, "Panel should open on mousedown");
+
+        let hidden = BrowserTestUtils.waitForEvent(select.panelList, "hidden");
+        select.panelList.hide();
+        await hidden;
+      });
+
+      add_task(async function testPanelAnchoredToTriggerButton() {
+        let target = await testHelpers.renderTemplate();
+        let select = target.querySelector("moz-select");
+        await select.updateComplete;
+
+        let panelButton = select.shadowRoot.querySelector(".panel-trigger");
+        let panelButtonLabel = select.shadowRoot.querySelector(
+          ".panel-trigger-text"
+        );
+
+        let shown = BrowserTestUtils.waitForEvent(select.panelList, "shown");
+        synthesizeMouseAtCenter(panelButtonLabel, {});
+        await shown;
+
+        is(
+          select.panelList.lastAnchorNode,
+          panelButton,
+          "Panel should be anchored to the trigger button even when clicking on a child element"
+        );
+
+        let hidden = BrowserTestUtils.waitForEvent(select.panelList, "hidden");
+        select.panelList.hide();
+        await hidden;
+      });
+
+      add_task(async function testPanelListKeyboardClickOpensPanel() {
+        let target = await testHelpers.renderTemplate();
+        let select = target.querySelector("moz-select");
+        await select.updateComplete;
+
+        ok(
+          select.usePanelList,
+          "Select should use panel-list for icon options"
+        );
+        ok(!select.panelList?.open, "Panel should be closed initially");
+
+        let panelButton = select.shadowRoot.querySelector(".panel-trigger");
+        ok(panelButton, "Panel trigger button should exist");
+
+        panelButton.focus();
+        ok(document.activeElement === select, "Select should be focused");
+
+        let shown = BrowserTestUtils.waitForEvent(select.panelList, "shown");
+        synthesizeKey(" ");
+        await shown;
+
+        ok(
+          select.panelList.open,
+          "Panel should open on Space key (keyboard click)"
+        );
+
+        let hidden = BrowserTestUtils.waitForEvent(select.panelList, "hidden");
+        select.panelList.hide();
+        await hidden;
+
+        ok(!select.panelList.open, "Panel should be closed");
+
+        shown = BrowserTestUtils.waitForEvent(select.panelList, "shown");
+        panelButton.focus();
+
+        synthesizeKey("KEY_Enter");
+        await shown;
+
+        ok(
+          select.panelList.open,
+          "Panel should open on Enter key (keyboard click)"
+        );
+
+        hidden = BrowserTestUtils.waitForEvent(select.panelList, "hidden");
+        select.panelList.hide();
+        await hidden;
+      });
+
+      add_task(async function testArrowKeySelection() {
+        // Arrow keys change selection on Windows/Linux only; on Mac they open the panel.
+        if (navigator.platform.startsWith("Mac")) {
+          return;
+        }
+
+        // Append disabled, hidden, separator, and a regular option after the base 3.
+        let children = testHelpers.html`
+          <moz-option value="4" label="Four" iconSrc="chrome://global/skin/icons/info.svg" disabled></moz-option>
+          <moz-option value="5" label="Five" iconSrc="chrome://global/skin/icons/info.svg" hidden></moz-option>
+          <hr />
+          <moz-option value="6" label="Six" iconSrc="chrome://global/skin/icons/info.svg"></moz-option>
+        `;
+        let target = await testHelpers.renderTemplate(
+          testHelpers.templateFn({}, children)
+        );
+        let select = target.querySelector("moz-select");
+        await select.updateComplete;
+
+        ok(
+          select.usePanelList,
+          "Select should use panel-list for icon options"
+        );
+        ok(!select.panelList?.open, "Panel should be closed initially");
+
+        let panelButton = select.shadowRoot.querySelector(".panel-trigger");
+        panelButton.focus();
+        is(select.value, "1", "Initial value should be '1'");
+
+        synthesizeKey("KEY_ArrowDown");
+        await select.updateComplete;
+        is(select.value, "2", "ArrowDown should advance selection to '2'");
+
+        synthesizeKey("KEY_ArrowDown");
+        await select.updateComplete;
+        is(select.value, "3", "ArrowDown should advance selection to '3'");
+
+        synthesizeKey("KEY_ArrowDown");
+        await select.updateComplete;
+        is(
+          select.value,
+          "6",
+          "ArrowDown should skip disabled, hidden, and separator options"
+        );
+
+        synthesizeKey("KEY_ArrowDown");
+        await select.updateComplete;
+        is(select.value, "6", "ArrowDown at end should not change value");
+
+        synthesizeKey("KEY_ArrowUp");
+        await select.updateComplete;
+        is(
+          select.value,
+          "3",
+          "ArrowUp should skip disabled, hidden, and separator options going back"
+        );
+
+        synthesizeKey("KEY_ArrowUp");
+        await select.updateComplete;
+        is(select.value, "2", "ArrowUp should move selection back to '2'");
+
+        synthesizeKey("KEY_ArrowUp");
+        await select.updateComplete;
+        is(select.value, "1", "ArrowUp should move selection back to '1'");
+
+        synthesizeKey("KEY_ArrowUp");
+        await select.updateComplete;
+        is(select.value, "1", "ArrowUp at start should not change value");
+
+        ok(
+          !select.panelList?.open,
+          "Panel should remain closed during arrow key navigation"
+        );
+      });
+
+      add_task(async function testPanelListRightClickDoesNotOpenPanel() {
+        let target = await testHelpers.renderTemplate();
+        let select = target.querySelector("moz-select");
+        await select.updateComplete;
+
+        ok(
+          select.usePanelList,
+          "Select should use panel-list for icon options"
+        );
+        ok(!select.panelList?.open, "Panel should be closed initially");
+
+        let panelButton = select.shadowRoot.querySelector(".panel-trigger");
+        ok(panelButton, "Panel trigger button should exist");
+
+        synthesizeMouseAtCenter(panelButton, { button: 2 });
+        await TestUtils.waitForTick();
+
+        ok(
+          !select.panelList.open,
+          "Panel should not open on right-click (button 2)"
+        );
+      });
+    </script>
+  </head>
+  <body></body>
+</html>

@@ -4,15 +4,17 @@
 
 import json
 import os
+import re
 import subprocess
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import mozpack.path as mozpath
 from mozfile import which
 from mozlint import result
 from mozlint.pathutils import expand_exclusions
+from packaging.version import Version
 
 
 def to_str_affected(info: dict[str, Any]) -> str:
@@ -213,6 +215,7 @@ def lint(paths, config, log, **lintargs) -> list[Any]:
             for kind, warnings in warning_categories.items():
                 for warning in warnings:
                     message = build_message(kind, warning, show_verbose)
+                    exclusions = config.get("exclude-error", [])
                     if not is_excluded(message, exclusions):
                         results.append(build_issue(config, f, message, "warning"))
 
@@ -223,12 +226,44 @@ def get_audit_version() -> str:
     """Get the version number of the cargo-audit installation.
 
     Returns:
-        A string representing the cargo-audit version.
+        str: A string representing the cargo-audit version.
     """
     return run_process(["cargo-audit", "--version"]).strip().split()[1]
 
 
+def get_rust_version() -> Optional[str]:
+    """Get the version number from rustc.
+
+    Returns:
+        str: A string representing the rust version or None if it couldn't be
+            detected.
+    """
+    proc = subprocess.run(
+        ["rustc", "--version"], capture_output=True, text=True, check=False
+    )
+    if proc.returncode != 0:
+        return
+
+    m = re.match(r"^rustc (\S+) \(.+\)$", proc.stdout)
+    if not m:
+        return
+
+    version = m.group(1)
+    if "-" in version:
+        version = version.rsplit("-", 1)[0]
+    return version
+
+
 def setup(root, log, **lintargs) -> int:
+    min_rust_version = "1.85.0"
+    rust_version = get_rust_version()
+    if not rust_version or Version(rust_version) < Version(min_rust_version):
+        version_was = f"{rust_version} was" if rust_version else "was not"
+        log.error(
+            f"cargo-audit requires at least Rust {min_rust_version}, but Rust {version_was} detected!"
+        )
+        return 1
+
     binary = which("cargo-audit")
 
     with Path(__file__).parent.joinpath("cargo-audit_version.txt").open() as f:
@@ -240,18 +275,16 @@ def setup(root, log, **lintargs) -> int:
             installed_version = get_audit_version()
 
         if not installed_version or installed_version != desired_version:
-
-            output = run_process(
-                [
-                    "cargo",
-                    "install",
-                    "--version",
-                    desired_version,
-                    "--color",
-                    "never",
-                    "cargo-audit",
-                ]
-            )
+            output = run_process([
+                "cargo",
+                "install",
+                "--locked",
+                "--version",
+                desired_version,
+                "--color",
+                "never",
+                "cargo-audit",
+            ])
             if not which("cargo-audit") or get_audit_version() != desired_version:
                 log.error(f"Could not install cargo-audit:\n{output}")
                 return 1

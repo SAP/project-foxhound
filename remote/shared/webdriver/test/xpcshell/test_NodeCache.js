@@ -57,7 +57,7 @@ add_task(function getOrCreateNodeReference_invalid() {
 add_task(function getOrCreateNodeReference_supportedNodeTypes() {
   const { browser, divEl, nodeCache, seenNodeIds } = setupTest();
 
-  // Bug 1820734: No ownerGlobal is available in XPCShell tests
+  // Bug 1820734: No documentGlobal is available in XPCShell tests
   // const xmlDocument = new DOMParser().parseFromString(
   //   "<xml></xml>",
   //   "application/xml"
@@ -67,7 +67,7 @@ add_task(function getOrCreateNodeReference_supportedNodeTypes() {
     { node: divEl, type: Node.ELEMENT_NODE },
     { node: divEl.attributes[0], type: Node.ATTRIBUTE_NODE },
     { node: browser.document.createTextNode("foo"), type: Node.TEXT_NODE },
-    // Bug 1820734: No ownerGlobal is available in XPCShell tests
+    // Bug 1820734: No documentGlobal is available in XPCShell tests
     // {
     //   node: xmlDocument.createCDATASection("foo"),
     //   type: Node.CDATA_SECTION_NODE,

@@ -76,7 +76,7 @@ const STYLE_INSPECTOR_L10N = new LocalizationHelper(
  *        A validator function that returns a boolean.
  *        This is called every few milliseconds to check if the result is true.
  *        When it is true, the promise resolves.
- * @param {String} name
+ * @param {string} name
  *        Optional name of the test. This is used to generate
  *        the success and failure messages.
  * @return a promise that resolves when the function returned true or rejects
@@ -100,7 +100,7 @@ function waitForSuccess(validatorFn, name = "untitled") {
  * Get the dataURL for the font family tooltip.
  *
  * @param {Window} win
- * @param {String} font
+ * @param {string} font
  *        The font family value.
  * @param {object} nodeFront
  *        The NodeActor that will used to retrieve the dataURL for the
@@ -130,7 +130,7 @@ var getFontFamilyDataURL = async function (win, font, nodeFront) {
  * @param {SwatchColorPickerTooltip} colorPicker
  * @param {Array} newRgba
  *        The new color to be set [r, g, b, a]
- * @param {Object} expectedChange
+ * @param {object} expectedChange
  *        Optional object that needs the following props:
  *          - {DOMNode} element The element in the page that will have its
  *            style changed.
@@ -177,7 +177,7 @@ var simulateColorPickerChange = async function (
  *
  * @param {CssComputedView} view
  *        The instance of the computed view panel
- * @param {String} name
+ * @param {string} name
  *        The name of the property to retrieve
  * @return an object {nameSpan, valueSpan}
  */
@@ -203,9 +203,9 @@ function getComputedViewProperty(view, name) {
  *
  * @param {CssComputedView} view
  *        The instance of the computed view panel
- * @param {String} name
+ * @param {string} name
  *        The name of the property to retrieve
- * @return {String} The property value
+ * @return {string} The property value
  */
 function getComputedViewPropertyValue(view, name, propertyName) {
   return getComputedViewProperty(view, name, propertyName).valueSpan

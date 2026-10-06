@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +5,6 @@
 #ifndef SANDBOX_SRC_LINE_BREAK_DISPATCHER_H_
 #define SANDBOX_SRC_LINE_BREAK_DISPATCHER_H_
 
-#include "base/macros.h"
 #include "sandbox/win/src/crosscall_server.h"
 #include "sandbox/win/src/sandbox_policy_base.h"
 
@@ -18,6 +15,9 @@ class LineBreakDispatcher final : public Dispatcher {
  public:
   explicit LineBreakDispatcher(PolicyBase* policy_base);
   ~LineBreakDispatcher() final {}
+
+  LineBreakDispatcher(const LineBreakDispatcher&) = delete;
+  LineBreakDispatcher& operator=(const LineBreakDispatcher&) = delete;
 
   // Dispatcher interface.
   bool SetupService(InterceptionManager* manager, IpcTag service) final;
@@ -30,7 +30,6 @@ class LineBreakDispatcher final : public Dispatcher {
                                 CountedBuffer* break_before_buf);
 
   PolicyBase* policy_base_;
-  DISALLOW_COPY_AND_ASSIGN(LineBreakDispatcher);
 };
 
 }  // namespace sandbox

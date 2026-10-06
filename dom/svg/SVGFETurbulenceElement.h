@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,7 +12,7 @@
 #include "mozilla/dom/SVGFilters.h"
 
 nsresult NS_NewSVGFETurbulenceElement(
-    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
 namespace mozilla::dom {
 
@@ -23,11 +21,11 @@ using SVGFETurbulenceElementBase = SVGFilterPrimitiveElement;
 class SVGFETurbulenceElement final : public SVGFETurbulenceElementBase {
   friend nsresult(::NS_NewSVGFETurbulenceElement(
       nsIContent** aResult,
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo));
 
  protected:
   explicit SVGFETurbulenceElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : SVGFETurbulenceElementBase(std::move(aNodeInfo)) {}
   JSObject* WrapNode(JSContext* aCx,
                      JS::Handle<JSObject*> aGivenProto) override;
@@ -64,6 +62,10 @@ class SVGFETurbulenceElement final : public SVGFETurbulenceElementBase {
   EnumAttributesInfo GetEnumInfo() override;
   StringAttributesInfo GetStringInfo() override;
 
+  enum { RESULT };
+  SVGAnimatedString mStringAttributes[1];
+  static StringInfo sStringInfo[1];
+
   enum { SEED };  // floating point seed?!
   SVGAnimatedNumber mNumberAttributes[1];
   static NumberInfo sNumberInfo[1];
@@ -81,10 +83,6 @@ class SVGFETurbulenceElement final : public SVGFETurbulenceElementBase {
   static SVGEnumMapping sTypeMap[];
   static SVGEnumMapping sStitchTilesMap[];
   static EnumInfo sEnumInfo[2];
-
-  enum { RESULT };
-  SVGAnimatedString mStringAttributes[1];
-  static StringInfo sStringInfo[1];
 };
 
 }  // namespace mozilla::dom

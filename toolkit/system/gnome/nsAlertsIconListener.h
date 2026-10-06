@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAlertsIconListener_h__
-#define nsAlertsIconListener_h__
+#ifndef nsAlertsIconListener_h_
+#define nsAlertsIconListener_h_
 
 #include "nsCOMPtr.h"
 #include "nsIAlertsService.h"
@@ -20,23 +19,23 @@ class nsSystemAlertsService;
 
 struct NotifyNotification;
 
-class nsAlertsIconListener : public nsIAlertNotificationImageListener {
+class nsAlertsIconListener : public nsISupports {
  public:
   NS_DECL_ISUPPORTS
-  NS_DECL_NSIALERTNOTIFICATIONIMAGELISTENER
 
   nsAlertsIconListener(nsSystemAlertsService* aBackend,
                        nsIAlertNotification* aAlertNotification,
                        const nsAString& aAlertName);
 
-  nsresult InitAlertAsync(nsIAlertNotification* aAlert,
-                          nsIObserver* aAlertListener);
+  nsresult InitAlert(nsIAlertNotification* aAlert, nsIObserver* aAlertListener);
   nsresult Close();
 
   void SendCallback();
   void SendActionCallback(const nsAString& aActionName);
   void SendClosed();
   void Disconnect();
+
+  static void MaybeSetActivationToken(NotifyNotification* aNotification);
 
  protected:
   virtual ~nsAlertsIconListener();
@@ -66,6 +65,8 @@ class nsAlertsIconListener : public nsIAlertNotificationImageListener {
   using notify_notification_set_hint_t = void (*)(NotifyNotification*,
                                                   const char*, GVariant*);
   using notify_notification_set_timeout_t = void (*)(NotifyNotification*, gint);
+  using notify_notification_get_activation_token_t =
+      const char* (*)(NotifyNotification*);
 
   nsCOMPtr<nsICancelable> mIconRequest;
   nsCString mAlertTitle;
@@ -96,10 +97,12 @@ class nsAlertsIconListener : public nsIAlertNotificationImageListener {
   static notify_notification_close_t notify_notification_close;
   static notify_notification_set_hint_t notify_notification_set_hint;
   static notify_notification_set_timeout_t notify_notification_set_timeout;
+  static notify_notification_get_activation_token_t
+      notify_notification_get_activation_token;
   NotifyNotification* mNotification = nullptr;
   gulong mClosureHandler = 0;
 
-  nsresult ShowAlert(GdkPixbuf* aPixbuf);
+  nsresult ShowAlert(imgIContainer* aImage);
 
   void NotifyFinished();
 };

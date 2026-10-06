@@ -24,12 +24,7 @@ add_autofill_heuristic_tests([
           { fieldName: "family-name", autofill: TEST_ADDRESS_1["family-name"] },
           {
             fieldName: "address-line1",
-            autofill:
-              TEST_ADDRESS_1["street-address"].replace("\n", " ") +
-              " " +
-              TEST_ADDRESS_1["street-address"].split(
-                "\n"
-              )[1] /* extra apartment is due to bug 1930008 */,
+            autofill: TEST_ADDRESS_1["street-address"].replace("\n", " "),
           },
           { fieldName: "postal-code", autofill: TEST_ADDRESS_1["postal-code"] },
         ],
@@ -144,6 +139,42 @@ add_autofill_heuristic_tests([
             autofill: TEST_ADDRESS_1["street-address"].split("\n")[1],
           },
           { fieldName: "postal-code", autofill: TEST_ADDRESS_1["postal-code"] },
+        ],
+      },
+    ],
+  },
+  {
+    description:
+      "Address search field (address-line1 lookup) is skipped and address-line2 is not promoted",
+    fixtureData: `
+        <html>
+        <body>
+          <form>
+            <label>First Name: <input id="firstname"></label>
+            <label>Last Name: <input id="lastname"></label>
+            <label>Address Lookup: <input id="Address1" placeholder="Enter address or postal code"></label>
+            <label>Apartment: <input id="apt"></label>
+          </form>
+        </body>
+        </html>
+      `,
+    profile: TEST_ADDRESS_1,
+    expectedResult: [
+      {
+        default: {
+          reason: "regex-heuristic",
+        },
+        fields: [
+          { fieldName: "given-name", autofill: TEST_ADDRESS_1["given-name"] },
+          { fieldName: "family-name", autofill: TEST_ADDRESS_1["family-name"] },
+          {
+            fieldName: "address-line1",
+            autofill: "",
+          },
+          {
+            fieldName: "address-line2",
+            autofill: TEST_ADDRESS_1["street-address"].split("\n")[1],
+          },
         ],
       },
     ],

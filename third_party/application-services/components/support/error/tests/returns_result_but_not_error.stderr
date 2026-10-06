@@ -1,0 +1,11 @@
+error[E0308]: mismatched types
+  --> returns_result_but_not_error.rs:29:2
+   |
+29 |  #[handle_error(Error)]
+   |  ^^^^^^^^^^^^^^^^^^^^^^ expected `Result<String, String>`, found `Result<String, ExternalError>`
+30 |  fn func() -> Result<String, String> {
+   |               ---------------------- expected `Result<String, String>` because of return type
+   |
+   = note: expected enum `Result<_, String>`
+              found enum `Result<_, ExternalError>`
+   = note: this error originates in the attribute macro `handle_error` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -17,7 +17,6 @@ import org.w3c.dom.Element
 
 private val FRAMEWORK_ELEMENTS = setOf(
     "androidx.constraintlayout.widget.ConstraintLayout",
-
     // Android framework views that extend ConstraintLayout
     "androidx.constraintlayout.motion.widget.MotionLayout",
 )
@@ -38,7 +37,6 @@ private val CUSTOM_VIEW_ELEMENTS = setOf(
     "$FENIX_PREFIX.settings.deletebrowsingdata.DeleteBrowsingDataItem",
     "$FENIX_PREFIX.trackingprotection.SwitchWithDescription",
     "$FENIX_PREFIX.trackingprotection.TrackingProtectionCategoryItem",
-
     "$AC_PREFIX.feature.readerview.view.ReaderViewControlsBar",
     "$AC_PREFIX.feature.findinpage.view.FindInPageBar",
     "$AC_PREFIX.feature.prompts.login.LoginSelectBar",

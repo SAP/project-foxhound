@@ -12,6 +12,8 @@
 [DEFAULT]
 # browser tests
 
+["include:../../../../../browser/components/aiwindow/ui/test/marionette/manifest.toml"]
+
 ["include:../../../../../browser/components/backup/tests/marionette/manifest.toml"]
 
 ["include:../../../../../browser/components/customizableui/test/marionette/manifest.toml"]
@@ -27,6 +29,8 @@
 ["include:../../../../../browser/components/sidebar/tests/marionette/manifest.toml"]
 
 ["include:../../../../../browser/components/tests/marionette/manifest.toml"]
+
+["include:../../../../../browser/extensions/webcompat/tests/marionette/manifest.toml"]
 
 # DOM tests
 

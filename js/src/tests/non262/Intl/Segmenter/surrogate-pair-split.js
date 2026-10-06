@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl')||!this.Intl.Segmenter)
-
 // Calling %Segments.prototype%.containing in the middle of a surrogate pair
 // doubles back to the lead surrogate.
 

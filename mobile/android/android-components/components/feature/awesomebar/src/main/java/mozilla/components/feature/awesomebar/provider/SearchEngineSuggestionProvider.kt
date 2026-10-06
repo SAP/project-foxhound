@@ -60,7 +60,7 @@ class SearchEngineSuggestionProvider(
                 title = titleFormatter(it.name),
                 description = description,
                 onSuggestionClicked = { selectShortcutEngine(it) },
-                score = MAX_VALUE,
+                score = MAX_VALUE - 1,
             )
         }
     }

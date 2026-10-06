@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -184,13 +183,19 @@ Http2WebTransportStream::OnOutputStreamReady(nsIAsyncOutputStream* aOut) {
   }
 
   while (mCurrentOut && mReceiveStreamPipeOut && (mRecvState != RECV_DONE)) {
+    uint32_t available = mCurrentOut->GetData().Length() - mWriteOffset;
     char* writeBuffer = reinterpret_cast<char*>(const_cast<uint8_t*>(
                             mCurrentOut->GetData().Elements())) +
                         mWriteOffset;
-    uint32_t toWrite = mCurrentOut->GetData().Length() - mWriteOffset;
+    uint32_t toWrite = available;
     if (mReliableSize) {
-      if (mTotalReceived + toWrite > *mReliableSize) {
-        toWrite = *mReliableSize - mTotalReceived;
+      if (*mReliableSize <= mTotalReceived) {
+        mRecvState = RECV_DONE;
+        break;
+      }
+      uint64_t remaining = *mReliableSize - mTotalReceived;
+      if (remaining < toWrite) {
+        toWrite = static_cast<uint32_t>(remaining);
       }
     }
 
@@ -358,23 +363,32 @@ nsresult Http2WebTransportStream::HandleMaxStreamData(uint64_t aLimit) {
 
 void Http2WebTransportStream::OnStopSending() { mSendState = SEND_DONE; }
 
-void Http2WebTransportStream::OnReset(uint64_t aSize) {
+nsresult Http2WebTransportStream::OnReset(uint64_t aSize) {
   if (mReliableSize) {
-    return;
+    return NS_OK;
+  }
+
+  LOG(("Http2WebTransportStream::OnReset %p aSize=%" PRIu64
+       " mTotalReceived=%" PRIu64,
+       this, aSize, mTotalReceived));
+
+  if (aSize < mTotalReceived) {
+    // A receiver MUST treat the receipt of a WT_RESET_STREAM with a Reliable
+    // Size smaller than the number of bytes it has received on the stream as a
+    // session error.
+    RefPtr<Http2WebTransportSessionImpl> session = mWebTransportSession;
+    Close(NS_ERROR_ILLEGAL_VALUE);
+    session->Close(NS_ERROR_ILLEGAL_VALUE);
+    return NS_ERROR_ILLEGAL_VALUE;
   }
 
   mReliableSize.emplace(aSize);
 
-  LOG(("Http2WebTransportStream::OnReset %p mReliableSize=%" PRIu64
-       " mTotalReceived=%" PRIu64,
-       this, *mReliableSize, mTotalReceived));
-  if (*mReliableSize < mTotalReceived) {
-    // A receiver MUST treat the receipt of a WT_RESET_STREAM with a Reliable
-    // Size smaller than the number of bytes it has received on the stream as a
-    // session error.
-    // TODO: find a better error code.
-    mWebTransportSession->OnError(0);
+  if (mTotalReceived == aSize) {
+    mRecvState = RECV_DONE;
   }
+
+  return NS_OK;
 }
 
 void Http2WebTransportStream::OnStreamDataSent(size_t aCount) {

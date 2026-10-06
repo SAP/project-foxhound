@@ -8,7 +8,7 @@
   }
 
   description {
-    font-weight: bold;
+    font-weight: var(--font-weight-bold);
   }
 }
 
@@ -27,7 +27,7 @@
 }
 
 #location {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 #contentTypeImage {

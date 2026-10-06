@@ -4,232 +4,147 @@
 
 package org.mozilla.focus.navigation
 
-import android.os.Build
 import android.os.Bundle
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentManager
+import androidx.fragment.app.FragmentTransaction
+import androidx.fragment.app.commit
+import androidx.fragment.app.replace
 import org.mozilla.focus.R
 import org.mozilla.focus.activity.MainActivity
-import org.mozilla.focus.autocomplete.AutocompleteAddFragment
-import org.mozilla.focus.autocomplete.AutocompleteListFragment
-import org.mozilla.focus.autocomplete.AutocompleteRemoveFragment
-import org.mozilla.focus.autocomplete.AutocompleteSettingsFragment
 import org.mozilla.focus.biometrics.BiometricAuthenticationFragment
-import org.mozilla.focus.cookiebanner.CookieBannerFragment
-import org.mozilla.focus.exceptions.ExceptionsListFragment
-import org.mozilla.focus.exceptions.ExceptionsRemoveFragment
-import org.mozilla.focus.ext.components
-import org.mozilla.focus.ext.settings
 import org.mozilla.focus.fragment.BrowserFragment
 import org.mozilla.focus.fragment.CrashListFragment
 import org.mozilla.focus.fragment.UrlInputFragment
-import org.mozilla.focus.fragment.about.AboutFragment
 import org.mozilla.focus.fragment.onboarding.OnboardingFirstFragment
 import org.mozilla.focus.fragment.onboarding.OnboardingSecondFragment
 import org.mozilla.focus.fragment.onboarding.OnboardingStep
 import org.mozilla.focus.fragment.onboarding.OnboardingStorage
-import org.mozilla.focus.locale.screen.LanguageFragment
 import org.mozilla.focus.nimbus.FocusNimbus
-import org.mozilla.focus.nimbus.Onboarding
-import org.mozilla.focus.searchwidget.SearchWidgetUtils
-import org.mozilla.focus.settings.AboutLibrariesFragment
-import org.mozilla.focus.settings.GeneralSettingsFragment
-import org.mozilla.focus.settings.InstalledSearchEnginesSettingsFragment
-import org.mozilla.focus.settings.ManualAddSearchEngineSettingsFragment
-import org.mozilla.focus.settings.MozillaSettingsFragment
-import org.mozilla.focus.settings.RemoveSearchEnginesSettingsFragment
-import org.mozilla.focus.settings.SearchSettingsFragment
-import org.mozilla.focus.settings.SettingsFragment
-import org.mozilla.focus.settings.advanced.AdvancedSettingsFragment
-import org.mozilla.focus.settings.advanced.SecretSettingsFragment
-import org.mozilla.focus.settings.permissions.SitePermissionsFragment
 import org.mozilla.focus.settings.permissions.permissionoptions.SitePermission
 import org.mozilla.focus.settings.permissions.permissionoptions.SitePermissionOptionsFragment
-import org.mozilla.focus.settings.privacy.PrivacySecuritySettingsFragment
-import org.mozilla.focus.state.AppAction
 import org.mozilla.focus.state.Screen
-import org.mozilla.focus.utils.ViewUtils
-import kotlin.collections.forEach as withEach
 
 /**
- * Class performing the actual navigation in [MainActivity] by performing fragment transactions if
- * needed.
+ * A helper class that manages fragment-based navigation within [MainActivity].
+ *
+ * This class centralizes the logic for creating and switching between different fragments
+ * (e.g., home screen, browser, settings, onboarding) using the [FragmentManager].
+ * By encapsulating navigation, it simplifies management and testing.
+ *
+ * @param supportFragmentManager The [FragmentManager] used to perform fragment transactions.
+ * @param onboardingStorage Manages the state and progress of the user onboarding flow.
+ * @param isInPictureInPictureMode A lambda that returns whether the activity is currently in PiP mode.
+ * @param shouldAnimateHome A lambda that determines if the home screen transition should be animated.
+ * @param showStartBrowsingCfr A function to trigger the "start browsing" CFR if applicable.
+ * @param onEraseAction A function to potentially trigger the widget promotion.
  */
-@Suppress("TooManyFunctions")
 class MainActivityNavigation(
-    private val activity: MainActivity,
-) {
+    private val supportFragmentManager: FragmentManager,
+    private val onboardingStorage: OnboardingStorage,
+    private val isInPictureInPictureMode: () -> Boolean,
+    private val shouldAnimateHome: () -> Boolean,
+    private val showStartBrowsingCfr: () -> Unit,
+    private val onEraseAction: () -> Any,
+) : AppNavigation {
+
     /**
      * Home screen.
      */
-    fun home() {
-        val fragmentManager = activity.supportFragmentManager
-        val browserFragment = fragmentManager.findFragmentByTag(BrowserFragment.FRAGMENT_TAG) as BrowserFragment?
-
-        val isShowingBrowser = browserFragment != null
-        val crashReporterIsVisible = browserFragment?.crashReporterIsVisible() == true
-
-        if (isShowingBrowser && !crashReporterIsVisible) {
-            showPromoteSearchWidgetDialogOrBrandedSnackbar()
+    override fun navigateToHome() {
+        // The erase action should only be triggered when we are navigating away from an existing browser session.
+        if (supportFragmentManager.findFragmentByTag(BrowserFragment.FRAGMENT_TAG) != null) {
+            onEraseAction()
         }
-
-        // We add the url input fragment to the layout if it doesn't exist yet.
-        val transaction = fragmentManager
-            .beginTransaction()
 
         // We only want to play the animation if a browser fragment is added and resumed.
         // If it is not resumed then the application is currently in the process of resuming
         // and the session was removed while the app was in the background (e.g. via the
         // notification). In this case we do not want to show the content and remove the
         // browser fragment immediately.
-        val shouldAnimate = isShowingBrowser && browserFragment!!.isResumed
-
-        if (shouldAnimate) {
-            transaction.setCustomAnimations(0, R.anim.erase_animation)
+        commitFragmentTransaction(allowStateLoss = true) {
+            if (shouldAnimateHome()) {
+                setCustomAnimations(0, R.anim.erase_animation)
+            }
+            replace<UrlInputFragment>(R.id.container, UrlInputFragment.FRAGMENT_TAG)
         }
-
         showStartBrowsingCfr()
-        // Currently this callback can get invoked while the app is in the background. Therefore we are using
-        // commitAllowingStateLoss() here because we can't do a fragment transaction while the app is in the
-        // background - like we already do in showBrowserScreenForCurrentSession().
-        // Ideally we'd make it possible to pause observers while the app is in the background:
-        // https://github.com/mozilla-mobile/android-components/issues/876
-        transaction
-            .replace(
-                R.id.container,
-                UrlInputFragment.createWithoutSession(),
-                UrlInputFragment.FRAGMENT_TAG,
-            )
-            .commitAllowingStateLoss()
-    }
-
-    private fun showStartBrowsingCfr() {
-        val onboardingConfig = FocusNimbus.features.onboarding.value()
-        if (
-            onboardingConfig.isCfrEnabled &&
-            !activity.settings.isFirstRun &&
-            activity.settings.shouldShowStartBrowsingCfr
-        ) {
-            FocusNimbus.features.onboarding.recordExposure()
-            activity.components.appStore.dispatch(AppAction.ShowStartBrowsingCfrChange(true))
-        }
-    }
-
-    /**
-     * Display the widget promo at first data clearing action and if it wasn't added after 5th Focus session
-     * or display branded snackbar when widget promo is not shown.
-     */
-    @Suppress("MagicNumber")
-    private fun showPromoteSearchWidgetDialogOrBrandedSnackbar() {
-        val onboardingFeature = FocusNimbus.features.onboarding
-        val onboardingConfig = onboardingFeature.value()
-
-        val clearBrowsingSessions = activity.components.settings.getClearBrowsingSessions()
-        activity.components.settings.addClearBrowsingSessions(1)
-
-        if (shouldShowPromoteSearchWidgetDialog(onboardingConfig) &&
-            (
-                clearBrowsingSessions == 0 || clearBrowsingSessions == 4
-                )
-        ) {
-            onboardingFeature.recordExposure()
-            SearchWidgetUtils.showPromoteSearchWidgetDialog(activity)
-        } else {
-            ViewUtils.showBrandedSnackbar(
-                activity.findViewById(android.R.id.content),
-                R.string.feedback_erase2,
-                activity.resources.getInteger(R.integer.erase_snackbar_delay),
-            )
-        }
-    }
-
-    private fun shouldShowPromoteSearchWidgetDialog(onboadingConfig: Onboarding): Boolean {
-        return (
-            onboadingConfig.isPromoteSearchWidgetDialogEnabled &&
-                !activity.components.settings.searchWidgetInstalled
-            )
     }
 
     /**
      * Show browser for tab with the given [tabId].
      */
-    fun browser(tabId: String) {
-        val fragmentManager = activity.supportFragmentManager
+    override fun navigateToBrowser(tabId: String) {
+        val currentFragment = supportFragmentManager.findFragmentById(R.id.container)
 
-        val urlInputFragment = fragmentManager.findFragmentByTag(UrlInputFragment.FRAGMENT_TAG) as UrlInputFragment?
-        if (urlInputFragment != null) {
-            fragmentManager
-                .beginTransaction()
-                .remove(urlInputFragment)
-                .commitAllowingStateLoss()
+        // Check if the correct BrowserFragment is already visible.
+        if (currentFragment is BrowserFragment && currentFragment.tab.id == tabId) {
+            return
         }
 
-        val browserFragment = fragmentManager.findFragmentByTag(BrowserFragment.FRAGMENT_TAG) as BrowserFragment?
-        if (browserFragment == null || browserFragment.tab.id != tabId) {
-            fragmentManager
-                .beginTransaction()
-                .replace(R.id.container, BrowserFragment.createForTab(tabId), BrowserFragment.FRAGMENT_TAG)
-                .commitAllowingStateLoss()
+        commitFragmentTransaction(allowStateLoss = true) {
+            val args = BrowserFragment.bundleForTab(tabId)
+            replace<BrowserFragment>(R.id.container, BrowserFragment.FRAGMENT_TAG, args)
         }
     }
 
     /**
-     * Edit URL of tab with the given [tabId].
+     * Opens the URL input fragment to allow editing the URL of the tab
+     * associated with the given [tabId].
+     *
+     * If a URL input fragment is already open for this tab, this function
+     * does nothing.
+     *
+     * @param tabId The ID of the tab whose URL is to be edited.
      */
-    fun edit(
+    override fun navigateToEditUrl(
         tabId: String,
     ) {
-        val fragmentManager = activity.supportFragmentManager
+        val existingFragment =
+            supportFragmentManager.findFragmentByTag(UrlInputFragment.FRAGMENT_TAG) as? UrlInputFragment
 
-        val urlInputFragment = fragmentManager.findFragmentByTag(UrlInputFragment.FRAGMENT_TAG) as UrlInputFragment?
-        if (urlInputFragment != null && urlInputFragment.tab?.id == tabId) {
+        if (existingFragment?.tab?.id == tabId) {
             // There's already an UrlInputFragment for this tab.
             return
         }
 
-        val urlFragment = UrlInputFragment.createWithTab(tabId)
-
-        fragmentManager
-            .beginTransaction()
-            .add(R.id.container, urlFragment, UrlInputFragment.FRAGMENT_TAG)
-            .commit()
+        val args = UrlInputFragment.bundleForTab(tabId)
+        commitFragmentTransaction {
+            add(R.id.container, UrlInputFragment::class.java, args, UrlInputFragment.FRAGMENT_TAG)
+        }
     }
 
     /**
      * Show onBoarding.
      */
-    fun firstRun() {
+    override fun navigateToFirstRun() {
         FocusNimbus.features.onboarding.recordExposure()
-        val onBoardingStorage = OnboardingStorage(activity)
-        val onboardingFragment = when (onBoardingStorage.getCurrentOnboardingStep()) {
-            OnboardingStep.ON_BOARDING_FIRST_SCREEN -> {
-                OnboardingFirstFragment()
-            }
 
-            OnboardingStep.ON_BOARDING_SECOND_SCREEN -> {
-                OnboardingSecondFragment()
-            }
+        when (onboardingStorage.getCurrentOnboardingStep()) {
+            OnboardingStep.ON_BOARDING_FIRST_SCREEN ->
+                navigateTo<OnboardingFirstFragment>(tag = OnboardingFirstFragment.FRAGMENT_TAG)
+
+            OnboardingStep.ON_BOARDING_SECOND_SCREEN ->
+                navigateTo<OnboardingSecondFragment>(tag = OnboardingSecondFragment.FRAGMENT_TAG)
         }
-
-        activity.supportFragmentManager
-            .beginTransaction()
-            .replace(R.id.container, onboardingFragment, onboardingFragment::class.java.simpleName)
-            .commit()
     }
 
-    fun showOnBoardingSecondScreen() {
-        activity.supportFragmentManager
-            .beginTransaction()
-            .replace(R.id.container, OnboardingSecondFragment(), OnboardingSecondFragment::class.java.simpleName)
-            .commit()
+    /**
+     * Shows the second screen of the onboarding process.
+     * This function replaces the current fragment with [OnboardingSecondFragment].
+     */
+    override fun navigateToOnboardingSecondScreen() {
+        navigateTo<OnboardingSecondFragment>(tag = OnboardingSecondFragment.FRAGMENT_TAG)
     }
 
     /**
      * Show content of about:crashes
      */
-    fun showCrashList() {
-        activity.supportFragmentManager
-            .beginTransaction()
-            .replace(R.id.container, CrashListFragment(true), CrashListFragment()::class.java.simpleName)
-            .commit()
+    override fun showCrashList() {
+        navigateTo<CrashListFragment>(
+            tag = CrashListFragment.FRAGMENT_TAG,
+            args = Bundle().apply { putBoolean("show_all", true) },
+        )
     }
 
     /**
@@ -238,88 +153,118 @@ class MainActivityNavigation(
      * @param bundle it is used for app navigation. If the user can unlock with success he should
      * be redirected to a certain screen. It comes from the external intent.
      */
-    fun lock(bundle: Bundle? = null) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            throw IllegalStateException("Trying to lock unsupported device")
+    override fun navigateToLockScreen(bundle: Bundle?) {
+        if (isInPictureInPictureMode()) {
+            return
         }
 
-        val fragmentManager = activity.supportFragmentManager
-
         val biometricAuthenticationFragment =
-            fragmentManager.findFragmentByTag(BiometricAuthenticationFragment.FRAGMENT_TAG)
+            supportFragmentManager.findFragmentByTag(BiometricAuthenticationFragment.FRAGMENT_TAG)
         if (biometricAuthenticationFragment != null) {
             bundle?.let { biometricAuthenticationFragment.arguments = it }
             return
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && activity.isInPictureInPictureMode) {
-            return
-        }
-
-        val transaction = fragmentManager
-            .beginTransaction()
-
-        fragmentManager.fragments.withEach { fragment ->
-            transaction.remove(fragment)
-        }
-
-        fragmentManager
-            .beginTransaction()
-            .replace(
+        commitFragmentTransaction {
+            supportFragmentManager.fragments.forEach { remove(it) }
+            replace<BiometricAuthenticationFragment>(
                 R.id.container,
-                BiometricAuthenticationFragment.createWithDestinationData(bundle),
                 BiometricAuthenticationFragment.FRAGMENT_TAG,
+                bundle,
             )
-            .commit()
+        }
     }
 
-    @Suppress("ComplexMethod")
-    fun settings(page: Screen.Settings.Page) {
-        val fragment = when (page) {
-            Screen.Settings.Page.Start -> SettingsFragment()
-            Screen.Settings.Page.General -> GeneralSettingsFragment()
-            Screen.Settings.Page.Privacy -> PrivacySecuritySettingsFragment()
-            Screen.Settings.Page.Search -> SearchSettingsFragment()
-            Screen.Settings.Page.Advanced -> AdvancedSettingsFragment()
-            Screen.Settings.Page.Mozilla -> MozillaSettingsFragment()
-            Screen.Settings.Page.PrivacyExceptions -> ExceptionsListFragment()
-            Screen.Settings.Page.PrivacyExceptionsRemove -> ExceptionsRemoveFragment()
-            Screen.Settings.Page.SitePermissions -> SitePermissionsFragment()
-            Screen.Settings.Page.SecretSettings -> SecretSettingsFragment()
-            Screen.Settings.Page.SearchList -> InstalledSearchEnginesSettingsFragment()
-            Screen.Settings.Page.SearchRemove -> RemoveSearchEnginesSettingsFragment()
-            Screen.Settings.Page.SearchAdd -> ManualAddSearchEngineSettingsFragment()
-            Screen.Settings.Page.SearchAutocomplete -> AutocompleteSettingsFragment()
-            Screen.Settings.Page.SearchAutocompleteList -> AutocompleteListFragment()
-            Screen.Settings.Page.SearchAutocompleteAdd -> AutocompleteAddFragment()
-            Screen.Settings.Page.SearchAutocompleteRemove -> AutocompleteRemoveFragment()
-            Screen.Settings.Page.About -> AboutFragment()
-            Screen.Settings.Page.Licenses -> AboutLibrariesFragment()
-            Screen.Settings.Page.Locale -> LanguageFragment()
-            Screen.Settings.Page.CookieBanner -> CookieBannerFragment()
-            Screen.Settings.Page.CrashList -> CrashListFragment()
-        }
+    /**
+     * Navigates to the specified settings page.
+     *
+     * This function determines which settings fragment to display based on the [page] parameter.
+     * It then replaces the current fragment with the new settings fragment, ensuring that
+     * the same fragment is not added multiple times.
+     *
+     * @param page The specific settings page to navigate to, defined in [Screen.Settings.Page].
+     */
+    override fun navigateToSettings(page: Screen.Settings.Page) {
+        val tag = "settings_${page.fragmentClass.simpleName}"
 
-        val tag = "settings_" + fragment::class.java.simpleName
+        navigateTo(page.fragmentClass, tag = tag)
+    }
 
-        val fragmentManager = activity.supportFragmentManager
-        if (fragmentManager.findFragmentByTag(tag) != null) {
+    /**
+     * Navigates to the site permission options screen.
+     * This function displays a fragment that allows users to configure specific permissions for a website.
+     *
+     * @param sitePermission The [SitePermission] object containing information about the site
+     * and its current permissions.
+     */
+    override fun navigateToSitePermissionOptions(sitePermission: SitePermission) {
+        navigateTo<SitePermissionOptionsFragment>(
+            tag = SitePermissionOptionsFragment.FRAGMENT_TAG,
+            args = SitePermissionOptionsFragment.bundleForSitePermission(sitePermission),
+        )
+    }
+
+    /**
+     * A generic navigator to replace the fragment in the main container.
+     *
+     * This function handles the transaction to replace the currently displayed fragment
+     * with a new one. It prevents redundant transactions by checking if a fragment with the
+     * same tag is already the active one in the container.
+     *
+     * @param fragmentClass The class of the fragment to instantiate and display.
+     * @param tag A unique tag used to identify the fragment in the FragmentManager.
+     * @param args An optional [Bundle] of arguments to pass to the new fragment.
+     * @param allowStateLoss If true, the transaction can be committed even after
+     *                       the activity's state has been saved.
+     * @param transactionSetup An optional lambda to apply custom configurations to the [FragmentTransaction],
+     *                         such as setting custom animations.
+     */
+    private fun <F : Fragment> navigateTo(
+        fragmentClass: Class<F>,
+        tag: String,
+        args: Bundle? = null,
+        allowStateLoss: Boolean = false,
+        transactionSetup: (FragmentTransaction.() -> Unit)? = null,
+    ) {
+        // Don't navigate if the fragment is already the current one in the container.
+        if (supportFragmentManager.findFragmentById(R.id.container)?.tag == tag) {
             return
         }
 
-        fragmentManager.beginTransaction()
-            .replace(R.id.container, fragment, tag)
-            .commit()
+        commitFragmentTransaction(allowStateLoss) {
+            transactionSetup?.invoke(this)
+            replace(R.id.container, fragmentClass, args, tag)
+        }
     }
 
-    fun sitePermissionOptionsFragment(sitePermission: SitePermission) {
-        val fragmentManager = activity.supportFragmentManager
-        fragmentManager.beginTransaction()
-            .replace(
-                R.id.container,
-                SitePermissionOptionsFragment.addSitePermission(sitePermission = sitePermission),
-                SitePermissionOptionsFragment.FRAGMENT_TAG,
-            )
-            .commit()
+    /**
+     * A reified version of the generic navigator for cleaner call sites.
+     */
+    private inline fun <reified F : Fragment> navigateTo(
+        tag: String,
+        args: Bundle? = null,
+        allowStateLoss: Boolean = false,
+        noinline transactionSetup: (FragmentTransaction.() -> Unit)? = null,
+    ) = navigateTo(F::class.java, tag, args, allowStateLoss, transactionSetup)
+
+    /**
+     * A wrapper for fragment transactions that sets common options.
+     *
+     * This function simplifies committing fragment transactions by providing a centralized
+     * place to configure default behaviors, such as enabling reordering. It uses the
+     * `commit` extension function from `androidx.fragment.app` for safer and more
+     * concise transaction management.
+     *
+     * @param allowStateLoss Whether the transaction can be committed after the activity's
+     * state has been saved. Setting this to `true` can prevent crashes but may result
+     * in the loss of the fragment state if the activity is restored. Defaults to `false`.
+     * @param block A lambda with a [FragmentTransaction] receiver, containing the
+     * specific operations for this transaction (e.g., `replace`, `add`, `remove`).
+     */
+    private fun commitFragmentTransaction(allowStateLoss: Boolean = false, block: FragmentTransaction.() -> Unit) {
+        supportFragmentManager.commit(allowStateLoss) {
+            setReorderingAllowed(true)
+            block()
+        }
     }
 }

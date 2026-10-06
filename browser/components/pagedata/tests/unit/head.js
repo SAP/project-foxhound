@@ -6,7 +6,8 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 );
 
 ChromeUtils.defineESModuleGetters(this, {
-  PageDataSchema: "resource:///modules/pagedata/PageDataSchema.sys.mjs",
+  PageDataSchema:
+    "moz-src:///browser/components/pagedata/PageDataSchema.sys.mjs",
 });
 
 const { HttpServer } = ChromeUtils.importESModule(

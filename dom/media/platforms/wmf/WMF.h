@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,13 +5,13 @@
 #ifndef WMF_H_
 #define WMF_H_
 
+// clang-format off
 #include <windows.h>
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>
 #include <mfobjects.h>
 #include <ks.h>
-#include <stdio.h>
 #include <mferror.h>
 #include <propvarutil.h>
 #include <wmcodecdsp.h>
@@ -21,9 +19,10 @@
 #include <dxva2api.h>
 #include <wmcodecdsp.h>
 #include <codecapi.h>
+// clang-format on
 
-#include "mozilla/Atomics.h"
 #include "mozilla/AppShutdown.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/StaticMutex.h"
 #include "nsThreadUtils.h"
@@ -139,11 +138,15 @@ class MediaFoundationInitializer final {
   // WMF from threads with the same COM compartment model.
   HRESULT MFShutdown();
 
-  MOZ_RUNINIT static inline UniquePtr<MediaFoundationInitializer> sInitializer;
+  constinit static inline UniquePtr<MediaFoundationInitializer> sInitializer;
   static inline StaticMutex sCreateMutex;
   static inline Atomic<bool> sIsShutdown{false};
   const bool mHasInitialized;
 };
+
+// Used to serialize wmf::MFTEnumEx with MFShutdown to prevent the
+// RTWorkQ/MFTEnumCache lock-order inversion deadlock (bug 1972278).
+inline StaticMutex sMFTEnumShutdownMutex MOZ_UNANNOTATED;
 
 // All functions below are wrappers around the corresponding WMF function,
 // and automatically locate and call the corresponding function in the WMF DLLs.

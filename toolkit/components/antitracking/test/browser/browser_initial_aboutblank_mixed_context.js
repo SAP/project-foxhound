@@ -14,10 +14,7 @@ add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["network.cookie.CHIPS.enabled", true],
-      [
-        "network.cookie.cookieBehavior",
-        BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
-      ],
+      ["network.cookie.cookieBehavior", BEHAVIOR_PARTITION_FOREIGN],
       ["dom.security.https_first", false],
       ["dom.security.https_only_mode", false],
     ],

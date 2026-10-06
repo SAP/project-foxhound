@@ -1,0 +1,23 @@
+From: Michael Froman <mfroman@mozilla.com>
+Date: Mon, 6 Apr 2026 18:41:00 -0500
+Subject: Bug 2029247 - (fix-4520c7897c) fix new usage of GetRealTimeClock in
+ bitrate_adjuster.h
+
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/a88b1959591bc4ddbf6deb88ff76dcc24fd8ae5d
+---
+ common_video/include/bitrate_adjuster.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/common_video/include/bitrate_adjuster.h b/common_video/include/bitrate_adjuster.h
+index 6cd92b7deb..d414fb7e25 100644
+--- a/common_video/include/bitrate_adjuster.h
++++ b/common_video/include/bitrate_adjuster.h
+@@ -40,7 +40,7 @@ class RTC_EXPORT BitrateAdjuster {
+   ABSL_DEPRECATE_AND_INLINE()
+   BitrateAdjuster(float min_adjusted_bitrate_pct,
+                   float max_adjusted_bitrate_pct)
+-      : BitrateAdjuster(Clock::GetRealTimeClock(),
++      : BitrateAdjuster(Clock::GetRealTimeClockRaw(),
+                         min_adjusted_bitrate_pct,
+                         max_adjusted_bitrate_pct) {}
+   virtual ~BitrateAdjuster() = default;

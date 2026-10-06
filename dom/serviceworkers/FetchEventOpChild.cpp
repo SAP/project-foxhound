@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,19 @@
 #include <utility>
 
 #include "MainThreadUtils.h"
+#include "ServiceWorkerPrivate.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/LoadInfo.h"
+#include "mozilla/Services.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/dom/FetchService.h"
+#include "mozilla/dom/InternalHeaders.h"
+#include "mozilla/dom/InternalResponse.h"
+#include "mozilla/dom/PRemoteWorkerControllerChild.h"
+#include "mozilla/dom/RemoteWorkerControllerChild.h"
+#include "mozilla/dom/ServiceWorkerRegistrationInfo.h"
+#include "mozilla/ipc/BackgroundChild.h"
+#include "mozilla/net/NeckoChannelParams.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentUtils.h"
 #include "nsDebug.h"
@@ -28,22 +39,6 @@
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
 
-#include "ServiceWorkerPrivate.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/LoadInfo.h"
-#include "mozilla/Services.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
-#include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/dom/FetchService.h"
-#include "mozilla/dom/InternalHeaders.h"
-#include "mozilla/dom/InternalResponse.h"
-#include "mozilla/dom/PRemoteWorkerControllerChild.h"
-#include "mozilla/dom/ServiceWorkerRegistrationInfo.h"
-#include "mozilla/net/NeckoChannelParams.h"
-#include "mozilla/dom/RemoteWorkerControllerChild.h"
-
 namespace mozilla::dom {
 
 namespace {
@@ -54,16 +49,15 @@ bool CSPPermitsResponse(nsILoadInfo* aLoadInfo,
   AssertIsOnMainThread();
   MOZ_ASSERT(aLoadInfo);
 
-  nsCString url = aResponse->GetUnfilteredURL();
-  if (url.IsEmpty()) {
-    // Synthetic response.
-    url = aWorkerScriptSpec;
-  }
+  nsresult rv;
 
-  nsCOMPtr<nsIURI> uri;
-  nsresult rv = NS_NewURI(getter_AddRefs(uri), url, nullptr, nullptr);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return false;
+  nsCOMPtr<nsIURI> uri = aResponse->GetUnfilteredURL();
+  if (!uri) {
+    // Synthetic response.
+    rv = NS_NewURI(getter_AddRefs(uri), aWorkerScriptSpec, nullptr, nullptr);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return false;
+    }
   }
 
   int16_t decision = nsIContentPolicy::ACCEPT;
@@ -92,8 +86,8 @@ void AsyncLog(nsIInterceptedChannel* aChannel, const nsACString& aScriptSpec,
 
     reporter->AddConsoleReport(
         nsIScriptError::errorFlag, "Service Worker Interception"_ns,
-        nsContentUtils::eDOM_PROPERTIES, aScriptSpec, aLineNumber,
-        aColumnNumber, aMessageName, params);
+        PropertiesFile::DOM_PROPERTIES, aScriptSpec, aLineNumber, aColumnNumber,
+        aMessageName, params);
   }
 }
 
@@ -198,7 +192,7 @@ NS_IMPL_ISUPPORTS(SynthesizeResponseWatcher, nsIInterceptedBodyCallback)
 
   actor->mWasSent = true;
   RefPtr<GenericPromise> promise = actor->mPromiseHolder.Ensure(__func__);
-  Unused << aManager->SendPFetchEventOpConstructor(actor, actor->mArgs);
+  (void)aManager->SendPFetchEventOpConstructor(actor, actor->mArgs);
   // NOTE: actor may have been destroyed
   return promise;
 }
@@ -406,7 +400,7 @@ void FetchEventOpChild::ActorDestroy(ActorDestroyReason) {
   mPromiseHolder.RejectIfExists(NS_ERROR_DOM_ABORT_ERR, __func__);
 
   if (NS_WARN_IF(!mInterceptedChannelHandled)) {
-    Unused << Recv__delete__(NS_ERROR_DOM_ABORT_ERR);
+    (void)Recv__delete__(NS_ERROR_DOM_ABORT_ERR);
   }
 }
 
@@ -426,6 +420,24 @@ nsresult FetchEventOpChild::StartSynthesizedResponse(
       InternalResponse::FromIPC(aArgs.internalResponse());
   if (NS_WARN_IF(!response)) {
     return NS_ERROR_FAILURE;
+  }
+
+  // This implements https://fetch.spec.whatwg.org/#main-fetch step 20 for the
+  // response from ServiceWorker.
+  const IPCInternalRequest& request = mArgs.common().internalRequest();
+  if ((response->GetUnfilteredStatus() == 206 ||
+       response->GetUnfilteredStatus() == 416) &&
+      response->GetTainting() == LoadTainting::Opaque) {
+    bool isRangedRequest = false;
+    for (const auto& headerEntry : request.headers()) {
+      if (headerEntry.name().Equals("Range"_ns)) {
+        isRangedRequest = true;
+        break;
+      }
+    }
+    if (!isRangedRequest) {
+      return NS_ERROR_FAILURE;
+    }
   }
 
   nsCOMPtr<nsIChannel> underlyingChannel;
@@ -484,21 +496,24 @@ nsresult FetchEventOpChild::StartSynthesizedResponse(
   // Propagate the URL to the content if the request mode is not "navigate".
   // Note that, we only reflect the final URL if the response.redirected is
   // false. We propagate all the URLs if the response.redirected is true.
-  const IPCInternalRequest& request = mArgs.common().internalRequest();
-  nsAutoCString responseURL;
-  if (request.requestMode() != RequestMode::Navigate) {
-    responseURL = response->GetUnfilteredURL();
-
+  nsCOMPtr<nsIURI> responseURL;
+  if (request.requestMode() != RequestMode::Navigate &&
+      response->GetUnfilteredURL()) {
     // Similar to how we apply the request fragment to redirects automatically
     // we also want to apply it automatically when propagating the response
     // URL from a service worker interception.  Currently response.url strips
     // the fragment, so this will never conflict with an existing fragment
     // on the response.  In the future we will have to check for a response
     // fragment and avoid overriding in that case.
-    if (!request.fragment().IsEmpty() && !responseURL.IsEmpty()) {
-      MOZ_ASSERT(!responseURL.Contains('#'));
-      responseURL.AppendLiteral("#");
-      responseURL.Append(request.fragment());
+    if (request.fragment().IsEmpty()) {
+      responseURL = response->GetUnfilteredURL();
+    } else {
+      rv = NS_GetURIWithNewRef(response->GetUnfilteredURL(),
+                               "#"_ns + request.fragment(),
+                               getter_AddRefs(responseURL));
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return rv;
+      }
     }
   }
 
@@ -510,19 +525,31 @@ nsresult FetchEventOpChild::StartSynthesizedResponse(
       new nsMainThreadPtrHolder<ServiceWorkerRegistrationInfo>(
           "ServiceWorkerRegistrationInfo", mRegistration, false));
 
-  nsCString requestURL = request.urlList().LastElement();
-  if (!request.fragment().IsEmpty()) {
-    requestURL.AppendLiteral("#");
-    requestURL.Append(request.fragment());
+  nsCOMPtr<nsIURI> requestURL;
+  if (request.fragment().IsEmpty()) {
+    requestURL = request.urlList().LastElement();
+  } else {
+    rv = NS_GetURIWithNewRef(request.urlList().LastElement(),
+                             "#"_ns + request.fragment(),
+                             getter_AddRefs(requestURL));
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+  }
+
+  nsAutoCString responseURLSpec;
+  if (responseURL) {
+    responseURL->GetSpec(responseURLSpec);
   }
 
   RefPtr<SynthesizeResponseWatcher> watcher = new SynthesizeResponseWatcher(
       interceptedChannel, registration,
       mArgs.common().isNonSubresourceRequest(), std::move(aArgs.closure()),
-      NS_ConvertUTF8toUTF16(responseURL));
+      NS_ConvertUTF8toUTF16(responseURLSpec));
 
   rv = mInterceptedChannel->StartSynthesizedResponse(
-      body, watcher, nullptr /* TODO */, responseURL, response->IsRedirected());
+      body, watcher, nullptr /* TODO */, responseURLSpec,
+      response->IsRedirected());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }

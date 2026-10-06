@@ -1,0 +1,4 @@
+[DEFAULT]
+subsuite = "update-packaging"
+
+["test_make_incremental_zucchini.py"]

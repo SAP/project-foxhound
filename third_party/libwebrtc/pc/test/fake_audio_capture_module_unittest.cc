@@ -10,19 +10,18 @@
 
 #include "pc/test/fake_audio_capture_module.h"
 
-#include <string.h>
-
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 
 #include "api/audio/audio_device_defines.h"
 #include "api/scoped_refptr.h"
 #include "api/test/rtc_error_matchers.h"
 #include "api/units/time_delta.h"
 #include "rtc_base/synchronization/mutex.h"
-#include "rtc_base/thread.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
+#include "test/run_loop.h"
 #include "test/wait_until.h"
 
 class FakeAdmTest : public ::testing::Test, public webrtc::AudioTransport {
@@ -36,7 +35,14 @@ class FakeAdmTest : public ::testing::Test, public webrtc::AudioTransport {
 
   void SetUp() override {
     fake_audio_capture_module_ = FakeAudioCaptureModule::Create();
-    EXPECT_TRUE(fake_audio_capture_module_.get() != NULL);
+    fake_audio_capture_module_->Init();
+    EXPECT_TRUE(fake_audio_capture_module_.get() != nullptr);
+    EXPECT_TRUE(fake_audio_capture_module_->Initialized());
+  }
+
+  void TearDown() override {
+    fake_audio_capture_module_->Terminate();
+    EXPECT_FALSE(fake_audio_capture_module_->Initialized());
   }
 
   // Callbacks inherited from webrtc::AudioTransport.
@@ -105,7 +111,7 @@ class FakeAdmTest : public ::testing::Test, public webrtc::AudioTransport {
     return pull_iterations_;
   }
 
-  rtc::scoped_refptr<FakeAudioCaptureModule> fake_audio_capture_module_;
+  webrtc::scoped_refptr<FakeAudioCaptureModule> fake_audio_capture_module_;
 
  private:
   bool RecordedDataReceived() const { return rec_buffer_bytes_ != 0; }
@@ -121,7 +127,7 @@ class FakeAdmTest : public ::testing::Test, public webrtc::AudioTransport {
     return min_buffer_size;
   }
 
-  webrtc::AutoThread main_thread_;
+  webrtc::test::RunLoop main_thread_;
 
   mutable webrtc::Mutex mutex_;
 

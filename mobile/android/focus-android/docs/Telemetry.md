@@ -1,4 +1,5 @@
 # Telemetry
+
 For clients that have "send anonymous usage data" enabled Focus sends a "core" ping and an "event" ping to Mozilla's telemetry service. Sending telemetry can be disabled in the app's settings. Builds of "Focus for Android" have telemetry enabled by default ("opt-out") while builds of "Klar for Android" have telemetry disabled by default.
 
 ## Core ping
@@ -96,8 +97,6 @@ The event ping contains a list of events ([see event format on readthedocs.io](h
 | Open link in new tab                   | action   | open   | browser_contextmenu | tab        |
 | Open new tab in Focus from customtab context menu | action   | open | browser_contextmenu |  full_browser   |
 
-
-
 #### Erasing session
 
 | Event                                  | category | method      | object              | value      | extras  |
@@ -161,14 +160,15 @@ The event ping contains a list of events ([see event format on readthedocs.io](h
   "total": "5"     // Total number of open tabs
 }
 ```
-#### Page Load Time Histogram
 
+#### Page Load Time Histogram
 
 | Event                    | category | method     | object | extras|
 |-----------------|----------|--------------|---------| ----- |
 | Histogram for Page Load Times for Foreground Session | histogram   | foreground  | browser   | histogram*|
 
 (*) There are 200 extras attached to this event, each a bucket of 100 ms each, with the key as the minimum value in the bucket and the value as the corresponding number of events in the bucket. Anything over 20,000 is put in the last bucket. For example:
+
 ```
 {”0":"2"}
 {“100”:"3"}
@@ -182,7 +182,6 @@ The event ping contains a list of events ([see event format on readthedocs.io](h
 |---------------------------------------------|----------|----------|---------------------|-----------------|
 | The count of the total non-unique http(s) URIs visited in a subsession, including page reloads, after the session has been restored. This does not include background page requests and URIs from embedded pages or private browsing                    | action   | open    | browser            | `{"total_uri_count": num }`           |
 | The count of the unique domains visited in a subsession, after the session has been restored. Subdomains under eTLD are aggregated after the first level (i.e. test.example.com and other.example.com are only counted once). This does not include background page requests and domains from embedded pages or private browsing.         | action   | open    | browser            | `{"unique_domains_count": num }`         |
-
 
 #### Downloads
 
@@ -216,25 +215,24 @@ The event ping contains a list of events ([see event format on readthedocs.io](h
 #### Settings
 
 | Event                          | category | method   | object                  | value | extras               |
-|--------------------------------|----------|----------|-------------------------|-------|--------------------------
-| Setting changed                | action   | change   | setting                 | <key> | `{ "to": <value> }`
-| Autocomplete domain added      | action   | save     | autocomplete_domain     |       | `{ "source": <value> }`
-| Autocomplete domain removed    | action   | remove   | autocomplete_domain     |       | `{ "total": 5 }`
-| Autocomplete domain reordered  | action   | reorder  | autocomplete_domain     |       | `options*`
-| Open Exceptions Setting        | action   | open     | allowlist               |       |
-| Remove Exceptions Domains      | action   | remove   | allowlist               |       |`{ "total": 5 }`
-| Remove All Exceptions Domains  | action   | remove_all |allowlist              |       |
-| Default search engine clicked  | action   | open     | search_engine_setting   |       |
-| Change default search engine   | action   | save     | search_engine_setting   |       | `{"source": src* }`
-| Select "Remove" engines screen | action   | remove   | search_engine_setting   |       |
-| Delete search engines          | remove   | remove   | remove_search_engines   |       |`{"selected": num* }`
-| Restore bundled engines        | action   | restore  | search_engine_setting   |       |
-| Select "Add another engine"    | action   | show     | custom_search_engine    |       |
-| Save custom search engine      | action   | save     | custom_search_engine    |       | `{"success": bool* }`
-| Click "Add search engine" ℹ️   | action   | click    | search_engine_learn_more|       |
-| Open with default browser prompt| action  | show     | make_default_browser_open_with|       |
-| Settings default browser prompt| action   | show    | make_default_browser_settings|       |
-
+|--------------------------------|----------|----------|-------------------------|-------|-------------------------- |
+| Setting changed                | action   | change   | setting                 | <key> | `{ "to": <value> }` |
+| Autocomplete domain added      | action   | save     | autocomplete_domain     |       | `{ "source": <value> }` |
+| Autocomplete domain removed    | action   | remove   | autocomplete_domain     |       | `{ "total": 5 }` |
+| Autocomplete domain reordered  | action   | reorder  | autocomplete_domain     |       | `options*` |
+| Open Exceptions Setting | action | open | allowlist |  |  |
+| Remove Exceptions Domains      | action   | remove   | allowlist               |       |`{ "total": 5 }` |
+| Remove All Exceptions Domains | action | remove_all | allowlist |  |  |
+| Default search engine clicked | action | open | search_engine_setting |  |  |
+| Change default search engine   | action   | save     | search_engine_setting   |       | `{"source": src* }` |
+| Select "Remove" engines screen | action | remove | search_engine_setting |  |  |
+| Delete search engines          | remove   | remove   | remove_search_engines   |       |`{"selected": num* }` |
+| Restore bundled engines | action | restore | search_engine_setting |  |  |
+| Select "Add another engine" | action | show | custom_search_engine |  |  |
+| Save custom search engine      | action   | save     | custom_search_engine    |       | `{"success": bool* }` |
+| Click "Add search engine" ℹ️ | action | click | search_engine_learn_more |  |  |
+| Open with default browser prompt | action | show | make_default_browser_open_with |  |  |
+| Settings default browser prompt | action | show | make_default_browser_settings |  |  |
 
 (*) `options` is a JSON map containing:
 
@@ -284,24 +282,24 @@ The event ping contains a list of events ([see event format on readthedocs.io](h
 
 | Event                                    | category | method     | object | value  |
 |------------------------------------------|----------|------------|--------|--------|
-| Open in new tab tip displayed | action   | show | tip | open_in_new_tab_tip    |        |
-| Add to homescreen tip displayed  | action   | show | tip | add_to_homescreen_tip    |        |
-| Disable tracking protection tip displayed  | action   | show | tip | disable_tracking_protection_tip    |     |
-| Disable tips on home screen tip displayed  | action   | show | tip | disable_tips_tip    |    |
-| Set default browser tip displayed  | action   | show | tip | default_browser_tip    |        |
-| Autocomplete URL tip displayed | action   | show | tip | add_autocomplete_url_tip    |        |
-| Open in new tab tip tapped | action   | click | tip | open_in_new_tab_tip    |        |
-| Add to homescreen tip tapped  | action   | click | tip | add_to_homescreen_tip    |        |
-| Disable tips tip tapped  | action   | click | tip | disable_tips_tip    |        | |
-| Set default browser tip tapped  | action   | click | tip | default_browser_tip    |        |
-| Autocomplete URL tip tapped | action   | click | tip | add_autocomplete_url_tip    |        |
-| Homescreen tips enabled/disabled | action   | click | tip | add_to_homescreen_tip    |        |
-| Survey tip displayed | action   | show | tip | survey_tip    |        |
-| Survey tip tapped | action   | click | tip | survey_tip    |        |
-| Survey (es) tip displayed | action   | show | tip | survey_tip_es    |        |
-| Survey (es) tip tapped | action   | click | tip | survey_tip_es    |        |
-| Survey (fr) tip displayed | action   | show | tip | survey_tip_fr    |        |
-| Survey (fr) tip tapped | action   | click | tip | survey_tip_fr    |        |
+| Open in new tab tip displayed | action | show | tip | open_in_new_tab_tip |
+| Add to homescreen tip displayed | action | show | tip | add_to_homescreen_tip |
+| Disable tracking protection tip displayed | action | show | tip | disable_tracking_protection_tip |
+| Disable tips on home screen tip displayed | action | show | tip | disable_tips_tip |
+| Set default browser tip displayed | action | show | tip | default_browser_tip |
+| Autocomplete URL tip displayed | action | show | tip | add_autocomplete_url_tip |
+| Open in new tab tip tapped | action | click | tip | open_in_new_tab_tip |
+| Add to homescreen tip tapped | action | click | tip | add_to_homescreen_tip |
+| Disable tips tip tapped | action | click | tip | disable_tips_tip |
+| Set default browser tip tapped | action | click | tip | default_browser_tip |
+| Autocomplete URL tip tapped | action | click | tip | add_autocomplete_url_tip |
+| Homescreen tips enabled/disabled | action | click | tip | add_to_homescreen_tip |
+| Survey tip displayed | action | show | tip | survey_tip |
+| Survey tip tapped | action | click | tip | survey_tip |
+| Survey (es) tip displayed | action | show | tip | survey_tip_es |
+| Survey (es) tip tapped | action | click | tip | survey_tip_es |
+| Survey (fr) tip displayed | action | show | tip | survey_tip_fr |
+| Survey (fr) tip tapped | action | click | tip | survey_tip_fr |
 
 #### SSL Errors
 

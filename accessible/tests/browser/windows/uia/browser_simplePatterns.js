@@ -22,12 +22,15 @@ const ToggleState_Indeterminate = 2;
 /**
  * Test the Invoke pattern.
  */
-addUiaTask(
+addAccessibleTask(
   `
 <button id="button">button</button>
 <p id="p">p</p>
 <input id="checkbox" type="checkbox">
 <input id="radio" type="radio">
+<div role="listbox">
+  <div id="option" role="option" onclick=";">option</div>
+</div>
   `,
   async function testInvoke() {
     await definePyVar("doc", `getDocUia()`);
@@ -37,34 +40,28 @@ addUiaTask(
     info("Calling Invoke on button");
     // The button will get focus when it is clicked.
     let focused = waitForEvent(EVENT_FOCUS, "button");
-    // The UIA -> IA2 proxy doesn't fire the Invoked event.
-    if (gIsUiaEnabled) {
-      await setUpWaitForUiaEvent("Invoke_Invoked", "button");
-    }
+    await setUpWaitForUiaEvent("Invoke_Invoked", "button");
     await runPython(`pattern.Invoke()`);
     await focused;
     ok(true, "button got focus");
-    if (gIsUiaEnabled) {
-      await waitForUiaEvent();
-      ok(true, "button got Invoked event");
-    }
+    await waitForUiaEvent();
+    ok(true, "button got Invoked event");
+
+    await testPatternSupported("option", "Invoke");
 
     await testPatternAbsent("p", "Invoke");
-    // The Microsoft IA2 -> UIA proxy doesn't follow Microsoft's own rules.
-    if (gIsUiaEnabled) {
-      // Check boxes expose the Toggle pattern, so they should not expose the
-      // Invoke pattern.
-      await testPatternAbsent("checkbox", "Invoke");
-      // Ditto for radio buttons.
-      await testPatternAbsent("radio", "Invoke");
-    }
+    // Check boxes expose the Toggle pattern, so they should not expose the
+    // Invoke pattern.
+    await testPatternAbsent("checkbox", "Invoke");
+    // Ditto for radio buttons.
+    await testPatternAbsent("radio", "Invoke");
   }
 );
 
 /**
  * Test the Toggle pattern.
  */
-addUiaTask(
+addAccessibleTask(
   `
 <input id="checkbox" type="checkbox" checked>
 <button id="toggleButton" aria-pressed="false">toggle</button>
@@ -104,29 +101,26 @@ addUiaTask(
       ToggleState_On,
       "checkbox has ToggleState_On"
     );
-    // The IA2 -> UIA proxy doesn't fire ToggleState prop change events.
-    if (gIsUiaEnabled) {
-      info("Calling Toggle on checkbox");
-      await setUpWaitForUiaPropEvent("ToggleToggleState", "checkbox");
-      await runPython(`pattern.Toggle()`);
-      await waitForUiaEvent();
-      ok(true, "Got ToggleState prop change event on checkbox");
-      is(
-        await runPython(`pattern.CurrentToggleState`),
-        ToggleState_Off,
-        "checkbox has ToggleState_Off"
-      );
-      info("Calling Toggle on checkbox");
-      await setUpWaitForUiaPropEvent("ToggleToggleState", "checkbox");
-      await runPython(`pattern.Toggle()`);
-      await waitForUiaEvent();
-      ok(true, "Got ToggleState prop change event on checkbox");
-      is(
-        await runPython(`pattern.CurrentToggleState`),
-        ToggleState_Indeterminate,
-        "checkbox has ToggleState_Indeterminate"
-      );
-    }
+    info("Calling Toggle on checkbox");
+    await setUpWaitForUiaPropEvent("ToggleToggleState", "checkbox");
+    await runPython(`pattern.Toggle()`);
+    await waitForUiaEvent();
+    ok(true, "Got ToggleState prop change event on checkbox");
+    is(
+      await runPython(`pattern.CurrentToggleState`),
+      ToggleState_Off,
+      "checkbox has ToggleState_Off"
+    );
+    info("Calling Toggle on checkbox");
+    await setUpWaitForUiaPropEvent("ToggleToggleState", "checkbox");
+    await runPython(`pattern.Toggle()`);
+    await waitForUiaEvent();
+    ok(true, "Got ToggleState prop change event on checkbox");
+    is(
+      await runPython(`pattern.CurrentToggleState`),
+      ToggleState_Indeterminate,
+      "checkbox has ToggleState_Indeterminate"
+    );
 
     await assignPyVarToUiaWithId("toggleButton");
     await definePyVar("pattern", `getUiaPattern(toggleButton, "Toggle")`);
@@ -136,18 +130,16 @@ addUiaTask(
       ToggleState_Off,
       "toggleButton has ToggleState_Off"
     );
-    if (gIsUiaEnabled) {
-      info("Calling Toggle on toggleButton");
-      await setUpWaitForUiaPropEvent("ToggleToggleState", "toggleButton");
-      await runPython(`pattern.Toggle()`);
-      await waitForUiaEvent();
-      ok(true, "Got ToggleState prop change event on toggleButton");
-      is(
-        await runPython(`pattern.CurrentToggleState`),
-        ToggleState_On,
-        "toggleButton has ToggleState_Off"
-      );
-    }
+    info("Calling Toggle on toggleButton");
+    await setUpWaitForUiaPropEvent("ToggleToggleState", "toggleButton");
+    await runPython(`pattern.Toggle()`);
+    await waitForUiaEvent();
+    ok(true, "Got ToggleState prop change event on toggleButton");
+    is(
+      await runPython(`pattern.CurrentToggleState`),
+      ToggleState_On,
+      "toggleButton has ToggleState_Off"
+    );
 
     await testPatternAbsent("button", "Toggle");
     await testPatternAbsent("p", "Toggle");
@@ -157,7 +149,7 @@ addUiaTask(
 /**
  * Test the ExpandCollapse pattern.
  */
-addUiaTask(
+addAccessibleTask(
   `
 <details>
   <summary id="summary">summary</summary>
@@ -182,81 +174,69 @@ addUiaTask(
       ExpandCollapseState_Collapsed,
       "summary has ExpandCollapseState_Collapsed"
     );
-    // The IA2 -> UIA proxy doesn't fire ToggleState prop change events, nor
-    // does it fail when Expand/Collapse is called on a control which is
-    // already in the desired state.
-    if (gIsUiaEnabled) {
-      info("Calling Expand on summary");
-      await setUpWaitForUiaPropEvent(
-        "ExpandCollapseExpandCollapseState",
-        "summary"
-      );
-      await runPython(`pattern.Expand()`);
-      await waitForUiaEvent();
-      ok(
-        true,
-        "Got ExpandCollapseExpandCollapseState prop change event on summary"
-      );
-      is(
-        await runPython(`pattern.CurrentExpandCollapseState`),
-        ExpandCollapseState_Expanded,
-        "summary has ExpandCollapseState_Expanded"
-      );
-      info("Calling Expand on summary");
-      await testPythonRaises(`pattern.Expand()`, "Expand on summary failed");
-      info("Calling Collapse on summary");
-      await setUpWaitForUiaPropEvent(
-        "ExpandCollapseExpandCollapseState",
-        "summary"
-      );
-      await runPython(`pattern.Collapse()`);
-      await waitForUiaEvent();
-      ok(
-        true,
-        "Got ExpandCollapseExpandCollapseState prop change event on summary"
-      );
-      is(
-        await runPython(`pattern.CurrentExpandCollapseState`),
-        ExpandCollapseState_Collapsed,
-        "summary has ExpandCollapseState_Collapsed"
-      );
-      info("Calling Collapse on summary");
-      await testPythonRaises(
-        `pattern.Collapse()`,
-        "Collapse on summary failed"
-      );
-    }
+    info("Calling Expand on summary");
+    await setUpWaitForUiaPropEvent(
+      "ExpandCollapseExpandCollapseState",
+      "summary"
+    );
+    await runPython(`pattern.Expand()`);
+    await waitForUiaEvent();
+    ok(
+      true,
+      "Got ExpandCollapseExpandCollapseState prop change event on summary"
+    );
+    is(
+      await runPython(`pattern.CurrentExpandCollapseState`),
+      ExpandCollapseState_Expanded,
+      "summary has ExpandCollapseState_Expanded"
+    );
+    info("Calling Expand on summary");
+    await testPythonRaises(`pattern.Expand()`, "Expand on summary failed");
+    info("Calling Collapse on summary");
+    await setUpWaitForUiaPropEvent(
+      "ExpandCollapseExpandCollapseState",
+      "summary"
+    );
+    await runPython(`pattern.Collapse()`);
+    await waitForUiaEvent();
+    ok(
+      true,
+      "Got ExpandCollapseExpandCollapseState prop change event on summary"
+    );
+    is(
+      await runPython(`pattern.CurrentExpandCollapseState`),
+      ExpandCollapseState_Collapsed,
+      "summary has ExpandCollapseState_Collapsed"
+    );
+    info("Calling Collapse on summary");
+    await testPythonRaises(`pattern.Collapse()`, "Collapse on summary failed");
 
     await assignPyVarToUiaWithId("popup");
     // Initially, popup has aria-haspopup but not aria-expanded. That should
     // be exposed as collapsed.
     await definePyVar("pattern", `getUiaPattern(popup, "ExpandCollapse")`);
     ok(await runPython(`bool(pattern)`), "popup has ExpandCollapse pattern");
-    // The IA2 -> UIA proxy doesn't expose ExpandCollapseState_Collapsed for
-    // aria-haspopup without aria-expanded.
-    if (gIsUiaEnabled) {
-      is(
-        await runPython(`pattern.CurrentExpandCollapseState`),
-        ExpandCollapseState_Collapsed,
-        "popup has ExpandCollapseState_Collapsed"
-      );
-      info("Calling Expand on popup");
-      await setUpWaitForUiaPropEvent(
-        "ExpandCollapseExpandCollapseState",
-        "popup"
-      );
-      await runPython(`pattern.Expand()`);
-      await waitForUiaEvent();
-      ok(
-        true,
-        "Got ExpandCollapseExpandCollapseState prop change event on popup"
-      );
-      is(
-        await runPython(`pattern.CurrentExpandCollapseState`),
-        ExpandCollapseState_Expanded,
-        "popup has ExpandCollapseState_Expanded"
-      );
-    }
+    is(
+      await runPython(`pattern.CurrentExpandCollapseState`),
+      ExpandCollapseState_Collapsed,
+      "popup has ExpandCollapseState_Collapsed"
+    );
+    info("Calling Expand on popup");
+    await setUpWaitForUiaPropEvent(
+      "ExpandCollapseExpandCollapseState",
+      "popup"
+    );
+    await runPython(`pattern.Expand()`);
+    await waitForUiaEvent();
+    ok(
+      true,
+      "Got ExpandCollapseExpandCollapseState prop change event on popup"
+    );
+    is(
+      await runPython(`pattern.CurrentExpandCollapseState`),
+      ExpandCollapseState_Expanded,
+      "popup has ExpandCollapseState_Expanded"
+    );
 
     await testPatternAbsent("button", "ExpandCollapse");
   }
@@ -265,7 +245,7 @@ addUiaTask(
 /**
  * Test the ScrollItem pattern.
  */
-addUiaTask(
+addAccessibleTask(
   `
 <hr style="height: 100vh;">
 <button id="button">button</button>
@@ -290,7 +270,7 @@ addUiaTask(
 /**
  * Test the Value pattern.
  */
-addUiaTask(
+addAccessibleTask(
   `
 <input id="text" value="before">
 <input id="textRo" readonly value="textRo">
@@ -357,14 +337,11 @@ addUiaTask(
       "textDis",
       "textDis has correct Value"
     );
-    // The IA2 -> UIA proxy doesn't fail SetValue for a disabled element.
-    if (gIsUiaEnabled) {
-      info("SetValue on textDis");
-      await testPythonRaises(
-        `pattern.SetValue("after")`,
-        "SetValue on textDis failed"
-      );
-    }
+    info("SetValue on textDis");
+    await testPythonRaises(
+      `pattern.SetValue("after")`,
+      "SetValue on textDis failed"
+    );
 
     await assignPyVarToUiaWithId("select");
     await definePyVar("pattern", `getUiaPattern(select, "Value")`);
@@ -450,7 +427,7 @@ addUiaTask(
 /**
  * Test the Value pattern on a document.
  */
-addUiaTask(``, async function testValueDoc(browser) {
+addAccessibleTask(``, async function testValueDoc(browser) {
   // A test snippet is a data: URI. The accessibility engine won't return these.
   let url = new URL("https://example.net/document-builder.sjs");
   url.searchParams.append("html", `<body id=${DEFAULT_CONTENT_DOC_BODY_ID}>`);
@@ -490,26 +467,22 @@ async function testRangeValueProps(id, ro, val, min, max, small, large) {
     max,
     `${id} has correct Maximum`
   );
-  // IA2 doesn't support small/large change, so the IA2 -> UIA proxy can't
-  // either.
-  if (gIsUiaEnabled) {
-    is(
-      await runPython(`pattern.CurrentSmallChange`),
-      small,
-      `${id} has correct SmallChange`
-    );
-    is(
-      await runPython(`pattern.CurrentLargeChange`),
-      large,
-      `${id} has correct LargeChange`
-    );
-  }
+  is(
+    await runPython(`pattern.CurrentSmallChange`),
+    small,
+    `${id} has correct SmallChange`
+  );
+  is(
+    await runPython(`pattern.CurrentLargeChange`),
+    large,
+    `${id} has correct LargeChange`
+  );
 }
 
 /**
  * Test the RangeValue pattern.
  */
-addUiaTask(
+addAccessibleTask(
   `
 <input id="range" type="range">
 <input id="rangeBig" type="range" max="1000">

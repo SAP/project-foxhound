@@ -20,10 +20,10 @@ add_task(async function () {
   );
 
   info("View source of an existing file that isn't used by the page");
-  const fileFound = await toolbox.viewSourceInStyleEditorByURL(CSS_URL, 0);
+  const fileFound = await toolbox.viewStyleSourceByURL(CSS_URL, 0);
   ok(
     !fileFound,
-    "viewSourceInStyleEditorByURL should resolve to false if source isn't found."
+    "viewStyleSourceByURL should resolve to false if source isn't found."
   );
 
   info("Waiting for view-source tab to open");

@@ -11,7 +11,7 @@ DESKTOP_CSS = "#top-navbar"
 @pytest.mark.with_interventions
 async def test_enabled(client):
     await client.navigate(URL, wait="none")
-    assert client.await_css(MOBILE_CSS, is_displayed=True)
+    assert client.await_css(MOBILE_CSS, is_displayed=True, timeout=30)
     assert not client.find_css(DESKTOP_CSS, is_displayed=True)
 
 
@@ -20,5 +20,5 @@ async def test_enabled(client):
 @pytest.mark.without_interventions
 async def test_disabled(client):
     await client.navigate(URL, wait="none")
-    assert client.await_css(DESKTOP_CSS, is_displayed=True)
+    assert client.await_css(DESKTOP_CSS, is_displayed=True, timeout=30)
     assert not client.find_css(MOBILE_CSS, is_displayed=True)

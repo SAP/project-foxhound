@@ -80,9 +80,10 @@ add_task(async function () {
     "JS:1516340399466235600",
     "Big number has expected parsed value text"
   );
-  ok(
+  is(
     values[2].querySelector(".parsed-value").getAttribute("title"),
-    "Big number parsed value label has a title attribute"
+    "JavaScript parsed value",
+    "Big number parsed value label has expected title attribute"
   );
 
   info("Check numbers with higher precision than what's possible in JS");
@@ -143,16 +144,13 @@ add_task(async function testLargeRootInteger() {
 
   await performRequests(monitor, tab, 1);
 
-  const onCodeMirrorReady = waitForDOM(
-    document,
-    "#response-panel .CodeMirror-code"
-  );
+  const onCodeMirrorReady = waitForDOM(document, "#response-panel .cm-content");
 
   store.dispatch(Actions.toggleNetworkDetails());
   clickOnSidebarTab(document, "response");
   const [codeMirrorCodeEl] = await onCodeMirrorReady;
   is(
-    codeMirrorCodeEl.querySelector("pre.CodeMirror-line span").textContent,
+    codeMirrorCodeEl.querySelector(".cm-line").textContent,
     "1516340399466235648",
     "Large number is displayed in a CodeMirror editor"
   );

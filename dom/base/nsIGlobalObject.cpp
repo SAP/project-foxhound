@@ -1,15 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsIGlobalObject.h"
+
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/GlobalFreezeObserver.h"
 #include "mozilla/GlobalTeardownObserver.h"
 #include "mozilla/Result.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
@@ -21,11 +21,8 @@
 #include "mozilla/dom/ServiceWorkerRegistration.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "nsContentUtils.h"
-#include "nsThreadUtils.h"
 #include "nsGlobalWindowInner.h"
-
-// Max number of Report objects
-constexpr auto MAX_REPORT_RECORDS = 100;
+#include "nsThreadUtils.h"
 
 using mozilla::AutoSlowOperation;
 using mozilla::CycleCollectedJSContext;
@@ -135,7 +132,7 @@ void nsIGlobalObject::UnlinkObjectsInGlobal() {
     }
   }
 
-  mReportRecords.Clear();
+  ClearReports();
   mReportingObservers.Clear();
   mCountQueuingStrategySizeFunction = nullptr;
   mByteLengthQueuingStrategySizeFunction = nullptr;
@@ -143,16 +140,8 @@ void nsIGlobalObject::UnlinkObjectsInGlobal() {
 
 void nsIGlobalObject::TraverseObjectsInGlobal(
     nsCycleCollectionTraversalCallback& cb) {
-  // Currently we only store BlobImpl objects off the the main-thread and they
-  // are not CCed.
-  if (!mHostObjectURIs.IsEmpty() && NS_IsMainThread()) {
-    for (uint32_t index = 0; index < mHostObjectURIs.Length(); ++index) {
-      BlobURLProtocolHandler::Traverse(mHostObjectURIs[index], cb);
-    }
-  }
-
   nsIGlobalObject* tmp = this;
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mReportRecords)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mReportBuffer)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mReportingObservers)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCountQueuingStrategySizeFunction)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mByteLengthQueuingStrategySizeFunction)
@@ -169,7 +158,7 @@ void nsIGlobalObject::RemoveGlobalTeardownObserver(
     GlobalTeardownObserver* aObject) {
   MOZ_DIAGNOSTIC_ASSERT(aObject);
   MOZ_ASSERT(aObject->isInList());
-  MOZ_ASSERT(aObject->GetOwnerGlobal() == this);
+  MOZ_ASSERT(aObject->GetRelevantGlobal() == this);
   aObject->remove();
 }
 
@@ -202,7 +191,7 @@ void nsIGlobalObject::ForEachGlobalTeardownObserver(
   for (auto& target : targetList) {
     // Check to see if a previous iteration's callback triggered the removal
     // of this target as a side-effect.  If it did, then just ignore it.
-    if (target->GetOwnerGlobal() != this) {
+    if (target->GetRelevantGlobal() != this) {
       continue;
     }
     aFunc(target, &done);
@@ -219,7 +208,7 @@ void nsIGlobalObject::DisconnectGlobalTeardownObservers() {
 
         // Calling DisconnectFromOwner() should result in
         // RemoveGlobalTeardownObserver() being called.
-        MOZ_DIAGNOSTIC_ASSERT(aTarget->GetOwnerGlobal() != this);
+        MOZ_DIAGNOSTIC_ASSERT(aTarget->GetRelevantGlobal() != this);
       });
 }
 
@@ -387,7 +376,7 @@ void nsIGlobalObject::RegisterReportingObserver(ReportingObserver* aObserver,
     return;
   }
 
-  for (Report* report : mReportRecords) {
+  for (const auto& report : mReportBuffer) {
     aObserver->MaybeReport(report);
   }
 }
@@ -405,12 +394,24 @@ void nsIGlobalObject::BroadcastReport(Report* aReport) {
     observer->MaybeReport(aReport);
   }
 
-  if (NS_WARN_IF(!mReportRecords.AppendElement(aReport, mozilla::fallible))) {
+  if (NS_WARN_IF(!mReportBuffer.AppendElement(aReport, mozilla::fallible))) {
     return;
   }
 
-  while (mReportRecords.Length() > MAX_REPORT_RECORDS) {
-    mReportRecords.RemoveElementAt(0);
+  uint32_t& count = mReportPerTypeCount.LookupOrInsert(aReport->Type());
+  ++count;
+
+  const uint32_t maxReportCount =
+      mozilla::StaticPrefs::dom_reporting_delivering_maxReports();
+  const nsString& reportType = aReport->Type();
+
+  for (size_t i = 0u; count > maxReportCount && i < mReportBuffer.Length();) {
+    if (mReportBuffer[i]->Type() == reportType) {
+      mReportBuffer.RemoveElementAt(i);
+      --count;
+    } else {
+      ++i;
+    }
   }
 }
 
@@ -426,7 +427,7 @@ void nsIGlobalObject::NotifyReportingObservers() {
 }
 
 void nsIGlobalObject::RemoveReportRecords() {
-  mReportRecords.Clear();
+  ClearReports();
 
   for (auto& observer : mReportingObservers) {
     observer->ForgetReports();
@@ -492,14 +493,31 @@ bool nsIGlobalObject::ShouldResistFingerprinting(CallerType aCallerType,
          ShouldResistFingerprinting(aTarget);
 }
 
+bool nsIGlobalObject::IsRFPTargetActive(const nsAString& aTargetName,
+                                        mozilla::ErrorResult& aRv) {
+  MOZ_ASSERT(mozilla::StaticPrefs::privacy_fingerprintingProtection_testing());
+
+  Maybe<RFPTarget> target = mozilla::nsRFPService::TextToRFPTarget(aTargetName);
+  if (NS_WARN_IF(!target)) {
+    aRv.Throw(NS_ERROR_INVALID_ARG);
+    return false;
+  }
+
+  return ShouldResistFingerprinting(*target);
+}
+
 void nsIGlobalObject::ReportToConsole(
-    uint32_t aErrorFlags, const nsCString& aCategory,
-    nsContentUtils::PropertiesFile aFile, const nsCString& aMessageName,
-    const nsTArray<nsString>& aParams,
+    uint32_t aErrorFlags, const nsCString& aCategory, PropertiesFile aFile,
+    const nsCString& aMessageName, const nsTArray<nsString>& aParams,
     const mozilla::SourceLocation& aLocation) {
   // We pass nullptr for the document because nsGlobalWindowInner handles the
   // case where it should be non-null.  We also expect the worker impl to
   // override.
   nsContentUtils::ReportToConsole(aErrorFlags, aCategory, nullptr, aFile,
                                   aMessageName.get(), aParams, aLocation);
+}
+
+void nsIGlobalObject::ClearReports() {
+  mReportBuffer.Clear();
+  mReportPerTypeCount.Clear();
 }

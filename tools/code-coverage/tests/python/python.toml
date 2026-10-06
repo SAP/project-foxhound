@@ -1,0 +1,4 @@
+[DEFAULT]
+subsuite = "coverage"
+
+["test_mach_commands.py"]

@@ -9,8 +9,6 @@ const CAPTCHA_SELECTOR = "#form-expanded-captcha";
 const NON_FORM_SELECTOR = "#form-expanded-non-form-input";
 
 const AUTOCOMPLETE_POPUP_SELECTOR = "#PopupAutoComplete";
-const USERNAME_DROPMARKER_SELECTOR =
-  "#password-notification-username-dropmarker";
 
 const TEST_CASES = [
   {
@@ -154,7 +152,9 @@ async function _clickDropmarker(document, notificationElement) {
   let acPopup = document.querySelector(AUTOCOMPLETE_POPUP_SELECTOR);
   let acPopupShown = BrowserTestUtils.waitForEvent(acPopup, "popupshown");
 
-  notificationElement.querySelector(USERNAME_DROPMARKER_SELECTOR).click();
+  notificationElement
+    .querySelector("#password-notification-username")
+    .dropmarkerEl.click();
   await acPopupShown;
 }
 
@@ -178,7 +178,7 @@ add_task(async function test_edit_password() {
     await LoginTestUtils.clearData();
     await cleanupDoorhanger();
     await cleanupPasswordNotifications();
-    Services.logins.removeAllUserFacingLogins();
+    await Services.logins.removeAllUserFacingLoginsAsync();
 
     // Create the pre-existing logins when needed.
     if (testCase.savedLogins) {
@@ -187,6 +187,7 @@ add_task(async function test_edit_password() {
     }
 
     info("Opening tab");
+    let formProcessedPromise = listenForTestNotification("FormProcessed");
     await BrowserTestUtils.withNewTab(
       {
         gBrowser,
@@ -195,6 +196,9 @@ add_task(async function test_edit_password() {
           "passwordmgr/test/browser/form_expanded.html",
       },
       async function (browser) {
+        info("Waiting for form-processed message");
+        await formProcessedPromise;
+
         info("Editing the form");
         for (const change of testCase.modifiedFields) {
           for (const selector in change) {
@@ -203,7 +207,6 @@ add_task(async function test_edit_password() {
             await changeContentFormValues(browser, change);
           }
         }
-
         let notif = getCaptureDoorhanger("any");
 
         let { panel } = PopupNotifications;
@@ -217,8 +220,8 @@ add_task(async function test_edit_password() {
         let notificationElement = panel.childNodes[0];
 
         let usernameDropmarker = notificationElement.querySelector(
-          USERNAME_DROPMARKER_SELECTOR
-        );
+          "#password-notification-username"
+        ).dropmarkerEl;
         Assert.equal(
           BrowserTestUtils.isVisible(usernameDropmarker),
           testCase.expectUsernameDropmarker,
@@ -267,7 +270,7 @@ add_task(async function test_edit_password() {
         await cleanupDoorhanger();
         await cleanupPasswordNotifications();
         await clearMessageCache(browser);
-        Services.logins.removeAllUserFacingLogins();
+        await Services.logins.removeAllUserFacingLoginsAsync();
       }
     );
   }

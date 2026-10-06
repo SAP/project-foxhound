@@ -5,7 +5,8 @@ pub trait RegExp: Sized {
 
   /// Generates a regexp pattern for the given string. If the pattern is
   /// invalid, the parse function should return an error.
-  fn parse(pattern: &str, flags: &str) -> Result<Self, ()>;
+  #[allow(clippy::result_unit_err)]
+  fn parse(pattern: &str, flags: &str, force_eval: bool) -> Result<Self, ()>;
 
   /// Matches the given text against the regular expression and returns the list
   /// of captures. The matches are returned in the order they appear in the
@@ -15,6 +16,8 @@ pub trait RegExp: Sized {
   ///
   /// Returns `None` if the text does not match the regular expression.
   fn matches<'a>(&self, text: &'a str) -> Option<Vec<Option<&'a str>>>;
+
+  fn pattern_string(&self) -> &str;
 }
 
 impl RegExp for regex::Regex {
@@ -22,8 +25,8 @@ impl RegExp for regex::Regex {
     RegexSyntax::Rust
   }
 
-  fn parse(pattern: &str, flags: &str) -> Result<Self, ()> {
-    regex::Regex::new(&format!("(?{flags}){pattern}")).map_err(|_| ())
+  fn parse(pattern: &str, _flags: &str, _force_eval: bool) -> Result<Self, ()> {
+    regex::Regex::new(pattern).map_err(|_| ())
   }
 
   fn matches<'a>(&self, text: &'a str) -> Option<Vec<Option<&'a str>>> {
@@ -36,5 +39,9 @@ impl RegExp for regex::Regex {
       .collect();
 
     Some(captures)
+  }
+
+  fn pattern_string(&self) -> &str {
+    self.as_str()
   }
 }

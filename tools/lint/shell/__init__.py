@@ -84,8 +84,8 @@ def find_shell_scripts(config, paths):
         pattern = "**/*.sh"
 
     files = []
-    for path in paths:
-        path = mozpath.normsep(path)
+    for p in paths:
+        path = mozpath.normsep(p)
         ignore = [
             e[len(path) :].lstrip("/")
             for e in exclude

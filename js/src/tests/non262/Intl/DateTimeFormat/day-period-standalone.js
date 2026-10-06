@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // Tests using various locales to cover all day period types:
 // "midnight", "noon", "morning1", "morning2", "afternoon1", "afternoon2",
 // "evening1", "evening2", "night1", "night2".

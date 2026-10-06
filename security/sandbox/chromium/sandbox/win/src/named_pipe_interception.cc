@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright 2006-2008 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,6 @@
 #include "sandbox/win/src/sandbox_nt_util.h"
 #include "sandbox/win/src/sharedmem_ipc_client.h"
 #include "sandbox/win/src/target_services.h"
-#include "mozilla/sandboxing/sandboxLogging.h"
 
 namespace sandbox {
 
@@ -31,8 +30,6 @@ TargetCreateNamedPipeW(CreateNamedPipeWFunction orig_CreateNamedPipeW,
       in_buffer_size, default_timeout, security_attributes);
   if (INVALID_HANDLE_VALUE != pipe)
     return pipe;
-
-  mozilla::sandboxing::LogBlocked("CreateNamedPipeW", pipe_name);
 
   // We don't trust that the IPC can work this early.
   if (!SandboxFactory::GetTargetServices()->GetState()->InitCalled())
@@ -69,7 +66,6 @@ TargetCreateNamedPipeW(CreateNamedPipeWFunction orig_CreateNamedPipeW,
     if (ERROR_SUCCESS != answer.win32_result)
       return INVALID_HANDLE_VALUE;
 
-    mozilla::sandboxing::LogAllowed("CreateNamedPipeW", pipe_name);
     return answer.handle;
   } while (false);
 

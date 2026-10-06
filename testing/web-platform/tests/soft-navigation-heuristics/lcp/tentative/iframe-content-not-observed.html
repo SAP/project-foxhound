@@ -30,37 +30,30 @@ Notes:
   promise_test(async (t) => {
     assert_implements(window.LargestContentfulPaint, "LargestContentfulPaint is not implemented");
     const helper = new SoftNavigationTestHelper(t);
-    const lcpEntries = await helper.getBufferedPerformanceEntriesWithTimeout(
-      /*type=*/ "largest-contentful-paint",
-      /*includeSoftNavigationObservations=*/ false,
-      /*minNumEntries=*/ 1,
-    );
+    const lcpEntries =
+        await helper.getBufferedPerformanceEntriesWithTimeout("largest-contentful-paint");
     assert_equals(lcpEntries.length, 1);
     assert_equals(lcpEntries[0].id, "click-target", "The first entry should be the button");
 
-    const softNavigationPromise = SoftNavigationTestHelper.getPerformanceEntries(
-      /*type=*/ "soft-navigation",
-      /*includeSoftNavigationObservations=*/ true,
-      /*minNumEntries=*/ 1,
-    ).then((entries) => {
+    const softNavigationPromise =
+        SoftNavigationTestHelper.getPerformanceEntries("soft-navigation")
+    .then((entries) => {
       assert_unreached("Should not have received a soft navigation entry!");
     });
-    const softLcpPromise = SoftNavigationTestHelper.getPerformanceEntries(
-      /*type=*/ "interaction-contentful-paint",
-      /*includeSoftNavigationObservations=*/ true,
-      /*minNumEntries=*/ 1,
-    ).then((entries) => {
-      assert_unreached("Should not have received an a soft LCP entry!");
+    const icpPromise =
+        SoftNavigationTestHelper.getPerformanceEntries("interaction-contentful-paint")
+    .then((entries) => {
+      assert_unreached("Should not have received an ICP entry!");
     });
 
     if (test_driver) {
       test_driver.click(document.getElementById("click-target"));
     }
 
-    // If neither the soft navigation nor the soft LCP are received within 3 seconds, we're ok.
+    // If neither the soft navigation nor the ICP entry are received within 3 seconds, we're ok.
     await Promise.race([
       softNavigationPromise,
-      softLcpPromise,
+      icpPromise,
       new Promise((resolve) => t.step_timeout(resolve(), 2000)),
     ]);
   }, "Element in child iframe is not observed for lcp or soft navigation, even if same-origin.");

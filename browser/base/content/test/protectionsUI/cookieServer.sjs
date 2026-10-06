@@ -27,8 +27,6 @@ function handleRequest(request, response) {
       "Set-Cookie",
       "foopy=1; SameSite=None; Secure; Partitioned"
     );
-
-    dump(" ==== TIM: cookie served\n");
   } else {
     response.setHeader("Set-Cookie", "foopy=1");
     response.write("cookie served");

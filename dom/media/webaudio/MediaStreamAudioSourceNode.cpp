@@ -1,20 +1,19 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaStreamAudioSourceNode.h"
-#include "mozilla/dom/MediaStreamAudioSourceNodeBinding.h"
+
 #include "AudioNodeEngine.h"
 #include "AudioNodeExternalInputTrack.h"
 #include "AudioStreamTrack.h"
-#include "mozilla/dom/Document.h"
-#include "nsContentUtils.h"
-#include "nsIScriptError.h"
-#include "nsID.h"
-#include "nsGlobalWindowInner.h"
 #include "Tracing.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/MediaStreamAudioSourceNodeBinding.h"
+#include "nsContentUtils.h"
+#include "nsGlobalWindowInner.h"
+#include "nsID.h"
+#include "nsIScriptError.h"
 
 namespace mozilla::dom {
 
@@ -92,34 +91,21 @@ void MediaStreamAudioSourceNode::Destroy() {
 
 MediaStreamAudioSourceNode::~MediaStreamAudioSourceNode() { Destroy(); }
 
-void MediaStreamAudioSourceNode::AttachToTrack(
-    const RefPtr<MediaStreamTrack>& aTrack, ErrorResult& aRv) {
+void MediaStreamAudioSourceNode::AttachToTrack(AudioStreamTrack* aTrack) {
+  MOZ_ASSERT(aTrack);
   MOZ_ASSERT(!mInputTrack);
-  MOZ_ASSERT(aTrack->AsAudioStreamTrack());
   MOZ_DIAGNOSTIC_ASSERT(!aTrack->Ended());
 
   if (!mTrack) {
     return;
   }
 
-  if (NS_WARN_IF(Context()->Graph() != aTrack->Graph())) {
-    nsGlobalWindowInner* pWindow = Context()->GetOwnerWindow();
-    Document* document = pWindow ? pWindow->GetExtantDoc() : nullptr;
-    nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "Web Audio"_ns,
-                                    document, nsContentUtils::eDOM_PROPERTIES,
-                                    "MediaStreamAudioSourceNodeDifferentRate");
-    // This is not a spec-required exception, just a limitation of our
-    // implementation.
-    aRv.ThrowNotSupportedError(
-        "Connecting AudioNodes from AudioContexts with different sample-rate "
-        "is currently not supported.");
-    return;
-  }
-
   mInputTrack = aTrack;
   ProcessedMediaTrack* outputTrack =
       static_cast<ProcessedMediaTrack*>(mTrack.get());
-  mInputPort = mInputTrack->ForwardTrackContentsTo(outputTrack);
+  mInputPort = aTrack->AddConsumerPort(outputTrack);
+  MOZ_DIAGNOSTIC_ASSERT(mInputPort);
+
   PrincipalChanged(mInputTrack);  // trigger enabling/disabling of the connector
   mInputTrack->AddPrincipalChangeObserver(this);
   MarkActive();
@@ -128,6 +114,7 @@ void MediaStreamAudioSourceNode::AttachToTrack(
 void MediaStreamAudioSourceNode::DetachFromTrack() {
   if (mInputTrack) {
     mInputTrack->RemovePrincipalChangeObserver(this);
+    mInputTrack->RemoveConsumerPort(mInputPort);
     mInputTrack = nullptr;
   }
   if (mInputPort) {
@@ -167,7 +154,7 @@ void MediaStreamAudioSourceNode::AttachToRightTrack(
     }
 
     if (!track->Ended()) {
-      AttachToTrack(track, aRv);
+      AttachToTrack(track);
     }
     return;
   }
@@ -189,7 +176,7 @@ void MediaStreamAudioSourceNode::NotifyTrackAdded(
     return;
   }
 
-  AttachToTrack(aTrack, IgnoreErrors());
+  AttachToTrack(aTrack->AsAudioStreamTrack());
 }
 
 void MediaStreamAudioSourceNode::NotifyTrackRemoved(
@@ -246,7 +233,7 @@ void MediaStreamAudioSourceNode::PrincipalChanged(
 
   if (!enabled && doc) {
     nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "Web Audio"_ns,
-                                    doc, nsContentUtils::eDOM_PROPERTIES,
+                                    doc, PropertiesFile::DOM_PROPERTIES,
                                     CrossOriginErrorString());
   }
 }
@@ -268,10 +255,7 @@ size_t MediaStreamAudioSourceNode::SizeOfIncludingThis(
 }
 
 void MediaStreamAudioSourceNode::DestroyMediaTrack() {
-  if (mInputPort) {
-    mInputPort->Destroy();
-    mInputPort = nullptr;
-  }
+  DetachFromTrack();
   AudioNode::DestroyMediaTrack();
 }
 

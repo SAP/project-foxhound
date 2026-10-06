@@ -23,7 +23,7 @@ function createTargetsForWatcher(watcherDataObject) {
  * Instantiate a content process target actor for the current process
  * and for a given watcher actor.
  *
- * @param {Object} watcherDataObject
+ * @param {object} watcherDataObject
  */
 function createContentProcessTargetActor(watcherDataObject) {
   logDOMProcess(
@@ -77,7 +77,7 @@ const DEBUG = false;
  *
  * @param {nsIDOMProcessChild} domProcessChild
  *        The process for which we should log a message.
- * @param {String} message
+ * @param {string} message
  *        Message to log.
  */
 function logDOMProcess(domProcessChild, message) {

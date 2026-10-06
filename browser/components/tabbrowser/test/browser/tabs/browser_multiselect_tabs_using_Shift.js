@@ -163,3 +163,54 @@ add_task(async function itemsInTheCollectionBeforeShiftClicking() {
   BrowserTestUtils.removeTab(tab4);
   BrowserTestUtils.removeTab(tab5);
 });
+
+add_task(async function multiselectIncludingSplitViews() {
+  let tab1 = await addTab();
+  let tab2 = await addTab();
+  let tab3 = await addTab();
+  let tab4 = await addTab();
+  let tab5 = await addTab();
+  let tab6 = await addTab();
+  gBrowser.addTabSplitView([tab1, tab2]);
+  gBrowser.addTabSplitView([tab3, tab4]);
+  gBrowser.addTabSplitView([tab5, tab6]);
+
+  await BrowserTestUtils.switchTab(gBrowser, tab2);
+
+  is(gBrowser.selectedTab, tab2, "Tab2 has focus now");
+  is(gBrowser.multiSelectedTabsCount, 0, "No tab is multi-selected");
+
+  info("Click on tab5 while holding shift key");
+  await triggerClickOn(tab5, { shiftKey: true });
+
+  ok(
+    !tab1.multiselected && !gBrowser._multiSelectedTabsSet.has(tab1),
+    "Tab1 is not multi-selected"
+  );
+  ok(
+    tab2.multiselected && gBrowser._multiSelectedTabsSet.has(tab2),
+    "Tab2 is multi-selected"
+  );
+  ok(
+    tab3.multiselected && gBrowser._multiSelectedTabsSet.has(tab3),
+    "Tab3 is multi-selected"
+  );
+  ok(
+    tab4.multiselected && gBrowser._multiSelectedTabsSet.has(tab4),
+    "Tab4 is multi-selected"
+  );
+  ok(
+    tab5.multiselected && gBrowser._multiSelectedTabsSet.has(tab5),
+    "Tab5 is multi-selected"
+  );
+  ok(
+    !tab6.multiselected && !gBrowser._multiSelectedTabsSet.has(tab6),
+    "Tab6 is not multi-selected"
+  );
+  is(gBrowser.multiSelectedTabsCount, 4, "four multi-selected tabs");
+  is(gBrowser.selectedTab, tab2, "Tab2 still has focus");
+
+  while (gBrowser.tabs.length > 1) {
+    BrowserTestUtils.removeTab(gBrowser.tabs.at(-1));
+  }
+});

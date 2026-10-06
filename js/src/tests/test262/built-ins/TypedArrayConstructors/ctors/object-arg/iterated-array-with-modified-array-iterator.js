@@ -46,6 +46,6 @@ testWithTypedArrayConstructors(function(TypedArray) {
   assert.sameValue(ta[1], 3);
   assert.sameValue(ta[2], 2);
   assert.sameValue(ta[3], 1);
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

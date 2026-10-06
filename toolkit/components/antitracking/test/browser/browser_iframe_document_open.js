@@ -11,14 +11,8 @@ const TEST_PAGE_PARTITIOEND =
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
-      [
-        "network.cookie.cookieBehavior",
-        BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
-      ],
-      [
-        "network.cookie.cookieBehavior.pbmode",
-        BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
-      ],
+      ["network.cookie.cookieBehavior", BEHAVIOR_PARTITION_FOREIGN],
+      ["network.cookie.cookieBehavior.pbmode", BEHAVIOR_PARTITION_FOREIGN],
       ["privacy.dynamic_firstparty.use_site", true],
       ["network.cookie.cookieBehavior.optInPartitioning", true],
       ["network.cookie.CHIPS.enabled", true],

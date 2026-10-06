@@ -39,8 +39,9 @@ export function toWasmSourceLine(offset) {
 
 /**
  * Convert source lines / WASM line offsets to Codemirror lines
- * @param {Object} source
- * @param {Number} lineOrOffset
+ *
+ * @param {object} source
+ * @param {number} lineOrOffset
  * @returns
  */
 export function toEditorLine(source, lineOrOffset) {

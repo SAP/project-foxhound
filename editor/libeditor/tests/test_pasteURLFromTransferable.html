@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+
+<body>
+<div id="html" contenteditable></div>
+<textarea id="text"></textarea>
+
+<script>
+const Cc = SpecialPowers.Cc;
+const Ci = SpecialPowers.Ci;
+
+const TEST_URL = "https://example.com/";
+
+function getHTMLEditor(aWindow) {
+  let editingSession = SpecialPowers.wrap(aWindow).docShell.editingSession;
+  if (!editingSession) {
+    return null;
+  }
+  let editor = editingSession.getEditorForWindow(aWindow);
+  if (!editor) {
+    return null;
+  }
+  return editor.QueryInterface(Ci.nsIHTMLEditor);
+}
+
+function getTextEditor(aElement) {
+  return SpecialPowers.wrap(aElement).editor;
+}
+
+function getLoadContext() {
+  return SpecialPowers.wrap(window).docShell.QueryInterface(
+    Ci.nsILoadContext
+  );
+}
+
+function makeURLTransferable(url) {
+  let trans = Cc["@mozilla.org/widget/transferable;1"].createInstance(
+    Ci.nsITransferable
+  );
+  trans.init(getLoadContext());
+  let s = Cc["@mozilla.org/supports-string;1"].createInstance(
+    Ci.nsISupportsString
+  );
+  s.data = url;
+  trans.setTransferData("text/x-moz-url-data", s);
+  return trans;
+}
+
+add_task(async function() {
+  await new Promise(resolve => SimpleTest.waitForFocus(resolve, window));
+
+  let html = document.getElementById("html");
+  html.focus();
+  await new Promise(resolve => SimpleTest.executeSoon(resolve));
+
+  let htmlInput = new Promise(resolve =>
+    html.addEventListener("input", resolve, {once: true})
+  );
+  getHTMLEditor(window).pasteTransferable(makeURLTransferable(TEST_URL));
+  await htmlInput;
+
+  is(
+    html.innerHTML,
+    "<a href=\"" + TEST_URL + "\">" + TEST_URL + "</a>",
+    "pasteTransferable inserts URL as link in HTML editor"
+  );
+  let htmlRange = getSelection().getRangeAt(0);
+  ok(
+    htmlRange.collapsed && htmlRange.startContainer == html && htmlRange.startOffset == 1,
+    "Selection should be collapsed after the inserted link"
+  );
+
+  let text = document.getElementById("text");
+  text.value = "";
+  text.focus();
+  await new Promise(resolve => SimpleTest.executeSoon(resolve));
+
+  let textInput = new Promise(resolve =>
+    text.addEventListener("input", resolve, {once: true})
+  );
+  getTextEditor(text).pasteTransferable(makeURLTransferable(TEST_URL));
+  await textInput;
+
+  is(
+    text.value,
+    TEST_URL,
+    "pasteTransferable inserts URL as text in plain text editor"
+  );
+});
+</script>
+</body>
+</html>

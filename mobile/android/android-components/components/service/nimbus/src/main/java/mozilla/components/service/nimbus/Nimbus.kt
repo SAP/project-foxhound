@@ -12,7 +12,8 @@ import org.mozilla.experiments.nimbus.NimbusAppInfo
 import org.mozilla.experiments.nimbus.NimbusDelegate
 import org.mozilla.experiments.nimbus.NimbusDeviceInfo
 import org.mozilla.experiments.nimbus.NimbusInterface
-import org.mozilla.experiments.nimbus.NimbusServerSettings
+import org.mozilla.experiments.nimbus.internal.GeckoPrefHandler
+import org.mozilla.experiments.nimbus.internal.NimbusServerSettings
 import org.mozilla.experiments.nimbus.internal.RecordedContext
 import org.mozilla.experiments.nimbus.Nimbus as ApplicationServicesNimbus
 
@@ -26,7 +27,6 @@ interface NimbusApi : NimbusInterface, Observable<NimbusInterface.Observer>
 // Re-export these classes which were in this package previously.
 // Clients which used these classes do not need to change.
 typealias NimbusAppInfo = NimbusAppInfo
-typealias NimbusServerSettings = NimbusServerSettings
 
 /**
  * This is the main entry point to the Nimbus experiment subsystem.
@@ -42,6 +42,7 @@ class Nimbus(
     deviceInfo: NimbusDeviceInfo = NimbusDeviceInfo.default(),
     delegate: NimbusDelegate = NimbusDelegate.default(),
     recordedContext: RecordedContext?,
+    geckoPrefHandler: GeckoPrefHandler? = null,
     private val observable: Observable<NimbusInterface.Observer> = ObserverRegistry(),
 ) : ApplicationServicesNimbus(
     context = context,
@@ -52,6 +53,7 @@ class Nimbus(
     delegate = delegate,
     observer = Observer(observable),
     recordedContext = recordedContext,
+    geckoPrefHandler = geckoPrefHandler,
 ),
     NimbusApi,
     Observable<NimbusInterface.Observer> by observable {

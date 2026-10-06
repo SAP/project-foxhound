@@ -9,13 +9,16 @@ import { PrivateBrowsingUtils } from "resource://gre/modules/PrivateBrowsingUtil
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
-  PanelMultiView: "resource:///modules/PanelMultiView.sys.mjs",
+  PanelMultiView:
+    "moz-src:///browser/components/customizableui/PanelMultiView.sys.mjs",
   RecentlyClosedTabsAndWindowsMenuUtils:
     "resource:///modules/sessionstore/RecentlyClosedTabsAndWindowsMenuUtils.sys.mjs",
   Sanitizer: "resource:///modules/Sanitizer.sys.mjs",
   SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
+  SharingUtils: "resource:///modules/SharingUtils.sys.mjs",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
 });
 
@@ -115,7 +118,7 @@ export const CustomizableWidgets = [
           break;
         case "command": {
           let { target } = event;
-          let { PanelUI, PlacesCommandHook } = target.ownerGlobal;
+          let { PanelUI, PlacesCommandHook } = target.documentGlobal;
           if (target.id == "appMenuRecentlyClosedTabs") {
             PanelUI.showSubView(this.recentlyClosedTabsPanel, target);
           } else if (target.id == "appMenuRecentlyClosedWindows") {
@@ -271,7 +274,7 @@ export const CustomizableWidgets = [
     shortcutId: "key_find",
     tooltiptext: "find-button.tooltiptext3",
     onCommand(aEvent) {
-      let win = aEvent.target.ownerGlobal;
+      let win = aEvent.target.documentGlobal;
       if (win.gLazyFindCommand) {
         win.gLazyFindCommand("onFindCommand");
       }
@@ -291,7 +294,7 @@ export const CustomizableWidgets = [
     defaultArea: "nav-bar",
     _introducedByPref: "sidebar.revamp",
     onCommand(aEvent) {
-      const { SidebarController } = aEvent.target.ownerGlobal;
+      const { SidebarController } = aEvent.target.documentGlobal;
       if (lazy.sidebarRevampEnabled) {
         SidebarController.handleToolbarButtonClick();
       } else {
@@ -300,7 +303,7 @@ export const CustomizableWidgets = [
     },
     onCreated(aNode) {
       if (lazy.sidebarRevampEnabled) {
-        const { SidebarController } = aNode.ownerGlobal;
+        const { SidebarController } = aNode.documentGlobal;
         SidebarController.updateToolbarButton(aNode);
         aNode.setAttribute("overflows", "false");
         // Show the toolbar button badge by setting the badged attribute.
@@ -445,12 +448,12 @@ export const CustomizableWidgets = [
         },
         onWidgetOverflow(aWidgetNode) {
           if (aWidgetNode == node) {
-            node.ownerGlobal.updateEditUIVisibility();
+            node.documentGlobal.updateEditUIVisibility();
           }
         },
         onWidgetUnderflow(aWidgetNode) {
           if (aWidgetNode == node) {
-            node.ownerGlobal.updateEditUIVisibility();
+            node.documentGlobal.updateEditUIVisibility();
           }
         },
       };
@@ -484,6 +487,40 @@ export const CustomizableWidgets = [
   },
 ];
 
+if (
+  Services.prefs.getBoolPref("browser.toolbars.share-button.enabled", false)
+) {
+  CustomizableWidgets.push({
+    id: "share-tab-button",
+    type: "custom",
+    onBuild(aDocument) {
+      let node = aDocument.createXULElement("toolbarbutton");
+      node.setAttribute("id", "share-tab-button");
+      aDocument.l10n.setAttributes(node, "toolbar-button-share-tab");
+
+      // share-tab-url-item is needed so BrowserUsageTelemetry can find the
+      // node carrying browsersToShare via .closest(".share-tab-url-item").
+      node.classList.add("toolbarbutton-1", "share-tab-url-item");
+
+      node.setAttribute("type", "menu");
+
+      let popup = aDocument.createXULElement("menupopup");
+      popup.setAttribute("id", "share-tab-popup");
+      popup.addEventListener("popupshowing", () => {
+        let browser = aDocument.defaultView.gBrowser.selectedBrowser;
+        node.contextBrowserToShare = Cu.getWeakReference(browser);
+        node.browsersToShare = null;
+
+        lazy.SharingUtils.populateSharePopup(popup);
+      });
+
+      node.appendChild(popup);
+
+      return node;
+    },
+  });
+}
+
 if (Services.prefs.getBoolPref("identity.fxaccounts.enabled")) {
   CustomizableWidgets.push({
     id: "sync-button",
@@ -496,7 +533,7 @@ if (Services.prefs.getBoolPref("identity.fxaccounts.enabled")) {
 
       let syncNowBtn = panelview.querySelector(".syncnow-label");
       let l10nId = syncNowBtn.getAttribute(
-        panelview.ownerGlobal.gSync._isCurrentlySyncing
+        panelview.documentGlobal.gSync._isCurrentlySyncing
           ? "syncing-data-l10n-id"
           : "sync-now-data-l10n-id"
       );
@@ -509,6 +546,7 @@ if (Services.prefs.getBoolPref("identity.fxaccounts.enabled")) {
         lazy.PanelMultiView.getViewNode(doc, "PanelUI-remotetabs-tabslist")
       );
       panelview.addEventListener("command", this);
+      panelview.addEventListener("click", this);
       let syncNowButton = lazy.PanelMultiView.getViewNode(
         aEvent.target.ownerDocument,
         "PanelUI-remotetabs-syncnow"
@@ -520,6 +558,7 @@ if (Services.prefs.getBoolPref("identity.fxaccounts.enabled")) {
       panelview.syncedTabsPanelList.destroy();
       panelview.syncedTabsPanelList = null;
       panelview.removeEventListener("command", this);
+      panelview.removeEventListener("click", this);
       let syncNowButton = lazy.PanelMultiView.getViewNode(
         aEvent.target.ownerDocument,
         "PanelUI-remotetabs-syncnow"
@@ -528,7 +567,7 @@ if (Services.prefs.getBoolPref("identity.fxaccounts.enabled")) {
     },
     handleEvent(aEvent) {
       let button = aEvent.target;
-      let { gSync } = button.ownerGlobal;
+      let { gSync } = button.documentGlobal;
       switch (aEvent.type) {
         case "mouseover":
           gSync.refreshSyncButtonsTooltip();
@@ -541,6 +580,11 @@ if (Services.prefs.getBoolPref("identity.fxaccounts.enabled")) {
             case "PanelUI-remotetabs-view-managedevices":
               gSync.openDevicesManagementPage("syncedtabs-menupanel");
               break;
+          }
+          break;
+        }
+        case "click": {
+          switch (button.id) {
             case "PanelUI-remotetabs-tabsdisabledpane-button":
             case "PanelUI-remotetabs-setupsync-button":
             case "PanelUI-remotetabs-syncdisabled-button":
@@ -552,8 +596,99 @@ if (Services.prefs.getBoolPref("identity.fxaccounts.enabled")) {
               gSync.openConnectAnotherDevice("synced-tabs");
               break;
           }
+          break;
         }
       }
+    },
+  });
+
+  CustomizableWidgets.push({
+    id: "send-tab-button",
+    l10nId: "toolbar-button-send-tab",
+    type: "custom",
+    tabSpecific: true,
+    locationSpecific: true,
+    onBuild(aDocument) {
+      const node = aDocument.createXULElement("toolbarbutton");
+      node.setAttribute("id", this.id);
+      aDocument.l10n.setAttributes(node, "toolbar-button-send-tab");
+
+      node.classList.add("toolbarbutton-1");
+
+      node.setAttribute("type", "menu");
+
+      const enableDisableButton = () => {
+        node.disabled =
+          !aDocument.documentGlobal.gSync.sendTabToolbarButtonShouldBeEnabled(
+            aDocument.documentGlobal.gBrowser.currentURI
+          );
+      };
+
+      Services.obs.addObserver(
+        enableDisableButton,
+        "fxaccounts:devicelist_updated"
+      );
+      Services.obs.addObserver(enableDisableButton, "sync-ui-state:update");
+      Services.prefs.addObserver(
+        "identity.fxaccounts.enabled",
+        enableDisableButton
+      );
+      aDocument.documentGlobal.addEventListener(
+        "TabSelect",
+        enableDisableButton
+      );
+
+      const locationListener = {
+        onLocationChange(_browser, webProgress, _request, _uri) {
+          if (webProgress.isTopLevel) {
+            enableDisableButton();
+          }
+        },
+      };
+      aDocument.documentGlobal.gBrowser.addTabsProgressListener(
+        locationListener
+      );
+
+      enableDisableButton();
+
+      const widgetListener = {
+        onWidgetInstanceRemoved: (aWidgetId, aDoc) => {
+          if (aWidgetId != this.id || aDoc != aDocument) {
+            return;
+          }
+          lazy.CustomizableUI.removeListener(widgetListener);
+          Services.obs.removeObserver(
+            enableDisableButton,
+            "fxaccounts:devicelist_updated"
+          );
+          Services.obs.removeObserver(
+            enableDisableButton,
+            "sync-ui-state:update"
+          );
+          Services.prefs.removeObserver(
+            "identity.fxaccounts.enabled",
+            enableDisableButton
+          );
+          aDocument.documentGlobal.removeEventListener(
+            "TabSelect",
+            enableDisableButton
+          );
+          aDocument.documentGlobal.gBrowser.removeTabsProgressListener(
+            locationListener
+          );
+        },
+      };
+      lazy.CustomizableUI.addListener(widgetListener);
+
+      const popup = aDocument.createXULElement("menupopup");
+      popup.setAttribute("id", "send-tab-popup");
+      popup.addEventListener("popupshowing", () =>
+        aDocument.documentGlobal.gSync.populateSendTabToolbarButton(popup)
+      );
+
+      node.appendChild(popup);
+
+      return node;
     },
   });
 }
@@ -562,7 +697,7 @@ let preferencesButton = {
   id: "preferences-button",
   l10nId: "toolbar-settings-button",
   onCommand(aEvent) {
-    let win = aEvent.target.ownerGlobal;
+    let win = aEvent.target.documentGlobal;
     win.openPreferences(undefined);
   },
 };
@@ -620,7 +755,7 @@ if (Services.prefs.getBoolPref("privacy.panicButton.enabled")) {
       }
     },
     onViewShowing(aEvent) {
-      let win = aEvent.target.ownerGlobal;
+      let win = aEvent.target.documentGlobal;
       let doc = win.document;
       let eventBlocker = null;
       eventBlocker = doc.l10n.translateElements([aEvent.target]);
@@ -651,8 +786,17 @@ if (PrivateBrowsingUtils.enabled) {
     l10nId: "toolbar-button-new-private-window",
     shortcutId: "key_privatebrowsing",
     onCommand(e) {
-      let win = e.target.ownerGlobal;
+      let win = e.target.documentGlobal;
       win.OpenBrowserWindow({ private: true });
     },
+  });
+}
+
+if (Services.prefs.getBoolPref("browser.tabs.groups.alternateMenu", false)) {
+  CustomizableWidgets.push({
+    id: "tab-groups-button",
+    type: "view",
+    viewId: "toolbar-tabGroupsListView",
+    l10nId: "toolbar-button-tab-groups",
   });
 }

@@ -10,6 +10,7 @@
 #include "secitem.h"
 #include "secasn1t.h"
 #include "secoidt.h"
+#include "kyber.h"
 
 /*
 ** Typedef for callback to get a password "key".
@@ -22,6 +23,9 @@ extern const SEC_ASN1Template nsslowkey_DHPrivateKeyTemplate[];
 extern const SEC_ASN1Template nsslowkey_DHPrivateKeyExportTemplate[];
 #define NSSLOWKEY_EC_PRIVATE_KEY_VERSION 1 /* as per SECG 1 C.4 */
 extern const SEC_ASN1Template nsslowkey_ECPrivateKeyTemplate[];
+extern const SEC_ASN1Template nsslowkey_PQBothSeedAndPrivateKeyTemplate[];
+extern const SEC_ASN1Template nsslowkey_PQSeedTemplate[];
+extern const SEC_ASN1Template nsslowkey_PQPrivateKeyTemplate[];
 
 extern const SEC_ASN1Template nsslowkey_PrivateKeyInfoTemplate[];
 extern const SEC_ASN1Template nsslowkey_EncryptedPrivateKeyInfoTemplate[];
@@ -62,11 +66,30 @@ typedef enum {
     NSSLOWKEYRSAKey = 1,
     NSSLOWKEYDSAKey = 2,
     NSSLOWKEYDHKey = 4,
-    NSSLOWKEYECKey = 5
+    NSSLOWKEYECKey = 5,
+    NSSLOWKEYMLDSAKey = 6,
+    NSSLOWKEYMLKEMKey = 7,
 } NSSLOWKEYType;
 
+/* ML KEM low structures packages a key with it's parameters.
+ * The ML KEM freebl didn't define these because all the functions
+ * take raw keys and param separately */
+typedef struct MLKEMPrivateKeyStr MLKEMPrivateKey;
+typedef struct MLKEMPublicKeyStr MLKEMPublicKey;
+
+struct MLKEMPrivateKeyStr {
+    KyberParams mlkemParams;
+    SECItem key;
+    SECItem seed;
+};
+
+struct MLKEMPublicKeyStr {
+    KyberParams mlkemParams;
+    SECItem key;
+};
+
 /*
-** An RSA public key object.
+** A unified public key object.
 */
 struct NSSLOWKEYPublicKeyStr {
     PLArenaPool *arena;
@@ -76,9 +99,17 @@ struct NSSLOWKEYPublicKeyStr {
         DSAPublicKey dsa;
         DHPublicKey dh;
         ECPublicKey ec;
+        MLDSAPublicKey mldsa;
+        MLKEMPublicKey mlkem;
     } u;
 };
 typedef struct NSSLOWKEYPublicKeyStr NSSLOWKEYPublicKey;
+
+typedef struct GenPostQuantumPrivateKeyStr GenPostQuantumPrivateKey;
+struct GenPostQuantumPrivateKeyStr {
+    SECItem seedItem;
+    SECItem keyItem;
+};
 
 /*
 ** Low Level private key object
@@ -93,6 +124,9 @@ struct NSSLOWKEYPrivateKeyStr {
         DSAPrivateKey dsa;
         DHPrivateKey dh;
         ECPrivateKey ec;
+        GenPostQuantumPrivateKey genpq; /* used to decode post quantum keys */
+        MLDSAPrivateKey mldsa;
+        MLKEMPrivateKey mlkem;
     } u;
 };
 typedef struct NSSLOWKEYPrivateKeyStr NSSLOWKEYPrivateKey;

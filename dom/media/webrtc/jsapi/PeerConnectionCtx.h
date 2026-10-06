@@ -2,20 +2,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef peerconnectionctx_h___h__
-#define peerconnectionctx_h___h__
+#ifndef peerconnectionctx_h_h_
+#define peerconnectionctx_h_h_
 
 #include <map>
 #include <string>
 
+#include "MediaTransportHandler.h"  // Mostly for IceLogPromise
+#include "PeerConnectionImpl.h"
 #include "api/field_trials_view.h"
 #include "call/audio_state.h"
-#include "MediaTransportHandler.h"  // Mostly for IceLogPromise
 #include "mozIGeckoMediaPluginService.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/StaticPtr.h"
 #include "nsIRunnable.h"
-#include "PeerConnectionImpl.h"
 
 class WebrtcLogSinkHandle;
 
@@ -100,6 +100,10 @@ class SharedWebrtcState {
 // * Upstream webrtc state shared across all Calls (processing thread)
 class PeerConnectionCtx {
  public:
+  // This is a singleton, so don't copy construct it, etc.
+  PeerConnectionCtx(const PeerConnectionCtx& other) = delete;
+  void operator=(const PeerConnectionCtx& other) = delete;
+
   static nsresult InitializeGlobal();
   static PeerConnectionCtx* GetInstance();
   static bool isActive();
@@ -139,14 +143,10 @@ class PeerConnectionCtx {
   void ClearClosedStats();
 
  private:
+  virtual ~PeerConnectionCtx() = default;
   std::map<const std::string, PeerConnectionImpl*> mPeerConnections;
 
   PeerConnectionCtx();
-
-  // This is a singleton, so don't copy construct it, etc.
-  PeerConnectionCtx(const PeerConnectionCtx& other) = delete;
-  void operator=(const PeerConnectionCtx& other) = delete;
-  virtual ~PeerConnectionCtx() = default;
 
   nsresult Initialize();
   nsresult StartTelemetryTimer();

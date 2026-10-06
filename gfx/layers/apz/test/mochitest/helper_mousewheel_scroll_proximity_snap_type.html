@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="apz_test_utils.js"></script>
+  <script src="apz_test_native_event_utils.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/paint_listener.js"></script>
+  <style>
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+#container {
+  scroll-snap-type: y proximity;
+  overflow: auto;
+  height: 100vh;
+}
+
+.section {
+  min-height: 100vh;
+}
+
+#section1 {
+  background: #964848;
+  scroll-snap-align: center;
+}
+
+#section2 {
+  background: #719648;
+  scroll-snap-align: center;
+}
+
+#section3 {
+  background: #487d96;
+  scroll-snap-align: center;
+}
+
+#section4 {
+  background: #954896;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: white;
+  font-size: 1.25rem;
+  font-family: system-ui;
+}
+  </style>
+  <script>
+async function test() {
+  let section3 = document.getElementById("section3");
+
+  let firstScrollendPromise = promiseScrollend(container);
+
+  info("Start Calling ScrollIntoView");
+  section3.scrollIntoView({block:"start", behavior: "auto"});
+  info("End Calling ScrollIntoView");
+
+  await firstScrollendPromise;
+
+  info("Start Calling Wheel Scroll");
+
+  let offsetBeforeWheelScroll = container.scrollTop;
+
+  let secondScrollendPromise = promiseScrollend(container);
+
+  await promiseApzFlushedRepaints()
+
+  let containerHeight = parseInt(getComputedStyle(container).height);
+  const scrollEvent = {
+    deltaY: containerHeight * 0.5,
+    asyncEnabled: true,
+    deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+  };
+  synthesizeWheel(container, 200, 200, scrollEvent);
+
+  await secondScrollendPromise;
+
+  isnot(offsetBeforeWheelScroll, container.scrollTop,
+        "Wheel scroll should scroll without a snap point");
+  is(offsetBeforeWheelScroll < container.scrollTop, true,
+     "Wheel scroll should have caused us to scroll");
+}
+waitUntilApzStable()
+.then(test)
+.then(subtestDone, subtestFailed);
+  </script>
+</head>
+<body>
+  <div id="container">
+    <div id="section1" class="section"></div>
+    <div id="section2" class="section"></div>
+    <div id="section3" class="section"></div>
+    <div id="section4" class="section"></div>
+      <div>
+        Firefox won't let us mousewheel-scroll to this.
+      </div>
+    </div>
+  </div>
+</body>

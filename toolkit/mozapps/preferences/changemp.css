@@ -1,0 +1,55 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@namespace html "http://www.w3.org/1999/xhtml";
+
+description {
+  display: flex;
+  padding-block: var(--space-xsmall);
+  align-items: flex-start;
+  gap: var(--space-small);
+  align-self: stretch;
+}
+
+#admin {
+  padding-block-end: 0;
+}
+
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-xsmall);
+  align-self: stretch;
+  margin-block: var(--space-small);
+}
+
+moz-input-password,
+moz-input-text {
+  width: 100%;
+}
+
+#pwmeter {
+  appearance: none;
+  width: 100%;
+  height: var(--size-item-xsmall);
+  min-height: var(--size-item-xsmall);
+  border-radius: var(--border-radius-medium);
+  border: var(--border-width) solid var(--border-color-interactive);
+  background: none;
+  margin-top: var(--space-xsmall);
+  overflow: hidden;
+}
+
+#pwmeter::-moz-progress-bar {
+  background: var(--color-accent-primary-active);
+}
+
+#pw-warning {
+  color: var(--text-color-deemphasized);
+  font-family: var(--platform-font-size-family);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight);
+  padding-top: var(--space-medium);
+}

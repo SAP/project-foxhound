@@ -40,6 +40,11 @@ function createMockDevTools() {
 /**
  * Check if a given method was called an expected number of times, and finally check the
  * arguments provided to the last call, if appropriate.
+ *
+ * @param {object} mock
+ * @param {string} method
+ * @param {number} length
+ * @param {Array} lastArgs
  */
 function checkCalls(mock, method, length, lastArgs) {
   Assert.strictEqual(

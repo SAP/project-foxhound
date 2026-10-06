@@ -8,69 +8,81 @@
 add_setup(async function () {
   useHttpServer();
 
-  await Services.search.init();
+  await SearchService.init();
 
   // This test purposely attempts to load an invalid engine.
-  consoleAllowList.push("_onLoad: Failed to init engine!");
+  consoleAllowList.push("parseXMLData: Failed to init engine!");
   consoleAllowList.push("Invalid search plugin due to namespace not matching");
 });
 
 add_task(async function test_invalid_path_fails() {
   await Assert.rejects(
-    Services.search.addOpenSearchEngine(
+    SearchService.addOpenSearchEngine(
       "http://invalid/opensearch/generic1.xml",
       null
     ),
     error => {
+      Assert.ok(
+        error instanceof SearchEngineInstallError,
+        "Should have raised an install error"
+      );
       Assert.equal(
-        error.result,
-        Ci.nsISearchService.ERROR_DOWNLOAD_FAILURE,
-        "Should have returned download failure."
+        error.type,
+        "download-failure",
+        "Should have returned download failure"
       );
       return true;
     },
-    "Should fail to install an engine with an invalid path."
+    "Should fail to install an engine with an invalid path"
   );
 });
 
 add_task(async function test_install_duplicate_fails() {
-  let engine = await Services.search.addOpenSearchEngine(
+  let engine = await SearchService.addOpenSearchEngine(
     `${gHttpURL}/opensearch/simple.xml`,
     null
   );
-  Assert.equal(engine.name, "simple", "Should have installed the engine.");
+  Assert.equal(engine.name, "simple", "Should have installed the engine");
 
   await Assert.rejects(
-    Services.search.addOpenSearchEngine(
+    SearchService.addOpenSearchEngine(
       `${gHttpURL}/opensearch/simple.xml`,
       null
     ),
     error => {
+      Assert.ok(
+        error instanceof SearchEngineInstallError,
+        "Should have raised an install error"
+      );
       Assert.equal(
-        error.result,
-        Ci.nsISearchService.ERROR_DUPLICATE_ENGINE,
-        "Should have returned duplicate failure."
+        error.type,
+        "duplicate-title",
+        "Should have returned duplicate failure"
       );
       return true;
     },
-    "Should fail to install a duplicate engine."
+    "Should fail to install a duplicate engine"
   );
 });
 
 add_task(async function test_invalid_engine_from_dir() {
   await Assert.rejects(
-    Services.search.addOpenSearchEngine(
+    SearchService.addOpenSearchEngine(
       `${gHttpURL}/opensearch/invalid.xml`,
       null
     ),
     error => {
+      Assert.ok(
+        error instanceof SearchEngineInstallError,
+        "Should have raised an install error"
+      );
       Assert.equal(
-        error.result,
-        Ci.nsISearchService.ERROR_ENGINE_CORRUPTED,
-        "Should have returned corruption failure."
+        error.type,
+        "corrupted",
+        "Should have returned corruption failure"
       );
       return true;
     },
-    "Should fail to install an invalid engine."
+    "Should fail to install an invalid engine"
   );
 });

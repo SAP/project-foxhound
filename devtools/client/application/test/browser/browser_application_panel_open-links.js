@@ -17,7 +17,7 @@ add_task(async function () {
   const { panel, toolbox } = await openNewTabAndApplicationPanel(TAB_URL);
   const doc = panel.panelWin.document;
 
-  selectPage(panel, "service-workers");
+  await selectPage(panel, "service-workers");
 
   // detach devtools in a separate window
   await toolbox.switchHost(Toolbox.HostType.WINDOW);

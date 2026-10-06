@@ -18,6 +18,8 @@
 #include "mozilla/dom/PContent.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/Services.h"
+#include "nsIObserverService.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -171,19 +173,6 @@ bool L10nRegistry::HasSource(const nsACString& aName, ErrorResult& aRv) {
   return result;
 }
 
-already_AddRefed<L10nFileSource> L10nRegistry::GetSource(
-    const nsACString& aName, ErrorResult& aRv) {
-  ffi::L10nRegistryStatus status;
-
-  RefPtr<const ffi::FileSource> raw(
-      dont_AddRef(ffi::l10nregistry_get_source(mRaw.get(), &aName, &status)));
-  if (PopulateError(aRv, status)) {
-    return nullptr;
-  }
-
-  return MakeAndAddRef<L10nFileSource>(std::move(raw));
-}
-
 void L10nRegistry::GetSourceNames(nsTArray<nsCString>& aRetVal) {
   ffi::l10nregistry_get_source_names(mRaw.get(), &aRetVal);
 }
@@ -326,6 +315,11 @@ void L10nRegistry::RegisterFileSourcesFromParentProcess(
     source->index.AppendElements(desc.index());
   }
   ffi::l10nregistry_register_parent_process_sources(&sources);
+
+  if (nsCOMPtr<nsIObserverService> obs =
+          mozilla::services::GetObserverService()) {
+    obs->NotifyObservers(nullptr, "intl:l10n-sources-changed", nullptr);
+  }
 }
 
 /* static */
@@ -380,9 +374,13 @@ nsresult L10nRegistry::LoadSync(const nsACString& aPath, void** aData,
       nsIRequest::LOAD_NORMAL);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  // Don't warn on failure here, because it is triggered very frequently for
+  // necko.ftl which first tries and fails loading a resource://app/ URI before
+  // succeeding with a resource://gre/ URI.
   nsCOMPtr<nsIInputStream> input;
-  rv = channel->Open(getter_AddRefs(input));
-  NS_ENSURE_SUCCESS(rv, NS_ERROR_INVALID_ARG);
+  if (NS_FAILED(channel->Open(getter_AddRefs(input)))) {
+    return NS_ERROR_INVALID_ARG;
+  }
 
   return NS_ReadInputStreamToBuffer(input, aData, -1, aSize);
 }
@@ -433,7 +431,12 @@ void L10nRegistrySendUpdateL10nFileSources() {
   nsTArray<ContentParent*> parents;
   ContentParent::GetAll(parents);
   for (ContentParent* parent : parents) {
-    Unused << parent->SendUpdateL10nFileSources(sources);
+    (void)parent->SendUpdateL10nFileSources(sources);
+  }
+
+  if (nsCOMPtr<nsIObserverService> obs =
+          mozilla::services::GetObserverService()) {
+    obs->NotifyObservers(nullptr, "intl:l10n-sources-changed", nullptr);
   }
 }
 

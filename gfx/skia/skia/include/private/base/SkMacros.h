@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -27,6 +27,15 @@
 #define SK_MACRO_APPEND_LINE(name)  SK_MACRO_CONCAT(name, __LINE__)
 
 #define SK_MACRO_APPEND_COUNTER(name) SK_MACRO_CONCAT(name, __COUNTER__)
+
+/*
+ *  Makes a string of X, where X is expanded before conversion to a string if X itself contains
+ *  macros.
+ *
+ *  Usage: SK_MACRO_STRINGIFY(__LINE__)    to make "123", where 123 is the current line number.
+ */
+#define SK_MACRO_STRINGIFY(X) SK_MACRO_STRINGIFY_IMPL_PRIV(X)
+#define SK_MACRO_STRINGIFY_IMPL_PRIV(X) #X
 
 ////////////////////////////////////////////////////////////////////////////////
 

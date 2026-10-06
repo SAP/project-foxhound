@@ -11,7 +11,9 @@
 #include "modules/audio_processing/agc/agc.h"
 
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
+#include <span>
 #include <vector>
 
 #include "modules/audio_processing/agc/loudness_histogram.h"
@@ -37,7 +39,7 @@ Agc::Agc()
 
 Agc::~Agc() = default;
 
-void Agc::Process(rtc::ArrayView<const int16_t> audio) {
+void Agc::Process(std::span<const int16_t> audio) {
   const int sample_rate_hz = audio.size() * kNum10msFramesInOneSecond;
   RTC_DCHECK_LE(sample_rate_hz, kMaxSampleRateHz);
   vad_.ProcessChunk(audio.data(), audio.size(), sample_rate_hz);

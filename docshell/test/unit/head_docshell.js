@@ -9,6 +9,7 @@ var { XPCOMUtils } = ChromeUtils.importESModule(
 ChromeUtils.defineESModuleGetters(this, {
   HttpServer: "resource://testing-common/httpd.sys.mjs",
   NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   SearchTestUtils: "resource://testing-common/SearchTestUtils.sys.mjs",
   SearchUtils: "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
   TestUtils: "resource://testing-common/TestUtils.sys.mjs",
@@ -16,12 +17,12 @@ ChromeUtils.defineESModuleGetters(this, {
 
 var profileDir = do_get_profile();
 
-const kSearchEngineID = "test_urifixup_search_engine";
+const kSearchEngineName = "test_urifixup_search_engine";
 const kSearchEngineURL = "https://www.example.org/?search={searchTerms}";
-const kPrivateSearchEngineID = "test_urifixup_search_engine_private";
+const kPrivateSearchEngineName = "test_urifixup_search_engine_private";
 const kPrivateSearchEngineURL =
   "https://www.example.org/?private={searchTerms}";
-const kPostSearchEngineID = "test_urifixup_search_engine_post";
+const kPostSearchEngineName = "test_urifixup_search_engine_post";
 const kPostSearchEngineURL = "https://www.example.org/";
 const kPostSearchEngineData = "q={searchTerms}";
 
@@ -31,7 +32,7 @@ async function setupSearchService() {
   SearchTestUtils.init(this);
 
   await SearchTestUtils.setRemoteSettingsConfig(CONFIG);
-  await Services.search.init();
+  await SearchService.init();
 }
 
 /**

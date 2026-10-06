@@ -1,21 +1,18 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DOMSecurityMonitor.h"
-#include "nsContentUtils.h"
 
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "nsContentUtils.h"
 #include "nsIChannel.h"
 #include "nsILoadInfo.h"
 #include "nsIPrincipal.h"
 #include "nsIURI.h"
 #include "nsJSUtils.h"
 #include "xpcpublic.h"
-
-#include "mozilla/BasePrincipal.h"
-#include "mozilla/StaticPrefs_dom.h"
 
 /* static */
 void DOMSecurityMonitor::AuditParsingOfHTMLXMLFragments(
@@ -71,6 +68,7 @@ void DOMSecurityMonitor::AuditParsingOfHTMLXMLFragments(
       "resource://devtools/client/shared/widgets/Spectrum.js"_ns,
       "resource://gre/modules/narrate/VoiceSelect.sys.mjs"_ns,
       "chrome://global/content/vendor/react-dom.js"_ns,
+      "chrome://browser/content/aiwindow/components/ai-chat-message.mjs"_ns,
       // ------------------------------------------------------------------
       // test pages
       // ------------------------------------------------------------------

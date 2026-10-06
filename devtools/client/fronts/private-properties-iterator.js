@@ -56,5 +56,4 @@ class PrivatePropertiesIteratorFront extends FrontClassWithSpec(
   }
 }
 
-exports.PrivatePropertiesIteratorFront = PrivatePropertiesIteratorFront;
 registerFront(PrivatePropertiesIteratorFront);

@@ -7,12 +7,14 @@
 //!
 //! [image]: https://drafts.csswg.org/css-images/#image-values
 
+use crate::derives::*;
+use crate::typed_om::{ImageValue, KeywordValue, ToTyped, TypedValue};
 use crate::values::computed::percentage::Percentage;
 use crate::values::computed::position::Position;
 use crate::values::computed::url::ComputedUrl;
 use crate::values::computed::{Angle, Color, Context};
 use crate::values::computed::{
-    AngleOrPercentage, LengthPercentage, NonNegativeLength, NonNegativeLengthPercentage,
+    AngleOrPercentage, Length, LengthPercentage, NonNegativeLength, NonNegativeLengthPercentage,
     Resolution, ToComputedValue,
 };
 use crate::values::generics::image::{self as generic, GradientCompatMode};
@@ -20,7 +22,8 @@ use crate::values::specified::image as specified;
 use crate::values::specified::position::{HorizontalPositionKeyword, VerticalPositionKeyword};
 use std::f32::consts::PI;
 use std::fmt::{self, Write};
-use style_traits::{CssWriter, ToCss};
+use style_traits::{CssString, CssWriter, ToCss};
+use thin_vec::ThinVec;
 
 pub use specified::ImageRendering;
 
@@ -28,19 +31,34 @@ pub use specified::ImageRendering;
 /// <https://drafts.csswg.org/css-images/#image-values>
 pub type Image = generic::GenericImage<Gradient, ComputedUrl, Color, Percentage, Resolution>;
 
+impl ToTyped for Image {
+    fn to_typed(&self, dest: &mut ThinVec<TypedValue>) -> Result<(), ()> {
+        match *self {
+            Image::None => {
+                dest.push(TypedValue::Keyword(KeywordValue(CssString::from("none"))));
+                Ok(())
+            },
+            Image::Url(ref url) => {
+                dest.push(TypedValue::Image(ImageValue::Computed(url.clone())));
+                Ok(())
+            },
+            _ => Err(()),
+        }
+    }
+}
+
 // Images should remain small, see https://github.com/servo/servo/pull/18430
 #[cfg(feature = "gecko")]
 size_of_test!(Image, 16);
 #[cfg(feature = "servo")]
-size_of_test!(Image, 40);
+size_of_test!(Image, 24);
 
 /// Computed values for a CSS gradient.
 /// <https://drafts.csswg.org/css-images/#gradients>
 pub type Gradient = generic::GenericGradient<
     LineDirection,
+    Length,
     LengthPercentage,
-    NonNegativeLength,
-    NonNegativeLengthPercentage,
     Position,
     Angle,
     AngleOrPercentage,
@@ -217,12 +235,19 @@ impl ToComputedValue for specified::Image {
             Self::Gradient(g) => Image::Gradient(g.to_computed_value(context)),
             #[cfg(feature = "gecko")]
             Self::Element(e) => Image::Element(e.to_computed_value(context)),
+            #[cfg(feature = "gecko")]
             Self::MozSymbolicIcon(e) => Image::MozSymbolicIcon(e.to_computed_value(context)),
             #[cfg(feature = "servo")]
             Self::PaintWorklet(w) => Image::PaintWorklet(w.to_computed_value(context)),
             Self::CrossFade(f) => Image::CrossFade(f.to_computed_value(context)),
             Self::ImageSet(s) => Image::ImageSet(s.to_computed_value(context)),
-            Self::LightDark(ld) => ld.compute(context),
+            Self::Image(color) => Image::Image(color.to_computed_value(context)),
+            Self::LightDark(ld) => match ld.compute(context) {
+                // none computes to image(transparent) in light-dark(), see
+                // https://github.com/w3c/csswg-drafts/issues/13866.
+                Image::None => Image::Image(Color::TRANSPARENT_BLACK.into()),
+                other => other,
+            },
         }
     }
 
@@ -233,11 +258,15 @@ impl ToComputedValue for specified::Image {
             Image::Gradient(g) => Self::Gradient(ToComputedValue::from_computed_value(g)),
             #[cfg(feature = "gecko")]
             Image::Element(e) => Self::Element(ToComputedValue::from_computed_value(e)),
-            Image::MozSymbolicIcon(e) => Self::MozSymbolicIcon(ToComputedValue::from_computed_value(e)),
+            #[cfg(feature = "gecko")]
+            Image::MozSymbolicIcon(e) => {
+                Self::MozSymbolicIcon(ToComputedValue::from_computed_value(e))
+            },
             #[cfg(feature = "servo")]
             Image::PaintWorklet(w) => Self::PaintWorklet(ToComputedValue::from_computed_value(w)),
             Image::CrossFade(f) => Self::CrossFade(ToComputedValue::from_computed_value(f)),
             Image::ImageSet(s) => Self::ImageSet(ToComputedValue::from_computed_value(s)),
+            Image::Image(color) => Self::Image(ToComputedValue::from_computed_value(color)),
             Image::LightDark(_) => unreachable!("Shouldn't have computed image-set values"),
         }
     }

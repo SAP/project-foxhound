@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -124,8 +122,8 @@ class PerThreadData {
     MOZ_ASSERT(observers);
 
     // Inform observers
-    for (auto i = observers->begin(), e = observers->end(); i != e; ++i) {
-      (*i)->Observe(aObservation);
+    for (auto observer : *observers) {
+      observer->Observe(aObservation);
     }
     mIsHandlingObservation = false;
   }
@@ -230,51 +228,64 @@ class SourceList {
     if (aOp & mozilla::IOInterposeObserver::OpCreateOrOpen) {
       VectorRemove(newLists->mCreateObservers, aStaticObserver);
       if (newLists->mCreateObservers.empty()) {
-        mObservedOperations = (mozilla::IOInterposeObserver::Operation)(
-            mObservedOperations &
-            ~mozilla::IOInterposeObserver::OpCreateOrOpen);
+        mObservedOperations =
+            (mozilla::IOInterposeObserver::
+                 Operation)(mObservedOperations &
+                            ~mozilla::IOInterposeObserver::OpCreateOrOpen);
       }
     }
     if (aOp & mozilla::IOInterposeObserver::OpRead) {
       VectorRemove(newLists->mReadObservers, aStaticObserver);
       if (newLists->mReadObservers.empty()) {
-        mObservedOperations = (mozilla::IOInterposeObserver::Operation)(
-            mObservedOperations & ~mozilla::IOInterposeObserver::OpRead);
+        mObservedOperations =
+            (mozilla::IOInterposeObserver::
+                 Operation)(mObservedOperations &
+                            ~mozilla::IOInterposeObserver::OpRead);
       }
     }
     if (aOp & mozilla::IOInterposeObserver::OpWrite) {
       VectorRemove(newLists->mWriteObservers, aStaticObserver);
       if (newLists->mWriteObservers.empty()) {
-        mObservedOperations = (mozilla::IOInterposeObserver::Operation)(
-            mObservedOperations & ~mozilla::IOInterposeObserver::OpWrite);
+        mObservedOperations =
+            (mozilla::IOInterposeObserver::
+                 Operation)(mObservedOperations &
+                            ~mozilla::IOInterposeObserver::OpWrite);
       }
     }
     if (aOp & mozilla::IOInterposeObserver::OpFSync) {
       VectorRemove(newLists->mFSyncObservers, aStaticObserver);
       if (newLists->mFSyncObservers.empty()) {
-        mObservedOperations = (mozilla::IOInterposeObserver::Operation)(
-            mObservedOperations & ~mozilla::IOInterposeObserver::OpFSync);
+        mObservedOperations =
+            (mozilla::IOInterposeObserver::
+                 Operation)(mObservedOperations &
+                            ~mozilla::IOInterposeObserver::OpFSync);
       }
     }
     if (aOp & mozilla::IOInterposeObserver::OpStat) {
       VectorRemove(newLists->mStatObservers, aStaticObserver);
       if (newLists->mStatObservers.empty()) {
-        mObservedOperations = (mozilla::IOInterposeObserver::Operation)(
-            mObservedOperations & ~mozilla::IOInterposeObserver::OpStat);
+        mObservedOperations =
+            (mozilla::IOInterposeObserver::
+                 Operation)(mObservedOperations &
+                            ~mozilla::IOInterposeObserver::OpStat);
       }
     }
     if (aOp & mozilla::IOInterposeObserver::OpClose) {
       VectorRemove(newLists->mCloseObservers, aStaticObserver);
       if (newLists->mCloseObservers.empty()) {
-        mObservedOperations = (mozilla::IOInterposeObserver::Operation)(
-            mObservedOperations & ~mozilla::IOInterposeObserver::OpClose);
+        mObservedOperations =
+            (mozilla::IOInterposeObserver::
+                 Operation)(mObservedOperations &
+                            ~mozilla::IOInterposeObserver::OpClose);
       }
     }
     if (aOp & mozilla::IOInterposeObserver::OpNextStage) {
       VectorRemove(newLists->mStageObservers, aStaticObserver);
       if (newLists->mStageObservers.empty()) {
-        mObservedOperations = (mozilla::IOInterposeObserver::Operation)(
-            mObservedOperations & ~mozilla::IOInterposeObserver::OpNextStage);
+        mObservedOperations =
+            (mozilla::IOInterposeObserver::
+                 Operation)(mObservedOperations &
+                            ~mozilla::IOInterposeObserver::OpNextStage);
       }
     }
     mObserverLists = newLists;

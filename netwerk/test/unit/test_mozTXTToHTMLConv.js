@@ -164,6 +164,22 @@ function run_test() {
       url: "mailto:john@mozilla.org",
       text: "john@mozilla.org",
     },
+    {
+      // stripped whitespace doesn't crash
+      input: "www\f\f\f\f\f.mozilla.org",
+      url: "http://www.mozilla.org",
+    },
+    // -- bidirectional formatting char
+    {
+      input: "see http://www.mozilla.org/\u202Eabc maybe",
+      url: "http://www.mozilla.org/",
+      text: "http://www.mozilla.org/",
+    },
+    {
+      input: "see <http://mozilla.org/\u202Eabc> maybe",
+      url: "http://mozilla.org/",
+      text: "",
+    },
   ];
 
   const scanTXTglyph = [

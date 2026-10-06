@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,7 +17,7 @@ NS_IMPL_ISUPPORTS(ExternalHelperAppChild, nsIStreamListener, nsIRequestObserver)
 
 ExternalHelperAppChild::ExternalHelperAppChild() : mStatus(NS_OK) {}
 
-ExternalHelperAppChild::~ExternalHelperAppChild() {}
+ExternalHelperAppChild::~ExternalHelperAppChild() = default;
 
 //-----------------------------------------------------------------------------
 // nsIStreamListener
@@ -41,7 +39,7 @@ ExternalHelperAppChild::OnDataAvailable(nsIRequest* request,
       return rv;
     }
 
-    if (NS_WARN_IF(!SendOnDataAvailable(data, offset, toRead))) {
+    if (NS_WARN_IF(!SendOnDataAvailable(data, offset))) {
       return NS_ERROR_UNEXPECTED;
     }
 
@@ -59,7 +57,8 @@ ExternalHelperAppChild::OnDataAvailable(nsIRequest* request,
 
 NS_IMETHODIMP
 ExternalHelperAppChild::OnStartRequest(nsIRequest* request) {
-  nsresult rv = mHandler->OnStartRequest(request);
+  RefPtr<nsExternalAppHandler> handler = mHandler;
+  nsresult rv = handler->OnStartRequest(request);
   NS_ENSURE_SUCCESS(rv, NS_ERROR_UNEXPECTED);
 
   nsCString entityID;
@@ -74,8 +73,8 @@ ExternalHelperAppChild::OnStartRequest(nsIRequest* request) {
 NS_IMETHODIMP
 ExternalHelperAppChild::OnStopRequest(nsIRequest* request, nsresult status) {
   // mHandler can be null if we diverted the request to the parent
-  if (mHandler) {
-    nsresult rv = mHandler->OnStopRequest(request, status);
+  if (RefPtr<nsExternalAppHandler> handler = mHandler) {
+    nsresult rv = handler->OnStopRequest(request, status);
     SendOnStopRequest(status);
     NS_ENSURE_SUCCESS(rv, NS_ERROR_UNEXPECTED);
   }

@@ -13,7 +13,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "asyncHistory",
   "@mozilla.org/browser/history;1",
-  "mozIAsyncHistory"
+  Ci.mozIAsyncHistory
 );
 async function rawAddVisit(id, uri, visitPRTime, transitionType) {
   return new Promise(resolve => {

@@ -18,8 +18,7 @@ def WebIDLTest(parser, harness):
 
     harness.ok(
         not threw,
-        "Should not have thrown on non-optional argument following "
-        "optional argument.",
+        "Should not have thrown on non-optional argument following optional argument.",
     )
 
     parser = parser.reset()

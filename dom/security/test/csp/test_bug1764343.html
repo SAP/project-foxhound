@@ -63,7 +63,9 @@ async function testBlocked() {
   });
   img.src = "//mochi.test:8888/tests/image/test/mochitest/blue.png";
   await onImgError;
-  is(img.complete, false, "image should not be loaded");
+  is(img.complete, true, "image should be completed even on error");
+  is(img.naturalWidth, 0, "image should have zero size on error");
+  is(img.naturalHeight, 0, "image should have zero size on error");
 
   // Make sure that CSP policy can further restrict (no 'nonce-b'), but not weak (adding 'nonce-c' or 'nonce-d')
   is(doc.a, true, "doc.a should be true (script 'nonce-a' allowed)");
@@ -96,7 +98,9 @@ async function testNotBlocked() {
   });
   img.src = "//mochi.test:8888/tests/image/test/mochitest/blue.png";
   await onImgLoad;
-  is(img.complete, true, "image should be loaded");
+  is(img.complete, true, "image should be completed on successful load");
+  ok(img.naturalWidth > 0, "image should have non-zero size on successful load");
+  ok(img.naturalHeight > 0, "image should have non-zero size on successful load");
 
   // New HTML contains 'nonce-a/c/d' and no CSP in about:blank.
   // (Can not weaken parent with 'nonce-d')

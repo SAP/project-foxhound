@@ -1,4 +1,3 @@
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -105,6 +104,7 @@ void ExtensionTest::CallWebExtMethodAssertEq(
   }
 
   dom::Sequence<JS::Value> args;
+  dom::SequenceRooter<JS::Value> argsRooter(aCx, &args);
   if (NS_WARN_IF(!args.AppendElement(expectedVal, fallible) ||
                  !args.AppendElement(actualVal, fallible) ||
                  !args.AppendElement(messageVal, fallible))) {
@@ -247,6 +247,7 @@ MOZ_CAN_RUN_SCRIPT bool ExtensionTest::AssertMatchInternal(
   // interpolated assertion message to the test.assertTrue API method on the
   // main thread.
   dom::Sequence<JS::Value> assertTrueArgs;
+  dom::SequenceRooter<JS::Value> assertTrueArgsRooter(aCx, &assertTrueArgs);
   JS::Rooted<JS::Value> arg0(aCx);
   JS::Rooted<JS::Value> arg1(aCx);
   NS_ENSURE_FALSE(!dom::ToJSValue(aCx, matched, &arg0) ||
@@ -308,6 +309,7 @@ MOZ_CAN_RUN_SCRIPT void ExtensionTest::AssertThrows(
     }
 
     dom::Sequence<JS::Value> assertTrueArgs;
+    dom::SequenceRooter<JS::Value> assertTrueArgsRooter(aCx, &assertTrueArgs);
     JS::Rooted<JS::Value> arg0(aCx);
     JS::Rooted<JS::Value> arg1(aCx);
     if (NS_WARN_IF(!dom::ToJSValue(aCx, false, &arg0) ||
@@ -383,6 +385,7 @@ class AssertRejectsHandler final : public dom::PromiseNativeHandler {
     }
 
     dom::Sequence<JS::Value> assertTrueArgs;
+    dom::SequenceRooter<JS::Value> assertTrueArgsRooter(aCx, &assertTrueArgs);
     JS::Rooted<JS::Value> arg0(aCx);
     JS::Rooted<JS::Value> arg1(aCx);
     if (NS_WARN_IF(!dom::ToJSValue(aCx, false, &arg0) ||

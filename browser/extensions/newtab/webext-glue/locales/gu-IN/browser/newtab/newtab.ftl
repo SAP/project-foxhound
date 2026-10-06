@@ -9,6 +9,38 @@ newtab-page-title = નવી ટૅબ
 newtab-settings-button =
     .title = તમારા નવા ટૅબ પૃષ્ઠને કસ્ટમાઇઝ કરો
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = નવી ટૅબ્સ
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } પંક્તિ
+           *[other] { $num } પંક્તિઓ
+        }
+home-restore-defaults-srd =
+    .label = મૂળભૂતને પુન:સંગ્રહો
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = પોતાના URLs...
+home-mode-choice-blank-srd =
+    .label = ખાલી પાનું
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = પ્રાયોજિત વાર્તાઓ
+home-prefs-highlights-option-visited-pages-srd =
+    .label = મુલાકાત લીધેલા પૃષ્ઠો
+home-prefs-highlights-options-bookmarks-srd =
+    .label = બુકમાર્ક્સ
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = સૌથી તાજેતરની ડાઉનલોડ
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +48,7 @@ newtab-search-box-search-button =
     .title = શોધો
     .aria-label = શોધો
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = શોધ એંજીન ઉમેરો
 newtab-topsites-edit-topsites-header = ટોચની સાઇટ સંપાદિત કરો
@@ -44,9 +76,6 @@ newtab-topsites-add-button = ઉમેરો
 newtab-confirm-delete-history-p1 = શું તમે ખરેખર તમારા ઇતિહાસમાંથી આ પૃષ્ઠનાં દરેક ઘટકને કાઢી નાખવા માંગો છો?
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = આ ક્રિયા પૂર્વવત્ કરી શકાતી નથી.
-
-## Top Sites - Sponsored label
-
 
 ## Context Menu - Action Tooltips.
 
@@ -77,12 +106,6 @@ newtab-menu-delete-history = ઇતિહાસમાંથી દૂર કર�
 newtab-menu-save-to-pocket = { -pocket-brand-name } માં સાચવો
 newtab-menu-delete-pocket = { -pocket-brand-name } માંથી કાઢી નાંખો
 newtab-menu-archive-pocket = { -pocket-brand-name } માં સંગ્રહ કરો
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
-
-## Message displayed in a modal window to explain privacy and provide context for sponsored content.
-
 
 ##
 
@@ -133,9 +156,6 @@ newtab-section-menu-move-up = ઉપર કરો
 newtab-section-menu-move-down = નીચે કરો
 newtab-section-menu-privacy-notice = ખાનગી સૂચના
 
-## Section aria-labels
-
-
 ## Section Headers.
 
 newtab-section-header-topsites = ટોચની સાઇટ્સ
@@ -168,69 +188,8 @@ newtab-pocket-more-recommendations = વધુ ભલામણો
 newtab-pocket-cta-button = { -pocket-brand-name } મેળવો
 newtab-pocket-cta-text = { -pocket-brand-name } તમને જે કથાઓ ગમે છે તે સાચવો, અને તમારા મનને રસપ્રદ વાંચન સાથે ઉત્તેજિત કરો.
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
 newtab-error-fallback-info = ઊફ્ફ, આ સામગ્રીને લોડ કરવામાં કંઈક ખોટું થયું.
 newtab-error-fallback-refresh-link = ફરી પ્રયાસ કરવા માટે પૃષ્ઠને તાજું કરો.
-
-## Customization Menu
-
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

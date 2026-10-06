@@ -13,7 +13,7 @@ add_task(async function () {
   const { inspector, view } = await openRuleView();
   await selectNode("#testid", inspector);
 
-  const bodyRuleEditor = getRuleViewRuleEditor(view, 3);
+  const bodyRuleEditor = getRuleViewRuleEditorAt(view, 2);
   const value = getRuleViewLinkTextByIndex(view, 2);
   // Note that this is relative to the <style>.
   is(value.slice(-2), ":6", "initial rule line number is 6");

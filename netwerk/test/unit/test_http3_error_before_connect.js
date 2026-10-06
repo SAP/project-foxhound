@@ -94,16 +94,30 @@ CheckOnlyHttp2Listener.prototype = {
   },
 };
 
-add_task(async function test_no_http3_after_error() {
-  let chan = makeChan();
-  let listener = new CheckOnlyHttp2Listener();
-  await altsvcSetupPromise(chan, listener);
-});
+add_task(
+  {
+    // Happy Eyeballs currently doesn't exclude H3.
+    skip_if: () =>
+      Services.prefs.getBoolPref("network.http.happy_eyeballs_enabled", false),
+  },
+  async function test_no_http3_after_error() {
+    let chan = makeChan();
+    let listener = new CheckOnlyHttp2Listener();
+    await altsvcSetupPromise(chan, listener);
+  }
+);
 
 // also after all connections are closed.
-add_task(async function test_no_http3_after_error2() {
-  Services.obs.notifyObservers(null, "net:prune-all-connections");
-  let chan = makeChan();
-  let listener = new CheckOnlyHttp2Listener();
-  await altsvcSetupPromise(chan, listener);
-});
+add_task(
+  {
+    // Happy Eyeballs currently doesn't exclude H3.
+    skip_if: () =>
+      Services.prefs.getBoolPref("network.http.happy_eyeballs_enabled", false),
+  },
+  async function test_no_http3_after_error2() {
+    Services.obs.notifyObservers(null, "net:prune-all-connections");
+    let chan = makeChan();
+    let listener = new CheckOnlyHttp2Listener();
+    await altsvcSetupPromise(chan, listener);
+  }
+);

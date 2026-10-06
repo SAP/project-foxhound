@@ -19,6 +19,9 @@ import com.google.android.material.snackbar.Snackbar
 import org.mozilla.focus.databinding.FocusSnackbarBinding
 import org.mozilla.focus.ext.isAccessibilityEnabled
 
+/**
+ * A custom [Snackbar] implementation for Focus.
+ */
 class FocusSnackbar private constructor(
     parent: ViewGroup,
     private val binding: FocusSnackbarBinding,
@@ -30,6 +33,9 @@ class FocusSnackbar private constructor(
         view.setPadding(0, 0, 0, 0)
     }
 
+    /**
+     * Sets the text to be displayed in the snackbar.
+     */
     fun setText(text: String) = apply {
         binding.snackbarText.text = text
     }

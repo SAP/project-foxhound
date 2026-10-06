@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,7 +18,7 @@ static inline bool profiler_thread_is_profiling_runnables() {
          profiler_is_perfetto_tracing();
 }
 
-#if !defined(MOZ_GECKO_PROFILER) || !defined(MOZ_COLLECTING_RUNNABLE_TELEMETRY)
+#if !defined(MOZ_COLLECTING_RUNNABLE_TELEMETRY)
 #  define AUTO_PROFILE_FOLLOWING_RUNNABLE(runnable)
 #else
 #  define AUTO_PROFILE_FOLLOWING_RUNNABLE(runnable)                  \
@@ -38,17 +36,25 @@ struct RunnableMarker : BaseMarkerType<RunnableMarker> {
 
   using MS = MarkerSchema;
   static constexpr MS::PayloadField PayloadFields[] = {
-      {"name", MS::InputType::CString, "Runnable Name", MS::Format::String,
-       MS::PayloadFlags::Searchable},
-      {"runnable", MS::InputType::Uint64, "Runnable",
-       MS::Format::TerminatingFlow, MS::PayloadFlags::Searchable},
+      {
+          "name",
+          MS::InputType::CString,
+          "Runnable Name",
+          MS::Format::String,
+      },
+      {
+          "runnable",
+          MS::InputType::Uint64,
+          "Runnable",
+          MS::Format::TerminatingFlow,
+      },
   };
 
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable};
   static constexpr const char* ChartLabel = "{marker.data.name}";
   static constexpr const char* TableLabel =
-      "{marker.name} - {marker.data.name}"
+      "{marker.data.name}"
       " runnable: {marker.data.runnable}";
 
   static constexpr bool IsStackBased = true;
@@ -89,11 +95,6 @@ class MOZ_RAII AutoProfileRunnable {
       mName = "Unnamed runnable";
     }
   }
-  // XXX: we should remove this constructor so that we can track flows properly
-  explicit AutoProfileRunnable(nsACString& aName)
-      : mStartTime(TimeStamp::Now()),
-        mName(aName),
-        mRunnable(Flow::FromPointer(&aName)) {}
 
   ~AutoProfileRunnable() {
     if (mName.IsEmpty()) {

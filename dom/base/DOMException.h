@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_DOMException_h__
-#define mozilla_dom_DOMException_h__
+#ifndef mozilla_dom_DOMException_h_
+#define mozilla_dom_DOMException_h_
 
 // We intentionally shadow non-virtual methods, but gcc gets confused.
 #ifdef __GNUC__
@@ -14,15 +12,16 @@
 #endif
 
 #include <stdint.h>
+
 #include "js/Value.h"
 #include "jspubtd.h"
+#include "mozilla/dom/BindingDeclarations.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsID.h"
-#include "nsWrapperCache.h"
 #include "nsIException.h"
 #include "nsString.h"
-#include "mozilla/dom/BindingDeclarations.h"
+#include "nsWrapperCache.h"
 
 class nsIGlobalObject;
 class nsIStackFrame;
@@ -88,7 +87,7 @@ class Exception : public nsIException, public nsWrapperCache {
 
   uint32_t LineNumber(JSContext* aCx) const;
 
-  uint32_t ColumnNumber() const;
+  uint32_t ColumnNumber(JSContext* aCx) const;
 
   already_AddRefed<nsIStackFrame> GetLocation() const;
 

@@ -81,8 +81,9 @@ Below are the options available:
 - **processorRevision**: The revision for any processor required by the model, used for additional input processing.
 - **logLevel**: The log level used in the worker
 - **runtimeFilename**: Name of the runtime wasm file.
-- **dtype**: quantization level, can be `fp32`, `fp16`, `q8`, `int8`, `uint8`, `q4`, `bnb4`, `q4f16``. Defaults to `q8`
-- **device**: device to use (`wasm` or `gpu`). Defaults to `wasm`
+- **dtype**: quantization level, can be `fp32`, `fp16`, `fp8_e5m2`, `fp8_e4m3`, `q8`, `int8`, `uint8`, `q4`, `bnb4`, `q4f16`. Defaults to `q8`
+- **device**: device to use (`wasm`, `gpu`, or `cpu`). Defaults to `wasm`
+- **executionPriority**: priority for the engine, can be `HIGH` (critical to Firefox), `NORMAL` (default), or `LOW` (third-party calls).
 - **kvCacheDtype**: quantization level for the wllama backend. It only applies to the wllama backend when flash attention is enabled. Otherwise, it is always `f32`.
 - **numContext**: Maximum context size. Applies only to the wllama backend.
 - **numBatch**: Number of tokens processed in a single forward pass. Applies only to the wllama backend.
@@ -92,7 +93,7 @@ Below are the options available:
 - **useMlock**: Whether to lock in memory the full model. Applies only to the wllama backend.
 - **numThreadsDecoding**: Number of threads used during decoding. Applies only to the wllama backend.
 - **modelFile**: The name of model file. Currently, only supported for the wllama backend.
-- **backend**: The backend to use, can be `onnx`, `wllama`. Default to `onnx`.
+- **backend**: The backend to use, can be `onnx`, `wllama`, `onnx-native`, `llama.cpp`, `best-llama`, `openai`, or `static-embeddings`. Defaults to `onnx`.
 
 **taskName** and **modelId** are required, the others are optional and will be filled automatically
 using values pulled from Remote Settings when the task id is recognized.
@@ -121,12 +122,18 @@ Some values are also set from the preferences (set in `about:config`):
 - **browser.ml.modelHubUrlTemplate**: Model URL template
 - **browser.ml.modelCacheTimeout**: Worker timeout in ms. Default value used for **timeoutMS**
 - **browser.ml.modelCacheMaxSize**: Maximum disk size for ML model cache (in GiB)
+- **browser.ml.checkForMemory**: Whether to check available system memory before creating an engine. Defaults to true.
+- **browser.ml.minimumPhysicalMemory**: Minimum physical memory (in bytes) required to run an engine.
+- **browser.ml.overridePipelineOptions**: A JSON string that overrides pipeline options. Intended for developer use only.
 
 
 URL allow and deny list
 :::::::::::::::::::::::
 
-We keep a Remote Settings collection called `ml-model-allow-deny-list` that contains URL prefixes
+We keep a Remote Settings collection called ``ml-model-allow-deny-list``
+(`dashboard <https://firefox-ai.github.io/runtime-tools/ml-model-allow-deny-list/>`__,
+`searchfox <https://searchfox.org/firefox-main/search?q=%22ml-model-allow-deny-list%22>`__)
+that contains URL prefixes
 that are allowed or denied.
 
 Each record comes with the following fields:

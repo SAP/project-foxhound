@@ -149,7 +149,7 @@
 }
 
 .frames-group .img.arrow {
-  mask: url("chrome://devtools/content/debugger/images/arrow.svg");
+  mask: url("chrome://devtools/content/shared/components/images/arrow.svg");
   margin-inline-end: 4px;
   background-color: var(--theme-icon-dimmed-color);
   width: 10px;

@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_workers_WorkerThread_h__
-#define mozilla_dom_workers_WorkerThread_h__
+#ifndef mozilla_dom_workers_WorkerThread_h_
+#define mozilla_dom_workers_WorkerThread_h_
 
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/CondVar.h"
@@ -100,10 +98,11 @@ class WorkerThread final : public nsThread {
   // This should only be called by consumers that have an
   // nsIEventTarget/nsIThread pointer.
   NS_IMETHOD
-  Dispatch(already_AddRefed<nsIRunnable> aRunnable, uint32_t aFlags) override;
+  Dispatch(already_AddRefed<nsIRunnable> aRunnable,
+           DispatchFlags aFlags) override;
 
   NS_IMETHOD
-  DispatchFromScript(nsIRunnable* aRunnable, uint32_t aFlags) override;
+  DispatchFromScript(nsIRunnable* aRunnable, DispatchFlags aFlags) override;
 
   NS_IMETHOD
   DelayedDispatch(already_AddRefed<nsIRunnable>, uint32_t) override;
@@ -112,4 +111,4 @@ class WorkerThread final : public nsThread {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_workers_WorkerThread_h__
+#endif  // mozilla_dom_workers_WorkerThread_h_

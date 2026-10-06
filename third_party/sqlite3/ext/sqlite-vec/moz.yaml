@@ -1,8 +1,8 @@
 schema: 1
 
 bugzilla:
-  product: Toolkit
-  component: Storage
+  product: Core
+  component: SQLite and Embedded Database Bindings
 
 origin:
   name: sqlite-vec
@@ -10,8 +10,8 @@ origin:
     An extremely small, "fast enough" vector search SQLite extension that runs
     anywhere!
   url: https://github.com/asg017/sqlite-vec
-  release: v0.1.7-alpha.2 (2025-01-10T14:54:13-08:00).
-  revision: v0.1.7-alpha.2
+  release: v0.1.10-alpha.4 (2026-05-17T23:50:43-07:00).
+  revision: v0.1.10-alpha.4
   license: MIT
   license-file: LICENSE-MIT
   notes: >
@@ -31,6 +31,10 @@ vendoring:
     - LICENSE-MIT
     - VERSION
     - sqlite-vec.c
+    - sqlite-vec-diskann.c
+    - sqlite-vec-ivf-kmeans.c
+    - sqlite-vec-ivf.c
+    - sqlite-vec-rescore.c
   keep:
     - moz.yaml
     - patches/*

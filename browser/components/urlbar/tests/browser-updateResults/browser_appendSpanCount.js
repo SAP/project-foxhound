@@ -19,9 +19,10 @@ add_task(async function viewUpdateAppendHidden() {
   // We'll use this test provider to test specific results.  We assume that
   // history and bookmarks have been cleared (by init() above).
   let provider = new DelayingTestProvider();
-  UrlbarProvidersManager.registerProvider(provider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(provider);
   registerCleanupFunction(() => {
-    UrlbarProvidersManager.unregisterProvider(provider);
+    providersManager.unregisterProvider(provider);
   });
 
   // We do two searches below without closing the panel.  Use "firefox cach" as
@@ -41,16 +42,16 @@ add_task(async function viewUpdateAppendHidden() {
   // suggestions.
   provider.results = queryStrings.map(
     suggestion =>
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.SEARCH,
-        UrlbarUtils.RESULT_SOURCE.SEARCH,
-        {
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.SEARCH,
+        source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+        payload: {
           query: queries[0],
           suggestion,
           lowerCaseSuggestion: suggestion.toLocaleLowerCase(),
-          engine: Services.search.defaultEngine.name,
-        }
-      )
+          engine: SearchService.defaultEngine.name,
+        },
+      })
   );
   provider.finishQueryPromise = Promise.resolve();
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
@@ -81,15 +82,14 @@ add_task(async function viewUpdateAppendHidden() {
   // results, so the view will append the history results as new rows.
   provider.results = queryStrings.map(title => {
     let url = "http://example.com/" + title;
-    return new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
-      {
+    return new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: {
         title,
         url,
-        displayUrl: "http://example.com/" + title,
-      }
-    );
+      },
+    });
   });
 
   // Don't allow the search to finish until we check the updated rows.  We'll
@@ -185,5 +185,5 @@ add_task(async function viewUpdateAppendHidden() {
   // We unregister the provider above in a cleanup function so we don't
   // accidentally interfere with later tests, but do it here too in case we add
   // more tasks to this test.  It's harmless to call more than once.
-  UrlbarProvidersManager.unregisterProvider(provider);
+  providersManager.unregisterProvider(provider);
 });

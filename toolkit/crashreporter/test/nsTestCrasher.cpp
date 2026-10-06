@@ -2,9 +2,9 @@
 
 #include <stdio.h>
 #include <map>
+#include <vector>
 
 #include "nscore.h"
-#include "mozilla/Unused.h"
 #include "ExceptionThrower.h"
 
 #ifdef XP_WIN
@@ -101,9 +101,11 @@ const int16_t CRASH_X64CFI_SAVE_XMM128_FAR = 18;
 const int16_t CRASH_X64CFI_EPILOG = 19;
 const int16_t CRASH_X64CFI_EOF = 20;
 #endif
+#ifdef MOZ_PHC
 const int16_t CRASH_PHC_USE_AFTER_FREE = 21;
 const int16_t CRASH_PHC_DOUBLE_FREE = 22;
 const int16_t CRASH_PHC_BOUNDS_VIOLATION = 23;
+#endif
 #if XP_WIN
 const int16_t CRASH_HEAP_CORRUPTION = 24;
 #endif
@@ -113,6 +115,7 @@ const int16_t CRASH_EXC_GUARD = 25;
 #ifndef XP_WIN
 const int16_t CRASH_STACK_OVERFLOW = 26;
 #endif
+const int16_t CRASH_STL_VECTOR_OOB = 27;
 
 #if XP_WIN && HAVE_64BIT_BUILD && defined(_M_X64) && !defined(__MINGW32__)
 
@@ -208,9 +211,9 @@ extern "C" NS_EXPORT void Crash(int16_t how) {
       break;
     }
     case CRASH_OOM: {
-      mozilla::Unused << moz_xmalloc((size_t)-1);
-      mozilla::Unused << moz_xmalloc((size_t)-1);
-      mozilla::Unused << moz_xmalloc((size_t)-1);
+      [[maybe_unused]] void* r0 = moz_xmalloc((size_t)-1);
+      [[maybe_unused]] void* r1 = moz_xmalloc((size_t)-1);
+      [[maybe_unused]] void* r2 = moz_xmalloc((size_t)-1);
       break;
     }
     case CRASH_MOZ_CRASH: {
@@ -318,6 +321,21 @@ extern "C" NS_EXPORT void Crash(int16_t how) {
       break;  // This should be unreachable
     }
 #endif  // XP_WIN
+    case CRASH_STL_VECTOR_OOB: {
+      // Make a vector with a power-of-2 size, remove the last element, then
+      // access just past the new end of the vector. The idea here is that if
+      // hardening is not enabled then the out-of-bounds access likely won't
+      // crash, because most implementations probably won't shrink the
+      // underlying buffer.
+      std::vector<int32_t> v;
+      const size_t initSize = 8;
+      v.resize(initSize, 9);
+      v.pop_back();
+      // Out-of-bounds access.
+      printf("CRASH_STL_VECTOR_OOB: %d\n", v[initSize - 1]);
+      // This should be unreachable, if hardening is enabled.
+      break;
+    }
     default:
       break;
   }

@@ -1,0 +1,88 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl1-core"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/conformance/context/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_conformance__context__constants-and-properties.html"]
+
+["test_conformance__context__context-attribute-preserve-drawing-buffer-antialias.html"]
+
+["test_conformance__context__context-attribute-preserve-drawing-buffer.html"]
+
+["test_conformance__context__context-attributes-alpha-depth-stencil-antialias.html"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+fail-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug && !swgl",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && debug && !swgl",
+]
+
+["test_conformance__context__context-creation-and-destruction.html"]
+
+["test_conformance__context__context-creation.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
+["test_conformance__context__context-eviction-with-garbage-collection.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
+["test_conformance__context__context-hidden-alpha.html"]
+
+["test_conformance__context__context-lost-restored.html"]
+
+["test_conformance__context__context-lost.html"]
+
+["test_conformance__context__context-no-alpha-fbo-with-alpha.html"]
+
+["test_conformance__context__context-release-upon-reload.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
+["test_conformance__context__context-release-with-workers.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
+["test_conformance__context__context-size-change.html"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_conformance__context__context-type-test.html"]
+
+["test_conformance__context__deleted-object-behavior.html"]
+
+["test_conformance__context__incorrect-context-object-behaviour.html"]
+
+["test_conformance__context__methods.html"]
+
+["test_conformance__context__premultiplyalpha-test.html"]
+
+["test_conformance__context__user-defined-properties-on-context.html"]
+
+["test_conformance__context__zero-sized-canvas.html"]

@@ -10,16 +10,19 @@
 
 #include "p2p/base/async_stun_tcp_socket.h"
 
-#include <stdint.h>
-#include <string.h>
-
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <list>
 #include <memory>
+#include <span>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/memory/memory.h"
-#include "api/array_view.h"
+#include "api/environment/environment.h"
 #include "rtc_base/async_packet_socket.h"
 #include "rtc_base/async_tcp_socket.h"
 #include "rtc_base/buffer.h"
@@ -27,89 +30,112 @@
 #include "rtc_base/network/sent_packet.h"
 #include "rtc_base/socket.h"
 #include "rtc_base/socket_address.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
-#include "rtc_base/thread.h"
 #include "rtc_base/virtual_socket_server.h"
+#include "test/create_test_environment.h"
+#include "test/gmock.h"
 #include "test/gtest.h"
+#include "test/run_loop.h"
 
 namespace webrtc {
 
-static unsigned char kStunMessageWithZeroLength[] = {
+using ::testing::ElementsAreArray;
+using ::testing::IsEmpty;
+using ::testing::NotNull;
+using ::testing::SizeIs;
+
+static constexpr auto kStunMessageWithZeroLength = std::to_array<uint8_t>({
     0x00, 0x01, 0x00, 0x00,  // length of 0 (last 2 bytes)
     0x21, 0x12, 0xA4, 0x42, '0', '1', '2', '3',
     '4',  '5',  '6',  '7',  '8', '9', 'a', 'b',
-};
+});
 
-static unsigned char kTurnChannelDataMessageWithZeroLength[] = {
-    0x40, 0x00, 0x00, 0x00,  // length of 0 (last 2 bytes)
-};
+static constexpr auto kTurnChannelDataMessageWithZeroLength =
+    std::to_array<uint8_t>({
+        0x40, 0x00, 0x00, 0x00,  // length of 0 (last 2 bytes)
+    });
 
-static unsigned char kTurnChannelDataMessage[] = {
+static constexpr auto kTurnChannelDataMessage = std::to_array<uint8_t>({
     0x40, 0x00, 0x00, 0x10, 0x21, 0x12, 0xA4, 0x42, '0', '1',
     '2',  '3',  '4',  '5',  '6',  '7',  '8',  '9',  'a', 'b',
-};
+});
 
-static unsigned char kStunMessageWithInvalidLength[] = {
+static auto kStunMessageWithInvalidLength = std::to_array<uint8_t>({
     0x00, 0x01, 0x00, 0x10, 0x21, 0x12, 0xA4, 0x42, '0', '1',
     '2',  '3',  '4',  '5',  '6',  '7',  '8',  '9',  'a', 'b',
-};
+});
 
-static unsigned char kTurnChannelDataMessageWithInvalidLength[] = {
+static auto kTurnChannelDataMessageWithInvalidLength = std::to_array<uint8_t>({
     0x80, 0x00, 0x00, 0x20, 0x21, 0x12, 0xA4, 0x42, '0', '1',
     '2',  '3',  '4',  '5',  '6',  '7',  '8',  '9',  'a', 'b',
-};
+});
 
-static unsigned char kTurnChannelDataMessageWithOddLength[] = {
-    0x40, 0x00, 0x00, 0x05, 0x21, 0x12, 0xA4, 0x42, '0',
-};
+static constexpr auto kTurnChannelDataMessageWithOddLength =
+    std::to_array<uint8_t>({
+        0x40,
+        0x00,
+        0x00,
+        0x05,
+        0x21,
+        0x12,
+        0xA4,
+        0x42,
+        '0',
+    });
 
 static const SocketAddress kClientAddr("11.11.11.11", 0);
 static const SocketAddress kServerAddr("22.22.22.22", 0);
 
 class AsyncStunServerTCPSocket : public AsyncTcpListenSocket {
  public:
-  explicit AsyncStunServerTCPSocket(std::unique_ptr<Socket> socket)
-      : AsyncTcpListenSocket(std::move(socket)) {}
-  void HandleIncomingConnection(Socket* socket) override {
-    SignalNewConnection(this, new AsyncStunTCPSocket(socket));
+  AsyncStunServerTCPSocket(const Environment& env,
+                           std::unique_ptr<Socket> socket)
+      : AsyncTcpListenSocket(env, std::move(socket)) {}
+  void HandleIncomingConnection(std::unique_ptr<Socket> socket) override {
+    NotifyNewConnection(this, new AsyncStunTCPSocket(env(), std::move(socket)));
   }
 };
 
-class AsyncStunTCPSocketTest : public ::testing::Test,
-                               public sigslot::has_slots<> {
+class AsyncStunTCPSocketTest : public ::testing::Test {
  protected:
   AsyncStunTCPSocketTest()
       : vss_(new VirtualSocketServer()), thread_(vss_.get()) {}
 
-  virtual void SetUp() { CreateSockets(); }
+  void SetUp() override { CreateSockets(); }
 
   void CreateSockets() {
+    const Environment env = CreateTestEnvironment();
     std::unique_ptr<Socket> server =
-        absl::WrapUnique(vss_->CreateSocket(kServerAddr.family(), SOCK_STREAM));
+        vss_->Create(kServerAddr.family(), SOCK_STREAM);
     server->Bind(kServerAddr);
     listen_socket_ =
-        std::make_unique<AsyncStunServerTCPSocket>(std::move(server));
-    listen_socket_->SignalNewConnection.connect(
-        this, &AsyncStunTCPSocketTest::OnNewConnection);
+        std::make_unique<AsyncStunServerTCPSocket>(env, std::move(server));
+    listen_socket_->SubscribeNewConnection(
+        this, [this](AsyncListenSocket* listen_socket,
+                     AsyncPacketSocket* packet_socket) {
+          OnNewConnection(listen_socket, packet_socket);
+        });
 
-    Socket* client = vss_->CreateSocket(kClientAddr.family(), SOCK_STREAM);
-    send_socket_.reset(AsyncStunTCPSocket::Create(
-        client, kClientAddr, listen_socket_->GetLocalAddress()));
-    send_socket_->SignalSentPacket.connect(
-        this, &AsyncStunTCPSocketTest::OnSentPacket);
-    ASSERT_TRUE(send_socket_.get() != NULL);
+    std::unique_ptr<Socket> client =
+        vss_->Create(kClientAddr.family(), SOCK_STREAM);
+    ASSERT_THAT(client, NotNull());
+    ASSERT_EQ(client->Bind(kClientAddr), 0);
+    ASSERT_EQ(client->Connect(listen_socket_->GetLocalAddress()), 0);
+    send_socket_ = std::make_unique<AsyncStunTCPSocket>(env, std::move(client));
+    send_socket_->SubscribeSentPacket(
+        this, [this](AsyncPacketSocket* socket, const SentPacketInfo& info) {
+          OnSentPacket(socket, info);
+        });
     vss_->ProcessMessagesUntilIdle();
   }
 
   void OnReadPacket(AsyncPacketSocket* /* socket */,
-                    const rtc::ReceivedPacket& packet) {
+                    const ReceivedIpPacket& packet) {
     recv_packets_.push_back(
-        std::string(reinterpret_cast<const char*>(packet.payload().data()),
-                    packet.payload().size()));
+        std::vector<uint8_t>(packet.payload().begin(), packet.payload().end()));
   }
 
   void OnSentPacket(AsyncPacketSocket* /* socket */,
-                    const rtc::SentPacket& /* packet */) {
+                    const SentPacketInfo& /* packet */) {
     ++sent_packets_;
   }
 
@@ -117,193 +143,174 @@ class AsyncStunTCPSocketTest : public ::testing::Test,
                        AsyncPacketSocket* new_socket) {
     recv_socket_ = absl::WrapUnique(new_socket);
     new_socket->RegisterReceivedPacketCallback(
-        [&](rtc::AsyncPacketSocket* socket, const rtc::ReceivedPacket& packet) {
+        [&](AsyncPacketSocket* socket, const ReceivedIpPacket& packet) {
           OnReadPacket(socket, packet);
         });
   }
 
-  bool Send(const void* data, size_t len) {
-    rtc::PacketOptions options;
-    int ret =
-        send_socket_->Send(reinterpret_cast<const char*>(data), len, options);
+  bool Send(std::span<const uint8_t> data) {
+    AsyncSocketPacketOptions options;
+    int ret = send_socket_->Send(data, options);
     vss_->ProcessMessagesUntilIdle();
-    return (ret == static_cast<int>(len));
-  }
-
-  bool CheckData(const void* data, int len) {
-    bool ret = false;
-    if (recv_packets_.size()) {
-      std::string packet = recv_packets_.front();
-      recv_packets_.pop_front();
-      ret = (memcmp(data, packet.c_str(), len) == 0);
-    }
-    return ret;
+    return (ret == static_cast<int>(data.size()));
   }
 
   std::unique_ptr<VirtualSocketServer> vss_;
-  AutoSocketServerThread thread_;
+  test::RunLoop thread_;
   std::unique_ptr<AsyncStunTCPSocket> send_socket_;
   std::unique_ptr<AsyncListenSocket> listen_socket_;
   std::unique_ptr<AsyncPacketSocket> recv_socket_;
-  std::list<std::string> recv_packets_;
+  std::list<std::vector<uint8_t>> recv_packets_;
   int sent_packets_ = 0;
 };
 
+static constexpr uint8_t kTurnChannelDataMarker = 0x40;
+static constexpr size_t kMaxTurnPacketSize = 65539;
+static constexpr size_t kMaxStunPacketSize = 65552;
+
 // Testing a stun packet sent/recv properly.
 TEST_F(AsyncStunTCPSocketTest, TestSingleStunPacket) {
-  EXPECT_TRUE(
-      Send(kStunMessageWithZeroLength, sizeof(kStunMessageWithZeroLength)));
-  EXPECT_EQ(1u, recv_packets_.size());
-  EXPECT_TRUE(CheckData(kStunMessageWithZeroLength,
-                        sizeof(kStunMessageWithZeroLength)));
+  EXPECT_TRUE(Send(kStunMessageWithZeroLength));
+  ASSERT_THAT(recv_packets_, SizeIs(1u));
+  EXPECT_THAT(recv_packets_.front(),
+              ElementsAreArray(kStunMessageWithZeroLength));
 }
 
 // Verify sending multiple packets.
 TEST_F(AsyncStunTCPSocketTest, TestMultipleStunPackets) {
-  EXPECT_TRUE(
-      Send(kStunMessageWithZeroLength, sizeof(kStunMessageWithZeroLength)));
-  EXPECT_TRUE(
-      Send(kStunMessageWithZeroLength, sizeof(kStunMessageWithZeroLength)));
-  EXPECT_TRUE(
-      Send(kStunMessageWithZeroLength, sizeof(kStunMessageWithZeroLength)));
-  EXPECT_TRUE(
-      Send(kStunMessageWithZeroLength, sizeof(kStunMessageWithZeroLength)));
-  EXPECT_EQ(4u, recv_packets_.size());
+  EXPECT_TRUE(Send(kStunMessageWithZeroLength));
+  EXPECT_TRUE(Send(kStunMessageWithZeroLength));
+  EXPECT_TRUE(Send(kStunMessageWithZeroLength));
+  EXPECT_TRUE(Send(kStunMessageWithZeroLength));
+  ASSERT_THAT(recv_packets_, SizeIs(4u));
 }
 
 TEST_F(AsyncStunTCPSocketTest, ProcessInputHandlesMultiplePackets) {
   send_socket_->RegisterReceivedPacketCallback(
-      [&](rtc::AsyncPacketSocket* /* socket */,
-          const rtc::ReceivedPacket& packet) {
-        recv_packets_.push_back(
-            std::string(reinterpret_cast<const char*>(packet.payload().data()),
-                        packet.payload().size()));
+      [&](AsyncPacketSocket* /* socket */, const ReceivedIpPacket& packet) {
+        recv_packets_.push_back(std::vector<uint8_t>(packet.payload().begin(),
+                                                     packet.payload().end()));
       });
   Buffer buffer;
-  buffer.AppendData(kStunMessageWithZeroLength,
-                    sizeof(kStunMessageWithZeroLength));
+  buffer.AppendData(kStunMessageWithZeroLength);
   // ChannelData message MUST be padded to
   // a multiple of four bytes.
-  const unsigned char kTurnChannelData[] = {
-      0x40, 0x00, 0x00, 0x04, 0x21, 0x12, 0xA4, 0x42,
-  };
-  buffer.AppendData(kTurnChannelData, sizeof(kTurnChannelData));
+  static constexpr auto kTurnChannelData = std::to_array<uint8_t>({
+      0x40,
+      0x00,
+      0x00,
+      0x04,
+      0x21,
+      0x12,
+      0xA4,
+      0x42,
+  });
+  buffer.AppendData(kTurnChannelData);
 
   send_socket_->ProcessInput(buffer);
-  EXPECT_EQ(2u, recv_packets_.size());
-  EXPECT_TRUE(CheckData(kStunMessageWithZeroLength,
-                        sizeof(kStunMessageWithZeroLength)));
-  EXPECT_TRUE(CheckData(kTurnChannelData, sizeof(kTurnChannelData)));
+  ASSERT_THAT(recv_packets_, SizeIs(2u));
+  EXPECT_THAT(recv_packets_.front(),
+              ElementsAreArray(kStunMessageWithZeroLength));
+  recv_packets_.pop_front();
+  EXPECT_THAT(recv_packets_.front(), ElementsAreArray(kTurnChannelData));
 }
 
 // Verifying TURN channel data message with zero length.
 TEST_F(AsyncStunTCPSocketTest, TestTurnChannelDataWithZeroLength) {
-  EXPECT_TRUE(Send(kTurnChannelDataMessageWithZeroLength,
-                   sizeof(kTurnChannelDataMessageWithZeroLength)));
-  EXPECT_EQ(1u, recv_packets_.size());
-  EXPECT_TRUE(CheckData(kTurnChannelDataMessageWithZeroLength,
-                        sizeof(kTurnChannelDataMessageWithZeroLength)));
+  EXPECT_TRUE(Send(kTurnChannelDataMessageWithZeroLength));
+  ASSERT_THAT(recv_packets_, SizeIs(1u));
+  EXPECT_THAT(recv_packets_.front(),
+              ElementsAreArray(kTurnChannelDataMessageWithZeroLength));
 }
 
 // Verifying TURN channel data message.
 TEST_F(AsyncStunTCPSocketTest, TestTurnChannelData) {
-  EXPECT_TRUE(Send(kTurnChannelDataMessage, sizeof(kTurnChannelDataMessage)));
-  EXPECT_EQ(1u, recv_packets_.size());
-  EXPECT_TRUE(
-      CheckData(kTurnChannelDataMessage, sizeof(kTurnChannelDataMessage)));
+  EXPECT_TRUE(Send(kTurnChannelDataMessage));
+  ASSERT_THAT(recv_packets_, SizeIs(1u));
+  EXPECT_THAT(recv_packets_.front(), ElementsAreArray(kTurnChannelDataMessage));
 }
 
 // Verifying TURN channel messages which needs padding handled properly.
 TEST_F(AsyncStunTCPSocketTest, TestTurnChannelDataPadding) {
-  EXPECT_TRUE(Send(kTurnChannelDataMessageWithOddLength,
-                   sizeof(kTurnChannelDataMessageWithOddLength)));
-  EXPECT_EQ(1u, recv_packets_.size());
-  EXPECT_TRUE(CheckData(kTurnChannelDataMessageWithOddLength,
-                        sizeof(kTurnChannelDataMessageWithOddLength)));
+  EXPECT_TRUE(Send(kTurnChannelDataMessageWithOddLength));
+  ASSERT_THAT(recv_packets_, SizeIs(1u));
+  EXPECT_THAT(recv_packets_.front(),
+              ElementsAreArray(kTurnChannelDataMessageWithOddLength));
 }
 
 // Verifying stun message with invalid length.
 TEST_F(AsyncStunTCPSocketTest, TestStunInvalidLength) {
-  EXPECT_FALSE(Send(kStunMessageWithInvalidLength,
-                    sizeof(kStunMessageWithInvalidLength)));
-  EXPECT_EQ(0u, recv_packets_.size());
+  EXPECT_FALSE(Send(kStunMessageWithInvalidLength));
+  ASSERT_THAT(recv_packets_, IsEmpty());
 
   // Modify the message length to larger value.
   kStunMessageWithInvalidLength[2] = 0xFF;
   kStunMessageWithInvalidLength[3] = 0xFF;
-  EXPECT_FALSE(Send(kStunMessageWithInvalidLength,
-                    sizeof(kStunMessageWithInvalidLength)));
+  EXPECT_FALSE(Send(kStunMessageWithInvalidLength));
 
   // Modify the message length to smaller value.
   kStunMessageWithInvalidLength[2] = 0x00;
   kStunMessageWithInvalidLength[3] = 0x01;
-  EXPECT_FALSE(Send(kStunMessageWithInvalidLength,
-                    sizeof(kStunMessageWithInvalidLength)));
+  EXPECT_FALSE(Send(kStunMessageWithInvalidLength));
 }
 
 // Verifying TURN channel data message with invalid length.
 TEST_F(AsyncStunTCPSocketTest, TestTurnChannelDataWithInvalidLength) {
-  EXPECT_FALSE(Send(kTurnChannelDataMessageWithInvalidLength,
-                    sizeof(kTurnChannelDataMessageWithInvalidLength)));
+  EXPECT_FALSE(Send(kTurnChannelDataMessageWithInvalidLength));
   // Modify the length to larger value.
   kTurnChannelDataMessageWithInvalidLength[2] = 0xFF;
   kTurnChannelDataMessageWithInvalidLength[3] = 0xF0;
-  EXPECT_FALSE(Send(kTurnChannelDataMessageWithInvalidLength,
-                    sizeof(kTurnChannelDataMessageWithInvalidLength)));
+  EXPECT_FALSE(Send(kTurnChannelDataMessageWithInvalidLength));
 
   // Modify the length to smaller value.
   kTurnChannelDataMessageWithInvalidLength[2] = 0x00;
   kTurnChannelDataMessageWithInvalidLength[3] = 0x00;
-  EXPECT_FALSE(Send(kTurnChannelDataMessageWithInvalidLength,
-                    sizeof(kTurnChannelDataMessageWithInvalidLength)));
+  EXPECT_FALSE(Send(kTurnChannelDataMessageWithInvalidLength));
 }
 
 // Verifying a small buffer handled (dropped) properly. This will be
 // a common one for both stun and turn.
 TEST_F(AsyncStunTCPSocketTest, TestTooSmallMessageBuffer) {
-  char data[1];
-  EXPECT_FALSE(Send(data, sizeof(data)));
+  auto data = std::to_array<uint8_t>({0});
+  EXPECT_FALSE(Send(data));
 }
 
 // Verifying a legal large turn message.
 TEST_F(AsyncStunTCPSocketTest, TestMaximumSizeTurnPacket) {
-  unsigned char packet[65539];
-  packet[0] = 0x40;
+  std::vector<uint8_t> packet(kMaxTurnPacketSize, 0);
+  packet[0] = kTurnChannelDataMarker;
   packet[1] = 0x00;
   packet[2] = 0xFF;
   packet[3] = 0xFF;
-  EXPECT_TRUE(Send(packet, sizeof(packet)));
+  EXPECT_TRUE(Send(packet));
 }
 
 // Verifying a legal large stun message.
 TEST_F(AsyncStunTCPSocketTest, TestMaximumSizeStunPacket) {
-  unsigned char packet[65552];
+  std::vector<uint8_t> packet(kMaxStunPacketSize, 0);
   packet[0] = 0x00;
   packet[1] = 0x01;
   packet[2] = 0xFF;
   packet[3] = 0xFC;
-  EXPECT_TRUE(Send(packet, sizeof(packet)));
+  EXPECT_TRUE(Send(packet));
 }
 
 // Test that a turn message is sent completely even if it exceeds the socket
 // send buffer capacity.
 TEST_F(AsyncStunTCPSocketTest, TestWithSmallSendBuffer) {
   vss_->set_send_buffer_capacity(1);
-  Send(kTurnChannelDataMessageWithOddLength,
-       sizeof(kTurnChannelDataMessageWithOddLength));
-  EXPECT_EQ(1u, recv_packets_.size());
-  EXPECT_TRUE(CheckData(kTurnChannelDataMessageWithOddLength,
-                        sizeof(kTurnChannelDataMessageWithOddLength)));
+  Send(kTurnChannelDataMessageWithOddLength);
+  ASSERT_THAT(recv_packets_, SizeIs(1u));
+  EXPECT_THAT(recv_packets_.front(),
+              ElementsAreArray(kTurnChannelDataMessageWithOddLength));
 }
 
 // Test that SignalSentPacket is fired when a packet is sent.
 TEST_F(AsyncStunTCPSocketTest, SignalSentPacketFiredWhenPacketSent) {
-  ASSERT_TRUE(
-      Send(kStunMessageWithZeroLength, sizeof(kStunMessageWithZeroLength)));
+  ASSERT_TRUE(Send(kStunMessageWithZeroLength));
   EXPECT_EQ(1, sent_packets_);
   // Send another packet for good measure.
-  ASSERT_TRUE(
-      Send(kStunMessageWithZeroLength, sizeof(kStunMessageWithZeroLength)));
+  ASSERT_TRUE(Send(kStunMessageWithZeroLength));
   EXPECT_EQ(2, sent_packets_);
 }
 
@@ -312,8 +319,8 @@ TEST_F(AsyncStunTCPSocketTest, SignalSentPacketFiredWhenPacketSent) {
 TEST_F(AsyncStunTCPSocketTest, SignalSentPacketNotFiredWhenPacketNotSent) {
   // Attempt to send a packet that's too small; since it isn't sent,
   // SignalSentPacket shouldn't fire.
-  char data[1];
-  ASSERT_FALSE(Send(data, sizeof(data)));
+  auto data = std::to_array<uint8_t>({0});
+  ASSERT_FALSE(Send(data));
   EXPECT_EQ(0, sent_packets_);
 }
 

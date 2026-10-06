@@ -35,7 +35,7 @@ for (const { content, res_restore } of TESTS) {
     async function rdmPreTask({ browser }) {
       if (res_restore) {
         info(`Setting resolution to ${res_restore}.`);
-        browser.ownerGlobal.windowUtils.setResolutionAndScaleTo(res_restore);
+        browser.documentGlobal.windowUtils.setResolutionAndScaleTo(res_restore);
       } else {
         info(`Not setting resolution.`);
       }
@@ -46,7 +46,7 @@ for (const { content, res_restore } of TESTS) {
       await setTouchAndMetaViewportSupport(ui, true);
     },
     async function rdmPostTask({ browser }) {
-      const resolution = browser.ownerGlobal.windowUtils.getResolution();
+      const resolution = browser.documentGlobal.windowUtils.getResolution();
       const res_target = res_restore ? res_restore : 1.0;
 
       const res_min = res_target * RESOLUTION_FACTOR_MIN;

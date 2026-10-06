@@ -25,7 +25,12 @@ from urllib.parse import parse_qsl, unquote, urlencode
 
 from multidict import CIMultiDict, CIMultiDictProxy
 
-from .compression_utils import ZLibCompressor, ZLibDecompressor
+from .abc import AbstractStreamWriter
+from .compression_utils import (
+    DEFAULT_MAX_DECOMPRESS_SIZE,
+    ZLibCompressor,
+    ZLibDecompressor,
+)
 from .hdrs import (
     CONTENT_DISPOSITION,
     CONTENT_ENCODING,
@@ -113,6 +118,10 @@ def parse_content_disposition(
     params: Dict[str, str] = {}
     while parts:
         item = parts.pop(0)
+
+        if not item:  # To handle trailing semicolons
+            warnings.warn(BadContentDispositionHeader(header))
+            continue
 
         if "=" not in item:
             warnings.warn(BadContentDispositionHeader(header))
@@ -269,6 +278,7 @@ class BodyPartReader:
         *,
         subtype: str = "mixed",
         default_charset: Optional[str] = None,
+        max_decompress_size: int = DEFAULT_MAX_DECOMPRESS_SIZE,
     ) -> None:
         self.headers = headers
         self._boundary = boundary
@@ -285,6 +295,7 @@ class BodyPartReader:
         self._prev_chunk: Optional[bytes] = None
         self._content_eof = 0
         self._cache: Dict[str, Any] = {}
+        self._max_decompress_size = max_decompress_size
 
     def __aiter__(self: Self) -> Self:
         return self
@@ -314,7 +325,7 @@ class BodyPartReader:
         while not self._at_eof:
             data.extend(await self.read_chunk(self.chunk_size))
         if decode:
-            return self.decode(data)
+            return await self.decode(data)
         return data
 
     async def read_chunk(self, size: int = chunk_size) -> bytes:
@@ -357,11 +368,8 @@ class BodyPartReader:
         self._read_bytes += len(chunk)
         if self._read_bytes == self._length:
             self._at_eof = True
-        if self._at_eof:
-            clrf = await self._content.readline()
-            assert (
-                b"\r\n" == clrf
-            ), "reader did not read all the data or it is malformed"
+        if self._at_eof and await self._content.readline() != b"\r\n":
+            raise ValueError("Reader did not read all the data or it is malformed")
         return chunk
 
     async def _read_chunk_from_length(self, size: int) -> bytes:
@@ -382,7 +390,8 @@ class BodyPartReader:
         ), "Chunk size must be greater or equal than boundary length + 2"
         first_chunk = self._prev_chunk is None
         if first_chunk:
-            self._prev_chunk = await self._content.read(size)
+            # We need to re-add the CRLF that got removed from headers parsing.
+            self._prev_chunk = b"\r\n" + await self._content.read(size)
 
         chunk = b""
         # content.read() may return less than size, so we need to loop to ensure
@@ -390,7 +399,8 @@ class BodyPartReader:
         while len(chunk) < self._boundary_len:
             chunk += await self._content.read(size)
             self._content_eof += int(self._content.at_eof())
-            assert self._content_eof < 3, "Reading after EOF"
+            if self._content_eof > 2:
+                raise ValueError("Reading after EOF")
             if self._content_eof:
                 break
         if len(chunk) > size:
@@ -409,12 +419,11 @@ class BodyPartReader:
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", category=DeprecationWarning)
                 self._content.unread_data(window[idx:])
-            if size > idx:
-                self._prev_chunk = self._prev_chunk[:idx]
+            self._prev_chunk = self._prev_chunk[:idx]
             chunk = window[len(self._prev_chunk) : idx]
             if not chunk:
                 self._at_eof = True
-        result = self._prev_chunk
+        result = self._prev_chunk[2 if first_chunk else 0 :]  # Strip initial CRLF
         self._prev_chunk = chunk
         return result
 
@@ -494,7 +503,7 @@ class BodyPartReader:
         """Returns True if the boundary was reached or False otherwise."""
         return self._at_eof
 
-    def decode(self, data: bytes) -> bytes:
+    async def decode(self, data: bytes) -> bytes:
         """Decodes data.
 
         Decoding is done according the specified Content-Encoding
@@ -504,18 +513,18 @@ class BodyPartReader:
             data = self._decode_content_transfer(data)
         # https://datatracker.ietf.org/doc/html/rfc7578#section-4.8
         if not self._is_form_data and CONTENT_ENCODING in self.headers:
-            return self._decode_content(data)
+            return await self._decode_content(data)
         return data
 
-    def _decode_content(self, data: bytes) -> bytes:
+    async def _decode_content(self, data: bytes) -> bytes:
         encoding = self.headers.get(CONTENT_ENCODING, "").lower()
         if encoding == "identity":
             return data
         if encoding in {"deflate", "gzip"}:
-            return ZLibDecompressor(
+            return await ZLibDecompressor(
                 encoding=encoding,
                 suppress_deflate_header=True,
-            ).decompress_sync(data)
+            ).decompress(data, max_length=self._max_decompress_size)
 
         raise RuntimeError(f"unknown content encoding: {encoding}")
 
@@ -586,11 +595,11 @@ class BodyPartReaderPayload(Payload):
         """
         raise TypeError("Unable to read body part as bytes. Use write() to consume.")
 
-    async def write(self, writer: Any) -> None:
+    async def write(self, writer: AbstractStreamWriter) -> None:
         field = self._value
         chunk = await field.read_chunk(size=2**16)
         while chunk:
-            await writer.write(field.decode(chunk))
+            await writer.write(await field.decode(chunk))
             chunk = await field.read_chunk(size=2**16)
 
 
@@ -777,10 +786,10 @@ class MultipartReader:
             raise ValueError(f"Invalid boundary {chunk!r}, expected {self._boundary!r}")
 
     async def _read_headers(self) -> "CIMultiDictProxy[str]":
-        lines = [b""]
+        lines = []
         while True:
             chunk = await self._content.readline()
-            chunk = chunk.strip()
+            chunk = chunk.rstrip(b"\r\n")
             lines.append(chunk)
             if not chunk:
                 break
@@ -972,14 +981,15 @@ class MultipartWriter(Payload):
         """Size of the payload."""
         total = 0
         for part, encoding, te_encoding in self._parts:
-            if encoding or te_encoding or part.size is None:
+            part_size = part.size
+            if encoding or te_encoding or part_size is None:
                 return None
 
             total += int(
                 2
                 + len(self._boundary)
                 + 2
-                + part.size  # b'--'+self._boundary+b'\r\n'
+                + part_size  # b'--'+self._boundary+b'\r\n'
                 + len(part._binary_headers)
                 + 2  # b'\r\n'
             )
@@ -1029,7 +1039,9 @@ class MultipartWriter(Payload):
 
         return b"".join(parts)
 
-    async def write(self, writer: Any, close_boundary: bool = True) -> None:
+    async def write(
+        self, writer: AbstractStreamWriter, close_boundary: bool = True
+    ) -> None:
         """Write body."""
         for part, encoding, te_encoding in self._parts:
             if self._is_form_data:
@@ -1083,7 +1095,7 @@ class MultipartWriter(Payload):
 
 
 class MultipartPayloadWriter:
-    def __init__(self, writer: Any) -> None:
+    def __init__(self, writer: AbstractStreamWriter) -> None:
         self._writer = writer
         self._encoding: Optional[str] = None
         self._compress: Optional[ZLibCompressor] = None

@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PropertyBagUtils.h"
 
+#include "ipc/IPCMessageUtilsSpecializations.h"
 #include "mozilla/SimpleEnumerator.h"
 #include "mozilla/dom/DOMTypes.h"
 #include "nsCOMPtr.h"
@@ -15,14 +14,12 @@
 #include "nsIURI.h"
 #include "nsVariant.h"
 
-using namespace IPC;
 using namespace mozilla::dom;
 
-namespace mozilla::ipc {
+namespace IPC {
 
-void IPDLParamTraits<nsIVariant*>::Write(MessageWriter* aWriter,
-                                         IProtocol* aActor,
-                                         nsIVariant* aParam) {
+void ParamTraits<nsIVariant*>::Write(MessageWriter* aWriter,
+                                     nsIVariant* aParam) {
   IDPLVariant variant;
 
   variant.type() = aParam->GetDataType();
@@ -131,18 +128,17 @@ void IPDLParamTraits<nsIVariant*>::Write(MessageWriter* aWriter,
       MOZ_CRASH("Non handled variant type, patch welcome");
       break;
   }
-  WriteIPDLParam(aWriter, aActor, variant);
+  WriteParam(aWriter, variant);
 }
 
-bool IPDLParamTraits<nsIVariant*>::Read(MessageReader* aReader,
-                                        IProtocol* aActor,
-                                        RefPtr<nsIVariant>* aResult) {
+bool ParamTraits<nsIVariant*>::Read(MessageReader* aReader,
+                                    RefPtr<nsIVariant>* aResult) {
   IDPLVariant value;
-  if (!ReadIPDLParam(aReader, aActor, &value)) {
+  if (!ReadParam(aReader, &value)) {
     return false;
   }
 
-  auto variant = MakeRefPtr<nsVariant>();
+  auto variant = mozilla::MakeRefPtr<nsVariant>();
 
   switch (value.type()) {
     case nsIDataType::VTYPE_INT8:
@@ -219,16 +215,15 @@ bool IPDLParamTraits<nsIVariant*>::Read(MessageReader* aReader,
   return true;
 }
 
-void IPDLParamTraits<nsIPropertyBag2*>::Write(MessageWriter* aWriter,
-                                              IProtocol* aActor,
-                                              nsIPropertyBag2* aParam) {
+void ParamTraits<nsIPropertyBag2*>::Write(MessageWriter* aWriter,
+                                          nsIPropertyBag2* aParam) {
   // We send a nsIPropertyBag as an array of IPDLProperty
   nsTArray<IPDLProperty> bag;
 
   nsCOMPtr<nsISimpleEnumerator> enumerator;
   if (aParam &&
       NS_SUCCEEDED(aParam->GetEnumerator(getter_AddRefs(enumerator)))) {
-    for (auto& property : SimpleEnumerator<nsIProperty>(enumerator)) {
+    for (auto& property : mozilla::SimpleEnumerator<nsIProperty>(enumerator)) {
       nsString name;
       nsCOMPtr<nsIVariant> value;
       MOZ_ALWAYS_SUCCEEDS(property->GetName(name));
@@ -236,18 +231,17 @@ void IPDLParamTraits<nsIPropertyBag2*>::Write(MessageWriter* aWriter,
       bag.AppendElement(IPDLProperty{name, value});
     }
   }
-  WriteIPDLParam(aWriter, aActor, bag);
+  WriteParam(aWriter, bag);
 }
 
-bool IPDLParamTraits<nsIPropertyBag2*>::Read(MessageReader* aReader,
-                                             IProtocol* aActor,
-                                             RefPtr<nsIPropertyBag2>* aResult) {
+bool ParamTraits<nsIPropertyBag2*>::Read(MessageReader* aReader,
+                                         RefPtr<nsIPropertyBag2>* aResult) {
   nsTArray<IPDLProperty> bag;
-  if (!ReadIPDLParam(aReader, aActor, &bag)) {
+  if (!ReadParam(aReader, &bag)) {
     return false;
   }
 
-  auto properties = MakeRefPtr<nsHashPropertyBag>();
+  auto properties = mozilla::MakeRefPtr<nsHashPropertyBag>();
 
   for (auto& entry : bag) {
     nsCOMPtr<nsIVariant> variant = std::move(entry.value());
@@ -258,4 +252,4 @@ bool IPDLParamTraits<nsIPropertyBag2*>::Read(MessageReader* aReader,
   return true;
 }
 
-}  // namespace mozilla::ipc
+}  // namespace IPC

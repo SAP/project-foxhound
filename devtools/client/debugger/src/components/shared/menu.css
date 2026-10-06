@@ -28,11 +28,11 @@ menuitem:hover {
   color: white;
 }
 
-menuitem[disabled="true"] {
+menuitem[disabled] {
   color: #cccccc;
 }
 
-menuitem[disabled="true"]:hover {
+menuitem[disabled]:hover {
   background-color: transparent;
   cursor: default;
 }

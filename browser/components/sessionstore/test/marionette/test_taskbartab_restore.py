@@ -19,20 +19,18 @@ def inline(title):
 
 class TestManualRestoreWithTaskbarTabs(SessionStoreTestCase):
     def setUp(self):
-        super(TestManualRestoreWithTaskbarTabs, self).setUp(
+        super().setUp(
             startup_page=1,
             include_private=False,
             restore_on_demand=False,
             taskbartabs_enable=True,
-            test_windows=set(
-                [
-                    # Window 1
-                    (
-                        inline("lorem ipsom"),
-                        inline("dolor"),
-                    ),
-                ]
-            ),
+            test_windows=set([
+                # Window 1
+                (
+                    inline("lorem ipsom"),
+                    inline("dolor"),
+                ),
+            ]),
         )
 
     """
@@ -77,32 +75,32 @@ class TestManualRestoreWithTaskbarTabs(SessionStoreTestCase):
         # meaning the window we opened should have
         # two tabs again.
         Wait(self.marionette).until(
-            lambda mn: mn.execute_script(
-                """
+            lambda mn: (
+                mn.execute_script(
+                    """
                 let newWindow = BrowserWindowTracker.getTopWindow({ allowTaskbarTabs: false });
                 return newWindow.gBrowser.tabs.length;
                 """
+                )
+                == 2
             )
-            == 2
         )
 
 
 class TestAutoRestoreWithTaskbarTabs(SessionStoreTestCase):
     def setUp(self):
-        super(TestAutoRestoreWithTaskbarTabs, self).setUp(
+        super().setUp(
             startup_page=3,
             include_private=False,
             restore_on_demand=False,
             taskbartabs_enable=True,
-            test_windows=set(
-                [
-                    # Window 1
-                    (
-                        inline("lorem ipsom"),
-                        inline("dolor"),
-                    ),
-                ]
-            ),
+            test_windows=set([
+                # Window 1
+                (
+                    inline("lorem ipsom"),
+                    inline("dolor"),
+                ),
+            ]),
         )
 
     """
@@ -122,11 +120,13 @@ class TestAutoRestoreWithTaskbarTabs(SessionStoreTestCase):
         # meaning the window we opened should have
         # the original two tabs plus the home page tab.
         Wait(self.marionette).until(
-            lambda mn: mn.execute_script(
-                """
+            lambda mn: (
+                mn.execute_script(
+                    """
                 let newWindow = BrowserWindowTracker.getTopWindow({ allowTaskbarTabs: false });
                 return newWindow.gBrowser.tabs.length;
                 """
+                )
+                == 3
             )
-            == 3
         )

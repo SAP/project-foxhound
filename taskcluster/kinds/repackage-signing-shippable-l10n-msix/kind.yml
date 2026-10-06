@@ -13,6 +13,9 @@ transforms:
 kind-dependencies:
     - repackage-shippable-l10n-msix
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 tasks:
     repackage-signing-shippable-l10n-msix:
         from-deps: {}

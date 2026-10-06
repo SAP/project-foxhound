@@ -120,6 +120,55 @@ class nsHtml5ElementName {
 
   inline static nsHtml5ElementName* elementNameByBuffer(char16_t* buf,
                                                         int32_t length) {
+    if (length == 3) {
+      if (nsHtml5Portability::bufferStartsWithLiteralAssumeSufficientLength(
+              buf, u"div")) {
+        return nsHtml5ElementName::ELT_DIV;
+      }
+      if (nsHtml5Portability::bufferStartsWithLiteralAssumeSufficientLength(
+              buf, u"img")) {
+        return nsHtml5ElementName::ELT_IMG;
+      }
+    } else if (length == 4) {
+      if (nsHtml5Portability::bufferStartsWithLiteralAssumeSufficientLength(
+              buf, u"span")) {
+        return nsHtml5ElementName::ELT_SPAN;
+      }
+    } else if (length == 2) {
+      if (nsHtml5Portability::bufferStartsWithLiteralAssumeSufficientLength(
+              buf, u"li")) {
+        return nsHtml5ElementName::ELT_LI;
+      }
+      if (nsHtml5Portability::bufferStartsWithLiteralAssumeSufficientLength(
+              buf, u"ul")) {
+        return nsHtml5ElementName::ELT_UL;
+      }
+    } else if (length == 1) {
+      if (buf[0] == 'a') {
+        return nsHtml5ElementName::ELT_A;
+      }
+      if (buf[0] == 'p') {
+        return nsHtml5ElementName::ELT_P;
+      }
+    } else if (length == 5) {
+      if (nsHtml5Portability::bufferStartsWithLiteralAssumeSufficientLength(
+              buf, u"label")) {
+        return nsHtml5ElementName::ELT_LABEL;
+      }
+      if (nsHtml5Portability::bufferStartsWithLiteralAssumeSufficientLength(
+              buf, u"input")) {
+        return nsHtml5ElementName::ELT_INPUT;
+      }
+    } else if (length == 6) {
+      if (nsHtml5Portability::bufferStartsWithLiteralAssumeSufficientLength(
+              buf, u"button")) {
+        return nsHtml5ElementName::ELT_BUTTON;
+      }
+      if (nsHtml5Portability::bufferStartsWithLiteralAssumeSufficientLength(
+              buf, u"strong")) {
+        return nsHtml5ElementName::ELT_STRONG;
+      }
+    }
     uint32_t hash = nsHtml5ElementName::bufToHash(buf, length);
     jArray<int32_t, int32_t> hashes;
     hashes = nsHtml5ElementName::ELEMENT_HASHES;
@@ -189,6 +238,17 @@ class nsHtml5ElementName {
   inline bool isCustom() { return this->htmlCreator == NS_NewCustomElement; }
 
   static nsHtml5ElementName* ELT_ANNOTATION_XML;
+  static nsHtml5ElementName* ELT_DIV;
+  static nsHtml5ElementName* ELT_IMG;
+  static nsHtml5ElementName* ELT_SPAN;
+  static nsHtml5ElementName* ELT_LI;
+  static nsHtml5ElementName* ELT_UL;
+  static nsHtml5ElementName* ELT_A;
+  static nsHtml5ElementName* ELT_P;
+  static nsHtml5ElementName* ELT_LABEL;
+  static nsHtml5ElementName* ELT_INPUT;
+  static nsHtml5ElementName* ELT_BUTTON;
+  static nsHtml5ElementName* ELT_STRONG;
   static nsHtml5ElementName* ELT_BIG;
   static nsHtml5ElementName* ELT_BDI;
   static nsHtml5ElementName* ELT_BDO;
@@ -196,14 +256,11 @@ class nsHtml5ElementName {
   static nsHtml5ElementName* ELT_DEL;
   static nsHtml5ElementName* ELT_DFN;
   static nsHtml5ElementName* ELT_DIR;
-  static nsHtml5ElementName* ELT_DIV;
-  static nsHtml5ElementName* ELT_IMG;
   static nsHtml5ElementName* ELT_INS;
   static nsHtml5ElementName* ELT_KBD;
   static nsHtml5ElementName* ELT_MAP;
   static nsHtml5ElementName* ELT_NAV;
   static nsHtml5ElementName* ELT_PRE;
-  static nsHtml5ElementName* ELT_A;
   static nsHtml5ElementName* ELT_B;
   static nsHtml5ElementName* ELT_RTC;
   static nsHtml5ElementName* ELT_SUB;
@@ -216,7 +273,6 @@ class nsHtml5ElementName {
   static nsHtml5ElementName* ELT_WBR;
   static nsHtml5ElementName* ELT_XMP;
   static nsHtml5ElementName* ELT_I;
-  static nsHtml5ElementName* ELT_P;
   static nsHtml5ElementName* ELT_Q;
   static nsHtml5ElementName* ELT_S;
   static nsHtml5ElementName* ELT_U;
@@ -282,7 +338,6 @@ class nsHtml5ElementName {
   static nsHtml5ElementName* ELT_FEDIFFUSELIGHTING;
   static nsHtml5ElementName* ELT_FESPECULARLIGHTING;
   static nsHtml5ElementName* ELT_LISTING;
-  static nsHtml5ElementName* ELT_STRONG;
   static nsHtml5ElementName* ELT_ALTGLYPH;
   static nsHtml5ElementName* ELT_CLIPPATH;
   static nsHtml5ElementName* ELT_MGLYPH;
@@ -293,7 +348,6 @@ class nsHtml5ElementName {
   static nsHtml5ElementName* ELT_SEARCH;
   static nsHtml5ElementName* ELT_SWITCH;
   static nsHtml5ElementName* ELT_TEXTPATH;
-  static nsHtml5ElementName* ELT_LI;
   static nsHtml5ElementName* ELT_MI;
   static nsHtml5ElementName* ELT_LINK;
   static nsHtml5ElementName* ELT_MARK;
@@ -303,8 +357,6 @@ class nsHtml5ElementName {
   static nsHtml5ElementName* ELT_DL;
   static nsHtml5ElementName* ELT_HTML;
   static nsHtml5ElementName* ELT_OL;
-  static nsHtml5ElementName* ELT_LABEL;
-  static nsHtml5ElementName* ELT_UL;
   static nsHtml5ElementName* ELT_SMALL;
   static nsHtml5ElementName* ELT_SYMBOL;
   static nsHtml5ElementName* ELT_ALTGLYPHITEM;
@@ -314,7 +366,6 @@ class nsHtml5ElementName {
   static nsHtml5ElementName* ELT_FORM;
   static nsHtml5ElementName* ELT_PARAM;
   static nsHtml5ElementName* ELT_ANIMATEMOTION;
-  static nsHtml5ElementName* ELT_BUTTON;
   static nsHtml5ElementName* ELT_CAPTION;
   static nsHtml5ElementName* ELT_FIGCAPTION;
   static nsHtml5ElementName* ELT_MN;
@@ -323,7 +374,6 @@ class nsHtml5ElementName {
   static nsHtml5ElementName* ELT_OPTION;
   static nsHtml5ElementName* ELT_POLYGON;
   static nsHtml5ElementName* ELT_PATTERN;
-  static nsHtml5ElementName* ELT_SPAN;
   static nsHtml5ElementName* ELT_SECTION;
   static nsHtml5ElementName* ELT_TSPAN;
   static nsHtml5ElementName* ELT_AUDIO;
@@ -370,7 +420,6 @@ class nsHtml5ElementName {
   static nsHtml5ElementName* ELT_FEPOINTLIGHT;
   static nsHtml5ElementName* ELT_FEDISTANTLIGHT;
   static nsHtml5ElementName* ELT_FONT;
-  static nsHtml5ElementName* ELT_INPUT;
   static nsHtml5ElementName* ELT_LINEARGRADIENT;
   static nsHtml5ElementName* ELT_MTEXT;
   static nsHtml5ElementName* ELT_NOSCRIPT;
@@ -382,6 +431,7 @@ class nsHtml5ElementName {
   static nsHtml5ElementName* ELT_RECT;
   static nsHtml5ElementName* ELT_RADIALGRADIENT;
   static nsHtml5ElementName* ELT_SELECT;
+  static nsHtml5ElementName* ELT_SELECTEDCONTENT;
   static nsHtml5ElementName* ELT_SLOT;
   static nsHtml5ElementName* ELT_SCRIPT;
   static nsHtml5ElementName* ELT_TFOOT;

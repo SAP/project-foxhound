@@ -226,6 +226,47 @@ add_task(async function test_sessions_tab_value_persistence() {
   await extension.unload();
 });
 
+// Regression test for https://bugzilla.mozilla.org/show_bug.cgi?id=2002643
+add_task(async function test_sessions_tab_value_persists_across_adoption() {
+  async function background() {
+    const tab = await browser.tabs.create({ url: "about:blank" });
+
+    await browser.sessions.setTabValue(tab.id, "my key", "tab value");
+
+    await browser.windows.create({ tabId: tab.id });
+
+    browser.test.assertEq(
+      await browser.sessions.getTabValue(tab.id, "my key"),
+      "tab value",
+      "setTabValue sticks to tab when tab is adopted in new window"
+    );
+
+    const win = await browser.windows.create({});
+    await browser.tabs.group({
+      createProperties: { windowId: win.id },
+      tabIds: [tab.id],
+    });
+
+    browser.test.assertEq(
+      await browser.sessions.getTabValue(tab.id, "my key"),
+      "tab value",
+      "setTabValue sticks to tab when tab is adopted in group in other window"
+    );
+
+    await browser.windows.remove(win.id);
+    browser.test.sendMessage("testComplete");
+  }
+
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: { permissions: ["sessions"] },
+    background,
+  });
+
+  await extension.startup();
+  await extension.awaitMessage("testComplete");
+  await extension.unload();
+});
+
 add_task(async function test_sessions_window_value() {
   info("Testing set/get/deleteWindowValue.");
 

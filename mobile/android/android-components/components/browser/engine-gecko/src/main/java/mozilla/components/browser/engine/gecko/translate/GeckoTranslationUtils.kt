@@ -64,6 +64,9 @@ object GeckoTranslationUtils {
                 TranslationsException.ERROR_MODEL_DOWNLOAD_REQUIRED ->
                     TranslationError.ModelDownloadRequiredError(this)
 
+                TranslationsException.ERROR_ENGINE_DEACTIVATED ->
+                    TranslationError.EngineDeactivatedError(this)
+
                 else -> TranslationError.UnknownError(this)
             }
         } else {

@@ -10,9 +10,9 @@ import mozilla.components.support.test.fakes.FakeClock
 import mozilla.components.support.test.fakes.android.FakeContext
 import mozilla.components.support.test.fakes.android.FakeSharedPreferences
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
+import kotlin.test.assertNotNull
 
 class RegionManagerTest {
     @Test
@@ -41,7 +41,7 @@ class RegionManagerTest {
         )
 
         val updatedRegion = regionManager.update()
-        assertNotNull(updatedRegion!!)
+        assertNotNull(updatedRegion)
         assertEquals("DE", updatedRegion.current)
         assertEquals("DE", updatedRegion.home)
     }
@@ -82,7 +82,7 @@ class RegionManagerTest {
         clock.advanceBy(60L * 60L * 24L * 8L * 1000L)
 
         val updatedRegion = (regionManager.update())
-        assertNotNull(updatedRegion!!)
+        assertNotNull(updatedRegion)
         assertEquals("FR", updatedRegion.home)
         assertEquals("FR", updatedRegion.current)
         assertEquals("FR", regionManager.region()?.home)

@@ -29,89 +29,72 @@
     ////////////////////////////////////////////////////////////////////////////
     // Test
 
-    // gA11yEventDumpID = "debug";
+    function checkTree(aTreeID) {
+      const domNode = getNode(aTreeID);
+      const tree = getAccessible(domNode);
 
-    /**
-     * Event queue invoker object to test accessible states for XUL tree
-     * accessible.
-     */
-    function statesChecker(aTreeID, aView)
-    {
-      this.DOMNode = getNode(aTreeID);
-      
-      this.invoke = function invoke()
-      {
-        this.DOMNode.view = aView;
+      let isTreeMultiSelectable = false;
+      const seltype = domNode.getAttribute("seltype");
+      if (seltype != "single")
+        isTreeMultiSelectable = true;
+
+      // selectAll
+      const accSelectable = getAccessible(domNode, [nsIAccessibleSelectable]);
+      ok(accSelectable, "tree is not selectable!");
+      if (accSelectable) {
+        is(accSelectable.selectAll(), isTreeMultiSelectable,
+           "SelectAll is not correct for seltype: " + seltype);
       }
-      this.check = function check()
-      {
-        var tree = getAccessible(this.DOMNode);
 
-        var isTreeMultiSelectable = false;
-        var seltype = this.DOMNode.getAttribute("seltype");
-        if (seltype != "single")
-          isTreeMultiSelectable = true;
-
-        // selectAll
-        var accSelectable = getAccessible(this.DOMNode,
-                                          [nsIAccessibleSelectable]);
-        ok(accSelectable, "tree is not selectable!");
-        if (accSelectable) {
-          is(accSelectable.selectAll(), isTreeMultiSelectable,
-             "SelectAll is not correct for seltype: " + seltype);
+      let selectedChildren = [];
+      if (isTreeMultiSelectable) {
+        const rows = tree.children;
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows.queryElementAt(i, nsIAccessible);
+          if (getRole(row) == ROLE_OUTLINEITEM || getRole(row) == ROLE_ROW)
+            selectedChildren.push(row);
         }
-
-        var selectedChildren = [];
-        if (isTreeMultiSelectable) {
-          var rows = tree.children;
-          for (var i = 0; i < rows.length; i++) {
-          var row = rows.queryElementAt(i, nsIAccessible);
-            if (getRole(row) == ROLE_OUTLINEITEM || getRole(row) == ROLE_ROW)
-              selectedChildren.push(row);
-          }
-        }
-        testSelectableSelection(accSelectable, selectedChildren,
-                                "selectAll test. ");
-
-        // unselectAll
-        accSelectable.unselectAll();
-        testSelectableSelection(accSelectable, [], "unselectAll test. ");
-
-        // addItemToSelection
-        accSelectable.addItemToSelection(1);
-        accSelectable.addItemToSelection(3);
-
-        selectedChildren = isTreeMultiSelectable ?
-          [ accSelectable.getChildAt(2), accSelectable.getChildAt(4) ] :
-          [ accSelectable.getChildAt(2) ];
-        testSelectableSelection(accSelectable, selectedChildren,
-                                "addItemToSelection test. ");
-
-        // removeItemFromSelection
-        accSelectable.removeItemFromSelection(1);
-
-        selectedChildren = isTreeMultiSelectable ?
-          [ accSelectable.getChildAt(4) ] : [ ];
-        testSelectableSelection(accSelectable, selectedChildren,
-                                "removeItemFromSelection test. ");
       }
+      testSelectableSelection(accSelectable, selectedChildren,
+                              "selectAll test. ");
 
-      this.getID = function getID()
-      {
-        "tree processor for " + prettyName(aTreeID);
-      }
+      // unselectAll
+      accSelectable.unselectAll();
+      testSelectableSelection(accSelectable, [], "unselectAll test. ");
+
+      // addItemToSelection
+      accSelectable.addItemToSelection(1);
+      accSelectable.addItemToSelection(3);
+
+      selectedChildren = isTreeMultiSelectable ?
+        [ accSelectable.getChildAt(2), accSelectable.getChildAt(4) ] :
+        [ accSelectable.getChildAt(2) ];
+      testSelectableSelection(accSelectable, selectedChildren,
+                              "addItemToSelection test. ");
+
+      // removeItemFromSelection
+      accSelectable.removeItemFromSelection(1);
+
+      selectedChildren = isTreeMultiSelectable ?
+        [ accSelectable.getChildAt(4) ] : [ ];
+      testSelectableSelection(accSelectable, selectedChildren,
+                              "removeItemFromSelection test. ");
     }
 
-    var gQueue = null;
+    async function doTest() {
+      for (let [treeID, view] of [
+        ["tree", new nsTreeTreeView()],
+        ["treesingle", new nsTreeTreeView()],
+        ["tabletree", new nsTreeTreeView()],
+      ]) {
+        const domNode = getNode(treeID);
+        const reordered = waitForEvent(EVENT_REORDER, domNode);
+        domNode.view = view;
+        await reordered;
+        checkTree(treeID);
+      }
 
-    function doTest()
-    {
-      gQueue = new eventQueue(EVENT_REORDER);
-      gQueue.push(new statesChecker("tree", new nsTreeTreeView()));
-      gQueue.push(new statesChecker("treesingle", new nsTreeTreeView()));
-      gQueue.push(new statesChecker("tabletree", new nsTreeTreeView()));
-
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

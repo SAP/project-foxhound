@@ -1,4 +1,4 @@
-const PAGEURI = NetUtil.newURI("http://deliciousbacon.com/");
+const PAGEURI = Services.io.newURI("http://deliciousbacon.com/");
 
 add_task(async function () {
   // First, add a history entry or else Places can't save a favicon.

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -58,7 +56,7 @@ nsresult Probe::Trigger() {
 
   ULONG result = TraceEvent(mManager->mSessionHandle, &event);
 
-  LOG(("Probes: Triggered %s, %s, %ld", mName.Data(),
+  LOG(("Probes: Triggered %s, %s, %ld", mName.get(),
        result == ERROR_SUCCESS ? "success" : "failure", result));
 
   nsresult rv;
@@ -104,7 +102,7 @@ ProbeManager::ProbeManager(const nsCID& aApplicationUID,
 #if defined(MOZ_LOGGING)
   char cidStr[NSID_LENGTH];
   aApplicationUID.ToProvidedString(cidStr);
-  LOG(("ProbeManager::Init for application %s, %s", aApplicationName.Data(),
+  LOG(("ProbeManager::Init for application %s, %s", mApplicationName.get(),
        cidStr));
 #endif
 }

@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // Language tags are processed case-insensitive, but unconditionally calling
 // the built-in String.prototype.toLowerCase() or toUpperCase() function
 // before parsing a language tag can map non-ASCII characters into the ASCII

@@ -10,47 +10,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   pprint: "chrome://remote/content/shared/Format.sys.mjs",
 });
 
-const ERRORS = new Set([
-  "DetachedShadowRootError",
-  "ElementClickInterceptedError",
-  "ElementNotAccessibleError",
-  "ElementNotInteractableError",
-  "InsecureCertificateError",
-  "InvalidArgumentError",
-  "InvalidCookieDomainError",
-  "InvalidElementStateError",
-  "InvalidSelectorError",
-  "InvalidSessionIDError",
-  "InvalidWebExtensionError",
-  "JavaScriptError",
-  "MoveTargetOutOfBoundsError",
-  "NoSuchAlertError",
-  "NoSuchElementError",
-  "NoSuchFrameError",
-  "NoSuchHandleError",
-  "NoSuchHistoryEntryError",
-  "NoSuchInterceptError",
-  "NoSuchNodeError",
-  "NoSuchRequestError",
-  "NoSuchScriptError",
-  "NoSuchShadowRootError",
-  "NoSuchUserContextError",
-  "NoSuchWebExtensionError",
-  "NoSuchWindowError",
-  "ScriptTimeoutError",
-  "SessionNotCreatedError",
-  "StaleElementReferenceError",
-  "TimeoutError",
-  "UnableToCaptureScreen",
-  "UnableToSetCookieError",
-  "UnableToSetFileInputError",
-  "UnexpectedAlertOpenError",
-  "UnknownCommandError",
-  "UnknownError",
-  "UnsupportedOperationError",
-  "WebDriverError",
-]);
-
 const BUILTIN_ERRORS = new Set([
   "Error",
   "EvalError",
@@ -114,10 +73,21 @@ export const error = {
    *     false otherwise.
    */
   isWebDriverError(obj) {
-    // Don't use "instanceof" to compare error objects because of possible
-    // problems when the other instance was created in a different global and
-    // as such won't have the same prototype object.
-    return error.isError(obj) && "name" in obj && ERRORS.has(obj.name);
+    // Walk the prototype chain checking for WebDriverError by constructor
+    // name rather than using instanceof, which doesn't work across globals.
+    // This avoids false positives for platform errors e.g. DOMException
+    // with name "UnknownError".
+    try {
+      let proto = Object.getPrototypeOf(obj);
+      while (proto) {
+        if (proto.constructor.name === "WebDriverError") {
+          return true;
+        }
+        proto = Object.getPrototypeOf(proto);
+      }
+    } catch (e) {}
+
+    return false;
   },
 
   /**
@@ -538,6 +508,22 @@ class NoSuchAlertError extends WebDriverError {
 }
 
 /**
+ * The client window could not be found.
+ *
+ * @param {(string|Error)=} obj
+ *     Optional string describing error situation or Error instance
+ *     to propagate.
+ * @param {object=} data
+ *     Additional error data helpful in diagnosing the error.
+ */
+class NoSuchClientWindow extends WebDriverError {
+  constructor(obj, data = {}) {
+    super(obj, data);
+    this.status = "no such client window";
+  }
+}
+
+/**
  * An element could not be located on the page using the given
  * search parameters.
  *
@@ -664,6 +650,38 @@ class NoSuchInterceptError extends WebDriverError {
   constructor(obj, data = {}) {
     super(obj, data);
     this.status = "no such intercept";
+  }
+}
+
+/**
+ * A network data collector with the given unique id could not be found.
+ *
+ * @param {(string|Error)=} obj
+ *     Optional string describing error situation or Error instance
+ *     to propagate.
+ * @param {object=} data
+ *     Additional error data helpful in diagnosing the error.
+ */
+class NoSuchNetworkCollectorError extends WebDriverError {
+  constructor(obj, data = {}) {
+    super(obj, data);
+    this.status = "no such network collector";
+  }
+}
+
+/**
+ * A network data for the provided request id and data type could not be found.
+ *
+ * @param {(string|Error)=} obj
+ *     Optional string describing error situation or Error instance
+ *     to propagate.
+ * @param {object=} data
+ *     Additional error data helpful in diagnosing the error.
+ */
+class NoSuchNetworkDataError extends WebDriverError {
+  constructor(obj, data = {}) {
+    super(obj, data);
+    this.status = "no such network data";
   }
 }
 
@@ -863,6 +881,22 @@ class UnableToCaptureScreen extends WebDriverError {
 }
 
 /**
+ * A network data content is not available.
+ *
+ * @param {(string|Error)=} obj
+ *     Optional string describing error situation or Error instance
+ *     to propagate.
+ * @param {object=} data
+ *     Additional error data helpful in diagnosing the error.
+ */
+class UnavailableNetworkDataError extends WebDriverError {
+  constructor(obj, data = {}) {
+    super(obj, data);
+    this.status = "unavailable network data";
+  }
+}
+
+/**
  * A modal dialog was open, blocking this operation.
  *
  * @param {(string|Error)=} obj
@@ -944,11 +978,14 @@ const STATUSES = new Map([
   ["javascript error", JavaScriptError],
   ["move target out of bounds", MoveTargetOutOfBoundsError],
   ["no such alert", NoSuchAlertError],
+  ["no such client window", NoSuchClientWindow],
   ["no such element", NoSuchElementError],
   ["no such frame", NoSuchFrameError],
   ["no such handle", NoSuchHandleError],
   ["no such history entry", NoSuchHistoryEntryError],
   ["no such intercept", NoSuchInterceptError],
+  ["no such network collector", NoSuchNetworkCollectorError],
+  ["no such network data", NoSuchNetworkDataError],
   ["no such node", NoSuchNodeError],
   ["no such request", NoSuchRequestError],
   ["no such script", NoSuchScriptError],
@@ -963,6 +1000,7 @@ const STATUSES = new Map([
   ["unable to capture screen", UnableToCaptureScreen],
   ["unable to set cookie", UnableToSetCookieError],
   ["unable to set file input", UnableToSetFileInputError],
+  ["unavailable network data", UnavailableNetworkDataError],
   ["unexpected alert open", UnexpectedAlertOpenError],
   ["unknown command", UnknownCommandError],
   ["unknown error", UnknownError],

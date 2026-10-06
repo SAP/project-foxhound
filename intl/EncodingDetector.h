@@ -51,9 +51,14 @@ class EncodingDetector final {
 
   /**
    * Creates a new instance of the detector.
+   *
+   * Pass `false` for `aAllowISO2022JP` for Web content.
+   * The argument is available so that Thunderbird can pass `true` when
+   * processing email content that cannot run scripts.
    */
-  static inline UniquePtr<EncodingDetector> Create() {
-    UniquePtr<EncodingDetector> detector(chardetng_encoding_detector_new());
+  static inline UniquePtr<EncodingDetector> Create(bool aAllowISO2022JP) {
+    UniquePtr<EncodingDetector> detector(
+        chardetng_encoding_detector_new(aAllowISO2022JP));
     return detector;
   }
 

@@ -14,7 +14,7 @@ const objects = [];
 
 /**
  * Request to track why the given object is kept in memory,
- * later on, when retrieving all the watched object via getAllNodeIds.
+ * later on, when retrieving all the watched object via getStillAllocatedObjects.
  */
 export function track(obj) {
   // We store a weak reference, so that we do force keeping the object in memory!!
@@ -22,20 +22,25 @@ export function track(obj) {
 }
 
 /**
- * Return the NodeId's of all the objects passed via `track()` method.
+ * Return the reference and NodeId's of all the objects passed via `track()` method,
+ * which are still hold in memory.
  *
- * NodeId's are used by spidermonkey memory API to designates JS objects in head snapshots.
+ * NodeId's are used by spidermonkey memory API to designates JS objects in heap snapshots.
  */
-export function getAllNodeIds() {
-  // Filter out objects which have been freed already
+export function getStillAllocatedObjects() {
   return (
     objects
-      .map(weak => weak.get())
-      .filter(obj => !!obj)
-      // Convert objects from here instead of from allocation tracker in order
-      // to be from the shared system compartment and avoid trying to compute the NodeId
-      // of a wrapper!
-      .map(ChromeUtils.getObjectNodeId)
+      // Filter out objects which have been freed already
+      .filter(ref => !!ref.get())
+      .map(weakRef => {
+        return {
+          weakRef,
+          // Convert objects from here instead of from allocation tracker in order
+          // to be from the shared system compartment and avoid trying to compute the NodeId
+          // of a wrapper!
+          ubiNodeId: ChromeUtils.getObjectNodeId(weakRef.get()),
+        };
+      })
   );
 }
 

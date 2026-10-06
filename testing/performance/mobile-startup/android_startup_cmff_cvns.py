@@ -124,9 +124,12 @@ class Startup_test:
             if i % 10 == 0:
                 screenshot_file = f"/sdcard/Download/{self.product}_iteration_{i}_startup_done_frame.png"
                 self.device.shell(f"screencap -p {screenshot_file}")
-                self.device.command_output(
-                    ["pull", "-a", screenshot_file, os.environ["TESTING_DIR"]]
-                )
+                self.device.command_output([
+                    "pull",
+                    "-a",
+                    screenshot_file,
+                    os.environ["TESTING_DIR"],
+                ])
         self.device.stop_application(self.package_id)
         print(f"{self.test_name}: {str(test_measurements)}")
         # Bug 1934023 - create way to pass median and still have replicates available

@@ -1,0 +1,21 @@
+{
+  "label": "app.sessionlinkpro.com",
+  "bugs": {
+    "1898929": {
+      "issue": "unsupported-warning",
+      "matches": ["*://app.sessionlinkpro.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "content_scripts": {
+        "js": [
+          "spoof_as_windows.js",
+          "use_chrome_useragent.js",
+          "define_minimal_window_chrome.js"
+        ]
+      }
+    }
+  ]
+}

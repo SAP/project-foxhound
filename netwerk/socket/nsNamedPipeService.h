@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -51,12 +50,11 @@ class NamedPipeService final : public nsINamedPipeService,
    * the worker thread to avoid a race condition that might happen between
    * |CloseHandle()| and |GetQueuedCompletionStatus()|.
    */
-  Mutex mLock MOZ_UNANNOTATED;
-  nsTArray<nsCOMPtr<nsINamedPipeDataObserver>>
-      mObservers;  // protected by mLock
-  nsTArray<nsCOMPtr<nsINamedPipeDataObserver>>
-      mRetiredObservers;             // protected by mLock
-  nsTArray<HANDLE> mRetiredHandles;  // protected by mLock
+  Mutex mLock;
+  nsTArray<nsCOMPtr<nsINamedPipeDataObserver>> mObservers MOZ_GUARDED_BY(mLock);
+  nsTArray<nsCOMPtr<nsINamedPipeDataObserver>> mRetiredObservers
+      MOZ_GUARDED_BY(mLock);
+  nsTArray<HANDLE> mRetiredHandles MOZ_GUARDED_BY(mLock);
 
   static StaticRefPtr<NamedPipeService> gSingleton;
 };

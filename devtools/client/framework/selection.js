@@ -158,7 +158,7 @@ class Selection extends EventEmitter {
    * Called when a target front is destroyed.
    *
    * @param {TargetFront} front
-   * @emits detached-front
+   * @fires detached-front
    */
   onTargetDestroyed(targetFront) {
     // if the current walker belongs to the target that is destroyed, emit a `detached-front`
@@ -179,12 +179,12 @@ class Selection extends EventEmitter {
    *
    * @param {NodeFront} nodeFront
    *        The NodeFront being selected.
-   * @param {Object} options (optional)
-   * @param {String} options.reason: Reason that triggered the selection, will be fired with
+   * @param {object} options (optional)
+   * @param {string} options.reason: Reason that triggered the selection, will be fired with
    *        the "new-node-front" event.
-   * @param {Boolean} options.isSlotted: Is the selection representing the slotted version
+   * @param {boolean} options.isSlotted: Is the selection representing the slotted version
    *        of the node.
-   * @param {String} options.searchQuery: If the selection was triggered by a search, the
+   * @param {string} options.searchQuery: If the selection was triggered by a search, the
    *        query of said search
    */
   setNodeFront(
@@ -277,8 +277,8 @@ class Selection extends EventEmitter {
     return this.isNode() && this.nodeFront.isPseudoElement;
   }
 
-  isAnonymousNode() {
-    return this.isNode() && this.nodeFront.isAnonymous;
+  isNativeAnonymousNode() {
+    return this.isNode() && this.nodeFront.isNativeAnonymous;
   }
 
   isAttributeNode() {

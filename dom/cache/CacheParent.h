@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,7 +17,8 @@ class CacheParent final : public PCacheParent {
   friend class PCacheParent;
 
  public:
-  CacheParent(SafeRefPtr<cache::Manager> aManager, CacheId aCacheId);
+  CacheParent(const WeakRefParentType& aManagingActor,
+              SafeRefPtr<cache::Manager> aManager, CacheId aCacheId);
 
  private:
   virtual ~CacheParent();
@@ -35,6 +34,7 @@ class CacheParent final : public PCacheParent {
 
   mozilla::ipc::IPCResult RecvTeardown();
 
+  const WeakRefParentType mManagingActor;
   SafeRefPtr<cache::Manager> mManager;
   const CacheId mCacheId;
 

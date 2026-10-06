@@ -69,7 +69,9 @@ support-files = [
 ["test_bug215405.xhtml"]
 
 ["test_bug293235.xhtml"]
-skip-if = ["true"] # bug 1393441
+skip-if = [
+  "true", # bug 1393441
+]
 
 ["test_bug294258.xhtml"]
 
@@ -104,7 +106,9 @@ skip-if = ["true"] # bug 1393441
 ["test_bug456980.xhtml"]
 
 ["test_bug565388.xhtml"]
-skip-if = ["true"] # Bug 1026815,Bug 1546159
+skip-if = [
+  "true", # Bug 1026815,Bug 1546159
+]
 
 ["test_bug582176.xhtml"]
 support-files = [
@@ -134,7 +138,11 @@ support-files = [
 # This bug only manifests in the non-e10s window open codepath. The test
 # should be updated to make sure it still opens a new window in the parent
 # process if and when we start running chrome mochitests with e10s enabled.
-skip-if = ["e10s"]
+skip-if = [
+  "e10s",
+]
 
 ["test_viewsource_forbidden_in_iframe.xhtml"]
-skip-if = ["true"] # bug 1019315
+skip-if = [
+  "true", # bug 1019315
+]

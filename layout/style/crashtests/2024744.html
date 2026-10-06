@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<style>
+@keyframes anim {
+  from { transform: translateX(0); }
+  to { transform: translateX(100px); }
+}
+#scroller {
+  width: 200px;
+  height: 200px;
+  overflow: scroll;
+}
+#content {
+  height: 1000px;
+}
+#target {
+  width: 50px;
+  height: 50px;
+  background: green;
+  animation: anim 10s linear;
+  animation-timeline: scroll();
+}
+</style>
+<script>
+function run() {
+  let target = document.getElementById('target');
+  let anim = target.getAnimations()[0];
+  // Make it paused pending.
+  anim.pause();
+  // Trigger SetTimeline from a finite timeline to a document timeline. This
+  // also calls SetCurrentTime which may cancel the pending task.
+  target.style.animationTimeline = 'auto';
+}
+</script>
+<body onload="run()">
+<div id="scroller">
+  <div id="content">
+    <div id="target"></div>
+  </div>
+</div>
+</body>

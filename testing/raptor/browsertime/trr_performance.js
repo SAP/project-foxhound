@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env node */
-
 const { logTest } = require("./utils/profiling");
 
 module.exports = logTest(
@@ -14,7 +12,8 @@ module.exports = logTest(
     const testType = `${context.options.browsertime.test_type}`;
     context.log.info("testType: " + testType);
 
-    const url = "https://httpstat.us/";
+    const url = context.options.browsertime.test_url || "https://httpbin.org/";
+    context.log.info("url: " + url);
 
     await commands.navigate("about:blank");
 

@@ -7,6 +7,12 @@ const { SUPPORT_URL, PREFERENCES_URL } = ChromeUtils.importESModule(
   "resource://gre/modules/megalist/aggregator/datasources/LoginDataSource.sys.mjs"
 );
 
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["toolkit.osKeyStore.unofficialBuildOnlyLogin", ""]],
+  });
+});
+
 const EXPECTED_PASSWORD_CARD_VALUES = [
   {
     originLine: { value: "example1.com" },
@@ -288,10 +294,15 @@ async function waitForMigrationWizard() {
     window,
     "MigrationWizard:Ready"
   );
-  await BrowserTestUtils.waitForLocationChange(
-    gBrowser,
-    "about:preferences#general"
-  );
+  // The Settings Redesign LegacyPaneMappings shim routes "general-migrate"
+  // to the sync pane, so accept either location for the migration entry.
+  const expectedUri = Services.prefs.getBoolPref(
+    "browser.settings-redesign.enabled",
+    false
+  )
+    ? "about:preferences#sync"
+    : "about:preferences#general";
+  await BrowserTestUtils.waitForLocationChange(gBrowser, expectedUri);
   return wizardReadyPromise;
 }
 
@@ -364,5 +375,22 @@ add_task(async function test_passwords_visibility_when_view_shown() {
   await waitForPasswordConceal(passwordCard.passwordLine.loginLine);
   ok(true, "Password is hidden.");
 
+  SidebarController.hide();
+});
+
+add_task(async function test_passwords_entry_is_not_visible_for_old_sidebar() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["sidebar.revamp", false],
+      ["sidebar.main.tools", "aichat,passwords,syncedtabs,history,bookmarks"],
+    ],
+  });
+
+  await SidebarController.toggle();
+  let passwordsMenuItem = document.querySelector("#sidebar-switcher-megalist");
+  ok(
+    passwordsMenuItem.hidden,
+    "Passwords menu item should be hidden for the old sidebar."
+  );
   SidebarController.hide();
 });

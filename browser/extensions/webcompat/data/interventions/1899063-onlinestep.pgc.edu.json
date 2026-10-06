@@ -1,0 +1,18 @@
+{
+  "label": "onlinestep.pgc.edu",
+  "bugs": {
+    "1899063": {
+      "issue": "unsupported-warning",
+      "matches": ["*://onlinestep.pgc.edu/*"]
+    }
+  },
+  "css": {
+    "hide_browser_notice": "div:has(> div > a[href='https://google.com/chrome']) { display: none; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": ["hide_browser_notice"]
+    }
+  ]
+}

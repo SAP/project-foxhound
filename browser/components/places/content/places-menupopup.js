@@ -4,7 +4,6 @@
 
 "use strict";
 
-/* eslint-env mozilla/browser-window */
 /* import-globals-from controller.js */
 
 // On Wayland when D&D source popup is closed,

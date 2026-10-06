@@ -1,0 +1,8 @@
+package test {
+  public class TestClassTwo {
+    method public void testMethod();
+  }
+  public class TestClassOne {
+    method public void testMethod();
+  }
+}

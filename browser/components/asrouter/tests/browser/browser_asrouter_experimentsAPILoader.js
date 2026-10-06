@@ -164,6 +164,7 @@ async function cleanup() {
 /**
  * Assert that a message is (or optionally is not) present in the ASRouter
  * messages list, optionally waiting for it to be present/not present.
+ *
  * @param {string} id message id
  * @param {boolean} [found=true] expect the message to be found
  * @param {boolean} [wait=true] check for the message until found/not found
@@ -261,14 +262,6 @@ add_task(async function test_exposure_ping() {
   });
 
   Assert.strictEqual(exposureSpy.callCount, 1, "Should send exposure ping");
-  const scalars = TelemetryTestUtils.getProcessScalars("parent", true, true);
-  TelemetryTestUtils.assertKeyedScalar(
-    scalars,
-    "telemetry.event_counts",
-    "normandy#expose#nimbus_experiment",
-    1
-  );
-
   exposureSpy.restore();
   await cleanup();
 });

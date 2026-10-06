@@ -18,6 +18,9 @@ object Performance {
 
     private const val EXTRA_IS_PERFORMANCE_TEST = "performancetest"
 
+    /**
+     * Processes the given [bundle] and [context] to determine if the app is being run as a performance test.
+     */
     fun processIntentIfPerformanceTest(bundle: Bundle?, context: Context) = isPerformanceTest(bundle, context)
 
     /**

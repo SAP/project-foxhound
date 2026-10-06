@@ -6,70 +6,67 @@ package org.mozilla.fenix.components.appstate.search
 
 import io.mockk.mockk
 import mozilla.components.browser.state.search.SearchEngine
-import mozilla.components.support.test.ext.joinBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
-import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction.SearchAction.SearchEnded
 import org.mozilla.fenix.components.appstate.AppAction.SearchAction.SearchEngineSelected
 import org.mozilla.fenix.components.appstate.AppAction.SearchAction.SearchStarted
 import org.mozilla.fenix.components.appstate.AppState
+import org.mozilla.fenix.components.appstate.AppStoreReducer
 import org.mozilla.fenix.components.metrics.MetricsUtils
 
 class SearchStateReducerTest {
     @Test
     fun `GIVEN no parameters provided WHEN the search is started THEN update the app state with default search related values`() {
-        val appStore = AppStore()
+        val initialState = AppState()
 
-        appStore.dispatch(SearchStarted()).joinBlocking()
+        val finalState = AppStoreReducer.reduce(initialState, SearchStarted())
 
-        assertEquals(true, appStore.state.searchState.isSearchActive)
-        assertNull(appStore.state.searchState.selectedSearchEngine)
-        assertNull(appStore.state.searchState.sourceTabId)
-        assertEquals(MetricsUtils.Source.NONE, appStore.state.searchState.searchAccessPoint)
+        assertEquals(true, finalState.searchState.isSearchActive)
+        assertNull(finalState.searchState.selectedSearchEngine)
+        assertNull(finalState.searchState.sourceTabId)
+        assertEquals(MetricsUtils.Source.NONE, finalState.searchState.searchAccessPoint)
     }
 
     @Test
     fun `GIVEN search details provided WHEN the search is started THEN update the app state with the provided details`() {
         val sourceTabId = "test"
         val source = MetricsUtils.Source.SUGGESTION
-        val appStore = AppStore()
+        val initialState = AppState()
 
-        appStore.dispatch(SearchStarted(sourceTabId, source)).joinBlocking()
+        val finalState = AppStoreReducer.reduce(initialState, SearchStarted(sourceTabId, source))
 
-        assertEquals(true, appStore.state.searchState.isSearchActive)
-        assertNull(appStore.state.searchState.selectedSearchEngine)
-        assertEquals(sourceTabId, appStore.state.searchState.sourceTabId)
-        assertEquals(source, appStore.state.searchState.searchAccessPoint)
+        assertEquals(true, finalState.searchState.isSearchActive)
+        assertNull(finalState.searchState.selectedSearchEngine)
+        assertEquals(sourceTabId, finalState.searchState.sourceTabId)
+        assertEquals(source, finalState.searchState.searchAccessPoint)
     }
 
     @Test
     fun `WHEN the search is ended THEN reset the search state in the app state`() {
-        val appStore = AppStore(
-            AppState(
-                searchState = SearchState(
-                    isSearchActive = true,
-                    selectedSearchEngine = mockk(),
-                    sourceTabId = "test",
-                    searchAccessPoint = MetricsUtils.Source.ACTION,
-                ),
+        val initialState = AppState(
+            searchState = SearchState(
+                isSearchActive = true,
+                selectedSearchEngine = mockk(),
+                sourceTabId = "test",
+                searchAccessPoint = MetricsUtils.Source.ACTION,
             ),
         )
 
-        appStore.dispatch(SearchEnded).joinBlocking()
+        val finalState = AppStoreReducer.reduce(initialState, SearchEnded)
 
-        assertEquals(SearchState.EMPTY, appStore.state.searchState)
+        assertEquals(SearchState.EMPTY, finalState.searchState)
     }
 
     @Test
     fun `WHEN a new search engine is selected THEN add it in the app state`() {
         val searchEngine: SearchEngine = mockk()
-        val appStore = AppStore()
+        val initialState = AppState()
 
-        appStore.dispatch(SearchEngineSelected(searchEngine, true)).joinBlocking()
+        val finalState = AppStoreReducer.reduce(initialState, SearchEngineSelected(searchEngine, true))
 
-        assertEquals(searchEngine, appStore.state.searchState.selectedSearchEngine?.searchEngine)
-        assertEquals(true, appStore.state.searchState.selectedSearchEngine?.isUserSelected)
+        assertEquals(searchEngine, finalState.searchState.selectedSearchEngine?.searchEngine)
+        assertEquals(true, finalState.searchState.selectedSearchEngine?.isUserSelected)
     }
 }

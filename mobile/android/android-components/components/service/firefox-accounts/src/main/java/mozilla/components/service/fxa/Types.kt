@@ -7,6 +7,7 @@ package mozilla.components.service.fxa
 
 import mozilla.appservices.fxaclient.AccessTokenInfo
 import mozilla.appservices.fxaclient.AccountEvent
+import mozilla.appservices.fxaclient.AttachedClient
 import mozilla.appservices.fxaclient.Device
 import mozilla.appservices.fxaclient.IncomingDeviceCommand
 import mozilla.appservices.fxaclient.Profile
@@ -18,7 +19,7 @@ import mozilla.components.concept.sync.DeviceCapability
 import mozilla.components.concept.sync.DeviceType
 import mozilla.components.concept.sync.OAuthScopedKey
 import mozilla.components.concept.sync.SyncAuthInfo
-import mozilla.components.concept.sync.UserData
+import mozilla.components.concept.sync.TabPrivacy
 import mozilla.appservices.fxaclient.DeviceCapability as RustDeviceCapability
 import mozilla.appservices.fxaclient.DevicePushSubscription as RustDevicePushSubscription
 import mozilla.appservices.sync15.DeviceType as RustDeviceType
@@ -71,6 +72,22 @@ fun AccessTokenInfo.into(): mozilla.components.concept.sync.AccessTokenInfo {
 }
 
 /**
+ * Converts from rust data type to the [mozilla.components.concept.sync.AttachedClient].
+ */
+fun AttachedClient.into(): mozilla.components.concept.sync.AttachedClient {
+    return mozilla.components.concept.sync.AttachedClient(
+        clientId = this.clientId,
+        deviceId = this.deviceId,
+        deviceType = this.deviceType.into(),
+        isCurrentSession = isCurrentSession,
+        name = this.name,
+        createdTime = this.createdTime,
+        lastAccessTime = this.lastAccessTime,
+        scope = this.scope,
+    )
+}
+
+/**
  * Converts a generic [AccessTokenInfo] into a Firefox Sync-friendly [SyncAuthInfo] instance which
  * may be used for data synchronization.
  *
@@ -104,20 +121,6 @@ fun Profile.into(): mozilla.components.concept.sync.Profile {
             )
         },
         displayName = this.displayName,
-    )
-}
-
-/**
- * Converts the android-components defined [UserData] type into
- * the application-services one, so consumers of android-components
- * do not have to know about application services.
- */
-fun UserData.into(): mozilla.appservices.fxaclient.UserData {
-    return mozilla.appservices.fxaclient.UserData(
-        sessionToken,
-        uid,
-        email,
-        verified,
     )
 }
 
@@ -223,6 +226,7 @@ fun TabHistoryEntry.into(): mozilla.components.concept.sync.TabData {
     return mozilla.components.concept.sync.TabData(
         title = this.title,
         url = this.url,
+        privacy = if (this.isPrivate) TabPrivacy.Private else TabPrivacy.Normal,
     )
 }
 
@@ -230,6 +234,7 @@ fun mozilla.components.concept.sync.TabData.into(): TabHistoryEntry {
     return TabHistoryEntry(
         title = this.title,
         url = this.url,
+        isPrivate = this.privacy == TabPrivacy.Private,
     )
 }
 

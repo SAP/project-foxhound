@@ -5,6 +5,8 @@
 package mozilla.components.browser.icons.loader
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import mozilla.components.browser.icons.IconRequest
 import mozilla.components.concept.fetch.Client
 import mozilla.components.concept.fetch.MutableHeaders
@@ -16,10 +18,7 @@ import mozilla.components.support.test.any
 import mozilla.components.support.test.argumentCaptor
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -31,6 +30,8 @@ import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoMoreInteractions
 import java.io.IOException
 import java.io.InputStream
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class HttpIconLoaderTest {
@@ -51,8 +52,8 @@ class HttpIconLoaderTest {
             val server = MockWebServer()
 
             server.enqueue(
-                MockResponse().setBody(
-                    javaClass.getResourceAsStream("/misc/test.txt")!!
+                MockResponse(
+                    body = javaClass.getResourceAsStream("/misc/test.txt")!!
                         .bufferedReader()
                         .use { it.readText() },
                 ),
@@ -71,9 +72,9 @@ class HttpIconLoaderTest {
                     ),
                 )
 
-                assertTrue(result is IconLoader.Result.BytesResult)
+                assertIs<IconLoader.Result.BytesResult>(result)
 
-                val data = (result as IconLoader.Result.BytesResult).bytes
+                val data = result.bytes
 
                 assertTrue(data.isNotEmpty())
 
@@ -90,7 +91,7 @@ class HttpIconLoaderTest {
                     println(headers.name(i) + ": " + headers.value(i))
                 }
             } finally {
-                server.shutdown()
+                server.close()
             }
         }
     }
@@ -258,11 +259,14 @@ class HttpIconLoaderTest {
 
             // Create a mock Response object with the Content-Length header set to a large size
             server.enqueue(
-                MockResponse().setBody(
-                    javaClass.getResourceAsStream("/misc/test.txt")!!
-                        .bufferedReader()
-                        .use { it.readText() },
-                ).addHeader("Content-Length", "2048576"),
+                MockResponse.Builder()
+                    .body(
+                        javaClass.getResourceAsStream("/misc/test.txt")!!
+                            .bufferedReader()
+                            .use { it.readText() },
+                    )
+                    .addHeader("Content-Length", "2048576")
+                    .build(),
             )
 
             server.start()
@@ -278,9 +282,9 @@ class HttpIconLoaderTest {
                     ),
                 )
 
-                assertTrue(result is IconLoader.Result.NoResult)
+                assertIs<IconLoader.Result.NoResult>(result)
             } finally {
-                server.shutdown()
+                server.close()
             }
         }
     }
@@ -296,11 +300,14 @@ class HttpIconLoaderTest {
             val server = MockWebServer()
 
             server.enqueue(
-                MockResponse().setBody(
-                    javaClass.getResourceAsStream("/misc/test.txt")!!
-                        .bufferedReader()
-                        .use { it.readText() },
-                ).addHeader("Content-Length", "10000"),
+                MockResponse.Builder()
+                    .body(
+                        javaClass.getResourceAsStream("/misc/test.txt")!!
+                            .bufferedReader()
+                            .use { it.readText() },
+                    )
+                    .addHeader("Content-Length", "10000")
+                    .build(),
             )
 
             server.start()
@@ -316,9 +323,9 @@ class HttpIconLoaderTest {
                     ),
                 )
 
-                assertTrue(result is IconLoader.Result.NoResult)
+                assertIs<IconLoader.Result.NoResult>(result)
             } finally {
-                server.shutdown()
+                server.close()
             }
         }
     }
@@ -334,11 +341,14 @@ class HttpIconLoaderTest {
             val server = MockWebServer()
 
             server.enqueue(
-                MockResponse().setBody(
-                    javaClass.getResourceAsStream("/misc/test.txt")!!
-                        .bufferedReader()
-                        .use { it.readText() },
-                ).removeHeader("Content-Length"),
+                MockResponse.Builder()
+                    .body(
+                        javaClass.getResourceAsStream("/misc/test.txt")!!
+                            .bufferedReader()
+                            .use { it.readText() },
+                    )
+                    .removeHeader("Content-Length")
+                    .build(),
             )
 
             server.start()
@@ -354,9 +364,9 @@ class HttpIconLoaderTest {
                     ),
                 )
 
-                assertTrue(result is IconLoader.Result.NoResult)
+                assertIs<IconLoader.Result.NoResult>(result)
             } finally {
-                server.shutdown()
+                server.close()
             }
         }
     }
@@ -372,14 +382,15 @@ class HttpIconLoaderTest {
             val server = MockWebServer()
 
             server.enqueue(
-                MockResponse()
-                    .setChunkedBody(
+                MockResponse.Builder()
+                    .chunkedBody(
                         javaClass.getResourceAsStream("/misc/test.txt")!!
                             .bufferedReader()
                             .use { it.readText() },
                         maxChunkSize = 12,
                     )
-                    .removeHeader("Content-Length"),
+                    .removeHeader("Content-Length")
+                    .build(),
             )
 
             server.start()
@@ -394,11 +405,11 @@ class HttpIconLoaderTest {
                         type = IconRequest.Resource.Type.APPLE_TOUCH_ICON,
                     ),
                 )
-                assertTrue("Result should return BytesResult type", result is IconLoader.Result.BytesResult)
-                val data = (result as IconLoader.Result.BytesResult).bytes
+                assertIs<IconLoader.Result.BytesResult>(result, "Result should return BytesResult type")
+                val data = result.bytes
                 assertTrue("Data should not be empty", data.isNotEmpty())
             } finally {
-                server.shutdown()
+                server.close()
             }
         }
     }

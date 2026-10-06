@@ -69,7 +69,7 @@ mutability: `AtomicBool`, `RefCell`, `Cell`, etc. This is because all XPCOM
 objects are reference counted (like `Arc<T>`), so cannot provide exclusive access.
 
 XPCOM methods are unsafe by default, but the
-[xpcom_method!](https://searchfox.org/mozilla-central/source/xpcom/rust/xpcom/src/method.rs)
+[xpcom_method!](https://searchfox.org/firefox-main/source/xpcom/rust/xpcom/src/method.rs)
 macro can be used to clean this up. It also takes care of null-checking and
 hiding pointers behind references, lets you return a `Result` instead of an
 `nsresult,` and so on.
@@ -100,14 +100,14 @@ conversion must be explicit.
 
 The following XPCOM components are written in Rust.
 
-- [kvstore](https://searchfox.org/mozilla-central/source/toolkit/components/kvstore),
+- [kvstore](https://searchfox.org/firefox-main/source/toolkit/components/kvstore),
   which exposes the LMDB key-value store (via the [Rkv
   library](https://docs.rs/rkv)) The API is asynchronous, using `moz_task` to
   schedule all I/O on a background thread, and supports getting, setting, and
   iterating over keys.
-- [cert_storage](https://searchfox.org/mozilla-central/source/security/manager/ssl/cert_storage),
+- [cert_storage](https://searchfox.org/firefox-main/source/security/manager/ssl/cert_storage),
   which stores lists of [revoked intermediate certificates](https://blog.mozilla.org/security/2015/03/03/revoking-intermediate-certificates-introducing-onecrl/).
-- [bookmark_sync](https://searchfox.org/mozilla-central/source/toolkit/components/places/bookmark_sync),
+- [bookmark_sync](https://searchfox.org/firefox-main/source/toolkit/components/places/bookmark_sync),
   which [merges](https://mozilla.github.io/dogear) bookmarks from Firefox Sync
   with bookmarks in the Places database.
   [There's also some docs on how Rust interacts with Sync](/services/sync/rust-engines.rst)

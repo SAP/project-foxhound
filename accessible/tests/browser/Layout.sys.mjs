@@ -142,7 +142,7 @@ export const Layout = {
     let height = 0;
 
     const elm = CommonUtils.getNode(id, doc);
-    const elmWindow = elm.ownerGlobal;
+    const elmWindow = elm.documentGlobal;
     if (elm.localName == "area") {
       const mapName = elm.parentNode.getAttribute("name");
       const selector = `[usemap="#${mapName}"]`;

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,11 +15,8 @@
 #include "js/PropertyAndElement.h"  // JS_DefineElement, JS_DefineFunction, JS_DefineProperty, JS_DefineUCProperty, JS_Enumerate, JS_GetElement, JS_GetProperty, JS_GetPropertyById
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/gfx/GPUProcessManager.h"
-#include "mozilla/Atomics.h"
-#include "mozilla/JSONWriter.h"
 #include "mozilla/StartupTimeline.h"
 #include "mozilla/StaticMutex.h"
-#include "mozilla/Unused.h"
 #include "nsClassHashtable.h"
 #include "nsString.h"
 #include "nsHashKeys.h"
@@ -957,7 +952,8 @@ nsresult internal_GetHistogramsSnapshot(
         continue;
       }
 
-      if (!hArray.emplaceBack(HistogramSnapshotInfo{snapshotData, id})) {
+      if (!hArray.emplaceBack(
+              HistogramSnapshotInfo{std::move(snapshotData), id})) {
         return NS_ERROR_OUT_OF_MEMORY;
       }
 
@@ -1519,15 +1515,13 @@ struct HistogramMarker {
   using MS = mozilla::MarkerSchema;
   static MS MarkerTypeDisplay() {
     MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-    schema.AddKeyLabelFormatSearchable("id", "Histogram Name",
-                                       MS::Format::UniqueString,
-                                       MS::Searchable::Searchable);
+    schema.AddKeyLabelFormat("id", "Histogram Name", MS::Format::UniqueString);
     schema.AddKeyLabelFormat("key", "Key", MS::Format::String);
     schema.AddKeyLabelFormat("val", "Sample", MS::Format::Integer);
     schema.SetTooltipLabel(
         "{marker.data.id}[{marker.data.key}] {marker.data.val}");
     schema.SetTableLabel(
-        "{marker.name} - {marker.data.id}[{marker.data.key}]: "
+        "{marker.data.id}[{marker.data.key}]: "
         "{marker.data.val}");
     return schema;
   }
@@ -1696,13 +1690,9 @@ static constexpr uint32_t HistogramObjectSlotCount =
 
 void internal_JSHistogram_finalize(JS::GCContext*, JSObject*);
 
-static const JSClassOps sJSHistogramClassOps = {nullptr, /* addProperty */
-                                                nullptr, /* delProperty */
-                                                nullptr, /* enumerate */
-                                                nullptr, /* newEnumerate */
-                                                nullptr, /* resolve */
-                                                nullptr, /* mayResolve */
-                                                internal_JSHistogram_finalize};
+static const JSClassOps sJSHistogramClassOps = {
+    .finalize = internal_JSHistogram_finalize,
+};
 
 static const JSClass sJSHistogramClass = {
     "JSHistogram", /* name */
@@ -1946,13 +1936,8 @@ namespace {
 void internal_JSKeyedHistogram_finalize(JS::GCContext*, JSObject*);
 
 static const JSClassOps sJSKeyedHistogramClassOps = {
-    nullptr, /* addProperty */
-    nullptr, /* delProperty */
-    nullptr, /* enumerate */
-    nullptr, /* newEnumerate */
-    nullptr, /* resolve */
-    nullptr, /* mayResolve */
-    internal_JSKeyedHistogram_finalize};
+    .finalize = internal_JSKeyedHistogram_finalize,
+};
 
 static const JSClass sJSKeyedHistogramClass = {
     "JSKeyedHistogram", /* name */

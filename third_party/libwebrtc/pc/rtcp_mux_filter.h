@@ -13,7 +13,7 @@
 
 #include "pc/session_description.h"
 
-namespace cricket {
+namespace webrtc {
 
 // RTCP Muxer, as defined in RFC 5761 (http://tools.ietf.org/html/rfc5761)
 class RtcpMuxFilter {
@@ -37,17 +37,17 @@ class RtcpMuxFilter {
   void SetActive();
 
   // Specifies whether the offer indicates the use of RTCP mux.
-  bool SetOffer(bool offer_enable, webrtc::ContentSource src);
+  bool SetOffer(bool offer_enable, ContentSource src);
 
   // Specifies whether the provisional answer indicates the use of RTCP mux.
-  bool SetProvisionalAnswer(bool answer_enable, webrtc::ContentSource src);
+  bool SetProvisionalAnswer(bool answer_enable, ContentSource src);
 
   // Specifies whether the answer indicates the use of RTCP mux.
-  bool SetAnswer(bool answer_enable, webrtc::ContentSource src);
+  bool SetAnswer(bool answer_enable, ContentSource src);
 
  private:
-  bool ExpectOffer(bool offer_enable, webrtc::ContentSource source);
-  bool ExpectAnswer(webrtc::ContentSource source);
+  bool ExpectOffer(bool offer_enable, ContentSource source);
+  bool ExpectAnswer(ContentSource source);
   enum State {
     // RTCP mux filter unused.
     ST_INIT,
@@ -73,6 +73,7 @@ class RtcpMuxFilter {
   bool offer_enable_;
 };
 
-}  // namespace cricket
+}  //  namespace webrtc
+
 
 #endif  // PC_RTCP_MUX_FILTER_H_

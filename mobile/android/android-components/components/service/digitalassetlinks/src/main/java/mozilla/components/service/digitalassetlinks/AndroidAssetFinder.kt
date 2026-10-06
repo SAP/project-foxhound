@@ -11,7 +11,7 @@ import android.content.pm.Signature
 import android.os.Build
 import android.os.Build.VERSION.SDK_INT
 import androidx.annotation.VisibleForTesting
-import mozilla.components.support.utils.ext.getPackageInfoCompat
+import mozilla.components.support.utils.ext.PackageManagerCompatHelper
 import java.io.ByteArrayInputStream
 import java.security.MessageDigest
 import java.security.NoSuchAlgorithmException
@@ -34,7 +34,7 @@ class AndroidAssetFinder {
      */
     fun getAndroidAppAsset(
         packageName: String,
-        packageManager: PackageManager,
+        packageManager: PackageManagerCompatHelper,
     ): Sequence<AssetDescriptor.Android> {
         return packageManager.getSignatures(packageName).asSequence()
             .mapNotNull { signature -> getCertificateSHA256Fingerprint(signature) }
@@ -65,7 +65,7 @@ class AndroidAssetFinder {
 
     @Suppress("PackageManagerGetSignatures")
     // https://stackoverflow.com/questions/39192844/android-studio-warning-when-using-packagemanager-get-signatures
-    private fun PackageManager.getSignatures(packageName: String): Array<Signature> {
+    private fun PackageManagerCompatHelper.getSignatures(packageName: String): Array<Signature> {
         val packageInfo = getPackageSignatureInfo(packageName) ?: return emptyArray()
 
         val signatures = if (SDK_INT >= Build.VERSION_CODES.P) {
@@ -89,13 +89,13 @@ class AndroidAssetFinder {
     }
 
     @SuppressLint("PackageManagerGetSignatures")
-    private fun PackageManager.getPackageSignatureInfo(packageName: String): PackageInfo? {
+    private fun PackageManagerCompatHelper.getPackageSignatureInfo(packageName: String): PackageInfo? {
         return try {
             if (SDK_INT >= Build.VERSION_CODES.P) {
                 getPackageInfoCompat(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
             } else {
                 @Suppress("Deprecation")
-                getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
+                getPackageInfoCompat(packageName, PackageManager.GET_SIGNATURES)
             }
         } catch (e: PackageManager.NameNotFoundException) {
             // Will return null if there is no package found.

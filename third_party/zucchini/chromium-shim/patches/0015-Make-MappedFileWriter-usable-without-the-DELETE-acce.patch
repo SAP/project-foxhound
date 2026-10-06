@@ -1,0 +1,81 @@
+Make MappedFileWriter usable without the DELETE access right.
+
+This is required for interfacing with our updater code, which creates files
+through the stdio abstractions and cannot have control over the access rights
+for the underlying handle.
+---
+ components/zucchini/mapped_file.cc | 12 ++++++++++++
+ components/zucchini/mapped_file.h  | 11 +++++++++++
+ 2 files changed, 23 insertions(+)
+
+diff --git a/components/zucchini/mapped_file.cc b/components/zucchini/mapped_file.cc
+index afcf630d0250..8dfb9181fb90 100644
+--- a/components/zucchini/mapped_file.cc
++++ b/components/zucchini/mapped_file.cc
+@@ -23,8 +23,14 @@ MappedFileReader::MappedFileReader(base::File file) {
+ 
+ MappedFileWriter::MappedFileWriter(const base::FilePath& file_path,
+                                    base::File file,
++#if defined(MOZ_ZUCCHINI)
++                                   size_t length,
++                                   bool keep)
++    : file_path_(file_path), delete_behavior_(keep ? kKeep : kManualDeleteOnClose) {
++#else
+                                    size_t length)
+     : file_path_(file_path), delete_behavior_(kManualDeleteOnClose) {
++#endif  // defined(MOZ_ZUCCHINI)
+   if (!file.IsValid()) {
+     error_ = "Invalid file.";
+     return;  // |buffer_| will be uninitialized, and therefore invalid.
+@@ -32,12 +38,18 @@ MappedFileWriter::MappedFileWriter(const base::FilePath& file_path,
+ 
+ #if BUILDFLAG(IS_WIN)
+   file_handle_ = file.Duplicate();
++#if defined(MOZ_ZUCCHINI)
++  if (!keep) {
++#endif  // defined(MOZ_ZUCCHINI)
+   // Tell the OS to delete the file when all handles are closed.
+   if (file_handle_.DeleteOnClose(true)) {
+     delete_behavior_ = kAutoDeleteOnClose;
+   } else {
+     error_ = "Failed to mark file for delete-on-close.";
+   }
++#if defined(MOZ_ZUCCHINI)
++  }
++#endif  // defined(MOZ_ZUCCHINI)
+ #endif  // BUILDFLAG(IS_WIN)
+ 
+   bool is_ok = buffer_.Initialize(std::move(file), {0, length},
+diff --git a/components/zucchini/mapped_file.h b/components/zucchini/mapped_file.h
+index 4834d78d25c2..e8230e394dde 100644
+--- a/components/zucchini/mapped_file.h
++++ b/components/zucchini/mapped_file.h
+@@ -40,6 +40,12 @@ class MappedFileReader {
+ 
+ // A file writer wrapper. The target file is deleted on destruction unless
+ // Keep() is called.
++#if defined(MOZ_ZUCCHINI)
++// Calling the constructor with |keep| set to true also prevents deletion on
++// destruction. On Windows, this is the only valid way to use a
++// MappedFileWriter if the handle behind |file| was not created with the DELETE
++// access right.
++#endif  // defined(MOZ_ZUCCHINI)
+ class MappedFileWriter {
+  public:
+   // Maps |file| to memory for writing. |file_path| is needed for auto delete on
+@@ -47,7 +53,12 @@ class MappedFileWriter {
+   // available via HasError() and error().
+   MappedFileWriter(const base::FilePath& file_path,
+                    base::File file,
++#if defined(MOZ_ZUCCHINI)
++                   size_t length,
++                   bool keep = false);
++#else
+                    size_t length);
++#endif  // defined(MOZ_ZUCCHINI)
+   MappedFileWriter(const MappedFileWriter&) = delete;
+   const MappedFileWriter& operator=(const MappedFileWriter&) = delete;
+   ~MappedFileWriter();
+-- 
+2.42.0.windows.2
+

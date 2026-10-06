@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,26 +6,24 @@
 
 #include <stdint.h>  // uint32_t
 
+#include "mozilla/Assertions.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/Services.h"
+#include "mozilla/dom/WindowGlobalParent.h"
+#include "mozilla/net/HttpBaseChannel.h"
 #include "nsCOMPtr.h"
+#include "nsContentSecurityUtils.h"
 #include "nsContentUtils.h"
 #include "nsDebug.h"
 #include "nsError.h"
-#include "nsHttpChannel.h"
-#include "nsContentSecurityUtils.h"
 #include "nsGlobalWindowOuter.h"
+#include "nsHttpChannel.h"
 #include "nsIContentPolicy.h"
+#include "nsIObserverService.h"
 #include "nsIScriptError.h"
 #include "nsLiteralString.h"
-#include "nsTArray.h"
 #include "nsStringFwd.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/dom/WindowGlobalParent.h"
-#include "mozilla/net/HttpBaseChannel.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/Services.h"
-#include "mozilla/Unused.h"
-
-#include "nsIObserverService.h"
+#include "nsTArray.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -56,8 +52,8 @@ void FramingChecker::ReportError(const char* aMessageTag,
   params.AppendElement(NS_ConvertUTF8toUTF16(spec));
 
   httpChannel->AddConsoleReport(nsIScriptError::errorFlag, "X-Frame-Options"_ns,
-                                nsContentUtils::eSECURITY_PROPERTIES, spec, 0,
-                                0, nsDependentCString(aMessageTag), params);
+                                PropertiesFile::SECURITY_PROPERTIES, spec, 0, 0,
+                                nsDependentCString(aMessageTag), params);
 
   // we are notifying observers for testing purposes because there is no event
   // to gather that an iframe load was blocked or not.
@@ -135,8 +131,7 @@ bool FramingChecker::CheckFrameOptions(nsIChannel* aChannel,
   }
 
   nsAutoCString xfoHeaderValue;
-  Unused << httpChannel->GetResponseHeader("X-Frame-Options"_ns,
-                                           xfoHeaderValue);
+  (void)httpChannel->GetResponseHeader("X-Frame-Options"_ns, xfoHeaderValue);
 
   // Step 10. (paritally) if the only header we received was empty, then we
   // process it as if it wasn't sent at all.

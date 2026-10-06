@@ -106,6 +106,10 @@ class FetchDownloadManager<T : AbstractFetchDownloadService>(
         }
     }
 
+    override fun registerListeners() {
+        registerBroadcastReceiver()
+    }
+
     private fun registerBroadcastReceiver() {
         if (!isSubscribedReceiver) {
             val filter = IntentFilter(ACTION_DOWNLOAD_COMPLETE)

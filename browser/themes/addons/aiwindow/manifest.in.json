@@ -1,0 +1,77 @@
+{
+  "manifest_version": 2,
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "firefox-aiwindow@mozilla.org"
+    }
+  },
+
+  "name": "Firefox AI Window",
+  "description": "Base theme for AI Window",
+  "author": "Mozilla",
+  "version": "1.0.0",
+
+  "theme": {
+    "properties": {
+      "color_scheme": "light",
+      "link_color": "#623ac3",
+      "ai_background_color": "#f5f4fe"
+    },
+    "colors": {
+      "frame": "#f5f4fe",
+      "toolbar": "transparent",
+      "tab_background_text": "#15141A",
+      "toolbar_text": "rgba(21, 20, 26, 0.69)",
+      "icon_color": "#5B5B66",
+      "toolbar_field_text": "rgba(21, 20, 26, 0.69)",
+      "toolbar_field_text_focus": "rgba(21, 20, 26, 1)",
+      "toolbar_bottom_separator": "transparent",
+      "toolbar_top_separator": "transparent",
+      "tab_line": "white",
+      "tab_selected": "rgba(255, 255, 255, 0.3)",
+      "popup": "white",
+      "popup_highlight": "#efe9ff",
+      "popup_highlight_text": "rgba(21, 20, 26, 1)",
+      "popup_text": "rgba(21, 20, 26, 1)"
+    }
+  },
+
+  "dark_theme": {
+    "properties": {
+      "link_color": "#ae90fe",
+      "ai_background_color": "#1d1f30"
+    },
+    "colors": {
+      "frame": "#1d1f30",
+      "toolbar": "transparent",
+      "tab_background_text": "#E1DCF7",
+      "toolbar_text": "#E4DCF7",
+      "icon_color": "#E4DCF7",
+      "toolbar_field_text": "#E4DCF7",
+      "toolbar_field_text_focus": "#E4DCF7",
+      "toolbar_field": "#191622",
+      "toolbar_field_border": "rgba(191, 191, 191, 0.40)",
+      "toolbar_field_border_focus": "rgba(191, 191, 191, 0.60)",
+      "toolbar_field_focus": "#191622",
+      "toolbar_bottom_separator": "transparent",
+      "toolbar_top_separator": "transparent",
+      "tab_background_separator": "transparent",
+      "tab_line": "rgba(191, 191, 191, 0.4)",
+      "tab_selected": "transparent",
+      "popup": "#191622",
+      "popup_border": "rgba(240, 240, 244, 0.4)",
+      "popup_highlight": "rgba(160, 140, 212, 0.24)",
+      "popup_highlight_text": "#D3C9EF",
+      "popup_text": "#D3C9EF"
+    }
+  },
+
+  "theme_experiment": {
+    "stylesheet": "aiwindow-theme.css",
+    "properties": {
+      "link_color": "--link-color",
+      "ai_background_color": "--ai-background-color"
+    }
+  }
+}

@@ -12,7 +12,7 @@
   margin-block: 2em 1em;
   font-size: large;
   text-align: start;
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 button {
@@ -39,7 +39,7 @@ td.integer {
   --codec-bg-unsupported-odd: #ffbdc5;
   --codec-text-name-even: var(--table-row-background-color);
   --codec-text-name-odd: var(--table-row-background-color-alternate);
-  --codec-text-other: var(--in-content-text-color);
+  --codec-text-other: var(--text-color);
   --codec-text-supported: #15141a;
   --codec-text-unsupported: #15141a;
 }
@@ -68,7 +68,7 @@ td.integer {
 #codec-table td:first-child {
   text-align: start;
   unicode-bidi: normal;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 #codec-table tr:nth-child(even) {
@@ -88,7 +88,7 @@ td.integer {
 }
 
 #codec-table tr > td.lack-of-extension {
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
 }
 
 #codec-table tr:nth-child(even) > td.unsupported {
@@ -150,11 +150,6 @@ td.integer {
   width: 20%;
 }
 
-#reset-box,
-#safe-mode-box {
-  display: none;
-}
-
 #reset-box > h3 {
   margin-top: 0;
 }
@@ -169,10 +164,6 @@ td.integer {
   overflow: auto;
   text-align: left;
   direction: ltr;
-}
-
-.hidden {
-  display: none;
 }
 
 #sandbox-tbody tr > td.feature-unavailable {

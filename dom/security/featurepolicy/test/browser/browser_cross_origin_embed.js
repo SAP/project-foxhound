@@ -44,9 +44,11 @@ add_task(async () => {
       });
 
       await notificationShown;
-      notificationPopup
-        .querySelector("button.popup-notification-primary-button")
-        .click();
+      const primaryButton = notificationPopup.querySelector(
+        ".popup-notification-primary-button"
+      );
+      await primaryButton.updateComplete;
+      primaryButton.click();
 
       await notificationHidden;
 

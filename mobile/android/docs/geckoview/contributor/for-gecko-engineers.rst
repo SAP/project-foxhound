@@ -1,5 +1,3 @@
-.. -*- Mode: rst; fill-column: 80; -*-
-
 =============================
 GeckoView For Gecko Engineers
 =============================
@@ -26,7 +24,7 @@ served by our general bootstrapping guide. If you are looking to
 contribute to front-end development of one of Mozilla’s Android
 browsers, you’re likely better off starting with their codebase and
 returning here only if actual GeckoView changes are needed. See, for
-example, `Fenix on Mozilla Central <https://searchfox.org/mozilla-central/source/mobile/android/fenix>`_.
+example, :searchfox:`Fenix on Mozilla Central <mobile/android/fenix>`.
 
 What to do if this guide contains bugs or leads you astray: The quickest
 way to get a response is to ask generally on #gv on Mozilla Slack;

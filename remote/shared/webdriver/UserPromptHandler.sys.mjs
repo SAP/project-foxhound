@@ -65,6 +65,8 @@ export const PromptTypes = {
   // specifying the unhandlePromptBehavior capability with a map containing a
   // "default" entry. See FALLBACK_DEFAULT_PROMPT_TYPE.
   Default: "default",
+  // A file picker dialog
+  File: "file",
   // A simple prompt dialog
   Prompt: "prompt",
 };

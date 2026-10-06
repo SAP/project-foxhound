@@ -34,7 +34,7 @@
         const canvas = document.querySelector('canvas');
         const adapter = await navigator.gpu?.requestAdapter({ });
 
-        const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
+        let presentationFormat = navigator.gpu.getPreferredCanvasFormat();
         if (presentationFormat != 'rgba8unorm' && presentationFormat != 'bgra8unorm') {
           throw new Error('Unsupported presentation format: ' + presentationFormat);
         }

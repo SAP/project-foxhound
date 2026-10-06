@@ -1,17 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ChromeWorker.h"
 
+#include "WorkerPrivate.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/WorkerBinding.h"
 #include "nsContentUtils.h"
 #include "nsIXPConnect.h"
-#include "WorkerPrivate.h"
 
 namespace mozilla::dom {
 
@@ -25,7 +23,7 @@ already_AddRefed<ChromeWorker> ChromeWorker::Constructor(
       AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdown)) {
     NS_WARNING("ChromeWorker construction during shutdown");
     nsCOMPtr<nsIXPConnect> xpc = nsIXPConnect::XPConnect();
-    Unused << xpc->DebugDumpJSStack(true, true, false);
+    (void)xpc->DebugDumpJSStack(true, true, false);
   }
 
   JSContext* cx = aGlobal.Context();

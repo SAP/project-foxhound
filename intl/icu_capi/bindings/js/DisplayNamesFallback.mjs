@@ -3,11 +3,12 @@ import wasm from "./diplomat-wasm.mjs";
 import * as diplomatRuntime from "./diplomat-runtime.mjs";
 
 
+
 /**
- * See the [Rust documentation for `Fallback`](https://docs.rs/icu/latest/icu/experimental/displaynames/options/enum.Fallback.html) for more information.
+ * 🚧 This API is experimental and may experience breaking changes outside major releases.
+ *
+ * See the [Rust documentation for `Fallback`](https://docs.rs/icu/2.1.1/icu/experimental/displaynames/enum.Fallback.html) for more information.
  */
-
-
 export class DisplayNamesFallback {
     #value = undefined;
 
@@ -45,6 +46,7 @@ export class DisplayNamesFallback {
         throw TypeError(value + " is not a DisplayNamesFallback and does not correspond to any of its enumerator values.");
     }
 
+    /** @internal */
     static fromValue(value) {
         return new DisplayNamesFallback(value);
     }
@@ -53,6 +55,7 @@ export class DisplayNamesFallback {
         return [...DisplayNamesFallback.#values.keys()][this.#value];
     }
 
+    /** @internal */
     get ffiValue(){
         return this.#value;
     }

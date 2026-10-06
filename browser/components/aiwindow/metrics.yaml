@@ -1,0 +1,1492 @@
+# This Source Code Form is subject to the terms of the Mozilla Public↩
+# License, v. 2.0. If a copy of the MPL was not distributed with this↩
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Adding a new metric? We have docs for that!
+# https://firefox-source-docs.mozilla.org/toolkit/components/glean/user/new_definitions_file.html
+
+---
+$schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
+$tags:
+  - "Core :: Machine Learning"
+
+smart_window:
+  chat_submit:
+    type: event
+    description: |
+      Recorded when the user submits a chat entry
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2015626
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009615
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D282873
+    data_sensitivity:
+      - interaction
+    notification_emails: &emails
+      - firefox-ai-and-ml@mozilla.com
+    expires: never
+    extra_keys:
+      chat_id: &chat_id
+        type: string
+        description: >
+          UUID for this smart window session. Unique identifier for each chat conversation
+      detected_intent: &detected_intent
+        type: string
+        description: >
+          What was the detected intent for the request: navigate, search, chat, or action
+      length: &length
+        type: quantity
+        unit: characters
+        description: >
+          Number of characters submitted
+      location: &location
+        type: string
+        description: >
+          Which input was used: fullpage, sidebar, or urlbar
+      mentions:
+        type: quantity
+        unit: count
+        description: >
+          Number of mentions in the request
+      message_seq: &message_seq
+        type: quantity
+        unit: count
+        description: >
+          Number of messages in that chat
+      model: &model
+        type: string
+        description: >
+          Model selected by the user
+      submit_type: &submit_type
+        type: string
+        description: >
+          How the request was submitted: button, enter, follow-up, shortcuts, starter, or suggestion
+      tabs:
+        type: quantity
+        unit: count
+        description: >
+          Number of tabs selected
+      turn_number: &turn_number
+        type: quantity
+        unit: count
+        description: >
+          Current chat turn number
+      chat_version: &chat_version
+        type: string
+        description: >
+          Version of chat prompt used for this request
+
+  search_submit:
+    type: event
+    description: |
+      Recorded when the user runs a search query
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009615
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D288855
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      chat_id: *chat_id
+      detected_intent: *detected_intent
+      length: *length
+      location: *location
+      message_seq: *message_seq
+      model: *model
+      provider:
+        type: string
+        description: >
+          Search provider used in the request
+      submit_type: *submit_type
+
+  navigate_submit:
+    type: event
+    description: |
+      Recorded when the user navigates to a URL
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009615
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D288855
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      chat_id: *chat_id
+      detected_intent: *detected_intent
+      length: *length
+      location: *location
+      message_seq: *message_seq
+      model: *model
+      submit_type: *submit_type
+
+  # Chat Assistant
+  chat_previous_session:
+    type: event
+    description: |
+      User clicks on previous session button
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2022629
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D287197
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      tabs:
+        type: quantity
+        unit: count
+        description: >
+          Number of tabs restored
+
+  history_displayed:
+    type: event
+    description: |
+      Results from Ask History are displayed to the user
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2022629
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D287197
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+      total: &total
+        type: quantity
+        unit: count
+        description: >
+          Number of history entries displayed
+      reason: &history_reason
+        type: string
+        description: >
+          What triggered the history display: ask or restore
+
+  history_click:
+    type: event
+    description: |
+      User clicks on a history result
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2022629
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D287197
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+      total: *total
+      position: &position
+        type: quantity
+        unit: count
+        description: >
+          Position of the entry that was clicked
+
+  chat_retrieved:
+    type: event
+    description: |
+      User retrieves a chat from history
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2022629
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D287197
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+      time_delta:
+        type: quantity
+        unit: ms
+        description: >
+          Elapsed time in milliseconds between last updated chat session completion and retrieval
+
+  quick_prompt_displayed:
+    type: event
+    description: |
+      User is presented with one or more quick prompts
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2022629
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D282482
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+      prompts:
+        type: quantity
+        unit: count
+        description: >
+          Number of prompts displayed
+
+  quick_prompt_clicked:
+    type: event
+    description: |
+      Recorded when the user selects a prompt suggestion in smart window mode
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2022629
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D282482
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+      starter: &starter
+        type: boolean
+        description: >
+          Boolean indicating if the prompt is a conversation starter, as opposed to a follow-up
+
+  get_page_content:
+    type: event
+    description: |
+      Browser reads the contents of a tab to include in chat result
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2022629
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D287197
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+      length:
+        type: quantity
+        unit: count
+        description: >
+          Number of characters read from the page
+      time:
+        type: quantity
+        unit: ms
+        description: >
+          Time to process the request
+
+  link_click:
+    type: event
+    description: |
+      User clicks a link within the response
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2022629
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D287197
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+
+  memory_removed_panel:
+    type: event
+    description: |
+      User removes a single memory from the memories panel
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2022629
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D287197
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      memories:
+        type: quantity
+        unit: count
+        description: >
+          Total number of memories still present after the removal
+      trigger:
+        type: string
+        description: >
+          The location where the removal occurred (assistant, settings)
+      in_use:
+        type: quantity
+        unit: count
+        description: >
+          Number of memories still applied to the assistant message after the removal. Null when the trigger is "settings"
+
+  memory_applied:
+    type: event
+    description: |
+      Triggered when a memory is used as part of query to provide response/results to user
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2022629
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D287197
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+
+  memory_applied_click:
+    type: event
+    description: |
+      User clicks on memories applied tooltip
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2022629
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D287197
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+
+  retry_no_memories:
+    type: event
+    description: |
+      User selects retry without memories
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2022629
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D287197
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+
+  memories_toggle:
+    type: event
+    description: |
+      Recorded when the user clicks the toggle to turn memories on or off for that chat
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2022629
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D287197
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+      memories:
+        type: quantity
+        unit: count
+        description: >
+          Total number of memories available
+      toggle: &toggle
+        type: boolean
+        description: >
+          Whether the memories feature is enabled or not. True for turning on and false for turning off
+
+  search_handoff:
+    type: event
+    description: |
+      A search toolcall is made due to assistant requiring more information to respond to a prompt
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2024869
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D287975
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+      provider:
+        type: string
+        description: >
+          The provider used for the search handoff, for example "google" or "bing"
+      model:
+        type: string
+        description: >
+          Model selected by the user
+
+  model_request:
+    type: event
+    description: |
+      A request is made to the backend model
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2021947
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D287710
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+      request_id: &request_id
+        type: string
+        description: >
+          Identifier to be used to cross reference with backend telemetry
+      detected_intent: *detected_intent
+      intent: &intent
+        type: string
+        description: >
+          Intent of the request
+      tokens: &tokens
+        type: quantity
+        unit: count
+        description: >
+          number of tokens processed to fulfill the request
+      memories:
+        type: quantity
+        unit: count
+        description: >
+          Number of memories included in the response
+
+  model_response:
+    type: event
+    description: |
+      A response is received from the backend model
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2021947
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035241
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2040801
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D287710
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+      request_id: *request_id
+      intent: *intent
+      tokens: *tokens
+      memories:
+        type: quantity
+        unit: count
+        description: >
+          Number of memories included in the response
+      latency:
+        type: quantity
+        unit: ms
+        description: >
+          Time in ms to start processing the request
+      duration:
+        type: quantity
+        unit: ms
+        description: >
+          Time in ms to process the request
+      error: &error
+        type: string
+        description: >
+          Canonical chat error name, or empty on success
+      http_status:
+        type: quantity
+        unit: count
+        description: >
+          HTTP status from the inference back-end, or 0 if no response
+      model: *model
+      is_retry:
+        type: boolean
+        description: >
+          True when this response (success or failure) was produced by a
+          user-initiated retry of a previous turn
+
+  chat_storage:
+    type: quantity
+    unit: bytes
+    description: |
+      Size of the chat storage
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2024507
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D288707
+    data_sensitivity:
+      - technical
+    notification_emails: *emails
+    expires: never
+
+  memories_count:
+    type: labeled_quantity
+    description: |
+      Number of memories stored for a user, split by source
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2024507
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D288707
+    data_sensitivity:
+      - technical
+    notification_emails: *emails
+    expires: never
+    labels:
+      - history
+      - conversation
+
+  memories_last_updated:
+    type: datetime
+    description: |
+      Date when memories were last updated
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2024507
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D288707
+    data_sensitivity:
+      - technical
+    notification_emails: *emails
+    expires: never
+
+  onboarding_screen_impression:
+    type: event
+    description: |
+      Recorded when onboarding screen is displayed in smart window mode
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009613
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009613
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    extra_keys:
+      message_id:
+        description: >
+          Identifier for the onboarding screen that is displayed, for example
+          'AI_WINDOW_WELCOME_0_AI_WINDOW_INTRO_WW' for the welcome screen,
+          'AI_WINDOW_WELCOME_1_AI_WINDOW_CHOOSE_MODEL_WW' for the model selection screen
+        type: string
+    expires: never
+
+  onboarding_model_selected:
+    type: event
+    description: |
+      Recorded when user selects a model for Smart Window during onboarding
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009613
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009613
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    extra_keys:
+      model:
+        description: >
+          Identifier for the model tile clicked by the user during onboarding,
+          for example: '1', '2', '3'
+        type: string
+    expires: never
+
+  onboarding_model_navigate:
+    type: event
+    description: |
+      Recorded when user clicks next on the model selection screen
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009613
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009613
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    extra_keys:
+      model:
+        description: >
+          Identifier for the selected model during onboarding when user clicks done,
+          for example: '1', '2', '3'
+        type: string
+    expires: never
+
+  onboarding_memories_navigate:
+    type: event
+    description: |
+      Recorded when user clicks next on the memories onboarding screen
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2032998
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2044126
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D296747
+      - https://phabricator.services.mozilla.com/D304658
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    extra_keys:
+      source:
+        description: >
+          Comma-separated list of memory checkbox ids the user had selected
+          when clicking next, for example: 'memories-chats,memories-browsing'.
+          Empty string if the user deselects all options
+        type: string
+    expires: never
+
+  onboarding_memories_settings:
+    type: event
+    description: |
+      Records memories checklist selections made by user on the memories onboarding screen
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2032998
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2032998
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    extra_keys:
+      source:
+        description: >
+          Comma-separated list of memory checkbox ids the user had selected
+          when clicking done, for example: 'memories-chats,memories-browsing'.
+          Empty string if the user deselects all options
+        type: string
+    expires: never
+
+  onboarding_setdefault_navigate:
+    type: event
+    description: |
+      Recorded when user clicks done on the set default onboarding screen
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037220
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2044126
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D300448
+      - https://phabricator.services.mozilla.com/D304658
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    extra_keys:
+      source:
+        description: >
+          Comma-separated list of set default checkbox ids the user had selected
+          when clicking done, for example: 'set-default-window'.
+          Empty string if the user deselects all options
+        type: string
+    expires: never
+
+  onboarding_setdefault_settings:
+    type: event
+    description: |
+      Records set default checklist selections made by user on the set default onboarding screen
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037220
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037220
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    extra_keys:
+      source:
+        description: >
+          Comma-separated list of set default checkbox ids the user had selected
+          when clicking done, for example: 'set-default-window'.
+          Empty string if the user deselects all options
+        type: string
+    expires: never
+
+  onboarding_back_navigate:
+    type: event
+    description: |
+      Recorded when user clicks back on an onboarding screen
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037220
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037220
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    extra_keys:
+      message_id:
+        description: >
+          Identifier of the onboarding screen the user navigated back from
+        type: string
+    expires: never
+
+  onboarding_complete:
+    type: event
+    description: |
+      Indicates if user completed onboarding successfully
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009613
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2044126
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D287028
+      - https://phabricator.services.mozilla.com/D304658
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    extra_keys:
+      model:
+        description: >
+          Final model selected on the model onboarding screen,
+          for example: '1', '2', '3'
+        type: string
+      memory_source:
+        description: >
+          Final value from the last memories navigate, a comma-separated list
+          of memory checkbox ids the user had selected, for example:
+          'memories-chats,memories-browsing'. Empty string if the user
+          deselects all options
+        type: string
+      setdefault_source:
+        description: >
+          Final value from the last set default navigate, a comma-separated
+          list of set default checkbox ids the user had selected, for example:
+          'set-default-window'. Empty string if the user deselects all options
+        type: string
+    expires: never
+
+  open_window:
+    type: event
+    description: |
+      Recorded when a Smart Window is opened
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009610
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037980
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D285902
+      - https://phabricator.services.mozilla.com/D299196
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    extra_keys:
+      trigger:
+        type: string
+        description: >
+          The reason the Smart Window was opened. One of: switch, menu, new_window, open_browser, undo_close, or keyboard_shortcut
+      fxa:
+        type: boolean
+        description: >
+          Whether the user is signed in to their Firefox Account
+      onboarding:
+        type: boolean
+        description: >
+          Whether the user saw firstrun onboarding when opening Smart Window. True if onboarding has not yet been completed.
+      opened_tabs:
+        type: quantity
+        unit: count
+        description: >
+          Number of tabs the user had opened when they switched to Smart window if the switch was used
+    expires: never
+
+  classic_switch:
+    type: event
+    description: |
+      The user switches from Smart Window to classic mode
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2024069
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037980
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D290316
+      - https://phabricator.services.mozilla.com/D299196
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    extra_keys:
+      duration_ms: &opened_duration_ms
+        type: quantity
+        unit: ms
+        description: >
+          The amount of time in Ms since the user opened the SmartWindow
+      opened_tabs:
+        type: quantity
+        unit: count
+        description: >
+          Number of tabs the user had opened when they switched to Classic window
+    expires: never
+
+  close_window:
+    type: event
+    description: |
+      Recorded when an active Smart Window is closed
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037980
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D299196
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    extra_keys:
+      duration_ms: *opened_duration_ms
+      opened_tabs:
+        type: quantity
+        unit: count
+        description: >
+          Number of tabs the user had opened when they closed the window
+    expires: never
+
+  uri_load:
+    type: event
+    description: |
+      User opens a URI in the Smart Window (includes session restore and external link). This event is sent at most once per hour to indicate Smart Window activity.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009610
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D285902
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    extra_keys:
+      model:
+        type: string
+        description: >
+          The name of the model selected during firstrun (e.g., "gemini-2.5-flash-lite").
+          "custom-model" if a custom model override is set. Empty string if firstrun
+          was not completed.
+    expires: never
+
+  sidebar_open:
+    type: event
+    description: |
+      Recorded when the Smart Window sidebar is opened
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009610
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D285902
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    extra_keys:
+      chat_id: *chat_id
+      message_seq: &sidebar_message_seq
+        type: quantity
+        unit: count
+        description: >
+          Number of messages in the conversation at the time the sidebar was opened or closed
+    expires: never
+
+  sidebar_close:
+    type: event
+    description: |
+      Recorded when the Smart Window sidebar is closed
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009610
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D285902
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    extra_keys:
+      chat_id: *chat_id
+      message_seq: *sidebar_message_seq
+    expires: never
+
+  tabs_opened:
+    type: counter
+    description: |
+      The number of Smart Window tabs opened in the current ping session
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009610
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D285902
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+
+  memories_nuke:
+    type: event
+    description: |
+      User clicks on “Delete all” button for memories
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009612
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D288768
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+
+  settings_memories:
+    type: event
+    description: |
+      User interacts with the checkboxes to change memories settings
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009612
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D288768
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      type:
+        type: string
+        description: >
+          chat or browsing
+      enabled:
+        type: boolean
+        description: >
+          Boolean indicating if that type of memory was enabled or disabled
+
+  settings_model:
+    type: event
+    description: |
+      User selects a different model from the settings page
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009612
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D288768
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      previous_model:
+        type: string
+        description: >
+          The model that was previously selected
+      new_model:
+        type: string
+        description: >
+          The new model that was selected
+
+  memories_panel_displayed:
+    type: event
+    description: |
+      User opens the memories preferences panel
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009612
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D288768
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      source:
+        type: string
+        description: >
+          Where the panel was opened from
+      memories:
+        type: quantity
+        unit: count
+        description: >
+          Number of memories available
+
+  model:
+    type: string
+    description: |
+      Records the model selected by the user, or “custom-model”
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009612
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D288768
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+
+  intent_change_preview:
+    type: event
+    description: |
+      Recorded when the smartbar action menu is opened
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009615
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D288855
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      chat_id: *chat_id
+      current_intent:
+        type: string
+        description: >
+          The current intent action: chat, search, navigate, or empty string
+      location: *location
+      message_seq: *message_seq
+
+  mention_start:
+    type: event
+    description: |
+      Recorded when the user brings up a list of inline mentions by typing `@`
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009615
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D288855
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      chat_id: *chat_id
+      location: *location
+      mentions_available:
+        type: quantity
+        unit: count
+        description: >
+          Number of mention suggestions shown
+      message_seq: *message_seq
+
+  mention_select:
+    type: event
+    description: |
+      Recorded when the user selects an inline mention from the list of suggestions
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009615
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D288855
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      chat_id: *chat_id
+      length:
+        type: quantity
+        unit: characters
+        description: >
+          Number of characters in the mention
+      location: *location
+      mentions_available:
+        type: quantity
+        unit: count
+        description: >
+          Number of mention suggestions available
+      message_seq: *message_seq
+
+  mention_remove:
+    type: event
+    description: |
+      Recorded when an inline mention is removed
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009615
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D288855
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      chat_id: *chat_id
+      location: *location
+      mentions:
+        type: quantity
+        unit: count
+        description: >
+          Number of inline mentions still included in the input
+      message_seq: *message_seq
+
+  add_tabs_click:
+    type: event
+    description: |
+      Recorded when the user clicks the "+"-menu
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009615
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D288855
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      chat_id: *chat_id
+      location: *location
+      message_seq: *message_seq
+      tabs_available: &tabs_available
+        type: quantity
+        unit: count
+        description: >
+          Number of tabs available
+      tabs_preselected: &tabs_preselected
+        type: quantity
+        unit: count
+        description: >
+          Number of tabs pre-selected
+
+  add_tabs_selection:
+    type: event
+    description: |
+      Recorded when the user selected a tab
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009615
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D288855
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      chat_id: *chat_id
+      location: *location
+      message_seq: *message_seq
+      tabs_available: *tabs_available
+      tabs_preselected: *tabs_preselected
+      tabs_selected: &tabs_selected
+        type: quantity
+        unit: count
+        description: >
+          Number of tabs selected at the end
+
+  remove_tab:
+    type: event
+    description: |
+      Recorded when the user removes a tab
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2009615
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D288855
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      chat_id: *chat_id
+      location: *location
+      message_seq: *message_seq
+      tabs_selected: *tabs_selected
+
+  memories_optin:
+    type: labeled_boolean
+    labels:
+      - generate_from_conversation
+      - generate_from_history
+    description: |
+      Records if the user is currently opted-in for memories from chat or from browsing.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2027892
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D291280
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+
+  set_default_optin:
+    type: boolean
+    description: |
+      Records if the user currently has the Smart Window set as the default window.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2044126
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D304658
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+
+  llmaj_based_telemetry:
+    type: event
+    description: |
+      Privacy preserving LLM as judge-based chat telemetry for Smart Window.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035338
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D297374
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - firefox-ai-and-ml@mozilla.com
+    expires: never
+    extra_keys:
+      chat_id: *chat_id
+      model: *model
+      turn_number: *turn_number
+      chat_version: *chat_version
+      telemetry_version:
+        type: string
+        description: >
+          Version of telemetry
+      telemetry_name:
+        type: string
+        description: >
+          Name of telemetry
+      record_type:
+        type: string
+        description: >
+          Type of telemetry record: state or terminal.
+      uniform_sampled:
+        type: boolean
+        description: >
+          Whether this record was included by uniform sampling.
+      uniform_sampling_probability:
+        type: quantity
+        unit: permille
+        description: >
+          Sampling probability scaled by 1,000. For example, 0.25 is recorded as 250.
+      trigger_sampled:
+        type: boolean
+        description: >
+          Whether this record was included by triggers.
+      trigger_sampling_probability:
+        type: quantity
+        unit: permille
+        description: >
+          Sampling probability scaled by 1,000. For example, 0.25 is recorded as 250.
+      triggers:
+        type: string
+        description: >
+          List of trigger objects in a json string
+      attribute_name:
+        type: string
+        description: >
+          Attribute names including was_successful, conversation_topic, memory_referenced, etc.
+      attribute_value:
+        type: string
+        description: >
+          Value of the attribute, note that original boolean value would be stored as string (true/false)
+
+  browser_action_prompt:
+    type: event
+    description: |
+      Displays a disambiguation picker, batch preview, or safety confirmation before acting.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037203
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037203
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+      action_type:
+        type: string
+        description: Type of browser action requested
+      prompt_type:
+        type: string
+        description: Type of prompt shown - disambiguation, batch_preview, or safety_confirmation
+      reason:
+        type: string
+        description: Why the prompt was shown - multiple_matches, low_confidence, batch_action, pinned_tab, active_tab, last_tab
+      candidates:
+        type: quantity
+        unit: count
+        description: Number of candidate tabs shown
+      preselected:
+        type: quantity
+        unit: count
+        description: Number of tabs preselected
+
+  browser_action_prompt_response:
+    type: event
+    description: |
+      User responds to a disambiguation picker, batch preview, or safety confirmation.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037203
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037203
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+      action_type:
+        type: string
+        description: >
+          Type of browser action requested
+      prompt_type:
+        type: string
+        description: >
+          Type of prompt shown: disambiguation, batch_preview, or safety_confirmation
+      response:
+        type: string
+        description: >
+          User response: select, confirm, cancel, or dismiss
+      selected:
+        type: quantity
+        unit: count
+        description: >
+          Number of tabs selected or confirmed
+      reason:
+        type: string
+        description: >
+          Reason the original prompt was shown
+
+  browser_action_undo:
+    type: event
+    description: |
+      User clicks Undo after a successful tab-close action.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037203
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037203
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+      action_type:
+        type: string
+        description: >
+          Type of browser action that was undone
+      tabs_restored:
+        type: quantity
+        unit: count
+        description: >
+          Number of tabs restored
+      time_delta:
+        type: quantity
+        unit: ms
+        description: >
+          Time in ms between action completion and Undo click
+      result:
+        type: string
+        description: >
+          Undo result: success, partial_success, or error
+      error:
+        type: string
+        description: >
+          Error code if Undo was not successful
+
+  browser_action_submit:
+    type: event
+    description: |
+      Recorded when the model invokes a browser action tool (e.g., manage_tabs).
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037203
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037203
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+      model: *model
+      prompt_version: &prompt_version
+        type: string
+        description: >
+          Major version of the chat prompt used for this request.
+      submit_type: *submit_type
+      action_type:
+        type: string
+        description: >
+          How the action was triggered: tab_mention, description, or unsupported.
+      tabs_open:
+        type: quantity
+        unit: count
+        description: >
+          Number of tabs open at submit time.
+      mentions:
+        type: quantity
+        unit: count
+        description: >
+          Number of tab mentions in the request.
+
+  browser_action_complete:
+    type: event
+    description: |
+      Recorded when a browser action initiated by the model has completed, errored, or been cancelled.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037203
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037203
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+      model: *model
+      prompt_version: *prompt_version
+      action_type:
+        type: string
+        description: >
+          How the action was triggered: tab_mention, description, or unsupported.
+      result:
+        type: string
+        description: >
+          Outcome of the action: success, partial_success, no_match,
+          unclear_target, blocked, cancelled, or error.
+      tabs_affected:
+        type: quantity
+        unit: count
+        description: >
+          Number of tabs actually closed.
+      undo_available:
+        type: boolean
+        description: >
+          Whether an undo path was available after the action completed.
+      error:
+        type: string
+        description: >
+          Error code if the action was unsuccessful.
+
+  topsites_enabled:
+    lifetime: application
+    type: boolean
+    description: >
+      Whether the single-row Top Sites are shown below the Smartbar in Smart
+      Window fullpage mode. Corresponds to the inverse of the
+      `browser.smartwindow.hideTopSites` pref (true when Top Sites are shown).
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2048338
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D307407
+    data_sensitivity:
+      - technical
+    notification_emails: *emails
+    expires: never
+
+  topsites_impression:
+    type: event
+    description: >
+      Recorded once when the Smart Window Top Sites row is loaded.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2048338
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D307407
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      visible_topsites: &visible_topsites
+        type: quantity
+        description: >
+          The quantity of visible Top Sites when the event occurred.
+          For example: 6 means six tiles were shown in the row.
+
+  topsites_click:
+    type: event
+    description: >
+      Recorded when a Smart Window Top Sites tile is clicked.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2048338
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D307407
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      position:
+        type: quantity
+        description: >
+          The position (0-index) of the Top Sites tile.
+          For example: 2 means the third tile in the row.
+      visible_topsites: *visible_topsites

@@ -1,0 +1,18 @@
+{
+  "label": "usbank.com",
+  "bugs": {
+    "2015962": {
+      "issue": "broken-layout",
+      "matches": ["*://onlinebanking.usbank.com/*"]
+    }
+  },
+  "css": {
+    "fix_minimum_font_size": ".usb--wrapper.is-value .usb--floating-label_overflow, .usb--wrapper.is-focused.is-value label.usb--floating-label_overflow { top: -1.125rem; } .usb--wrapper.is-focused label.usb--floating-label_overflow { top: -1.125rem; top: calc(var(--text-input-focus-active-label-top, 0) - 1.125rem); }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": ["fix_minimum_font_size"]
+    }
+  ]
+}

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,9 +7,8 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/GRefPtr.h"
 #include "mozilla/GUniquePtr.h"
-#include "mozilla/UniquePtrExtensions.h"
+#include "mozilla/widget/GSettings.h"
 #include "nsIAccessibleEvent.h"
-#include "nsIGSettingsService.h"
 #include "nsMai.h"
 #include "nsServiceManagerUtils.h"
 #include "nsWindow.h"
@@ -90,7 +87,7 @@ void a11y::PlatformInit() {
   }
 
   gAtkTableCellGetTypeFunc =
-      (GType(*)())PR_FindFunctionSymbol(sATKLib, "atk_table_cell_get_type");
+      (GType (*)())PR_FindFunctionSymbol(sATKLib, "atk_table_cell_get_type");
 
   const char* (*atkGetVersion)() =
       (const char* (*)())PR_FindFunctionSymbol(sATKLib, "atk_get_version");
@@ -258,26 +255,15 @@ bool a11y::ShouldA11yBeEnabled() {
 #endif
 
   // check GSettings
-  nsCOMPtr<nsIGSettingsService> gsettings =
-      do_GetService(NS_GSETTINGSSERVICE_CONTRACTID);
-
-  if (gsettings) {
-    bool shouldEnable = false;
-    nsCOMPtr<nsIGSettingsCollection> a11y_settings;
-    gsettings->GetCollectionForSchema(
-        nsLiteralCString("org.gnome.desktop.interface"),
-        getter_AddRefs(a11y_settings));
-    if (a11y_settings) {
-      a11y_settings->GetBoolean(nsLiteralCString("toolkit-accessibility"),
-                                &shouldEnable);
-    }
-
-    return shouldEnable;
-  }
-
-  return false;
+  return widget::GSettings::GetBoolean("org.gnome.desktop.interface"_ns,
+                                       "toolkit-accessibility"_ns)
+      .valueOr(false);
 }
 
 uint64_t a11y::GetCacheDomainsForKnownClients(uint64_t aCacheDomains) {
   return aCacheDomains;
+}
+
+void a11y::GetHumanReadableInstantiatorStr(nsAString& aResult) {
+  aResult.Truncate();
 }

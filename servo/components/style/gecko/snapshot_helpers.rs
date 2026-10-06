@@ -37,7 +37,7 @@ unsafe fn ptr<T>(attr: &structs::nsAttrValue) -> *const T {
 }
 
 #[inline(always)]
-unsafe fn get_class_or_part_from_attr(attr: &structs::nsAttrValue) -> Class {
+unsafe fn get_class_or_part_from_attr(attr: &structs::nsAttrValue) -> Class<'_> {
     debug_assert!(bindings::Gecko_AssertClassAttrValueIsSane(attr));
     let base_type = base_type(attr);
     if base_type == structs::nsAttrValue_ValueBaseType_eAtomBase {
@@ -58,7 +58,7 @@ unsafe fn get_class_or_part_from_attr(attr: &structs::nsAttrValue) -> Class {
             .mAtomArray
             .as_ref();
         let array =
-            (*attr_array).mArray.as_ptr() as *const structs::nsTArray<structs::RefPtr<nsAtom>>;
+            (*attr_array).mArray.0.as_ptr() as *const structs::nsTArray<structs::RefPtr<nsAtom>>;
         return Class::More(&**array);
     }
     debug_assert_eq!(base_type, structs::nsAttrValue_ValueBaseType_eStringBase);

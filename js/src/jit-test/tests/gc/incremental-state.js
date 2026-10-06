@@ -72,8 +72,6 @@ while (gcstate() === "Prepare" || gcstate() == "MarkRoots") {
   gcslice(1000000);
 }
 assertEq(gcstate(), "Sweep");
-gcslice(1000000);
-assert(gcstate() !== "Sweep");
 finishgc();
 
 // Two-slice zeal modes that yield once during sweeping.

@@ -106,7 +106,6 @@ impl Example for App {
             let local_rect = LayoutRect::from_size(doc.content_rect.size());
 
             builder.push_simple_stacking_context(
-                doc.content_rect.min,
                 space_and_clip.spatial_id,
                 PrimitiveFlags::IS_BACKFACE_VISIBLE,
             );

@@ -25,21 +25,6 @@
   <![CDATA[
 
     ////////////////////////////////////////////////////////////////////////////
-    // Invokers
-
-    function focusTree(aTreeID)
-    {
-      var checker = new focusChecker(getFirstTreeItem, aTreeID);
-      this.__proto__ = new synthFocus(aTreeID, [ checker ]);
-    }
-
-    function moveToNextItem(aTreeID)
-    {
-      var checker = new focusChecker(getSecondTreeItem, aTreeID);
-      this.__proto__ = new synthDownKey(aTreeID, [ checker ]);
-    }
-
-    ////////////////////////////////////////////////////////////////////////////
     // Helpers
 
     function getTreeItemAt(aTreeID, aIdx)
@@ -54,23 +39,26 @@
     ////////////////////////////////////////////////////////////////////////////
     // Test
 
-    var gQueue = null;
-
-    //gA11yEventDumpID = "debug"; // debugging
-    //gA11yEventDumpToConsole = true; // debugging
-
-    function doTest()
+    async function doTest()
     {
-      gQueue = new eventQueue();
+      let firstItem = getFirstTreeItem("tree");
+      let focused = waitForEvent(EVENT_FOCUS, firstItem);
+      getNode("tree").focus();
+      await focused;
 
-      gQueue.push(new focusTree("tree"));
-      gQueue.push(new moveToNextItem("tree"));
-      gQueue.push(new synthFocus("emptytree"));
+      let secondItem = getSecondTreeItem("tree");
+      focused = waitForEvent(EVENT_FOCUS, secondItem);
+      synthesizeKey("VK_DOWN", {});
+      await focused;
+
+      focused = waitForEvent(EVENT_FOCUS, "emptytree");
+      getNode("emptytree").focus();
+      await focused;
 
       // no focus event for changed current item for unfocused tree
-      gQueue.push(new changeCurrentItem("tree", 0));
+      getNode("tree").currentIndex = 0;
 
-      gQueue.invoke();
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

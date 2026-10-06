@@ -40,8 +40,8 @@ public:
                                    const SkSamplingOptions&,
                                    const SkMatrix* localMatrix);
 
-    // TODO(skbug.com/12784): Requires SkImage to be texture backed, and created SkShader can only
-    // be used on GPU-backed surfaces.
+    // TODO(skbug.com/40043877): Requires SkImage to be texture backed, and created SkShader can
+    // only be used on GPU-backed surfaces.
     static sk_sp<SkShader> MakeSubset(sk_sp<SkImage>,
                                       const SkRect& subset,
                                       SkTileMode tmx,
@@ -49,6 +49,17 @@ public:
                                       const SkSamplingOptions&,
                                       const SkMatrix* localMatrix,
                                       bool clampAsIfUnpremul = false);
+
+    // Given arguments for a call to SkCanvas::drawImageRect, returns a
+    // possibly adjusted 'dst' SkRect and a shader to apply to the paint such that calling
+    // SkCanvas::drawRect(newDst, *paint) produces
+    // visually equivalent results to the original drawImageRect() call.
+    static std::pair<SkRect, sk_sp<SkShader>> MakeForDrawRect(const SkImage* image,
+                                                              const SkPaint& paint,
+                                                              const SkSamplingOptions&,
+                                                              SkRect src,
+                                                              SkRect dst,
+                                                              bool strictSrcSubset);
 
     SkImageShader(sk_sp<SkImage>,
                   const SkRect& subset,
@@ -86,7 +97,7 @@ private:
     const SkTileMode        fTileModeX;
     const SkTileMode        fTileModeY;
 
-    // TODO(skbug.com/12784): This is only supported for GPU images currently.
+    // TODO(skbug.com/40043877): This is only supported for GPU images currently.
     // If subset == (0,0,w,h) of the image, then no subset is applied. Subset will not be empty.
     const SkRect            fSubset;
 

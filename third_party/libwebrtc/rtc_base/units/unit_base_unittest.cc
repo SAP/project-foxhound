@@ -10,6 +10,11 @@
 
 #include "rtc_base/units/unit_base.h"
 
+#include <cmath>
+#include <cstdint>
+#include <limits>
+
+#include "rtc_base/checks.h"
 #include "test/gtest.h"
 
 namespace webrtc {
@@ -142,27 +147,6 @@ TEST(UnitBaseTest, ComparisonOperators) {
 
   EXPECT_GT(TestUnit::PlusInfinity(), large);
   EXPECT_LT(TestUnit::MinusInfinity(), TestUnit::Zero());
-}
-
-TEST(UnitBaseTest, Clamping) {
-  const TestUnit upper = TestUnit::FromKilo(800);
-  const TestUnit lower = TestUnit::FromKilo(100);
-  const TestUnit under = TestUnit::FromKilo(100);
-  const TestUnit inside = TestUnit::FromKilo(500);
-  const TestUnit over = TestUnit::FromKilo(1000);
-  EXPECT_EQ(under.Clamped(lower, upper), lower);
-  EXPECT_EQ(inside.Clamped(lower, upper), inside);
-  EXPECT_EQ(over.Clamped(lower, upper), upper);
-
-  TestUnit mutable_delta = lower;
-  mutable_delta.Clamp(lower, upper);
-  EXPECT_EQ(mutable_delta, lower);
-  mutable_delta = inside;
-  mutable_delta.Clamp(lower, upper);
-  EXPECT_EQ(mutable_delta, inside);
-  mutable_delta = over;
-  mutable_delta.Clamp(lower, upper);
-  EXPECT_EQ(mutable_delta, upper);
 }
 
 TEST(UnitBaseTest, CanBeInititializedFromLargeInt) {

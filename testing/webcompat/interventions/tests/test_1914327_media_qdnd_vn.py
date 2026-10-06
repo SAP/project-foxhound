@@ -1,4 +1,5 @@
 import pytest
+from webdriver.bidi.error import UnknownErrorException
 
 URL = "https://media.qdnd.vn/phim-truyen-thong-tai-lieu/nhung-hinh-anh-dau-tien-trong-du-an-phim-ve-bo-doi-cu-ho-nam-2024-59811"
 PLAY_BUTTON_CSS = "#hpcplayer .media-icon-play"
@@ -20,7 +21,10 @@ async def calls_canPlayType(client, type):
       Object.defineProperty(proto, "canPlayType", def);
     """
     )
-    await client.navigate(URL)
+    try:
+        await client.navigate(URL, no_skip=True)
+    except UnknownErrorException:
+        pass
     play, err = client.await_first_element_of(
         [
             client.css(PLAY_BUTTON_CSS),
@@ -28,9 +32,10 @@ async def calls_canPlayType(client, type):
         ],
         is_displayed=True,
     )
+    await client.stall(2)
     if play:
         play.click()
-        client.await_css(ERROR_MSG_CSS, is_displayed=True)
+    await client.stall(2)
     return client.execute_script(
         """
       return window.__cpts.includes(arguments[0]);

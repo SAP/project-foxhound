@@ -26,7 +26,7 @@ async function enableServiceWorkerDebugging() {
  *
  * @param {Tab} tab
  *        The tab on which the message will be received.
- * @param {String} message
+ * @param {string} message
  *        The name of the expected message.
  */
 function onServiceWorkerMessage(tab, message) {

@@ -10,16 +10,28 @@
 
 #include "test/fake_vp8_encoder.h"
 
-#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 
+#include "api/environment/environment.h"
+#include "api/scoped_refptr.h"
+#include "api/sequence_checker.h"
+#include "api/video/encoded_image.h"
+#include "api/video/video_codec_type.h"
+#include "api/video/video_frame_type.h"
+#include "api/video_codecs/video_codec.h"
 #include "api/video_codecs/video_encoder.h"
-#include "api/video_codecs/vp8_temporal_layers.h"
 #include "api/video_codecs/vp8_temporal_layers_factory.h"
 #include "modules/video_coding/codecs/interface/common_constants.h"
 #include "modules/video_coding/include/video_codec_interface.h"
 #include "modules/video_coding/include/video_error_codes.h"
-#include "modules/video_coding/utility/simulcast_utility.h"
+#include "rtc_base/synchronization/mutex.h"
+#include "test/fake_encoder.h"
+
+namespace webrtc {
+
+namespace test {
 
 namespace {
 
@@ -41,10 +53,6 @@ void WriteFakeVp8(unsigned char* payload,
 }
 }  // namespace
 
-namespace webrtc {
-
-namespace test {
-
 FakeVp8Encoder::FakeVp8Encoder(const Environment& env) : FakeEncoder(env) {
   sequence_checker_.Detach();
 }
@@ -59,7 +67,7 @@ int32_t FakeVp8Encoder::InitEncode(const VideoCodec* config,
 
   Vp8TemporalLayersFactory factory;
   frame_buffer_controller_ =
-      factory.Create(*config, settings, &fec_controller_override_);
+      factory.Create(env_, *config, settings, &fec_controller_override_);
 
   return WEBRTC_VIDEO_CODEC_OK;
 }
@@ -92,20 +100,19 @@ CodecSpecificInfo FakeVp8Encoder::PopulateCodecSpecific(
 
 CodecSpecificInfo FakeVp8Encoder::EncodeHook(
     EncodedImage& encoded_image,
-    rtc::scoped_refptr<EncodedImageBuffer> buffer) {
+    scoped_refptr<EncodedImageBuffer> buffer) {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
   uint8_t simulcast_index = encoded_image.SimulcastIndex().value_or(0);
   frame_buffer_controller_->NextFrameConfig(simulcast_index,
                                             encoded_image.RtpTimestamp());
   CodecSpecificInfo codec_specific =
-      PopulateCodecSpecific(encoded_image.size(), encoded_image._frameType,
+      PopulateCodecSpecific(encoded_image.size(), encoded_image.frame_type(),
                             simulcast_index, encoded_image.RtpTimestamp());
 
   // Write width and height to the payload the same way as the real encoder
   // does.
   WriteFakeVp8(buffer->data(), encoded_image._encodedWidth,
-               encoded_image._encodedHeight,
-               encoded_image._frameType == VideoFrameType::kVideoFrameKey);
+               encoded_image._encodedHeight, encoded_image.IsKey());
   return codec_specific;
 }
 

@@ -1,8 +1,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef mozilla_nsCookieRule_h__
-#define mozilla_nsCookieRule_h__
+#ifndef mozilla_nsCookieRule_h_
+#define mozilla_nsCookieRule_h_
 
 #include "nsICookieRule.h"
 #include "nsICookie.h"

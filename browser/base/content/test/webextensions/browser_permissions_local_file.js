@@ -10,18 +10,15 @@ async function installFile(filename) {
   file.leafName = filename;
 
   let MockFilePicker = SpecialPowers.MockFilePicker;
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
   MockFilePicker.setFiles([file]);
   MockFilePicker.afterOpenCallback = MockFilePicker.cleanup;
 
-  let { document } = await BrowserAddonUI.openAddonsMgr(
-    "addons://list/extension"
-  );
+  let win = await BrowserAddonUI.openAddonsMgr("addons://list/extension");
 
   // Do the install...
-  await waitAboutAddonsViewLoaded(document);
-  let installButton = document.querySelector('[action="install-from-file"]');
-  installButton.click();
+  await waitAboutAddonsViewLoaded(win.document);
+  await triggerPageOptionsAction(win, "install-from-file");
 }
 
 add_task(async function test_install_extension_from_local_file() {

@@ -24,15 +24,15 @@
 /// | z: flags                   |    |   |   |    local_clip_rect  |  +-----------------------+ | |
 /// |    segment_index           |    |   |   +---------------------+                            | |
 /// | w: resource_address       +--+  |   |                                                      | |
-/// +----------------------------+ |  |   |                                 (sGpuCache)          | |
-///                                |  |   |         (sGpuCache)          +------------+          | |
+/// +----------------------------+ |  |   |                             (float gpu buffer)       | |
+///                                |  |   |   (float gpu buffer)         +------------+          | |
 ///                                |  |   |   +---------------+          | Transform  | <--------+ |
-///                (sGpuCache)     |  |   +-> | Picture task  |          +------------+            |
+///           (float gpu buffer)   |  |   +-> | Picture task  |          +------------+            |
 ///            +-------------+     |  |       |               |                                    |
 ///            |  Resource   | <---+  |       |         ...   |                                    |
 ///            |             |        |       +---------------+   +--------------------------------+
 ///            |             |        |                           |
-///            +-------------+        |             (sGpuCache)   v                        (sGpuCache)
+///            +-------------+        |       (float gpu buffer)  v                (float gpu buffer)
 ///                                   |       +---------------+  +--------------+---------------+-+-+
 ///                                   +-----> | Clip area     |  | Brush data   |  Segment data | | |
 ///                                           |               |  |              |               | | |
@@ -109,11 +109,12 @@ void brush_shader_main_vs(
         segment_rect = ph.local_rect;
         segment_data = vec4(0.0);
     } else {
+        // See BrushSegmentGpuData
         int segment_address = ph.specific_prim_address +
                               VECS_PER_SPECIFIC_BRUSH +
                               instance.segment_index * VECS_PER_SEGMENT;
 
-        vec4[2] segment_info = fetch_from_gpu_cache_2(segment_address);
+        vec4[2] segment_info = fetch_from_gpu_buffer_2f(segment_address);
         segment_rect = RectWithEndpoint(segment_info[0].xy, segment_info[0].zw);
         segment_rect.p0 += ph.local_rect.p0;
         segment_rect.p1 += ph.local_rect.p0;

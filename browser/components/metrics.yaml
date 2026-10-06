@@ -132,6 +132,23 @@ launch_on_login:
     expires: never
     telemetry_mirror: Launch_on_login_LastProfileDisable_Startup
 
+  user_toggle:
+    type: event
+    description: >
+      Recorded when the user checks or unchecks the "Open Firefox when
+      your computer starts" checkbox in about:preferences.
+    bugs:
+      - https://bugzil.la/2034181
+    data_reviews:
+      - https://bugzil.la/2034181
+    notification_emails:
+      - drubino@mozilla.com
+    expires: never
+    extra_keys:
+      enabled:
+        type: boolean
+        description: Whether launch on login was turned on (true) or off (false).
+
 upgrade_dialog:
   trigger_reason:
     type: event
@@ -199,7 +216,6 @@ browser.startup:
       - perf-telemetry-alerts@mozilla.com
     expires: never
     unit: CACHE_RESULT_SCALARS
-    telemetry_mirror: BROWSER_STARTUP_ABOUTHOME_CACHE_RESULT
     no_lint:
       - COMMON_PREFIX
 
@@ -234,7 +250,6 @@ browser.startup:
       - mconley@mozilla.com
       - perf-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: BROWSER_STARTUP_ABOUTHOME_CACHE_SHUTDOWNWRITE
     no_lint:
       - COMMON_PREFIX
   kiosk_mode:
@@ -251,6 +266,21 @@ browser.startup:
       - rtestard@mozilla.com
     expires: never
     lifetime: application
+
+qrcode:
+  opened:
+    type: counter
+    description: >
+      Records how often the QR code dialog is opened from the Share menu.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1996321
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1996321
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - overholt@mozilla.com
+    expires: never
 
 datasanitization:
   privacy_sanitize_sanitize_on_shutdown:
@@ -662,6 +692,28 @@ os.environment:
     expires: never
     telemetry_mirror: OS_ENVIRONMENT_IS_KEPT_IN_DOCK
 
+  desktop_entry_exists:
+    type: string
+    description: >
+      Determines whether a freedesktop.org desktop entry exists that matches
+      the remoting name, i.e. that is likely to associate with browser windows.
+
+      This will only be set on Linux, and is either:
+        * "absent", if none exists (or one exists but is marked Hidden, i.e.
+          deleted)
+        * "invisible", if it exists but is marked invisible (by NoDisplay etc)
+        * "visible" if it exists and is visible
+        * "sandboxed" if running under Flatpak or Snap, where it is likely
+          visible but detection is impossible
+    bugs:
+      - https://bugzil.la/2032619
+    data_reviews:
+      - https://bugzil.la/2032619
+    notification_emails:
+      - dmcintosh@mozilla.com
+      - drubino@mozilla.com
+    expires: 155
+
   is_taskbar_pinned:
     type: boolean
     description: >
@@ -697,6 +749,22 @@ os.environment:
       - shong@mozilla.com
     expires: never
     telemetry_mirror: OS_ENVIRONMENT_IS_TASKBAR_PINNED_PRIVATE
+
+  launch_on_login_state:
+    type: string
+    description: >
+      The state of the launch-on-login setting at startup. One of:
+      "enabled" (launch on login is active), "disabled" (not enabled
+      by the user), "disabled_by_settings" (blocked by Windows
+      Settings or policy), "not_supported" (feature unavailable on
+      this platform), or "error" (failed to determine state).
+    bugs:
+      - https://bugzil.la/2034180
+    data_reviews:
+      - https://bugzil.la/2034180
+    notification_emails:
+      - drubino@mozilla.com
+    expires: never
 
 security:
   https_only_mode_enabled:
@@ -905,11 +973,127 @@ browser:
     expires: never
     telemetry_mirror: h#BROWSER_SET_DEFAULT_ERROR
 
+  set_default_pdf_handler_attempt:
+    type: event
+    description: >
+      Recorded once per call to ShellService.setAsDefaultPDFHandler. Captures
+      the last method that was attempted, whether that method's API call
+      succeeded without throwing, and whether Firefox is the default PDF
+      handler when the OS state is sampled after
+      browser.shell.setDefaultPDFHandler.attemptWaitTimeMs has elapsed. The
+      wait gives the user time to interact with any picker or settings
+      dialog that the chosen method launched.
+    extra_keys:
+      method:
+        type: string
+        description: >
+          Which method was last attempted. One of "user_choice" (UserChoice
+          registry write), "open_with" (IOpenWithLauncher API), or "settings"
+          (ms-settings:defaultapps modern settings dialog).
+      success:
+        type: boolean
+        description: >
+          Whether the API call for the chosen method returned without
+          throwing. For user_choice this means the registry write completed;
+          for open_with and settings it only means the launcher was invoked,
+          not that the user picked Firefox.
+      result_is_default:
+        type: boolean
+        description: >
+          Whether Firefox is the default PDF handler when sampled after the
+          attemptWaitTimeMs delay.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2022617
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2022617
+    notification_emails:
+      - hsohaney@mozilla.com
+      - application-update-telemetry-alerts@mozilla.com
+    expires: never
+
+  set_default_pdf_handler_modern_settings_result:
+    type: labeled_counter
+    description: >
+      Result of each attempt to set the default PDF handler by opening modern settings
+      through the ms-settings protocol (ms-settings:defaultapps).
+    labels:
+      - Success
+      - Failure
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2022617
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2022617
+    notification_emails:
+      - hsohaney@mozilla.com
+      - application-update-telemetry-alerts@mozilla.com
+    expires: never
+
+
+  set_default_protocol_handler_attempt:
+    type: event
+    description: >
+      Recorded once per call to ShellService.setAsDefaultProtocolHandler.
+      Captures the last method that was attempted, whether that method's
+      API call succeeded without throwing, the protocol that was targeted,
+      and whether Firefox is the default protocol handler when the OS state
+      is sampled after
+      browser.shell.setDefaultProtocolHandler.attemptWaitTimeMs has elapsed.
+      The wait gives the user time to interact with any picker or settings
+      dialog that the chosen method launched.
+    extra_keys:
+      method:
+        type: string
+        description: >
+          Which method was last attempted. One of "open_with"
+          (IOpenWithLauncher API) or "settings" (ms-settings:defaultapps
+          modern settings dialog).
+      success:
+        type: boolean
+        description: >
+          Whether the API call for the chosen method returned without
+          throwing. This only means the launcher was invoked, not that the
+          user picked Firefox.
+      protocol:
+        type: string
+        description: >
+          The protocol that was targeted (e.g. "https", "mailto").
+      result_is_default:
+        type: boolean
+        description: >
+          Whether Firefox is the default handler for `protocol` when sampled
+          after the attemptWaitTimeMs delay.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2041764
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2041764
+    notification_emails:
+      - hsohaney@mozilla.com
+      - application-update-telemetry-alerts@mozilla.com
+    expires: never
+
+  set_default_protocol_handler_modern_settings_result:
+    type: labeled_counter
+    description: >
+      Result of each attempt to set the default protocol handler by opening
+      modern settings through the ms-settings protocol
+      (ms-settings:defaultapps).
+    labels:
+      - Success
+      - Failure
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2041764
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2041764
+    notification_emails:
+      - hsohaney@mozilla.com
+      - application-update-telemetry-alerts@mozilla.com
+    expires: never
+
   set_default_pdf_handler_user_choice_result:
     type: labeled_counter
     description: >
-      Result of each attempt to set the default browser with
-      SetDefaultExtensionHandlersUserChoice() for pdf extension
+      Result of each attempt to set the default browser by setting the user-choice
+      regkey for pdf extension.
 
       This metric was generated to correspond to the Legacy Telemetry
       categorical histogram BROWSER_SET_DEFAULT_PDF_HANDLER_USER_CHOICE_RESULT.
@@ -996,7 +1180,7 @@ browser:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1525076
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1874944
     notification_emails:
-      - aoprea@mozilla.com
+      - omc-core@mozilla.com
     expires: never
     telemetry_mirror: h#BROWSER_ATTRIBUTION_ERRORS
 
@@ -1017,3 +1201,98 @@ browser:
     data_sensitivity:
       - technical
     expires: never
+
+  global_ai_control_is_blocking:
+    type: boolean
+    lifetime: application
+    description: |
+      Status of the global AI enhancements setting.
+      When true, enhancements are blocked.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2013077
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2013077
+    notification_emails:
+      - project-nimbus@mozilla.com
+    data_sensitivity:
+      - interaction
+    expires: never
+    send_in_pings:
+      - metrics
+
+  ai_control_is_blocking:
+    type: labeled_boolean
+    lifetime: application
+    description: |
+      Status of the AI controls per feature setting.
+      When true, the feature enhancement is blocked.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2018218
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2018218
+    notification_emails:
+      - sopsal@mozilla.com
+      - mstriemer@mozilla.com
+    data_sensitivity:
+      - interaction
+    expires: never
+    send_in_pings:
+      - metrics
+
+  global_ai_control_toggled:
+    type: event
+    description: Emitted when the global AI enhancements setting is toggled.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2012214
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2012214
+    notification_emails:
+      - project-nimbus@mozilla.com
+    data_sensitivity:
+      - interaction
+    expires: never
+    extra_keys:
+      blocked:
+        type: boolean
+        description: >
+          The state of the "Block AI Enhancements" toggle.
+
+  ai_control_changed:
+    type: event
+    description: Emitted when an AI enhancement control setting is changed.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2018218
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2018218
+    notification_emails:
+      - sopsal@mozilla.com
+      - mstriemer@mozilla.com
+    data_sensitivity:
+      - interaction
+    expires: never
+    extra_keys:
+      feature:
+        type: string
+        description: >
+          The AI Control feature identifier.
+      selection:
+        type: string
+        description: >
+          The state of the "Block AI Enhancements" dropdown.
+
+distribution:
+  mozillaonline_ignored:
+    type: boolean
+    description: >
+      Recorded when Firefox detects a mozillaonline distribution and ignores it,
+      applying no distribution customizations.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2027788
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2027788
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - amarchesini@mozilla.com
+    expires: never
+    lifetime: application

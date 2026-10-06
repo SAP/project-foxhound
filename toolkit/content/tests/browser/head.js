@@ -192,6 +192,7 @@ function once(target, name) {
 /**
  * check if current wakelock is equal to expected state, if not, then wait until
  * the wakelock changes its state to expected state.
+ *
  * @param needLock
  *        the wakolock should be locked or not
  * @param isForegroundLock

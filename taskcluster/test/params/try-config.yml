@@ -18,7 +18,6 @@ head_repository: https://hg.mozilla.org/try
 head_rev: 482ccd66d49e0e4a0d260ca872f770df4983ccea
 hg_branch: default
 level: "1"
-message: "Fuzzy query='foobar"
 moz_build_date: "20171031195649"
 optimize_target_tasks: false
 owner: user@example.com
@@ -48,7 +47,5 @@ try_task_config:
   use-artifact-builds: true
 release_type: "nightly"
 release_product: null
-required_signoffs: []
-signoff_urls: {}
 phabricator_diff:
 tasks_for: hg-push

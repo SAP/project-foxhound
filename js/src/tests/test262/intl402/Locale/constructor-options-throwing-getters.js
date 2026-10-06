@@ -1,10 +1,12 @@
+// |reftest| shell-option(--enable-intl-locale-info) skip-if(!this.hasOwnProperty('Intl')||!this.Intl.Locale.prototype.hasOwnProperty('firstDayOfWeek')||!xulRuntime.shell) -- Intl.Locale-info is not enabled unconditionally, requires shell-options
 // Copyright 2018 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
 esid: sec-Intl.Locale
 description: Checks the propagation of exceptions from the options for the Locale constructor.
-features: [Intl.Locale]
+features: [Intl.Locale, Intl.Locale-info]
+locale: [en]
 ---*/
 
 function CustomError() {}
@@ -16,6 +18,7 @@ const options = [
   "variants",
   "calendar",
   "collation",
+  "firstDayOfWeek",
   "hourCycle",
   "caseFirst",
   "numeric",

@@ -1,6 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * vim: ts=4 sw=4 expandtab:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -9,8 +7,6 @@ package org.mozilla.geckoview;
 import static org.mozilla.geckoview.GeckoSession.GeckoPrintException.ERROR_NO_ACTIVITY_CONTEXT;
 import static org.mozilla.geckoview.GeckoSession.GeckoPrintException.ERROR_NO_ACTIVITY_CONTEXT_DELEGATE;
 
-import android.annotation.SuppressLint;
-import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.Context;
 import android.content.ContextWrapper;
@@ -18,6 +14,7 @@ import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Insets;
 import android.graphics.Matrix;
 import android.graphics.Rect;
 import android.graphics.RectF;
@@ -44,6 +41,7 @@ import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewStructure;
+import android.view.WindowInsets;
 import android.view.autofill.AutofillManager;
 import android.view.autofill.AutofillValue;
 import android.view.inputmethod.EditorInfo;
@@ -65,10 +63,14 @@ import java.util.HashMap;
 import java.util.Objects;
 import org.mozilla.gecko.AndroidGamepadManager;
 import org.mozilla.gecko.EventDispatcher;
+import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.InputMethods;
 import org.mozilla.gecko.SurfaceViewWrapper;
 import org.mozilla.gecko.util.ThreadUtils;
 
+/**
+ * A view container that hosts Gecko rendering, manages its surface, and dispatches input/events.
+ */
 @UiThread
 public class GeckoView extends FrameLayout implements GeckoDisplay.NewSurfaceProvider {
   private static final String LOGTAG = "GeckoView";
@@ -78,10 +80,14 @@ public class GeckoView extends FrameLayout implements GeckoDisplay.NewSurfacePro
       mWindowInsetsListeners =
           new HashMap<String, androidx.core.view.OnApplyWindowInsetsListener>();
 
+  /** Manages the underlying GeckoDisplay surface lifecycle and layout. */
   protected final @NonNull Display mDisplay = new Display();
 
   private Integer mLastCoverColor;
+
+  /** The currently attached GeckoSession, or null if none is set. */
   protected @Nullable GeckoSession mSession;
+
   WeakReference<Autofill.Session> mAutofillSession = new WeakReference<>(null);
 
   // Whether this GeckoView instance has a session that is no longer valid, e.g. because the session
@@ -186,8 +192,15 @@ public class GeckoView extends FrameLayout implements GeckoDisplay.NewSurfacePro
       if (GeckoView.this.mSurfaceWrapper != null) {
         GeckoView.this.mSurfaceWrapper.getView().getLocationOnScreen(mOrigin);
         mDisplay.screenOriginChanged(mOrigin[0], mOrigin[1]);
-        // cutout support
-        if (Build.VERSION.SDK_INT >= 28) {
+        // cutout / edge to edge support
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+          final WindowInsets windowInsets =
+              GeckoView.this.mSurfaceWrapper.getView().getRootWindowInsets();
+          final Insets insets =
+              windowInsets.getInsets(
+                  WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+          mDisplay.safeAreaInsetsChanged(insets.top, insets.right, insets.bottom, insets.left);
+        } else if (Build.VERSION.SDK_INT >= 28) {
           final DisplayCutout cutout =
               GeckoView.this.mSurfaceWrapper.getView().getRootWindowInsets().getDisplayCutout();
           if (cutout != null) {
@@ -255,13 +268,22 @@ public class GeckoView extends FrameLayout implements GeckoDisplay.NewSurfacePro
     }
   }
 
-  @SuppressWarnings("checkstyle:javadocmethod")
+  /**
+   * Construct a new GeckoView instance.
+   *
+   * @param context The Context in which this view is running.
+   */
   public GeckoView(final Context context) {
     super(context);
     init();
   }
 
-  @SuppressWarnings("checkstyle:javadocmethod")
+  /**
+   * Construct a new GeckoView with layout attributes.
+   *
+   * @param context the Context in which this view is running
+   * @param attrs the set of view attributes to apply
+   */
   public GeckoView(final Context context, final AttributeSet attrs) {
     super(context, attrs);
     init();
@@ -314,12 +336,7 @@ public class GeckoView extends FrameLayout implements GeckoDisplay.NewSurfacePro
       mSelectionActionDelegate = new BasicSelectionActionDelegate(activity);
     }
 
-    if (Build.VERSION.SDK_INT >= 26) {
-      mAutofillDelegate = new AndroidAutofillDelegate();
-    } else {
-      // We don't support Autofill on SDK < 26
-      mAutofillDelegate = new Autofill.Delegate() {};
-    }
+    mAutofillDelegate = new AndroidAutofillDelegate();
     mPrintDelegate = new GeckoViewPrintDelegate();
   }
 
@@ -364,6 +381,7 @@ public class GeckoView extends FrameLayout implements GeckoDisplay.NewSurfacePro
    */
   public static final int BACKEND_TEXTURE_VIEW = 2;
 
+  /** View backend type definitions for GeckoView display backends. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({BACKEND_SURFACE_VIEW, BACKEND_TEXTURE_VIEW})
   public @interface ViewBackend {}
@@ -503,6 +521,10 @@ public class GeckoView extends FrameLayout implements GeckoDisplay.NewSurfacePro
       session.getMagnifier().setView(null);
     }
 
+    if (mSession.getHapticFeedbackController().getView() == this) {
+      mSession.getHapticFeedbackController().setView(null);
+    }
+
     if (isFocused()) {
       mSession.setFocused(false);
     }
@@ -601,6 +623,10 @@ public class GeckoView extends FrameLayout implements GeckoDisplay.NewSurfacePro
       session.getMagnifier().setView(mSurfaceWrapper.getView());
     }
 
+    if (session.getHapticFeedbackController().getView() == null) {
+      session.getHapticFeedbackController().setView(this);
+    }
+
     if (session.getPrintDelegate() == null && mPrintDelegate != null) {
       session.setPrintDelegate(mPrintDelegate);
     }
@@ -610,8 +636,12 @@ public class GeckoView extends FrameLayout implements GeckoDisplay.NewSurfacePro
     }
   }
 
+  /**
+   * Returns the current GeckoSession attached to this view.
+   *
+   * @return The GeckoSession instance, or null if none is set.
+   */
   @AnyThread
-  @SuppressWarnings("checkstyle:javadocmethod")
   public @Nullable GeckoSession getSession() {
     return mSession;
   }
@@ -622,7 +652,11 @@ public class GeckoView extends FrameLayout implements GeckoDisplay.NewSurfacePro
     return mSession.getEventDispatcher();
   }
 
-  @SuppressWarnings("checkstyle:javadocmethod")
+  /**
+   * Retrieves the controller responsible for panning and zooming gestures.
+   *
+   * @return The non-null PanZoomController for this GeckoView.
+   */
   public @NonNull PanZoomController getPanZoomController() {
     ThreadUtils.assertOnUiThread();
     return mSession.getPanZoomController();
@@ -701,12 +735,6 @@ public class GeckoView extends FrameLayout implements GeckoDisplay.NewSurfacePro
     if (mIsSessionPoisoned) {
       throw new IllegalStateException("Trying to display a view with invalid session.");
     }
-    if (mSession != null) {
-      final GeckoRuntime runtime = mSession.getRuntime();
-      if (runtime != null) {
-        runtime.orientationChanged();
-      }
-    }
 
     if (mSession != null) {
       mDisplay.acquire(mSession.acquireDisplay());
@@ -717,6 +745,7 @@ public class GeckoView extends FrameLayout implements GeckoDisplay.NewSurfacePro
     // This needs to be called after the `super.onAttachedToWindow()`.
     addWindowInsetsListener(KEYBOARD_WINDOW_INSETS_LISTENER, mDisplay);
     attachWindowInsetsListener(getActivityFromContext(getContext()));
+    GeckoAppShell.setDisplayId(getDisplay().getDisplayId());
   }
 
   @Override
@@ -743,14 +772,6 @@ public class GeckoView extends FrameLayout implements GeckoDisplay.NewSurfacePro
     if (mSession != null) {
       final GeckoRuntime runtime = mSession.getRuntime();
       if (runtime != null) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-          // If API is 31+, DisplayManager API may report previous information.
-          // So we have to report it again. But since Configuration.orientation may still have
-          // previous information even if onConfigurationChanged is called, we have to calculate it
-          // from display data.
-          runtime.orientationChanged();
-        }
-
         runtime.configurationChanged(newConfig);
       }
     }
@@ -843,10 +864,7 @@ public class GeckoView extends FrameLayout implements GeckoDisplay.NewSurfacePro
 
   @Override
   public Handler getHandler() {
-    if (Build.VERSION.SDK_INT >= 24 || mSession == null) {
-      return super.getHandler();
-    }
-    return mSession.getTextInput().getHandler(super.getHandler());
+    return super.getHandler();
   }
 
   @Override
@@ -912,7 +930,6 @@ public class GeckoView extends FrameLayout implements GeckoDisplay.NewSurfacePro
     }
   }
 
-  @SuppressLint("ClickableViewAccessibility")
   @Override
   public boolean onTouchEvent(final MotionEvent event) {
     if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
@@ -990,7 +1007,6 @@ public class GeckoView extends FrameLayout implements GeckoDisplay.NewSurfacePro
   }
 
   @Override
-  @TargetApi(26)
   public void autofill(@NonNull final SparseArray<AutofillValue> values) {
     // Note: we can't use mSession.getAutofillSession() because the app might have swapped
     // the session under us between the onProvideAutofillVirtualStructure and this call
@@ -1039,7 +1055,6 @@ public class GeckoView extends FrameLayout implements GeckoDisplay.NewSurfacePro
    *
    * @param enabled Whether or not Android autofill is enabled for this view.
    */
-  @TargetApi(26)
   public void setAutofillEnabled(final boolean enabled) {
     mAutofillEnabled = enabled;
 
@@ -1055,12 +1070,10 @@ public class GeckoView extends FrameLayout implements GeckoDisplay.NewSurfacePro
   /**
    * @return Whether or not Android autofill is enabled for this view.
    */
-  @TargetApi(26)
   public boolean getAutofillEnabled() {
     return mAutofillEnabled;
   }
 
-  @TargetApi(26)
   private class AndroidAutofillDelegate implements Autofill.Delegate {
     AutofillManager mAutofillManager;
     boolean mDisabled = false;

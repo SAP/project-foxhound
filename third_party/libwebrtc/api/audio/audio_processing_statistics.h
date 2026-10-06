@@ -20,6 +20,10 @@
 namespace webrtc {
 // This version of the stats uses Optionals, it will replace the regular
 // AudioProcessingStatistics struct.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
 struct RTC_EXPORT AudioProcessingStats {
   AudioProcessingStats();
   AudioProcessingStats(const AudioProcessingStats& other);
@@ -31,7 +35,7 @@ struct RTC_EXPORT AudioProcessingStats {
   // It is conservative in flagging audio as speech, with low likelihood of
   // incorrectly flagging a frame as voice.
   // Only reported if voice detection is enabled in AudioProcessing::Config.
-  std::optional<bool> voice_detected;
+  [[deprecated("bugs.webrtc.org/11226")]] std::optional<bool> voice_detected;
 
   // AEC Statistics.
   // ERL = 10log_10(P_far / P_echo)
@@ -62,6 +66,9 @@ struct RTC_EXPORT AudioProcessingStats {
   // call to `GetStatistics()`.
   std::optional<int32_t> delay_ms;
 };
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 }  // namespace webrtc
 

@@ -4,7 +4,6 @@
 
 #include <windows.h>
 #include <aclapi.h>
-#include <stdlib.h>
 #include <shlwapi.h>
 
 // Used for DNLEN and UNLEN

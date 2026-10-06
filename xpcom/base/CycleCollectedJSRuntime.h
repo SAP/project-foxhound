@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -349,7 +347,7 @@ class CycleCollectedJSRuntime {
                        nsCycleCollectionTraversalCallback& aCb) const;
 
   virtual bool DescribeCustomObjects(JSObject* aObject, const JSClass* aClasp,
-                                     char (&aName)[72]) const {
+                                     char (&aName)[512]) const {
     return false;  // We did nothing.
   }
 
@@ -529,6 +527,7 @@ class CycleCollectedJSRuntime {
   // storage), because we do not want to keep it alive.  nsWrapperCache handles
   // this for us via its "object moved" handling.
   void NurseryWrapperAdded(nsWrapperCache* aCache);
+  void NurseryWrapperRemovedSlow(nsWrapperCache* aCache);
   void JSObjectsTenured(JS::GCContext* aGCContext);
 
   void DeferredFinalize(DeferredFinalizeAppendFunction aAppendFunc,
@@ -546,9 +545,9 @@ class CycleCollectedJSRuntime {
 
   // Prepare any zones for GC that have been passed to AddZoneWaitingForGC()
   // since the last GC or since the last call to PrepareWaitingZonesForGC(),
-  // whichever was most recent. If there were no such zones, prepare for a
-  // full GC.
-  void PrepareWaitingZonesForGC();
+  // whichever was most recent. If there were no such zones and the GC was not
+  // triggered by the JS engine, prepare for a full GC.
+  void PrepareWaitingZonesForGC(JS::GCReason aReason);
 
   // Get the current thread's CycleCollectedJSRuntime.  Returns null if there
   // isn't one.

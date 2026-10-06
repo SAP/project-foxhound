@@ -9,9 +9,8 @@ const { BrowserTestUtils } = ChromeUtils.importESModule(
 );
 
 add_task(async function testMozPageNavResponsive() {
-  let { html, render } = await import(
-    "chrome://global/content/vendor/lit.all.mjs"
-  );
+  let { html, render } =
+    await import("chrome://global/content/vendor/lit.all.mjs");
   let template = html`
     <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
     <div style="width: 200px; height: 100vh;">

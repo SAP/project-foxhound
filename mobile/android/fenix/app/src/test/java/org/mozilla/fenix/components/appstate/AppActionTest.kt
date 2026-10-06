@@ -4,24 +4,21 @@
 
 package org.mozilla.fenix.components.appstate
 
-import mozilla.components.support.test.ext.joinBlocking
-import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.mozilla.fenix.components.AppStore
 
 class AppActionTest {
 
-    private val capture = CaptureActionsMiddleware<AppState, AppAction>()
-    private val appStore = AppStore(middlewares = listOf(capture))
-
     @Test
     fun `WHEN UpdateInactiveExpanded is dispatched THEN update inactiveTabsExpanded`() {
-        assertFalse(appStore.state.inactiveTabsExpanded)
+        val initialState = AppState()
 
-        appStore.dispatch(AppAction.UpdateInactiveExpanded(true)).joinBlocking()
+        assertFalse(initialState.inactiveTabsExpanded)
 
-        assertTrue(appStore.state.inactiveTabsExpanded)
+        val finalState =
+            AppStoreReducer.reduce(initialState, AppAction.UpdateInactiveExpanded(true))
+
+        assertTrue(finalState.inactiveTabsExpanded)
     }
 }

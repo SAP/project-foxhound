@@ -21,14 +21,14 @@ sudo dtrace -n 'mach_kernel::wakeup { @[ustack()] = count(); }' -p $FIREFOX_PID 
 
 Let's break that down further.
 
--   The` -n` option combined with the `mach_kernel::wakeup` selects a
-    *probe point*. `mach_kernel` is the *module name* and `wakeup` is
-    the *probe name*. You can see a complete list of probes by running
-    `sudo dtrace -l`.
--   The code between the braces is run when the probe point is hit. The
-    above code counts unique stack traces when wakeups occur; `ustack`
-    is short for \"user stack\", i.e. the stack of the userspace program
-    executing.
+- The` -n` option combined with the `mach_kernel::wakeup` selects a
+  *probe point*. `mach_kernel` is the *module name* and `wakeup` is
+  the *probe name*. You can see a complete list of probes by running
+  `sudo dtrace -l`.
+- The code between the braces is run when the probe point is hit. The
+  above code counts unique stack traces when wakeups occur; `ustack`
+  is short for \"user stack\", i.e. the stack of the userspace program
+  executing.
 
 Run that command for a few seconds and then hit [Ctrl]{.kbd} + [C]{.kbd}
 to interrupt it. `dtrace` will then print to the output file a number of
@@ -43,7 +43,7 @@ It's unclear how to improve upon this.
 dtrace is *very* powerful, and you can learn more about it by consulting
 the following resources:
 
--   [The DTrace one-liner
-    tutorial](https://wiki.freebsd.org/DTrace/Tutorial) from FreeBSD.
--   [DTrace tools](http://www.brendangregg.com/dtrace.html), by Brendan
-    Gregg.
+- [The DTrace one-liner
+  tutorial](https://wiki.freebsd.org/DTrace/Tutorial) from FreeBSD.
+- [DTrace tools](http://www.brendangregg.com/dtrace.html), by Brendan
+  Gregg.

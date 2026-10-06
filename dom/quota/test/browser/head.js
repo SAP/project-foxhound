@@ -75,11 +75,7 @@ async function triggerSecondaryCommand(popup, remember = false, win = window) {
     notification.checkbox.checked = true;
   }
 
-  await EventUtils.synthesizeMouseAtCenter(
-    notification.secondaryButton,
-    {},
-    win
-  );
+  EventUtils.synthesizeMouseAtCenter(notification.secondaryButton, {}, win);
 }
 
 function dismissNotification(popup, win = window) {

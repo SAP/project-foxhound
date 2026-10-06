@@ -1,0 +1,15 @@
+{
+  "label": "frankfred.com",
+  "bugs": {
+    "1904411": {
+      "issue": "desktop-layout-not-mobile",
+      "matches": ["*://*.frankfred.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

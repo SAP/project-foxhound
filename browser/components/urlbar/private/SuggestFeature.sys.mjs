@@ -7,9 +7,9 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
 /**
@@ -26,61 +26,53 @@ export class SuggestFeature {
   /**
    * @returns {Array}
    *   If the feature is conditioned on any prefs or Nimbus variables, the
-   *   subclass should override this getter and return their names in this array
-   *   so that `update()` and `enable()` can be called when they change. Names
-   *   should be recognized by `UrlbarPrefs`, i.e., pref names should be
-   *   relative to the `browser.urlbar.` branch. For Nimbus variables with
-   *   fallback prefs, include only the variable name.
+   *   subclass should override this getter and return their names in this
+   *   array. When one of these prefs or variables changes, Suggest will call
+   *   `feature.update()`, which checks `feature.shouldEnable`. If the value of
+   *   `shouldEnable` is different from the feature's current enabled status,
+   *   then `feature.update()` calls `feature.enable()`.
    *
-   *   When Suggest determines whether the feature should be enabled, it will
-   *   call `UrlbarPrefs.get()` on each name in this array and disable the
-   *   feature if any are falsey. If any of the prefs or variables are not
-   *   booleans, the subclass may also need to override
-   *   `additionalEnablingPredicate` to perform additional checks on them.
+   *   Pref and variable names should be recognized by `UrlbarPrefs`. i.e., pref
+   *   names should be relative to the `browser.urlbar.` branch. For Nimbus
+   *   variables with fallback prefs, include only the variable name.
    */
   get enablingPreferences() {
     return [];
   }
 
   /**
-   * @returns {string | null}
-   *   If there is a feature-specific pref that is controlled by the user and
-   *   toggles the feature on and off, the subclass should override this getter
-   *   and return its name. It should also be included in `enablingPreferences`.
-   *   The name should be recognized by `UrlbarPrefs`, i.e., it should be
-   *   relative to the `browser.urlbar.` branch.
+   * @returns {Array}
+   *   If there are any feature-specific prefs that are exposed to the user and
+   *   allow the feature to be toggled on or off, the subclass should override
+   *   this getter and return their names. They should also be included in
+   *   `enablingPreferences`. The names should be recognized by `UrlbarPrefs`,
+   *   i.e., they should be relative to the `browser.urlbar.` branch.
    *
-   *   If the feature is a `SuggestProvider`, typically this should be the pref
-   *   that's named `suggest.mySuggestionType` and set to `false` when the user
-   *   dismisses the entire suggestion type, i.e., the relevant
-   *   `browser.urlbar.suggest.` pref.
+   *   If the feature is a `SuggestProvider`, typically this should include the
+   *   pref that's named `suggest.mySuggestionType` and set to `false` when the
+   *   user dismisses the entire suggestion type, i.e., the relevant
+   *   These prefs should be controlled by the user, so they should never
+   *   include the feature's `featureGate` pref.
    *
-   *   The pref should be controlled by the user, so it should never be the
-   *   feature's feature-gate pref.
-   *
-   *   The pref should control this feature specifically, so it should never be
-   *   `suggest.quicksuggest.sponsored` or `suggest.quicksuggest.nonsponsored`.
-   *   If the feature has no such pref, this getter should return null.
+   *   These prefs should control this feature specifically, so they should
+   *   never include `suggest.quicksuggest.all` or
+   *   `suggest.quicksuggest.sponsored`. If the feature has no such prefs,
+   *   this getter should return an empty array.
    */
-  get primaryUserControlledPreference() {
-    return null;
+  get primaryUserControlledPreferences() {
+    return [];
   }
 
   /**
    * @returns {boolean}
-   *   If the feature is conditioned on any predicate other than the prefs and
-   *   Nimbus variables in `enablingPreferences`, the subclass should override
-   *   this getter and return whether the feature should be enabled. It may also
-   *   need to override this getter if any of the prefs or variables in
-   *   `enablingPreferences` are not booleans so that it can perform additional
-   *   checks on them. (The predicate does not need to check prefs and variables
-   *   in `enablingPreferences` that are booleans.)
+   *   Whether the feature should be enabled, assuming Suggest is enabled. This
+   *   base implementation returns true if every pref in `enablingPreferences`
+   *   is truthy. The subclass should override it if it needs different logic.
    *
-   *   This getter will be called only when Suggest is enabled and all prefs and
-   *   variables in `enablingPreferences` are truthy.
+   *   This getter will be called only when Suggest is enabled.
    */
-  get additionalEnablingPredicate() {
-    return true;
+  get shouldEnable() {
+    return this.enablingPreferences.every(p => lazy.UrlbarPrefs.get(p));
   }
 
   /**
@@ -94,17 +86,6 @@ export class SuggestFeature {
   enable(enabled) {}
 
   // Methods not designed for overriding below
-
-  /**
-   * @returns {boolean}
-   *   Whether the feature should be enabled, assuming Suggest is enabled.
-   */
-  get shouldEnable() {
-    return (
-      this.enablingPreferences.every(p => lazy.UrlbarPrefs.get(p)) &&
-      this.additionalEnablingPredicate
-    );
-  }
 
   /**
    * @returns {ConsoleInstance}
@@ -195,6 +176,17 @@ export class SuggestProvider extends SuggestFeature {
   }
 
   /**
+   * @returns {Array}
+   *   If the feature manages dynamic Rust suggestions, its `rustSuggestionType`
+   *   getter should return "Dynamic", and it should override
+   *   `dynamicRustSuggestionTypes` to return an array of the dynamic type
+   *   names as defined by `suggestion_type` in the remote settings records.
+   */
+  get dynamicRustSuggestionTypes() {
+    return [];
+  }
+
+  /**
    * @returns {object|null}
    *   If the feature manages suggestions served by the Rust component that
    *   require provider constraints, the subclass should override this getter
@@ -203,6 +195,11 @@ export class SuggestProvider extends SuggestFeature {
    *   feature is enabled.
    */
   get rustProviderConstraints() {
+    if (this.dynamicRustSuggestionTypes?.length) {
+      return {
+        dynamicSuggestionTypes: this.dynamicRustSuggestionTypes,
+      };
+    }
     return null;
   }
 
@@ -242,6 +239,18 @@ export class SuggestProvider extends SuggestFeature {
    */
   getSuggestionTelemetryType(suggestion) {
     return this.merinoProvider;
+  }
+
+  /**
+   * Gets the list of commands that should be shown in the result menu for a
+   * given result from the provider. All commands returned by this method should
+   * be handled by implementing `onEngagement()` with the possible exception of
+   * commands automatically handled by the urlbar, like "help".
+   *
+   * @returns {?UrlbarResultCommand[]}
+   */
+  getResultCommand() {
+    return undefined;
   }
 
   /**
@@ -384,11 +393,11 @@ export class SuggestBackend extends SuggestFeature {
    *
    * @param {string} searchString
    *   The search string.
-   * @param {object} options
+   * @param {object} [options]
    *   Options object.
-   * @param {UrlbarQueryContext} options.queryContext
+   * @param {UrlbarQueryContext} [options.queryContext]
    *   The query context.
-   * @param {Array} options.types
+   * @param {?Array} [options.types]
    *   This is only intended to be used in special circumstances and normally
    *   should not be specified. Array of suggestion types to query. By default
    *   all enabled suggestion types are queried.
@@ -397,7 +406,7 @@ export class SuggestBackend extends SuggestFeature {
    *   suggestions matched or suggestions can't be fetched for any reason.
    * @abstract
    */
-  async query(searchString, { queryContext, types }) {
+  async query(searchString, { queryContext, types = null } = {}) {
     throw new Error("Trying to access the base class, must be overridden");
   }
 

@@ -104,6 +104,14 @@ describe("<DSContextFooter>", () => {
       FluentOrText
     );
   });
+  it("should render nova sponsor label with source-wrapper when novaEnabled is true", () => {
+    wrapper = mount(<DSContextFooter sponsor="Nimoy" novaEnabled={true} />);
+
+    assert.isTrue(wrapper.find(".source-wrapper").exists());
+    assert.equal(wrapper.find(".source-wrapper .source").text(), "Nimoy");
+    assert.isTrue(wrapper.find(".ds-spoc-separator").exists());
+    assert.isTrue(wrapper.find(".ds-spoc-sponsored").exists());
+  });
   it("should render a new badge if props change from an old badge to a new one", async () => {
     wrapper = mount(<DSContextFooter context_type={bookmarkBadge} />);
 

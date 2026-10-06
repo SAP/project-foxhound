@@ -20,7 +20,7 @@ pub extern "C" fn read_toolkit_buildid_from_file(
 
     trace!("read_toolkit_buildid_from_file {} {}", fname, nname);
 
-    match BuildIdReader::new(&path).and_then(|mut reader| reader.read_string_build_id(&note_name)) {
+    match BuildIdReader::new(path).and_then(|mut reader| reader.read_string_build_id(&note_name)) {
         Ok(id) => {
             trace!("read_toolkit_buildid_from_file {}", id);
             rv_build_id.assign(&id);

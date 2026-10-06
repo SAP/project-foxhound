@@ -43,7 +43,8 @@ add_task(async function test_pin_unpin_open_tab() {
     let openTabs = document.querySelector("view-opentabs[name=opentabs]");
     await openTabs.updateComplete;
     await TestUtils.waitForCondition(
-      () => openTabs.viewCards[0].tabList.rowEls.length
+      () => openTabs.viewCards[0].tabList.rowEls.length,
+      "Waiting for the first view card tab list to have row elements"
     );
     await openTabs.openTabsTarget.readyWindowsPromise;
     let card = openTabs.viewCards[0];
@@ -59,7 +60,10 @@ add_task(async function test_pin_unpin_open_tab() {
       {},
       content
     );
-    await TestUtils.waitForCondition(() => card.tabContextMenu.panelList);
+    await TestUtils.waitForCondition(
+      () => card.tabContextMenu.panelList,
+      "Waiting for the tab context menu panel list to be available"
+    );
     let panelList = card.tabContextMenu.panelList;
     await BrowserTestUtils.waitForEvent(panelList, "shown");
     info("The context menu is shown when clicking the tab's 'more' button");
@@ -68,16 +72,6 @@ add_task(async function test_pin_unpin_open_tab() {
       "panel-item[data-l10n-id=fxviewtabrow-pin-tab]"
     );
 
-    await clearAllParentTelemetryEvents();
-    let contextMenuEvent = [
-      [
-        "firefoxview_next",
-        "context_menu",
-        "tabs",
-        undefined,
-        { menu_action: "pin-tab", data_type: "opentabs" },
-      ],
-    ];
     tabChangeRaised = BrowserTestUtils.waitForEvent(
       NonPrivateTabs,
       "TabChange"
@@ -91,8 +85,9 @@ add_task(async function test_pin_unpin_open_tab() {
     await openTabs.updateComplete;
 
     let pinnedTab = card.tabList.rowEls[0];
-    await TestUtils.waitForCondition(() =>
-      pinnedTab.indicators.includes("pinned")
+    await TestUtils.waitForCondition(
+      () => pinnedTab.indicators.includes("pinned"),
+      "Waiting for the pinned tab to have the pinned indicator"
     );
 
     // Check aria roles
@@ -119,7 +114,10 @@ add_task(async function test_pin_unpin_open_tab() {
       { type: "contextmenu" },
       content
     );
-    await TestUtils.waitForCondition(() => card.tabContextMenu.panelList);
+    await TestUtils.waitForCondition(
+      () => card.tabContextMenu.panelList,
+      "Waiting for the tab context menu panel list to be available"
+    );
     panelList = card.tabContextMenu.panelList;
     await BrowserTestUtils.waitForEvent(panelList, "shown");
     info("The context menu is shown when right clicking the pinned tab");
@@ -128,16 +126,7 @@ add_task(async function test_pin_unpin_open_tab() {
       "panel-item[data-l10n-id=fxviewtabrow-unpin-tab]"
     );
 
-    await clearAllParentTelemetryEvents();
-    contextMenuEvent = [
-      [
-        "firefoxview_next",
-        "context_menu",
-        "tabs",
-        undefined,
-        { menu_action: "unpin-tab", data_type: "opentabs" },
-      ],
-    ];
+    Services.fog.testResetFOG();
     tabChangeRaised = BrowserTestUtils.waitForEvent(
       NonPrivateTabs,
       "TabChange"
@@ -149,7 +138,12 @@ add_task(async function test_pin_unpin_open_tab() {
 
     await tabChangeRaised;
     await openTabs.updateComplete;
-    await telemetryEvent(contextMenuEvent);
+    const contextEvents = Glean.firefoxviewNext.contextMenuTabs.testGetValue();
+    Assert.equal(1, contextEvents.length, "Expect one context menu event.");
+    Assert.deepEqual(
+      { menu_action: "unpin-tab", data_type: "opentabs" },
+      contextEvents[0].extra
+    );
   });
   cleanup();
 });
@@ -165,7 +159,8 @@ add_task(async function test_indicator_pinned_tabs_with_keyboard() {
     let openTabs = document.querySelector("view-opentabs[name=opentabs]");
     await openTabs.updateComplete;
     await TestUtils.waitForCondition(
-      () => openTabs.viewCards[0].tabList.rowEls.length
+      () => openTabs.viewCards[0].tabList.rowEls.length,
+      "Waiting for the first view card tab list to have row elements"
     );
     await openTabs.openTabsTarget.readyWindowsPromise;
     setSortOption(openTabs, "tabStripOrder");
@@ -191,9 +186,9 @@ add_task(async function test_indicator_pinned_tabs_with_keyboard() {
     );
 
     // Pin 2 of 5 tabs
-    browser.ownerGlobal.gBrowser.tabs.forEach((tab, i) => {
-      if (i > 2 && tab != browser.ownerGlobal.FirefoxViewHandler.tab) {
-        browser.ownerGlobal.gBrowser.pinTab(tab);
+    browser.documentGlobal.gBrowser.tabs.forEach((tab, i) => {
+      if (i > 2 && tab != browser.documentGlobal.FirefoxViewHandler.tab) {
+        browser.documentGlobal.gBrowser.pinTab(tab);
       }
     });
 
@@ -222,12 +217,14 @@ add_task(async function test_indicator_pinned_tabs_with_keyboard() {
 
     // Test mute/unmute
     EventUtils.synthesizeKey("m", { ctrlKey: true });
-    await TestUtils.waitForCondition(() =>
-      soundPlayingPinnedTab.indicators.includes("muted")
+    await TestUtils.waitForCondition(
+      () => soundPlayingPinnedTab.indicators.includes("muted"),
+      "Waiting for the sound playing pinned tab to have the muted indicator"
     );
     EventUtils.synthesizeKey("m", { ctrlKey: true });
     await TestUtils.waitForCondition(
-      () => !soundPlayingPinnedTab.indicators.includes("muted")
+      () => !soundPlayingPinnedTab.indicators.includes("muted"),
+      "Waiting for the sound playing pinned tab to no longer have the muted indicator"
     );
 
     await arrowRight(card.tabList);
@@ -311,7 +308,8 @@ add_task(async function test_mute_unmute_pinned_tab() {
     let openTabs = document.querySelector("view-opentabs[name=opentabs]");
     await openTabs.updateComplete;
     await TestUtils.waitForCondition(
-      () => openTabs.viewCards[0].tabList.rowEls.length
+      () => openTabs.viewCards[0].tabList.rowEls.length,
+      "Waiting for the first view card tab list to have row elements"
     );
     await openTabs.openTabsTarget.readyWindowsPromise;
     let card = openTabs.viewCards[0];
@@ -342,8 +340,9 @@ add_task(async function test_mute_unmute_pinned_tab() {
     await openTabs.updateComplete;
 
     let mutedTab = card.tabList.rowEls[0];
-    await TestUtils.waitForCondition(() =>
-      mutedTab.indicators.includes("muted")
+    await TestUtils.waitForCondition(
+      () => mutedTab.indicators.includes("muted"),
+      "Waiting for the muted tab to have the muted indicator"
     );
 
     // Unmute tab
@@ -368,7 +367,8 @@ add_task(async function test_mute_unmute_pinned_tab() {
 
     let unmutedTab = card.tabList.rowEls[0];
     await TestUtils.waitForCondition(
-      () => !unmutedTab.indicators.includes("muted")
+      () => !unmutedTab.indicators.includes("muted"),
+      "Waiting for the unmuted tab to no longer have the muted indicator"
     );
   });
   cleanup();
@@ -382,7 +382,8 @@ add_task(async function test_mute_unmute_with_context_menu() {
     let openTabs = document.querySelector("view-opentabs[name=opentabs]");
     await openTabs.updateComplete;
     await TestUtils.waitForCondition(
-      () => openTabs.viewCards[0].tabList.rowEls.length
+      () => openTabs.viewCards[0].tabList.rowEls.length,
+      "Waiting for the first view card tab list to have row elements"
     );
     await openTabs.openTabsTarget.readyWindowsPromise;
     let card = openTabs.viewCards[0];
@@ -398,7 +399,10 @@ add_task(async function test_mute_unmute_with_context_menu() {
       { type: "contextmenu" },
       content
     );
-    await TestUtils.waitForCondition(() => card.tabContextMenu.panelList);
+    await TestUtils.waitForCondition(
+      () => card.tabContextMenu.panelList,
+      "Waiting for the tab context menu panel list to be available"
+    );
     let panelList = card.tabContextMenu.panelList;
     await BrowserTestUtils.waitForEvent(panelList, "shown");
     info("The context menu is shown when clicking the tab's 'more' button");
@@ -407,16 +411,6 @@ add_task(async function test_mute_unmute_with_context_menu() {
       "panel-item[data-l10n-id=fxviewtabrow-mute-tab]"
     );
 
-    await clearAllParentTelemetryEvents();
-    let contextMenuEvent = [
-      [
-        "firefoxview_next",
-        "context_menu",
-        "tabs",
-        undefined,
-        { menu_action: "mute-tab", data_type: "opentabs" },
-      ],
-    ];
     tabChangeRaised = BrowserTestUtils.waitForEvent(
       NonPrivateTabs,
       "TabChange"
@@ -430,8 +424,9 @@ add_task(async function test_mute_unmute_with_context_menu() {
     await openTabs.updateComplete;
 
     let mutedTab = card.tabList.rowEls[0];
-    await TestUtils.waitForCondition(() =>
-      mutedTab.indicators.includes("muted")
+    await TestUtils.waitForCondition(
+      () => mutedTab.indicators.includes("muted"),
+      "Waiting for the muted tab to have the muted indicator"
     );
 
     // Open context menu
@@ -440,7 +435,10 @@ add_task(async function test_mute_unmute_with_context_menu() {
       { type: "contextmenu" },
       content
     );
-    await TestUtils.waitForCondition(() => card.tabContextMenu.panelList);
+    await TestUtils.waitForCondition(
+      () => card.tabContextMenu.panelList,
+      "Waiting for the tab context menu panel list to be available"
+    );
     panelList = card.tabContextMenu.panelList;
     await BrowserTestUtils.waitForEvent(panelList, "shown");
     info("The context menu is shown when right clicking the pinned tab");
@@ -449,16 +447,7 @@ add_task(async function test_mute_unmute_with_context_menu() {
       "panel-item[data-l10n-id=fxviewtabrow-unmute-tab]"
     );
 
-    await clearAllParentTelemetryEvents();
-    contextMenuEvent = [
-      [
-        "firefoxview_next",
-        "context_menu",
-        "tabs",
-        undefined,
-        { menu_action: "unmute-tab", data_type: "opentabs" },
-      ],
-    ];
+    Services.fog.testResetFOG();
     tabChangeRaised = BrowserTestUtils.waitForEvent(
       NonPrivateTabs,
       "TabChange"
@@ -470,11 +459,17 @@ add_task(async function test_mute_unmute_with_context_menu() {
 
     await tabChangeRaised;
     await openTabs.updateComplete;
-    await telemetryEvent(contextMenuEvent);
+    const contextEvents = Glean.firefoxviewNext.contextMenuTabs.testGetValue();
+    Assert.equal(1, contextEvents.length, "Expect one context menu event.");
+    Assert.deepEqual(
+      { menu_action: "unmute-tab", data_type: "opentabs" },
+      contextEvents[0].extra
+    );
 
     let unmutedTab = card.tabList.rowEls[0];
     await TestUtils.waitForCondition(
-      () => !unmutedTab.indicators.includes("muted")
+      () => !unmutedTab.indicators.includes("muted"),
+      "Waiting for the unmuted tab to no longer have the muted indicator"
     );
   });
   cleanup();

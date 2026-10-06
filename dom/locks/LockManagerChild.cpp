@@ -1,12 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "LockManagerChild.h"
-#include "LockRequestChild.h"
 
+#include "LockRequestChild.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/RemoteWorkerChild.h"
 #include "mozilla/dom/WindowGlobalChild.h"
@@ -16,7 +14,8 @@
 
 namespace mozilla::dom::locks {
 
-LockManagerChild::LockManagerChild(nsIGlobalObject* aOwner) : mOwner(aOwner) {
+LockManagerChild::LockManagerChild(nsIGlobalObject* aGlobal)
+    : mGlobal(aGlobal) {
   if (!NS_IsMainThread()) {
     mWorkerRef = IPCWorkerRef::Create(GetCurrentThreadWorkerPrivate(),
                                       "LockManagerChild");

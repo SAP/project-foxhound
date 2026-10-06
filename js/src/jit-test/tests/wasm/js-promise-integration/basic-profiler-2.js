@@ -1,4 +1,4 @@
-// |jit-test| skip-if: !WasmHelpers.isSingleStepProfilingEnabled
+// |jit-test| skip-if: !wasmJSPromiseIntegrationEnabled() || !WasmHelpers.isSingleStepProfilingEnabled
 
 // Test profiling of JS PI non-suspending import call.
 
@@ -44,29 +44,56 @@ var res = update_state(4);
 var tasks = res.then((r) => {
   assertEq(r, .04);
   const stacks = disableSingleStepProfiling();
-  assertEqImpreciseStacks(stacks,
-    [
+  assertEqImpreciseStacks(stacks, [
       "",
       ">",
-      "1,>",                                   // enter $promising.exported
-      ...wb("CreateSuspender,1,>"),
       "1,>",
-      ...wb("CreatePromisingPromise,1,>"),
+      "<,1,>",
+      "CreatePromise,1,>",
+      "<,1,>",
       "1,>",
-      ...wb("#ref.func function,1,>"),         // ref to $promising.trampoline
+      "<,1,>",
+      "GC postbarrier,1,>",
+      "<,1,>",
       "1,>",
-      ...wb("#update suspender state util,1,>"),
+      "<,1,>",
+      "GC postbarrier,1,>",
+      "<,1,>",
       "1,>",
-      "2,1,>",                                 // enter $promising.trampoline
-      "1,2,1,>",                               // enter "update_state_export"
-      "<,1,2,1,>",                             // JS compute_delta
-      "1,2,1,>",                               // exiting from "update_state_export"
-      "2,1,>",                                 // at $promising.trampoline
-      ...wb("SetPromisingPromiseResults,2,1,>"),
+      "<,1,>",
+      "#ref.func function,1,>",
+      "<,1,>",
+      "1,>",
+      "<,1,>",
+      "#cont.new function,1,>",
+      "<,1,>",
+      "1,>",
+      "1,1,>",
+      "1,>",
+      "2,1,>",
+      "<,2,1,>",
+      "GC postbarrier,2,1,>",
+      "<,2,1,>",
+      "2,1,>",
+      "<,2,1,>",
+      "GC postbarrier,2,1,>",
+      "<,2,1,>",
+      "2,1,>",
+      "1,2,1,>",
+      "<,1,2,1,>",
+      "1,2,1,>",
+      "2,1,>",
+      "<,2,1,>",
+      "ResolvePromiseWithResults,2,1,>",
+      "<,2,1,>",
       "2,1,>",
       "1,>",
-      ...wb("#update suspender state util,1,>"),
-      "1,>",                                   // exiting $promising.exported
+      ">",
+      "1,>",
+      "<,1,>",
+      "#cont.unwind function,1,>",
+      "<,1,>",
+      "1,>",
       ">",
       ""
     ]

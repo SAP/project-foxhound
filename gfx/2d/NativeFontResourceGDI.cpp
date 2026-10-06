@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,10 +14,10 @@ namespace gfx {
 
 /* static */
 already_AddRefed<NativeFontResourceGDI> NativeFontResourceGDI::Create(
-    uint8_t* aFontData, uint32_t aDataLength) {
+    const uint8_t* aFontData, uint32_t aDataLength) {
   DWORD numberOfFontsAdded;
-  HANDLE fontResourceHandle =
-      ::AddFontMemResourceEx(aFontData, aDataLength, 0, &numberOfFontsAdded);
+  HANDLE fontResourceHandle = ::AddFontMemResourceEx(
+      (PVOID)aFontData, aDataLength, 0, &numberOfFontsAdded);
   if (!fontResourceHandle) {
     gfxWarning() << "Failed to add memory font resource.";
     return nullptr;
@@ -44,7 +42,7 @@ already_AddRefed<UnscaledFont> NativeFontResourceGDI::CreateUnscaledFont(
   }
 
   const LOGFONT* logFont = reinterpret_cast<const LOGFONT*>(aInstanceData);
-  RefPtr<UnscaledFont> unscaledFont = new UnscaledFontGDI(*logFont);
+  RefPtr unscaledFont = MakeRefPtr<UnscaledFontGDI>(*logFont);
   return unscaledFont.forget();
 }
 

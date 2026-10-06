@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <limits.h>
 #include <memory>
 #include "nss.h"
 #include "pk11pub.h"
@@ -164,6 +165,27 @@ TEST_F(Pkcs11AESKeyWrapKwpTest, TestVectors) {
                testvector.test_id);
   }
   EXPECT_EQ(count, expected_count);
+}
+
+// Regression test for integer overflow in AESKeyWrap_EncryptKWP: when
+// inputLen > UINT_MAX - (2 * AES_KEY_WRAP_BLOCK_SIZE - 1), paddedInputLen
+// (which equals inputLen + padLen, see aeskeywrap.c:531) overflows and
+// could allocate a smaller buffer than the PORT_Memcpy expects
+TEST_F(Pkcs11AESKeyWrapKwpTest, OverflowingInputLenIsRejected) {
+  ScopedPK11SlotInfo slot(PK11_GetInternalSlot());
+  ASSERT_NE(nullptr, slot);
+  ScopedPK11SymKey kek(
+      PK11_KeyGen(slot.get(), CKM_AES_CBC, nullptr, 16, nullptr));
+  ASSERT_NE(nullptr, kek);
+
+  std::vector<unsigned char> plaintext(16, 0xAB);
+  std::vector<unsigned char> ciphertext(plaintext.size() + 16);
+  unsigned int out_len = 0;
+
+  SECStatus rv = PK11_Encrypt(
+      kek.get(), CKM_AES_KEY_WRAP_KWP, nullptr, ciphertext.data(), &out_len,
+      static_cast<unsigned int>(ciphertext.size()), plaintext.data(), UINT_MAX);
+  EXPECT_EQ(SECFailure, rv);
 }
 
 }  // namespace nss_test

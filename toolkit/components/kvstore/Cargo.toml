@@ -15,18 +15,19 @@ log = "0.4"
 moz_task = { path = "../../../xpcom/rust/moz_task" }
 nserror = { path = "../../../xpcom/rust/nserror" }
 nsstring = { path = "../../../xpcom/rust/nsstring" }
-rkv = { version = "0.19", default-features = false, features=["no-canonicalize-path"] }
+rkv = { version = "0.20", default-features = false, features=["no-canonicalize-path"] }
 storage_variant = { path = "../../../storage/variant" }
 xpcom = { path = "../../../xpcom/rust/xpcom" }
 tempfile = "3"
 thin-vec = { version = "0.2.1", features = ["gecko-ffi"] }
 thiserror = "1"
-rusqlite = "0.33.0"
+rusqlite = { workspace = true, features = ["functions"] }
 hashbrown = "0.13"
 futures = "0.3"
 serde = "1"
 serde_json = { version = "1", features = ["float_roundtrip"] }
 chrono = "0.4"
+skv = { path = "../../../third_party/skv" }
 
 [features]
-gtest = []
+gtest = ["skv/gtest"]

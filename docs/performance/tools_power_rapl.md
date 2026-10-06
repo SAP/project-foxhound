@@ -26,7 +26,9 @@ $OBJDIR/dist/bin/rapl
 
 On Linux, `rapl` can be run as root, as follows.
 
-    sudo $OBJDIR/dist/bin/rapl
+```
+sudo $OBJDIR/dist/bin/rapl
+```
 
 Alternatively, it can be run without root privileges by setting the
 contents of
@@ -65,17 +67,17 @@ The following is 10 seconds of output from a default invocation of
 
 Things to note include the following.
 
--   All measurements are in Watts.
--   The first line indicates the meaning of each column.
--   The underscores in `_pkg_`, `_gpu_` and `_ram_` are present so that
-    each column's name has five characters.
--   The total power is the sum of the package power and the RAM power.
--   The package estimate is divided into three parts: cores, GPU, and
-    \"other\". \"Other\" is computed as the package power minus the
-    cores power and GPU power.
--   If the processor does not support GPU or RAM estimates then
-    \"` n/a `\" will be printed in the relevant column instead of a
-    number, and it will contribute zero to the total.
+- All measurements are in Watts.
+- The first line indicates the meaning of each column.
+- The underscores in `_pkg_`, `_gpu_` and `_ram_` are present so that
+  each column's name has five characters.
+- The total power is the sum of the package power and the RAM power.
+- The package estimate is divided into three parts: cores, GPU, and
+  \"other\". \"Other\" is computed as the package power minus the
+  cores power and GPU power.
+- If the processor does not support GPU or RAM estimates then
+  \"` n/a `\" will be printed in the relevant column instead of a
+  number, and it will contribute zero to the total.
 
 Once sampling is finished --- either because the user interrupted it, or
 because the requested number of samples has been taken --- the following
@@ -100,11 +102,11 @@ The distribution data is omitted if there was zero or one samples taken.
 
 ## Options
 
--   `-i --sample-interval`. The length of each sample in milliseconds.
-    Defaults to 1000. A warning is given if you set it below 50 because
-    that is likely to lead to inaccurate estimates.
--   `-n --sample-count`. The number of samples to take. The default is
-    0, which is interpreted as \"unlimited\".
+- `-i --sample-interval`. The length of each sample in milliseconds.
+  Defaults to 1000. A warning is given if you set it below 50 because
+  that is likely to lead to inaccurate estimates.
+- `-n --sample-count`. The number of samples to take. The default is
+  0, which is interpreted as \"unlimited\".
 
 ## Combining with `powermetrics`
 

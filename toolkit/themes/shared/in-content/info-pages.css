@@ -7,6 +7,9 @@
 :root {
   --in-content-container-min-width: 13em;
   --in-content-container-max-width: 52em;
+  --info-pages-body-space-padding: var(--dimension-40) var(--dimension-48);
+  --info-pages-list-space-column-gap: var(--dimension-80);
+  --info-pages-title-space-image-offset: calc(2.5 * var(--space-xxlarge));
 }
 
 /* Body and container */
@@ -15,7 +18,7 @@ body {
   flex-direction: column;
   box-sizing: border-box;
   min-height: 100vh;
-  padding: 40px 48px;
+  padding: var(--info-pages-body-space-padding);
   align-items: center;
   justify-content: center;
 }
@@ -36,9 +39,9 @@ body.wide-container {
   background-size: 1.6em;
   /* Ensure sufficient space for the background image: */
   min-height: 1.6em;
-  margin-inline-start: -2.3em;
-  padding-inline-start: 2.3em;
-  font-size: 2.2rem;
+  margin-inline-start: calc(-1 * var(--info-pages-title-space-image-offset));
+  padding-inline-start: var(--info-pages-title-space-image-offset);
+  font-size: var(--font-size-xxxlarge);
   -moz-context-properties: fill;
   fill: currentColor;
 }
@@ -49,15 +52,15 @@ body.wide-container {
 }
 
 .title-text {
-  font-size: 2.2rem;
-  padding-bottom: 0.4em;
+  font-size: var(--font-size-xxxlarge);
+  padding-bottom: var(--space-medium);
 }
 
 @media (max-width: 970px) {
   .title {
     padding-inline-start: 0;
     margin-inline-start: 0;
-    padding-top: 2.3em;
+    padding-top: var(--info-pages-title-space-image-offset);
   }
 
   .title-text {
@@ -66,19 +69,19 @@ body.wide-container {
 }
 
 .page-subtitle {
-  margin-bottom: 2em;
+  margin-bottom: var(--space-xxlarge);
 }
 
 ul,
 ol {
-  margin: 1em 0;
+  margin: var(--space-large) 0;
   padding: 0;
-  margin-inline-start: 2em;
+  margin-inline-start: var(--space-xxlarge);
 }
 
 ul > li,
 ol > li {
-  margin-bottom: 0.5em;
+  margin-bottom: var(--space-small);
 }
 
 ul {
@@ -86,12 +89,12 @@ ul {
 }
 
 dt {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 ul.columns {
   column-count: 2;
-  column-gap: 5em;
+  column-gap: var(--info-pages-list-space-column-gap);
 }
 
 @media (max-width: 35em) {
@@ -102,11 +105,11 @@ ul.columns {
 
 /* Buttons */
 .button-container {
-  margin-top: 1.2em;
+  margin-top: var(--space-large);
 }
 
 button {
-  padding: 0 1.5em;
+  padding: 0 var(--space-xlarge);
 }
 
 .button-container > button:first-child {
@@ -126,24 +129,24 @@ tree {
 /* Tables */
 
 table {
-  background-color: var(--in-content-table-background);
-  color: var(--in-content-text-color);
+  background-color: var(--table-background-color);
+  color: var(--text-color);
   font: message-box;
   text-align: start;
   width: 100%;
-  border: 1px solid var(--in-content-table-border-color);
-  border-radius: 4px;
+  border: 1px solid var(--table-border-color);
+  border-radius: var(--border-radius-small);
   border-spacing: 0;
   overflow: hidden;
 }
 
 table button {
-  padding-inline: 3px;
+  padding-inline: var(--space-xsmall);
 }
 
 th,
 td {
-  padding: 4px;
+  padding: var(--space-xsmall);
   text-align: match-parent;
 }
 
@@ -152,9 +155,9 @@ thead th {
 }
 
 th {
-  background-color: var(--in-content-table-header-background);
-  color: var(--in-content-table-header-color);
-  border: 1px solid var(--in-content-table-border-color);
+  background-color: var(--table-header-background-color);
+  color: var(--table-header-text-color);
+  border: 1px solid var(--table-border-color);
 }
 
 th.column {
@@ -163,22 +166,22 @@ th.column {
 }
 
 td {
-  border: 1px solid var(--in-content-border-color);
+  border: 1px solid var(--table-border-color);
   unicode-bidi: plaintext; /* Make sure file paths will be LTR */
 }
 
 .action-box {
-  background-color: var(--in-content-table-background);
-  border: 1px solid var(--in-content-box-border-color);
-  border-radius: 4px;
-  padding: 16px;
+  background-color: var(--table-background-color);
+  border: 1px solid var(--table-border-color);
+  border-radius: var(--border-radius-small);
+  padding: var(--space-large);
   flex: 1 1 25%;
 }
 
 .header-flex {
   display: flex;
-  gap: 1.5rem;
-  margin-bottom: 1rem;
+  gap: var(--space-xlarge);
+  margin-bottom: var(--space-large);
   flex-wrap: wrap;
 }
 

@@ -6,7 +6,13 @@
 // Test the script caches in the network monitor.
 async function do_test_script_cache(enableCache) {
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.script_loader.navigation_cache", enableCache]],
+    set: [
+      ["dom.script_loader.experimental.navigation_cache", enableCache],
+      [
+        "dom.script_loader.experimental.navigation_cache.check_memory_pressure",
+        false,
+      ],
+    ],
   });
   registerCleanupFunction(() => SpecialPowers.popPrefEnv());
 
@@ -134,7 +140,13 @@ add_task(async function test_script_cache_enabled() {
  */
 async function do_test_module_cache(enableCache) {
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.script_loader.navigation_cache", enableCache]],
+    set: [
+      ["dom.script_loader.experimental.navigation_cache", enableCache],
+      [
+        "dom.script_loader.experimental.navigation_cache.check_memory_pressure",
+        false,
+      ],
+    ],
   });
   registerCleanupFunction(() => SpecialPowers.popPrefEnv());
 

@@ -44,7 +44,7 @@ async function run_test() {
   function checkBlocklist() {
     var driverVersion = gfxInfo.adapterDriverVersion;
     if (driverVersion) {
-      var status = gfxInfo.getFeatureStatusStr("DIRECT2D");
+      var status = gfxInfo.getFeatureStatusStr("DX_NV12");
       Assert.equal(status, "BLOCKED_DEVICE");
 
       status = gfxInfo.getFeatureStatusStr("WEBRENDER");

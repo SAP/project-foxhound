@@ -1,18 +1,16 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAppStartup_h__
-#define nsAppStartup_h__
+#ifndef nsAppStartup_h_
+#define nsAppStartup_h_
 
 #include "nsIAppStartup.h"
 #include "nsIWindowCreator.h"
 #include "nsIObserver.h"
 #include "nsWeakReference.h"
-
+#include "mozilla/HangAnnotations.h"
 #include "nsIAppShell.h"
-#include "mozilla/Attributes.h"
 
 #if defined(XP_WIN)
 // XPerf-backed probes
@@ -26,7 +24,8 @@
 class nsAppStartup final : public nsIAppStartup,
                            public nsIWindowCreator,
                            public nsIObserver,
-                           public nsSupportsWeakReference {
+                           public nsSupportsWeakReference,
+                           public mozilla::BackgroundHangAnnotator {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIAPPSTARTUP
@@ -36,8 +35,10 @@ class nsAppStartup final : public nsIAppStartup,
   nsAppStartup();
   nsresult Init();
 
+  void AnnotateHang(mozilla::BackgroundHangAnnotations& aAnnotations) override;
+
  private:
-  ~nsAppStartup() = default;
+  ~nsAppStartup();
 
   void CloseAllWindows();
 
@@ -45,16 +46,17 @@ class nsAppStartup final : public nsIAppStartup,
 
   nsCOMPtr<nsIAppShell> mAppShell;
 
-  int32_t mConsiderQuitStopper;     // if > 0, Quit(eConsiderQuit) fails
-  bool mRunning;                    // Have we started the main event loop?
-  bool mShuttingDown;               // Quit method reentrancy check
-  bool mStartingUp;                 // Have we passed final-ui-startup?
-  bool mAttemptingQuit;             // Quit(eAttemptQuit) still trying
-  bool mIsSafeModeNecessary;        // Whether safe mode is necessary
-  bool mStartupCrashTrackingEnded;  // Whether startup crash tracking has
-                                    // already ended
-  bool mWasSilentlyStarted;         // Was this startup a silent start?
-
+  int32_t mConsiderQuitStopper;  // if > 0, Quit(eConsiderQuit) fails
+  bool mRunning;                 // Have we started the main event loop?
+  bool mShuttingDown;            // Quit method reentrancy check
+  bool mStartingUp;              // Have we passed final-ui-startup?
+  bool mAttemptingQuit;          // Quit(eAttemptQuit) still trying
+  bool mIsSafeModeNecessary;     // Whether safe mode is necessary
+  // Whether startup crash tracking has already ended. Primarily used to track
+  // startup crashes; also reused to gate BHR hang annotations since the
+  // "startup" window for both happens to coincide.
+  bool mStartupCrashAndHangTrackingEnded;
+  bool mWasSilentlyStarted;  // Was this startup a silent start?
 #if defined(XP_WIN)
   // If true, allow the process to live on after the last window is closed
   bool mAllowWindowless;
@@ -69,4 +71,4 @@ class nsAppStartup final : public nsIAppStartup,
 #endif
 };
 
-#endif  // nsAppStartup_h__
+#endif  // nsAppStartup_h_

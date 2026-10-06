@@ -36,6 +36,7 @@ import mozilla.components.support.ktx.android.content.appName
 import mozilla.components.support.ktx.android.view.toScope
 import mozilla.components.support.utils.creditCardIssuerNetwork
 import mozilla.components.support.utils.ext.getParcelableCompat
+import com.google.android.material.R as materialR
 
 private const val KEY_CREDIT_CARD = "KEY_CREDIT_CARD"
 
@@ -57,8 +58,7 @@ internal class CreditCardSaveDialogFragment : PromptDialogFragment() {
         return BottomSheetDialog(requireContext(), R.style.MozDialogStyle).apply {
             setCancelable(true)
             setOnShowListener {
-                val bottomSheet =
-                    findViewById<View>(com.google.android.material.R.id.design_bottom_sheet) as FrameLayout
+                val bottomSheet = findViewById<View>(materialR.id.design_bottom_sheet) as FrameLayout
                 val behavior = BottomSheetBehavior.from(bottomSheet)
                 behavior.state = BottomSheetBehavior.STATE_EXPANDED
             }

@@ -90,7 +90,7 @@ window._snapshots = {
               href:
                 "https://developer.mozilla.org/docs/Web/Accessibility/Guides/" +
                 "Understanding_WCAG/Perceivable/Color_contrast?utm_source=" +
-                "devtools&utm_medium=a11y-panel-checks-color-contrast",
+                "devtools&utm_medium=a11y-panel-checks-color-contrast&utm_campaign=default",
               onClick:
                 "openDocOnClick(event) {\n    event.preventDefault();\n    " +
                 "openDocLink(event.target.href);\n  }",
@@ -174,7 +174,7 @@ window._snapshots = {
               href:
                 "https://developer.mozilla.org/docs/Web/Accessibility/Guides/" +
                 "Understanding_WCAG/Perceivable/Color_contrast?utm_source=" +
-                "devtools&utm_medium=a11y-panel-checks-color-contrast",
+                "devtools&utm_medium=a11y-panel-checks-color-contrast&utm_campaign=default",
               onClick:
                 "openDocOnClick(event) {\n    event.preventDefault();\n    " +
                 "openDocLink(event.target.href);\n  }",
@@ -247,7 +247,7 @@ window._snapshots = {
               href:
                 "https://developer.mozilla.org/docs/Web/Accessibility/Guides/" +
                 "Understanding_WCAG/Perceivable/Color_contrast?utm_source=" +
-                "devtools&utm_medium=a11y-panel-checks-color-contrast",
+                "devtools&utm_medium=a11y-panel-checks-color-contrast&utm_campaign=default",
               onClick:
                 "openDocOnClick(event) {\n    event.preventDefault();\n    " +
                 "openDocLink(event.target.href);\n  }",

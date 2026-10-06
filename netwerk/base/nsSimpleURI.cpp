@@ -1,9 +1,6 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-#include "mozilla/DebugOnly.h"
 
 #undef LOG
 #include "ipc/IPCMessageUtils.h"
@@ -18,6 +15,7 @@
 #include "nsIObjectOutputStream.h"
 #include "nsEscape.h"
 #include "nsError.h"
+#include "nsQueryObject.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/ipc/URIUtils.h"
@@ -31,21 +29,6 @@ using namespace mozilla::ipc;
 namespace mozilla {
 namespace net {
 
-static NS_DEFINE_CID(kThisSimpleURIImplementationCID,
-                     NS_THIS_SIMPLEURI_IMPLEMENTATION_CID);
-
-/* static */
-already_AddRefed<nsSimpleURI> nsSimpleURI::From(nsIURI* aURI) {
-  RefPtr<nsSimpleURI> uri;
-  nsresult rv = aURI->QueryInterface(kThisSimpleURIImplementationCID,
-                                     getter_AddRefs(uri));
-  if (NS_FAILED(rv)) {
-    return nullptr;
-  }
-
-  return uri.forget();
-}
-
 NS_IMPL_CLASSINFO(nsSimpleURI, nullptr, nsIClassInfo::THREADSAFE,
                   NS_SIMPLEURI_CID)
 // Empty CI getter. We only need nsIClassInfo for Serialization
@@ -57,13 +40,11 @@ NS_IMPL_CI_INTERFACE_GETTER0(nsSimpleURI)
 NS_IMPL_ADDREF(nsSimpleURI)
 NS_IMPL_RELEASE(nsSimpleURI)
 NS_INTERFACE_TABLE_HEAD(nsSimpleURI)
-  NS_INTERFACE_TABLE(nsSimpleURI, nsIURI, nsISerializable)
+  NS_INTERFACE_TABLE(nsSimpleURI, nsIURI, nsISerializable,
+                     nsIIPCSerializableURI, nsIURIWithSizeOf)
   NS_INTERFACE_TABLE_TO_MAP_SEGUE
   NS_IMPL_QUERY_CLASSINFO(nsSimpleURI)
-  if (aIID.Equals(kThisSimpleURIImplementationCID)) {
-    foundInterface = static_cast<nsIURI*>(this);
-  } else
-    NS_INTERFACE_MAP_ENTRY(nsISizeOf)
+  NS_INTERFACE_MAP_ENTRY_CONCRETE(nsSimpleURI)
 NS_INTERFACE_MAP_END
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -81,7 +62,7 @@ nsresult nsSimpleURI::ReadPrivate(nsIObjectInputStream* aStream) {
   bool isMutable;
   rv = aStream->ReadBoolean(&isMutable);
   if (NS_FAILED(rv)) return rv;
-  Unused << isMutable;
+  (void)isMutable;
 
   nsAutoCString scheme;
   rv = aStream->ReadCString(scheme);
@@ -432,7 +413,7 @@ nsresult nsSimpleURI::SetPathQueryRefInternal() {
     // fallible version of `NS_EscapeURL` which won't do an unnecessary copy in
     // the non-escaping case.
     nsAutoCString escapedRef;
-    if (NS_EscapeURLSpan(Ref(), esc_OnlyNonASCII | esc_Spaces, escapedRef)) {
+    if (NS_EscapeURLSpan(Ref(), esc_Ref, escapedRef)) {
       if (!mSpec.Replace(RefStart(), RefLen(), escapedRef, fallible)) {
         return NS_ERROR_OUT_OF_MEMORY;
       }
@@ -464,9 +445,11 @@ nsresult nsSimpleURI::SetRef(const nsACString& aRef) {
     return NS_ERROR_MALFORMED_URI;
   }
 
+  nsAutoCString filteredRef(aRef);
+  filteredRef.StripTaggedASCII(ASCIIMask::MaskCRLFTab());
+
   nsAutoCString ref;
-  nsresult rv =
-      NS_EscapeURL(aRef, esc_OnlyNonASCII | esc_Spaces, ref, fallible);
+  nsresult rv = NS_EscapeURL(filteredRef, esc_Ref, ref, fallible);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -526,10 +509,8 @@ nsresult nsSimpleURI::EqualsInternal(
   NS_ENSURE_ARG_POINTER(other);
   MOZ_ASSERT(result, "null pointer");
 
-  RefPtr<nsSimpleURI> otherUri;
-  nsresult rv = other->QueryInterface(kThisSimpleURIImplementationCID,
-                                      getter_AddRefs(otherUri));
-  if (NS_FAILED(rv)) {
+  RefPtr<nsSimpleURI> otherUri = do_QueryObject(other);
+  if (!otherUri) {
     *result = false;
     return NS_OK;
   }
@@ -639,16 +620,15 @@ nsSimpleURI::GetAsciiHost(nsACString& result) {
   return NS_OK;
 }
 
-//----------------------------------------------------------------------------
-// nsSimpleURI::nsISizeOf
-//----------------------------------------------------------------------------
-
-size_t nsSimpleURI::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const {
-  return mSpec.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
-}
-
-size_t nsSimpleURI::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
-  return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
+// Among the sub-classes that inherit (directly or indirectly) from
+// nsSimpleURI, measurement of the following members may be added later if
+// DMD finds it is worthwhile:
+// - nsJSURI: mBaseURI
+// - nsSimpleNestedURI: mInnerURI
+// - nsBlobURI: mPrincipal
+size_t nsSimpleURI::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) {
+  return aMallocSizeOf(this) +
+         mSpec.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
 }
 
 NS_IMETHODIMP

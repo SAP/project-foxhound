@@ -5,12 +5,14 @@ ruff:
     exclude: []
     # The configure option is used by the build system
     extensions: ["configure", "py"]
+    # Lint Python inside dot-directories too (e.g. .agents, .claude skills).
+    find-dotfiles: true
     support-files:
         - "**/.ruff.toml"
         - "**/ruff.toml"
         - "**/pyproject.toml"
         - "tools/lint/python/ruff.py"
     # Rules that should result in warnings rather than errors.
-    warning-rules: [PLR, PLW, UP006, UP007, UP008, UP028, UP030, UP031]
+    warning-rules: [PLW0603, PLW1641, PLW2901, UP031]
     type: external
     payload: python.ruff:lint

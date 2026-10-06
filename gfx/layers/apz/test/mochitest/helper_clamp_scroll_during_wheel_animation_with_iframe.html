@@ -1,0 +1,81 @@
+<!DOCTYPE HTML>
+<meta charset="utf-8">
+<style>
+html { overflow: auto; }
+body { margin: 0; }
+iframe { display: block; width: 80%; border: 0; }
+</style>
+<iframe id="frame"></iframe>
+<script src="apz_test_utils.js"></script>
+<script src="apz_test_native_event_utils.js"></script>
+<script src="/tests/SimpleTest/paint_listener.js"></script>
+<script>
+"use strict";
+
+const items = Array.from({ length: 50 }, (_, i) =>
+  `<div class="item">Item ${i + 1}</div>`
+).join("\n");
+
+async function test() {
+  const frame = document.getElementById("frame");
+  const frameLoadPromise = new Promise(resolve =>
+    frame.addEventListener("load", resolve, { once: true })
+  );
+
+  frame.srcdoc = `<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; }
+  .item {
+    height: 100px;
+    background: lightblue;
+    border-bottom: 1px solid #ccc;
+    box-sizing: border-box;
+  }
+  .item:nth-child(even) { background: lightyellow; }
+</style>
+${items}`;
+
+  await frameLoadPromise;
+
+  const doc = frame.contentDocument;
+  frame.style.height = doc.body.scrollHeight + "px";
+
+  await promiseApzFlushedRepaints();
+
+  // Temporarily set the iframe height to "auto" to reduce the outer page's
+  // max scroll, which clamps the scroll position (ScrollOrigin::Clamp), then
+  // restore the height and issue a scrollTo to preserve the scroll position.
+  const adjust = () => {
+    const scrollPos = window.scrollY;
+    frame.style.height = "auto";
+    frame.style.height = doc.body.scrollHeight + "px";
+    document.scrollingElement.scrollTo({ top: scrollPos });
+  };
+
+  // Start a smooth scroll animation with a wheel event.
+  const transformEndPromise = promiseTransformEnd();
+  await synthesizeNativeWheel(window, 50, 50, 0, -50);
+
+  // Wait until the main thread has received a non-zero scroll position from
+  // APZ, so that the clamp in adjust() actually has an effect.
+  await new Promise(resolve => window.addEventListener("scroll", resolve, { once: true }));
+  const scrollYAtAdjust = window.scrollY;
+
+  // While the smooth scroll animation is running, call adjust() to trigger a
+  // clamp scroll. Without the fix, this clobbers the APZ animation and the
+  // scroll ends up at scrollYAtAdjust rather than continuing to the full
+  // animation target.
+  adjust();
+
+  await transformEndPromise;
+  await promiseApzFlushedRepaints();
+
+  ok(window.scrollY > scrollYAtAdjust,
+    `Scroll should have continued past ${scrollYAtAdjust} after clamp, got ${window.scrollY}`);
+}
+
+waitUntilApzStable()
+.then(test)
+.then(subtestDone, subtestFailed);
+</script>

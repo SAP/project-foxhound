@@ -1,14 +1,13 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __TX_I_XPATH_CONTEXT
-#define __TX_I_XPATH_CONTEXT
+#ifndef TX_I_XPATH_CONTEXT
+#define TX_I_XPATH_CONTEXT
 
-#include "nscore.h"
 #include "nsISupportsImpl.h"
 #include "nsStringFwd.h"
+#include "nscore.h"
 
 class FunctionCall;
 class nsAtom;
@@ -129,4 +128,4 @@ class txIEvalContext : public txIMatchContext {
   uint32_t size() override;                     \
   uint32_t position() override
 
-#endif  // __TX_I_XPATH_CONTEXT
+#endif  // TX_I_XPATH_CONTEXT

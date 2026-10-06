@@ -25,9 +25,9 @@ const Agent = {
    * Return the canonical JSON serialization of the specified records.
    * It has to match what is done on the server (See Kinto/kinto-signer).
    *
-   * @param {Array<Object>} records
-   * @param {String} timestamp
-   * @returns {String}
+   * @param {Array<object>} records
+   * @param {string} timestamp
+   * @returns {string}
    */
   async canonicalStringify(records, timestamp) {
     // Sort list by record id.
@@ -59,8 +59,9 @@ const Agent = {
    * If present, import the JSON file into the Remote Settings IndexedDB
    * for the specified bucket and collection.
    * (eg. blocklists/certificates, main/onboarding)
-   * @param {String} bucket
-   * @param {String} collection
+   *
+   * @param {string} bucket
+   * @param {string} collection
    * @returns {int} Number of records loaded from dump or -1 if no dump found.
    */
   async importJSONDump(bucket, collection) {
@@ -81,9 +82,10 @@ const Agent = {
 
   /**
    * Check that the specified file matches the expected size and SHA-256 hash.
-   * @param {String} fileUrl file URL to read from
-   * @param {Number} size expected file size
-   * @param {String} size expected file SHA-256 as hex string
+   *
+   * @param {string} fileUrl file URL to read from
+   * @param {number} size expected file size
+   * @param {string} size expected file SHA-256 as hex string
    * @returns {boolean}
    */
   async checkFileHash(fileUrl, size, hash) {
@@ -142,10 +144,10 @@ let gPendingTransactions = new Set();
  *
  * Note: This duplicates some logics from `kinto-offline-client.sys.mjs`.
  *
- * @param {String} bucket
- * @param {String} collection
- * @param {Array<Object>} records
- * @param {Number} timestamp
+ * @param {string} bucket
+ * @param {string} collection
+ * @param {Array<object>} records
+ * @param {number} timestamp
  */
 async function importDumpIDB(bucket, collection, records, timestamp) {
   // Open the DB. It will exist since if we are running this, it means

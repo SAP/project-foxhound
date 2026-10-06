@@ -1,5 +1,8 @@
 // Test trying to call cleanupSome recursively in callback.
 
+// This makes the test time out in some configs.
+unsetgczeal("CheckHeapBeforeMinorGC");
+
 // 0: Initial state.
 // 1: Attempt recursive calls.
 // 2: After recursive calls.

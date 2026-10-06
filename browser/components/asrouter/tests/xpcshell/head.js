@@ -84,6 +84,10 @@ async function makeValidators() {
       "resource://testing-common/NewtabPromoMessage.schema.json",
       { common: true }
     ),
+    smart_window_newtab_promo: await schemaValidatorFor(
+      "resource://testing-common/SmartWindowNewtabPromo.schema.json",
+      { common: true }
+    ),
     spotlight: await schemaValidatorFor(
       "resource://testing-common/Spotlight.schema.json",
       { common: true }

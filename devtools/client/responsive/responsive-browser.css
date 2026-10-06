@@ -2,21 +2,26 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-:root {
-  /* This should map to --theme-toolbar-background. */
-  --rdm-background-color: #f5f5f6;
-  --rdm-shadow-color: rgba(155, 155, 155, 0.26);
-
-  &[devtoolstheme="dark"] {
-    --rdm-background-color: #18181a;
-    --rdm-shadow-color: rgba(105, 105, 105, 0.26);
-  }
-}
-
 .browserContainer.responsive-mode {
-  background-color: var(--rdm-background-color);
+  /* This should map to --theme-toolbar-background. */
+  --rdm-background-color: light-dark(#f5f5f6, #18181a);
+  --rdm-shadow-color: light-dark(rgba(155, 155, 155, 0.26), rgba(105, 105, 105, 0.26));
+  --theme-tab-toolbar-background: light-dark(#f9f9fa, #0c0c0d);
   --rdm-toolbar-height: 30px;
   --rdm-toolbar-accomodate-ua-height: 60px;
+
+  /**
+   * Set background - not only background-color - to properly override the
+   * content-area.css property set at
+   * https://searchfox.org/firefox-main/rev/e28b34ab33dbf49364999070168cbb7e11e8e5bd/browser/themes/shared/tabbrowser/content-area.css#168
+   */
+  background: var(--rdm-background-color);
+
+  color-scheme: light;
+
+  :root[devtoolstheme="dark"] & {
+    color-scheme: dark;
+  }
 }
 
 .browserContainer.responsive-mode > .rdm-toolbar {
@@ -56,46 +61,42 @@
 }
 
 .browserContainer.responsive-mode > .browserStack {
-  --resizer-offset: 4px;
-  --browser-viewport-width: calc(var(--rdm-width) + var(--resizer-offset));
-  --browser-viewport-height: calc(var(--rdm-height) + var(--resizer-offset));
-  --rdm-zoomed-width: calc(var(--rdm-width) * var(--rdm-zoom));
-  --rdm-zoomed-height: calc(var(--rdm-height) * var(--rdm-zoom));
   min-height: 0;
   min-width: 0;
   overflow: auto;
   contain: size;
-  grid-template-columns: 15px 1fr [center-align] var(--browser-viewport-width) 1fr;
-  grid-template-rows: 65px [margin-top-offset] var(--browser-viewport-height);
+
+  /**
+   * The grid areas provide a reference box for the browser. The browser
+   * (and the .rdm-screen-box element) will fill the grid box exactly at
+   * rdm-zoom 1. If rdm-zoom is different from 1, the grid areas do not
+   * change; instead, we use a transform on the browser and on the
+   * .rdm-screen-box to make it grow beyond the grid area.
+   * Resizer handles etc are children of .rdm-screen-box, so they will be
+   * placed correctly as a result of .rdm-screen-box's transform.
+   */
+  grid-template-columns: 15px 1fr [center-align] var(--rdm-width) 1fr;
+  grid-template-rows: 65px [margin-top-offset] var(--rdm-height) [below-browser] 1fr;
 }
 
-.browserContainer.responsive-mode > .browserStack > .rdm-dynamic-toolbar {
-  align-self: end;
-  background: lightslategray;
-  opacity: 0.5;
-}
-
-.browserContainer.responsive-mode > .browserStack > :is(browser, .rdm-viewport-resize-handle, .rdm-dynamic-toolbar) {
+.browserContainer.responsive-mode > .browserStack > :is(browser, .rdm-screen-box) {
   grid-column: center-align;
   grid-row: margin-top-offset;
 }
 
-.browserContainer.responsive-mode.left-aligned > .browserStack > :is(browser, .rdm-viewport-resize-handle) {
+.browserContainer.responsive-mode.left-aligned > .browserStack > :is(browser, .rdm-screen-box) {
   grid-column: left-align;
 }
 
 .browserContainer.responsive-mode.left-aligned > .browserStack {
-  grid-template-columns: 15px [left-align] var(--browser-viewport-width) 1fr;
+  grid-template-columns: 15px [left-align] var(--rdm-width) 1fr;
 }
 
 html[dir="rtl"] .browserContainer.responsive-mode.left-aligned > .browserStack {
-  grid-template-columns: 1fr [left-align] var(--browser-viewport-width) 15px;
+  grid-template-columns: 1fr [left-align] var(--rdm-width) 15px;
 }
 
-.browserContainer.responsive-mode > .browserStack > browser {
-  border: 1px solid var(--devtools-splitter-color);
-  box-shadow: 0 4px 4px 0 var(--rdm-shadow-color);
-
+.browserContainer.responsive-mode > .browserStack > :is(browser, .rdm-screen-box) {
   transform-origin: 50% 0;
   transform: scale(var(--rdm-zoom), var(--rdm-zoom));
   box-sizing: content-box; /* This is important to ensure that the pane has the
@@ -105,55 +106,146 @@ html[dir="rtl"] .browserContainer.responsive-mode.left-aligned > .browserStack {
   width: var(--rdm-width);
 }
 
-.browserContainer.responsive-mode.left-aligned > .browserStack > browser {
+.browserContainer.responsive-mode.left-aligned > .browserStack > :is(browser, .rdm-screen-box) {
   transform-origin: 0 0;
+}
+
+.browserContainer.responsive-mode > .browserStack > browser {
+  position: relative; /* so that .style.top moves it (for dynamic toolbar on top) */
+}
+
+.rdm-screen-box {
+  --side-handle-thickness: 5px;
+  --corner-handle-size: 16px;
+
+  /* We use outline instead of border so that we don't affect the position
+  or size of the browser content. */
+  outline: 1px solid var(--devtools-splitter-color);
+  box-shadow: 0 4px 4px var(--rdm-shadow-color);
+  position: relative;
+  display: grid;
+
+  /* Don't block mouse events from reaching the underlying browser. */
+  pointer-events: none;
+
+  & > * {
+    /* But do allow mouse interactions with resizers etc */
+    pointer-events: all;
+  }
+}
+
+/**
+ * .rdm-browser-bottom-cover covers up any bits of the browser that stick out
+ * of the screen box when pushed down by the dynamic toolbar (when the toolbar
+ * is on the top).
+ * We'd prefer to clip off the bottom using e.g. overflow:clip, but we don't
+ * have an ancestor element in the DOM that can act as the clip.
+ *
+ * Ideally we wouldn't need to move the browser at all when the dynamic toolbar
+ * moves. This is tracked in bug 1921331.
+ */
+.rdm-browser-bottom-cover {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 0;
+  background: var(--rdm-background-color);
 }
 
 /* Resize handles */
 
-.browserContainer.responsive-mode > .browserStack > .viewport-resize-handle {
-  width: 16px;
-  height: 16px;
+.rdm-screen-box > .viewport-resize-handle {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: var(--corner-handle-size);
+  height: var(--corner-handle-size);
   background-image: url("./images/grippers.svg");
-  margin-inline-end: var(--resizer-offset);
-  margin-block-end: var(--resizer-offset);
   background-repeat: no-repeat;
   background-origin: content-box;
   cursor: nwse-resize;
-  align-self: end;
-  justify-self: right;
-  position: relative;
-  left: calc((var(--rdm-zoomed-width) - var(--rdm-width)) / 2);
-  top: calc(var(--rdm-zoomed-height) - var(--rdm-height));
 }
 
-.browserContainer.responsive-mode.left-aligned > .browserStack > .viewport-resize-handle {
-  left: calc(var(--rdm-zoomed-width) - var(--rdm-width));
-}
-
-.browserContainer.responsive-mode > .browserStack > .viewport-horizontal-resize-handle {
-  width: 5px;
-  height: calc(var(--rdm-zoomed-height) - 16px);
+.rdm-screen-box > .viewport-horizontal-resize-handle {
+  position: absolute;
+  top: 0;
+  left: calc(100% - var(--side-handle-thickness) / 2);
+  width: var(--side-handle-thickness);
+  bottom: var(--corner-handle-size);
   cursor: ew-resize;
-  justify-self: right;
-  position: relative;
-  left: calc((var(--rdm-zoomed-width) - var(--rdm-width)) / 2);
 }
 
-.browserContainer.responsive-mode.left-aligned > .browserStack > .viewport-horizontal-resize-handle {
-  left: calc(var(--rdm-zoomed-width) - var(--rdm-width));
-}
-
-.browserContainer.responsive-mode > .browserStack > .viewport-vertical-resize-handle {
-  width: calc(var(--rdm-zoomed-width) - 16px);
-  height: 5px;
-  cursor: ns-resize;
-  align-self: end;
-  position: relative;
-  top: calc(var(--rdm-zoomed-height) - var(--rdm-height));
-  left: calc((-1 * (var(--rdm-zoomed-width) - var(--rdm-width)) / 2));
-}
-
-.browserContainer.responsive-mode.left-aligned > .browserStack > .viewport-vertical-resize-handle {
+.rdm-screen-box > .viewport-vertical-resize-handle {
+  position: absolute;
   left: 0;
+  top: calc(100% - var(--side-handle-thickness) / 2);
+  height: var(--side-handle-thickness);
+  right: var(--corner-handle-size);
+  cursor: ns-resize;
+}
+
+/* Dynamic toolbar */
+
+.rdm-dynamic-toolbar {
+  overflow: clip;
+  display: flex;
+
+  &:not(.dynamic-toolbar-enabled) {
+    display: none;
+  }
+
+  &:not(.dynamic-toolbar-on-top) {
+    align-self: end;
+  }
+}
+
+.rdm-dynamic-toolbar-inner {
+  /**
+   * We set a fixed height here so that the contents don't get squished by
+   * .rdm-dynamic-toolbar's .style.height when we hide the dynamic toolbar.
+   */
+  height: var(--rdm-dynamic-toolbar-max-height);
+
+  flex: 1; /* full  width */
+  background: var(--theme-tab-toolbar-background);
+  box-sizing: border-box;
+  border: 0 solid var(--devtools-splitter-color);
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  align-content: space-between;
+  gap: 15px;
+  padding: 0 15px;
+
+  .rdm-dynamic-toolbar.dynamic-toolbar-on-top > & {
+    align-self: flex-end; /* anchor self to bottom of container */
+    border-bottom-width: 1px;
+  }
+
+  .rdm-dynamic-toolbar:not(.dynamic-toolbar-on-top) > & {
+    border-top-width: 1px;
+  }
+
+  /* Skeleton UI for the URL bar */
+  &::before {
+    content: "";
+    flex: 1;
+    height: 70%;
+    border-radius: 1000px;
+    background: light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.07));
+  }
+
+  /* Skeleton UI for the tab counter, a rounded box with a 1 inside */
+  &::after {
+    content: "1";
+    color: light-dark(rgba(0, 0, 0, 0.3), rgba(255, 255, 255, 0.3));
+    width: 20px;
+    height: 20px;
+    line-height: 20px;
+    text-align: center;
+    font-size: 14px;
+    border-radius: 4px;
+    border: 2px solid currentColor;
+  }
 }

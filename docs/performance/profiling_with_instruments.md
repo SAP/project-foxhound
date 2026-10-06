@@ -5,27 +5,27 @@ profiling.
 
 ## Official Apple documentation
 
--   [Instruments User
-    Guide](https://developer.apple.com/library/mac/documentation/DeveloperTools/Conceptual/InstrumentsUserGuide/)
--   [Instruments User
-    Reference](https://developer.apple.com/library/mac/documentation/AnalysisTools/Reference/Instruments_User_Reference/)
--   [Instruments Help
-    Articles](https://developer.apple.com/library/mac/recipes/Instruments_help_articles/)
--   [Instruments
-    Help](https://developer.apple.com/library/mac/recipes/instruments_help-collection/)
--   [Performance
-    Overview](https://developer.apple.com/library/mac/documentation/Performance/Conceptual/PerformanceOverview/)
+- [Instruments User
+  Guide](https://developer.apple.com/library/mac/documentation/DeveloperTools/Conceptual/InstrumentsUserGuide/)
+- [Instruments User
+  Reference](https://developer.apple.com/library/mac/documentation/AnalysisTools/Reference/Instruments_User_Reference/)
+- [Instruments Help
+  Articles](https://developer.apple.com/library/mac/recipes/Instruments_help_articles/)
+- [Instruments
+  Help](https://developer.apple.com/library/mac/recipes/instruments_help-collection/)
+- [Performance
+  Overview](https://developer.apple.com/library/mac/documentation/Performance/Conceptual/PerformanceOverview/)
 
 ### Basic Usage
 
--   Select \"Time Profiler\" from the \"Choose a profiling template
-    for:\" dialog.
--   In the top left, next to the record and pause button, there will be
-    a \"\[machine name\] \> All Processes\". Click \"All Processes\" and
-    select \"firefox\" from the \"Running Applications\" section.
--   Click the record button (red circle in top left)
--   Wait for the amount of time that you want to profile
--   Click the stop button
+- Select \"Time Profiler\" from the \"Choose a profiling template
+  for:\" dialog.
+- In the top left, next to the record and pause button, there will be
+  a \"\[machine name\] \> All Processes\". Click \"All Processes\" and
+  select \"firefox\" from the \"Running Applications\" section.
+- Click the record button (red circle in top left)
+- Wait for the amount of time that you want to profile
+- Click the stop button
 
 ## Command line tools
 

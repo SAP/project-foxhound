@@ -47,6 +47,8 @@ support-files = [
 
 ["test_encoder_png.js"]
 
+["test_encoder_png_hdr.js"]
+
 ["test_imgtools.js"]
 
 ["test_moz_icon_uri.js"]

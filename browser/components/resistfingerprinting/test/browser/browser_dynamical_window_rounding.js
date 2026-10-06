@@ -95,7 +95,9 @@ function checkForDefaultSetting(
 
 function test_letterboxing_css_rule() {
   ok(
-    RFPHelper.getLetterboxingDefaultRule(window.gBrowser.ownerGlobal.document),
+    RFPHelper.getLetterboxingDefaultRule(
+      window.gBrowser.documentGlobal.document
+    ),
     "We can find the letterboxing CSS rules to dynamically update."
   );
 }
@@ -317,7 +319,7 @@ async function test_no_rounding_fullscreen(aWindow) {
     DEFAULT_URL
   );
   let { promise: focusPromise, resolve } = Promise.withResolvers();
-  SimpleTest.waitForFocus(resolve, tab.linkedBrowser.ownerGlobal);
+  SimpleTest.waitForFocus(resolve, tab.linkedBrowser.documentGlobal);
   await focusPromise;
   let fullscreenPromise = BrowserTestUtils.waitForContentEvent(
     tab.linkedBrowser,

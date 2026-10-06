@@ -1,0 +1,46 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Test for CHIPS cookie in reporting response from worker</title>
+</head>
+<body>
+
+<script type="application/javascript">
+
+function ok(a, msg) {
+  parent.postMessage({type: "test", check: !!a, msg }, "*");
+}
+
+function finish() {
+  parent.postMessage({type: "finish" }, "*");
+}
+
+function checkReport() {
+  return new Promise(resolve => {
+    let id = setInterval(_ => {
+      fetch("delivering.sjs?task=check&min=1")
+      .then(r => r.text())
+      .then(text => {
+        if (text) {
+          resolve(JSON.parse(text));
+          clearInterval(id);
+        }
+      });
+    }, 1000);
+  });
+}
+
+// Spawn a worker served by the SJS with Reporting-Endpoints header.
+const w = new Worker("delivering.sjs?task=worker&chips");
+w.onmessage = () => {
+  checkReport()
+  .then(reports => {
+    ok(reports.length >= 1, "We received at least one report from worker");
+    ok(!!reports[0].body, "The report has a body");
+    finish();
+  });
+};
+
+</script>
+</body>
+</html>

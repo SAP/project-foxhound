@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -52,14 +50,12 @@ class SyncModuleLoader : public JS::loader::ModuleLoaderBase {
  private:
   ~SyncModuleLoader();
 
-  already_AddRefed<ModuleLoadRequest> CreateStaticImport(
-      nsIURI* aURI, JS::ModuleType aModuleType, ModuleLoadRequest* aParent,
-      const mozilla::dom::SRIMetadata& aSriMetadata) override;
-
-  already_AddRefed<ModuleLoadRequest> CreateDynamicImport(
-      JSContext* aCx, nsIURI* aURI, JS::ModuleType aModuleType,
-      LoadedScript* aMaybeActiveScript, JS::Handle<JSString*> aSpecifier,
-      JS::Handle<JSObject*> aPromise) override;
+  already_AddRefed<ModuleLoadRequest> CreateRequest(
+      JSContext* aCx, nsIURI* aURI, JS::Handle<JSObject*> aModuleRequest,
+      JS::Handle<JS::Value> aHostDefined, JS::Handle<JS::Value> aPayload,
+      bool aIsDynamicImport, JS::loader::ScriptFetchOptions* aOptions,
+      dom::ReferrerPolicy aReferrerPolicy, nsIURI* aBaseURL,
+      const dom::SRIMetadata& aSriMetadata) override;
 
   void OnDynamicImportStarted(ModuleLoadRequest* aRequest) override;
 
@@ -90,13 +86,13 @@ class SyncLoadContext : public JS::loader::LoadContextBase {
  public:
   // The result of compiling a module script. These fields are used temporarily
   // before being passed to the module loader.
-  nsresult mRv;
+  nsresult mRv = NS_OK;
 
   // The exception thrown during compiling a module script. These fields are
   // used temporarily before being passed to the module loader.
   JS::PersistentRooted<JS::Value> mExceptionValue;
 
-  JS::PersistentRooted<JSScript*> mScript;
+  JS::PersistentRooted<JSObject*> mModule;
 };
 
 }  // namespace loader

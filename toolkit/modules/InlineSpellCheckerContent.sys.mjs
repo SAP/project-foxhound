@@ -1,4 +1,3 @@
-/* vim: set ts=2 sw=2 sts=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,7 +18,7 @@ export var InlineSpellCheckerContent = {
     let spellChecker;
     if (!(editFlags & (SpellCheckHelper.TEXTAREA | SpellCheckHelper.INPUT))) {
       // Get the editor off the window.
-      let win = event.target.ownerGlobal;
+      let win = event.target.documentGlobal;
       let editingSession = win.docShell.editingSession;
       spellChecker = this._spellChecker = new InlineSpellChecker(
         editingSession.getEditorForWindow(win)

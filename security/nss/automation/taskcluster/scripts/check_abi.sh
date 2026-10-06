@@ -10,7 +10,8 @@ set_env()
     mkdir "${OUTPUTDIR}"
   fi
 
-  cp -a ${VCS_PATH}/nss ${VCS_PATH}/nspr .
+  cp -a "${VCS_PATH}/nss" .
+  [ -d nspr ] || git clone https://github.com/mozilla/nspr nspr
   pushd nspr
   if [[ -f ../nss/nspr.patch && "$ALLOW_NSPR_PATCH" == "1" ]]; then
     cat ../nss/nspr.patch | patch -p1
@@ -39,11 +40,11 @@ check_abi()
     fi
 
     BASE_NSPR=NSPR_$(head -1 baseline/nss/automation/release/nspr-version.txt | cut -d . -f 1-2 | tr . _)_BRANCH
-    if ! hg clone -u "${BASE_NSPR}" "${VCS_PATH}/nspr" baseline/nspr; then
+    if ! git clone -b "${BASE_NSPR}" https://github.com/mozilla/nspr baseline/nspr; then
       rm -rf baseline/nspr
-      hg clone -u "default" "${VCS_PATH}/nspr" baseline/nspr
-      echo "Nonexisting tag ${BASE_NSPR} derived from ${BASE_NSS} automation/release/nspr-version.txt"
-      echo "Using default branch instead."
+      git clone -b main https://github.com/mozilla/nspr baseline/nspr
+      echo "Nonexisting branch ${BASE_NSPR} derived from ${BASE_NSS} automation/release/nspr-version.txt"
+      echo "Using main branch instead."
     fi
 
     echo "######## building baseline NSPR/NSS ########"

@@ -13,8 +13,10 @@ transforms:
 kind-dependencies:
     - release-partner-repack
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 only-for-build-platforms:
-    - linux-shippable/opt
     - linux64-shippable/opt
 
 tasks:

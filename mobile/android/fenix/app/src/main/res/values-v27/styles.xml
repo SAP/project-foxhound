@@ -27,18 +27,11 @@
         <item name="android:windowLayoutInDisplayCutoutMode">default</item>
     </style>
 
-    <style name="SplashScreen" parent="SplashScreenThemeBase">
-        <item name="windowSplashScreenAnimatedIcon">@drawable/animated_splash_screen</item>
-        <!-- Splash screen is animated to maximum 12 seconds -->
-        <item name="windowSplashScreenAnimationDuration">12000</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">default</item>
-    </style>
-
     <style name="BottomSheetPrivate" parent="BottomSheetBasePrivate">
         <item name="android:windowIsFloating">false</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">?attr/layer1</item>
-        <item name="android:colorBackground">?attr/layer1</item>
+        <item name="android:navigationBarColor">?attr/colorSurface</item>
+        <item name="android:colorBackground">?attr/colorSurface</item>
         <!-- Style the navigation bar -->
         <item name="android:navigationBarDividerColor">@android:color/transparent</item>
         <item name="android:windowLightNavigationBar">false</item>
@@ -47,16 +40,10 @@
     <style name="BottomSheet" parent="BottomSheetBase">
         <item name="android:windowIsFloating">false</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">?attr/layer1</item>
-        <item name="android:colorBackground">?attr/layer1</item>
+        <item name="android:navigationBarColor">?attr/colorSurface</item>
+        <item name="android:colorBackground">?attr/colorSurface</item>
         <!-- Style the navigation bar -->
         <item name="android:windowLightNavigationBar">@bool/theme_is_light</item>
         <item name="android:navigationBarDividerColor">@android:color/transparent</item>
-    </style>
-
-    <style name="TabTrayDialogStyle" parent="TabTrayDialogStyleBase">
-        <item name="android:navigationBarDividerColor">@android:color/transparent</item>
-        <item name="android:windowLightNavigationBar">@bool/theme_is_light</item>
-        <item name="android:navigationBarColor">@color/fx_mobile_layer_color_1</item>
     </style>
 </resources>

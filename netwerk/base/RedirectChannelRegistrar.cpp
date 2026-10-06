@@ -34,10 +34,12 @@ RedirectChannelRegistrar::GetOrCreate() {
 }
 
 NS_IMETHODIMP
-RedirectChannelRegistrar::RegisterChannel(nsIChannel* channel, uint64_t id) {
+RedirectChannelRegistrar::RegisterChannel(nsIChannel* channel, uint64_t id,
+                                          uint64_t aContentParentId) {
   MutexAutoLock lock(mLock);
 
   mRealChannels.InsertOrUpdate(id, channel);
+  mChannelOwners.InsertOrUpdate(id, aContentParentId);
 
   return NS_OK;
 }
@@ -53,9 +55,18 @@ RedirectChannelRegistrar::GetRegisteredChannel(uint64_t id,
 }
 
 NS_IMETHODIMP
-RedirectChannelRegistrar::LinkChannels(uint64_t id, nsIParentChannel* channel,
+RedirectChannelRegistrar::LinkChannels(uint64_t id, uint64_t aContentParentId,
+                                       nsIParentChannel* channel,
                                        nsIChannel** _retval) {
   MutexAutoLock lock(mLock);
+
+  // Only hand back the registered channel if it was registered for the
+  // requesting content process, since the id is supplied by the content
+  // process.
+  uint64_t owner;
+  if (!mChannelOwners.Get(id, &owner) || owner != aContentParentId) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
 
   if (!mRealChannels.Get(id, _retval)) return NS_ERROR_NOT_AVAILABLE;
 
@@ -79,6 +90,7 @@ RedirectChannelRegistrar::DeregisterChannels(uint64_t id) {
 
   mRealChannels.Remove(id);
   mParentChannels.Remove(id);
+  mChannelOwners.Remove(id);
   return NS_OK;
 }
 

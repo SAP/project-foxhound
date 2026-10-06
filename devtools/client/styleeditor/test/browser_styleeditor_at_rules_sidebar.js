@@ -40,6 +40,10 @@ waitForExplicitFinish();
 add_task(async function () {
   // Enable @property rules
   await pushPref("layout.css.properties-and-values.enabled", true);
+  // Enable anchor positioning
+  await pushPref("layout.css.anchor-positioning.enabled", true);
+  // Enable @custom-media
+  await pushPref("layout.css.custom-media.enabled", true);
 
   const { ui } = await openStyleEditorForURL(TESTCASE_URI);
 
@@ -50,10 +54,10 @@ add_task(async function () {
   await openEditor(plainEditor);
   testPlainEditor(plainEditor);
 
-  info("Test editor for inline sheet with @media rules");
-  const inlineMediaEditor = ui.editors[3];
-  await openEditor(inlineMediaEditor);
-  await testInlineMediaEditor(ui, inlineMediaEditor);
+  info("Test editor for inline sheet with at-rules");
+  const inlineAtRulesEditor = ui.editors[3];
+  await openEditor(inlineAtRulesEditor);
+  await testInlineAtRulesEditor(ui, inlineAtRulesEditor);
 
   info("Test editor with @media rules");
   const mediaEditor = ui.editors[1];
@@ -84,12 +88,12 @@ function testPlainEditor(editor) {
   is(sidebar.hidden, true, "sidebar is hidden on editor without @media");
 }
 
-async function testInlineMediaEditor(ui, editor) {
+async function testInlineAtRulesEditor(ui, editor) {
   const sidebar = editor.details.querySelector(".stylesheet-sidebar");
   is(sidebar.hidden, false, "sidebar is showing on editor with @media");
 
   const entries = sidebar.querySelectorAll(".at-rule-label");
-  is(entries.length, 7, "7 at-rules displayed in sidebar");
+  is(entries.length, 16, "16 at-rules displayed in sidebar");
 
   await testRule({
     ui,
@@ -151,9 +155,100 @@ async function testInlineMediaEditor(ui, editor) {
     ui,
     editor,
     rule: entries[6],
-    line: 30,
+    conditionText: "--my-container (height > 42px)",
+    line: 29,
+    type: "container",
+  });
+
+  await testRule({
+    ui,
+    editor,
+    rule: entries[7],
+    conditionText: "--my-container",
+    line: 31,
+    type: "container",
+  });
+
+  await testRule({
+    ui,
+    editor,
+    rule: entries[8],
+    line: 33,
     type: "property",
     propertyName: "--my-property",
+  });
+
+  await testRule({
+    ui,
+    editor,
+    rule: entries[9],
+    line: 39,
+    type: "position-try",
+    positionTryName: "--pt-custom-bottom",
+  });
+
+  await testRule({
+    ui,
+    editor,
+    rule: entries[10],
+    line: 45,
+    type: "custom-media",
+    customMediaName: "--mobile-breakpoint",
+    customMediaQuery: [
+      { text: "(width < 320px) and (height < 1420px)" },
+      { text: ", " },
+      { text: "not print" },
+    ],
+  });
+
+  await testRule({
+    ui,
+    editor,
+    rule: entries[11],
+    line: 46,
+    type: "custom-media",
+    customMediaName: "--enabled",
+    customMediaQuery: [{ text: "true" }],
+  });
+
+  await testRule({
+    ui,
+    editor,
+    rule: entries[12],
+    line: 47,
+    type: "custom-media",
+    customMediaName: "--disabled",
+    customMediaQuery: [{ text: "false", matches: false }],
+  });
+
+  await testRule({
+    ui,
+    editor,
+    rule: entries[13],
+    line: 52,
+    type: "media",
+    conditionText: "(--mobile-breakpoint)",
+    matches: false,
+  });
+
+  await testRule({
+    ui,
+    editor,
+    rule: entries[14],
+    line: 56,
+    type: "media",
+    conditionText: "(--enabled)",
+    matches: false,
+  });
+
+  await testRule({
+    ui,
+    editor,
+    rule: entries[15],
+    line: 60,
+    type: "media",
+    conditionText: "(--disabled)",
+    matches: false,
   });
 }
 
@@ -278,16 +373,23 @@ async function testMediaRuleAdded(ui, editor) {
 /**
  * Run assertion on given rule
  *
- * @param {Object} options
+ * @param {object} options
  * @param {StyleEditorUI} options.ui
  * @param {StyleSheetEditor} options.editor: The editor the rule is displayed in
  * @param {Element} options.rule: The rule element in the media sidebar
- * @param {String} options.conditionText: at-rule condition text (for @media, @container, @support)
- * @param {Boolean} options.matches: Whether or not the document matches the rule
- * @param {String} options.layerName: Optional name of the @layer
- * @param {String} options.propertyName: Name of the @property if type is "property"
- * @param {Number} options.line: Line of the rule
- * @param {String} options.type: The type of the rule (container, layer, media, support, property ).
+ * @param {string} options.conditionText: at-rule condition text (for @media, @container, @support)
+ * @param {boolean} options.matches: Whether or not the document matches the rule
+ * @param {string} options.layerName: Optional name of the @layer
+ * @param {string} options.positionTryName: Name of the @position-try if type is "position-try"
+ * @param {string} options.propertyName: Name of the @property if type is "property"
+ * @param {string} options.customMediaName: Name of the @custom-media if type is "custom-media"
+ * @param {Array<object>} options.customMediaQuery: query parts of the @custom-media if type is "custom-media"
+ * @param {string} options.customMediaQuery[].text: the query string of the part of the @custom-media
+ *        if type is "custom-media"
+ * @param {boolean} options.customMediaQuery[].matches: whether or not this part is style as matching,
+ *        if type is "custom-media". Defaults to true.
+ * @param {number} options.line: Line of the rule
+ * @param {string} options.type: The type of the rule (container, layer, media, support, property ).
  *                               Defaults to "media".
  */
 async function testRule({
@@ -297,7 +399,10 @@ async function testRule({
   conditionText = "",
   matches,
   layerName,
+  positionTryName,
   propertyName,
+  customMediaName,
+  customMediaQuery,
   line,
   type = "media",
 }) {
@@ -307,12 +412,55 @@ async function testRule({
     name = layerName;
   } else if (type === "property") {
     name = propertyName;
+  } else if (type === "position-try") {
+    name = positionTryName;
   }
-  is(
-    atTypeEl.textContent,
-    `@${type}\u00A0${name ? `${name}\u00A0` : ""}`,
-    "label for at-rule type is correct"
-  );
+
+  if (type === "custom-media") {
+    const atTypeChilNodes = Array.from(atTypeEl.childNodes);
+    is(
+      atTypeChilNodes.shift().textContent,
+      `@custom-media\u00A0`,
+      "label for @custom-media is correct"
+    );
+    is(
+      atTypeChilNodes.shift().textContent,
+      `${customMediaName} `,
+      "name for @custom-media is correct"
+    );
+    is(
+      atTypeChilNodes.length,
+      customMediaQuery.length,
+      `Got expected number of children of @custom-media (got ${JSON.stringify(atTypeChilNodes.map(n => n.textContent))})`
+    );
+    for (let i = 0; i < atTypeChilNodes.length; i++) {
+      const node = atTypeChilNodes[i];
+      is(
+        node.textContent,
+        customMediaQuery[i].text,
+        `Got expected text for part #${i} of @custom-media`
+      );
+      if (customMediaQuery[i].matches ?? true) {
+        ok(
+          // handle TextNode
+          !node.classList ||
+            !node.classList.contains("media-condition-unmatched"),
+          `Text for part #${i} of @custom-media ("${node.textContent}") does not have unmatching class`
+        );
+      } else {
+        ok(
+          node.classList.contains("media-condition-unmatched"),
+          `Text for part #${i} of @custom-media ("${node.textContent}") has expected unmatching class`
+        );
+      }
+    }
+  } else {
+    is(
+      atTypeEl.textContent,
+      `@${type}\u00A0${name ? `${name}\u00A0` : ""}`,
+      "label for at-rule type is correct"
+    );
+  }
 
   const cond = rule.querySelector(".at-rule-condition");
   is(

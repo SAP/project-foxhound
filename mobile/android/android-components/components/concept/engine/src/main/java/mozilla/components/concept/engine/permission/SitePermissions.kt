@@ -27,6 +27,8 @@ data class SitePermissions(
     val autoplayInaudible: AutoplayStatus = AutoplayStatus.ALLOWED,
     val mediaKeySystemAccess: Status = NO_DECISION,
     val crossOriginStorageAccess: Status = NO_DECISION,
+    val localDeviceAccess: Status = NO_DECISION,
+    val localNetworkAccess: Status = NO_DECISION,
     val savedAt: Long,
 ) : Parcelable {
     enum class Status(
@@ -91,6 +93,8 @@ data class SitePermissions(
             Permission.AUTOPLAY_INAUDIBLE -> autoplayInaudible.toStatus()
             Permission.MEDIA_KEY_SYSTEM_ACCESS -> mediaKeySystemAccess
             Permission.STORAGE_ACCESS -> crossOriginStorageAccess
+            Permission.LOCAL_DEVICE_ACCESS -> localDeviceAccess
+            Permission.LOCAL_NETWORK_ACCESS -> localNetworkAccess
         }
     }
 }

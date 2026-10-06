@@ -2,13 +2,13 @@
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
-includes: [sm/non262.js, sm/non262-shell.js]
 flags:
   - noStrict
 description: |
   pending
 esid: pending
 ---*/
+
 // Function#caller restrictions as proposed by
 // https://github.com/claudepache/es-legacy-function-reflection/
 
@@ -33,9 +33,5 @@ assert.sameValue([0].map(caller)[0], null);
 assert.sameValue(function*() {
     yield caller();
 }().next().value, null);
-
-
-if (typeof assert.sameValue === "function") {
-}
 
 reportCompare(0, 0);

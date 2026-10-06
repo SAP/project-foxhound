@@ -1,4 +1,3 @@
-/* -*- js-indent-level: 2; indent-tabs-mode: nil -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,10 +17,10 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
   // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
-  ShellService: "resource:///modules/ShellService.sys.mjs",
+  ShellService: "moz-src:///browser/components/shell/ShellService.sys.mjs",
 });
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  AlertsService: ["@mozilla.org/alerts-service;1", "nsIAlertsService"],
+  AlertsService: ["@mozilla.org/alerts-service;1", Ci.nsIAlertsService],
 });
 ChromeUtils.defineLazyGetter(lazy, "log", () => {
   let { ConsoleAPI } = ChromeUtils.importESModule(
@@ -237,6 +236,23 @@ export async function doTask(defaultAgent, force) {
   let defaultPdfHandler = defaultAgent.getDefaultPdfHandler();
   lazy.log.debug(`Default PDF Handler: ${defaultPdfHandler}`);
 
+  let isTaskbarPinned = "Error";
+  try {
+    let shellService = Cc["@mozilla.org/browser/shell-service;1"].getService(
+      Ci.nsIWindowsShellService
+    );
+    let winTaskbar = Cc["@mozilla.org/windows-taskbar;1"].getService(
+      Ci.nsIWinTaskbar
+    );
+    let pinned = await shellService.isCurrentAppPinnedToTaskbarAsync(
+      winTaskbar.defaultGroupId
+    );
+    isTaskbarPinned = pinned ? "IsPinned" : "NotPinned";
+    lazy.log.debug(`Is pinned to taskbar: ${isTaskbarPinned}`);
+  } catch (ex) {
+    lazy.log.error(`Pin detection failed: ${ex}`);
+  }
+
   let notificationTelemetry = {
     shown: kNotificationShown.notShown,
     action: kNotificationAction.noAction,
@@ -268,7 +284,8 @@ export async function doTask(defaultAgent, force) {
     defaultPdfHandler,
     notificationTelemetry.shown,
     notificationTelemetry.action,
-    daysSinceLastAppLaunch
+    daysSinceLastAppLaunch,
+    isTaskbarPinned
   );
 }
 
@@ -297,16 +314,16 @@ async function showNotification(name) {
       "browser/backgroundtasks/defaultagent.ftl",
     ]);
     let [title, body, yesButtonText, noButtonText] = await l10n.formatValues([
-      { id: "default-browser-notification-header-text" },
-      { id: "default-browser-notification-body-text" },
+      { id: "default-browser-notification-privacy-header-text" },
+      { id: "default-browser-notification-privacy-body-text" },
       { id: "default-browser-notification-yes-button-text" },
-      { id: "default-browser-notification-no-button-text" },
+      { id: "default-browser-notification-privacy-no-button-text" },
     ]);
 
     let yesAction = "yes-action";
     let noAction = "no-action";
 
-    let alert = makeAlert({
+    let alert = await makeAlert({
       name,
       title,
       body,
@@ -342,17 +359,35 @@ async function showNotification(name) {
   return notificationTelemetry;
 }
 
-function makeAlert(options) {
+async function makeAlert(options) {
   let winalert = Cc["@mozilla.org/windows-alert-notification;1"].createInstance(
     Ci.nsIWindowsAlertNotification
   );
   winalert.imagePlacement = winalert.eIcon;
 
+  let image = null;
+  try {
+    const uri = Services.io.newURI(
+      "chrome://global/content/defaultagent/default-browser-notification-privacy-image.svg"
+    );
+    const channel = Services.io.newChannelFromURI(
+      uri,
+      null,
+      Services.scriptSecurityManager.getSystemPrincipal(),
+      null,
+      Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
+      Ci.nsIContentPolicy.TYPE_IMAGE
+    );
+    image = await ChromeUtils.fetchDecodedImage(uri, channel);
+  } catch (e) {
+    lazy.log.error(`makeAlert image loading failed: ${e}`);
+  }
+
   let alert = winalert.QueryInterface(Ci.nsIAlertNotification);
   let systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
   alert.init(
     options.name,
-    "chrome://global/content/defaultagent/fox-doodle-peek.png",
+    null /* aImageURL */,
     options.title,
     options.body,
     true /* aTextClickable */,
@@ -364,6 +399,8 @@ function makeAlert(options) {
     null /* aInPrivateBrowsing */,
     true /* aRequireInteraction */
   );
+  alert.image = image;
+  alert.imagePlacement = alert.eInline;
 
   alert.actions = options.actions;
 

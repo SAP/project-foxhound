@@ -20,32 +20,26 @@ internal data class MenuPositioningData(
      * Where and how should the menu be placed in relation to the [BrowserMenuPlacement.anchor].
      */
     val inferredMenuPlacement: BrowserMenuPlacement? = null,
-
     /**
      * The orientation asked by users of this class when initializing it.
      */
     val askedOrientation: BrowserMenu.Orientation = BrowserMenu.Orientation.DOWN,
-
     /**
      * Whether the menu fits in the space between [display top, anchor] in a top - down layout.
      */
     val fitsUp: Boolean = false,
-
     /**
      * Whether the menu fits in the space between [anchor, display top] in a top - down layout.
      */
     val fitsDown: Boolean = false,
-
     /**
      * Distance between [display top, anchor top margin]. Used for better positioning the menu.
      */
     @param:Px val availableHeightToTop: Int = 0,
-
     /**
      * Distance between [display bottom, anchor bottom margin]. Used for better positioning the menu.
      */
     @param:Px val availableHeightToBottom: Int = 0,
-
     /**
      * [View#measuredHeight] of the menu. May be bigger than the available screen height.
      */

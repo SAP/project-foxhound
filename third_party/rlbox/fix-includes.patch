@@ -1,0 +1,18 @@
+diff --git a/include/rlbox_sandbox.hpp b/include/rlbox_sandbox.hpp
+index 63995c89adf2e..eae1d2aa19da2 100644
+--- a/include/rlbox_sandbox.hpp
++++ b/include/rlbox_sandbox.hpp
+@@ -11,12 +11,12 @@
+ #include <limits>
+ #include <map>
+ #include <mutex>
++#include <string>
+ #ifndef RLBOX_USE_CUSTOM_SHARED_LOCK
+ #  include <shared_mutex>
+ #endif
+ #ifdef RLBOX_MEASURE_TRANSITION_TIMES
+ #  include <sstream>
+-#  include <string>
+ #endif
+ #include <stdint.h>
+ #include <type_traits>

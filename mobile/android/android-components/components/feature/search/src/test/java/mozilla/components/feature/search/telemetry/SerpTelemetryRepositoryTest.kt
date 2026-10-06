@@ -5,88 +5,155 @@
 package mozilla.components.feature.search.telemetry
 
 import kotlinx.coroutines.runBlocking
+import mozilla.appservices.remotesettings.RemoteSettingsClient
 import mozilla.appservices.remotesettings.RemoteSettingsRecord
-import mozilla.appservices.remotesettings.RemoteSettingsResponse
-import mozilla.components.support.remotesettings.RemoteSettingsClient
-import mozilla.components.support.remotesettings.RemoteSettingsResult
+import mozilla.appservices.remotesettings.RemoteSettingsService
 import mozilla.components.support.test.mock
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.Mock
+import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.`when`
-import org.mockito.MockitoAnnotations
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertIs
+import mozilla.components.support.remotesettings.RemoteSettingsService as MozillaRemoteSettingsService
 
 @RunWith(RobolectricTestRunner::class)
 class SerpTelemetryRepositoryTest {
-    @Mock
-    private lateinit var mockRemoteSettingsClient: RemoteSettingsClient
 
+    private val rawJson = """
+        {
+  "data": [
+    {
+      "schema": 1,
+      "taggedCodes": [],
+      "telemetryId": "0",
+      "organicCodes": [],
+      "codeParamName": "bar",
+      "queryParamNames": [],
+      "searchPageRegexp": "^https://(?:m|www)\\.foo\\.baz",
+      "followOnParamNames": [],
+      "extraAdServersRegexps": [],
+      "last_modified": 40
+    }],
+  "timestamp": 40
+}
+    """.trimIndent()
+
+    private lateinit var mockMozillaService: MozillaRemoteSettingsService
+    private lateinit var mockRemoteSettingsService: RemoteSettingsService
+    private lateinit var mockRemoteSettingsClient: RemoteSettingsClient
     private lateinit var serpTelemetryRepository: SerpTelemetryRepository
+    private val mockReadJson: () -> JSONObject = mock()
 
     @Before
     fun setup() {
-        MockitoAnnotations.openMocks(this)
+        mockMozillaService = mock()
+        mockRemoteSettingsService = mock()
+        mockRemoteSettingsClient = mock()
+
+        `when`(mockMozillaService.remoteSettingsService).thenReturn(mockRemoteSettingsService)
+        `when`(mockRemoteSettingsService.makeClient("test")).thenReturn(mockRemoteSettingsClient)
+        doAnswer {
+            JSONObject(rawJson)
+        }.`when`(mockReadJson)()
+
         serpTelemetryRepository = SerpTelemetryRepository(
-            rootStorageDirectory = mock(),
-            readJson = mock(),
-            collectionName = "",
-            serverUrl = "https://test.server",
-            bucketName = "",
+            readJson = mockReadJson,
+            collectionName = "test",
+            remoteSettingsService = mockMozillaService,
         )
-
-        serpTelemetryRepository.remoteSettingsClient = mockRemoteSettingsClient
     }
 
     @Test
-    fun `GIVEN non-empty response WHEN writeToCache is called THEN the result is a success`() = runBlocking {
-        val records = listOf(
-            RemoteSettingsRecord("1", 123u, false, null, JSONObject()),
-            RemoteSettingsRecord("2", 456u, true, null, JSONObject()),
-        )
-        val response = RemoteSettingsResponse(records, 125614567U)
+    fun `GIVEN empty response WHEN getRecords is called THEN the preinstalled data is used`() =
+        runBlocking {
+            `when`(mockRemoteSettingsClient.getRecords())
+                .thenReturn(emptyList<RemoteSettingsRecord>())
+            `when`(mockRemoteSettingsClient.getLastModifiedTimestamp())
+                .thenReturn(null)
 
-        `when`(mockRemoteSettingsClient.write(response))
-            .thenReturn(RemoteSettingsResult.Success(response))
+            val result = serpTelemetryRepository.updateProviderList()
 
-        val result = serpTelemetryRepository.writeToCache(response)
-
-        assertTrue(result is RemoteSettingsResult.Success)
-        assertEquals(response, (result as RemoteSettingsResult.Success).response)
-    }
+            assertEquals(1, result.size)
+            assertEquals("0", result[0].telemetryId)
+        }
 
     @Test
-    fun `GIVEN non-empty response WHEN fetchRemoteResponse is called THEN the result is equal to the response`() = runBlocking {
-        val records = listOf(
-            RemoteSettingsRecord("1", 123u, false, null, JSONObject()),
-            RemoteSettingsRecord("2", 456u, true, null, JSONObject()),
-        )
-        val response = RemoteSettingsResponse(records, 125614567U)
-        `when`(mockRemoteSettingsClient.fetch())
-            .thenReturn(RemoteSettingsResult.Success(response))
+    fun `GIVEN older response than cache WHEN getRecords is called THEN the preinstalled data is used`() =
+        runBlocking {
+            `when`(mockRemoteSettingsClient.getRecords())
+                .thenReturn(
+                    listOf(
+                        RemoteSettingsRecord("1", 40u, false, null, JSONObject()),
+                        RemoteSettingsRecord("2", 41u, true, null, JSONObject()),
+                    ),
+                )
+            `when`(mockRemoteSettingsClient.getLastModifiedTimestamp())
+                .thenReturn(39u)
 
-        val result = serpTelemetryRepository.fetchRemoteResponse()
+            val result = serpTelemetryRepository.updateProviderList()
 
-        assertEquals(response, result)
-    }
+            assertEquals(1, result.size)
+            assertEquals("0", result[0].telemetryId)
+        }
 
     @Test
-    fun `GIVEN non-empty response WHEN loadProvidersFromCache is called THEN the result is equal to the response`() = runBlocking {
-        val records = listOf(
-            RemoteSettingsRecord("1", 123u, false, null, JSONObject()),
-            RemoteSettingsRecord("2", 456u, true, null, JSONObject()),
-        )
-        val response = RemoteSettingsResponse(records, 125614567U)
-        `when`(mockRemoteSettingsClient.read())
-            .thenReturn(RemoteSettingsResult.Success(response))
+    fun `GIVEN newer response WHEN getRecords is called THEN the updated data is used`() =
+        runBlocking {
+            `when`(mockRemoteSettingsClient.getRecords())
+                .thenReturn(
+                    listOf(
+                        RemoteSettingsRecord(
+                            "1",
+                            40u,
+                            false,
+                            null,
+                            JSONObject(
+                                """{
+      "schema": 2,
+      "taggedCodes": [],
+      "telemetryId": "1",
+      "organicCodes": [],
+      "codeParamName": "bar",
+      "queryParamNames": [],
+      "searchPageRegexp": "^https://(?:m|www)\\.foo\\.baz",
+      "followOnParamNames": [],
+      "extraAdServersRegexps": [],
+      "last_modified": 40
+    }""",
+                            ),
+                        ),
+                        RemoteSettingsRecord(
+                            "2",
+                            41u,
+                            true,
+                            null,
+                            JSONObject(
+                                """{
+      "schema": 1,
+      "taggedCodes": [],
+      "telemetryId": "2",
+      "organicCodes": [],
+      "codeParamName": "bar",
+      "queryParamNames": [],
+      "searchPageRegexp": "^https://(?:m|www)\\.foo\\.baz",
+      "followOnParamNames": [],
+      "extraAdServersRegexps": [],
+      "last_modified": 40
+    }""",
+                            ),
+                        ),
+                    ),
+                )
+            `when`(mockRemoteSettingsClient.getLastModifiedTimestamp())
+                .thenReturn(41u)
 
-        val result = serpTelemetryRepository.loadProvidersFromCache()
+            val result = serpTelemetryRepository.updateProviderList()
 
-        assertEquals(response.lastModified, result.first)
-        assertEquals(response.records.mapNotNull { it.fields.toSearchProviderModel() }, result.second)
-    }
+            assertEquals(2, result.size)
+            assertEquals("1", result[0].telemetryId)
+        }
 }

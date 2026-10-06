@@ -50,7 +50,6 @@ function run_test() {
   do_get_profile();
 
   Services.prefs.setIntPref("browser.cache.disk.max_entry_size", 0);
-  Services.prefs.setBoolPref("network.http.rcwn.enabled", false);
 
   httpServer = new HttpServer();
   httpServer.registerPathHandler("/content", contentHandler);

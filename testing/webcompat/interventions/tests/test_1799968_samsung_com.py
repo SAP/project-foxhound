@@ -1,6 +1,6 @@
 import pytest
 
-URL = "https://www.samsung.com/in/watches/galaxy-watch/galaxy-watch5-44mm-graphite-bluetooth-sm-r910nzaainu/"
+URL = "https://www.samsung.com/in/watches/galaxy-watch/galaxy-watch8-40mm-silver-bluetooth-sm-l320nzsains/"
 GOOD_CSS = "html.linux.firefox"
 ERROR_MSG = "DOMTokenList.add: The empty string is not a valid token."
 

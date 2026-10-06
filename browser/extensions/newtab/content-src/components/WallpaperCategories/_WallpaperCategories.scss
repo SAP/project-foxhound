@@ -14,6 +14,11 @@
     text-align: center;
     width: 100%;
   }
+
+  // @nova-cleanup (remove .nova-enabled class and move this rule to the style above)
+  .nova-enabled & {
+    gap: calc(var(--space-xlarge) * 2) var(--space-medium);
+  }
 }
 
 .category-header {
@@ -23,9 +28,19 @@
   .wallpapers-reset {
     margin: unset;
   }
+
+  // @nova-cleanup (remove .nova-enabled class and instead move up these .wallpaper-reset styles to above. Don't add the justify-content: unset rule, just remove the current justify-content in .category-header when nova lands)
+  .nova-enabled & {
+    justify-content: unset;
+
+    .wallpapers-reset {
+      margin-block-end: var(--space-medium);
+      margin-inline-start: auto;
+    }
+  }
 }
 
-.arrow-button {
+button.arrow-button {
   background: url('chrome://global/skin/icons/arrow-left.svg') no-repeat left center;
 
   &:dir(rtl) {
@@ -39,6 +54,12 @@
   -moz-context-properties: fill;
   fill: currentColor;
   min-height: 1rem;
+  margin-inline-start: var(--space-xsmall);
+  margin-block-start: var(--space-xsmall);
+}
+
+.wallpapers-arrow-button {
+  margin-block-end: var(--space-xlarge);
 }
 
 .wallpaper-input {
@@ -56,6 +77,11 @@
   padding: 0;
   width: 100%;
 
+  &:checked,
+  &.selected {
+    box-shadow: inset 0 0 0 3px var(--color-accent-primary);
+  }
+
   &.theme-custom-wallpaper {
     border: 2px dashed var(--border-color-default, #CFCFD8);
     box-shadow: none;
@@ -65,13 +91,18 @@
       content: '';
       -moz-context-properties: fill;
       fill: var(--icon-color);
-      width: calc(var(--icon-size-default) * 1.25 ); // Custom size: ~20px;
-      height: calc(var(--icon-size-default) * 1.25 ); // Custom size: ~20px;
+      width: calc(var(--icon-size) * 1.25 ); // Custom size: ~20px;
+      height: calc(var(--icon-size) * 1.25 ); // Custom size: ~20px;
       display: block;
       position: absolute;
       inset-block-start: 50%;
       inset-inline-start: 50%;
       transform: translate(-50%, -50%);
+    }
+
+    &:focus {
+      outline-color: var(--focus-outline-color);
+      outline-offset: var(--focus-outline-offset);
     }
   }
 
@@ -90,7 +121,7 @@
   }
 
   &:focus-visible {
-    outline-color: var(--newtab-primary-action-background);
+    outline-offset: var(--focus-outline-offset);
   }
 
   &:hover {
@@ -98,10 +129,9 @@
     outline-color: transparent;
   }
 
-  &:focus {
-    border-color: transparent;
-    outline-color: var(--color-accent-primary-active);
-    padding: var(--space-xxsmall);
+  // @nova-cleanup (remove .nova-enabled class and move this rule to the style above)
+  .nova-enabled & {
+    border-radius: var(--border-radius-small);
   }
 }
 
@@ -112,16 +142,14 @@
   outline: 2px dashed var(--border-color-default, #CFCFD8);
   outline-offset: 2px;
   position: relative;
-  color-scheme: light;
 
   .wallpaper-input {
     box-shadow: none;
-  }
 
-  &:focus-visible {
-    border-color: transparent;
-    outline-color: var(--color-accent-primary-active);
-    padding: var(--space-xxsmall);
+    &:focus {
+      outline-color: var(--focus-outline-color);
+      outline-offset: 6px;
+    }
   }
 
   // The color picker has a default state where the user has not picked a custom color
@@ -155,7 +183,7 @@
     color-scheme: dark;
 
     @media (prefers-color-scheme: dark) {
-      color: #FBFBFE; // var(--color-gray-05);
+      color: #FBFBFE; // var(--color-gray-0);
     }
   }
 
@@ -165,8 +193,8 @@
     content: '';
     -moz-context-properties: fill;
     fill: var(--icon-color);
-    width: calc(var(--icon-size-default) * 1.25); // Custom size: ~20px;
-    height: calc(var(--icon-size-default) * 1.25); // Custom size: ~20px;
+    width: calc(var(--icon-size) * 1.25); // Custom size: ~20px;
+    height: calc(var(--icon-size) * 1.25); // Custom size: ~20px;
     display: block;
     position: absolute;
     inset-block-start: 50%;
@@ -174,6 +202,7 @@
     transform: translate(-50%, -50%);
     pointer-events: none;
     cursor: pointer;
+    color-scheme: light;
   }
 
   label {
@@ -194,7 +223,7 @@
   gap: var(--space-large);
   grid-template-columns: 1fr 1fr 1fr;
   grid-auto-rows: 86px;
-  margin: var(--space-large) 0;
+  margin: 0;
   padding: 0;
   border: none;
 
@@ -205,21 +234,16 @@
     gap: unset;
     grid-auto-rows: unset;
     grid-template-columns: unset;
-
-    /* XXXdholbert The 32px subtraction here is to account for our 16px of
-     * margin on top and bottom. Ideally this should change to use
-     * 'height: stretch' when bug 1789477 lands. */
-    height: calc(100% - var(--space-xlarge));
-    inset-inline-start: var(--space-xlarge);
+    height: 100%;
+    // Can get rid of padding and replace height with
+    // 'height: stretch' when bug 1789477 lands.
+    padding: var(--space-xlarge);
     position: absolute;
     inset-block-start: 0;
-    width: 380px;
+    inset-inline-start: 100%;
+    width: 100%;
     z-index: 2;
-    transform: translateX(100%);
-
-    &:dir(rtl) {
-      transform: translateX(-100%);
-    }
+    overflow-y: auto;
 
     fieldset {
       border: none;
@@ -227,6 +251,7 @@
       gap: var(--space-large);
       grid-auto-rows: 86px;
       grid-template-columns: 1fr 1fr 1fr;
+      padding: 0;
     }
 
     @media (prefers-reduced-motion: no-preference) {
@@ -234,13 +259,13 @@
       &.wallpaper-list-exit,
       &.wallpaper-list-enter-done,
       &.wallpaper-list-exit-done {
-        transition: transform 300ms;
+        transition: inset-inline-start 300ms;
       }
     }
 
     &.wallpaper-list-enter-done,
     &.wallpaper-list-enter-active {
-      transform: translateX(0);
+      inset-inline-start: 0;
     }
   }
 
@@ -284,6 +309,10 @@
 
   &:hover {
     text-decoration: none;
+  }
+
+  &:focus-visible {
+    outline-offset: -2px;
   }
 }
 

@@ -1,0 +1,59 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* stylelint-disable stylelint-plugin-mozilla/use-design-tokens */
+
+// When the pagination renders, push the watch button up when the widget is large
+.sports-matches-tab-panel:has(.sports-live-pagination) > moz-button {
+  inset-block-end: var(--space-xxlarge);
+}
+
+// When the pagination renders, push the watch button up and to the right when the widget is medium
+.medium-widget .sports-matches-tab-panel:has(.sports-live-pagination) .sports-watch-live-button {
+  inset-inline: unset;
+  inset-inline-start: var(--space-small);
+  inset-block-end: var(--space-xxsmall);
+}
+
+.sports-live-pagination {
+  position: absolute;
+  inset-block-end: var(--space-xxsmall);
+  inset-inline: 0;
+  margin-inline: auto;
+  width: fit-content;
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+}
+
+.large-widget .sports-live-pagination {
+  inset-block-end: calc(var(--space-small) * -1);
+}
+
+.sports-live-pagination-dots {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xsmall);
+}
+
+.sports-live-pagination-dot {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: var(--border-radius-circle);
+  background-color: var(--text-color-deemphasized);
+  opacity: 0.5;
+  transition: opacity 100ms;
+
+  &:hover {
+    opacity: 0.85;
+  }
+
+  &.is-active {
+    opacity: 1;
+    background-color: var(--color-accent-primary)
+  }
+}

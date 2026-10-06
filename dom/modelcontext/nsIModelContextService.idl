@@ -1,0 +1,25 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+
+[scriptable, builtinclass, uuid(746da1ff-52ce-46be-9256-78b83c9a0523)]
+interface nsIModelContextService : nsISupports
+{
+  // This function will return errors if the `dom.modelcontext.enabled`
+  // pref is not true, as a precautionary measure.
+  [implicit_jscontext]
+  Promise getToolsForWindow(in unsigned long long innerWindowId);
+
+  // WARNING: this returns a promise can resolve with a content-supplied
+  // value (after a structured clone). This value is untrusted and dangerous
+  // to use.
+  // This function will return errors if the `dom.modelcontext.enabled`
+  // pref is not true, as a precautionary measure.
+  [implicit_jscontext]
+  Promise invokeTool(in unsigned long long innerWindowId,
+                     in ACString toolName,
+                     [optional] in jsval input);
+};

@@ -1,5 +1,6 @@
-* Start date: 2022-06-21
-* RFC PR: [#112](https://github.com/mozilla-mobile/shared-docs/pull/112)
+- Start date: 2022-06-21
+- RFC PR: [#112](https://github.com/mozilla-mobile/shared-docs/pull/112)
+
 ---
 
 # Summary
@@ -11,6 +12,7 @@ The wallpapers feature was introduced on Android and iOS in v98 during Q1 2022. 
 # Motivation
 
 The original version of the networking solution consisted of adding wallpaper image files to deeply nested directories which defined the properties of the wallpaper. For example, an Android wallpaper might be found at:
+
 ```
 <root>/mobile-wallpapers/android/<resolution>/<orientation>/<light/dark>/<wallpaper collection>/<wallpaper name>
 ```
@@ -42,6 +44,7 @@ Instead of relying on an (undocumented) convention for file paths, wallpaper met
 - wallpaper region availability
 
 This is not a finalized spec, but an example might look like the following:
+
 ```json
 {
     "last-updated-date": "2022-01-01",

@@ -10,13 +10,13 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import io.mockk.mockk
 import io.mockk.verify
 import mozilla.components.support.test.robolectric.testContext
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.databinding.ShareCloseBinding
 import org.mozilla.fenix.share.listadapters.ShareTabsAdapter
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertIs
 
 @RunWith(RobolectricTestRunner::class)
 class ShareCloseViewTest {
@@ -35,8 +35,8 @@ class ShareCloseViewTest {
         ShareCloseView(container, interactor)
         val binding = ShareCloseBinding.bind(container)
 
-        assertTrue(binding.sharedSiteList.layoutManager is LinearLayoutManager)
-        assertTrue(binding.sharedSiteList.adapter is ShareTabsAdapter)
+        assertIs<LinearLayoutManager>(binding.sharedSiteList.layoutManager)
+        assertIs<ShareTabsAdapter>(binding.sharedSiteList.adapter)
 
         binding.closeButton.performClick()
         verify { interactor.onShareClosed() }

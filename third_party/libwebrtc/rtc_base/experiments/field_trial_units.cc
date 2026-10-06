@@ -9,13 +9,16 @@
  */
 #include "rtc_base/experiments/field_trial_units.h"
 
-#include <stdio.h>
-
+#include <cstdio>
 #include <limits>
 #include <optional>
 #include <string>
 
 #include "absl/strings/string_view.h"
+#include "api/units/data_rate.h"
+#include "api/units/data_size.h"
+#include "api/units/time_delta.h"
+#include "rtc_base/experiments/field_trial_parser.h"
 
 // Large enough to fit "seconds", the longest supported unit name.
 #define RTC_TRIAL_UNIT_LENGTH_STR "7"
@@ -31,16 +34,18 @@ struct ValueWithUnit {
 
 std::optional<ValueWithUnit> ParseValueWithUnit(absl::string_view str) {
   if (str == "inf") {
-    return ValueWithUnit{std::numeric_limits<double>::infinity(), ""};
+    return ValueWithUnit{.value = std::numeric_limits<double>::infinity(),
+                         .unit = ""};
   } else if (str == "-inf") {
-    return ValueWithUnit{-std::numeric_limits<double>::infinity(), ""};
+    return ValueWithUnit{.value = -std::numeric_limits<double>::infinity(),
+                         .unit = ""};
   } else {
     double double_val;
     char unit_char[RTC_TRIAL_UNIT_SIZE];
     unit_char[0] = 0;
     if (sscanf(std::string(str).c_str(), "%lf%" RTC_TRIAL_UNIT_LENGTH_STR "s",
                &double_val, unit_char) >= 1) {
-      return ValueWithUnit{double_val, unit_char};
+      return ValueWithUnit{.value = double_val, .unit = unit_char};
     }
   }
   return std::nullopt;

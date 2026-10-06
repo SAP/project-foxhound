@@ -15,9 +15,9 @@ pub mod error {
     #[allow(non_upper_case_globals)]
     pub static preinit_tasks_overflow: Lazy<CounterMetric> = Lazy::new(|| {
         CounterMetric::new(CommonMetricData {
-            category: "glean.error".into(),
             name: "preinit_tasks_overflow".into(),
-            send_in_pings: vec!["metrics".into()],
+            category: "glean.error".into(),
+            send_in_pings: vec!["metrics".into(), "health".into()],
             lifetime: Lifetime::Ping,
             disabled: false,
             ..Default::default()

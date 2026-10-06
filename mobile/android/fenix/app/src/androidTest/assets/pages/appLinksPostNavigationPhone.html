@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+This is the page with the auto-submitting form that redirects to an phone
+intent.
+<form action="tel://1234567890" method="POST"></form>
+<script>
+  const f = document.forms[0];
+  f.submit();
+</script>

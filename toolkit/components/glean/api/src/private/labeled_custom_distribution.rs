@@ -28,14 +28,14 @@ pub enum LabeledCustomDistributionMetric {
     Child { id: BaseMetricId, label: String },
 }
 
-crate::define_metric_metadata_getter!(
+define_metric_metadata_getter!(
     CustomDistributionMetric,
     LabeledCustomDistributionMetric,
     CUSTOM_DISTRIBUTION_MAP,
     LABELED_CUSTOM_DISTRIBUTION_MAP
 );
 
-crate::define_metric_namer!(LabeledCustomDistributionMetric, LABELED);
+define_metric_namer!(LabeledCustomDistributionMetric, LABELED);
 
 impl LabeledCustomDistributionMetric {
     #[cfg(test)]
@@ -113,18 +113,6 @@ impl CustomDistribution for LabeledCustomDistributionMetric {
         }
     }
 
-    pub fn test_get_value<'a, S: Into<Option<&'a str>>>(
-        &self,
-        ping_name: S,
-    ) -> Option<DistributionData> {
-        match self {
-            LabeledCustomDistributionMetric::Parent(p) => p.test_get_value(ping_name),
-            LabeledCustomDistributionMetric::Child { id, .. } => {
-                panic!("Cannot get test value for labeled_custom_distribution {:?} in non-parent process!", id)
-            }
-        }
-    }
-
     pub fn test_get_num_recorded_errors(&self, error: glean::ErrorType) -> i32 {
         match self {
             LabeledCustomDistributionMetric::Parent(p) => p.test_get_num_recorded_errors(error),
@@ -132,6 +120,20 @@ impl CustomDistribution for LabeledCustomDistributionMetric {
                 "Cannot get the number of recorded errors for labeled_custom_distribution {:?} in non-parent process!",
                 id
             ),
+        }
+    }
+}
+
+#[inherent]
+impl glean::TestGetValue for LabeledCustomDistributionMetric {
+    type Output = DistributionData;
+
+    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<DistributionData> {
+        match self {
+            LabeledCustomDistributionMetric::Parent(p) => p.test_get_value(ping_name),
+            LabeledCustomDistributionMetric::Child { id, .. } => {
+                panic!("Cannot get test value for labeled_custom_distribution {:?} in non-parent process!", id)
+            }
         }
     }
 }

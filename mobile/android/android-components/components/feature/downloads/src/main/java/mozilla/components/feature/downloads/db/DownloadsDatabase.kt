@@ -5,6 +5,7 @@
 package mozilla.components.feature.downloads.db
 
 import android.content.Context
+import android.os.Environment
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -17,7 +18,7 @@ import mozilla.components.browser.state.state.content.DownloadState
 /**
  * Internal database for saving downloads.
  */
-@Database(entities = [DownloadEntity::class], version = 5)
+@Database(entities = [DownloadEntity::class], version = 6)
 @TypeConverters(StatusConverter::class)
 internal abstract class DownloadsDatabase : RoomDatabase() {
     abstract fun downloadDao(): DownloadDao
@@ -39,6 +40,7 @@ internal abstract class DownloadsDatabase : RoomDatabase() {
                 Migrations.migration_2_3,
                 Migrations.migration_3_4,
                 Migrations.migration_4_5,
+                Migrations.migration_5_6,
             ).build().also {
                 instance = it
             }
@@ -78,6 +80,31 @@ internal object Migrations {
     val migration_4_5 = object : Migration(4, 5) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE downloads ADD COLUMN etag TEXT")
+        }
+    }
+    val migration_5_6 = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            val publicDownloadsPath = Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_DOWNLOADS,
+            ).path
+
+            // Create a temporal table
+            db.execSQL(
+                "CREATE TABLE downloads_new ( `id` TEXT NOT NULL, `url` TEXT NOT NULL, `file_name` TEXT, `content_type` TEXT, `content_length` INTEGER, `status` INTEGER NOT NULL, `directory_path` TEXT NOT NULL, `created_at` INTEGER NOT NULL, `etag` TEXT, PRIMARY KEY(`id`))",
+            )
+
+            // 3. Copy the data with path conversion.
+            db.execSQL(
+                """
+                INSERT INTO downloads_new (id, url, file_name, content_type, content_length, status, directory_path, created_at, etag)
+                SELECT id, url, file_name, content_type, content_length, status, '$publicDownloadsPath', created_at, etag FROM downloads
+                """.trimIndent(),
+            )
+
+            // Remove the old table
+            db.execSQL("DROP TABLE downloads")
+            // Rename the table name to the correct one
+            db.execSQL("ALTER TABLE downloads_new RENAME TO downloads")
         }
     }
 }

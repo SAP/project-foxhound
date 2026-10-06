@@ -16,6 +16,7 @@ using mozilla::dom::IdentityCredentialRequestOptions from "mozilla/dom/IdentityC
 using mozilla::dom::IdentityProviderConfig from "mozilla/dom/IdentityCredentialBinding.h";
 using mozilla::dom::IdentityResolveOptions from "mozilla/dom/IdentityCredentialBinding.h";
 using mozilla::dom::LoginStatus from "mozilla/dom/LoginStatusBinding.h";
+using mozilla::dom::MaybeDiscardedBrowsingContext from "mozilla/dom/BrowsingContext.h";
 
 [RefCounted] using class nsIURI from "mozilla/ipc/URIUtils.h";
 
@@ -39,7 +40,7 @@ union WebIdentityGetCredentialResponse {
 
 union OpenContinuationWindowResponse {
   nsresult;
-  uint64_t;
+  MaybeDiscardedBrowsingContext;
 };
 
 async protocol PWebIdentity {

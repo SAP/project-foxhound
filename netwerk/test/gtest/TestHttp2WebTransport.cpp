@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -429,8 +428,8 @@ CreateStreamAndSendData(WebTransportStreamBase* aStream,
   aStream->GetWriterAndReader(getter_AddRefs(writer), getter_AddRefs(reader));
 
   uint32_t numWritten = 0;
-  Unused << writer->Write((const char*)aData.Elements(), aData.Length(),
-                          &numWritten);
+  (void)writer->Write((const char*)aData.Elements(), aData.Length(),
+                      &numWritten);
   NS_ProcessPendingEvents(nullptr);
   return std::make_pair(writer, reader);
 }
@@ -544,7 +543,7 @@ TEST(TestHttp2WebTransport, OutgoingBidiStream)
   bidiStream->GetWriterAndReader(getter_AddRefs(writer),
                                  getter_AddRefs(reader));
   uint64_t available = 0;
-  Unused << reader->Available(&available);
+  (void)reader->Available(&available);
   EXPECT_EQ(available, inputData.Length());
 
   ValidateData(reader, inputData);
@@ -627,8 +626,8 @@ TEST(TestHttp2WebTransport, StreamDataSenderFlowControl)
   nsTArray<uint8_t> inputData;
   CreateTestData(100, inputData);
   uint32_t numWritten = 0;
-  Unused << writer->Write((const char*)inputData.Elements(), inputData.Length(),
-                          &numWritten);
+  (void)writer->Write((const char*)inputData.Elements(), inputData.Length(),
+                      &numWritten);
 
   NS_ProcessPendingEvents(nullptr);
 
@@ -646,8 +645,8 @@ TEST(TestHttp2WebTransport, StreamDataSenderFlowControl)
   ValidateData(streamData.mData, inputData);
 
   numWritten = 0;
-  Unused << writer->Write((const char*)inputData.Elements(), inputData.Length(),
-                          &numWritten);
+  (void)writer->Write((const char*)inputData.Elements(), inputData.Length(),
+                      &numWritten);
 
   NS_ProcessPendingEvents(nullptr);
   ServerProcessCapsules(server, client);
@@ -664,8 +663,8 @@ TEST(TestHttp2WebTransport, StreamDataSenderFlowControl)
   server->SendWebTransportMaxStreamDataCapsule(300, id);
   ClientProcessCapsules(server, client);
 
-  Unused << writer->Write((const char*)inputData.Elements(), inputData.Length(),
-                          &numWritten);
+  (void)writer->Write((const char*)inputData.Elements(), inputData.Length(),
+                      &numWritten);
 
   NS_ProcessPendingEvents(nullptr);
   ServerProcessCapsules(server, client);
@@ -701,8 +700,8 @@ TEST(TestHttp2WebTransport, StreamDataSenderFlowControlMaxData)
   nsTArray<uint8_t> inputData;
   CreateTestData(100, inputData);
   uint32_t numWritten = 0;
-  Unused << writer->Write((const char*)inputData.Elements(), inputData.Length(),
-                          &numWritten);
+  (void)writer->Write((const char*)inputData.Elements(), inputData.Length(),
+                      &numWritten);
 
   NS_ProcessPendingEvents(nullptr);
 
@@ -720,8 +719,8 @@ TEST(TestHttp2WebTransport, StreamDataSenderFlowControlMaxData)
   ValidateData(streamData.mData, inputData);
 
   numWritten = 0;
-  Unused << writer->Write((const char*)inputData.Elements(), inputData.Length(),
-                          &numWritten);
+  (void)writer->Write((const char*)inputData.Elements(), inputData.Length(),
+                      &numWritten);
 
   NS_ProcessPendingEvents(nullptr);
   ServerProcessCapsules(server, client);
@@ -742,8 +741,8 @@ TEST(TestHttp2WebTransport, StreamDataSenderFlowControlMaxData)
   server->SendWebTransportMaxStreamDataCapsule(500, id);
   ClientProcessCapsules(server, client);
 
-  Unused << writer->Write((const char*)inputData.Elements(), inputData.Length(),
-                          &numWritten);
+  (void)writer->Write((const char*)inputData.Elements(), inputData.Length(),
+                      &numWritten);
 
   NS_ProcessPendingEvents(nullptr);
   ServerProcessCapsules(server, client);
@@ -754,8 +753,8 @@ TEST(TestHttp2WebTransport, StreamDataSenderFlowControlMaxData)
   server->SendWebTransportMaxDataCapsule(1024);
   ClientProcessCapsules(server, client);
 
-  Unused << writer->Write((const char*)inputData.Elements(), inputData.Length(),
-                          &numWritten);
+  (void)writer->Write((const char*)inputData.Elements(), inputData.Length(),
+                      &numWritten);
 
   NS_ProcessPendingEvents(nullptr);
   ServerProcessCapsules(server, client);
@@ -852,7 +851,7 @@ TEST(TestHttp2WebTransport, ReceiverFlowControl1)
   ClientProcessCapsules(server, client);
 
   uint64_t available = 0;
-  Unused << reader->Available(&available);
+  (void)reader->Available(&available);
   EXPECT_EQ(available, FC_SIZE / 4);
 
   nsTArray<uint8_t> outputData;
@@ -870,7 +869,7 @@ TEST(TestHttp2WebTransport, ReceiverFlowControl1)
   CheckFc(*bidiStream->ReceiverFc(), FC_SIZE / 4 + 1, FC_SIZE / 4 + 1);
 
   available = 0;
-  Unused << reader->Available(&available);
+  (void)reader->Available(&available);
   EXPECT_EQ(available, 1u);
 
   ServerProcessCapsules(server, client);

@@ -230,6 +230,10 @@ bool StartsWithT(T str, T search_for, CompareCase case_sensitivity) {
       return std::equal(search_for.begin(), search_for.end(), source.begin(),
                         CaseInsensitiveCompareASCII<CharT>());
   }
+
+#if defined(MOZ_ZUCCHINI)
+  return false;
+#endif  // defined(MOZ_ZUCCHINI)
 }
 
 template <typename T, typename CharT = typename T::value_type>
@@ -248,6 +252,10 @@ bool EndsWithT(T str, T search_for, CompareCase case_sensitivity) {
       return std::equal(source.begin(), source.end(), search_for.begin(),
                         CaseInsensitiveCompareASCII<CharT>());
   }
+
+#if defined(MOZ_ZUCCHINI)
+  return false;
+#endif  // defined(MOZ_ZUCCHINI)
 }
 
 // A Matcher for DoReplaceMatchesAfterOffset() that matches substrings.

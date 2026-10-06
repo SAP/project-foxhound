@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 let nf = new Intl.NumberFormat("en", {
   minimumFractionDigits: 0,
   maximumFractionDigits: 2,

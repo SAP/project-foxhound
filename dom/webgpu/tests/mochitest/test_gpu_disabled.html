@@ -12,6 +12,11 @@
         "Pref should be disabled."
       );
       ok(navigator.gpu === undefined, "navigator.gpu === undefined");
+      const canvas = document.createElement("canvas");
+      ok(
+        canvas.getContext("webgpu") === null,
+        'canvas.getContext("webgpu") === null'
+      );
     </script>
   </body>
 </html>

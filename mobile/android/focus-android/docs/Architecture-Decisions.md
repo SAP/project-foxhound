@@ -52,6 +52,7 @@ A number of existing Android browsers (e.g. Opera, Brave) are built on top of th
 Firefox Focus is going to be build on top of Android's WebView.
 
 Reasons for using WebView:
+
 * At the time of writing the Focus for Android prototype GeckoView already existed but it wasn't in a state that it could be used outside of Firefox for Android reliably. In addition to that there wasn't a stable API comparable offering the feature set of WebView.
 * APK size has been a long-term concern of the Firefox for Android team. A large APK size has been problematic for partnership deals and distribution in countries where bandwidth is limited or expensive. GeckoView is roughly 30 MB in size, while WebView is part of the Android system and is basically "free". Prototype builds of Focus for Android based on WebView were less than 3 MB in size.
 

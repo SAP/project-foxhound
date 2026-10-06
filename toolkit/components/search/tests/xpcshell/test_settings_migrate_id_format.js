@@ -47,17 +47,17 @@ add_setup(async function () {
     { compress: true }
   );
 
-  await Services.search.init();
+  await SearchService.init();
 });
 
 add_task(async function test_cached_engine_properties() {
   Assert.equal(
-    Services.search.defaultEngine.name,
+    SearchService.defaultEngine.name,
     "engine2",
     "Should have the expected default engine"
   );
 
-  const engines = await Services.search.getEngines();
+  const engines = await SearchService.getEngines();
   Assert.deepEqual(
     engines.map(e => e.name),
     ["engine2", "engine1-de"],

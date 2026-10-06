@@ -41,6 +41,8 @@ CHROMIUM_DIRS = [
 TARGET_RE = re.compile(
     r'(?P<indentation_level>\s*)\w*\("(?P<target_name>\w*)"\) {$')
 
+BAD_TARGETS = ['libjingle_peerconnection_api']
+
 
 class TemporaryDirectory:
 
@@ -101,6 +103,21 @@ def fix_errors(filename, missing_deps, deleted_sources):
     Run(['gn', 'format', filename])
 
 
+def fix_source_set(filename, line_to_replace):
+    with open(filename) as file:
+        lines = file.readlines()
+    fixed_file = ''
+    for line in lines:
+        if line.strip() == line_to_replace.strip():
+            fixed_file += line.replace('rtc_source_set', 'rtc_library')
+        else:
+            fixed_file += line
+
+    with open(filename, 'w') as file:
+        file.write(fixed_file)
+
+    Run(['gn', 'format', filename])
+
 def first_non_empty(iterable):
     """Return first item which evaluates to True, or fallback to None."""
     return next((x for x in iterable if x), None)
@@ -147,6 +164,80 @@ def rebase(base_path, dependency_path, dependency):
     return rebased + ':' + dependency
 
 
+def _update_deps(new_lines, current_deps_lines_content, block_type):
+    """Helper to finalize and append a processed deps block to new_lines."""
+    if block_type == 'deps_set':
+        new_lines.append('deps = [\n')
+    elif block_type == 'deps_add':
+        new_lines.append('deps += [\n')
+    for dep_line in current_deps_lines_content:
+        line = dep_line.strip()
+        # Keep blank lines (inserted for formatting), comments and
+        # lines tagged with "  # keep".
+        if not line or line.startswith('#') or line.endswith(' # keep'):
+            new_lines.append(dep_line)
+            continue
+        deps_to_keep = []
+        # Keep absolute dependencies.
+        deps_to_keep.extend(re.findall(r'"(//[^"]*)"', dep_line))
+        # Keep _unittest and _unittests target.
+        deps_to_keep.extend(
+            re.findall(r'"([^"]*[_:](?:unit)?tests?)"', dep_line))
+        for dep in deps_to_keep:
+            new_lines.append('"' + dep + '",\n')
+    new_lines.append(']\n')
+
+
+def remove_all_dependencies(filename):
+    """
+    Removes non-absolute dependencies from all targets in a BUILD.gn file.
+    It preserves `deps = [...]` and `deps += [...]` blocks if they contain
+    absolute dependencies (starting with '//'), otherwise it removes them
+    or replaces with `deps = []`.
+    """
+    if not os.path.exists(filename):
+        print('Error: File "{}" not found.'.format(filename), file=sys.stderr)
+        return 1
+    with open(filename, 'r') as file:
+        lines = file.readlines()
+
+    new_lines = []  # New file content.
+    block_type = None  # None, 'deps_set' or 'deps_add'
+    bracket_level = 0
+    current_deps_lines_content = []  # Stores content of deps block
+
+    for line in lines:
+        stripped_line = line.split('#', 1)[0].strip()
+
+        if block_type is None:  # Not in a deps block.
+            if stripped_line.startswith('deps = ['):
+                block_type = 'deps_set'
+            elif stripped_line.startswith('deps += ['):
+                block_type = 'deps_add'
+            else:  # Not a deps line, just append it.
+                new_lines.append(line)
+
+        if block_type is not None:  # Inside a deps block.
+            current_deps_lines_content.append(line)
+            bracket_level += stripped_line.count('[')
+            bracket_level -= stripped_line.count(']')
+            if bracket_level < 0:
+                print('Error: Unbalanced [] found in "{}'.format(filename),
+                      file=sys.stderr)
+                return 1
+
+            if bracket_level == 0:  # End of a deps block
+                _update_deps(new_lines, current_deps_lines_content, block_type)
+                block_type = None
+                current_deps_lines_content = []
+
+    with open(filename, 'w') as file:
+        file.writelines(new_lines)
+    Run(['gn', 'format', filename])
+    print('Removed all dependencies from {}.'.format(filename))
+    return 0
+
+
 def main():
     helptext = """
 This tool tries to fix (some) errors reported by `gn gen --check`.
@@ -159,16 +250,36 @@ useful to check for different configurations."""
     parser = argparse.ArgumentParser(
         description=helptext,
         formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        '-r',
+        '--remove-all-dependencies',
+        dest='remove_deps_file_paths',
+        nargs='+',
+        metavar='FILE_PATH',
+        help='Remove all dependencies from the specified BUILD.gn files.')
     parser.add_argument('-C',
                         dest='local_build_dir',
                         help='Path lo a local build dir, e.g. out/Default')
     (flags, argv_to_forward) = parser.parse_known_args(sys.argv[1:])
 
+    if flags.remove_deps_file_paths:
+        for filename in flags.remove_deps_file_paths:
+            if remove_all_dependencies(filename) != 0:
+                return 1
+        return 0
+
     deleted_sources = set()
     errors_by_file = defaultdict(lambda: defaultdict(set))
 
     if flags.local_build_dir:
-        mb_output = Run(["gn", "gen", "--check", flags.local_build_dir])
+        mb_output = Run([
+            "gn",
+            "gen",
+            "--check",
+            # High limit to expose all errors to the tool.
+            "--error-limit=20000",
+            flags.local_build_dir
+        ])
     else:
         with TemporaryDirectory() as tmp_dir:
             mb_script_path = os.path.join(SCRIPT_DIR, 'mb', 'mb.py')
@@ -195,14 +306,19 @@ useful to check for different configurations."""
         if target_msg not in error:
             target_msg = 'It is not in any dependency of'
         if target_msg not in error:
+            target_msg = 'rtc_source_set shall not contain cc files'
+        if target_msg not in error:
             print('\n'.join(error))
             continue
         index = error.index(target_msg) + 1
-        path, target = error[index].strip().split(':')
         if error[index + 1] in ('is including a file from the target:',
                                 'The include file is in the target(s):'):
+            path, target = error[index].strip().split(':')
             dep = error[index + 2].strip()
             dep_path, dep = dep.split(':')
+            if dep in BAD_TARGETS:  # Ignore suggestions for known bad targets.
+                dep = error[index + 3].strip()
+                dep_path, dep = dep.split(':')
             dep = rebase(path, dep_path, dep)
             # Replacing /target:target with /target
             dep = re.sub(r'/(\w+):(\1)$', r'/\1', dep)
@@ -214,6 +330,12 @@ useful to check for different configurations."""
             deleted_file = '"' + os.path.basename(
                 error[index + 2].strip()) + '",'
             deleted_sources.add(deleted_file)
+        elif target_msg == 'rtc_source_set shall not contain cc files':
+            path = error[index].strip().split(':',
+                                              maxsplit=1)[0].split(' ')[1][2:]
+            print('Turning', error[index + 1].strip().split(' ')[0], 'in',
+                  path, 'into an rtc_library...')
+            fix_source_set(path, error[index + 1])
         else:
             print('\n'.join(error))
             continue

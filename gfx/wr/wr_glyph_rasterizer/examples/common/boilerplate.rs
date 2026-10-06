@@ -4,11 +4,11 @@
 
 use api::ImageFormat;
 use euclid::{Transform3D, UnknownUnit};
-use glutin::{self, PossiblyCurrent};
 use gleam::gl;
+use glutin::display::GlDisplay;
 use wr_glyph_rasterizer::{RasterizedGlyph, GlyphFormat};
 
-use std::{ffi::CStr, rc::Rc};
+use std::{ffi::{CStr, CString}, rc::Rc};
 
 #[allow(unused)]
 pub struct Gl {
@@ -25,28 +25,21 @@ pub struct Gl {
     glyphs: Vec<RasterizedGlyph>,
 }
 
-pub fn load(gl_context: &glutin::Context<PossiblyCurrent>, glyphs: Vec<RasterizedGlyph>) -> Gl {
+pub fn load(is_gles: bool, gl_display: &impl GlDisplay, glyphs: Vec<RasterizedGlyph>) -> Gl {
     env_logger::init();
 
-    #[cfg(target_os = "macos")]
-    {
-        use core_foundation::{self as cf, base::TCFType};
-        let i = cf::bundle::CFBundle::main_bundle().info_dictionary();
-        let mut i = unsafe { i.to_mutable() };
-        i.set(
-            cf::string::CFString::new("NSSupportsAutomaticGraphicsSwitching"),
-            cf::boolean::CFBoolean::true_value().into_CFType(),
-        );
-    }
-
-    let gl = match gl_context.get_api() {
-        glutin::Api::OpenGl => unsafe {
-            gl::GlFns::load_with(|symbol| gl_context.get_proc_address(symbol) as *const _)
-        },
-        glutin::Api::OpenGlEs => unsafe {
-            gl::GlesFns::load_with(|symbol| gl_context.get_proc_address(symbol) as *const _)
-        },
-        glutin::Api::WebGl => unimplemented!(),
+    let gl: Rc<dyn gl::Gl> = if is_gles {
+        unsafe {
+            gl::GlesFns::load_with(|symbol| {
+                gl_display.get_proc_address(&CString::new(symbol).unwrap()) as *const _
+            })
+        }
+    } else {
+        unsafe {
+            gl::GlFns::load_with(|symbol| {
+                gl_display.get_proc_address(&CString::new(symbol).unwrap()) as *const _
+            })
+        }
     };
 
     let version = unsafe {

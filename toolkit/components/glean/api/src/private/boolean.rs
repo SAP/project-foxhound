@@ -127,28 +127,6 @@ impl Boolean for BooleanMetric {
         }
     }
 
-    /// **Test-only API.**
-    ///
-    /// Get the currently stored value as a boolean.
-    /// This doesn't clear the stored value.
-    ///
-    /// ## Arguments
-    ///
-    /// * `ping_name` - the storage name to look into.
-    ///
-    /// ## Return value
-    ///
-    /// Returns the stored value or `None` if nothing stored.
-    pub fn test_get_value<'a, S: Into<Option<&'a str>>>(&self, ping_name: S) -> Option<bool> {
-        let ping_name = ping_name.into().map(|s| s.to_string());
-        match self {
-            BooleanMetric::Parent { id: _, inner } => inner.test_get_value(ping_name),
-            _ => {
-                panic!("Cannot get test value for boolean metric in non-main process!",)
-            }
-        }
-    }
-
     /// **Exported for test purposes.**
     ///
     /// Gets the number of recorded errors for the given metric and error type.
@@ -168,6 +146,32 @@ impl Boolean for BooleanMetric {
             _ => panic!(
                 "Cannot get the number of recorded errors for boolean metric in non-main process!"
             ),
+        }
+    }
+}
+
+#[inherent]
+impl glean::TestGetValue for BooleanMetric {
+    type Output = bool;
+
+    /// **Test-only API.**
+    ///
+    /// Get the currently stored value as a boolean.
+    /// This doesn't clear the stored value.
+    ///
+    /// ## Arguments
+    ///
+    /// * `ping_name` - the storage name to look into.
+    ///
+    /// ## Return value
+    ///
+    /// Returns the stored value or `None` if nothing stored.
+    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<bool> {
+        match self {
+            BooleanMetric::Parent { id: _, inner } => inner.test_get_value(ping_name),
+            _ => {
+                panic!("Cannot get test value for boolean metric in non-main process!",)
+            }
         }
     }
 }
@@ -193,7 +197,9 @@ mod test {
         let metric = &metrics::test_only_ipc::a_bool;
         metric.set(true);
 
-        assert!(metric.test_get_value("test-ping").unwrap());
+        assert!(metric
+            .test_get_value(Some("test-ping".to_string()))
+            .unwrap());
     }
 
     #[test]
@@ -221,7 +227,10 @@ mod test {
         assert!(ipc::replay_from_buf(&ipc::take_buf().unwrap()).is_ok());
 
         assert!(
-            false == parent_metric.test_get_value("test-ping").unwrap(),
+            false
+                == parent_metric
+                    .test_get_value(Some("test-ping".to_string()))
+                    .unwrap(),
             "Boolean metrics should only work in the parent process"
         );
     }
@@ -235,19 +244,19 @@ mod test {
 
         parent_metric.set(false);
 
-        {
-            let child_metric = parent_metric.child_metric();
-
-            // scope for need_ipc RAII
+        if let super::BooleanMetric::Child(meta) = parent_metric.child_metric() {
             let _raii = ipc::test_set_need_ipc(true);
-
-            child_metric.set(true);
+            super::BooleanMetric::UnorderedChild(meta).set(true);
+        } else {
+            panic!("Not an ordered child!");
         }
 
         assert!(ipc::replay_from_buf(&ipc::take_buf().unwrap()).is_ok());
 
         assert!(
-            !parent_metric.test_get_value("test-ping").unwrap(),
+            parent_metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap(),
             "Boolean metrics can unsafely work in child processes"
         );
     }

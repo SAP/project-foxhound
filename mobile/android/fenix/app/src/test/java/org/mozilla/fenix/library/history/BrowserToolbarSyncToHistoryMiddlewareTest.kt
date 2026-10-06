@@ -7,7 +7,8 @@ package org.mozilla.fenix.library.history
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
-import mozilla.components.compose.browser.toolbar.store.BrowserToolbarAction.ToggleEditMode
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarAction.EnterEditMode
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarAction.ExitEditMode
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarState
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarStore
 import mozilla.components.compose.browser.toolbar.store.Mode
@@ -28,7 +29,7 @@ class BrowserToolbarSyncToHistoryMiddlewareTest {
             middleware = listOf(BrowserToolbarSyncToHistoryMiddleware(historyStore)),
         )
 
-        toolbarStore.dispatch(ToggleEditMode(false))
+        toolbarStore.dispatch(ExitEditMode)
 
         verify { historyStore.dispatch(SearchDismissed) }
     }
@@ -43,7 +44,7 @@ class BrowserToolbarSyncToHistoryMiddlewareTest {
             middleware = listOf(BrowserToolbarSyncToHistoryMiddleware(historyStore)),
         )
 
-        toolbarStore.dispatch(ToggleEditMode(false))
+        toolbarStore.dispatch(ExitEditMode)
 
         verify(exactly = 0) { historyStore.dispatch(any()) }
     }
@@ -58,7 +59,7 @@ class BrowserToolbarSyncToHistoryMiddlewareTest {
             middleware = listOf(BrowserToolbarSyncToHistoryMiddleware(historyStore)),
         )
 
-        toolbarStore.dispatch(ToggleEditMode(true))
+        toolbarStore.dispatch(EnterEditMode(false))
 
         verify(exactly = 0) { historyStore.dispatch(any()) }
     }

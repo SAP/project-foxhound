@@ -6,6 +6,26 @@
 const MOCK_PASSWORD = "mckP@ss3x2 fake_password";
 
 /**
+ * Creates a default backupServiceState object with common properties.
+ * This is used in tests to avoid repetition of the defaultParent structure.
+ *
+ * @param {object} overrides - Properties to override or add to the default state
+ * @returns {object} The complete backupServiceState object
+ */
+function createBackupServiceState(overrides = {}) {
+  const testDefaultName = "test-default-path";
+  return {
+    defaultParent: {
+      path: PathUtils.join(PathUtils.tempDir, testDefaultName),
+      fileName: testDefaultName,
+    },
+    archiveEnabledStatus: true,
+    restoreEnabledStatus: true,
+    ...overrides,
+  };
+}
+
+/**
  * Dispatches a custom event "ValidPasswordsDetected" or "InvalidPasswordsDetected" from
  * the password-validation-inputs element within a parent element.
  * Pass "ValidPasswordsDetected" to simulate when a user meets password requirements

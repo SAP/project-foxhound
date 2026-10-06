@@ -10,8 +10,9 @@
 
 #include "rtc_base/experiments/quality_scaling_experiment.h"
 
+#include "api/field_trials.h"
+#include "api/video/video_codec_type.h"
 #include "test/gtest.h"
-#include "test/scoped_key_value_config.h"
 
 namespace webrtc {
 namespace {
@@ -41,26 +42,34 @@ void ExpectEqualConfig(QualityScalingExperiment::Config a,
 #if !defined(WEBRTC_IOS)
 // TODO(bugs.webrtc.org/12401): investigate why QualityScaler kicks in on iOS.
 TEST(QualityScalingExperimentTest, DefaultEnabledWithoutFieldTrial) {
-  webrtc::test::ScopedKeyValueConfig field_trials("");
+  FieldTrials field_trials("");
   EXPECT_TRUE(QualityScalingExperiment::Enabled(field_trials));
 }
 #else
 TEST(QualityScalingExperimentTest, DefaultDisabledWithoutFieldTrialIOS) {
-  webrtc::test::ScopedKeyValueConfig field_trials("");
+  FieldTrials field_trials("");
   EXPECT_FALSE(QualityScalingExperiment::Enabled(field_trials));
 }
 #endif
 
 TEST(QualityScalingExperimentTest, EnabledWithFieldTrial) {
-  webrtc::test::ScopedKeyValueConfig field_trials(
-      "WebRTC-Video-QualityScaling/Enabled/");
+  FieldTrials field_trials("WebRTC-Video-QualityScaling/Enabled/");
   EXPECT_TRUE(QualityScalingExperiment::Enabled(field_trials));
 }
 
 TEST(QualityScalingExperimentTest, ParseSettings) {
-  const QualityScalingExperiment::Settings kExpected = {1, 2, 3,    4,     5, 6,
-                                                        7, 8, 0.9f, 0.99f, 1};
-  webrtc::test::ScopedKeyValueConfig field_trials(
+  const QualityScalingExperiment::Settings kExpected = {.vp8_low = 1,
+                                                        .vp8_high = 2,
+                                                        .vp9_low = 3,
+                                                        .vp9_high = 4,
+                                                        .h264_low = 5,
+                                                        .h264_high = 6,
+                                                        .generic_low = 7,
+                                                        .generic_high = 8,
+                                                        .alpha_high = 0.9f,
+                                                        .alpha_low = 0.99f,
+                                                        .drop = 1};
+  FieldTrials field_trials(
       "WebRTC-Video-QualityScaling/Enabled-1,2,3,4,5,6,7,8,0.9,0.99,1/");
   const auto settings = QualityScalingExperiment::ParseSettings(field_trials);
   EXPECT_TRUE(settings);
@@ -70,25 +79,24 @@ TEST(QualityScalingExperimentTest, ParseSettings) {
 #if !defined(WEBRTC_IOS)
 // TODO(bugs.webrtc.org/12401): investigate why QualityScaler kicks in on iOS.
 TEST(QualityScalingExperimentTest, ParseSettingsUsesDefaultsWithoutFieldTrial) {
-  webrtc::test::ScopedKeyValueConfig field_trials("");
+  FieldTrials field_trials("");
   // Uses some default hard coded values.
   EXPECT_TRUE(QualityScalingExperiment::ParseSettings(field_trials));
 }
 #else
 TEST(QualityScalingExperimentTest, ParseSettingsFailsWithoutFieldTrial) {
-  webrtc::test::ScopedKeyValueConfig field_trials("");
+  FieldTrials field_trials("");
   EXPECT_FALSE(QualityScalingExperiment::ParseSettings(field_trials));
 }
 #endif
 
 TEST(QualityScalingExperimentTest, ParseSettingsFailsWithInvalidFieldTrial) {
-  webrtc::test::ScopedKeyValueConfig field_trials(
-      "WebRTC-Video-QualityScaling/Enabled-invalid/");
+  FieldTrials field_trials("WebRTC-Video-QualityScaling/Enabled-invalid/");
   EXPECT_FALSE(QualityScalingExperiment::ParseSettings(field_trials));
 }
 
 TEST(QualityScalingExperimentTest, GetConfig) {
-  webrtc::test::ScopedKeyValueConfig field_trials(
+  FieldTrials field_trials(
       "WebRTC-Video-QualityScaling/Enabled-1,2,3,4,5,6,7,8,0.9,0.99,0/");
   const auto config = QualityScalingExperiment::GetConfig(field_trials);
   EXPECT_EQ(0.9f, config.alpha_high);
@@ -97,8 +105,7 @@ TEST(QualityScalingExperimentTest, GetConfig) {
 }
 
 TEST(QualityScalingExperimentTest, GetsDefaultConfigForInvalidFieldTrial) {
-  webrtc::test::ScopedKeyValueConfig field_trials(
-      "WebRTC-Video-QualityScaling/Enabled-invalid/");
+  FieldTrials field_trials("WebRTC-Video-QualityScaling/Enabled-invalid/");
   const auto config = QualityScalingExperiment::GetConfig(field_trials);
   ExpectEqualConfig(config, QualityScalingExperiment::Config());
 }
@@ -106,14 +113,14 @@ TEST(QualityScalingExperimentTest, GetsDefaultConfigForInvalidFieldTrial) {
 TEST(QualityScalingExperimentTest, GetsDefaultAlphaForInvalidValue) {
   QualityScalingExperiment::Config expected_config;
   expected_config.use_all_drop_reasons = true;
-  webrtc::test::ScopedKeyValueConfig field_trials(
+  FieldTrials field_trials(
       "WebRTC-Video-QualityScaling/Enabled-1,2,3,4,5,6,7,8,0.99,0.9,1/");
   const auto config = QualityScalingExperiment::GetConfig(field_trials);
   ExpectEqualConfig(config, expected_config);
 }
 
 TEST(QualityScalingExperimentTest, GetVp8Thresholds) {
-  webrtc::test::ScopedKeyValueConfig field_trials(
+  FieldTrials field_trials(
       "WebRTC-Video-QualityScaling/Enabled-1,2,3,4,5,6,0,0,0.9,0.99,1/");
   const auto thresholds =
       QualityScalingExperiment::GetQpThresholds(kVideoCodecVP8, field_trials);
@@ -123,7 +130,7 @@ TEST(QualityScalingExperimentTest, GetVp8Thresholds) {
 }
 
 TEST(QualityScalingExperimentTest, GetThresholdsFailsForInvalidVp8Value) {
-  webrtc::test::ScopedKeyValueConfig field_trials(
+  FieldTrials field_trials(
       "WebRTC-Video-QualityScaling/Enabled-0,0,3,4,5,6,7,8,0.9,0.99,1/");
   const auto thresholds =
       QualityScalingExperiment::GetQpThresholds(kVideoCodecVP8, field_trials);
@@ -131,7 +138,7 @@ TEST(QualityScalingExperimentTest, GetThresholdsFailsForInvalidVp8Value) {
 }
 
 TEST(QualityScalingExperimentTest, GetVp9Thresholds) {
-  webrtc::test::ScopedKeyValueConfig field_trials(
+  FieldTrials field_trials(
       "WebRTC-Video-QualityScaling/Enabled-1,2,3,4,5,6,0,0,0.9,0.99,1/");
   const auto thresholds =
       QualityScalingExperiment::GetQpThresholds(kVideoCodecVP9, field_trials);
@@ -141,7 +148,7 @@ TEST(QualityScalingExperimentTest, GetVp9Thresholds) {
 }
 
 TEST(QualityScalingExperimentTest, GetThresholdsFailsForInvalidVp9Value) {
-  webrtc::test::ScopedKeyValueConfig field_trials(
+  FieldTrials field_trials(
       "WebRTC-Video-QualityScaling/Enabled-1,2,0,0,5,6,7,8,0.9,0.99,1/");
   const auto thresholds =
       QualityScalingExperiment::GetQpThresholds(kVideoCodecVP9, field_trials);
@@ -149,7 +156,7 @@ TEST(QualityScalingExperimentTest, GetThresholdsFailsForInvalidVp9Value) {
 }
 
 TEST(QualityScalingExperimentTest, GetH264Thresholds) {
-  webrtc::test::ScopedKeyValueConfig field_trials(
+  FieldTrials field_trials(
       "WebRTC-Video-QualityScaling/Enabled-1,2,3,4,5,6,0,0,0.9,0.99,1/");
   const auto thresholds =
       QualityScalingExperiment::GetQpThresholds(kVideoCodecH264, field_trials);
@@ -159,7 +166,7 @@ TEST(QualityScalingExperimentTest, GetH264Thresholds) {
 }
 
 TEST(QualityScalingExperimentTest, GetThresholdsFailsForInvalidH264Value) {
-  webrtc::test::ScopedKeyValueConfig field_trials(
+  FieldTrials field_trials(
       "WebRTC-Video-QualityScaling/Enabled-1,2,3,4,0,0,7,8,0.9,0.99,1/");
   const auto thresholds =
       QualityScalingExperiment::GetQpThresholds(kVideoCodecH264, field_trials);
@@ -167,7 +174,7 @@ TEST(QualityScalingExperimentTest, GetThresholdsFailsForInvalidH264Value) {
 }
 
 TEST(QualityScalingExperimentTest, GetGenericThresholds) {
-  webrtc::test::ScopedKeyValueConfig field_trials(
+  FieldTrials field_trials(
       "WebRTC-Video-QualityScaling/Enabled-1,2,3,4,0,0,7,8,0.9,0.99,1/");
   const auto thresholds = QualityScalingExperiment::GetQpThresholds(
       kVideoCodecGeneric, field_trials);
@@ -177,7 +184,7 @@ TEST(QualityScalingExperimentTest, GetGenericThresholds) {
 }
 
 TEST(QualityScalingExperimentTest, GetThresholdsFailsForInvalidGenericValue) {
-  webrtc::test::ScopedKeyValueConfig field_trials(
+  FieldTrials field_trials(
       "WebRTC-Video-QualityScaling/Enabled-1,2,3,4,5,6,0,0,0.9,0.99,1/");
   const auto thresholds = QualityScalingExperiment::GetQpThresholds(
       kVideoCodecGeneric, field_trials);

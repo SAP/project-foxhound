@@ -13,9 +13,9 @@
  * limitations under the License.
  */
 
-// ./test/core/memory-multi.wast
+// ./test/core/multi-memory/memory-multi.wast
 
-// ./test/core/memory-multi.wast:5
+// ./test/core/multi-memory/memory-multi.wast:5
 let $0 = instantiate(`(module
   (memory \$mem1 1)
   (memory \$mem2 1)
@@ -33,13 +33,13 @@ let $0 = instantiate(`(module
   (data \$d "\\01\\00\\00\\00" "\\02\\00\\00\\00")
 )`);
 
-// ./test/core/memory-multi.wast:22
+// ./test/core/multi-memory/memory-multi.wast:22
 assert_return(() => invoke($0, `init1`, []), [value("i32", 1)]);
 
-// ./test/core/memory-multi.wast:23
+// ./test/core/multi-memory/memory-multi.wast:23
 assert_return(() => invoke($0, `init2`, []), [value("i32", 2)]);
 
-// ./test/core/memory-multi.wast:26
+// ./test/core/multi-memory/memory-multi.wast:26
 let $1 = instantiate(`(module
   (memory \$mem1 1)
   (memory \$mem2 1)
@@ -55,8 +55,8 @@ let $1 = instantiate(`(module
   )
 )`);
 
-// ./test/core/memory-multi.wast:41
+// ./test/core/multi-memory/memory-multi.wast:41
 assert_return(() => invoke($1, `fill1`, []), [value("i32", 16843009)]);
 
-// ./test/core/memory-multi.wast:42
+// ./test/core/multi-memory/memory-multi.wast:42
 assert_return(() => invoke($1, `fill2`, []), [value("i32", 514)]);

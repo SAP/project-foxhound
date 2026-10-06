@@ -34,6 +34,8 @@ function parseColor(color, kind) {
   return color;
 }
 
+const activePanelActions = new Set();
+
 /** Common base class for Page and Browser actions. */
 class PanelActionBase {
   constructor(options, tabContext, extension) {
@@ -61,9 +63,12 @@ class PanelActionBase {
     // the preloaded popup. If we don't end up opening we need to clear this
     // permission when clearing the popup.
     this.activeTabForPreload = null;
+
+    activePanelActions.add(this);
   }
 
   onShutdown() {
+    activePanelActions.delete(this);
     this.tabContext.shutdown();
   }
 
@@ -254,6 +259,25 @@ class PanelActionBase {
     return popupUrl;
   }
 
+  /**
+   * Check whether any panel instance is blocking openPopup().
+   *
+   * @param {ChromeWindow} window
+   *        The browser window for which openPopup() is called.
+   * @throws {ExtensionError} If the openPopup() call should be rejected.
+   */
+  throwIfOpenPopupIsBlockedByAnyAction(window) {
+    for (const action of activePanelActions) {
+      if (action.isPanelShownBlockingOpenPopup(window)) {
+        // This message is intentionally generic, in case we also want to throw
+        // this error if non-extension panels are open.
+        throw new ExtensionError(
+          "openPopup() cannot be called while another panel is open"
+        );
+      }
+    }
+  }
+
   api(context) {
     let { extension } = context;
     return {
@@ -382,6 +406,17 @@ class PanelActionBase {
    */
   isShownForTab(_tab) {
     return false;
+  }
+
+  /**
+   * Check whether the panel is showing (blocking openPopup()).
+   *
+   * @param {ChromeWindow} _window
+   *        The browser window for which openPopup() is called.
+   * @throws {ExtensionError} If the openPopup() call should be rejected.
+   */
+  isPanelShownBlockingOpenPopup(_window) {
+    throw new Error("Not implemented.");
   }
 }
 
@@ -548,6 +583,10 @@ export class BrowserActionBase extends PanelActionBase {
     extension.on("update-blocklist-state", () => this.updateOnChange());
   }
 
+  // action.openPopup() only supports focused windows (bug 2011516).
+  static ERROR_WIN_NOT_FOCUSED =
+    "Cannot show popup for an inactive window, only for the currently focused window.";
+
   async loadIconData() {
     const { extension } = this;
     const options =
@@ -653,7 +692,10 @@ export class BrowserActionBase extends PanelActionBase {
       enable: (...args) => this.enable(...args),
       disable: (...args) => this.disable(...args),
       isEnabled: details => {
-        return this.getPropertyFromDetails(details, "enabled");
+        if (typeof details == "number") {
+          details = { tabId: details };
+        }
+        return this.getPropertyFromDetails(details ?? {}, "enabled");
       },
       setBadgeText: details => {
         this.setPropertyFromDetails(details, "badgeText", details.text);

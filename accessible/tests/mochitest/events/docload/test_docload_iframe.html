@@ -18,62 +18,46 @@
           src="../../events.js"></script>
 
   <script type="application/javascript">
-    // //////////////////////////////////////////////////////////////////////////
-    // Invokers
-
     const kHide = 1;
     const kShow = 2;
     const kRemove = 3;
 
-    function morphIFrame(aIdentifier, aAction) {
-      this.DOMNode = getNode(aIdentifier);
-      this.IFrameContainerDOMNode = this.DOMNode.parentNode;
+    async function morphIFrame(aIdentifier, aAction) {
+      const domNode = getNode(aIdentifier);
+      const containerDOMNode = domNode.parentNode;
 
-      this.eventSeq = [
-        new invokerChecker(aAction === kShow ? EVENT_SHOW : EVENT_HIDE, this.DOMNode),
-        new invokerChecker(EVENT_REORDER, this.IFrameContainerDOMNode),
-      ];
+      let events = waitForEvents([
+        [aAction === kShow ? EVENT_SHOW : EVENT_HIDE, domNode],
+        [EVENT_REORDER, containerDOMNode],
+      ]);
 
-      this.invoke = () => {
-        if (aAction === kRemove) {
-          this.IFrameContainerDOMNode.removeChild(this.DOMNode);
-        } else {
-          this.DOMNode.style.display = aAction === kHide ? "none" : "block";
-        }
-      };
+      if (aAction === kRemove) {
+        containerDOMNode.removeChild(domNode);
+      } else {
+        domNode.style.display = aAction === kHide ? "none" : "block";
+      }
 
-      this.finalCheck = () =>
-        testAccessibleTree(this.IFrameContainerDOMNode, {
-          role: ROLE_SECTION,
-          children: (aAction == kHide || aAction == kRemove) ? [ ] :
-            [
-              {
-                role: ROLE_INTERNAL_FRAME,
-                children: [
-                  { role: ROLE_DOCUMENT },
-                ],
-              },
-            ],
-        });
+      await events;
 
-      this.getID = () => {
-        if (aAction === kRemove) {
-          return "remove iframe";
-        }
-
-        return `change display style of iframe to ${aAction === kHide ? "none" : "block"}`;
-      };
+      testAccessibleTree(containerDOMNode, {
+        role: ROLE_SECTION,
+        children: (aAction == kHide || aAction == kRemove) ? [] :
+          [
+            {
+              role: ROLE_INTERNAL_FRAME,
+              children: [
+                { role: ROLE_DOCUMENT },
+              ],
+            },
+          ],
+      });
     }
 
-    // //////////////////////////////////////////////////////////////////////////
-    // Do tests
-
-    function doTests() {
-      const gQueue = new eventQueue(EVENT_REORDER);
-      gQueue.push(new morphIFrame("iframe", kHide));
-      gQueue.push(new morphIFrame("iframe", kShow));
-      gQueue.push(new morphIFrame("iframe", kRemove));
-      gQueue.invoke(); // Will call SimpleTest.finish();
+    async function doTests() {
+      await morphIFrame("iframe", kHide);
+      await morphIFrame("iframe", kShow);
+      await morphIFrame("iframe", kRemove);
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

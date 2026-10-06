@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<updates>
+  <addons>
+    <addon id="gmp-gmpopenh264" URL="http://127.0.0.1:8011/gmp-gmpopenh264-1.1.zip" hashFunction="sha256" hashValue="1118b90d6f645eefc2b99af17bae396636ace1e33d079c88de715177584e2aee" version="1.1"/>
+    <addon id="NOT-gmp-gmpopenh264" URL="http://127.0.0.1:8011/NOT-gmp-gmpopenh264-1.1.zip" hashFunction="sha512" hashValue="141592656f645eefc2b99af17bae396636ace1e33d079c88de715177584e2aee" version="9.1"/>
+    <addon notid="NOT-gmp-gmpopenh264" URL="http://127.0.0.1:8011/NOT-gmp-gmpopenh264-1.1.zip" hashFunction="sha512" hashValue="141592656f645eefc2b99af17bae396636ace1e33d079c88de715177584e2aee" version="9.1"/>
+    <addon id="NOT-gmp-gmpopenh264" notURL="http://127.0.0.1:8011/NOT-gmp-gmpopenh264-1.1.zip" hashFunction="sha512" hashValue="141592656f645eefc2b99af17bae396636ace1e33d079c88de715177584e2aee" version="9.1"/>
+    <addon id="NOT-gmp-gmpopenh264" URL="http://127.0.0.1:8011/NOT-gmp-gmpopenh264-1.1.zip" nothashFunction="sha512" hashValue="141592656f645eefc2b99af17bae396636ace1e33d079c88de715177584e2aee" version="9.1"/>
+    <addon id="NOT-gmp-gmpopenh264" URL="http://127.0.0.1:8011/NOT-gmp-gmpopenh264-1.1.zip" hashFunction="sha512" nothashValue="141592656f645eefc2b99af17bae396636ace1e33d079c88de715177584e2aee" version="9.1"/>
+    <addon id="NOT-gmp-gmpopenh264" URL="http://127.0.0.1:8011/NOT-gmp-gmpopenh264-1.1.zip" hashFunction="sha512" hashValue="141592656f645eefc2b99af17bae396636ace1e33d079c88de715177584e2aee" notversion="9.1"/>
+  </addons>
+</updates>

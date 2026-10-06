@@ -1,10 +1,10 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WMFMediaDataEncoder.h"
+
+#include <comdef.h>
 
 #include "ImageContainer.h"
 #include "ImageConversion.h"
@@ -13,10 +13,12 @@
 #include "TimeUnits.h"
 #include "WMFDataEncoderUtils.h"
 #include "WMFUtils.h"
-#include <comdef.h>
 #include "mozilla/WindowsProcessMitigations.h"
+#include "mozilla/dom/WebCodecsUtils.h"
 
 namespace mozilla {
+
+#define AUTO_MARKER(desc) AUTO_WEBCODECS_MARKER("WMFMediaDataEncoder", desc)
 
 using InitPromise = MediaDataEncoder::InitPromise;
 using EncodePromise = MediaDataEncoder::EncodePromise;
@@ -28,7 +30,7 @@ WMFMediaDataEncoder::WMFMediaDataEncoder(const EncoderConfig& aConfig,
       mTaskQueue(aTaskQueue),
       mHardwareNotAllowed(aConfig.mHardwarePreference ==
                           HardwarePreference::RequireSoftware) {
-  WMF_ENC_LOGE("WMFMediaDataEncoder ctor: %s, (hw not allowed: %s)",
+  WMF_ENC_LOGE("WMFMediaDataEncoder ctor: {}, (hw not allowed: {})",
                aConfig.ToString().get(), mHardwareNotAllowed ? "yes" : "no");
   MOZ_ASSERT(mTaskQueue);
 }
@@ -38,7 +40,7 @@ RefPtr<InitPromise> WMFMediaDataEncoder::Init() {
                      &WMFMediaDataEncoder::ProcessInit);
 }
 RefPtr<EncodePromise> WMFMediaDataEncoder::Encode(const MediaData* aSample) {
-  WMF_ENC_LOGD("Encode ts=%s", aSample->mTime.ToString().get());
+  WMF_ENC_LOGD("Encode ts={}", aSample->mTime.ToString().get());
   MOZ_ASSERT(aSample);
 
   RefPtr<const VideoData> sample(aSample->As<const VideoData>());
@@ -47,27 +49,46 @@ RefPtr<EncodePromise> WMFMediaDataEncoder::Encode(const MediaData* aSample) {
       mTaskQueue, this, __func__, &WMFMediaDataEncoder::ProcessEncode,
       std::move(sample));
 }
+RefPtr<EncodePromise> WMFMediaDataEncoder::Encode(
+    nsTArray<RefPtr<MediaData>>&& aSamples) {
+  WMF_ENC_LOGD("Encode: num of samples={}", aSamples.Length());
+  MOZ_ASSERT(!aSamples.IsEmpty());
+
+  nsTArray<RefPtr<const VideoData>> videoSamples;
+  for (auto& sample : aSamples) {
+    videoSamples.AppendElement(sample->As<const VideoData>());
+  }
+
+  return InvokeAsync(mTaskQueue, this, __func__,
+                     &WMFMediaDataEncoder::ProcessEncodeBatch,
+                     std::move(videoSamples));
+}
 RefPtr<EncodePromise> WMFMediaDataEncoder::Drain() {
   WMF_ENC_LOGD("Drain");
-  return InvokeAsync(
-      mTaskQueue, __func__, [self = RefPtr<WMFMediaDataEncoder>(this)]() {
-        nsTArray<MFTEncoder::OutputSample> outputs;
-        return SUCCEEDED(self->mEncoder->Drain(outputs))
-                   ? self->ProcessOutputSamples(std::move(outputs))
-                   : EncodePromise::CreateAndReject(
-                         NS_ERROR_DOM_MEDIA_FATAL_ERR, __func__);
-      });
+  return InvokeAsync(mTaskQueue, this, __func__,
+                     &WMFMediaDataEncoder::ProcessDrain);
 }
 RefPtr<ShutdownPromise> WMFMediaDataEncoder::Shutdown() {
   WMF_ENC_LOGD("Shutdown");
-  return InvokeAsync(mTaskQueue, __func__,
-                     [self = RefPtr<WMFMediaDataEncoder>(this)]() {
-                       if (self->mEncoder) {
-                         self->mEncoder->Destroy();
-                         self->mEncoder = nullptr;
-                       }
-                       return ShutdownPromise::CreateAndResolve(true, __func__);
-                     });
+  return InvokeAsync(
+      mTaskQueue, __func__, [self = RefPtr<WMFMediaDataEncoder>(this)]() {
+        auto r = MediaResult(NS_ERROR_DOM_MEDIA_CANCELED,
+                             "Canceled by WMFMediaDataEncoder::Shutdown");
+
+        // Cancel encode in flight if any.
+        self->mEncodeRequest.DisconnectIfExists();
+        self->mEncodePromise.RejectIfExists(r, __func__);
+
+        // Cancel drain in flight if any.
+        self->mDrainRequest.DisconnectIfExists();
+        self->mDrainPromise.RejectIfExists(r, __func__);
+
+        if (self->mEncoder) {
+          self->mEncoder->Destroy();
+          self->mEncoder = nullptr;
+        }
+        return ShutdownPromise::CreateAndResolve(true, __func__);
+      });
 }
 RefPtr<GenericPromise> WMFMediaDataEncoder::SetBitrate(uint32_t aBitsPerSec) {
   return InvokeAsync(
@@ -100,6 +121,8 @@ RefPtr<InitPromise> WMFMediaDataEncoder::ProcessInit() {
   MOZ_ASSERT(!mEncoder,
              "Should not initialize encoder again without shutting down");
 
+  auto cleanup = MakeScopeExit([&] { mIsHardwareAccelerated = false; });
+
   if (!wmf::MediaFoundationInitializer::HasInitialized()) {
     return InitPromise::CreateAndReject(
         MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
@@ -115,8 +138,8 @@ RefPtr<InitPromise> WMFMediaDataEncoder::ProcessInit() {
 
   if (FAILED(hr)) {
     _com_error error(hr);
-    WMF_ENC_LOGE("init MFTEncoder: error = 0x%lX, %ls", hr,
-                 error.ErrorMessage());
+    WMF_ENC_LOGE("init MFTEncoder: error = 0x{:X}, {}", hr,
+                 NS_ConvertUTF16toUTF8(error.ErrorMessage()).get());
     return InitPromise::CreateAndReject(
         MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                     RESULT_DETAIL("Can't create the MFT encoder.")),
@@ -125,8 +148,10 @@ RefPtr<InitPromise> WMFMediaDataEncoder::ProcessInit() {
 
   mEncoder = std::move(encoder);
   InitializeConfigData();
-  return InitPromise::CreateAndResolve(TrackInfo::TrackType::kVideoTrack,
-                                       __func__);
+  mIsHardwareAccelerated = mEncoder->IsHardwareAccelerated();
+  WMF_ENC_LOGD("HW accelerated: {}", mIsHardwareAccelerated ? "yes" : "no");
+  cleanup.release();
+  return InitPromise::CreateAndResolve(true, __func__);
 }
 
 HRESULT WMFMediaDataEncoder::InitMFTEncoder(RefPtr<MFTEncoder>& aEncoder) {
@@ -134,24 +159,24 @@ HRESULT WMFMediaDataEncoder::InitMFTEncoder(RefPtr<MFTEncoder>& aEncoder) {
                                 mConfig.mCodecSpecific);
   if (FAILED(hr)) {
     _com_error error(hr);
-    WMF_ENC_LOGE("MFTEncoder::Create: error = 0x%lX, %ls", hr,
-                 error.ErrorMessage());
+    WMF_ENC_LOGE("MFTEncoder::Create: error = 0x{:X}, {}", hr,
+                 NS_ConvertUTF16toUTF8(error.ErrorMessage()).get());
     return hr;
   }
 
   hr = aEncoder->SetModes(mConfig);
   if (FAILED(hr)) {
     _com_error error(hr);
-    WMF_ENC_LOGE("MFTEncoder::SetMode: error = 0x%lX, %ls", hr,
-                 error.ErrorMessage());
+    WMF_ENC_LOGE("MFTEncoder::SetMode: error = 0x{:X}, {}", hr,
+                 NS_ConvertUTF16toUTF8(error.ErrorMessage()).get());
     return hr;
   }
 
   hr = SetMediaTypes(aEncoder, mConfig);
   if (FAILED(hr)) {
     _com_error error(hr);
-    WMF_ENC_LOGE("MFTEncoder::SetMediaType: error = 0x%lX, %ls", hr,
-                 error.ErrorMessage());
+    WMF_ENC_LOGE("MFTEncoder::SetMediaType: error = 0x{:X}, {}", hr,
+                 NS_ConvertUTF16toUTF8(error.ErrorMessage()).get());
     return hr;
   }
 
@@ -186,7 +211,7 @@ void WMFMediaDataEncoder::SetConfigData(const nsTArray<UINT8>& aHeader) {
 
   mConfigData =
       aHeader.Length() > 0 ? ParseH264Parameters(aHeader, IsAnnexB()) : nullptr;
-  WMF_ENC_LOGD("ConfigData has been updated to %zu bytes",
+  WMF_ENC_LOGD("ConfigData has been updated to {} bytes",
                mConfigData ? mConfigData->Length() : 0);
 }
 
@@ -195,32 +220,132 @@ RefPtr<EncodePromise> WMFMediaDataEncoder::ProcessEncode(
   AssertOnTaskQueue();
   MOZ_ASSERT(mEncoder);
   MOZ_ASSERT(aSample);
+  MOZ_ASSERT(mEncodePromise.IsEmpty());
+  MOZ_ASSERT(!mEncodeRequest.Exists());
 
-  WMF_ENC_LOGD("ProcessEncode ts=%s duration=%s",
+  WMF_ENC_LOGD("ProcessEncode ts={} duration={}",
                aSample->mTime.ToString().get(),
                aSample->mDuration.ToString().get());
 
   RefPtr<IMFSample> nv12 = ConvertToNV12InputSample(std::move(aSample));
-
-  MFTEncoder::InputSample inputSample{nv12, aSample->mKeyframe};
-
-  if (!nv12 || FAILED(mEncoder->PushInput(inputSample))) {
-    WMF_ENC_LOGE("failed to process input sample");
+  if (!nv12) {
+    WMF_ENC_LOGE("failed to convert sample into NV12 format");
     return EncodePromise::CreateAndReject(
         MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
-                    RESULT_DETAIL("Failed to process input.")),
+                    RESULT_DETAIL("Failed to convert sample into NV12 format")),
         __func__);
   }
 
-  nsTArray<MFTEncoder::OutputSample> outputs = mEncoder->TakeOutput();
+  RefPtr<EncodePromise> p = mEncodePromise.Ensure(__func__);
 
-  return ProcessOutputSamples(std::move(outputs));
+  nsTArray<MFTEncoder::InputSample> inputs;
+  inputs.AppendElement(MFTEncoder::InputSample{
+      .mSample = nv12.forget(), .mKeyFrameRequested = aSample->mKeyframe});
+  mEncoder->Encode(std::move(inputs))
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [self = RefPtr<WMFMediaDataEncoder>(this)](
+              MFTEncoder::EncodedData&& aOutput) {
+            self->mEncodeRequest.Complete();
+            self->mEncodePromise.Resolve(
+                self->ProcessOutputSamples(std::move(aOutput)), __func__);
+          },
+          [self =
+               RefPtr<WMFMediaDataEncoder>(this)](const MediaResult& aError) {
+            WMF_ENC_SLOGE("Encode failed: {}", aError.Description().get());
+            self->mEncodeRequest.Complete();
+            self->mEncodePromise.Reject(aError, __func__);
+          })
+      ->Track(mEncodeRequest);
+
+  return p;
+}
+
+RefPtr<EncodePromise> WMFMediaDataEncoder::ProcessEncodeBatch(
+    nsTArray<RefPtr<const VideoData>>&& aSamples) {
+  AssertOnTaskQueue();
+  MOZ_ASSERT(mEncoder);
+  MOZ_ASSERT(!aSamples.IsEmpty());
+  MOZ_ASSERT(mEncodePromise.IsEmpty());
+  MOZ_ASSERT(!mEncodeRequest.Exists());
+
+  WMF_ENC_LOGD("ProcessEncodeBatch: num of samples={}", aSamples.Length());
+
+  nsTArray<MFTEncoder::InputSample> inputs;
+  for (auto& sample : aSamples) {
+    RefPtr<IMFSample> nv12 = ConvertToNV12InputSample(std::move(sample));
+    if (!nv12) {
+      WMF_ENC_LOGE(
+          "failed to convert samples(ts={} duration={}) into NV12 format",
+          sample->mTime.ToString().get(), sample->mDuration.ToString().get());
+      return EncodePromise::CreateAndReject(
+          MediaResult(
+              NS_ERROR_DOM_MEDIA_FATAL_ERR,
+              RESULT_DETAIL("Failed to convert sample into NV12 format")),
+          __func__);
+    }
+    inputs.AppendElement(MFTEncoder::InputSample{
+        .mSample = std::move(nv12), .mKeyFrameRequested = sample->mKeyframe});
+  }
+
+  RefPtr<EncodePromise> p = mEncodePromise.Ensure(__func__);
+
+  mEncoder->Encode(std::move(inputs))
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [self = RefPtr<WMFMediaDataEncoder>(this)](
+              MFTEncoder::EncodedData&& aOutput) {
+            self->mEncodeRequest.Complete();
+            self->mEncodePromise.Resolve(
+                self->ProcessOutputSamples(std::move(aOutput)), __func__);
+          },
+          [self =
+               RefPtr<WMFMediaDataEncoder>(this)](const MediaResult& aError) {
+            WMF_ENC_SLOGE("Encode failed: {}", aError.Description().get());
+            self->mEncodeRequest.Complete();
+            self->mEncodePromise.Reject(aError, __func__);
+          })
+      ->Track(mEncodeRequest);
+
+  return p;
+}
+
+RefPtr<EncodePromise> WMFMediaDataEncoder::ProcessDrain() {
+  AssertOnTaskQueue();
+  MOZ_ASSERT(mEncoder);
+  MOZ_ASSERT(mDrainPromise.IsEmpty());
+  MOZ_ASSERT(!mDrainRequest.Exists());
+
+  WMF_ENC_LOGD("ProcessDrain");
+
+  RefPtr<EncodePromise> p = mDrainPromise.Ensure(__func__);
+
+  mEncoder->Drain()
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [self = RefPtr<WMFMediaDataEncoder>(this)](
+              MFTEncoder::EncodedData&& aOutput) {
+            self->mDrainRequest.Complete();
+            self->mDrainPromise.Resolve(
+                self->ProcessOutputSamples(std::move(aOutput)), __func__);
+          },
+          [self =
+               RefPtr<WMFMediaDataEncoder>(this)](const MediaResult& aError) {
+            WMF_ENC_SLOGE("Drain failed: {}", aError.Description().get());
+            self->mDrainRequest.Complete();
+            self->mDrainPromise.Reject(aError, __func__);
+          })
+      ->Track(mDrainRequest);
+
+  return p;
 }
 
 already_AddRefed<IMFSample> WMFMediaDataEncoder::ConvertToNV12InputSample(
     RefPtr<const VideoData>&& aData) {
   AssertOnTaskQueue();
   MOZ_ASSERT(mEncoder);
+
+  AUTO_MARKER("::ConvertToNV12InputSample");
 
   size_t mBufferLength = 0;
 
@@ -256,8 +381,8 @@ already_AddRefed<IMFSample> WMFMediaDataEncoder::ConvertToNV12InputSample(
   HRESULT hr = mEncoder->CreateInputSample(&input, mBufferLength);
   if (FAILED(hr)) {
     _com_error error(hr);
-    WMF_ENC_LOGE("CreateInputSample: error = 0x%lX, %ls", hr,
-                 error.ErrorMessage());
+    WMF_ENC_LOGE("CreateInputSample: error = 0x{:X}, {}", hr,
+                 NS_ConvertUTF16toUTF8(error.ErrorMessage()).get());
     return nullptr;
   }
 
@@ -265,16 +390,16 @@ already_AddRefed<IMFSample> WMFMediaDataEncoder::ConvertToNV12InputSample(
   hr = input->GetBufferByIndex(0, getter_AddRefs(buffer));
   if (FAILED(hr)) {
     _com_error error(hr);
-    WMF_ENC_LOGE("GetBufferByIndex: error = 0x%lX, %ls", hr,
-                 error.ErrorMessage());
+    WMF_ENC_LOGE("GetBufferByIndex: error = 0x{:X}, {}", hr,
+                 NS_ConvertUTF16toUTF8(error.ErrorMessage()).get());
     return nullptr;
   }
 
   hr = buffer->SetCurrentLength(mBufferLength);
   if (FAILED(hr)) {
     _com_error error(hr);
-    WMF_ENC_LOGE("SetCurrentLength: error = 0x%lX, %ls", hr,
-                 error.ErrorMessage());
+    WMF_ENC_LOGE("SetCurrentLength: error = 0x{:X}, {}", hr,
+                 NS_ConvertUTF16toUTF8(error.ErrorMessage()).get());
     return nullptr;
   }
 
@@ -282,7 +407,8 @@ already_AddRefed<IMFSample> WMFMediaDataEncoder::ConvertToNV12InputSample(
   hr = lockBuffer.Result();
   if (FAILED(hr)) {
     _com_error error(hr);
-    WMF_ENC_LOGE("LockBuffer: error = 0x%lX, %ls", hr, error.ErrorMessage());
+    WMF_ENC_LOGE("LockBuffer: error = 0x{:X}, {}", hr,
+                 NS_ConvertUTF16toUTF8(error.ErrorMessage()).get());
     return nullptr;
   }
 
@@ -297,26 +423,27 @@ already_AddRefed<IMFSample> WMFMediaDataEncoder::ConvertToNV12InputSample(
   hr = input->SetSampleTime(UsecsToHNs(aData->mTime.ToMicroseconds()));
   if (FAILED(hr)) {
     _com_error error(hr);
-    WMF_ENC_LOGE("SetSampleTime: error = 0x%lX, %ls", hr, error.ErrorMessage());
+    WMF_ENC_LOGE("SetSampleTime: error = 0x{:X}, {}", hr,
+                 NS_ConvertUTF16toUTF8(error.ErrorMessage()).get());
     return nullptr;
   }
 
   hr = input->SetSampleDuration(UsecsToHNs(aData->mDuration.ToMicroseconds()));
   if (FAILED(hr)) {
     _com_error error(hr);
-    WMF_ENC_LOGE("SetSampleDuration: error = 0x%lX, %ls", hr,
-                 error.ErrorMessage());
+    WMF_ENC_LOGE("SetSampleDuration: error = 0x{:X}, {}", hr,
+                 NS_ConvertUTF16toUTF8(error.ErrorMessage()).get());
     return nullptr;
   }
 
   return input.forget();
 }
 
-RefPtr<EncodePromise> WMFMediaDataEncoder::ProcessOutputSamples(
+MediaDataEncoder::EncodedData WMFMediaDataEncoder::ProcessOutputSamples(
     nsTArray<MFTEncoder::OutputSample>&& aSamples) {
   EncodedData frames;
 
-  WMF_ENC_LOGD("ProcessOutputSamples: %zu frames", aSamples.Length());
+  WMF_ENC_LOGD("ProcessOutputSamples: {} frames", aSamples.Length());
 
   for (MFTEncoder::OutputSample& sample : aSamples) {
     RefPtr<MediaRawData> frame = OutputSampleToMediaData(sample);
@@ -326,7 +453,7 @@ RefPtr<EncodePromise> WMFMediaDataEncoder::ProcessOutputSamples(
       WMF_ENC_LOGE("failed to convert output frame");
     }
   }
-  return EncodePromise::CreateAndResolve(std::move(frames), __func__);
+  return frames;
 }
 
 already_AddRefed<MediaRawData> WMFMediaDataEncoder::OutputSampleToMediaData(
@@ -373,7 +500,7 @@ already_AddRefed<MediaRawData> WMFMediaDataEncoder::OutputSampleToMediaData(
   frame->mDuration = media::TimeUnit::FromMicroseconds(HNsToUsecs(duration));
   frame->mKeyframe = isKeyframe;
 
-  WMF_ENC_LOGD("converted MediaData: ts=%s", frame->mTime.ToString().get());
+  WMF_ENC_LOGD("converted MediaData: ts={}", frame->mTime.ToString().get());
 
   return frame.forget();
 }
@@ -431,5 +558,7 @@ bool WMFMediaDataEncoder::WriteFrameData(RefPtr<MediaRawData>& aDest,
   PodCopy(writer->Data(), aSrc.Data(), aSrc.Length());
   return true;
 }
+
+#undef AUTO_MARKER
 
 }  // namespace mozilla

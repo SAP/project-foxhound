@@ -9,6 +9,7 @@ using struct mozilla::void_t from "mozilla/ipc/IPCCore.h";
 using nsIContentSecurityPolicy::RequireTrustedTypesForDirectiveState from "nsIContentSecurityPolicy.h";
 using mozilla::dom::IntegrityPolicy::Sources from "mozilla/dom/IntegrityPolicy.h";
 using mozilla::dom::IntegrityPolicy::Destinations from "mozilla/dom/IntegrityPolicy.h";
+using nsILoadInfo::IPAddressSpace from "nsILoadInfo.h";
 
 namespace mozilla {
 namespace ipc {
@@ -92,6 +93,7 @@ namespace ipc {
 {
   CSPInfo? csp;
   IntegrityPolicyArgs? integrityPolicy;
+  IPAddressSpace ipAddressSpace;
 };
 
 [Comparable] struct WebTransportHash {

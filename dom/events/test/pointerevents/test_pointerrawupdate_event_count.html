@@ -16,8 +16,8 @@ SimpleTest.requestCompleteLog();
 SimpleTest.waitForFocus(async () => {
   await SpecialPowers.pushPrefEnv({"set": [
     ["dom.event.pointer.rawupdate.enabled", true],
+    ["dom.event.pointer.rawupdate.movement.enabled", true],
     ["dom.events.coalesce.mousemove", true],
-    ["test.events.async.enabled", true],
   ]});
 
   const target0 = window.document.getElementById("target0");
@@ -27,7 +27,7 @@ SimpleTest.waitForFocus(async () => {
   info("Waiting for a click for waiting for stable state...");
   await new Promise(resolve => {
     target0.addEventListener("click", resolve, {once: true});
-    synthesizeMouseAtCenter(target0, {});
+    synthesizeMouseAtCenter(target0, { asyncEnabled: true });
   });
   info("Got a click which must be synthesized by us!");
 
@@ -74,10 +74,10 @@ SimpleTest.waitForFocus(async () => {
   });
 
   info("Synthesizing mouse moves....");
-  synthesizeMouse(target0, 5, 5, {type: "mousemove"});
-  synthesizeMouse(target0, 10, 10, {type: "mousemove"});
-  synthesizeMouse(target0, 15, 15, {type: "mousemove"});
-  synthesizeMouse(target0, 20, 20, {type: "mousemove"});
+  synthesizeMouse(target0, 5, 5, { type: "mousemove", asyncEnabled: true });
+  synthesizeMouse(target0, 10, 10, { type: "mousemove", asyncEnabled: true });
+  synthesizeMouse(target0, 15, 15, { type: "mousemove", asyncEnabled: true });
+  synthesizeMouse(target0, 20, 20, { type: "mousemove", asyncEnabled: true });
   info("Waiting for 4 coalesced pointermove events...");
   await waitForPointerMove;
 
@@ -117,11 +117,31 @@ SimpleTest.waitForFocus(async () => {
       `pointerrawupdate(${i++}): should have same values as coalesced pointermove events`
     );
   }
+  {
+    const lastPoint = {x: pointerRawUpdateEvents[0].screenX, y: pointerRawUpdateEvents[0].screenY};
+    for (let i = 1; i < pointerRawUpdateEvents.length; i++) {
+      const event = pointerRawUpdateEvents[i];
+      isfuzzy(
+        event.movementX,
+        event.screenX - lastPoint.x,
+        1,
+        `pointerrawupdate[${i}].movementX (screenX: ${event.screenX}, lastPoint.x: ${lastPoint.x})`
+      );
+      isfuzzy(
+        event.movementY,
+        event.screenY - lastPoint.y,
+        1,
+        `pointerrawupdate[${i}].movementY (screenY: ${event.screenY}, lastPoint.y: ${lastPoint.y})`
+      );
+      lastPoint.x = event.screenX;
+      lastPoint.y = event.screenY;
+    }
+  }
 
   info("Waiting for a click for waiting for stable state after the test...");
   await new Promise(resolve => {
     target0.addEventListener("click", resolve, {once: true});
-    synthesizeMouseAtCenter(target0, {});
+    synthesizeMouseAtCenter(target0, { asyncEnabled: true });
   });
   info("Got a click after the test!");
   utils.restoreNormalRefresh();

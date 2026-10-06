@@ -1,13 +1,10 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsToolkit.h"
 
-#include <ctype.h>
 #include <stdlib.h>
-#include <stdio.h>
 
 #include <mach/mach_port.h>
 #include <mach/mach_interface.h>
@@ -26,10 +23,9 @@ extern "C" {
 #include "nsCocoaUtils.h"
 #include "nsObjCExceptions.h"
 
-#include "nsGkAtoms.h"
 #include "nsIRollupListener.h"
 #include "nsIWidget.h"
-#include "nsBaseWidget.h"
+#include "nsIWidget.h"
 
 #include "nsIObserverService.h"
 
@@ -103,7 +99,7 @@ nsresult nsToolkit::RegisterForSleepWakeNotifications() {
   NS_ASSERTION(!mSleepWakeNotificationRLS, "Already registered for sleep/wake");
 
   gRootPort = ::IORegisterForSystemPower(
-      0, &notifyPortRef, ToolkitSleepWakeCallback, &mPowerNotifier);
+      nullptr, &notifyPortRef, ToolkitSleepWakeCallback, &mPowerNotifier);
   if (gRootPort == MACH_PORT_NULL) {
     NS_ERROR("IORegisterForSystemPower failed");
     return NS_ERROR_FAILURE;
@@ -135,11 +131,9 @@ void nsToolkit::RemoveSleepWakeNotifications() {
 
 // Cocoa Firefox's use of custom context menus requires that we explicitly
 // handle mouse events from other processes that the OS handles
-// "automatically" for native context menus -- mouseMoved events so that
-// right-click context menus work properly when our browser doesn't have the
-// focus (bmo bug 368077), and mouseDown events so that our browser can
-// dismiss a context menu when a mouseDown happens in another process (bmo
-// bug 339945).
+// "automatically" for native context menus. This is not a frequently
+// exercised code path any more, so if you're working on it it's worth looking
+// into whether this is really doing what you want.
 void nsToolkit::MonitorAllProcessMouseEvents() {
   NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
@@ -153,14 +147,14 @@ void nsToolkit::MonitorAllProcessMouseEvents() {
   if (mAllProcessMouseMonitor == nil) {
     mAllProcessMouseMonitor = [NSEvent
         addGlobalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown |
-                                              NSEventMaskLeftMouseDown
+                                              NSEventMaskOtherMouseDown
                                       handler:^(NSEvent* evt) {
                                         if ([NSApp isActive]) {
                                           return;
                                         }
 
                                         nsIRollupListener* rollupListener =
-                                            nsBaseWidget::
+                                            nsIWidget::
                                                 GetActiveRollupListener();
                                         if (!rollupListener) {
                                           return;
@@ -225,7 +219,7 @@ nsToolkit* nsToolkit::GetToolkit() {
   NS_OBJC_END_TRY_BLOCK_RETURN(nullptr);
 }
 
-// An alternative to [NSObject poseAsClass:] that isn't deprecated on OS X
+// An alternative to [NSObject poseAsClass:] that isn't deprecated on macOS
 // Leopard and is available to 64-bit binaries on Leopard and above.  Based on
 // ideas and code from http://www.cocoadev.com/index.pl?MethodSwizzling.
 // Since the Method type becomes an opaque type as of Objective-C 2.0, we'll

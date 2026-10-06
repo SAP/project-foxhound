@@ -90,12 +90,12 @@ async function check_results({ featureEnabled = false }) {
   for (let i = 0; i < numResults; i++) {
     let { result } = await UrlbarTestUtils.getDetailsOfResultAt(window, i);
     Assert.equal(result.type, UrlbarUtils.RESULT_TYPE.SEARCH);
-    Assert.equal(result.providerName, "SearchSuggestions");
+    Assert.equal(result.providerName, "UrlbarProviderSearchSuggestions");
     Assert.equal(result.payload.engine, "basic");
     Assert.equal(result.isRichSuggestion, featureEnabled);
     if (featureEnabled) {
       Assert.equal(typeof result.payload.description, "string");
-      Assert.ok(result.payload.icon.startsWith("data:"));
+      Assert.ok(result.payload.icon.startsWith("moz-remote-image:"));
     }
   }
 
@@ -125,9 +125,9 @@ add_task(async function test_richsuggestion_deduplication() {
   // The Rich Suggestion that points to the same query as the Hueristic result
   // should not be deduplicated.
   Assert.equal(heuristicResult.type, UrlbarUtils.RESULT_TYPE.SEARCH);
-  Assert.equal(heuristicResult.providerName, "HeuristicFallback");
+  Assert.equal(heuristicResult.providerName, "UrlbarProviderHeuristicFallback");
   Assert.equal(richResult.type, UrlbarUtils.RESULT_TYPE.SEARCH);
-  Assert.equal(richResult.providerName, "SearchSuggestions");
+  Assert.equal(richResult.providerName, "UrlbarProviderSearchSuggestions");
   Assert.equal(
     heuristicResult.payload.query,
     richResult.payload.lowerCaseSuggestion

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,17 +5,13 @@
 #include "SVGFilters.h"
 
 #include <algorithm>
-#include "DOMSVGAnimatedNumberList.h"
+
 #include "DOMSVGAnimatedLength.h"
-#include "nsGkAtoms.h"
-#include "nsCOMPtr.h"
-#include "nsIFrame.h"
-#include "nsLayoutUtils.h"
+#include "DOMSVGAnimatedNumberList.h"
 #include "SVGAnimatedEnumeration.h"
 #include "SVGAnimatedNumberPair.h"
 #include "SVGAnimatedString.h"
 #include "SVGNumberList.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/SVGContentUtils.h"
 #include "mozilla/SVGFilterInstance.h"
@@ -32,6 +26,10 @@
 #include "mozilla/dom/SVGFESpotLightElement.h"
 #include "mozilla/dom/SVGFilterElement.h"
 #include "mozilla/dom/SVGLengthBinding.h"
+#include "nsCOMPtr.h"
+#include "nsGkAtoms.h"
+#include "nsIFrame.h"
+#include "nsLayoutUtils.h"
 
 #if defined(XP_WIN)
 // Prevent Windows redefining LoadImage
@@ -46,13 +44,13 @@ namespace mozilla::dom {
 
 SVGElement::LengthInfo SVGFilterPrimitiveElement::sLengthInfo[4] = {
     {nsGkAtoms::x, 0, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::y, 0, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
     {nsGkAtoms::width, 100, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::height, 100, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
-     SVGContentUtils::Y}};
+     SVGLength::Axis::Y}};
 
 //----------------------------------------------------------------------
 // Implementation
@@ -119,19 +117,25 @@ bool SVGFilterPrimitiveElement::HasValidDimensions() const {
 Size SVGFilterPrimitiveElement::GetKernelUnitLength(
     SVGFilterInstance* aInstance, SVGAnimatedNumberPair* aKernelUnitLength) {
   if (!aKernelUnitLength->IsExplicitlySet()) {
-    return Size(aInstance->GetPrimitiveUserSpaceUnitValue(SVGContentUtils::X),
-                aInstance->GetPrimitiveUserSpaceUnitValue(SVGContentUtils::Y));
+    return Size(aInstance->GetPrimitiveUserSpaceUnitValue(SVGLength::Axis::X),
+                aInstance->GetPrimitiveUserSpaceUnitValue(SVGLength::Axis::Y));
   }
 
-  float kernelX = aInstance->GetPrimitiveNumber(
-      SVGContentUtils::X, aKernelUnitLength, SVGAnimatedNumberPair::eFirst);
+  float kernelX =
+      aInstance->GetPrimitiveNumber(SVGLength::Axis::X, aKernelUnitLength,
+                                    SVGAnimatedNumberPairWhichOne::First);
   if (kernelX <= 0.0f) {
-    kernelX = aInstance->GetPrimitiveUserSpaceUnitValue(SVGContentUtils::X);
+    kernelX = aInstance->GetPrimitiveUserSpaceUnitValue(SVGLength::Axis::X);
+  } else {
+    kernelX = std::min(kernelX, float(kReasonableSurfaceSize));
   }
-  float kernelY = aInstance->GetPrimitiveNumber(
-      SVGContentUtils::Y, aKernelUnitLength, SVGAnimatedNumberPair::eSecond);
+  float kernelY =
+      aInstance->GetPrimitiveNumber(SVGLength::Axis::Y, aKernelUnitLength,
+                                    SVGAnimatedNumberPairWhichOne::Second);
   if (kernelY <= 0.0f) {
-    kernelY = aInstance->GetPrimitiveUserSpaceUnitValue(SVGContentUtils::Y);
+    kernelY = aInstance->GetPrimitiveUserSpaceUnitValue(SVGLength::Axis::Y);
+  } else {
+    kernelY = std::min(kernelY, float(kReasonableSurfaceSize));
   }
   return Size(kernelX, kernelY);
 }
@@ -153,15 +157,15 @@ SVGElement::NumberInfo SVGComponentTransferFunctionElement::sNumberInfo[5] = {
     {nsGkAtoms::offset, 0}};
 
 SVGEnumMapping SVGComponentTransferFunctionElement::sTypeMap[] = {
-    {nsGkAtoms::identity, SVG_FECOMPONENTTRANSFER_TYPE_IDENTITY},
-    {nsGkAtoms::table, SVG_FECOMPONENTTRANSFER_TYPE_TABLE},
-    {nsGkAtoms::discrete, SVG_FECOMPONENTTRANSFER_TYPE_DISCRETE},
-    {nsGkAtoms::linear, SVG_FECOMPONENTTRANSFER_TYPE_LINEAR},
-    {nsGkAtoms::gamma, SVG_FECOMPONENTTRANSFER_TYPE_GAMMA},
+    {nsGkAtoms::identity, uint8_t(SVGFEComponentTransferType::Identity)},
+    {nsGkAtoms::table, uint8_t(SVGFEComponentTransferType::Table)},
+    {nsGkAtoms::discrete, uint8_t(SVGFEComponentTransferType::Discrete)},
+    {nsGkAtoms::linear, uint8_t(SVGFEComponentTransferType::Linear)},
+    {nsGkAtoms::gamma, uint8_t(SVGFEComponentTransferType::Gamma)},
     {nullptr, 0}};
 
 SVGElement::EnumInfo SVGComponentTransferFunctionElement::sEnumInfo[1] = {
-    {nsGkAtoms::type, sTypeMap, SVG_FECOMPONENTTRANSFER_TYPE_IDENTITY}};
+    {nsGkAtoms::type, sTypeMap, uint8_t(SVGFEComponentTransferType::Identity)}};
 
 //----------------------------------------------------------------------
 // nsSVGFilterPrimitiveChildElement methods
@@ -217,7 +221,8 @@ SVGComponentTransferFunctionElement::Offset() {
 
 void SVGComponentTransferFunctionElement::ComputeAttributes(
     int32_t aChannel, ComponentTransferAttributes& aAttributes) {
-  uint32_t type = mEnumAttributes[TYPE].GetAnimValue();
+  SVGFEComponentTransferType type =
+      SVGFEComponentTransferType(mEnumAttributes[TYPE].GetAnimValue());
 
   float slope, intercept, amplitude, exponent, offset;
   GetAnimatedNumberValues(&slope, &intercept, &amplitude, &exponent, &offset,
@@ -226,16 +231,16 @@ void SVGComponentTransferFunctionElement::ComputeAttributes(
   const SVGNumberList& tableValues =
       mNumberListAttributes[TABLEVALUES].GetAnimValue();
 
-  aAttributes.mTypes[aChannel] = (uint8_t)type;
+  aAttributes.mTypes[aChannel] = type;
   switch (type) {
-    case SVG_FECOMPONENTTRANSFER_TYPE_LINEAR: {
+    case SVGFEComponentTransferType::Linear: {
       aAttributes.mValues[aChannel].SetLength(2);
       aAttributes.mValues[aChannel][kComponentTransferSlopeIndex] = slope;
       aAttributes.mValues[aChannel][kComponentTransferInterceptIndex] =
           intercept;
       break;
     }
-    case SVG_FECOMPONENTTRANSFER_TYPE_GAMMA: {
+    case SVGFEComponentTransferType::Gamma: {
       aAttributes.mValues[aChannel].SetLength(3);
       aAttributes.mValues[aChannel][kComponentTransferAmplitudeIndex] =
           amplitude;
@@ -243,14 +248,16 @@ void SVGComponentTransferFunctionElement::ComputeAttributes(
       aAttributes.mValues[aChannel][kComponentTransferOffsetIndex] = offset;
       break;
     }
-    case SVG_FECOMPONENTTRANSFER_TYPE_DISCRETE:
-    case SVG_FECOMPONENTTRANSFER_TYPE_TABLE: {
+    case SVGFEComponentTransferType::Discrete:
+    case SVGFEComponentTransferType::Table: {
       if (!tableValues.IsEmpty()) {
         aAttributes.mValues[aChannel].AppendElements(&tableValues[0],
                                                      tableValues.Length());
       }
       break;
     }
+    default:
+      break;
   }
 }
 
@@ -339,7 +346,7 @@ SVGElement::NumberInfo SVGFELightingElement::sNumberInfo[4] = {
     {nsGkAtoms::specularExponent, 1}};
 
 SVGElement::NumberPairInfo SVGFELightingElement::sNumberPairInfo[1] = {
-    {nsGkAtoms::kernelUnitLength, 0, 0}};
+    {nsGkAtoms::kernelUnitLength, 0}};
 
 SVGElement::StringInfo SVGFELightingElement::sStringInfo[2] = {
     {nsGkAtoms::result, kNameSpaceID_None, true},
@@ -401,7 +408,9 @@ bool SVGFELightingElement::OutputIsTainted(
     const nsTArray<bool>& aInputsAreTainted,
     nsIPrincipal* aReferencePrincipal) {
   if (const auto* frame = GetPrimaryFrame()) {
-    if (frame->Style()->StyleSVGReset()->mLightingColor.IsCurrentColor()) {
+    if (frame->Style()
+            ->StyleSVGReset()
+            ->mLightingColor.DependsOnCurrentColor()) {
       return true;
     }
   }

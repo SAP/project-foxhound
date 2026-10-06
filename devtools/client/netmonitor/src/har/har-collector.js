@@ -17,23 +17,23 @@ const trace = {
  * This object is responsible for collecting data related to all
  * HTTP requests executed by the page (including inner iframes).
  */
-function HarCollector(options) {
-  this.commands = options.commands;
+class HarCollector {
+  constructor(options) {
+    this.commands = options.commands;
 
-  this.onResourceAvailable = this.onResourceAvailable.bind(this);
-  this.onResourceUpdated = this.onResourceUpdated.bind(this);
-  this.onRequestHeaders = this.onRequestHeaders.bind(this);
-  this.onRequestCookies = this.onRequestCookies.bind(this);
-  this.onRequestPostData = this.onRequestPostData.bind(this);
-  this.onResponseHeaders = this.onResponseHeaders.bind(this);
-  this.onResponseCookies = this.onResponseCookies.bind(this);
-  this.onResponseContent = this.onResponseContent.bind(this);
-  this.onEventTimings = this.onEventTimings.bind(this);
+    this.onResourceAvailable = this.onResourceAvailable.bind(this);
+    this.onResourceUpdated = this.onResourceUpdated.bind(this);
+    this.onRequestHeaders = this.onRequestHeaders.bind(this);
+    this.onRequestCookies = this.onRequestCookies.bind(this);
+    this.onRequestPostData = this.onRequestPostData.bind(this);
+    this.onResponseHeaders = this.onResponseHeaders.bind(this);
+    this.onResponseCookies = this.onResponseCookies.bind(this);
+    this.onResponseContent = this.onResponseContent.bind(this);
+    this.onEventTimings = this.onEventTimings.bind(this);
 
-  this.clear();
-}
+    this.clear();
+  }
 
-HarCollector.prototype = {
   // Connection
 
   async start() {
@@ -44,7 +44,7 @@ HarCollector.prototype = {
         onUpdated: this.onResourceUpdated,
       }
     );
-  },
+  }
 
   async stop() {
     await this.commands.resourceCommand.unwatchResources(
@@ -54,7 +54,7 @@ HarCollector.prototype = {
         onUpdated: this.onResourceUpdated,
       }
     );
-  },
+  }
 
   clear() {
     // Any pending requests events will be ignored (they turn
@@ -64,7 +64,7 @@ HarCollector.prototype = {
     this.firstRequestStart = -1;
     this.lastRequestStart = -1;
     this.requests = [];
-  },
+  }
 
   waitForHarLoad() {
     // There should be yet another timeout e.g.:
@@ -76,7 +76,7 @@ HarCollector.prototype = {
         resolve(this);
       });
     });
-  },
+  }
 
   waitForResponses() {
     trace.log("HarCollector.waitForResponses; " + this.requests.length);
@@ -108,7 +108,7 @@ HarCollector.prototype = {
       );
       return this.pageLoadDeferred;
     });
-  },
+  }
 
   // Page Loaded Timeout
 
@@ -137,7 +137,7 @@ HarCollector.prototype = {
         resolve();
       }, timeout);
     });
-  },
+  }
 
   resetPageLoadTimeout() {
     // Remove the current timeout.
@@ -153,17 +153,17 @@ HarCollector.prototype = {
       this.pageLoadReject();
       this.pageLoadReject = null;
     }
-  },
+  }
 
   // Collected Data
 
   getFile(actorId) {
     return this.files.get(actorId);
-  },
+  }
 
   getItems() {
     return this.items;
-  },
+  }
 
   // Event Handlers
 
@@ -204,7 +204,7 @@ HarCollector.prototype = {
       // Mimic the Net panel data structure
       this.items.push(file);
     }
-  },
+  }
 
   onResourceUpdated(updates) {
     for (const { resource } of updates) {
@@ -296,7 +296,7 @@ HarCollector.prototype = {
         this.resetPageLoadTimeout();
       });
     }
-  },
+  }
 
   async getData(actor, method, callback) {
     const file = this.getFile(actor);
@@ -320,12 +320,12 @@ HarCollector.prototype = {
     );
     callback(response);
     return response;
-  },
+  }
 
   /**
    * Handles additional information received for a "requestHeaders" packet.
    *
-   * @param object response
+   * @param {object} response
    *        The message received from the server.
    */
   onRequestHeaders(response) {
@@ -333,12 +333,12 @@ HarCollector.prototype = {
     file.requestHeaders = response;
 
     this.getLongHeaders(response.headers);
-  },
+  }
 
   /**
    * Handles additional information received for a "requestCookies" packet.
    *
-   * @param object response
+   * @param {object} response
    *        The message received from the server.
    */
   onRequestCookies(response) {
@@ -346,12 +346,12 @@ HarCollector.prototype = {
     file.requestCookies = response;
 
     this.getLongHeaders(response.cookies);
-  },
+  }
 
   /**
    * Handles additional information received for a "requestPostData" packet.
    *
-   * @param object response
+   * @param {object} response
    *        The message received from the server.
    */
   onRequestPostData(response) {
@@ -367,12 +367,12 @@ HarCollector.prototype = {
         response.postData.text = value;
       });
     }
-  },
+  }
 
   /**
    * Handles additional information received for a "responseHeaders" packet.
    *
-   * @param object response
+   * @param {object} response
    *        The message received from the server.
    */
   onResponseHeaders(response) {
@@ -380,12 +380,12 @@ HarCollector.prototype = {
     file.responseHeaders = response;
 
     this.getLongHeaders(response.headers);
-  },
+  }
 
   /**
    * Handles additional information received for a "responseCookies" packet.
    *
-   * @param object response
+   * @param {object} response
    *        The message received from the server.
    */
   onResponseCookies(response) {
@@ -393,12 +393,12 @@ HarCollector.prototype = {
     file.responseCookies = response;
 
     this.getLongHeaders(response.cookies);
-  },
+  }
 
   /**
    * Handles additional information received for a "responseContent" packet.
    *
-   * @param object response
+   * @param {object} response
    *        The message received from the server.
    */
   onResponseContent(response) {
@@ -412,22 +412,21 @@ HarCollector.prototype = {
         response.content.text = value;
       });
     }
-  },
+  }
 
   /**
    * Handles additional information received for a "eventTimings" packet.
    *
-   * @param object response
+   * @param {object} response
    *        The message received from the server.
    */
   onEventTimings(response) {
     const file = this.getFile(response.from);
     file.eventTimings = response;
     file.totalTime = response.totalTime;
-  },
+  }
 
   // Helpers
-
   getLongHeaders(headers) {
     for (const header of headers) {
       if (typeof header.value == "object") {
@@ -440,16 +439,16 @@ HarCollector.prototype = {
         }
       }
     }
-  },
+  }
 
   /**
    * Fetches the full text of a string.
    *
-   * @param object | string stringGrip
+   * @param {object | string} stringGrip
    *        The long string grip containing the corresponding actor.
    *        If you pass in a plain string (by accident or because you're lazy),
    *        then a promise of the same string is simply returned.
-   * @return object Promise
+   * @return {object} Promise
    *         A promise that is resolved when the full string contents
    *         are available, or rejected if something goes wrong.
    */
@@ -457,8 +456,8 @@ HarCollector.prototype = {
     const promise = getLongStringFullText(this.commands.client, stringGrip);
     this.requests.push(promise);
     return promise;
-  },
-};
+  }
+}
 
 // Helpers
 

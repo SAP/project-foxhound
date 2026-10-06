@@ -36,6 +36,14 @@ const TEST_PROFILE_ES = {
   "address-level1": "Madrid",
 };
 
+const TEST_PROFILE_NL = {
+  email: "address_nl@mozilla.org",
+  organization: "Mozilla",
+  country: "NL",
+  "street-address": "Noordeinde 68B",
+  "postal-code": "2514 GL",
+};
+
 add_autofill_heuristic_tests([
   {
     description: "Test autofill with house number",
@@ -372,6 +380,98 @@ add_autofill_heuristic_tests([
             autofill: "mm",
             reason: "regex-heuristic",
           },
+        ],
+      },
+    ],
+  },
+  {
+    description: "Test autofill with field with house number suffix",
+    fixtureData: `<form>
+      <input id="email">
+      <label for="organization">Organization</label>
+      <input id="organization">
+      <label for="housenumber">Huisnummer</label>
+      <input id="housenumber">
+      <label for="toevoeging">Toevoeging</label>
+      <input id="toevoeging">
+    </form>`,
+    profile: TEST_PROFILE_NL,
+    expectedResult: [
+      {
+        default: {
+          reason: "regex-heuristic",
+        },
+        fields: [
+          { fieldName: "email", autofill: TEST_PROFILE_NL.email },
+          { fieldName: "organization", autofill: TEST_PROFILE_NL.organization },
+          {
+            fieldName: "address-housenumber",
+            autofill: "68",
+            reason: "update-heuristic-alternate",
+          },
+          { fieldName: "address-extra-housesuffix", autofill: "B" },
+        ],
+      },
+    ],
+  },
+  {
+    description:
+      "Test autofill with field with house number suffix where no suffix is available",
+    fixtureData: `<form>
+      <input id="email">
+      <label for="organization">Organization</label>
+      <input id="organization">
+      <label for="housenumber">Huisnummer</label>
+      <input id="housenumber">
+      <label for="toevoeging">Toevoeging</label>
+      <input id="toevoeging">
+    </form>`,
+    profile: TEST_PROFILE_CA,
+    expectedResult: [
+      {
+        default: {
+          reason: "regex-heuristic",
+        },
+        fields: [
+          { fieldName: "email", autofill: TEST_PROFILE_CA.email },
+          { fieldName: "organization", autofill: TEST_PROFILE_CA.organization },
+          {
+            fieldName: "address-housenumber",
+            autofill: "160",
+            reason: "update-heuristic-alternate",
+          },
+          { fieldName: "address-extra-housesuffix", autofill: "" },
+        ],
+      },
+    ],
+  },
+  {
+    description:
+      "Test autofill with field with house number suffix but there is no suffix field",
+    fixtureData: `<form>
+      <input id="email">
+      <label for="organization">Organization</label>
+      <input id="organization">
+      <label for="housenumber">Huisnummer</label>
+      <input id="housenumber">
+      <label for="straat">Straat</label>
+      <input id="straat">
+    </form>`,
+    profile: TEST_PROFILE_NL,
+    expectedResult: [
+      {
+        default: {
+          reason: "regex-heuristic",
+        },
+        fields: [
+          { fieldName: "email", autofill: TEST_PROFILE_NL.email },
+          { fieldName: "organization", autofill: TEST_PROFILE_NL.organization },
+          {
+            fieldName: "address-housenumber",
+            autofill: "68B",
+            reason: "update-heuristic-alternate",
+          },
+          { fieldName: "street-address", autofill: "Noordeinde" },
         ],
       },
     ],

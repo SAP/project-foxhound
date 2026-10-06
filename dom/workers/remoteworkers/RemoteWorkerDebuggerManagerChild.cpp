@@ -3,12 +3,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RemoteWorkerDebuggerManagerChild.h"
+
 #include "RemoteWorkerService.h"
 
 namespace mozilla::dom {
 
-RemoteWorkerDebuggerManagerChild::RemoteWorkerDebuggerManagerChild() {}
+RemoteWorkerDebuggerManagerChild::RemoteWorkerDebuggerManagerChild() = default;
 
-RemoteWorkerDebuggerManagerChild::~RemoteWorkerDebuggerManagerChild() {}
+RemoteWorkerDebuggerManagerChild::~RemoteWorkerDebuggerManagerChild() = default;
 
 }  // end of namespace mozilla::dom

@@ -15,7 +15,7 @@ const ruleTester = new RuleTester();
 // ------------------------------------------------------------------------------
 
 function callError() {
-  return [{ messageId: "useStaticImport", type: "VariableDeclaration" }];
+  return [{ messageId: "useStaticImport" }];
 }
 
 ruleTester.run("use-static-import", rule, {

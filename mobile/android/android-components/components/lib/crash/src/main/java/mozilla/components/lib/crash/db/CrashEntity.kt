@@ -12,6 +12,7 @@ import mozilla.components.lib.crash.Crash
 import mozilla.components.support.base.ext.getStacktraceAsString
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.NotSerializableException
 import java.io.ObjectInputStream
 import java.io.ObjectOutputStream
 import mozilla.components.concept.base.crash.Breadcrumb as CrashBreadcrumb
@@ -30,74 +31,61 @@ data class CrashReporterUnableToRestoreException(override var message: String) :
 )
 internal data class CrashEntity(
     // shared fields- both uncaught exception and native crashes
-
     /**
      * Type of crash- either UNCAUGHT or NATIVE
      */
     @ColumnInfo(name = "crashType", defaultValue = "UNCAUGHT")
     var crashType: CrashType,
-
     /**
      * Generated UUID for this crash.
      */
     @PrimaryKey
     @ColumnInfo(name = "uuid")
     var uuid: String,
-
     /**
      * Runtime tags that should be attached to any report associated with this crash.
      */
     @ColumnInfo(name = "runtime_tags", defaultValue = "{}")
     var runtimeTags: Map<String, String>,
-
     /**
      * List of breadcrumbs to send with the crash report.
      */
     @ColumnInfo(name = "breadcrumbs", defaultValue = "null")
     var breadcrumbs: List<String>? = emptyList(),
-
     /**
      * Timestamp (in milliseconds) of when the crash happened.
      */
     @ColumnInfo(name = "created_at")
     var createdAt: Long,
-
     // Uncaught exception crash fields
-
     /**
      * The stacktrace of the crash (if this crash was caused by an exception/throwable): otherwise
      * a string describing the type of crash.
      */
     @ColumnInfo(name = "stacktrace")
     var stacktrace: String,
-
     /**
      * The serialized [Throwable] tht caused the crash.
      */
     @ColumnInfo(name = "throwable")
     val throwableData: ByteArray?,
-
     // Native crash fields
-
     /**
      * Path to a Breakpad minidump file containing information about the crash.
      */
     @ColumnInfo(name = "minidumpPath", defaultValue = "null")
     var minidumpPath: String?,
-
     /**
      * The type of process the crash occurred in. Affects whether or not the crash is fatal
      * or whether the application can recover from it.
      */
     @ColumnInfo(name = "processVisibility", defaultValue = "null")
     var processVisibility: String?,
-
     /**
      * The process type name reported by the crashing process.
      */
     @ColumnInfo(name = "processType", defaultValue = "null")
     var processType: String?,
-
     /**
      * Path to a file containing extra metadata about the crash. The file contains key-value pairs
      * in the form `Key=Value`. Be aware, it may contain sensitive data such as the URI that was
@@ -105,7 +93,6 @@ internal data class CrashEntity(
      */
     @ColumnInfo(name = "extrasPath", defaultValue = "null")
     var extrasPath: String?,
-
     /**
      * The type of child process (when available).
      */
@@ -176,11 +163,26 @@ internal fun Crash.toEntity(): CrashEntity {
 }
 
 private fun Throwable.serialize(): ByteArray {
-    val byteArrayOutputStream = ByteArrayOutputStream()
-    ObjectOutputStream(byteArrayOutputStream).use { oos ->
-        oos.writeObject(this)
+    return try {
+        val byteArrayOutputStream = ByteArrayOutputStream()
+        ObjectOutputStream(byteArrayOutputStream).use { oos ->
+            oos.writeObject(this)
+        }
+        byteArrayOutputStream.toByteArray()
+    } catch (e: NotSerializableException) {
+        // If throwable isn't serializable, then use a placeholder Throwable with
+        // the same stack and include basic name / message data. This gives us
+        // at least some data to understand these crashes in the wild.
+
+        this.forceSerializable().serialize()
     }
-    return byteArrayOutputStream.toByteArray()
+}
+
+internal fun Throwable.forceSerializable(): Throwable {
+    val innerMessage = "${javaClass.name}: $message"
+    val altThrowable = CrashReporterUnableToRestoreException(innerMessage)
+    altThrowable.stackTrace = stackTrace.clone()
+    return altThrowable
 }
 
 private fun ByteArray.deserializeThrowable(): Throwable {

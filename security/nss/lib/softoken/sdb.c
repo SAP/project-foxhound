@@ -25,6 +25,7 @@
 #include "prthread.h"
 #include "prio.h"
 #include <stdio.h>
+#include <limits.h>
 #include "secport.h"
 #include "prmon.h"
 #include "prenv.h"
@@ -129,9 +130,9 @@ const CK_ATTRIBUTE_TYPE sftkdb_known_attributes[] = {
     CKA_X2RATCHET_ISALICE, CKA_X2RATCHET_NHKR, CKA_X2RATCHET_NHKS,
     CKA_X2RATCHET_NR, CKA_X2RATCHET_NS, CKA_X2RATCHET_PNS, CKA_X2RATCHET_RK,
     CKA_HSS_LEVELS, CKA_HSS_LMS_TYPE, CKA_HSS_LMOTS_TYPE, CKA_HSS_LMS_TYPES,
-    CKA_HSS_LMOTS_TYPES, CKA_HSS_KEYS_REMAINING, CKA_OBJECT_VALIDATION_FLAGS,
-    CKA_VALIDATION_TYPE, CKA_VALIDATION_VERSION, CKA_VALIDATION_LEVEL,
-    CKA_VALIDATION_MODULE_ID, CKA_VALIDATION_FLAG,
+    CKA_HSS_LMOTS_TYPES, CKA_HSS_KEYS_REMAINING, CKA_PARAMETER_SET,
+    CKA_OBJECT_VALIDATION_FLAGS, CKA_VALIDATION_TYPE, CKA_VALIDATION_VERSION,
+    CKA_VALIDATION_LEVEL, CKA_VALIDATION_MODULE_ID, CKA_VALIDATION_FLAG,
     CKA_VALIDATION_AUTHORITY_TYPE, CKA_VALIDATION_COUNTRY,
     CKA_VALIDATION_CERTIFICATE_IDENTIFIER, CKA_VALIDATION_CERTIFICATE_URI,
     CKA_VALIDATION_PROFILE, CKA_VALIDATION_VENDOR_URI, CKA_ENCAPSULATE_TEMPLATE,
@@ -158,7 +159,7 @@ const CK_ATTRIBUTE_TYPE sftkdb_known_attributes[] = {
 };
 // clang-format on
 
-const int sftkdb_known_attributes_size = PR_ARRAY_SIZE(sftkdb_known_attributes);
+const size_t sftkdb_known_attributes_size = PR_ARRAY_SIZE(sftkdb_known_attributes);
 
 /*
  * Note on use of sqlReadDB: Only one thread at a time may have an actual
@@ -831,12 +832,15 @@ sdb_FindObjectsInit(SDB *sdb, const CK_ATTRIBUTE *template, CK_ULONG count,
     sqlite3_free(newStr);
     for (i = 0; sqlerr == SQLITE_OK && i < count; i++) {
         const void *blobData = template[i].pValue;
-        unsigned int blobSize = template[i].ulValueLen;
+        CK_ULONG blobSize = template[i].ulValueLen;
         if (blobSize == 0) {
-            blobSize = SQLITE_EXPLICIT_NULL_LEN;
             blobData = SQLITE_EXPLICIT_NULL;
+            blobSize = SQLITE_EXPLICIT_NULL_LEN;
+        } else if (blobSize > INT_MAX) {
+            error = CKR_ARGUMENTS_BAD;
+            goto loser;
         }
-        sqlerr = sqlite3_bind_blob(findstmt, i + 1, blobData, blobSize,
+        sqlerr = sqlite3_bind_blob(findstmt, i + 1, blobData, (int)blobSize,
                                    SQLITE_TRANSIENT);
     }
     if (sqlerr == SQLITE_OK) {
@@ -1687,7 +1691,7 @@ sdb_Abort(SDB *sdb)
 
 static int tableExists(sqlite3 *sqlDB, const char *tableName);
 
-static const char GET_PW_CMD[] = "SELECT ALL * FROM metaData WHERE id=$ID;";
+static const char GET_PW_CMD[] = "SELECT ALL * FROM metaData WHERE id=$ID LIMIT 1;";
 CK_RV
 sdb_GetMetaData(SDB *sdb, const char *id, SECItem *item1, SECItem *item2)
 {
@@ -1732,7 +1736,7 @@ sdb_GetMetaData(SDB *sdb, const char *id, SECItem *item1, SECItem *item2)
             item1->len = sqlite3_column_bytes(stmt, 1);
             if (item1->len > len) {
                 error = CKR_BUFFER_TOO_SMALL;
-                continue;
+                goto loser;
             }
             blobData = sqlite3_column_blob(stmt, 1);
             PORT_Memcpy(item1->data, blobData, item1->len);
@@ -1741,7 +1745,7 @@ sdb_GetMetaData(SDB *sdb, const char *id, SECItem *item1, SECItem *item2)
                 item2->len = sqlite3_column_bytes(stmt, 2);
                 if (item2->len > len) {
                     error = CKR_BUFFER_TOO_SMALL;
-                    continue;
+                    goto loser;
                 }
                 blobData = sqlite3_column_blob(stmt, 2);
                 PORT_Memcpy(item2->data, blobData, item2->len);
@@ -2024,8 +2028,8 @@ sdb_update_column(sqlite3 *sqlDB, const char *table, sdbDataType type)
     }
     /* we have more attributes than in the database, so we know things
      * are missing, find what was missing */
-    for (int i = 0; i < sftkdb_known_attributes_size; i++) {
-        char *typeString = sqlite3_mprintf("a%x", sftkdb_known_attributes[i]);
+    for (size_t i = 0; i < sftkdb_known_attributes_size; i++) {
+        char *typeString = sqlite3_mprintf("a%lx", sftkdb_known_attributes[i]);
         PRBool found = PR_FALSE;
         /* this one index is important, we skip the first column (id), since
          * it will never match, starting at zero isn't a bug,
@@ -2072,7 +2076,6 @@ CK_RV
 sdb_init(char *dbname, char *table, sdbDataType type, int *inUpdate,
          int *newInit, int inFlags, PRUint32 accessOps, SDB **pSdb)
 {
-    int i;
     char *initStr = NULL;
     char *newStr;
     char *queryStr = NULL;
@@ -2136,8 +2139,9 @@ sdb_init(char *dbname, char *table, sdbDataType type, int *inUpdate,
             goto loser;
         }
         initStr = sqlite3_mprintf("");
-        for (i = 0; initStr && i < sftkdb_known_attributes_size; i++) {
-            newStr = sqlite3_mprintf("%s, a%x", initStr, sftkdb_known_attributes[i]);
+        for (size_t i = 0; initStr && i < sftkdb_known_attributes_size; i++) {
+            newStr = sqlite3_mprintf("%s, a%lx", initStr,
+                                     sftkdb_known_attributes[i]);
             sqlite3_free(initStr);
             initStr = newStr;
         }

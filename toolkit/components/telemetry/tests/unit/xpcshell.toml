@@ -17,64 +17,110 @@ generated-files = [
 ]
 
 ["test_ChildHistograms.js"]
-skip-if = ["os == 'android'"] # Disabled due to crashes (see bug 1331366)
+skip-if = [
+  "os == 'android'", # Disabled due to crashes (see bug 1331366)
+]
 tags = "addons"
 
 ["test_CoveragePing.js"]
+run-if = [
+  "os != 'android'", # Legacy telemetry is a lways disabled on Android
+]
 
 ["test_EventPing.js"]
+run-if = [
+  "os != 'android'", # Legacy telemetry is a lways disabled on Android
+]
 tags = "coverage"
 
 ["test_HealthPing.js"]
 skip-if = [
-  "verify && os == 'win'",
-  "os == 'android' && processor == 'x86_64'",
+  "os == 'android' && arch == 'x86_64'",
+  "os == 'win' && verify",
 ]
 tags = "addons"
 
+["test_MainPingDisablement.js"]
+skip-if = [
+  "appname == 'thunderbird'", # testing feature not applicable to Thunderbird
+  "os == 'android'", # Legacy telemetry is always disabled on Android
+]
+
 ["test_MigratePendingPings.js"]
+run-if = [
+  "os != 'android'", # Legacy telemetry is a lways disabled on Android
+]
 
 ["test_PingAPI.js"]
+run-if = [
+  "os != 'android'", # Legacy telemetry is a lways disabled on Android
+]
 
 ["test_PingSender.js"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_PrefMigrationForTOU.js"]
 
 ["test_RDDScalars.js"]
-skip-if = ["os == 'android'"] # RDD is not a thing on Android?
+skip-if = [
+  "os == 'android'", # RDD is not a thing on Android?
+]
 
 ["test_SocketScalars.js"]
-run-if = ["socketprocess_networking"] # Needs socket process (bug 1716307)
+run-if = [
+  "socketprocess_networking", # Needs socket process (bug 1716307)
+]
 
 ["test_SubsessionChaining.js"]
 tags = "addons"
 
 ["test_SyncPingIntegration.js"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_TOUNotificationFlow.js"]
+skip-if = [
+  "appname == 'thunderbird'",
+  "os == 'android'",
+]
+# The TOU notification flow is desktop-only and not used by Thunderbird.
 
 ["test_TelemetryClientID_reset.js"]
-skip-if = ["os == 'android'"] # Disabled as Android/GeckoView doesn't run TelemetryController
+skip-if = [
+  "os == 'android'", # Disabled as Android/GeckoView doesn't run TelemetryController
+]
 
 ["test_TelemetryController.js"]
 
 ["test_TelemetryControllerBuildID.js"]
 
 ["test_TelemetryControllerShutdown.js"]
-skip-if = ["os == 'android' && processor == 'x86_64'"]  # Disabled as Android/GeckoView doesn't run TelemetryController
+skip-if = [
+  "os == 'android' && arch == 'x86_64'", # Disabled as Android/GeckoView doesn't run TelemetryController
+]
 tags = "addons"
 
 ["test_TelemetryController_idle.js"]
+run-if = [
+  "os != 'android'", # Legacy telemetry is a lways disabled on Android
+]
+
+["test_TelemetryController_pingDisablement.js"]
+skip-if = [
+  "appname == 'thunderbird'", # testing feature not applicable to Thunderbird
+  "os == 'android'", # Legacy telemetry is always disabled on Android
+]
 
 ["test_TelemetryEnvironment.js"]
+requesttimeoutfactor = 2  # Slow on Windows
 skip-if = [
   "os == 'android'",
   "os == 'win' && msix", # https://bugzilla.mozilla.org/show_bug.cgi?id=1807929
 ]
 tags = "addons"
-run-sequentially = "very high failure rate in parallel"
 
 ["test_TelemetryEnvironment_search.js"]
 skip-if = [
@@ -84,79 +130,120 @@ skip-if = [
 
 ["test_TelemetryHistograms.js"]
 
-["test_TelemetryLateWrites.js"]
-
-["test_TelemetryLockCount.js"]
-
 ["test_TelemetryReportingPolicy.js"]
+skip-if = [
+  "os == 'android'",
+]
+# Desktop only
 tags = "addons"
 
 ["test_TelemetryScalars.js"]
 
 ["test_TelemetryScalars_buildFaster.js"]
-skip-if = ["os == 'win' && msix"] # https://bugzilla.mozilla.org/show_bug.cgi?id=1807929
+skip-if = [
+  "os == 'win' && msix", # https://bugzilla.mozilla.org/show_bug.cgi?id=1807929
+]
 
 ["test_TelemetryScalars_impressionId.js"]
 
 ["test_TelemetrySend.js"]
-skip-if = ["os == 'linux' && ccov"] # Bug 1701874
+requesttimeoutfactor = 3  # Slow on Windows
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && ccov", # Bug 1701874
+]
 
 ["test_TelemetrySendOldPings.js"]
-skip-if = ["os == 'android'"] # Disabled due to intermittent orange on Android
+skip-if = [
+  "os == 'android'", # Disabled due to intermittent orange on Android
+]
 tags = "addons"
 
 ["test_TelemetrySession.js"]
 tags = "addons"
-skip-if = ["os == 'linux' && verify && debug"]
+skip-if = [
+  "os == 'linux' && debug && verify",
+]
 
 ["test_TelemetrySession_abortedSessionQueued.js"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_TelemetrySession_activeTicks.js"]
+run-if = [
+  "os != 'android'", # Legacy telemetry is a lways disabled on Android
+]
 
 ["test_TelemetryTimestamps.js"]
 
 ["test_TelemetryUtils.js"]
 
 ["test_ThirdPartyModulesPing.js"]
-run-if = ["(os == 'win' && !msix)"] # Disabled for MSIX due to https://bugzilla.mozilla.org/show_bug.cgi?id=1807929
+run-if = [
+  "os == 'win' && !msix", # Disabled for MSIX due to https://bugzilla.mozilla.org/show_bug.cgi?id=1807929,
+]
+skip-if = [
+  "artifact", # disabled for artifact for bug 1982870.
+]
 
 ["test_UninstallPing.js"]
 support-files = ["file_UninstallPing.worker.js"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["test_UsageReporting.js"]
 tags = "coverage"
-run-if = ["appname == 'firefox'"]
-skip-if = ["artifact"] # See bug 1945662.
+run-if = [
+  "appname == 'firefox'",
+]
+skip-if = [
+  "artifact", # See bug 1945662.
+]
 
 ["test_UserInteraction.js"]
 
 ["test_UserInteraction_annotations.js"]
 # BHR is disabled on tsan, asan and outside of Nightly.
-run-sequentially = "very high failure rate in parallel"
 skip-if = [
-  "debug",
   "asan",
-  "tsan",
+  "debug",
   "os == 'android'",
-  "release_or_beta",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # Bug 1713329
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Bug 1707747
-  "win11_2009 && bits == 32 && !debug", #  Bug 1781452
-  "os == 'linux' && !debug", #  Bug 1781452
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1929422
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && opt", #  Bug 1781452
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", #  Bug 1781452
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", #  Bug 1781452
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", #  Bug 1781452
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1713329
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1929422
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1707747
+  "release_or_beta",
+  "tsan",
 ]
 
 ["test_UtilityScalars.js"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
+
+["test_canUpload_truth_table.js"]
+skip-if = [
+  "appname == 'thunderbird'",
+  "os == 'android'",
+]
+# The policy notification/acceptance flows are desktop only and not used by
+# Thunderbird or Android.
 
 ["test_client_id.js"]
 
 ["test_failover_retry.js"]
-skip-if = ["os == 'android'"] # Android doesn't support telemetry though some tests manage to pass with xpcshell
+run-if = [
+  "os != 'android'", # Android doesn't support telemetry though some tests manage to pass with xpcshell
+]
 
 ["test_new_profile.js"]
-run-if = ["os == 'win'"]
-skip-if = ["appname == 'thunderbird'"] # Test requires modules from browser
+run-if = [
+  "os == 'win'",
+]
+skip-if = [
+  "appname == 'thunderbird'", # Test requires modules from browser
+]

@@ -6,23 +6,23 @@
 
 package org.mozilla.fenix.tabstray.ui.inactivetabs
 
-import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -40,25 +40,24 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import mozilla.components.browser.state.state.ContentState
-import mozilla.components.browser.state.state.TabSessionState
+import mozilla.components.compose.base.button.IconButton
 import mozilla.components.compose.base.button.TextButton
 import mozilla.components.compose.cfr.CFRPopup
 import mozilla.components.compose.cfr.CFRPopupLayout
 import mozilla.components.compose.cfr.CFRPopupProperties
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.list.ExpandableListHeader
-import org.mozilla.fenix.compose.list.FaviconListItem
 import org.mozilla.fenix.ext.toShortUrl
-import org.mozilla.fenix.tabstray.ext.toDisplayTitle
+import org.mozilla.fenix.tabstray.data.TabsTrayItem
+import org.mozilla.fenix.tabstray.data.createTab
+import org.mozilla.fenix.tabstray.ui.tabitems.BasicTabListItem
 import org.mozilla.fenix.theme.FirefoxTheme
-
-private val ROUNDED_CORNER_SHAPE = RoundedCornerShape(8.dp)
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Top-level list for displaying an expandable section of Inactive Tabs.
  *
- * @param inactiveTabs List of [TabSessionState] to display.
+ * @param inactiveTabs List of [TabsTrayItem.Tab] to display.
  * @param expanded Whether to show the inactive tabs section expanded or collapsed.
  * @param showAutoCloseDialog Whether to show the auto close inactive tabs dialog.
  * @param showCFR Whether to show the CFR.
@@ -75,7 +74,7 @@ private val ROUNDED_CORNER_SHAPE = RoundedCornerShape(8.dp)
 @Composable
 @Suppress("LongParameterList")
 fun InactiveTabsList(
-    inactiveTabs: List<TabSessionState>,
+    inactiveTabs: List<TabsTrayItem.Tab>,
     expanded: Boolean,
     showAutoCloseDialog: Boolean,
     showCFR: Boolean,
@@ -83,67 +82,63 @@ fun InactiveTabsList(
     onDeleteAllButtonClick: () -> Unit,
     onAutoCloseDismissClick: () -> Unit,
     onEnableAutoCloseClick: () -> Unit,
-    onTabClick: (TabSessionState) -> Unit,
-    onTabCloseClick: (TabSessionState) -> Unit,
+    onTabClick: (TabsTrayItem.Tab) -> Unit,
+    onTabCloseClick: (TabsTrayItem.Tab) -> Unit,
     onCFRShown: () -> Unit,
     onCFRClick: () -> Unit,
     onCFRDismiss: () -> Unit,
 ) {
     Card(
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-        colors = CardDefaults.cardColors(containerColor = FirefoxTheme.colors.layer2),
-        shape = ROUNDED_CORNER_SHAPE,
-        border = BorderStroke(
-            width = 1.dp,
-            color = FirefoxTheme.colors.borderPrimary,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+            contentColor = MaterialTheme.colorScheme.secondary,
         ),
+        shape = MaterialTheme.shapes.medium,
     ) {
-        Column(
-            modifier = Modifier
-                .animateContentSize()
-                .fillMaxWidth(),
-        ) {
-            InactiveTabsHeader(
-                expanded = expanded,
-                showCFR = showCFR,
-                onCFRShown = onCFRShown,
-                onCFRClick = onCFRClick,
-                onCFRDismiss = onCFRDismiss,
-                onClick = { onHeaderClick(!expanded) },
-                onDeleteAllClick = onDeleteAllButtonClick,
+        InactiveTabsHeader(
+            expanded = expanded,
+            showCFR = showCFR,
+            onCFRShown = onCFRShown,
+            onCFRClick = onCFRClick,
+            onCFRDismiss = onCFRDismiss,
+            onClick = { onHeaderClick(!expanded) },
+        )
+
+        if (expanded) {
+            if (showAutoCloseDialog) {
+                InactiveTabsAutoClosePrompt(
+                    onDismissClick = onAutoCloseDismissClick,
+                    onEnableAutoCloseClick = onEnableAutoCloseClick,
+                )
+            }
+
+            InactiveTabsSubHeader(
+                inactiveTabsSize = inactiveTabs.size,
+                onDeleteAllButtonClick = onDeleteAllButtonClick,
             )
 
-            if (expanded) {
-                if (showAutoCloseDialog) {
-                    InactiveTabsAutoClosePrompt(
-                        onDismissClick = onAutoCloseDismissClick,
-                        onEnableAutoCloseClick = onEnableAutoCloseClick,
-                    )
+            inactiveTabs.forEachIndexed { index, tab ->
+                val tabUrl = tab.url.toShortUrl()
+                val faviconPainter = tab.icon?.run {
+                    prepareToDraw()
+                    BitmapPainter(asImageBitmap())
                 }
 
-                Column {
-                    inactiveTabs.forEach { tab ->
-                        val tabUrl = tab.content.url.toShortUrl()
-                        val faviconPainter = tab.content.icon?.run {
-                            prepareToDraw()
-                            BitmapPainter(asImageBitmap())
-                        }
+                BasicTabListItem(
+                    title = tab.title,
+                    url = tabUrl,
+                    faviconPainter = faviconPainter,
+                    onClick = { onTabClick(tab) },
+                    showCloseButton = true,
+                    onCloseButtonClick = { onTabCloseClick(tab) },
+                )
 
-                        FaviconListItem(
-                            label = tab.toDisplayTitle(),
-                            url = tabUrl,
-                            description = tabUrl,
-                            faviconPainter = faviconPainter,
-                            onClick = { onTabClick(tab) },
-                            iconPainter = painterResource(R.drawable.mozac_ic_cross_24),
-                            iconDescription = stringResource(R.string.content_description_close_button),
-                            onIconClick = { onTabCloseClick(tab) },
-                        )
-                    }
+                if (index != inactiveTabs.size - 1) {
+                    HorizontalDivider()
                 }
-
-                Spacer(modifier = Modifier.height(8.dp))
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }
@@ -154,7 +149,6 @@ fun InactiveTabsList(
  * @param expanded Whether the section is expanded.
  * @param showCFR Whether to show the CFR.
  * @param onClick Called when the user clicks on the header.
- * @param onDeleteAllClick Called when the user clicks on the delete all button.
  * @param onCFRShown Invoked when the CFR is displayed.
  * @param onCFRClick Invoked when the CFR is clicked.
  * @param onCFRDismiss Invoked when the CFR is dismissed.
@@ -164,7 +158,6 @@ private fun InactiveTabsHeader(
     expanded: Boolean,
     showCFR: Boolean,
     onClick: () -> Unit,
-    onDeleteAllClick: () -> Unit,
     onCFRShown: () -> Unit,
     onCFRClick: () -> Unit,
     onCFRDismiss: () -> Unit,
@@ -209,22 +202,47 @@ private fun InactiveTabsHeader(
     ) {
         ExpandableListHeader(
             headerText = stringResource(R.string.inactive_tabs_title),
-            headerTextStyle = FirefoxTheme.typography.headline7,
+            headerTextStyle = FirefoxTheme.typography.body1,
+            headerTextColor = MaterialTheme.colorScheme.secondary,
+            iconTint = MaterialTheme.colorScheme.secondary,
+            contentPadding = PaddingValues(all = 16.dp),
             expanded = expanded,
             expandActionContentDescription = stringResource(R.string.inactive_tabs_expand_content_description),
             collapseActionContentDescription = stringResource(R.string.inactive_tabs_collapse_content_description),
             onClick = onClick,
+        )
+    }
+}
+
+@Composable
+private fun InactiveTabsSubHeader(
+    inactiveTabsSize: Int,
+    onDeleteAllButtonClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(start = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(
+                R.string.inactive_tabs_num_items,
+                inactiveTabsSize,
+            ),
+            modifier = Modifier.weight(1f),
+            style = FirefoxTheme.typography.body1,
+        )
+
+        IconButton(
+            onClick = onDeleteAllButtonClick,
+            contentDescription = stringResource(R.string.inactive_tabs_delete_all),
         ) {
-            IconButton(
-                onClick = onDeleteAllClick,
-                modifier = Modifier.padding(horizontal = 4.dp),
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_delete),
-                    contentDescription = stringResource(R.string.inactive_tabs_delete_all),
-                    tint = FirefoxTheme.colors.iconPrimary,
-                )
-            }
+            Icon(
+                painter = painterResource(iconsR.drawable.mozac_ic_delete_24),
+                contentDescription = null,
+            )
         }
     }
 }
@@ -242,11 +260,11 @@ private fun InactiveTabsAutoClosePrompt(
 ) {
     Card(
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-        shape = ROUNDED_CORNER_SHAPE,
-        colors = CardDefaults.cardColors(containerColor = FirefoxTheme.colors.layer2),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
         border = BorderStroke(
             width = 1.dp,
-            color = FirefoxTheme.colors.borderPrimary,
+            color = MaterialTheme.colorScheme.outlineVariant,
         ),
     ) {
         Column(
@@ -260,20 +278,22 @@ private fun InactiveTabsAutoClosePrompt(
             ) {
                 Text(
                     text = stringResource(R.string.tab_tray_inactive_auto_close_title),
-                    color = FirefoxTheme.colors.textPrimary,
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f),
                     style = FirefoxTheme.typography.headline8,
                 )
 
                 IconButton(
                     onClick = onDismissClick,
+                    contentDescription = stringResource(
+                        R.string.tab_tray_inactive_auto_close_button_content_description,
+                    ),
                     modifier = Modifier.size(20.dp),
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.mozac_ic_cross_20),
-                        contentDescription =
-                        stringResource(R.string.tab_tray_inactive_auto_close_button_content_description),
-                        tint = FirefoxTheme.colors.iconPrimary,
+                        painter = painterResource(iconsR.drawable.mozac_ic_cross_20),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
             }
@@ -283,7 +303,7 @@ private fun InactiveTabsAutoClosePrompt(
                     R.string.tab_tray_inactive_auto_close_body_2,
                     stringResource(R.string.app_name),
                 ),
-                color = FirefoxTheme.colors.textSecondary,
+                color = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.fillMaxWidth(),
                 fontSize = 14.sp,
             )
@@ -300,7 +320,7 @@ private fun InactiveTabsAutoClosePrompt(
 @PreviewLightDark
 private fun InactiveTabsAutoClosePromptPreview() {
     FirefoxTheme {
-        Box(Modifier.background(FirefoxTheme.colors.layer1)) {
+        Box(Modifier.background(MaterialTheme.colorScheme.surface)) {
             InactiveTabsAutoClosePrompt(
                 onDismissClick = {},
                 onEnableAutoCloseClick = {},
@@ -316,9 +336,12 @@ private fun InactiveTabsListPreview() {
     var showAutoClosePrompt by remember { mutableStateOf(true) }
 
     FirefoxTheme {
-        Box(Modifier.background(FirefoxTheme.colors.layer1)) {
+        Box(Modifier.background(MaterialTheme.colorScheme.surface)) {
             InactiveTabsList(
-                inactiveTabs = generateFakeInactiveTabsList(),
+                inactiveTabs = listOf(
+                    createTab(url = "www.mozilla.com"),
+                    createTab(url = "www.example.com"),
+                ),
                 expanded = expanded,
                 showAutoCloseDialog = showAutoClosePrompt,
                 showCFR = false,
@@ -335,19 +358,3 @@ private fun InactiveTabsListPreview() {
         }
     }
 }
-
-private fun generateFakeInactiveTabsList(): List<TabSessionState> =
-    listOf(
-        TabSessionState(
-            id = "tabId",
-            content = ContentState(
-                url = "www.mozilla.com",
-            ),
-        ),
-        TabSessionState(
-            id = "tabId",
-            content = ContentState(
-                url = "www.google.com",
-            ),
-        ),
-    )

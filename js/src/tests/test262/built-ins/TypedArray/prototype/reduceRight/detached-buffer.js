@@ -29,6 +29,6 @@ testWithTypedArrayConstructors(function(TA) {
   assert.throws(TypeError, function() {
     sample.reduceRight(callbackfn);
   });
-});
+}, null, null, ["immutable"]);
 
 reportCompare(0, 0);

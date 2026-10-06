@@ -44,31 +44,44 @@ export const BackgroundPageThumbs = {
    *
    * The page is loaded anonymously, and plug-ins are disabled.
    *
-   * @param url      The URL to capture.
-   * @param options  An optional object that configures the capture.  Its
-   *                 properties are the following, and all are optional:
-   * @opt onDone     A function that will be asynchronously called when the
-   *                 capture is complete or times out.  It's called as
-   *                   onDone(url),
-   *                 where `url` is the captured URL.
-   * @opt timeout    The capture will time out after this many milliseconds have
-   *                 elapsed after the capture has progressed to the head of
-   *                 the queue and started.  Defaults to 30000 (30 seconds).
-   * @opt isImage    If true, backgroundPageThumbsContent will attempt to render
-   *                 the url directly to canvas. Note that images will mostly get
-   *                 detected and rendered as such anyway, but this will ensure it.
-   * @opt targetWidth The target width when capturing an image.
-   * @opt backgroundColor The background colour when capturing an image.
-   * @opt dontStore  If set to true, the image blob won't be stored to disk, an
-   *                 object will instead be passed as third argument to onDone:
-   *                 {
-   *                   data: an ArrayBuffer containing the data
-   *                   contentType: the data content-type
-   *                   originalUrl: the originally requested url
-   *                   currentUrl: the final url after redirects
-   *                 }
-   * @opt contentType can be set to an image contentType for the capture,
-   *                  defaults to PageThumbs.contentType.
+   * @param url
+   *   The URL to capture.
+   * @param {object} [options]
+   *   An optional object that configures the capture.
+   * @param {Function} [options.onDone]
+   *   A function that will be asynchronously called when the capture is
+   *   complete or times out.  It's called as onDone(url), where `url` is the
+   *   captured URL.
+   * @param {number} [options.timeout]
+   *   The capture will time out after this many milliseconds have elapsed after
+   *   the capture has progressed to the head of the queue and started. Defaults
+   *   to 30000 (30 seconds).
+   * @param {boolean} [options.isImage]
+   *   If true, backgroundPageThumbsContent will attempt to render the url
+   *   directly to canvas. Note that images will mostly get detected and rendered
+   *   as such anyway, but this will ensure it.
+   * @param {number} [options.targetWidth]
+   *   The target width when capturing an image.
+   * @param {string} [options.backgroundColor]
+   *   The background colour when capturing an image.
+   * @param {boolean} [options.dontStore]
+   *   If set to true, the image blob won't be stored to disk, an object will
+   *   instead be passed as third argument to onDone:
+   *   ```
+   *   {
+   *     data: an ArrayBuffer containing the data
+   *     contentType: the data content-type
+   *     originalUrl: the originally requested url
+   *     currentUrl: the final url after redirects
+   *   }
+   *   ```
+   * @param {string} [options.contentType]
+   *   Can be set to an image contentType for the capture, defaults to
+   *   PageThumbs.contentType.
+   * @param {number} [options.settleWaitTime]
+   *   Milliseconds to wait after the page reports loaded before capturing, to
+   *   allow for in-page redirects. Defaults to 2500. Set to 0 when capturing a
+   *   direct image URL where no settle is needed.
    */
   capture(url, options = {}) {
     if (!PageThumbs._prefEnabled()) {
@@ -324,7 +337,7 @@ export const BackgroundPageThumbs = {
         Components.isSuccessCode(status) ||
         status === Cr.NS_BINDING_ABORTED
       ) {
-        this._thumbBrowser.ownerGlobal.requestIdleCallback(() => {
+        this._thumbBrowser.documentGlobal.requestIdleCallback(() => {
           currentCapture.pageLoaded(this._thumbBrowser);
         });
       } else {
@@ -593,7 +606,8 @@ Capture.prototype = {
             this._done(browser, null, TEL_CAPTURE_DONE_BAD_URI);
           }
         },
-        () => {
+        err => {
+          console.error(err);
           // The query can fail when a crash occurs while loading. The error causes
           // thumbnail crash tests to fail with an uninteresting error message.
         }
@@ -620,9 +634,14 @@ Capture.prototype = {
       return;
     }
 
-    let waitTime = Cu.isInAutomation
-      ? TESTING_SETTLE_WAIT_TIME
-      : SETTLE_WAIT_TIME;
+    let waitTime;
+    if (this.options.settleWaitTime !== undefined) {
+      waitTime = this.options.settleWaitTime;
+    } else if (Cu.isInAutomation) {
+      waitTime = TESTING_SETTLE_WAIT_TIME;
+    } else {
+      waitTime = SETTLE_WAIT_TIME;
+    }
 
     // There was additional activity, so restart the wait timer
     if (this.redirectTimer) {
@@ -644,7 +663,7 @@ Capture.prototype = {
     let pageLoadTime = new Date() - this._pageLoadStartTime;
     let canvasDrawStartTime = new Date();
 
-    let canvas = PageThumbs.createCanvas(aBrowser.ownerGlobal, 1, 1);
+    let canvas = PageThumbs.createCanvas(aBrowser.documentGlobal, 1, 1);
     try {
       await PageThumbs.captureToCanvas(
         aBrowser,

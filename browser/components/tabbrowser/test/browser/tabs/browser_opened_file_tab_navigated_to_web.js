@@ -1,6 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
-
 const TEST_FILE = "dummy_page.html";
 // eslint-disable-next-line @microsoft/sdl/no-insecure-url
 const WEB_ADDRESS = "http://example.org/";

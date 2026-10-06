@@ -1,14 +1,12 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MessagePortParent.h"
+
 #include "MessagePortService.h"
 #include "mozilla/dom/RefMessageBodyService.h"
 #include "mozilla/dom/SharedMessageBody.h"
-#include "mozilla/Unused.h"
 
 namespace mozilla::dom {
 
@@ -38,7 +36,7 @@ bool MessagePortParent::Entangle(const nsID& aDestinationUUID,
 }
 
 mozilla::ipc::IPCResult MessagePortParent::RecvPostMessages(
-    nsTArray<MessageData>&& aMessages) {
+    nsTArray<NotNull<RefPtr<SharedMessageBody>>>&& aMessages) {
   if (!mService) {
     NS_WARNING("PostMessages is called after a shutdown!");
     // This implies most probably that CloseAndDelete() has been already called
@@ -47,27 +45,23 @@ mozilla::ipc::IPCResult MessagePortParent::RecvPostMessages(
   }
 
   if (!mEntangled) {
-    // If we were shut down, the above condition already bailed out. So this
-    // should actually never happen and returning a failure is fine.
-    return IPC_FAIL(this, "RecvPostMessages not entangled");
+    // The child may send PostMessages before the Entangled() callback arrives
+    // (e.g. if it calls postMessage() then Atomics.wait() before the entangling
+    // IPC round-trip completes). Buffer these messages and flush them when
+    // Entangled() is called.
+    if (!mPendingMessages.AppendElements(std::move(aMessages),
+                                         mozilla::fallible)) {
+      return IPC_FAIL(this, "RecvPostMessages OOM");
+    }
+    return IPC_OK();
   }
 
-  // This converts the object in a data struct where we have BlobImpls.
-  FallibleTArray<RefPtr<SharedMessageBody>> messages;
-  if (NS_WARN_IF(!SharedMessageBody::FromMessagesToSharedParent(aMessages,
-                                                                messages))) {
-    // FromMessagesToSharedParent() returns false only if the array allocation
-    // failed.
-    // See bug 1750497 for further discussion if this is the wanted behavior.
-    return IPC_FAIL(this, "SharedMessageBody::FromMessagesToSharedParent");
-  }
-
-  if (messages.IsEmpty()) {
+  if (aMessages.IsEmpty()) {
     // An empty payload can be safely ignored.
     return IPC_OK();
   }
 
-  if (!mService->PostMessages(this, std::move(messages))) {
+  if (!mService->PostMessages(this, std::move(aMessages))) {
     // TODO: Verify if all failure conditions of PostMessages() merit an
     // IPC_FAIL. See bug 1750499.
     return IPC_FAIL(this, "RecvPostMessages->PostMessages");
@@ -76,7 +70,7 @@ mozilla::ipc::IPCResult MessagePortParent::RecvPostMessages(
 }
 
 mozilla::ipc::IPCResult MessagePortParent::RecvDisentangle(
-    nsTArray<MessageData>&& aMessages) {
+    nsTArray<NotNull<RefPtr<SharedMessageBody>>>&& aMessages) {
   if (!mService) {
     NS_WARNING("Entangle is called after a shutdown!");
     // This implies most probably that CloseAndDelete() has been already called
@@ -90,15 +84,7 @@ mozilla::ipc::IPCResult MessagePortParent::RecvDisentangle(
     return IPC_FAIL(this, "RecvDisentangle not entangled");
   }
 
-  // This converts the object in a data struct where we have BlobImpls.
-  FallibleTArray<RefPtr<SharedMessageBody>> messages;
-  if (NS_WARN_IF(!SharedMessageBody::FromMessagesToSharedParent(aMessages,
-                                                                messages))) {
-    // TODO: Verify if failed allocations merit an IPC_FAIL. See bug 1750497.
-    return IPC_FAIL(this, "SharedMessageBody::FromMessagesToSharedParent");
-  }
-
-  if (!mService->DisentanglePort(this, std::move(messages))) {
+  if (!mService->DisentanglePort(this, std::move(aMessages))) {
     // TODO: Verify if all failure conditions of DisentanglePort() merit an
     // IPC_FAIL. See bug 1750501.
     return IPC_FAIL(this, "RecvDisentangle->DisentanglePort");
@@ -114,7 +100,7 @@ mozilla::ipc::IPCResult MessagePortParent::RecvStopSendingData() {
   }
 
   mCanSendData = false;
-  Unused << SendStopSendingDataConfirmed();
+  (void)SendStopSendingDataConfirmed();
   return IPC_OK();
 }
 
@@ -131,7 +117,7 @@ mozilla::ipc::IPCResult MessagePortParent::RecvClose() {
 
   MOZ_ASSERT(!mEntangled);
 
-  Unused << Send__delete__(this);
+  (void)Send__delete__(this);
   return IPC_OK();
 }
 
@@ -144,15 +130,24 @@ void MessagePortParent::ActorDestroy(ActorDestroyReason aWhy) {
   }
 }
 
-bool MessagePortParent::Entangled(nsTArray<MessageData>&& aMessages) {
+bool MessagePortParent::Entangled(
+    nsTArray<NotNull<RefPtr<SharedMessageBody>>>&& aMessages) {
   MOZ_ASSERT(!mEntangled);
   mEntangled = true;
+
+  // Flush any messages that arrived via PostMessages before entangling
+  // completed.
+  if (!mPendingMessages.IsEmpty() && mService) {
+    mService->PostMessages(this, std::move(mPendingMessages));
+    mPendingMessages.Clear();
+  }
+
   return SendEntangled(aMessages);
 }
 
 void MessagePortParent::CloseAndDelete() {
   Close();
-  Unused << Send__delete__(this);
+  (void)Send__delete__(this);
 }
 
 void MessagePortParent::Close() {

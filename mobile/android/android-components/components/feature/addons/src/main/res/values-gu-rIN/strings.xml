@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://schemas.android.com/apk/res-auto">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this file,
+  You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!-- Description for the "privacy" WebExtensions API permission. -->
   <string name="mozac_feature_addons_permissions_privacy_description">ગોપનીયતા સેટિંગ્સ વાંચો અને તેમાં ફેરફાર કરો</string>
   <!-- Description for the "<all_urls>" WebExtensions API permission. -->
@@ -61,8 +68,6 @@
   <!-- Indicates the add-on is enabled. -->
   <string name="mozac_feature_addons_settings_on">ચાલુ કરો</string>
   <!-- Indicates the add-on is allowed in private browsing mode. -->
-  <string name="mozac_feature_addons_settings_allow_in_private_browsing" moz:removedIn="141" tools:ignore="UnusedResources">ખાનગી બ્રાઉઝિંગમાં ચલાવવાની મંજૂરી આપો</string>
-  <!-- Indicates the add-on is allowed in private browsing mode. -->
   <string name="mozac_feature_addons_settings_run_in_private_browsing">ખાનગી બ્રાઉઝિંગમાં ચલાવો</string>
   <!-- Indicates the add-on is enabled. -->
   <string name="mozac_feature_addons_enabled">સક્રિય</string>
@@ -82,10 +87,6 @@
   <string name="mozac_feature_addons_permissions">પરવાનગીઓ</string>
   <!-- This is a button to remove (i.e. uninstall) an add-on. -->
   <string name="mozac_feature_addons_remove">દૂર કરો</string>
-  <!-- This is the title of a dialog that asks the users if they to install or not an add-on. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_permissions_dialog_title" moz:removedIn="141" tools:ignore="UnusedResources">%1$sઉમેરશો?</string>
-  <!-- This is the subtitle of a dialog that asks the users if they want to install or not an add-on, the subtitle lists the permissions that this add-on requires, the permissions will dynamically be listed after the ":". -->
-  <string name="mozac_feature_addons_permissions_dialog_subtitle" moz:removedIn="141" tools:ignore="UnusedResources">આ માટે તમારી પરવાનગીની જરૂર છે:</string>
   <!-- This is a button to add (install) an add-on . -->
   <string name="mozac_feature_addons_permissions_dialog_add">ઉમેરો</string>
   <!-- This is a button to cancel the add-on installation . -->
@@ -94,16 +95,6 @@
   <string name="mozac_feature_addons_install_addon_dialog_cancel">રદ કરો</string>
   <!-- This is the title of page where all the add-ons are listed -->
   <string name="mozac_feature_addons_addons">ઍડ-ઓન્સ</string>
-  <!-- The label of the allow button, this will be shown to the user when an add-on needs new permissions, with the button the user will indicate that they want to accept the new permissions and update the add-on -->
-  <string name="mozac_feature_addons_updater_notification_allow_button" moz:removedIn="142" tools:ignore="UnusedResources">પરવાનગી આપો</string>
-  <!-- The label of the deny button on a notification, this will be shown to the user when an add-on needs new permissions. Indicates the user denies the new permissions and prevents the add-on from be updated -->
-  <string name="mozac_feature_addons_updater_notification_deny_button" moz:removedIn="142" tools:ignore="UnusedResources">નામંજૂર કરો</string>
-  <!-- The tile of the notification, this will be shown to the user when an add-on needs new permissions, to be updated. %1$s is the name of the add-ons -->
-  <string name="mozac_feature_addons_updater_notification_title" moz:removedIn="142" tools:ignore="UnusedResources">%1$s પાસે નવું અપડેટ છે</string>
-  <!-- The content of the notification, this will be shown when an add-on needs new permissions, to be updated. %1$d is the amount of new permissions -->
-  <string name="mozac_feature_addons_updater_notification_content" tools:ignore="PluralsCandidate,UnusedResources" moz:removedIn="142">%1$d નવી પરવાનગી જરૂરી છે</string>
-  <!-- The content of the notification displayed when an add-on needs a new permission -->
-  <string name="mozac_feature_addons_updater_notification_content_singular" moz:removedIn="142" tools:ignore="UnusedResources">નવી પરવાનગી જરૂરી છે</string>
   <!-- Name of the "notification channel" used for displaying a notification for new supported add-ons. See https://developer.android.com/training/notify-user/channels -->
   <string name="mozac_feature_addons_supported_checker_notification_channel" tools:ignore="UnusedResources">આધારભૂત ઍડ-ઓન્સ તપાસનાર</string>
   <!-- The tile of the notification, this will be shown to the user when one newly supported add-on is available. -->
@@ -120,12 +111,8 @@
   <string name="mozac_feature_addons_successfully_installed">%1$s સફળતાપૂર્વક સ્થાપિત કર્યું</string>
   <!-- Text shown after failing to install an add-on (when add-on type isn't supported or an unknown has errored). %1$s is the add-on name. -->
   <string name="mozac_feature_addons_failed_to_install">%1$s સ્થાપિત કરવામાં નિષ્ફળ</string>
-  <!-- Text shown after successfully enabled an add-on. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_successfully_enabled" tools:ignore="UnusedResources" moz:removedIn="142">%1$s ને સફળતાપૂર્વક સક્ષમ કર્યું</string>
   <!-- Text shown after failed to enable an add-on. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_failed_to_enable">%1$s ને સક્ષમ કરવામાં નિષ્ફળ</string>
-  <!-- Text shown after successfully disabled an add-on. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_successfully_disabled" tools:ignore="UnusedResources" moz:removedIn="142">%1$s ને સફળતાપૂર્વક અક્ષમ કર્યું</string>
   <!-- Text shown after failed to disable an add-on. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_failed_to_disable">%1$s ને અક્ષમ કરવામાં નિષ્ફળ</string>
   <!-- Text shown after successfully removed an add-on. %1$s is the add-on name. -->
@@ -148,6 +135,4 @@
   <string name="mozac_feature_addons_updater_dialog_last_attempt">છેલ્લો પ્રયાસ:</string>
   <!-- Displayed in the "Status" field for the updater when an add-on has been correctly updated -->
   <string name="mozac_feature_addons_updater_dialog_status">પરિસ્થિતિ:</string>
-  <!-- Text shown in the dialog when add-on installation is completed. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_installed_dialog_title" moz:removedIn="142" tools:ignore="UnusedResources">%1$s %2$s માં ઉમેરવામાં આવ્યું છે.</string>
 </resources>

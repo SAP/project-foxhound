@@ -208,6 +208,26 @@
         );
         is(seenEvents.length, 1, "No additional click events were triggered.");
       });
+
+      add_task(async function testMozBoxButtonLabelUpdate() {
+        const FIRST_LABEL = "Old label";
+        const SECOND_LABEL = "New label";
+        const ACCESSKEY = "l";
+
+        let renderTarget = await testHelpers.renderTemplate(
+          testHelpers.templateFn({ label: FIRST_LABEL, accesskey: ACCESSKEY })
+        );
+        let button = renderTarget.firstElementChild;
+
+        button.label = SECOND_LABEL;
+        await button.updateComplete;
+
+        is(
+          button.labelEl.textContent.trim(),
+          SECOND_LABEL,
+          "Box button label updates to new value without corruption when accesskey is set."
+        );
+      });
     </script>
   </head>
   <body>

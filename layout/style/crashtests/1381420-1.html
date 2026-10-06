@@ -24,9 +24,8 @@
 window.addEventListener('load', () => {
   requestAnimationFrame(() => {
     details.open = false;
-    SpecialPowers.getDOMWindowUtils(window)
-                 .sendMouseEvent("mousemove", 100, 100, 1,
-                                 0, 1, 0);
+    SpecialPowers.wrap(window)
+                 .synthesizeMouseEvent("mousemove", 100, 100, { clickCount: 1, modifiers: 1 });
     requestAnimationFrame(() => {
       document.documentElement.classList.remove("reftest-wait");
     });

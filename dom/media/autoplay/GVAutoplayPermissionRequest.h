@@ -11,6 +11,8 @@
 class nsGlobalWindowInner;
 
 namespace mozilla::dom {
+inline constexpr const char kGVAutoplayAllowedTopic[] =
+    "geckoview-autoplay-allowed";
 
 /**
  * This class is used to provide an ability for GeckoView (GV) to allow its
@@ -71,7 +73,11 @@ class GVAutoplayPermissionRequest : public ContentPermissionRequestBase {
  */
 class GVAutoplayPermissionRequestor final {
  public:
+  // Creates async autoplay requests (eAUDIBLE and/or eINAUDIBLE) if needed.
   static void AskForPermissionIfNeeded(nsPIDOMWindowInner* aWindow);
+
+  // Returns true if an audible and/or inaudible request is unknown or pending.
+  static bool HasUnresolvedRequest(nsPIDOMWindowInner* aWindow);
 
  private:
   static bool HasEverAskForRequest(BrowsingContext* aContext,

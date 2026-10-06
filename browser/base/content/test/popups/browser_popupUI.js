@@ -146,7 +146,7 @@ add_task(async function titlebar_buttons_visibility() {
 // Test only `visibility` rule here, to verify bug 1636229 fix.
 // Other styles and ancestors can be different for each OS.
 function isVisible(element) {
-  const style = element.ownerGlobal.getComputedStyle(element);
+  const style = element.documentGlobal.getComputedStyle(element);
   return style.visibility == "visible";
 }
 

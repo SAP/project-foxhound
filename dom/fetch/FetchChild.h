@@ -2,11 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_fetchChild_h__
-#define mozilla_dom_fetchChild_h__
+#ifndef mozilla_dom_fetchChild_h_
+#define mozilla_dom_fetchChild_h_
 
-#include "mozilla/dom/AbortSignal.h"
 #include "mozilla/dom/AbortFollower.h"
+#include "mozilla/dom/AbortSignal.h"
 #include "mozilla/dom/FlippedOnce.h"
 #include "mozilla/dom/PFetchChild.h"
 #include "mozilla/dom/SerializedStackHolder.h"
@@ -39,7 +39,8 @@ class FetchChild final : public PFetchChild, public AbortFollower {
   mozilla::ipc::IPCResult RecvOnFlushConsoleReport(
       nsTArray<net::ConsoleReportCollected>&& aReports);
 
-  mozilla::ipc::IPCResult RecvOnCSPViolationEvent(const nsAString& aJSon);
+  mozilla::ipc::IPCResult RecvOnCSPViolationEvent(
+      const nsAString& aJSon, const nsAString& aReportGroupName);
 
   mozilla::ipc::IPCResult RecvOnReportPerformanceTiming(
       ResponseTiming&& aTiming);

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +7,6 @@
 
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/layers/Fence.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 #include "Units.h"
@@ -23,6 +20,7 @@ class GLContext;
 }
 
 namespace layers {
+class AndroidHardwareBuffer;
 class CompositionRecorder;
 class SyncObjectHost;
 }  // namespace layers
@@ -58,6 +56,12 @@ class RenderCompositor {
   // Returns false when waiting gpu tasks is failed.
   // It might happen when rendering context is lost.
   virtual bool WaitForGPU() { return true; }
+
+  // On platforms where putting the frame onto the screen involves work in other
+  // processes, wait until those other processes have completed that work.
+  // Specifically, on macOS, we have to send surfaces to the parent process and
+  // it will put them into CALayers, and we want to wait until that's done.
+  virtual void WaitUntilPresentationFlushed() {}
 
   // Check for and return the last completed frame.
   // @return the last (highest) completed RenderedFrameId
@@ -115,8 +119,15 @@ class RenderCompositor {
 
   virtual bool ShouldUseNativeCompositor() { return false; }
 
-  virtual bool ShouldUseLayerCompositor() { return false; }
+  virtual bool ShouldUseLayerCompositor() const { return false; }
 
+  virtual bool UseLayerCompositor() const { return false; }
+
+  // Request RenderCompositor to enable taking screenshot
+  // In WebRender layer compositor case, taking screenshot will be ready in at
+  // most one WebRender composition.
+  //
+  // @return true if taking screenshot is ready.
   virtual bool EnableAsyncScreenshot() { return false; }
 
   // Interface for wr::Compositor
@@ -167,13 +178,22 @@ class RenderCompositor {
                                 size_t aNumDirtyRects,
                                 const wr::DeviceIntRect* aOpaqueRects,
                                 size_t aNumOpaqueRects) {}
-  virtual void EnableNativeCompositor(bool aEnable) {}
   virtual void DeInit() {}
   // Overrides any of the default compositor capabilities for behavior this
   // compositor might require.
   virtual void GetCompositorCapabilities(CompositorCapabilities* aCaps);
 
   virtual void GetWindowVisibility(WindowVisibility* aVisibility);
+
+  // Called from WebRender Renderer::composite_simple().
+  // WindowProperties is used to control how to composite with WebRender layer
+  // compositor.
+  //
+  // @param WindowProperties::is_opaque Notify if rendering window is opaque.
+  // WebRender might use this to optimize layer allocation.
+  // @param WindowProperties::enable_screenshot Requests to WebRender to use
+  // only one content layer during composite for taking screenshot except debug
+  // layer.
   virtual void GetWindowProperties(WindowProperties* aProperties);
 
   // Interface for partial present
@@ -212,6 +232,13 @@ class RenderCompositor {
     return false;
   }
   virtual bool MaybeProcessScreenshotQueue() { return false; }
+#ifdef MOZ_WIDGET_ANDROID
+  virtual bool MaybeCaptureScreenPixels(
+      const gfx::IntRect& aSourceRect,
+      RefPtr<layers::AndroidHardwareBuffer> aHardwareBuffer) {
+    return false;
+  }
+#endif
 
   virtual RefPtr<layers::Fence> GetAndResetReleaseFence() { return nullptr; }
 

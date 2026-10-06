@@ -63,7 +63,7 @@ module.exports = function (config) {
     coverageIstanbulReporter: {
       reports: ["lcov", "text-summary"], // for some reason "lcov" reallys means "lcov" and "html"
       "report-config": {
-        // so the full m-c path gets printed; needed for https://coverage.moz.tools/ integration
+        // so the full m-c path gets printed; needed for Searchfox integration
         lcov: {
           projectRoot: "../../..",
         },
@@ -156,7 +156,7 @@ module.exports = function (config) {
             /**
              * WallpaperFeed.sys.mjs is tested via an xpcshell test
              */
-            "lib/WallpaperFeed.sys.mjs": {
+            "lib/Wallpapers/WallpaperFeed.sys.mjs": {
               statements: 0,
               lines: 0,
               functions: 0,
@@ -175,20 +175,22 @@ module.exports = function (config) {
               functions: 0,
               branches: 0,
             },
-            "content-src/components/DiscoveryStreamComponents/FeatureHighlight/WallpaperFeatureHighlight.jsx":
-              {
-                statements: 0,
-                lines: 0,
-                functions: 0,
-                branches: 0,
-              },
-            "content-src/components/DiscoveryStreamComponents/FeatureHighlight/DownloadMobilePromoHighlight.jsx":
-              {
-                statements: 0,
-                lines: 0,
-                functions: 0,
-                branches: 0,
-              },
+            /**
+             * Logo.jsx and its variant components are tested via Jest
+             * (see test/jest/content-src/components/Logo.test.jsx).
+             */
+            "content-src/components/Logo/Logo.jsx": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            "content-src/components/Logo/variants/*.jsx": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
             "content-src/components/DiscoveryStreamComponents/FeatureHighlight/FollowSectionButtonHighlight.jsx":
               {
                 statements: 88,
@@ -200,6 +202,14 @@ module.exports = function (config) {
                 statements: 88,
                 lines: 88,
                 functions: 80,
+              },
+            // for all other components in FeatureHighlight that dont have bespoke functionality
+            "content-src/components/DiscoveryStreamComponents/FeatureHighlight/!(FeatureHighlight).jsx":
+              {
+                statements: 0,
+                lines: 0,
+                functions: 0,
+                branches: 0,
               },
             "content-src/components/DiscoveryStreamComponents/ReportContent/ReportContent.jsx":
               {
@@ -218,31 +228,38 @@ module.exports = function (config) {
                 functions: 0,
                 branches: 0,
               },
-            /**
-             * Tests for inline topic selection are coming in a follow-up task
-             */
             "content-src/components/DiscoveryStreamComponents/InterestPicker/*.jsx":
               {
-                statements: 0,
-                lines: 0,
-                functions: 0,
-                branches: 0,
+                statements: 40,
+                lines: 39,
+                functions: 37,
+                branches: 25,
               },
             "content-src/components/DiscoveryStreamComponents/DSCard/DSCard.jsx":
               {
                 statements: 94.94,
                 lines: 94.84,
                 functions: 9.91,
-                branches: 71.69,
+                branches: 70.72,
               },
             "content-src/components/DiscoveryStreamComponents/CardSections/CardSections.jsx":
               {
-                statements: 83.82,
-                lines: 83.33,
+                statements: 83.11,
+                lines: 82.52,
                 functions: 79.31,
                 branches: 52.8,
               },
             "content-src/components/DiscoveryStreamComponents/SectionContextMenu/SectionContextMenu.jsx":
+              {
+                statements: 0,
+                lines: 0,
+                functions: 0,
+                branches: 0,
+              },
+            /**
+             * SectionFollowButton.jsx is covered by Jest tests
+             */
+            "content-src/components/DiscoveryStreamComponents/SectionFollowButton/SectionFollowButton.jsx":
               {
                 statements: 0,
                 lines: 0,
@@ -262,13 +279,17 @@ module.exports = function (config) {
                 lines: 84,
                 functions: 83,
               },
-            "content-src/components/DiscoveryStreamComponents/DSThumbsUpDownButtons/DSThumbsUpDownButtons.jsx":
+            "content-src/components/DiscoveryStreamComponents/BriefingCard/BriefingCard.jsx":
               {
-                statements: 75,
-                lines: 75,
-                branches: 50,
+                statements: 92.31,
+                branches: 66.67,
+                functions: 90,
+                lines: 94.59,
               },
-            "content-src/components/DiscoveryStreamComponents/TrendingSearches/TrendingSearches.jsx":
+            /**
+             * PromoCard currently has no functionality and is a placeholder component
+             */
+            "content-src/components/DiscoveryStreamComponents/PromoCard/PromoCard.jsx":
               {
                 statements: 0,
                 lines: 0,
@@ -279,7 +300,7 @@ module.exports = function (config) {
               statements: 80.95,
               lines: 80.95,
               functions: 71.43,
-              branches: 71,
+              branches: 70.9,
             },
             /**
              * WallpaperCategories.jsx is tested via an xpcshell test
@@ -300,16 +321,97 @@ module.exports = function (config) {
               functions: 0,
               branches: 0,
             },
-            /**
-             * Weather.jsx is tested via an xpcshell test
-             */
-            "content-src/components/Weather/*.jsx": {
+            "content-src/components/Weather/Weather.jsx": {
+              statements: 48,
+              lines: 49,
+              functions: 31.2,
+              branches: 31.2,
+            },
+            "content-src/components/Widgets/WeatherForecast/WeatherForecast.jsx":
+              {
+                statements: 0,
+                lines: 0,
+                functions: 0,
+                branches: 0,
+              },
+            // Coverage for this component lives in Jest (test/jest/content-src/components/DiscoveryStreamComponents/InterestPicker.test.jsx)
+            "content-src/components/Nova/InterestPicker/InterestPicker.jsx": {
               statements: 0,
               lines: 0,
               functions: 0,
               branches: 0,
             },
-            "content-src/components/Widgets/FocusTimer/FocusTimer.jsx": {
+            // Coverage for this component lives in Jest (test/jest/content-src/components/Widgets/Weather.test.jsx)
+            "content-src/components/Widgets/Weather/Weather.jsx": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            // Coverage for this component lives in Jest (test/jest/content-src/components/Widgets/WidgetsSidebar.test.jsx)
+            "content-src/components/Widgets/WidgetsSidebar.jsx": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            // Coverage for this module lives in Jest (test/jest/content-src/components/Widgets/WidgetsRegistry.test.jsx)
+            "common/WidgetsRegistry.mjs": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            // Coverage for this component lives in Jest
+            "content-src/components/Widgets/WidgetsComponentRegistry.jsx": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            // Coverage for this component lives in Jest (test/jest/content-src/components/Widgets/MoveSubmenu.test.jsx)
+            "content-src/components/Widgets/MoveSubmenu.jsx": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            // Coverage for this component lives in Jest (test/jest/content-src/components/Widgets/Clocks.test.jsx)
+            "content-src/components/Widgets/Clocks/Clocks.jsx": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            // Coverage for this component lives in Jest (test/jest/content-src/components/Widgets/AddClockForm.test.jsx)
+            "content-src/components/Widgets/Clocks/AddClockForm.jsx": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            // Coverage for this component lives in Jest (test/jest/content-src/components/Widgets/EditClocksPanel.test.jsx)
+            "content-src/components/Widgets/Clocks/EditClocksPanel.jsx": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            // Coverage for this component lives in Jest (test/jest/content-src/components/Widgets/ClocksRow.test.jsx)
+            "content-src/components/Widgets/Clocks/ClocksRow.jsx": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            // Coverage for this module lives in Jest (test/jest/content-src/components/Widgets/ClocksHelpers.test.jsx)
+            "content-src/components/Widgets/Clocks/ClocksHelpers.mjs": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            "content-src/components/Weather/LocationSearch.jsx": {
               statements: 0,
               lines: 0,
               functions: 0,
@@ -321,17 +423,29 @@ module.exports = function (config) {
               functions: 0,
               branches: 0,
             },
+            "content-src/components/CustomizeMenu/SectionsMgmtPanel/*.jsx": {
+              statements: 86,
+              lines: 76,
+              functions: 86,
+              branches: 76,
+            },
+            "content-src/components/CustomizeMenu/ContentSection/*.jsx": {
+              statements: 82,
+              lines: 82,
+              functions: 100,
+              branches: 67,
+            },
             "content-src/components/CustomizeMenu/**/*.jsx": {
-              statements: 0,
-              lines: 0,
-              functions: 0,
-              branches: 0,
+              statements: 68,
+              lines: 66,
+              functions: 80,
+              branches: 16,
             },
             "content-src/components/CustomizeMenu/*.jsx": {
-              statements: 0,
-              lines: 0,
-              functions: 0,
-              branches: 0,
+              statements: 98,
+              lines: 98,
+              functions: 98,
+              branches: 98,
             },
             "content-src/lib/link-menu-options.js": {
               statements: 96,
@@ -341,12 +455,74 @@ module.exports = function (config) {
             },
             "content-src/lib/utils.jsx": {
               branches: 60,
+              statements: 95.56,
+              lines: 95.4,
+              functions: 92.86,
             },
             "content-src/components/MessageWrapper/MessageWrapper.jsx": {
               lines: 50,
               statements: 51.1,
               functions: 31.2,
               branches: 31.2,
+            },
+            "content-src/components/Search/Search.jsx": {
+              statements: 38,
+              lines: 39,
+              functions: 28,
+              branches: 25,
+            },
+            "content-src/components/Widgets/SportsWidget/SportsWidget.jsx": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            // Coverage for this component lives in Jest (test/jest/content-src/components/Widgets/SportsMatchRow.test.jsx)
+            "content-src/components/Widgets/SportsWidget/SportsMatchRow.jsx": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            // Coverage for this component lives in Jest (test/jest/content-src/components/Widgets/WatchLiveModal.test.jsx)
+            "content-src/components/Widgets/SportsWidget/WatchLiveModal.jsx": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            // Coverage for this hook lives in Jest (test/jest/content-src/components/Widgets/useLocalizedTeamNames.test.jsx)
+            "content-src/components/Widgets/SportsWidget/useLocalizedTeamNames.jsx":
+              {
+                statements: 0,
+                lines: 0,
+                functions: 0,
+                branches: 0,
+              },
+            // Coverage for this component lives in Jest (test/jest/content-src/components/Widgets/SportsWidget.test.jsx)
+            "content-src/components/Widgets/SportsWidget/LivePagination.jsx": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            "content-src/components/Widgets/Widgets.jsx": {
+              statements: 51.1,
+              lines: 52,
+              functions: 31.2,
+              branches: 31.2,
+            },
+            "content-src/components/Widgets/useWidgetDnD.jsx": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            "content-src/components/Widgets/useMouseDnD.jsx": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
             },
             "content-src/components/**/*.jsx": {
               statements: 51.1,
@@ -358,7 +534,17 @@ module.exports = function (config) {
         },
       },
     },
-    files: [PATHS.testEntryFile],
+    files: [
+      // Load React 16 from toolkit vendor for enzyme compatibility, instead of React19
+      "../../../toolkit/content/vendor/react/react.js",
+      "../../../toolkit/content/vendor/react/react-dom.js",
+      "../../../toolkit/content/vendor/react/react-dom-server.js",
+      "test/vendor/react-dom-test-utils.js",
+      "../../../toolkit/content/vendor/react/prop-types.js",
+      "../../../toolkit/content/vendor/react/react-redux.js",
+      "../../../toolkit/content/vendor/react/redux.js",
+      PATHS.testEntryFile,
+    ],
     preprocessors,
     webpack: {
       mode: "none",
@@ -404,14 +590,43 @@ module.exports = function (config) {
         new webpack.DefinePlugin({
           "process.env.NODE_ENV": JSON.stringify("development"),
         }),
+
+        // Replace react-redux imports with React 16-compatible version from toolkit
+        new webpack.NormalModuleReplacementPlugin(
+          /^react-redux$/,
+          path.resolve(
+            __dirname,
+            "../../../toolkit/content/vendor/react/react-redux.js"
+          )
+        ),
       ],
-      externals: {
-        // enzyme needs these for backwards compatibility with 0.13.
-        // see https://github.com/airbnb/enzyme/blob/master/docs/guides/webpack.md#using-enzyme-with-webpack
-        "react/addons": true,
-        "react/lib/ReactContext": true,
-        "react/lib/ExecutionEnvironment": true,
-      },
+      externals: [
+        // Use React 16 from toolkit vendor files for enzyme compatibility
+        {
+          react: "React",
+          "react-dom": "ReactDOM",
+          "react-dom/client": "ReactDOM",
+          "react-dom/server": "ReactDOMServer",
+          "react-dom/server.browser": "ReactDOMServer",
+          "react-dom/test-utils": "ReactTestUtils",
+          "prop-types": "PropTypes",
+          "react-redux": "ReactRedux",
+          redux: "Redux",
+          // enzyme needs these for backwards compatibility with 0.13.
+          // see https://github.com/airbnb/enzyme/blob/master/docs/guides/webpack.md#using-enzyme-with-webpack
+          "react/addons": true,
+          "react/lib/ReactContext": true,
+          "react/lib/ExecutionEnvironment": true,
+        },
+        // Exclude use-sync-external-store completely
+        // eslint-disable-next-line consistent-return
+        function ({ request }, callback) {
+          if (/^use-sync-external-store/.test(request)) {
+            return callback(null, "var {}");
+          }
+          callback();
+        },
+      ],
       module: {
         rules: [
           {

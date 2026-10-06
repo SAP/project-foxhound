@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +9,7 @@
 #include <unordered_set>
 
 #include "mozilla/layers/GeckoContentController.h"
+#include "mozilla/layers/GeckoContentControllerTypes.h"
 #include "mozilla/layers/RepaintRequest.h"
 #include "mozilla/layers/ScrollableLayerGuid.h"
 #include "nsThreadUtils.h"
@@ -22,6 +21,8 @@ class GeckoContentController;
 
 // A runnable invoked in nsRefreshDriver::Tick as an early runnable.
 class APZTaskRunnable final : public Runnable {
+  using APZStateChange = GeckoContentController_APZStateChange;
+
  public:
   explicit APZTaskRunnable(GeckoContentController* aController)
       : Runnable("RepaintRequestRunnable"),
@@ -36,6 +37,9 @@ class APZTaskRunnable final : public Runnable {
       // one will be discarded.
       void
       QueueRequest(const RepaintRequest& aRequest);
+  void QueueAPZStateChange(const ScrollableLayerGuid& aGuid,
+                           const APZStateChange& aChange, const int& aArg,
+                           Maybe<uint64_t> aInputBlockId);
   void QueueFlushCompleteNotification();
   void Revoke() {
     mController = nullptr;
@@ -67,13 +71,20 @@ class APZTaskRunnable final : public Runnable {
       }
     };
   };
+  struct APZStateChangeRequest {
+    ScrollableLayerGuid mGuid;
+    APZStateChange mChange;
+    int mArg;
+    Maybe<uint64_t> mInputBlockId;
+  };
+  using Request = mozilla::Variant<RepaintRequest, APZStateChangeRequest>;
   using RepaintRequests =
       std::unordered_set<RepaintRequestKey, RepaintRequestKey::HashFn>;
   // We have an unordered_map and a deque for pending RepaintRequests. The
   // unordered_map is for quick lookup and the deque is for processing the
   // pending RepaintRequests in the order we queued.
   RepaintRequests mPendingRepaintRequestMap;
-  std::deque<RepaintRequest> mPendingRepaintRequestQueue;
+  std::deque<Request> mPendingRequestQueue;
   // This APZTaskRunnable instance is per APZChild instance, which means its
   // lifetime is tied to the APZChild instance, thus this APZTaskRunnable
   // instance will be (re-)used for different pres shells so we'd need to

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -197,6 +195,11 @@ nsresult SnappyFrameUtils::ParseCompressedData(char* aDest, size_t aDestLength,
   *aBytesWrittenOut = 0;
   *aBytesReadOut = 0;
   size_t offset = 0;
+
+  // A CompressedData chunk must contain at least the masked CRC.
+  if (NS_WARN_IF(aDataLength < kCRCLength)) {
+    return NS_ERROR_CORRUPTED_CONTENT;
+  }
 
   uint32_t readCrc = LittleEndian::readUint32(aData + offset);
   offset += kCRCLength;

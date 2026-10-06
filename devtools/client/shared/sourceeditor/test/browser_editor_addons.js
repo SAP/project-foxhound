@@ -17,7 +17,7 @@ async function test() {
   ok(doc.querySelector(".cm-trailingspace"));
 
   // foldcode.js and foldgutter.js
-  ed.setMode(Editor.modes.js);
+  ed.setMode(Editor.modes.javascript);
   ed.setText("function main() {\nreturn 'Hello, World!';\n}");
   executeSoon(() => testFold(doc, ed, win));
 }

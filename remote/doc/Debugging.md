@@ -48,5 +48,5 @@ This enables `LogLevel::Debug` level information and places all
 output in the file service.log in your current working directory.
 
 [preference]: Prefs.md
-[prlog.h]: https://searchfox.org/mozilla-central/source/nsprpub/pr/include/prlog.h
+[prlog.h]: https://searchfox.org/firefox-main/source/nsprpub/pr/include/prlog.h
 [wiki]: https://wiki.mozilla.org/Remote/Developer_Resources

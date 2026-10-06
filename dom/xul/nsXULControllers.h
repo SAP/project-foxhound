@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,13 +8,13 @@
 
 */
 
-#ifndef nsXULControllers_h__
-#define nsXULControllers_h__
+#ifndef nsXULControllers_h_
+#define nsXULControllers_h_
 
 #include "nsCOMPtr.h"
-#include "nsTArray.h"
-#include "nsIControllers.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsIControllers.h"
+#include "nsTArray.h"
 
 /* non-XPCOM class for holding controllers and their IDs */
 class nsXULControllerData final {
@@ -35,7 +34,7 @@ class nsXULControllers final : public nsIControllers {
  public:
   nsXULControllers();
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsXULControllers, nsIControllers)
   NS_DECL_NSICONTROLLERS
 
@@ -48,4 +47,4 @@ class nsXULControllers final : public nsIControllers {
   uint32_t mCurControllerID;
 };
 
-#endif  // nsXULControllers_h__
+#endif  // nsXULControllers_h_

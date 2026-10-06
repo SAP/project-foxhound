@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,6 +24,8 @@ RenderBufferTextureHost::RenderBufferTextureHost(
   switch (mDescriptor.type()) {
     case layers::BufferDescriptor::TYCbCrDescriptor: {
       const layers::YCbCrDescriptor& ycbcr = mDescriptor.get_YCbCrDescriptor();
+      MOZ_ASSERT(gfx::IntRect(gfx::IntPoint(), ycbcr.ySize())
+                     .Contains(ycbcr.display()));
       mSize = ycbcr.display().Size();
       mFormat = gfx::SurfaceFormat::YUV420;
       break;
@@ -58,11 +58,15 @@ wr::WrExternalImage RenderBufferTextureHost::Lock(uint8_t aChannelIndex,
       return InvalidToWrExternalImage();
     }
     if (mFormat != gfx::SurfaceFormat::YUV420) {
+      auto stride = layers::ImageDataSerializer::GetRGBStride(
+          mDescriptor.get_RGBDescriptor());
+      if (NS_WARN_IF(stride.isNothing())) {
+        gfxCriticalNote << "Invalid stride";
+        return InvalidToWrExternalImage();
+      }
+
       mSurface = gfx::Factory::CreateWrappingDataSourceSurface(
-          GetBuffer(),
-          layers::ImageDataSerializer::GetRGBStride(
-              mDescriptor.get_RGBDescriptor()),
-          mSize, mFormat);
+          GetBuffer(), stride.value(), mSize, mFormat);
       if (NS_WARN_IF(!mSurface)) {
         gfxCriticalNote << "DataSourceSurface is null";
         return InvalidToWrExternalImage();
@@ -170,9 +174,13 @@ size_t RenderBufferTextureHost::GetPlaneCount() const {
 gfx::SurfaceFormat RenderBufferTextureHost::GetFormat() const {
   switch (mDescriptor.type()) {
     case layers::BufferDescriptor::TYCbCrDescriptor:
-      return gfx::SurfaceFormat::YUV420;
-    default:
+      return mFormat;
+    case layers::BufferDescriptor::TRGBDescriptor:
       return mDescriptor.get_RGBDescriptor().format();
+    default:
+      gfxCriticalError() << "Bad buffer host descriptor "
+                         << (int)mDescriptor.type();
+      MOZ_CRASH("GFX: Bad descriptor");
   }
 }
 
@@ -191,6 +199,19 @@ gfx::YUVRangedColorSpace RenderBufferTextureHost::GetYUVColorSpace() const {
       return gfx::GetYUVRangedColorSpace(mDescriptor.get_YCbCrDescriptor());
     default:
       return gfx::YUVRangedColorSpace::Default;
+  }
+}
+
+gfx::TransferFunction RenderBufferTextureHost::GetTransferFunction() const {
+  switch (mDescriptor.type()) {
+    case layers::BufferDescriptor::TYCbCrDescriptor:
+      return mDescriptor.get_YCbCrDescriptor().transferFunction();
+    case layers::BufferDescriptor::TRGBDescriptor:
+      return mDescriptor.get_RGBDescriptor().transferFunction();
+    default:
+      gfxCriticalError() << "Bad buffer host descriptor "
+                         << (int)mDescriptor.type();
+      MOZ_CRASH("GFX: Bad descriptor");
   }
 }
 
@@ -235,7 +256,12 @@ bool RenderBufferTextureHost::MapPlane(RenderCompositor* aCompositor,
     default: {
       const layers::RGBDescriptor& desc = mDescriptor.get_RGBDescriptor();
       aPlaneInfo.mData = mBuffer;
-      aPlaneInfo.mStride = layers::ImageDataSerializer::GetRGBStride(desc);
+      auto stride = layers::ImageDataSerializer::GetRGBStride(desc);
+      if (stride.isNothing()) {
+        gfxCriticalNote << "Invalid stride";
+        return false;
+      }
+      aPlaneInfo.mStride = stride.value();
       aPlaneInfo.mSize = desc.size();
       break;
     }

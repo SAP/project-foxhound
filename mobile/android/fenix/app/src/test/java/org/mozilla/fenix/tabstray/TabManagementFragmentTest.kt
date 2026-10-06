@@ -5,10 +5,6 @@
 package org.mozilla.fenix.tabstray
 
 import android.content.Context
-import android.content.Intent
-import android.content.res.Configuration
-import android.view.LayoutInflater
-import android.view.View
 import androidx.navigation.NavController
 import io.mockk.Runs
 import io.mockk.every
@@ -16,9 +12,6 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.spyk
 import io.mockk.verify
-import mozilla.components.browser.state.state.ContentState
-import mozilla.components.browser.state.state.TabSessionState
-import mozilla.components.browser.storage.sync.Tab
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -28,21 +21,22 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.NavGraphDirections
-import org.mozilla.fenix.databinding.FragmentTabTrayDialogBinding
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.fenix.helpers.MockkRetryTestRule
 import org.mozilla.fenix.home.HomeScreenViewModel
 import org.mozilla.fenix.navigation.NavControllerProvider
-import org.mozilla.fenix.settings.biometric.BiometricUtils
+import org.mozilla.fenix.tabstray.data.createTab
+import org.mozilla.fenix.tabstray.redux.state.Page
+import org.mozilla.fenix.tabstray.redux.state.TabsTrayState
 import org.mozilla.fenix.tabstray.ui.TabManagementFragment
+import org.mozilla.fenix.utils.Settings
 import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class TabManagementFragmentTest {
     private lateinit var context: Context
     private lateinit var fragment: TabManagementFragment
-    private lateinit var tabsTrayDialogBinding: FragmentTabTrayDialogBinding
 
     @get:Rule
     val mockkRule = MockkRetryTestRule()
@@ -53,25 +47,11 @@ class TabManagementFragmentTest {
     @Before
     fun setup() {
         context = mockk(relaxed = true)
-        val inflater = LayoutInflater.from(testContext)
-        tabsTrayDialogBinding = FragmentTabTrayDialogBinding.inflate(inflater)
 
         fragment = spyk(TabManagementFragment())
-        fragment._tabsTrayDialogBinding = tabsTrayDialogBinding
         every { fragment.context } returns context
         every { fragment.viewLifecycleOwner } returns mockk(relaxed = true)
         every { fragment.view } returns mockk()
-    }
-
-    @Test
-    fun `WHEN dismissTabsTrayAndNavigateHome is called with a sessionId THEN it navigates to home to delete that sessions and dismisses the tray`() {
-        every { fragment.navigateToHomeAndDeleteSession(any(), any()) } just Runs
-        every { fragment.dismissTabsTray() } just Runs
-
-        fragment.dismissTabsTrayAndNavigateHome("test")
-
-        verify { fragment.navigateToHomeAndDeleteSession("test", any()) }
-        verify { fragment.dismissTabsTray() }
     }
 
     @Test
@@ -93,154 +73,13 @@ class TabManagementFragmentTest {
     }
 
     @Test
-    fun `WHEN dismissTabsTray is called THEN it dismisses the tray`() {
-        every { fragment.dismissAllowingStateLoss() } just Runs
+    fun `WHEN dismissTabManager is called THEN it dismisses the tab manager`() {
+        val navController: NavController = mockk(relaxed = true)
         every { fragment.recordBreadcrumb(any()) } just Runs
 
-        fragment.dismissTabsTray()
+        fragment.dismissTabManager(navController = navController)
 
-        verify { fragment.dismissAllowingStateLoss() }
-    }
-
-    @Test
-    fun `WHEN onConfigurationChanged is called THEN it delegates the tray behavior manager to update the tray`() {
-        val trayBehaviorManager: TabSheetBehaviorManager = mockk(relaxed = true)
-        fragment.trayBehaviorManager = trayBehaviorManager
-        val newConfiguration = Configuration()
-        every { context.settings().gridTabView } returns false
-
-        fragment.onConfigurationChanged(newConfiguration)
-
-        verify { trayBehaviorManager.updateDependingOnOrientation(newConfiguration.orientation) }
-    }
-
-    @Test
-    fun `GIVEN a list of tabs WHEN a tab is present with an ID THEN the index is returned`() {
-        val tab1 = TabSessionState(
-            id = "tab1",
-            content = ContentState(
-                url = "https://mozilla.org",
-                private = false,
-            ),
-        )
-        val tab2 = TabSessionState(
-            id = "tab2",
-            content = ContentState(
-                url = "https://mozilla.org",
-                private = false,
-            ),
-        )
-        val tab3 = TabSessionState(
-            id = "tab3",
-            content = ContentState(
-                url = "https://mozilla.org",
-                private = false,
-            ),
-        )
-        val tabsList = listOf(
-            tab1,
-            tab2,
-            tab3,
-        )
-        val position = fragment.getTabPositionFromId(tabsList, "tab2")
-        assertEquals(1, position)
-    }
-
-    // tests for onTabPageClick
-    @Test
-    fun `GIVEN private screen is locked WHEN a private tab is clicked THEN the biometrics prompt is shown and the tabs tray page selected`() {
-        var isBiometricsPromptCalled = false
-        var isTabsTrayInteractorCalled = false
-        val biometricUtils = buildTestBiometricUtils {
-            isBiometricsPromptCalled = true
-        }
-        val testInteractor = buildTestInteractor(
-            onTabPageClicked = {
-                isTabsTrayInteractorCalled = true
-            },
-        )
-
-        fragment.onTabPageClick(
-            biometricUtils = biometricUtils,
-            tabsTrayInteractor = testInteractor,
-            page = Page.PrivateTabs,
-            isPrivateScreenLocked = true,
-        )
-
-        assertFalse(isTabsTrayInteractorCalled)
-        assertTrue(isBiometricsPromptCalled)
-    }
-
-    @Test
-    fun `GIVEN private screen is unlocked WHEN a private tab is clicked THEN the biometrics prompt is not shown and the tabs tray page selected`() {
-        var isBiometricsPromptCalled = false
-        var isTabsTrayInteractorCalled = false
-        val biometricUtils = buildTestBiometricUtils {
-            isBiometricsPromptCalled = true
-        }
-        val testInteractor = buildTestInteractor(
-            onTabPageClicked = {
-                isTabsTrayInteractorCalled = true
-            },
-        )
-
-        fragment.onTabPageClick(
-            biometricUtils = biometricUtils,
-            tabsTrayInteractor = testInteractor,
-            page = Page.PrivateTabs,
-            isPrivateScreenLocked = false,
-        )
-
-        assertTrue(isTabsTrayInteractorCalled)
-        assertFalse(isBiometricsPromptCalled)
-    }
-
-    @Test
-    fun `GIVEN private screen is locked WHEN a regular tab is clicked THEN the biometrics prompt is not shown and the tabs tray page selected`() {
-        var isBiometricsPromptCalled = false
-        var isTabsTrayInteractorCalled = false
-        val biometricUtils = buildTestBiometricUtils {
-            isBiometricsPromptCalled = true
-        }
-        val testInteractor = buildTestInteractor(
-            onTabPageClicked = {
-                isTabsTrayInteractorCalled = true
-            },
-        )
-
-        fragment.onTabPageClick(
-            biometricUtils = biometricUtils,
-            tabsTrayInteractor = testInteractor,
-            page = Page.NormalTabs,
-            isPrivateScreenLocked = true,
-        )
-
-        assertTrue(isTabsTrayInteractorCalled)
-        assertFalse(isBiometricsPromptCalled)
-    }
-
-    @Test
-    fun `GIVEN private screen is unlocked WHEN a regular tab is clicked THEN the biometrics prompt is not shown and the tabs tray page selected`() {
-        var isBiometricsPromptCalled = false
-        var isTabsTrayInteractorCalled = false
-        val biometricUtils = buildTestBiometricUtils {
-            isBiometricsPromptCalled = true
-        }
-        val testInteractor = buildTestInteractor(
-            onTabPageClicked = {
-                isTabsTrayInteractorCalled = true
-            },
-        )
-
-        fragment.onTabPageClick(
-            biometricUtils = biometricUtils,
-            tabsTrayInteractor = testInteractor,
-            page = Page.NormalTabs,
-            isPrivateScreenLocked = false,
-        )
-
-        assertTrue(isTabsTrayInteractorCalled)
-        assertFalse(isBiometricsPromptCalled)
+        verify { navController.popBackStack() }
     }
 
     @Test
@@ -279,6 +118,123 @@ class TabManagementFragmentTest {
         assertFalse(result)
     }
 
+    @Test
+    fun `GIVEN transition animation setting is disabled THEN tabManagerOpeningAnimationEnabled returns false`() {
+        val mockSettings = mockk<Settings>()
+        every { mockSettings.tabManagerOpeningAnimationEnabled } returns false
+        every { context.components.settings } returns mockSettings
+        assertFalse(
+            fragment.shouldPerformTransitionAnimation(
+                selectedPage = Page.NormalTabs,
+                mode = TabsTrayState.Mode.Normal,
+                tabState = fakeTab(isPrivate = false),
+            ),
+        )
+    }
+
+    @Test
+    fun `GIVEN TabTray mode is multi-select THEN tabManagerOpeningAnimationEnabled returns false`() {
+        val mockSettings = mockk<Settings>()
+        every { mockSettings.tabManagerOpeningAnimationEnabled } returns true
+        every { context.components.settings } returns mockSettings
+        assertFalse(
+            fragment.shouldPerformTransitionAnimation(
+                selectedPage = Page.NormalTabs,
+                mode = TabsTrayState.Mode.Select(setOf(fakeTab(isPrivate = false))),
+                tabState = fakeTab(isPrivate = false),
+            ),
+        )
+    }
+
+    @Test
+    fun `GIVEN transition to normal tab on normal TabsTray page THEN tabManagerOpeningAnimationEnabled returns true`() {
+        val mockSettings = mockk<Settings>()
+        every { mockSettings.tabManagerOpeningAnimationEnabled } returns true
+        every { context.components.settings } returns mockSettings
+        assertTrue(
+            fragment.shouldPerformTransitionAnimation(
+                selectedPage = Page.NormalTabs,
+                mode = TabsTrayState.Mode.Normal,
+                tabState = fakeTab(isPrivate = false),
+            ),
+        )
+    }
+
+    @Test
+    fun `GIVEN transition to private tab on private TabsTray page THEN tabManagerOpeningAnimationEnabled returns true`() {
+        val mockSettings = mockk<Settings>()
+        every { mockSettings.tabManagerOpeningAnimationEnabled } returns true
+        every { context.components.settings } returns mockSettings
+        assertTrue(
+            fragment.shouldPerformTransitionAnimation(
+                selectedPage = Page.PrivateTabs,
+                mode = TabsTrayState.Mode.Normal,
+                tabState = fakeTab(isPrivate = true),
+            ),
+        )
+    }
+
+    @Test
+    fun `GIVEN transition to private tab on normal TabsTray page THEN tabManagerOpeningAnimationEnabled returns false`() {
+        val mockSettings = mockk<Settings>()
+        every { mockSettings.tabManagerOpeningAnimationEnabled } returns true
+        every { context.components.settings } returns mockSettings
+        assertFalse(
+            fragment.shouldPerformTransitionAnimation(
+                selectedPage = Page.NormalTabs,
+                mode = TabsTrayState.Mode.Normal,
+                tabState = fakeTab(isPrivate = true),
+            ),
+        )
+    }
+
+    @Test
+    fun `GIVEN transition to normal tab on private TabsTray page THEN tabManagerOpeningAnimationEnabled returns false`() {
+        val mockSettings = mockk<Settings>()
+        every { mockSettings.tabManagerOpeningAnimationEnabled } returns true
+        every { context.components.settings } returns mockSettings
+        assertFalse(
+            fragment.shouldPerformTransitionAnimation(
+                selectedPage = Page.PrivateTabs,
+                mode = TabsTrayState.Mode.Normal,
+                tabState = fakeTab(isPrivate = false),
+            ),
+        )
+    }
+
+    @Test
+    fun `GIVEN transition to normal tab on synced TabsTray page THEN tabManagerOpeningAnimationEnabled returns false`() {
+        val mockSettings = mockk<Settings>()
+        every { mockSettings.tabManagerOpeningAnimationEnabled } returns true
+        every { context.components.settings } returns mockSettings
+        assertFalse(
+            fragment.shouldPerformTransitionAnimation(
+                selectedPage = Page.SyncedTabs,
+                mode = TabsTrayState.Mode.Normal,
+                tabState = fakeTab(isPrivate = false),
+            ),
+        )
+    }
+
+    @Test
+    fun `GIVEN transition to private tab on synced TabsTray page THEN tabManagerOpeningAnimationEnabled returns false`() {
+        val mockSettings = mockk<Settings>()
+        every { mockSettings.tabManagerOpeningAnimationEnabled } returns true
+        every { context.components.settings } returns mockSettings
+        assertFalse(
+            fragment.shouldPerformTransitionAnimation(
+                selectedPage = Page.SyncedTabs,
+                mode = TabsTrayState.Mode.Normal,
+                tabState = fakeTab(isPrivate = true),
+            ),
+        )
+    }
+
+    private fun fakeTab(isPrivate: Boolean) = createTab(
+        url = "www.mozilla.org",
+        private = isPrivate,
+    )
+
     private fun testShouldShowLockPbmBanner(
         isPrivateMode: Boolean = true,
         hasPrivateTabs: Boolean = true,
@@ -294,52 +250,4 @@ class TabManagementFragmentTest {
             shouldShowBanner = shouldShowBanner,
         )
     }
-}
-
-private fun buildTestBiometricUtils(
-    onBiometricsPromptCalled: () -> Unit,
-) = object : BiometricUtils {
-    override fun bindBiometricsCredentialsPromptOrShowWarning(
-        titleRes: Int,
-        view: View,
-        onShowPinVerification: (Intent) -> Unit,
-        onAuthSuccess: () -> Unit,
-        onAuthFailure: () -> Unit,
-    ) {
-        onBiometricsPromptCalled()
-    }
-}
-
-private fun buildTestInteractor(
-    onTabPageClicked: () -> Unit,
-) = object : TabsTrayInteractor {
-    override fun onTabPageClicked(page: Page) {
-        onTabPageClicked()
-    }
-
-    // no-op
-    override fun onDeletePrivateTabWarningAccepted(tabId: String, source: String?) {}
-    override fun onDeleteSelectedTabsClicked() {}
-    override fun onForceSelectedTabsAsInactiveClicked() {}
-    override fun onBookmarkSelectedTabsClicked() {}
-    override fun onAddSelectedTabsToCollectionClicked() {}
-    override fun onShareSelectedTabs() {}
-    override fun onTabsMove(tabId: String, targetId: String?, placeAfter: Boolean) {}
-    override fun onRecentlyClosedClicked() {}
-    override fun onMediaClicked(tab: TabSessionState) {}
-    override fun onTabLongClicked(tab: TabSessionState): Boolean { return false }
-    override fun onBackPressed(): Boolean { return false }
-    override fun onSyncedTabClicked(tab: Tab) {}
-    override fun onSyncedTabClosed(deviceId: String, tab: Tab) {}
-    override fun onTabSelected(tab: TabSessionState, source: String?) {}
-    override fun onTabClosed(tab: TabSessionState, source: String?) {}
-    override fun onInactiveTabsHeaderClicked(expanded: Boolean) {}
-    override fun onInactiveTabClicked(tab: TabSessionState) {}
-    override fun onInactiveTabClosed(tab: TabSessionState) {}
-    override fun onDeleteAllInactiveTabsClicked() {}
-    override fun onAutoCloseDialogCloseButtonClicked() {}
-    override fun onEnableAutoCloseClicked() {}
-    override fun onNormalTabsFabClicked() {}
-    override fun onPrivateTabsFabClicked() {}
-    override fun onSyncedTabsFabClicked() {}
 }

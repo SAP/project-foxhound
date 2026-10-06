@@ -9,43 +9,44 @@
 from xpidl import rust, xpidl
 
 derive_method_tmpl = """\
-Method {
-    name: "%(name)s",
-    params: &[%(params)s],
-    ret: "%(ret)s",
-}"""
+Method {{
+    name: "{name}",
+    params: &[{params}],
+    ret: "{ret}",
+}}"""
 
 
 def attrAsMethodStruct(iface, m, getter):
     params = [
-        'Param { name: "%s", ty: "%s" }' % x
-        for x in rust.attributeRawParamList(iface, m, getter)
+        f'Param {{ name: "{name}", ty: "{ty}" }}'
+        for name, ty in rust.attributeRawParamList(iface, m, getter)
     ]
-    return derive_method_tmpl % {
-        "name": rust.attributeNativeName(m, getter),
-        "params": ", ".join(params),
-        "ret": "::nserror::nsresult",
-    }
+    return derive_method_tmpl.format(
+        name=rust.attributeNativeName(m, getter),
+        params=", ".join(params),
+        ret="::nserror::nsresult",
+    )
 
 
 def methodAsMethodStruct(iface, m):
     params = [
-        'Param { name: "%s", ty: "%s" }' % x for x in rust.methodRawParamList(iface, m)
+        f'Param {{ name: "{name}", ty: "{ty}" }}'
+        for name, ty in rust.methodRawParamList(iface, m)
     ]
-    return derive_method_tmpl % {
-        "name": rust.methodNativeName(m),
-        "params": ", ".join(params),
-        "ret": rust.methodReturnType(m),
-    }
+    return derive_method_tmpl.format(
+        name=rust.methodNativeName(m),
+        params=", ".join(params),
+        ret=rust.methodReturnType(m),
+    )
 
 
 derive_iface_tmpl = """\
-Interface {
-    name: "%(name)s",
-    base: %(base)s,
-    sync: %(sync)s,
-    methods: %(methods)s,
-},
+Interface {{
+    name: "{name}",
+    base: {base},
+    sync: {sync},
+    methods: {methods},
+}},
 """
 
 
@@ -55,44 +56,42 @@ def write_interface(iface, fd):
 
     assert iface.base or (iface.name == "nsISupports")
 
-    base = 'Some("%s")' % iface.base if iface.base is not None else "None"
+    base = f'Some("{iface.base}")' if iface.base is not None else "None"
     try:
         methods = ""
         for member in iface.members:
             if type(member) is xpidl.Attribute:
-                methods += "/* %s */\n" % member.toIDL()
-                methods += "%s,\n" % attrAsMethodStruct(iface, member, True)
+                methods += f"/* {member.toIDL()} */\n"
+                methods += f"{attrAsMethodStruct(iface, member, True)},\n"
                 if not member.readonly:
-                    methods += "%s,\n" % attrAsMethodStruct(iface, member, False)
+                    methods += f"{attrAsMethodStruct(iface, member, False)},\n"
                 methods += "\n"
 
             elif type(member) is xpidl.Method:
-                methods += "/* %s */\n" % member.toIDL()
-                methods += "%s,\n\n" % methodAsMethodStruct(iface, member)
+                methods += f"/* {member.toIDL()} */\n"
+                methods += f"{methodAsMethodStruct(iface, member)},\n\n"
         fd.write(
-            derive_iface_tmpl
-            % {
-                "name": iface.name,
-                "base": base,
-                "sync": "true" if iface.attributes.rust_sync else "false",
-                "methods": "Ok(&[\n%s])" % methods,
-            }
+            derive_iface_tmpl.format(
+                name=iface.name,
+                base=base,
+                sync="true" if iface.attributes.rust_sync else "false",
+                methods=f"Ok(&[\n{methods}])",
+            )
         )
     except xpidl.RustNoncompat as reason:
         fd.write(
-            derive_iface_tmpl
-            % {
-                "name": iface.name,
-                "base": base,
-                "sync": "false",
-                "methods": 'Err("%s")' % reason,
-            }
+            derive_iface_tmpl.format(
+                name=iface.name,
+                base=base,
+                sync="false",
+                methods=f'Err("{reason}")',
+            )
         )
 
 
 header = """\
 //
-// DO NOT EDIT.  THIS FILE IS GENERATED FROM $SRCDIR/%(relpath)s
+// DO NOT EDIT.  THIS FILE IS GENERATED FROM $SRCDIR/{relpath}
 //
 
 """
@@ -101,7 +100,7 @@ header = """\
 def print_rust_macros_bindings(idl, fd, relpath):
     fd = rust.AutoIndent(fd)
 
-    fd.write(header % {"relpath": relpath})
+    fd.write(header.format(relpath=relpath))
     fd.write("{static D: &[Interface] = &[\n")
 
     for p in idl.productions:

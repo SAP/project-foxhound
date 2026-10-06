@@ -1,0 +1,93 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test captureVisibleTab blurring for extension pages</title>
+  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
+  <script type="text/javascript" src="head.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script type="text/javascript">
+"use strict";
+
+// Verify that an extension cannot capture another extension's page at full
+// quality, but can capture its own pages without blurring.
+add_task(async function test_captureVisibleTab_extension_pages() {
+  let victimExtension = ExtensionTestUtils.loadExtension({
+    files: {
+      "page.html": `<!DOCTYPE html><html><body>victim extension page</body></html>`,
+    },
+    async background() {
+      let tab = await browser.tabs.create({
+        url: browser.runtime.getURL("page.html"),
+        active: true,
+      });
+      browser.test.sendMessage("ready");
+      await new Promise(resolve => browser.test.onMessage.addListener(resolve));
+      await browser.tabs.remove(tab.id);
+      browser.test.sendMessage("closed");
+    },
+  });
+  await victimExtension.startup();
+  await victimExtension.awaitMessage("ready");
+
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: { permissions: ["<all_urls>"] },
+    files: {
+      "page.html": `<!DOCTYPE html><html><body>own extension page</body></html>`,
+    },
+    async background() {
+      // Capture the active tab (victim extension's page) — should be blurred.
+      let blurred = await browser.tabs.captureVisibleTab();
+      browser.test.assertTrue(
+        blurred.startsWith("data:image/png;"),
+        "Other extension's page returns PNG by default (blurred)"
+      );
+      let blurredImg = new Image();
+      blurredImg.src = blurred;
+      await blurredImg.decode();
+      browser.test.assertTrue(
+        blurredImg.width <= 300,
+        `Blurred image width ${blurredImg.width} is at most 300`
+      );
+      browser.test.assertTrue(
+        blurredImg.height <= 300,
+        `Blurred image height ${blurredImg.height} is at most 300`
+      );
+
+      // Open own page and capture — should NOT be blurred.
+      let ownTab = await browser.tabs.create({
+        url: browser.runtime.getURL("page.html"),
+        active: true,
+      });
+      let unblurred = await browser.tabs.captureVisibleTab();
+      browser.test.assertTrue(
+        unblurred.startsWith("data:image/png;"),
+        "Own extension page capture returns PNG"
+      );
+      let unblurredImg = new Image();
+      unblurredImg.src = unblurred;
+      await unblurredImg.decode();
+      browser.test.assertTrue(
+        unblurredImg.width > 300 || unblurredImg.height > 300,
+        `Own extension page (${unblurredImg.width}x${unblurredImg.height}) is not blurred`
+      );
+
+      await browser.tabs.remove(ownTab.id);
+      browser.test.sendMessage("done");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+
+  victimExtension.sendMessage("cleanup");
+  await victimExtension.awaitMessage("closed");
+  await victimExtension.unload();
+});
+</script>
+</body>
+</html>

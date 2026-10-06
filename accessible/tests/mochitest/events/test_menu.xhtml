@@ -15,152 +15,89 @@
           src="../events.js" />
 
   <script><![CDATA[
-    function openFileMenu()
-    {
-      this.eventSeq = [
-        new invokerChecker(EVENT_MENU_START, "menubar"),
-        new invokerChecker("popupshown", "menupopup-file")
-        // new invokerChecker(EVENT_FOCUS, getNode("menuitem-newtab")) intermitent failure
-      ];
-
-      this.invoke = function openFileMenu_invoke()
-      {
-        synthesizeKey("F", {altKey: true, shiftKey: true});
-      }
-
-      this.getID = function openFileMenu_getID()
-      {
-        return "open file menu by alt+F press";
-      }
-    }
-
-    function openEditMenu()
-    {
-      this.eventSeq = [
-        new invokerChecker("popuphidden", "menupopup-file"),
-        new invokerChecker("popupshown", "menupopup-edit"),
-        // new invokerChecker(EVENT_FOCUS, getNode("menuitem-undo")) intermitent failure
-      ];
-
-      this.invoke = function openEditMenu_invoke()
-      {
-        synthesizeKey("KEY_ArrowRight");
-      }
-
-      this.getID = function openEditMenu_getID()
-      {
-        return "open edit menu by lef arrow press";
-      }
-    }
-
-    function closeEditMenu()
-    {
-      this.eventSeq = [
-        //new invokerChecker(EVENT_FOCUS, document), intermitent failure
-        new invokerChecker("popuphidden", "menupopup-edit"),
-      ];
-
-      this.invoke = function closeEditMenu_invoke()
-      {
-        synthesizeKey("KEY_Escape");
-      }
-
-      this.getID = function closeEditMenu_getID()
-      {
-        return "close edit menu";
-      }
-    }
-
-    function focusFileMenu()
-    {
-      this.eventSeq = [
-        new invokerChecker(EVENT_MENU_START, getNode("menubar"))
-        // new invokerChecker(EVENT_FOCUS, getNode("menuitem-file")) //intermitent failure
-      ];
-
-      this.invoke = function focusFileMenu_invoke()
-      {
-        synthesizeKey("KEY_Alt");
-      }
-
-      this.getID = function focusFileMenu_getID()
-      {
-        return "activate menubar, focus file menu (atl press)";
-      }
-    }
-
-    function focusEditMenu()
-    {
-      this.eventSeq = [
-        new invokerChecker(EVENT_FOCUS, getNode("menuitem-edit"))
-      ];
-
-      this.invoke = function focusEditMenu_invoke()
-      {
-        synthesizeKey("KEY_ArrowRight");
-      }
-
-      this.getID = function focusEditMenu_getID()
-      {
-        return "focus edit menu";
-      }
-    }
-
-    function leaveMenubar()
-    {
-      this.eventSeq = [
-        //new invokerChecker(EVENT_FOCUS, document), intermitent failure
-        new invokerChecker(EVENT_MENU_END, "menubar")
-      ];
-
-      this.invoke = function leaveMenubar_invoke()
-      {
-        synthesizeKey("KEY_Escape");
-      }
-
-      this.getID = function leaveMenubar_getID()
-      {
-        return "leave menubar";
-      }
-    }
-
     /**
      * Do tests.
      */
 
-    //gA11yEventDumpID = "eventdump";
-    //gA11yEventDumpToConsole = true;
-
-    var gQueue = null;
-
-    function doTests()
-    {
+    async function doTests() {
       if (!WIN && !LINUX) {
         todo(false, "Enable this test on other platforms.");
         SimpleTest.finish();
         return;
       }
 
-      todo(false,
-           "Fix intermitent failures. Focus may randomly occur before or after menupopup events!");
+      todo(
+        false,
+        "Fix intermitent failures. Focus may randomly occur before or after menupopup events!"
+      );
 
-      gQueue = new eventQueue();
+      // open file menu by alt+F press
+      let menuStartPromise = waitForEvent(EVENT_MENU_START, "menubar");
+      let popupShownFilePromise = new Promise(r =>
+        getNode("menupopup-file").addEventListener("popupshown", r, {
+          once: true,
+        })
+      );
+      synthesizeKey("F", {altKey: true, shiftKey: true});
+      await menuStartPromise;
+      await popupShownFilePromise;
 
-      gQueue.push(new openFileMenu());
-      gQueue.push(new openEditMenu());
-      gQueue.push(new closeEditMenu());
-      gQueue.push(new leaveMenubar());
+      // open edit menu by left arrow press
+      let popupHiddenFilePromise = new Promise(r =>
+        getNode("menupopup-file").addEventListener("popuphidden", r, {
+          once: true,
+        })
+      );
+      let popupShownEditPromise = new Promise(r =>
+        getNode("menupopup-edit").addEventListener("popupshown", r, {
+          once: true,
+        })
+      );
+      synthesizeKey("KEY_ArrowRight");
+      await popupHiddenFilePromise;
+      await popupShownEditPromise;
+
+      // close edit menu
+      let popupHiddenEditPromise = new Promise(r =>
+        getNode("menupopup-edit").addEventListener("popuphidden", r, {
+          once: true,
+        })
+      );
+      synthesizeKey("KEY_Escape");
+      await popupHiddenEditPromise;
+
+      // leave menubar
+      let menuEndPromise = waitForEvent(EVENT_MENU_END, "menubar");
+      synthesizeKey("KEY_Escape");
+      await menuEndPromise;
 
       // Alt key is used to active menubar and focus menu item on Windows,
       // other platforms requires setting a ui.key.menuAccessKeyFocuses
       // preference.
       if (WIN || LINUX) {
-        gQueue.push(new focusFileMenu());
-        gQueue.push(new focusEditMenu());
-        gQueue.push(new leaveMenubar());
+        // activate menubar, focus file menu (alt press)
+        let focusFileMenuStartPromise = waitForEvent(
+          EVENT_MENU_START,
+          getNode("menubar")
+        );
+        synthesizeKey("KEY_Alt");
+        await focusFileMenuStartPromise;
+
+        // focus edit menu
+        let focusEditMenuPromise = waitForEvent(
+          EVENT_FOCUS,
+          getNode("menuitem-edit")
+        );
+        synthesizeKey("KEY_ArrowRight");
+        await focusEditMenuPromise;
+
+        // leave menubar
+        let menuEndPromise2 = waitForEvent(EVENT_MENU_END, "menubar");
+        synthesizeKey("KEY_Escape");
+        await menuEndPromise2;
       }
 
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

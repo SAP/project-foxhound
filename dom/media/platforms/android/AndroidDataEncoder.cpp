@@ -6,24 +6,24 @@
 
 #include "AnnexB.h"
 #include "H264.h"
+#include "ImageContainer.h"
 #include "MediaData.h"
 #include "MediaInfo.h"
-
-#include "ImageContainer.h"
 #include "libyuv/convert_from.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Unused.h"
 #include "nsThreadUtils.h"
 
 namespace mozilla {
 
 extern LazyLogModule sPEMLog;
-#define AND_ENC_LOG(arg, ...)                \
-  MOZ_LOG(sPEMLog, mozilla::LogLevel::Debug, \
-          ("AndroidDataEncoder(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
-#define AND_ENC_LOGE(arg, ...)               \
-  MOZ_LOG(sPEMLog, mozilla::LogLevel::Error, \
-          ("AndroidDataEncoder(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
+#define AND_ENC_LOG(arg, ...)                                               \
+  MOZ_LOG_FMT(sPEMLog, mozilla::LogLevel::Debug,                            \
+              "AndroidDataEncoder({})::{}: " arg, fmt::ptr(this), __func__, \
+              ##__VA_ARGS__)
+#define AND_ENC_LOGE(arg, ...)                                              \
+  MOZ_LOG_FMT(sPEMLog, mozilla::LogLevel::Error,                            \
+              "AndroidDataEncoder({})::{}: " arg, fmt::ptr(this), __func__, \
+              ##__VA_ARGS__)
 
 #define REJECT_IF_ERROR()                                                \
   do {                                                                   \
@@ -146,7 +146,7 @@ RefPtr<MediaDataEncoder::InitPromise> AndroidDataEncoder::ProcessInit() {
   mIsHardwareAccelerated = mJavaEncoder->IsHardwareAccelerated();
   mDrainState = DrainState::DRAINABLE;
 
-  return InitPromise::CreateAndResolve(TrackInfo::kVideoTrack, __func__);
+  return InitPromise::CreateAndResolve(true, __func__);
 }
 
 RefPtr<MediaDataEncoder::EncodePromise> AndroidDataEncoder::Encode(
@@ -154,9 +154,26 @@ RefPtr<MediaDataEncoder::EncodePromise> AndroidDataEncoder::Encode(
   RefPtr<AndroidDataEncoder> self = this;
   MOZ_ASSERT(aSample != nullptr);
 
-  RefPtr<const MediaData> sample(aSample);
+  return InvokeAsync(
+      mTaskQueue, __func__,
+      [self, sample = RefPtr<MediaData>(const_cast<MediaData*>(aSample))]() {
+        return self->ProcessEncode({sample});
+      });
+}
+
+// TODO(Bug 1984936): For realtime mode, resolve the promise after the first
+// sample's result is available, then continue processing remaining samples.
+// This allows the caller to keep submitting new samples while the encoder
+// handles pending ones.
+RefPtr<MediaDataEncoder::EncodePromise> AndroidDataEncoder::Encode(
+    nsTArray<RefPtr<MediaData>>&& aSamples) {
+  RefPtr<AndroidDataEncoder> self = this;
+  MOZ_ASSERT(!aSamples.IsEmpty());
+
   return InvokeAsync(mTaskQueue, __func__,
-                     [self, sample]() { return self->ProcessEncode(sample); });
+                     [self, samples = std::move(aSamples)]() mutable {
+                       return self->ProcessEncode(std::move(samples));
+                     });
 }
 
 static jni::ByteBuffer::LocalRef ConvertI420ToNV12Buffer(
@@ -194,35 +211,40 @@ static jni::ByteBuffer::LocalRef ConvertI420ToNV12Buffer(
 }
 
 RefPtr<MediaDataEncoder::EncodePromise> AndroidDataEncoder::ProcessEncode(
-    const RefPtr<const MediaData>& aSample) {
+    nsTArray<RefPtr<MediaData>>&& aSamples) {
   AssertOnTaskQueue();
 
   REJECT_IF_ERROR();
 
-  RefPtr<const VideoData> sample(aSample->As<const VideoData>());
-  MOZ_ASSERT(sample);
+  // TODO(Bug 1984936): Looping here for large batches is inefficient, as it can
+  // take excessive shared memory and file descriptors due to passing both input
+  // and output buffers between the content and media codec processes.
+  for (auto& s : aSamples) {
+    RefPtr<const VideoData> sample(s->As<const VideoData>());
+    MOZ_ASSERT(sample);
 
-  mInputSampleDuration = aSample->mDuration;
+    mInputSampleDuration = s->mDuration;
 
-  // Bug 1789846: Check with the Encoder if MediaCodec has a stride or height
-  // value to use.
-  jni::ByteBuffer::LocalRef buffer = ConvertI420ToNV12Buffer(
-      sample, mYUVBuffer, mJavaEncoder->GetInputFormatStride(),
-      mJavaEncoder->GetInputFormatYPlaneHeight());
-  if (!buffer) {
-    return EncodePromise::CreateAndReject(NS_ERROR_ILLEGAL_INPUT, __func__);
+    // Bug 1789846: Check with the Encoder if MediaCodec has a stride or height
+    // value to use.
+    jni::ByteBuffer::LocalRef buffer = ConvertI420ToNV12Buffer(
+        sample, mYUVBuffer, mJavaEncoder->GetInputFormatStride(),
+        mJavaEncoder->GetInputFormatYPlaneHeight());
+    if (!buffer) {
+      return EncodePromise::CreateAndReject(NS_ERROR_ILLEGAL_INPUT, __func__);
+    }
+
+    if (s->mKeyframe) {
+      mInputBufferInfo->Set(0, AssertedCast<int32_t>(mYUVBuffer->Length()),
+                            s->mTime.ToMicroseconds(),
+                            java::sdk::MediaCodec::BUFFER_FLAG_SYNC_FRAME);
+    } else {
+      mInputBufferInfo->Set(0, AssertedCast<int32_t>(mYUVBuffer->Length()),
+                            s->mTime.ToMicroseconds(), 0);
+    }
+
+    mJavaEncoder->Input(buffer, mInputBufferInfo, nullptr);
   }
-
-  if (aSample->mKeyframe) {
-    mInputBufferInfo->Set(0, AssertedCast<int32_t>(mYUVBuffer->Length()),
-                          aSample->mTime.ToMicroseconds(),
-                          java::sdk::MediaCodec::BUFFER_FLAG_SYNC_FRAME);
-  } else {
-    mInputBufferInfo->Set(0, AssertedCast<int32_t>(mYUVBuffer->Length()),
-                          aSample->mTime.ToMicroseconds(), 0);
-  }
-
-  mJavaEncoder->Input(buffer, mInputBufferInfo, nullptr);
 
   if (mEncodedData.Length() > 0) {
     EncodedData pending = std::move(mEncodedData);
@@ -253,26 +275,14 @@ static RefPtr<MediaByteBuffer> ExtractCodecConfig(
     const int32_t aSize, const bool aAsAVCC) {
   auto config = MakeRefPtr<MediaByteBuffer>(aSize);
   config->SetLength(aSize);
-  jni::ByteBuffer::LocalRef dest =
-      jni::ByteBuffer::New(config->Elements(), aSize);
-  aBuffer->WriteToByteBuffer(dest, aOffset, aSize);
+  NS_ENSURE_SUCCESS(
+      aBuffer->NativeCopy(reinterpret_cast<jlong>(config->Elements()),
+                          config->Length(), aOffset, aSize),
+      nullptr);
   if (!aAsAVCC) {
     return config;
   }
-  // Convert to avcC.
-  nsTArray<AnnexB::NALEntry> paramSets;
-  AnnexB::ParseNALEntries(
-      Span<const uint8_t>(config->Elements(), config->Length()), paramSets);
-
-  auto avcc = MakeRefPtr<MediaByteBuffer>();
-  AnnexB::NALEntry& sps = paramSets.ElementAt(0);
-  AnnexB::NALEntry& pps = paramSets.ElementAt(1);
-  const uint8_t* spsPtr = config->Elements() + sps.mOffset;
-  H264::WriteExtraData(
-      avcc, spsPtr[1], spsPtr[2], spsPtr[3],
-      Span<const uint8_t>(spsPtr, sps.mSize),
-      Span<const uint8_t>(config->Elements() + pps.mOffset, pps.mSize));
-  return avcc;
+  return AnnexB::ExtractExtraDataForAVCC(*config);
 }
 
 void AndroidDataEncoder::ProcessOutput(
@@ -286,7 +296,7 @@ void AndroidDataEncoder::ProcessOutput(
             &AndroidDataEncoder::ProcessOutput, std::move(aSample),
             std::move(aBuffer)));
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-    Unused << rv;
+    (void)rv;
     return;
   }
   AssertOnTaskQueue();
@@ -302,7 +312,11 @@ void AndroidDataEncoder::ProcessOutput(
 
   int32_t flags;
   bool ok = NS_SUCCEEDED(info->Flags(&flags));
-  bool isEOS = !!(flags & java::sdk::MediaCodec::BUFFER_FLAG_END_OF_STREAM);
+  bool isEOS =
+      ok && !!(flags & java::sdk::MediaCodec::BUFFER_FLAG_END_OF_STREAM);
+  if (isEOS) {
+    mDrainState = DrainState::DRAINED;
+  }
 
   int32_t offset;
   ok &= NS_SUCCEEDED(info->Offset(&offset));
@@ -314,13 +328,22 @@ void AndroidDataEncoder::ProcessOutput(
   ok &= NS_SUCCEEDED(info->PresentationTimeUs(&presentationTimeUs));
 
   if (!ok) {
+    Error(MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                      "fail to get output buffer info"_ns));
     return;
   }
 
   if (size > 0) {
     if ((flags & java::sdk::MediaCodec::BUFFER_FLAG_CODEC_CONFIG) != 0) {
-      mConfigData = ExtractCodecConfig(aBuffer, offset, size,
-                                       IsAVCC(mConfig.mCodecSpecific));
+      auto configData = ExtractCodecConfig(aBuffer, offset, size,
+                                           IsAVCC(mConfig.mCodecSpecific));
+      if (configData) {
+        mConfigData = std::move(configData);
+      } else {
+        MOZ_ASSERT_UNREACHABLE("Bad config data!");
+        Error(MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                          "fail to extract codec config"_ns));
+      }
       return;
     }
     RefPtr<MediaRawData> output;
@@ -333,15 +356,17 @@ void AndroidDataEncoder::ProcessOutput(
           aBuffer, offset, size,
           !!(flags & java::sdk::MediaCodec::BUFFER_FLAG_KEY_FRAME));
     }
+    if (!output) {
+      Error(MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                        "fail to copy sample buffer"_ns));
+      return;
+    }
     output->mEOS = isEOS;
     output->mTime = media::TimeUnit::FromMicroseconds(presentationTimeUs);
     output->mDuration = mInputSampleDuration;
     mEncodedData.AppendElement(std::move(output));
   }
 
-  if (isEOS) {
-    mDrainState = DrainState::DRAINED;
-  }
   if (!mDrainPromise.IsEmpty()) {
     EncodedData pending = std::move(mEncodedData);
     mDrainPromise.Resolve(std::move(pending), __func__);
@@ -355,12 +380,13 @@ RefPtr<MediaRawData> AndroidDataEncoder::GetOutputData(
   auto output = MakeRefPtr<MediaRawData>();
   UniquePtr<MediaRawDataWriter> writer(output->CreateWriter());
   if (!writer->SetSize(aSize)) {
-    AND_ENC_LOGE("fail to allocate output buffer");
+    AND_ENC_LOGE("fail to allocate output buffer: size={}", aSize);
     return nullptr;
   }
 
-  jni::ByteBuffer::LocalRef buf = jni::ByteBuffer::New(writer->Data(), aSize);
-  aBuffer->WriteToByteBuffer(buf, aOffset, aSize);
+  NS_ENSURE_SUCCESS(aBuffer->NativeCopy(reinterpret_cast<jlong>(writer->Data()),
+                                        writer->Size(), aOffset, aSize),
+                    nullptr);
   output->mKeyframe = aIsKeyFrame;
 
   return output;
@@ -393,9 +419,10 @@ RefPtr<MediaRawData> AndroidDataEncoder::GetOutputDataH264(
     PodCopy(writer->Data(), mConfigData->Elements(), prependSize);
   }
 
-  jni::ByteBuffer::LocalRef buf =
-      jni::ByteBuffer::New(writer->Data() + prependSize, aSize);
-  aBuffer->WriteToByteBuffer(buf, aOffset, aSize);
+  NS_ENSURE_SUCCESS(
+      aBuffer->NativeCopy(reinterpret_cast<jlong>(writer->Data() + prependSize),
+                          writer->Size() - prependSize, aOffset, aSize),
+      nullptr);
 
   if (asAVCC && !AnnexB::ConvertSampleToAVCC(output, avccHeader)) {
     AND_ENC_LOGE("fail to convert annex-b sample to AVCC");
@@ -477,12 +504,15 @@ void AndroidDataEncoder::Error(const MediaResult& aError) {
     nsresult rv = mTaskQueue->Dispatch(NewRunnableMethod<MediaResult>(
         "AndroidDataEncoder::Error", this, &AndroidDataEncoder::Error, aError));
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-    Unused << rv;
+    (void)rv;
     return;
   }
   AssertOnTaskQueue();
 
   mError = Some(aError);
+  if (!mDrainPromise.IsEmpty()) {
+    mDrainPromise.Reject(aError, __func__);
+  }
 }
 
 void AndroidDataEncoder::CallbacksSupport::HandleInput(int64_t aTimestamp,

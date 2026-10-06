@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>CSS Color 4: OOG light red - binary search MINDE gamut mapping</title>
+<link rel="author" title="John ARNZEN" href="mailto:firefox-dev@johnarnzen.com">
+<link rel="help" href="https://drafts.csswg.org/css-color-4/#gamut-mapping">
+<link rel="help" href="https://drafts.csswg.org/css-color-4/#GMA-Binary-local-MINDE">
+<link rel="match" href="bs-001-red-light-ref.html">
+<meta name="assert" content="oklch() with no alpha">
+<style>
+    body { background-color: grey; }
+    .ref, .test { width: 12em; height: 6em; }
+    .ref { background-color: rgb(100% 96.3% 94.7%); margin-bottom: 0; } /* oklch as rgb, by binary search/MINDE GMA */
+    .test { background-color: oklch(99% 0.8 29.2); margin-top: 0; }
+</style>
+<body>
+    <p>Test passes if you see a single square, and not two rectangles of different colors.</p>
+    <div class="ref"></div>
+    <div class="test"></div>
+</body>

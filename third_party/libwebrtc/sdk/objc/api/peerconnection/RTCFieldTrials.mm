@@ -14,7 +14,7 @@
 
 #import "base/RTCLogging.h"
 
-#include "system_wrappers/include/field_trial.h"
+#include "api/environment/deprecated_global_field_trials.h"
 
 NSString *const kRTCFieldTrialAudioForceABWENoTWCCKey =
     @"WebRTC-Audio-ABWENoTWCC";
@@ -58,5 +58,5 @@ void RTCInitFieldTrialDictionary(
     RTCLogError(@"Failed to convert field trial string.");
     return;
   }
-  webrtc::field_trial::InitFieldTrialsFromString(gFieldTrialInitString);
+  webrtc::DeprecatedGlobalFieldTrials::Set(gFieldTrialInitString);
 }

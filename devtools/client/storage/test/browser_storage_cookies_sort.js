@@ -8,7 +8,7 @@
 "use strict";
 
 add_task(async function () {
-  const TEST_URL = MAIN_DOMAIN + "storage-cookies-sort.html";
+  const TEST_URL = MAIN_URL + "storage-cookies-sort.html";
   await openTabAndSetupStorage(TEST_URL);
   showAllColumns(true);
 

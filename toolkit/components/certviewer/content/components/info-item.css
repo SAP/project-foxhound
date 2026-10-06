@@ -16,7 +16,7 @@ label {
   text-align: end;
   margin-inline-end: 0;
   color: var(--text-color-deemphasized);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: 1em;
 }
 
@@ -37,9 +37,9 @@ label {
 }
 
 .long-hex:hover {
-  border-block-color: var(--in-content-border-color);
-  background-color: var(--in-content-item-hover);
-  color: var(--in-content-item-hover-text);
+  border-block-color: var(--border-color);
+  background-color: var(--background-color-list-item-hover);
+  color: var(--text-color-list-item-hover);
 }
 
 .hex-open {

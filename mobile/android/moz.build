@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -9,7 +7,7 @@ with Files("**"):
     SCHEDULES.exclusive = ["android", "fenix", "focus-android"]
 
 with Files("geckoview_example/**"):
-    BUG_COMPONENT = ("GeckoView", "GeckoViewExample")
+    BUG_COMPONENT = ("GeckoView", "General")
 
 with Files("fenix/**"):
     BUG_COMPONENT = ("Firefox for Android", "General")
@@ -57,6 +55,26 @@ GeneratedFile(
     inputs=["geckoview/src/main/java/org/mozilla/gecko/util/XPCOMError.jinja"],
 )
 
+GeneratedFile(
+    "geckoview/src/main/java/org/mozilla/geckoview/CrashReport.java",
+    script="/toolkit/crashreporter/annotations/generate.py",
+    inputs=["!/toolkit/crashreporter/annotations/validated.yaml"],
+)
+
+GeneratedFile(
+    "android-components/components/lib/crash/src/main/java/mozilla/components/lib/crash/service/CrashReport.kt",
+    script="/toolkit/crashreporter/annotations/generate.py",
+    inputs=["!/toolkit/crashreporter/annotations/validated.yaml"],
+)
+
+include("/browser/extensions/webcompat/generate_files.mozbuild")
+include("/browser/extensions/webcompat/preprocessed_intervention_files.mozbuild")
+GenerateWebCompatAddonFiles(
+    preprocessed_intervention_files,
+    "/browser/extensions/webcompat/",
+    "webcompat_addon_generated_files/",
+)
+
 CONFIGURE_SUBST_FILES += ["installer/Makefile"]
 
 DIRS += [
@@ -77,11 +95,18 @@ DIRS += [
 TEST_HARNESS_FILES.testing.mochitest.tests.junit += [
     "geckoview/src/androidTest/assets/www/forms_iframe.html",
     "geckoview/src/androidTest/assets/www/forms_xorigin.html",
+    "geckoview/src/androidTest/assets/www/framebusting_child.html",
+    "geckoview/src/androidTest/assets/www/framebusting_parent.html",
     "geckoview/src/androidTest/assets/www/hello.html",
     "geckoview/src/androidTest/assets/www/hsts_header.sjs",
     "geckoview/src/androidTest/assets/www/iframe_http_only.html",
     "geckoview/src/androidTest/assets/www/simple_redirect.sjs",
     "geckoview/src/androidTest/assets/www/update_manifest.json",
+    "geckoview/src/androidTest/assets/www/webauthn_related_origin.html",
+    "geckoview/src/androidTest/assets/www/worker/open_window.html",
+    "geckoview/src/androidTest/assets/www/worker/open_window.js",
+    "geckoview/src/androidTest/assets/www/worker/open_window_target.html",
+    "geckoview/src/androidTest/assets/www/worker/service-worker.js",
 ]
 
 SPHINX_TREES["/mobile/android"] = "docs"

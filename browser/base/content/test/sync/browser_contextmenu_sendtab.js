@@ -3,10 +3,12 @@
 
 "use strict";
 
-const kForceOverflowWidthPx = 450;
-
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/browser/base/content/test/general/head.js",
+  this
+);
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/browser/components/customizableui/test/head.js",
   this
 );
 
@@ -56,7 +58,7 @@ add_setup(async function () {
   });
 
   await promiseSyncReady();
-  await Services.search.init();
+  await SearchService.init();
   // gSync.init() is called in a requestIdleCallback. Force its initialization.
   gSync.init();
   sinon
@@ -127,20 +129,24 @@ add_task(
     let navbar = document.getElementById("nav-bar");
 
     // Resize the window so that the account button is in the overflow menu.
-    let originalWidth = window.outerWidth;
-    window.resizeTo(kForceOverflowWidthPx, window.outerHeight);
+    // As of bug 1960002, overflowing the navbar also requires adding extra
+    // buttons.
+    let originalWidth = ensureToolbarOverflow(window, false);
+
     await TestUtils.waitForCondition(() => navbar.hasAttribute("overflowing"));
 
     await checkForConfirmationHint("PanelUI-menu-button");
     document.documentElement.setAttribute("fxastatus", "not_configured");
 
-    window.resizeTo(originalWidth, window.outerHeight);
+    unensureToolbarOverflow(window, originalWidth);
     await TestUtils.waitForCondition(() => !navbar.hasAttribute("overflowing"));
     CustomizableUI.reset();
   }
 );
 
 add_task(async function test_sendTabToDevice_showsConfirmationHint_appMenu() {
+  ensureToolbarOverflow(window);
+
   // If fxastatus is "not_configured" then the FxA button is hidden, and we
   // should use the appMenu.
   is(
@@ -158,9 +164,12 @@ add_task(async function test_tab_contextmenu() {
     .expects("sendTabToDevice")
     .once()
     .withExactArgs(
-      "about:mozilla",
-      [fxaDevices[1]],
-      "The Book of Mozilla, 6:27"
+      {
+        url: "about:mozilla",
+        title: "The Book of Mozilla, 6:27",
+        private: false,
+      },
+      [fxaDevices[1]]
     )
     .returns(true);
 
@@ -172,9 +181,82 @@ add_task(async function test_tab_contextmenu() {
     "Send tab to device is shown"
   );
   is(
+    document.getElementById("context_sendTabToDevice").label,
+    "Send to Device",
+    "Send tab to device label changed"
+  );
+  is(
+    document.getElementById("context_sendTabToDeviceSeparator").hidden,
+    false,
+    "Send tab to device separator is shown"
+  );
+  is(
     document.getElementById("context_sendTabToDevice").disabled,
     false,
     "Send tab to device is enabled"
+  );
+
+  await activateMenuItem();
+  await closeConfirmationHint();
+
+  expectation.verify();
+  sandbox.restore();
+});
+
+add_task(async function test_tab_contextmenu_send_to_mobile() {
+  let mobileFxaDevices = [
+    {
+      id: 1,
+      name: "Foo",
+      type: "mobile",
+      availableCommands: { "https://identity.mozilla.com/cmd/open-uri": "baz" },
+      lastAccessTime: Date.now(),
+    },
+    {
+      id: 2,
+      name: "Bar",
+      type: "tablet",
+      availableCommands: { "https://identity.mozilla.com/cmd/open-uri": "boo" },
+      lastAccessTime: Date.now() + 60000, // add 30min
+    },
+  ];
+
+  const sandbox = setupSendTabMocks({ fxaDevices: mobileFxaDevices });
+  let expectation = sandbox
+    .mock(gSync)
+    .expects("sendTabToDevice")
+    .once()
+    .withExactArgs(
+      {
+        url: "about:mozilla",
+        title: "The Book of Mozilla, 6:27",
+        private: false,
+      },
+      [mobileFxaDevices[1]]
+    )
+    .returns(true);
+
+  updateTabContextMenu(testTab);
+  await openTabContextMenu("context_sendTabToDevice");
+  is(
+    document.getElementById("context_sendTabToDevice").hidden,
+    false,
+    "Send tab to mobile is shown"
+  );
+  is(
+    document.getElementById("context_sendTabToDevice").label,
+    "Send to Mobile",
+    "Send tab to mobile label changed"
+  );
+  is(
+    document.getElementById("context_sendTabToDeviceSeparator").hidden,
+    false,
+    "Send tab to device separator is shown"
+  );
+  is(
+    document.getElementById("context_sendTabToDevice").disabled,
+    false,
+    "Send tab to mobile is enabled"
   );
 
   await activateMenuItem();
@@ -190,8 +272,13 @@ add_task(async function test_tab_contextmenu_unconfigured() {
   updateTabContextMenu(testTab);
   is(
     document.getElementById("context_sendTabToDevice").hidden,
-    true,
-    "Send tab to device is hidden"
+    false,
+    "Send tab to device should not be hidden"
+  );
+  is(
+    document.getElementById("context_sendTabToDeviceSeparator").hidden,
+    false,
+    "Send tab to device separator should not be hidden"
   );
   is(
     document.getElementById("context_sendTabToDevice").disabled,
@@ -208,6 +295,11 @@ add_task(async function test_tab_contextmenu_not_sendable() {
   updateTabContextMenu(testTab);
   is(
     document.getElementById("context_sendTabToDevice").hidden,
+    true,
+    "Send tab to device is hidden"
+  );
+  is(
+    document.getElementById("context_sendTabToDeviceSeparator").hidden,
     true,
     "Send tab to device is hidden"
   );
@@ -230,6 +322,11 @@ add_task(async function test_tab_contextmenu_not_synced_yet() {
     "Send tab to device is hidden"
   );
   is(
+    document.getElementById("context_sendTabToDeviceSeparator").hidden,
+    true,
+    "Send tab to device separator is hidden"
+  );
+  is(
     document.getElementById("context_sendTabToDevice").disabled,
     true,
     "Send tab to device is disabled"
@@ -244,6 +341,11 @@ add_task(async function test_tab_contextmenu_sync_not_ready_configured() {
   updateTabContextMenu(testTab);
   is(
     document.getElementById("context_sendTabToDevice").hidden,
+    true,
+    "Send tab to device is hidden"
+  );
+  is(
+    document.getElementById("context_sendTabToDeviceSeparator").hidden,
     true,
     "Send tab to device is hidden"
   );
@@ -265,8 +367,13 @@ add_task(async function test_tab_contextmenu_sync_not_ready_other_state() {
   updateTabContextMenu(testTab);
   is(
     document.getElementById("context_sendTabToDevice").hidden,
-    true,
-    "Send tab to device is hidden"
+    false,
+    "Send tab to device should not be hidden"
+  );
+  is(
+    document.getElementById("context_sendTabToDeviceSeparator").hidden,
+    false,
+    "Send tab to device separator should not be hidden"
   );
   is(
     document.getElementById("context_sendTabToDevice").disabled,
@@ -287,6 +394,12 @@ add_task(async function test_tab_contextmenu_fxa_disabled() {
     document.getElementById("context_sendTabToDevice").hidden,
     true,
     "Send tab to device is hidden"
+  );
+  updateTabContextMenu(testTab);
+  is(
+    document.getElementById("context_sendTabToDeviceSeparator").hidden,
+    true,
+    "Send tab to device separator is hidden"
   );
 
   getter.restore();

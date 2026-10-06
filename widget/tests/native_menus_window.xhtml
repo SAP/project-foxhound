@@ -186,7 +186,7 @@
         ok(!testItem("1|3|2", ""), sna);
 
         // Show newMenu0.
-        newMenu0.setAttribute("hidden", "false");
+        newMenu0.removeAttribute("hidden");
         forceUpdateNativeMenuAt("1|3");
         ok(runBaseMenuTests(), sa);
         ok(testItem("1|0", "cmd_NewItem0"), sa);
@@ -209,8 +209,8 @@
         ok(!testItem("1|2|2", ""), sna);
 
         // Show items.
-        newMenuItem1.setAttribute("hidden", "false");
-        newMenuItem4.setAttribute("hidden", "false");
+        newMenuItem1.removeAttribute("hidden");
+        newMenuItem4.removeAttribute("hidden");
         forceUpdateNativeMenuAt("1|3");
         ok(runBaseMenuTests(), sa);
         ok(testItem("1|0", "cmd_NewItem0"), sa);
@@ -267,9 +267,9 @@
         newMenuItem2.setAttribute("hidden", "true");
         newMenu1.setAttribute("hidden", "true");
         forceUpdateNativeMenuAt("1");
-        newMenuItem1.setAttribute("hidden", "false");
-        newMenuItem2.setAttribute("hidden", "false");
-        newMenu1.setAttribute("hidden", "false");
+        newMenuItem1.removeAttribute("hidden");
+        newMenuItem2.removeAttribute("hidden");
+        newMenu1.removeAttribute("hidden");
         forceUpdateNativeMenuAt("1");
 
         onTestsFinished();

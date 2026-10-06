@@ -31,6 +31,11 @@ import mozilla.components.service.nimbus.GleanMetrics.Messaging as GleanMessagin
 const val MESSAGING_FEATURE_ID = "messaging"
 
 /**
+ * The maximum number of times to retry [NimbusMessagingInterface.createMessageHelper].
+ */
+private const val MAX_RETRY_ATTEMPTS = 5
+
+/**
  * Provides messages from [messagingFeature] and combine with the metadata store on [metadataStorage].
  */
 class NimbusMessagingStorage(
@@ -55,14 +60,30 @@ class NimbusMessagingStorage(
         get() = attributeProvider?.getCustomAttributes(context) ?: JSONObject()
 
     /**
-     * Returns a Nimbus message helper, for evaluating JEXL.
+     * Attempts to create and return a Nimbus message helper for evaluating JEXL expressions.
+     *
+     * ⚠️ This method calls [NimbusMessagingInterface.createMessageHelper], which may throw a
+     * [NimbusException]. To improve resilience against transient errors, it retries the operation
+     * up to [MAX_RETRY_ATTEMPTS].
      *
      * The JEXL context is time-sensitive, so this should be created new for each set of evaluations.
      *
-     * Since it has a native peer, it should be [destroy]ed after finishing the set of evaluations.
+     * Since it has a native peer, it should be destroyed after finishing the set of evaluations.
      */
-    fun createMessagingHelper(): NimbusMessagingHelperInterface =
-        nimbus.createMessageHelper(customAttributes)
+    fun createMessagingHelper(): NimbusMessagingHelperInterface {
+        repeat(MAX_RETRY_ATTEMPTS) { attempt ->
+            try {
+                return nimbus.createMessageHelper(customAttributes)
+            } catch (e: NimbusException) {
+                logger.error(
+                    "Attempt ${attempt + 1} of $MAX_RETRY_ATTEMPTS to create Nimbus message helper failed",
+                    e,
+                )
+            }
+        }
+
+        throw IllegalStateException("The Nimbus createMessagingHelper function threw an exception")
+    }
 
     /**
      * Returns the [Message] for the given [key] or returns null if none found.

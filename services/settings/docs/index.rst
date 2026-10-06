@@ -312,9 +312,10 @@ From the client API standpoint, this is completely transparent: the ``.get()`` m
 Uptake Telemetry
 ================
 
-Some :ref:`uptake telemetry <telemetry/collection/uptake>` is collected in order to monitor how remote settings are propagated.
+Telemetry events are sent during synchronization (``uptake.remotecontent.result`` category with name ``uptake_remotesettings``).
 
-It is submitted to a single :ref:`keyed histogram <histogram-type-keyed>` whose id is ``UPTAKE_REMOTE_CONTENT_RESULT_1`` and the keys are prefixed with ``main/`` (eg. ``main/a-key`` in the above example).
+Refer to the `Glean Dictionary page <https://dictionary.telemetry.mozilla.org/apps/firefox_desktop/metrics/uptake_remotecontent_result_uptake_remotesettings>`_
+for more details.
 
 
 Create new remote settings
@@ -376,17 +377,22 @@ In some use-cases it's necessary to store some state using extra attributes on r
     });
 
 
-``filterFunc``: custom filtering function
------------------------------------------
+``filterCreator``: custom filter
+--------------------------------
 
-By default, the entries returned by ``.get()`` are filtered based on the JEXL expression result from the ``filter_expression`` field. The ``filterFunc`` option allows to execute a custom filter (async) function, that should return the record (modified or not) if kept or a falsy value if filtered out.
+By default, the entries returned by ``.get()`` are filtered based on the JEXL expression result from the ``filter_expression`` field. The ``filterCreator`` option allows to provide a custom filter: On a call to ``.get()``, the filter creator is called to create a new filter object. Then the method `filterObject.filterEntry(entry)` is executed for every entry. This (async) method should return the record (modified or not) if the record should be kept, or a falsy value if the record should be filtered out.
 
 .. code-block:: javascript
 
     const client = RemoteSettings("a-collection", {
-      filterFunc: (record, environment) => {
-        const { enabled, ...entry } = record;
-        return enabled ? entry : null;
+      filterCreator: async (environment, collectionName) => {
+        // Return a filter object which filters entries based on entry.enabled.
+        return {
+          async filterEntry(record) {
+            const { enabled, ...entry } = record;
+            return enabled ? entry : null;
+          }
+        };
       }
     });
 

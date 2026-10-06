@@ -1,4 +1,3 @@
-/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -129,7 +128,8 @@
 #define AUDIO_3GPP "audio/3gpp"
 #define AUDIO_3GPP2 "audio/3gpp2"
 #define AUDIO_MIDI "audio/x-midi"
-#define AUDIO_MATROSKA "audio/x-matroska"
+#define AUDIO_MATROSKA_LEGACY "audio/x-matroska"
+#define AUDIO_MATROSKA "audio/matroska"
 #define AUDIO_AAC "audio/aac"
 #define AUDIO_AACP "audio/aacp"
 #define AUDIO_MPEG_TS "audio/mp2t"
@@ -214,7 +214,8 @@
 #define VIDEO_3GPP2 "video/3gpp2"
 #define VIDEO_MPEG_TS "video/mp2t"
 #define VIDEO_AVI "video/avi"
-#define VIDEO_MATROSKA "video/x-matroska"
+#define VIDEO_MATROSKA_LEGACY "video/x-matroska"
+#define VIDEO_MATROSKA "video/matroska"
 #define APPLICATION_OGG "application/ogg"
 #define APPLICATION_MPEGURL "application/vnd.apple.mpegurl"
 #define APPLICATION_DASH_XML "application/dash+xml"
@@ -253,7 +254,6 @@
  */
 #define PARAM_PROTOCOL "protocol"
 #define PARAM_MICALG "micalg"
-#define PARAM_MICALG_MD2 "rsa-md2"
 #define PARAM_MICALG_MD5 "rsa-md5"
 #define PARAM_MICALG_MD5_2 "md5"
 #define PARAM_MICALG_SHA1 "sha1"

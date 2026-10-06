@@ -50,35 +50,6 @@ sandbox:
     expires: never
     telemetry_mirror: SANDBOX_FAILED_LAUNCH_KEYED
 
-  has_user_namespaces:
-    type: labeled_counter
-    description: >
-      Whether our process succedeed in creating a user namespace
-
-      This metric was generated to correspond to the Legacy Telemetry boolean
-      histogram SANDBOX_HAS_USER_NAMESPACES.
-    labels:
-      - "false"
-      - "true"
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1098428
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1370578
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1461546
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1464220
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1885704
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1098428
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1370578
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1461546
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1464220
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1885704
-    notification_emails:
-      - gcp@mozilla.com
-      - jld@mozilla.com
-      - alissy@mozilla.com
-    expires: 145
-    telemetry_mirror: h#SANDBOX_HAS_USER_NAMESPACES
-
   effective_content_process_level:
     type: quantity
     unit: level

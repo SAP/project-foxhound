@@ -1,0 +1,427 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# This file defines the metrics that are recorded by glean telemetry. They are
+# automatically converted to Kotlin code at build time using the `glean_parser`
+# PyPI package.
+---
+
+$schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
+
+nimbus_events:
+  enrollment:
+    type: event
+    description: >
+      Recorded when a user has met the conditions and is first bucketed into an
+      experiment (i.e. targeting matched and they were randomized into a bucket
+      and branch of the experiment). Expected a maximum of once per experiment
+      per user.
+    extra_keys:
+      experiment:
+        type: string
+        description: The slug/unique identifier of the experiment
+      branch:
+        type: string
+        description: The branch slug/identifier that was randomly chosen
+      experiment_type:
+        type: string
+        description: Indicates whether this is an experiment or rollout
+    bugs:
+      - https://jira.mozilla.com/browse/SDK-61
+    data_reviews:
+      - https://github.com/mozilla-mobile/android-components/pull/9168#issuecomment-743461975
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - tlong@mozilla.com
+      - telemetry-team@mozilla.com
+    expires: never
+  enroll_failed:
+    type: event
+    description: >
+      Recorded when an enrollment fails, including the reason for the failure.
+    extra_keys:
+      experiment:
+        type: string
+        description: The slug/unique identifier of the experiment
+      reason:
+        type: string
+        description: The reason for the enrollment failure
+      branch:
+        type: string
+        description: If reason == "invalid-branch", this is the invalid branch.
+    bugs:
+      - https://mozilla-hub.atlassian.net/browse/EXP-2534
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1773563#c7
+      - https://github.com/mozilla/application-services/pull/5137#issuecomment-1276562922
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - tlong@mozilla.com
+      - nimbus-team@mozilla.com
+    expires: never
+    send_in_pings:
+      - background-update
+      - events
+  unenrollment:
+    type: event
+    description: >
+      Recorded when either telemetry is disabled, or the experiment has run
+      for its designed duration (i.e. it is no longer present in the Nimbus
+      Remote Settings collection)
+    extra_keys:
+      experiment:
+        type: string
+        description: The slug/unique identifier of the experiment
+      branch:
+        type: string
+        description: The branch slug/identifier that was randomly chosen
+      reason:
+        type: string
+        description: The reason for the unenrollment
+    bugs:
+      - https://jira.mozilla.com/browse/SDK-126
+    data_reviews:
+      - https://github.com/mozilla-mobile/android-components/pull/9168#issuecomment-743461975
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - tlong@mozilla.com
+      - telemetry-team@mozilla.com
+    expires: never
+  unenroll_failed:
+    type: event
+    description: >
+      Recorded when an unenrollment fails, including the reason for the failure.
+    extra_keys:
+      experiment:
+        type: string
+        description: The slug/unique identifier of the experiment
+      reason:
+        type: string
+        description: The reason for the unenrollment failure
+    bugs:
+      - https://mozilla-hub.atlassian.net/browse/EXP-2534
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1773563#c7
+      - https://github.com/mozilla/application-services/pull/5137#issuecomment-1276562922
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - tlong@mozilla.com
+      - nimbus-team@mozilla.com
+    expires: never
+    send_in_pings:
+      - background-update
+      - events
+  disqualification:
+    type: event
+    description: >
+      Recorded when a user becomes ineligible to continue receiving the
+      treatment for an enrolled experiment, for reasons such as the user
+      opting out of the experiment or no longer matching targeting for the
+      experiment.
+    extra_keys:
+      experiment:
+        type: string
+        description: The slug/unique identifier of the experiment
+      branch:
+        type: string
+        description: The branch slug/identifier that was randomly chosen
+    bugs:
+      - https://jira.mozilla.com/browse/SDK-126
+    data_reviews:
+      - https://github.com/mozilla-mobile/android-components/pull/9168#issuecomment-743461975
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - tlong@mozilla.com
+      - telemetry-team@mozilla.com
+    expires: never
+  activation:
+    type: event
+    description: >
+      Recorded when a feature is configured with an experimental
+      configuration for the first time in this session.
+    extra_keys:
+      experiment:
+        type: string
+        description: The slug/unique identifier of the experiment
+      branch:
+        type: string
+        description: The branch slug/identifier that was randomly chosen
+      feature_id:
+        type: string
+        description: The identifier of the feature that is recording an exposure
+    bugs:
+      - https://mozilla-hub.atlassian.net/browse/EXP-3950
+    data_reviews:
+      - https://github.com/mozilla/application-services/pull/5908#pullrequestreview-1718840482
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - chumphreys@mozilla.com
+      - project-nimbus@mozilla.com
+    expires: never
+    # Disabled by default. This needs a server-knobs rollout to ensure the volume is not overwhelming.
+    disabled: true
+
+  database_load:
+    type: event
+    description: >
+      An event recorded when the Nimbus database is loaded.
+
+    extra_keys:
+      corrupt:
+        type: boolean
+        description: >
+          Whether or not the database was corrupted when we tried to load it.
+
+          This field may be empty, e.g., if the database could not be loaded.
+
+      initial_version:
+        type: quantity
+        description: >
+          The version of the database on disk at load time.
+
+          This field may be empty, e.g., if we cannot create a database.
+
+      error:
+        type: string
+        description: >
+          If an error occured during the initial load of the database this field
+          will contain the relevant error code.
+
+      migrated_version:
+        type: quantity
+        description: >
+          The version of the database that was migrated to.
+
+          This field will be empty if no migration(s) occurred.
+
+      migration_error:
+        type: string
+        description: >
+          If an error occurred during the initial load of the database this
+          field will contain the relevant error code.
+
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997631
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997631
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - beth@mozilla.com
+      - project-nimbus@mozilla.com
+    expires: never
+
+  database_migration:
+    type: event
+    description: >
+      An event recorded when a database migration occurs.
+
+    extra_keys:
+      reason:
+        type: string
+        description: >
+          The reason the migration occurred.
+
+          This is one of:
+
+          - "upgrade"
+          - "invalid_version"
+
+      from_version:
+        type: quantity
+        description: >
+          The original version of the database. A value of 0 indicates that
+          the db_version was not set in the meta store.
+
+      to_version:
+        type: quantity
+        description: >
+          The target version of the migration that was performed.
+
+      error:
+        type: string
+        description: >
+          If an error occurred during the migration, the relevant error code.
+
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997631
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997631
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - beth@mozilla.com
+      - project-nimbus@mozilla.com
+    expires: never
+
+  exposure:
+    type: event
+    description: >
+      Recorded when a user actually observes an experimental treatment, or
+      would have observed an experimental treatment if they had been in a
+      branch that would have shown one.
+    extra_keys:
+      experiment:
+        type: string
+        description: The slug/unique identifier of the experiment
+      branch:
+        type: string
+        description: The branch slug/identifier that was randomly chosen
+      feature_id:
+        type: string
+        description: The identifier of the feature that is recording an exposure
+    bugs:
+      - https://jira.mozilla.com/browse/SDK-65
+    data_reviews:
+      - https://github.com/mozilla-mobile/android-components/pull/9168#issuecomment-743461975
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - tlong@mozilla.com
+      - telemetry-team@mozilla.com
+    expires: never
+  malformed_feature:
+    type: event
+    description: >
+      Recorded when feature code detects a problem with some part of the
+      feature configuration.
+    extra_keys:
+      experiment:
+        type: string
+        description: The slug/unique identifier of the experiment
+      branch:
+        type: string
+        description: The branch slug/identifier that was randomly chosen
+      feature_id:
+        type: string
+        description: The identifier of the feature that is has a malformed
+          configuration
+      part_id:
+        type: string
+        description: The identifier of the feature-specific part that is
+          malformed. e.g. the card or message id.
+    bugs:
+      - https://jira.mozilla.com/browse/EXP-3310
+    data_reviews:
+      - https://github.com/mozilla/application-services/pull/5440#pullrequestreview-1356564351
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - chumphreys@mozilla.com
+      - nimbus-team@mozilla.com
+    expires: never
+  enrollment_status:
+    type: event
+    description: >
+      Recorded for each enrollment status each time the SDK completes application of pending experiments.
+    extra_keys:
+      slug:
+        type: string
+        description: The slug/unique identifier of the experiment
+      status:
+        type: string
+        description: The status of this enrollment
+      reason:
+        type: string
+        description: The reason the client is in the noted status
+      branch:
+        type: string
+        description: The branch slug/identifier that was randomly chosen (if the client is enrolled)
+      error_string:
+        type: string
+        description: If the enrollment resulted in an error, the associated error string
+      conflict_slug:
+        type: string
+        description: If the enrollment hit a feature conflict, the slug of the conflicting experiment/rollout
+    bugs:
+      - https://mozilla-hub.atlassian.net/browse/EXP-3827
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1996105
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1996120
+    data_reviews:
+      - https://github.com/mozilla/application-services/pull/5857#issuecomment-1749722071
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - beth@mozilla.com
+      - project-nimbus@mozilla.com
+    expires: never
+    send_in_pings:
+      - nimbus-targeting-context
+  is_ready:
+    type: event
+    description: >
+      An event sent when Nimbus finishes launching.
+    bugs:
+      - https://mozilla-hub.atlassian.net/browse/EXP-4221
+    data_reviews:
+      - https://github.com/mozilla/application-services/pull/6062#issuecomment-1899087931
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - chumphreys@mozilla.com
+      - project-nimbus@mozilla.com
+    expires: never
+nimbus_health:
+  cache_not_ready_for_feature:
+    type: event
+    description: >
+      Recorded when an application or library requests a feature configuration
+      before the in memory cache has been populated from the database
+    extra_keys:
+      feature_id:
+        type: string
+        description: The feature id of the configuration that was requested
+    disabled: true
+    bugs:
+      - https://mozilla-hub.atlassian.net/browse/EXP-2743
+      - https://mozilla-hub.atlassian.net/browse/EXP-2852
+    data_reviews:
+      - https://github.com/mozilla/application-services/pull/5118#issuecomment-1235827006
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - tlong@mozilla.com
+    expires: never
+  apply_pending_experiments_time:
+    send_in_pings:
+      - metrics
+    type: timing_distribution
+    time_unit: millisecond
+    description: |
+      Measure how long `applyPendingExperiments` takes.
+      `applyPendingExperiments` uses disk I/O, and happens at
+      startup, as part of the initialization sequence.
+    bugs:
+      - https://mozilla-hub.atlassian.net/browse/EXP-3083
+    data_reviews:
+      - https://github.com/mozilla/application-services/pull/5344#issuecomment-1402584994
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - chumphreys@mozilla.com
+      - nimbus-dev@mozilla.com
+    expires: never
+  fetch_experiments_time:
+    send_in_pings:
+      - metrics
+    type: timing_distribution
+    time_unit: millisecond
+    description: |
+      Measures how long `fetchExperiments` takes.
+    bugs:
+      - https://mozilla-hub.atlassian.net/browse/EXP-3083
+    data_reviews:
+      - https://github.com/mozilla/application-services/pull/5344#issuecomment-1402584994
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - chumphreys@mozilla.com
+      - nimbus-dev@mozilla.com
+    expires: never

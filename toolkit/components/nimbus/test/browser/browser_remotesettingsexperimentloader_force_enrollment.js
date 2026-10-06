@@ -5,7 +5,8 @@
 async function setup(experiments) {
   const sandbox = sinon.createSandbox();
 
-  sandbox.stub(ExperimentAPI.manager, "forceEnroll");
+  sandbox.spy(ExperimentAPI.manager, "forceEnroll");
+  sandbox.stub(ExperimentAPI.manager, "_enroll");
 
   await resetRemoteSettingsCollections({ experiments });
 
@@ -50,7 +51,7 @@ add_task(async function test_fetch_recipe_and_branch_no_debug() {
 
   Assert.ok(
     ExperimentAPI.manager.forceEnroll.notCalled,
-    "forceEnroll is not called"
+    "enroll is not called"
   );
 
   Services.prefs.setBoolPref("nimbus.debug", true);
@@ -95,14 +96,13 @@ add_task(async function test_fetch_recipe_and_branch_badbranch() {
       slug,
       branch: "other_branch",
     }),
-    new RegExp(`Could not find branch slug other_branch in ${slug}`),
+    new RegExp(
+      `Could not force enroll into ${slug}: no such branch other_branch`
+    ),
     "should throw an error"
   );
 
-  Assert.ok(
-    ExperimentAPI.manager.forceEnroll.notCalled,
-    "forceEnroll is not called"
-  );
+  Assert.ok(ExperimentAPI.manager._enroll.notCalled, "_enroll() is not called");
 
   await cleanup();
 });
@@ -118,10 +118,7 @@ add_task(async function test_fetch_recipe_and_branch() {
   });
 
   Assert.ok(
-    ExperimentAPI.manager.forceEnroll.calledOnceWithExactly(
-      recipe,
-      recipe.branches[0]
-    ),
+    ExperimentAPI.manager.forceEnroll.calledOnceWithExactly(recipe, "control"),
     "Called forceEnroll"
   );
 

@@ -12,13 +12,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.Button
-import androidx.compose.material.ButtonDefaults
-import androidx.compose.material.Text
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -29,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import mozilla.components.ui.colors.PhotonColors
 import org.mozilla.focus.R
 import org.mozilla.focus.ui.theme.FocusTheme
+import org.mozilla.focus.ui.theme.focusDimensions
 import org.mozilla.focus.ui.theme.focusTypography
 import org.mozilla.focus.ui.theme.gradientBackground
 
@@ -49,7 +49,6 @@ private fun OnBoardingSecondScreenComposePreview() {
  * @param skipScreen Will be called when the user clicks on Skip button.
  */
 @Composable
-@Suppress("LongMethod")
 fun OnBoardingSecondScreenCompose(
     setAsDefaultBrowser: () -> Unit,
     skipScreen: () -> Unit,
@@ -65,7 +64,7 @@ fun OnBoardingSecondScreenCompose(
 
         Image(
             painter = painterResource(R.drawable.onboarding_second_screen_icon),
-            contentDescription = LocalContext.current.getString(R.string.app_name),
+            contentDescription = stringResource(R.string.app_name),
             modifier = Modifier
                 .size(200.dp, 300.dp)
                 .weight(1f, false),
@@ -76,8 +75,11 @@ fun OnBoardingSecondScreenCompose(
                 R.string.onboarding_second_screen_title,
                 stringResource(R.string.onboarding_short_app_name),
             ),
-            modifier = Modifier
-                .padding(top = 32.dp, start = 16.dp, end = 16.dp),
+            modifier = Modifier.padding(
+                top = focusDimensions.paddingExtraLarge,
+                start = focusDimensions.paddingDefault,
+                end = focusDimensions.paddingDefault,
+            ),
             textAlign = TextAlign.Center,
             style = focusTypography.onboardingTitle,
         )
@@ -87,7 +89,11 @@ fun OnBoardingSecondScreenCompose(
                 R.string.onboarding_second_screen_subtitle_one,
             ),
             modifier = Modifier
-                .padding(top = 16.dp, start = 16.dp, end = 16.dp),
+                .padding(
+                    top = focusDimensions.paddingDefault,
+                    start = focusDimensions.paddingDefault,
+                    end = focusDimensions.paddingDefault,
+                ),
             textAlign = TextAlign.Center,
             style = focusTypography.onboardingSubtitle,
         )
@@ -98,7 +104,11 @@ fun OnBoardingSecondScreenCompose(
                 stringResource(R.string.onboarding_short_app_name),
             ),
             modifier = Modifier
-                .padding(top = 16.dp, start = 16.dp, end = 16.dp),
+                .padding(
+                    top = focusDimensions.paddingDefault,
+                    start = focusDimensions.paddingDefault,
+                    end = focusDimensions.paddingDefault,
+                ),
             textAlign = TextAlign.Center,
             style = focusTypography.onboardingSubtitle,
         )
@@ -115,36 +125,37 @@ private fun ComponentOnBoardingSecondScreenButtons(
     Button(
         onClick = setAsDefaultBrowser,
         modifier = Modifier
-            .padding(top = 33.dp, start = 16.dp, end = 16.dp)
+            .padding(
+                top = focusDimensions.paddingOnboardingButtonTop,
+                start = focusDimensions.paddingDefault,
+                end = focusDimensions.paddingDefault,
+            )
             .fillMaxWidth(),
         colors = ButtonDefaults.textButtonColors(
-            backgroundColor = colorResource(R.color.onboardingButtonOneColor),
+            containerColor = colorResource(R.color.onboardingButtonOneColor),
         ),
     ) {
         Text(
-            text = AnnotatedString(
-                LocalContext.current.resources.getString(
-                    R.string.onboarding_second_screen_default_browser_button_text,
-                ),
-            ),
+            text = AnnotatedString(stringResource(id = R.string.onboarding_second_screen_default_browser_button_text)),
             color = PhotonColors.White,
         )
     }
     Button(
         onClick = skipScreen,
         modifier = Modifier
-            .padding(top = 8.dp, start = 16.dp, end = 16.dp, bottom = 74.dp)
+            .padding(
+                top = focusDimensions.paddingSmall,
+                start = focusDimensions.paddingDefault,
+                end = focusDimensions.paddingDefault,
+                bottom = focusDimensions.paddingOnboardingBottom,
+            )
             .fillMaxWidth(),
         colors = ButtonDefaults.textButtonColors(
-            backgroundColor = colorResource(R.color.onboardingButtonTwoColor),
+            containerColor = colorResource(R.color.onboardingButtonTwoColor),
         ),
     ) {
         Text(
-            text = AnnotatedString(
-                LocalContext.current.resources.getString(
-                    R.string.onboarding_second_screen_skip_button_text,
-                ),
-            ),
+            text = AnnotatedString(stringResource(id = R.string.onboarding_second_screen_skip_button_text)),
             color = PhotonColors.Black,
         )
     }

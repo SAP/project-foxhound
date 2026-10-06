@@ -1,0 +1,15 @@
+{
+  "label": "www.jp.square-enix.com",
+  "bugs": {
+    "1651292": {
+      "issue": "page-fails-to-load",
+      "matches": ["*://www.jp.square-enix.com/music/sem/page/FF7R/ost/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

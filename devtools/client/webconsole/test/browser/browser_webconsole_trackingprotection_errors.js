@@ -37,13 +37,7 @@ const COOKIE_BEHAVIORS = {
   PARTITION_FOREIGN: 5,
 };
 
-const { UrlClassifierTestUtils } = ChromeUtils.importESModule(
-  "resource://testing-common/UrlClassifierTestUtils.sys.mjs"
-);
-
 registerCleanupFunction(async function () {
-  UrlClassifierTestUtils.cleanupTestTrackers();
-
   await new Promise(resolve => {
     Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, () =>
       resolve()
@@ -51,12 +45,12 @@ registerCleanupFunction(async function () {
   });
 });
 
-pushPref("devtools.webconsole.groupWarningMessages", false);
+add_setup(async function () {
+  await pushPref("devtools.webconsole.groupSimilarMessages", false);
+  await setupUrlClassifierTest();
+});
 
 add_task(async function testEnhancedTrackingProtectionMessage() {
-  await UrlClassifierTestUtils.addTestTrackers();
-
-  await pushPref("privacy.trackingprotection.enabled", true);
   const hud = await openNewTabAndConsole(TRACKER_URL + TEST_FILE);
 
   info("Test tracking protection message");

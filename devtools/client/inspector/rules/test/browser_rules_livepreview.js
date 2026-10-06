@@ -41,7 +41,7 @@ add_task(async function () {
 });
 
 async function testLivePreviewData(data, ruleView, selector) {
-  const rule = getRuleViewRuleEditor(ruleView, 1).rule;
+  const rule = getRuleViewRuleEditorAt(ruleView, 1).rule;
   const propEditor = rule.textProps[0].editor;
 
   info("Focusing the property value inplace-editor");
@@ -58,8 +58,8 @@ async function testLivePreviewData(data, ruleView, selector) {
   ruleView.debounce.flush();
   await onPreviewDone;
 
-  const onValueDone = ruleView.once("ruleview-changed");
   if (data.escape) {
+    const onValueDone = ruleView.once("ruleview-changed");
     // First, close the popup
     await waitFor(() => ruleView.popup && ruleView.popup.isOpen);
     ok(true, "Popup was opened");
@@ -70,10 +70,10 @@ async function testLivePreviewData(data, ruleView, selector) {
 
     // Then hit escape a second time to cancel the change
     EventUtils.synthesizeKey("KEY_Escape");
+    await onValueDone;
   } else {
     EventUtils.synthesizeKey("KEY_Enter");
   }
-  await onValueDone;
 
   // While the editor is still focused in, the display should have
   // changed already

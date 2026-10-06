@@ -25,7 +25,7 @@ function col(text, className) {
 function link(text) {
   let column = document.createElement("td");
   let a = document.createElement("a");
-  a.href = "https://mozilla.github.io/policy-templates/#" + text.toLowerCase();
+  a.href = `https://firefox-admin-docs.mozilla.org/reference/policies/${text.toLowerCase()}/`;
   a.target = "_blank";
   let content = document.createTextNode(text);
   a.appendChild(content);
@@ -291,10 +291,12 @@ function generateDocumentation() {
     DisableSetDesktopBackground: "DisableSetAsDesktopBackground",
     FirefoxHome: "FirefoxHome2",
     Permissions: "Permissions2",
+    PopupBlocking: "PopupBlocking2",
     SanitizeOnShutdown: "SanitizeOnShutdown2",
     SecurityDevices: "SecurityDevices2",
     SkipTermsOfUse: "SkipTermsOfUse2",
     WindowsSSO: "Windows10SSO",
+    BrowserDataBackup: "Backup",
   };
   let deprecated_policies = ["DisablePocket"];
 
@@ -406,7 +408,7 @@ function show(button) {
   content.hidden = false;
 
   let title = document.getElementById("sectionTitle");
-  title.textContent = button.textContent;
+  title.textContent = button.textContent.trim();
   location.hash = category;
   restoreScrollPosition(category);
 }

@@ -13,12 +13,14 @@
 
 #if defined(WEBRTC_INCLUDE_INTERNAL_AUDIO_DEVICE)
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <memory>
 
+#include "absl/base/nullability.h"
 #include "api/audio/audio_device.h"
-#include "api/task_queue/task_queue_factory.h"
+#include "api/audio/audio_device_defines.h"
+#include "api/environment/environment.h"
+#include "api/scoped_refptr.h"
 #include "modules/audio_device/audio_device_buffer.h"
 
 namespace webrtc {
@@ -42,19 +44,22 @@ class AudioDeviceModuleImpl : public AudioDeviceModuleForTest {
     kPlatformFuchsia = 7,
   };
 
-  int32_t CheckPlatform();
-  int32_t CreatePlatformSpecificObjects();
-  int32_t AttachAudioBuffer();
+  static absl_nullable scoped_refptr<AudioDeviceModuleImpl> Create(
+      const Environment& env,
+      AudioLayer audio_layer);
 
-  AudioDeviceModuleImpl(AudioLayer audio_layer,
-                        TaskQueueFactory* task_queue_factory);
+  AudioDeviceModuleImpl(const Environment& env, AudioLayer audio_layer);
   // If `create_detached` is true, created ADM can be used on another thread
   // compared to the one on which it was created. It's useful for testing.
-  AudioDeviceModuleImpl(AudioLayer audio_layer,
+  AudioDeviceModuleImpl(const Environment& env,
+                        AudioLayer audio_layer,
                         std::unique_ptr<AudioDeviceGeneric> audio_device,
-                        TaskQueueFactory* task_queue_factory,
                         bool create_detached);
   ~AudioDeviceModuleImpl() override;
+
+  int32_t CheckPlatform();
+  int32_t CreatePlatformSpecificObjects(const Environment& env);
+  int32_t AttachAudioBuffer();
 
   // Retrieve the currently utilized audio layer
   int32_t ActiveAudioLayer(AudioLayer* audioLayer) const override;

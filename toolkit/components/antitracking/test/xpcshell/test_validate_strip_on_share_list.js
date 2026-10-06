@@ -30,12 +30,19 @@ async function validateSchema(paramList, nameOfList) {
           type: "array",
           items: { type: "string" },
         },
-        topLevelSites: {
+        origins: {
           type: "array",
           items: { type: "string" },
         },
+        isGlobal: {
+          type: "boolean",
+        },
       },
-      required: ["queryParams", "topLevelSites"],
+      anyOf: [
+        { properties: { isGlobal: { const: true } } },
+        { required: ["origins"] },
+      ],
+      required: ["queryParams"],
     },
     required: ["global"],
   };

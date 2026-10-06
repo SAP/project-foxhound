@@ -179,7 +179,7 @@ var CaptivePortalWatcher = {
     let win = BrowserWindowTracker.getTopWindow();
     // Used by tests: ignore the main test window in order to enable testing of
     // the case where we have no open windows.
-    if (win.document.documentElement.getAttribute("ignorecaptiveportal")) {
+    if (win?.document.documentElement.getAttribute("ignorecaptiveportal")) {
       win = null;
     }
 
@@ -288,7 +288,7 @@ var CaptivePortalWatcher = {
       case "activate":
         this._delayedCaptivePortalDetected();
         break;
-      case "TabSelect":
+      case "TabSelect": {
         if (this._notificationPromise) {
           await this._notificationPromise;
         }
@@ -312,6 +312,7 @@ var CaptivePortalWatcher = {
           button.style.visibility = "visible";
         }
         break;
+      }
     }
   },
 
@@ -394,7 +395,7 @@ var CaptivePortalWatcher = {
             userContextId: gBrowser.contentPrincipal.userContextId,
           }
         ),
-        disableTRR: true,
+        isCaptivePortalTab: true,
       });
       this._captivePortalTab = Cu.getWeakReference(tab);
       this._previousCaptivePortalTab = Cu.getWeakReference(tab);

@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -25,8 +24,8 @@ interface HTMLObjectElement : HTMLElement {
            attribute DOMString name;
   [CEReactions, Pure, SetterThrows]
            attribute DOMString useMap;
-  [Pure]
-  readonly attribute HTMLFormElement? form;
+  [Pure, BinaryName=formForBindings]
+  readonly attribute Element? form;
   [CEReactions, Pure, SetterThrows]
            attribute DOMString width;
   [CEReactions, Pure, SetterThrows]

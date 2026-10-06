@@ -21,9 +21,9 @@ const {
 } = require("resource://devtools/server/actors/inspector/document-walker.js");
 
 // Always log packets when running tests.
-Services.prefs.setBoolPref("devtools.debugger.log", true);
+Services.prefs.setIntPref("logging.devtools_rdp", 5);
 SimpleTest.registerCleanupFunction(function () {
-  Services.prefs.clearUserPref("devtools.debugger.log");
+  Services.prefs.clearUserPref("logging.devtools_rdp");
 });
 
 if (!DevToolsServer.initialized) {
@@ -53,8 +53,7 @@ SimpleTest.registerCleanupFunction(function () {
  */
 async function attachURL(url) {
   // Get the current browser window
-  const gBrowser =
-    Services.wm.getMostRecentWindow("navigator:browser").gBrowser;
+  const gBrowser = Services.wm.getMostRecentBrowserWindow().gBrowser;
 
   // open the url in a new tab, save a reference to the new inner window global object
   // and wait for it to load. The tests rely on this window object to send a "ready"

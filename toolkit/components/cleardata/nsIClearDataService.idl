@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -174,6 +173,21 @@ interface nsIClearDataService : nsISupports
   void cleanupAfterDeletionAtShutdown(in uint32_t aFlags, in nsIClearDataCallback aCallback);
 
   /**
+   * Clear all private browsing data by firing "last-pb-context-exited"
+   * and awaiting async observer completions.
+   *
+   * This is intended to be called by ResetPBMPanel and similar components
+   * that need to ensure PBM cleanup is complete before proceeding.
+   *
+   * Only one cleanup can be in progress at a time. Returns NS_ERROR_ABORT
+   * if called while a previous cleanup is still running.
+   *
+   * @param aCallback callback executed when ALL cleanup completes
+   * @throws NS_ERROR_ABORT if a cleanup is already in progress
+   */
+  void clearPrivateBrowsingData(in nsIClearDataCallback aCallback);
+
+  /**
    * Match a host and OriginAttributes against a schemeless site and
    * OriginAttributesPattern.
    * Also considers partitioned state by inspecting OriginAttributes
@@ -221,7 +235,15 @@ interface nsIClearDataService : nsISupports
    */
   const uint32_t CLEAR_DOWNLOADS = 1 << 4;
 
-  // Free bit here.
+  /**
+   * TLS session resumption tokens cached by SSLTokensCache.
+   * These are server-issued connection credentials: a server can recognize a
+   * returning client by the same ticket, making them privacy-sensitive state
+   * analogous to auth tokens.  Unlike derived content (HTTP cache), they
+   * cannot be regenerated transparently, so they belong in
+   * CLEAR_COOKIES_AND_SITE_DATA rather than CLEAR_ALL_CACHES.
+   */
+  const uint32_t CLEAR_TLS_TOKEN_CACHE = 1 << 5;
 
   /**
    * Media devices.
@@ -232,11 +254,6 @@ interface nsIClearDataService : nsISupports
    * LocalStorage, IndexedDB, ServiceWorkers, DOM Cache and so on.
    */
   const uint32_t CLEAR_DOM_QUOTA = 1 << 7;
-
-  /**
-   * Predictor network data
-   */
-  const uint32_t CLEAR_PREDICTOR_NETWORK_DATA = 1 << 8;
 
   /**
    * DOM Push notifications
@@ -388,11 +405,12 @@ interface nsIClearDataService : nsISupports
     CLEAR_HISTORY | CLEAR_ALL_CACHES |
     CLEAR_COOKIES | CLEAR_EME | CLEAR_DOWNLOADS |
     CLEAR_PERMISSIONS | CLEAR_DOM_STORAGES | CLEAR_CONTENT_PREFERENCES |
-    CLEAR_PREDICTOR_NETWORK_DATA | CLEAR_DOM_PUSH_NOTIFICATIONS |
+    CLEAR_DOM_PUSH_NOTIFICATIONS |
     CLEAR_CLIENT_AUTH_REMEMBER_SERVICE | CLEAR_REPORTS | CLEAR_CERT_EXCEPTIONS |
     CLEAR_CREDENTIAL_MANAGER_STATE | CLEAR_COOKIE_BANNER_EXCEPTION |
     CLEAR_COOKIE_BANNER_EXECUTED_RECORD | CLEAR_FINGERPRINTING_PROTECTION_STATE |
-    CLEAR_BOUNCE_TRACKING_PROTECTION_STATE | CLEAR_MESSAGING_LAYER_SECURITY_STATE;
+    CLEAR_BOUNCE_TRACKING_PROTECTION_STATE | CLEAR_MESSAGING_LAYER_SECURITY_STATE |
+    CLEAR_TLS_TOKEN_CACHE;
 
   /**
    * Helper flag for clearing cookies and site data.
@@ -406,7 +424,8 @@ interface nsIClearDataService : nsISupports
   const uint32_t CLEAR_COOKIES_AND_SITE_DATA =
     CLEAR_COOKIES | CLEAR_COOKIE_BANNER_EXECUTED_RECORD | CLEAR_DOM_STORAGES | CLEAR_HSTS |
     CLEAR_EME | CLEAR_AUTH_TOKENS | CLEAR_AUTH_CACHE | CLEAR_FINGERPRINTING_PROTECTION_STATE |
-    CLEAR_BOUNCE_TRACKING_PROTECTION_STATE | CLEAR_STORAGE_PERMISSIONS | CLEAR_MESSAGING_LAYER_SECURITY_STATE;
+    CLEAR_BOUNCE_TRACKING_PROTECTION_STATE | CLEAR_STORAGE_PERMISSIONS | CLEAR_MESSAGING_LAYER_SECURITY_STATE |
+    CLEAR_TLS_TOKEN_CACHE;
 
   /**
   * Helper flag for tracker purging
@@ -429,4 +448,28 @@ interface nsIClearDataCallback : nsISupports
    *                     cleanup. If nothing failed, aFailedFlags will be 0.
    */
   void onDataDeleted(in uint32_t aFailedFlags);
+};
+
+/**
+ * Callback returned by nsIPBMCleanupCollector.addPendingCleanup().
+ * Async observers call complete() when their cleanup finishes.
+ * @param aStatus NS_OK on success, or an error code on failure.
+ */
+[scriptable, function, uuid(20c97fec-c9b5-471b-b37b-b89956bf0402)]
+interface nsIPBMCleanupCallback : nsISupports
+{
+  void complete(in nsresult aStatus);
+};
+
+/**
+ * Passed as aSubject in the "last-pb-context-exited" notification when
+ * cleanup is initiated by ClearDataService.clearPrivateBrowsingData().
+ * Async observers should QI the subject and call addPendingCleanup()
+ * to register their operation. When the subject is null (natural PBM
+ * window close), observers behave as before (fire-and-forget).
+ */
+[scriptable, uuid(1e1c9889-25cd-44fa-bd96-ece29fc3956d)]
+interface nsIPBMCleanupCollector : nsISupports
+{
+  nsIPBMCleanupCallback addPendingCleanup();
 };

@@ -134,6 +134,8 @@ Compiler::Compiler(rx::GLImplFactory *implFactory, const State &state, egl::Disp
     mResources.MaxFragmentInputVectors = caps.maxFragmentInputComponents / 4;
     mResources.MinProgramTexelOffset   = caps.minProgramTexelOffset;
     mResources.MaxProgramTexelOffset   = caps.maxProgramTexelOffset;
+    mResources.MaxFragmentUniformBlocks = caps.maxShaderUniformBlocks[gl::ShaderType::Fragment];
+    mResources.MaxVertexUniformBlocks   = caps.maxShaderUniformBlocks[gl::ShaderType::Vertex];
 
     // EXT_blend_func_extended
     mResources.EXT_blend_func_extended  = extensions.blendFuncExtendedEXT;
@@ -180,6 +182,7 @@ Compiler::Compiler(rx::GLImplFactory *implFactory, const State &state, egl::Disp
 
     mResources.MaxComputeUniformComponents = caps.maxShaderUniformComponents[ShaderType::Compute];
     mResources.MaxComputeTextureImageUnits = caps.maxShaderTextureImageUnits[ShaderType::Compute];
+    mResources.MaxComputeUniformBlocks = caps.maxShaderUniformBlocks[gl::ShaderType::Compute];
 
     mResources.MaxComputeAtomicCounters = caps.maxShaderAtomicCounters[ShaderType::Compute];
     mResources.MaxComputeAtomicCounterBuffers =
@@ -238,6 +241,8 @@ Compiler::Compiler(rx::GLImplFactory *implFactory, const State &state, egl::Disp
     mResources.MaxTessControlAtomicCounters = caps.maxShaderAtomicCounters[ShaderType::TessControl];
     mResources.MaxTessControlAtomicCounterBuffers =
         caps.maxShaderAtomicCounterBuffers[ShaderType::TessControl];
+    mResources.MaxTessControlUniformBlocks =
+        caps.maxShaderUniformBlocks[gl::ShaderType::TessControl];
 
     mResources.MaxTessPatchComponents = caps.maxTessPatchComponents;
     mResources.MaxPatchVertices       = caps.maxPatchVertices;
@@ -255,6 +260,8 @@ Compiler::Compiler(rx::GLImplFactory *implFactory, const State &state, egl::Disp
         caps.maxShaderAtomicCounters[ShaderType::TessEvaluation];
     mResources.MaxTessEvaluationAtomicCounterBuffers =
         caps.maxShaderAtomicCounterBuffers[ShaderType::TessEvaluation];
+    mResources.MaxTessEvaluationUniformBlocks =
+        caps.maxShaderUniformBlocks[gl::ShaderType::TessEvaluation];
 
     // Subpixel bits.
     mResources.SubPixelBits = static_cast<int>(caps.subPixelBits);

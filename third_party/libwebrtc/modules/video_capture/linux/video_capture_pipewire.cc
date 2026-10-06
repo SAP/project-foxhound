@@ -10,18 +10,44 @@
 
 #include "modules/video_capture/linux/video_capture_pipewire.h"
 
+#include <pipewire/pipewire.h>
+#include <spa/buffer/buffer.h>
+#include <spa/buffer/meta.h>
+#include <spa/param/format-utils.h>
 #include <spa/param/format.h>
+#include <spa/param/param.h>
 #include <spa/param/video/format-utils.h>
+#include <spa/param/video/raw.h>
 #include <spa/pod/builder.h>
+#include <spa/pod/iter.h>
+#include <spa/pod/vararg.h>
+#include <spa/utils/defs.h>
 #include <spa/utils/result.h>
+#include <spa/utils/type.h>
+#include <sys/mman.h>
 
+#include <algorithm>
+#include <cerrno>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <new>
 #include <vector>
 
+#include "api/sequence_checker.h"
+#include "api/video/video_rotation.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
 #include "modules/portal/pipewire_utils.h"
+#include "modules/video_capture/linux/pipewire_session.h"
+#include "modules/video_capture/video_capture_defines.h"
+#include "modules/video_capture/video_capture_impl.h"
+#include "modules/video_capture/video_capture_options.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/race_checker.h"
 #include "rtc_base/sanitizer.h"
-#include "rtc_base/string_to_number.h"
+#include "rtc_base/synchronization/mutex.h"
+#include "system_wrappers/include/clock.h"
 
 namespace webrtc {
 namespace videocapturemodule {
@@ -30,20 +56,20 @@ struct {
   uint32_t spa_format;
   VideoType video_type;
 } constexpr kSupportedFormats[] = {
-    {SPA_VIDEO_FORMAT_I420, VideoType::kI420},
-    {SPA_VIDEO_FORMAT_NV12, VideoType::kNV12},
-    {SPA_VIDEO_FORMAT_YUY2, VideoType::kYUY2},
-    {SPA_VIDEO_FORMAT_UYVY, VideoType::kUYVY},
+    {.spa_format = SPA_VIDEO_FORMAT_I420, .video_type = VideoType::kI420},
+    {.spa_format = SPA_VIDEO_FORMAT_NV12, .video_type = VideoType::kNV12},
+    {.spa_format = SPA_VIDEO_FORMAT_YUY2, .video_type = VideoType::kYUY2},
+    {.spa_format = SPA_VIDEO_FORMAT_UYVY, .video_type = VideoType::kUYVY},
     // PipeWire is big-endian for the formats, while libyuv is little-endian
     // This means that BGRA == ARGB, RGBA == ABGR and similar
     // This follows mapping in libcamera PipeWire plugin:
     // https://gitlab.freedesktop.org/pipewire/pipewire/-/blob/master/spa/plugins/libcamera/libcamera-utils.cpp
-    {SPA_VIDEO_FORMAT_BGRA, VideoType::kARGB},
-    {SPA_VIDEO_FORMAT_RGBA, VideoType::kABGR},
-    {SPA_VIDEO_FORMAT_ARGB, VideoType::kBGRA},
-    {SPA_VIDEO_FORMAT_RGB, VideoType::kBGR24},
-    {SPA_VIDEO_FORMAT_BGR, VideoType::kRGB24},
-    {SPA_VIDEO_FORMAT_RGB16, VideoType::kRGB565},
+    {.spa_format = SPA_VIDEO_FORMAT_BGRA, .video_type = VideoType::kARGB},
+    {.spa_format = SPA_VIDEO_FORMAT_RGBA, .video_type = VideoType::kABGR},
+    {.spa_format = SPA_VIDEO_FORMAT_ARGB, .video_type = VideoType::kBGRA},
+    {.spa_format = SPA_VIDEO_FORMAT_RGB, .video_type = VideoType::kBGR24},
+    {.spa_format = SPA_VIDEO_FORMAT_BGR, .video_type = VideoType::kRGB24},
+    {.spa_format = SPA_VIDEO_FORMAT_RGB16, .video_type = VideoType::kRGB565},
 };
 
 VideoType VideoCaptureModulePipeWire::PipeWireRawFormatToVideoType(
@@ -67,8 +93,9 @@ uint32_t VideoCaptureModulePipeWire::VideoTypeToPipeWireRawFormat(
 }
 
 VideoCaptureModulePipeWire::VideoCaptureModulePipeWire(
+    Clock* clock,
     VideoCaptureOptions* options)
-    : VideoCaptureImpl(),
+    : VideoCaptureImpl(clock),
       session_(options->pipewire_session()),
       initialized_(false),
       started_(false) {}
@@ -125,21 +152,22 @@ static spa_pod* BuildFormat(spa_pod_builder* builder,
                         0);
   }
 
-  spa_rectangle resolution = spa_rectangle{width, height};
+  spa_rectangle resolution = spa_rectangle{.width = width, .height = height};
   spa_pod_builder_add(builder, SPA_FORMAT_VIDEO_size,
                       SPA_POD_Rectangle(&resolution), 0);
 
   // Framerate can be also set to 0 to be unspecified
   if (frame_rate) {
-    spa_fraction framerate = spa_fraction{static_cast<uint32_t>(frame_rate), 1};
+    spa_fraction framerate =
+        spa_fraction{.num = static_cast<uint32_t>(frame_rate), .denom = 1};
     spa_pod_builder_add(builder, SPA_FORMAT_VIDEO_framerate,
                         SPA_POD_Fraction(&framerate), 0);
   } else {
     // Default to some reasonable values
     spa_fraction preferred_frame_rate =
-        spa_fraction{static_cast<uint32_t>(30), 1};
-    spa_fraction min_frame_rate = spa_fraction{1, 1};
-    spa_fraction max_frame_rate = spa_fraction{30, 1};
+        spa_fraction{.num = static_cast<uint32_t>(30), .denom = 1};
+    spa_fraction min_frame_rate = spa_fraction{.num = 1, .denom = 1};
+    spa_fraction max_frame_rate = spa_fraction{.num = 30, .denom = 1};
     spa_pod_builder_add(
         builder, SPA_FORMAT_VIDEO_framerate,
         SPA_POD_CHOICE_RANGE_Fraction(&preferred_frame_rate, &min_frame_rate,
@@ -194,7 +222,8 @@ int32_t VideoCaptureModulePipeWire::StartCapture(
 
   pw_stream_add_listener(stream_, &stream_listener_, &stream_events, this);
 
-  spa_pod_builder builder = spa_pod_builder{buffer, sizeof(buffer)};
+  spa_pod_builder builder =
+      spa_pod_builder{.data = buffer, .size = sizeof(buffer)};
   std::vector<const spa_pod*> params;
   uint32_t width = capability.width;
   uint32_t height = capability.height;
@@ -221,15 +250,20 @@ int32_t VideoCaptureModulePipeWire::StartCapture(
   return 0;
 }
 
+RTC_NO_SANITIZE("cfi-icall")
 int32_t VideoCaptureModulePipeWire::StopCapture() {
   RTC_DCHECK_RUN_ON(&api_checker_);
 
   PipeWireThreadLoopLock thread_loop_lock(session_->pw_main_loop_);
+
   // PipeWireSession is guarded by API checker so just make sure we do
   // race detection when the PipeWire loop is locked/stopped to not run
   // any callback at this point.
   RTC_CHECK_RUNS_SERIALIZED(&capture_checker_);
   if (stream_) {
+    // Removing the listener first guarantees no callbacks will fire after this
+    // point.
+    spa_hook_remove(&stream_listener_);
     pw_stream_destroy(stream_);
     stream_ = nullptr;
   }
@@ -310,7 +344,7 @@ void VideoCaptureModulePipeWire::OnFormatChanged(const struct spa_pod* format) {
                       << static_cast<int>(configured_capability_.videoType);
 
   uint8_t buffer[1024] = {};
-  auto builder = spa_pod_builder{buffer, sizeof(buffer)};
+  auto builder = spa_pod_builder{.data = buffer, .size = sizeof(buffer)};
 
   // Setup buffers and meta header for new format.
   std::vector<const spa_pod*> params;
@@ -456,12 +490,12 @@ void VideoCaptureModulePipeWire::ProcessBuffers() {
       if (!frame) {
         RTC_LOG(LS_ERROR) << "Failed to mmap the memory: "
                           << std::strerror(errno);
+        pw_stream_queue_buffer(stream_, buffer);
         return;
       }
 
-      IncomingFrame(
-          SPA_MEMBER(frame.get(), spaBuffer->datas[0].mapoffset, uint8_t),
-          spaBuffer->datas[0].chunk->size, configured_capability_);
+      IncomingFrame(frame.get(), spaBuffer->datas[0].chunk->size,
+                    configured_capability_);
     } else {  // SPA_DATA_MemPtr
       IncomingFrame(static_cast<uint8_t*>(spaBuffer->datas[0].data),
                     spaBuffer->datas[0].chunk->size, configured_capability_);

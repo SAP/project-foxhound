@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,12 +5,11 @@
 #ifndef VP8TrackEncoder_h_
 #define VP8TrackEncoder_h_
 
-#include "TrackEncoder.h"
-
 #include <vpx/vpx_codec.h>
 
-#include "mozilla/RollingMean.h"
 #include "TimeUnits.h"
+#include "TrackEncoder.h"
+#include "mozilla/RollingMean.h"
 
 namespace mozilla {
 

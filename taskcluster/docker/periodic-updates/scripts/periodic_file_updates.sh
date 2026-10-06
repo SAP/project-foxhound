@@ -13,10 +13,10 @@ Usage: $(basename "$0") [-p product]
            # Use archive.m.o instead of the taskcluster index to get xpcshell
            [--use-ftp-builds]
            # Use git rather than hg. Using git does not currently support cloning (use
-           # --skip-repo as well).
+           # --skip-clone as well).
            [--use-git]
            # One (or more) of the following actions must be specified.
-           --hsts | --hpkp | --remote-settings | --suffix-list | --mobile-experiments | --ct-logs
+           --hsts | --hpkp | --remote-settings | --suffix-list | --mobile-experiments | --mobile-merino-manifest | --ct-logs
            -b branch
            # The name of top source directory to use for the repository clone.
            [-t topsrcdir]
@@ -44,6 +44,7 @@ DO_HPKP=false
 DO_REMOTE_SETTINGS=false
 DO_SUFFIX_LIST=false
 DO_MOBILE_EXPERIMENTS=false
+DO_MOBILE_MERINO_MANIFEST=false
 DO_CT_LOGS=false
 
 CLONE_REPO=true
@@ -71,6 +72,7 @@ while [ $# -gt 0 ]; do
     --remote-settings) DO_REMOTE_SETTINGS=true ;;
     --suffix-list) DO_SUFFIX_LIST=true ;;
     --mobile-experiments) DO_MOBILE_EXPERIMENTS=true ;;
+    --mobile-merino-manifest) DO_MOBILE_MERINO_MANIFEST=true ;;
     --ct-logs) DO_CT_LOGS=true ;;
     --skip-clone) CLONE_REPO=false ;;
     --skip-push) SKIP_PUSH=true ;;
@@ -93,9 +95,9 @@ if [ "${BRANCH}" == "" ]; then
 fi
 
 # Must choose at least one update action.
-if [ "$DO_HSTS" == "false" ] && [ "$DO_HPKP" == "false" ] && [ "$DO_REMOTE_SETTINGS" == "false" ] && [ "$DO_SUFFIX_LIST" == "false" ] && [ "$DO_MOBILE_EXPERIMENTS" == false ] && [ "$DO_CT_LOGS" == false ]
+if [ "$DO_HSTS" == "false" ] && [ "$DO_HPKP" == "false" ] && [ "$DO_REMOTE_SETTINGS" == "false" ] && [ "$DO_SUFFIX_LIST" == "false" ] && [ "$DO_MOBILE_EXPERIMENTS" == false ] && [ "$DO_MOBILE_MERINO_MANIFEST" == false ] && [ "$DO_CT_LOGS" == false ]
 then
-  echo "Error: you must specify at least one action from: --hsts, --hpkp, --remote-settings, or --suffix-list" >&2
+  echo "Error: you must specify at least one action from: --hsts, --hpkp, --remote-settings, --suffix-list, --mobile-experiments, --mobile-merino-manifest, or --ct-logs" >&2
   usage
   exit 13
 fi
@@ -119,7 +121,11 @@ if [ "${TOPSRCDIR}" == "" ]; then
 fi
 
 case "${BRANCH}" in
-  mozilla-central|comm-central|try )
+  try)
+    # don't clone try, that can only end in sadness
+    HGREPO="https://${HGHOST}/mozilla-central"
+    ;;
+  mozilla-central|comm-central )
     HGREPO="https://${HGHOST}/${BRANCH}"
     ;;
   mozilla-*|comm-* )
@@ -131,12 +137,11 @@ case "${BRANCH}" in
 esac
 
 BROWSER_ARCHIVE="target.tar.xz"
-TESTS_ARCHIVE="target.common.tests.tar.gz"
+TESTS_ARCHIVE="target.common.tests.tar.zst"
 
-UNPACK_CMD="tar Jxf"
+UNPACK_CMD="tar xf"
 COMMIT_AUTHOR='ffxbld <ffxbld@mozilla.com>'
 WGET="wget -nv"
-UNTAR="tar -zxf"
 DIFF="$(command -v diff) -u"
 JQ="$(command -v jq)"
 
@@ -178,6 +183,9 @@ EXPERIMENTER_URL="https://experimenter.services.mozilla.com/api/v6/experiments-f
 FENIX_INITIAL_EXPERIMENTS="mobile/android/fenix/app/src/main/res/raw/initial_experiments.json"
 FOCUS_INITIAL_EXPERIMENTS="mobile/android/focus-android/app/src/main/res/raw/initial_experiments.json"
 MOBILE_EXPERIMENTS_UPDATED=false
+
+MOBILE_MERINO_MANIFEST_UPDATE_SCRIPT="${SCRIPTDIR}/update_mobile_merino_manifest.py"
+MOBILE_MERINO_MANIFEST_UPDATED=false
 
 CT_LOG_UPDATE_SCRIPT="${SCRIPTDIR}/getCTKnownLogs.py"
 
@@ -275,7 +283,7 @@ function unpack_artifacts {
   ${UNPACK_CMD} "${BROWSER_ARCHIVE}"
   mkdir -p tests
   cd tests
-  ${UNTAR} "../${TESTS_ARCHIVE}"
+  ${UNPACK_CMD} "../${TESTS_ARCHIVE}"
   cd "${BASEDIR}"
   cp tests/bin/xpcshell "${PRODUCT}"
 }
@@ -407,9 +415,18 @@ function compare_remote_settings_files {
 
   # 1. List remote settings collections from server.
   echo "INFO: fetch remote settings list from server"
-  ${WGET} -qO- "${REMOTE_SETTINGS_SERVER}/buckets/monitor/collections/changes/records" |\
-    ${JQ} -r '.data[] | .bucket+"/"+.collection+"/"+(.last_modified|tostring)' |\
-    # 2. For each entry ${bucket, collection, last_modified}
+  changes_lines="$(
+    ${WGET} -O- \
+      "${REMOTE_SETTINGS_SERVER}/buckets/monitor/collections/changes/changeset?_expected=0" |
+        ${JQ} -r '.changes[] | .bucket+"/"+.collection+"/"+(.last_modified|tostring)'
+  )"
+  line_count="$(printf '%s\n' "${changes_lines}" | wc -l | xargs)"
+  if [ "${line_count}" -le 1 ]; then
+    echo "ERROR: no changes pulled from server" >&2
+    exit 15
+  fi
+
+  # 2. For each entry ${bucket, collection, last_modified}
   while IFS="/" read -r bucket collection last_modified; do
 
     # 3. Check to see if the collection exists in the dump directory of the repository,
@@ -467,7 +484,7 @@ function compare_remote_settings_files {
     else
       ${HG} --cwd "${TOPSRCDIR}" purge services/settings/dumps/main/search-config-icons
     fi
-  done
+  done <<< "${changes_lines}"
 
   echo "INFO: diffing old/new remote settings dumps..."
   create_repo_diff "${REMOTE_SETTINGS_DIR}" "${REMOTE_SETTINGS_DIFF_ARTIFACT}"
@@ -539,6 +556,17 @@ function compare_mobile_experiments() {
   fi
 }
 
+function update_mobile_merino_manifest() {
+  echo "INFO: Updating mobile merino manifest..."
+  "${TOPSRCDIR}"/mach python "${MOBILE_MERINO_MANIFEST_UPDATE_SCRIPT}"
+  status=$?
+
+  if [ $status -gt 1 ]; then
+    exit 70
+  fi
+  return $status
+}
+
 function update_ct_logs() {
   echo "INFO: Updating CT logs..."
   "${TOPSRCDIR}"/mach python "${CT_LOG_UPDATE_SCRIPT}"
@@ -598,10 +626,18 @@ function push_repo {
   then
     return 1
   fi
-  # Clean up older review requests
+  # Clean up older review requests of the same type as this run.
+  # Pinning updates (HSTS/HPKP) and periodic updates are separate tasks and
+  # must not abandon each other's patches.
   # Turn  Needs Review D624: No bug, Automated HSTS ...
   # into D624
-  for diff in $($ARC list | grep "Needs Review" | grep -E "${BRANCH} repo-update" | awk 'match($0, /D[0-9]+[^: ]/) { print substr($0, RSTART, RLENGTH)  }')
+  ALL_DIFFS=$($ARC list | grep "Needs Review" | grep -E "${BRANCH} repo-update" || true)
+  if [ "${DO_HSTS}" == "true" ] || [ "${DO_HPKP}" == "true" ]; then
+    OLDER_DIFFS=$(echo "${ALL_DIFFS}" | grep -E "HSTS|HPKP" || true)
+  else
+    OLDER_DIFFS=$(echo "${ALL_DIFFS}" | grep -vE "HSTS|HPKP" || true)
+  fi
+  for diff in $(echo "${OLDER_DIFFS}" | awk 'match($0, /D[0-9]+[^: ]/) { print substr($0, RSTART, RLENGTH)  }')
   do
     echo "Removing old request $diff"
     # There is no 'arc abandon', see bug 1452082
@@ -668,12 +704,18 @@ if [ "${DO_MOBILE_EXPERIMENTS}" == "true" ]; then
     MOBILE_EXPERIMENTS_UPDATED=true
   fi
 fi
+if [ "${DO_MOBILE_MERINO_MANIFEST}" == "true" ]; then
+  if update_mobile_merino_manifest
+  then
+    MOBILE_MERINO_MANIFEST_UPDATED=true
+  fi
+fi
 if [ "${DO_CT_LOGS}" == "true" ]; then
   update_ct_logs
 fi
 
 
-if [ "${HSTS_UPDATED}" == "false" ] && [ "${HPKP_UPDATED}" == "false" ] && [ "${REMOTE_SETTINGS_UPDATED}" == "false" ] && [ "${SUFFIX_LIST_UPDATED}" == "false" ] && [ "${MOBILE_EXPERIMENTS_UPDATED}" == "false" ] && [ "${DO_CT_LOGS}" == "false" ]; then
+if [ "${HSTS_UPDATED}" == "false" ] && [ "${HPKP_UPDATED}" == "false" ] && [ "${REMOTE_SETTINGS_UPDATED}" == "false" ] && [ "${SUFFIX_LIST_UPDATED}" == "false" ] && [ "${MOBILE_EXPERIMENTS_UPDATED}" == "false" ] && [ "${MOBILE_MERINO_MANIFEST_UPDATED}" == "false" ] && [ "${DO_CT_LOGS}" == "false" ]; then
   echo "INFO: no updates required. Exiting."
   exit 0
 else
@@ -711,6 +753,13 @@ if [ "${MOBILE_EXPERIMENTS_UPDATED}" == "true" ]
 then
   stage_mobile_experiments_files
   COMMIT_MESSAGE="${COMMIT_MESSAGE} mobile-experiments"
+fi
+
+if [ "${MOBILE_MERINO_MANIFEST_UPDATED}" == "true" ]
+then
+  # Merino manifest file is already updated in-place in the tree, 
+  # so there's no need to stage them.
+  COMMIT_MESSAGE="${COMMIT_MESSAGE} mobile-merino-manifest"
 fi
 
 if [ "${DO_CT_LOGS}" == "true" ]

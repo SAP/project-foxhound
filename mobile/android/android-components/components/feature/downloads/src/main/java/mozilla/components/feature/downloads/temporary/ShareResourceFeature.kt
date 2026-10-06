@@ -45,6 +45,7 @@ import mozilla.components.support.ktx.android.content.shareMedia
  *  @property store a reference to the application's [BrowserStore]
  *  @property tabId ID of the tab session, or null if the selected session should be used.
  *  @param httpClient Client used for downloading internet resources
+ *  @param mainDispatcher [CoroutineDispatcher] used for observing the store. Defaults to [Dispatchers.Main].
  *  @param ioDispatcher Coroutine dispatcher used for IO operations like the download operation
  *  and cleanup of old cached files. Defaults to IO.
  */
@@ -53,6 +54,7 @@ class ShareResourceFeature(
     private val store: BrowserStore,
     private val tabId: String?,
     httpClient: Client,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : TemporaryDownloadFeature(
     context = context,
@@ -61,7 +63,7 @@ class ShareResourceFeature(
 ) {
 
     override fun start() {
-        scope = store.flowScoped { flow ->
+        scope = store.flowScoped(dispatcher = mainDispatcher) { flow ->
             flow.mapNotNull { state -> state.findTabOrCustomTabOrSelectedTab(tabId) }
                 .distinctUntilChangedBy { it.content.share }
                 .collect { state ->

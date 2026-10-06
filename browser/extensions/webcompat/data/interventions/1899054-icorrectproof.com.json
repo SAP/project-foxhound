@@ -1,0 +1,18 @@
+{
+  "label": "icorrectproof.com",
+  "bugs": {
+    "1899054": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://www.icorrectproof.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "skip_if": ["InstallTrigger_undefined"],
+      "content_scripts": {
+        "js": ["undefine_InstallTrigger.js"]
+      }
+    }
+  ]
+}

@@ -7,11 +7,10 @@ import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 import { toEditorPosition } from "../../utils/editor/index";
 import { isException } from "../../utils/pause/index";
 import { connect } from "devtools/client/shared/vendor/react-redux";
-import { markerTypes } from "../../constants";
 import {
   getVisibleSelectedFrame,
   getPauseReason,
-  getSourceTextContent,
+  getSourceTextContentForLocation,
   getCurrentThread,
   getViewport,
   getSelectedTraceLocation,
@@ -65,7 +64,7 @@ export class DebugLine extends PureComponent {
     // So we have to use `createPositionElementNode`, similarly to column breakpoints
     // to have a new dedicated DOM element for the paused location.
     editor.setPositionContentMarker({
-      id: markerTypes.PAUSED_LOCATION_MARKER,
+      id: editor.markerTypes.PAUSED_LOCATION_MARKER,
 
       // Ensure displaying the marker after all the other markers and especially the column breakpoint markers
       displayLast: true,
@@ -84,12 +83,12 @@ export class DebugLine extends PureComponent {
     });
 
     editor.setLineContentMarker({
-      id: markerTypes.DEBUG_LINE_MARKER,
+      id: editor.markerTypes.DEBUG_LINE_MARKER,
       lineClassName: lineClass,
       lines: [{ line: editorLocation.line }],
     });
     editor.setPositionContentMarker({
-      id: markerTypes.DEBUG_POSITION_MARKER,
+      id: editor.markerTypes.DEBUG_POSITION_MARKER,
       positionClassName: markTextClass,
       positions: [editorLocation],
     });
@@ -105,9 +104,13 @@ export class DebugLine extends PureComponent {
       otherProps?.location !== location ||
       otherProps?.selectedSource?.id !== selectedSource.id
     ) {
-      editor.removeLineContentMarker(markerTypes.DEBUG_LINE_MARKER);
-      editor.removePositionContentMarker(markerTypes.DEBUG_POSITION_MARKER);
-      editor.removePositionContentMarker(markerTypes.PAUSED_LOCATION_MARKER);
+      editor.removeLineContentMarker(editor.markerTypes.DEBUG_LINE_MARKER);
+      editor.removePositionContentMarker(
+        editor.markerTypes.DEBUG_POSITION_MARKER
+      );
+      editor.removePositionContentMarker(
+        editor.markerTypes.PAUSED_LOCATION_MARKER
+      );
     }
   }
 
@@ -166,7 +169,7 @@ const mapStateToProps = state => {
     return {};
   }
 
-  const sourceTextContent = getSourceTextContent(state, location);
+  const sourceTextContent = getSourceTextContentForLocation(state, location);
   if (!isDocumentReady(location, sourceTextContent)) {
     return {};
   }

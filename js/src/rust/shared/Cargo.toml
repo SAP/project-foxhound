@@ -15,12 +15,16 @@ encoding_c = "0.9.5"
 encoding_c_mem = "0.2.4"
 mozglue-static = { path = "../../../../mozglue/static/rust" }
 gluesmith = { path = "../../fuzz-tests/gluesmith", optional = true }
-icu_capi = { version = "2.0", optional = true, default-features= false, features = ["any_provider", "compiled_data", "segmenter", "calendar"] }
-unicode-bidi-ffi = { path = "../../../../intl/bidi/rust/unicode-bidi-ffi" }
+icu_capi = { version = "2.1", optional = true, default-features= false, features = ["any_provider", "compiled_data", "segmenter", "calendar"] }
+unicode-bidi-ffi = { path = "../../../../intl/bidi/rust/unicode-bidi-ffi", optional = true }
+normalizer_glue = { path = "../../builtin/normalizer_glue" }
+properties_glue = { path = "../../irregexp/properties_glue", optional = true }
+collator_glue = { path = "../../builtin/intl/collator_glue", optional = true }
+locale_glue = { path = "../../builtin/intl/locale_glue", optional = true }
 
 [features]
 simd-accel = ['encoding_c/simd-accel']
-icu4x = ['icu_capi']
+icu4x = ['icu_capi', 'unicode-bidi-ffi', 'properties_glue', 'collator_glue', 'locale_glue']
 
 # Uncomment this to enable perf support in release mode.
 #[profile.release]

@@ -23,6 +23,28 @@ interface nsIMockNetworkLayerController : nsISupports
   void clearNetAddrOverrides();
 
   /**
+   * This method causes TCP connect() to fail with PR_CONNECT_REFUSED_ERROR
+   * for the given network address.
+   */
+  void blockTCPConnect(in nsINetAddr aAddr);
+
+  /**
+   * Removes all entries from the TCP connect blocklist.
+   */
+  void clearBlockedTCPConnect();
+
+  /**
+   * This method causes TCP connect() to hang indefinitely (returns
+   * PR_IN_PROGRESS_ERROR without actually connecting) for the given address.
+   */
+  void pauseTCPConnect(in nsINetAddr aAddr);
+
+  /**
+   * Removes all entries from the TCP connect pause list.
+   */
+  void clearPausedTCPConnect();
+
+  /**
    * This method prevents any UDP traffic to and from the given network address.
    */
   void blockUDPAddrIO(in nsINetAddr aAddr);
@@ -31,4 +53,15 @@ interface nsIMockNetworkLayerController : nsISupports
    * Removes all entries from the UDP blocklist.
    */
   void clearBlockedUDPAddr();
+
+  /**
+   * This method causes UDP sendto() to fail immediately with
+   * PR_CONNECT_REFUSED_ERROR for the given network address.
+   */
+  void failUDPAddrIO(in nsINetAddr aAddr);
+
+  /**
+   * Removes all entries from the UDP fail list.
+   */
+  void clearFailedUDPAddr();
 };

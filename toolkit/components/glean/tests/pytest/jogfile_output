@@ -350,6 +350,18 @@
         false
       ],
       [
+        "quantity",
+        "unordered_quantity_metric",
+        [
+          "metrics"
+        ],
+        "ping",
+        false,
+        {
+          "permit_non_commutative_operations_over_ipc": true
+        }
+      ],
+      [
         "uuid",
         "uuid_metric",
         [

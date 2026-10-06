@@ -1,13 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* base class for DOM objects for element.style and cssStyleRule.style */
 
-#ifndef nsDOMCSSDeclaration_h___
-#define nsDOMCSSDeclaration_h___
+#ifndef nsDOMCSSDeclaration_h_
+#define nsDOMCSSDeclaration_h_
 
 #include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
@@ -16,14 +14,20 @@
 #include "nsCOMPtr.h"
 #include "nsCompatibility.h"
 #include "nsICSSDeclaration.h"
+// The following include provides nsCSSProps::PropertyIDLName(), used by
+// generated CSS2PropertiesBinding.cpp
+// TODO: Ideally it would only be included from there.
+#include "nsCSSProps.h"
 
 class nsIPrincipal;
 struct JSContext;
 class JSObject;
+enum class AttrModType : uint8_t;  // Defined in nsIMutationObserver.h
 
 namespace mozilla {
+struct CSSPropertyId;
 enum class StyleCssRuleType : uint8_t;
-class DeclarationBlock;
+struct StyleLockedDeclarationBlock;
 struct DeclarationBlockMutationClosure;
 namespace css {
 class Loader;
@@ -39,7 +43,7 @@ struct MutationClosureData {
 
   mozilla::dom::Element* mElement = nullptr;
   Maybe<nsAttrValue> mOldValue;
-  uint8_t mModType = 0;
+  AttrModType mModType{0};  // NOTE: The initial value is invalid value.
   bool mWasCalled = false;
   bool mShouldBeCalled = false;
 };
@@ -48,6 +52,9 @@ struct MutationClosureData {
 
 class nsDOMCSSDeclaration : public nsICSSDeclaration {
  public:
+  using Block = mozilla::StyleLockedDeclarationBlock;
+  static already_AddRefed<Block> EnsureBlockMutable(Block*);
+
   // Only implement QueryInterface; subclasses have the responsibility
   // of implementing AddRef/Release.
   NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr) override;
@@ -62,7 +69,7 @@ class nsDOMCSSDeclaration : public nsICSSDeclaration {
    * Method analogous to CSSStyleDeclaration::GetPropertyValue,
    * which obeys all the same restrictions.
    */
-  virtual void GetPropertyValue(const nsCSSPropertyID aPropID,
+  virtual void GetPropertyValue(const NonCustomCSSPropertyId aPropId,
                                 nsACString& aValue);
 
   /**
@@ -70,10 +77,21 @@ class nsDOMCSSDeclaration : public nsICSSDeclaration {
    * method does NOT allow setting a priority (the priority will
    * always be set to default priority).
    */
-  virtual void SetPropertyValue(const nsCSSPropertyID aPropID,
+  virtual void SetPropertyValue(const NonCustomCSSPropertyId aPropId,
                                 const nsACString& aValue,
                                 nsIPrincipal* aSubjectPrincipal,
                                 mozilla::ErrorResult& aRv);
+
+  /**
+   * Method used by Typed OM to set a property from a typed value.
+   *
+   * For now, the value is passed as a string and parsed internally. In the
+   * future, this is expected to take a StylePropertyTypedValueList and avoid
+   * parsing by converting Typed OM values directly.
+   */
+  virtual void SetPropertyTypedValue(const mozilla::CSSPropertyId& aPropId,
+                                     const nsACString& aValue,
+                                     mozilla::ErrorResult& aRv);
 
   // Require subclasses to implement |GetParentRule|.
   // NS_DECL_NSIDOMCSSSTYLEDECLARATION
@@ -82,6 +100,7 @@ class nsDOMCSSDeclaration : public nsICSSDeclaration {
                   mozilla::ErrorResult& aRv) override;
   void GetPropertyValue(const nsACString& propertyName,
                         nsACString& _retval) override;
+  bool HasLonghandProperty(const nsACString& propertyName) override;
   void RemoveProperty(const nsACString& propertyName, nsACString& _retval,
                       mozilla::ErrorResult& aRv) override;
   void GetPropertyPriority(const nsACString& propertyName,
@@ -89,9 +108,10 @@ class nsDOMCSSDeclaration : public nsICSSDeclaration {
   void SetProperty(const nsACString& propertyName, const nsACString& value,
                    const nsACString& priority, nsIPrincipal* aSubjectPrincipal,
                    mozilla::ErrorResult& aRv) override;
+  using nsICSSDeclaration::SetProperty;
   uint32_t Length() override;
 
-  // WebIDL interface for CSS2Properties
+  // WebIDL interface for CSSStyleProperties
   virtual void IndexedGetter(uint32_t aIndex, bool& aFound,
                              nsACString& aPropName) override;
 
@@ -128,12 +148,11 @@ class nsDOMCSSDeclaration : public nsICSSDeclaration {
 
   // If aOperation is Modify, aCreated must be non-null and the call may set it
   // to point to the newly created object.
-  virtual mozilla::DeclarationBlock* GetOrCreateCSSDeclaration(
-      Operation aOperation, mozilla::DeclarationBlock** aCreated) = 0;
+  virtual Block* GetOrCreateCSSDeclaration(Operation aOperation,
+                                           Block** aCreated) = 0;
 
   virtual nsresult SetCSSDeclaration(
-      mozilla::DeclarationBlock* aDecl,
-      mozilla::MutationClosureData* aClosureData) = 0;
+      Block* aDecl, mozilla::MutationClosureData* aClosureData) = 0;
   // Document that we must call BeginUpdate/EndUpdate on around the
   // calls to SetCSSDeclaration and the style rule mutation that leads
   // to it.
@@ -155,7 +174,7 @@ class nsDOMCSSDeclaration : public nsICSSDeclaration {
   static ParsingEnvironment GetParsingEnvironmentForRule(
       const mozilla::css::Rule* aRule, mozilla::StyleCssRuleType);
 
-  nsresult ParsePropertyValue(const nsCSSPropertyID aPropID,
+  nsresult ParsePropertyValue(const NonCustomCSSPropertyId aPropId,
                               const nsACString& aPropValue, bool aIsImportant,
                               nsIPrincipal* aSubjectPrincipal);
 
@@ -164,7 +183,10 @@ class nsDOMCSSDeclaration : public nsICSSDeclaration {
                                     bool aIsImportant,
                                     nsIPrincipal* aSubjectPrincipal);
 
-  void RemovePropertyInternal(nsCSSPropertyID aPropID,
+  nsresult SetPropertyTypedValue(const mozilla::CSSPropertyId& aPropId,
+                                 const nsACString& aPropValue);
+
+  void RemovePropertyInternal(NonCustomCSSPropertyId aPropId,
                               mozilla::ErrorResult& aRv);
   void RemovePropertyInternal(const nsACString& aPropert,
                               mozilla::ErrorResult& aRv);
@@ -183,4 +205,4 @@ class nsDOMCSSDeclaration : public nsICSSDeclaration {
                                     ServoFunc aServoFunc);
 };
 
-#endif  // nsDOMCSSDeclaration_h___
+#endif  // nsDOMCSSDeclaration_h_

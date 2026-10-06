@@ -54,6 +54,8 @@
       gFindBar.browser = gBrowser;
 
       let loadedPromise = BrowserTestUtils.browserLoaded(gBrowser);
+      // TODO: Switch to SpecialPowers.spawn
+// eslint-disable-next-line mozilla/reject-contenttask-spawn
       let contentLoadedPromise = ContentTask.spawn(gBrowser, null, async function() {
         return new Promise(resolve => {
           addEventListener("DOMContentLoaded", () => resolve(), { once: true });
@@ -76,6 +78,8 @@
 
       let focusPromise;
       if (browserId == "content-remote") {
+        // TODO: Switch to SpecialPowers.spawn
+// eslint-disable-next-line mozilla/reject-contenttask-spawn
         focusPromise = ContentTask.spawn(gBrowser, null, async function() {
           await new Promise(resolve => {
             content.document.addEventListener("focus", resolve, { once: true });

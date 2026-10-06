@@ -10,9 +10,11 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.annotation.VisibleForTesting
 import androidx.core.net.toUri
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import mozilla.components.lib.publicsuffixlist.PublicSuffixList
 import mozilla.components.support.ktx.kotlin.toShortUrl
 import mozilla.telemetry.glean.private.NoExtras
@@ -27,17 +29,19 @@ import org.mozilla.fenix.trackingprotection.ProtectionsState
  *
  * @param container [ViewGroup] in which this View will inflate itself.
  * @param context An Android [Context].
- * @param ioScope [CoroutineScope] with an IO dispatcher used for structured concurrency.
+ * @param scope [CoroutineScope]used for structured concurrency.
  * @param publicSuffixList To show short url.
  * @param interactor [CookieBannerDetailsInteractor] which will have delegated to all user interactions.
+ * @param ioDispatcher [CoroutineDispatcher] used for IO operations.
  * @param onDismiss Lambda invoked to dismiss the cookie banner.
  */
 class CookieBannerHandlingDetailsView(
     container: ViewGroup,
     private val context: Context,
-    private val ioScope: CoroutineScope,
+    private val scope: CoroutineScope,
     private val publicSuffixList: PublicSuffixList,
     private val interactor: CookieBannerDetailsInteractor,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val onDismiss: () -> Unit,
 ) {
     val binding = ComponentCookieBannerDetailsPanelBinding.inflate(
@@ -86,29 +90,32 @@ class CookieBannerHandlingDetailsView(
 
     @VisibleForTesting
     internal fun bindTitle(url: String, state: CookieBannerUIMode) {
-        ioScope.launch {
-            val host = url.toUri().host.orEmpty()
-            val domain = publicSuffixList.getPublicSuffixPlusOne(host).await()
-
-            launch(Dispatchers.Main) {
-                val data = domain ?: url
-                val shortUrl = data.toShortUrl(publicSuffixList)
-                val title = when (state) {
-                    CookieBannerUIMode.ENABLE -> context.getString(
-                        R.string.reduce_cookie_banner_details_panel_title_off_for_site_1,
-                        shortUrl,
-                    )
-                    CookieBannerUIMode.DISABLE -> context.getString(
-                        R.string.reduce_cookie_banner_details_panel_title_on_for_site_1,
-                        shortUrl,
-                    )
-                    CookieBannerUIMode.SITE_NOT_SUPPORTED -> context.getString(
-                        R.string.cookie_banner_handling_details_site_is_not_supported_title_2,
-                    )
-                    else -> ""
-                }
-                binding.title.text = title
+        scope.launch {
+            val domain = withContext(ioDispatcher) {
+                val host = url.toUri().host.orEmpty()
+                publicSuffixList.getPublicSuffixPlusOne(host).await()
             }
+
+            val data = domain ?: url
+            val shortUrl = data.toShortUrl(publicSuffixList)
+            val title = when (state) {
+                CookieBannerUIMode.ENABLE -> context.getString(
+                    R.string.reduce_cookie_banner_details_panel_title_off_for_site_1,
+                    shortUrl,
+                )
+
+                CookieBannerUIMode.DISABLE -> context.getString(
+                    R.string.reduce_cookie_banner_details_panel_title_on_for_site_1,
+                    shortUrl,
+                )
+
+                CookieBannerUIMode.SITE_NOT_SUPPORTED -> context.getString(
+                    R.string.cookie_banner_handling_details_site_is_not_supported_title_2,
+                )
+
+                else -> ""
+            }
+            binding.title.text = title
         }
     }
 

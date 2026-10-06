@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,19 +6,14 @@
 #define WEBGL_TEXTURE_H_
 
 #include <algorithm>
-#include <map>
-#include <set>
 #include <vector>
-
-#include "mozilla/Assertions.h"
-#include "mozilla/Casting.h"
-#include "mozilla/CheckedInt.h"
-#include "mozilla/dom/TypedArray.h"
 
 #include "CacheInvalidator.h"
 #include "WebGLObjectModel.h"
 #include "WebGLStrongTypes.h"
 #include "WebGLTypes.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/dom/TypedArray.h"
 
 namespace mozilla {
 class ErrorResult;

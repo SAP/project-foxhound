@@ -1,28 +1,23 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FuzzingInterface.h"
-
-#include "jsapi.h"
 #include "js/StructuredClone.h"
-#include "mozilla/dom/ipc/StructuredCloneData.h"
-#include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/dom/StructuredCloneHolder.h"
-#include "mozilla/dom/SimpleGlobalObject.h"
+#include "jsapi.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/ScopeExit.h"
-#include "mozilla/UniquePtr.h"
-
+#include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/SimpleGlobalObject.h"
+#include "mozilla/dom/StructuredCloneHolder.h"
+#include "mozilla/dom/ipc/StructuredCloneData.h"
 #include "nsCycleCollector.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
 using namespace mozilla::dom::ipc;
 
-MOZ_RUNINIT JS::PersistentRooted<JSObject*> global;
+constinit JS::PersistentRooted<JSObject*> global;
 
 static int FuzzingInitDomSC(int* argc, char*** argv) {
   JSObject* simpleGlobal =
@@ -52,14 +47,14 @@ static int FuzzingRunDomSC(const uint8_t* data, size_t size) {
   // during fuzzing.
   size -= size % 8;
 
-  StructuredCloneData scdata;
-  if (!scdata.CopyExternalData(reinterpret_cast<const char*>(data), size)) {
+  auto scdata = MakeRefPtr<StructuredCloneData>();
+  if (!scdata->CopyExternalData(reinterpret_cast<const char*>(data), size)) {
     return 0;
   }
 
   JS::Rooted<JS::Value> result(cx);
   ErrorResult rv;
-  scdata.Read(cx, &result, rv);
+  scdata->Read(cx, &result, rv);
 
   rv.SuppressException();
 

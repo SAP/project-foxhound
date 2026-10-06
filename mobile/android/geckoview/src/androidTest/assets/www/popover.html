@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>Popover</title>
+    <script>
+      function load() {
+        document.body.addEventListener("click", () => {
+          document.getElementById("mypopover").showPopover();
+        });
+      }
+    </script>
+  </head>
+  <body onload="load()">
+    <div style="width: 100px; height: 100px">click me</div>
+    <div id="mypopover" popover>This is a popover content.</div>
+  </body>
+</html>

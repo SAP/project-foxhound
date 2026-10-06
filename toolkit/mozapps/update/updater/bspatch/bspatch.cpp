@@ -108,9 +108,9 @@ int MBS_ReadHeader(FILE* file, MBSPatchHeader* header) {
 }
 
 int MBS_ApplyPatch(const MBSPatchHeader* header, FILE* patchFile,
-                   unsigned char* fbuffer, FILE* file) {
-  unsigned char* fbufstart = fbuffer;
-  unsigned char* fbufend = fbuffer + header->slen;
+                   const unsigned char* fbuffer, FILE* file) {
+  const unsigned char* fbufstart = fbuffer;
+  const unsigned char* fbufend = fbuffer + header->slen;
 
   unsigned char* buf = (unsigned char*)malloc(header->cblen + header->difflen +
                                               header->extralen);

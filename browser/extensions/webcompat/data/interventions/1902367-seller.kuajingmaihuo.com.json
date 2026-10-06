@@ -1,0 +1,15 @@
+{
+  "label": "seller.kuajingmaihuo.com",
+  "bugs": {
+    "1902367": {
+      "issue": "unsupported-warning",
+      "matches": ["*://seller.kuajingmaihuo.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

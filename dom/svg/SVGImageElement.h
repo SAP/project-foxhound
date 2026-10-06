@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,15 +5,16 @@
 #ifndef DOM_SVG_SVGIMAGEELEMENT_H_
 #define DOM_SVG_SVGIMAGEELEMENT_H_
 
-#include "nsImageLoadingContent.h"
 #include "mozilla/dom/SVGAnimatedLength.h"
+#include "mozilla/dom/SVGAnimatedPreserveAspectRatio.h"
 #include "mozilla/dom/SVGAnimatedString.h"
 #include "mozilla/dom/SVGGeometryElement.h"
-#include "mozilla/dom/SVGAnimatedPreserveAspectRatio.h"
 #include "mozilla/gfx/2D.h"
+#include "nsINode.h"
+#include "nsImageLoadingContent.h"
 
 nsresult NS_NewSVGImageElement(
-    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
 namespace mozilla {
 class SVGImageFrame;
@@ -30,19 +29,19 @@ class SVGImageElement final : public SVGImageElementBase,
   friend class mozilla::SVGImageFrame;
 
  protected:
-  explicit SVGImageElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+  explicit SVGImageElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
   virtual ~SVGImageElement();
   JSObject* WrapNode(JSContext* aCx,
                      JS::Handle<JSObject*> aGivenProto) override;
   friend nsresult(::NS_NewSVGImageElement(
       nsIContent** aResult,
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo));
 
  public:
   // interfaces:
 
   NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_ADDSIZEOFEXCLUDINGTHIS
 
   // EventTarget
   void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
@@ -102,7 +101,7 @@ class SVGImageElement final : public SVGImageElementBase,
 
   already_AddRefed<Promise> Decode(ErrorResult& aRv);
 
-  static nsCSSPropertyID GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum);
+  static NonCustomCSSPropertyId GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum);
 
   gfx::Rect GeometryBounds(const gfx::Matrix& aToBoundsSpace);
 
@@ -126,15 +125,15 @@ class SVGImageElement final : public SVGImageElementBase,
 
   nsCOMPtr<nsIURI> mSrcURI;
 
+  enum { HREF, XLINK_HREF };
+  SVGAnimatedString mStringAttributes[2];
+  static StringInfo sStringInfo[2];
+
   enum { ATTR_X, ATTR_Y, ATTR_WIDTH, ATTR_HEIGHT };
   SVGAnimatedLength mLengthAttributes[4];
   static LengthInfo sLengthInfo[4];
 
   SVGAnimatedPreserveAspectRatio mPreserveAspectRatio;
-
-  enum { HREF, XLINK_HREF };
-  SVGAnimatedString mStringAttributes[2];
-  static StringInfo sStringInfo[2];
 };
 
 }  // namespace dom

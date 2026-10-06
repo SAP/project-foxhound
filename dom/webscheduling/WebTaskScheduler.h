@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,23 +5,22 @@
 #ifndef mozilla_dom_WebTaskScheduler_h
 #define mozilla_dom_WebTaskScheduler_h
 
-#include "nsThreadUtils.h"
-#include "nsPIDOMWindow.h"
-#include "nsWrapperCache.h"
-#include "nsClassHashtable.h"
-
 #include "TaskSignal.h"
 #include "mozilla/Variant.h"
-#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/AbortFollower.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/TimeoutHandler.h"
 #include "mozilla/dom/WebTaskSchedulingBinding.h"
+#include "nsClassHashtable.h"
+#include "nsPIDOMWindow.h"
+#include "nsThreadUtils.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 
 // Keep tracks of the number of same-event-loop-high-priority-queues
 // (User_blocking or User_visible) that have at least one task scheduled.
-MOZ_CONSTINIT extern uint32_t
+constinit extern uint32_t
     gNumNormalOrHighPriorityQueuesHaveTaskScheduledMainThread;
 
 // https://wicg.github.io/scheduling-apis/#scheduling-state

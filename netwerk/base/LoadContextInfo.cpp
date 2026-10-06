@@ -107,7 +107,7 @@ NS_IMETHODIMP LoadContextInfoFactory::FromWindow(nsIDOMWindow* aWindow,
 
 // Helper functions
 
-LoadContextInfo* GetLoadContextInfo(nsIChannel* aChannel) {
+already_AddRefed<LoadContextInfo> GetLoadContextInfo(nsIChannel* aChannel) {
   nsresult rv;
 
   DebugOnly<bool> pb = NS_UsePrivateBrowsing(aChannel);
@@ -123,13 +123,13 @@ LoadContextInfo* GetLoadContextInfo(nsIChannel* aChannel) {
   StoragePrincipalHelper::GetOriginAttributesForNetworkState(aChannel, oa);
   MOZ_ASSERT(pb == (oa.IsPrivateBrowsing()));
 
-  return new LoadContextInfo(anon, oa);
+  return MakeAndAddRef<LoadContextInfo>(anon, oa);
 }
 
-LoadContextInfo* GetLoadContextInfo(nsILoadContext* aLoadContext,
-                                    bool aIsAnonymous) {
+already_AddRefed<LoadContextInfo> GetLoadContextInfo(
+    nsILoadContext* aLoadContext, bool aIsAnonymous) {
   if (!aLoadContext) {
-    return new LoadContextInfo(aIsAnonymous, OriginAttributes());
+    return MakeAndAddRef<LoadContextInfo>(aIsAnonymous, OriginAttributes());
   }
 
   OriginAttributes oa;
@@ -143,24 +143,26 @@ LoadContextInfo* GetLoadContextInfo(nsILoadContext* aLoadContext,
   }
 #endif
 
-  return new LoadContextInfo(aIsAnonymous, oa);
+  return MakeAndAddRef<LoadContextInfo>(aIsAnonymous, oa);
 }
 
-LoadContextInfo* GetLoadContextInfo(nsIDOMWindow* aWindow, bool aIsAnonymous) {
+already_AddRefed<LoadContextInfo> GetLoadContextInfo(nsIDOMWindow* aWindow,
+                                                     bool aIsAnonymous) {
   nsCOMPtr<nsIWebNavigation> webNav = do_GetInterface(aWindow);
   nsCOMPtr<nsILoadContext> loadContext = do_QueryInterface(webNav);
 
   return GetLoadContextInfo(loadContext, aIsAnonymous);
 }
 
-LoadContextInfo* GetLoadContextInfo(nsILoadContextInfo* aInfo) {
-  return new LoadContextInfo(aInfo->IsAnonymous(),
-                             *aInfo->OriginAttributesPtr());
+already_AddRefed<LoadContextInfo> GetLoadContextInfo(
+    nsILoadContextInfo* aInfo) {
+  return MakeAndAddRef<LoadContextInfo>(aInfo->IsAnonymous(),
+                                        *aInfo->OriginAttributesPtr());
 }
 
-LoadContextInfo* GetLoadContextInfo(bool const aIsAnonymous,
-                                    OriginAttributes const& aOriginAttributes) {
-  return new LoadContextInfo(aIsAnonymous, aOriginAttributes);
+already_AddRefed<LoadContextInfo> GetLoadContextInfo(
+    bool const aIsAnonymous, OriginAttributes const& aOriginAttributes) {
+  return MakeAndAddRef<LoadContextInfo>(aIsAnonymous, aOriginAttributes);
 }
 
 }  // namespace net

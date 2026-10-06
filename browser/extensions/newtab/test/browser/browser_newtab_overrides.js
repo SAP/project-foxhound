@@ -119,7 +119,7 @@ add_task(async function override_blank_loads_in_browser() {
     BrowserCommands.openTab();
 
     let browser = gBrowser.selectedBrowser;
-    await BrowserTestUtils.browserLoaded(browser);
+    await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
 
     await SpecialPowers.spawn(browser, [], async () => {
       Assert.equal(content.location.href, "about:blank", "Got right URL");

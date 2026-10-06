@@ -1,15 +1,15 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "txURIUtils.h"
-#include "nsNetUtil.h"
-#include "mozilla/dom/Document.h"
-#include "nsIPrincipal.h"
+
 #include "mozilla/LoadInfo.h"
-#include "mozilla/dom/nsCSPContext.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/dom/nsCSPContext.h"
+#include "nsIPrincipal.h"
+#include "nsNetUtil.h"
 
 using mozilla::dom::Document;
 using mozilla::net::LoadInfo;

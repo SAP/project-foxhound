@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,7 +25,6 @@
 #include "nsIX509Cert.h"
 #include "nsIX509CertDB.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Components.h"
 #include "mozilla/ErrorNames.h"
@@ -211,7 +208,7 @@ const char* const ApplicationReputationService::kBinaryFileExtensions[] = {
     ".class",  // Java
     //".cmd", exec // Windows executable
     //".com", exec // Windows executable
-    ".command",        // Mac script
+    //".command", exec  // Mac script
     ".configprofile",  // Configuration file for Apple systems
     ".cpgz",           // Mac archive
     ".cpi",            // Control Panel Item. Executable used for adding icons
@@ -434,9 +431,9 @@ const char* const ApplicationReputationService::kBinaryFileExtensions[] = {
     ".scptd",  // AppleScript
     //".scr", exec         // Windows
     //".sct", exec         // Windows shell
-    ".search-ms",  // Windows
-    ".seplugin",   // AppleScript
-    ".service",    // Systemd service unit file
+    //".search-ms", exec         // Windows Saved Search
+    ".seplugin",  // AppleScript
+    ".service",   // Systemd service unit file
     //".settingcontent-ms", exec // Windows settings
     ".sh",    // Linux shell
     ".shar",  // Linux shell
@@ -507,6 +504,7 @@ const char* const ApplicationReputationService::kBinaryFileExtensions[] = {
     ".workflow",  // Mac Automator
     //".wrc", // FreeArc archive
     //".ws",  exec  // Windows script
+    ".wsb",  // Windows Sandbox configuration
     //".wsc", exec  // Windows script
     //".wsf", exec  // Windows script
     //".wsh", exec  // Windows script
@@ -799,7 +797,8 @@ PendingDBLookup::~PendingDBLookup() {
 
 nsresult PendingDBLookup::LookupSpec(const nsACString& aSpec,
                                      const LookupType& aLookupType) {
-  LOG(("Checking principal %s [this=%p]", aSpec.Data(), this));
+  LOG(("Checking principal %s [this=%p]", PromiseFlatCString(aSpec).get(),
+       this));
   mSpec = aSpec;
   mLookupType = aLookupType;
   nsresult rv = LookupSpecInternal(aSpec);
@@ -1425,7 +1424,7 @@ nsresult PendingLookup::DoLookupInternal() {
   resource->set_type(ClientDownloadRequest::DOWNLOAD_URL);
 
   nsCOMPtr<nsIReferrerInfo> referrerInfo;
-  mozilla::Unused << mQuery->GetReferrerInfo(getter_AddRefs(referrerInfo));
+  (void)mQuery->GetReferrerInfo(getter_AddRefs(referrerInfo));
   nsCOMPtr<nsIURI> referrer;
   // It is quite possible that referrer header is omitted due to security reason
   // (for example navigation from https-> http). Hence we should use the
@@ -1700,7 +1699,7 @@ nsresult PendingLookup::SendRemoteQueryInternal(Reason& aReason) {
 
   nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(mChannel, &rv));
   NS_ENSURE_SUCCESS(rv, rv);
-  mozilla::Unused << httpChannel;
+  (void)httpChannel;
 
   // Upload the protobuf to the application reputation service.
   nsCOMPtr<nsIUploadChannel2> uploadChannel = do_QueryInterface(mChannel, &rv);

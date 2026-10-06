@@ -30,6 +30,8 @@ let $0 = instantiate(`(module
   (data (memory \$m) (i32.const 1) "a" "" "bcd")
   (data (memory \$m) (offset (i32.const 0)))
   (data (memory \$m) (offset (i32.const 0)) "" "a" "bc" "")
+  (data)
+  (data "a" "" "bcd")
 
   (data \$d1 (i32.const 0))
   (data \$d2 (i32.const 1) "a" "" "bcd")
@@ -43,21 +45,23 @@ let $0 = instantiate(`(module
   (data \$d10 (memory \$m) (i32.const 1) "a" "" "bcd")
   (data \$d11 (memory \$m) (offset (i32.const 0)))
   (data \$d12 (memory \$m) (offset (i32.const 0)) "" "a" "bc" "")
+  (data \$d13)
+  (data \$d14 "a" "" "bcd")
 )`);
 
-// ./test/core/data.wast:36
+// ./test/core/data.wast:40
 let $1 = instantiate(`(module
   (memory 1)
   (data (i32.const 0) "a")
 )`);
 
-// ./test/core/data.wast:40
+// ./test/core/data.wast:44
 let $2 = instantiate(`(module
   (import "spectest" "memory" (memory 1))
   (data (i32.const 0) "a")
 )`);
 
-// ./test/core/data.wast:45
+// ./test/core/data.wast:49
 let $3 = instantiate(`(module
   (memory 1)
   (data (i32.const 0) "a")
@@ -67,7 +71,7 @@ let $3 = instantiate(`(module
   (data (i32.const 3) "c")
 )`);
 
-// ./test/core/data.wast:53
+// ./test/core/data.wast:57
 let $4 = instantiate(`(module
   (import "spectest" "memory" (memory 1))
   (data (i32.const 0) "a")
@@ -78,159 +82,159 @@ let $4 = instantiate(`(module
   (data (i32.const 1) "h")
 )`);
 
-// ./test/core/data.wast:63
+// ./test/core/data.wast:67
 let $5 = instantiate(`(module
   (global (import "spectest" "global_i32") i32)
   (memory 1)
   (data (global.get 0) "a")
 )`);
 
-// ./test/core/data.wast:68
+// ./test/core/data.wast:72
 let $6 = instantiate(`(module
   (global (import "spectest" "global_i32") i32)
   (import "spectest" "memory" (memory 1))
   (data (global.get 0) "a")
 )`);
 
-// ./test/core/data.wast:74
+// ./test/core/data.wast:78
 let $7 = instantiate(`(module
   (global \$g (import "spectest" "global_i32") i32)
   (memory 1)
   (data (global.get \$g) "a")
 )`);
 
-// ./test/core/data.wast:79
+// ./test/core/data.wast:83
 let $8 = instantiate(`(module
   (global \$g (import "spectest" "global_i32") i32)
   (import "spectest" "memory" (memory 1))
   (data (global.get \$g) "a")
 )`);
 
-// ./test/core/data.wast:85
+// ./test/core/data.wast:89
 let $9 = instantiate(`(module (memory 1) (global i32 (i32.const 0)) (data (global.get 0) "a"))`);
 
-// ./test/core/data.wast:86
+// ./test/core/data.wast:90
 let $10 = instantiate(`(module (memory 1) (global \$g i32 (i32.const 0)) (data (global.get \$g) "a"))`);
 
-// ./test/core/data.wast:91
+// ./test/core/data.wast:95
 let $11 = instantiate(`(module
   (memory 1)
   (data (i32.const 0) "a")
   (data (i32.const 0xffff) "b")
 )`);
 
-// ./test/core/data.wast:96
+// ./test/core/data.wast:100
 let $12 = instantiate(`(module
   (import "spectest" "memory" (memory 1))
   (data (i32.const 0) "a")
   (data (i32.const 0xffff) "b")
 )`);
 
-// ./test/core/data.wast:102
+// ./test/core/data.wast:106
 let $13 = instantiate(`(module
   (memory 2)
   (data (i32.const 0x1_ffff) "a")
 )`);
 
-// ./test/core/data.wast:107
+// ./test/core/data.wast:111
 let $14 = instantiate(`(module
   (memory 0)
   (data (i32.const 0))
 )`);
 
-// ./test/core/data.wast:111
+// ./test/core/data.wast:115
 let $15 = instantiate(`(module
   (import "spectest" "memory" (memory 0))
   (data (i32.const 0))
 )`);
 
-// ./test/core/data.wast:116
+// ./test/core/data.wast:120
 let $16 = instantiate(`(module
   (memory 0 0)
   (data (i32.const 0))
 )`);
 
-// ./test/core/data.wast:121
+// ./test/core/data.wast:125
 let $17 = instantiate(`(module
   (memory 1)
   (data (i32.const 0x1_0000) "")
 )`);
 
-// ./test/core/data.wast:126
+// ./test/core/data.wast:130
 let $18 = instantiate(`(module
   (memory 0)
   (data (i32.const 0) "" "")
 )`);
 
-// ./test/core/data.wast:130
+// ./test/core/data.wast:134
 let $19 = instantiate(`(module
   (import "spectest" "memory" (memory 0))
   (data (i32.const 0) "" "")
 )`);
 
-// ./test/core/data.wast:135
+// ./test/core/data.wast:139
 let $20 = instantiate(`(module
   (memory 0 0)
   (data (i32.const 0) "" "")
 )`);
 
-// ./test/core/data.wast:140
+// ./test/core/data.wast:144
 let $21 = instantiate(`(module
   (import "spectest" "memory" (memory 0))
   (data (i32.const 0) "a")
 )`);
 
-// ./test/core/data.wast:145
+// ./test/core/data.wast:149
 let $22 = instantiate(`(module
   (import "spectest" "memory" (memory 0 3))
   (data (i32.const 0) "a")
 )`);
 
-// ./test/core/data.wast:150
+// ./test/core/data.wast:154
 let $23 = instantiate(`(module
   (global (import "spectest" "global_i32") i32)
   (import "spectest" "memory" (memory 0))
   (data (global.get 0) "a")
 )`);
 
-// ./test/core/data.wast:156
+// ./test/core/data.wast:160
 let $24 = instantiate(`(module
   (global (import "spectest" "global_i32") i32)
   (import "spectest" "memory" (memory 0 3))
   (data (global.get 0) "a")
 )`);
 
-// ./test/core/data.wast:162
+// ./test/core/data.wast:166
 let $25 = instantiate(`(module
   (import "spectest" "memory" (memory 0))
   (data (i32.const 1) "a")
 )`);
 
-// ./test/core/data.wast:167
+// ./test/core/data.wast:171
 let $26 = instantiate(`(module
   (import "spectest" "memory" (memory 0 3))
   (data (i32.const 1) "a")
 )`);
 
-// ./test/core/data.wast:174
+// ./test/core/data.wast:178
 let $27 = instantiate(`(module
   (memory 1)
   (data (i32.add (i32.const 0) (i32.const 42)))
 )`);
 
-// ./test/core/data.wast:179
+// ./test/core/data.wast:183
 let $28 = instantiate(`(module
   (memory 1)
   (data (i32.sub (i32.const 42) (i32.const 0)))
 )`);
 
-// ./test/core/data.wast:184
+// ./test/core/data.wast:188
 let $29 = instantiate(`(module
   (memory 1)
   (data (i32.mul (i32.const 1) (i32.const 2)))
 )`);
 
-// ./test/core/data.wast:191
+// ./test/core/data.wast:195
 let $30 = instantiate(`(module
   (global (import "spectest" "global_i32") i32)
   (memory 1)
@@ -244,7 +248,7 @@ let $30 = instantiate(`(module
   )
 )`);
 
-// ./test/core/data.wast:206
+// ./test/core/data.wast:210
 assert_trap(
   () => instantiate(`(module
     (memory 0)
@@ -253,7 +257,7 @@ assert_trap(
   `out of bounds memory access`,
 );
 
-// ./test/core/data.wast:214
+// ./test/core/data.wast:218
 assert_trap(
   () => instantiate(`(module
     (memory 0 0)
@@ -262,7 +266,7 @@ assert_trap(
   `out of bounds memory access`,
 );
 
-// ./test/core/data.wast:222
+// ./test/core/data.wast:226
 assert_trap(
   () => instantiate(`(module
     (memory 0 1)
@@ -271,7 +275,7 @@ assert_trap(
   `out of bounds memory access`,
 );
 
-// ./test/core/data.wast:229
+// ./test/core/data.wast:233
 assert_trap(
   () => instantiate(`(module
     (memory 0)
@@ -280,7 +284,7 @@ assert_trap(
   `out of bounds memory access`,
 );
 
-// ./test/core/data.wast:236
+// ./test/core/data.wast:240
 assert_trap(
   () => instantiate(`(module
     (memory 0 1)
@@ -289,7 +293,7 @@ assert_trap(
   `out of bounds memory access`,
 );
 
-// ./test/core/data.wast:253
+// ./test/core/data.wast:257
 assert_trap(
   () => instantiate(`(module
     (global (import "spectest" "global_i32") i32)
@@ -299,7 +303,7 @@ assert_trap(
   `out of bounds memory access`,
 );
 
-// ./test/core/data.wast:262
+// ./test/core/data.wast:266
 assert_trap(
   () => instantiate(`(module
     (memory 1 2)
@@ -308,7 +312,7 @@ assert_trap(
   `out of bounds memory access`,
 );
 
-// ./test/core/data.wast:269
+// ./test/core/data.wast:273
 assert_trap(
   () => instantiate(`(module
     (import "spectest" "memory" (memory 1))
@@ -317,7 +321,7 @@ assert_trap(
   `out of bounds memory access`,
 );
 
-// ./test/core/data.wast:277
+// ./test/core/data.wast:281
 assert_trap(
   () => instantiate(`(module
     (memory 2)
@@ -326,7 +330,7 @@ assert_trap(
   `out of bounds memory access`,
 );
 
-// ./test/core/data.wast:285
+// ./test/core/data.wast:289
 assert_trap(
   () => instantiate(`(module
     (memory 2 3)
@@ -335,7 +339,7 @@ assert_trap(
   `out of bounds memory access`,
 );
 
-// ./test/core/data.wast:293
+// ./test/core/data.wast:297
 assert_trap(
   () => instantiate(`(module
     (memory 1)
@@ -344,7 +348,7 @@ assert_trap(
   `out of bounds memory access`,
 );
 
-// ./test/core/data.wast:300
+// ./test/core/data.wast:304
 assert_trap(
   () => instantiate(`(module
     (import "spectest" "memory" (memory 1))
@@ -353,7 +357,7 @@ assert_trap(
   `out of bounds memory access`,
 );
 
-// ./test/core/data.wast:308
+// ./test/core/data.wast:312
 assert_trap(
   () => instantiate(`(module
     (memory 2)
@@ -362,7 +366,7 @@ assert_trap(
   `out of bounds memory access`,
 );
 
-// ./test/core/data.wast:315
+// ./test/core/data.wast:319
 assert_trap(
   () => instantiate(`(module
     (import "spectest" "memory" (memory 1))
@@ -371,7 +375,7 @@ assert_trap(
   `out of bounds memory access`,
 );
 
-// ./test/core/data.wast:325
+// ./test/core/data.wast:329
 assert_invalid(
   () => instantiate(`(module
     (data (i32.const 0) "")
@@ -379,7 +383,7 @@ assert_invalid(
   `unknown memory`,
 );
 
-// ./test/core/data.wast:333
+// ./test/core/data.wast:337
 assert_invalid(
   () => instantiate(`(module binary
     "\\00asm" "\\01\\00\\00\\00"
@@ -392,7 +396,7 @@ assert_invalid(
   `unknown memory 1`,
 );
 
-// ./test/core/data.wast:346
+// ./test/core/data.wast:350
 assert_invalid(
   () => instantiate(`(module binary
     "\\00asm" "\\01\\00\\00\\00"
@@ -403,7 +407,7 @@ assert_invalid(
   `unknown memory 0`,
 );
 
-// ./test/core/data.wast:357
+// ./test/core/data.wast:361
 assert_invalid(
   () => instantiate(`(module binary
     "\\00asm" "\\01\\00\\00\\00"
@@ -414,7 +418,7 @@ assert_invalid(
   `unknown memory 1`,
 );
 
-// ./test/core/data.wast:369
+// ./test/core/data.wast:373
 assert_invalid(
   () => instantiate(`(module binary
     "\\00asm" "\\01\\00\\00\\00"
@@ -433,7 +437,7 @@ assert_invalid(
   `unknown memory 1`,
 );
 
-// ./test/core/data.wast:391
+// ./test/core/data.wast:395
 assert_invalid(
   () => instantiate(`(module binary
     "\\00asm" "\\01\\00\\00\\00"
@@ -450,7 +454,7 @@ assert_invalid(
   `unknown memory 1`,
 );
 
-// ./test/core/data.wast:410
+// ./test/core/data.wast:414
 assert_invalid(
   () => instantiate(`(module
     (memory 1)
@@ -459,7 +463,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/data.wast:418
+// ./test/core/data.wast:422
 assert_invalid(
   () => instantiate(`(module
     (memory 1)
@@ -468,7 +472,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/data.wast:426
+// ./test/core/data.wast:430
 assert_invalid(
   () => instantiate(`(module 
     (memory 1)
@@ -477,7 +481,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/data.wast:434
+// ./test/core/data.wast:438
 assert_invalid(
   () => instantiate(`(module
     (memory 1)
@@ -486,7 +490,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/data.wast:442
+// ./test/core/data.wast:446
 assert_invalid(
   () => instantiate(`(module
     (global (import "test" "global-i32") i32)
@@ -496,7 +500,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/data.wast:451
+// ./test/core/data.wast:455
 assert_invalid(
   () => instantiate(`(module
     (global (import "test" "global-i32") i32)
@@ -506,7 +510,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/data.wast:460
+// ./test/core/data.wast:464
 assert_invalid(
   () => instantiate(`(module
     (memory 1)
@@ -515,7 +519,7 @@ assert_invalid(
   `constant expression required`,
 );
 
-// ./test/core/data.wast:468
+// ./test/core/data.wast:472
 assert_invalid(
   () => instantiate(`(module
     (memory 1)
@@ -524,7 +528,7 @@ assert_invalid(
   `constant expression required`,
 );
 
-// ./test/core/data.wast:476
+// ./test/core/data.wast:480
 assert_invalid(
   () => instantiate(`(module
     (memory 1)
@@ -533,7 +537,7 @@ assert_invalid(
   `constant expression required`,
 );
 
-// ./test/core/data.wast:484
+// ./test/core/data.wast:488
 assert_invalid(
   () => instantiate(`(module
     (memory 1)
@@ -542,7 +546,7 @@ assert_invalid(
   `constant expression required`,
 );
 
-// ./test/core/data.wast:492
+// ./test/core/data.wast:496
 assert_invalid(
   () => instantiate(`(module
     (global \$g (import "test" "g") (mut i32))
@@ -552,7 +556,7 @@ assert_invalid(
   `constant expression required`,
 );
 
-// ./test/core/data.wast:501
+// ./test/core/data.wast:505
 assert_invalid(
   () => instantiate(`(module 
      (memory 1)
@@ -561,7 +565,7 @@ assert_invalid(
   `unknown global 0`,
 );
 
-// ./test/core/data.wast:509
+// ./test/core/data.wast:513
 assert_invalid(
   () => instantiate(`(module
      (global (import "test" "global-i32") i32)
@@ -571,7 +575,7 @@ assert_invalid(
   `unknown global 1`,
 );
 
-// ./test/core/data.wast:518
+// ./test/core/data.wast:522
 assert_invalid(
   () => instantiate(`(module 
      (global (import "test" "global-mut-i32") (mut i32))

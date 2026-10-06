@@ -1,21 +1,26 @@
-/* -*- Mode: C++; tab-width: 40; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsICanvasRenderingContextInternal.h"
 
+#include "mozilla/ErrorResult.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/CanvasUtils.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/gfx/DrawTargetRecording.h"
-#include "mozilla/ErrorResult.h"
-#include "mozilla/PresShell.h"
 #include "nsContentUtils.h"
 #include "nsPIDOMWindow.h"
+#include "nsRFPService.h"
 #include "nsRefreshDriver.h"
+#include "nsThreadUtils.h"
+
+static mozilla::LazyLogModule gRenderingFingerprinterDetection(
+    "FingerprinterDetection");
 
 nsICanvasRenderingContextInternal::nsICanvasRenderingContextInternal() =
     default;
@@ -32,12 +37,98 @@ mozilla::PresShell* nsICanvasRenderingContextInternal::GetPresShell() {
 
 nsIGlobalObject* nsICanvasRenderingContextInternal::GetParentObject() const {
   if (mCanvasElement) {
+    if (auto* original = mCanvasElement->GetOriginalCanvas()) {
+      return original->OwnerDoc()->GetScopeObject();
+    }
     return mCanvasElement->OwnerDoc()->GetScopeObject();
   }
   if (mOffscreenCanvas) {
     return mOffscreenCanvas->GetParentObject();
   }
   return nullptr;
+}
+
+class RecordCanvasUsageRunnable final
+    : public mozilla::dom::WorkerMainThreadRunnable {
+ public:
+  RecordCanvasUsageRunnable(mozilla::dom::WorkerPrivate* aWorkerPrivate,
+                            const mozilla::CanvasUsage& aUsage)
+      : WorkerMainThreadRunnable(aWorkerPrivate,
+                                 "RecordCanvasUsageRunnable"_ns),
+        mUsage(aUsage) {
+    MOZ_ASSERT(aWorkerPrivate);
+    aWorkerPrivate->AssertIsOnWorkerThread();
+  }
+
+ protected:
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY bool MainThreadRun() override {
+    mozilla::AssertIsOnMainThread();
+    RefPtr<mozilla::dom::Document> doc;
+    if (!mWorkerRef) {
+      MOZ_LOG(gRenderingFingerprinterDetection, mozilla::LogLevel::Error,
+              ("RecordCanvasUsageRunnable::MainThreadRun - null mWorkerRef"));
+      return false;
+    }
+    auto* priv = mWorkerRef->Private();
+    if (!priv) {
+      MOZ_LOG(
+          gRenderingFingerprinterDetection, mozilla::LogLevel::Error,
+          ("RecordCanvasUsageRunnable::MainThreadRun - null worker private"));
+      return false;
+    }
+    doc = priv->GetDocument();
+    if (!doc) {
+      MOZ_LOG(gRenderingFingerprinterDetection, mozilla::LogLevel::Error,
+              ("RecordCanvasUsageRunnable::MainThreadRun - null document"));
+      return false;
+    }
+    doc->RecordCanvasUsage(mUsage);
+    return true;
+  }
+
+ private:
+  mozilla::CanvasUsage mUsage;
+};
+
+void nsICanvasRenderingContextInternal::RecordCanvasUsage(
+    mozilla::CanvasExtractionAPI aAPI, mozilla::CSSIntSize size) const {
+  mozilla::dom::CanvasContextType contextType;
+  if (mCanvasElement) {
+    contextType = mCanvasElement->GetCurrentContextType();
+    auto usage =
+        mozilla::CanvasUsage::CreateUsage(false, contextType, aAPI, size, this);
+    mCanvasElement->OwnerDoc()->RecordCanvasUsage(usage);
+  }
+  if (mOffscreenCanvas) {
+    contextType = mOffscreenCanvas->GetContextType();
+    auto usage =
+        mozilla::CanvasUsage::CreateUsage(true, contextType, aAPI, size, this);
+    if (NS_IsMainThread()) {
+      nsIGlobalObject* global = mOffscreenCanvas->GetRelevantGlobal();
+      if (global) {
+        if (nsPIDOMWindowInner* inner = global->GetAsInnerWindow()) {
+          if (mozilla::dom::Document* doc = inner->GetExtantDoc()) {
+            doc->RecordCanvasUsage(usage);
+          }
+        }
+      }
+    } else {
+      mozilla::dom::WorkerPrivate* workerPrivate =
+          mozilla::dom::GetCurrentThreadWorkerPrivate();
+      if (workerPrivate) {
+        RefPtr<RecordCanvasUsageRunnable> runnable =
+            new RecordCanvasUsageRunnable(workerPrivate, usage);
+        mozilla::ErrorResult rv;
+        runnable->Dispatch(workerPrivate, mozilla::dom::WorkerStatus::Canceling,
+                           rv);
+        if (rv.Failed()) {
+          rv.SuppressException();
+          MOZ_LOG(gRenderingFingerprinterDetection, mozilla::LogLevel::Error,
+                  ("RecordCanvasUsageRunnable dispatch failed"));
+        }
+      }
+    }
+  }
 }
 
 nsIPrincipal* nsICanvasRenderingContextInternal::PrincipalOrNull() const {
@@ -63,7 +154,7 @@ nsICookieJarSettings* nsICanvasRenderingContextInternal::GetCookieJarSettings()
   // and return the cookieJarSettings for the window's document, if available.
   if (mOffscreenCanvas) {
     nsCOMPtr<nsPIDOMWindowInner> win =
-        do_QueryInterface(mOffscreenCanvas->GetOwnerGlobal());
+        do_QueryInterface(mOffscreenCanvas->GetRelevantGlobal());
 
     if (win) {
       return win->GetExtantDoc()->CookieJarSettings();

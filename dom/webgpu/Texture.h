@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,11 +6,12 @@
 #define GPU_Texture_H_
 
 #include <cstdint>
-#include "mozilla/WeakPtr.h"
-#include "nsWrapperCache.h"
+
 #include "ObjectModel.h"
+#include "mozilla/WeakPtr.h"
 #include "mozilla/webgpu/WebGPUTypes.h"
 #include "mozilla/webgpu/ffi/wgpu.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 namespace dom {
@@ -28,15 +28,16 @@ class CanvasContext;
 class Device;
 class TextureView;
 
-class Texture final : public ObjectBase, public ChildOf<Device> {
+class Texture final : public nsWrapperCache,
+                      public ObjectBase,
+                      public ChildOf<Device> {
  public:
   GPU_DECL_CYCLE_COLLECTION(Texture)
   GPU_DECL_JS_WRAP(Texture)
 
   Texture(Device* const aParent, RawId aId,
           const dom::GPUTextureDescriptor& aDesc);
-  Device* GetDevice() { return mParent; }
-  const RawId mId;
+
   const dom::GPUTextureFormat mFormat;
   const Maybe<uint8_t> mBytesPerBlock;
 
@@ -44,7 +45,6 @@ class Texture final : public ObjectBase, public ChildOf<Device> {
 
  private:
   virtual ~Texture();
-  void Cleanup();
 
   const ffi::WGPUExtent3d mSize;
   const uint32_t mMipLevelCount;

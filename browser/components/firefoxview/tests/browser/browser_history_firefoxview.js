@@ -1,6 +1,10 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
+const { PlacesTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PlacesTestUtils.sys.mjs"
+);
+
 ChromeUtils.defineESModuleGetters(globalThis, {
   SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
 });
@@ -11,10 +15,6 @@ const { ProfileAge } = ChromeUtils.importESModule(
 const HAS_IMPORTED_HISTORY_PREF = "browser.migrate.interactions.history";
 const IMPORT_HISTORY_DISMISSED_PREF =
   "browser.tabs.firefox-view.importHistory.dismissed";
-const HISTORY_EVENT = [["firefoxview_next", "history", "visits", undefined]];
-const SHOW_ALL_HISTORY_EVENT = [
-  ["firefoxview_next", "show_all_history", "tabs", undefined],
-];
 const NEVER_REMEMBER_HISTORY_PREF = "browser.privatebrowsing.autostart";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -65,69 +65,6 @@ async function historyComponentReady(historyComponent, expectedHistoryItems) {
   let actual = historyComponent.cards.length;
 
   is(expected, actual, `Total number of cards should be ${expected}`);
-}
-
-async function historyTelemetry() {
-  await TestUtils.waitForCondition(
-    () => {
-      let events = Services.telemetry.snapshotEvents(
-        Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
-        false
-      ).parent;
-      return events && events.length >= 1;
-    },
-    "Waiting for history firefoxview telemetry event.",
-    200,
-    100
-  );
-
-  TelemetryTestUtils.assertEvents(
-    HISTORY_EVENT,
-    { category: "firefoxview_next" },
-    { clear: true, process: "parent" }
-  );
-}
-
-async function sortHistoryTelemetry(sortHistoryEvent) {
-  await TestUtils.waitForCondition(
-    () => {
-      let events = Services.telemetry.snapshotEvents(
-        Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
-        false
-      ).parent;
-      return events && events.length >= 1;
-    },
-    "Waiting for sort_history firefoxview telemetry event.",
-    200,
-    100
-  );
-
-  TelemetryTestUtils.assertEvents(
-    sortHistoryEvent,
-    { category: "firefoxview_next" },
-    { clear: true, process: "parent" }
-  );
-}
-
-async function showAllHistoryTelemetry() {
-  await TestUtils.waitForCondition(
-    () => {
-      let events = Services.telemetry.snapshotEvents(
-        Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
-        false
-      ).parent;
-      return events && events.length >= 1;
-    },
-    "Waiting for show_all_history firefoxview telemetry event.",
-    200,
-    100
-  );
-
-  TelemetryTestUtils.assertEvents(
-    SHOW_ALL_HISTORY_EVENT,
-    { category: "firefoxview_next" },
-    { clear: true, process: "parent" }
-  );
 }
 
 async function addHistoryItems(dateAdded) {
@@ -201,39 +138,43 @@ add_task(async function test_list_ordering() {
     );
 
     // Select first history item in first card
-    await clearAllParentTelemetryEvents();
-    await TestUtils.waitForCondition(() => {
-      return historyComponent.lists[0].rowEls.length;
-    });
+    Services.fog.testResetFOG();
+    await TestUtils.waitForCondition(
+      () => historyComponent.lists[0].rowEls.length,
+      "The first history list to have row elements"
+    );
     let firstHistoryLink = historyComponent.lists[0].rowEls[0].mainEl;
     let promiseHidden = BrowserTestUtils.waitForEvent(
       document,
       "visibilitychange"
     );
-    await EventUtils.synthesizeMouseAtCenter(firstHistoryLink, {}, content);
-    await historyTelemetry();
+    EventUtils.synthesizeMouseAtCenter(firstHistoryLink, {}, content);
+    Assert.equal(
+      1,
+      Glean.firefoxviewNext.historyVisits.testGetValue().length,
+      "Expected one history event."
+    );
     await promiseHidden;
-    await openFirefoxViewTab(browser.ownerGlobal);
+    await openFirefoxViewTab(browser.documentGlobal);
 
     // Test number of cards when sorted by site/domain
-    await clearAllParentTelemetryEvents();
-    let sortHistoryEvent = [
-      [
-        "firefoxview_next",
-        "sort_history",
-        "tabs",
-        undefined,
-        { sort_type: "site", search_start: "false" },
-      ],
-    ];
+    Services.fog.testResetFOG();
     // Select sort by site option
-    await EventUtils.synthesizeMouseAtCenter(
+    EventUtils.synthesizeMouseAtCenter(
       historyComponent.sortInputs[1],
       {},
       content
     );
-    await TestUtils.waitForCondition(() => historyComponent.fullyUpdated);
-    await sortHistoryTelemetry(sortHistoryEvent);
+    await TestUtils.waitForCondition(
+      () => historyComponent.fullyUpdated,
+      "Waiting for the history component to be fully updated"
+    );
+    let sortEvents = Glean.firefoxviewNext.sortHistoryTabs.testGetValue();
+    Assert.equal(1, sortEvents.length, "Expected one sort event.");
+    Assert.deepEqual(
+      { sort_type: "site", search_start: "false" },
+      sortEvents[0].extra
+    );
 
     let expectedNumOfCards = historyComponent.controller.historyVisits.length;
 
@@ -244,24 +185,23 @@ add_task(async function test_list_ordering() {
       () => expectedNumOfCards === historyComponent.cards.length
     );
 
-    await clearAllParentTelemetryEvents();
-    sortHistoryEvent = [
-      [
-        "firefoxview_next",
-        "sort_history",
-        "tabs",
-        undefined,
-        { sort_type: "date", search_start: "false" },
-      ],
-    ];
+    Services.fog.testResetFOG();
     // Select sort by date option
-    await EventUtils.synthesizeMouseAtCenter(
+    EventUtils.synthesizeMouseAtCenter(
       historyComponent.sortInputs[0],
       {},
       content
     );
-    await TestUtils.waitForCondition(() => historyComponent.fullyUpdated);
-    await sortHistoryTelemetry(sortHistoryEvent);
+    await TestUtils.waitForCondition(
+      () => historyComponent.fullyUpdated,
+      "Waiting for the history component to be fully updated"
+    );
+    sortEvents = Glean.firefoxviewNext.sortHistoryTabs.testGetValue();
+    Assert.equal(1, sortEvents.length, "Expected one sort event.");
+    Assert.deepEqual(
+      { sort_type: "date", search_start: "false" },
+      sortEvents[0].extra
+    );
 
     // clean up extra tabs
     while (gBrowser.tabs.length > 1) {
@@ -279,7 +219,10 @@ add_task(async function test_empty_states() {
 
     let historyComponent = document.querySelector("view-history");
     historyComponent.profileAge = 8;
-    await TestUtils.waitForCondition(() => historyComponent.emptyState);
+    await TestUtils.waitForCondition(
+      () => historyComponent.emptyState,
+      "Waiting for the history component to be in the empty state"
+    );
     let emptyStateCard = historyComponent.emptyState;
     ok(
       emptyStateCard.headerEl.textContent.includes(
@@ -299,7 +242,10 @@ add_task(async function test_empty_states() {
     // Manually update the history component from the test, since changing this setting
     // in about:preferences will require a browser reload
     historyComponent.requestUpdate();
-    await TestUtils.waitForCondition(() => historyComponent.fullyUpdated);
+    await TestUtils.waitForCondition(
+      () => historyComponent.fullyUpdated,
+      "Waiting for the history component to be fully updated"
+    );
     emptyStateCard = historyComponent.emptyState;
     ok(
       emptyStateCard.headerEl.textContent.includes("You’re in control"),
@@ -316,7 +262,10 @@ add_task(async function test_empty_states() {
     // Manually update the history component from the test, since changing this setting
     // in about:preferences will require a browser reload
     historyComponent.requestUpdate();
-    await TestUtils.waitForCondition(() => historyComponent.fullyUpdated);
+    await TestUtils.waitForCondition(
+      () => historyComponent.fullyUpdated,
+      "Waiting for the history component to be fully updated"
+    );
 
     // Test import history banner shows if profile age is 7 days or less and
     // user hasn't already imported history from another browser
@@ -324,13 +273,19 @@ add_task(async function test_empty_states() {
     Services.prefs.setBoolPref(HAS_IMPORTED_HISTORY_PREF, true);
     ok(!historyComponent.cards.length, "Import history banner not shown yet");
     historyComponent.profileAge = 0;
-    await TestUtils.waitForCondition(() => historyComponent.fullyUpdated);
+    await TestUtils.waitForCondition(
+      () => historyComponent.fullyUpdated,
+      "Waiting for the history component to be fully updated"
+    );
     ok(
       !historyComponent.cards.length,
       "Import history banner still not shown yet"
     );
     Services.prefs.setBoolPref(HAS_IMPORTED_HISTORY_PREF, false);
-    await TestUtils.waitForCondition(() => historyComponent.fullyUpdated);
+    await TestUtils.waitForCondition(
+      () => historyComponent.fullyUpdated,
+      "Waiting for the history component to be fully updated"
+    );
     ok(
       historyComponent.cards[0].textContent.includes(
         "Import history from another browser"
@@ -340,7 +295,10 @@ add_task(async function test_empty_states() {
     let importHistoryCloseButton =
       historyComponent.cards[0].querySelector("moz-button.close");
     importHistoryCloseButton.click();
-    await TestUtils.waitForCondition(() => historyComponent.fullyUpdated);
+    await TestUtils.waitForCondition(
+      () => historyComponent.fullyUpdated,
+      "Waiting for the history component to be fully updated"
+    );
     ok(
       Services.prefs.getBoolPref(IMPORT_HISTORY_DISMISSED_PREF, true) &&
         !historyComponent.cards.length,
@@ -366,11 +324,15 @@ add_task(async function test_observers_removed_when_view_is_hidden() {
     await navigateToViewAndWait(document, "history");
     const historyComponent = document.querySelector("view-history");
     historyComponent.profileAge = 8;
-    let visitList = await TestUtils.waitForCondition(() =>
-      historyComponent.cards?.[0]?.querySelector("fxview-tab-list")
+    let visitList = await TestUtils.waitForCondition(
+      () => historyComponent.cards?.[0]?.querySelector("fxview-tab-list"),
+      "the first history card to have a tab list"
     );
     info("The list should show a visit from the new tab.");
-    await TestUtils.waitForCondition(() => visitList.rowEls.length === 1);
+    await TestUtils.waitForCondition(
+      () => visitList.rowEls.length === 1,
+      "visit list to have exactly one row element"
+    );
 
     let promiseHidden = BrowserTestUtils.waitForEvent(
       document,
@@ -391,11 +353,15 @@ add_task(async function test_observers_removed_when_view_is_hidden() {
     );
 
     info("The list should update when Firefox View is visible.");
-    await openFirefoxViewTab(browser.ownerGlobal);
-    visitList = await TestUtils.waitForCondition(() =>
-      historyComponent.cards?.[0]?.querySelector("fxview-tab-list")
+    await openFirefoxViewTab(browser.documentGlobal);
+    visitList = await TestUtils.waitForCondition(
+      () => historyComponent.cards?.[0]?.querySelector("fxview-tab-list"),
+      "the first history card to have a tab list"
     );
-    await TestUtils.waitForCondition(() => visitList.rowEls.length > 1);
+    await TestUtils.waitForCondition(
+      () => visitList.rowEls.length > 1,
+      "visit list to have more than one row element"
+    );
 
     BrowserTestUtils.removeTab(tab);
   });
@@ -414,15 +380,20 @@ add_task(async function test_show_all_history_telemetry() {
     historyComponent.profileAge = 8;
     await historyComponentReady(historyComponent, historyEntries.length);
 
-    await clearAllParentTelemetryEvents();
+    Services.fog.testResetFOG();
     let showAllHistoryBtn = historyComponent.showAllHistoryBtn;
     showAllHistoryBtn.scrollIntoView();
-    await EventUtils.synthesizeMouseAtCenter(showAllHistoryBtn, {}, content);
-    await showAllHistoryTelemetry();
+    EventUtils.synthesizeMouseAtCenter(showAllHistoryBtn, {}, content);
+    Assert.equal(
+      1,
+      Glean.firefoxviewNext.showAllHistoryTabs.testGetValue().length,
+      "Expected one show-all-history event."
+    );
 
     // Make sure library window is shown
-    await TestUtils.waitForCondition(() =>
-      Services.wm.getMostRecentWindow("Places:Organizer")
+    await TestUtils.waitForCondition(
+      () => Services.wm.getMostRecentWindow("Places:Organizer"),
+      "Waiting for the Places Organizer window to be open"
     );
     let library = Services.wm.getMostRecentWindow("Places:Organizer");
     await BrowserTestUtils.closeWindow(library);
@@ -446,6 +417,8 @@ add_task(async function test_search_history() {
     );
 
     info("Input a search query.");
+    // Clear any popovers that might obscure content.
+    EventUtils.synthesizeKey("VK_ESCAPE", {}, window);
     EventUtils.synthesizeMouseAtCenter(searchTextbox, {}, content);
     EventUtils.sendString("Example Domain 1", content);
     await BrowserTestUtils.waitForMutationCondition(
@@ -496,12 +469,7 @@ add_task(async function test_search_history() {
       searchTextbox,
       "Search input is focused"
     );
-    let inputChildren = SpecialPowers.InspectorUtils.getChildrenForNode(
-      searchTextbox.inputEl,
-      true,
-      false
-    );
-    let clearButton = inputChildren.find(e => e.localName == "button");
+    let clearButton = SpecialPowers.getInputButton(searchTextbox.inputEl);
     EventUtils.synthesizeMouseAtCenter(clearButton, {}, content);
     await BrowserTestUtils.waitForMutationCondition(
       historyComponent.shadowRoot,
@@ -549,15 +517,13 @@ add_task(async function test_search_ignores_stale_queries() {
     info("Input a bogus search query.");
     EventUtils.synthesizeMouseAtCenter(searchTextbox, {}, content);
     EventUtils.sendString("Bogus Query", content);
-    await TestUtils.waitForCondition(() => bogusQueryInProgress);
+    await TestUtils.waitForCondition(
+      () => bogusQueryInProgress,
+      "The bogus query to be in progress"
+    );
 
     info("Clear the bogus query.");
-    let inputChildren = SpecialPowers.InspectorUtils.getChildrenForNode(
-      searchTextbox.inputEl,
-      true,
-      false
-    );
-    let clearButton = inputChildren.find(e => e.localName == "button");
+    let clearButton = SpecialPowers.getInputButton(searchTextbox.inputEl);
     EventUtils.synthesizeMouseAtCenter(clearButton, {}, content);
     await searchTextbox.updateComplete;
 
@@ -586,7 +552,8 @@ add_task(async function test_persist_collapse_card_after_view_change() {
     const historyComponent = document.querySelector("view-history");
     historyComponent.profileAge = 8;
     await TestUtils.waitForCondition(
-      () => historyComponent.controller.totalVisitsCount === 4
+      () => historyComponent.controller.totalVisitsCount === 4,
+      "The history component to have a total visit count of 4"
     );
     let firstHistoryCard = historyComponent.cards[0];
     ok(
@@ -613,6 +580,91 @@ add_task(async function test_persist_collapse_card_after_view_change() {
     );
 
     await PlacesUtils.history.clear();
+    gBrowser.removeTab(gBrowser.selectedTab);
+  });
+});
+
+add_task(async function test_forget_about_this_site_option() {
+  await PlacesUtils.history.clear();
+  const TEST_URL = "https://example.com/";
+  await PlacesUtils.history.insert({
+    url: TEST_URL,
+    title: "Example Domain",
+    visits: [{ date: new Date() }],
+  });
+  await withFirefoxView({}, async browser => {
+    const { document } = browser.contentWindow;
+    await navigateToViewAndWait(document, "history");
+    const historyComponent = document.querySelector("view-history");
+
+    await TestUtils.waitForCondition(() => historyComponent.fullyUpdated);
+
+    await BrowserTestUtils.waitForMutationCondition(
+      historyComponent.shadowRoot,
+      { childList: true, subtree: true },
+      () => historyComponent.lists[0]
+    );
+    await BrowserTestUtils.waitForMutationCondition(
+      historyComponent.lists[0].shadowRoot,
+      { subtree: true, childList: true },
+      () => historyComponent.lists[0].rowEls.length === 1
+    );
+
+    const firstTabList = historyComponent.lists[0];
+    const firstItem = firstTabList.rowEls[0];
+    const panelList = historyComponent.panelList;
+    EventUtils.synthesizeMouseAtCenter(
+      firstItem.secondaryButtonEl,
+      {},
+      content
+    );
+    await BrowserTestUtils.waitForEvent(panelList, "shown");
+    const panelItems = Array.from(panelList.children).filter(
+      panelItem => panelItem.nodeName === "PANEL-ITEM"
+    );
+
+    const forgetOption = panelItems.find(
+      item => item.dataset.l10nId === "firefoxview-history-context-forget-site"
+    );
+
+    ok(
+      forgetOption.textContent.includes("Forget"),
+      "Forget About This Site option is present in the context menu."
+    );
+    let dialogOpened = BrowserTestUtils.promiseAlertDialogOpen(
+      null,
+      "chrome://browser/content/places/clearDataForSite.xhtml",
+      { isSubDialog: true }
+    );
+    const promiseForgotten =
+      PlacesTestUtils.waitForNotification("page-removed");
+    EventUtils.synthesizeMouseAtCenter(forgetOption, {}, content);
+    info("Forget About This Site option clicked.");
+
+    let dialog = await dialogOpened;
+    info("Dialog opened.");
+
+    let removeButton = dialog.document
+      .querySelector("dialog")
+      .getButton("accept");
+
+    removeButton.click();
+    info("Clear Data button clicked.");
+    await Promise.all([
+      BrowserTestUtils.waitForEvent(dialog, "unload"),
+      promiseForgotten,
+    ]);
+    info("Site forgotten successfully.");
+
+    await BrowserTestUtils.waitForMutationCondition(
+      historyComponent.shadowRoot,
+      { childList: true, subtree: true },
+      () => !historyComponent.lists[0]?.rowEls.length
+    );
+    ok(
+      !historyComponent.lists[0]?.rowEls.length,
+      "The site has been removed from the history list."
+    );
     gBrowser.removeTab(gBrowser.selectedTab);
   });
 });

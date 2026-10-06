@@ -1,0 +1,375 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>action.openPopup with multiple popups</title>
+  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
+  <script type="text/javascript" src="head.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+
+<script type="text/javascript">
+"use strict";
+
+// The tests in this file load two background scripts, the second with tests
+// calling the following helpers defined by the first background script:
+/* globals waitForNextPopup, verifyPopupNotOpened, verifyPopupOpened */
+
+function loadExtension({
+  extensionId,
+  background,
+  action_is_pinned = false,
+  has_page_action = false,
+}) {
+  function backgroundHelperInitScript() {
+    class PopupPortWrapper {
+      #port;
+      #closedPromise;
+      constructor(port) {
+        this.#port = port;
+        this.#closedPromise = new Promise(resolve => {
+          port.onDisconnect.addListener(() => {
+            this.#port = null;
+            resolve();
+          });
+        });
+      }
+
+      async closePopup() {
+        this.#port?.postMessage("close_popup");
+        await this.#closedPromise;
+      }
+    }
+
+    const resolvers = [];
+    browser.runtime.onConnect.addListener(port => {
+      browser.test.assertEq("popup_open", port.name, "Expected port name");
+      if (!resolvers.length) {
+        browser.test.fail("Popup opened while we were not expecting one!");
+        return;
+      }
+      resolvers.shift().resolve(new PopupPortWrapper(port));
+    });
+
+    async function waitForNextPopup() {
+      const prom = Promise.withResolvers();
+      resolvers.push(prom);
+      // When the popup loads, it will send a message and trigger onConnect.
+      // In real world extensions that is good enough.
+      // In unit tests, we quickly run some checks, but it is possible for
+      // these checks to be run while the popup UI is still pending to be shown.
+      // To avoid intermittent test failures, we explicitly use the
+      // awaitExtensionPanel test helper to make sure that the panel is shown.
+      await new Promise(resolve => {
+        // Note: we might not get a reply if the test does not expect a popup.
+        // In that case this promise never resolves.
+        const randomId = Math.random();
+        browser.test.onMessage.addListener(function listener(msg, reply) {
+          if (msg === "awaitExtensionPanel:done" && randomId === reply) {
+            browser.test.onMessage.removeListener(listener);
+            resolve();
+          }
+        });
+        browser.test.sendMessage("awaitExtensionPanel", randomId);
+      });
+      return prom.promise;
+    }
+
+    async function verifyPopupNotOpened(prom) {
+      // Before ruling a popup as not opened. Wait a little bit to increase our
+      // confidence that there is not a pending attempt to open the popup.
+      for (let i = 0; i < 3; ++i) {
+        // Perform a round trip to the parent (action API):
+        await browser.action.isEnabled({});
+        // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+        await new Promise(r => setTimeout(r, 100));
+      }
+
+      let i = resolvers.find(p => p.promise === prom);
+      if (i !== -1) {
+        resolvers.splice(i, 1);
+      } else {
+        browser.test.fail("Popup was unexpectedly opened");
+      }
+    }
+
+    async function verifyPopupOpened(prom) {
+      browser.test.log("Verifying that popup has opened...");
+      const popupWrapper = await prom;
+      browser.test.log("Confirmed that popup had opened");
+      return popupWrapper;
+    }
+
+    // These globals are used by other background scripts in this test file and
+    // listed in the "globals" comment at the top of this script for eslint.
+    globalThis.waitForNextPopup = waitForNextPopup;
+    globalThis.verifyPopupNotOpened = verifyPopupNotOpened;
+    globalThis.verifyPopupOpened = verifyPopupOpened;
+  }
+  const extensionData = {
+    manifest: {
+      manifest_version: 3,
+      browser_specific_settings: { gecko: { id: extensionId } },
+      action: {
+        default_popup: "popup.html",
+        default_area: action_is_pinned ? "navbar" : "menupanel",
+      },
+      background: {
+        scripts: ["background_helper_init_script.js", "background_test.js"],
+      },
+    },
+
+    // The Extensions Panel on desktop queries the add-on manager. To be as
+    // realistic as possible, use "temporary" instead of "geckoview-only" here.
+    useAddonManager: "temporary",
+    files: {
+      "background_helper_init_script.js": backgroundHelperInitScript,
+      "background_test.js": background,
+      "popup.html": `<!DOCTYPE html><${"script"} src="popup.js"><\/script>`,
+      "popup.js": () => {
+        window.onload = () => {
+          let p = browser.runtime.connect({ name: "popup_open" });
+          p.onMessage.addListener(msg => {
+            browser.test.assertEq("close_popup", msg, "Expected msg to popup");
+            window.close(); // will notify caller via port.onDisconnect.
+          });
+        };
+      },
+    },
+  };
+  if (has_page_action) {
+    extensionData.manifest.page_action = {
+      default_popup: "popup.html",
+      show_matches: ["<all_urls>"],
+    };
+  }
+  const extension = ExtensionTestUtils.loadExtension(extensionData);
+  extension.onMessage("awaitExtensionPanel", async randomId => {
+    await AppTestDelegate.awaitExtensionPanel(window, extension);
+    extension.sendMessage("awaitExtensionPanel:done", randomId);
+  });
+  return extension;
+}
+
+add_setup(async () => {
+  await SpecialPowers.pushPrefEnv({
+    "set": [
+      ["extensions.openPopupWithoutUserGesture.enabled", true],
+      // The tests here are driven from a background script. Although they are
+      // expected to run quickly, set a high idle timeout so that we can rule
+      // out the unexpected suspension of background scripts in this test.
+      ["extensions.background.idle.timeout", 300_000],
+    ],
+  });
+});
+
+add_task(async function test_openPopup_reject_second_call() {
+  let extension = loadExtension({
+    extensionId: "openPopup-once@tests.mozilla.org",
+    async background() {
+      const prom = waitForNextPopup();
+      await browser.action.openPopup();
+      const popupWrapper = await verifyPopupOpened(prom);
+
+      browser.test.log("When the popup is open, it cannot be opened again");
+      const prom2 = waitForNextPopup();
+      await browser.test.assertRejects(
+        browser.action.openPopup(),
+        "openPopup() cannot be called while another panel is open",
+        "openPopup() should reject when the popup is still open"
+      );
+
+      await popupWrapper.closePopup();
+
+      await verifyPopupNotOpened(prom2);
+
+      browser.test.log("When the popup is closed, it can be opened again");
+      const prom3 = waitForNextPopup();
+      await browser.action.openPopup();
+      const popupWrapper3 = await verifyPopupOpened(prom3);
+      await popupWrapper3.closePopup();
+
+      browser.test.sendMessage("done");
+    },
+  });
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
+add_task(async function test_openPopup_reject_while_page_action_is_shown() {
+  let extension = loadExtension({
+    extensionId: "openPopup-with-pageAction@tests.mozilla.org",
+    has_page_action: true,
+    async background() {
+      const [tab] = await browser.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+      browser.test.assertTrue(
+        await browser.pageAction.isShown({ tabId: tab.id }),
+        "Sanity check: pageAction is shown in current tab (via show_matches)"
+      );
+
+      async function openPageAction() {
+        return new Promise(resolve => {
+          browser.test.withHandlingUserInput(() => {
+            resolve(browser.pageAction.openPopup());
+          });
+        });
+      }
+
+      const prom = waitForNextPopup();
+      await openPageAction();
+      const pageActionPopupWrapper = await verifyPopupOpened(prom);
+
+      const prom2 = waitForNextPopup();
+      await browser.test.assertRejects(
+        browser.action.openPopup(),
+        "openPopup() cannot be called while another panel is open",
+        "openPopup() should reject when pageAction popup is open"
+      );
+      await verifyPopupNotOpened(prom2);
+
+      await pageActionPopupWrapper.closePopup();
+
+      browser.test.log("action.openPopup() works after closing pageAction");
+      const prom3 = waitForNextPopup();
+      await browser.action.openPopup();
+      const popupWrapper3 = await verifyPopupOpened(prom3);
+
+      browser.test.log("pageAction.openPopup() rejects after action.openPopup");
+      await browser.test.assertRejects(
+        openPageAction(),
+        "openPopup() cannot be called while another panel is open",
+        "pageAction.openPopup() should reject when action popup is open"
+      );
+
+      await popupWrapper3.closePopup();
+
+      browser.test.sendMessage("done");
+    },
+  });
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
+async function do_test_openPopup_multiple_extensions({
+  is_own_action_button_pinned = false,
+  is_other_action_button_pinned = false,
+}) {
+  const otherExtension = loadExtension({
+    extensionId: "openPopup@another-ext",
+    action_is_pinned: is_other_action_button_pinned,
+    background() {
+      const ERROR_POPUP_STILL_OPEN =
+        "openPopup() cannot be called while another panel is open";
+      browser.runtime.onMessageExternal.addListener(async msg => {
+        if (msg === "open_fail") {
+          await browser.test.assertRejects(
+            browser.action.openPopup(),
+            ERROR_POPUP_STILL_OPEN,
+            "openPopup should fail if another extension popup is visible"
+          );
+        } else if (msg === "open_ok") {
+          const prom = waitForNextPopup();
+          // We close the popup with window.close(). But even after issuing the
+          // close request, the popup may still be active. So if we cannot open
+          // the popup due to it still being detected as open, retry again.
+          //
+          // This is not great, but it also matches what extensions have to do
+          // in practice if they want to open a popup.
+          //
+          // The arbitrarily chosen retry amount and interval are arbitrarily
+          // chosen, such that it is extremely likely for the popup to have
+          // completed closing. It not closing within that time would be a true
+          // bug. The 50 x 100ms matches TestUtils.waitForCondition and other
+          // similar helpers that expect quick progress without a specific
+          // event to wait for.
+          for (let i = 1; i <= 50; ++i) {
+            browser.test.log(`Calling openPopup, attempt ${i}`);
+            try {
+              await browser.action.openPopup();
+              break;
+            } catch (e) {
+              if (e.message !== ERROR_POPUP_STILL_OPEN) {
+                browser.test.fail(`Unexpected error from openPopup: ${e}`);
+                break;
+              }
+              // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+              await new Promise(r => setTimeout(r, 100));
+            }
+          }
+          const popupWrapper = await verifyPopupOpened(prom);
+          await popupWrapper.closePopup();
+        } else {
+          browser.test.fail(`Unexpected message: ${msg}`);
+        }
+      });
+    },
+  });
+  await otherExtension.startup();
+
+  let extension = loadExtension({
+    extensionId: "openPopup-with-other-extensions@tests.mozilla.org",
+    action_is_pinned: is_own_action_button_pinned,
+    async background() {
+      const prom = waitForNextPopup();
+      await browser.action.openPopup();
+      const popupWrapper = await verifyPopupOpened(prom);
+
+      browser.test.log("After openPopup(), another extension cannot open too");
+      await browser.runtime.sendMessage("openPopup@another-ext", "open_fail");
+      browser.test.assertEq(
+        1,
+        browser.extension.getViews({ type: "popup" }).length,
+        "Popup is still open"
+      );
+
+      await popupWrapper.closePopup();
+
+      browser.test.log("After closing popup, another extension can open popup");
+      await browser.runtime.sendMessage("openPopup@another-ext", "open_ok");
+
+      browser.test.sendMessage("done");
+    },
+  });
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+  await otherExtension.unload();
+}
+
+add_task(async function test_openPopup_multiple_extensions() {
+  await do_test_openPopup_multiple_extensions({
+    is_own_action_button_pinned: false,
+    is_other_action_button_pinned: false,
+  });
+});
+
+add_task(async function test_openPopup_multiple_extensions_own_pinned() {
+  await do_test_openPopup_multiple_extensions({
+    is_own_action_button_pinned: true,
+    is_other_action_button_pinned: false,
+  });
+});
+
+add_task(async function test_openPopup_multiple_extensions_other_pinned() {
+  await do_test_openPopup_multiple_extensions({
+    is_own_action_button_pinned: false,
+    is_other_action_button_pinned: true,
+  });
+});
+
+add_task(async function test_openPopup_multiple_extensions_both_pinned() {
+  await do_test_openPopup_multiple_extensions({
+    is_own_action_button_pinned: true,
+    is_other_action_button_pinned: true,
+  });
+});
+</script>
+
+</body>
+</html>

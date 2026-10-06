@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <h1>file_broadcast_load.html</h1>
 <script>
-let channel = new BroadcastChannel("test");
+let channel = SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel("test");
 channel.onmessage = function(e) {
   console.log("file_broadcast_load.html got message:", e.data);
   if (e.data == "close") {

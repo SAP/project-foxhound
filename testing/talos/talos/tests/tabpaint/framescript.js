@@ -1,5 +1,3 @@
-/* eslint-env mozilla/frame-script */
-
 (function () {
   addEventListener(
     "load",

@@ -104,6 +104,7 @@ add_task(async function test_tabdialogbox_tab_switch_focus() {
 
 /**
  * Tests that an alert prompt has focus on the default element.
+ *
  * @param {CommonDialog} prompt - Prompt to test focus for.
  * @param {number} index - Index of the prompt to log.
  */

@@ -63,7 +63,6 @@
   --scrubberStack-width: 64px;
   --muteButton-width: var(--button-size);
   --volumeStack-width: 48px;
-  --castingButton-width: var(--button-size);
   --closedCaptionButton-width: var(--button-size);
   --fullscreenButton-width: var(--button-size);
   --positionDurationBox-width: var(--timer-size);
@@ -217,14 +216,6 @@
 }
 .muteButton[noAudio] + .volumeStack {
   display: none;
-}
-
-.castingButton {
-  background-image: url(chrome://global/skin/media/castingButton-ready.svg);
-}
-
-.castingButton[enabled] {
-  background-image: url(chrome://global/skin/media/castingButton-active.svg);
 }
 
 .closedCaptionButton {

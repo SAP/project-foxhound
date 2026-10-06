@@ -21,8 +21,8 @@ add_task(async function new_about_blank_tab() {
   await BrowserTestUtils.withNewTab("about:blank", async browser => {
     is(
       browser.browsingContext.currentWindowGlobal.isInitialDocument,
-      false,
-      "After loading an actual, final about:blank in the tab, the field is false"
+      true,
+      "After the initial about:blank fires its load event, the field is still true"
     );
   });
 });
@@ -35,6 +35,9 @@ add_task(async function iframe_initial_about_blank() {
       info("Create an iframe without any explicit location");
       await SpecialPowers.spawn(browser, [], async () => {
         const iframe = content.document.createElement("iframe");
+        let loadPromise = new Promise(resolve => {
+          iframe.addEventListener("load", resolve, { once: true });
+        });
         // Add the iframe to the DOM tree in order to be able to have its browsingContext
         content.document.body.appendChild(iframe);
         const { browsingContext } = iframe;
@@ -52,13 +55,11 @@ add_task(async function iframe_initial_about_blank() {
           ]
         );
 
-        await new Promise(resolve => {
-          iframe.addEventListener("load", resolve, { once: true });
-        });
+        await loadPromise;
         is(
           iframe.contentDocument.isInitialDocument,
-          false,
-          "The field is false after having loaded the final about:blank document"
+          true,
+          "The field remains true when the iframe stays at about:blank"
         );
         let afterLoadPromise = SpecialPowers.spawnChrome(
           [browsingContext],
@@ -73,7 +74,7 @@ add_task(async function iframe_initial_about_blank() {
         is(beforeIsInitial, true, "before load is initial in parent");
         is(beforeWasInitial, true, "before load was initial in parent");
         let [afterIsInitial, afterWasInitial] = await afterLoadPromise;
-        is(afterIsInitial, false, "after load is not initial in parent");
+        is(afterIsInitial, true, "after load is initial in parent");
         is(afterWasInitial, true, "after load was initial in parent");
         iframe.remove();
       });
@@ -104,14 +105,12 @@ add_task(async function iframe_initial_about_blank() {
 add_task(async function window_open() {
   async function testWindowOpen({ browser, args, isCrossOrigin, willLoad }) {
     info(`Open popup with ${JSON.stringify(args)}`);
-    const onNewTab = BrowserTestUtils.waitForNewTab(
-      gBrowser,
-      args[0] || "about:blank"
-    );
+    let url = args[0] || "about:blank";
+    const onNewTab = BrowserTestUtils.waitForNewTab(gBrowser, url);
     await SpecialPowers.spawn(
       browser,
-      [args, isCrossOrigin, willLoad],
-      async (args, crossOrigin, willLoad) => {
+      [url, args, isCrossOrigin, willLoad],
+      async (url, args, crossOrigin, willLoad) => {
         const win = content.window.open(...args);
         is(
           win.document.isInitialDocument,
@@ -128,7 +127,7 @@ add_task(async function window_open() {
 
         // In cross origin, it is harder to watch for new document load, and if
         // no argument is passed no load will happen.
-        if (!crossOrigin && willLoad) {
+        if (!crossOrigin && willLoad && url != "about:blank") {
           await new Promise(r =>
             win.addEventListener("load", r, { once: true })
           );
@@ -149,11 +148,19 @@ add_task(async function window_open() {
     const windowGlobal =
       newTab.linkedBrowser.browsingContext.currentWindowGlobal;
     if (willLoad) {
-      is(
-        windowGlobal.isInitialDocument,
-        false,
-        "The field is false in the parent process after having loaded the final document"
-      );
+      if (url == "about:blank") {
+        is(
+          windowGlobal.isInitialDocument,
+          true,
+          "The field is true in the parent process after having loaded about:blank"
+        );
+      } else {
+        is(
+          windowGlobal.isInitialDocument,
+          false,
+          "The field is false in the parent process after having loaded the final document"
+        );
+      }
     } else {
       is(
         windowGlobal.isInitialDocument,

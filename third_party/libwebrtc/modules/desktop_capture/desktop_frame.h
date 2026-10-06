@@ -17,8 +17,11 @@
 #include <optional>
 #include <vector>
 
+#include "absl/base/nullability.h"
+#include "media/base/video_common.h"
 #include "modules/desktop_capture/desktop_geometry.h"
 #include "modules/desktop_capture/desktop_region.h"
+#include "modules/desktop_capture/frame_texture.h"
 #include "modules/desktop_capture/shared_memory.h"
 #include "rtc_base/system/rtc_export.h"
 
@@ -27,6 +30,8 @@ namespace webrtc {
 const float kStandardDPI = 96.0f;
 
 // DesktopFrame represents a video frame captured from the screen.
+// TODO(crbug.com/40929600): Make data-dependent methods virtual so
+// texture-backed frames can provide their own implementations.
 class RTC_EXPORT DesktopFrame {
  public:
   // DesktopFrame objects always hold BGRA data.
@@ -58,8 +63,14 @@ class RTC_EXPORT DesktopFrame {
   // Distance in the buffer between two neighboring rows in bytes.
   int stride() const { return stride_; }
 
-  // Data buffer used for the frame.
-  uint8_t* data() const { return data_; }
+  // The pixel format the `DesktopFrame` is stored in.
+  FourCC pixel_format() const { return pixel_format_; }
+
+  // Data buffer used for the frame. May be nullptr for texture-backed frames.
+  uint8_t* absl_nullable data() const { return data_; }
+
+  // Texture used for the frame.
+  FrameTexture* texture() const { return texture_; }
 
   // SharedMemory used for the buffer or NULL if memory is allocated on the
   // heap. The result is guaranteed to be deleted only after the frame is
@@ -157,20 +168,34 @@ class RTC_EXPORT DesktopFrame {
   bool FrameDataIsBlack() const;
 
  protected:
+  // TODO(bugs.webrtc.org/436974448): Remove.
+  // Deprecated, use the next constructor.
   DesktopFrame(DesktopSize size,
                int stride,
                uint8_t* data,
                SharedMemory* shared_memory);
+
+  DesktopFrame(DesktopSize size,
+               int stride,
+               FourCC pixel_format,
+               uint8_t* data,
+               SharedMemory* shared_memory,
+               FrameTexture* texture = nullptr);
 
   // Ownership of the buffers is defined by the classes that inherit from this
   // class. They must guarantee that the buffer is not deleted before the frame
   // is deleted.
   uint8_t* const data_;
   SharedMemory* const shared_memory_;
+  FrameTexture* texture_;
 
  private:
   const DesktopSize size_;
   const int stride_;
+
+  // The pixel format for the data stored. Currently, only 4 byte per pixel
+  // formats are supported.
+  const FourCC pixel_format_;
 
   DesktopRegion updated_region_;
   DesktopVector top_left_;
@@ -188,8 +213,12 @@ class RTC_EXPORT DesktopFrame {
 // A DesktopFrame that stores data in the heap.
 class RTC_EXPORT BasicDesktopFrame : public DesktopFrame {
  public:
-  // The entire data buffer used for the frame is initialized with zeros.
+  // TODO(bugs.webrtc.org/436974448): Remove.
+  // Deprecated, use the last constructor.
   explicit BasicDesktopFrame(DesktopSize size);
+
+  // The entire data buffer used for the frame is initialized with zeros.
+  BasicDesktopFrame(DesktopSize size, FourCC pixel_format);
 
   ~BasicDesktopFrame() override;
 
@@ -209,17 +238,26 @@ class RTC_EXPORT SharedMemoryDesktopFrame : public DesktopFrame {
   // `shared_memory_factory` should not be nullptr.
   static std::unique_ptr<DesktopFrame> Create(
       DesktopSize size,
+      FourCC pixel_format,
       SharedMemoryFactory* shared_memory_factory);
 
-  // Takes ownership of `shared_memory`.
-  // Deprecated, use the next constructor.
+  // TODO(bugs.webrtc.org/436974448): Remove.
+  // Deprecated, use the last constructor.
   SharedMemoryDesktopFrame(DesktopSize size,
                            int stride,
+                           std::unique_ptr<SharedMemory> shared_memory);
+
+  // Takes ownership of `shared_memory`.
+  // Deprecated, use the last constructor.
+  SharedMemoryDesktopFrame(DesktopSize size,
+                           int stride,
+                           FourCC pixel_format,
                            SharedMemory* shared_memory);
 
   // Preferred.
   SharedMemoryDesktopFrame(DesktopSize size,
                            int stride,
+                           FourCC pixel_format,
                            std::unique_ptr<SharedMemory> shared_memory);
 
   ~SharedMemoryDesktopFrame() override;
@@ -237,6 +275,7 @@ class RTC_EXPORT SharedMemoryDesktopFrame : public DesktopFrame {
   // constructor, std::unique_ptr<T>::operator->() won't be involved anymore.
   SharedMemoryDesktopFrame(DesktopRect rect,
                            int stride,
+                           FourCC pixel_format,
                            SharedMemory* shared_memory);
 };
 

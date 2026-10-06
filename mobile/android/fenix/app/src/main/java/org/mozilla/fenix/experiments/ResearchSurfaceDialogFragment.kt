@@ -8,10 +8,9 @@ import android.annotation.SuppressLint
 import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
-import androidx.compose.ui.platform.ComposeView
 import androidx.fragment.app.DialogFragment
+import androidx.fragment.compose.content
 import androidx.navigation.fragment.navArgs
 import org.mozilla.fenix.R
 import org.mozilla.fenix.experiments.view.ResearchSurfaceSurvey
@@ -20,7 +19,6 @@ import org.mozilla.fenix.theme.FirefoxTheme
 /**
  * Dialog displaying the fullscreen research surface message.
  */
-
 class ResearchSurfaceDialogFragment : DialogFragment() {
     private val args by navArgs<ResearchSurfaceDialogFragmentArgs>()
     private lateinit var bundleArgs: Bundle
@@ -52,7 +50,7 @@ class ResearchSurfaceDialogFragment : DialogFragment() {
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?,
-    ): View = ComposeView(requireContext()).apply {
+    ) = content {
         val messageText = bundleArgs.getString(KEY_MESSAGE_TEXT)
             ?: getString(R.string.nimbus_survey_message_text)
         val acceptButtonText = bundleArgs.getString(KEY_ACCEPT_BUTTON_TEXT)
@@ -60,22 +58,20 @@ class ResearchSurfaceDialogFragment : DialogFragment() {
         val dismissButtonText = bundleArgs.getString(KEY_DISMISS_BUTTON_TEXT)
             ?: getString(R.string.preferences_not_take_survey)
 
-        setContent {
-            FirefoxTheme {
-                ResearchSurfaceSurvey(
-                    messageText = messageText,
-                    onAcceptButtonText = acceptButtonText,
-                    onDismissButtonText = dismissButtonText,
-                    onDismiss = {
-                        onDismiss()
-                        dismiss()
-                    },
-                    onAccept = {
-                        onAccept()
-                        dismiss()
-                    },
-                )
-            }
+        FirefoxTheme {
+            ResearchSurfaceSurvey(
+                messageText = messageText,
+                onAcceptButtonText = acceptButtonText,
+                onDismissButtonText = dismissButtonText,
+                onDismiss = {
+                    onDismiss()
+                    dismiss()
+                },
+                onAccept = {
+                    onAccept()
+                    dismiss()
+                },
+            )
         }
     }
 

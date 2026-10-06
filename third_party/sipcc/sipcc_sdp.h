@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _SIPCC_SDP_H_
-#define _SIPCC_SDP_H_
+#ifndef SIPCCSDP_H_
+#define SIPCCSDP_H_
 
 #include "sdp_os_defs.h"
 #include "ccsdp.h"
@@ -1842,4 +1842,4 @@ sdp_attr_get_extmap_id(sdp_t *sdp_p, uint16_t level, uint16_t inst);
 sdp_result_e
 sdp_attr_set_extmap(sdp_t *sdp_p, uint16_t level, uint16_t id, const char* uri, uint16_t inst);
 
-#endif /* _SDP_H_ */
+#endif /* SDP_H_ */

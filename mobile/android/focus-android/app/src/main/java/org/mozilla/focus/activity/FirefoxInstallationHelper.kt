@@ -9,7 +9,7 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import androidx.core.net.toUri
 import mozilla.components.support.utils.Browsers
-import mozilla.components.support.utils.ext.resolveActivityCompat
+import mozilla.components.support.utils.ext.packageManagerCompatHelper
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.focus.GleanMetrics.OpenWith
 
@@ -30,7 +30,7 @@ object FirefoxInstallationHelper {
      */
     fun resolveAppStore(context: Context): ActivityInfo? {
         val resolveInfo =
-            context.packageManager.resolveActivityCompat(storeIntent, 0) ?: return null
+            context.packageManagerCompatHelper.resolveActivityCompat(storeIntent, 0) ?: return null
 
         return if (resolveInfo.activityInfo.exported) {
             resolveInfo.activityInfo

@@ -24,13 +24,6 @@ export var SessionHistory = Object.freeze({
     return SessionHistoryInternal.isEmpty(docShell);
   },
 
-  collect(docShell, aFromIdx = -1) {
-    if (Services.appinfo.sessionHistoryInParent) {
-      throw new Error("Use SessionHistory.collectFromParent instead");
-    }
-    return SessionHistoryInternal.collect(docShell, aFromIdx);
-  },
-
   collectFromParent(uri, documentHasChildNodes, history, aFromIdx = -1) {
     return SessionHistoryInternal.collectCommon(
       uri,
@@ -40,20 +33,9 @@ export var SessionHistory = Object.freeze({
     );
   },
 
-  collectNonWebControlledBlankLoadingSession(browsingContext) {
-    return SessionHistoryInternal.collectNonWebControlledBlankLoadingSession(
+  collectNonWebControlledLoadingSession(browsingContext) {
+    return SessionHistoryInternal.collectNonWebControlledLoadingSession(
       browsingContext
-    );
-  },
-
-  restore(docShell, tabData) {
-    if (Services.appinfo.sessionHistoryInParent) {
-      throw new Error("Use SessionHistory.restoreFromParent instead");
-    }
-    return SessionHistoryInternal.restore(
-      docShell.QueryInterface(Ci.nsIWebNavigation).sessionHistory
-        .legacySHistory,
-      tabData
     );
   },
 
@@ -85,28 +67,6 @@ var SessionHistoryInternal = {
     }
     let uri = webNavigation.currentURI.spec;
     return uri == "about:blank" && history.count == 0;
-  },
-
-  /**
-   * Collects session history data for a given docShell.
-   *
-   * @param docShell
-   *        The docShell that owns the session history.
-   * @param aFromIdx
-   *        The starting local index to collect the history from.
-   * @return An object reprereseting a partial global history update.
-   */
-  collect(docShell, aFromIdx = -1) {
-    let webNavigation = docShell.QueryInterface(Ci.nsIWebNavigation);
-    let uri = webNavigation.currentURI.displaySpec;
-    let body = webNavigation.document.body;
-    let history = webNavigation.sessionHistory;
-    return this.collectCommon(
-      uri,
-      body && body.hasChildNodes(),
-      history.legacySHistory,
-      aFromIdx
-    );
   },
 
   collectCommon(uri, documentHasChildNodes, shistory, aFromIdx) {
@@ -161,10 +121,10 @@ var SessionHistoryInternal = {
     return data;
   },
 
-  collectNonWebControlledBlankLoadingSession(browsingContext) {
+  collectNonWebControlledLoadingSession(browsingContext) {
     if (
       browsingContext.sessionHistory?.count === 0 &&
-      browsingContext.nonWebControlledBlankURI &&
+      browsingContext.nonWebControlledLoadingURI &&
       browsingContext.mostRecentLoadingSessionHistoryEntry
     ) {
       return {
@@ -293,8 +253,10 @@ var SessionHistoryInternal = {
       );
     }
 
-    if (shEntry.policyContainer?.csp) {
-      entry.csp = lazy.E10SUtils.serializeCSP(shEntry.policyContainer.csp);
+    if (shEntry.policyContainer) {
+      entry.policyContainer = lazy.E10SUtils.serializePolicyContainer(
+        shEntry.policyContainer
+      );
     }
 
     entry.docIdentifier = shEntry.bfcacheID;
@@ -325,6 +287,9 @@ var SessionHistoryInternal = {
     }
 
     entry.transient = shEntry.isTransient();
+
+    entry.navigationKey = shEntry.navigationKey.toString();
+    entry.navigationId = shEntry.navigationId.toString();
 
     return entry;
   },
@@ -415,7 +380,7 @@ var SessionHistoryInternal = {
    *        Hash for ensuring unique frame IDs
    * @param docIdentMap
    *        Hash to ensure reuse of BFCache entries
-   * @returns nsISHEntry
+   * @returns {nsISHEntry}
    */
   deserializeEntry(entry, idMap, docIdentMap, shistory) {
     var shEntry = shistory.createEntry();
@@ -587,12 +552,25 @@ var SessionHistoryInternal = {
         entry.principalToInherit_base64
       );
     }
-    if (entry.csp) {
+    if (entry.policyContainer) {
+      // Firefox 143 and later writes to policyContainer (bug 1974070).
+      shEntry.policyContainer = lazy.E10SUtils.deserializePolicyContainer(
+        entry.policyContainer
+      );
+    } else if (entry.csp) {
+      // Firefox 142 and earlier writes entry.csp;
       const csp = lazy.E10SUtils.deserializeCSP(entry.csp);
       shEntry.policyContainer = new lazy.PolicyContainer(csp);
     }
     if (entry.wireframe) {
       shEntry.wireframe = entry.wireframe;
+    }
+
+    if (entry.navigationKey) {
+      shEntry.navigationKey = Components.ID(entry.navigationKey);
+    }
+    if (entry.navigationId) {
+      shEntry.navigationId = Components.ID(entry.navigationId);
     }
 
     if (entry.children) {

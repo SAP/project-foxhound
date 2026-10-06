@@ -128,6 +128,73 @@ class DatarateTestSVC
     ResetModel();
   }
 
+  void SetUpCbr() {
+    cfg_.rc_buf_initial_sz = 500;
+    cfg_.rc_buf_optimal_sz = 500;
+    cfg_.rc_buf_sz = 1000;
+    cfg_.rc_dropframe_thresh = 0;
+    cfg_.rc_min_quantizer = 0;
+    cfg_.rc_max_quantizer = 63;
+    cfg_.rc_end_usage = AOM_CBR;
+    cfg_.g_lag_in_frames = 0;
+  }
+
+  void SetTargetBitratesFor1SL1TL() {
+    number_temporal_layers_ = 1;
+    number_spatial_layers_ = 1;
+    target_layer_bitrate_[0] = cfg_.rc_target_bitrate;
+  }
+
+  void SetTargetBitratesFor1SL2TL() {
+    number_temporal_layers_ = 2;
+    number_spatial_layers_ = 1;
+    target_layer_bitrate_[0] = 60 * cfg_.rc_target_bitrate / 100;
+    target_layer_bitrate_[1] = cfg_.rc_target_bitrate;
+  }
+
+  void SetTargetBitratesFor1SL3TL() {
+    number_temporal_layers_ = 3;
+    number_spatial_layers_ = 1;
+    target_layer_bitrate_[0] = 50 * cfg_.rc_target_bitrate / 100;
+    target_layer_bitrate_[1] = 70 * cfg_.rc_target_bitrate / 100;
+    target_layer_bitrate_[2] = cfg_.rc_target_bitrate;
+  }
+
+  void SetTargetBitratesFor2SL1TL() {
+    number_temporal_layers_ = 1;
+    number_spatial_layers_ = 2;
+    target_layer_bitrate_[0] = 2 * cfg_.rc_target_bitrate / 4;
+    target_layer_bitrate_[1] = 2 * cfg_.rc_target_bitrate / 4;
+  }
+
+  void SetTargetBitratesFor3SL1TL() {
+    number_temporal_layers_ = 1;
+    number_spatial_layers_ = 3;
+    target_layer_bitrate_[0] = 1 * cfg_.rc_target_bitrate / 8;
+    target_layer_bitrate_[1] = 3 * cfg_.rc_target_bitrate / 8;
+    target_layer_bitrate_[2] = 4 * cfg_.rc_target_bitrate / 8;
+  }
+
+  void SetTargetBitratesFor3SL3TL() {
+    number_temporal_layers_ = 3;
+    number_spatial_layers_ = 3;
+    // SL0
+    const int bitrate_sl0 = 1 * cfg_.rc_target_bitrate / 8;
+    target_layer_bitrate_[0] = 50 * bitrate_sl0 / 100;
+    target_layer_bitrate_[1] = 70 * bitrate_sl0 / 100;
+    target_layer_bitrate_[2] = bitrate_sl0;
+    // SL1
+    const int bitrate_sl1 = 3 * cfg_.rc_target_bitrate / 8;
+    target_layer_bitrate_[3] = 50 * bitrate_sl1 / 100;
+    target_layer_bitrate_[4] = 70 * bitrate_sl1 / 100;
+    target_layer_bitrate_[5] = bitrate_sl1;
+    // SL2
+    const int bitrate_sl2 = 4 * cfg_.rc_target_bitrate / 8;
+    target_layer_bitrate_[6] = 50 * bitrate_sl2 / 100;
+    target_layer_bitrate_[7] = 70 * bitrate_sl2 / 100;
+    target_layer_bitrate_[8] = bitrate_sl2;
+  }
+
   void DecompressedFrameHook(const aom_image_t &img,
                              aom_codec_pts_t pts) override {
     frame_info_list_.push_back(FrameInfo(pts, img.d_w, img.d_h));
@@ -179,6 +246,8 @@ class DatarateTestSVC
     external_resize_dynamic_drop_layer_ = false;
     external_resize_pattern_ = 0;
     dynamic_tl_ = false;
+    dynamic_scale_factors_ = false;
+    disable_last_ref_ = false;
   }
 
   void PreEncodeFrameHook(::libaom_test::VideoSource *video,
@@ -234,7 +303,7 @@ class DatarateTestSVC
         spatial_layer_id, multi_ref_, comp_pred_,
         (video->frame() % cfg_.kf_max_dist) == 0, dynamic_enable_disable_mode_,
         rps_mode_, rps_recovery_frame_, simulcast_mode_, use_last_as_scaled_,
-        use_last_as_scaled_single_ref_);
+        use_last_as_scaled_single_ref_, disable_last_ref_);
     if (intra_only_ == 1 && frame_sync_ > 0) {
       // Set an Intra-only frame on SL0 at frame_sync_.
       // In order to allow decoding to start on SL0 in mid-sequence we need to
@@ -413,6 +482,31 @@ class DatarateTestSVC
         number_temporal_layers_ = 1;
         svc_params_.layer_target_bitrate[0] = cfg_.rc_target_bitrate;
         svc_params_.framerate_factor[0] = 1;
+        encoder->Control(AV1E_SET_SVC_PARAMS, &svc_params_);
+      }
+    } else if (dynamic_scale_factors_) {
+      if (layer_id_.spatial_layer_id == 0 && video->frame() == 0) {
+        // Change layer bitrates to set top layer to 0.
+        // This will trigger skip encoding/dropping of top spatial layer.
+        // Set scale factors to 1/2 on top layer.
+        bitrate_layer_[2] = svc_params_.layer_target_bitrate[2];
+        cfg_.rc_target_bitrate -= bitrate_layer_[2];
+        svc_params_.layer_target_bitrate[2] = 0;
+        svc_params_.scaling_factor_num[0] = 1;
+        svc_params_.scaling_factor_den[0] = 4;
+        svc_params_.scaling_factor_num[1] = 1;
+        svc_params_.scaling_factor_den[1] = 2;
+        svc_params_.scaling_factor_num[2] = 1;
+        svc_params_.scaling_factor_den[2] = 2;
+        encoder->Config(&cfg_);
+        encoder->Control(AV1E_SET_SVC_PARAMS, &svc_params_);
+      } else if (layer_id_.spatial_layer_id == 0 && video->frame() == 30) {
+        // Go back nonzero bitrate and set scale factors to 1/1 on top layer.
+        svc_params_.layer_target_bitrate[2] = bitrate_layer_[2];
+        cfg_.rc_target_bitrate += svc_params_.layer_target_bitrate[2];
+        svc_params_.scaling_factor_num[2] = 1;
+        svc_params_.scaling_factor_den[2] = 1;
+        encoder->Config(&cfg_);
         encoder->Control(AV1E_SET_SVC_PARAMS, &svc_params_);
       }
     }
@@ -850,6 +944,19 @@ class DatarateTestSVC
     }
   }
 
+  void CheckDatarate(double low_factor, double high_factor,
+                     int num_layers_to_check = -1) {
+    if (num_layers_to_check < 0) {
+      num_layers_to_check = number_temporal_layers_ * number_spatial_layers_;
+    }
+    for (int i = 0; i < num_layers_to_check; i++) {
+      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * low_factor)
+          << " The datarate for the file is lower than target by too much!";
+      ASSERT_LE(effective_datarate_tl[i],
+                target_layer_bitrate_[i] * high_factor)
+          << " The datarate for the file is greater than target by too much!";
+    }
+  }
   // Layer pattern configuration.
   virtual int set_layer_pattern(
       int frame_cnt, aom_svc_layer_id_t *layer_id,
@@ -858,7 +965,7 @@ class DatarateTestSVC
       int multi_ref, int comp_pred, int is_key_frame,
       int dynamic_enable_disable_mode, int rps_mode, int rps_recovery_frame,
       int simulcast_mode, bool use_last_as_scaled,
-      bool use_last_as_scaled_single_ref) {
+      bool use_last_as_scaled_single_ref, bool disable_last_ref) {
     int lag_index = 0;
     int base_count = frame_cnt >> 2;
     layer_id->spatial_layer_id = spatial_layer;
@@ -1058,6 +1165,11 @@ class DatarateTestSVC
     if (dynamic_enable_disable_mode == 1 &&
         layer_id->spatial_layer_id == number_spatial_layers_ - 1)
       ref_frame_config->reference[0] = 0;
+    // Always disable LAST reference under this flag. use GOLDEN reference.
+    if (disable_last_ref) {
+      ref_frame_config->reference[0] = 0;
+      ref_frame_config->reference[3] = 1;
+    }
     return layer_flags;
   }
 
@@ -1099,14 +1211,7 @@ class DatarateTestSVC
   }
 
   virtual void BasicRateTargetingSVC3TL1SLTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 1;
 
     ::libaom_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352,
@@ -1114,17 +1219,9 @@ class DatarateTestSVC
     const int bitrate_array[2] = { 200, 550 };
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
-    number_temporal_layers_ = 3;
-    target_layer_bitrate_[0] = 50 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[1] = 70 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[2] = cfg_.rc_target_bitrate;
+    SetTargetBitratesFor1SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.60)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.60)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.60, 1.60);
 #if CONFIG_AV1_DECODER
     // Top temporal layers are non_reference, so exlcude them from
     // mismatch count, since loopfilter/cdef is not applied for these on
@@ -1134,15 +1231,48 @@ class DatarateTestSVC
 #endif
   }
 
-  virtual void SetFrameQpSVC3TL1SLTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
+  virtual void BasicRateTargetingSVC3TL1SLQvgaLowFramerateTest() {
+    SetUpCbr();
+    cfg_.g_error_resilient = 0;
+    cfg_.g_threads = 2;
+    cfg_.kf_max_dist = 30;
+    cfg_.kf_min_dist = 30;
     cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    cfg_.rc_min_quantizer = 2;
+    cfg_.rc_max_quantizer = 50;
+
+    ::libaom_test::I420VideoSource video("desktop1.320_180.yuv", 320, 180, 10,
+                                         1, 0, 800);
+    const int bitrate_array[2] = { 50, 200 };
+    cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
+    ResetModel();
+    tile_columns_ = 1;
+    SetTargetBitratesFor1SL3TL();
+    ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
+  }
+
+  virtual void BasicRateTargetingSVC3TL1SLQvgaHighBitrateLowFramerateTest() {
+    SetUpCbr();
+    cfg_.g_error_resilient = 0;
+    cfg_.g_threads = 2;
+    cfg_.kf_max_dist = 30;
+    cfg_.kf_min_dist = 30;
+    cfg_.rc_dropframe_thresh = 0;
+    cfg_.rc_min_quantizer = 2;
+    cfg_.rc_max_quantizer = 50;
+
+    ::libaom_test::I420VideoSource video("desktop1.320_180.yuv", 320, 180, 10,
+                                         1, 0, 800);
+    const int bitrate_array[2] = { 500, 1000 };
+    cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
+    ResetModel();
+    tile_columns_ = 1;
+    SetTargetBitratesFor1SL3TL();
+    ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
+  }
+
+  virtual void SetFrameQpSVC3TL1SLTest() {
+    SetUpCbr();
     cfg_.g_error_resilient = 1;
 
     user_define_frame_qp_ = 1;
@@ -1153,22 +1283,12 @@ class DatarateTestSVC
     const int bitrate_array[2] = { 200, 550 };
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
-    number_temporal_layers_ = 3;
-    target_layer_bitrate_[0] = 50 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[1] = 70 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[2] = cfg_.rc_target_bitrate;
+    SetTargetBitratesFor1SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
   }
 
   virtual void SetFrameQpSVC3TL3SLTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
 
     user_define_frame_qp_ = 1;
@@ -1179,35 +1299,12 @@ class DatarateTestSVC
     const int bitrate_array[2] = { 600, 1200 };
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
-    number_temporal_layers_ = 3;
-    number_spatial_layers_ = 3;
-    // SL0
-    const int bitrate_sl0 = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[0] = 50 * bitrate_sl0 / 100;
-    target_layer_bitrate_[1] = 70 * bitrate_sl0 / 100;
-    target_layer_bitrate_[2] = bitrate_sl0;
-    // SL1
-    const int bitrate_sl1 = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[3] = 50 * bitrate_sl1 / 100;
-    target_layer_bitrate_[4] = 70 * bitrate_sl1 / 100;
-    target_layer_bitrate_[5] = bitrate_sl1;
-    // SL2
-    const int bitrate_sl2 = 4 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[6] = 50 * bitrate_sl2 / 100;
-    target_layer_bitrate_[7] = 70 * bitrate_sl2 / 100;
-    target_layer_bitrate_[8] = bitrate_sl2;
+    SetTargetBitratesFor3SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
   }
 
   virtual void BasicRateTargetingSVC3TL1SLScreenTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
 
     ::libaom_test::Y4mVideoSource video("screendata.y4m", 0, 60);
@@ -1216,18 +1313,9 @@ class DatarateTestSVC
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
     screen_mode_ = 1;
-    number_temporal_layers_ = 3;
-    number_spatial_layers_ = 1;
-    target_layer_bitrate_[0] = 50 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[1] = 70 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[2] = cfg_.rc_target_bitrate;
+    SetTargetBitratesFor1SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.40)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 2.0)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.40, 2.0);
 #if CONFIG_AV1_DECODER
     // Top temporal layers are non_reference, so exlcude them from
     // mismatch count, since loopfilter/cdef is not applied for these on
@@ -1257,17 +1345,9 @@ class DatarateTestSVC
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
     screen_mode_ = 1;
-    number_temporal_layers_ = 2;
-    number_spatial_layers_ = 1;
-    target_layer_bitrate_[0] = 60 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[1] = cfg_.rc_target_bitrate;
+    SetTargetBitratesFor1SL2TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.75)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.8)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.75, 1.8);
 #if CONFIG_AV1_DECODER
     // Top temporal layers are non_reference, so exlcude them from
     // mismatch count, since loopfilter/cdef is not applied for these on
@@ -1296,10 +1376,7 @@ class DatarateTestSVC
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
     screen_mode_ = 1;
-    number_temporal_layers_ = 2;
-    number_spatial_layers_ = 1;
-    target_layer_bitrate_[0] = 60 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[1] = cfg_.rc_target_bitrate;
+    SetTargetBitratesFor1SL2TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
 #if CONFIG_AV1_DECODER
     // Top temporal layers are non_reference, so exclude them from
@@ -1333,10 +1410,7 @@ class DatarateTestSVC
     tile_columns_ = 1;
     tile_rows_ = 1;
     screen_mode_ = 1;
-    number_temporal_layers_ = 2;
-    number_spatial_layers_ = 1;
-    target_layer_bitrate_[0] = 60 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[1] = cfg_.rc_target_bitrate;
+    SetTargetBitratesFor1SL2TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
 #if CONFIG_AV1_DECODER
     // Top temporal layers are non_reference, so exclude them from
@@ -1350,14 +1424,7 @@ class DatarateTestSVC
   }
 
   virtual void BasicRateTargetingSVC1TL3SLScreenTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
 
     ::libaom_test::Y4mVideoSource video("niklas_1280_720_30.y4m", 0, 60);
@@ -1366,32 +1433,19 @@ class DatarateTestSVC
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
     screen_mode_ = 1;
-    number_temporal_layers_ = 1;
-    number_spatial_layers_ = 3;
+    SetTargetBitratesFor3SL1TL();
     target_layer_bitrate_[0] = 30 * cfg_.rc_target_bitrate / 100;
     target_layer_bitrate_[1] = 60 * cfg_.rc_target_bitrate / 100;
     target_layer_bitrate_[2] = cfg_.rc_target_bitrate;
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.50)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.5)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.50, 1.5);
 #if CONFIG_AV1_DECODER
     EXPECT_EQ((int)GetMismatchFrames(), 0);
 #endif
   }
 
   virtual void BasicRateTargetingSVC1TL1SLScreenScCutsMotionTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
 
     ::libaom_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352,
@@ -1401,30 +1455,16 @@ class DatarateTestSVC
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
     screen_mode_ = 1;
-    number_temporal_layers_ = 1;
-    number_spatial_layers_ = 1;
-    target_layer_bitrate_[0] = cfg_.rc_target_bitrate;
+    SetTargetBitratesFor1SL1TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.40)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.7)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.40, 1.7);
 #if CONFIG_AV1_DECODER
     EXPECT_EQ((int)GetMismatchFrames(), 0);
 #endif
   }
 
   virtual void BasicRateTargetingSVC3TL1SLResizeTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
     cfg_.rc_resize_mode = RESIZE_DYNAMIC;
 
@@ -1432,20 +1472,12 @@ class DatarateTestSVC
                                          1, 0, 400);
     cfg_.g_w = 640;
     cfg_.g_h = 480;
-    const int bitrate_array[2] = { 80, 90 };
+    const int bitrate_array[2] = { 50, 70 };
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
-    number_temporal_layers_ = 3;
-    target_layer_bitrate_[0] = 50 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[1] = 70 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[2] = cfg_.rc_target_bitrate;
+    SetTargetBitratesFor1SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.80)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.60)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.80, 2.0);
 #if CONFIG_AV1_DECODER
     unsigned int last_w = cfg_.g_w;
     unsigned int last_h = cfg_.g_h;
@@ -1469,14 +1501,7 @@ class DatarateTestSVC
   }
 
   virtual void BasicRateTargetingSVC1TL2SLTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
 
     ::libaom_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352,
@@ -1484,28 +1509,31 @@ class DatarateTestSVC
     const int bitrate_array[2] = { 300, 600 };
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
-    number_temporal_layers_ = 1;
-    number_spatial_layers_ = 2;
-    target_layer_bitrate_[0] = 2 * cfg_.rc_target_bitrate / 4;
-    target_layer_bitrate_[1] = 2 * cfg_.rc_target_bitrate / 4;
+    SetTargetBitratesFor2SL1TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.80)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.60)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.80, 1.60);
+  }
+
+  virtual void BasicRateTargetingSVC1TL2SLDisableLASTTest() {
+    SetUpCbr();
+    cfg_.g_error_resilient = 0;
+
+    ::libaom_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352,
+                                         288, 30, 1, 0, 300);
+    const int bitrate_array[2] = { 300, 600 };
+    cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
+    ResetModel();
+    disable_last_ref_ = true;
+    screen_mode_ = true;
+    ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
+#if CONFIG_AV1_DECODER
+    EXPECT_EQ((int)GetMismatchFrames(), 0);
+#endif
   }
 
   virtual void BasicRateTargetingSVC3TL3SLIntraStartDecodeBaseMidSeq() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
+    SetUpCbr();
     cfg_.rc_max_quantizer = 56;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
     cfg_.g_error_resilient = 0;
     ::libaom_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352,
                                          288, 30, 1, 0, 300);
@@ -1516,32 +1544,11 @@ class DatarateTestSVC
     frame_sync_ = 20;
     frame_to_start_decoding_ = frame_sync_;
     layer_to_decode_ = 0;
-    number_temporal_layers_ = 3;
-    number_spatial_layers_ = 3;
-    // SL0
-    const int bitrate_sl0 = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[0] = 50 * bitrate_sl0 / 100;
-    target_layer_bitrate_[1] = 70 * bitrate_sl0 / 100;
-    target_layer_bitrate_[2] = bitrate_sl0;
-    // SL1
-    const int bitrate_sl1 = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[3] = 50 * bitrate_sl1 / 100;
-    target_layer_bitrate_[4] = 70 * bitrate_sl1 / 100;
-    target_layer_bitrate_[5] = bitrate_sl1;
-    // SL2
-    const int bitrate_sl2 = 4 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[6] = 50 * bitrate_sl2 / 100;
-    target_layer_bitrate_[7] = 70 * bitrate_sl2 / 100;
-    target_layer_bitrate_[8] = bitrate_sl2;
+    SetTargetBitratesFor3SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
     // Only check datarate on SL0 - this is layer that is decoded starting at
     // frame_to_start_decoding_.
-    for (int i = 0; i < number_temporal_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.50)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.60)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.50, 1.60, number_temporal_layers_);
 #if CONFIG_AV1_DECODER
     // Only base spatial layer is decoded and there are no non-referenece
     // frames on S0, so #mismatch must be 0.
@@ -1550,14 +1557,8 @@ class DatarateTestSVC
   }
 
   virtual void BasicRateTargetingSVC3TL3SLIntraMidSeqDecodeAll() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
+    SetUpCbr();
     cfg_.rc_max_quantizer = 56;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
     cfg_.g_error_resilient = 0;
     ::libaom_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352,
                                          288, 30, 1, 0, 300);
@@ -1568,30 +1569,9 @@ class DatarateTestSVC
     frame_sync_ = 20;
     frame_to_start_decoding_ = 0;
     layer_to_decode_ = 3;
-    number_temporal_layers_ = 3;
-    number_spatial_layers_ = 3;
-    // SL0
-    const int bitrate_sl0 = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[0] = 50 * bitrate_sl0 / 100;
-    target_layer_bitrate_[1] = 70 * bitrate_sl0 / 100;
-    target_layer_bitrate_[2] = bitrate_sl0;
-    // SL1
-    const int bitrate_sl1 = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[3] = 50 * bitrate_sl1 / 100;
-    target_layer_bitrate_[4] = 70 * bitrate_sl1 / 100;
-    target_layer_bitrate_[5] = bitrate_sl1;
-    // SL2
-    const int bitrate_sl2 = 4 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[6] = 50 * bitrate_sl2 / 100;
-    target_layer_bitrate_[7] = 70 * bitrate_sl2 / 100;
-    target_layer_bitrate_[8] = bitrate_sl2;
+    SetTargetBitratesFor3SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.585)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.60)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.585, 1.60);
 #if CONFIG_AV1_DECODER
     // All 3 spatial layers are decoded, starting at frame 0, so there are
     // and there 300/2 = 150 non-reference frames, so mismatch is 150.
@@ -1600,14 +1580,8 @@ class DatarateTestSVC
   }
 
   virtual void BasicRateTargetingSVC3TL3SLSimulcast() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
+    SetUpCbr();
     cfg_.rc_max_quantizer = 56;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
     cfg_.g_error_resilient = 0;
     cfg_.kf_max_dist = 150;
     cfg_.kf_min_dist = 150;
@@ -1620,23 +1594,7 @@ class DatarateTestSVC
     simulcast_mode_ = 1;
     frame_to_start_decoding_ = cfg_.kf_max_dist;
     layer_to_decode_ = 2;  // SL2
-    number_temporal_layers_ = 3;
-    number_spatial_layers_ = 3;
-    // SL0
-    const int bitrate_sl0 = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[0] = 50 * bitrate_sl0 / 100;
-    target_layer_bitrate_[1] = 70 * bitrate_sl0 / 100;
-    target_layer_bitrate_[2] = bitrate_sl0;
-    // SL1
-    const int bitrate_sl1 = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[3] = 50 * bitrate_sl1 / 100;
-    target_layer_bitrate_[4] = 70 * bitrate_sl1 / 100;
-    target_layer_bitrate_[5] = bitrate_sl1;
-    // SL2
-    const int bitrate_sl2 = 4 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[6] = 50 * bitrate_sl2 / 100;
-    target_layer_bitrate_[7] = 70 * bitrate_sl2 / 100;
-    target_layer_bitrate_[8] = bitrate_sl2;
+    SetTargetBitratesFor3SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
     // Only SL2 layer is decoded.
     for (int tl = 0; tl < number_temporal_layers_; tl++) {
@@ -1656,14 +1614,7 @@ class DatarateTestSVC
   }
 
   virtual void BasicRateTargetingSVC1TL2SLIntraOnlyTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
 
     ::libaom_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352,
@@ -1672,28 +1623,13 @@ class DatarateTestSVC
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
     intra_only_ = 1;
-    number_temporal_layers_ = 1;
-    number_spatial_layers_ = 2;
-    target_layer_bitrate_[0] = 2 * cfg_.rc_target_bitrate / 4;
-    target_layer_bitrate_[1] = 2 * cfg_.rc_target_bitrate / 4;
+    SetTargetBitratesFor2SL1TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.80)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.60)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.80, 1.60);
   }
 
   virtual void BasicRateTargetingSVC1TL1SLIntraOnlyTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
 
     ::libaom_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352,
@@ -1702,24 +1638,13 @@ class DatarateTestSVC
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
     intra_only_single_layer_ = true;
-    number_temporal_layers_ = 1;
-    number_spatial_layers_ = 1;
+    SetTargetBitratesFor1SL1TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    ASSERT_GE(effective_datarate_tl[0], cfg_.rc_target_bitrate * 0.80)
-        << " The datarate for the file is lower than target by too much!";
-    ASSERT_LE(effective_datarate_tl[0], cfg_.rc_target_bitrate * 1.60)
-        << " The datarate for the file is greater than target by too much!";
+    CheckDatarate(0.80, 1.60);
   }
 
   virtual void BasicRateTargetingSVC1TL3SLTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
 
     ::libaom_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352,
@@ -1727,29 +1652,13 @@ class DatarateTestSVC
     const int bitrate_array[2] = { 500, 1000 };
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
-    number_temporal_layers_ = 1;
-    number_spatial_layers_ = 3;
-    target_layer_bitrate_[0] = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[1] = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[2] = 4 * cfg_.rc_target_bitrate / 8;
+    SetTargetBitratesFor3SL1TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.80)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.38)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.80, 1.38);
   }
 
   virtual void BasicRateTargetingSVC1TL3SLLastIsScaledTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
 
     ::libaom_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352,
@@ -1757,30 +1666,14 @@ class DatarateTestSVC
     const int bitrate_array[2] = { 500, 1000 };
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
-    number_temporal_layers_ = 1;
-    number_spatial_layers_ = 3;
     use_last_as_scaled_ = true;
-    target_layer_bitrate_[0] = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[1] = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[2] = 4 * cfg_.rc_target_bitrate / 8;
+    SetTargetBitratesFor3SL1TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.80)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.38)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.80, 1.38);
   }
 
   virtual void BasicRateTargetingSVC1TL3SLLastIsScaledSingleRefTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
 
     ::libaom_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352,
@@ -1788,31 +1681,15 @@ class DatarateTestSVC
     const int bitrate_array[2] = { 500, 1000 };
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
-    number_temporal_layers_ = 1;
-    number_spatial_layers_ = 3;
     use_last_as_scaled_ = true;
     use_last_as_scaled_single_ref_ = true;
-    target_layer_bitrate_[0] = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[1] = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[2] = 4 * cfg_.rc_target_bitrate / 8;
+    SetTargetBitratesFor3SL1TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.80)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.38)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.80, 1.38);
   }
 
   virtual void BasicRateTargetingSVC1TL3SLMultiRefTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
 
     ::libaom_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352,
@@ -1821,29 +1698,13 @@ class DatarateTestSVC
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
     multi_ref_ = 1;
-    number_temporal_layers_ = 1;
-    number_spatial_layers_ = 3;
-    target_layer_bitrate_[0] = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[1] = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[2] = 4 * cfg_.rc_target_bitrate / 8;
+    SetTargetBitratesFor3SL1TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.80)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.38)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.80, 1.38);
   }
 
   virtual void BasicRateTargetingSVC3TL3SLTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
 
     ::libaom_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352,
@@ -1851,124 +1712,40 @@ class DatarateTestSVC
     const int bitrate_array[2] = { 600, 1200 };
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
-    number_temporal_layers_ = 3;
-    number_spatial_layers_ = 3;
-    // SL0
-    const int bitrate_sl0 = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[0] = 50 * bitrate_sl0 / 100;
-    target_layer_bitrate_[1] = 70 * bitrate_sl0 / 100;
-    target_layer_bitrate_[2] = bitrate_sl0;
-    // SL1
-    const int bitrate_sl1 = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[3] = 50 * bitrate_sl1 / 100;
-    target_layer_bitrate_[4] = 70 * bitrate_sl1 / 100;
-    target_layer_bitrate_[5] = bitrate_sl1;
-    // SL2
-    const int bitrate_sl2 = 4 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[6] = 50 * bitrate_sl2 / 100;
-    target_layer_bitrate_[7] = 70 * bitrate_sl2 / 100;
-    target_layer_bitrate_[8] = bitrate_sl2;
+    SetTargetBitratesFor3SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.50)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.38)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.50, 1.38);
   }
 
   virtual void BasicRateTargetingSVC3TL3SLHDTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
 
     ::libaom_test::Y4mVideoSource video("niklas_1280_720_30.y4m", 0, 60);
     const int bitrate_array[2] = { 600, 1200 };
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
-    number_temporal_layers_ = 3;
-    number_spatial_layers_ = 3;
-    // SL0
-    const int bitrate_sl0 = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[0] = 50 * bitrate_sl0 / 100;
-    target_layer_bitrate_[1] = 70 * bitrate_sl0 / 100;
-    target_layer_bitrate_[2] = bitrate_sl0;
-    // SL1
-    const int bitrate_sl1 = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[3] = 50 * bitrate_sl1 / 100;
-    target_layer_bitrate_[4] = 70 * bitrate_sl1 / 100;
-    target_layer_bitrate_[5] = bitrate_sl1;
-    // SL2
-    const int bitrate_sl2 = 4 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[6] = 50 * bitrate_sl2 / 100;
-    target_layer_bitrate_[7] = 70 * bitrate_sl2 / 100;
-    target_layer_bitrate_[8] = bitrate_sl2;
+    SetTargetBitratesFor3SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.70)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.45)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.70, 1.45);
   }
 
   virtual void BasicRateTargetingFixedModeSVC3TL3SLHDTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
 
     ::libaom_test::Y4mVideoSource video("niklas_1280_720_30.y4m", 0, 60);
     const int bitrate_array[2] = { 600, 1200 };
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
-    number_temporal_layers_ = 3;
-    number_spatial_layers_ = 3;
     use_fixed_mode_svc_ = 1;
-    // SL0
-    const int bitrate_sl0 = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[0] = 50 * bitrate_sl0 / 100;
-    target_layer_bitrate_[1] = 70 * bitrate_sl0 / 100;
-    target_layer_bitrate_[2] = bitrate_sl0;
-    // SL1
-    const int bitrate_sl1 = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[3] = 50 * bitrate_sl1 / 100;
-    target_layer_bitrate_[4] = 70 * bitrate_sl1 / 100;
-    target_layer_bitrate_[5] = bitrate_sl1;
-    // SL2
-    const int bitrate_sl2 = 4 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[6] = 50 * bitrate_sl2 / 100;
-    target_layer_bitrate_[7] = 70 * bitrate_sl2 / 100;
-    target_layer_bitrate_[8] = bitrate_sl2;
+    SetTargetBitratesFor3SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.70)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.45)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.70, 1.45);
   }
 
   virtual void BasicRateTargetingSVC3TL3SLMultiThreadSpeedPerLayerTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
     cfg_.g_threads = 2;
     ::libaom_test::I420VideoSource video("niklas_640_480_30.yuv", 640, 480, 30,
@@ -1981,41 +1758,13 @@ class DatarateTestSVC
     tile_columns_ = 1;
     tile_rows_ = 0;
     set_speed_per_layer_ = true;
-    number_temporal_layers_ = 3;
-    number_spatial_layers_ = 3;
-    // SL0
-    const int bitrate_sl0 = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[0] = 50 * bitrate_sl0 / 100;
-    target_layer_bitrate_[1] = 70 * bitrate_sl0 / 100;
-    target_layer_bitrate_[2] = bitrate_sl0;
-    // SL1
-    const int bitrate_sl1 = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[3] = 50 * bitrate_sl1 / 100;
-    target_layer_bitrate_[4] = 70 * bitrate_sl1 / 100;
-    target_layer_bitrate_[5] = bitrate_sl1;
-    // SL2
-    const int bitrate_sl2 = 4 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[6] = 50 * bitrate_sl2 / 100;
-    target_layer_bitrate_[7] = 70 * bitrate_sl2 / 100;
-    target_layer_bitrate_[8] = bitrate_sl2;
+    SetTargetBitratesFor3SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.70)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.45)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.70, 1.45);
   }
 
   virtual void BasicRateTargetingSVC3TL3SLHDMultiThread2Test() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
     cfg_.g_threads = 2;
 
@@ -2025,41 +1774,13 @@ class DatarateTestSVC
     ResetModel();
     tile_columns_ = 1;
     tile_rows_ = 0;
-    number_temporal_layers_ = 3;
-    number_spatial_layers_ = 3;
-    // SL0
-    const int bitrate_sl0 = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[0] = 50 * bitrate_sl0 / 100;
-    target_layer_bitrate_[1] = 70 * bitrate_sl0 / 100;
-    target_layer_bitrate_[2] = bitrate_sl0;
-    // SL1
-    const int bitrate_sl1 = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[3] = 50 * bitrate_sl1 / 100;
-    target_layer_bitrate_[4] = 70 * bitrate_sl1 / 100;
-    target_layer_bitrate_[5] = bitrate_sl1;
-    // SL2
-    const int bitrate_sl2 = 4 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[6] = 50 * bitrate_sl2 / 100;
-    target_layer_bitrate_[7] = 70 * bitrate_sl2 / 100;
-    target_layer_bitrate_[8] = bitrate_sl2;
+    SetTargetBitratesFor3SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.70)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.45)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.70, 1.45);
   }
 
   virtual void BasicRateTargetingSVC2TL1SLHDMultiThread4Test() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
     cfg_.g_threads = 4;
 
@@ -2069,28 +1790,13 @@ class DatarateTestSVC
     ResetModel();
     tile_columns_ = 1;
     tile_rows_ = 1;
-    number_temporal_layers_ = 2;
-    number_spatial_layers_ = 1;
-    target_layer_bitrate_[0] = 60 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[1] = cfg_.rc_target_bitrate;
+    SetTargetBitratesFor1SL2TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.70)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.45)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.70, 1.45);
   }
 
   virtual void BasicRateTargetingSVC2TL1SLHDMultiThread4AutoTilesTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
     cfg_.g_threads = 4;
 
@@ -2099,28 +1805,13 @@ class DatarateTestSVC
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
     auto_tiles_ = 1;
-    number_temporal_layers_ = 2;
-    number_spatial_layers_ = 1;
-    target_layer_bitrate_[0] = 60 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[1] = cfg_.rc_target_bitrate;
+    SetTargetBitratesFor1SL2TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.70)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.45)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.70, 1.45);
   }
 
   virtual void BasicRateTargetingSVC3TL3SLHDMultiThread4Test() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
     cfg_.g_threads = 4;
 
@@ -2130,41 +1821,13 @@ class DatarateTestSVC
     ResetModel();
     tile_columns_ = 1;
     tile_rows_ = 1;
-    number_temporal_layers_ = 3;
-    number_spatial_layers_ = 3;
-    // SL0
-    const int bitrate_sl0 = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[0] = 50 * bitrate_sl0 / 100;
-    target_layer_bitrate_[1] = 70 * bitrate_sl0 / 100;
-    target_layer_bitrate_[2] = bitrate_sl0;
-    // SL1
-    const int bitrate_sl1 = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[3] = 50 * bitrate_sl1 / 100;
-    target_layer_bitrate_[4] = 70 * bitrate_sl1 / 100;
-    target_layer_bitrate_[5] = bitrate_sl1;
-    // SL2
-    const int bitrate_sl2 = 4 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[6] = 50 * bitrate_sl2 / 100;
-    target_layer_bitrate_[7] = 70 * bitrate_sl2 / 100;
-    target_layer_bitrate_[8] = bitrate_sl2;
+    SetTargetBitratesFor3SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.70)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.45)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.70, 1.45);
   }
 
   virtual void BasicRateTargetingSVC3TL3SLHDMultiRefTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
 
     ::libaom_test::Y4mVideoSource video("niklas_1280_720_30.y4m", 0, 60);
@@ -2172,41 +1835,13 @@ class DatarateTestSVC
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
     multi_ref_ = 1;
-    number_temporal_layers_ = 3;
-    number_spatial_layers_ = 3;
-    // SL0
-    const int bitrate_sl0 = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[0] = 50 * bitrate_sl0 / 100;
-    target_layer_bitrate_[1] = 70 * bitrate_sl0 / 100;
-    target_layer_bitrate_[2] = bitrate_sl0;
-    // SL1
-    const int bitrate_sl1 = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[3] = 50 * bitrate_sl1 / 100;
-    target_layer_bitrate_[4] = 70 * bitrate_sl1 / 100;
-    target_layer_bitrate_[5] = bitrate_sl1;
-    // SL2
-    const int bitrate_sl2 = 4 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[6] = 50 * bitrate_sl2 / 100;
-    target_layer_bitrate_[7] = 70 * bitrate_sl2 / 100;
-    target_layer_bitrate_[8] = bitrate_sl2;
+    SetTargetBitratesFor3SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.70)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.45)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.70, 1.45);
   }
 
   virtual void BasicRateTargetingSVC3TL3SLKfTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
     cfg_.kf_mode = AOM_KF_AUTO;
     cfg_.kf_min_dist = cfg_.kf_max_dist = 100;
@@ -2216,41 +1851,13 @@ class DatarateTestSVC
     const int bitrate_array[2] = { 600, 1200 };
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
-    number_temporal_layers_ = 3;
-    number_spatial_layers_ = 3;
-    // SL0
-    const int bitrate_sl0 = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[0] = 50 * bitrate_sl0 / 100;
-    target_layer_bitrate_[1] = 70 * bitrate_sl0 / 100;
-    target_layer_bitrate_[2] = bitrate_sl0;
-    // SL1
-    const int bitrate_sl1 = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[3] = 50 * bitrate_sl1 / 100;
-    target_layer_bitrate_[4] = 70 * bitrate_sl1 / 100;
-    target_layer_bitrate_[5] = bitrate_sl1;
-    // SL2
-    const int bitrate_sl2 = 4 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[6] = 50 * bitrate_sl2 / 100;
-    target_layer_bitrate_[7] = 70 * bitrate_sl2 / 100;
-    target_layer_bitrate_[8] = bitrate_sl2;
+    SetTargetBitratesFor3SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.55)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.4)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.55, 1.4);
   }
 
   virtual void BasicRateTargeting444SVC3TL3SLTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
     cfg_.g_profile = 1;
 
@@ -2259,41 +1866,13 @@ class DatarateTestSVC
     const int bitrate_array[2] = { 600, 1200 };
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
-    number_temporal_layers_ = 3;
-    number_spatial_layers_ = 3;
-    // SL0
-    const int bitrate_sl0 = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[0] = 50 * bitrate_sl0 / 100;
-    target_layer_bitrate_[1] = 70 * bitrate_sl0 / 100;
-    target_layer_bitrate_[2] = bitrate_sl0;
-    // SL1
-    const int bitrate_sl1 = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[3] = 50 * bitrate_sl1 / 100;
-    target_layer_bitrate_[4] = 70 * bitrate_sl1 / 100;
-    target_layer_bitrate_[5] = bitrate_sl1;
-    // SL2
-    const int bitrate_sl2 = 4 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[6] = 50 * bitrate_sl2 / 100;
-    target_layer_bitrate_[7] = 70 * bitrate_sl2 / 100;
-    target_layer_bitrate_[8] = bitrate_sl2;
+    SetTargetBitratesFor3SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.70)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.38)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.70, 1.38);
   }
 
   virtual void BasicRateTargetingSVC3TL1SLMultiRefDropAllEnhTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     // error_resilient can set to off/0, since for SVC the context update
     // is done per-layer.
     cfg_.g_error_resilient = 0;
@@ -2313,17 +1892,9 @@ class DatarateTestSVC
         n++;
       }
     }
-    number_temporal_layers_ = 3;
-    target_layer_bitrate_[0] = 50 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[1] = 70 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[2] = cfg_.rc_target_bitrate;
+    SetTargetBitratesFor1SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.60)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.60)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.60, 1.60);
 #if CONFIG_AV1_DECODER
     // Test that no mismatches have been found.
     std::cout << "          Decoded frames: " << GetDecodedFrames() << "\n";
@@ -2334,14 +1905,7 @@ class DatarateTestSVC
   }
 
   virtual void BasicRateTargetingSVC3TL1SLDropAllEnhTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     // error_resilient can set to off/0, since for SVC the context update
     // is done per-layer.
     cfg_.g_error_resilient = 0;
@@ -2360,17 +1924,9 @@ class DatarateTestSVC
         n++;
       }
     }
-    number_temporal_layers_ = 3;
-    target_layer_bitrate_[0] = 50 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[1] = 70 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[2] = cfg_.rc_target_bitrate;
+    SetTargetBitratesFor1SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.60)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.60)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.60, 1.60);
 #if CONFIG_AV1_DECODER
     // Test that no mismatches have been found.
     std::cout << "          Decoded frames: " << GetDecodedFrames() << "\n";
@@ -2381,14 +1937,7 @@ class DatarateTestSVC
   }
 
   virtual void BasicRateTargetingSVC3TL1SLDropTL2EnhTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     // error_resilient for sequence can be off/0, since dropped frames (TL2)
     // are non-reference frames.
     cfg_.g_error_resilient = 0;
@@ -2407,17 +1956,9 @@ class DatarateTestSVC
         n++;
       }
     }
-    number_temporal_layers_ = 3;
-    target_layer_bitrate_[0] = 50 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[1] = 70 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[2] = cfg_.rc_target_bitrate;
+    SetTargetBitratesFor1SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.60)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.60)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.60, 1.60);
 #if CONFIG_AV1_DECODER
     // Test that no mismatches have been found.
     std::cout << "          Decoded frames: " << GetDecodedFrames() << "\n";
@@ -2428,14 +1969,7 @@ class DatarateTestSVC
   }
 
   virtual void BasicRateTargetingSVC3TL1SLDropAllEnhFrameERTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
 
     ::libaom_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352,
                                          288, 30, 1, 0, 300);
@@ -2455,17 +1989,9 @@ class DatarateTestSVC
         n++;
       }
     }
-    number_temporal_layers_ = 3;
-    target_layer_bitrate_[0] = 50 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[1] = 70 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[2] = cfg_.rc_target_bitrate;
+    SetTargetBitratesFor1SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.60)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.60)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.60, 1.60);
 #if CONFIG_AV1_DECODER
     // Test that no mismatches have been found.
     std::cout << "          Decoded frames: " << GetDecodedFrames() << "\n";
@@ -2476,14 +2002,7 @@ class DatarateTestSVC
   }
 
   virtual void BasicRateTargetingSVC3TL1SLDropSetEnhFrameERTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
 
     ::libaom_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352,
                                          288, 30, 1, 0, 300);
@@ -2512,17 +2031,9 @@ class DatarateTestSVC
       }
     }
     drop_frames_ = n;
-    number_temporal_layers_ = 3;
-    target_layer_bitrate_[0] = 50 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[1] = 70 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[2] = cfg_.rc_target_bitrate;
+    SetTargetBitratesFor1SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.60)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.60)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.60, 1.60);
 #if CONFIG_AV1_DECODER
     // Test that no mismatches have been found.
     std::cout << "          Decoded frames: " << GetDecodedFrames() << "\n";
@@ -2533,14 +2044,7 @@ class DatarateTestSVC
   }
 
   virtual void BasicRateTargetingSVC2TL1SLDropSetEnhER0Test() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
 
     ::libaom_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352,
                                          288, 30, 1, 0, 300);
@@ -2573,12 +2077,7 @@ class DatarateTestSVC
     target_layer_bitrate_[0] = 70 * cfg_.rc_target_bitrate / 100;
     target_layer_bitrate_[1] = cfg_.rc_target_bitrate;
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.60)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.60)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.60, 1.60);
 #if CONFIG_AV1_DECODER
     // Test that no mismatches have been found.
     std::cout << "          Decoded frames: " << GetDecodedFrames() << "\n";
@@ -2589,14 +2088,7 @@ class DatarateTestSVC
   }
 
   virtual void BasicRateTargetingSVC3TL1SLDropSetEnhER0Test() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
 
     ::libaom_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352,
                                          288, 30, 1, 0, 300);
@@ -2625,17 +2117,9 @@ class DatarateTestSVC
       }
     }
     drop_frames_ = n;
-    number_temporal_layers_ = 3;
-    target_layer_bitrate_[0] = 50 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[1] = 70 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[2] = cfg_.rc_target_bitrate;
+    SetTargetBitratesFor1SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.60)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.60)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.60, 1.60);
 #if CONFIG_AV1_DECODER
     // Test that no mismatches have been found.
     std::cout << "          Decoded frames: " << GetDecodedFrames() << "\n";
@@ -2646,14 +2130,7 @@ class DatarateTestSVC
   }
 
   virtual void BasicRateTargetingSVC3TL3SLDropSetEnhER0Test() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     ::libaom_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352,
                                          288, 30, 1, 0, 300);
     const int bitrate_array[2] = { 200, 550 };
@@ -2679,32 +2156,11 @@ class DatarateTestSVC
 #endif
       }
     }
-    number_temporal_layers_ = 3;
-    number_spatial_layers_ = 3;
+    SetTargetBitratesFor3SL3TL();
     multi_ref_ = 1;
     drop_frames_ = n * number_spatial_layers_;
-    // SL0
-    const int bitrate_sl0 = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[0] = 50 * bitrate_sl0 / 100;
-    target_layer_bitrate_[1] = 70 * bitrate_sl0 / 100;
-    target_layer_bitrate_[2] = bitrate_sl0;
-    // SL1
-    const int bitrate_sl1 = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[3] = 50 * bitrate_sl1 / 100;
-    target_layer_bitrate_[4] = 70 * bitrate_sl1 / 100;
-    target_layer_bitrate_[5] = bitrate_sl1;
-    // SL2
-    const int bitrate_sl2 = 4 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[6] = 50 * bitrate_sl2 / 100;
-    target_layer_bitrate_[7] = 70 * bitrate_sl2 / 100;
-    target_layer_bitrate_[8] = bitrate_sl2;
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.60)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.60)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.60, 1.60);
 #if CONFIG_AV1_DECODER
     // Test that no mismatches have been found.
     std::cout << "          Decoded frames: " << GetDecodedFrames() << "\n";
@@ -2715,14 +2171,7 @@ class DatarateTestSVC
   }
 
   virtual void BasicRateTargetingSVC3TL1SLMultiRefCompoundTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
 
     ::libaom_test::I420VideoSource video("niklas_640_480_30.yuv", 640, 480, 30,
@@ -2734,29 +2183,13 @@ class DatarateTestSVC
     ResetModel();
     multi_ref_ = 1;
     comp_pred_ = 1;
-    number_temporal_layers_ = 3;
-    number_spatial_layers_ = 1;
-    target_layer_bitrate_[0] = 50 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[1] = 70 * cfg_.rc_target_bitrate / 100;
-    target_layer_bitrate_[2] = cfg_.rc_target_bitrate;
+    SetTargetBitratesFor1SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.80)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.60)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.80, 1.60);
   }
 
   virtual void BasicRateTargetingSVC1TL3SLDynEnablTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
 
     ::libaom_test::I420VideoSource video("niklas_640_480_30.yuv", 640, 480, 30,
@@ -2764,31 +2197,15 @@ class DatarateTestSVC
     const int bitrate_array[2] = { 500, 1000 };
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
-    number_temporal_layers_ = 1;
-    number_spatial_layers_ = 3;
-    target_layer_bitrate_[0] = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[1] = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[2] = 4 * cfg_.rc_target_bitrate / 8;
+    SetTargetBitratesFor3SL1TL();
     dynamic_enable_disable_mode_ = 1;
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
     // No need to check RC on top layer which is disabled part of the time.
-    for (int i = 0; i < number_spatial_layers_ - 1; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.80)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.38)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.80, 1.38, number_spatial_layers_ - 1);
   }
 
   virtual void BasicRateTargetingSVC1TL3SLDynDisEnablTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
 
     ::libaom_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352,
@@ -2796,31 +2213,15 @@ class DatarateTestSVC
     const int bitrate_array[2] = { 500, 1000 };
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
     ResetModel();
-    number_temporal_layers_ = 1;
-    number_spatial_layers_ = 3;
-    target_layer_bitrate_[0] = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[1] = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[2] = 4 * cfg_.rc_target_bitrate / 8;
+    SetTargetBitratesFor3SL1TL();
     dynamic_enable_disable_mode_ = 2;
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
     // No need to check RC on top layer which is disabled part of the time.
-    for (int i = 0; i < number_spatial_layers_ - 1; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.80)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.38)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.80, 1.38, number_spatial_layers_ - 1);
   }
 
   virtual void BasicRateTargetingRPS1TL1SLDropFramesTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
 
     ::libaom_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352,
                                          288, 30, 1, 0, 300);
@@ -2840,16 +2241,9 @@ class DatarateTestSVC
       n++;
     }
     drop_frames_ = n;
-    number_spatial_layers_ = 1;
-    number_temporal_layers_ = 1;
-    target_layer_bitrate_[0] = cfg_.rc_target_bitrate;
+    SetTargetBitratesFor1SL1TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    for (int i = 0; i < number_temporal_layers_ * number_spatial_layers_; i++) {
-      ASSERT_GE(effective_datarate_tl[i], target_layer_bitrate_[i] * 0.60)
-          << " The datarate for the file is lower than target by too much!";
-      ASSERT_LE(effective_datarate_tl[i], target_layer_bitrate_[i] * 1.60)
-          << " The datarate for the file is greater than target by too much!";
-    }
+    CheckDatarate(0.60, 1.60);
 #if CONFIG_AV1_DECODER
     // Test that no mismatches have been found.
     std::cout << "          Decoded frames: " << GetDecodedFrames() << "\n";
@@ -2860,14 +2254,7 @@ class DatarateTestSVC
   }
 
   virtual void BasicRateTargetingSVC3TL3SLExternalResizePattern1Test() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
     const int bitrate_array[2] = { 600, 1200 };
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
@@ -2877,35 +2264,12 @@ class DatarateTestSVC
     ResetModel();
     external_resize_dynamic_drop_layer_ = true;
     external_resize_pattern_ = 1;
-    number_temporal_layers_ = 3;
-    number_spatial_layers_ = 3;
-    // SL0
-    const int bitrate_sl0 = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[0] = 50 * bitrate_sl0 / 100;
-    target_layer_bitrate_[1] = 70 * bitrate_sl0 / 100;
-    target_layer_bitrate_[2] = bitrate_sl0;
-    // SL1
-    const int bitrate_sl1 = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[3] = 50 * bitrate_sl1 / 100;
-    target_layer_bitrate_[4] = 70 * bitrate_sl1 / 100;
-    target_layer_bitrate_[5] = bitrate_sl1;
-    // SL2
-    const int bitrate_sl2 = 4 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[6] = 50 * bitrate_sl2 / 100;
-    target_layer_bitrate_[7] = 70 * bitrate_sl2 / 100;
-    target_layer_bitrate_[8] = bitrate_sl2;
+    SetTargetBitratesFor3SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
   }
 
   virtual void BasicRateTargetingSVC3TL3SLExternalResizePattern1HighResTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
     const int bitrate_array[2] = { 600, 1200 };
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
@@ -2917,35 +2281,12 @@ class DatarateTestSVC
     ResetModel();
     external_resize_dynamic_drop_layer_ = true;
     external_resize_pattern_ = 1;
-    number_temporal_layers_ = 3;
-    number_spatial_layers_ = 3;
-    // SL0
-    const int bitrate_sl0 = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[0] = 50 * bitrate_sl0 / 100;
-    target_layer_bitrate_[1] = 70 * bitrate_sl0 / 100;
-    target_layer_bitrate_[2] = bitrate_sl0;
-    // SL1
-    const int bitrate_sl1 = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[3] = 50 * bitrate_sl1 / 100;
-    target_layer_bitrate_[4] = 70 * bitrate_sl1 / 100;
-    target_layer_bitrate_[5] = bitrate_sl1;
-    // SL2
-    const int bitrate_sl2 = 4 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[6] = 50 * bitrate_sl2 / 100;
-    target_layer_bitrate_[7] = 70 * bitrate_sl2 / 100;
-    target_layer_bitrate_[8] = bitrate_sl2;
+    SetTargetBitratesFor3SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
   }
 
   virtual void BasicRateTargetingSVC3TL3SLExternalResizePattern2Test() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
     const int bitrate_array[2] = { 600, 1200 };
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
@@ -2955,35 +2296,12 @@ class DatarateTestSVC
     ResetModel();
     external_resize_dynamic_drop_layer_ = true;
     external_resize_pattern_ = 2;
-    number_temporal_layers_ = 3;
-    number_spatial_layers_ = 3;
-    // SL0
-    const int bitrate_sl0 = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[0] = 50 * bitrate_sl0 / 100;
-    target_layer_bitrate_[1] = 70 * bitrate_sl0 / 100;
-    target_layer_bitrate_[2] = bitrate_sl0;
-    // SL1
-    const int bitrate_sl1 = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[3] = 50 * bitrate_sl1 / 100;
-    target_layer_bitrate_[4] = 70 * bitrate_sl1 / 100;
-    target_layer_bitrate_[5] = bitrate_sl1;
-    // SL2
-    const int bitrate_sl2 = 4 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[6] = 50 * bitrate_sl2 / 100;
-    target_layer_bitrate_[7] = 70 * bitrate_sl2 / 100;
-    target_layer_bitrate_[8] = bitrate_sl2;
+    SetTargetBitratesFor3SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
   }
 
   virtual void BasicRateTargetingSVC3TL3SLExternalResizePattern2HighResTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
     const int bitrate_array[2] = { 600, 1200 };
     cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
@@ -2995,35 +2313,12 @@ class DatarateTestSVC
     ResetModel();
     external_resize_dynamic_drop_layer_ = true;
     external_resize_pattern_ = 2;
-    number_temporal_layers_ = 3;
-    number_spatial_layers_ = 3;
-    // SL0
-    const int bitrate_sl0 = 1 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[0] = 50 * bitrate_sl0 / 100;
-    target_layer_bitrate_[1] = 70 * bitrate_sl0 / 100;
-    target_layer_bitrate_[2] = bitrate_sl0;
-    // SL1
-    const int bitrate_sl1 = 3 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[3] = 50 * bitrate_sl1 / 100;
-    target_layer_bitrate_[4] = 70 * bitrate_sl1 / 100;
-    target_layer_bitrate_[5] = bitrate_sl1;
-    // SL2
-    const int bitrate_sl2 = 4 * cfg_.rc_target_bitrate / 8;
-    target_layer_bitrate_[6] = 50 * bitrate_sl2 / 100;
-    target_layer_bitrate_[7] = 70 * bitrate_sl2 / 100;
-    target_layer_bitrate_[8] = bitrate_sl2;
+    SetTargetBitratesFor3SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
   }
 
   virtual void BasicRateTargetingSVC3TL1SLDynamicTLTest() {
-    cfg_.rc_buf_initial_sz = 500;
-    cfg_.rc_buf_optimal_sz = 500;
-    cfg_.rc_buf_sz = 1000;
-    cfg_.rc_dropframe_thresh = 0;
-    cfg_.rc_min_quantizer = 0;
-    cfg_.rc_max_quantizer = 63;
-    cfg_.rc_end_usage = AOM_CBR;
-    cfg_.g_lag_in_frames = 0;
+    SetUpCbr();
     cfg_.g_error_resilient = 0;
     ::libaom_test::I420VideoSource video("niklas_640_480_30.yuv", 640, 480, 30,
                                          1, 0, 400);
@@ -3036,6 +2331,31 @@ class DatarateTestSVC
     number_temporal_layers_ = 1;
     number_spatial_layers_ = 1;
     dynamic_tl_ = true;
+    ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
+  }
+
+  virtual void BasicRateTargetingSVC1TL3SLIssue433046392() {
+    cfg_.rc_buf_initial_sz = 500;
+    cfg_.rc_buf_optimal_sz = 500;
+    cfg_.rc_buf_sz = 1000;
+    cfg_.rc_dropframe_thresh = 0;
+    cfg_.rc_min_quantizer = 0;
+    cfg_.rc_max_quantizer = 63;
+    cfg_.rc_end_usage = AOM_CBR;
+    cfg_.g_lag_in_frames = 0;
+    cfg_.g_error_resilient = 0;
+    const int bitrate_array[2] = { 600, 1200 };
+    cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
+    cfg_.g_w = 1280;
+    cfg_.g_h = 720;
+    ::libaom_test::Y4mVideoSource video("niklas_1280_720_30.y4m", 0, 60);
+    ResetModel();
+    dynamic_scale_factors_ = true;
+    number_temporal_layers_ = 1;
+    number_spatial_layers_ = 3;
+    target_layer_bitrate_[0] = 1 * cfg_.rc_target_bitrate / 8;
+    target_layer_bitrate_[1] = 3 * cfg_.rc_target_bitrate / 8;
+    target_layer_bitrate_[2] = 4 * cfg_.rc_target_bitrate / 8;
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
   }
 
@@ -3082,11 +2402,26 @@ class DatarateTestSVC
   int bitrate_layer_[9];
   int external_resize_pattern_;
   bool dynamic_tl_;
+  bool dynamic_scale_factors_;
+  bool disable_last_ref_;
 };
 
 // Check basic rate targeting for CBR, for 3 temporal layers, 1 spatial.
 TEST_P(DatarateTestSVC, BasicRateTargetingSVC3TL1SL) {
   BasicRateTargetingSVC3TL1SLTest();
+}
+
+// Check basic rate targeting for CBR, for 3 temporal layers, 1 spatial,
+// QVGA, low framerate.
+TEST_P(DatarateTestSVC, BasicRateTargetingSVC3TL1SLQvgaLowFrameate) {
+  BasicRateTargetingSVC3TL1SLQvgaLowFramerateTest();
+}
+
+// Check basic rate targeting for CBR, for 3 temporal layers, 1 spatial,
+// QVGA, high bitrate and low framerate.
+TEST_P(DatarateTestSVC,
+       BasicRateTargetingSVC3TL1SLQvgaHighBitrateLowFramerateTest) {
+  BasicRateTargetingSVC3TL1SLQvgaHighBitrateLowFramerateTest();
 }
 
 TEST_P(DatarateTestSVC, SetFrameQpSVC3TL1SL) { SetFrameQpSVC3TL1SLTest(); }
@@ -3145,6 +2480,12 @@ TEST_P(DatarateTestSVC, BasicRateTargetingSVC3TL1SLResize) {
 // Check basic rate targeting for CBR, for 2 spatial layers, 1 temporal.
 TEST_P(DatarateTestSVC, BasicRateTargetingSVC1TL2SL) {
   BasicRateTargetingSVC1TL2SLTest();
+}
+
+// Check basic rate targeting for CBR, for 2 spatial layers, 1 temporal.
+// Disable the usage of LAST referenc frame.
+TEST_P(DatarateTestSVC, BasicRateTargetingSVC1TL2SLDisableLAST) {
+  BasicRateTargetingSVC1TL2SLDisableLASTTest();
 }
 
 // Check basic rate targeting for CBR, for 3 spatial layers, 3 temporal,
@@ -3419,6 +2760,19 @@ TEST_P(DatarateTestSVC, BasicRateTargetingSVC3TL1SLDynamicTL) {
   BasicRateTargetingSVC3TL1SLDynamicTLTest();
 }
 
+// For 1 pass CBR SVC with 3 spatial and 1 temporal layer.
+// This encoding is to catch the issue in b:433046392. Encoder is initialized
+// for 3 spatial layers with top resolution of 1280x720. Starting from first
+// frame the scale factor for top layer is set to 1/2 (so top layer will be
+// same resolution as middle) and 0 bitrate is set for top layer to skip
+// encoding that layer. Then mid-way in sequence the scale factor is set to 1/1
+// (so top layer is 1280x720) and non-zero bitrate is set for all layers.
+// Disabling usage of src_sad_blk_64x64 for spatial layers fixes the issues with
+// this encoding.
+TEST_P(DatarateTestSVC, BasicRateTargetingSVC1TL3SLIssue433046392) {
+  BasicRateTargetingSVC1TL3SLIssue433046392();
+}
+
 TEST(SvcParams, BitrateOverflow) {
   uint8_t buf[6] = { 0 };
   aom_image_t img;
@@ -3452,10 +2806,18 @@ TEST(SvcParams, BitrateOverflow) {
   EXPECT_EQ(aom_codec_destroy(&enc), AOM_CODEC_OK);
 }
 
+// Speed 6 takes too long on valgrind, so do only 1 bitrate and one aq_mode.
+#ifdef AOM_VALGRIND_BUILD
 AV1_INSTANTIATE_TEST_SUITE(DatarateTestSVC,
                            ::testing::Values(::libaom_test::kRealTime),
-                           ::testing::Range(7, 12), ::testing::Values(0, 3),
+                           ::testing::Range(6, 12), ::testing::Values(3),
+                           ::testing::Values(1));
+#else  // AOM_VALGRIND_BUILD
+AV1_INSTANTIATE_TEST_SUITE(DatarateTestSVC,
+                           ::testing::Values(::libaom_test::kRealTime),
+                           ::testing::Range(6, 12), ::testing::Values(0, 3),
                            ::testing::Values(0, 1));
+#endif
 
 }  // namespace
 }  // namespace datarate_test

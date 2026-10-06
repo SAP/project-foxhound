@@ -39,7 +39,7 @@ pub(crate) struct HasDestructorAnalysis<'ctx> {
     dependencies: HashMap<ItemId, Vec<ItemId>>,
 }
 
-impl<'ctx> HasDestructorAnalysis<'ctx> {
+impl HasDestructorAnalysis<'_> {
     fn consider_edge(kind: EdgeKind) -> bool {
         // These are the only edges that can affect whether a type has a
         // destructor or not.
@@ -58,9 +58,8 @@ impl<'ctx> HasDestructorAnalysis<'ctx> {
         let was_not_already_in_set = self.have_destructor.insert(id);
         assert!(
             was_not_already_in_set,
-            "We shouldn't try and insert {:?} twice because if it was \
-             already in the set, `constrain` should have exited early.",
-            id
+            "We shouldn't try and insert {id:?} twice because if it was \
+             already in the set, `constrain` should have exited early."
         );
         ConstrainResult::Changed
     }
@@ -83,7 +82,7 @@ impl<'ctx> MonotoneFramework for HasDestructorAnalysis<'ctx> {
     }
 
     fn initial_worklist(&self) -> Vec<ItemId> {
-        self.ctx.allowlisted_items().iter().cloned().collect()
+        self.ctx.allowlisted_items().iter().copied().collect()
     }
 
     fn constrain(&mut self, id: ItemId) -> ConstrainResult {
@@ -94,9 +93,8 @@ impl<'ctx> MonotoneFramework for HasDestructorAnalysis<'ctx> {
         }
 
         let item = self.ctx.resolve_item(id);
-        let ty = match item.as_type() {
-            None => return ConstrainResult::Same,
-            Some(ty) => ty,
+        let Some(ty) = item.as_type() else {
+            return ConstrainResult::Same;
         };
 
         match *ty.kind() {
@@ -162,7 +160,7 @@ impl<'ctx> MonotoneFramework for HasDestructorAnalysis<'ctx> {
     {
         if let Some(edges) = self.dependencies.get(&id) {
             for item in edges {
-                trace!("enqueue {:?} into worklist", item);
+                trace!("enqueue {item:?} into worklist");
                 f(*item);
             }
         }

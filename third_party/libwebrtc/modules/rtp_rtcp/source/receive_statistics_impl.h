@@ -11,7 +11,8 @@
 #ifndef MODULES_RTP_RTCP_SOURCE_RECEIVE_STATISTICS_IMPL_H_
 #define MODULES_RTP_RTCP_SOURCE_RECEIVE_STATISTICS_IMPL_H_
 
-#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -20,7 +21,9 @@
 
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
+#include "call/rtp_packet_sink_interface.h"
 #include "modules/rtp_rtcp/include/receive_statistics.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/report_block.h"
 #include "rtc_base/bitrate_tracker.h"
 #include "rtc_base/containers/flat_map.h"
@@ -33,7 +36,7 @@ namespace webrtc {
 // Extends StreamStatistician with methods needed by the implementation.
 class StreamStatisticianImplInterface : public StreamStatistician {
  public:
-  virtual ~StreamStatisticianImplInterface() = default;
+  ~StreamStatisticianImplInterface() override = default;
   virtual void MaybeAppendReportBlockAndReset(
       std::vector<rtcp::ReportBlock>& report_blocks) = 0;
   virtual void SetMaxReorderingThreshold(int max_reordering_threshold) = 0;

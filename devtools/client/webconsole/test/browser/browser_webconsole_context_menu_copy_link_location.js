@@ -56,7 +56,7 @@ add_task(async function () {
     "test-console.html",
     ".network"
   );
-  await reloadBrowser(gBrowser.selectedBrowser);
+  await reloadSelectedTab(gBrowser.selectedBrowser);
 
   message = await onNetworkMessage;
   ok(message, "Network log found in the console");

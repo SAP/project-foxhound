@@ -40,7 +40,13 @@ export default [
       "react/sort-comp": [
         "error",
         {
-          order: ["static-methods", "lifecycle", "everything-else", "render"],
+          order: [
+            "static-methods",
+            "instance-variables",
+            "lifecycle",
+            "everything-else",
+            "render",
+          ],
           groups: {
             lifecycle: [
               "displayName",
@@ -172,12 +178,6 @@ export default [
     },
   },
   {
-    files: ["client/framework/**", "shared/webconsole/test/chrome/*.html"],
-    rules: {
-      "mozilla/no-aArgs": "off",
-    },
-  },
-  {
     files: ["client/framework/test/**"],
     rules: {
       "mozilla/var-only-at-top-level": "off",
@@ -237,10 +237,10 @@ export default [
   {
     // These tests use old React. We should accept deprecated API usages
     files: [
-      "client/inspector/markup/test/doc_markup_events_react_development_15.4.1.html",
-      "client/inspector/markup/test/doc_markup_events_react_development_15.4.1_jsx.html",
-      "client/inspector/markup/test/doc_markup_events_react_production_15.3.1.html",
-      "client/inspector/markup/test/doc_markup_events_react_production_15.3.1_jsx.html",
+      "client/inspector/markup/test/events/doc_markup_events_react_development_15.4.1.html",
+      "client/inspector/markup/test/events/doc_markup_events_react_development_15.4.1_jsx.html",
+      "client/inspector/markup/test/events/doc_markup_events_react_production_15.3.1.html",
+      "client/inspector/markup/test/events/doc_markup_events_react_production_15.3.1_jsx.html",
     ],
     rules: {
       "react/no-deprecated": "off",
@@ -273,7 +273,9 @@ export default [
     },
   },
   {
-    files: ["client/inspector/markup/test/doc_markup_events_react_*_jsx.html"],
+    files: [
+      "client/inspector/markup/test/events/doc_markup_events_react_*_jsx.html",
+    ],
     languageOptions: {
       parserOptions: {
         ecmaFeatures: {
@@ -297,16 +299,5 @@ export default [
   {
     files: ["**/node/**"],
     languageOptions: { globals: globals.jest },
-  },
-  {
-    // Bug 1967461 - Fix the files and re-enable these rules.
-    files: [
-      "client/shared/components/object-inspector/components/ObjectInspector.js",
-      "client/shared/components/object-inspector/components/ObjectInspectorItem.js",
-    ],
-    rules: {
-      "react/prop-types": "off",
-      "react/sort-comp": "off",
-    },
   },
 ];

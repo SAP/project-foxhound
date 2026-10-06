@@ -51,40 +51,32 @@ def get_reftest(setup_test_harness, binary, parser):
 
     build = parser.build_obj
     options = vars(parser.parse_args([]))
-    options.update(
-        {
-            "app": binary,
-            "focusFilterMode": "non-needs-focus",
-            "suite": "reftest",
-        }
-    )
+    options.update({
+        "app": binary,
+        "focusFilterMode": "non-needs-focus",
+        "suite": "reftest",
+    })
 
     if not os.path.isdir(build.bindir):
         package_root = os.path.dirname(harness_root)
-        options.update(
-            {
-                "extraProfileFiles": [os.path.join(package_root, "bin", "plugins")],
-                "reftestExtensionPath": os.path.join(harness_root, "reftest"),
-                "sandboxReadWhitelist": [here, os.environ["PYTHON_TEST_TMP"]],
-                "utilityPath": os.path.join(package_root, "bin"),
-                "specialPowersExtensionPath": os.path.join(
-                    harness_root, "specialpowers"
-                ),
-            }
-        )
+        options.update({
+            "extraProfileFiles": [os.path.join(package_root, "bin", "plugins")],
+            "reftestExtensionPath": os.path.join(harness_root, "reftest"),
+            "sandboxReadWhitelist": [here, os.environ["PYTHON_TEST_TMP"]],
+            "utilityPath": os.path.join(package_root, "bin"),
+            "specialPowersExtensionPath": os.path.join(harness_root, "specialpowers"),
+        })
 
         if "MOZ_FETCHES_DIR" in os.environ:
             options["sandboxReadWhitelist"].append(os.environ["MOZ_FETCHES_DIR"])
     else:
-        options.update(
-            {
-                "extraProfileFiles": [os.path.join(build.topobjdir, "dist", "plugins")],
-                "sandboxReadWhitelist": [build.topobjdir, build.topsrcdir],
-                "specialPowersExtensionPath": os.path.join(
-                    build.distdir, "xpi-stage", "specialpowers"
-                ),
-            }
-        )
+        options.update({
+            "extraProfileFiles": [os.path.join(build.topobjdir, "dist", "plugins")],
+            "sandboxReadWhitelist": [build.topobjdir, build.topsrcdir],
+            "specialPowersExtensionPath": os.path.join(
+                build.distdir, "xpi-stage", "specialpowers"
+            ),
+        })
 
     def inner(**opts):
         options.update(opts)

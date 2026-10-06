@@ -10,10 +10,11 @@
 
 namespace ASN1Mutators {
 
-size_t FlipConstructed(uint8_t *data, size_t size, size_t maxSize,
+size_t CustomMutator(uint8_t* data, size_t size, size_t maxSize,
+                     unsigned int seed);
+size_t CustomCrossOver(const uint8_t* data1, size_t size1, const uint8_t* data2,
+                       size_t size2, uint8_t* out, size_t maxOutSize,
                        unsigned int seed);
-size_t ChangeType(uint8_t *data, size_t size, size_t maxSize,
-                  unsigned int seed);
 
 }  // namespace ASN1Mutators
 

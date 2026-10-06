@@ -1,0 +1,158 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>QueryContentEvent when Selection is in text control element</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/EventUtils.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css">
+<script>
+"use strict";
+
+SimpleTest.waitForExplicitFinish();
+SimpleTest.waitForFocus(() => {
+  const container = document.querySelector("div");
+  // <input>
+  {
+    container.innerHTML = "abc<input>def";
+    const input = container.querySelector("input");
+    getSelection().collapse(input, 0);
+    const result = synthesizeQueryTextContent(0, 100);
+    const desc = `"<div contenteditable>abc<input>{}</input>def</div>" before explicitly setting focus to <input>`;
+    is(
+      result.succeeded ? result.text : null,
+      "abc\ndef",
+      `${desc}: All text in the editing host should be returned`
+    );
+  }
+  {
+    container.innerHTML = "abc<input>def";
+    const input = container.querySelector("input");
+    input.focus();
+    container.focus();
+    getSelection().collapse(input, 0);
+    const result = synthesizeQueryTextContent(0, 100);
+    const desc = `"<div contenteditable>abc<input>{}</input>def</div>" after explicitly setting focus to <input>`;
+    is(
+      result.succeeded ? result.text : null,
+      "abc\ndef",
+      `${desc}: All text in the editing host should be returned`
+    );
+  }
+  {
+    container.innerHTML = 'abc<input value="def">ghi';
+    const input = container.querySelector("input");
+    getSelection().collapse(input, 0);
+    const result = synthesizeQueryTextContent(0, 100);
+    const desc = `"<div contenteditable>abc<input value="def">{}</input>def</div>" before explicitly setting focus to <input>`;
+    is(
+      result.succeeded ? result.text : null,
+      "abc\nghi",
+      `${desc}: All text in the editing host should be returned`
+    );
+  }
+  {
+    container.innerHTML = 'abc<input value="def">ghi';
+    const input = container.querySelector("input");
+    input.focus();
+    container.focus();
+    getSelection().collapse(input, 0);
+    const result = synthesizeQueryTextContent(0, 100);
+    const desc = `"<div contenteditable>abc<input>{}</input>ghi</div>" after explicitly setting focus to <input>`;
+    is(
+      result.succeeded ? result.text : null,
+      "abc\nghi",
+      `${desc}: All text in the editing host should be returned`
+    );
+  }
+  {
+    container.innerHTML = 'abc<input value="def">ghi';
+    const input = container.querySelector("input");
+    input.focus();
+    document.execCommand("insertText", false, "X");
+    container.focus();
+    getSelection().collapse(input, 0);
+    const result = synthesizeQueryTextContent(0, 100);
+    const desc = `"<div contenteditable>abc<input value="def">{}</input>ghi</div>" after explicitly setting focus to <input> and updating its value`;
+    is(
+      result.succeeded ? result.text : null,
+      "abc\nghi", // "X" shouldn't appear in the DOM
+      `${desc}: All text in the editing host should be returned`
+    );
+  }
+  // <textarea>
+  {
+    container.innerHTML = "abc<textarea></textarea>def";
+    const textarea = container.querySelector("textarea");
+    getSelection().collapse(textarea, 0);
+    const result = synthesizeQueryTextContent(0, 100);
+    const desc = `"<div contenteditable>abc<textarea>{}</textarea>def</div>" before explicitly setting focus to <textarea>`;
+    is(
+      result.succeeded ? result.text : null,
+      "abc\ndef",
+      `${desc}: All text in the editing host should be returned`
+    );
+  }
+  {
+    container.innerHTML = "abc<textarea></textarea>def";
+    const textarea = container.querySelector("textarea");
+    textarea.focus();
+    container.focus();
+    getSelection().collapse(textarea, 0);
+    const result = synthesizeQueryTextContent(0, 100);
+    const desc = `"<div contenteditable>abc<textarea>{}</textarea>def</div>" after explicitly setting focus to <textarea>`;
+    is(
+      result.succeeded ? result.text : null,
+      "abc\ndef",
+      `${desc}: All text in the editing host should be returned`
+    );
+  }
+  {
+    container.innerHTML = "abc<textarea>def</textarea>ghi";
+    const textarea = container.querySelector("textarea");
+    getSelection().collapse(textarea.firstChild, 1);
+    const result = synthesizeQueryTextContent(0, 100);
+    const desc = `"<div contenteditable>abc<textarea>d[]ef</textarea>def</div>" before explicitly setting focus to <textarea>`;
+    is(
+      result.succeeded ? result.text : null,
+      "abc\ndefghi", // XXX Well, \n should be there at </textarea>...
+      `${desc}: All text in the editing host should be returned`
+    );
+  }
+  {
+    container.innerHTML = "abc<textarea>def</textarea>ghi";
+    const textarea = container.querySelector("textarea");
+    textarea.focus();
+    container.focus();
+    getSelection().collapse(textarea.firstChild, 1);
+    const result = synthesizeQueryTextContent(0, 100);
+    const desc = `"<div contenteditable>abc<textarea>d[]ef</textarea>ghi</div>" after explicitly setting focus to <textarea>`;
+    is(
+      result.succeeded ? result.text : null,
+      "abc\ndefghi", // XXX Well, \n should be there at </textarea>...
+      `${desc}: All text in the editing host should be returned`
+    );
+  }
+  {
+    container.innerHTML = "abc<textarea>def</textarea>ghi";
+    const textarea = container.querySelector("textarea");
+    textarea.focus();
+    document.execCommand("insertText", false, "X");
+    container.focus();
+    getSelection().collapse(textarea.firstChild, 1);
+    const result = synthesizeQueryTextContent(0, 100);
+    const desc = `"<div contenteditable>abc<textarea>d[]ef</textarea>ghi</div>" after explicitly setting focus to <textarea> and updating its value`;
+    is(
+      result.succeeded ? result.text : null,
+      "abc\ndefghi", // "X" shouldn't appear in the DOM
+      `${desc}: All text in the editing host should be returned`
+    );
+  }
+  SimpleTest.finish();
+});
+</script>
+</head>
+<body>
+<div contenteditable></div>
+</body>
+</html>

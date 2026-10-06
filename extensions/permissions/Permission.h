@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,7 +21,8 @@ class Permission : public nsIPermission {
 
   static already_AddRefed<Permission> Create(
       nsIPrincipal* aPrincipal, const nsACString& aType, uint32_t aCapability,
-      uint32_t aExpireType, int64_t aExpireTime, int64_t aModificationTime);
+      uint32_t aExpireType, int64_t aExpireTime, int64_t aModificationTime,
+      uint64_t aBrowserId = 0);
 
   // This method creates a new nsIPrincipal with a stripped OriginAttributes (no
   // userContextId) and a content principal equal to the origin of 'aPrincipal'.
@@ -32,7 +32,7 @@ class Permission : public nsIPermission {
  protected:
   Permission(nsIPrincipal* aPrincipal, const nsACString& aType,
              uint32_t aCapability, uint32_t aExpireType, int64_t aExpireTime,
-             int64_t aModificationTime);
+             int64_t aModificationTime, uint64_t aBrowserId = 0);
 
   virtual ~Permission() = default;
 
@@ -42,6 +42,7 @@ class Permission : public nsIPermission {
   uint32_t mExpireType;
   int64_t mExpireTime;
   int64_t mModificationTime;
+  uint64_t mBrowserId;
 };
 
 }  // namespace mozilla

@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef NotificationCallback_h__
-#define NotificationCallback_h__
+#ifndef NotificationCallback_h_
+#define NotificationCallback_h_
 
 #include <filesystem>
 #include <tuple>
@@ -38,6 +36,7 @@ struct ToastArgs {
   std::wstring profile;
   std::wstring windowsTag;
   std::wstring action;
+  bool skipNotificationServer;
 };
 
 class NotificationCallback final
@@ -62,7 +61,7 @@ class NotificationCallback final
   void HandleActivation(LPCWSTR invokedArgs);
   mozilla::Maybe<ToastArgs> ParseToastArguments(LPCWSTR invokedArgs);
   std::tuple<path, mozilla::UniquePtr<wchar_t[]>> BuildRunCommand(
-      const ToastArgs& args);
+      const mozilla::Maybe<ToastArgs>& args);
 
   static mozilla::Maybe<nsAutoHandle> CreatePipe(const std::wstring& tag);
   static bool ConnectPipeWithTimeout(const nsAutoHandle& pipe);

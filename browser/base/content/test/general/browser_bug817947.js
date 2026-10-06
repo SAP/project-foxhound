@@ -43,7 +43,9 @@ async function preparePendingTab() {
   let [{ state }] = SessionStore.getClosedTabDataForWindow(window);
 
   tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
-  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser, {
+    wantLoad: "about:blank",
+  });
   SessionStore.setTabState(tab, JSON.stringify(state));
   ok(tab.hasAttribute("pending"), "tab should be pending");
 

@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsInterfaceRequestorAgg_h__
-#define nsInterfaceRequestorAgg_h__
+#ifndef nsInterfaceRequestorAgg_h_
+#define nsInterfaceRequestorAgg_h_
 
 #include "nsError.h"
 
@@ -32,4 +30,4 @@ extern nsresult NS_NewInterfaceRequestorAggregation(
     nsIInterfaceRequestor* aFirst, nsIInterfaceRequestor* aSecond,
     nsIEventTarget* aTarget, nsIInterfaceRequestor** aResult);
 
-#endif  // !defined( nsInterfaceRequestorAgg_h__ )
+#endif  // !defined( nsInterfaceRequestorAgg_h_ )

@@ -10,6 +10,8 @@ import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.browser.state.search.SearchEngineProvider
 import org.mozilla.fenix.R
 import org.mozilla.fenix.search.awesomebar.SearchSuggestionsProvidersBuilder.Companion.GOOGLE_SEARCH_ENGINE_NAME
+import mozilla.components.feature.awesomebar.R as awesomebarR
+import mozilla.components.feature.fxsuggest.R as fxsuggestR
 
 /**
  * Provides localized strings for various suggestion groups in the AwesomeBar.
@@ -53,13 +55,6 @@ interface SuggestionsStringsProvider {
     fun forSearchEngineSuggestionDescription(): String
 
     /**
-     * Returns the title for the search shortcuts settings.
-     *
-     * @return The localized title string.
-     */
-    fun searchShortcutsSettingsTitle(): String
-
-    /**
      * Returns a localized string that can be used as a title for suggestions from a specific search engine provider.
      * The string will be formatted with the provided [searchEngineName].
      *
@@ -93,6 +88,11 @@ interface SuggestionsStringsProvider {
      * "Firefox Suggest" header.
      */
     val firefoxSuggestHeader: String
+
+    /**
+     * Firefox Suggest Online header
+     */
+    val firefoxSuggestOnlineHeader: String
 }
 
 /**
@@ -182,24 +182,23 @@ class DefaultSuggestionsStringsProvider(
         context.getString(R.string.firefox_suggest_header)
 
     /**
-     * Returns the title for the search shortcuts engine settings.
-     * This title is displayed in the UI, typically for a settings section related to search engine shortcuts.
+     * Returns the static string for the "Firefox Suggest Online" header.
      *
-     * @return The localized title string.
+     * This header is used in the awesomebar to indicate and group suggestions
+     * that are powered by Firefox Suggest Online.
      */
-    override fun searchShortcutsSettingsTitle(): String {
-        return context.getString(R.string.search_shortcuts_engine_settings)
-    }
+    override val firefoxSuggestOnlineHeader =
+        context.getString(R.string.firefox_suggest_online_header)
 
     override fun searchEngineSuggestionProviderTitle(searchEngineName: String): String {
         return context.getString(R.string.search_engine_suggestions_title, searchEngineName)
     }
 
     override fun getSwitchToTabDescriptionString(): String {
-        return context.getString(R.string.switch_to_tab_description)
+        return context.getString(awesomebarR.string.switch_to_tab_description)
     }
 
     override fun getSponsoredSuggestionDescription(): String {
-        return context.getString(R.string.sponsored_suggestion_description)
+        return context.getString(fxsuggestR.string.sponsored_suggestion_description)
     }
 }

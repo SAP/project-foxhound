@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Google LLC.
+ * Copyright 2022 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -36,7 +36,7 @@ public:
 
     struct Info {
         Info() {}
-        Info(const char* name) : fName(name), fSpecVersion(0) {}
+        explicit Info(const char* name) : fName(name), fSpecVersion(0) {}
 
         SkString fName;
         uint32_t fSpecVersion;

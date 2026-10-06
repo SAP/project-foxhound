@@ -18,7 +18,7 @@ add_task(async function () {
   const { Prefs } = windowRequire("devtools/client/netmonitor/src/utils/prefs");
 
   const wait = waitForNetworkEvents(monitor, 1);
-  await reloadBrowser();
+  await reloadSelectedTab();
   await wait;
 
   ok(

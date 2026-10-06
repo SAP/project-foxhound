@@ -5,6 +5,7 @@
 package mozilla.components.feature.search.telemetry
 
 import androidx.annotation.VisibleForTesting
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import mozilla.components.browser.state.state.BrowserState
@@ -25,7 +26,7 @@ import org.json.JSONObject
 /**
  * Main configuration and functionality for tracking ads / web searches with specific providers.
  */
-abstract class BaseSearchTelemetry {
+abstract class BaseSearchTelemetry(private val mainDispatcher: CoroutineDispatcher) {
     var providerList: List<SearchProviderModel>? = emptyList()
 
     @VisibleForTesting(otherwise = VisibleForTesting.PROTECTED)
@@ -60,7 +61,7 @@ abstract class BaseSearchTelemetry {
             id = extensionInfo.id,
             url = extensionInfo.resourceUrl,
             onSuccess = { extension ->
-                store.flowScoped { flow ->
+                store.flowScoped(dispatcher = mainDispatcher) { flow ->
                     subscribeToUpdates(flow, extension, extensionInfo)
                 }
             },

@@ -1,4 +1,5 @@
 # Automated UI Testing
+
 _This document is intended to explain how various technologies are used together to conduct automated UI testing for Android at Mozilla. This document is accessible for all developers including those that are new to the Mozilla community._
 
 Recall, that the primary problem we try to solve with automated testing is preventing unintended changes, which often lead to bugs or poor user experiences. This problem is most common -- thus we benefit the most from thorough testing.
@@ -72,6 +73,7 @@ Below is a very simplified flow diagram that demonstrates the hand-off from a Gi
 ```
 
 ## Mozilla resources
+
 * [Firebase Console](https://console.firebase.google.com/)
 * [FirefoxCI](https://firefox-ci-tc.services.mozilla.com)
 * [Taskcluster](https://taskcluster.net)
@@ -79,6 +81,7 @@ Below is a very simplified flow diagram that demonstrates the hand-off from a Gi
 * [Treeherder](https://treeherder.mozilla.org)
 
 ## Testing resources
+
 * [Firebase](https://firebase.google.com)
 * [Espresso](https://developer.android.com/training/testing/espresso)
 * [UI Automator](https://developer.android.com/training/testing/ui-automator)

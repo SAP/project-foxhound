@@ -1,4 +1,3 @@
-/* -*- js-indent-level: 2; indent-tabs-mode: nil -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -40,7 +39,8 @@ var Impl = {
 
   /**
    * This triggers basic telemetry initialization for content processes.
-   * @param {Boolean} [testing=false] True if we are in test mode, false otherwise.
+   *
+   * @param {boolean} [testing=false] True if we are in test mode, false otherwise.
    */
   setupContentTelemetry(testing = false) {
     this._testMode = testing;

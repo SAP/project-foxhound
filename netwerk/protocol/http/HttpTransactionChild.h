@@ -1,12 +1,12 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef HttpTransactionChild_h__
-#define HttpTransactionChild_h__
+#ifndef HttpTransactionChild_h_
+#define HttpTransactionChild_h_
 
 #include "mozilla/Atomics.h"
+#include "mozilla/net/HttpTrafficAnalyzer.h"
 #include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/net/PHttpTransactionChild.h"
 #include "nsHttpRequestHead.h"
@@ -53,10 +53,10 @@ class HttpTransactionChild final : public PHttpTransactionChild,
       const Maybe<IPCStream>& aRequestBody, const uint64_t& aReqContentLength,
       const bool& aReqBodyIncludesHeaders,
       const uint64_t& aTopLevelOuterContentWindowId,
-      const uint8_t& aHttpTrafficCategory, const uint64_t& aRequestContextID,
-      const ClassOfService& aClassOfService, const uint32_t& aInitialRwin,
-      const bool& aResponseTimeoutEnabled, const uint64_t& aChannelId,
-      const bool& aHasTransactionObserver,
+      const HttpTrafficCategory& aHttpTrafficCategory,
+      const uint64_t& aRequestContextID, const ClassOfService& aClassOfService,
+      const uint32_t& aInitialRwin, const bool& aResponseTimeoutEnabled,
+      const uint64_t& aChannelId, const bool& aHasTransactionObserver,
       const mozilla::Maybe<PInputChannelThrottleQueueChild*>& aThrottleQueue,
       const bool& aIsDocumentLoad,
       const nsILoadInfo::IPAddressSpace& aParentIPAddressSpace,
@@ -87,9 +87,10 @@ class HttpTransactionChild final : public PHttpTransactionChild,
       nsHttpRequestHead* requestHead,
       nsIInputStream* requestBody,  // use the trick in bug 1277681
       uint64_t requestContentLength, bool requestBodyHasHeaders,
-      uint64_t topLevelOuterContentWindowId, uint8_t httpTrafficCategory,
-      uint64_t requestContextID, ClassOfService classOfService,
-      uint32_t initialRwin, bool responseTimeoutEnabled, uint64_t channelId,
+      uint64_t topLevelOuterContentWindowId,
+      HttpTrafficCategory httpTrafficCategory, uint64_t requestContextID,
+      ClassOfService classOfService, uint32_t initialRwin,
+      bool responseTimeoutEnabled, uint64_t channelId,
       bool aHasTransactionObserver,
       const nsILoadInfo::IPAddressSpace& aParentIPAddressSpace,
       const LNAPerms& aLnaPermissionStatus);
@@ -127,4 +128,4 @@ inline nsISupports* ToSupports(mozilla::net::HttpTransactionChild* p) {
   return static_cast<nsIStreamListener*>(p);
 }
 
-#endif  // nsHttpTransactionChild_h__
+#endif  // nsHttpTransactionChild_h_

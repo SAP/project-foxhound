@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env browser */
-
 "use strict";
 
 const {
@@ -112,9 +110,9 @@ class DeviceForm extends PureComponent {
   /**
    * Validates the name field's value.
    *
-   * @param  {String} value
+   * @param  {string} value
    *         The input field value for the device name.
-   * @return {Boolean} true if device name is valid, false otherwise.
+   * @return {boolean} true if device name is valid, false otherwise.
    */
   validateNameField(value) {
     const nameFieldValue = value.trim();

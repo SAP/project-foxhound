@@ -33,4 +33,3 @@ protocolhandler.mailto:
         type: boolean
     send_in_pings:
       - events
-      - metrics

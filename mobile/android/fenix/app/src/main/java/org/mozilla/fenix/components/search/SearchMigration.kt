@@ -50,15 +50,15 @@ internal class SearchMigration(
 
         return ids.mapNotNull { id ->
             val xml = preferences.getString(id, null)
-            loadSafely(id, xml?.byteInputStream()?.buffered())
+            loadSafely(context, id, xml?.byteInputStream()?.buffered())
         }
     }
 }
 
 @Suppress("DEPRECATION")
-private fun loadSafely(id: String, stream: BufferedInputStream?): SearchEngine? {
+private fun loadSafely(context: Context, id: String, stream: BufferedInputStream?): SearchEngine? {
     return try {
-        stream?.let { parseLegacySearchEngine(id, it) }
+        stream?.let { parseLegacySearchEngine(context, id, it) }
     } catch (e: IOException) {
         null
     } catch (e: XmlPullParserException) {

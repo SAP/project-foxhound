@@ -353,26 +353,6 @@ pub extern "C" fn l10nregistry_has_source(
 }
 
 #[no_mangle]
-pub extern "C" fn l10nregistry_get_source(
-    reg: &GeckoL10nRegistry,
-    name: &nsACString,
-    status: &mut L10nRegistryStatus,
-) -> *mut FileSource {
-    if name.is_empty() {
-        *status = L10nRegistryStatus::EmptyName;
-        return std::ptr::null_mut();
-    }
-
-    *status = L10nRegistryStatus::None;
-
-    if let Ok(Some(source)) = reg.file_source_by_name(&name.to_utf8()).report_error() {
-        Box::into_raw(Box::new(source))
-    } else {
-        std::ptr::null_mut()
-    }
-}
-
-#[no_mangle]
 pub extern "C" fn l10nregistry_clear_sources(reg: &GeckoL10nRegistry) {
     let _ = reg.clear_sources().report_error();
 

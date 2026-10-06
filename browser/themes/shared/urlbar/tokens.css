@@ -1,0 +1,15 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@import url("chrome://browser/skin/urlbar/urlbar.tokens.css");
+@import url("chrome://browser/skin/urlbar/urlbarview.tokens.css");
+
+@media not ((forced-colors) or (-moz-native-theme)) {
+  :root:not([lwtheme]) {
+    /* Our JSON design token system does not have a mechanism for supporting non-color tokens in dark mode. */
+    @media (prefers-color-scheme: dark) {
+      --urlbar-icon-fill-opacity: 1;
+    }
+  }
+}

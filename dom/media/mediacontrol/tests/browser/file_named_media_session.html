@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Named media session host</title>
+</head>
+<body>
+<video id="parent_video" src="gizmo.mp4" loop></video>
+<div id="iframe_host"></div>
+<script>
+window.appendCrossOriginIframe = url => {
+  const iframe = document.createElement("iframe");
+  iframe.id = "cross_origin_iframe";
+  iframe.src = url;
+  document.getElementById("iframe_host").appendChild(iframe);
+  return new Promise(r => (iframe.onload = r));
+};
+</script>
+</body>
+</html>

@@ -64,7 +64,7 @@ function* testSteps() {
 
   // The profile contains just one empty IndexedDB database. The file
   // create_db.js in the package was run locally, specifically it was
-  // temporarily added to xpcshell.ini and then executed:
+  // temporarily added to xpcshell.toml and then executed:
   // mach xpcshell-test --interactive dom/quota/test/xpcshell/create_db.js
   installPackage("basics_profile");
 

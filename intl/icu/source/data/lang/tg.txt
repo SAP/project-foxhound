@@ -371,8 +371,16 @@ tg{
             islamic-tbla{"Тақвими ҳиҷрӣ (ҷадвал, давраи ситорашиносӣ)"}
             iso8601{"Тақвими ISO-8601"}
         }
+        calendar%core{
+            gregorian{"Грегорианӣ"}
+            islamic-civil{"Ҳиҷрӣ (ҷадвалӣ, давраи шаҳрвандӣ)"}
+            islamic-tbla{"Ҳиҷрӣ (ҷадвал, давраи ситорашиносӣ)"}
+        }
         collation{
             standard{"Тартиби мураттабсозии стандартӣ"}
+        }
+        collation%core{
+            standard{"Стандартӣ"}
         }
         numbers{
             arab{"Рақамҳои ҳинду-арабӣ"}

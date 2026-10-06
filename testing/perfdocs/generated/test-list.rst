@@ -20,15 +20,15 @@ motionmark-animometer, motionmark-htmlsuite
     * subtest: FPS from the subtest, each subtest is run for 15 seconds, repeat this 5 times and report the median value
     * suite: we take a geometric mean of all the subtests (9 for animometer, 11 for html suite)
 
-speedometer
-===========
+speedometer2
+============
 
 * measuring: responsiveness of web applications
 * data: there are 16 subtests in Speedometer; each of these are made up of 9 internal benchmarks.
 * summarization:
 
-    * subtest: For all of the 16 subtests, we collect `a summed of all their internal benchmark results <https://searchfox.org/mozilla-central/source/third_party/webkit/PerformanceTests/Speedometer/resources/benchmark-report.js#66-67>`_ for each of them. To obtain a single score per subtest, we take `a median of the replicates <https://searchfox.org/mozilla-central/source/testing/raptor/raptor/output.py#427-470>`_.
-    * score: `geometric mean of the 16 subtest metrics (along with some special corrections) <https://searchfox.org/mozilla-central/source/testing/raptor/raptor/output.py#317-330>`_.
+    * subtest: For all of the 16 subtests, we collect :searchfox:`a summed of all their internal benchmark results <third_party/webkit/PerformanceTests/Speedometer/resources/benchmark-report.js#66-67>` for each of them. To obtain a single score per subtest, we take :searchfox:`a median of the replicates <testing/raptor/raptor/output.py#427-470>`.
+    * score: :searchfox:`geometric mean of the 16 subtest metrics (along with some special corrections) <testing/raptor/raptor/output.py#317-330>`.
 
 This is the `Speedometer v1.0 <http://browserbench.org/Speedometer/>`_ JavaScript benchmark taken verbatim and slightly modified to work with the Raptor harness.
 

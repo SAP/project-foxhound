@@ -100,7 +100,7 @@ add_task(async function testCookieCategoryLabel() {
 
       Services.prefs.setIntPref(
         TPC_PREF,
-        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN
+        Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN
       );
       await TestUtils.waitForCondition(
         () => categoryItem.classList.contains("blocked"),

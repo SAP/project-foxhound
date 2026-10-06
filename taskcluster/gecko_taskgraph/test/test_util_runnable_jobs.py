@@ -50,9 +50,9 @@ class TestRunnableJobs(unittest.TestCase):
         return taskgraph, label_to_taskid
 
     def test_taskgraph_to_runnable_jobs(self):
-        tg, label_to_taskid = self.make_taskgraph(
-            {t["label"]: Task(**t) for t in self.tasks[:]}
-        )
+        tg, label_to_taskid = self.make_taskgraph({
+            t["label"]: Task(**t) for t in self.tasks[:]
+        })
 
         res = full_task_graph_to_runnable_jobs(tg.to_json())
 

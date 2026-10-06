@@ -17,34 +17,70 @@
   async function testBrowserChildCoalescing() {
     var ret = new Promise(function(resolve) {
       SpecialPowers.loadChromeScript(function() {
-        /* eslint-env mozilla/chrome-script */
+        const kAllowToCoalesceTouchMovesOption = { isAsyncEnabled: true, isDOMEventSynthesized: false };
         var element = this.actorParent.rootFrameLoader.ownerElement;
         var rect = element.getBoundingClientRect();
         var win = element.ownerDocument.defaultView;
-        var utils = win.windowUtils;
         var x = rect.x + (rect.width / 2);
         var y = Math.floor(rect.y + (rect.height / 4));
         var endYForFirstTouch = Math.floor(rect.y + ((rect.height / 4) * 2));
         var endYForSecondTouch = Math.floor(rect.y + ((rect.height / 4) * 4));
-        utils.sendTouchEvent("touchstart", [0], [x], [y], [1], [1], [0], [1],
-                             [0], [0], [0], 0);
+        win.synthesizeTouchEvent("touchstart", [{
+          identifier: 0,
+          offsetX: x,
+          offsetY: y,
+        }], 0, kAllowToCoalesceTouchMovesOption);
         while (y != endYForFirstTouch) {
-          utils.sendTouchEvent("touchmove", [0], [x], [y], [1], [1], [0], [1],
-                               [0], [0], [0], 0);
+          win.synthesizeTouchEvent("touchmove", [{
+            identifier: 0,
+            offsetX: x,
+            offsetY: y,
+          }], 0, kAllowToCoalesceTouchMovesOption);
           ++y;
         }
 
         // Add a new touch and move this touch
-        utils.sendTouchEvent("touchstart", [0, 1], [x, x], [endYForFirstTouch, endYForFirstTouch], [1, 1], [1, 1], [0, 0], [1, 1],
-                             [0, 0], [0, 0], [0, 0], 0);
+        win.synthesizeTouchEvent("touchstart", [
+          {
+            identifier: 0,
+            offsetX: x,
+            offsetY: endYForFirstTouch,
+          },
+          {
+            identifier: 1,
+            offsetX: x,
+            offsetY: endYForFirstTouch,
+          },
+        ], 0, kAllowToCoalesceTouchMovesOption);
+
         while (y != endYForSecondTouch) {
-          utils.sendTouchEvent("touchmove", [0, 1], [x, x], [endYForFirstTouch, y], [1, 1], [1, 1], [0, 0], [1, 1],
-                               [0, 0], [0, 0], [0, 0], 0);
+          win.synthesizeTouchEvent("touchmove", [
+            {
+              identifier: 0,
+              offsetX: x,
+              offsetY: endYForFirstTouch,
+            },
+            {
+              identifier: 1,
+              offsetX: x,
+              offsetY: y,
+            },
+          ], 0, kAllowToCoalesceTouchMovesOption);
           ++y;
         }
 
-        utils.sendTouchEvent("touchend", [0, 1], [x, x], [endYForFirstTouch, endYForSecondTouch], [1, 1], [1, 1], [0, 0], [1, 1],
-                             [0, 0], [0, 0], [0, 0], 0);
+        win.synthesizeTouchEvent("touchend", [
+          {
+            identifier: 0,
+            offsetX: x,
+            offsetY: endYForFirstTouch,
+          },
+          {
+            identifier: 1,
+            offsetX: x,
+            offsetY: endYForSecondTouch,
+          },
+        ], 0, kAllowToCoalesceTouchMovesOption);
       });
 
       let touchStartCount = 0;
@@ -57,7 +93,6 @@
           shouldReceiveMultiTouch = true;
         }
       }, true);
-
 
       window.addEventListener("touchmove", function(e) {
         if (receivedTouchEnd) {

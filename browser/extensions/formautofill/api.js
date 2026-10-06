@@ -19,7 +19,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "resProto",
   "@mozilla.org/network/protocol;1?name=resource",
-  "nsISubstitutingProtocolHandler"
+  Ci.nsISubstitutingProtocolHandler
 );
 
 const RESOURCE_HOST = "formautofill";
@@ -147,7 +147,7 @@ this.formautofill = class extends ExtensionAPI {
       child: {
         esModuleURI: "resource://autofill/FormAutofillChild.sys.mjs",
         events: {
-          focusin: {},
+          focusin: { capture: true },
           "form-changed": { createActor: false },
           "form-submission-detected": { createActor: false },
         },

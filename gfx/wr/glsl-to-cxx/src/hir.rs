@@ -3533,6 +3533,7 @@ pub fn ast_to_hir(state: &mut State, tu: &syntax::TranslationUnit) -> Translatio
         vec![Type::new(Vec2)],
     );
     declare_function(state, "pow", None, Type::new(Vec3), vec![Type::new(Vec3)]);
+    declare_function(state, "pow", None, Type::new(Vec2), vec![Type::new(Vec2)]);
     declare_function(state, "pow", None, Type::new(Float), vec![Type::new(Float)]);
     declare_function(state, "exp", None, Type::new(Float), vec![Type::new(Float)]);
     declare_function(state, "exp2", None, Type::new(Float), vec![Type::new(Float)]);
@@ -3956,6 +3957,14 @@ pub fn ast_to_hir(state: &mut State, tu: &syntax::TranslationUnit) -> Translatio
         vec![Type::new(Sampler2D), Type::new(IVec2), Type::new(Int)],
         RunClass::Scalar,
     );
+    declare_function_ext(
+        state,
+        "swgl_validateGradientFromStops",
+        None,
+        Type::new(Int),
+        vec![Type::new(Sampler2D), Type::new(IVec2), Type::new(Int)],
+        RunClass::Scalar,
+    );
     declare_function(
         state,
         "swgl_commitLinearGradientRGBA8",
@@ -3966,10 +3975,58 @@ pub fn ast_to_hir(state: &mut State, tu: &syntax::TranslationUnit) -> Translatio
     );
     declare_function(
         state,
+        "swgl_commitDitheredLinearGradientRGBA8",
+        None,
+        Type::new(Void),
+        vec![Type::new(Sampler2D), Type::new(Int), Type::new(Float), Type::new(Bool), Type::new(Bool),
+             Type::new(Vec2), Type::new(Vec2), Type::new(Float)],
+    );
+    declare_function(
+        state,
+        "swgl_commitLinearGradientFromStopsRGBA8",
+        None,
+        Type::new(Void),
+        vec![Type::new(Sampler2D), Type::new(Int), Type::new(Int), Type::new(Float), Type::new(Bool),
+             Type::new(Vec2), Type::new(Vec2), Type::new(Float)],
+    );
+    declare_function(
+        state,
+        "swgl_commitDitheredLinearGradientFromStopsRGBA8",
+        None,
+        Type::new(Void),
+        vec![Type::new(Sampler2D), Type::new(Int), Type::new(Int), Type::new(Float), Type::new(Bool),
+             Type::new(Vec2), Type::new(Vec2), Type::new(Float), Type::new(Vec4)],
+    );
+    declare_function(
+        state,
         "swgl_commitRadialGradientRGBA8",
         None,
         Type::new(Void),
         vec![Type::new(Sampler2D), Type::new(Int), Type::new(Float), Type::new(Bool), Type::new(Vec2),
+             Type::new(Float)],
+    );
+    declare_function(
+        state,
+        "swgl_commitDitheredRadialGradientRGBA8",
+        None,
+        Type::new(Void),
+        vec![Type::new(Sampler2D), Type::new(Int), Type::new(Float), Type::new(Bool), Type::new(Vec2),
+             Type::new(Float)],
+    );
+    declare_function(
+        state,
+        "swgl_commitRadialGradientFromStopsRGBA8",
+        None,
+        Type::new(Void),
+        vec![Type::new(Sampler2D), Type::new(Int), Type::new(Int), Type::new(Float), Type::new(Bool), Type::new(Vec2),
+             Type::new(Float)],
+    );
+    declare_function(
+        state,
+        "swgl_commitDitheredRadialGradientFromStopsRGBA8",
+        None,
+        Type::new(Void),
+        vec![Type::new(Sampler2D), Type::new(Int), Type::new(Int), Type::new(Float), Type::new(Bool), Type::new(Vec2),
              Type::new(Float)],
     );
     declare_function(

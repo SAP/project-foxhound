@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2021 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -22,6 +22,9 @@ for (const [input, expected] of tests) {
 
   const implicit = time.toString();
   assert.sameValue(implicit, expected, "default precision is auto and no rounding");
+
+  const lambda = time.toString(() => {});
+  assert.sameValue(lambda, expected, "default precision is auto and no rounding");
 }
 
 reportCompare(0, 0);

@@ -10,21 +10,28 @@
 
 #include "modules/desktop_capture/win/screen_capturer_win_gdi.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <optional>
+#include <string>
 #include <utility>
 
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
 #include "modules/desktop_capture/desktop_capture_metrics_helper.h"
 #include "modules/desktop_capture/desktop_capture_options.h"
 #include "modules/desktop_capture/desktop_capture_types.h"
 #include "modules/desktop_capture/desktop_frame.h"
 #include "modules/desktop_capture/desktop_frame_win.h"
+#include "modules/desktop_capture/desktop_geometry.h"
 #include "modules/desktop_capture/desktop_region.h"
-#include "modules/desktop_capture/mouse_cursor.h"
-#include "modules/desktop_capture/win/cursor.h"
+#include "modules/desktop_capture/shared_desktop_frame.h"
+#include "modules/desktop_capture/shared_memory.h"
 #include "modules/desktop_capture/win/desktop.h"
 #include "modules/desktop_capture/win/screen_capture_utils.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/time_utils.h"
 #include "rtc_base/trace_event.h"
 #include "system_wrappers/include/metrics.h"
 
@@ -40,8 +47,8 @@ const wchar_t kDwmapiLibraryName[] = L"dwmapi.dll";
 
 }  // namespace
 
-ScreenCapturerWinGdi::ScreenCapturerWinGdi(
-    const DesktopCaptureOptions& options) {
+ScreenCapturerWinGdi::ScreenCapturerWinGdi(const DesktopCaptureOptions& options)
+    : clock_(options.clock()) {
   if (options.disable_effects()) {
     // Load dwmapi.dll dynamically since it is not available on XP.
     if (!dwmapi_library_)
@@ -75,7 +82,7 @@ void ScreenCapturerWinGdi::SetSharedMemoryFactory(
 
 void ScreenCapturerWinGdi::CaptureFrame() {
   TRACE_EVENT0("webrtc", "ScreenCapturerWinGdi::CaptureFrame");
-  int64_t capture_start_time_nanos = rtc::TimeNanos();
+  Timestamp capture_start_time = clock_.CurrentTime();
 
   queue_.MoveToNextFrame();
   if (queue_.current_frame() && queue_.current_frame()->IsShared()) {
@@ -98,8 +105,7 @@ void ScreenCapturerWinGdi::CaptureFrame() {
   frame->mutable_updated_region()->SetRect(
       DesktopRect::MakeSize(frame->size()));
 
-  int capture_time_ms = (rtc::TimeNanos() - capture_start_time_nanos) /
-                        rtc::kNumNanosecsPerMillisec;
+  int capture_time_ms = (clock_.CurrentTime() - capture_start_time).ms();
   RTC_HISTOGRAM_COUNTS_1000(
       "WebRTC.DesktopCapture.Win.ScreenGdiCapturerFrameTime", capture_time_ms);
   frame->set_capture_time_ms(capture_time_ms);
@@ -108,13 +114,19 @@ void ScreenCapturerWinGdi::CaptureFrame() {
 }
 
 bool ScreenCapturerWinGdi::GetSourceList(SourceList* sources) {
-  return webrtc::GetScreenList(sources);
+  return GetScreenList(sources);
 }
 
 bool ScreenCapturerWinGdi::SelectSource(SourceId id) {
-  bool valid = IsScreenValid(id, &current_device_key_);
-  if (valid)
+  std::wstring device_key;
+  bool valid = IsScreenValid(id, &device_key);
+  if (valid) {
     current_screen_id_ = id;
+    current_device_key_ = device_key;
+  } else {
+    current_screen_id_ = kFullDesktopScreenId;
+    current_device_key_ = std::nullopt;
+  }
   return valid;
 }
 

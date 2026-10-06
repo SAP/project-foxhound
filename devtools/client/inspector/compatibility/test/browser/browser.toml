@@ -1,12 +1,11 @@
 [DEFAULT]
-tags = "devtools"
+tags = "devtools devtools-compat-data"
 subsuite = "devtools"
 support-files = [
   "head.js",
   "!/devtools/client/inspector/test/head.js",
   "!/devtools/client/inspector/test/shared-head.js",
   "!/devtools/client/shared/test/shared-head.js",
-  "!/devtools/client/shared/test/telemetry-test-helpers.js",
   "!/devtools/client/shared/test/highlighter-test-actor.js",
 ]
 

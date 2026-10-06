@@ -5,31 +5,31 @@
 Transform the repackage signing task into an actual task description.
 """
 
+from typing import Optional
+
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
 from taskgraph.util.schema import Schema
 from taskgraph.util.taskcluster import get_artifact_path
-from voluptuous import Optional
 
-from gecko_taskgraph.transforms.task import task_description_schema
+from gecko_taskgraph.transforms.task import TaskDescriptionSchema
 from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 from gecko_taskgraph.util.partners import get_partner_config_by_kind
 from gecko_taskgraph.util.scriptworker import get_signing_type_per_platform
 
 transforms = TransformSequence()
 
-repackage_signing_description_schema = Schema(
-    {
-        Optional("label"): str,
-        Optional("extra"): object,
-        Optional("attributes"): task_description_schema["attributes"],
-        Optional("dependencies"): task_description_schema["dependencies"],
-        Optional("shipping-product"): task_description_schema["shipping-product"],
-        Optional("shipping-phase"): task_description_schema["shipping-phase"],
-        Optional("priority"): task_description_schema["priority"],
-        Optional("task-from"): task_description_schema["task-from"],
-    }
-)
+
+class RepackageSigningDescriptionSchema(Schema, kw_only=True):
+    label: Optional[str] = None
+    extra: Optional[object] = None
+    attributes: TaskDescriptionSchema.__annotations__["attributes"] = None
+    dependencies: TaskDescriptionSchema.__annotations__["dependencies"] = None
+    shipping_product: TaskDescriptionSchema.__annotations__["shipping_product"] = None
+    shipping_phase: TaskDescriptionSchema.__annotations__["shipping_phase"] = None
+    priority: TaskDescriptionSchema.__annotations__["priority"] = None
+    task_from: TaskDescriptionSchema.__annotations__["task_from"] = None
+    run_on_repo_type: TaskDescriptionSchema.__annotations__["run_on_repo_type"] = None
 
 
 @transforms.add
@@ -40,7 +40,7 @@ def remove_name(config, jobs):
         yield job
 
 
-transforms.add_validate(repackage_signing_description_schema)
+transforms.add_validate(RepackageSigningDescriptionSchema)
 
 
 @transforms.add
@@ -105,22 +105,20 @@ def make_repackage_signing_description(config, jobs):
                 "repack_stub_installer"
             )
             if build_platform.startswith("win32") and repack_stub_installer:
-                upstream_artifacts.append(
-                    {
-                        "taskId": {"task-reference": "<repackage>"},
-                        "taskType": "repackage",
-                        "paths": [
-                            get_artifact_path(
-                                dep_job,
-                                f"{repack_id}/target.stub-installer.exe",
-                            ),
-                        ],
-                        "formats": [
-                            "gcp_prod_autograph_authenticode_202412",
-                            "gcp_prod_autograph_gpg",
-                        ],
-                    }
-                )
+                upstream_artifacts.append({
+                    "taskId": {"task-reference": "<repackage>"},
+                    "taskType": "repackage",
+                    "paths": [
+                        get_artifact_path(
+                            dep_job,
+                            f"{repack_id}/target.stub-installer.exe",
+                        ),
+                    ],
+                    "formats": [
+                        "gcp_prod_autograph_authenticode_202412",
+                        "gcp_prod_autograph_gpg",
+                    ],
+                })
         elif "mac" in build_platform:
             upstream_artifacts = [
                 {
@@ -156,6 +154,7 @@ def make_repackage_signing_description(config, jobs):
             "dependencies": dependencies,
             "attributes": attributes,
             "run-on-projects": dep_job.attributes.get("run_on_projects"),
+            "run-on-repo-type": job.get("run-on-repo-type", ["git", "hg"]),
             "extra": {
                 "repack_id": repack_id,
             },

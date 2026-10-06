@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -15,7 +14,6 @@ import android.net.DhcpInfo;
 import android.net.Proxy;
 import android.net.ProxyInfo;
 import android.net.wifi.WifiManager;
-import android.os.Build;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -119,11 +117,6 @@ public class GeckoNetworkManager extends BroadcastReceiver {
   }
 
   private void getProxyInfoAndReport(final Context aContext) {
-    // getDefaultProxy() added in API 23.
-    if (Build.VERSION.SDK_INT < 23) {
-      return;
-    }
-
     if (mCurrentState != ManagerState.OnNoListeners
         && mCurrentState != ManagerState.OnWithListeners) {
       return;
@@ -451,9 +444,7 @@ public class GeckoNetworkManager extends BroadcastReceiver {
   private static void registerBroadcastReceiver(
       final Context context, final BroadcastReceiver receiver) {
     final IntentFilter filter = new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION);
-    if (Build.VERSION.SDK_INT >= 23) {
-      filter.addAction(Proxy.PROXY_CHANGE_ACTION);
-    }
+    filter.addAction(Proxy.PROXY_CHANGE_ACTION);
     context.registerReceiver(receiver, filter);
   }
 

@@ -7,6 +7,8 @@
 const TEST_URI = URL_ROOT_SSL + "doc_media_queries.html";
 
 add_task(async function testBfCacheNavigationWithDevTools() {
+  await pushPref("layout.css.custom-media.enabled", true);
+
   await addTab(TEST_URI);
   const { inspector, toolbox } = await openRuleView();
 
@@ -60,16 +62,11 @@ add_task(async function testBfCacheNavigationAfterClosingDevTools() {
   // Wait for the iframe target to be processed before destroying the toolbox,
   // to avoid unhandled promise rejections.
   // The iframe URL starts with https://example.org/document-builder.sjs
-  let onIframeProcessed;
-
-  // Do not wait for the additional target in the noeft-nofis flavor.
-  const isNoEFTNoFis = !isFissionEnabled() && !isEveryFrameTargetEnabled();
-  if (!isNoEFTNoFis) {
-    const iframeURL = "https://example.org/document-builder.sjs";
-    onIframeProcessed = waitForTargetProcessed(toolbox.commands, targetFront =>
-      targetFront.url.startsWith(iframeURL)
-    );
-  }
+  const iframeURL = "https://example.org/document-builder.sjs";
+  const onIframeProcessed = waitForTargetProcessed(
+    toolbox.commands,
+    targetFront => targetFront.url.startsWith(iframeURL)
+  );
 
   info("Navigate to a different URL");
   await navigateTo(TEST_URI + "?someparameter");

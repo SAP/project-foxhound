@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,9 +11,31 @@
 #include "nsNetCID.h"
 #include "nsObjCExceptions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_network.h"
+#include "nsINetworkLinkService.h"
+#include "nsIObserver.h"
+#include "nsIObserverService.h"
+#include "nsXPCOM.h"
 #include "ProxyUtils.h"
 #include "ProxyConfig.h"
+
+class nsOSXSystemProxySettings;
+
+class NetworkLinkObserver final : public nsIObserver {
+ public:
+  NS_DECL_THREADSAFE_ISUPPORTS
+  NS_DECL_NSIOBSERVER
+
+  explicit NetworkLinkObserver(nsOSXSystemProxySettings* aSettings)
+      : mSettings(aSettings) {}
+
+  void ClearSettings() { mSettings = nullptr; }
+
+ private:
+  ~NetworkLinkObserver() = default;
+  nsOSXSystemProxySettings* mSettings;
+};
 
 class nsOSXSystemProxySettings : public nsISystemProxySettings {
  public:
@@ -48,6 +68,7 @@ class nsOSXSystemProxySettings : public nsISystemProxySettings {
   SCDynamicStoreContext mContext;
   SCDynamicStoreRef mSystemDynamicStore;
   NSDictionary* mProxyDict;
+  RefPtr<NetworkLinkObserver> mNetworkLinkObserver;
 
   // Mapping of URI schemes to SystemConfiguration keys
   struct SchemeMapping {
@@ -59,6 +80,26 @@ class nsOSXSystemProxySettings : public nsISystemProxySettings {
   };
   static const SchemeMapping gSchemeMappingList[];
 };
+
+NS_IMPL_ISUPPORTS(NetworkLinkObserver, nsIObserver)
+
+NS_IMETHODIMP NetworkLinkObserver::Observe(nsISupports*, const char* aTopic,
+                                           const char16_t*) {
+  if (!strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID)) {
+    nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+    if (obs) {
+      obs->RemoveObserver(this, NS_NETWORK_LINK_TOPIC);
+      obs->RemoveObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID);
+    }
+    mSettings = nullptr;
+    return NS_OK;
+  }
+
+  if (!strcmp(aTopic, NS_NETWORK_LINK_TOPIC) && mSettings) {
+    mSettings->ProxyHasChanged();
+  }
+  return NS_OK;
+}
 
 NS_IMPL_ISUPPORTS(nsOSXSystemProxySettings, nsISystemProxySettings)
 
@@ -134,6 +175,14 @@ nsresult nsOSXSystemProxySettings::Init() {
 
   InitDone();
 
+  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+  if (obs) {
+    mNetworkLinkObserver = new NetworkLinkObserver(this);
+    obs->AddObserver(mNetworkLinkObserver, NS_NETWORK_LINK_TOPIC, false);
+    obs->AddObserver(mNetworkLinkObserver, NS_XPCOM_SHUTDOWN_OBSERVER_ID,
+                     false);
+  }
+
   return NS_OK;
 
   NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
@@ -143,6 +192,15 @@ nsOSXSystemProxySettings::~nsOSXSystemProxySettings() {
   NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   [mProxyDict release];
+
+  if (mNetworkLinkObserver) {
+    mNetworkLinkObserver->ClearSettings();
+    nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+    if (obs) {
+      obs->RemoveObserver(mNetworkLinkObserver, NS_NETWORK_LINK_TOPIC);
+      obs->RemoveObserver(mNetworkLinkObserver, NS_XPCOM_SHUTDOWN_OBSERVER_ID);
+    }
+  }
 
   if (mSystemDynamicStore) {
     // Invalidate the dynamic store's run loop source
@@ -288,11 +346,49 @@ NS_IMETHODIMP nsOSXSystemProxySettings::SetSystemProxyInfo(
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
+NS_IMETHODIMP nsOSXSystemProxySettings::GetSystemProxyDirect(bool* aResult) {
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
+
+  if (mozilla::toolkit::system::HasProxyEnvVars()) {
+    *aResult = false;
+    return NS_OK;
+  }
+
+  if (!mProxyDict) {
+    *aResult = true;
+    return NS_OK;
+  }
+
+  if (IsAutoconfigEnabled()) {
+    *aResult = false;
+    return NS_OK;
+  }
+
+  for (const SchemeMapping* keys = gSchemeMappingList; keys->mScheme; keys++) {
+    NSNumber* enabled = [mProxyDict objectForKey:(NSString*)keys->mEnabled];
+    if (enabled && [enabled intValue] != 0) {
+      *aResult = false;
+      return NS_OK;
+    }
+  }
+
+  *aResult = true;
+  return NS_OK;
+
+  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
+}
+
 nsresult nsOSXSystemProxySettings::GetProxyForURI(const nsACString& aSpec,
                                                   const nsACString& aScheme,
                                                   const nsACString& aHost,
                                                   const int32_t aPort,
                                                   nsACString& aResult) {
+  nsresult rv = mozilla::toolkit::system::GetProxyFromEnvironment(
+      aScheme, aHost, aPort, aResult);
+  if (NS_SUCCEEDED(rv)) {
+    return rv;
+  }
+
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   int32_t proxyPort;
@@ -422,6 +518,16 @@ NS_IMETHODIMP OSXSystemProxySettingsAsync::SetSystemProxyInfo(
     const nsTArray<nsCString>& aExclusionList) {
   MOZ_ASSERT(false, "Did not expect to be called on this platform");
   return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP OSXSystemProxySettingsAsync::GetSystemProxyDirect(bool* aResult) {
+  // mConfig is written only in OnProxyConfigChangedInternal(), which runs on
+  // the main thread (GetMainThreadOnly() returns true for this class), so this
+  // read is safe without a mutex.
+  *aResult = !mozilla::toolkit::system::HasProxyEnvVars() &&
+             mConfig.PACUrl().IsEmpty() &&
+             mConfig.Rules().mProxyServers.empty();
+  return NS_OK;
 }
 
 NS_IMETHODIMP

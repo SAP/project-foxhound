@@ -22,20 +22,18 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=406596
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
-/** Test for Bug 406596 **/
+/** Test for Bug 406596 */
 
 function testTabbing(click, focus, selectionOffset) {
-  var wu = SpecialPowers.getDOMWindowUtils(window);
-
   var elem = document.getElementById(click);
   var rect = elem.getBoundingClientRect();
   var selection = window.getSelection();
 
   var x = (rect.left + rect.right) / 4;
   var y = (rect.top + rect.bottom) / 2;
-  wu.sendMouseEvent("mousedown", x, y, 0, 1, 0);
-  wu.sendMouseEvent("mousemove", x + selectionOffset, y, 0, 1, 0);
-  wu.sendMouseEvent("mouseup", x + selectionOffset, y, 0, 1, 0);
+  synthesizeMouseAtPoint(x, y, { type: "mousedown" });
+  synthesizeMouseAtPoint(x + selectionOffset, y, { type: "mousemove" });
+  synthesizeMouseAtPoint(x + selectionOffset, y, { type: "mouseup" });
   if (selectionOffset) {
     is(selection.rangeCount, 1, "there should be one range in the selection");
     var range = selection.getRangeAt(0);

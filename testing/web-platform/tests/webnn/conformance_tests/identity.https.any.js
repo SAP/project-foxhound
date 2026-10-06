@@ -1,5 +1,5 @@
 // META: title=test WebNN API element-wise identity operation
-// META: global=window,worker
+// META: global=window
 // META: variant=?cpu
 // META: variant=?gpu
 // META: variant=?npu
@@ -520,10 +520,5 @@ const identityTests = [
   }
 ];
 
-if (navigator.ml) {
-  identityTests.forEach((test) => {
-    webnn_conformance_test(buildAndExecuteGraph, getZeroULPTolerance, test);
-  });
-} else {
-  test(() => assert_implements(navigator.ml, 'missing navigator.ml'));
-}
+webnn_conformance_test(
+    identityTests, buildAndExecuteGraph, getZeroULPTolerance);

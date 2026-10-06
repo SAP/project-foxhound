@@ -11,6 +11,7 @@ screen_capture = true
 test_url = "http://<host>:<port>/assorted/driver.html?raptor"
 type = "benchmark"
 unit = "ms"
+sparse_checkout = true
 
 ["assorted-dom"]
 repository = "https://github.com/mozilla/perf-automation"

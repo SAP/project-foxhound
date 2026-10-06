@@ -16,18 +16,15 @@ add_task(async function test_places() {
   Services.prefs.setBoolPref(SUGGEST_ENABLED_PREF, true);
   Services.prefs.setBoolPref(QUICKACTIONS_PREF, false);
   let engine = await addTestSuggestionsEngine();
-  await Services.search.setDefault(
-    engine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-  );
-  let oldCurrentEngine = Services.search.defaultEngine;
+  await SearchService.setDefault(engine, SearchService.CHANGE_REASON.UNKNOWN);
+  let oldCurrentEngine = SearchService.defaultEngine;
   registerCleanupFunction(async () => {
     Services.prefs.clearUserPref(SUGGEST_PREF);
     Services.prefs.clearUserPref(SUGGEST_ENABLED_PREF);
     Services.prefs.clearUserPref(QUICKACTIONS_PREF);
-    await Services.search.setDefault(
+    await SearchService.setDefault(
       oldCurrentEngine,
-      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+      SearchService.CHANGE_REASON.UNKNOWN
     );
   });
 
@@ -68,10 +65,7 @@ add_task(async function test_places() {
 
   await controller.startQuery(context);
 
-  info(
-    "Results:\n" +
-      context.results.map(m => `${m.title} - ${m.payload.url}`).join("\n")
-  );
+  info("Results:\n" + context.results.map(m => m.payload.url).join("\n"));
   Assert.equal(
     context.results.length,
     7,
@@ -102,7 +96,7 @@ add_task(async function test_places() {
       "Test tab",
       "Test history",
     ],
-    context.results.map(m => m.title),
+    context.results.map(m => m.getDisplayableValueAndHighlights("title").value),
     "Check match titles"
   );
 
@@ -167,10 +161,7 @@ add_task(async function test_bookmarkBehaviorDisabled_tagged() {
 
   await controller.startQuery(context);
 
-  info(
-    "Results:\n" +
-      context.results.map(m => `${m.title} - ${m.payload.url}`).join("\n")
-  );
+  info("Results:\n" + context.results.map(m => m.payload.url).join("\n"));
   Assert.equal(
     context.results.length,
     2,
@@ -185,7 +176,7 @@ add_task(async function test_bookmarkBehaviorDisabled_tagged() {
 
   Assert.deepEqual(
     [searchString, "Test bookmark"],
-    context.results.map(m => m.title),
+    context.results.map(m => m.getDisplayableValueAndHighlights("title").value),
     "Check match titles"
   );
 
@@ -218,10 +209,7 @@ add_task(async function test_bookmarkBehaviorDisabled_untagged() {
 
   await controller.startQuery(context);
 
-  info(
-    "Results:\n" +
-      context.results.map(m => `${m.title} - ${m.payload.url}`).join("\n")
-  );
+  info("Results:\n" + context.results.map(m => m.payload.url).join("\n"));
   Assert.equal(
     context.results.length,
     2,
@@ -236,7 +224,7 @@ add_task(async function test_bookmarkBehaviorDisabled_untagged() {
 
   Assert.deepEqual(
     [searchString, "Test bookmark"],
-    context.results.map(m => m.title),
+    context.results.map(m => m.getDisplayableValueAndHighlights("title").value),
     "Check match titles"
   );
 
@@ -266,10 +254,7 @@ add_task(async function test_diacritics() {
 
   await controller.startQuery(context);
 
-  info(
-    "Results:\n" +
-      context.results.map(m => `${m.title} - ${m.payload.url}`).join("\n")
-  );
+  info("Results:\n" + context.results.map(m => m.payload.url).join("\n"));
   Assert.equal(
     context.results.length,
     2,
@@ -284,7 +269,7 @@ add_task(async function test_diacritics() {
 
   Assert.deepEqual(
     [searchString, "Test bookmark with accents in path"],
-    context.results.map(m => m.title),
+    context.results.map(m => m.getDisplayableValueAndHighlights("title").value),
     "Check match titles"
   );
 

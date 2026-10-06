@@ -44,19 +44,19 @@ function ok(bool, msg) {
 /**
  * Generate and track results from a XMLHttpRequest with regards to timeouts.
  *
- * @param {String} id         The test description.
- * @param {Number} timeLimit  The initial setting for the request timeout.
- * @param {Number} resetAfter (Optional) The time after sending the request, to
+ * @param {string} id         The test description.
+ * @param {number} timeLimit  The initial setting for the request timeout.
+ * @param {number} resetAfter (Optional) The time after sending the request, to
  *                            reset the timeout.
- * @param {Number} resetTo    (Optional) The delay to reset the timeout to.
+ * @param {number} resetTo    (Optional) The delay to reset the timeout to.
  *
- * @note The actual testing takes place in handleEvent(event).
+ * Note: The actual testing takes place in handleEvent(event).
  * The requests are generated in startXHR().
  *
- * @note If resetAfter and resetTo are omitted, only the initial timeout setting
+ * Note: If resetAfter and resetTo are omitted, only the initial timeout setting
  * applies.
  *
- * @constructor
+ * @class
  * @implements DOMEventListener
  */
 function RequestTracker(async, id, timeLimit /*[, resetAfter, resetTo]*/) {
@@ -121,7 +121,7 @@ RequestTracker.prototype = {
   /**
    * Get a message describing this test.
    *
-   * @returns {String} The test description.
+   * @returns {string} The test description.
    */
   getMessage() {
     var rv = this.id + ", ";
@@ -148,12 +148,12 @@ RequestTracker.prototype = {
 
     var type = evt.type,
       expectedType;
-    // The XHR responds after 3000 milliseconds with a load event.
+    // The XHR responds after 2500 milliseconds with a load event.
     var timeLimit =
-      this.mustReset && this.resetAfter < Math.min(3000, this.timeLimit)
+      this.mustReset && this.resetAfter < Math.min(2500, this.timeLimit)
         ? this.resetTo
         : this.timeLimit;
-    if (timeLimit == 0 || timeLimit >= 3000) {
+    if (timeLimit == 0 || timeLimit >= 2500) {
       expectedType = "load";
     } else {
       expectedType = "timeout";
@@ -233,7 +233,7 @@ AbortedRequest.prototype = {
   /**
    * Get a message describing this test.
    *
-   * @returns {String} The test description.
+   * @returns {string} The test description.
    */
   getMessage() {
     return "time to abort is " + this.abortDelay + ", timeout set at 2000";
@@ -291,7 +291,7 @@ var TestRequests = [
   // Simple timeouts.
   new RequestTracker(true, "no time out scheduled, load fires normally", 0),
   new RequestTracker(true, "load fires normally", 5000),
-  new RequestTracker(true, "timeout hit before load", 2000),
+  new RequestTracker(true, "timeout hit before load", 1500),
 
   // Timeouts reset after a certain delay.
   new RequestTracker(
@@ -311,9 +311,9 @@ var TestRequests = [
   new RequestTracker(
     true,
     "timeout fires normally with same timeout set twice",
-    2000,
-    1000,
-    2000
+    1500,
+    750,
+    1500
   ),
 
   new RequestTracker(
@@ -328,7 +328,7 @@ var TestRequests = [
     "timeout overrides load after a delay",
     5000,
     1000,
-    2000
+    1500
   ),
   new RequestTracker(
     true,
@@ -379,7 +379,7 @@ var WorkerThreadTestRequests = [
   // Simple timeouts.
   new RequestTracker(false, "no time out scheduled, load fires normally", 0),
   new RequestTracker(false, "load fires normally", 5000),
-  new RequestTracker(false, "timeout hit before load", 2000),
+  new RequestTracker(false, "timeout hit before load", 1500),
 
   // Reset timeouts don't make much sense with a sync request ...
 ];

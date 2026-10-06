@@ -85,7 +85,7 @@ export const ContentProcessWatcherRegistry = {
    * Get all data objects for all currently active watcher actors.
    * If a specific target type is passed, this will only return objects of watcher actively watching for a given target type.
    *
-   * @param {String} targetType
+   * @param {string} targetType
    *        Optional target type to filter only a subset of watchers.
    * @return {Array|Iterator}
    *         List of data objects. (see createWatcherDataObject)
@@ -116,8 +116,8 @@ export const ContentProcessWatcherRegistry = {
   /**
    * Get the watcher data object for a given watcher actor.
    *
-   * @param {String} watcherActorID
-   * @param {Boolean} onlyFromCache
+   * @param {string} watcherActorID
+   * @param {boolean} onlyFromCache
    *        If set explicitly to true, will avoid falling back to shared data.
    *        This is typically useful on destructor/removing/cleanup to avoid creating unexpected data.
    *        It is also used to avoid the exception thrown when sharedData is cleared on toolbox destruction.
@@ -158,11 +158,11 @@ export const ContentProcessWatcherRegistry = {
    * and the parent process, which will route RDP packets from/to the client by using
    * a unique "forwarding prefix".
    *
-   * @param {String} watcherActorID
-   * @param {Boolean} useDistinctLoader
+   * @param {string} watcherActorID
+   * @param {boolean} useDistinctLoader
    *        To be set to true when debugging a privileged context running the shared system principal global.
    *        This is a requirement for spidermonkey Debugger API used by the thread actor.
-   * @return {Object}
+   * @return {object}
    *         Object with connection (DevToolsServerConnection) and loader (DevToolsLoader) attributes.
    */
   getOrCreateConnectionForWatcher(watcherActorID, useDistinctLoader) {
@@ -216,9 +216,9 @@ export const ContentProcessWatcherRegistry = {
   /**
    * Method to be called each time a new target actor is instantiated.
    *
-   * @param {Object} watcherDataObject
+   * @param {object} watcherDataObject
    * @param {Actor} targetActor
-   * @param {Boolean} isDocumentCreation
+   * @param {boolean} isDocumentCreation
    */
   onNewTargetActor(watcherDataObject, targetActor, isDocumentCreation = false) {
     // There is no root actor in content processes and so
@@ -279,7 +279,7 @@ export const ContentProcessWatcherRegistry = {
   /**
    * Method to be called each time a target actor is meant to be destroyed.
    *
-   * @param {Object} watcherDataObject
+   * @param {object} watcherDataObject
    * @param {Actor} targetActor
    * @param {object} options
    * @param {boolean} options.isModeSwitching
@@ -322,8 +322,8 @@ export const ContentProcessWatcherRegistry = {
   /**
    * Method to know if a given Watcher Actor is still registered.
    *
-   * @param {String} watcherActorID
-   * @return {Boolean}
+   * @param {string} watcherActorID
+   * @return {boolean}
    */
   has(watcherActorID) {
     return gAllWatcherData.has(watcherActorID);
@@ -332,7 +332,7 @@ export const ContentProcessWatcherRegistry = {
   /**
    * Method to unregister a given Watcher Actor.
    *
-   * @param {Object} watcherDataObject
+   * @param {object} watcherDataObject
    */
   remove(watcherDataObject) {
     // We do not need to destroy each actor individually as they
@@ -347,6 +347,9 @@ export const ContentProcessWatcherRegistry = {
       lazy.releaseDistinctSystemPrincipalLoader(watcherDataObject);
     }
 
+    if (watcherDataObject.htmlSourcesCache) {
+      watcherDataObject.htmlSourcesCache.destroy();
+    }
     gAllWatcherData.delete(watcherDataObject.watcherActorID);
     if (gAllWatcherData.size == 0) {
       gAllWatcherData = null;
@@ -356,7 +359,7 @@ export const ContentProcessWatcherRegistry = {
   /**
    * Method to know if there is no more Watcher registered.
    *
-   * @return {Boolean}
+   * @return {boolean}
    */
   isEmpty() {
     return !gAllWatcherData || gAllWatcherData.size == 0;

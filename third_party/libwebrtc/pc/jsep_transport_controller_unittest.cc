@@ -18,25 +18,24 @@
 #include <utility>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "api/candidate.h"
 #include "api/crypto/crypto_options.h"
 #include "api/dtls_transport_interface.h"
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
+#include "api/field_trials.h"
 #include "api/ice_transport_interface.h"
 #include "api/jsep.h"
 #include "api/make_ref_counted.h"
 #include "api/peer_connection_interface.h"
 #include "api/rtc_error.h"
+#include "api/rtp_transport_factory.h"
 #include "api/scoped_refptr.h"
 #include "api/test/rtc_error_matchers.h"
 #include "api/transport/data_channel_transport_interface.h"
 #include "api/transport/enums.h"
 #include "api/units/time_delta.h"
-#include "call/payload_type.h"
-#include "call/payload_type_picker.h"
-#include "media/base/codec.h"
-#include "media/base/media_constants.h"
 #include "p2p/base/ice_transport_internal.h"
 #include "p2p/base/p2p_constants.h"
 #include "p2p/base/port_allocator.h"
@@ -46,7 +45,9 @@
 #include "p2p/dtls/dtls_transport_internal.h"
 #include "p2p/dtls/fake_dtls_transport.h"
 #include "p2p/test/fake_ice_transport.h"
+#include "p2p/test/fake_port_allocator.h"
 #include "pc/dtls_transport.h"
+#include "pc/rtp_transport.h"
 #include "pc/rtp_transport_internal.h"
 #include "pc/session_description.h"
 #include "pc/transport_stats.h"
@@ -57,64 +58,64 @@
 #include "rtc_base/net_helper.h"
 #include "rtc_base/rtc_certificate.h"
 #include "rtc_base/socket_address.h"
+#include "rtc_base/ssl_certificate.h"
 #include "rtc_base/ssl_fingerprint.h"
 #include "rtc_base/ssl_identity.h"
 #include "rtc_base/ssl_stream_adapter.h"
 #include "rtc_base/task_queue_for_test.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread.h"
+#include "system_wrappers/include/metrics.h"
+#include "test/create_test_field_trials.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
-#include "test/scoped_key_value_config.h"
+#include "test/run_loop.h"
 #include "test/wait_until.h"
 
-using cricket::Candidate;
-using ::webrtc::Candidates;
-using ::webrtc::FakeDtlsTransport;
-
-static const int kTimeout = 100;
-static const char kIceUfrag1[] = "u0001";
-static const char kIcePwd1[] = "TESTICEPWD00000000000001";
-static const char kIceUfrag2[] = "u0002";
-static const char kIcePwd2[] = "TESTICEPWD00000000000002";
-static const char kIceUfrag3[] = "u0003";
-static const char kIcePwd3[] = "TESTICEPWD00000000000003";
-static const char kIceUfrag4[] = "u0004";
-static const char kIcePwd4[] = "TESTICEPWD00000000000004";
-static const char kAudioMid1[] = "audio1";
-static const char kAudioMid2[] = "audio2";
-static const char kVideoMid1[] = "video1";
-static const char kVideoMid2[] = "video2";
-static const char kDataMid1[] = "data1";
-
 namespace webrtc {
+namespace {
+
+using ::testing::ElementsAre;
+using ::testing::Pair;
+
+constexpr TimeDelta kTimeout = TimeDelta::Millis(100);
+const char kIceUfrag1[] = "u0001";
+const char kIcePwd1[] = "TESTICEPWD00000000000001";
+const char kIceUfrag2[] = "u0002";
+const char kIcePwd2[] = "TESTICEPWD00000000000002";
+const char kIceUfrag3[] = "u0003";
+const char kIcePwd3[] = "TESTICEPWD00000000000003";
+const char kIceUfrag4[] = "u0004";
+const char kIcePwd4[] = "TESTICEPWD00000000000004";
+const char kAudioMid1[] = "audio1";
+const char kAudioMid2[] = "audio2";
+const char kVideoMid1[] = "video1";
+const char kVideoMid2[] = "video2";
+const char kDataMid1[] = "data1";
 
 class FakeIceTransportFactory : public IceTransportFactory {
  public:
   ~FakeIceTransportFactory() override = default;
-  rtc::scoped_refptr<IceTransportInterface> CreateIceTransport(
+  scoped_refptr<IceTransportInterface> CreateIceTransport(
       const std::string& transport_name,
       int component,
       IceTransportInit init) override {
-    return rtc::make_ref_counted<cricket::FakeIceTransportWrapper>(
-        std::make_unique<cricket::FakeIceTransport>(transport_name, component));
+    return make_ref_counted<FakeIceTransport>(
+        std::make_unique<FakeIceTransportInternal>(transport_name, component));
   }
 };
 
-class FakeDtlsTransportFactory : public cricket::DtlsTransportFactory {
+class FakeDtlsTransportFactory : public DtlsTransportFactory {
  public:
-  std::unique_ptr<cricket::DtlsTransportInternal> CreateDtlsTransport(
-      IceTransportInternal* ice,
+  std::unique_ptr<DtlsTransportInternal> CreateDtlsTransport(
+      scoped_refptr<IceTransportInterface> ice,
       const CryptoOptions& crypto_options,
       SSLProtocolVersion max_version) override {
-    return std::make_unique<FakeDtlsTransport>(
-        static_cast<cricket::FakeIceTransport*>(ice));
+    return std::make_unique<FakeDtlsTransport>(std::move(ice));
   }
 };
 
 class JsepTransportControllerTest : public JsepTransportController::Observer,
-                                    public ::testing::Test,
-                                    public sigslot::has_slots<> {
+                                    public ::testing::Test {
  public:
   JsepTransportControllerTest()
       : env_(CreateEnvironment(&field_trials_)),
@@ -122,65 +123,67 @@ class JsepTransportControllerTest : public JsepTransportController::Observer,
     fake_ice_transport_factory_ = std::make_unique<FakeIceTransportFactory>();
     fake_dtls_transport_factory_ = std::make_unique<FakeDtlsTransportFactory>();
   }
+  ~JsepTransportControllerTest() override {
+    if (network_thread_ != nullptr && port_allocator_) {
+      network_thread_->BlockingCall([&] { port_allocator_ = std::nullopt; });
+    }
+  }
 
   void CreateJsepTransportController(JsepTransportController::Config config,
                                      Thread* network_thread = Thread::Current(),
                                      PortAllocator* port_allocator = nullptr) {
+    if (port_allocator == nullptr) {
+      if (!port_allocator_) {
+        port_allocator_.emplace(env_, network_thread->socketserver(),
+                                network_thread);
+      }
+      port_allocator = &*port_allocator_;
+    }
     config.transport_observer = this;
-    config.rtcp_handler = [](const rtc::CopyOnWriteBuffer& packet,
+    config.rtcp_handler = [](const CopyOnWriteBuffer& packet,
                              int64_t packet_time_us) {
       RTC_DCHECK_NOTREACHED();
     };
     config.ice_transport_factory = fake_ice_transport_factory_.get();
     config.dtls_transport_factory = fake_dtls_transport_factory_.get();
-    config.on_dtls_handshake_error_ = [](rtc::SSLHandshakeError s) {};
-    transport_controller_ = std::make_unique<JsepTransportController>(
-        env_, network_thread, port_allocator,
-        nullptr /* async_resolver_factory */, payload_type_picker_,
-        std::move(config));
-    SendTask(network_thread, [&] { ConnectTransportControllerSignals(); });
-  }
-
-  void ConnectTransportControllerSignals() {
-    transport_controller_->SubscribeIceConnectionState(
-        [this](cricket::IceConnectionState s) {
-          JsepTransportControllerTest::OnConnectionState(s);
-        });
-    transport_controller_->SubscribeConnectionState(
+    config.signal_ice_candidates_gathered =
+        [this](absl::string_view transport,
+               const std::vector<Candidate>& candidates) {
+          OnCandidatesGathered(transport, candidates);
+        };
+    config.signal_ice_connection_state = [this](IceConnectionState s) {
+      OnConnectionState(s);
+    };
+    config.signal_connection_state =
         [this](PeerConnectionInterface::PeerConnectionState s) {
-          JsepTransportControllerTest::OnCombinedConnectionState(s);
-        });
-    transport_controller_->SubscribeStandardizedIceConnectionState(
+          OnCombinedConnectionState(s);
+        };
+    config.signal_standardized_ice_connection_state =
         [this](PeerConnectionInterface::IceConnectionState s) {
-          JsepTransportControllerTest::OnStandardizedIceConnectionState(s);
-        });
-    transport_controller_->SubscribeIceGatheringState(
-        [this](cricket::IceGatheringState s) {
-          JsepTransportControllerTest::OnGatheringState(s);
-        });
-    transport_controller_->SubscribeIceCandidateGathered(
-        [this](const std::string& transport,
-               const std::vector<cricket::Candidate>& candidates) {
-          JsepTransportControllerTest::OnCandidatesGathered(transport,
-                                                            candidates);
-        });
+          OnStandardizedIceConnectionState(s);
+        };
+    config.signal_ice_gathering_state = [this](IceGatheringState s) {
+      OnGatheringState(s);
+    };
+    transport_controller_ = std::make_unique<JsepTransportController>(
+        env_, signaling_thread_, network_thread, port_allocator,
+        /*async_resolver_factory=*/nullptr,
+        /*lna_permission_factory=*/nullptr, std::move(config));
   }
 
   std::unique_ptr<SessionDescription> CreateSessionDescriptionWithoutBundle() {
     auto description = std::make_unique<SessionDescription>();
     AddAudioSection(description.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                    cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                    nullptr);
+                    ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
     AddVideoSection(description.get(), kVideoMid1, kIceUfrag1, kIcePwd1,
-                    cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                    nullptr);
+                    ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
     return description;
   }
 
   std::unique_ptr<SessionDescription>
   CreateSessionDescriptionWithBundleGroup() {
     auto description = CreateSessionDescriptionWithoutBundle();
-    ContentGroup bundle_group(cricket::GROUP_TYPE_BUNDLE);
+    ContentGroup bundle_group(GROUP_TYPE_BUNDLE);
     bundle_group.AddContentName(kAudioMid1);
     bundle_group.AddContentName(kVideoMid1);
     description->AddGroup(bundle_group);
@@ -192,9 +195,9 @@ class JsepTransportControllerTest : public JsepTransportController::Observer,
   CreateSessionDescriptionWithBundledData() {
     auto description = CreateSessionDescriptionWithoutBundle();
     AddDataSection(description.get(), kDataMid1, MediaProtocolType::kSctp,
-                   kIceUfrag1, kIcePwd1, cricket::ICEMODE_FULL,
-                   cricket::CONNECTIONROLE_ACTPASS, nullptr);
-    ContentGroup bundle_group(cricket::GROUP_TYPE_BUNDLE);
+                   kIceUfrag1, kIcePwd1, ICEMODE_FULL, CONNECTIONROLE_ACTPASS,
+                   nullptr);
+    ContentGroup bundle_group(GROUP_TYPE_BUNDLE);
     bundle_group.AddContentName(kAudioMid1);
     bundle_group.AddContentName(kVideoMid1);
     bundle_group.AddContentName(kDataMid1);
@@ -206,9 +209,9 @@ class JsepTransportControllerTest : public JsepTransportController::Observer,
                        const std::string& mid,
                        const std::string& ufrag,
                        const std::string& pwd,
-                       cricket::IceMode ice_mode,
-                       cricket::ConnectionRole conn_role,
-                       rtc::scoped_refptr<RTCCertificate> cert) {
+                       IceMode ice_mode,
+                       ConnectionRole conn_role,
+                       scoped_refptr<RTCCertificate> cert) {
     std::unique_ptr<AudioContentDescription> audio(
         new AudioContentDescription());
     // Set RTCP-mux to be true because the default policy is "mux required".
@@ -222,9 +225,9 @@ class JsepTransportControllerTest : public JsepTransportController::Observer,
                        const std::string& mid,
                        const std::string& ufrag,
                        const std::string& pwd,
-                       cricket::IceMode ice_mode,
-                       cricket::ConnectionRole conn_role,
-                       rtc::scoped_refptr<RTCCertificate> cert) {
+                       IceMode ice_mode,
+                       ConnectionRole conn_role,
+                       scoped_refptr<RTCCertificate> cert) {
     std::unique_ptr<VideoContentDescription> video(
         new VideoContentDescription());
     // Set RTCP-mux to be true because the default policy is "mux required".
@@ -239,9 +242,9 @@ class JsepTransportControllerTest : public JsepTransportController::Observer,
                       MediaProtocolType protocol_type,
                       const std::string& ufrag,
                       const std::string& pwd,
-                      cricket::IceMode ice_mode,
-                      cricket::ConnectionRole conn_role,
-                      rtc::scoped_refptr<RTCCertificate> cert) {
+                      IceMode ice_mode,
+                      ConnectionRole conn_role,
+                      scoped_refptr<RTCCertificate> cert) {
     RTC_CHECK(protocol_type == MediaProtocolType::kSctp);
     std::unique_ptr<SctpDataContentDescription> data(
         new SctpDataContentDescription());
@@ -255,22 +258,21 @@ class JsepTransportControllerTest : public JsepTransportController::Observer,
                         const std::string& mid,
                         const std::string& ufrag,
                         const std::string& pwd,
-                        cricket::IceMode ice_mode,
-                        cricket::ConnectionRole conn_role,
-                        rtc::scoped_refptr<RTCCertificate> cert) {
-    std::unique_ptr<rtc::SSLFingerprint> fingerprint;
+                        IceMode ice_mode,
+                        ConnectionRole conn_role,
+                        scoped_refptr<RTCCertificate> cert) {
+    std::unique_ptr<SSLFingerprint> fingerprint;
     if (cert) {
-      fingerprint = rtc::SSLFingerprint::CreateFromCertificate(*cert);
+      fingerprint = SSLFingerprint::CreateFromCertificate(*cert);
     }
 
-    cricket::TransportDescription transport_desc(std::vector<std::string>(),
-                                                 ufrag, pwd, ice_mode,
-                                                 conn_role, fingerprint.get());
-    description->AddTransportInfo(cricket::TransportInfo(mid, transport_desc));
+    TransportDescription transport_desc(std::vector<std::string>(), ufrag, pwd,
+                                        ice_mode, conn_role, fingerprint.get());
+    description->AddTransportInfo(TransportInfo(mid, transport_desc));
   }
 
   IceConfig CreateIceConfig(
-      int receiving_timeout,
+      TimeDelta receiving_timeout,
       ContinualGatheringPolicy continual_gathering_policy) {
     IceConfig config;
     config.receiving_timeout = receiving_timeout;
@@ -278,55 +280,47 @@ class JsepTransportControllerTest : public JsepTransportController::Observer,
     return config;
   }
 
-  Candidate CreateCandidate(const std::string& transport_name, int component) {
+  Candidate CreateCandidate(int component = ICE_CANDIDATE_COMPONENT_RTP) {
     Candidate c;
-    c.set_transport_name(transport_name);
     c.set_address(SocketAddress("192.168.1.1", 8000));
     c.set_component(component);
-    c.set_protocol(cricket::UDP_PROTOCOL_NAME);
+    c.set_protocol(UDP_PROTOCOL_NAME);
     c.set_priority(1);
     return c;
   }
 
-  void CreateLocalDescriptionAndCompleteConnectionOnNetworkThread() {
-    if (!network_thread_->IsCurrent()) {
-      SendTask(network_thread_.get(), [&] {
-        CreateLocalDescriptionAndCompleteConnectionOnNetworkThread();
-      });
-      return;
-    }
-
+  void CreateLocalDescriptionAndCompleteConnection() {
     auto description = CreateSessionDescriptionWithBundleGroup();
     EXPECT_TRUE(
         transport_controller_
             ->SetLocalDescription(SdpType::kOffer, description.get(), nullptr)
             .ok());
-
     transport_controller_->MaybeStartGathering();
-    auto fake_audio_dtls = static_cast<FakeDtlsTransport*>(
-        transport_controller_->GetDtlsTransport(kAudioMid1));
-    auto fake_video_dtls = static_cast<FakeDtlsTransport*>(
-        transport_controller_->GetDtlsTransport(kVideoMid1));
-    fake_audio_dtls->fake_ice_transport()->SignalCandidateGathered(
-        fake_audio_dtls->fake_ice_transport(),
-        CreateCandidate(kAudioMid1, /*component=*/1));
-    fake_video_dtls->fake_ice_transport()->SignalCandidateGathered(
-        fake_video_dtls->fake_ice_transport(),
-        CreateCandidate(kVideoMid1, /*component=*/1));
-    fake_audio_dtls->fake_ice_transport()->SetCandidatesGatheringComplete();
-    fake_video_dtls->fake_ice_transport()->SetCandidatesGatheringComplete();
-    fake_audio_dtls->fake_ice_transport()->SetConnectionCount(2);
-    fake_video_dtls->fake_ice_transport()->SetConnectionCount(2);
-    fake_audio_dtls->SetReceiving(true);
-    fake_video_dtls->SetReceiving(true);
-    fake_audio_dtls->SetWritable(true);
-    fake_video_dtls->SetWritable(true);
-    fake_audio_dtls->fake_ice_transport()->SetConnectionCount(1);
-    fake_video_dtls->fake_ice_transport()->SetConnectionCount(1);
+
+    SendTask(network_thread_.get(), [this] {
+      auto fake_audio_dtls = static_cast<FakeDtlsTransport*>(
+          transport_controller_->GetDtlsTransport(kAudioMid1));
+      auto fake_video_dtls = static_cast<FakeDtlsTransport*>(
+          transport_controller_->GetDtlsTransport(kVideoMid1));
+      fake_audio_dtls->fake_ice_transport()->NotifyCandidateGathered(
+          fake_audio_dtls->fake_ice_transport(), CreateCandidate());
+      fake_video_dtls->fake_ice_transport()->NotifyCandidateGathered(
+          fake_video_dtls->fake_ice_transport(), CreateCandidate());
+      fake_audio_dtls->fake_ice_transport()->SetCandidatesGatheringComplete();
+      fake_video_dtls->fake_ice_transport()->SetCandidatesGatheringComplete();
+      fake_audio_dtls->fake_ice_transport()->SetConnectionCount(2);
+      fake_video_dtls->fake_ice_transport()->SetConnectionCount(2);
+      fake_audio_dtls->SetReceiving(true);
+      fake_video_dtls->SetReceiving(true);
+      fake_audio_dtls->SetWritable(true);
+      fake_video_dtls->SetWritable(true);
+      fake_audio_dtls->fake_ice_transport()->SetConnectionCount(1);
+      fake_video_dtls->fake_ice_transport()->SetConnectionCount(1);
+    });
   }
 
  protected:
-  void OnConnectionState(cricket::IceConnectionState state) {
+  void OnConnectionState(IceConnectionState state) {
     ice_signaled_on_thread_ = Thread::Current();
     connection_state_ = state;
     ++connection_state_signal_count_;
@@ -354,35 +348,32 @@ class JsepTransportControllerTest : public JsepTransportController::Observer,
     ++gathering_state_signal_count_;
   }
 
-  void OnCandidatesGathered(const std::string& transport_name,
+  void OnCandidatesGathered(absl::string_view transport_name,
                             const Candidates& candidates) {
     ice_signaled_on_thread_ = Thread::Current();
-    candidates_[transport_name].insert(candidates_[transport_name].end(),
-                                       candidates.begin(), candidates.end());
+    std::string str_name(transport_name);
+    candidates_[str_name].insert(candidates_[str_name].end(),
+                                 candidates.begin(), candidates.end());
     ++candidates_signal_count_;
   }
 
   // JsepTransportController::Observer overrides.
   bool OnTransportChanged(
-      const std::string& mid,
+      absl::string_view mid,
       RtpTransportInternal* rtp_transport,
-      rtc::scoped_refptr<DtlsTransport> dtls_transport,
+      scoped_refptr<DtlsTransport> dtls_transport,
       DataChannelTransportInterface* data_channel_transport) override {
-    changed_rtp_transport_by_mid_[mid] = rtp_transport;
-    if (dtls_transport) {
-      changed_dtls_transport_by_mid_[mid] = dtls_transport->internal();
-    } else {
-      changed_dtls_transport_by_mid_[mid] = nullptr;
-    }
+    std::string str_mid(mid);
+    changed_rtp_transport_by_mid_[str_mid] = rtp_transport;
+    changed_dtls_transport_by_mid_[str_mid] = dtls_transport;
     return true;
   }
 
-  test::ScopedKeyValueConfig field_trials_;
+  FieldTrials field_trials_ = CreateTestFieldTrials();
   Environment env_;
-  AutoThread main_thread_;
+  test::RunLoop main_thread_;
   // Information received from signals from transport controller.
-  cricket::IceConnectionState connection_state_ =
-      cricket::kIceConnectionConnecting;
+  IceConnectionState connection_state_ = kIceConnectionConnecting;
   PeerConnectionInterface::IceConnectionState ice_connection_state_ =
       PeerConnectionInterface::kIceConnectionNew;
   PeerConnectionInterface::PeerConnectionState combined_connection_state_ =
@@ -403,14 +394,15 @@ class JsepTransportControllerTest : public JsepTransportController::Observer,
   std::unique_ptr<Thread> network_thread_;
   std::unique_ptr<FakeIceTransportFactory> fake_ice_transport_factory_;
   std::unique_ptr<FakeDtlsTransportFactory> fake_dtls_transport_factory_;
+  std::optional<FakePortAllocator> port_allocator_;
   Thread* const signaling_thread_ = nullptr;
   Thread* ice_signaled_on_thread_ = nullptr;
   // Used to verify the SignalRtpTransportChanged/SignalDtlsTransportChanged are
   // signaled correctly.
   std::map<std::string, RtpTransportInternal*> changed_rtp_transport_by_mid_;
-  std::map<std::string, cricket::DtlsTransportInternal*>
+  std::map<std::string, scoped_refptr<DtlsTransport>>
       changed_dtls_transport_by_mid_;
-  webrtc::PayloadTypePicker payload_type_picker_;
+  std::unique_ptr<RtpTransportFactory> custom_rtp_transport_factory_ = nullptr;
   // Transport controller needs to be destroyed first, because it may issue
   // callbacks that modify the changed_*_by_mid in the destructor.
   std::unique_ptr<JsepTransportController> transport_controller_;
@@ -442,11 +434,9 @@ TEST_F(JsepTransportControllerTest, GetDtlsTransport) {
           ->SetLocalDescription(SdpType::kOffer, description.get(), nullptr)
           .ok());
   EXPECT_NE(nullptr, transport_controller_->GetDtlsTransport(kAudioMid1));
-  EXPECT_NE(nullptr, transport_controller_->GetRtcpDtlsTransport(kAudioMid1));
   EXPECT_NE(nullptr,
             transport_controller_->LookupDtlsTransportByMid(kAudioMid1));
   EXPECT_NE(nullptr, transport_controller_->GetDtlsTransport(kVideoMid1));
-  EXPECT_NE(nullptr, transport_controller_->GetRtcpDtlsTransport(kVideoMid1));
   EXPECT_NE(nullptr,
             transport_controller_->LookupDtlsTransportByMid(kVideoMid1));
   // Lookup for all MIDs should return different transports (no bundle)
@@ -454,7 +444,6 @@ TEST_F(JsepTransportControllerTest, GetDtlsTransport) {
             transport_controller_->LookupDtlsTransportByMid(kVideoMid1));
   // Return nullptr for non-existing ones.
   EXPECT_EQ(nullptr, transport_controller_->GetDtlsTransport(kVideoMid2));
-  EXPECT_EQ(nullptr, transport_controller_->GetRtcpDtlsTransport(kVideoMid2));
   EXPECT_EQ(nullptr,
             transport_controller_->LookupDtlsTransportByMid(kVideoMid2));
   // Take a pointer to a transport, shut down the transport controller,
@@ -463,9 +452,9 @@ TEST_F(JsepTransportControllerTest, GetDtlsTransport) {
       transport_controller_->LookupDtlsTransportByMid(kVideoMid1);
   DtlsTransport* my_transport =
       static_cast<DtlsTransport*>(dtls_transport.get());
-  EXPECT_NE(nullptr, my_transport->internal());
+  EXPECT_EQ(DtlsTransportState::kNew, my_transport->Information().state());
   transport_controller_.reset();
-  EXPECT_EQ(nullptr, my_transport->internal());
+  EXPECT_EQ(DtlsTransportState::kClosed, my_transport->Information().state());
 }
 
 TEST_F(JsepTransportControllerTest, GetDtlsTransportWithRtcpMux) {
@@ -478,9 +467,7 @@ TEST_F(JsepTransportControllerTest, GetDtlsTransportWithRtcpMux) {
           ->SetLocalDescription(SdpType::kOffer, description.get(), nullptr)
           .ok());
   EXPECT_NE(nullptr, transport_controller_->GetDtlsTransport(kAudioMid1));
-  EXPECT_EQ(nullptr, transport_controller_->GetRtcpDtlsTransport(kAudioMid1));
   EXPECT_NE(nullptr, transport_controller_->GetDtlsTransport(kVideoMid1));
-  EXPECT_EQ(nullptr, transport_controller_->GetRtcpDtlsTransport(kVideoMid1));
 }
 
 TEST_F(JsepTransportControllerTest, SetIceConfig) {
@@ -502,8 +489,7 @@ TEST_F(JsepTransportControllerTest, SetIceConfig) {
 
   // Test that value stored in controller is applied to new transports.
   AddAudioSection(description.get(), kAudioMid2, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
 
   EXPECT_TRUE(
       transport_controller_
@@ -534,9 +520,11 @@ TEST_F(JsepTransportControllerTest, NeedIceRestart) {
   // Initially NeedsIceRestart should return false.
   EXPECT_FALSE(transport_controller_->NeedsIceRestart(kAudioMid1));
   EXPECT_FALSE(transport_controller_->NeedsIceRestart(kVideoMid1));
-  // Set the needs-ice-restart flag and verify NeedsIceRestart starts returning
-  // true.
+  // Set the needs-ice-restart flag, synchronize the transport states and verify
+  // NeedsIceRestart starts returning true.
   transport_controller_->SetNeedsIceRestartFlag();
+  transport_controller_->SetTransportStates(
+      transport_controller_->GetTransportStates_n());
   EXPECT_TRUE(transport_controller_->NeedsIceRestart(kAudioMid1));
   EXPECT_TRUE(transport_controller_->NeedsIceRestart(kVideoMid1));
   // For a nonexistent transport, false should be returned.
@@ -567,8 +555,7 @@ TEST_F(JsepTransportControllerTest, MaybeStartGathering) {
   // candidates.
   transport_controller_->MaybeStartGathering();
   EXPECT_THAT(WaitUntil([&] { return kIceGatheringGathering; },
-                        ::testing::Eq(gathering_state_),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                        ::testing::Eq(gathering_state_), {.timeout = kTimeout}),
               IsRtcOk());
   EXPECT_EQ(1, gathering_state_signal_count_);
 }
@@ -584,14 +571,14 @@ TEST_F(JsepTransportControllerTest, AddRemoveRemoteCandidates) {
       transport_controller_->GetDtlsTransport(kAudioMid1));
   ASSERT_NE(nullptr, fake_audio_dtls);
   Candidates candidates;
-  candidates.push_back(
-      CreateCandidate(kAudioMid1, cricket::ICE_CANDIDATE_COMPONENT_RTP));
+  candidates.push_back(CreateCandidate());
   EXPECT_TRUE(
       transport_controller_->AddRemoteCandidates(kAudioMid1, candidates).ok());
   EXPECT_EQ(1U,
             fake_audio_dtls->fake_ice_transport()->remote_candidates().size());
 
-  EXPECT_TRUE(transport_controller_->RemoveRemoteCandidates(candidates).ok());
+  IceCandidate ice_candidate(kAudioMid1, -1, candidates[0]);
+  EXPECT_TRUE(transport_controller_->RemoveRemoteCandidate(&ice_candidate));
   EXPECT_EQ(0U,
             fake_audio_dtls->fake_ice_transport()->remote_candidates().size());
 }
@@ -599,14 +586,13 @@ TEST_F(JsepTransportControllerTest, AddRemoveRemoteCandidates) {
 TEST_F(JsepTransportControllerTest, SetAndGetLocalCertificate) {
   CreateJsepTransportController(JsepTransportController::Config());
 
-  rtc::scoped_refptr<RTCCertificate> certificate1 = RTCCertificate::Create(
-      rtc::SSLIdentity::Create("session1", rtc::KT_DEFAULT));
-  rtc::scoped_refptr<RTCCertificate> returned_certificate;
+  scoped_refptr<RTCCertificate> certificate1 =
+      RTCCertificate::Create(SSLIdentity::Create("session1", KT_DEFAULT));
+  scoped_refptr<RTCCertificate> returned_certificate;
 
   auto description = std::make_unique<SessionDescription>();
   AddAudioSection(description.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  certificate1);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, certificate1);
 
   // Apply the local certificate.
   EXPECT_TRUE(transport_controller_->SetLocalCertificate(certificate1));
@@ -624,8 +610,8 @@ TEST_F(JsepTransportControllerTest, SetAndGetLocalCertificate) {
   EXPECT_EQ(nullptr, transport_controller_->GetLocalCertificate(kVideoMid1));
 
   // Shouldn't be able to change the identity once set.
-  rtc::scoped_refptr<RTCCertificate> certificate2 = RTCCertificate::Create(
-      rtc::SSLIdentity::Create("session2", rtc::KT_DEFAULT));
+  scoped_refptr<RTCCertificate> certificate2 =
+      RTCCertificate::Create(SSLIdentity::Create("session2", KT_DEFAULT));
   EXPECT_FALSE(transport_controller_->SetLocalCertificate(certificate2));
 }
 
@@ -641,7 +627,7 @@ TEST_F(JsepTransportControllerTest, GetRemoteSSLCertChain) {
   auto fake_audio_dtls = static_cast<FakeDtlsTransport*>(
       transport_controller_->GetDtlsTransport(kAudioMid1));
   fake_audio_dtls->SetRemoteSSLCertificate(&fake_certificate);
-  std::unique_ptr<rtc::SSLCertChain> returned_cert_chain =
+  std::unique_ptr<SSLCertChain> returned_cert_chain =
       transport_controller_->GetRemoteSSLCertChain(kAudioMid1);
   ASSERT_TRUE(returned_cert_chain);
   ASSERT_EQ(1u, returned_cert_chain->GetSize());
@@ -654,20 +640,18 @@ TEST_F(JsepTransportControllerTest, GetRemoteSSLCertChain) {
 
 TEST_F(JsepTransportControllerTest, GetDtlsRole) {
   CreateJsepTransportController(JsepTransportController::Config());
-  auto offer_certificate = RTCCertificate::Create(
-      rtc::SSLIdentity::Create("offer", rtc::KT_DEFAULT));
-  auto answer_certificate = RTCCertificate::Create(
-      rtc::SSLIdentity::Create("answer", rtc::KT_DEFAULT));
+  auto offer_certificate =
+      RTCCertificate::Create(SSLIdentity::Create("offer", KT_DEFAULT));
+  auto answer_certificate =
+      RTCCertificate::Create(SSLIdentity::Create("answer", KT_DEFAULT));
   transport_controller_->SetLocalCertificate(offer_certificate);
 
   auto offer_desc = std::make_unique<SessionDescription>();
   AddAudioSection(offer_desc.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  offer_certificate);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, offer_certificate);
   auto answer_desc = std::make_unique<SessionDescription>();
   AddAudioSection(answer_desc.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_PASSIVE,
-                  answer_certificate);
+                  ICEMODE_FULL, CONNECTIONROLE_PASSIVE, answer_certificate);
 
   EXPECT_TRUE(
       transport_controller_
@@ -695,7 +679,7 @@ TEST_F(JsepTransportControllerTest, GetStats) {
           ->SetLocalDescription(SdpType::kOffer, description.get(), nullptr)
           .ok());
 
-  cricket::TransportStats stats;
+  TransportStats stats;
   EXPECT_TRUE(transport_controller_->GetStats(kAudioMid1, &stats));
   EXPECT_EQ(kAudioMid1, stats.transport_name);
   EXPECT_EQ(1u, stats.channel_stats.size());
@@ -711,28 +695,26 @@ TEST_F(JsepTransportControllerTest, SignalConnectionStateFailed) {
           ->SetLocalDescription(SdpType::kOffer, description.get(), nullptr)
           .ok());
 
-  auto fake_ice = static_cast<cricket::FakeIceTransport*>(
+  auto fake_ice = static_cast<FakeIceTransportInternal*>(
       transport_controller_->GetDtlsTransport(kAudioMid1)->ice_transport());
   fake_ice->SetCandidatesGatheringComplete();
   fake_ice->SetConnectionCount(1);
   // The connection stats will be failed if there is no active connection.
   fake_ice->SetConnectionCount(0);
-  EXPECT_THAT(WaitUntil([&] { return cricket::kIceConnectionFailed; },
-                        ::testing::Eq(connection_state_),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
-              IsRtcOk());
+  EXPECT_THAT(
+      WaitUntil([&] { return kIceConnectionFailed; },
+                ::testing::Eq(connection_state_), {.timeout = kTimeout}),
+      IsRtcOk());
   EXPECT_EQ(1, connection_state_signal_count_);
   EXPECT_THAT(
       WaitUntil([&] { return PeerConnectionInterface::kIceConnectionFailed; },
-                ::testing::Eq(ice_connection_state_),
-                {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                ::testing::Eq(ice_connection_state_), {.timeout = kTimeout}),
       IsRtcOk());
   EXPECT_EQ(1, ice_connection_state_signal_count_);
   EXPECT_THAT(
       WaitUntil(
           [&] { return PeerConnectionInterface::PeerConnectionState::kFailed; },
-          ::testing::Eq(combined_connection_state_),
-          {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+          ::testing::Eq(combined_connection_state_), {.timeout = kTimeout}),
       IsRtcOk());
   EXPECT_EQ(1, combined_connection_state_signal_count_);
 }
@@ -762,41 +744,38 @@ TEST_F(JsepTransportControllerTest,
   fake_video_dtls->fake_ice_transport()->SetConnectionCount(0);
   fake_video_dtls->fake_ice_transport()->SetCandidatesGatheringComplete();
 
-  EXPECT_THAT(WaitUntil([&] { return cricket::kIceConnectionFailed; },
-                        ::testing::Eq(connection_state_),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
-              IsRtcOk());
+  EXPECT_THAT(
+      WaitUntil([&] { return kIceConnectionFailed; },
+                ::testing::Eq(connection_state_), {.timeout = kTimeout}),
+      IsRtcOk());
   EXPECT_EQ(1, connection_state_signal_count_);
   EXPECT_THAT(
       WaitUntil([&] { return PeerConnectionInterface::kIceConnectionFailed; },
-                ::testing::Eq(ice_connection_state_),
-                {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                ::testing::Eq(ice_connection_state_), {.timeout = kTimeout}),
       IsRtcOk());
   EXPECT_EQ(2, ice_connection_state_signal_count_);
   EXPECT_THAT(
       WaitUntil(
           [&] { return PeerConnectionInterface::PeerConnectionState::kFailed; },
-          ::testing::Eq(combined_connection_state_),
-          {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+          ::testing::Eq(combined_connection_state_), {.timeout = kTimeout}),
       IsRtcOk());
   EXPECT_EQ(2, combined_connection_state_signal_count_);
 
   fake_audio_dtls->SetDtlsState(DtlsTransportState::kConnected);
   fake_video_dtls->SetDtlsState(DtlsTransportState::kConnected);
-  // Set the connection count to be 2 and the cricket::FakeIceTransport will set
-  // the transport state to be STATE_CONNECTING.
+  // Set the connection count to be 2 and the webrtc::FakeIceTransportInternal
+  // will set the transport state to be STATE_CONNECTING.
   fake_video_dtls->fake_ice_transport()->SetConnectionCount(2);
   fake_video_dtls->SetWritable(true);
-  EXPECT_THAT(WaitUntil([&] { return cricket::kIceConnectionConnected; },
-                        ::testing::Eq(connection_state_),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
-              IsRtcOk());
+  EXPECT_THAT(
+      WaitUntil([&] { return kIceConnectionConnected; },
+                ::testing::Eq(connection_state_), {.timeout = kTimeout}),
+      IsRtcOk());
   EXPECT_EQ(2, connection_state_signal_count_);
   EXPECT_THAT(
       WaitUntil(
           [&] { return PeerConnectionInterface::kIceConnectionConnected; },
-          ::testing::Eq(ice_connection_state_),
-          {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+          ::testing::Eq(ice_connection_state_), {.timeout = kTimeout}),
       IsRtcOk());
   EXPECT_EQ(3, ice_connection_state_signal_count_);
   EXPECT_THAT(
@@ -804,8 +783,7 @@ TEST_F(JsepTransportControllerTest,
           [&] {
             return PeerConnectionInterface::PeerConnectionState::kConnected;
           },
-          ::testing::Eq(combined_connection_state_),
-          {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+          ::testing::Eq(combined_connection_state_), {.timeout = kTimeout}),
       IsRtcOk());
   EXPECT_EQ(3, combined_connection_state_signal_count_);
 }
@@ -828,14 +806,13 @@ TEST_F(JsepTransportControllerTest, SignalConnectionStateComplete) {
   // We should only get a signal when all are connected.
   fake_audio_dtls->fake_ice_transport()->SetTransportState(
       IceTransportState::kCompleted,
-      cricket::IceTransportState::STATE_COMPLETED);
+      IceTransportStateInternal::STATE_COMPLETED);
   fake_audio_dtls->SetWritable(true);
   fake_audio_dtls->fake_ice_transport()->SetCandidatesGatheringComplete();
 
   EXPECT_THAT(
       WaitUntil([&] { return PeerConnectionInterface::kIceConnectionChecking; },
-                ::testing::Eq(ice_connection_state_),
-                {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                ::testing::Eq(ice_connection_state_), {.timeout = kTimeout}),
       IsRtcOk());
   EXPECT_EQ(1, ice_connection_state_signal_count_);
   EXPECT_THAT(
@@ -843,52 +820,48 @@ TEST_F(JsepTransportControllerTest, SignalConnectionStateComplete) {
           [&] {
             return PeerConnectionInterface::PeerConnectionState::kConnecting;
           },
-          ::testing::Eq(combined_connection_state_),
-          {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+          ::testing::Eq(combined_connection_state_), {.timeout = kTimeout}),
       IsRtcOk());
   EXPECT_EQ(1, combined_connection_state_signal_count_);
 
   fake_video_dtls->fake_ice_transport()->SetTransportState(
-      IceTransportState::kFailed, cricket::IceTransportState::STATE_FAILED);
+      IceTransportState::kFailed, IceTransportStateInternal::STATE_FAILED);
   fake_video_dtls->fake_ice_transport()->SetCandidatesGatheringComplete();
 
-  EXPECT_THAT(WaitUntil([&] { return cricket::kIceConnectionFailed; },
-                        ::testing::Eq(connection_state_),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
-              IsRtcOk());
+  EXPECT_THAT(
+      WaitUntil([&] { return kIceConnectionFailed; },
+                ::testing::Eq(connection_state_), {.timeout = kTimeout}),
+      IsRtcOk());
   EXPECT_EQ(1, connection_state_signal_count_);
   EXPECT_THAT(
       WaitUntil([&] { return PeerConnectionInterface::kIceConnectionFailed; },
-                ::testing::Eq(ice_connection_state_),
-                {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                ::testing::Eq(ice_connection_state_), {.timeout = kTimeout}),
       IsRtcOk());
   EXPECT_EQ(2, ice_connection_state_signal_count_);
   EXPECT_THAT(
       WaitUntil(
           [&] { return PeerConnectionInterface::PeerConnectionState::kFailed; },
-          ::testing::Eq(combined_connection_state_),
-          {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+          ::testing::Eq(combined_connection_state_), {.timeout = kTimeout}),
       IsRtcOk());
   EXPECT_EQ(2, combined_connection_state_signal_count_);
 
   fake_audio_dtls->SetDtlsState(DtlsTransportState::kConnected);
   fake_video_dtls->SetDtlsState(DtlsTransportState::kConnected);
-  // Set the connection count to be 1 and the cricket::FakeIceTransport will set
-  // the transport state to be STATE_COMPLETED.
+  // Set the connection count to be 1 and the webrtc::FakeIceTransportInternal
+  // will set the transport state to be STATE_COMPLETED.
   fake_video_dtls->fake_ice_transport()->SetTransportState(
       IceTransportState::kCompleted,
-      cricket::IceTransportState::STATE_COMPLETED);
+      IceTransportStateInternal::STATE_COMPLETED);
   fake_video_dtls->SetWritable(true);
-  EXPECT_THAT(WaitUntil([&] { return cricket::kIceConnectionCompleted; },
-                        ::testing::Eq(connection_state_),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
-              IsRtcOk());
+  EXPECT_THAT(
+      WaitUntil([&] { return kIceConnectionCompleted; },
+                ::testing::Eq(connection_state_), {.timeout = kTimeout}),
+      IsRtcOk());
   EXPECT_EQ(3, connection_state_signal_count_);
   EXPECT_THAT(
       WaitUntil(
           [&] { return PeerConnectionInterface::kIceConnectionCompleted; },
-          ::testing::Eq(ice_connection_state_),
-          {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+          ::testing::Eq(ice_connection_state_), {.timeout = kTimeout}),
       IsRtcOk());
   EXPECT_EQ(3, ice_connection_state_signal_count_);
   EXPECT_THAT(
@@ -896,8 +869,7 @@ TEST_F(JsepTransportControllerTest, SignalConnectionStateComplete) {
           [&] {
             return PeerConnectionInterface::PeerConnectionState::kConnected;
           },
-          ::testing::Eq(combined_connection_state_),
-          {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+          ::testing::Eq(combined_connection_state_), {.timeout = kTimeout}),
       IsRtcOk());
   EXPECT_EQ(3, combined_connection_state_signal_count_);
 }
@@ -915,8 +887,7 @@ TEST_F(JsepTransportControllerTest, SignalIceGatheringStateGathering) {
   fake_audio_dtls->fake_ice_transport()->MaybeStartGathering();
   // Should be in the gathering state as soon as any transport starts gathering.
   EXPECT_THAT(WaitUntil([&] { return kIceGatheringGathering; },
-                        ::testing::Eq(gathering_state_),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                        ::testing::Eq(gathering_state_), {.timeout = kTimeout}),
               IsRtcOk());
   EXPECT_EQ(1, gathering_state_signal_count_);
 }
@@ -936,8 +907,7 @@ TEST_F(JsepTransportControllerTest, SignalIceGatheringStateComplete) {
 
   fake_audio_dtls->fake_ice_transport()->MaybeStartGathering();
   EXPECT_THAT(WaitUntil([&] { return kIceGatheringGathering; },
-                        ::testing::Eq(gathering_state_),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                        ::testing::Eq(gathering_state_), {.timeout = kTimeout}),
               IsRtcOk());
   EXPECT_EQ(1, gathering_state_signal_count_);
 
@@ -948,15 +918,13 @@ TEST_F(JsepTransportControllerTest, SignalIceGatheringStateComplete) {
 
   fake_video_dtls->fake_ice_transport()->MaybeStartGathering();
   EXPECT_THAT(WaitUntil([&] { return kIceGatheringGathering; },
-                        ::testing::Eq(gathering_state_),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                        ::testing::Eq(gathering_state_), {.timeout = kTimeout}),
               IsRtcOk());
   EXPECT_EQ(1, gathering_state_signal_count_);
 
   fake_video_dtls->fake_ice_transport()->SetCandidatesGatheringComplete();
   EXPECT_THAT(WaitUntil([&] { return kIceGatheringComplete; },
-                        ::testing::Eq(gathering_state_),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                        ::testing::Eq(gathering_state_), {.timeout = kTimeout}),
               IsRtcOk());
   EXPECT_EQ(2, gathering_state_signal_count_);
 }
@@ -981,9 +949,8 @@ TEST_F(JsepTransportControllerTest,
   EXPECT_NE(fake_audio_dtls, fake_video_dtls);
 
   fake_audio_dtls->fake_ice_transport()->MaybeStartGathering();
-  EXPECT_THAT(WaitUntil([&] { return webrtc::kIceGatheringGathering; },
-                        ::testing::Eq(gathering_state_),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+  EXPECT_THAT(WaitUntil([&] { return kIceGatheringGathering; },
+                        ::testing::Eq(gathering_state_), {.timeout = kTimeout}),
               IsRtcOk());
   EXPECT_EQ(1, gathering_state_signal_count_);
 
@@ -1004,17 +971,16 @@ TEST_F(JsepTransportControllerTest,
   fake_video_dtls = static_cast<FakeDtlsTransport*>(
       transport_controller_->GetDtlsTransport(kVideoMid1));
   EXPECT_EQ(fake_audio_dtls, fake_video_dtls);
-  EXPECT_THAT(WaitUntil([&] { return cricket::kIceConnectionCompleted; },
-                        ::testing::Eq(connection_state_),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
-              IsRtcOk());
+  EXPECT_THAT(
+      WaitUntil([&] { return kIceConnectionCompleted; },
+                ::testing::Eq(connection_state_), {.timeout = kTimeout}),
+      IsRtcOk());
   EXPECT_EQ(PeerConnectionInterface::kIceConnectionCompleted,
             ice_connection_state_);
   EXPECT_EQ(PeerConnectionInterface::PeerConnectionState::kConnected,
             combined_connection_state_);
   EXPECT_THAT(WaitUntil([&] { return kIceGatheringComplete; },
-                        ::testing::Eq(gathering_state_),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                        ::testing::Eq(gathering_state_), {.timeout = kTimeout}),
               IsRtcOk());
   EXPECT_EQ(2, gathering_state_signal_count_);
 }
@@ -1027,8 +993,7 @@ TEST_F(JsepTransportControllerTest,
   CreateJsepTransportController(JsepTransportController::Config());
   auto description = std::make_unique<SessionDescription>();
   AddAudioSection(description.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   EXPECT_TRUE(
       transport_controller_
           ->SetLocalDescription(SdpType::kOffer, description.get(), nullptr)
@@ -1044,11 +1009,10 @@ TEST_F(JsepTransportControllerTest,
   fake_audio_dtls->fake_ice_transport()->MaybeStartGathering();
   fake_audio_dtls->fake_ice_transport()->SetTransportState(
       IceTransportState::kChecking,
-      cricket::IceTransportState::STATE_CONNECTING);
+      IceTransportStateInternal::STATE_CONNECTING);
   EXPECT_THAT(
       WaitUntil([&] { return PeerConnectionInterface::kIceConnectionChecking; },
-                ::testing::Eq(ice_connection_state_),
-                {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                ::testing::Eq(ice_connection_state_), {.timeout = kTimeout}),
       IsRtcOk());
   EXPECT_EQ(1, ice_connection_state_signal_count_);
   EXPECT_THAT(
@@ -1056,13 +1020,11 @@ TEST_F(JsepTransportControllerTest,
           [&] {
             return PeerConnectionInterface::PeerConnectionState::kConnecting;
           },
-          ::testing::Eq(combined_connection_state_),
-          {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+          ::testing::Eq(combined_connection_state_), {.timeout = kTimeout}),
       IsRtcOk());
   EXPECT_EQ(1, combined_connection_state_signal_count_);
   EXPECT_THAT(WaitUntil([&] { return kIceGatheringGathering; },
-                        ::testing::Eq(gathering_state_),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                        ::testing::Eq(gathering_state_), {.timeout = kTimeout}),
               IsRtcOk());
   EXPECT_EQ(1, gathering_state_signal_count_);
 
@@ -1075,20 +1037,17 @@ TEST_F(JsepTransportControllerTest,
                   .ok());
   EXPECT_THAT(
       WaitUntil([&] { return PeerConnectionInterface::kIceConnectionNew; },
-                ::testing::Eq(ice_connection_state_),
-                {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                ::testing::Eq(ice_connection_state_), {.timeout = kTimeout}),
       IsRtcOk());
   EXPECT_EQ(2, ice_connection_state_signal_count_);
   EXPECT_THAT(
       WaitUntil(
           [&] { return PeerConnectionInterface::PeerConnectionState::kNew; },
-          ::testing::Eq(combined_connection_state_),
-          {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+          ::testing::Eq(combined_connection_state_), {.timeout = kTimeout}),
       IsRtcOk());
   EXPECT_EQ(2, combined_connection_state_signal_count_);
   EXPECT_THAT(WaitUntil([&] { return kIceGatheringNew; },
-                        ::testing::Eq(gathering_state_),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                        ::testing::Eq(gathering_state_), {.timeout = kTimeout}),
               IsRtcOk());
   EXPECT_EQ(2, gathering_state_signal_count_);
 
@@ -1097,8 +1056,7 @@ TEST_F(JsepTransportControllerTest,
   EXPECT_TRUE(transport_controller_->RollbackTransports().ok());
   EXPECT_THAT(
       WaitUntil([&] { return PeerConnectionInterface::kIceConnectionChecking; },
-                ::testing::Eq(ice_connection_state_),
-                {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                ::testing::Eq(ice_connection_state_), {.timeout = kTimeout}),
       IsRtcOk());
   EXPECT_EQ(3, ice_connection_state_signal_count_);
   EXPECT_THAT(
@@ -1106,13 +1064,11 @@ TEST_F(JsepTransportControllerTest,
           [&] {
             return PeerConnectionInterface::PeerConnectionState::kConnecting;
           },
-          ::testing::Eq(combined_connection_state_),
-          {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+          ::testing::Eq(combined_connection_state_), {.timeout = kTimeout}),
       IsRtcOk());
   EXPECT_EQ(3, combined_connection_state_signal_count_);
   EXPECT_THAT(WaitUntil([&] { return kIceGatheringGathering; },
-                        ::testing::Eq(gathering_state_),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                        ::testing::Eq(gathering_state_), {.timeout = kTimeout}),
               IsRtcOk());
   EXPECT_EQ(3, gathering_state_signal_count_);
 }
@@ -1128,11 +1084,11 @@ TEST_F(JsepTransportControllerTest, SignalCandidatesGathered) {
 
   auto fake_audio_dtls = static_cast<FakeDtlsTransport*>(
       transport_controller_->GetDtlsTransport(kAudioMid1));
-  fake_audio_dtls->fake_ice_transport()->SignalCandidateGathered(
-      fake_audio_dtls->fake_ice_transport(), CreateCandidate(kAudioMid1, 1));
+  fake_audio_dtls->fake_ice_transport()->NotifyCandidateGathered(
+      fake_audio_dtls->fake_ice_transport(), CreateCandidate());
   EXPECT_THAT(
       WaitUntil([&] { return 1; }, ::testing::Eq(candidates_signal_count_),
-                {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                {.timeout = kTimeout}),
       IsRtcOk());
   EXPECT_EQ(1u, candidates_[kAudioMid1].size());
 }
@@ -1144,29 +1100,26 @@ TEST_F(JsepTransportControllerTest, IceSignalingOccursOnNetworkThread) {
   CreateJsepTransportController(JsepTransportController::Config(),
                                 network_thread_.get(),
                                 /*port_allocator=*/nullptr);
-  CreateLocalDescriptionAndCompleteConnectionOnNetworkThread();
+  CreateLocalDescriptionAndCompleteConnection();
 
   // connecting --> connected --> completed
-  EXPECT_THAT(WaitUntil([&] { return cricket::kIceConnectionCompleted; },
-                        ::testing::Eq(connection_state_),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
-              IsRtcOk());
+  EXPECT_THAT(
+      WaitUntil([&] { return kIceConnectionCompleted; },
+                ::testing::Eq(connection_state_), {.timeout = kTimeout}),
+      IsRtcOk());
   EXPECT_EQ(2, connection_state_signal_count_);
 
   // new --> gathering --> complete
   EXPECT_THAT(WaitUntil([&] { return kIceGatheringComplete; },
-                        ::testing::Eq(gathering_state_),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                        ::testing::Eq(gathering_state_), {.timeout = kTimeout}),
               IsRtcOk());
   EXPECT_EQ(2, gathering_state_signal_count_);
 
   EXPECT_THAT(WaitUntil([&] { return candidates_[kAudioMid1].size(); },
-                        ::testing::Eq(1u),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                        ::testing::Eq(1u), {.timeout = kTimeout}),
               IsRtcOk());
   EXPECT_THAT(WaitUntil([&] { return candidates_[kVideoMid1].size(); },
-                        ::testing::Eq(1u),
-                        {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
+                        ::testing::Eq(1u), {.timeout = kTimeout}),
               IsRtcOk());
   EXPECT_EQ(2, candidates_signal_count_);
 
@@ -1186,12 +1139,10 @@ TEST_F(JsepTransportControllerTest, IceRoleNotRedetermined) {
   // Let the `transport_controller_` be the controlled side initially.
   auto remote_offer = std::make_unique<SessionDescription>();
   AddAudioSection(remote_offer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   auto local_answer = std::make_unique<SessionDescription>();
   AddAudioSection(local_answer.get(), kAudioMid1, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_PASSIVE,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_PASSIVE, nullptr);
 
   EXPECT_TRUE(
       transport_controller_
@@ -1204,21 +1155,18 @@ TEST_F(JsepTransportControllerTest, IceRoleNotRedetermined) {
 
   auto fake_dtls = static_cast<FakeDtlsTransport*>(
       transport_controller_->GetDtlsTransport(kAudioMid1));
-  EXPECT_EQ(cricket::ICEROLE_CONTROLLED,
-            fake_dtls->fake_ice_transport()->GetIceRole());
+  EXPECT_EQ(ICEROLE_CONTROLLED, fake_dtls->fake_ice_transport()->GetIceRole());
 
   // New offer will trigger the ICE restart.
   auto restart_local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(restart_local_offer.get(), kAudioMid1, kIceUfrag3, kIcePwd3,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   EXPECT_TRUE(transport_controller_
                   ->SetLocalDescription(SdpType::kOffer,
                                         restart_local_offer.get(),
                                         remote_offer.get())
                   .ok());
-  EXPECT_EQ(cricket::ICEROLE_CONTROLLED,
-            fake_dtls->fake_ice_transport()->GetIceRole());
+  EXPECT_EQ(ICEROLE_CONTROLLED, fake_dtls->fake_ice_transport()->GetIceRole());
 }
 
 // Tests ICE-Lite mode in remote answer.
@@ -1226,31 +1174,25 @@ TEST_F(JsepTransportControllerTest, SetIceRoleWhenIceLiteInRemoteAnswer) {
   CreateJsepTransportController(JsepTransportController::Config());
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   EXPECT_TRUE(
       transport_controller_
           ->SetLocalDescription(SdpType::kOffer, local_offer.get(), nullptr)
           .ok());
   auto fake_dtls = static_cast<FakeDtlsTransport*>(
       transport_controller_->GetDtlsTransport(kAudioMid1));
-  EXPECT_EQ(cricket::ICEROLE_CONTROLLING,
-            fake_dtls->fake_ice_transport()->GetIceRole());
-  EXPECT_EQ(cricket::ICEMODE_FULL,
-            fake_dtls->fake_ice_transport()->remote_ice_mode());
+  EXPECT_EQ(ICEROLE_CONTROLLING, fake_dtls->fake_ice_transport()->GetIceRole());
+  EXPECT_EQ(ICEMODE_FULL, fake_dtls->fake_ice_transport()->remote_ice_mode());
 
   auto remote_answer = std::make_unique<SessionDescription>();
   AddAudioSection(remote_answer.get(), kAudioMid1, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_LITE, cricket::CONNECTIONROLE_PASSIVE,
-                  nullptr);
+                  ICEMODE_LITE, CONNECTIONROLE_PASSIVE, nullptr);
   EXPECT_TRUE(transport_controller_
                   ->SetRemoteDescription(SdpType::kAnswer, local_offer.get(),
                                          remote_answer.get())
                   .ok());
-  EXPECT_EQ(cricket::ICEROLE_CONTROLLING,
-            fake_dtls->fake_ice_transport()->GetIceRole());
-  EXPECT_EQ(cricket::ICEMODE_LITE,
-            fake_dtls->fake_ice_transport()->remote_ice_mode());
+  EXPECT_EQ(ICEROLE_CONTROLLING, fake_dtls->fake_ice_transport()->GetIceRole());
+  EXPECT_EQ(ICEMODE_LITE, fake_dtls->fake_ice_transport()->remote_ice_mode());
 }
 
 // Tests that the ICE role remains "controlling" if a subsequent offer that
@@ -1261,12 +1203,10 @@ TEST_F(JsepTransportControllerTest,
   CreateJsepTransportController(JsepTransportController::Config());
   auto remote_offer = std::make_unique<SessionDescription>();
   AddAudioSection(remote_offer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_LITE, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_LITE, CONNECTIONROLE_ACTPASS, nullptr);
   auto local_answer = std::make_unique<SessionDescription>();
   AddAudioSection(local_answer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_PASSIVE,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_PASSIVE, nullptr);
   // Initial Offer/Answer exchange. If the remote offerer is ICE-Lite, then the
   // local side is the controlling.
   EXPECT_TRUE(
@@ -1279,22 +1219,19 @@ TEST_F(JsepTransportControllerTest,
                   .ok());
   auto fake_dtls = static_cast<FakeDtlsTransport*>(
       transport_controller_->GetDtlsTransport(kAudioMid1));
-  EXPECT_EQ(cricket::ICEROLE_CONTROLLING,
-            fake_dtls->fake_ice_transport()->GetIceRole());
+  EXPECT_EQ(ICEROLE_CONTROLLING, fake_dtls->fake_ice_transport()->GetIceRole());
 
   // In the subsequence remote offer triggers an ICE restart.
   auto remote_offer2 = std::make_unique<SessionDescription>();
   AddAudioSection(remote_offer2.get(), kAudioMid1, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_LITE, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_LITE, CONNECTIONROLE_ACTPASS, nullptr);
   EXPECT_TRUE(transport_controller_
                   ->SetRemoteDescription(SdpType::kOffer, local_answer.get(),
                                          remote_offer2.get())
                   .ok());
   auto local_answer2 = std::make_unique<SessionDescription>();
   AddAudioSection(local_answer2.get(), kAudioMid1, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_PASSIVE,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_PASSIVE, nullptr);
   EXPECT_TRUE(transport_controller_
                   ->SetLocalDescription(SdpType::kAnswer, local_answer2.get(),
                                         remote_offer2.get())
@@ -1303,14 +1240,13 @@ TEST_F(JsepTransportControllerTest,
       transport_controller_->GetDtlsTransport(kAudioMid1));
   // The local side is still the controlling role since the remote side is using
   // ICE-Lite.
-  EXPECT_EQ(cricket::ICEROLE_CONTROLLING,
-            fake_dtls->fake_ice_transport()->GetIceRole());
+  EXPECT_EQ(ICEROLE_CONTROLLING, fake_dtls->fake_ice_transport()->GetIceRole());
 }
 
 // Tests that the SDP has more than one audio/video m= sections.
 TEST_F(JsepTransportControllerTest, MultipleMediaSectionsOfSameTypeWithBundle) {
   CreateJsepTransportController(JsepTransportController::Config());
-  ContentGroup bundle_group(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup bundle_group(GROUP_TYPE_BUNDLE);
   bundle_group.AddContentName(kAudioMid1);
   bundle_group.AddContentName(kAudioMid2);
   bundle_group.AddContentName(kVideoMid1);
@@ -1318,31 +1254,25 @@ TEST_F(JsepTransportControllerTest, MultipleMediaSectionsOfSameTypeWithBundle) {
 
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(local_offer.get(), kAudioMid2, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kVideoMid1, kIceUfrag3, kIcePwd3,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddDataSection(local_offer.get(), kDataMid1, MediaProtocolType::kSctp,
-                 kIceUfrag1, kIcePwd1, cricket::ICEMODE_FULL,
-                 cricket::CONNECTIONROLE_ACTPASS, nullptr);
+                 kIceUfrag1, kIcePwd1, ICEMODE_FULL, CONNECTIONROLE_ACTPASS,
+                 nullptr);
 
   auto remote_answer = std::make_unique<SessionDescription>();
   AddAudioSection(remote_answer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_PASSIVE,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_PASSIVE, nullptr);
   AddAudioSection(remote_answer.get(), kAudioMid2, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_PASSIVE,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_PASSIVE, nullptr);
   AddVideoSection(remote_answer.get(), kVideoMid1, kIceUfrag3, kIcePwd3,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_PASSIVE,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_PASSIVE, nullptr);
   AddDataSection(remote_answer.get(), kDataMid1, MediaProtocolType::kSctp,
-                 kIceUfrag1, kIcePwd1, cricket::ICEMODE_FULL,
-                 cricket::CONNECTIONROLE_PASSIVE, nullptr);
+                 kIceUfrag1, kIcePwd1, ICEMODE_FULL, CONNECTIONROLE_PASSIVE,
+                 nullptr);
 
   local_offer->AddGroup(bundle_group);
   remote_answer->AddGroup(bundle_group);
@@ -1389,42 +1319,34 @@ TEST_F(JsepTransportControllerTest, MultipleBundleGroups) {
   static const char kMid4Video[] = "4_video";
 
   CreateJsepTransportController(JsepTransportController::Config());
-  ContentGroup bundle_group1(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup bundle_group1(GROUP_TYPE_BUNDLE);
   bundle_group1.AddContentName(kMid1Audio);
   bundle_group1.AddContentName(kMid2Video);
-  ContentGroup bundle_group2(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup bundle_group2(GROUP_TYPE_BUNDLE);
   bundle_group2.AddContentName(kMid3Audio);
   bundle_group2.AddContentName(kMid4Video);
 
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid2Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(local_offer.get(), kMid3Audio, kIceUfrag3, kIcePwd3,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid4Video, kIceUfrag4, kIcePwd4,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   local_offer->AddGroup(bundle_group1);
   local_offer->AddGroup(bundle_group2);
 
   auto remote_answer = std::make_unique<SessionDescription>();
   AddAudioSection(remote_answer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid2Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(remote_answer.get(), kMid3Audio, kIceUfrag3, kIcePwd3,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid4Video, kIceUfrag4, kIcePwd4,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   remote_answer->AddGroup(bundle_group1);
   remote_answer->AddGroup(bundle_group2);
 
@@ -1472,43 +1394,35 @@ TEST_F(JsepTransportControllerTest,
   static const char kMid4Video[] = "4_video";
 
   CreateJsepTransportController(JsepTransportController::Config());
-  ContentGroup bundle_group1(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup bundle_group1(GROUP_TYPE_BUNDLE);
   bundle_group1.AddContentName(kMid1Audio);
   bundle_group1.AddContentName(kMid2Video);
-  ContentGroup bundle_group2(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup bundle_group2(GROUP_TYPE_BUNDLE);
   bundle_group2.AddContentName(kMid3Audio);
   bundle_group2.AddContentName(kMid4Video);
 
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid2Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(local_offer.get(), kMid3Audio, kIceUfrag3, kIcePwd3,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid4Video, kIceUfrag4, kIcePwd4,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   // The offer has both groups.
   local_offer->AddGroup(bundle_group1);
   local_offer->AddGroup(bundle_group2);
 
   auto remote_answer = std::make_unique<SessionDescription>();
   AddAudioSection(remote_answer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid2Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(remote_answer.get(), kMid3Audio, kIceUfrag3, kIcePwd3,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid4Video, kIceUfrag4, kIcePwd4,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   // The answer only has a single group! This is what happens when talking to an
   // endpoint that does not have support for multiple BUNDLE groups.
   remote_answer->AddGroup(bundle_group1);
@@ -1542,50 +1456,42 @@ TEST_F(JsepTransportControllerTest, MultipleBundleGroupsIllegallyChangeGroup) {
 
   CreateJsepTransportController(JsepTransportController::Config());
   // Offer groups (kMid1Audio,kMid2Video) and (kMid3Audio,kMid4Video).
-  ContentGroup offer_bundle_group1(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup offer_bundle_group1(GROUP_TYPE_BUNDLE);
   offer_bundle_group1.AddContentName(kMid1Audio);
   offer_bundle_group1.AddContentName(kMid2Video);
-  ContentGroup offer_bundle_group2(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup offer_bundle_group2(GROUP_TYPE_BUNDLE);
   offer_bundle_group2.AddContentName(kMid3Audio);
   offer_bundle_group2.AddContentName(kMid4Video);
   // Answer groups (kMid1Audio,kMid4Video) and (kMid3Audio,kMid2Video), i.e. the
   // second group members have switched places. This should get rejected.
-  ContentGroup answer_bundle_group1(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup answer_bundle_group1(GROUP_TYPE_BUNDLE);
   answer_bundle_group1.AddContentName(kMid1Audio);
   answer_bundle_group1.AddContentName(kMid4Video);
-  ContentGroup answer_bundle_group2(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup answer_bundle_group2(GROUP_TYPE_BUNDLE);
   answer_bundle_group2.AddContentName(kMid3Audio);
   answer_bundle_group2.AddContentName(kMid2Video);
 
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid2Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(local_offer.get(), kMid3Audio, kIceUfrag3, kIcePwd3,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid4Video, kIceUfrag4, kIcePwd4,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   local_offer->AddGroup(offer_bundle_group1);
   local_offer->AddGroup(offer_bundle_group2);
 
   auto remote_answer = std::make_unique<SessionDescription>();
   AddAudioSection(remote_answer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid2Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(remote_answer.get(), kMid3Audio, kIceUfrag3, kIcePwd3,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid4Video, kIceUfrag4, kIcePwd4,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   remote_answer->AddGroup(answer_bundle_group1);
   remote_answer->AddGroup(answer_bundle_group2);
 
@@ -1609,48 +1515,40 @@ TEST_F(JsepTransportControllerTest, MultipleBundleGroupsInvalidSubsets) {
 
   CreateJsepTransportController(JsepTransportController::Config());
   // Offer groups (kMid1Audio,kMid2Video) and (kMid3Audio,kMid4Video).
-  ContentGroup offer_bundle_group1(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup offer_bundle_group1(GROUP_TYPE_BUNDLE);
   offer_bundle_group1.AddContentName(kMid1Audio);
   offer_bundle_group1.AddContentName(kMid2Video);
-  ContentGroup offer_bundle_group2(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup offer_bundle_group2(GROUP_TYPE_BUNDLE);
   offer_bundle_group2.AddContentName(kMid3Audio);
   offer_bundle_group2.AddContentName(kMid4Video);
   // Answer groups (kMid1Audio) and (kMid2Video), i.e. the second group was
   // moved from the first group. This should get rejected.
-  ContentGroup answer_bundle_group1(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup answer_bundle_group1(GROUP_TYPE_BUNDLE);
   answer_bundle_group1.AddContentName(kMid1Audio);
-  ContentGroup answer_bundle_group2(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup answer_bundle_group2(GROUP_TYPE_BUNDLE);
   answer_bundle_group2.AddContentName(kMid2Video);
 
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid2Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(local_offer.get(), kMid3Audio, kIceUfrag3, kIcePwd3,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid4Video, kIceUfrag4, kIcePwd4,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   local_offer->AddGroup(offer_bundle_group1);
   local_offer->AddGroup(offer_bundle_group2);
 
   auto remote_answer = std::make_unique<SessionDescription>();
   AddAudioSection(remote_answer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid2Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(remote_answer.get(), kMid3Audio, kIceUfrag3, kIcePwd3,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid4Video, kIceUfrag4, kIcePwd4,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   remote_answer->AddGroup(answer_bundle_group1);
   remote_answer->AddGroup(answer_bundle_group2);
 
@@ -1674,23 +1572,20 @@ TEST_F(JsepTransportControllerTest, MultipleBundleGroupsInvalidOverlap) {
   CreateJsepTransportController(JsepTransportController::Config());
   // Offer groups (kMid1Audio,kMid3Audio) and (kMid2Video,kMid3Audio), i.e.
   // kMid3Audio is in both groups - this is illegal.
-  ContentGroup offer_bundle_group1(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup offer_bundle_group1(GROUP_TYPE_BUNDLE);
   offer_bundle_group1.AddContentName(kMid1Audio);
   offer_bundle_group1.AddContentName(kMid3Audio);
-  ContentGroup offer_bundle_group2(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup offer_bundle_group2(GROUP_TYPE_BUNDLE);
   offer_bundle_group2.AddContentName(kMid2Video);
   offer_bundle_group2.AddContentName(kMid3Audio);
 
   auto offer = std::make_unique<SessionDescription>();
-  AddAudioSection(offer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
-  AddVideoSection(offer.get(), kMid2Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
-  AddAudioSection(offer.get(), kMid3Audio, kIceUfrag3, kIcePwd3,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+  AddAudioSection(offer.get(), kMid1Audio, kIceUfrag1, kIcePwd1, ICEMODE_FULL,
+                  CONNECTIONROLE_ACTPASS, nullptr);
+  AddVideoSection(offer.get(), kMid2Video, kIceUfrag2, kIcePwd2, ICEMODE_FULL,
+                  CONNECTIONROLE_ACTPASS, nullptr);
+  AddAudioSection(offer.get(), kMid3Audio, kIceUfrag3, kIcePwd3, ICEMODE_FULL,
+                  CONNECTIONROLE_ACTPASS, nullptr);
   offer->AddGroup(offer_bundle_group1);
   offer->AddGroup(offer_bundle_group2);
 
@@ -1715,64 +1610,52 @@ TEST_F(JsepTransportControllerTest, MultipleBundleGroupsUnbundleFirstMid) {
   CreateJsepTransportController(JsepTransportController::Config());
   // Offer groups (kMid1Audio,kMid2Audio,kMid3Audio) and
   // (kMid4Video,kMid5Video,kMid6Video).
-  ContentGroup offer_bundle_group1(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup offer_bundle_group1(GROUP_TYPE_BUNDLE);
   offer_bundle_group1.AddContentName(kMid1Audio);
   offer_bundle_group1.AddContentName(kMid2Audio);
   offer_bundle_group1.AddContentName(kMid3Audio);
-  ContentGroup offer_bundle_group2(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup offer_bundle_group2(GROUP_TYPE_BUNDLE);
   offer_bundle_group2.AddContentName(kMid4Video);
   offer_bundle_group2.AddContentName(kMid5Video);
   offer_bundle_group2.AddContentName(kMid6Video);
   // Answer groups (kMid2Audio,kMid3Audio) and (kMid5Video,kMid6Video), i.e.
   // we've moved the first MIDs out of the groups.
-  ContentGroup answer_bundle_group1(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup answer_bundle_group1(GROUP_TYPE_BUNDLE);
   answer_bundle_group1.AddContentName(kMid2Audio);
   answer_bundle_group1.AddContentName(kMid3Audio);
-  ContentGroup answer_bundle_group2(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup answer_bundle_group2(GROUP_TYPE_BUNDLE);
   answer_bundle_group2.AddContentName(kMid5Video);
   answer_bundle_group2.AddContentName(kMid6Video);
 
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(local_offer.get(), kMid2Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(local_offer.get(), kMid3Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid4Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid5Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid6Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   local_offer->AddGroup(offer_bundle_group1);
   local_offer->AddGroup(offer_bundle_group2);
 
   auto remote_answer = std::make_unique<SessionDescription>();
   AddAudioSection(remote_answer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(remote_answer.get(), kMid2Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(remote_answer.get(), kMid3Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid4Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid5Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid6Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   remote_answer->AddGroup(answer_bundle_group1);
   remote_answer->AddGroup(answer_bundle_group2);
 
@@ -1810,67 +1693,55 @@ TEST_F(JsepTransportControllerTest, MultipleBundleGroupsChangeFirstMid) {
   CreateJsepTransportController(JsepTransportController::Config());
   // Offer groups (kMid1Audio,kMid2Audio,kMid3Audio) and
   // (kMid4Video,kMid5Video,kMid6Video).
-  ContentGroup offer_bundle_group1(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup offer_bundle_group1(GROUP_TYPE_BUNDLE);
   offer_bundle_group1.AddContentName(kMid1Audio);
   offer_bundle_group1.AddContentName(kMid2Audio);
   offer_bundle_group1.AddContentName(kMid3Audio);
-  ContentGroup offer_bundle_group2(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup offer_bundle_group2(GROUP_TYPE_BUNDLE);
   offer_bundle_group2.AddContentName(kMid4Video);
   offer_bundle_group2.AddContentName(kMid5Video);
   offer_bundle_group2.AddContentName(kMid6Video);
   // Answer groups (kMid2Audio,kMid1Audio,kMid3Audio) and
   // (kMid5Video,kMid6Video,kMid4Video), i.e. we've changed which MID is first
   // but accept the whole group.
-  ContentGroup answer_bundle_group1(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup answer_bundle_group1(GROUP_TYPE_BUNDLE);
   answer_bundle_group1.AddContentName(kMid2Audio);
   answer_bundle_group1.AddContentName(kMid1Audio);
   answer_bundle_group1.AddContentName(kMid3Audio);
-  ContentGroup answer_bundle_group2(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup answer_bundle_group2(GROUP_TYPE_BUNDLE);
   answer_bundle_group2.AddContentName(kMid5Video);
   answer_bundle_group2.AddContentName(kMid6Video);
   answer_bundle_group2.AddContentName(kMid4Video);
 
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(local_offer.get(), kMid2Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(local_offer.get(), kMid3Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid4Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid5Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid6Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   local_offer->AddGroup(offer_bundle_group1);
   local_offer->AddGroup(offer_bundle_group2);
 
   auto remote_answer = std::make_unique<SessionDescription>();
   AddAudioSection(remote_answer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(remote_answer.get(), kMid2Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(remote_answer.get(), kMid3Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid4Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid5Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid6Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   remote_answer->AddGroup(answer_bundle_group1);
   remote_answer->AddGroup(answer_bundle_group2);
 
@@ -1912,42 +1783,34 @@ TEST_F(JsepTransportControllerTest,
 
   CreateJsepTransportController(JsepTransportController::Config());
   // Start by grouping (kMid1Audio,kMid2Audio) and (kMid4Video,kMid4f5Video).
-  ContentGroup bundle_group1(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup bundle_group1(GROUP_TYPE_BUNDLE);
   bundle_group1.AddContentName(kMid1Audio);
   bundle_group1.AddContentName(kMid2Audio);
-  ContentGroup bundle_group2(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup bundle_group2(GROUP_TYPE_BUNDLE);
   bundle_group2.AddContentName(kMid4Video);
   bundle_group2.AddContentName(kMid5Video);
 
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(local_offer.get(), kMid2Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid4Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid5Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   local_offer->AddGroup(bundle_group1);
   local_offer->AddGroup(bundle_group2);
 
   auto remote_answer = std::make_unique<SessionDescription>();
   AddAudioSection(remote_answer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(remote_answer.get(), kMid2Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid4Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid5Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   remote_answer->AddGroup(bundle_group1);
   remote_answer->AddGroup(bundle_group2);
 
@@ -1961,30 +1824,24 @@ TEST_F(JsepTransportControllerTest,
                   .ok());
 
   // Add kMid3Audio and kMid6Video to the respective audio/video bundle groups.
-  ContentGroup new_bundle_group1(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup new_bundle_group1(GROUP_TYPE_BUNDLE);
   bundle_group1.AddContentName(kMid3Audio);
-  ContentGroup new_bundle_group2(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup new_bundle_group2(GROUP_TYPE_BUNDLE);
   bundle_group2.AddContentName(kMid6Video);
 
   auto subsequent_offer = std::make_unique<SessionDescription>();
   AddAudioSection(subsequent_offer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(subsequent_offer.get(), kMid2Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(subsequent_offer.get(), kMid3Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(subsequent_offer.get(), kMid4Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(subsequent_offer.get(), kMid5Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(subsequent_offer.get(), kMid6Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   subsequent_offer->AddGroup(bundle_group1);
   subsequent_offer->AddGroup(bundle_group2);
   EXPECT_TRUE(transport_controller_
@@ -2013,42 +1870,34 @@ TEST_F(JsepTransportControllerTest,
 
   CreateJsepTransportController(JsepTransportController::Config());
   // Start by grouping (kMid1Audio,kMid2Audio) and (kMid3Video,kMid4Video).
-  ContentGroup bundle_group1(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup bundle_group1(GROUP_TYPE_BUNDLE);
   bundle_group1.AddContentName(kMid1Audio);
   bundle_group1.AddContentName(kMid2Audio);
-  ContentGroup bundle_group2(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup bundle_group2(GROUP_TYPE_BUNDLE);
   bundle_group2.AddContentName(kMid3Video);
   bundle_group2.AddContentName(kMid4Video);
 
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(local_offer.get(), kMid2Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid3Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid4Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   local_offer->AddGroup(bundle_group1);
   local_offer->AddGroup(bundle_group2);
 
   auto remote_answer = std::make_unique<SessionDescription>();
   AddAudioSection(remote_answer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(remote_answer.get(), kMid2Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid3Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid4Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   remote_answer->AddGroup(bundle_group1);
   remote_answer->AddGroup(bundle_group2);
 
@@ -2063,7 +1912,7 @@ TEST_F(JsepTransportControllerTest,
 
   // Switch to grouping (kMid1Audio,kMid2Audio,kMid3Video,kMid4Video).
   // This is a illegal without first removing m= sections from their groups.
-  ContentGroup new_bundle_group(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup new_bundle_group(GROUP_TYPE_BUNDLE);
   new_bundle_group.AddContentName(kMid1Audio);
   new_bundle_group.AddContentName(kMid2Audio);
   new_bundle_group.AddContentName(kMid3Video);
@@ -2071,17 +1920,13 @@ TEST_F(JsepTransportControllerTest,
 
   auto subsequent_offer = std::make_unique<SessionDescription>();
   AddAudioSection(subsequent_offer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(subsequent_offer.get(), kMid2Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(subsequent_offer.get(), kMid3Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(subsequent_offer.get(), kMid4Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   subsequent_offer->AddGroup(new_bundle_group);
   EXPECT_FALSE(transport_controller_
                    ->SetLocalDescription(SdpType::kOffer,
@@ -2099,7 +1944,7 @@ TEST_F(JsepTransportControllerTest,
 
   CreateJsepTransportController(JsepTransportController::Config());
   // Start by grouping (kMid1Audio,kMid2Audio,kMid3Video,kMid4Video).
-  ContentGroup bundle_group(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup bundle_group(GROUP_TYPE_BUNDLE);
   bundle_group.AddContentName(kMid1Audio);
   bundle_group.AddContentName(kMid2Audio);
   bundle_group.AddContentName(kMid3Video);
@@ -2107,32 +1952,24 @@ TEST_F(JsepTransportControllerTest,
 
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(local_offer.get(), kMid2Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid3Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid4Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   local_offer->AddGroup(bundle_group);
 
   auto remote_answer = std::make_unique<SessionDescription>();
   AddAudioSection(remote_answer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(remote_answer.get(), kMid2Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid3Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid4Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   remote_answer->AddGroup(bundle_group);
 
   EXPECT_TRUE(
@@ -2146,26 +1983,22 @@ TEST_F(JsepTransportControllerTest,
 
   // Switch to grouping (kMid1Audio,kMid2Audio) and (kMid3Video,kMid4Video).
   // This is a illegal without first removing m= sections from their groups.
-  ContentGroup new_bundle_group1(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup new_bundle_group1(GROUP_TYPE_BUNDLE);
   new_bundle_group1.AddContentName(kMid1Audio);
   new_bundle_group1.AddContentName(kMid2Audio);
-  ContentGroup new_bundle_group2(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup new_bundle_group2(GROUP_TYPE_BUNDLE);
   new_bundle_group2.AddContentName(kMid3Video);
   new_bundle_group2.AddContentName(kMid4Video);
 
   auto subsequent_offer = std::make_unique<SessionDescription>();
   AddAudioSection(subsequent_offer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(subsequent_offer.get(), kMid2Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(subsequent_offer.get(), kMid3Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(subsequent_offer.get(), kMid4Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   subsequent_offer->AddGroup(new_bundle_group1);
   subsequent_offer->AddGroup(new_bundle_group2);
   EXPECT_FALSE(transport_controller_
@@ -2184,42 +2017,34 @@ TEST_F(JsepTransportControllerTest,
 
   CreateJsepTransportController(JsepTransportController::Config());
   // Start by grouping (kMid1Audio,kMid2Audio) and (kMid3Video,kMid4Video).
-  ContentGroup bundle_group1(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup bundle_group1(GROUP_TYPE_BUNDLE);
   bundle_group1.AddContentName(kMid1Audio);
   bundle_group1.AddContentName(kMid2Audio);
-  ContentGroup bundle_group2(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup bundle_group2(GROUP_TYPE_BUNDLE);
   bundle_group2.AddContentName(kMid3Video);
   bundle_group2.AddContentName(kMid4Video);
 
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(local_offer.get(), kMid2Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid3Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid4Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   local_offer->AddGroup(bundle_group1);
   local_offer->AddGroup(bundle_group2);
 
   auto remote_answer = std::make_unique<SessionDescription>();
   AddAudioSection(remote_answer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(remote_answer.get(), kMid2Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid3Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(remote_answer.get(), kMid4Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   remote_answer->AddGroup(bundle_group1);
   remote_answer->AddGroup(bundle_group2);
 
@@ -2234,26 +2059,22 @@ TEST_F(JsepTransportControllerTest,
 
   // Switch to grouping (kMid1Audio,kMid3Video) and (kMid2Audio,kMid3Video).
   // This is a illegal without first removing m= sections from their groups.
-  ContentGroup new_bundle_group1(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup new_bundle_group1(GROUP_TYPE_BUNDLE);
   new_bundle_group1.AddContentName(kMid1Audio);
   new_bundle_group1.AddContentName(kMid3Video);
-  ContentGroup new_bundle_group2(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup new_bundle_group2(GROUP_TYPE_BUNDLE);
   new_bundle_group2.AddContentName(kMid2Audio);
   new_bundle_group2.AddContentName(kMid4Video);
 
   auto subsequent_offer = std::make_unique<SessionDescription>();
   AddAudioSection(subsequent_offer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(subsequent_offer.get(), kMid2Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(subsequent_offer.get(), kMid3Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(subsequent_offer.get(), kMid4Video, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   subsequent_offer->AddGroup(new_bundle_group1);
   subsequent_offer->AddGroup(new_bundle_group2);
   EXPECT_FALSE(transport_controller_
@@ -2266,31 +2087,25 @@ TEST_F(JsepTransportControllerTest,
 // Tests that only a subset of all the m= sections are bundled.
 TEST_F(JsepTransportControllerTest, BundleSubsetOfMediaSections) {
   CreateJsepTransportController(JsepTransportController::Config());
-  ContentGroup bundle_group(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup bundle_group(GROUP_TYPE_BUNDLE);
   bundle_group.AddContentName(kAudioMid1);
   bundle_group.AddContentName(kVideoMid1);
 
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(local_offer.get(), kAudioMid2, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kVideoMid1, kIceUfrag3, kIcePwd3,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
 
   auto remote_answer = std::make_unique<SessionDescription>();
   AddAudioSection(remote_answer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_PASSIVE,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_PASSIVE, nullptr);
   AddAudioSection(remote_answer.get(), kAudioMid2, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_PASSIVE,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_PASSIVE, nullptr);
   AddVideoSection(remote_answer.get(), kVideoMid1, kIceUfrag3, kIcePwd3,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_PASSIVE,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_PASSIVE, nullptr);
 
   local_offer->AddGroup(bundle_group);
   remote_answer->AddGroup(bundle_group);
@@ -2321,17 +2136,17 @@ TEST_F(JsepTransportControllerTest, BundleSubsetOfMediaSections) {
 // sections are added in the subsequent offer.
 TEST_F(JsepTransportControllerTest, BundleOnDataSectionInSubsequentOffer) {
   CreateJsepTransportController(JsepTransportController::Config());
-  ContentGroup bundle_group(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup bundle_group(GROUP_TYPE_BUNDLE);
   bundle_group.AddContentName(kDataMid1);
 
   auto local_offer = std::make_unique<SessionDescription>();
   AddDataSection(local_offer.get(), kDataMid1, MediaProtocolType::kSctp,
-                 kIceUfrag1, kIcePwd1, cricket::ICEMODE_FULL,
-                 cricket::CONNECTIONROLE_ACTPASS, nullptr);
+                 kIceUfrag1, kIcePwd1, ICEMODE_FULL, CONNECTIONROLE_ACTPASS,
+                 nullptr);
   auto remote_answer = std::make_unique<SessionDescription>();
   AddDataSection(remote_answer.get(), kDataMid1, MediaProtocolType::kSctp,
-                 kIceUfrag1, kIcePwd1, cricket::ICEMODE_FULL,
-                 cricket::CONNECTIONROLE_PASSIVE, nullptr);
+                 kIceUfrag1, kIcePwd1, ICEMODE_FULL, CONNECTIONROLE_PASSIVE,
+                 nullptr);
   local_offer->AddGroup(bundle_group);
   remote_answer->AddGroup(bundle_group);
 
@@ -2347,29 +2162,25 @@ TEST_F(JsepTransportControllerTest, BundleOnDataSectionInSubsequentOffer) {
 
   // Add audio/video sections in subsequent offer.
   AddAudioSection(local_offer.get(), kAudioMid1, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kVideoMid1, kIceUfrag3, kIcePwd3,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(remote_answer.get(), kAudioMid1, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_PASSIVE,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_PASSIVE, nullptr);
   AddVideoSection(remote_answer.get(), kVideoMid1, kIceUfrag3, kIcePwd3,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_PASSIVE,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_PASSIVE, nullptr);
 
   // Reset the bundle group and do another offer/answer exchange.
   bundle_group.AddContentName(kAudioMid1);
   bundle_group.AddContentName(kVideoMid1);
-  local_offer->RemoveGroupByName(cricket::GROUP_TYPE_BUNDLE);
+  local_offer->RemoveGroupByName(GROUP_TYPE_BUNDLE);
   local_offer->AddGroup(bundle_group);
 
   EXPECT_TRUE(transport_controller_
                   ->SetLocalDescription(SdpType::kOffer, local_offer.get(),
                                         remote_answer.get())
                   .ok());
-  remote_answer->RemoveGroupByName(cricket::GROUP_TYPE_BUNDLE);
+  remote_answer->RemoveGroupByName(GROUP_TYPE_BUNDLE);
   remote_answer->AddGroup(bundle_group);
   EXPECT_TRUE(transport_controller_
                   ->SetRemoteDescription(SdpType::kAnswer, local_offer.get(),
@@ -2384,32 +2195,28 @@ TEST_F(JsepTransportControllerTest, BundleOnDataSectionInSubsequentOffer) {
 
 TEST_F(JsepTransportControllerTest, VideoDataRejectedInAnswer) {
   CreateJsepTransportController(JsepTransportController::Config());
-  ContentGroup bundle_group(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup bundle_group(GROUP_TYPE_BUNDLE);
   bundle_group.AddContentName(kAudioMid1);
   bundle_group.AddContentName(kVideoMid1);
   bundle_group.AddContentName(kDataMid1);
 
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kVideoMid1, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddDataSection(local_offer.get(), kDataMid1, MediaProtocolType::kSctp,
-                 kIceUfrag3, kIcePwd3, cricket::ICEMODE_FULL,
-                 cricket::CONNECTIONROLE_ACTPASS, nullptr);
+                 kIceUfrag3, kIcePwd3, ICEMODE_FULL, CONNECTIONROLE_ACTPASS,
+                 nullptr);
 
   auto remote_answer = std::make_unique<SessionDescription>();
   AddAudioSection(remote_answer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_PASSIVE,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_PASSIVE, nullptr);
   AddVideoSection(remote_answer.get(), kVideoMid1, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_PASSIVE,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_PASSIVE, nullptr);
   AddDataSection(remote_answer.get(), kDataMid1, MediaProtocolType::kSctp,
-                 kIceUfrag3, kIcePwd3, cricket::ICEMODE_FULL,
-                 cricket::CONNECTIONROLE_PASSIVE, nullptr);
+                 kIceUfrag3, kIcePwd3, ICEMODE_FULL, CONNECTIONROLE_PASSIVE,
+                 nullptr);
   // Reject video and data section.
   remote_answer->contents()[1].rejected = true;
   remote_answer->contents()[2].rejected = true;
@@ -2444,25 +2251,21 @@ TEST_F(JsepTransportControllerTest, VideoDataRejectedInAnswer) {
 // fixed
 TEST_F(JsepTransportControllerTest, ChangeBundledMidNotSupported) {
   CreateJsepTransportController(JsepTransportController::Config());
-  ContentGroup bundle_group(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup bundle_group(GROUP_TYPE_BUNDLE);
   bundle_group.AddContentName(kAudioMid1);
   bundle_group.AddContentName(kVideoMid1);
 
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kVideoMid1, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
 
   auto remote_answer = std::make_unique<SessionDescription>();
   AddAudioSection(remote_answer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_PASSIVE,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_PASSIVE, nullptr);
   AddVideoSection(remote_answer.get(), kVideoMid1, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_PASSIVE,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_PASSIVE, nullptr);
 
   local_offer->AddGroup(bundle_group);
   remote_answer->AddGroup(bundle_group);
@@ -2486,7 +2289,7 @@ TEST_F(JsepTransportControllerTest, ChangeBundledMidNotSupported) {
                   .ok());
   // The answerer uses the new bundle group and now the bundle mid is changed to
   // `kVideo1`.
-  remote_answer->RemoveGroupByName(cricket::GROUP_TYPE_BUNDLE);
+  remote_answer->RemoveGroupByName(GROUP_TYPE_BUNDLE);
   remote_answer->AddGroup(bundle_group);
   EXPECT_FALSE(transport_controller_
                    ->SetRemoteDescription(SdpType::kAnswer, local_offer.get(),
@@ -2497,32 +2300,28 @@ TEST_F(JsepTransportControllerTest, ChangeBundledMidNotSupported) {
 // an error, but rejecting all of them works as expected.
 TEST_F(JsepTransportControllerTest, RejectFirstContentInBundleGroup) {
   CreateJsepTransportController(JsepTransportController::Config());
-  ContentGroup bundle_group(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup bundle_group(GROUP_TYPE_BUNDLE);
   bundle_group.AddContentName(kAudioMid1);
   bundle_group.AddContentName(kVideoMid1);
   bundle_group.AddContentName(kDataMid1);
 
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kVideoMid1, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddDataSection(local_offer.get(), kDataMid1, MediaProtocolType::kSctp,
-                 kIceUfrag3, kIcePwd3, cricket::ICEMODE_FULL,
-                 cricket::CONNECTIONROLE_ACTPASS, nullptr);
+                 kIceUfrag3, kIcePwd3, ICEMODE_FULL, CONNECTIONROLE_ACTPASS,
+                 nullptr);
 
   auto remote_answer = std::make_unique<SessionDescription>();
   AddAudioSection(remote_answer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_PASSIVE,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_PASSIVE, nullptr);
   AddVideoSection(remote_answer.get(), kVideoMid1, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_PASSIVE,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_PASSIVE, nullptr);
   AddDataSection(remote_answer.get(), kDataMid1, MediaProtocolType::kSctp,
-                 kIceUfrag3, kIcePwd3, cricket::ICEMODE_FULL,
-                 cricket::CONNECTIONROLE_PASSIVE, nullptr);
+                 kIceUfrag3, kIcePwd3, ICEMODE_FULL, CONNECTIONROLE_PASSIVE,
+                 nullptr);
   // Reject audio content in answer.
   remote_answer->contents()[0].rejected = true;
 
@@ -2558,8 +2357,7 @@ TEST_F(JsepTransportControllerTest, ApplyNonRtcpMuxOfferWhenMuxingRequired) {
   CreateJsepTransportController(std::move(config));
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
 
   local_offer->contents()[0].media_description()->set_rtcp_mux(false);
   // Applying a non-RTCP-mux offer is expected to fail.
@@ -2577,8 +2375,7 @@ TEST_F(JsepTransportControllerTest, ApplyNonRtcpMuxAnswerWhenMuxingRequired) {
   CreateJsepTransportController(std::move(config));
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   EXPECT_TRUE(
       transport_controller_
           ->SetLocalDescription(SdpType::kOffer, local_offer.get(), nullptr)
@@ -2586,8 +2383,7 @@ TEST_F(JsepTransportControllerTest, ApplyNonRtcpMuxAnswerWhenMuxingRequired) {
 
   auto remote_answer = std::make_unique<SessionDescription>();
   AddAudioSection(remote_answer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_PASSIVE,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_PASSIVE, nullptr);
   // Applying a non-RTCP-mux answer is expected to fail.
   remote_answer->contents()[0].media_description()->set_rtcp_mux(false);
   EXPECT_FALSE(transport_controller_
@@ -2604,11 +2400,11 @@ TEST_F(JsepTransportControllerTest,
   auto local_offer = CreateSessionDescriptionWithoutBundle();
   auto remote_answer = CreateSessionDescriptionWithoutBundle();
 
-  ContentGroup offer_bundle_group(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup offer_bundle_group(GROUP_TYPE_BUNDLE);
   offer_bundle_group.AddContentName(kAudioMid1);
   local_offer->AddGroup(offer_bundle_group);
 
-  ContentGroup answer_bundle_group(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup answer_bundle_group(GROUP_TYPE_BUNDLE);
   answer_bundle_group.AddContentName(kAudioMid1);
   answer_bundle_group.AddContentName(kVideoMid1);
   remote_answer->AddGroup(answer_bundle_group);
@@ -2628,7 +2424,7 @@ TEST_F(JsepTransportControllerTest, RejectBundleGroupWithNonExistingMid) {
   auto local_offer = CreateSessionDescriptionWithoutBundle();
   auto remote_answer = CreateSessionDescriptionWithoutBundle();
 
-  ContentGroup invalid_bundle_group(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup invalid_bundle_group(GROUP_TYPE_BUNDLE);
   // The BUNDLE group is invalid because there is no data section in the
   // description.
   invalid_bundle_group.AddContentName(kDataMid1);
@@ -2667,7 +2463,7 @@ TEST_F(JsepTransportControllerTest, RemoveContentFromBundleGroup) {
                                         remote_answer.get())
                   .ok());
   auto new_answer = CreateSessionDescriptionWithoutBundle();
-  ContentGroup new_bundle_group(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup new_bundle_group(GROUP_TYPE_BUNDLE);
   //  The answer removes video from the BUNDLE group without rejecting it is
   //  invalid.
   new_bundle_group.AddContentName(kAudioMid1);
@@ -2698,9 +2494,8 @@ TEST_F(JsepTransportControllerTest, ChangeTaggedMediaSectionMaxBundle) {
 
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
-  ContentGroup bundle_group(cricket::GROUP_TYPE_BUNDLE);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
+  ContentGroup bundle_group(GROUP_TYPE_BUNDLE);
   bundle_group.AddContentName(kAudioMid1);
   local_offer->AddGroup(bundle_group);
   EXPECT_TRUE(
@@ -2717,10 +2512,9 @@ TEST_F(JsepTransportControllerTest, ChangeTaggedMediaSectionMaxBundle) {
   std::unique_ptr<SessionDescription> local_reoffer(local_offer->Clone());
   local_reoffer->contents()[0].rejected = true;
   AddVideoSection(local_reoffer.get(), kVideoMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
-  local_reoffer->RemoveGroupByName(cricket::GROUP_TYPE_BUNDLE);
-  ContentGroup new_bundle_group(cricket::GROUP_TYPE_BUNDLE);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
+  local_reoffer->RemoveGroupByName(GROUP_TYPE_BUNDLE);
+  ContentGroup new_bundle_group(GROUP_TYPE_BUNDLE);
   new_bundle_group.AddContentName(kVideoMid1);
   local_reoffer->AddGroup(new_bundle_group);
 
@@ -2742,8 +2536,7 @@ TEST_F(JsepTransportControllerTest, RollbackRestoresRejectedTransport) {
   CreateJsepTransportController(JsepTransportController::Config());
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   std::unique_ptr<SessionDescription> remote_answer(local_offer->Clone());
   EXPECT_TRUE(
       transport_controller_
@@ -2760,8 +2553,7 @@ TEST_F(JsepTransportControllerTest, RollbackRestoresRejectedTransport) {
   // set to null.
   auto local_reoffer = std::make_unique<SessionDescription>();
   AddAudioSection(local_reoffer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   local_reoffer->contents()[0].rejected = true;
 
   EXPECT_TRUE(transport_controller_
@@ -2789,20 +2581,17 @@ TEST_F(JsepTransportControllerTest, RollbackRestoresPreviousTransportMapping) {
   // Perform an initial offer/answer to establish a (kMid1Audio,kMid2Audio)
   // group.
   CreateJsepTransportController(JsepTransportController::Config());
-  ContentGroup bundle_group(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup bundle_group(GROUP_TYPE_BUNDLE);
   bundle_group.AddContentName(kMid1Audio);
   bundle_group.AddContentName(kMid2Audio);
 
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid2Audio, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(local_offer.get(), kMid3Audio, kIceUfrag3, kIcePwd3,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   local_offer->AddGroup(bundle_group);
 
   std::unique_ptr<SessionDescription> remote_answer(local_offer->Clone());
@@ -2827,14 +2616,11 @@ TEST_F(JsepTransportControllerTest, RollbackRestoresPreviousTransportMapping) {
   bundle_group.AddContentName(kMid3Audio);
   auto local_reoffer = std::make_unique<SessionDescription>();
   AddAudioSection(local_reoffer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_reoffer.get(), kMid2Audio, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddAudioSection(local_reoffer.get(), kMid3Audio, kIceUfrag3, kIcePwd3,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   local_reoffer->AddGroup(bundle_group);
 
   EXPECT_TRUE(transport_controller_
@@ -2869,18 +2655,16 @@ TEST_F(JsepTransportControllerTest, RollbackAndAddToDifferentBundleGroup) {
   // Perform an initial offer/answer to establish two bundle groups, each with
   // one MID.
   CreateJsepTransportController(JsepTransportController::Config());
-  ContentGroup bundle_group1(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup bundle_group1(GROUP_TYPE_BUNDLE);
   bundle_group1.AddContentName(kMid1Audio);
-  ContentGroup bundle_group2(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup bundle_group2(GROUP_TYPE_BUNDLE);
   bundle_group2.AddContentName(kMid2Audio);
 
   auto local_offer = std::make_unique<SessionDescription>();
   AddAudioSection(local_offer.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(local_offer.get(), kMid2Audio, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   local_offer->AddGroup(bundle_group1);
   local_offer->AddGroup(bundle_group2);
 
@@ -2896,19 +2680,16 @@ TEST_F(JsepTransportControllerTest, RollbackAndAddToDifferentBundleGroup) {
                   .ok());
 
   // Apply an offer that adds kMid3Audio to the first BUNDLE group.,
-  ContentGroup modified_bundle_group1(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup modified_bundle_group1(GROUP_TYPE_BUNDLE);
   modified_bundle_group1.AddContentName(kMid1Audio);
   modified_bundle_group1.AddContentName(kMid3Audio);
   auto subsequent_offer_1 = std::make_unique<SessionDescription>();
   AddAudioSection(subsequent_offer_1.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(subsequent_offer_1.get(), kMid2Audio, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(subsequent_offer_1.get(), kMid3Audio, kIceUfrag3, kIcePwd3,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   subsequent_offer_1->AddGroup(modified_bundle_group1);
   subsequent_offer_1->AddGroup(bundle_group2);
 
@@ -2929,19 +2710,16 @@ TEST_F(JsepTransportControllerTest, RollbackAndAddToDifferentBundleGroup) {
   EXPECT_EQ(nullptr, transport_controller_->GetRtpTransport(kMid3Audio));
 
   // Apply an offer that adds kMid3Audio to the second BUNDLE group.,
-  ContentGroup modified_bundle_group2(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup modified_bundle_group2(GROUP_TYPE_BUNDLE);
   modified_bundle_group2.AddContentName(kMid2Audio);
   modified_bundle_group2.AddContentName(kMid3Audio);
   auto subsequent_offer_2 = std::make_unique<SessionDescription>();
   AddAudioSection(subsequent_offer_2.get(), kMid1Audio, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(subsequent_offer_2.get(), kMid2Audio, kIceUfrag2, kIcePwd2,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   AddVideoSection(subsequent_offer_2.get(), kMid3Audio, kIceUfrag3, kIcePwd3,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
   subsequent_offer_2->AddGroup(bundle_group1);
   subsequent_offer_2->AddGroup(modified_bundle_group2);
 
@@ -2962,17 +2740,15 @@ TEST_F(JsepTransportControllerTest, RollbackAndAddToDifferentBundleGroup) {
 // is accepted.
 TEST_F(JsepTransportControllerTest, BundleOnlySectionDoesNotNeedRtcpMux) {
   CreateJsepTransportController(JsepTransportController::Config());
-  ContentGroup bundle_group(cricket::GROUP_TYPE_BUNDLE);
+  ContentGroup bundle_group(GROUP_TYPE_BUNDLE);
   bundle_group.AddContentName(kAudioMid1);
   bundle_group.AddContentName(kVideoMid1);
 
   auto offer = std::make_unique<SessionDescription>();
-  AddAudioSection(offer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
-  AddVideoSection(offer.get(), kVideoMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+  AddAudioSection(offer.get(), kAudioMid1, kIceUfrag1, kIcePwd1, ICEMODE_FULL,
+                  CONNECTIONROLE_ACTPASS, nullptr);
+  AddVideoSection(offer.get(), kVideoMid1, kIceUfrag1, kIcePwd1, ICEMODE_FULL,
+                  CONNECTIONROLE_ACTPASS, nullptr);
   offer->AddGroup(bundle_group);
 
   // Remove rtcp-mux and set bundle-only on the second content.
@@ -2992,76 +2768,152 @@ TEST_F(JsepTransportControllerTest,
   CreateJsepTransportController(std::move(config));
 
   auto offer = std::make_unique<SessionDescription>();
-  AddAudioSection(offer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
+  AddAudioSection(offer.get(), kAudioMid1, kIceUfrag1, kIcePwd1, ICEMODE_FULL,
+                  CONNECTIONROLE_ACTPASS, nullptr);
   EXPECT_TRUE(transport_controller_
                   ->SetRemoteDescription(SdpType::kOffer, nullptr, offer.get())
                   .ok());
 }
 
-TEST_F(JsepTransportControllerTest, SuggestPayloadTypeBasic) {
-  auto config = JsepTransportController::Config();
-  CreateJsepTransportController(std::move(config));
-  cricket::Codec pcmu_codec =
-      cricket::CreateAudioCodec(-1, cricket::kPcmuCodecName, 8000, 1);
-  RTCErrorOr<PayloadType> pcmu_pt =
-      transport_controller_->SuggestPayloadType("mid", pcmu_codec);
-  ASSERT_TRUE(pcmu_pt.ok());
-  EXPECT_EQ(pcmu_pt.value(), PayloadType(0));
+TEST_F(JsepTransportControllerTest, RtpTransportCountHistogramNoBundle) {
+  metrics::Reset();
+  CreateJsepTransportController(JsepTransportController::Config());
+  auto description = CreateSessionDescriptionWithoutBundle();
+  transport_controller_->SetLocalDescription(SdpType::kOffer, description.get(),
+                                             nullptr);
+  transport_controller_->SetRemoteDescription(
+      SdpType::kAnswer, description.get(), description.get());
+  EXPECT_METRIC_EQ(
+      1, metrics::NumSamples("WebRTC.PeerConnection.RtpTransportCount"));
+  // We expect 2 transports
+  EXPECT_METRIC_THAT(
+      metrics::Samples("WebRTC.PeerConnection.RtpTransportCount"),
+      ElementsAre(Pair(2, 1)));
 }
 
-TEST_F(JsepTransportControllerTest, SuggestPayloadTypeReusesRemotePayloadType) {
-  auto config = JsepTransportController::Config();
-  CreateJsepTransportController(std::move(config));
-  const PayloadType remote_lyra_pt(99);
-  cricket::Codec remote_lyra_codec =
-      cricket::CreateAudioCodec(remote_lyra_pt, "lyra", 8000, 1);
-  auto offer = std::make_unique<SessionDescription>();
-  AddAudioSection(offer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
-  offer->contents()[0].media_description()->set_codecs({remote_lyra_codec});
-  EXPECT_TRUE(transport_controller_
-                  ->SetRemoteDescription(SdpType::kOffer, nullptr, offer.get())
-                  .ok());
-  cricket::Codec local_lyra_codec =
-      cricket::CreateAudioCodec(-1, "lyra", 8000, 1);
-  RTCErrorOr<PayloadType> lyra_pt =
-      transport_controller_->SuggestPayloadType(kAudioMid1, local_lyra_codec);
-  ASSERT_TRUE(lyra_pt.ok());
-  EXPECT_EQ(lyra_pt.value(), remote_lyra_pt);
+TEST_F(JsepTransportControllerTest, RtpTransportCountHistogramWithBundleGroup) {
+  metrics::Reset();
+  CreateJsepTransportController(JsepTransportController::Config());
+  auto description = CreateSessionDescriptionWithBundleGroup();
+  transport_controller_->SetLocalDescription(SdpType::kOffer, description.get(),
+                                             nullptr);
+  transport_controller_->SetRemoteDescription(
+      SdpType::kAnswer, description.get(), description.get());
+  EXPECT_METRIC_EQ(
+      1, metrics::NumSamples("WebRTC.PeerConnection.RtpTransportCount"));
+  // We expect 1 transport
+  EXPECT_METRIC_THAT(
+      metrics::Samples("WebRTC.PeerConnection.RtpTransportCount"),
+      ElementsAre(Pair(1, 1)));
 }
 
 TEST_F(JsepTransportControllerTest,
-       SuggestPayloadTypeAvoidsRemoteLocalConflict) {
-  auto config = JsepTransportController::Config();
-  CreateJsepTransportController(std::move(config));
-  // libwebrtc will normally allocate 110 to DTMF/48000
-  const PayloadType remote_opus_pt(110);
-  cricket::Codec remote_opus_codec =
-      cricket::CreateAudioCodec(remote_opus_pt, "opus", 48000, 2);
-  auto offer = std::make_unique<SessionDescription>();
-  AddAudioSection(offer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
-                  cricket::ICEMODE_FULL, cricket::CONNECTIONROLE_ACTPASS,
-                  nullptr);
-  offer->contents()[0].media_description()->set_codecs({remote_opus_codec});
+       IceRoleRemainsControllingAfterIceLiteSequence) {
+  CreateJsepTransportController(JsepTransportController::Config());
+  auto local_offer = std::make_unique<SessionDescription>();
+  AddAudioSection(local_offer.get(), kAudioMid1, kIceUfrag1, kIcePwd1,
+                  ICEMODE_FULL, CONNECTIONROLE_ACTPASS, nullptr);
+
+  // 1. Send Offer
+  EXPECT_TRUE(
+      transport_controller_
+          ->SetLocalDescription(SdpType::kOffer, local_offer.get(), nullptr)
+          .ok());
+  // Check Role -> Controlling
+  auto fake_dtls = static_cast<FakeDtlsTransport*>(
+      transport_controller_->GetDtlsTransport(kAudioMid1));
+  EXPECT_EQ(ICEROLE_CONTROLLING, fake_dtls->fake_ice_transport()->GetIceRole());
+
+  // 2. Receive Answer
+  auto remote_answer = std::make_unique<SessionDescription>();
+  AddAudioSection(remote_answer.get(), kAudioMid1, kIceUfrag2, kIcePwd2,
+                  ICEMODE_LITE, CONNECTIONROLE_PASSIVE, nullptr);
   EXPECT_TRUE(transport_controller_
-                  ->SetRemoteDescription(SdpType::kOffer, nullptr, offer.get())
+                  ->SetRemoteDescription(SdpType::kAnswer, local_offer.get(),
+                                         remote_answer.get())
                   .ok());
-  // Check that we get the Opus codec back with the remote PT
-  cricket::Codec local_opus_codec =
-      cricket::CreateAudioCodec(-1, "opus", 48000, 2);
-  RTCErrorOr<PayloadType> local_opus_pt =
-      transport_controller_->SuggestPayloadType(kAudioMid1, local_opus_codec);
-  EXPECT_EQ(local_opus_pt.value(), remote_opus_pt);
-  // Check that we don't get 110 allocated for DTMF, since it's in use for opus
-  cricket::Codec local_other_codec =
-      cricket::CreateAudioCodec(-1, cricket::kDtmfCodecName, 48000, 1);
-  RTCErrorOr<PayloadType> other_pt =
-      transport_controller_->SuggestPayloadType(kAudioMid1, local_other_codec);
-  ASSERT_TRUE(other_pt.ok());
-  EXPECT_NE(other_pt.value(), remote_opus_pt);
+  // Check Role -> no change.
+  EXPECT_EQ(ICEROLE_CONTROLLING, fake_dtls->fake_ice_transport()->GetIceRole());
+
+  // 3. Receive Offer
+  auto remote_offer = std::make_unique<SessionDescription>();
+  AddAudioSection(remote_offer.get(), kAudioMid1, kIceUfrag3, kIcePwd3,
+                  ICEMODE_LITE, CONNECTIONROLE_ACTPASS, nullptr);
+  EXPECT_TRUE(transport_controller_
+                  ->SetRemoteDescription(SdpType::kOffer, local_offer.get(),
+                                         remote_offer.get())
+                  .ok());
+  // Check Role -> no change.
+  EXPECT_EQ(ICEROLE_CONTROLLING, fake_dtls->fake_ice_transport()->GetIceRole());
+
+  // 4. Send Answer
+  auto local_answer = std::make_unique<SessionDescription>();
+  AddAudioSection(local_answer.get(), kAudioMid1, kIceUfrag4, kIcePwd4,
+                  ICEMODE_FULL, CONNECTIONROLE_PASSIVE, nullptr);
+  EXPECT_TRUE(transport_controller_
+                  ->SetLocalDescription(SdpType::kAnswer, local_answer.get(),
+                                        remote_offer.get())
+                  .ok());
+  // Check Role -> should still be ICEROLE_CONTROLLING.
+  EXPECT_EQ(ICEROLE_CONTROLLING, fake_dtls->fake_ice_transport()->GetIceRole());
 }
 
+TEST_F(JsepTransportControllerTest, CustomRtpTransportFactory) {
+  class CustomRtpTransportFactory : public RtpTransportFactory {
+   public:
+    explicit CustomRtpTransportFactory(const FieldTrialsView& field_trials)
+        : field_trials_view_(field_trials) {}
+    std::unique_ptr<RtpTransport> CreateRtpTransport(
+        absl::string_view transport_name,
+        std::unique_ptr<DtlsTransportInternal> rtp_dtls_transport,
+        std::unique_ptr<DtlsTransportInternal> rtcp_dtls_transport) override {
+      auto transport = std::make_unique<RtpTransport>(
+          /*rtcp_mux_enabled*/ false, field_trials_view_);
+      transport->SetRtpPacketTransport(rtp_dtls_transport.get());
+      if (transport_name == kAudioMid1) {
+        audio_transport_ = transport.get();
+        audio_rtp_dtls_transport_ = std::move(rtp_dtls_transport);
+        audio_rtcp_dtls_transport_ = std::move(rtcp_dtls_transport);
+      } else if (transport_name == kVideoMid1) {
+        video_transport_ = transport.get();
+        video_rtp_dtls_transport_ = std::move(rtp_dtls_transport);
+        video_rtcp_dtls_transport_ = std::move(rtcp_dtls_transport);
+      }
+      return transport;
+    }
+
+    RtpTransport* audio_transport_;
+    RtpTransport* video_transport_;
+
+   private:
+    // These DtlsTransportInternals just need to be kept alive.
+    std::unique_ptr<DtlsTransportInternal> audio_rtp_dtls_transport_;
+    std::unique_ptr<DtlsTransportInternal> audio_rtcp_dtls_transport_;
+    std::unique_ptr<DtlsTransportInternal> video_rtp_dtls_transport_;
+    std::unique_ptr<DtlsTransportInternal> video_rtcp_dtls_transport_;
+    const FieldTrialsView& field_trials_view_;
+  };
+
+  custom_rtp_transport_factory_ =
+      std::make_unique<CustomRtpTransportFactory>(field_trials_);
+  CustomRtpTransportFactory* factory = static_cast<CustomRtpTransportFactory*>(
+      custom_rtp_transport_factory_.get());
+
+  JsepTransportController::Config config;
+  config.rtp_transport_factory = custom_rtp_transport_factory_.get();
+  CreateJsepTransportController(std::move(config));
+  auto description = CreateSessionDescriptionWithoutBundle();
+  EXPECT_TRUE(
+      transport_controller_
+          ->SetLocalDescription(SdpType::kOffer, description.get(), nullptr)
+          .ok());
+  auto audio_rtp_transport = transport_controller_->GetRtpTransport(kAudioMid1);
+  auto video_rtp_transport = transport_controller_->GetRtpTransport(kVideoMid1);
+  EXPECT_NE(nullptr, audio_rtp_transport);
+  EXPECT_EQ(factory->audio_transport_, audio_rtp_transport);
+  EXPECT_NE(nullptr, video_rtp_transport);
+  EXPECT_EQ(factory->video_transport_, video_rtp_transport);
+}
+
+}  // namespace
 }  // namespace webrtc

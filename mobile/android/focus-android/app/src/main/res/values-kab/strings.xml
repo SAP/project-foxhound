@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ad k-d-yefk afus ad teqqimeḍ d aqeṛṛu.</p> <p>Seqdec-it d iminig uslig: <ul> <li>Nadi sakin snirem akken iwata deg usnas</li> <li>Sewḥel ineḍfaren (neɣ leqqem iɣewwaren akken ad tsirgeḍ ineḍfaren)</li> <li>Sfeḍ inagan n tuqqna akked uzray n tunigin d unadi</li> </ul> </p> <p>%1$s yesnulfa-t-id Mozilla. Tuɣdaṭ-nneɣ ad nḥareb γef internet yeldin d tezmert-is.<br/> <a href=\"%2$s\">Issin ugar</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ad k-d-yefk afus ad teqqimeḍ d aqeṛṛu.</p>\n<p>Seqdec-it d iminig uslig:\n<ul>\n<li>Nadi sakin snirem akken iwata deg usnas</li>\n<li>Sewḥel ineḍfaren (neɣ leqqem iɣewwaren akken ad tsirgeḍ ineḍfaren)</li>\n<li>Sfeḍ inagan n tuqqna akked uzray n tunigin d unadi</li>\n</ul> </p>\n<p>%1$s yesnulfa-t-id Mozilla. Tuɣdaṭ-nneɣ ad nḥareb γef internet yeldin d tezmert-is.<br/>\n<a href=\"%2$s\">Issin ugar</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Issin ugar</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -244,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Senṭeḍ neγ sekcem URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Amedya: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Amedya: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Amedya: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -316,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Err %1$s d iminig amezwer</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Azen isefka n useqdec</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Issin ugar</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla tettennaɣ akken ad telqeḍ kan ayen tesra i usnulfu d usnernu n %1$s i yal uiwen.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla tettennaɣ akken ad telqeḍ kan ayen tesra i usnulfu d usnernu n %1$s i yal uiwen.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Ping n useqdec n yal ass</string>
-  <string name="preference_daily_usage_ping_description">Aya yettallel Mozilla ad tessekyed amḍan n yiseqdacen urmiden.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Aya yettallel Mozilla ad tessekyed amḍan n yiseqdacen urmiden.</string>
   <string name="preference_daily_usage_ping_learn_more">Issin ugar</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Tasertit n tbaḍnit</string>
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">S ukemmel, ad tqebleḍ %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">S ukemmel, ad tqebleḍ %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Tiwtiln n useqdec n Fiefox.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Tiwtiln n useqdec n Fiefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox terḥa-t tudert-ik tabaḍnit. Issin ugar deg %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox terḥa-t tudert-ik tabaḍnit. Issin ugar deg %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Tasertit n tbaḍnit.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">Tasertit n tbaḍnit</string>
   <!-- New Onboarding flow first screen button label -->
@@ -813,7 +812,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Mdel Iccer</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Azen aneqqis n uɣelluy i Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Azen aneqqis n uɣelluy i Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->
@@ -883,7 +882,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Aya yezmer ad yili d ugur deg twila n uqeddac, neɣ yezmer ad yili d ḥedd i iɛerrḍen ad yaker tamagit n uqeddac. <br/><br/> Ma teqqneḍ ɣer uqeddac-a akken ilaq yakan, tuccḍa tezmer ad tili d taskudant.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Ahat yella ḥedd i iɛerrḍen ad yaker tamagit n usmel, ur ilaq ara ad tkemmleḍ.</label> <br><br> <label>%1$s ur yumin ara <b>%2$s</b> acku tasiregt d tarussint, tasiregt tesɛa azmul-is, neɣ aqeddac ur d-yuzin ara tisirag timeɣta.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Ahat yella ḥedd i iɛerrḍen ad yaker tamagit n usmel, ur ilaq ara ad tkemmleḍ.</label> <br><br>\n<label>%1$s ur yumin ara <b>%2$s</b> acku tasiregt d tarussint, tasiregt tesɛa azmul-is, neɣ aqeddac ur d-yuzin ara tisirag timeɣta.</label>]]></string>
   <!--
     Sessions List
 

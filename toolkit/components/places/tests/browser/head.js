@@ -27,13 +27,15 @@ async function clearHistoryAndHistoryCache() {
 }
 
 async function synthesizeVisitByUser(browser, url) {
-  let onNewTab = BrowserTestUtils.waitForNewTab(browser.ownerGlobal.gBrowser);
+  let onNewTab = BrowserTestUtils.waitForNewTab(
+    browser.documentGlobal.gBrowser
+  );
   // We intentionally turn off this a11y check, because the following click is
   // purposefully sent on an arbitrary web content that is not expected to be
   // tested by itself with the browser mochitests, therefore this rule check
   // shall be ignored by a11y_checks suite.
   AccessibilityUtils.setEnv({ mustHaveAccessibleRule: false });
-  await ContentTask.spawn(browser, [url], async ([href]) => {
+  await SpecialPowers.spawn(browser, [url], async href => {
     EventUtils.synthesizeMouseAtCenter(
       content.document.querySelector(`a[href='${href}'`),
       {},
@@ -46,9 +48,11 @@ async function synthesizeVisitByUser(browser, url) {
 }
 
 async function synthesizeVisitByScript(browser, url) {
-  let onNewTab = BrowserTestUtils.waitForNewTab(browser.ownerGlobal.gBrowser);
+  let onNewTab = BrowserTestUtils.waitForNewTab(
+    browser.documentGlobal.gBrowser
+  );
   AccessibilityUtils.setEnv({ mustHaveAccessibleRule: false });
-  await ContentTask.spawn(browser, [url], async ([href]) => {
+  await SpecialPowers.spawn(browser, [url], async href => {
     let a = content.document.querySelector(`a[href='${href}'`);
     a.click();
   });
@@ -76,10 +80,10 @@ async function assertLinkVisitedStatus(
     return true;
   });
 
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
     [url, expectedVisited],
-    async ([href, visited]) => {
+    async (href, visited) => {
       // ElementState::VISITED
       const VISITED_STATE = 1 << 18;
       await ContentTaskUtils.waitForCondition(() => {
@@ -93,4 +97,132 @@ async function assertLinkVisitedStatus(
     }
   );
   Assert.ok(true, "The visited state is corerct");
+}
+
+async function checkFrecencyEqual(url1, url2) {
+  let frecency1 = await PlacesTestUtils.getDatabaseValue(
+    "moz_places",
+    "frecency",
+    {
+      url: url1,
+    }
+  );
+  let frecency2 = await PlacesTestUtils.getDatabaseValue(
+    "moz_places",
+    "frecency",
+    {
+      url: url2,
+    }
+  );
+  Assert.equal(
+    frecency1,
+    frecency2,
+    `Frecency of ${url1} is equal to frecency of ${url2}.`
+  );
+}
+
+async function checkFrecencyGreater(url1, url2) {
+  let frecency1 = await PlacesTestUtils.getDatabaseValue(
+    "moz_places",
+    "frecency",
+    {
+      url: url1,
+    }
+  );
+  let frecency2 = await PlacesTestUtils.getDatabaseValue(
+    "moz_places",
+    "frecency",
+    {
+      url: url2,
+    }
+  );
+  Assert.greater(
+    frecency1,
+    frecency2,
+    `Frecency of ${url1} is greater than frecency of ${url2}.`
+  );
+}
+
+async function checkFrecencyNonZero(url) {
+  Assert.greater(
+    await PlacesTestUtils.getDatabaseValue("moz_places", "frecency", {
+      url,
+    }),
+    0,
+    `Frecency of ${url} is greater than 0.`
+  );
+}
+
+async function checkUrlHidden(url, expectedHidden) {
+  let hiddenState = await PlacesTestUtils.getDatabaseValue(
+    "moz_places",
+    "hidden",
+    {
+      url,
+    }
+  );
+  Assert.equal(
+    hiddenState,
+    expectedHidden,
+    `URL ${url} is ${expectedHidden ? "hidden" : "not hidden."}`
+  );
+}
+
+async function checkRedirect(
+  redirectUrl,
+  targetUrl,
+  intermediateUrls = [],
+  isTyped = false
+) {
+  // First, check redirect and intermediate urls are hidden and the target URL
+  // is not hidden.
+  await checkUrlHidden(redirectUrl, 1);
+  for (let intermediateUrl of intermediateUrls) {
+    await checkUrlHidden(intermediateUrl, 1);
+  }
+  await checkUrlHidden(targetUrl, 0);
+
+  // Check the frecency values of redirect URLs are expected.
+  await checkFrecencyNonZero(redirectUrl);
+  for (let intermediateUrl of intermediateUrls) {
+    if (isTyped) {
+      await checkFrecencyGreater(redirectUrl, intermediateUrl);
+    } else {
+      await checkFrecencyEqual(redirectUrl, intermediateUrl);
+    }
+  }
+
+  // Check intermediate urls have the same frecency.
+  let intermediateUrlObj = [];
+  for (let intermediateUrl of intermediateUrls) {
+    let frecency = await PlacesTestUtils.getDatabaseValue(
+      "moz_places",
+      "frecency",
+      {
+        url: intermediateUrl,
+      }
+    );
+    intermediateUrlObj.push({ url: intermediateUrl, frecency });
+  }
+  if (intermediateUrlObj.length) {
+    let expected = intermediateUrlObj[0];
+    for (let i = 1; i < intermediateUrlObj.length; ++i) {
+      Assert.equal(
+        intermediateUrlObj[i].frecency,
+        expected.frecency,
+        `Frecency of intermediate url ${intermediateUrlObj[i].url} should match ${expected.url}`
+      );
+    }
+  }
+
+  // Check the target URL has a higher frecency than the intermediate URLs.
+  for (let intermediateUrl of intermediateUrls) {
+    await checkFrecencyGreater(targetUrl, intermediateUrl);
+  }
+
+  if (isTyped && intermediateUrls.length) {
+    await checkFrecencyGreater(redirectUrl, targetUrl);
+  } else {
+    await checkFrecencyGreater(targetUrl, redirectUrl);
+  }
 }

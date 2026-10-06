@@ -37,6 +37,8 @@ interface nsIUrlClassifierBlockedChannel: nsISupports
   // ID of the top level browser associated with the blocked channel.
   readonly attribute uint64_t browserId;
 
+  readonly attribute nsIChannel channel;
+
   // Unblock the load, but inform the UI that the tracking content will be
   // replaced with a shim. The unblocked channel is still considered as a
   // tracking channel. The only difference to allow() is the event sent to the

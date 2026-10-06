@@ -1,0 +1,10 @@
+# Invalidation tests
+# Format: OPERATOR file1.yaml file2.yaml
+# ==  no tiles should be dirty after rendering file2 (zero invalidation)
+# !=  at least one tile should be dirty after rendering file2
+
+# Scrolling a sub-picture should not invalidate tiles
+== scroll_subpic_1.yaml scroll_subpic_2.yaml
+
+# Moving a rect within a tile requires a composite (and dirty tile)
+!= composite_nop_1.yaml composite_nop_2.yaml

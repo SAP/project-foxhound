@@ -1,0 +1,22 @@
+diff --git a/qrcode.mjs b/qrcode.mjs
+index 444522524987..4f4174684310 100644
+--- a/qrcode.mjs
++++ b/qrcode.mjs
+@@ -826,7 +826,7 @@ const QRMode = {
+ // QRErrorCorrectionLevel
+ //---------------------------------------------------------------------
+ 
+-const QRErrorCorrectionLevel = {
++export const QRErrorCorrectionLevel = {
+   L : 1,
+   M : 0,
+   Q : 3,
+@@ -1242,7 +1242,7 @@ const qrPolynomial = function(num, shift) {
+ // QRRSBlock
+ //---------------------------------------------------------------------
+ 
+-const QRRSBlock = function() {
++export const QRRSBlock = function() {
+ 
+   const RS_BLOCK_TABLE = [
+ 

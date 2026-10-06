@@ -14,19 +14,17 @@
  * limitations under the License.
  */
 
-#ifndef __ClearKeySession_h__
-#define __ClearKeySession_h__
+#ifndef ClearKeySession_h_
+#define ClearKeySession_h_
 
 // This include is required in order for content_decryption_module to work
 // on Unix systems.
-#include <stddef.h>
 
 #include <string>
 #include <vector>
 
-#include "content_decryption_module.h"
-
 #include "ClearKeyUtils.h"
+#include "content_decryption_module.h"
 
 class ClearKeySession {
  public:
@@ -53,4 +51,4 @@ class ClearKeySession {
   const cdm::SessionType mSessionType;
 };
 
-#endif  // __ClearKeySession_h__
+#endif  // ClearKeySession_h_

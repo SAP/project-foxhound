@@ -1,0 +1,8 @@
+[bindings.kotlin]
+package_name = "mozilla.appservices.merino"
+omit_checksums = true
+
+[bindings.swift]
+ffi_module_name = "MozillaRustComponents"
+ffi_module_filename = "merinoFFI"
+generate_codable_conformance = true

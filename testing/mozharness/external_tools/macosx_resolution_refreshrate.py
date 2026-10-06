@@ -39,6 +39,9 @@ def get_target_resolution():
 
 def get_refresh_rate():
     if platform.system() == "Darwin":
+        if is_virtual_machine():
+            print("Skipping refresh-rate check on headless VM.")
+            return 0
         # 11.20/aarch64 (mac mini m1) - always has 53.00
         # 14.70 - mix between 60.00 and 24.00
         cmd = "system_profiler SPDisplaysDataType | grep 'UI' | cut -d '@' -f 2 | cut -d ' ' -f 2 | sed 's/Hz//'"
@@ -65,6 +68,9 @@ def get_refresh_rate():
 
 def get_resolution():
     if platform.system() == "Darwin":
+        if is_virtual_machine():
+            print("Skipping resolution check on headless VM.")
+            return 0
         """
         system_profiler SPDisplaysDataType | grep Resolution
           Resolution: 1920 x 1080 (1080p FHD - Full High Definition)
@@ -87,6 +93,13 @@ def get_resolution():
     return 0
 
 
+def is_virtual_machine():
+    result = subprocess.run(
+        "sysctl -n hw.model", shell=True, capture_output=True, text=True
+    )
+    return result.stdout.strip().startswith("VirtualMac")
+
+
 def main():
     # NOTE: this script is only designed for macosx.
     parser = OptionParser()
@@ -106,6 +119,9 @@ def main():
     os_version = get_os_version()
     # Currently the 10.15 machines are not all consistent with proper kvm, resolution, refresh rate
     if os_version == "10.15":
+        return 0
+    # Virtual machines have no physical display; skip display checks.
+    if platform.system() == "Darwin" and is_virtual_machine():
         return 0
     return retVal
 

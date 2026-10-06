@@ -1,0 +1,41 @@
+{
+  "background": {
+    "color": {
+      "@base": {
+        "value": {
+          "nativeTheme": "Field",
+          "default": "{background.color.box.@base}"
+        }
+      }
+    }
+  },
+  "border": {
+    "color": {
+      "value": {
+        "nativeTheme": "ThreeDShadow",
+        "light": "{color.gray.10}",
+        "dark": "{color.gray.60}",
+        "forcedColors": "{border.color.@base}"
+      }
+    },
+    "radius": {
+      "value": "16px"
+    }
+  },
+  "padding": {
+    "@base": {
+      "value": "{panel.padding.block}"
+    },
+    "block": {
+      "value": "8px"
+    }
+  },
+  "text": {
+    "color": {
+      "value": {
+        "nativeTheme": "FieldText",
+        "default": "{text.color.@base}"
+      }
+    }
+  }
+}

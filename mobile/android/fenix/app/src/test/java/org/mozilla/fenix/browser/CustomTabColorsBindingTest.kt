@@ -7,8 +7,8 @@ package org.mozilla.fenix.browser
 import android.view.Window
 import io.mockk.mockk
 import io.mockk.verify
-import mozilla.components.support.test.rule.MainCoroutineRule
-import org.junit.Rule
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.browser.store.BrowserScreenAction.CustomTabColorsUpdated
@@ -19,30 +19,31 @@ import org.robolectric.RobolectricTestRunner
 @Suppress("DEPRECATION") // for accessing the window properties
 @RunWith(RobolectricTestRunner::class)
 class CustomTabColorsBindingTest {
-    @get:Rule
-    val coroutineRule = MainCoroutineRule()
 
+    private val testDispatcher = StandardTestDispatcher()
     private val window: Window = mockk(relaxed = true)
     private val store = BrowserScreenStore()
-    private val binding = CustomTabColorsBinding(store, window)
+    private val binding = CustomTabColorsBinding(store, window, testDispatcher)
 
     @Test
-    fun `WHEN colors for the system bars change THEN apply them to the system bars`() {
+    fun `WHEN colors for the system bars change THEN apply them to the system bars`() = runTest(testDispatcher) {
         binding.start()
 
-        store.dispatch(CustomTabColorsUpdated(CustomTabColors(1, 2, 3, 4)))
+        store.dispatch(CustomTabColorsUpdated(CustomTabColors(1, 2, 3, 4, 5)))
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify { window.statusBarColor = 2 }
-        verify { window.navigationBarColor = 2 }
-        verify { window.navigationBarDividerColor = 3 }
+        verify { window.navigationBarColor = 3 }
+        verify { window.navigationBarDividerColor = 4 }
     }
 
     @Test
-    fun `WHEN custom colors are not available THEN don't apply any color change`() {
-        val binding = CustomTabColorsBinding(store, window)
+    fun `WHEN custom colors are not available THEN don't apply any color change`() = runTest(testDispatcher) {
+        val binding = CustomTabColorsBinding(store, window, testDispatcher)
         binding.start()
 
         store.dispatch(CustomTabColorsUpdated(CustomTabColors(null, null, null, null)))
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(exactly = 0) { window.statusBarColor = any<Int>() }
         verify(exactly = 0) { window.navigationBarColor = any<Int>() }

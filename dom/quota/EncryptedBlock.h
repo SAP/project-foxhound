@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+
 #include "mozilla/Assertions.h"
 #include "mozilla/Span.h"
 #include "nsTArray.h"
@@ -43,6 +42,10 @@ class EncryptedBlock {
     // Currently, only sizeof(uint16_t) bytes gets used in the first block.
     std::fill(mData.begin(), mData.begin() + CipherPrefixOffset(), 0);
     SetActualPayloadLength(MaxPayloadLength());
+  }
+
+  static constexpr size_t RoundedUpToBasicBlockSize(const size_t aValue) {
+    return (aValue + BasicBlockSize - 1) / BasicBlockSize * BasicBlockSize;
   }
 
   size_t MaxPayloadLength() const {
@@ -84,10 +87,6 @@ class EncryptedBlock {
  private:
   static constexpr size_t CipherPrefixOffset() {
     return RoundedUpToBasicBlockSize(sizeof(uint16_t));
-  }
-
-  static constexpr size_t RoundedUpToBasicBlockSize(const size_t aValue) {
-    return (aValue + BasicBlockSize - 1) / BasicBlockSize * BasicBlockSize;
   }
 
   nsTArray<uint8_t> mData;

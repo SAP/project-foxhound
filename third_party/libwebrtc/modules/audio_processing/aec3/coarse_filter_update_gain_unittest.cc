@@ -11,16 +11,25 @@
 #include "modules/audio_processing/aec3/coarse_filter_update_gain.h"
 
 #include <algorithm>
+#include <array>
+#include <cstddef>
 #include <memory>
 #include <numeric>
 #include <string>
 #include <vector>
 
+#include "api/audio/echo_canceller3_config.h"
 #include "modules/audio_processing/aec3/adaptive_fir_filter.h"
 #include "modules/audio_processing/aec3/aec3_common.h"
+#include "modules/audio_processing/aec3/aec3_fft.h"
 #include "modules/audio_processing/aec3/aec_state.h"
+#include "modules/audio_processing/aec3/block.h"
+#include "modules/audio_processing/aec3/fft_buffer.h"
+#include "modules/audio_processing/aec3/fft_data.h"
 #include "modules/audio_processing/aec3/render_delay_buffer.h"
+#include "modules/audio_processing/aec3/render_signal_analyzer.h"
 #include "modules/audio_processing/test/echo_canceller_test_tools.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/numerics/safe_minmax.h"
 #include "rtc_base/random.h"
 #include "rtc_base/strings/string_builder.h"
@@ -141,7 +150,7 @@ TEST(CoarseFilterUpdateGainDeathTest, NullDataOutputGain) {
   RenderSignalAnalyzer analyzer(EchoCanceller3Config{});
   FftData E;
   const EchoCanceller3Config::Filter::CoarseConfiguration& config = {
-      12, 0.5f, 220075344.f};
+      .length_blocks = 12, .rate = 0.5f, .noise_gate = 220075344.f};
   CoarseFilterUpdateGain gain(config, 250);
   std::array<float, kFftLengthBy2Plus1> render_power;
   render_power.fill(0.f);
@@ -226,7 +235,7 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(1, 2, 4),
     [](const ::testing::TestParamInfo<
         CoarseFilterUpdateGainOneTwoFourRenderChannels::ParamType>& info) {
-      return (rtc::StringBuilder() << "Render" << info.param).str();
+      return (StringBuilder() << "Render" << info.param).str();
     });
 
 // Verifies that the magnitude of the gain on average decreases for a

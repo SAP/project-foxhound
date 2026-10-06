@@ -1,0 +1,247 @@
+# Measure the overhead taint tracking adds, by running the same standard
+# benchmarks in Foxhound and in a stock Firefox built from the upstream commit
+# Foxhound is based on.
+name: Benchmarks
+
+on:
+  schedule:
+    # Weekly, on Sunday morning. Benchmarks are too slow and too noisy to run
+    # on every pull request.
+    - cron: '0 4 * * 0'
+  workflow_dispatch:
+    inputs:
+      rounds:
+        description: 'Interleaved rounds per build (more is less noisy, and slower)'
+        required: false
+        default: '5'
+      benchmarks:
+        description: 'Comma separated subset of sunspider,kraken,v8'
+        required: false
+        default: 'sunspider,kraken,v8'
+
+permissions:
+  contents: read
+
+jobs:
+
+  # The stock Firefox to compare against, built from the upstream commit
+  # recorded in .PLAYWRIGHT_VERSION with a mozconfig matching Foxhound's, so
+  # the two differ in the instrumentation rather than in build options. The
+  # result is cached, since that commit only moves on an upstream merge.
+  build-vanilla:
+    runs-on: ubuntu-22.04
+    name: Build stock Firefox
+    outputs:
+      upstream: ${{ steps.upstream.outputs.commit }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # The upstream commit is an ancestor of this branch, so the full
+          # history is needed to check it out.
+          fetch-depth: 0
+
+      - name: Read upstream commit
+        id: upstream
+        run: |
+          commit="$(grep -oP 'FIREFOX_UPSTREAM_COMMIT=\K[0-9a-f]+' .PLAYWRIGHT_VERSION)"
+          if [ -z "$commit" ]; then
+            echo "could not read FIREFOX_UPSTREAM_COMMIT" >&2
+            exit 1
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "Upstream Firefox commit: $commit"
+
+      - name: Restore cached build
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: vanilla-dist
+          key: vanilla-firefox-${{ steps.upstream.outputs.commit }}-ubuntu-22.04
+
+      - name: Free Disk Space
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Set Swap Space
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
+
+      - name: Install dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl python3 python3-pip python3-venv tar zip unzip git
+          python3 -m pip install setuptools
+
+      - name: Build stock Firefox
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          git worktree add ../vanilla "${{ steps.upstream.outputs.commit }}" --detach
+          cd ../vanilla
+          # Mirror the Foxhound mozconfig, minus the Foxhound branding and app
+          # name, which do not exist upstream.
+          cat > .mozconfig <<'EOF'
+          mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-vanilla
+          ac_add_options --disable-updater
+          ac_add_options --disable-sandbox
+          ac_add_options --without-wasm-sandboxed-libraries
+          ac_add_options --disable-crashreporter
+          ac_add_options --disable-backgroundtasks
+          ac_add_options --enable-release
+          MOZ_REQUIRE_SIGNING=
+          EOF
+          ./mach --no-interactive bootstrap --application-choice=browser
+          source .PLAYWRIGHT_VERSION || true
+          ./mach build
+          ./mach package
+          mkdir -p "$GITHUB_WORKSPACE/vanilla-dist"
+          cp obj-vanilla/dist/firefox-*.tar.* "$GITHUB_WORKSPACE/vanilla-dist/"
+
+      - name: Upload stock Firefox
+        uses: actions/upload-artifact@v4
+        with:
+          name: vanilla-firefox
+          path: vanilla-dist/*
+          compression-level: 0
+          if-no-files-found: error
+
+  # Foxhound itself, built the same way the Browser workflow builds it.
+  build-foxhound:
+    runs-on: ubuntu-22.04
+    name: Build Foxhound
+    steps:
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl python3 python3-pip python3-venv tar zip unzip git
+          python3 -m pip install setuptools
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Bootstrap
+        run: |
+          cp taintfox_mozconfig_ubuntu .mozconfig
+          bash build.sh -p -n
+          bash build.sh -u -v
+
+      - name: Build
+        run: bash build.sh -s -v
+
+      - name: Package
+        run: bash build.sh -s -u
+
+      - name: Upload Foxhound
+        uses: actions/upload-artifact@v4
+        with:
+          name: foxhound-benchmark-build
+          path: obj-tf-release/dist/foxhound-*.tar.xz
+          compression-level: 0
+          if-no-files-found: error
+
+  benchmark:
+    runs-on: ubuntu-22.04
+    name: Run benchmarks
+    needs: [build-vanilla, build-foxhound]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libasound2 libatk1.0-0 libcairo-gobject2 libcairo2 libdbus-1-3 \
+            libdbus-glib-1-2 libfontconfig1 libfreetype6 libgdk-pixbuf-2.0-0 \
+            libglib2.0-0 libgtk-3-0 libpango-1.0-0 libpangocairo-1.0-0 libx11-6 \
+            libx11-xcb1 libxcb-shm0 libxcb1 libxcomposite1 libxcursor1 \
+            libxdamage1 libxext6 libxfixes3 libxi6 libxrandr2 libxrender1 \
+            libxtst6 fonts-liberation
+
+      - name: Download builds
+        uses: actions/download-artifact@v4
+        with:
+          path: builds
+
+      - name: Unpack builds
+        id: unpack
+        run: |
+          set -euo pipefail
+          mkdir -p unpacked
+          for archive in builds/*/*.tar.*; do
+            echo "unpacking $archive"
+            tar -xf "$archive" -C unpacked
+          done
+          vanilla="$(find unpacked -type f -name firefox -perm -u+x | head -1)"
+          foxhound="$(find unpacked -type f -name foxhound -perm -u+x | head -1)"
+          if [ -z "$vanilla" ] || [ -z "$foxhound" ]; then
+            echo "could not find both binaries under unpacked/" >&2
+            find unpacked -maxdepth 3 -type f -perm -u+x | head -20 >&2
+            exit 1
+          fi
+          echo "vanilla=$vanilla" >> "$GITHUB_OUTPUT"
+          echo "foxhound=$foxhound" >> "$GITHUB_OUTPUT"
+          "$vanilla" --version || true
+          "$foxhound" --version || true
+
+      - name: Run benchmarks
+        run: |
+          python3 taint/test/perf/run_benchmarks.py \
+            --rounds "${{ github.event.inputs.rounds || '5' }}" \
+            --benchmarks "${{ github.event.inputs.benchmarks || 'sunspider,kraken,v8' }}" \
+            --out benchmark-results.json \
+            vanilla="${{ steps.unpack.outputs.vanilla }}" \
+            foxhound="${{ steps.unpack.outputs.foxhound }}"
+
+      - name: Summarise
+        if: always()
+        run: |
+          if [ -s benchmark-results.json ]; then
+            python3 taint/test/perf/summarise.py benchmark-results.json \
+              --baseline vanilla --out benchmark-summary.md
+            cat benchmark-summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No results were produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            benchmark-results.json
+            benchmark-summary.md
+          if-no-files-found: warn

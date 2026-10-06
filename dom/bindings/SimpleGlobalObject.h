@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,17 +8,17 @@
  * is safe to use on both mainthread and worker threads.
  */
 
-#ifndef mozilla_dom_SimpleGlobalObject_h__
-#define mozilla_dom_SimpleGlobalObject_h__
+#ifndef mozilla_dom_SimpleGlobalObject_h_
+#define mozilla_dom_SimpleGlobalObject_h_
 
-#include "nsThreadUtils.h"
+#include "js/TypeDecls.h"
+#include "js/Value.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIGlobalObject.h"
 #include "nsISupportsImpl.h"
+#include "nsThreadUtils.h"
 #include "nsWrapperCache.h"
-#include "js/TypeDecls.h"
-#include "js/Value.h"
 
 namespace mozilla::dom {
 
@@ -72,7 +70,7 @@ class SimpleGlobalObject final : public nsIGlobalObject, public nsWrapperCache {
   nsISerialEventTarget* SerialEventTarget() const final {
     return NS_GetCurrentThread();
   }
-  nsresult Dispatch(already_AddRefed<nsIRunnable>&& aRunnable) const final {
+  nsresult Dispatch(already_AddRefed<nsIRunnable> aRunnable) const final {
     return NS_DispatchToCurrentThread(std::move(aRunnable));
   }
 
@@ -100,4 +98,4 @@ class SimpleGlobalObject final : public nsIGlobalObject, public nsWrapperCache {
 
 }  // namespace mozilla::dom
 
-#endif /* mozilla_dom_SimpleGlobalObject_h__ */
+#endif /* mozilla_dom_SimpleGlobalObject_h_ */

@@ -48,6 +48,23 @@
 
           );
 }
+#f::after {
+
+  content: attr(          
+      ns|/*Comment*/data-text
+
+
+          );
+}
+
+#g::after {
+
+  content: attr(          
+      ns|/*Comment*/ data-text
+
+
+          );
+}
 </style>
 </head>
 <body xmlns:ns="http://www.example.com/ns">
@@ -56,5 +73,7 @@
 <div id="b" ns:data-text="World">Hello</div>
 <div id="d" ns:data-text="World">Hello</div>
 <div id="e" ns:data-text="World">Hello</div>
+<div id="f" ns:data-text="World">Hello</div>
+<div id="g" ns:data-text="World">Hello</div>
 </body>
 </html>

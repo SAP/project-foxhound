@@ -18,152 +18,102 @@
 
   <script type="application/javascript">
 
-    // //////////////////////////////////////////////////////////////////////////
-    // Invokers
+    async function doTest() {
+      const tree3 = { SECTION: [ { role: ROLE_TEXT_LEAF, name: "x" } ] };
+      testAccessibleTree("container3", tree3);
 
-    /**
-     * Middle image accessible removal results in text accessible removal.
-     *
-     * Before:
-     *   DOM: whitespace img1 whitespace img2 whitespace img3 whitespace,
-     *   a11y: img1 whitespace img2 whitespace img3
-     * After:
-     *   DOM: whitespace img1 whitespace whitespace img3 whitespace,
-     *   a11y: img1 whitespace img3
-     */
-    function removeImg() {
-      this.containerNode = getNode("container1");
-      this.imgNode = getNode("img1");
-      this.img = getAccessible(this.imgNode);
-      this.text = this.img.nextSibling;
+      getNode("c3_inner").style.textAlign = "center";
+      document.body.offsetTop; // Flush layout.
+      window.windowUtils.advanceTimeAndRefresh(100);
 
-      this.eventSeq = [
-        new invokerChecker(EVENT_HIDE, this.img),
-        new invokerChecker(EVENT_HIDE, this.text),
-        new invokerChecker(EVENT_REORDER, this.containerNode),
-      ];
+      testAccessibleTree("container3", tree3);
+      window.windowUtils.restoreNormalRefresh();
 
-      this.finalCheck = function textLeafUpdate_finalCheck() {
-        var tree =
-          { SECTION: [
+      /**
+       * Middle image accessible removal results in text accessible removal.
+       *
+       * Before:
+       *   DOM: whitespace img1 whitespace img2 whitespace img3 whitespace,
+       *   a11y: img1 whitespace img2 whitespace img3
+       * After:
+       *   DOM: whitespace img1 whitespace whitespace img3 whitespace,
+       *   a11y: img1 whitespace img3
+       */
+      const containerNode1 = getNode("container1");
+      const imgNode = getNode("img1");
+      const img = getAccessible(imgNode);
+      const text = img.nextSibling;
+
+      let tree =
+        { SECTION: [
+          { GRAPHIC: [] },
+          { TEXT_LEAF: [] },
+          { GRAPHIC: [] },
+          { TEXT_LEAF: [] },
+          { GRAPHIC: [] },
+        ] };
+      testAccessibleTree(containerNode1, tree);
+
+      let p = waitForEvents([[EVENT_HIDE, img],
+                             [EVENT_HIDE, text],
+                             [EVENT_REORDER, containerNode1]]);
+      containerNode1.removeChild(imgNode);
+      await p;
+
+      tree =
+        { SECTION: [
+          { GRAPHIC: [] },
+          { TEXT_LEAF: [] },
+          { GRAPHIC: [] },
+        ] };
+      testAccessibleTree(containerNode1, tree);
+
+      /**
+       * Append image making the whitespace visible and thus accessible.
+       * Note: images and whitespaces are on different leves of accessible
+       * trees, so that image container accessible update doesn't update the
+       * tree of whitespace container.
+       *
+       * Before:
+       *   DOM: whitespace emptylink whitespace linkwithimg whitespace
+       *   a11y: emptylink linkwithimg
+       * After:
+       *   DOM: whitespace linkwithimg whitespace linkwithimg whitespace
+       *   a11y: linkwithimg whitespace linkwithimg
+       */
+      const containerNode2 = getNode("container2");
+      const topNode = containerNode2.parentNode;
+      const textNode = containerNode2.nextSibling;
+      const newImgNode = document.createElement("img");
+      newImgNode.setAttribute("src", "../moz.png");
+
+      tree =
+        { SECTION: [
+          { LINK: [] },
+          { LINK: [
             { GRAPHIC: [] },
-            { TEXT_LEAF: [] },
+          ] },
+        ] };
+      testAccessibleTree(topNode, tree);
+
+      p = waitForEvents([[EVENT_SHOW, textNode], [EVENT_SHOW, newImgNode],
+                         [EVENT_REORDER, topNode]]);
+      containerNode2.appendChild(newImgNode);
+      await p;
+
+      tree =
+        { SECTION: [
+          { LINK: [
             { GRAPHIC: [] },
-          ] };
-
-        testAccessibleTree(this.containerNode, tree);
-      };
-
-      this.invoke = function setOnClickAttr_invoke() {
-        var tree =
-          { SECTION: [
+          ] },
+          { TEXT_LEAF: [] },
+          { LINK: [
             { GRAPHIC: [] },
-            { TEXT_LEAF: [] },
-            { GRAPHIC: [] },
-            { TEXT_LEAF: [] },
-            { GRAPHIC: [] },
-          ] };
+          ] },
+        ] };
+      testAccessibleTree(topNode, tree);
 
-        testAccessibleTree(this.containerNode, tree);
-
-        this.containerNode.removeChild(this.imgNode);
-      };
-
-      this.getID = function setOnClickAttr_getID() {
-        return "remove middle img";
-      };
-    }
-
-    /**
-     * Append image making the whitespace visible and thus accessible.
-     * Note: images and whitespaces are on different leves of accessible trees,
-     * so that image container accessible update doesn't update the tree
-     * of whitespace container.
-     *
-     * Before:
-     *   DOM: whitespace emptylink whitespace linkwithimg whitespace
-     *   a11y: emptylink linkwithimg
-     * After:
-     *   DOM: whitespace linkwithimg whitespace linkwithimg whitespace
-     *   a11y: linkwithimg whitespace linkwithimg
-     */
-    function insertImg() {
-      this.containerNode = getNode("container2");
-      this.topNode = this.containerNode.parentNode;
-      this.textNode = this.containerNode.nextSibling;
-      this.imgNode = document.createElement("img");
-      this.imgNode.setAttribute("src", "../moz.png");
-
-      this.eventSeq = [
-        new asyncInvokerChecker(EVENT_SHOW, getAccessible, this.textNode),
-        new asyncInvokerChecker(EVENT_SHOW, getAccessible, this.imgNode),
-        new orderChecker(),
-        new invokerChecker(EVENT_REORDER, this.topNode),
-      ];
-
-      this.invoke = function insertImg_invoke() {
-        var tree =
-          { SECTION: [
-            { LINK: [] },
-            { LINK: [
-              { GRAPHIC: [] },
-            ] },
-          ] };
-
-        testAccessibleTree(this.topNode, tree);
-
-        this.containerNode.appendChild(this.imgNode);
-      };
-
-      this.finalCheck = function insertImg_finalCheck() {
-        var tree =
-          { SECTION: [
-            { LINK: [
-              { GRAPHIC: [ ] },
-            ] },
-            { TEXT_LEAF: [ ] },
-            { LINK: [
-              { GRAPHIC: [ ] },
-            ] },
-          ] };
-
-        testAccessibleTree(this.topNode, tree);
-      };
-
-      this.getID = function appendImg_getID() {
-        return "insert img into internal container";
-      };
-    }
-
-  function dontCreateMapWhiteSpace() {
-    const tree = { SECTION: [ { role: ROLE_TEXT_LEAF, name: "x" } ] };
-    testAccessibleTree("container3", tree);
-
-    getNode("c3_inner").style.textAlign = "center";
-    document.body.offsetTop; // Flush layout.
-    window.windowUtils.advanceTimeAndRefresh(100);
-
-    testAccessibleTree("container3", tree);
-    window.windowUtils.restoreNormalRefresh();
-  }
-
-    // //////////////////////////////////////////////////////////////////////////
-    // Test
-
-    // gA11yEventDumpID = "eventdump"; // debug stuff
-    // gA11yEventDumpToConsole = true;
-
-    var gQueue = null;
-
-    function doTest() {
-      dontCreateMapWhiteSpace();
-
-      gQueue = new eventQueue();
-
-      gQueue.push(new removeImg());
-      gQueue.push(new insertImg());
-
-      gQueue.invoke(); // SimpleTest.finish() will be called in the end
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

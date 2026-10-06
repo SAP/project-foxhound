@@ -1,0 +1,791 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Test InspectorUtils.getComputationSteps</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<code>InspectorUtils.getComputationSteps</code>
+
+<style>
+  * {
+    box-sizing: border-box;
+  }
+
+  :root {
+    font-size: 20px;
+  }
+
+  main {
+    container-type: size;
+    width: 200px;
+    height: 100px;
+  }
+
+  section {
+    width: 100px;
+    height: 50px;
+    font-size: 24px;
+
+    &::after {
+      font-size: 28px;
+    }
+  }
+</style>
+
+<main>
+  <section>Section.80</section>
+</main>
+
+<script>
+add_task(async function() {
+  const { InspectorUtils } = SpecialPowers;
+  const test = ({expression, el, pseudo, expected}) => {
+    const res = Array.from(InspectorUtils.getComputationSteps(expression, el, pseudo));
+    const outer = el.outerHTML;
+    const fmt = arr => `(${arr.length})[${arr.map(s => `'${s}'`).join(", ")}]`
+    is(
+      fmt(res),
+      fmt(expected),
+      `Got expected steps for "${expression}" on ${outer.substring(0, outer.indexOf(">") + 1)}${pseudo ? "::" + pseudo: ""}`
+    );
+  }
+
+  const sectionEl = document.querySelector("section");
+
+  /// clamp()
+  test({
+    expression: "clamp(1,2,3)",
+    el: sectionEl,
+    expected: [
+      "clamp(1, 2, 3)",
+      "2"
+    ]
+  });
+  test({
+    expression: "clamp(3,2,1)",
+    el: sectionEl,
+    expected: [
+      "clamp(3, 2, 1)",
+      "3"
+    ]
+  });
+  test({
+    expression: "clamp(1,3,2)",
+    el: sectionEl,
+    expected: [
+      "clamp(1, 3, 2)",
+      "2"
+    ]
+  });
+
+  /// round()
+  test({
+    expression: "round(10.5)",
+    el: sectionEl,
+    expected: [
+      "round(10.5)",
+      "round(10.5, 1)",
+      "11"
+    ]
+  });
+  test({
+    expression: "round(10.5,1)",
+    el: sectionEl,
+    expected: [
+      "round(10.5, 1)",
+      "11"
+    ]
+  });
+  test({
+    expression: "round(Infinity)",
+    el: sectionEl,
+    expected: [
+      "round(Infinity)",
+      "round(infinity, 1)",
+      "infinity"
+    ]
+  });
+  test({
+    expression: "round(10.5, 2)",
+    el: sectionEl,
+    expected: [
+      "round(10.5, 2)",
+      "10"
+    ]
+  });
+  test({
+    expression: "round(up, 10.5)",
+    el: sectionEl,
+    expected: [
+      "round(up, 10.5)",
+      "round(up, 10.5, 1)",
+      "11"
+    ]
+  });
+  test({
+    expression: "round(down, 10.5)",
+    el: sectionEl,
+    expected: [
+      "round(down, 10.5)",
+      "round(down, 10.5, 1)",
+      "10"
+    ]
+  });
+  test({
+    expression: "round(nearest, 10.5)",
+    el: sectionEl,
+    expected: [
+      "round(nearest, 10.5)",
+      "round(10.5, 1)",
+      "11"
+    ]
+  });
+  test({
+    expression: "round(to-zero, 10.5)",
+    el: sectionEl,
+    expected: [
+      "round(to-zero, 10.5)",
+      "round(to-zero, 10.5, 1)",
+      "10"
+    ]
+  });
+  test({
+    expression: "round(up, Infinity)",
+    el: sectionEl,
+    expected: [
+      "round(up, Infinity)",
+      "round(up, infinity, 1)",
+      "infinity"
+    ]
+  });
+  test({
+    expression: "round(up, 10.5, Infinity)",
+    el: sectionEl,
+    expected: [
+      "round(up, 10.5, infinity)",
+      "infinity"
+    ]
+  });
+  test({
+    expression: "round(down, 10.5, Infinity)",
+    el: sectionEl,
+    expected: [
+      "round(down, 10.5, infinity)",
+      "0"
+    ]
+  });
+  test({
+    expression: "round(nearest, 10.5, Infinity)",
+    el: sectionEl,
+    expected: [
+      "round(nearest, 10.5, Infinity)",
+      "round(10.5, infinity)",
+      "0"
+    ]
+  });
+  test({
+    expression: "round(to-zero, 10.5, Infinity)",
+    el: sectionEl,
+    expected: [
+      "round(to-zero, 10.5, infinity)",
+      "0"
+    ]
+  });
+  test({
+    expression: "round(up, -10.5, Infinity)",
+    el: sectionEl,
+    expected: [
+      "round(up, -10.5, infinity)",
+      "0"
+    ]
+  });
+  test({
+    expression: "round(down, -10.5, Infinity)",
+    el: sectionEl,
+    expected: [
+      "round(down, -10.5, infinity)",
+      "-infinity"
+    ]
+  });
+  test({
+    expression: "round(nearest, -10.5, Infinity)",
+    el: sectionEl,
+    expected: [
+      "round(nearest, -10.5, Infinity)",
+      "round(-10.5, infinity)",
+      "0"
+    ]
+  });
+  test({
+    expression: "round(to-zero, -10.5, Infinity)",
+    el: sectionEl,
+    expected: [
+      "round(to-zero, -10.5, infinity)",
+      "0"
+    ]
+  });
+  test({
+    expression: "round(up, -10.5)",
+    el: sectionEl,
+    expected: [
+      "round(up, -10.5)",
+      "round(up, -10.5, 1)",
+      "-10"
+    ]
+  });
+  test({
+    expression: "round(down, -10.5)",
+    el: sectionEl,
+    expected: [
+      "round(down, -10.5)",
+      "round(down, -10.5, 1)",
+      "-11"
+    ]
+  });
+  test({
+    expression: "round(nearest, -10.5)",
+    el: sectionEl,
+    expected: [
+      "round(nearest, -10.5)",
+      "round(-10.5, 1)",
+      "-10"
+    ]
+  });
+  test({
+    expression: "round(to-zero, -10.5)",
+    el: sectionEl,
+    expected: [
+      "round(to-zero, -10.5)",
+      "round(to-zero, -10.5, 1)",
+      "-10"
+    ]
+  });
+  test({
+    expression: "round(up, 0, -1)",
+    el: sectionEl,
+    expected: [
+      "round(up, 0, -1)",
+      "0"
+    ]
+  });
+  test({
+    expression: "round(down, 0, -1)",
+    el: sectionEl,
+    expected: [
+      "round(down, 0, -1)",
+      "0"
+    ]
+  });
+  test({
+    expression: "round(nearest, 0, -1)",
+    el: sectionEl,
+    expected: [
+      "round(nearest, 0, -1)",
+      "round(0, -1)",
+      "0"
+    ]
+  });
+  test({
+    expression: "round(to-zero, 0, -1)",
+    el: sectionEl,
+    expected: [
+      "round(to-zero, 0, -1)",
+      "0"
+    ]
+  });
+
+  /// mod()
+  test({
+    expression: "mod(3.5, 2)",
+    el: sectionEl,
+    expected: [
+      "mod(3.5, 2)",
+      "1.5",
+    ]
+  });
+
+  /// rem()
+  test({
+    expression: "rem(3.5, 2)",
+    el: sectionEl,
+    expected: [
+      "rem(3.5, 2)",
+      "1.5",
+    ]
+  });
+
+  /// sin()
+  test({
+    expression: "sin(0deg)",
+    el: sectionEl,
+    expected: [
+      "sin(0deg)",
+      "0",
+    ]
+  });
+
+  /// cos()
+  test({
+    expression: "cos(pi)",
+    el: sectionEl,
+    expected: [
+      "cos(pi)",
+      "cos(3.14159)",
+      "-1",
+    ]
+  });
+
+  /// tan()
+  test({
+    expression: "tan(0.125turn)",
+    el: sectionEl,
+    expected: [
+      "tan(0.125turn)",
+      "1",
+    ]
+  });
+
+  /// asin()
+  test({
+    expression: "asin(0.5)",
+    el: sectionEl,
+    expected: [
+      "asin(0.5)",
+      "30deg",
+    ]
+  });
+  test({
+    expression: "asin(2)",
+    el: sectionEl,
+    expected: [
+      "asin(2)",
+      "NaN * 1deg",
+    ]
+  });
+
+  /// acos()
+  test({
+    expression: "acos(0.5)",
+    el: sectionEl,
+    expected: [
+      "acos(0.5)",
+      "60deg",
+    ]
+  });
+  test({
+    expression: "acos(2)",
+    el: sectionEl,
+    expected: [
+      "acos(2)",
+      "NaN * 1deg",
+    ]
+  });
+
+  /// atan()
+  test({
+    expression: "atan(-1)",
+    el: sectionEl,
+    expected: [
+      "atan(-1)",
+      "-45deg",
+    ]
+  });
+  test({
+    expression: "atan(Infinity)",
+    el: sectionEl,
+    expected: [
+      "atan(infinity)",
+      "90deg",
+    ]
+  });
+
+  /// atan2()
+  test({
+    expression: "atan2(1rem, -0.5rem)",
+    el: sectionEl,
+    expected: [
+      "atan2(1rem, -0.5rem)",
+      "atan2(20px, -10px)",
+      "116.565deg",
+    ]
+  });
+
+  /// pow()
+  test({
+    expression: "pow(5, 2)",
+    el: sectionEl,
+    expected: [
+      "pow(5, 2)",
+      "25",
+    ]
+  });
+
+  /// sqrt()
+  test({
+    expression: "sqrt(9)",
+    el: sectionEl,
+    expected: [
+      "sqrt(9)",
+      "3",
+    ]
+  });
+
+  /// hypot()
+  test({
+    expression: "hypot(2em)",
+    el: sectionEl,
+    expected: [
+      "hypot(2em)",
+      "hypot(48px)",
+      "48px",
+    ]
+  });
+  test({
+    expression: "hypot(4em, 3em)",
+    el: sectionEl,
+    expected: [
+      "hypot(4em, 3em)",
+      "hypot(96px, 72px)",
+      "120px",
+    ]
+  });
+
+  /// log()
+  test({
+    expression: "log(1)",
+    el: sectionEl,
+    expected: [
+      "log(1)",
+      "0",
+    ]
+  });
+  test({
+    expression: "log(8, 2)",
+    el: sectionEl,
+    expected: [
+      "log(8, 2)",
+      "3",
+    ]
+  });
+
+  /// exp()
+  test({
+    expression: "exp(1)",
+    el: sectionEl,
+    expected: [
+      "exp(1)",
+      "2.71828",
+    ]
+  });
+
+  /// abs()
+  test({
+    expression: "abs(-1em)",
+    el: sectionEl,
+    expected: [
+      "abs(-1em)",
+      "abs(-24px)",
+      "24px",
+    ]
+  });
+
+  /// sign()
+  test({
+    expression: "sign(-1em)",
+    el: sectionEl,
+    expected: [
+      "sign(-1em)",
+      "sign(-24px)",
+      "-1",
+    ]
+  });
+
+
+  /// min()
+  test({
+    expression: "min(1em, 10cqh)",
+    el: sectionEl,
+    expected: [
+      "min(1em, 10cqh)",
+      "min(24px, 10px)",
+      "10px",
+    ]
+  });
+  test({
+    expression: "min(acos(2), 90deg)",
+    el: sectionEl,
+    expected: [
+    "min(acos(2), 90deg)",
+    "min(NaN * 1deg, 90deg)",
+    "NaN * 1deg",
+    ]
+  });
+
+  /// max()
+  test({
+    expression: "max(1em, 10cqh)",
+    el: sectionEl,
+    expected: [
+      "max(1em, 10cqh)",
+      "max(24px, 10px)",
+      "24px",
+    ]
+  });
+  test({
+    expression: "max(acos(2), 90deg)",
+    el: sectionEl,
+    expected: [
+    "max(acos(2), 90deg)",
+    "max(NaN * 1deg, 90deg)",
+    "NaN * 1deg",
+    ]
+  });
+
+  /// calc() operations
+  test({
+    expression: "calc(1px)",
+    el: sectionEl,
+    expected: ["calc(1px)", "1px"]
+  });
+  test({
+    expression: "calc(1px + 2px)",
+    el: sectionEl,
+    expected: [
+      "calc(1px + 2px)",
+      "3px"
+    ]
+  });
+  test({
+    expression: "calc(1px - 2px)",
+    el: sectionEl,
+    expected: [
+      "calc(1px - 2px)",
+      "-1px"
+    ]
+  });
+  test({
+    expression: "calc(1px * 2)",
+    el: sectionEl,
+    expected: [
+      "calc(1px * 2)",
+      "2px"
+    ]
+  });
+  test({
+    expression: "calc(1px / 2)",
+    el: sectionEl,
+    expected: [
+      "calc(1px / 2)",
+      "calc(1px * 0.5)",
+      "0.5px",
+    ]
+  });
+
+  /// Complex expressions
+  test({
+    expression: "calc(10cqw + 20cqh + 30px)",
+    el: sectionEl,
+    expected: [
+      "calc(10cqw + 20cqh + 30px)",
+      "calc(20px + 20px + 30px)",
+      "70px",
+    ]
+  });
+  test({
+    expression: "min(1em, 10cqw)",
+    el: sectionEl,
+    expected: [
+      "min(1em, 10cqw)",
+      "min(24px, 20px)",
+      "20px",
+    ]
+  });
+  test({
+    expression: "calc(min(sin(pi * 1.5), cos(0rad)) * 2px)",
+    el: sectionEl,
+    expected: [
+      "calc(min(sin(pi * 1.5), cos(0rad)) * 2px)",
+      "calc(min(sin(3.14159 * 1.5), cos(0rad)) * 2px)",
+      "calc(min(sin(4.71239), cos(0rad)) * 2px)",
+      "calc(min(-1, cos(0rad)) * 2px)",
+      "calc(min(-1, 1) * 2px)",
+      "calc(-1 * 2px)",
+      "-2px",
+    ]
+  });
+  test({
+    expression: "clamp(10cqmax, 3em, 15cqw)",
+    el: sectionEl,
+    expected: [
+      "clamp(10cqmax, 3em, 15cqw)",
+      "clamp(20px, 72px, 30px)",
+      "30px",
+    ]
+  });
+  test({
+    expression: "clamp(5cqmin, 3em, min(10cqw, 30cqh))",
+    el: sectionEl,
+    expected: [
+      "clamp(5cqmin, 3em, min(10cqw, 30cqh))",
+      "clamp(5px, 72px, min(20px, 30px))",
+      "clamp(5px, 72px, 20px)",
+      "20px",
+    ]
+  });
+  test({
+    expression: "clamp(10%, 3em, 10cqw)",
+    el: sectionEl,
+    expected: [
+      "clamp(10%, 3em, 10cqw)",
+      // TODO: 10% should also be computed (See Bug 2041621)
+      "clamp(10%, 72px, 20px)",
+    ]
+  });
+  test({
+    expression: "min(sin(90deg), cos(min(0, max(0, Infinity))))",
+    el: sectionEl,
+    expected: [
+      "min(sin(90deg), cos(min(0, max(0, infinity))))",
+      "min(1, cos(min(0, max(0, infinity))))",
+      "min(1, cos(min(0, infinity)))",
+      "min(1, cos(0))",
+      "min(1, 1)",
+      "1",
+    ]
+  });
+  test({
+    expression: "max(42, Infinity)",
+    el: sectionEl,
+    expected: [
+      // TODO: Check if it should be Infinity (with uppercase I)
+      "max(42, infinity)",
+      "infinity",
+    ]
+  });
+  test({
+    expression: "mod(mod(mod(3.5, 2), 3), 42)",
+    el: sectionEl,
+    expected: [
+      "mod(mod(mod(3.5, 2), 3), 42)",
+      "mod(mod(1.5, 3), 42)",
+      "mod(1.5, 42)",
+      "1.5",
+    ]
+  });
+  test({
+    expression: "abs(sin(270deg))",
+    el: sectionEl,
+    expected: [
+      "abs(sin(270deg))",
+      "abs(-1)",
+      "1",
+    ]
+  });
+  test({
+    expression: "calc(10cqw + 20cqh + 30px + (min(cos(pi) * abs(-4), mod(10, 23))) * 1cqmin)",
+    el: sectionEl,
+    expected: [
+      "calc(10cqw + 20cqh + 30px + (min(cos(pi) * abs(-4), mod(10, 23))) * 1cqmin)",
+      "calc(10cqw + 20cqh + 30px + (min(cos(3.14159) * abs(-4), mod(10, 23)) * 1cqmin))",
+      "calc(20px + 20px + 30px + (min(cos(3.14159) * abs(-4), mod(10, 23)) * 1px))",
+      "calc(20px + 20px + 30px + (min(-1 * abs(-4), mod(10, 23)) * 1px))",
+      "calc(20px + 20px + 30px + (min(-1 * 4, mod(10, 23)) * 1px))",
+      "calc(20px + 20px + 30px + (min(-4, mod(10, 23)) * 1px))",
+      "calc(20px + 20px + 30px + (min(-4, 10) * 1px))",
+      "calc(20px + 20px + 30px + (-4 * 1px))",
+      "calc(20px + 20px + 30px - 4px)",
+      "66px",
+    ]
+  });
+  test({
+    expression: "min(cos(2 * pi) * abs(-4), mod(10, 23))",
+    el: sectionEl,
+    expected: [
+      "min(cos(2 * pi) * abs(-4), mod(10, 23))",
+      "min(cos(2 * 3.14159) * abs(-4), mod(10, 23))",
+      "min(cos(6.28319) * abs(-4), mod(10, 23))",
+      "min(1 * abs(-4), mod(10, 23))",
+      "min(1 * 4, mod(10, 23))",
+      "min(4, mod(10, 23))",
+      "min(4, 10)",
+      "4",
+    ]
+  });
+  test({
+    expression: "calc((3em + 4rem) / 2)",
+    el: sectionEl,
+    expected: [
+      "calc((3em + 4rem) / 2)",
+      "calc((72px + 80px) / 2)",
+      "calc(152px / 2)",
+      "calc(152px * 0.5)",
+      "76px",
+    ]
+  });
+  test({
+    expression: "calc((3em + 4rem) / (10 * 5em))",
+    el: sectionEl,
+    expected: [
+      "calc((3em + 4rem) / (10 * 5em))",
+      "calc((72px + 80px) / (10 * 120px))",
+      "calc(152px / (10 * 120px))",
+      "calc(152px / 1200px)",
+      // Once Bug 1264520 lands, we should get another step
+      // with a unitless value (~ 0.1266)
+    ]
+  });
+  test({
+    expression: "calc((3em + 4rem) / 2)",
+    el: sectionEl,
+    pseudo: "::after",
+    expected: [
+      "calc((3em + 4rem) / 2)",
+      "calc((84px + 80px) / 2)",
+      "calc(164px / 2)",
+      "calc(164px * 0.5)",
+      "82px",
+    ]
+  });
+  test({
+    expression: "calc(var(--x, 10px) + 3px)",
+    el: sectionEl,
+    // TODO: var() should be substituted (See Bug 2041622)
+    expected: []
+  });
+
+  /// relative color computation
+
+  test({
+    // From `lch(from aquamarine l c calc(h + 180))`
+    expression: "calc(h + 180)",
+    el: sectionEl,
+    // TODO: This should be handled (See Bug 1898261)
+    expected: []
+  });
+  test({
+    // From `lch(from aquamarine l c calc(h - 180))`
+    expression: "calc(h - 180)",
+    el: sectionEl,
+    // TODO: This should be handled (See Bug 1898261)
+    expected: []
+  });
+  test({
+    // From `lch(from aquamarine l c calc(h * 2))`
+    expression: "calc(h * 2)",
+    el: sectionEl,
+    // TODO: This should be handled (See Bug 1898261)
+    expected: []
+  });
+  test({
+    // From `lch(from aquamarine l c calc(h / 2))`
+    expression: "calc(h / 2)",
+    el: sectionEl,
+    // TODO: This should be handled (See Bug 1898261)
+    expected: []
+  });
+});
+</script>
+</body>
+</html>

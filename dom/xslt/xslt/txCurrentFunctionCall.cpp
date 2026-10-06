@@ -3,8 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsGkAtoms.h"
-#include "txXSLTFunctions.h"
 #include "txExecutionState.h"
+#include "txXSLTFunctions.h"
 
 /*
   Implementation of XSLT 1.0 extension function: current

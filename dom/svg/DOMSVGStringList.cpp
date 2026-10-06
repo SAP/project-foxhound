@@ -1,19 +1,18 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DOMSVGStringList.h"
 
+#include <algorithm>
+
+#include "SVGAttrTearoffTable.h"
 #include "mozAutoDocUpdate.h"
 #include "mozilla/dom/SVGStringListBinding.h"
 #include "mozilla/dom/SVGTests.h"
 #include "nsCOMPtr.h"
 #include "nsError.h"
 #include "nsQueryObject.h"
-#include "SVGAttrTearoffTable.h"
-#include <algorithm>
 
 // See the architecture comment in this file's header.
 
@@ -59,7 +58,7 @@ class MOZ_RAII AutoChangeStringListNotifier : public mozAutoDocUpdate {
       : mozAutoDocUpdate(aStringList->mElement->GetComposedDoc(), true),
         mStringList(aStringList) {
     MOZ_ASSERT(mStringList, "Expecting non-null stringList");
-    mEmptyOrOldValue = mStringList->mElement->WillChangeStringList(
+    mStringList->mElement->WillChangeStringList(
         mStringList->mIsConditionalProcessingAttribute, mStringList->mAttrEnum,
         *this);
   }
@@ -67,12 +66,11 @@ class MOZ_RAII AutoChangeStringListNotifier : public mozAutoDocUpdate {
   ~AutoChangeStringListNotifier() {
     mStringList->mElement->DidChangeStringList(
         mStringList->mIsConditionalProcessingAttribute, mStringList->mAttrEnum,
-        mEmptyOrOldValue, *this);
+        *this);
   }
 
  private:
   DOMSVGStringList* const mStringList;
-  nsAttrValue mEmptyOrOldValue;
 };
 
 /* static */

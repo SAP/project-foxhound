@@ -13,10 +13,13 @@
 #include <cstdint>
 #include <list>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
 #include "api/candidate.h"
+#include "api/environment/environment.h"
+#include "api/environment/environment_factory.h"
 #include "api/test/rtc_error_matchers.h"
 #include "api/units/time_delta.h"
 #include "p2p/base/basic_packet_socket_factory.h"
@@ -32,23 +35,22 @@
 #include "rtc_base/network/sent_packet.h"
 #include "rtc_base/socket.h"
 #include "rtc_base/socket_address.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
-#include "rtc_base/thread.h"
-#include "rtc_base/time_utils.h"
 #include "rtc_base/virtual_socket_server.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
-#include "test/scoped_key_value_config.h"
+#include "test/run_loop.h"
 #include "test/wait_until.h"
 
-using cricket::Connection;
-using cricket::ICE_PWD_LENGTH;
-using cricket::ICE_UFRAG_LENGTH;
-using cricket::Port;
-using cricket::TCPPort;
 using ::testing::Eq;
 using ::testing::IsTrue;
+using ::webrtc::Connection;
+using ::webrtc::CreateEnvironment;
+using ::webrtc::Environment;
+using ::webrtc::ICE_PWD_LENGTH;
+using ::webrtc::ICE_UFRAG_LENGTH;
+using ::webrtc::Port;
 using ::webrtc::SocketAddress;
+using ::webrtc::TCPPort;
 
 static int kTimeout = 1000;
 static const SocketAddress kLocalAddr("11.11.11.11", 0);
@@ -61,16 +63,17 @@ static const SocketAddress kRemoteIPv6Addr("2401:fa00:4:1000:be30:5bff:fee5:c4",
 
 constexpr uint64_t kTiebreakerDefault = 44444;
 
-class ConnectionObserver : public sigslot::has_slots<> {
+class ConnectionObserver {
  public:
   explicit ConnectionObserver(Connection* conn) : conn_(conn) {
-    conn->SignalDestroyed.connect(this, &ConnectionObserver::OnDestroyed);
+    conn->SubscribeDestroyed(
+        this, [this](Connection* connection) { OnDestroyed(connection); });
   }
 
   ~ConnectionObserver() {
     if (!connection_destroyed_) {
       RTC_DCHECK(conn_);
-      conn_->SignalDestroyed.disconnect(this);
+      conn_->UnsubscribeDestroyed(this);
     }
   }
 
@@ -83,16 +86,16 @@ class ConnectionObserver : public sigslot::has_slots<> {
   bool connection_destroyed_ = false;
 };
 
-class TCPPortTest : public ::testing::Test, public sigslot::has_slots<> {
+class TCPPortTest : public ::testing::Test {
  public:
   TCPPortTest()
       : ss_(new webrtc::VirtualSocketServer()),
         main_(ss_.get()),
         socket_factory_(ss_.get()),
-        username_(webrtc::CreateRandomString(ICE_UFRAG_LENGTH)),
-        password_(webrtc::CreateRandomString(ICE_PWD_LENGTH)) {}
+        username_(webrtc::CreateRandomString(webrtc::ICE_UFRAG_LENGTH)),
+        password_(webrtc::CreateRandomString(webrtc::ICE_PWD_LENGTH)) {}
 
-  rtc::Network* MakeNetwork(const SocketAddress& addr) {
+  webrtc::Network* MakeNetwork(const SocketAddress& addr) {
     networks_.emplace_back("unittest", "unittest", addr.ipaddr(), 32);
     networks_.back().AddIP(addr.ipaddr());
     return &networks_.back();
@@ -102,41 +105,41 @@ class TCPPortTest : public ::testing::Test, public sigslot::has_slots<> {
                                          bool allow_listen = true,
                                          int port_number = 0) {
     auto port = std::unique_ptr<TCPPort>(
-        TCPPort::Create({.network_thread = &main_,
+        TCPPort::Create({.env = env_,
+                         .network_thread = main_.task_queue(),
                          .socket_factory = &socket_factory_,
                          .network = MakeNetwork(addr),
                          .ice_username_fragment = username_,
-                         .ice_password = password_,
-                         .field_trials = &field_trials_},
+                         .ice_password = password_},
                         port_number, port_number, allow_listen));
     port->SetIceTiebreaker(kTiebreakerDefault);
     return port;
   }
 
-  std::unique_ptr<TCPPort> CreateTCPPort(const rtc::Network* network) {
+  std::unique_ptr<TCPPort> CreateTCPPort(const webrtc::Network* network) {
     auto port = std::unique_ptr<TCPPort>(
-        TCPPort::Create({.network_thread = &main_,
+        TCPPort::Create({.env = env_,
+                         .network_thread = main_.task_queue(),
                          .socket_factory = &socket_factory_,
                          .network = network,
                          .ice_username_fragment = username_,
-                         .ice_password = password_,
-                         .field_trials = &field_trials_},
+                         .ice_password = password_},
                         0, 0, true));
     port->SetIceTiebreaker(kTiebreakerDefault);
     return port;
   }
 
  protected:
+  const Environment env_ = CreateEnvironment();
   // When a "create port" helper method is called with an IP, we create a
   // Network with that IP and add it to this list. Using a list instead of a
   // vector so that when it grows, pointers aren't invalidated.
-  std::list<rtc::Network> networks_;
+  std::list<webrtc::Network> networks_;
   std::unique_ptr<webrtc::VirtualSocketServer> ss_;
-  webrtc::AutoSocketServerThread main_;
+  webrtc::test::RunLoop main_;
   webrtc::BasicPacketSocketFactory socket_factory_;
   std::string username_;
   std::string password_;
-  webrtc::test::ScopedKeyValueConfig field_trials_;
 };
 
 TEST_F(TCPPortTest, TestTCPPortWithLocalhostAddress) {
@@ -197,7 +200,7 @@ TEST_F(TCPPortTest, TCPPortNotDiscardedIfNotBoundToBestIP) {
 
   // Set up a network with kLocalAddr1 as the "best" IP, and kAlternateLocalAddr
   // as an alternate.
-  rtc::Network* network = MakeNetwork(kLocalAddr);
+  webrtc::Network* network = MakeNetwork(kLocalAddr);
   network->AddIP(kAlternateLocalAddr.ipaddr());
   ASSERT_EQ(kLocalAddr.ipaddr(), network->GetBestIP());
 
@@ -222,7 +225,7 @@ TEST_F(TCPPortTest, TCPPortNotDiscardedIfNotBoundToBestIP) {
 }
 
 // Regression test for crbug.com/webrtc/8972, caused by buggy comparison
-// between rtc::IPAddress and rtc::InterfaceAddress.
+// between webrtc::IPAddress and webrtc::InterfaceAddress.
 TEST_F(TCPPortTest, TCPPortNotDiscardedIfBoundToTemporaryIP) {
   networks_.emplace_back("unittest", "unittest", kLocalIPv6Addr.ipaddr(), 32);
   networks_.back().AddIP(webrtc::InterfaceAddress(
@@ -243,16 +246,18 @@ TEST_F(TCPPortTest, TCPPortNotDiscardedIfBoundToTemporaryIP) {
       webrtc::IsRtcOk());
 }
 
-class SentPacketCounter : public sigslot::has_slots<> {
+class SentPacketCounter {
  public:
   explicit SentPacketCounter(TCPPort* p) {
-    p->SignalSentPacket.connect(this, &SentPacketCounter::OnSentPacket);
+    p->SubscribeSentPacket(this, [this](const webrtc::SentPacketInfo& info) {
+      OnSentPacket(info);
+    });
   }
 
   int sent_packets() const { return sent_packets_; }
 
  private:
-  void OnSentPacket(const rtc::SentPacket&) { ++sent_packets_; }
+  void OnSentPacket(const webrtc::SentPacketInfo&) { ++sent_packets_; }
 
   int sent_packets_ = 0;
 };
@@ -262,8 +267,8 @@ class SentPacketCounter : public sigslot::has_slots<> {
 TEST_F(TCPPortTest, SignalSentPacket) {
   std::unique_ptr<TCPPort> client(CreateTCPPort(kLocalAddr));
   std::unique_ptr<TCPPort> server(CreateTCPPort(kRemoteAddr));
-  client->SetIceRole(cricket::ICEROLE_CONTROLLING);
-  server->SetIceRole(cricket::ICEROLE_CONTROLLED);
+  client->SetIceRole(webrtc::ICEROLE_CONTROLLING);
+  server->SetIceRole(webrtc::ICEROLE_CONTROLLED);
   client->PrepareAddress();
   server->PrepareAddress();
 
@@ -277,7 +282,7 @@ TEST_F(TCPPortTest, SignalSentPacket) {
 
   // Need to get the port of the actual outgoing socket, not the server socket..
   webrtc::Candidate client_candidate = client->Candidates()[0];
-  client_candidate.set_address(static_cast<cricket::TCPConnection*>(client_conn)
+  client_candidate.set_address(static_cast<webrtc::TCPConnection*>(client_conn)
                                    ->socket()
                                    ->GetLocalAddress());
   Connection* server_conn =
@@ -288,8 +293,8 @@ TEST_F(TCPPortTest, SignalSentPacket) {
                         {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
       webrtc::IsRtcOk());
 
-  client_conn->Ping(webrtc::TimeMillis());
-  server_conn->Ping(webrtc::TimeMillis());
+  client_conn->Ping(env_.clock().CurrentTime());
+  server_conn->Ping(env_.clock().CurrentTime());
   ASSERT_THAT(
       webrtc::WaitUntil([&] { return client_conn->writable(); }, IsTrue(),
                         {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
@@ -301,10 +306,10 @@ TEST_F(TCPPortTest, SignalSentPacket) {
 
   SentPacketCounter client_counter(client.get());
   SentPacketCounter server_counter(server.get());
-  static const char kData[] = "hello";
+  static constexpr uint8_t kData[] = {'h', 'e', 'l', 'l', 'o', '\0'};
   for (int i = 0; i < 10; ++i) {
-    client_conn->Send(&kData, sizeof(kData), rtc::PacketOptions());
-    server_conn->Send(&kData, sizeof(kData), rtc::PacketOptions());
+    client_conn->Send(kData, webrtc::AsyncSocketPacketOptions());
+    server_conn->Send(kData, webrtc::AsyncSocketPacketOptions());
   }
   EXPECT_THAT(
       webrtc::WaitUntil([&] { return client_counter.sent_packets(); }, Eq(10),
@@ -324,8 +329,8 @@ TEST_F(TCPPortTest, SignalSentPacketAfterReconnect) {
   constexpr int kServerPort = 123;
   std::unique_ptr<TCPPort> server(
       CreateTCPPort(kRemoteAddr, /*allow_listen=*/true, kServerPort));
-  client->SetIceRole(cricket::ICEROLE_CONTROLLING);
-  server->SetIceRole(cricket::ICEROLE_CONTROLLED);
+  client->SetIceRole(webrtc::ICEROLE_CONTROLLING);
+  server->SetIceRole(webrtc::ICEROLE_CONTROLLED);
   client->PrepareAddress();
   server->PrepareAddress();
 
@@ -339,7 +344,7 @@ TEST_F(TCPPortTest, SignalSentPacketAfterReconnect) {
 
   // Need to get the port of the actual outgoing socket.
   webrtc::Candidate client_candidate = client->Candidates()[0];
-  client_candidate.set_address(static_cast<cricket::TCPConnection*>(client_conn)
+  client_candidate.set_address(static_cast<webrtc::TCPConnection*>(client_conn)
                                    ->socket()
                                    ->GetLocalAddress());
   client_candidate.set_tcptype("");
@@ -350,15 +355,15 @@ TEST_F(TCPPortTest, SignalSentPacketAfterReconnect) {
                         {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
       webrtc::IsRtcOk());
   EXPECT_FALSE(client_conn->writable());
-  client_conn->Ping(webrtc::TimeMillis());
+  client_conn->Ping(env_.clock().CurrentTime());
   ASSERT_THAT(
       webrtc::WaitUntil([&] { return client_conn->writable(); }, IsTrue(),
                         {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
       webrtc::IsRtcOk());
 
   SentPacketCounter client_counter(client.get());
-  static const char kData[] = "hello";
-  int result = client_conn->Send(&kData, sizeof(kData), rtc::PacketOptions());
+  static constexpr uint8_t kData[] = {'h', 'e', 'l', 'l', 'o', '\0'};
+  int result = client_conn->Send(kData, webrtc::AsyncSocketPacketOptions());
   EXPECT_EQ(result, 6);
 
   // Deleting the server port should break the current connection.
@@ -371,12 +376,12 @@ TEST_F(TCPPortTest, SignalSentPacketAfterReconnect) {
 
   // Recreate the server port with the same port number.
   server = CreateTCPPort(kRemoteAddr, /*allow_listen=*/true, kServerPort);
-  server->SetIceRole(cricket::ICEROLE_CONTROLLED);
+  server->SetIceRole(webrtc::ICEROLE_CONTROLLED);
   server->PrepareAddress();
 
   // Sending a packet from the client will trigger a reconnect attempt but the
   // packet will be discarded.
-  result = client_conn->Send(&kData, sizeof(kData), rtc::PacketOptions());
+  result = client_conn->Send(kData, webrtc::AsyncSocketPacketOptions());
   EXPECT_EQ(result, SOCKET_ERROR);
   ASSERT_THAT(
       webrtc::WaitUntil([&] { return client_conn->connected(); }, IsTrue(),
@@ -386,7 +391,7 @@ TEST_F(TCPPortTest, SignalSentPacketAfterReconnect) {
   EXPECT_TRUE(client_conn->writable());
   for (int i = 0; i < 10; ++i) {
     // All sent packets still fail to send.
-    EXPECT_EQ(client_conn->Send(&kData, sizeof(kData), rtc::PacketOptions()),
+    EXPECT_EQ(client_conn->Send(kData, webrtc::AsyncSocketPacketOptions()),
               SOCKET_ERROR);
   }
   // And are not reported as sent.
@@ -399,7 +404,7 @@ TEST_F(TCPPortTest, SignalSentPacketAfterReconnect) {
   // Client outgoing socket port will have changed since the client create a new
   // socket when it reconnect.
   client_candidate = client->Candidates()[0];
-  client_candidate.set_address(static_cast<cricket::TCPConnection*>(client_conn)
+  client_candidate.set_address(static_cast<webrtc::TCPConnection*>(client_conn)
                                    ->socket()
                                    ->GetLocalAddress());
   client_candidate.set_tcptype("");
@@ -415,20 +420,19 @@ TEST_F(TCPPortTest, SignalSentPacketAfterReconnect) {
       webrtc::IsRtcOk());
 
   // Send Stun Binding request.
-  client_conn->Ping(webrtc::TimeMillis());
+  client_conn->Ping(env_.clock().CurrentTime());
   // The Stun Binding request is reported as sent.
   EXPECT_THAT(
       webrtc::WaitUntil([&] { return client_counter.sent_packets(); }, Eq(2),
                         {.timeout = webrtc::TimeDelta::Millis(kTimeout)}),
       webrtc::IsRtcOk());
   // Wait a bit for the Stun response to be received.
-  webrtc::Thread::Current()->ProcessMessages(100);
+  main_.RunFor(webrtc::TimeDelta::Millis(100));
 
   // After the Stun Ping response has been received, packets can be sent again
   // and SignalSentPacket should be invoked.
   for (int i = 0; i < 5; ++i) {
-    EXPECT_EQ(client_conn->Send(&kData, sizeof(kData), rtc::PacketOptions()),
-              6);
+    EXPECT_EQ(client_conn->Send(kData, webrtc::AsyncSocketPacketOptions()), 6);
   }
   EXPECT_THAT(webrtc::WaitUntil(
                   [&] { return client_counter.sent_packets(); }, Eq(2 + 5),

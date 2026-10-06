@@ -1,0 +1,44 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>Bug 1975822 - mp3 duration via data: URL</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+<audio id="a"></audio>
+<script>
+// CBR mp3 with no Xing/Info header, large enough that loading via
+// FileReader.readAsDataURL exposes the timing path inside
+// ChannelMediaResource where a non-HTTP channel was leaving the cache
+// stream length unset and the demuxer reported Infinity duration.
+// ffprobe reports 30.024 s.
+const SRC = "cbr-no-xing.mp3";
+const EXPECTED = 30.024;
+
+add_task(async function test_mp3_dataurl_duration() {
+  const blob = await fetch(SRC).then(r => r.blob());
+  const dataUrl = await new Promise(resolve => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.readAsDataURL(blob);
+  });
+
+  const audio = document.getElementById("a");
+  audio.src = dataUrl;
+
+  // Wait for canplaythrough so any late metadata-vs-buffered race has
+  // settled before we assert on the duration.
+  await new Promise((resolve, reject) => {
+    audio.addEventListener("canplaythrough", resolve, { once: true });
+    audio.addEventListener("error", () => reject(audio.error), { once: true });
+  });
+
+  ok(Number.isFinite(audio.duration),
+     "data: URL mp3 duration should be finite, got " + audio.duration);
+  ok(Math.abs(audio.duration - EXPECTED) < 0.1,
+     "data: URL mp3 duration should be ~" + EXPECTED + "s, got " + audio.duration);
+});
+</script>
+</body>
+</html>

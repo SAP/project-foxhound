@@ -1,0 +1,17 @@
+{
+  "label": "ace7.acecombat.jp",
+  "bugs": {
+    "1903480": {
+      "issue": "broken-scrolling",
+      "matches": ["*://ace7.acecombat.jp/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "content_scripts": {
+        "js": ["slow_down_wheel_events.js"]
+      }
+    }
+  ]
+}

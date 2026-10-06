@@ -1,0 +1,27 @@
+{
+  "label": "beterbed.nl",
+  "bugs": {
+    "1942292": {
+      "issue": "extra-scrollbars",
+      "matches": ["*://www.beterbed.nl/*"]
+    }
+  },
+  "css": {
+    "hide_extra_scrollbars": ".slider-element .slider-content { scrollbar-width: none; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "max_version": 150,
+      "css": ["hide_extra_scrollbars"]
+    },
+    {
+      "platforms": ["desktop"],
+      "min_version": 151,
+      "pref_check": {
+        "layout.css.fake-webkit-scrollbar.enabled": false
+      },
+      "css": ["hide_extra_scrollbars"]
+    }
+  ]
+}

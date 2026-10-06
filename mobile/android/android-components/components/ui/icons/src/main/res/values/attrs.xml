@@ -7,4 +7,8 @@
     <attr name="mozac_ic_private_mode_circle_fill_background_color" format="reference" />
     <!-- Icon color for mozac_ic_private_mode_circle_fill_48 -->
     <attr name="mozac_ic_private_mode_circle_fill_icon_color" format="reference" />
+
+    <!-- Shield slash critical fill colors for mozac_ic_shield_slash_critical_24 -->
+    <attr name="mozac_ic_shield_slash_bg_fill_critical" format="reference"/>
+    <attr name="mozac_ic_shield_slash_fill_critical" format="reference"/>
 </resources>

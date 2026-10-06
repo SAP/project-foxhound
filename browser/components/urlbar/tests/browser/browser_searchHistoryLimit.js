@@ -17,7 +17,7 @@ let gEngine;
 
 add_setup(async function () {
   await SearchTestUtils.installSearchExtension({}, { setAsDefault: true });
-  gEngine = Services.search.getEngineByName("Example");
+  gEngine = SearchService.getEngineByName("Example");
   await UrlbarTestUtils.formHistory.clear();
 
   registerCleanupFunction(async function () {

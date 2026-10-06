@@ -1,15 +1,15 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set et cin ts=4 sw=2 sts=2: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsHttpChannel_h__
-#define nsHttpChannel_h__
+#ifndef nsHttpChannel_h_
+#define nsHttpChannel_h_
 
 #include "AlternateServices.h"
 #include "AutoClose.h"
 #include "HttpBaseChannel.h"
+#include "HttpTransactionShell.h"
+#include "nsHttpResponseHead.h"
 #include "nsIReplacedHttpResponse.h"
 #include "TimingStruct.h"
 #include "mozilla/AtomicBitfields.h"
@@ -26,11 +26,11 @@
 #include "nsIEarlyHintObserver.h"
 #include "nsIHttpAuthenticableChannel.h"
 #include "nsIProtocolProxyCallback.h"
-#include "nsIRaceCacheWithNetwork.h"
 #include "nsIRequestContext.h"
 #include "nsIStreamListener.h"
 #include "nsIThreadRetargetableRequest.h"
 #include "nsIThreadRetargetableStreamListener.h"
+#include "nsITransport.h"
 #include "nsITransportSecurityInfo.h"
 #include "nsTArray.h"
 #include "nsWeakReference.h"
@@ -72,7 +72,6 @@ class nsHttpChannel final : public HttpBaseChannel,
                             public nsIDNSListener,
                             public nsSupportsWeakReference,
                             public nsICorsPreflightCallback,
-                            public nsIRaceCacheWithNetwork,
                             public nsIRequestTailUnblockCallback,
                             public nsIEarlyHintObserver {
  public:
@@ -90,7 +89,6 @@ class nsHttpChannel final : public HttpBaseChannel,
   NS_DECL_NSITHREADRETARGETABLEREQUEST
   NS_DECL_NSIDNSLISTENER
   NS_INLINE_DECL_STATIC_IID(NS_HTTPCHANNEL_IID)
-  NS_DECL_NSIRACECACHEWITHNETWORK
   NS_DECL_NSIREQUESTTAILUNBLOCKCALLBACK
   NS_DECL_NSIEARLYHINTOBSERVER
 
@@ -125,7 +123,6 @@ class nsHttpChannel final : public HttpBaseChannel,
                                       nsProxyInfo* aProxyInfo,
                                       uint32_t aProxyResolveFlags,
                                       nsIURI* aProxyURI, uint64_t aChannelId,
-                                      ExtContentPolicyType aContentPolicyType,
                                       nsILoadInfo* aLoadInfo) override;
 
   static bool IsRedirectStatus(uint32_t status);
@@ -140,9 +137,11 @@ class nsHttpChannel final : public HttpBaseChannel,
                               const nsACString& reason) override;
   NS_IMETHOD Cancel(nsresult status) override;
   NS_IMETHOD Suspend() override;
+  static void StaticSuspend(nsHttpChannel* aChan);
   NS_IMETHOD Resume() override;
   // nsIChannel
-  NS_IMETHOD GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo) override;
+  NS_IMETHOD
+  GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo) override;
   NS_IMETHOD AsyncOpen(nsIStreamListener* aListener) override;
   // nsIHttpChannel
   NS_IMETHOD GetEncodedBodySize(uint64_t* aEncodedBodySize) override;
@@ -179,6 +178,10 @@ class nsHttpChannel final : public HttpBaseChannel,
   NS_IMETHOD GetConnectEnd(mozilla::TimeStamp* aConnectEnd) override;
   NS_IMETHOD GetRequestStart(mozilla::TimeStamp* aRequestStart) override;
   NS_IMETHOD GetResponseStart(mozilla::TimeStamp* aResponseStart) override;
+  NS_IMETHOD GetFirstInterimResponseStart(
+      mozilla::TimeStamp* aFirstInterimResponseStart) override;
+  NS_IMETHOD GetFinalResponseHeadersStart(
+      mozilla::TimeStamp* aFinalResponseHeadersStart) override;
   NS_IMETHOD GetResponseEnd(mozilla::TimeStamp* aResponseEnd) override;
 
   NS_IMETHOD GetTransactionPending(
@@ -205,6 +208,11 @@ class nsHttpChannel final : public HttpBaseChannel,
   NS_IMETHOD SetResponseStatus(uint32_t aStatus,
                                const nsACString& aStatusText) override;
 
+  NS_IMETHOD GetDecompressDictionary(
+      DictionaryCacheEntry** aDictionary) override;
+  NS_IMETHOD SetDecompressDictionary(
+      DictionaryCacheEntry* aDictionary) override;
+
   void SetWarningReporter(HttpChannelSecurityWarningReporter* aReporter);
   HttpChannelSecurityWarningReporter* GetWarningReporter();
 
@@ -215,6 +223,7 @@ class nsHttpChannel final : public HttpBaseChannel,
 
  public: /* internal necko use only */
   uint32_t GetRequestTime() const { return mRequestTime; }
+  const nsACString& GetLNAPromptAction() const { return mLNAPromptAction; }
 
   void AsyncOpenFinal(TimeStamp aTimeStamp);
 
@@ -272,15 +281,7 @@ class nsHttpChannel final : public HttpBaseChannel,
   already_AddRefed<WebTransportSessionEventListener>
   GetWebTransportSessionEventListener();
 
- private:  // used for alternate service validation
-  RefPtr<TransactionObserver> mTransactionObserver;
-
  public:
-  void SetTransactionObserver(TransactionObserver* arg) {
-    mTransactionObserver = arg;
-  }
-  TransactionObserver* GetTransactionObserver() { return mTransactionObserver; }
-
   CacheDisposition mCacheDisposition{kCacheUnresolved};
 
  protected:
@@ -307,8 +308,33 @@ class nsHttpChannel final : public HttpBaseChannel,
 
   // Based on the proxy configuration determine the strategy for resolving the
   // end server host name.
-  ProxyDNSStrategy GetProxyDNSStrategy();
+  nsIHttpChannelInternal::ProxyDNSStrategy ComputeProxyDNSStrategy();
 
+ public:
+  NS_IMETHOD GetProxyDNSStrategy(
+      nsIHttpChannelInternal::ProxyDNSStrategy* aStrategy) override;
+
+ private:
+  // Add Sec-Fetch-Storage-Access headers based on cookie partitioning
+  void AddStorageAccessHeadersToRequest();
+  bool DispatchRelease();
+
+ public:
+  // returns whether this channel is a retry after receiving the
+  // "Activate-Storage-Access"-header for a request that is eligable for
+  // unpartitioned cookies. Therefore needs to have still valid
+  // storage-permission granted. Public to be accible from AntiTrackingUtils.
+  bool StorageAccessReloadedChannel();
+
+  // Tells the channel to suspend after examining the response
+  void PrimeSuspendAfterExamineResponse();
+  // Cancel the suspension request, or resume if the suspension started
+  void CancelSuspendOrResumeAfterExamineResponse();
+  // Suspend if we called PrimeSuspendAfterExamineResponse
+  // and not CancelSuspendOrResumeAfterExamineResponse
+  void MaybeSuspendAfterExamineResponse();
+
+ private:
   // We might synchronously or asynchronously call BeginConnect,
   // which includes DNS prefetch and speculative connection, according to
   // whether an async tracker lookup is required. If the tracker lookup
@@ -335,6 +361,12 @@ class nsHttpChannel final : public HttpBaseChannel,
       nsHttpConnectionInfo* aConnInfo);
   [[nodiscard]] nsresult ContinueProcessResponse2(nsresult);
   nsresult HandleOverrideResponse();
+  nsresult OnPermissionPromptResult(bool aGranted, const nsACString& aType);
+  LNAPermission UpdateLocalNetworkAccessPermissions(
+      const nsACString& aPermissionType);
+  void MaybeUpdateDocumentIPAddressSpaceFromCache();
+  nsresult ProcessLNAActions();
+  void UpdateCurrentIpAddressSpace();
 
  public:
   void UpdateCacheDisposition(bool aSuccessfulReval, bool aPartialContentUsed);
@@ -342,6 +374,8 @@ class nsHttpChannel final : public HttpBaseChannel,
   [[nodiscard]] nsresult ContinueProcessResponse4(nsresult);
   [[nodiscard]] nsresult ProcessNormal();
   [[nodiscard]] nsresult ContinueProcessNormal(nsresult);
+  [[nodiscard]] nsresult ContinueProcessNormal2(nsresult);
+  [[nodiscard]] nsresult ContinueProcessNormal3();
   void ProcessAltService(nsHttpConnectionInfo* aTransConnInfo = nullptr);
   bool ShouldBypassProcessNotModified();
   [[nodiscard]] nsresult ProcessNotModified(
@@ -361,7 +395,6 @@ class nsHttpChannel final : public HttpBaseChannel,
   [[nodiscard]] nsresult ContinueOnStartRequest1(nsresult);
   [[nodiscard]] nsresult ContinueOnStartRequest2(nsresult);
   [[nodiscard]] nsresult ContinueOnStartRequest3(nsresult);
-  [[nodiscard]] nsresult ContinueOnStartRequest4(nsresult);
 
   void OnClassOfServiceUpdated();
 
@@ -396,9 +429,16 @@ class nsHttpChannel final : public HttpBaseChannel,
   void CloseCacheEntry(bool doomOnFailure);
   [[nodiscard]] nsresult InitCacheEntry();
   void UpdateInhibitPersistentCachingFlag();
-  [[nodiscard]] nsresult AddCacheEntryHeaders(nsICacheEntry* entry);
+  bool ParseDictionary(nsICacheEntry* aEntry, nsHttpResponseHead* aResponseHead,
+                       bool aModified);
+  [[nodiscard]] nsresult AddCacheEntryHeaders(nsICacheEntry* entry,
+                                              bool aModified);
+  [[nodiscard]] nsresult UpdateCacheEntryHeaders(nsICacheEntry* entry,
+                                                 const nsHttpAtom* aAtom);
   [[nodiscard]] nsresult FinalizeCacheEntry();
   [[nodiscard]] nsresult InstallCacheListener(int64_t offset = 0);
+  [[nodiscard]] nsresult DoInstallCacheListener(bool aSaveDecompressed,
+                                                int64_t offset = 0);
   void MaybeInvalidateCacheEntryForSubsequentGet();
   void AsyncOnExamineCachedResponse();
 
@@ -462,6 +502,8 @@ class nsHttpChannel final : public HttpBaseChannel,
    */
   [[nodiscard]] nsresult ProcessHSTSHeader(nsITransportSecurityInfo* aSecInfo);
 
+  [[nodiscard]] nsresult ProcessWAICTHeader();
+
   void InvalidateCacheEntryForLocation(const char* location);
   void AssembleCacheKey(const char* spec, uint32_t postID, nsACString& key);
   [[nodiscard]] nsresult CreateNewURI(const char* loc, nsIURI** newURI);
@@ -484,8 +526,6 @@ class nsHttpChannel final : public HttpBaseChannel,
 
   // Report telemetry for system principal request success rate
   void ReportSystemChannelTelemetry(nsresult status);
-  // Report telemetry and stats to about:networking
-  void ReportRcwnStats(bool isFromNet);
 
   // Create a aggregate set of the current notification callbacks
   // and ensure the transaction is updated to use it.
@@ -522,9 +562,12 @@ class nsHttpChannel final : public HttpBaseChannel,
   // writing a new entry. The content type is used in cache internally only.
   void SetCachedContentType();
 
+  bool IsAuthRedirectedChannel() { return !!LoadAuthRedirectedChannel(); }
+
  private:
-  // this section is for main-thread-only object
-  // all the references need to be proxy released on main thread.
+  // --- MAIN THREAD ONLY OBJECTS ---
+  // this section is for main-thread-only objects
+  // all the references need to be released on main thread.
   // auth specific data
   nsCOMPtr<nsIHttpChannelAuthProvider> mAuthProvider;
   nsCOMPtr<nsIURI> mRedirectURI;
@@ -539,8 +582,17 @@ class nsHttpChannel final : public HttpBaseChannel,
   // state of whether tracking protection is enabled or not.
   RefPtr<nsChannelClassifier> mChannelClassifier;
 
-  // Proxy release all members above on main thread.
-  void ReleaseMainThreadOnlyReferences();
+  // Dictionary entry for the entry being used to decompress this stream
+  // (i.e. we added Dictionary-Available to the request).
+  RefPtr<DictionaryCacheEntry> mDictDecompress;
+  // This is for channels we're going to use a dictionaries in the future
+  // (i.e. ResponseHeaders has Use-As-Dictionary)
+  RefPtr<DictionaryCacheEntry> mDictSaving;
+  // Note that in the case of using a file to be a dictionary for future
+  // versions of itself, these may have the same URI (but likely different
+  // hashes).
+
+  // --- END OF MAIN THREAD ONLY OBJECTS SECTION ---
 
   // Called after the channel is made aware of its tracking status in order
   // to readjust the referrer if needed according to the referrer default
@@ -592,7 +644,6 @@ class nsHttpChannel final : public HttpBaseChannel,
   mozilla::TimeStamp mOnStartRequestTimestamp;
   // Timestamp of the time the channel was suspended.
   mozilla::TimeStamp mSuspendTimestamp;
-  mozilla::TimeStamp mOnCacheEntryCheckTimestamp;
 
   // Properties used for the profiler markers
   // This keeps the timestamp for the start marker, to be reused for the end
@@ -606,7 +657,7 @@ class nsHttpChannel final : public HttpBaseChannel,
 
   // Total time the channel spent suspended. This value is reported to
   // telemetry in nsHttpChannel::OnStartRequest().
-  TimeDuration mSuspendTotalTime{0};
+  TimeDuration mSuspendTotalTime{nullptr};
 
   friend class AutoRedirectVetoNotifier;
   friend class HttpAsyncAborter<nsHttpChannel>;
@@ -694,13 +745,14 @@ class nsHttpChannel final : public HttpBaseChannel,
   MOZ_ATOMIC_BITFIELDS(mAtomicBitfields6, 32, (
     // True if network request gets to OnStart before we get a response from the cache
     (uint32_t, NetworkWonRace, 1),
-    // Valid values are CachedContentValid
+    // Valid values are CachedContentValidity::Unset/Invalid/Valid
     (uint32_t, CachedContentIsValid, 2),
     // Only set to true when we receive an HTTPSSVC record before the
     // transaction is created.
     (uint32_t, HTTPSSVCTelemetryReported, 1),
     (uint32_t, EchConfigUsed, 1),
-    (uint32_t, AuthRedirectedChannel, 1)
+    (uint32_t, AuthRedirectedChannel, 1),
+    (uint32_t, StorageAccessReloadChannel, 1)
   ))
   // clang-format on
   enum CachedContentValidity : uint8_t { Unset = 0, Invalid = 1, Valid = 2 };
@@ -723,14 +775,14 @@ class nsHttpChannel final : public HttpBaseChannel,
   void PopRedirectAsyncFunc(nsContinueRedirectionFunc func);
 
   // If this resource is eligible for tailing based on class-of-service flags
-  // and load flags.  We don't tail Leaders/Unblocked/UrgentStart and top-level
-  // loads.
+  // and load flags.  We don't tail Leaders/Unblocked/UrgentStart and
+  // top-level loads.
   bool EligibleForTailing();
 
   // Called exclusively only from AsyncOpen or after all classification
   // callbacks. If this channel is 1) Tail, 2) assigned a request context, 3)
-  // the context is still in the tail-blocked phase, then the method will queue
-  // this channel. OnTailUnblock will be called after the context is
+  // the context is still in the tail-blocked phase, then the method will
+  // queue this channel. OnTailUnblock will be called after the context is
   // tail-unblocked or canceled.
   bool WaitingForTailUnblock();
 
@@ -768,13 +820,6 @@ class nsHttpChannel final : public HttpBaseChannel,
     RefPtr<nsHttpChannel> mChannel;
   };
 
-  // These next members are only used in unit tests to delay the call to
-  // cache->AsyncOpenURI in order to race the cache with the network.
-  nsCOMPtr<nsITimer> mCacheOpenTimer;
-  std::function<void(nsHttpChannel*)> mCacheOpenFunc;
-  uint32_t mCacheOpenDelay = 0;
-  uint32_t mNetworkTriggerDelay = 0;
-
   // We need to remember which is the source of the response we are using.
   enum ResponseSource {
     RESPONSE_PENDING = 0,      // response is pending
@@ -783,58 +828,57 @@ class nsHttpChannel final : public HttpBaseChannel,
   };
   Atomic<ResponseSource, Relaxed> mFirstResponseSource{RESPONSE_PENDING};
 
-  // Determines if it's possible and advisable to race the network request
-  // with the cache fetch, and proceeds to do so.
-  void MaybeRaceCacheWithNetwork();
-
-  // Creates a new cache entry when network wins the race to ensure we have
-  // the latest version of the resource in the cache. Otherwise we might return
-  // an old content when navigating back in history.
-  void MaybeCreateCacheEntryWhenRCWN();
-
-  nsresult TriggerNetworkWithDelay(uint32_t aDelay);
   nsresult TriggerNetwork();
+  nsresult OnSuspendTimeout();
   void CancelNetworkRequest(nsresult aStatus);
 
   nsresult LogConsoleError(const char* aTag);
 
-  void SetHTTPSSVCRecord(already_AddRefed<nsIDNSHTTPSSVCRecord>&& aRecord);
+  void SetHTTPSSVCRecord(already_AddRefed<nsIDNSHTTPSSVCRecord> aRecord);
 
   void RecordOnStartTelemetry(nsresult aStatus, bool aIsNavigation);
 
-  // Timer used to delay the network request, or to trigger the network
-  // request if retrieving the cache entry takes too long.
-  nsCOMPtr<nsITimer> mNetworkTriggerTimer;
+  void MaybeGenerateNELReport();
+
   // Is true if the network request has been triggered.
   bool mNetworkTriggered = false;
+
+  // Timer to detect if channel has been suspended too long while writing to
+  // cache. When the timer fires we'll notify the cache entry to make
+  // all other listeners continue.
+  nsCOMPtr<nsITimer> mSuspendTimer;
+  // Tri-state to track whether anti-tracking classification happened
+  // and has completed or not.
+  // Nothing: No anti-tracking classification
+  // Some(true): classification ongoing
+  // Some(false): classification done
+  Maybe<Atomic<bool>> mSuspendAfterExamineResponse;
+  bool mWritingToCache = false;
   bool mWaitingForProxy = false;
   bool mStaleRevalidation = false;
-  // Will be true if the onCacheEntryAvailable callback is not called by the
-  // time we send the network request
-  Atomic<bool> mRaceCacheWithNetwork{false};
-  uint32_t mRaceDelay{0};
-  // If true then OnCacheEntryAvailable should ignore the entry, because
-  // SetupTransaction removed conditional headers and decisions made in
-  // OnCacheEntryCheck are no longer valid.
-  bool mIgnoreCacheEntry{false};
-  bool mAllowRCWN{true};
-  // Lock preventing SetupTransaction/MaybeCreateCacheEntryWhenRCWN and
-  // OnCacheEntryCheck being called at the same time.
-  mozilla::Mutex mRCWNLock MOZ_UNANNOTATED{"nsHttpChannel.mRCWNLock"};
+  // Set if this is dictionary-compressed
+  bool mIsDictionaryCompressed = false;
+
+  // Set to true when OnSuspendTimeout calls SetBypassWriterLock(true)
+  // for the cache entry. Gets reset back to false when Resume calls
+  // SetBypassWriterLock(false)
+  bool mBypassCacheWriterSet{false};
 
   TimeStamp mNavigationStartTimeStamp;
 
-  // Promise that blocks connection creation when we want to resolve the origin
-  // host name to be able to give the configured proxy only the resolved IP
-  // to not leak names.
+  // Promise that blocks connection creation when we want to resolve the
+  // origin host name to be able to give the configured proxy only the
+  // resolved IP to not leak names.
   MozPromiseHolder<DNSPromise> mDNSBlockingPromise;
   // When we hit DoConnect before the resolution is done, Then() will be set
   // here to resume DoConnect.
   RefPtr<DNSPromise> mDNSBlockingThenable;
 
-  // We update the value of mProxyConnectResponseCode when OnStartRequest is
-  // called and reset the value when we switch to another failover proxy.
-  int32_t mProxyConnectResponseCode{0};
+  // We update the value of mProxyConnectResponseHead when OnStartRequest is
+  // called and reset the value when we switch to another failover proxy. It is
+  // a shared pointer to the head owned by the connection/transaction, so this
+  // is an addref rather than a deep copy. See bug 2045419.
+  RefPtr<ProxyConnectResponseHead> mProxyConnectResponseHead;
 
   // If mHTTPSSVCRecord has value, it means OnHTTPSRRAvailable() is called and
   // we got the result of HTTPS RR query. Otherwise, it means we are still
@@ -856,6 +900,17 @@ class nsHttpChannel final : public HttpBaseChannel,
   Maybe<EssentialDomainCategory> mEssentialDomainCategory;
   static EssentialDomainCategory GetEssentialDomainCategory(nsCString& domain);
 
+  // Permissions for the request to make local network access
+  LNAPerms mLNAPermission{};
+
+  // Track if we are waiting for OnPermissionPromptResult callback
+  // Used to handle cancellation while suspended waiting for LNA permission
+  bool mWaitingForLNAPermission{false};
+
+  bool mUsingDictionary{false};  // we added Available-Dictionary
+  bool mShouldSuspendForDictionary{false};
+  bool mSuspendedForDictionary{false};
+
  protected:
   virtual void DoNotifyListenerCleanup() override;
 
@@ -868,10 +923,13 @@ class nsHttpChannel final : public HttpBaseChannel,
  private:  // cache telemetry
   bool mDidReval{false};
 
-  RefPtr<nsIEarlyHintObserver> mEarlyHintObserver;
+  nsCOMPtr<nsIEarlyHintObserver> mEarlyHintObserver;
   Maybe<nsCString> mOpenerCallingScriptLocation;
   RefPtr<WebTransportSessionEventListener> mWebTransportSessionEventListener;
   nsMainThreadPtrHandle<nsIReplacedHttpResponse> mOverrideResponse;
+  // LNA telemetry: stores the user's action on the permission prompt
+  // Values: "allow", "deny", or empty string (no prompt shown)
+  nsCString mLNAPromptAction;
 };
 
 }  // namespace net
@@ -881,4 +939,4 @@ inline nsISupports* ToSupports(mozilla::net::nsHttpChannel* aChannel) {
   return static_cast<nsIHttpChannel*>(aChannel);
 }
 
-#endif  // nsHttpChannel_h__
+#endif  // nsHttpChannel_h_

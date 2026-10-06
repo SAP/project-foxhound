@@ -1,0 +1,44 @@
+From be9ec0aba4720b4cc77957c5e0e259559dddfbda Mon Sep 17 00:00:00 2001
+From: Jim Blandy <jimb@red-bean.com>
+Date: Wed, 29 Apr 2026 11:34:35 -0700
+Subject: [PATCH] Bug 2029910: Cairo: avoid overflow rendering FreeType glyphs.
+ r=#gfx-reviewers!
+
+In `_compute_xrender_bitmap_size`, avoid arithmetic overflow in
+calculating the size needed for the glyph buffer by: rejecting
+unreasonable glyph sizes early, and using 64-bit temporaries to
+multiply 32-bit values.
+---
+ src/cairo-ft-font.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/src/cairo-ft-font.c b/src/cairo-ft-font.c
+index d1a4f333904f..02481e8b06ed 100644
+--- a/src/cairo-ft-font.c
++++ b/src/cairo-ft-font.c
+@@ -1031,6 +1031,11 @@ _compute_xrender_bitmap_size(FT_Bitmap      *target,
+ 
+     width = ftbit->width;
+     height = ftbit->rows;
++
++    /* Reject absurd glyph dimensions to avoid overflow below. */
++    if (width < 0 || width > INT_MAX / 4 || height < 0)
++	return -1;
++
+     pitch = (width + 3) & ~3;
+ 
+     switch (ftbit->pixel_mode) {
+@@ -1082,6 +1087,10 @@ _compute_xrender_bitmap_size(FT_Bitmap      *target,
+     target->pitch = pitch;
+     target->buffer = NULL;
+ 
++    /* Reject this size if the multiplication overflows. */
++    if ((cairo_int64_t) pitch * height > INT_MAX)
++	return -1;
++
+     return pitch * height;
+ }
+ 
+-- 
+2.53.0
+

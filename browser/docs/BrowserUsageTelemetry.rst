@@ -4,7 +4,7 @@
 Browser Usage Telemetry
 =======================
 
-The `BrowserUsageTelemetry.sys.mjs <https://searchfox.org/mozilla-central/source/browser/modules/BrowserUsageTelemetry.sys.mjs>`_ module is the main module for measurements regarding the browser usage (e.g. tab and window counts, search counts, ...).
+The :searchfox:`BrowserUsageTelemetry.sys.mjs <browser/modules/BrowserUsageTelemetry.sys.mjs>` module is the main module for measurements regarding the browser usage (e.g. tab and window counts, search counts, ...).
 
 The measurements recording begins right after the ``SessionStore`` has finished restoring the session (i.e. restoring tabs/windows after Firefox starts).
 
@@ -17,7 +17,7 @@ The usage telemetry module currently measures these interactions with the browse
 - *navigation events*: at this time, this only counts the number of time a page load is triggered by a particular UI interaction (e.g. by searching through the URL bar, see ``browser.engagement.navigation.urlbar``).
 
 
-Please see `Scalars.yaml <https://searchfox.org/mozilla-central/source/toolkit/components/telemetry/Scalars.yaml>`_ for the full list of tracked interactions.
+Please see :searchfox:`Scalars.yaml <toolkit/components/telemetry/Scalars.yaml>` for the full list of tracked interactions.
 
 Customizable UI
 ===============
@@ -47,11 +47,12 @@ For the purposes of this telemetry a set of areas are defined:
   * ``pageaction-urlbar`` - Page actions buttons in the address bar.
   * ``pageaction-panel`` - The page action (meatball) menu.
   * ``nav-bar-start`` - The area of the navigation toolbar before the address bar.
-  * ``nav-bar-end`` - The area of the navigastion toolbar after the address bar.
+  * ``nav-bar-end`` - The area of the navigation toolbar after the address bar.
   * ``unified-extensions-area`` - The unified extensions panel.
 
-* In ``about:preferences`` the different cagtegories are used:
+* In ``about:preferences`` the different categories are used:
 
+  * ``preferences-paneDownloads``
   * ``preferences-paneGeneral``
   * ``preferences-paneHome``
   * ``preferences-panePrivacy``
@@ -59,6 +60,12 @@ For the purposes of this telemetry a set of areas are defined:
   * ``preferences-paneSearchResults``
   * ``preferences-paneSync``
   * ``preferences-paneContainers``
+  * ``preferences-paneAccessibility``
+  * ``preferences-paneAppearance``
+  * ``preferences-paneLanguages``
+  * ``preferences-paneAbout``
+  * ``preferences-panePermissionsData``
+  * ``preferences-paneTabsBrowsing``
 
 Widget Identifiers
 ------------------

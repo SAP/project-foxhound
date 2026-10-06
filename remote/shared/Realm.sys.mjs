@@ -197,6 +197,10 @@ export class WindowRealm extends Realm {
     return this.#window.browsingContext;
   }
 
+  get globalObject() {
+    return this.#globalObject;
+  }
+
   get globalObjectReference() {
     return this.#globalObjectReference;
   }
@@ -271,6 +275,8 @@ export class WindowRealm extends Realm {
    *
    * @param {string} expression
    *     The expression to evaluate.
+   * @param {DebuggerFrame=} pausedDebuggerFrame
+   *     The current paused debugger frame to use for the evaluation (optional).
    *
    * @returns {object}
    *     - evaluationStatus {EvaluationStatus} One of "normal", "throw".
@@ -279,9 +285,22 @@ export class WindowRealm extends Realm {
    *     - result {RemoteValue=} the result of the evaluation serialized as a
    *       RemoteValue if the evaluation status was "normal".
    */
-  executeInGlobal(expression) {
+  executeInRealm(expression, pausedDebuggerFrame) {
     this.#enableRealmAutomationFeatures();
+
+    if (pausedDebuggerFrame) {
+      return pausedDebuggerFrame.evalWithBindings(
+        expression,
+        {},
+        {
+          bypassCSP: true,
+          url: this.#window.document.baseURI,
+        }
+      );
+    }
+
     return this.#globalObjectReference.executeInGlobal(expression, {
+      bypassCSP: true,
       url: this.#window.document.baseURI,
     });
   }
@@ -295,6 +314,8 @@ export class WindowRealm extends Realm {
    *     The arguments to pass to the function call.
    * @param {object} thisParameter
    *     The value of the `this` keyword for the function call.
+   * @param {DebuggerFrame=} pausedDebuggerFrame
+   *     The current paused debugger frame to use for the evaluation (optional).
    *
    * @returns {object}
    *     - evaluationStatus {EvaluationStatus} One of "normal", "throw".
@@ -303,10 +324,11 @@ export class WindowRealm extends Realm {
    *     - result {RemoteValue=} the result of the evaluation serialized as a
    *       RemoteValue if the evaluation status was "normal".
    */
-  executeInGlobalWithBindings(
+  executeInRealmWithBindings(
     functionDeclaration,
     functionArguments,
-    thisParameter
+    thisParameter,
+    pausedDebuggerFrame
   ) {
     this.#enableRealmAutomationFeatures();
     const expression = `(${functionDeclaration}).apply(__bidi_this, __bidi_args)`;
@@ -316,13 +338,23 @@ export class WindowRealm extends Realm {
       args.push(arg);
     }
 
+    const bindings = {
+      __bidi_args: this.#createDebuggerObject(args),
+      __bidi_this: this.#createDebuggerObject(thisParameter),
+    };
+
+    if (pausedDebuggerFrame) {
+      return pausedDebuggerFrame.evalWithBindings(expression, bindings, {
+        bypassCSP: true,
+        url: this.#window.document.baseURI,
+      });
+    }
+
     return this.#globalObjectReference.executeInGlobalWithBindings(
       expression,
+      bindings,
       {
-        __bidi_args: this.#createDebuggerObject(args),
-        __bidi_this: this.#createDebuggerObject(thisParameter),
-      },
-      {
+        bypassCSP: true,
         url: this.#window.document.baseURI,
       }
     );

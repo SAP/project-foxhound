@@ -95,5 +95,5 @@
   justify-content: space-between;
   height: 46px;
   padding: 0 var(--space-large);
-  border-top: var(--border-width) solid var(--border-color-card);
+  border-top: var(--border-width) solid var(--card-border-color);
 }

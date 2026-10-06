@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gtest/gtest.h"
 
+#include "mozilla/HashFunctions.h"
 #include "mozilla/MruCache.h"
 #include "nsString.h"
 
@@ -53,36 +52,6 @@ static nsCString MakeStringKey(char aKey) {
   nsCString key;
   key.Append(aKey);
   return key;
-}
-
-TEST(MruCache, TestNullChecker)
-{
-  using mozilla::detail::EmptyChecker;
-
-  {
-    int test = 0;
-    EXPECT_TRUE(EmptyChecker<decltype(test)>::IsNotEmpty(test));
-
-    test = 42;
-    EXPECT_TRUE(EmptyChecker<decltype(test)>::IsNotEmpty(test));
-  }
-
-  {
-    const char* test = "abc";
-    EXPECT_TRUE(EmptyChecker<decltype(test)>::IsNotEmpty(test));
-
-    test = nullptr;
-    EXPECT_FALSE(EmptyChecker<decltype(test)>::IsNotEmpty(test));
-  }
-
-  {
-    int foo = 42;
-    int* test = &foo;
-    EXPECT_TRUE(EmptyChecker<decltype(test)>::IsNotEmpty(test));
-
-    test = nullptr;
-    EXPECT_FALSE(EmptyChecker<decltype(test)>::IsNotEmpty(test));
-  }
 }
 
 TEST(MruCache, TestEmptyCache)

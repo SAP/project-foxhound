@@ -1,0 +1,18 @@
+{
+  "label": "theaa.com",
+  "bugs": {
+    "1848849": {
+      "issue": "broken-printing",
+      "matches": ["*://*.theaa.com/route-planner/*"]
+    }
+  },
+  "css": {
+    "fix_blank_print_preview": "@media print { @page { size: a3 !important; } }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": ["fix_blank_print_preview"]
+    }
+  ]
+}

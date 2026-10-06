@@ -19,9 +19,8 @@ add_setup(async function () {
     set: [
       [
         "network.cookie.cookieBehavior",
-        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+        Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
       ],
-      ["network.cookie.cookieBehavior.trackerCookieBlocking", false],
     ],
   });
 
@@ -126,4 +125,36 @@ add_task(async function testTrackerCookiesSubView() {
   await closeProtectionsPanel();
 
   BrowserTestUtils.removeTab(tab);
+});
+
+// Verify that the partitioned tracker cookies are recorded in the tracking DB.
+add_task(async function testPartitionedTrackerCookiesInTrackingDB() {
+  await TrackingDBService.clearAll();
+
+  // Open a tab which embeds a third-party tracker iframe which sets a cookie.
+  let tab = await BrowserTestUtils.openNewForegroundTab({
+    url: TEST_PAGE,
+    gBrowser,
+  });
+
+  let promise = BrowserTestUtils.waitForCondition(async () => {
+    let foundTrackerCookieEvent = false;
+    let events = await TrackingDBService.getEventsByDateRange(0, Date.now());
+
+    for (let event of events) {
+      let type = event.getResultByName("type");
+      if (type == Ci.nsITrackingDBService.TRACKING_COOKIES_ID) {
+        foundTrackerCookieEvent = true;
+        break;
+      }
+    }
+
+    return foundTrackerCookieEvent;
+  });
+
+  BrowserTestUtils.removeTab(tab);
+
+  await promise;
+
+  ok(true, "Partitioned tracker cookies are recorded in the tracking DB");
 });

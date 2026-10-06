@@ -12,10 +12,10 @@ import mozilla.components.browser.state.state.content.ShareResourceState
 import mozilla.components.concept.fetch.Response
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.test.assertNotNull
 
 class ShareResourceReducerTest {
 

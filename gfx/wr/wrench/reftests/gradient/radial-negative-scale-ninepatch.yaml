@@ -1,0 +1,30 @@
+# This test contains a radial gradient with rounded corners.
+# The primitive is large enough to exercise the quad nine-patch
+# code path.
+# The primitive has a negative scale applied to it. The goal
+# of this test is to check that the fiddly coordinate space
+# handling of decomposed quads properly handles transforms that
+# can flip primitives.
+---
+root:
+  items:
+    - type: stacking-context
+      transform: scale-x(-1)
+      items:
+        - type: clip
+          id: 5
+          complex:
+            - rect: [-300, 0, 300, 300]
+              radius: 50
+        # A white square (that doesn't contribute to the output)
+        # to make sure that the clip is not lifted to the picture
+        # containing gradient primitive.
+        - type: rect
+          bounds: 10 10 10 10
+          color: white
+        - type: radial-gradient
+          bounds: -300 0 300 300
+          center: 0 0
+          radius: 500 600
+          stops: [0.0, red, 1.0, blue]
+          clip-chain: [5]

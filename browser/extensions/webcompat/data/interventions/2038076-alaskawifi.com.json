@@ -1,0 +1,15 @@
+{
+  "label": "alaskawifi.com",
+  "bugs": {
+    "2038076": {
+      "issue": "broken-interactive-elements",
+      "matches": ["https://alaskawifi.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

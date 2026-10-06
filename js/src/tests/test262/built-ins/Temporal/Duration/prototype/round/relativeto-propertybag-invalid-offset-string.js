@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -19,13 +19,14 @@ const badOffsets = [
   null,       // must be a string
   true,       // must be a string
   1000n,      // must be a string
+  "+00:0000", // separator must be consistent for hours/minutes and minutes/seconds
 ];
 badOffsets.forEach((offset) => {
   const relativeTo = { year: 2021, month: 10, day: 28, offset, timeZone };
   assert.throws(
     typeof(offset) === 'string' ? RangeError : TypeError,
     () => instance.round({ largestUnit: "years", relativeTo }),
-    `"${offset} is not a valid offset string`
+    `"${offset}" is not a valid offset string`
   );
 });
 

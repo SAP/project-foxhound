@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,81 +6,86 @@
 
 #include "JSOracleParent.h"
 #include "ThirdPartyUtil.h"
+#include "VsyncSource.h"
+#include "WrapperFactory.h"
+#include "imgLoader.h"
 #include "js/CallAndConstruct.h"  // JS::Call
-#include "js/ColumnNumber.h"  // JS::TaggedColumnNumberOneOrigin, JS::ColumnNumberOneOrigin
 #include "js/CharacterEncoding.h"
-#include "js/Date.h"                // JS::IsISOStyleDate
+#include "js/ColumnNumber.h"  // JS::TaggedColumnNumberOneOrigin, JS::ColumnNumberOneOrigin
+#include "js/Date.h"  // JS::IsISOStyleDate
+#include "js/JSON.h"
 #include "js/Object.h"              // JS::GetClass
 #include "js/PropertyAndElement.h"  // JS_DefineProperty, JS_DefinePropertyById, JS_Enumerate, JS_GetProperty, JS_GetPropertyById, JS_SetProperty, JS_SetPropertyById, JS::IdVector
 #include "js/PropertyDescriptor.h"  // JS::PropertyDescriptor, JS_GetOwnPropertyDescriptorById
 #include "js/SavedFrameAPI.h"
 #include "js/Value.h"  // JS::Value, JS::StringValue
 #include "jsfriendapi.h"
-#include "WrapperFactory.h"
-
+#include "mozJSModuleLoader.h"
 #include "mozilla/Base64.h"
+#include "mozilla/Components.h"
+#include "mozilla/ControllerCommand.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
 #include "mozilla/ErrorNames.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/FormAutofillNative.h"
 #include "mozilla/IntentionalCrash.h"
+#include "mozilla/KeySystemConfig.h"
 #include "mozilla/PerfStats.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProcInfo.h"
-#include "mozilla/ResultExtensions.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerMarkers.h"
+#include "mozilla/RemoteMediaManagerChild.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/ScrollingMetrics.h"
 #include "mozilla/SharedStyleSheetCache.h"
-#include "mozilla/dom/SharedScriptCache.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/WheelHandlingHelper.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/IdleDeadline.h"
 #include "mozilla/dom/InProcessParent.h"
 #include "mozilla/dom/JSActorService.h"
 #include "mozilla/dom/MediaSessionBinding.h"
 #include "mozilla/dom/PBrowserParent.h"
-#include "mozilla/dom/Performance.h"
 #include "mozilla/dom/PopupBlocker.h"
+#include "mozilla/dom/ProcessIsolation.h"
 #include "mozilla/dom/Promise.h"
-#include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/Record.h"
 #include "mozilla/dom/ReportingHeader.h"
+#include "mozilla/dom/SharedScriptCache.h"
 #include "mozilla/dom/UnionTypes.h"
 #include "mozilla/dom/WindowBinding.h"  // For IdleRequestCallback/Options
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/dom/WorkerScope.h"
+#include "mozilla/dom/quota/QuotaManager.h"
+#include "mozilla/image/FetchDecodedImage.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
-#include "mozilla/ipc/UtilityProcessSandboxing.h"
-#include "mozilla/ipc/UtilityProcessManager.h"
 #include "mozilla/ipc/UtilityProcessHost.h"
+#include "mozilla/ipc/UtilityProcessManager.h"
+#include "mozilla/ipc/UtilityProcessSandboxing.h"
 #include "mozilla/layers/WebRenderBridgeChild.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
-#include "mozilla/net/UrlClassifierFeatureFactory.h"
-#include "mozilla/RemoteMediaManagerChild.h"
-#include "mozilla/KeySystemConfig.h"
-#include "mozilla/WheelHandlingHelper.h"
-#include "nsRFPTargetSetIDL.h"
-#include "nsIRFPTargetSetIDL.h"
-#include "nsIWidget.h"
-#include "nsString.h"
-#include "nsNativeTheme.h"
-#include "nsThreadUtils.h"
-#include "mozJSModuleLoader.h"
-#include "mozilla/ProfilerLabels.h"
-#include "mozilla/ProfilerMarkers.h"
+#include "mozilla/net/ChannelClassifierUtils.h"
 #include "nsContentUtils.h"
+#include "nsControllerCommandTable.h"
 #include "nsDocShell.h"
 #include "nsIException.h"
-#include "VsyncSource.h"
-#include "imgLoader.h"
+#include "nsIRFPTargetSetIDL.h"
+#include "nsIURIFixup.h"
+#include "nsIWidget.h"
+#include "nsNativeTheme.h"
+#include "nsPIDOMWindowInlines.h"
+#include "nsRFPTargetSetIDL.h"
+#include "nsString.h"
+#include "nsThreadUtils.h"
 
 #ifdef XP_UNIX
 #  include <errno.h>
-#  include <unistd.h>
 #  include <fcntl.h>
 #  include <poll.h>
 #  include <sys/wait.h>
+#  include <unistd.h>
 
 #  ifdef XP_LINUX
 #    include <sys/prctl.h>
@@ -223,10 +226,78 @@ void ChromeUtils::ReleaseAssert(GlobalObject& aGlobal, bool aCondition,
 }
 
 /* static */
+void ChromeUtils::RegisterMarkerSchema(GlobalObject& aGlobal,
+                                       JS::Handle<JSObject*> aSchema,
+                                       ErrorResult& aRv) {
+  JSContext* cx = aGlobal.Context();
+  JS::Rooted<JSObject*> schemaObj(cx, aSchema);
+
+  JS::Rooted<JS::Value> nameVal(cx);
+  if (!JS_GetProperty(cx, schemaObj, "name", &nameVal) || !nameVal.isString()) {
+    aRv.ThrowTypeError("Schema must contain a 'name' field (string)");
+    return;
+  }
+
+  JS::Rooted<JSString*> nameStr(cx, nameVal.toString());
+  nsAutoJSString schemaName;
+  if (!schemaName.init(cx, nameStr)) {
+    aRv.ThrowTypeError("Failed to extract schema name");
+    return;
+  }
+
+  nsString jsonString;
+
+  auto callback = [](const char16_t* buf, uint32_t len, void* data) {
+    static_cast<nsString*>(data)->Append(buf, len);
+    return true;
+  };
+
+  if (!JS::ToJSONMaybeSafely(cx, schemaObj, callback, &jsonString)) {
+    aRv.ThrowTypeError("Failed to serialize schema");
+    return;
+  }
+
+  NS_ConvertUTF16toUTF8 schemaNameUTF8(schemaName);
+  profiler_register_marker_schema(schemaNameUTF8, jsonString);
+}
+
+// Wrapper marker type for custom markers from JavaScript.
+// Uses an empty name for two reasons:
+// 1. Avoids writing a "type" field in marker data (the user's type wins)
+// 2. Prevents this wrapper's schema from appearing in profile.meta.markerSchema
+//    (empty-name markers are filtered out during schema streaming)
+struct JSCustomMarker : public ::mozilla::BaseMarkerType<JSCustomMarker> {
+  static constexpr const char* Name = "";
+  static constexpr bool StoreName = true;
+
+  using MS = ::mozilla::MarkerSchema;
+
+  static constexpr MS::PayloadField PayloadFields[] = {};
+  static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
+                                               MS::Location::MarkerTable};
+
+  static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
+                                   const ProfilerString8View& aJSON) {
+    // Splice the user's JSON properties directly into the marker data.
+    // By setting Name = "" above, we avoid having the profiler infrastructure
+    // write its own "type" field, so the only "type" field comes from the
+    // user's data object (e.g., "CustomMarker").
+    auto stringView = aJSON.StringView();
+    const char* data = stringView.data();
+    size_t length = stringView.length();
+
+    if (length >= 2 && data[0] == '{' && data[length - 1] == '}') {
+      // Skip the opening '{' and closing '}'
+      aWriter.Splice(data + 1, length - 2);
+    }
+  }
+};
+
+/* static */
 void ChromeUtils::AddProfilerMarker(
     GlobalObject& aGlobal, const nsACString& aName,
     const ProfilerMarkerOptionsOrDouble& aOptions,
-    const Optional<nsACString>& aText) {
+    const Optional<UTF8StringOrObject>& aData) {
   if (!profiler_thread_is_being_profiled_for_markers()) {
     return;
   }
@@ -279,31 +350,9 @@ void ChromeUtils::AddProfilerMarker(
     }
   }
   if (startTime) {
-    RefPtr<Performance> performance;
-
-    if (NS_IsMainThread()) {
-      nsCOMPtr<nsPIDOMWindowInner> ownerWindow =
-          do_QueryInterface(aGlobal.GetAsSupports());
-      if (ownerWindow) {
-        performance = ownerWindow->GetPerformance();
-      }
-    } else {
-      JSContext* cx = aGlobal.Context();
-      WorkerPrivate* workerPrivate = GetWorkerPrivateFromContext(cx);
-      if (workerPrivate) {
-        performance = workerPrivate->GlobalScope()->GetPerformance();
-      }
-    }
-
-    if (performance) {
-      options.Set(MarkerTiming::IntervalUntilNowFrom(
-          performance->CreationTimeStamp() +
-          TimeDuration::FromMilliseconds(startTime)));
-    } else {
-      options.Set(MarkerTiming::IntervalUntilNowFrom(
-          TimeStamp::ProcessCreation() +
-          TimeDuration::FromMilliseconds(startTime)));
-    }
+    options.Set(MarkerTiming::IntervalUntilNowFrom(
+        TimeStamp::ProcessCreation() +
+        TimeDuration::FromMilliseconds(startTime)));
   }
 
   if (innerWindowId) {
@@ -314,10 +363,63 @@ void ChromeUtils::AddProfilerMarker(
 
   {
     AUTO_PROFILER_STATS(ChromeUtils_AddProfilerMarker);
-    if (aText.WasPassed()) {
-      profiler_add_marker(aName, category, std::move(options),
-                          ::geckoprofiler::markers::TextMarker{},
-                          aText.Value());
+    if (aData.WasPassed()) {
+      const auto& data = aData.Value();
+
+      if (data.IsUTF8String()) {
+        profiler_add_marker(aName, category, std::move(options),
+                            ::geckoprofiler::markers::TextMarker{},
+                            data.GetAsUTF8String());
+      } else {
+        JSContext* cx = aGlobal.Context();
+        JS::Rooted<JSObject*> obj(cx, data.GetAsObject());
+
+        // JS::ToJSONMaybeSafely asserts that its input is a plain object or
+        // array; a wrapper would trip that assertion. Unwrap and test the
+        // underlying object directly.
+        JS::Rooted<JSObject*> unwrapped(cx, js::CheckedUnwrapStatic(obj));
+
+        if (!unwrapped || !JS::IsPlainObject(unwrapped)) {
+          // Non-plain object (e.g. an Error) or denied unwrap: fall back to a
+          // text marker using the object's string form.
+          JS::Rooted<JS::Value> objValue(cx, JS::ObjectValue(*obj));
+          JS::Rooted<JSString*> str(cx, JS::ToString(cx, objValue));
+          nsAutoCString text;
+          if (!str) {
+            JS_ClearPendingException(cx);
+            text.AssignLiteral("<error converting to string>");
+          } else {
+            nsAutoJSString jsText;
+            NS_ENSURE_TRUE_VOID(jsText.init(cx, str));
+            CopyUTF16toUTF8(jsText, text);
+          }
+          profiler_add_marker(aName, category, std::move(options),
+                              ::geckoprofiler::markers::TextMarker{}, text);
+          return;
+        }
+
+        nsString jsonString;
+        auto callback = [](const char16_t* buf, uint32_t len, void* d) {
+          static_cast<nsString*>(d)->Append(buf, len);
+          return true;
+        };
+
+        // ToJSONMaybeSafely requires same-realm input; enter the unwrapped
+        // object's realm before calling it.
+        {
+          JSAutoRealm ar(cx, unwrapped);
+          if (!JS::ToJSONMaybeSafely(cx, unwrapped, callback, &jsonString)) {
+            JS_ClearPendingException(cx);
+            return;
+          }
+        }
+
+        NS_ConvertUTF16toUTF8 jsonUTF8(jsonString);
+
+        profiler_add_marker(
+            aName, category, std::move(options), JSCustomMarker{},
+            ProfilerString8View::WrapNullTerminatedString(jsonUTF8.get()));
+      }
     } else {
       profiler_add_marker(aName, category, std::move(options));
     }
@@ -729,6 +831,10 @@ void ChromeUtils::ImportESModule(
   nsresult rv =
       moduleloader->ImportESModule(cx, registryLocation, &moduleNamespace);
   if (NS_FAILED(rv)) {
+    if (maybeSyncLoaderScope) {
+      // Import error itself should be propagated.
+      maybeSyncLoaderScope->Finish();
+    }
     aRv.Throw(rv);
     return;
   }
@@ -946,6 +1052,10 @@ static bool ESModuleGetter(JSContext* aCx, unsigned aArgc, JS::Value* aVp) {
   JS::Rooted<JSObject*> moduleNamespace(aCx);
   nsresult rv = moduleloader->ImportESModule(aCx, uri, &moduleNamespace);
   if (NS_FAILED(rv)) {
+    if (maybeSyncLoaderScope) {
+      // Import error itself should be propagated.
+      maybeSyncLoaderScope->Finish();
+    }
     Throw(aCx, rv);
     return false;
   }
@@ -1098,6 +1208,11 @@ void ChromeUtils::GetLibcConstants(const GlobalObject&,
   aConsts.mO_CREAT.Construct(O_CREAT);
   aConsts.mO_NONBLOCK.Construct(O_NONBLOCK);
   aConsts.mO_WRONLY.Construct(O_WRONLY);
+#  ifdef O_CLOEXEC
+  aConsts.mO_CLOEXEC.Construct(O_CLOEXEC);
+  // In the unlikely event of a target where O_CLOEXEC isn't defined
+  // (Solaris 10?), the property will be absent in JS.
+#  endif
 
   aConsts.mPOLLERR.Construct(POLLERR);
   aConsts.mPOLLHUP.Construct(POLLHUP);
@@ -1109,6 +1224,7 @@ void ChromeUtils::GetLibcConstants(const GlobalObject&,
 
 #  ifdef XP_LINUX
   aConsts.mPR_CAPBSET_READ.Construct(PR_CAPBSET_READ);
+  aConsts.mO_PATH.Construct(O_PATH);
 #  endif
 }
 #endif
@@ -1717,6 +1833,22 @@ void ChromeUtils::ClearResourceCache(
   }
 }
 
+void ChromeUtils::InvalidateResourceCache(GlobalObject& aGlobal,
+                                          ErrorResult& aRv) {
+  SharedScriptCache::Invalidate();
+}
+
+void ChromeUtils::GetCachedJavaScriptSource(
+    GlobalObject& aGlobal, const nsACString& aKey, const nsACString& aURI,
+    const nsACString& aHintCharset, JS::MutableHandle<JS::Value> aRetval,
+    ErrorResult& aRv) {
+  JSContext* cx = aGlobal.Context();
+  if (!SharedScriptCache::GetCachedScriptSource(cx, aKey, aURI, aHintCharset,
+                                                aRetval)) {
+    aRv.NoteJSContextException(aGlobal.Context());
+  }
+}
+
 void ChromeUtils::ClearBfcacheByPrincipal(GlobalObject& aGlobal,
                                           nsIPrincipal* aPrincipal,
                                           ErrorResult& aRv) {
@@ -1878,10 +2010,10 @@ already_AddRefed<Promise> ChromeUtils::RequestProcInfo(GlobalObject& aGlobal,
                                                          // DOM windows.
             /* aUtilityInfo = */ std::move(utilityActors),
             /* aChild = */ 0  // Without a ContentProcess, no ChildId.
-#ifdef XP_DARWIN
+#ifdef XP_MACOSX
             ,
             /* aChildTask = */ aGeckoProcess->GetChildTask()
-#endif  // XP_DARWIN
+#endif  // XP_MACOSX
         );
       });
 
@@ -1982,10 +2114,10 @@ already_AddRefed<Promise> ChromeUtils::RequestProcInfo(GlobalObject& aGlobal,
         /* aWindowInfo = */ std::move(windows),
         /* aUtilityInfo = */ nsTArray<UtilityInfo>(),
         /* aChild = */ contentParent->ChildID()
-#ifdef XP_DARWIN
+#ifdef XP_MACOSX
             ,
         /* aChildTask = */ contentParent->Process()->GetChildTask()
-#endif  // XP_DARWIN
+#endif  // XP_MACOSX
     );
   }
 
@@ -2077,13 +2209,49 @@ already_AddRefed<Promise> ChromeUtils::RequestProcInfo(GlobalObject& aGlobal,
 }
 
 /* static */
+uint64_t ChromeUtils::GetCurrentProcessMemoryUsage(GlobalObject& aGlobal,
+                                                   ErrorResult& aRv) {
+  uint64_t retVal = 0;
+  nsresult rv = mozilla::GetCurrentProcessMemoryUsage(&retVal);
+  if (NS_FAILED(rv)) {
+    aRv.Throw(rv);
+  }
+  return retVal;
+}
+
+/* static */
+uint64_t ChromeUtils::GetCpuTimeSinceProcessStart(GlobalObject& aGlobal,
+                                                  ErrorResult& aRv) {
+  uint64_t retVal = 0;
+  nsresult rv = mozilla::GetCpuTimeSinceProcessStartInMs(&retVal);
+  if (NS_FAILED(rv)) {
+    aRv.Throw(rv);
+  }
+  return retVal;
+}
+
+/* static */
 bool ChromeUtils::VsyncEnabled(GlobalObject& aGlobal) {
   return mozilla::gfx::VsyncSource::GetFastestVsyncRate().isSome();
 }
 
-void ChromeUtils::SetPerfStatsCollectionMask(GlobalObject& aGlobal,
-                                             uint64_t aMask) {
-  PerfStats::SetCollectionMask(static_cast<PerfStats::MetricMask>(aMask));
+void ChromeUtils::EnableAllPerfStatsFeatures(GlobalObject& aGlobal) {
+  PerfStats::MetricMask mask =
+      std::numeric_limits<PerfStats::MetricMask>::max();
+  PerfStats::SetCollectionMask(mask);
+}
+
+void ChromeUtils::SetPerfStatsFeatures(GlobalObject& aGlobal,
+                                       const Sequence<nsString>& aMetrics) {
+  // Convert string array to bitmask
+  PerfStats::MetricMask mask = 0;
+  for (const auto& metricName : aMetrics) {
+    // Convert string to corresponding enum value and set bit
+    NS_ConvertUTF16toUTF8 utf8MetricName(metricName);
+    mask |= PerfStats::GetFeatureMask(utf8MetricName.get());
+  }
+
+  PerfStats::SetCollectionMask(mask);
 }
 
 already_AddRefed<Promise> ChromeUtils::CollectPerfStats(GlobalObject& aGlobal,
@@ -2102,8 +2270,9 @@ already_AddRefed<Promise> ChromeUtils::CollectPerfStats(GlobalObject& aGlobal,
 
   extPromise->Then(
       GetCurrentSerialEventTarget(), __func__,
-      [promise](const nsCString& aResult) {
-        promise->MaybeResolve(NS_ConvertUTF8toUTF16(aResult));
+      [promise](const std::string& aResult) {
+        promise->MaybeResolve(
+            NS_ConvertUTF8toUTF16(aResult.c_str(), aResult.length()));
       },
       [promise](bool aValue) { promise->MaybeReject(NS_ERROR_FAILURE); });
 
@@ -2409,7 +2578,7 @@ already_AddRefed<Promise> ChromeUtils::EnsureHeadlessContentProcess(
 /* static */
 bool ChromeUtils::IsClassifierBlockingErrorCode(GlobalObject& aGlobal,
                                                 uint32_t aError) {
-  return net::UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(
+  return net::ChannelClassifierUtils::IsClassifierBlockingErrorCode(
       static_cast<nsresult>(aError));
 }
 
@@ -2504,6 +2673,11 @@ bool ChromeUtils::IsDarkBackground(GlobalObject&, Element& aElement) {
 }
 
 double ChromeUtils::DateNow(GlobalObject&) { return JS_Now() / 1000.0; }
+
+/* static */
+double ChromeUtils::Now(GlobalObject&) {
+  return (TimeStamp::Now() - TimeStamp::ProcessCreation()).ToMilliseconds();
+}
 
 /* static */
 void ChromeUtils::EnsureJSOracleStarted(GlobalObject&) {
@@ -2642,27 +2816,25 @@ void ChromeUtils::CallFunctionAndLogException(
   }
 }
 
-std::atomic<uint32_t> ChromeUtils::sDevToolsOpenedCount = 0;
+static Atomic<uint32_t, Relaxed> sDevToolsOpenedCount{0};
 
 /* static */
-bool ChromeUtils::IsDevToolsOpened() {
-  return ChromeUtils::sDevToolsOpenedCount > 0;
-}
+bool ChromeUtils::IsDevToolsOpened() { return sDevToolsOpenedCount > 0; }
 
 /* static */
 bool ChromeUtils::IsDevToolsOpened(GlobalObject& aGlobal) {
-  return ChromeUtils::IsDevToolsOpened();
+  return IsDevToolsOpened();
 }
 
 /* static */
 void ChromeUtils::NotifyDevToolsOpened(GlobalObject& aGlobal) {
-  ChromeUtils::sDevToolsOpenedCount++;
+  sDevToolsOpenedCount++;
 }
 
 /* static */
 void ChromeUtils::NotifyDevToolsClosed(GlobalObject& aGlobal) {
-  MOZ_ASSERT(ChromeUtils::sDevToolsOpenedCount >= 1);
-  ChromeUtils::sDevToolsOpenedCount--;
+  MOZ_ASSERT(sDevToolsOpenedCount >= 1);
+  sDevToolsOpenedCount--;
 }
 
 /* static */
@@ -2710,6 +2882,168 @@ already_AddRefed<nsIContentSecurityPolicy> ChromeUtils::CreateCSPFromHeader(
     GlobalObject& aGlobal, const nsAString& aHeader, nsIURI* aSelfURI,
     nsIPrincipal* aLoadingPrincipal, ErrorResult& aRv) {
   return CSP_CreateFromHeader(aHeader, aSelfURI, aLoadingPrincipal, aRv);
+}
+
+Nullable<bool> ChromeUtils::GetGlobalWindowCommandEnabled(
+    GlobalObject&, const nsACString& aName) {
+  const auto* table = nsControllerCommandTable::WindowCommandTable();
+  RefPtr handler = table->FindCommandHandler(aName);
+  if (!handler) {
+    return nullptr;
+  }
+  return handler->IsCommandEnabled(aName, nullptr);
+}
+
+already_AddRefed<Promise> ChromeUtils::FetchDecodedImage(GlobalObject& aGlobal,
+                                                         nsIURI* aURI,
+                                                         nsIChannel* aChannel,
+                                                         ErrorResult& aRv) {
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
+  MOZ_ASSERT(global);
+  RefPtr<Promise> domPromise = Promise::Create(global, aRv);
+  if (NS_WARN_IF(aRv.Failed())) {
+    return nullptr;
+  }
+
+  image::FetchDecodedImage(aURI, aChannel, gfx::IntSize{})
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [global, domPromise](already_AddRefed<imgIContainer> aImage) {
+            nsCOMPtr<imgIContainer> image(std::move(aImage));
+
+            AutoJSAPI jsapi;
+            if (!jsapi.Init(global)) {
+              domPromise->MaybeRejectWithUndefined();
+              return;
+            }
+
+            JS::Rooted<JS::Value> value(jsapi.cx());
+            if (!WrapObject(jsapi.cx(), image, &NS_GET_IID(imgIContainer),
+                            &value)) {
+              domPromise->MaybeRejectWithUndefined();
+              return;
+            }
+
+            domPromise->MaybeResolve(value);
+          },
+          [domPromise](nsresult aStatus) { domPromise->MaybeReject(aStatus); });
+
+  return domPromise.forget();
+}
+
+void ChromeUtils::EncodeURIForSrcset(GlobalObject&, const nsACString& aIn,
+                                     nsACString& aOut) {
+  const auto inputLen = aIn.Length();
+  if (!inputLen) {
+    return;
+  }
+  size_t start = 0;
+  while (true) {
+    auto idx = aIn.View().find_first_of(nsContentUtils::kHTMLWhitespace, start);
+    if (idx == std::string_view::npos) {
+      break;
+    }
+    aOut.Append(Substring(aIn, start, idx - start));
+    aOut.AppendPrintf("%%%x", aIn.CharAt(idx));
+    start = idx + 1;
+    if (start == inputLen) {
+      return;
+    }
+  }
+  if (start == 0) {
+    aOut.Assign(aIn);
+  } else {
+    aOut.Append(Substring(aIn, start));
+  }
+}
+
+void ChromeUtils::GetLastOOMStackTrace(GlobalObject& aGlobal,
+                                       nsAString& aRetval) {
+  JSContext* cx = aGlobal.Context();
+  aRetval = NS_ConvertUTF8toUTF16(JS_GetLastOOMStackTrace(cx));
+}
+
+void ChromeUtils::PredictRemoteTypeForURI(
+    GlobalObject& aGlobal, nsIURI* aURI,
+    const PredictRemoteTypeOptions& aOptions, nsACString& aRemoteType,
+    ErrorResult& aRv) {
+  // If 'useRemoteTabs' is disabled, immediately return with NOT_REMOTE_TYPE,
+  // as we won't perform any process isolation.
+  bool useRemoteTabs = true;
+  if (aOptions.mUseRemoteTabs.WasPassed()) {
+    useRemoteTabs = aOptions.mUseRemoteTabs.Value();
+  } else if (aOptions.mWindow) {
+    useRemoteTabs = aOptions.mWindow->GetBrowsingContext()->UseRemoteTabs();
+  }
+  if (!useRemoteTabs) {
+    aRemoteType = NOT_REMOTE_TYPE;
+    return;
+  }
+
+  bool useRemoteSubframes = true;
+  if (aOptions.mUseRemoteSubframes.WasPassed()) {
+    useRemoteSubframes = aOptions.mUseRemoteSubframes.Value();
+  } else if (aOptions.mWindow) {
+    useRemoteSubframes =
+        aOptions.mWindow->GetBrowsingContext()->UseRemoteSubframes();
+  }
+
+  OriginAttributes attrs;
+  attrs.mUserContextId = aOptions.mUserContextId;
+  attrs.mGeckoViewSessionContextId = aOptions.mGeckoViewSessionContextId;
+  if (aOptions.mPrivateBrowsingId.WasPassed()) {
+    attrs.mPrivateBrowsingId = aOptions.mPrivateBrowsingId.Value();
+  } else if (aOptions.mWindow) {
+    attrs.mPrivateBrowsingId = aOptions.mWindow->IsPrivateBrowsing() ? 1 : 0;
+  }
+
+  nsCString preferredRemoteType = aOptions.mPreferredRemoteType.WasPassed()
+                                      ? aOptions.mPreferredRemoteType.Value()
+                                      : SharedWebRemoteType(attrs);
+
+  // If we got nullptr as our argument URI argument, treat it like an
+  // about:blank document, and load it into our preferred remote type.
+  if (!aURI) {
+    aRemoteType = preferredRemoteType;
+    return;
+  }
+
+  auto result = mozilla::dom::PredictRemoteTypeForURI(
+      aURI, attrs, preferredRemoteType, useRemoteSubframes);
+  if (result.isErr()) {
+    aRv.Throw(result.unwrapErr());
+    return;
+  }
+
+  aRemoteType = result.unwrap();
+}
+
+void ChromeUtils::PredictRemoteTypeForURI(
+    GlobalObject& aGlobal, const nsACString& aURIString,
+    const PredictRemoteTypeOptions& aOptions, nsACString& aRemoteType,
+    ErrorResult& aRv) {
+  // Attempt to invoke URIFixup to fix up the given URI string into a functional
+  // string. If this fails, `preferredURI` will be `nullptr`. We intentionally
+  // don't forward any errors reported, as we want to recover in the case of an
+  // invalid URI.
+  nsCOMPtr<nsIURI> preferredURI;
+  if (nsCOMPtr<nsIURIFixup> uriFixup = components::URIFixup::Service()) {
+    nsCOMPtr<nsIURIFixupInfo> fixupInfo;
+    uriFixup->GetFixupURIInfo(aURIString, nsIURIFixup::FIXUP_FLAG_NONE,
+                              getter_AddRefs(fixupInfo));
+    if (fixupInfo) {
+      fixupInfo->GetPreferredURI(getter_AddRefs(preferredURI));
+    }
+  }
+
+  // If parsing the URI with fixup failed, clear out `mPreferredRemoteType`, so
+  // we always fall back to the least privileged remote type.
+  PredictRemoteTypeOptions newOptions(aOptions);
+  if (!preferredURI) {
+    newOptions.mPreferredRemoteType.Reset();
+  }
+
+  PredictRemoteTypeForURI(aGlobal, preferredURI, newOptions, aRemoteType, aRv);
 }
 
 }  // namespace mozilla::dom

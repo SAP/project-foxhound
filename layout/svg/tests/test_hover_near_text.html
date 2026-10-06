@@ -4,6 +4,7 @@
         <meta http-equiv="Content-Type" content="application/xhtml+xml; charset=UTF-8"/>
         <title>Test mouse hover near text element inside svg element with viewBox attribute</title>
         <script src="/tests/SimpleTest/SimpleTest.js"></script>
+        <script src="/tests/SimpleTest/EventUtils.js"></script>
     </head>
     <body style="margin:0">
         <div>
@@ -15,9 +16,10 @@
             <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1519144">Mozilla Bug 1519144</a>
         </p>
         <script type="application/javascript">
-            let utils = SpecialPowers.getDOMWindowUtils(window);
-            utils.sendMouseEvent('mousemove', 155, 125, 0, 0, 0); //hover above the text
-            utils.sendMouseEvent('mousemove', 125, 155, 0, 0, 0); //hover to the left of the text
+            //hover above the text
+            synthesizeMouseAtPoint(155, 125, { type: "mousemove" });
+            //hover to the left of the text
+            synthesizeMouseAtPoint(125, 155, { type: "mousemove" });
             requestIdleCallback(() => {
                 ok(!document.getElementsByTagName('text')[0].hasAttribute('fill'),
                    'Text element should not receive an event');

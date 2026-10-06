@@ -2,4 +2,6 @@
 support-files = ["process_error.xhtml"]
 
 ["test_process_error.xhtml"]
-skip-if = ["!crashreporter"]
+skip-if = [
+  "!crashreporter",
+]

@@ -15,18 +15,20 @@ They are also run when using the "devtools" preset: `./mach try --preset devtool
 
 ### Node tests try job definition
 
-The definition of those try jobs can be found at [taskcluster/kinds/source-test/node.yml](https://searchfox.org/mozilla-central/source/taskcluster/kinds/source-test/node.yml).
+The definition of those try jobs can be found at [taskcluster/kinds/source-test/node.yml](https://searchfox.org/firefox-main/source/taskcluster/kinds/source-test/node.yml).
 
 The definition also contains the list of files that will trigger the node test jobs. Currently the the devtools tests run when any file is modified under `devtools/client` or `devtools/shared`.
 
 You will need yarn to be installed in order to run the DevTools tests. See [https://yarnpkg.com/getting-started](https://yarnpkg.com/getting-started).
 
 To run the DevTools tests, use the mach command `devtools-node-test`:
+
 ```
 > ./mach devtools-node-test --suite={suitename}
 ```
 
 At the moment of writing, the supported suites for this script are:
+
 - `aboutdebugging`
 - `accessibility`
 - `application`
@@ -39,6 +41,7 @@ At the moment of writing, the supported suites for this script are:
 - `webconsole`
 
 You can run all the test suites by omitting the suite argument:
+
 ```
 > ./mach devtools-node-test
 ```
@@ -48,11 +51,13 @@ You can run all the test suites by omitting the suite argument:
 Some of the node tests are snapshot tests, which means they compare the output of a given component to a previous text snapshot. They might break if you are legitimately modifying a component and it means the snapshots need to be updated.
 
 A snapshot failure will show up as follows:
+
 ```
 › 1 snapshot failed from 1 test suite
 ```
 
 It should also mention the command you can run to update the snapshots:
+
 ```
 Inspect your code changes or run `yarn run test-ci -u` to update them.
 ```
@@ -61,7 +66,7 @@ For example, if you need to update snapshots in a specific panel, first locate t
 
 ## TypeScript
 
-The "performance" suite performs TypeScript checks. The TypeScript usage in the performance panel is documented at [devtools/client/performance-new/typescript.md](https://searchfox.org/mozilla-central/source/devtools/client/performance-new/typescript.md) ([see rendered version on GitHub](https://github.com/mozilla/gecko-dev/blob/master/devtools/client/performance-new/typescript.md)).
+The "performance" suite performs TypeScript checks. The TypeScript usage in the performance panel is documented at [devtools/client/performance-new/typescript.md](https://searchfox.org/firefox-main/source/devtools/client/performance-new/typescript.md) ([see rendered version on GitHub](https://github.com/mozilla/gecko-dev/blob/master/devtools/client/performance-new/typescript.md)).
 
 ## devtools-bundle
 

@@ -8,7 +8,7 @@ import * as dom from "resource://devtools/client/shared/vendor/react-dom-factori
 
 const { span } = dom;
 
-import { JSON_NUMBER } from "resource://devtools/client/shared/components/reps/reps/constants.mjs";
+import { JSON_NUMBER } from "./constants.mjs";
 
 // Dependencies
 const validProtocols = /(http|https|ftp|data|resource|chrome):/i;
@@ -128,11 +128,11 @@ const escapeRegexpIncludingDoubleQuote = new RegExp(`[${commonEscapes}"]`, "g");
  * require escaping, falling back to double quotes if that's not possible
  * (and then escaping them in the string).
  *
- * @param {String} str
+ * @param {string} str
  *        the input
- * @param {Boolean} escapeWhitespace
+ * @param {boolean} escapeWhitespace
  *        if true, TAB, CR, and NL characters will be escaped
- * @return {String} the escaped string
+ * @return {string} the escaped string
  */
 function escapeString(str, escapeWhitespace) {
   let quote = '"';
@@ -185,9 +185,9 @@ function escapeString(str, escapeWhitespace) {
  * Escape a property name, if needed.  "Escaping" in this context
  * means surrounding the property name with quotes.
  *
- * @param {String}
+ * @param {string}
  *        name the property name
- * @return {String} either the input, or the input surrounded by
+ * @return {string} either the input, or the input surrounded by
  *                  quotes, properly quoted in JS syntax.
  */
 function maybeEscapePropertyName(name) {
@@ -344,7 +344,7 @@ function wrapRender(renderMethod) {
 /**
  * Get preview items from a Grip.
  *
- * @param {Object} Grip from which we want the preview items
+ * @param {object} Grip from which we want the preview items
  * @return {Array} Array of the preview items of the grip, or an empty array
  *                 if the grip does not have preview items
  */
@@ -407,7 +407,7 @@ function getGripPreviewItems(grip) {
 /**
  * Get the type of an object.
  *
- * @param {Object} Grip from which we want the type.
+ * @param {object} Grip from which we want the type.
  * @param {boolean} noGrip true if the object is not a grip.
  * @return {boolean}
  */
@@ -457,7 +457,7 @@ function isURL(token) {
  * Returns new array in which `char` are interleaved between the original items.
  *
  * @param {Array} items
- * @param {String} char
+ * @param {string} char
  * @returns Array
  */
 function interleave(items, char) {
@@ -481,9 +481,9 @@ const ellipsisElement = span(
 /**
  * Removes any unallowed CSS properties from a string of CSS declarations
  *
- * @param {String} userProvidedStyle CSS declarations
+ * @param {string} userProvidedStyle CSS declarations
  * @param {Function} createElement Method to create a dummy element the styles get applied to
- * @returns {Object} Filtered CSS properties as JavaScript object in camelCase notation
+ * @returns {object} Filtered CSS properties as JavaScript object in camelCase notation
  */
 function cleanupStyle(userProvidedStyle, createElement) {
   // Regular expression that matches the allowed CSS property names.
@@ -546,9 +546,9 @@ function cleanupStyle(userProvidedStyle, createElement) {
  * It's important to only apply it when needed as this CSS property can have an
  * important impact on performance (See Bug 1879806)
  *
- * @param {String} className: The className want to set on an element
- * @param {String} strToCheck: The string for which we want to check if it has RTL chars
- * @returns {String}
+ * @param {string} className: The className want to set on an element
+ * @param {string} strToCheck: The string for which we want to check if it has RTL chars
+ * @returns {string}
  */
 function appendRTLClassNameIfNeeded(className = "", strToCheck) {
   if (
@@ -568,7 +568,7 @@ function appendRTLClassNameIfNeeded(className = "", strToCheck) {
  * - source: The original number in the JSON string (e.g. `1e2`)
  * - parsedValue: The parsed number  (e.g. for `1e2` it will be `100`)
  *
- * @param {String} str: The JSON string
+ * @param {string} str: The JSON string
  * @returns {*} The parsed JSON
  */
 function parseJsonLossless(str) {

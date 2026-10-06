@@ -23,8 +23,6 @@ support-files = [
 
 ["test_bug290397.html"]
 
-["test_bug323656.html"]
-
 ["test_bug344830.html"]
 support-files = ["bug344830_testembed.svg"]
 
@@ -59,7 +57,9 @@ support-files = ["bug344830_testembed.svg"]
 ["test_bug421436.html"]
 
 ["test_bug421839-1.html"]
-skip-if = ["true"] # Disabled for calling finish twice
+skip-if = [
+  "true", # Disabled for calling finish twice
+]
 
 ["test_bug421839-2.html"]
 support-files = ["bug421839-2-page.html"]
@@ -96,7 +96,9 @@ support-files = [
 ["test_bug503813.html"]
 
 ["test_bug507902.html"]
-skip-if = ["true"] # Bug 510001
+skip-if = [
+  "true", # Bug 510001
+]
 
 ["test_bug522632.html"]
 
@@ -107,7 +109,9 @@ support-files = [
   "file_bug579767_1.html",
   "file_bug579767_2.html",
 ]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_bug589621.html"]
 
@@ -133,7 +137,6 @@ support-files = ["bug633762_iframe.html"]
 ["test_bug748961.html"]
 
 ["test_bug756984.html"]
-fail-if = ["os == 'linux' && os_version == '18.04'"] # Bug 1600208 permafail on ubuntu1804
 
 ["test_bug784410.html"]
 
@@ -166,7 +169,9 @@ support-files = ["file_bug1307853.html"]
 
 ["test_bug1566783.html"]
 support-files = ["file_bug1566783.html"]
-skip-if = ["!debug"] # Bug 1838577
+skip-if = [
+  "opt", # Bug 1838577
+]
 
 ["test_bug1623764.html"]
 
@@ -180,6 +185,10 @@ skip-if = ["!debug"] # Bug 1838577
 
 ["test_bug1803209.html"]
 
+["test_bug1831148.html"]
+
+["test_bug1847329.html"]
+
 ["test_crash_on_mouse_move.html"]
 
 ["test_dynamic_reflow_root_disallowal.html"]
@@ -192,8 +201,8 @@ support-files = [
   "frame_visibility_in_iframe_child.html",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_grid_track_sizing_algo_001.html"]
@@ -209,6 +218,9 @@ skip-if = [
 ["test_image_selection_in_contenteditable.html"]
 
 ["test_intrinsic_size_on_loading.html"]
+skip-if = [
+  "xorigin && verify-standalone",
+]
 
 ["test_key_enter_open_second_summary.html"]
 
@@ -223,7 +235,6 @@ skip-if = [
 ["test_movement_by_words.html"]
 # Disable the caret movement by word test on Linux because the shortcut keys
 # are defined in system level.  So, it depends on the environment.
-skip-if = ["os == 'linux' && os_version == '18.04'"]
 
 ["test_overlay_scrollbar_position.html"]
 
@@ -246,20 +257,22 @@ skip-if = [
 support-files = ["!/gfx/layers/apz/test/mochitest/apz_test_native_event_utils.js"]
 skip-if = [
   "os == 'android'",
-  "display == 'wayland' && os_version == '22.04'", # Bug 1857078
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1857078
 ]
 
 ["test_scroll_position_iframe.html"]
-skip-if = [
-  "os == 'android' && android_version == '24' && processor == 'x86_64'", # Bug 1971645
-]
+support-files = ["file_scroll_position_iframe.html"]
 
 ["test_scroll_position_restore.html"]
 support-files = ["file_scroll_position_restore.html"]
-skip-if = ["display == 'wayland' && os_version == '22.04'"] # Bug 1857246
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1857246
+]
 
 ["test_scroll_position_restore_after_stop.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_scroll_position_restore_no_bfcache.html"]
 support-files = [
@@ -272,51 +285,81 @@ support-files = [
 ["test_selection_changes_with_middle_mouse_button.html"]
 
 ["test_selection_cross_shadow_boundary_1_backward_click.html"]
-skip-if = ["release_or_beta"] # requires Selection.getComposedRanges to be enabled (Nightly only)
+run-if = [
+  "!release_or_beta", # requires Selection.getComposedRanges to be enabled (Nightly only)
+]
 
 ["test_selection_cross_shadow_boundary_1_backward_drag.html"]
-skip-if = ["release_or_beta"] # requires Selection.getComposedRanges to be enabled (Nightly only)
+run-if = [
+  "!release_or_beta", # requires Selection.getComposedRanges to be enabled (Nightly only)
+]
 
 ["test_selection_cross_shadow_boundary_1_forward_click.html"]
-skip-if = ["release_or_beta"] # requires Selection.getComposedRanges to be enabled (Nightly only)
+run-if = [
+  "!release_or_beta", # requires Selection.getComposedRanges to be enabled (Nightly only)
+]
 
 ["test_selection_cross_shadow_boundary_1_forward_drag.html"]
-skip-if = ["release_or_beta"] # requires Selection.getComposedRanges to be enabled (Nightly only)
+run-if = [
+  "!release_or_beta", # requires Selection.getComposedRanges to be enabled (Nightly only)
+]
 
 ["test_selection_cross_shadow_boundary_2_backward_click.html"]
-skip-if = ["release_or_beta"] # requires Selection.getComposedRanges to be enabled (Nightly only)
+run-if = [
+  "!release_or_beta", # requires Selection.getComposedRanges to be enabled (Nightly only)
+]
 
 ["test_selection_cross_shadow_boundary_2_backward_drag.html"]
-skip-if = ["release_or_beta"] # requires Selection.getComposedRanges to be enabled (Nightly only)
+run-if = [
+  "!release_or_beta", # requires Selection.getComposedRanges to be enabled (Nightly only)
+]
 
 ["test_selection_cross_shadow_boundary_2_forward_click.html"]
-skip-if = ["release_or_beta"] # requires Selection.getComposedRanges to be enabled (Nightly only)
+run-if = [
+  "!release_or_beta", # requires Selection.getComposedRanges to be enabled (Nightly only)
+]
 
 ["test_selection_cross_shadow_boundary_2_forward_drag.html"]
-skip-if = ["release_or_beta"] # requires Selection.getComposedRanges to be enabled (Nightly only)
+run-if = [
+  "!release_or_beta", # requires Selection.getComposedRanges to be enabled (Nightly only)
+]
 
 ["test_selection_cross_shadow_boundary_backward_nested_click.html"]
-skip-if = ["release_or_beta"] # requires Selection.getComposedRanges to be enabled (Nightly only)
+run-if = [
+  "!release_or_beta", # requires Selection.getComposedRanges to be enabled (Nightly only)
+]
 
 ["test_selection_cross_shadow_boundary_forward_and_backward.html"]
-skip-if = ["release_or_beta"] # requires Selection.getComposedRanges to be enabled (Nightly only)
+run-if = [
+  "!release_or_beta", # requires Selection.getComposedRanges to be enabled (Nightly only)
+]
 
 ["test_selection_cross_shadow_boundary_multi_ranges_backward_click.html"]
-skip-if = ["release_or_beta"] # requires Selection.getComposedRanges to be enabled (Nightly only)
+run-if = [
+  "!release_or_beta", # requires Selection.getComposedRanges to be enabled (Nightly only)
+]
 
 ["test_selection_cross_shadow_boundary_multi_ranges_backward_drag.html"]
-skip-if = ["release_or_beta"] # requires Selection.getComposedRanges to be enabled (Nightly only)
+run-if = [
+  "!release_or_beta", # requires Selection.getComposedRanges to be enabled (Nightly only)
+]
 
 ["test_selection_cross_shadow_boundary_multi_ranges_forward_click.html"]
-skip-if = ["release_or_beta"] # requires Selection.getComposedRanges to be enabled (Nightly only)
+run-if = [
+  "!release_or_beta", # requires Selection.getComposedRanges to be enabled (Nightly only)
+]
 
 ["test_selection_cross_shadow_boundary_multi_ranges_forward_drag.html"]
-skip-if = ["release_or_beta"] # requires Selection.getComposedRanges to be enabled (Nightly only)
+run-if = [
+  "!release_or_beta", # requires Selection.getComposedRanges to be enabled (Nightly only)
+]
 
 ["test_selection_doubleclick.html"]
 
 ["test_selection_expanding.html"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'"] # Bug 1968678
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1968678
+]
 
 ["test_selection_multiclick_drag.html"]
 

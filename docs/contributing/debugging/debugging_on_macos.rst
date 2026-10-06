@@ -95,67 +95,83 @@ that should be understood before taking this step.**
 Creating an Xcode project
 -------------------------
 
-If you try to create a new Xcode project in an existing directory
-then Xcode will delete its existing contents (Xcode will warn you
-beforehand). To work around that, the steps below have you initialize
-the project outside the Mozilla source tree, close the project, copy
-the .xcodeproj project "file" into the source tree, and then reopen
-the project to finish setting it up.
-
 Note also that since Xcode 7.3.1 it doesn't seem to be possible to
 have the Xcode project live outside the source tree. If you try to do
 that then Xcode will simply **copy** the source files under the
 project directory rather than link to them which breaks debugging and the
 possibility to modify-rebuild-relaunch from inside Xcode.
 
-These steps were last updated for Xcode 15:
+These steps were last updated for Xcode 26.5:
+
+Initial setup:
 
 #. Open Xcode, and create a new Project with File > New > Project.
    Select the "Other" tab then select the "Empty" project type, then
-   click Next. Name the project and click Next again. Xcode will refuse
-   to create a new project in a non-empty directory, so create/select
-   a temporary directory to contain the project files, untick "Create
-   Git repository" and then click Create.
-#. Before going any further, close the project (File > Close Project).
-   Now open Finder, find the \*.xcodejproj directory in the temporary
-   directory, move it into the root directory of your Mozilla source
-   tree, then double-click on it to reopen it. (You can now delete the
-   temporary directory.)
+   click Next.
+#. Name the project and click Next. Select the root directory of the
+   Mozilla source code, ensure that "Create Git repository" is not
+   checked, then click Next again.
+#. Xcode will create a subdirectory with the name that you gave as the
+   project name. It will contain a single file, again with the same
+   project name along with the `.xcodeproj` file name extension.
+#. Optional: if you want the `.xcodeproj` file directly in your source
+   directory, exit Xcode, move the file there, and delete the now
+   empty project directory. Reopen the project by double clicking the
+   `.xcodeproj` file.
 #. In the left-hand pane in Xcode you should see a tree item where the
-   root item has the project name. Now, right click on the root item,
-   select 'Add files to "<project-name>"', select all the files and
-   directories in your source directory, untick "Copy items if needed",
-   then click Add. (These will then be progressively added under the
-   root item <project-name> in the left-hand pane. Note that
-   subdirectories may initially appear to be empty, but they too will
-   progressively be  populated as Xcode processes the sourse files.
-   Once done, you should be able to open any file quickly by hitting
-   Cmd-Shift-O and typing in the name of a file.)
-#. In the Product menu, select Scheme > New Scheme and name your scheme
-   (for example, "Debug"). After you click OK, Xcode should open the
-   settings window for the new scheme. (If not, then open its settings
-   from the Product > Edit Scheme menu.)
-#. Select "Run" on the left-hand side of the settings window, then
-   select the "Info" tab. Set the Executable by clicking on "None" and
-   selecting "Other...". A new dialog titled "Choose an executable to
-   launch" will pop up. Browse to the ``.app`` file that you want to
-   debug (``Firefox.app``, ``Nightly``\ ``Debug.app`` etc). The ``.app``
-   file is typically found inside the ``dist`` folder in your build
-   directory.
+   root item has the project name. Right click on the root item,
+   select 'Add files to "<project-name>"', select all the directories
+   in your root source directory (or the ones you care about) and
+   click "Add".
+#. At the "Choose options for adding these files" window that opens,
+   make sure that "Action" is set to "Reference files in place", then
+   click "Finish".
+#. Xcode may take a few minutes to process and add all the files to
+   the project, and may appear to hang, pegged at 100% CPU usage.
+#. Xcode will continue to process files in the background once it
+   becomes responsive again, but while it's doing that the directories
+   shown in the project tree in the left hand pane may be slow to
+   expand.
+#. You should be able to open any file quickly by hitting
+   Cmd-Shift-O and typing in part of the name of a file.
+
+Setting up debugging:
+
+#. Make sure you've built the source, since you need to point to the
+   ``.app`` in the steps below.
+#. In the Product menu, select ``Scheme > New Scheme...``. When prompted,
+   enter a name for your scheme (for example, "Debug"). If you're
+   object directory is inside your source directory, then select the
+   ``.app`` file that you want to debug an the Target. If your object
+   directory lives outside your source directory, then for now select
+   a random binary from the Target list (Xcode can't at this point
+   reference a binary outside the source directory, but we'll fix that
+   below). Click OK.
+#. If Xcode doesn't open the Scheme Editor window, then open it via
+   ``Product > Scheme > Edit Scheme...`` menu.
+#. If you were not able to select the binary you wanted previously:
+
+   #. Select "Run" on the left-hand side of the settings window, then
+      select the "Info" tab.
+   #. Expand the Executable field and select ``Other...``. Navigate to the
+      ``.app`` that you want to debug in your object directory and select
+      it. (The ``.app`` file is typically found inside the ``dist`` folder
+      in your build directory, for example ``Firefox.app``.)
+   #. Select ``Profile`` on the left hand side and repeat this process.
+   #. Select ``Build`` on the left hand side and under Targets remove
+      the random dummy target you added previously. Make sure the new
+      one you just added has all its checkboxes checked.
+
 #. If you are debugging Firefox, Thunderbird, or some other application
    that supports multiple profiles, using a separate profile for
    debugging purposes is recommended. See "Having a profile for
-   debugging purposes" below. Select the "Arguments" tab in the scheme
-   editor, and click the '+' below the "Arguments passed on launch"
-   field. Add "-P *profilename*", where *profilename* is the name of a
-   profile you created previously.
+   debugging purposes" below. Select "Run" from the left hand side and
+   in the "Arguments" tab in the scheme editor, and click the '+' below
+   the "Arguments passed on launch" field. Add "-P *profilename*", where
+   *profilename* is the name of a profile you created previously.
 #. Also in the "Arguments" panel, you may want to add an environment
    variable MOZ_DEBUG_CHILD_PROCESS set to the value 1 to help with
-   debugging e10s.
-#. Select "Build" from the left of the scheme editor window, and check
-   that there is nothing listed under Targets (otherwise it may cause
-   problems when you try to run the executable for debugging since you
-   will get build errors).
+   debugging.
 #. Click "Close" to close the scheme editor.
 
 At this point you can run and debug the Mozilla application from Xcode
@@ -179,10 +195,8 @@ Setting up lldb
    lldb <Debugging Firefox with LLDB>`.
 
 The
-`.lldbinit <http://searchfox.org/mozilla-central/source/.lldbinit>`__
-file in the source tree imports many useful `Mozilla specific lldb
-settings, commands and
-formatters <https://searchfox.org/mozilla-central/source/python/lldbutils/README.txt>`__
+:searchfox:`.lldbinit`
+file in the source tree imports many useful :searchfox:`Mozilla specific lldb settings, commands and formatters <python/lldbutils/README.txt>`
 into ``lldb``, but you may need to take one of the following steps to
 make sure this file is used.
 

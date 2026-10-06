@@ -1,14 +1,13 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_indexeddb_actorschild_h__
-#define mozilla_dom_indexeddb_actorschild_h__
+#ifndef mozilla_dom_indexeddb_actorschild_h_
+#define mozilla_dom_indexeddb_actorschild_h_
 
 #include "js/RootingAPI.h"
-#include "mozilla/Attributes.h"
+#include "mozilla/InitializedOnce.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/IDBCursorType.h"
 #include "mozilla/dom/IDBTransaction.h"
 #include "mozilla/dom/indexedDB/PBackgroundIDBCursorChild.h"
@@ -20,8 +19,6 @@
 #include "mozilla/dom/indexedDB/PBackgroundIDBTransactionChild.h"
 #include "mozilla/dom/indexedDB/PBackgroundIDBVersionChangeTransactionChild.h"
 #include "mozilla/dom/indexedDB/PBackgroundIndexedDBUtilsChild.h"
-#include "mozilla/InitializedOnce.h"
-#include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
 #include "nsTArray.h"
 
@@ -421,6 +418,8 @@ class BackgroundRequestChild final : public BackgroundRequestChildBase,
   bool mGetAll;
 
  private:
+  struct UndefinedJSHandleValue {};
+
   // Only created by IDBTransaction.
   explicit BackgroundRequestChild(MovingNotNull<RefPtr<IDBRequest>> aRequest);
 
@@ -437,19 +436,46 @@ class BackgroundRequestChild final : public BackgroundRequestChildBase,
 
   UniquePtr<JSStructuredCloneData> GetNextCloneData();
 
-  void HandleResponse(nsresult aResponse);
+  [[nodiscard]] bool DeserializeCloneInfos(
+      nsTArray<SerializedStructuredCloneReadInfo>& aSerialized,
+      nsTArray<StructuredCloneReadInfoChild>& aOut);
 
-  void HandleResponse(const Key& aResponse);
+  [[nodiscard]]
+  nsCOMPtr<nsIRunnable> HandleResponse(nsresult aResponse);
 
-  void HandleResponse(const nsTArray<Key>& aResponse);
+  [[nodiscard]]
+  nsCOMPtr<nsIRunnable> HandleResponse(Key&& aResponse);
 
-  void HandleResponse(SerializedStructuredCloneReadInfo&& aResponse);
+  [[nodiscard]]
+  nsCOMPtr<nsIRunnable> HandleResponse(nsTArray<Key>&& aResponse);
 
-  void HandleResponse(nsTArray<SerializedStructuredCloneReadInfo>&& aResponse);
+  [[nodiscard]]
+  nsCOMPtr<nsIRunnable> HandleResponse(
+      SerializedStructuredCloneReadInfo&& aResponse);
 
-  void HandleResponse(JS::Handle<JS::Value> aResponse);
+  [[nodiscard]]
+  nsCOMPtr<nsIRunnable> HandleResponse(
+      nsTArray<SerializedStructuredCloneReadInfo>&& aResponse);
 
-  void HandleResponse(uint64_t aResponse);
+  [[nodiscard]]
+  nsCOMPtr<nsIRunnable> HandleResponse(
+      ObjectStoreGetAllRecordsResponse&& aResponse);
+
+  [[nodiscard]]
+  nsCOMPtr<nsIRunnable> HandleResponse(IndexGetAllRecordsResponse&& aResponse);
+
+  [[nodiscard]]
+  nsCOMPtr<nsIRunnable> HandleResponse(
+      UndefinedJSHandleValue /* overload selector */);
+
+  [[nodiscard]]
+  nsCOMPtr<nsIRunnable> HandleResponse(uint64_t aResponse);
+
+  // Wraps |aAction(request, transaction)| in a runnable that first handles
+  // transaction abort and owner-global loss; only instantiated in
+  // ActorsChild.cpp.
+  template <typename SuccessAction>
+  nsCOMPtr<nsIRunnable> MakeDeferredResultRunnable(SuccessAction&& aAction);
 
   nsresult HandlePreprocess(const PreprocessInfo& aPreprocessInfo);
 
@@ -634,4 +660,4 @@ class BackgroundUtilsChild final : public PBackgroundIndexedDBUtilsChild {
 
 }  // namespace mozilla::dom::indexedDB
 
-#endif  // mozilla_dom_indexeddb_actorschild_h__
+#endif  // mozilla_dom_indexeddb_actorschild_h_

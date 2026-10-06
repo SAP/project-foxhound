@@ -19,7 +19,24 @@ interface nsIEnterprisePolicies : nsISupports
   // so it should be usable from most places.
   readonly attribute boolean isEnterprise;
 
+  /**
+   * Checks if a specific feature is allowed by the enterprise policies.
+   *
+   * @param feature The feature to check.
+   * @returns A boolean - true if the feature is allowed.
+   */
   boolean isAllowed(in ACString feature);
+
+  /**
+   * Checks if a specific feature is allowed for a given URI by the enterprise
+   * policies. This will fall back to the global `isAllowed` check if there is
+   * no site specific policy for the feature.
+   *
+   * @param feature The feature to check.
+   * @param uri The URI to check against.
+   * @returns A boolean - true if the feature is allowed for the URI.
+   */
+  boolean isAllowedForURI(in ACString feature, in nsIURI uri);
 
   /**
    * Get the active policies that have been successfully parsed.
@@ -61,6 +78,16 @@ interface nsIEnterprisePolicies : nsISupports
    * @returns A boolean - true of the addon may be installed.
    */
   boolean mayInstallAddon(in jsval addon);
+
+  /**
+   * Checks whether an enterprise policy requires the given addon to be
+   * present (force_installed, normal_installed, or the legacy Extensions.Locked
+   * list). This reflects policy intent and does not consult the addon
+   * database.
+   *
+   * @returns A boolean - true if the addon is required by policy.
+   */
+  boolean isAddonRequiredByPolicy(in ACString addonID);
 
   /**
    * Uses install_sources to determine if an addon can be installed

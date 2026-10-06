@@ -1,0 +1,121 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@import "chrome://global/skin/global.css";
+
+:host(.hidden) {
+  display: none;
+}
+
+:host {
+  display: block;
+  max-width: var(--size-layout-medium);
+  margin-block-start: var(--space-xlarge);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+  margin-block-end: var(--space-medium);
+
+  .header-icon {
+    width: var(--icon-size-small);
+    height: var(--icon-size-small);
+
+    &.dark {
+      display: none;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      &.dark {
+        display: block;
+      }
+
+      &.light {
+        display: none;
+      }
+    }
+  }
+
+  .card-title {
+    font-size: var(--font-size-large);
+    font-weight: var(--font-weight-semibold);
+    margin: 0;
+  }
+}
+
+.stats-total {
+  margin-block-end: var(--space-medium);
+
+  .total-label {
+    font-size: var(--font-size-large);
+    font-weight: var(--font-weight-bold);
+    color: var(--text-color);
+  }
+}
+
+.categories {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-small);
+
+  .category-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-small);
+    font-size: var(--font-size-small);
+  }
+
+  .category-icon {
+    width: var(--icon-size-small);
+    height: var(--icon-size-small);
+    -moz-context-properties: fill;
+    fill: var(--text-color-deemphasized);
+
+    /* stylelint-disable stylelint-plugin-mozilla/no-base-design-tokens */
+    &.trackers {
+      fill: var(--color-cyan-30);
+    }
+
+    &.fingerprinters {
+      fill: var(--color-orange-30);
+    }
+
+    &.cookies {
+      fill: var(--color-blue-40);
+    }
+
+    &.social {
+      fill: var(--color-violet-50);
+    }
+    /* stylelint-enable stylelint-plugin-mozilla/no-base-design-tokens */
+  }
+
+  .category-label {
+    color: var(--text-color-deemphasized);
+  }
+}
+
+.private-window-state,
+.empty-state {
+  color: var(--text-color-deemphasized);
+  font-size: var(--font-size-small);
+}
+
+.empty-state {
+  margin-block-end: var(--space-medium);
+}
+
+.loading-state,
+.error-state {
+  color: var(--text-color-deemphasized);
+  font-size: var(--font-size-small);
+  padding: var(--space-medium);
+  text-align: center;
+}
+
+.error-state {
+  color: var(--text-color-error);
+}

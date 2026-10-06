@@ -57,7 +57,7 @@ add_task(async function () {
 /* Helpers */
 
 function dragElement(el, { startX, startY, deltaX, deltaY }) {
-  const win = el.ownerGlobal;
+  const win = el.documentGlobal;
   const endX = startX + deltaX;
   const endY = startY + deltaY;
 

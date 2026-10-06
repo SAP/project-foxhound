@@ -74,7 +74,7 @@ sw{
         BZ{"Belize"}
         CA{"Kanada"}
         CC{"Visiwa vya Cocos (Keeling)"}
-        CD{"Jamhuri ya Kidemokrasia ya Kongo"}
+        CD{"Kongo - Kinshasa"}
         CF{"Jamhuri ya Afrika ya Kati"}
         CG{"Kongo - Brazzaville"}
         CH{"Uswisi"}
@@ -85,6 +85,7 @@ sw{
         CN{"Uchina"}
         CO{"Kolombia"}
         CP{"Kisiwa cha Clipperton"}
+        CQ{"Sark"}
         CR{"Kostarika"}
         CU{"Kuba"}
         CV{"Cape Verde"}
@@ -302,7 +303,6 @@ sw{
         HK{"Hong Kong"}
         MO{"Makau"}
         PS{"Palestina"}
-        US{"US"}
     }
     Countries%variant{
         CD{"Kongo (DRC)"}

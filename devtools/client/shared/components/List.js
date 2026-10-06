@@ -195,7 +195,7 @@ class List extends Component {
   /**
    * Sets the passed in item to be the current item.
    *
-   * @param {null|Number} index
+   * @param {null | number} index
    *        The index of the item in to be set as current, or undefined to unset the
    *        current item.
    */

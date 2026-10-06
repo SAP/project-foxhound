@@ -29,6 +29,13 @@ add_task(async function test_contentscript_shadowDOM() {
       "closed",
       "Should have closed ShadowRoot."
     );
+    for (let element of document.querySelectorAll("input,select,video")) {
+      browser.test.assertEq(
+        element.openOrClosedShadowRoot,
+        null,
+        "Should not expose UA shadow roots."
+      );
+    }
     browser.test.sendMessage("contentScript");
   }
 

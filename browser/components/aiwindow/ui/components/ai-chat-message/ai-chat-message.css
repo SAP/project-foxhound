@@ -1,0 +1,170 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.untrusted-link-label {
+  text-decoration: underline dashed;
+}
+
+.message-assistant {
+  a {
+    --smartwindow-assistant-link-color: light-dark(var(--color-violet-50), var(--color-violet-20));
+    --smartwindow-assistant-link-color-hover: light-dark(var(--color-violet-90), var(--color-violet-50));
+    --smartwindow-assistant-link-color-visited: light-dark(var(--color-violet-70), var(--color-violet-40));
+    --smartwindow-assistant-link-color-active: light-dark(var(--color-violet-90), var(--color-violet-50));
+    --smartwindow-assistant-accent-color-focus: light-dark(var(--color-violet-70), var(--color-violet-40));
+    color: var(--smartwindow-assistant-link-color);
+  }
+
+  a:visited {
+    color: var(--smartwindow-assistant-link-color-visited);
+  }
+
+  a:hover {
+    color: var(--smartwindow-assistant-link-color-hover);
+  }
+
+  a:active {
+    color: var(--smartwindow-assistant-link-color-active);
+  }
+
+  a:focus-visible {
+    accent-color: var(--smartwindow-assistant-accent-color-focus);
+    outline-style: inset;
+  }
+
+  /* making sure links keep the same color while being printed */
+  :host(:not([complete])) & a {
+    --smartwindow-assistant-link-color-visited: var(--smartwindow-assistant-link-color);
+  }
+}
+
+.message-assistant.with-history {
+  :is(ul, ol) {
+    display: none;
+  }
+}
+
+.message-user p {
+  margin-block-start: 0;
+  margin-block-end: 0;
+}
+
+.message-assistant > :first-child {
+  margin-block-start: 0;
+}
+.message-assistant > :last-child {
+  margin-block-end: 0;
+}
+
+ai-chat-table {
+  --smartwindow-table-title-color: light-dark(var(--color-violet-90), var(--color-violet-10));
+  --smartwindow-table-border: var(--border-width) solid
+    light-dark(color-mix(in srgb, var(--color-violet-90) 20%, transparent), color-mix(in srgb, var(--color-violet-10) 20%, transparent));
+
+  display: block;
+  font-size: var(--font-size-small);
+  max-width: 100%;
+
+  & th,
+  & td {
+    padding: var(--space-small) var(--space-medium);
+    text-align: start;
+  }
+
+  & thead tr {
+    border-block-end: var(--smartwindow-table-border);
+  }
+
+  & th {
+    color: var(--smartwindow-table-title-color);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  & tbody tr:not(:last-child) {
+    border-block-end: var(--smartwindow-table-border);
+  }
+}
+
+ai-chat-grid::part(row) {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-small);
+  padding: var(--space-medium) 0;
+  text-decoration: none;
+}
+
+[part~="row"]:first-child {
+  padding-top: 0;
+}
+
+ai-chat-grid::part(scrollarea-grid) {
+  background-color: transparent;
+  margin-top: var(--space-medium);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.5) transparent;
+}
+
+ai-chat-grid::part(scrollarea-list) {
+  --background-color: light-dark(var(--color-violet-10), var(--color-violet-80));
+  --card-border: var(--card-border-radius) solid light-dark(var(--color-violet-10), var(--color-violet-80));
+
+  box-sizing: border-box;
+  background-color: var(--background-color);
+  border-radius: var(--card-border-radius);
+  padding: 0 var(--space-xlarge);
+  margin-top: var(--space-medium);
+  /* stylelint-disable-next-line -- Figma design */
+  height: 255px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.5) transparent;
+  border-inline-end: var(--card-border);
+  border-block: var(--card-border);
+}
+
+ai-chat-grid::part(favicon) {
+  width: var(--icon-size-small);
+  height: var(--icon-size-small);
+}
+
+ai-chat-grid::part(title) {
+  flex-grow: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-color);
+}
+
+ai-chat-grid::part(timestamp) {
+  white-space: nowrap;
+  text-align: end;
+  color: var(--text-color);
+}
+
+:host([data-message-role="assistant"]) {
+  display: block;
+  width: 100%;
+  container-type: inline-size;
+}
+
+ai-chat-grid {
+  --ai-chat-grid-columns: repeat(2, minmax(0, 1fr));
+}
+
+@container (width <= 320px) {
+  ai-chat-grid {
+    --ai-chat-grid-columns: repeat(1, minmax(0, 1fr));
+  }
+}
+
+/* stylelint-disable-next-line media-query-no-invalid */
+@media -moz-pref("browser.nova.enabled") {
+  .message-assistant {
+    a {
+      --smartwindow-assistant-link-color-active: light-dark(var(--color-violet-80), var(--color-violet-50));
+      --smartwindow-assistant-accent-color-focus: light-dark(var(--color-violet-50), var(--color-violet-10));
+    }
+  }
+}

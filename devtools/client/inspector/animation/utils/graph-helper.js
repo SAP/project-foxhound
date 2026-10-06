@@ -33,13 +33,13 @@ class SummaryGraphHelper {
   /**
    * Constructor.
    *
-   * @param {Object} state
+   * @param {object} state
    *        State of animation.
    * @param {Array} keyframes
    *        Array of keyframe.
-   * @param {Number} totalDuration
+   * @param {number} totalDuration
    *        Total displayable duration.
-   * @param {Number} minSegmentDuration
+   * @param {number} minSegmentDuration
    *        Minimum segment duration.
    * @param {Function} getValueFunc
    *        Which returns graph value of given time.
@@ -70,9 +70,9 @@ class SummaryGraphHelper {
   /**
    * Create the path segments from given parameters.
    *
-   * @param {Number} startTime
+   * @param {number} startTime
    *        Starting time of animation.
-   * @param {Number} endTime
+   * @param {number} endTime
    *        Ending time of animation.
    * @return {Array}
    *         Array of path segment.
@@ -92,8 +92,8 @@ class SummaryGraphHelper {
   /**
    * Return a coordinate as a graph segment at given time.
    *
-   * @param {Number} time
-   * @return {Object}
+   * @param {number} time
+   * @return {object}
    *         { x: Number, y: Number }
    */
   getSegment(time) {
@@ -105,15 +105,15 @@ class SummaryGraphHelper {
 /**
  * Create the path segments from given parameters.
  *
- * @param {Number} startTime
+ * @param {number} startTime
  *        Starting time of animation.
- * @param {Number} endTime
+ * @param {number} endTime
  *        Ending time of animation.
- * @param {Number} minSegmentDuration
+ * @param {number} minSegmentDuration
  *        Minimum segment duration.
- * @param {Number} minProgressThreshold
+ * @param {number} minProgressThreshold
  *        Minimum progress threshold.
- * @param {Number} resolution
+ * @param {number} resolution
  *        Duration resolution for first time.
  * @param {Function} getSegment
  *        A function that calculate the graph segment.
@@ -180,10 +180,10 @@ function createPathSegments(
  * Create a function which is used as parameter (toPathStringFunc) in constructor
  * of SummaryGraphHelper.
  *
- * @param {Number} endTime
+ * @param {number} endTime
  *        end time of animation
  *        e.g. 200
- * @param {Number} playbackRate
+ * @param {number} playbackRate
  *        playback rate of animation
  *        e.g. -1
  * @return {Function}
@@ -206,7 +206,7 @@ function createSummaryGraphPathStringFunction(endTime, playbackRate) {
  *
  * @param {Array} keyframes
  *        Array of keyframe.
- * @return {Number}
+ * @return {number}
  *         Preferred duration resolution.
  */
 function getPreferredDurationResolution(keyframes) {
@@ -233,7 +233,7 @@ function getPreferredDurationResolution(keyframes) {
 /**
  * Return preferred progress threshold to render summary graph.
  *
- * @param {Object} state
+ * @param {object} state
  *        State of animation.
  * @param {Array} keyframes
  *        Array of keyframe.
@@ -307,7 +307,7 @@ function mapSegmentsToPlaybackRate(segments, endTime, playbackRate) {
  *
  * @param {Array} segments
  *        e.g. [{ x: 100, y: 0 }, { x: 200, y: 1 }]
- * @return {String}
+ * @return {string}
  *         Path string.
  *         e.g. "L100,0 L200,1"
  */

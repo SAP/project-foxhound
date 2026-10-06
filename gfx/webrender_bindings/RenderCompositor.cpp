@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,6 +11,7 @@
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/SyncObject.h"
+#include "mozilla/webrender/RenderCompositorLayerNative.h"
 #include "mozilla/webrender/RenderCompositorLayersSWGL.h"
 #include "mozilla/webrender/RenderCompositorOGL.h"
 #include "mozilla/webrender/RenderCompositorSWGL.h"
@@ -151,11 +150,6 @@ void wr_compositor_end_frame(void* aCompositor) {
   compositor->CompositorEndFrame();
 }
 
-void wr_compositor_enable_native_compositor(void* aCompositor, bool aEnable) {
-  RenderCompositor* compositor = static_cast<RenderCompositor*>(aCompositor);
-  compositor->EnableNativeCompositor(aEnable);
-}
-
 void wr_compositor_get_capabilities(void* aCompositor,
                                     CompositorCapabilities* aCaps) {
   RenderCompositor* compositor = static_cast<RenderCompositor*>(aCompositor);
@@ -244,7 +238,11 @@ UniquePtr<RenderCompositor> RenderCompositor::Create(
 #if defined(MOZ_WAYLAND)
   if (gfx::gfxVars::UseWebRenderCompositor() &&
       aWidget->GetCompositorOptions().AllowNativeCompositor()) {
-    return RenderCompositorNativeOGL::Create(aWidget, aError);
+    if (StaticPrefs::gfx_webrender_layer_compositor()) {
+      return RenderCompositorLayerNativeOGL::Create(aWidget, aError);
+    } else {
+      return RenderCompositorNativeOGL::Create(aWidget, aError);
+    }
   }
 #endif
 
@@ -260,6 +258,16 @@ UniquePtr<RenderCompositor> RenderCompositor::Create(
   // RenderCompositorOGL is not used on android
   return nullptr;
 #elif defined(XP_DARWIN)
+  if (gfx::gfxVars::UseWebRenderCompositor() &&
+      aWidget->GetCompositorOptions().AllowNativeCompositor()) {
+    if (StaticPrefs::gfx_webrender_layer_compositor()) {
+      UniquePtr<RenderCompositor> compositor =
+          RenderCompositorLayerNativeOGL::Create(aWidget, aError);
+      if (compositor) {
+        return compositor;
+      }
+    }
+  }
   // Mac uses NativeLayerCA
   return RenderCompositorNativeOGL::Create(aWidget, aError);
 #else

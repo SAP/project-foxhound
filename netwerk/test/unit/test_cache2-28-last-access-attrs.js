@@ -32,7 +32,8 @@ function run_test() {
           new OpenCallback(NORMAL, "m", "d", function (entry1) {
             var secondOpen = NowSeconds();
             Assert.equal(entry1.fetchCount, 2);
-            do_check_time(entry1.lastFetched, firstOpen, secondOpen);
+            // Allow +1 second margin: NowSeconds() truncates but cache may round differently
+            do_check_time(entry1.lastFetched, firstOpen, secondOpen + 1);
             do_check_time(entry1.lastModified, timeStart, firstOpen);
 
             finish_cache2_test();

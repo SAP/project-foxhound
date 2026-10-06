@@ -22,6 +22,7 @@ transforms:
 # builds because they are signed with an ephemeral private key that is
 # generated for each build.
 task-defaults:
+    run-on-repo-type: [hg]
     tier: 2
     args: >-
         --output-empty

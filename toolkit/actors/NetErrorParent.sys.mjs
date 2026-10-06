@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -59,7 +58,7 @@ export class EscapablePageParent extends JSWindowActorParent {
 
       // Ideally we use the homepage...
       if (AppConstants.MOZ_BUILD_APP == "browser") {
-        safePage = lazy.HomePage.getForErrorPage(browser.ownerGlobal);
+        safePage = lazy.HomePage.getForErrorPage(browser.documentGlobal);
       }
       browser.fixupAndLoadURIString(safePage, {
         triggeringPrincipal:
@@ -204,7 +203,7 @@ export class NetErrorParent extends EscapablePageParent {
         this.browser.reload();
         break;
       case "Browser:OpenCaptivePortalPage":
-        this.browser.ownerGlobal.CaptivePortalWatcher.ensureCaptivePortalTab();
+        this.browser.documentGlobal.CaptivePortalWatcher.ensureCaptivePortalTab();
         break;
       case "Browser:PrimeMitm":
         this.primeMitm(this.browser);
@@ -213,7 +212,7 @@ export class NetErrorParent extends EscapablePageParent {
         Services.prefs.clearUserPref("security.enterprise_roots.enabled");
         Services.prefs.clearUserPref("security.enterprise_roots.auto-enabled");
         break;
-      case "Browser:ResetSSLPreferences":
+      case "Browser:ResetSSLPreferences": {
         let prefSSLImpact = PREF_SSL_IMPACT_ROOTS.reduce((prefs, root) => {
           return prefs.concat(Services.prefs.getChildList(root));
         }, []);
@@ -222,29 +221,31 @@ export class NetErrorParent extends EscapablePageParent {
         }
         this.browser.reload();
         break;
+      }
       case "Browser:SSLErrorGoBack":
         this.leaveErrorPage(this.browser);
         break;
-      case "GetChangedCertPrefs":
+      case "GetChangedCertPrefs": {
         let hasChangedCertPrefs = this.hasChangedCertPrefs();
         this.sendAsyncMessage("HasChangedCertPrefs", {
           hasChangedCertPrefs,
         });
         break;
+      }
       case "DisplayOfflineSupportPage":
         this.displayOfflineSupportPage(message.data.supportPageSlug);
         break;
       case "Browser:CertExceptionError":
         switch (message.data.elementId) {
           case "viewCertificate": {
-            let certs = message.data.failedCertChain.map(certBase64 =>
+            let certs = message.data.handshakeCertificates.map(certBase64 =>
               encodeURIComponent(certBase64)
             );
             let certsStringURL = certs.map(elem => `cert=${elem}`);
             certsStringURL = certsStringURL.join("&");
             let url = `about:certificate?${certsStringURL}`;
 
-            let window = this.browser.ownerGlobal;
+            let window = this.browser.documentGlobal;
             if (AppConstants.MOZ_BUILD_APP === "browser") {
               window.switchToTabHavingURI(url, true, {});
             } else {
@@ -254,26 +255,31 @@ export class NetErrorParent extends EscapablePageParent {
           }
         }
         break;
-      case "Browser:AddTRRExcludedDomain":
-        let domain = message.data.hostname;
+      case "Browser:AddTRRExcludedDomain": {
+        let uri = this.browsingContext.currentURI;
+        if (uri instanceof Ci.nsINestedURI) {
+          uri = uri.QueryInterface(Ci.nsINestedURI).innermostURI;
+        }
         let excludedDomains = Services.prefs.getStringPref(
           "network.trr.excluded-domains"
         );
-        excludedDomains += `, ${domain}`;
+        excludedDomains += `, ${uri.asciiHost}`;
         Services.prefs.setStringPref(
           "network.trr.excluded-domains",
           excludedDomains
         );
         break;
-      case "OpenTRRPreferences":
+      }
+      case "OpenTRRPreferences": {
         let browser = this.browsingContext.top.embedderElement;
         if (!browser) {
           break;
         }
 
-        let win = browser.ownerGlobal;
+        let win = browser.documentGlobal;
         win.openPreferences("privacy-doh");
         break;
+      }
     }
   }
 }

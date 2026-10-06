@@ -17,8 +17,8 @@ function visibilityHandlerStore(store) {
      * The function will be called once when the panel is shown.
      *
      * @param {Function} listener
-     * @param {Object} options
-     * @param {Boolean} options.ignoreVisibility
+     * @param {object} options
+     * @param {boolean} options.ignoreVisibility
      *        If true, bypass this helper to listen to all store updates,
      *        regarless of panel visibility. This is useful for tests.
      */

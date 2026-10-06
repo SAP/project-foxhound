@@ -34,4 +34,30 @@ add_heuristic_tests([
       },
     ],
   },
+  {
+    description:
+      "Address form where type='tel' must be checked to identify telephone field",
+    fixtureData: `
+          <form>
+            <input type="text" id="name" autocomplete="name"/>
+            <input type="text" id="country" autocomplete="country"/>
+            <input type="text" id="street-address" autocomplete="street-address"/>
+            <input type="text" id="address-line1" autocomplete="address-line1"/>
+            <input type="tel"/>
+          </form>`,
+    expectedResult: [
+      {
+        default: {
+          reason: "autocomplete",
+        },
+        fields: [
+          { fieldName: "name" },
+          { fieldName: "country" },
+          { fieldName: "street-address" },
+          { fieldName: "address-line1" },
+          { fieldName: "tel", reason: "regex-heuristic" },
+        ],
+      },
+    ],
+  },
 ]);

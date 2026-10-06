@@ -1,0 +1,47 @@
+[DEFAULT]
+dupe-manifest=true
+prefs = [
+  "browser.settings-redesign.enabled=false",
+]
+support-files = [
+  "head.js",
+]
+tags = "os_integration"
+
+["browser_search_no_results_change_category.js"]
+
+["browser_search_results.js"]
+
+["browser_search_subdialog_tooltip_saved_addresses.js"]
+
+["browser_search_subdialogs_within_preferences_1.js"]
+skip-if = [
+  "tsan", # Bug 1678829
+]
+
+["browser_search_subdialogs_within_preferences_2.js"]
+
+["browser_search_subdialogs_within_preferences_3.js"]
+
+["browser_search_subdialogs_within_preferences_4.js"]
+
+["browser_search_subdialogs_within_preferences_5.js"]
+
+["browser_search_subdialogs_within_preferences_6.js"]
+
+["browser_search_subdialogs_within_preferences_7.js"]
+
+["browser_search_subdialogs_within_preferences_8.js"]
+
+["browser_search_subdialogs_within_preferences_9.js"]
+
+["browser_search_subdialogs_within_preferences_site_data_xul.js"]
+
+["browser_search_within_preferences_1.js"]
+skip-if = [
+  "os == 'win'", # Bug 1787026
+]
+
+["browser_search_within_preferences_2.js"]
+
+["browser_search_within_preferences_command.js"]

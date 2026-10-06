@@ -1,10 +1,8 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-/* exported IS_OOP, valueSum, clearHistograms, getSnapshots, promiseTelemetryRecorded,
+/* exported IS_OOP, GLEAN_EVENTPAGE_IDLE_RESULT_CATEGORIES, valueSum,
             assertDNRTelemetryMetricsDefined, assertDNRTelemetryMetricsNoSamples, assertDNRTelemetryMetricsGetValueEq,
-            assertDNRTelemetryMetricsSamplesCount, resetTelemetryData, setupTelemetryForTests */
+            assertDNRTelemetryMetricsSamplesCount, setupTelemetryForTests */
 
 ChromeUtils.defineESModuleGetters(this, {
   ContentTaskUtils: "resource://testing-common/ContentTaskUtils.sys.mjs",
@@ -21,18 +19,10 @@ Services.prefs.setBoolPref(
 
 const IS_OOP = Services.prefs.getBoolPref("extensions.webextensions.remote");
 
-const WEBEXT_EVENTPAGE_RUNNING_TIME_MS = "WEBEXT_EVENTPAGE_RUNNING_TIME_MS";
-const WEBEXT_EVENTPAGE_RUNNING_TIME_MS_BY_ADDONID =
-  "WEBEXT_EVENTPAGE_RUNNING_TIME_MS_BY_ADDONID";
-const WEBEXT_EVENTPAGE_IDLE_RESULT_COUNT = "WEBEXT_EVENTPAGE_IDLE_RESULT_COUNT";
-const WEBEXT_EVENTPAGE_IDLE_RESULT_COUNT_BY_ADDONID =
-  "WEBEXT_EVENTPAGE_IDLE_RESULT_COUNT_BY_ADDONID";
-
-// Keep this in sync with the order in Histograms.json for "WEBEXT_EVENTPAGE_IDLE_RESULT_COUNT":
-// the position of the category string determines the index of the values collected in the categorial
-// histogram and so the existing labels should be kept in the exact same order and any new category
-// to be added in the future should be appended to the existing ones.
-const HISTOGRAM_EVENTPAGE_IDLE_RESULT_CATEGORIES = [
+// Keep these labels in the same order as "eventpage_idle_result" Glean metric
+// definition in toolkit/components/extensions/metrics.yaml to make it easier
+// to keep them in sync (while keeping `__other__` as the last entry).
+const GLEAN_EVENTPAGE_IDLE_RESULT_CATEGORIES = [
   "suspend",
   "reset_other",
   "reset_event",
@@ -40,10 +30,6 @@ const HISTOGRAM_EVENTPAGE_IDLE_RESULT_CATEGORIES = [
   "reset_nativeapp",
   "reset_streamfilter",
   "reset_parentapicall",
-];
-
-const GLEAN_EVENTPAGE_IDLE_RESULT_CATEGORIES = [
-  ...HISTOGRAM_EVENTPAGE_IDLE_RESULT_CATEGORIES,
   "__other__",
 ];
 
@@ -51,156 +37,11 @@ function valueSum(arr) {
   return Object.values(arr).reduce((a, b) => a + b, 0);
 }
 
-function clearHistograms() {
-  Services.telemetry.getSnapshotForHistograms("main", true /* clear */);
-  Services.telemetry.getSnapshotForKeyedHistograms("main", true /* clear */);
-}
-
-function clearScalars() {
-  Services.telemetry.getSnapshotForScalars("main", true /* clear */);
-  Services.telemetry.getSnapshotForKeyedScalars("main", true /* clear */);
-}
-
-function getSnapshots(process) {
-  return Services.telemetry.getSnapshotForHistograms("main", false /* clear */)[
-    process
-  ];
-}
-
-function getKeyedSnapshots(process) {
-  return Services.telemetry.getSnapshotForKeyedHistograms(
-    "main",
-    false /* clear */
-  )[process];
-}
-
-// TODO Bug 1357509: There is no good way to make sure that the parent received
-// the histogram entries from the extension and content processes.  Let's stick
-// to the ugly, spinning the event loop until we have a good approach.
-function promiseTelemetryRecorded(id, process, expectedCount) {
-  let condition = () => {
-    let snapshot = Services.telemetry.getSnapshotForHistograms(
-      "main",
-      false /* clear */
-    )[process][id];
-    return snapshot && valueSum(snapshot.values) >= expectedCount;
-  };
-  return ContentTaskUtils.waitForCondition(condition);
-}
-
-function promiseKeyedTelemetryRecorded(
-  id,
-  process,
-  expectedKey,
-  expectedCount
-) {
-  let condition = () => {
-    let snapshot = Services.telemetry.getSnapshotForKeyedHistograms(
-      "main",
-      false /* clear */
-    )[process][id];
-    return (
-      snapshot &&
-      snapshot[expectedKey] &&
-      valueSum(snapshot[expectedKey].values) >= expectedCount
-    );
-  };
-  return ContentTaskUtils.waitForCondition(condition);
-}
-
-function assertHistogramSnapshot(
-  histogramId,
-  { keyed, processSnapshot, expectedValue },
-  msg
-) {
-  let histogram;
-
-  if (keyed) {
-    histogram = Services.telemetry.getKeyedHistogramById(histogramId);
-  } else {
-    histogram = Services.telemetry.getHistogramById(histogramId);
-  }
-
-  let res = processSnapshot(histogram.snapshot());
-  Assert.deepEqual(res, expectedValue, msg);
-  return res;
-}
-
-function assertHistogramEmpty(histogramId) {
-  assertHistogramSnapshot(
-    histogramId,
-    {
-      processSnapshot: snapshot => snapshot.sum,
-      expectedValue: 0,
-    },
-    `No data recorded for histogram: ${histogramId}.`
-  );
-}
-
-function assertKeyedHistogramEmpty(histogramId) {
-  assertHistogramSnapshot(
-    histogramId,
-    {
-      keyed: true,
-      processSnapshot: snapshot => Object.keys(snapshot).length,
-      expectedValue: 0,
-    },
-    `No data recorded for histogram: ${histogramId}.`
-  );
-}
-
-function assertHistogramCategoryNotEmpty(
-  histogramId,
-  { category, categories, keyed, key },
-  msg
-) {
-  let message = msg;
-
-  if (!msg) {
-    message = `Data recorded for histogram: ${histogramId}, category "${category}"`;
-    if (keyed) {
-      message += `, key "${key}"`;
-    }
-  }
-
-  assertHistogramSnapshot(
-    histogramId,
-    {
-      keyed,
-      processSnapshot: snapshot => {
-        const categoryIndex = categories.indexOf(category);
-        if (keyed) {
-          return {
-            [key]: snapshot[key]
-              ? snapshot[key].values[categoryIndex] > 0
-              : null,
-          };
-        }
-        return snapshot.values[categoryIndex] > 0;
-      },
-      expectedValue: keyed ? { [key]: true } : true,
-    },
-    message
-  );
-}
-
 function setupTelemetryForTests() {
   // FOG needs a profile directory to put its data in.
   do_get_profile();
   // FOG needs to be initialized in order for data to flow.
   Services.fog.initializeFOG();
-}
-
-function resetTelemetryData() {
-  Services.fog.testResetFOG();
-
-  // Clear histograms data recorded in the unified telemetry
-  // (needed to make sure we can keep asserting that the same
-  // amount of samples collected by Glean should also be found
-  // in the related mirrored unified telemetry probe after we
-  // have reset Glean metrics data using testResetFOG).
-  clearHistograms();
-  clearScalars();
 }
 
 function assertValidGleanMetric({
@@ -278,18 +119,19 @@ function assertGleanMetricsSamplesCount({
   );
 }
 
-function assertGleanLabeledCounter({
+function assertGleanLabeledMetric({
   metricId,
   gleanMetric,
   gleanMetricLabels,
   expectedLabelsValue,
   ignoreNonExpectedLabels,
   ignoreUnknownLabels,
+  preprocessLabelValueFn,
   message,
 }) {
   const { GleanLabeled } = globalThis;
   const msg = message ? `(${message})` : "";
-  if (!Array.isArray(gleanMetricLabels) || !gleanMetricLabels.length) {
+  if (!Array.isArray(gleanMetricLabels)) {
     throw new Error(
       `Missing mandatory gleanMetricLabels property ${msg}: ${gleanMetricLabels}`
     );
@@ -301,17 +143,35 @@ function assertGleanLabeledCounter({
     );
   }
 
+  let actualLabeledValues = gleanMetric.testGetValue();
+
   for (const label of gleanMetricLabels) {
     const expectedLabelValue = expectedLabelsValue[label];
     if (ignoreNonExpectedLabels && !(label in expectedLabelsValue)) {
       continue;
     }
+
+    // NOTE: no need for optional chaining on accessing actualLabeledValue,
+    // GleanLabeled testGetValue calls will return an empty object when there
+    // is no data.
+    let actualLabelValue = actualLabeledValues[label];
+    if (actualLabelValue != null && preprocessLabelValueFn) {
+      // Optionally preprocess the actual labeled values to make it easier
+      // to assert the expected values that the callers actually cares about.
+      actualLabelValue = preprocessLabelValueFn(actualLabelValue);
+    }
     Assert.deepEqual(
-      gleanMetric[label].testGetValue(),
+      actualLabelValue,
       expectedLabelValue,
-      `Expect Glean "${metricId}" metric label "${label}" to be ${
-        expectedLabelValue > 0 ? expectedLabelValue : "empty"
-      }`
+      `Got expected value Glean "${metricId}" metric label "${label}"`
+    );
+  }
+
+  if (gleanMetricLabels.length === 0) {
+    Assert.deepEqual(
+      actualLabeledValues,
+      {},
+      `Expect GleanLabeled "${metricId}" to be empty`
     );
   }
 
@@ -324,7 +184,7 @@ function assertGleanLabeledCounter({
   }
 }
 
-function assertGleanLabeledCounterEmpty({
+function assertGleanLabeledMetricEmpty({
   metricId,
   gleanMetric,
   gleanMetricLabels,
@@ -332,7 +192,7 @@ function assertGleanLabeledCounterEmpty({
 }) {
   // All empty labels passed to the other helpers to make it
   // assert that all labels are empty.
-  assertGleanLabeledCounter({
+  assertGleanLabeledMetric({
     metricId,
     gleanMetric,
     gleanMetricLabels,
@@ -341,7 +201,7 @@ function assertGleanLabeledCounterEmpty({
   });
 }
 
-function assertGleanLabeledCounterNotEmpty({
+function assertGleanLabeledMetricNotEmpty({
   metricId,
   gleanMetric,
   expectedNotEmptyLabels,
@@ -400,97 +260,6 @@ function assertDNRTelemetryMetricsDefined(metrics) {
   );
 }
 
-function assertDNRTelemetryMirrored({
-  gleanMetric,
-  gleanLabel,
-  unifiedName,
-  unifiedType,
-}) {
-  assertDNRTelemetryMetricsDefined([
-    { metric: gleanMetric, label: gleanLabel },
-  ]);
-  const gleanData = gleanLabel
-    ? Glean.extensionsApisDnr[gleanMetric][gleanLabel].testGetValue()
-    : Glean.extensionsApisDnr[gleanMetric].testGetValue();
-
-  if (!unifiedName) {
-    Assert.ok(
-      false,
-      `Unexpected missing unifiedName parameter on call to assertDNRTelemetryMirrored`
-    );
-    return;
-  }
-
-  let unifiedData;
-
-  switch (unifiedType) {
-    case "histogram": {
-      let found = false;
-      try {
-        const histogram = Services.telemetry.getHistogramById(unifiedName);
-        found = !!histogram;
-      } catch (err) {
-        Cu.reportError(err);
-      }
-      Assert.ok(found, `Expect an histogram named ${unifiedName} to be found`);
-      unifiedData = Services.telemetry.getSnapshotForHistograms("main", false)
-        .parent[unifiedName];
-      break;
-    }
-    case "keyedScalar": {
-      const snapshot = Services.telemetry.getSnapshotForKeyedScalars(
-        "main",
-        false
-      );
-      if (unifiedName in (snapshot?.parent || {})) {
-        unifiedData = snapshot.parent[unifiedName][gleanLabel];
-      }
-      break;
-    }
-    case "scalar": {
-      const snapshot = Services.telemetry.getSnapshotForScalars("main", false);
-      if (unifiedName in (snapshot?.parent || {})) {
-        unifiedData = snapshot.parent[unifiedName];
-      }
-      break;
-    }
-    default:
-      Assert.ok(
-        false,
-        `Unexpected unifiedType ${unifiedType} on call to assertDNRTelemetryMirrored`
-      );
-      return;
-  }
-
-  if (gleanData == undefined) {
-    Assert.deepEqual(
-      unifiedData,
-      undefined,
-      `Expect mirrored unified telemetry ${unifiedType} ${unifiedName} has no samples as Glean ${gleanMetric}`
-    );
-  } else {
-    switch (unifiedType) {
-      case "histogram": {
-        Assert.deepEqual(
-          valueSum(unifiedData.values),
-          valueSum(gleanData.values),
-          `Expect mirrored unified telemetry ${unifiedType} ${unifiedName} has samples mirrored from Glean ${gleanMetric}`
-        );
-        break;
-      }
-      case "scalar":
-      case "keyedScalar": {
-        Assert.deepEqual(
-          unifiedData,
-          gleanData,
-          `Expect mirrored unified telemetry ${unifiedType} ${unifiedName} has samples mirrored from Glean ${gleanMetric}`
-        );
-        break;
-      }
-    }
-  }
-}
-
 function assertDNRTelemetryMetricsNoSamples(metrics, msg) {
   assertDNRTelemetryMetricsDefined(metrics);
   for (const metricDetails of metrics) {
@@ -504,16 +273,6 @@ function assertDNRTelemetryMetricsNoSamples(metrics, msg) {
       undefined,
       `Expect no sample for Glean metric extensionApisDnr.${metric} (${msg}): ${gleanData}`
     );
-
-    if (metricDetails.mirroredName) {
-      const { mirroredName, mirroredType } = metricDetails;
-      assertDNRTelemetryMirrored({
-        gleanMetric: metric,
-        gleanLabel: label,
-        unifiedName: mirroredName,
-        unifiedType: mirroredType,
-      });
-    }
   }
 }
 
@@ -532,16 +291,6 @@ function assertDNRTelemetryMetricsGetValueEq(metrics, msg) {
         label ? `.${label}` : ""
       } (${msg})`
     );
-
-    if (metricDetails.mirroredName) {
-      const { mirroredName, mirroredType } = metricDetails;
-      assertDNRTelemetryMirrored({
-        gleanMetric: metric,
-        gleanLabel: label,
-        unifiedName: mirroredName,
-        unifiedType: mirroredType,
-      });
-    }
   }
 }
 
@@ -581,14 +330,5 @@ function assertDNRTelemetryMetricsSamplesCount(metrics, msg) {
       !gleanData.values["0"],
       `No sample for Glean metric extensionsApisDnr.${metric} should be collected for the bucket "0"`
     );
-
-    if (metricDetails.mirroredName) {
-      const { mirroredName, mirroredType } = metricDetails;
-      assertDNRTelemetryMirrored({
-        gleanMetric: metric,
-        unifiedName: mirroredName,
-        unifiedType: mirroredType,
-      });
-    }
   }
 }

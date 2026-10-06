@@ -8,8 +8,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "chrome://global/content/translations/translations-document.sys.mjs",
   LRUCache:
     "chrome://global/content/translations/translations-document.sys.mjs",
-  LanguageDetector:
-    "resource://gre/modules/translations/LanguageDetector.sys.mjs",
 });
 
 /**
@@ -41,9 +39,11 @@ export class TranslationsChild extends JSWindowActorChild {
     }
 
     if (event.type === "DOMContentLoaded") {
-      this.sendAsyncMessage("Translations:ReportLangTags", {
-        documentElementLang: this.document.documentElement.lang,
+      this.sendAsyncMessage("Translations:DOMContentLoaded", {
+        htmlLangAttribute: this.document.documentElement.lang,
       });
+    } else if (event.type === "load") {
+      this.sendAsyncMessage("Translations:Load");
     }
   }
 
@@ -77,6 +77,29 @@ export class TranslationsChild extends JSWindowActorChild {
       case "Translations:FindBarClose": {
         this.#translatedDoc?.enterLazyTranslationsMode();
         return undefined;
+      }
+      case "Translations:ExtractPageText": {
+        const { document } = this;
+        if (!document) {
+          return "";
+        }
+
+        const { sufficientLength } = data;
+
+        const encoder = Cu.createDocumentEncoder("text/plain");
+        encoder.init(
+          document,
+          "text/plain",
+          Ci.nsIDocumentEncoder.OutputBodyOnly |
+            Ci.nsIDocumentEncoder.SkipInvisibleContent |
+            Ci.nsIDocumentEncoder.AllowCrossShadowBoundary |
+            Ci.nsIDocumentEncoder.OutputForPlainTextClipboardCopy |
+            Ci.nsIDocumentEncoder.OutputDisallowLineBreaking |
+            Ci.nsIDocumentEncoder.OutputDropInvisibleBreak |
+            Ci.nsIDocumentEncoder.OutputLFLineBreak
+        );
+
+        return encoder.encodeToStringWithMaxLength(sufficientLength);
       }
       case "Translations:TranslatePage": {
         if (this.#translatedDoc?.engineStatus === "error") {
@@ -117,32 +140,9 @@ export class TranslationsChild extends JSWindowActorChild {
       case "Translations:GetDocumentElementLang": {
         return this.document.documentElement.lang;
       }
-      case "Translations:IdentifyLanguage": {
-        // Wait for idle callback as the page will be more settled if it has
-        // dynamic content, like on a React app.
-        if (this.contentWindow) {
-          await new Promise(resolve => {
-            this.contentWindow.requestIdleCallback(resolve);
-          });
-        }
-
-        if (this.#isDestroyed) {
-          return undefined;
-        }
-
-        const startTime = Cu.now();
-        const detectionResult =
-          await lazy.LanguageDetector.detectLanguageFromDocument(this.document);
-
-        if (this.#isDestroyed) {
-          return undefined;
-        }
-
-        this.addProfilerMarker(
-          `Detect language from document: ${detectionResult.language}`,
-          startTime
-        );
-        return detectionResult;
+      case "Translations:IsDocumentReady": {
+        const state = this.document.readyState;
+        return state === "interactive" || state === "complete";
       }
       case "Translations:AcquirePort": {
         this.addProfilerMarker("Acquired a port, resuming translations");

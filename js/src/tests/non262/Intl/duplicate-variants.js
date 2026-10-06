@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // RFC 5646 section 2.1
 // variant       = 5*8alphanum         ; registered variants
 //               / (DIGIT 3alphanum)

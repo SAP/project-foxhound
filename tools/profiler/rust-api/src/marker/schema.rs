@@ -13,8 +13,8 @@ pub type Location = mozilla::MarkerSchema_Location;
 /// Formats of marker properties for profiler front-end.
 pub type Format = mozilla::MarkerSchema_Format;
 
-/// Whether it's searchable or not in the profiler front-end.
-pub type Searchable = mozilla::MarkerSchema_Searchable;
+/// Payload flags that will be used to serialize special schema fields.
+pub type PayloadFlags = mozilla::MarkerSchema_PayloadFlags;
 
 /// This object collects all the information necessary to stream the JSON schema
 /// that informs the front-end how to display a type of markers.
@@ -110,6 +110,14 @@ impl MarkerSchema {
         self
     }
 
+    /// Set the marker to be stack based
+    pub fn set_stack_based(&mut self) -> &mut Self {
+        unsafe {
+            bindings::gecko_profiler_marker_schema_set_stack_based(self.ptr);
+        }
+        self
+    }
+
     // Each data element that is streamed by `stream_json_marker_data()` can be
     // displayed as indicated by using one of the `add_...` function below.
     // Each `add...` will add a line in the full marker description. Parameters:
@@ -152,49 +160,51 @@ impl MarkerSchema {
         self
     }
 
-    /// Add a key / format / searchable row for the marker data element.
+    /// Add a key / format / payload_flags row for the marker data element.
     /// - `key`: Element property name as streamed by `stream_json_marker_data()`.
     /// - `format`: How to format the data element value, see `Format` above.
-    pub fn add_key_format_searchable(
+    /// - `payload_flags`: Optional, /// They will be used to serialize special
+    ///    schema fields.
+    pub fn add_key_format_with_flags(
         &mut self,
         key: &str,
         format: Format,
-        searchable: Searchable,
+        payload_flags: PayloadFlags,
     ) -> &mut Self {
         unsafe {
-            bindings::gecko_profiler_marker_schema_add_key_format_searchable(
+            bindings::gecko_profiler_marker_schema_add_key_format_with_flags(
                 self.ptr,
                 key.as_ptr() as *const c_char,
                 key.len(),
                 format,
-                searchable,
+                payload_flags,
             );
         }
         self
     }
 
-    /// Add a key / label / format / searchable row for the marker data element.
+    /// Add a key / label / format / payload_flags row for the marker data element.
     /// - `key`: Element property name as streamed by `stream_json_marker_data()`.
     /// - `label`: Optional label. Defaults to the key name.
     /// - `format`: How to format the data element value, see `Format` above.
-    /// - `searchable`: Optional, indicates if the value is used in searches,
-    ///   defaults to false.
-    pub fn add_key_label_format_searchable(
+    /// - `payload_flags`: Optional, /// They will be used to serialize special
+    ///    schema fields.
+    pub fn add_key_label_format_with_flags(
         &mut self,
         key: &str,
         label: &str,
         format: Format,
-        searchable: Searchable,
+        payload_flags: PayloadFlags,
     ) -> &mut Self {
         unsafe {
-            bindings::gecko_profiler_marker_schema_add_key_label_format_searchable(
+            bindings::gecko_profiler_marker_schema_add_key_label_format_with_flags(
                 self.ptr,
                 key.as_ptr() as *const c_char,
                 key.len(),
                 label.as_ptr() as *const c_char,
                 label.len(),
                 format,
-                searchable,
+                payload_flags,
             );
         }
         self

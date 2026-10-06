@@ -10,13 +10,14 @@
 
 #include "api/video_codecs/video_codec.h"
 
-#include <string.h>
-
+#include <cstring>
+#include <optional>
 #include <string>
 
 #include "absl/strings/match.h"
 #include "api/video/video_codec_type.h"
 #include "api/video_codecs/scalability_mode.h"
+#include "api/video_codecs/sdp_video_format.h"
 #include "api/video_codecs/simulcast_stream.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/strings/string_builder.h"
@@ -71,14 +72,13 @@ VideoCodec::VideoCodec()
       spatialLayers(),
       mode(VideoCodecMode::kRealtimeVideo),
       expect_encode_from_texture(false),
-      timing_frame_thresholds({0, 0}),
+      timing_frame_thresholds({.delay_ms = 0, .outlier_ratio_percent = 0}),
       legacy_conference_mode(false),
       codec_specific_(),
       complexity_(VideoCodecComplexity::kComplexityNormal) {}
 
 std::string VideoCodec::ToString() const {
-  char string_buf[2048];
-  SimpleStringBuilder ss(string_buf);
+  StringBuilder ss;
 
   ss << "VideoCodec {" << "type: " << CodecTypeToPayloadString(codecType)
      << ", mode: "
@@ -99,7 +99,7 @@ std::string VideoCodec::ToString() const {
     ss << "}";
   }
   ss << "}";
-  return ss.str();
+  return ss.Release();
 }
 
 VideoCodecVP8* VideoCodec::VP8() {
@@ -190,6 +190,24 @@ bool VideoCodec::GetFrameDropEnabled() const {
 
 void VideoCodec::SetFrameDropEnabled(bool enabled) {
   frame_drop_enabled_ = enabled;
+}
+
+bool VideoCodec::IsMixedCodec() const {
+  std::optional<SdpVideoFormat> first_format;
+  for (size_t i = 0; i < numberOfSimulcastStreams; ++i) {
+    if (!simulcastStream[i].active) {
+      continue;
+    }
+    if (!simulcastStream[i].format.has_value()) {
+      return false;  // Format is always set for active layers in mixed-codec.
+    }
+    if (!first_format.has_value()) {
+      first_format = simulcastStream[i].format;  // First active layer's format.
+    } else if (!first_format->IsSameCodec(*simulcastStream[i].format)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 }  // namespace webrtc

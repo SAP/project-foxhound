@@ -37,3 +37,5 @@ context-id-deletion-request:
   metadata:
     follows_collection_enabled: false
     include_info_sections: false
+  uploader_capabilities:
+    - ohttp

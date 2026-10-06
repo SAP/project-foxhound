@@ -1,0 +1,83 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.status-ok::before,
+.status-alert::before,
+.status-loading::before {
+  -moz-context-properties: fill;
+  height: var(--icon-size);
+  width: var(--icon-size);
+  margin-inline-end: var(--space-medium);
+}
+
+.status-ok::before {
+  content: url("chrome://global/skin/icons/check-filled.svg");
+  fill: var(--icon-color-success);
+}
+
+.status-alert::before {
+  content: url("chrome://global/skin/icons/warning.svg");
+  fill: var(--icon-color-warning);
+}
+
+.status-loading::before {
+  content: url("chrome://global/skin/icons/loading.svg");
+  fill: currentColor;
+}
+
+small {
+  font-size: var(--font-size-small);
+  color: var(--text-color-deemphasized);
+}
+
+.card-contents {
+  display: flex;
+}
+
+.status-text-container {
+  flex-grow: 1;
+}
+
+ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-medium);
+  list-style-type: none;
+  margin-block: var(--space-medium) 0;
+  padding: 0;
+}
+
+li {
+  display: flex;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+}
+
+a:hover,
+a:hover:active {
+  color: inherit;
+  text-decoration: none;
+}
+
+h3 {
+  font-size: var(--font-size-root);
+  font-weight: var(--font-weight-heading);
+  margin: 0;
+}
+
+.status-alert moz-box-link {
+  margin-block-start: var(--space-medium);
+}
+
+.status-image {
+  margin-inline-start: var(--space-xsmall);
+  max-width: 100px;
+  object-fit: contain;
+}

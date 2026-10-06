@@ -12,7 +12,7 @@ In some ways however it does more, for example much of the async logic is built 
 
 ## UniFFI.webidl and WebIDL code generation
 
-The interface between the C++ and JavaScript code is defined in [UniFFI.webidl](https://searchfox.org/mozilla-central/source/dom/chrome-webidl/UniFFI.webidl).
+The interface between the C++ and JavaScript code is defined in [UniFFI.webidl](https://searchfox.org/firefox-main/source/dom/chrome-webidl/UniFFI.webidl).
 This brings a second system of code generation, which auto-generates the C++ glue code needed to expose this interface to JavaScript.
 See [Web IDL bindings](https://firefox-source-docs.mozilla.org/dom/webIdlBindings/index.html) for details.
 

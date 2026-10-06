@@ -1,0 +1,11 @@
+[package]
+name = "portable-atomic"
+version = "1.999.0"
+edition = "2018"
+license = "MPL-2.0"
+
+[lib]
+path = "lib.rs"
+
+[features]
+critical-section = []

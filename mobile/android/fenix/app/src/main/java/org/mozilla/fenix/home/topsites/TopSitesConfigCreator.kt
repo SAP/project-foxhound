@@ -34,6 +34,7 @@ internal fun getTopSitesConfig(
     store: BrowserStore,
 ): () -> TopSitesConfig {
     return {
+        val limit = if (settings.suppressSponsoredTopSitesEnabled) 0 else TOP_SITES_PROVIDER_LIMIT
         TopSitesConfig(
             totalSites = settings.topSitesMaxLimit,
             frecencyConfig = if (FxNimbus.features.homepageHideFrecentTopSites.value().enabled) {
@@ -45,7 +46,7 @@ internal fun getTopSitesConfig(
             },
             providerConfig = TopSitesProviderConfig(
                 showProviderTopSites = settings.showContileFeature,
-                limit = TOP_SITES_PROVIDER_LIMIT,
+                limit = limit,
                 maxThreshold = TOP_SITES_PROVIDER_MAX_THRESHOLD,
                 providerFilter = { topSite ->
                     when (store.state.search.selectedOrDefaultSearchEngine?.name) {

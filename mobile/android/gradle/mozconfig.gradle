@@ -1,64 +1,257 @@
-/* -*- Mode: Groovy; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import groovy.json.JsonSlurper
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import javax.inject.Inject
+import org.gradle.api.provider.ValueSource
+import org.gradle.api.provider.ValueSourceParameters
+import org.gradle.process.ExecOperations
 
 // Loads the mach environment configurations into a gradle extension property.
+//
+// This script runs during Gradle configuration. Originally it called `./mach
+// environment` to get the full build configuration, but that's expensive (often 2-3
+// seconds). Now, `./mach configure` dumps the configuration to
+// `config.status.json`, so we just need to know the topobjdir to read it.
+// Determining the topobjdir without mach would require duplicating topobjdir
+// resolution logic, so we run `./mach environment` to get just the topobjdir.
+//
+// We use two layers of caching to avoid running `./mach environment` unnecessarily:
+//
+// 1. Gradle's configuration cache (via ValueSource API): We declare all inputs that
+//    affect topobjdir resolution as ValueSource parameters. When these inputs are
+//    unchanged, Gradle reuses the entire cached configuration without calling obtain().
+//
+// 2. Local file cache (inside obtain()): When Gradle's config cache is invalidated
+//    for other reasons (e.g., build script changes), we still check our local cache
+//    before running `./mach environment`. This cache is stored in
+//    .gradle/mach-environment-cache/ and keyed by a hash of the same inputs.
+//
+// This means `./mach environment` only runs when inputs actually change.
 
-apply from: file('./mach_env.gradle')
-
-logger.lifecycle("mozconfig.gradle> Loading mach environment into a gradle extension property")
+def startTime = System.currentTimeMillis()
+logger.debug("mozconfig.gradle> Loading mach environment")
 
 if (!ext.hasProperty("topsrcdir")) {
     ext.topsrcdir = file(buildscript.getSourceFile()).getParentFile().getParentFile().getParentFile().getParentFile().absolutePath
 }
 
-def command = ["${topsrcdir}/mach", "environment", "--format", "json", "--verbose"]
-if (System.env.GRADLE_MACH_PYTHON) {
-    command.addAll(0, [System.env.GRADLE_MACH_PYTHON])
-} else if (System.properties["os.name"].contains("Windows")) {
-    command.addAll(0, ["python"])
+abstract class TopobjdirValueSource implements ValueSource<String, TopobjdirValueSource.Params> {
+    interface Params extends ValueSourceParameters {
+        Property<String> getTopsrcdir()
+        Property<String> getMozconfigEnv()
+        Property<String> getMozObjdirEnv()
+        Property<String> getMozAutomation()
+        Property<String> getMozconfigContents()
+        Property<String> getDotMozconfigContents()
+        Property<String> getDefaultMozconfigContents()
+        Property<String> getLocalPropertiesContents()
+        Property<String> getLocalMozconfigContents()
+    }
+
+    @Inject
+    abstract ExecOperations getExecOperations()
+
+    // Called when Gradle's configuration cache is invalidated. We maintain our own
+    // local file cache here so that `./mach environment` only runs when inputs
+    // actually change, not just when Gradle's config cache is wiped for other reasons.
+    @Override
+    String obtain() {
+        def logger = org.gradle.api.logging.Logging.getLogger(TopobjdirValueSource.class)
+        def topsrcdir = parameters.topsrcdir.get()
+
+        // Compute hash of all inputs for local caching
+        def inputs = new StringBuilder()
+        inputs.append("MOZCONFIG=${parameters.mozconfigEnv.get()}\n")
+        inputs.append("MOZ_OBJDIR=${parameters.mozObjdirEnv.get()}\n")
+        inputs.append("mozconfigContents=${parameters.mozconfigContents.get().hashCode()}\n")
+        inputs.append("dotMozconfigContents=${parameters.dotMozconfigContents.get().hashCode()}\n")
+        inputs.append("defaultMozconfigContents=${parameters.defaultMozconfigContents.get().hashCode()}\n")
+        inputs.append("localPropertiesContents=${parameters.localPropertiesContents.get().hashCode()}\n")
+        inputs.append("localMozconfigContents=${parameters.localMozconfigContents.get().hashCode()}\n")
+
+        logger.debug("mozconfig.gradle> Cache inputs:\n${inputs}")
+
+        def sha256 = MessageDigest.getInstance("SHA-256")
+        sha256.update(inputs.toString().getBytes(StandardCharsets.UTF_8))
+        def currentHash = sha256.digest().encodeHex().toString()
+
+        // Check local cache (this doesn't affect Gradle's config cache since we're inside obtain())
+        // Disable local caching in automation to ensure consistent behavior
+        def useCache = !parameters.mozAutomation.get()
+
+        def cacheDir = new File(topsrcdir, ".gradle/mach-environment-cache")
+        cacheDir.mkdirs()
+
+        def cacheHashFile = new File(cacheDir, "inputs.sha256")
+        def topobjdirCacheFile = new File(cacheDir, "topobjdir.txt")
+
+        if (useCache && cacheHashFile.exists() && topobjdirCacheFile.exists()) {
+            def cachedHash = cacheHashFile.text.trim()
+            if (cachedHash == currentHash) {
+                logger.debug("mozconfig.gradle> topobjdir cache hit!")
+                return topobjdirCacheFile.text.trim()
+            }
+        }
+
+        logger.debug("mozconfig.gradle> topobjdir cache miss! Running `./mach environment`")
+        def command = ["${topsrcdir}/mach", "environment", "--format", "json"]
+        if (System.properties["os.name"].contains("Windows")) {
+            command.addAll(0, ["python"])
+        }
+
+        def stdout = new ByteArrayOutputStream()
+        def stderr = new ByteArrayOutputStream()
+
+        def result = execOperations.exec { spec ->
+            spec.workingDir = new File(topsrcdir)
+            spec.commandLine = command
+            def mozconfigEnv = parameters.mozconfigEnv.get()
+            if (mozconfigEnv) {
+                spec.environment('MOZCONFIG', mozconfigEnv)
+            }
+            spec.standardOutput = stdout
+            spec.errorOutput = stderr
+            spec.ignoreExitValue = true
+        }
+
+        if (result.exitValue != 0) {
+            throw new GradleException(
+                "mozconfig.gradle> Error running ./mach environment:\n" +
+                "Process '${command}' finished with non-zero exit value ${result.exitValue}:\n\n" +
+                "stdout:\n${stdout}\n\n" +
+                "stderr:\n${stderr}"
+            )
+        }
+
+        def outputString = stdout.toString().normalize().trim()
+        // Ignore possible lines of output from pip installing packages,
+        // so only start at what looks like the beginning of a JSON object
+        if (outputString.lastIndexOf("\n") != -1) {
+            outputString = outputString.substring(outputString.lastIndexOf("\n") + 1).trim()
+        }
+
+        def slurper = new JsonSlurper()
+        def jsonMachEnv
+        try {
+            jsonMachEnv = slurper.parseText(outputString)
+        } catch (Exception e) {
+            throw new GradleException("Failed to parse JSON from ./mach environment: ${e.message}\nOutput: ${outputString}")
+        }
+
+        def topobjdir = jsonMachEnv.topobjdir
+
+        if (useCache) {
+            try {
+                cacheHashFile.text = currentHash
+                topobjdirCacheFile.text = topobjdir
+            } catch (Exception e) {
+                logger.debug("mozconfig.gradle> Warning: Failed to write cache: ${e.message}")
+            }
+        }
+
+        return topobjdir
+    }
 }
 
-def proc = providers.exec {
-    workingDir = new File(topsrcdir)
-    environment = machEnv(topsrcdir)
-    commandLine = command
-    ignoreExitValue = true
+def readFileContents = { File f ->
+    if (!f.exists() || f.isDirectory()) {
+        return ""
+    }
+    return providers.fileContents(layout.rootDirectory.file(f.absolutePath)).asText.getOrElse("")
 }
 
-def result = proc.result.get().exitValue
-def standardOutput = proc.standardOutput.asText.get()
-// Only show the output if something went wrong.
-if (result != 0) {
-    logger.info("mozconfig.gradle> Error running ./mach environment: \n\n"
-            + "Process '${command}' finished with non-zero exit value ${result}:\n\n"
-            + "stdout:\n"
-            + "${standardOutput}\n\n"
-            + "stderr:\n"
-            + "${proc.standardError.asText.get()}")
-    throw new StopExecutionException(
-            "Could not run ./mach environment. Try running ./mach build first.")
+def mozObjdirEnv = providers.environmentVariable('MOZ_OBJDIR').getOrElse("")
+def mozAutomation = providers.environmentVariable('MOZ_AUTOMATION').getOrElse("")
+
+def dotMozconfigContents = readFileContents(new File(topsrcdir, '.mozconfig'))
+def defaultMozconfigContents = readFileContents(new File(topsrcdir, 'mozconfig'))
+def localPropertiesContents = readFileContents(new File(topsrcdir, 'local.properties'))
+
+def localMozconfigResolvedPath = ""
+def localMozconfigContents = ""
+def localProperties = new Properties()
+if (localPropertiesContents) {
+    localProperties.load(new StringReader(localPropertiesContents))
+    def localMozconfigProperty = localProperties.getProperty("mozilla-central.mozconfig")
+    if (localMozconfigProperty) {
+        def localMozconfigFile = new File(localMozconfigProperty).isAbsolute() ? new File(localMozconfigProperty) : new File(topsrcdir, localMozconfigProperty)
+        localMozconfigResolvedPath = localMozconfigFile.absolutePath
+        localMozconfigContents = readFileContents(localMozconfigFile)
+    }
 }
 
-def outputString = standardOutput.toString().normalize()
-// Ignore possible lines of output from pip installing packages,
-// so only start at what looks like the beginning of a JSON object
-if (outputString.lastIndexOf("\n") != -1) {
-    outputString = outputString.substring(outputString.lastIndexOf("\n") + 1)
+def mozconfigEnv = providers.environmentVariable('MOZCONFIG').getOrElse("")
+if (mozconfigEnv && !new File(mozconfigEnv).isAbsolute()) {
+    mozconfigEnv = new File(topsrcdir, mozconfigEnv).absolutePath
 }
+if (localMozconfigResolvedPath && (!mozconfigEnv || localMozconfigResolvedPath == mozconfigEnv)) {
+    mozconfigEnv = localMozconfigResolvedPath
+    logger.debug("mozconfig.gradle> Using mozconfig from local.properties: ${localMozconfigResolvedPath}")
+} else if (localMozconfigResolvedPath) {
+    logger.debug("mozconfig.gradle> Preferring mozconfig from environment over local.properties: ${mozconfigEnv}")
+} else {
+    logger.debug("mozconfig.gradle> No mozconfig found in local.properties")
+}
+
+def mozconfigFile = mozconfigEnv ? new File(mozconfigEnv) : null
+def mozconfigContents = mozconfigFile ? readFileContents(mozconfigFile) : ""
+
+// Extract autoPublish paths from local.properties for local substitution builds
+["autoPublish.application-services.dir", "autoPublish.glean.dir"].each { key ->
+    def relativeOrAbsolutePath = localProperties.getProperty(key)
+    if (relativeOrAbsolutePath != null) {
+        def autoPublishDir = new File(topsrcdir).toPath().resolve(relativeOrAbsolutePath)
+        gradle.ext."localProperties.$key" = autoPublishDir.toString()
+    }
+}
+
+def topsrcdirValue = topsrcdir
+def mozconfigEnvValue = mozconfigEnv
+def mozObjdirEnvValue = mozObjdirEnv
+def mozAutomationValue = mozAutomation
+def mozconfigContentsValue = mozconfigContents
+def dotMozconfigContentsValue = dotMozconfigContents
+def defaultMozconfigContentsValue = defaultMozconfigContents
+def localPropertiesContentsValue = localPropertiesContents
+def localMozconfigContentsValue = localMozconfigContents
+
+def topobjdirProvider = providers.of(TopobjdirValueSource) {
+    parameters {
+        it.topsrcdir.set(topsrcdirValue)
+        it.mozconfigEnv.set(mozconfigEnvValue)
+        it.mozObjdirEnv.set(mozObjdirEnvValue)
+        it.mozAutomation.set(mozAutomationValue)
+        it.mozconfigContents.set(mozconfigContentsValue)
+        it.dotMozconfigContents.set(dotMozconfigContentsValue)
+        it.defaultMozconfigContents.set(defaultMozconfigContentsValue)
+        it.localPropertiesContents.set(localPropertiesContentsValue)
+        it.localMozconfigContents.set(localMozconfigContentsValue)
+    }
+}
+
+def topobjdir = topobjdirProvider.get()
+logger.debug("mozconfig.gradle> topobjdir=${topobjdir}")
+
+def machEnvFile = new File(topobjdir, 'config.status.json')
+if (!machEnvFile.exists()) {
+    throw new GradleException("config.status.json not found at ${machEnvFile.absolutePath}. Run ./mach configure first.")
+}
+
 def slurper = new JsonSlurper()
-def json;
+def json
 try {
-    json = slurper.parseText(outputString)
-} catch (ignored) {
-    logger.info("mozconfig.gradle> Failed to parse JSON output from ./mach environment: \n\n" +
-            outputString);
-    throw new StopExecutionException(
-            "Failed to parse JSON output from ./mach environment.\n\n" + outputString);
+    json = slurper.parse(machEnvFile)
+} catch (Exception e) {
+    logger.error("mozconfig.gradle> Failed to parse: ${machEnvFile.text}")
+    throw new GradleException("Failed to parse ${machEnvFile.absolutePath}: ${e.message}")
 }
+
+def elapsed = System.currentTimeMillis() - startTime
+logger.info("mozconfig.gradle> Loaded mach environment for ${topobjdir} in ${elapsed} ms")
 
 if (json.substs.MOZ_BUILD_APP != 'mobile/android') {
     throw new GradleException("Building with Gradle is only supported for Firefox for Android, i.e., MOZ_BUILD_APP == 'mobile/android'.")
@@ -72,15 +265,6 @@ if (json.substs.MOZ_BUILD_APP != 'mobile/android') {
 // tries to configure the project even once, and as a side benefit
 // saves invoking |mach environment| multiple times.
 gradle.ext.mozconfig = json
-
-// Produced by `mach build`.  Bug 1543982: the mozconfig determined by `mach
-// environment` above can be different because `mach build` itself sets certain
-// critical environment variables including MOZ_OBJDIR, CC, and CXX.  We use
-// this record to patch up the environment when we recursively invoke `mach
-// build ...` commands from within Gradle.  This avoids invalidating configure
-// based on the changed environment variables.
-def orig = slurper.parse(new File(json.topobjdir, '.mozconfig.json'))
-gradle.ext.mozconfig.orig_mozconfig = orig.mozconfig
 
 // While we're here, read our VCS configuration when available.  This is usually
 // present in the `mozconfig`, but the source of truth is `source-repo.h`, which
@@ -101,5 +285,20 @@ if (sourceRepoFile.canRead()) {
 
     if (gradle.ext.mozconfig.substs.MOZILLA_OFFICIAL) {
         logger.info("mozconfig.gradle> Parsed source-repo.h: ${gradle.ext.mozconfig.source_repo}");
+    }
+}
+
+// Configures Maven repositories from mozconfig onto a RepositoryHandler.
+// In Groovy, pass `delegate` from within a `repositories { }` closure, since
+// `delegate` refers to the RepositoryHandler that receives method calls.
+// In Kotlin, pass `this`.
+gradle.ext.configureMavenRepositories = { handler ->
+    gradle.mozconfig.substs.GRADLE_MAVEN_REPOSITORIES.each { repository ->
+        handler.maven {
+            url = repository
+            if (gradle.mozconfig.substs.ALLOW_INSECURE_GRADLE_REPOSITORIES) {
+                allowInsecureProtocol = true
+            }
+        }
     }
 }

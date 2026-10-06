@@ -30,10 +30,22 @@ async function getAllPages() {
 
 add_setup(async function () {
   await PlacesTestUtils.addVisits([
-    "https://testdomain1.moz.org",
-    "https://testdomain2.moz.org",
-    "https://testdomain3.moz.org",
+    "https://testdomain1.moz.org/",
+    "https://testdomain2.moz.org/",
+    "https://testdomain3.moz.org/",
+    "https://zerofrecency.moz.org/",
   ]);
+
+  await PlacesTestUtils.updateDatabaseValues(
+    "moz_places",
+    {
+      frecency: 0,
+      recalc_alt_frecency: 0,
+    },
+    {
+      url: "https://zerofrecency.moz.org/",
+    }
+  );
 
   Assert.ok(
     PlacesFrecencyRecalculator.alternativeFrecencyInfo.pages.enabled,
@@ -44,7 +56,7 @@ add_setup(async function () {
 });
 
 add_task(async function test_init() {
-  // Set alt_frecency to NULL and recalc_alt_frecency = 0 for the entries in
+  // Set alt_frecency to NULL and recalc_alt_frecency = 1 for the entries in
   // moz_places to verify they are recalculated.
   await PlacesTestUtils.updateDatabaseValues("moz_places", {
     alt_frecency: null,
@@ -90,7 +102,13 @@ add_task(async function test_init() {
     "All the entries have been recalculated"
   );
   Assert.ok(
-    pages.every(p => p.alt_frecency > 0),
+    pages.some(p => p.frecency == 0 && p.alt_frecency == 0),
+    "There's at least one entry with zero frecency"
+  );
+  Assert.ok(
+    pages.every(p =>
+      p.frecency == 0 ? p.alt_frecency == 0 : p.alt_frecency > 0
+    ),
     "All the entries have been recalculated"
   );
   Assert.ok(
@@ -155,7 +173,9 @@ add_task(async function test_different_version() {
     "All the entries have been recalculated"
   );
   Assert.ok(
-    pages.every(p => p.alt_frecency > 0),
+    pages.every(p =>
+      p.frecency == 0 ? p.alt_frecency == 0 : p.alt_frecency > 0
+    ),
     "All the entries have been recalculated"
   );
   Assert.ok(
@@ -219,7 +239,9 @@ add_task(async function test_different_variables() {
     "All the entries have been recalculated"
   );
   Assert.ok(
-    pages.every(p => p.alt_frecency > 0),
+    pages.every(p =>
+      p.frecency == 0 ? p.alt_frecency == 0 : p.alt_frecency > 0
+    ),
     "All the entries have been recalculated"
   );
   Assert.ok(

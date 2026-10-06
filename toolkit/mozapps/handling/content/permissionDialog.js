@@ -5,6 +5,20 @@
 const { EnableDelayHelper } = ChromeUtils.importESModule(
   "resource://gre/modules/PromptUtils.sys.mjs"
 );
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+
+// These schemes are for digital identitity documents.
+// We show a warning card for them in the permission dialog,
+// so the user is made aware the site may be requesting a real
+// identity.
+const lazy = {};
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "walletSchemes",
+  "privacy.wallet_schemes"
+);
 
 let dialog = {
   /**
@@ -55,7 +69,7 @@ let dialog = {
         this._dialog.setAttribute("buttondisabledaccept", true);
       },
       enableDialog: () => {
-        this._dialog.setAttribute("buttondisabledaccept", false);
+        this._dialog.removeAttribute("buttondisabledaccept");
       },
       focusTarget: window,
     });
@@ -64,6 +78,7 @@ let dialog = {
   /**
    * We only show the website address if the origin is not user-readable
    * in the address bar.
+   *
    * @returns {boolean} - true if principal is top level and user-readable,
    *                      false otherwise.
    * If the triggering principal is null this method always returns false.
@@ -145,11 +160,32 @@ let dialog = {
   },
 
   /**
+   * Determines the l10n ID to use for the dangerous scheme warning,
+   * depending on the triggering principal and the preferred application
+   * handler.
+   */
+  get walletWarningL10nId() {
+    if (this.shouldShowPrincipal() && this.userReadablePrincipal) {
+      if (this._preferredHandlerName) {
+        return "wallet-custom-scheme-warning-host-app";
+      }
+      return "wallet-custom-scheme-warning-host";
+    }
+
+    if (this._preferredHandlerName) {
+      return "wallet-custom-scheme-warning-app";
+    }
+
+    return "wallet-custom-scheme-warning";
+  },
+
+  /**
    * Computes text to show in the prompt that is a user-understandable
    * version of what is asking to open the external protocol.
    * It's usually the prePath of the site that wants to navigate to
    * the external protocol, though we use the OS syntax for paths if
    * the request comes from `file://`.
+   *
    * @returns {string|null} - text to show, or null if we can't derive an
    * readable string from the triggering principal.
    */
@@ -213,6 +249,23 @@ let dialog = {
         host,
         scheme,
       });
+    }
+
+    let walletSchemeList = lazy.walletSchemes.split(",");
+    if (walletSchemeList.includes(scheme)) {
+      let warning = document.getElementById("warning-bar");
+      document.l10n.setAttributes(
+        warning,
+        "wallet-custom-scheme-warning-heading"
+      );
+      warning.messageL10nId = this.walletWarningL10nId;
+      warning.messageL10nArgs = {
+        host,
+        scheme,
+        appName: this._preferredHandlerName,
+      };
+      warning.hidden = false;
+      description.hidden = true;
     }
   },
 

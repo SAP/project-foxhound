@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 add_setup(async function () {
@@ -11,9 +9,9 @@ add_setup(async function () {
   // - The pageAction is pinned on the urlbar by default
   //   when shown, and hidden when is not available (same for the
   //   overflow menu when enabled)
-  BrowserPageActions.mainButtonNode.style.visibility = "visible";
+  BrowserPageActions.mainButtonNode.style.display = "flex";
   registerCleanupFunction(() => {
-    BrowserPageActions.mainButtonNode.style.removeProperty("visibility");
+    BrowserPageActions.mainButtonNode.style.removeProperty("display");
   });
 });
 

@@ -13,7 +13,7 @@ richlistbox {
   border: 1px solid ThreeDShadow;
 }
 
-richlistbox[disabled="true"] {
+richlistbox[disabled] {
   color: GrayText;
 }
 

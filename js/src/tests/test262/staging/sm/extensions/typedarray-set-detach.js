@@ -4,23 +4,13 @@
  */
 
 /*---
-includes: [sm/non262.js, sm/non262-shell.js]
-flags:
-  - noStrict
+includes: [detachArrayBuffer.js]
 description: |
-  pending
+  Uint8Array.prototype.set issues when this array changes during setting
+info: bugzilla.mozilla.org/show_bug.cgi?id=983344
 esid: pending
+features: [host-gc-required]
 ---*/
-//-----------------------------------------------------------------------------
-var BUGNUMBER = 983344;
-var summary =
-  "Uint8Array.prototype.set issues when this array changes during setting";
-
-print(BUGNUMBER + ": " + summary);
-
-/**************
- * BEGIN TEST *
- **************/
 
 var ab = new ArrayBuffer(200);
 var a = new Uint8Array(ab);
@@ -39,16 +29,12 @@ var src = [ 10, 20, 30, 40,
             ];
 Object.defineProperty(src, 4, {
   get: function () {
-    $262.detachArrayBuffer(ab);
+    $DETACHBUFFER(ab);
     $262.gc();
     return 200;
   }
 });
 
 a.set(src);
-
-/******************************************************************************/
-
-print("Tests complete");
 
 reportCompare(0, 0);

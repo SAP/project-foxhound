@@ -78,6 +78,13 @@ add_task(async function test_help_panel_cloning() {
           appMenuHelpItem.getAttribute("oncommand"),
           "oncommand was properly cloned."
         );
+      } else if (attr == "disabled") {
+        // We really clone the property, so the attribute value might differ (e.g. "true" vs "").
+        Assert.equal(
+          helpMenuPopupItem.hasAttribute(attr),
+          appMenuHelpItem.hasAttribute(attr),
+          `${attr} property was cloned.`
+        );
       } else {
         Assert.equal(
           helpMenuPopupItem.getAttribute(attr),

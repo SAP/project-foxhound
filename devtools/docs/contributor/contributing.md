@@ -6,7 +6,7 @@ Thank you for taking the time to contribute! There are several areas where you c
 
 ## 👉 Code of conduct 👈
 
-We strive for collaboration with [mutual respect](https://searchfox.org/mozilla-central/source/devtools/CODE_OF_CONDUCT.md) for each other. Mozilla also has a set of [participation guidelines](https://www.mozilla.org/en-US/about/governance/policies/participation/) which goes into greater detail specific to Mozilla employees and contributors.
+We strive for collaboration with [mutual respect](https://searchfox.org/firefox-main/source/devtools/CODE_OF_CONDUCT.md) for each other. Mozilla also has a set of [participation guidelines](https://www.mozilla.org/en-US/about/governance/policies/participation/) which goes into greater detail specific to Mozilla employees and contributors.
 
 Please read the two links above before getting involved. **Contributions that don't abide by the code of conduct and participation guidelines will be rejected**.
 

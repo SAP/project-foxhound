@@ -5,13 +5,13 @@
 package org.mozilla.fenix.components
 
 import android.view.View
-import androidx.coordinatorlayout.widget.CoordinatorLayout
 import mozilla.components.feature.prompts.concept.AutocompletePrompt
 import mozilla.components.feature.prompts.concept.ExpandablePrompt
 import mozilla.components.feature.prompts.concept.SelectablePromptView
 import mozilla.components.feature.prompts.concept.ToggleablePrompt
 import org.mozilla.fenix.browser.AutofillSelectBarBehavior
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
+import org.mozilla.fenix.ext.behavior
 
 /**
  * Fenix specific implementation of [AutocompletePrompt]. This class accomplishes two things:
@@ -30,7 +30,7 @@ class FenixAutocompletePrompt<T, V>(
     private val viewProvider: () -> V,
     private val toolbarPositionProvider: () -> ToolbarPosition,
     private val onShow: () -> Unit,
-    private val onHide: () -> Unit,
+    private val onHide: () -> Unit = {},
 ) : AutocompletePrompt<T> where V : View, V : AutocompletePrompt<T>, V : ExpandablePrompt {
     private val view: V by lazy {
         viewProvider()
@@ -87,10 +87,4 @@ class FenixAutocompletePrompt<T, V>(
             behavior = createCustomAutofillBarBehavior()
         }
     }
-
-    private var View.behavior: CoordinatorLayout.Behavior<*>?
-        get() = (layoutParams as? CoordinatorLayout.LayoutParams)?.behavior
-        set(value) {
-            (layoutParams as? CoordinatorLayout.LayoutParams)?.behavior = value
-        }
 }

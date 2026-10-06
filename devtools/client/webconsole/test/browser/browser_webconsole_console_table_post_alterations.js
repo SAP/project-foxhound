@@ -11,7 +11,7 @@ const TEST_URI = `data:text/html,<!DOCTYPE html>Test console.table with modified
 add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
-  await ContentTask.spawn(gBrowser.selectedBrowser, null, () => {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     const x = ["a", "b"];
     content.wrappedJSObject.console.table(x);
     x.push("c");

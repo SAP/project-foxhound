@@ -38,15 +38,6 @@ async function paste(aCallback) {
   await pastePromise;
 }
 
-add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["dom.events.asyncClipboard.readText", true],
-      ["dom.events.asyncClipboard.clipboardItem", true],
-    ],
-  });
-});
-
 add_task(async function test_mandatory_type() {
   const items = {
     "text/plain": "X" + Math.random(),

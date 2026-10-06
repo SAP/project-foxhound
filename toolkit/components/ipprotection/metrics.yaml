@@ -1,0 +1,143 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+---
+$schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
+$tags:
+  - 'Firefox :: IP Protection'
+
+ipprotection:
+  started:
+    type: event
+    description: >
+      Recorded when IP Protection is started.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017486
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017486
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - kpatenio@mozilla.com
+      - vpn-telemetry@mozilla.com
+    expires: never
+    extra_keys:
+      userAction:
+        type: boolean
+        description: >
+          If the VPN was connected by a user action.
+      inPrivateBrowsing:
+        type: boolean
+        description: >
+          True if IP Protection was started in a private browsing window.
+
+  stopped:
+    type: event
+    description: >
+      Recorded when IP Protection is stopped.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017486
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017486
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - kpatenio@mozilla.com
+      - vpn-telemetry@mozilla.com
+    expires: never
+    extra_keys:
+      userAction:
+        type: boolean
+        description: >
+          If the VPN was disconnected by a user action.
+      duration:
+        type: string
+        description: >
+          Amount of time the VPN was connected in a session.
+
+  error:
+    type: event
+    description: >
+      Recorded when the in-panel error message is triggered.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998500
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998500
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - rking@mozilla.com
+      - vpn-telemetry@mozilla.com
+    expires: never
+    extra_keys:
+      source:
+        type: string
+        description: >
+          Module where the error originated.
+
+  paused:
+    type: event
+    description: >
+      Recorded when the IPP Proxy manager is set to the paused state.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998500
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998500
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - vpn-telemetry@mozilla.com
+    expires: never
+    extra_keys:
+      wasActive:
+        type: boolean
+        description: >
+          True if the previous state was the active state, otherwise false.
+
+  exclusion_added:
+    type: counter
+    description: >
+      Recorded when a site exclusion is added.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017487
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017487
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - kpatenio@mozilla.com
+      - vpn-telemetry@mozilla.com
+    expires: never
+
+  breakage_message_shown:
+    type: event
+    description: >
+      Recorded when the IP Protection activator extension shows the breakage
+      notification suggesting the user turn on the VPN for the current site.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2043999
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2043999
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - amarchesini@mozilla.com
+      - vpn-telemetry@mozilla.com
+    expires: never
+
+  breakage_message_dismissed:
+    type: event
+    description: >
+      Recorded when the user dismisses the IP Protection activator breakage
+      notification.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2043999
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2043999
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - amarchesini@mozilla.com
+      - vpn-telemetry@mozilla.com
+    expires: never

@@ -5,62 +5,7 @@
 
 const TEST_PAGE_LONG = TEST_ROOT + "test-video-selection.html";
 
-const { TelemetryTestUtils } = ChromeUtils.importESModule(
-  "resource://testing-common/TelemetryTestUtils.sys.mjs"
-);
-
-const EXPECTED_EVENT_CREATE = [
-  [
-    "pictureinpicture",
-    "create",
-    "player",
-    undefined,
-    { ccEnabled: "false", webVTTSubtitles: "false" },
-  ],
-];
-
-const EXPECTED_EVENT_CREATE_WITH_TEXT_TRACKS = [
-  [
-    "pictureinpicture",
-    "create",
-    "player",
-    undefined,
-    { ccEnabled: "true", webVTTSubtitles: "true" },
-  ],
-];
-
-const EXPECTED_EVENT_CLOSED_METHOD_CLOSE_BUTTON = [
-  {
-    category: "pictureinpicture",
-    method: "closed_method",
-    object: "closeButton",
-  },
-];
-
 const videoID = "with-controls";
-
-const EXPECTED_EVENT_CLOSED_METHOD_UNPIP = [
-  {
-    category: "pictureinpicture",
-    method: "closed_method",
-    object: "unpip",
-  },
-];
-
-const FULLSCREEN_EVENTS = [
-  {
-    category: "pictureinpicture",
-    method: "fullscreen",
-    object: "player",
-    extraKey: { enter: "true" },
-  },
-  {
-    category: "pictureinpicture",
-    method: "fullscreen",
-    object: "player",
-    extraKey: { enter: "true" },
-  },
-];
 
 add_task(async function testCreateAndCloseButtonTelemetry() {
   await BrowserTestUtils.withNewTab(
@@ -69,56 +14,34 @@ add_task(async function testCreateAndCloseButtonTelemetry() {
       url: TEST_PAGE,
     },
     async browser => {
-      Services.telemetry.clearEvents();
+      Services.fog.testResetFOG();
 
       await ensureVideosReady(browser);
 
       let pipWin = await triggerPictureInPicture(browser, videoID);
       ok(pipWin, "Got Picture-in-Picture window.");
 
-      let filter = {
-        category: "pictureinpicture",
-        method: "create",
-        object: "player",
-      };
-      await waitForTelemeryEvents(
-        filter,
-        EXPECTED_EVENT_CREATE.length,
-        "parent"
-      );
-
-      TelemetryTestUtils.assertEvents(EXPECTED_EVENT_CREATE, filter, {
-        clear: true,
-        process: "parent",
-      });
+      let ev = Glean.pictureinpicture.createPlayer.testGetValue();
+      Assert.equal(ev.length, 1);
+      Assert.equal(ev[0].extra.ccEnabled, "false");
+      Assert.equal(ev[0].extra.webVTTSubtitles, "false");
 
       let pipClosed = BrowserTestUtils.domWindowClosed(pipWin);
       let closeButton = pipWin.document.getElementById("close");
       EventUtils.synthesizeMouseAtCenter(closeButton, {}, pipWin);
       await pipClosed;
 
-      filter = {
-        category: "pictureinpicture",
-        method: "closed_method",
-        object: "closeButton",
-      };
-      await waitForTelemeryEvents(
-        filter,
-        EXPECTED_EVENT_CLOSED_METHOD_CLOSE_BUTTON.length,
-        "parent"
-      );
+      ev = Glean.pictureinpicture.closedMethodCloseButton.testGetValue();
+      Assert.equal(ev.length, 1);
 
-      TelemetryTestUtils.assertEvents(
-        EXPECTED_EVENT_CLOSED_METHOD_CLOSE_BUTTON,
-        filter,
-        { clear: true, process: "parent" }
+      // There is a delay between pipClosed and the "unload" event firing.
+      // Even though pictureinpicture.window_open_duration is recorded to on
+      // parent, wait for an IPC flush to give the "unload" time to propagate.
+      await Services.fog.testFlushAllChildren();
+      Assert.greater(
+        Glean.pictureinpicture.windowOpenDuration.testGetValue().sum,
+        0
       );
-
-      let hist = TelemetryTestUtils.getAndClearHistogram(
-        "FX_PICTURE_IN_PICTURE_WINDOW_OPEN_DURATION"
-      );
-
-      Assert.ok(hist, "Histogram exists");
     }
   );
 });
@@ -139,51 +62,25 @@ add_task(async function textTextTracksAndUnpipTelemetry() {
       gBrowser,
     },
     async browser => {
-      Services.telemetry.clearEvents();
+      Services.fog.testResetFOG();
 
       await ensureVideosReady(browser);
 
       let pipWin = await triggerPictureInPicture(browser, videoID);
       ok(pipWin, "Got Picture-in-Picture window.");
 
-      let filter = {
-        category: "pictureinpicture",
-        method: "create",
-        object: "player",
-      };
-      await waitForTelemeryEvents(
-        filter,
-        EXPECTED_EVENT_CREATE_WITH_TEXT_TRACKS.length,
-        "parent"
-      );
-
-      TelemetryTestUtils.assertEvents(
-        EXPECTED_EVENT_CREATE_WITH_TEXT_TRACKS,
-        filter,
-        { clear: true, process: "parent" }
-      );
+      let ev = Glean.pictureinpicture.createPlayer.testGetValue();
+      Assert.equal(ev.length, 1);
+      Assert.equal(ev[0].extra.ccEnabled, "true");
+      Assert.equal(ev[0].extra.webVTTSubtitles, "true");
 
       let pipClosed = BrowserTestUtils.domWindowClosed(pipWin);
       let unpipButton = pipWin.document.getElementById("unpip");
       EventUtils.synthesizeMouseAtCenter(unpipButton, {}, pipWin);
       await pipClosed;
 
-      filter = {
-        category: "pictureinpicture",
-        method: "closed_method",
-        object: "unpip",
-      };
-      await waitForTelemeryEvents(
-        filter,
-        EXPECTED_EVENT_CLOSED_METHOD_UNPIP.length,
-        "parent"
-      );
-
-      TelemetryTestUtils.assertEvents(
-        EXPECTED_EVENT_CLOSED_METHOD_UNPIP,
-        filter,
-        { clear: true, process: "parent" }
-      );
+      ev = Glean.pictureinpicture.closedMethodUnpip.testGetValue();
+      Assert.equal(ev.length, 1);
     }
   );
 });
@@ -212,17 +109,10 @@ add_task(async function test_fullscreen_events() {
         fullscreenBtn.click();
       });
 
-      let filter = {
-        category: "pictureinpicture",
-        method: "fullscreen",
-        object: "player",
-      };
-      await waitForTelemeryEvents(filter, FULLSCREEN_EVENTS.length, "parent");
-
-      TelemetryTestUtils.assertEvents(FULLSCREEN_EVENTS, filter, {
-        clear: true,
-        process: "parent",
-      });
+      let ev = Glean.pictureinpicture.fullscreenPlayer.testGetValue();
+      Assert.equal(ev.length, 2);
+      Assert.ok("enter" in ev[0].extra);
+      Assert.ok("enter" in ev[1].extra);
 
       await ensureMessageAndClosePiP(browser, videoID, pipWin, false);
     }

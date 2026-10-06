@@ -41,7 +41,7 @@ Variants
 Sometimes we want to run the same tests under a different Firefox context,
 usually this means with a pref set. The concept of ``variants`` was invented to
 handle this use case. A variant is a stanza of configuration that can be merged
-into each test definition. Variants are defined in the `variants.yml`_ file.
+into each test definition. Variants are defined in the :searchfox:`variants.yml <taskcluster/kinds/test/variants.yml>` file.
 See this file for an up to date list of active variants and the pref(s) they
 set.
 
@@ -108,7 +108,7 @@ Expired Variants
 ~~~~~~~~~~~~~~~~
 Ideally, when a variant is not needed anymore, it should be dropped (even if it
 has not expired). If you need to extend the expiration date, you can submit a
-patch to modify the expiration date in the `variants.yml`_ file. Variants will
+patch to modify the expiration date in the :searchfox:`variants.yml <taskcluster/kinds/test/variants.yml>` file. Variants will
 not be scheduled to run after the expiration date.
 
 If an expired variant is not dropped, the triage owner of the component will be
@@ -120,7 +120,6 @@ manifest conditions pending the triage owner / manager to review.
 Please subscribe to alerts from `firefox-ci <https://groups.google.com/a/mozilla.com/g/firefox-ci>`
 group in order to be aware of changes to the CI, scheduling, or the policy.
 
-.. _variants.yml: https://searchfox.org/mozilla-central/source/taskcluster/kinds/test/variants.yml
 .. _json-e: https://json-e.js.org/
 
 

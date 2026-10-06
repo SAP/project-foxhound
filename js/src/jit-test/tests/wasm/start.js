@@ -1,7 +1,7 @@
-assertErrorMessage(() => wasmEvalText('(module (func) (start 0) (start 0))'), SyntaxError, /wasm text error/);
 assertErrorMessage(() => wasmEvalText('(module (func) (start $unknown))'), SyntaxError, /failed to find/);
 
 wasmFailValidateText('(module (func) (start 1))', /unknown start function/);
+wasmFailValidateText('(module (func) (start 0) (start 0))', /unknown section before code section/);
 wasmFailValidateText('(module (func (param i32)) (start 0))', /must be nullary/);
 wasmFailValidateText('(module (func (param i32) (param f32)) (start 0))', /must be nullary/);
 wasmFailValidateText('(module (func (param i32) (param f32) (param f64)) (start 0))', /must be nullary/);

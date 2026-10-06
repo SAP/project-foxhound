@@ -18,14 +18,15 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.DividerItemDecoration
-import mozilla.components.support.utils.ext.getPackageInfoCompat
-import org.mozilla.fenix.BrowserDirection
+import mozilla.components.support.utils.ext.packageManagerCompatHelper
 import org.mozilla.fenix.BuildConfig
 import org.mozilla.fenix.GleanMetrics.Events
-import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.databinding.FragmentAboutBinding
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
+import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.ext.openToBrowser
+import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.settings.about.AboutItemType.LICENSING_INFO
@@ -42,10 +43,10 @@ import org.mozilla.geckoview.BuildConfig as GeckoViewBuildConfig
  */
 class AboutFragment(
     private val toastHandler: ToastHandler = DefaultToastHandler(),
-) : Fragment(), AboutPageListener {
+) : Fragment(), AboutPageListener, SystemInsetsPaddedFragment {
 
     private lateinit var appName: String
-    private var aboutPageAdapter: AboutPageAdapter? = AboutPageAdapter(this)
+    private var aboutPageAdapter: AboutPageAdapter? = null
     private var _binding: FragmentAboutBinding? = null
 
     private val binding get() = _binding!!
@@ -76,7 +77,7 @@ class AboutFragment(
             )
         }
 
-        setupDebugMenu(binding.wordmark, view.settings(), lifecycle)
+        setupDebugMenu(binding.wordmark, view.context.components.settings, lifecycle)
 
         populateAboutHeader()
         aboutPageAdapter?.submitList(populateAboutList())
@@ -89,6 +90,7 @@ class AboutFragment(
 
     override fun onDestroyView() {
         super.onDestroyView()
+        binding.aboutList.adapter = null
         aboutPageAdapter = null
         _binding = null
     }
@@ -116,7 +118,7 @@ class AboutFragment(
     internal fun setupDebugMenu(view: View, settings: Settings, lifecycle: Lifecycle) {
         val secretDebugMenuTrigger = SecretDebugMenuTrigger(
             onLogoClicked = { clicksLeft -> onLogoClicked(view.context, clicksLeft) },
-            onDebugMenuActivated = { onDebugMenuActivated(view.context, view.settings()) },
+            onDebugMenuActivated = { onDebugMenuActivated(view.context, settings) },
         )
 
         if (!settings.showSecretDebugMenuThisSession) {
@@ -155,8 +157,10 @@ class AboutFragment(
 
     private fun populateAboutHeader() {
         val aboutText = try {
-            val packageInfo =
-                requireContext().packageManager.getPackageInfoCompat(requireContext().packageName, 0)
+            val packageInfo = requireContext().packageManagerCompatHelper.getPackageInfoCompat(
+                requireContext().packageName,
+                0,
+            )
             val versionCode = PackageInfoCompat.getLongVersionCode(packageInfo).toString()
             val maybeFenixVcsHash = if (BuildConfig.VCS_HASH.isNotBlank()) ", ${BuildConfig.VCS_HASH}" else ""
             val maybeGecko = getString(R.string.gecko_view_abbreviation)
@@ -217,7 +221,7 @@ class AboutFragment(
             AboutPageItem(
                 AboutItem.ExternalLink(
                     PRIVACY_NOTICE,
-                    SupportUtils.getMozillaPageUrl(SupportUtils.MozillaPage.PRIVATE_NOTICE),
+                    SupportUtils.getMozillaPageUrl(SupportUtils.MozillaPage.PRIVACY_NOTICE),
                 ),
                 getString(R.string.about_privacy_notice),
             ),
@@ -240,10 +244,10 @@ class AboutFragment(
     }
 
     private fun openLinkInNormalTab(url: String) {
-        (activity as HomeActivity).openToBrowserAndLoad(
+        findNavController().openToBrowser()
+        requireComponents.useCases.fenixBrowserUseCases.loadUrlOrSearch(
             searchTermOrURL = url,
             newTab = true,
-            from = BrowserDirection.FromAbout,
         )
     }
 

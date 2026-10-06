@@ -1,23 +1,24 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PerformanceEventTiming.h"
+
+#include <algorithm>
+
+#include "PerformanceInteractionMetrics.h"
 #include "PerformanceMainThread.h"
 #include "mozilla/EventForwards.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/dom/PerformanceEventTimingBinding.h"
-#include "PerformanceInteractionMetrics.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/Performance.h"
-#include "mozilla/dom/Event.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TextEvents.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Event.h"
+#include "mozilla/dom/Performance.h"
+#include "mozilla/dom/PerformanceEventTimingBinding.h"
 #include "nsContentUtils.h"
+#include "nsGkAtoms.h"
 #include "nsIDocShell.h"
-#include <algorithm>
 
 namespace mozilla::dom {
 
@@ -35,13 +36,13 @@ PerformanceEventTiming::PerformanceEventTiming(Performance* aPerformance,
                                                const TimeStamp& aStartTime,
                                                bool aIsCancelable,
                                                EventMessage aMessage)
-    : PerformanceEntry(aPerformance->GetParentObject(), aName, u"event"_ns),
+    : PerformanceEntry(aPerformance->GetParentObject(), aName,
+                       nsGkAtoms::event),
       mPerformance(aPerformance),
       mProcessingStart(aPerformance->NowUnclamped()),
       mProcessingEnd(0),
       mStartTime(
           aPerformance->GetDOMTiming()->TimeStampToDOMHighRes(aStartTime)),
-      mDuration(0),
       mCancelable(aIsCancelable),
       mMessage(aMessage) {}
 
@@ -49,7 +50,7 @@ PerformanceEventTiming::PerformanceEventTiming(
     const PerformanceEventTiming& aEventTimingEntry)
     : PerformanceEntry(aEventTimingEntry.mPerformance->GetParentObject(),
                        nsDependentAtomString(aEventTimingEntry.GetName()),
-                       nsDependentAtomString(aEventTimingEntry.GetEntryType())),
+                       aEventTimingEntry.GetEntryTypeAsStaticAtom()),
       mPerformance(aEventTimingEntry.mPerformance),
       mProcessingStart(aEventTimingEntry.mProcessingStart),
       mProcessingEnd(aEventTimingEntry.mProcessingEnd),
@@ -58,6 +59,7 @@ PerformanceEventTiming::PerformanceEventTiming(
       mDuration(aEventTimingEntry.mDuration),
       mCancelable(aEventTimingEntry.mCancelable),
       mInteractionId(aEventTimingEntry.mInteractionId),
+      mFallbackTime(aEventTimingEntry.mFallbackTime),
       mMessage(aEventTimingEntry.mMessage) {}
 
 JSObject* PerformanceEventTiming::WrapObject(
@@ -121,7 +123,7 @@ PerformanceEventTiming::TryGenerateEventTiming(const EventTarget* aTarget,
   }
 
   nsCOMPtr<nsPIDOMWindowInner> innerWindow =
-      do_QueryInterface(aTarget->GetOwnerGlobal());
+      do_QueryInterface(aTarget->GetRelevantGlobal());
   if (!innerWindow) {
     return nullptr;
   }
@@ -145,7 +147,7 @@ bool PerformanceEventTiming::ShouldAddEntryToBuffer(double aDuration) const {
     return true;
   }
   MOZ_ASSERT(GetEntryType() == nsGkAtoms::event);
-  return RawDuration() >= aDuration;
+  return RawDuration().valueOr(0) >= aDuration;
 }
 
 bool PerformanceEventTiming::ShouldAddEntryToObserverBuffer(
@@ -180,7 +182,7 @@ nsINode* PerformanceEventTiming::GetTarget() const {
   }
 
   nsCOMPtr<nsPIDOMWindowInner> global =
-      do_QueryInterface(element->GetOwnerGlobal());
+      do_QueryInterface(element->GetRelevantGlobal());
   if (!global) {
     return nullptr;
   }
@@ -195,12 +197,24 @@ void PerformanceEventTiming::FinalizeEventTiming(const WidgetEvent* aEvent) {
     return;
   }
   nsCOMPtr<nsPIDOMWindowInner> global =
-      do_QueryInterface(target->GetOwnerGlobal());
+      do_QueryInterface(target->GetRelevantGlobal());
   if (!global) {
     return;
   }
 
-  mProcessingEnd = mPerformance->NowUnclamped();
+  // If a modal dialog appeared before this event was dispatched (e.g. a keyup
+  // queued during an alert), cap processingEnd at the dialog appearance time.
+  DOMHighResTimeStamp lastModalFallback =
+      mPerformance->GetLastModalFallbackTime();
+  if (lastModalFallback > 0 && mStartTime < lastModalFallback) {
+    SetFallbackTimeIfNotSet(lastModalFallback);
+  }
+
+  // Cap processingEnd at the fallback time if a modal dialog appeared during
+  // event processing. The dialog provides visual feedback before processing
+  // actually completes, so its appearance time is the effective processing end.
+  // https://github.com/w3c/event-timing/issues/154
+  mProcessingEnd = mFallbackTime.valueOr(mPerformance->NowUnclamped());
 
   Element* element = Element::FromEventTarget(target);
   if (!element || element->ChromeOnlyAccess()) {

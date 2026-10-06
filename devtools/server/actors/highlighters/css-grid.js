@@ -147,45 +147,45 @@ const gCachedGridPattern = new Map();
  * h.hide();
  * h.destroy();
  *
- * @param {String} options.color
+ * @param {string} options.color
  *        The color that should be used to draw the highlighter for this grid.
- * @param {Number} options.globalAlpha
+ * @param {number} options.globalAlpha
  *        The alpha (transparency) value that should be used to draw the highlighter for
  *        this grid.
- * @param {Boolean} options.showAllGridAreas
+ * @param {boolean} options.showAllGridAreas
  *        Shows all the grid area highlights for the current grid if isShown is
  *        true.
- * @param {String} options.showGridArea
+ * @param {string} options.showGridArea
  *        Shows the grid area highlight for the given area name.
- * @param {Boolean} options.showGridAreasOverlay
+ * @param {boolean} options.showGridAreasOverlay
  *        Displays an overlay of all the grid areas for the current grid
  *        container if isShown is true.
- * @param {Object} options.showGridCell
+ * @param {object} options.showGridCell
  *        An object containing the grid fragment index, row and column numbers
  *        to the corresponding grid cell to highlight for the current grid.
- * @param {Number} options.showGridCell.gridFragmentIndex
+ * @param {number} options.showGridCell.gridFragmentIndex
  *        Index of the grid fragment to render the grid cell highlight.
- * @param {Number} options.showGridCell.rowNumber
+ * @param {number} options.showGridCell.rowNumber
  *        Row number of the grid cell to highlight.
- * @param {Number} options.showGridCell.columnNumber
+ * @param {number} options.showGridCell.columnNumber
  *        Column number of the grid cell to highlight.
- * @param {Object} options.showGridLineNames
+ * @param {object} options.showGridLineNames
  *        An object containing the grid fragment index and line number to the
  *        corresponding grid line to highlight for the current grid.
- * @param {Number} options.showGridLineNames.gridFragmentIndex
+ * @param {number} options.showGridLineNames.gridFragmentIndex
  *        Index of the grid fragment to render the grid line highlight.
- * @param {Number} options.showGridLineNames.lineNumber
+ * @param {number} options.showGridLineNames.lineNumber
  *        Line number of the grid line to highlight.
- * @param {String} options.showGridLineNames.type
+ * @param {string} options.showGridLineNames.type
  *        The dimension type of the grid line.
- * @param {Boolean} options.showGridLineNumbers
+ * @param {boolean} options.showGridLineNumbers
  *        Displays the grid line numbers on the grid lines if isShown is true.
- * @param {Boolean} options.showInfiniteLines
+ * @param {boolean} options.showInfiniteLines
  *        Displays an infinite line to represent the grid lines if isShown is
  *        true.
- * @param {Number} options.isParent
+ * @param {number} options.isParent
  *        Set to true if this is a "parent" grid, i.e. a grid with a subgrid.
- * @param {Number} options.zIndex
+ * @param {number} options.zIndex
  *        The z-index to decide the displaying order.
  *
  * Structure:
@@ -227,11 +227,12 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
   constructor(highlighterEnv) {
     super(highlighterEnv);
 
-    this.ID_CLASS_PREFIX = "css-grid-";
-
     this.markup = new CanvasFrameAnonymousContentHelper(
       this.highlighterEnv,
-      this._buildMarkup.bind(this)
+      this._buildMarkup.bind(this),
+      {
+        contentRootHostClassName: "devtools-highlighter-css-grid",
+      }
     );
     this.isReady = this.markup.initialize();
 
@@ -266,209 +267,188 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
       },
     });
 
-    const root = this.markup.createNode({
+    this.rootEl = this.markup.createNode({
       parent: container,
       attributes: {
-        id: "root",
-        class: "root",
+        id: "css-grid-root",
+        class: "css-grid-root",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     // We use a <canvas> element so that we can draw an arbitrary number of lines
     // which wouldn't be possible with HTML or SVG without having to insert and remove
     // the whole markup on every update.
     this.markup.createNode({
-      parent: root,
+      parent: this.rootEl,
       nodeType: "canvas",
       attributes: {
-        id: "canvas",
-        class: "canvas",
+        id: "css-grid-canvas",
+        class: "css-grid-canvas",
         hidden: "true",
         width: CANVAS_SIZE,
         height: CANVAS_SIZE,
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     // Build the SVG element.
     const svg = this.markup.createSVGNode({
       nodeType: "svg",
-      parent: root,
+      parent: this.rootEl,
       attributes: {
-        id: "elements",
+        id: "css-grid-elements",
         width: "100%",
         height: "100%",
         hidden: "true",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     const regions = this.markup.createSVGNode({
       nodeType: "g",
       parent: svg,
       attributes: {
-        class: "regions",
+        class: "css-grid-regions",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     this.markup.createSVGNode({
       nodeType: "path",
       parent: regions,
       attributes: {
-        class: "areas",
-        id: "areas",
+        class: "css-grid-areas",
+        id: "css-grid-areas",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     this.markup.createSVGNode({
       nodeType: "path",
       parent: regions,
       attributes: {
-        class: "cells",
-        id: "cells",
+        class: "css-grid-cells",
+        id: "css-grid-cells",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     // Build the grid area infobar markup.
     const areaInfobarContainer = this.markup.createNode({
       parent: container,
       attributes: {
-        class: "area-infobar-container",
-        id: "area-infobar-container",
+        class: "css-grid-area-infobar-container",
+        id: "css-grid-area-infobar-container",
         position: "top",
         hidden: "true",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     const areaInfobar = this.markup.createNode({
       parent: areaInfobarContainer,
       attributes: {
-        class: "infobar",
+        class: "css-grid-infobar",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     const areaTextbox = this.markup.createNode({
       parent: areaInfobar,
       attributes: {
-        class: "infobar-text",
+        class: "css-grid-infobar-text",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
     this.markup.createNode({
       nodeType: "span",
       parent: areaTextbox,
       attributes: {
-        class: "area-infobar-name",
-        id: "area-infobar-name",
+        class: "css-grid-area-infobar-name",
+        id: "css-grid-area-infobar-name",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
     this.markup.createNode({
       nodeType: "span",
       parent: areaTextbox,
       attributes: {
-        class: "area-infobar-dimensions",
-        id: "area-infobar-dimensions",
+        class: "css-grid-area-infobar-dimensions",
+        id: "css-grid-area-infobar-dimensions",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     // Build the grid cell infobar markup.
     const cellInfobarContainer = this.markup.createNode({
       parent: container,
       attributes: {
-        class: "cell-infobar-container",
-        id: "cell-infobar-container",
+        class: "css-grid-cell-infobar-container",
+        id: "css-grid-cell-infobar-container",
         position: "top",
         hidden: "true",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     const cellInfobar = this.markup.createNode({
       parent: cellInfobarContainer,
       attributes: {
-        class: "infobar",
+        class: "css-grid-infobar",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     const cellTextbox = this.markup.createNode({
       parent: cellInfobar,
       attributes: {
-        class: "infobar-text",
+        class: "css-grid-infobar-text",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
     this.markup.createNode({
       nodeType: "span",
       parent: cellTextbox,
       attributes: {
-        class: "cell-infobar-position",
-        id: "cell-infobar-position",
+        class: "css-grid-cell-infobar-position",
+        id: "css-grid-cell-infobar-position",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
     this.markup.createNode({
       nodeType: "span",
       parent: cellTextbox,
       attributes: {
-        class: "cell-infobar-dimensions",
-        id: "cell-infobar-dimensions",
+        class: "css-grid-cell-infobar-dimensions",
+        id: "css-grid-cell-infobar-dimensions",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     // Build the grid line infobar markup.
     const lineInfobarContainer = this.markup.createNode({
       parent: container,
       attributes: {
-        class: "line-infobar-container",
-        id: "line-infobar-container",
+        class: "css-grid-line-infobar-container",
+        id: "css-grid-line-infobar-container",
         position: "top",
         hidden: "true",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     const lineInfobar = this.markup.createNode({
       parent: lineInfobarContainer,
       attributes: {
-        class: "infobar",
+        class: "css-grid-infobar",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     const lineTextbox = this.markup.createNode({
       parent: lineInfobar,
       attributes: {
-        class: "infobar-text",
+        class: "css-grid-infobar-text",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
     this.markup.createNode({
       nodeType: "span",
       parent: lineTextbox,
       attributes: {
-        class: "line-infobar-number",
-        id: "line-infobar-number",
+        class: "css-grid-line-infobar-number",
+        id: "css-grid-line-infobar-number",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
     this.markup.createNode({
       nodeType: "span",
       parent: lineTextbox,
       attributes: {
-        class: "line-infobar-names",
-        id: "line-infobar-names",
+        class: "css-grid-line-infobar-names",
+        id: "css-grid-line-infobar-names",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     return container;
@@ -482,7 +462,7 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
    * Clear the grid area highlights.
    */
   clearGridAreas() {
-    const areas = this.getElement("areas");
+    const areas = this.getElement("css-grid-areas");
     areas.setAttribute("d", "");
   }
 
@@ -490,7 +470,7 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
    * Clear the grid cell highlights.
    */
   clearGridCell() {
-    const cells = this.getElement("cells");
+    const cells = this.getElement("css-grid-cells");
     cells.setAttribute("d", "");
   }
 
@@ -504,6 +484,7 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
     }
 
     this.markup.destroy();
+    this.rootEl = null;
 
     // Clear the pattern cache to avoid dead object exceptions (Bug 1342051).
     this.clearCache();
@@ -511,7 +492,7 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
   }
 
   get canvas() {
-    return this.getElement("canvas");
+    return this.getElement("css-grid-canvas");
   }
 
   get color() {
@@ -527,7 +508,7 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
   }
 
   getElement(id) {
-    return this.markup.getElement(this.ID_CLASS_PREFIX + id);
+    return this.markup.getElement(id);
   }
 
   getFirstColLinePos(fragment) {
@@ -542,9 +523,9 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
    * Gets the grid gap pattern used to render the gap regions based on the device
    * pixel ratio given.
    *
-   * @param  {Number} devicePixelRatio
+   * @param  {number} devicePixelRatio
    *         The device pixel ratio we want the pattern for.
-   * @param  {Object} dimension
+   * @param  {object} dimension
    *         Refers to the Map key for the grid dimension type which is either the
    *         constant COLUMNS or ROWS.
    * @return {CanvasPattern} grid gap pattern.
@@ -603,7 +584,7 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
    *
    * @param  {GridTracks} tracks
    *         The grid track of a given grid dimension.
-   * @return {Number} index of the last edge of the explicit grid for a grid dimension.
+   * @return {number} index of the last edge of the explicit grid for a grid dimension.
    */
   getLastEdgeLineIndex(tracks) {
     let trackIndex = tracks.length - 1;
@@ -622,7 +603,7 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
   }
 
   getNode(id) {
-    return this.markup.content.root.getElementById(this.ID_CLASS_PREFIX + id);
+    return this.markup.content.root.getElementById(id);
   }
 
   /**
@@ -663,29 +644,38 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
   }
 
   _hideGrid() {
-    this.getElement("canvas").setAttribute("hidden", "true");
+    this.getElement("css-grid-canvas").setAttribute("hidden", "true");
   }
 
   _hideGridAreaInfoBar() {
-    this.getElement("area-infobar-container").setAttribute("hidden", "true");
+    this.getElement("css-grid-area-infobar-container").setAttribute(
+      "hidden",
+      "true"
+    );
   }
 
   _hideGridCellInfoBar() {
-    this.getElement("cell-infobar-container").setAttribute("hidden", "true");
+    this.getElement("css-grid-cell-infobar-container").setAttribute(
+      "hidden",
+      "true"
+    );
   }
 
   _hideGridElements() {
-    this.getElement("elements").setAttribute("hidden", "true");
+    this.getElement("css-grid-elements").setAttribute("hidden", "true");
   }
 
   _hideGridLineInfoBar() {
-    this.getElement("line-infobar-container").setAttribute("hidden", "true");
+    this.getElement("css-grid-line-infobar-container").setAttribute(
+      "hidden",
+      "true"
+    );
   }
 
   /**
    * Checks if the current node has a CSS Grid layout.
    *
-   * @return {Boolean} true if the current node has a CSS grid layout, false otherwise.
+   * @return {boolean} true if the current node has a CSS grid layout, false otherwise.
    */
   isGrid() {
     return this.currentNode.hasGridFragments();
@@ -696,8 +686,8 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
    * may have a fragment that defines column tracks but doesn't have any rows (or vice
    * versa). In which case we do not want to draw anything for that fragment.
    *
-   * @param  {Object} fragment
-   * @return {Boolean}
+   * @param  {object} fragment
+   * @return {boolean}
    */
   isValidFragment(fragment) {
     return fragment.cols.tracks.length && fragment.rows.tracks.length;
@@ -732,7 +722,7 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
     // Hide the canvas, grid element highlights and infobar.
     this._hide();
 
-    this.getElement("root").setAttribute(
+    this.getElement("css-grid-root").setAttribute(
       "data-is-parent-grid",
       !!this.options.isParent
     );
@@ -753,23 +743,29 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
   }
 
   _showGrid() {
-    this.getElement("canvas").removeAttribute("hidden");
+    this.getElement("css-grid-canvas").removeAttribute("hidden");
   }
 
   _showGridAreaInfoBar() {
-    this.getElement("area-infobar-container").removeAttribute("hidden");
+    this.getElement("css-grid-area-infobar-container").removeAttribute(
+      "hidden"
+    );
   }
 
   _showGridCellInfoBar() {
-    this.getElement("cell-infobar-container").removeAttribute("hidden");
+    this.getElement("css-grid-cell-infobar-container").removeAttribute(
+      "hidden"
+    );
   }
 
   _showGridElements() {
-    this.getElement("elements").removeAttribute("hidden");
+    this.getElement("css-grid-elements").removeAttribute("hidden");
   }
 
   _showGridLineInfoBar() {
-    this.getElement("line-infobar-container").removeAttribute("hidden");
+    this.getElement("css-grid-line-infobar-container").removeAttribute(
+      "hidden"
+    );
   }
 
   /**
@@ -782,7 +778,7 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
   /**
    * Shows the grid area highlight for the given area name.
    *
-   * @param  {String} areaName
+   * @param  {string} areaName
    *         Grid area name.
    */
   showGridArea(areaName) {
@@ -792,11 +788,11 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
   /**
    * Shows the grid cell highlight for the given grid cell options.
    *
-   * @param  {Number} options.gridFragmentIndex
+   * @param  {number} options.gridFragmentIndex
    *         Index of the grid fragment to render the grid cell highlight.
-   * @param  {Number} options.rowNumber
+   * @param  {number} options.rowNumber
    *         Row number of the grid cell to highlight.
-   * @param  {Number} options.columnNumber
+   * @param  {number} options.columnNumber
    *         Column number of the grid cell to highlight.
    */
   showGridCell({ gridFragmentIndex, rowNumber, columnNumber }) {
@@ -806,11 +802,11 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
   /**
    * Shows the grid line highlight for the given grid line options.
    *
-   * @param  {Number} options.gridFragmentIndex
+   * @param  {number} options.gridFragmentIndex
    *         Index of the grid fragment to render the grid line highlight.
-   * @param  {Number} options.lineNumber
+   * @param  {number} options.lineNumber
    *         Line number of the grid line to highlight.
-   * @param  {String} options.type
+   * @param  {string} options.type
    *         The dimension type of the grid line.
    */
   showGridLineNames({ gridFragmentIndex, lineNumber, type }) {
@@ -890,7 +886,7 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
   /**
    * Render the grid area highlight for the given area name or for all the grid areas.
    *
-   * @param  {String} areaName
+   * @param  {string} areaName
    *         Name of the grid area to be highlighted. If no area name is provided, all
    *         the grid areas should be highlighted.
    */
@@ -951,16 +947,16 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
       }
     }
 
-    const areas = this.getElement("areas");
+    const areas = this.getElement("css-grid-areas");
     areas.setAttribute("d", paths.join(" "));
   }
 
   /**
    * Render grid area name on the containing grid area cell.
    *
-   * @param  {Object} fragment
+   * @param  {object} fragment
    *         The grid fragment of the grid container.
-   * @param  {Object} area
+   * @param  {object} area
    *         The area overlay to render on the CSS highlighter canvas.
    */
   renderGridAreaName(fragment, area) {
@@ -1105,11 +1101,11 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
    * Render the grid cell highlight for the given grid fragment index, row and column
    * number.
    *
-   * @param  {Number} gridFragmentIndex
+   * @param  {number} gridFragmentIndex
    *         Index of the grid fragment to render the grid cell highlight.
-   * @param  {Number} rowNumber
+   * @param  {number} rowNumber
    *         Row number of the grid cell to highlight.
-   * @param  {Number} columnNumber
+   * @param  {number} columnNumber
    *         Column number of the grid cell to highlight.
    */
   renderGridCell(gridFragmentIndex, rowNumber, columnNumber) {
@@ -1150,7 +1146,7 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
       }))
     );
 
-    const cells = this.getElement("cells");
+    const cells = this.getElement("css-grid-cells");
     cells.setAttribute("d", getPathDescriptionFromPoints(svgPoints));
 
     this._showGridCellInfoBar();
@@ -1160,16 +1156,16 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
   /**
    * Render the grid gap area on the css grid highlighter canvas.
    *
-   * @param  {Number} linePos
+   * @param  {number} linePos
    *         The line position along the x-axis for a column grid line and
    *         y-axis for a row grid line.
-   * @param  {Number} startPos
+   * @param  {number} startPos
    *         The start position of the cross side of the grid line.
-   * @param  {Number} endPos
+   * @param  {number} endPos
    *         The end position of the cross side of the grid line.
-   * @param  {Number} breadth
+   * @param  {number} breadth
    *         The grid line breadth value.
-   * @param  {String} dimensionType
+   * @param  {string} dimensionType
    *         The grid dimension type which is either the constant COLUMNS or ROWS.
    */
   renderGridGap(linePos, startPos, endPos, breadth, dimensionType) {
@@ -1237,11 +1233,11 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
    * Render the grid line name highlight for the given grid fragment index, lineNumber,
    * and dimensionType.
    *
-   * @param  {Number} gridFragmentIndex
+   * @param  {number} gridFragmentIndex
    *         Index of the grid fragment to render the grid line highlight.
-   * @param  {Number} lineNumber
+   * @param  {number} lineNumber
    *         Line number of the grid line to highlight.
-   * @param  {String} dimensionType
+   * @param  {string} dimensionType
    *         The dimension type of the grid line.
    */
   renderGridLineNames(gridFragmentIndex, lineNumber, dimensionType) {
@@ -1287,16 +1283,16 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
   /**
    * Render the grid line number on the css grid highlighter canvas.
    *
-   * @param  {Number} lineNumber
+   * @param  {number} lineNumber
    *         The grid line number.
-   * @param  {Number} linePos
+   * @param  {number} linePos
    *         The line position along the x-axis for a column grid line and
    *         y-axis for a row grid line.
-   * @param  {Number} startPos
+   * @param  {number} startPos
    *         The start position of the cross side of the grid line.
-   * @param  {Number} breadth
+   * @param  {number} breadth
    *         The grid line breadth value.
-   * @param  {String} dimensionType
+   * @param  {string} dimensionType
    *         The grid dimension type which is either the constant COLUMNS or ROWS.
    * @param  {Boolean||undefined} isStackedLine
    *         Boolean indicating if the line is stacked.
@@ -1521,11 +1517,11 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
   /**
    * Determine which edge of a line number box to aim the line number arrow at.
    *
-   * @param  {String} dimensionType
+   * @param  {string} dimensionType
    *         The grid line dimension type which is either the constant COLUMNS or ROWS.
-   * @param  {Number} lineNumber
+   * @param  {number} lineNumber
    *         The grid line number.
-   * @return {String} The edge of the box: top, right, bottom or left.
+   * @return {string} The edge of the box: top, right, bottom or left.
    */
   getBoxEdge(dimensionType, lineNumber) {
     let boxEdge;
@@ -1582,16 +1578,16 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
   /**
    * Render the grid line on the css grid highlighter canvas.
    *
-   * @param  {Number} linePos
+   * @param  {number} linePos
    *         The line position along the x-axis for a column grid line and
    *         y-axis for a row grid line.
-   * @param  {Number} startPos
+   * @param  {number} startPos
    *         The start position of the cross side of the grid line.
-   * @param  {Number} endPos
+   * @param  {number} endPos
    *         The end position of the cross side of the grid line.
-   * @param  {String} dimensionType
+   * @param  {string} dimensionType
    *         The grid dimension type which is either the constant COLUMNS or ROWS.
-   * @param  {String} lineType
+   * @param  {string} lineType
    *         The grid line type - "edge", "explicit", or "implicit".
    */
   renderLine(linePos, startPos, endPos, dimensionType, lineType) {
@@ -1649,14 +1645,14 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
    *
    * @param  {GridDimension} gridDimension
    *         Column or row grid dimension object.
-   * @param  {Object} quad.bounds
+   * @param  {object} quad.bounds
    *         The content bounds of the box model region quads.
-   * @param  {String} dimensionType
+   * @param  {string} dimensionType
    *         The grid dimension type which is either the constant COLUMNS or ROWS.
-   * @param  {Number} startPos
+   * @param  {number} startPos
    *         The start position of the cross side ("left" for ROWS and "top" for COLUMNS)
    *         of the grid dimension.
-   * @param  {Number} endPos
+   * @param  {number} endPos
    *         The end position of the cross side ("left" for ROWS and "top" for COLUMNS)
    *         of the grid dimension.
    */
@@ -1706,9 +1702,9 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
    *
    * @param  {GridDimension} gridDimension
    *         Column or row grid dimension object.
-   * @param  {String} dimensionType
+   * @param  {string} dimensionType
    *         The grid dimension type which is either the constant COLUMNS or ROWS.
-   * @param  {Number} startPos
+   * @param  {number} startPos
    *         The start position of the cross side ("left" for ROWS and "top" for COLUMNS)
    *         of the grid dimension.
    */
@@ -1766,9 +1762,9 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
    *
    * @param  {GridDimension} gridDimension
    *         Column or row grid dimension object.
-   * @param  {String} dimensionType
+   * @param  {string} dimensionType
    *         The grid dimension type which is either the constant COLUMNS or ROWS.
-   * @param  {Number} startPos
+   * @param  {number} startPos
    *         The start position of the cross side ("left" for ROWS and "top" for COLUMNS)
    *         of the grid dimension.
    */
@@ -1823,7 +1819,7 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
   _update() {
     setIgnoreLayoutChanges(true);
 
-    const root = this.getNode("root");
+    const root = this.getNode("css-grid-root");
     this._winDimensions = getWindowDimensions(this.win);
     const { width, height } = this._winDimensions;
 
@@ -1884,7 +1880,7 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
    *
    * @param  {GridArea} area
    *         The grid area object.
-   * @param  {Object} bounds
+   * @param  {object} bounds
    *         A DOMRect-like object represent the grid area rectangle.
    */
   _updateGridAreaInfobar(area, bounds) {
@@ -1894,10 +1890,10 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
       " \u00D7 " +
       parseFloat(height.toPrecision(6));
 
-    this.getElement("area-infobar-name").setTextContent(area.name);
-    this.getElement("area-infobar-dimensions").setTextContent(dim);
+    this.getElement("css-grid-area-infobar-name").setTextContent(area.name);
+    this.getElement("css-grid-area-infobar-dimensions").setTextContent(dim);
 
-    const container = this.getElement("area-infobar-container");
+    const container = this.getElement("css-grid-area-infobar-container");
     moveInfobar(container, bounds, this.win, {
       position: "bottom",
     });
@@ -1906,11 +1902,11 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
   /**
    * Update the grid information displayed in the grid cell info bar.
    *
-   * @param  {Number} rowNumber
+   * @param  {number} rowNumber
    *         The grid cell's row number.
-   * @param  {Number} columnNumber
+   * @param  {number} columnNumber
    *         The grid cell's column number.
-   * @param  {Object} bounds
+   * @param  {object} bounds
    *         A DOMRect-like object represent the grid cell rectangle.
    */
   _updateGridCellInfobar(rowNumber, columnNumber, bounds) {
@@ -1924,10 +1920,10 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
       { row: rowNumber, column: columnNumber }
     );
 
-    this.getElement("cell-infobar-position").setTextContent(position);
-    this.getElement("cell-infobar-dimensions").setTextContent(dim);
+    this.getElement("css-grid-cell-infobar-position").setTextContent(position);
+    this.getElement("css-grid-cell-infobar-dimensions").setTextContent(dim);
 
-    const container = this.getElement("cell-infobar-container");
+    const container = this.getElement("css-grid-cell-infobar-container");
     moveInfobar(container, bounds, this.win, {
       position: "top",
     });
@@ -1936,20 +1932,24 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
   /**
    * Update the grid information displayed in the grid line info bar.
    *
-   * @param  {String} gridLineNames
+   * @param  {string} gridLineNames
    *         Comma-separated string of names for the grid line.
-   * @param  {Number} gridLineNumber
+   * @param  {number} gridLineNumber
    *         The grid line number.
-   * @param  {Number} x
+   * @param  {number} x
    *         The x-coordinate of the grid line.
-   * @param  {Number} y
+   * @param  {number} y
    *         The y-coordinate of the grid line.
    */
   _updateGridLineInfobar(gridLineNames, gridLineNumber, x, y) {
-    this.getElement("line-infobar-number").setTextContent(gridLineNumber);
-    this.getElement("line-infobar-names").setTextContent(gridLineNames);
+    this.getElement("css-grid-line-infobar-number").setTextContent(
+      gridLineNumber
+    );
+    this.getElement("css-grid-line-infobar-names").setTextContent(
+      gridLineNames
+    );
 
-    const container = this.getElement("line-infobar-container");
+    const container = this.getElement("css-grid-line-infobar-container");
     moveInfobar(
       container,
       getBoundsFromPoints([

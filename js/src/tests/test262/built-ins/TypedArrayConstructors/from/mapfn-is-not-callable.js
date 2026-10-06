@@ -56,6 +56,6 @@ testWithTypedArrayConstructors(function(TA) {
     getIterator, 0,
     "IsCallable(mapfn) check occurs before getting source[@@iterator]"
   );
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

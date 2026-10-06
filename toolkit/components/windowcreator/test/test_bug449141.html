@@ -43,8 +43,14 @@ var progressListener = {
       var videoFile = getTempDir();
       videoFile.append(this.dirName);
       dirExists = videoFile.exists();
-      videoFile.append("320x240.webm");
-      videoExists = videoFile.exists();
+      var entries = videoFile.directoryEntries;
+      while (entries.hasMoreElements()) {
+        var entry = entries.nextFile;
+        if (entry.leafName.startsWith("320x240") && entry.leafName.endsWith(".webm")) {
+          videoExists = true;
+          break;
+        }
+      }
       this.folder.remove(true);
       this.file.remove(false);
       ok(dirExists, "Directory containing video file should be created");

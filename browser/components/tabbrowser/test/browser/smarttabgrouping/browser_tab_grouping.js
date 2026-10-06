@@ -108,12 +108,13 @@ add_task(async function testClustering() {
 
 /**
  * Run tests for finding similar items for a single item or cluster of items with label anchorLabel
- * @param {Number[][]} embeddings Embeddings for each item
- * @param {String} anchorLabel String representing the ID of the anchor cluster
- * @param {Object[]} labels Dict representing each document (unused )
- * @param {String[]} labelClusterList List of items, with id of cluster for each (unused in)
- * @param {String} testName Name of the test dataset
- * @returns {Object[]}
+ *
+ * @param {number[][]} embeddings Embeddings for each item
+ * @param {string} anchorLabel String representing the ID of the anchor cluster
+ * @param {object[]} labels Dict representing each document (unused )
+ * @param {string[]} labelClusterList List of items, with id of cluster for each (unused in)
+ * @param {string} testName Name of the test dataset
+ * @returns {object[]}
  */
 async function anchorTestsForCluster(
   embeddings,

@@ -6,11 +6,11 @@
 async function changeRangeTo(helper, destination) {
   info(`changeRangeTo(${destination})`);
   let rangeSelect = helper.get("range-picker");
-  let options = getRangeOptions(helper);
-  let numberMove =
-    options.indexOf(destination) - options.indexOf(rangeSelect.value);
-  let direction = numberMove > 0 ? "down" : "up";
-  if (!numberMove) {
+  const optionIndex = [...rangeSelect.options]
+    .map(o => o.value)
+    .indexOf(destination);
+  const option = rangeSelect.options[optionIndex];
+  if (option.selected) {
     return;
   }
 
@@ -22,11 +22,23 @@ async function changeRangeTo(helper, destination) {
   rangeSelect.scrollIntoView({ block: "center" });
   EventUtils.sendKey("space", helper.win);
 
-  await popupOpen;
-  for (let i = Math.abs(numberMove); i > 0; i--) {
-    EventUtils.sendKey(direction, window);
+  const selectPopup = await popupOpen;
+  if (selectPopup.isNativeMenu) {
+    selectPopup.activateItem(selectPopup.childNodes[optionIndex]);
+  } else {
+    const enabledOptions = getRangeOptions(helper);
+    const numberMove =
+      enabledOptions.indexOf(destination) -
+      enabledOptions.indexOf(rangeSelect.value);
+    const direction = numberMove > 0 ? "down" : "up";
+    if (!numberMove) {
+      return;
+    }
+    for (let i = Math.abs(numberMove); i > 0; i--) {
+      EventUtils.sendKey(direction, window);
+    }
+    EventUtils.sendKey("return", window);
   }
-  EventUtils.sendKey("return", window);
 
   await input;
 }

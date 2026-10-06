@@ -17,7 +17,7 @@
         android:layout_gravity="center"
         android:layout_marginStart="16dp"
         android:contentDescription="@string/preference_etp_exceptions_icon_description"
-        tools:srcCompat="@drawable/ic_internet" />
+        tools:srcCompat="@drawable/mozac_ic_globe_24" />
 
     <TextView
         android:id="@android:id/title"

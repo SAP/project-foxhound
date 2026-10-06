@@ -1,0 +1,13 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="match" href="select-unselectable-text-ref.html">
+</head>
+<body>
+  <div><span style="user-select:none">ABC</span></div>
+  <script>
+    getSelection().selectAllChildren(document.querySelector("div"));
+  </script>
+</body>
+</html>

@@ -12,6 +12,9 @@
 @container (min-height: 0px) {
 }
 
+@container name (min-width: 0px), (width > 1px) {
+}
+
 div {
   width: 100px;
   height: 100px;
@@ -35,9 +38,9 @@ div {
 
 <div id="child1"></div>
 
-<div class="container-height" id="container1">
-  <div class="container-named" id="container2">
-    <div class="container-unnamed" id="container3">
+<div class="container-height" id="unnamedSizeContainer">
+  <div class="container-named" id="namedInlineSizeContainer">
+    <div class="container-unnamed" id="unnamedInlineSizeContainer">
       <div id="child2"></div>
     </div>
   </div>
@@ -48,15 +51,22 @@ div {
   let withoutFilter = SpecialPowers.wrap(sheet.cssRules[0]);
   let withFilter = SpecialPowers.wrap(sheet.cssRules[1]);
   let heightQuery = SpecialPowers.wrap(sheet.cssRules[2]);
+  let withMultipleConditions = SpecialPowers.wrap(sheet.cssRules[3]);
 
   // Container query selection requires up-to-date layout information.
   document.body.getBoundingClientRect();
 
-  is(withoutFilter.queryContainerFor(child1), null, "No filter, no container");
-  is(withFilter.queryContainerFor(child1), null, "Filter, no container");
-  is(heightQuery.queryContainerFor(child1), null, "Height, no container");
+  is(withoutFilter.queryContainerFor(child1, 0), null, "No filter, no container");
+  is(withFilter.queryContainerFor(child1, 0), null, "Filter, no container");
+  is(heightQuery.queryContainerFor(child1, 0), null, "Height, no container");
+  is(withMultipleConditions.queryContainerFor(child1, 0), null, "Multiple conditions, no container for first condition");
+  is(withMultipleConditions.queryContainerFor(child1, 1), null, "Multiple conditions, no container for second condition");
+  is(withMultipleConditions.queryContainerFor(child1, 2), null, "Multiple conditions, no container for unexisting condition index");
 
-  is(SpecialPowers.unwrap(withoutFilter.queryContainerFor(child2)), container3, "No filter, container");
-  is(SpecialPowers.unwrap(withFilter.queryContainerFor(child2)), container2, "Filter");
-  is(SpecialPowers.unwrap(heightQuery.queryContainerFor(child2)), container1, "Height");
+  is(SpecialPowers.unwrap(withoutFilter.queryContainerFor(child2, 0)), unnamedInlineSizeContainer, "No filter, container");
+  is(SpecialPowers.unwrap(withFilter.queryContainerFor(child2, 0)), namedInlineSizeContainer, "Filter container");
+  is(SpecialPowers.unwrap(heightQuery.queryContainerFor(child2, 0)), unnamedSizeContainer, "Height");
+  is(SpecialPowers.unwrap(withMultipleConditions.queryContainerFor(child2, 0)), namedInlineSizeContainer, "Multiple conditions, container for first condition (Filter)");
+  is(SpecialPowers.unwrap(withMultipleConditions.queryContainerFor(child2, 1)), unnamedInlineSizeContainer, "Multiple conditions, container for second condition (No Filter)");
+  is(SpecialPowers.unwrap(withMultipleConditions.queryContainerFor(child2, 2)), null, "Multiple conditions, no container for unexisting condition index");
 </script>

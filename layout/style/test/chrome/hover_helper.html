@@ -60,7 +60,7 @@ function setResize(str) {
 }
 
 function step1() {
-    /** test basic hover **/
+    /** test basic hover */
     var divone = document.getElementById("one");
     synthesizeMouse(divone, 5, 7, moveEvent, window);
     is(getComputedStyle(divone, "").backgroundColor, "rgb(0, 0, 255)",
@@ -83,7 +83,7 @@ function step1() {
     is(getComputedStyle(divone.firstChild, "").backgroundColor, "rgb(255, 0, 0)",
        ":hover applies");
 
-    /** Test for Bug 302561 **/
+    /** Test for Bug 302561 */
     setResize("step2();");
     is(iframe.contentDocument.body.offsetWidth, 50,
        ":hover does not apply (iframe body width)");

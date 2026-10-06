@@ -14,8 +14,8 @@
 #include <memory>
 
 #include "api/audio/audio_frame_processor.h"
+#include "api/ref_count.h"
 #include "api/task_queue/task_queue_base.h"
-#include "rtc_base/ref_count.h"
 
 namespace webrtc {
 
@@ -35,7 +35,7 @@ class AsyncAudioProcessing final {
     Factory(const Factory&) = delete;
     Factory& operator=(const Factory&) = delete;
 
-    ~Factory();
+    ~Factory() override;
     Factory(AudioFrameProcessor& frame_processor,
             TaskQueueFactory& task_queue_factory);
     Factory(std::unique_ptr<AudioFrameProcessor> frame_processor,

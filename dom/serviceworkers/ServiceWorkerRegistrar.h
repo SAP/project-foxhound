@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,15 +7,15 @@
 
 #include "mozilla/Monitor.h"
 #include "mozilla/dom/ServiceWorkerRegistrarTypes.h"
+#include "nsCOMPtr.h"
 #include "nsClassHashtable.h"
 #include "nsIAsyncShutdown.h"
 #include "nsIObserver.h"
-#include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsTArray.h"
 
 #define SERVICEWORKERREGISTRAR_FILE u"serviceworker.txt"
-#define SERVICEWORKERREGISTRAR_VERSION 10
+#define SERVICEWORKERREGISTRAR_VERSION 12
 #define SERVICEWORKERREGISTRAR_TERMINATOR "#"
 #define SERVICEWORKERREGISTRAR_TRUE "true"
 #define SERVICEWORKERREGISTRAR_FALSE "false"

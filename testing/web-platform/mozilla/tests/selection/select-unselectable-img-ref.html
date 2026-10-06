@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+img::selection {
+  background-color: transparent;
+  color: currentColor;
+}
+</style>
+</head>
+<body>
+  <div><img
+   style="width:100px;height:100px"
+   src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAIAAAACDbGyAAAAE0lEQVR4nGNk+M+ADJgYGCjiAwBPkgEJOTC6CgAAAABJRU5ErkJggg=="
+  ></div>
+  <script>
+    getSelection().selectAllChildren(document.querySelector("div"));
+  </script>
+</body>
+</html>

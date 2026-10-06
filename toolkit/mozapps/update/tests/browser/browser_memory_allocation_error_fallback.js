@@ -8,12 +8,6 @@
  * updating without staging.
  */
 
-const READ_STRINGS_MEM_ERROR = 10;
-const ARCHIVE_READER_MEM_ERROR = 11;
-const BSPATCH_MEM_ERROR = 12;
-const UPDATER_MEM_ERROR = 13;
-const UPDATER_QUOTED_PATH_MEM_ERROR = 14;
-
 const EXPECTED_STATUS =
   AppConstants.platform == "win" ? STATE_PENDING_SVC : STATE_PENDING;
 

@@ -467,6 +467,20 @@ update:
     expires: never
     telemetry_mirror: h#UPDATE_SERVICE_MANUALLY_UNINSTALLED_SUBSEQUENT
 
+  state_write_failure:
+    type: counter
+    description: >
+      Update: Count of the number of times we have shown a notification to the
+      user that they need to manually update because we cannot write to the
+      update status file.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1984458
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1984458
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+    expires: never
+
   unable_to_apply_external:
     type: counter
     description: >
@@ -1610,6 +1624,17 @@ update:
     send_in_pings:
       - update
 
+  blocked:
+    type: counter
+    description: >
+      Number of downloads blocked by the WAF.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010409
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010409
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+    expires: never
 
 updater:
   available:

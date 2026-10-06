@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -10,7 +9,8 @@ dictionary PCErrorData
 {
   required PCError name;
   required DOMString message;
-  // Will need to add more stuff (optional) for RTCError
+  DOMString errorDetail;
+  long sdpLineNumber;
 };
 
 [ChromeOnly,
@@ -31,6 +31,7 @@ interface PeerConnectionObserver
   undefined onAddIceCandidateSuccess();
   undefined onAddIceCandidateError(PCErrorData error);
   undefined onIceCandidate(unsigned short level, DOMString mid, DOMString candidate, DOMString ufrag);
+  undefined onIceCandidateError(DOMString address, unsigned short port, DOMString url, unsigned short errorCode, DOMString errorText);
 
   /* Data channel callbacks */
   undefined notifyDataChannel(RTCDataChannel channel);

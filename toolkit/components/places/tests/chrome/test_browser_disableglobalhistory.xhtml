@@ -16,8 +16,12 @@
 
   let w = window.browsingContext.topChromeWindow.openDialog('browser_disableglobalhistory.xhtml', '_blank', 'chrome,resizable=yes,width=400,height=600', window);
 
-  function done() {
+  function done(results) {
     w.close();
+    for (let [id, actual, expected] of results) {
+      is(actual, expected,
+         "Got the right useGlobalHistory state in the docShell of " + id);
+    }
     SimpleTest.finish();
   }
   </script>

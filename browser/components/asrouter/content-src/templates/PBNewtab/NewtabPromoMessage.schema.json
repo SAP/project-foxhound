@@ -13,35 +13,6 @@
           "type": "boolean",
           "description": "Should we hide the default promo after the experiment promo is dismissed."
         },
-        "infoEnabled": {
-          "type": "boolean",
-          "description": "Should we show the info section."
-        },
-        "infoIcon": {
-          "type": "string",
-          "description": "Icon shown in the left side of the info section. Default is the private browsing icon."
-        },
-        "infoTitle": {
-          "type": "string",
-          "description": "Is the title in the info section enabled."
-        },
-        "infoTitleEnabled": {
-          "type": "boolean",
-          "description": "Is the title in the info section enabled."
-        },
-        "infoBody": {
-          "type": "string",
-          "description": "Text content in the info section."
-        },
-        "infoLinkText": {
-          "type": "string",
-          "description": "Text for the link in the info section."
-        },
-        "infoLinkUrl": {
-          "type": "string",
-          "description": "URL for the info section link.",
-          "format": "moz-url-format"
-        },
         "promoEnabled": {
           "type": "boolean",
           "description": "Should we show the promo section."
@@ -119,26 +90,6 @@
           },
           "then": {
             "required": ["promoButton"]
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "infoEnabled": { "const": true }
-            },
-            "required": ["infoEnabled"]
-          },
-          "then": {
-            "required": ["infoLinkText"],
-            "if": {
-              "properties": {
-                "infoTitleEnabled": { "const": true }
-              },
-              "required": ["infoTitleEnabled"]
-            },
-            "then": {
-              "required": ["infoTitle"]
-            }
           }
         }
       ]

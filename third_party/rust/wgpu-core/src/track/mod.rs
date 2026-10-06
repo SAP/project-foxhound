@@ -106,12 +106,13 @@ use crate::{
     binding_model, command,
     lock::{rank, Mutex},
     pipeline,
-    resource::{self, Labeled, RawResourceAccess, ResourceErrorIdent},
+    resource::{self, Labeled, RawResourceAccess, ResourceErrorIdent, Trackable},
     snatch::SnatchGuard,
     track::blas::BlasTracker,
 };
 
 use alloc::{sync::Arc, vec::Vec};
+use bitflags::Flags;
 use core::{fmt, mem, ops};
 
 use thiserror::Error;
@@ -224,7 +225,7 @@ impl SharedTrackerIndexAllocator {
 pub(crate) struct TrackerIndexAllocators {
     pub buffers: Arc<SharedTrackerIndexAllocator>,
     pub textures: Arc<SharedTrackerIndexAllocator>,
-    pub texture_views: Arc<SharedTrackerIndexAllocator>,
+    pub external_textures: Arc<SharedTrackerIndexAllocator>,
     pub samplers: Arc<SharedTrackerIndexAllocator>,
     pub bind_groups: Arc<SharedTrackerIndexAllocator>,
     pub compute_pipelines: Arc<SharedTrackerIndexAllocator>,
@@ -240,7 +241,7 @@ impl TrackerIndexAllocators {
         TrackerIndexAllocators {
             buffers: Arc::new(SharedTrackerIndexAllocator::new()),
             textures: Arc::new(SharedTrackerIndexAllocator::new()),
-            texture_views: Arc::new(SharedTrackerIndexAllocator::new()),
+            external_textures: Arc::new(SharedTrackerIndexAllocator::new()),
             samplers: Arc::new(SharedTrackerIndexAllocator::new()),
             bind_groups: Arc::new(SharedTrackerIndexAllocator::new()),
             compute_pipelines: Arc::new(SharedTrackerIndexAllocator::new()),
@@ -321,8 +322,6 @@ pub(crate) trait ResourceUses:
 
     /// Turn the resource into a pile of bits.
     fn bits(self) -> u16;
-    /// Returns true if the all the uses are ordered.
-    fn all_ordered(self) -> bool;
     /// Returns true if any of the uses are exclusive.
     fn any_exclusive(self) -> bool;
 }
@@ -337,10 +336,10 @@ fn invalid_resource_state<T: ResourceUses>(state: T) -> bool {
 
 /// Returns true if the transition from one state to another does not require
 /// a barrier.
-fn skip_barrier<T: ResourceUses>(old_state: T, new_state: T) -> bool {
+fn skip_barrier<F: Flags>(old_state: F, ordered_uses_mask: F, new_state: F) -> bool {
     // If the state didn't change and all the usages are ordered, the hardware
     // will guarantee the order of accesses, so we do not need to issue a barrier at all
-    old_state == new_state && old_state.all_ordered()
+    old_state.bits() == new_state.bits() && ordered_uses_mask.contains(old_state)
 }
 
 #[derive(Clone, Debug, Error)]
@@ -436,6 +435,7 @@ impl<T: ResourceUses> fmt::Display for InvalidUse<T> {
 pub(crate) struct BindGroupStates {
     pub buffers: BufferBindGroupState,
     pub views: TextureViewBindGroupState,
+    pub external_textures: StatelessTracker<resource::ExternalTexture>,
     pub samplers: StatelessTracker<resource::Sampler>,
     pub acceleration_structures: StatelessTracker<resource::Tlas>,
 }
@@ -445,6 +445,7 @@ impl BindGroupStates {
         Self {
             buffers: BufferBindGroupState::new(),
             views: TextureViewBindGroupState::new(),
+            external_textures: StatelessTracker::new(),
             samplers: StatelessTracker::new(),
             acceleration_structures: StatelessTracker::new(),
         }
@@ -536,6 +537,8 @@ impl UsageScope<'static> {
     pub fn new_pooled<'d>(
         pool: &'d UsageScopePool,
         tracker_indices: &TrackerIndexAllocators,
+        ordered_buffer_usages: wgt::BufferUses,
+        ordered_texture_usages: wgt::TextureUses,
     ) -> UsageScope<'d> {
         let pooled = pool.lock().pop().unwrap_or_default();
 
@@ -546,7 +549,9 @@ impl UsageScope<'static> {
         };
 
         scope.buffers.set_size(tracker_indices.buffers.size());
+        scope.buffers.set_ordered_uses_mask(ordered_buffer_usages);
         scope.textures.set_size(tracker_indices.textures.size());
+        scope.textures.set_ordered_uses_mask(ordered_texture_usages);
         scope
     }
 }
@@ -600,22 +605,45 @@ pub(crate) struct DeviceTracker {
 }
 
 impl DeviceTracker {
-    pub fn new() -> Self {
+    pub fn new(
+        ordered_buffer_usages: wgt::BufferUses,
+        ordered_texture_usages: wgt::TextureUses,
+    ) -> Self {
         Self {
-            buffers: DeviceBufferTracker::new(),
-            textures: DeviceTextureTracker::new(),
+            buffers: DeviceBufferTracker::new(ordered_buffer_usages),
+            textures: DeviceTextureTracker::new(ordered_texture_usages),
         }
     }
 }
 
 /// A full double sided tracker used by CommandBuffers.
 pub(crate) struct Tracker {
+    /// Buffers used within this command buffer.
+    ///
+    /// For compute passes, this only includes buffers actually used by the
+    /// pipeline (contrast with the `bind_groups` member).
     pub buffers: BufferTracker,
+
+    /// Textures used within this command buffer.
+    ///
+    /// For compute passes, this only includes textures actually used by the
+    /// pipeline (contrast with the `bind_groups` member).
     pub textures: TextureTracker,
+
     pub blas_s: BlasTracker,
     pub tlas_s: StatelessTracker<resource::Tlas>,
     pub views: StatelessTracker<resource::TextureView>,
+
+    /// Contains all bind groups that were passed in any call to
+    /// `set_bind_group` on the encoder.
+    ///
+    /// WebGPU requires that submission fails if any resource in any of these
+    /// bind groups is destroyed, even if the resource is not actually used by
+    /// the pipeline (e.g. because the pipeline does not use the bound slot, or
+    /// because the bind group was replaced by a subsequent call to
+    /// `set_bind_group`).
     pub bind_groups: StatelessTracker<binding_model::BindGroup>,
+
     pub compute_pipelines: StatelessTracker<pipeline::ComputePipeline>,
     pub render_pipelines: StatelessTracker<pipeline::RenderPipeline>,
     pub bundles: StatelessTracker<command::RenderBundle>,
@@ -623,10 +651,13 @@ pub(crate) struct Tracker {
 }
 
 impl Tracker {
-    pub fn new() -> Self {
+    pub fn new(
+        ordered_buffer_usages: wgt::BufferUses,
+        ordered_texture_usages: wgt::TextureUses,
+    ) -> Self {
         Self {
-            buffers: BufferTracker::new(),
-            textures: TextureTracker::new(),
+            buffers: BufferTracker::new(ordered_buffer_usages),
+            textures: TextureTracker::new(ordered_texture_usages),
             blas_s: BlasTracker::new(),
             tlas_s: StatelessTracker::new(),
             views: StatelessTracker::new(),
@@ -656,24 +687,22 @@ impl Tracker {
     /// Only stateful things are merged in here, all other resources are owned
     /// indirectly by the bind group.
     ///
-    /// # Safety
+    /// # Panics
     ///
-    /// The maximum ID given by each bind group resource must be less than the
-    /// value given to `set_size`
-    pub unsafe fn set_and_remove_from_usage_scope_sparse(
+    /// If a resource in the `bind_group` is not found in the usage scope.
+    pub fn set_and_remove_from_usage_scope_sparse(
         &mut self,
         scope: &mut UsageScope,
         bind_group: &BindGroupStates,
     ) {
-        unsafe {
-            self.buffers.set_and_remove_from_usage_scope_sparse(
-                &mut scope.buffers,
-                bind_group.buffers.used_tracker_indices(),
-            )
-        };
-        unsafe {
-            self.textures
-                .set_and_remove_from_usage_scope_sparse(&mut scope.textures, &bind_group.views)
-        };
+        self.buffers.set_and_remove_from_usage_scope_sparse(
+            &mut scope.buffers,
+            bind_group
+                .buffers
+                .used_resources()
+                .map(|b| b.tracker_index()),
+        );
+        self.textures
+            .set_and_remove_from_usage_scope_sparse(&mut scope.textures, &bind_group.views);
     }
 }

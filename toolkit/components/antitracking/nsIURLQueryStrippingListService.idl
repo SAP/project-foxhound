@@ -31,7 +31,7 @@ interface nsIURLQueryStrippingListObserver : nsISupports
    * @param aStripRules
    *        An Array of stringified strip rules.
    *        A stringified rule has the form of:
-   *        "'queryParams': ['param1', 'param2', ...], 'topLevelSites': ['www.site.com', 'www.site.de', ...]"
+   *        "'queryParams': ['param1', 'param2', ...], 'origins': ['www.site.com', 'www.site.de', ...]"
    */
   [implicit_jscontext]
   void onStripOnShareUpdate(in Array<AString> aStripRules);

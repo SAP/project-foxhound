@@ -1,0 +1,242 @@
+# HG changeset patch
+# User Bob Owen <bobowencode@gmail.com>
+Minor reversions for changes that require c++20 support.
+
+diff --git a/base/check_op.h b/base/check_op.h
+--- a/base/check_op.h
++++ b/base/check_op.h
+@@ -65,17 +65,17 @@ BASE_EXPORT char* StreamValToStr(const v
+ #ifdef __has_builtin
+ #define SUPPORTS_BUILTIN_ADDRESSOF (__has_builtin(__builtin_addressof))
+ #else
+ #define SUPPORTS_BUILTIN_ADDRESSOF 0
+ #endif
+ 
+ template <typename T>
+ inline std::enable_if_t<
+-    base::internal::SupportsOstreamOperator<const T&> &&
++    base::internal::SupportsOstreamOperator<const T&>::value &&
+         !std::is_function_v<typename std::remove_pointer<T>::type>,
+     char*>
+ CheckOpValueStr(const T& v) {
+   auto f = [](std::ostream& s, const void* p) {
+     s << *reinterpret_cast<const T*>(p);
+   };
+ 
+   // operator& might be overloaded, so do the std::addressof dance.
+@@ -90,18 +90,19 @@ CheckOpValueStr(const T& v) {
+ #endif
+   return StreamValToStr(vp, f);
+ }
+ 
+ #undef SUPPORTS_BUILTIN_ADDRESSOF
+ 
+ // Overload for types that have no operator<< but do have .ToString() defined.
+ template <typename T>
+-inline std::enable_if_t<!base::internal::SupportsOstreamOperator<const T&> &&
+-                            base::internal::SupportsToString<const T&>,
++inline std::enable_if_t<
++    !base::internal::SupportsOstreamOperator<const T&>::value &&
++        base::internal::SupportsToString<const T&>::value,
+                         char*>
+ CheckOpValueStr(const T& v) {
+   // .ToString() may not return a std::string, e.g. blink::WTF::String.
+   return CheckOpValueStr(v.ToString());
+ }
+ 
+ // Provide an overload for functions and function pointers. Function pointers
+ // don't implicitly convert to void* but do implicitly convert to bool, so
+@@ -114,18 +115,19 @@ inline std::enable_if_t<
+     char*>
+ CheckOpValueStr(const T& v) {
+   return CheckOpValueStr(reinterpret_cast<const void*>(v));
+ }
+ 
+ // We need overloads for enums that don't support operator<<.
+ // (i.e. scoped enums where no operator<< overload was declared).
+ template <typename T>
+-inline std::enable_if_t<!base::internal::SupportsOstreamOperator<const T&> &&
+-                            std::is_enum_v<T>,
++inline std::enable_if_t<
++    !base::internal::SupportsOstreamOperator<const T&>::value &&
++        std::is_enum_v<T>,
+                         char*>
+ CheckOpValueStr(const T& v) {
+   return CheckOpValueStr(
+       static_cast<typename std::underlying_type<T>::type>(v));
+ }
+ 
+ // Takes ownership of `v1_str` and `v2_str`, destroying them with free(). For
+ // use with CheckOpValueStr() which allocates these strings using strdup().
+diff --git a/base/containers/contiguous_iterator.h b/base/containers/contiguous_iterator.h
+--- a/base/containers/contiguous_iterator.h
++++ b/base/containers/contiguous_iterator.h
+@@ -38,17 +38,19 @@ struct IsStringIterImpl
+ //
+ // Note: Requires indirection via `IsStringIterImpl` to avoid triggering a
+ // `static_assert(is_trivial_v<value_type>)` inside libc++'s std::basic_string.
+ template <typename T>
+ struct IsStringIter
+     : std::conjunction<
+           std::disjunction<std::is_same<iter_value_t<T>, char>,
+                            std::is_same<iter_value_t<T>, wchar_t>,
++#if !defined(MOZ_SANDBOX)
+                            std::is_same<iter_value_t<T>, char8_t>,
++#endif
+                            std::is_same<iter_value_t<T>, char16_t>,
+                            std::is_same<iter_value_t<T>, char32_t>>,
+           IsStringIterImpl<T>> {};
+ 
+ // An iterator to std::array is contiguous.
+ // Reference: https://wg21.link/array.overview#1
+ template <typename T, typename ArrayT = std::array<iter_value_t<T>, 1>>
+ struct IsArrayIter
+diff --git a/base/strings/to_string.h b/base/strings/to_string.h
+--- a/base/strings/to_string.h
++++ b/base/strings/to_string.h
+@@ -18,18 +18,21 @@
+ 
+ namespace base {
+ 
+ template <typename... Ts>
+ std::string ToString(const Ts&... values);
+ 
+ namespace internal {
+ 
++template <typename T, typename = void>
++struct SupportsToString : std::false_type {};
+ template <typename T>
+-concept SupportsToString = requires(const T& t) { t.ToString(); };
++struct SupportsToString<T, decltype(void(std::declval<T>().ToString()))>
++    : std::true_type {};
+ 
+ // I/O manipulators are function pointers, but should be sent directly to the
+ // `ostream` instead of being cast to `const void*` like other function
+ // pointers.
+ template <typename T, typename = void>
+ constexpr bool IsIomanip = false;
+ template <typename T>
+ constexpr bool
+@@ -51,50 +54,50 @@ template <typename T, typename = void>
+ struct ToStringHelper {
+   static void Stringify(const T& v, std::ostringstream& ss) {
+     ss << "[" << sizeof(v) << "-byte object at 0x" << std::addressof(v) << "]";
+   }
+ };
+ 
+ // Most streamables.
+ template <typename T>
+-struct ToStringHelper<T,
+-                      std::enable_if_t<SupportsOstreamOperator<const T&> &&
+-                                       !WillBeIncorrectlyStreamedAsBool<T>>> {
++struct ToStringHelper<
++    T, std::enable_if_t<SupportsOstreamOperator<const T&>::value &&
++                        !WillBeIncorrectlyStreamedAsBool<T>>> {
+   static void Stringify(const T& v, std::ostringstream& ss) { ss << v; }
+ };
+ 
+ // Functions and function pointers.
+ template <typename T>
+-struct ToStringHelper<T,
+-                      std::enable_if_t<SupportsOstreamOperator<const T&> &&
+-                                       WillBeIncorrectlyStreamedAsBool<T>>> {
++struct ToStringHelper<
++    T, std::enable_if_t<SupportsOstreamOperator<const T&>::value &&
++                        WillBeIncorrectlyStreamedAsBool<T>>> {
+   static void Stringify(const T& v, std::ostringstream& ss) {
+     ToStringHelper<const void*>::Stringify(reinterpret_cast<const void*>(v),
+                                            ss);
+   }
+ };
+ 
+ // Non-streamables that have a `ToString` member.
+ template <typename T>
+-struct ToStringHelper<T,
+-                      std::enable_if_t<!SupportsOstreamOperator<const T&> &&
+-                                       SupportsToString<const T&>>> {
++struct ToStringHelper<
++    T, std::enable_if_t<!SupportsOstreamOperator<const T&>::value &&
++                        SupportsToString<const T&>::value>> {
+   static void Stringify(const T& v, std::ostringstream& ss) {
+     // .ToString() may not return a std::string, e.g. blink::WTF::String.
+     ToStringHelper<decltype(v.ToString())>::Stringify(v.ToString(), ss);
+   }
+ };
+ 
+ // Non-streamable enums (i.e. scoped enums where no `operator<<` overload was
+ // declared).
+ template <typename T>
+ struct ToStringHelper<
+-    T,
+-    std::enable_if_t<!SupportsOstreamOperator<const T&> && std::is_enum_v<T>>> {
++    T, std::enable_if_t<!SupportsOstreamOperator<const T&>::value &&
++                        std::is_enum_v<T>>> {
+   static void Stringify(const T& v, std::ostringstream& ss) {
+     using UT = typename std::underlying_type_t<T>;
+     ToStringHelper<UT>::Stringify(static_cast<UT>(v), ss);
+   }
+ };
+ 
+ // Tuples. Will recursively apply `ToString()` to each value in the tuple.
+ template <typename... T>
+diff --git a/base/types/strong_alias.h b/base/types/strong_alias.h
+--- a/base/types/strong_alias.h
++++ b/base/types/strong_alias.h
+@@ -149,17 +149,17 @@ class StrongAlias {
+  protected:
+   UnderlyingType value_;
+ };
+ 
+ // Stream operator for convenience, streams the UnderlyingType.
+ template <typename TagType,
+           typename UnderlyingType,
+           typename = std::enable_if_t<
+-              internal::SupportsOstreamOperator<UnderlyingType>>>
++              internal::SupportsOstreamOperator<UnderlyingType>::value>>
+ std::ostream& operator<<(std::ostream& stream,
+                          const StrongAlias<TagType, UnderlyingType>& alias) {
+   return stream << alias.value();
+ }
+ 
+ }  // namespace base
+ 
+ #endif  // BASE_TYPES_STRONG_ALIAS_H_
+diff --git a/sandbox/win/src/sandbox_policy_base.cc b/sandbox/win/src/sandbox_policy_base.cc
+--- a/sandbox/win/src/sandbox_policy_base.cc
++++ b/sandbox/win/src/sandbox_policy_base.cc
+@@ -805,12 +805,12 @@ absl::optional<base::span<const uint8_t>
+   return absl::nullopt;
+ }
+ 
+ void PolicyBase::AddDelegateData(base::span<const uint8_t> data) {
+   CHECK(data.size() > 0u);
+   // Can only set this once - as there is only one region sent to the child.
+   CHECK(!delegate_data_);
+   delegate_data_ =
+-      std::make_unique<std::vector<const uint8_t>>(data.begin(), data.end());
++      std::make_unique<const std::vector<uint8_t>>(data.begin(), data.end());
+ }
+ 
+ }  // namespace sandbox
+diff --git a/sandbox/win/src/sandbox_policy_base.h b/sandbox/win/src/sandbox_policy_base.h
+--- a/sandbox/win/src/sandbox_policy_base.h
++++ b/sandbox/win/src/sandbox_policy_base.h
+@@ -248,17 +248,17 @@ class PolicyBase final : public TargetPo
+ 
+   // Returns nullopt if no data has been set, or a view into the data.
+   absl::optional<base::span<const uint8_t>> delegate_data_span();
+ 
+   // The user-defined global policy settings.
+   HANDLE stdout_handle_;
+   HANDLE stderr_handle_;
+   // An opaque blob of data the delegate uses to prime any pre-sandbox hooks.
+-  std::unique_ptr<std::vector<const uint8_t>> delegate_data_;
++  std::unique_ptr<const std::vector<uint8_t>> delegate_data_;
+ 
+   std::unique_ptr<Dispatcher> dispatcher_;
+ 
+   // Contains the list of handles being shared with the target process.
+   // This list contains handles other than the stderr/stdout handles which are
+   // shared with the target at times.
+   base::HandlesToInheritVector handles_to_share_;
+   Job job_;

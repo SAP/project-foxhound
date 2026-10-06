@@ -1,11 +1,12 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Cookie.h"
 #include "CookieCommons.h"
+#include "mozilla/HashFunctions.h"
 #include "CookieStorage.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/glean/NetwerkMetrics.h"
@@ -29,18 +30,38 @@ namespace net {
 // necessary to enforce ordering among cookies whose creation times would
 // otherwise overlap, since it's possible two cookies may be created at the
 // same time, or that the system clock isn't monotonic.
-static int64_t gLastCreationTime;
+static Atomic<int64_t, SequentiallyConsistent> gLastCreationTimeInUSec;
 
-int64_t Cookie::GenerateUniqueCreationTime(int64_t aCreationTime) {
-  // Check if the creation time given to us is greater than the running maximum
-  // (it should always be monotonically increasing).
-  if (aCreationTime > gLastCreationTime) {
-    gLastCreationTime = aCreationTime;
-    return aCreationTime;
+// static
+uint32_t Cookie::ComputeKeyHash(const nsACString& aName,
+                                const nsACString& aHost,
+                                const nsACString& aPath) {
+  return mozilla::AddToHash(mozilla::AddToHash(mozilla::HashString(aName),
+                                               mozilla::HashString(aHost)),
+                            mozilla::HashString(aPath));
+}
+
+Cookie::Cookie(const CookieStruct& aCookieData,
+               const OriginAttributes& aOriginAttributes)
+    : mData(aCookieData),
+      mOriginAttributes(aOriginAttributes),
+      mKeyHash(ComputeKeyHash(aCookieData.name(), aCookieData.host(),
+                              aCookieData.path())) {}
+
+int64_t Cookie::GenerateUniqueCreationTimeInUSec(int64_t aCreationTimeInUSec) {
+  // Use a CAS loop to atomically advance gLastCreationTimeInUSec: if the
+  // proposed time is greater than the current maximum, try to store it;
+  // otherwise bump the maximum by one.  Retry on CAS failure (another thread
+  // raced ahead of us).
+  int64_t old = gLastCreationTimeInUSec;
+  while (true) {
+    int64_t desired =
+        (aCreationTimeInUSec > old) ? aCreationTimeInUSec : old + 1;
+    if (gLastCreationTimeInUSec.compareExchange(old, desired)) {
+      return desired;
+    }
+    old = gLastCreationTimeInUSec;
   }
-
-  // Make up our own.
-  return ++gLastCreationTime;
 }
 
 already_AddRefed<Cookie> Cookie::Create(
@@ -49,10 +70,13 @@ already_AddRefed<Cookie> Cookie::Create(
   RefPtr<Cookie> cookie =
       Cookie::FromCookieStruct(aCookieData, aOriginAttributes);
 
-  // If the creationTime given to us is higher than the running maximum,
+  // If the creationTimeInUSec given to us is higher than the running maximum,
   // update our maximum.
-  if (cookie->mData.creationTime() > gLastCreationTime) {
-    gLastCreationTime = cookie->mData.creationTime();
+  int64_t creation = cookie->mData.creationTimeInUSec();
+  int64_t old = gLastCreationTimeInUSec;
+  while (creation > old) {
+    if (gLastCreationTimeInUSec.compareExchange(old, creation)) break;
+    old = gLastCreationTimeInUSec;
   }
 
   return cookie.forget();
@@ -99,34 +123,47 @@ already_AddRefed<Cookie> Cookie::CreateValidated(
   int64_t currentTimeInUsec = PR_Now();
   // Assert that the last creation time is not higher than the current time.
   // The 10000 wiggle room accounts for the fact that calling
-  // GenerateUniqueCreationTime might go over the value of PR_Now(), but we'd
-  // most likely not add 10000 cookies in a row.
-  MOZ_ASSERT(gLastCreationTime < currentTimeInUsec + 10000,
+  // GenerateUniqueCreationTimeInUSec might go over the value of PR_Now(), but
+  // we'd most likely not add 10000 cookies in a row.
+  MOZ_ASSERT(gLastCreationTimeInUSec < currentTimeInUsec + 10000,
              "Last creation time must not be higher than NOW");
 
-  // If the creationTime given to us is higher than the current time then
+  // If the creationTimeInUSec given to us is higher than the current time then
   // update the creation time to now.
-  if (cookie->mData.creationTime() > currentTimeInUsec) {
+  if (cookie->mData.creationTimeInUSec() > currentTimeInUsec) {
     uint64_t diffInSeconds =
-        (cookie->mData.creationTime() - currentTimeInUsec) / PR_USEC_PER_SEC;
+        (cookie->mData.creationTimeInUSec() - currentTimeInUsec) /
+        PR_USEC_PER_SEC;
     mozilla::glean::networking::cookie_creation_fixup_diff
         .AccumulateSingleSample(diffInSeconds);
     glean::networking::cookie_timestamp_fixed_count.Get("creationTime"_ns)
         .Add(1);
 
-    cookie->mData.creationTime() =
-        GenerateUniqueCreationTime(currentTimeInUsec);
+    cookie->mData.creationTimeInUSec() =
+        GenerateUniqueCreationTimeInUSec(currentTimeInUsec);
   }
 
-  if (cookie->mData.lastAccessed() > currentTimeInUsec) {
+  if (cookie->mData.lastAccessedInUSec() > currentTimeInUsec) {
     uint64_t diffInSeconds =
-        (cookie->mData.lastAccessed() - currentTimeInUsec) / PR_USEC_PER_SEC;
+        (cookie->mData.lastAccessedInUSec() - currentTimeInUsec) /
+        PR_USEC_PER_SEC;
     mozilla::glean::networking::cookie_access_fixup_diff.AccumulateSingleSample(
         diffInSeconds);
     glean::networking::cookie_timestamp_fixed_count.Get("lastAccessed"_ns)
         .Add(1);
 
-    cookie->mData.lastAccessed() = currentTimeInUsec;
+    cookie->mData.lastAccessedInUSec() = currentTimeInUsec;
+  }
+
+  if (cookie->mData.updateTimeInUSec() > currentTimeInUsec) {
+    uint64_t diffInSeconds =
+        (cookie->mData.updateTimeInUSec() - currentTimeInUsec) /
+        PR_USEC_PER_SEC;
+    mozilla::glean::networking::cookie_access_fixup_diff.AccumulateSingleSample(
+        diffInSeconds);
+    glean::networking::cookie_timestamp_fixed_count.Get("updateTime"_ns).Add(1);
+
+    cookie->mData.updateTimeInUSec() = currentTimeInUsec;
   }
 
   return cookie.forget();
@@ -143,7 +180,7 @@ size_t Cookie::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const {
 bool Cookie::IsStale() const {
   int64_t currentTimeInUsec = PR_Now();
 
-  return currentTimeInUsec - LastAccessed() >
+  return currentTimeInUsec - LastAccessedInUSec() >
          StaticPrefs::network_cookie_staleThreshold() * PR_USEC_PER_SEC;
 }
 
@@ -174,7 +211,7 @@ NS_IMETHODIMP Cookie::GetPath(nsACString& aPath) {
   return NS_OK;
 }
 NS_IMETHODIMP Cookie::GetExpiry(int64_t* aExpiry) {
-  *aExpiry = Expiry();
+  *aExpiry = ExpiryInMSec();
   return NS_OK;
 }
 NS_IMETHODIMP Cookie::GetIsSession(bool* aIsSession) {
@@ -198,11 +235,15 @@ NS_IMETHODIMP Cookie::GetIsPartitioned(bool* aPartitioned) {
   return NS_OK;
 }
 NS_IMETHODIMP Cookie::GetCreationTime(int64_t* aCreation) {
-  *aCreation = CreationTime();
+  *aCreation = CreationTimeInUSec();
   return NS_OK;
 }
 NS_IMETHODIMP Cookie::GetLastAccessed(int64_t* aTime) {
-  *aTime = LastAccessed();
+  *aTime = LastAccessedInUSec();
+  return NS_OK;
+}
+NS_IMETHODIMP Cookie::GetUpdateTime(int64_t* aTime) {
+  *aTime = UpdateTimeInUSec();
   return NS_OK;
 }
 NS_IMETHODIMP Cookie::GetSameSite(int32_t* aSameSite) {
@@ -235,7 +276,7 @@ Cookie::GetExpires(uint64_t* aExpires) {
   if (IsSession()) {
     *aExpires = 0;
   } else {
-    *aExpires = Expiry() > 0 ? Expiry() : 1;
+    *aExpires = ExpiryInMSec() > 0 ? ExpiryInMSec() : 1;
   }
   return NS_OK;
 }

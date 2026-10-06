@@ -8,7 +8,6 @@
 #include <stdint.h>
 
 #include <limits>
-#include <memory>
 #include <vector>
 
 #include "mojo/core/ports/event.h"

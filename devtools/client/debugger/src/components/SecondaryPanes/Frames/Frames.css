@@ -130,7 +130,7 @@
   background-color: var(--theme-toolbar-background-hover);
 }
 
-.frames .img.annotation-logo {
+.frames .dbg-img.annotation-logo {
   margin-inline-end: 4px;
   background-color: currentColor;
 }
@@ -138,7 +138,7 @@
 /*
  * We also show the library icon in locations, which are forced to RTL.
  */
-.frames .location .img.annotation-logo {
+.frames .location .dbg-img.annotation-logo {
   margin-inline-start: 4px;
 }
 

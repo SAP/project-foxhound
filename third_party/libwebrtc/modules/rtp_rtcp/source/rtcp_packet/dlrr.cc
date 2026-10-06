@@ -10,6 +10,9 @@
 
 #include "modules/rtp_rtcp/source/rtcp_packet/dlrr.h"
 
+#include <cstddef>
+#include <cstdint>
+
 #include "modules/rtp_rtcp/source/byte_io.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
@@ -49,7 +52,6 @@ bool Dlrr::Parse(const uint8_t* buffer, uint16_t block_length_32bits) {
     RTC_LOG(LS_WARNING) << "Invalid size for dlrr block.";
     return false;
   }
-
   size_t blocks_count = block_length_32bits / 3;
   const uint8_t* read_at = buffer + kBlockHeaderLength;
   sub_blocks_.resize(blocks_count);

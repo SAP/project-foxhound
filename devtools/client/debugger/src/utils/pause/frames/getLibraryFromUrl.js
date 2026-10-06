@@ -61,10 +61,6 @@ const libraryMap = [
     pattern: /ember/i,
   },
   {
-    label: "Choo",
-    pattern: /choo/i,
-  },
-  {
     label: "VueJS",
     pattern: /vue(?:\.[a-z]+)*\.js/i,
   },

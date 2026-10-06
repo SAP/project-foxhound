@@ -59,8 +59,8 @@ runNetworkTest(async () => {
   ]});
   makePC({ iceServers: [
     { urls:"turn:[::1]:3478", username:"p", credential:"p" },
-    { urls:"turn:[::1]:3478", username:"", credential:"" },
-    { urls:"turns:[::1]:3478", username:"", credential:"" },
+    { urls:"turn:[::1]:3478", username:"", credential:"p" },
+    { urls:"turns:[::1]:3478", username:"", credential:"p" },
   ]});
   makePC({ iceServers: [
     { urls:"turn:localhost:3478?transport=udp", username:"p", credential:"p" },
@@ -82,7 +82,6 @@ runNetworkTest(async () => {
   await push({ set: [['media.peerconnection.treat_warnings_as_errors', false]] });
 
   makePC({ iceServers: [
-    { urls:"stuns:localhost", foo:"" },
     { url:"stun:localhost", foo:"" },
     { url:"turn:localhost", username:"p", credential:"p" }
   ]});
@@ -90,6 +89,7 @@ runNetworkTest(async () => {
   // Test getConfiguration
   const config = {
     bundlePolicy: "max-bundle",
+    rtcpMuxPolicy: "require",
     iceTransportPolicy: "relay",
     peerIdentity: null,
     certificates: [],

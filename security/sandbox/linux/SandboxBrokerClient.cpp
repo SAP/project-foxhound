@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -59,12 +57,12 @@ int SandboxBrokerClient::DoCall(const Request* aReq, const char* aPath,
   if (SandboxInfo::Get().Test(SandboxInfo::kVerboseTests)) {
     // Dont use SANDBOX_LOG directly to not be too spammy, just make sure the
     // ReportLog() works as expected
-    SandboxProfiler::ReportLog(OperationDescription[aReq->mOp]);
+    SandboxProfiler::ReportLog(OperationDescription(aReq->mOp));
   }
 
   const void* top = CallerPC();
   SandboxProfiler::ReportRequest(top, aReq->mId,
-                                 OperationDescription[aReq->mOp], aReq->mFlags,
+                                 OperationDescription(aReq->mOp), aReq->mFlags,
                                  aPath, aPath2, getpid());
 
   struct iovec ios[3];
@@ -125,8 +123,8 @@ int SandboxBrokerClient::DoCall(const Request* aReq, const char* aPath,
     return -recvErrno;
   }
   if (recvd == 0) {
-    SANDBOX_LOG("Unexpected EOF, op %d flags 0%o path %s", aReq->mOp,
-                aReq->mFlags, path);
+    SANDBOX_LOG("Unexpected EOF, op %s flags 0%o path %s",
+                OperationDescription(aReq->mOp), aReq->mFlags, path);
     return -EIO;
   }
   MOZ_ASSERT(static_cast<size_t>(recvd) <= ios[0].iov_len + ios[1].iov_len);
@@ -145,7 +143,7 @@ int SandboxBrokerClient::DoCall(const Request* aReq, const char* aPath,
     // search path (e.g., shared libraries).  In those cases, this
     // error message is expected.
     SANDBOX_LOG("Failed errno %d op %s flags 0%o path %s", resp.mError,
-                OperationDescription[aReq->mOp], aReq->mFlags, path);
+                OperationDescription(aReq->mOp), aReq->mFlags, path);
   }
   if (openedFd >= 0) {
     close(openedFd);
@@ -204,11 +202,6 @@ int SandboxBrokerClient::Chmod(const char* aPath, int aMode) {
 
 int SandboxBrokerClient::Link(const char* aOldPath, const char* aNewPath) {
   Request req = MakeRequest(SANDBOX_FILE_LINK, 0, 0);
-  return DoCall(&req, aOldPath, aNewPath, nullptr, false);
-}
-
-int SandboxBrokerClient::Symlink(const char* aOldPath, const char* aNewPath) {
-  Request req = MakeRequest(SANDBOX_FILE_SYMLINK, 0, 0);
   return DoCall(&req, aOldPath, aNewPath, nullptr, false);
 }
 

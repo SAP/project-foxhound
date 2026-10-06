@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.82.0"
+rust-version = "1.87"
 name = "naga"
-version = "26.0.0"
+version = "29.0.0"
 authors = ["gfx-rs developers"]
 build = "build.rs"
 exclude = [
@@ -80,10 +80,7 @@ spv-in = [
 spv-out = ["dep:spirv"]
 stderr = ["codespan-reporting/std"]
 termcolor = ["codespan-reporting/termcolor"]
-wgsl-in = [
-    "dep:hexf-parse",
-    "dep:unicode-ident",
-]
+wgsl-in = ["dep:unicode-ident"]
 wgsl-out = []
 
 [lib]
@@ -91,7 +88,7 @@ name = "naga"
 path = "src/lib.rs"
 
 [dependencies.arbitrary]
-version = "1.4"
+version = "1.4.2"
 features = ["derive"]
 optional = true
 
@@ -100,7 +97,7 @@ version = "0.7.1"
 default-features = false
 
 [dependencies.bit-set]
-version = "0.8"
+version = "0.10"
 default-features = false
 
 [dependencies.bitflags]
@@ -110,7 +107,7 @@ version = "2.9"
 version = "1"
 
 [dependencies.codespan-reporting]
-version = "0.12"
+version = "0.13"
 default-features = false
 
 [dependencies.half]
@@ -119,19 +116,15 @@ features = ["num-traits"]
 default-features = false
 
 [dependencies.hashbrown]
-version = "0.15"
+version = "0.16"
 features = [
     "default-hasher",
     "inline-more",
 ]
 default-features = false
 
-[dependencies.hexf-parse]
-version = "0.2"
-optional = true
-
 [dependencies.indexmap]
-version = "2.7"
+version = "2.11.4"
 default-features = false
 
 [dependencies.libm]
@@ -139,7 +132,7 @@ version = "0.2.6"
 default-features = false
 
 [dependencies.log]
-version = "0.4.21"
+version = "0.4.29"
 
 [dependencies.num-traits]
 version = "0.2.16"
@@ -167,7 +160,7 @@ version = "1.1"
 default-features = false
 
 [dependencies.serde]
-version = "1.0.219"
+version = "1.0.225"
 features = [
     "alloc",
     "derive",
@@ -176,11 +169,11 @@ optional = true
 default-features = false
 
 [dependencies.spirv]
-version = "0.3"
+version = "0.4"
 optional = true
 
 [dependencies.thiserror]
-version = "2.0.3"
+version = "2.0.12"
 default-features = false
 
 [dependencies.unicode-ident]
@@ -195,7 +188,7 @@ version = "0.11"
 default-features = false
 
 [dev-dependencies.hashbrown]
-version = "0.15"
+version = "0.16"
 features = [
     "default-hasher",
     "inline-more",
@@ -209,16 +202,17 @@ path = "hlsl-snapshots"
 [dev-dependencies.itertools]
 version = "0.14"
 
+[dev-dependencies.naga-test]
+path = "../naga-test"
+
 [dev-dependencies.ron]
-version = "0.10"
+version = "0.12"
 
 [dev-dependencies.rspirv]
-version = "0.11"
-git = "https://github.com/gfx-rs/rspirv"
-rev = "b969f175d5663258b4891e44b76c1544da9661ab"
+version = "0.13"
 
 [dev-dependencies.serde]
-version = "1.0.219"
+version = "1.0.225"
 features = [
     "default",
     "derive",
@@ -226,16 +220,12 @@ features = [
 default-features = false
 
 [dev-dependencies.spirv]
-version = "0.3"
-features = ["deserialize"]
+version = "0.4"
 
 [dev-dependencies.strum]
-version = "0.27"
+version = "0.28"
 features = ["derive"]
 default-features = false
-
-[dev-dependencies.toml]
-version = "0.8.9"
 
 [dev-dependencies.walkdir]
 version = "2.3"

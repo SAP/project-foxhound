@@ -1,64 +1,25 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WindowsLocationProvider.h"
+
+#include "GeolocationPosition.h"
 #include "WindowsLocationParent.h"
+#include "mozilla/Logging.h"
+#include "mozilla/dom/GeolocationPositionErrorBinding.h"
 #include "mozilla/dom/WindowsUtilsParent.h"
 #include "mozilla/glean/DomGeolocationMetrics.h"
-#include "GeolocationPosition.h"
-#include "nsComponentManagerUtils.h"
 #include "mozilla/ipc/UtilityProcessManager.h"
 #include "mozilla/ipc/UtilityProcessSandboxing.h"
+#include "nsComponentManagerUtils.h"
 #include "prtime.h"
-#include "MLSFallback.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/Logging.h"
-#include "mozilla/FloatingPoint.h"
-#include "mozilla/dom/GeolocationPositionErrorBinding.h"
 
 namespace mozilla::dom {
 
 LazyLogModule gWindowsLocationProviderLog("WindowsLocationProvider");
 #define LOG(...) \
   MOZ_LOG(gWindowsLocationProviderLog, LogLevel::Debug, (__VA_ARGS__))
-
-class MLSUpdate : public nsIGeolocationUpdate {
- public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSIGEOLOCATIONUPDATE
-  explicit MLSUpdate(nsIGeolocationUpdate* aCallback) : mCallback(aCallback) {}
-
- private:
-  nsCOMPtr<nsIGeolocationUpdate> mCallback;
-  virtual ~MLSUpdate() {}
-};
-
-NS_IMPL_ISUPPORTS(MLSUpdate, nsIGeolocationUpdate);
-
-NS_IMETHODIMP
-MLSUpdate::Update(nsIDOMGeoPosition* aPosition) {
-  if (!mCallback) {
-    return NS_ERROR_FAILURE;
-  }
-
-  nsCOMPtr<nsIDOMGeoPositionCoords> coords;
-  aPosition->GetCoords(getter_AddRefs(coords));
-  if (!coords) {
-    return NS_ERROR_FAILURE;
-  }
-  return mCallback->Update(aPosition);
-}
-NS_IMETHODIMP
-MLSUpdate::NotifyError(uint16_t aError) {
-  if (!mCallback) {
-    return NS_ERROR_FAILURE;
-  }
-  nsCOMPtr<nsIGeolocationUpdate> callback(mCallback);
-  return callback->NotifyError(aError);
-}
 
 NS_IMPL_ISUPPORTS(WindowsLocationProvider, nsIGeolocationProvider)
 
@@ -73,7 +34,6 @@ WindowsLocationProvider::~WindowsLocationProvider() {
       mActor.get(), mActorPromise.get());
   Send__delete__();
   ReleaseUtilityProcess();
-  CancelMLSProvider();
 }
 
 void WindowsLocationProvider::MaybeCreateLocationActor() {
@@ -141,7 +101,7 @@ bool WindowsLocationProvider::WhenActorIsReady(Fn&& fn) {
     mActorPromise->Then(
         GetCurrentSerialEventTarget(), __func__,
         [fn](const RefPtr<WindowsLocationParent>& actor) {
-          Unused << fn(actor.get());
+          (void)fn(actor.get());
           return actor;
         },
         [](bool) { return false; });
@@ -218,7 +178,6 @@ void WindowsLocationProvider::RecvUpdate(
 
   if (!mEverUpdated) {
     mEverUpdated = true;
-    // Saw signal without MLS fallback
     glean::geolocation::fallback
         .EnumGet(glean::geolocation::FallbackLabel::eNone)
         .Add();
@@ -227,16 +186,11 @@ void WindowsLocationProvider::RecvUpdate(
 
 void WindowsLocationProvider::RecvFailed(uint16_t err) {
   LOG("WindowsLocationProvider::RecvFailed(%p)", this);
-  // Cannot get current location at this time.  We use MLS instead.
-  if (mMLSProvider || !mCallback) {
+  // Cannot get current location at this time.
+  if (!mCallback) {
     return;
   }
 
-  if (NS_SUCCEEDED(CreateAndWatchMLSProvider(mCallback))) {
-    return;
-  }
-
-  // No ILocation and no MLS, so we have failed completely.
   // We keep strong references to objects that we need to guarantee
   // will live past the NotifyError callback.
   RefPtr<WindowsLocationProvider> self = this;
@@ -250,8 +204,7 @@ void WindowsLocationProvider::ActorStopped() {
   ReleaseUtilityProcess();
 
   if (mWatching) {
-    // Treat as remote geolocation error, which will cause it to fallback
-    // to MLS if it hasn't already.
+    // Treat as remote geolocation error.
     mWatching = false;
     RecvFailed(GeolocationPositionError_Binding::POSITION_UNAVAILABLE);
     return;
@@ -268,7 +221,6 @@ NS_IMETHODIMP
 WindowsLocationProvider::Startup() {
   LOG("WindowsLocationProvider::Startup(%p, %p, %p)", this, mActor.get(),
       mActorPromise.get());
-  // If this fails, we will use the MLS fallback.
   SendStartup();
   return NS_OK;
 }
@@ -286,8 +238,7 @@ WindowsLocationProvider::Watch(nsIGeolocationUpdate* aCallback) {
     return NS_OK;
   }
 
-  // Couldn't send request.  We will use MLS instead.
-  return CreateAndWatchMLSProvider(aCallback);
+  return NS_ERROR_FAILURE;
 }
 
 NS_IMETHODIMP
@@ -300,7 +251,6 @@ WindowsLocationProvider::Shutdown() {
     mWatching = false;
   }
 
-  CancelMLSProvider();
   return NS_OK;
 }
 
@@ -308,10 +258,6 @@ NS_IMETHODIMP
 WindowsLocationProvider::SetHighAccuracy(bool enable) {
   LOG("WindowsLocationProvider::SetHighAccuracy(%p, %p, %p, %s)", this,
       mActor.get(), mActorPromise.get(), enable ? "true" : "false");
-  if (mMLSProvider) {
-    // Ignored when running MLS fallback.
-    return NS_OK;
-  }
 
   if (!SendSetHighAccuracy(enable)) {
     return NS_ERROR_FAILURE;
@@ -319,36 +265,8 @@ WindowsLocationProvider::SetHighAccuracy(bool enable) {
 
   // Since we SendSetHighAccuracy asynchronously, we cannot say for sure
   // that it will succeed.  If it does fail then we will get a
-  // RecvFailed IPC message, which will cause a fallback to MLS.
+  // RecvFailed IPC message.
   return NS_OK;
-}
-
-nsresult WindowsLocationProvider::CreateAndWatchMLSProvider(
-    nsIGeolocationUpdate* aCallback) {
-  LOG("WindowsLocationProvider::CreateAndWatchMLSProvider"
-      "(%p, %p, %p, %p, %p)",
-      this, mMLSProvider.get(), mActor.get(), mActorPromise.get(), aCallback);
-
-  if (mMLSProvider) {
-    return NS_OK;
-  }
-
-  mMLSProvider = new MLSFallback(0);
-  return mMLSProvider->Startup(new MLSUpdate(aCallback));
-}
-
-void WindowsLocationProvider::CancelMLSProvider() {
-  LOG("WindowsLocationProvider::CancelMLSProvider"
-      "(%p, %p, %p, %p, %p)",
-      this, mMLSProvider.get(), mActor.get(), mActorPromise.get(),
-      mCallback.get());
-
-  if (!mMLSProvider) {
-    return;
-  }
-
-  mMLSProvider->Shutdown(MLSFallback::ShutdownReason::ProviderShutdown);
-  mMLSProvider = nullptr;
 }
 
 #undef LOG

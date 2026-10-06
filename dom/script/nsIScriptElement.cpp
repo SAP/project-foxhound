@@ -1,6 +1,3 @@
-
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -71,6 +68,17 @@ void nsIScriptElement::EndEvaluating() {
 already_AddRefed<nsIParser> nsIScriptElement::GetCreatorParser() {
   nsCOMPtr<nsIParser> parser = do_QueryReferent(mCreatorParser);
   return parser.forget();
+}
+
+bool nsIScriptElement::AttemptToExecute(nsCOMPtr<nsIParser> aParser) {
+  mDoneAddingChildren = true;
+  bool block = MaybeProcessScript(aParser);
+  if (!mAlreadyStarted) {
+    // Need to lose parser-insertedness here to allow another script to cause
+    // execution later.
+    LoseParserInsertedness();
+  }
+  return block;
 }
 
 mozilla::dom::ReferrerPolicy nsIScriptElement::GetReferrerPolicy() {

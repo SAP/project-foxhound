@@ -1,15 +1,14 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=2 et lcs=trail\:.,tab\:>~ :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "BaseVFS.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "nsIFile.h"
 #include "nsIFileURL.h"
+#include "nsAppDirectoryServiceDefs.h"
+#include "nsDirectoryServiceUtils.h"
 #include "mozStorageService.h"
 #include "mozStorageConnection.h"
 #include "nsComponentManagerUtils.h"
@@ -25,9 +24,11 @@
 #include "mozilla/LateWriteChecks.h"
 #include "mozIStorageCompletionCallback.h"
 #include "mozIStoragePendingStatement.h"
+#include "mozilla/StaticPrefs_security.h"
 #include "mozilla/StaticPrefs_storage.h"
 #include "mozilla/intl/Collator.h"
 #include "mozilla/intl/LocaleService.h"
+#include "mozilla/storage/SQLiteEncryption.h"
 
 #include "sqlite3.h"
 #include "mozilla/AutoSQLiteLifetime.h"
@@ -183,11 +184,12 @@ already_AddRefed<Service> Service::getSingleton() {
   return nullptr;
 }
 
-int Service::AutoVFSRegistration::Init(UniquePtr<sqlite3_vfs> aVFS) {
+int Service::AutoVFSRegistration::Init(UniquePtr<sqlite3_vfs> aVFS,
+                                       bool aMakeDefault) {
   MOZ_ASSERT(!mVFS);
   if (aVFS) {
     mVFS = std::move(aVFS);
-    return sqlite3_vfs_register(mVFS.get(), 0);
+    return sqlite3_vfs_register(mVFS.get(), aMakeDefault ? 1 : 0);
   }
   NS_WARNING("Failed to register VFS");
   return SQLITE_OK;
@@ -202,10 +204,7 @@ Service::AutoVFSRegistration::~AutoVFSRegistration() {
   }
 }
 
-Service::Service()
-    : mMutex("Service::mMutex"),
-      mRegistrationMutex("Service::mRegistrationMutex"),
-      mLastSensitivity(mozilla::intl::Collator::Sensitivity::Base) {}
+Service::Service() : mRegistrationMutex("Service::mRegistrationMutex") {}
 
 Service::~Service() {
   mozilla::UnregisterWeakMemoryReporter(this);
@@ -303,7 +302,7 @@ void Service::minimizeMemory() {
       nsCOMPtr<nsIRunnable> event = NewRunnableMethod<const nsCString>(
           "Connection::ExecuteSimpleSQL", conn, &Connection::ExecuteSimpleSQL,
           shrinkPragma);
-      Unused << conn->eventTargetOpenedOn->Dispatch(event, NS_DISPATCH_NORMAL);
+      (void)conn->eventTargetOpenedOn->Dispatch(event, NS_DISPATCH_NORMAL);
     }
   }
 }
@@ -357,8 +356,21 @@ nsresult Service::initialize() {
     return convertResultCode(rc);
   }
 
-  rc =
-      mObfuscatingSqliteVFS.Init(obfsvfs::ConstructVFS(quotavfs::GetVFSName()));
+  // obfsvfs registers as the SQLite default VFS *only* when at-rest
+  // encryption is enabled, so that every keyless sqlite3_open_v2 (e.g.
+  // rusqlite callers like app-services, skv) flows through it and gets
+  // path-aware at-rest encryption applied by xOpen. When the pref is off
+  // we register it non-default (exactly as before this feature): keyless
+  // opens keep using the OS default VFS and never enter obfsOpen's policy
+  // path, so the pref-off build is a true no-op. mozStorage callers that
+  // explicitly name `obfsvfs::GetVFSName()` keep using it by name in
+  // either case; callers that name `basevfs` / `quotavfs` / the
+  // read-only-no-lock VFS keep their named choice (sqlite3_open_v2 with
+  // an explicit zVfs argument bypasses the default).
+  rc = mObfuscatingSqliteVFS.Init(
+      obfsvfs::ConstructVFS(quotavfs::GetVFSName()),
+      /* aMakeDefault = */
+      StaticPrefs::security_storage_encryption_sqlite_enabled());
   if (rc != SQLITE_OK) {
     return convertResultCode(rc);
   }
@@ -382,65 +394,20 @@ nsresult Service::initialize() {
   mozilla::RegisterStorageSQLiteDistinguishedAmount(
       StorageSQLiteDistinguishedAmount);
 
+  // Eagerly cache the profile path and register the keystore observers.
+  // Off-main-thread database opens (Cookie, IndexedDB/QuotaManager, etc.)
+  // that race ahead of this still get their key: GetEncryptionKey resolves
+  // and caches the profile path on first use from any thread.
+  // Registers the profile observer that, when SQLite encryption is on,
+  // initializes NSS on the main thread at profile-do-change -- before any
+  // in-profile database is opened on a worker. That makes the worker-thread
+  // EnsureNSSInitializedChromeOrContent() a no-op, so it never has to
+  // SyncRunnable-dispatch NSS init back to a main thread that may be blocked
+  // awaiting the storage operation (which would deadlock). See
+  // storage/SQLiteEncryption.cpp.
+  InitEncryptionKeystore();
+
   return NS_OK;
-}
-
-int Service::localeCompareStrings(const nsAString& aStr1,
-                                  const nsAString& aStr2,
-                                  Collator::Sensitivity aSensitivity) {
-  // The mozilla::intl::Collator is not thread safe, since the Collator::Options
-  // can be changed.
-  MutexAutoLock mutex(mMutex);
-
-  Collator* collator = getCollator();
-  if (!collator) {
-    NS_ERROR("Storage service has no collation");
-    return 0;
-  }
-
-  if (aSensitivity != mLastSensitivity) {
-    Collator::Options options{};
-    options.sensitivity = aSensitivity;
-    auto result = mCollator->SetOptions(options);
-
-    if (result.isErr()) {
-      NS_WARNING("Could not configure the mozilla::intl::Collation.");
-      return 0;
-    }
-    mLastSensitivity = aSensitivity;
-  }
-
-  return collator->CompareStrings(aStr1, aStr2);
-}
-
-Collator* Service::getCollator() {
-  mMutex.AssertCurrentThreadOwns();
-
-  if (mCollator) {
-    return mCollator.get();
-  }
-
-  auto result = mozilla::intl::LocaleService::TryCreateComponent<Collator>();
-  if (result.isErr()) {
-    NS_WARNING("Could not create mozilla::intl::Collation.");
-    return nullptr;
-  }
-
-  mCollator = result.unwrap();
-
-  // Sort in a case-insensitive way, where "base" letters are considered
-  // equal, e.g: a = á, a = A, a ≠ b.
-  Collator::Options options{};
-  options.sensitivity = Collator::Sensitivity::Base;
-  auto optResult = mCollator->SetOptions(options);
-
-  if (optResult.isErr()) {
-    NS_WARNING("Could not configure the mozilla::intl::Collation.");
-    mCollator = nullptr;
-    return nullptr;
-  }
-
-  return mCollator.get();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -463,9 +430,8 @@ Service::OpenSpecialDatabase(const nsACString& aStorageKey,
     flags |= SQLITE_OPEN_URI;
   }
 
-  RefPtr<Connection> msc =
-      new Connection(this, flags, Connection::SYNCHRONOUS,
-                     kMozStorageMemoryStorageKey, interruptible);
+  auto msc = MakeRefPtr<Connection>(this, flags, Connection::SYNCHRONOUS,
+                                    kMozStorageMemoryStorageKey, interruptible);
   const nsresult rv = msc->initialize(aStorageKey, aName);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -506,8 +472,8 @@ class AsyncInitDatabase final : public Runnable {
 
  private:
   nsresult DispatchResult(nsresult aStatus, nsISupports* aValue) {
-    RefPtr<CallbackComplete> event =
-        new CallbackComplete(aStatus, aValue, mCallback.forget());
+    auto event =
+        MakeRefPtr<CallbackComplete>(aStatus, aValue, mCallback.forget());
     return NS_DispatchToMainThread(event);
   }
 
@@ -593,14 +559,14 @@ Service::OpenAsyncDatabase(nsIVariant* aDatabaseStore, uint32_t aOpenFlags,
     rv = storageFile->GetNativeLeafName(telemetryFilename);
     NS_ENSURE_SUCCESS(rv, rv);
   }
-  RefPtr<Connection> msc = new Connection(
+  auto msc = MakeRefPtr<Connection>(
       this, flags, Connection::ASYNCHRONOUS, telemetryFilename,
       /* interruptible */ true, ignoreLockingMode, openNotExclusive);
   nsCOMPtr<nsIEventTarget> target = msc->getAsyncExecutionTarget();
   MOZ_ASSERT(target,
              "Cannot initialize a connection that has been closed already");
 
-  RefPtr<AsyncInitDatabase> asyncInit = new AsyncInitDatabase(
+  auto asyncInit = MakeRefPtr<AsyncInitDatabase>(
       msc, storageFile, /* growthIncrement */ -1, aCallback);
   return target->Dispatch(asyncInit, nsIEventTarget::DISPATCH_NORMAL);
 }
@@ -620,8 +586,8 @@ Service::OpenDatabase(nsIFile* aDatabaseFile, uint32_t aConnectionFlags,
   nsAutoCString telemetryFilename;
   nsresult rv = aDatabaseFile->GetNativeLeafName(telemetryFilename);
   NS_ENSURE_SUCCESS(rv, rv);
-  RefPtr<Connection> msc = new Connection(this, flags, Connection::SYNCHRONOUS,
-                                          telemetryFilename, interruptible);
+  auto msc = MakeRefPtr<Connection>(this, flags, Connection::SYNCHRONOUS,
+                                    telemetryFilename, interruptible);
   rv = msc->initialize(aDatabaseFile);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -644,8 +610,8 @@ Service::OpenUnsharedDatabase(nsIFile* aDatabaseFile, uint32_t aConnectionFlags,
   nsAutoCString telemetryFilename;
   nsresult rv = aDatabaseFile->GetNativeLeafName(telemetryFilename);
   NS_ENSURE_SUCCESS(rv, rv);
-  RefPtr<Connection> msc = new Connection(this, flags, Connection::SYNCHRONOUS,
-                                          telemetryFilename, interruptible);
+  auto msc = MakeRefPtr<Connection>(this, flags, Connection::SYNCHRONOUS,
+                                    telemetryFilename, interruptible);
   rv = msc->initialize(aDatabaseFile);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -678,8 +644,8 @@ Service::OpenDatabaseWithFileURL(nsIFileURL* aFileURL,
     rv = databaseFile->GetNativeLeafName(telemetryFilename);
     NS_ENSURE_SUCCESS(rv, rv);
   }
-  RefPtr<Connection> msc = new Connection(this, flags, Connection::SYNCHRONOUS,
-                                          telemetryFilename, interruptible);
+  auto msc = MakeRefPtr<Connection>(this, flags, Connection::SYNCHRONOUS,
+                                    telemetryFilename, interruptible);
   rv = msc->initialize(aFileURL);
   NS_ENSURE_SUCCESS(rv, rv);
 

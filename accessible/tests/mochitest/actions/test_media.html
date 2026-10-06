@@ -21,33 +21,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=483573
           src="../states.js"></script>
 
   <script type="application/javascript">
+    /* global testAction */
     SimpleTest.requestCompleteLog(); // To help diagnose bug 1845221
-
-    // gA11yEventDumpID = "eventDump";
-    // gA11yEventDumpToConsole = true; // debug stuff
-
-    function focusChecker(aAcc) {
-      this.type = EVENT_FOCUS;
-      this.target = aAcc;
-      this.getID = function focusChecker_getID() {
-        return "focus handling";
-      };
-      this.check = function focusChecker_check() {
-        testStates(this.target, STATE_FOCUSED);
-      };
-    }
-
-    function nameChecker(aAcc, aName) {
-      this.type = EVENT_NAME_CHANGE;
-      this.target = aAcc;
-      this.getID = function nameChecker_getID() {
-        return "name change handling";
-      };
-      this.check = function nameChecker_check(aEvent) {
-        is(aEvent.accessible.name, aName,
-           "Wrong name of " + prettyName(aEvent.accessible) + " on focus");
-      };
-    }
 
     async function loadAudioSource() {
       /**
@@ -64,10 +39,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=483573
         el.src = "../bug461281.ogg";
       });
 
-      doTest();
+      await doTest();
     }
 
-    function doTest() {
+    async function doTest() {
       // ////////////////////////////////////////////////////////////////////////
       // test actions of audio controls
 
@@ -78,36 +53,34 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=483573
       // var scrubber = playBtn.nextSibling.nextSibling.nextSibling;
       var muteBtn = audioElm.lastChild.previousSibling;
 
-      var actions = [
-        {
-          ID: muteBtn,
-          actionName: "press",
-          eventTarget: "element",
-          eventSeq: [
-     //       new focusChecker(muteBtn),
-            new nameChecker(muteBtn, "Unmute"),
-          ],
-        },
+      await testAction({
+        id: muteBtn,
+        actionName: "press",
+        eventSeq: [
+     //     [EVENT_FOCUS, muteBtn, () => testStates(muteBtn, STATE_FOCUSED)],
+          [EVENT_NAME_CHANGE, muteBtn,
+           evt => is(evt.accessible.name, "Unmute",
+                     "Wrong name of " + prettyName(evt.accessible) + " on focus")],
+        ],
+      });
      //   {
-     //     ID: scrubber,
+     //     id: scrubber,
      //     actionName: "activate",
-     //     events: null,
      //     eventSeq: [
-     //       new focusChecker(scrubber)
+     //       [EVENT_FOCUS, scrubber, () => testStates(scrubber, STATE_FOCUSED)]
      //     ]
      //   },
-        {
-          ID: playBtn,
-          actionName: "press",
-          eventTarget: "element",
-          eventSeq: [
-     //       new focusChecker(playBtn),
-            new nameChecker(playBtn, "Pause"),
-          ],
-        },
-      ];
-
-      testActions(actions); // Will call SimpleTest.finish();
+      await testAction({
+        id: playBtn,
+        actionName: "press",
+        eventSeq: [
+     //     [EVENT_FOCUS, playBtn, () => testStates(playBtn, STATE_FOCUSED)],
+          [EVENT_NAME_CHANGE, playBtn,
+           evt => is(evt.accessible.name, "Pause",
+                     "Wrong name of " + prettyName(evt.accessible) + " on focus")],
+        ],
+      });
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

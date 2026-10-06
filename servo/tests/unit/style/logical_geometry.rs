@@ -19,14 +19,14 @@ fn modes() -> Vec<WritingMode> {
         WritingMode::RTL,
         WritingMode::VERTICAL | WritingMode::RTL,
         WritingMode::VERTICAL | WritingMode::VERTICAL_LR | WritingMode::RTL,
-        WritingMode::VERTICAL |
-            WritingMode::VERTICAL_LR |
-            WritingMode::VERTICAL_SIDEWAYS |
-            WritingMode::RTL,
-        WritingMode::VERTICAL |
-            WritingMode::VERTICAL_LR |
-            WritingMode::TEXT_SIDEWAYS |
-            WritingMode::RTL,
+        WritingMode::VERTICAL
+            | WritingMode::VERTICAL_LR
+            | WritingMode::VERTICAL_SIDEWAYS
+            | WritingMode::RTL,
+        WritingMode::VERTICAL
+            | WritingMode::VERTICAL_LR
+            | WritingMode::TEXT_SIDEWAYS
+            | WritingMode::RTL,
         WritingMode::VERTICAL | WritingMode::VERTICAL_LR | WritingMode::UPRIGHT | WritingMode::RTL,
         WritingMode::VERTICAL | WritingMode::VERTICAL_SIDEWAYS | WritingMode::RTL,
         WritingMode::VERTICAL | WritingMode::TEXT_SIDEWAYS | WritingMode::RTL,

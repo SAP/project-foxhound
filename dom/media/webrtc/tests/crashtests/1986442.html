@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<head>
+<script>
+  document.addEventListener("DOMContentLoaded", async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        "video": {
+          "frameRate": {
+            "max": -128
+          }
+        }
+      });
+      const v = document.createElement("video");
+      v.srcObject = stream;
+      v.play();
+      await new Promise(r => v.onresize = r);
+    } finally {
+      document.documentElement.removeAttribute("class");
+    }
+  });
+</script>
+</head>
+</html>

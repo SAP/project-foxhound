@@ -25,6 +25,9 @@ import org.mozilla.focus.ext.enableDynamicBehavior
 import org.mozilla.focus.ext.hide
 import org.mozilla.focus.ext.showAsFixed
 
+/**
+ * Integration for the full-screen feature, managing immersive mode and toolbar visibility.
+ */
 @Suppress("LongParameterList")
 class FullScreenIntegration(
     val activity: Activity,
@@ -72,7 +75,7 @@ class FullScreenIntegration(
         } else {
             // If the video is in PiP, but is not in fullscreen anymore we should move the task containing
             // this activity to the back of the activity stack
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && activity.isInPictureInPictureMode) {
+            if (activity.isInPictureInPictureMode) {
                 activity.moveTaskToBack(false)
             }
             exitBrowserFullscreen()

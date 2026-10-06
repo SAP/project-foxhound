@@ -14,14 +14,8 @@ stage-package:
 install::
 	@$(MAKE) -C browser/installer install
 
-source-package::
-	@$(MAKE) -C browser/installer source-package
-
 upload::
 	@$(MAKE) -C browser/installer upload
-
-source-upload::
-	@$(MAKE) -C browser/installer source-upload
 
 hg-bundle::
 	@$(MAKE) -C browser/installer hg-bundle

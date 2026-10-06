@@ -27,5 +27,4 @@ class WebExtensionInspectedWindowFront extends FrontClassWithSpec(
   }
 }
 
-exports.WebExtensionInspectedWindowFront = WebExtensionInspectedWindowFront;
 registerFront(WebExtensionInspectedWindowFront);

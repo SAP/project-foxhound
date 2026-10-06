@@ -14,9 +14,10 @@ task-defaults:
         # Remove noise from differences in line numbers in preprocessor output
         # due to #if/#else branches.
         - sed -i '/^\/\/@line /d' {a,b}/"$RESOURCE_DIR"/browser/defaults/preferences/firefox.js
-        # bug 1825141 - telemetry.fog.artifact_build isn't stable between
+        - sed -i '/^\/\/@line /d' {a,b}/"$RESOURCE_DIR"/greprefs.js
+        # bug 2036424 - telemetry.fog.artifact_build isn't stable between
         # artifact and not-artifact builds, so remove its line if present.
-        - sed -i '/telemetry\.fog\.artifact\_build/d' b/"$RESOURCE_DIR"/browser/defaults/preferences/firefox.js
+        - sed -i '/telemetry\.fog\.artifact\_build/d' b/"$RESOURCE_DIR"/greprefs.js
         # bug 1936471 - nimbus.telemetry.targetingContextEnabled isn't stable
         # between artifact and non-artifact builds because this pref controls
         # submission of an object metric and object metrics aren't supported in

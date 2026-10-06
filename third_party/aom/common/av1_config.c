@@ -8,6 +8,7 @@
  * Media Patent License 1.0 was not distributed with this source code in the
  * PATENTS file, you can obtain it at www.aomedia.org/license/patent.
  */
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -48,6 +49,19 @@
     }                                                 \
   } while (0)
 
+#define AV1C_READ_UNSIGNED_OR_RETURN_ERROR(field, length)   \
+  int field = 0;                                            \
+  do {                                                      \
+    field = aom_rb_read_unsigned_literal(reader, (length)); \
+    if (result == -1) {                                     \
+      fprintf(stderr,                                       \
+              "av1c: Could not read bits for " #field       \
+              ", value=%d result=%d.\n",                    \
+              field, result);                               \
+      return -1;                                            \
+    }                                                       \
+  } while (0)
+
 // Helper macros for setting/restoring the error handler data in
 // aom_read_bit_buffer.
 #define AV1C_PUSH_ERROR_HANDLER_DATA(new_data)                \
@@ -81,8 +95,8 @@ static int parse_timing_info(struct aom_read_bit_buffer *reader) {
   int result = 0;
   AV1C_PUSH_ERROR_HANDLER_DATA(result);
 
-  AV1C_READ_BITS_OR_RETURN_ERROR(num_units_in_display_tick, 32);
-  AV1C_READ_BITS_OR_RETURN_ERROR(time_scale, 32);
+  AV1C_READ_UNSIGNED_OR_RETURN_ERROR(num_units_in_display_tick, 32);
+  AV1C_READ_UNSIGNED_OR_RETURN_ERROR(time_scale, 32);
 
   AV1C_READ_BIT_OR_RETURN_ERROR(equal_picture_interval);
   if (equal_picture_interval) {
@@ -93,6 +107,11 @@ static int parse_timing_info(struct aom_read_bit_buffer *reader) {
               "num_ticks_per_picture_minus_1, value=%u.\n",
               num_ticks_per_picture_minus_1);
       return result;
+    }
+    if (num_ticks_per_picture_minus_1 == UINT32_MAX) {
+      fprintf(stderr,
+              "av1c: num_ticks_per_picture_minus_1 cannot be (1 << 32) − 1.\n");
+      return -1;
     }
   }
 
@@ -114,7 +133,7 @@ static int parse_decoder_model_info(struct aom_read_bit_buffer *reader) {
   AV1C_PUSH_ERROR_HANDLER_DATA(result);
 
   AV1C_READ_BITS_OR_RETURN_ERROR(buffer_delay_length_minus_1, 5);
-  AV1C_READ_BITS_OR_RETURN_ERROR(num_units_in_decoding_tick, 32);
+  AV1C_READ_UNSIGNED_OR_RETURN_ERROR(num_units_in_decoding_tick, 32);
   AV1C_READ_BITS_OR_RETURN_ERROR(buffer_removal_time_length_minus_1, 5);
   AV1C_READ_BITS_OR_RETURN_ERROR(frame_presentation_time_length_minus_1, 5);
 

@@ -20,7 +20,8 @@ const TEST_URI = `
 
 add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  startTelemetry();
+  Services.fog.testResetFOG();
+
   const { inspector, view } = await openRuleView();
   const HIGHLIGHTER_TYPE = inspector.highlighters.TYPES.GRID;
   const { waitForHighlighterTypeShown } = getHighlighterTestHelpers(inspector);
@@ -38,5 +39,5 @@ add_task(async function () {
 });
 
 function checkResults() {
-  checkTelemetry("devtools.rules.gridinspector.opened", "", 1, "scalar");
+  is(1, Glean.devtoolsRulesGridinspector.opened.testGetValue());
 }

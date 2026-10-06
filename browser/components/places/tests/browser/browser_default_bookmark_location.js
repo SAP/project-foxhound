@@ -179,11 +179,17 @@ add_task(async function test_change_location_panel() {
   let prefChangedPromise = TestUtils.waitForPrefChange(LOCATION_PREF);
 
   // Click the choose item.
-  EventUtils.synthesizeMouseAtCenter(
-    win.document.getElementById("editBMPanel_bmRootItem"),
-    {},
-    win
-  );
+  if (menuList.menupopup.isNativeMenu) {
+    menuList.menupopup.activateItem(
+      win.document.getElementById("editBMPanel_bmRootItem")
+    );
+  } else {
+    EventUtils.synthesizeMouseAtCenter(
+      win.document.getElementById("editBMPanel_bmRootItem"),
+      {},
+      win
+    );
+  }
 
   await TestUtils.waitForCondition(
     () => menuList.getAttribute("selectedGuid") == menuGuid,
@@ -231,11 +237,17 @@ add_task(async function test_change_location_panel() {
   await promisePopup;
 
   // Click the toolbar item.
-  EventUtils.synthesizeMouseAtCenter(
-    win.document.getElementById("editBMPanel_toolbarFolderItem"),
-    {},
-    win
-  );
+  if (menuList.menupopup.isNativeMenu) {
+    menuList.menupopup.activateItem(
+      win.document.getElementById("editBMPanel_toolbarFolderItem")
+    );
+  } else {
+    EventUtils.synthesizeMouseAtCenter(
+      win.document.getElementById("editBMPanel_toolbarFolderItem"),
+      {},
+      win
+    );
+  }
 
   await TestUtils.waitForCondition(
     () => menuList.getAttribute("selectedGuid") == toolbarGuid,

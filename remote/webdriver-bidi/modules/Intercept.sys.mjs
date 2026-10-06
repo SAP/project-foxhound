@@ -7,12 +7,12 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   getSeenNodesForBrowsingContext:
     "chrome://remote/content/shared/webdriver/Session.sys.mjs",
-  TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
+  NavigableManager: "chrome://remote/content/shared/NavigableManager.sys.mjs",
 });
 
 /**
  * The serialization of JavaScript objects in the content process might produce
- * extra data that needs to be transfered and then processed by the parent
+ * extra data that needs to be transferred and then processed by the parent
  * process. This extra data is part of the payload as returned by commands
  * and events and can contain the following:
  *
@@ -87,7 +87,8 @@ function addContextIdToSerializedWindow(serialized) {
           );
 
           serialized.value = {
-            context: lazy.TabManager.getIdForBrowsingContext(browsingContext),
+            context:
+              lazy.NavigableManager.getIdForBrowsingContext(browsingContext),
           };
         }
         break;

@@ -4,7 +4,7 @@
 "use strict";
 
 async function getEngineNames() {
-  let engines = await Services.search.getEngines();
+  let engines = await SearchService.getEngines();
   return engines.map(engine => engine._name);
 }
 
@@ -33,7 +33,7 @@ add_setup(async function () {
 });
 
 add_task(async function basic_install_test() {
-  await Services.search.init();
+  await SearchService.init();
   await promiseAfterSettings();
 
   // On first boot, we get the configuration defaults
@@ -52,9 +52,9 @@ add_task(async function basic_install_test() {
     "default",
   ]);
 
-  let engine = await Services.search.getEngineByName("Example");
+  let engine = await SearchService.getEngineByName("Example");
   Assert.equal(
-    engine.wrappedJSObject.queryCharset,
+    engine.queryCharset,
     "windows-1252",
     "Should have the correct charset"
   );
@@ -77,7 +77,7 @@ add_task(async function test_install_duplicate_engine() {
     { skipUnload: true }
   );
 
-  let engine = await Services.search.getEngineByName("default");
+  let engine = await SearchService.getEngineByName("default");
   let submission = engine.getSubmission("foo");
   Assert.equal(
     submission.uri.spec,
@@ -106,7 +106,7 @@ add_task(async function test_load_favicon_invalid() {
 
   await observed;
 
-  let engine = await Services.search.getEngineByName("Example");
+  let engine = await SearchService.getEngineByName("Example");
   Assert.equal(
     null,
     await engine.getIconURL(),
@@ -136,7 +136,7 @@ add_task(async function test_load_favicon_invalid_redirect() {
 
   await observed;
 
-  let engine = await Services.search.getEngineByName("Example");
+  let engine = await SearchService.getEngineByName("Example");
   Assert.equal(
     null,
     await engine.getIconURL(),
@@ -163,7 +163,7 @@ add_task(async function test_load_favicon_redirect() {
     { skipUnload: true }
   );
 
-  let engine = await Services.search.getEngineByName("Example");
+  let engine = await SearchService.getEngineByName("Example");
 
   await promiseIconChanged;
 
@@ -202,9 +202,9 @@ add_task(async function test_load_icon_extension_url_ico() {
     { "icon.ico": iconBuffer }
   );
 
-  let engine = Services.search.getEngineByName("Example");
+  let engine = SearchService.getEngineByName("Example");
   await promiseIconChanged;
-  let iconMapObj = engine.wrappedJSObject._iconMapObj;
+  let iconMapObj = engine._iconMapObj;
 
   Assert.deepEqual(
     Object.keys(iconMapObj).toSorted(),
@@ -261,9 +261,9 @@ add_task(async function test_load_icon_extension_url_svg() {
     { "icon.svg": iconBuffer }
   );
 
-  let engine = Services.search.getEngineByName("Example");
+  let engine = SearchService.getEngineByName("Example");
   await promiseIconChanged;
-  let iconMapObj = engine.wrappedJSObject._iconMapObj;
+  let iconMapObj = engine._iconMapObj;
 
   Assert.deepEqual(
     Object.keys(iconMapObj).toSorted(),
@@ -301,9 +301,9 @@ add_task(async function test_load_icon_http_url_ico() {
     { skipUnload: true }
   );
 
-  let engine = Services.search.getEngineByName("Example");
+  let engine = SearchService.getEngineByName("Example");
   await promiseIconChanged;
-  let iconMapObj = engine.wrappedJSObject._iconMapObj;
+  let iconMapObj = engine._iconMapObj;
 
   Assert.deepEqual(
     Object.keys(iconMapObj).toSorted(),

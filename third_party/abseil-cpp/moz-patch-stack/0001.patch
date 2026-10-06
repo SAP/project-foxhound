@@ -18,7 +18,7 @@ Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/29bb1b6d7fc465aad
  2 files changed, 22 insertions(+), 3 deletions(-)
 
 diff --git a/abseil-cpp/BUILD.gn b/abseil-cpp/BUILD.gn
-index b1ada6e828c..2ac91cd9f07 100644
+index 8b8bcfe69fe..97b460e4fd4 100644
 --- a/abseil-cpp/BUILD.gn
 +++ b/abseil-cpp/BUILD.gn
 @@ -26,7 +26,7 @@ component("absl") {
@@ -55,9 +55,9 @@ index b1ada6e828c..2ac91cd9f07 100644
    public_deps = [
      "//third_party/abseil-cpp/absl/algorithm",
      "//third_party/abseil-cpp/absl/algorithm:container",
-@@ -121,6 +122,23 @@ group("absl_component_deps") {
-     # alternative to inject abort hook. See notes in `base/logging.cc`.
-     "//third_party/abseil-cpp/absl/base:raw_logging_internal",
+@@ -125,6 +126,23 @@ group("absl_component_deps") {
+     # absl internal utilities used by protobuf.
+     "//third_party/abseil-cpp/absl/container:layout",
    ]
 +  } else {
 +  public_deps = [

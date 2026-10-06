@@ -1,0 +1,23 @@
+From: Andreas Pehrson <apehrson@mozilla.com>
+Date: Tue, 2 Nov 2021 14:35:00 +0000
+Subject: Bug 1729455 - Ensure the libwebrtc system clock is not used. r=bwc
+
+Differential Revision: https://phabricator.services.mozilla.com/D128244
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/3e8ac168ee3db089dd892bf140df53e15d6f0918
+---
+ rtc_base/system_time.cc | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/rtc_base/system_time.cc b/rtc_base/system_time.cc
+index d5076431d3..e6ce4b2a74 100644
+--- a/rtc_base/system_time.cc
++++ b/rtc_base/system_time.cc
+@@ -13,6 +13,8 @@
+ #ifndef WEBRTC_EXCLUDE_SYSTEM_TIME
+ #include "rtc_base/system_time.h"
+ 
++#error Mozilla: Must not use the built-in libwebrtc clock
++
+ #include <time.h>
+ 
+ #include <cstdint>

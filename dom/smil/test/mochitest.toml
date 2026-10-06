@@ -39,7 +39,9 @@ disabled = "until bug 501183 is fixed"
 ["test_smilCSSPaced.xhtml"]
 
 ["test_smilChangeAfterFrozen.xhtml"]
-skip-if = ["true"] # bug 1358955.
+skip-if = [
+  "true", # bug 1358955.
+]
 
 ["test_smilConditionalProcessing.html"]
 
@@ -102,7 +104,9 @@ skip-if = ["true"] # bug 1358955.
 ["test_smilValues.xhtml"]
 
 ["test_smilWithTransition.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_smilWithXlink.xhtml"]
 

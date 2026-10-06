@@ -213,6 +213,8 @@
       label: Image decoding
     - name: GRAPHICS_WebGPU
       label: WebGPU
+    - name: GRAPHICS_VSync
+      label: VSync triggered animation
 
 - name: DOM
   label: DOM
@@ -344,3 +346,10 @@
       label: Inference
     - name: ML_SETUP
       label: Setup
+
+- name: LOGS
+  label: Logs
+  color: lightblue
+  subcategories:
+    - name: LOGS
+      label: Other

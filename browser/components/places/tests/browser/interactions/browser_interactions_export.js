@@ -125,7 +125,7 @@ async function downloadFile(type, includePlaceData) {
       },
     };
   });
-  await downloadList.addView(downloadView);
+  downloadList.addView(downloadView);
 
   let download;
   await BrowserTestUtils.withNewTab(
@@ -151,7 +151,7 @@ async function downloadFile(type, includePlaceData) {
         "Download succeeded."
       );
       info("Finished downloading.");
-      await downloadList.removeView(downloadView);
+      downloadList.removeView(downloadView);
     }
   );
 

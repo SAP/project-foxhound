@@ -2,14 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _PACKET_DUMPER_H_
-#define _PACKET_DUMPER_H_
-
-#include "nsISupportsImpl.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/dom/RTCPeerConnectionBinding.h"
+#ifndef PACKET_DUMPER_H_
+#define PACKET_DUMPER_H_
 
 #include <vector>
+
+#include "mozilla/RefPtr.h"
+#include "mozilla/dom/RTCPeerConnectionBinding.h"
+#include "nsISupportsImpl.h"
 
 namespace mozilla {
 class PeerConnectionImpl;
@@ -52,4 +52,4 @@ class PacketDumper {
 
 }  // namespace mozilla
 
-#endif  // _PACKET_DUMPER_H_
+#endif  // PACKET_DUMPER_H_

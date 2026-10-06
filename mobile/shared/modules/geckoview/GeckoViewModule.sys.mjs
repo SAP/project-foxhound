@@ -41,10 +41,6 @@ export class GeckoViewModule {
     return this.moduleManager.browser;
   }
 
-  get messageManager() {
-    return this.moduleManager.messageManager;
-  }
-
   get eventDispatcher() {
     return this.moduleManager.eventDispatcher;
   }
@@ -77,19 +73,6 @@ export class GeckoViewModule {
 
   // Override to disable module after clearing the Java delegate.
   onDisable() {}
-
-  // Override to perform actions when content module has started loading;
-  // by default, pause events so events that depend on content modules can work.
-  onLoadContentModule() {
-    this._eventProxy.enableQueuing(true);
-  }
-
-  // Override to perform actions when content module has finished loading;
-  // by default, un-pause events and flush queued events.
-  onContentModuleLoaded() {
-    this._eventProxy.enableQueuing(false);
-    this._eventProxy.dispatchQueuedEvents();
-  }
 
   registerListener(aEventList) {
     this._eventProxy.registerListener(aEventList);

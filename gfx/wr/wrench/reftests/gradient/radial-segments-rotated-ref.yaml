@@ -1,0 +1,12 @@
+---
+root:
+  items:
+    - type: stacking-context
+      bounds: [50, 50, 1000, 1000]
+      transform: rotate(10)
+      items:
+      - type: radial-gradient
+        bounds: 10 10 750 500
+        center: 0 0
+        radius: 4000 3500
+        stops: [0.0, red, 0.1, blue, 1.0, blue]

@@ -1,8 +1,20 @@
 "use strict";
 
+function isMenubarVisible() {
+  return BrowserTestUtils.isVisible(document.getElementById("toolbar-menubar"));
+}
+
 add_task(async function () {
+  let menubarVisible = isMenubarVisible();
+
   await startCustomizing();
   is(gBrowser.tabs.length, 2, "Should have 2 tabs");
+
+  is(
+    isMenubarVisible(),
+    menubarVisible,
+    "Menubar visibility shouldn't change during customize mode"
+  );
 
   let paletteKidCount = document.getElementById(
     "customization-palette"
@@ -39,12 +51,16 @@ add_task(async function () {
     "Should have just as many items in the palette as before."
   );
   await endCustomizing();
+
+  is(
+    isMenubarVisible(),
+    menubarVisible,
+    "Menubar visibility shouldn't change exiting customize mode"
+  );
   is(startedCount, 1, "Should have only started once");
   gNavToolbox.removeEventListener("customizationstarting", handler);
-  let customizableToolbars = document.querySelectorAll(
-    "toolbar[customizable=true]:not([autohide=true])"
-  );
-  for (let toolbar of customizableToolbars) {
+  let toolbars = document.querySelectorAll("toolbar");
+  for (let toolbar of toolbars) {
     ok(
       !toolbar.hasAttribute("customizing"),
       "Toolbar " + toolbar.id + " is no longer customizing"

@@ -11,78 +11,67 @@
 #ifndef PC_TEST_MOCK_CHANNEL_INTERFACE_H_
 #define PC_TEST_MOCK_CHANNEL_INTERFACE_H_
 
-#include <functional>
 #include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"
 #include "api/jsep.h"
 #include "api/media_types.h"
+#include "api/rtc_error.h"
 #include "media/base/media_channel.h"
 #include "media/base/stream_params.h"
 #include "pc/channel_interface.h"
 #include "pc/rtp_transport_internal.h"
+#include "pc/session_description.h"
 #include "test/gmock.h"
 
 namespace webrtc {
+class RtpPacketReceived;
 
 // Mock class for BaseChannel.
-// Use this class in unit tests to avoid dependecy on a specific
+// Use this class in unit tests to avoid dependency on a specific
 // implementation of BaseChannel.
-class MockChannelInterface : public cricket::ChannelInterface {
+class MockChannelInterface : public ChannelInterface {
  public:
-  MOCK_METHOD(webrtc::MediaType, media_type, (), (const, override));
-  MOCK_METHOD(cricket::VideoChannel*, AsVideoChannel, (), (override));
-  MOCK_METHOD(cricket::VoiceChannel*, AsVoiceChannel, (), (override));
-  MOCK_METHOD(cricket::MediaSendChannelInterface*,
-              media_send_channel,
-              (),
-              (override));
-  MOCK_METHOD(cricket::VoiceMediaSendChannelInterface*,
+  MOCK_METHOD(MediaType, media_type, (), (const, override));
+
+  MOCK_METHOD(MediaSendChannelInterface*, media_send_channel, (), (override));
+  MOCK_METHOD(VoiceMediaSendChannelInterface*,
               voice_media_send_channel,
               (),
               (override));
-  MOCK_METHOD(cricket::VideoMediaSendChannelInterface*,
+  MOCK_METHOD(VideoMediaSendChannelInterface*,
               video_media_send_channel,
               (),
               (override));
-  MOCK_METHOD(cricket::MediaReceiveChannelInterface*,
+  MOCK_METHOD(MediaReceiveChannelInterface*,
               media_receive_channel,
               (),
               (override));
-  MOCK_METHOD(cricket::VoiceMediaReceiveChannelInterface*,
+  MOCK_METHOD(VoiceMediaReceiveChannelInterface*,
               voice_media_receive_channel,
               (),
               (override));
-  MOCK_METHOD(cricket::VideoMediaReceiveChannelInterface*,
+  MOCK_METHOD(VideoMediaReceiveChannelInterface*,
               video_media_receive_channel,
               (),
               (override));
   MOCK_METHOD(absl::string_view, transport_name, (), (const, override));
   MOCK_METHOD(const std::string&, mid, (), (const, override));
   MOCK_METHOD(void, Enable, (bool), (override));
-  MOCK_METHOD(void,
-              SetFirstPacketReceivedCallback,
-              (std::function<void()>),
-              (override));
-  MOCK_METHOD(void,
-              SetFirstPacketSentCallback,
-              (std::function<void()>),
-              (override));
-  MOCK_METHOD(bool,
+  MOCK_METHOD(RTCError,
               SetLocalContent,
-              (const webrtc::MediaContentDescription*, SdpType, std::string&),
+              (const webrtc::MediaContentDescription*, SdpType),
               (override));
-  MOCK_METHOD(bool,
+  MOCK_METHOD(RTCError,
               SetRemoteContent,
-              (const webrtc::MediaContentDescription*, SdpType, std::string&),
+              (const webrtc::MediaContentDescription*, SdpType),
               (override));
-  MOCK_METHOD(bool, SetPayloadTypeDemuxingEnabled, (bool), (override));
-  MOCK_METHOD(const std::vector<cricket::StreamParams>&,
+  MOCK_METHOD(const std::vector<StreamParams>&,
               local_streams,
               (),
               (const, override));
-  MOCK_METHOD(const std::vector<cricket::StreamParams>&,
+  MOCK_METHOD(const std::vector<StreamParams>&,
               remote_streams,
               (),
               (const, override));
@@ -91,10 +80,5 @@ class MockChannelInterface : public cricket::ChannelInterface {
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace cricket {
-using ::webrtc::MockChannelInterface;
-}  // namespace cricket
 
 #endif  // PC_TEST_MOCK_CHANNEL_INTERFACE_H_

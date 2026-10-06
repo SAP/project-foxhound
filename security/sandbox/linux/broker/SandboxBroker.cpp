@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,7 +30,6 @@
 #include "base/string_util.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/ipc/FileDescriptor.h"
 #include "nsAppDirectoryServiceDefs.h"
@@ -141,7 +138,7 @@ SandboxBroker::Policy::~Policy() = default;
 SandboxBroker::Policy::Policy(const Policy& aOther)
     : mMap(aOther.mMap.Clone()) {}
 
-// Chromium
+// See also Chromium BrokerFilePermission::ValidatePath in
 // sandbox/linux/syscall_broker/broker_file_permission.cc
 // Async signal safe
 bool SandboxBroker::Policy::ValidatePath(const char* path) const {
@@ -160,13 +157,11 @@ bool SandboxBroker::Policy::ValidatePath(const char* path) const {
   if (len >= 3 && path[len - 3] == '/' && path[len - 2] == '.' &&
       path[len - 1] == '.')
     return false;
-  // No /../ anywhere
-  for (size_t i = 0; i < len; i++) {
-    if (path[i] == '/' && (len - i) > 3) {
-      if (path[i + 1] == '.' && path[i + 2] == '.' && path[i + 3] == '/') {
-        return false;
-      }
-    }
+  // No special path components anywhere.
+  // Assume libc's strstr is good enough that we don't need to optimize.
+  // strstr is officially async signal safe as of POSIX.1-2017
+  if (strstr(path, "//") || strstr(path, "/./") || strstr(path, "/../")) {
+    return false;
   }
   return true;
 }
@@ -188,6 +183,15 @@ void SandboxBroker::Policy::AddPath(int aPerms, const char* aPath,
     SANDBOX_LOG("policy for %s: %d -> %d", aPath, perms, perms | aPerms);
   }
   perms |= aPerms;
+}
+
+void SandboxBroker::Policy::RemoveAllDenyRules() {
+  for (auto iter = mMap.Iter(); !iter.Done(); iter.Next()) {
+    iter.Data() &= ~FORCE_DENY;
+    if ((iter.Data() & ~RECURSIVE) == 0) {
+      iter.Remove();
+    }
+  }
 }
 
 void SandboxBroker::Policy::AddTree(int aPerms, const char* aPath) {
@@ -286,7 +290,7 @@ void SandboxBroker::Policy::AddAncestors(const char* aPath, int aPerms) {
   nsAutoCString path(aPath);
 
   while (true) {
-    const auto lastSlash = path.RFindCharInSet("/");
+    const auto lastSlash = path.RFindChar('/');
     if (lastSlash <= 0) {
       MOZ_ASSERT(lastSlash == 0);
       return;
@@ -294,6 +298,91 @@ void SandboxBroker::Policy::AddAncestors(const char* aPath, int aPerms) {
     path.Truncate(lastSlash);
     AddPath(aPerms, path.get());
   }
+}
+
+enum class IterationDecision : uint8_t { Continue, Break };
+
+// This is slightly different from the loop in AddAncestors: it leaves the
+// trailing slashes attached so they'll match AddTree entries.
+template <typename Fn>
+void ForEachAncestorDirectoryWithTrailingSlash(const nsACString& aPath,
+                                               Fn&& aCallback) {
+  if (aPath.IsEmpty()) {
+    return;
+  }
+  nsAutoCString ancestor(aPath);
+  while (true) {
+    // Last() release-asserts that the string is not empty. We bail out on empty
+    // strings above, and the Truncate() below will always give us a non-empty
+    // string.
+    if (ancestor.Last() == '/') {
+      ancestor.Truncate(ancestor.Length() - 1);
+    }
+    const auto lastSlash = ancestor.RFindChar('/');
+    if (lastSlash < 0) {
+      MOZ_ASSERT(ancestor.IsEmpty());
+      break;
+    }
+    ancestor.Truncate(lastSlash + 1);
+    if (aCallback(ancestor) == IterationDecision::Break) {
+      break;
+    }
+  }
+}
+
+struct Match {
+  size_t mPrefixLength;
+  int mPerms;
+
+  bool operator<(const Match& aOther) const {
+    // We want longer matches first.
+    return mPrefixLength > aOther.mPrefixLength;
+  }
+};
+static int ComputeInheritedPerms(const Span<Match> aAncestorMatches,
+                                 bool aIncludeDeny) {
+  MOZ_ASSERT(std::is_sorted(aAncestorMatches.begin(), aAncestorMatches.end()));
+  MOZ_ASSERT(std::all_of(aAncestorMatches.begin(), aAncestorMatches.end(),
+                         [](const Match& aMatch) {
+                           return aMatch.mPerms & SandboxBroker::RECURSIVE;
+                         }));
+
+  int inheritedPerms = 0;
+  for (const Match& match : aAncestorMatches) {
+    if (match.mPerms & SandboxBroker::FORCE_DENY) {
+      // If we have anything under a FORCE_DENY dir, then we want to stop
+      // the inheritance chain now.
+      if (aIncludeDeny) {
+        inheritedPerms |= match.mPerms & ~SandboxBroker::RECURSIVE;
+      }
+      break;
+    }
+    inheritedPerms |= match.mPerms & ~SandboxBroker::RECURSIVE;
+    // We've found a more specific rule, if we hit a DENY, we want to stop at
+    // that point without including it.
+    aIncludeDeny = false;
+  }
+  MOZ_ASSERT(!(inheritedPerms & SandboxBroker::RECURSIVE));
+  return inheritedPerms;
+}
+
+// FIXME(emilio): This duplicates some logic with Lookup(), and doesn't deal
+// with prefix rules that don't fall onto a directory boundary. Consider
+// changing PathPermissionMap to some sort of radix tree data structure instead
+// (which will also make Lookup() faster), or deal with prefixes here like
+// Lookup() does by iterating the whole map (would be quadratic and slower).
+static int ComputeInheritedPerms(const SandboxBroker::PathPermissionMap& aMap,
+                                 const nsACString& aPath, bool aIncludeDeny) {
+  AutoTArray<Match, 4> matches;
+  ForEachAncestorDirectoryWithTrailingSlash(
+      aPath, [&](const nsACString& aAncestor) {
+        const int ancestorPerms = aMap.Get(aAncestor);
+        if (ancestorPerms & SandboxBroker::RECURSIVE) {
+          matches.AppendElement(Match{aAncestor.Length(), ancestorPerms});
+        }
+        return IterationDecision::Continue;
+      });
+  return ComputeInheritedPerms(matches, aIncludeDeny);
 }
 
 void SandboxBroker::Policy::FixRecursivePermissions() {
@@ -308,40 +397,9 @@ void SandboxBroker::Policy::FixRecursivePermissions() {
 
   for (const auto& entry : oldMap) {
     const nsACString& path = entry.GetKey();
-    const int& localPerms = entry.GetData();
-    int inheritedPerms = 0;
-
-    nsAutoCString ancestor(path);
-    // This is slightly different from the loop in AddAncestors: it
-    // leaves the trailing slashes attached so they'll match AddTree
-    // entries.
-    while (true) {
-      // Last() release-asserts that the string is not empty.  We
-      // should never have empty keys in the map, and the Truncate()
-      // below will always give us a non-empty string.
-      if (ancestor.Last() == '/') {
-        ancestor.Truncate(ancestor.Length() - 1);
-      }
-      const auto lastSlash = ancestor.RFindCharInSet("/");
-      if (lastSlash < 0) {
-        MOZ_ASSERT(ancestor.IsEmpty());
-        break;
-      }
-      ancestor.Truncate(lastSlash + 1);
-      const int ancestorPerms = oldMap.Get(ancestor);
-      if (ancestorPerms & RECURSIVE) {
-        // if a child is set with FORCE_DENY, do not compute inheritedPerms
-        if ((localPerms & FORCE_DENY) == FORCE_DENY) {
-          if (SandboxInfo::Get().Test(SandboxInfo::kVerbose)) {
-            SANDBOX_LOG("skip inheritence policy for %s: %d",
-                        PromiseFlatCString(path).get(), localPerms);
-          }
-        } else {
-          inheritedPerms |= ancestorPerms & ~RECURSIVE;
-        }
-      }
-    }
-
+    const int localPerms = entry.GetData();
+    const int inheritedPerms =
+        ComputeInheritedPerms(oldMap, path, /* aIncludeDeny = */ false);
     const int newPerms = localPerms | inheritedPerms;
     if ((newPerms & ~RECURSIVE) == inheritedPerms) {
       if (SandboxInfo::Get().Test(SandboxInfo::kVerbose)) {
@@ -368,29 +426,23 @@ int SandboxBroker::Policy::Lookup(const nsACString& aPath) const {
   if (perms) {
     return perms;
   }
-
   // Not a legally constructed path
-  if (!ValidatePath(PromiseFlatCString(aPath).get())) return 0;
-
-  // Now it's either an illegal access, or a recursive
-  // directory permission. We'll have to check the entire
-  // whitelist for the best match (slower).
-  int allPerms = 0;
+  if (!ValidatePath(PromiseFlatCString(aPath).get())) {
+    return 0;
+  }
+  // Now it's either an illegal access, or a recursive directory permission.
+  // We'll have to check the entire whitelist for the best match (slower).
+  AutoTArray<Match, 4> matches;
   for (const auto& entry : mMap) {
-    const nsACString& whiteListPath = entry.GetKey();
-    const int& perms = entry.GetData();
-
-    if (!(perms & RECURSIVE)) continue;
-
-    // passed part starts with something on the whitelist
-    if (StringBeginsWith(aPath, whiteListPath)) {
-      allPerms |= perms;
+    if ((entry.GetData() & RECURSIVE) &&
+        StringBeginsWith(aPath, entry.GetKey())) {
+      matches.AppendElement(Match{entry.GetKey().Length(), entry.GetData()});
     }
   }
-
-  // Strip away the RECURSIVE flag as it doesn't
-  // necessarily apply to aPath.
-  return allPerms & ~RECURSIVE;
+  if (matches.Length() > 1) {
+    matches.Sort();
+  }
+  return ComputeInheritedPerms(matches, /* aIncludeDeny= */ true);
 }
 
 static bool AllowOperation(int aReqFlags, int aPerms) {
@@ -475,17 +527,6 @@ static int DoStat(const char* aPath, statstruct* aBuff, int aFlags) {
     return lstatsyscall(aPath, aBuff);
   }
   return statsyscall(aPath, aBuff);
-}
-
-static int DoLink(const char* aPath, const char* aPath2,
-                  SandboxBrokerCommon::Operation aOper) {
-  if (aOper == SandboxBrokerCommon::Operation::SANDBOX_FILE_LINK) {
-    return link(aPath, aPath2);
-  }
-  if (aOper == SandboxBrokerCommon::Operation::SANDBOX_FILE_SYMLINK) {
-    return symlink(aPath, aPath2);
-  }
-  MOZ_CRASH("SandboxBroker: Unknown link operation");
 }
 
 static int DoConnect(const char* aPath, size_t aLen, int aType,
@@ -608,9 +649,9 @@ int SandboxBroker::SymlinkPermissions(const char* aPath,
   int perms = 0;
   // Resolve relative paths, propagate permissions and
   // fail if a symlink is in a writable path. The output is in perms.
-  char* result =
-      SandboxBroker::SymlinkPath(mPolicy.get(), pathBufSymlink, NULL, &perms);
-  if (result != NULL) {
+  char* result = SandboxBroker::SymlinkPath(mPolicy.get(), pathBufSymlink,
+                                            nullptr, &perms);
+  if (result != nullptr) {
     free(result);
     // We finished the translation, so we have a usable return in "perms".
     return perms;
@@ -709,6 +750,11 @@ void SandboxBroker::ThreadMain(void) {
       shutdown(mFileDesc, SHUT_RD);
       break;
     }
+    if (!OperationIsValid(req.mOp)) {
+      SANDBOX_LOG("invalid op %d", static_cast<unsigned>(req.mOp));
+      shutdown(mFileDesc, SHUT_RD);
+      break;
+    }
 
     // Initialize the response with the default failure.
     memset(&resp, 0, sizeof(resp));
@@ -774,13 +820,21 @@ void SandboxBroker::ThreadMain(void) {
       // Same for the second path.
       pathLen2 = strnlen(pathBuf2, kMaxPathLen);
       if (pathLen2 > 0) {
+        if (OperationPaths(req.mOp) < 2) {
+          SANDBOX_LOG("extra path for op %s from pid %d",
+                      OperationDescription(req.mOp), mChildPid);
+          shutdown(mFileDesc, SHUT_RD);
+          break;
+        }
         // Force 0 termination.
         pathBuf2[pathLen2] = '\0';
         pathLen2 = ConvertRelativePath(pathBuf2, sizeof(pathBuf2), pathLen2);
         int perms2 = mPolicy->Lookup(nsDependentCString(pathBuf2, pathLen2));
 
-        // Take the intersection of the permissions for both paths.
-        perms &= perms2;
+        // Take the intersection of the permissions for both paths
+        // (the bits which cause denials need to be handled specially).
+        constexpr int kNegPerms = FORCE_DENY | CRASH_INSTEAD;
+        perms = (perms & perms2) | ((perms | perms2) & kNegPerms);
       }
     } else {
       // Failed to receive intelligible paths.
@@ -853,9 +907,8 @@ void SandboxBroker::ThreadMain(void) {
           break;
 
         case SANDBOX_FILE_LINK:
-        case SANDBOX_FILE_SYMLINK:
           if (permissive || AllowOperation(W_OK | X_OK, perms)) {
-            if (DoLink(pathBuf, pathBuf2, req.mOp) == 0) {
+            if (link(pathBuf, pathBuf2) == 0) {
               resp.mError = 0;
             } else {
               resp.mError = -errno;
@@ -986,6 +1039,8 @@ void SandboxBroker::ThreadMain(void) {
             AuditDenial(req.mOp, req.mFlags, req.mId, perms, pathBuf);
           }
           break;
+        default:
+          MOZ_CRASH("unreachable");
       }
     } else {
       MOZ_ASSERT(perms == 0);
@@ -1027,7 +1082,7 @@ void SandboxBroker::ThreadMain(void) {
   }
 }
 
-void SandboxBroker::AuditPermissive(int aOp, int aFlags, uint64_t aId,
+void SandboxBroker::AuditPermissive(Operation aOp, int aFlags, uint64_t aId,
                                     int aPerms, const char* aPath) {
   MOZ_RELEASE_ASSERT(SandboxInfo::Get().Test(SandboxInfo::kPermissive));
 
@@ -1041,21 +1096,21 @@ void SandboxBroker::AuditPermissive(int aOp, int aFlags, uint64_t aId,
   SANDBOX_LOG_ERRNO(
       "SandboxBroker: would have denied op=%s rflags=%o perms=%d path=%s for "
       "pid=%d permissive=1; real status",
-      OperationDescription[aOp], aFlags, aPerms, aPath, mChildPid);
+      OperationDescription(aOp), aFlags, aPerms, aPath, mChildPid);
   SandboxProfiler::ReportAudit("SandboxBroker::AuditPermissive",
-                               OperationDescription[aOp], aFlags, aId, aPerms,
+                               OperationDescription(aOp), aFlags, aId, aPerms,
                                aPath, mChildPid);
 }
 
-void SandboxBroker::AuditDenial(int aOp, int aFlags, uint64_t aId, int aPerms,
-                                const char* aPath) {
+void SandboxBroker::AuditDenial(Operation aOp, int aFlags, uint64_t aId,
+                                int aPerms, const char* aPath) {
   if (SandboxInfo::Get().Test(SandboxInfo::kVerbose)) {
     SANDBOX_LOG(
         "SandboxBroker: denied op=%s rflags=%o perms=%d path=%s for pid=%d",
-        OperationDescription[aOp], aFlags, aPerms, aPath, mChildPid);
+        OperationDescription(aOp), aFlags, aPerms, aPath, mChildPid);
   }
   SandboxProfiler::ReportAudit("SandboxBroker::AuditDenial",
-                               OperationDescription[aOp], aFlags, aId, aPerms,
+                               OperationDescription(aOp), aFlags, aId, aPerms,
                                aPath, mChildPid);
 }
 

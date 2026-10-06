@@ -5,6 +5,9 @@
 "use strict";
 
 const {
+  ignore,
+} = require("resource://devtools/client/shared/redux/middleware/ignore.js");
+const {
   thunk,
 } = require("resource://devtools/client/shared/redux/middleware/thunk.js");
 const eventTelemetryMiddleware = require("resource://devtools/client/application/src/middleware/event-telemetry.js");
@@ -40,6 +43,7 @@ function configureStore(telemetry) {
   };
 
   const middleware = applyMiddleware(
+    ignore,
     thunk(),
     eventTelemetryMiddleware(telemetry)
   );

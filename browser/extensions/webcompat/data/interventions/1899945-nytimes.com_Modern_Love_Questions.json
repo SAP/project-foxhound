@@ -1,0 +1,15 @@
+{
+  "label": "nytimes.com Modern Love Questions",
+  "bugs": {
+    "1899945": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://www.nytimes.com/interactive/projects/modern-love/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

@@ -3,19 +3,19 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
+import functools
 import itertools
 import logging
 import math
 
 import taskgraph
-from mozbuild.util import memoize
 from mozpack.path import match as mozpackmatch
 from taskgraph.util import json
 
 logger = logging.getLogger(__name__)
 
 
-@memoize
+@functools.cache
 def perfile_number_of_chunks(is_try, try_task_config, files_changed, type):
     changed_files = set(files_changed)
     if taskgraph.fast and not is_try:
@@ -68,7 +68,7 @@ def perfile_number_of_chunks(is_try, try_task_config, files_changed, type):
 
             if mozpackmatch(path, pattern):
                 gpu = False
-                if type == "test-verify-e10s" or type == "test-coverage-e10s":
+                if type in {"test-verify-e10s", "test-coverage-e10s"}:
                     # file_patterns for test-verify will pick up some gpu tests, lets ignore
                     # in the case of reftest, we will not have any in the regular case
                     gpu_dirs = [

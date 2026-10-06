@@ -38,9 +38,9 @@ export var TargetActorRegistry = {
    * In some scenarios, the registry can have multiple target actors for a given
    * browserId (e.g. the regular DevTools content toolbox + DevTools WebExtensions targets).
    *
-   * @param {Object} sessionContext: The Session Context to help know what is debugged.
+   * @param {object} sessionContext: The Session Context to help know what is debugged.
    *                                 See devtools/server/actors/watcher/session-context.js
-   * @param {String} connectionPrefix: DevToolsServerConnection's prefix, in order to select only actor
+   * @param {string} connectionPrefix: DevToolsServerConnection's prefix, in order to select only actor
    *                                   related to the same connection. i.e. the same client.
    * @returns {Array<TargetActor>}
    */
@@ -66,9 +66,9 @@ export var TargetActorRegistry = {
    * Helper for tests to help track the number of targets created for a given tab.
    * (Used by browser_ext_devtools_inspectedWindow.js)
    *
-   * @param {Number} browserId: ID for the tab
+   * @param {number} browserId: ID for the tab
    *
-   * @returns {Number} Number of targets for this tab.
+   * @returns {number} Number of targets for this tab.
    */
 
   getTargetActorsCountForBrowserElement(browserId) {

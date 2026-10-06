@@ -37,9 +37,7 @@ RUN apt-get update && \
       libgtk-3-0 \
       libucl1 \
       libxml2 \
-      m4 \
       make \
-      p7zip-full \
       perl \
       procps \
       python3-dev \

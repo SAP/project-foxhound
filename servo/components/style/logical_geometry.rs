@@ -4,13 +4,13 @@
 
 //! Geometry in flow-relative space.
 
+use crate::derives::*;
 use crate::properties::style_structs;
 use euclid::default::{Point2D, Rect, SideOffsets2D, Size2D};
 use euclid::num::Zero;
 use std::cmp::{max, min};
 use std::fmt::{self, Debug, Error, Formatter};
 use std::ops::{Add, Sub};
-use unicode_bidi as bidi;
 
 pub enum BlockFlowDirection {
     TopToBottom,
@@ -41,6 +41,7 @@ pub enum InlineBaseDirection {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(u8)]
 pub enum WritingModeProperty {
@@ -113,7 +114,7 @@ bitflags!(
         const WRITING_MODE_HORIZONTAL_TB = 0;
         /// * writing-mode: vertical_rl;
         const WRITING_MODE_VERTICAL_RL = WritingMode::VERTICAL.bits();
-        /// * writing-mode: vertcail-lr;
+        /// * writing-mode: vertical-lr;
         const WRITING_MODE_VERTICAL_LR = WritingMode::VERTICAL.bits() |
                                          WritingMode::VERTICAL_LR.bits() |
                                          WritingMode::LINE_INVERTED.bits();
@@ -223,6 +224,11 @@ impl WritingMode {
     }
 
     #[inline]
+    pub fn is_vertical_rl(&self) -> bool {
+        self.is_vertical() && !self.is_vertical_lr()
+    }
+
+    #[inline]
     pub fn is_horizontal(&self) -> bool {
         !self.is_vertical()
     }
@@ -307,6 +313,25 @@ impl WritingMode {
         }
     }
 
+    /// Given a physical side, flips the start on that axis, and returns the corresponding
+    /// physical side.
+    #[inline]
+    pub fn flipped_start_side(&self, side: PhysicalSide) -> PhysicalSide {
+        let bs = self.block_start_physical_side();
+        if side == bs {
+            return self.inline_start_physical_side();
+        }
+        let be = self.block_end_physical_side();
+        if side == be {
+            return self.inline_end_physical_side();
+        }
+        if side == self.inline_start_physical_side() {
+            return bs;
+        }
+        debug_assert_eq!(side, self.inline_end_physical_side());
+        be
+    }
+
     #[inline]
     pub fn start_start_physical_corner(&self) -> PhysicalCorner {
         PhysicalCorner::from_sides(
@@ -354,18 +379,6 @@ impl WritingMode {
             InlineBaseDirection::RightToLeft
         } else {
             InlineBaseDirection::LeftToRight
-        }
-    }
-
-    #[inline]
-    /// The default bidirectional embedding level for this writing mode.
-    ///
-    /// Returns bidi level 0 if the mode is LTR, or 1 otherwise.
-    pub fn to_bidi_level(&self) -> bidi::Level {
-        if self.is_bidi_ltr() {
-            bidi::Level::ltr()
-        } else {
-            bidi::Level::rtl()
         }
     }
 
@@ -1135,10 +1148,10 @@ impl<T: Clone> LogicalMargin<T> {
 impl<T: PartialEq + Zero> LogicalMargin<T> {
     #[inline]
     pub fn is_zero(&self) -> bool {
-        self.block_start == Zero::zero() &&
-            self.inline_end == Zero::zero() &&
-            self.block_end == Zero::zero() &&
-            self.inline_start == Zero::zero()
+        self.block_start == Zero::zero()
+            && self.inline_end == Zero::zero()
+            && self.block_end == Zero::zero()
+            && self.inline_start == Zero::zero()
     }
 }
 
@@ -1399,8 +1412,8 @@ impl<T: Copy + Add<T, Output = T> + Sub<T, Output = T>> LogicalRect<T> {
 
     pub fn translate(&self, offset: &LogicalPoint<T>) -> LogicalRect<T> {
         LogicalRect {
-            start: self.start +
-                LogicalSize {
+            start: self.start
+                + LogicalSize {
                     inline: offset.i,
                     block: offset.b,
                     debug_writing_mode: offset.debug_writing_mode,
@@ -1568,10 +1581,10 @@ impl LogicalSide {
         ];
 
         debug_assert!(
-            WritingMode::VERTICAL.bits() == 0x01 &&
-                WritingMode::INLINE_REVERSED.bits() == 0x02 &&
-                WritingMode::VERTICAL_LR.bits() == 0x04 &&
-                WritingMode::LINE_INVERTED.bits() == 0x08
+            WritingMode::VERTICAL.bits() == 0x01
+                && WritingMode::INLINE_REVERSED.bits() == 0x02
+                && WritingMode::VERTICAL_LR.bits() == 0x04
+                && WritingMode::LINE_INVERTED.bits() == 0x08
         );
         let index = (wm.bits() & 0xF) as usize;
         INLINE_MAPPING[index][edge]
@@ -1621,8 +1634,24 @@ pub enum PhysicalSide {
 }
 
 impl PhysicalSide {
-    fn orthogonal_to(self, other: Self) -> bool {
+    /// Returns whether one physical side is parallel to another.
+    pub fn parallel_to(self, other: Self) -> bool {
+        !self.orthogonal_to(other)
+    }
+
+    /// Returns whether one physical side is orthogonal to another.
+    pub fn orthogonal_to(self, other: Self) -> bool {
         matches!(self, Self::Top | Self::Bottom) != matches!(other, Self::Top | Self::Bottom)
+    }
+
+    /// Returns the opposite side.
+    pub fn opposite_side(self) -> Self {
+        match self {
+            Self::Top => Self::Bottom,
+            Self::Right => Self::Left,
+            Self::Bottom => Self::Top,
+            Self::Left => Self::Right,
+        }
     }
 }
 

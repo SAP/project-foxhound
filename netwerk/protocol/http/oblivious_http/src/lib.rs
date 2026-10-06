@@ -194,7 +194,7 @@ impl ObliviousHttp {
 }
 
 #[no_mangle]
-pub extern "C" fn oblivious_http_constructor(
+pub unsafe extern "C" fn oblivious_http_constructor(
     iid: *const xpcom::nsIID,
     result: *mut *mut xpcom::reexports::libc::c_void,
 ) -> nserror::nsresult {

@@ -12,7 +12,7 @@ This module is the glue between Firefox and Glean.
 * It is written in Rust.
 * The crate is named `fog_control`.
 * It is not published to crates.io.
-* It is not consumed by other Rust crates inside mozilla-central.
+* It is not consumed by other Rust crates inside `mozilla-central`.
 
 This module is responsible for
 
@@ -29,7 +29,7 @@ It calls into `glean` (the Glean SDK Rust Language Binding) to:
 * toggle `upload_enabled`
 * get upload tasks
 
-It calls into `fog` to:
+It calls into the `firefox-on-glean` crate to:
 
 * pass IPC buffers
 * record to its own metrics
@@ -40,13 +40,15 @@ This module provides the user-facing API for Glean inside mozilla-central.
 
 * The code lives in `toolkit/components/glean/api`.
 * It is written in Rust.
-* The crate is named `fog`.
-* It is not published to crates.io.
-* It can be consumed by other Rust crates inside mozilla-central for their Glean usage.
+* The crate is named `firefox-on-glean`.
+* Though it is published to crates.io,
+  that is merely so it can be used as an optional dependency for crates inside
+  `mozilla-central` that need to ship outside of `mozilla-central` sometimes.
+* It can be consumed by other Rust crates inside `mozilla-central` for their Glean usage.
 
 This module is responsible for
 
-* exposing a specific metric API in Rust
+* exposing the specific metric API in Rust
 * wrapping metric implementations for handling IPC
 * exposing FFI functionality to implement other language APIs on top.
   See also [Adding a New Metric Type](new_metric_types.md).

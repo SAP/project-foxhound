@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -146,8 +145,13 @@ class TextEditor final : public EditorBase,
 
   MOZ_CAN_RUN_SCRIPT nsresult
   OnFocus(const nsINode& aOriginalEventTargetNode) final;
+  MOZ_CAN_RUN_SCRIPT void PostHandleFocusEvent(
+      const nsINode& aFocusEventTargetNode) final;
 
   nsresult OnBlur(const dom::EventTarget* aEventTarget) final;
+
+  [[nodiscard]] Result<widget::IMEState, nsresult> GetPreferredIMEState()
+      const final;
 
   /**
    * The maximum number of characters allowed.
@@ -183,25 +187,9 @@ class TextEditor final : public EditorBase,
   InsertLineBreakAsAction(nsIPrincipal* aPrincipal = nullptr) final;
 
   /**
-   * ComputeTextValue() computes plaintext value of this editor.  This may be
-   * too expensive if it's in hot path.
-   *
-   * @param aDocumentEncoderFlags   Flags of nsIDocumentEncoder.
-   * @param aCharset                Encoding of the document.
+   * ComputeTextValue() computes plaintext value of this editor.
    */
-  nsresult ComputeTextValue(uint32_t aDocumentEncoderFlags,
-                            nsAString& aOutputString) const {
-    AutoEditActionDataSetter editActionData(*this, EditAction::eNotEditing);
-    if (NS_WARN_IF(!editActionData.CanHandle())) {
-      return NS_ERROR_NOT_INITIALIZED;
-    }
-    nsresult rv = ComputeValueInternal(u"text/plain"_ns, aDocumentEncoderFlags,
-                                       aOutputString);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return EditorBase::ToGenericNSResult(rv);
-    }
-    return NS_OK;
-  }
+  nsresult ComputeTextValue(nsAString&) const;
 
   /**
    * The following methods are available only when the instance is a password
@@ -263,7 +251,14 @@ class TextEditor final : public EditorBase,
    * Return the `Text` node in the anonymous <div>.  Note that the anonymous
    * <div> can have only one `Text` for the storage of the value of this editor.
    */
-  dom::Text* GetTextNode() {
+  enum class IgnoreTextNodeCache : bool { No, Yes };
+  dom::Text* GetTextNode(
+      IgnoreTextNodeCache aIgnoreTextNodeCache = IgnoreTextNodeCache::No) {
+    if (aIgnoreTextNodeCache == IgnoreTextNodeCache::No) {
+      if (Text* const cachedTextNode = GetCachedTextNode()) {
+        return cachedTextNode;
+      }
+    }
     MOZ_DIAGNOSTIC_ASSERT(GetRoot());
     MOZ_DIAGNOSTIC_ASSERT(GetRoot()->GetFirstChild());
     MOZ_DIAGNOSTIC_ASSERT(GetRoot()->GetFirstChild()->IsText());
@@ -272,8 +267,9 @@ class TextEditor final : public EditorBase,
     }
     return GetRoot()->GetFirstChild()->GetAsText();
   }
-  const dom::Text* GetTextNode() const {
-    return const_cast<TextEditor*>(this)->GetTextNode();
+  const dom::Text* GetTextNode(IgnoreTextNodeCache aIgnoreTextNodeCache =
+                                   IgnoreTextNodeCache::No) const {
+    return const_cast<TextEditor*>(this)->GetTextNode(aIgnoreTextNodeCache);
   }
 
  protected:  // May be called by friends.
@@ -604,6 +600,17 @@ class TextEditor final : public EditorBase,
 
   MOZ_ALWAYS_INLINE bool HasAutoMaskingTimer() const {
     return mPasswordMaskData && mPasswordMaskData->mTimer;
+  }
+
+  void ResetPasswordMaskData() {
+    if (mPasswordMaskData) {
+      mPasswordMaskData->CancelTimer(PasswordMaskData::ReleaseTimer::Yes);
+    }
+    if (IsPasswordEditor()) {
+      mPasswordMaskData = MakeUnique<PasswordMaskData>();
+    } else {
+      mPasswordMaskData = nullptr;
+    }
   }
 
  protected:

@@ -49,6 +49,9 @@ add_setup(() => {
 });
 
 async function clear_state() {
+  Services.fog.testResetFOG();
+  enableUptakeMetric();
+
   Services.prefs.setStringPref(
     "services.settings.server",
     `http://localhost:${server.identity.primaryPort}/v1`
@@ -68,6 +71,9 @@ async function clear_state() {
     },
     delete: async id => {
       delete downloader.cache[id];
+    },
+    deleteMultiple: async ids => {
+      ids.forEach(id => delete downloader.cache[id]);
     },
     hasData: async () => {
       return !!Object.keys(downloader.cache).length;
@@ -201,41 +207,29 @@ add_task(async function test_delete_all() {
 add_task(clear_state);
 
 add_task(async function test_downloader_reports_download_errors() {
-  await withFakeChannel("nightly", async () => {
-    const client = RemoteSettings("some-collection");
+  const client = RemoteSettings("some-collection");
 
-    const record = {
-      attachment: {
-        ...RECORD.attachment,
-        location: "404-error.pem",
-      },
-    };
+  const record = {
+    attachment: {
+      ...RECORD.attachment,
+      location: "404-error.pem",
+    },
+  };
 
-    try {
-      await client.attachments.download(record, { retry: 0 });
-    } catch (e) {}
+  try {
+    await client.attachments.download(record, { retry: 0 });
+  } catch (e) {}
 
-    TelemetryTestUtils.assertEvents([
-      [
-        "uptake.remotecontent.result",
-        "uptake",
-        "remotesettings",
-        UptakeTelemetry.STATUS.DOWNLOAD_START,
-        {
-          source: client.identifier,
-        },
-      ],
-      [
-        "uptake.remotecontent.result",
-        "uptake",
-        "remotesettings",
-        UptakeTelemetry.STATUS.DOWNLOAD_ERROR,
-        {
-          source: client.identifier,
-        },
-      ],
-    ]);
-  });
+  assertTelemetryEvents([
+    {
+      value: UptakeTelemetry.STATUS.DOWNLOAD_START,
+      source: client.identifier,
+    },
+    {
+      value: UptakeTelemetry.STATUS.DOWNLOAD_ERROR,
+      source: client.identifier,
+    },
+  ]);
 });
 add_task(clear_state);
 
@@ -243,43 +237,31 @@ add_task(async function test_downloader_reports_offline_error() {
   const backupOffline = Services.io.offline;
   Services.io.offline = true;
 
-  await withFakeChannel("nightly", async () => {
+  try {
+    const client = RemoteSettings("some-collection");
+    const record = {
+      attachment: {
+        ...RECORD.attachment,
+        location: "will-try-and-fail.pem",
+      },
+    };
     try {
-      const client = RemoteSettings("some-collection");
-      const record = {
-        attachment: {
-          ...RECORD.attachment,
-          location: "will-try-and-fail.pem",
-        },
-      };
-      try {
-        await client.attachments.download(record, { retry: 0 });
-      } catch (e) {}
+      await client.attachments.download(record, { retry: 0 });
+    } catch (e) {}
 
-      TelemetryTestUtils.assertEvents([
-        [
-          "uptake.remotecontent.result",
-          "uptake",
-          "remotesettings",
-          UptakeTelemetry.STATUS.DOWNLOAD_START,
-          {
-            source: client.identifier,
-          },
-        ],
-        [
-          "uptake.remotecontent.result",
-          "uptake",
-          "remotesettings",
-          UptakeTelemetry.STATUS.NETWORK_OFFLINE_ERROR,
-          {
-            source: client.identifier,
-          },
-        ],
-      ]);
-    } finally {
-      Services.io.offline = backupOffline;
-    }
-  });
+    assertTelemetryEvents([
+      {
+        value: UptakeTelemetry.STATUS.DOWNLOAD_START,
+        source: client.identifier,
+      },
+      {
+        value: UptakeTelemetry.STATUS.NETWORK_OFFLINE_ERROR,
+        source: client.identifier,
+      },
+    ]);
+  } finally {
+    Services.io.offline = backupOffline;
+  }
 });
 add_task(clear_state);
 

@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 add_task(async function tabs_discarded_load_and_discard() {
@@ -9,11 +7,6 @@ add_task(async function tabs_discarded_load_and_discard() {
     },
     async background() {
       browser.test.sendMessage("ready");
-      const SHIP = await new Promise(resolve =>
-        browser.test.onMessage.addListener((msg, data) => {
-          resolve(data);
-        })
-      );
 
       const PAGE_URL_BEFORE = "http://example.com/initiallyDiscarded";
       const PAGE_URL =
@@ -74,7 +67,7 @@ add_task(async function tabs_discarded_load_and_discard() {
       // "restoring" the lazy browser prior to loading the requested URL.
 
       let expectedUrlChanges = [PAGE_URL_BEFORE, PAGE_URL];
-      if (SHIP && observedChanges.url.length === 1) {
+      if (observedChanges.url.length === 1) {
         // Except when SHIP is enabled, which turns this into a race,
         // so sometimes only the final URL is seen (see bug 1696815#c22).
         expectedUrlChanges = [PAGE_URL];
@@ -123,7 +116,6 @@ add_task(async function tabs_discarded_load_and_discard() {
 
   await extension.startup();
   await extension.awaitMessage("ready");
-  extension.sendMessage("SHIP", Services.appinfo.sessionHistoryInParent);
   await extension.awaitMessage("done");
   await extension.unload();
 });

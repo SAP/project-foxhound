@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -68,8 +66,8 @@ nsCString DisplayItemClipChain::ToString(
   nsAutoCString str;
   for (auto* sc = aClipChain; sc; sc = sc->mParent) {
     if (sc->mASR) {
-      str.AppendPrintf("0x%p <%s> [0x%p]", sc, sc->mClip.ToString().get(),
-                       sc->mASR->mScrollContainerFrame);
+      str.AppendPrintf("0x%p <%s> %s", sc, sc->mClip.ToString().get(),
+                       ActiveScrolledRoot::ToString(sc->mASR).get());
     } else {
       str.AppendPrintf("0x%p <%s> [root asr]", sc, sc->mClip.ToString().get());
     }

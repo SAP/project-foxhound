@@ -1,0 +1,65 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>MediaKeySystemConfiguration persistentState and distinctiveIdentifier check</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+<script type="text/javascript" src="manifest.js"></script>
+</head>
+<script type="application/javascript">
+
+/**
+ * This test verifies that the persistentState and distinctiveIdentifier are
+ * correctly set in the output configuration, and that they remain consistent
+ * between the output configs for MediaKeySystemAccess and MediaCapabilities.
+ */
+add_task(async function testConfigResults() {
+  const keySystem = "org.w3.clearkey";
+  const contentType = 'video/mp4; codecs="avc1.42e01e"';
+  const mksa = await navigator.requestMediaKeySystemAccess(keySystem, [{
+    persistentState: 'required',
+    // Clearkey doesn't support 'required'
+    distinctiveIdentifier: 'not-allowed',
+    videoCapabilities: [{
+      contentType
+    }],
+  }]);
+  is(mksa.getConfiguration().persistentState, 'required',
+     `${mksa.getConfiguration().persistentState} should be "required"`);
+  is(mksa.getConfiguration().distinctiveIdentifier, 'not-allowed',
+     `${mksa.getConfiguration().distinctiveIdentifier} should be "not-allowed"`);
+
+  const info = await navigator.mediaCapabilities.decodingInfo({
+    type: 'media-source',
+    video: {
+      width: 1280,
+      height: 720,
+      framerate: 30,
+      bitrate: 10000,
+      contentType
+    },
+    keySystemConfiguration: {
+      keySystem,
+      persistentState: 'required',
+      // Clearkey doesn't support 'required'
+      distinctiveIdentifier: 'not-allowed',
+    },
+  });
+  is(info.keySystemAccess.getConfiguration().persistentState, 'required',
+     `${info.keySystemAccess.getConfiguration().persistentState} should be "required"`);
+  is(info.keySystemAccess.getConfiguration().distinctiveIdentifier, 'not-allowed',
+     `${info.keySystemAccess.getConfiguration().distinctiveIdentifier} should be "not-allowed"`);
+
+  is(mksa.getConfiguration().persistentState,
+     info.keySystemAccess.getConfiguration().persistentState,
+     "They should be both 'required'");
+  is(mksa.getConfiguration().distinctiveIdentifier,
+     info.keySystemAccess.getConfiguration().distinctiveIdentifier,
+     "They should be both 'not-allowed'");
+});
+
+
+</script>
+<body>
+</body>
+</html>

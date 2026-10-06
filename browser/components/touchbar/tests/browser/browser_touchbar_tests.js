@@ -6,14 +6,14 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "TouchBarHelper",
   "@mozilla.org/widget/touchbarhelper;1",
-  "nsITouchBarHelper"
+  Ci.nsITouchBarHelper
 );
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "TouchBarInput",
   "@mozilla.org/widget/touchbarinput;1",
-  "nsITouchBarInput"
+  Ci.nsITouchBarInput
 );
 
 const TEST_PATH = getRootDirectory(gTestPath).replace(
@@ -118,6 +118,27 @@ add_task(async function updateMainButtonInFullscreen() {
     "chrome://global/skin/icons/search-glass.svg",
     "OpenLocation should be displaying the search glass icon."
   );
+});
+
+/**
+ * Tests that activeUrl and activeTitle return the URL and title of the
+ * selected tab. These getters are called from the macOS Share scrubber
+ * (nsTouchBar.mm's itemsForSharingServicePickerTouchBarItem:).
+ */
+add_task(async function activeUrlAndTitle() {
+  let url = TEST_PATH + "readerModeArticle.html";
+  await BrowserTestUtils.withNewTab(url, async function (browser) {
+    Assert.equal(
+      TouchBarHelper.activeUrl,
+      browser.currentURI.spec,
+      "activeUrl should match the selected tab's URL."
+    );
+    Assert.equal(
+      TouchBarHelper.activeTitle,
+      browser.contentTitle,
+      "activeTitle should match the selected tab's title."
+    );
+  });
 });
 
 add_task(async function toggleUrlbarFocusOnOpenLocation() {

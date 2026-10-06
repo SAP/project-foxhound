@@ -261,7 +261,7 @@ class GeckoWebExtension(
                 tabDetails: GeckoNativeWebExtension.CreateTabDetails,
             ): GeckoResult<GeckoSession>? {
                 val geckoEngineSession = GeckoEngineSession(
-                    runtime,
+                    runtime = runtime,
                     defaultSettings = defaultSettings,
                     openGeckoSession = false,
                 )
@@ -276,17 +276,7 @@ class GeckoWebExtension(
             }
 
             override fun onOpenOptionsPage(ext: GeckoNativeWebExtension) {
-                ext.metaData.optionsPageUrl?.let { optionsPageUrl ->
-                    tabHandler.onNewTab(
-                        this@GeckoWebExtension,
-                        GeckoEngineSession(
-                            runtime,
-                            defaultSettings = defaultSettings,
-                        ),
-                        false,
-                        optionsPageUrl,
-                    )
-                }
+                tabHandler.onOpenOptionsPage(this@GeckoWebExtension)
             }
         }
 
@@ -403,8 +393,11 @@ class GeckoWebExtension(
     }
 
     @VisibleForTesting
-    internal fun getIcon(size: Int): GeckoResult<Bitmap> {
-        return nativeExtension.metaData.icon.getBitmap(size)
+    internal fun getIcon(size: Int): GeckoResult<Bitmap?> {
+        return nativeExtension.metaData.icon.getBitmap(size).then(
+            { GeckoResult.fromValue(it) },
+            { GeckoResult.fromValue(null) },
+        )
     }
 
     /**
@@ -442,7 +435,12 @@ class GeckoPort(
 
 private fun GeckoNativeWebExtensionAction.convert(): Action {
     val loadIcon: (suspend (Int) -> Bitmap?)? = icon?.let {
-        { size -> icon?.getBitmap(size)?.await() }
+        { size ->
+            icon?.getBitmap(size)?.then(
+                { GeckoResult.fromValue(it) },
+                { GeckoResult.fromValue(null) },
+            )?.await()
+        }
     }
 
     val onClick = { click() }

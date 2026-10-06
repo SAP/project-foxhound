@@ -65,19 +65,25 @@ function parameterstest(pc) {
            Promise.resolve());
 }
 
-runNetworkTest(() => {
-  const test = new PeerConnectionTest();
-  test.setMediaConstraints([{video: true}], [{video: true}]);
-  test.chain.removeAfter("PC_REMOTE_WAIT_FOR_MEDIA_FLOW");
+runNetworkTest(async () => {
+  await withPrefs([
+    ["media.peerconnection.allow_old_setParameters", true],
+  ],
+    async () => {
+      const test = new PeerConnectionTest();
+      test.setMediaConstraints([{video: true}], [{video: true}]);
+      test.chain.removeAfter("PC_REMOTE_WAIT_FOR_MEDIA_FLOW");
 
-  // Test sender parameters.
-  test.chain.append([
-    function PC_LOCAL_SET_PARAMETERS(test) {
-      return parameterstest(test.pcLocal._pc);
+      // Test sender parameters.
+      test.chain.append([
+        function PC_LOCAL_SET_PARAMETERS(test) {
+          return parameterstest(test.pcLocal._pc);
+        }
+      ]);
+
+      await test.run();
     }
-  ]);
-
-  return test.run();
+  );
 });
 
 </script>

@@ -1,6 +1,6 @@
 load(libdir + "asserts.js");
 
 assertErrorMessage(() => RegExp.prototype.test.call({}), TypeError,
-                   /test method called on incompatible Object/);
+                   /RegExp.prototype.test called on incompatible receiver: Object/);
 assertErrorMessage(() => RegExp.prototype[Symbol.match].call([]), TypeError,
-                   /\[Symbol\.match\] method called on incompatible Array/);
+                   /RegExp.prototype.\[Symbol\.match\] called on incompatible receiver: Array/);

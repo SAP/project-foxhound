@@ -1,16 +1,19 @@
 # mozilla-mobile Docker Guide
+
 TaskCluster runs our automation tasks, such as compilation and unit tests, in a [Docker container](https://en.wikipedia.org/wiki/Docker_(software)). We maintain our own Docker images. A complete up-to-date listing is available [on Docker Hub](https://hub.docker.com/r/mozillamobile/):
+
 - [`mozillamobile/focus-android`](https://hub.docker.com/r/mozillamobile/focus-android/)
 - [`mozillamobile/firefox-tv`](https://hub.docker.com/r/mozillamobile/firefox-tv/)
 - [`mozillamobile/android-components`](https://hub.docker.com/r/mozillamobile/android-components/)
 - [`mozillamobile/fenix`](https://hub.docker.com/r/mozillamobile/fenix/)
 
- These images contain all the tools (e.g. Android SDK, Python runtime) needed to run our tasks. These images are built from a Dockerfile located in our repository (e.g. [focus-android Dockerfile](https://github.com/mozilla-mobile/focus-android/blob/master/tools/docker/Dockerfile)). Taskcluster downloads this image from [Docker Hub](https://hub.docker.com/) whenever it needs to run one of our tasks.
+  These images contain all the tools (e.g. Android SDK, Python runtime) needed to run our tasks. These images are built from a Dockerfile located in our repository (e.g. [focus-android Dockerfile](https://github.com/mozilla-mobile/focus-android/blob/master/tools/docker/Dockerfile)). Taskcluster downloads this image from [Docker Hub](https://hub.docker.com/) whenever it needs to run one of our tasks.
 
 If you want to build or use an image locally then you need to install the Community Edition of Docker on your machine:
-https://www.docker.com/community-edition
+<https://www.docker.com/community-edition>
 
 ## Updating the Docker image
+
 If our toolchain changes or if we require new tools for running tasks then it might be needed to update the image taskcluster uses. This sample will use the `mozillamobile/focus-android` docker image as an example:
 
 1. Install Docker Community Edition on your machine
@@ -41,12 +44,14 @@ Running this command requires that you have an account, are added to the "mozill
 
 Once the docker image is pushed, make sure your `taskcluster.yml` is referencing the new docker image with the correct tag number under `payload`.
 
-Note: If there is a failure while building the docker image, this often comes from lack of memory.  Try increasing the memory and swap space on GUI and/or `-m 5g` build argument.
+Note: If there is a failure while building the docker image, this often comes from lack of memory. Try increasing the memory and swap space on GUI and/or `-m 5g` build argument.
 
 ## Debugging errors
+
 If you receive an error on TaskCluster that you can't reproduce locally, you may need to use Docker locally to reproduce the TaskCluster build environment.
 
 tldr version to use docker:
+
 ```sh
 # Install docker from https://www.docker.com/community-edition
 
@@ -62,6 +67,7 @@ docker run -it mozillamobile/focus-android /bin/bash
 ```
 
 ## Cheat sheet
+
 A list of docker commands that can be helpful:
 
 ```sh
@@ -94,6 +100,7 @@ docker pull <tag>
 ```
 
 ## Help. I'm running out of disk space
+
 Over time Docker is using a lot of disk space for all the images and containers you have started. At least on MacOS even removing images and containers doesn't reclaim disk space. The only thing that seems to help is to remove this gigantic Docker.qcow2 file. Note that doing that will remove all your local images and containers. You will need to re-pull or re-build images you need.
 
 ```bash

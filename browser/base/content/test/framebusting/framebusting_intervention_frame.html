@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Framebusting Intervention - Frame</title>
+  </head>
+  <body>
+    <form id="form" method="post" target="_top"></form>
+    <a id="link" target="_top"></a>
+    <script>
+      const form = document.getElementById("form");
+      const link = document.getElementById("link");
+      const params = new URLSearchParams(location.search);
+
+      if (self != top) {
+        try {
+          switch (params.get("variant")) {
+            case null:
+            case "top":
+              top.location = self.location;
+              break;
+            case "open":
+              self.open(self.location, "_top");
+              break;
+            case "form":
+              form.action = self.location;
+              form.submit();
+              break;
+            case "link":
+              link.href = self.location;
+              link.click();
+              break;
+            case "mailto":
+              top.location = "mailto:example@example.com";
+              break;
+            default:
+              throw Error("Invalid variant!");
+          }
+        } catch (err) {
+          if (err.name !== "SecurityError") throw err;
+        }
+      }
+    </script>
+  </body>
+</html>

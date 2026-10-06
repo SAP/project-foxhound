@@ -13,7 +13,7 @@
 var manager = new MediaTestManager;
 
 function startTest(test, token) {
-  var video = document.createElement('video');
+  const video = document.createElement('video');
   video.preload = "metadata";
   video.token = token;
   video.prevTime = 0;
@@ -30,62 +30,63 @@ function startTest(test, token) {
   video.src = test.name;
   video.name = test.name;
 
-  var check = function(t, v) { return function() {
-    is(t.name, v.name, t.name + ": Name should match #1");
-    checkMetadata(t.name, v, t);
-  }}(test, video);
+  var check = function() {
+    is(test.name, video.name, test.name + ": Name should match #1");
+    checkMetadata(test.name, video, test);
+  };
 
-  var noLoad = function(t) { return function() {
-    ok(false, t.name + " should not fire 'load' event");
-  }}(test, video);
+  var noLoad = function() {
+    ok(false, test.name + " should not fire 'load' event");
+  };
 
-  var noError = function(t, v) { return function() {
-    ok(false, t.name + " should not fire 'error' event " + v.error.message);
-  }}(test, video);
+  var noError = function() {
+    ok(false, test.name + " should not fire 'error' event " + video.error.message);
+    finish();
+  };
 
   var finish = function() {
     video.finished = true;
     video.removeEventListener("timeupdate", timeUpdate);
     removeNodeAndSource(video);
     manager.finished(video.token);
-  }
+  };
 
   // We should get "ended" and "suspend" events to finish the test.
   var mayFinish = function() {
     if (video.seenEnded && video.seenSuspend) {
       finish();
     }
-  }
+  };
 
-  var checkEnded = function(t, v) { return function() {
-    is(t.name, v.name, t.name + ": Name should match #2");
-    checkMetadata(t.name, v, test);
-    is(v.readyState, v.HAVE_CURRENT_DATA, t.name + " checking readyState");
-    ok(v.ended, t.name + " checking playback has ended");
-    ok(!v.finished, t.name + " shouldn't be finished");
-    ok(!v.seenEnded, t.name + " shouldn't be ended");
+  var checkEnded = function() {
+    is(test.name, video.name, test.name + ": Name should match #2");
+    checkMetadata(test.name, video, test);
+    is(video.readyState, video.HAVE_CURRENT_DATA, test.name + " checking readyState");
+    ok(video.ended, test.name + " checking playback has ended");
+    ok(!video.finished, test.name + " shouldn't be finished");
+    ok(!video.seenEnded, test.name + " shouldn't be ended");
 
-    v.seenEnded = true;
+    video.seenEnded = true;
     mayFinish();
-  }}(test, video);
+  };
 
-  var checkSuspended = function(t, v) { return function() {
-    if (v.seenSuspend) {
+  var checkSuspended = function() {
+    if (video.seenSuspend) {
       return;
     }
-    is(t.name, v.name, t.name + ": Name should match #3");
+    is(test.name, video.name, test.name + ": Name should match #3");
 
-    v.seenSuspend = true;
+    video.seenSuspend = true;
     mayFinish();
-  }}(test, video);
+  };
 
-  var timeUpdate = function(t, v) { return function() {
-    if (v.prevTime > v.currentTime) {
-      ok(false, t.name + " time should run forwards: p=" +
-                v.prevTime + " c=" + v.currentTime);
+  var timeUpdate = function() {
+    if (video.prevTime > video.currentTime) {
+      ok(false, test.name + " time should run forwards: p=" +
+                video.prevTime + " c=" + video.currentTime);
     }
-    v.prevTime = v.currentTime;
-  }}(test, video);
+    video.prevTime = video.currentTime;
+  };
 
   video.addEventListener("load", noLoad);
   video.addEventListener("error", noError);

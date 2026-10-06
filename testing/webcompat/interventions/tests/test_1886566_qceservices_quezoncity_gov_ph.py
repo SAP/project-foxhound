@@ -36,13 +36,41 @@ async def is_iframe_visible(client, in_headless_mode):
     )
 
 
+@pytest.mark.only_firefox_versions(min=146)
+@pytest.mark.enable_webkit_fill_available
 @pytest.mark.asyncio
-@pytest.mark.with_interventions
-async def test_enabled(client, in_headless_mode):
+@pytest.mark.without_interventions
+async def test_now_works_with_just_pref(client, in_headless_mode):
     assert await is_iframe_visible(client, in_headless_mode)
 
 
+@pytest.mark.only_firefox_versions(min=146)
+@pytest.mark.disable_webkit_fill_available
+@pytest.mark.asyncio
+@pytest.mark.with_interventions
+async def test_still_works_without_pref(client, in_headless_mode):
+    assert await is_iframe_visible(client, in_headless_mode)
+
+
+@pytest.mark.only_firefox_versions(min=146)
+@pytest.mark.disable_webkit_fill_available
 @pytest.mark.asyncio
 @pytest.mark.without_interventions
-async def test_disabled(client, in_headless_mode):
+async def test_still_does_not_work_without_pref_or_intervention(
+    client, in_headless_mode
+):
+    assert not await is_iframe_visible(client, in_headless_mode)
+
+
+@pytest.mark.only_firefox_versions(max=145)
+@pytest.mark.asyncio
+@pytest.mark.without_interventions
+async def test_did_work_with_intervention(client, in_headless_mode):
+    assert await is_iframe_visible(client, in_headless_mode)
+
+
+@pytest.mark.only_firefox_versions(max=145)
+@pytest.mark.asyncio
+@pytest.mark.without_interventions
+async def test_did_not_work_without_intervention(client, in_headless_mode):
     assert not await is_iframe_visible(client, in_headless_mode)

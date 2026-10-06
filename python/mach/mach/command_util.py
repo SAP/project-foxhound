@@ -86,11 +86,16 @@ MACH_COMMANDS = {
         "python/mozbuild/mozbuild/compilation/codecomplete.py"
     ),
     "configure": MachCommandReference("python/mozbuild/mozbuild/build_commands.py"),
+    "coverage-report": MachCommandReference("tools/code-coverage/mach_commands.py"),
     "cppunittest": MachCommandReference("testing/mach_commands.py"),
+    "crash-ping-metrics": MachCommandReference(
+        "toolkit/crashreporter/crashping/glean_metrics.py"
+    ),
     "crashtest": MachCommandReference("layout/tools/reftest/mach_commands.py"),
     "data-review": MachCommandReference(
         "toolkit/components/glean/build_scripts/mach_commands.py"
     ),
+    "devtools-mcp": MachCommandReference("tools/mach_commands.py"),
     "devtools-node-test": MachCommandReference("devtools/mach_commands.py"),
     "doc": MachCommandReference("tools/moztreedocs/mach_commands.py"),
     "doctor": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
@@ -99,6 +104,8 @@ MACH_COMMANDS = {
     "event-into-legacy": MachCommandReference(
         "toolkit/components/glean/build_scripts/mach_commands.py"
     ),
+    "eval": MachCommandReference("toolkit/components/ml/eval/mach_commands.py"),
+    "eval-tools": MachCommandReference("toolkit/components/ml/eval/mach_commands.py"),
     "fetch-condprofile": MachCommandReference("testing/condprofile/mach_commands.py"),
     "file-info": MachCommandReference(
         "python/mozbuild/mozbuild/frontend/mach_commands.py"
@@ -123,6 +130,9 @@ MACH_COMMANDS = {
     "gifft": MachCommandReference(
         "toolkit/components/telemetry/build_scripts/mach_commands.py"
     ),
+    "gecko-trace": MachCommandReference(
+        "toolkit/components/gecko-trace/mach_commands.py"
+    ),
     "glean": MachCommandReference(
         "toolkit/components/glean/build_scripts/mach_commands.py"
     ),
@@ -133,6 +143,9 @@ MACH_COMMANDS = {
     ),
     "hazards": MachCommandReference("js/src/devtools/rootAnalysis/mach_commands.py"),
     "ide": MachCommandReference("python/mozbuild/mozbuild/backend/mach_commands.py"),
+    "rust-analyzer-config": MachCommandReference(
+        "python/mozbuild/mozbuild/backend/mach_commands.py"
+    ),
     "import-pr": MachCommandReference("tools/vcs/mach_commands.py"),
     "install": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
     "intermittents": MachCommandReference("testing/intermittents_mach_commands.py"),
@@ -150,7 +163,7 @@ MACH_COMMANDS = {
         "python/mach/mach/commands/commandinfo.py"
     ),
     "macos-sign": MachCommandReference("tools/signing/macos/mach_commands.py"),
-    "manifest": MachCommandReference("testing/mach_commands.py"),
+    "manifest": MachCommandReference("testing/manifest/mach_commands.py"),
     "platform-diff": MachCommandReference("testing/mach_commands.py"),
     "marionette-test": MachCommandReference("testing/marionette/mach_commands.py"),
     "mochitest": MachCommandReference("testing/mochitest/mach_commands.py", ["test"]),
@@ -163,6 +176,7 @@ MACH_COMMANDS = {
     "newtab": MachCommandReference("browser/extensions/newtab/mach_commands.py"),
     "node": MachCommandReference("tools/mach_commands.py"),
     "npm": MachCommandReference("tools/mach_commands.py"),
+    "npx": MachCommandReference("tools/mach_commands.py"),
     "nss-uplift": MachCommandReference("security/mach_commands.py"),
     "package": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
     "package-multi-locale": MachCommandReference(
@@ -172,6 +186,7 @@ MACH_COMMANDS = {
     "perf-data-review": MachCommandReference(
         "toolkit/components/glean/build_scripts/mach_commands.py"
     ),
+    "perfdocs": MachCommandReference("python/mozperftest/mozperftest/mach_commands.py"),
     "perftest": MachCommandReference("python/mozperftest/mozperftest/mach_commands.py"),
     "perftest-test": MachCommandReference(
         "python/mozperftest/mozperftest/mach_commands.py",
@@ -202,6 +217,7 @@ MACH_COMMANDS = {
     "rusttests": MachCommandReference("testing/mach_commands.py"),
     "settings": MachCommandReference("python/mach/mach/commands/settings.py"),
     "show-log": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
+    "source-package": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
     "static-analysis": MachCommandReference(
         "python/mozbuild/mozbuild/code_analysis/mach_commands.py"
     ),
@@ -219,11 +235,13 @@ MACH_COMMANDS = {
         "testing/webcompat/mach_commands.py",
     ),
     "tps-build": MachCommandReference("testing/tps/mach_commands.py"),
+    "tps-test": MachCommandReference("testing/tps/mach_commands.py"),
     "try": MachCommandReference("tools/tryselect/mach_commands.py"),
     "ts": MachCommandReference("tools/ts/mach_commands.py"),
     "uniffi": MachCommandReference(
         "toolkit/components/uniffi-bindgen-gecko-js/mach_commands.py"
     ),
+    "update": MachCommandReference("tools/update-programs/mach_commands.py"),
     "update-glean": MachCommandReference(
         "toolkit/components/glean/build_scripts/mach_commands.py"
     ),
@@ -268,6 +286,7 @@ MACH_COMMANDS = {
     "wpt-test-paths": MachCommandReference("testing/web-platform/mach_commands.py"),
     "wpt-unittest": MachCommandReference("testing/web-platform/mach_commands.py"),
     "wpt-update": MachCommandReference("testing/web-platform/mach_commands.py"),
+    "wrshell": MachCommandReference("gfx/wr/mach_commands.py"),
     "xpcshell": MachCommandReference("js/xpconnect/mach_commands.py"),
     "xpcshell-test": MachCommandReference(
         "testing/xpcshell/mach_commands.py", ["test"]
@@ -296,14 +315,14 @@ class DecoratorVisitor(ast.NodeVisitor):
             kwarg_dict = {}
 
             for name, arg in zip(["command", "subcommand"], decorator.args):
-                kwarg_dict[name] = arg.s
+                kwarg_dict[name] = arg.value
 
             for keyword in decorator.keywords:
                 if keyword.arg not in relevant_kwargs:
                     # We only care about these 3 kwargs, so we can safely skip the rest
                     continue
 
-                kwarg_dict[keyword.arg] = getattr(keyword.value, "s", "")
+                kwarg_dict[keyword.arg] = keyword.value.value
 
             command = kwarg_dict.pop("command")
             self.results.setdefault(command, {})

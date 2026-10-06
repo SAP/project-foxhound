@@ -13,9 +13,12 @@
 # Usage:
 # $ ./generate_sources_mozbuild.sh
 
+set -xe
+
 export LC_ALL=C
 BASE_DIR=$(pwd)
-LIBAOM_SRC_DIR="../../third_party/aom"
+ROOT_DIR="../.."
+LIBAOM_SRC_DIR="$ROOT_DIR/third_party/aom"
 LIBAOM_CONFIG_DIR="config"
 
 # Print license header.
@@ -34,21 +37,21 @@ function gen_rtcd_header {
 
   AOM_CONFIG=$BASE_DIR/$LIBAOM_CONFIG_DIR/$1/config/aom_config.h
 
-  $BASE_DIR/$LIBAOM_SRC_DIR/build/cmake/rtcd.pl \
+  $BASE_DIR/$LIBAOM_SRC_DIR/cmake/rtcd.pl \
     --arch=$2 \
     --sym=av1_rtcd $3 \
     --config=$AOM_CONFIG \
     $BASE_DIR/$LIBAOM_SRC_DIR/av1/common/av1_rtcd_defs.pl \
     > $BASE_DIR/$LIBAOM_CONFIG_DIR/$1/config/av1_rtcd.h
 
-  $BASE_DIR/$LIBAOM_SRC_DIR/build/cmake/rtcd.pl \
+  $BASE_DIR/$LIBAOM_SRC_DIR/cmake/rtcd.pl \
     --arch=$2 \
     --sym=aom_scale_rtcd $3 \
     --config=$AOM_CONFIG \
     $BASE_DIR/$LIBAOM_SRC_DIR/aom_scale/aom_scale_rtcd.pl \
     > $BASE_DIR/$LIBAOM_CONFIG_DIR/$1/config/aom_scale_rtcd.h
 
-  $BASE_DIR/$LIBAOM_SRC_DIR/build/cmake/rtcd.pl \
+  $BASE_DIR/$LIBAOM_SRC_DIR/cmake/rtcd.pl \
     --arch=$2 \
     --sym=aom_dsp_rtcd $3 \
     --config=$AOM_CONFIG \
@@ -62,7 +65,7 @@ function gen_arm64_optional_args {
   local file="$BASE_DIR/$LIBAOM_CONFIG_DIR/$1/config/aom_config.h"
 
   # The features below are copied from the "ARM64_FLAVORS" in
-  # AOM_DIR/build/cmake/cpu.cmake.
+  # AOM_DIR/cmake/cpu.cmake.
   local arm64_flavors=(
     "NEON"
     "ARM_CRC32"
@@ -94,7 +97,7 @@ function gen_arm64_optional_args {
 echo "Generating config files."
 python3 -m venv temp
 . temp/bin/activate
-pip install pyparsing==2.4.7
+pip install -e $ROOT_DIR/python/mozcmakeparser
 python3 generate_sources_mozbuild.py
 deactivate
 rm -r temp

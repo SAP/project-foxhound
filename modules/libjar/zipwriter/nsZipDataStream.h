@@ -9,7 +9,6 @@
 #include "nsZipWriter.h"
 #include "nsIOutputStream.h"
 #include "nsIStreamListener.h"
-#include "mozilla/Attributes.h"
 
 class nsZipDataStream final : public nsIStreamListener {
  public:
@@ -17,7 +16,7 @@ class nsZipDataStream final : public nsIStreamListener {
   NS_DECL_NSIREQUESTOBSERVER
   NS_DECL_NSISTREAMLISTENER
 
-  nsZipDataStream() {}
+  nsZipDataStream() = default;
 
   nsresult Init(nsZipWriter* aWriter, nsIOutputStream* aStream,
                 nsZipHeader* aHeader, int32_t aCompression);
@@ -25,7 +24,7 @@ class nsZipDataStream final : public nsIStreamListener {
   nsresult ReadStream(nsIInputStream* aStream);
 
  private:
-  ~nsZipDataStream() {}
+  ~nsZipDataStream() = default;
 
   nsCOMPtr<nsIStreamListener> mOutput;
   nsCOMPtr<nsIOutputStream> mStream;

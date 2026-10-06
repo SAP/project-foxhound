@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,16 +5,13 @@
 // Original author: ekr@rtfm.com
 
 // This is a wrapper around the nICEr ICE stack
-#ifndef transportlayerice_h__
-#define transportlayerice_h__
-
-#include "sigslot.h"
-
-#include "mozilla/RefPtr.h"
+#ifndef transportlayerice_h_
+#define transportlayerice_h_
 
 #include "m_cpp_utils.h"
-
+#include "mozilla/RefPtr.h"
 #include "nricemediastream.h"
+#include "sigslot.h"
 #include "transportlayer.h"
 
 // An ICE transport layer -- corresponds to a single ICE

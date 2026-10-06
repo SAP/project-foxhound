@@ -17,7 +17,18 @@ this.extension = class extends ExtensionAPI {
         },
 
         isAllowedFileSchemeAccess() {
-          return false;
+          if (
+            !Services.prefs.getBoolPref(
+              "extensions.webextensions.fileSchemeAccess.requireOptIn"
+            )
+          ) {
+            // Historically, we returned false here even when extensions had
+            // the ability to run content scripts in file:. When the preference
+            // disables the required opt-in, we maintain this historical
+            // behavior instead of returning true.
+            return false;
+          }
+          return context.extension.policy.fileSchemeAllowed;
         },
       },
     };

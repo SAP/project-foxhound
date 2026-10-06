@@ -153,8 +153,8 @@ where
 
 /// Returns true if a given string has a given prefix with case-insensitive match.
 pub fn starts_with_ignore_ascii_case(string: &str, prefix: &str) -> bool {
-    string.len() >= prefix.len() &&
-        string.as_bytes()[0..prefix.len()].eq_ignore_ascii_case(prefix.as_bytes())
+    string.len() >= prefix.len()
+        && string.as_bytes()[0..prefix.len()].eq_ignore_ascii_case(prefix.as_bytes())
 }
 
 /// Returns an ascii lowercase version of a string, only allocating if needed.
@@ -166,23 +166,3 @@ pub fn string_as_ascii_lowercase<'a>(input: &'a str) -> Cow<'a, str> {
         Cow::Borrowed(input)
     }
 }
-
-/// To avoid accidentally instantiating multiple monomorphizations of large
-/// serialization routines, we define explicit concrete types and require
-/// them in those routines. This avoids accidental mixing of String and
-/// nsACString arguments in Gecko, which would cause code size to blow up.
-#[cfg(feature = "gecko")]
-pub type CssStringWriter = ::nsstring::nsACString;
-
-/// String type that coerces to CssStringWriter, used when serialization code
-/// needs to allocate a temporary string.
-#[cfg(feature = "gecko")]
-pub type CssString = ::nsstring::nsCString;
-
-/// String. The comments for the Gecko types explain the need for this abstraction.
-#[cfg(feature = "servo")]
-pub type CssStringWriter = String;
-
-/// String. The comments for the Gecko types explain the need for this abstraction.
-#[cfg(feature = "servo")]
-pub type CssString = String;

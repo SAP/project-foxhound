@@ -198,6 +198,69 @@ let runTests = t.step_func_done(function() {
   testFindable(false, "find me", `
     Do you find <span inert>not findable</span> me?
   `, "boundary-crossing inert");
+
+  testFindable(true, "hidden content", `
+    <div hidden="until-found">This is hidden content</div>
+  `, "hidden=until-found should be findable");
+
+  testFindable(true, "details content", `
+    <details>
+      <summary>Click to expand</summary>
+      <div>This is details content</div>
+    </details>
+  `, "closed details should be findable");
+
+  promise_test(async function() {
+    const iframe = document.querySelector("iframe");
+    iframe.contentDocument.documentElement.innerHTML = `
+      <div id="hidden" hidden="until-found">findable text</div>
+    `;
+
+    const beforematchPromise = new Promise(resolve => {
+      iframe.contentDocument.getElementById("hidden").addEventListener("beforematch", () => {
+        resolve();
+      }, { once: true });
+    });
+
+    iframe.contentWindow.getSelection().removeAllRanges();
+    const found = iframe.contentWindow.find("findable");
+
+    assert_true(found, "Should find text in hidden=until-found");
+
+    await beforematchPromise;
+
+    await new Promise(resolve => iframe.contentWindow.requestAnimationFrame(resolve));
+
+    const hiddenElement = iframe.contentDocument.getElementById("hidden");
+    assert_equals(hiddenElement.hidden, false, "hidden attribute should be removed");
+  }, "beforematch event fires and element is revealed for hidden=until-found");
+
+  testFindable(false, "should not be found", `
+    <style>#outer { content-visibility: hidden; }</style>
+    <div id="outer">
+      <div hidden="until-found">This should not be found</div>
+    </div>
+  `, "hidden=until-found inside content-visibility:hidden should not be findable");
+
+  promise_test(async function() {
+    const iframe = document.querySelector("iframe");
+    iframe.contentDocument.documentElement.innerHTML = `
+      <details id="details">
+        <summary>Summary</summary>
+        <div>Details text</div>
+      </details>
+    `;
+
+    iframe.contentWindow.getSelection().removeAllRanges();
+    const found = iframe.contentWindow.find("Details text");
+
+    assert_true(found, "Should find text in closed details");
+
+    await new Promise(resolve => iframe.contentWindow.requestAnimationFrame(resolve));
+
+    const detailsElement = iframe.contentDocument.getElementById("details");
+    assert_true(detailsElement.open, "details element should be opened after find");
+  }, "details element is opened after find");
 });
 
 window.onload = function() {

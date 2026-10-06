@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,7 +12,6 @@
 #include "nsDeviceContext.h"
 #include "nsLayoutUtils.h"
 #include "nsObjCExceptions.h"
-#include "nsNumberControlFrame.h"
 #include "nsRect.h"
 #include "nsSize.h"
 #include "nsStyleConsts.h"
@@ -47,28 +45,13 @@
 using namespace mozilla;
 using namespace mozilla::gfx;
 
-#define DRAW_IN_FRAME_DEBUG 0
 #define SCROLLBARS_VISUAL_DEBUG 0
 
 // private Quartz routines needed here
 extern "C" {
 CG_EXTERN void CGContextSetCTM(CGContextRef, CGAffineTransform);
 CG_EXTERN void CGContextSetBaseCTM(CGContextRef, CGAffineTransform);
-typedef CFTypeRef CUIRendererRef;
-void CUIDraw(CUIRendererRef r, CGRect rect, CGContextRef ctx,
-             CFDictionaryRef options, CFDictionaryRef* result);
 }
-
-// Workaround for NSCell control tint drawing
-// Without this workaround, NSCells are always drawn with the clear control tint
-// as long as they're not attached to an NSControl which is a subview of an
-// active window.
-// XXXmstange Why doesn't Webkit need this?
-@implementation NSCell (ControlTintWorkaround)
-- (int)_realControlTint {
-  return [self controlTint];
-}
-@end
 
 // This is the window for our MOZCellDrawView. When an NSCell is drawn, some
 // NSCell implementations look at the draw view's window to determine whether
@@ -143,8 +126,8 @@ static void DrawFocusRingForCellIfNeeded(NSCell* aCell, NSRect aWithFrame,
     // for the whole button. The transparency layer is a way to merge the
     // individual button parts together before the focus ring shape is
     // calculated.
-    CGContextBeginTransparencyLayerWithRect(cgContext,
-                                            NSRectToCGRect(aWithFrame), 0);
+    CGContextBeginTransparencyLayerWithRect(
+        cgContext, NSRectToCGRect(aWithFrame), nullptr);
     [aCell drawFocusRingMaskWithFrame:aWithFrame inView:aInView];
     CGContextEndTransparencyLayer(cgContext);
 
@@ -194,6 +177,10 @@ using CellMarginArray = PerSizeArray<IntMargin>;
 
 static void InflateControlRect(NSRect* rect, NSControlSize cocoaControlSize,
                                const CellMarginArray& marginSet) {
+  if (nsCocoaFeatures::OnTahoeOrLater()) {
+    // Controls on macOS 26 fill the entire frame and do not require inflation.
+    return;
+  }
   auto controlSize = EnumSizeForCocoaSize(cocoaControlSize);
   const IntMargin& buttonMargins = marginSet[controlSize];
   rect->origin.x -= buttonMargins.left;
@@ -203,7 +190,7 @@ static void InflateControlRect(NSRect* rect, NSControlSize cocoaControlSize,
 }
 
 static NSWindow* NativeWindowForFrame(nsIFrame* aFrame,
-                                      nsIWidget** aTopLevelWidget = NULL) {
+                                      nsIWidget** aTopLevelWidget = nullptr) {
   if (!aFrame) return nil;
 
   nsIWidget* widget = aFrame->GetNearestWidget();
@@ -240,7 +227,7 @@ static NSSize WindowButtonsSize(nsIFrame* aFrame) {
 }
 
 static BOOL FrameIsInActiveWindow(nsIFrame* aFrame) {
-  nsIWidget* topLevelWidget = NULL;
+  nsIWidget* topLevelWidget = nullptr;
   NSWindow* win = NativeWindowForFrame(aFrame, &topLevelWidget);
   if (!topLevelWidget || !win) return YES;
 
@@ -338,17 +325,6 @@ nsNativeThemeCocoa::~nsNativeThemeCocoa() {
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
-// Limit on the area of the target rect (in pixels^2) in
-// DrawCellWithScaling() and DrawButton() and above which we
-// don't draw the object into a bitmap buffer.  This is to avoid crashes in
-// [NSGraphicsContext graphicsContextWithCGContext:flipped:] and
-// CGContextDrawImage(), and also to avoid very poor drawing performance in
-// CGContextDrawImage() when it scales the bitmap (particularly if xscale or
-// yscale is less than but near 1 -- e.g. 0.9).  This value was determined
-// by trial and error, on OS X 10.4.11 and 10.5.4, and on systems with
-// different amounts of RAM.
-#define BITMAP_MAX_AREA 500000
-
 static int GetBackingScaleFactorForRendering(CGContextRef cgContext) {
   CGAffineTransform ctm =
       CGContextGetUserSpaceToDeviceSpaceTransform(cgContext);
@@ -410,101 +386,80 @@ static void DrawCellWithScaling(NSCell* cell, CGContextRef cgContext,
 
   [NSGraphicsContext saveGraphicsState];
 
-  // Only skip the buffer if the area of our cell (in pixels^2) is too large.
-  if (drawRect.size.width * drawRect.size.height > BITMAP_MAX_AREA) {
-    // Inflate the rect Gecko gave us by the margin for the control.
-    InflateControlRect(&drawRect, controlSize, marginSet);
+  float w = ceil(drawRect.size.width);
+  float h = ceil(drawRect.size.height);
+  NSRect tmpRect = NSMakeRect(kMaxFocusRingWidth, kMaxFocusRingWidth, w, h);
 
-    NSGraphicsContext* savedContext = [NSGraphicsContext currentContext];
-    [NSGraphicsContext
-        setCurrentContext:[NSGraphicsContext
-                              graphicsContextWithCGContext:cgContext
-                                                   flipped:YES]];
+  // inflate to figure out the frame we need to tell NSCell to draw in, to get
+  // something that's 0,0,w,h
+  InflateControlRect(&tmpRect, controlSize, marginSet);
 
-    DrawCellIncludingFocusRing(cell, drawRect, view);
+  // and then, expand by kMaxFocusRingWidth size to make sure we can capture
+  // any focus ring
+  w += kMaxFocusRingWidth * 2.0;
+  h += kMaxFocusRingWidth * 2.0;
 
-    [NSGraphicsContext setCurrentContext:savedContext];
-  } else {
-    float w = ceil(drawRect.size.width);
-    float h = ceil(drawRect.size.height);
-    NSRect tmpRect = NSMakeRect(kMaxFocusRingWidth, kMaxFocusRingWidth, w, h);
+  int backingScaleFactor = GetBackingScaleFactorForRendering(cgContext);
+  CGColorSpaceRef rgb = CGColorSpaceCreateDeviceRGB();
+  CGContextRef ctx = CGBitmapContextCreate(
+      nullptr, (int)w * backingScaleFactor, (int)h * backingScaleFactor, 8,
+      (int)w * backingScaleFactor * 4, rgb, kCGImageAlphaPremultipliedFirst);
+  CGColorSpaceRelease(rgb);
 
-    // inflate to figure out the frame we need to tell NSCell to draw in, to get
-    // something that's 0,0,w,h
-    InflateControlRect(&tmpRect, controlSize, marginSet);
-
-    // and then, expand by kMaxFocusRingWidth size to make sure we can capture
-    // any focus ring
-    w += kMaxFocusRingWidth * 2.0;
-    h += kMaxFocusRingWidth * 2.0;
-
-    int backingScaleFactor = GetBackingScaleFactorForRendering(cgContext);
-    CGColorSpaceRef rgb = CGColorSpaceCreateDeviceRGB();
-    CGContextRef ctx = CGBitmapContextCreate(
-        NULL, (int)w * backingScaleFactor, (int)h * backingScaleFactor, 8,
-        (int)w * backingScaleFactor * 4, rgb, kCGImageAlphaPremultipliedFirst);
-    CGColorSpaceRelease(rgb);
-
-    // We need to flip the image twice in order to avoid drawing bugs on 10.4,
-    // see bug 465069. This is the first flip transform, applied to cgContext.
-    CGContextScaleCTM(cgContext, 1.0f, -1.0f);
-    CGContextTranslateCTM(cgContext, 0.0f,
-                          -(2.0 * destRect.origin.y + destRect.size.height));
-    if (mirrorHorizontal) {
-      CGContextScaleCTM(cgContext, -1.0f, 1.0f);
-      CGContextTranslateCTM(
-          cgContext, -(2.0 * destRect.origin.x + destRect.size.width), 0.0f);
-    }
-
-    NSGraphicsContext* savedContext = [NSGraphicsContext currentContext];
-    [NSGraphicsContext
-        setCurrentContext:[NSGraphicsContext graphicsContextWithCGContext:ctx
-                                                                  flipped:YES]];
-
-    CGContextScaleCTM(ctx, backingScaleFactor, backingScaleFactor);
-
-    // Set the context's "base transform" to in order to get correctly-sized
-    // focus rings.
-    CGContextSetBaseCTM(ctx, CGAffineTransformMakeScale(backingScaleFactor,
-                                                        backingScaleFactor));
-
-    // This is the second flip transform, applied to ctx.
-    CGContextScaleCTM(ctx, 1.0f, -1.0f);
-    CGContextTranslateCTM(ctx, 0.0f,
-                          -(2.0 * tmpRect.origin.y + tmpRect.size.height));
-
-    DrawCellIncludingFocusRing(cell, tmpRect, view);
-
-    [NSGraphicsContext setCurrentContext:savedContext];
-
-    CGImageRef img = CGBitmapContextCreateImage(ctx);
-
-    // Drop the image into the original destination rectangle, scaling to fit
-    // Only scale kMaxFocusRingWidth by xscale/yscale when the resulting rect
-    // doesn't extend beyond the overflow rect
-    float xscale = destRect.size.width / drawRect.size.width;
-    float yscale = destRect.size.height / drawRect.size.height;
-    float scaledFocusRingX =
-        xscale < 1.0f ? kMaxFocusRingWidth * xscale : kMaxFocusRingWidth;
-    float scaledFocusRingY =
-        yscale < 1.0f ? kMaxFocusRingWidth * yscale : kMaxFocusRingWidth;
-    CGContextDrawImage(cgContext,
-                       CGRectMake(destRect.origin.x - scaledFocusRingX,
-                                  destRect.origin.y - scaledFocusRingY,
-                                  destRect.size.width + scaledFocusRingX * 2,
-                                  destRect.size.height + scaledFocusRingY * 2),
-                       img);
-
-    CGImageRelease(img);
-    CGContextRelease(ctx);
+  // We need to flip the image twice in order to avoid drawing bugs on 10.4,
+  // see bug 465069. This is the first flip transform, applied to cgContext.
+  CGContextScaleCTM(cgContext, 1.0f, -1.0f);
+  CGContextTranslateCTM(cgContext, 0.0f,
+                        -(2.0 * destRect.origin.y + destRect.size.height));
+  if (mirrorHorizontal) {
+    CGContextScaleCTM(cgContext, -1.0f, 1.0f);
+    CGContextTranslateCTM(
+        cgContext, -(2.0 * destRect.origin.x + destRect.size.width), 0.0f);
   }
 
-  [NSGraphicsContext restoreGraphicsState];
+  NSGraphicsContext* savedContext = [NSGraphicsContext currentContext];
+  [NSGraphicsContext
+      setCurrentContext:[NSGraphicsContext graphicsContextWithCGContext:ctx
+                                                                flipped:YES]];
 
-#if DRAW_IN_FRAME_DEBUG
-  CGContextSetRGBFillColor(cgContext, 0.0, 0.0, 0.5, 0.25);
-  CGContextFillRect(cgContext, destRect);
-#endif
+  CGContextScaleCTM(ctx, backingScaleFactor, backingScaleFactor);
+
+  // Set the context's "base transform" to in order to get correctly-sized
+  // focus rings.
+  CGContextSetBaseCTM(
+      ctx, CGAffineTransformMakeScale(backingScaleFactor, backingScaleFactor));
+
+  // This is the second flip transform, applied to ctx.
+  CGContextScaleCTM(ctx, 1.0f, -1.0f);
+  CGContextTranslateCTM(ctx, 0.0f,
+                        -(2.0 * tmpRect.origin.y + tmpRect.size.height));
+
+  DrawCellIncludingFocusRing(cell, tmpRect, view);
+
+  [NSGraphicsContext setCurrentContext:savedContext];
+
+  CGImageRef img = CGBitmapContextCreateImage(ctx);
+
+  // Drop the image into the original destination rectangle, scaling to fit
+  // Only scale kMaxFocusRingWidth by xscale/yscale when the resulting rect
+  // doesn't extend beyond the overflow rect
+  float xscale = destRect.size.width / drawRect.size.width;
+  float yscale = destRect.size.height / drawRect.size.height;
+  float scaledFocusRingX =
+      xscale < 1.0f ? kMaxFocusRingWidth * xscale : kMaxFocusRingWidth;
+  float scaledFocusRingY =
+      yscale < 1.0f ? kMaxFocusRingWidth * yscale : kMaxFocusRingWidth;
+  CGContextDrawImage(cgContext,
+                     CGRectMake(destRect.origin.x - scaledFocusRingX,
+                                destRect.origin.y - scaledFocusRingY,
+                                destRect.size.width + scaledFocusRingX * 2,
+                                destRect.size.height + scaledFocusRingY * 2),
+                     img);
+
+  CGImageRelease(img);
+  CGContextRelease(ctx);
+
+  [NSGraphicsContext restoreGraphicsState];
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
@@ -653,28 +608,43 @@ static void DrawCellWithSnapping(NSCell* cell, CGContextRef cgContext,
 static float VerticalAlignFactor(nsIFrame* aFrame) {
   if (!aFrame) return 0.5f;  // default: center
 
-  const auto& va = aFrame->StyleDisplay()->mVerticalAlign;
-  auto kw = va.IsKeyword() ? va.AsKeyword() : StyleVerticalAlignKeyword::Middle;
-  switch (kw) {
-    case StyleVerticalAlignKeyword::Top:
-    case StyleVerticalAlignKeyword::TextTop:
+  const auto& alignmentBaseline = aFrame->StyleDisplay()->mAlignmentBaseline;
+  const auto& baselineShift = aFrame->StyleDisplay()->mBaselineShift;
+
+  if (baselineShift.IsKeyword()) {
+    switch (baselineShift.AsKeyword()) {
+      case StyleBaselineShiftKeyword::Top:
+        return 0.0f;
+
+      case StyleBaselineShiftKeyword::Sub:
+      case StyleBaselineShiftKeyword::Super:
+        return 0.5f;
+
+      case StyleBaselineShiftKeyword::Bottom:
+        return 1.0f;
+
+      default:
+        break;
+    }
+  }
+
+  switch (alignmentBaseline) {
+    case StyleAlignmentBaseline::TextTop:
       return 0.0f;
 
-    case StyleVerticalAlignKeyword::Sub:
-    case StyleVerticalAlignKeyword::Super:
-    case StyleVerticalAlignKeyword::Middle:
-    case StyleVerticalAlignKeyword::MozMiddleWithBaseline:
+    case StyleAlignmentBaseline::Middle:
+    case StyleAlignmentBaseline::MozMiddleWithBaseline:
       return 0.5f;
 
-    case StyleVerticalAlignKeyword::Baseline:
-    case StyleVerticalAlignKeyword::Bottom:
-    case StyleVerticalAlignKeyword::TextBottom:
+    case StyleAlignmentBaseline::Baseline:
+    case StyleAlignmentBaseline::TextBottom:
       return 1.0f;
 
     default:
-      MOZ_ASSERT_UNREACHABLE("invalid vertical-align");
-      return 0.5f;
+      break;
   }
+
+  return 0.5f;
 }
 
 static void ApplyControlParamsToNSCell(
@@ -737,9 +707,6 @@ void nsNativeThemeCocoa::DrawCheckboxOrRadio(
   ApplyControlParamsToNSCell(aParams.controlParams, cell);
 
   [cell setState:CellStateForCheckboxOrRadioState(aParams.state)];
-  [cell setControlTint:(aParams.controlParams.insideActiveWindow
-                            ? [NSColor currentControlTint]
-                            : NSClearControlTint)];
 
   // Ensure that the control is square.
   float length = std::min(inBoxRect.size.width, inBoxRect.size.height);
@@ -982,9 +949,7 @@ static void RenderTransformedHIThemeControl(CGContextRef aCGContext,
     drawDirect = FALSE;
   }
 
-  // Fall back to no bitmap buffer if the area of our control (in pixels^2)
-  // is too large.
-  if (drawDirect || (aRect.size.width * aRect.size.height > BITMAP_MAX_AREA)) {
+  if (drawDirect) {
     aFunc(aCGContext, drawRect, aData);
   } else {
     // Inflate the buffer to capture focus rings.
@@ -994,7 +959,7 @@ static void RenderTransformedHIThemeControl(CGContextRef aCGContext,
     int backingScaleFactor = GetBackingScaleFactorForRendering(aCGContext);
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
     CGContextRef bitmapctx = CGBitmapContextCreate(
-        NULL, w * backingScaleFactor, h * backingScaleFactor, 8,
+        nullptr, w * backingScaleFactor, h * backingScaleFactor, 8,
         w * backingScaleFactor * 4, colorSpace,
         kCGImageAlphaPremultipliedFirst);
     CGColorSpaceRelease(colorSpace);
@@ -1045,7 +1010,7 @@ static void RenderButton(CGContextRef cgContext, const NSRect& aRenderRect,
                          void* aData) {
   HIThemeButtonDrawInfo* bdi = (HIThemeButtonDrawInfo*)aData;
   HIThemeDrawButton(&aRenderRect, bdi, cgContext, kHIThemeOrientationNormal,
-                    NULL);
+                    nullptr);
 }
 
 void nsNativeThemeCocoa::DrawHIThemeButton(
@@ -1067,11 +1032,6 @@ void nsNativeThemeCocoa::DrawHIThemeButton(
 
   RenderTransformedHIThemeControl(cgContext, aRect, RenderButton, &bdi,
                                   aParams.rtl);
-
-#if DRAW_IN_FRAME_DEBUG
-  CGContextSetRGBFillColor(cgContext, 0.0, 0.0, 0.5, 0.25);
-  CGContextFillRect(cgContext, inBoxRect);
-#endif
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
@@ -1153,12 +1113,6 @@ void nsNativeThemeCocoa::DrawDropdown(CGContextRef cgContext,
       aParams.editable ? (NSCell*)mComboBoxCell : (NSCell*)mDropdownCell;
 
   ApplyControlParamsToNSCell(aParams.controlParams, cell);
-
-  if (aParams.controlParams.insideActiveWindow) {
-    [cell setControlTint:[NSColor currentControlTint]];
-  } else {
-    [cell setControlTint:NSClearControlTint];
-  }
 
   const CellRenderSettings& settings =
       aParams.editable ? editableMenulistSettings : dropdownSettings;
@@ -1718,21 +1672,6 @@ LayoutDeviceIntSize nsNativeThemeCocoa::GetMinimumWidgetSize(
   NS_OBJC_END_TRY_BLOCK_RETURN(LayoutDeviceIntSize());
 }
 
-bool nsNativeThemeCocoa::WidgetAttributeChangeRequiresRepaint(
-    StyleAppearance aAppearance, nsAtom* aAttribute) {
-  // Some widget types just never change state.
-  switch (aAppearance) {
-    case StyleAppearance::MozWindowTitlebar:
-    case StyleAppearance::MozSidebar:
-    case StyleAppearance::Tooltip:
-    case StyleAppearance::Menupopup:
-      return false;
-    default:
-      break;
-  }
-  return Theme::WidgetAttributeChangeRequiresRepaint(aAppearance, aAttribute);
-}
-
 bool nsNativeThemeCocoa::ThemeSupportsWidget(nsPresContext* aPresContext,
                                              nsIFrame* aFrame,
                                              StyleAppearance aAppearance) {
@@ -1778,22 +1717,6 @@ bool nsNativeThemeCocoa::ThemeSupportsWidget(nsPresContext* aPresContext,
   }
 
   return false;
-}
-
-bool nsNativeThemeCocoa::WidgetIsContainer(StyleAppearance aAppearance) {
-  // flesh this out at some point
-  switch (aAppearance) {
-    case StyleAppearance::MozMenulistArrowButton:
-    case StyleAppearance::Radio:
-    case StyleAppearance::Checkbox:
-    case StyleAppearance::MozMacHelpButton:
-    case StyleAppearance::MozMacDisclosureButtonOpen:
-    case StyleAppearance::MozMacDisclosureButtonClosed:
-      return false;
-    default:
-      break;
-  }
-  return true;
 }
 
 bool nsNativeThemeCocoa::ThemeDrawsFocusForWidget(nsIFrame*,

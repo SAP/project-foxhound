@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
+    <string name="app_name">Test App</string>
+    <string name="fenix_deprecated" tools:ignore="UnusedResources" moz:removedIn="149">Old text</string>
+    <string name="active_string">Still used</string>
+    <!-- Fenix has an active string with the same name as an AC deprecated one -->
+    <string name="shadowed_name">Fenix active version</string>
+</resources>

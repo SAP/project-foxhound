@@ -1,0 +1,34 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+about:
+  description: Nimbus Feature Manifest for Python Testing
+channels:
+  - nightly
+  - developer
+features:
+  example-feature:
+    description: An example feature
+    variables:
+      enabled:
+        description: If the feature is enabled
+        type: Boolean
+        default: false
+      something:
+        description: Another variable
+        type: Option<String>
+        default: null
+    defaults:
+      - channel: nightly
+        value: {
+           "enabled": true
+        }
+      - channel: developer
+        value: {
+           "something": "wicked"
+        }
+
+types:
+  objects: {}
+  enums: {}

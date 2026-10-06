@@ -1,0 +1,47 @@
+<!DOCTYPE HTML>
+<html>
+<!--
+https://bugzilla.mozilla.org/show_bug.cgi?id=2015811
+-->
+<head>
+  <title>Test for ordering of tasks from hashchange and popstate events on same-document navigation</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=2015811">Mozilla Bug 2015811</a>
+<p id="display"></p>
+<div id="content" style="display: none">
+
+</div>
+<pre id="test">
+  <script>
+    SimpleTest.waitForExplicitFinish();
+
+    onload = () => {
+      history.pushState({}, "", "#/");
+
+      let eventlog = [];
+      onpopstate = () => {
+        eventlog.push("popstate");
+
+        setTimeout(() => {
+          eventlog.push("timeout");
+
+          is(eventlog.length, 3);
+          is(eventlog[0], "popstate");
+          is(eventlog[1], "hashchange");
+          is(eventlog[2], "timeout");
+          SimpleTest.finish();
+        });
+      };
+      onhashchange = () => {
+        eventlog.push("hashchange");
+      };
+
+      history.back();
+    };
+  </script>
+</pre>
+</body>
+</html>

@@ -32,7 +32,7 @@ add_task(async function () {
   const sourceTab = findElementWithSelector(dbg, ".source-tab.active");
 
   ok(
-    sourceTab.querySelector(".source-icon.javascript"),
+    sourceTab.querySelector(".dbg-img-javascript.source-icon"),
     "Source tab for a react file has a Javascript icon"
   );
   assertSourceIcon(dbg, "App.js", "javascript");

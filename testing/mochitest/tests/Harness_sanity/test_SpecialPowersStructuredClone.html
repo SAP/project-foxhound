@@ -1,0 +1,43 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Test for structured clone of SpecialPowers methods</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+
+<script>
+  add_task(async function test_findUnexpectedCrashDumpFiles() {
+    let retval = await SpecialPowers.findUnexpectedCrashDumpFiles();
+
+    ok(SpecialPowers.isWrapper(retval), "Returns wrapper");
+
+    let realValue = SpecialPowers.unwrap(retval);
+    ok(Array.isArray(realValue), "Unwrapped value is array");
+
+    is(
+      SpecialPowers.unwrap(SpecialPowers.Cu.getGlobalForObject(realValue)),
+      window,
+      "Value part of current global"
+    );
+
+    // Now the part of interest: Can we clone? Regression test for bug 2007587:
+    structuredClone(realValue);
+
+    let actualError;
+    try {
+      structuredClone(retval);
+      actualError = "(no error thrown)";
+    } catch (e) {
+      actualError = e.toString();
+    }
+    is(
+      actualError,
+      "DataCloneError: Proxy object could not be cloned.",
+      "Wrapped value cannot be structured cloned"
+    );
+  });
+</script>
+</body>
+</html>

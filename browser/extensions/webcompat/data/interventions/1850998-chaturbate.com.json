@@ -1,0 +1,17 @@
+{
+  "label": "chaturbate.com",
+  "bugs": {
+    "1850998": {
+      "issue": "user-interface-frustration",
+      "matches": ["*://*.chaturbate.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "content_scripts": {
+        "js": ["bug1850998-chaturbate.com.js"]
+      }
+    }
+  ]
+}

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,11 +22,11 @@
 #include "nsThreadUtils.h"
 #include "nsString.h"
 #include "mozilla/AppShutdown.h"
+#include "mozilla/BackgroundHangMonitor.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProfilerMarkers.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/Try.h"
-#include "mozilla/Unused.h"
 
 #include "GeckoProfiler.h"
 #include "prprf.h"
@@ -156,7 +155,7 @@ nsAppStartup::nsAppStartup()
       mStartingUp(true),
       mAttemptingQuit(false),
       mIsSafeModeNecessary(false),
-      mStartupCrashTrackingEnded(false) {
+      mStartupCrashAndHangTrackingEnded(false) {
   char* mozAppSilentStart = PR_GetEnv("MOZ_APP_SILENT_START");
 
   /* When calling PR_SetEnv() with an empty value the existing variable may
@@ -173,6 +172,10 @@ nsAppStartup::nsAppStartup()
   mAllowWindowless =
       mozAppAllowWindowless && (strcmp(mozAppAllowWindowless, "") != 0);
 #endif
+}
+
+nsAppStartup::~nsAppStartup() {
+  BackgroundHangMonitor::UnregisterAnnotator(*this);
 }
 
 nsresult nsAppStartup::Init() {
@@ -194,6 +197,8 @@ nsresult nsAppStartup::Init() {
   os->AddObserver(this, "xul-window-destroyed", true);
   os->AddObserver(this, "profile-before-change", true);
   os->AddObserver(this, "xpcom-shutdown", true);
+
+  BackgroundHangMonitor::RegisterAnnotator(*this);
 
 #if defined(XP_WIN)
   os->AddObserver(this, "places-init-complete", true);
@@ -229,6 +234,17 @@ nsresult nsAppStartup::Init() {
 #endif  // defined(XP_WIN)
 
   return NS_OK;
+}
+
+void nsAppStartup::AnnotateHang(BackgroundHangAnnotations& aAnnotations) {
+  if (!mStartupCrashAndHangTrackingEnded) {
+    aAnnotations.AddAnnotation(u"BeforeStartupCrashAndHangTrackingEnded"_ns,
+                               true);
+  }
+
+  if (AppShutdown::IsShutdownImpending()) {
+    aAnnotations.AddAnnotation(u"ShutdownImpending"_ns, true);
+  }
 }
 
 //
@@ -549,8 +565,7 @@ Result<ShutdownPhase, nsresult> IDLShutdownPhaseToNative(
 
 NS_IMETHODIMP
 nsAppStartup::AdvanceShutdownPhase(IDLShutdownPhase aPhase) {
-  ShutdownPhase nativePhase;
-  MOZ_TRY_VAR(nativePhase, IDLShutdownPhaseToNative(aPhase));
+  ShutdownPhase nativePhase = MOZ_TRY(IDLShutdownPhaseToNative(aPhase));
   AppShutdown::AdvanceShutdownPhase(nativePhase);
   return NS_OK;
 }
@@ -558,9 +573,14 @@ nsAppStartup::AdvanceShutdownPhase(IDLShutdownPhase aPhase) {
 NS_IMETHODIMP
 nsAppStartup::IsInOrBeyondShutdownPhase(IDLShutdownPhase aPhase,
                                         bool* aIsInOrBeyond) {
-  ShutdownPhase nativePhase;
-  MOZ_TRY_VAR(nativePhase, IDLShutdownPhaseToNative(aPhase));
+  ShutdownPhase nativePhase = MOZ_TRY(IDLShutdownPhaseToNative(aPhase));
   *aIsInOrBeyond = AppShutdown::IsInOrBeyond(nativePhase);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsAppStartup::SetImpendingShutdown() {
+  AppShutdown::SetImpendingShutdown();
   return NS_OK;
 }
 
@@ -880,7 +900,7 @@ nsAppStartup::TrackStartupCrashBegin(bool* aIsSafeModeNecessary) {
   const int32_t MAX_STARTUP_BUFFER = 10;
   nsresult rv;
 
-  mStartupCrashTrackingEnded = false;
+  mStartupCrashAndHangTrackingEnded = false;
 
   StartupTimeline::Record(StartupTimeline::STARTUP_CRASH_DETECTION_BEGIN);
 
@@ -991,8 +1011,7 @@ static nsresult RemoveIncompleteStartupFile() {
         if (NS_WARN_IF(incompleteStartup.isErr())) {
           return;
         }
-        Unused << NS_WARN_IF(
-            NS_FAILED(incompleteStartup.unwrap()->Remove(false)));
+        (void)NS_WARN_IF(NS_FAILED(incompleteStartup.unwrap()->Remove(false)));
       }));
 }
 
@@ -1003,15 +1022,16 @@ nsAppStartup::TrackStartupCrashEnd() {
   if (xr) xr->GetInSafeMode(&inSafeMode);
 
   // return if we already ended or we're restarting into safe mode
-  if (mStartupCrashTrackingEnded || (mIsSafeModeNecessary && !inSafeMode))
+  if (mStartupCrashAndHangTrackingEnded ||
+      (mIsSafeModeNecessary && !inSafeMode))
     return NS_OK;
-  mStartupCrashTrackingEnded = true;
+  mStartupCrashAndHangTrackingEnded = true;
 
   StartupTimeline::Record(StartupTimeline::STARTUP_CRASH_DETECTION_END);
 
   // Remove the incomplete startup canary file, so the next startup doesn't
   // detect a recent startup crash.
-  Unused << NS_WARN_IF(NS_FAILED(RemoveIncompleteStartupFile()));
+  (void)NS_WARN_IF(NS_FAILED(RemoveIncompleteStartupFile()));
 
   // Use the timestamp of XRE_main as an approximation for the lock file
   // timestamp. See MAX_STARTUP_BUFFER for the buffer time period.
@@ -1034,7 +1054,7 @@ nsAppStartup::TrackStartupCrashEnd() {
     // On a successful startup in automatic safe mode, allow the user one more
     // crash in regular mode before returning to safe mode.
     int32_t maxResumedCrashes = 0;
-    int32_t prefType;
+    nsIPrefBranch::PreferenceType prefType;
     rv = Preferences::GetRootBranch(PrefValueKind::Default)
              ->GetPrefType(kPrefMaxResumedCrashes, &prefType);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -1069,7 +1089,8 @@ nsAppStartup::RestartInSafeMode(uint32_t aQuitMode) {
 }
 
 NS_IMETHODIMP
-nsAppStartup::CreateInstanceWithProfile(nsIToolkitProfile* aProfile) {
+nsAppStartup::CreateInstanceWithProfile(nsIToolkitProfile* aProfile,
+                                        const nsTArray<nsString>& aArgs) {
   if (NS_WARN_IF(!aProfile)) {
     return NS_ERROR_FAILURE;
   }
@@ -1102,8 +1123,15 @@ nsAppStartup::CreateInstanceWithProfile(nsIToolkitProfile* aProfile) {
 
   NS_ConvertUTF8toUTF16 wideName(profileName);
 
-  const char16_t* args[] = {u"-P", wideName.get()};
-  rv = process->Runw(false, args, 2);
+  // Build argument list: -P <profile_name> followed by any additional args
+  AutoTArray<const char16_t*, 2> args = {u"-P", wideName.get()};
+
+  // Add optional arguments if provided
+  for (const auto& arg : aArgs) {
+    args.AppendElement(arg.get());
+  }
+
+  rv = process->Runw(false, args.Elements(), args.Length());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }

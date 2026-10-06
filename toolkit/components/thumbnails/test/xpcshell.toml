@@ -2,4 +2,6 @@
 head = ""
 
 ["test_thumbnails_interfaces.js"]
-skip-if = ["os == 'android'"] # xpcom interface not packaged
+run-if = [
+  "os != 'android'", # xpcom interface not packaged
+]

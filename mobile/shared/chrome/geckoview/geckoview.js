@@ -13,7 +13,6 @@ var { XPCOMUtils } = ChromeUtils.importESModule(
 
 ChromeUtils.defineESModuleGetters(this, {
   Blocklist: "resource://gre/modules/Blocklist.sys.mjs",
-  E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
   EventDispatcher: "resource://gre/modules/Messaging.sys.mjs",
   GeckoViewActorManager: "resource://gre/modules/GeckoViewActorManager.sys.mjs",
   GeckoViewSettings: "resource://gre/modules/GeckoViewSettings.sys.mjs",
@@ -43,8 +42,7 @@ XPCOMUtils.defineLazyScriptGetter(
 /**
  * ModuleManager creates and manages GeckoView modules. Each GeckoView module
  * normally consists of a JSM module file with an optional content module file.
- * The module file contains a class that extends GeckoViewModule, and the
- * content module file contains a class that extends GeckoViewChildModule. A
+ * The module file contains a class that extends GeckoViewModule. A
  * module usually pairs with a particular GeckoSessionHandler or delegate on the
  * Java side, and automatically receives module lifetime events such as
  * initialization, change in enabled state, and change in settings.
@@ -54,11 +52,16 @@ var ModuleManager = {
     return window.arguments[0].QueryInterface(Ci.nsIGeckoViewView).initData;
   },
 
-  init(aBrowser, aModules) {
+  init(aModules) {
     const initData = this._initData;
-    this._browser = aBrowser;
     this._settings = initData.settings;
     this._frozenSettings = Object.freeze(Object.assign({}, this._settings));
+
+    // Promise resolvers set during applink navigation, used to defer extension startup.
+    this._applinkNavigation = null;
+
+    const browser = createBrowser(this.settings);
+    this._browser = browser;
 
     const self = this;
     this._modules = new Map(
@@ -76,16 +79,16 @@ var ModuleManager = {
       })()
     );
 
-    window.document.documentElement.appendChild(aBrowser);
+    window.document.documentElement.appendChild(browser);
 
     // By default all layers are discarded when a browser is set to inactive.
     // GeckoView by default sets browsers to inactive every time they're not
     // visible. To avoid flickering when changing tabs, we preserve layers for
     // all loaded tabs.
-    aBrowser.preserveLayers(true);
+    browser.preserveLayers(true);
     // GeckoView browsers start off as active (for now at least).
     // See bug 1815015 for an attempt at making them start off inactive.
-    aBrowser.docShellIsActive = true;
+    browser.docShellIsActive = true;
 
     WindowEventDispatcher.registerListener(this, [
       "GeckoView:UpdateModuleState",
@@ -93,15 +96,9 @@ var ModuleManager = {
       "GeckoView:UpdateSettings",
     ]);
 
-    this.messageManager.addMessageListener(
-      "GeckoView:ContentModuleLoaded",
-      this
-    );
-
     this._moduleByActorName = new Map();
     this.forEach(module => {
       module.onInit();
-      module.loadInitFrameScript();
       for (const actorName of module.actorNames) {
         this._moduleByActorName[actorName] = module;
       }
@@ -115,6 +112,14 @@ var ModuleManager = {
 
       this._modules.clear();
     });
+
+    browser.addEventListener("WillChangeBrowserRemoteness", () =>
+      this.willChangeBrowserRemoteness()
+    );
+
+    browser.addEventListener("DidChangeBrowserRemoteness", () =>
+      this.didChangeBrowserRemoteness()
+    );
   },
 
   onPrintWindow(aParams) {
@@ -147,10 +152,6 @@ var ModuleManager = {
     return this._browser;
   },
 
-  get messageManager() {
-    return this._browser.messageManager;
-  },
-
   get eventDispatcher() {
     return WindowEventDispatcher;
   },
@@ -169,31 +170,28 @@ var ModuleManager = {
     );
   },
 
-  // Ensures that session history has been flushed before changing remoteness
-  async prepareToChangeRemoteness() {
-    // Session state like history is maintained at the process level so we need
-    // to collect it and restore it in the other process when switching.
-    // TODO: This should go away when we migrate the history to the main
-    // process Bug 1507287.
-    const { history } = await this.getActor("GeckoViewContent").collectState();
-
-    // Ignore scroll and form data since we're navigating away from this page
-    // anyway
-    this.sessionState = { history };
+  // Defer a notification callback if an applink navigation is in progress,
+  // waiting for the navigation to complete (or a timeout) before idle-
+  // dispatching the callback. Fires immediately if no applink is pending.
+  _maybeDeferForApplink(notifyFn, timeoutMs = 5000) {
+    const applinkNav = this._applinkNavigation;
+    if (applinkNav) {
+      const timeoutPromise = new Promise(resolve => {
+        setTimeout(resolve, timeoutMs);
+      });
+      Promise.race([applinkNav.promise, timeoutPromise]).then(() => {
+        this._applinkNavigation = null;
+        Services.tm.idleDispatchToMainThread(notifyFn);
+      });
+    } else {
+      notifyFn();
+    }
   },
 
   willChangeBrowserRemoteness() {
     debug`WillChangeBrowserRemoteness`;
 
     // Now we're switching the remoteness.
-    this.disabledModules = [];
-    this.forEach(module => {
-      if (module.enabled && module.disableOnProcessSwitch) {
-        module.enabled = false;
-        this.disabledModules.push(module);
-      }
-    });
-
     this.forEach(module => {
       module.onDestroyBrowser();
     });
@@ -207,34 +205,6 @@ var ModuleManager = {
         module.impl.onInitBrowser();
       }
     });
-
-    this.messageManager.addMessageListener(
-      "GeckoView:ContentModuleLoaded",
-      this
-    );
-
-    this.forEach(module => {
-      // We're attaching a new browser so we have to reload the frame scripts
-      module.loadInitFrameScript();
-    });
-
-    this.disabledModules.forEach(module => {
-      module.enabled = true;
-    });
-    this.disabledModules = null;
-  },
-
-  afterBrowserRemotenessChange(aSwitchId) {
-    const { sessionState } = this;
-    this.sessionState = null;
-
-    sessionState.switchId = aSwitchId;
-
-    this.getActor("GeckoViewContent").restoreState(sessionState);
-    this.browser.focus();
-
-    // Load was handled
-    return true;
   },
 
   _updateSettings(aSettings) {
@@ -280,27 +250,11 @@ var ModuleManager = {
             module.enabled = initData.modules[name];
           }
         }
-
-        // Notify child of the transfer.
-        this._browser.messageManager.sendAsyncMessage(aEvent);
         break;
       }
 
       case "GeckoView:UpdateSettings": {
         this._updateSettings(aData);
-        break;
-      }
-    }
-  },
-
-  receiveMessage(aMsg) {
-    debug`receiveMessage ${aMsg.name} ${aMsg.data}`;
-    switch (aMsg.name) {
-      case "GeckoView:ContentModuleLoaded": {
-        const module = this._modules.get(aMsg.data.module);
-        if (module) {
-          module.onContentModuleLoaded();
-        }
         break;
       }
     }
@@ -378,13 +332,6 @@ class ModuleInfo {
     this.enabled = this._enabledOnInit;
   }
 
-  /**
-   * Loads the onInit frame script
-   */
-  loadInitFrameScript() {
-    this._loadFrameScript(this._onInitPhase);
-  }
-
   onDestroy() {
     if (this._impl) {
       this._impl.onDestroy();
@@ -413,7 +360,6 @@ class ModuleInfo {
    * Load resource according to a phase object that contains possible keys,
    *
    * "resource": specify the JSM resource to load for this module.
-   * "frameScript": specify a content JS frame script to load for this module.
    */
   _loadResource(aPhase) {
     if (!aPhase || !aPhase.resource || this._impl) {
@@ -424,32 +370,8 @@ class ModuleInfo {
     this._impl = new exports[this._name](this);
   }
 
-  /**
-   * Load frameScript according to a phase object that contains possible keys,
-   *
-   * "frameScript": specify a content JS frame script to load for this module.
-   */
-  _loadFrameScript(aPhase) {
-    if (!aPhase || !aPhase.frameScript || this._contentModuleLoaded) {
-      return;
-    }
-
-    if (this._impl) {
-      this._impl.onLoadContentModule();
-    }
-    this._manager.messageManager.loadFrameScript(aPhase.frameScript, true);
-    this._contentModuleLoaded = true;
-  }
-
   get manager() {
     return this._manager;
-  }
-
-  get disableOnProcessSwitch() {
-    // Only disable while process switching if it has a frameScript
-    return (
-      !!this._onInitPhase?.frameScript || !!this._onEnablePhase?.frameScript
-    );
   }
 
   get name() {
@@ -477,15 +399,12 @@ class ModuleInfo {
 
     if (aEnabled) {
       this._loadResource(this._onEnablePhase);
-      this._loadFrameScript(this._onEnablePhase);
       this._loadActors(this._onEnablePhase);
       if (this._impl) {
         this._impl.onEnable();
         this._impl.onSettingsUpdate();
       }
     }
-
-    this._updateContentModuleState();
   }
 
   receiveMessage(aMessage) {
@@ -500,27 +419,9 @@ class ModuleInfo {
       throw error;
     }
   }
-
-  onContentModuleLoaded() {
-    this._updateContentModuleState();
-
-    if (this._impl) {
-      this._impl.onContentModuleLoaded();
-    }
-  }
-
-  _updateContentModuleState() {
-    this._manager.messageManager.sendAsyncMessage(
-      "GeckoView:UpdateModuleState",
-      {
-        module: this._name,
-        enabled: this.enabled,
-      }
-    );
-  }
 }
 
-function createBrowser() {
+function createBrowser(settings) {
   const browser = (window.browser = document.createXULElement("browser"));
   // Identify this `<browser>` element uniquely to Marionette, devtools, etc.
   // Use the JSM global to create the permanentKey, so that if the
@@ -534,7 +435,13 @@ function createBrowser() {
   browser.setAttribute("flex", "1");
   browser.setAttribute("maychangeremoteness", "true");
   browser.setAttribute("remote", "true");
-  browser.setAttribute("remoteType", E10SUtils.DEFAULT_REMOTE_TYPE);
+  browser.setAttribute(
+    "remoteType",
+    ChromeUtils.predictRemoteTypeForURI(null, {
+      window,
+      geckoViewSessionContextId: settings.sessionContextId ?? undefined,
+    })
+  );
   browser.setAttribute("messagemanagergroup", "browsers");
   browser.setAttribute("manualactiveness", "true");
 
@@ -553,8 +460,7 @@ function InitLater(fn, object, name) {
 function startup() {
   GeckoViewUtils.initLogging("XUL", window);
 
-  const browser = createBrowser();
-  ModuleManager.init(browser, [
+  ModuleManager.init([
     {
       name: "GeckoViewContent",
       onInit: {
@@ -706,12 +612,6 @@ function startup() {
       },
     },
     {
-      name: "SessionStateAggregator",
-      onInit: {
-        frameScript: "chrome://geckoview/content/SessionStateAggregator.js",
-      },
-    },
-    {
       name: "GeckoViewAutofill",
       onInit: {
         actors: {
@@ -856,22 +756,13 @@ function startup() {
         resource: "resource://gre/modules/GeckoViewTranslations.sys.mjs",
       },
     },
+    {
+      name: "GeckoViewPageExtractor",
+      onInit: {
+        resource: "resource://gre/modules/GeckoViewPageExtractor.sys.mjs",
+      },
+    },
   ]);
-
-  if (!Services.appinfo.sessionHistoryInParent) {
-    browser.prepareToChangeRemoteness = () =>
-      ModuleManager.prepareToChangeRemoteness();
-    browser.afterChangeRemoteness = switchId =>
-      ModuleManager.afterBrowserRemotenessChange(switchId);
-  }
-
-  browser.addEventListener("WillChangeBrowserRemoteness", () =>
-    ModuleManager.willChangeBrowserRemoteness()
-  );
-
-  browser.addEventListener("DidChangeBrowserRemoteness", () =>
-    ModuleManager.didChangeBrowserRemoteness()
-  );
 
   // Allows actors to access ModuleManager.
   window.moduleManager = ModuleManager;
@@ -896,7 +787,9 @@ function startup() {
     // Let the extension code know it can start loading things that were delayed
     // while GeckoView started up.
     InitLater(() => {
-      Services.obs.notifyObservers(window, "extensions-late-startup");
+      window.moduleManager._maybeDeferForApplink(() => {
+        Services.obs.notifyObservers(window, "extensions-late-startup");
+      });
     });
 
     InitLater(() => {
@@ -947,9 +840,9 @@ function startup() {
 
   // Move focus to the content window at the end of startup,
   // so things like text selection can work properly.
-  browser.focus();
+  ModuleManager.browser.focus();
 
-  InitializationTracker.onInitialized(performance.now());
+  InitializationTracker.onInitialized(ChromeUtils.now());
 }
 
 window.addEventListener("DOMContentLoaded", startup, { once: true });

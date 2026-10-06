@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2011-2016 Google Inc.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the gfx/skia/LICENSE file.
@@ -52,7 +50,18 @@ void convolve_vertically_avx2(
     };
 
     int i = 0;
-    for (; i < filterLen / 2 * 2; i += 2) {
+    if (i < filterLen && (reinterpret_cast<uintptr_t>(filter) & 2) != 0) {
+      // _mm256_set1_epi32 may generate instructions that require 4-byte align
+      // for the memory load. ConvolutionFixed is 2 bytes, so a random offset
+      // into the filter array might be only 2-byte aligned. Process the first
+      // entry individually so that subsequent blocks will be 4-byte aligned.
+      convolve_16_pixels(
+          _mm256_set1_epi32(*(const int16_t*)(filter + i)),
+          _mm256_loadu_si256((const __m256i*)(srcRows[i] + x * 4)),
+          _mm256_setzero_si256());
+      i++;
+    }
+    for (; i + 1 < filterLen; i += 2) {
       convolve_16_pixels(
           _mm256_set1_epi32(*(const int32_t*)(filter + i)),
           _mm256_loadu_si256((const __m256i*)(srcRows[i + 0] + x * 4)),
@@ -65,11 +74,12 @@ void convolve_vertically_avx2(
           _mm256_setzero_si256());
     }
 
-    // Trim the fractional parts off the accumulators.
-    accum04 = _mm256_srai_epi32(accum04, 14);
-    accum15 = _mm256_srai_epi32(accum15, 14);
-    accum26 = _mm256_srai_epi32(accum26, 14);
-    accum37 = _mm256_srai_epi32(accum37, 14);
+    // Round and trim the fractional parts off the accumulators.
+    __m256i round = _mm256_set1_epi32(1 << 13);
+    accum04 = _mm256_srai_epi32(_mm256_add_epi32(accum04, round), 14);
+    accum15 = _mm256_srai_epi32(_mm256_add_epi32(accum15, round), 14);
+    accum26 = _mm256_srai_epi32(_mm256_add_epi32(accum26, round), 14);
+    accum37 = _mm256_srai_epi32(_mm256_add_epi32(accum37, round), 14);
 
     // Pack back down to 8-bit channels.
     auto pixels = _mm256_packus_epi16(_mm256_packs_epi32(accum04, accum15),

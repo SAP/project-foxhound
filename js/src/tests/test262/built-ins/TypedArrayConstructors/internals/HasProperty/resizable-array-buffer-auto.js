@@ -58,6 +58,6 @@ testWithTypedArrayConstructors(function(TA) {
   } catch (_) {}
 
   assert.sameValue(inspect(array), expected, "following shrink (out of bounds)");
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

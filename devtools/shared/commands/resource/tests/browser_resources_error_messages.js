@@ -15,6 +15,10 @@ httpServer.registerPathHandler(`/test_page_errors.html`, (req, res) => {
 
 const TEST_URI = `http://localhost:${httpServer.identity.primaryPort}/test_page_errors.html`;
 
+const { getMdnLinkParams } = ChromeUtils.importESModule(
+  "resource://devtools/shared/mdn.mjs"
+);
+
 add_task(async function () {
   // Disable the preloaded process as it creates processes intermittently
   // which forces the emission of RDP requests we aren't correctly waiting for.
@@ -181,9 +185,9 @@ async function triggerErrors(tab, resourceCommand) {
       }
     );
 
-    await ContentTask.spawn(
+    await SpecialPowers.spawn(
       tab.linkedBrowser,
-      expression,
+      [expression],
       function frameScript(expr) {
         const document = content.document;
         const scriptEl = document.createElement("script");
@@ -206,8 +210,11 @@ function checkPageErrorResource(pageErrorResource, expected) {
   // Let's remove test harness related frames in stacktrace
   const clonedPageErrorResource = { ...pageErrorResource };
   if (clonedPageErrorResource.stacktrace) {
-    const index = clonedPageErrorResource.stacktrace.findIndex(frame =>
-      frame.filename.startsWith("resource://testing-common/content-task.js")
+    const index = clonedPageErrorResource.stacktrace.findIndex(
+      frame =>
+        frame.filename.startsWith(
+          "resource://testing-common/content-task.js"
+        ) || frame.filename.startsWith(gTestPath)
     );
     if (index > -1) {
       clonedPageErrorResource.stacktrace =
@@ -225,7 +232,7 @@ const NUMBER_REGEX = /^\d+$/;
 const FRACTIONAL_NUMBER_REGEX = /^\d+(\.\d{1,3})?$/;
 
 const mdnUrl = path =>
-  `https://developer.mozilla.org/${path}?utm_source=mozilla&utm_medium=firefox-console-errors&utm_campaign=default`;
+  `https://developer.mozilla.org/${path}?${getMdnLinkParams("firefox-console-errors")}`;
 
 const expectedPageErrors = new Map([
   [

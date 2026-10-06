@@ -1,5 +1,5 @@
 import pytest
-from tests.support.asserts import assert_success
+from tests.support.classic.asserts import assert_success
 
 
 def new_window(session, type_hint=None):

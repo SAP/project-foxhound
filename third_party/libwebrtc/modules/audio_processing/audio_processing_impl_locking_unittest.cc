@@ -9,19 +9,22 @@
  */
 
 #include <algorithm>
-#include <memory>
+#include <cstddef>
+#include <cstdint>
+#include <span>
 #include <vector>
 
-#include "api/array_view.h"
+#include "api/audio/audio_processing.h"
 #include "api/audio/builtin_audio_processing_builder.h"
 #include "api/environment/environment_factory.h"
-#include "modules/audio_processing/audio_processing_impl.h"
-#include "modules/audio_processing/test/test_utils.h"
+#include "api/scoped_refptr.h"
+#include "api/units/time_delta.h"
 #include "rtc_base/event.h"
 #include "rtc_base/platform_thread.h"
 #include "rtc_base/random.h"
 #include "rtc_base/synchronization/mutex.h"
-#include "system_wrappers/include/sleep.h"
+#include "rtc_base/thread.h"
+#include "rtc_base/thread_annotations.h"
 #include "test/gtest.h"
 
 namespace webrtc {
@@ -56,7 +59,6 @@ enum class AecType {
   AecTurnedOff,
   BasicWebRtcAecSettingsWithExtentedFilter,
   BasicWebRtcAecSettingsWithDelayAgnosticAec,
-  BasicWebRtcAecSettingsWithAecMobile
 };
 
 // Thread-safe random number generator wrapper.
@@ -119,8 +121,7 @@ struct TestConfig {
   // Test case generator for the test configurations to use in the brief tests.
   static std::vector<TestConfig> GenerateBriefTestConfigs() {
     std::vector<TestConfig> test_configs;
-    AecType aec_types[] = {AecType::BasicWebRtcAecSettingsWithDelayAgnosticAec,
-                           AecType::BasicWebRtcAecSettingsWithAecMobile};
+    AecType aec_types[] = {AecType::BasicWebRtcAecSettingsWithDelayAgnosticAec};
     for (auto aec_type : aec_types) {
       TestConfig test_config;
       test_config.aec_type = aec_type;
@@ -163,16 +164,16 @@ struct TestConfig {
       };
 
       const AllowedApiCallCombinations api_calls[] = {
-          {RenderApiImpl::ProcessReverseStreamImplInteger,
-           CaptureApiImpl::ProcessStreamImplInteger},
-          {RenderApiImpl::ProcessReverseStreamImplFloat,
-           CaptureApiImpl::ProcessStreamImplFloat},
-          {RenderApiImpl::AnalyzeReverseStreamImplFloat,
-           CaptureApiImpl::ProcessStreamImplFloat},
-          {RenderApiImpl::ProcessReverseStreamImplInteger,
-           CaptureApiImpl::ProcessStreamImplFloat},
-          {RenderApiImpl::ProcessReverseStreamImplFloat,
-           CaptureApiImpl::ProcessStreamImplInteger}};
+          {.render_api = RenderApiImpl::ProcessReverseStreamImplInteger,
+           .capture_api = CaptureApiImpl::ProcessStreamImplInteger},
+          {.render_api = RenderApiImpl::ProcessReverseStreamImplFloat,
+           .capture_api = CaptureApiImpl::ProcessStreamImplFloat},
+          {.render_api = RenderApiImpl::AnalyzeReverseStreamImplFloat,
+           .capture_api = CaptureApiImpl::ProcessStreamImplFloat},
+          {.render_api = RenderApiImpl::ProcessReverseStreamImplInteger,
+           .capture_api = CaptureApiImpl::ProcessStreamImplFloat},
+          {.render_api = RenderApiImpl::ProcessReverseStreamImplFloat,
+           .capture_api = CaptureApiImpl::ProcessStreamImplInteger}};
       std::vector<TestConfig> out;
       for (auto api_call : api_calls) {
         test_config.render_api_function = api_call.render_api;
@@ -185,10 +186,11 @@ struct TestConfig {
     auto add_aec_settings = [](const std::vector<TestConfig>& in) {
       std::vector<TestConfig> out;
       AecType aec_types[] = {
-          AecType::BasicWebRtcAecSettings, AecType::AecTurnedOff,
+          AecType::BasicWebRtcAecSettings,
+          AecType::AecTurnedOff,
           AecType::BasicWebRtcAecSettingsWithExtentedFilter,
           AecType::BasicWebRtcAecSettingsWithDelayAgnosticAec,
-          AecType::BasicWebRtcAecSettingsWithAecMobile};
+      };
       for (auto test_config : in) {
         // Due to a VisualStudio 2015 compiler issue, the internal loop
         // variable here cannot override a previously defined name.
@@ -224,11 +226,7 @@ struct TestConfig {
 
       std::vector<TestConfig> out;
       for (auto test_config : in) {
-        auto available_rates =
-            (test_config.aec_type ==
-                     AecType::BasicWebRtcAecSettingsWithAecMobile
-                 ? rtc::ArrayView<const int>(sample_rates, 2)
-                 : rtc::ArrayView<const int>(sample_rates));
+        auto available_rates = std::span<const int>(sample_rates);
 
         for (auto rate : available_rates) {
           test_config.initial_sample_rate_hz = rate;
@@ -428,7 +426,7 @@ class AudioProcessingImplLockTest
   mutable RandomGenerator rand_gen_;
 
   const TestConfig test_config_;
-  rtc::scoped_refptr<AudioProcessing> apm_;
+  scoped_refptr<AudioProcessing> apm_;
   FrameCounters frame_counters_;
   RenderProcessor render_thread_state_;
   CaptureProcessor capture_thread_state_;
@@ -441,7 +439,7 @@ class AudioProcessingImplLockTest
 // Sleeps a random time between 0 and max_sleep milliseconds.
 void SleepRandomMs(int max_sleep, RandomGenerator* rand_gen) {
   int sleeptime = rand_gen->RandInt(0, max_sleep);
-  SleepMs(sleeptime);
+  Thread::SleepMs(sleeptime);
 }
 
 // Populates a float audio frame with random data.
@@ -462,7 +460,7 @@ void PopulateAudioFrame(float** frame,
 void PopulateAudioFrame(float amplitude,
                         size_t num_channels,
                         size_t samples_per_channel,
-                        rtc::ArrayView<int16_t> frame,
+                        std::span<int16_t> frame,
                         RandomGenerator* rand_gen) {
   ASSERT_GT(amplitude, 0);
   ASSERT_LE(amplitude, 32767);
@@ -478,8 +476,6 @@ void PopulateAudioFrame(float amplitude,
 AudioProcessing::Config GetApmTestConfig(AecType aec_type) {
   AudioProcessing::Config apm_config;
   apm_config.echo_canceller.enabled = aec_type != AecType::AecTurnedOff;
-  apm_config.echo_canceller.mobile_mode =
-      aec_type == AecType::BasicWebRtcAecSettingsWithAecMobile;
   apm_config.gain_controller1.enabled = true;
   apm_config.gain_controller1.mode =
       AudioProcessing::Config::GainController1::kAdaptiveDigital;
@@ -542,9 +538,6 @@ void StatsProcessor::Process() {
   AudioProcessing::Config apm_config = apm_->GetConfig();
   if (test_config_->aec_type != AecType::AecTurnedOff) {
     EXPECT_TRUE(apm_config.echo_canceller.enabled);
-    EXPECT_EQ(apm_config.echo_canceller.mobile_mode,
-              (test_config_->aec_type ==
-               AecType::BasicWebRtcAecSettingsWithAecMobile));
   } else {
     EXPECT_FALSE(apm_config.echo_canceller.enabled);
   }
@@ -834,10 +827,8 @@ void RenderProcessor::Process() {
 void RenderProcessor::PrepareFrame() {
   // Restrict to a common fixed sample rate if the integer interface is
   // used.
-  if ((test_config_->render_api_function ==
-       RenderApiImpl::ProcessReverseStreamImplInteger) ||
-      (test_config_->aec_type !=
-       AecType::BasicWebRtcAecSettingsWithAecMobile)) {
+  if (test_config_->render_api_function ==
+      RenderApiImpl::ProcessReverseStreamImplInteger) {
     frame_data_.input_sample_rate_hz = test_config_->initial_sample_rate_hz;
     frame_data_.output_sample_rate_hz = test_config_->initial_sample_rate_hz;
   }

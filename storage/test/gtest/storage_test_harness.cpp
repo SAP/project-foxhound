@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=2 et lcs=trail\:.,tab\:>~ :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -186,10 +184,14 @@ nsIThread* last_non_watched_thread = nullptr;
  * call the real mutex function.
  */
 extern "C" void wrapped_MutexEnter(sqlite3_mutex* mutex) {
-  if (PR_GetCurrentThread() == watched_thread) {
+  PRThread* current = PR_GetCurrentThread();
+  if (current == watched_thread) {
     mutex_used_on_watched_thread = true;
   } else {
-    last_non_watched_thread = NS_GetCurrentThread();
+    const char* name = PR_GetThreadName(current);
+    if (name && strncmp(name, "sqldb:", 6) == 0) {
+      last_non_watched_thread = NS_GetCurrentThread();
+    }
   }
   orig_mutex_methods.xMutexEnter(mutex);
 }
@@ -211,6 +213,7 @@ extern "C" int wrapped_MutexTry(sqlite3_mutex* mutex) {
 void watch_for_mutex_use_on_this_thread() {
   watched_thread = ::PR_GetCurrentThread();
   mutex_used_on_watched_thread = false;
+  last_non_watched_thread = nullptr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -229,9 +232,8 @@ already_AddRefed<nsIThread> get_conn_async_thread(mozIStorageConnection* db) {
   nsCOMPtr<mozIStorageAsyncStatement> stmt;
   db->CreateAsyncStatement("SELECT 1"_ns, getter_AddRefs(stmt));
   blocking_async_execute(stmt);
-  stmt->Finalize();
-
   nsCOMPtr<nsIThread> asyncThread = last_non_watched_thread;
+  stmt->Finalize();
 
   // Additionally, check that the thread we get as the background thread is the
   // same one as the one we report from getInterface.

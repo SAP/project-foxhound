@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -39,6 +36,7 @@ namespace net {
 class HttpBackgroundChannelParent;
 class ParentChannelListener;
 class ChannelEventQueue;
+class CacheEntryWriteHandleParent;
 
 class HttpChannelParent final : public nsIInterfaceRequestor,
                                 public PHttpChannelParent,
@@ -83,6 +81,8 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
       const nsACString& type, int64_t predictedSize,
       nsIAsyncOutputStream** _retval);
 
+  [[nodiscard]] CacheEntryWriteHandleParent* AllocCacheEntryWriteHandle();
+
   // Callbacks for each asynchronous tasks required in AsyncOpen
   // procedure, will call InvokeAsyncOpen when all the expected
   // tasks is finished successfully or when any failure happened.
@@ -96,6 +96,17 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   // Calls SendSetPriority if mIPCClosed is false.
   void DoSendSetPriority(int16_t aValue);
 
+  // Calls SendReportLNAToConsole if mIPCClosed is false.
+  void DoSendReportLNAToConsole(const NetAddr& aPeerAddr,
+                                const nsACString& aMessageType,
+                                const nsACString& aPromptAction,
+                                const nsACString& aTopLevelSite);
+
+  // The content process this channel parent belongs to. Used by
+  // BackgroundChannelRegistrar to ensure a background channel is only linked
+  // to a channel from the same process.
+  dom::ContentParentId GetContentParentId() const;
+
   // Callback while background channel is ready.
   void OnBackgroundParentReady(HttpBackgroundChannelParent* aBgParent);
   // Callback while background channel is destroyed.
@@ -107,14 +118,12 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   // BeginConnect.
   void OverrideReferrerInfoDuringBeginConnect(nsIReferrerInfo* aReferrerInfo);
 
-  // Set the cookie strings, which will be informed to the child actor during
-  // PHttpBackgroundChannel::OnStartRequest. Note that CookieService also sends
-  // the information to all actors via PContent, a main thread IPC, which could
-  // be slower than background IPC PHttpBackgroundChannel::OnStartRequest.
-  // Therefore, another cookie notification via PBackground is needed to
-  // guarantee the listener in child has the necessary cookies before
-  // OnStartRequest.
-  void SetCookieHeaders(const nsTArray<nsCString>& aCookieHeaders);
+  // Set the cookie changes triggered by the channel, which will be applied by
+  // the child actor during PHttpBackgroundChannel::OnStartRequest. Note that
+  // CookieService also sends the information to all actors via PContent, a main
+  // thread IPC, which could be slower than background IPC
+  // PHttpBackgroundChannel::OnStartRequest.
+  void SetCookieChanges(nsTArray<CookieChange>&& aCookieChanges);
 
   using ChildEndpointPromise =
       MozPromise<ipc::Endpoint<extensions::PStreamFilterChild>, bool, true>;
@@ -191,10 +200,6 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   virtual mozilla::ipc::IPCResult RecvRemoveCorsPreflightCacheEntry(
       nsIURI* uri, const mozilla::ipc::PrincipalInfo& requestingPrincipal,
       const OriginAttributes& originAttributes) override;
-  virtual mozilla::ipc::IPCResult RecvSetCookies(
-      const nsACString& aBaseDomain, const OriginAttributes& aOriginAttributes,
-      nsIURI* aHost, const bool& aFromHttp, const bool& aIsThirdParty,
-      nsTArray<CookieStruct>&& aCookies) override;
   virtual mozilla::ipc::IPCResult RecvBytesRead(const int32_t& aCount) override;
   virtual mozilla::ipc::IPCResult RecvOpenOriginalCacheInputStream() override;
   virtual void ActorDestroy(ActorDestroyReason why) override;
@@ -245,6 +250,12 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   // consumed quickly enough. Otherwise, memory explosion could happen.
   bool NeedFlowControl();
 
+  // Get the appropriate event target for background parent operations based on
+  // channel's class of service flags: synchronous event target for urgent
+  // channels, queued for others to balance responsiveness and prevent
+  // head-of-line blocking.
+  nsCOMPtr<nsISerialEventTarget> GetEventTargetForBgParentWait();
+
   bool IsRedirectDueToAuthRetry(uint32_t redirectFlags);
 
   int32_t mSendWindowSize;
@@ -289,9 +300,9 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   // original one. This info will be sent in OnStartRequest.
   nsCOMPtr<nsIReferrerInfo> mOverrideReferrerInfo;
 
-  // The cookie string in Set-Cookie header. This info will be sent in
-  // OnStartRequest.
-  nsTArray<nsCString> mCookieHeaders;
+  // The cookie changes received while processing the Set-Cookie header. This
+  // info will be sent in OnStartRequest.
+  nsTArray<CookieChange> mCookieChanges;
 
   // OnStatus is always called before OnProgress.
   // Set true in OnStatus if next OnProgress can be ignored

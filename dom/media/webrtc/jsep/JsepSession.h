@@ -2,24 +2,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _JSEPSESSION_H_
-#define _JSEPSESSION_H_
+#ifndef JSEPSESSION_H_
+#define JSEPSESSION_H_
 
-#include <map>
 #include <string>
 #include <vector>
-#include "mozilla/Attributes.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtr.h"
-#include "nsError.h"
-
-#include "jsep/JsepTransport.h"
-#include "sdp/Sdp.h"
 
 #include "jsep/JsepTransceiver.h"
-
+#include "jsep/JsepTransport.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/PeerConnectionObserverEnumsBinding.h"
+#include "nsError.h"
+#include "sdp/Sdp.h"
 
 namespace mozilla {
 
@@ -58,6 +54,8 @@ struct JsepAnswerOptions : public JsepOAOptions {};
 
 enum JsepBundlePolicy { kBundleBalanced, kBundleMaxCompat, kBundleMaxBundle };
 
+enum JsepRtcpMuxPolicy { kRtcpMuxRequire, kRtcpMuxNegotiate };
+
 enum JsepMediaType { kNone = 0, kAudio, kVideo, kAudioVideo };
 
 struct JsepExtmapMediaType {
@@ -71,7 +69,7 @@ class JsepSession {
       : mName(name), mState(kJsepStateStable), mNegotiations(0) {}
   virtual ~JsepSession() {}
 
-  virtual JsepSession* Clone() const = 0;
+  virtual UniquePtr<JsepSession> Clone() const = 0;
 
   virtual nsresult Init() = 0;
 
@@ -82,6 +80,8 @@ class JsepSession {
 
   // Set up the ICE And DTLS data.
   virtual nsresult SetBundlePolicy(JsepBundlePolicy policy) = 0;
+  virtual nsresult SetRtcpMuxPolicy(JsepRtcpMuxPolicy policy) = 0;
+  virtual JsepRtcpMuxPolicy GetRtcpMuxPolicy() const = 0;
   virtual bool RemoteIsIceLite() const = 0;
   virtual std::vector<std::string> GetIceOptions() const = 0;
 
@@ -184,8 +184,14 @@ class JsepSession {
    public:
     Result() = default;
     MOZ_IMPLICIT Result(dom::PCError aError) : mError(Some(aError)) {}
-    // TODO(bug 1527916): Need c'tor and members for handling RTCError.
+    Result(dom::PCError aError, const std::string& aErrorDetail,
+           Maybe<size_t> aSdpLineNumber = Nothing())
+        : mError(Some(aError)),
+          mErrorDetail(Some(aErrorDetail)),
+          mSdpLineNumber(aSdpLineNumber) {}
     Maybe<dom::PCError> mError;
+    Maybe<std::string> mErrorDetail;
+    Maybe<size_t> mSdpLineNumber;
   };
 
   // Basic JSEP operations.

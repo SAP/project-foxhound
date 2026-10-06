@@ -14,9 +14,10 @@ add_task(async function () {
 
   const EXPECTED_SECURITY_STATES = {
     "test1.example.com": "security-state-insecure",
-    "example.com": "security-state-secure",
+    "example.com": "security-state-secure-custom-root",
     "nocert.example.com": "security-state-broken",
     localhost: "security-state-secure",
+    notlocalhost: "security-state-insecure",
   };
 
   const { tab, monitor } = await initNetMonitor(CUSTOM_GET_URL, {
@@ -56,10 +57,10 @@ add_task(async function () {
 
   /**
    * A helper that performs requests to
-   *  - https://nocert.example.com (broken)
-   *  - https://example.com (secure)
-   *  - http://test1.example.com (insecure)
-   *  - http://localhost (local)
+   *  - https://nocert.example.com (certificate issue -> broken)
+   *  - https://example.com (secure using custom root)
+   *  - http://test1.example.com (plaintext -> not secure)
+   *  - http://localhost (local -> secure)
    * and waits until NetworkMonitor has handled all packets sent by the server.
    */
   async function performRequests() {
@@ -97,6 +98,11 @@ add_task(async function () {
     done = waitForNetworkEvents(monitor, 1);
     info("Requesting a resource over HTTP to localhost.");
     await executeRequests(1, "http://localhost" + CORS_SJS_PATH);
+    await done;
+
+    done = waitForNetworkEvents(monitor, 1);
+    info("Requesting a resource over HTTP to notlocalhost.");
+    await executeRequests(1, "http://notlocalhost" + CORS_SJS_PATH);
     await done;
 
     const expectedCount = Object.keys(EXPECTED_SECURITY_STATES).length;

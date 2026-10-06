@@ -20,7 +20,6 @@ function error(code, observable) {
     errors: [
       {
         messageId: "noCorresponding",
-        type: "Identifier",
         data: { observable },
       },
     ],

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,16 +20,19 @@ void NativeMenuSupport::CreateNativeMenuBar(nsIWidget* aParent,
 #ifdef MOZ_ENABLE_DBUS
   if (aMenuBarElement && StaticPrefs::widget_gtk_global_menu_enabled() &&
       DBusMenuFunctions::Init()) {
-    static_cast<nsWindow*>(aParent)->SetDBusMenuBar(
-        DBusMenuBar::Create(aMenuBarElement));
+    if (auto window = nsWindow::FromWidget(aParent)) {
+      window->SetDBusMenuBar(DBusMenuBar::Create(aMenuBarElement));
+    }
   }
 #endif
 }
 
-already_AddRefed<NativeMenu> NativeMenuSupport::CreateNativeContextMenu(
+already_AddRefed<NativeMenu> NativeMenuSupport::CreateNativePopupMenu(
     dom::Element* aPopup) {
   return MakeAndAddRef<NativeMenuGtk>(aPopup);
 }
+
+bool NativeMenuSupport::ShouldUseNativeAnchoredMenus() { return false; }
 
 bool NativeMenuSupport::ShouldUseNativeContextMenus() {
   return NativeMenuGtk::CanUse();

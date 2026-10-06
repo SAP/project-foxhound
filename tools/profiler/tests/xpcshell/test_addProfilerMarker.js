@@ -35,11 +35,12 @@ function expectDuration(marker) {
     "number",
     "startTime should be a number"
   );
-  // Floats can cause rounding issues. We've seen up to a 4.17e-5 difference in
-  // intermittent failures, so we are permissive and accept up to 5e-5.
+  // Floats can cause rounding issues.
+  // In intermittent failures, we've seen up to a 9e-5 difference on win
+  // and 4.17e-5 on macosx, so we are permissive and accept up to 1e-4.
   Assert.less(
     Math.abs(marker.startTime - startTime),
-    5e-5,
+    1e-4,
     "startTime should be the expected time"
   );
   Assert.equal(typeof marker.endTime, "number", "endTime should be a number");
@@ -116,8 +117,8 @@ function expectStack(marker, thread) {
 
 add_task(async () => {
   await ProfilerTestUtils.startProfilerForMarkerTests();
-  startTime = Cu.now();
-  while (Cu.now() < startTime + 1) {
+  startTime = ChromeUtils.now();
+  while (ChromeUtils.now() < startTime + 1) {
     // Busy wait for 1ms to ensure the intentionally set start time of markers
     // will be significantly different from the time at which the marker is
     // recorded.
@@ -218,4 +219,124 @@ add_task(async () => {
   }
 
   Assert.equal(0, Object.keys(testFunctions).length, "all markers were found");
+});
+
+add_task(async function test_registerMarkerSchema() {
+  const schema = {
+    name: "CustomMarker",
+    display: ["marker-chart", "marker-table"],
+    data: [
+      { key: "field1", label: "Field 1", format: "string" },
+      { key: "field2", label: "Field 2", format: "integer" },
+    ],
+  };
+
+  ChromeUtils.registerMarkerSchema(schema);
+  Assert.ok(true, "Schema registered without error");
+});
+
+add_task(async function test_registerMarkerSchemaNoName() {
+  const invalidSchema = {
+    display: ["marker-chart"],
+    data: [],
+  };
+
+  Assert.throws(
+    () => ChromeUtils.registerMarkerSchema(invalidSchema),
+    /name/,
+    "Should throw when schema lacks 'name' field"
+  );
+});
+
+add_task(async function test_addMarkerWithObject() {
+  await ProfilerTestUtils.startProfilerForMarkerTests();
+
+  const markerData = {
+    type: "CustomMarker",
+    field1: "test value",
+    field2: 42,
+  };
+
+  ChromeUtils.addProfilerMarker("TestMarker", {}, markerData);
+
+  const profile = await ProfilerTestUtils.stopNowAndGetProfile();
+  dump(JSON.stringify(profile) + "\n");
+  const mainThread = profile.threads.find(({ name }) => name === "GeckoMain");
+  const markers = ProfilerTestUtils.getInflatedMarkerData(mainThread);
+
+  const customMarker = markers.find(m => m.name === "TestMarker");
+  Assert.ok(customMarker, "Custom marker found in profile");
+  Assert.ok(customMarker.data, "Marker has data");
+
+  Assert.deepEqual(
+    customMarker.data,
+    markerData,
+    "Marker data should match exactly what was passed in"
+  );
+
+  const schemas = profile.meta.markerSchema;
+  const customSchema = schemas.find(s => s.name === "CustomMarker");
+  Assert.ok(customSchema, "Custom schema found in profile");
+});
+
+add_task(async function test_addMarkerWithCrossRealmPlainObject() {
+  // A plain object coming from a different realm reaches AddProfilerMarker as
+  // a cross-compartment wrapper. JS::GetBuiltinClass unwraps proxies, but
+  // JS::ToJSONMaybeSafely's assertion checks the wrapper directly, so we need
+  // to unwrap before calling it.
+  await ProfilerTestUtils.startProfilerForMarkerTests();
+
+  const sandbox = Cu.Sandbox(Cu.getGlobalForObject(Services), {
+    wantGlobalProperties: ["ChromeUtils"],
+  });
+  const wrappedObject = Cu.evalInSandbox(
+    "({ type: 'CustomMarker', field1: 'crossrealm', field2: 7 })",
+    sandbox
+  );
+
+  ChromeUtils.addProfilerMarker("CrossRealmMarker", {}, wrappedObject);
+
+  const profile = await ProfilerTestUtils.stopNowAndGetProfile();
+  const mainThread = profile.threads.find(({ name }) => name === "GeckoMain");
+  const markers = ProfilerTestUtils.getInflatedMarkerData(mainThread);
+
+  const marker = markers.find(m => m.name === "CrossRealmMarker");
+  Assert.ok(marker, "Marker with cross-realm object data was recorded");
+  Assert.deepEqual(
+    marker.data,
+    { type: "CustomMarker", field1: "crossrealm", field2: 7 },
+    "Marker data should match the cross-realm plain object"
+  );
+});
+
+add_task(async function test_addMarkerWithNonPlainObject() {
+  // Non-plain objects (e.g. Error, Array) passed as the data argument should
+  // be recorded as text markers using the object's string form.
+  await ProfilerTestUtils.startProfilerForMarkerTests();
+
+  const err = new TypeError("boom");
+  ChromeUtils.addProfilerMarker("NonPlainObjectMarker", {}, err);
+  ChromeUtils.addProfilerMarker("ArrayMarker", {}, [1, 2, 3]);
+
+  const profile = await ProfilerTestUtils.stopNowAndGetProfile();
+  const mainThread = profile.threads.find(({ name }) => name === "GeckoMain");
+  const markers = ProfilerTestUtils.getInflatedMarkerData(mainThread);
+
+  const errMarker = markers.find(m => m.name === "NonPlainObjectMarker");
+  Assert.ok(errMarker, "Marker with Error data was recorded");
+  Assert.equal(errMarker.data.type, "Text", "Should fall back to Text marker");
+  Assert.equal(
+    errMarker.data.name,
+    String(err),
+    "Text payload should be the Error's string form"
+  );
+
+  const arrMarker = markers.find(m => m.name === "ArrayMarker");
+  Assert.ok(arrMarker, "Marker with Array data was recorded");
+  Assert.equal(arrMarker.data.type, "Text", "Should fall back to Text marker");
+  Assert.equal(
+    arrMarker.data.name,
+    "1,2,3",
+    "Text payload should be the Array's string form"
+  );
 });

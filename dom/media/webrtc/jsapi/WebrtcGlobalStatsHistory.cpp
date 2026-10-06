@@ -5,10 +5,10 @@
 #include "WebrtcGlobalStatsHistory.h"
 
 #include "domstubs.h"
-#include "mozilla/LinkedList.h"
-#include "mozilla/dom/RTCStatsReportBinding.h"  // for RTCStatsReportInternal
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/LinkedList.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/dom/RTCStatsReportBinding.h"  // for RTCStatsReportInternal
 #include "mozilla/fallible.h"
 #include "mozilla/mozalloc_oom.h"
 #include "nsDOMNavigationTiming.h"
@@ -69,7 +69,7 @@ auto WebrtcGlobalStatsHistory::Entry::MakeReportElement(
   auto* elem = new ReportElement();
   elem->report = std::move(aReport);
   // We don't want to store a copy of the SDP history with each stats entry.
-  // SDP History is stored seperately, see MakeSdpElements.
+  // SDP History is stored separately, see MakeSdpElements.
   elem->report->mSdpHistory.Clear();
   return elem;
 }

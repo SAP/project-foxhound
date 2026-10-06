@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,7 +5,6 @@
 #ifndef TX_XSLT_PATTERNS_H
 #define TX_XSLT_PATTERNS_H
 
-#include "mozilla/Attributes.h"
 #include "txExpandedName.h"
 #include "txExpr.h"
 #include "txXMLUtils.h"
@@ -188,7 +186,7 @@ class txStepPattern : public txPattern, public PredicateList {
 
   txNodeTest* getNodeTest() { return mNodeTest.get(); }
   void setNodeTest(txNodeTest* aNodeTest) {
-    mozilla::Unused << mNodeTest.release();
+    (void)mNodeTest.release();
     mNodeTest = mozilla::WrapUnique(aNodeTest);
   }
 

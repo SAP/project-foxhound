@@ -9,7 +9,7 @@ const PREF_STORAGE_VERSION = "browser.pagethumbnails.storage_version";
 
 var tmp = Cu.Sandbox(window, { wantGlobalProperties: ["ChromeUtils"] });
 Services.scriptloader.loadSubScript(
-  "resource://gre/modules/PageThumbs.jsm",
+  "resource://gre/modules/PageThumbs.sys.mjs",
   tmp
 );
 var { PageThumbsStorageMigrator } = tmp;

@@ -12,15 +12,9 @@
 
 namespace mozilla {
 
-#ifdef LOG
-#  undef LOG
-#endif
-#ifdef LOG_TEST
-#  undef LOG_TEST
-#endif
-
 extern LazyLogModule gMediaTrackGraphLog;
-#define LOG(type, msg) MOZ_LOG(gMediaTrackGraphLog, type, msg)
+#define LOG(type, ...) \
+  MOZ_LOG_FMT(gMediaTrackGraphLog, type, MOZ_LOG_EXPAND_ARGS __VA_ARGS__)
 #define LOG_TEST(type) MOZ_LOG_TEST(gMediaTrackGraphLog, type)
 
 UniquePtr<CrossGraphPort> CrossGraphPort::Connect(
@@ -43,11 +37,25 @@ UniquePtr<CrossGraphPort> CrossGraphPort::Connect(
   RefPtr<MediaInputPort> port =
       aStreamTrack->ForwardTrackContentsTo(transmitter);
 
+  LOG(LogLevel::Verbose,
+      ("Created CrossGraphPort transmitter {} (rate {}, from AudioStreamTrack "
+       "{}) and receiver {} (rate {}) between graphs {} and {}",
+       fmt::ptr(transmitter.get()), transmitter->mSampleRate,
+       fmt::ptr(aStreamTrack.get()), fmt::ptr(receiver.get()),
+       receiver->mSampleRate, fmt::ptr(aStreamTrack->Graph()),
+       fmt::ptr(aPartnerGraph)));
+
   return WrapUnique(new CrossGraphPort(std::move(port), std::move(transmitter),
                                        std::move(receiver)));
 }
 
 CrossGraphPort::~CrossGraphPort() {
+  LOG(LogLevel::Verbose,
+      ("Destroying CrossGraphPort transmitter {} (rate {}) and receiver {} "
+       "(rate {}) between graphs {} and {}",
+       fmt::ptr(mTransmitter.get()), mTransmitter->mSampleRate,
+       fmt::ptr(mReceiver.get()), mReceiver->mSampleRate,
+       fmt::ptr(mTransmitter->Graph()), fmt::ptr(mReceiver->Graph())));
   mTransmitter->Destroy();
   mReceiver->Destroy();
   mTransmitterPort->Destroy();
@@ -74,9 +82,8 @@ void CrossGraphTransmitter::ProcessInput(GraphTime aFrom, GraphTime aTo,
     return;
   }
 
-  LOG(LogLevel::Verbose,
-      ("Transmitter (%p) from %" PRId64 ", to %" PRId64 ", ticks %" PRId64 "",
-       this, aFrom, aTo, aTo - aFrom));
+  LOG(LogLevel::Verbose, ("Transmitter ({}) from {}, to {}, ticks {}",
+                          fmt::ptr(this), aFrom, aTo, aTo - aFrom));
 
   AudioSegment audio;
   GraphTime next;
@@ -110,7 +117,7 @@ void CrossGraphTransmitter::ProcessInput(GraphTime aFrom, GraphTime aTo,
   mStartTime = aTo;
 
   for (AudioSegment::ChunkIterator iter(audio); !iter.IsEnded(); iter.Next()) {
-    Unused << mReceiver->EnqueueAudio(*iter);
+    (void)mReceiver->EnqueueAudio(*iter);
   }
 }
 
@@ -129,14 +136,13 @@ uint32_t CrossGraphReceiver::NumberOfChannels() const {
 void CrossGraphReceiver::ProcessInput(GraphTime aFrom, GraphTime aTo,
                                       uint32_t aFlags) {
   LOG(LogLevel::Verbose,
-      ("Receiver (%p) mSegment: duration: %" PRId64 ", from %" PRId64
-       ", to %" PRId64 ", ticks %" PRId64 "",
-       this, mSegment->GetDuration(), aFrom, aTo, aTo - aFrom));
+      ("Receiver ({}) mSegment: duration: {}, from {}, to {}, ticks {}",
+       fmt::ptr(this), mSegment->GetDuration(), aFrom, aTo, aTo - aFrom));
 
   AudioSegment transmittedAudio;
   while (mCrossThreadFIFO.AvailableRead()) {
     AudioChunk chunk;
-    Unused << mCrossThreadFIFO.Dequeue(&chunk, 1);
+    (void)mCrossThreadFIFO.Dequeue(&chunk, 1);
     transmittedAudio.AppendAndConsumeChunk(std::move(chunk));
     mTransmitterHasStarted = true;
   }
@@ -147,7 +153,8 @@ void CrossGraphReceiver::ProcessInput(GraphTime aFrom, GraphTime aTo,
         mDriftCorrection.RequestFrames(transmittedAudio, aTo - aFrom);
     if (LOG_TEST(LogLevel::Verbose) && audioCorrected.IsNull()) {
       LOG(LogLevel::Verbose,
-          ("Receiver(%p): Silence has been added, not enough input", this));
+          ("Receiver({}): Silence has been added, not enough input",
+           fmt::ptr(this)));
     }
     mSegment->AppendFrom(&audioCorrected);
   } else {
@@ -161,3 +168,6 @@ int CrossGraphReceiver::EnqueueAudio(AudioChunk& aChunk) {
 }
 
 }  // namespace mozilla
+
+#undef LOG
+#undef LOG_TEST

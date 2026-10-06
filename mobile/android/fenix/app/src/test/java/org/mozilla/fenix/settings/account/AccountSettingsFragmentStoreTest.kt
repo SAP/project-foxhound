@@ -17,7 +17,7 @@ class AccountSettingsFragmentStoreTest {
         val store = AccountSettingsFragmentStore(initialState)
         val duration = 1L
 
-        store.dispatch(AccountSettingsFragmentAction.SyncFailed(duration)).join()
+        store.dispatch(AccountSettingsFragmentAction.SyncFailed(duration))
         assertNotSame(initialState, store.state)
         assertEquals(LastSyncTime.Failed(duration), store.state.lastSyncedDate)
     }
@@ -28,7 +28,7 @@ class AccountSettingsFragmentStoreTest {
         val store = AccountSettingsFragmentStore(initialState)
         val duration = 1L
 
-        store.dispatch(AccountSettingsFragmentAction.SyncEnded(duration)).join()
+        store.dispatch(AccountSettingsFragmentAction.SyncEnded(duration))
         assertNotSame(initialState, store.state)
         assertEquals(LastSyncTime.Success(duration), store.state.lastSyncedDate)
     }
@@ -39,7 +39,7 @@ class AccountSettingsFragmentStoreTest {
         val store = AccountSettingsFragmentStore(initialState)
         val deviceName = "testing"
 
-        store.dispatch(AccountSettingsFragmentAction.UpdateDeviceName(deviceName)).join()
+        store.dispatch(AccountSettingsFragmentAction.UpdateDeviceName(deviceName))
         assertNotSame(initialState, store.state)
         assertEquals(deviceName, store.state.deviceName)
     }

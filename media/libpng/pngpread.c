@@ -218,9 +218,6 @@ png_push_read_chunk(png_structrp png_ptr, png_inforp info_ptr)
 
       else if (chunk_name == png_fdAT)
       {
-         PNG_PUSH_SAVE_BUFFER_IF_LT(4)
-         png_ensure_sequence_number(png_ptr, 4);
-
          if ((png_ptr->mode & PNG_HAVE_fcTL) == 0)
          {
             /* Discard trailing fdATs for frames other than the first */
@@ -228,13 +225,17 @@ png_push_read_chunk(png_structrp png_ptr, png_inforp info_ptr)
                png_error(png_ptr, "out of place fdAT");
 
             PNG_PUSH_SAVE_BUFFER_IF_FULL
-            png_crc_finish(png_ptr, png_ptr->push_length);
+            png_ensure_sequence_number(png_ptr, png_ptr->push_length);
+            png_crc_finish(png_ptr, png_ptr->push_length - 4);
             png_ptr->mode &= ~PNG_HAVE_CHUNK_HEADER;
          }
 
          else
          {
             /* frame data follows */
+            PNG_PUSH_SAVE_BUFFER_IF_LT(4)
+
+            png_ensure_sequence_number(png_ptr, png_ptr->push_length);
             png_ptr->idat_size = png_ptr->push_length - 4;
             png_ptr->mode |= PNG_HAVE_IDAT;
             png_ptr->process_mode = PNG_READ_IDAT_MODE;
@@ -571,7 +572,7 @@ png_push_read_IDAT(png_structrp png_ptr)
 #ifdef PNG_READ_APNG_SUPPORTED
       if (png_ptr->num_frames_read > 0)
       {
-         png_ensure_sequence_number(png_ptr, 4);
+         png_ensure_sequence_number(png_ptr, png_ptr->push_length);
          png_ptr->idat_size -= 4;
       }
 #endif

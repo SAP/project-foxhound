@@ -12,8 +12,9 @@ const r = React.createElement;
 
 /**
  * Dispatches a page event to the privileged frame script for this tab.
- * @param {String} action
- * @param {Object} data
+ *
+ * @param {string} action
+ * @param {object} data
  */
 function sendPageEvent(action, data) {
   const event = new CustomEvent("ShieldPageEvent", {
@@ -111,6 +112,8 @@ class AboutStudies extends React.Component {
     if (Object.values(this.state).some(v => v === null)) {
       return null;
     }
+
+    document.title = translations.pageTitle;
 
     return r(
       "div",

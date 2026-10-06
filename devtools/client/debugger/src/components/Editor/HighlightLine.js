@@ -24,7 +24,6 @@ import {
   getCurrentThread,
   getShouldHighlightSelectedLocation,
 } from "../../selectors/index";
-import { markerTypes } from "../../constants";
 
 function isDebugLine(selectedFrame, selectedLocation) {
   if (!selectedFrame) {
@@ -122,7 +121,7 @@ export class HighlightLine extends Component {
     }
 
     editor.setLineContentMarker({
-      id: markerTypes.HIGHLIGHT_LINE_MARKER,
+      id: editor.markerTypes.HIGHLIGHT_LINE_MARKER,
       lineClassName: "highlight-line",
       lines: [{ line: editorLine }],
     });

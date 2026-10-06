@@ -12,6 +12,9 @@ internal object MenuDialogTestTag {
 
     const val EXTENSIONS = "$MAIN_MENU.extensions"
     const val SHARE = "$MAIN_MENU.share"
+    const val MORE_OPTION_CHEVRON = "$MAIN_MENU.more.chevron"
+
+    const val EXTENSIONS_OPTION_CHEVRON = "$MAIN_MENU.extensions.chevron"
     const val DESKTOP_SITE_ON = "$MAIN_MENU.desktop.site.on"
     const val DESKTOP_SITE_OFF = "$MAIN_MENU.desktop.site.off"
 

@@ -39,16 +39,19 @@ ChromeUtils.defineESModuleGetters(lazy, {
 XPCOMUtils.defineLazyServiceGetters(lazy, {
   aomStartup: [
     "@mozilla.org/addons/addon-manager-startup;1",
-    "amIAddonManagerStartup",
+    Ci.amIAddonManagerStartup,
   ],
   resProto: [
     "@mozilla.org/network/protocol;1?name=resource",
-    "nsISubstitutingProtocolHandler",
+    Ci.nsISubstitutingProtocolHandler,
   ],
-  spellCheck: ["@mozilla.org/spellchecker/engine;1", "mozISpellCheckingEngine"],
+  spellCheck: [
+    "@mozilla.org/spellchecker/engine;1",
+    Ci.mozISpellCheckingEngine,
+  ],
   timerManager: [
     "@mozilla.org/updates/timer-manager;1",
-    "nsIUpdateTimerManager",
+    Ci.nsIUpdateTimerManager,
   ],
 });
 
@@ -415,7 +418,7 @@ function* iterDirectory(aDir) {
  * in which "webextension-foo" types were converted to "foo" and the
  * "loader" property was added to distinguish different addon types.
  *
- * @param {Object} addon  The addon info to migrate.
+ * @param {object} addon  The addon info to migrate.
  * @returns {boolean} True if the addon data was converted, false if not.
  */
 function migrateAddonLoader(addon) {
@@ -481,7 +484,7 @@ const JSON_FIELDS = Object.freeze([
 ]);
 
 class XPIState {
-  constructor(location, id, saved = {}) {
+  constructor(location, id, saved = {}, isRelocatedLocation = false) {
     this.location = location;
     this.id = id;
 
@@ -494,10 +497,24 @@ class XPIState {
       }
     }
 
-    // Builds prior to be 1512436 did not include the rootURI property.
-    // If we're updating from such a build, add that property now.
-    if (!("rootURI" in this) && this.file) {
+    // Recompute rootURI for:
+    //
+    // - A location that was detected as relocated when being restored
+    //   from the addonStartup.json.lz4 data (See Bug 1429838).
+    // - Builds prior to Bug 1512436 did not include the rootURI property.
+    //   If we're updating from such a build, add that property now.
+    //
+    // NOTE: path and rootURI on the AddonDB side will be updated accordingly
+    // by XPIDatabaseReconcile.updatePath (called from XPIDatabaseReconcile.updateExistingAddon
+    // when the oldAddon.path and newAddon.path are mismatching, as part of the
+    // XPIDatabaseReconcile.processFileChanges logic).
+    if (this.file && (isRelocatedLocation || !("rootURI" in this))) {
       this.rootURI = getURIForResourceInFile(this.file, "").spec;
+      if (isRelocatedLocation) {
+        logger.warn(
+          `Recomputed XPIState rootURI for ${id} due to relocated location ${this.location.name}.`
+        );
+      }
     }
 
     if (!this.telemetryKey) {
@@ -553,7 +570,7 @@ class XPIState {
    * Returns a JSON-compatible representation of this add-on's state
    * data, to be saved to addonStartup.json.
    *
-   * @returns {Object}
+   * @returns {object}
    */
   toJSON() {
     let json = {
@@ -738,15 +755,33 @@ class XPIStateLocation extends Map {
   }
 
   restore(saved) {
+    // If saved.path mismatches with this.path, then the location has been
+    // reloaded and the rootURI for all the add-ons in the relocated location
+    // will have to be recomputed to make sure it points to the new absolute
+    // path to the XPI file (See Bug 1429838).
+    //
+    // NOTE: This method is going to be called with the `saved` parameter (which
+    // contains the location data coming from addonStartup.json.lz4 data) when it
+    // is called from `XPIStates.scanForChanges`.
+    const isRelocatedLocation =
+      this.path && saved.path && this.path != saved.path;
+    if (isRelocatedLocation) {
+      logger.warn(
+        `Detected relocated XPIStateLocation ${this.name} (from "${saved.path}" to "${this.path}"). ` +
+          `XPIState rootURI will be recomputed for each add-on in this location.`
+      );
+    }
+
     if (!this.path && saved.path) {
       this.path = saved.path;
       this.dir = new nsIFile(this.path);
     }
     this.staged = saved.staged || {};
-    this.changed = saved.changed || false;
+
+    this.changed = saved.changed || isRelocatedLocation || false;
 
     for (let [id, data] of Object.entries(saved.addons || {})) {
-      let xpiState = this._addState(id, data);
+      let xpiState = this._addState(id, data, isRelocatedLocation);
 
       // Make a note that this state was restored from saved data. But
       // only if this location hasn't moved since the last startup,
@@ -761,7 +796,7 @@ class XPIStateLocation extends Map {
    * Returns a JSON-compatible representation of this location's state
    * data, to be saved to addonStartup.json.
    *
-   * @returns {Object}
+   * @returns {object}
    */
   toJSON() {
     let json = {
@@ -790,8 +825,8 @@ class XPIStateLocation extends Map {
     return false;
   }
 
-  _addState(addonId, saved) {
-    let xpiState = new XPIState(this, addonId, saved);
+  _addState(addonId, saved, isRelocatedLocation) {
+    let xpiState = new XPIState(this, addonId, saved, isRelocatedLocation);
     this.set(addonId, xpiState);
     return xpiState;
   }
@@ -1021,7 +1056,7 @@ var SystemBuiltInLocation =
     /**
      * Finds all the add-ons installed in this location.
      *
-     * @returns {Map<AddonID, {builtin: { addon_version: String, res_url: String}}>}
+     * @returns {Map<AddonID, {builtin: {addon_version: string, res_url: string}}>}
      *        A map of add-ons present in this location.
      */
     readAddons() {
@@ -1289,7 +1324,7 @@ class SystemAddonLocation extends DirectoryLocation {
   /**
    * Reads the current set of system add-ons
    *
-   * @returns {Object}
+   * @returns {object}
    */
   static _loadAddonSet() {
     try {
@@ -1451,7 +1486,7 @@ var XPIStates = {
   /**
    * Load extension state data from addonStartup.json.
    *
-   * @returns {Object}
+   * @returns {object}
    */
   loadExtensionState() {
     let state;
@@ -1459,22 +1494,6 @@ var XPIStates = {
       state = lazy.aomStartup.readStartupData();
     } catch (e) {
       logger.warn("Error parsing extensions state: ${error}", { error: e });
-    }
-
-    // Let's remove invalid `_processedColors` properties in the theme add-ons.
-    for (let location of Object.values(state || {})) {
-      for (let data of Object.values(location.addons || {})) {
-        if (data.type === "theme" && data.startupData) {
-          // Some profiles have an outdated version of `startupData` containing
-          // `_processedColors` properties, which in certain cases prevent the
-          // data from being updated correctly. These properties are removed
-          // here. See bug 1830136.
-          delete data.startupData.lwtData?.darkTheme?._processedColors;
-          delete data.startupData.lwtData?.theme?._processedColors;
-          delete data.startupData.lwtDarkStyles?._processedColors;
-          delete data.startupData.lwtStyles?._processedColors;
-        }
-      }
     }
 
     // When upgrading from a build prior to bug 857456, convert startup
@@ -1771,6 +1790,7 @@ var XPIStates = {
   /**
    * Find the highest priority location of an add-on by ID and return the
    * XPIState.
+   *
    * @param {string} aId
    *        The add-on IDa
    * @param {function} aFilter
@@ -1879,7 +1899,6 @@ var XPIStates = {
    *        The name of the add-on location.
    * @param {string} aId
    *        The ID of the add-on.
-   *
    */
   removeAddon(aLocation, aId) {
     logger.debug(`Removing XPIState for ${aLocation}: ${aId}`);
@@ -1909,7 +1928,7 @@ var XPIStates = {
  * A helper class to manage the lifetime of and interaction with
  * bootstrap scopes for an add-on.
  *
- * @param {Object} addon
+ * @param {object} addon
  *        The add-on which owns this scope. Should be either an
  *        AddonInternal or XPIState object.
  */
@@ -1929,7 +1948,7 @@ class BootstrapScope {
    * Returns a BootstrapScope object for the given add-on. If an active
    * scope exists, it is returned. Otherwise a new one is created.
    *
-   * @param {Object} addon
+   * @param {object} addon
    *        The add-on which owns this scope, as accepted by the
    *        constructor.
    * @returns {BootstrapScope}
@@ -1957,7 +1976,7 @@ class BootstrapScope {
    * the wrapped bootstrap scope has a fetchState method, it is called,
    * and its result returned. If not, returns null.
    *
-   * @returns {Object|null}
+   * @returns {object | null}
    */
   fetchState() {
     if (this.scope && this.scope.fetchState) {
@@ -1973,7 +1992,7 @@ class BootstrapScope {
    *        The name of the bootstrap method to call
    * @param {integer} aReason
    *        The reason flag to pass to the bootstrap's startup method
-   * @param {Object} [aExtraParams = {}]
+   * @param {object} [aExtraParams = {}]
    *        An object of additional key/value pairs to pass to the method in
    *        the params argument
    * @returns {any}
@@ -2158,7 +2177,7 @@ class BootstrapScope {
    *
    * @param {integer} reason
    *        The reason code for the startup call.
-   * @param {Object} [aExtraParams]
+   * @param {object} [aExtraParams]
    *        Optional extra parameters to pass to the bootstrap method.
    * @returns {Promise}
    *        Resolves when the startup method has run to completion, rejects
@@ -2196,7 +2215,7 @@ class BootstrapScope {
    *
    * @param {integer} reason
    *        The reason code for the shutdown call.
-   * @param {Object} [aExtraParams]
+   * @param {object} [aExtraParams]
    *        Optional extra parameters to pass to the bootstrap method.
    */
   async shutdown(reason, aExtraParams) {
@@ -2216,7 +2235,7 @@ class BootstrapScope {
    *
    * @param {integer} reason
    *        The reason code for the shutdown call.
-   * @param {Object} [aExtraParams]
+   * @param {object} [aExtraParams]
    *        Optional extra parameters to pass to the bootstrap method.
    */
   async disable() {
@@ -2241,7 +2260,7 @@ class BootstrapScope {
    * @param {boolean} [startup = false]
    *        If true, and the add-on is active, calls its startup method
    *        after its install method.
-   * @param {Object} [extraArgs]
+   * @param {object} [extraArgs]
    *        Optional extra parameters to pass to the bootstrap method.
    * @returns {Promise}
    *        Resolves when the startup method has run to completion, if
@@ -2272,7 +2291,7 @@ class BootstrapScope {
    *
    * @param {integer} reason
    *        The reason code for the calls.
-   * @param {Object} [extraArgs]
+   * @param {object} [extraArgs]
    *        Optional extra parameters to pass to the bootstrap method.
    * @returns {Promise}
    *        Resolves when the shutdown method has run to completion, if
@@ -2651,7 +2670,7 @@ export var XPIProvider = {
    * Unregisters the dictionaries in the given object, and re-registers
    * any built-in dictionaries in their place, when they exist.
    *
-   * @param {Object<nsIURI>} aDicts
+   * @param {{[key: string]: nsIURI}} aDicts
    *        An object containing a property with a dictionary language
    *        code and a nsIURI value for each dictionary to be
    *        unregistered.
@@ -2694,7 +2713,9 @@ export var XPIProvider = {
    */
   startup(aAppChanged, aOldAppVersion, aOldPlatformVersion) {
     try {
-      AddonManagerPrivate.recordTimestamp("XPI_startup_begin");
+      Glean.addonsManager.startupTimeline.XPI_startup_begin.set(
+        Services.telemetry.msSinceProcessStart()
+      );
 
       logger.debug("startup");
 
@@ -2786,7 +2807,9 @@ export var XPIProvider = {
       }
 
       try {
-        AddonManagerPrivate.recordTimestamp("XPI_bootstrap_addons_begin");
+        Glean.addonsManager.startupTimeline.XPI_bootstrap_addons_begin.set(
+          Services.telemetry.msSinceProcessStart()
+        );
 
         for (let addon of this.sortBootstrappedAddons()) {
           // The startup update check above may have already started some
@@ -2830,7 +2853,9 @@ export var XPIProvider = {
             );
           }
         }
-        AddonManagerPrivate.recordTimestamp("XPI_bootstrap_addons_end");
+        Glean.addonsManager.startupTimeline.XPI_bootstrap_addons_end.set(
+          Services.telemetry.msSinceProcessStart()
+        );
       } catch (e) {
         logger.error("bootstrap startup failed", e);
         AddonManagerPrivate.recordException(
@@ -2903,7 +2928,9 @@ export var XPIProvider = {
 
       // Detect final-ui-startup for telemetry reporting
       Services.obs.addObserver(function observer() {
-        AddonManagerPrivate.recordTimestamp("XPI_finalUIStartup");
+        Glean.addonsManager.startupTimeline.XPI_finalUIStartup.set(
+          Services.telemetry.msSinceProcessStart()
+        );
         Services.obs.removeObserver(observer, "final-ui-startup");
       }, "final-ui-startup");
 
@@ -2953,7 +2980,9 @@ export var XPIProvider = {
         }
       }
 
-      AddonManagerPrivate.recordTimestamp("XPI_startup_end");
+      Glean.addonsManager.startupTimeline.XPI_startup_end.set(
+        Services.telemetry.msSinceProcessStart()
+      );
 
       if (
         Services.prefs.getIntPref(PREF_LAST_SIGNATURE_CHECKPOINT, 0) !==
@@ -3080,7 +3109,7 @@ export var XPIProvider = {
    * Check the staging directories of install locations for any add-ons to be
    * installed or add-ons to be uninstalled.
    *
-   * @param {Object} aManifests
+   * @param {object} aManifests
    *         A dictionary to add detected install manifests to for the purpose
    *         of passing through updated compatibility information
    * @returns {boolean}
@@ -3156,18 +3185,15 @@ export var XPIProvider = {
    * newer version already exists or the user has previously uninstalled the
    * distributed add-on.
    *
-   * @param {Object} aManifests
+   * @param {object} aManifests
    *        A dictionary to add new install manifests to to save having to
    *        reload them later
    * @param {string} [aAppChanged]
    *        See checkForChanges
-   * @param {string?} [aOldAppVersion]
-   *        The version of the application last run with this profile or null
-   *        if it is a new profile or the version is unknown
    * @returns {boolean}
    *        True if any new add-ons were installed
    */
-  installDistributionAddons(aManifests, aAppChanged, aOldAppVersion) {
+  installDistributionAddons(aManifests, aAppChanged) {
     let distroDirs = [];
     try {
       distroDirs.push(
@@ -3231,12 +3257,7 @@ export var XPIProvider = {
         try {
           let loc = XPIStates.getLocation(KEY_APP_PROFILE);
           let addon = awaitPromise(
-            XPIExports.XPIInstall.installDistributionAddon(
-              id,
-              file,
-              loc,
-              aOldAppVersion
-            )
+            XPIExports.XPIInstall.installDistributionAddon(id, file, loc)
           );
 
           if (addon) {
@@ -3347,11 +3368,7 @@ export var XPIProvider = {
 
     // If the application has changed then check for new distribution add-ons
     if (Services.prefs.getBoolPref(PREF_INSTALL_DISTRO_ADDONS, true)) {
-      updated = this.installDistributionAddons(
-        manifests,
-        aAppChanged,
-        aOldAppVersion
-      );
+      updated = this.installDistributionAddons(manifests, aAppChanged);
       if (updated) {
         updateReasons.push("installDistributionAddons");
       }
@@ -3382,6 +3399,7 @@ export var XPIProvider = {
           "XPIDB_startup_load_reasons",
           updateReasons
         );
+        Glean.xpiDatabase.startupLoadReasons.set(updateReasons);
         XPIExports.XPIDatabase.syncLoadDB(false);
         try {
           extensionListChanged =
@@ -3566,7 +3584,7 @@ export var XPIProvider = {
     return XPIExports.XPIDatabase.getBlocklistAttentionInfo();
   },
 
-  /*
+  /**
    * Notified when a preference we're interested in has changed.
    *
    * @see nsIObserver

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -163,13 +161,11 @@ Result<Ok, CPUUsageWatcherError> CPUUsageWatcher::Init() {
   mExternalUsageThreshold =
       std::max(1.0f - 1.0f / (float)mNumCPUs, kTolerableExternalCPUUsageFloor);
 
-  CPUStats processTimes;
-  MOZ_TRY_VAR(processTimes, GetProcessCPUStats(mNumCPUs));
+  CPUStats processTimes = MOZ_TRY(GetProcessCPUStats(mNumCPUs));
   mProcessUpdateTime = processTimes.updateTime;
   mProcessUsageTime = processTimes.usageTime;
 
-  CPUStats globalTimes;
-  MOZ_TRY_VAR(globalTimes, GetGlobalCPUStats());
+  CPUStats globalTimes = MOZ_TRY(GetGlobalCPUStats());
   mGlobalUpdateTime = globalTimes.updateTime;
   mGlobalUsageTime = globalTimes.usageTime;
 
@@ -197,10 +193,8 @@ Result<Ok, CPUUsageWatcherError> CPUUsageWatcher::CollectCPUUsage() {
 
   mExternalUsageRatio = 0.0f;
 
-  CPUStats processTimes;
-  MOZ_TRY_VAR(processTimes, GetProcessCPUStats(mNumCPUs));
-  CPUStats globalTimes;
-  MOZ_TRY_VAR(globalTimes, GetGlobalCPUStats());
+  CPUStats processTimes = MOZ_TRY(GetProcessCPUStats(mNumCPUs));
+  CPUStats globalTimes = MOZ_TRY(GetGlobalCPUStats());
 
   uint64_t processUsageDelta = processTimes.usageTime - mProcessUsageTime;
   uint64_t processUpdateDelta = processTimes.updateTime - mProcessUpdateTime;

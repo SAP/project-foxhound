@@ -49,10 +49,9 @@
   // Simple implementation of |require|
   let require = (function () {
     /**
-     * Mapping from module URI to module exports.
+     * Mapping from the absolute module URI to the exports object for that module.
      *
-     * @keys {string} The absolute URI to a module.
-     * @values {object} The |exports| objects for that module.
+     * @type {Map<string, object>}
      */
     let modules = new Map();
 
@@ -92,7 +91,7 @@
      * @return {*} An object containing the properties exported by the module.
      */
     return function require(baseURL, path) {
-      let startTime = performance.now();
+      let startTime = ChromeUtils.now();
       if (typeof path != "string") {
         throw new TypeError(
           "The argument to require() must be a string got " + path

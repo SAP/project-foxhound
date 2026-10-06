@@ -1,6 +1,12 @@
 [DEFAULT]
 prefs = [
     "browser.backup.scheduled.enabled=false",
+    "browser.backup.archive.enabled=true",
+    "browser.backup.restore.enabled=true",
+    "privacy.sanitize.sanitizeOnShutdown=false",
+    # Profile backup is disabled when SQLite at-rest encryption is on
+    # (Bug 1996558); run these tests with it off (the production default).
+    "security.storage.encryption.sqlite.enabled=false"
 ]
 support-files = ["head.js"]
 
@@ -13,6 +19,8 @@ support-files = ["head.js"]
 ["test_password_validation_inputs.html"]
 
 ["test_restore_from_backup.html"]
+
+["test_trigger_create_backup.html"]
 
 ["test_turn_off_scheduled_backups.html"]
 

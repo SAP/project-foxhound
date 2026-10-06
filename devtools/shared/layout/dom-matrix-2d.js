@@ -8,10 +8,10 @@
  * Returns a matrix for the scaling given.
  * Calling `scale()` or `scale(1) returns a new identity matrix.
  *
- * @param {Number} [sx = 1]
+ * @param {number} [sx = 1]
  *        the abscissa of the scaling vector.
  *        If unspecified, it will equal to `1`.
- * @param {Number} [sy = sx]
+ * @param {number} [sy = sx]
  *        The ordinate of the scaling vector.
  *        If not present, its default value is `sx`, leading to a uniform scaling.
  * @return {Array}
@@ -24,10 +24,10 @@ exports.scale = scale;
  * Returns a matrix for the translation given.
  * Calling `translate()` or `translate(0) returns a new identity matrix.
  *
- * @param {Number} [tx = 0]
+ * @param {number} [tx = 0]
  *        The abscissa of the translating vector.
  *        If unspecified, it will equal to `0`.
- * @param {Number} [ty = tx]
+ * @param {number} [ty = tx]
  *        The ordinate of the translating vector.
  *        If unspecified, it will equal to `tx`.
  * @return {Array}
@@ -50,7 +50,7 @@ exports.reflectAboutY = reflectAboutY;
  * Returns a matrix for the rotation given.
  * Calling `rotate()` or `rotate(0)` returns a new identity matrix.
  *
- * @param {Number} [angle = 0]
+ * @param {number} [angle = 0]
  *        The angle, in radians, for which to return a corresponding rotation matrix.
  *        If unspecified, it will equal `0`.
  * @return {Array}
@@ -121,7 +121,7 @@ exports.apply = apply;
  *
  * @param {Array} M
  *        The matrix to check
- * @return {Boolean}
+ * @return {boolean}
  *        `true` if the matrix passed is a identity matrix, `false` otherwise.
  */
 const isIdentity = M =>
@@ -145,7 +145,7 @@ exports.isIdentity = isIdentity;
  *        The first vector, serving as the "x axis" of the coordinate system.
  * @param {Array} v
  *        The second vector, serving as the "y axis" of the coordinate system.
- * @return {Object}
+ * @return {object}
  *        { basis, invertedBasis, uLength, vLength }
  *        basis and invertedBasis are the change of basis matrices. uLength and
  *        vLength are the lengths of u and v.
@@ -224,10 +224,10 @@ exports.getNodeTransformationMatrix = getNodeTransformationMatrix;
  * Returns the matrix to rotate, translate, and reflect (if needed) from the element's
  * top-left origin into the actual writing mode and text direction applied to the element.
  *
- * @param  {Object} size
+ * @param  {object} size
  *         An element's untransformed content `width` and `height` (excluding any margin,
  *         borders, or padding).
- * @param  {Object} style
+ * @param  {object} style
  *         The computed `writingMode` and `direction` properties for the element.
  * @return {Array}
  *         The matrix with adjustments for writing mode and text direction, if any.
@@ -261,7 +261,7 @@ function getWritingModeMatrix(size, style) {
     case "ltr":
       // This is the initial value. No further adjustment needed.
       break;
-    case "rtl":
+    case "rtl": {
       let rowLength = width;
       if (writingMode != "horizontal-tb") {
         rowLength = height;
@@ -269,6 +269,7 @@ function getWritingModeMatrix(size, style) {
       currentMatrix = multiply(currentMatrix, translate(rowLength, 0));
       currentMatrix = multiply(currentMatrix, reflectAboutY());
       break;
+    }
     default:
       console.error(`Unexpected direction: ${direction}`);
   }
@@ -287,7 +288,7 @@ exports.getWritingModeMatrix = getWritingModeMatrix;
  *
  * @param  {Array} M
  *         The matrix in this module's 9 element format.
- * @return {String}
+ * @return {string}
  *         The matching 6 element CSS transform function.
  */
 function getCSSMatrixTransform(M) {

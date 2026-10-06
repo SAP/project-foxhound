@@ -1,5 +1,10 @@
 "use strict";
 
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/browser/components/profiles/tests/browser/head.js",
+  this
+);
+
 var gTestTab;
 var gContentAPI;
 
@@ -21,15 +26,12 @@ add_UITour_task(async function test_resetFirefox() {
   );
 
   // make reset possible.
-  let profileService = Cc["@mozilla.org/toolkit/profile-service;1"].getService(
-    Ci.nsIToolkitProfileService
+  await initGroupDatabase();
+  Assert.ok(
+    SelectableProfileService.currentProfile,
+    "Should have a profile now"
   );
-  let currentProfileDir = Services.dirsvc.get("ProfD", Ci.nsIFile);
-  let profileName = "mochitest-test-profile-temp-" + Date.now();
-  let tempProfile = profileService.createProfile(
-    currentProfileDir,
-    profileName
-  );
+
   canReset = await getConfigurationPromise("canReset");
   ok(
     canReset,
@@ -37,10 +39,4 @@ add_UITour_task(async function test_resetFirefox() {
   );
   await gContentAPI.resetFirefox();
   await dialogPromise;
-  tempProfile.remove(false);
-  canReset = await getConfigurationPromise("canReset");
-  ok(
-    !canReset,
-    "Shouldn't be able to reset from mochitest's temporary profile once removed from the profile manager."
-  );
 });

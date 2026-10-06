@@ -30,7 +30,7 @@
 }
 
 .update-header-label {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 #update-button-box {
@@ -47,7 +47,7 @@
 }
 
 #updateFinishedName {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
   font-size: larger;
 }
 
@@ -57,7 +57,7 @@ update {
 }
 
 .update-name {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .update-label-column {
@@ -65,7 +65,7 @@ update {
 }
 
 .update-type {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
   color: #990000;
 }
 

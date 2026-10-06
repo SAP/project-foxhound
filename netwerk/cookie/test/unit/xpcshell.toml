@@ -27,3 +27,5 @@ prefs = ["dom.security.https_first=false"]
 ["test_schemeMap.js"]
 
 ["test_timestamp_fixup.js"]
+
+["test_valueless_cookie_migration.js"]

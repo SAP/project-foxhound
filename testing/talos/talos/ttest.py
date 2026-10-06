@@ -3,14 +3,15 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 """A generic means of running an URL based browser test
-   follows the following steps
-     - creates a profile
-     - tests the profile
-     - gets metrics for the current test environment
-     - loads the url
-     - collects info on any counters while test runs
-     - waits for a 'dump' from the browser
+follows the following steps
+  - creates a profile
+  - tests the profile
+  - gets metrics for the current test environment
+  - loads the url
+  - collects info on any counters while test runs
+  - waits for a 'dump' from the browser
 """
+
 import json
 import os
 import platform
@@ -255,9 +256,9 @@ class TTest:
                 )
 
         # include global (cross-cycle) counters
-        test_results.all_counter_results.extend(
-            [{key: value} for key, value in global_counters.items()]
-        )
+        test_results.all_counter_results.extend([
+            {key: value} for key, value in global_counters.items()
+        ])
         for c in test_results.all_counter_results:
             for key, value in c.items():
                 LOG.debug("COUNTER %r: %s" % (key, value))

@@ -29,10 +29,9 @@ function getPartitionedLoadContextInfo(
  * For now, we need to actively wait for the cache to be cleared before we can proceed.
  * This needs to be removed once bug 1839340 is resolved.
  *
- *
- * @param {String} url - Waiting until there is no entry of this url in the cache anymore
+ * @param {string} url - Waiting until there is no entry of this url in the cache anymore
  * @param {string[]} cacheTypes - The caches that should be chacked, e.g ["disk", "memory"]
- * @param {Object[]} partitionContexts - Defines which partitions should be checked in addition.
+ * @param {object[]} partitionContexts - Defines which partitions should be checked in addition.
  *        The objects hold a url and a base domain, for each cacheType it will be checked if there is still data
  *        of the url under the base domain.
  */

@@ -182,9 +182,7 @@ async function getExpectedResources(ignoreUnresurrectedSources = false) {
       description: "javascript URL",
       sourceForm: {
         introductionType: "javascriptURL",
-        sourceMapBaseURL: isEveryFrameTargetEnabled()
-          ? "about:blank"
-          : TEST_URL,
+        sourceMapBaseURL: "about:blank",
         url: null,
         isBlackBoxed: false,
         sourceMapURL: null,

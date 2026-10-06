@@ -74,7 +74,6 @@ class TestScreenCaptureChrome(
 
         root_dimensions = self.scale(self.get_element_dimensions(self.document_element))
 
-        # self.marionette.set_window_rect(width=100, height=100)
         # A full capture is not the outer dimensions of the window,
         # but instead the bounding box of the window's root node (documentElement).
         screenshot_full = self.marionette.screenshot()

@@ -4,7 +4,7 @@
 "use strict";
 
 const TEST_URI =
-  "http://example.com/browser/devtools/client/webconsole/" +
+  "https://example.com/browser/devtools/client/webconsole/" +
   "test/browser/test-eval-sources.html";
 
 // Test that stack/message links in console API and error messages originating
@@ -15,7 +15,12 @@ add_task(async function () {
   const toolbox = gDevTools.getToolboxForTab(gBrowser.selectedTab);
 
   let messageNode = await waitFor(() => findErrorMessage(hud, "BAR"));
-  await clickFirstStackElement(hud, messageNode, true);
+  await clickFirstStackElement(hud.toolbox, messageNode, true, {
+    // evaled sources have no URL
+    url: null,
+    line: 1,
+    column: 33,
+  });
 
   const dbg = toolbox.getPanel("jsdebugger");
 
@@ -29,14 +34,19 @@ add_task(async function () {
   await testOpenInDebugger(hud, {
     text: "FOO",
     typeSelector: ".console-api",
-    expectUrl: false,
+    // evaled sources have no URL
+    url: null,
+    line: 1,
+    column: 35,
   });
 
   await toolbox.selectTool("webconsole");
   await testOpenInDebugger(hud, {
     text: "BAR",
     typeSelector: ".error",
-    expectUrl: false,
+    url: null,
+    line: 1,
+    column: 33,
   });
 
   // Test that links in the API work when the eval source has a sourceURL property
@@ -45,13 +55,21 @@ add_task(async function () {
   await testOpenInDebugger(hud, {
     text: "BAZ",
     typeSelector: ".console-api",
-    expectUrl: false,
+    url: null,
+    line: 2,
+    column: 17,
   });
 
   // Test that stacks in console.trace() calls work.
   await toolbox.selectTool("webconsole");
   messageNode = await waitFor(() => findConsoleAPIMessage(hud, "TRACE"));
-  await clickFirstStackElement(hud, messageNode, false);
+  await clickFirstStackElement(hud.toolbox, messageNode, false, {
+    // Do not assert the url as it differs from Frame and Debugger
+    // The Frame displays "my-foo.js", while the debugger resolves to an absolute URL.
+    url: null,
+    line: 3,
+    column: 17,
+  });
 
   is(
     /my-foo.js/.test(dbg._selectors.getSelectedSource(dbg._getState()).url),
@@ -60,20 +78,21 @@ add_task(async function () {
   );
 });
 
-async function clickFirstStackElement(hud, message, needsExpansion) {
+async function clickFirstStackElement(
+  toolbox,
+  message,
+  needsExpansion,
+  options
+) {
   if (needsExpansion) {
     const button = message.querySelector(".collapse-button");
     ok(button, "has button");
     button.click();
   }
 
-  let frame;
-  await waitUntil(() => {
-    frame = message.querySelector(".stacktrace .frame");
-    return !!frame;
-  });
+  const frameNode = await waitFor(() =>
+    message.querySelector(".stacktrace .frame")
+  );
 
-  const onSourceOpenedInDebugger = once(hud, "source-in-debugger-opened");
-  EventUtils.sendMouseEvent({ type: "click" }, frame);
-  await onSourceOpenedInDebugger;
+  await clickAndAssertFrameLinkNode(toolbox, frameNode, options);
 }

@@ -411,6 +411,10 @@ void SkPDFArray::appendColorComponent(uint8_t value) {
     this->append(SkPDFUnion::ColorComponent(value));
 }
 
+void SkPDFArray::appendColorComponentF(float value) {
+    this->append(SkPDFUnion::ColorComponentF(value));
+}
+
 void SkPDFArray::appendBool(bool value) {
     this->append(SkPDFUnion::Bool(value));
 }
@@ -567,7 +571,7 @@ static void serialize_stream(SkPDFDict* origDict,
     {
         SkDynamicMemoryWStream compressedData;
         SkDeflateWStream deflateWStream(&compressedData,SkToInt(doc->metadata().fCompressionLevel));
-        SkStreamCopy(&deflateWStream, stream);
+        SkStreamPriv::Copy(&deflateWStream, stream);
         deflateWStream.finalize();
         if (stream->getLength() > compressedData.bytesWritten() + kMinimumSavings) {
             tmp = compressedData.detachAsStream();

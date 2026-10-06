@@ -2,10 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/remote-page */
-
 /**
  * Determines whether a given value is a fluent id or plain text and adds it to an element
+ *
  * @param {Array<[HTMLElement, string]>} items An array of [element, value] where value is
  *                                       a fluent id starting with "fluent:" or plain text
  */
@@ -23,58 +22,6 @@ function translateElements(items) {
       element.removeAttribute("data-l10n-id");
     }
   });
-}
-
-function renderInfo({
-  infoEnabled,
-  infoTitle,
-  infoTitleEnabled,
-  infoBody,
-  infoLinkText,
-  infoLinkUrl,
-  infoIcon,
-} = {}) {
-  const container = document.querySelector(".info");
-  if (infoEnabled === false) {
-    container.hidden = true;
-    return;
-  }
-  container.hidden = false;
-
-  const titleEl = document.getElementById("info-title");
-  const bodyEl = document.getElementById("info-body");
-  const linkEl = document.getElementById("private-browsing-myths");
-
-  let feltPrivacyEnabled = RPMGetBoolPref(
-    "browser.privatebrowsing.felt-privacy-v1",
-    false
-  );
-
-  if (infoIcon && !feltPrivacyEnabled) {
-    container.style.backgroundImage = `url(${infoIcon})`;
-  }
-
-  if (feltPrivacyEnabled) {
-    // Record exposure event for Felt Privacy experiment
-    window.FeltPrivacyExposureTelemetry();
-
-    infoTitleEnabled = true;
-    infoTitle = "fluent:about-private-browsing-felt-privacy-v1-info-header";
-    infoBody = "fluent:about-private-browsing-felt-privacy-v1-info-body";
-    infoLinkText = "fluent:about-private-browsing-felt-privacy-v1-info-link";
-  }
-
-  titleEl.hidden = !infoTitleEnabled;
-
-  translateElements([
-    [titleEl, infoTitle],
-    [bodyEl, infoBody],
-    [linkEl, infoLinkText],
-  ]);
-
-  if (infoLinkUrl) {
-    linkEl.setAttribute("href", infoLinkUrl);
-  }
 }
 
 async function renderPromo({
@@ -258,7 +205,6 @@ async function setupMessageConfig(config = null) {
     } catch (e) {}
   }
 
-  renderInfo(config);
   let hasRendered = await renderPromo(config);
   if (hasRendered && message) {
     recordOnceVisible(message);
@@ -303,6 +249,14 @@ document.addEventListener("DOMContentLoaded", function () {
   linkEl.addEventListener("click", () => {
     window.PrivateBrowsingRecordClick("InfoLink");
   });
+
+  if (RPMGetBoolPref("browser.nova.enabled", false)) {
+    document.getElementById("info-title").hidden = true;
+    document.l10n.setAttributes(
+      document.getElementById("info-body"),
+      "about-private-browsing-nova-info-body"
+    );
+  }
 
   // We don't do this setup until now, because we don't want to record any impressions until we're
   // sure we're actually running a private window, not just about:privatebrowsing in a normal window.
@@ -352,55 +306,4 @@ document.addEventListener("DOMContentLoaded", function () {
   };
   openSearchOptions.addEventListener("click", openSearchOptionsEvtHandler);
   openSearchOptions.addEventListener("keypress", openSearchOptionsEvtHandler);
-
-  // Setup the search hand-off box.
-  let btn = document.getElementById("search-handoff-button");
-
-  let editable = document.getElementById("fake-editable");
-  let DISABLE_SEARCH_TOPIC = "DisableSearch";
-  let SHOW_SEARCH_TOPIC = "ShowSearch";
-  let SEARCH_HANDOFF_TOPIC = "SearchHandoff";
-
-  function showSearch() {
-    btn.classList.remove("focused");
-    btn.classList.remove("disabled");
-    RPMRemoveMessageListener(SHOW_SEARCH_TOPIC, showSearch);
-  }
-
-  function disableSearch() {
-    btn.classList.add("disabled");
-  }
-
-  function handoffSearch(text) {
-    RPMSendAsyncMessage(SEARCH_HANDOFF_TOPIC, { text });
-    RPMAddMessageListener(SHOW_SEARCH_TOPIC, showSearch);
-    if (text) {
-      disableSearch();
-    } else {
-      btn.classList.add("focused");
-      RPMAddMessageListener(DISABLE_SEARCH_TOPIC, disableSearch);
-    }
-  }
-  btn.addEventListener("focus", function () {
-    handoffSearch();
-  });
-  btn.addEventListener("click", function () {
-    handoffSearch();
-  });
-
-  // Hand-off any text that gets dropped or pasted
-  editable.addEventListener("drop", function (ev) {
-    ev.preventDefault();
-    let text = ev.dataTransfer.getData("text");
-    if (text) {
-      handoffSearch(text);
-    }
-  });
-  editable.addEventListener("paste", function (ev) {
-    ev.preventDefault();
-    handoffSearch(ev.clipboardData.getData("Text"));
-  });
-
-  // Load contentSearchUI so it sets the search engine icon and name for us.
-  new window.ContentSearchHandoffUIController();
 });

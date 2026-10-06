@@ -120,9 +120,9 @@ add_task(async function testDeveloperButtonWrongKey() {
 add_task(async function testPageActionsButtonPress() {
   // The page actions button is not normally visible, so we must
   // unhide it.
-  BrowserPageActions.mainButtonNode.style.visibility = "visible";
+  BrowserPageActions.mainButtonNode.style.display = "flex";
   registerCleanupFunction(() => {
-    BrowserPageActions.mainButtonNode.style.removeProperty("visibility");
+    BrowserPageActions.mainButtonNode.style.removeProperty("display");
   });
   await BrowserTestUtils.withNewTab("https://example.com", async function () {
     let button = document.getElementById("pageActionButton");
@@ -203,7 +203,7 @@ add_task(async function testSidebarsButtonPress() {
     await SpecialPowers.pushPrefEnv({
       set: [["sidebar.verticalTabs", true]],
     });
-    await SidebarController.initializeUIState({ launcherExpanded: false });
+    await SidebarController.updateUIState({ launcherExpanded: false });
   }
   let button = document.getElementById("sidebar-button");
   ok(!button.checked, "Sidebars button not checked at start of test");

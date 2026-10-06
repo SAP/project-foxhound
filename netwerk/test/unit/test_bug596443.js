@@ -59,8 +59,6 @@ function run_test() {
   httpserver.registerPathHandler("/bug596443", handler);
   httpserver.start(-1);
 
-  Services.prefs.setBoolPref("network.http.rcwn.enabled", false);
-
   // make sure we have a profile so we can use the disk-cache
   do_get_profile();
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -105,6 +103,14 @@ typedef IntRect (*ReorientRowFn)(const uint8_t* aSrc, int32_t aSrcRow,
  */
 GFX2D_API ReorientRowFn
 ReorientRow(const struct image::Orientation& aOrientation);
+
+/**
+ * Converts a row of RGBA float16 pixels to uint16_t values, clamping the
+ * float [0.0, 1.0] range to uint16 [0, 65535], with NaN treated as 0.0.
+ * Writes aChannels (3 or 4) channels per pixel.
+ */
+GFX2D_API void ConvertFloat16RowToUint16(const uint16_t* aSrc, uint16_t* aDst,
+                                         uint32_t aWidth, uint32_t aChannels);
 
 }  // namespace gfx
 }  // namespace mozilla

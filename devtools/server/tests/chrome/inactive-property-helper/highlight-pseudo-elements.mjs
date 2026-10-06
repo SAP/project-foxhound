@@ -173,7 +173,7 @@ export default [
     info: "custom property is active on ::target-text",
     property: "--my-var",
     tagName: "span",
-    rules: ["span::target-text { -my-var: red; }"],
+    rules: ["span::target-text { --my-var: red; }"],
     isActive: true,
   },
 ];

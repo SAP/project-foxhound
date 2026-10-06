@@ -10,19 +10,31 @@
 
 #include "test/testsupport/ivf_video_frame_generator.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <memory>
+#include <optional>
 
+#include "absl/strings/string_view.h"
 #include "api/environment/environment.h"
+#include "api/scoped_refptr.h"
+#include "api/test/frame_generator_interface.h"
+#include "api/units/time_delta.h"
 #include "api/video/encoded_image.h"
 #include "api/video/i420_buffer.h"
-#include "api/video_codecs/video_codec.h"
-#include "media/base/media_constants.h"
+#include "api/video/video_codec_type.h"
+#include "api/video/video_frame.h"
+#include "api/video/video_frame_buffer.h"
+#include "api/video_codecs/video_decoder.h"
 #include "modules/video_coding/codecs/av1/dav1d_decoder.h"
 #include "modules/video_coding/codecs/h264/include/h264.h"
 #include "modules/video_coding/codecs/vp8/include/vp8.h"
 #include "modules/video_coding/codecs/vp9/include/vp9.h"
 #include "modules/video_coding/include/video_error_codes.h"
+#include "modules/video_coding/utility/ivf_file_reader.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/system/file_wrapper.h"
 
 namespace webrtc {
@@ -108,8 +120,7 @@ FrameGeneratorInterface::VideoFrameData IvfVideoFrameGenerator::NextFrame() {
                      << kMaxNextFrameWaitTimeout << ". Can't continue";
 
   MutexLock frame_lock(&frame_decode_lock_);
-  rtc::scoped_refptr<VideoFrameBuffer> buffer =
-      next_frame_->video_frame_buffer();
+  scoped_refptr<VideoFrameBuffer> buffer = next_frame_->video_frame_buffer();
 
   // Set original resolution to resolution of decoded frame.
   original_resolution_ = {.width = static_cast<size_t>(buffer->width()),
@@ -120,7 +131,7 @@ FrameGeneratorInterface::VideoFrameData IvfVideoFrameGenerator::NextFrame() {
        output_resolution_->height != original_resolution_.height)) {
     // Video adapter has requested a down-scale. Allocate a new buffer and
     // return scaled version.
-    rtc::scoped_refptr<I420Buffer> scaled_buffer = I420Buffer::Create(
+    scoped_refptr<I420Buffer> scaled_buffer = I420Buffer::Create(
         output_resolution_->width, output_resolution_->height);
     scaled_buffer->ScaleFrom(*buffer->ToI420());
     buffer = scaled_buffer;

@@ -146,16 +146,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=558036
       // don't barf on an empty abbr element.
       testAbsentAttrs("th3", { "abbr": "" });
 
-      // application accessible
-      if (WIN) {
-        var gfxInfo = Cc["@mozilla.org/gfx/info;1"].
-          getService(Ci.nsIGfxInfo);
-        var attrs = {
-          "D2D": (gfxInfo.D2DEnabled ? "true" : "false"),
-        };
-        testAttrs(getApplicationAccessible(), attrs, false);
-      }
-
       // no object attributes
       testAbsentAttrs(getAccessible("listitem").firstChild, { "tag": "" });
 

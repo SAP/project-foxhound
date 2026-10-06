@@ -1,0 +1,64 @@
+{
+  "image": {
+    "xsmall": {
+      "value": "{dimension.40}"
+    },
+    "small": {
+      "value": "{dimension.48}"
+    },
+    "medium": {
+      "value": "{dimension.56}"
+    },
+    "large": {
+      "value": "{dimension.64}"
+    },
+    "xlarge": {
+      "value": "{dimension.80}"
+    },
+    "xxlarge": {
+      "value": "{dimension.96}"
+    }
+  },
+  "item": {
+    "xsmall": {
+      "value": "{dimension.12}"
+    },
+    "small": {
+      "value": "{dimension.16}"
+    },
+    "medium": {
+      "value": "{dimension.24}"
+    },
+    "large": {
+      "value": "{dimension.32}"
+    },
+    "xlarge": {
+      "value": "{dimension.48}"
+    }
+  },
+  "layout": {
+    "xsmall": {
+      "value": "{dimension.100}"
+    },
+    "small": {
+      "value": "{dimension.200}"
+    },
+    "medium": {
+      "value": "{dimension.300}"
+    },
+    "large": {
+      "value": "{dimension.400}"
+    },
+    "xlarge": {
+      "value": "{dimension.500}"
+    }
+  },
+  "sidebar": {
+    "@base": {
+      "value": "280px"
+    },
+    "narrow": {
+      "value": "118px"
+    }
+  }
+}

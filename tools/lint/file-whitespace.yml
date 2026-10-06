@@ -44,6 +44,7 @@ file-whitespace:
         - dom/smil/crashtests
         - dom/smil/test
         - dom/security/test
+        - dom/serializers/tests
         - dom/svg/crashtests
         - dom/svg/test
         - dom/webauthn/winwebauthn/webauthn.h
@@ -68,7 +69,6 @@ file-whitespace:
         - intl/components/gtest/TestNumberRangeFormat.cpp
         - intl/icu_segmenter_data
         - intl/lwbrk/crashtests
-        - intl/lwbrk/rulebrk.c
         - intl/uconv/crashtests
         - intl/uconv/tests
         - intl/strres/tests/unit/397093.properties
@@ -122,7 +122,6 @@ file-whitespace:
         - toolkit/locales/en-US/chrome/passwordmgr/passwordmgr.properties
         - tools/lint/eslint
         - tools/lint/test/test_clang_format.py
-        - view/crashtests
         - widget/cocoa/crashtests
         - widget/nsFilePickerProxy.cpp
         - widget/tests
@@ -156,6 +155,8 @@ file-whitespace:
         - .kt
         - .md
         - .mn
+        - .nsh
+        - .nsi
         - .properties
         - .py
         - .rs
@@ -166,6 +167,7 @@ file-whitespace:
         - .yml
         - .xhtml
     support-files:
-        - 'tools/lint/file-whitespace/**'
+        - 'tools/lint/mozcheck/**'
     type: external
-    payload: file-whitespace:lint
+    payload: mozcheck:lint
+    check: file-whitespace

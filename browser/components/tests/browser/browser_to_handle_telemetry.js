@@ -92,6 +92,10 @@ function assertToHandleTelemetry(assertions) {
   }
 }
 
+add_setup(async function () {
+  await TelemetryTestUtils.getProcessScalars("parent", true, true);
+});
+
 add_task(async function test_invoked_to_handle_registered_file_type() {
   await handleCommandLine(
     [

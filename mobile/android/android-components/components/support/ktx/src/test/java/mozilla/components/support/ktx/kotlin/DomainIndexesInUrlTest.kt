@@ -4,23 +4,23 @@
 
 package mozilla.components.support.ktx.kotlin
 
-import android.net.InetAddresses
-import android.util.Patterns
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import mozilla.components.lib.publicsuffixlist.PublicSuffixList
+import mozilla.components.support.ktx.helpers.ShadowInetAddresses
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import org.robolectric.annotation.Implementation
-import org.robolectric.annotation.Implements
 
 @RunWith(RobolectricTestRunner::class)
 @Config(shadows = [ShadowInetAddresses::class])
 class DomainIndexesInUrlTest {
+
+    private val testDispatcher = StandardTestDispatcher()
+
     @Test
     fun `GIVEN a simple URL WHEN getting the domain indexes THEN get the start and end indexes of the domain in URL`() =
         testDomainIndexesInURL(
@@ -116,27 +116,11 @@ class DomainIndexesInUrlTest {
     private fun testDomainIndexesInURL(
         url: String,
         expectedIndexes: Pair<Int, Int>?,
-    ) = runTest {
+    ) = runTest(testDispatcher) {
         val urlWithMarkedDomain = url.applyRegistrableDomainSpan(
-            publicSuffixList = PublicSuffixList(testContext, Dispatchers.Unconfined, this),
+            publicSuffixList = PublicSuffixList(testContext, testDispatcher),
         )
 
         assertEquals(expectedIndexes, urlWithMarkedDomain.getRegistrableDomainIndexRange())
-    }
-}
-
-/**
- * Robolectric default implementation of [InetAddresses] returns false for any address.
- * This shadow is used to override that behavior and return true for any IP address.
- */
-@Implements(InetAddresses::class)
-private class ShadowInetAddresses {
-    companion object {
-        @Implementation
-        @JvmStatic
-        @Suppress("DEPRECATION")
-        fun isNumericAddress(address: String): Boolean {
-            return Patterns.IP_ADDRESS.matcher(address).matches() || address.contains(":")
-        }
     }
 }

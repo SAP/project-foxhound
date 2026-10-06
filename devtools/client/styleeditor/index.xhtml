@@ -38,7 +38,7 @@
   <script src="chrome://devtools/content/styleeditor/index.js" />
 
   <popupset id="style-editor-popups">
-    <menupopup id="sourceEditorContextMenu" incontentshell="false">
+    <menupopup id="sourceEditorContextMenu" escapecontentshell="true">
       <menuitem
         id="cMenu_undo"
         data-l10n-id="text-action-undo"
@@ -89,7 +89,7 @@
         command="cmd_gotoLine"
       />
     </menupopup>
-    <menupopup id="sidebar-context" incontentshell="false">
+    <menupopup id="sidebar-context" escapecontentshell="true">
       <menuitem
         id="context-openlinknewtab"
         data-l10n-id="styleeditor-open-link-new-tab"

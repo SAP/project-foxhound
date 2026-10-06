@@ -57,8 +57,8 @@ var HarUtils = {
    *
    * @param {File} file Target file where the HAR string (JSON)
    * should be stored.
-   * @param {String} jsonString HAR data (JSON or JSONP)
-   * @param {Boolean} compress The result file is zipped if set to true.
+   * @param {string} jsonString HAR data (JSON or JSONP)
+   * @param {boolean} compress The result file is zipped if set to true.
    */
   saveToFile(file, jsonString, compress) {
     const openFlags =

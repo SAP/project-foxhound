@@ -1,4 +1,7 @@
 [DEFAULT]
+run-if = [
+  "os != 'android'",
+]
 firefox-appdir = "browser"
 
 ["test_sidebar_state.js"]

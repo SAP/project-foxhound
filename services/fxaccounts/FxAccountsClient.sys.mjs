@@ -6,7 +6,7 @@ import { CommonUtils } from "resource://services-common/utils.sys.mjs";
 
 import { HawkClient } from "resource://services-common/hawkclient.sys.mjs";
 import { deriveHawkCredentials } from "resource://services-common/hawkrequest.sys.mjs";
-import { CryptoUtils } from "resource://services-crypto/utils.sys.mjs";
+import { CryptoUtils } from "moz-src:///services/crypto/modules/utils.sys.mjs";
 
 import {
   ERRNO_ACCOUNT_DOES_NOT_EXIST,
@@ -253,7 +253,7 @@ FxAccountsClient.prototype = {
    *
    * @param String sessionTokenHex
    *        The session token encoded in hex
-   * @param {Object} options
+   * @param {object} options
    * @param options.client_id
    * @param options.state
    * @param options.scope
@@ -261,7 +261,7 @@ FxAccountsClient.prototype = {
    * @param options.code_challenge_method
    * @param options.code_challenge
    * @param [options.keys_jwe]
-   * @returns {Promise<Object>} Object containing `code` and `state`.
+   * @returns {Promise<object>} Object containing `code` and `state`.
    */
   async oauthAuthorize(sessionTokenHex, options) {
     const credentials = await deriveHawkCredentials(
@@ -291,8 +291,8 @@ FxAccountsClient.prototype = {
    * @param String verifier: OAuth PKCE verifier
    * @param String clientId: OAuth client ID
    *
-   * @returns { Object } object containing `refresh_token`, `access_token` and `keys_jwe`
-   **/
+   * @returns {object} object containing `refresh_token`, `access_token` and `keys_jwe`
+   */
   async oauthToken(sessionTokenHex, code, verifier, clientId) {
     const credentials = await deriveHawkCredentials(
       sessionTokenHex,
@@ -464,14 +464,14 @@ FxAccountsClient.prototype = {
   /**
    * Obtain an OAuth access token by authenticating using a session token.
    *
-   * @param {String} sessionTokenHex
+   * @param {string} sessionTokenHex
    *        The session token encoded in hex
-   * @param {String} clientId
-   * @param {String} scope
+   * @param {string} clientId
+   * @param {string} scope
    *        List of space-separated scopes.
-   * @param {Number} ttl
+   * @param {number} ttl
    *        Token time to live.
-   * @return {Promise<Object>} Object containing an `access_token`.
+   * @return {Promise<object>} Object containing an `access_token`.
    */
   async accessTokenWithSessionToken(sessionTokenHex, clientId, scope, ttl) {
     const credentials = await deriveHawkCredentials(
@@ -536,7 +536,7 @@ FxAccountsClient.prototype = {
   /**
    * Register a new device
    *
-   * @method registerDevice
+   * @function registerDevice
    * @param  sessionTokenHex
    *         Session token obtained from signIn
    * @param  name
@@ -584,7 +584,7 @@ FxAccountsClient.prototype = {
    * Sends a message to other devices. Must conform with the push payload schema:
    * https://github.com/mozilla/fxa-auth-server/blob/master/docs/pushpayloads.schema.json
    *
-   * @method notifyDevice
+   * @function notifyDevice
    * @param  sessionTokenHex
    *         Session token obtained from signIn
    * @param  deviceIds
@@ -627,7 +627,7 @@ FxAccountsClient.prototype = {
   /**
    * Retrieves pending commands for our device.
    *
-   * @method getCommands
+   * @function getCommands
    * @param  sessionTokenHex - Session token obtained from signIn
    * @param  [index] - If specified, only messages received after the one who
    *                   had that index will be retrieved.
@@ -652,7 +652,7 @@ FxAccountsClient.prototype = {
   /**
    * Invokes a command on another device.
    *
-   * @method invokeCommand
+   * @function invokeCommand
    * @param  sessionTokenHex - Session token obtained from signIn
    * @param  command - Name of the command to invoke
    * @param  target - Recipient device ID.
@@ -681,7 +681,7 @@ FxAccountsClient.prototype = {
   /**
    * Update the session or name for an existing device
    *
-   * @method updateDevice
+   * @function updateDevice
    * @param  sessionTokenHex
    *         Session token obtained from signIn
    * @param  id
@@ -726,7 +726,7 @@ FxAccountsClient.prototype = {
    * Get a list of currently registered devices that have been accessed
    * in the last `DEVICES_FILTER_DAYS` days
    *
-   * @method getDeviceList
+   * @function getDeviceList
    * @param  sessionTokenHex
    *         Session token obtained from signIn
    * @return Promise

@@ -9,6 +9,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   Log: "resource://gre/modules/Log.sys.mjs",
   PlacesUIUtils: "moz-src:///browser/components/places/PlacesUIUtils.sys.mjs",
+  AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "relativeTimeFormat", () => {
@@ -24,7 +25,9 @@ export const LOGGING_PREF = "browser.tabs.firefox-view.logLevel";
 export const MAX_TABS_FOR_RECENT_BROWSING = 5;
 
 export function formatURIForDisplay(uriString) {
-  return lazy.BrowserUtils.formatURIStringForDisplay(uriString);
+  return lazy.BrowserUtils.formatURIStringForDisplay(uriString, {
+    showFilenameForLocalURIs: true,
+  });
 }
 
 export function convertTimestamp(
@@ -88,19 +91,32 @@ export function escapeHtmlEntities(text) {
     .replace(/'/g, "&#39;");
 }
 
-export function navigateToLink(e, url = e.originalTarget.url) {
+export function navigateToLink(
+  e,
+  url = e.originalTarget.url,
+  { forceNewTab = true } = {}
+) {
   let currentWindow =
-    e.target.ownerGlobal.browsingContext.embedderWindowGlobal.browsingContext
+    e.target.documentGlobal.browsingContext.embedderWindowGlobal.browsingContext
       .window;
   if (currentWindow.openTrustedLinkIn) {
-    let where = lazy.BrowserUtils.whereToOpenLink(
-      e.detail.originalEvent,
-      false,
-      true
-    );
-    if (where == "current") {
+    const originalEvent = e.detail.originalEvent;
+    const isModifierClick =
+      lazy.AppConstants.platform == "macosx"
+        ? originalEvent.metaKey
+        : originalEvent.ctrlKey;
+    let where;
+
+    if (isModifierClick) {
       where = "tab";
+    } else {
+      where = lazy.BrowserUtils.whereToOpenLink(originalEvent, false, true);
+      if (where == "current" && forceNewTab) {
+        where = "tab";
+      }
     }
-    currentWindow.openTrustedLinkIn(url, where);
+    currentWindow.openTrustedLinkIn(url, where, {
+      inBackground: isModifierClick,
+    });
   }
 }

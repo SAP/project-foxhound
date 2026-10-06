@@ -75,7 +75,18 @@ class NetworkEventContentWatcher {
     this.networkEvents.clear();
   }
 
-  httpFailedOpeningRequest = subject => {
+  httpFailedOpeningRequest = (subject, topic) => {
+    if (
+      topic != "http-on-failed-opening-request" ||
+      !(subject instanceof Ci.nsIHttpChannel)
+    ) {
+      const channel = subject.QueryInterface(Ci.nsIChannel);
+      console.warn(
+        `httpFailedOpeningRequest triggered on non-nsIHttpChannel for uri: ${channel.URI.spec}`
+      );
+      return;
+    }
+
     const channel = subject.QueryInterface(Ci.nsIHttpChannel);
 
     // Ignore preload requests to avoid duplicity request entries in
@@ -101,7 +112,7 @@ class NetworkEventContentWatcher {
     });
   };
 
-  httpOnResourceCacheResponse = (subject, topic) => {
+  httpOnResourceCacheResponse = (subject, topic, memoryCacheKey) => {
     if (
       topic != "http-on-resource-cache-response" ||
       !(subject instanceof Ci.nsIHttpChannel)
@@ -139,6 +150,7 @@ class NetworkEventContentWatcher {
 
     this.onNetworkEventAvailable(channel, {
       fromCache: true,
+      memoryCacheKey,
       networkEventOptions: {},
       type: RESOURCE_TYPES.CACHED,
     });
@@ -177,7 +189,10 @@ class NetworkEventContentWatcher {
     });
   };
 
-  onNetworkEventAvailable(channel, { fromCache, networkEventOptions, type }) {
+  onNetworkEventAvailable(
+    channel,
+    { fromCache, memoryCacheKey, networkEventOptions, type }
+  ) {
     const networkEventActor = new NetworkEventActor(
       this.targetActor.conn,
       this.targetActor.sessionContext,
@@ -217,6 +232,9 @@ class NetworkEventContentWatcher {
 
     this.onAvailable([resource]);
 
+    if (memoryCacheKey) {
+      networkEventActor.addMemoryCacheData(channel, memoryCacheKey);
+    }
     networkEventActor.addCacheDetails({ fromCache });
     if (type == RESOURCE_TYPES.BLOCKED) {
       lazy.NetworkUtils.setEventAsAvailable(networkEvent.resourceUpdates, [
@@ -231,15 +249,13 @@ class NetworkEventContentWatcher {
         {} /* offsets */
       );
       networkEventActor.addServerTimings({});
-      networkEventActor.addResponseContent(
-        {
-          mimeType: channel.contentType,
-          size: channel.contentLength,
-          text: "",
-          transferredSize: 0,
-        },
-        {}
-      );
+      networkEventActor.addResponseContent({
+        mimeType: channel.contentType,
+        size: channel.contentLength,
+        text: "",
+        transferredSize: 0,
+      });
+      networkEventActor.addResponseContentComplete({});
     } else if (type == RESOURCE_TYPES.DATA_CHANNEL) {
       lazy.NetworkUtils.handleDataChannel(channel, networkEventActor);
     }
@@ -260,7 +276,7 @@ class NetworkEventContentWatcher {
         resourceUpdates.fromCache = updateResource.fromCache;
         resourceUpdates.fromServiceWorker = updateResource.fromServiceWorker;
         break;
-      case NETWORK_EVENT_TYPES.RESPONSE_START:
+      case NETWORK_EVENT_TYPES.RESPONSE_START: {
         // For cached image requests channel.responseStatus is set to 200 as
         // expected. However responseStatusText is empty. In this case fallback
         // to the expected statusText "OK".
@@ -274,14 +290,19 @@ class NetworkEventContentWatcher {
         resourceUpdates.remoteAddress = updateResource.remoteAddress;
         resourceUpdates.remotePort = updateResource.remotePort;
         resourceUpdates.waitingTime = updateResource.waitingTime;
-
+        if (Number.isInteger(updateResource.priority)) {
+          resourceUpdates.priority = updateResource.priority;
+        }
         lazy.NetworkUtils.setEventAsAvailable(resourceUpdates, [
           NETWORK_EVENT_TYPES.RESPONSE_COOKIES,
           NETWORK_EVENT_TYPES.RESPONSE_HEADERS,
         ]);
         break;
+      }
       case NETWORK_EVENT_TYPES.RESPONSE_CONTENT:
-        resourceUpdates.contentSize = updateResource.contentSize;
+        if (updateResource.contentSize !== undefined) {
+          resourceUpdates.contentSize = updateResource.contentSize;
+        }
         resourceUpdates.mimeType = updateResource.mimeType;
         resourceUpdates.transferredSize = updateResource.transferredSize;
         break;
@@ -301,7 +322,7 @@ class NetworkEventContentWatcher {
     // responseContent.
     const isResponseComplete =
       receivedUpdates.includes(NETWORK_EVENT_TYPES.RESPONSE_START) &&
-      receivedUpdates.includes(NETWORK_EVENT_TYPES.RESPONSE_CONTENT) &&
+      receivedUpdates.includes(NETWORK_EVENT_TYPES.RESPONSE_CONTENT_COMPLETE) &&
       receivedUpdates.includes(NETWORK_EVENT_TYPES.EVENT_TIMINGS);
 
     if (isResponseComplete) {
@@ -314,6 +335,7 @@ class NetworkEventContentWatcher {
 
     if (
       updateResource.updateType == NETWORK_EVENT_TYPES.RESPONSE_START ||
+      updateResource.updateType == NETWORK_EVENT_TYPES.RESPONSE_CONTENT ||
       isResponseComplete
     ) {
       this._emitUpdate(networkEvent);

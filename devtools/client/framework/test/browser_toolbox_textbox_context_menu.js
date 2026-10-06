@@ -53,7 +53,7 @@ add_task(async function checkMenuEntryStates() {
   }
 
   const onContextMenuHidden = toolbox.once("menu-close");
-  if (Services.prefs.getBoolPref("widget.macos.native-context-menus", false)) {
+  if (textboxContextMenu.isNativeMenu) {
     info("Using hidePopup semantics because of macOS native context menus.");
     textboxContextMenu.hidePopup();
   } else {
@@ -124,7 +124,7 @@ async function checkTextBox(textBox, toolbox) {
 
   info("Closing the menu");
   const onContextMenuHidden = toolbox.once("menu-close");
-  if (Services.prefs.getBoolPref("widget.macos.native-context-menus", false)) {
+  if (textboxContextMenu.isNativeMenu) {
     info("Using hidePopup semantics because of macOS native context menus.");
     textboxContextMenu.hidePopup();
   } else {

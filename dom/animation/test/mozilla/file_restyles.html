@@ -2204,6 +2204,27 @@ waitForAllPaints(async () => {
     await ensureElementRemoval(container);
   });
 
+  add_task(async function animations_in_opacity_zero_forwards_filling_animation() {
+    const container = addDiv(null, { style: 'opacity: 0' });
+
+    const child = addDiv(null, { style: 'animation: on-main-thread 100s infinite;' });
+    container.appendChild(child);
+
+    const containerAnimation = container.animate({ opacity: [ '1', '0' ] },
+                                                 { duration: 100, fill: 'forwards' });
+    await containerAnimation.finished;
+
+    const animation = child.getAnimations()[0];
+    await waitForAnimationReadyToRestyle(animation);
+
+    const restyleCount = await observeStyling(5);
+
+    is(restyleCount, 0,
+       'Animations in opacity zero descendant element should be throttled ' +
+       'after the root opacity animation has finished while filling forwards');
+    await ensureElementRemoval(container);
+  });
+
   add_task_if_omta_enabled(async function restyling_main_thread_animations_in_opacity_zero_descendant_during_root_opacity_animation() {
     const container = addDiv(null, { style: 'opacity: 0; animation: opacity-from-zero 100s infinite' });
 

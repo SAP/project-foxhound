@@ -88,8 +88,9 @@ function do_check_throws_message(aFunc, aResult) {
  *
  * @param [arg0, arg1, arg2, ...]
  *        Any number of arguments to print out
- * @usage _("Hello World") -> prints "Hello World"
- * @usage _(1, 2, 3) -> prints "1 2 3"
+ * @example
+ * _("Hello World") -> prints "Hello World"
+ * _(1, 2, 3) -> prints "1 2 3"
  */
 var _ = function () {
   print(Array.from(arguments).join(" "));
@@ -209,62 +210,4 @@ function installFakePAC() {
 function uninstallFakePAC() {
   _("Uninstalling fake PAC.");
   MockRegistrar.unregister(fakePACCID);
-}
-
-function getUptakeTelemetrySnapshot(component, source) {
-  const TELEMETRY_CATEGORY_ID = "uptake.remotecontent.result";
-  const snapshot = Services.telemetry.snapshotEvents(
-    Ci.nsITelemetry.DATASET_ALL_CHANNELS,
-    true
-  );
-  const parentEvents = snapshot.parent || [];
-  return (
-    parentEvents
-      // Transform raw event data to objects.
-      .map(([, category, method, object, value, extras]) => {
-        return { category, method, object, value, extras };
-      })
-      // Keep only for the specified component and source.
-      .filter(
-        e =>
-          e.category == TELEMETRY_CATEGORY_ID &&
-          e.object == component &&
-          e.extras.source == source
-      )
-      // Return total number of events received by status, to mimic histograms snapshots.
-      .reduce((acc, e) => {
-        acc[e.value] = (acc[e.value] || 0) + 1;
-        return acc;
-      }, {})
-  );
-}
-
-function checkUptakeTelemetry(snapshot1, snapshot2, expectedIncrements) {
-  const { UptakeTelemetry } = ChromeUtils.importESModule(
-    "resource://services-common/uptake-telemetry.sys.mjs"
-  );
-  const STATUSES = Object.values(UptakeTelemetry.STATUS);
-  for (const status of STATUSES) {
-    const expected = expectedIncrements[status] || 0;
-    const previous = snapshot1[status] || 0;
-    const current = snapshot2[status] || previous;
-    Assert.equal(expected, current - previous, `check events for ${status}`);
-  }
-}
-
-async function withFakeChannel(channel, f) {
-  const { Policy } = ChromeUtils.importESModule(
-    "resource://services-common/uptake-telemetry.sys.mjs"
-  );
-  let oldGetChannel = Policy.getChannel;
-  Policy.getChannel = () => channel;
-  try {
-    return await f();
-  } finally {
-    Policy.getChannel = oldGetChannel;
-  }
-}
-
-function arrayEqual(a, b) {
-  return JSON.stringify(a) == JSON.stringify(b);
 }

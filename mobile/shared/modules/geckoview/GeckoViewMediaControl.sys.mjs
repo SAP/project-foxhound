@@ -79,9 +79,9 @@ export class GeckoViewMediaControl extends GeckoViewModule {
         break;
       case "GeckoView:MediaSession:Stop":
         this.controller.stop();
-        this.eventDispatcher.sendRequest({
-          type: "GeckoView:MediaSession:Playback:None",
-        });
+        this.eventDispatcher.sendRequest(
+          "GeckoView:MediaSession:Playback:None"
+        );
         break;
       case "GeckoView:MediaSession:NextTrack":
         this.controller.nextTrack();
@@ -143,24 +143,19 @@ export class GeckoViewMediaControl extends GeckoViewModule {
   handleActivated() {
     debug`handleActivated`;
 
-    this.eventDispatcher.sendRequest({
-      type: "GeckoView:MediaSession:Activated",
-    });
+    this.eventDispatcher.sendRequest("GeckoView:MediaSession:Activated");
   }
 
   handleDeactivated() {
     debug`handleDeactivated`;
 
-    this.eventDispatcher.sendRequest({
-      type: "GeckoView:MediaSession:Deactivated",
-    });
+    this.eventDispatcher.sendRequest("GeckoView:MediaSession:Deactivated");
   }
 
   handlePositionStateChanged(aEvent) {
     debug`handlePositionStateChanged`;
 
-    this.eventDispatcher.sendRequest({
-      type: "GeckoView:MediaSession:PositionState",
+    this.eventDispatcher.sendRequest("GeckoView:MediaSession:PositionState", {
       state: {
         duration: aEvent.duration,
         playbackRate: aEvent.playbackRate,
@@ -181,8 +176,7 @@ export class GeckoViewMediaControl extends GeckoViewModule {
       features[key] = true;
     });
 
-    this.eventDispatcher.sendRequest({
-      type: "GeckoView:MediaSession:Features",
+    this.eventDispatcher.sendRequest("GeckoView:MediaSession:Features", {
       features,
     });
   }
@@ -197,8 +191,7 @@ export class GeckoViewMediaControl extends GeckoViewModule {
     debug`handleMetadataChanged ${metadata}`;
 
     if (metadata) {
-      this.eventDispatcher.sendRequest({
-        type: "GeckoView:MediaSession:Metadata",
+      this.eventDispatcher.sendRequest("GeckoView:MediaSession:Metadata", {
         metadata,
       });
     }
@@ -215,7 +208,9 @@ export class GeckoViewMediaControl extends GeckoViewModule {
         type = "GeckoView:MediaSession:Playback:None";
         break;
       case "paused":
-        type = "GeckoView:MediaSession:Playback:Paused";
+        type = this.controller.isAnyMediaBeingControlled
+          ? "GeckoView:MediaSession:Playback:Paused"
+          : "GeckoView:MediaSession:Playback:None";
         break;
       case "playing":
         type = "GeckoView:MediaSession:Playback:Playing";
@@ -226,9 +221,7 @@ export class GeckoViewMediaControl extends GeckoViewModule {
       return;
     }
 
-    this.eventDispatcher.sendRequest({
-      type,
-    });
+    this.eventDispatcher.sendRequest(type);
   }
 }
 

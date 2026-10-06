@@ -24,13 +24,18 @@ You will need the following:
 - Node.js 10+ (On Mac, the best way to install Node.js is to use the install link on the `Node.js homepage`_)
 - npm (packaged with Node.js)
 
-To install dependencies, run the following from the root of the mozilla-central repository.
-(Using ``mach`` to call ``npm`` and ``node`` commands will ensure you're using the correct versions of Node and npm.)
+To install node dependencies, run the following from the root of the mozilla-central repository.
+(This command uses ``mach`` to call ``npm`` and ``node`` commands to ensure the correct versions of Node and npm are being referenced.)
+
+.. code-block:: shell
+
+  ./mach newtab install
+
+**IMPORTANT NOTE**: If you're using Windows, you may need to run the install command differently:
 
 .. code-block:: shell
 
   (cd browser/extensions/newtab && ../../../mach npm install)
-
 
 Which files should you edit?
 ````````````````````````````
@@ -47,21 +52,55 @@ To build assets and run Firefox, run the following from the root of the mozilla-
 
 .. code-block:: shell
 
-  ./mach npm run bundle --prefix=browser/extensions/newtab && ./mach build && ./mach run
+  ./mach newtab bundle && ./mach build && ./mach run
 
 Continuous development / debugging
 ----------------------------------
 
-For near real-time reloading, run the following commands in separate terminals to automatically rebuild bundled files whenever JSX or SCSS files change. After making a change, `restart your local instance </devtools-user/browser_console/index.html#controlling-the-browser>`_ to apply the updates.
+For near real-time reloading, run the following commands in **two separate terminals** to automatically rebuild bundled files whenever JSX or SCSS files change. After making a change, `restart your local instance </devtools-user/browser_console/index.html#controlling-the-browser>`_ to apply the updates. Run the following terminal commands:
 
 .. code-block:: shell
 
-  ./mach npm run watchmc --prefix=browser/extensions/newtab
+  ./mach newtab watch
+
+.. code-block:: shell
+
   ./mach run
-  ./mach watch
+
+**IMPORTANT NOTE**: This task will add inline source maps to help with debugging, which changes the memory footprint. Do not use the ``watch`` task for profiling or performance testing! After finishing your work, **be sure to stop the watch process**. When stopped, it will automatically run a final bundle step to remove the temporary inline source maps.
 
 
-**IMPORTANT NOTE**: This task will add inline source maps to help with debugging, which changes the memory footprint. Do not use the ``watchmc`` task for profiling or performance testing! After finalizing your changes, be sure to run `the bundle command <./index.html#building-assets-and-running-firefox>`_ again before committing to remove the inline source maps.
+Pre-commit git hook
+-------------------
+
+A pre-commit hook is available in ``tools/lint/hooks_newtab.py``. When installed,
+it runs the following checks in order, stopping at the first failure:
+
+1. **Bundle** — if newtab source or bundle output files are staged, runs
+   ``./mach newtab bundle`` and blocks the commit if the output files differ
+   from what is staged.
+2. **Lint** — runs `mozlint <https://firefox-source-docs.mozilla.org/code-quality/lint/usage.html>`_
+   on staged files and blocks the commit if there are errors.
+3. **Tests** — optionally runs unit tests (configurable, disabled by default).
+
+To install the hook, run the following from the root of the mozilla-central repository:
+
+.. code-block:: shell
+
+  ln -sf "$(git rev-parse --show-toplevel)/tools/lint/hooks_newtab.py" \
+         "$(git rev-parse --show-toplevel)/.git/hooks/pre-commit"
+
+By default, no tests are run on commit. To configure which tests run, use
+``git config newtab.pre-commit.tests`` with one of the following values:
+
+.. code-block:: shell
+
+  git config newtab.pre-commit.tests jest       # Jest only (~30 seconds)
+  git config newtab.pre-commit.tests jest-karma # Jest + Karma/Enzyme (~3-5 minutes)
+  git config newtab.pre-commit.tests all        # all tests including xpcshell and browser (10+ minutes)
+  git config newtab.pre-commit.tests none       # skip tests (default)
+
+To commit despite failing tests, use ``git commit --no-verify`` to bypass the hook entirely.
 
 
 Running tests

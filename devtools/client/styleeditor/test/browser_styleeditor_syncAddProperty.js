@@ -28,7 +28,7 @@ add_task(async function () {
     await selectNode("#testid", inspector);
 
     info("Focusing a new property name in the rule-view on " + URI);
-    const ruleEditor = getRuleViewRuleEditor(view, 1);
+    const ruleEditor = getRuleViewRuleEditorAt(view, 1);
     const editor = await focusEditableField(view, ruleEditor.closeBrace);
     is(
       inplaceEditor(ruleEditor.newPropSpan),

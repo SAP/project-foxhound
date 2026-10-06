@@ -137,7 +137,7 @@ export function Deferred() {
  *     Case-sensitive string representing the event name to listen for.
  * @param {object=} options
  * @param {boolean=} options.capture
- *     Indicates the event will be despatched to this subject,
+ *     Indicates the event will be dispatched to this subject,
  *     before it bubbles down to any EventTarget beneath it in the
  *     DOM tree. Defaults to false.
  * @param {Function=} options.checkFn
@@ -154,7 +154,7 @@ export function Deferred() {
  *     Determines whether to add listener to the system group. Defaults to
  *     false.
  * @param {boolean=} options.wantUntrusted
- *     Receive synthetic events despatched by web content. Defaults to false.
+ *     Receive synthetic events dispatched by web content. Defaults to false.
  *
  * @returns {Promise<Event>}
  *     Either fulfilled with the first described event, satisfying
@@ -252,7 +252,7 @@ export function executeSoon(fn) {
 /**
  * Runs a Promise-like function off the main thread until it is resolved
  * through ``resolve`` or ``rejected`` callbacks.  The function is
- * guaranteed to be run at least once, irregardless of the timeout.
+ * guaranteed to be run at least once, regardless of the timeout.
  *
  * The ``func`` is evaluated every ``interval`` for as long as its
  * runtime duration does not exceed ``interval``.  Evaluations occur

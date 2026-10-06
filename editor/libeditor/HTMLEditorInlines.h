@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,8 +14,6 @@
 #include "ErrorList.h"  // for nsresult
 
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/Debug.h"
-#include "mozilla/Likely.h"
 #include "mozilla/RefPtr.h"
 
 #include "mozilla/dom/Element.h"
@@ -60,6 +57,13 @@ Result<MoveNodeResult, nsresult> HTMLEditor::MoveNodeToEndWithTransaction(
     nsIContent& aContentToMove, nsINode& aNewContainer) {
   return MoveNodeWithTransaction(aContentToMove,
                                  EditorDOMPoint::AtEndOf(aNewContainer));
+}
+
+Result<MoveNodeResult, nsresult> HTMLEditor::MoveSiblingsToEndWithTransaction(
+    nsIContent& aFirstContentToMove, nsIContent& aLastContentToMove,
+    nsINode& aNewContainer) {
+  return MoveSiblingsWithTransaction(aFirstContentToMove, aLastContentToMove,
+                                     EditorDOMPoint::AtEndOf(aNewContainer));
 }
 
 Element* HTMLEditor::GetTableCellElementAt(

@@ -1,5 +1,9 @@
 "use strict";
 
+const { SearchService } = ChromeUtils.importESModule(
+  "moz-src:///toolkit/components/search/SearchService.sys.mjs"
+);
+
 // Check TopSites edit modal and overlay show up.
 test_newtab({
   before: setTestTopSites,
@@ -22,6 +26,11 @@ test_newtab({
       ".top-sites li:nth-child(2) button"
     );
     topsitesAddBtn.click();
+
+    await ContentTaskUtils.waitForCondition(
+      () => content.document.querySelector(".topsite-form"),
+      "Should find a visible topsite form"
+    );
 
     let found = content.document.querySelector(".topsite-form");
     ok(found && !found.hidden, "Should find a visible topsite form");
@@ -73,6 +82,11 @@ test_newtab({
     topsiteContextBtn = topsiteEl.querySelector(".context-menu-button");
     ok(topsiteContextBtn, "Should find a context menu button");
     topsiteContextBtn.click();
+
+    await ContentTaskUtils.waitForCondition(
+      () => topsiteEl.querySelector(".context-menu-item button"),
+      "Should find context menu item button for unpin"
+    );
     topsiteEl.querySelector(".context-menu-item button").click();
 
     // Need to wait for unpin action.
@@ -144,7 +158,11 @@ test_newtab({
     );
 
     // Click the "Add" button
-    let addBtn = content.document.querySelector(".done");
+    await ContentTaskUtils.waitForCondition(
+      () => content.document.getElementById("topsites-form-save-button"),
+      "No add button found"
+    );
+    let addBtn = content.document.getElementById("topsites-form-save-button");
     addBtn.click();
 
     // Wait for Topsite to be populated
@@ -177,6 +195,8 @@ test_newtab({
         ),
       "Topsite not removed"
     );
+    // This was set when the topsite was removed, we need to reset it.
+    SpecialPowers.clearUserPref("browser.newtabpage.blocked");
   },
 });
 
@@ -204,7 +224,8 @@ test_newtab({
       gURLBar.focused,
       "We clicked a search topsite the focus should be in location bar"
     );
-    let engine = await Services.search.getEngineByAlias(searchTopSiteTag);
+
+    let engine = await SearchService.getEngineByAlias(searchTopSiteTag);
 
     // We don't use UrlbarTestUtils.assertSearchMode here since the newtab
     // testing scope doesn't integrate well with UrlbarTestUtils.
@@ -248,7 +269,7 @@ add_task(async function test_search_topsite_remove_engine() {
       SpecialPowers.spawn(
         browser,
         [],
-        () => content.document.getElementById("root").children.length
+        () => content.document.getElementById("root")?.children.length
       ),
     "Should render activity stream content"
   );
@@ -274,12 +295,12 @@ add_task(async function test_search_topsite_remove_engine() {
     }
   );
 
-  await Services.search.removeEngine(
-    await Services.search.getEngineByAlias(topSiteAlias)
+  await SearchService.removeEngine(
+    await SearchService.getEngineByAlias(topSiteAlias)
   );
 
   registerCleanupFunction(() => {
-    Services.search.restoreDefaultEngines();
+    SearchService.restoreDefaultEngines();
   });
 
   await SpecialPowers.spawn(

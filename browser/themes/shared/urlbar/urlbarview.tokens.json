@@ -1,0 +1,53 @@
+{
+  "background": {
+    "color": {
+      "hover": {
+        "value": {
+          "light": "rgb(240, 240, 244)",
+          "dark": "{background.color.dimmed.@base}",
+          "nativeTheme": "{background.color.dimmed.@base}"
+        }
+      },
+      "selected": {
+        "value": {
+          "light": "#e0e0e6",
+          "dark": "rgb(43, 42, 51)",
+          "nativeTheme": "SelectedItem"
+        }
+      }
+    }
+  },
+  "border": {
+    "radius": {
+      "value": "calc({button.border.radius} + 2px)"
+    }
+  },
+  "separator": {
+    "color": {
+      "value": {
+        "light": "rgb(240, 240, 244)",
+        "dark": "rgb(82, 82, 94)",
+        "nativeTheme": "color-mix(in srgb, currentColor 14%, transparent)",
+        "prefersContrast": "color-mix(in srgb, currentColor 86%, transparent)"
+      }
+    }
+  },
+  "text": {
+    "color": {
+      "action": {
+        "value": {
+          "light": "rgb(91, 91, 102)",
+          "dark": "rgb(191, 191, 201)",
+          "nativeTheme": "LinkText"
+        }
+      },
+      "selected": {
+        "value": {
+          "light": "rgb(21, 20, 26)",
+          "dark": "rgb(251, 251, 254)",
+          "nativeTheme": "SelectedItemText"
+        }
+      }
+    }
+  }
+}

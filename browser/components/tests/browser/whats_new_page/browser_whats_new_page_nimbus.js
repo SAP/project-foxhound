@@ -19,13 +19,13 @@ add_task(async function nimbus_whats_new_page() {
       gBrowser.selectedBrowser &&
       gBrowser.selectedBrowser.currentURI &&
       gBrowser.selectedBrowser.currentURI.spec ==
-        "https://www.mozilla.org/en-US/projects/firefox/whatsnew/",
+        "https://www.firefox.com/en-US/whatsnew/",
     `Waiting for the expected page to reopen, ${gBrowser.selectedBrowser.currentURI.spec}`
   );
   is(
     gBrowser.selectedBrowser.currentURI.spec,
-    "https://www.mozilla.org/en-US/projects/firefox/whatsnew/",
-    "The what's new page's url should equal https://www.mozilla.org/en-US/projects/firefox/whatsnew/"
+    "https://www.firefox.com/en-US/whatsnew/",
+    "The what's new page's URL should be the Nimbus-provided firefox.com URL"
   );
   gBrowser.removeTab(gBrowser.selectedTab);
 

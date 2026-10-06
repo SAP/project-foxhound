@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,38 +7,37 @@
 #include "ClientInfo.h"
 #include "ClientManager.h"
 #include "ClientState.h"
-#include "mozilla/ResultExtensions.h"
+#include "mozilla/NullPrincipal.h"
+#include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/dom/WindowGlobalParent.h"
+#include "mozilla/dom/nsCSPContext.h"
 #include "nsContentUtils.h"
 #include "nsDocShell.h"
 #include "nsDocShellLoadState.h"
 #include "nsFocusManager.h"
 #include "nsGlobalWindowOuter.h"
+#include "nsIBrowser.h"
 #include "nsIBrowserDOMWindow.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeOwner.h"
 #include "nsIMutableArray.h"
 #include "nsISupportsPrimitives.h"
 #include "nsIURI.h"
-#include "nsIBrowser.h"
 #include "nsIWebProgress.h"
 #include "nsIWebProgressListener.h"
 #include "nsIWindowMediator.h"
 #include "nsIWindowWatcher.h"
 #include "nsIXPConnect.h"
 #include "nsNetUtil.h"
+#include "nsOpenWindowInfo.h"
 #include "nsPIDOMWindow.h"
 #include "nsPIWindowWatcher.h"
 #include "nsPrintfCString.h"
 #include "nsWindowWatcher.h"
-#include "nsOpenWindowInfo.h"
-
-#include "mozilla/dom/BrowserParent.h"
-#include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/dom/CanonicalBrowsingContext.h"
-#include "mozilla/dom/nsCSPContext.h"
-#include "mozilla/dom/PolicyContainer.h"
-#include "mozilla/dom/WindowGlobalParent.h"
 
 #ifdef MOZ_GECKOVIEW
 #  include "mozilla/dom/Promise-inl.h"
@@ -503,7 +500,10 @@ RefPtr<ClientOpPromise> ClientOpenWindow(
 
   RefPtr<nsOpenWindowInfo> openInfo = new nsOpenWindowInfo();
   openInfo->mBrowsingContextReadyCallback = callback;
-  openInfo->mOriginAttributes = principal->OriginAttributesRef();
+  nsCOMPtr<nsIURI> nullPrincipalURI = NullPrincipal::CreateURI(nullptr);
+  nsCOMPtr<nsIPrincipal> initialPrincipal =
+      NullPrincipal::Create(principal->OriginAttributesRef(), nullPrincipalURI);
+  openInfo->mPrincipalToInheritForAboutBlank = std::move(initialPrincipal);
   openInfo->mIsRemote = true;
 
   RefPtr<BrowsingContext> bc;

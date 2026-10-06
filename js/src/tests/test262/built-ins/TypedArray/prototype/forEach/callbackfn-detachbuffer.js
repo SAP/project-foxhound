@@ -25,9 +25,9 @@ includes: [detachArrayBuffer.js, testTypedArray.js]
 features: [TypedArray]
 ---*/
 
-testWithTypedArrayConstructors(function(TA) {
+testWithTypedArrayConstructors(function(TA, makeCtorArg) {
   var loops = 0;
-  var sample = new TA(2);
+  var sample = new TA(makeCtorArg(2));
 
   sample.forEach(function() {
     if (loops === 0) {
@@ -37,6 +37,6 @@ testWithTypedArrayConstructors(function(TA) {
   });
 
   assert.sameValue(loops, 2);
-});
+}, null, null, ["immutable"]);
 
 reportCompare(0, 0);

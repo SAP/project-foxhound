@@ -10,6 +10,7 @@ page_timeout = 420000 # 7 mins
 test_url = "http://<host>:<port>/index.html?raptor"
 type = "benchmark"
 unit = "score"
+sparse_checkout = true
 
 ["unity-webgl"]
 repository = "https://github.com/mozilla/perf-automation"

@@ -27,6 +27,21 @@
           "type": "string",
           "format": "moz-url-format"
         },
+        "dark_mode_image_url": {
+          "description": "The URL of an image to be displayed as part of the notification in dark mode.",
+          "type": "string",
+          "format": "moz-url-format"
+        },
+        "reduced_motion_image_url": {
+          "description": "The URL of an image to be displayed as part of the notification when the user prefers reduced motion.",
+          "type": "string",
+          "format": "moz-url-format"
+        },
+        "dark_mode_reduced_motion_image_url": {
+          "description": "The URL of an image to be displayed as part of the notification in dark mode with reduced motion.",
+          "type": "string",
+          "format": "moz-url-format"
+        },
         "launch_url": {
           "description": "The URL to launch when the notification or an action button is clicked.",
           "type": "string",

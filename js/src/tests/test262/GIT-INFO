@@ -1,5 +1,5 @@
-commit 823f4cfd2004cf410bc0344304e22e12d243e955
-Author: Ms2ger <Ms2ger@igalia.com>
-Date:   Mon Jun 9 15:35:15 2025 +0200
+commit fc32f3e82cb9ec08885fdd306756b65116e8547a
+Author: Chengzhong Wu <cwu631@bloomberg.net>
+Date:   Mon Jun 8 10:18:03 2026 -0400
 
-    Fix some esids that should have been lower case
+    NewExpression does not allow member access in ImportCall

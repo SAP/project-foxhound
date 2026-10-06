@@ -10,7 +10,7 @@
 
 ## Code
 
-The source for `moz-box-item` can be found under [toolkit/content/widgets/moz-box-item/](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/moz-box-item)
+The source for `moz-box-item` can be found under [toolkit/content/widgets/moz-box-item/](https://searchfox.org/firefox-main/source/toolkit/content/widgets/moz-box-item)
 
 ## How to use `moz-box-item`
 
@@ -121,7 +121,8 @@ Use the default slot if you need to place a custom content into the `moz-box-ite
 ```html
 <moz-box-item>
   <div class="slotted">
-    <img src="chrome://global/skin/illustrations/security-error.svg" />
+    <img src="chrome://global/skin/illustrations/security-error.svg"
+    alt="Confused Kit is looking at an orange exclamation mark" />
     <span>This is an example message</span>
     <span class="text-deemphasized">
       Message description would go down here
@@ -133,7 +134,8 @@ Use the default slot if you need to place a custom content into the `moz-box-ite
 ```html story
 <moz-box-item style={{ width: "280px" }}>
   <div style={{ display: "flex", justifyContent: "center", alignItems: "center", flexDirection: "column", textAlign: "center" }}>
-    <img src="chrome://global/skin/illustrations/security-error.svg" style={{ width: "150px", marginBlockEnd: "16px" }} />
+    <img src="chrome://global/skin/illustrations/security-error.svg" style={{ width: "150px", marginBlockEnd: "16px" }}
+    alt="Confused Kit is looking at an orange exclamation mark" />
     <span>This is an example message</span>
     <span class="text-deemphasized">
       Message description would go down here

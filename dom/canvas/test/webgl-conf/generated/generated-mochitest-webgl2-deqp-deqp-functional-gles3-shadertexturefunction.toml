@@ -1,0 +1,52 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-deqp"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/closure-library/**",
+  "../checkout/deqp/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_deqp__functional__gles3__shadertexturefunction__texelfetch.html"]
+
+["test_2_deqp__functional__gles3__shadertexturefunction__texelfetchoffset.html"]
+
+["test_2_deqp__functional__gles3__shadertexturefunction__texture.html"]
+
+["test_2_deqp__functional__gles3__shadertexturefunction__texturegrad.html"]
+
+["test_2_deqp__functional__gles3__shadertexturefunction__texturegradoffset.html"]
+
+["test_2_deqp__functional__gles3__shadertexturefunction__texturelod.html"]
+
+["test_2_deqp__functional__gles3__shadertexturefunction__texturelodoffset.html"]
+
+["test_2_deqp__functional__gles3__shadertexturefunction__textureoffset.html"]
+
+["test_2_deqp__functional__gles3__shadertexturefunction__textureproj.html"]
+
+["test_2_deqp__functional__gles3__shadertexturefunction__textureprojgrad.html"]
+
+["test_2_deqp__functional__gles3__shadertexturefunction__textureprojgradoffset.html"]
+
+["test_2_deqp__functional__gles3__shadertexturefunction__textureprojlod.html"]
+
+["test_2_deqp__functional__gles3__shadertexturefunction__textureprojlodoffset.html"]
+
+["test_2_deqp__functional__gles3__shadertexturefunction__textureprojoffset.html"]
+
+["test_2_deqp__functional__gles3__shadertexturefunction__texturesize.html"]

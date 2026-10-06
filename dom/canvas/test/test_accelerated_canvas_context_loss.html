@@ -27,14 +27,13 @@ async function restartGPUProcess() {
       );
       let promise = TestUtils.topicObserved("compositor-reinitialized");
 
-      const remoteCanvas = gfxInfo.usingRemoteCanvas;
       const acceleratedCanvas = gfxInfo.usingAcceleratedCanvas;
-      ok(true, "Restarting GPU process, remote canvas " + remoteCanvas + ", accelerated canvas " + acceleratedCanvas);
+      ok(true, "Restarting GPU process, accelerated canvas " + acceleratedCanvas);
 
       gfxInfo.killGPUProcessForTests();
       await promise;
 
-      return remoteCanvas || acceleratedCanvas;
+      return acceleratedCanvas;
     }
 
     ok(true, "Not using GPU process");

@@ -1,0 +1,227 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+// @nova-cleanup(merge-styles): Merge nova/activity-stream.scss back to activity-stream.scss after ship
+// @nova-cleanup(remove-file): The CSS switcher in AboutNewTabChild.sys.mjs was removed, but it won't
+// train hop to older Firefox versions. This file is kept so those versions still have a working
+// reference when the switcher swaps to it. Once the switcher removal reaches Release, this file
+// can be removed.
+
+@import 'tokens';
+@import '../normalize';
+@import '../variables';
+@import '../theme';
+@import '../icons';
+@import '../mixins';
+
+:root {
+  font-size: var(--font-size-root);
+  height: 100%;
+
+  &[lwt-newtab-brighttext] {
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+body,
+#root {
+  min-height: 100vh;
+}
+
+#root {
+  position: relative;
+}
+
+body {
+  background-color: var(--newtab-background-color);
+  font-family: system-ui;
+  font-size: var(--font-size-root);
+
+  // rules for HNT wallpapers
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: var(--newtab-wallpaper-backgroundPosition);
+  background-attachment: fixed;
+  background-image:
+    var(--newtab-wallpaper, ''),
+    linear-gradient(to right, var(--newtab-wallpaper-color, ''), var(--newtab-wallpaper-color, ''));
+  overflow-y: auto;
+}
+
+h1,
+h2 {
+  font-weight: var(--font-weight);
+}
+
+.inner-border {
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-small);
+  height: 100%;
+  inset-inline-start: 0;
+  pointer-events: none;
+  position: absolute;
+  inset-block-start: 0;
+  width: 100%;
+  z-index: 100;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.show-on-init {
+  opacity: 0;
+  transition: opacity 0.2s ease-in;
+
+  &.on {
+    animation: fadeIn 0.2s;
+    opacity: 1;
+  }
+}
+
+.actions {
+  border-block-start: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  margin: 0;
+  padding: var(--space-large) var(--space-xlarge) 0;
+}
+
+// Default button (grey)
+.button,
+.actions button {
+  background-color: var(--newtab-button-secondary-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-small);
+  color: inherit;
+  cursor: pointer;
+  margin-block-end: var(--space-large);
+  padding: var(--space-small) var(--space-xxlarge);
+  white-space: nowrap;
+
+  &:hover:not(.dismiss),
+  &:focus:not(.dismiss) {
+    box-shadow: $shadow-primary;
+    transition: box-shadow 150ms;
+  }
+
+  &.dismiss {
+    background-color: transparent;
+    border: 0;
+    padding: 0;
+    text-decoration: underline;
+  }
+
+  // Blue button
+  &.primary,
+  &.done {
+    background-color: var(--newtab-primary-action-background);
+    border: solid 1px var(--newtab-primary-action-background);
+    color: var(--newtab-primary-element-text-color);
+    margin-inline-start: auto;
+  }
+}
+
+input {
+  &[type='text'],
+  &[type='search'] {
+    border-radius: var(--border-radius-small);
+  }
+}
+
+// These styles are needed for -webkit-line-clamp to work correctly, so reuse
+// this class name while separately setting a clamp value via CSS or JS.
+.clamp {
+  -webkit-box-orient: vertical;
+  display: -webkit-box;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+// Components
+// stylelint-disable no-invalid-position-at-import-rule
+@import '../../components/A11yLinkButton/A11yLinkButton';
+@import '../../components/ActivationWindowMessage/ActivationWindowMessage';
+@import '../../components/Base/Base';
+@import '../../components/Base/Grid';
+@import '../../components/ErrorBoundary/ErrorBoundary';
+@import '../../components/Logo/Logo';
+@import '../../components/TopSites/TopSites';
+@import '../../components/Sections/Sections';
+@import '../../components/Search/Search';
+@import '../../components/ContextMenu/ContextMenu';
+@import '../../components/ConfirmDialog/ConfirmDialog';
+@import '../../components/CustomizeMenu/CustomizeMenu';
+@import '../../components/WallpaperCategories/WallpaperCategories';
+@import '../../components/DownloadModalToggle/DownloadModalToggle';
+@import '../../components/Card/Card';
+@import '../../components/CollapsibleSection/CollapsibleSection';
+@import '../../components/DiscoveryStreamAdmin/DiscoveryStreamAdmin';
+@import '../../components/MoreRecommendations/MoreRecommendations';
+@import '../../components/DiscoveryStreamBase/DiscoveryStreamBase';
+@import '../../components/ModalOverlay/ModalOverlay';
+@import '../../components/Notifications/Notifications';
+
+// Widget Components
+@import '../../components/Widgets/Widgets';
+@import '../../components/Widgets/WidgetWrapper';
+@import '../../components/Widgets/WidgetCelebration';
+@import '../../components/Widgets/Lists/Lists';
+@import '../../components/Widgets/FocusTimer/FocusTimer';
+@import '../../components/Widgets/SportsWidget/SportsWidget';
+@import '../../components/Widgets/SportsWidget/SportsMatchRow';
+@import '../../components/Widgets/SportsWidget/WatchLiveModal';
+@import '../../components/Widgets/SportsWidget/LivePagination';
+@import '../../components/Widgets/Weather/Weather';
+@import '../../components/Widgets/Clocks/Clocks';
+
+// Discovery Stream Components
+@import '../../components/DiscoveryStreamComponents/CardGrid/CardGrid';
+@import '../../components/DiscoveryStreamComponents/CardSections/CardSections';
+@import '../../components/DiscoveryStreamComponents/Highlights/Highlights';
+@import '../../components/DiscoveryStreamComponents/HorizontalRule/HorizontalRule';
+@import '../../components/DiscoveryStreamComponents/Navigation/Navigation';
+@import '../../components/DiscoveryStreamComponents/SectionTitle/SectionTitle';
+@import '../../components/DiscoveryStreamComponents/TopSites/TopSites';
+@import '../../components/DiscoveryStreamComponents/DSLinkMenu/DSLinkMenu';
+@import '../../components/DiscoveryStreamComponents/DSCard/DSCard';
+@import '../../components/DiscoveryStreamComponents/DSContextFooter/DSContextFooter';
+@import '../../components/DiscoveryStreamComponents/DSImage/DSImage';
+@import '../../components/DiscoveryStreamImpressionStats/ImpressionStats';
+@import '../../components/DiscoveryStreamComponents/DSEmptyState/DSEmptyState';
+@import '../../components/DiscoveryStreamComponents/PrivacyLink/PrivacyLink';
+@import '../../components/DiscoveryStreamComponents/TopicsWidget/TopicsWidget';
+@import '../../components/DiscoveryStreamComponents/FeatureHighlight/FeatureHighlight';
+@import '../../components/DiscoveryStreamComponents/FeatureHighlight/DownloadMobilePromoHighlight';
+@import '../../components/DiscoveryStreamComponents/FeatureHighlight/FollowSectionButtonHighlight';
+@import '../../components/DiscoveryStreamComponents/FeatureHighlight/WallpaperFeatureHighlight';
+@import '../../components/DiscoveryStreamComponents/FeatureHighlight/ShortcutFeatureHighlight';
+@import '../../components/DiscoveryStreamComponents/FeatureHighlight/WidgetsRowFeatureHighlight';
+@import '../../components/DiscoveryStreamComponents/FeatureHighlight/OMCHighlightBody';
+@import '../../components/DiscoveryStreamComponents/FeatureHighlight/OMCHighlightPopover';
+@import '../../components/DiscoveryStreamComponents/TopicSelection/TopicSelection';
+@import '../../components/DiscoveryStreamComponents/AdBanner/AdBanner';
+@import '../../components/DiscoveryStreamComponents/AdBannerContextMenu/AdBannerContextMenu';
+@import '../../components/DiscoveryStreamComponents/PromoCard/PromoCard';
+@import '../../components/DiscoveryStreamComponents/BriefingCard/BriefingCard';
+@import '../../components/DiscoveryStreamComponents/SectionContextMenu/SectionContextMenu';
+@import '../../components/DiscoveryStreamComponents/InterestPicker/InterestPicker';
+@import '../../components/DiscoveryStreamComponents/ReportContent/ReportContent';
+@import '../../components/DiscoveryStreamComponents/PersonalizedCard/PersonalizedCard';
+@import '../../components/MessageWrapper/MessageWrapper';
+
+// Nova Component Styles
+@import 'TopSites';
+@import 'CardSections';
+@import 'DSCard';
+
+// stylelint-enable no-invalid-position-at-import-rule

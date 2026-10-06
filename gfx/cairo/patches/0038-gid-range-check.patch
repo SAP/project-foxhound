@@ -1,0 +1,46 @@
+# HG changeset patch
+# User Jonathan Kew <jkew@mozilla.com>
+# Date 1782237080 -3600
+#      Tue Jun 23 18:51:20 2026 +0100
+# Node ID c7a4fc2fe90e38d2dff625517bafe8c38d4df720
+# Parent  c01a5e2713306294194ba48fafd5f9378cfee3bc
+Bug 2049398 - Range-check glyph ID.
+
+diff --git a/gfx/cairo/cairo/src/cairo-cff-subset.c b/gfx/cairo/cairo/src/cairo-cff-subset.c
+--- a/gfx/cairo/cairo/src/cairo-cff-subset.c
++++ b/gfx/cairo/cairo/src/cairo-cff-subset.c
+@@ -1832,6 +1832,8 @@ cairo_cff_font_subset_charstrings_and_su
+ 	} else {
+ 	    glyph = font->scaled_font_subset->glyphs[i];
+ 	}
++	if (unlikely (glyph >= (unsigned long) font->num_glyphs))
++	    return CAIRO_INT_STATUS_UNSUPPORTED;
+         element = _cairo_array_index (&font->charstrings_index, glyph);
+         status = cff_index_append (&font->charstrings_subset_index,
+                                    element->data,
+@@ -1901,6 +1903,10 @@ cairo_cff_font_subset_fontdict (cairo_cf
+ 		return status;
+ 	    }
+ 	}
++	if (unlikely (gid >= (unsigned long) font->num_glyphs)) {
++	    free (reverse_map);
++	    return CAIRO_INT_STATUS_UNSUPPORTED;
++	}
+ 
+         fd = font->fdselect[gid];
+         if (fd < 0 || (unsigned int) fd >= font->num_fontdicts) {
+diff --git a/gfx/cairo/cairo/src/cairo-scaled-font-subsets.c b/gfx/cairo/cairo/src/cairo-scaled-font-subsets.c
+--- a/gfx/cairo/cairo/src/cairo-scaled-font-subsets.c
++++ b/gfx/cairo/cairo/src/cairo-scaled-font-subsets.c
+@@ -839,6 +839,11 @@ _cairo_scaled_font_subsets_map_glyph (ca
+     cairo_bool_t has_color;
+     cairo_bool_t is_user;
+ 
++    /* Font backends only ever see the low 24 bits (see
++     * _cairo_scaled_glyph_index); strip any high bits so the index later
++     * passed to the subsetters matches the glyph that was actually loaded. */
++    scaled_font_glyph_index &= 0xffffff;
++
+     /* Lookup glyph in unscaled subsets */
+     if (subsets->type != CAIRO_SUBSETS_SCALED) {
+         key.is_scaled = FALSE;

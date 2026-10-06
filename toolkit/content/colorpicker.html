@@ -1,0 +1,31 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
+<!doctype html>
+<meta http-equiv="Content-Security-Policy" content="default-src chrome:" />
+<link rel="stylesheet" href="chrome://global/skin/colorpicker.css" />
+<script
+  src="chrome://global/content/bindings/colorpicker.mjs"
+  type="module"
+></script>
+<section class="spectrum-color-picker">
+  <div
+    class="spectrum-color spectrum-box"
+    tabindex="0"
+    role="slider"
+    aria-describedby="spectrum-dragger"
+  >
+    <div class="spectrum-sat">
+      <div class="spectrum-val">
+        <div class="spectrum-dragger" id="spectrum-dragger"></div>
+      </div>
+    </div>
+  </div>
+</section>
+<section class="spectrum-controls">
+  <div class="spectrum-color-preview"></div>
+  <div class="spectrum-slider-container">
+    <div class="spectrum-hue spectrum-box"></div>
+    <div class="spectrum-alpha spectrum-checker spectrum-box" hidden></div>
+  </div>
+</section>

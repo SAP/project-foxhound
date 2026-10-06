@@ -10,11 +10,22 @@
 
 #include "modules/desktop_capture/linux/wayland/screencast_portal.h"
 
+#include <gio/gio.h>
 #include <gio/gunixfdlist.h>
-#include <glib-object.h>
+#include <glib.h>
+#include <unistd.h>
 
+#include <cstdint>
+#include <string>
+#include <utility>
+
+#include "modules/desktop_capture/desktop_capture_types.h"
+#include "modules/portal/pipewire_utils.h"
+#include "modules/portal/portal_guard.h"
+#include "modules/portal/portal_request_response.h"
 #include "modules/portal/scoped_glib.h"
 #include "modules/portal/xdg_desktop_portal_utils.h"
+#include "modules/portal/xdg_session_details.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 
@@ -30,6 +41,7 @@ using xdg_portal::SetupRequestResponseSignal;
 using xdg_portal::SetupSessionRequestHandlers;
 using xdg_portal::StartSessionRequest;
 using xdg_portal::TearDownSession;
+using xdg_portal::UnsubscribeSignalHandler;
 
 }  // namespace
 
@@ -46,19 +58,20 @@ ScreenCastPortal::CaptureSourceType ScreenCastPortal::ToCaptureSourceType(
   }
 }
 
-ScreenCastPortal::ScreenCastPortal(CaptureType type, PortalNotifier* notifier)
+ScreenCastPortal::ScreenCastPortal(CaptureType type,
+                                   PortalNotifier* notifier,
+                                   bool prefer_cursor_embedded)
     : ScreenCastPortal(type,
                        notifier,
                        OnProxyRequested,
                        OnSourcesRequestResponseSignal,
-                       this) {}
+                       prefer_cursor_embedded) {}
 
 ScreenCastPortal::ScreenCastPortal(
     CaptureType type,
     PortalNotifier* notifier,
     ProxyRequestResponseHandler proxy_request_response_handler,
     SourcesRequestResponseSignalHandler sources_request_response_signal_handler,
-    gpointer user_data,
     bool prefer_cursor_embedded)
     : notifier_(notifier),
       capture_source_type_(ToCaptureSourceType(type)),
@@ -66,14 +79,26 @@ ScreenCastPortal::ScreenCastPortal(
                                           : CursorMode::kMetadata),
       proxy_request_response_handler_(proxy_request_response_handler),
       sources_request_response_signal_handler_(
-          sources_request_response_signal_handler),
-      user_data_(user_data) {}
+          sources_request_response_signal_handler) {}
 
 ScreenCastPortal::~ScreenCastPortal() {
   Stop();
 }
 
 void ScreenCastPortal::Stop() {
+  // Cancel first so that any callback entering g_dbus_proxy_call_finish()
+  // after this point gets G_IO_ERROR_CANCELLED via GTask's check_cancellable.
+  if (cancellable_)
+    g_cancellable_cancel(cancellable_);
+
+  // Lock the guard to wait for any in-flight callback on the GLib main
+  // thread that already passed the _finish() check and is currently using
+  // the portal. Once we acquire the lock, that callback has finished.
+  if (guard_) {
+    MutexLock lock(&guard_->mutex);
+    guard_->portal = nullptr;
+  }
+
   UnsubscribeSignalHandlers();
   TearDownSession(std::move(session_handle_), proxy_, cancellable_,
                   connection_);
@@ -88,23 +113,12 @@ void ScreenCastPortal::Stop() {
   }
 }
 
+// static
 void ScreenCastPortal::UnsubscribeSignalHandlers() {
-  if (start_request_signal_id_) {
-    g_dbus_connection_signal_unsubscribe(connection_, start_request_signal_id_);
-    start_request_signal_id_ = 0;
-  }
-
-  if (sources_request_signal_id_) {
-    g_dbus_connection_signal_unsubscribe(connection_,
-                                         sources_request_signal_id_);
-    sources_request_signal_id_ = 0;
-  }
-
-  if (session_request_signal_id_) {
-    g_dbus_connection_signal_unsubscribe(connection_,
-                                         session_request_signal_id_);
-    session_request_signal_id_ = 0;
-  }
+  UnsubscribeSignalHandler(connection_, session_request_signal_id_);
+  UnsubscribeSignalHandler(connection_, sources_request_signal_id_);
+  UnsubscribeSignalHandler(connection_, start_request_signal_id_);
+  UnsubscribeSignalHandler(connection_, session_closed_signal_id_);
 }
 
 void ScreenCastPortal::SetSessionDetails(
@@ -126,8 +140,12 @@ void ScreenCastPortal::SetSessionDetails(
 
 void ScreenCastPortal::Start() {
   cancellable_ = g_cancellable_new();
+
+  guard_ = scoped_refptr<PortalGuard>(new PortalGuard());
+  guard_->portal = this;
+
   RequestSessionProxy(kScreenCastInterfaceName, proxy_request_response_handler_,
-                      cancellable_, this);
+                      cancellable_, guard_);
 }
 
 xdg_portal::SessionDetails ScreenCastPortal::GetSessionDetails() {
@@ -136,8 +154,8 @@ xdg_portal::SessionDetails ScreenCastPortal::GetSessionDetails() {
 
 void ScreenCastPortal::OnPortalDone(RequestResponse result) {
   notifier_->OnScreenCastRequestResult(result, pw_stream_node_id_, pw_fd_);
-  if (result != RequestResponse::kSuccess) {
-    Stop();
+  if (result != RequestResponse::kSuccess && cancellable_) {
+    g_cancellable_cancel(cancellable_);
   }
 }
 
@@ -145,7 +163,9 @@ void ScreenCastPortal::OnPortalDone(RequestResponse result) {
 void ScreenCastPortal::OnProxyRequested(GObject* gobject,
                                         GAsyncResult* result,
                                         gpointer user_data) {
-  static_cast<ScreenCastPortal*>(user_data)->RequestSessionUsingProxy(result);
+  ScopedPortalLock lock(user_data);
+  if (auto* that = static_cast<ScreenCastPortal*>(lock.portal()))
+    that->RequestSessionUsingProxy(result);
 }
 
 void ScreenCastPortal::RequestSession(GDBusProxy* proxy) {
@@ -153,15 +173,16 @@ void ScreenCastPortal::RequestSession(GDBusProxy* proxy) {
   connection_ = g_dbus_proxy_get_connection(proxy_);
   SetupSessionRequestHandlers(
       "webrtc", OnSessionRequested, OnSessionRequestResponseSignal, connection_,
-      proxy_, cancellable_, portal_handle_, session_request_signal_id_, this);
+      proxy_, cancellable_, portal_handle_, session_request_signal_id_, guard_);
 }
 
 // static
 void ScreenCastPortal::OnSessionRequested(GDBusProxy* proxy,
                                           GAsyncResult* result,
                                           gpointer user_data) {
-  static_cast<ScreenCastPortal*>(user_data)->OnSessionRequestResult(proxy,
-                                                                    result);
+  ScopedPortalLock lock(user_data);
+  if (auto* that = static_cast<ScreenCastPortal*>(lock.portal()))
+    that->OnSessionRequestResult(proxy, result);
 }
 
 // static
@@ -173,11 +194,21 @@ void ScreenCastPortal::OnSessionRequestResponseSignal(
     const char* signal_name,
     GVariant* parameters,
     gpointer user_data) {
-  ScreenCastPortal* that = static_cast<ScreenCastPortal*>(user_data);
-  RTC_DCHECK(that);
+  ScopedPortalSignalLock lock(user_data);
+  auto* that = static_cast<ScreenCastPortal*>(lock.portal());
+  if (!that)
+    return;
+
+  if (!UnsubscribeSignalHandler(that->connection_,
+                                that->session_request_signal_id_)) {
+    RTC_LOG(LS_ERROR) << "Duplicate session request signal from portal.";
+    that->OnPortalDone(RequestResponse::kError);
+    return;
+  }
+
   that->RegisterSessionClosedSignalHandler(
       OnSessionClosedSignal, parameters, that->connection_,
-      that->session_handle_, that->session_closed_signal_id_);
+      that->session_handle_, that->session_closed_signal_id_, that->guard_);
 
   // Do not continue if we don't get session_handle back. The call above will
   // already notify the capturer there is a failure, but we would still continue
@@ -195,17 +226,24 @@ void ScreenCastPortal::OnSessionClosedSignal(GDBusConnection* connection,
                                              const char* signal_name,
                                              GVariant* parameters,
                                              gpointer user_data) {
-  ScreenCastPortal* that = static_cast<ScreenCastPortal*>(user_data);
-  RTC_DCHECK(that);
+  ScopedPortalSignalLock lock(user_data);
+  auto* that = static_cast<ScreenCastPortal*>(lock.portal());
+  if (!that)
+    return;
+
+  if (!UnsubscribeSignalHandler(that->connection_,
+                                that->session_closed_signal_id_)) {
+    RTC_LOG(LS_ERROR) << "Duplicate session closed signal from portal.";
+    return;
+  }
 
   RTC_LOG(LS_INFO) << "Received closed signal from session.";
 
-  that->notifier_->OnScreenCastSessionClosed();
+  // Clear the session handle to avoid calling Session::Close from the destructor
+  // since it's already closed
+  that->session_handle_ = "";
 
-  // Unsubscribe from the signal and free the session handle to avoid calling
-  // Session::Close from the destructor since it's already closed
-  g_dbus_connection_signal_unsubscribe(that->connection_,
-                                       that->session_closed_signal_id_);
+  that->notifier_->OnScreenCastSessionClosed();
 }
 
 void ScreenCastPortal::SourcesRequest() {
@@ -258,23 +296,26 @@ void ScreenCastPortal::SourcesRequest() {
 
   sources_handle_ = PrepareSignalHandle(variant_string.get(), connection_);
   sources_request_signal_id_ = SetupRequestResponseSignal(
-      sources_handle_.c_str(), sources_request_response_signal_handler_,
-      user_data_, connection_);
+      sources_handle_.c_str(), sources_request_response_signal_handler_, guard_,
+      connection_);
 
   RTC_LOG(LS_INFO) << "Requesting sources from the screen cast session.";
   g_dbus_proxy_call(
       proxy_, "SelectSources",
       g_variant_new("(oa{sv})", session_handle_.c_str(), &builder),
       G_DBUS_CALL_FLAGS_NONE, /*timeout=*/-1, cancellable_,
-      reinterpret_cast<GAsyncReadyCallback>(OnSourcesRequested), this);
+      reinterpret_cast<GAsyncReadyCallback>(OnSourcesRequested),
+      guard_->AddRefAndGet());
 }
 
 // static
 void ScreenCastPortal::OnSourcesRequested(GDBusProxy* proxy,
                                           GAsyncResult* result,
                                           gpointer user_data) {
-  ScreenCastPortal* that = static_cast<ScreenCastPortal*>(user_data);
-  RTC_DCHECK(that);
+  ScopedPortalLock lock(user_data);
+  auto* that = static_cast<ScreenCastPortal*>(lock.portal());
+  if (!that)
+    return;
 
   Scoped<GError> error;
   Scoped<GVariant> variant(
@@ -293,11 +334,8 @@ void ScreenCastPortal::OnSourcesRequested(GDBusProxy* proxy,
   g_variant_get_child(variant.get(), 0, "o", handle.receive());
   if (!handle) {
     RTC_LOG(LS_ERROR) << "Failed to initialize the screen cast session.";
-    if (that->sources_request_signal_id_) {
-      g_dbus_connection_signal_unsubscribe(that->connection_,
-                                           that->sources_request_signal_id_);
-      that->sources_request_signal_id_ = 0;
-    }
+    UnsubscribeSignalHandler(that->connection_,
+                             that->sources_request_signal_id_);
     that->OnPortalDone(RequestResponse::kError);
     return;
   }
@@ -314,8 +352,17 @@ void ScreenCastPortal::OnSourcesRequestResponseSignal(
     const char* signal_name,
     GVariant* parameters,
     gpointer user_data) {
-  ScreenCastPortal* that = static_cast<ScreenCastPortal*>(user_data);
-  RTC_DCHECK(that);
+  ScopedPortalSignalLock lock(user_data);
+  auto* that = static_cast<ScreenCastPortal*>(lock.portal());
+  if (!that)
+    return;
+
+  if (!UnsubscribeSignalHandler(that->connection_,
+                                that->sources_request_signal_id_)) {
+    RTC_LOG(LS_ERROR) << "Duplicate sources signal from portal.";
+    that->OnPortalDone(RequestResponse::kError);
+    return;
+  }
 
   RTC_LOG(LS_INFO) << "Received sources signal from session.";
 
@@ -334,15 +381,16 @@ void ScreenCastPortal::OnSourcesRequestResponseSignal(
 void ScreenCastPortal::StartRequest() {
   StartSessionRequest("webrtc", session_handle_, OnStartRequestResponseSignal,
                       OnStartRequested, proxy_, connection_, cancellable_,
-                      start_request_signal_id_, start_handle_, this);
+                      start_request_signal_id_, start_handle_, guard_);
 }
 
 // static
 void ScreenCastPortal::OnStartRequested(GDBusProxy* proxy,
                                         GAsyncResult* result,
                                         gpointer user_data) {
-  static_cast<ScreenCastPortal*>(user_data)->OnStartRequestResult(proxy,
-                                                                  result);
+  ScopedPortalLock lock(user_data);
+  if (auto* that = static_cast<ScreenCastPortal*>(lock.portal()))
+    that->OnStartRequestResult(proxy, result);
 }
 
 // static
@@ -353,8 +401,17 @@ void ScreenCastPortal::OnStartRequestResponseSignal(GDBusConnection* connection,
                                                     const char* signal_name,
                                                     GVariant* parameters,
                                                     gpointer user_data) {
-  ScreenCastPortal* that = static_cast<ScreenCastPortal*>(user_data);
-  RTC_DCHECK(that);
+  ScopedPortalSignalLock lock(user_data);
+  auto* that = static_cast<ScreenCastPortal*>(lock.portal());
+  if (!that)
+    return;
+
+  if (!UnsubscribeSignalHandler(that->connection_,
+                                that->start_request_signal_id_)) {
+    RTC_LOG(LS_ERROR) << "Duplicate start signal from portal.";
+    that->OnPortalDone(RequestResponse::kError);
+    return;
+  }
 
   RTC_LOG(LS_INFO) << "Start signal received.";
   uint32_t portal_response;
@@ -430,15 +487,17 @@ void ScreenCastPortal::OpenPipeWireRemote() {
       g_variant_new("(oa{sv})", session_handle_.c_str(), &builder),
       G_DBUS_CALL_FLAGS_NONE, /*timeout=*/-1, /*fd_list=*/nullptr, cancellable_,
       reinterpret_cast<GAsyncReadyCallback>(OnOpenPipeWireRemoteRequested),
-      this);
+      guard_->AddRefAndGet());
 }
 
 // static
 void ScreenCastPortal::OnOpenPipeWireRemoteRequested(GDBusProxy* proxy,
                                                      GAsyncResult* result,
                                                      gpointer user_data) {
-  ScreenCastPortal* that = static_cast<ScreenCastPortal*>(user_data);
-  RTC_DCHECK(that);
+  ScopedPortalLock lock(user_data);
+  auto* that = static_cast<ScreenCastPortal*>(lock.portal());
+  if (!that)
+    return;
 
   Scoped<GError> error;
   Scoped<GUnixFDList> outlist;

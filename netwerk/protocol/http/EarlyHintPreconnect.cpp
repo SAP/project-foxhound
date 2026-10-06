@@ -57,12 +57,6 @@ EarlyHintsPreConnectOverride::GetParallelSpeculativeConnectLimit(
 }
 
 NS_IMETHODIMP
-EarlyHintsPreConnectOverride::GetIsFromPredictor(bool* isFromPredictor) {
-  *isFromPredictor = false;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 EarlyHintsPreConnectOverride::GetAllow1918(bool* allow) {
   *allow = false;
   return NS_OK;

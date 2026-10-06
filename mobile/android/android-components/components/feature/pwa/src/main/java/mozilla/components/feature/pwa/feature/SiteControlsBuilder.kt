@@ -12,14 +12,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.drawable.Icon
-import android.os.Build
-import android.os.Build.VERSION.SDK_INT
 import android.widget.Toast
 import androidx.core.content.getSystemService
 import mozilla.components.browser.state.state.CustomTabSessionState
 import mozilla.components.feature.pwa.R
 import mozilla.components.feature.session.SessionUseCases
-import mozilla.components.support.utils.PendingIntentUtils
 
 /**
  * Callback for [WebAppSiteControlsFeature] that lets the displayed notification be customized.
@@ -77,7 +74,7 @@ interface SiteControlsBuilder {
         protected fun createPendingIntent(context: Context, action: String, requestCode: Int): PendingIntent {
             val intent = Intent(action)
             intent.setPackage(context.packageName)
-            return PendingIntent.getBroadcast(context, requestCode, intent, PendingIntentUtils.defaultFlags)
+            return PendingIntent.getBroadcast(context, requestCode, intent, PendingIntent.FLAG_IMMUTABLE)
         }
 
         companion object {
@@ -102,16 +99,12 @@ interface SiteControlsBuilder {
 
             val title = context.getString(R.string.mozac_feature_pwa_site_controls_refresh)
             val intent = createPendingIntent(context, ACTION_REFRESH, 2)
-            val refreshAction = if (SDK_INT >= Build.VERSION_CODES.M) {
+            val refreshAction =
                 Notification.Action.Builder(
                     Icon.createWithResource(context, R.drawable.ic_refresh),
                     title,
                     intent,
-                )
-            } else {
-                @Suppress("Deprecation")
-                Notification.Action.Builder(R.drawable.ic_refresh, title, intent)
-            }.build()
+                ).build()
 
             builder.addAction(refreshAction)
         }

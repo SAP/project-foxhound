@@ -10,9 +10,12 @@
 
 #include "api/audio/audio_frame.h"
 
-#include <stdint.h>
-#include <string.h>  // memcmp
+#include <cstdint>
+#include <cstring>
 
+#include "api/audio/audio_view.h"
+#include "api/audio/channel_layout.h"
+#include "rtc_base/checks.h"
 #include "test/gtest.h"
 
 namespace webrtc {
@@ -63,7 +66,7 @@ TEST(AudioFrameTest, FrameStartsZeroedAndMuted) {
   EXPECT_TRUE(AllSamplesAre(0, frame));
 }
 
-// TODO: b/335805780 - Delete test when `mutable_data()` returns ArrayView.
+// TODO: b/335805780 - Delete test when `mutable_data()` returns std::span.
 TEST(AudioFrameTest, UnmutedFrameIsInitiallyZeroedLegacy) {
   AudioFrame frame(kSampleRateHz, kNumChannelsMono, CHANNEL_LAYOUT_NONE);
   frame.mutable_data();
@@ -85,7 +88,7 @@ TEST(AudioFrameTest, UnmutedFrameIsInitiallyZeroed) {
 TEST(AudioFrameTest, MutedFrameBufferIsZeroed) {
   AudioFrame frame;
   int16_t* frame_data =
-      frame.mutable_data(kSamplesPerChannel, kNumChannelsMono).begin();
+      frame.mutable_data(kSamplesPerChannel, kNumChannelsMono).data().data();
   EXPECT_FALSE(frame.muted());
   // Fill the reserved buffer with non-zero data.
   for (size_t i = 0; i < frame.max_16bit_samples(); i++) {

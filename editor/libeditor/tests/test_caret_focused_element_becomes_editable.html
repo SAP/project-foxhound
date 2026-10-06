@@ -1,0 +1,29 @@
+<!doctype html>
+<head>
+  <meta charset="utf-8">
+  <title>Test for caret becoming visible when focused element becomes editable</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css">
+</head>
+<div tabindex="0" id="focusable">text</div>
+<div contenteditable="true">editable</div>
+<script>
+function isCaretVisible() {
+  return SpecialPowers.wrap(window).docShell
+    .editingSession?.getEditorForWindow(window).selectionController.caretVisible;
+}
+SimpleTest.waitForExplicitFinish();
+SimpleTest.waitForFocus(() => {
+  // Test for bug 2032191
+  let element = document.getElementById("focusable");
+  element.focus();
+  ok(!isCaretVisible(), "Caret should not be visible when element is not editable");
+  element.contentEditable = true;
+  ok(isCaretVisible(), "Caret should become visible when element becomes editable");
+  element.contentEditable = false;
+  ok(!isCaretVisible(), "Caret should not be visible when element becomes non-editable");
+
+  SimpleTest.finish();
+});
+</script>

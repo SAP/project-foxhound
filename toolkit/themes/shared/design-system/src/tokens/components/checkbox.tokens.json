@@ -1,0 +1,70 @@
+{
+  "background": {
+    "color": {
+      "@base": {
+        "value": "{button.background.color.@base}"
+      },
+      "hover": {
+        "value": "{button.background.color.hover}"
+      },
+      "active": {
+        "value": "{button.background.color.active}"
+      },
+      "disabled": {
+        "value": "{button.background.color.disabled}"
+      },
+      "checked": {
+        "@base": {
+          "value": "{button.background.color.primary.@base}"
+        },
+        "hover": {
+          "value": "{button.background.color.primary.hover}"
+        },
+        "active": {
+          "value": "{button.background.color.primary.active}"
+        },
+        "disabled": {
+          "value": "{button.background.color.primary.disabled}"
+        }
+      }
+    }
+  },
+  "border": {
+    "color": {
+      "@base": {
+        "value": "{border.color.interactive.@base}"
+      },
+      "checked": {
+        "@base": {
+          "value": "{checkbox.background.color.checked.@base}"
+        },
+        "hover": {
+          "value": "{checkbox.background.color.checked.hover}"
+        },
+        "active": {
+          "value": "{checkbox.background.color.checked.active}"
+        },
+        "disabled": {
+          "value": "{checkbox.background.color.checked.disabled}"
+        }
+      }
+    },
+    "radius": {
+      "value": "{border.radius.small}"
+    }
+  },
+  "margin": {
+    "inline": {
+      "value": "{space.small}"
+    }
+  },
+  "opacity": {
+    "disabled": {
+      "value": "{button.opacity.disabled}"
+    }
+  },
+  "size": {
+    "comment": "TODO Bug 1876537: Make this em-based, probably?",
+    "value": "{size.item.small}"
+  }
+}

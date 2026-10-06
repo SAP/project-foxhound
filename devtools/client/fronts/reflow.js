@@ -27,5 +27,4 @@ class ReflowFront extends FrontClassWithSpec(reflowSpec) {
   }
 }
 
-exports.ReflowFront = ReflowFront;
 registerFront(ReflowFront);

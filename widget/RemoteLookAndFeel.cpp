@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=8 et :
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,7 +14,6 @@
 #include "nsXULAppAPI.h"
 
 #include <limits>
-#include <type_traits>
 #include <utility>
 
 namespace mozilla::widget {
@@ -91,10 +87,8 @@ void AddToMap(nsTArray<Item>& aItems, nsTArray<UInt>& aMap, Id aId,
 
 nsresult RemoteLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
                                            nscolor& aResult) {
-  const nscolor* result;
   const bool dark = aScheme == ColorScheme::Dark;
-  MOZ_TRY_VAR(
-      result,
+  const nscolor* result = MOZ_TRY(
       MapLookup(dark ? mTables.darkColors() : mTables.lightColors(),
                 dark ? mTables.darkColorMap() : mTables.lightColorMap(), aID));
   aResult = *result;
@@ -102,15 +96,15 @@ nsresult RemoteLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
 }
 
 nsresult RemoteLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
-  const int32_t* result;
-  MOZ_TRY_VAR(result, MapLookup(mTables.ints(), mTables.intMap(), aID));
+  const int32_t* result =
+      MOZ_TRY(MapLookup(mTables.ints(), mTables.intMap(), aID));
   aResult = *result;
   return NS_OK;
 }
 
 nsresult RemoteLookAndFeel::NativeGetFloat(FloatID aID, float& aResult) {
-  const float* result;
-  MOZ_TRY_VAR(result, MapLookup(mTables.floats(), mTables.floatMap(), aID));
+  const float* result =
+      MOZ_TRY(MapLookup(mTables.floats(), mTables.floatMap(), aID));
   aResult = *result;
   return NS_OK;
 }

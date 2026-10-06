@@ -4,6 +4,7 @@
 
 //! Machinery to compute distances between animatable values.
 
+use crate::derives::*;
 use app_units::Au;
 use euclid::default::Size2D;
 use std::iter::Sum;
@@ -28,7 +29,7 @@ pub trait ComputeSquaredDistance {
 }
 
 /// A distance between two animatable values.
-#[derive(Add, Clone, Copy, Debug, From)]
+#[derive(Add, Clone, Copy, Debug, From, PartialEq, PartialOrd)]
 pub struct SquaredDistance {
     value: f64,
 }
@@ -115,8 +116,8 @@ where
 {
     #[inline]
     fn compute_squared_distance(&self, other: &Self) -> Result<SquaredDistance, ()> {
-        Ok(self.width.compute_squared_distance(&other.width)? +
-            self.height.compute_squared_distance(&other.height)?)
+        Ok(self.width.compute_squared_distance(&other.width)?
+            + self.height.compute_squared_distance(&other.height)?)
     }
 }
 

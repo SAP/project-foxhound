@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,9 +5,9 @@
 #include "PlacesObservers.h"
 
 #include "PlacesWeakCallbackWrapper.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsIXPConnect.h"
-#include "mozilla/ClearOnShutdown.h"
 
 namespace mozilla::dom {
 
@@ -67,7 +65,7 @@ using WeakNativeListeners =
 // Even if NotifyListeners is called any timing, we mange the notifications with
 // adding to this queue, then sending in sequence. This avoids sending nested
 // notifications while previous ones are still being sent.
-MOZ_RUNINIT static nsTArray<Sequence<OwningNonNull<PlacesEvent>>>
+constinit static nsTArray<Sequence<OwningNonNull<PlacesEvent>>>
     gNotificationQueue;
 
 uint32_t GetEventTypeFlag(PlacesEventType aEventType) {
@@ -325,7 +323,7 @@ void PlacesObservers::NotifyListeners(
         "Avoid nested Places notifications if possible, the order of events "
         "cannot be guaranteed");
     nsCOMPtr<nsIXPConnect> xpc = nsIXPConnect::XPConnect();
-    Unused << xpc->DebugDumpJSStack(false, false, false);
+    (void)xpc->DebugDumpJSStack(false, false, false);
   }
 #endif
 

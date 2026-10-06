@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,12 +5,11 @@
 #ifndef DOM_SVG_SVGPRESERVEASPECTRATIO_H_
 #define DOM_SVG_SVGPRESERVEASPECTRATIO_H_
 
-#include "mozilla/dom/SVGPreserveAspectRatioBinding.h"
 #include "mozilla/HashFunctions.h"  // for HashGeneric
-
-#include "nsWrapperCache.h"
-#include "nsCycleCollectionParticipant.h"
 #include "mozilla/dom/SVGElement.h"
+#include "mozilla/dom/SVGPreserveAspectRatioBinding.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 class ErrorResult;

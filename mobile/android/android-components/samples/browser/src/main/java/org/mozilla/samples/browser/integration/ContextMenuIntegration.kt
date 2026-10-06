@@ -5,6 +5,7 @@
 package org.mozilla.samples.browser.integration
 
 import android.content.Context
+import android.os.Environment
 import android.view.View
 import androidx.fragment.app.FragmentManager
 import mozilla.components.browser.state.store.BrowserStore
@@ -48,7 +49,13 @@ class ContextMenuIntegration(
                     parentView,
                     snackbarDelegate,
                 ),
-                createSaveImageCandidate(context, contextMenuUseCases),
+                createSaveImageCandidate(
+                    context = context,
+                    contextMenuUseCases = contextMenuUseCases,
+                    downloadsLocation = {
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).path
+                },
+                    ),
                 createCopyImageLocationCandidate(context, parentView, snackbarDelegate),
                 createAddContactCandidate(context),
                 createShareEmailAddressCandidate(context),
@@ -63,10 +70,13 @@ class ContextMenuIntegration(
                 ),
             )
             ContextMenuCandidate.defaultCandidates(
-                context,
-                tabsUseCases,
-                contextMenuUseCases,
-                parentView,
+                context = context,
+                tabsUseCases = tabsUseCases,
+                contextMenuUseCases = contextMenuUseCases,
+                snackBarParentView = parentView,
+                downloadsLocation = {
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).path
+                },
             ) + appLinksCandidate
         }
     }

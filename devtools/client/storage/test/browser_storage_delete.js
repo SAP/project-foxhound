@@ -7,23 +7,11 @@
 // Test deleting storage items
 
 const TEST_CASES = [
-  [["localStorage", "http://test1.example.org"], "ls1", "name"],
-  [["sessionStorage", "http://test1.example.org"], "ss1", "name"],
-  [
-    ["cookies", "http://test1.example.org"],
-    getCookieId("c1", "test1.example.org", "/browser"),
-    "name",
-  ],
-  [
-    ["indexedDB", "http://test1.example.org", "idb1 (default)", "obj1"],
-    1,
-    "name",
-  ],
-  [
-    ["Cache", "http://test1.example.org", "plop"],
-    MAIN_DOMAIN + "404_cached_file.js",
-    "url",
-  ],
+  [["localStorage", MAIN_ORIGIN], "ls1", "name"],
+  [["sessionStorage", MAIN_ORIGIN], "ss1", "name"],
+  [["cookies", MAIN_ORIGIN], getCookieId("c1", MAIN_HOST, "/browser"), "name"],
+  [["indexedDB", MAIN_ORIGIN, "idb1 (default)", "obj1"], 1, "name"],
+  [["Cache", MAIN_ORIGIN, "plop"], MAIN_URL + "404_cached_file.js", "url"],
 ];
 
 add_task(async function () {
@@ -31,7 +19,7 @@ add_task(async function () {
   // We should not enforce https for tests using this page.
   await pushPref("dom.security.https_first", false);
 
-  await openTabAndSetupStorage(MAIN_DOMAIN + "storage-listings.html");
+  await openTabAndSetupStorage(MAIN_URL + "storage-listings.html");
 
   const contextMenu = gPanelWindow.document.getElementById(
     "storage-table-popup"

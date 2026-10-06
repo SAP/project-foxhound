@@ -9,7 +9,7 @@ Migration to HG
      to
    | Mozilla's HG (Mercurial) server.
    | Each project now lives in its own separate space, they can be found at:
-   |    https://hg.mozilla.org/projects/nspr/
+   |    https://github.com/mozilla/nspr/
    |    https://hg.mozilla.org/projects/nss/
    |    https://hg.mozilla.org/projects/jss/
    |   https://hg.mozilla.org/projects/python-nss/
@@ -35,7 +35,7 @@ Migration to HG
    | source code and build both NSPR and NSS:
    |   mkdir workarea
    |   cd workarea
-   |   hg clone https://hg.mozilla.org/projects/nspr
+   |   git clone https://github.com/mozilla/nspr
    |   hg clone https://hg.mozilla.org/projects/nss
    |   cd nss
    |   # set USE_64=1 on 64 bit architectures

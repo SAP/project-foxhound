@@ -11,8 +11,7 @@ with open(sites) as f:
 
 
 def next_site():
-    for site in sites:
-        yield site
+    yield from sites
 
 
 get_site = next_site()

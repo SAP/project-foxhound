@@ -1,9 +1,6 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-/* eslint-env mozilla/browser-window */
 
 document.addEventListener(
   "DOMContentLoaded",
@@ -14,6 +11,7 @@ document.addEventListener(
       switch (event.target.id) {
         // == edit-menu ==
         case "menu_preferences":
+        case "menu_settings":
           openPreferences(undefined);
           break;
 
@@ -107,6 +105,17 @@ document.addEventListener(
         case "helpPolicySupport":
           openTrustedLinkIn(Services.policies.getSupportMenu().URL.href, "tab");
           break;
+
+        // menu_setAsDefault is only available on macOS
+        case "menu_setAsDefault":
+          if (AppConstants.platform == "macosx") {
+            Glean.browserApplicationmenu.setAsDefault.record();
+            ShellService.setAsDefault().catch(async _ => {
+              // Due to https://bugzilla.mozilla.org/show_bug.cgi?id=1205066
+              // setAsDefault() always throws on macOS so we don't need to log it.
+            });
+          }
+          break;
       }
     });
 
@@ -183,6 +192,8 @@ document.addEventListener(
           if (!event.target.parentNode._placesView) {
             new HistoryMenu(event);
           }
+
+          AIWindow.appMenu(event, window);
           break;
         case "historyUndoPopup":
           document

@@ -1,25 +1,21 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#if !defined(mozilla_dom_HTMLCanvasElement_h)
-#  define mozilla_dom_HTMLCanvasElement_h
+#ifndef mozilla_dom_HTMLCanvasElement_h
+#define mozilla_dom_HTMLCanvasElement_h
 
-#  include "LayoutConstants.h"
-#  include "mozilla/Attributes.h"
-#  include "mozilla/StateWatching.h"
-#  include "mozilla/WeakPtr.h"
-#  include "nsIDOMEventListener.h"
-#  include "nsIObserver.h"
-#  include "nsGenericHTMLElement.h"
-#  include "nsGkAtoms.h"
-#  include "nsSize.h"
-#  include "nsError.h"
-
-#  include "mozilla/dom/CanvasRenderingContextHelper.h"
-#  include "mozilla/gfx/Rect.h"
-#  include "mozilla/layers/LayersTypes.h"
+#include "LayoutConstants.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/StateWatching.h"
+#include "mozilla/WeakPtr.h"
+#include "mozilla/dom/CanvasRenderingContextHelper.h"
+#include "mozilla/gfx/Rect.h"
+#include "mozilla/layers/LayersTypes.h"
+#include "nsError.h"
+#include "nsGenericHTMLElement.h"
+#include "nsGkAtoms.h"
+#include "nsIObserver.h"
+#include "nsSize.h"
 
 class nsICanvasRenderingContextInternal;
 class nsIInputStream;
@@ -118,7 +114,7 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
 
  public:
   explicit HTMLCanvasElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
   NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLCanvasElement, canvas)
 
@@ -266,7 +262,7 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
                               nsAttrValue& aResult) override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
   nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
-                                      int32_t aModType) const override;
+                                      AttrModType aModType) const override;
   nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
 
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
@@ -333,10 +329,12 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
                          const nsAString& aMimeType,
                          const JS::Value& aEncoderOptions, nsAString& aDataURL);
 
-  UniquePtr<uint8_t[]> GetImageBuffer(int32_t* aOutFormat,
-                                      gfx::IntSize* aOutImageSize) override;
+  UniquePtr<uint8_t[]> GetImageBuffer(
+      CanvasUtils::ImageExtraction aExtractionBehavior, int32_t* aOutFormat,
+      gfx::IntSize* aOutImageSize) override;
 
-  MOZ_CAN_RUN_SCRIPT void CallPrintCallback();
+  MOZ_CAN_RUN_SCRIPT void CallPrintCallback(
+      RefPtr<HTMLCanvasPrintState> aPrintState);
 
   virtual void AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
                             const nsAttrValue* aValue,
@@ -432,7 +430,7 @@ class HTMLCanvasPrintState final : public nsWrapperCache {
   virtual JSObject* WrapObject(JSContext* cx,
                                JS::Handle<JSObject*> aGivenProto) override;
 
-  HTMLCanvasElement* GetParentObject() { return mCanvas; }
+  HTMLCanvasElement* GetParentObject();
 
  private:
   ~HTMLCanvasPrintState();

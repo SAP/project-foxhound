@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,13 +10,11 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/ipc/ByteBuf.h"
-#include "mozilla/Unused.h"
 #include "nsThreadUtils.h"
 
 using mozilla::AppShutdown;
 using mozilla::RunOnShutdown;
 using mozilla::ShutdownPhase;
-using mozilla::Unused;
 using mozilla::glean::FlushFOGData;
 using mozilla::glean::SendFOGData;
 using mozilla::ipc::ByteBuf;
@@ -68,7 +65,7 @@ void FOG_IPCPayloadFull() {
   // FOG IPC must happen on the main thread until bug 1641989.
   // If there is no main thread (too early in startup or too late in shutdown),
   // there's nothing we can do but log.
-  Unused << NS_WARN_IF(NS_FAILED(NS_DispatchToMainThread(
+  (void)NS_WARN_IF(NS_FAILED(NS_DispatchToMainThread(
       NS_NewRunnableFunction("FOG IPC Payload getting full", [] {
         FlushFOGData([](ByteBuf&& aBuf) { SendFOGData(std::move(aBuf)); });
       }))));

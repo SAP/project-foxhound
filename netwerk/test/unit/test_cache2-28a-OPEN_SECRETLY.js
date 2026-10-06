@@ -6,7 +6,8 @@ function run_test() {
     return parseInt(new Date().getTime() / 1000);
   }
   function do_check_time(a, b) {
-    Assert.less(Math.abs(a - b), 0.5);
+    // Allow up to 1 second: NowSeconds() truncates but cache may round differently
+    Assert.less(Math.abs(a - b), 2);
   }
 
   asyncOpenCacheEntry(

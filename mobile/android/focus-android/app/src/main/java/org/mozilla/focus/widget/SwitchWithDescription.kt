@@ -13,7 +13,11 @@ import androidx.core.content.withStyledAttributes
 import mozilla.components.support.ktx.android.view.putCompoundDrawablesRelativeWithIntrinsicBounds
 import org.mozilla.focus.R
 import org.mozilla.focus.databinding.SwitchWithDescriptionBinding
+import mozilla.components.ui.icons.R as iconsR
 
+/**
+ * A custom view that displays a switch with a title and a description.
+ */
 class SwitchWithDescription @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
@@ -30,7 +34,7 @@ class SwitchWithDescription @JvmOverloads constructor(
         context.withStyledAttributes(attrs, R.styleable.SwitchWithDescription, defStyleAttr, 0) {
             val icon = getResourceId(
                 R.styleable.SwitchWithDescription_switchIcon,
-                R.drawable.mozac_ic_shield_24,
+                iconsR.drawable.mozac_ic_shield_24,
             )
 
             val switchTitle = resources.getString(

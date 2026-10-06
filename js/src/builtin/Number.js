@@ -60,9 +60,9 @@ function Number_isSafeInteger(number) {
 }
 
 function Global_isNaN(number) {
-  return Number_isNaN(ToNumber(number));
+  return Number_isNaN(TO_NUMBER(number));
 }
 
 function Global_isFinite(number) {
-  return Number_isFinite(ToNumber(number));
+  return Number_isFinite(TO_NUMBER(number));
 }

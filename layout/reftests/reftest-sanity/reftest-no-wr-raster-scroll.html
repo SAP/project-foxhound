@@ -1,0 +1,47 @@
+<!DOCTYPE HTML>
+<html class="reftest-wait reftest-no-wr-raster">
+<head>
+<style>
+html, body {
+  margin: 0;
+  padding: 0;
+}
+#scroller {
+  width: 200px;
+  height: 200px;
+  overflow: scroll;
+  scrollbar-width: none;
+  background: green;
+}
+#content {
+  width: 100%;
+  height: 400px;
+  position: relative;
+}
+#box {
+  position: absolute;
+  top: 150px;
+  left: 50px;
+  width: 100px;
+  height: 100px;
+  background: blue;
+}
+</style>
+</head>
+<body>
+<div id="scroller">
+  <div id="content">
+    <div id="box"></div>
+  </div>
+</div>
+<script>
+function doTest() {
+  // Scroll to move the box - this should NOT cause tile rasterization
+  // since the content was already rasterized, just at a different scroll offset
+  document.getElementById("scroller").scrollTop = 100;
+  document.documentElement.classList.remove("reftest-wait");
+}
+document.addEventListener("MozReftestInvalidate", doTest);
+</script>
+</body>
+</html>

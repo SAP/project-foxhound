@@ -23,11 +23,11 @@ const TEST_URI = `
 add_task(async function addWithSpecialCharacter() {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view: ruleView } = await openRuleView();
-  const { document: doc, store } = selectChangesView(inspector);
+  const { document: doc, store } = await selectChangesView(inspector);
 
   await selectNode("div", inspector);
 
-  const ruleEditor = getRuleViewRuleEditor(ruleView, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(ruleView, 1);
   const editor = await focusEditableField(ruleView, ruleEditor.closeBrace);
 
   const input = editor.input;
@@ -45,17 +45,14 @@ add_task(async function addWithSpecialCharacter() {
   info(`Change the CSS declaration value to ${newValue}`);
   const prop = getTextProperty(ruleView, 1, { [PROPERTY_NAME]: INITIAL_VALUE });
   onTrackChange = waitForDispatch(store, "TRACK_CHANGE");
-  // flushCount needs to be set to 2 once when quotes are involved.
-  await setProperty(ruleView, prop, newValue, { flushCount: 2 });
+  await setProperty(ruleView, prop, newValue);
   await onTrackChange;
   await assertAddedDeclaration(doc, EXPECTED_PROPERTY_NAME, newValue);
 
   newValue = "123";
   info(`Change the CSS declaration value to ${newValue}`);
   onTrackChange = waitForDispatch(store, "TRACK_CHANGE");
-  // 2 preview requests to flush: one for the new value and one for the
-  // autocomplete popup suggestion (even if no suggestion is displayed here).
-  await setProperty(ruleView, prop, newValue, { flushCount: 2 });
+  await setProperty(ruleView, prop, newValue);
   await onTrackChange;
   await assertAddedDeclaration(doc, EXPECTED_PROPERTY_NAME, newValue);
 });

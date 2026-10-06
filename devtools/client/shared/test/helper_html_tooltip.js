@@ -17,7 +17,7 @@
  *        The tooltip instance to display
  * @param {Node} anchor
  *        The anchor that should be used to display the tooltip
- * @param {Object} see HTMLTooltip:show documentation
+ * @param {object} see HTMLTooltip:show documentation
  * @return {Promise} promise that resolves when reflow and repaint are done.
  */
 async function showTooltip(tooltip, anchor, { position, x, y } = {}) {
@@ -72,7 +72,7 @@ function waitForReflow(tooltip) {
  *        The HTMLTooltip instance to check
  * @param {Node} anchor
  *        The tooltip's anchor
- * @param {Object} expected
+ * @param {object} expected
  *        - {String} position : "top" or "bottom"
  *        - {Boolean} leftAligned
  *        - {Number} width: expected tooltip width

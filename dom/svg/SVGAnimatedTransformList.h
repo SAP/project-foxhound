@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,9 +5,9 @@
 #ifndef DOM_SVG_SVGANIMATEDTRANSFORMLIST_H_
 #define DOM_SVG_SVGANIMATEDTRANSFORMLIST_H_
 
-#include "mozilla/Attributes.h"
+#include <memory>
+
 #include "mozilla/SMILAttr.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/SVGTransformList.h"
 
 class nsAtom;
@@ -50,7 +48,7 @@ class SVGAnimatedTransformList {
   SVGAnimatedTransformList& operator=(const SVGAnimatedTransformList& aOther) {
     mBaseVal = aOther.mBaseVal;
     if (aOther.mAnimVal) {
-      mAnimVal = MakeUnique<SVGTransformList>(*aOther.mAnimVal);
+      mAnimVal = std::make_unique<SVGTransformList>(*aOther.mAnimVal);
     }
     mIsBaseSet = aOther.mIsBaseSet;
     mCreatedOrRemovedOnLastChange = aOther.mCreatedOrRemovedOnLastChange;
@@ -117,7 +115,7 @@ class SVGAnimatedTransformList {
     return mCreatedOrRemovedOnLastChange;
   }
 
-  UniquePtr<SMILAttr> ToSMILAttr(dom::SVGElement* aSVGElement);
+  std::unique_ptr<SMILAttr> ToSMILAttr(dom::SVGElement* aSVGElement);
 
  private:
   // mAnimVal is a pointer to allow us to determine if we're being animated or
@@ -126,7 +124,7 @@ class SVGAnimatedTransformList {
   // the empty string (<set to="">).
 
   SVGTransformList mBaseVal;
-  UniquePtr<SVGTransformList> mAnimVal;
+  std::unique_ptr<SVGTransformList> mAnimVal;
   bool mIsBaseSet;
   // See documentation for accessor.
   bool mCreatedOrRemovedOnLastChange;
@@ -147,10 +145,10 @@ class SVGAnimatedTransformList {
     nsresult SetAnimValue(const SMILValue& aNewAnimValue) override;
 
    protected:
-    static void ParseValue(const nsAString& aSpec, const nsAtom* aTransformType,
+    static void ParseValue(const nsAString& aSpec, uint16_t aTransformType,
                            SMILValue& aResult);
-    static int32_t ParseParameterList(const nsAString& aSpec, float* aVars,
-                                      int32_t aNVars);
+    static int32_t ParseParameterList(
+        const nsAString& aSpec, SVGTransformSMILData::SimpleParams& aParams);
 
     // These will stay alive because a SMILAttr only lives as long
     // as the Compositing step, and DOM elements don't get a chance to

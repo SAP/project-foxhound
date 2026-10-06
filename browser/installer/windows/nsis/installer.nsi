@@ -10,7 +10,7 @@
 # ApplicationID
 #   http://nsis.sourceforge.net/ApplicationID_plug-in
 # CityHash
-#   http://searchfox.org/mozilla-central/source/other-licenses/nsis/Contrib/CityHash
+#   http://searchfox.org/firefox-main/source/other-licenses/nsis/Contrib/CityHash
 # nsJSON
 #   http://nsis.sourceforge.net/NsJSON_plug-in
 # ShellLink
@@ -42,6 +42,7 @@ Var InstallType
 Var AddStartMenuSC
 Var AddTaskbarSC
 Var AddDesktopSC
+Var AddDesktopLauncher
 Var AddPrivateBrowsingSC
 Var InstallMaintenanceService
 Var InstallOptionalExtensions
@@ -99,6 +100,7 @@ Var PostSigningData
 !include defines.nsi
 !include common.nsh
 !include locales.nsi
+!include installer_helpers.nsh
 
 VIAddVersionKey "FileDescription" "${BrandShortName} Installer"
 VIAddVersionKey "OriginalFilename" "setup.exe"
@@ -138,12 +140,10 @@ VIAddVersionKey "OriginalFilename" "setup.exe"
 !insertmacro WriteRegStr2
 !insertmacro WriteRegDWORD2
 
-; This needs to be inserted after InitHashAppModelId because it uses
-; $AppUserModelID and the compiler can't handle using variables lexically before
-; they've been declared.
-!insertmacro GetInstallerRegistryPref
-
 !include shared.nsh
+
+!define TELEMETRY_FULL_INSTALLER
+!include telemetry.nsh
 
 ; Helper macros for ui callbacks. Insert these after shared.nsh
 !insertmacro CheckCustomCommon
@@ -643,7 +643,10 @@ Section "-Application" APP_IDX
     SetShellVarContext current
   ${EndIf}
 
-  ${If} $AddDesktopSC == 1
+  ${If} $AddDesktopLauncher == 1
+    ; Entry point for installing launcher when Firefox is being installed
+    Call OnInstallDesktopLauncherHandler
+  ${ElseIf} $AddDesktopSC == 1
     ${If} ${FileExists} "$DESKTOP\${BrandFullName}.lnk"
       ShellLink::GetShortCutTarget "$DESKTOP\${BrandFullName}.lnk"
       Pop $0
@@ -658,10 +661,10 @@ Section "-Application" APP_IDX
       ${If} ${FileExists} "$DESKTOP\${BrandShortName}.lnk"
         ShellLink::SetShortCutDescription "$DESKTOP\${BrandShortName}.lnk" "$(BRIEF_APP_DESC)"
         ShellLink::SetShortCutWorkingDirectory "$DESKTOP\${BrandShortName}.lnk" \
-                                               "$INSTDIR"
+                                              "$INSTDIR"
         ${If} "$AppUserModelID" != ""
           ApplicationID::Set "$DESKTOP\${BrandShortName}.lnk" \
-                             "$AppUserModelID" "true"
+                            "$AppUserModelID" "true"
         ${EndIf}
         ${LogMsg} "Added Shortcut: $DESKTOP\${BrandShortName}.lnk"
       ${Else}
@@ -755,7 +758,6 @@ Section "-InstallEndCleanup"
   SetDetailsPrint none
 
   ; Maybe copy the post-signing data?
-  StrCpy $PostSigningData ""
   ${GetParameters} $0
   ClearErrors
   ; We don't get post-signing data from the MSI.
@@ -768,7 +770,13 @@ Section "-InstallEndCleanup"
       ; We're being run standalone, copy the data.
       ${CopyPostSigningData}
       Pop $PostSigningData
+    ${Else}
+      ; If we see this value in telemetry, it means that we were expecting the stub installer
+      ; to send telemetry for this installation, but the full installer (also?) sent telemetry
+      StrCpy $PostSigningData "full_installer:unexpected"
     ${EndIf}
+  ${Else}
+    StrCpy $PostSigningData "msi:none"
   ${EndIf}
 
   ; Adds a pinned Task Bar shortcut (see MigrateTaskBarShortcut for details).
@@ -837,7 +845,7 @@ Section "-InstallEndCleanup"
   ; When we're using the GUI, .onGUIEnd sends the ping, but of course that isn't
   ; invoked when we're running silently.
   ${If} ${Silent}
-    Call SendPing
+    Call SendPingIfApplicable
   ${EndIf}
 SectionEnd
 
@@ -974,216 +982,46 @@ Function LaunchApp
   ${GetParameters} $0
   ${GetOptions} "$0" "/UAC:" $1
   ${If} ${Errors}
+    ClearErrors
     ${ExecAndWaitForInputIdle} "$\"$INSTDIR\${FileMainEXE}$\" -first-startup"
+    ${If} ${Errors}
+      StrCpy $LaunchedNewApp false
+    ${Else}
+      StrCpy $LaunchedNewApp true
+    ${EndIf}
   ${Else}
     GetFunctionAddress $0 LaunchAppFromElevatedProcess
     UAC::ExecCodeSegment $0
   ${EndIf}
-
-  StrCpy $LaunchedNewApp true
 FunctionEnd
 
 Function LaunchAppFromElevatedProcess
   ; Set our current working directory to the application's install directory
   ; otherwise the 7-Zip temp directory will be in use and won't be deleted.
   SetOutPath "$INSTDIR"
+  ClearErrors
   ${ExecAndWaitForInputIdle} "$\"$INSTDIR\${FileMainEXE}$\" -first-startup"
+  ${If} ${Errors}
+    StrCpy $LaunchedNewApp false
+  ${Else}
+    StrCpy $LaunchedNewApp true
+  ${EndIf}
 FunctionEnd
 
-Function SendPing
+; Send a telemetry ping to the server if needed.
+;
+; We do _not_ want to send the ping if we were launched by the stub installer,
+; since we'd be double-counting the number of installations. The stub installer
+; is repsonsible for sending the ping in that case.
+Function SendPingIfApplicable
+  ClearErrors
   ${GetParameters} $0
   ${GetOptions} $0 "/LaunchedFromStub" $0
-  ${IfNot} ${Errors}
-    Return
-  ${EndIf}
-
-  ; Create a GUID to use as the unique document ID.
-  System::Call "rpcrt4::UuidCreate(g . r0)i"
-  ; StringFromGUID2 (which is what System::Call uses internally to stringify
-  ; GUIDs) includes braces in its output, and we don't want those.
-  StrCpy $0 $0 -1 1
-
-  ; Configure the HTTP request for the ping
-  nsJSON::Set /tree ping /value "{}"
-  nsJSON::Set /tree ping "Url" /value \
-    '"${TELEMETRY_BASE_URL}/${TELEMETRY_NAMESPACE}/${TELEMETRY_INSTALL_PING_DOCTYPE}/${TELEMETRY_INSTALL_PING_VERSION}/$0"'
-  nsJSON::Set /tree ping "Verb" /value '"POST"'
-  nsJSON::Set /tree ping "DataType" /value '"JSON"'
-  nsJSON::Set /tree ping "AccessType" /value '"PreConfig"'
-
-  ; Fill in the ping payload
-  nsJSON::Set /tree ping "Data" /value "{}"
-  nsJSON::Set /tree ping "Data" "installer_type" /value '"full"'
-  nsJSON::Set /tree ping "Data" "installer_version" /value '"${AppVersion}"'
-  nsJSON::Set /tree ping "Data" "build_channel" /value '"${Channel}"'
-  nsJSON::Set /tree ping "Data" "update_channel" /value '"${UpdateChannel}"'
-  nsJSON::Set /tree ping "Data" "locale" /value '"${AB_CD}"'
-
-  ReadINIStr $0 "$INSTDIR\application.ini" "App" "Version"
-  nsJSON::Set /tree ping "Data" "version" /value '"$0"'
-  ReadINIStr $0 "$INSTDIR\application.ini" "App" "BuildID"
-  nsJSON::Set /tree ping "Data" "build_id" /value '"$0"'
-
-  ; Capture the distribution ID and version if they exist.
-  StrCpy $1 "$INSTDIR\distribution\distribution.ini"
-  ${If} ${FileExists} "$1"
-    ReadINIStr $0 "$1" "Global" "id"
-    nsJSON::Set /tree ping "Data" "distribution_id" /value '"$0"'
-    ReadINIStr $0 "$1" "Global" "version"
-    nsJSON::Set /tree ping "Data" "distribution_version" /value '"$0"'
-  ${EndIf}
-
-  ReadRegDWORD $0 HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion" "UBR"
   ${If} ${Errors}
-    StrCpy $0 "-1" ; Assign -1 if an error occured during registry read
+    GetFunctionAddress $0 PrepareFullInstallPing
+    Push $0
+    Call SendTelemetryPing
   ${EndIf}
-  
-  nsJSON::Set /tree ping "Data" "windows_ubr" /value '$0'
-
-  ${GetParameters} $0
-  ${GetOptions} $0 "/LaunchedFromMSI" $0
-  ${IfNot} ${Errors}
-    nsJSON::Set /tree ping "Data" "from_msi" /value true
-  ${EndIf}
-
-  !ifdef HAVE_64BIT_BUILD
-    nsJSON::Set /tree ping "Data" "64bit_build" /value true
-  !else
-    nsJSON::Set /tree ping "Data" "64bit_build" /value false
-  !endif
-
-  ${If} ${RunningX64}
-    nsJSON::Set /tree ping "Data" "64bit_os" /value true
-  ${Else}
-    nsJSON::Set /tree ping "Data" "64bit_os" /value false
-  ${EndIf}
-
-  ; Though these values are sometimes incorrect due to bug 444664 it happens
-  ; so rarely it isn't worth working around it by reading the registry values.
-  ${WinVerGetMajor} $0
-  ${WinVerGetMinor} $1
-  ${WinVerGetBuild} $2
-  nsJSON::Set /tree ping "Data" "os_version" /value '"$0.$1.$2"'
-  ${If} ${IsServerOS}
-    nsJSON::Set /tree ping "Data" "server_os" /value true
-  ${Else}
-    nsJSON::Set /tree ping "Data" "server_os" /value false
-  ${EndIf}
-
-  ClearErrors
-  WriteRegStr HKLM "Software\Mozilla" "${BrandShortName}InstallerTest" \
-                   "Write Test"
-  ${If} ${Errors}
-    nsJSON::Set /tree ping "Data" "admin_user" /value false
-  ${Else}
-    DeleteRegValue HKLM "Software\Mozilla" "${BrandShortName}InstallerTest"
-    nsJSON::Set /tree ping "Data" "admin_user" /value true
-  ${EndIf}
-
-  ${If} $DefaultInstDir == $INSTDIR
-    nsJSON::Set /tree ping "Data" "default_path" /value true
-  ${Else}
-    nsJSON::Set /tree ping "Data" "default_path" /value false
-  ${EndIf}
-
-  nsJSON::Set /tree ping "Data" "set_default" /value "$SetAsDefault"
-
-  nsJSON::Set /tree ping "Data" "new_default" /value false
-  nsJSON::Set /tree ping "Data" "old_default" /value false
-
-  AppAssocReg::QueryCurrentDefault "http" "protocol" "effective"
-  Pop $0
-  ReadRegStr $0 HKCR "$0\shell\open\command" ""
-  ${If} $0 != ""
-    ${GetPathFromString} "$0" $0
-    ${GetParent} "$0" $1
-    ${GetLongPath} "$1" $1
-    ${If} $1 == $INSTDIR
-      nsJSON::Set /tree ping "Data" "new_default" /value true
-    ${Else}
-      StrCpy $0 "$0" "" -11 # 11 == length of "firefox.exe"
-      ${If} "$0" == "${FileMainEXE}"
-        nsJSON::Set /tree ping "Data" "old_default" /value true
-      ${EndIf}
-    ${EndIf}
-  ${EndIf}
-
-  nsJSON::Set /tree ping "Data" "had_old_install" /value "$HadOldInstall"
-
-  ${If} ${Silent}
-    ; In silent mode, only the install phase is executed, and the GUI events
-    ; that initialize most of the phase times are never called; only
-    ; $InstallPhaseStart and $FinishPhaseStart have usable values.
-    ${GetSecondsElapsed} $InstallPhaseStart $FinishPhaseStart $0
-
-    nsJSON::Set /tree ping "Data" "intro_time" /value 0
-    nsJSON::Set /tree ping "Data" "options_time" /value 0
-    nsJSON::Set /tree ping "Data" "install_time" /value "$0"
-    nsJSON::Set /tree ping "Data" "finish_time" /value 0
-  ${Else}
-    ; In GUI mode, all we can be certain of is that the intro phase has started;
-    ; the user could have canceled at any time and phases after that won't
-    ; have run at all. So we have to be prepared for anything after
-    ; $IntroPhaseStart to be uninitialized. For anything that isn't filled in
-    ; yet we'll use the current tick count. That means that any phases that
-    ; weren't entered at all will get 0 for their times because the start and
-    ; end tick counts will be the same.
-    System::Call "kernel32::GetTickCount()l .s"
-    Pop $0
-
-    ${If} $OptionsPhaseStart == 0
-      StrCpy $OptionsPhaseStart $0
-    ${EndIf}
-    ${GetSecondsElapsed} $IntroPhaseStart $OptionsPhaseStart $1
-    nsJSON::Set /tree ping "Data" "intro_time" /value "$1"
-
-    ${If} $InstallPhaseStart == 0
-      StrCpy $InstallPhaseStart $0
-    ${EndIf}
-    ${GetSecondsElapsed} $OptionsPhaseStart $InstallPhaseStart $1
-    nsJSON::Set /tree ping "Data" "options_time" /value "$1"
-
-    ${If} $FinishPhaseStart == 0
-      StrCpy $FinishPhaseStart $0
-    ${EndIf}
-    ${GetSecondsElapsed} $InstallPhaseStart $FinishPhaseStart $1
-    nsJSON::Set /tree ping "Data" "install_time" /value "$1"
-
-    ${If} $FinishPhaseEnd == 0
-      StrCpy $FinishPhaseEnd $0
-    ${EndIf}
-    ${GetSecondsElapsed} $FinishPhaseStart $FinishPhaseEnd $1
-    nsJSON::Set /tree ping "Data" "finish_time" /value "$1"
-  ${EndIf}
-
-  ; $PostSigningData should only be empty if we didn't try to copy the
-  ; postSigningData file at all. If we did try and the file was missing
-  ; or empty, this will be "0", and for consistency with the stub we will
-  ; still submit it.
-  ${If} $PostSigningData != ""
-    nsJSON::Quote /always $PostSigningData
-    Pop $0
-    nsJSON::Set /tree ping "Data" "attribution" /value $0
-  ${EndIf}
-
-  nsJSON::Set /tree ping "Data" "new_launched" /value "$LaunchedNewApp"
-
-  nsJSON::Set /tree ping "Data" "succeeded" /value false
-  ${If} $InstallResult == "cancel"
-    nsJSON::Set /tree ping "Data" "user_cancelled" /value true
-  ${ElseIf} $InstallResult == "success"
-    nsJSON::Set /tree ping "Data" "succeeded" /value true
-  ${EndIf}
-
-  ${If} ${Silent}
-    nsJSON::Set /tree ping "Data" "silent" /value true
-  ${Else}
-    nsJSON::Set /tree ping "Data" "silent" /value false
-  ${EndIf}
-
-  ; Send the ping request. This call will block until a response is received,
-  ; but we shouldn't have any windows still open, so we won't jank anything.
-  nsJSON::Set /http ping
 FunctionEnd
 
 ; Record data about this installation for use in in-app Telemetry pings.
@@ -1227,7 +1065,7 @@ Function WriteInstallationTelemetryData
   ${EndIf}
 
   ; Check for top-level profile directory
-  ; Note: This is the same check used to set $ExistingProfile in stub.nsi
+  ; Note: This is the same check used to set $HadExistingProfile in stub.nsi
   ${GetLocalAppDataFolder} $0
   ${If} ${FileExists} "$0\Mozilla\Firefox"
     StrCpy $1 "true"
@@ -1371,7 +1209,8 @@ FunctionEnd
 
 Function leaveOptions
   ${MUI_INSTALLOPTIONS_READ} $0 "options.ini" "Settings" "State"
-  ${If} $0 != 0
+  ${IfNot} ${Errors}
+  ${AndIf} $0 != 0
     Abort
   ${EndIf}
   ${MUI_INSTALLOPTIONS_READ} $R0 "options.ini" "Field 2" "State"
@@ -1721,6 +1560,9 @@ Function .onInit
   StrCpy $FinishPhaseEnd 0
   StrCpy $InstallResult "cancel"
   StrCpy $LaunchedNewApp false
+  ; initialize postSigningData to explicitly say that it comes from the full installer
+  StrCpy $PostSigningData "full_installer:unset"
+
 
   StrCpy $PageName ""
   StrCpy $LANGUAGE 0
@@ -1734,9 +1576,9 @@ Function .onInit
   ; Windows 8.1/Server 2012 R2 and lower are not supported.
   ${Unless} ${AtLeastWin10}
     ${If} "$R7" == "0"
-      strCpy $R7 "$(WARN_MIN_SUPPORTED_OSVER_CPU_MSG)"
+      strCpy $R7 "$(WARN_MIN_SUPPORTED_OSVER_CPU_MSG2)"
     ${Else}
-      strCpy $R7 "$(WARN_MIN_SUPPORTED_OSVER_MSG)"
+      strCpy $R7 "$(WARN_MIN_SUPPORTED_OSVER_MSG2)"
     ${EndIf}
     MessageBox MB_OKCANCEL|MB_ICONSTOP "$R7" IDCANCEL +2
     ExecShell "open" "${URLSystemRequirements}"
@@ -1753,33 +1595,26 @@ Function .onInit
 !ifdef HAVE_64BIT_BUILD
   ${If} "${ARCH}" == "AArch64"
     ${IfNot} ${IsNativeARM64}
-      MessageBox MB_OKCANCEL|MB_ICONSTOP "$(WARN_MIN_SUPPORTED_OSVER_MSG)" IDCANCEL +2
+      MessageBox MB_OKCANCEL|MB_ICONSTOP "$(WARN_MIN_SUPPORTED_OSVER_MSG2)" IDCANCEL +2
       ExecShell "open" "${URLSystemRequirements}"
       Quit
     ${EndIf}
   ${ElseIfNot} ${RunningX64}
-    MessageBox MB_OKCANCEL|MB_ICONSTOP "$(WARN_MIN_SUPPORTED_OSVER_MSG)" IDCANCEL +2
+    MessageBox MB_OKCANCEL|MB_ICONSTOP "$(WARN_MIN_SUPPORTED_OSVER_MSG2)" IDCANCEL +2
     ExecShell "open" "${URLSystemRequirements}"
     Quit
   ${EndIf}
-  SetRegView 64
 !endif
 
-  SetShellVarContext all
-  ${GetFirstInstallPath} "Software\Mozilla\${BrandFullNameInternal}" $0
-  ${If} "$0" == "false"
-    SetShellVarContext current
-    ${GetFirstInstallPath} "Software\Mozilla\${BrandFullNameInternal}" $0
-    ${If} "$0" == "false"
-      StrCpy $HadOldInstall false
-    ${Else}
-      StrCpy $HadOldInstall true
-    ${EndIf}
+  ${GetExistingInstallPath} $0
+  ${If} "$0" == ""
+    StrCpy $HadOldInstall false
   ${Else}
     StrCpy $HadOldInstall true
+    ${UseExistingInstallPathIfNoInstallDirArg} $0
   ${EndIf}
 
-  ${InstallOnInitCommon} "$(WARN_MIN_SUPPORTED_OSVER_CPU_MSG)"
+  ${InstallOnInitCommon} "$(WARN_MIN_SUPPORTED_OSVER_CPU_MSG2)"
 
   !insertmacro InitInstallOptionsFile "options.ini"
   !insertmacro InitInstallOptionsFile "shortcuts.ini"
@@ -1965,5 +1800,5 @@ FunctionEnd
 
 Function .onGUIEnd
   ${OnEndCommon}
-  Call SendPing
+  Call SendPingIfApplicable
 FunctionEnd

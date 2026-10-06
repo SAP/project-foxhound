@@ -5,7 +5,7 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   UrlbarSearchTermsPersistence:
-    "resource:///modules/UrlbarSearchTermsPersistence.sys.mjs",
+    "moz-src:///browser/components/urlbar/UrlbarSearchTermsPersistence.sys.mjs",
 });
 
 const PROVIDERS = [
@@ -43,6 +43,19 @@ const PROVIDERS = [
         key: "excludeKey",
       },
     ],
+  },
+  {
+    id: "example3",
+    queryParamNames: ["q"],
+    searchPageRegexp: "^https://example3\\.com/",
+    includeParams: [],
+    excludeParams: [],
+  },
+  {
+    id: "example4",
+    queryParamNames: ["q"],
+    searchPageRegexp: "^https://example4\\.com/",
+    excludeParams: [],
   },
 ];
 
@@ -188,6 +201,28 @@ const TESTS = [
       },
     ],
   },
+  {
+    title: "Empty includeParams",
+    name: "example3",
+    cases: [
+      {
+        title: "With search query param value",
+        originalURI: "https://example3.com/?q=foo",
+        expected: "foo",
+      },
+    ],
+  },
+  {
+    title: "No includeParams",
+    name: "example4",
+    cases: [
+      {
+        title: "With search query param value",
+        originalURI: "https://example4.com/?q=foo",
+        expected: "foo",
+      },
+    ],
+  },
 ];
 
 add_setup(async function () {
@@ -241,13 +276,39 @@ add_setup(async function () {
       },
     },
     {
+      recordType: "engine",
+      identifier: "example3",
+      base: {
+        name: "example3",
+        urls: {
+          search: {
+            base: "https://example3.com/",
+            searchTermParamName: "q",
+          },
+        },
+      },
+    },
+    {
+      recordType: "engine",
+      identifier: "example4",
+      base: {
+        name: "example4",
+        urls: {
+          search: {
+            base: "https://example4.com/",
+            searchTermParamName: "q",
+          },
+        },
+      },
+    },
+    {
       recordType: "defaultEngines",
       globalDefault: "Example",
       specificDefaults: [],
     },
   ];
   SearchTestUtils.updateRemoteSettingsConfig(CONFIG_V2);
-  await Services.search.init();
+  await SearchService.init();
 });
 
 add_task(async function test_parsing_extracted_urls() {

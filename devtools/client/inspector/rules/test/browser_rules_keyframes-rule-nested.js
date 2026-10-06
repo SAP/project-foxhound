@@ -56,17 +56,12 @@ add_task(async function () {
   const { inspector, view } = await openRuleView();
 
   await selectNode("body", inspector);
-  const headers = Array.from(view.element.querySelectorAll(".ruleview-header"));
-  Assert.deepEqual(
-    headers.map(el => el.textContent),
-    [
-      "Keyframes in-layer",
-      "Keyframes in-starting-style",
-      "Keyframes in-media",
-      "Keyframes in-container",
-    ],
-    "Got expected keyframes sections"
-  );
+  const headers = assertRuleViewHeaders(view, [
+    "Keyframes in-layer",
+    "Keyframes in-starting-style",
+    "Keyframes in-media",
+    "Keyframes in-container",
+  ]);
 
   info("Check that keyframes' keyframe ancestor rules are not displayed");
   for (const headerEl of headers) {

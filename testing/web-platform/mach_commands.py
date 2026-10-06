@@ -8,7 +8,11 @@ import os
 import sys
 
 from mach.decorators import Command
-from mach_commands_base import WebPlatformTestsRunner, create_parser_wpt
+from mach_commands_base import (
+    WebPlatformTestsRunner,
+    create_parser_wpt,
+    setup_environment,
+)
 from mozbuild.base import MachCommandConditions as conditions
 from mozbuild.base import MozbuildObject
 
@@ -20,10 +24,10 @@ class WebPlatformTestsRunnerSetup(MozbuildObject):
     default_log_type = "mach"
 
     def __init__(self, *args, **kwargs):
-        super(WebPlatformTestsRunnerSetup, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self._here = os.path.join(self.topsrcdir, "testing", "web-platform")
         kwargs["tests_root"] = os.path.join(self._here, "tests")
-        sys.path.insert(0, kwargs["tests_root"])
+        setup_environment(kwargs["tests_root"])
         build_path = os.path.join(self.topobjdir, "build")
         if build_path not in sys.path:
             sys.path.append(build_path)
@@ -343,10 +347,7 @@ class WebPlatformTestsTestPathsRunner(MozbuildObject):
     """Update web platform tests."""
 
     def run(self, **kwargs):
-        sys.path.insert(
-            0,
-            os.path.abspath(os.path.join(os.path.dirname(__file__), "tests", "tools")),
-        )
+        setup_environment()
         import logging
 
         import manifestupdate
@@ -372,15 +373,11 @@ class WebPlatformTestsTestPathsRunner(MozbuildObject):
         )
         results = {}
         for url_base, paths in test_paths.items():
-            if "manifest_path" not in paths:
-                paths["manifest_path"] = os.path.join(
-                    paths["metadata_path"], "MANIFEST.json"
-                )
             results.update(
                 testpaths.get_paths(
-                    path=paths["manifest_path"],
+                    path=paths.manifest_path,
                     src_root=src_root,
-                    tests_root=paths["tests_path"],
+                    tests_root=paths.tests_path,
                     update=kwargs["update"],
                     rebuild=kwargs["rebuild"],
                     url_base=url_base,
@@ -417,10 +414,8 @@ def create_parser_metadata_merge():
 
 
 def create_parser_serve():
-    sys.path.insert(
-        0, os.path.abspath(os.path.join(os.path.dirname(__file__), "tests", "tools"))
-    )
-    import serve
+    setup_environment()
+    from tools import serve
 
     return serve.serve.get_parser()
 

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>LNA Feature Policy Parent Test</title>
+</head>
+<body>
+<div id="content">
+  <h1>LNA Feature Policy Test - Parent Document</h1>
+  <div id="iframe-container"></div>
+</div>
+
+<script type="text/javascript">
+  document.addEventListener("DOMContentLoaded", function() {
+    const params = new URLSearchParams(location.search);
+    const iframeType = params.get("iframe");
+    const rand = params.get("rand");
+    const parentRand = params.get("parentRand");
+
+    // If parentRand is present, trigger a fetch from parent document first
+    if (parentRand) {
+      fetch(`http://localhost:21555/?type=fetch&rand=${parentRand}`)
+        .then(() => console.log("Parent fetch succeeded"))
+        .catch(e => console.error("Parent fetch failed:", e));
+    }
+
+    if (iframeType) {
+      const container = document.getElementById("iframe-container");
+      const iframe = document.createElement("iframe");
+      iframe.id = "test-iframe";
+
+      const sameOriginURL = "https://example.com/browser/netwerk/test/browser/lna_feature_policy_iframe_same_origin.html";
+      const crossOriginURL = "https://example.org/browser/netwerk/test/browser/lna_feature_policy_iframe_cross_origin.html";
+      const nestedURL = "https://example.com/browser/netwerk/test/browser/lna_feature_policy_nested.html";
+
+      // Append rand parameter to iframe URLs
+      const randParam = rand ? `?rand=${rand}` : "";
+
+      switch (iframeType) {
+        case "same-origin":
+          iframe.src = sameOriginURL + randParam;
+          break;
+
+        case "cross-origin-no-allow":
+          iframe.src = crossOriginURL + randParam;
+          break;
+
+        case "cross-origin-loopback":
+          iframe.src = crossOriginURL + randParam;
+          iframe.setAttribute("allow", "loopback-network");
+          break;
+
+        case "cross-origin-local-network":
+          iframe.src = crossOriginURL + randParam;
+          iframe.setAttribute("allow", "local-network");
+          break;
+
+        case "cross-origin-both":
+          iframe.src = crossOriginURL + randParam;
+          iframe.setAttribute("allow", "loopback-network; local-network");
+          break;
+
+        case "nested":
+          iframe.src = nestedURL + randParam;
+          iframe.setAttribute("allow", "loopback-network");
+          break;
+
+        default:
+          console.error("Unknown iframe type:", iframeType);
+          return;
+      }
+
+      container.appendChild(iframe);
+    }
+  });
+</script>
+</body>
+</html>

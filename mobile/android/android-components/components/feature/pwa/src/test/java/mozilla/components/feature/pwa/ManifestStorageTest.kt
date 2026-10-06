@@ -5,7 +5,6 @@
 package mozilla.components.feature.pwa
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.engine.manifest.WebAppManifest
 import mozilla.components.feature.pwa.db.ManifestDao
@@ -27,7 +26,6 @@ import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 
-@ExperimentalCoroutinesApi
 @RunWith(AndroidJUnit4::class)
 class ManifestStorageTest {
 
@@ -75,7 +73,6 @@ class ManifestStorageTest {
 
         storage.saveManifest(firefoxManifest)
         verify(dao).insertManifest(any())
-        Unit
     }
 
     @Test
@@ -88,7 +85,6 @@ class ManifestStorageTest {
 
         storage.updateManifest(firefoxManifest)
         verify(dao).updateManifest(any())
-        Unit
     }
 
     @Test
@@ -100,7 +96,6 @@ class ManifestStorageTest {
 
         storage.updateManifest(firefoxManifest)
         verify(dao, never()).updateManifest(any())
-        Unit
     }
 
     @Test
@@ -110,7 +105,6 @@ class ManifestStorageTest {
 
         storage.removeManifests(listOf("https://example.com", "https://proxx.app"))
         verify(dao).deleteManifests(listOf("https://example.com", "https://proxx.app"))
-        Unit
     }
 
     @Test

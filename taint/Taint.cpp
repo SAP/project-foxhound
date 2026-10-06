@@ -12,8 +12,7 @@
 #include <locale>    // wstring_convert
 #include <codecvt>   // codecvt_utf8
 #include <iostream>  // cout
-#include <stack>
-#include <string>  // stoi and u32string
+#include <string>    // stoi and u32string
 #include <algorithm>
 #include <sstream>  // stringstream
 
@@ -100,17 +99,13 @@ TaintOperation::TaintOperation(const char* name,
 
 TaintOperation::TaintOperation(const char* name,
                                std::vector<std::u16string> args)
-    : name_(name),
-      arguments_(std::move(args)),
-      source_(false) {}
+    : name_(name), arguments_(std::move(args)), source_(false) {}
 
 TaintOperation::TaintOperation(const char* name)
     : name_(name), source_(false) {}
 
 TaintOperation::TaintOperation(const char* name, TaintLocation location)
-    : name_(name),
-      source_(false),
-      location_(std::move(location)) {}
+    : name_(name), source_(false), location_(std::move(location)) {}
 
 TaintOperation::TaintOperation(TaintOperation&& other) noexcept
     : name_(std::move(other.name_)),
@@ -141,7 +136,8 @@ void TaintOperation::dump(const TaintOperation& op) {
   std::cout << "************************************************" << std::endl;
   std::cout << "Location: " << convert.to_bytes(op.location().filename()) << ":"
             << op.location().line() << ":" << op.location().pos() << std::endl;
-  std::cout << "Function: " << convert.to_bytes(op.location().function()) << std::endl;
+  std::cout << "Function: " << convert.to_bytes(op.location().function())
+            << std::endl;
   std::cout << "Args:" << std::endl;
   for (const auto& arg : op.arguments()) {
     len += arg.length();
@@ -188,18 +184,23 @@ TaintNode::TaintNode(TaintOperation&& operation) noexcept
 }
 
 void TaintNode::addref() {
-  if (refcount_ == 0xffffffff) {
+  // Relaxed is sufficient: taking a new reference implies the caller already
+  // holds one, so no other thread can destroy the node concurrently.
+  uint32_t prev = refcount_.fetch_add(1, std::memory_order_relaxed);
+  if (prev == 0xffffffff) {
     MOZ_CRASH("TaintNode refcount overflow");
   }
-
-  ++refcount_;
 }
 
 void TaintNode::release() {
   MOZ_ASSERT(refcount_ > 0);
 
-  --refcount_;
-  if (refcount_ == 0) {
+  // The decrement and the zero test must be a single atomic operation,
+  // otherwise two threads dropping the last two references can both observe
+  // zero and double free. Release/acquire pairing ensures all prior writes
+  // are visible to the thread that runs the destructor.
+  if (refcount_.fetch_sub(1, std::memory_order_release) == 1) {
+    std::atomic_thread_fence(std::memory_order_acquire);
     delete this;
   }
 }
@@ -338,13 +339,15 @@ TaintFlow TaintFlow::extend(const TaintFlow& flow,
 
 TaintFlow TaintFlow::append(const TaintFlow& first, const TaintFlow& second) {
   TaintFlow outFlow(first);
-  std::stack<const TaintNode*> q;
+
+  // A vector rather than a std::stack: the latter is deque backed and
+  // allocates a full chunk even for very short flows.
+  std::vector<const TaintNode*> nodes;
   for (const TaintNode& node : second) {
-    q.push(&node);
+    nodes.push_back(&node);
   }
-  for (; !q.empty(); q.pop()) {
-    const TaintNode* node = q.top();
-    outFlow.extend(node->operation());
+  for (auto it = nodes.rbegin(); it != nodes.rend(); ++it) {
+    outFlow.extend((*it)->operation());
   }
   return outFlow;
 }
@@ -378,7 +381,13 @@ bool TaintRange::operator<(const TaintRange& other) const {
   return this->end() < other.begin();
 }
 
-bool TaintRange::operator<(uint32_t index) const { return this->end() < index; }
+// A half open range [begin, end) sorts before an index when it ends at or
+// before it. Using < here made lower_bound stop on the range ending exactly
+// at the index, so at() reported no taint on every boundary between two
+// adjacent ranges.
+bool TaintRange::operator<(uint32_t index) const {
+  return this->end() <= index;
+}
 
 bool TaintRange::operator>(uint32_t index) const {
   return this->begin() > index;
@@ -509,24 +518,36 @@ StringTaint::StringTaint(const StringTaint& other) : ranges_(nullptr) {
 
 void StringTaint::assignFromSubTaint(const StringTaint& other, uint32_t begin,
                                      uint32_t end) {
-  MOZ_COUNT_CTOR(StringTaint);
-  auto* ranges = new std::vector<TaintRange>();
-  if (other.ranges_) {
-    // Use binary search to get first range
-    auto range = std::lower_bound(other.begin(), other.end(), begin);
-    for (; range != other.end(); range++) {
-      if (range->begin() < end && range->end() > begin && end > begin) {
-        ranges->push_back(TaintRange(std::max(range->begin(), begin) - begin,
-                                     std::min(range->end(), end) - begin,
-                                     range->flow()));
+  // Nothing can be selected, so don't allocate a vector just to throw it away.
+  if (!other.ranges_ || end <= begin) {
+    clear();
+    return;
+  }
+
+  const auto& source = *other.ranges_;
+
+  // Use binary search to get first range
+  auto first = std::lower_bound(source.begin(), source.end(), begin);
+
+  // Allocated lazily so that a selection matching no range costs nothing.
+  std::vector<TaintRange>* ranges = nullptr;
+  for (auto range = first; range != source.end(); range++) {
+    if (range->begin() < end && range->end() > begin) {
+      if (!ranges) {
+        MOZ_COUNT_CTOR(StringTaint);
+        ranges = new std::vector<TaintRange>();
       }
-      // Break out early if possible
-      if (range->end() > end) {
-        break;
-      }
+      ranges->emplace_back(std::max(range->begin(), begin) - begin,
+                           std::min(range->end(), end) - begin, range->flow());
+    }
+    // Break out early if possible
+    if (range->end() > end) {
+      break;
     }
   }
-  assign(ranges);
+
+  clear();
+  ranges_ = ranges;
   CHECK_RANGES(ranges_);
 }
 
@@ -579,7 +600,6 @@ StringTaint& StringTaint::operator=(StringTaint&& other) noexcept {
 
 void StringTaint::clear() {
   if (ranges_ != nullptr) {
-    ranges_->clear();
     delete ranges_;
     ranges_ = nullptr;
     MOZ_COUNT_DTOR(StringTaint);
@@ -601,51 +621,82 @@ SafeStringTaint StringTaint::safeSubTaint(uint32_t index) const {
 void StringTaint::clearBetween(uint32_t begin, uint32_t end) {
   MOZ_ASSERT(begin <= end);
 
-  if (begin == end) {
+  // Ranges are kept sorted and disjoint, so the affected ones form a
+  // contiguous run that can be trimmed in place without reallocating.
+  if (!ranges_ || begin == end) {
     return;
   }
 
-  MOZ_COUNT_CTOR(StringTaint);
-  auto* ranges = new std::vector<TaintRange>();
-  for (auto& range : *this) {
-    if (range.end() <= begin || range.begin() >= end) {
-      ranges->emplace_back(range.begin(), range.end(), range.flow());
-    } else {
-      if (range.begin() < begin) {
-        ranges->emplace_back(range.begin(), begin, range.flow());
-      }
-      if (range.end() > end) {
-        ranges->emplace_back(end, range.end(), range.flow());
-      }
-    }
+  auto& ranges = *ranges_;
+
+  size_t i = 0;
+  while (i < ranges.size() && ranges[i].end() <= begin) {
+    i++;
+  }
+  if (i == ranges.size() || ranges[i].begin() >= end) {
+    return;
   }
 
-  assign(ranges);
+  // A range that strictly contains the cleared span splits in two. No other
+  // range can overlap the span in that case.
+  if (ranges[i].begin() < begin && ranges[i].end() > end) {
+    TaintRange tail(end, ranges[i].end(), ranges[i].flow());
+    ranges[i].resize(ranges[i].begin(), begin);
+    ranges.insert(ranges.begin() + i + 1, std::move(tail));
+    CHECK_RANGES(ranges_);
+    return;
+  }
+
+  // Trim the range overlapping the start of the span, then the one
+  // overlapping its end, and drop everything in between.
+  size_t first = i;
+  if (ranges[i].begin() < begin) {
+    ranges[i].resize(ranges[i].begin(), begin);
+    first = ++i;
+  }
+  while (i < ranges.size() && ranges[i].end() <= end) {
+    i++;
+  }
+  if (i < ranges.size() && ranges[i].begin() < end) {
+    ranges[i].resize(end, ranges[i].end());
+  }
+  ranges.erase(ranges.begin() + first, ranges.begin() + i);
+
+  if (ranges.empty()) {
+    clear();
+  }
+  CHECK_RANGES(ranges_);
 }
 
 void StringTaint::shift(uint32_t index, int amount) {
   MOZ_ASSERT(index + amount >= 0);  // amount can be negative
 
-  if (0 == amount) {
+  if (0 == amount || !ranges_) {
     return;
   }
 
-  MOZ_COUNT_CTOR(StringTaint);
-  auto* ranges = new std::vector<TaintRange>();
-  for (auto& range : *this) {
-    if (range.begin() >= index) {
-      ranges->emplace_back(range.begin() + amount, range.end() + amount,
-                           range.flow());
-    } else if (range.end() > index) {
-      MOZ_ASSERT(amount >= 0);
-      ranges->emplace_back(range.begin(), index, range.flow());
-      ranges->emplace_back(index + amount, range.end() + amount, range.flow());
-    } else {
-      ranges->emplace_back(range.begin(), range.end(), range.flow());
-    }
+  auto& ranges = *ranges_;
+
+  size_t i = 0;
+  while (i < ranges.size() && ranges[i].end() <= index) {
+    i++;
+  }
+  if (i == ranges.size()) {
+    return;
   }
 
-  assign(ranges);
+  // At most one range straddles the insertion point and has to be split.
+  if (ranges[i].begin() < index) {
+    MOZ_ASSERT(amount >= 0);
+    TaintRange tail(index + amount, ranges[i].end() + amount, ranges[i].flow());
+    ranges[i].resize(ranges[i].begin(), index);
+    ranges.insert(ranges.begin() + i + 1, std::move(tail));
+    i += 2;
+  }
+  for (; i < ranges.size(); i++) {
+    ranges[i].resize(ranges[i].begin() + amount, ranges[i].end() + amount);
+  }
+  CHECK_RANGES(ranges_);
 }
 
 void StringTaint::insert(uint32_t index, const StringTaint& taint) {
@@ -653,34 +704,44 @@ void StringTaint::insert(uint32_t index, const StringTaint& taint) {
     return;
   }
 
-  MOZ_COUNT_CTOR(StringTaint);
-  auto* ranges = new std::vector<TaintRange>();
-  auto it = begin();
-
-  while (it != end() && it->begin() < index) {
-    auto& range = *it;
-    MOZ_ASSERT(range.end() <= index);
-    ranges->emplace_back(range.begin(), range.end(), range.flow());
-    it++;
+  // Inserting a taint into itself would read from the vector while it is
+  // being resized, so work from a copy.
+  if (&taint == this) {
+    SafeStringTaint copy(taint);
+    insert(index, copy);
+    return;
   }
 
-  for (auto& range : taint) {
-    ranges->emplace_back(range.begin() + index, range.end() + index,
-                         range.flow());
+  const auto& inserted = *taint.ranges_;
+
+  if (!ranges_) {
+    MOZ_COUNT_CTOR(StringTaint);
+    ranges_ = new std::vector<TaintRange>();
   }
 
-  while (it != end()) {
-    auto& range = *it;
-    ranges->emplace_back(range.begin(), range.end(), range.flow());
-    it++;
+  auto& ranges = *ranges_;
+
+  size_t pos = 0;
+  while (pos < ranges.size() && ranges[pos].begin() < index) {
+    MOZ_ASSERT(ranges[pos].end() <= index);
+    pos++;
   }
 
-  assign(ranges);
+  ranges.insert(ranges.begin() + pos, inserted.size(), TaintRange());
+  for (const auto& range : inserted) {
+    ranges[pos++] =
+        TaintRange(range.begin() + index, range.end() + index, range.flow());
+  }
+
+  CHECK_RANGES(ranges_);
 }
 
 const TaintFlow* StringTaint::at(uint32_t index) const {
-  auto rangeItr = std::lower_bound(begin(), end(), index);
-  if (rangeItr != end()) {
+  if (!ranges_) {
+    return nullptr;
+  }
+  auto rangeItr = std::lower_bound(ranges_->begin(), ranges_->end(), index);
+  if (rangeItr != ranges_->end()) {
     if (rangeItr->contains(index)) {
       return &rangeItr->flow();
     }
@@ -689,11 +750,8 @@ const TaintFlow* StringTaint::at(uint32_t index) const {
 }
 
 const TaintFlow& StringTaint::atRef(uint32_t index) const {
-  auto rangeItr = std::lower_bound(begin(), end(), index);
-  if (rangeItr != end()) {
-    if (rangeItr->contains(index)) {
-      return rangeItr->flow();
-    }
+  if (const TaintFlow* flow = at(index)) {
+    return *flow;
   }
   return TaintFlow::getEmptyTaintFlow();
 }
@@ -704,7 +762,11 @@ void StringTaint::set(uint32_t index, const TaintFlow& flow) {
     append(TaintRange(index, index + 1, flow));
   } else {
     clearAt(index);
-    insert(index, StringTaint(TaintRange(index, index + 1, flow)));
+    // insert() offsets the given ranges by |index|, so the range has to start
+    // at zero. SafeStringTaint so the temporary releases its range vector;
+    // a plain StringTaint has a trivial destructor and would leak it.
+    SafeStringTaint single(TaintRange(0, 1, flow));
+    insert(index, single);
   }
   CHECK_RANGES(ranges_);
 }
@@ -722,7 +784,10 @@ StringTaint& StringTaint::subtaint(uint32_t index) {
 }
 
 StringTaint& StringTaint::extend(const TaintOperation& operation) {
-  for (auto& range : *this) {
+  if (!ranges_) {
+    return *this;
+  }
+  for (auto& range : *ranges_) {
     range.flow().extend(operation);
   }
 
@@ -730,11 +795,7 @@ StringTaint& StringTaint::extend(const TaintOperation& operation) {
 }
 
 StringTaint& StringTaint::extend(TaintOperation&& operation) {
-  for (auto& range : *this) {
-    range.flow().extend(operation);
-  }
-
-  return *this;
+  return extend(static_cast<const TaintOperation&>(operation));
 }
 
 StringTaint& StringTaint::overlay(uint32_t begin, uint32_t end,
@@ -766,6 +827,7 @@ StringTaint& StringTaint::overlay(uint32_t begin, uint32_t end,
 
   MOZ_COUNT_CTOR(StringTaint);
   auto* ranges = new std::vector<TaintRange>();
+  ranges->reserve(ranges_->size() * 2 + 2);
 
   auto current = this->begin();
   auto next = this->begin();
@@ -798,7 +860,7 @@ StringTaint& StringTaint::overlay(uint32_t begin, uint32_t end,
       }
       // Non-overlap at the end of the range
       if (end < current->end()) {
-        ranges->emplace_back(current->end(), end, current->flow());
+        ranges->emplace_back(end, current->end(), current->flow());
       }
     }
 
@@ -849,7 +911,7 @@ StringTaint& StringTaint::append(TaintRange range) {
     }
   }
 
-  ranges_->push_back(range);
+  ranges_->push_back(std::move(range));
   CHECK_RANGES(ranges_);
   return *this;
 }
@@ -858,7 +920,12 @@ void StringTaint::concat(const StringTaint& other, uint32_t offset) {
   MOZ_ASSERT_IF(ranges_ && ranges_->size() > 0,
                 ranges_->back().end() <= offset);
 
-  for (auto& range : other) {
+  if (!other.ranges_) {
+    return;
+  }
+  // No reserve() here: append() merges adjacent ranges sharing a flow, so
+  // growing to an exact size on each call would defeat geometric growth.
+  for (const auto& range : *other.ranges_) {
     append(
         TaintRange(range.begin() + offset, range.end() + offset, range.flow()));
   }
@@ -909,9 +976,12 @@ void StringTaint::assign(std::vector<TaintRange>* ranges) {
     ranges_ = ranges;
   } else {
     ranges_ = nullptr;
-    // XXX is this really correct?
-    MOZ_COUNT_DTOR(StringTaint);
-    delete ranges;
+    // Only count a destruction if a vector was actually allocated, otherwise
+    // the ctor/dtor counts get out of balance for a null argument.
+    if (ranges) {
+      MOZ_COUNT_DTOR(StringTaint);
+      delete ranges;
+    }
   }
   CHECK_RANGES(ranges_);
 }

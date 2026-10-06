@@ -155,7 +155,7 @@ def convert_zst_archive(zst_archive, tmpdir):
     from mozpack.files import File
     from mozpack.mozjar import Deflater, JarWriter
 
-    def iter_files_from_tar(reader):
+    def iter_files_from_tar(reader, desc="reader"):
         ctx = zstandard.ZstdDecompressor()
         uncompressed = ctx.stream_reader(reader)
         with tarfile.open(mode="r|", fileobj=uncompressed, bufsize=1024 * 1024) as tar:
@@ -163,10 +163,17 @@ def convert_zst_archive(zst_archive, tmpdir):
                 info = tar.next()
                 if info is None:
                     break
-                data = tar.extractfile(info).read()
-                yield (info.name, data)
+                file = tar.extractfile(info)
+                if file:
+                    data = file.read()
+                    yield (info.name, data)
+                else:
+                    log.warning(
+                        "Tarball entry from %s is not a file: `%s`", desc, info.name
+                    )
 
     def prepare_from(archive, tmpdir):
+        reader_desc = None
         if archive.startswith("http"):
             resp = requests.get(archive, allow_redirects=True, stream=True)
             resp.raise_for_status()
@@ -174,8 +181,10 @@ def convert_zst_archive(zst_archive, tmpdir):
             # Work around taskcluster generic-worker possibly gzipping the tar.zst.
             if resp.headers.get("Content-Encoding") == "gzip":
                 reader = gzip.GzipFile(fileobj=reader)
+            reader_desc = f"stream `{archive}`"
         else:
             reader = open(archive, "rb")
+            reader_desc = f"file `{archive}`"
 
         def handle_file(data):
             """
@@ -228,7 +237,9 @@ def convert_zst_archive(zst_archive, tmpdir):
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=os.cpu_count()
         ) as executor:
-            yield from executor.map(handle_file, iter_files_from_tar(reader))
+            yield from executor.map(
+                handle_file, iter_files_from_tar(reader, desc=reader_desc)
+            )
 
         reader.close()
 
@@ -303,7 +314,9 @@ def upload_symbols(zip_path):
 
     log.info(f'Uploading symbol file "{zip_path}" to "{url}"')
 
-    for i, _ in enumerate(redo.retrier(attempts=MAX_RETRIES), start=1):
+    for i, _ in enumerate(
+        redo.retrier(attempts=MAX_RETRIES, sleeptime=60, sleepscale=1), start=1
+    ):
         log.info("Attempt %d of %d..." % (i, MAX_RETRIES))
         try:
             if zip_path.startswith("http"):
@@ -315,9 +328,8 @@ def upload_symbols(zip_path):
                 headers={"Auth-Token": auth_token},
                 allow_redirects=False,
                 # Allow a longer read timeout because uploading by URL means the server
-                # has to fetch the entire zip file, which can take a while. The load balancer
-                # in front of symbols.mozilla.org has a 300 second timeout, so we'll use that.
-                timeout=(300, 300),
+                # has to fetch the entire zip file, which can take a while.
+                timeout=(300, 600),
                 **zip_arg,
             )
             # 408, 429 or any 5XX is likely to be a transient failure.

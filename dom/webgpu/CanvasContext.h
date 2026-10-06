@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,12 +5,12 @@
 #ifndef GPU_CanvasContext_H_
 #define GPU_CanvasContext_H_
 
-#include "nsICanvasRenderingContextInternal.h"
-#include "nsWrapperCache.h"
 #include "ObjectModel.h"
 #include "mozilla/layers/LayersTypes.h"
-#include "mozilla/webrender/WebRenderAPI.h"
 #include "mozilla/webgpu/WebGPUTypes.h"
+#include "mozilla/webrender/WebRenderAPI.h"
+#include "nsICanvasRenderingContextInternal.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 namespace dom {
@@ -28,7 +27,6 @@ class CanvasContext final : public nsICanvasRenderingContextInternal,
                             public nsWrapperCache {
  private:
   virtual ~CanvasContext();
-  void Cleanup();
 
  public:
   // nsISupports interface + CC
@@ -56,10 +54,12 @@ class CanvasContext final : public nsICanvasRenderingContextInternal,
   bool InitializeCanvasRenderer(nsDisplayListBuilder* aBuilder,
                                 layers::CanvasRenderer* aRenderer) override;
   mozilla::UniquePtr<uint8_t[]> GetImageBuffer(
+      mozilla::CanvasUtils::ImageExtraction aExtractionBehavior,
       int32_t* out_format, gfx::IntSize* out_imageSize) override;
-  NS_IMETHOD GetInputStream(const char* aMimeType,
-                            const nsAString& aEncoderOptions,
-                            nsIInputStream** aStream) override;
+  NS_IMETHOD GetInputStream(
+      const char* aMimeType, const nsAString& aEncoderOptions,
+      mozilla::CanvasUtils::ImageExtraction aExtractionBehavior,
+      const nsACString& aRandomizationKey, nsIInputStream** aStream) override;
   already_AddRefed<gfx::SourceSurface> GetSurfaceSnapshot(
       gfxAlphaType* aOutAlphaType) override;
 
@@ -106,13 +106,12 @@ class CanvasContext final : public nsICanvasRenderingContextInternal,
   bool mPendingSwapChainPresent = false;
   bool mWaitingCanvasRendererInitialized = false;
 
-  RefPtr<WebGPUChild> mBridge;
+  RefPtr<WebGPUChild> mChild;
   RefPtr<Texture> mCurrentTexture;
   gfx::SurfaceFormat mGfxFormat = gfx::SurfaceFormat::R8G8B8A8;
 
   Maybe<layers::RemoteTextureId> mLastRemoteTextureId;
   Maybe<layers::RemoteTextureOwnerId> mRemoteTextureOwnerId;
-  nsTArray<RawId> mBufferIds;
   RefPtr<layers::FwdTransactionTracker> mFwdTransactionTracker;
   bool mUseSharedTextureInSwapChain = false;
   bool mNewTextureRequested = false;

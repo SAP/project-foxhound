@@ -1,0 +1,19 @@
+{
+  "item": {
+    "xsmall": {
+      "value": "12px"
+    },
+    "small": {
+      "value": "16px"
+    },
+    "medium": {
+      "value": "24px"
+    },
+    "large": {
+      "value": "32px"
+    },
+    "xlarge": {
+      "value": "48px"
+    }
+  }
+}

@@ -153,7 +153,7 @@ export function truncate(strings, ...values) {
         return obj.map(walk);
 
       // arbitrary object
-      default:
+      default: {
         if (
           Object.getOwnPropertyNames(obj).includes("toString") &&
           typeof obj.toString == "function"
@@ -166,6 +166,7 @@ export function truncate(strings, ...values) {
           rv[prop] = walk(obj[prop]);
         }
         return rv;
+      }
     }
   }
 

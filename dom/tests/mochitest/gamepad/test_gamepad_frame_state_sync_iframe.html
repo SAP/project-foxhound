@@ -32,23 +32,30 @@ async function startTest() {
   await gamepad_loaded();
 }
 var f1, f2;
+var buttonUpPromise1, buttonUpPromise2;
 async function gamepad_loaded() {
   f1 = document.getElementById('f1');
   f2 = document.getElementById('f2');
   let w1 = f1.contentWindow;
   let w2 = f2.contentWindow;
-  w1.addEventListener("gamepadbuttonup", () => {
-                       ok(!f1.contentWindow.gamepad.buttons[0].pressed,
-                          "frame 1 no button pressed");
-                       ok(!f1.contentWindow.gamepad.buttons[0].touched,
-                          "frame 1 no button touched");
-                      });
-  w2.addEventListener("gamepadbuttonup", () => {
-                      ok(!f2.contentWindow.gamepad.buttons[0].pressed,
-                         "frame 2 no button pressed");
-                      ok(!f2.contentWindow.gamepad.buttons[0].touched,
-                         "frame 2 no button touched");
-                      })
+  buttonUpPromise1 = new Promise(resolve => {
+    w1.addEventListener("gamepadbuttonup", () => {
+      ok(!f1.contentWindow.gamepad.buttons[0].pressed,
+         "frame 1 no button pressed");
+      ok(!f1.contentWindow.gamepad.buttons[0].touched,
+         "frame 1 no button touched");
+      resolve();
+    });
+  });
+  buttonUpPromise2 = new Promise(resolve => {
+    w2.addEventListener("gamepadbuttonup", () => {
+      ok(!f2.contentWindow.gamepad.buttons[0].pressed,
+         "frame 2 no button pressed");
+      ok(!f2.contentWindow.gamepad.buttons[0].touched,
+         "frame 2 no button touched");
+      resolve();
+    });
+  });
   // Now press the button, but don't release it.
   await GamepadService.newButtonEvent(index, 0, true, true);
 }
@@ -70,14 +77,12 @@ async function check_button_pressed() {
   ok(f2.contentWindow.gamepad.buttons[0].pressed, "frame 2 sees button pressed");
   ok(f2.contentWindow.gamepad.buttons[0].touched, "frame 2 sees button touched");
 
-  // Now release the button, then hide the second frame.
+  // Now release the button and wait for both frames to process it.
   await GamepadService.newButtonEvent(index, 0, false, false);
+  await Promise.all([buttonUpPromise1, buttonUpPromise2]);
 
-  SpecialPowers.executeSoon(async function() {
-    // cleanup
-    await GamepadService.removeGamepad(index);
-    SimpleTest.finish();
-  });
+  await GamepadService.removeGamepad(index);
+  SimpleTest.finish();
 }
 
 </script>

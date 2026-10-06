@@ -14,6 +14,7 @@ task-defaults:
         max-run-time: 7200
         env:
             GRADLE_USER_HOME: "/builds/worker/checkouts/gecko/mobile/android/gradle/dotgradle-offline"
+    run-on-repo-type: [hg]
     run:
         using: mozharness
         script: "mozharness/scripts/fx_desktop_build.py"
@@ -27,6 +28,8 @@ task-defaults:
         toolchain:
             - android-ndk-linux
             - android-sdk-linux
+            - linux64-embedded-uniffi-bindgen
+            - linux64-nimbus-fml
             - linux64-jdk
             - linux64-rust-android
             - linux64-rust-size
@@ -44,13 +47,13 @@ android-aarch64-fenix/debug:
     treeherder:
         platform: fenix-android-all/opt
         symbol: fenix-debug(Br)
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
         artifacts:
             - name: public/build/fenix.apk
-              path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/outputs/apk/fenix/debug/fenix-fenix-arm64-v8a-debug.apk
+              path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/outputs/apk/debug/app-arm64-v8a-debug.apk
               type: file
     run:
         custom-build-variant-cfg: aarch64-fenix-debug

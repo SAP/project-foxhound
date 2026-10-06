@@ -1,0 +1,127 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Test InspectorUtils.getAnchorFor</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<code>InspectorUtils.getAnchorFor</code>
+
+<style>
+  #anchor {
+    anchor-name: --my-anchor, --anchor-alias;
+  }
+
+  #another-anchor {
+    anchor-name: --another-anchor;
+  }
+
+  .anchored {
+    position-anchor: --my-anchor;
+    position: absolute;
+    top: anchor(--another-anchor bottom);
+  }
+
+  #not-abs-pos {
+    position: relative;
+  }
+
+  #with-pseudo::before {
+    content: "";
+    display: block;
+    width: 10px;
+    height: 10px;
+    background: hotpink;
+    position: absolute;
+    position-anchor: auto;
+    position-area: top right;
+  }
+</style>
+
+<section>
+  <div id="anchor">⚓️</div>
+  <div id="another-anchor">⚓︎⚓︎⚓︎</div>
+  <div id="not-abs-pos" class="anchored">not abs-pos</div>
+  <div id="abs-pos" class="anchored">abs-pos</div>
+  <div id="with-pseudo">with pseudo</div>
+  <button id="popover-control" popovertarget="my-popover">show popover</button>
+  <aside id="my-popover" popover="auto">popover</aside>
+</section>
+
+<script>
+add_task(async function() {
+  const { InspectorUtils } = SpecialPowers;
+  const test = (elementId, anchorName, expectedAnchorElement, expectedType) => {
+    info(`InspectorUtils.getAnchorFor(#${elementId}, ${anchorName ?? "null"})`);
+    const el = document.getElementById(elementId);
+    const res = InspectorUtils.getAnchorFor(el, anchorName);
+    if (expectedAnchorElement === null) {
+      is(res, null, `There should be no ${anchorName ? anchorName + " " : ""}anchor for #${elementId}`)
+      return;
+    }
+
+    // We compare the ids because res.element is a Proxy, so we can't match it against
+    // an element we'd retrieve.
+    is(
+      res?.element?.id,
+      expectedAnchorElement.id,
+      `Got expected ${anchorName ? anchorName + " " : ""}anchor element for #${elementId}`
+    );
+
+    is(
+      res?.type,
+      expectedType,
+      `Got expected anchor association type for #${elementId}`
+    );
+  }
+
+  // no anchor when passing an anchor name that is not set
+  test("abs-pos", "--undefined-name", null);
+  // no anchor for element that are not absolutely positioned
+  test("not-abs-pos", null, null);
+
+  const anchorEl = document.getElementById("anchor");
+  const anotherAnchorEl = document.getElementById("another-anchor");
+  const popoverControlEl = document.getElementById("popover-control")
+  // show popover so the popover element gets an implicit anchor
+  popoverControlEl.click();
+
+  // explicitly associated anchor
+  test("abs-pos", "--my-anchor", anchorEl, "explicit");
+  test("abs-pos", "--another-anchor", anotherAnchorEl, "explicit");
+  // still getting the associated anchor without passing a name
+  test("abs-pos", null, anchorEl, "explicit");
+
+  // implicitly associated popover anchor
+  test("my-popover", null, popoverControlEl, "popover");
+  // no anchor when the popover is not displayed
+  document.getElementById("my-popover").togglePopover();
+  test("my-popover", null, null);
+
+  // implicitly associated pseudo element
+  const [beforePseudoElement] = InspectorUtils.getChildrenForNode(
+    document.getElementById("with-pseudo"),
+    true,
+    false,
+  );
+  is(
+    beforePseudoElement.implementedPseudoElement,
+    "::before",
+    "Got expected ::before pseudo element"
+  );
+  const pseudoElementRes = InspectorUtils.getAnchorFor(beforePseudoElement);
+  is(
+    pseudoElementRes?.element?.id,
+    "with-pseudo",
+    `Got expected anchor element for ::before pseudo element`
+  );
+  is(
+    pseudoElementRes?.type,
+    "pseudo-element",
+    `Got expected anchor association type for ::before pseudo element`
+  );
+});
+</script>
+</body>
+</html>

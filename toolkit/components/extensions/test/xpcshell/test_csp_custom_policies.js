@@ -1,10 +1,4 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
-
-const { Preferences } = ChromeUtils.importESModule(
-  "resource://gre/modules/Preferences.sys.mjs"
-);
 
 const ADDON_ID = "test@web.extension";
 
@@ -12,12 +6,29 @@ const aps = Cc["@mozilla.org/addons/policy-service;1"].getService(
   Ci.nsIAddonPolicyService
 );
 
-const v2_csp = Preferences.get(
+const v2_csp = Services.prefs.getStringPref(
   "extensions.webextensions.base-content-security-policy"
 );
-const v3_csp = Preferences.get(
+
+const v3_csp = Services.prefs.getStringPref(
   "extensions.webextensions.base-content-security-policy.v3"
 );
+
+const v3_with_localhost_csp = Services.prefs.getStringPref(
+  "extensions.webextensions.base-content-security-policy.v3-with-localhost"
+);
+
+function getExpectedBaseCSP(manifestVersion, temporarilyInstalled) {
+  if (manifestVersion === 2) {
+    return v2_csp;
+  }
+
+  if (temporarilyInstalled) {
+    return v3_with_localhost_csp;
+  }
+
+  return v3_csp;
+}
 
 add_task(async function test_invalid_addon_csp() {
   await Assert.throws(
@@ -35,7 +46,9 @@ add_task(async function test_invalid_addon_csp() {
 add_task(async function test_policy_csp() {
   equal(
     aps.defaultCSP,
-    Preferences.get("extensions.webextensions.default-content-security-policy"),
+    Services.prefs.getStringPref(
+      "extensions.webextensions.default-content-security-policy"
+    ),
     "Expected default CSP value"
   );
 
@@ -84,11 +97,32 @@ add_task(async function test_policy_csp() {
       },
       expectedPolicy: CUSTOM_POLICY,
     },
+    {
+      name: "manifest 3 version set (temporary install), no custom policy",
+      policyData: {
+        manifestVersion: 3,
+        temporarilyInstalled: true,
+      },
+      expectedPolicy: aps.defaultCSPV3,
+    },
+    {
+      name: "manifest 3 version set (temporary install), custom extensionPage policy",
+      policyData: {
+        manifestVersion: 3,
+        temporarilyInstalled: true,
+        extensionPageCSP: `script-src 'self' https://127.0.0.1 https://localhost`,
+      },
+      expectedPolicy: `script-src 'self' https://127.0.0.1 https://localhost`,
+    },
   ];
 
   let policy = null;
 
-  function setExtensionCSP({ manifestVersion, extensionPageCSP }) {
+  function setExtensionCSP({
+    manifestVersion,
+    extensionPageCSP,
+    temporarilyInstalled,
+  }) {
     if (policy) {
       policy.active = false;
     }
@@ -101,6 +135,7 @@ add_task(async function test_policy_csp() {
       allowedOrigins: new MatchPatternSet([]),
       localizeCallback() {},
 
+      temporarilyInstalled,
       manifestVersion,
       extensionPageCSP,
     });
@@ -111,11 +146,13 @@ add_task(async function test_policy_csp() {
   for (let test of tests) {
     info(test.name);
     setExtensionCSP(test.policyData);
-    equal(
-      aps.getBaseCSP(ADDON_ID),
-      test.policyData.manifestVersion == 3 ? v3_csp : v2_csp,
-      "baseCSP is correct"
+
+    let expectedBaseCSP = getExpectedBaseCSP(
+      test.policyData.manifestVersion ?? 2,
+      !!test.policyData.temporarilyInstalled
     );
+
+    equal(aps.getBaseCSP(ADDON_ID), expectedBaseCSP, "baseCSP is correct");
     equal(
       aps.getExtensionPageCSP(ADDON_ID),
       test.expectedPolicy,
@@ -125,8 +162,6 @@ add_task(async function test_policy_csp() {
 });
 
 add_task(async function test_extension_csp() {
-  Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
-
   ExtensionTestUtils.failOnSchemaWarnings(false);
 
   let extension_pages = "script-src 'self'; img-src 'none'";
@@ -223,6 +258,28 @@ add_task(async function test_extension_csp() {
       expectedPolicy: aps.defaultCSPV3,
     },
     {
+      name: "manifest_v3 allows localhost when temporarily installed",
+      temporarilyInstalled: true,
+      manifest: {
+        manifest_version: 3,
+        content_security_policy: {
+          extension_pages: `script-src 'self' https://127.0.0.1 https://localhost`,
+        },
+      },
+      expectedPolicy: `script-src 'self' https://127.0.0.1 https://localhost`,
+    },
+    {
+      name: "manifest_v3 allows 127.0.0.1 when temporarily installed",
+      temporarilyInstalled: true,
+      manifest: {
+        manifest_version: 3,
+        content_security_policy: {
+          extension_pages: `script-src 'self' https://127.0.0.1`,
+        },
+      },
+      expectedPolicy: `script-src 'self' https://127.0.0.1`,
+    },
+    {
       name: "manifest_v3 allows wasm-unsafe-eval",
       manifest: {
         manifest_version: 3,
@@ -281,23 +338,26 @@ add_task(async function test_extension_csp() {
     info(test.name);
     let extension = ExtensionTestUtils.loadExtension({
       manifest: test.manifest,
+      temporarilyInstalled: !!test.temporarilyInstalled,
     });
     await extension.startup();
     let policy = WebExtensionPolicy.getByID(extension.id);
-    equal(
-      policy.baseCSP,
-      test.manifest.manifest_version == 3 ? v3_csp : v2_csp,
-      "baseCSP is correct"
+
+    const expectedBaseCSP = getExpectedBaseCSP(
+      policy.manifestVersion,
+      policy.temporarilyInstalled
     );
+
+    equal(policy.baseCSP, expectedBaseCSP, "baseCSP is correct");
+
     equal(
       policy.extensionPageCSP,
       test.expectedPolicy,
       "extensionPageCSP is correct."
     );
+
     await extension.unload();
   }
 
   ExtensionTestUtils.failOnSchemaWarnings(true);
-
-  Services.prefs.clearUserPref("extensions.manifestV3.enabled");
 });

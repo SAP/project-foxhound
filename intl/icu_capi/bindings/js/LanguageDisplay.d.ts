@@ -2,17 +2,20 @@
 import type { pointer, codepoint } from "./diplomat-runtime.d.ts";
 
 
+
 /**
- * See the [Rust documentation for `LanguageDisplay`](https://docs.rs/icu/latest/icu/experimental/displaynames/options/enum.LanguageDisplay.html) for more information.
+ * 🚧 This API is experimental and may experience breaking changes outside major releases.
+ *
+ * See the [Rust documentation for `LanguageDisplay`](https://docs.rs/icu/2.1.1/icu/experimental/displaynames/enum.LanguageDisplay.html) for more information.
  */
-
-
 export class LanguageDisplay {
 
+    /** @internal */
     static fromValue(value: LanguageDisplay | string): LanguageDisplay;
 
     get value(): string;
 
+    /** @internal */
     get ffiValue(): number;
 
     static Dialect : LanguageDisplay;

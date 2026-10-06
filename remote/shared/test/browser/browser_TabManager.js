@@ -101,126 +101,27 @@ add_task(async function test_addTab_window() {
 
     const newTab1 = await TabManager.addTab({ window: win1 });
     is(
-      newTab1.ownerGlobal,
+      newTab1.documentGlobal,
       win1,
       "The new tab was opened in the specified window"
     );
 
     const newTab2 = await TabManager.addTab({ window: win2 });
     is(
-      newTab2.ownerGlobal,
+      newTab2.documentGlobal,
       win2,
       "The new tab was opened in the specified window"
     );
 
     const newTab3 = await TabManager.addTab();
     is(
-      newTab3.ownerGlobal,
+      newTab3.documentGlobal,
       win2,
       "The new tab was opened in the foreground window"
     );
   } finally {
     await BrowserTestUtils.closeWindow(win1);
     await BrowserTestUtils.closeWindow(win2);
-  }
-});
-
-add_task(async function test_getBrowsingContextById() {
-  const browser = gBrowser.selectedBrowser;
-
-  is(TabManager.getBrowsingContextById(null), null);
-  is(TabManager.getBrowsingContextById(undefined), null);
-  is(TabManager.getBrowsingContextById("wrong-id"), null);
-
-  info(`Navigate to ${TEST_URL}`);
-  await loadURL(browser, TEST_URL);
-
-  const contexts = browser.browsingContext.getAllBrowsingContextsInSubtree();
-  is(contexts.length, 2, "Top context has 1 child");
-
-  const topContextId = TabManager.getIdForBrowsingContext(contexts[0]);
-  is(TabManager.getBrowsingContextById(topContextId), contexts[0]);
-  const childContextId = TabManager.getIdForBrowsingContext(contexts[1]);
-  is(TabManager.getBrowsingContextById(childContextId), contexts[1]);
-});
-
-add_task(async function test_getDiscardedBrowsingContextById() {
-  const tab = await TabManager.addTab();
-  const browser = tab.linkedBrowser;
-  const browsingContext = browser.browsingContext;
-  const contextId = TabManager.getIdForBrowsingContext(browsingContext);
-
-  is(
-    TabManager.getBrowsingContextById(contextId),
-    browsingContext,
-    "Browsing context is accessible by its ID"
-  );
-
-  gBrowser.removeTab(tab);
-
-  is(
-    TabManager.getBrowsingContextById(contextId),
-    null,
-    "Browsing context is no longer accessible after the tab is removed"
-  );
-});
-
-add_task(async function test_getIdForBrowsingContext() {
-  const browser = gBrowser.selectedBrowser;
-
-  // Browsing context not set.
-  is(TabManager.getIdForBrowsingContext(null), null);
-  is(TabManager.getIdForBrowsingContext(undefined), null);
-
-  info(`Navigate to ${TEST_URL}`);
-  await loadURL(browser, TEST_URL);
-
-  const contexts = browser.browsingContext.getAllBrowsingContextsInSubtree();
-  is(contexts.length, 2, "Top context has 1 child");
-
-  is(
-    TabManager.getIdForBrowsingContext(contexts[0]),
-    TabManager.getIdForBrowser(browser),
-    "Got expected id for top-level browsing context"
-  );
-  is(
-    TabManager.getIdForBrowsingContext(contexts[1]),
-    contexts[1].id.toString(),
-    "Got expected id for child browsing context"
-  );
-});
-
-add_task(async function test_getNavigableForBrowsingContext() {
-  const browser = gBrowser.selectedBrowser;
-
-  info(`Navigate to ${TEST_URL}`);
-  await loadURL(browser, TEST_URL);
-
-  const contexts = browser.browsingContext.getAllBrowsingContextsInSubtree();
-  is(contexts.length, 2, "Top context has 1 child");
-
-  // For a top-level browsing context the content browser is returned.
-  const topContext = contexts[0];
-  is(
-    TabManager.getNavigableForBrowsingContext(topContext),
-    browser,
-    "Top-Level browsing context has the content browser as navigable"
-  );
-
-  // For child browsing contexts the browsing context itself is returned.
-  const childContext = contexts[1];
-  is(
-    TabManager.getNavigableForBrowsingContext(childContext),
-    childContext,
-    "Child browsing context has itself as navigable"
-  );
-
-  const invalidValues = [undefined, null, 1, "test", {}, []];
-  for (const invalidValue of invalidValues) {
-    Assert.throws(
-      () => TabManager.getNavigableForBrowsingContext(invalidValue),
-      /Expected browsingContext to be a CanonicalBrowsingContext/
-    );
   }
 });
 
@@ -338,9 +239,9 @@ add_task(async function test_tabs() {
   const expectedTabs = [...gBrowser.tabs, ...win1.gBrowser.tabs];
 
   try {
-    is(TabManager.tabs.length, 3, "Got expected amount of open tabs");
+    is(TabManager.allTabs.length, 3, "Got expected amount of open tabs");
     ok(
-      expectedTabs.every(tab => TabManager.tabs.includes(tab)),
+      expectedTabs.every(tab => TabManager.allTabs.includes(tab)),
       "Expected tabs were returned"
     );
   } finally {

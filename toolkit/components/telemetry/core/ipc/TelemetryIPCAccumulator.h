@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef TelemetryIPCAccumulator_h__
-#define TelemetryIPCAccumulator_h__
+#ifndef TelemetryIPCAccumulator_h_
+#define TelemetryIPCAccumulator_h_
 
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Maybe.h"
@@ -48,9 +47,9 @@ void IPCTimerFired(nsITimer* aTimer, void* aClosure);
 
 void DeInitializeGlobalState();
 
-void DispatchToMainThread(already_AddRefed<nsIRunnable>&& aEvent);
+void DispatchToMainThread(already_AddRefed<nsIRunnable> aEvent);
 
 }  // namespace TelemetryIPCAccumulator
 }  // namespace mozilla
 
-#endif  // TelemetryIPCAccumulator_h__
+#endif  // TelemetryIPCAccumulator_h_

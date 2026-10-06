@@ -35,6 +35,8 @@ pub enum ExpressionError {
     InvalidSwizzleComponent(crate::SwizzleComponent, crate::VectorSize),
     #[error(transparent)]
     Compose(#[from] super::ComposeError),
+    #[error("Cannot construct zero value of {0:?} because it is not a constructible type")]
+    InvalidZeroValue(Handle<crate::Type>),
     #[error(transparent)]
     IndexableLength(#[from] IndexableLengthError),
     #[error("Operation {0:?} can't work with {1:?}")]
@@ -87,8 +89,14 @@ pub enum ExpressionError {
     InvalidDerivative,
     #[error("Image array index parameter is misplaced")]
     InvalidImageArrayIndex,
-    #[error("Inappropriate sample or level-of-detail index for texel access")]
-    InvalidImageOtherIndex,
+    #[error("Cannot textureLoad from a specific multisample sample on a non-multisampled image.")]
+    InvalidImageSampleSelector,
+    #[error("Cannot textureLoad from a multisampled image without specifying a sample.")]
+    MissingImageSampleSelector,
+    #[error("Cannot textureLoad with a specific mip level on a non-mipmapped image.")]
+    InvalidImageLevelSelector,
+    #[error("Cannot textureLoad from a mipmapped image without specifying a level.")]
+    MissingImageLevelSelector,
     #[error("Image array index type of {0:?} is not an integer scalar")]
     InvalidImageArrayIndexType(Handle<crate::Expression>),
     #[error("Image sample or level-of-detail index's type of {0:?} is not an integer scalar")]
@@ -141,6 +149,15 @@ pub enum ExpressionError {
     Literal(#[from] LiteralError),
     #[error("{0:?} is not supported for Width {2} {1:?} arguments yet, see https://github.com/gfx-rs/wgpu/issues/5276")]
     UnsupportedWidth(crate::MathFunction, crate::ScalarKind, crate::Bytes),
+    #[error("Invalid operand for cooperative op")]
+    InvalidCooperativeOperand(Handle<crate::Expression>),
+    #[error("Shift amount exceeds the bit width of {lhs_type:?}")]
+    ShiftAmountTooLarge {
+        lhs_type: crate::TypeInner,
+        rhs_expr: Handle<crate::Expression>,
+    },
+    #[error("Division by zero")]
+    DivideByZero,
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -236,6 +253,128 @@ impl super::Validator {
         Ok(())
     }
 
+    /// Return an error if a constant shift amount in `right` exceeds the bit
+    /// width of `left_ty`.
+    ///
+    /// This function promises to return an error in cases where (1) the
+    /// expression is well-typed, (2) `left_ty` is a concrete integer, and
+    /// (3) the shift will overflow. It does not return an error in cases where
+    /// the expression is not well-typed (e.g. vector dimension mismatch),
+    /// because those will be rejected elsewhere.
+    fn validate_constant_shift_amounts(
+        left_ty: &crate::TypeInner,
+        right: Handle<crate::Expression>,
+        module: &crate::Module,
+        function: &crate::Function,
+    ) -> Result<(), ExpressionError> {
+        fn is_overflowing_shift(
+            left_ty: &crate::TypeInner,
+            right: Handle<crate::Expression>,
+            module: &crate::Module,
+            function: &crate::Function,
+        ) -> bool {
+            let Some((vec_size, scalar)) = left_ty.vector_size_and_scalar() else {
+                return false;
+            };
+            if !matches!(
+                scalar.kind,
+                crate::ScalarKind::Sint | crate::ScalarKind::Uint
+            ) {
+                return false;
+            }
+            let lhs_bits = u32::from(8 * scalar.width);
+            if vec_size.is_none() {
+                let shift_amount = module
+                    .to_ctx()
+                    .get_const_val_from::<u32, _>(right, &function.expressions);
+                shift_amount.ok().is_some_and(|s| s >= lhs_bits)
+            } else {
+                match function.expressions[right] {
+                    crate::Expression::ZeroValue(_) => false, // zero shift does not overflow
+                    crate::Expression::Splat { value, .. } => module
+                        .to_ctx()
+                        .get_const_val_from::<u32, _>(value, &function.expressions)
+                        .ok()
+                        .is_some_and(|s| s >= lhs_bits),
+                    crate::Expression::Compose {
+                        ty: _,
+                        ref components,
+                    } => components.iter().any(|comp| {
+                        module
+                            .to_ctx()
+                            .get_const_val_from::<u32, _>(*comp, &function.expressions)
+                            .ok()
+                            .is_some_and(|s| s >= lhs_bits)
+                    }),
+                    _ => false,
+                }
+            }
+        }
+
+        if is_overflowing_shift(left_ty, right, module, function) {
+            Err(ExpressionError::ShiftAmountTooLarge {
+                lhs_type: left_ty.clone(),
+                rhs_expr: right,
+            })
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Return an error if a constant divisor in `right` evaluates to zero for
+    /// an integer division or remainder operation.
+    ///
+    /// This function promises to return an error in cases where (1) the
+    /// expression is well-typed, (2) `left_ty` is a concrete integer or a
+    /// vector, and (3) `right` is a const-expression that evaluates to zero.
+    /// It does not return an error in cases where the expression is not
+    /// well-typed (e.g. vector dimension mismatch), because those will be
+    /// rejected elsewhere.
+    fn validate_constant_divisor(
+        left_ty: &crate::TypeInner,
+        right: Handle<crate::Expression>,
+        module: &crate::Module,
+        function: &crate::Function,
+    ) -> Result<(), ExpressionError> {
+        fn contains_zero(
+            handle: Handle<crate::Expression>,
+            expressions: &crate::Arena<crate::Expression>,
+            module: &crate::Module,
+        ) -> bool {
+            match expressions[handle] {
+                crate::Expression::Literal(_) | crate::Expression::ZeroValue(_) => module
+                    .to_ctx()
+                    .get_const_val_from::<u32, _>(handle, expressions)
+                    .ok()
+                    .is_some_and(|v| v == 0),
+                crate::Expression::Splat { value, .. } => contains_zero(value, expressions, module),
+                crate::Expression::Compose { ref components, .. } => components
+                    .iter()
+                    .any(|&comp| contains_zero(comp, expressions, module)),
+                crate::Expression::Constant(c) => {
+                    contains_zero(module.constants[c].init, &module.global_expressions, module)
+                }
+                _ => false,
+            }
+        }
+
+        let Some((_, scalar)) = left_ty.vector_size_and_scalar() else {
+            return Ok(());
+        };
+        if !matches!(
+            scalar.kind,
+            crate::ScalarKind::Sint | crate::ScalarKind::Uint
+        ) {
+            return Ok(());
+        }
+
+        if contains_zero(right, &function.expressions, module) {
+            Err(ExpressionError::DivideByZero)
+        } else {
+            Ok(())
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn validate_expression(
         &self,
@@ -266,7 +405,7 @@ impl super::Validator {
                     | Ti::ValuePointer { size: Some(_), .. }
                     | Ti::BindingArray { .. } => {}
                     ref other => {
-                        log::error!("Indexing of {:?}", other);
+                        log::debug!("Indexing of {other:?}");
                         return Err(ExpressionError::InvalidBaseType(base));
                     }
                 };
@@ -277,7 +416,7 @@ impl super::Validator {
                         ..
                     }) => {}
                     ref other => {
-                        log::error!("Indexing by {:?}", other);
+                        log::debug!("Indexing by {other:?}");
                         return Err(ExpressionError::InvalidIndexType(index));
                     }
                 }
@@ -285,7 +424,7 @@ impl super::Validator {
                 // If index is const we can do check for non-negative index
                 match module
                     .to_ctx()
-                    .eval_expr_to_u32_from(index, &function.expressions)
+                    .get_const_val_from(index, &function.expressions)
                 {
                     Ok(value) => {
                         let length = if self.overrides_resolved {
@@ -301,10 +440,13 @@ impl super::Validator {
                             }
                         }
                     }
-                    Err(crate::proc::U32EvalError::Negative) => {
+                    Err(crate::proc::ConstValueError::Negative) => {
                         return Err(ExpressionError::NegativeIndex(base))
                     }
-                    Err(crate::proc::U32EvalError::NonConst) => {}
+                    Err(crate::proc::ConstValueError::NonConst) => {}
+                    Err(crate::proc::ConstValueError::InvalidType) => {
+                        return Err(ExpressionError::InvalidIndexType(index))
+                    }
                 }
 
                 ShaderStages::all()
@@ -332,7 +474,7 @@ impl super::Validator {
                         }
                         Ti::Struct { ref members, .. } => members.len() as u32,
                         ref other => {
-                            log::error!("Indexing of {:?}", other);
+                            log::debug!("Indexing of {other:?}");
                             return Err(ExpressionError::InvalidBaseType(top));
                         }
                     };
@@ -341,14 +483,14 @@ impl super::Validator {
 
                 let limit = resolve_index_limit(module, base, &resolver[base], true)?;
                 if index >= limit {
-                    return Err(ExpressionError::IndexOutOfBounds(base, limit));
+                    return Err(ExpressionError::IndexOutOfBounds(base, index));
                 }
                 ShaderStages::all()
             }
             E::Splat { size: _, value } => match resolver[value] {
                 Ti::Scalar { .. } => ShaderStages::all(),
                 ref other => {
-                    log::error!("Splat scalar type {:?}", other);
+                    log::debug!("Splat scalar type {other:?}");
                     return Err(ExpressionError::InvalidSplatType(value));
                 }
             },
@@ -360,7 +502,7 @@ impl super::Validator {
                 let vec_size = match resolver[vector] {
                     Ti::Vector { size: vec_size, .. } => vec_size,
                     ref other => {
-                        log::error!("Swizzle vector type {:?}", other);
+                        log::debug!("Swizzle vector type {other:?}");
                         return Err(ExpressionError::InvalidVectorType(vector));
                     }
                 };
@@ -375,7 +517,13 @@ impl super::Validator {
                 self.validate_literal(literal)?;
                 ShaderStages::all()
             }
-            E::Constant(_) | E::Override(_) | E::ZeroValue(_) => ShaderStages::all(),
+            E::Constant(_) | E::Override(_) => ShaderStages::all(),
+            E::ZeroValue(ty) => {
+                if !mod_info[ty].contains(TypeFlags::CONSTRUCTIBLE) {
+                    return Err(ExpressionError::InvalidZeroValue(ty));
+                }
+                ShaderStages::all()
+            }
             E::Compose { ref components, ty } => {
                 validate_compose(
                     ty,
@@ -400,7 +548,7 @@ impl super::Validator {
                             .contains(TypeFlags::SIZED | TypeFlags::DATA) => {}
                     Ti::ValuePointer { .. } => {}
                     ref other => {
-                        log::error!("Loading {:?}", other);
+                        log::debug!("Loading {other:?}");
                         return Err(ExpressionError::InvalidPointerType(pointer));
                     }
                 }
@@ -460,6 +608,7 @@ impl super::Validator {
                         kind: crate::ScalarKind::Uint | crate::ScalarKind::Sint,
                         multi: false,
                     } if gather.is_some() => false,
+                    crate::ImageClass::External => false,
                     crate::ImageClass::Depth { multi: false } => true,
                     _ => return Err(ExpressionError::InvalidImageClass(class)),
                 };
@@ -551,7 +700,7 @@ impl super::Validator {
                         crate::ImageClass::Sampled {
                             kind: crate::ScalarKind::Float,
                             multi: false
-                        }
+                        } | crate::ImageClass::External
                     ) {
                         return Err(ExpressionError::InvalidSampleClampCoordinateToEdge(
                             alloc::format!("image class `{class:?}`"),
@@ -587,6 +736,11 @@ impl super::Validator {
                             "depth comparison".into(),
                         ));
                     }
+                }
+
+                // External textures can only be sampled using clamp_to_edge.
+                if matches!(class, crate::ImageClass::External) && !clamp_to_edge {
+                    return Err(ExpressionError::InvalidImageClass(class));
                 }
 
                 // check level properties
@@ -709,8 +863,11 @@ impl super::Validator {
                             return Err(ExpressionError::InvalidImageOtherIndexType(sample));
                         }
                     }
-                    _ => {
-                        return Err(ExpressionError::InvalidImageOtherIndex);
+                    (Some(_), false) => {
+                        return Err(ExpressionError::InvalidImageSampleSelector);
+                    }
+                    (None, true) => {
+                        return Err(ExpressionError::MissingImageSampleSelector);
                     }
                 }
 
@@ -723,8 +880,11 @@ impl super::Validator {
                         }) => {}
                         _ => return Err(ExpressionError::InvalidImageArrayIndexType(level)),
                     },
-                    _ => {
-                        return Err(ExpressionError::InvalidImageOtherIndex);
+                    (Some(_), false) => {
+                        return Err(ExpressionError::InvalidImageLevelSelector);
+                    }
+                    (None, true) => {
+                        return Err(ExpressionError::MissingImageLevelSelector);
                     }
                 }
                 ShaderStages::all()
@@ -760,15 +920,14 @@ impl super::Validator {
             }
             E::Unary { op, expr } => {
                 use crate::UnaryOperator as Uo;
-                let inner = &resolver[expr];
-                match (op, inner.scalar_kind()) {
-                    (Uo::Negate, Some(Sk::Float | Sk::Sint))
-                    | (Uo::LogicalNot, Some(Sk::Bool))
-                    | (Uo::BitwiseNot, Some(Sk::Sint | Sk::Uint)) => {}
-                    other => {
-                        log::error!("Op {:?} kind {:?}", op, other);
-                        return Err(ExpressionError::InvalidUnaryOperandType(op, expr));
-                    }
+                let Some((_, scalar)) = resolver[expr].vector_size_and_scalar() else {
+                    return Err(ExpressionError::InvalidUnaryOperandType(op, expr));
+                };
+                match (op, scalar.kind) {
+                    (Uo::Negate, Sk::Float | Sk::Sint) => {}
+                    (Uo::LogicalNot, Sk::Bool) => {}
+                    (Uo::BitwiseNot, Sk::Sint | Sk::Uint) => {}
+                    _ => return Err(ExpressionError::InvalidUnaryOperandType(op, expr)),
                 }
                 ShaderStages::all()
             }
@@ -782,7 +941,9 @@ impl super::Validator {
                             Sk::Uint | Sk::Sint | Sk::Float => left_inner == right_inner,
                             Sk::Bool | Sk::AbstractInt | Sk::AbstractFloat => false,
                         },
-                        Ti::Matrix { .. } => left_inner == right_inner,
+                        Ti::Matrix { .. } | Ti::CooperativeMatrix { .. } => {
+                            left_inner == right_inner
+                        }
                         _ => false,
                     },
                     Bo::Divide | Bo::Modulo => match *left_inner {
@@ -812,7 +973,7 @@ impl super::Validator {
                                     scalar: scalar2, ..
                                 },
                             ) => scalar1 == scalar2,
-                            // Scalar/matrix.
+                            // Scalar * matrix.
                             (
                                 &Ti::Scalar(Sc {
                                     kind: Sk::Float, ..
@@ -825,7 +986,7 @@ impl super::Validator {
                                     kind: Sk::Float, ..
                                 }),
                             ) => true,
-                            // Vector/vector.
+                            // Vector * vector.
                             (
                                 &Ti::Vector {
                                     size: size1,
@@ -858,8 +1019,14 @@ impl super::Validator {
                                 },
                                 &Ti::Matrix { rows, .. },
                             ) => size == rows,
+                            // Matrix * matrix.
                             (&Ti::Matrix { columns, .. }, &Ti::Matrix { rows, .. }) => {
                                 columns == rows
+                            }
+                            // Scalar * coop matrix.
+                            (&Ti::Scalar(s1), &Ti::CooperativeMatrix { scalar: s2, .. })
+                            | (&Ti::CooperativeMatrix { scalar: s1, .. }, &Ti::Scalar(s2)) => {
+                                s1 == s2
                             }
                             _ => false,
                         };
@@ -875,7 +1042,7 @@ impl super::Validator {
                                 Sk::Bool | Sk::AbstractInt | Sk::AbstractFloat => false,
                             },
                             ref other => {
-                                log::error!("Op {:?} left type {:?}", op, other);
+                                log::debug!("Op {op:?} left type {other:?}");
                                 false
                             }
                         }
@@ -887,7 +1054,7 @@ impl super::Validator {
                             ..
                         } => left_inner == right_inner,
                         ref other => {
-                            log::error!("Op {:?} left type {:?}", op, other);
+                            log::debug!("Op {op:?} left type {other:?}");
                             false
                         }
                     },
@@ -897,7 +1064,7 @@ impl super::Validator {
                             Sk::Float | Sk::AbstractInt | Sk::AbstractFloat => false,
                         },
                         ref other => {
-                            log::error!("Op {:?} left type {:?}", op, other);
+                            log::debug!("Op {op:?} left type {other:?}");
                             false
                         }
                     },
@@ -907,7 +1074,7 @@ impl super::Validator {
                             Sk::Bool | Sk::Float | Sk::AbstractInt | Sk::AbstractFloat => false,
                         },
                         ref other => {
-                            log::error!("Op {:?} left type {:?}", op, other);
+                            log::debug!("Op {op:?} left type {other:?}");
                             false
                         }
                     },
@@ -916,7 +1083,7 @@ impl super::Validator {
                             Ti::Scalar(scalar) => (Ok(None), scalar),
                             Ti::Vector { size, scalar } => (Ok(Some(size)), scalar),
                             ref other => {
-                                log::error!("Op {:?} base type {:?}", op, other);
+                                log::debug!("Op {op:?} base type {other:?}");
                                 (Err(()), Sc::BOOL)
                             }
                         };
@@ -927,7 +1094,7 @@ impl super::Validator {
                                 scalar: Sc { kind: Sk::Uint, .. },
                             } => Ok(Some(size)),
                             ref other => {
-                                log::error!("Op {:?} shift type {:?}", op, other);
+                                log::debug!("Op {op:?} shift type {other:?}");
                                 Err(())
                             }
                         };
@@ -938,12 +1105,12 @@ impl super::Validator {
                     }
                 };
                 if !good {
-                    log::error!(
+                    log::debug!(
                         "Left: {:?} of type {:?}",
                         function.expressions[left],
                         left_inner
                     );
-                    log::error!(
+                    log::debug!(
                         "Right: {:?} of type {:?}",
                         function.expressions[right],
                         right_inner
@@ -955,6 +1122,14 @@ impl super::Validator {
                         rhs_expr: right,
                         rhs_type: right_inner.clone(),
                     });
+                }
+                // For shift operations, check if the constant shift amount exceeds the bit width
+                if matches!(op, Bo::ShiftLeft | Bo::ShiftRight) {
+                    Self::validate_constant_shift_amounts(left_inner, right, module, function)?;
+                }
+                // For integer division or remainder, check if the constant divisor is zero
+                if matches!(op, Bo::Divide | Bo::Modulo) {
+                    Self::validate_constant_divisor(left_inner, right, module, function)?;
                 }
                 ShaderStages::all()
             }
@@ -1007,18 +1182,13 @@ impl super::Validator {
                 ShaderStages::all()
             }
             E::Derivative { expr, .. } => {
-                match resolver[expr] {
-                    Ti::Scalar(Sc {
-                        kind: Sk::Float, ..
-                    })
-                    | Ti::Vector {
-                        scalar:
-                            Sc {
-                                kind: Sk::Float, ..
-                            },
-                        ..
-                    } => {}
-                    _ => return Err(ExpressionError::InvalidDerivative),
+                let Some((_, scalar)) = resolver[expr].vector_size_and_scalar() else {
+                    return Err(ExpressionError::InvalidDerivative);
+                };
+                if scalar.kind != Sk::Float || scalar.width < 4 {
+                    // Derivatives are not supported for `f16`, although support may be added
+                    // in the future, see https://github.com/gpuweb/gpuweb/issues/5482.
+                    return Err(ExpressionError::InvalidDerivative);
                 }
                 ShaderStages::FRAGMENT
             }
@@ -1032,7 +1202,7 @@ impl super::Validator {
                             ..
                         } => {}
                         ref other => {
-                            log::error!("All/Any of type {:?}", other);
+                            log::debug!("All/Any of type {other:?}");
                             return Err(ExpressionError::InvalidBooleanVector(argument));
                         }
                     },
@@ -1040,7 +1210,7 @@ impl super::Validator {
                         Ti::Scalar(scalar) | Ti::Vector { scalar, .. }
                             if scalar.kind == Sk::Float => {}
                         ref other => {
-                            log::error!("Float test of type {:?}", other);
+                            log::debug!("Float test of type {other:?}");
                             return Err(ExpressionError::InvalidFloatArgument(argument));
                         }
                     },
@@ -1054,6 +1224,20 @@ impl super::Validator {
                 arg2,
                 arg3,
             } => {
+                if matches!(
+                    fun,
+                    crate::MathFunction::QuantizeToF16
+                        | crate::MathFunction::Pack2x16float
+                        | crate::MathFunction::Unpack2x16float
+                ) && !self
+                    .capabilities
+                    .contains(crate::valid::Capabilities::SHADER_FLOAT16_IN_FLOAT32)
+                {
+                    return Err(ExpressionError::MissingCapabilities(
+                        crate::valid::Capabilities::SHADER_FLOAT16_IN_FLOAT32,
+                    ));
+                }
+
                 let actuals: &[_] = match (arg1, arg2, arg3) {
                     (None, None, None) => &[arg],
                     (Some(arg1), None, None) => &[arg, arg1],
@@ -1145,7 +1329,7 @@ impl super::Validator {
                     // WorkGroupUniformLoad
                     .contains(TypeFlags::SIZED | TypeFlags::CONSTRUCTIBLE)
                 {
-                    ShaderStages::COMPUTE
+                    ShaderStages::COMPUTE_LIKE
                 } else {
                     return Err(ExpressionError::InvalidWorkGroupUniformLoadResultType(ty));
                 }
@@ -1164,7 +1348,7 @@ impl super::Validator {
                     }
                 }
                 ref other => {
-                    log::error!("Array length of {:?}", other);
+                    log::debug!("Array length of {other:?}");
                     return Err(ExpressionError::InvalidArrayType(expr));
                 }
             },
@@ -1179,12 +1363,12 @@ impl super::Validator {
                 } => match resolver.types[base].inner {
                     Ti::RayQuery { .. } => ShaderStages::all(),
                     ref other => {
-                        log::error!("Intersection result of a pointer to {:?}", other);
+                        log::debug!("Intersection result of a pointer to {other:?}");
                         return Err(ExpressionError::InvalidRayQueryType(query));
                     }
                 },
                 ref other => {
-                    log::error!("Intersection result of {:?}", other);
+                    log::debug!("Intersection result of {other:?}");
                     return Err(ExpressionError::InvalidRayQueryType(query));
                 }
             },
@@ -1200,16 +1384,43 @@ impl super::Validator {
                         vertex_return: true,
                     } => ShaderStages::all(),
                     ref other => {
-                        log::error!("Intersection result of a pointer to {:?}", other);
+                        log::debug!("Intersection result of a pointer to {other:?}");
                         return Err(ExpressionError::InvalidRayQueryType(query));
                     }
                 },
                 ref other => {
-                    log::error!("Intersection result of {:?}", other);
+                    log::debug!("Intersection result of {other:?}");
                     return Err(ExpressionError::InvalidRayQueryType(query));
                 }
             },
             E::SubgroupBallotResult | E::SubgroupOperationResult { .. } => self.subgroup_stages,
+            E::CooperativeLoad { ref data, .. } => {
+                if resolver[data.pointer]
+                    .pointer_base_type()
+                    .and_then(|tr| tr.inner_with(&module.types).scalar())
+                    .is_none()
+                {
+                    return Err(ExpressionError::InvalidPointerType(data.pointer));
+                }
+                ShaderStages::COMPUTE
+            }
+            E::CooperativeMultiplyAdd { a, b, c } => {
+                let roles = [
+                    crate::CooperativeRole::A,
+                    crate::CooperativeRole::B,
+                    crate::CooperativeRole::C,
+                ];
+                for (operand, expected_role) in [a, b, c].into_iter().zip(roles) {
+                    match resolver[operand] {
+                        Ti::CooperativeMatrix { role, .. } if role == expected_role => {}
+                        ref other => {
+                            log::debug!("{expected_role:?} operand type: {other:?}");
+                            return Err(ExpressionError::InvalidCooperativeOperand(a));
+                        }
+                    }
+                }
+                ShaderStages::COMPUTE
+            }
         };
         Ok(stages)
     }
@@ -1249,7 +1460,7 @@ impl super::Validator {
     }
 }
 
-pub fn check_literal_value(literal: crate::Literal) -> Result<(), LiteralError> {
+pub const fn check_literal_value(literal: crate::Literal) -> Result<(), LiteralError> {
     let is_nan = match literal {
         crate::Literal::F64(v) => v.is_nan(),
         crate::Literal::F32(v) => v.is_nan(),

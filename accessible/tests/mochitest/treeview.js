@@ -4,43 +4,21 @@
 /**
  * Helper method to start a single XUL tree test.
  */
-function loadXULTreeAndDoTest(aDoTestFunc, aTreeID, aTreeView) {
-  var doTestFunc = aDoTestFunc ? aDoTestFunc : gXULTreeLoadContext.doTestFunc;
-  var treeID = aTreeID ? aTreeID : gXULTreeLoadContext.treeID;
-  var treeView = aTreeView ? aTreeView : gXULTreeLoadContext.treeView;
+async function loadXULTreeAndDoTest(aDoTestFunc, aTreeID, aTreeView) {
+  const treeNode = getNode(aTreeID);
 
-  let treeNode = getNode(treeID);
+  const reordered = waitForEvent(EVENT_REORDER, treeNode);
+  treeNode.view = aTreeView;
+  await reordered;
 
-  gXULTreeLoadContext.queue = new eventQueue();
-  gXULTreeLoadContext.queue.push({
-    treeNode,
-
-    eventSeq: [new invokerChecker(EVENT_REORDER, treeNode)],
-
-    invoke() {
-      this.treeNode.view = treeView;
-    },
-
-    getID() {
-      return "Load XUL tree " + prettyName(treeID);
-    },
-  });
-  gXULTreeLoadContext.queue.onFinish = function () {
-    SimpleTest.executeSoon(doTestFunc);
-    return DO_NOT_FINISH_TEST;
-  };
-  gXULTreeLoadContext.queue.invoke();
+  await aDoTestFunc();
 }
 
 /**
  * Analogy of addA11yLoadEvent, nice helper to load XUL tree and start the test.
  */
 function addA11yXULTreeLoadEvent(aDoTestFunc, aTreeID, aTreeView) {
-  gXULTreeLoadContext.doTestFunc = aDoTestFunc;
-  gXULTreeLoadContext.treeID = aTreeID;
-  gXULTreeLoadContext.treeView = aTreeView;
-
-  addA11yLoadEvent(loadXULTreeAndDoTest);
+  addA11yLoadEvent(() => loadXULTreeAndDoTest(aDoTestFunc, aTreeID, aTreeView));
 }
 
 function nsTableTreeView(aRowCount) {
@@ -261,13 +239,3 @@ function treeItem(aText, aOpen, aChildren) {
     this.children = aChildren;
   }
 }
-
-/**
- * Used in conjunction with loadXULTreeAndDoTest and addA11yXULTreeLoadEvent.
- */
-var gXULTreeLoadContext = {
-  doTestFunc: null,
-  treeID: null,
-  treeView: null,
-  queue: null,
-};

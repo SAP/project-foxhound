@@ -13,7 +13,6 @@ add_setup(async function () {
     set: [
       ["test.wait300msAfterTabSwitch", true],
       ["privacy.query_stripping.strip_list", "stripParam"],
-      ["privacy.query_stripping.strip_on_share.canDisable", false],
     ],
   });
 
@@ -38,8 +37,7 @@ add_task(async function testPrefDisabled() {
     strippedURI: shortenedUrl,
     prefEnabled: false,
     useTestList: false,
-    canDisable: false,
-    menuItemVisible: false,
+    expectedDisabled: true,
   });
 });
 
@@ -52,8 +50,7 @@ add_task(async function testQueryParamIsStrippedSelectURL() {
     strippedURI: shortenedUrl,
     prefEnabled: true,
     useTestList: false,
-    canDisable: false,
-    menuItemVisible: true,
+    expectedDisabled: false,
   });
 });
 
@@ -66,12 +63,11 @@ add_task(async function testQueryParamIsStripped() {
     strippedURI: shortenedUrl,
     prefEnabled: true,
     useTestList: false,
-    canDisable: false,
-    menuItemVisible: true,
+    expectedDisabled: false,
   });
 });
 
-// Menu item should be visible, if there is nothing to strip, url should remain the same
+// Menu item should be disabled if the url remains the same.
 add_task(async function testURLIsCopiedWithNoParams() {
   let validUrl = "https://www.example.com/";
   let shortenedUrl = "https://www.example.com/";
@@ -80,8 +76,7 @@ add_task(async function testURLIsCopiedWithNoParams() {
     strippedURI: shortenedUrl,
     prefEnabled: true,
     useTestList: false,
-    canDisable: false,
-    menuItemVisible: true,
+    expectedDisabled: true,
   });
 });
 
@@ -94,8 +89,7 @@ add_task(async function testQueryParamIsStrippedForSiteSpecific() {
     strippedURI: shortenedUrl,
     prefEnabled: true,
     useTestList: true,
-    canDisable: false,
-    menuItemVisible: true,
+    expectedDisabled: false,
   });
 });
 
@@ -108,22 +102,7 @@ add_task(async function testQueryParamIsNotStrippedForWrongSiteSpecific() {
     strippedURI: shortenedUrl,
     prefEnabled: true,
     useTestList: true,
-    canDisable: false,
-    menuItemVisible: true,
-  });
-});
-
-// Ensuring clean copy works with magnet links. We don't strip anything but copying the original URI should still work.
-add_task(async function testMagneticLinks() {
-  let validUrl = "magnet:?xt=urn:btih:somesha1hash";
-  let shortenedUrl = "magnet:?xt=urn:btih:somesha1hash";
-  await testStripOnShare({
-    originalURI: validUrl,
-    strippedURI: shortenedUrl,
-    prefEnabled: true,
-    useTestList: true,
-    canDisable: false,
-    menuItemVisible: true,
+    expectedDisabled: true,
   });
 });
 
@@ -136,13 +115,12 @@ add_task(async function testMagneticLinks() {
     strippedURI: shortenedUrl,
     prefEnabled: true,
     useTestList: true,
-    canDisable: true,
-    menuItemVisible: false,
+    expectedDisabled: true,
   });
 });
 
 // Ensuring clean copy is disabled on about links
-add_task(async function testMagneticLinks() {
+add_task(async function testAboutLinks() {
   let validUrl = "about:blank";
   let shortenedUrl = "about:blank";
   await testStripOnShare({
@@ -150,22 +128,20 @@ add_task(async function testMagneticLinks() {
     strippedURI: shortenedUrl,
     prefEnabled: true,
     useTestList: true,
-    canDisable: true,
-    menuItemVisible: false,
+    expectedDisabled: true,
   });
 });
 
-// Ensure clean copy is diabled when nothing can be stripped
+// Ensure clean copy is disabled when nothing can be stripped.
 add_task(async function testStripNothingDisabled() {
   let validUrl = "https://example.com";
-  let shortenedUrl = "https://example.com";
+  let shortenedUrl = "https://example.com/";
   await testStripOnShare({
     originalURI: validUrl,
     strippedURI: shortenedUrl,
     prefEnabled: true,
     useTestList: true,
-    canDisable: true,
-    menuItemVisible: false,
+    expectedDisabled: true,
   });
 });
 
@@ -181,65 +157,32 @@ add_task(async function testErrorHandlingForNestedLinks() {
     strippedURI: shortenedUrl,
     prefEnabled: true,
     useTestList: true,
-    canDisable: false,
-    menuItemVisible: true,
-  });
-});
-
-// Tests that the menu item does not show up if the strip on share and disable
-// pref is enabled and there is nothing to strip
-add_task(async function testNoParamToStripWithCanDisablePref() {
-  let validUrl = "https://www.example.com/";
-  let shortenedUrl = "https://www.example.com/";
-  await testStripOnShare({
-    originalURI: validUrl,
-    strippedURI: shortenedUrl,
-    prefEnabled: true,
-    useTestList: false,
-    canDisable: true,
-    menuItemVisible: false,
-  });
-});
-
-// Menu item should be visible, url should be stripped.
-// Even with disable pref enabed
-add_task(async function testQueryParamIsStrippedWithCanDisablePref() {
-  let validUrl = "https://www.example.com/?stripParam=1234";
-  let shortenedUrl = "https://www.example.com/";
-  await testStripOnShare({
-    originalURI: validUrl,
-    strippedURI: shortenedUrl,
-    prefEnabled: true,
-    useTestList: false,
-    canDisable: true,
-    menuItemVisible: true,
+    expectedDisabled: false,
   });
 });
 
 /**
- * Opens a new tab, opens the context menu and checks that the strip-on-share menu item is visible.
+ * Opens a new tab, opens the context menu and checks the menu item.
  * Checks that the stripped version of the url is copied to the clipboard.
  *
- * @param {string} originalURI - The orginal url before the stripping occurs
- * @param {string} strippedURI - The expected url after stripping occurs
- * @param {boolean} prefEnabled - Whether StripOnShare pref is enabled
- * @param {boolean} useTestList - Whether the StripOnShare or Test list should be used
- * @param {boolean} canDisable - Whether the StripOnShare context menu item is disabled if there is nothing to be stripped
- * @param {boolean} menuItemVisible - Whether the StripOnShare context menu item should be visible
+ * @param {object} options
+ * @param {string} options.originalURI - The orginal url before stripping.
+ * @param {string} options.strippedURI - The expected url after stripping.
+ * @param {boolean} options.prefEnabled - If true, enable strip_on_share pref.
+ * @param {boolean} options.useTestList - If true, use test mode pref and list.
+ * @param {boolean} options.expectedDisabled - The expected item disabled state.
  */
 async function testStripOnShare({
   originalURI,
   strippedURI,
   prefEnabled,
   useTestList,
-  canDisable,
-  menuItemVisible,
+  expectedDisabled,
 }) {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["privacy.query_stripping.strip_on_share.enabled", prefEnabled],
       ["privacy.query_stripping.strip_on_share.enableTestMode", useTestList],
-      ["privacy.query_stripping.strip_on_share.canDisable", canDisable],
     ],
   });
 
@@ -247,15 +190,15 @@ async function testStripOnShare({
     let testJson = {
       global: {
         queryParams: ["utm_ad"],
-        topLevelSites: ["*"],
+        isGlobal: true,
       },
       example: {
         queryParams: ["test_2", "test_1"],
-        topLevelSites: ["www.example.com"],
+        origins: ["www.example.com"],
       },
       exampleNet: {
         queryParams: ["test_3", "test_4"],
-        topLevelSites: ["www.example.net"],
+        origins: ["www.example.net"],
       },
     };
 
@@ -287,29 +230,25 @@ async function testStripOnShare({
       browser
     );
     await awaitPopupShown;
+
+    let menuItem = contextMenu.querySelector("#context-stripOnShareLink");
+    Assert.equal(
+      BrowserTestUtils.isVisible(menuItem),
+      prefEnabled,
+      "Menu item is visible"
+    );
+    Assert.equal(menuItem.disabled, expectedDisabled, "Menu item is disabled");
+
     let awaitPopupHidden = BrowserTestUtils.waitForEvent(
       contextMenu,
       "popuphidden"
     );
-    let stripOnShare = contextMenu.querySelector("#context-stripOnShareLink");
-    if (menuItemVisible) {
-      Assert.ok(
-        BrowserTestUtils.isVisible(stripOnShare),
-        "Menu item is visible"
-      );
+    if (prefEnabled) {
       // Make sure the stripped link will be copied to the clipboard
       await SimpleTest.promiseClipboardChange(strippedURI, () => {
-        contextMenu.activateItem(stripOnShare);
+        contextMenu.activateItem(menuItem);
       });
     } else {
-      if (canDisable) {
-        Assert.ok(stripOnShare.disabled, "Menu item is disabled");
-      } else {
-        Assert.ok(
-          !BrowserTestUtils.isVisible(stripOnShare),
-          "Menu item is not visible"
-        );
-      }
       contextMenu.hidePopup();
     }
     await awaitPopupHidden;

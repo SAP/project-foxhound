@@ -4,24 +4,26 @@
 
 package org.mozilla.fenix.ui
 
-import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.core.net.toUri
-import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
-import org.mozilla.fenix.customannotations.SkipLeaks
+import org.mozilla.fenix.customannotations.Converted
 import org.mozilla.fenix.customannotations.SmokeTest
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeShort
 import org.mozilla.fenix.helpers.TestHelper.exitMenu
-import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.clickPageObject
 import org.mozilla.fenix.ui.robots.homeScreen
 import org.mozilla.fenix.ui.robots.navigationToolbar
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
-class SettingsHTTPSOnlyModeTest : TestSetup() {
+class SettingsHTTPSOnlyModeTest {
+    @get:Rule(order = 0)
+    val fenixTestRule: FenixTestRule = FenixTestRule()
+
     private val httpPageUrl = "http://example.com/"
     private val secondHttpPageUrl = "http://permission.site/"
     private val httpsPageUrl = "https://example.com/"
@@ -35,21 +37,21 @@ class SettingsHTTPSOnlyModeTest : TestSetup() {
     private val httpsOnlyContinueButton = "Continue to HTTP Site"
     private val httpsOnlyBackButton = "Go Back (Recommended)"
 
-    @get:Rule
-    val activityTestRule =
-        AndroidComposeTestRule(
+    @get:Rule(order = 1)
+    val composeTestRule =
+        AndroidComposeTestRuleV2(
             HomeActivityIntentTestRule.withDefaultSettingsOverrides(),
         ) { it.activity }
 
-    @get:Rule
-    val memoryLeaksRule = DetectMemoryLeaksRule()
+    @get:Rule(order = 2)
+    val memoryLeaksRule = DetectMemoryLeaksRule(composeTestRule = { composeTestRule })
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1724825
     @Test
     fun httpsOnlyModeMenuItemsTest() {
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openHttpsOnlyModeMenu {
             verifyHttpsOnlyModeMenuHeader()
             verifyHttpsOnlyModeSummary()
@@ -72,13 +74,17 @@ class SettingsHTTPSOnlyModeTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1724827
-    @Ignore("Failing: https://bugzilla.mozilla.org/show_bug.cgi?id=1826317")
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.SettingsHTTPSOnlyModeTest#httpsOnlyModeEnabledInNormalBrowsingTest"],
+        bug = 2037892,
+        since = "2026-05",
+    )
     @SmokeTest
     @Test
     fun httpsOnlyModeEnabledInNormalBrowsingTest() {
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openHttpsOnlyModeMenu {
             clickHttpsOnlyModeSwitch()
             verifyHttpsOnlyOptionSelected(
@@ -89,37 +95,40 @@ class SettingsHTTPSOnlyModeTest : TestSetup() {
             verifySettingsOptionSummary("HTTPS-Only Mode", "On in all tabs")
             exitMenu()
         }
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(httpPageUrl.toUri()) {
-            verifyPageContent("Example Domain")
-        }.openNavigationToolbar {
-            verifyUrl(httpsPageUrl)
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser(secondHttpPageUrl.toUri()) {
+            verifyPageContent("permission.site")
+        }.openSearch {
+            verifyTypedToolbarText(secondHttpsPageUrl, exists = true)
+        }.dismissSearchBar {
+        }
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(insecureHttpPage.toUri()) {
             verifyPageContent(httpsOnlyErrorTitle)
             verifyPageContent(httpsOnlyErrorMessage)
             verifyPageContent(httpsOnlyErrorMessage2)
             verifyPageContent(httpsOnlyBackButton)
-            clickPageObject(itemContainingText(httpsOnlyBackButton))
+            clickPageObject(composeTestRule, itemContainingText(httpsOnlyBackButton))
             // Workaround required with Fission ON:
             // Click back twice to avoid https://bugzilla.mozilla.org/show_bug.cgi?id=1932498
             if (itemContainingText(httpsOnlyBackButton).waitForExists(waitingTimeShort)) {
-                clickPageObject(itemContainingText(httpsOnlyBackButton))
+                clickPageObject(composeTestRule, itemContainingText(httpsOnlyBackButton))
             }
-            verifyPageContent("Example Domain")
-        }.openNavigationToolbar {
+            verifyPageContent("permission.site")
+        }
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(insecureHttpPage.toUri()) {
-            clickPageObject(itemContainingText(httpsOnlyContinueButton))
+            clickPageObject(composeTestRule, itemContainingText(httpsOnlyContinueButton))
             verifyPageContent("http.badssl.com")
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2091057
     @Test
-    @SkipLeaks
     fun httpsOnlyModeExceptionPersistsForCurrentSessionTest() {
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openHttpsOnlyModeMenu {
             clickHttpsOnlyModeSwitch()
             verifyHttpsOnlyOptionSelected(
@@ -128,15 +137,15 @@ class SettingsHTTPSOnlyModeTest : TestSetup() {
             )
             exitMenu()
         }
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(insecureHttpPage.toUri()) {
             verifyPageContent(httpsOnlyErrorTitle)
-            clickPageObject(itemContainingText(httpsOnlyContinueButton))
+            clickPageObject(composeTestRule, itemContainingText(httpsOnlyContinueButton))
             verifyPageContent("http.badssl.com")
-        }.openTabDrawer(activityTestRule) {
+        }.openTabDrawer(composeTestRule) {
             closeTab()
         }
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(insecureHttpPage.toUri()) {
             verifyPageContent("http.badssl.com")
         }
@@ -145,9 +154,9 @@ class SettingsHTTPSOnlyModeTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1724828
     @Test
     fun httpsOnlyModeEnabledOnlyInPrivateBrowsingTest() {
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openHttpsOnlyModeMenu {
             clickHttpsOnlyModeSwitch()
             selectHttpsOnlyModeOption(
@@ -158,39 +167,40 @@ class SettingsHTTPSOnlyModeTest : TestSetup() {
             verifySettingsOptionSummary("HTTPS-Only Mode", "On in private tabs")
             exitMenu()
         }
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(insecureHttpPage.toUri()) {
             verifyPageContent("http.badssl.com")
-        }.goToHomescreen(activityTestRule) {
+        }.goToHomescreen {
         }.togglePrivateBrowsingMode()
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(secondHttpPageUrl.toUri()) {
             verifyPageContent("Notifications")
-        }.openNavigationToolbar {
-            verifyUrl(secondHttpsPageUrl)
+        }.openSearch {
+            verifyTypedToolbarText(secondHttpsPageUrl, exists = true)
+        }.dismissSearchBar {
+        }
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(insecureHttpPage.toUri()) {
             verifyPageContent(httpsOnlyErrorTitle)
             verifyPageContent(httpsOnlyErrorMessage)
             verifyPageContent(httpsOnlyErrorMessage2)
             verifyPageContent(httpsOnlyBackButton)
-            clickPageObject(itemContainingText(httpsOnlyBackButton))
+            clickPageObject(composeTestRule, itemContainingText(httpsOnlyBackButton))
             // Workaround required with Fission ON:
             // Click back twice to avoid https://bugzilla.mozilla.org/show_bug.cgi?id=1932498
             if (itemContainingText(httpsOnlyBackButton).waitForExists(waitingTimeShort)) {
-                clickPageObject(itemContainingText(httpsOnlyBackButton))
+                clickPageObject(composeTestRule, itemContainingText(httpsOnlyBackButton))
             }
             verifyPageContent("Notifications")
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2091058
-    @Ignore("Failing: https://bugzilla.mozilla.org/show_bug.cgi?id=1941261")
     @Test
-    @SkipLeaks
     fun turnOffHttpsOnlyModeTest() {
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openHttpsOnlyModeMenu {
             clickHttpsOnlyModeSwitch()
             verifyHttpsOnlyOptionSelected(
@@ -199,27 +209,28 @@ class SettingsHTTPSOnlyModeTest : TestSetup() {
             )
             exitMenu()
         }
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(httpPageUrl.toUri()) {
-            verifyPageContent("Example Domain")
-        }.openNavigationToolbar {
-            verifyUrl(httpsPageUrl)
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser(secondHttpPageUrl.toUri()) {
+            verifyPageContent("permission.site")
+        }.openSearch {
+            verifyTypedToolbarText(secondHttpsPageUrl, exists = true)
+        }.dismissSearchBar {
+        }
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(insecureHttpPage.toUri()) {
             verifyPageContent(httpsOnlyErrorTitle)
             verifyPageContent(httpsOnlyErrorMessage)
             verifyPageContent(httpsOnlyErrorMessage2)
             verifyPageContent(httpsOnlyBackButton)
-            clickPageObject(itemContainingText(httpsOnlyBackButton))
+            clickPageObject(composeTestRule, itemContainingText(httpsOnlyBackButton))
             // Workaround required with Fission ON:
             // Click back twice to avoid https://bugzilla.mozilla.org/show_bug.cgi?id=1932498
             if (itemContainingText(httpsOnlyBackButton).waitForExists(waitingTimeShort)) {
-                clickPageObject(itemContainingText(httpsOnlyBackButton))
+                clickPageObject(composeTestRule, itemContainingText(httpsOnlyBackButton))
             }
-            verifyPageContent("Example Domain")
-        }.openNavigationToolbar {
-        }.goBackToBrowserScreen {
+            verifyPageContent("permission.site")
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openHttpsOnlyModeMenu {
             clickHttpsOnlyModeSwitch()
             verifyHttpsOnlyModeIsEnabled(false)
@@ -227,9 +238,40 @@ class SettingsHTTPSOnlyModeTest : TestSetup() {
             verifySettingsOptionSummary("HTTPS-Only Mode", "Off")
             exitMenu()
         }
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(insecureHttpPage.toUri()) {
             verifyPageContent("http.badssl.com")
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/4024985
+    @Test
+    fun verifyHttpsFirstModeExceptionPersistenceTest() {
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser("http://permission.site".toUri()) {
+            verifyPageContent("permission.site")
+        }.openSearch {
+            verifyTypedToolbarText("http://permission.site/", exists = true)
+        }.dismissSearchBar {
+        }
+
+        // Exception should persist
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser("permission.site".toUri()) {
+            verifyPageContent("permission.site")
+        }.openSearch {
+            verifyTypedToolbarText("http://permission.site/", exists = true)
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/4024993
+    @Test
+    fun verifySecureConnectionByDefaultForSchemelessUrlsTest() {
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser("permission.site".toUri()) {
+            verifyPageContent("permission.site")
+        }.openSearch {
+            verifyTypedToolbarText("https://permission.site/", exists = true)
         }
     }
 }

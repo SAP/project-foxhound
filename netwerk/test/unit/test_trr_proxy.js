@@ -97,14 +97,19 @@ async function do_test_pac_dnsResolve() {
   await new Promise(resolve => chan.asyncOpen(new ChannelListener(resolve)));
   await consolePromise;
 
-  let h2Port = Services.env.get("MOZHTTP2_PORT");
-  Assert.notEqual(h2Port, null);
-  Assert.notEqual(h2Port, "");
+  let trrServer = new TRRServer();
+  await trrServer.start();
+
+  registerCleanupFunction(async () => {
+    if (trrServer) {
+      await trrServer.stop();
+    }
+  });
 
   override.addIPOverride("foo.example.com", "127.0.0.1");
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${h2Port}/doh?responseIP=127.0.0.1`
+    `https://foo.example.com:${trrServer.port()}/doh?responseIP=127.0.0.1`
   );
 
   trr_test_setup();
@@ -125,6 +130,10 @@ async function do_test_pac_dnsResolve() {
   await test_with("test1.com", 2);
   await test_with("test2.com", 3);
   await httpserv.stop();
+  if (trrServer) {
+    await trrServer.stop();
+    trrServer = null;
+  }
 }
 
 add_task(async function test_pac_dnsResolve() {

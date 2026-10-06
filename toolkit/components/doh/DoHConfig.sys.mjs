@@ -20,7 +20,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 const kGlobalPrefBranch = "doh-rollout";
 function regionPrefBranch() {
-  let homeRegion = lazy.Preferences.get(`${kGlobalPrefBranch}.home-region`);
+  let homeRegion = Services.prefs.getStringPref(
+    `${kGlobalPrefBranch}.home-region`,
+    undefined
+  );
   if (!homeRegion) {
     return undefined;
   }
@@ -180,22 +183,28 @@ export const DoHConfigController = {
   async loadRegion() {
     await new Promise(resolve => {
       // If the region has changed since it was last set, update the pref.
-      let homeRegionChanged = lazy.Preferences.get(
-        `${kGlobalPrefBranch}.home-region-changed`
+      let homeRegionChanged = Services.prefs.getBoolPref(
+        `${kGlobalPrefBranch}.home-region-changed`,
+        false
       );
       if (homeRegionChanged) {
-        lazy.Preferences.reset(`${kGlobalPrefBranch}.home-region-changed`);
-        lazy.Preferences.reset(`${kGlobalPrefBranch}.home-region`);
+        Services.prefs.clearUserPref(
+          `${kGlobalPrefBranch}.home-region-changed`
+        );
+        Services.prefs.clearUserPref(`${kGlobalPrefBranch}.home-region`);
       }
 
-      let homeRegion = lazy.Preferences.get(`${kGlobalPrefBranch}.home-region`);
+      let homeRegion = Services.prefs.getStringPref(
+        `${kGlobalPrefBranch}.home-region`,
+        undefined
+      );
       if (homeRegion) {
         resolve();
         return;
       }
 
       let updateRegionAndResolve = () => {
-        lazy.Preferences.set(
+        Services.prefs.setStringPref(
           `${kGlobalPrefBranch}.home-region`,
           currentRegion()
         );
@@ -246,17 +255,30 @@ export const DoHConfigController = {
     });
   },
 
+  updateRegionIfChanged(trigger) {
+    let oldRegion = Services.prefs.getStringPref(
+      `${kGlobalPrefBranch}.home-region`,
+      undefined
+    );
+    if (currentRegion() && currentRegion() != oldRegion) {
+      let newRegion = currentRegion();
+      Services.prefs.setStringPref(
+        `${kGlobalPrefBranch}.home-region`,
+        newRegion
+      );
+      Glean.doh.regionChanged.record({
+        old_region: oldRegion || "unknown",
+        new_region: newRegion,
+        trigger,
+      });
+      this.notifyNewConfig();
+    }
+  },
+
   // Performs a region check when the timezone changes
   async getRegionAndNotify() {
     await lazy.Region._fetchRegion();
-    if (
-      currentRegion() &&
-      currentRegion() !=
-        lazy.Preferences.get(`${kGlobalPrefBranch}.home-region`)
-    ) {
-      lazy.Preferences.set(`${kGlobalPrefBranch}.home-region`, currentRegion());
-      this.notifyNewConfig();
-    }
+    this.updateRegionIfChanged("timezone-changed");
   },
 
   observe(subject, topic, data) {
@@ -280,17 +302,7 @@ export const DoHConfigController = {
         }
         break;
       case "idle-daily":
-        if (
-          currentRegion() &&
-          currentRegion() !=
-            lazy.Preferences.get(`${kGlobalPrefBranch}.home-region`)
-        ) {
-          lazy.Preferences.set(
-            `${kGlobalPrefBranch}.home-region`,
-            currentRegion()
-          );
-          this.notifyNewConfig();
-        }
+        this.updateRegionIfChanged("idle-daily");
         break;
       case "default-timezone-changed":
         this.getRegionAndNotify();
@@ -318,7 +330,10 @@ export const DoHConfigController = {
       configByRegion.set(c.id, c);
     });
 
-    let homeRegion = lazy.Preferences.get(`${kGlobalPrefBranch}.home-region`);
+    let homeRegion = Services.prefs.getStringPref(
+      `${kGlobalPrefBranch}.home-region`,
+      undefined
+    );
     let localConfig =
       configByRegion.get(homeRegion?.toLowerCase()) ||
       configByRegion.get("global");
@@ -385,6 +400,20 @@ export const DoHConfigController = {
 
     // Finally, update the currentConfig object synchronously.
     DoHConfigController.currentConfig = newConfig;
+
+    function applyHttp3FirstForProviders(providerList = []) {
+      for (const provider of providerList) {
+        try {
+          let uri = Services.io.newURI(provider.uri);
+          let host = uri.host;
+          Services.dns.setHttp3FirstForServer(host, !!provider.http3First);
+        } catch (e) {
+          console.error(`Failed to set http3First for ${provider.uri}: ${e}`);
+        }
+      }
+    }
+
+    applyHttp3FirstForProviders(providers);
 
     DoHConfigController.notifyNewConfig();
   },

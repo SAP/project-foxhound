@@ -27,6 +27,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.databinding.ComponentExceptionsBinding
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertIs
 
 @RunWith(RobolectricTestRunner::class)
 class TrackingProtectionExceptionsViewTest {
@@ -58,8 +59,8 @@ class TrackingProtectionExceptionsViewTest {
 
     @Test
     fun `binds exception text`() {
-        assertTrue(binding.exceptionsLearnMore.movementMethod is LinkMovementMethod)
-        assertTrue(binding.exceptionsLearnMore.text is Spannable)
+        assertIs<LinkMovementMethod>(binding.exceptionsLearnMore.movementMethod)
+        assertIs<Spannable>(binding.exceptionsLearnMore.text)
         assertEquals("Learn more", binding.exceptionsLearnMore.text.toString())
 
         every { interactor.onLearnMore() } just Runs

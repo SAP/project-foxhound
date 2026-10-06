@@ -1,0 +1,80 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset='utf-8'/>
+    <title>Paragraph-movement should land the caret inside shadow DOM content</title>
+    <!-- Any copyright is dedicated to the Public Domain.
+         http://creativecommons.org/publicdomain/zero/1.0/ -->
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  </head>
+  <body>
+    <!-- A block-level shadow host whose shadow root holds a text node directly,
+         mirroring the case the reviewer raised for bug 2041228. -->
+    <div id="host"></div>
+
+    <script type="text/javascript">
+      SimpleTest.waitForExplicitFinish();
+
+      // The selection controller of the top-level document (paragraphMove is not
+      // exposed on the web Selection API, so we drive it via the controller).
+      function getSelectionController(win) {
+        return SpecialPowers.wrap(win)
+          .docShell
+          .QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor)
+          .getInterface(SpecialPowers.Ci.nsISelectionDisplay)
+          .QueryInterface(SpecialPowers.Ci.nsISelectionController);
+      }
+
+      function runTest() {
+        const host = document.getElementById("host");
+        const shadow = host.attachShadow({ mode: "open" });
+        // Text directly in the shadow root, no leading/trailing whitespace so
+        // the rendered length matches the node length.
+        shadow.textContent = "Some shadow text.";
+        const shadowText = shadow.firstChild;
+
+        const selection = document.getSelection();
+        const controller = getSelectionController(window);
+
+        // getComposedRanges exposes endpoints inside the passed shadow root
+        // without retargeting them to the host, so we can assert on the actual
+        // boundary container. paragraphMove updates the selection synchronously.
+        function composedFocus() {
+          const ranges = selection.getComposedRanges({ shadowRoots: [shadow] });
+          is(ranges.length, 1, "should have exactly one composed range");
+          const range = ranges[0];
+          ok(range.collapsed, "caret move should leave the selection collapsed");
+          return { container: range.endContainer, offset: range.endOffset };
+        }
+
+        // Caret move to the beginning of the paragraph. The whole shadow text is
+        // one paragraph, so the boundary container must be the shadow Text node
+        // (not the host <div>), at offset 0 (regression guard for bug 2041228).
+        selection.collapse(shadowText, 5);
+        controller.paragraphMove(false, false);
+        let focus = composedFocus();
+        is(focus.container, shadowText,
+           "paragraphMove(begin): boundary container should be the shadow Text node");
+        isnot(focus.container, host,
+           "paragraphMove(begin): boundary container should not be the host <div>");
+        is(focus.offset, 0,
+           "paragraphMove(begin): offset should be 0");
+
+        // Caret move to the end of the paragraph: same Text node, offset at end.
+        selection.collapse(shadowText, 5);
+        controller.paragraphMove(true, false);
+        focus = composedFocus();
+        is(focus.container, shadowText,
+           "paragraphMove(end): boundary container should be the shadow Text node");
+        isnot(focus.container, host,
+           "paragraphMove(end): boundary container should not be the host <div>");
+        is(focus.offset, shadowText.length,
+           "paragraphMove(end): offset should be at the end of the shadow text");
+
+        SimpleTest.finish();
+      }
+
+      SimpleTest.waitForFocus(runTest);
+    </script>
+  </body>
+</html>

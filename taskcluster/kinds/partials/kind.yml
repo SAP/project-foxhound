@@ -18,6 +18,9 @@ only-for-attributes:
     - nightly
     - shippable
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 only-for-build-platforms:
     - macosx64-shippable/opt
     - macosx64-devedition/opt
@@ -27,8 +30,6 @@ only-for-build-platforms:
     - win64-devedition/opt
     - win64-aarch64-shippable/opt
     - win64-aarch64-devedition/opt
-    - linux-shippable/opt
-    - linux-devedition/opt
     - linux64-shippable/opt
     - linux64-aarch64-shippable/opt
     - linux64-devedition/opt

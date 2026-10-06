@@ -276,23 +276,21 @@ var tests = [
 
 function drive(test)
 {
-  SpecialPowers.pushPrefEnv({set: [["network.http.rcwn.enabled", false]]}, _=>{
-    var xhr = new XMLHttpRequest();
-    test.init(xhr);
-    xhr.onreadystatechange = function() {
-      if (this.readyState == 3) {
-        test.loading(this);
-      }
-      if (this.readyState == 4) {
-        test.done(this);
-        if (!tests.length)
-          SimpleTest.finish();
-        else
-          drive(tests.shift());
-      }
+  var xhr = new XMLHttpRequest();
+  test.init(xhr);
+  xhr.onreadystatechange = function() {
+    if (this.readyState == 3) {
+      test.loading(this);
     }
-    xhr.send();
-  });
+    if (this.readyState == 4) {
+      test.done(this);
+      if (!tests.length)
+        SimpleTest.finish();
+      else
+        drive(tests.shift());
+    }
+  }
+  xhr.send();
 }
 
 </script>

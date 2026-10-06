@@ -1,98 +1,374 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 
 // Author: kenton@google.com (Kenton Varda)
 //  Based on original Protocol Buffers design by
 //  Sanjay Ghemawat, Jeff Dean, and others.
 
-#include <google/protobuf/message.h>
+#include "google/protobuf/message.h"
 
-#include <iostream>
-#include <stack>
-#include <unordered_map>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <initializer_list>
+#include <new>  // IWYU pragma: keep for operator new().
+#include <queue>
+#include <string>
+#include <utility>
+#include <variant>
+#include <vector>
 
-#include <google/protobuf/stubs/casts.h>
-#include <google/protobuf/stubs/logging.h>
-#include <google/protobuf/stubs/common.h>
-#include <google/protobuf/io/coded_stream.h>
-#include <google/protobuf/io/zero_copy_stream_impl.h>
-#include <google/protobuf/stubs/strutil.h>
-#include <google/protobuf/descriptor.h>
-#include <google/protobuf/descriptor.pb.h>
-#include <google/protobuf/generated_message_reflection.h>
-#include <google/protobuf/generated_message_util.h>
-#include <google/protobuf/map_field.h>
-#include <google/protobuf/map_field_inl.h>
-#include <google/protobuf/parse_context.h>
-#include <google/protobuf/reflection_internal.h>
-#include <google/protobuf/reflection_ops.h>
-#include <google/protobuf/unknown_field_set.h>
-#include <google/protobuf/wire_format.h>
-#include <google/protobuf/wire_format_lite.h>
-#include <google/protobuf/stubs/map_util.h>
-#include <google/protobuf/stubs/stl_util.h>
-#include <google/protobuf/stubs/hash.h>
+#include "absl/algorithm/container.h"
+#include "absl/base/call_once.h"
+#include "absl/base/optimization.h"
+#include "absl/container/flat_hash_map.h"
+#include "absl/container/flat_hash_set.h"
+#include "absl/hash/hash.h"
+#include "absl/log/absl_check.h"
+#include "absl/log/absl_log.h"
+#include "absl/strings/escaping.h"
+#include "absl/strings/match.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
+#include "absl/strings/str_join.h"
+#include "absl/strings/str_split.h"
+#include "absl/strings/string_view.h"
+#include "absl/strings/strip.h"
+#include "absl/synchronization/mutex.h"
+#include "absl/types/optional.h"
+#include "google/protobuf/descriptor.h"
+#include "google/protobuf/descriptor.pb.h"
+#include "google/protobuf/dynamic_message.h"
+#include "google/protobuf/generated_message_reflection.h"
+#include "google/protobuf/generated_message_tctable_impl.h"
+#include "google/protobuf/generated_message_util.h"
+#include "google/protobuf/io/coded_stream.h"
+#include "google/protobuf/io/tokenizer.h"
+#include "google/protobuf/map_field.h"
+#include "google/protobuf/message_lite.h"
+#include "google/protobuf/parse_context.h"
+#include "google/protobuf/port.h"
+#include "google/protobuf/reflection_internal.h"
+#include "google/protobuf/reflection_ops.h"
+#include "google/protobuf/reflection_visit_fields.h"
+#include "google/protobuf/text_format.h"
+#include "google/protobuf/unknown_field_set.h"
+#include "google/protobuf/wire_format.h"
+
 
 // Must be included last.
-#include <google/protobuf/port_def.inc>
+#include "google/protobuf/port_def.inc"
 
 namespace google {
 namespace protobuf {
-
 namespace internal {
 
-// TODO(gerbens) make this factorized better. This should not have to hop
+// TODO make this factorized better. This should not have to hop
 // to reflection. Currently uses GeneratedMessageReflection and thus is
 // defined in generated_message_reflection.cc
 void RegisterFileLevelMetadata(const DescriptorTable* descriptor_table);
+
+struct DescriptorMethodsFriend {
+  static const TcParseTableBase* GetTcParseTable(const MessageLite& msg) {
+    return DownCastMessage<Message>(msg).GetReflection()->GetTcParseTable();
+  }
+};
+
+namespace {
+
+Metadata GetMetadataImpl(const internal::ClassDataFull& data) {
+  auto* table = data.descriptor_table();
+  // Only codegen types provide a table. DynamicMessage does not provide a table
+  // and instead eagerly initializes the descriptor/reflection members.
+  if (ABSL_PREDICT_TRUE(table != nullptr)) {
+    if (ABSL_PREDICT_FALSE(data.has_get_metadata_tracker())) {
+      data.get_metadata_tracker();
+    }
+    absl::call_once(*table->once, [table] {
+      internal::AssignDescriptorsOnceInnerCall(table);
+    });
+  }
+  return {data.descriptor(), data.reflection()};
+}
+
+// Helper function to get type name - logic from Message::GetTypeNameImpl
+absl::string_view GetTypeNameImpl(const ClassData* data) {
+  return GetMetadataImpl(data->full()).descriptor->full_name();
+}
+
+// Helper function for InitializationErrorString - logic from existing static
+// function
+std::string InitializationErrorStringImpl(const MessageLite& msg) {
+  return DownCastMessage<Message>(msg).InitializationErrorString();
+}
+
+// Helper function to get TcParseTable - logic from Message::GetTcParseTableImpl
+const internal::TcParseTableBase* GetTcParseTableImpl(const MessageLite& msg) {
+  return DescriptorMethodsFriend::GetTcParseTable(msg);
+}
+
+// Helper function for SpaceUsedLong - logic from Message::SpaceUsedLongImpl
+size_t SpaceUsedLongImpl(const MessageLite& msg_lite) {
+  auto& msg = DownCastMessage<Message>(msg_lite);
+  return msg.GetReflection()->SpaceUsedLong(msg);
+}
+
+// Helper function for DebugString - logic from existing static function
+std::string DebugStringImpl(const MessageLite& msg) {
+  return DownCastMessage<Message>(msg).DebugString();
+}
+
+}  // namespace
+
+PROTOBUF_CONSTINIT PROTOBUF_EXPORT const DescriptorMethods
+    kDescriptorMethods = {
+        GetTypeNameImpl,
+        InitializationErrorStringImpl,
+        GetTcParseTableImpl,
+        SpaceUsedLongImpl,
+        DebugStringImpl,
+        nullptr,
+};
 
 }  // namespace internal
 
 using internal::ReflectionOps;
 using internal::WireFormat;
-using internal::WireFormatLite;
+
+namespace {
+
+enum class AbslFlagFormat {
+  kTextFormat,
+  kSerialized,
+};
+
+struct AbslFlagHeader {
+  AbslFlagFormat format;
+  absl::string_view format_name;
+  std::vector<absl::string_view> options;
+  bool uses_dead_char = false;
+  bool uses_prefix = false;
+};
+
+std::variant<AbslFlagHeader, std::string> ConsumeAbslFlagHeader(
+    absl::string_view& text) {
+  AbslFlagHeader header;
+
+  if (text.empty()) {
+    // Whatever format is fine.
+    header.format = AbslFlagFormat::kTextFormat;
+    return header;
+  }
+
+  if (absl::ConsumePrefix(&text, ":")) {
+    header.uses_dead_char = true;
+  }
+
+  auto pos = text.find(':');
+  if (pos == text.npos) {
+    header.format = AbslFlagFormat::kTextFormat;
+    return header;
+  }
+
+  header.uses_prefix = true;
+
+  absl::string_view format_spec = text.substr(0, pos);
+  if (!header.uses_dead_char) {
+    header.format_name = format_spec;
+    // Legacy specs.
+    if (format_spec == "text") {
+      header.format = AbslFlagFormat::kTextFormat;
+    } else if (format_spec == "base64text") {
+      header.format = AbslFlagFormat::kTextFormat;
+      header.options = {"base64"};
+    } else if (format_spec == "base64serialized") {
+      header.format = AbslFlagFormat::kSerialized;
+      header.options = {"base64"};
+    } else {
+      if (absl::StrContains(format_spec, ",")) {
+        return absl::StrFormat(
+            "Format options are only allowed with delimited format specifier. "
+            "Use `:%1$s:` instead of `%1$s:`",
+            format_spec);
+      }
+      header.uses_prefix = false;
+      header.format = AbslFlagFormat::kTextFormat;
+      return header;
+    }
+  } else {
+    std::vector<absl::string_view> parts = absl::StrSplit(format_spec, ',');
+    header.format_name = parts[0];
+
+    if (header.format_name == "text") {
+      header.format = AbslFlagFormat::kTextFormat;
+    } else if (header.format_name == "serialized") {
+      header.format = AbslFlagFormat::kSerialized;
+    } else {
+      return absl::StrFormat("Invalid format `%s`.", header.format_name);
+    }
+
+    header.options.assign(parts.begin() + 1, parts.end());
+  }
+
+  if (header.uses_prefix) {
+    text.remove_prefix(pos + 1);
+  }
+  return header;
+}
+
+}  // namespace
+
+bool Message::AbslParseFlagImpl(absl::string_view text, std::string& error) {
+  Clear();
+
+  auto header_or_error = ConsumeAbslFlagHeader(text);
+  if (std::holds_alternative<std::string>(header_or_error)) {
+    error = std::get<std::string>(header_or_error);
+    return false;
+  }
+  auto header = std::get<AbslFlagHeader>(std::move(header_or_error));
+
+  if (!header.uses_dead_char) {
+    error = "Prefix must start with a `:`. Eg `:text:`.";
+    return false;
+  }
+
+  // If we have a prefix without a dead char, verify that the message does not
+  // have a field by that name as that would be ambiguous.
+  if (!header.uses_dead_char && header.uses_prefix &&
+      GetDescriptor()->FindFieldByName(header.format_name) != nullptr) {
+    error = absl::StrFormat(
+        "Prefix `%s:` used is ambiguous with message fields. If you meant to "
+        "use this prefix, use `:%s:` instead. If you meant to use text "
+        "format, use `:text:` as a prefix.",
+        header.format_name, header.format_name);
+    return false;
+  }
+
+  const auto verify_options =
+      [&](std::initializer_list<absl::string_view> valid_options) -> bool {
+    for (absl::string_view o : header.options) {
+      if (!absl::c_linear_search(valid_options, o)) {
+        error = absl::StrFormat("Unknown option `%s` for format `%s`.", o,
+                                header.format_name);
+        return false;
+      }
+    }
+    return true;
+  };
+
+  static constexpr absl::string_view kBase64 = "base64";
+
+  std::string unescaped;
+  const auto unescape_if_needed = [&] {
+    if (absl::c_linear_search(header.options, kBase64)) {
+      if (!absl::Base64Unescape(text, &unescaped)) {
+        error = absl::StrFormat("Invalid base64 input.");
+        return false;
+      }
+      text = unescaped;
+    }
+    return true;
+  };
+
+  switch (header.format) {
+    case AbslFlagFormat::kTextFormat: {
+      static constexpr absl::string_view kIgnoreUnknown = "ignore_unknown";
+      if (!verify_options({kIgnoreUnknown, kBase64})) return false;
+      if (!unescape_if_needed()) return false;
+      TextFormat::Parser parser;
+      struct StringErrorCollector : io::ErrorCollector {
+        explicit StringErrorCollector(std::string& error) : error(error) {}
+        std::string& error;
+        void RecordError(int line, io::ColumnNumber column,
+                         absl::string_view message) override {
+          error = absl::StrFormat("(Line %v, Column %v): %v", line, column,
+                                  message);
+        }
+      } collector(error);
+      if (absl::c_linear_search(header.options, kIgnoreUnknown)) {
+        parser.AllowUnknownField(true);
+        parser.AllowUnknownExtension(true);
+      }
+      parser.RecordErrorsTo(&collector);
+      return parser.ParseFromString(text, this);
+    }
+
+    case AbslFlagFormat::kSerialized: {
+      if (!verify_options({kBase64})) return false;
+      if (!unescape_if_needed()) return false;
+      return ParseFromString(text);
+    }
+
+    default:
+      internal::Unreachable();
+  }
+}
+
+std::string Message::AbslUnparseFlagImpl() const {
+  bool has_ufs = !GetReflection()->GetUnknownFields(*this).empty();
+  internal::VisitMessageFields(*this, [&](const auto& msg) {
+    has_ufs = has_ufs || !msg.GetReflection()->GetUnknownFields(msg).empty();
+  });
+
+  if (has_ufs) {
+    // We can't use text format because it won't round trip
+    // Use binary instead.
+    return absl::StrCat(":serialized,base64:",
+                        absl::Base64Escape(SerializeAsString()));
+  } else {
+    TextFormat::Printer printer;
+    printer.SetSingleLineMode(true);
+    printer.SetUseShortRepeatedPrimitives(true);
+    std::string str;
+    // PrintToString can't really fail.
+    (void)printer.PrintToString(*this, &str);
+
+    // If completely empty, just return the empty string.
+    // It is usually the default and nicer to read.
+    if (str.empty()) {
+      return str;
+    }
+
+    return absl::StrCat(":text:", str);
+  }
+}
+
+void Message::MergeImpl(MessageLite& to, const MessageLite& from) {
+  ReflectionOps::Merge(DownCastMessage<Message>(from),
+                       DownCastMessage<Message>(&to));
+}
+
+void Message::ClearImpl() {
+  ReflectionOps::Clear(DownCastMessage<Message>(this));
+}
+
+size_t Message::ByteSizeLongImpl(const MessageLite& msg) {
+  auto& _this = DownCastMessage<Message>(msg);
+  size_t size = WireFormat::ByteSize(_this);
+  _this.AccessCachedSize().Set(internal::ToCachedSize(size));
+  return size;
+}
+
+uint8_t* Message::_InternalSerializeImpl(const MessageLite& msg,
+                                         uint8_t* target,
+                                         io::EpsCopyOutputStream* stream) {
+  return WireFormat::_InternalSerialize(DownCastMessage<Message>(msg), target,
+                                        stream);
+}
 
 void Message::MergeFrom(const Message& from) {
   auto* class_to = GetClassData();
   auto* class_from = from.GetClassData();
-  auto* merge_to_from = class_to ? class_to->merge_to_from : nullptr;
   if (class_to == nullptr || class_to != class_from) {
-    merge_to_from = [](Message& to, const Message& from) {
-      ReflectionOps::Merge(from, &to);
-    };
+    ReflectionOps::Merge(from, this);
+  } else {
+    class_to->full().merge_to_from(*this, from);
   }
-  merge_to_from(*this, from);
-}
-
-void Message::CheckTypeAndMergeFrom(const MessageLite& other) {
-  MergeFrom(*down_cast<const Message*>(&other));
 }
 
 void Message::CopyFrom(const Message& from) {
@@ -100,49 +376,34 @@ void Message::CopyFrom(const Message& from) {
 
   auto* class_to = GetClassData();
   auto* class_from = from.GetClassData();
-  auto* copy_to_from = class_to ? class_to->copy_to_from : nullptr;
 
-  if (class_to == nullptr || class_to != class_from) {
+  if (class_from != nullptr && class_from == class_to) {
+    // Fail if "from" is a descendant of "to" as such copy is not allowed.
+    ABSL_DCHECK(!internal::IsDescendant(*this, from))
+        << "Source of CopyFrom cannot be a descendant of the target.";
+    ABSL_DCHECK(!internal::IsDescendant(from, *this))
+        << "Target of CopyFrom cannot be a descendant of the source.";
+    Clear();
+    class_to->full().merge_to_from(*this, from);
+  } else {
     const Descriptor* descriptor = GetDescriptor();
-    GOOGLE_CHECK_EQ(from.GetDescriptor(), descriptor)
+    ABSL_CHECK_EQ(from.GetDescriptor(), descriptor)
         << ": Tried to copy from a message with a different type. "
            "to: "
         << descriptor->full_name()
         << ", "
            "from: "
         << from.GetDescriptor()->full_name();
-    copy_to_from = [](Message& to, const Message& from) {
-      ReflectionOps::Copy(from, &to);
-    };
+    ReflectionOps::Copy(from, this);
   }
-  copy_to_from(*this, from);
 }
 
-void Message::CopyWithSourceCheck(Message& to, const Message& from) {
-#ifndef NDEBUG
-  FailIfCopyFromDescendant(to, from);
-#endif
-  to.Clear();
-  to.GetClassData()->merge_to_from(to, from);
-}
-
-void Message::FailIfCopyFromDescendant(Message& to, const Message& from) {
-  auto* arena = to.GetArenaForAllocation();
-  bool same_message_owned_arena = to.GetOwningArena() == nullptr &&
-                                  arena != nullptr &&
-                                  arena == from.GetOwningArena();
-  GOOGLE_CHECK(!same_message_owned_arena && !internal::IsDescendant(to, from))
-      << "Source of CopyFrom cannot be a descendant of the target.";
-}
-
-std::string Message::GetTypeName() const {
-  return GetDescriptor()->full_name();
-}
-
+#if !defined(PROTOBUF_CUSTOM_VTABLE)
 void Message::Clear() { ReflectionOps::Clear(this); }
+#endif  // !PROTOBUF_CUSTOM_VTABLE
 
-bool Message::IsInitialized() const {
-  return ReflectionOps::IsInitialized(*this);
+bool Message::IsInitializedImpl(const MessageLite& msg) {
+  return ReflectionOps::IsInitialized(DownCastMessage<Message>(msg));
 }
 
 void Message::FindInitializationErrors(std::vector<std::string>* errors) const {
@@ -152,24 +413,28 @@ void Message::FindInitializationErrors(std::vector<std::string>* errors) const {
 std::string Message::InitializationErrorString() const {
   std::vector<std::string> errors;
   FindInitializationErrors(&errors);
-  return Join(errors, ", ");
+  return absl::StrJoin(errors, ", ");
 }
 
 void Message::CheckInitialized() const {
-  GOOGLE_CHECK(IsInitialized()) << "Message of type \"" << GetDescriptor()->full_name()
-                         << "\" is missing required fields: "
-                         << InitializationErrorString();
+  ABSL_CHECK(IsInitialized())
+      << "Message of type \"" << GetDescriptor()->full_name()
+      << "\" is missing required fields: " << InitializationErrorString();
 }
 
 void Message::DiscardUnknownFields() {
   return ReflectionOps::DiscardUnknownFields(this);
 }
 
-const char* Message::_InternalParse(const char* ptr,
-                                    internal::ParseContext* ctx) {
-  return WireFormat::_InternalParse(this, ptr, ctx);
+Metadata Message::GetMetadata() const {
+  return GetMetadataImpl(GetClassData()->full());
 }
 
+Metadata Message::GetMetadataImpl(const internal::ClassDataFull& data) {
+  return internal::GetMetadataImpl(data);
+}
+
+#if !defined(PROTOBUF_CUSTOM_VTABLE)
 uint8_t* Message::_InternalSerialize(uint8_t* target,
                                      io::EpsCopyOutputStream* stream) const {
   return WireFormat::_InternalSerialize(*this, target, stream);
@@ -177,18 +442,13 @@ uint8_t* Message::_InternalSerialize(uint8_t* target,
 
 size_t Message::ByteSizeLong() const {
   size_t size = WireFormat::ByteSize(*this);
-  SetCachedSize(internal::ToCachedSize(size));
+  AccessCachedSize().Set(internal::ToCachedSize(size));
   return size;
 }
-
-void Message::SetCachedSize(int /* size */) const {
-  GOOGLE_LOG(FATAL) << "Message class \"" << GetDescriptor()->full_name()
-             << "\" implements neither SetCachedSize() nor ByteSize().  "
-                "Must implement one or the other.";
-}
+#endif  // !PROTOBUF_CUSTOM_VTABLE
 
 size_t Message::ComputeUnknownFieldsSize(
-    size_t total_size, internal::CachedSize* cached_size) const {
+    size_t total_size, const internal::CachedSize* cached_size) const {
   total_size += WireFormat::ComputeUnknownFieldsSize(
       _internal_metadata_.unknown_fields<UnknownFieldSet>(
           UnknownFieldSet::default_instance));
@@ -197,8 +457,8 @@ size_t Message::ComputeUnknownFieldsSize(
 }
 
 size_t Message::MaybeComputeUnknownFieldsSize(
-    size_t total_size, internal::CachedSize* cached_size) const {
-  if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
+    size_t total_size, const internal::CachedSize* cached_size) const {
+  if (ABSL_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
     return ComputeUnknownFieldsSize(total_size, cached_size);
   }
   cached_size->Set(internal::ToCachedSize(total_size));
@@ -206,24 +466,25 @@ size_t Message::MaybeComputeUnknownFieldsSize(
 }
 
 size_t Message::SpaceUsedLong() const {
-  return GetReflection()->SpaceUsedLong(*this);
+  return GetClassData()->full().descriptor_methods()->space_used_long(*this);
 }
 
-uint64_t Message::GetInvariantPerBuild(uint64_t salt) {
-  return salt;
+namespace internal {
+void* CreateSplitMessageGeneric(Arena* arena, const void* default_split,
+                                size_t size) {
+  void* split =
+      (arena == nullptr) ? Allocate(size) : arena->AllocateAligned(size);
+  memcpy(split, default_split, size);
+  return split;
 }
+}  // namespace internal
 
 // =============================================================================
 // MessageFactory
 
-MessageFactory::~MessageFactory() {}
+MessageFactory::~MessageFactory() = default;
 
 namespace {
-
-
-#define HASH_MAP std::unordered_map
-#define STR_HASH_FXN hash<::google::protobuf::StringPiece>
-
 
 class GeneratedMessageFactory final : public MessageFactory {
  public:
@@ -232,18 +493,79 @@ class GeneratedMessageFactory final : public MessageFactory {
   void RegisterFile(const google::protobuf::internal::DescriptorTable* table);
   void RegisterType(const Descriptor* descriptor, const Message* prototype);
 
+  const Message* TryGetPrototype(const Descriptor* type);
+
   // implements MessageFactory ---------------------------------------
   const Message* GetPrototype(const Descriptor* type) override;
 
  private:
-  // Only written at static init time, so does not require locking.
-  HASH_MAP<StringPiece, const google::protobuf::internal::DescriptorTable*,
-           STR_HASH_FXN>
-      file_map_;
+  GeneratedMessageFactory() {
+    dropped_defaults_factory_.SetDelegateToGeneratedFactory(true);
+  }
 
-  internal::WrappedMutex mutex_;
-  // Initialized lazily, so requires locking.
-  std::unordered_map<const Descriptor*, const Message*> type_map_;
+  absl::optional<const Message*> FindInTypeMap(const Descriptor* type)
+      ABSL_SHARED_LOCKS_REQUIRED(mutex_)
+  {
+    auto it = type_map_.find(type);
+    if (it == type_map_.end()) return absl::nullopt;
+    return it->second.get();
+  }
+
+  const google::protobuf::internal::DescriptorTable* FindInFileMap(
+      absl::string_view name) {
+    auto it = files_.find(name);
+    if (it == files_.end()) return nullptr;
+    return *it;
+  }
+
+  struct DescriptorByNameHash {
+    using is_transparent = void;
+    size_t operator()(const google::protobuf::internal::DescriptorTable* t) const {
+      return absl::HashOf(absl::string_view{t->filename});
+    }
+
+    size_t operator()(absl::string_view name) const {
+      return absl::HashOf(name);
+    }
+  };
+  struct DescriptorByNameEq {
+    using is_transparent = void;
+    bool operator()(const google::protobuf::internal::DescriptorTable* lhs,
+                    const google::protobuf::internal::DescriptorTable* rhs) const {
+      return lhs == rhs || (*this)(lhs->filename, rhs->filename);
+    }
+    bool operator()(absl::string_view lhs,
+                    const google::protobuf::internal::DescriptorTable* rhs) const {
+      return (*this)(lhs, rhs->filename);
+    }
+    bool operator()(const google::protobuf::internal::DescriptorTable* lhs,
+                    absl::string_view rhs) const {
+      return (*this)(lhs->filename, rhs);
+    }
+    bool operator()(absl::string_view lhs, absl::string_view rhs) const {
+      return lhs == rhs;
+    }
+  };
+
+  // Only written at static init time, so does not require locking.
+  absl::flat_hash_set<const google::protobuf::internal::DescriptorTable*,
+                      DescriptorByNameHash, DescriptorByNameEq>
+      files_;
+  DynamicMessageFactory dropped_defaults_factory_;
+
+  absl::Mutex mutex_;
+  class MessagePtr {
+   public:
+    MessagePtr() : value_() {}
+    explicit MessagePtr(const Message* msg) : value_(msg) {}
+    const Message* get() const { return value_; }
+    void set(const Message* msg) { value_ = msg; }
+
+   private:
+    const Message* value_;
+  };
+  absl::flat_hash_map<const Descriptor*, MessagePtr> type_map_
+      ABSL_GUARDED_BY(mutex_);
 };
 
 GeneratedMessageFactory* GeneratedMessageFactory::singleton() {
@@ -254,14 +576,14 @@ GeneratedMessageFactory* GeneratedMessageFactory::singleton() {
 
 void GeneratedMessageFactory::RegisterFile(
     const google::protobuf::internal::DescriptorTable* table) {
-  if (!InsertIfNotPresent(&file_map_, table->filename, table)) {
-    GOOGLE_LOG(FATAL) << "File is already registered: " << table->filename;
+  if (!files_.insert(table).second) {
+    ABSL_LOG(FATAL) << "File is already registered: " << table->filename;
   }
 }
 
 void GeneratedMessageFactory::RegisterType(const Descriptor* descriptor,
                                            const Message* prototype) {
-  GOOGLE_DCHECK_EQ(descriptor->file()->pool(), DescriptorPool::generated_pool())
+  ABSL_DCHECK_EQ(descriptor->file()->pool(), DescriptorPool::generated_pool())
       << "Tried to register a non-generated type with the generated "
          "type registry.";
 
@@ -269,17 +591,44 @@ void GeneratedMessageFactory::RegisterType(const Descriptor* descriptor,
   // function during GetPrototype(), in which case we already have locked
   // the mutex.
   mutex_.AssertHeld();
-  if (!InsertIfNotPresent(&type_map_, descriptor, prototype)) {
-    GOOGLE_LOG(DFATAL) << "Type is already registered: " << descriptor->full_name();
+  if (!type_map_.try_emplace(descriptor, prototype).second) {
+    ABSL_DLOG(FATAL) << "Type is already registered: "
+                     << descriptor->full_name();
   }
 }
 
 
 const Message* GeneratedMessageFactory::GetPrototype(const Descriptor* type) {
+  const Message* result = TryGetPrototype(type);
+  if (result == nullptr &&
+      type->file()->pool() == DescriptorPool::generated_pool()) {
+    // We registered this descriptor with a null pointer.
+    // In this case we need to create the prototype from the dynamic factory.
+    // We _must_ do this outside the lock because the dynamic factory will call
+    // back into the generated factory for cross linking.
+    result = dropped_defaults_factory_.GetPrototype(type);
+
+    {
+      absl::WriterMutexLock lock(&mutex_);
+      // And update the main map to make the next lookup faster.
+      // We don't need to recheck here. Even if someone raced us here the result
+      // is the same, so we can just write it.
+      type_map_[type].set(result);
+    }
+  }
+
+  return result;
+}
+
+const Message* GeneratedMessageFactory::TryGetPrototype(
+    const Descriptor* type) {
+  absl::optional<const Message*> result;
   {
-    ReaderMutexLock lock(&mutex_);
-    const Message* result = FindPtrOrNull(type_map_, type);
-    if (result != nullptr) return result;
+    absl::ReaderMutexLock lock(&mutex_);
+    result = FindInTypeMap(type);
+    if (result.has_value() && *result != nullptr) {
+      return *result;
+    }
   }
 
   // If the type is not in the generated pool, then we can't possibly handle
@@ -288,34 +637,37 @@ const Message* GeneratedMessageFactory::GetPrototype(const Descriptor* type) {
 
   // Apparently the file hasn't been registered yet.  Let's do that now.
   const internal::DescriptorTable* registration_data =
-      FindPtrOrNull(file_map_, type->file()->name().c_str());
+      FindInFileMap(type->file()->name());
   if (registration_data == nullptr) {
-    GOOGLE_LOG(DFATAL) << "File appears to be in generated pool but wasn't "
-                   "registered: "
-                << type->file()->name();
+    ABSL_DLOG(FATAL) << "File appears to be in generated pool but wasn't "
+                        "registered: "
+                     << type->file()->name();
     return nullptr;
   }
 
-  WriterMutexLock lock(&mutex_);
+  {
+    absl::WriterMutexLock lock(&mutex_);
 
-  // Check if another thread preempted us.
-  const Message* result = FindPtrOrNull(type_map_, type);
-  if (result == nullptr) {
-    // Nope.  OK, register everything.
-    internal::RegisterFileLevelMetadata(registration_data);
-    // Should be here now.
-    result = FindPtrOrNull(type_map_, type);
+    // Check if another thread preempted us.
+    result = FindInTypeMap(type);
+    if (!result.has_value()) {
+      // Nope.  OK, register everything.
+      internal::RegisterFileLevelMetadata(registration_data);
+      // Should be here now.
+      result = FindInTypeMap(type);
+      ABSL_DCHECK(result.has_value());
+    }
   }
 
-  if (result == nullptr) {
-    GOOGLE_LOG(DFATAL) << "Type appears to be in generated pool but wasn't "
-                << "registered: " << type->full_name();
-  }
-
-  return result;
+  return *result;
 }
 
 }  // namespace
+
+const Message* MessageFactory::TryGetGeneratedPrototype(
+    const Descriptor* type) {
+  return GeneratedMessageFactory::singleton()->TryGetPrototype(type);
+}
 
 MessageFactory* MessageFactory::generated_factory() {
   return GeneratedMessageFactory::singleton();
@@ -342,7 +694,7 @@ T* GetSingleton() {
 
 const internal::RepeatedFieldAccessor* Reflection::RepeatedFieldAccessor(
     const FieldDescriptor* field) const {
-  GOOGLE_CHECK(field->is_repeated());
+  ABSL_CHECK(field->is_repeated());
   switch (field->cpp_type()) {
 #define HANDLE_PRIMITIVE_TYPE(TYPE, type) \
   case FieldDescriptor::CPPTYPE_##TYPE:   \
@@ -357,9 +709,11 @@ const internal::RepeatedFieldAccessor* Reflection::RepeatedFieldAccessor(
     HANDLE_PRIMITIVE_TYPE(ENUM, int32_t)
 #undef HANDLE_PRIMITIVE_TYPE
     case FieldDescriptor::CPPTYPE_STRING:
-      switch (field->options().ctype()) {
-        default:
-        case FieldOptions::STRING:
+      switch (field->cpp_string_type()) {
+        case FieldDescriptor::CppStringType::kCord:
+          ABSL_LOG(FATAL) << "Repeated cords are not supported.";
+        case FieldDescriptor::CppStringType::kView:
+        case FieldDescriptor::CppStringType::kString:
           return GetSingleton<internal::RepeatedPtrFieldStringAccessor>();
       }
       break;
@@ -370,35 +724,22 @@ const internal::RepeatedFieldAccessor* Reflection::RepeatedFieldAccessor(
         return GetSingleton<internal::RepeatedPtrFieldMessageAccessor>();
       }
   }
-  GOOGLE_LOG(FATAL) << "Should not reach here.";
+  ABSL_LOG(FATAL) << "Should not reach here.";
   return nullptr;
 }
 
 namespace internal {
-template <>
-#if defined(_MSC_VER) && (_MSC_VER >= 1800)
-// Note: force noinline to workaround MSVC compiler bug with /Zc:inline, issue
-// #240
-PROTOBUF_NOINLINE
-#endif
-    Message*
-    GenericTypeHandler<Message>::NewFromPrototype(const Message* prototype,
-                                                  Arena* arena) {
-  return prototype->New(arena);
-}
-template <>
-#if defined(_MSC_VER) && (_MSC_VER >= 1800)
-// Note: force noinline to workaround MSVC compiler bug with /Zc:inline, issue
-// #240
-PROTOBUF_NOINLINE
-#endif
-    Arena*
-    GenericTypeHandler<Message>::GetOwningArena(Message* value) {
-  return value->GetOwningArena();
-}
+template void InternalMetadata::DoClear<UnknownFieldSet>();
+template void InternalMetadata::DoMergeFrom<UnknownFieldSet>(
+    const UnknownFieldSet& other);
+template void InternalMetadata::DoSwap<UnknownFieldSet>(UnknownFieldSet* other);
+template void InternalMetadata::DeleteOutOfLineHelper<UnknownFieldSet>();
+template UnknownFieldSet*
+InternalMetadata::mutable_unknown_fields_slow<UnknownFieldSet>();
 }  // namespace internal
+
 
 }  // namespace protobuf
 }  // namespace google
 
-#include <google/protobuf/port_undef.inc>
+#include "google/protobuf/port_undef.inc"

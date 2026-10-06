@@ -11,15 +11,22 @@
 #include "modules/audio_processing/agc2/input_volume_controller.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <fstream>
+#include <ios>
 #include <limits>
-#include <string>
+#include <memory>
+#include <optional>
+#include <tuple>
 #include <vector>
 
+#include "api/audio/audio_processing.h"
+#include "api/environment/environment_factory.h"
+#include "modules/audio_processing/audio_buffer.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/numerics/safe_minmax.h"
-#include "rtc_base/strings/string_builder.h"
 #include "system_wrappers/include/metrics.h"
-#include "test/field_trial.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/testsupport/file_utils.h"
@@ -35,17 +42,15 @@ namespace {
 
 constexpr int kSampleRateHz = 32000;
 constexpr int kNumChannels = 1;
-constexpr int kInitialInputVolume = 128;
+constexpr int kDefaultInitialInputVolume = 128;
 constexpr int kClippedMin = 165;  // Arbitrary, but different from the default.
 constexpr float kAboveClippedThreshold = 0.2f;
-constexpr int kMinMicLevel = 20;
 constexpr int kClippedLevelStep = 15;
 constexpr float kClippedRatioThreshold = 0.1f;
 constexpr int kClippedWaitFrames = 300;
 constexpr float kHighSpeechProbability = 0.7f;
 constexpr float kLowSpeechProbability = 0.1f;
 constexpr float kSpeechLevel = -25.0f;
-constexpr float kSpeechProbabilityThreshold = 0.5f;
 constexpr float kSpeechRatioThreshold = 0.8f;
 
 constexpr float kMinSample = std::numeric_limits<int16_t>::min();
@@ -65,7 +70,7 @@ std::unique_ptr<InputVolumeController> CreateInputVolumeController(
     bool enable_clipping_predictor = false,
     int update_input_volume_wait_frames = 0) {
   InputVolumeControllerConfig config{
-      .min_input_volume = kMinMicLevel,
+      .min_input_volume = 20,
       .clipped_level_min = kClippedMin,
       .clipped_level_step = clipped_level_step,
       .clipped_ratio_threshold = clipped_ratio_threshold,
@@ -74,12 +79,12 @@ std::unique_ptr<InputVolumeController> CreateInputVolumeController(
       .target_range_max_dbfs = -18,
       .target_range_min_dbfs = -30,
       .update_input_volume_wait_frames = update_input_volume_wait_frames,
-      .speech_probability_threshold = kSpeechProbabilityThreshold,
+      .speech_probability_threshold = 0.5f,
       .speech_ratio_threshold = kSpeechRatioThreshold,
   };
 
-  return std::make_unique<InputVolumeController>(/*num_capture_channels=*/1,
-                                                 config);
+  return std::make_unique<InputVolumeController>(
+      /*num_capture_channels=*/1, config, CreateEnvironment().field_trials());
 }
 
 // (Over)writes `samples_value` for the samples in `audio_buffer`.
@@ -161,7 +166,8 @@ class SpeechSamplesReader {
     RTC_DCHECK(controller.capture_output_used());
 
     float gain = std::pow(10.0f, gain_db / 20.0f);  // From dB to linear gain.
-    is_.seekg(0, is_.beg);  // Start from the beginning of the PCM file.
+    is_.seekg(0,
+              std::ifstream::beg);  // Start from the beginning of the PCM file.
 
     // Read and feed frames.
     for (int i = 0; i < num_frames; ++i) {
@@ -244,7 +250,9 @@ class InputVolumeControllerTestHelper {
                      kNumChannels,
                      kSampleRateHz,
                      kNumChannels),
-        controller(/*num_capture_channels=*/1, config) {
+        controller(/*num_capture_channels=*/1,
+                   config,
+                   CreateEnvironment().field_trials()) {
     controller.Initialize();
     WriteAudioBufferSamples(/*samples_value=*/0.0f, /*clipped_ratio=*/0.0f,
                             audio_buffer);
@@ -338,7 +346,8 @@ TEST_P(InputVolumeControllerChannelSampleRateTest, CheckIsAlive) {
 
   constexpr InputVolumeController::Config kConfig{.enable_clipping_predictor =
                                                       true};
-  InputVolumeController controller(num_channels, kConfig);
+  InputVolumeController controller(num_channels, kConfig,
+                                   CreateEnvironment().field_trials());
   controller.Initialize();
   AudioBuffer buffer(sample_rate_hz, num_channels, sample_rate_hz, num_channels,
                      sample_rate_hz, num_channels);
@@ -487,7 +496,7 @@ TEST_P(InputVolumeControllerParametrizedTest, MicVolumeResponseToRmsError) {
   InputVolumeControllerConfig config = GetInputVolumeControllerTestConfig();
   config.min_input_volume = GetParam();
   InputVolumeControllerTestHelper helper(config);
-  int volume = *helper.CallAgcSequence(kInitialInputVolume,
+  int volume = *helper.CallAgcSequence(kDefaultInitialInputVolume,
                                        kHighSpeechProbability, kSpeechLevel);
 
   // Inside the digital gain's window; no change of volume.
@@ -532,7 +541,7 @@ TEST_P(InputVolumeControllerParametrizedTest, MicVolumeIsLimited) {
   const int min_input_volume = GetParam();
   config.min_input_volume = min_input_volume;
   InputVolumeControllerTestHelper helper(config);
-  int volume = *helper.CallAgcSequence(kInitialInputVolume,
+  int volume = *helper.CallAgcSequence(kDefaultInitialInputVolume,
                                        kHighSpeechProbability, kSpeechLevel);
 
   // Maximum upwards change is limited.
@@ -620,7 +629,7 @@ TEST_P(InputVolumeControllerParametrizedTest,
        UnmutingChecksVolumeWithoutRaising) {
   InputVolumeControllerTestHelper helper(
       /*config=*/{.min_input_volume = GetParam()});
-  helper.CallAgcSequence(kInitialInputVolume, kHighSpeechProbability,
+  helper.CallAgcSequence(kDefaultInitialInputVolume, kHighSpeechProbability,
                          kSpeechLevel);
 
   helper.controller.HandleCaptureOutputUsedChange(false);
@@ -639,7 +648,7 @@ TEST_P(InputVolumeControllerParametrizedTest, UnmutingRaisesTooLowVolume) {
   const int min_input_volume = GetParam();
   InputVolumeControllerTestHelper helper(
       /*config=*/{.min_input_volume = min_input_volume});
-  helper.CallAgcSequence(kInitialInputVolume, kHighSpeechProbability,
+  helper.CallAgcSequence(kDefaultInitialInputVolume, kHighSpeechProbability,
                          kSpeechLevel);
 
   helper.controller.HandleCaptureOutputUsedChange(false);
@@ -658,7 +667,7 @@ TEST_P(InputVolumeControllerParametrizedTest,
   InputVolumeControllerConfig config = GetInputVolumeControllerTestConfig();
   config.min_input_volume = GetParam();
   InputVolumeControllerTestHelper helper(config);
-  int volume = *helper.CallAgcSequence(kInitialInputVolume,
+  int volume = *helper.CallAgcSequence(kDefaultInitialInputVolume,
                                        kHighSpeechProbability, kSpeechLevel);
 
   // GetMicVolume returns a value outside of the quantization slack, indicating
@@ -684,7 +693,7 @@ TEST_P(InputVolumeControllerParametrizedTest,
   InputVolumeControllerConfig config = GetInputVolumeControllerTestConfig();
   config.min_input_volume = GetParam();
   InputVolumeControllerTestHelper helper(config);
-  int volume = *helper.CallAgcSequence(kInitialInputVolume,
+  int volume = *helper.CallAgcSequence(kDefaultInitialInputVolume,
                                        kHighSpeechProbability, kSpeechLevel);
 
   // Force the mic up to max volume. Takes a few steps due to the residual
@@ -719,7 +728,7 @@ TEST_P(InputVolumeControllerParametrizedTest,
   InputVolumeControllerConfig config = GetInputVolumeControllerTestConfig();
   config.min_input_volume = min_input_volume;
   InputVolumeControllerTestHelper helper(config);
-  int volume = *helper.CallAgcSequence(kInitialInputVolume,
+  int volume = *helper.CallAgcSequence(kDefaultInitialInputVolume,
                                        kHighSpeechProbability, kSpeechLevel);
 
   // Manual change below min, but strictly positive, otherwise no action will be
@@ -751,7 +760,7 @@ TEST_P(InputVolumeControllerParametrizedTest,
   const int min_input_volume = GetParam();
   InputVolumeControllerTestHelper helper(
       /*config=*/{.min_input_volume = min_input_volume});
-  int volume = *helper.CallAgcSequence(kInitialInputVolume,
+  int volume = *helper.CallAgcSequence(kDefaultInitialInputVolume,
                                        kHighSpeechProbability, kSpeechLevel);
 
   // Manual change below min, but strictly positive, otherwise
@@ -764,7 +773,7 @@ TEST_P(InputVolumeControllerParametrizedTest,
 TEST_P(InputVolumeControllerParametrizedTest, NoClippingHasNoImpact) {
   InputVolumeControllerTestHelper helper(
       /*config=*/{.min_input_volume = GetParam()});
-  helper.CallAgcSequence(kInitialInputVolume, kHighSpeechProbability,
+  helper.CallAgcSequence(kDefaultInitialInputVolume, kHighSpeechProbability,
                          kSpeechLevel);
 
   helper.CallAnalyzeInputAudio(/*num_calls=*/100, /*clipped_ratio=*/0);
@@ -775,7 +784,7 @@ TEST_P(InputVolumeControllerParametrizedTest,
        ClippingUnderThresholdHasNoImpact) {
   InputVolumeControllerTestHelper helper(
       /*config=*/{.min_input_volume = GetParam()});
-  helper.CallAgcSequence(kInitialInputVolume, kHighSpeechProbability,
+  helper.CallAgcSequence(kDefaultInitialInputVolume, kHighSpeechProbability,
                          kSpeechLevel);
 
   helper.CallAnalyzeInputAudio(/*num_calls=*/1, /*clipped_ratio=*/0.099);
@@ -912,7 +921,7 @@ TEST_P(InputVolumeControllerParametrizedTest,
 TEST_P(InputVolumeControllerParametrizedTest, TakesNoActionOnZeroMicVolume) {
   InputVolumeControllerTestHelper helper(
       /*config=*/{.min_input_volume = GetParam()});
-  helper.CallAgcSequence(kInitialInputVolume, kHighSpeechProbability,
+  helper.CallAgcSequence(kDefaultInitialInputVolume, kHighSpeechProbability,
                          kSpeechLevel);
 
   EXPECT_EQ(
@@ -1180,7 +1189,8 @@ TEST_P(InputVolumeControllerParametrizedTest,
 // Checks that passing an empty speech level has no effect on the input volume.
 TEST_P(InputVolumeControllerParametrizedTest, EmptyRmsErrorHasNoEffect) {
   InputVolumeController controller(kNumChannels,
-                                   GetInputVolumeControllerTestConfig());
+                                   GetInputVolumeControllerTestConfig(),
+                                   CreateEnvironment().field_trials());
   controller.Initialize();
 
   // Feed speech with low energy that would trigger an upward adapation of
@@ -1188,17 +1198,17 @@ TEST_P(InputVolumeControllerParametrizedTest, EmptyRmsErrorHasNoEffect) {
   constexpr int kNumFrames = 125;
   constexpr int kGainDb = -20;
   SpeechSamplesReader reader;
-  int volume = reader.Feed(kNumFrames, kInitialInputVolume, kGainDb,
+  int volume = reader.Feed(kNumFrames, kDefaultInitialInputVolume, kGainDb,
                            kLowSpeechProbability, std::nullopt, controller);
 
   // Check that no adaptation occurs.
-  ASSERT_EQ(volume, kInitialInputVolume);
+  ASSERT_EQ(volume, kDefaultInitialInputVolume);
 }
 
 // Checks that the recommended input volume is not updated unless enough
 // frames have been processed after the previous update.
 TEST(InputVolumeControllerTest, UpdateInputVolumeWaitFramesIsEffective) {
-  constexpr int kInputVolume = kInitialInputVolume;
+  constexpr int kInputVolume = kDefaultInitialInputVolume;
   std::unique_ptr<InputVolumeController> controller_wait_0 =
       CreateInputVolumeController(kClippedLevelStep, kClippedRatioThreshold,
                                   kClippedWaitFrames,
@@ -1276,7 +1286,7 @@ TEST(InputVolumeControllerTest,
 }
 
 TEST(InputVolumeControllerTest, SpeechRatioThresholdIsEffective) {
-  constexpr int kInputVolume = kInitialInputVolume;
+  constexpr int kInputVolume = kDefaultInitialInputVolume;
   // Create two input volume controllers with 10 frames between volume updates
   // and the minimum speech ratio of 0.8 and speech probability threshold 0.5.
   std::unique_ptr<InputVolumeController> controller_1 =
@@ -1327,7 +1337,7 @@ TEST(InputVolumeControllerTest, SpeechRatioThresholdIsEffective) {
 }
 
 TEST(InputVolumeControllerTest, SpeechProbabilityThresholdIsEffective) {
-  constexpr int kInputVolume = kInitialInputVolume;
+  constexpr int kInputVolume = kDefaultInitialInputVolume;
   // Create two input volume controllers with the exact same settings and
   // 10 frames between volume updates.
   std::unique_ptr<InputVolumeController> controller_1 =

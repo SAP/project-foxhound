@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsExternalHelperAppService_h__
-#define nsExternalHelperAppService_h__
+#ifndef nsExternalHelperAppService_h_
+#define nsExternalHelperAppService_h_
 
 #include "mozilla/Logging.h"
 #include "prtime.h"
@@ -31,7 +30,6 @@
 #include "nsIObserver.h"
 #include "nsCOMArray.h"
 #include "nsWeakReference.h"
-#include "mozilla/Attributes.h"
 
 class nsExternalAppHandler;
 class nsIMIMEInfo;
@@ -128,6 +126,14 @@ class nsExternalHelperAppService : public nsIExternalHelperAppService,
 
   // Internal method. Only called directly from tests.
   static nsresult EscapeURI(nsIURI* aURI, nsIURI** aResult);
+
+  /**
+   * Check whether `aBrowsingContext` is sandboxed such that external
+   * protocol navigations performed in that context would be blocked.
+   */
+  static bool ExternalProtocolIsBlockedBySandbox(
+      mozilla::dom::BrowsingContext* aBrowsingContext,
+      const bool aHasValidUserGestureActivation);
 
   /**
    * Logging Module. Usage: set MOZ_LOG=HelperAppService:level, where level
@@ -307,7 +313,8 @@ class nsExternalAppHandler final : public nsIStreamListener,
                        mozilla::dom::BrowsingContext* aBrowsingContext,
                        nsIInterfaceRequestor* aWindowContext,
                        nsExternalHelperAppService* aExtProtSvc,
-                       const nsAString& aSuggestedFileName, uint32_t aReason,
+                       const nsAString& aSuggestedFileName,
+                       nsIHelperAppLauncherDialog::reason aReason,
                        bool aForceSave);
 
   /**
@@ -401,7 +408,7 @@ class nsExternalAppHandler final : public nsIStreamListener,
    * reason the dialog was shown (unknown content type, server requested it,
    * etc).
    */
-  uint32_t mReason;
+  nsIHelperAppLauncherDialog::reason mReason;
 
   /**
    * Indicates if the nsContentSecurityUtils rate this download as
@@ -565,4 +572,4 @@ class nsExternalAppHandler final : public nsIStreamListener,
   RefPtr<nsExternalHelperAppService> mExtProtSvc;
 };
 
-#endif  // nsExternalHelperAppService_h__
+#endif  // nsExternalHelperAppService_h_

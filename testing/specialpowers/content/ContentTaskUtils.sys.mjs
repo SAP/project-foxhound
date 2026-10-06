@@ -10,9 +10,9 @@
  * callback based.
  */
 
-// Disable ownerGlobal use since that's not available on content-privileged elements.
+// Disable documentGlobal use since that's not available on content-privileged elements.
 
-/* eslint-disable mozilla/use-ownerGlobal */
+/* eslint-disable mozilla/use-documentGlobal */
 
 import { setTimeout } from "resource://gre/modules/Timer.sys.mjs";
 
@@ -84,7 +84,7 @@ export var ContentTaskUtils = {
    *        Rejects if timeout is exceeded or condition ever throws.
    */
   async waitForCondition(condition, msg, interval = 100, maxTries = 50) {
-    let startTime = Cu.now();
+    let startTime = ChromeUtils.now();
     for (let tries = 0; tries < maxTries; ++tries) {
       await new Promise(resolve => setTimeout(resolve, interval));
 
@@ -141,16 +141,15 @@ export var ContentTaskUtils = {
    *        listening should continue. If not specified, the first event with
    *        the specified name resolves the returned promise.
    *
-   * @note Because this function is intended for testing, any error in checkFn
+   * Note: Because this function is intended for testing, any error in checkFn
    *       will cause the returned promise to be rejected instead of waiting for
    *       the next event, since this is probably a bug in the test.
    *
-   * @returns {Promise}
-   * @resolves The Event object.
+   * @returns {Promise<Event>}
    */
   waitForEvent(subject, eventName, capture, checkFn, wantsUntrusted = false) {
     return new Promise((resolve, reject) => {
-      let startTime = Cu.now();
+      let startTime = ChromeUtils.now();
       subject.addEventListener(
         eventName,
         function listener(event) {
@@ -188,7 +187,7 @@ export var ContentTaskUtils = {
    *
    * @param {Element} subject
    *        The element on which to observe mutations.
-   * @param {Object} options
+   * @param {object} options
    *        The options to pass to MutationObserver.observe();
    * @param {function} checkFn [optional]
    *        Function that returns true when it wants the promise to be resolved.
@@ -201,7 +200,13 @@ export var ContentTaskUtils = {
       return Promise.resolve();
     }
     return new Promise(resolve => {
-      let obs = new subject.ownerGlobal.MutationObserver(function () {
+      /**
+       * @backward-compat { version 152 }
+       *
+       * Get rid of the documentGlobal fallback once 152 makes it to release.
+       */
+      let global = subject.documentGlobal ?? subject.ownerGlobal;
+      let obs = new global.MutationObserver(function () {
         if (checkFn && !checkFn()) {
           return;
         }
@@ -213,8 +218,44 @@ export var ContentTaskUtils = {
   },
 
   /**
+   * Run a query selector that pierces into open and closed Shadow DOM roots.
+   *
+   * @param {Document | ShadowRoot | Element} root
+   * @param {string} selector
+   * @returns {Element | null}
+   */
+  querySelectorDeep(root, selector) {
+    if (!root) {
+      return null;
+    }
+
+    const direct = root.querySelector?.(selector);
+    if (direct) {
+      return direct;
+    }
+
+    const doc = root.ownerDocument ?? root;
+    const treeWalker = doc.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+
+    // Walk child elements to find other shadow roots.
+    let current = treeWalker.currentNode;
+    while (current) {
+      const shadow = current.openOrClosedShadowRoot;
+      if (shadow) {
+        const match = ContentTaskUtils.querySelectorDeep(shadow, selector);
+        if (match) {
+          return match;
+        }
+      }
+      current = treeWalker.nextNode();
+    }
+
+    return null;
+  },
+
+  /**
    * Gets an instance of the `EventUtils` helper module for usage in
-   * content tasks. See https://searchfox.org/mozilla-central/source/testing/mochitest/tests/SimpleTest/EventUtils.js
+   * content tasks. See https://searchfox.org/firefox-main/source/testing/mochitest/tests/SimpleTest/EventUtils.js
    *
    * @param content
    *        The `content` global object from your content task.

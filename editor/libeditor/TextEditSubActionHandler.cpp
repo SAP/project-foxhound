@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -33,8 +32,8 @@
 #include "nsDebug.h"
 #include "nsError.h"
 #include "nsGkAtoms.h"
+#include "mozilla/dom/ContentList.h"
 #include "nsIContent.h"
-#include "nsIHTMLCollection.h"
 #include "nsINode.h"
 #include "nsISupports.h"
 #include "nsLiteralString.h"
@@ -335,7 +334,7 @@ void TextEditor::HandleNewLinesInStringForSingleLineEditor(
           ++offset;
         }
       }
-      aString = result;
+      aString = std::move(result);
       break;
     }
     case nsIEditor::eNewlinesPasteIntact:
@@ -379,7 +378,7 @@ Result<EditActionResult, nsresult> TextEditor::HandleInsertText(
   uint32_t start = 0;
   if (IsPasswordEditor()) {
     if (GetComposition() && !GetComposition()->String().IsEmpty()) {
-      start = GetComposition()->XPOffsetInTextNode();
+      start = GetComposition()->ClampedStartOffsetInTextNode();
     } else {
       uint32_t end = 0;
       nsContentUtils::GetSelectionInTextControl(&SelectionRef(), GetRoot(),

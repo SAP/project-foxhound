@@ -11,14 +11,34 @@ import android.content.pm.ActivityInfo
  */
 interface OrientationDelegate {
     /**
+     * The result of an orientation lock request.
+     */
+    enum class LockResult {
+        /**
+         * The orientation lock request was successful.
+         */
+        SUCCESS,
+
+        /**
+         * The orientation lock request was rejected.
+         */
+        REJECTED,
+
+        /**
+         * The orientation lock request is not supported by the platform.
+         */
+        NOT_SUPPORTED,
+    }
+
+    /**
      * Request to force a certain screen orientation on the current activity.
      *
      * @param requestedOrientation The screen orientation which should be set.
      * Values can be any of screen orientation values defined in [ActivityInfo].
      *
-     * @return Whether the request to set a screen orientation is promised to be fulfilled or denied.
+     * @return The [LockResult] of the orientation lock request.
      */
-    fun onOrientationLock(requestedOrientation: Int): Boolean = true
+    fun onOrientationLock(requestedOrientation: Int): LockResult = LockResult.SUCCESS
 
     /**
      * Request to restore the natural device orientation, what it was before [onOrientationLock].

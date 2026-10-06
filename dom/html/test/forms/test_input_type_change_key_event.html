@@ -1,0 +1,103 @@
+<!DOCTYPE HTML>
+<html>
+<!--
+https://bugzilla.mozilla.org/show_bug.cgi?id=928224
+-->
+<head>
+  <title>Test for Bug 928224</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=928224">Mozilla Bug 928224</a>
+<p id="display"></p>
+<div id="content">
+  <input id="username" type="text" value="Enter User Name" onfocus="clearText(this)">
+  <input id="target" type="text" autocomplete="off" maxlength="35" value="Enter Password"
+         onkeypress="maskPassword(this, 'password')" onkeyup="bindPassword(this)" onblur="clearText(this)"
+         name="password" title="Enter Password">
+  <input id="reverseTarget" type="password" autocomplete="off">
+</div>
+<div id="visiblePassword">Password = </div>
+<pre id="test">
+<script>
+
+/**
+ * Test for Bug 928224.
+ * Mimics a common pattern: a password field starts as type=text with placeholder
+ * "Enter Password"; on first keypress, maskPassword() clears the placeholder and
+ * switches type to "password". The first character typed must not be dropped.
+ * Also tests the reverse: type=password changing to type=text on keypress.
+ */
+
+SimpleTest.waitForExplicitFinish();
+SimpleTest.waitForFocus(function() {
+  test();
+  testReverseDirection();
+  SimpleTest.finish();
+});
+
+function maskPassword(elm, type) {
+  if (document.getElementById(elm.id).value === "Enter Password") {
+    document.getElementById(elm.id).value = "";
+    document.getElementById(elm.id).type = type;
+  }
+}
+
+function clearText(elm) {
+  if (elm.value === "Enter User Name") {
+    elm.value = "";
+  }
+  if (document.getElementById(elm.id).value === "" && elm.id === "target") {
+    document.getElementById(elm.id).value = "Enter Password";
+    document.getElementById(elm.id).type = "text";
+    document.getElementById("visiblePassword").textContent = "Password = ";
+  }
+}
+
+function bindPassword(elm) {
+  document.getElementById("visiblePassword").textContent = "Password = " + document.getElementById(elm.id).value;
+}
+
+function testReverseDirection() {
+  const reverseTarget = document.getElementById("reverseTarget");
+
+  is(reverseTarget.type, "password", "reverseTarget starts as password");
+
+  reverseTarget.addEventListener("keypress", function onKeypress() {
+    reverseTarget.type = "text";
+    reverseTarget.removeEventListener("keypress", onKeypress);
+  });
+
+  reverseTarget.focus();
+  synthesizeKey("a");
+
+  is(reverseTarget.type, "text", "type should have changed to text on keypress");
+  is(reverseTarget.value, "a",
+     "first character must not be dropped after type change from password to text on keypress (Bug 928224)");
+}
+
+function test() {
+  const username = document.getElementById("username");
+  const target = document.getElementById("target");
+
+  is(target.value, "Enter Password", "target starts with placeholder");
+  is(target.type, "text", "target starts as text");
+
+  username.focus();
+  synthesizeKey("KEY_Tab");
+
+  is(document.activeElement, target, "target should be focused after Tab");
+
+  synthesizeKey("a");
+
+  is(target.type, "password", "maskPassword should have changed type to password");
+  is(target.value, "a",
+     "first character must not be dropped after type change on keypress (Bug 928224)");
+}
+
+</script>
+</pre>
+</body>
+</html>

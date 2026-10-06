@@ -39,21 +39,30 @@ export class AboutTranslationsChild extends JSWindowActorChild {
     "browser.translations.useHTML"
   );
 
-  handleEvent(event) {
+  async handleEvent(event) {
     if (event.type === "DOMDocElementInserted") {
       this.#exportFunctions();
     }
 
-    if (
-      event.type === "DOMContentLoaded" &&
-      Services.prefs.getBoolPref("browser.translations.enable")
-    ) {
-      this.#sendEventToContent({ type: "enable" });
+    if (event.type === "DOMContentLoaded") {
+      const enabled = await this.sendQuery("AboutTranslations:GetEnabledState");
+      this.#sendEventToContent({
+        type: "enabled-state-changed",
+        enabled,
+      });
     }
   }
 
   receiveMessage({ name, data }) {
     switch (name) {
+      case "AboutTranslations:EnabledStateChanged": {
+        const { enabled } = data;
+        this.#sendEventToContent({
+          type: "enabled-state-changed",
+          enabled,
+        });
+        break;
+      }
       case "AboutTranslations:SendTranslationsPort": {
         const { languagePair, port } = data;
         const transferables = [port];
@@ -75,6 +84,10 @@ export class AboutTranslationsChild extends JSWindowActorChild {
       default:
         throw new Error("Unknown AboutTranslations message: " + name);
     }
+  }
+
+  RPMGetFormatURLPref(formatURL) {
+    return Services.urlFormatter.formatURLPref(formatURL);
   }
 
   /**
@@ -133,14 +146,20 @@ export class AboutTranslationsChild extends JSWindowActorChild {
     const fns = [
       "AT_log",
       "AT_logError",
-      "AT_getAppLocale",
+      "AT_getAppLocaleAsBCP47",
       "AT_getSupportedLanguages",
+      "AT_clearSourceText",
+      "AT_enableTranslationsFeature",
+      "AT_isEnabledStateManagedByPolicy",
       "AT_isTranslationEngineSupported",
       "AT_isHtmlTranslation",
+      "AT_isInAutomation",
       "AT_createTranslationsPort",
       "AT_identifyLanguage",
+      "AT_getDisplayName",
       "AT_getScriptDirection",
       "AT_telemetry",
+      "RPMGetFormatURLPref",
     ];
     for (const name of fns) {
       Cu.exportFunction(this[name].bind(this), window, { defineAs: name });
@@ -170,7 +189,7 @@ export class AboutTranslationsChild extends JSWindowActorChild {
    *
    * @returns {Intl.Locale}
    */
-  AT_getAppLocale() {
+  AT_getAppLocaleAsBCP47() {
     return Services.locale.appLocaleAsBCP47;
   }
 
@@ -188,6 +207,34 @@ export class AboutTranslationsChild extends JSWindowActorChild {
   }
 
   /**
+   * Clears the about:translations source textarea with privileged user-input
+   * semantics, rather than setting the value directly to an empty string.
+   *
+   * Clearing the text this way allows the text to be restored via `Ctrl/Cmd + Z`.
+   */
+  AT_clearSourceText() {
+    const sourceTextArea = this.contentWindow.document.getElementById(
+      "about-translations-source-textarea"
+    );
+
+    sourceTextArea.focus();
+    sourceTextArea.setUserInput("");
+  }
+
+  /**
+   * Returns the display name of the given BCP-47 language tag.
+   *
+   * @param {string} language
+   */
+  AT_getDisplayName(language) {
+    return this.#convertToContentPromise(
+      this.sendQuery("AboutTranslations:GetDisplayName", { language }).then(
+        data => Cu.cloneInto(data, this.contentWindow)
+      )
+    );
+  }
+
+  /**
    * Does this device support the translation engine?
    *
    * @returns {Promise<boolean>}
@@ -199,12 +246,50 @@ export class AboutTranslationsChild extends JSWindowActorChild {
   }
 
   /**
+   * Returns true if the enabled state is managed by an enterprise policy, otherwise false.
+   *
+   * When false, the user may freely enable or disable the Translations feature.
+   * When true, the enabled state cannot be changed by the user at run time.
+   *
+   * Note that it is possible for a policy to enforce that the feature is "disabled and immutable,"
+   * such that the user cannot turn the feature on, as well as "enabled and immutable," such that
+   * the user cannot turn the feature off.
+   *
+   * @returns {Promise<boolean>}
+   */
+  AT_isEnabledStateManagedByPolicy() {
+    return this.#convertToContentPromise(
+      this.sendQuery("AboutTranslations:IsEnabledStateManagedByPolicy")
+    );
+  }
+
+  /**
+   * Enables the Translations feature.
+   *
+   * @returns {Promise<void>}
+   */
+  AT_enableTranslationsFeature() {
+    return this.#convertToContentPromise(
+      this.sendQuery("AboutTranslations:EnableTranslationsFeature")
+    );
+  }
+
+  /**
    * Expose the #isHtmlTranslation property.
    *
    * @returns {bool}
    */
   AT_isHtmlTranslation() {
     return this.#isHtmlTranslation;
+  }
+
+  /**
+   * Returns true if we are running tests in automation, otherwise false.
+   *
+   * @returns {boolean}
+   */
+  AT_isInAutomation() {
+    return Cu.isInAutomation;
   }
 
   /**
@@ -227,17 +312,12 @@ export class AboutTranslationsChild extends JSWindowActorChild {
    * Attempts to identify the human language in which the message is written.
    *
    * @param {string} message
-   * @returns {Promise<{ langTag: string, confidence: number }>}
+   * @returns {Promise<{ language: string, confident: boolean }>}
    */
   AT_identifyLanguage(message) {
     return this.#convertToContentPromise(
       lazy.LanguageDetector.detectLanguage(message).then(data =>
-        Cu.cloneInto(
-          // This language detector reports confidence as a boolean instead of
-          // a percentage, so we need to map the confidence to 0.0 or 1.0.
-          { langTag: data.language, confidence: data.confident ? 1.0 : 0.0 },
-          this.contentWindow
-        )
+        Cu.cloneInto(data, this.contentWindow)
       )
     );
   }

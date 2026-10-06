@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,8 +10,6 @@
 #include "mozilla/layers/LayersMessageUtils.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
 #include "mozilla/ScrollContainerFrame.h"
-#include "mozilla/ToString.h"
-#include "mozilla/Unused.h"
 #include "nsDisplayList.h"
 #include "nsTArray.h"
 #include "UnitTransforms.h"
@@ -67,15 +63,18 @@ void WebRenderLayerScrollData::Initialize(
 
   while (asr && asr != aStopAtAsr) {
     MOZ_ASSERT(aOwner.GetManager());
+    if (asr->mKind != ActiveScrolledRoot::ASRKind::Scroll) {
+      asr = asr->mParent;
+      continue;
+    }
     ScrollableLayerGuid::ViewID scrollId = asr->GetViewId();
     if (Maybe<size_t> index = aOwner.HasMetadataFor(scrollId)) {
       mScrollIds.AppendElement(index.ref());
     } else {
       Maybe<ScrollMetadata> metadata =
-          asr->mScrollContainerFrame->ComputeScrollMetadata(
+          asr->ScrollFrame()->ComputeScrollMetadata(
               aOwner.GetManager(), aItem->Frame(), aItem->ToReferenceFrame());
-      aOwner.GetBuilder()->AddScrollContainerFrameToNotify(
-          asr->mScrollContainerFrame);
+      aOwner.GetBuilder()->AddScrollContainerFrameToNotify(asr->ScrollFrame());
       if (metadata) {
         MOZ_ASSERT(metadata->GetMetrics().GetScrollId() == scrollId);
         mScrollIds.AppendElement(aOwner.AddMetadata(metadata.ref()));
@@ -305,7 +304,11 @@ bool WebRenderLayerScrollData::ValidateSubtree(
     const WebRenderLayerScrollData* currentChild =
         &aParent.mLayerScrollData[currentChildIndex];
     childDescendantCounts += currentChild->mDescendantCount;
-    currentChild->ValidateSubtree(aParent, aVisitCounts, currentChildIndex);
+    if (!currentChild->ValidateSubtree(aParent, aVisitCounts,
+                                       currentChildIndex)) {
+      // If a subtree is invalid, we are also invalid.
+      return false;
+    }
 
     // The current child's descendants come first in the array, and the next
     // element after that is our next child.

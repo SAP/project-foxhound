@@ -1,0 +1,32 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@import url("chrome://browser/content/firefoxview/fxview-tab-list.css");
+
+.fxview-tab-row-main:has(.fxview-tab-row-snippet) {
+  grid-template-rows: auto auto;
+  row-gap: var(--space-xsmall);
+  margin-bottom: var(--space-medium);
+}
+
+.fxview-tab-row-snippet {
+  color: var(--text-color-deemphasized);
+  font-size: var(--font-size-small);
+  grid-column: 2 / -1;
+  grid-row: 2;
+
+  > strong {
+    color: var(--text-color);
+    font-weight: var(--font-weight-bold);
+  }
+}
+
+.fxview-tab-row-favicon.chat-overlay {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  background-size: 60%, 100%;
+  background-position:
+    right calc(100% + 1px),
+    0;
+  background-repeat: no-repeat, no-repeat;
+}

@@ -29,9 +29,6 @@ const { NetUtil } = ChromeUtils.importESModule(
   "resource://gre/modules/NetUtil.sys.mjs"
 );
 
-// Always log packets when running tests. runxpcshelltests.py will throw
-// the output away anyway, unless you give it the --verbose flag.
-Services.prefs.setBoolPref("devtools.debugger.log", false);
 // Enable remote debugging for the relevant tests.
 Services.prefs.setBoolPref("devtools.debugger.remote-enabled", true);
 
@@ -407,8 +404,9 @@ async function getTestTab(client, title) {
 }
 /**
  *  Attach to the client's tab whose title is specified
- * @param {Object} client
- * @param {Object} title
+ *
+ * @param {object} client
+ * @param {object} title
  * @returns commands
  */
 async function attachTestTab(client, title) {
@@ -427,9 +425,10 @@ async function attachTestTab(client, title) {
 /**
  * Attach to the client's tab whose title is specified, and then attach to
  * that tab's thread.
- * @param {Object} client
- * @param {Object} title
- * @returns {Object}
+ *
+ * @param {object} client
+ * @param {object} title
+ * @returns {object}
  *         targetFront
  *         threadFront
  *         commands

@@ -231,7 +231,7 @@ e.g. \"https://0.0.0.0:0/base/\"""",
     )
     httpd.start()
     print(
-        "{0}: started fixture server on {1}".format(sys.argv[0], httpd.get_url("/")),
+        "{}: started fixture server on {}".format(sys.argv[0], httpd.get_url("/")),
         file=sys.stderr,
     )
     httpd.wait()

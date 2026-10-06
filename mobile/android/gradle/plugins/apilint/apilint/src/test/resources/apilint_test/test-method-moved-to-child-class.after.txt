@@ -1,0 +1,8 @@
+package test {
+  public class TestParent {
+    method public void testMethod();
+  }
+  public class TestChild extends test.TestParent {
+    method public void testChildMethod();
+  }
+}

@@ -10,7 +10,10 @@
 
 #include "modules/rtp_rtcp/source/active_decode_targets_helper.h"
 
+#include <bitset>
+#include <cstdint>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "test/gtest.h"
@@ -225,8 +228,8 @@ TEST(ActiveDecodeTargetsHelperTest, ReturnsBitmaskWhenChanged) {
 }
 
 TEST(ActiveDecodeTargetsHelperTest, ReturnsNulloptWhenChainsAreNotUsed) {
-  const rtc::ArrayView<const int> kDecodeTargetProtectedByChain;
-  const rtc::ArrayView<const int> kNoChainDiffs;
+  const std::span<const int> kDecodeTargetProtectedByChain;
+  const std::span<const int> kNoChainDiffs;
 
   ActiveDecodeTargetsHelper helper;
   helper.OnFrame(kDecodeTargetProtectedByChain, /*active_decode_targets=*/kAll,

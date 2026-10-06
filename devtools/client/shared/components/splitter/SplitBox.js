@@ -228,12 +228,12 @@ class SplitBox extends Component {
    * Calculates the constrained size taking into account the minimum width or
    * height passed via this.props.minSize.
    *
-   * @param {Number} requestedSize
+   * @param {number} requestedSize
    *        The requested size
-   * @param {Number} splitBoxWidthOrHeight
+   * @param {number} splitBoxWidthOrHeight
    *        The width or height of the splitBox
    *
-   * @return {Number}
+   * @return {number}
    *         The constrained size
    */
   getConstrainedSizeInPx(requestedSize, splitBoxWidthOrHeight) {

@@ -32,71 +32,117 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=633602
         SimpleTest.waitForExplicitFinish();
         SimpleTest.requestFlakyTimeout("We may need to wait for window's moving");
 
-        function MouseMovementStats() {
-          this.screenX = false;
-          this.screenY = false;
-          this.movementX = false;
-          this.movementY = false;
+        function MouseMovementStats(aEvent) {
+          this.screenX = aEvent.screenX;
+          this.screenY = aEvent.screenY;
+          this.movementX = aEvent.movementX;
+          this.movementY = aEvent.movementY;
         }
 
-        var div = document.getElementById("div")
-          , divCenterWidth = 0
-          , divCenterHeight = 0
-          , movementX = false
-          , movementY = false
-          , firstMove = new MouseMovementStats()
-          , secondMove = new MouseMovementStats();
+        var div = document.getElementById("div");
+        var movementX, movementY;
+        var firstMouseMove, secondMouseMove, secondPointerMove, secondPointerRawUpdate;
 
         function runTests () {
           ok(movementX && movementY, "movementX and " +
             "movementY should exist in mouse events objects.");
-          is(secondMove.movementX, secondMove.screenX - firstMove.screenX,
-           "movementX should be equal to eNow.screenX-ePrevious.screenX");
-          is(secondMove.movementY, secondMove.screenY - firstMove.screenY,
-           "movementY should be equal to eNow.screenY-ePrevious.screenY");
+          ok(firstMouseMove, "firstMouseMove should be recorded");
+          ok(secondMouseMove, "secondMouseMove should be recorded");
+          ok(secondPointerMove, "secondPointerMove should be recorded");
+          ok(secondPointerRawUpdate, "secondPointerRawUpdate should be recorded");
+          is(
+            secondMouseMove?.movementX,
+            secondMouseMove?.screenX - firstMouseMove?.screenX,
+           `movementX should be equal to eNow.screenX (${secondMouseMove.screenX}) - ePrevious.screenX (${firstMouseMove.screenX})`
+          );
+          is(
+            secondPointerMove?.movementX,
+            secondMouseMove?.movementX,
+            "movementX of pointermove should be equal to movementX of the corresponding mousemove"
+          );
+          is(
+            secondPointerRawUpdate?.movementX,
+            secondPointerMove?.movementX,
+            "movementX of pointerrawupdate should be equal to movementX of the corresponding pointermove"
+          );
+          is(
+            secondMouseMove?.movementY,
+            secondMouseMove?.screenY - firstMouseMove?.screenY,
+           `movementY should be equal to eNow.screenY (${secondMouseMove.screenY}) - ePrevious.screenY (${firstMouseMove.screenY})`
+          );
+          is(
+            secondPointerMove?.movementY,
+            secondMouseMove?.movementY,
+            "movementY of pointermove should be equal to movementY of the corresponding mousemove"
+          );
+          is(
+            secondPointerRawUpdate?.movementY,
+            secondPointerMove?.movementY,
+            "movementY of pointerrawupdate should be equal to movementY of the corresponding pointermove"
+          );
         }
 
-        var moveMouse = function(e) {
-          info("Got mouse move");
+        var onFirstMouseMove = function(e) {
+          info(`Got first ${e.type}`);
+
+          div.removeEventListener(e.type, onFirstMouseMove);
+
+          firstMouseMove = new MouseMovementStats(e);
+
           movementX = ("movementX" in e);
           movementY = ("movementY" in e);
 
-          div.removeEventListener("mousemove", moveMouse);
-          div.addEventListener("mousemove", moveMouseAgain);
-
-          firstMove.screenX = e.screenX;
-          firstMove.screenY = e.screenY;
-
-          divCenterWidth = Math.round(div.getBoundingClientRect().width / 2);
-          divCenterHeight = Math.round(div.getBoundingClientRect().height / 2);
-
+          div.addEventListener("mousemove", onSecondMouseMoveOrPointerMove);
+          div.addEventListener("pointermove", onSecondMouseMoveOrPointerMove);
+          div.addEventListener("pointerrawupdate", onSecondMouseMoveOrPointerMove);
+          const divCenterWidth = Math.round(div.getBoundingClientRect().width / 2);
+          const divCenterHeight = Math.round(div.getBoundingClientRect().height / 2);
+          // FIXME: We should synthesize another mousemove after the propagation of
+          // current mousemove ends.  However, doing that will fail so that it does
+          // not make sense what this test checks.
           synthesizeMouse(div, (divCenterWidth + 10), (divCenterHeight + 10), {
             type: "mousemove"
           }, window);
         };
 
-        var moveMouseAgain = function(e) {
-          info("Got mouse move again");
-          secondMove.screenX = e.screenX;
-          secondMove.screenY = e.screenY;
-          secondMove.movementX = e.movementX;
-          secondMove.movementY = e.movementY;
+        var onSecondMouseMoveOrPointerMove = function(e) {
+          info(`Got second ${e.type}`);
 
-          div.removeEventListener("mousemove", moveMouseAgain);
-          addFullscreenChangeContinuation("exit", function() {
-            info("Got fullscreenchange for exiting");
-            runTests();
-            SimpleTest.finish();
-          });
-          document.exitFullscreen();
+          div.removeEventListener(e.type, onSecondMouseMoveOrPointerMove);
+          switch (e.type) {
+            case "mousemove":
+              secondMouseMove = new MouseMovementStats(e);
+              addFullscreenChangeContinuation("exit", function() {
+                info("Got fullscreenchange for exiting");
+                runTests();
+                SimpleTest.finish();
+              });
+              document.exitFullscreen();
+              break;
+            case "pointermove":
+              secondPointerMove = new MouseMovementStats(e);
+              break;
+            case "pointerrawupdate":
+              secondPointerRawUpdate = new MouseMovementStats(e);
+              break;
+          }
         };
 
         function start() {
           info("Requesting fullscreen on parent");
+          for (const type of ["mousemove", "pointermove", "pointerrawupdate"]) {
+            addEventListener(type, event => {
+              info(`${type}: { screenX: ${event.screenX}, screenY: ${
+                event.screenY
+              }, movementX: ${event.movementX}, movementY: ${event.movementY} }`);
+            }, {capture: true});
+          }
           addFullscreenChangeContinuation("enter", function() {
             info("Got fullscreenchange for entering");
-            div.addEventListener("mousemove", moveMouse);
-            synthesizeMouseAtCenter(div, {type: "mousemove"}, window);
+            div.addEventListener("mousemove", onFirstMouseMove);
+            requestAnimationFrame(
+              () => synthesizeMouseAtCenter(div, {type: "mousemove"}, window)
+            );
           });
           div.requestFullscreen();
         }

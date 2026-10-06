@@ -15,10 +15,13 @@ Firefox provides additional parameters for certain commands, as detailed in the 
 ```CDDL
 webExtension.InstallParameters = {
    extensionData: webExtension.ExtensionData,
+   ? moz:allowPrivateBrowsing: bool .default false,
    ? moz:permanent: bool .default false,
 }
 ```
 
 Description:
+
+* `moz:allowPrivateBrowsing`: When set to `true`, the web extension will be allowed in private browsing mode.
 
 * `moz:permanent`: When set to `true`, the web extension will be installed permanently. This requires the extension to be signed. Unsigned extensions can only be installed temporarily, which is the default behavior.

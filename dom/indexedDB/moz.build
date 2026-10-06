@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -8,7 +6,6 @@ with Files("**"):
     BUG_COMPONENT = ("Core", "Storage: IndexedDB")
 
 MOCHITEST_MANIFESTS += [
-    "test/mochitest-intl-api.toml",
     "test/mochitest-private.toml",
     "test/mochitest-regular.toml",
 ]
@@ -43,6 +40,7 @@ EXPORTS.mozilla.dom += [
     "IDBIndex.h",
     "IDBKeyRange.h",
     "IDBObjectStore.h",
+    "IDBRecord.h",
     "IDBRequest.h",
     "IDBTransaction.h",
     "IndexedDatabase.h",
@@ -74,9 +72,11 @@ UNIFIED_SOURCES += [
     "IDBDatabase.cpp",
     "IDBEvents.cpp",
     "IDBFactory.cpp",
+    "IDBGetAllOptions.cpp",
     "IDBIndex.cpp",
     "IDBKeyRange.cpp",
     "IDBObjectStore.cpp",
+    "IDBRecord.cpp",
     "IDBRequest.cpp",
     "IDBTransaction.cpp",
     "IndexedDatabase.cpp",

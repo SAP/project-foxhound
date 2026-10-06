@@ -96,6 +96,7 @@
 #if defined(SK_HISTOGRAM_ENUMERATION)  || \
     defined(SK_HISTOGRAM_BOOLEAN)      || \
     defined(SK_HISTOGRAM_EXACT_LINEAR) || \
+    defined(SK_HISTOGRAM_CUSTOM_EXACT_LINEAR) || \
     defined(SK_HISTOGRAM_MEMORY_KB)    || \
     defined(SK_HISTOGRAM_CUSTOM_COUNTS)|| \
     defined(SK_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES)
@@ -114,6 +115,11 @@
 
 #ifndef SK_HISTOGRAM_EXACT_LINEAR
 #  define SK_HISTOGRAM_EXACT_LINEAR(name, sample, valueMax)
+#endif
+
+#ifndef SK_HISTOGRAM_CUSTOM_EXACT_LINEAR
+#  define SK_HISTOGRAM_CUSTOM_EXACT_LINEAR(name, sample, value_min, \
+                                           value_max, bucket_count)
 #endif
 
 #ifndef SK_HISTOGRAM_MEMORY_KB
@@ -137,10 +143,6 @@
         #define SK_FORCE_RASTER_PIPELINE_BLITTER
     #endif
     #define SK_DISABLE_SDF_TEXT
-#endif
-
-#ifndef SK_DISABLE_LEGACY_SHADERCONTEXT
-#   define SK_ENABLE_LEGACY_SHADERCONTEXT
 #endif
 
 #if defined(SK_BUILD_FOR_LIBFUZZER) || defined(SK_BUILD_FOR_AFL_FUZZ)

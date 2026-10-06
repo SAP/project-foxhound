@@ -4,6 +4,9 @@
 
 function restore_prefs() {
   Services.prefs.clearUserPref("dom.disable_open_during_load");
+  Services.prefs.clearUserPref(
+    "dom.security.framebusting_intervention.enabled"
+  );
 }
 
 let ORIGINAL_PREF_VALUE = undefined;
@@ -26,19 +29,24 @@ registerCleanupFunction(async function cleanup_prefs() {
       ORIGINAL_PREF_VALUE
     );
   }
+  Services.prefs.clearUserPref(
+    "dom.security.framebusting_intervention.enabled"
+  );
 });
 
 async function test_popup_blocker_disabled({ disabled, locked }) {
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
-    "about:preferences#privacy"
+    Services.prefs.getBoolPref("browser.settings-redesign.enabled", false)
+      ? "about:preferences#permissionsData"
+      : "about:preferences#privacy"
   );
   await SpecialPowers.spawn(
     tab.linkedBrowser,
     [{ disabled, locked }],
     // eslint-disable-next-line no-shadow
     async function ({ disabled, locked }) {
-      let checkbox = content.document.getElementById("popupPolicy");
+      let checkbox = content.document.getElementById("popupAndRedirectPolicy");
       is(
         checkbox.checked,
         !disabled,
@@ -56,7 +64,14 @@ async function test_popup_blocker_disabled({ disabled, locked }) {
   is(
     Services.prefs.prefIsLocked("dom.disable_open_during_load"),
     locked,
-    "Flash pref lock state should match policy lock state"
+    "Pop-up flash pref lock state should match policy lock state"
+  );
+  is(
+    Services.prefs.prefIsLocked(
+      "dom.security.framebusting_intervention.enabled"
+    ),
+    locked,
+    "Framebusting pref lock state should match policy lock state"
   );
 }
 
@@ -90,35 +105,6 @@ add_task(async function test_block() {
   restore_prefs();
 });
 
-add_task(async function test_block_locked() {
-  await setupPolicyEngineWithJson({
-    policies: {
-      PopupBlocking: {
-        Default: true,
-        Locked: true,
-      },
-    },
-  });
-
-  await test_popup_blocker_disabled({ disabled: false, locked: true });
-
-  restore_prefs();
-});
-
-add_task(async function test_locked() {
-  await setupPolicyEngineWithJson({
-    policies: {
-      PopupBlocking: {
-        Locked: true,
-      },
-    },
-  });
-
-  await test_popup_blocker_disabled({ disabled: false, locked: true });
-
-  restore_prefs();
-});
-
 add_task(async function test_disabled() {
   await setupPolicyEngineWithJson({
     policies: {
@@ -129,21 +115,6 @@ add_task(async function test_disabled() {
   });
 
   await test_popup_blocker_disabled({ disabled: true, locked: false });
-
-  restore_prefs();
-});
-
-add_task(async function test_disabled_locked() {
-  await setupPolicyEngineWithJson({
-    policies: {
-      PopupBlocking: {
-        Default: false,
-        Locked: true,
-      },
-    },
-  });
-
-  await test_popup_blocker_disabled({ disabled: true, locked: true });
 
   restore_prefs();
 });

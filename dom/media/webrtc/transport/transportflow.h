@@ -1,22 +1,20 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Original author: ekr@rtfm.com
 
-#ifndef transportflow_h__
-#define transportflow_h__
+#ifndef transportflow_h_
+#define transportflow_h_
 
 #include <deque>
 #include <string>
 
-#include "nscore.h"
-#include "nsISupportsImpl.h"
-#include "mozilla/UniquePtr.h"
-#include "transportlayer.h"
 #include "m_cpp_utils.h"
+#include "mozilla/UniquePtr.h"
+#include "nsISupportsImpl.h"
+#include "nscore.h"
+#include "transportlayer.h"
 
 // A stack of transport layers acts as a flow.
 // Generally, one reads and writes to the top layer.
@@ -50,9 +48,10 @@ namespace mozilla {
 class TransportFlow final : public nsISupports {
  public:
   TransportFlow()
-      : id_("(anonymous)"), layers_(new std::deque<TransportLayer*>) {}
+      : id_("(anonymous)"),
+        layers_(MakeUnique<std::deque<TransportLayer*>>()) {}
   explicit TransportFlow(const std::string id)
-      : id_(id), layers_(new std::deque<TransportLayer*>) {}
+      : id_(id), layers_(MakeUnique<std::deque<TransportLayer*>>()) {}
 
   const std::string& id() const { return id_; }
 

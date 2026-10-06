@@ -1,17 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/MaybeCrossOriginObject.h"
 
-#include "mozilla/BasePrincipal.h"
-#include "mozilla/dom/BindingUtils.h"
-#include "mozilla/dom/DOMJSProxyHandler.h"
-#include "mozilla/dom/RemoteObjectProxy.h"
+#include "AccessCheck.h"
 #include "js/CallAndConstruct.h"    // JS::Call
-#include "js/friend/WindowProxy.h"  // js::IsWindowProxy
 #include "js/Object.h"              // JS::GetClass
 #include "js/PropertyAndElement.h"  // JS_DefineFunctions, JS_DefineProperties
 #include "js/PropertyDescriptor.h"  // JS::PropertyDescriptor, JS_GetOwnPropertyDescriptorById
@@ -19,8 +13,12 @@
 #include "js/RootingAPI.h"
 #include "js/WeakMap.h"
 #include "js/Wrapper.h"
+#include "js/friend/WindowProxy.h"  // js::IsWindowProxy
 #include "jsfriendapi.h"
-#include "AccessCheck.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/DOMJSProxyHandler.h"
+#include "mozilla/dom/RemoteObjectProxy.h"
 #include "nsContentUtils.h"
 
 #ifdef DEBUG

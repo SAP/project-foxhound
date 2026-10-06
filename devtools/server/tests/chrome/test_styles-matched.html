@@ -45,7 +45,7 @@ addTest(function testMatchedStyles() {
   promiseDone(gWalker.querySelector(gWalker.rootNode, "#matched-test-node").then(node => {
     return gStyles.getMatchedSelectors(node, "font-size", {});
   }).then(matched => {
-    is(matched[0].sourceText, "this.style", "First match comes from the element style");
+    is(matched[0].sourceText, "element", "First match comes from the element style");
     is(matched[0].selector, "@element.style", "Element style has a special selector");
     is(matched[0].value, "10px", "First match has the expected value");
     is(matched[0].status, CssLogic.STATUS.BEST, "First match is the best match");

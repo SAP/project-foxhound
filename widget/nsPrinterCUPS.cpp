@@ -1,4 +1,3 @@
-/* -*- Mode: C++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -131,12 +130,7 @@ bool nsPrinterCUPS::SupportsDuplex() const {
   return Supports(CUPS_SIDES, CUPS_SIDES_TWO_SIDED_PORTRAIT);
 }
 
-bool nsPrinterCUPS::SupportsMonochrome() const {
-  if (!SupportsColor()) {
-    return true;
-  }
-  return StaticPrefs::print_cups_monochrome_enabled();
-}
+bool nsPrinterCUPS::SupportsMonochrome() const { return true; }
 
 bool nsPrinterCUPS::SupportsColor() const {
   // CUPS 2.1 (particularly as used in Ubuntu 16) is known to have inaccurate

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,6 +18,13 @@ class RelativeLuminanceUtils {
     float r = ComputeComponent(NS_GET_R(aColor));
     float g = ComputeComponent(NS_GET_G(aColor));
     float b = ComputeComponent(NS_GET_B(aColor));
+    return ComputeFromComponents(r, g, b);
+  }
+
+  static float Compute(float aR, float aG, float aB) {
+    float r = ComputeComponent(aR);
+    float g = ComputeComponent(aG);
+    float b = ComputeComponent(aB);
     return ComputeFromComponents(r, g, b);
   }
 
@@ -50,12 +55,15 @@ class RelativeLuminanceUtils {
   }
 
  private:
-  static float ComputeComponent(uint8_t aComponent) {
-    float v = float(aComponent) / 255.0f;
-    if (v <= 0.03928f) {
-      return v / 12.92f;
+  static float ComputeComponent(float aComponent) {
+    if (aComponent <= 0.03928f) {
+      return aComponent / 12.92f;
     }
-    return std::pow((v + 0.055f) / 1.055f, 2.4f);
+    return std::pow((aComponent + 0.055f) / 1.055f, 2.4f);
+  }
+
+  static float ComputeComponent(uint8_t aComponent) {
+    return ComputeComponent(float(aComponent) / 255.0f);
   }
 
   static constexpr float ComputeFromComponents(float aR, float aG, float aB) {

@@ -5,14 +5,12 @@
 package org.mozilla.fenix.components.menu.compose
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.painter.Painter
@@ -27,7 +25,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.tooling.preview.PreviewLightDark
-import androidx.compose.ui.unit.dp
+import mozilla.components.compose.base.modifier.animateRotation
 import mozilla.components.feature.addons.Addon
 import mozilla.components.feature.addons.ui.displayName
 import mozilla.components.feature.addons.ui.summary
@@ -36,7 +34,7 @@ import org.mozilla.fenix.components.menu.MenuDialogTestTag.RECOMMENDED_ADDON_ITE
 import org.mozilla.fenix.components.menu.MenuDialogTestTag.RECOMMENDED_ADDON_ITEM_TITLE
 import org.mozilla.fenix.compose.list.FaviconListItem
 import org.mozilla.fenix.theme.FirefoxTheme
-import org.mozilla.fenix.translations.rotationAnimation
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * An [Addon] menu item.
@@ -55,7 +53,7 @@ import org.mozilla.fenix.translations.rotationAnimation
 internal fun AddonMenuItem(
     addon: Addon,
     addonInstallationInProgress: Addon?,
-    iconPainter: Painter? = painterResource(id = R.drawable.mozac_ic_plus_24),
+    iconPainter: Painter? = painterResource(id = iconsR.drawable.mozac_ic_plus_24),
     iconDescription: String? = null,
     showDivider: Boolean = true,
     index: Int = 0,
@@ -75,11 +73,10 @@ internal fun AddonMenuItem(
             url = addon.iconUrl,
             modifier = Modifier
                 .testTag(RECOMMENDED_ADDON_ITEM)
-                .clip(shape = RoundedCornerShape(4.dp))
+                .clip(shape = MaterialTheme.shapes.extraSmall)
                 .background(
-                    color = FirefoxTheme.colors.layer3,
+                    color = MaterialTheme.colorScheme.surfaceBright,
                 )
-                .clickable {}
                 .semantics {
                     role = Role.Button
                     collectionItemInfo =
@@ -93,20 +90,16 @@ internal fun AddonMenuItem(
                 },
             labelModifier = Modifier.testTag(RECOMMENDED_ADDON_ITEM_TITLE),
             description = description,
+            maxDescriptionLines = 1,
             faviconPainter = BitmapPainter(image = addonIcon.asImageBitmap()),
             onClick = onClick,
             showDivider = showDivider,
-            dividerColor = FirefoxTheme.colors.borderPrimary,
             iconPainter = if (isInstallAddonInProgress) {
-                painterResource(id = R.drawable.mozac_ic_sync_24)
+                painterResource(id = iconsR.drawable.mozac_ic_sync_24)
             } else {
                 iconPainter
             },
-            iconButtonModifier = if (isInstallAddonInProgress) {
-                Modifier.rotate(rotationAnimation())
-            } else {
-                Modifier
-            },
+            iconButtonModifier = Modifier.animateRotation(isInstallAddonInProgress),
             iconDescription = iconDescription ?: stringResource(
                 R.string.browser_menu_extension_plus_icon_content_description_2,
                 label,
@@ -116,8 +109,9 @@ internal fun AddonMenuItem(
     } else {
         MenuItem(
             label = label,
-            beforeIconPainter = painterResource(id = R.drawable.mozac_ic_extension_24),
+            beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_extension_24),
             description = description,
+            maxDescriptionLines = 1,
             onClick = onClick,
             showDivider = showDivider,
             afterIconPainter = iconPainter,
@@ -145,8 +139,8 @@ private fun AddonMenuItemPreview() {
     FirefoxTheme {
         Column(
             modifier = Modifier
-                .background(color = FirefoxTheme.colors.layer3)
-                .padding(16.dp),
+                .background(color = MaterialTheme.colorScheme.surface)
+                .padding(all = FirefoxTheme.layout.space.static200),
         ) {
             MenuGroup {
                 AddonMenuItem(

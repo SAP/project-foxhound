@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -30,8 +29,6 @@ import java.util.StringTokenizer;
 import org.mozilla.gecko.annotation.RobocopTarget;
 import org.mozilla.gecko.annotation.WrapForJNI;
 import org.mozilla.gecko.mozglue.GeckoLoader;
-import org.mozilla.gecko.process.GeckoProcessManager;
-import org.mozilla.gecko.process.GeckoProcessType;
 import org.mozilla.gecko.process.MemoryController;
 import org.mozilla.gecko.util.GeckoBundle;
 import org.mozilla.gecko.util.ThreadUtils;
@@ -141,7 +138,6 @@ public class GeckoThread extends Thread {
 
   // Main process parameters
   public static final int FLAG_DEBUGGING = 1 << 0; // Debugging mode.
-  public static final int FLAG_PRELOAD_CHILD = 1 << 1; // Preload child during main thread start.
   public static final int FLAG_ENABLE_NATIVE_CRASHREPORTER =
       1 << 2; // Enable native crash reporting.
   public static final int FLAG_DISABLE_LOW_MEMORY_DETECTION =
@@ -456,8 +452,14 @@ public class GeckoThread extends Thread {
     final List<String> env = getEnvFromExtras(mInitInfo.extras);
 
     // In Gecko, the native crash reporter is enabled by default in opt builds, and
-    // disabled by default in debug builds.
-    if ((mInitInfo.flags & FLAG_ENABLE_NATIVE_CRASHREPORTER) == 0 && !BuildConfig.DEBUG_BUILD) {
+    // disabled by default in debug builds. This may be inconsistent with whether a GeckoView
+    // handler is set, so default Gecko to follow GeckoView unless overridden (such as by a test
+    // harness).
+    if (env.contains("MOZ_CRASHREPORTER=1") || env.contains("MOZ_CRASHREPORTER_DISABLE=1")) {
+      // If explicitly set, pass settings to Gecko regardless of whether a GeckoView handler exists.
+      // Native crashes can still write out minidumps even if GeckoView doesn't process them.
+    } else if ((mInitInfo.flags & FLAG_ENABLE_NATIVE_CRASHREPORTER) == 0
+        && !BuildConfig.DEBUG_BUILD) {
       env.add(0, "MOZ_CRASHREPORTER_DISABLE=1");
     } else if ((mInitInfo.flags & FLAG_ENABLE_NATIVE_CRASHREPORTER) != 0
         && BuildConfig.DEBUG_BUILD) {
@@ -488,11 +490,6 @@ public class GeckoThread extends Thread {
         mInitInfo.xpcshell);
 
     initGeckoEnvironment();
-
-    if ((mInitInfo.flags & FLAG_PRELOAD_CHILD) != 0) {
-      // Preload the content ("tab") child process.
-      GeckoProcessManager.getInstance().preload(GeckoProcessType.CONTENT);
-    }
 
     if ((mInitInfo.flags & FLAG_DEBUGGING) != 0) {
       try {

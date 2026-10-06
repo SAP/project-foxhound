@@ -10,11 +10,24 @@
 
 #include "modules/video_coding/rtp_vp8_ref_finder.h"
 
+#include <cstdint>
+#include <memory>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
+#include "api/rtp_packet_infos.h"
+#include "api/video/encoded_frame.h"
+#include "api/video/encoded_image.h"
+#include "api/video/video_codec_type.h"
+#include "api/video/video_content_type.h"
+#include "api/video/video_frame_type.h"
+#include "api/video/video_rotation.h"
+#include "api/video/video_timing.h"
 #include "modules/rtp_rtcp/source/frame_object.h"
+#include "modules/rtp_rtcp/source/rtp_video_header.h"
+#include "modules/video_coding/codecs/vp8/include/vp8_globals.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
@@ -31,7 +44,7 @@ namespace {
 MATCHER_P2(HasIdAndRefs, id, refs, "") {
   return Matches(Eq(id))(arg->Id()) &&
          Matches(UnorderedElementsAreArray(refs))(
-             rtc::ArrayView<int64_t>(arg->references, arg->num_references));
+             std::span<int64_t>(arg->references, arg->num_references));
 }
 
 Matcher<const std::vector<std::unique_ptr<EncodedFrame>>&>
@@ -83,8 +96,8 @@ class Frame {
         /*seq_num_end=*/0,
         /*markerBit=*/true,
         /*times_nacked=*/0,
-        /*first_packet_received_time=*/0,
-        /*last_packet_received_time=*/0,
+        /*first_packet_received_time=*/std::nullopt,
+        /*last_packet_received_time=*/std::nullopt,
         /*rtp_timestamp=*/0,
         /*ntp_time_ms=*/0,
         VideoSendTiming(),

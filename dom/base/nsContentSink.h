@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,18 +13,17 @@
 // Base class for contentsink implementations.
 
 #include "mozilla/Attributes.h"
-#include "nsICSSLoaderObserver.h"
-#include "nsWeakReference.h"
-#include "nsCOMPtr.h"
-#include "nsString.h"
-#include "nsGkAtoms.h"
-#include "nsITimer.h"
-#include "nsStubDocumentObserver.h"
-#include "nsIContentSink.h"
 #include "mozilla/Logging.h"
-#include "nsCycleCollectionParticipant.h"
-#include "nsThreadUtils.h"
 #include "mozilla/StaticPrefs_content.h"
+#include "nsCOMPtr.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsICSSLoaderObserver.h"
+#include "nsIContentSink.h"
+#include "nsITimer.h"
+#include "nsString.h"
+#include "nsStubDocumentObserver.h"
+#include "nsThreadUtils.h"
+#include "nsWeakReference.h"
 
 class nsIURI;
 class nsIChannel;
@@ -141,10 +138,11 @@ class nsContentSink : public nsICSSLoaderObserver,
   void PrefetchHref(const nsAString& aHref, const nsAString& aAs,
                     const nsAString& aType, const nsAString& aMedia);
   void PreloadHref(const nsAString& aHref, const nsAString& aAs,
-                   const nsAString& aType, const nsAString& aMedia,
-                   const nsAString& aNonce, const nsAString& aIntegrity,
-                   const nsAString& aSrcset, const nsAString& aSizes,
-                   const nsAString& aCORS, const nsAString& aReferrerPolicy,
+                   const nsAString& aRel, const nsAString& aType,
+                   const nsAString& aMedia, const nsAString& aNonce,
+                   const nsAString& aIntegrity, const nsAString& aSrcset,
+                   const nsAString& aSizes, const nsAString& aCORS,
+                   const nsAString& aReferrerPolicy,
                    uint64_t aEarlyHintPreloaderId,
                    const nsAString& aFetchPriority);
 
@@ -208,7 +206,6 @@ class nsContentSink : public nsICSSLoaderObserver,
   RefPtr<nsParserBase> mParser;
   nsCOMPtr<nsIURI> mDocumentURI;
   nsCOMPtr<nsIDocShell> mDocShell;
-  RefPtr<mozilla::css::Loader> mCSSLoader;
   RefPtr<nsNodeInfoManager> mNodeInfoManager;
   RefPtr<mozilla::dom::ScriptLoader> mScriptLoader;
 

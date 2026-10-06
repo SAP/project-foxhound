@@ -6,6 +6,7 @@ package mozilla.components.support.utils
 
 import android.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.core.graphics.ColorUtils.calculateContrast
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.support.utils.ColorUtils.calculateAlphaFromPercentage
 import mozilla.components.support.utils.ColorUtils.darken
@@ -39,6 +40,15 @@ class ColorUtilsTest {
 
         // Yahnac
         assertEquals(Color.WHITE.toLong(), ColorUtils.getReadableTextColor(-0xa8400).toLong())
+    }
+
+    @Test
+    fun `getSecondaryReadableTextColor has a good contrast with the background color`() {
+        listOf(Color.GRAY, Color.CYAN, Color.YELLOW).forEach { backgroundColor ->
+            val secondaryReadableTextColor = ColorUtils.getSecondaryReadableTextColor(backgroundColor)
+            val contrast = calculateContrast(secondaryReadableTextColor, backgroundColor)
+            assertTrue(contrast > 2.5f)
+        }
     }
 
     @Test

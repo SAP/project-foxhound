@@ -11,11 +11,14 @@
 #include "rtc_base/rate_tracker.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/time_utils.h"
 
-namespace rtc {
+namespace webrtc {
 
 static const int64_t kTimeUnset = -1;
 
@@ -33,16 +36,16 @@ RateTracker::~RateTracker() {
   delete[] sample_buckets_;
 }
 
-double RateTracker::ComputeRateForInterval(
-    int64_t interval_milliseconds) const {
+double RateTracker::ComputeRateForInterval(Timestamp current_time,
+                                           TimeDelta interval) const {
   if (bucket_start_time_milliseconds_ == kTimeUnset) {
     return 0.0;
   }
-  int64_t current_time = Time();
+  int64_t current_time_ms = current_time.ms();
   // Calculate which buckets to sum up given the current time.  If the time
   // has passed to a new bucket then we have to skip some of the oldest buckets.
   int64_t available_interval_milliseconds =
-      std::min(interval_milliseconds,
+      std::min(interval.ms(),
                bucket_milliseconds_ * static_cast<int64_t>(bucket_count_));
   // number of old buckets (i.e. after the current bucket in the ring buffer)
   // that are expired given our current time interval.
@@ -50,10 +53,10 @@ double RateTracker::ComputeRateForInterval(
   // Number of milliseconds of the first bucket that are not a portion of the
   // current interval.
   int64_t milliseconds_to_skip;
-  if (current_time >
+  if (current_time_ms >
       initialization_time_milliseconds_ + available_interval_milliseconds) {
     int64_t time_to_skip =
-        current_time - bucket_start_time_milliseconds_ +
+        current_time_ms - bucket_start_time_milliseconds_ +
         static_cast<int64_t>(bucket_count_) * bucket_milliseconds_ -
         available_interval_milliseconds;
     buckets_to_skip = time_to_skip / bucket_milliseconds_;
@@ -62,7 +65,7 @@ double RateTracker::ComputeRateForInterval(
     buckets_to_skip = bucket_count_ - current_bucket_;
     milliseconds_to_skip = 0;
     available_interval_milliseconds =
-        webrtc::TimeDiff(current_time, initialization_time_milliseconds_);
+        current_time_ms - initialization_time_milliseconds_;
     // Let one bucket interval pass after initialization before reporting.
     if (available_interval_milliseconds < bucket_milliseconds_) {
       return 0.0;
@@ -90,31 +93,14 @@ double RateTracker::ComputeRateForInterval(
          static_cast<double>(available_interval_milliseconds);
 }
 
-double RateTracker::ComputeTotalRate() const {
-  if (bucket_start_time_milliseconds_ == kTimeUnset) {
-    return 0.0;
-  }
-  int64_t current_time = Time();
-  if (current_time <= initialization_time_milliseconds_) {
-    return 0.0;
-  }
-  return static_cast<double>(total_sample_count_ * 1000) /
-         static_cast<double>(
-             webrtc::TimeDiff(current_time, initialization_time_milliseconds_));
-}
-
 int64_t RateTracker::TotalSampleCount() const {
   return total_sample_count_;
 }
 
-void RateTracker::AddSamples(int64_t sample_count) {
-  AddSamplesAtTime(Time(), sample_count);
-}
-
-void RateTracker::AddSamplesAtTime(int64_t current_time_ms,
-                                   int64_t sample_count) {
+void RateTracker::Update(int64_t sample_count, Timestamp current_time) {
   RTC_DCHECK_LE(0, sample_count);
-  EnsureInitialized();
+  int64_t current_time_ms = current_time.ms();
+  EnsureInitialized(current_time_ms);
   // Advance the current bucket as needed for the current time, and reset
   // bucket counts as we advance.
   for (size_t i = 0; i <= bucket_count_ &&
@@ -136,14 +122,10 @@ void RateTracker::AddSamplesAtTime(int64_t current_time_ms,
   total_sample_count_ += sample_count;
 }
 
-int64_t RateTracker::Time() const {
-  return webrtc::TimeMillis();
-}
-
-void RateTracker::EnsureInitialized() {
+void RateTracker::EnsureInitialized(int64_t current_time_ms) {
   if (bucket_start_time_milliseconds_ == kTimeUnset) {
-    initialization_time_milliseconds_ = Time();
-    bucket_start_time_milliseconds_ = initialization_time_milliseconds_;
+    initialization_time_milliseconds_ = current_time_ms;
+    bucket_start_time_milliseconds_ = current_time_ms;
     current_bucket_ = 0;
     // We only need to initialize the first bucket because we reset buckets when
     // current_bucket_ increments.
@@ -155,4 +137,4 @@ size_t RateTracker::NextBucketIndex(size_t bucket_index) const {
   return (bucket_index + 1u) % (bucket_count_ + 1u);
 }
 
-}  // namespace rtc
+}  // namespace webrtc

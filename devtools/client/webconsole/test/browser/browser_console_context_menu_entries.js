@@ -35,11 +35,43 @@ add_task(async function () {
   });
   const networkMessage = await onNetworkMessage;
 
-  info("Open and check the context menu for the network message");
-  let menuPopup = await openContextMenu(hud, networkMessage.node);
+  info(
+    "Open and check the context menu for the network message (when the message link is right-clicked)"
+  );
+  // Target the link element within the node, this simulates the user right-clicking the network message link
+  let menuPopup = await openContextMenu(
+    hud,
+    networkMessage.node.querySelector("a.url")
+  );
   ok(menuPopup, "The context menu is displayed on a network message");
 
   let expectedContextMenu = addPrefBasedEntries([
+    "#console-menu-copy-url (a)",
+    "#console-menu-open-url (T)",
+    "#console-menu-store (S) [disabled]",
+    "#console-menu-copy (C)",
+    "#console-menu-copy-object (o) [disabled]",
+    "#console-menu-export-clipboard (M)",
+    "#console-menu-export-file (F)",
+  ]);
+  is(
+    getSimplifiedContextMenu(menuPopup).join("\n"),
+    expectedContextMenu.join("\n"),
+    "The context menu has the expected entries for a network message"
+  );
+  await hideContextMenu(hud);
+
+  info(
+    "Open and check the context menu for the network message (when the arrow node is right-clicked)"
+  );
+  // Target the arrow button element within the node, this simulates the user right-clicking arrow button
+  menuPopup = await openContextMenu(
+    hud,
+    networkMessage.node.querySelector("button.arrow")
+  );
+  ok(menuPopup, "The context menu is displayed on a network message");
+
+  expectedContextMenu = addPrefBasedEntries([
     "#console-menu-copy-url (a)",
     "#console-menu-open-url (T)",
     "#console-menu-store (S) [disabled]",

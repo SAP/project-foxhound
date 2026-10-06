@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,7 @@
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/glean/bindings/DistributionData.h"
 #include "mozilla/glean/bindings/GleanMetric.h"
+#include "mozilla/glean/bindings/MemoryDistributionStandalone.h"
 #include "mozilla/Maybe.h"
 #include "nsTArray.h"
 
@@ -21,20 +20,10 @@ namespace mozilla::glean {
 
 namespace impl {
 
-class MemoryDistributionMetric {
+class MemoryDistributionMetric : public MemoryDistributionStandalone {
  public:
-  constexpr explicit MemoryDistributionMetric(uint32_t aId) : mId(aId) {}
-
-  /*
-   * Accumulates the provided sample in the metric.
-   *
-   * @param aSample The sample to be recorded by the metric. The sample is
-   *                assumed to be in the confgured memory unit of the metric.
-   *
-   * Notes: Values bigger than 1 Terabyte (2^40 bytes) are truncated and an
-   * InvalidValue error is recorded.
-   */
-  void Accumulate(size_t aSample) const;
+  constexpr explicit MemoryDistributionMetric(uint32_t aId)
+      : MemoryDistributionStandalone(aId) {}
 
   /**
    * **Test-only API**
@@ -55,9 +44,6 @@ class MemoryDistributionMetric {
    */
   Result<Maybe<DistributionData>, nsCString> TestGetValue(
       const nsACString& aPingName = nsCString()) const;
-
- private:
-  const uint32_t mId;
 };
 }  // namespace impl
 

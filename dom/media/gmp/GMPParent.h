@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,20 +8,20 @@
 #include "GMPNativeTypes.h"
 #include "GMPProcessParent.h"
 #include "GMPServiceParent.h"
+#include "GMPStorageParent.h"
+#include "GMPTimerParent.h"
 #include "GMPVideoDecoderParent.h"
 #include "GMPVideoEncoderParent.h"
-#include "GMPTimerParent.h"
-#include "GMPStorageParent.h"
+#include "mozilla/Atomics.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/gmp/PGMPParent.h"
 #include "mozilla/ipc/CrashReporterHelper.h"
 #include "nsCOMPtr.h"
-#include "nscore.h"
+#include "nsIFile.h"
 #include "nsISupports.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#include "nsIFile.h"
-#include "mozilla/Atomics.h"
-#include "mozilla/MozPromise.h"
+#include "nscore.h"
 
 namespace mozilla::gmp {
 
@@ -65,6 +64,10 @@ class GMPParent final : public PGMPParent,
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GMPParent, final)
 
   GMPParent();
+
+#ifdef MOZ_WIDGET_ANDROID
+  void InitForClearkey(GeckoMediaPluginServiceParent* aService);
+#endif
 
   RefPtr<GenericPromise> Init(GeckoMediaPluginServiceParent* aService,
                               nsIFile* aPluginDir);
@@ -163,15 +166,8 @@ class GMPParent final : public PGMPParent,
   void GetCrashID(nsString& aResult);
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
-  mozilla::ipc::IPCResult RecvPGMPStorageConstructor(
-      PGMPStorageParent* actor) override;
-  PGMPStorageParent* AllocPGMPStorageParent();
-  bool DeallocPGMPStorageParent(PGMPStorageParent* aActor);
-
-  mozilla::ipc::IPCResult RecvPGMPTimerConstructor(
-      PGMPTimerParent* actor) override;
-  PGMPTimerParent* AllocPGMPTimerParent();
-  bool DeallocPGMPTimerParent(PGMPTimerParent* aActor);
+  already_AddRefed<PGMPStorageParent> AllocPGMPStorageParent();
+  already_AddRefed<PGMPTimerParent> AllocPGMPTimerParent();
 
   mozilla::ipc::IPCResult RecvPGMPContentChildDestroyed();
 
@@ -227,8 +223,6 @@ class GMPParent final : public PGMPParent,
 
   bool mCanDecrypt;
 
-  nsTArray<RefPtr<GMPTimerParent>> mTimers;
-  nsTArray<RefPtr<GMPStorageParent>> mStorage;
   // NodeId the plugin is assigned to, or empty if the the plugin is not
   // assigned to a NodeId.
   nsCString mNodeId;

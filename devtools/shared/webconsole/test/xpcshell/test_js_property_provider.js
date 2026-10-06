@@ -245,6 +245,8 @@ function runChecks(dbgObject, environment, sandbox) {
   test_has_result(results, "charAt");
   results = propertyProvider("`\\\\`.");
   test_has_result(results, "charAt");
+  results = propertyProvider(`"🧑".c`);
+  test_has_result(results, "codePointAt");
 
   info("Test that suggestions are not given for syntax errors.");
   results = propertyProvider("'foo\"");
@@ -724,6 +726,7 @@ function runChecks(dbgObject, environment, sandbox) {
 
 /**
  * A helper that ensures an empty array of results were found.
+ *
  * @param Object results
  *        The results returned by jsPropertyProvider.
  */
@@ -733,6 +736,7 @@ function test_has_no_results(results) {
 }
 /**
  * A helper that ensures (required) results were found.
+ *
  * @param Object results
  *        The results returned by jsPropertyProvider.
  * @param String requiredSuggestion
@@ -751,6 +755,7 @@ function test_has_result(results, requiredSuggestion) {
 
 /**
  * A helper that ensures results are the expected ones.
+ *
  * @param Object results
  *        The results returned by jsPropertyProvider.
  * @param Array expectedMatches

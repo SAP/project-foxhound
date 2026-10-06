@@ -8,7 +8,7 @@ import "chrome://global/content/elements/moz-card.mjs";
 import { ERRORS } from "chrome://browser/content/backup/backup-constants.mjs";
 import "./turn-on-scheduled-backups.mjs";
 
-window.MozXULElement.insertFTLIfNeeded("locales-preview/backupSettings.ftl");
+window.MozXULElement.insertFTLIfNeeded("browser/backupSettings.ftl");
 window.MozXULElement.insertFTLIfNeeded("branding/brand.ftl");
 
 const SELECTABLE_ERRORS = {
@@ -25,31 +25,40 @@ export default {
       mapping: SELECTABLE_ERRORS,
       control: { type: "select" },
     },
+    hideFilePathChooser: { control: "boolean" },
+    embeddedFxBackupOptIn: { control: "boolean" },
+    isEncryptedBackup: { control: "boolean" },
   },
 };
 
 const Template = ({
   defaultPath,
-  _newPath,
   defaultLabel,
+  _newPath,
   _newLabel,
   enableBackupErrorCode,
+  hideFilePathChooser,
+  embeddedFxBackupOptIn,
 }) => html`
-  <moz-card style="width: 27.8rem; position: relative;">
-    <turn-on-scheduled-backups
-      defaultPath=${defaultPath}
-      _newPath=${ifDefined(_newPath)}
-      defaultLabel=${defaultLabel}
-      _newLabel=${ifDefined(_newLabel)}
-      .enableBackupErrorCode=${enableBackupErrorCode}
-    ></turn-on-scheduled-backups>
-  </moz-card>
+  <turn-on-scheduled-backups
+    defaultPath=${defaultPath}
+    defaultLabel=${defaultLabel}
+    _newPath=${ifDefined(_newPath)}
+    _newLabel=${ifDefined(_newLabel)}
+    .enableBackupErrorCode=${enableBackupErrorCode}
+    ?hide-file-path-chooser=${hideFilePathChooser}
+    ?embedded-fx-backup-opt-in=${embeddedFxBackupOptIn}
+  ></turn-on-scheduled-backups>
 `;
 
+// ---------------------- Default / legacy stories ----------------------
 export const Default = Template.bind({});
 Default.args = {
   defaultPath: "/Some/User/Documents",
   defaultLabel: "Documents",
+  hideFilePathChooser: false,
+  embeddedFxBackupOptIn: false,
+  enableBackupErrorCode: 0,
 };
 
 export const CustomLocation = Template.bind({});
@@ -63,4 +72,19 @@ export const EnableError = Template.bind({});
 EnableError.args = {
   ...CustomLocation.args,
   enableBackupErrorCode: ERRORS.FILE_SYSTEM_ERROR,
+};
+
+// ---------------------- Embedded Fx Backup Opt-In Stories ----------------------
+export const EmbeddedFx_UnencryptedBackup = Template.bind({});
+EmbeddedFx_UnencryptedBackup.args = {
+  ...Default.args,
+  embeddedFxBackupOptIn: true,
+  hideFilePathChooser: false, // Shows file path chooser, password section hidden via CSS
+};
+
+export const EmbeddedFx_EncryptedBackup_HideFilePathChooser = Template.bind({});
+EmbeddedFx_EncryptedBackup_HideFilePathChooser.args = {
+  ...Default.args,
+  embeddedFxBackupOptIn: true,
+  hideFilePathChooser: true, // Hide file path chooser, show password input
 };

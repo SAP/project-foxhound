@@ -21,11 +21,13 @@ struct SocketInfo {
   uint16_t port;
   bool active;
   nsCString type;
+  nsCString originAttributesSuffix;
 };
 
 inline bool operator==(const SocketInfo& a, const SocketInfo& b) {
   return a.host == b.host && a.sent == b.sent && a.received == b.received &&
-         a.port == b.port && a.active == b.active && a.type == b.type;
+         a.port == b.port && a.active == b.active && a.type == b.type &&
+         a.originAttributesSuffix == b.originAttributesSuffix;
 }
 
 struct DnsAndConnectSockets {
@@ -60,6 +62,7 @@ struct HttpRetParams {
   uint16_t port;
   nsCString httpVersion;
   bool ssl;
+  nsCString originAttributesSuffix;
 };
 
 struct Http3ConnStats {
@@ -111,6 +114,7 @@ struct ParamTraits<mozilla::net::SocketInfo> {
     WriteParam(aWriter, aParam.port);
     WriteParam(aWriter, aParam.active);
     WriteParam(aWriter, aParam.type);
+    WriteParam(aWriter, aParam.originAttributesSuffix);
   }
 
   static bool Read(MessageReader* aReader, paramType* aResult) {
@@ -119,7 +123,8 @@ struct ParamTraits<mozilla::net::SocketInfo> {
            ReadParam(aReader, &aResult->received) &&
            ReadParam(aReader, &aResult->port) &&
            ReadParam(aReader, &aResult->active) &&
-           ReadParam(aReader, &aResult->type);
+           ReadParam(aReader, &aResult->type) &&
+           ReadParam(aReader, &aResult->originAttributesSuffix);
   }
 };
 
@@ -193,6 +198,7 @@ struct ParamTraits<mozilla::net::HttpRetParams> {
     WriteParam(aWriter, aParam.port);
     WriteParam(aWriter, aParam.httpVersion);
     WriteParam(aWriter, aParam.ssl);
+    WriteParam(aWriter, aParam.originAttributesSuffix);
   }
 
   static bool Read(MessageReader* aReader, paramType* aResult) {
@@ -203,7 +209,8 @@ struct ParamTraits<mozilla::net::HttpRetParams> {
            ReadParam(aReader, &aResult->counter) &&
            ReadParam(aReader, &aResult->port) &&
            ReadParam(aReader, &aResult->httpVersion) &&
-           ReadParam(aReader, &aResult->ssl);
+           ReadParam(aReader, &aResult->ssl) &&
+           ReadParam(aReader, &aResult->originAttributesSuffix);
   }
 };
 

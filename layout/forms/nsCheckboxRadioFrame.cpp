@@ -1,12 +1,12 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsCheckboxRadioFrame.h"
 
+#include "LayoutConstants.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ReflowInput.h"
 #include "nsIContent.h"
 #include "nsLayoutUtils.h"
 
@@ -30,7 +30,7 @@ NS_QUERYFRAME_HEAD(nsCheckboxRadioFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsAtomicContainerFrame)
 
 nscoord nsCheckboxRadioFrame::DefaultSize() {
-  const CSSCoord size = StyleDisplay()->HasAppearance()
+  const CSSCoord size = StyleDisplay()->HasNativeAppearance()
                             ? PresContext()->Theme()->GetCheckboxRadioPrefSize()
                             : CSSCoord(13.0f);
   return CSSPixel::ToAppUnits(Style()->EffectiveZoom().Zoom(size));
@@ -45,21 +45,21 @@ void nsCheckboxRadioFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
 nscoord nsCheckboxRadioFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
                                              IntrinsicISizeType aType) {
-  return StyleDisplay()->HasAppearance() ? DefaultSize() : 0;
+  return StyleDisplay()->HasNativeAppearance() ? DefaultSize() : 0;
 }
 
 /* virtual */
 LogicalSize nsCheckboxRadioFrame::ComputeAutoSize(
-    gfxContext* aRC, WritingMode aWM, const LogicalSize& aCBSize,
-    nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
-    ComputeSizeFlags aFlags) {
+    const SizeComputationInput& aSizingInput, WritingMode aWM,
+    const LogicalSize& aCBSize, nscoord aAvailableISize,
+    const LogicalSize& aMargin, const LogicalSize& aBorderPadding,
+    const StyleSizeOverrides& aSizeOverrides, ComputeSizeFlags aFlags) {
   LogicalSize size(aWM, 0, 0);
-  if (!StyleDisplay()->HasAppearance()) {
+  if (!StyleDisplay()->HasNativeAppearance()) {
     return size;
   }
   return nsAtomicContainerFrame::ComputeAutoSize(
-      aRC, aWM, aCBSize, aAvailableISize, aMargin, aBorderPadding,
+      aSizingInput, aWM, aCBSize, aAvailableISize, aMargin, aBorderPadding,
       aSizeOverrides, aFlags);
 }
 
@@ -78,7 +78,7 @@ Maybe<nscoord> nsCheckboxRadioFrame::GetNaturalBaselineBOffset(
 
   // For appearance:none we use a standard CSS baseline, i.e. synthesized from
   // our margin-box.
-  if (!StyleDisplay()->HasAppearance()) {
+  if (!StyleDisplay()->HasNativeAppearance()) {
     return Nothing{};
   }
 
@@ -121,6 +121,26 @@ void nsCheckboxRadioFrame::Reflow(nsPresContext* aPresContext,
     const float inflation = nsLayoutUtils::FontSizeInflationFor(this);
     aDesiredSize.Width() *= inflation;
     aDesiredSize.Height() *= inflation;
+  }
+
+  {
+    const nsSize containerSize = aDesiredSize.PhysicalSize();
+    for (auto* kid : mFrames) {
+      MOZ_ASSERT(kid->IsPlaceholderFrame(),
+                 "We only really expect placeholders here");
+      const auto kidWm = kid->GetWritingMode();
+      auto availSize = aDesiredSize.Size(kidWm);
+      availSize.BSize(kidWm) = NS_UNCONSTRAINEDSIZE;
+      ReflowInput kidReflowInput(aPresContext, aReflowInput, kid, availSize);
+      ReflowOutput kidDesiredSize(kidReflowInput);
+      nsReflowStatus status;
+      const LogicalPoint position(kidWm);
+      ReflowChild(kid, aPresContext, kidDesiredSize, kidReflowInput, kidWm,
+                  position, containerSize, ReflowChildFlags::Default, status);
+      FinishReflowChild(kid, aPresContext, kidDesiredSize, &kidReflowInput,
+                        kidWm, position, containerSize,
+                        ReflowChildFlags::Default);
+    }
   }
 
   NS_FRAME_TRACE(NS_FRAME_TRACE_CALLS,

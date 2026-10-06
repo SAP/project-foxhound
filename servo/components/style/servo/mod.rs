@@ -6,7 +6,11 @@
 //!
 //! These get compiled out on a Gecko build.
 
-pub mod media_queries;
+pub mod animation;
+#[allow(missing_docs)] // TODO.
+pub mod attr;
+mod encoding_support;
+pub mod media_features;
 pub mod restyle_damage;
 pub mod selector_parser;
-pub mod url;
+mod shadow_parts;

@@ -8,7 +8,6 @@ add_setup(async function () {
       // when landing on the page.
       ["browser.contentblocking.report.monitor.enabled", false],
       ["browser.contentblocking.report.lockwise.enabled", false],
-      ["browser.contentblocking.report.proxy.enabled", false],
       ["browser.contentblocking.cfr-milestone.update-interval", 0],
     ],
   });
@@ -75,7 +74,7 @@ add_task(async function doTest() {
     );
 
     let newTabPromise = waitForAboutProtectionsTab();
-    await EventUtils.synthesizeMouseAtCenter(
+    EventUtils.synthesizeMouseAtCenter(
       document.getElementById("protections-popup-milestones-content"),
       {}
     );

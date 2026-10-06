@@ -7,7 +7,6 @@ Platforms in the CI
    TODO:
       * Leverage verify_docs - https://bugzilla.mozilla.org/show_bug.cgi?id=1636400
       * Add a new column (when executed ? ie always, rarely, etc)
-      * asan reporter isn't listed for mac os x
 
 Build Platforms
 ---------------
@@ -132,7 +131,6 @@ or prevening some classes of errors (memory, threading, etc).
    Linux x64 WebRender asan, "| Christian Holler
    | Tyson Smith (ubsan)", "| Identify memory issues with :ref:`Address Sanitizer`.
    | Also includes the UndefinedBehaviorSanitizer"
-   Linux x64 asan reporter, Christian Holler, Generate :ref:`ASan Nightly Project <ASan Nightly>` builds
    Linux x64 CCov, Marco Castelluccio , Collect :ref:`Code coverage` information to identify what is tested (or not)
    Linux 18.04 x64 asan, "| Christian Holler
    | Tyson Smith (ubsan)", "| Identify memory issues with :ref:`Address Sanitizer`.
@@ -143,7 +141,6 @@ or prevening some classes of errors (memory, threading, etc).
    Linux 18.04 x64 CCov, Marco Castelluccio , Collect :ref:`Code coverage` information to identify what is tested (or not)
    OS X Cross Compiled CCov, Marco Castelluccio , Collect :ref:`Code coverage` information to identify what is tested (or not)
    OS X 10.14 Cross Compiled CCov, Marco Castelluccio , Collect :ref:`Code coverage` information to identify what is tested (or not)
-   Windows 2012 x64 asan reporter, Christian Holler, Generate :ref:`ASan Nightly Project <ASan Nightly>` builds
    Windows 10 x64 CCov, Marco Castelluccio , Collect :ref:`Code coverage` information to identify what is tested (or not)
    Android 4.0 API16+ CCov, Marco Castelluccio , Collect :ref:`Code coverage` information to identify what is tested (or not)
    Android 4.3 API16+ CCov, Marco Castelluccio , Collect :ref:`Code coverage` information to identify what is tested (or not)

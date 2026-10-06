@@ -16,7 +16,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "gScreenManager",
   "@mozilla.org/gfx/screenmanager;1",
-  "nsIScreenManager"
+  Ci.nsIScreenManager
 );
 
 /**
@@ -260,7 +260,7 @@ const WebRTCIndicator = {
     }
 
     let browser = activeStreams[activeStreams.length - 1].browser;
-    let browserWindow = browser.ownerGlobal;
+    let browserWindow = browser.documentGlobal;
     let browserRect =
       browserWindow.windowUtils.getBoundsWithoutFlushing(browser);
 

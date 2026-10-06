@@ -1,4 +1,3 @@
-/* vim:set ts=4 sw=2 sts=2 et ci: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,13 +22,10 @@
 #  include "nsIX509Cert.h"
 #  include "nsITransportSecurityInfo.h"
 #endif
-#include "mozilla/Attributes.h"
 #include "mozilla/Base64.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Tokenizer.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include "nsCRT.h"
 #include "nsNetUtil.h"
 #include "nsIChannel.h"
@@ -108,7 +104,7 @@ static bool CanUseDefaultCredentials(nsIHttpAuthenticableChannel* channel,
   }
 
   nsCOMPtr<nsIURI> uri;
-  Unused << channel->GetURI(getter_AddRefs(uri));
+  (void)channel->GetURI(getter_AddRefs(uri));
 
   bool allowNonFqdn;
   if (NS_FAILED(prefs->GetBoolPref(kAllowNonFqdn, &allowNonFqdn))) {

@@ -36,6 +36,8 @@ pub fn convert<P: AsRef<Path>>(path: P, wast: &str) -> Result<String> {
         err
     };
 
+    println!("Processing {} ...", filename.display());
+
     let mut lexer = wast::lexer::Lexer::new(wast);
     // The 'names.wast' spec test has confusable unicode -- disable detection.
     lexer.allow_confusing_unicode(filename.ends_with("names.wast"));
@@ -350,22 +352,33 @@ fn convert_directive(
             span: _,
             exec,
             message,
-        } => unimplemented!(
-            "unsupported assert_suspension directive at {}:{}:{}: exec {:#?}, message {:#?}",
-            filename.display(),
-            line,
-            col,
-            exec,
-            message
-        ),
-        Thread(thread) => {
+        } => {
+            let exec_node = execute_to_js(current_instance, exec, wast)?;
+            let expected_node = Box::new(JSNode::Raw(format!(
+                "`{}`",
+                escape_template_name_string(message)
+            )));
             writejs!(
-                "let ${0} = new Thread(${1}, \"${1}\", `",
+                "{};",
+                JSNode::Assert {
+                    name: "assert_suspension".to_string(),
+                    exec: exec_node,
+                    expected: expected_node,
+                }
+                .output(0),
+            )?;
+        }
+        Thread(thread) => {
+            let (shared_module, shared_module_name) = match thread.shared_module {
+                Some(m) => (format!("${}", m.name()), format!("${}", m.name())),
+                None => ("null".to_string(), "__nomodule".to_string()),
+            };
+
+            writejs!(
+                "let ${} = new Thread({}, \"{}\", `",
                 thread.name.name(),
-                thread
-                    .shared_module
-                    .expect("shared_module on threads is required")
-                    .name()
+                shared_module,
+                shared_module_name,
             )?;
 
             for directive in thread.directives {
@@ -453,36 +466,27 @@ fn closed_module(module: &str) -> Result<&str> {
         bail!("expected module source");
     }
 
-    enum State {
-        Module,
-        QStr,
-        EscapeQStr,
-    }
+    let mut lexer = wast::lexer::Lexer::new(module);
+    lexer.allow_confusing_unicode(true);
 
     let mut i = 0;
     let mut level = 1;
-    let mut state = State::Module;
 
-    let mut chars = module.chars();
     while level != 0 {
-        let next = chars.next().ok_or(anyhow!("unable to close module"))?;
-        match state {
-            State::Module => match next {
-                '(' => level += 1,
-                ')' => level -= 1,
-                '"' => state = State::QStr,
+        match lexer.parse(&mut i) {
+            Ok(Some(tok)) => match tok.kind {
+                wast::lexer::TokenKind::LParen => {
+                    level += 1;
+                }
+                wast::lexer::TokenKind::RParen => {
+                    level -= 1;
+                }
                 _ => {}
             },
-            State::QStr => match next {
-                '"' => state = State::Module,
-                '\\' => state = State::EscapeQStr,
-                _ => {}
-            },
-            State::EscapeQStr => match next {
-                _ => state = State::QStr,
-            },
+            Ok(None) | Err(_) => {
+                return Err(anyhow!("unable to close module"));
+            }
         }
-        i += next.len_utf8();
     }
     return Ok(&module[0..i]);
 }

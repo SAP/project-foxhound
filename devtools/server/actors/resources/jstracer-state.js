@@ -58,9 +58,9 @@ class TracingStateWatcher {
    * in case it stops by itself, instead of being stopped when the Actor's stopTracing
    * method is called by the user.
    *
-   * @param {Boolean} enabled
+   * @param {boolean} enabled
    *        True if the tracer starts tracing, false it it stops.
-   * @param {String} reason
+   * @param {string} reason
    *        Optional string to justify why the tracer stopped.
    */
   async onTracingToggled(enabled, reason) {

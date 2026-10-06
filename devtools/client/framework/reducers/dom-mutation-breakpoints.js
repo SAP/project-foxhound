@@ -11,7 +11,7 @@ const initialReducerState = {
 exports.reducer = domMutationBreakpointReducer;
 function domMutationBreakpointReducer(state = initialReducerState, action) {
   switch (action.type) {
-    case "ADD_DOM_MUTATION_BREAKPOINT":
+    case "ADD_DOM_MUTATION_BREAKPOINT": {
       const hasExistingBp = state.breakpoints.some(
         bp =>
           bp.nodeFront === action.nodeFront &&
@@ -37,6 +37,7 @@ function domMutationBreakpointReducer(state = initialReducerState, action) {
         ],
       };
       break;
+    }
     case "REMOVE_DOM_MUTATION_BREAKPOINT":
       for (const [index, bp] of state.breakpoints.entries()) {
         if (

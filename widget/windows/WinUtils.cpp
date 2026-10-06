@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sts=2 sw=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,7 +14,6 @@
 #include "nsWindowDefs.h"
 #include "InputDeviceUtils.h"
 #include "KeyboardLayout.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/BackgroundHangMonitor.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/StaticPrefs_widget.h"
@@ -31,7 +28,6 @@
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
-#include "mozilla/Unused.h"
 #include "nsIContentPolicy.h"
 #include "WindowsUIUtils.h"
 #include "nsContentUtils.h"
@@ -235,48 +231,12 @@ float WinUtils::SystemDPI() {
 // static
 double WinUtils::SystemScaleFactor() { return SystemDPI() / 96.0; }
 
-typedef HRESULT(WINAPI* GETDPIFORMONITORPROC)(HMONITOR, MONITOR_DPI_TYPE, UINT*,
-                                              UINT*);
-
-typedef HRESULT(WINAPI* GETPROCESSDPIAWARENESSPROC)(HANDLE,
-                                                    PROCESS_DPI_AWARENESS*);
-
-GETDPIFORMONITORPROC sGetDpiForMonitor;
-GETPROCESSDPIAWARENESSPROC sGetProcessDpiAwareness;
-
-static bool SlowIsPerMonitorDPIAware() {
-  // Intentionally leak the handle.
-  HMODULE shcore = LoadLibraryEx(L"shcore", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
-  if (shcore) {
-    sGetDpiForMonitor =
-        (GETDPIFORMONITORPROC)GetProcAddress(shcore, "GetDpiForMonitor");
-    sGetProcessDpiAwareness = (GETPROCESSDPIAWARENESSPROC)GetProcAddress(
-        shcore, "GetProcessDpiAwareness");
-  }
-  PROCESS_DPI_AWARENESS dpiAwareness;
-  return sGetDpiForMonitor && sGetProcessDpiAwareness &&
-         SUCCEEDED(
-             sGetProcessDpiAwareness(GetCurrentProcess(), &dpiAwareness)) &&
-         dpiAwareness == PROCESS_PER_MONITOR_DPI_AWARE;
-}
-
-/* static */
-bool WinUtils::IsPerMonitorDPIAware() {
-  static bool perMonitorDPIAware = SlowIsPerMonitorDPIAware();
-  return perMonitorDPIAware;
-}
-
 /* static */
 float WinUtils::MonitorDPI(HMONITOR aMonitor) {
-  if (IsPerMonitorDPIAware()) {
-    UINT dpiX, dpiY = 96;
-    sGetDpiForMonitor(aMonitor ? aMonitor : GetPrimaryMonitor(),
-                      MDT_EFFECTIVE_DPI, &dpiX, &dpiY);
-    return dpiY;
-  }
-
-  // We're not per-monitor aware, use system DPI instead.
-  return SystemDPI();
+  UINT dpiX, dpiY = 96;
+  GetDpiForMonitor(aMonitor ? aMonitor : GetPrimaryMonitor(), MDT_EFFECTIVE_DPI,
+                   &dpiX, &dpiY);
+  return dpiY;
 }
 
 /* static */
@@ -317,14 +277,9 @@ WinUtils::GetPrimaryMonitor() {
 /* static */
 HMONITOR
 WinUtils::MonitorFromRect(const gfx::Rect& rect) {
-  // convert coordinates from desktop to device pixels for MonitorFromRect
-  double dpiScale =
-      IsPerMonitorDPIAware() ? 1.0 : LogToPhysFactor(GetPrimaryMonitor());
-
-  RECT globalWindowBounds = {NSToIntRound(dpiScale * rect.X()),
-                             NSToIntRound(dpiScale * rect.Y()),
-                             NSToIntRound(dpiScale * (rect.XMost())),
-                             NSToIntRound(dpiScale * (rect.YMost()))};
+  RECT globalWindowBounds = {NSToIntRound(rect.X()), NSToIntRound(rect.Y()),
+                             NSToIntRound(rect.XMost()),
+                             NSToIntRound(rect.YMost())};
 
   return ::MonitorFromRect(&globalWindowBounds, MONITOR_DEFAULTTONEAREST);
 }
@@ -341,7 +296,7 @@ int WinUtils::GetSystemMetricsForDpi(int nIndex, UINT dpi) {
   if (HasSystemMetricsForDpi()) {
     return sGetSystemMetricsForDpi(nIndex, dpi);
   } else {
-    double scale = IsPerMonitorDPIAware() ? dpi / SystemDPI() : 1.0;
+    double scale = dpi / SystemDPI();
     return NSToIntRound(::GetSystemMetrics(nIndex) * scale);
   }
 }
@@ -521,7 +476,7 @@ HWND WinUtils::GetTopLevelHWND(HWND aWnd, bool aStopIfNotChild,
 
 // Map from native window handles to nsWindow structures. Does not AddRef.
 // Inherently unsafe to access outside the main thread.
-MOZ_RUNINIT static nsTHashMap<HWND, nsWindow*> sExtantNSWindows;
+constinit static nsTHashMap<HWND, nsWindow*> sExtantNSWindows;
 
 /* static */
 void WinUtils::SetNSWindowPtr(HWND aWnd, nsWindow* aWindow) {
@@ -908,8 +863,7 @@ AsyncDeleteAllFaviconsFromDisk::AsyncDeleteAllFaviconsFromDisk(
 
   // Prepare the profile directory cache on the main thread, to ensure we wont
   // do this on non-main threads.
-  Unused << NS_GetSpecialDirectory("ProfLDS",
-                                   getter_AddRefs(mJumpListCacheDir));
+  (void)NS_GetSpecialDirectory("ProfLDS", getter_AddRefs(mJumpListCacheDir));
 }
 
 NS_IMETHODIMP AsyncDeleteAllFaviconsFromDisk::Run() {
@@ -1316,33 +1270,35 @@ bool WinUtils::IsIMEEnabled(IMEEnabled aIMEState) {
 
 /* static */
 void WinUtils::SetupKeyModifiersSequence(nsTArray<KeyPair>* aArray,
-                                         uint32_t aModifiers, UINT aMessage) {
-  MOZ_ASSERT(!(aModifiers & nsIWidget::ALTGRAPH) ||
-             !(aModifiers & (nsIWidget::CTRL_L | nsIWidget::ALT_R)));
+                                         nsIWidget::NativeModifiers aModifiers,
+                                         UINT aMessage) {
+  MOZ_ASSERT(!(aModifiers & nsIWidget::NativeModifiers::ALTGRAPH) ||
+             !(aModifiers & (nsIWidget::NativeModifiers::CTRL_L |
+                             nsIWidget::NativeModifiers::ALT_R)));
   if (aMessage == WM_KEYUP) {
     // If AltGr is released, ControlLeft key is released first, then,
     // AltRight key is released.
-    if (aModifiers & nsIWidget::ALTGRAPH) {
+    if (aModifiers & nsIWidget::NativeModifiers::ALTGRAPH) {
       aArray->AppendElement(
           KeyPair(VK_CONTROL, VK_LCONTROL, ScanCode::eControlLeft));
       aArray->AppendElement(KeyPair(VK_MENU, VK_RMENU, ScanCode::eAltRight));
     }
     for (uint32_t i = std::size(sModifierKeyMap); i; --i) {
       const uint32_t* map = sModifierKeyMap[i - 1];
-      if (aModifiers & map[0]) {
+      if (aModifiers & static_cast<nsIWidget::NativeModifiers>(map[0])) {
         aArray->AppendElement(KeyPair(map[1], map[2], map[3]));
       }
     }
   } else {
     for (uint32_t i = 0; i < std::size(sModifierKeyMap); ++i) {
       const uint32_t* map = sModifierKeyMap[i];
-      if (aModifiers & map[0]) {
+      if (aModifiers & static_cast<nsIWidget::NativeModifiers>(map[0])) {
         aArray->AppendElement(KeyPair(map[1], map[2], map[3]));
       }
     }
     // If AltGr is pressed, ControlLeft key is pressed first, then,
     // AltRight key is pressed.
-    if (aModifiers & nsIWidget::ALTGRAPH) {
+    if (aModifiers & nsIWidget::NativeModifiers::ALTGRAPH) {
       aArray->AppendElement(
           KeyPair(VK_CONTROL, VK_LCONTROL, ScanCode::eControlLeft));
       aArray->AppendElement(KeyPair(VK_MENU, VK_RMENU, ScanCode::eAltRight));
@@ -1772,13 +1728,13 @@ bool WinUtils::UnexpandEnvVars(nsAString& aPath) {
 WinUtils::WhitelistVec WinUtils::BuildWhitelist() {
   WhitelistVec result;
 
-  Unused << result.emplaceBack(
+  (void)result.emplaceBack(
       std::make_pair(nsString(u"%ProgramFiles%"_ns), nsDependentString()));
 
   // When no substitution is required, set the void flag
   result.back().second.SetIsVoid(true);
 
-  Unused << result.emplaceBack(
+  (void)result.emplaceBack(
       std::make_pair(nsString(u"%SystemRoot%"_ns), nsDependentString()));
   result.back().second.SetIsVoid(true);
 
@@ -1793,8 +1749,8 @@ WinUtils::WhitelistVec WinUtils::BuildWhitelist() {
     nsAutoString cleanTmpPath(tmpPath);
     if (UnexpandEnvVars(cleanTmpPath)) {
       constexpr auto tempVar = u"%TEMP%"_ns;
-      Unused << result.emplaceBack(std::make_pair(
-          nsString(cleanTmpPath), nsDependentString(tempVar, 0)));
+      (void)result.emplaceBack(std::make_pair(nsString(cleanTmpPath),
+                                              nsDependentString(tempVar, 0)));
     }
   }
 
@@ -2056,6 +2012,21 @@ bool WinUtils::MicaPopupsEnabled() {
   }
   auto* lf = static_cast<nsLookAndFeel*>(nsLookAndFeel::GetInstance());
   return !lf->NeedsMicaWorkaround();
+}
+
+static BOOL CALLBACK InvalidateWindowPreviewsProc(HWND aHwnd, LPARAM aLParam) {
+  if (RefPtr<nsWindow> window = WinUtils::GetNSWindowPtr(aHwnd)) {
+    RefPtr<nsITaskbarWindowPreview> taskbarPreview =
+        window->GetTaskbarPreview();
+    if (taskbarPreview) {
+      taskbarPreview->Invalidate();
+    }
+  }
+  return TRUE;
+}
+
+void WinUtils::InvalidateWindowPreviews() {
+  ::EnumWindows(InvalidateWindowPreviewsProc, 0);
 }
 
 // There are undocumented APIs to query/change the system DPI settings found by

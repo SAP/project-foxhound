@@ -1,5 +1,5 @@
 [DEFAULT]
-prefs = ["browser.policies.alternatePath='<test-root>/browser/components/enterprisepolicies/tests/browser/trackingprotection/trackingprotection.json'"]
+prefs = ["browser.policies.alternatePath='<test-root>/browser/components/enterprisepolicies/tests/browser/trackingprotection/trackingprotection.json'", "privacy.trackingprotection.allow_list.hasMigratedCategoryPrefs=true"]
 support-files = ["trackingprotection.json"]
 
 ["browser_policy_trackingprotection.js"]

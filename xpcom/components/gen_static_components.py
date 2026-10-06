@@ -11,10 +11,6 @@ from perfecthash import PerfectHash
 
 NO_CONTRACT_ID = 0xFFFFFFFF
 
-PHF_SIZE = 512
-
-TINY_PHF_SIZE = 16
-
 # In tests, we might not have a (complete) buildconfig.
 ENDIAN = (
     "<" if buildconfig.substs.get("TARGET_ENDIANNESS", "little") == "little" else ">"
@@ -272,7 +268,7 @@ class ModuleEntry:
 
         if len(self.interfaces) > 255:
             raise Exception(
-                "JS service %s may not have more than 255 " "interfaces" % self.js_name
+                "JS service %s may not have more than 255 interfaces" % self.js_name
             )
 
         self.interfaces_offset = len(interfaces)
@@ -322,8 +318,7 @@ class ModuleEntry:
             for prop in ("init_method", "legacy_constructor", "headers"):
                 if getattr(self, prop):
                     error(
-                        "JavaScript components may not specify a '%s' "
-                        "property" % prop
+                        "JavaScript components may not specify a '%s' property" % prop
                     )
         elif self.external:
             if self.constructor or self.legacy_constructor:
@@ -349,7 +344,7 @@ class ModuleEntry:
             )
 
         if self.overridable and not self.contract_ids:
-            error("Overridable components must specify at least one contract " "ID")
+            error("Overridable components must specify at least one contract ID")
 
     @property
     def contract_id(self):
@@ -879,19 +874,16 @@ def gen_substs(manifests):
             raise Exception("Duplicate cid: %s" % str(mod.cid))
         cids.add(str(mod.cid))
 
-    cid_phf = PerfectHash(modules, PHF_SIZE, key=lambda module: module.cid.bytes)
+    cid_phf = PerfectHash(modules, key=lambda module: module.cid.bytes)
 
-    contract_phf = PerfectHash(
-        contracts, PHF_SIZE, key=lambda entry: entry.contract.encode()
-    )
+    contract_phf = PerfectHash(contracts, key=lambda entry: entry.contract.encode())
 
     js_services_phf = PerfectHash(
-        list(js_services.values()), PHF_SIZE, key=lambda entry: entry.js_name.encode()
+        list(js_services.values()), key=lambda entry: entry.js_name.encode()
     )
 
     protocol_handlers_phf = PerfectHash(
         list(protocol_handlers.values()),
-        TINY_PHF_SIZE,
         key=lambda entry: entry.scheme.encode(),
     )
 
@@ -940,7 +932,7 @@ def gen_substs(manifests):
         lower_entry=lambda entry: entry.to_cxx(),
         return_type="const StaticModule*",
         return_entry=(
-            "return entry.CID().Equals(aKey) && entry.Active()" " ? &entry : nullptr;"
+            "return entry.CID().Equals(aKey) && entry.Active() ? &entry : nullptr;"
         ),
         key_type="const nsID&",
         key_bytes="reinterpret_cast<const char*>(&aKey)",

@@ -5,8 +5,6 @@ package mozilla.components.browser.engine.gecko
 
 import android.os.Looper.getMainLooper
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import mozilla.components.browser.engine.gecko.content.blocking.GeckoTrackingProtectionException
 import mozilla.components.browser.engine.gecko.permission.geckoContentPermission
 import mozilla.components.concept.engine.EngineSession
@@ -45,7 +43,6 @@ class GeckoTrackingProtectionExceptionStorageTest {
         runtime = mock()
         whenever(runtime.settings).thenReturn(mock())
         storage = spy(GeckoTrackingProtectionExceptionStorage(runtime))
-        storage.scope = CoroutineScope(Dispatchers.Main)
     }
 
     @Test
@@ -232,7 +229,7 @@ class GeckoTrackingProtectionExceptionStorageTest {
         shadowOf(getMainLooper()).idle()
 
         assertTrue(exceptionList!!.isNotEmpty())
-        val exception = exceptionList!!.first() as GeckoTrackingProtectionException
+        val exception = exceptionList.first() as GeckoTrackingProtectionException
 
         assertEquals("https://example.com/", exception.url)
         assertEquals(contentPermission, exception.contentPermission)

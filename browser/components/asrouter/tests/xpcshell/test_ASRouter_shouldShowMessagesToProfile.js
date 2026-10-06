@@ -14,6 +14,17 @@ const { ASRouterTargeting } = ChromeUtils.importESModule(
 
 add_task(async function test_shouldShowMessagesToProfile() {
   let sandbox = sinon.createSandbox();
+  // Enable singleProfileMessaging mitigation
+  Services.prefs.setBoolPref(
+    "messaging-system.profile.singleProfileMessaging.disable",
+    false
+  );
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref(
+      "messaging-system.profile.singleProfileMessaging.disable"
+    );
+  });
+
   // shouldShowMessages should return true if the Selectable Profile Service is not enabled
   Services.prefs.setBoolPref("browser.profiles.enabled", false);
 

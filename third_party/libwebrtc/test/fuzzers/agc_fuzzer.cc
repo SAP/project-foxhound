@@ -13,7 +13,6 @@
 #include <memory>
 #include <vector>
 
-#include "api/array_view.h"
 #include "api/audio/audio_processing.h"
 #include "modules/audio_processing/agc/gain_control.h"
 #include "modules/audio_processing/audio_buffer.h"
@@ -25,7 +24,7 @@ namespace webrtc {
 namespace {
 
 void FillAudioBuffer(size_t sample_rate_hz,
-                     test::FuzzDataHelper* fuzz_data,
+                     FuzzDataHelper* fuzz_data,
                      AudioBuffer* buffer) {
   float* const* channels = buffer->channels_f();
   for (size_t i = 0; i < buffer->num_channels(); ++i) {
@@ -42,26 +41,25 @@ void FillAudioBuffer(size_t sample_rate_hz,
 
 // This function calls the GainControl functions that are overriden as private
 // in GainControlInterface.
-void FuzzGainControllerConfig(test::FuzzDataHelper* fuzz_data,
-                              GainControl* gc) {
+void FuzzGainControllerConfig(FuzzDataHelper* fuzz_data, GainControl* gc) {
   GainControl::Mode modes[] = {GainControl::Mode::kAdaptiveAnalog,
                                GainControl::Mode::kAdaptiveDigital,
                                GainControl::Mode::kFixedDigital};
   GainControl::Mode mode = fuzz_data->SelectOneOf(modes);
   const bool enable_limiter = fuzz_data->ReadOrDefaultValue(true);
   // The values are capped to comply with the API of webrtc::GainControl.
-  const int analog_level_min =
-      rtc::SafeClamp<int>(fuzz_data->ReadOrDefaultValue<uint16_t>(0), 0, 65534);
+  const int analog_level_min = webrtc::SafeClamp<int>(
+      fuzz_data->ReadOrDefaultValue<uint16_t>(0), 0, 65534);
   const int analog_level_max =
-      rtc::SafeClamp<int>(fuzz_data->ReadOrDefaultValue<uint16_t>(65535),
-                          analog_level_min + 1, 65535);
+      webrtc::SafeClamp<int>(fuzz_data->ReadOrDefaultValue<uint16_t>(65535),
+                             analog_level_min + 1, 65535);
   const int stream_analog_level =
-      rtc::SafeClamp<int>(fuzz_data->ReadOrDefaultValue<uint16_t>(30000),
-                          analog_level_min, analog_level_max);
-  const int gain =
-      rtc::SafeClamp<int>(fuzz_data->ReadOrDefaultValue<int8_t>(30), -1, 100);
+      webrtc::SafeClamp<int>(fuzz_data->ReadOrDefaultValue<uint16_t>(30000),
+                             analog_level_min, analog_level_max);
+  const int gain = webrtc::SafeClamp<int>(
+      fuzz_data->ReadOrDefaultValue<int8_t>(30), -1, 100);
   const int target_level_dbfs =
-      rtc::SafeClamp<int>(fuzz_data->ReadOrDefaultValue<int8_t>(15), -1, 35);
+      webrtc::SafeClamp<int>(fuzz_data->ReadOrDefaultValue<int8_t>(15), -1, 35);
 
   gc->set_mode(mode);
   gc->enable_limiter(enable_limiter);
@@ -82,7 +80,7 @@ void FuzzGainControllerConfig(test::FuzzDataHelper* fuzz_data,
   static_cast<void>(gc->is_limiter_enabled());
 }
 
-void FuzzGainController(test::FuzzDataHelper* fuzz_data, GainControlImpl* gci) {
+void FuzzGainController(FuzzDataHelper* fuzz_data, GainControlImpl* gci) {
   using Rate = ::webrtc::AudioProcessing::NativeRate;
   const Rate rate_kinds[] = {Rate::kSampleRate16kHz, Rate::kSampleRate32kHz,
                              Rate::kSampleRate48kHz};
@@ -117,11 +115,10 @@ void FuzzGainController(test::FuzzDataHelper* fuzz_data, GainControlImpl* gci) {
 
 }  // namespace
 
-void FuzzOneInput(const uint8_t* data, size_t size) {
-  if (size > 200000) {
+void FuzzOneInput(FuzzDataHelper fuzz_data) {
+  if (fuzz_data.size() > 200'000) {
     return;
   }
-  test::FuzzDataHelper fuzz_data(rtc::ArrayView<const uint8_t>(data, size));
   auto gci = std::make_unique<GainControlImpl>();
   FuzzGainController(&fuzz_data, gci.get());
 }

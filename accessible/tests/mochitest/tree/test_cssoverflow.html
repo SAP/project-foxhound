@@ -22,78 +22,41 @@
 
   <script type="application/javascript">
     // //////////////////////////////////////////////////////////////////////////
-    // Invokers
-
-    function focusAnchor(aID) {
-      this.linkNode = getNode(aID);
-      this.link = getAccessible(this.linkNode);
-
-      this.eventSeq = [
-        new invokerChecker(EVENT_FOCUS, getAccessible, this.linkNode),
-      ];
-
-      this.invoke = function focusAnchor_invoke() {
-        this.linkNode.focus();
-      };
-
-      this.check = function focusAnchor_check(aEvent) {
-        is(this.link, aEvent.accessible,
-                "Focus should be fired against new link accessible!");
-      };
-
-      this.getID = function focusAnchor_getID() {
-        return "focus a:focus{overflow:scroll} #1";
-      };
-    }
-
-    function tabAnchor(aID) {
-      this.linkNode = getNode(aID);
-      this.link = getAccessible(this.linkNode);
-
-      this.eventSeq = [
-        new invokerChecker(EVENT_FOCUS, getAccessible, this.linkNode),
-      ];
-
-      this.invoke = function tabAnchor_invoke() {
-        synthesizeKey("VK_TAB", { shiftKey: false });
-      };
-
-      this.check = function tabAnchor_check(aEvent) {
-        is(this.link, aEvent.accessible,
-                   "Focus should be fired against new link accessible!");
-      };
-
-      this.getID = function tabAnchor_getID() {
-        return "focus a:focus{overflow:scroll} #2";
-      };
-    }
-
-    // //////////////////////////////////////////////////////////////////////////
     // Do tests
 
-    var gQueue = null;
-    // gA11yEventDumpID = "eventdump"; // debug stuff
-    // gA11yEventDumpToConsole = true;
-
-    function doTests() {
+    async function doTests() {
       // Shift+Tab not working, and a test timeout, bug 746977
       if (MAC) {
-        todo(false, "Shift+tab isn't working on OS X, needs to be disabled until bug 746977 is fixed!");
+        todo(
+          false,
+          "Shift+tab isn't working on OS X, needs to be disabled until bug 746977 is fixed!"
+        );
         SimpleTest.finish();
         return;
       }
-
-      gQueue = new eventQueue();
 
       // CSS 'overflow: scroll' property setting and unsetting causes accessible
       // recreation (and fire show/hide events). For example, the focus and
       // blur of HTML:a with ':focus {overflow: scroll; }' CSS style causes its
       // accessible recreation. The focus event should be fired on new
       // accessible.
-      gQueue.push(new focusAnchor("a"));
-      gQueue.push(new tabAnchor("a2"));
+      const aLinkNode = getNode("a");
+      const aLink = getAccessible(aLinkNode);
+      let focused = waitForEvent(EVENT_FOCUS, e => e.DOMNode == aLinkNode);
+      aLinkNode.focus();
+      let event = await focused;
+      is(aLink, event.accessible,
+         "Focus should be fired against new link accessible!");
 
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      const a2LinkNode = getNode("a2");
+      const a2Link = getAccessible(a2LinkNode);
+      focused = waitForEvent(EVENT_FOCUS, e => e.DOMNode == a2LinkNode);
+      synthesizeKey("VK_TAB", { shiftKey: false });
+      event = await focused;
+      is(a2Link, event.accessible,
+         "Focus should be fired against new link accessible!");
+
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

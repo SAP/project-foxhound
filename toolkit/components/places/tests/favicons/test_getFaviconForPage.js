@@ -750,9 +750,84 @@ add_task(async function test_port() {
 });
 
 add_task(async function test_no_favicon() {
-  const pageURI = uri("http://example.com/");
-  const result = await PlacesUtils.favicons.getFaviconForPage(pageURI);
-  Assert.equal(result, null);
+  const FAVICON_DATAURI = await createDataURLForFavicon(
+    await createFavicon("favicon.png")
+  );
+
+  const TEST_DATA = [
+    {
+      visited: null,
+      browsing: "http://example.com/",
+      expected: null,
+    },
+    {
+      visited: {
+        page: "http://example.com/",
+        favicon: "http://mozilla.example.com/favicon.png/",
+      },
+      browsing: "http://example.com:8000/",
+      expected: null,
+    },
+    {
+      visited: {
+        page: "http://example.com:8000/",
+        favicon: "http://mozilla.example.com/favicon.png/",
+      },
+      browsing: "http://example.com/",
+      expected: null,
+    },
+    {
+      visited: {
+        page: "http://example.com/",
+        favicon: "http://mozilla.example.com/favicon.png/",
+      },
+      browsing: "https://example.com/",
+      expected: null,
+    },
+    {
+      visited: {
+        page: "https://example.com/",
+        favicon: "http://mozilla.example.com/favicon.png/",
+      },
+      browsing: "http://example.com/",
+      expected: null,
+    },
+    {
+      visited: {
+        page: "http://example.com/",
+        favicon: "http://mozilla.example.com/favicon.png/",
+      },
+      browsing: "http://example.com:80/",
+      expected: "http://mozilla.example.com/favicon.png/",
+    },
+    {
+      visited: {
+        page: "http://example.com:80/",
+        favicon: "http://mozilla.example.com/favicon.png/",
+      },
+      browsing: "http://example.com/",
+      expected: "http://mozilla.example.com/favicon.png/",
+    },
+  ];
+
+  for (const { visited, browsing, expected } of TEST_DATA) {
+    if (visited) {
+      await PlacesTestUtils.addVisits(uri(visited.page));
+      await PlacesTestUtils.setFaviconForPage(
+        uri(visited.page),
+        uri(visited.favicon),
+        FAVICON_DATAURI
+      );
+    }
+
+    const result = await PlacesUtils.favicons.getFaviconForPage(uri(browsing));
+    Assert.equal(result?.uri.spec, expected);
+
+    if (visited) {
+      await PlacesUtils.history.clear();
+      await PlacesTestUtils.clearFavicons();
+    }
+  }
 });
 
 add_task(async function test_invalid_page_uri() {

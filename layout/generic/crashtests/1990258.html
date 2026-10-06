@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<script>
+requestIdleCallback(() => {
+  document.body.setAttribute("style", "text-transform:capitalize")
+  document.styleSheets[0].disabled = true
+})
+</script>
+<style>
+#a {
+  text-decoration-style: double;
+}
+#b {
+  direction: rtl;
+}
+</style>
+<canvas id="b"></canvas>
+<bdo id="a">
+t
+&#xFBB;

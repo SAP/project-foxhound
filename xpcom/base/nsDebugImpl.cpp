@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -351,6 +349,7 @@ struct DebugBreakMarker {
               MS::Location::MarkerTable};
     schema.SetAllLabels("{marker.data.Severity}: {marker.data.name}");
     schema.AddKeyFormat("Message", MS::Format::String);
+    schema.AddKeyFormat("name", MS::Format::String, MS::PayloadFlags::Hidden);
     schema.AddKeyFormat("Severity", MS::Format::String);
     schema.AddKeyFormat("Expression", MS::Format::String);
     schema.AddKeyFormat("File", MS::Format::String);
@@ -378,6 +377,7 @@ static void NS_PrintStackTrace() {
 EXPORT_XPCOM_API(void)
 NS_DebugBreak(uint32_t aSeverity, const char* aStr, const char* aExpr,
               const char* aFile, int32_t aLine) {
+  aFile = MOZ_StripRelativeComponents(aFile);
   FixedBuffer nonPIDBuf;
   FixedBuffer buf;
   const char* sevString = "WARNING";

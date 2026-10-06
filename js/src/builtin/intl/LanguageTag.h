@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -18,12 +16,9 @@
 
 struct JS_PUBLIC_API JSContext;
 class JSLinearString;
-class JS_PUBLIC_API JSString;
 class JS_PUBLIC_API JSTracer;
 
-namespace js {
-
-namespace intl {
+namespace js::intl {
 
 /**
  * Parse a string Unicode BCP 47 locale identifier. If successful, store in
@@ -67,7 +62,7 @@ namespace intl {
  * the input could not be parsed or the canonical form of the resulting language
  * tag contains more than a single language subtag.
  */
-JS::Result<JSString*> ParseStandaloneISO639LanguageTag(
+JS::Result<JSLinearString*> ParseStandaloneISO639LanguageTag(
     JSContext* cx, JS::Handle<JSLinearString*> str);
 
 class UnicodeExtensionKeyword final {
@@ -95,11 +90,9 @@ class UnicodeExtensionKeyword final {
     JS::HandleVector<UnicodeExtensionKeyword> keywords);
 
 JS::UniqueChars FormatLocale(
-    JSContext* cx, JS::Handle<JSObject*> internals,
+    JSContext* cx, JS::Handle<JSLinearString*> locale,
     JS::HandleVector<UnicodeExtensionKeyword> keywords);
 
-}  // namespace intl
-
-}  // namespace js
+}  // namespace js::intl
 
 #endif /* builtin_intl_LanguageTag_h */

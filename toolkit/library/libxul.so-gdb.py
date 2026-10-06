@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-""" GDB Python customization auto-loader for libxul """
+"""GDB Python customization auto-loader for libxul"""
 
 import re
 from os.path import abspath, dirname, exists
@@ -19,18 +19,18 @@ from os.path import abspath, dirname, exists
 libxul_dir = dirname(__file__)
 objdir = None
 for relpath in ("../../..", "../.."):
-    objdir = abspath(libxul_dir + "/" + relpath)
-    if not exists(objdir + "/build/.gdbinit"):
+    candidate = abspath(libxul_dir + "/" + relpath)
+    if not exists(candidate + "/build/.gdbinit"):
         continue
 
-    if objdir is not None:
-        m = re.search(r"[\w ]+: (.*)", gdb.execute("show directories", False, True))
-        if m and (objdir not in m.group(1).split(":")):
-            gdb.execute(f"set directories {objdir}:{m.group(1)}")
-else:
-    gdb.write("Warning: Gecko objdir not found\n")
+    objdir = candidate
+    m = re.search(r"[\w ]+: (.*)", gdb.execute("show directories", False, True))
+    if m and (objdir not in m.group(1).split(":")):
+        gdb.execute(f"set directories {objdir}:{m.group(1)}")
 
 if objdir is not None:
     # When running from a random directory, the toplevel Gecko .gdbinit may
     # not have been loaded. Load it now.
     gdb.execute("source -s build/.gdbinit.loader")
+else:
+    gdb.write("Warning: Gecko objdir not found\n")

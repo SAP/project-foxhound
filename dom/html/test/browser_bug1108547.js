@@ -68,7 +68,7 @@ function runPass(getterFile, finishedCallback) {
   }
 
   function onNewTabOpened() {
-    // When the new tab is opened, wait for it to load.
+    // When the new tab with js URI is opened, wait for it to load.
     privateWin.gBrowser.tabContainer.removeEventListener(
       "TabOpen",
       onNewTabOpened,
@@ -76,7 +76,8 @@ function runPass(getterFile, finishedCallback) {
     );
     BrowserTestUtils.browserLoaded(
       privateWin.gBrowser.tabs[privateWin.gBrowser.tabs.length - 1]
-        .linkedBrowser
+        .linkedBrowser,
+      { wantLoad: "about:blank" } // js URIs have about:blank as location
     )
       .then(fetchResult)
       .then(onNewTabLoaded);
@@ -124,10 +125,11 @@ function runPass(getterFile, finishedCallback) {
   }
 
   function onNewTabOpened2() {
-    // When the new tab is opened, wait for it to load.
+    // When the new tab with  js URI is opened, wait for it to load.
     gBrowser.tabContainer.removeEventListener("TabOpen", onNewTabOpened2, true);
     BrowserTestUtils.browserLoaded(
-      gBrowser.tabs[gBrowser.tabs.length - 1].linkedBrowser
+      gBrowser.tabs[gBrowser.tabs.length - 1].linkedBrowser,
+      { wantLoad: "about:blank" } // js URIs have about:blank as location
     )
       .then(fetchResult)
       .then(onNewTabLoaded2);

@@ -4,48 +4,47 @@
 
 #include "AudioConduit.h"
 
-#include "common/browser_logging/CSFLog.h"
-#include "MediaConduitControl.h"
-#include "transport/SrtpFlow.h"  // For SRTP_MAX_EXPANSION
-#include "WebrtcCallWrapper.h"
-#include "libwebrtcglue/FrameTransformer.h"
 #include <vector>
+
 #include "CodecConfig.h"
-#include "mozilla/StateMirroring.h"
-#include <vector>
+#include "MediaConduitControl.h"
+#include "WebrtcCallWrapper.h"
+#include "common/browser_logging/CSFLog.h"
+#include "libwebrtcglue/FrameTransformer.h"
 #include "mozilla/MozPromise.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/RWLock.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/StateMirroring.h"
+#include "transport/SrtpFlow.h"  // For SRTP_MAX_EXPANSION
 
 // libwebrtc includes
-#include "api/audio_codecs/builtin_audio_encoder_factory.h"
-#include "audio/audio_receive_stream.h"
-#include "media/base/media_constants.h"
-#include "rtc_base/ref_counted_object.h"
+#include <stdint.h>
 
+#include <limits>
+#include <memory>
+#include <string>
+#include <utility>
+
+#include "MainThreadUtils.h"
+#include "MediaConduitErrors.h"
+#include "MediaConduitInterface.h"
 #include "api/audio/audio_frame.h"
 #include "api/audio/audio_mixer.h"
 #include "api/audio_codecs/audio_format.h"
+#include "api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "api/call/transport.h"
 #include "api/media_types.h"
 #include "api/rtp_headers.h"
 #include "api/rtp_parameters.h"
 #include "api/transport/rtp/rtp_source.h"
-#include <utility>
+#include "audio/audio_receive_stream.h"
 #include "call/audio_receive_stream.h"
 #include "call/audio_send_stream.h"
-#include "call/call_basic_stats.h"
 #include "domstubs.h"
 #include "jsapi/RTCStatsReport.h"
-#include <limits>
-#include "MainThreadUtils.h"
-#include <map>
-#include "MediaConduitErrors.h"
-#include "MediaConduitInterface.h"
-#include <memory>
+#include "media/base/media_constants.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/StateWatching.h"
 #include "nsCOMPtr.h"
@@ -54,8 +53,7 @@
 #include "nsThreadUtils.h"
 #include "rtc_base/copy_on_write_buffer.h"
 #include "rtc_base/network/sent_packet.h"
-#include <stdint.h>
-#include <string>
+#include "rtc_base/ref_counted_object.h"
 #include "transport/mediapacket.h"
 
 // for ntohs
@@ -79,7 +77,7 @@ static const char* acLogTag = "WebrtcAudioSessionConduit";
 #endif
 #define LOGTAG acLogTag
 
-using namespace cricket;
+using namespace webrtc;
 using LocalDirection = MediaSessionConduitLocalDirection;
 
 const char kCodecParamCbr[] = "cbr";
@@ -355,7 +353,30 @@ void WebrtcAudioConduit::OnControlConfigChange() {
 
         webrtc::AudioSendStream::Config::SendCodecSpec spec(
             aConfig.mType, CodecConfigToLibwebrtcFormat(aConfig));
-        mSendStreamConfig.send_codec_spec = spec;
+        const auto info =
+            mSendStreamConfig.encoder_factory->QueryAudioEncoder(spec.format);
+        if (info) {
+          if (const auto& maxBps = mControl.mConfiguredSendCodec
+                                       ->mEncodingConstraints.maxBitrateBps) {
+            spec.target_bitrate_bps =
+                std::clamp(SaturatingCast<int>(*maxBps), info->min_bitrate_bps,
+                           info->max_bitrate_bps);
+          }
+        }
+        mSendStreamConfig.send_codec_spec = std::move(spec);
+
+        const int kDefaultAudioBitrateBps = 32000;
+        // Use the codec's own default bitrate when the application has not
+        // configured a max -- it already accounts for stereo, SDP
+        // maxaveragebitrate/maxplaybackrate, and fixed-rate codecs like
+        // PCMU/PCMA/G.722.
+        const int targetBps =
+            mSendStreamConfig.send_codec_spec->target_bitrate_bps.value_or(
+                info ? info->default_bitrate_bps : kDefaultAudioBitrateBps);
+        mSendStreamConfig.min_bitrate_bps = targetBps;
+        mSendStreamConfig.max_bitrate_bps = targetBps;
+        mSendStreamConfig.include_in_congestion_control_allocation =
+            aConfig.HasCongestionControlAck();
 
         mDtmfEnabled = aConfig.mDtmfEnabled;
         sendStreamReconfigureNeeded = true;
@@ -385,7 +406,7 @@ void WebrtcAudioConduit::OnControlConfigChange() {
         mControl.mFrameTransformerProxySend.Ref();
     if (!mSendStreamConfig.frame_transformer) {
       mSendStreamConfig.frame_transformer =
-          new rtc::RefCountedObject<FrameTransformer>(false);
+          new webrtc::RefCountedObject<FrameTransformer>(false);
       sendStreamRecreationNeeded = true;
     }
     static_cast<FrameTransformer*>(mSendStreamConfig.frame_transformer.get())
@@ -398,7 +419,7 @@ void WebrtcAudioConduit::OnControlConfigChange() {
         mControl.mFrameTransformerProxyRecv.Ref();
     if (!mRecvStreamConfig.frame_transformer) {
       mRecvStreamConfig.frame_transformer =
-          new rtc::RefCountedObject<FrameTransformer>(false);
+          new webrtc::RefCountedObject<FrameTransformer>(false);
       recvStreamRecreationNeeded = true;
     }
     static_cast<FrameTransformer*>(mRecvStreamConfig.frame_transformer.get())
@@ -530,7 +551,7 @@ Maybe<webrtc::AudioSendStream::Stats> WebrtcAudioConduit::GetSenderStats()
   return Some(mSendStream->GetStats());
 }
 
-Maybe<webrtc::CallBasicStats> WebrtcAudioConduit::GetCallStats() const {
+Maybe<webrtc::Call::Stats> WebrtcAudioConduit::GetCallStats() const {
   MOZ_ASSERT(mCallThread->IsOnCurrentThread());
   if (!mCall->Call()) {
     return Nothing();
@@ -681,12 +702,12 @@ void WebrtcAudioConduit::OnRtpReceived(webrtc::RtpPacketReceived&& aPacket,
   }
 }
 
-void WebrtcAudioConduit::OnRtcpReceived(rtc::CopyOnWriteBuffer&& aPacket) {
+void WebrtcAudioConduit::OnRtcpReceived(webrtc::CopyOnWriteBuffer&& aPacket) {
   MOZ_ASSERT(mCallThread->IsOnCurrentThread());
 
   if (mCall->Call()) {
     mCall->Call()->Receiver()->DeliverRtcpPacket(
-        std::forward<rtc::CopyOnWriteBuffer>(aPacket));
+        std::forward<webrtc::CopyOnWriteBuffer>(aPacket));
   }
 }
 
@@ -933,6 +954,12 @@ RtpExtList WebrtcAudioConduit::FilterExtensions(LocalDirection aDirection,
       filteredExtensions.push_back(
           webrtc::RtpExtension(extension.uri, extension.id));
     }
+
+    // TransportCC header extension
+    if (extension.uri == webrtc::RtpExtension::kTransportSequenceNumberUri) {
+      filteredExtensions.push_back(
+          webrtc::RtpExtension(extension.uri, extension.id));
+    }
   }
 
   return filteredExtensions;
@@ -1054,7 +1081,7 @@ void WebrtcAudioConduit::SetJitterBufferTarget(DOMHighResTimeStamp aTargetMs) {
       })));
 }
 
-void WebrtcAudioConduit::DeliverPacket(rtc::CopyOnWriteBuffer packet,
+void WebrtcAudioConduit::DeliverPacket(webrtc::CopyOnWriteBuffer packet,
                                        PacketType type) {
   // Currently unused.
   MOZ_ASSERT(false);

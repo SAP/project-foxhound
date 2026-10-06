@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
 import org.mozilla.fenix.utils.Settings
+import kotlin.coroutines.CoroutineContext
 
 /**
  * An interface to persis the state of the splash screen.
@@ -85,8 +86,8 @@ sealed class SplashScreenManagerResult {
  * @param splashScreenOperation The operation to execute during the splash screen.
  * @param splashScreenTimeout The timeout for the operation.
  * @param storage Interface to persist and retrieve splash screen state.
- * @param isDeviceSupported Determines whether the device supports the splash screen.
- * @param scope The coroutine scope.
+ * @param scope The coroutine scope used for launching background tasks.
+ * @param coroutineContext The coroutine context used for switching back to the main thread.
  * @param showSplashScreen Callback to display the splash screen.
  * @param onSplashScreenFinished Callback after the splash screen finishes.
  */
@@ -94,8 +95,8 @@ class SplashScreenManager(
     private val splashScreenOperation: SplashScreenOperation,
     private val splashScreenTimeout: Long,
     private val storage: SplashScreenStorage,
-    private val isDeviceSupported: () -> Boolean,
     private val scope: CoroutineScope = MainScope(),
+    private val coroutineContext: CoroutineContext = Dispatchers.Main,
     private val showSplashScreen: (KeepOnScreenCondition) -> Unit,
     private val onSplashScreenFinished: (SplashScreenManagerResult) -> Unit,
 ) : KeepOnScreenCondition {
@@ -110,11 +111,10 @@ class SplashScreenManager(
      * trying to complete [splashScreenOperation] before reaching [splashScreenTimeout].
      */
     fun showSplashScreen() {
-        if (!isDeviceSupported() || storage.isFirstSplashScreenShown) {
+        if (storage.isFirstSplashScreenShown) {
             onSplashScreenFinished(SplashScreenManagerResult.DidNotPresentSplashScreen)
             return
         }
-
         storage.isFirstSplashScreenShown = true
         showSplashScreen(this)
 
@@ -138,7 +138,9 @@ class SplashScreenManager(
                 }.onAwait { it }
             }
 
-            withContext(Dispatchers.Main) {
+            splashScreenOperation.dispose()
+
+            withContext(this@SplashScreenManager.coroutineContext) {
                 isSplashScreenFinished = true
                 onSplashScreenFinished(result)
             }

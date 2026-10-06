@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<title>Testing wasm module import in worklet</title>
+
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script type=module>
+promise_test(async () => {
+  const audioContext = new AudioContext();
+  await audioContext.audioWorklet.addModule("resources/worklet.wasm");
+}, "Loading a wasm module in an audio worklet");
+</script>

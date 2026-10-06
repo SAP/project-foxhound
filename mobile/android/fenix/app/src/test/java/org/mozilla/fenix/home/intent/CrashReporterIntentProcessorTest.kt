@@ -22,9 +22,7 @@ class CrashReporterIntentProcessorTest {
     private val appStore: AppStore = mockk(relaxed = true)
     private val navController: NavController = mockk()
     private val out: Intent = mockk()
-    private val settings: Settings = mockk {
-        every { shouldUseComposableToolbar } returns false
-    }
+    private val settings: Settings = mockk()
 
     @Test
     fun `GIVEN a blank Intent WHEN processing it THEN do nothing and return false`() {

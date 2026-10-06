@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -134,7 +132,7 @@ class PACResolver final : public nsIDNSListener,
   nsCOMPtr<nsIDNSRecord> mResponse;
   nsCOMPtr<nsITimer> mTimer;
   nsCOMPtr<nsIEventTarget> mMainThreadEventTarget;
-  Mutex mMutex MOZ_UNANNOTATED;
+  Mutex mMutex MOZ_ANNOTATED;
 
  private:
   ~PACResolver() = default;
@@ -146,7 +144,7 @@ static void PACLogToConsole(nsString& aMessage) {
     auto task = [message(aMessage)]() {
       SocketProcessChild* child = SocketProcessChild::GetSingleton();
       if (child) {
-        Unused << child->SendOnConsoleMessage(message);
+        (void)child->SendOnConsoleMessage(message);
       }
     };
     if (NS_IsMainThread()) {
@@ -288,13 +286,7 @@ static bool PACResolveToString(const nsACString& aHostName,
   NetAddr netAddr;
   if (!PACResolve(aHostName, &netAddr, aTimeout)) return false;
 
-  char dottedDecimal[128];
-  if (!netAddr.ToStringBuffer(dottedDecimal, sizeof(dottedDecimal))) {
-    return false;
-  }
-
-  aDottedDecimal.Assign(dottedDecimal);
-  return true;
+  return netAddr.ToString(aDottedDecimal);
 }
 
 // dnsResolve(host) javascript implementation
@@ -392,7 +384,14 @@ class JSContextWrapper {
     JSContext* cx = JS_NewContext(JS::DefaultHeapMaxBytes + aExtraHeapSize);
     if (NS_WARN_IF(!cx)) return nullptr;
 
-    JS::ContextOptionsRef(cx).setDisableIon().setDisableEvalSecurityChecks();
+    // PAC scripts are user-provided scripts that run in the parent process.
+    // Disable Ion because we don't require it and it reduces attack surface.
+    // Disable security checks because we cannot enforce restrictions on these
+    // scripts.
+    JS::ContextOptionsRef(cx)
+        .setDisableIon()
+        .setDisableEvalSecurityChecks()
+        .setDisableFilenameSecurityChecks();
 
     JSContextWrapper* entry = new JSContextWrapper(cx);
     if (NS_FAILED(entry->Init())) {
@@ -893,7 +892,7 @@ nsresult RemoteProxyAutoConfig::Init(nsIThread* aPACThread) {
     return rv;
   }
 
-  Unused << socketProcessParent->SendInitProxyAutoConfigChild(std::move(child));
+  (void)socketProcessParent->SendInitProxyAutoConfigChild(std::move(child));
   mProxyAutoConfigParent = new ProxyAutoConfigParent();
   return aPACThread->Dispatch(
       NS_NewRunnableFunction("ProxyAutoConfigParent::ProxyAutoConfigParent",
@@ -908,8 +907,8 @@ nsresult RemoteProxyAutoConfig::ConfigurePAC(const nsACString& aPACURI,
                                              bool aIncludePath,
                                              uint32_t aExtraHeapSize,
                                              nsISerialEventTarget*) {
-  Unused << mProxyAutoConfigParent->SendConfigurePAC(
-      aPACURI, aPACScriptData, aIncludePath, aExtraHeapSize);
+  (void)mProxyAutoConfigParent->SendConfigurePAC(aPACURI, aPACScriptData,
+                                                 aIncludePath, aExtraHeapSize);
   return NS_OK;
 }
 

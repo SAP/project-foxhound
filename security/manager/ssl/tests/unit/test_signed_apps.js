@@ -534,6 +534,18 @@ add_signature_test(COSEOnly, function () {
   );
 });
 
+add_signature_test(COSEOnly, function () {
+  certdb.openSignedAppFileAsync(
+    Ci.nsIX509CertDB.AppXPCShellRoot,
+    original_app_path("tampered-spki"),
+    check_open_result(
+      "tampered-spki",
+      Cr.NS_ERROR_SIGNED_JAR_MANIFEST_INVALID,
+      []
+    )
+  );
+});
+
 // Sanity check to ensure a no-op tampering gives a valid result
 add_signature_test(PKCS7WithSHA1OrSHA256, function () {
   let tampered = tampered_app_path("identity_tampering");

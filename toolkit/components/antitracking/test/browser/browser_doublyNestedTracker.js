@@ -6,11 +6,11 @@ add_task(async function () {
     set: [
       [
         "network.cookie.cookieBehavior",
-        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+        Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
       ],
       [
         "network.cookie.cookieBehavior.pbmode",
-        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+        Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
       ],
       ["privacy.trackingprotection.enabled", false],
       ["privacy.trackingprotection.pbmode.enabled", false],
@@ -67,9 +67,9 @@ add_task(async function () {
         ok(false, "Unknown message");
       });
 
-      document.body.appendChild(ifr);
       ifr.src =
         "https://tracking.example.org/browser/toolkit/components/antitracking/test/browser/3rdParty.html";
+      document.body.appendChild(ifr);
     });
   }
 
@@ -110,8 +110,8 @@ add_task(async function () {
           ok(false, "Unknown message");
         });
 
-        content.document.body.appendChild(ifr);
         ifr.src = obj.page;
+        content.document.body.appendChild(ifr);
       });
     }
   );

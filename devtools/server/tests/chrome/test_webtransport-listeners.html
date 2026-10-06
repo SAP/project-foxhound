@@ -1,0 +1,32 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Test the WebTransport watcher </title>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script class="testbody" type="text/javascript">
+  'use strict';
+  const { require } = ChromeUtils.importESModule("resource://devtools/shared/loader/Loader.sys.mjs");
+  const WebTransportWatcher = require("devtools/server/actors/resources/webtransport.js");
+  var service = Cc["@mozilla.org/webtransportevent/service;1"]
+                  .getService(Ci.nsIWebTransportEventService);
+  ok(!!service, "We have the nsIWebTransportEventService");
+
+  var innerWindowId = window.windowGlobalChild.innerWindowId;
+  ok(innerWindowId, "We have a valid innerWindowID: " + innerWindowId);
+
+  const watcher = new WebTransportWatcher();
+
+  watcher.startListening(innerWindowId);
+  ok(service.hasListenerFor(innerWindowId), "Service has listener for the window");
+
+  watcher.stopListening(innerWindowId);
+  ok(!service.hasListenerFor(innerWindowId), "Service no longer has a listener for the window");
+
+  // Make sure this does not throw if the listener does not exist.
+  watcher.stopListening(innerWindowId);
+</script>
+</body>
+</html>

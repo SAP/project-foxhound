@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RemoteWorkerNonLifeCycleOpControllerChild.h"
+
 #include "mozilla/dom/ServiceWorkerOp.h"
 #include "mozilla/dom/SharedWorkerOp.h"
 #include "mozilla/dom/WorkerCommon.h"
@@ -49,7 +50,7 @@ void RemoteWorkerNonLifeCycleOpControllerChild::TransistionStateToKilled() {
   if (!CanSend()) {
     return;
   }
-  Unused << SendTerminated();
+  (void)SendTerminated();
   if (GetIPCChannel()) {
     GetIPCChannel()->Close();
   }
@@ -60,7 +61,7 @@ void RemoteWorkerNonLifeCycleOpControllerChild::ErrorPropagation(
   if (!CanSend()) {
     return;
   }
-  Unused << SendError(aError);
+  (void)SendError(aError);
 }
 
 void RemoteWorkerNonLifeCycleOpControllerChild::StartOp(

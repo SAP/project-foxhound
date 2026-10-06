@@ -1,3 +1,11 @@
+# Affix file for en_US-mozilla Hunspell Dictionary.
+#
+# Version rel-2026.02.25
+# Wed Feb 25 15:37:24 2026 -0500 [7e99eda]
+# 
+# https://wordlist.aspell.net
+# 
+
 SET ISO8859-1
 TRY esianrtolcdugmphbyfvkwzESIANRTOLCDUGMPHBYFVKWZ'
 NOSUGGEST !

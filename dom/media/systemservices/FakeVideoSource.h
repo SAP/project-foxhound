@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,12 +5,12 @@
 #ifndef DOM_MEDIA_SYSTEMSERVICES_FAKEVIDEOSOURCE_H_
 #define DOM_MEDIA_SYSTEMSERVICES_FAKEVIDEOSOURCE_H_
 
+#include "MediaEventSource.h"
+#include "PerformanceRecorder.h"
 #include "mozilla/EventTargetCapability.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/ThreadSafety.h"
-#include "MediaEventSource.h"
-#include "PerformanceRecorder.h"
 
 class nsITimer;
 
@@ -25,6 +23,7 @@ typedef BaseTimeDuration<TimeDurationValueCalculator> TimeDuration;
 namespace layers {
 class Image;
 class ImageContainer;
+struct PlanarYCbCrData;
 }  // namespace layers
 
 class FakeVideoSource {
@@ -38,7 +37,7 @@ class FakeVideoSource {
   bool CaptureStarted();
   void SetTrackingId(uint32_t aTrackingIdProcId);
 
-  MediaEventSource<RefPtr<layers::Image>>& GeneratedImageEvent() {
+  MediaEventSource<RefPtr<layers::Image>, TimeStamp>& GeneratedImageEvent() {
     return mGeneratedImageEvent;
   }
 
@@ -53,11 +52,13 @@ class FakeVideoSource {
   Mutex mMutex{"FakeVideoSource::mMutex"};
   nsCOMPtr<nsITimer> mTimer MOZ_GUARDED_BY(mMutex);
   PerformanceRecorderMulti<CaptureStage> mCaptureRecorder;
-  MediaEventProducer<RefPtr<layers::Image>> mGeneratedImageEvent;
+  MediaEventProducer<RefPtr<layers::Image>, TimeStamp> mGeneratedImageEvent;
 
   EventTargetCapability<nsISerialEventTarget> mTarget;
   Maybe<TrackingId> mTrackingId MOZ_GUARDED_BY(mTarget);
   RefPtr<layers::ImageContainer> mImageContainer MOZ_GUARDED_BY(mTarget);
+  nsTArray<uint8_t> mFrame MOZ_GUARDED_BY(mTarget);
+  std::unique_ptr<layers::PlanarYCbCrData> mFrameData MOZ_GUARDED_BY(mTarget);
   int32_t mWidth MOZ_GUARDED_BY(mTarget) = -1;
   int32_t mHeight MOZ_GUARDED_BY(mTarget) = -1;
   int mCb MOZ_GUARDED_BY(mTarget) = 16;

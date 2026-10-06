@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* nsJARInputStream.cpp
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
@@ -11,7 +10,6 @@
 #include "mozilla/MmapFaultHandler.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/UniquePtrExtensions.h"
 
 #include "nsEscape.h"
 #include "nsDebug.h"
@@ -122,7 +120,7 @@ nsresult nsJARInputStream::InitDirectory(nsJAR* aJar, const char* aDir) {
     ++curr;
   }
   nsAutoCString pattern = escDirName + "?*~"_ns + escDirName + "?*/?*"_ns;
-  rv = mJar->mZip->FindInit(pattern.get(), getter_Transfers(find));
+  rv = mJar->mZip->FindInit(pattern.get(), mozilla::getter_Transfers(find));
   if (NS_FAILED(rv)) return rv;
 
   const char* name;

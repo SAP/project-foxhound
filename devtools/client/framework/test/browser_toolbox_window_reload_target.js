@@ -12,9 +12,15 @@ requestLongerTimeout(10);
 const { PromiseTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
-
 // allow a context error because it is harmless. This could likely be removed in the next patch because it is a symptom of events coming from the target-list and debugger targets module...
 PromiseTestUtils.allowMatchingRejectionsGlobally(/Page has navigated/);
+
+// Closing the toolbox makes the performance panel try to stop the profiler;
+// when it's already running (MOZ_PROFILER_STARTUP=1) that request races the
+// connection teardown and rejects harmlessly. See bug 2044383.
+PromiseTestUtils.allowMatchingRejectionsGlobally(
+  /Connection closed, pending request to .*stopProfilerAndDiscardProfile/
+);
 
 const TEST_URL =
   "data:text/html;charset=utf-8," +

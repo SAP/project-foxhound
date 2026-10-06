@@ -1,0 +1,15 @@
+{
+  "label": "ceskatelevize.cz",
+  "bugs": {
+    "1574564": {
+      "issue": "broken-videos",
+      "matches": ["*://*.ceskatelevize.cz/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

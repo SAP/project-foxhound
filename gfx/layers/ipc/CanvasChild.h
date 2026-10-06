@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -46,8 +44,6 @@ class CanvasChild final : public PCanvasChild, public SupportsWeakPtr {
    * Release resources until they are next required.
    */
   void ClearCachedResources();
-
-  ipc::IPCResult RecvNotifyDeviceChanged();
 
   ipc::IPCResult RecvNotifyDeviceReset(
       const nsTArray<RemoteTextureOwnerId>& aOwnerIds);
@@ -181,6 +177,9 @@ class CanvasChild final : public PCanvasChild, public SupportsWeakPtr {
 
   ~CanvasChild() final;
 
+  size_t SizeOfDataSurfaceShmem(gfx::IntSize, gfx::SurfaceFormat aFormat);
+  bool ShouldGrowDataSurfaceShmem(size_t aSizeRequired);
+  bool EnsureDataSurfaceShmem(size_t aSizeRequired);
   bool EnsureDataSurfaceShmem(gfx::IntSize aSize, gfx::SurfaceFormat aFormat);
 
   static void ReleaseDataShmemHolder(void* aClosure);
@@ -196,6 +195,7 @@ class CanvasChild final : public PCanvasChild, public SupportsWeakPtr {
 
   std::shared_ptr<ipc::ReadOnlySharedMemoryMapping> mDataSurfaceShmem;
   bool mDataSurfaceShmemAvailable = false;
+  uint32_t mNextDataSurfaceShmemId = 0;
   int64_t mLastWriteLockCheckpoint = 0;
   uint32_t mTransactionsSinceGetDataSurface = kCacheDataSurfaceThreshold;
   struct TextureInfo {

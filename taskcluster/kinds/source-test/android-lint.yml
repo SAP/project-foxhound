@@ -4,6 +4,7 @@
 ---
 task-defaults:
     description: 'Run lint over all modules'
+    run-on-repo-type: [hg]
     run:
         using: gradlew
         gradlew: ['lint']
@@ -19,15 +20,17 @@ task-defaults:
     fetches:
         toolchain:
             - android-sdk-linux
+            - linux64-embedded-uniffi-bindgen
+            - linux64-nimbus-fml
             - android-gradle-dependencies
             - linux64-jdk-repack
         build-fat-aar:
-            - target.maven.tar.xz
+            - target.maven.zip
     platform: 'lint/opt'
     treeherder:
         kind: test
         tier: 1
-    worker-type: b-linux-gcp
+    worker-type: b-linux
     when:
         files-changed:
             - "mobile/android/android-components/**"

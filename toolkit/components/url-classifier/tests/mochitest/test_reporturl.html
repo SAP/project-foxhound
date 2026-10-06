@@ -24,6 +24,8 @@ const {TestUtils} = ChromeUtils.importESModule(
   "resource://testing-common/TestUtils.sys.mjs"
 );
 
+SimpleTest.expectAssertions(0, 2); // calls SchedulePaint() mid hiding an iframe bug 1818799
+
 var mainWindow = window.browsingContext.topChromeWindow;
 const SJS = "mochi.test:8888/chrome/toolkit/components/url-classifier/tests/mochitest/report.sjs";
 const BASE_URL = "http://" + SJS + "?";

@@ -140,7 +140,7 @@ int nr_stun_build_data_indication(nr_stun_client_data_indication_params *params,
 #endif /* USE_TURN */
 
 int nr_stun_form_success_response(nr_stun_message *req, nr_transport_addr *from, Data *password, nr_stun_message *res);
-void nr_stun_form_error_response(nr_stun_message *request, nr_stun_message* response, int number, char* msg);
+void nr_stun_form_error_response(nr_stun_message *request, nr_stun_message* response, int number, const char* msg);
 int nr_stun_compute_lt_message_integrity_password(const char *username, const char *realm,
                                                   Data *password, Data *hmac_key);
 

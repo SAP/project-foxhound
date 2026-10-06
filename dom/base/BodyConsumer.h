@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +5,8 @@
 #ifndef mozilla_dom_BodyConsumer_h
 #define mozilla_dom_BodyConsumer_h
 
-#include "mozilla/GlobalTeardownObserver.h"
 #include "mozilla/GlobalFreezeObserver.h"
+#include "mozilla/GlobalTeardownObserver.h"
 #include "mozilla/dom/AbortFollower.h"
 #include "mozilla/dom/MutableBlobStorage.h"
 #include "nsIInputStreamPump.h"
@@ -47,7 +45,7 @@ class BodyConsumer final : public AbortFollower,
    * @param aBodyStream the stream to read.
    * @param aSignalImpl an AbortSignal object. Optional.
    * @param aType the consume type.
-   * @param aBodyBlobURISpec this is used only if the consume type is
+   * @param aBodyBlobImpl this is used only if the consume type is
    *          ConsumeType::Blob. Optional.
    * @param aBodyLocalPath local path in case the blob is created from a local
    *          file. Used only by ConsumeType::Blob. Optional.
@@ -62,7 +60,7 @@ class BodyConsumer final : public AbortFollower,
   static already_AddRefed<Promise> Create(
       nsIGlobalObject* aGlobal, nsISerialEventTarget* aMainThreadEventTarget,
       nsIInputStream* aBodyStream, AbortSignalImpl* aSignalImpl,
-      ConsumeType aType, const nsACString& aBodyBlobURISpec,
+      ConsumeType aType, BlobImpl* aBodyBlobImpl,
       const nsAString& aBodyLocalPath, const nsACString& aBodyMimeType,
       const nsACString& aMixedCaseMimeType,
       MutableBlobStorage::MutableBlobStorageType aBlobStorageType,
@@ -96,8 +94,7 @@ class BodyConsumer final : public AbortFollower,
  private:
   BodyConsumer(nsISerialEventTarget* aMainThreadEventTarget,
                nsIGlobalObject* aGlobalObject, nsIInputStream* aBodyStream,
-               Promise* aPromise, ConsumeType aType,
-               const nsACString& aBodyBlobURISpec,
+               Promise* aPromise, ConsumeType aType, BlobImpl* aBodyBlobImpl,
                const nsAString& aBodyLocalPath, const nsACString& aBodyMimeType,
                const nsACString& aMixedCaseMimeType,
                MutableBlobStorage::MutableBlobStorageType aBlobStorageType,
@@ -131,7 +128,7 @@ class BodyConsumer final : public AbortFollower,
   nsCString mBodyMimeType;
   nsCString mMixedCaseMimeType;
 
-  nsCString mBodyBlobURISpec;
+  RefPtr<BlobImpl> mBodyBlobImpl;
   nsString mBodyLocalPath;
 
   nsCOMPtr<nsIGlobalObject> mGlobal;

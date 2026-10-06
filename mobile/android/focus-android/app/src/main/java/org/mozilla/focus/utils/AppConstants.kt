@@ -6,6 +6,9 @@ package org.mozilla.focus.utils
 
 import org.mozilla.focus.BuildConfig
 
+/**
+ * App-wide constants and utility properties.
+ */
 object AppConstants {
     private const val BUILD_TYPE_RELEASE = "release"
     private const val BUILD_TYPE_BETA = "beta"

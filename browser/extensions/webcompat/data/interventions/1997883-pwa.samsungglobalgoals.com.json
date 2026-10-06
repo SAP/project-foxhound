@@ -1,0 +1,15 @@
+{
+  "label": "pwa.samsungglobalgoals.com",
+  "bugs": {
+    "1997883": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://pwa.samsungglobalgoals.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

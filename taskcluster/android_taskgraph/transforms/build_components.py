@@ -148,15 +148,13 @@ def add_artifacts(config, tasks):
         ]:
             if key in task:
                 optional_artifact_template = task.pop(key, {})
-                build_artifact_definitions.append(
-                    {
-                        "type": optional_artifact_template["type"],
-                        "name": optional_artifact_template["name"],
-                        "path": optional_artifact_template["path"].format(
-                            component_path=get_path(component)
-                        ),
-                    }
-                )
+                build_artifact_definitions.append({
+                    "type": optional_artifact_template["type"],
+                    "name": optional_artifact_template["name"],
+                    "path": optional_artifact_template["path"].format(
+                        component_path=get_path(component)
+                    ),
+                })
 
         if artifact_template:
             all_extensions = get_extensions(component)
@@ -185,22 +183,20 @@ def add_artifacts(config, tasks):
                 artifact_full_name = artifact_template["name"].format(
                     artifact_file_name=artifact_file_name,
                 )
-                build_artifact_definitions.append(
-                    {
-                        "type": artifact_template["type"],
-                        "name": artifact_full_name,
-                        "path": artifact_template["path"].format(
-                            component_path=get_path(component),
-                            component=component,
-                            version=craft_path_version(
-                                version,
-                                task["attributes"]["build-type"],
-                                nightly_version,
-                            ),
-                            artifact_file_name=artifact_file_name,
+                build_artifact_definitions.append({
+                    "type": artifact_template["type"],
+                    "name": artifact_full_name,
+                    "path": artifact_template["path"].format(
+                        component_path=get_path(component),
+                        component=component,
+                        version=craft_path_version(
+                            version,
+                            task["attributes"]["build-type"],
+                            nightly_version,
                         ),
-                    }
-                )
+                        artifact_file_name=artifact_file_name,
+                    ),
+                })
 
                 artifacts[extension] = artifact_full_name
 

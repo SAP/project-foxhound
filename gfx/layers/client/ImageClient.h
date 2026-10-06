@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,12 +7,12 @@
 
 #include <stdint.h>                             // for uint32_t, uint64_t
 #include <sys/types.h>                          // for int32_t
-#include "mozilla/Attributes.h"                 // for override
 #include "mozilla/RefPtr.h"                     // for RefPtr, already_AddRefed
 #include "mozilla/gfx/Types.h"                  // for SurfaceFormat
 #include "mozilla/layers/CompositableClient.h"  // for CompositableClient
 #include "mozilla/layers/CompositorTypes.h"     // for CompositableType, etc
 #include "mozilla/layers/LayersSurfaces.h"      // for SurfaceDescriptor
+#include "ImageContainer.h"                     // for ClearImagesType
 #include "mozilla/layers/TextureClient.h"       // for TextureClient, etc
 #include "mozilla/mozalloc.h"                   // for operator delete
 #include "nsCOMPtr.h"                           // for already_AddRefed

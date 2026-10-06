@@ -111,10 +111,9 @@ class TlsConnectStreamTls13Ech : public TlsConnectTestBase {
     DataBuffer name;
     ASSERT_TRUE(parser.ReadVariable(&name, 2));
     ASSERT_EQ(0U, parser.remaining());
-    // Manual comparison to silence coverity false-positives.
-    ASSERT_EQ(name.len(), kPublicName.length());
-    ASSERT_EQ(0,
-              memcmp(kPublicName.c_str(), name.data(), kPublicName.length()));
+    std::string captured_name(reinterpret_cast<const char*>(name.data()),
+                              name.len());
+    EXPECT_EQ(expected_name, captured_name);
   }
 
   void DoEchRetry(const ScopedSECKEYPublicKey& server_pub,
@@ -1024,6 +1023,35 @@ TEST_F(TlsConnectStreamTls13Ech, EchConfigList) {
   ASSERT_EQ(rv, SECSuccess);
 }
 
+// Verify that ssl_DupSocket correctly copies each ECH config.
+TEST_F(TlsConnectStreamTls13Ech, EchDupSocketCopiesAllConfigs) {
+  ScopedSECKEYPublicKey pub1, pub2;
+  ScopedSECKEYPrivateKey priv1, priv2;
+  DataBuffer config1, config2;
+  EnsureTlsSetup();
+
+  std::string name1("first.name"), name2("second.name");
+  TlsConnectTestBase::GenerateEchConfig(HpkeDhKemX25519Sha256, kDefaultSuites,
+                                        name1, 100, config1, pub1, priv1);
+  TlsConnectTestBase::GenerateEchConfig(HpkeDhKemX25519Sha256, kDefaultSuites,
+                                        name2, 100, config2, pub2, priv2);
+  DataBuffer configList = MakeEchConfigList(config1, config2);
+  ASSERT_EQ(SECSuccess,
+            SSL_SetClientEchConfigs(client_->ssl_fd(), configList.data(),
+                                    configList.len()));
+
+  // Exercise ssl_DupSocket (and tls13_CopyEchConfigs) by importing the
+  // client as a model onto the server fd.
+  ASSERT_NE(nullptr, SSL_ImportFD(client_->ssl_fd(), server_->ssl_fd()));
+
+  // Bug 2020614: tls13_CopyEchConfigs used PR_LIST_TAIL instead of cur_p,
+  // so all entries in the copied list were copies of the last config.
+  EXPECT_STREQ(name1.c_str(),
+               SSLInt_GetEchConfigPublicName(server_->ssl_fd(), 0));
+  EXPECT_STREQ(name2.c_str(),
+               SSLInt_GetEchConfigPublicName(server_->ssl_fd(), 1));
+}
+
 TEST_F(TlsConnectStreamTls13Ech, EchConfigsTrialDecrypt) {
   // Apply two ECHConfigs on the server. They are identical with the exception
   // of the public key: the first ECHConfig contains a public key for which we
@@ -1106,7 +1134,7 @@ TEST_F(TlsConnectStreamTls13, EchAcceptWithExternalPsk) {
   Handshake();
   CheckConnected();
   SendReceive();
-  CheckKeys(ssl_kea_ecdh, ssl_grp_ec_curve25519, ssl_auth_psk, ssl_sig_none);
+  CheckKeys(ssl_auth_psk, ssl_sig_none);
   // The PSK extension is present in CHOuter.
   ASSERT_TRUE(filter->captured());
 
@@ -2392,6 +2420,41 @@ TEST_F(TlsConnectStreamTls13, NoEchFromTls12Client) {
   ASSERT_FALSE(filter->captured());
 }
 
+TEST_F(TlsConnectStreamTls13Ech, CorrectPreLimInfoFromTls12ClientWithEch) {
+  EnsureTlsSetup();
+  SetupEch(client_, server_);
+  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_2,
+                           SSL_LIBRARY_VERSION_TLS_1_2);
+  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_2,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  client_->ExpectEch(false);
+  server_->ExpectEch(false);
+  SetExpectedVersion(SSL_LIBRARY_VERSION_TLS_1_2);
+  Connect();
+  SSLPreliminaryChannelInfo channelPreInfo;
+  SSL_GetPreliminaryChannelInfo(server_->ssl_fd(), &channelPreInfo,
+                                sizeof(channelPreInfo));
+  EXPECT_EQ(PR_FALSE, channelPreInfo.echAccepted);
+  EXPECT_EQ(NULL, channelPreInfo.echPublicName);
+}
+
+TEST_F(TlsConnectStreamTls13Ech, CorrectSNIFromTls12ClientWithEch) {
+  EnsureTlsSetup();
+  SetupEch(client_, server_);
+  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_2,
+                           SSL_LIBRARY_VERSION_TLS_1_2);
+  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_2,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  client_->ExpectEch(false);
+  server_->ExpectEch(false);
+  SetExpectedVersion(SSL_LIBRARY_VERSION_TLS_1_2);
+  auto filter =
+      MakeTlsFilter<TlsExtensionCapture>(client_, ssl_server_name_xtn);
+  Connect();
+  ASSERT_TRUE(filter->captured());
+  CheckSniExtension(filter->extension(), "server");
+}
+
 TEST_F(TlsConnectStreamTls13, EchOuterWith12Max) {
   EnsureTlsSetup();
   SetupEch(client_, server_);
@@ -2910,7 +2973,7 @@ TEST_F(TlsConnectStreamTls13Ech, EchPublicNameNotLdh) {
       "name-",
       "test-.name",
       "!",
-      u8"\u2077",
+      "\xe2\x81\xb7",  // U+2077 SUPERSCRIPT SEVEN, UTF-8 encoded
   };
   ValidatePublicNames(kNotLdh, SECFailure);
 }

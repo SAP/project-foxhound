@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsCOMPtr_h___
-#define nsCOMPtr_h___
+#ifndef nsCOMPtr_h_
+#define nsCOMPtr_h_
 
 /*
  * Having problems?
@@ -133,7 +131,7 @@ inline already_AddRefed<T>&& dont_AddRef(
  *
  * See |class nsGetInterface| for an example.
  */
-class MOZ_STACK_CLASS nsCOMPtr_helper {
+class MOZ_STACK_CLASS MOZ_NULL_AFTER_MOVE nsCOMPtr_helper {
  public:
   virtual nsresult NS_FASTCALL operator()(const nsIID&, void**) const = 0;
 };
@@ -290,9 +288,9 @@ class MOZ_STACK_CLASS nsQueryReferent final {
 
 // Helper for assert_validity method
 template <class T>
-char (&TestForIID(decltype(&NS_GET_IID(T))))[2];
+constexpr std::true_type TestForIID(decltype(&NS_GET_IID(T)));
 template <class T>
-char TestForIID(...);
+constexpr std::false_type TestForIID(...);
 
 template <class T>
 class MOZ_IS_REFPTR nsCOMPtr final {
@@ -326,8 +324,8 @@ class MOZ_IS_REFPTR nsCOMPtr final {
  private:
   T* MOZ_OWNING_REF mRawPtr;
 
-  void assert_validity() {
-    static_assert(1 < sizeof(TestForIID<T>(nullptr)),
+  constexpr void assert_validity() {
+    static_assert(decltype(TestForIID<T>(nullptr))::value,
                   "nsCOMPtr only works "
                   "for types with IIDs.  Either use RefPtr; add an IID to "
                   "your type with NS_INLINE_DECL_STATIC_IID/ ;"
@@ -371,12 +369,11 @@ class MOZ_IS_REFPTR nsCOMPtr final {
 
   // Constructors
 
-  nsCOMPtr() : mRawPtr(nullptr) {
-    assert_validity();
+  constexpr nsCOMPtr() : mRawPtr(nullptr) {
     NSCAP_LOG_ASSIGNMENT(this, nullptr);
   }
 
-  MOZ_IMPLICIT nsCOMPtr(decltype(nullptr)) : mRawPtr(nullptr) {
+  MOZ_IMPLICIT nsCOMPtr(std::nullptr_t) : mRawPtr(nullptr) {
     assert_validity();
     NSCAP_LOG_ASSIGNMENT(this, nullptr);
   }
@@ -1171,4 +1168,7 @@ struct outparam_as_pointer<nsGetterAddRefs<T>> {
 };
 }  // namespace mozilla::detail
 
-#endif  // !defined(nsCOMPtr_h___)
+template <typename T>
+struct fmt::formatter<nsCOMPtr<T>> : fmt::ostream_formatter {};
+
+#endif  // !defined(nsCOMPtr_h_)

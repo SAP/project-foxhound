@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,13 +6,13 @@
 
 #include <dlfcn.h>
 
+#include "AOMDecoder.h"
 #include "AppleATDecoder.h"
 #include "AppleVTDecoder.h"
 #include "H265.h"
 #include "MP4Decoder.h"
-#include "VideoUtils.h"
 #include "VPXDecoder.h"
-#include "AOMDecoder.h"
+#include "VideoUtils.h"
 #include "mozilla/Logging.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_media.h"
@@ -24,8 +22,6 @@ extern "C" {
 // Only exists from MacOS 11
 extern void VTRegisterSupplementalVideoDecoderIfAvailable(
     CMVideoCodecType codecType) __attribute__((weak_import));
-extern Boolean VTIsHardwareDecodeSupported(CMVideoCodecType codecType)
-    __attribute__((weak_import));
 }
 
 namespace mozilla {
@@ -126,10 +122,9 @@ DecodeSupportSet AppleDecoderModule::SupportsMimeType(
     }
   }
 
-  MOZ_LOG(sPDMLog, LogLevel::Debug,
-          ("Apple decoder %s requested type '%s'",
-           supportType.isEmpty() ? "rejects" : "supports",
-           aMimeType.BeginReading()));
+  MOZ_LOG_FMT(sPDMLog, LogLevel::Debug, "Apple decoder {} requested type '{}'",
+              supportType.isEmpty() ? "rejects" : "supports",
+              PromiseFlatCString(aMimeType).get());
   return supportType;
 }
 
@@ -239,11 +234,7 @@ bool AppleDecoderModule::IsVideoSupported(
 /* static */
 bool AppleDecoderModule::CanCreateHWDecoder(const MediaCodec& aCodec) {
   // Check whether HW decode should even be enabled
-  if (!gfx::gfxVars::CanUseHardwareVideoDecoding()) {
-    return false;
-  }
-
-  if (!VTIsHardwareDecodeSupported) {
+  if (!gfx::gfxVars::CanUseHardwareVideoDecoding() || XRE_IsUtilityProcess()) {
     return false;
   }
 
@@ -283,16 +274,15 @@ bool AppleDecoderModule::CanCreateHWDecoder(const MediaCodec& aCodec) {
       new AppleVTDecoder(info, nullptr, {}, nullptr, Nothing());
   auto release = MakeScopeExit([&]() { decoder->Shutdown(); });
   if (NS_FAILED(decoder->InitializeSession())) {
-    MOZ_LOG(sPDMLog, LogLevel::Debug,
-            ("Failed to initializing VT HW decoder session"));
+    MOZ_LOG_FMT(sPDMLog, LogLevel::Debug,
+                "Failed to initializing VT HW decoder session");
     return false;
   }
   nsAutoCString failureReason;
   bool hwSupport = decoder->IsHardwareAccelerated(failureReason);
   if (!hwSupport) {
-    MOZ_LOG(
-        sPDMLog, LogLevel::Debug,
-        ("VT decoder failed to use HW : '%s'", failureReason.BeginReading()));
+    MOZ_LOG_FMT(sPDMLog, LogLevel::Debug, "VT decoder failed to use HW : '{}'",
+                failureReason.get());
   }
   return hwSupport;
 }

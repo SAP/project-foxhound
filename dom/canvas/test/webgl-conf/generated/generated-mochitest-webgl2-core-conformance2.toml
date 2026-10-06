@@ -1,0 +1,791 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-core"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/conformance2/attribs/**",
+  "../checkout/conformance2/buffers/**",
+  "../checkout/conformance2/canvas/**",
+  "../checkout/conformance2/context/**",
+  "../checkout/conformance2/extensions/**",
+  "../checkout/conformance2/misc/**",
+  "../checkout/conformance2/offscreencanvas/**",
+  "../checkout/conformance2/programs/**",
+  "../checkout/conformance2/query/**",
+  "../checkout/conformance2/reading/**",
+  "../checkout/conformance2/renderbuffers/**",
+  "../checkout/conformance2/rendering/**",
+  "../checkout/conformance2/samplers/**",
+  "../checkout/conformance2/state/**",
+  "../checkout/conformance2/sync/**",
+  "../checkout/conformance2/textures/**",
+  "../checkout/conformance2/transform_feedback/**",
+  "../checkout/conformance2/uniforms/**",
+  "../checkout/conformance2/vertex_arrays/**",
+  "../checkout/conformance2/wasm/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_conformance2__attribs__gl-bindAttribLocation-aliasing-inactive.html"]
+fail-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
+]
+
+["test_2_conformance2__attribs__gl-vertex-attrib-i-render.html"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_2_conformance2__attribs__gl-vertex-attrib-normalized-int.html"]
+
+["test_2_conformance2__attribs__gl-vertex-attrib.html"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_2_conformance2__attribs__gl-vertexattribipointer-offsets.html"]
+
+["test_2_conformance2__attribs__gl-vertexattribipointer.html"]
+
+["test_2_conformance2__attribs__invalid-vertex-attribs.html"]
+
+["test_2_conformance2__attribs__render-no-enabled-attrib-arrays.html"]
+
+["test_2_conformance2__buffers__bound-buffer-size-change-test.html"]
+
+["test_2_conformance2__buffers__buffer-copying-contents.html"]
+
+["test_2_conformance2__buffers__buffer-copying-restrictions.html"]
+
+["test_2_conformance2__buffers__buffer-data-and-buffer-sub-data-sub-source.html"]
+
+["test_2_conformance2__buffers__buffer-overflow-test.html"]
+
+["test_2_conformance2__buffers__buffer-type-restrictions.html"]
+
+["test_2_conformance2__buffers__delete-buffer.html"]
+
+["test_2_conformance2__buffers__get-buffer-sub-data-validity.html"]
+
+["test_2_conformance2__buffers__get-buffer-sub-data.html"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_2_conformance2__buffers__one-large-uniform-buffer.html"]
+
+["test_2_conformance2__buffers__uniform-buffers-second-compile.html"]
+
+["test_2_conformance2__buffers__uniform-buffers-state-restoration.html"]
+
+["test_2_conformance2__buffers__uniform-buffers.html"]
+
+["test_2_conformance2__canvas__drawingbuffer-storage-test.html"]
+
+["test_2_conformance2__canvas__to-data-url-with-pack-params.html"]
+
+["test_2_conformance2__context__constants-and-properties-2.html"]
+
+["test_2_conformance2__context__context-attributes-depth-stencil-antialias-obeyed.html"]
+fail-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+]
+tags = "os_integration"
+
+["test_2_conformance2__context__context-mode.html"]
+
+["test_2_conformance2__context__context-resize-changes-buffer-binding-bug.html"]
+
+["test_2_conformance2__context__context-sharing-texture2darray-texture3d-data-bug.html"]
+
+["test_2_conformance2__context__context-type-test-2.html"]
+
+["test_2_conformance2__context__incorrect-context-object-behaviour.html"]
+
+["test_2_conformance2__context__methods-2.html"]
+
+["test_2_conformance2__context__no-experimental-webgl2.html"]
+
+["test_2_conformance2__extensions__ext-color-buffer-float.html"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug",
+]
+
+["test_2_conformance2__extensions__ext-color-buffer-half-float.html"]
+
+["test_2_conformance2__extensions__ext-conservative-depth.html"]
+
+["test_2_conformance2__extensions__ext-disjoint-timer-query-webgl2.html"]
+
+["test_2_conformance2__extensions__ext-render-snorm.html"]
+
+["test_2_conformance2__extensions__ext-texture-filter-anisotropic.html"]
+
+["test_2_conformance2__extensions__ext-texture-norm16.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'", #Bug 1658801
+]
+fail-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
+]
+
+["test_2_conformance2__extensions__nv-shader-noperspective-interpolation.html"]
+
+["test_2_conformance2__extensions__oes-draw-buffers-indexed.html"]
+
+["test_2_conformance2__extensions__oes-sample-variables.html"]
+
+["test_2_conformance2__extensions__oes-shader-multisample-interpolation.html"]
+
+["test_2_conformance2__extensions__ovr_multiview2.html"]
+fail-if = [
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
+["test_2_conformance2__extensions__ovr_multiview2_depth.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
+["test_2_conformance2__extensions__ovr_multiview2_draw_buffers.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+fail-if = [
+  "os == 'win' && os_version == '11.26100' && debug",
+  "os == 'win' && os_version == '11.26200' && debug",
+]
+
+["test_2_conformance2__extensions__ovr_multiview2_flat_varying.html"]
+
+["test_2_conformance2__extensions__ovr_multiview2_instanced_draw.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
+["test_2_conformance2__extensions__ovr_multiview2_non_multiview_shaders.html"]
+
+["test_2_conformance2__extensions__ovr_multiview2_single_view_operations.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
+["test_2_conformance2__extensions__ovr_multiview2_timer_query.html"]
+
+["test_2_conformance2__extensions__ovr_multiview2_transform_feedback.html"]
+
+["test_2_conformance2__extensions__promoted-extensions-in-shaders.html"]
+
+["test_2_conformance2__extensions__promoted-extensions.html"]
+
+["test_2_conformance2__extensions__required-extensions.html"]
+fail-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
+
+["test_2_conformance2__extensions__webgl-blend-func-extended.html"]
+
+["test_2_conformance2__extensions__webgl-clip-cull-distance.html"]
+
+["test_2_conformance2__extensions__webgl-multi-draw-instanced-base-vertex-base-instance.html"]
+fail-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+]
+
+["test_2_conformance2__extensions__webgl-provoking-vertex.html"]
+
+["test_2_conformance2__extensions__webgl-render-shared-exponent.html"]
+
+["test_2_conformance2__extensions__webgl-shader-pixel-local-storage.html"]
+
+["test_2_conformance2__extensions__webgl-stencil-texturing.html"]
+
+["test_2_conformance2__misc__blend-integer.html"]
+
+["test_2_conformance2__misc__expando-loss-2.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
+
+["test_2_conformance2__misc__getextension-while-pbo-bound-stability.html"]
+
+["test_2_conformance2__misc__instanceof-test.html"]
+
+["test_2_conformance2__misc__null-object-behaviour-2.html"]
+
+["test_2_conformance2__misc__object-deletion-behaviour-2.html"]
+
+["test_2_conformance2__misc__uninitialized-test-2.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_2_conformance2__misc__views-with-offsets.html"]
+
+["test_2_conformance2__offscreencanvas__context-creation-worker.html"]
+
+["test_2_conformance2__offscreencanvas__context-creation.html"]
+
+["test_2_conformance2__offscreencanvas__methods-2-worker.html"]
+
+["test_2_conformance2__offscreencanvas__methods-2.html"]
+
+["test_2_conformance2__offscreencanvas__offscreencanvas-query.html"]
+
+["test_2_conformance2__offscreencanvas__offscreencanvas-sync.html"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt",
+]
+
+["test_2_conformance2__offscreencanvas__offscreencanvas-timer-query.html"]
+
+["test_2_conformance2__offscreencanvas__offscreencanvas-transfer-image-bitmap.html"]
+
+["test_2_conformance2__programs__active-built-in-attribs.html"]
+
+["test_2_conformance2__programs__get-uniform-indices.html"]
+
+["test_2_conformance2__programs__gl-get-frag-data-location.html"]
+
+["test_2_conformance2__programs__sampler-uniforms.html"]
+
+["test_2_conformance2__query__occlusion-query-scissor.html"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
+
+["test_2_conformance2__query__occlusion-query.html"]
+skip-if = [
+  "true",
+]
+
+["test_2_conformance2__query__query.html"]
+
+["test_2_conformance2__reading__format-r11f-g11f-b10f.html"]
+
+["test_2_conformance2__reading__read-pixels-from-fbo-test.html"]
+skip-if = [
+  "true",
+]
+
+["test_2_conformance2__reading__read-pixels-from-rgb8-into-pbo-bug.html"]
+
+["test_2_conformance2__reading__read-pixels-into-pixel-pack-buffer.html"]
+fail-if = [
+  "true",
+]
+
+["test_2_conformance2__reading__read-pixels-pack-parameters.html"]
+
+["test_2_conformance2__renderbuffers__framebuffer-object-attachment.html"]
+
+["test_2_conformance2__renderbuffers__framebuffer-test.html"]
+
+["test_2_conformance2__renderbuffers__framebuffer-texture-layer.html"]
+
+["test_2_conformance2__renderbuffers__invalidate-framebuffer.html"]
+
+["test_2_conformance2__renderbuffers__multisample-draws-between-blits.html"]
+fail-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+]
+
+["test_2_conformance2__renderbuffers__multisample-with-full-sample-counts.html"]
+
+["test_2_conformance2__renderbuffers__multisampled-depth-renderbuffer-initialization.html"]
+
+["test_2_conformance2__renderbuffers__multisampled-renderbuffer-initialization.html"]
+
+["test_2_conformance2__renderbuffers__multisampled-stencil-renderbuffer-initialization.html"]
+
+["test_2_conformance2__renderbuffers__readbuffer.html"]
+fail-if = [
+  "true",
+]
+
+["test_2_conformance2__rendering__attrib-type-match.html"]
+
+["test_2_conformance2__rendering__blitframebuffer-filter-outofbounds.html"]
+
+["test_2_conformance2__rendering__blitframebuffer-filter-srgb.html"]
+fail-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
+]
+
+["test_2_conformance2__rendering__blitframebuffer-multisampled-readbuffer.html"]
+fail-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+]
+
+["test_2_conformance2__rendering__blitframebuffer-outside-readbuffer.html"]
+
+["test_2_conformance2__rendering__blitframebuffer-r11f-g11f-b10f.html"]
+
+["test_2_conformance2__rendering__blitframebuffer-resolve-to-back-buffer.html"]
+skip-if = [
+  "true",
+]
+
+["test_2_conformance2__rendering__blitframebuffer-scissor-enabled.html"]
+
+["test_2_conformance2__rendering__blitframebuffer-size-overflow.html"]
+
+["test_2_conformance2__rendering__blitframebuffer-srgb-and-linear-drawbuffers.html"]
+
+["test_2_conformance2__rendering__blitframebuffer-stencil-only.html"]
+
+["test_2_conformance2__rendering__blitframebuffer-test.html"]
+
+["test_2_conformance2__rendering__blitframebuffer-unaffected-by-colormask.html"]
+
+["test_2_conformance2__rendering__canvas-resizing-with-pbo-bound.html"]
+
+["test_2_conformance2__rendering__clear-func-buffer-type-match.html"]
+
+["test_2_conformance2__rendering__clear-srgb-color-buffer.html"]
+
+["test_2_conformance2__rendering__clearbuffer-sub-source.html"]
+
+["test_2_conformance2__rendering__clearbufferfv-with-alpha-false.html"]
+
+["test_2_conformance2__rendering__clipping-wide-points.html"]
+fail-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
+
+["test_2_conformance2__rendering__depth-stencil-feedback-loop.html"]
+
+["test_2_conformance2__rendering__draw-buffers-dirty-state-bug.html"]
+
+["test_2_conformance2__rendering__draw-buffers-driver-hang.html"]
+
+["test_2_conformance2__rendering__draw-buffers-sparse-output-locations.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_2_conformance2__rendering__draw-buffers.html"]
+
+["test_2_conformance2__rendering__draw-with-integer-texture-base-level.html"]
+
+["test_2_conformance2__rendering__element-index-uint.html"]
+
+["test_2_conformance2__rendering__framebuffer-completeness-draw-framebuffer.html"]
+
+["test_2_conformance2__rendering__framebuffer-completeness-unaffected.html"]
+
+["test_2_conformance2__rendering__framebuffer-mismatched-attachment-targets.html"]
+fail-if = [
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_2_conformance2__rendering__framebuffer-render-to-layer-angle-issue.html"]
+fail-if = [
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_2_conformance2__rendering__framebuffer-render-to-layer.html"]
+fail-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
+]
+
+["test_2_conformance2__rendering__framebuffer-texture-changing-base-level.html"]
+
+["test_2_conformance2__rendering__framebuffer-texture-level1.html"]
+fail-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
+
+["test_2_conformance2__rendering__framebuffer-to-texture.html"]
+fail-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+]
+
+["test_2_conformance2__rendering__framebuffer-unsupported.html"]
+
+["test_2_conformance2__rendering__fs-color-type-mismatch-color-buffer-type.html"]
+
+["test_2_conformance2__rendering__instanced-arrays.html"]
+
+["test_2_conformance2__rendering__instanced-rendering-bug.html"]
+
+["test_2_conformance2__rendering__instanced-rendering-large-divisor.html"]
+
+["test_2_conformance2__rendering__line-rendering-quality.html"]
+fail-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+]
+
+["test_2_conformance2__rendering__multisampling-depth-resolve.html"]
+fail-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+]
+
+["test_2_conformance2__rendering__multisampling-fragment-evaluation.html"]
+
+["test_2_conformance2__rendering__out-of-bounds-index-buffers-after-copying.html"]
+
+["test_2_conformance2__rendering__rasterizer-discard-and-implicit-clear.html"]
+
+["test_2_conformance2__rendering__read-draw-when-missing-image.html"]
+
+["test_2_conformance2__rendering__rgb-format-support.html"]
+
+["test_2_conformance2__rendering__texture-switch-performance.html"]
+skip-if = [
+  "true",
+]
+
+["test_2_conformance2__rendering__uniform-block-buffer-size.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
+["test_2_conformance2__rendering__vertex-id-large-count.html"]
+
+["test_2_conformance2__rendering__vertex-id.html"]
+
+["test_2_conformance2__samplers__multi-context-sampler-test.html"]
+
+["test_2_conformance2__samplers__sampler-drawing-test.html"]
+
+["test_2_conformance2__samplers__samplers.html"]
+
+["test_2_conformance2__state__gl-enum-tests.html"]
+
+["test_2_conformance2__state__gl-get-calls.html"]
+fail-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+]
+
+["test_2_conformance2__state__gl-getstring.html"]
+
+["test_2_conformance2__state__gl-object-get-calls.html"]
+skip-if = [
+  "true",
+]
+fail-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
+
+["test_2_conformance2__sync__sync-webgl-specific.html"]
+
+["test_2_conformance2__textures__misc__active-3d-texture-bug.html"]
+
+["test_2_conformance2__textures__misc__angle-stuck-depth-textures.html"]
+
+["test_2_conformance2__textures__misc__canvas-remains-unchanged-after-used-in-webgl-texture.html"]
+
+["test_2_conformance2__textures__misc__compressed-tex-from-pbo-crash.html"]
+
+["test_2_conformance2__textures__misc__compressed-tex-image.html"]
+
+["test_2_conformance2__textures__misc__copy-texture-cube-map-AMD-bug.html"]
+
+["test_2_conformance2__textures__misc__copy-texture-cube-map-bug.html"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
+
+["test_2_conformance2__textures__misc__copy-texture-image-luma-format.html"]
+
+["test_2_conformance2__textures__misc__copy-texture-image-same-texture.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_2_conformance2__textures__misc__copy-texture-image-webgl-specific.html"]
+
+["test_2_conformance2__textures__misc__copy-texture-image.html"]
+
+["test_2_conformance2__textures__misc__generate-mipmap-with-large-base-level.html"]
+
+["test_2_conformance2__textures__misc__gl-get-tex-parameter.html"]
+
+["test_2_conformance2__textures__misc__immutable-tex-render-feedback.html"]
+fail-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
+]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64' && debug",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
+]
+
+["test_2_conformance2__textures__misc__integer-cubemap-specification-order-bug.html"]
+
+["test_2_conformance2__textures__misc__integer-cubemap-texture-sampling.html"]
+
+["test_2_conformance2__textures__misc__mipmap-fbo.html"]
+
+["test_2_conformance2__textures__misc__npot-video-sizing.html"]
+
+["test_2_conformance2__textures__misc__origin-clean-conformance-offscreencanvas.html"]
+skip-if = [
+  "true",
+]
+
+["test_2_conformance2__textures__misc__tex-3d-mipmap-levels-intel-bug.html"]
+fail-if = [
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_2_conformance2__textures__misc__tex-3d-size-limit.html"]
+
+["test_2_conformance2__textures__misc__tex-base-level-bug.html"]
+fail-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
+]  # macosx1014 due to 1563418
+
+["test_2_conformance2__textures__misc__tex-image-10bpc.html"]
+fail-if = [
+  "true",
+]
+
+["test_2_conformance2__textures__misc__tex-image-and-sub-image-with-array-buffer-view-sub-source.html"]
+
+["test_2_conformance2__textures__misc__tex-image-with-bad-args-from-dom-elements.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'", # Bug 1687073
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_2_conformance2__textures__misc__tex-image-with-bad-args.html"]
+
+["test_2_conformance2__textures__misc__tex-image-with-different-data-source.html"]
+
+["test_2_conformance2__textures__misc__tex-input-validation.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_2_conformance2__textures__misc__tex-mipmap-levels.html"]
+fail-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_2_conformance2__textures__misc__tex-new-formats.html"]
+
+["test_2_conformance2__textures__misc__tex-srgb-mipmap.html"]
+fail-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+]
+
+["test_2_conformance2__textures__misc__tex-storage-2d.html"]
+
+["test_2_conformance2__textures__misc__tex-storage-and-subimage-3d.html"]
+
+["test_2_conformance2__textures__misc__tex-storage-compressed-formats.html"]
+
+["test_2_conformance2__textures__misc__tex-subimage3d-canvas-bug.html"]
+
+["test_2_conformance2__textures__misc__tex-subimage3d-pixel-buffer-bug.html"]
+
+["test_2_conformance2__textures__misc__tex-unpack-params-imagedata.html"]
+fail-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+]
+
+["test_2_conformance2__textures__misc__tex-unpack-params-with-flip-y-and-premultiply-alpha.html"]
+fail-if = [
+  "true",
+]
+
+["test_2_conformance2__textures__misc__tex-unpack-params.html"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && debug",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug", # Bug 2034604
+]
+fail-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
+]
+
+["test_2_conformance2__textures__misc__texel-fetch-undefined.html"]
+
+["test_2_conformance2__textures__misc__texture-npot.html"]
+
+["test_2_conformance2__transform_feedback__default_transform_feedback.html"]
+
+["test_2_conformance2__transform_feedback__non-existent-varying.html"]
+
+["test_2_conformance2__transform_feedback__same-buffer-two-binding-points.html"]
+
+["test_2_conformance2__transform_feedback__simultaneous_binding.html"]
+
+["test_2_conformance2__transform_feedback__switching-objects.html"]
+
+["test_2_conformance2__transform_feedback__too-small-buffers.html"]
+skip-if = [
+  "true",
+]
+
+["test_2_conformance2__transform_feedback__transform_feedback.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64' && debug",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
+
+["test_2_conformance2__transform_feedback__two-unreferenced-varyings.html"]
+
+["test_2_conformance2__transform_feedback__unwritten-output-defaults-to-zero.html"]
+
+["test_2_conformance2__uniforms__dependent-buffer-change.html"]
+
+["test_2_conformance2__uniforms__draw-with-uniform-blocks.html"]
+
+["test_2_conformance2__uniforms__gl-uniform-arrays-sub-source.html"]
+
+["test_2_conformance2__uniforms__incompatible-texture-type-for-sampler.html"]
+
+["test_2_conformance2__uniforms__large-uniform-buffers.html"]
+
+["test_2_conformance2__uniforms__query-uniform-blocks-after-shader-detach.html"]
+
+["test_2_conformance2__uniforms__simple-buffer-change.html"]
+
+["test_2_conformance2__uniforms__uniform-blocks-with-arrays.html"]
+
+["test_2_conformance2__vertex_arrays__vertex-array-object-and-disabled-attributes.html"]
+
+["test_2_conformance2__vertex_arrays__vertex-array-object.html"]
+
+["test_2_conformance2__wasm__bufferdata-16gb-wasm-memory.html"]
+fail-if = [
+  "true",
+]
+
+["test_2_conformance2__wasm__bufferdata-4gb-wasm-memory.html"]
+fail-if = [
+  "os == 'win' && arch == 'x86'",
+]
+
+["test_2_conformance2__wasm__buffersubdata-16gb-wasm-memory.html"]
+fail-if = [
+  "true",
+]
+
+["test_2_conformance2__wasm__buffersubdata-4gb-wasm-memory.html"]
+fail-if = [
+  "os == 'win' && arch == 'x86'",
+]
+
+["test_2_conformance2__wasm__getbuffersubdata-16gb-wasm-memory.html"]
+fail-if = [
+  "true",
+]
+
+["test_2_conformance2__wasm__getbuffersubdata-4gb-wasm-memory.html"]
+fail-if = [
+  "os == 'win' && arch == 'x86'",
+]
+
+["test_2_conformance2__wasm__readpixels-16gb-wasm-memory.html"]
+fail-if = [
+  "true",
+]
+
+["test_2_conformance2__wasm__readpixels-4gb-wasm-memory.html"]
+fail-if = [
+  "os == 'win' && arch == 'x86'",
+]
+
+["test_2_conformance2__wasm__teximage2d-16gb-wasm-memory.html"]
+fail-if = [
+  "true",
+]
+
+["test_2_conformance2__wasm__teximage2d-4gb-wasm-memory.html"]
+fail-if = [
+  "os == 'win' && arch == 'x86'",
+]
+
+["test_2_conformance2__wasm__texsubimage2d-16gb-wasm-memory.html"]
+fail-if = [
+  "true",
+]
+
+["test_2_conformance2__wasm__texsubimage2d-4gb-wasm-memory.html"]
+fail-if = [
+  "os == 'win' && arch == 'x86'",
+]

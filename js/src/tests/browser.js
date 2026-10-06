@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -545,14 +544,8 @@
         let nextScriptIndex = i + 1;
         if (nextScriptIndex < scripts.length) {
           var callNextAppend = () => appendScript(nextScriptIndex);
-          SpecialPowers.wrap(script).addEventListener("afterscriptexecute", callNextAppend, {mozSystemGroup: true, once: true});
-
-          // Module scripts don't fire the "afterscriptexecute" event when there
-          // was an error, instead the "error" event is emitted. So listen for
-          // both events when creating module scripts.
-          if (spec.module) {
-            script.addEventListener("error", callNextAppend, {once: true});
-          }
+          script.addEventListener("load", callNextAppend, {once: true});
+          script.addEventListener("error", callNextAppend, {once: true});
         }
 
         scriptElements[i] = script;

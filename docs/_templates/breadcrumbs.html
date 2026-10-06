@@ -9,9 +9,11 @@
     rel="nofollow"
     >Report an issue</a
   >
-  / {%- if show_source and has_source and sourcename %}
-  <a href="{{ pathto('_sources/' + sourcename, true)|e }}" rel="nofollow">
-    {{ _('View page source') }}</a
+  / {%- if display_github and has_source and github_source_path %}
+  <a
+    href="https://{{ github_host|default('github.com') }}/{{ github_user }}/{{ github_repo }}/blob/{{ github_version }}/{{ github_source_path }}"
+    rel="nofollow"
+    >{{ _('View page source') }}</a
   >
   {%- endif %}
 </li>

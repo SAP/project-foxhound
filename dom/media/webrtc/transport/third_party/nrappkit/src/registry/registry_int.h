@@ -1,13 +1,3 @@
-#if 0
-#define NR_LOG_REGISTRY BLAHBLAH()
-#define LOG_REGISTRY BLAHBLAH()
-static int BLAHBLAH() {
-int blahblah;
-r_log_register("registry",&blahblah);
-return blahblah;
-}
-#endif
-
 /*
  *
  *    registry_int.h
@@ -63,7 +53,7 @@ return blahblah;
 
 extern int NR_LOG_REGISTRY;
 
-int nr_reg_is_valid(NR_registry name);
+int nr_reg_is_valid(NR_registry_name name);
 
 #define NR_REG_TYPE_CHAR               0
 #define NR_REG_TYPE_UCHAR              1
@@ -77,15 +67,13 @@ int nr_reg_is_valid(NR_registry name);
 #define NR_REG_TYPE_BYTES              9
 #define NR_REG_TYPE_STRING             10
 #define NR_REG_TYPE_REGISTRY           11
-char *nr_reg_type_name(int type);
-int nr_reg_compute_type(char *type_name, int *type);
-
-char *nr_reg_action_name(int action);
+const char *nr_reg_type_name(int type);
+const char *nr_reg_action_name(int action);
 
 int nr_reg_cb_init(void);
 int nr_reg_client_cb_init(void);
 int nr_reg_register_for_callbacks(int fd, int connect_to_port);
-int nr_reg_raise_event(NR_registry name, int action);
+int nr_reg_raise_event(NR_registry_name name, int action);
 #ifndef NO_REG_RPC
 int nr_reg_get_client(CLIENT **client);
 #endif
@@ -93,5 +81,58 @@ int nr_reg_get_client(CLIENT **client);
 #define CALLBACK_SERVER_ADDR     "127.0.0.1"
 #define CALLBACK_SERVER_PORT     8082
 #define CALLBACK_SERVER_BACKLOG  32
+
+/* if C were an object-oriented language, nr_scalar_registry_node and
+ * nr_array_registry_node would subclass nr_registry_node, but it isn't
+ * object-oriented language, so this is used in cases where the pointer
+ * could be of either type */
+typedef struct nr_registry_node_ {
+    unsigned char  type;
+} nr_registry_node;
+
+typedef struct nr_scalar_registry_node_ {
+    unsigned char  type;
+    union {
+        char          _char;
+        UCHAR         _uchar;
+        INT2       _nr_int2;
+        UINT2      _nr_uint2;
+        INT4       _nr_int4;
+        UINT4      _nr_uint4;
+        INT8       _nr_int8;
+        UINT8      _nr_uint8;
+        double        _double;
+    } scalar;
+} nr_scalar_registry_node;
+
+/* string, bytes */
+typedef struct nr_array_registry_node_ {
+    unsigned char    type;
+    struct {
+        unsigned int     length;
+        unsigned char    data[1];
+    } array;
+} nr_array_registry_node;
+
+typedef struct nr_reg_find_children_arg_ {
+    size_t         size;
+    NR_registry   *children;
+    size_t         length;
+} nr_reg_find_children_arg;
+
+int nr_reg_local_init(void);
+
+int nr_reg_get(const char *name, int type, void *out);
+int nr_reg_get_array(const char *name, unsigned char type, UCHAR *out, size_t size, size_t *length);
+
+int nr_reg_set(const char *name, int type, void *data);
+int nr_reg_set_array(const char *name, unsigned char type, const UCHAR *data, size_t length);
+
+int nr_reg_fetch_node(const char *name, unsigned char type, nr_registry_node **node, int *free_node);
+
+int nr_reg_local_get_length(NR_registry_name name, size_t *len);
+int nr_reg_local_del(NR_registry_name name);
+int nr_reg_local_get_child_count(NR_registry_name parent, size_t *count);
+int nr_reg_local_get_children(NR_registry_name parent, NR_registry *data, size_t size, size_t *length);
 
 #endif

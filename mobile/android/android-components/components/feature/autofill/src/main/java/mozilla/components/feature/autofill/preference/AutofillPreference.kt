@@ -6,9 +6,9 @@ package mozilla.components.feature.autofill.preference
 
 import android.content.Context
 import android.util.AttributeSet
-import androidx.appcompat.widget.SwitchCompat
 import androidx.preference.Preference
 import androidx.preference.PreferenceViewHolder
+import com.google.android.material.materialswitch.MaterialSwitch
 import mozilla.components.feature.autofill.AutofillUseCases
 import mozilla.components.feature.autofill.R
 
@@ -23,7 +23,7 @@ class AutofillPreference(
     attrs: AttributeSet? = null,
 ) : Preference(context, attrs) {
     private val useCases = AutofillUseCases()
-    private var switchView: SwitchCompat? = null
+    private var switchView: MaterialSwitch? = null
 
     init {
         widgetLayoutResource = R.layout.mozac_feature_autofill_preference
@@ -33,7 +33,7 @@ class AutofillPreference(
     override fun onBindViewHolder(holder: PreferenceViewHolder) {
         super.onBindViewHolder(holder)
 
-        switchView = holder.findViewById(R.id.switch_widget) as SwitchCompat
+        switchView = holder.findViewById(R.id.switch_widget) as MaterialSwitch
 
         update()
     }

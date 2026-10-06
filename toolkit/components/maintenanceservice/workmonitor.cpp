@@ -21,7 +21,6 @@
 #include "mozilla/CmdLineAndEnvUtils.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 
 using namespace mozilla;
 

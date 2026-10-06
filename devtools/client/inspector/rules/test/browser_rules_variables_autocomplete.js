@@ -106,7 +106,7 @@ async function checkNewPropertyCssVariableAutocomplete(
   view,
   expectedPopupItems
 ) {
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
   const editor = await focusNewRuleViewProperty(ruleEditor);
   const onPopupOpen = editor.popup.once("popup-opened");
   EventUtils.sendString("--");
@@ -167,7 +167,7 @@ async function checkCssVariableAutocomplete(
  * @param {Array{Object}} expectedPopupItems
  */
 function assertEditorPopupItems(editor, expectedPopupItems) {
-  const popupListItems = Array.from(editor.popup._list.querySelectorAll("li"));
+  const popupListItems = Array.from(editor.popup.list.querySelectorAll("li"));
   is(
     popupListItems.length,
     expectedPopupItems.length,

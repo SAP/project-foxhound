@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,11 +12,13 @@
 #include <sys/syscall.h>
 
 #include <algorithm>
+#include <atomic>
 #include <limits>
 #include <tuple>
 
 #include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "base/memory/raw_ptr_exclusion.h"
 #include "build/build_config.h"
 #include "sandbox/linux/bpf_dsl/seccomp_macros.h"
 #include "sandbox/linux/seccomp-bpf/die.h"
@@ -28,7 +30,9 @@
 namespace {
 
 struct arch_sigsys {
-  void* ip;
+  // This is not raw_ptr because it is a pointer to a code address given to us
+  // by the kernel.
+  RAW_PTR_EXCLUSION void* ip;
   int nr;
   unsigned int arch;
 };
@@ -60,7 +64,7 @@ bool GetIsInSigHandler(const ucontext_t* ctx) {
 void SetIsInSigHandler() {
   sigset_t mask;
   if (sigemptyset(&mask) || sigaddset(&mask, LINUX_SIGBUS) ||
-      sandbox::sys_sigprocmask(LINUX_SIG_BLOCK, &mask, NULL)) {
+      sandbox::sys_sigprocmask(LINUX_SIG_BLOCK, &mask, nullptr)) {
     SANDBOX_DIE("Failed to block SIGBUS");
   }
 }
@@ -76,11 +80,7 @@ bool IsDefaultSignalAction(const struct sigaction& sa) {
 
 namespace sandbox {
 
-Trap::Trap()
-    : trap_array_(NULL),
-      trap_array_size_(0),
-      trap_array_capacity_(0),
-      has_unsafe_traps_(false) {
+Trap::Trap() {
   // Set new SIGSYS handler
   struct sigaction sa = {};
   // In some toolchain, sa_sigaction is not declared in struct sigaction.
@@ -104,7 +104,7 @@ Trap::Trap()
   // Unmask SIGSYS
   sigset_t mask;
   if (sigemptyset(&mask) || sigaddset(&mask, LINUX_SIGSYS) ||
-      sys_sigprocmask(LINUX_SIG_UNBLOCK, &mask, NULL)) {
+      sys_sigprocmask(LINUX_SIG_UNBLOCK, &mask, nullptr)) {
     SANDBOX_DIE("Failed to configure SIGSYS handler");
   }
 }
@@ -166,7 +166,7 @@ void Trap::SigSys(int nr, LinuxSigInfo* info, ucontext_t* ctx) {
 
   // Obtain the siginfo information that is specific to SIGSYS.
   struct arch_sigsys sigsys;
-#if defined(si_call_addr) && !defined(__native_client_nonsfi__)
+#if defined(si_call_addr)
   sigsys.ip = info->si_call_addr;
   sigsys.nr = info->si_syscall;
   sigsys.arch = info->si_arch;
@@ -227,7 +227,7 @@ void Trap::SigSys(int nr, LinuxSigInfo* info, ucontext_t* ctx) {
                        SECCOMP_PARM6(ctx));
 #endif  // defined(__mips__)
   } else {
-    const TrapKey& trap = trap_array_[info->si_errno - 1];
+    const auto& trap = trap_array_[info->si_errno - 1];
     if (!trap.safe) {
       SetIsInSigHandler();
     }
@@ -248,7 +248,7 @@ void Trap::SigSys(int nr, LinuxSigInfo* info, ucontext_t* ctx) {
 
     // Now call the TrapFnc callback associated with this particular instance
     // of SECCOMP_RET_TRAP.
-    rc = trap.fnc(data, const_cast<void*>(trap.aux));
+    rc = trap.fnc(data, reinterpret_cast<void*>(trap.aux));
   }
 
   // Update the CPU register that stores the return code of the system call
@@ -260,12 +260,8 @@ void Trap::SigSys(int nr, LinuxSigInfo* info, ucontext_t* ctx) {
   return;
 }
 
-bool Trap::TrapKey::operator<(const TrapKey& o) const {
-  return std::tie(fnc, aux, safe) < std::tie(o.fnc, o.aux, o.safe);
-}
-
-uint16_t Trap::Add(TrapFnc fnc, const void* aux, bool safe) {
-  if (!safe && !SandboxDebuggingAllowedByUser()) {
+uint16_t Trap::Add(const Handler& handler) {
+  if (!handler.safe && !SandboxDebuggingAllowedByUser()) {
     // Unless the user set the CHROME_SANDBOX_DEBUGGING environment variable,
     // we never return an ErrorCode that is marked as "unsafe". This also
     // means, the BPF compiler will never emit code that allow unsafe system
@@ -280,13 +276,7 @@ uint16_t Trap::Add(TrapFnc fnc, const void* aux, bool safe) {
     SANDBOX_DIE(
         "Cannot use unsafe traps unless CHROME_SANDBOX_DEBUGGING "
         "is enabled");
-
-    return 0;
   }
-
-  // Each unique pair of TrapFnc and auxiliary data make up a distinct instance
-  // of a SECCOMP_RET_TRAP.
-  TrapKey key(fnc, aux, safe);
 
   // We return unique identifiers together with SECCOMP_RET_TRAP. This allows
   // us to associate trap with the appropriate handler. The kernel allows us
@@ -297,7 +287,7 @@ uint16_t Trap::Add(TrapFnc fnc, const void* aux, bool safe) {
   // calls that might be async-signal-unsafe.
   // In order to do so, we store all of our traps in a C-style trap_array_.
 
-  TrapIds::const_iterator iter = trap_ids_.find(key);
+  auto iter = trap_ids_.find(handler);
   if (iter != trap_ids_.end()) {
     // We have seen this pair before. Return the same id that we assigned
     // earlier.
@@ -330,34 +320,21 @@ uint16_t Trap::Add(TrapFnc fnc, const void* aux, bool safe) {
   // events.
   if (trap_array_size_ >= trap_array_capacity_) {
     trap_array_capacity_ += kCapacityIncrement;
-    TrapKey* old_trap_array = trap_array_;
-    TrapKey* new_trap_array = new TrapKey[trap_array_capacity_];
+    auto* old_trap_array = trap_array_;
+    auto* new_trap_array = new TrapRegistry::Handler[trap_array_capacity_];
     std::copy_n(old_trap_array, trap_array_size_, new_trap_array);
 
-    // Language specs are unclear on whether the compiler is allowed to move
-    // the "delete[]" above our preceding assignments and/or memory moves,
-    // iff the compiler believes that "delete[]" doesn't have any other
-    // global side-effects.
-    // We insert optimization barriers to prevent this from happening.
-    // The first barrier is probably not needed, but better be explicit in
-    // what we want to tell the compiler.
-    // The clang developer mailing list couldn't answer whether this is a
-    // legitimate worry; but they at least thought that the barrier is
-    // sufficient to prevent the (so far hypothetical) problem of re-ordering
-    // of instructions by the compiler.
-    //
-    // TODO(mdempsky): Try to clean this up using base/atomicops or C++11
-    // atomics; see crbug.com/414363.
-    asm volatile("" : "=r"(new_trap_array) : "0"(new_trap_array) : "memory");
     trap_array_ = new_trap_array;
-    asm volatile("" : "=r"(trap_array_) : "0"(trap_array_) : "memory");
-
+    // Prevent the compiler from moving delete[] before the store of the
+    // |new_trap_array|, otherwise a concurrent SIGSYS may see a |trap_array_|
+    // that still points to |old_trap_array| after it has been deleted.
+    std::atomic_signal_fence(std::memory_order_release);
     delete[] old_trap_array;
   }
 
   uint16_t id = trap_array_size_ + 1;
-  trap_ids_[key] = id;
-  trap_array_[trap_array_size_] = key;
+  trap_ids_[handler] = id;
+  trap_array_[trap_array_size_] = handler;
   trap_array_size_++;
   return id;
 }

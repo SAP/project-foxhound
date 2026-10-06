@@ -1,23 +1,18 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SVGMarkerElement.h"
 
-#include "nsGkAtoms.h"
 #include "DOMSVGAngle.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
-#include "nsError.h"
-#include "mozilla/ArrayUtils.h"
+#include "SVGContentUtils.h"
 #include "mozilla/dom/SVGGeometryElement.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGMarkerElementBinding.h"
 #include "mozilla/gfx/Matrix.h"
-#include "mozilla/FloatingPoint.h"
-#include "mozilla/RefPtr.h"
-#include "SVGContentUtils.h"
+#include "nsError.h"
+#include "nsGkAtoms.h"
 
 using namespace mozilla::gfx;
 using namespace mozilla::dom::SVGMarkerElement_Binding;
@@ -35,13 +30,13 @@ JSObject* SVGMarkerElement::WrapNode(JSContext* aCx,
 
 SVGElement::LengthInfo SVGMarkerElement::sLengthInfo[4] = {
     {nsGkAtoms::refX, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::refY, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
     {nsGkAtoms::markerWidth, 3, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::markerHeight, 3, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
 };
 
 SVGEnumMapping SVGMarkerElement::sUnitsMap[] = {
@@ -56,7 +51,7 @@ SVGElement::EnumInfo SVGMarkerElement::sEnumInfo[1] = {
 // Implementation
 
 SVGMarkerElement::SVGMarkerElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : SVGMarkerElementBase(std::move(aNodeInfo)), mCoordCtx(nullptr) {}
 
 //----------------------------------------------------------------------
@@ -165,15 +160,16 @@ gfx::Matrix SVGMarkerElement::GetMarkerTransform(float aStrokeWidth,
       angle = aMark.angle;
       break;
     case SVG_MARKER_ORIENT_AUTO_START_REVERSE:
-      angle = aMark.angle + (aMark.type == SVGMark::eStart ? M_PI : 0.0f);
+      angle = aMark.angle + (aMark.type == SVGMark::Type::Start ? M_PI : 0.0f);
       break;
     default:  // SVG_MARKER_ORIENT_ANGLE
-      angle = mOrient.GetAnimValue() * M_PI / 180.0f;
+      angle = mOrient.GetAnimValue() * kRadPerDegree;
       break;
   }
 
   return gfx::Matrix(cos(angle) * scale, sin(angle) * scale,
-                     -sin(angle) * scale, cos(angle) * scale, aMark.x, aMark.y);
+                     -sin(angle) * scale, cos(angle) * scale, aMark.pos.x,
+                     aMark.pos.y);
 }
 
 SVGViewBox SVGMarkerElement::GetViewBox() {
@@ -210,7 +206,7 @@ gfx::Matrix SVGMarkerElement::GetViewBoxTransform() {
     Matrix TM = viewBoxTM;
     TM.PostTranslate(-ref.x, -ref.y);
 
-    mViewBoxToViewportTransform = MakeUnique<gfx::Matrix>(TM);
+    mViewBoxToViewportTransform = std::make_unique<gfx::Matrix>(TM);
   }
 
   return *mViewBoxToViewportTransform;

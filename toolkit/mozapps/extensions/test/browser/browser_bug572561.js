@@ -6,7 +6,6 @@
 // installed but some are pending install
 
 var gManagerWindow;
-var gCategoryUtilities;
 var gProvider;
 var gInstallProperties = [
   {
@@ -17,17 +16,20 @@ var gInstallProperties = [
 var gInstall;
 var gExpectedCancel = false;
 var gTestInstallListener = {
-  onInstallStarted() {
+  async onInstallStarted() {
+    await AboutAddonsTestUtils.waitForCategoriesUpdate(gManagerWindow);
     check_hidden(false);
   },
 
-  onInstallEnded() {
+  async onInstallEnded() {
+    await AboutAddonsTestUtils.waitForCategoriesUpdate(gManagerWindow);
     check_hidden(false);
     run_next_test();
   },
 
-  onInstallCancelled() {
+  async onInstallCancelled() {
     ok(gExpectedCancel, "Should expect install cancel");
+    await AboutAddonsTestUtils.waitForCategoriesUpdate(gManagerWindow);
     check_hidden(false);
     run_next_test();
   },
@@ -45,7 +47,6 @@ async function test() {
 
   let aWindow = await open_manager("addons://list/extension");
   gManagerWindow = aWindow;
-  gCategoryUtilities = new CategoryUtilities(gManagerWindow);
   run_next_test();
 }
 
@@ -55,7 +56,10 @@ async function end_test() {
 }
 
 function check_hidden(aExpectedHidden) {
-  var hidden = !gCategoryUtilities.isTypeVisible("locale");
+  var hidden = !AboutAddonsTestUtils.isCategoryVisible(
+    gManagerWindow,
+    "locale"
+  );
   is(hidden, aExpectedHidden, "Should have correct hidden state");
 }
 
@@ -73,7 +77,6 @@ add_test(function () {
 add_test(async function () {
   let aWindow = await restart_manager(gManagerWindow, null);
   gManagerWindow = aWindow;
-  gCategoryUtilities = new CategoryUtilities(gManagerWindow);
   check_hidden(true);
   run_next_test();
 });
@@ -88,7 +91,6 @@ add_test(function () {
 add_test(async function () {
   let aWindow = await restart_manager(gManagerWindow, null);
   gManagerWindow = aWindow;
-  gCategoryUtilities = new CategoryUtilities(gManagerWindow);
   check_hidden(false);
 
   gExpectedCancel = true;

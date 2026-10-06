@@ -68,7 +68,7 @@ add_task(async function aboutPrefs_foregroundCheck_discardUpdateNotif() {
   let manualDesktopCheckbox = content.document.getElementById("manualDesktop");
   manualDesktopCheckbox.click();
   is(
-    manualDesktopCheckbox.selected,
+    manualDesktopCheckbox.checked,
     true,
     "Manual update option should be selected"
   );

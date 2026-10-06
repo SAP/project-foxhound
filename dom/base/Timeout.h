@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,16 +5,17 @@
 #ifndef mozilla_dom_timeout_h
 #define mozilla_dom_timeout_h
 
-#include "mozilla/dom/PopupBlocker.h"
-#include "mozilla/dom/TimeoutHandler.h"
+#include "GeckoProfiler.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/TimeStamp.h"
-#include "nsGlobalWindowInner.h"
+#include "mozilla/dom/PopupBlocker.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsGlobalWindowInner.h"
 #include "nsTHashMap.h"
-#include "GeckoProfiler.h"
 
 namespace mozilla::dom {
+
+class TimeoutHandler;
 
 /*
  * Timeout struct that holds information about each script
@@ -136,7 +135,7 @@ class Timeout final : protected LinkedListElement<RefPtr<Timeout>> {
   // (or is cancelled, etc)
   TimeStamp mSubmitTime;
 
-  ~Timeout() { SetTimeoutContainer(nullptr); }
+  ~Timeout();
 
  public:
   // Public member variables in this section.  Please don't add to this list

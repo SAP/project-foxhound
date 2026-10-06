@@ -140,7 +140,7 @@ add_task(async function testBlackBoxOnToolboxRestart() {
   await openContextMenuInDebugger(dbg, "gutterElement", 2);
   await selectBlackBoxContextMenuItem(dbg, "blackbox-line");
 
-  await reloadBrowser();
+  await reloadSelectedTab();
   // Wait a little bit incase of a pause
   await wait(1000);
 
@@ -159,7 +159,7 @@ add_task(async function testBlackBoxOnToolboxRestart() {
   // Wait for blackbox action and requests to settle to avoid unhandled promise
   // rejections due to pending promises.
   const onBlackboxDone = waitForDispatch(dbg2.store, "BLACKBOX_SOURCE_RANGES");
-  await reloadBrowser();
+  await reloadSelectedTab();
 
   info("Wait for the blackbox action to complete");
   await onBlackboxDone;
@@ -170,6 +170,22 @@ add_task(async function testBlackBoxOnToolboxRestart() {
 
   info("Assert that debbuger still does not pause on the debugger statement");
   assertNotPaused(dbg2);
+});
+
+add_task(async function testBlackBoxRangeColumns() {
+  const dbg = await initDebugger("doc-command-click.html", "simple4.js");
+  await selectSource(dbg, "simple4.js");
+
+  await selectEditorLinesAndOpenContextMenu(dbg, { startLine: 8, endLine: 8 });
+  const action = await selectBlackBoxContextMenuItem(dbg, "blackbox-line");
+
+  const range = action.ranges[0];
+  is(range.start.column, 0, "start column is 0");
+  is(
+    range.end.column,
+    '  console.log("Hello!");'.length,
+    "end column includes leading indentation"
+  );
 });
 
 async function testBlackBoxSource(dbg, source) {
@@ -507,8 +523,9 @@ async function assertContextMenuDisabled(dbg, selector, shouldBeDisabled) {
 
 /**
  * Asserts that the gutter blackbox context menu items which are visible are correct
- * @params {Object} dbg
- * @params {Array} testFixtures
+ *
+ * @param {object} dbg
+ * @param {Array} testFixtures
  *                 Details needed for the assertion. Any blackboxed/nonBlackboxed lines
  *                 and any blackboxed/nonBlackboxed sources
  */
@@ -564,8 +581,9 @@ async function assertGutterBlackBoxBoxContextMenuItems(dbg, testFixtures) {
 
 /**
  * Asserts that the source tree blackbox context menu items which are visible are correct
- * @params {Object} dbg
- * @params {Array} testFixtures
+ *
+ * @param {object} dbg
+ * @param {Array} testFixtures
  *                 Details needed for the assertion. Any blackboxed/nonBlackboxed sources
  */
 async function assertSourceTreeBlackBoxBoxContextMenuItems(dbg, testFixtures) {
@@ -596,8 +614,9 @@ async function assertSourceTreeBlackBoxBoxContextMenuItems(dbg, testFixtures) {
 
 /**
  * Asserts that the editor blackbox context menu items which are visible are correct
- * @params {Object} dbg
- * @params {Array} testFixtures
+ *
+ * @param {object} dbg
+ * @param {Array} testFixtures
  *                 Details needed for the assertion. Any blackboxed/nonBlackboxed lines
  *                 and any blackboxed/nonBlackboxed sources
  */

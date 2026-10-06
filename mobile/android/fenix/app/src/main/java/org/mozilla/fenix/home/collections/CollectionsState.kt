@@ -4,17 +4,11 @@
 
 package org.mozilla.fenix.home.collections
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 import mozilla.components.browser.state.selector.normalTabs
-import mozilla.components.browser.state.selector.privateTabs
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.feature.tab.collections.TabCollection
-import org.mozilla.fenix.browser.browsingmode.BrowsingModeManager
 import org.mozilla.fenix.components.appstate.AppState
-import org.mozilla.fenix.theme.FirefoxTheme
-import org.mozilla.fenix.wallpapers.WallpaperState
 
 /**
  * State object encapsulating the UI state of the collections section of the homepage.
@@ -36,18 +30,6 @@ sealed class CollectionsState {
     ) : CollectionsState()
 
     /**
-     * State in which the placeholder should be displayed.
-     *
-     * @property showSaveTabsToCollection Whether to show the "Save tabs to collection" menu item in the collections
-     * menu.
-     * @property colors [CollectionColors] to use for collections UI.
-     */
-    data class Placeholder(
-        val showSaveTabsToCollection: Boolean,
-        val colors: CollectionColors,
-    ) : CollectionsState()
-
-    /**
      * State in which no collections section should be displayed.
      */
     data object Gone : CollectionsState()
@@ -57,104 +39,17 @@ sealed class CollectionsState {
         internal fun build(
             appState: AppState,
             browserState: BrowserState,
-            browsingModeManager: BrowsingModeManager,
         ): CollectionsState =
             with(appState) {
-                when {
-                    collections.isNotEmpty() -> Content(
+                if (collections.isNotEmpty()) {
+                    Content(
                         collections = collections,
                         expandedCollections = expandedCollections,
                         showSaveTabsToCollection = browserState.normalTabs.isNotEmpty(),
                     )
-
-                    showCollectionPlaceholder -> {
-                        val tabCount = if (browsingModeManager.mode.isPrivate) {
-                            browserState.privateTabs.size
-                        } else {
-                            browserState.normalTabs.size
-                        }
-
-                        Placeholder(
-                            showSaveTabsToCollection = tabCount > 0,
-                            colors = CollectionColors.colors(wallpaperState),
-                        )
-                    }
-
-                    else -> Gone
+                } else {
+                    Gone
                 }
             }
-    }
-}
-
-/**
- * Represents the colors used by collections.
- *
- * @property buttonBackgroundColor [Color] to display for the button background.
- * @property buttonTextColor [Color] to display for the button text color.
- * @property titleTextColor [Color] to display for the title text color.
- * @property descriptionTextColor [Color] to display for the description text color.
- */
-data class CollectionColors(
-    val buttonBackgroundColor: Color,
-    val buttonTextColor: Color,
-    val titleTextColor: Color,
-    val descriptionTextColor: Color,
-) {
-    /**
-     * Companion object for [CollectionColors]
-     */
-    companion object {
-        /**
-         * Builder function used to construct an instance of [CollectionColors].
-         */
-        @Composable
-        fun colors(
-            buttonBackgroundColor: Color = FirefoxTheme.colors.actionPrimary,
-            buttonTextColor: Color = FirefoxTheme.colors.textActionPrimary,
-            titleTextColor: Color = FirefoxTheme.colors.textPrimary,
-            descriptionTextColor: Color = FirefoxTheme.colors.textSecondary,
-        ) = CollectionColors(
-            buttonBackgroundColor = buttonBackgroundColor,
-            buttonTextColor = buttonTextColor,
-            titleTextColor = titleTextColor,
-            descriptionTextColor = descriptionTextColor,
-        )
-
-        /**
-         * Builder function used to construct an instance of [CollectionColors] given a
-         * [WallpaperState].
-         */
-        @Composable
-        fun colors(wallpaperState: WallpaperState): CollectionColors {
-            val textColor = wallpaperState.currentWallpaper.textColor
-            val titleTextColor: Color
-            val descriptionTextColor: Color
-            if (textColor == null) {
-                titleTextColor = FirefoxTheme.colors.textPrimary
-                descriptionTextColor = FirefoxTheme.colors.textSecondary
-            } else {
-                val color = Color(textColor)
-                titleTextColor = color
-                descriptionTextColor = color
-            }
-
-            var buttonColor = FirefoxTheme.colors.actionPrimary
-            var buttonTextColor = FirefoxTheme.colors.textActionPrimary
-
-            wallpaperState.ComposeRunIfWallpaperCardColorsAreAvailable { _, _ ->
-                buttonColor = FirefoxTheme.colors.layer1
-
-                if (!isSystemInDarkTheme()) {
-                    buttonTextColor = FirefoxTheme.colors.textActionSecondary
-                }
-            }
-
-            return CollectionColors(
-                buttonBackgroundColor = buttonColor,
-                buttonTextColor = buttonTextColor,
-                titleTextColor = titleTextColor,
-                descriptionTextColor = descriptionTextColor,
-            )
-        }
     }
 }

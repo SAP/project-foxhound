@@ -36,6 +36,11 @@ extensions.registerModules({
     scopes: ["addon_child", "content_child", "devtools_child"],
     paths: [["i18n"]],
   },
+  publicSuffix: {
+    url: "chrome://extensions/content/child/ext-publicSuffix.js",
+    scopes: ["addon_child"],
+    paths: [["publicSuffix"]],
+  },
   runtime: {
     url: "chrome://extensions/content/child/ext-runtime.js",
     scopes: ["addon_child", "content_child", "devtools_child"],

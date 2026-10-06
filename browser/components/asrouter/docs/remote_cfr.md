@@ -62,7 +62,7 @@ By default, all CFR messages are localized with the remote Fluent files hosted i
 
 We can check which components of the messages are hooked up to RemoteL10n with the following [Searchfox regex query](https://searchfox.org/mozilla-central/search?q=lazy%5C.RemoteL10n%5C.%28formatLocalizableText%7CcreateElement%29&path=&case=false&regexp=true). For example Infobar buttons are currently not Remotel10n configurable, see [Bug 1933819](https://bugzilla.mozilla.org/show_bug.cgi?id=1933819).
 
-For local testing and development, we can force ASRouter to use the local Fluent files by flipping the pref `browser.newtabpage.activity-stream.asrouter.useRemoteL10n` in `about:config`. A note that [RemoteL10n uses the `main` bucket](https://searchfox.org/mozilla-central/source/browser/components/asrouter/modules/ASRouter.sys.mjs#297) so we cannot test using `main-preview`.
+For local testing and development, we can force ASRouter to use the local Fluent files by flipping the pref `browser.newtabpage.activity-stream.asrouter.useRemoteL10n` in `about:config`. A note that [RemoteL10n uses the `main` bucket](https://searchfox.org/firefox-main/source/browser/components/asrouter/modules/ASRouter.sys.mjs#297) so we cannot test using `main-preview`.
 
 ## The following are steps on how to authenticate and add messages manually
 

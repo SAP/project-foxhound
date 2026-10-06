@@ -21,6 +21,54 @@
     "$ref": "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json#/$defs/TemplatedMessage"
   },
   "$defs": {
+    "ActionOnlyMessage": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "$id": "file:///ActionOnlyMessage.schema.json",
+      "title": "ActionOnlyMessage",
+      "description": "A template for messages that silently execute an allowlisted special message action with no UI. Records an impression before attempting action.",
+      "allOf": [
+        {
+          "$ref": "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json#/$defs/Message"
+        }
+      ],
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "description": "The type of the special message action to execute."
+                },
+                "data": {
+                  "type": "object",
+                  "description": "Optional data for the action."
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "additionalProperties": true,
+              "description": "The special message action to execute. Only allowlisted action types may be used."
+            }
+          },
+          "additionalProperties": true,
+          "required": [
+            "action"
+          ]
+        },
+        "template": {
+          "type": "string",
+          "const": "action_only"
+        }
+      },
+      "required": [
+        "targeting"
+      ]
+    },
     "BookmarksBarButton": {
       "$schema": "https://json-schema.org/draft/2019-09/schema",
       "$id": "file:///BookmarksBarButton.schema.json",
@@ -564,14 +612,36 @@
                 {
                   "allOf": [
                     {
-                      "$ref": "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json#/$defs/localizableText"
-                    },
-                    {
-                      "not": {
-                        "required": [
-                          "href"
-                        ]
-                      }
+                      "allOf": [
+                        {
+                          "$ref": "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json#/$defs/localizableText"
+                        },
+                        {
+                          "not": {
+                            "required": [
+                              "href"
+                            ]
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "description": "Additional arguments, only a `where` override is currently allowed",
+                          "properties": {
+                            "args": {
+                              "type": "object",
+                              "description": "Where to open ('tab', 'tabshifted', 'current', etc.)",
+                              "properties": {
+                                "where": {
+                                  "type": "string",
+                                  "description": "Where to open - e.g. 'tab', 'window', etc."
+                                }
+                              },
+                              "additionalProperties": false
+                            }
+                          },
+                          "additionalProperties": true
+                        }
+                      ]
                     }
                   ]
                 },
@@ -622,6 +692,69 @@
             "dismissable": {
               "description": "Should the infobar include an X dismiss button, defaults to true",
               "type": "boolean"
+            },
+            "dismissOnPrefChange": {
+              "description": "If set, one or more prefs to observe. The infobar will automatically dismiss when any of these prefs is set for the first time or when its value changes.",
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1,
+                  "uniqueItems": true
+                }
+              ]
+            },
+            "impression_action": {
+              "oneOf": [
+                {
+                  "$ref": "file:///InfoBar.schema.json#/$defs/impressionActionItem"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "const": "MULTI_ACTION"
+                    },
+                    "orderedExecution": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "actions": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "$ref": "file:///InfoBar.schema.json#/$defs/impressionActionItem"
+                          }
+                        }
+                      },
+                      "required": [
+                        "actions"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "canReplace": {
+              "description": "IDs of other infobar messages this infobar may replace",
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
             },
             "buttons": {
               "type": "array",
@@ -677,6 +810,29 @@
               "type": "object",
               "additionalProperties": {
                 "$ref": "#/$defs/linkUrl"
+              }
+            },
+            "linkActions": {
+              "description": "Map of Fluent data-l10n-name keys to a Special Message Action dispatched when the link is clicked (in addition to opening the URL).",
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "description": "SpecialMessageActions action type"
+                  },
+                  "data": {
+                    "type": "object"
+                  },
+                  "dismiss": {
+                    "type": "boolean",
+                    "description": "If true, dismiss the infobar after handling this link's action. Defaults to false."
+                  }
+                },
+                "required": [
+                  "type"
+                ]
               }
             },
             "style": {
@@ -757,6 +913,44 @@
             "href"
           ],
           "additionalProperties": false
+        },
+        "impressionActionItem": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "SET_PREF"
+            },
+            "once": {
+              "type": "boolean",
+              "description": "If true, only fire on first impression."
+            },
+            "data": {
+              "type": "object",
+              "properties": {
+                "pref": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "value": {}
+                  },
+                  "required": [
+                    "name"
+                  ]
+                }
+              },
+              "required": [
+                "pref"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
         }
       }
     },
@@ -777,9 +971,10 @@
           "properties": {
             "messageType": {
               "type": "string",
-              "description": "The subtype of the message.",
+              "description": "The subtype of the message. 'fxa_cta' is used for Firefox Accounts messaging and is only visible when signed out, unless 'allowWhenSignedIn' property is provided. It replaces the fxa menu item when displayed. 'default_cta' is used for general messages, regardless of sign in state and only visible within the App Menu.",
               "enum": [
-                "fxa_cta"
+                "fxa_cta",
+                "default_cta"
               ]
             },
             "primaryText": {
@@ -788,7 +983,7 @@
             },
             "secondaryText": {
               "$ref": "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json#/$defs/localizableText",
-              "description": "The second text for the message, which offers more detail on the value proposition to the user."
+              "description": "The secondary text for the message, which offers more detail on the value proposition to the user. Not displayed when layout is 'simple'."
             },
             "closeAction": {
               "type": "object",
@@ -828,6 +1023,14 @@
               "$ref": "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json#/$defs/localizableText",
               "description": "The label for the primary action."
             },
+            "primaryButtonSize": {
+              "type": "string",
+              "enum": [
+                "default",
+                "small"
+              ],
+              "description": "The size of the primary button, default is 'default'."
+            },
             "imageURL": {
               "type": "string",
               "description": "URL for image to use with the content."
@@ -836,9 +1039,17 @@
               "type": "number",
               "description": "The image width in pixels. Default is 120px."
             },
+            "logoURL": {
+              "type": "string",
+              "description": "URL for logo to use with the content."
+            },
+            "logoWidth": {
+              "type": "number",
+              "description": "The logo width in pixels. Default is 18px."
+            },
             "imageVerticalTopOffset": {
               "type": "number",
-              "description": "The margin-block-start value to apply to the image in pixels, used in 'column' layouts."
+              "description": "The margin-block-start value to apply to the image in pixels."
             },
             "imageVerticalBottomOffset": {
               "type": "number",
@@ -848,13 +1059,22 @@
               "type": "number",
               "description": "The container's margin-block-end value in pixels. Used to visually offset the image in 'row' layouts when 'imageVerticalBottomOffset' is applied."
             },
+            "containerPaddingBottom": {
+              "type": "number",
+              "description": "The container's padding-block-end value in pixels."
+            },
             "layout": {
               "type": "string",
-              "description": "The layout of the message content and illustration. Row displays the image to the inline to the right of the text, column displays the image above the text.",
+              "description": "The layout of the message content and illustration. Row displays the image inline to the right of the text, column displays the image above the text. Simple layout only displays primary text and primary button on one row.",
               "enum": [
                 "row",
-                "column"
+                "column",
+                "simple"
               ]
+            },
+            "allowWhenSignedIn": {
+              "type": "boolean",
+              "description": "If true, the message will be shown even when the user is signed in. For 'fxa_cta' messages. Defaults to false."
             }
           }
         },
@@ -890,35 +1110,6 @@
             "hideDefault": {
               "type": "boolean",
               "description": "Should we hide the default promo after the experiment promo is dismissed."
-            },
-            "infoEnabled": {
-              "type": "boolean",
-              "description": "Should we show the info section."
-            },
-            "infoIcon": {
-              "type": "string",
-              "description": "Icon shown in the left side of the info section. Default is the private browsing icon."
-            },
-            "infoTitle": {
-              "type": "string",
-              "description": "Is the title in the info section enabled."
-            },
-            "infoTitleEnabled": {
-              "type": "boolean",
-              "description": "Is the title in the info section enabled."
-            },
-            "infoBody": {
-              "type": "string",
-              "description": "Text content in the info section."
-            },
-            "infoLinkText": {
-              "type": "string",
-              "description": "Text for the link in the info section."
-            },
-            "infoLinkUrl": {
-              "type": "string",
-              "description": "URL for the info section link.",
-              "format": "moz-url-format"
             },
             "promoEnabled": {
               "type": "boolean",
@@ -1021,38 +1212,6 @@
                   "promoButton"
                 ]
               }
-            },
-            {
-              "if": {
-                "properties": {
-                  "infoEnabled": {
-                    "const": true
-                  }
-                },
-                "required": [
-                  "infoEnabled"
-                ]
-              },
-              "then": {
-                "required": [
-                  "infoLinkText"
-                ],
-                "if": {
-                  "properties": {
-                    "infoTitleEnabled": {
-                      "const": true
-                    }
-                  },
-                  "required": [
-                    "infoTitleEnabled"
-                  ]
-                },
-                "then": {
-                  "required": [
-                    "infoTitle"
-                  ]
-                }
-              }
             }
           ]
         },
@@ -1100,6 +1259,119 @@
       "required": [
         "targeting"
       ]
+    },
+    "SmartWindowNewtabPromo": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "$id": "file:///SmartWindowNewtabPromo.schema.json",
+      "title": "SmartWindowNewtabPromo",
+      "description": "A template for promo messages that appear on the Smart Window new tab page.",
+      "allOf": [
+        {
+          "$ref": "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json#/$defs/Message"
+        }
+      ],
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "The visual style of the promo (passed through to moz-promo)."
+            },
+            "heading": {
+              "$ref": "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json#/$defs/localizableText",
+              "description": "The heading text of the promo."
+            },
+            "message": {
+              "$ref": "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json#/$defs/localizableText",
+              "description": "The body text of the promo."
+            },
+            "imageSrc": {
+              "type": "string",
+              "description": "URL of the image to display."
+            },
+            "imageAlignment": {
+              "type": "string",
+              "description": "Alignment of the image within the promo."
+            },
+            "imageWidth": {
+              "type": "string",
+              "description": "Width preset for the image."
+            },
+            "imageDisplay": {
+              "type": "string",
+              "description": "Display style for the image."
+            },
+            "primary_button": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "$ref": "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json#/$defs/localizableText",
+                  "description": "The label for the primary action button."
+                },
+                "action": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "description": "Action dispatched by the button."
+                    },
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The action to take upon clicking the primary button."
+                }
+              },
+              "required": [
+                "label",
+                "action"
+              ]
+            },
+            "additional_button": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "$ref": "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json#/$defs/localizableText",
+                  "description": "The label for the additional action button."
+                },
+                "action": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "description": "Action dispatched by the button."
+                    },
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The action to take upon clicking the additional button."
+                }
+              },
+              "required": [
+                "label",
+                "action"
+              ]
+            }
+          },
+          "additionalProperties": true
+        },
+        "template": {
+          "type": "string",
+          "const": "smart_window_newtab_promo"
+        }
+      },
+      "additionalProperties": true
     },
     "Spotlight": {
       "$schema": "https://json-schema.org/draft/2019-09/schema",
@@ -1154,6 +1426,10 @@
             "disableEscClose": {
               "type": "boolean",
               "description": "Don't allow the message to be dismissed using the ESC key - for limited use in Spotlight modals only when the message content clearly informs the user that a decision is required to proceed"
+            },
+            "write_in_microsurvey": {
+              "type": "boolean",
+              "description": "Set to true to apply the write-in microsurvey data policy. This is required for write-in microsurveys. Messages using the textarea tile should always set this to true. It prevents client_id from being recorded with any telemetry events for the message, recording a unique impression_id instead. It also sends the events on the more restrictive microsurvey ping instead of the messaging-system ping."
             },
             "disableHistoryUpdates": {
               "type": "boolean",
@@ -1214,6 +1490,21 @@
             },
             "image_url": {
               "description": "The URL of an image to be displayed as part of the notification.",
+              "type": "string",
+              "format": "moz-url-format"
+            },
+            "dark_mode_image_url": {
+              "description": "The URL of an image to be displayed as part of the notification in dark mode.",
+              "type": "string",
+              "format": "moz-url-format"
+            },
+            "reduced_motion_image_url": {
+              "description": "The URL of an image to be displayed as part of the notification when the user prefers reduced motion.",
+              "type": "string",
+              "format": "moz-url-format"
+            },
+            "dark_mode_reduced_motion_image_url": {
+              "description": "The URL of an image to be displayed as part of the notification in dark mode with reduced motion.",
               "type": "string",
               "format": "moz-url-format"
             },
@@ -1448,6 +1739,7 @@
           "type": "string",
           "description": "Which messaging template this message is using.",
           "enum": [
+            "action_only",
             "bookmarks_bar_button",
             "cfr_urlbar_chiclet",
             "cfr_doorhanger",
@@ -1456,6 +1748,7 @@
             "menu_message",
             "pb_newtab",
             "newtab_message",
+            "smart_window_newtab_promo",
             "spotlight",
             "feature_callout",
             "toast_notification",
@@ -1593,6 +1886,25 @@
               "template": {
                 "type": "string",
                 "enum": [
+                  "action_only"
+                ]
+              }
+            },
+            "required": [
+              "template"
+            ]
+          },
+          "then": {
+            "$ref": "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json#/$defs/ActionOnlyMessage"
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "template": {
+                "type": "string",
+                "enum": [
                   "bookmarks_bar_button"
                 ]
               }
@@ -1718,6 +2030,25 @@
           },
           "then": {
             "$ref": "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json#/$defs/NewtabMessage"
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "template": {
+                "type": "string",
+                "enum": [
+                  "smart_window_newtab_promo"
+                ]
+              }
+            },
+            "required": [
+              "template"
+            ]
+          },
+          "then": {
+            "$ref": "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json#/$defs/SmartWindowNewtabPromo"
           }
         },
         {

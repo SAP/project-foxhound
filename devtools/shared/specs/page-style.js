@@ -29,6 +29,7 @@ const pageStyleSpec = generateActorSpec({
         node: Arg(0, "domnode"),
         markMatched: Option(1, "boolean"),
         onlyMatched: Option(1, "boolean"),
+        clearCache: Option(1, "boolean"),
         filter: Option(1, "string"),
         filterProperties: Option(1, "nullable:array:string"),
       },
@@ -118,6 +119,14 @@ const pageStyleSpec = generateActorSpec({
       },
       response: {
         attributes: RetVal("array:string"),
+      },
+    },
+    getAnchorNames: {
+      request: {
+        node: Arg(0, "domnode"),
+      },
+      response: {
+        names: RetVal("array:string"),
       },
     },
   },

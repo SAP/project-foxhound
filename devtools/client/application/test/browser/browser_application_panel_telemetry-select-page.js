@@ -10,14 +10,17 @@ add_task(async function () {
   const { panel, tab, commands } = await openNewTabAndApplicationPanel(TAB_URL);
   const doc = panel.panelWin.document;
 
-  setupTelemetryTest();
+  Services.fog.testResetFOG();
 
   // make sure the default page is opened and then select a different one
   await waitUntil(() => doc.querySelector(".js-service-workers-page") !== null);
   ok(true, "Service Workers page was loaded per default.");
-  selectPage(panel, "manifest");
+  await selectPage(panel, "manifest");
 
-  checkTelemetryEvent({ method: "select_page", page_type: "manifest" });
+  const events = Glean.devtoolsMain.selectPageApplication.testGetValue();
+  Assert.equal(1, events.length);
+  Assert.greater(Number(events[0].extra.session_id), 0);
+  Assert.equal("manifest", events[0].extra.page_type);
 
   // close the tab
   info("Closing the tab.");

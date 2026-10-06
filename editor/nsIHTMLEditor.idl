@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -108,15 +107,6 @@ interface nsIHTMLEditor : nsISupports
    */
   [can_run_script]
   void insertHTML(in AString aInputString);
-
-  /**
-   *  Rebuild the entire document from source HTML
-   *  Needed to be able to edit HEAD and other outside-of-BODY content
-   *
-   *  @param aSourceString   HTML source string of the entire new document
-   */
-  [can_run_script]
-  void rebuildDocumentFromSource(in AString aSourceString);
 
   /**
     * Insert an element, which may have child nodes, at the selection

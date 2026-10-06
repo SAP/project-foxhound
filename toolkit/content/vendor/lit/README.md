@@ -44,3 +44,7 @@ want and manually run our import commands.
   4. npm install && npm run build
   5. Copy packages/lit/lit-all.min.js to toolkit/content/widgets/vendor/lit.all.mjs
   6. hg ci -m "Update to lit@<version>"
+
+## The lit.all.d.ts file
+
+The [lit](https://github.com/lit/lit) npm package is installed *only for its types*, which are exported from a custom [lit.all.d.ts](/toolkit/content/widgets/vendor/lit.all.d.ts) file. This file contains all of Lit's types used throughout the project and using it is preferred vs importing types from each of Lit's files directly, mainly to avoid having to update paths in so many places if their paths in the Lit project ever change. The file doesn't have every exported Lit type by default. Any Lit type that is necessary in the project will need to be explicitly added and re-exported from this file.

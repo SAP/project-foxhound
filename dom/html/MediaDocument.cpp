@@ -1,28 +1,26 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaDocument.h"
-#include "nsGkAtoms.h"
-#include "nsRect.h"
-#include "nsPresContext.h"
-#include "nsViewManager.h"
-#include "nsITextToSubURI.h"
-#include "nsIURL.h"
-#include "nsIDocShell.h"
-#include "nsCharsetSource.h"  // kCharsetFrom* macro definition
-#include "nsNodeInfoManager.h"
-#include "nsContentUtils.h"
-#include "nsDocElementCreatedNotificationRunner.h"
+
+#include "mozilla/Components.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/Components.h"
-#include "nsServiceManagerUtils.h"
-#include "nsIPrincipal.h"
+#include "nsCharsetSource.h"  // kCharsetFrom* macro definition
+#include "nsContentUtils.h"
+#include "nsDocElementCreatedNotificationRunner.h"
+#include "nsGkAtoms.h"
+#include "nsIDocShell.h"
 #include "nsIMultiPartChannel.h"
+#include "nsIPrincipal.h"
+#include "nsITextToSubURI.h"
+#include "nsIURL.h"
+#include "nsNodeInfoManager.h"
+#include "nsPresContext.h"
 #include "nsProxyRelease.h"
+#include "nsRect.h"
+#include "nsServiceManagerUtils.h"
 
 namespace mozilla::dom {
 
@@ -47,8 +45,8 @@ MediaDocumentStreamListener::OnStartRequest(nsIRequest* request) {
 
   mDocument->StartLayout();
 
-  if (mNextStream) {
-    return mNextStream->OnStartRequest(request);
+  if (nsCOMPtr<nsIStreamListener> nextStream = mNextStream) {
+    return nextStream->OnStartRequest(request);
   }
 
   return NS_ERROR_PARSED_DATA_CACHED;
@@ -58,8 +56,8 @@ NS_IMETHODIMP
 MediaDocumentStreamListener::OnStopRequest(nsIRequest* request,
                                            nsresult status) {
   nsresult rv = NS_OK;
-  if (mNextStream) {
-    rv = mNextStream->OnStopRequest(request, status);
+  if (nsCOMPtr<nsIStreamListener> nextStream = mNextStream) {
+    rv = nextStream->OnStopRequest(request, status);
   }
 
   // Don't release mDocument here if we're in the middle of a multipart
@@ -81,8 +79,8 @@ MediaDocumentStreamListener::OnDataAvailable(nsIRequest* request,
                                              nsIInputStream* inStr,
                                              uint64_t sourceOffset,
                                              uint32_t count) {
-  if (mNextStream) {
-    return mNextStream->OnDataAvailable(request, inStr, sourceOffset, count);
+  if (nsCOMPtr<nsIStreamListener> nextStream = mNextStream) {
+    return nextStream->OnDataAvailable(request, inStr, sourceOffset, count);
   }
 
   return NS_OK;
@@ -120,7 +118,8 @@ const char* const MediaDocument::sFormatNames[4] = {
     ""                       // eWithDimAndFile
 };
 
-MediaDocument::MediaDocument() : mDidInitialDocumentSetup(false) {
+MediaDocument::MediaDocument()
+    : nsHTMLDocument(LoadedAsData::No), mDidInitialDocumentSetup(false) {
   mCompatMode = eCompatibility_FullStandards;
 }
 MediaDocument::~MediaDocument() = default;
@@ -183,7 +182,7 @@ void MediaDocument::InitialSetupDone() {
              "Bad readyState: we should still be doing our initial load");
   mDidInitialDocumentSetup = true;
   nsContentUtils::AddScriptRunner(
-      new nsDocElementCreatedNotificationRunner(this));
+      MakeAndAddRef<nsDocElementCreatedNotificationRunner>(this));
   SetReadyStateInternal(Document::READYSTATE_INTERACTIVE);
 }
 
@@ -375,20 +374,23 @@ void MediaDocument::UpdateTitleAndCharset(const nsACString& aTypeStr,
     heightStr.AppendInt(aHeight);
     // If we got a filename, display it
     if (!fileStr.IsEmpty()) {
-      AutoTArray<nsString, 4> formatStrings = {fileStr, typeStr, widthStr,
-                                               heightStr};
+      AutoTArray<nsString, 4> formatStrings = {
+          std::move(fileStr), std::move(typeStr), std::move(widthStr),
+          std::move(heightStr)};
       FormatStringFromName(aFormatNames[eWithDimAndFile], formatStrings, title);
     } else {
-      AutoTArray<nsString, 3> formatStrings = {typeStr, widthStr, heightStr};
+      AutoTArray<nsString, 3> formatStrings = {
+          std::move(typeStr), std::move(widthStr), std::move(heightStr)};
       FormatStringFromName(aFormatNames[eWithDim], formatStrings, title);
     }
   } else {
     // If we got a filename, display it
     if (!fileStr.IsEmpty()) {
-      AutoTArray<nsString, 2> formatStrings = {fileStr, typeStr};
+      AutoTArray<nsString, 2> formatStrings = {std::move(fileStr),
+                                               std::move(typeStr)};
       FormatStringFromName(aFormatNames[eWithFile], formatStrings, title);
     } else {
-      AutoTArray<nsString, 1> formatStrings = {typeStr};
+      AutoTArray<nsString, 1> formatStrings = {std::move(typeStr)};
       FormatStringFromName(aFormatNames[eWithNoInfo], formatStrings, title);
     }
   }

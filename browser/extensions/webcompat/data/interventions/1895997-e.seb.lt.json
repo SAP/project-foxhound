@@ -1,0 +1,15 @@
+{
+  "label": "e.seb.lt",
+  "bugs": {
+    "1895997": {
+      "issue": "unsupported-warning",
+      "matches": ["*://login.seb.lt/ui/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

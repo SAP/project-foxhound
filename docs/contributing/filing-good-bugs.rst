@@ -15,7 +15,7 @@ information to open an actionable bug.
    and version if reporting a bug.
 -  If you can, **list files and lines of code** that may need to be
    modified. Ideally provide a patch for getting started.
-   Do not hesitate to add permalinks to `Searchfox <https://searchfox.org/mozilla-central/source/>`_
+   Do not hesitate to add permalinks to `Searchfox <https://searchfox.org/firefox-main/source/>`_
    pointing to the file and lines.
 -  If applicable, **provide a test case** or document that can be used to
    test the bug is solved. For example, if the bug title was “HTML

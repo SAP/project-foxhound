@@ -13,6 +13,8 @@ private const val PREFERENCE_FILE = "mozac_feature_search_metadata"
 
 private const val PREFERENCE_KEY_USER_SELECTED_SEARCH_ENGINE_ID = "user_selected_search_engine_id"
 private const val PREFERENCE_KEY_USER_SELECTED_SEARCH_ENGINE_NAME = "user_selected_search_engine_name"
+private const val PREFERENCE_KEY_USER_SELECTED_PRIVATE_SEARCH_ENGINE_ID = "user_selected_private_search_engine_id"
+private const val PREFERENCE_KEY_USER_SELECTED_PRIVATE_SEARCH_ENGINE_NAME = "user_selected_private_search_engine_name"
 private const val PREFERENCE_KEY_HIDDEN_SEARCH_ENGINES = "hidden_search_engines"
 private const val PREFERENCE_KEY_ADDITIONAL_SEARCH_ENGINES = "additional_search_engines"
 private const val PREFERENCE_KEY_DISABLED_SEARCH_ENGINE_ID = "preference_key_disabled_search_engine_id"
@@ -51,6 +53,30 @@ internal class SearchMetadataStorage(
         preferences.value.edit {
             putString(PREFERENCE_KEY_USER_SELECTED_SEARCH_ENGINE_ID, id)
             putString(PREFERENCE_KEY_USER_SELECTED_SEARCH_ENGINE_NAME, name)
+        }
+    }
+
+    override suspend fun getUserSelectedPrivateSearchEngine(): SearchMiddleware.MetadataStorage.UserChoice? {
+        val id = preferences.value.getString(PREFERENCE_KEY_USER_SELECTED_PRIVATE_SEARCH_ENGINE_ID, null)
+            ?: return null
+
+        return SearchMiddleware.MetadataStorage.UserChoice(
+            id,
+            preferences.value.getString(PREFERENCE_KEY_USER_SELECTED_PRIVATE_SEARCH_ENGINE_NAME, null),
+        )
+    }
+
+    override suspend fun setUserSelectedPrivateSearchEngine(id: String, name: String?) {
+        preferences.value.edit {
+            putString(PREFERENCE_KEY_USER_SELECTED_PRIVATE_SEARCH_ENGINE_ID, id)
+            putString(PREFERENCE_KEY_USER_SELECTED_PRIVATE_SEARCH_ENGINE_NAME, name)
+        }
+    }
+
+    override suspend fun clearUserSelectedPrivateSearchEngine() {
+        preferences.value.edit {
+            remove(PREFERENCE_KEY_USER_SELECTED_PRIVATE_SEARCH_ENGINE_ID)
+            remove(PREFERENCE_KEY_USER_SELECTED_PRIVATE_SEARCH_ENGINE_NAME)
         }
     }
 

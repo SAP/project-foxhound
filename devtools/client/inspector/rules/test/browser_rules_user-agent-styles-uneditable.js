@@ -33,7 +33,7 @@ async function userAgentStylesUneditable(inspector, view) {
   info("Making sure that UI is not editable for user agent styles");
 
   await selectNode("a", inspector);
-  const uaRules = view._elementStyle.rules.filter(
+  const uaRules = view.elementStyle.rules.filter(
     rule => !rule.editor.isEditable
   );
 

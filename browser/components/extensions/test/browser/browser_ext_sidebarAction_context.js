@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 async function runTests(options) {
@@ -107,7 +105,7 @@ async function runTests(options) {
 
     let title = details.title || options.manifest.name;
 
-    is(getListStyleImage(menu), details.icon, "icon URL is correct");
+    is(getMenuitemImage(menu), details.icon, "icon URL is correct");
     is(menu.getAttribute("label"), title, "image label is correct");
   }
 

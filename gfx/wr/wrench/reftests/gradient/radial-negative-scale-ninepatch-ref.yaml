@@ -1,0 +1,17 @@
+---
+root:
+  items:
+    - type: clip
+      id: 5
+      complex:
+        - rect: [0, 0, 300, 300]
+          radius: 50
+    - type: rect
+      bounds: 10 10 10 10
+      color: white
+    - type: radial-gradient
+      bounds: 0 0 300 300
+      center: 300 0
+      radius: 500 600
+      stops: [0.0, red, 1.0, blue]
+      clip-chain: [5]

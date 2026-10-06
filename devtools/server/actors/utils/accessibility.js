@@ -28,7 +28,7 @@ const HIGHLIGHTER_STYLES_SHEET = `data:text/css;charset=utf-8,
  *
  * @param  {nsIAccessible}  accessible
  *         object to be tested.
- * @return {Boolean}
+ * @return {boolean}
  *         True if accessible object is defunct, false otherwise.
  */
 function isDefunct(accessible) {
@@ -82,7 +82,7 @@ function removeSheetForBackgroundCalculation(win) {
  * @param   {nsIAccessible} accessible
  *          Accessible for which to determine its role attribute value.
  *
- * @returns {null|String}
+ * @returns {null | string}
  *          Role attribute value if specified.
  */
 function getAriaRoles(accessible) {

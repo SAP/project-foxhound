@@ -6,9 +6,7 @@
  * inadvertently match elements in the article content. */
 
 :root {
-  --grey-90-a10: rgba(12, 12, 13, 0.1);
-  --grey-90-a20: rgba(12, 12, 13, 0.2);
-  --grey-30: #d7d7db;
+  --gray-theme-background: var(--color-gray-30);
   --light-theme-background: #fff;
   --light-theme-foreground: rgb(21, 20, 26);
   --dark-theme-background: rgb(28, 27, 34);
@@ -30,9 +28,8 @@ body {
   --main-background: var(--light-theme-background);
   --main-foreground: var(--light-theme-foreground);
   --primary-color: rgb(0, 97, 224);
-  --toolbar-border: var(--grey-90-a20);
+  --toolbar-border: var(--color-black-alpha-20);
   --toolbar-transparent-border: transparent;
-  --toolbar-box-shadow: var(--grey-90-a10);
   --toolbar-button-background: transparent;
   --toolbar-button-background-hover: rgba(207, 207, 216, 0.66);
   --toolbar-button-foreground-hover: var(--icon-fill);
@@ -47,11 +44,11 @@ body {
   --popup-background: #fff;
   --popup-foreground: var(--main-foreground);
   --popup-border: rgba(0, 0, 0, 0.12);
-  --popup-line: var(--grey-30);
+  --popup-line: var(--gray-theme-background);
   --popup-shadow: rgba(49, 49, 49, 0.3);
   --popup-button-background: rgba(207, 207, 216, 0.33);
   --popup-button-foreground: var(--main-foreground);
-  --popup-button-selected-foreground: var(--color-gray-05);
+  --popup-button-selected-foreground: var(--color-gray-0);
   --popup-button-background-hover: var(--toolbar-button-background-hover);
   --popup-button-foreground-hover: var(--main-foreground);
   --popup-button-background-active: var(--toolbar-button-background-active);
@@ -89,7 +86,7 @@ body.sepia {
 
 body.gray {
   color-scheme: light;
-  --main-background: var(--grey-30);
+  --main-background: var(--gray-theme-background);
   --main-foreground: var(--light-theme-foreground);
   --toolbar-border: var(--main-foreground);
   --icon-fill: var(--main-foreground);
@@ -98,7 +95,6 @@ body.gray {
 body.dark,
 body.contrast {
   color-scheme: dark;
-  --toolbar-box-shadow: black;
   --toolbar-button-background-hover: rgb(82, 82, 94);
   --toolbar-button-background-active: rgb(91, 91, 102);
   --popup-background: rgb(66, 65, 77);
@@ -121,7 +117,7 @@ body.dark {
   --main-background: var(--dark-theme-background);
   --main-foreground: var(--dark-theme-foreground);
   --primary-color: rgb(0, 221, 255);
-  --toolbar-border: rgba(249, 249, 250, 0.2);
+  --toolbar-border: var(--color-white-alpha-20);
   --icon-fill: rgb(251, 251, 254);
 }
 
@@ -158,7 +154,6 @@ body.hcm {
   /* We need a true transparent but in HCM this would compute to an actual color,
      so select the page's background color instead: */
   --toolbar-transparent-border: Canvas;
-  --toolbar-box-shadow: Canvas;
   --toolbar-button-background: ButtonFace;
   --toolbar-button-background-hover: SelectedItem;
   --toolbar-button-foreground-hover: SelectedItemText;
@@ -218,7 +213,7 @@ body.loaded {
 }
 
 a {
-  border-radius: 2px;
+  border-radius: var(--border-radius-xsmall);
 }
 
 a::selection {
@@ -329,8 +324,8 @@ blockquote {
 .toolbar {
   padding-block: 16px;
   border: 1px solid var(--toolbar-border);
-  border-radius: 6px;
-  box-shadow: 0 2px 8px var(--toolbar-box-shadow);
+  border-radius: var(--border-radius-small);
+  box-shadow: var(--box-shadow-level-4);
 
   width: 32px; /* basic width, without padding/border */
 
@@ -377,7 +372,7 @@ blockquote {
   }
 
   .toolbar-container.scrolled > .toolbar:not(:hover, :focus-within) > .reader-controls:not(.dropdown-open) .toolbar-button {
-    opacity: 0.6;
+    opacity: var(--opacity-deemphasized);
   }
 
   .toolbar-container.transition-location {
@@ -418,7 +413,7 @@ button:disabled {
   height: 32px;
   padding: 0;
   border: 1px solid var(--toolbar-button-border);
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   margin: 4px 0;
   background-color: var(--toolbar-button-background);
   background-size: 16px 16px;
@@ -454,7 +449,7 @@ button:disabled {
   color: var(--tooltip-foreground);
   padding: 4px 8px;
   border: 1px solid var(--tooltip-border);
-  border-radius: 2px;
+  border-radius: var(--border-radius-xsmall);
   visibility: hidden;
   pointer-events: none;
   /* Put above .dropdown .dropdown-popup, which has z-index: 1000. */
@@ -492,14 +487,14 @@ button:disabled {
   z-index: 1000;
   background-color: var(--popup-background);
   visibility: hidden;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   border: 1px solid var(--popup-border);
   box-shadow: 0 0 10px 0 var(--popup-shadow);
   top: var(--space-xsmall);
 
   h2 {
     font-size: var(--font-size-large);
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--font-weight-heading);
     color: var(--popup-foreground);
     margin-block: var(--space-small);
   }
@@ -590,16 +585,8 @@ body.hcm .color-scheme-buttons {
   justify-content: center;
   /* We want 10px between items, but there's no margin collapsing in flexbox. */
   margin: 10px 5px;
-  border-radius: 2px;
+  border-radius: var(--border-radius-xsmall);
   border-color: var(--popup-border);
-}
-
-.color-scheme-buttons > input:first-child + label {
-  margin-inline-start: 10px;
-}
-
-.color-scheme-buttons > label:last-child {
-  margin-inline-end: 10px;
 }
 
 /* Improved text and layout menu popup */
@@ -676,7 +663,7 @@ body.hcm .color-scheme-buttons {
     background-color: var(--popup-button-background);
     color: var(--popup-button-foreground);
     font-size: inherit;
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--font-weight-semibold);
     padding-inline: var(--space-large) var(--space-xxlarge);
     text-overflow: ellipsis;
     background-image: url("chrome://global/skin/icons/arrow-down.svg");
@@ -875,7 +862,7 @@ div[name="customtheme"] {
 }
 
 .color-scheme-buttons > label {
-  height: 48px;
+  height: var(--size-item-xlarge);
   width: calc(50% - 21px);
   font-size: 15px;
   color: var(--popup-button-foreground);
@@ -916,11 +903,11 @@ div[name="customtheme"] {
   }
 
   .contrast-button:before {
-    background-color: #000000;
+    background-color: black;
   }
 
   .gray-button:before {
-    background-color: var(--grey-30);
+    background-color: var(--gray-theme-background);
   }
 }
 
@@ -972,6 +959,7 @@ div[name="customtheme"] {
  * must be added to CLASSES_TO_PRESERVE in ReaderMode.sys.mjs, so that
  * Readability.js doesn't strip them out */
 
+/* Variables in .container are for user customization and should not be replaced with design tokens */
 .container {
   margin: 0 auto;
   font-size: var(--font-size);
@@ -980,6 +968,7 @@ div[name="customtheme"] {
   text-align: var(--text-alignment);
   word-spacing: var(--word-spacing);
   letter-spacing: var(--letter-spacing);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-font-weight-tokens */
   font-weight: var(--font-weight);
 
   .header {
@@ -988,7 +977,11 @@ div[name="customtheme"] {
 }
 
 pre {
-  font-family: inherit;
+  font-family: monospace;
+
+  .plain-text-doc & {
+    font-family: inherit;
+  }
 }
 
 .moz-reader-content {
@@ -1014,7 +1007,7 @@ pre {
 .moz-reader-content h1,
 .moz-reader-content h2,
 .moz-reader-content h3 {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .moz-reader-content h1 {
@@ -1064,7 +1057,7 @@ pre {
 .moz-reader-content .wp-caption {
   margin: -10px -10px calc(8px + var(--line-height) * 0.4);
   padding: 10px;
-  border-radius: 5px;
+  border-radius: var(--border-radius-small);
 }
 
 .moz-reader-content li {

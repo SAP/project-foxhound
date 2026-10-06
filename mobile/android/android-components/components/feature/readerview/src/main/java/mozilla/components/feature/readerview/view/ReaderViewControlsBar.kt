@@ -133,7 +133,6 @@ class ReaderViewControlsBar @JvmOverloads constructor(
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
     }
 
-    @Suppress("ComplexMethod")
     private fun bindViews() {
         fontGroup = applyCheckedListener(R.id.mozac_feature_readerview_font_group) { checkedId ->
             val fontType = when (checkedId) {
@@ -160,13 +159,19 @@ class ReaderViewControlsBar @JvmOverloads constructor(
         }
     }
 
-    private inline fun applyClickListener(@IdRes id: Int, crossinline block: () -> Unit): AppCompatButton {
+    private inline fun applyClickListener(
+        @IdRes id: Int,
+        crossinline block: () -> Unit,
+    ): AppCompatButton {
         return findViewById<AppCompatButton>(id).apply {
             setOnClickListener { block() }
         }
     }
 
-    private inline fun applyCheckedListener(@IdRes id: Int, crossinline block: (Int) -> Unit): RadioGroup {
+    private inline fun applyCheckedListener(
+        @IdRes id: Int,
+        crossinline block: (Int) -> Unit,
+    ): RadioGroup {
         return findViewById<RadioGroup>(id).apply {
             setOnCheckedChangeListener { _, checkedId -> block(checkedId) }
         }

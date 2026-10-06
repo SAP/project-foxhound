@@ -37,7 +37,7 @@ class TabPartitionTest {
 
     @Test
     fun `GIVEN a tab partition with non-empty tab group THEN tab partition is not empty`() {
-        val tabPartition = TabPartition("test", listOf(TabGroup("test", "test", listOf("tab1"))))
+        val tabPartition = TabPartition("test", listOf(TabGroup("test", "test", setOf("tab1"))))
 
         assertTrue(tabPartition.isNotEmpty())
         assertFalse(tabPartition.isEmpty())
@@ -45,20 +45,20 @@ class TabPartitionTest {
 
     @Test
     fun `GIVEN a tab partition with non-empty tab group THEN get group by name will return the group`() {
-        val tabPartition = TabPartition("test", listOf(TabGroup("test id", "abc", listOf("tab1", "tab2"))))
+        val tabPartition = TabPartition("test", listOf(TabGroup("test id", "abc", setOf("tab1", "tab2"))))
 
         assertTrue(tabPartition.getGroupByName("abc") != null)
-        assertEquals(listOf("tab1", "tab2"), tabPartition.getGroupByName("abc")?.tabIds)
+        assertEquals(setOf("tab1", "tab2"), tabPartition.getGroupByName("abc")?.tabIds)
         assertTrue(tabPartition.isNotEmpty())
         assertFalse(tabPartition.isEmpty())
     }
 
     @Test
     fun `GIVEN a tab partition with non-empty tab group THEN get group by ID will return the group`() {
-        val tabPartition = TabPartition("test", listOf(TabGroup("test id", "abc", listOf("tab1", "tab2"))))
+        val tabPartition = TabPartition("test", listOf(TabGroup("test id", "abc", setOf("tab1", "tab2"))))
 
         assertTrue(tabPartition.getGroupById("test id") != null)
-        assertEquals(listOf("tab1", "tab2"), tabPartition.getGroupById("test id")?.tabIds)
+        assertEquals(setOf("tab1", "tab2"), tabPartition.getGroupById("test id")?.tabIds)
         assertTrue(tabPartition.isNotEmpty())
         assertFalse(tabPartition.isEmpty())
     }

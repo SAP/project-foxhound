@@ -170,6 +170,10 @@ class SystemEngineSession(
         return state.bundle?.let { webView.restoreState(it) } != null
     }
 
+    override fun flushSessionState() {
+        throw UnsupportedOperationException("Engine session state flush is not available in this engine")
+    }
+
     /**
      * See [EngineSession.updateTrackingProtection]
      */
@@ -497,6 +501,15 @@ class SystemEngineSession(
      */
     override fun exitFullScreenMode() {
         fullScreenCallback?.onCustomViewHidden()
+    }
+
+    /**
+     * See [EngineSession.processBackPressed]
+     */
+    override fun processBackPressed(
+        onResult: (Boolean) -> Unit,
+    ) {
+        onResult(false)
     }
 
     internal fun toggleDesktopUA(userAgent: String, requestDesktop: Boolean): String {

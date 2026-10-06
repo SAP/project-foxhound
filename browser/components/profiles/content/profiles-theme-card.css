@@ -50,7 +50,7 @@ moz-card {
    * ProfilesThemeCard.theme.contentColor doesn't exist. For example, when the
    * theme card is a theme from AMO and not one of the default themes.
    */
-  background-color: var(--newtab-background-color, var(--in-content-page-background));
+  background-color: var(--newtab-background-color, var(--background-color-canvas));
 
   > img {
     -moz-context-properties: fill, stroke, fill-opacity;

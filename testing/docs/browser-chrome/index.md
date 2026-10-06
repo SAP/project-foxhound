@@ -87,14 +87,14 @@ Profiling tests
 The `./mach test` and `./mach mochitest` commands also support a `--profiler`
 flag that will start the Firefox Profiler before running tests.
 
-It's possible to get a profile also on try with `--env MOZ_PROFILER_STARTUP=1`:
+It's possible to get a profile also on try with `--profiler`:
 
 ```
-./mach try fuzzy --env MOZ_PROFILER_STARTUP=1 <test directory>
+./mach try fuzzy --profiler <test directory>
 ```
 
 The profile will be uploaded in case of a failure only, so make sure to add
-something such as `ok(false, “force profile upload”);` in your test to force the
+something such as `ok(false, "force profile upload");` in your test to force the
 failure.
 
 

@@ -16,8 +16,7 @@
         width="800" height="500"
         screenX="10" screenY="10"
 #ifdef XP_MACOSX
-        drawtitle="true"
-        customtitlebar="true"
+        hidetitlebarseparator="true"
 #endif
         toggletoolbar="true"
         persist="width height screenX screenY sizemode">
@@ -172,13 +171,8 @@
                      data-l10n-id="places-forward-button"
                      disabled="true"/>
 
-#ifdef XP_MACOSX
-        <toolbarbutton type="menu" class="tabbable" wantdropmarker="true"
-              data-l10n-id="places-organize-button-mac"
-#else
-      <menubar id="placesMenu">
+      <menubar id="placesMenu" nonnative="true">
         <menu class="menu-iconic" data-l10n-id="places-organize-button"
-#endif
               id="organizeButton">
           <menupopup id="organizeButtonPopup">
             <menuitem id="newbookmark"
@@ -247,14 +241,8 @@
                       data-l10n-id="places-file-close"/>
 #endif
           </menupopup>
-#ifdef XP_MACOSX
-        </toolbarbutton>
-        <toolbarbutton type="menu" class="tabbable" wantdropmarker="true"
-        data-l10n-id="places-view-button-mac"
-#else
         </menu>
         <menu class="menu-iconic" data-l10n-id="places-view-button"
-#endif
               id="viewMenu">
           <menupopup id="viewMenuPopup">
 
@@ -275,14 +263,8 @@
               </menupopup>
             </menu>
           </menupopup>
-#ifdef XP_MACOSX
-        </toolbarbutton>
-        <toolbarbutton type="menu" class="tabbable" wantdropmarker="true"
-        data-l10n-id="places-maintenance-button-mac"
-#else
         </menu>
         <menu class="menu-iconic" data-l10n-id="places-maintenance-button"
-#endif
               id="maintenanceButton">
           <menupopup id="maintenanceButtonPopup">
             <menuitem id="backupBookmarks"
@@ -307,13 +289,8 @@
                       command="OrganizerCommand_browserImport"
                       data-l10n-id="places-import-other-browser"/>
           </menupopup>
-#ifdef XP_MACOSX
-        </toolbarbutton>
-#else
         </menu>
       </menubar>
-#endif
-
       <toolbarbutton id="clearDownloadsButton"
                           data-l10n-id="downloads-clear-downloads-button"
                           class="tabbable"

@@ -6,7 +6,7 @@
 import json
 import os
 
-import requests
+from taskcluster.exceptions import TaskclusterRestFailure
 from taskgraph.parameters import Parameters
 from taskgraph.taskgraph import TaskGraph
 from taskgraph.util.taskcluster import get_artifact, list_task_group_incomplete_tasks
@@ -26,8 +26,6 @@ from gecko_taskgraph.util.taskgraph import (
     find_existing_tasks_from_previous_kinds,
 )
 
-RELEASE_PROMOTION_SIGNOFFS = ("mar-signing",)
-
 
 def is_release_promotion_available(parameters):
     return parameters["project"] in RELEASE_PROMOTION_PROJECTS
@@ -39,27 +37,6 @@ def get_partner_config(partner_url_config, github_token):
         if url:
             partner_config[kind] = get_partner_config_by_url(url, kind, github_token)
     return partner_config
-
-
-def get_signoff_properties():
-    props = {}
-    for signoff in RELEASE_PROMOTION_SIGNOFFS:
-        props[signoff] = {
-            "type": "string",
-        }
-    return props
-
-
-def get_required_signoffs(input, parameters):
-    input_signoffs = set(input.get("required_signoffs", []))
-    params_signoffs = set(parameters["required_signoffs"] or [])
-    return sorted(list(input_signoffs | params_signoffs))
-
-
-def get_signoff_urls(input, parameters):
-    signoff_urls = parameters["signoff_urls"]
-    signoff_urls.update(input.get("signoff_urls", {}))
-    return signoff_urls
 
 
 def get_flavors(graph_config, param):
@@ -125,8 +102,7 @@ def get_flavors(graph_config, param):
             "rebuild_kinds": {
                 "type": "array",
                 "description": (
-                    "Optional: an array of kinds to ignore from the previous "
-                    "graph(s)."
+                    "Optional: an array of kinds to ignore from the previous graph(s)."
                 ),
                 "default": graph_config["release-promotion"].get("rebuild-kinds", []),
                 "items": {
@@ -158,8 +134,9 @@ def get_flavors(graph_config, param):
             "next_version": {
                 "type": "string",
                 "description": (
-                    "Next version. Required in the following flavors: "
-                    "{}".format(get_flavors(graph_config, "version-bump"))
+                    "Next version. Required in the following flavors: {}".format(
+                        get_flavors(graph_config, "version-bump")
+                    )
                 ),
                 "default": "",
             },
@@ -177,8 +154,9 @@ def get_flavors(graph_config, param):
             "partial_updates": {
                 "type": "object",
                 "description": (
-                    "Partial updates. Required in the following flavors: "
-                    "{}".format(get_flavors(graph_config, "partial-updates"))
+                    "Partial updates. Required in the following flavors: {}".format(
+                        get_flavors(graph_config, "partial-updates")
+                    )
                 ),
                 "default": {},
                 "additionalProperties": {
@@ -246,24 +224,13 @@ def get_flavors(graph_config, param):
                 "default": False,
                 "description": "Toggle for creating EME-free repacks",
             },
-            "required_signoffs": {
-                "type": "array",
-                "description": ("The flavor of release promotion to perform."),
-                "items": {
-                    "enum": RELEASE_PROMOTION_SIGNOFFS,
-                },
-            },
-            "signoff_urls": {
-                "type": "object",
-                "default": {},
-                "additionalProperties": False,
-                "properties": get_signoff_properties(),
-            },
         },
         "required": ["release_promotion_flavor", "build_number"],
     },
 )
-def release_promotion_action(parameters, graph_config, input, task_group_id, task_id):
+def release_promotion_action(
+    push_parameters, graph_config, input, task_group_id, task_id
+):
     release_promotion_flavor = input["release_promotion_flavor"]
     promotion_config = graph_config["release-promotion"]["flavors"][
         release_promotion_flavor
@@ -282,7 +249,7 @@ def release_promotion_action(parameters, graph_config, input, task_group_id, tas
 
     if promotion_config.get("partial-updates", False):
         partial_updates = input.get("partial_updates", {})
-        if not partial_updates and release_level(parameters["project"]) == "production":
+        if not partial_updates and release_level(push_parameters) == "production":
             raise Exception(
                 f"`partial_updates` property needs to be provided for `{release_promotion_flavor}`"
                 "target."
@@ -290,11 +257,11 @@ def release_promotion_action(parameters, graph_config, input, task_group_id, tas
         balrog_prefix = product.title()
         os.environ["PARTIAL_UPDATES"] = json.dumps(partial_updates, sort_keys=True)
         release_history = populate_release_history(
-            balrog_prefix, parameters["project"], partial_updates=partial_updates
+            balrog_prefix, push_parameters["project"], partial_updates=partial_updates
         )
 
     target_tasks_method = promotion_config["target-tasks-method"].format(
-        project=parameters["project"]
+        project=push_parameters["project"]
     )
     rebuild_kinds = input.get(
         "rebuild_kinds", promotion_config.get("rebuild-kinds", [])
@@ -312,30 +279,34 @@ def release_promotion_action(parameters, graph_config, input, task_group_id, tas
             raise Exception(
                 f"task group has unexpected pre-existing incomplete tasks (e.g. {t})"
             )
-    except requests.exceptions.HTTPError as e:
+    except TaskclusterRestFailure as e:
         # 404 means the task group doesn't exist yet, and we're fine
-        if e.response.status_code != 404:
+        if e.status_code != 404:
             raise
 
     # Build previous_graph_ids from ``previous_graph_ids``, ``revision``,
     # or the action parameters.
     previous_graph_ids = input.get("previous_graph_ids")
+    head_rev_param = "{}head_rev".format(graph_config["project-repo-param-prefix"])
     if not previous_graph_ids:
         revision = input.get("revision")
         if revision:
-            head_rev_param = "{}head_rev".format(
-                graph_config["project-repo-param-prefix"]
-            )
-            push_parameters = {
-                head_rev_param: revision,
-                "project": parameters["project"],
-            }
-        else:
-            push_parameters = parameters
+            push_parameters[head_rev_param] = revision
         previous_graph_ids = [find_decision_task(push_parameters, graph_config)]
 
     # Download parameters from the first decision task
     parameters = get_artifact(previous_graph_ids[0], "public/parameters.yml")
+    # Override `head_rev` - this should always be the revision that this action
+    # task was fired from. If the first `previous_graph_id` given was from an
+    # earlier revision, it will end up being wrong. This will cause any created
+    # tasks to have the wrong revision set, which causes problems such as showing
+    # up in the wrong place on Treeherder, and associated cached task digests
+    # with unmatched sources.
+    parameters["head_rev"] = push_parameters["head_rev"]
+    # If no `project-repo-param-prefix' is set this will end up doing the same
+    # as the above...but that's no harm.
+    parameters[head_rev_param] = push_parameters[head_rev_param]
+
     # Download and combine full task graphs from each of the previous_graph_ids.
     # Sometimes previous relpro action tasks will add tasks, like partials,
     # that didn't exist in the first full_task_graph, so combining them is
@@ -354,8 +325,6 @@ def release_promotion_action(parameters, graph_config, input, task_group_id, tas
     parameters["build_number"] = int(input["build_number"])
     parameters["next_version"] = next_version
     parameters["release_history"] = release_history
-    if promotion_config.get("is-rc"):
-        parameters["release_type"] += "-rc"
     parameters["release_eta"] = input.get("release_eta", "")
     parameters["release_product"] = product
     # When doing staging releases on try, we still want to re-use tasks from
@@ -396,13 +365,11 @@ def release_promotion_action(parameters, graph_config, input, task_group_id, tas
     parameters["release_enable_emefree"] = release_enable_emefree
 
     partner_config = input.get("release_partner_config")
-    if not partner_config and any(
-        [
-            release_enable_partner_repack,
-            release_enable_partner_attribution,
-            release_enable_emefree,
-        ]
-    ):
+    if not partner_config and any([
+        release_enable_partner_repack,
+        release_enable_partner_attribution,
+        release_enable_emefree,
+    ]):
         github_token = get_token(parameters)
         partner_config = get_partner_config(partner_url_config, github_token)
     if partner_config:
@@ -416,9 +383,7 @@ def release_promotion_action(parameters, graph_config, input, task_group_id, tas
     if input["version"]:
         parameters["version"] = input["version"]
 
-    parameters["required_signoffs"] = get_required_signoffs(input, parameters)
-    parameters["signoff_urls"] = get_signoff_urls(input, parameters)
-
+    parameters["dontbuild"] = False
     # make parameters read-only
     parameters = Parameters(**parameters)
 

@@ -17,10 +17,5 @@ assertEq(Number("0o88"), NaN);
 assertEq(Number("-0o66"), NaN);
 assertEq(+"0o66", 54);
 
-if(typeof getSelfHostedValue === "function"){
-    assertEq(getSelfHostedValue("ToNumber")("0b11"), 3);
-    assertEq(getSelfHostedValue("ToNumber")("0o66"), 54);
-}
-
 if (typeof reportCompare === "function")
     reportCompare(true, true);

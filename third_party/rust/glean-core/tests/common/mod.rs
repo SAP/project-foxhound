@@ -11,8 +11,6 @@ use std::fs::{read_dir, File};
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
-use chrono::offset::TimeZone;
-use iso8601::Date::YMD;
 use serde_json::Value as JsonValue;
 
 use ctor::ctor;
@@ -41,9 +39,13 @@ pub fn tempdir() -> (tempfile::TempDir, String) {
 
 pub const GLOBAL_APPLICATION_ID: &str = "org.mozilla.glean.test.app";
 
-// Creates a new instance of Glean with a temporary directory.
-// We need to keep the `TempDir` alive, so that it's not deleted before we stop using it.
-pub fn new_glean(tempdir: Option<tempfile::TempDir>) -> (Glean, tempfile::TempDir) {
+/// Creates a new instance of Glean with a temporary directory, with `upload_enabled` specified.
+///
+/// We need to keep the `TempDir` alive, so that it's not deleted before we stop using it.
+pub fn new_glean_with_upload(
+    tempdir: Option<tempfile::TempDir>,
+    upload_enabled: bool,
+) -> (Glean, tempfile::TempDir) {
     let dir = match tempdir {
         Some(tempdir) => tempdir,
         None => tempfile::tempdir().unwrap(),
@@ -53,7 +55,7 @@ pub fn new_glean(tempdir: Option<tempfile::TempDir>) -> (Glean, tempfile::TempDi
         data_path: dir.path().display().to_string(),
         application_id: GLOBAL_APPLICATION_ID.into(),
         language_binding_name: "Rust".into(),
-        upload_enabled: true,
+        upload_enabled,
         max_events: None,
         delay_ping_lifetime_io: false,
         app_build: "Unknown".into(),
@@ -75,6 +77,13 @@ pub fn new_glean(tempdir: Option<tempfile::TempDir>) -> (Glean, tempfile::TempDi
     _ = new_test_ping(&mut glean, "store2");
 
     (glean, dir)
+}
+
+/// Creates a new instance of Glean with a temporary directory.
+///
+/// We need to keep the `TempDir` alive, so that it's not deleted before we stop using it.
+pub fn new_glean(tempdir: Option<tempfile::TempDir>) -> (Glean, tempfile::TempDir) {
+    new_glean_with_upload(tempdir, true)
 }
 
 pub fn new_test_ping(glean: &mut Glean, name: &str) -> PingType {
@@ -156,21 +165,6 @@ impl PingBuilder {
         self.reason_codes = value;
         self
     }
-}
-
-/// Converts an iso8601::DateTime to a chrono::DateTime<FixedOffset>
-pub fn iso8601_to_chrono(datetime: &iso8601::DateTime) -> chrono::DateTime<chrono::FixedOffset> {
-    if let YMD { year, month, day } = datetime.date {
-        return chrono::FixedOffset::east(datetime.time.tz_offset_hours * 3600)
-            .ymd(year, month, day)
-            .and_hms_milli(
-                datetime.time.hour,
-                datetime.time.minute,
-                datetime.time.second,
-                datetime.time.millisecond,
-            );
-    };
-    panic!("Unsupported datetime format");
 }
 
 /// Gets a vector of the currently queued pings.

@@ -1,0 +1,23 @@
+From: Byron Campen <docfaraday@gmail.com>
+Date: Tue, 19 May 2026 16:37:00 -0500
+Subject: Bug 2040478 - (fix-de183fb028) Remove this include of override code
+ that is gone. r?mjf
+
+It appears that this override code is no longer necessary.
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/dbd090975384251d83d3554677efcbb0e133feab
+---
+ call/call.h | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/call/call.h b/call/call.h
+index e64b878e22..0233850e55 100644
+--- a/call/call.h
++++ b/call/call.h
+@@ -27,7 +27,6 @@
+ #include "api/video/video_stream_encoder_settings.h"
+ #include "call/audio_receive_stream.h"
+ #include "call/audio_send_stream.h"
+-#include "call/call_basic_stats.h"
+ #include "call/call_config.h"
+ #include "call/flexfec_receive_stream.h"
+ #include "call/packet_receiver.h"

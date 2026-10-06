@@ -2,7 +2,6 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
-  Preferences: "resource://gre/modules/Preferences.sys.mjs",
 });
 
 AddonTestUtils.init(this);
@@ -28,13 +27,13 @@ add_task(async function setup() {
 
   // Set prefs to our initial values.
   for (let pref in PREFS) {
-    Preferences.set(pref, PREFS[pref]);
+    Services.prefs.setBoolPref(pref, PREFS[pref]);
   }
 
   registerCleanupFunction(() => {
     // Reset the prefs.
     for (let pref in PREFS) {
-      Preferences.reset(pref);
+      Services.prefs.clearUserPref(pref);
     }
   });
 });
@@ -103,7 +102,10 @@ add_task(async function test_browser_settings() {
   });
 
   info(`testing homepageOverride`);
-  Preferences.set("browser.startup.homepage", "http://homepage.example.com");
+  Services.prefs.setStringPref(
+    "browser.startup.homepage",
+    "http://homepage.example.com"
+  );
   await extension.awaitMessage("homepageOverride");
   ok(true, "homepageOverride.onChange fired");
 
@@ -152,7 +154,10 @@ add_task(async function test_browser_settings() {
   });
 
   info(`testing homepageOverride after AOM restart`);
-  Preferences.set("browser.startup.homepage", "http://test.example.com");
+  Services.prefs.setStringPref(
+    "browser.startup.homepage",
+    "http://test.example.com"
+  );
   await extension.awaitMessage("homepageOverride");
   ok(true, "homepageOverride.onChange fired");
 

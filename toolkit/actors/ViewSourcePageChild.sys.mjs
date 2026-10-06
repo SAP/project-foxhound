@@ -160,8 +160,8 @@ export class ViewSourcePageChild extends JSWindowActorChild {
     // Scroll the beginning of the line into view.
     selCon.scrollSelectionIntoView(
       Ci.nsISelectionController.SELECTION_NORMAL,
-      Ci.nsISelectionController.SELECTION_FOCUS_REGION,
-      true
+      Ci.nsISelectionController.SELECTION_WHOLE_SELECTION,
+      0
     );
 
     this.sendAsyncMessage("ViewSource:GoToLine:Success", { lineNumber });

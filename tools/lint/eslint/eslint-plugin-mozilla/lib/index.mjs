@@ -6,14 +6,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-import globals from "globals";
 import helpers from "./helpers.mjs";
 import packageData from "../package.json" with { type: "json" };
-
-import noUnsanitizedPlugin from "eslint-plugin-no-unsanitized";
-import sdlPlugin from "@microsoft/eslint-plugin-sdl";
-import promisePlugin from "eslint-plugin-promise";
-import jsdocPlugin from "eslint-plugin-jsdoc";
 
 let { allFileExtensions, turnOff } = helpers;
 
@@ -73,6 +67,9 @@ let plugin = {
     "no-browser-refs-in-toolkit": (
       await import("./rules/no-browser-refs-in-toolkit.mjs")
     ).default,
+    "no-newtab-refs-outside-newtab": (
+      await import("./rules/no-newtab-refs-outside-newtab.mjs")
+    ).default,
     "no-compare-against-boolean-literals": (
       await import("./rules/no-compare-against-boolean-literals.mjs")
     ).default,
@@ -102,6 +99,9 @@ let plugin = {
       .default,
     "reject-addtask-only": (await import("./rules/reject-addtask-only.mjs"))
       .default,
+    "reject-contenttask-spawn": (
+      await import("./rules/reject-contenttask-spawn.mjs")
+    ).default,
     "reject-eager-module-in-lazy-getter": (
       await import("./rules/reject-eager-module-in-lazy-getter.mjs")
     ).default,
@@ -124,6 +124,9 @@ let plugin = {
       .default,
     "reject-multiple-getters-calls": (
       await import("./rules/reject-multiple-getters-calls.mjs")
+    ).default,
+    "reject-import-preferences-module": (
+      await import("./rules/reject-import-preferences-module.mjs")
     ).default,
     "reject-scriptableunicodeconverter": (
       await import("./rules/reject-scriptableunicodeconverter.mjs")
@@ -149,7 +152,8 @@ let plugin = {
     "use-default-preference-values": (
       await import("./rules/use-default-preference-values.mjs")
     ).default,
-    "use-ownerGlobal": (await import("./rules/use-ownerGlobal.mjs")).default,
+    "use-documentGlobal": (await import("./rules/use-documentGlobal.mjs"))
+      .default,
     "use-includes-instead-of-indexOf": (
       await import("./rules/use-includes-instead-of-indexOf.mjs")
     ).default,
@@ -171,98 +175,37 @@ let plugin = {
   turnOff,
 };
 
-/**
- * Clones a flat configuration section, adjusting fields so that ESLint won't
- * fail.
- *
- * @param {object} section
- *   The section to clone.
- * @returns {object}
- *   The cloned section.
- */
-function cloneFlatSection(section) {
-  let config = structuredClone(section);
-
-  // We assume all parts of the flat config need the plugins defined. In
-  // practice, they only need to be defined where they are used, but for
-  // now this is simpler.
-  config.plugins = {
-    mozilla: plugin,
-    "no-unsanitized": noUnsanitizedPlugin,
-    "@microsoft/sdl": sdlPlugin,
-    promise: promisePlugin,
-    jsdoc: jsdocPlugin,
-  };
-  if (!config.languageOptions) {
-    config.languageOptions = {};
+function addThisPlugin(section) {
+  if (!section.plugins) {
+    section.plugins = {};
   }
-
-  if (config.globals) {
-    config.languageOptions.globals = { ...config.globals };
-    delete config.globals;
-  }
-
-  // Handle changing the location of the sourceType.
-  if (config.parserOptions?.sourceType) {
-    config.languageOptions.sourceType = config.parserOptions.sourceType;
-  }
-  if (config.parserOptions?.ecmaFeatures) {
-    config.languageOptions.parserOptions = {
-      ecmaFeatures: config.parserOptions.ecmaFeatures,
-    };
-  }
-  delete config.parserOptions;
-
-  // Convert any environments into a list of globals.
-  for (let [key, value] of Object.entries(config.env ?? {})) {
-    if (!value) {
-      throw new Error(
-        "Removing environments is not supported by eslint-plugin-mozilla"
-      );
-    }
-    if (!config.languageOptions.globals) {
-      config.languageOptions.globals = {};
-    }
-    if (key.startsWith("mozilla/")) {
-      config.languageOptions.globals = {
-        ...config.languageOptions.globals,
-        ...plugin.environments[key.substring("mozilla/".length)].globals,
-      };
-    } else {
-      config.languageOptions.globals = {
-        ...config.languageOptions.globals,
-        ...globals[key],
-      };
-    }
-  }
-  delete config.env;
-
-  return config;
+  section.plugins.mozilla = plugin;
+  return section;
 }
 
 plugin.configs = {
-  "flat/browser-test": cloneFlatSection(
+  "flat/browser-test": addThisPlugin(
     (await import("./configs/browser-test.mjs")).default
   ),
-  "flat/chrome-test": cloneFlatSection(
+  "flat/chrome-test": addThisPlugin(
     (await import("./configs/chrome-test.mjs")).default
   ),
-  "flat/general-test": cloneFlatSection(
+  "flat/general-test": addThisPlugin(
     (await import("./configs/general-test.mjs")).default
   ),
-  "flat/mochitest-test": cloneFlatSection(
+  "flat/mochitest-test": addThisPlugin(
     (await import("./configs/mochitest-test.mjs")).default
   ),
   "flat/recommended": (await import("./configs/recommended.mjs")).default.map(
-    section => cloneFlatSection(section)
+    section => addThisPlugin(section)
   ),
-  "flat/require-jsdoc": cloneFlatSection(
+  "flat/require-jsdoc": addThisPlugin(
     (await import("./configs/require-jsdoc.mjs")).default
   ),
-  "flat/valid-jsdoc": cloneFlatSection(
+  "flat/valid-jsdoc": addThisPlugin(
     (await import("./configs/valid-jsdoc.mjs")).default
   ),
-  "flat/xpcshell-test": cloneFlatSection(
+  "flat/xpcshell-test": addThisPlugin(
     (await import("./configs/xpcshell-test.mjs")).default
   ),
 };

@@ -1,42 +1,40 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ContainerParser.h"
 
-#include "WebMBufferedParser.h"
-#include "mozilla/EndianUtils.h"
-#include "mozilla/IntegerPrintfMacros.h"
-#include "mozilla/ErrorResult.h"
-#include "MoofParser.h"
-#include "mozilla/Logging.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/Try.h"
-#include "MediaData.h"
-#include "nsMimeTypes.h"
+#include <algorithm>
+
 #include "AtomType.h"
 #include "BufferReader.h"
 #include "ByteStream.h"
 #include "MP4Interval.h"
+#include "MediaData.h"
+#include "MoofParser.h"
 #include "SampleIterator.h"
 #include "SourceBufferResource.h"
-#include <algorithm>
+#include "WebMBufferedParser.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/Logging.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/Try.h"
+#include "nsMimeTypes.h"
 
 extern mozilla::LogModule* GetMediaSourceSamplesLog();
 
-#define MSE_DEBUG(arg, ...)                                            \
-  DDMOZ_LOG(GetMediaSourceSamplesLog(), mozilla::LogLevel::Debug,      \
-            "(%s)::%s: " arg, mType.OriginalString().Data(), __func__, \
+#define MSE_DEBUG(arg, ...)                                           \
+  DDMOZ_LOG(GetMediaSourceSamplesLog(), mozilla::LogLevel::Debug,     \
+            "(%s)::%s: " arg, mType.OriginalString().get(), __func__, \
             ##__VA_ARGS__)
-#define MSE_DEBUGV(arg, ...)                                           \
-  DDMOZ_LOG(GetMediaSourceSamplesLog(), mozilla::LogLevel::Verbose,    \
-            "(%s)::%s: " arg, mType.OriginalString().Data(), __func__, \
+#define MSE_DEBUGV(arg, ...)                                          \
+  DDMOZ_LOG(GetMediaSourceSamplesLog(), mozilla::LogLevel::Verbose,   \
+            "(%s)::%s: " arg, mType.OriginalString().get(), __func__, \
             ##__VA_ARGS__)
 #define MSE_DEBUGVEX(_this, arg, ...)                                        \
   DDMOZ_LOGEX(_this, GetMediaSourceSamplesLog(), mozilla::LogLevel::Verbose, \
-              "(%s)::%s: " arg, mType.OriginalString().Data(), __func__,     \
+              "(%s)::%s: " arg, mType.OriginalString().get(), __func__,      \
               ##__VA_ARGS__)
 
 namespace mozilla {
@@ -188,7 +186,8 @@ class WebMContainerParser
     if (initSegment || !HasCompleteInitData()) {
       if (mParser.mInitEndOffset > 0) {
         MOZ_DIAGNOSTIC_ASSERT(mInitData && mResource &&
-                              mParser.mInitEndOffset <= mResource->GetLength());
+                              mParser.mInitEndOffset <=
+                                  mResource->GetCachedDataEnd(0));
         if (!mInitData->SetLength(mParser.mInitEndOffset, fallible)) {
           // Super unlikely OOM
           return NS_ERROR_OUT_OF_MEMORY;
@@ -314,10 +313,10 @@ class MP4Stream : public ByteStream, public DecoderDoctorLifeLogger<MP4Stream> {
  public:
   explicit MP4Stream(SourceBufferResource* aResource);
   virtual ~MP4Stream();
-  bool ReadAt(int64_t aOffset, void* aBuffer, size_t aCount,
-              size_t* aBytesRead) override;
-  bool CachedReadAt(int64_t aOffset, void* aBuffer, size_t aCount,
-                    size_t* aBytesRead) override;
+  nsresult ReadAt(int64_t aOffset, void* aBuffer, size_t aCount,
+                  size_t* aBytesRead) override;
+  nsresult CachedReadAt(int64_t aOffset, void* aBuffer, size_t aCount,
+                        size_t* aBytesRead) override;
   bool Length(int64_t* aSize) override;
   const uint8_t* GetContiguousAccess(int64_t aOffset, size_t aSize) override;
 
@@ -333,21 +332,21 @@ MP4Stream::MP4Stream(SourceBufferResource* aResource) : mResource(aResource) {
 
 MP4Stream::~MP4Stream() { MOZ_COUNT_DTOR(MP4Stream); }
 
-bool MP4Stream::ReadAt(int64_t aOffset, void* aBuffer, size_t aCount,
-                       size_t* aBytesRead) {
+nsresult MP4Stream::ReadAt(int64_t aOffset, void* aBuffer, size_t aCount,
+                           size_t* aBytesRead) {
   return CachedReadAt(aOffset, aBuffer, aCount, aBytesRead);
 }
 
-bool MP4Stream::CachedReadAt(int64_t aOffset, void* aBuffer, size_t aCount,
-                             size_t* aBytesRead) {
+nsresult MP4Stream::CachedReadAt(int64_t aOffset, void* aBuffer, size_t aCount,
+                                 size_t* aBytesRead) {
   nsresult rv = mResource->ReadFromCache(reinterpret_cast<char*>(aBuffer),
                                          aOffset, aCount);
   if (NS_FAILED(rv)) {
     *aBytesRead = 0;
-    return false;
+    return rv;
   }
   *aBytesRead = aCount;
-  return true;
+  return rv;
 }
 
 const uint8_t* MP4Stream::GetContiguousAccess(int64_t aOffset, size_t aSize) {
@@ -429,12 +428,9 @@ class MP4ContainerParser : public ContainerParser,
       };
 
       while (reader.Remaining() >= 8) {
-        uint32_t tmp;
-        MOZ_TRY_VAR(tmp, reader.ReadU32());
-        uint64_t size = tmp;
+        uint64_t size = MOZ_TRY(reader.ReadU32());
         const uint8_t* typec = reader.Peek(4);
-        MOZ_TRY_VAR(tmp, reader.ReadU32());
-        AtomType type(tmp);
+        AtomType type(MOZ_TRY(reader.ReadU32()));
         // We've seen fourcc not being ASCII in the wild. In this rare case,
         // print hex values instead of the ascii representation.
         if (isprint(typec[0]) && isprint(typec[1]) && isprint(typec[2]) &&
@@ -469,7 +465,7 @@ class MP4ContainerParser : public ContainerParser,
         }
         if (size == 1) {
           // 64 bits size.
-          MOZ_TRY_VAR(size, reader.ReadU64());
+          size = MOZ_TRY(reader.ReadU64());
         } else if (size == 0) {
           // Atom extends to the end of the buffer, it can't have what we're
           // looking for.
@@ -515,7 +511,7 @@ class MP4ContainerParser : public ContainerParser,
     Maybe<size_t> mMediaOffset;
     Maybe<size_t> mDataOffset;
     bool mValid;
-    char mLastInvalidBox[5];
+    char mLastInvalidBox[5]{};
   };
 
  public:
@@ -549,8 +545,8 @@ class MP4ContainerParser : public ContainerParser,
 
     mResource->AppendData(aData);
     MediaByteRangeSet byteRanges;
-    byteRanges +=
-        MediaByteRange(int64_t(mParser->mOffset), mResource->GetLength());
+    byteRanges += MediaByteRange(int64_t(mParser->mOffset),
+                                 mResource->GetCachedDataEnd(mParser->mOffset));
     mParser->RebuildFragmentedIndex(byteRanges);
 
     if (initSegment || !HasCompleteInitData()) {

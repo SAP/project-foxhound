@@ -9,9 +9,16 @@
  */
 #include "test/peer_scenario/signaling_route.h"
 
+#include <cstddef>
+#include <functional>
 #include <memory>
+#include <string>
+#include <utility>
 
-#include "test/network/network_emulation_manager.h"
+#include "api/jsep.h"
+#include "api/test/network_emulation/cross_traffic.h"
+#include "rtc_base/checks.h"
+#include "test/peer_scenario/peer_scenario_client.h"
 
 namespace webrtc {
 namespace test {
@@ -21,14 +28,13 @@ constexpr size_t kSdpPacketSize = 1200;
 
 struct IceMessage {
   IceMessage() = default;
-  explicit IceMessage(const IceCandidateInterface* candidate)
+  explicit IceMessage(const IceCandidate* candidate)
       : sdp_mid(candidate->sdp_mid()),
-        sdp_mline_index(candidate->sdp_mline_index()) {
-    RTC_CHECK(candidate->ToString(&sdp_line));
-  }
-  std::unique_ptr<IceCandidateInterface> AsCandidate() const {
+        sdp_mline_index(candidate->sdp_mline_index()),
+        sdp_line(candidate->ToString()) {}
+  std::unique_ptr<IceCandidate> AsCandidate() const {
     SdpParseError err;
-    std::unique_ptr<IceCandidateInterface> candidate(
+    std::unique_ptr<IceCandidate> candidate(
         CreateIceCandidate(sdp_mid, sdp_mline_index, sdp_line, &err));
     RTC_CHECK(candidate) << "Failed to parse: \"" << err.line
                          << "\". Reason: " << err.description;
@@ -43,7 +49,7 @@ void StartIceSignalingForRoute(PeerScenarioClient* caller,
                                PeerScenarioClient* callee,
                                CrossTrafficRoute* send_route) {
   caller->handlers()->on_ice_candidate.push_back(
-      [=](const IceCandidateInterface* candidate) {
+      [=](const IceCandidate* candidate) {
         IceMessage msg(candidate);
         send_route->NetworkDelayedAction(kIcePacketSize, [callee, msg]() {
           callee->thread()->PostTask(
@@ -53,6 +59,7 @@ void StartIceSignalingForRoute(PeerScenarioClient* caller,
 }
 
 void StartSdpNegotiation(
+    bool send_sdp_using_network,
     PeerScenarioClient* caller,
     PeerScenarioClient* callee,
     CrossTrafficRoute* send_route,
@@ -63,29 +70,43 @@ void StartSdpNegotiation(
     std::function<void(const SessionDescriptionInterface&)> exchange_finished) {
   caller->CreateAndSetSdp(munge_offer, [=](std::string sdp_offer) {
     if (modify_offer) {
-      auto offer = CreateSessionDescription(SdpType::kOffer, sdp_offer);
+      std::unique_ptr<SessionDescriptionInterface> offer =
+          CreateSessionDescription(SdpType::kOffer, sdp_offer);
       modify_offer(offer.get());
       RTC_CHECK(offer->ToString(&sdp_offer));
     }
-    send_route->NetworkDelayedAction(kSdpPacketSize, [=] {
+    auto action = [=] {
       callee->SetSdpOfferAndGetAnswer(
           sdp_offer, std::move(callee_remote_description_set),
           [=](std::string answer) {
-            ret_route->NetworkDelayedAction(kSdpPacketSize, [=] {
+            auto set_answer_action = [=] {
               caller->SetSdpAnswer(std::move(answer),
                                    std::move(exchange_finished));
-            });
+            };
+            if (send_sdp_using_network) {
+              ret_route->NetworkDelayedAction(kSdpPacketSize,
+                                              set_answer_action);
+            } else {
+              set_answer_action();
+            }
           });
-    });
+    };
+    if (send_sdp_using_network) {
+      send_route->NetworkDelayedAction(kSdpPacketSize, action);
+    } else {
+      action();
+    }
   });
 }
 }  // namespace
 
-SignalingRoute::SignalingRoute(PeerScenarioClient* caller,
+SignalingRoute::SignalingRoute(bool send_sdp_via_network,
+                               PeerScenarioClient* caller,
                                PeerScenarioClient* callee,
                                CrossTrafficRoute* send_route,
                                CrossTrafficRoute* ret_route)
-    : caller_(caller),
+    : send_sdp_via_network_(false),
+      caller_(caller),
       callee_(callee),
       send_route_(send_route),
       ret_route_(ret_route) {}
@@ -101,9 +122,9 @@ void SignalingRoute::NegotiateSdp(
     std::function<void()> callee_remote_description_set,
     std::function<void(const SessionDescriptionInterface& answer)>
         exchange_finished) {
-  StartSdpNegotiation(caller_, callee_, send_route_, ret_route_, munge_offer,
-                      modify_offer, callee_remote_description_set,
-                      exchange_finished);
+  StartSdpNegotiation(send_sdp_via_network_, caller_, callee_, send_route_,
+                      ret_route_, munge_offer, modify_offer,
+                      callee_remote_description_set, exchange_finished);
 }
 
 void SignalingRoute::NegotiateSdp(

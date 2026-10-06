@@ -1,0 +1,653 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* stylelint-disable stylelint-plugin-mozilla/use-design-tokens */
+
+.sports {
+  border-radius: var(--border-radius-large);
+  padding: var(--space-medium);
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--box-shadow-level-2);
+  height: 100%;
+  position: relative;
+
+  // End-of-match celebration tokens, used by the celebration that plays when a
+  // followed team's match ends.
+  --widget-celebration-accent-color: var(--color-accent-primary);
+  --widget-celebration-copy-color: var(--text-color);
+  --widget-celebration-surface-color: var(--background-color-box);
+  --widget-celebration-headline-gradient-angle: 90deg;
+  --widget-celebration-headline-gradient-start: var(--color-orange-20);
+  --widget-celebration-headline-gradient-mid-start: var(--color-orange-30);
+  --widget-celebration-headline-gradient-mid-end: var(--color-pink-30);
+  --widget-celebration-headline-gradient-end: var(--color-pink-40);
+  --widget-celebration-tint-color: transparent;
+  --widget-celebration-glow-color: color-mix(
+    in srgb,
+    var(--widget-celebration-accent-color) 35%,
+    transparent
+  );
+  --widget-celebration-orbit-color: color-mix(
+    in srgb,
+    var(--widget-celebration-accent-color) 70%,
+    transparent
+  );
+  --widget-celebration-track-color: color-mix(
+    in srgb,
+    var(--widget-celebration-accent-color) 45%,
+    transparent
+  );
+  --widget-celebration-border-draw-duration: 1900ms;
+  --widget-celebration-orbit-duration: 1900ms;
+  --widget-celebration-hold-duration: 3400ms;
+  --widget-celebration-exit-duration: 1200ms;
+  --widget-celebration-enter-ease: cubic-bezier(0.2, 0.9, 0.2, 1);
+  --widget-celebration-headline-delay: 80ms;
+  --widget-celebration-panel-delay: var(--widget-celebration-headline-delay);
+  --widget-celebration-illustration-delay: 180ms;
+  --widget-celebration-subhead-delay: 280ms;
+
+  @include widget-base-style;
+  @include widget-celebration-styles('sports-celebration');
+
+  .sports-celebration-illustration {
+    inset-inline: 0;
+    margin-inline: auto;
+    transform-origin: bottom center;
+    translate: -18% 0;
+  }
+
+  // Hide the "View all" / "Show less" toggle when the celebration starts, but
+  // bring it back on its own short timer rather than waiting for the full
+  // celebration lifecycle (hold + exit) to finish. visibility keeps its space
+  // so the card doesn't reflow. Tune --sports-view-all-return-delay to taste.
+  --sports-view-all-return-delay: 4000ms;
+
+  &.is-celebrating .sports-view-all {
+    animation: sports-celebration-restore-view-all
+      var(--sports-view-all-return-delay) steps(1, jump-end) forwards;
+  }
+
+  // Followed-team celebration: replace the generic animated stroke with a 2px
+  // border in the followed team's colors (a linear gradient supplied via
+  // --sports-celebration-border-gradient). Same gradient-border technique as
+  // .is-followed-highlight, faded in/out with the celebration.
+  &.is-followed-celebration {
+    .sports-celebration-stroke,
+    .sports-celebration-stroke-track,
+    .sports-celebration-stroke-orbit {
+      display: none;
+    }
+
+    // When the user follows the winning team, the persistent followed-highlight
+    // border is already on; hide it during the celebration so its 2px team
+    // gradient doesn't stack with the celebration's animated one (::after).
+    &.is-followed-highlight::before {
+      display: none;
+    }
+
+    &::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      border-radius: inherit;
+      padding: 2px; /* stylelint-disable-line declaration-property-value-disallowed-list */
+      background: var(--sports-celebration-border-gradient);
+      // Cuts a hole in the middle so only the 2px outer ring shows.
+      mask:
+        linear-gradient(#FFF 0 0) content-box,
+        linear-gradient(#FFF 0 0);
+      mask-composite: exclude;
+      opacity: 0;
+      pointer-events: none;
+      animation-name: sports-celebration-border-in, sports-celebration-border-out;
+      animation-duration: 260ms, var(--widget-celebration-exit-duration);
+      animation-timing-function: var(--widget-celebration-enter-ease), ease;
+      animation-fill-mode: forwards, forwards;
+      animation-delay: 0ms, var(--widget-celebration-hold-duration);
+    }
+  }
+
+  &:hover,
+  &:has(:focus-visible) {
+    outline: 1px solid var(--border-color-deemphasized);
+    box-shadow: var(--card-box-shadow-hover);
+  }
+
+  &.is-followed-highlight {
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      padding: 2px; /* stylelint-disable-line declaration-property-value-disallowed-list */
+      background: var(--sports-followed-gradient);
+      // Cuts a hole in the middle so only the 2px outer ring shows,
+      // turning the gradient fill into a gradient border.
+      mask:
+        linear-gradient(#FFF 0 0) content-box,
+        linear-gradient(#FFF 0 0);
+      mask-composite: exclude;
+      pointer-events: none;
+    }
+  }
+
+  &.medium-widget {
+    .sports-title-wrapper {
+      align-items: center;
+      margin-block-end: 0;
+    }
+
+    .sports-intro-wrapper > .sports-intro-lede {
+      margin: 0;
+    }
+
+    .sports-intro-title {
+      font-size: var(--font-size-root);
+    }
+
+    .sports-buttons-wrapper {
+      margin-block-start: var(--space-medium);
+    }
+
+    .sports-body {
+      // Bleed into the widget padding so the View all button focus outline isn't clipped.
+      margin-block-end: calc(-1 * var(--space-xsmall));
+      padding-block-end: var(--space-xsmall);
+      justify-content: space-between;
+    }
+
+    .match-highlight-view {
+      align-self: first baseline;
+      margin-block-end: auto;
+    }
+
+    // The medium card is shorter, so scale the celebration kit down to fit.
+    .sports-celebration-illustration {
+      block-size: 92px;
+    }
+
+    // Shorter fall distance on the shorter medium card: same (in-budget)
+    // duration over less distance reads as a slower drift, and the pieces
+    // still finish before the celebration unmounts.
+    .sports-celebration-confetti-piece {
+      --confetti-fall: 230px;
+    }
+  }
+
+  &.large-widget {
+    .sports-intro-wrapper {
+      margin-block-start: var(--space-large);
+    }
+
+    .sports-buttons-wrapper {
+      margin-block-start: var(--space-large);
+    }
+  }
+
+  &.sports-intro {
+    position: relative;
+    overflow: hidden;
+
+    .sports-intro-video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: bottom center;
+      pointer-events: none;
+    }
+
+    > .sports-title-wrapper,
+    > .sports-body {
+      position: relative;
+      z-index: 1;
+    }
+  }
+
+  &.sports-follow-state {
+    .sports-title-wrapper {
+      padding: var(--space-small);
+    }
+  }
+
+  &.sports-matches {
+    .sports-title-wrapper {
+      grid-template-columns: auto 1fr auto;
+    }
+  }
+
+  &.sports-key-dates {
+    .sports-title-wrapper {
+      grid-template-columns: auto 1fr auto;
+
+      > h3 {
+        font-size: var(--font-size-small);
+        margin-block: 0;
+        justify-self: start;
+        align-self: center;
+        margin-inline-start: var(--space-small);
+        font-weight: var(--font-weight);
+        color: var(--text-color-deemphasized);
+      }
+    }
+  }
+}
+
+.sports-title-wrapper {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  margin-block-end: var(--space-xsmall);
+
+  .sports-intro-title {
+    margin-block: 0;
+    max-width: 250px;
+  }
+
+  .sports-intro-lede {
+    margin-block-end: var(--space-small);
+  }
+}
+
+.sports-context-menu-wrapper {
+  grid-column: 3;
+  justify-self: end;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sports:hover,
+.sports:has(:focus-visible) {
+  .sports-context-menu-wrapper {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+// Handles keyboard focus on moz-button, since :has(:focus-visible) doesn't include shadow DOM
+.sports-context-menu-wrapper:focus-within,
+.sports-context-menu-wrapper:has(panel-list[open]) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sports-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-small);
+  overflow-y: auto;
+  scrollbar-width: none;
+  overflow-x: hidden;
+  padding-inline: var(--space-small);
+  padding-block: var(--space-xsmall) var(--space-small);
+}
+
+.sports-live-scores {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xsmall);
+}
+
+.sports-intro-wrapper {
+  text-align: center;
+}
+
+.sports-intro-title {
+  margin-block: 0;
+  font-size: var(--font-size-heading-xlarge);
+  font-weight: var(--font-weight-heading);
+}
+
+.sports-buttons-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  .sports-view-matches {
+    margin-block-end: var(--space-small);
+  }
+
+  .sports-follow-teams-btn {
+    background: var(--newtab-background-color-secondary);
+    border-radius: var(--border-radius-xlarge);
+  }
+}
+
+.sports-follow-teams {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-small);
+  flex: 1;
+}
+
+.sports-country-search {
+  margin-block-end: var(--space-xsmall);
+}
+
+.sports-follow-teams-title {
+  font-size: var(--font-size-small);
+  align-self: center;
+}
+
+.sports-follow-teams-list {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-xsmall);
+  gap: var(--space-medium);
+  flex: 1;
+  overflow-y: auto;
+}
+
+.sports-follow-teams-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+  cursor: pointer;
+
+  &.is-disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+
+    moz-checkbox {
+      // Lets the row's not-allowed cursor show through; we can't reach the cursor on the input in the shadow DOM from outside.
+      pointer-events: none;
+    }
+
+    .sports-team-flag,
+    .sports-team-name {
+      cursor: not-allowed;
+    }
+  }
+}
+
+.sports-team-flag {
+  width: 30px;
+  height: var(--dimension-20);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.sports-team-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-size-root);
+  color: var(--text-color);
+}
+
+.sports-back-button {
+  grid-column: 1;
+  justify-self: start;
+
+  &:dir(rtl) {
+    transform: scaleX(-1);
+  }
+}
+
+.sports-matches-tabs {
+  display: flex;
+}
+
+.sports-matches-view {
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.sports-matches-tab-panel {
+  width: 100%;
+  height: 100%;
+}
+
+.sports-matches-view > div > moz-button {
+  display: block;
+  margin-inline: auto;
+}
+
+.sports-matches-list-section > ul {
+  list-style: none;
+  padding-inline-start: 0;
+  margin-block: 0;
+}
+
+.sports-matches-list {
+  margin-block-start: var(--space-medium);
+}
+
+.sports-section-label {
+  color: var(--text-color-deemphasized);
+  font-size: var(--font-size-small);
+}
+
+.sports-matches-list-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-large);
+}
+
+@keyframes sports-section-label-live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.sports-section-label-live {
+  color: var(--text-color-error);
+  font-weight: var(--font-weight-heading);
+  animation: sports-section-label-live-pulse 1.6s ease-in-out infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
+.sports-matches-list-section {
+  & + & {
+    border-block-start: 1px solid var(--border-color-deemphasized);
+    padding-block-start: calc(var(--space-large) + var(--space-xsmall));
+    margin-block-start: calc(var(--space-large) + var(--space-xsmall));
+  }
+}
+
+.sports-followed-only-toggle {
+  display: block;
+  margin-block-end: var(--space-small);
+}
+
+// This rule applies to the "Show less" button only when the full list of upcoming games or previous results is shown
+.sports-matches-tab-panel:not(:has(.match-highlight-view)) > moz-button {
+  margin-block-start: var(--space-medium);
+  padding-block-end: var(--space-small);
+}
+
+.sports-matches-tab-panel:has(.match-highlight-view) {
+  height: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.sports-matches-tab-panel:has(.match-highlight-view) > .sports-section-label,
+.sports-matches-tab-panel:has(.match-highlight-view) > .sports-now-header {
+  position: absolute;
+  margin-block-start: var(--space-medium);
+}
+
+.sports-now-header {
+  inset-inline: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-small);
+}
+
+.sports-live-refresh-button {
+  margin-block-start: calc(-1 * var(--space-xsmall));
+}
+
+.medium-widget
+.sports-matches-tab-panel:has(.match-highlight-view)
+> .sports-live-refresh-button {
+  inset-inline: unset;
+  inset-inline-end: 0;
+  margin-block-start: 0;
+}
+
+.medium-widget
+.sports-matches-tab-panel:has(.sports-live-pagination)
+.sports-live-refresh-button {
+  inset-inline-end: var(--space-small);
+  inset-block-end: var(--space-xxsmall);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sports-live-refresh-button.is-spinning::part(button) {
+    animation: sports-live-refresh-spin 1s linear infinite;
+  }
+}
+
+@keyframes sports-live-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.large-widget
+.sports-matches-tab-panel:has(.match-highlight-view)
+> .match-highlight-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.sports-matches-tab-panel:has(.match-highlight-view) > moz-button {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline: 0;
+  width: fit-content;
+}
+
+.sports-upcoming-empty-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+
+  .sports-upcoming-empty-info-icon {
+    width: var(--icon-size);
+    height: var(--icon-size);
+    background: url('chrome://global/skin/icons/info.svg') no-repeat center / contain;
+    -moz-context-properties: fill;
+    fill: currentColor;
+  }
+}
+
+.sports-matches-tab {
+  flex: 1;
+  padding-block: var(--space-small);
+  border: none;
+  border-block-end: 2px solid transparent;
+  font-size: var(--font-size-small);
+
+  &:focus-visible {
+    outline: var(--focus-outline);
+  }
+
+  &.is-active {
+    font-weight: var(--font-weight-semibold);
+    border-block-end-color: var(--color-accent-primary);
+  }
+
+  &.is-disabled {
+    color: var(--text-color-disabled);
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+}
+
+.sports-cancel-button {
+  grid-column: 3;
+  justify-self: end;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--newtab-primary-action-background);
+  font-size: var(--font-size-small);
+  text-decoration: underline;
+}
+
+.sports-done-button {
+  margin-inline-start: auto;
+  position: sticky;
+  inset-inline-end: 0;
+  inset-block-end: var(--space-xxsmall);
+}
+
+// Key dates state
+.sports-key-dates {
+  display: flex;
+  flex-direction: column;
+
+  .sports-key-dates-list {
+    list-style: none;
+    padding-inline-start: var(--space-xsmall);
+    margin-block-start: 0;
+
+    .sports-key-dates-item {
+      display: flex;
+      justify-content: space-between;
+      margin-block-end: var(--space-medium);
+      font-size: var(--font-size-small);
+
+      &:last-of-type {
+        margin-block-end: 0;
+      }
+    }
+  }
+
+  moz-button {
+    align-self: center;
+  }
+}
+
+// Holds the "View all" toggle hidden for one step, then restores it, so it
+// reappears partway through the celebration instead of at the very end.
+@keyframes sports-celebration-restore-view-all {
+  from {
+    visibility: hidden;
+  }
+
+  to {
+    visibility: visible;
+  }
+}
+
+@keyframes sports-celebration-border-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sports-celebration-border-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}

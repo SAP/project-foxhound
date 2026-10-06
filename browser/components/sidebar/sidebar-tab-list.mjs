@@ -20,11 +20,6 @@ export class SidebarTabList extends FxviewTabListBase {
     // Panel is open, assume we always want to react to updates.
     this.updatesPaused = false;
     this.multiSelect = true;
-    this.selectedGuids = new Set();
-    this.shortcutsLocalization = new Localization(
-      ["toolkit/global/textActions.ftl"],
-      true
-    );
   }
 
   static queries = {
@@ -35,139 +30,83 @@ export class SidebarTabList extends FxviewTabListBase {
   };
 
   /**
-   * Only handle vertical navigation in sidebar.
+   * The tree view controller that owns selection state for the page this list
+   * belongs to.
    *
-   * @param {KeyboardEvent} e
+   * @returns {SidebarTreeView}
    */
-  handleFocusElementInRow(e) {
-    // Handle vertical navigation.
-    if (
-      (e.code == "ArrowUp" && this.activeIndex > 0) ||
-      (e.code == "ArrowDown" && this.activeIndex < this.rowEls.length - 1)
-    ) {
-      super.handleFocusElementInRow(e);
-    } else if (
-      (e.code == "ArrowUp" && this.activeIndex == 0) ||
-      e.code === "ArrowLeft"
-    ) {
-      this.#focusParentHeader(e.target);
-    } else if (
-      e.code == "ArrowDown" &&
-      this.activeIndex == this.rowEls.length - 1
-    ) {
-      this.#focusNextHeader(e.target);
+  get treeView() {
+    let host = this.getRootNode()?.host;
+    while (host) {
+      if (host.treeView) {
+        return host.treeView;
+      }
+      host = host.getRootNode()?.host;
     }
-
-    // Update or clear multi-selection (depending on whether shift key is used).
-    if (this.multiSelect && (e.code === "ArrowUp" || e.code === "ArrowDown")) {
-      this.#updateSelection(e);
-    }
-
-    // (Ctrl / Cmd) + A should select all rows.
-    if (
-      e.getModifierState("Accel") &&
-      e.key.toUpperCase() === this.selectAllShortcut
-    ) {
-      e.preventDefault();
-      this.#selectAll();
-    }
+    return null;
   }
 
-  #focusParentHeader(row) {
-    let parentCard = row.getRootNode().host.closest("moz-card");
-    if (parentCard) {
-      parentCard.summaryEl.focus();
-    }
-  }
-
-  #focusNextHeader(row) {
-    let parentCard = row.getRootNode().host.closest("moz-card");
-    if (
-      this.sortOption == "datesite" &&
-      parentCard.classList.contains("last-card")
-    ) {
-      // If we're going down from the last site, then focus the next date.
-      const dateCard = parentCard.parentElement;
-      const nextDate = dateCard.nextElementSibling;
-      nextDate?.summaryEl.focus();
-    }
-    let nextCard = parentCard.nextElementSibling;
-    if (nextCard && nextCard.localName == "moz-card") {
-      nextCard.summaryEl.focus();
-    }
-  }
-
-  #updateSelection(event) {
-    if (!event.shiftKey) {
-      // Clear the selection when navigating without shift key.
-      // Dispatch event so that other lists will also clear their selection.
-      this.clearSelection();
-      this.dispatchEvent(
-        new CustomEvent("clear-selection", {
-          bubbles: true,
-          composed: true,
-        })
-      );
+  #dispatchFocusRowEvent = event => {
+    const [row] = event.composedPath();
+    if (row.localName !== "sidebar-tab-row") {
       return;
     }
-
-    // Select the current row.
-    const row = event.target;
-    const {
-      guid,
-      previousElementSibling: prevRow,
-      nextElementSibling: nextRow,
-    } = row;
-    this.selectedGuids.add(guid);
-
-    // Select the previous or next sibling, depending on which arrow key was used.
-    if (event.code === "ArrowUp" && prevRow) {
-      this.selectedGuids.add(prevRow.guid);
-    } else if (event.code === "ArrowDown" && nextRow) {
-      this.selectedGuids.add(nextRow.guid);
-    } else {
-      this.requestVirtualListUpdate();
-    }
-
-    // Notify the host component.
     this.dispatchEvent(
-      new CustomEvent("update-selection", {
+      new CustomEvent("focus-row", {
         bubbles: true,
         composed: true,
+        detail: { guid: row.guid },
       })
     );
+  };
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.addEventListener("focusin", this.#dispatchFocusRowEvent);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.removeEventListener("focusin", this.#dispatchFocusRowEvent);
+  }
+
+  willUpdate(changedProperties) {
+    if (changedProperties.has("tabItems") && Array.isArray(this.tabItems)) {
+      for (const item of this.tabItems) {
+        item.guid ??= Services.uuid.generateUUID().toString();
+      }
+    }
+  }
+
+  handleFocusElementInRow(e) {
+    if (!this.treeView) {
+      super.handleFocusElementInRow(e);
+      return;
+    }
+    this.treeView.handleKeydown(e);
+    if (e.defaultPrevented) {
+      e.stopPropagation();
+    }
+  }
+
+  toggleRowSelection(guid) {
+    this.treeView?.toggleSelection(this, guid);
   }
 
   clearSelection() {
-    this.selectedGuids.clear();
-    this.requestVirtualListUpdate();
+    this.treeView?.resetSelection();
   }
 
-  get selectAllShortcut() {
-    const [l10nMessage] = this.shortcutsLocalization.formatMessagesSync([
-      "text-action-select-all-shortcut",
-    ]);
-    const shortcutKey = l10nMessage.attributes[0].value;
-    return shortcutKey;
-  }
-
-  #selectAll() {
-    for (const { guid } of this.tabItems) {
-      this.selectedGuids.add(guid);
-    }
-    this.requestVirtualListUpdate();
-    this.dispatchEvent(
-      new CustomEvent("update-selection", {
-        bubbles: true,
-        composed: true,
-      })
-    );
+  selectAll() {
+    this.treeView?.selectAllInList(this);
   }
 
   itemTemplate = (tabItem, i) => {
     let tabIndex = -1;
     if ((this.searchQuery || this.sortOption == "lastvisited") && i == 0) {
       // Make the first row focusable if there is no header.
+      tabIndex = 0;
+    } else if (!this.searchQuery) {
       tabIndex = 0;
     }
     return html`
@@ -178,10 +117,12 @@ export class SidebarTabList extends FxviewTabListBase {
         compact
         .currentActiveElementId=${this.currentActiveElementId}
         .closeRequested=${tabItem.closeRequested}
+        .containerObj=${tabItem.containerObj}
         .fxaDeviceId=${ifDefined(tabItem.fxaDeviceId)}
         .favicon=${tabItem.icon}
         .guid=${tabItem.guid}
         .hasPopup=${this.hasPopup}
+        .indicators=${tabItem.indicators}
         .primaryL10nArgs=${ifDefined(tabItem.primaryL10nArgs)}
         .primaryL10nId=${tabItem.primaryL10nId}
         role="listitem"
@@ -191,7 +132,7 @@ export class SidebarTabList extends FxviewTabListBase {
         )}
         .secondaryL10nArgs=${ifDefined(tabItem.secondaryL10nArgs)}
         .secondaryL10nId=${tabItem.secondaryL10nId}
-        .selected=${this.selectedGuids.has(tabItem.guid)}
+        .selected=${this.isTabItemSelected(tabItem)}
         .sourceClosedId=${ifDefined(tabItem.sourceClosedId)}
         .sourceWindowId=${ifDefined(tabItem.sourceWindowId)}
         .tabElement=${ifDefined(tabItem.tabElement)}
@@ -202,6 +143,10 @@ export class SidebarTabList extends FxviewTabListBase {
       ></sidebar-tab-row>
     `;
   };
+
+  isTabItemSelected(tabItem) {
+    return !!this.treeView?.isSelected(this, tabItem.guid);
+  }
 
   stylesheets() {
     return [
@@ -217,16 +162,41 @@ customElements.define("sidebar-tab-list", SidebarTabList);
 
 export class SidebarTabRow extends FxviewTabRowBase {
   static properties = {
-    guid: { type: String },
+    containerObj: { type: Object },
+    guid: { type: String, reflect: true, attribute: "data-guid" },
     selected: { type: Boolean, reflect: true },
+    indicators: { type: Array },
   };
+
+  get tooltipText() {
+    return !this.primaryL10nId ? this.url : null;
+  }
 
   /**
    * Fallback to the native implementation in sidebar. We want to focus the
    * entire row instead of delegating it to link or hover buttons.
    */
-  focus() {
-    HTMLElement.prototype.focus.call(this);
+  focus(options) {
+    HTMLElement.prototype.focus.call(this, options);
+  }
+
+  #getContainerClasses() {
+    let containerClasses = ["fxview-tab-row-container-indicator", "icon"];
+    if (this.containerObj) {
+      let { icon, color } = this.containerObj;
+      containerClasses.push(`identity-icon-${icon}`);
+      containerClasses.push(`identity-color-${color}`);
+    }
+    return containerClasses;
+  }
+
+  #containerIndicatorTemplate() {
+    let tabList = this.getRootNode().host;
+    let tabsToCheck = tabList.tabItems;
+    return html`${when(
+      tabsToCheck.some(tab => tab.containerObj),
+      () => html`<span class=${this.#getContainerClasses().join(" ")}></span>`
+    )}`;
   }
 
   secondaryButtonTemplate() {
@@ -252,6 +222,15 @@ export class SidebarTabRow extends FxviewTabRowBase {
   render() {
     return html`
       ${this.stylesheets()}
+      ${when(
+        this.containerObj,
+        () => html`
+          <link
+            rel="stylesheet"
+            href="chrome://browser/content/usercontext/usercontext.css"
+          />
+        `
+      )}
       <link
         rel="stylesheet"
         href="chrome://browser/content/sidebar/sidebar-tab-row.css"
@@ -260,20 +239,27 @@ export class SidebarTabRow extends FxviewTabRowBase {
         class=${classMap({
           "fxview-tab-row-main": true,
           "no-action-button-row": this.canClose === false,
+          muted: this.indicators?.includes("muted"),
+          attention: this.indicators?.includes("attention"),
+          soundplaying: this.indicators?.includes("soundplaying"),
+          "activemedia-blocked": this.indicators?.includes(
+            "activemedia-blocked"
+          ),
         })}
-        disabled=${this.closeRequested}
+        ?disabled=${this.closeRequested}
         data-l10n-args=${ifDefined(this.primaryL10nArgs)}
         data-l10n-id=${ifDefined(this.primaryL10nId)}
         href=${ifDefined(this.url)}
         id="fxview-tab-row-main"
         tabindex="-1"
-        title=${!this.primaryL10nId ? this.url : null}
+        title=${this.tooltipText}
         @click=${this.primaryActionHandler}
+        @auxclick=${this.auxActionHandler}
         @keydown=${this.primaryActionHandler}
       >
         ${this.faviconTemplate()} ${this.titleTemplate()}
       </a>
-      ${this.secondaryButtonTemplate()}
+      ${this.secondaryButtonTemplate()} ${this.#containerIndicatorTemplate()}
     `;
   }
 }

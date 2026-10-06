@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,13 +10,13 @@
 #include "mozilla/Services.h"
 #include "nsIObserverService.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/Unused.h"
 #include "SpecialSystemDirectory.h"
 
-#ifdef XP_UNIX  // {
+#if defined(XP_UNIX) && !defined(XP_IOS)  // {
 #  include "mozilla/Preferences.h"
 #  include <fcntl.h>
 #  include <unistd.h>
+#  include <signal.h>
 #  include <sys/stat.h>
 
 using namespace mozilla;
@@ -53,7 +51,8 @@ static void DumpSignalHandler(int aSignum) {
 
   if (sDumpPipeWriteFd != -1) {
     uint8_t signum = static_cast<int>(aSignum);
-    Unused << write(sDumpPipeWriteFd, &signum, sizeof(signum));
+    [[maybe_unused]] ssize_t r =
+        write(sDumpPipeWriteFd, &signum, sizeof(signum));
   }
 }
 
@@ -222,7 +221,7 @@ FifoWatcher* FifoWatcher::GetSingleton() {
   if (!sSingleton) {
     nsAutoCString dirPath;
     Preferences::GetCString("memory_info_dumper.watch_fifo.directory", dirPath);
-    sSingleton = new FifoWatcher(dirPath);
+    sSingleton = new FifoWatcher(std::move(dirPath));
     sSingleton->Init();
     ClearOnShutdown(&sSingleton);
   }
@@ -393,7 +392,7 @@ void FifoWatcher::OnFileCanReadWithoutBlocking(int aFd) {
   LOG("Got unexpected value from fifo; ignoring it.");
 }
 
-#endif  // XP_UNIX }
+#endif  // XP_UNIX && !XP_IOS }
 
 // In Android case, this function will open a file named aFilename under
 // /data/local/tmp/"aFoldername".
@@ -406,8 +405,7 @@ nsresult nsDumpUtils::OpenTempFile(const nsACString& aFilename, nsIFile** aFile,
   // rather than the temp directory which is not.
   if (!*aFile) {
     if (char* env = PR_GetEnv("DOWNLOADS_DIRECTORY")) {
-      Unused << NS_WARN_IF(
-          NS_FAILED(NS_NewNativeLocalFile(nsCString(env), aFile)));
+      (void)NS_WARN_IF(NS_FAILED(NS_NewNativeLocalFile(nsCString(env), aFile)));
     }
   }
 #endif
@@ -437,7 +435,7 @@ nsresult nsDumpUtils::OpenTempFile(const nsACString& aFilename, nsIFile** aFile,
 
     // It's OK if this fails; that probably just means that the directory
     // already exists.
-    Unused << (*aFile)->Create(nsIFile::DIRECTORY_TYPE, 0777);
+    (void)(*aFile)->Create(nsIFile::DIRECTORY_TYPE, 0777);
 
     nsAutoCString dirPath;
     rv = (*aFile)->GetNativePath(dirPath);

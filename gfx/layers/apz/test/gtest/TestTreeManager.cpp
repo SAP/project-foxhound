@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -390,7 +388,7 @@ TEST_F(APZCTreeManagerTester,
   // A key event causing scroll page down happens.
   WidgetKeyboardEvent widgetEvent(true, eKeyDown, nullptr);
   KeyboardInput input(widgetEvent);
-  Unused << manager->ReceiveInputEvent(input);
+  (void)manager->ReceiveInputEvent(input);
 
   // Simulate WebRender compositing frames until APZ tells it the scroll offset
   // has stopped changing.

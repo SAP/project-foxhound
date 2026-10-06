@@ -1,4 +1,7 @@
-// |jit-test| skip-if: !('stringRepresentation' in this)
+// |jit-test| skip-if: !('stringRepresentation' in this); --setpref=objectfuse_for_global=false
+
+// Don't use object fuses for this test because atomizing global constants
+// affects what we're testing.
 
 // This is to test the correctness of the string deduplication algorithm during
 // the tenuring phase. Same strings below refer to the same character encoding

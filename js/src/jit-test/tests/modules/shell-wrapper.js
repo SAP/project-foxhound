@@ -1,4 +1,4 @@
-// |jit-test| --enable-import-attributes
+// |jit-test|
 // Test shell ModuleObject wrapper's accessors and methods
 
 load(libdir + "asserts.js");
@@ -33,7 +33,7 @@ testGetter(a, "namespace");
 // ==== status getter ====
 const c = registerModule('c', parseModule(`
 `));
-assertEq(c.status, "Unlinked");
+assertEq(c.status, "New");
 moduleLink(c);
 assertEq(c.status, "Linked");
 moduleEvaluate(c);
@@ -66,36 +66,34 @@ testGetter(e.requestedModules[0].moduleRequest, "moduleType");
 testGetter(e.requestedModules[0], "lineNumber");
 testGetter(e.requestedModules[0], "columnNumber");
 
-if (getRealmConfiguration("importAttributes")) {
-  const e1 = parseModule(`
+const e1 = parseModule(`
 import a from 'b' with {type: 'json'};
 `);
-  assertEq(e1.requestedModules.length, 1);
-  assertEq(e1.requestedModules[0].moduleRequest.specifier, 'b');
-  assertEq(e1.requestedModules[0].moduleRequest.moduleType, 'json');
-  assertEq(e1.requestedModules[0].moduleRequest.firstUnsupportedAttributeKey, null);
-  assertEq(e1.requestedModules[0].lineNumber, 2);
-  assertEq(e1.requestedModules[0].columnNumber, 15);
-  testGetter(e1, "requestedModules");
-  testGetter(e1.requestedModules[0], "moduleRequest");
-  testGetter(e1.requestedModules[0].moduleRequest, "specifier");
-  testGetter(e1.requestedModules[0].moduleRequest, "moduleType");
-  testGetter(e1.requestedModules[0], "lineNumber");
-  testGetter(e1.requestedModules[0], "columnNumber");
+assertEq(e1.requestedModules.length, 1);
+assertEq(e1.requestedModules[0].moduleRequest.specifier, 'b');
+assertEq(e1.requestedModules[0].moduleRequest.moduleType, 'json');
+assertEq(e1.requestedModules[0].moduleRequest.firstUnsupportedAttributeKey, null);
+assertEq(e1.requestedModules[0].lineNumber, 2);
+assertEq(e1.requestedModules[0].columnNumber, 15);
+testGetter(e1, "requestedModules");
+testGetter(e1.requestedModules[0], "moduleRequest");
+testGetter(e1.requestedModules[0].moduleRequest, "specifier");
+testGetter(e1.requestedModules[0].moduleRequest, "moduleType");
+testGetter(e1.requestedModules[0], "lineNumber");
+testGetter(e1.requestedModules[0], "columnNumber");
 
-  const e2 = parseModule(`
+const e2 = parseModule(`
 import a from 'b' with {type: 'cpp', foo: 'bar'};
 `);
-  assertEq(e2.requestedModules.length, 1);
-  assertEq(e2.requestedModules[0].moduleRequest.specifier, 'b');
-  assertEq(e2.requestedModules[0].moduleRequest.moduleType, 'unknown');
-  assertEq(e2.requestedModules[0].moduleRequest.firstUnsupportedAttributeKey, 'foo');
-  testGetter(e2, "requestedModules");
-  testGetter(e2.requestedModules[0], "moduleRequest");
-  testGetter(e2.requestedModules[0].moduleRequest, "specifier");
-  testGetter(e2.requestedModules[0].moduleRequest, "moduleType");
-  testGetter(e2.requestedModules[0].moduleRequest, "firstUnsupportedAttributeKey");
-}
+assertEq(e2.requestedModules.length, 1);
+assertEq(e2.requestedModules[0].moduleRequest.specifier, 'b');
+assertEq(e2.requestedModules[0].moduleRequest.moduleType, 'unknown');
+assertEq(e2.requestedModules[0].moduleRequest.firstUnsupportedAttributeKey, 'foo');
+testGetter(e2, "requestedModules");
+testGetter(e2.requestedModules[0], "moduleRequest");
+testGetter(e2.requestedModules[0].moduleRequest, "specifier");
+testGetter(e2.requestedModules[0].moduleRequest, "moduleType");
+testGetter(e2.requestedModules[0].moduleRequest, "firstUnsupportedAttributeKey");
 
 // ==== importEntries getter ====
 const f = parseModule(`
@@ -158,7 +156,7 @@ assertEq(i.starExportEntries[0].localName, null);
 assertEq(i.starExportEntries[0].lineNumber, 2);
 assertEq(i.starExportEntries[0].columnNumber, 8);
 
-// ==== dfsIndex and dfsAncestorIndex getters ====
+// ==== dfsAncestorIndex getter ====
 const j = registerModule('j', parseModule(`
 export const v1 = 10;
 import {v2} from 'k'
@@ -172,18 +170,12 @@ export const v3 = 10;
 import {v2} from 'k'
 import {v1} from 'j'
 `));
-assertEq(j.dfsIndex, undefined);
 assertEq(j.dfsAncestorIndex, undefined);
-assertEq(k.dfsIndex, undefined);
 assertEq(k.dfsAncestorIndex, undefined);
-assertEq(l.dfsIndex, undefined);
 assertEq(l.dfsAncestorIndex, undefined);
 moduleLink(l);
-assertEq(j.dfsIndex, 2);
 assertEq(j.dfsAncestorIndex, 1);
-assertEq(k.dfsIndex, 1);
 assertEq(k.dfsAncestorIndex, 1);
-assertEq(l.dfsIndex, 0);
 assertEq(l.dfsAncestorIndex, 0);
 
 // ==== async and promises getters ====
@@ -191,11 +183,11 @@ const m = parseModule(`
 `);
 assertEq(m.hasTopLevelAwait, false);
 assertEq(m.topLevelCapability, undefined);
-assertEq(m.asyncEvaluatingPostOrder, undefined);
+assertEq(m.asyncEvaluationOrder, -1);
 assertEq(m.asyncParentModules[0], undefined);
 assertEq(m.pendingAsyncDependencies, undefined);
 testGetter(m, "hasTopLevelAwait");
 testGetter(m, "topLevelCapability");
-testGetter(m, "asyncEvaluatingPostOrder");
+testGetter(m, "asyncEvaluationOrder");
 testGetter(m, "asyncParentModules");
 testGetter(m, "pendingAsyncDependencies");

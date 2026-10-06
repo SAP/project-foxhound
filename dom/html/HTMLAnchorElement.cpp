@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,18 +7,17 @@
 
 #include "mozilla/dom/HTMLAnchorElement.h"
 
+#include "mozilla/EventDispatcher.h"
+#include "mozilla/FocusModel.h"
 #include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLAnchorElementBinding.h"
 #include "mozilla/dom/HTMLDNSPrefetch.h"
-#include "mozilla/EventDispatcher.h"
-#include "mozilla/MemoryReporting.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsGkAtoms.h"
-#include "mozilla/FocusModel.h"
-#include "mozilla/dom/Document.h"
-#include "nsPresContext.h"
 #include "nsIURI.h"
+#include "nsPresContext.h"
 #include "nsTaintingUtils.h"
 #include "nsWindowSizes.h"
 

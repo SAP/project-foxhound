@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,8 +6,8 @@
 #define DOM_FRAGMENTDIRECTIVE_H_
 
 #include "js/TypeDecls.h"
-#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/fragmentdirectives_ffi_generated.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsStringFwd.h"
@@ -42,7 +40,7 @@ class TextDirectiveFinder;
  */
 class FragmentDirective final : public nsISupports, public nsWrapperCache {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(FragmentDirective)
 
  public:
@@ -143,7 +141,8 @@ class FragmentDirective final : public nsISupports, public nsWrapperCache {
    * @return Returns the created text directive as resolved promise, or a
    *         rejected promise in case of an error.
    */
-  already_AddRefed<Promise> CreateTextDirectiveForSelection();
+  already_AddRefed<Promise> CreateTextDirectiveForRanges(
+      const Sequence<OwningNonNull<nsRange>>& aRanges);
 
  private:
   RefPtr<Document> mDocument;

@@ -19,6 +19,7 @@ import mozilla.components.lib.state.ext.consumeFrom
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 import org.mozilla.fenix.R
 import org.mozilla.fenix.databinding.FragmentAddOnInternalSettingsBinding
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.snackbar.FenixSnackbarDelegate
@@ -27,7 +28,7 @@ import org.mozilla.fenix.snackbar.SnackbarBinding
 /**
  * A fragment to show the web extension action popup with [EngineView].
  */
-class WebExtensionActionPopupFragment : AddonPopupBaseFragment(), EngineSession.Observer {
+class WebExtensionActionPopupFragment : AddonPopupBaseFragment(), EngineSession.Observer, SystemInsetsPaddedFragment {
 
     private val args by navArgs<WebExtensionActionPopupFragmentArgs>()
     private val coreComponents by lazy { requireComponents.core }

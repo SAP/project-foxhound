@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 add_setup(async () => {
@@ -10,11 +8,7 @@ add_setup(async () => {
 
 add_task(async function testIncognitoViews() {
   // Make sure the mouse isn't hovering over the browserAction widget.
-  EventUtils.synthesizeMouseAtCenter(
-    gURLBar.textbox,
-    { type: "mouseover" },
-    window
-  );
+  EventUtils.synthesizeMouseAtCenter(gURLBar, { type: "mouseover" }, window);
 
   let extension = ExtensionTestUtils.loadExtension({
     incognitoOverride: "spanning",

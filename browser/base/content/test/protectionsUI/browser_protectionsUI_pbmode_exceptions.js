@@ -19,19 +19,19 @@ registerCleanupFunction(function () {
 });
 
 function hidden(sel) {
-  let win = browser.ownerGlobal;
+  let win = browser.documentGlobal;
   let el = win.document.querySelector(sel);
   let display = win.getComputedStyle(el).getPropertyValue("display", null);
   return display === "none";
 }
 
 function protectionsPopupState() {
-  let win = browser.ownerGlobal;
+  let win = browser.documentGlobal;
   return win.document.getElementById("protections-popup")?.state || "closed";
 }
 
 function clickButton(sel) {
-  let win = browser.ownerGlobal;
+  let win = browser.documentGlobal;
   let el = win.document.querySelector(sel);
   el.doCommand();
 }
@@ -95,11 +95,11 @@ add_task(async function testExceptionAddition() {
   browser = privateWin.gBrowser;
   let tab = await BrowserTestUtils.openNewForegroundTab(browser);
 
-  gProtectionsHandler = browser.ownerGlobal.gProtectionsHandler;
+  gProtectionsHandler = browser.documentGlobal.gProtectionsHandler;
   ok(gProtectionsHandler, "CB is attached to the private window");
 
   TrackingProtection =
-    browser.ownerGlobal.gProtectionsHandler.blockers.TrackingProtection;
+    browser.documentGlobal.gProtectionsHandler.blockers.TrackingProtection;
   ok(TrackingProtection, "TP is attached to the private window");
 
   Services.prefs.setBoolPref(TP_PB_PREF, true);
@@ -107,14 +107,17 @@ add_task(async function testExceptionAddition() {
 
   info("Load a test page containing tracking elements");
   await Promise.all([
-    promiseTabLoadEvent(tab, TRACKING_PAGE),
-    waitForContentBlockingEvent(2, tab.ownerGlobal),
+    BrowserTestUtils.loadURIString({
+      browser: tab.linkedBrowser,
+      uriString: TRACKING_PAGE,
+    }),
+    waitForContentBlockingEvent(2, tab.documentGlobal),
   ]);
 
-  testTrackingPage(tab.ownerGlobal);
+  testTrackingPage(tab.documentGlobal);
 
   info("Disable TP for the page (which reloads the page)");
-  let tabReloadPromise = promiseTabLoadEvent(tab);
+  let tabReloadPromise = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
   gProtectionsHandler.disableForCurrentPage();
   is(protectionsPopupState(), "closed", "protections popup is closed");
 
@@ -127,7 +130,10 @@ add_task(async function testExceptionAddition() {
   tab = browser.selectedTab = BrowserTestUtils.addTab(browser);
 
   info("Load a test page containing tracking elements");
-  await promiseTabLoadEvent(tab, TRACKING_PAGE);
+  await BrowserTestUtils.loadURIString({
+    browser: tab.linkedBrowser,
+    uriString: TRACKING_PAGE,
+  });
   testTrackingPageUnblocked();
 
   await BrowserTestUtils.closeWindow(privateWin);
@@ -145,30 +151,33 @@ add_task(async function testExceptionPersistence() {
   browser = privateWin.gBrowser;
   let tab = await BrowserTestUtils.openNewForegroundTab(browser);
 
-  gProtectionsHandler = browser.ownerGlobal.gProtectionsHandler;
+  gProtectionsHandler = browser.documentGlobal.gProtectionsHandler;
   ok(gProtectionsHandler, "CB is attached to the private window");
   TrackingProtection =
-    browser.ownerGlobal.gProtectionsHandler.blockers.TrackingProtection;
+    browser.documentGlobal.gProtectionsHandler.blockers.TrackingProtection;
   ok(TrackingProtection, "TP is attached to the private window");
 
   ok(TrackingProtection.enabled, "TP is still enabled");
 
   info("Load a test page containing tracking elements");
   await Promise.all([
-    promiseTabLoadEvent(tab, TRACKING_PAGE),
-    waitForContentBlockingEvent(2, tab.ownerGlobal),
+    BrowserTestUtils.loadURIString({
+      browser: tab.linkedBrowser,
+      uriString: TRACKING_PAGE,
+    }),
+    waitForContentBlockingEvent(2, tab.documentGlobal),
   ]);
 
-  testTrackingPage(tab.ownerGlobal);
+  testTrackingPage(tab.documentGlobal);
 
   info("Disable TP for the page (which reloads the page)");
-  let tabReloadPromise = promiseTabLoadEvent(tab);
+  let tabReloadPromise = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
   gProtectionsHandler.disableForCurrentPage();
   is(protectionsPopupState(), "closed", "protections popup is closed");
 
   await Promise.all([
     tabReloadPromise,
-    waitForContentBlockingEvent(2, tab.ownerGlobal),
+    waitForContentBlockingEvent(2, tab.documentGlobal),
   ]);
   testTrackingPageUnblocked();
 

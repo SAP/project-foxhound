@@ -9,6 +9,7 @@ import mozilla.components.service.digitalassetlinks.AndroidAssetFinder
 import mozilla.components.service.digitalassetlinks.AssetDescriptor
 import mozilla.components.service.digitalassetlinks.Relation
 import mozilla.components.service.digitalassetlinks.local.StatementRelationChecker
+import mozilla.components.support.utils.ext.packageManagerCompatHelper
 
 /**
  * Helper to verify that a specific application is allowed to receive get the login credentials for
@@ -34,7 +35,9 @@ class CredentialAccessVerifier(
         domain: String,
         packageName: String,
     ): Boolean {
-        val assets = assetsFinder.getAndroidAppAsset(packageName, context.packageManager).toList()
+        val assets =
+            assetsFinder.getAndroidAppAsset(packageName, context.packageManagerCompatHelper)
+                .toList()
 
         // I was expecting us to need to verify all signatures here. But If I understand the usage
         // in `OriginVerifier` and the spec (see link in class comment) correctly then verifying one

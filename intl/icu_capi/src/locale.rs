@@ -4,7 +4,6 @@
 
 #[diplomat::bridge]
 #[diplomat::abi_rename = "icu4x_{0}_mv1"]
-#[diplomat::attr(auto, namespace = "icu4x")]
 pub mod ffi {
     use alloc::boxed::Box;
 
@@ -14,14 +13,18 @@ pub mod ffi {
 
     #[diplomat::rust_link(icu::locale::TransformResult, Enum)]
     #[diplomat::enum_convert(icu_locale::TransformResult)]
+    #[non_exhaustive]
     pub enum TransformResult {
         Modified,
+        // This is an output type, so the default mostly impacts deferred initialization.
+        #[diplomat::attr(auto, default)]
         Unmodified,
     }
 
     /// A locale canonicalizer.
     #[diplomat::rust_link(icu::locale::LocaleCanonicalizer, Struct)]
     #[diplomat::opaque]
+    #[diplomat::demo(custom_func = "../../../tools/web-demo/custom/LocaleCanonicalizer.mjs")]
     pub struct LocaleCanonicalizer(icu_locale::LocaleCanonicalizer);
 
     impl LocaleCanonicalizer {

@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<script>
+  window.addEventListener("load", async () => {
+    const canvas = document.createElementNS("http://www.w3.org/1999/xhtml", "canvas")
+    document.documentElement.appendChild(canvas)
+    const offscreen = canvas.transferControlToOffscreen()
+    const context = offscreen.getContext("2d")
+    canvas.toBlob(async () => {
+    }, "image/webp", "-moz-parse-options:format=bmp;bpp=32")
+  })
+</script>
+</html>

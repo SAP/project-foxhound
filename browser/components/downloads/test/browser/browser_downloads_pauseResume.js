@@ -27,6 +27,12 @@ add_task(async function test_downloads_library() {
   let listbox = win.document.getElementById("downloadsListBox");
   ok(listbox, "Download list box present");
 
+  await BrowserTestUtils.waitForMutationCondition(
+    listbox,
+    { childList: true, subtree: true },
+    () => !!listbox.itemChildren.length
+  );
+
   // Select one of the downloads.
   listbox.itemChildren[0].click();
   listbox.itemChildren[0]._shell._download.hasPartialData = true;

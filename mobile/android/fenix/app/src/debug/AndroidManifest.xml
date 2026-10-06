@@ -17,8 +17,8 @@
         android:maxSdkVersion="28" />
 
     <application
-            tools:replace="android:name"
-            android:name="org.mozilla.fenix.DebugFenixApplication">
+        tools:replace="android:name"
+        android:name="org.mozilla.fenix.FenixApplication">
 
         <activity android:name="androidx.activity.ComponentActivity" />
     </application>

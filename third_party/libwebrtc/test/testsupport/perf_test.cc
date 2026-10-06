@@ -10,12 +10,14 @@
 
 #include "test/testsupport/perf_test.h"
 
-#include <stdio.h>
-
 #include <algorithm>
-#include <fstream>
+#include <cmath>
+#include <cstdio>
+#include <ostream>
 #include <set>
+#include <span>
 #include <sstream>
+#include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"
@@ -23,30 +25,31 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/synchronization/mutex.h"
+#include "rtc_base/thread_annotations.h"
 #include "test/testsupport/file_utils.h"
 #include "test/testsupport/perf_test_histogram_writer.h"
+#include "test/testsupport/perf_test_result_writer.h"
 
 namespace webrtc {
 namespace test {
 
 namespace {
 
-std::string UnitWithDirection(
-    absl::string_view units,
-    webrtc::test::ImproveDirection improve_direction) {
+std::string UnitWithDirection(absl::string_view units,
+                              test::ImproveDirection improve_direction) {
   switch (improve_direction) {
-    case webrtc::test::ImproveDirection::kNone:
+    case test::ImproveDirection::kNone:
       return std::string(units);
-    case webrtc::test::ImproveDirection::kSmallerIsBetter:
+    case test::ImproveDirection::kSmallerIsBetter:
       return std::string(units) + "_smallerIsBetter";
-    case webrtc::test::ImproveDirection::kBiggerIsBetter:
+    case test::ImproveDirection::kBiggerIsBetter:
       return std::string(units) + "_biggerIsBetter";
   }
 }
 
 std::vector<SamplesStatsCounter::StatsSample> GetSortedSamples(
     const SamplesStatsCounter& counter) {
-  rtc::ArrayView<const SamplesStatsCounter::StatsSample> view =
+  std::span<const SamplesStatsCounter::StatsSample> view =
       counter.GetTimedSamples();
   std::vector<SamplesStatsCounter::StatsSample> out(view.begin(), view.end());
   std::stable_sort(out.begin(), out.end(),
@@ -69,7 +72,7 @@ void OutputListToStream(std::ostream* ostream, const Container& values) {
 struct PlottableCounter {
   std::string graph_name;
   std::string trace_name;
-  webrtc::SamplesStatsCounter counter;
+  SamplesStatsCounter counter;
   std::string units;
 };
 
@@ -84,12 +87,13 @@ class PlottableCounterPrinter {
 
   void AddCounter(absl::string_view graph_name,
                   absl::string_view trace_name,
-                  const webrtc::SamplesStatsCounter& counter,
+                  const SamplesStatsCounter& counter,
                   absl::string_view units) {
     MutexLock lock(&mutex_);
-    plottable_counters_.push_back({std::string(graph_name),
-                                   std::string(trace_name), counter,
-                                   std::string(units)});
+    plottable_counters_.push_back({.graph_name = std::string(graph_name),
+                                   .trace_name = std::string(trace_name),
+                                   .counter = counter,
+                                   .units = std::string(units)});
   }
 
   void Print(const std::vector<std::string>& desired_graphs_raw) const {
@@ -178,10 +182,10 @@ class ResultsLinePrinter {
 
   void PrintResultList(absl::string_view graph_name,
                        absl::string_view trace_name,
-                       const rtc::ArrayView<const double> values,
+                       const std::span<const double> values,
                        absl::string_view units,
                        const bool important,
-                       webrtc::test::ImproveDirection improve_direction) {
+                       test::ImproveDirection improve_direction) {
     std::ostringstream value_stream;
     value_stream.precision(8);
     OutputListToStream(&value_stream, values);
@@ -244,7 +248,7 @@ bool WritePerfResults(const std::string& output_path) {
   std::string results = GetPerfResults();
   CreateDir(DirName(output_path));
   FILE* output = fopen(output_path.c_str(), "wb");
-  if (output == NULL) {
+  if (output == nullptr) {
     printf("Failed to write to %s.\n", output_path.c_str());
     return false;
   }
@@ -335,7 +339,7 @@ void PrintResultMeanAndError(absl::string_view measurement,
 void PrintResultList(absl::string_view measurement,
                      absl::string_view modifier,
                      absl::string_view trace,
-                     const rtc::ArrayView<const double> values,
+                     const std::span<const double> values,
                      absl::string_view units,
                      bool important,
                      ImproveDirection improve_direction) {

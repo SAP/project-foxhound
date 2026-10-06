@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -39,7 +37,7 @@ struct AudioDataSerializedData;
 
 class AudioData final : public nsISupports, public nsWrapperCache {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(AudioData)
 
  public:
@@ -132,13 +130,19 @@ class AudioData final : public nsISupports, public nsWrapperCache {
 class AudioDataResource final {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(AudioDataResource);
   explicit AudioDataResource(FallibleTArray<uint8_t>&& aData)
-      : mData(std::move(aData)) {}
+      : mCopiedData(std::move(aData)) {}
 
-  explicit AudioDataResource() : mData() {}
+  explicit AudioDataResource() : mCopiedData() {}
+  /// Create AudioDataResource, transferring ownership from js_malloc'd data.
+  AudioDataResource(UniquePtr<uint8_t[], JS::FreePolicy>&& aData,
+                    size_t aOffset, size_t aLen)
+      : mAdoptedData(std::move(aData)),
+        mAdoptedDataOffset(aOffset),
+        mAdoptedDataLen(aLen) {}
 
   static AudioDataResource* Create(const Span<uint8_t>& aData) {
     AudioDataResource* resource = new AudioDataResource();
-    if (!resource->mData.AppendElements(aData, mozilla::fallible_t())) {
+    if (!resource->mCopiedData.AppendElements(aData, mozilla::fallible_t())) {
       return nullptr;
     }
     return resource;
@@ -147,13 +151,20 @@ class AudioDataResource final {
   static Result<already_AddRefed<AudioDataResource>, nsresult> Construct(
       const OwningAllowSharedBufferSource& aInit);
 
-  Span<uint8_t> Data() { return Span(mData.Elements(), mData.Length()); };
+  Span<uint8_t> Data() {
+    return mAdoptedData
+               ? Span(mAdoptedData.get() + mAdoptedDataOffset, mAdoptedDataLen)
+               : Span(mCopiedData.Elements(), mCopiedData.Length());
+  }
 
  private:
   ~AudioDataResource() = default;
   // It's always possible for the allocation to fail -- the size is
   // controled by script.
-  FallibleTArray<uint8_t> mData;
+  FallibleTArray<uint8_t> mCopiedData;
+  UniquePtr<uint8_t[], JS::FreePolicy> mAdoptedData;
+  size_t mAdoptedDataOffset;
+  size_t mAdoptedDataLen;
 };
 
 struct AudioDataSerializedData {

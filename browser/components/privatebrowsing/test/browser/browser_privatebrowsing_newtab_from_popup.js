@@ -6,26 +6,14 @@
  * This is a regression test for bug 1202634.
  */
 
-// We're able to sidestep some quote-escaping issues when
-// nesting data URI's by encoding the second data URI in
-// base64.
-const POPUP_BODY_BASE64 = btoa(`<a href="http://example.com/" target="_blank"
-                                   id="second">
-                                  Now click this
-                                </a>`);
-const POPUP_LINK = `data:text/html;charset=utf-8;base64,${POPUP_BODY_BASE64}`;
-const WINDOW_BODY = `data:text/html,
-                     <a href="%23" id="first"
-                        onclick="window.open('${POPUP_LINK}', '_blank',
-                                             'width=630,height=500')">
-                       First click this.
-                     </a>`;
+const PATH = getRootDirectory(gTestPath).replace(
+  "chrome://mochitests/content",
+  "https://example.com"
+);
+const POPUP_LINK = PATH + "file_newtab_from_popup.html";
+const WINDOW_SOURCE = PATH + "file_newtab_from_popup_source.html";
 
 add_task(async function test_private_popup_window_opens_private_tabs() {
-  // allow top level data: URI navigations, otherwise clicking a data: link fails
-  await SpecialPowers.pushPrefEnv({
-    set: [["security.data_uri.block_toplevel_data_uri_navigations", false]],
-  });
   let privWin = await BrowserTestUtils.openNewBrowserWindow({ private: true });
 
   // Sanity check - this browser better be private.
@@ -37,7 +25,7 @@ add_task(async function test_private_popup_window_opens_private_tabs() {
   // First, open a private browsing window, and load our
   // testing page.
   let privBrowser = privWin.gBrowser.selectedBrowser;
-  BrowserTestUtils.startLoadingURIString(privBrowser, WINDOW_BODY);
+  BrowserTestUtils.startLoadingURIString(privBrowser, WINDOW_SOURCE);
   await BrowserTestUtils.browserLoaded(privBrowser);
 
   // Next, click on the link in the testing page, and ensure

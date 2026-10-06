@@ -46,6 +46,10 @@
             "type": "string",
             "format": "uri"
           },
+          "name": {
+            "description": "The visible name of this Taskbar Tab.",
+            "type": "string"
+          },
           "shortcutRelativePath": {
             "description": "The path to the shortcut relative to the Start Menu/Programs folder.",
             "type": "string"

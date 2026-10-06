@@ -1,159 +1,100 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-add_task(async function () {
-  // allow top level data: URI navigations, otherwise loading data: URIs
-  // in toplevel windows fail.
+function waitForBlockedDataURIWarning() {
+  return new Promise(resolve => {
+    Services.console.registerListener(function onConsoleMessage(msg) {
+      if (!(msg instanceof Ci.nsIScriptError)) {
+        return;
+      }
+
+      if (msg.category != "DATA_URI_BLOCKED") {
+        return;
+      }
+
+      Services.console.unregisterListener(onConsoleMessage);
+      resolve();
+    });
+  });
+}
+
+// The old view-image subtests used data:text/html as image/background sources.
+// With top-level data: navigations blocked, those no longer test useful image
+// context-menu behavior; data:image view-image coverage lives in contextMenu
+// tests. Keep the remaining data: frame context-menu path here.
+add_task(async function test_show_only_this_frame_data_uri_is_blocked() {
   await SpecialPowers.pushPrefEnv({
-    set: [["security.data_uri.block_toplevel_data_uri_navigations", false]],
+    set: [["security.data_uri.block_toplevel_data_uri_navigations", true]],
   });
 
-  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, null, false);
-
-  tab.linkedBrowser.stop(); // stop the about:blank load
-
-  let writeDomainURL = encodeURI(
-    "data:text/html,<script>document.write(document.domain);</script>"
+  let tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "http://mochi.test:8888/"
   );
 
-  let tests = [
-    {
-      name: "view image with background image",
-      url: "http://mochi.test:8888/",
-      element: "body",
-      opensNewTab: true,
-      go() {
-        return SpecialPowers.spawn(
-          gBrowser.selectedBrowser,
-          [{ writeDomainURL }],
-          async function (arg) {
-            let contentBody = content.document.body;
-            contentBody.style.backgroundImage =
-              "url('" + arg.writeDomainURL + "')";
-
-            return "context-viewimage";
-          }
-        );
-      },
-      verify(browser) {
-        return SpecialPowers.spawn(browser, [], async function () {
-          Assert.equal(
-            content.document.body.textContent,
-            "",
-            "no domain was inherited for view image with background image"
-          );
-        });
-      },
-    },
-    {
-      name: "view image",
-      url: "http://mochi.test:8888/",
-      element: "img",
-      opensNewTab: true,
-      go() {
-        return SpecialPowers.spawn(
-          gBrowser.selectedBrowser,
-          [{ writeDomainURL }],
-          async function (arg) {
-            let doc = content.document;
-            let img = doc.createElement("img");
-            img.height = 100;
-            img.width = 100;
-            img.setAttribute("src", arg.writeDomainURL);
-            doc.body.insertBefore(img, doc.body.firstElementChild);
-
-            return "context-viewimage";
-          }
-        );
-      },
-      verify(browser) {
-        return SpecialPowers.spawn(browser, [], async function () {
-          Assert.equal(
-            content.document.body.textContent,
-            "",
-            "no domain was inherited for view image"
-          );
-        });
-      },
-    },
-    {
-      name: "show only this frame",
-      url: "http://mochi.test:8888/",
-      element: "html",
-      frameIndex: 0,
-      go() {
-        return SpecialPowers.spawn(
-          gBrowser.selectedBrowser,
-          [{ writeDomainURL }],
-          async function (arg) {
-            let doc = content.document;
-            let iframe = doc.createElement("iframe");
-            iframe.setAttribute("src", arg.writeDomainURL);
-            doc.body.insertBefore(iframe, doc.body.firstElementChild);
-
-            // Wait for the iframe to load.
-            return new Promise(resolve => {
-              iframe.addEventListener(
-                "load",
-                function () {
-                  resolve("context-showonlythisframe");
-                },
-                { capture: true, once: true }
-              );
-            });
-          }
-        );
-      },
-      verify(browser) {
-        return SpecialPowers.spawn(browser, [], async function () {
-          Assert.equal(
-            content.document.body.textContent,
-            "",
-            "no domain was inherited for 'show only this frame'"
-          );
-        });
-      },
-    },
-  ];
-
-  let contentAreaContextMenu = document.getElementById(
-    "contentAreaContextMenu"
-  );
-
-  for (let test of tests) {
-    let loadedPromise = BrowserTestUtils.browserLoaded(
-      gBrowser.selectedBrowser
+  try {
+    let writeDomainURL = encodeURI(
+      "data:text/html,<script>parent.postMessage(document.domain, '*');</script>"
     );
-    BrowserTestUtils.startLoadingURIString(gBrowser, test.url);
-    await loadedPromise;
 
-    info("Run subtest " + test.name);
-    let commandToRun = await test.go();
+    let iframeDomain = await SpecialPowers.spawn(
+      tab.linkedBrowser,
+      [writeDomainURL],
+      async function (dataURL) {
+        let doc = content.document;
+        let iframe = doc.createElement("iframe");
+        iframe.style.width = "100px";
+        iframe.style.height = "100px";
+        let receivedDomain;
 
+        function onMessage(event) {
+          if (event.source === iframe.contentWindow) {
+            receivedDomain = event.data;
+          }
+        }
+
+        content.addEventListener("message", onMessage, { capture: true });
+        try {
+          let iframeLoaded = new Promise(resolve => {
+            iframe.addEventListener("load", resolve, { once: true });
+          });
+
+          iframe.setAttribute("src", dataURL);
+          doc.body.insertBefore(iframe, doc.body.firstElementChild);
+          await iframeLoaded;
+          await ContentTaskUtils.waitForCondition(
+            () => receivedDomain !== undefined,
+            "data: URI iframe posted its document.domain"
+          );
+          return receivedDomain;
+        } finally {
+          content.removeEventListener("message", onMessage, { capture: true });
+        }
+      }
+    );
+
+    is(iframeDomain, "", "no domain was inherited for data: URI iframe");
+
+    let contentAreaContextMenu = document.getElementById(
+      "contentAreaContextMenu"
+    );
     let popupShownPromise = BrowserTestUtils.waitForEvent(
       contentAreaContextMenu,
       "popupshown"
     );
 
-    let browsingContext = gBrowser.selectedBrowser.browsingContext;
-    if (test.frameIndex != null) {
-      browsingContext = browsingContext.children[test.frameIndex];
-    }
-
-    await new Promise(r => {
-      SimpleTest.executeSoon(r);
+    await new Promise(resolve => {
+      SimpleTest.executeSoon(resolve);
     });
 
-    // Sometimes, the iframe test fails as the child iframe hasn't finishing layout
-    // yet. Try again in this case.
     while (true) {
       try {
         await BrowserTestUtils.synthesizeMouse(
-          test.element,
+          "html",
           3,
           3,
           { type: "contextmenu", button: 2 },
-          browsingContext
+          tab.linkedBrowser.browsingContext.children[0]
         );
       } catch (ex) {
         continue;
@@ -162,34 +103,30 @@ add_task(async function () {
     }
 
     await popupShownPromise;
-    info("onImage: " + gContextMenu.onImage);
 
-    let loadedAfterCommandPromise = test.opensNewTab
-      ? BrowserTestUtils.waitForNewTab(gBrowser, null, true)
-      : BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+    let subMenu = document.getElementById("frame");
+    let subMenuShown = BrowserTestUtils.waitForEvent(subMenu, "popupshown");
+    subMenu.openMenu(true);
+    await subMenuShown;
+
+    let originalURI = tab.linkedBrowser.currentURI.spec;
+    let warningPromise = waitForBlockedDataURIWarning();
     let popupHiddenPromise = BrowserTestUtils.waitForEvent(
       contentAreaContextMenu,
       "popuphidden"
     );
-    if (commandToRun == "context-showonlythisframe") {
-      let subMenu = document.getElementById("frame");
-      let subMenuShown = BrowserTestUtils.waitForEvent(subMenu, "popupshown");
-      subMenu.openMenu(true);
-      await subMenuShown;
-    }
-    contentAreaContextMenu.activateItem(document.getElementById(commandToRun));
-    let result = await loadedAfterCommandPromise;
-
-    await test.verify(
-      test.opensNewTab ? result.linkedBrowser : gBrowser.selectedBrowser
+    contentAreaContextMenu.activateItem(
+      document.getElementById("context-showonlythisframe")
     );
-
     await popupHiddenPromise;
+    await warningPromise;
 
-    if (test.opensNewTab) {
-      gBrowser.removeCurrentTab();
-    }
+    is(
+      tab.linkedBrowser.currentURI.spec,
+      originalURI,
+      "Show Only This Frame does not navigate top-level to a data: URI"
+    );
+  } finally {
+    await BrowserTestUtils.removeTab(tab);
   }
-
-  gBrowser.removeCurrentTab();
 });

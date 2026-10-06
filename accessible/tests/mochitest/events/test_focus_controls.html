@@ -19,29 +19,55 @@
           src="../states.js"></script>
 
   <script type="application/javascript">
-    // gA11yEventDumpToConsole = true;
 
-    var gQueue = null;
-    function doTests() {
-      gQueue = new eventQueue(EVENT_FOCUS);
+    async function doTests() {
+      let focused = waitForEvent(EVENT_FOCUS, "textbox");
+      selectAllTextAndFocus("textbox");
+      await focused;
+      testStates(getAccessible("textbox"), STATE_FOCUSED);
 
-      gQueue.push(new synthFocus("textbox"));
-      gQueue.push(new synthFocus("textarea"));
-      gQueue.push(new synthFocus("button1"));
-      gQueue.push(new synthFocus("button2"));
-      gQueue.push(new synthFocus("checkbox"));
-      gQueue.push(new synthFocus("radio1"));
-      gQueue.push(new synthDownKey("radio1", new focusChecker("radio2")));
+      focused = waitForEvent(EVENT_FOCUS, "textarea");
+      selectAllTextAndFocus("textarea");
+      await focused;
+      testStates(getAccessible("textarea"), STATE_FOCUSED);
+
+      focused = waitForEvent(EVENT_FOCUS, "button1");
+      selectAllTextAndFocus("button1");
+      await focused;
+      testStates(getAccessible("button1"), STATE_FOCUSED);
+
+      focused = waitForEvent(EVENT_FOCUS, "button2");
+      selectAllTextAndFocus("button2");
+      await focused;
+      testStates(getAccessible("button2"), STATE_FOCUSED);
+
+      focused = waitForEvent(EVENT_FOCUS, "checkbox");
+      selectAllTextAndFocus("checkbox");
+      await focused;
+      testStates(getAccessible("checkbox"), STATE_FOCUSED);
+
+      focused = waitForEvent(EVENT_FOCUS, "radio1");
+      selectAllTextAndFocus("radio1");
+      await focused;
+      testStates(getAccessible("radio1"), STATE_FOCUSED);
+
+      focused = waitForEvent(EVENT_FOCUS, "radio2");
+      synthesizeKey("KEY_ArrowDown", {});
+      await focused;
+      testStates(getAccessible("radio2"), STATE_FOCUSED);
 
       // no focus events for checkbox or radio inputs when they are checked
       // programmatically
-      gQueue.push(new changeCurrentItem("checkbox"));
-      gQueue.push(new changeCurrentItem("radio1"));
+      getNode("checkbox").checked = true;
+      getNode("radio1").checked = true;
 
       let fileBrowseButton = getAccessible("file");
-      gQueue.push(new synthFocus("file", new focusChecker(fileBrowseButton)));
+      focused = waitForEvent(EVENT_FOCUS, fileBrowseButton);
+      selectAllTextAndFocus("file");
+      await focused;
+      testStates(fileBrowseButton, STATE_FOCUSED);
 
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

@@ -18,7 +18,7 @@ Firefox employs several techniques to orchestrate network request scheduling:
 ### Class of Service
 - Categorizes requests based on context or request target. See [nsIClassOfService.idl](https://searchfox.org/mozilla-central/rev/f549a50b1e39b1e6bea19912d92545c4c0a06b7b/netwerk/base/nsIClassOfService.idl#7-15)
 - Categories (e.g. [Leader, Normal, Follower, Speculative, etc](https://searchfox.org/mozilla-central/rev/f549a50b1e39b1e6bea19912d92545c4c0a06b7b/netwerk/base/nsIClassOfService.idl#69-102)) can affect both network and cache behaviours
-- May defer scheduling of certain requests (e.g., trackers classified as `ClassOfService::Tail`).
+- May defer scheduling of certain requests (e.g., trackers classified as `ClassOfService::Tail`). For detailed information about resource tailing, see [Firefox Resource Tailing Documentation](resource_tailing.md).
 - Also defines [base urgency for a request](https://searchfox.org/mozilla-central/rev/f2c181a7ab3bfea4d2266521e6eac713630479b3/netwerk/protocol/http/nsHttpHandler.cpp#794-818)
 
 ## Priority
@@ -54,8 +54,3 @@ These priorities are calculated based on the following factors:
 | **Image (About to Be Rendered)**     | `(0)`                                    | `PRIORITY_HIGH, -10`                                                                 | `3`                         | `true`          | See: [image_layout_network_priority](https://searchfox.org/mozilla-central/rev/a13db27562f9237db97e2ea5b01dc879d5b55b74/modules/libpref/init/StaticPrefList.yaml#7429-7431) and [bug 1915817](https://bugzilla.mozilla.org/show_bug.cgi?id=1915817)                                   |
 | **Fetch**                            | `(0)`                                    | `PRIORITY_NORMAL, 0`<br>`fetchpriority=high: PRIORITY_HIGH, -10`<br>`fetchpriority=low: PRIORITY_LOW, 10` | `4`<br>`fetchpriority=high: 3`<br>`fetchpriority=low: 5` | `false`         |                                                                           |
 | **Tracker (Script)**                 | `Tail (256), Unblocked (16)`             | `PRIORITY_NORMAL, 0`                                                                 | `3`                                           | `false`         | Request is tailed, i.e., deferred by a constant multiplied by the number of pending requests. |
-
----
-
-
----

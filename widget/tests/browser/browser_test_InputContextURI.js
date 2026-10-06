@@ -6,7 +6,10 @@
 const gDOMWindowUtils = EventUtils._getDOMWindowUtils(window);
 
 function promiseURLBarFocus() {
-  const waitForFocusInURLBar = BrowserTestUtils.waitForEvent(gURLBar, "focus");
+  const waitForFocusInURLBar = BrowserTestUtils.waitForEvent(
+    gURLBar.inputField,
+    "focus"
+  );
   gURLBar.blur();
   gURLBar.focus();
   return Promise.all([
@@ -118,9 +121,6 @@ add_task(async function test_input_in_data() {
 });
 
 add_task(async function test_omit_private_things_in_URL() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["network.auth.confirmAuth.enabled", false]],
-  });
   await promiseURLBarFocus();
 
   await BrowserTestUtils.withNewTab(

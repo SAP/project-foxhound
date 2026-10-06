@@ -5,7 +5,7 @@ allowlist = {
     'nightly': {},
     }
 
-all_platforms = ['win64', 'win64-aarch64', 'win32', 'linux32', 'linux64', 'macosx64']
+all_platforms = ['win64', 'win64-aarch64', 'win32', 'linux64', 'macosx64']
 
 for platform in all_platforms:
     allowlist['nightly'][platform] = [
@@ -14,9 +14,6 @@ for platform in all_platforms:
 
 allowlist['nightly']['macosx64'] += [
     'ac_add_options --enable-instruments',
-    'ac_add_options --enable-dtrace',
-    'if test `uname -s` != Linux; then',
-    'fi',
 ]
 
 allowlist['nightly']['win64'] += [
@@ -29,9 +26,6 @@ for platform in all_platforms:
         'ac_add_options --enable-official-branding',
     ]
 
-allowlist['release']['linux32'] += [
-    'export MOZILLA_OFFICIAL=1',
-]
 allowlist['release']['linux64'] += [
     'export MOZILLA_OFFICIAL=1',
 ]

@@ -1,0 +1,567 @@
+{
+  "gray": {
+    "0": {
+      "value": "#fbfbfe"
+    },
+    "10": {
+      "override": true,
+      "value": "unset"
+    },
+    "15": {
+      "override": true,
+      "value": "unset"
+    },
+    "20": {
+      "value": "#f0f0f4"
+    },
+    "25": {
+      "override": true,
+      "value": "unset"
+    },
+    "30": {
+      "value": "#bac2ca"
+    },
+    "35": {
+      "override": true,
+      "value": "unset"
+    },
+    "40": {
+      "override": true,
+      "value": "unset"
+    },
+    "45": {
+      "override": true,
+      "value": "unset"
+    },
+    "50": {
+      "value": "#bfbfc9"
+    },
+    "55": {
+      "override": true,
+      "value": "unset"
+    },
+    "60": {
+      "value": "#8f8f9d"
+    },
+    "65": {
+      "override": true,
+      "value": "unset"
+    },
+    "70": {
+      "value": "#5b5b66"
+    },
+    "75": {
+      "override": true,
+      "value": "unset"
+    },
+    "80": {
+      "value": "#23222b"
+    },
+    "85": {
+      "override": true,
+      "value": "unset"
+    },
+    "90": {
+      "value": "#1c1b22"
+    },
+    "100": {
+      "value": "#15141a"
+    }
+  },
+  "red": {
+    "0": {
+      "value": "oklch(97% 0.05 15)"
+    },
+    "10": {
+      "value": "oklch(90% 0.1 15)"
+    },
+    "20": {
+      "value": "oklch(83% 0.14 15)"
+    },
+    "30": {
+      "value": "oklch(76% 0.17 15)"
+    },
+    "40": {
+      "value": "oklch(69% 0.19 15)"
+    },
+    "50": {
+      "value": "oklch(62% 0.21 15)"
+    },
+    "60": {
+      "value": "oklch(55% 0.21 15)"
+    },
+    "70": {
+      "value": "oklch(48% 0.2 15)"
+    },
+    "80": {
+      "value": "oklch(41% 0.17 15)"
+    },
+    "90": {
+      "value": "oklch(34% 0.14 15)"
+    },
+    "100": {
+      "value": "oklch(27% 0.1 15)"
+    },
+    "110": {
+      "value": "oklch(20% 0.05 15)"
+    }
+  },
+  "orange": {
+    "0": {
+      "value": "oklch(97% 0.05 50)"
+    },
+    "10": {
+      "value": "oklch(90% 0.10 50)"
+    },
+    "20": {
+      "value": "oklch(86% 0.14 50)"
+    },
+    "30": {
+      "value": "oklch(79% 0.17 50)"
+    },
+    "40": {
+      "value": "oklch(72% 0.19 50)"
+    },
+    "50": {
+      "value": "oklch(65% 0.21 50)"
+    },
+    "60": {
+      "value": "oklch(58% 0.21 50)"
+    },
+    "70": {
+      "value": "oklch(48% 0.20 50)"
+    },
+    "80": {
+      "value": "oklch(41% 0.17 50)"
+    },
+    "90": {
+      "value": "oklch(34% 0.14 50)"
+    },
+    "100": {
+      "value": "oklch(27% 0.10 50)"
+    },
+    "110": {
+      "value": "oklch(20% 0.05 50)"
+    }
+  },
+  "yellow": {
+    "0": {
+      "value": "oklch(97% 0.05 90)"
+    },
+    "10": {
+      "value": "oklch(93% 0.1 90)"
+    },
+    "20": {
+      "value": "oklch(86% 0.14 90)"
+    },
+    "30": {
+      "value": "oklch(79% 0.2 90)"
+    },
+    "40": {
+      "value": "oklch(72% 0.22 90)"
+    },
+    "50": {
+      "value": "oklch(65% 0.24 90)"
+    },
+    "60": {
+      "value": "oklch(58% 0.24 90)"
+    },
+    "70": {
+      "value": "oklch(51% 0.23 90)"
+    },
+    "80": {
+      "value": "oklch(41% 0.2 90)"
+    },
+    "90": {
+      "value": "oklch(34% 0.17 90)"
+    },
+    "100": {
+      "value": "oklch(27% 0.13 90)"
+    },
+    "110": {
+      "value": "oklch(20% 0.08 90)"
+    }
+  },
+  "green": {
+    "0": {
+      "value": "oklch(97% 0.05 145)"
+    },
+    "10": {
+      "value": "oklch(90% 0.1 145)"
+    },
+    "20": {
+      "value": "oklch(83% 0.14 145)"
+    },
+    "30": {
+      "value": "oklch(76% 0.17 145)"
+    },
+    "40": {
+      "value": "oklch(69% 0.19 145)"
+    },
+    "50": {
+      "value": "oklch(62% 0.21 145)"
+    },
+    "60": {
+      "value": "oklch(55% 0.21 145)"
+    },
+    "70": {
+      "value": "oklch(48% 0.2 145)"
+    },
+    "80": {
+      "value": "oklch(41% 0.17 145)"
+    },
+    "90": {
+      "value": "oklch(34% 0.14 145)"
+    },
+    "100": {
+      "value": "oklch(27% 0.1 145)"
+    },
+    "110": {
+      "value": "oklch(20% 0.05 145)"
+    }
+  },
+  "cyan": {
+    "0": {
+      "value": "oklch(97% 0.05 205)"
+    },
+    "10": {
+      "value": "oklch(90% 0.07 205)"
+    },
+    "20": {
+      "value": "oklch(83% 0.11 205)"
+    },
+    "30": {
+      "value": "oklch(76% 0.14 205)"
+    },
+    "40": {
+      "value": "oklch(69% 0.19 205)"
+    },
+    "50": {
+      "value": "oklch(62% 0.21 205)"
+    },
+    "60": {
+      "value": "oklch(55% 0.21 205)"
+    },
+    "70": {
+      "value": "oklch(48% 0.2 205)"
+    },
+    "80": {
+      "value": "oklch(41% 0.17 205)"
+    },
+    "90": {
+      "value": "oklch(34% 0.14 205)"
+    },
+    "100": {
+      "value": "oklch(27% 0.1 205)"
+    },
+    "110": {
+      "value": "oklch(20% 0.05 205)"
+    }
+  },
+  "blue": {
+    "0": {
+      "value": "oklch(97% 0.05 260)"
+    },
+    "10": {
+      "value": "oklch(90% 0.13 260)"
+    },
+    "20": {
+      "value": "oklch(83% 0.17 260)"
+    },
+    "30": {
+      "value": "oklch(76% 0.2 260)"
+    },
+    "40": {
+      "value": "oklch(69% 0.22 260)"
+    },
+    "50": {
+      "value": "oklch(62% 0.24 260)"
+    },
+    "60": {
+      "value": "oklch(55% 0.24 260)"
+    },
+    "70": {
+      "value": "oklch(48% 0.2 260)"
+    },
+    "80": {
+      "value": "oklch(41% 0.17 260)"
+    },
+    "90": {
+      "value": "oklch(34% 0.14 260)"
+    },
+    "100": {
+      "value": "oklch(27% 0.1 260)"
+    },
+    "110": {
+      "value": "oklch(20% 0.05 260)"
+    }
+  },
+  "violet": {
+    "0": {
+      "value": "oklch(97% 0.05 290)"
+    },
+    "10": {
+      "value": "oklch(90% 0.13 290)"
+    },
+    "20": {
+      "value": "oklch(83% 0.17 290)"
+    },
+    "30": {
+      "value": "oklch(76% 0.2 290)"
+    },
+    "40": {
+      "value": "oklch(69% 0.22 290)"
+    },
+    "50": {
+      "value": "oklch(62% 0.24 290)"
+    },
+    "60": {
+      "value": "oklch(55% 0.24 290)"
+    },
+    "70": {
+      "value": "oklch(48% 0.2 290)"
+    },
+    "80": {
+      "value": "oklch(41% 0.17 290)"
+    },
+    "90": {
+      "value": "oklch(34% 0.14 290)"
+    },
+    "100": {
+      "value": "oklch(27% 0.1 290)"
+    },
+    "110": {
+      "value": "oklch(20% 0.05 290)"
+    }
+  },
+  "purple": {
+    "0": {
+      "value": "oklch(97% 0.05 315)"
+    },
+    "10": {
+      "value": "oklch(90% 0.1 315)"
+    },
+    "20": {
+      "value": "oklch(83% 0.14 315)"
+    },
+    "30": {
+      "value": "oklch(76% 0.17 315)"
+    },
+    "40": {
+      "value": "oklch(69% 0.19 315)"
+    },
+    "50": {
+      "value": "oklch(62% 0.21 315)"
+    },
+    "60": {
+      "value": "oklch(55% 0.21 315)"
+    },
+    "70": {
+      "value": "oklch(48% 0.2 315)"
+    },
+    "80": {
+      "value": "oklch(41% 0.17 315)"
+    },
+    "90": {
+      "value": "oklch(34% 0.14 315)"
+    },
+    "100": {
+      "value": "oklch(27% 0.1 315)"
+    },
+    "110": {
+      "value": "oklch(20% 0.05 315)"
+    }
+  },
+  "pink": {
+    "0": {
+      "value": "oklch(97% 0.05 360)"
+    },
+    "10": {
+      "value": "oklch(90% 0.1 360)"
+    },
+    "20": {
+      "value": "oklch(83% 0.14 360)"
+    },
+    "30": {
+      "value": "oklch(76% 0.17 360)"
+    },
+    "40": {
+      "value": "oklch(69% 0.19 360)"
+    },
+    "50": {
+      "value": "oklch(62% 0.21 360)"
+    },
+    "60": {
+      "value": "oklch(55% 0.21 360)"
+    },
+    "70": {
+      "value": "oklch(48% 0.2 360)"
+    },
+    "80": {
+      "value": "oklch(41% 0.17 360)"
+    },
+    "90": {
+      "value": "oklch(34% 0.14 360)"
+    },
+    "100": {
+      "value": "oklch(27% 0.1 360)"
+    },
+    "110": {
+      "value": "oklch(20% 0.05 360)"
+    }
+  },
+  "white": {
+    "@base": {
+      "value": "#ffffff"
+    },
+    "alpha": {
+      "10": {
+        "value": "oklch(1 0 0 / 10%)"
+      },
+      "20": {
+        "value": "oklch(1 0 0 / 20%)"
+      },
+      "30": {
+        "value": "oklch(1 0 0 / 30%)"
+      },
+      "40": {
+        "value": "oklch(1 0 0 / 40%)"
+      },
+      "50": {
+        "value": "oklch(1 0 0 / 50%)"
+      },
+      "60": {
+        "value": "oklch(1 0 0 / 60%)"
+      },
+      "70": {
+        "value": "oklch(1 0 0 / 70%)"
+      },
+      "80": {
+        "value": "oklch(1 0 0 / 80%)"
+      },
+      "90": {
+        "value": "oklch(1 0 0 / 90%)"
+      }
+    }
+  },
+  "black": {
+    "@base": {
+      "value": "#000000"
+    },
+    "alpha": {
+      "10": {
+        "value": "oklch(0 0 0 / 10%)"
+      },
+      "20": {
+        "value": "oklch(0 0 0 / 20%)"
+      },
+      "30": {
+        "value": "oklch(0 0 0 / 30%)"
+      },
+      "40": {
+        "value": "oklch(0 0 0 / 40%)"
+      },
+      "50": {
+        "value": "oklch(0 0 0 / 50%)"
+      },
+      "60": {
+        "value": "oklch(0 0 0 / 60%)"
+      },
+      "70": {
+        "value": "oklch(0 0 0 / 70%)"
+      },
+      "80": {
+        "value": "oklch(0 0 0 / 80%)"
+      },
+      "90": {
+        "value": "oklch(0 0 0 / 90%)"
+      }
+    }
+  },
+  "violet-desaturated": {
+    "0": {
+      "override": true,
+      "value": "unset"
+    },
+    "10": {
+      "override": true,
+      "value": "unset"
+    },
+    "20": {
+      "override": true,
+      "value": "unset"
+    },
+    "30": {
+      "override": true,
+      "value": "unset"
+    },
+    "40": {
+      "override": true,
+      "value": "unset"
+    },
+    "50": {
+      "override": true,
+      "value": "unset"
+    },
+    "60": {
+      "override": true,
+      "value": "unset"
+    },
+    "70": {
+      "override": true,
+      "value": "unset"
+    },
+    "80": {
+      "override": true,
+      "value": "unset"
+    },
+    "90": {
+      "override": true,
+      "value": "unset"
+    }
+  },
+  "accent": {
+    "primary": {
+      "@base": {
+        "value": {
+          "light": "{color.blue.60}",
+          "dark": "{color.cyan.30}",
+          "nativeTheme": "AccentColor",
+          "forcedColors": "ButtonText"
+        }
+      },
+      "hover": {
+        "value": {
+          "forcedColors": "SelectedItem",
+          "light": "{color.blue.70}",
+          "dark": "{color.cyan.20}",
+          "nativeTheme": "color-mix(in srgb, black 10%, {color.accent.primary.@base})"
+        }
+      },
+      "active": {
+        "value": {
+          "forcedColors": "{color.accent.primary.hover}",
+          "light": "{color.blue.80}",
+          "dark": "{color.cyan.10}",
+          "nativeTheme": "color-mix(in srgb, black 20%, {color.accent.primary.@base})"
+        }
+      },
+      "selected": {
+        "value": {
+          "forcedColors": "SelectedItem",
+          "light": "{color.blue.60}",
+          "dark": "{color.cyan.30}",
+          "nativeTheme": "SelectedItem"
+        }
+      }
+    },
+    "attention": {
+      "value": {
+        "prefersContrast": "AccentColor",
+        "light": "#2ac3a2",
+        "dark": "#54ffbd",
+        "nativeTheme": "AccentColor"
+      }
+    }
+  }
+}

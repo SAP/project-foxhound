@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+
+<?csp default-src chrome:; ?>
+
+<!DOCTYPE window>
+
+<window
+  data-l10n-id="protected-auth-window"
+  xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+  xmlns:html="http://www.w3.org/1999/xhtml"
+>
+  <dialog buttons="cancel">
+    <linkset>
+      <html:link rel="stylesheet" href="chrome://global/skin/global.css" />
+      <html:link rel="localization" href="security/pippki/pippki.ftl" />
+    </linkset>
+
+    <script src="chrome://pippki/content/protectedAuth.js" />
+
+    <vbox style="margin: 1em; min-width: 25em; max-width: 50em">
+      <description id="tokenName" style="white-space: pre-wrap"></description>
+    </vbox>
+  </dialog>
+</window>

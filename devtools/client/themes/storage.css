@@ -85,6 +85,7 @@ a {
 
 #expires,
 #lastAccessed,
+#updateTime,
 #creationTime {
   min-width: 115px;
 }
@@ -136,6 +137,11 @@ a {
 
 #storage-toolbar .add-button::before {
   background-image: url("chrome://devtools/skin/images/add.svg");
+  -moz-user-focus: normal;
+}
+
+#storage-toolbar .delete-all-button::before {
+  background-image: url("chrome://devtools/skin/images/clear.svg");
   -moz-user-focus: normal;
 }
 

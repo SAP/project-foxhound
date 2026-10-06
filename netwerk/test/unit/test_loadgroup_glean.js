@@ -4,6 +4,10 @@
 
 "use strict";
 
+const { NodeHTTP2Server } = ChromeUtils.importESModule(
+  "resource://testing-common/NodeServer.sys.mjs"
+);
+
 const network = Glean.network;
 
 const page_probes = [

@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 3; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -48,7 +47,7 @@ nsresult nsOSHelperAppServiceChild::ExternalProtocolHandlerExists(
   LOG("nsOSHelperAppServiceChild::ExternalProtocolHandlerExists(): "
       "protocol: %s, result: %" PRId32,
       aProtocolScheme, static_cast<uint32_t>(rv));
-  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
   return rv;
 }
 
@@ -75,7 +74,7 @@ nsOSHelperAppServiceChild::GetApplicationDescription(const nsACString& aScheme,
       "scheme: %s, result: %" PRId32 ", description: %s",
       PromiseFlatCString(aScheme).get(), static_cast<uint32_t>(rv),
       NS_ConvertUTF16toUTF8(aRetVal).get());
-  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
   return rv;
 }
 
@@ -97,7 +96,7 @@ nsOSHelperAppServiceChild::GetMIMEInfoFromOS(const nsACString& aMIMEType,
       "MIME type: %s, extension: %s, result: %" PRId32,
       PromiseFlatCString(aMIMEType).get(), PromiseFlatCString(aFileExt).get(),
       static_cast<uint32_t>(rv));
-  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
   return rv;
 }
 

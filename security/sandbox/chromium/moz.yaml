@@ -10,8 +10,8 @@ origin:
 
   url: https://chromium.googlesource.com/chromium/src/
 
-  release: 0085b3faa4477bd52f03aeb1ee1097fa54a1bd55 (Fri May 01 21:43:25 2020).
-  revision: 0085b3faa4477bd52f03aeb1ee1097fa54a1bd55
+  release: 6d3cc0dac5057925e096b1329680124b19f35842 (Fri Jan 12 17:18:37 2024).
+  revision: 6d3cc0dac5057925e096b1329680124b19f35842
 
   license: BSD-3-Clause
 
@@ -21,55 +21,98 @@ vendoring:
   flavor: individual-files
   tracking: commit
 
+  skip-vendoring-steps:
+    - update-moz-build
+
   individual-files-default-upstream: ""
   individual-files-default-destination: "{vendor_dir}/"
   individual-files-list:
+    - base/allocator/partition_allocator/src/partition_alloc/allocation_guard.h
+    - base/allocator/partition_allocator/src/partition_alloc/flags.h
+    - base/allocator/partition_allocator/src/partition_alloc/oom.h
+    - base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/augmentations/compiler_specific.h
+    - base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/compiler_specific.h
+    - base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/component_export.h  
+    - base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/cxx20_is_constant_evaluated.h
+    - base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/thread_annotations.h
+    - base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/win/win_handle_types.h
+    - base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/win/win_handle_types_list.inc
+    - base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/win/windows_types.h
+    - base/allocator/partition_allocator/src/partition_alloc/partition_alloc_config.h
+    - base/allocator/partition_allocator/src/partition_alloc/partition_alloc_forward.h
+    - base/allocator/partition_allocator/src/partition_alloc/pointers/raw_ptr.h
+    - base/allocator/partition_allocator/src/partition_alloc/pointers/raw_ptr_exclusion.h
+    - base/allocator/partition_allocator/src/partition_alloc/pointers/raw_ptr_noop_impl.h
+    - base/allocator/partition_allocator/src/partition_alloc/pointers/raw_ref.h
     - base/at_exit.cc
     - base/at_exit.h
     - base/atomic_ref_count.h
-    - base/atomic_sequence_num.h
     - base/atomicops.h
     - base/atomicops_internals_portable.h
-    - base/atomicops_internals_x86_msvc.h
+    - base/auto_reset.h
     - base/base_export.h
-    - base/base_paths.h
-    - base/base_paths_win.h
-    - base/base_switches.cc
-    - base/base_switches.h
-    - base/bind.h
-    - base/bind_helpers.h
-    - base/bind_internal.h
     - base/bit_cast.h
     - base/bits.h
-    - base/callback.h
-    - base/callback_forward.h
-    - base/callback_internal.cc
-    - base/callback_internal.h
+    - base/check.cc
+    - base/check.h
+    - base/check_op.cc
+    - base/check_op.h
     - base/compiler_specific.h
     - base/containers/adapters.h
-    - base/containers/buffer_iterator.h
     - base/containers/checked_iterators.h
     - base/containers/circular_deque.h
+    - base/containers/contains.h
+    - base/containers/contiguous_iterator.h
+    - base/containers/cxx20_erase.h
+    - base/containers/cxx20_erase_deque.h
+    - base/containers/cxx20_erase_forward_list.h
+    - base/containers/cxx20_erase_internal.h
+    - base/containers/cxx20_erase_list.h
+    - base/containers/cxx20_erase_map.h
+    - base/containers/cxx20_erase_set.h
+    - base/containers/cxx20_erase_string.h
+    - base/containers/cxx20_erase_unordered_map.h
+    - base/containers/cxx20_erase_unordered_set.h
+    - base/containers/cxx20_erase_vector.h
+    - base/containers/flat_map.h
+    - base/containers/flat_tree.h
+    - base/containers/linked_list.h
+    - base/containers/queue.h
     - base/containers/span.h
     - base/containers/stack.h
     - base/containers/util.h
     - base/containers/vector_buffer.h
     - base/cpu.cc
     - base/cpu.h
+    - base/cxx20_is_constant_evaluated.h
+    - base/cxx20_to_address.h
+    - base/dcheck_is_on.h
     - base/debug/alias.cc
     - base/debug/alias.h
+    - base/debug/crash_logging.cc
     - base/debug/crash_logging.h
-    - base/debug/debugger.h
+    - base/debug/dump_without_crashing.h
     - base/debug/leak_annotations.h
-    - base/debug/profiler.cc
     - base/debug/profiler.h
     - base/environment.cc
     - base/environment.h
-    - base/file_descriptor_posix.h
+    - base/features.h
     - base/files/file_path.h
-    - base/files/file_path_constants.cc
     - base/format_macros.h
-    - base/guid.h
+    - base/functional/bind.h
+    - base/functional/bind_internal.h
+    - base/functional/callback.h
+    - base/functional/callback_forward.h
+    - base/functional/callback_helpers.h
+    - base/functional/callback_internal.cc
+    - base/functional/callback_internal.h
+    - base/functional/callback_tags.h
+    - base/functional/disallow_unretained.h
+    - base/functional/function_ref.h
+    - base/functional/identity.h
+    - base/functional/invoke.h
+    - base/functional/not_fn.h
+    - base/functional/unretained_traits.h
     - base/hash/hash.cc
     - base/hash/hash.h
     - base/immediate_crash.h
@@ -79,24 +122,37 @@ vendoring:
     - base/location.cc
     - base/location.h
     - base/logging.h
-    - base/macros.h
-    - base/memory/aligned_memory.h
+    - base/macros/concat.h
+    - base/macros/uniquify.h
     - base/memory/free_deleter.h
-    - base/memory/platform_shared_memory_region.cc
+    - base/memory/memory_pressure_listener.h
+    - base/memory/platform_shared_memory_handle.h
     - base/memory/platform_shared_memory_region.h
-    - base/memory/platform_shared_memory_region_win.cc
     - base/memory/ptr_util.h
+    - base/memory/raw_ptr.h
+    - base/memory/raw_ptr_asan_bound_arg_tracker.h
+    - base/memory/raw_ptr_exclusion.h
+    - base/memory/raw_ref.h
     - base/memory/raw_scoped_refptr_mismatch_checker.h
     - base/memory/ref_counted.cc
     - base/memory/ref_counted.h
+    - base/memory/safe_ref_traits.h
     - base/memory/scoped_refptr.h
-    - base/memory/shared_memory_mapping.cc
+    - base/memory/shared_memory_mapper.h
     - base/memory/shared_memory_mapping.h
     - base/memory/singleton.h
-    - base/memory/unsafe_shared_memory_region.cc
     - base/memory/unsafe_shared_memory_region.h
     - base/memory/weak_ptr.h
+    - base/message_loop/message_pump.h
+    - base/message_loop/message_pump_for_io.h
+    - base/message_loop/message_pump_for_ui.h
+    - base/message_loop/message_pump_libevent.h
+    - base/message_loop/message_pump_type.h
+    - base/message_loop/message_pump_win.h
+    - base/message_loop/watchable_io_message_pump_posix.h
+    - base/metrics/field_trial_params.h
     - base/no_destructor.h
+    - base/notreached.h
     - base/numerics/checked_math.h
     - base/numerics/checked_math_impl.h
     - base/numerics/clamped_math.h
@@ -108,9 +164,11 @@ vendoring:
     - base/numerics/safe_math_arm_impl.h
     - base/numerics/safe_math_clang_gcc_impl.h
     - base/numerics/safe_math_shared_impl.h
-    - base/optional.h
-    - base/os_compat_android.h
-    - base/path_service.h
+    - base/numerics/wrapping_math.h
+    - base/observer_list.h
+    - base/observer_list_internal.h
+    - base/observer_list_types.h
+    - base/pending_task.h
     - base/posix/can_lower_nice_to.cc
     - base/posix/can_lower_nice_to.h
     - base/posix/eintr_wrapper.h
@@ -122,40 +180,42 @@ vendoring:
     - base/process/memory.h
     - base/process/process.h
     - base/process/process_handle.h
-    - base/process/process_handle_win.cc
+    - base/rand_util.cc
     - base/rand_util.h
     - base/rand_util_win.cc
+    - base/ranges/algorithm.h
+    - base/ranges/functional.h
+    - base/ranges/ranges.h
     - base/scoped_clear_last_error.h
     - base/scoped_clear_last_error_win.cc
     - base/sequence_checker.h
     - base/sequence_checker_impl.h
     - base/sequence_token.h
-    - base/sequenced_task_runner.h
-    - base/sequenced_task_runner_helpers.h
-    - base/single_thread_task_runner.h
-    - base/stl_util.h
-    - base/strings/char_traits.h
-    - base/strings/nullable_string16.cc
-    - base/strings/nullable_string16.h
     - base/strings/safe_sprintf.cc
     - base/strings/safe_sprintf.h
-    - base/strings/safe_sprintf_unittest.cc
-    - base/strings/string16.cc
-    - base/strings/string16.h
     - base/strings/string_number_conversions.cc
     - base/strings/string_number_conversions.h
-    - base/strings/string_piece.cc
+    - base/strings/string_number_conversions_internal.h
+    - base/strings/string_number_conversions_win.h
     - base/strings/string_piece.h
     - base/strings/string_piece_forward.h
     - base/strings/string_split.cc
     - base/strings/string_split.h
+    - base/strings/string_split_internal.h
+    - base/strings/string_split_win.h
     - base/strings/string_util.cc
     - base/strings/string_util.h
     - base/strings/string_util_constants.cc
+    - base/strings/string_util_impl_helpers.h
+    - base/strings/string_util_internal.h
     - base/strings/string_util_posix.h
+    - base/strings/string_util_win.cc
     - base/strings/string_util_win.h
     - base/strings/stringprintf.cc
     - base/strings/stringprintf.h
+    - base/strings/to_string.h
+    - base/strings/utf_ostream_operators.cc
+    - base/strings/utf_ostream_operators.h
     - base/strings/utf_string_conversion_utils.cc
     - base/strings/utf_string_conversion_utils.h
     - base/strings/utf_string_conversions.cc
@@ -170,29 +230,39 @@ vendoring:
     - base/synchronization/lock_impl_win.cc
     - base/synchronization/waitable_event.h
     - base/synchronization/waitable_event_posix.cc
-    - base/task_runner.h
+    - base/task/current_thread.h
+    - base/task/delay_policy.h
+    - base/task/delayed_task_handle.h
+    - base/task/post_task_and_reply_with_result_internal.h
+    - base/task/sequence_manager/task_time_observer.h
+    - base/task/sequenced_task_runner.h
+    - base/task/sequenced_task_runner_helpers.h
+    - base/task/single_thread_task_runner.h
+    - base/task/task_observer.h
+    - base/task/task_runner.h
     - base/template_util.h
     - base/third_party/cityhash/city.cc
     - base/third_party/cityhash/city.h
     - base/third_party/cityhash/COPYING
-    - base/third_party/dynamic_annotations/dynamic_annotations.h
-    - base/third_party/dynamic_annotations/LICENSE
-    - base/third_party/icu/icu_utf.cc
     - base/third_party/icu/icu_utf.h
     - base/third_party/icu/LICENSE
     - base/third_party/superfasthash/LICENSE
     - base/third_party/superfasthash/README.chromium
     - base/third_party/superfasthash/superfasthash.c
-    - base/third_party/valgrind/LICENSE
-    - base/third_party/valgrind/valgrind.h
     - base/thread_annotations.h
+    - base/threading/hang_watcher.h
     - base/threading/platform_thread.cc
     - base/threading/platform_thread.h
     - base/threading/platform_thread_internal_posix.cc
     - base/threading/platform_thread_internal_posix.h
     - base/threading/platform_thread_posix.cc
+    - base/threading/platform_thread_ref.cc
+    - base/threading/platform_thread_ref.h
     - base/threading/platform_thread_win.cc
     - base/threading/platform_thread_win.h
+    - base/threading/scoped_thread_priority.h
+    - base/threading/simple_thread.h
+    - base/threading/thread_checker.h
     - base/threading/thread_checker_impl.h
     - base/threading/thread_collision_warner.cc
     - base/threading/thread_collision_warner.h
@@ -206,40 +276,62 @@ vendoring:
     - base/threading/thread_local_storage_win.cc
     - base/threading/thread_restrictions.cc
     - base/threading/thread_restrictions.h
+    - base/threading/threading_features.h
+    - base/time/tick_clock.h
     - base/time/time.cc
     - base/time/time.h
-    - base/time/time_exploded_posix.cc
     - base/time/time_now_posix.cc
     - base/time/time_override.h
     - base/time/time_win.cc
-    - base/time/time_win_features.cc
-    - base/time/time_win_features.h
-    - base/token.cc
     - base/token.h
-    - base/tuple.h
-    - base/unguessable_token.cc
+    - base/trace_event/base_tracing.h
+    - base/trace_event/base_tracing_forward.h
+    - base/trace_event/common/trace_event_common.h
+    - base/trace_event/memory_allocator_dump_guid.h
+    - base/trace_event/trace_event_stub.cc
+    - base/trace_event/trace_event_stub.h
+    - base/types/always_false.h
+    - base/types/pass_key.h
+    - base/types/strong_alias.h
+    - base/types/supports_ostream_operator.h
     - base/unguessable_token.h
     - base/version.cc
     - base/version.h
+    - base/win/access_control_list.cc
+    - base/win/access_control_list.h
+    - base/win/access_token.cc
+    - base/win/access_token.h
     - base/win/current_module.h
+    - base/win/message_window.h
     - base/win/pe_image.cc
     - base/win/pe_image.h
     - base/win/scoped_handle.cc
     - base/win/scoped_handle.h
     - base/win/scoped_handle_verifier.cc
     - base/win/scoped_handle_verifier.h
+    - base/win/scoped_localalloc.h
     - base/win/scoped_process_information.cc
     - base/win/scoped_process_information.h
+    - base/win/security_descriptor.cc
+    - base/win/security_descriptor.h
+    - base/win/security_util.cc
+    - base/win/security_util.h
+    - base/win/sid.cc
+    - base/win/sid.h
     - base/win/startup_information.cc
     - base/win/startup_information.h
     - base/win/static_constants.cc
     - base/win/static_constants.h
+    - base/win/win_handle_types.h
+    - base/win/win_handle_types_list.inc
     - base/win/windows_types.h
     - base/win/windows_version.cc
     - base/win/windows_version.h
     - build/build_config.h
     - build/buildflag.h
     - LICENSE
+    - sandbox/features.cc
+    - sandbox/features.h
     - sandbox/linux/bpf_dsl/bpf_dsl.cc
     - sandbox/linux/bpf_dsl/bpf_dsl.h
     - sandbox/linux/bpf_dsl/bpf_dsl_forward.h
@@ -259,42 +351,32 @@ vendoring:
     - sandbox/linux/bpf_dsl/syscall_set.cc
     - sandbox/linux/bpf_dsl/syscall_set.h
     - sandbox/linux/bpf_dsl/trap_registry.h
-    - sandbox/linux/seccomp-bpf/bpf_tester_compatibility_delegate.h
-    - sandbox/linux/seccomp-bpf/bpf_tests.h
-    - sandbox/linux/seccomp-bpf/bpf_tests_unittest.cc
     - sandbox/linux/seccomp-bpf/die.cc
     - sandbox/linux/seccomp-bpf/die.h
-    - sandbox/linux/seccomp-bpf/sandbox_bpf.cc
-    - sandbox/linux/seccomp-bpf/sandbox_bpf.h
-    - sandbox/linux/seccomp-bpf/sandbox_bpf_test_runner.cc
-    - sandbox/linux/seccomp-bpf/sandbox_bpf_test_runner.h
     - sandbox/linux/seccomp-bpf/syscall.cc
     - sandbox/linux/seccomp-bpf/syscall.h
-    - sandbox/linux/seccomp-bpf/syscall_unittest.cc
     - sandbox/linux/seccomp-bpf/trap.cc
     - sandbox/linux/seccomp-bpf/trap.h
     - sandbox/linux/services/syscall_wrappers.cc
     - sandbox/linux/services/syscall_wrappers.h
     - sandbox/linux/system_headers/arm64_linux_syscalls.h
     - sandbox/linux/system_headers/arm_linux_syscalls.h
-    - sandbox/linux/system_headers/arm_linux_ucontext.h
     - sandbox/linux/system_headers/capability.h
-    - sandbox/linux/system_headers/i386_linux_ucontext.h
     - sandbox/linux/system_headers/linux_filter.h
-    - sandbox/linux/system_headers/linux_futex.h
     - sandbox/linux/system_headers/linux_seccomp.h
     - sandbox/linux/system_headers/linux_signal.h
+    - sandbox/linux/system_headers/linux_stat.h
     - sandbox/linux/system_headers/linux_syscalls.h
-    - sandbox/linux/system_headers/linux_ucontext.h
     - sandbox/linux/system_headers/x86_32_linux_syscalls.h
     - sandbox/linux/system_headers/x86_64_linux_syscalls.h
     - sandbox/sandbox_export.h
     - sandbox/win/src/acl.cc
     - sandbox/win/src/acl.h
-    - sandbox/win/src/app_container_profile.h
-    - sandbox/win/src/app_container_profile_base.cc
-    - sandbox/win/src/app_container_profile_base.h
-    - sandbox/win/src/app_container_test.cc
+    - sandbox/win/src/alternate_desktop.cc
+    - sandbox/win/src/alternate_desktop.h
+    - sandbox/win/src/app_container.h
+    - sandbox/win/src/app_container_base.cc
+    - sandbox/win/src/app_container_base.h
     - sandbox/win/src/broker_services.cc
     - sandbox/win/src/broker_services.h
     - sandbox/win/src/crosscall_client.h
@@ -303,7 +385,6 @@ vendoring:
     - sandbox/win/src/crosscall_server.h
     - sandbox/win/src/eat_resolver.cc
     - sandbox/win/src/eat_resolver.h
-    - sandbox/win/src/file_policy_test.cc
     - sandbox/win/src/filesystem_dispatcher.cc
     - sandbox/win/src/filesystem_dispatcher.h
     - sandbox/win/src/filesystem_interception.cc
@@ -314,36 +395,28 @@ vendoring:
     - sandbox/win/src/handle_closer.h
     - sandbox/win/src/handle_closer_agent.cc
     - sandbox/win/src/handle_closer_agent.h
-    - sandbox/win/src/handle_closer_test.cc
-    - sandbox/win/src/handle_inheritance_test.cc
     - sandbox/win/src/heap_helper.cc
     - sandbox/win/src/heap_helper.h
-    - sandbox/win/src/integrity_level_test.cc
     - sandbox/win/src/interception.cc
     - sandbox/win/src/interception.h
     - sandbox/win/src/interception_agent.cc
     - sandbox/win/src/interception_agent.h
     - sandbox/win/src/interception_internal.h
-    - sandbox/win/src/interception_unittest.cc
     - sandbox/win/src/interceptors.h
     - sandbox/win/src/interceptors_64.cc
     - sandbox/win/src/interceptors_64.h
     - sandbox/win/src/internal_types.h
     - sandbox/win/src/ipc_args.cc
     - sandbox/win/src/ipc_args.h
-    - sandbox/win/src/ipc_ping_test.cc
     - sandbox/win/src/ipc_tags.h
-    - sandbox/win/src/ipc_unittest.cc
     - sandbox/win/src/job.cc
     - sandbox/win/src/job.h
-    - sandbox/win/src/job_unittest.cc
     - sandbox/win/src/named_pipe_dispatcher.cc
     - sandbox/win/src/named_pipe_dispatcher.h
     - sandbox/win/src/named_pipe_interception.cc
     - sandbox/win/src/named_pipe_interception.h
     - sandbox/win/src/named_pipe_policy.cc
     - sandbox/win/src/named_pipe_policy.h
-    - sandbox/win/src/named_pipe_policy_test.cc
     - sandbox/win/src/nt_internals.h
     - sandbox/win/src/policy_broker.cc
     - sandbox/win/src/policy_broker.h
@@ -352,15 +425,11 @@ vendoring:
     - sandbox/win/src/policy_engine_params.h
     - sandbox/win/src/policy_engine_processor.cc
     - sandbox/win/src/policy_engine_processor.h
-    - sandbox/win/src/policy_engine_unittest.cc
     - sandbox/win/src/policy_low_level.cc
     - sandbox/win/src/policy_low_level.h
-    - sandbox/win/src/policy_low_level_unittest.cc
-    - sandbox/win/src/policy_opcodes_unittest.cc
     - sandbox/win/src/policy_params.h
     - sandbox/win/src/policy_target.cc
     - sandbox/win/src/policy_target.h
-    - sandbox/win/src/policy_target_test.cc
     - sandbox/win/src/process_mitigations.cc
     - sandbox/win/src/process_mitigations.h
     - sandbox/win/src/process_mitigations_win32k_dispatcher.cc
@@ -369,32 +438,22 @@ vendoring:
     - sandbox/win/src/process_mitigations_win32k_interception.h
     - sandbox/win/src/process_mitigations_win32k_policy.cc
     - sandbox/win/src/process_mitigations_win32k_policy.h
-    - sandbox/win/src/process_policy_test.cc
     - sandbox/win/src/process_thread_dispatcher.cc
     - sandbox/win/src/process_thread_dispatcher.h
     - sandbox/win/src/process_thread_interception.cc
     - sandbox/win/src/process_thread_interception.h
     - sandbox/win/src/process_thread_policy.cc
     - sandbox/win/src/process_thread_policy.h
-    - sandbox/win/src/registry_dispatcher.cc
-    - sandbox/win/src/registry_dispatcher.h
-    - sandbox/win/src/registry_interception.cc
-    - sandbox/win/src/registry_interception.h
-    - sandbox/win/src/registry_policy.cc
-    - sandbox/win/src/registry_policy.h
-    - sandbox/win/src/registry_policy_test.cc
     - sandbox/win/src/resolver.cc
     - sandbox/win/src/resolver.h
     - sandbox/win/src/resolver_32.cc
     - sandbox/win/src/resolver_64.cc
     - sandbox/win/src/restricted_token.cc
     - sandbox/win/src/restricted_token.h
-    - sandbox/win/src/restricted_token_unittest.cc
     - sandbox/win/src/restricted_token_utils.cc
     - sandbox/win/src/restricted_token_utils.h
     - sandbox/win/src/sandbox.cc
     - sandbox/win/src/sandbox.h
-    - sandbox/win/src/sandbox.vcproj
     - sandbox/win/src/sandbox_factory.h
     - sandbox/win/src/sandbox_globals.cc
     - sandbox/win/src/sandbox_nt_types.h
@@ -403,11 +462,7 @@ vendoring:
     - sandbox/win/src/sandbox_policy.h
     - sandbox/win/src/sandbox_policy_base.cc
     - sandbox/win/src/sandbox_policy_base.h
-    - sandbox/win/src/sandbox_rand.cc
-    - sandbox/win/src/sandbox_rand.h
     - sandbox/win/src/sandbox_types.h
-    - sandbox/win/src/sandbox_utils.cc
-    - sandbox/win/src/sandbox_utils.h
     - sandbox/win/src/security_capabilities.cc
     - sandbox/win/src/security_capabilities.h
     - sandbox/win/src/security_level.h
@@ -415,45 +470,37 @@ vendoring:
     - sandbox/win/src/service_resolver.h
     - sandbox/win/src/service_resolver_32.cc
     - sandbox/win/src/service_resolver_64.cc
-    - sandbox/win/src/service_resolver_unittest.cc
     - sandbox/win/src/sharedmem_ipc_client.cc
     - sandbox/win/src/sharedmem_ipc_client.h
     - sandbox/win/src/sharedmem_ipc_server.cc
     - sandbox/win/src/sharedmem_ipc_server.h
-    - sandbox/win/src/sid.cc
-    - sandbox/win/src/sid.h
-    - sandbox/win/src/sid_unittest.cc
     - sandbox/win/src/signed_dispatcher.cc
     - sandbox/win/src/signed_dispatcher.h
     - sandbox/win/src/signed_interception.cc
     - sandbox/win/src/signed_interception.h
     - sandbox/win/src/signed_policy.cc
     - sandbox/win/src/signed_policy.h
-    - sandbox/win/src/sync_dispatcher.cc
-    - sandbox/win/src/sync_dispatcher.h
-    - sandbox/win/src/sync_interception.cc
-    - sandbox/win/src/sync_interception.h
-    - sandbox/win/src/sync_policy.cc
-    - sandbox/win/src/sync_policy.h
-    - sandbox/win/src/sync_policy_test.cc
-    - sandbox/win/src/sync_policy_test.h
+    - sandbox/win/src/startup_information_helper.cc
+    - sandbox/win/src/startup_information_helper.h
     - sandbox/win/src/target_interceptions.cc
     - sandbox/win/src/target_interceptions.h
     - sandbox/win/src/target_process.cc
     - sandbox/win/src/target_process.h
     - sandbox/win/src/target_services.cc
     - sandbox/win/src/target_services.h
-    - sandbox/win/src/threadpool_unittest.cc
+    - sandbox/win/src/threadpool.cc
+    - sandbox/win/src/threadpool.h
     - sandbox/win/src/top_level_dispatcher.cc
     - sandbox/win/src/top_level_dispatcher.h
-    - sandbox/win/src/unload_dll_test.cc
-    - sandbox/win/src/win2k_threadpool.cc
-    - sandbox/win/src/win2k_threadpool.h
     - sandbox/win/src/win_utils.cc
     - sandbox/win/src/win_utils.h
-    - sandbox/win/src/win_utils_unittest.cc
     - sandbox/win/src/window.cc
     - sandbox/win/src/window.h
+    - third_party/libevent/event-config.h
+    - third_party/libevent/event.h
+    - third_party/libevent/evutil.h
+    - third_party/libevent/LICENSE
+    - third_party/libevent/linux/event-config.h
 
   # Apply patches that are taken from upstream first as these will not be
   # needed at some point, so we want subsequent patches to work after the

@@ -1,4 +1,5 @@
 import {
+  // eslint-disable-next-line no-shadow
   Navigation,
   Topic,
 } from "content-src/components/DiscoveryStreamComponents/Navigation/Navigation";

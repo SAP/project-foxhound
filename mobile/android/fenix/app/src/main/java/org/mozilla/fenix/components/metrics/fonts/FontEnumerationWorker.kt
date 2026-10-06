@@ -18,7 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.mozilla.fenix.Config
 import org.mozilla.fenix.GleanMetrics.Pings
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
 import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.hours
@@ -43,7 +43,7 @@ class FontEnumerationWorker(
 
         // To avoid getting multiple submissions from new installs, set directly
         // to the desired number of submissions
-        applicationContext.settings().numFontListSent = DESIRED_SUBMISSIONS_NUMBER
+        applicationContext.components.settings.numFontListSent = DESIRED_SUBMISSIONS_NUMBER
 
         return@withContext Result.success()
     }
@@ -84,7 +84,7 @@ class FontEnumerationWorker(
                 return
             }
 
-            if (context.settings().numFontListSent >= DESIRED_SUBMISSIONS_NUMBER) {
+            if (context.components.settings.numFontListSent >= DESIRED_SUBMISSIONS_NUMBER) {
                 return
             }
 

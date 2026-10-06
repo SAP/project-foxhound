@@ -1,0 +1,29 @@
+{
+  "background": {
+    "color": {
+      "value": {
+        "light": "white",
+        "dark": "rgb(28, 27, 34)",
+        "nativeTheme": "-moz-sidebar"
+      }
+    }
+  },
+  "text": {
+    "color": {
+      "value": {
+        "light": "rgb(21, 20, 26)",
+        "dark": "rgb(249, 249, 250)",
+        "nativeTheme": "-moz-sidebartext"
+      }
+    }
+  },
+  "border": {
+    "color": {
+      "value": {
+        "default": "{card.border.color}",
+        "nativeTheme": "-moz-sidebarborder",
+        "prefersContrast": "{card.border.color}"
+      }
+    }
+  }
+}

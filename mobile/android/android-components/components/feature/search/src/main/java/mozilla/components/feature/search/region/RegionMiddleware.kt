@@ -13,13 +13,11 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import mozilla.components.browser.state.action.BrowserAction
-import mozilla.components.browser.state.action.InitAction
 import mozilla.components.browser.state.action.SearchAction
 import mozilla.components.browser.state.action.UpdateDistribution
 import mozilla.components.browser.state.search.RegionState
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.lib.state.Store
 import mozilla.components.service.location.LocationService
 
@@ -39,14 +37,16 @@ class RegionMiddleware(
     internal var updateJob: Job? = null
 
     override fun invoke(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         next: (BrowserAction) -> Unit,
         action: BrowserAction,
     ) {
-        if (action is InitAction || action is SearchAction.RefreshSearchEnginesAction) {
-            updateJob = determineRegion(context.store)
+        if (action is SearchAction.RefreshSearchEnginesAction) {
+            updateJob?.cancel()
+            updateJob = determineRegion(store)
         } else if (action is UpdateDistribution) {
-            updateJob = determineRegion(context.store, action.distributionId)
+            updateJob?.cancel()
+            updateJob = determineRegion(store, action.distributionId)
         }
 
         next(action)

@@ -28,3 +28,27 @@ widget:
       - mnakano.birchill@mozilla.com
     expires: never
     telemetry_mirror: WIDGET_IME_NAME_ON_MAC
+
+  mac_application_menu_opened:
+    type: counter
+    description: >
+      Counts how often the macOS Firefox application menu is opened
+    bugs:
+      - https://bugzil.la/2018748
+    data_reviews:
+      - https://bugzil.la/2018748
+    notification_emails:
+      - rfambro@mozilla.com
+    expires: never
+
+  rosetta_status:
+    type: boolean
+    description: >
+      True if Rosetta translation is being used.
+    bugs:
+      - https://bugzil.la/1664933
+    data_reviews:
+      - https://bugzil.la/1664933
+    notification_emails:
+      - hballent@mozilla.com
+    expires: never

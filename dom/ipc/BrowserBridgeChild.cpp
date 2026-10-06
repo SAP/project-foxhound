@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,18 +7,17 @@
 #  include "mozilla/a11y/DocManager.h"
 #  include "mozilla/a11y/OuterDocAccessible.h"
 #endif
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/BrowserBridgeChild.h"
 #include "mozilla/dom/BrowserBridgeHost.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/MozFrameLoaderOwnerBinding.h"
-#include "mozilla/PresShell.h"
 #include "nsFocusManager.h"
 #include "nsFrameLoader.h"
 #include "nsFrameLoaderOwner.h"
 #include "nsObjectLoadingContent.h"
 #include "nsQueryObject.h"
 #include "nsSubDocumentFrame.h"
-#include "nsView.h"
 
 using namespace mozilla::ipc;
 
@@ -35,7 +32,7 @@ BrowserBridgeChild::BrowserBridgeChild(BrowsingContext* aBrowsingContext,
                                        TabId aId, const LayersId& aLayersId)
     : mId{aId}, mLayersId{aLayersId}, mBrowsingContext(aBrowsingContext) {}
 
-BrowserBridgeChild::~BrowserBridgeChild() {}
+BrowserBridgeChild::~BrowserBridgeChild() = default;
 
 already_AddRefed<BrowserBridgeHost> BrowserBridgeChild::FinishInit(
     nsFrameLoader* aFrameLoader) {
@@ -59,23 +56,19 @@ already_AddRefed<BrowserBridgeHost> BrowserBridgeChild::FinishInit(
   return MakeAndAddRef<BrowserBridgeHost>(this);
 }
 
-nsILoadContext* BrowserBridgeChild::GetLoadContext() {
-  return mBrowsingContext;
-}
-
 void BrowserBridgeChild::NavigateByKey(bool aForward,
                                        bool aForDocumentNavigation) {
-  Unused << SendNavigateByKey(aForward, aForDocumentNavigation);
+  (void)SendNavigateByKey(aForward, aForDocumentNavigation);
 }
 
 void BrowserBridgeChild::Activate(uint64_t aActionId) {
   LOGBROWSERCHILDFOCUS(
       ("BrowserBridgeChild::Activate actionid: %" PRIu64, aActionId));
-  Unused << SendActivate(aActionId);
+  (void)SendActivate(aActionId);
 }
 
 void BrowserBridgeChild::Deactivate(bool aWindowLowering, uint64_t aActionId) {
-  Unused << SendDeactivate(aWindowLowering, aActionId);
+  (void)SendDeactivate(aWindowLowering, aActionId);
 }
 
 /*static*/
@@ -159,8 +152,8 @@ mozilla::ipc::IPCResult BrowserBridgeChild::RecvMaybeFireEmbedderLoadEvents(
 }
 
 mozilla::ipc::IPCResult BrowserBridgeChild::RecvScrollRectIntoView(
-    const nsRect& aRect, const ScrollAxis& aVertical,
-    const ScrollAxis& aHorizontal, const ScrollFlags& aScrollFlags,
+    const nsRect& aRect, const AxisScrollParams& aVertical,
+    const AxisScrollParams& aHorizontal, const ScrollFlags& aScrollFlags,
     const int32_t& aAppUnitsPerDevPixel) {
   RefPtr<Element> owner = mFrameLoader->GetOwnerContent();
   if (!owner) {

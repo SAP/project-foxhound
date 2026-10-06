@@ -45,14 +45,14 @@ class IntentProcessors(
      * Provides intent processing functionality for ACTION_VIEW and ACTION_SEND intents.
      */
     val intentProcessor by lazyMonitored {
-        TabIntentProcessor(tabsUseCases, searchUseCases.newTabSearch, isPrivate = false)
+        TabIntentProcessor(tabsUseCases, searchUseCases.newTabSearch, isPrivate = false, engine = engine)
     }
 
     /**
      * Provides intent processing functionality for ACTION_VIEW and ACTION_SEND intents in private tabs.
      */
     val privateIntentProcessor by lazyMonitored {
-        TabIntentProcessor(tabsUseCases, searchUseCases.newPrivateTabSearch, isPrivate = true)
+        TabIntentProcessor(tabsUseCases, searchUseCases.newPrivateTabSearch, isPrivate = true, engine = engine)
     }
 
     val customTabIntentProcessor by lazyMonitored {

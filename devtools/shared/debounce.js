@@ -12,7 +12,7 @@
  *         The function to debounce
  * @param {number} wait
  *         The wait period
- * @param {Object} scope
+ * @param {object} scope
  *         The scope to use for func
  * @return {Function} The debounced function, which has a `cancel` method that the
  *                    consumer can call to cancel any pending setTimeout callback.

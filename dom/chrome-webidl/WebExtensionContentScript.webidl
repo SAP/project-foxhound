@@ -182,6 +182,11 @@ enum ContentScriptExecutionWorld {
   "USER_SCRIPT",
 };
 
+enum ContentScriptCssOrigin {
+  "author",
+  "user",
+};
+
 [ChromeOnly, Exposed=Window]
 interface WebExtensionContentScript : MozDocumentMatcher {
   [Throws]
@@ -213,6 +218,12 @@ interface WebExtensionContentScript : MozDocumentMatcher {
   readonly attribute DOMString? worldId;
 
   /**
+   * The css origin of the stylesheet to inject.
+   */
+  [Constant]
+  readonly attribute ContentScriptCssOrigin cssOrigin;
+
+  /**
    * A set of paths, relative to the extension root, of CSS sheets to inject
    * into matching pages.
    */
@@ -233,6 +244,8 @@ dictionary WebExtensionContentScriptInit : MozDocumentMatcherInit {
   ContentScriptExecutionWorld world = "ISOLATED";
 
   DOMString? worldId = null;
+
+  ContentScriptCssOrigin cssOrigin = "author";
 
   sequence<DOMString> cssPaths = [];
 

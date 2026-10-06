@@ -1,5 +1,5 @@
 <script>
-  var bc = new BroadcastChannel("file_bug1121701_1");
+  var bc = SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel("file_bug1121701_1");
   var pageHideAsserts = undefined;
   bc.onmessage = (msgEvent) => {
     var msg = msgEvent.data;

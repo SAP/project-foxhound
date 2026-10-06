@@ -10,8 +10,7 @@
 
 #include "modules/audio_coding/neteq/red_payload_splitter.h"
 
-#include <stddef.h>
-
+#include <cstddef>
 #include <cstdint>
 #include <list>
 #include <utility>
@@ -20,6 +19,7 @@
 #include "modules/audio_coding/neteq/decoder_database.h"
 #include "modules/audio_coding/neteq/packet.h"
 #include "rtc_base/buffer.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
 

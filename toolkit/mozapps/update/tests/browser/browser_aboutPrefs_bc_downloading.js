@@ -31,7 +31,7 @@ add_task(async function aboutPrefs_backgroundCheck_downloading() {
     },
     async tab => {
       // Once the state is pending but langpacks aren't complete the about
-      // dialog should still be showing downloading.
+      // preferences should still be showing downloading.
       TestUtils.waitForCondition(() => {
         return readStatusFile() == STATE_PENDING;
       });
@@ -40,7 +40,7 @@ add_task(async function aboutPrefs_backgroundCheck_downloading() {
         tab.linkedBrowser,
         [],
         () => {
-          return content.gAppUpdater.selectedPanel.id;
+          return content.Preferences.getSetting("updateState").value;
         }
       );
 

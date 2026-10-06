@@ -1,8 +1,8 @@
 import os
 import unittest
 
-import mozharness.base.python as python
 import mozunit
+from mozharness.base import python
 
 here = os.path.dirname(os.path.abspath(__file__))
 

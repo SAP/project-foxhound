@@ -3,9 +3,10 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/MIDIOutputMap.h"
+
+#include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/MIDIOutputMapBinding.h"
 #include "nsPIDOMWindow.h"
-#include "mozilla/dom/BindingUtils.h"
 
 namespace mozilla::dom {
 

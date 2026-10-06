@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use crate::common_metric_data::{CommonMetricDataInternal, DynamicLabelType};
 use crate::error_recording::{test_get_num_recorded_errors, ErrorType};
-use crate::metrics::Metric;
 use crate::metrics::MetricType;
+use crate::metrics::{Metric, TestGetValue};
 use crate::storage::StorageManager;
 use crate::CommonMetricData;
 use crate::Glean;
@@ -89,7 +89,7 @@ impl BooleanMetric {
     pub fn get_value(&self, glean: &Glean, ping_name: Option<&str>) -> Option<bool> {
         let queried_ping_name = ping_name.unwrap_or_else(|| &self.meta().inner.send_in_pings[0]);
 
-        match StorageManager.snapshot_metric_for_test(
+        match StorageManager.snapshot_metric(
             glean.storage(),
             queried_ping_name,
             &self.meta.identifier(glean),
@@ -98,25 +98,6 @@ impl BooleanMetric {
             Some(Metric::Boolean(b)) => Some(b),
             _ => None,
         }
-    }
-
-    /// **Test-only API (exported for FFI purposes).**
-    ///
-    /// Gets the currently stored value as an integer.
-    ///
-    /// This doesn't clear the stored value.
-    ///
-    /// # Arguments
-    ///
-    /// * `ping_name` - the optional name of the ping to retrieve the metric
-    ///                 for. Defaults to the first value in `send_in_pings`.
-    ///
-    /// # Returns
-    ///
-    /// The stored value or `None` if nothing stored.
-    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<bool> {
-        crate::block_on_dispatcher();
-        crate::core::with_glean(|glean| self.get_value(glean, ping_name.as_deref()))
     }
 
     /// **Exported for test purposes.**
@@ -136,5 +117,27 @@ impl BooleanMetric {
         crate::core::with_glean(|glean| {
             test_get_num_recorded_errors(glean, self.meta(), error).unwrap_or(0)
         })
+    }
+}
+
+impl TestGetValue for BooleanMetric {
+    type Output = bool;
+    /// **Test-only API (exported for FFI purposes).**
+    ///
+    /// Gets the currently stored value as a boolean.
+    ///
+    /// This doesn't clear the stored value.
+    ///
+    /// # Arguments
+    ///
+    /// * `ping_name` - the optional name of the ping to retrieve the metric
+    ///                 for. Defaults to the first value in `send_in_pings`.
+    ///
+    /// # Returns
+    ///
+    /// The stored value or `None` if nothing stored.
+    fn test_get_value(&self, ping_name: Option<String>) -> Option<bool> {
+        crate::block_on_dispatcher();
+        crate::core::with_glean(|glean| self.get_value(glean, ping_name.as_deref()))
     }
 }

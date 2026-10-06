@@ -22,7 +22,7 @@ function openContextMenuFor(element, shiftkey, waitForSpellCheck) {
   function actuallyOpenContextMenuFor() {
     lastElement = element;
     var eventDetails = { type: "contextmenu", button: 2, shiftKey: shiftkey };
-    synthesizeMouse(element, 2, 2, eventDetails, element.ownerGlobal);
+    synthesizeMouse(element, 2, 2, eventDetails, element.documentGlobal);
   }
 
   if (waitForSpellCheck) {
@@ -82,7 +82,26 @@ function getVisibleMenuItems(aMenu) {
         if (item.id != FRAME_OS_PID) {
           ok(key, "menuitem " + item.id + " has an access key");
         }
-        if (accessKeys[key]) {
+        // These entries already had overlapping access keys and we are keeping
+        // their existing ones to avoid disorienting users by changing them.
+        // The duplicate access keys do work, you just have to hit the access
+        // key more than once to use them.
+        // This test did not catch the duplicate access keys initially because
+        // it only tests the entries in the context menu by default and the
+        // Send Tab entry was originally only in the context menu if the user is
+        // signed in. See Bug 2035895.
+        const allowedAccessKeyDuplicates = [
+          "context-translate-selection",
+          "context-sendlinktodevice",
+        ];
+
+        if (
+          accessKeys[key] &&
+          !(
+            allowedAccessKeyDuplicates.includes(item.id) &&
+            allowedAccessKeyDuplicates.includes(accessKeys[key])
+          )
+        ) {
           ok(
             false,
             "menuitem " + item.id + " has same accesskey as " + accessKeys[key]
@@ -301,14 +320,14 @@ let lastElementSelector = null;
  * Right-clicks on the element that matches `selector` and checks the
  * context menu that appears against the `menuItems` array.
  *
- * @param {String} selector
+ * @param {string} selector
  *        A selector passed to querySelector to find
  *        the element that will be referenced.
  * @param {Array} menuItems
  *        An array of menuitem ids and their associated enabled state. A state
  *        of null means that it will be ignored. Ids of '---' are used for
  *        menuseparators.
- * @param {Object} options, optional
+ * @param {object} options, optional
  *        skipFocusChange: don't move focus to the element before test, useful
  *                         if you want to delay spell-check initialization
  *        offsetX: horizontal mouse offset from the top-left corner of
@@ -338,8 +357,8 @@ async function test_contextmenu(selector, menuItems, options = {}) {
   if (!options.skipFocusChange) {
     await SpecialPowers.spawn(
       gBrowser.selectedBrowser,
-      [[lastElementSelector, selector]],
-      async function ([contentLastElementSelector, contentSelector]) {
+      [lastElementSelector, selector],
+      async function (contentLastElementSelector, contentSelector) {
         if (contentLastElementSelector) {
           let contentLastElement = content.document.querySelector(
             contentLastElementSelector
@@ -399,13 +418,43 @@ async function test_contextmenu(selector, menuItems, options = {}) {
     info("Completed onContextMenuShown");
   }
 
+  if (
+    typeof options.awaitOnMenuBuilt === "object" &&
+    options.awaitOnMenuBuilt.id
+  ) {
+    const elementId = options.awaitOnMenuBuilt.id;
+    const menu = document.getElementById(elementId);
+    await TestUtils.waitForCondition(
+      () => menu && !menu.hidden,
+      `Menu ${elementId} did not appear in time`
+    );
+    info(`Menu "${elementId}" was built and is now visible`);
+  }
+
   if (menuItems) {
     if (Services.prefs.getBoolPref("devtools.inspector.enabled", true)) {
-      const inspectItems =
-        menuItems.includes("context-viewsource") ||
-        menuItems.includes("context-viewpartialsource-selection")
-          ? []
-          : ["---", null];
+      let inspectItems = [];
+      let hasSeparatorAboveAskChat = false;
+      let viewSourceIndex = menuItems.indexOf("context-viewsource");
+      if (viewSourceIndex == -1) {
+        viewSourceIndex = menuItems.indexOf(
+          "context-viewpartialsource-selection"
+        );
+      }
+
+      const askChatIndex = menuItems.indexOf("context-ask-chat");
+      const isAskChatLastItem = menuItems.at(-6) === "context-ask-chat";
+      if (askChatIndex >= 2) {
+        hasSeparatorAboveAskChat = menuItems[askChatIndex - 2] === "---";
+      }
+
+      if (
+        viewSourceIndex == -1 &&
+        !(isAskChatLastItem && hasSeparatorAboveAskChat)
+      ) {
+        inspectItems.push("---", null);
+      }
+
       if (
         Services.prefs.getBoolPref("devtools.accessibility.enabled", true) &&
         (Services.prefs.getBoolPref("devtools.everOpened", false) ||
@@ -415,7 +464,11 @@ async function test_contextmenu(selector, menuItems, options = {}) {
       }
       inspectItems.push("context-inspect", true);
 
-      menuItems = menuItems.concat(inspectItems);
+      if (viewSourceIndex == -1) {
+        menuItems = menuItems.concat(inspectItems);
+      } else {
+        menuItems.splice(viewSourceIndex + 2, 0, ...inspectItems);
+      }
     }
 
     checkContextMenu(menuItems);

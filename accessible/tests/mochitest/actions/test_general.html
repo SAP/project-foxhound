@@ -16,43 +16,20 @@
           src="../actions.js"></script>
 
   <script type="application/javascript">
-    function doTest() {
-      var actionsArray = [
-        {
-          ID: "li_clickable1",
-          actionName: "click",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "li_clickable2",
-          actionName: "click",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "li_clickable3",
-          actionName: "click",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "onclick_img",
-          actionName: "click",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "label1",
-          actionName: "click",
-          events: CLICK_EVENTS,
-        },
-
-      ];
-
-      testActions(actionsArray);
+    /* global testAction */
+    async function doTest() {
+      await testAction({ id: "li_clickable1", actionName: "click", events: CLICK_EVENTS });
+      await testAction({ id: "li_clickable2", actionName: "click", events: CLICK_EVENTS });
+      await testAction({ id: "li_clickable3", actionName: "click", events: CLICK_EVENTS });
+      await testAction({ id: "onclick_img", actionName: "click", events: CLICK_EVENTS });
+      await testAction({ id: "label1", actionName: "click", events: CLICK_EVENTS });
 
       is(getAccessible("label1").firstChild.actionCount, 1, "label text should have 1 action");
 
       getAccessible("onclick_img").takeFocus();
       is(getAccessible("link1").actionCount, 1, "links should have one action");
       is(getAccessible("link2").actionCount, 1, "link with onclick handler should have 1 action");
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

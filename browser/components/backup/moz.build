@@ -1,11 +1,9 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files("**"):
-    BUG_COMPONENT = ("Firefox", "Profiles")
+    BUG_COMPONENT = ("Firefox", "Profile Backup")
 
 JAR_MANIFESTS += ["jar.mn"]
 
@@ -32,11 +30,14 @@ EXTRA_JS_MODULES.backup += [
     "MeasurementUtils.sys.mjs",
     "resources/AddonsBackupResource.sys.mjs",
     "resources/BackupResource.sys.mjs",
+    "resources/BookmarksBackupResource.sys.mjs",
     "resources/CookiesBackupResource.sys.mjs",
     "resources/CredentialsAndSecurityBackupResource.sys.mjs",
     "resources/FormHistoryBackupResource.sys.mjs",
     "resources/MiscDataBackupResource.sys.mjs",
     "resources/PlacesBackupResource.sys.mjs",
     "resources/PreferencesBackupResource.sys.mjs",
+    "resources/SelectableProfileBackupResource.sys.mjs",
     "resources/SessionStoreBackupResource.sys.mjs",
+    "resources/SiteSettingsBackupResource.sys.mjs",
 ]

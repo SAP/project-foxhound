@@ -69,11 +69,10 @@ function synthesizeMouseEvent(type,                // string
                               button,              // long
                               clickCount,          // long
                               modifiers,           // long
-                              ignoreWindowBounds)  // boolean
+                              ignoreRootScrollFrame)  // boolean
 {
-  var utils = SpecialPowers.getDOMWindowUtils(window);
-  utils.sendMouseEvent(type, x, y, button, clickCount,
-                       modifiers, ignoreWindowBounds);
+  SpecialPowers.wrap(window).synthesizeMouseEvent(type, x, y, { button, clickCount, modifiers },
+                                                  { ignoreRootScrollFrame });
 }
 
 function run_test()

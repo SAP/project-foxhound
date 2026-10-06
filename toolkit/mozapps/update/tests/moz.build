@@ -1,10 +1,10 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 FINAL_TARGET = "_tests/xpcshell/toolkit/mozapps/update/tests/data"
+
+TEST_DIRS += ["gtest"]
 
 if not CONFIG["MOZ_SUITE"]:
     BROWSER_CHROME_MANIFESTS += [
@@ -33,6 +33,9 @@ SimplePrograms(
         "TestAUSReadStrings",
     ]
 )
+
+if CONFIG["OS_ARCH"] == "WINNT":
+    SimplePrograms(["test_file_change_mtime", "test_file_hold_open"])
 
 LOCAL_INCLUDES += [
     "/toolkit/mozapps/update",
@@ -103,6 +106,8 @@ FINAL_TARGET_FILES += [
     "data/partial_removed-files",
     "data/partial_removed-files_mac",
     "data/partial_update_manifest",
+    "data/partial_zucchini.mar",
+    "data/partial_zucchini_mac.mar",
     "data/replace_log_success",
     "data/simple.mar",
     "data/syncManagerTestChild.js",

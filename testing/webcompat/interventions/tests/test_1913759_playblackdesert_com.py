@@ -20,5 +20,5 @@ async def test_enabled(client):
 @pytest.mark.without_interventions
 async def test_disabled(client):
     await client.navigate(URL)
-    client.await_text(BAD_TEXT, is_displayed=True, timeout=4000)
+    client.await_text(BAD_TEXT, is_displayed=True)
     assert not client.find_css(LOGIN_CSS, is_displayed=True)

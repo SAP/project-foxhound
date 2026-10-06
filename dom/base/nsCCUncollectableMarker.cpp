@@ -1,48 +1,47 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsCCUncollectableMarker.h"
-#include "nsIObserverService.h"
-#include "nsIDocShell.h"
-#include "nsServiceManagerUtils.h"
-#include "nsIDocumentViewer.h"
-#include "mozilla/dom/Document.h"
+
 #include "InProcessBrowserChildMessageManager.h"
-#include "nsIWindowMediator.h"
-#include "nsPIDOMWindow.h"
-#include "nsIWebNavigation.h"
-#include "nsISHistory.h"
-#include "nsISHEntry.h"
-#include "nsIWindowWatcher.h"
-#include "mozilla/Services.h"
-#include "nsIAppWindow.h"
-#include "nsIAppShellService.h"
-#include "nsAppShellCID.h"
-#include "nsContentUtils.h"
-#include "nsGlobalWindowInner.h"
-#include "nsGlobalWindowOuter.h"
-#include "nsJSEnvironment.h"
-#include "nsFrameLoader.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
 #include "mozilla/EventListenerManager.h"
+#include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/ChromeMessageBroadcaster.h"
 #include "mozilla/dom/ContentFrameMessageManager.h"
 #include "mozilla/dom/ContentProcessMessageManager.h"
 #include "mozilla/dom/CustomElementRegistry.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ParentProcessMessageManager.h"
-#include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/SessionHistoryEntry.h"
 #include "mozilla/dom/TimeoutManager.h"
-#include "xpcpublic.h"
-#include "nsObserverService.h"
+#include "nsAppShellCID.h"
+#include "nsContentUtils.h"
 #include "nsFocusManager.h"
+#include "nsFrameLoader.h"
+#include "nsGlobalWindowInner.h"
+#include "nsGlobalWindowOuter.h"
+#include "nsIAppShellService.h"
+#include "nsIAppWindow.h"
+#include "nsIDocShell.h"
+#include "nsIDocumentViewer.h"
 #include "nsIInterfaceRequestorUtils.h"
+#include "nsIObserverService.h"
+#include "nsISHistory.h"
+#include "nsIWebNavigation.h"
+#include "nsIWindowMediator.h"
+#include "nsIWindowWatcher.h"
 #include "nsIXULRuntime.h"
+#include "nsJSEnvironment.h"
+#include "nsObserverService.h"
+#include "nsPIDOMWindow.h"
+#include "nsServiceManagerUtils.h"
+#include "xpcpublic.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -209,26 +208,14 @@ void MarkDocumentViewer(nsIDocumentViewer* aViewer, bool aCleanupJS) {
 
 void MarkDocShell(nsIDocShellTreeItem* aNode, bool aCleanupJS);
 
-void MarkSHEntry(nsISHEntry* aSHEntry, bool aCleanupJS) {
+void MarkSHEntry(SessionHistoryEntry* aSHEntry, bool aCleanupJS) {
   if (!aSHEntry) {
     return;
   }
 
-  nsCOMPtr<nsIDocumentViewer> viewer;
-  aSHEntry->GetDocumentViewer(getter_AddRefs(viewer));
-  MarkDocumentViewer(viewer, aCleanupJS);
-
-  nsCOMPtr<nsIDocShellTreeItem> child;
-  int32_t i = 0;
-  while (NS_SUCCEEDED(aSHEntry->ChildShellAt(i++, getter_AddRefs(child))) &&
-         child) {
-    MarkDocShell(child, aCleanupJS);
-  }
-
-  int32_t count;
-  aSHEntry->GetChildCount(&count);
-  for (i = 0; i < count; ++i) {
-    nsCOMPtr<nsISHEntry> childEntry;
+  int32_t count = aSHEntry->GetChildCount();
+  for (int32_t i = 0; i < count; ++i) {
+    RefPtr<SessionHistoryEntry> childEntry;
     aSHEntry->GetChildAt(i, getter_AddRefs(childEntry));
     MarkSHEntry(childEntry, aCleanupJS);
   }
@@ -247,18 +234,6 @@ void MarkDocShell(nsIDocShellTreeItem* aNode, bool aCleanupJS) {
   nsCOMPtr<nsIWebNavigation> webNav = do_QueryInterface(shell);
   RefPtr<ChildSHistory> history = webNav->GetSessionHistory();
   IgnoredErrorResult ignore;
-  nsISHistory* legacyHistory =
-      history ? history->GetLegacySHistory(ignore) : nullptr;
-  if (legacyHistory) {
-    MOZ_DIAGNOSTIC_ASSERT(!mozilla::SessionHistoryInParent());
-    int32_t historyCount = history->Count();
-    for (int32_t i = 0; i < historyCount; ++i) {
-      nsCOMPtr<nsISHEntry> shEntry;
-      legacyHistory->GetEntryAtIndex(i, getter_AddRefs(shEntry));
-
-      MarkSHEntry(shEntry, aCleanupJS);
-    }
-  }
 
   int32_t i, childCount;
   aNode->GetInProcessChildCount(&childCount);

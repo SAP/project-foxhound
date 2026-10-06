@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +6,6 @@
 #define NSSUBDOCUMENTFRAME_H_
 
 #include "Units.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/gfx/Matrix.h"
 #include "nsAtomicContainerFrame.h"
 #include "nsDisplayList.h"
@@ -54,10 +51,15 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
                          mozilla::IntrinsicISizeType aType) override;
 
   mozilla::IntrinsicSize GetIntrinsicSize() override;
-  mozilla::AspectRatio GetIntrinsicRatio() const override;
+  mozilla::AspectRatio GetIntrinsicRatio() const override {
+    return GetIntrinsicRatio(false);
+  }
+  mozilla::AspectRatio GetIntrinsicRatio(bool aIgnoreContainment) const;
+
+  const nsPoint& GetExtraOffset() const { return mExtraOffset; }
 
   SizeComputationResult ComputeSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
+      const SizeComputationInput& aSizingInput, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
       const mozilla::LogicalSize& aMargin,
       const mozilla::LogicalSize& aBorderPadding,
@@ -72,7 +74,7 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
                         const nsDisplayListSet& aLists) override;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
 
@@ -90,14 +92,12 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
       bool aIgnoreContainment = false) const;
 
   nsIDocShell* GetDocShell() const;
+  nsIDocShell* GetExtantDocShell() const;
   nsresult BeginSwapDocShells(nsIFrame* aOther);
   void EndSwapDocShells(nsIFrame* aOther);
 
-  static void InsertViewsInReverseOrder(nsView* aSibling, nsView* aParent);
-  static void EndSwapDocShellsForViews(nsView* aView);
-
-  nsView* EnsureInnerView();
-  nsPoint GetExtraOffset() const;
+  mozilla::dom::Document* GetExtantSubdocument();
+  mozilla::PresShell* GetSubdocumentPresShell();
   nsIFrame* GetSubdocumentRootFrame();
   enum { IGNORE_PAINT_SUPPRESSION = 0x1 };
   mozilla::PresShell* GetSubdocumentPresShellForPainting(uint32_t aFlags);
@@ -152,6 +152,10 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
   const Maybe<nsRect>& GetVisibleRect() const { return mVisibleRect; }
   void SetVisibleRect(const Maybe<nsRect>& aRect) { mVisibleRect = aRect; }
 
+  void AddEmbeddingPresShell(mozilla::PresShell*);
+  void EnsureEmbeddingPresShell(mozilla::PresShell*);
+  void RemoveEmbeddingPresShell(mozilla::PresShell*);
+
  protected:
   friend class AsyncFrameInit;
 
@@ -161,6 +165,11 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
   void PropagateIsUnderHiddenEmbedderElement(bool aValue);
   void UpdateEmbeddedBrowsingContextDependentData();
 
+  // Makes sure that all the live pres shells are pointing to `this`. Returns
+  // true if there's any live shells.
+  bool FixUpInProcessPresShellsAfterAttach();
+  void PrepareInProcessPresShellsForDetach();
+
   bool IsInline() const { return mIsInline; }
 
   // Show our document viewer. The document viewer is hidden via a script
@@ -168,23 +177,26 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
   // being reframed.
   void ShowViewer();
 
-  nsView* GetViewInternal() const override { return mOuterView; }
-  void SetViewInternal(nsView* aView) override { mOuterView = aView; }
-  void CreateView();
-
   mutable RefPtr<nsFrameLoader> mFrameLoader;
 
-  nsView* mOuterView;
-  nsView* mInnerView;
-
+  // The in-process pres shells that we're currently embedding. May be multiple
+  // because of in-process BFCache.
+  // TODO(emilio): Maybe that's not relevant anymore? We definitely hit that
+  // code-path, but maybe it could be simplified nowadays?
+  AutoTArray<nsWeakPtr, 1> mInProcessPresShells;
   // When process-switching a remote tab, we might temporarily paint the old
   // one.
   Maybe<RemoteFramePaintData> mRetainedRemoteFrame;
+  nsWeakPtr mLastPaintedPresShell;
 
   // The raster scale from our last paint.
   mozilla::gfx::MatrixScales mRasterScale;
   // The visible rect from our last paint.
   Maybe<nsRect> mVisibleRect;
+
+  // The extra offset from our padding box to the child, needed to deal with
+  // object-fit and co.
+  nsPoint mExtraOffset;
 
   bool mIsInline : 1;
   bool mPostedReflowCallback : 1;

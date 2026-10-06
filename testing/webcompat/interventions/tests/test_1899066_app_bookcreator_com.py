@@ -2,7 +2,7 @@ import pytest
 
 URL = "https://app.bookcreator.com/sign-in"
 
-SIGN_IN_CSS = ".sign-in-button"
+SIGN_IN_CSS = "[data-testid=student-sign-in]"
 UNSUPPORTED_TEXT = "Firefox is not an officially supported browser"
 
 

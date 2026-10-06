@@ -5,8 +5,10 @@
 import { showMenu } from "../../context-menu/menu";
 import { getSelectedLocation } from "../../utils/selected-location";
 import { features } from "../../utils/prefs";
-import { formatKeyShortcut } from "../../utils/text";
 import { isLineBlackboxed } from "../../utils/source";
+const {
+  stringifyFromElectronKey,
+} = require("resource://devtools/client/shared/key-shortcuts.js");
 
 import {
   getSelectedSource,
@@ -114,7 +116,7 @@ const addBreakpointItem = (location, dispatch) => ({
   accesskey: L10N.getStr("shortcuts.toggleBreakpoint.accesskey"),
   disabled: false,
   click: () => dispatch(addBreakpoint(location)),
-  accelerator: formatKeyShortcut(L10N.getStr("toggleBreakpoint.key")),
+  accelerator: stringifyFromElectronKey(L10N.getStr("toggleBreakpoint.key")),
 });
 
 const removeBreakpointItem = (breakpoint, dispatch) => ({
@@ -123,13 +125,15 @@ const removeBreakpointItem = (breakpoint, dispatch) => ({
   accesskey: L10N.getStr("shortcuts.toggleBreakpoint.accesskey"),
   disabled: false,
   click: () => dispatch(removeBreakpoint(breakpoint)),
-  accelerator: formatKeyShortcut(L10N.getStr("toggleBreakpoint.key")),
+  accelerator: stringifyFromElectronKey(L10N.getStr("toggleBreakpoint.key")),
 });
 
 const addConditionalBreakpointItem = (location, dispatch) => ({
   id: "node-menu-add-conditional-breakpoint",
   label: L10N.getStr("editor.addConditionBreakpoint"),
-  accelerator: formatKeyShortcut(L10N.getStr("toggleCondPanel.breakpoint.key")),
+  accelerator: stringifyFromElectronKey(
+    L10N.getStr("toggleCondPanel.breakpoint.key")
+  ),
   accesskey: L10N.getStr("editor.addConditionBreakpoint.accesskey"),
   disabled: false,
   click: () => dispatch(openConditionalPanel(location)),
@@ -138,7 +142,9 @@ const addConditionalBreakpointItem = (location, dispatch) => ({
 const editConditionalBreakpointItem = (location, dispatch) => ({
   id: "node-menu-edit-conditional-breakpoint",
   label: L10N.getStr("editor.editConditionBreakpoint"),
-  accelerator: formatKeyShortcut(L10N.getStr("toggleCondPanel.breakpoint.key")),
+  accelerator: stringifyFromElectronKey(
+    L10N.getStr("toggleCondPanel.breakpoint.key")
+  ),
   accesskey: L10N.getStr("editor.addConditionBreakpoint.accesskey"),
   disabled: false,
   click: () => dispatch(openConditionalPanel(location)),
@@ -159,7 +165,9 @@ const addLogPointItem = (location, dispatch) => ({
   accesskey: L10N.getStr("editor.addLogPoint.accesskey"),
   disabled: false,
   click: () => dispatch(openConditionalPanel(location, true)),
-  accelerator: formatKeyShortcut(L10N.getStr("toggleCondPanel.logPoint.key")),
+  accelerator: stringifyFromElectronKey(
+    L10N.getStr("toggleCondPanel.logPoint.key")
+  ),
 });
 
 const editLogPointItem = (location, dispatch) => ({
@@ -168,7 +176,9 @@ const editLogPointItem = (location, dispatch) => ({
   accesskey: L10N.getStr("editor.editLogPoint.accesskey"),
   disabled: false,
   click: () => dispatch(openConditionalPanel(location, true)),
-  accelerator: formatKeyShortcut(L10N.getStr("toggleCondPanel.logPoint.key")),
+  accelerator: stringifyFromElectronKey(
+    L10N.getStr("toggleCondPanel.logPoint.key")
+  ),
 });
 
 const logPointItem = (breakpoint, location, dispatch) => {

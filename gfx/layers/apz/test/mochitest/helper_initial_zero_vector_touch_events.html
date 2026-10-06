@@ -1,0 +1,36 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1">
+  <title>Test that zero vector initial touch-move doesn't lock scroll axis</title>
+  <script type="application/javascript" src="apz_test_native_event_utils.js"></script>
+  <script type="application/javascript" src="apz_test_utils.js"></script>
+  <script src="/tests/SimpleTest/paint_listener.js"></script>
+</head>
+<!-- scrollable in both directions -->
+<body style="height:2000vh; width: 2000vw;">
+</body>
+<script type="application/javascript">
+async function test() {
+  let scrollEventPromise = waitForScrollEvent(window);
+
+  await synthesizeNativeTouch(window, 100, 200,
+                              SpecialPowers.DOMWindowUtils.TOUCH_CONTACT);
+  await synthesizeNativeTouch(window, 100, 200,
+                              SpecialPowers.DOMWindowUtils.TOUCH_CONTACT);
+  await synthesizeNativeTouch(window, 100, 150,
+                              SpecialPowers.DOMWindowUtils.TOUCH_CONTACT);
+  await synthesizeNativeTouch(window, 100, 100,
+                              SpecialPowers.DOMWindowUtils.TOUCH_CONTACT);
+  await synthesizeNativeTouch(window, 100, 100,
+                              SpecialPowers.DOMWindowUtils.TOUCH_REMOVE);
+  await scrollEventPromise;
+  ok(window.scrollY > 0, "A zero-vector initial touch-move should not prevent subsequent touch-moves from scrolling");
+}
+
+waitUntilApzStable()
+.then(test)
+.then(subtestDone, subtestFailed);
+</script>
+</html>

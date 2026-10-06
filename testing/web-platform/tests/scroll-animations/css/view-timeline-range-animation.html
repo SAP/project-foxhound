@@ -221,6 +221,13 @@
     endOffset: 880
   });
 
+  test_animation_range({
+    rangeStart: 'scroll 100px',
+    rangeEnd: 'scroll 800px',
+    startOffset: 100,
+    endOffset: 800
+  });
+
   // Test animation-range via timeline-scope.
   test_animation_range({
     rangeStart: 'exit 2em',
@@ -228,12 +235,5 @@
     startOffset: 820,
     endOffset: 880
   }, template_with_scope, '(scoped)');
-
-  test_animation_range({
-    rangeStart: 'scroll 100px',
-    rangeEnd: 'scroll 800px',
-    startOffset: 100,
-    endOffset: 800
-  });
 
 </script>

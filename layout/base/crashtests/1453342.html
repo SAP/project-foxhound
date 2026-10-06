@@ -21,9 +21,9 @@
     // DDBEGIN
     o1 = document.createElementNS('http://www.w3.org/1998/Math/MathML', 'mroot');
     o2 = document.createElement('frame');
+    o2.addEventListener('load', frameLoader);
     document.documentElement.appendChild(o1);
     document.documentElement.appendChild(o2);
-    o2.addEventListener('load', frameLoader);
   }
   window.addEventListener('load', start)
 </script>

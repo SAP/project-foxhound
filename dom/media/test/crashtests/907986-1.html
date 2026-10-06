@@ -5,10 +5,11 @@ var context = new window.OfflineAudioContext(1, 100, 48000);
 context.oncomplete = function(e) {
     document.documentElement.removeAttribute("class");
 };
+const FLT_MAX = 3.40282e+38;
 // zero front vector
-context.listener.setOrientation(0, 0, 0, 6.311749985202524e+307, 0, 0);
+context.listener.setOrientation(0, 0, 0, FLT_MAX, 0, 0);
 var panner = context.createPanner();
-panner.setPosition(3.40282e+38, 4, 3.40282e+38);
+panner.setPosition(FLT_MAX, 4, FLT_MAX);
 panner.connect(context.destination);
 var source = context.createOscillator();
 source.connect(panner);

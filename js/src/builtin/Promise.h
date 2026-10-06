@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -263,7 +261,7 @@ struct PromiseReactionRecordBuilder {
 
 // This implements "Let promiseCapability be ! NewPromiseCapability(%Promise%)".
 [[nodiscard]] PromiseObject* CreatePromiseObjectWithoutResolutionFunctions(
-    JSContext* cx);
+    JSContext* cx, int32_t extraFlags = 0);
 
 [[nodiscard]] bool ResolvePromiseInternal(JSContext* cx,
                                           JS::Handle<JSObject*> promise,
@@ -272,6 +270,15 @@ struct PromiseReactionRecordBuilder {
     JSContext* cx, JS::Handle<PromiseObject*> promise,
     JS::Handle<JS::Value> reason,
     JS::Handle<SavedFrame*> unwrappedRejectionStack = nullptr);
+
+#ifdef NIGHTLY_BUILD
+// Implements the SafePromiseResolve abstract operation from the
+// https://tc39.es/proposal-thenable-curtailment/
+// See the function definition in Promise.cpp for the observable contract.
+[[nodiscard]] bool SafeResolvePromise(JSContext* cx,
+                                      JS::Handle<PromiseObject*> promise,
+                                      JS::Handle<JS::Value> resolution);
+#endif  // NIGHTLY_BUILD
 
 [[nodiscard]] bool InternalAsyncGeneratorAwait(
     JSContext* cx, JS::Handle<AsyncGeneratorObject*> generator,

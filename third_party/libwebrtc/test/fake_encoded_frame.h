@@ -11,12 +11,17 @@
 #ifndef TEST_FAKE_ENCODED_FRAME_H_
 #define TEST_FAKE_ENCODED_FRAME_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "api/rtp_packet_infos.h"
+#include "api/units/timestamp.h"
 #include "api/video/encoded_frame.h"
 #include "api/video/video_rotation.h"
+#include "api/video/video_timing.h"
 #include "test/gmock.h"
 
 namespace webrtc {
@@ -25,15 +30,15 @@ namespace test {
 class FakeEncodedFrame : public EncodedFrame {
  public:
   // Always 10ms delay and on time.
-  int64_t ReceivedTime() const override;
+  std::optional<Timestamp> ReceivedTimestamp() const override;
   int64_t RenderTime() const override;
 
   // Setters for protected variables.
-  void SetReceivedTime(int64_t received_time);
+  void SetReceivedTime(Timestamp received_time);
   void SetPayloadType(int payload_type);
 
  private:
-  int64_t received_time_;
+  Timestamp received_time_ = Timestamp::Zero();
 };
 
 MATCHER_P(WithId, id, "") {

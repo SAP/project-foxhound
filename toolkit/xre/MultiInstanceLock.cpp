@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -213,18 +211,36 @@ bool IsOtherInstanceRunning(MultiInstLockHandle lock, bool* aResult) {
   if (!::UnlockFileEx(lock, 0, 1, 0, &o)) {
     return false;
   }
-  // Attempt to take an exclusive lock.
+  // Attempt to take an exclusive lock. A failure with ERROR_LOCK_VIOLATION
+  // normally means another instance is holding a shared lock, but it can also
+  // be a false positive: an unrelated process (antivirus, the search indexer,
+  // an EDR agent) briefly opening the just-created lock file for scanning holds
+  // a transient shared handle that blocks our exclusive lock for a moment. To
+  // avoid spuriously reporting another instance, retry a few times with a short
+  // backoff so such transient handles get a chance to close.
+  constexpr int kMaxAttempts = 5;
   bool rv = false;
-  if (::LockFileEx(lock, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY, 0,
-                   1, 0, &o)) {
-    // We got the exclusive lock, so now release it.
-    ::UnlockFileEx(lock, 0, 1, 0, &o);
-    *aResult = false;
-    rv = true;
-  } else if (::GetLastError() == ERROR_LOCK_VIOLATION) {
-    // We didn't get the exclusive lock because of outstanding shared locks.
+  for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
+    if (::LockFileEx(lock, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
+                     0, 1, 0, &o)) {
+      // We got the exclusive lock, so now release it.
+      ::UnlockFileEx(lock, 0, 1, 0, &o);
+      *aResult = false;
+      rv = true;
+      break;
+    }
+    if (::GetLastError() != ERROR_LOCK_VIOLATION) {
+      // An unexpected failure; we can't determine whether another instance is
+      // running, so leave rv false to report that.
+      break;
+    }
+    // Outstanding shared lock: assume another instance, but keep retrying in
+    // case it is a transient handle that will go away.
     *aResult = true;
     rv = true;
+    if (attempt + 1 < kMaxAttempts) {
+      ::Sleep(10);
+    }
   }
   // Attempt to reclaim the shared lock we released at the beginning.
   if (!::LockFileEx(lock, LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, &o)) {

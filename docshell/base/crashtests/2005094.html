@@ -1,0 +1,24 @@
+<div id=l1>
+ <div id=l2>
+  <iframe id="ifr"></iframe>
+ </div>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  // On load, synchronously re-bind the iframe to cause another synchronous load
+  ifr.onload = () => l1.appendChild(l2)
+  try {
+    // Start a synchronous load that nests itself indefinitely
+    ifr.parentNode.appendChild(ifr)
+  } catch (e) {
+    if (e.name == "RangeError") {
+        // Silence stack overflow errors
+    } else {
+        throw e;
+    }
+  }
+  // Once we're here, something interrupted the infinite recursion
+  // Don't crash when trying to access the possibly broken document
+  window.frames[0].document.body
+})
+</script>

@@ -64,10 +64,6 @@ function MockSoundInstance() {}
 MockSoundInstance.prototype = {
   QueryInterface: ChromeUtils.generateQI(["nsISound"]),
 
-  play(aURL) {
-    MockSound._played.push(`(uri)${aURL.spec}`);
-  },
-
   beep() {
     MockSound._played.push("beep");
   },

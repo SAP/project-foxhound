@@ -1,5 +1,4 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -180,6 +179,35 @@ interface nsIClipboard : nsISupports
 
     void getData ( in nsITransferable aTransferable, in nsIClipboard_ClipboardType aWhichClipboard, [optional] in WindowContext aRequestingWindowContext) ;
 
+  /**
+   * Retrieves clipboard data for the given transferable only if the data
+   * size does not exceed the specified threshold.
+   * If the data exceeds the threshold, the transferable is left untouched and
+   * the Promise resolves to false.
+   * NOTE: Currently, aThreshold will apply only for text/plain flavor.
+   *
+   * @param  aTransferable The transferable
+   * @param  aThreshold
+   *         Threshold in bytes for clipboard data acquisition. The byte size
+   *         is approximate and may differ slightly across platforms (e.g.
+   *         UTF-16 byte count on macOS/Android, UTF-8 byte count * 2 on GTK,
+   *         heap allocation size on Windows).
+   *         If 0 is specified, no data size limit.
+   * @param  aWhichClipboard Specifies the clipboard to which this operation applies.
+   * @param  aRequestingWindowContext [optional]
+   *         The window context window that is requesting the clipboard, which is
+   *         used for content analysis. Passing null means that the content is
+   *         exempt from content analysis. (for example, scripted clipboard read by
+   *         system code) This parameter should not be null when calling this from a
+   *         content process.
+   * @result Promise
+   */
+  [implicit_jscontext]
+  Promise getDataIfSmallerThan(in nsITransferable aTransferable,
+                               in unsigned long long aThreshold,
+                               in nsIClipboard_ClipboardType aWhichClipboard,
+                               [optional] in WindowContext aRequestingWindowContext);
+
     /**
      * Requests getting data asynchronously from the native clipboard. This does
      * not actually retrieve the data, but returns a nsIAsyncGetClipboardData
@@ -261,4 +289,26 @@ interface nsIClipboard : nsISupports
      */
     [infallible]
     boolean isClipboardTypeSupported(in nsIClipboard_ClipboardType aWhichClipboard);
+
+  /**
+   * C++ only helper to retrieves clipboard data for the given transferable only
+   * if the data size does not exceed the specified threshold.
+   *
+   * @param  aTransferable The transferable
+   * @param  aThreshold
+   *         Threshold in bytes for clipboard data acquisition. The byte size
+   *         is approximate and may differ slightly across platforms (e.g.
+   *         UTF-16 byte count on macOS/Android, UTF-8 byte count * 2 on GTK,
+   *         heap allocation size on Windows).
+   *         If 0 is specified, no data size limit.
+   * @param  aWhichClipboard Specifies the clipboard to which this operation applies.
+   * @param  aRequestingWindowContext [optional]
+   *         The window context window that is requesting the clipboard.
+   * @result Promise
+   */
+  [noscript]
+  void getDataIfSmallerThanNative(in nsITransferable aTransferable,
+                                  in unsigned long long aThreshold,
+                                  in nsIClipboard_ClipboardType aWhichClipboard,
+                                  [optional] in WindowContext aRequestingWindowContext);
 };

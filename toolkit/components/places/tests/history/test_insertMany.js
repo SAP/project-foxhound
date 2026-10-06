@@ -37,7 +37,7 @@ add_task(async function test_insertMany() {
   let makePageInfos = async function (urls, filter = x => x) {
     let pageInfos = [];
     for (let url of urls) {
-      let uri = NetUtil.newURI(url);
+      let uri = Services.io.newURI(url);
 
       let pageInfo = {
         title: `Visit to ${url}`,

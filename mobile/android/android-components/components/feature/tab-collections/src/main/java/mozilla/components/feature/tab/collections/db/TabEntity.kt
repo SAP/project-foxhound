@@ -33,19 +33,14 @@ internal data class TabEntity(
     @PrimaryKey(autoGenerate = true)
     @ColumnInfo(name = "id")
     var id: Long? = null,
-
     @ColumnInfo(name = "title")
     var title: String,
-
     @ColumnInfo(name = "url")
     var url: String,
-
     @ColumnInfo(name = "stat_file")
     var stateFile: String,
-
     @ColumnInfo(name = "tab_collection_id")
     var tabCollectionId: Long,
-
     @ColumnInfo(name = "created_at")
     var createdAt: Long,
 ) {

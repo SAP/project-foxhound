@@ -157,7 +157,7 @@ function revert_allow_unsafe_parent_loads_when_extensions_not_remote() {
 }
 
 /**
- * Clears the HTTP and content image caches.
+ * Clears the HTTP and all subresource caches.
  */
 function clearCache() {
   Services.cache2.clear();
@@ -166,6 +166,8 @@ function clearCache() {
     .getService(Ci.imgITools)
     .getImgCacheForDocument(null);
   imageCache.clearCache(false);
+
+  ChromeUtils.clearResourceCache();
 }
 
 var promiseConsoleOutput = async function (task) {
@@ -296,18 +298,65 @@ function handlingUserInputFrameScript() {
   const { MessageChannel } = ChromeUtils.importESModule(
     "resource://testing-common/MessageChannel.sys.mjs"
   );
+  const { Assert } = ChromeUtils.importESModule(
+    "resource://testing-common/Assert.sys.mjs"
+  );
 
+  let targetInnerWindowId = content.windowGlobalChild.innerWindowId;
   let handle;
-  MessageChannel.addListener(this, "ExtensionTest:HandleUserInput", {
+  const handlingUserInputHelper = {
+    // MessageChannel receiveMessage handler.
     receiveMessage({ data }) {
+      // If handle was set while receiving a new request to create it,
+      // we will destroy it but also report it as an explicit test failure
+      // and stop the test earlier when a leak has been detected.
+      if (handle && data) {
+        handle.destruct();
+        handle = null;
+        Assert.ok(false, "leaked HandlingUserInput handle found");
+      }
+
       if (data) {
         handle = content.windowUtils.setHandlingUserInput(true);
-      } else if (handle) {
-        handle.destruct();
+      } else {
+        handle?.destruct();
         handle = null;
       }
     },
-  });
+    // Observer Service notifications observer.
+    observe(subject, topic) {
+      if (topic !== "inner-window-destroyed") {
+        return;
+      }
+      const innerWindowId = subject.QueryInterface(Ci.nsISupportsPRUint64).data;
+      if (innerWindowId != targetInnerWindowId) {
+        // Return earlier when called as an "inner-window-destroyed" observer
+        // and the innerWindowID isn't matching the innerWindowId gathered
+        // when the frame script was originally executed.
+        return;
+      }
+      Services.obs.removeObserver(this, "inner-window-destroyed");
+      if (handle) {
+        handle.destruct();
+        handle = null;
+        // This error would not be triggering an explicit test failure
+        // unfortunately, and so not using Assert methods to not make it
+        // look like if this would be captured as a test failure
+        // (also compared with Assert.ok it the resulting error log is more
+        // verbose and easier to spot in the test logs).
+        throw new Error(
+          "Unexpected leaked HandlingUserInput handle found while handling inner-window-destroyed"
+        );
+      }
+    },
+  };
+
+  MessageChannel.addListener(
+    this,
+    "ExtensionTest:HandleUserInput",
+    handlingUserInputHelper
+  );
+  Services.obs.addObserver(handlingUserInputHelper, "inner-window-destroyed");
 }
 
 // If you use withHandlingUserInput then restart the addon manager,
@@ -316,6 +365,10 @@ function resetHandlingUserInput() {
   extensionHandlers = new WeakSet();
 }
 
+// TODO(Bug 1598804): most of xpcshell tests should now be able to use the
+// browser.test.withHandlingUserInput test helper, consider either restrict
+// this helper to when that isn't possible or to remove it completely if
+// not needed anymore and technically redundant.
 async function withHandlingUserInput(extension, fn) {
   let { messageManager } = extension.extension.groupFrameLoader;
 
@@ -333,12 +386,26 @@ async function withHandlingUserInput(extension, fn) {
     "ExtensionTest:HandleUserInput",
     true
   );
-  await fn();
-  await MessageChannel.sendMessage(
-    messageManager,
-    "ExtensionTest:HandleUserInput",
-    false
-  );
+  try {
+    await fn();
+  } catch (err) {
+    // Log the error along with its full stack trace to make it easier
+    // to investigate its root cause.
+    Cu.reportError(err);
+    // Capture an explicit failure to avoid an exception raised from
+    // MessageChannel.sendMessage in the finally block to be hiding
+    // the actual test failure.
+    ok(
+      false,
+      `Unexpected error raised from withHandlingUserInput callback: ${err}`
+    );
+  } finally {
+    await MessageChannel.sendMessage(
+      messageManager,
+      "ExtensionTest:HandleUserInput",
+      false
+    );
+  }
 }
 
 // QuotaManagerService test helpers.
@@ -428,6 +495,14 @@ async function assertIsPersistentScriptsCachedFlag(ext, expectedValue) {
   );
 }
 
+// Number of anticipated crashes triggered by a call to crashFrame or
+// crashExtensionBackground. The setup_crash_reporter_override_and_cleaner
+// helper waits until it has observed that many crashes before cleanup
+// to prevent crash reports for expected crashes from being left behind.
+let gNumTriggeredCrashes = 0;
+
+// Only use this function if AppConstants.MOZ_CRASHREPORTER is set. In other
+// cases crash dumps are not generated and we do not need to clean up.
 function setup_crash_reporter_override_and_cleaner() {
   const crashIds = [];
   // Override CrashService.sys.mjs to intercept crash dumps, for two reasons:
@@ -446,6 +521,7 @@ function setup_crash_reporter_override_and_cleaner() {
       // until the end of the test, to minimize noise during the test, and to
       // ensure that the cleanup completes fully.
       crashIds.push(id);
+      info(`Detected crash with dumpID: ${id} (total: ${crashIds.length})`);
     },
     QueryInterface: ChromeUtils.generateQI(["nsICrashService"]),
   });
@@ -458,6 +534,30 @@ function setup_crash_reporter_override_and_cleaner() {
       Ci.nsICrashReporter
     );
 
+    let errorIfCrashDumpsNotFound;
+    if (crashIds.length !== gNumTriggeredCrashes) {
+      // We must wait while crashIds.length < gNumTriggeredCrashes in order to
+      // find all crashes that we want to clean up.
+      // If crashIds.length > gNumTriggeredCrashes, we don't have to wait, but
+      // still enter this block to print the informational message showing the
+      // discrepancy between expected vs actual crashes. The test would most
+      // likely fail anyway due to the presence of unexpected crashes.
+      info(
+        `Got ${crashIds.length} instead of ${gNumTriggeredCrashes} crash dumps`
+      );
+      try {
+        await TestUtils.waitForCondition(
+          () => crashIds.length >= gNumTriggeredCrashes,
+          `Waiting for all expected crash dumps to have been written`
+        );
+      } catch (e) {
+        // Even if we did not get all expected crashes, just continue to clean
+        // up the crashes that we did have so far, so that these (expected)
+        // crash dumps are not flagged as unexpected crashes.
+        info(`Did not find all expected crash dumps, cleaning up what we have`);
+        errorIfCrashDumpsNotFound = e;
+      }
+    }
     info(`Observed ${crashIds.length} crash dump(s).`);
     let deletedCount = 0;
     for (let id of crashIds) {
@@ -483,6 +583,9 @@ function setup_crash_reporter_override_and_cleaner() {
       ++deletedCount;
     }
     info(`Removed ${deletedCount} crash dumps out of ${crashIds.length}`);
+    if (errorIfCrashDumpsNotFound) {
+      throw errorIfCrashDumpsNotFound;
+    }
   });
 }
 
@@ -493,6 +596,8 @@ function crashFrame(browser) {
     // The browser should be remote, or the test runner would be killed.
     throw new Error("<browser> must be remote");
   }
+
+  ++gNumTriggeredCrashes;
 
   const { BrowserTestUtils } = ChromeUtils.importESModule(
     "resource://testing-common/BrowserTestUtils.sys.mjs"

@@ -101,7 +101,7 @@ add_task(async () => {
     "Previous search shown"
   );
   let { result } = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
-  Assert.equal(result.providerName, "RecentSearches");
+  Assert.equal(result.providerName, "UrlbarProviderRecentSearches");
 
   await BrowserTestUtils.removeTab(tab);
 });
@@ -133,7 +133,7 @@ add_task(async () => {
     window,
     count - 1
   );
-  Assert.equal(result.providerName, "RecentSearches");
+  Assert.equal(result.providerName, "UrlbarProviderRecentSearches");
 
   await BrowserTestUtils.removeTab(tab);
   await SpecialPowers.popPrefEnv();
@@ -178,7 +178,7 @@ add_task(async () => {
   let { result } = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
   Assert.notEqual(
     result.providerName,
-    "RecentSearches",
+    "UrlbarProviderRecentSearches",
     "Click on help URL did not record a search"
   );
 

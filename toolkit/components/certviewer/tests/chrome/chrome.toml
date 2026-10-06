@@ -9,5 +9,7 @@ support-files = ["parseOutput.mjs"]
 ["test_certDecoderFields.html"]
 support-files = ["CSoutput.mjs"]
 
+["test_hexToIpv6Repr.html"]
+
 ["test_kebabCaseInAdjustCertInformation.html"]
 support-files = ["parseOutput.mjs"]

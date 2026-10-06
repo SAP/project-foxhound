@@ -22,7 +22,7 @@ add_task(async function () {
 });
 
 function testNewRule(view) {
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
   const editor = ruleEditor.selectorText.ownerDocument.activeElement;
   is(editor.value, "#testid", "Selector editor value is as expected");
   info("Escaping from the selector field the change");

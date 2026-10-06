@@ -18,11 +18,11 @@ const TEST_URI = `
 add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view: ruleView } = await openRuleView();
-  const { document: doc, store } = selectChangesView(inspector);
+  const { document: doc, store } = await selectChangesView(inspector);
   const panel = doc.querySelector("#sidebar-panel-changes");
 
   await selectNode("div", inspector);
-  const ruleEditor = getRuleViewRuleEditor(ruleView, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(ruleView, 1);
 
   info("Focusing the first rule's selector name in the Rule view");
   const editor = await focusEditableField(ruleView, ruleEditor.selectorText);

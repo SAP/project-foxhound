@@ -116,7 +116,7 @@ async function testFullpageClipboardScrollbar(hud) {
  * saying that the screenshot was copied to clipboard is rendered in the console.
  *
  * @param {WebConsole} hud
- * @param {String} command
+ * @param {string} command
  */
 function executeScreenshotClipboardCommand(hud, command) {
   return executeAndWaitForMessageByType(

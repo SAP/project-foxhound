@@ -70,7 +70,6 @@
     info("Sending blob to a worker");
 
     function workerScript() {
-      /* eslint-env worker */
       onmessage = function(event) {
         var blob = event.data;
         var blobUrl = URL.createObjectURL(blob);

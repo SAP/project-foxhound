@@ -1,0 +1,23 @@
+{
+  "label": "perplexity.ai",
+  "bugs": {
+    "1997575": {
+      "issue": "user-interface-frustration",
+      "matches": ["*://www.perplexity.ai/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "modify_meta_viewport": {
+        "all_frames": true,
+        "modify": {
+          "interactive-widget": {
+            "value": "resizes-content",
+            "only_if_not_equals": "resizes-content"
+          }
+        }
+      }
+    }
+  ]
+}

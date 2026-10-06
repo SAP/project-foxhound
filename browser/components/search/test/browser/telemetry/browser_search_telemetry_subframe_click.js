@@ -90,7 +90,7 @@ async function clickLinkInSubframe(openInNewTab) {
     let el = content.document.querySelector(_query);
     Assert.ok(el, "Clickable element is visible on page.");
 
-    await EventUtils.synthesizeMouseAtCenter(el, {}, content.window);
+    EventUtils.synthesizeMouseAtCenter(el, {}, content.window);
   });
 }
 

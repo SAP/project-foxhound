@@ -39,7 +39,7 @@ testWithTypedArrayConstructors(function(TA) {
   });
 
   assert.sameValue(lastValue, "obj2");
-});
+}, null, ["passthrough"]);
 
 
 reportCompare(0, 0);

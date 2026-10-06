@@ -1,0 +1,218 @@
+{
+  "addons": {
+    "china-newtab@mozillaonline.com": {
+      "updates": [
+        {
+          "update_hash": "sha256:1abf01a8f1b21320380c4532ca12809a9cb189cf41347c1147a88c2fed2d1484",
+          "version": "6.0.20250903.173925",
+          "update_link": "https://archive.mozilla.org/pub/cn_pack/addons/china-newtab/china-newtab-6.202-fx.xpi",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "115.0"
+            }
+          }
+        },
+        {
+          "update_hash": "sha256:f591ee704f887d73a8f6526abe64d1297d04da881d1249307d2e27619c59187d",
+          "version": "5.114.0buildid20230523.014108",
+          "update_link": "https://archive.mozilla.org/pub/cn_pack/addons/china-newtab/china-newtab-5.114-fx.xpi",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "91.0"
+            }
+          }
+        },
+        {
+          "update_hash": "sha256:cca9f11ddf95a653ae5a10f4a6d8a1ed7f3d52c235afe0e6605d6c78ccf8e68b",
+          "version": "4.89",
+          "update_link": "https://archive.mozilla.org/pub/cn_pack/addons/china-newtab/china-newtab-4.89-fx.xpi",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "68.0"
+            }
+          }
+        }
+      ]
+    },
+    "cehomepage@mozillaonline.com": {
+      "updates": [
+        {
+          "update_hash": "sha256:d09aeaa42e56c04ffb951c42a9004503074f6c25a8b90965f391566879f79f3a",
+          "version": "4.0.20250910.174818",
+          "update_link": "https://archive.mozilla.org/pub/cn_pack/addons/cehomepage/cehomepage-4.202-fx.xpi",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "115.0"
+            }
+          }
+        },
+        {
+          "update_hash": "sha256:bbd960f89d9f79b5573379419eea036da18d8d3ba3671c5b8dc5517fbe9a9e48",
+          "version": "3.112.0buildid20230328.090241",
+          "update_link": "https://archive.mozilla.org/pub/cn_pack/addons/cehomepage/cehomepage-3.112-fx.xpi",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "68.0"
+            }
+          }
+        },
+        {
+          "update_hash": "sha256:be4d6e94c4f332990cee4e3b2c8661bd1d9f33a3c5eb3589b67a5b1f16008f83",
+          "version": "3.72",
+          "update_link": "https://archive.mozilla.org/pub/cn_pack/addons/cehomepage/cehomepage-3.72-fx.xpi",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "60.0"
+            }
+          }
+        },
+        {
+          "update_hash": "sha256:ccd5256ca10ec6d280aab8c0f8093f90b450f75e0ad57dcbdcd2a18a57771a59",
+          "version": "2.61.2",
+          "update_link": "https://archive.mozilla.org/pub/cn_pack/addons/cehomepage/cehomepage-2.61.2-fx.xpi",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "56.0"
+            }
+          }
+        }
+      ]
+    },
+    "cpmanager@mozillaonline.com": {
+      "updates": [
+        {
+          "update_hash": "sha256:60cf05f9ccdc0f354a2f58e6dcebef9fb02c19c655393dac174e0daaef6abc11",
+          "version": "6.0.20250910.174846",
+          "update_link": "https://archive.mozilla.org/pub/cn_pack/addons/cpmanager/cpmanager-6.202-fx.xpi",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "115.0"
+            }
+          }
+        },
+        {
+          "update_hash": "sha256:8e82757241a4259ad3f3db016267bbe2497da1f191c3ea481aa47a97dc92dfd4",
+          "version": "5.114.0buildid20230523.014054",
+          "update_link": "https://archive.mozilla.org/pub/cn_pack/addons/cpmanager/cpmanager-5.114-fx.xpi",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "78.0"
+            }
+          }
+        },
+        {
+          "update_hash": "sha256:4ef589a09e205e6b7c82186ec7a922b19a846a9b412109c3ca0c7300e08ed427",
+          "version": "4.90",
+          "update_link": "https://archive.mozilla.org/pub/cn_pack/addons/cpmanager/cpmanager-4.90-fx.xpi",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "68.0"
+            }
+          }
+        },
+        {
+          "update_hash": "sha256:5b021a5da60bb128304aa8a1077b39d97a283105fa09c1c2368815ccaca1355e",
+          "version": "4.72",
+          "update_link": "https://archive.mozilla.org/pub/cn_pack/addons/cpmanager/cpmanager-4.72-fx.xpi",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "60.0"
+            }
+          }
+        },
+        {
+          "update_hash": "sha256:3c7fe8da13d5ca4b851e1212178cbe7e9f31cac0022fcafbdcfb455827171374",
+          "version": "3.61.1",
+          "update_link": "https://archive.mozilla.org/pub/cn_pack/addons/cpmanager/cpmanager-3.61.1-fx.xpi",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "56.0"
+            }
+          }
+        }
+      ]
+    },
+    "coba@mozilla.com.cn": {
+      "updates": [
+        {
+          "update_hash": "sha256:0c8918a642bb923530b3d419e9421762f21bb486aef854dfc60e70c117bdc7d7",
+          "version": "5.0",
+          "update_link": "https://archive.mozilla.org/pub/cn_pack/addons/coba/coba-5.0-fx.xpi",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "58.0"
+            }
+          }
+        },
+        {
+          "update_hash": "sha256:41cc282f1da13f7e0a45f2e8aac45bab2f356c2741bb6cde3daeb74ba812b0e0",
+          "version": "4.107",
+          "update_link": "https://archive.mozilla.org/pub/cn_pack/addons/coba/coba-4.107-fx.xpi",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "54.0"
+            }
+          }
+        }
+      ]
+    },
+    "wx-assistant@mozillaonline.com": {
+      "updates": [
+        {
+          "update_hash": "sha256:2f20127093069fca6f66a97bd7348830c0e84e5f8ae1f451ad5f53d95166c67c",
+          "version": "3.0",
+          "update_link": "https://archive.mozilla.org/pub/cn_pack/addons/wxassistant/wxassistant-3.0-fx.xpi",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "58.0"
+            }
+          }
+        },
+        {
+          "update_hash": "sha256:d3d7e14326c65f0837bf6f40b163dfca038da7689fd5dfcdd8e6d884c6ef5201",
+          "version": "2.59",
+          "update_link": "https://archive.mozilla.org/pub/cn_pack/addons/wxassistant/wxassistant-2.59-fx.xpi",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "48.0"
+            }
+          }
+        }
+      ]
+    },
+    "tabtweak@mozillaonline.com": {
+      "updates": [
+        {
+          "update_hash": "sha256:51a119f464e03a3552f2a177cb5c07d3f8456a58d3cb5c1c9878fe469d0547ae",
+          "version": "6.0.20250903.174225",
+          "update_link": "https://archive.mozilla.org/pub/cn_pack/addons/tabtweak/tabtweak-6.202-fx.xpi",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "115.0"
+            }
+          }
+        },
+        {
+          "update_hash": "sha256:531b2c33cf173cf1b8c9453120a0e64c8012c0eb8201e0fbace79019520220b8",
+          "version": "5.107.0buildid20221104.101003",
+          "update_link": "https://archive.mozilla.org/pub/cn_pack/addons/tabtweak/tabtweak-5.107-fx.xpi",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "61.0a1"
+            }
+          }
+        },
+        {
+          "update_hash": "sha256:b17c4332242d4b5eb367eeff2ce70254e0411b900eedeff2d5d3c061ce64e255",
+          "version": "4.61",
+          "update_link": "https://archive.mozilla.org/pub/cn_pack/addons/tabtweak/tabtweak-4.61-fx.xpi",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "57.0"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

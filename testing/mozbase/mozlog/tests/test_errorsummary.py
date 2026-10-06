@@ -1,9 +1,6 @@
-# -*- coding: utf-8 -*-
-
 import json
 import time
 
-import mozunit
 import pytest
 
 # flake8: noqa
@@ -229,6 +226,131 @@ import pytest
             """.strip(),
             id="timeout_no_group_status",
         ),
+        pytest.param(
+            [
+                (
+                    "suite_start",
+                    {
+                        "manifestA": ["test_foo", "test_bar", "test_baz"],
+                        "manifestB": ["test_something"],
+                    },
+                ),
+                ("group_start", "manifestA"),
+                ("test_start", "test_foo"),
+                ("test_end", "test_foo", "SKIP"),
+                ("test_start", "test_bar"),
+                ("test_end", "test_bar", "OK"),
+                ("test_start", "test_baz"),
+                ("test_end", "test_baz", "PASS", "FAIL"),
+                ("group_end", "manifestA"),
+                ("group_start", "manifestB"),
+                ("test_start", "test_something"),
+                ("test_end", "test_something", "OK"),
+                ("group_end", "manifestB"),
+                ("suite_end",),
+            ],
+            """
+                {"groups": ["manifestA", "manifestB"], "action": "test_groups", "line": 0}
+                {"test": "test_baz", "subtest": null, "group": "manifestA", "status": "PASS", "expected": "FAIL", "message": null, "stack": null, "modifiers": "", "known_intermittent": [], "action": "test_result", "line": 7}
+                {"group": "manifestA", "status": "ERROR", "duration": 70, "action": "group_result", "line": 13}
+                {"group": "manifestB", "status": "OK", "duration": 30, "action": "group_result", "line": 13}
+            """.strip(),
+            id="group_start_end_duration",
+        ),
+        pytest.param(
+            [
+                (
+                    "suite_start",
+                    {
+                        "manifestA": ["test_foo", "test_bar"],
+                    },
+                ),
+                ("group_start", "manifestA"),
+                ("test_start", "test_foo"),
+                ("test_end", "test_foo", "SKIP"),
+                ("test_start", "test_bar"),
+                ("test_end", "test_bar", "SKIP"),
+                ("group_end", "manifestA"),
+                ("suite_end",),
+            ],
+            """
+                {"groups": ["manifestA"], "action": "test_groups", "line": 0}
+                {"group": "manifestA", "status": "SKIP", "duration": 0, "action": "group_result", "line": 7}
+            """.strip(),
+            id="group_start_end_all_skipped",
+        ),
+        pytest.param(
+            [
+                (
+                    "suite_start",
+                    {
+                        "manifestA": ["test_foo"],
+                        "manifestB": ["test_something"],
+                    },
+                ),
+                ("group_start", "parallel"),
+                ("test_start", "test_foo"),
+                ("test_end", "test_foo", "OK"),
+                ("test_start", "test_something"),
+                ("test_end", "test_something", "OK"),
+                ("group_end", "parallel"),
+                ("suite_end",),
+            ],
+            """
+                {"groups": ["manifestA", "manifestB"], "action": "test_groups", "line": 0}
+                {"group": "manifestA", "status": "OK", "duration": 10, "action": "group_result", "line": 7}
+                {"group": "manifestB", "status": "OK", "duration": 10, "action": "group_result", "line": 7}
+            """.strip(),
+            id="non_manifest_group_names_ignored",
+        ),
+        pytest.param(
+            [
+                (
+                    "suite_start",
+                    {
+                        "manifestA": ["test_a1", "test_a2"],
+                        "manifestB": ["test_b1"],
+                    },
+                ),
+                ("group_start", "parallel", {"threads": 2}),
+                ("test_start", "test_a1"),
+                ("test_end", "test_a1", "OK"),
+                ("test_start", "test_b1"),
+                ("test_end", "test_b1", "OK"),
+                ("group_end", "parallel"),
+                ("group_start", "sequential"),
+                ("test_start", "test_a2"),
+                ("test_end", "test_a2", "OK"),
+                ("group_end", "sequential"),
+                ("suite_end",),
+            ],
+            """
+                {"groups": ["manifestA", "manifestB"], "action": "test_groups", "line": 0}
+                {"group": "manifestA", "status": "OK", "duration": 14, "action": "group_result", "line": 11}
+                {"group": "manifestB", "status": "OK", "duration": 5, "action": "group_result", "line": 11}
+            """.strip(),
+            id="parallel_threads_divide_time",
+        ),
+        pytest.param(
+            [
+                (
+                    "suite_start",
+                    {
+                        "manifestA": ["test_a1", "test_a2"],
+                    },
+                ),
+                ("test_start", "test_a1"),
+                ("test_start", "test_a2"),
+                ("test_end", "test_a2", "SKIP"),
+                ("test_end", "test_a1", "OK"),
+                ("suite_end",),
+            ],
+            """
+                {"groups": ["manifestA"], "action": "test_groups", "line": 0}
+                {"group": "manifestA", "status": "OK", "duration": 30, "action": "group_result", "line": 5}
+            """.strip(),
+            id="parallel_skip_does_not_clear_other_test_time",
+        ),
     ),
 )
 def test_errorsummary(monkeypatch, get_logger, logs, expected):
@@ -259,4 +381,6 @@ def test_errorsummary(monkeypatch, get_logger, logs, expected):
 
 
 if __name__ == "__main__":
+    import mozunit
+
     mozunit.main()

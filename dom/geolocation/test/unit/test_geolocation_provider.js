@@ -7,12 +7,27 @@ var geolocation = null;
 var success = false;
 var watchID = -1;
 
+async function getCurrentMetrics() {
+  // We set geo.provider.network.scan to false, so we know to expect ip-based
+  // location, not wifi-environment-based.
+  return {
+    ipCount:
+      await Glean.geolocation.geolocationService.network_ip.testGetValue(),
+  };
+}
+
+async function checkMetrics() {
+  let metrics = await getCurrentMetrics();
+  Assert.equal(metrics.ipCount, 1);
+}
+
 function terminate(succ) {
   success = succ;
   geolocation.clearWatch(watchID);
 }
 
-function successCallback() {
+async function successCallback() {
+  await checkMetrics();
   terminate(true);
 }
 function errorCallback() {
@@ -57,9 +72,20 @@ function geoHandler(metadata, response) {
   response.write(position);
 }
 
-function run_test() {
+async function run_test() {
   // only kill this test when shutdown is called on the provider.
   do_test_pending();
+
+  // Initialize Glean and get current state.
+  do_get_profile();
+  Services.fog.initializeFOG();
+
+  // Disable the NetworkGeolocationProvider cache so we can test for the
+  // correct telemetry values.
+  Services.prefs.setBoolPref(
+    "geo.provider.network.debug.requestCache.enabled",
+    false
+  );
 
   httpserver = new HttpServer();
   httpserver.registerPathHandler("/geo", geoHandler);
@@ -77,4 +103,8 @@ function run_test() {
 
   geolocation = Cc["@mozilla.org/geolocation;1"].getService(Ci.nsISupports);
   watchID = geolocation.watchPosition(successCallback, errorCallback);
+
+  Services.prefs.clearUserPref(
+    "geo.provider.network.debug.requestCache.enabled"
+  );
 }

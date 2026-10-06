@@ -1,12 +1,7 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 const { AddonManager } = ChromeUtils.importESModule(
   "resource://gre/modules/AddonManager.sys.mjs"
-);
-const { Preferences } = ChromeUtils.importESModule(
-  "resource://gre/modules/Preferences.sys.mjs"
 );
 
 const { TestUtils } = ChromeUtils.importESModule(
@@ -64,7 +59,7 @@ function makeExtension(opts) {
 }
 
 add_task(async function test_langpack_startup_cache() {
-  Preferences.set("extensions.logging.enabled", false);
+  Services.prefs.setBoolPref("extensions.logging.enabled", false);
   await AddonTestUtils.promiseStartupManager();
 
   // Install langpacks to get proper locale startup.

@@ -22,13 +22,13 @@ To see the Dominators view for a snapshot, select \"Dominators\" in the
 
 The Dominators view consists of two panels:
 
--   the [Dominators Tree
-    panel](#dominators-tree-panel)
-    shows you which nodes in the snapshot are retaining the most memory
--   the [Retaining Paths
-    panel](#retaining-paths-panel)
-    (new in Firefox 47) shows the 5 shortest retaining paths for a
-    single node.
+- the [Dominators Tree
+  panel](#dominators-tree-panel)
+  shows you which nodes in the snapshot are retaining the most memory
+- the [Retaining Paths
+  panel](#retaining-paths-panel)
+  (new in Firefox 47) shows the 5 shortest retaining paths for a
+  single node.
 
 ![](../img/dominators-2.png)
 
@@ -40,20 +40,20 @@ retaining the most memory.
 In the main part of the UI, the first row is labeled \"GC Roots\".
 Immediately underneath that is an entry for:
 
--   Every GC root node. In Gecko, there is more than one memory graph,
-    and therefore more than one root. There may be many (often
-    temporary) roots. For example: variables allocated on the stack need
-    to be rooted, or internal caches may need to root their elements.
--   Any other node that\'s referenced from two different roots (since in
-    this case, neither root dominates it).
+- Every GC root node. In Gecko, there is more than one memory graph,
+  and therefore more than one root. There may be many (often
+  temporary) roots. For example: variables allocated on the stack need
+  to be rooted, or internal caches may need to root their elements.
+- Any other node that\'s referenced from two different roots (since in
+  this case, neither root dominates it).
 
 Each entry displays:
 
--   the retained size of the node, as bytes and as a percentage of the
-    total
--   the shallow size of the node, as bytes and as a percentage of the
-    total
--   the nodes\'s name and address in memory.
+- the retained size of the node, as bytes and as a percentage of the
+  total
+- the shallow size of the node, as bytes and as a percentage of the
+  total
+- the nodes\'s name and address in memory.
 
 Entries are ordered by the amount of memory that they retain. For
 example:
@@ -168,15 +168,15 @@ randomly-generated name.
 
 To see what it looks like in the Dominators view:
 
--   load the page
--   enable the Memory tool in the
-    [Settings](https://developer.mozilla.org/en-US/docs/Tools/Tools_Toolbox#settings), if you
-    haven\'t already
--   open the Memory tool
--   check \"Record call stacks\"
--   press the button labeled \"Make monsters!\"
--   take a snapshot
--   switch to the \"Dominators\" view
+- load the page
+- enable the Memory tool in the
+  [Settings](https://developer.mozilla.org/en-US/docs/Tools/Tools_Toolbox#settings), if you
+  haven\'t already
+- open the Memory tool
+- check \"Record call stacks\"
+- press the button labeled \"Make monsters!\"
+- take a snapshot
+- switch to the \"Dominators\" view
 
 <iframe width="595" height="325" src="https://www.youtube.com/embed/HiWnfMoMs2c" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"></iframe>
 

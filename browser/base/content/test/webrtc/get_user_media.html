@@ -3,6 +3,7 @@
 <head><meta charset="UTF-8"></head>
 <body>
 <div id="message"></div>
+<button id="gum">getUserMedia</button>
 <script>
 // Specifies whether we are using fake streams to run this automation
 var useFakeStreams = true;
@@ -25,6 +26,29 @@ function message(m) {
 var gStreams = [];
 var gVideoEvents = [];
 var gAudioEvents = [];
+
+/**
+ * Queue a getUserMedia request to be triggered by a button click.
+ * The button click needs to be handled by the caller.
+ *
+ * @param {boolean} aAudio - Whether to request audio.
+ * @param {boolean} aVideo - Whether to request video.
+ * @param {number} aShare - The type of screen sharing.
+ * @param {boolean} aBadDevice - Whether to use a bad device ID.
+ * @param {boolean} withUserActivation - Whether to simulate user activation.
+ * @returns {Promise} - Resolves when the requestDevice call completes.
+ */
+function queueRequestDeviceViaBtn(aAudio, aVideo, aShare, aBadDevice = false) {
+  return new Promise((resolve) => {
+    let button = document.getElementById("gum");
+    button.addEventListener("click", () => {
+      button.innerText = "getUserMedia";
+      requestDevice(aAudio, aVideo, aShare, aBadDevice).then(resolve);
+    }, {once: true});
+    button.innerText =
+      `getUserMedia(${aAudio}, ${aVideo}, ${aShare}, ${aBadDevice})`;
+  });
+}
 
 async function requestDevice(aAudio, aVideo, aShare, aBadDevice = false) {
   const opts = {video: aVideo, audio: aAudio};

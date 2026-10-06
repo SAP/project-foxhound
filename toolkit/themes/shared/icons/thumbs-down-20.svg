@@ -1,4 +1,17 @@
 <!-- This Source Code Form is subject to the terms of the Mozilla Public
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
-<svg width="20" height="20" xmlns="http://www.w3.org/2000/svg"><g clip-path="url(#a)" fill="context-fill" fill-opacity="context-fill-opacity"><path fill-rule="evenodd" clip-rule="evenodd" d="M5 2.125h9.656c1.388 0 2.614.885 3.054 2.201l2.145 6.436a2.751 2.751 0 0 1-.382 2.504 2.75 2.75 0 0 1-2.254 1.153H13.23v2.243a2.843 2.843 0 0 1-2.842 2.838 1.774 1.774 0 0 1-1.687-1.216l-.994-2.982a1.809 1.809 0 0 0-.197-.408l-1.845-2.813H5v.044a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1v-10.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v.5zm0 1.75h9.656c.633 0 1.193.403 1.394 1.005l2.145 6.435c.105.318.055.656-.141.928a1.02 1.02 0 0 1-.835.427H11.48v3.992c0 .6-.488 1.088-1.089 1.088l-1.025-3.005a3.55 3.55 0 0 0-.393-.81L6.61 10.331H5V3.875z"/></g><defs><clipPath id="a"><path fill="#fff" d="M0 0h20v20H0z"/></clipPath></defs></svg>
+<svg width="20" height="20" xmlns="http://www.w3.org/2000/svg" fill="context-fill" fill-opacity="context-fill-opacity">
+<style>
+.nova { display: none; }
+
+@media -moz-pref("browser.nova.enabled") {
+  .proton { display: none; }
+  .nova { display: revert; }
+}
+</style>
+<g class="proton"><g clip-path="url(#a)"><path fill-rule="evenodd" clip-rule="evenodd" d="M5 2.125h9.656c1.388 0 2.614.885 3.054 2.201l2.145 6.436a2.751 2.751 0 0 1-.382 2.504 2.75 2.75 0 0 1-2.254 1.153H13.23v2.243a2.843 2.843 0 0 1-2.842 2.838 1.774 1.774 0 0 1-1.687-1.216l-.994-2.982a1.809 1.809 0 0 0-.197-.408l-1.845-2.813H5v.044a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1v-10.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v.5zm0 1.75h9.656c.633 0 1.193.403 1.394 1.005l2.145 6.435c.105.318.055.656-.141.928a1.02 1.02 0 0 1-.835.427H11.48v3.992c0 .6-.488 1.088-1.089 1.088l-1.025-3.005a3.55 3.55 0 0 0-.393-.81L6.61 10.331H5V3.875z"/></g><defs><clipPath id="a"><path fill="#fff" d="M0 0h20v20H0z"/></clipPath></defs></g>
+<g class="nova">
+  <path fill-rule="evenodd" d="M3.5 1.5a1.5 1.5 0 0 1 1.413 1h4.855c1.804.073 3.628.211 5.42.41.806.09 1.542.491 2.069 1.134A12.1 12.1 0 0 1 20 11.972a3.12 3.12 0 0 1-2.936 3.035 39 39 0 0 1-4.087.005v2.352A2.64 2.64 0 0 1 10.343 20h-.315c-.882 0-1.683-.554-2.02-1.453a20.2 20.2 0 0 0-2.6-5.732l-.437-.013A1.5 1.5 0 0 1 3.5 14h-2A1.5 1.5 0 0 1 0 12.5V3a1.5 1.5 0 0 1 1.5-1.5zM5 11.05l.908.03c.278.01.535.15.692.378a22 22 0 0 1 1.663 2.844 21.5 21.5 0 0 1 1.406 3.702c.055.147.2.246.357.246h.315a.887.887 0 0 0 .886-.886V14.08a.87.87 0 0 1 .942-.872 37 37 0 0 0 2.72.107 38 38 0 0 0 2.079-.055 1.36 1.36 0 0 0 1.28-1.322A10.35 10.35 0 0 0 15.9 5.153a1.37 1.37 0 0 0-.908-.503 77 77 0 0 0-5.263-.4H5z" clip-rule="evenodd" />
+</g>
+</svg>

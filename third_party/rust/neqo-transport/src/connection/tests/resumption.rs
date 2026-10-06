@@ -7,7 +7,7 @@
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
 use neqo_common::{Datagram, Decoder, Role};
-use neqo_crypto::AuthenticationStatus;
+use nss::{AuthenticationStatus, RecordProtectionOps as _};
 use test_fixture::{
     assertions,
     header_protection::{self, decode_initial_header, initial_aead_and_hp},
@@ -15,14 +15,13 @@ use test_fixture::{
 };
 
 use super::{
-    connect, connect_with_rtt, default_client, default_server, exchange_ticket, get_tokens,
-    new_client, resumed_server, send_something, AT_LEAST_PTO,
+    AT_LEAST_PTO, connect, connect_with_rtt, default_client, default_server, exchange_ticket,
+    get_tokens, new_client, resumed_server, send_something,
 };
 use crate::{
+    ConnectionParameters, DEFAULT_INITIAL_RTT, Error, MIN_INITIAL_PACKET_SIZE, State, Version,
     addr_valid::{AddressValidation, ValidateAddress},
     frame::FrameType,
-    rtt::INITIAL_RTT,
-    ConnectionParameters, Error, State, Version, MIN_INITIAL_PACKET_SIZE,
 };
 
 #[test]
@@ -84,14 +83,15 @@ fn remember_smoothed_rtt() {
 }
 
 fn ticket_rtt(rtt: Duration) -> Duration {
-    // A simple ACK_ECN frame for a single packet with packet number 0 with a single ECT(0) mark.
-    const ACK_FRAME_1: &[u8] = &[0x03, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00];
+    // A simple ACK frame for a single packet with packet number 0.
+    const ACK_FRAME_1: &[u8] = &[0x02, 0x00, 0x00, 0x00, 0x00];
 
-    // This test needs to decrypt the CI, so turn off MLKEM.
+    // This test needs to predicts the exact shape of an ACK frame, so disable randomization.
     let mut client = new_client(
         ConnectionParameters::default()
             .versions(Version::Version1, vec![Version::Version1])
-            .mlkem(false),
+            .mlkem(false)
+            .randomize_first_pn(false),
     );
     let mut server = default_server();
     let mut now = now();
@@ -108,12 +108,11 @@ fn ticket_rtt(rtt: Duration) -> Duration {
         decode_initial_header(&server_initial, Role::Server).unwrap();
 
     // Now decrypt the packet.
-    let (aead, hp) = initial_aead_and_hp(&client_dcid, Role::Server);
+    let (aead_enc, aead_dec, hp) = initial_aead_and_hp(&client_dcid, Role::Server);
     let (header, pn) = header_protection::remove(&hp, protected_header, payload);
-    assert_eq!(pn, 0);
     let pn_len = header.len() - protected_header.len();
     let mut buf = vec![0; payload.len()];
-    let mut plaintext = aead
+    let mut plaintext = aead_dec
         .decrypt(pn, &header, &payload[pn_len..], &mut buf)
         .unwrap()
         .to_owned();
@@ -131,7 +130,8 @@ fn ticket_rtt(rtt: Duration) -> Duration {
     // And rebuild a packet.
     let mut packet = header.clone();
     packet.resize(MIN_INITIAL_PACKET_SIZE, 0);
-    aead.encrypt(pn, &header, &plaintext, &mut packet[header.len()..])
+    aead_enc
+        .encrypt(pn, &header, &plaintext, &mut packet[header.len()..])
         .unwrap();
     header_protection::apply(&hp, &mut packet, protected_header.len()..header.len());
     let si = Datagram::new(
@@ -192,7 +192,7 @@ fn ticket_rtt_less_than_default() {
 
 #[test]
 fn ticket_rtt_larger_than_default() {
-    assert_eq!(ticket_rtt(Duration::from_millis(500)), INITIAL_RTT);
+    assert_eq!(ticket_rtt(Duration::from_millis(500)), DEFAULT_INITIAL_RTT);
 }
 
 /// Check that a resumed connection uses a token on Initial packets.

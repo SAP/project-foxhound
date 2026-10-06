@@ -1,0 +1,15 @@
+[DEFAULT]
+tags = "urlbar"
+support-files = [
+  "head.js",
+]
+prefs = [
+  # Disable APZ since the native key event hits an assertion of bug 1867732.
+  "apz.popups_without_remote.enabled=false"
+]
+
+["browser_result_menu_activate_by_space.js"]
+skip-if = [
+  # Disable Linux since the native key event can not be fired.
+  "os == 'linux'"
+]

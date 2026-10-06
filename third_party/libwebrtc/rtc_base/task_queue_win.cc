@@ -37,6 +37,7 @@ static_assert(false, "This file should not be built, see Bug 1797161.");
 #include <memory>
 #include <optional>
 #include <queue>
+#include <string>
 #include <utility>
 
 #include "absl/functional/any_invocable.h"
@@ -44,7 +45,6 @@ static_assert(false, "This file should not be built, see Bug 1797161.");
 #include "api/task_queue/task_queue_base.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
-#include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/event.h"
 #include "rtc_base/logging.h"
@@ -60,19 +60,23 @@ namespace {
 void CALLBACK InitializeQueueThread(ULONG_PTR param) {
   MSG msg;
   ::PeekMessage(&msg, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
-  rtc::Event* data = reinterpret_cast<rtc::Event*>(param);
+  Event* data = reinterpret_cast<Event*>(param);
   data->Set();
 }
 
 ThreadPriority TaskQueuePriorityToThreadPriority(
     TaskQueueFactory::Priority priority) {
   switch (priority) {
-    case TaskQueueFactory::Priority::HIGH:
+    case TaskQueueFactory::Priority::kHigh:
       return ThreadPriority::kRealtime;
-    case TaskQueueFactory::Priority::LOW:
+    case TaskQueueFactory::Priority::kLow:
       return ThreadPriority::kLow;
-    case TaskQueueFactory::Priority::NORMAL:
+    case TaskQueueFactory::Priority::kNormal:
       return ThreadPriority::kNormal;
+    case TaskQueueFactory::Priority::kVideo:
+      return ThreadPriority::kVideo;
+    case TaskQueueFactory::Priority::kAudio:
+      return ThreadPriority::kAudio;
   }
 }
 
@@ -168,6 +172,7 @@ class TaskQueueWin : public TaskQueueBase {
   TaskQueueWin(absl::string_view queue_name, ThreadPriority priority);
   ~TaskQueueWin() override = default;
 
+  absl::string_view queue_name() const override { return name_; }
   void Delete() override;
 
  protected:
@@ -201,15 +206,17 @@ class TaskQueueWin : public TaskQueueBase {
   std::queue<absl::AnyInvocable<void() &&>> pending_
       RTC_GUARDED_BY(pending_lock_);
   HANDLE in_queue_;
+  const std::string name_;
 };
 
 TaskQueueWin::TaskQueueWin(absl::string_view queue_name,
                            ThreadPriority priority)
-    : in_queue_(::CreateEvent(nullptr, true, false, nullptr)) {
+    : in_queue_(::CreateEvent(nullptr, true, false, nullptr)),
+      name_(queue_name) {
   RTC_DCHECK(in_queue_);
-  thread_ = rtc::PlatformThread::SpawnJoinable(
-      [this] { RunThreadMain(); }, queue_name,
-      rtc::ThreadAttributes().SetPriority(priority));
+  thread_ =
+      PlatformThread::SpawnJoinable([this] { RunThreadMain(); }, queue_name,
+                                    ThreadAttributes().SetPriority(priority));
 
   Event event(false, false);
   RTC_CHECK(thread_.QueueAPC(&InitializeQueueThread,
@@ -279,7 +286,7 @@ void TaskQueueWin::RunThreadMain() {
     // (e.g. required for InitializeQueueThread and stopping the thread in
     // PlatformThread).
     DWORD result = ::MsgWaitForMultipleObjectsEx(
-        arraysize(handles), handles, INFINITE, QS_ALLEVENTS, MWMO_ALERTABLE);
+        std::size(handles), handles, INFINITE, QS_ALLEVENTS, MWMO_ALERTABLE);
     RTC_CHECK_NE(WAIT_FAILED, result);
     if (result == (WAIT_OBJECT_0 + 2)) {
       // There are messages in the message queue that need to be handled.

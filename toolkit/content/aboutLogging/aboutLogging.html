@@ -32,14 +32,13 @@
         <div id="toast-copied" data-l10n-id="about-logging-url-copied"></div>
         <moz-button
           iconsrc="chrome://global/skin/icons/more.svg"
-          aria-expanded="false"
-          aria-haspopup="menu"
           type="default"
           size="default"
           id="open-menu-button"
           data-l10n-id="about-logging-menu"
+          menuid="logging-menu"
         ></moz-button>
-        <panel-list>
+        <panel-list id="logging-menu">
           <panel-item
             id="copy-as-url"
             data-l10n-id="about-logging-copy-as-url"
@@ -189,6 +188,10 @@
           <input type="checkbox" id="with-profiler-stacks-checkbox" /><label
             for="with-profiler-stacks-checkbox"
             data-l10n-id="about-logging-with-profiler-stacks-checkbox"
+          ></label>
+          <input type="checkbox" id="with-javascript-tracing-checkbox" /><label
+            for="with-javascript-tracing-checkbox"
+            data-l10n-id="about-logging-with-javascript-tracing-checkbox"
           ></label>
         </div>
         <div id="logging-output-file" class="form-entry">

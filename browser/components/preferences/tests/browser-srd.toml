@@ -1,0 +1,78 @@
+[DEFAULT]
+dupe-manifest = true
+prefs = [
+  "extensions.formautofill.addresses.available='on'",
+  "signon.management.page.os-auth.enabled=true",
+  "browser.backup.archive.enabled=false",
+  "browser.backup.restore.enabled=false",
+  "browser.settings-redesign.enabled=true",
+  "extensions.getAddons.langpacks.url=https://mochi.test:8000/langpacks",
+]
+support-files = [
+  "head.js",
+  "addons/pl-dictionary.xpi",
+  "addons/set_homepage.xpi",
+  "addons/set_newtab.xpi",
+]
+tags = "os_integration"
+
+["browser_about_settings.js"]
+
+["browser_accessibility_pane.js"]
+
+["browser_accessibility_zoom.js"]
+
+["browser_appearance_pane.js"]
+
+["browser_backup_visibility.js"]
+
+["browser_backup_warning_banner.js"]
+
+["browser_bug1018066_resetScrollPosition.js"]
+
+["browser_bug1020245_openPreferences_to_paneContent.js"]
+
+["browser_build_font_options_test.js"]
+
+["browser_checkspelling.js"]
+
+["browser_colors_dialog.js"]
+
+["browser_fluent.js"]
+
+["browser_legacy_pane_mappings.js"]
+
+["browser_no_id_collision_between_categories_and_mainPane.js"]
+
+["browser_open_migration_wizard.js"]
+
+["browser_privacy_trustPanelBreachAlerts.js"]
+
+["browser_setting_group_in_progress.js"]
+
+["browser_setting_pane_redesign_promo.js"]
+
+["browser_setting_pane_scroll_restoration.js"]
+
+["browser_setting_pane_sub_pane.js"]
+
+["browser_setting_pane_sub_pane_search.js"]
+
+["browser_spotlight.js"]
+
+["browser_srd_telemetry_bucket_migration.js"]
+
+["browser_sub_pane_navigation_selection.js"]
+
+["browser_subdialogs.js"]
+support-files = ["subdialog.xhtml", "subdialog2.xhtml"]
+
+["browser_tabs_open_external_next_to_active_tab.js"]
+
+["browser_updates_managed_by_os.js"]
+
+["browser_windows_launch_on_login.js"]
+run-if = ["os == 'win' && !msix"]
+
+["browser_windows_launch_on_login_msix.js"]
+run-if = ["os == 'win' && msix"]

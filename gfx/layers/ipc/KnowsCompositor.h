@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -188,7 +186,7 @@ class KnowsCompositor {
   /**
    * Helpers for finding other related interface. These are infallible.
    */
-  virtual TextureForwarder* GetTextureForwarder() = 0;
+  virtual RefPtr<TextureForwarder> GetTextureForwarder() = 0;
   virtual LayersIPCActor* GetLayersIPCActor() = 0;
 
  protected:
@@ -220,7 +218,7 @@ class KnowsCompositorMediaProxy : public KnowsCompositor {
   explicit KnowsCompositorMediaProxy(
       const TextureFactoryIdentifier& aIdentifier);
 
-  TextureForwarder* GetTextureForwarder() override;
+  RefPtr<TextureForwarder> GetTextureForwarder() override;
 
   LayersIPCActor* GetLayersIPCActor() override;
 

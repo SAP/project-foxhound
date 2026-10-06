@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<head><meta charset="utf-8"><title>crash test</title></head>
+<body>
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+  const enc = new VideoEncoder({
+    output: () => {},
+    error: () => {}
+  });
+  enc.configure({
+    codec: "av01.0.04M.08",
+    width: 640,
+    height: 480,
+  });
+  const p = enc.flush().catch(() => {});
+  enc.configure({
+    codec: "vp8",
+    width: 320,
+    height: 240,
+  });
+  await p.then(() => { enc.reset(); }).catch(() => {});
+  document.documentElement.removeAttribute("class");
+});
+</script>
+</body>
+</html>

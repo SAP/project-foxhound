@@ -27,6 +27,17 @@ HRESULT WMFPMPServer::RuntimeClassInitialize(
   return S_OK;
 }
 
+void WMFPMPServer::Shutdown() {
+  ENTRY_LOG();
+  if (mMediaSession) {
+    mMediaSession->Shutdown();
+  }
+  mPmpHost.Reset();
+  mPmpServer.Reset();
+  mMediaSession.Reset();
+  mPropertyPmp.Reset();
+}
+
 STDMETHODIMP WMFPMPServer::GetIids(ULONG* aIidCount, IID** aIids) {
   NOT_IMPLEMENTED();
   return E_NOTIMPL;

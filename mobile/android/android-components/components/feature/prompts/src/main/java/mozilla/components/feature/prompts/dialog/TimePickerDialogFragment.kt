@@ -3,35 +3,35 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 package mozilla.components.feature.prompts.dialog
 
-import android.annotation.SuppressLint
-import android.app.AlertDialog
 import android.app.DatePickerDialog
 import android.app.Dialog
 import android.app.TimePickerDialog
-import android.content.Context
 import android.content.DialogInterface
 import android.content.DialogInterface.BUTTON_NEGATIVE
 import android.content.DialogInterface.BUTTON_NEUTRAL
 import android.content.DialogInterface.BUTTON_POSITIVE
-import android.os.Build
-import android.os.Build.VERSION_CODES.M
+import android.icu.util.TimeZone
 import android.os.Bundle
 import android.text.format.DateFormat
-import android.view.LayoutInflater
 import android.view.View
 import android.widget.DatePicker
 import android.widget.TimePicker
 import androidx.annotation.VisibleForTesting
 import androidx.annotation.VisibleForTesting.Companion.PRIVATE
+import androidx.appcompat.app.AlertDialog
+import com.google.android.material.datepicker.CalendarConstraints
+import com.google.android.material.datepicker.DateValidatorPointBackward
+import com.google.android.material.datepicker.DateValidatorPointForward
+import com.google.android.material.datepicker.MaterialDatePicker
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.timepicker.MaterialTimePicker
+import com.google.android.material.timepicker.TimeFormat
 import mozilla.components.feature.prompts.R
-import mozilla.components.feature.prompts.ext.day
 import mozilla.components.feature.prompts.ext.hour
 import mozilla.components.feature.prompts.ext.millisecond
 import mozilla.components.feature.prompts.ext.minute
-import mozilla.components.feature.prompts.ext.month
 import mozilla.components.feature.prompts.ext.second
 import mozilla.components.feature.prompts.ext.toCalendar
-import mozilla.components.feature.prompts.ext.year
 import mozilla.components.feature.prompts.widget.MonthAndYearPicker
 import mozilla.components.feature.prompts.widget.TimePrecisionPicker
 import mozilla.components.support.utils.TimePicker.shouldShowSecondsPicker
@@ -78,57 +78,30 @@ internal class TimePickerDialogFragment :
             safeArguments.putSerializable(KEY_SELECTED_DATE, value)
         }
 
-    @Suppress("ComplexMethod")
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
-        val context = requireContext()
-        val dialog = when (selectionType) {
-            SELECTION_TYPE_TIME -> createTimePickerDialog(context)
-            SELECTION_TYPE_DATE -> initialDate.toCalendar().let { cal ->
-                DatePickerDialog(
-                    context,
-                    this@TimePickerDialogFragment,
-                    cal.year,
-                    cal.month,
-                    cal.day,
-                ).apply { setMinMaxDate(datePicker) }
+        return when (selectionType) {
+            SELECTION_TYPE_DATE, SELECTION_TYPE_DATE_AND_TIME -> {
+                createMaterialDatePickerDialog(isDateTimePicker = selectionType == SELECTION_TYPE_DATE_AND_TIME)
+                Dialog(requireContext())
             }
-            SELECTION_TYPE_DATE_AND_TIME -> AlertDialog.Builder(context)
-                .setView(inflateDateTimePicker(LayoutInflater.from(context)))
-                .create()
-                .also {
-                    it.setButton(BUTTON_POSITIVE, context.getString(R.string.mozac_feature_prompts_set_date), this)
-                    it.setButton(BUTTON_NEGATIVE, context.getString(R.string.mozac_feature_prompts_cancel), this)
+
+            SELECTION_TYPE_TIME -> {
+                val step = stepSize?.toFloat()
+                if (shouldShowSecondsPicker(step) && step != null) {
+                    createTimeStepPickerDialog(step)
+                } else {
+                    createMaterialTimePickerDialog(selectedDate.time)
+                    Dialog(requireContext())
                 }
-            SELECTION_TYPE_MONTH -> AlertDialog.Builder(context)
-                .setTitle(R.string.mozac_feature_prompts_set_month)
-                .setView(inflateDateMonthPicker())
-                .create()
-                .also {
-                    it.setButton(BUTTON_POSITIVE, context.getString(R.string.mozac_feature_prompts_set_date), this)
-                    it.setButton(BUTTON_NEGATIVE, context.getString(R.string.mozac_feature_prompts_cancel), this)
-                }
-            else -> throw IllegalArgumentException()
+            }
+
+            SELECTION_TYPE_MONTH -> createMonthPickerDialog()
+            else -> throw IllegalArgumentException("Invalid selection type: $selectionType")
         }
-
-        dialog.also {
-            it.setCancelable(true)
-            it.setButton(BUTTON_NEUTRAL, context.getString(R.string.mozac_feature_prompts_clear), this)
-        }
-
-        return dialog
-    }
-
-    /**
-     * Called when the user touches outside of the dialog.
-     */
-    override fun onCancel(dialog: DialogInterface) {
-        super.onCancel(dialog)
-        onClick(dialog, BUTTON_NEGATIVE)
     }
 
     override fun onStart() {
         super.onStart()
-
         val alertDialog = dialog
         if (alertDialog is AlertDialog) {
             // We want to call the extension function after the show() call on the dialog,
@@ -137,74 +110,102 @@ internal class TimePickerDialogFragment :
         }
     }
 
-    // Create the appropriate time picker dialog for the given step value.
-    private fun createTimePickerDialog(context: Context): AlertDialog {
-        // Create the Android time picker dialog
-        fun createTimePickerDialog(): AlertDialog {
-            return initialDate.toCalendar().let { cal ->
-                TimePickerDialog(
-                    context,
-                    this,
-                    cal.hour,
-                    cal.minute,
-                    DateFormat.is24HourFormat(context),
-                )
-            }
-        }
+    private fun createMaterialTimePickerDialog(dateSelection: Long? = null) {
+        val calendar = initialDate.toCalendar()
+        val is24Hour = DateFormat.is24HourFormat(requireContext())
+        val timeFormat = if (is24Hour) TimeFormat.CLOCK_24H else TimeFormat.CLOCK_12H
 
-        // Create the custom time picker dialog
-        fun createTimeStepPickerDialog(stepValue: Float): AlertDialog {
-            return AlertDialog.Builder(context)
-                .setTitle(R.string.mozac_feature_prompts_set_time)
-                .setView(
-                    TimePrecisionPicker(
-                        context = requireContext(),
-                        selectedTime = initialDate.toCalendar(),
-                        maxTime = maximumDate?.toCalendar()
-                            ?: TimePrecisionPicker.getDefaultMaxTime(),
-                        minTime = minimumDate?.toCalendar()
-                            ?: TimePrecisionPicker.getDefaultMinTime(),
-                        stepValue = stepValue,
-                        timeSetListener = this,
-                    ),
-                )
-                .create()
-                .also {
-                    it.setButton(
-                        BUTTON_POSITIVE,
-                        context.getString(R.string.mozac_feature_prompts_set_date),
-                        this,
-                    )
-                    it.setButton(
-                        BUTTON_NEGATIVE,
-                        context.getString(R.string.mozac_feature_prompts_cancel),
-                        this,
-                    )
-                }
-        }
+        val timePicker = MaterialTimePicker.Builder()
+            .setTimeFormat(timeFormat)
+            .setHour(calendar.hour)
+            .setMinute(calendar.minute)
+            .setTitleText(R.string.mozac_feature_prompts_set_time)
+            .build()
 
-        return if (!shouldShowSecondsPicker(stepSize?.toFloat())) {
-            createTimePickerDialog()
-        } else {
-            stepSize?.let {
-                createTimeStepPickerDialog(it.toFloat())
-            } ?: createTimePickerDialog()
+        timePicker.addOnPositiveButtonClickListener {
+            val finalCalendar = (
+                dateSelection?.let {
+                    Calendar.getInstance().apply {
+                        timeInMillis = it - TimeZone.getDefault().getOffset(it)
+                    }
+                } ?: selectedDate.toCalendar()
+                )
+
+            finalCalendar.set(Calendar.HOUR_OF_DAY, timePicker.hour)
+            finalCalendar.set(Calendar.MINUTE, timePicker.minute)
+            finalCalendar.set(Calendar.SECOND, 0)
+            finalCalendar.set(Calendar.MILLISECOND, 0)
+            selectedDate = finalCalendar.time
+
+            feature?.onConfirm(sessionId, promptRequestUID, selectedDate)
+            dismiss()
         }
+        timePicker.addOnNegativeButtonClickListener {
+            feature?.onCancel(sessionId, promptRequestUID)
+            dismiss()
+        }
+        timePicker.addOnCancelListener {
+            feature?.onCancel(sessionId, promptRequestUID)
+            dismiss()
+        }
+        timePicker.show(parentFragmentManager, timePicker.toString())
     }
 
-    @SuppressLint("InflateParams")
-    private fun inflateDateTimePicker(inflater: LayoutInflater): View {
-        val view = inflater.inflate(R.layout.mozac_feature_prompts_date_time_picker, null)
-        val datePicker = view.findViewById<DatePicker>(R.id.date_picker)
-        val dateTimePicker = view.findViewById<TimePicker>(R.id.datetime_picker)
-        val cal = initialDate.toCalendar()
+    private fun createMaterialDatePickerDialog(isDateTimePicker: Boolean = false) {
+        val constraintsBuilder = CalendarConstraints.Builder().apply {
+            minimumDate?.let { setValidator(DateValidatorPointForward.from(it.time)) }
+            maximumDate?.let { setValidator(DateValidatorPointBackward.before(it.time)) }
+        }
+        val initialUtcTime = initialDate.time + TimeZone.getDefault().getOffset(initialDate.time)
 
-        // Bind date picker
-        setMinMaxDate(datePicker)
-        datePicker.init(cal.year, cal.month, cal.day, this)
-        initTimePicker(dateTimePicker, cal)
+        val datePicker = MaterialDatePicker.Builder.datePicker()
+            .setSelection(initialUtcTime)
+            .setPositiveButtonText(R.string.mozac_feature_prompts_set_date)
+            .setNegativeButtonText(R.string.mozac_feature_prompts_cancel)
+            .setCalendarConstraints(constraintsBuilder.build())
+            .build()
 
-        return view
+        datePicker.addOnPositiveButtonClickListener { selection ->
+            if (isDateTimePicker) {
+                createMaterialTimePickerDialog(selection)
+            } else {
+                // For the date-only picker, we confirm the selection and dismiss everything.
+                val millis = (selection ?: 0L) - TimeZone.getDefault().getOffset(selection ?: 0L)
+
+                selectedDate = Date(millis)
+                feature?.onConfirm(sessionId, promptRequestUID, selectedDate)
+            }
+        }
+        datePicker.addOnNegativeButtonClickListener {
+            feature?.onCancel(sessionId, promptRequestUID)
+        }
+        datePicker.addOnCancelListener {
+            feature?.onCancel(sessionId, promptRequestUID)
+        }
+        datePicker.addOnDismissListener {
+            // Only dismiss parent if we're not showing time picker
+            if (!isDateTimePicker && isAdded) {
+                dismissAllowingStateLoss()
+            }
+        }
+        datePicker.show(parentFragmentManager, datePicker.toString())
+    }
+
+    private fun createMonthPickerDialog(): AlertDialog {
+        val view = inflateDateMonthPicker()
+        return buildDialogWithView(view, titleResId = R.string.mozac_feature_prompts_set_month)
+    }
+
+    private fun buildDialogWithView(view: View, titleResId: Int? = null): AlertDialog {
+        val builder = MaterialAlertDialogBuilder(requireContext())
+            .setView(view)
+            .setPositiveButton(R.string.mozac_feature_prompts_set_date, this)
+            .setNegativeButton(R.string.mozac_feature_prompts_cancel, this)
+            .setNeutralButton(R.string.mozac_feature_prompts_clear, this)
+
+        titleResId?.let { builder.setTitle(it) }
+
+        return builder.create()
     }
 
     private fun inflateDateMonthPicker(): View {
@@ -217,26 +218,46 @@ internal class TimePickerDialogFragment :
         )
     }
 
-    @Suppress("DEPRECATION")
-    private fun initTimePicker(picker: TimePicker, cal: Calendar) {
-        if (Build.VERSION.SDK_INT >= M) {
-            picker.hour = cal.hour
-            picker.minute = cal.minute
-        } else {
-            picker.currentHour = cal.hour
-            picker.currentMinute = cal.minute
-        }
-        picker.setIs24HourView(DateFormat.is24HourFormat(requireContext()))
-        picker.setOnTimeChangedListener(this)
+    fun createTimeStepPickerDialog(stepValue: Float): AlertDialog {
+        val view = TimePrecisionPicker(
+            context = requireContext(),
+            selectedTime = initialDate.toCalendar(),
+            maxTime = maximumDate?.toCalendar() ?: TimePrecisionPicker.getDefaultMaxTime(),
+            minTime = minimumDate?.toCalendar() ?: TimePrecisionPicker.getDefaultMinTime(),
+            stepValue = stepValue,
+            timeSetListener = this,
+        )
+        return buildDialogWithView(view, titleResId = R.string.mozac_feature_prompts_set_time)
     }
 
-    private fun setMinMaxDate(datePicker: DatePicker) {
-        minimumDate?.let {
-            datePicker.minDate = it.time
+    override fun onClick(dialog: DialogInterface?, which: Int) {
+        when (which) {
+            BUTTON_POSITIVE -> feature?.onConfirm(sessionId, promptRequestUID, selectedDate)
+            BUTTON_NEGATIVE -> feature?.onCancel(sessionId, promptRequestUID)
+            BUTTON_NEUTRAL -> feature?.onClear(sessionId, promptRequestUID)
         }
-        maximumDate?.let {
-            datePicker.maxDate = it.time
-        }
+    }
+
+    override fun onTimeChanged(picker: TimePicker?, hourOfDay: Int, minute: Int) {
+        val calendar = selectedDate.toCalendar()
+        calendar.set(Calendar.HOUR_OF_DAY, hourOfDay)
+        calendar.set(Calendar.MINUTE, minute)
+        selectedDate = calendar.time
+    }
+
+    override fun onTimeSet(view: TimePicker?, hourOfDay: Int, minute: Int) {
+        onTimeChanged(view, hourOfDay, minute)
+        onClick(null, BUTTON_POSITIVE)
+    }
+
+    override fun onDateChanged(view: DatePicker?, year: Int, monthOfYear: Int, dayOfMonth: Int) {
+        val calendar = Calendar.getInstance()
+        calendar.set(year, monthOfYear, dayOfMonth)
+        selectedDate = calendar.time
+    }
+
+    override fun onDateSet(picker: MonthAndYearPicker, month: Int, year: Int) {
+        onDateChanged(null, year, month, 0)
     }
 
     override fun onTimeSet(
@@ -254,39 +275,9 @@ internal class TimePickerDialogFragment :
         selectedDate = calendar.time
     }
 
-    override fun onDateChanged(view: DatePicker?, year: Int, monthOfYear: Int, dayOfMonth: Int) {
-        val calendar = Calendar.getInstance()
-        calendar.set(year, monthOfYear, dayOfMonth)
-        selectedDate = calendar.time
-    }
-
     override fun onDateSet(view: DatePicker?, year: Int, month: Int, dayOfMonth: Int) {
         onDateChanged(view, year, month, dayOfMonth)
         onClick(null, BUTTON_POSITIVE)
-    }
-
-    override fun onDateSet(picker: MonthAndYearPicker, month: Int, year: Int) {
-        onDateChanged(null, year, month, 0)
-    }
-
-    override fun onTimeChanged(picker: TimePicker?, hourOfDay: Int, minute: Int) {
-        val calendar = selectedDate.toCalendar()
-        calendar.set(Calendar.HOUR_OF_DAY, hourOfDay)
-        calendar.set(Calendar.MINUTE, minute)
-        selectedDate = calendar.time
-    }
-
-    override fun onTimeSet(view: TimePicker?, hourOfDay: Int, minute: Int) {
-        onTimeChanged(view, hourOfDay, minute)
-        onClick(null, BUTTON_POSITIVE)
-    }
-
-    override fun onClick(dialog: DialogInterface?, which: Int) {
-        when (which) {
-            BUTTON_POSITIVE -> feature?.onConfirm(sessionId, promptRequestUID, selectedDate)
-            BUTTON_NEGATIVE -> feature?.onCancel(sessionId, promptRequestUID)
-            BUTTON_NEUTRAL -> feature?.onClear(sessionId, promptRequestUID)
-        }
     }
 
     companion object {

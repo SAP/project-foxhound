@@ -21,5 +21,4 @@ class AddonsFront extends FrontClassWithSpec(addonsSpec) {
   }
 }
 
-exports.AddonsFront = AddonsFront;
 registerFront(AddonsFront);

@@ -1,0 +1,8 @@
+{
+  "policies": {
+    "EnableTrackingProtection": {
+      "Category": "strict",
+      "Locked": true
+    }
+  }
+}

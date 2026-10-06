@@ -88,17 +88,29 @@ class ToolbarFeature(
     )
 
     /**
-     * Controls how the URL should be styled
-     *
-     * RegistrableDomain: displays only the eTLD+1 (direct subdomain of the public suffix), uncolored
-     * ColoredUrl: displays the full URL with distinct colors for the registrable domain and the rest of the URL.
-     *   Colors the entire hostname if the registrable domain cannot be determined or is an IP address.
-     *   Leaves non http(s) URLs uncolored.
-     * UncoloredUrl: displays the full URL, uncolored
+     * Options for how the URL should be styled.
      */
     sealed class RenderStyle {
+        /**
+         * Display only the eTLD+1 (direct subdomain of the public suffix), uncolored.
+         */
         object RegistrableDomain : RenderStyle()
+
+        /**
+         * Display only the host using distinct colors for the registrable domain and its subdomains
+         */
+        object ColoredDomain : RenderStyle()
+
+        /**
+         * Display the full URL with distinct colors for the registrable domain and the rest of the URL.
+         * Colors the entire hostname if the registrable domain cannot be determined or is an IP address.
+         * Leaves non http(s) URLs uncolored.
+         */
         object ColoredUrl : RenderStyle()
+
+        /**
+         * Display the full URL, uncolored
+         */
         object UncoloredUrl : RenderStyle()
     }
 }

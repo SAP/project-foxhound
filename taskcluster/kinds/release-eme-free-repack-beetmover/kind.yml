@@ -13,6 +13,9 @@ transforms:
 kind-dependencies:
     - release-eme-free-repack-repackage-signing
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 only-for-build-platforms:
     - macosx64-shippable/opt
     - win32-shippable/opt

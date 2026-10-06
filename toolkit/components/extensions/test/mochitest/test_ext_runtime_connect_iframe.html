@@ -37,6 +37,7 @@ add_task(async function connect_from_background_frame() {
       // instead of a xpcshell test.
       browser.test.assertEq(port.sender.tab, undefined, "Sender is not a tab");
       browser.test.assertEq(port.sender.frameId, undefined, "frameId unset");
+      browser.test.assertEq(port.sender.documentId, port.name, "documentId matches getDocumentId(window)");
       browser.test.assertEq(port.sender.url, FRAME_URL, "Expected sender URL");
       browser.test.assertEq(port.sender.origin, FRAME_ORIGIN, "Expected sender origin");
       port.onMessage.addListener(msg => {
@@ -60,7 +61,7 @@ add_task(async function connect_from_background_frame() {
   function contentScript() {
     browser.test.log(`Running content script at ${document.URL}`);
 
-    let port = browser.runtime.connect();
+    let port = browser.runtime.connect({ name: browser.runtime.getDocumentId(window) });
     port.onMessage.addListener(msg => {
       browser.test.assertEq("ping", msg, "Expected message to content script");
       port.postMessage("pong");
@@ -99,6 +100,7 @@ add_task(async function connect_from_content_script_in_frame() {
       // instead of a xpcshell test.
       browser.test.assertEq(port.sender.tab.url, TAB_URL, "Sender is the tab");
       browser.test.assertTrue(port.sender.frameId > 0, "frameId is set");
+      browser.test.assertEq(port.sender.documentId, port.name, "documentId matches getDocumentId(window)");
       browser.test.assertEq(port.sender.url, FRAME_URL, "Expected sender URL");
       browser.test.assertEq(port.sender.origin, FRAME_ORIGIN, "Expected sender origin");
 
@@ -120,7 +122,7 @@ add_task(async function connect_from_content_script_in_frame() {
   function contentScript() {
     browser.test.log(`Running content script at ${document.URL}`);
 
-    browser.runtime.connect();
+    browser.runtime.connect({ name: browser.runtime.getDocumentId(window) });
   }
 
   let extension = ExtensionTestUtils.loadExtension({

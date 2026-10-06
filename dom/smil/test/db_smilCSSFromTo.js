@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -297,8 +295,8 @@ var gFromToBundles = [
   new TestcaseBundle(gPropList.dominant_baseline, [
     new AnimTestcaseFromTo("alphabetic", "hanging"),
     new AnimTestcaseFromTo("mathematical", "central"),
-    new AnimTestcaseFromTo("middle", "text-after-edge"),
-    new AnimTestcaseFromTo("text-before-edge", "auto"),
+    new AnimTestcaseFromTo("middle", "text-bottom"),
+    new AnimTestcaseFromTo("text-top", "auto"),
     new AnimTestcaseFromTo("alphabetic", "inherit", { toComp: "auto" }),
   ]),
   // NOTE: Mozilla doesn't currently support "enable-background", but I'm

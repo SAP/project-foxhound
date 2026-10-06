@@ -16,7 +16,7 @@ class ApplicationPanel {
    *        The frame/window dedicated to this panel.
    * @param {Toolbox} toolbox
    *        The toolbox instance responsible for this panel.
-   * @param {Object} commands
+   * @param {object} commands
    *        The commands object with all interfaces defined from devtools/shared/commands/
    */
   constructor(panelWin, toolbox, commands) {
@@ -40,6 +40,24 @@ class ApplicationPanel {
     this.panelWin = null;
     this.toolbox = null;
     this.emit("destroyed");
+  }
+
+  /**
+   * Called by toolbox.js on `Esc` keydown to check if the application panel
+   * should prevent the split console from being toggled.
+   *
+   * @returns {boolean} true if the split console toggle should be prevented.
+   */
+  shouldPreventSplitConsoleToggle() {
+    // If a popover is displayed, hide it and prevent the split console from
+    // being toggled.
+    const popoverEl = this.panelWin.document.querySelector(":popover-open");
+    if (popoverEl) {
+      popoverEl.hidePopover();
+      return true;
+    }
+
+    return false;
   }
 }
 

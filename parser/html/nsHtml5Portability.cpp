@@ -7,15 +7,6 @@
 #include "nsAtom.h"
 #include "nsHtml5TreeBuilder.h"
 #include "nsString.h"
-#include "mozilla/CheckedInt.h"
-
-int32_t nsHtml5Portability::checkedAdd(int32_t a, int32_t b) {
-  mozilla::CheckedInt<int32_t> sum(a);
-  sum += b;
-  MOZ_RELEASE_ASSERT(sum.isValid(),
-                     "HTML input too large for signed 32-bit integer.");
-  return sum.value();
-}
 
 nsAtom* nsHtml5Portability::newLocalNameFromBuffer(char16_t* buf,
                                                    int32_t length,
@@ -26,13 +17,15 @@ nsAtom* nsHtml5Portability::newLocalNameFromBuffer(char16_t* buf,
 
 nsHtml5String nsHtml5Portability::newStringFromBuffer(
     char16_t* buf, int32_t offset, int32_t length, const StringTaint& taint,
-    nsHtml5TreeBuilder* treeBuilder, bool maybeAtomize) {
+    nsHtml5TreeBuilder* treeBuilder, nsHtml5AtomTable* interner) {
   if (!length) {
     return nsHtml5String::EmptyString();
   }
-  if (maybeAtomize && !taint.hasTaint()) {
-    return nsHtml5String::FromAtom(
-        NS_AtomizeMainThread(nsDependentSubstring(buf + offset, length)));
+  if (interner) {
+    MOZ_ASSERT(!offset);
+    RefPtr<nsAtom> atom =
+        interner->GetAtom(nsDependentSubstring(buf, buf + length));
+    return nsHtml5String::FromAtom(atom.forget(), taint);
   }
   return nsHtml5String::FromBuffer(buf + offset, length, taint, treeBuilder);
 }

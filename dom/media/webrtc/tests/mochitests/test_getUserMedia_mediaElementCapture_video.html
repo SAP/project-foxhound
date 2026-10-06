@@ -38,7 +38,8 @@ runTest(async () => {
     info("Capturing");
     captureStreamElement =
       createMediaElement("video", "captureStream");
-    captureStreamElement.srcObject = gUMVideoElement.mozCaptureStream();
+    captureStreamElement.srcObject =
+    gUMVideoElement.captureStream?.() || gUMVideoElement.mozCaptureStream();
     captureStreamElement.play();
 
     await h.checkVideoPlaying(captureStreamElement);

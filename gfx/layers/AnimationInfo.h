@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -129,8 +127,9 @@ class AnimationInfo final {
   bool AddAnimationsForProperty(
       nsIFrame* aFrame, const EffectSet* aEffects,
       const nsTArray<RefPtr<dom::Animation>>& aCompositorAnimations,
-      const Maybe<TransformData>& aTransformData, nsCSSPropertyID aProperty,
-      Send aSendFlag, WebRenderLayerManager* aLayerManager);
+      const Maybe<TransformData>& aTransformData,
+      NonCustomCSSPropertyId aProperty, Send aSendFlag,
+      WebRenderLayerManager* aLayerManager);
 
   void AddNonAnimatingTransformLikePropertiesStyles(
       const nsCSSPropertyIDSet& aNonAnimatingProperties, nsIFrame* aFrame,

@@ -13,6 +13,9 @@ transforms:
 kind-dependencies:
     - balrog
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 tasks:
     post-balrog-dummy:
         description: Dummy task to deal with max_dependencies

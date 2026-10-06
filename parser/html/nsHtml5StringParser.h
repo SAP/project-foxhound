@@ -31,6 +31,7 @@ class nsHtml5StringParser : public nsParserBase {
 
   /**
    * Invoke the fragment parsing algorithm (innerHTML).
+   * https://html.spec.whatwg.org/#html-fragment-parsing-algorithm
    * DO NOT CALL from outside nsContentUtils.cpp.
    *
    * @param aSourceBuffer the string being set as innerHTML

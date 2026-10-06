@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SVGLineElement.h"
+
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGLineElementBinding.h"
 #include "mozilla/gfx/2D.h"
@@ -22,28 +21,29 @@ JSObject* SVGLineElement::WrapNode(JSContext* aCx,
 
 SVGElement::LengthInfo SVGLineElement::sLengthInfo[4] = {
     {nsGkAtoms::x1, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::y1, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
     {nsGkAtoms::x2, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::y2, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
 };
 
 //----------------------------------------------------------------------
 // Implementation
 
 SVGLineElement::SVGLineElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : SVGLineElementBase(std::move(aNodeInfo)) {}
 
 void SVGLineElement::MaybeAdjustForZeroLength(float aX1, float aY1, float& aX2,
                                               float aY2) {
   if (aX1 == aX2 && aY1 == aY2) {
     SVGContentUtils::AutoStrokeOptions strokeOptions;
-    SVGContentUtils::GetStrokeOptions(&strokeOptions, this, nullptr, nullptr,
-                                      SVGContentUtils::eIgnoreStrokeDashing);
+    SVGContentUtils::GetStrokeOptions(
+        &strokeOptions, this, nullptr, nullptr,
+        SVGContentUtils::StrokeOptionFlag::IgnoreStrokeDashing);
 
     if (strokeOptions.mLineCap != CapStyle::BUTT) {
       float tinyLength =
@@ -94,8 +94,9 @@ void SVGLineElement::GetMarkPoints(nsTArray<SVGMark>* aMarks) {
 
   float angle = std::atan2(y2 - y1, x2 - x1);
 
-  aMarks->AppendElement(SVGMark(x1, y1, angle, SVGMark::eStart));
-  aMarks->AppendElement(SVGMark(x2, y2, angle, SVGMark::eEnd));
+  aMarks->AppendElement(
+      SVGMark(gfx::Point(x1, y1), angle, SVGMark::Type::Start));
+  aMarks->AppendElement(SVGMark(gfx::Point(x2, y2), angle, SVGMark::Type::End));
 }
 
 void SVGLineElement::GetAsSimplePath(SimplePath* aSimplePath) {

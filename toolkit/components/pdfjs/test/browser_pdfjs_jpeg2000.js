@@ -6,8 +6,9 @@ const TESTROOT = "https://example.com/browser/" + RELATIVE_DIR;
 
 /**
  * Get the the pixels on the drawn canvas.
- * @param {Object} browser
- * @returns {Object}
+ *
+ * @param {object} browser
+ * @returns {object}
  */
 async function getPixels(browser) {
   return SpecialPowers.spawn(browser, [], async function () {
@@ -17,9 +18,8 @@ async function getPixels(browser) {
     Assert.ok(!!canvas, "We must have a canvas");
 
     return new Uint32Array(
-      canvas
-        .getContext("2d")
-        .getImageData(0, 0, canvas.width, canvas.height).data.buffer
+      canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height)
+        .data.buffer
     );
   });
 }

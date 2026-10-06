@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -129,10 +128,8 @@ nsClientAuthRememberService::GetDecisions(
       if (NS_FAILED(rv)) {
         return rv;
       }
-      RefPtr<nsIClientAuthRememberRecord> tmp =
-          new nsClientAuthRemember(key, value);
-
-      results.AppendElement(tmp);
+      RefPtr tmp = MakeRefPtr<nsClientAuthRemember>(key, value);
+      results.AppendElement(std::move(tmp));
     }
   }
 
@@ -186,8 +183,7 @@ nsClientAuthRememberService::DeleteDecisionsByHost(
       if (NS_FAILED(rv)) {
         return rv;
       }
-      RefPtr<nsIClientAuthRememberRecord> tmp =
-          new nsClientAuthRemember(key, value);
+      RefPtr tmp = MakeRefPtr<nsClientAuthRemember>(key, value);
       nsAutoCString asciiHost;
       tmp->GetAsciiHost(asciiHost);
       if (asciiHost.Equals(aHostName)) {
@@ -269,17 +265,17 @@ nsresult CheckForPreferredCertificate(const nsACString& aHostName,
     return NS_ERROR_UNEXPECTED;
   }
   ScopedCFType<SecIdentityRef> identity(
-      ::SecIdentityCopyPreferred(host.get(), NULL, NULL));
+      ::SecIdentityCopyPreferred(host.get(), nullptr, nullptr));
   if (!identity) {
     // No preferred identity for this hostname, leave aCertDBKey empty and
     // return
     return NS_OK;
   }
-  SecCertificateRef certRefRaw = NULL;
+  SecCertificateRef certRefRaw = nullptr;
   OSStatus copyResult =
       ::SecIdentityCopyCertificate(identity.get(), &certRefRaw);
   ScopedCFType<SecCertificateRef> certRef(certRefRaw);
-  if (copyResult != errSecSuccess || certRef.get() == NULL) {
+  if (copyResult != errSecSuccess || certRef.get() == nullptr) {
     return NS_ERROR_UNEXPECTED;
   }
   ScopedCFType<CFDataRef> der(::SecCertificateCopyData(certRef.get()));

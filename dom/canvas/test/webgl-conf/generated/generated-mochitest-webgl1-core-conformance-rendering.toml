@@ -1,0 +1,151 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl1-core"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/conformance/rendering/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_conformance__rendering__bind-framebuffer-flush-bug.html"]
+
+["test_conformance__rendering__blending.html"]
+
+["test_conformance__rendering__canvas-alpha-bug.html"]
+
+["test_conformance__rendering__clear-after-copyTexImage2D.html"]
+
+["test_conformance__rendering__clear-default-framebuffer-with-scissor-test.html"]
+
+["test_conformance__rendering__clipping-wide-points.html"]
+fail-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
+
+["test_conformance__rendering__color-mask-preserved-during-implicit-clears.html"]
+
+["test_conformance__rendering__color-mask-should-not-affect-antialiased-framebuffer-resolution.html"]
+
+["test_conformance__rendering__culling.html"]
+
+["test_conformance__rendering__default-texture-draw-bug.html"]
+
+["test_conformance__rendering__draw-arrays-out-of-bounds.html"]
+
+["test_conformance__rendering__draw-elements-out-of-bounds.html"]
+
+["test_conformance__rendering__draw-webgl-to-canvas-2d-repeatedly.html"]
+
+["test_conformance__rendering__draw-with-changing-start-vertex-bug.html"]
+
+["test_conformance__rendering__framebuffer-switch.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
+["test_conformance__rendering__framebuffer-texture-clear.html"]
+
+["test_conformance__rendering__framebuffer-texture-switch.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
+["test_conformance__rendering__gl-clear.html"]
+
+["test_conformance__rendering__gl-drawarrays.html"]
+
+["test_conformance__rendering__gl-drawelements.html"]
+
+["test_conformance__rendering__gl-scissor-canvas-dimensions.html"]
+
+["test_conformance__rendering__gl-scissor-fbo-test.html"]
+
+["test_conformance__rendering__gl-scissor-test.html"]
+fail-if = [
+  "display == 'wayland'",
+]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
+
+["test_conformance__rendering__gl-viewport-test.html"]
+
+["test_conformance__rendering__line-loop-tri-fan.html"]
+
+["test_conformance__rendering__line-rendering-quality.html"]
+
+["test_conformance__rendering__many-draw-calls.html"]
+skip-if = [
+  "debug",
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
+["test_conformance__rendering__more-than-65536-indices.html"]
+
+["test_conformance__rendering__multisample-corruption.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_conformance__rendering__negative-one-index.html"]
+
+["test_conformance__rendering__out-of-bounds-array-buffers.html"]
+
+["test_conformance__rendering__out-of-bounds-index-buffers.html"]
+
+["test_conformance__rendering__point-no-attributes.html"]
+
+["test_conformance__rendering__point-size.html"]
+
+["test_conformance__rendering__point-specific-shader-variables.html"]
+
+["test_conformance__rendering__point-with-gl-pointcoord-in-fragment-shader.html"]
+
+["test_conformance__rendering__polygon-offset.html"]
+
+["test_conformance__rendering__preservedrawingbuffer-leak.html"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_conformance__rendering__rendering-sampling-feedback-loop.html"]
+
+["test_conformance__rendering__rendering-stencil-large-viewport.html"]
+fail-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_conformance__rendering__scissor-rect-repeated-rendering.html"]
+
+["test_conformance__rendering__simple.html"]
+
+["test_conformance__rendering__texture-switch-performance.html"]
+skip-if = [
+  "true",
+]
+
+["test_conformance__rendering__triangle.html"]

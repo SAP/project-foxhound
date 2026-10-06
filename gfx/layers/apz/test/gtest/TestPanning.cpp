@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -561,4 +559,35 @@ TEST_F(APZCPanningTester, HoldGesture_DuringAutoscrollAnimation) {
 
   // Check that this did NOT cancel the autoscroll animation.
   apzc->AssertStateIsAutoscroll();
+}
+TEST_F(APZCPanningTester, Autoscroll_ScrollWheelCooldown) {
+  auto cooldownMS = StaticPrefs::apz_autoscroll_scroll_wheel_cooldown();
+  // Tell APZ about the current mouse position. This is needed for
+  // autoscroll to work correctly.
+  tm->SetCurrentMousePosition(ScreenPoint(5, 5));
+
+  // Start an autoscroll animation.
+  apzc->StartAutoscroll(ScreenPoint(5, 5));
+  apzc->AssertStateIsAutoscroll();
+
+  // Send a scroll wheel and check that this did NOT cancel the autoscroll
+  // animation.
+  Wheel(apzc, ScreenIntPoint(10, 10), ScreenPoint(0, 10), mcc->Time());
+  apzc->AssertStateIsAutoscroll();
+
+  // Advance to right before cooldown ends
+  if (cooldownMS - 1 > 0) {
+    mcc->AdvanceByMillis(cooldownMS - 1);
+    // Send a scroll wheel and check that this did NOT cancel the autoscroll
+    // animation.
+    Wheel(apzc, ScreenIntPoint(10, 10), ScreenPoint(0, 10), mcc->Time());
+    apzc->AssertStateIsAutoscroll();
+  }
+  // Advance the time to right after cooldown
+  mcc->AdvanceByMillis(2);
+
+  // Send a scroll wheel and check that this DID cancel the autoscroll
+  // animation.
+  Wheel(apzc, ScreenIntPoint(10, 10), ScreenPoint(0, 10), mcc->Time());
+  apzc->AssertStateIsReset();
 }

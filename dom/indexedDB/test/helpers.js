@@ -765,6 +765,21 @@ function workerScript() {
     });
   };
 
+  self.requestSucceeded = function (_request_, _optionalSyncSuccessCallback_) {
+    return new Promise(function (_resolve_, _reject_) {
+      _request_.onerror = function (_event_) {
+        ok(false, "indexedDB error, '" + _event_.target.error.name + "'");
+        _reject_(_event_);
+      };
+      _request_.onsuccess = function (_event_) {
+        if (_optionalSyncSuccessCallback_) {
+          _optionalSyncSuccessCallback_();
+        }
+        _resolve_(_event_);
+      };
+    });
+  };
+
   self.postMessage({ op: "ready" });
 }
 

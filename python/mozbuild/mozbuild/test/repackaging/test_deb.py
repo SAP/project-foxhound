@@ -45,7 +45,7 @@ ZH_TW_FTL = """\
 # The entry name is the label on the desktop icon, among other things.
 desktop-entry-name = { -brand-shortcut-name }
 # The comment usually appears as a tooltip when hovering over application menu entry.
-desktop-entry-comment = 瀏覽全球資訊網
+desktop-entry-comment-1 = 瀏覽全球資訊網
 desktop-entry-generic-name = 網頁瀏覽器
 # Keywords are search terms used to find this application.
 # The string is a list of keywords separated by semicolons:
@@ -75,14 +75,14 @@ StartupNotify=true
 Actions=new-window;new-private-window;open-profile-manager;
 Name=en-US-desktop-entry-name
 Name[zh_TW]=zh-TW-desktop-entry-name
-Comment=en-US-desktop-entry-comment
-Comment[zh_TW]=zh-TW-desktop-entry-comment
+Comment=en-US-desktop-entry-comment-1
+Comment[zh_TW]=zh-TW-desktop-entry-comment-1
 GenericName=en-US-desktop-entry-generic-name
 GenericName[zh_TW]=zh-TW-desktop-entry-generic-name
 Keywords=en-US-desktop-entry-keywords
 Keywords[zh_TW]=zh-TW-desktop-entry-keywords
-X-GNOME-FullName=en-US-desktop-entry-x-gnome-full-name
-X-GNOME-FullName[zh_TW]=zh-TW-desktop-entry-x-gnome-full-name
+X-GNOME-FullName=en-US-desktop-entry-x-gnome-full-name-1
+X-GNOME-FullName[zh_TW]=zh-TW-desktop-entry-x-gnome-full-name-1
 
 [Desktop Action new-window]
 Exec=firefox-nightly --new-window %u
@@ -108,21 +108,21 @@ Exec=firefox-devedition %u
 Terminal=false
 X-MultipleArgs=false
 Icon=firefox-devedition
-StartupWMClass=firefox-aurora
+StartupWMClass=firefox-dev
 Categories=GNOME;GTK;Network;WebBrowser;
 MimeType=application/json;application/pdf;application/rdf+xml;application/rss+xml;application/x-xpinstall;application/xhtml+xml;application/xml;audio/flac;audio/ogg;audio/webm;image/avif;image/gif;image/jpeg;image/png;image/svg+xml;image/webp;text/html;text/xml;video/ogg;video/webm;x-scheme-handler/chrome;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/mailto;
 StartupNotify=true
 Actions=new-window;new-private-window;open-profile-manager;
 Name=en-US-desktop-entry-name
 Name[zh_TW]=zh-TW-desktop-entry-name
-Comment=en-US-desktop-entry-comment
-Comment[zh_TW]=zh-TW-desktop-entry-comment
+Comment=en-US-desktop-entry-comment-1
+Comment[zh_TW]=zh-TW-desktop-entry-comment-1
 GenericName=en-US-desktop-entry-generic-name
 GenericName[zh_TW]=zh-TW-desktop-entry-generic-name
 Keywords=en-US-desktop-entry-keywords
 Keywords[zh_TW]=zh-TW-desktop-entry-keywords
-X-GNOME-FullName=en-US-desktop-entry-x-gnome-full-name
-X-GNOME-FullName[zh_TW]=zh-TW-desktop-entry-x-gnome-full-name
+X-GNOME-FullName=en-US-desktop-entry-x-gnome-full-name-1
+X-GNOME-FullName[zh_TW]=zh-TW-desktop-entry-x-gnome-full-name-1
 
 [Desktop Action new-window]
 Exec=firefox-devedition --new-window %u
@@ -209,6 +209,7 @@ def test_generate_deb_desktop_entry_file_text(monkeypatch):
     build_variables = {
         "PKG_NAME": "firefox-nightly",
         "Icon": "firefox-nightly",
+        "REMOTING_NAME": "firefox-nightly",
     }
     release_product = "firefox"
     release_type = "nightly"
@@ -276,6 +277,7 @@ def test_generate_deb_desktop_entry_file_text(monkeypatch):
     build_variables = {
         "PKG_NAME": "firefox-devedition",
         "Icon": "firefox-devedition",
+        "REMOTING_NAME": "firefox-dev",
     }
     release_product = "devedition"
     release_type = "beta"

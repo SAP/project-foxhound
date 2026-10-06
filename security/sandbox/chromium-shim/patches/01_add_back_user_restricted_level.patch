@@ -1,0 +1,73 @@
+# HG changeset patch
+# User Bob Owen <bobowencode@gmail.com>
+# Date 1730471667 0
+#      Fri Nov 01 14:34:27 2024 +0000
+Add back USER_RESTRICTED access token level
+
+diff --git a/sandbox/win/src/restricted_token_utils.cc b/sandbox/win/src/restricted_token_utils.cc
+--- a/sandbox/win/src/restricted_token_utils.cc
++++ b/sandbox/win/src/restricted_token_utils.cc
+@@ -112,16 +112,23 @@ std::optional<base::win::AccessToken> Cr
+         restricted_token.AddRestrictingSid(*unique_restricted_sid);
+       }
+       // This token has to be able to create objects in BNO, it needs the
+       // current logon sid in the token to achieve this. You should also set the
+       // process to be low integrity level so it can't access object created by
+       // other processes.
+       restricted_token.AddRestrictingSidLogonSession();
+       break;
++    case USER_RESTRICTED:
++      restricted_token.AddUserSidForDenyOnly();
++      restricted_token.AddRestrictingSid(base::win::WellKnownSid::kRestricted);
++      if (unique_restricted_sid) {
++        restricted_token.AddRestrictingSid(*unique_restricted_sid);
++      }
++      break;
+     case USER_LOCKDOWN:
+       remove_traverse_privilege = true;
+       restricted_token.AddUserSidForDenyOnly();
+       restricted_token.AddRestrictingSid(base::win::WellKnownSid::kNull);
+       if (unique_restricted_sid) {
+         restricted_token.AddRestrictingSid(*unique_restricted_sid);
+       }
+       break;
+diff --git a/sandbox/win/src/security_level.h b/sandbox/win/src/security_level.h
+--- a/sandbox/win/src/security_level.h
++++ b/sandbox/win/src/security_level.h
+@@ -38,16 +38,18 @@ enum IntegrityLevel {
+ // The Token level specifies a set of  security profiles designed to
+ // provide the bulk of the security of sandbox.
+ //
+ //  TokenLevel                 |Restricting   |Deny Only       |Privileges|
+ //                             |Sids          |Sids            |          |
+ // ----------------------------|--------------|----------------|----------|
+ // USER_LOCKDOWN               | Null Sid     | All            | None     |
+ // ----------------------------|--------------|----------------|----------|
++// USER_RESTRICTED             | RESTRICTED   | All            | Traverse |
++// ----------------------------|--------------|----------------|----------|
+ // USER_LIMITED                | Users        | All except:    | Traverse |
+ //                             | Everyone     | Users          |          |
+ //                             | RESTRICTED   | Everyone       |          |
+ //                             |              | Interactive    |          |
+ // ----------------------------|--------------|----------------|----------|
+ // USER_INTERACTIVE            | Users        | All except:    | Traverse |
+ //                             | Everyone     | Users          |          |
+ //                             | RESTRICTED   | Everyone       |          |
+@@ -75,16 +77,17 @@ enum IntegrityLevel {
+ // and on the broker token itself.
+ //
+ // The LOCKDOWN level is designed to allow access to almost nothing that has
+ // security associated with and they are the recommended levels to run sandboxed
+ // code specially if there is a chance that the broker is process might be
+ // started by a user that belongs to the Admins or power users groups.
+ enum TokenLevel {
+   USER_LOCKDOWN = 0,
++  USER_RESTRICTED,
+   USER_LIMITED,
+   USER_INTERACTIVE,
+   USER_RESTRICTED_NON_ADMIN,
+   USER_RESTRICTED_SAME_ACCESS,
+   USER_UNPROTECTED,
+   USER_LAST
+ };
+ 

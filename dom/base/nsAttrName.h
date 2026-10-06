@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,8 +8,8 @@
  * can.
  */
 
-#ifndef nsAttrName_h___
-#define nsAttrName_h___
+#ifndef nsAttrName_h_
+#define nsAttrName_h_
 
 #include "mozilla/dom/NodeInfo.h"
 #include "nsAtom.h"
@@ -29,6 +27,9 @@ class nsAttrName {
     NS_ASSERTION(aAtom, "null atom-name in nsAttrName");
     NS_ADDREF(aAtom);
   }
+
+  explicit nsAttrName(already_AddRefed<nsAtom> aAtom)
+      : mBits(reinterpret_cast<uintptr_t>(aAtom.take())) {}
 
   explicit nsAttrName(mozilla::dom::NodeInfo* aNodeInfo) {
     NS_ASSERTION(aNodeInfo, "null nodeinfo-name in nsAttrName");

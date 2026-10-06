@@ -1,0 +1,134 @@
+<!DOCTYPE HTML>
+<html>
+<!--
+Unit test for chrome://global/content/ScrollOffsets.mjs.
+Exercises the ScrollOffsets API in isolation from its consumers
+(about:addons and about:preferences) so regressions to the shared
+contract are caught independently of either page.
+-->
+<head>
+  <meta charset="utf-8">
+  <title>ScrollOffsets unit test</title>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
+  <style>
+    #scroller {
+      width: 100px;
+      height: 100px;
+      overflow: auto;
+    }
+    #scroller > div {
+      width: 1000px;
+      height: 1000px;
+    }
+  </style>
+  <script>
+    SimpleTest.waitForExplicitFinish();
+
+    async function run() {
+      const { ScrollOffsets } = await import(
+        "chrome://global/content/ScrollOffsets.mjs"
+      );
+
+      const scroller = document.getElementById("scroller");
+      let offsets = new ScrollOffsets(scroller);
+
+      // newHistoryEntryId() returns unique, monotonically increasing values.
+      const id1 = offsets.newHistoryEntryId();
+      const id2 = offsets.newHistoryEntryId();
+      const id3 = offsets.newHistoryEntryId();
+      isnot(id1, id2, "newHistoryEntryId returns distinct ids");
+      ok(id2 > id1 && id3 > id2, "ids are monotonically increasing");
+
+      // setView + save records the current position under the given id.
+      offsets.setView(id1);
+      scroller.scrollTo(0, 50);
+      offsets.save();
+
+      // Switching views and restoring brings back the saved offset.
+      offsets.setView(id2);
+      scroller.scrollTo(0, 0);
+      is(scroller.scrollTop, 0, "scroller reset before restoring id1");
+
+      offsets.setView(id1);
+      offsets.restore();
+      is(scroller.scrollTop, 50, "restore() applied id1's saved offset");
+
+      // Restoring an unknown id scrolls to (0, 0).
+      scroller.scrollTo(0, 75);
+      offsets.setView(id3);
+      offsets.restore();
+      is(scroller.scrollTop, 0, "restore() for unsaved id scrolls to top");
+
+      // Independent views keep independent offsets.
+      offsets.setView(id2);
+      scroller.scrollTo(40, 80);
+      offsets.save();
+      offsets.setView(id1);
+      offsets.restore();
+      is(scroller.scrollTop, 50, "id1 unaffected by id2's save");
+      offsets.setView(id2);
+      offsets.restore();
+      is(scroller.scrollLeft, 40, "id2 retained its own scrollLeft");
+      is(scroller.scrollTop, 80, "id2 retained its own scrollTop");
+
+      // save() before any setView is a no-op (no key to write under, so
+      // the offset is silently dropped instead of throwing).
+      offsets = new ScrollOffsets(scroller);
+      scroller.scrollTo(0, 25);
+      offsets.save();
+      offsets.setView(id1);
+      offsets.restore();
+      is(scroller.scrollTop, 0, "save() with no active view did not persist");
+
+      // canRestore = false forces getPosition to report (0, 0) so an
+      // accidental save() doesn't overwrite a real offset with zeros from
+      // a transient state (used by about:addons during tab-switching).
+      offsets = new ScrollOffsets(scroller);
+      offsets.setView(id1);
+      scroller.scrollTo(0, 90);
+      offsets.canRestore = false;
+      let pos = offsets.getPosition();
+      is(pos.top, 0, "getPosition returns 0 top while canRestore is false");
+      is(pos.left, 0, "getPosition returns 0 left while canRestore is false");
+      offsets.save();
+      scroller.scrollTo(0, 60);
+      offsets.setView(id1);
+      offsets.restore();
+      is(scroller.scrollTop, 0, "save() while !canRestore recorded zeros");
+
+      // setView re-enables canRestore.
+      offsets.canRestore = false;
+      offsets.setView(id1);
+      ok(offsets.canRestore, "setView re-enables canRestore");
+
+      // Constructed with no argument, the container defaults to
+      // document.documentElement (the about:addons usage pattern).
+      const docOffsets = new ScrollOffsets();
+      const fallbackId = docOffsets.newHistoryEntryId();
+      const originalTop = document.documentElement.scrollTop;
+      docOffsets.setView(fallbackId);
+      // restore() with no saved offset should not throw, and should scroll
+      // the root element to (0, 0).
+      docOffsets.restore();
+      is(
+        document.documentElement.scrollTop,
+        0,
+        "default container restored to top when no offset saved"
+      );
+      // Leave document scroll position as we found it.
+      document.documentElement.scrollTo(0, originalTop);
+
+      SimpleTest.finish();
+    }
+
+    window.addEventListener("DOMContentLoaded", run, { once: true });
+  </script>
+</head>
+<body>
+  <div id="scroller"><div></div></div>
+  <p id="display"></p>
+  <div id="content" style="display: none"></div>
+  <pre id="test"></pre>
+</body>
+</html>

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,8 +9,6 @@
 
 #include "ipc/EnumSerializer.h"
 #include "ipc/IPCMessageUtils.h"
-#include "mozilla/IsEnumCase.h"
-#include "mozilla/ParamTraits_IsEnumCase.h"
 #include "mozilla/ParamTraits_TiedFields.h"
 #include "mozilla/webrender/webrender_ffi.h"
 #include "mozilla/webrender/WebRenderTypes.h"
@@ -48,12 +44,29 @@ struct ParamTraits<mozilla::wr::ImageDescriptor> {
     WriteParam(aWriter, aParam.opacity);
   }
 
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->format) &&
-           ReadParam(aReader, &aResult->width) &&
-           ReadParam(aReader, &aResult->height) &&
-           ReadParam(aReader, &aResult->stride) &&
-           ReadParam(aReader, &aResult->opacity);
+  static ReadResult<paramType> Read(MessageReader* aReader) {
+    mozilla::wr::ImageFormat format;
+    int32_t width;
+    int32_t height;
+    int32_t stride;
+    mozilla::wr::OpacityType opacity;
+    if (!ReadParam(aReader, &format) || !ReadParam(aReader, &width) ||
+        !ReadParam(aReader, &height) || !ReadParam(aReader, &stride) ||
+        !ReadParam(aReader, &opacity)) {
+      return {};
+    }
+    if (width < 0 || height < 0 || stride < 0) {
+      return {};
+    }
+    if (stride != 0) {
+      int bpp = mozilla::gfx::BytesPerPixel(
+          mozilla::wr::ImageFormatToSurfaceFormat(format));
+      if (bpp <= 0 || stride / bpp < width) {
+        return {};
+      }
+    }
+    return paramType(mozilla::gfx::IntSize(width, height), stride, format,
+                     opacity);
   }
 };
 
@@ -112,7 +125,6 @@ struct ParamTraits<mozilla::wr::BuiltDisplayListDescriptor> {
     WriteParam(aWriter, aParam.send_start_time);
     WriteParam(aWriter, aParam.total_clip_nodes);
     WriteParam(aWriter, aParam.total_spatial_nodes);
-    WriteParam(aWriter, aParam.cache_size);
   }
 
   static bool Read(MessageReader* aReader, paramType* aResult) {
@@ -121,8 +133,7 @@ struct ParamTraits<mozilla::wr::BuiltDisplayListDescriptor> {
            ReadParam(aReader, &aResult->builder_finish_time) &&
            ReadParam(aReader, &aResult->send_start_time) &&
            ReadParam(aReader, &aResult->total_clip_nodes) &&
-           ReadParam(aReader, &aResult->total_spatial_nodes) &&
-           ReadParam(aReader, &aResult->cache_size);
+           ReadParam(aReader, &aResult->total_spatial_nodes);
   }
 };
 
@@ -178,42 +189,6 @@ inline auto TiedFields<mozilla::wr::FontInstanceOptions>(
   return std::tie(a.flags, a.synthetic_italics, a.render_mode, a._padding);
 }
 
-// -
-
-#if !(defined(XP_MACOSX) || defined(XP_WIN))
-
-template <>
-inline constexpr bool IsEnumCase<wr::FontLCDFilter>(
-    const wr::FontLCDFilter raw) {
-  switch (raw) {
-    case wr::FontLCDFilter::None:
-    case wr::FontLCDFilter::Default:
-    case wr::FontLCDFilter::Light:
-    case wr::FontLCDFilter::Legacy:
-    case wr::FontLCDFilter::Sentinel:
-      return true;
-  }
-  return false;
-}
-
-template <>
-inline constexpr bool IsEnumCase<wr::FontHinting>(const wr::FontHinting raw) {
-  switch (raw) {
-    case wr::FontHinting::None:
-    case wr::FontHinting::Mono:
-    case wr::FontHinting::Light:
-    case wr::FontHinting::Normal:
-    case wr::FontHinting::LCD:
-    case wr::FontHinting::Sentinel:
-      return true;
-  }
-  return false;
-}
-
-#endif  // !(defined(XP_MACOSX) || defined(XP_WIN))
-
-// -
-
 template <>
 inline auto TiedFields<mozilla::wr::FontInstancePlatformOptions>(
     mozilla::wr::FontInstancePlatformOptions& a) {
@@ -222,7 +197,7 @@ inline auto TiedFields<mozilla::wr::FontInstancePlatformOptions>(
 #elif defined(XP_MACOSX)
   return std::tie(a.unused);
 #else
-  return std::tie(a.lcd_filter, a.hinting);
+  return std::tie(a.lcd_filter, a.hinting, a.gamma, a.enhanced_contrast);
 #endif
 }
 
@@ -251,30 +226,6 @@ inline auto TiedFields<mozilla::wr::LayoutPoint>(mozilla::wr::LayoutPoint& a) {
 }
 
 template <>
-inline constexpr bool IsEnumCase<wr::OpacityType>(const wr::OpacityType raw) {
-  switch (raw) {
-    case wr::OpacityType::Opaque:
-    case wr::OpacityType::HasAlphaChannel:
-    case wr::OpacityType::Sentinel:
-      return true;
-  }
-  return false;
-}
-
-template <>
-inline constexpr bool IsEnumCase<wr::FontRenderMode>(
-    const wr::FontRenderMode raw) {
-  switch (raw) {
-    case wr::FontRenderMode::Mono:
-    case wr::FontRenderMode::Alpha:
-    case wr::FontRenderMode::Subpixel:
-    case wr::FontRenderMode::Sentinel:
-      return true;
-  }
-  return false;
-}
-
-template <>
 inline auto TiedFields<mozilla::wr::InternerSubReport>(
     mozilla::wr::InternerSubReport& a) {
 #define _COMMA ,
@@ -296,8 +247,6 @@ inline auto TiedFields<mozilla::wr::MemoryReport>(
   // clang-format off
   return std::tie(
     a.clip_stores,
-    a.gpu_cache_metadata,
-    a.gpu_cache_cpu_mirror,
     a.hit_testers,
     a.fonts,
     a.weak_fonts,
@@ -310,7 +259,6 @@ inline auto TiedFields<mozilla::wr::MemoryReport>(
     a.swgl,
     a.frame_allocator,
     a.render_tasks,
-    a.gpu_cache_textures,
     a.vertex_data_textures,
     a.render_target_textures,
     a.picture_tile_textures,
@@ -374,11 +322,15 @@ struct ParamTraits<mozilla::wr::FontInstanceOptions>
 
 template <>
 struct ParamTraits<mozilla::wr::FontLCDFilter>
-    : public ParamTraits_IsEnumCase<mozilla::wr::FontLCDFilter> {};
+    : public ContiguousEnumSerializer<mozilla::wr::FontLCDFilter,
+                                      mozilla::wr::FontLCDFilter::None,
+                                      mozilla::wr::FontLCDFilter::Sentinel> {};
 
 template <>
 struct ParamTraits<mozilla::wr::FontHinting>
-    : public ParamTraits_IsEnumCase<mozilla::wr::FontHinting> {};
+    : public ContiguousEnumSerializer<mozilla::wr::FontHinting,
+                                      mozilla::wr::FontHinting::None,
+                                      mozilla::wr::FontHinting::Sentinel> {};
 
 #endif  // !(defined(XP_MACOSX) || defined(XP_WIN))
 
@@ -451,11 +403,15 @@ struct ParamTraits<mozilla::wr::MemoryReport>
 
 template <>
 struct ParamTraits<mozilla::wr::OpacityType>
-    : public ParamTraits_IsEnumCase<mozilla::wr::OpacityType> {};
+    : public ContiguousEnumSerializer<mozilla::wr::OpacityType,
+                                      mozilla::wr::OpacityType::Opaque,
+                                      mozilla::wr::OpacityType::Sentinel> {};
 
 template <>
 struct ParamTraits<mozilla::wr::FontRenderMode>
-    : public ParamTraits_IsEnumCase<mozilla::wr::FontRenderMode> {};
+    : public ContiguousEnumSerializer<mozilla::wr::FontRenderMode,
+                                      mozilla::wr::FontRenderMode::Mono,
+                                      mozilla::wr::FontRenderMode::Sentinel> {};
 
 template <>
 struct ParamTraits<mozilla::wr::ExternalImageKeyPair>

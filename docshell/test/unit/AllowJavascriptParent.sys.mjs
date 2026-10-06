@@ -3,7 +3,7 @@ let loadPromises = new WeakMap();
 export class AllowJavascriptParent extends JSWindowActorParent {
   async receiveMessage(msg) {
     switch (msg.name) {
-      case "LoadFired":
+      case "LoadFired": {
         let bc = this.browsingContext;
         let deferred = loadPromises.get(bc);
         if (deferred) {
@@ -11,6 +11,7 @@ export class AllowJavascriptParent extends JSWindowActorParent {
           deferred.resolve(this);
         }
         break;
+      }
     }
   }
 

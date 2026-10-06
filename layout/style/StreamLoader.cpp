@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,10 +6,10 @@
 
 #include "mozilla/Encoding.h"
 #include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StyleSheet.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/dom/CacheExpirationTime.h"
-#include "mozilla/glean/NetwerkMetrics.h"
-#include "mozilla/net/UrlClassifierFeatureFactory.h"
+#include "mozilla/net/ChannelClassifierUtils.h"
 #include "nsContentUtils.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsIChannel.h"
@@ -46,7 +44,8 @@ NS_IMETHODIMP
 StreamLoader::OnStartRequest(nsIRequest* aRequest) {
   MOZ_ASSERT(aRequest);
   mRequest = aRequest;
-  mSheetLoadData->OnStartRequest(aRequest);
+  RefPtr<SheetLoadData> sheetLoadData = mSheetLoadData;
+  sheetLoadData->OnStartRequest(aRequest);
 
   // It's kinda bad to let Web content send a number that results
   // in a potentially large allocation directly, but efficiency of
@@ -106,13 +105,6 @@ StreamLoader::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
     mSheetLoadData->mNetworkMetadata =
         new SubResourceNetworkMetadataHolder(aRequest);
 
-    if (mOnDataFinishedTime) {
-      // collect telemetry for the delta between OnDataFinished and
-      // OnStopRequest
-      TimeDuration delta = (TimeStamp::Now() - mOnDataFinishedTime);
-      glean::networking::http_content_cssloader_ondatafinished_to_onstop_delay
-          .AccumulateRawDuration(delta);
-    }
     mSheetLoadData->mSheet->UnblockParsePromise();
   } else {
     if (mSheetLoadData->mRecordErrors) {
@@ -124,8 +116,7 @@ StreamLoader::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
   auto HandleErrorInMainThread = [&] {
     MOZ_ASSERT(mStatus != NS_OK_PARSE_SHEET);
     MOZ_ASSERT(NS_IsMainThread());
-    if (net::UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(
-            mStatus)) {
+    if (net::ChannelClassifierUtils::IsClassifierBlockingErrorCode(mStatus)) {
       // Handle sheet not loading error because source was a tracking URL (or
       // fingerprinting, cryptomining, etc). We make a note of this sheet node
       // by including it in a dedicated array of blocked tracking nodes under
@@ -243,9 +234,6 @@ NS_IMETHODIMP
 StreamLoader::OnDataFinished(nsresult aResult) {
   nsCOMPtr<nsIRequest> request = mRequest.forget();
   if (StaticPrefs::network_send_OnDataFinished_cssLoader()) {
-    MOZ_ASSERT(mOnDataFinishedTime.IsNull(),
-               "OnDataFinished should only be called once");
-    mOnDataFinishedTime = TimeStamp::Now();
     return OnStopRequest(request, aResult);
   }
 

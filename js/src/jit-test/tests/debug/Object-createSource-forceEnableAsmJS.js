@@ -1,4 +1,4 @@
-// |jit-test| skip-if: !wasmDebuggingEnabled()
+// |jit-test| --asmjs; skip-if: !wasmDebuggingEnabled()
 
 gczeal(0);
 

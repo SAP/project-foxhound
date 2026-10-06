@@ -18,8 +18,7 @@ support-files = [
 skip-if = [
   "appname == 'thunderbird'", # bug 1942789
   "inc_origin_init",
-  "os == 'android' && android_version == '24' && processor == 'x86_64'",
-  "os == 'android' && android_version == '34' && processor == 'x86_64'",
+  "os == 'android' && os_version == '14' && arch == 'x86_64'",
 ]
 
 ["test_qm_first_initialization_attempt.js"]

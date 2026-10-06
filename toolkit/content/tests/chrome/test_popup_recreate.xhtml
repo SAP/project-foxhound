@@ -50,6 +50,7 @@ function recreate()
     while (element.hasChildNodes())
       element.firstChild.remove();
     element.appendItem("Cat");
+    element.menupopup.toggleAttribute("nonnative", true);
     gState = "after";
     document.getElementById("menulist").open = true;
   }
@@ -75,7 +76,7 @@ function checkSize()
 
 <hbox align="center" pack="center">
   <menulist id="menulist" onpopupshown="checkSize();" onpopuphidden="recreate();" style="width: 200px">
-    <menupopup position="after_start">
+    <menupopup position="after_start" nonnative="">
       <menuitem label="Cat"/>
     </menupopup>
   </menulist>

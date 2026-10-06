@@ -15,17 +15,24 @@ function fixlines(s) {
     return s.split(/\n+/)
         .map(strip)
         .filter(x => x.length > 0)
-        .map(x => '(?:0x)?' + HEXES + ' ' + x)
         .map(spaces)
         .join('\n');
 }
 
+function stripencoding(s, insEncoding) {
+    var encoding = RegExp(`^(?:0x)?${HEX}+\\s+${insEncoding}\\s+(.*)$`);
+    return s.split('\n')
+        .map(x => x.match(encoding)?.[1] ?? x)
+        .join('\n');
+}
+
 function strip(s) {
-    while (s.length > 0 && isspace(s.charAt(0)))
-        s = s.substring(1);
-    while (s.length > 0 && isspace(s.charAt(s.length-1)))
-        s = s.substring(0, s.length-1);
-    return s;
+    var start = 0, end = s.length;
+    while (start < s.length && isspace(s.charAt(start)))
+        start++;
+    while (end > start && isspace(s.charAt(end - 1)))
+        end--;
+    return s.substring(start, end);
 }
 
 function striplines(s) {

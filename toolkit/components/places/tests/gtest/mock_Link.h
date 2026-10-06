@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=2 et lcs=trail\:.,tab\:>~ :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,10 +6,9 @@
  * This is a mock Link object which can be used in tests.
  */
 
-#ifndef mock_Link_h__
-#define mock_Link_h__
+#ifndef mock_Link_h_
+#define mock_Link_h_
 
-#include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/Link.h"
 #include "mozilla/StaticPrefs_layout.h"
 
@@ -69,4 +66,4 @@ class mock_Link : public mozilla::dom::Link {
 
 NS_IMPL_ISUPPORTS(mock_Link, mozilla::dom::Link)
 
-#endif  // mock_Link_h__
+#endif  // mock_Link_h_

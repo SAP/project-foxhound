@@ -3,8 +3,8 @@
 # Disabled on Linux asan due to bug 1549729.
 skip-if = [
   "debug",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
   "tsan",
-  "os == 'linux' && asan",
 ]
 # to avoid overhead when running the browser normally, StartupRecorder.sys.mjs will
 # do almost nothing unless browser.startup.record is true.
@@ -27,10 +27,8 @@ environment = [
 
 ["../browser_startup_mainthreadio.js"]
 skip-if = [
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # bug 1707724
-  "socketprocess_networking",
-  "win11_2009 && bits == 32",
   "os == 'win' && msix", # Bug 1833639
+  "socketprocess_networking", # bug 1707724
 ]
 
 ["../browser_startup_syncIPC.js"]

@@ -458,12 +458,17 @@ const CurlUtils = {
     return (
       encapsChars +
       str
+        // Replace all the \ (used as the escape character in the next replace) with \\
+        .replace(/\\/g, "\\\\")
+
         // Replace all " with \" to ensure the first parser does not remove it.
         .replace(/"/g, '\\"')
 
         // Then escape all characters we are not sure about with ^ to ensure it
         // gets to MS Crt parser safely.
-        .replace(/[^a-zA-Z0-9\s_\-:=+~\/.',?;()*`]/g, "^$&")
+        // Note: Also do not escape unicode control (C) non-printable characters
+        // https://www.compart.com/en/unicode/category (this is captured with `\p{C}` and the `u` unicode flag)
+        .replace(/[^-a-zA-Z0-9\s_:=+~\/.',?;()*`\p{C}]/gu, "^$&")
 
         // The % character is special because MS Crt parser will try and look for
         // ENV variables and fill them in its place. We cannot escape them with %
@@ -474,15 +479,18 @@ const CurlUtils = {
         // by the previous replace.
         .replace(/%(?=[a-zA-Z0-9_])/g, "%^")
 
-        // We replace \r and \r\n with \n, this allows to consistently escape all new
-        // lines in the next replace
-        .replace(/\r\n?/g, "\n")
+        // All other whitespace characters are replaced with a single space, as there
+        // is no way to enter their literal values in a command line, and they do break
+        // the command allowing for injection.
+        // Since want to keep line breaks, we need to exclude them in the regex (`[^\r\n]`),
+        // and use double negations to get the other whitespace chars (`[^\S]` translates
+        // to "not not whitespace")
+        .replace(/[^\S\r\n]/g, " ")
 
         // Lastly we replace new lines with ^ and TWO new lines because the first
         // new line is there to enact the escape command the second is the character
         // to escape (in this case new line).
-        // The extra " enables escaping new lines with ^ within quotes in cmd.exe.
-        .replace(/\n/g, '"^\r\n\r\n"') +
+        .replace(/\r?\n|\r/g, "^\n\n") +
       encapsChars
     );
   },

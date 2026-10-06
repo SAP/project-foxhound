@@ -1,4 +1,7 @@
 [DEFAULT]
+run-if = [
+  "os != 'android'",
+]
 head = "head_bookmarks.js"
 firefox-appdir = "browser"
 support-files = [
@@ -17,10 +20,13 @@ support-files = [
 ["test_browserGlue_bookmarkshtml.js"]
 
 ["test_browserGlue_corrupt.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_browserGlue_corrupt_nobackup.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_browserGlue_corrupt_nobackup_default.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_browserGlue_distribution.js"]
 
@@ -30,11 +36,7 @@ support-files = [
 
 ["test_browserGlue_restore.js"]
 
-["test_clearHistory_shutdown.js"]
-prefs = ["privacy.sanitize.useOldClearHistoryDialog=true"]
-
 ["test_clearHistory_shutdown_v2.js"]
-prefs = ["privacy.sanitize.useOldClearHistoryDialog=false"]
 
 ["test_interactions_blocklist.js"]
 

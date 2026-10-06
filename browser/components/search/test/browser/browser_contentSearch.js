@@ -3,6 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 ChromeUtils.defineESModuleGetters(this, {
+  ConfigSearchEngine:
+    "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
   SearchTestUtils: "resource://testing-common/SearchTestUtils.sys.mjs",
 });
 
@@ -34,6 +36,9 @@ add_setup(async function () {
       ["browser.newtab.preload", false],
       ["browser.search.separatePrivateDefault.ui.enabled", true],
       ["browser.search.separatePrivateDefault", true],
+      // Force settings redesign to false, so that `hideOneOffButton` will correctly
+      // work for the time being.
+      ["browser.settings-redesign.enabled", false],
     ],
   });
 
@@ -79,8 +84,8 @@ add_task(async function GetState() {
 
 add_task(async function SetDefaultEngine() {
   let { browser } = await addTab();
-  let newDefaultEngine = await Services.search.getEngineByName("FooChromeIcon");
-  let oldDefaultEngine = await Services.search.getDefault();
+  let newDefaultEngine = await SearchService.getEngineByName("FooChromeIcon");
+  let oldDefaultEngine = await SearchService.getDefault();
   let searchPromise = await waitForTestMsg(browser, "CurrentEngine");
   sendEventToContent(browser, {
     type: "SetCurrentEngine",
@@ -105,9 +110,9 @@ add_task(async function SetDefaultEngine() {
   });
 
   let enginePromise = await waitForTestMsg(browser, "CurrentEngine");
-  await Services.search.setDefault(
+  await SearchService.setDefault(
     oldDefaultEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    SearchService.CHANGE_REASON.UNKNOWN
   );
   msg = await enginePromise.donePromise;
   checkMsg(msg, {
@@ -119,12 +124,12 @@ add_task(async function SetDefaultEngine() {
 // ContentSearchChild doesn't support setting the private engine at this time
 // as it doesn't need to, so we just test updating the default here.
 add_task(async function setDefaultEnginePrivate() {
-  const engine = await Services.search.getEngineByName("FooChromeIcon");
+  const engine = await SearchService.getEngineByName("FooChromeIcon");
   const { browser } = await addTab();
   let enginePromise = await waitForTestMsg(browser, "CurrentPrivateEngine");
-  await Services.search.setDefaultPrivate(
+  await SearchService.setDefaultPrivate(
     engine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    SearchService.CHANGE_REASON.UNKNOWN
   );
   let msg = await enginePromise.donePromise;
   checkMsg(msg, {
@@ -135,7 +140,7 @@ add_task(async function setDefaultEnginePrivate() {
 
 add_task(async function modifyEngine() {
   let { browser } = await addTab();
-  let engine = await Services.search.getDefault();
+  let engine = await SearchService.getDefault();
   let oldAlias = engine.alias;
   let statePromise = await waitForTestMsg(browser, "CurrentState");
   engine.alias = "ContentSearchTest";
@@ -155,7 +160,7 @@ add_task(async function modifyEngine() {
 
 add_task(async function test_hideEngine() {
   let { browser } = await addTab();
-  let engine = await Services.search.getEngineByName("Foo \u2661");
+  let engine = await SearchService.getEngineByName("Foo \u2661");
   let statePromise = await waitForTestMsg(browser, "CurrentState");
   engine.hideOneOffButton = true;
   let msg = await statePromise.donePromise;
@@ -174,7 +179,7 @@ add_task(async function test_hideEngine() {
 
 add_task(async function search() {
   let { browser } = await addTab();
-  let engine = await Services.search.getDefault();
+  let engine = await SearchService.getDefault();
   let data = {
     engineName: engine.name,
     searchString: "ContentSearchTest",
@@ -192,7 +197,7 @@ add_task(async function searchInBackgroundTab() {
   // search page should be loaded in the same tab that performed the search, in
   // the background tab.
   let { browser } = await addTab();
-  let engine = await Services.search.getDefault();
+  let engine = await SearchService.getDefault();
   let data = {
     engineName: engine.name,
     searchString: "ContentSearchTest",
@@ -236,7 +241,7 @@ add_task(async function badImage() {
   // Removing the engine triggers a final CurrentState message.  Wait for it so
   // it doesn't trip up subsequent tests.
   let statePromise = await waitForTestMsg(browser, "CurrentState");
-  await Services.search.removeEngine(engine);
+  await SearchService.removeEngine(engine);
   await statePromise.donePromise;
 });
 
@@ -331,7 +336,7 @@ add_task(
 
     // Finally, clean up by removing the test engine.
     let statePromise = await waitForTestMsg(browser, "CurrentState");
-    await Services.search.removeEngine(engine);
+    await SearchService.removeEngine(engine);
     await statePromise.donePromise;
   }
 );
@@ -448,6 +453,8 @@ async function waitForNewEngine(browser, basename) {
   let engine = await SearchTestUtils.installOpenSearchEngine({
     url: getRootDirectory(gTestPath) + basename,
   });
+  //await SearchService.setDefault(engine, SearchService.CHANGE_REASON.UNKNOWN);
+
   return [engine, await statePromise.donePromise];
 }
 
@@ -458,24 +465,33 @@ async function addTab() {
   );
   registerCleanupFunction(() => gBrowser.removeTab(tab));
 
-  return { browser: tab.linkedBrowser };
+  let { linkedBrowser } = tab;
+
+  // The ContentSearch actor is lazily instantiated on the first
+  // ContentSearchClient event. Ensure it exists before returning so that
+  // broadcasts from engine changes reach this tab.
+  let statePromise = await waitForTestMsg(linkedBrowser, "State");
+  sendEventToContent(linkedBrowser, { type: "GetState" });
+  await statePromise.donePromise;
+
+  return { browser: linkedBrowser };
 }
 
 var currentStateObj = async function (hiddenEngine = "") {
   let state = {
     engines: [],
-    currentEngine: await constructEngineObj(await Services.search.getDefault()),
+    currentEngine: await constructEngineObj(await SearchService.getDefault()),
     currentPrivateEngine: await constructEngineObj(
-      await Services.search.getDefaultPrivate()
+      await SearchService.getDefaultPrivate()
     ),
   };
-  for (let engine of await Services.search.getVisibleEngines()) {
+  for (let engine of await SearchService.getVisibleEngines()) {
     let uri = await engine.getIconURL(16);
     state.engines.push({
       name: engine.name,
       iconData: await iconDataFromURI(uri),
       hidden: engine.name == hiddenEngine,
-      isAppProvided: engine.isAppProvided,
+      isConfigEngine: engine instanceof ConfigSearchEngine,
     });
   }
   return state;
@@ -486,7 +502,7 @@ async function constructEngineObj(engine) {
   return {
     name: engine.name,
     iconData: await iconDataFromURI(uriFavicon),
-    isAppProvided: engine.isAppProvided,
+    isConfigEngine: engine instanceof ConfigSearchEngine,
   };
 }
 

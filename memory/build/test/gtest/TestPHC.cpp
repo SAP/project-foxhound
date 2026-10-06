@@ -69,13 +69,8 @@ TEST(PHC, TestPHCAllocations)
     MOZ_CRASH("failed to get a PHC allocation");
   }
 
-  // On Win64 the smallest possible allocation is 16 bytes. On other platforms
-  // it is 8 bytes.
-#if defined(XP_WIN) && defined(HAVE_64BIT_BUILD)
+  // The smallest possible allocation is 16 bytes.
   ASSERT_POS(8U, 16U);
-#else
-  ASSERT_POS(8U, 8U);
-#endif
   for (unsigned i = 16; i <= kPageSize; i *= 2) {
     ASSERT_POS(i, i);
   }
@@ -98,14 +93,23 @@ TEST(PHC, TestPHCAllocations)
   ASSERT_EQ(moz_malloc_usable_size(p), (a2));                   \
   free(p);
 
-  // On Win64 the smallest possible allocation is 16 bytes. On other platforms
-  // it is 8 bytes.
-#if defined(XP_WIN) && defined(HAVE_64BIT_BUILD)
+  // The smallest possible allocation is 16 bytes.
   ASSERT_ALIGN(8U, 16U);
-#else
-  ASSERT_ALIGN(8U, 8U);
-#endif
   for (unsigned i = 16; i <= kPageSize; i *= 2) {
+#if defined(XP_DARWIN) && defined(__aarch64__)
+    // On 16KB page systems, jemalloc may use the 4KB size class for 8KB-aligned
+    // allocations (usable 4096), while PHC must place them at offset 8192 in
+    // the page (usable 8192). The mismatch is unavoidable, so skip jemalloc
+    // check.
+    if (i == kPageSize / 2) {
+      p = (uint8_t*)GetPHCAllocation(8, i);
+      ASSERT_EQ((reinterpret_cast<uintptr_t>(p) & (kPageSize - 1)),
+                (size_t)(kPageSize - i));
+      ASSERT_EQ(moz_malloc_usable_size(p), (size_t)i);
+      free(p);
+      continue;
+    }
+#endif
     ASSERT_ALIGN(i, i);
   }
 
@@ -255,7 +259,7 @@ TEST(PHC, TestPHCInfo)
 {
   mozilla::phc::SetPHCState(phc::PHCState::Enabled);
 
-  int stackVar;
+  int stackVar = 0;
   phc::AddrInfo phcInfo;
 
   // Test a default AddrInfo.
@@ -376,22 +380,15 @@ size_t GetNumAvailable() {
   return stats.mSlotsFreed + stats.mSlotsUnused;
 }
 
-TEST(PHC, TestPHCExhaustion)
-{
-  // PHC hardcodes the amount of allocations to track.
-  size_t num_allocations = GetNumAvailable();
-
-  mozilla::phc::DisablePHCOnCurrentThread();
-  std::vector<uint8_t*> allocations(num_allocations);
-  mozilla::phc::ReenablePHCOnCurrentThread();
-
+#ifndef ANDROID
+static void TestExhaustion(std::vector<uint8_t*>& aAllocs) {
   // Disable the reuse delay to make the test more reliable.  At the same
   // time lower the other probabilities to speed up this test, but much
   // lower and the test runs more slowly maybe because of how PHC
   // optimises for multithreading.
   mozilla::phc::SetPHCProbabilities(64, 64, 0);
 
-  for (auto& a : allocations) {
+  for (auto& a : aAllocs) {
     a = GetPHCAllocation(128);
     ASSERT_TRUE(a);
     TestInUseAllocation(a, 128);
@@ -402,10 +399,30 @@ TEST(PHC, TestPHCExhaustion)
   // We should now fail to get an allocation.
   ASSERT_FALSE(GetPHCAllocation(128));
 
-  for (auto& a : allocations) {
+  // Restore defaults.
+  mozilla::phc::SetPHCProbabilities(
+      StaticPrefs::memory_phc_avg_delay_first(),
+      StaticPrefs::memory_phc_avg_delay_normal(),
+      StaticPrefs::memory_phc_avg_delay_page_reuse());
+}
+
+static void ReleaseVector(std::vector<uint8_t*>& aAllocs) {
+  for (auto& a : aAllocs) {
     free(a);
     TestFreedAllocation(a, 128);
   }
+}
+
+TEST(PHC, TestExhaustion)
+{
+  // PHC hardcodes the amount of allocations to track.
+  size_t num_allocations = GetNumAvailable();
+  mozilla::phc::DisablePHCOnCurrentThread();
+  std::vector<uint8_t*> allocations(num_allocations);
+  mozilla::phc::ReenablePHCOnCurrentThread();
+
+  TestExhaustion(allocations);
+  ReleaseVector(allocations);
 
   // And now that we've released those allocations the number of available
   // slots will be non-zero.
@@ -414,10 +431,101 @@ TEST(PHC, TestPHCExhaustion)
   uint8_t* r = GetPHCAllocation(128);
   ASSERT_TRUE(!!r);
   free(r);
+}
 
-  // Restore defaults.
-  mozilla::phc::SetPHCProbabilities(
-      StaticPrefs::memory_phc_avg_delay_first(),
-      StaticPrefs::memory_phc_avg_delay_normal(),
-      StaticPrefs::memory_phc_avg_delay_page_reuse());
+static uint8_t* VectorMax(std::vector<uint8_t*>& aVec) {
+  uint8_t* max = 0;
+  for (auto a : aVec) {
+    max = a > max ? a : max;
+  }
+  return max;
+}
+
+TEST(PHC, TestBounds)
+{
+  // PHC reserves a large area of virtual memory and depending on runtime
+  // configuration allocates a smaller range of memory within it.  This test
+  // tests that boundary.
+
+  size_t num_allocations = GetNumAvailable();
+  mozilla::phc::DisablePHCOnCurrentThread();
+  std::vector<uint8_t*> allocations(num_allocations);
+  mozilla::phc::ReenablePHCOnCurrentThread();
+
+  TestExhaustion(allocations);
+
+  uint8_t* max = VectorMax(allocations);
+  ASSERT_TRUE(!!max);
+
+  // Verify that the next page is a guard page.
+  phc::AddrInfo phcInfo;
+  ASSERT_TRUE(mozilla::phc::IsPHCAllocation(max + 128 + 1, &phcInfo));
+  ASSERT_TRUE(PHCInfoEq(phcInfo, phc::AddrInfo::Kind::GuardPage, max, 128, true,
+                        false));
+
+  // But the page after that is Nothing.
+  ASSERT_TRUE(!mozilla::phc::IsPHCAllocation(max + kPageSize * 2, &phcInfo));
+
+  ReleaseVector(allocations);
+}
+#endif
+
+size_t GetNumSlotsTotal() {
+  mozilla::phc::PHCStats stats;
+  GetPHCStats(stats);
+  return stats.mSlotsAllocated + stats.mSlotsFreed + stats.mSlotsUnused;
+}
+
+#ifndef ANDROID
+TEST(PHC, TestPHCGrow)
+{
+  size_t batch_1_num = GetNumAvailable();
+  mozilla::phc::DisablePHCOnCurrentThread();
+  std::vector<uint8_t*> batch_1(batch_1_num);
+  mozilla::phc::ReenablePHCOnCurrentThread();
+  TestExhaustion(batch_1);
+
+  size_t total_before = GetNumSlotsTotal();
+  size_t requested = total_before + 1024;
+  mozilla::phc::SetPHCSize(requested * kPageSize);
+
+  ASSERT_TRUE(GetNumSlotsTotal() == requested);
+
+  size_t batch_2_num = GetNumAvailable();
+  ASSERT_TRUE(!!batch_2_num);
+  ASSERT_TRUE(batch_2_num == 1024ul);
+  mozilla::phc::DisablePHCOnCurrentThread();
+  std::vector<uint8_t*> batch_2(batch_2_num);
+  mozilla::phc::ReenablePHCOnCurrentThread();
+  TestExhaustion(batch_2);
+
+  ReleaseVector(batch_1);
+  ReleaseVector(batch_2);
+}
+#endif
+
+TEST(PHC, TestPHCLimit)
+{
+  // Test the virtual address limit compiled into PHC.
+
+  size_t start = GetNumSlotsTotal();
+  mozilla::phc::SetPHCSize(SIZE_MAX);
+
+  ASSERT_TRUE(GetNumSlotsTotal() > start);
+
+  // This needs to match the limit compiled into phc
+  // (see kPhcVirtualReservation)
+  size_t limit =
+#ifdef HAVE_64BIT_BUILD
+#  if defined(XP_DARWIN) && defined(__aarch64__)
+      512 * 1024 * 1024;
+#  else
+      128 * 1024 * 1024;
+#  endif
+#else
+      2 * 1024 * 1024;
+#endif
+  ASSERT_TRUE(GetNumSlotsTotal() == limit / kPageSize / 2 - 1);
+
+  mozilla::phc::SetPHCSize(start);
 }

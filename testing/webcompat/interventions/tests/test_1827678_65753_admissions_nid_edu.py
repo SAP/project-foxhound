@@ -6,7 +6,6 @@ SUPPORTED_CSS = "nav"
 UNSUPPORTED_TEXT = "please login using only Google Chrome"
 
 
-@pytest.mark.only_platforms("android")
 @pytest.mark.asyncio
 @pytest.mark.with_interventions
 async def test_enabled(client):
@@ -14,7 +13,6 @@ async def test_enabled(client):
     assert client.await_css(SUPPORTED_CSS)
 
 
-@pytest.mark.only_platforms("android")
 @pytest.mark.asyncio
 @pytest.mark.without_interventions
 async def test_disabled(client):

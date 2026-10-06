@@ -40,6 +40,37 @@ add_task(async function test_query_index() {
   win.close();
   await extension.unload();
 });
+
+// On desktop Firefox, window.open() with the popup feature opens a tab in a
+// new window with windowType "popup". On Android, there is no distinction
+// between normal windows and popup windows, so treat them as type "normal".
+// Regression test for https://bugzilla.mozilla.org/show_bug.cgi?id=2032367
+add_task(async function test_query_windowType() {
+  const extension = ExtensionTestUtils.loadExtension({
+    background: function() {
+      browser.tabs.onCreated.addListener(async ({ id }) => {
+        let tabs = await browser.tabs.query({ windowType: "normal" });
+        browser.test.assertEq(
+          tabs.filter(t => t.id === id).length,
+          1,
+          "window.open() with popup is a normal type, not a popup"
+        );
+        browser.test.assertDeepEq(
+          await browser.tabs.query({ windowType: "popup" }),
+          [],
+          "There are no tabs with windowType popup on Android"
+        );
+        browser.test.sendMessage("done");
+      });
+    },
+  });
+
+  await extension.startup();
+  const win = window.open("http://example.com", "", "popup");
+  await extension.awaitMessage("done");
+  win.close();
+  await extension.unload();
+});
 </script>
 
 </body>

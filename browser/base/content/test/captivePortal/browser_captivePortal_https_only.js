@@ -46,7 +46,7 @@ add_task(async function checkCaptivePortalExempt() {
 
     Assert.ok(true, "openPortalLoginPageButton has focus");
     info("Clicking the Open Login Page button");
-    await EventUtils.synthesizeMouseAtCenter(loginButton, {}, content);
+    EventUtils.synthesizeMouseAtCenter(loginButton, {}, content);
   });
   is(
     PermissionTestUtils.testPermission(CANONICAL_URI, PERMISSION_NAME),

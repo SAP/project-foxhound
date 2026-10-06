@@ -1,6 +1,4 @@
-/* -*- Mode: c++; c-basic-offset: 2; tab-width: 4; indent-tabs-mode: nil; -*-
- * vim: set sw=2 ts=4 expandtab:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,6 +6,10 @@
 #include "LaunchError.h"
 
 #import <BrowserEngineKit/BrowserEngineKit.h>
+
+#import "mozilla/widget/GeckoViewSupport.h"
+
+using namespace mozilla::widget;
 
 namespace mozilla::ipc {
 
@@ -124,6 +126,19 @@ ExtensionKitProcess& ExtensionKitProcess::operator=(
 ExtensionKitProcess::~ExtensionKitProcess() {
   SwitchObject(mKind, mProcessObject,
                [&](auto* aProcessObject) { [aProcessObject release]; });
+}
+
+void LockdownExtensionKitProcess(ExtensionKitSandboxRevision aRevision) {
+  if (id<GeckoProcessExtension> process = GetCurrentProcessExtension()) {
+    switch (aRevision) {
+      case ExtensionKitSandboxRevision::Revision1:
+        [process lockdownSandbox:@"1.0"];
+        return;
+      default:
+        NSLog(@"Unknown ExtensionKit sandbox revision");
+        return;
+    }
+  }
 }
 
 }  // namespace mozilla::ipc

@@ -9,19 +9,27 @@ import {
   getFirstSourceActorForGeneratedSource,
 } from "../selectors/sources";
 
-export function getSourceTextContent(state, location) {
-  if (location.source.isOriginal) {
+export function getSourceTextContentForLocation(state, location) {
+  return getSourceTextContentForSource(
+    state,
+    location.source,
+    location.sourceActor
+  );
+}
+
+export function getSourceTextContentForSource(
+  state,
+  source,
+  sourceActor = null
+) {
+  if (source.isOriginal) {
     return state.sourcesContent.mutableOriginalSourceTextContentMapBySourceId.get(
-      location.source.id
+      source.id
     );
   }
 
-  let { sourceActor } = location;
   if (!sourceActor) {
-    sourceActor = getFirstSourceActorForGeneratedSource(
-      state,
-      location.source.id
-    );
+    sourceActor = getFirstSourceActorForGeneratedSource(state, source.id);
   }
   return state.sourcesContent.mutableGeneratedSourceTextContentMapBySourceActorId.get(
     sourceActor.id
@@ -29,7 +37,7 @@ export function getSourceTextContent(state, location) {
 }
 
 export function getSettledSourceTextContent(state, location) {
-  const content = getSourceTextContent(state, location);
+  const content = getSourceTextContentForLocation(state, location);
   return asSettled(content);
 }
 
@@ -40,7 +48,7 @@ export function getSelectedSourceTextContent(state) {
     return null;
   }
 
-  return getSourceTextContent(state, location);
+  return getSourceTextContentForLocation(state, location);
 }
 
 export function getSourcesEpoch(state) {

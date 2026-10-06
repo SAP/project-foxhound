@@ -161,7 +161,7 @@ add_task(async function test_softblocked_item_messagebar() {
     addonId: addon.id,
     isCUIWidget: true,
     expectVisible: true,
-    expectFluentId: "unified-extensions-item-messagebar-softblocked",
+    expectFluentId: "unified-extensions-item-messagebar-softblocked2",
     expectFluentArgs: { extensionName: addon.name },
   });
   await closeExtensionsPanel();
@@ -192,7 +192,7 @@ add_task(async function test_softblocked_item_messagebar() {
     expectInArea: CustomizableUI.AREA_BOOKMARKS,
     expectOverflowedWidget: true,
     expectVisible: true,
-    expectFluentId: "unified-extensions-item-messagebar-softblocked",
+    expectFluentId: "unified-extensions-item-messagebar-softblocked2",
     expectFluentArgs: { extensionName: addon.name },
   });
   await closeExtensionsPanel();
@@ -224,7 +224,7 @@ add_task(async function test_softblocked_item_messagebar() {
     addonId: addon.id,
     isCUIWidget: false,
     expectVisible: true,
-    expectFluentId: "unified-extensions-item-messagebar-softblocked",
+    expectFluentId: "unified-extensions-item-messagebar-softblocked2",
     expectFluentArgs: { extensionName: addon.name },
   });
   await closeExtensionsPanel();

@@ -1,12 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PersistenceType.h"
 
-#include <utility>
 #include "nsIFile.h"
 #include "nsLiteralString.h"
 #include "nsString.h"
@@ -175,6 +172,12 @@ Maybe<PersistenceType> TypeFrom_impl(T& aData) {
 void BadPersistenceType() { MOZ_CRASH("Bad persistence type value!"); }
 
 }  // namespace
+
+bool IsTemporaryPersistenceType(const PersistenceType aPersistenceType) {
+  return std::find(std::begin(kTemporaryPersistenceTypes),
+                   std::end(kTemporaryPersistenceTypes),
+                   aPersistenceType) != std::end(kTemporaryPersistenceTypes);
+}
 
 bool IsValidPersistenceType(const PersistenceType aPersistenceType) {
   switch (aPersistenceType) {

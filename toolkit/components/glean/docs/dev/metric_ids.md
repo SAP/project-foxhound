@@ -179,7 +179,7 @@ This is the `metric_entry_t` which is laid out as follows:
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ```
 
-* 64 bits wide (`uint64_t` with a `typdef`)
+* 64 bits wide (`uint64_t` with a `typedef`)
 * Top 32 bits are an index into a string table of all metrics' base identifiers
   (in JS conjugation)
     * We use `perfecthash` to make it fast to go from `Glean.someCategory.aMetric`

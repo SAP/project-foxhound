@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +6,6 @@
 #define mozilla_net_SocketProcessHost_h
 
 #include "mozilla/Maybe.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "mozilla/MemoryReportingProcess.h"
 #include "mozilla/ipc/TaskFactory.h"
@@ -119,6 +117,9 @@ class SocketProcessHost final : public mozilla::ipc::GeckoChildProcessHost {
   // OnProcessUnexpectedShutdown will be invoked.
   bool mShutdownRequested;
   bool mChannelClosed;
+#if defined(XP_MACOSX) || defined(XP_IOS)
+  bool mAppleFastDatapathProbeResultReceived = false;
+#endif
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
   RefPtr<SandboxBroker> mSandboxBroker;

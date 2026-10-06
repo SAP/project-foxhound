@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -15,12 +13,14 @@
 // These pointers must be traced using TraceOffthreadGCPtr.
 template <typename T>
 class OffthreadGCPtr {
-  // Note: no pre-barrier is needed because after being initialized
-  // this is a constant. No post-barrier is needed because the value
-  // is always tenured.
-  T ptr_;
+  // Note: no pre-barrier is needed because after being initialized to a
+  // non-empty OffthreadGCPtr this is a constant. No post-barrier is needed
+  // because the value is always tenured.
+  T ptr_ = JS::SafelyInitialized<T>::create();
 
  public:
+  constexpr OffthreadGCPtr() = default;
+
   explicit OffthreadGCPtr(const T& ptr) : ptr_(ptr) {
     MOZ_ASSERT(JS::GCPolicy<T>::isTenured(ptr),
                "OffthreadSnapshot pointers must be tenured");
@@ -39,7 +39,6 @@ class OffthreadGCPtr {
   }
 
  private:
-  OffthreadGCPtr() = delete;
   void operator=(OffthreadGCPtr<T>& other) = delete;
 };
 

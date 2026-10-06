@@ -1,6 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
-
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
@@ -24,10 +21,11 @@ async function test_sanitize_offlineApps(storageHelpersScript) {
             case "set-storage-data":
               await window.testWriteKey(...args);
               break;
-            case "get-storage-data":
+            case "get-storage-data": {
               const value = await window.testReadKey(args[0]);
               browser.test.assertEq(args[1], value, "Got the expected value");
               break;
+            }
             default:
               browser.test.fail(`Unexpected test message received: ${msg}`);
           }

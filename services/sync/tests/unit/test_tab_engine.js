@@ -96,7 +96,8 @@ add_task(async function setup() {
   await engine.initialize();
 
   // Since these are xpcshell tests, we'll need to mock this
-  TabProvider.shouldSkipWindow = mockShouldSkipWindow;
+  TabProvider.getOrderedNonPrivateWindows =
+    mockGetOrderedNonPrivateWindows.bind(this, []);
 });
 
 add_task(async function test_tab_engine_skips_incoming_local_record() {
@@ -174,15 +175,12 @@ add_task(async function test_tab_engine_skips_incoming_local_record() {
       equal(client.name, "Remote client");
       equal(client.type, "desktop");
       Assert.ok(client.lastModified); // lastModified should be filled in once serverModified is populated from the server
-      deepEqual(client.tabs, [
-        {
-          title: "title2",
-          urlHistory: ["http://bar.com/"],
-          icon: "",
-          inactive: false,
-          lastUsed: 3000,
-        },
-      ]);
+      Assert.equal(client.tabs.length, 1);
+      let tab = client.tabs[0];
+      Assert.equal(tab.title, "title2");
+      Assert.deepEqual(tab.urlHistory, ["http://bar.com/"]);
+      Assert.equal(tab.icon, "");
+      Assert.ok(!tab.inactive);
       await syncFinish.call(engine);
       resolve();
     };
@@ -194,33 +192,4 @@ add_task(async function test_tab_engine_skips_incoming_local_record() {
   await promiseFinished;
   // Bug 1800185 - we don't want the sync scheduler to see these records as incoming.
   Assert.ok(!Service.scheduler.hasIncomingItems);
-});
-
-// Ensure we trim tabs in the case of going past the max payload size allowed
-add_task(async function test_too_many_tabs() {
-  let a_lot_of_tabs = [];
-
-  for (let i = 0; i < 4000; ++i) {
-    a_lot_of_tabs.push(
-      `http://example${i}.com/some-super-long-url-chain-to-help-with-bytes`
-    );
-  }
-
-  TabProvider.getWindowEnumerator = mockGetWindowEnumerator.bind(
-    this,
-    a_lot_of_tabs
-  );
-
-  let encoder = Utils.utf8Encoder;
-  // see tryfitItems(..) in util.js
-  const computeSerializedSize = records =>
-    encoder.encode(JSON.stringify(records)).byteLength;
-
-  const maxPayloadSize = Service.getMaxRecordPayloadSize();
-  const maxSerializedSize = (maxPayloadSize / 4) * 3 - 1500;
-  // We are over max payload size
-  Assert.greater(computeSerializedSize(a_lot_of_tabs), maxSerializedSize);
-  let tabs = await engine.getTabsWithinPayloadSize();
-  // We are now under max payload size
-  Assert.less(computeSerializedSize(tabs), maxSerializedSize);
 });

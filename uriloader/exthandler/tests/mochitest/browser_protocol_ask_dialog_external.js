@@ -197,3 +197,40 @@ add_task(async function external_https_redirect_doesnt_ask() {
   );
   gHandlerService.wrappedJSObject.mockProtocolHandler();
 });
+
+/**
+ * Tests that if a URI scheme is launched externally, has a non-standard protocol
+ * and a default exists the permission dialog is shown.
+ */
+add_task(async function test_external_non_standard_protocol() {
+  let scheme = getSystemProtocol();
+  if (!scheme) {
+    return;
+  }
+  let uri = `${scheme}://test`;
+  let cmdLineHandler = Cc["@mozilla.org/browser/final-clh;1"].getService(
+    Ci.nsICommandLineHandler
+  );
+  let permissionDialogOpenPromise = waitForProtocolPermissionDialog(
+    gBrowser,
+    true
+  );
+  let fakeCmdLine = Cu.createCommandLine(
+    ["-url", uri],
+    null,
+    Ci.nsICommandLine.STATE_REMOTE_EXPLICIT
+  );
+  cmdLineHandler.handle(fakeCmdLine);
+  let dialog = await permissionDialogOpenPromise;
+  ok(dialog, "Should have prompted.");
+
+  let dialogClosedPromise = waitForProtocolPermissionDialog(
+    gBrowser.selectedBrowser,
+    false
+  );
+  let dialogEl = dialog._frame.contentDocument.querySelector("dialog");
+  dialogEl.cancelDialog();
+  await dialogClosedPromise;
+  // We will have opened a tab; close it.
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+});

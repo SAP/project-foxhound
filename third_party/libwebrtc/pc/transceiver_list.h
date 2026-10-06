@@ -11,18 +11,16 @@
 #ifndef PC_TRANSCEIVER_LIST_H_
 #define PC_TRANSCEIVER_LIST_H_
 
-#include <stddef.h>
-
-#include <algorithm>
+#include <cstddef>
 #include <map>
 #include <optional>
 #include <string>
 #include <vector>
 
-#include "api/media_types.h"
-#include "api/rtc_error.h"
+#include "absl/strings/string_view.h"
 #include "api/rtp_parameters.h"
 #include "api/rtp_sender_interface.h"
+#include "api/rtp_transceiver_direction.h"
 #include "api/scoped_refptr.h"
 #include "api/sequence_checker.h"
 #include "pc/rtp_transceiver.h"
@@ -32,7 +30,7 @@
 
 namespace webrtc {
 
-typedef rtc::scoped_refptr<RtpTransceiverProxyWithInternal<RtpTransceiver>>
+typedef scoped_refptr<RtpTransceiverProxyWithInternal<RtpTransceiver>>
     RtpTransceiverProxyRefPtr;
 
 // Captures partial state to be used for rollback. Applicable only in
@@ -44,8 +42,7 @@ class TransceiverStableState {
   void SetMSectionIfUnset(std::optional<std::string> mid,
                           std::optional<size_t> mline_index);
   void SetRemoteStreamIds(const std::vector<std::string>& ids);
-  void SetInitSendEncodings(
-      const std::vector<RtpEncodingParameters>& encodings);
+  void SetInitSendEncodings(std::vector<RtpEncodingParameters> encodings);
   void SetFiredDirection(
       std::optional<RtpTransceiverDirection> fired_direction) {
     fired_direction_ = fired_direction;
@@ -94,15 +91,23 @@ class TransceiverStableState {
 class TransceiverList {
  public:
   // Returns a copy of the currently active list of transceivers. The
-  // list consists of rtc::scoped_refptrs, which will keep the transceivers
+  // list consists of webrtc::scoped_refptrs, which will keep the transceivers
   // from being deallocated, even if they are removed from the TransceiverList.
   std::vector<RtpTransceiverProxyRefPtr> List() const {
     RTC_DCHECK_RUN_ON(&sequence_checker_);
     return transceivers_;
   }
+
   // As above, but does not check thread ownership. Unsafe.
   // TODO(bugs.webrtc.org/12692): Refactor and remove
-  std::vector<RtpTransceiverProxyRefPtr> UnsafeList() const {
+  std::vector<RtpTransceiverProxyRefPtr> UnsafeList() const
+      RTC_NO_THREAD_SAFETY_ANALYSIS {
+    return transceivers_;
+  }
+
+  // Returns a const reference to the list without generating a copy.
+  const std::vector<RtpTransceiverProxyRefPtr>& ListRef() const {
+    RTC_DCHECK_RUN_ON(&sequence_checker_);
     return transceivers_;
   }
 
@@ -117,13 +122,11 @@ class TransceiverList {
   }
   void Remove(RtpTransceiverProxyRefPtr transceiver) {
     RTC_DCHECK_RUN_ON(&sequence_checker_);
-    transceivers_.erase(
-        std::remove(transceivers_.begin(), transceivers_.end(), transceiver),
-        transceivers_.end());
+    std::erase(transceivers_, transceiver);
   }
   RtpTransceiverProxyRefPtr FindBySender(
-      rtc::scoped_refptr<RtpSenderInterface> sender) const;
-  RtpTransceiverProxyRefPtr FindByMid(const std::string& mid) const;
+      scoped_refptr<RtpSenderInterface> sender) const;
+  RtpTransceiverProxyRefPtr FindByMid(absl::string_view mid) const;
   RtpTransceiverProxyRefPtr FindByMLineIndex(size_t mline_index) const;
 
   // Find or create the stable state for a transceiver.
@@ -144,9 +147,8 @@ class TransceiverList {
 
  private:
   RTC_NO_UNIQUE_ADDRESS SequenceChecker sequence_checker_;
-  std::vector<RtpTransceiverProxyRefPtr> transceivers_;
-  // TODO(bugs.webrtc.org/12692): Add RTC_GUARDED_BY(sequence_checker_);
-
+  std::vector<RtpTransceiverProxyRefPtr> transceivers_
+      RTC_GUARDED_BY(sequence_checker_);
   // Holds changes made to transceivers during applying descriptors for
   // potential rollback. Gets cleared once signaling state goes to stable.
   std::map<RtpTransceiverProxyRefPtr, TransceiverStableState>

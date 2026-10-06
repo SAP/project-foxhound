@@ -330,6 +330,20 @@ function checkTabCountHistogram(result, expected, message) {
   Assert.deepEqual(result.values, expected, message);
 }
 
+function checkLoadedTabCount(samples, message) {
+  const v = Glean.browserEngagement.loadedTabCount.testGetValue();
+  if (!samples.length) {
+    Assert.equal(v, null, message);
+    return;
+  }
+  Assert.equal(v.count, samples.length, message + " - count");
+  Assert.equal(
+    v.sum,
+    samples.reduce((a, b) => a + b, 0),
+    message + " - sum"
+  );
+}
+
 add_task(async function test_tabsHistogram() {
   let openedTabs = [];
   let tabCountHist = TelemetryTestUtils.getAndClearHistogram("TAB_COUNT");
@@ -516,16 +530,11 @@ add_task(async function test_loadedTabsHistogram() {
   }
 
   resetTimestamps();
+  Services.fog.testResetFOG();
   const tabCount = TelemetryTestUtils.getAndClearHistogram("TAB_COUNT");
-  const loadedTabCount =
-    TelemetryTestUtils.getAndClearHistogram("LOADED_TAB_COUNT");
 
   checkTabCountHistogram(tabCount.snapshot(), {}, "TAB_COUNT - initial count");
-  checkTabCountHistogram(
-    loadedTabCount.snapshot(),
-    {},
-    "LOADED_TAB_COUNT - initial count"
-  );
+  checkLoadedTabCount([], "loadedTabCount - initial count");
 
   resetTimestamps();
   const tabs = [
@@ -533,8 +542,8 @@ add_task(async function test_loadedTabsHistogram() {
   ];
 
   // There are two tabs open: the mochi.test tab and the foreground tab.
-  const snapshot = loadedTabCount.snapshot();
-  checkTabCountHistogram(snapshot, { 1: 0, 2: 1, 3: 0 }, "TAB_COUNT - new tab");
+  const snapshot = tabCount.snapshot();
+  checkLoadedTabCount([2], "loadedTabCount - new tab");
 
   // Open a pending tab, as if by session restore.
   resetTimestamps();
@@ -554,11 +563,7 @@ add_task(async function test_loadedTabsHistogram() {
   );
 
   // Only the mochi.test and foreground tab are loaded.
-  checkTabCountHistogram(
-    loadedTabCount.snapshot(),
-    { 1: 0, 2: 2, 3: 0 },
-    "LOADED_TAB_COUNT - Added pending tab"
-  );
+  checkLoadedTabCount([2, 2], "loadedTabCount - Added pending tab");
 
   resetTimestamps();
   const restoredEvent = BrowserTestUtils.waitForEvent(lazyTab, "SSTabRestored");
@@ -571,11 +576,7 @@ add_task(async function test_loadedTabsHistogram() {
     "TAB_COUNT - Restored pending tab"
   );
 
-  checkTabCountHistogram(
-    loadedTabCount.snapshot(),
-    { 1: 0, 2: 2, 3: 1, 4: 0 },
-    "LOADED_TAB_COUNT - Restored pending tab"
-  );
+  checkLoadedTabCount([2, 2, 3], "loadedTabCount - Restored pending tab");
 
   resetTimestamps();
 
@@ -597,10 +598,9 @@ add_task(async function test_loadedTabsHistogram() {
     "TAB_COUNT - Navigated in existing tab"
   );
 
-  checkTabCountHistogram(
-    loadedTabCount.snapshot(),
-    { 1: 0, 2: 2, 3: 2, 4: 0 },
-    "LOADED_TAB_COUNT - Navigated in existing tab"
+  checkLoadedTabCount(
+    [2, 2, 3, 3],
+    "loadedTabCount - Navigated in existing tab"
   );
 
   resetTimestamps();
@@ -614,11 +614,7 @@ add_task(async function test_loadedTabsHistogram() {
     "TAB_COUNT - Opened new window"
   );
 
-  checkTabCountHistogram(
-    loadedTabCount.snapshot(),
-    { 1: 0, 2: 2, 3: 2, 4: 1, 5: 0 },
-    "LOADED_TAB_COUNT - Opened new window"
-  );
+  checkLoadedTabCount([2, 2, 3, 3, 4], "loadedTabCount - Opened new window");
 
   resetTimestamps();
   await BrowserTestUtils.openNewForegroundTab(win.gBrowser, "about:robots");
@@ -628,10 +624,9 @@ add_task(async function test_loadedTabsHistogram() {
     "TAB_COUNT - Opened new tab in new window"
   );
 
-  checkTabCountHistogram(
-    loadedTabCount.snapshot(),
-    { 1: 0, 2: 2, 3: 2, 4: 1, 5: 1, 6: 0 },
-    "LOADED_TAB_COUNT - Opened new tab in new window"
+  checkLoadedTabCount(
+    [2, 2, 3, 3, 4, 5],
+    "loadedTabCount - Opened new tab in new window"
   );
 
   for (const tab of tabs) {

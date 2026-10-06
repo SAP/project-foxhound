@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +9,8 @@
 #include "nsTArray.h"
 
 namespace mozilla::gmp {
+
+class GMPVideoi420FrameImpl;
 
 enum class GMPSharedMemClass { Decoded, Encoded };
 
@@ -27,8 +28,11 @@ class GMPSharedMemManager {
   virtual bool MgrAllocShmem(size_t aSize, ipc::Shmem* aMem) { return false; }
   virtual void MgrDeallocShmem(ipc::Shmem& aMem) = 0;
 
+  virtual void MgrDecodedFrameDestroyed(GMPVideoi420FrameImpl* aFrame) {}
+
  protected:
   virtual bool MgrIsOnOwningThread() const = 0;
+  virtual bool MgrCanSend() const = 0;
 
   static constexpr size_t kMaxPools = 2;
 

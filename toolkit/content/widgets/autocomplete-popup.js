@@ -87,7 +87,7 @@
                 }
                 this._disabledItemClicked = false;
                 break;
-              case "mousemove":
+              case "mousemove": {
                 if (Date.now() - this.mLastMoveTime <= 30) {
                   return;
                 }
@@ -110,6 +110,7 @@
 
                 this.mLastMoveTime = Date.now();
                 break;
+              }
             }
           },
         };
@@ -274,8 +275,6 @@
         // clear any previous selection, see bugs 400671 and 488357
         this.selectedIndex = -1;
 
-        var width = aElement.getBoundingClientRect().width;
-        this.style.setProperty("--panel-width", Math.max(width, 100) + "px");
         // invalidate() depends on the width attribute
         this._invalidate();
 
@@ -336,23 +335,43 @@
         let firstRowRect = rows[0].getBoundingClientRect();
         if (this._rlbPadding == undefined) {
           let style = window.getComputedStyle(this.richlistbox);
-          let paddingTop = parseInt(style.paddingTop) || 0;
-          let paddingBottom = parseInt(style.paddingBottom) || 0;
+          let paddingTop = parseFloat(style.paddingTop) || 0;
+          let paddingBottom = parseFloat(style.paddingBottom) || 0;
           this._rlbPadding = paddingTop + paddingBottom;
         }
 
+        let lastRowMarginBottom = 0;
+        let firstRowMarginTop = 0;
         // The class `forceHandleUnderflow` is for the item might need to
         // handle OverUnderflow or Overflow when the height of an item will
         // be changed dynamically.
         for (let i = 0; i < numRows; i++) {
-          if (rows[i].classList.contains("forceHandleUnderflow")) {
-            rows[i].handleOverUnderflow();
+          let child = rows[i];
+          if (child.classList.contains("forceHandleUnderflow")) {
+            child.handleOverUnderflow();
+          }
+
+          const styles = getComputedStyle(child);
+
+          // Get margin-top value of first row
+          if (i == 0) {
+            firstRowMarginTop = parseFloat(styles.marginTop);
+          }
+
+          // Get margin-bottom value of last row
+          if (i == numRows - 1) {
+            lastRowMarginBottom = parseFloat(styles.marginBottom);
           }
         }
 
         let lastRowRect = rows[numRows - 1].getBoundingClientRect();
         // Calculate the height to have the first row to last row shown
-        height = lastRowRect.bottom - firstRowRect.top + this._rlbPadding;
+        height =
+          lastRowRect.bottom -
+          firstRowRect.top +
+          this._rlbPadding +
+          firstRowMarginTop +
+          lastRowMarginBottom;
       }
 
       this._collapseUnusedItems();
@@ -413,7 +432,6 @@
           const UNREUSEABLE_STYLES = [
             "autofill",
             "action",
-            "status",
             "generatedPassword",
             "generic",
             "importableLearnMore",
@@ -441,9 +459,6 @@
               break;
             case "action":
               options = { is: "autocomplete-action-richlistitem" };
-              break;
-            case "status":
-              options = { is: "autocomplete-status-richlistitem" };
               break;
             case "generic":
               options = { is: "autocomplete-two-line-richlistitem" };

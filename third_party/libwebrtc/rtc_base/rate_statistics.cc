@@ -11,11 +11,13 @@
 #include "rtc_base/rate_statistics.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <limits>
-#include <memory>
+#include <optional>
 
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/numerics/safe_compare.h"
 #include "rtc_base/numerics/safe_conversions.h"
 
 namespace webrtc {
@@ -116,7 +118,7 @@ std::optional<int64_t> RateStatistics::Rate(int64_t now_ms) const {
   // overflowed, treat this as rate unavailable.
   if (num_samples_ == 0 || active_window_size <= 1 ||
       (num_samples_ <= 1 &&
-       rtc::SafeLt(active_window_size, current_window_size_ms_)) ||
+       SafeLt(active_window_size, current_window_size_ms_)) ||
       overflow_) {
     return std::nullopt;
   }

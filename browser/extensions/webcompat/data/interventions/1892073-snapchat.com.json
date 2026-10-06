@@ -1,0 +1,16 @@
+{
+  "label": "snapchat.com",
+  "bugs": {
+    "1892073": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.snapchat.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "only_channels": ["nightly", "beta"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

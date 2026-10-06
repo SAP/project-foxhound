@@ -182,7 +182,7 @@ add_task(async function () {
       const boxModelInfoBarEl = getBoxModelHighlighterInfoBarEl(boxModelRoot);
       return (
         // wait for the infobar to be displayed
-        boxModelInfoBarEl.getAttribute("hidden") === null &&
+        !boxModelInfoBarEl.hasAttribute("hidden") &&
         // and make sure it's shown for the hovered element
         boxModelInfoBarEl.querySelector(".box-model-infobar-id")
           ?.textContent === "#clicky"

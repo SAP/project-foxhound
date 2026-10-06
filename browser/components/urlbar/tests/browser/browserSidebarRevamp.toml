@@ -1,14 +1,13 @@
 [DEFAULT]
 dupe-manifest=true
+tags = "urlbar"
 support-files = [
   "dummy_page.html",
   "head.js",
   "head-common.js",
 ]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && asan", # long running manifest
-  "os == 'linux' && os_version == '18.04' && tsan", # long running manifest
-  "win11_2009 && asan", # long running manifest
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # long running manifest
 ]
 prefs = [
   "browser.bookmarks.testing.skipDefaultBookmarksImport=true",

@@ -60,18 +60,18 @@ function makeChan(uri) {
   return chan;
 }
 
-add_task(async function test_kyber_success() {
+add_task(async function test_mlkem_success() {
   let listener = new Http3Listener();
   listener.expectedKeaGroup = "mlkem768x25519";
   let chan = makeChan("https://foo.example.com");
   await chanPromise(chan, listener);
 });
 
-add_task(async function test_no_kyber_on_retry() {
+add_task(async function test_mlkem_on_retry() {
   Services.obs.notifyObservers(null, "net:cancel-all-connections");
 
   let listener = new Http3Listener();
-  listener.expectedKeaGroup = "x25519";
+  listener.expectedKeaGroup = "mlkem768x25519";
   let chan = makeChan("https://foo.example.com");
   chan.QueryInterface(Ci.nsIHttpChannelInternal).tlsFlags =
     Ci.nsIHttpChannelInternal.TLS_FLAG_CONFIGURE_AS_RETRY;

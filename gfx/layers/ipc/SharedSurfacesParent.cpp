@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -39,11 +37,14 @@ void SharedSurfacesParent::MappingTracker::TakeExpired(
   aExpired = std::move(mExpired);
 }
 
-void SharedSurfacesParent::MappingTracker::NotifyHandlerEnd() {
+void SharedSurfacesParent::MappingTracker::InternalTrackerObserver::
+    NotifyHandlerEnd() {
   nsTArray<RefPtr<gfx::SourceSurfaceSharedDataWrapper>> expired;
   {
     StaticMutexAutoLock lock(sMutex);
-    TakeExpired(expired, lock);
+    if (sInstance) {
+      sInstance->mTracker.TakeExpired(expired, lock);
+    }
   }
 
   SharedSurfacesParent::ExpireMap(expired);
@@ -60,6 +61,7 @@ void SharedSurfacesParent::Initialize() {
   StaticMutexAutoLock lock(sMutex);
   if (!sInstance) {
     sInstance = new SharedSurfacesParent();
+    sInstance->mTracker.InitLocked(lock);
   }
 }
 
@@ -87,7 +89,10 @@ void SharedSurfacesParent::Shutdown() {
   // main thread.
   MOZ_ASSERT(NS_IsMainThread());
   StaticMutexAutoLock lock(sMutex);
-  sInstance = nullptr;
+  if (sInstance) {
+    sInstance->mTracker.DestroyLocked(lock);
+    sInstance = nullptr;
+  }
 }
 
 /* static */
@@ -185,8 +190,7 @@ void SharedSurfacesParent::AddSameProcess(const wr::ExternalImageId& aId,
   // This is good because we avoid mapping the same shared memory twice, but
   // still allow the original surface to be freed and remove the wrapper from
   // the table when it is no longer needed.
-  RefPtr<SourceSurfaceSharedDataWrapper> surface =
-      new SourceSurfaceSharedDataWrapper();
+  RefPtr surface = MakeRefPtr<SourceSurfaceSharedDataWrapper>();
   surface->Init(aSurface);
 
   uint64_t id = wr::AsUint64(aId);
@@ -238,8 +242,12 @@ void SharedSurfacesParent::Add(const wr::ExternalImageId& aId,
   MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());
   MOZ_ASSERT(aPid != base::GetCurrentProcId());
 
-  RefPtr<SourceSurfaceSharedDataWrapper> surface =
-      new SourceSurfaceSharedDataWrapper();
+  if (aDesc.format() != SurfaceFormat::B8G8R8X8 &&
+      aDesc.format() != SurfaceFormat::B8G8R8A8) {
+    return;
+  }
+
+  RefPtr surface = MakeRefPtr<SourceSurfaceSharedDataWrapper>();
 
   // We preferentially map in new surfaces when they are initially received
   // because we are likely to reference them in a display list soon. The unmap

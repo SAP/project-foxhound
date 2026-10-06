@@ -18,3 +18,24 @@ messaging-system:
   notification_emails:
     - pmcmanis@mozilla.com
     - dmosedale@mozilla.com
+
+microsurvey:
+  description: |
+    This is a ping representing single events emitted by microsurvey messages,
+    which are triggered by the messaging system. It is largely identical to
+    messaging-system, except that it includes write-in responses from
+    microsurveys, and it applies the write-in microsurvey data policy: reduced
+    retention, stricter access control, OHTTP, and no client_id.
+  include_client_id: false
+  send_if_empty: false
+  metadata:
+    include_info_sections: false
+  uploader_capabilities:
+    - ohttp
+  bugs:
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=2010984
+  data_reviews:
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=2010984
+  notification_emails:
+    - pmcmanis@mozilla.com
+    - dmosedale@mozilla.com

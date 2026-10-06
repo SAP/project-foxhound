@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,7 @@
 #include "FileSystemParentTestHelpers.h"
 #include "FileSystemParentTypes.h"
 #include "gtest/gtest.h"
+#include "mozilla/StaticPrefs_security.h"
 #include "mozilla/dom/quota/UsageInfo.h"
 
 // This file is intended for integration tests which verify usage tracking
@@ -104,6 +103,13 @@ TEST_F(TestFileSystemUsageTracking, WritesToFilesShouldIncreaseUsage) {
 }
 
 TEST_F(TestFileSystemUsageTracking, RemovingFileShouldDecreaseUsage) {
+  if (StaticPrefs::security_storage_encryption_sqlite_enabled()) {
+    // obfsvfs forces an 8192-byte page size with 32 reserved bytes per page,
+    // so the on-disk database usage no longer matches the byte counts this
+    // test computes assuming the unencrypted page layout.
+    GTEST_SKIP()
+        << "QM usage accounting differs under SQLite at-rest encryption";
+  }
   // Initialize database
   ASSERT_NO_FATAL_FAILURE(EnsureDataManager());
 

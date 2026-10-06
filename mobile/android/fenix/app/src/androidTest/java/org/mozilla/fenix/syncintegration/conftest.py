@@ -156,11 +156,11 @@ def gradlewbuild(fxa_account, monkeypatch, gradlewbuild_log):
 def pytest_addoption(parser):
     parser.addoption(
         "--firefox",
-        help="path to firefox binary (defaults to " "downloading latest nightly build)",
+        help="path to firefox binary (defaults to downloading latest nightly build)",
     )
     parser.addoption(
         "--tps",
-        help="path to tps add-on (defaults to " "downloading latest nightly build)",
+        help="path to tps add-on (defaults to downloading latest nightly build)",
     )
 
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2011-2016 Google Inc.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the gfx/skia/LICENSE file.
@@ -95,6 +93,8 @@ void convolve_horizontally_neon(const unsigned char* srcData,
 
     // Bring this value back in range. All of the filter scaling factors
     // are in fixed point with kShiftBits bits of fractional part.
+    accum = vaddq_s32(
+        accum, vdupq_n_s32(1 << (SkConvolutionFilter1D::kShiftBits - 1)));
     accum = vshrq_n_s32(accum, SkConvolutionFilter1D::kShiftBits);
 
     // Pack and store the new pixel.
@@ -150,11 +150,16 @@ static void ConvolveVertically(
       accum3 += vmull_s16(src16_3, coeff16);
     }
 
-    // Shift right for fixed point implementation.
-    accum0 = vshrq_n_s32(accum0, SkConvolutionFilter1D::kShiftBits);
-    accum1 = vshrq_n_s32(accum1, SkConvolutionFilter1D::kShiftBits);
-    accum2 = vshrq_n_s32(accum2, SkConvolutionFilter1D::kShiftBits);
-    accum3 = vshrq_n_s32(accum3, SkConvolutionFilter1D::kShiftBits);
+    // Shift right for fixed point implementation, with rounding.
+    int32x4_t round = vdupq_n_s32(1 << (SkConvolutionFilter1D::kShiftBits - 1));
+    accum0 = vshrq_n_s32(vaddq_s32(accum0, round),
+                         SkConvolutionFilter1D::kShiftBits);
+    accum1 = vshrq_n_s32(vaddq_s32(accum1, round),
+                         SkConvolutionFilter1D::kShiftBits);
+    accum2 = vshrq_n_s32(vaddq_s32(accum2, round),
+                         SkConvolutionFilter1D::kShiftBits);
+    accum3 = vshrq_n_s32(vaddq_s32(accum3, round),
+                         SkConvolutionFilter1D::kShiftBits);
 
     // Packing 32 bits |accum| to 16 bits per channel (signed saturation).
     // [16] a1 b1 g1 r1 a0 b0 g0 r0
@@ -220,9 +225,13 @@ static void ConvolveVertically(
       accum2 += vmull_s16(src16_2, coeff16);
     }
 
-    accum0 = vshrq_n_s32(accum0, SkConvolutionFilter1D::kShiftBits);
-    accum1 = vshrq_n_s32(accum1, SkConvolutionFilter1D::kShiftBits);
-    accum2 = vshrq_n_s32(accum2, SkConvolutionFilter1D::kShiftBits);
+    int32x4_t round = vdupq_n_s32(1 << (SkConvolutionFilter1D::kShiftBits - 1));
+    accum0 = vshrq_n_s32(vaddq_s32(accum0, round),
+                         SkConvolutionFilter1D::kShiftBits);
+    accum1 = vshrq_n_s32(vaddq_s32(accum1, round),
+                         SkConvolutionFilter1D::kShiftBits);
+    accum2 = vshrq_n_s32(vaddq_s32(accum2, round),
+                         SkConvolutionFilter1D::kShiftBits);
 
     int16x8_t accum16_0 = vcombine_s16(vqmovn_s32(accum0), vqmovn_s32(accum1));
     int16x8_t accum16_1 = vcombine_s16(vqmovn_s32(accum2), vqmovn_s32(accum2));

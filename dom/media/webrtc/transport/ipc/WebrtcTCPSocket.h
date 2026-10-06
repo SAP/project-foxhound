@@ -1,25 +1,23 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef webrtc_tcp_socket_h__
-#define webrtc_tcp_socket_h__
+#ifndef webrtc_tcp_socket_h_
+#define webrtc_tcp_socket_h_
 
 #include <list>
 
+#include "mozilla/net/WebrtcProxyConfig.h"
 #include "nsCOMPtr.h"
 #include "nsIAsyncInputStream.h"
 #include "nsIAsyncOutputStream.h"
 #include "nsIAuthPromptProvider.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIInterfaceRequestor.h"
+#include "nsIProtocolProxyCallback.h"
 #include "nsIStreamListener.h"
 #include "nsStringFwd.h"
 #include "nsTArray.h"
-#include "nsIProtocolProxyCallback.h"
-#include "mozilla/net/WebrtcProxyConfig.h"
 
 class nsISocketTransport;
 
@@ -101,4 +99,4 @@ class WebrtcTCPSocket : public nsIHttpUpgradeListener,
 
 }  // namespace mozilla::net
 
-#endif  // webrtc_tcp_socket_h__
+#endif  // webrtc_tcp_socket_h_

@@ -1,0 +1,14 @@
+<div id="outer">
+<div id="inner">
+<iframe id="ifr"></iframe>
+<script>
+ifr.onload = () => {
+    outer.appendChild(inner);
+    if (!ifr.src) {
+      ifr.src = "about:blank";
+    }
+}
+// append -> ifr load -> append -> overrecursion
+// We end up with a broken iframe and set src to start a navigation.
+inner.appendChild(ifr);
+</script>

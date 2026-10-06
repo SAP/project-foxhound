@@ -1,0 +1,29 @@
+<!doctype html>
+<html class="reftest-wait">
+<meta charset="utf-8">
+<title>adoptedStyleSheets adopt link tag</title>
+<iframe id="ifr" src="about:blank"></iframe>
+<script>
+onload = async () => {
+  let arr;
+  (() => {
+    let ifr = document.getElementById('ifr');
+    let div = ifr.contentDocument.createElement('div');
+    let shadow = div.attachShadow({mode: 'open'});
+    let sheet = new ifr.contentWindow.CSSStyleSheet();
+    shadow.adoptedStyleSheets[0] = sheet;
+    arr = shadow.adoptedStyleSheets;
+    document.adoptNode(div);
+  })();
+
+  dump("Force GC and CC\n");
+  SpecialPowers.forceShrinkingGC();
+  SpecialPowers.forceCC();
+  SpecialPowers.forceShrinkingGC();
+  SpecialPowers.forceCC();
+
+  arr[0] = new CSSStyleSheet();
+  document.documentElement.classList.remove("reftest-wait");
+};
+</script>
+</html>

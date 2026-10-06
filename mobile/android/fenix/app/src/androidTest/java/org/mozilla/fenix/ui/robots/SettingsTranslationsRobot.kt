@@ -45,12 +45,14 @@ class SettingsTranslationsRobot(private val composeTestRule: ComposeTestRule) {
 
     @OptIn(ExperimentalTestApi::class)
     fun verifyDownloadedLanguage(downloadedLanguage: String) {
-        Log.i(TAG, "verifyDownloadedLanguage: Waiting for $waitingTime until the $downloadedLanguage language is downloaded")
-        composeTestRule.waitUntilAtLeastOneExists(hasContentDescription("$downloadedLanguage 17.94 MBDelete"), waitingTime)
-        Log.i(TAG, "verifyDownloadedLanguage: Waited for $waitingTime until the $downloadedLanguage language was downloaded")
-        Log.i(TAG, "verifyDownloadedLanguage: Trying to verify that $downloadedLanguage language is downloaded")
-        composeTestRule.onNodeWithContentDescription("$downloadedLanguage 17.94 MBDelete").assertIsDisplayed()
-        Log.i(TAG, "verifyDownloadedLanguage: Verified that $downloadedLanguage language is downloaded")
+        Log.i(TAG, "verifyDownloadedLanguage: Waiting until $downloadedLanguage is downloaded")
+        composeTestRule.waitUntil(timeoutMillis = 30_000) {
+            composeTestRule.onAllNodes(hasContentDescription("$downloadedLanguage", substring = true))
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        composeTestRule.onNodeWithContentDescription("$downloadedLanguage", substring = true)
+            .assertIsDisplayed()
+        Log.i(TAG, "verifyDownloadedLanguage: Verified that $downloadedLanguage is downloaded")
     }
 
     fun verifyDownloadLanguageInSavingModePrompt() {

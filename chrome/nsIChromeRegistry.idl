@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -60,20 +59,6 @@ interface nsIXULChromeRegistry : nsIChromeRegistry
    * Do not pass non-chrome URIs to this method.
    */
   boolean allowContentToAccess(in nsIURI url);
-
-  /**
-   * Returns true if the passed chrome URL is allowed to be loaded in a remote
-   * process. This reflects the remoteenabled flag on packages.
-   * Do not pass non-chrome URIs to this method.
-   */
-  boolean canLoadURLRemotely(in nsIURI url);
-
-  /**
-   * Returns true if the passed chrome URL must be loaded in a remote process.
-   * This reflects the remoterequired flag on packages.
-   * Do not pass non-chrome URIs to this method.
-   */
-  boolean mustLoadURLRemotely(in nsIURI url);
 };
 
 %{ C++

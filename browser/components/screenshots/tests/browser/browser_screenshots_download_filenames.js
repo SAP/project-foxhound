@@ -121,6 +121,58 @@ add_task(async function file_saved_to_screenshots_folder() {
   );
 });
 
+add_task(async function file_saved_to_preferred_downloads_folder_downloads() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.screenshots.folderList", 4],
+      ["browser.download.folderList", 1],
+    ],
+  });
+
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: TEST_PAGE,
+    },
+    async browser => {
+      const expectedDir = Services.dirsvc.get("DfltDwnld", Ci.nsIFile).path;
+
+      info(`expectedDir: ${expectedDir}`);
+
+      let documentTitle = "MyScreenshot";
+
+      let result = await getFilename(documentTitle, browser);
+      Assert.stringContains(result.filename, expectedDir);
+    }
+  );
+});
+
+add_task(async function file_saved_to_preferred_downloads_folder_desktop() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.screenshots.folderList", 4],
+      ["browser.download.folderList", 0],
+    ],
+  });
+
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: TEST_PAGE,
+    },
+    async browser => {
+      const expectedDir = Services.dirsvc.get("Desk", Ci.nsIFile).path;
+
+      info(`expectedDir: ${expectedDir}`);
+
+      let documentTitle = "MyScreenshot";
+
+      let result = await getFilename(documentTitle, browser);
+      Assert.stringContains(result.filename, expectedDir);
+    }
+  );
+});
+
 add_task(async function file_saved_to_desktop_folder() {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.screenshots.folderList", 0]],

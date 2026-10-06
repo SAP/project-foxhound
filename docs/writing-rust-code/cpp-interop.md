@@ -8,6 +8,7 @@ Generally speaking, the more complicated is the data you want to transfer, the
 harder it'll be to transfer across the FFI boundary.
 
 Booleans, integers, and pointers cause little trouble.
+
 - C++ `bool` matches Rust `bool`
 - C++ `uint8_t` matches Rust `u8`, `int32_t` matches Rust `i32`, etc.
 - C++ `const T*` matches Rust `*const T`, `T*` matches Rust `*mut T`.
@@ -45,7 +46,9 @@ bool UniquelyNamedFunction(const nsCString* aInput, nsCString* aRetVal) {
 }
 }
 ```
+
 add this declaration to the Rust code:
+
 ```rust
 extern "C" {
     pub fn UniquelyNamedFunction(input: &nsCString, ret_val: &mut nsCString) -> bool;
@@ -60,8 +63,8 @@ the `unsafe` block.)
 Because of this unsafety, for non-trivial interfaces (in particular when C++
 structs and classes must be accessed from Rust code) it's common to use
 [rust-bindgen](https://github.com/rust-lang/rust-bindgen), which generates Rust
-bindings. The documentation is
-[here](https://rust-lang.github.io/rust-bindgen/).
+bindings. See the
+[rust-bindgen documentation](https://rust-lang.github.io/rust-bindgen/).
 
 ## Accessing Rust code and data from C++
 

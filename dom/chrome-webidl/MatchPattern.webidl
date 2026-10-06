@@ -160,3 +160,31 @@ dictionary MatchPatternOptions {
    */
   boolean restrictSchemes = true;
 };
+
+/**
+ * A set of MatchPatternSets associated with a source.
+ * Denies URLs that match the deny set and don't match the except set.
+ * Patterns are matched by origin only (paths are ignored).
+ */
+[ChromeOnly, Exposed=Window]
+interface ExtensionGuardSet {
+  [Throws]
+  constructor(ExtensionGuardSetInit init);
+
+  [Constant] readonly attribute MatchPatternSet deny;
+  [Constant] readonly attribute MatchPatternSet? except;
+  [Constant] readonly attribute ExtensionGuardSource source;
+
+  boolean denies(URI uri);
+};
+
+dictionary ExtensionGuardSetInit {
+  required sequence<DOMString> deny;
+  sequence<DOMString> except;
+  required ExtensionGuardSource source;
+};
+
+enum ExtensionGuardSource {
+  "enterprise-global",
+  "enterprise-per-extension",
+};

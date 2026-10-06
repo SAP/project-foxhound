@@ -46,7 +46,7 @@ add_setup(async function () {
   SearchTestUtils.setRemoteSettingsConfig(CONFIG_V2);
 
   stub = sinon.stub(
-    await Services.search.wrappedJSObject,
+    await SearchService,
     "_showRemovalOfSearchEngineNotificationBox"
   );
 
@@ -55,10 +55,10 @@ add_setup(async function () {
   Region._setHomeRegion("", false);
 
   let promiseSaved = promiseAfterSettings();
-  await Services.search.init();
+  await SearchService.init();
   await promiseSaved;
 
-  userSettings = await Services.search.wrappedJSObject._settings.get();
+  userSettings = await SearchService._settings.get();
 
   registerCleanupFunction(async () => {
     sinon.restore();
@@ -67,15 +67,15 @@ add_setup(async function () {
 
 // Verify the loaded configuration matches what we expect for the test.
 add_task(async function test_initial_config_correct() {
-  const installedEngines = await Services.search.getAppProvidedEngines();
+  const installedEngines = await SearchService.getAppProvidedEngines();
   Assert.deepEqual(
-    installedEngines.map(e => e.identifier),
+    installedEngines.map(e => e.id),
     ["engine_to_remove", "engine_to_keep"],
     "Should have the correct list of engines installed."
   );
 
   Assert.equal(
-    (await Services.search.getDefault()).identifier,
+    (await SearchService.getDefault()).id,
     "engine_to_remove",
     "Should have loaded the expected default engine"
   );
@@ -108,7 +108,7 @@ add_task(async function test_metadata_undefined() {
 
   const newDefault = await defaultEngineChanged;
   Assert.equal(
-    newDefault.QueryInterface(Ci.nsISearchEngine).name,
+    newDefault.name,
     "engine_to_keep",
     "Should have correctly notified the new default engine."
   );
@@ -131,8 +131,7 @@ add_task(async function test_metadata_changed() {
 });
 
 add_task(async function test_default_engine_unchanged() {
-  let currentEngineName =
-    Services.search.wrappedJSObject._getEngineDefault(false).name;
+  let currentEngineName = SearchService._getEngineDefault(false).name;
 
   Assert.equal(
     currentEngineName,
@@ -157,7 +156,7 @@ add_task(async function test_new_current_engine_is_undefined() {
   consoleAllowList.push("No default engine");
   let settings = structuredClone(userSettings);
   let getEngineDefaultStub = sinon.stub(
-    await Services.search.wrappedJSObject,
+    await SearchService,
     "_getEngineDefault"
   );
   getEngineDefaultStub.returns(undefined);
@@ -172,7 +171,7 @@ add_task(async function test_new_current_engine_is_undefined() {
 });
 
 add_task(async function test_current_engine_is_null() {
-  Services.search.wrappedJSObject._currentEngine = null;
+  SearchService._currentEngine = null;
 
   await reloadEngines(structuredClone(userSettings));
   Assert.ok(
@@ -194,9 +193,9 @@ add_task(async function test_default_changed_and_metadata_unchanged_exists() {
   Region._setHomeRegion("FR", false);
 
   info("Set user settings metadata to the same properties as cached metadata.");
-  await Services.search.wrappedJSObject._fetchEngineSelectorEngines();
+  await SearchService._fetchEngineSelectorEngines();
   userSettings.metaData = {
-    ...Services.search.wrappedJSObject._settings.getSettingsMetaData(),
+    ...SearchService._settings.getSettingsMetaData(),
     appDefaultEngine: "engine_to_remove",
   };
 
@@ -221,9 +220,9 @@ add_task(async function test_default_engine_changed_and_metadata_unchanged() {
   );
 
   info("Set user settings metadata to the same properties as cached metadata.");
-  await Services.search.wrappedJSObject._fetchEngineSelectorEngines();
+  await SearchService._fetchEngineSelectorEngines();
   userSettings.metaData = {
-    ...Services.search.wrappedJSObject._settings.getSettingsMetaData(),
+    ...SearchService._settings.getSettingsMetaData(),
     appDefaultEngineId: "engine_to_remove",
   };
 
@@ -246,14 +245,14 @@ add_task(async function test_default_engine_changed_and_metadata_unchanged() {
 
   const newDefault = await defaultEngineChanged;
   Assert.equal(
-    newDefault.QueryInterface(Ci.nsISearchEngine).name,
+    newDefault.name,
     "engine_to_keep",
     "Should have correctly notified the new default engine"
   );
 
   info("Reset userSettings.metaData.current engine.");
   let settings = structuredClone(userSettings);
-  settings.metaData.current = Services.search.wrappedJSObject._currentEngine;
+  settings.metaData.current = SearchService._currentEngine;
 
   await loadEngines(settings);
   Assert.ok(stub.calledTwice, "_loadEngines should show the notification box.");
@@ -303,7 +302,7 @@ add_task(async function test_app_default_engine_change_start_up_still_exists() {
 });
 
 async function setConfigToLoad(config) {
-  Services.search.wrappedJSObject.resetEngineSelector();
+  SearchService.resetEngineSelector();
   SearchTestUtils.setRemoteSettingsConfig(config);
 }
 
@@ -314,7 +313,7 @@ function writeSettings(settings) {
 async function reloadEngines(settings) {
   let promiseSaved = promiseAfterSettings();
 
-  await Services.search.wrappedJSObject._reloadEngines(settings);
+  await SearchService._reloadEngines(settings);
 
   await promiseSaved;
 }
@@ -324,8 +323,8 @@ async function loadEngines(settings) {
 
   let promiseSaved = promiseAfterSettings();
 
-  Services.search.wrappedJSObject.reset();
-  await Services.search.init();
+  SearchService.reset();
+  await SearchService.init();
 
   await promiseSaved;
 }
@@ -349,7 +348,7 @@ async function assert_metadata_changed(settings) {
 
   let newDefault = await defaultEngineChanged;
   Assert.equal(
-    newDefault.QueryInterface(Ci.nsISearchEngine).name,
+    newDefault.name,
     "engine_to_remove",
     "Should have correctly notified the new default engine."
   );
@@ -365,7 +364,7 @@ async function assert_metadata_changed(settings) {
   );
 
   Assert.equal(
-    Services.search.defaultEngine.name,
+    SearchService.defaultEngine.name,
     "engine_to_remove",
     "Should have correctly notified the new default engine."
   );

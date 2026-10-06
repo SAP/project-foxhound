@@ -9,8 +9,10 @@ import android.widget.TextView
 import androidx.appcompat.widget.AppCompatSpinner
 import androidx.core.view.isVisible
 import io.mockk.MockKAnnotations
+import io.mockk.Runs
 import io.mockk.every
-import io.mockk.impl.annotations.MockK
+import io.mockk.impl.annotations.RelaxedMockK
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.spyk
 import io.mockk.verify
@@ -30,7 +32,7 @@ import java.util.EnumMap
 @RunWith(RobolectricTestRunner::class)
 class WebsitePermissionViewTest {
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var interactor: WebsitePermissionInteractor
     private lateinit var view: WebsitePermissionsView
 
@@ -58,7 +60,7 @@ class WebsitePermissionViewTest {
             mapOf(PhoneFeature.CAMERA to ToggleablePermission(label, status)),
         )
 
-        every { view.bindPermission(any(), any()) } returns Unit
+        every { view.bindPermission(any(), any()) } just Runs
 
         view.update(map)
 
@@ -83,7 +85,7 @@ class WebsitePermissionViewTest {
         view.permissionViews =
             EnumMap(mapOf(PhoneFeature.CAMERA to ToggleablePermission(label, status)))
 
-        every { view.bindPermission(any(), any()) } returns Unit
+        every { view.bindPermission(any(), any()) } just Runs
 
         view.update(map)
 
@@ -106,7 +108,7 @@ class WebsitePermissionViewTest {
 
         view.permissionViews = EnumMap(mapOf(PhoneFeature.CAMERA to permissionView))
 
-        every { interactor.onPermissionToggled(any()) } returns Unit
+        every { interactor.onPermissionToggled(any()) } just Runs
 
         view.bindPermission(permission, permissionView)
 
@@ -135,7 +137,7 @@ class WebsitePermissionViewTest {
 
         view.permissionViews = EnumMap(mapOf(PhoneFeature.CAMERA to permissionView))
 
-        every { interactor.onPermissionToggled(any()) } returns Unit
+        every { interactor.onPermissionToggled(any()) } just Runs
 
         view.bindPermission(permission, permissionView)
 
@@ -179,7 +181,7 @@ class WebsitePermissionViewTest {
 
         view.permissionViews = EnumMap(mapOf(PhoneFeature.AUTOPLAY to permissionView))
 
-        every { interactor.onAutoplayChanged(any()) } returns Unit
+        every { interactor.onAutoplayChanged(any()) } just Runs
 
         view.bindPermission(permission, permissionView)
 

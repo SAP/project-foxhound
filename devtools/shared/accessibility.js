@@ -38,11 +38,12 @@ const LARGE_TEXT = {
 
 /**
  * Get contrast ratio score based on WCAG criteria.
- * @param  {Number} ratio
+ *
+ * @param  {number} ratio
  *         Value of the contrast ratio for a given accessible object.
- * @param  {Boolean} isLargeText
+ * @param  {boolean} isLargeText
  *         True if the accessible object contains large text.
- * @return {String}
+ * @return {string}
  *         Value that represents calculated contrast ratio score.
  */
 function getContrastRatioScore(ratio, isLargeText) {
@@ -60,7 +61,8 @@ function getContrastRatioScore(ratio, isLargeText) {
 
 /**
  * Get calculated text style properties from a node's computed style, if possible.
- * @param  {Object} computedStyle
+ *
+ * @param  {object} computedStyle
  *         Computed style using which text styling information is to be calculated.
  *         - fontSize   {String}
  *                      Font size of the text
@@ -70,7 +72,7 @@ function getContrastRatioScore(ratio, isLargeText) {
  *                      Rgb color of the text
  *         - opacity    {String} Optional
  *                      Opacity of the text
- * @return {Object}
+ * @return {object}
  *         Color and text size information for a given DOM node.
  */
 function getTextProperties(computedStyle) {
@@ -122,7 +124,7 @@ function getTextProperties(computedStyle) {
  * against the given background color data. If background is multi-colored, return a
  * range, otherwise a single contrast ratio.
  *
- * @param  {Object} backgroundColorData
+ * @param  {object} backgroundColorData
  *         Object with one or more of the following properties:
  *         - value              {Array}
  *                              rgba array for single color background
@@ -130,12 +132,12 @@ function getTextProperties(computedStyle) {
  *                              min luminance rgba array for multi color background
  *         - max                {Array}
  *                              max luminance rgba array for multi color background
- * @param  {Object}  textData
+ * @param  {object}  textData
  *         - color              {Array}
  *                              rgba array for text of referenced DOM node
  *         - isLargeText        {Boolean}
  *                              True if text of referenced DOM node is large
- * @return {Object}
+ * @return {object}
  *         An object that may contain one or more of the following fields: error,
  *         isLargeText, value, min, max values for contrast.
  */

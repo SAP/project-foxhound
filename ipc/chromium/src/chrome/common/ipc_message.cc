@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -130,6 +128,15 @@ void Message::SetAttachedFileHandles(
   attached_handles_ = std::move(handles);
 }
 
+bool Message::has_any_attachments() const {
+  return !attached_ports_.IsEmpty() || !attached_handles_.IsEmpty()
+#if defined(XP_DARWIN)
+         || !attached_send_rights_.IsEmpty() ||
+         !attached_receive_rights_.IsEmpty()
+#endif
+      ;
+}
+
 uint32_t Message::num_handles() const { return attached_handles_.Length(); }
 
 void Message::WritePort(mozilla::ipc::ScopedPort port) {
@@ -186,6 +193,35 @@ bool Message::ConsumeMachSendRight(PickleIterator* iter,
 
 uint32_t Message::num_send_rights() const {
   return attached_send_rights_.Length();
+}
+
+bool Message::WriteMachReceiveRight(mozilla::UniqueMachReceiveRight port) {
+  uint32_t index = attached_receive_rights_.Length();
+  WriteUInt32(index);
+  if (index == MAX_DESCRIPTORS_PER_MESSAGE) {
+    return false;
+  }
+  attached_receive_rights_.AppendElement(std::move(port));
+  return true;
+}
+
+bool Message::ConsumeMachReceiveRight(
+    PickleIterator* iter, mozilla::UniqueMachReceiveRight* port) const {
+  uint32_t index;
+  if (!ReadUInt32(iter, &index)) {
+    return false;
+  }
+  if (index >= attached_receive_rights_.Length()) {
+    return false;
+  }
+  // NOTE: This mutates the underlying array, replacing the receive right with a
+  // null right.
+  *port = std::exchange(attached_receive_rights_[index], nullptr);
+  return true;
+}
+
+uint32_t Message::num_receive_rights() const {
+  return attached_receive_rights_.Length();
 }
 #endif
 

@@ -491,6 +491,12 @@ struct FeaturesGL : FeatureSetBase
         "supportsShaderFramebufferFetchNonCoherentEXT", FeatureCategory::OpenGLFeatures,
         "Backend GL context supports EXT_shader_framebuffer_fetch_non_coherent extension", &members,
         "http://anglebug.com/7279"};
+
+    FeatureInfo validateMaxPerStageUniformBlocksAtCompileTime = {
+        "validateMaxPerStageUniformBlocksAtCompileTime", FeatureCategory::OpenGLWorkarounds,
+        "Validate GL_MAX_*_UNIFORM_BLOCKS at compile time instead of link time to work around "
+        "compiler bugs.",
+        &members, "http://crbug.com/475877320"};
 };
 
 inline FeaturesGL::FeaturesGL()  = default;

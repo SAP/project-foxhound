@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <title></title>
+  </head>
+  <body>
+    <script>
+      "use strict";
+      // This file is used to test the retrieval of JS sources from a front-end.
+      // Rather than using some kind of complicated message passing scheme to
+      // talk to the test harness, modify the title of the page. The tests can
+      // easily read the window title to see if things worked as expected.
+
+      // The following are the titles used to communicate the page's state to the tests.
+      // Keep these in sync with any tests that read them.
+      const initialTitle = "Waiting for the JS sources";
+      const successTitle = "JS sources received";
+      const errorTitle = "Error"
+
+      document.title = initialTitle;
+
+      // A function which requests the JS sources from the browser using the GET_JS_SOURCES
+      // WebChannel message.
+      function getJSSources(sourceUuids, expectError = false) {
+        return new Promise((resolve, reject) => {
+          const requestId = Date.now();
+
+          function listener(event) {
+            window.removeEventListener(
+              "WebChannelMessageToContent",
+              listener,
+              true
+            );
+
+            const { id, message } = event.detail;
+
+            dump(JSON.stringify(message));
+            dump("\n");
+            if (id !== "profiler.firefox.com" ||
+              !message ||
+              typeof message !== "object"
+            ) {
+              console.error(message);
+              reject(new Error("A malformed WebChannel event was received."));
+              return;
+            }
+
+            if (!message.type) {
+              console.error(message);
+              reject(new Error("The WebChannel event indicates an error."));
+              return;
+            }
+
+            if (message.requestId === requestId) {
+              if (message.type === "SUCCESS_RESPONSE") {
+                resolve(message.response);
+              } else if (message.type === "ERROR_RESPONSE") {
+                if (expectError) {
+                  resolve({ error: message.error });
+                } else {
+                  reject(new Error(message.error));
+                }
+              } else {
+                reject(new Error("Unknown response type: " + message.type));
+              }
+            }
+          }
+
+          window.addEventListener("WebChannelMessageToContent", listener, true);
+
+          window.dispatchEvent(
+            new CustomEvent("WebChannelMessageToChrome", {
+              detail: JSON.stringify({
+                id: "profiler.firefox.com",
+                message: { type: "GET_JS_SOURCES", requestId, sourceUuids },
+              }),
+            })
+          );
+        })
+      }
+
+      async function runTest() {
+        try {
+          // Get test configuration from URL parameters
+          const params = new URLSearchParams(document.location.search);
+          const testType = params.get("testType") || "basic";
+          const expectError = params.get("expectError") === "true";
+
+          let sourcesToRequest;
+          let expectedResponse;
+
+          // Handle invalid-request test case where sourceUuids is intentionally not JSON
+          if (testType === "invalid-request") {
+            sourcesToRequest = params.get("sourceUuids"); // Keep as string for invalid test
+            expectedResponse = null;
+          } else {
+            sourcesToRequest = JSON.parse(params.get("sourceUuids") || "[]");
+            expectedResponse = JSON.parse(params.get("expectedResponse") || "null");
+          }
+
+          let response;
+          if (expectError) {
+            response = await getJSSources(sourcesToRequest, true);
+          } else {
+            response = await getJSSources(sourcesToRequest, false);
+          }
+
+          dump("response\n")
+          dump(JSON.stringify(response));
+
+          let testPassed = false;
+
+          function deepEqual(obj1, obj2) {
+            return JSON.stringify(obj1) === JSON.stringify(obj2);
+          }
+
+          switch (testType) {
+            case "basic":
+              // Test case: Request existing JS sources
+              testPassed = response &&
+                Array.isArray(response) &&
+                response.length === expectedResponse.length &&
+                response.every((item, index) => deepEqual(item, expectedResponse[index]));
+              break;
+
+            case "nonexistent":
+              // Test case: Request non-existent sources (should return error objects)
+              testPassed = response &&
+                Array.isArray(response) &&
+                response.length === expectedResponse.length &&
+                response.every((item, index) => deepEqual(item, expectedResponse[index]));
+              break;
+
+            case "no-data":
+              // Test case: No JS source data registered (should return error)
+              testPassed = response &&
+                response.error &&
+                response.error.includes("No JS source data found for this tab");
+              break;
+
+            case "invalid-request":
+              // Test case: Invalid sources parameter (should return error)
+              testPassed = response &&
+                response.error &&
+                response.error.includes("sourceUuids must be an array");
+              break;
+
+            default:
+              throw new Error("Unknown test type: " + testType);
+          }
+
+          if (testPassed) {
+            document.title = successTitle;
+          } else {
+            dump('Test failed in webchannel-js-sources.html\n');
+            dump(`Test type: ${testType}\n`);
+            dump(`Expected: ${JSON.stringify(expectedResponse)}\n`);
+            dump(`Actual: ${JSON.stringify(response)}\n`);
+
+            console.error(
+              "Test failed in webchannel-js-sources.html",
+              { testType, expectedResponse, response }
+            );
+
+            document.title = errorTitle;
+          }
+        } catch (error) {
+          // Catch any error and notify the test.
+          document.title = errorTitle;
+          dump('An error was caught in webchannel-js-sources.html\n');
+          dump(`${error}\n`);
+          console.error(
+            "An error was caught in webchannel-js-sources.html",
+            error
+          );
+        }
+      }
+
+      runTest();
+    </script>
+  </body>
+</html>

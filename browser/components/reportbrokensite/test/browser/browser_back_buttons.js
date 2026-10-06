@@ -12,9 +12,8 @@ add_common_setup();
 add_task(async function testBackButtonsAreAdded() {
   ensureReportBrokenSitePreffedOn();
 
-  await BrowserTestUtils.withNewTab(REPORTABLE_PAGE_URL, async function () {
+  await withNewTab(REPORTABLE_PAGE_URL, async () => {
     let rbs = await AppMenu().openReportBrokenSite();
-    rbs.isBackButtonEnabled();
     await rbs.clickBack();
     await rbs.close();
 
@@ -23,7 +22,6 @@ add_task(async function testBackButtonsAreAdded() {
     await rbs.close();
 
     rbs = await ProtectionsPanel().openReportBrokenSite();
-    rbs.isBackButtonEnabled();
     await rbs.clickBack();
     await rbs.close();
 

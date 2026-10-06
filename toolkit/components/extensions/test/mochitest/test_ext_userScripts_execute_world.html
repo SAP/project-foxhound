@@ -1,0 +1,495 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Tests userScripts.execute() with world option</title>
+  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
+  <script type="text/javascript" src="head.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+
+<script type="text/javascript">
+
+"use strict";
+
+const MOCHITEST_HOST_PERMISSIONS = [
+  "*://mochi.test/",
+  "*://mochi.xorigin-test/",
+  "*://test1.example.com/",
+];
+
+const makeExtension = ({ manifest: manifestProps, ...otherProps }) => {
+  return ExtensionTestUtils.loadExtension({
+    manifest: {
+      manifest_version: 3,
+      optional_permissions: ["userScripts"],
+      host_permissions: [
+        ...MOCHITEST_HOST_PERMISSIONS,
+        "https://example.com/",
+        // Used in `file_contains_iframe.html`
+        "https://example.org/",
+      ],
+      granted_host_permissions: true,
+      ...manifestProps,
+    },
+    useAddonManager: "temporary",
+    ...otherProps,
+  });
+};
+
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.webextOptionalPermissionPrompts", false]],
+  });
+});
+
+async function test_execute_anonymous_filename(type) {
+  function extractFilename() {
+    const error = new Error();
+    return {
+      fileName: error.fileName,
+      // We only care about file names, so strip line and column numbers.
+      stack: error.stack.replaceAll(/:\d+:\d+/g, ""),
+    };
+  }
+
+  const extension = makeExtension({
+    async background() {
+      const msgPromise = new Promise((resolve, reject) =>
+        browser.test.onMessage.addListener((msg, opts) => {
+          if (msg === "execute") {
+            return resolve(opts);
+          }
+          reject("invalid message received");
+        })
+      );
+
+      browser.test.sendMessage("bgpage:ready");
+
+      const { type, js } = await msgPromise;
+
+      const tabs = await browser.tabs.query({ active: true });
+      browser.test.assertEq(1, tabs.length, "expected 1 tab");
+
+      await new Promise(resolve => {
+        browser.test.withHandlingUserInput(() => {
+          resolve(
+            browser.permissions.request({ permissions: ["userScripts"] })
+          );
+        });
+      });
+
+      // Verify that the script source cannot be exfiltrated by the MAIN world
+      // script. If it were to be possible, then a script on the web page can
+      // do the same, which is undesirable because of fingerprinting and script
+      // source secrecy.
+      let results = await browser.userScripts.execute({
+        target: { tabId: tabs[0].id },
+        js,
+        world: "MAIN",
+      });
+      browser.test.assertDeepEq(undefined, results[0].error, "No error");
+      browser.test.assertDeepEq(
+        {
+          fileName: "<anonymous code>",
+          stack: "extractFilename@<anonymous code>\n@<anonymous code>\n",
+        },
+        results[0].result,
+        `execute with world:MAIN & ${type} should not leak the extension URL`
+      );
+
+      // Same tests, but with world: "USER_SCRIPT". Since the world is isolated,
+      // it does not really matter what the values are, but just to verify that
+      // the value is sane, check its value.
+      results = await browser.userScripts.execute({
+        target: { tabId: tabs[0].id },
+        js,
+        world: "USER_SCRIPT",
+      });
+
+      let expectedResult;
+      if (type === "code") {
+        expectedResult = {
+          fileName: "sandbox eval code",
+          stack: `extractFilename@sandbox eval code
+@sandbox eval code
+`,
+        };
+      } else if (type === "file") {
+        expectedResult = {
+          fileName: location.origin + "/file_leak_me.js",
+          stack: `extractFilename@${location.origin}/file_leak_me.js
+@${location.origin}/file_leak_me.js
+`,
+        };
+      }
+
+      browser.test.assertDeepEq(undefined, results[0].error, "No error");
+      browser.test.assertDeepEq(
+        expectedResult,
+        results[0].result,
+        `execute with world:USER_SCRIPT & ${type} may expose extension URLs`
+      );
+
+      browser.test.notifyPass("background-done");
+    },
+    files: {
+      "file_leak_me.js": extractFilename,
+    },
+  });
+
+  const tab = await AppTestDelegate.openNewForegroundTab(
+    window,
+    "https://test1.example.com/tests/toolkit/components/extensions/test/mochitest/file_simple_inline_script.html",
+    true
+  );
+
+  await extension.startup();
+  await extension.awaitMessage("bgpage:ready");
+  switch (type) {
+    case "file":
+      extension.sendMessage("execute", {
+        type,
+        js: [{ file: "file_leak_me.js" }],
+      });
+      break;
+    case "code":
+      extension.sendMessage("execute", {
+        type,
+        js: [{ code: `(${extractFilename})()` }],
+      });
+      break;
+    default:
+      browser.test.fail(`invalid type received: ${type}`);
+  }
+  await extension.awaitFinish("background-done");
+  await extension.unload();
+
+  await AppTestDelegate.removeTab(window, tab);
+}
+
+add_task(async function test_execute_anonymous_filename_file() {
+  await test_execute_anonymous_filename("file");
+});
+add_task(async function test_execute_anonymous_filename_code() {
+  await test_execute_anonymous_filename("code");
+});
+
+add_task(async function test_execute_invalid_world() {
+  let extension = makeExtension({
+    async background() {
+      await new Promise(resolve => {
+        browser.test.withHandlingUserInput(() => {
+          resolve(
+            browser.permissions.request({ permissions: ["userScripts"] })
+          );
+        });
+      });
+
+      browser.test.assertThrows(
+        () =>
+          browser.userScripts.execute({
+            target: { tabId: 123 },
+            js: [{ code: "'Unexpected execution';" }],
+            world: "ISOLATED",
+          }),
+        /world: Invalid enumeration value "ISOLATED"/,
+        "execute should throw when an invalid world is passed"
+      );
+
+      await browser.test.assertRejects(
+        browser.userScripts.execute({
+          target: { tabId: 123 },
+          js: [{ code: "'Unexpected execution';" }],
+          worldId: "_RESERVED_WORLD_IDENTIFIER",
+        }),
+        /Invalid worldId: _RESERVED_WORLD_IDENTIFIER/,
+        "execute should throw when a reserved worldId is passed"
+      );
+
+      const oversizedWorldId = "X".repeat(257);
+      await browser.test.assertRejects(
+        browser.userScripts.execute({
+          target: { tabId: 123 },
+          js: [{ code: "'Unexpected execution';" }],
+          worldId: oversizedWorldId,
+        }),
+        new RegExp(`Invalid worldId: ${oversizedWorldId}`),
+        "execute should throw when the worldId exceeds the character limit"
+      );
+
+      browser.test.notifyPass("background-done");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitFinish("background-done");
+  await extension.unload();
+});
+
+add_task(async function test_execute_user_script_world() {
+  const extension = makeExtension({
+    async background() {
+      await new Promise(resolve => {
+        browser.test.withHandlingUserInput(() => {
+          resolve(
+            browser.permissions.request({ permissions: ["userScripts"] })
+          );
+        });
+      });
+
+      const tabs = await browser.tabs.query({ active: true });
+      browser.test.assertEq(1, tabs.length, "expected 1 tab");
+
+      // check whether browser API is undefined without properly configured world
+      {
+        const results = await browser.userScripts.execute({
+          target: { tabId: tabs[0].id },
+          js: [{ code: "browser" }],
+          world: "USER_SCRIPT",
+        });
+
+        browser.test.assertEq(
+          1,
+          results.length,
+          "got expected number of results"
+        );
+        browser.test.assertEq(
+          undefined,
+          results[0].result,
+          "got expected return value"
+        );
+      }
+
+      // check whether script does have access to a limited set of browser.runtime APIs
+      {
+        await browser.userScripts.configureWorld({
+          worldId: "worldWithMessaging",
+          messaging: true,
+        });
+
+        const messagePromise = new Promise(resolve =>
+          browser.runtime.onUserScriptMessage.addListener(resolve)
+        );
+        const connectPromise = new Promise(resolve =>
+          browser.runtime.onUserScriptConnect.addListener(resolve)
+        );
+
+        const results = await browser.userScripts.execute({
+          target: { tabId: tabs[0].id },
+          js: [
+            {
+              code: `
+              browser.runtime.sendMessage("messageFromUserScript");
+              browser.runtime.connect(null, { name: "connectFromUserScript" });
+              Object.keys(browser.runtime);
+            `,
+            },
+          ],
+          // Note: The execution happens in a fresh world thus the
+          // previously configureWorld call should have exposed the messaging API
+          worldId: "worldWithMessaging",
+        });
+
+        browser.test.assertEq(
+          1,
+          results.length,
+          "got expected number of results"
+        );
+        browser.test.assertDeepEq(undefined, results[0].error, "No error");
+        browser.test.assertDeepEq(
+          ["connect", "sendMessage"],
+          results[0].result,
+          "got expected return value"
+        );
+        browser.test.assertEq(
+          "messageFromUserScript",
+          await messagePromise,
+          "got expected message"
+        );
+        browser.test.assertEq(
+          "connectFromUserScript",
+          (await connectPromise).name,
+          "got expected port name"
+        );
+      }
+
+      // check whether global variables can be accessed across execution calls
+      {
+        await browser.userScripts.execute({
+          target: { tabId: tabs[0].id },
+          js: [
+            {
+              code: 'globalThis.defaultWorldVar = "valueFromPreviousUserScript";',
+            },
+          ],
+          world: "USER_SCRIPT",
+        });
+        // this sets the variable in a different world so it should not affect
+        // the value in the default world
+        await browser.userScripts.execute({
+          target: { tabId: tabs[0].id },
+          js: [
+            {
+              code: 'globalThis.defaultWorldVar = "valueFromOtherWorld";',
+            },
+          ],
+          worldId: "worldWithMessaging",
+        });
+        const results = await browser.userScripts.execute({
+          target: { tabId: tabs[0].id },
+          js: [
+            {
+              code: "defaultWorldVar;",
+            },
+          ],
+          // world defaults to USER_SCRIPT
+        });
+
+        browser.test.assertEq(
+          1,
+          results.length,
+          "got expected number of results"
+        );
+        browser.test.assertEq(
+          "valueFromPreviousUserScript",
+          results[0].result,
+          "got expected return value"
+        );
+      }
+
+      browser.test.notifyPass("execute-script");
+    },
+  });
+
+  const tab = await AppTestDelegate.openNewForegroundTab(
+    window,
+    "https://test1.example.com/tests/toolkit/components/extensions/test/mochitest/file_sample.html",
+    true
+  );
+
+  await extension.startup();
+  await extension.awaitFinish("execute-script");
+  await extension.unload();
+
+  await AppTestDelegate.removeTab(window, tab);
+});
+
+add_task(async function test_execution_world_constants() {
+  let extension = makeExtension({
+    async background() {
+      await new Promise(resolve => {
+        browser.test.withHandlingUserInput(() => {
+          resolve(
+            browser.permissions.request({ permissions: ["userScripts"] })
+          );
+        });
+      });
+
+      browser.test.assertDeepEq(
+        {
+          USER_SCRIPT: "USER_SCRIPT",
+          MAIN: "MAIN",
+        },
+        browser.userScripts.ExecutionWorld,
+        "expected userScripts.ExecutionWorld to be defined"
+      );
+
+      browser.test.notifyPass("background-done");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitFinish("background-done");
+  await extension.unload();
+});
+
+add_task(async function test_execute_with_registered_script_world() {
+  let extension = makeExtension({
+    async background() {
+      await new Promise(resolve => {
+        browser.test.withHandlingUserInput(() => {
+          resolve(
+            browser.permissions.request({ permissions: ["userScripts"] })
+          );
+        });
+      });
+
+      const testData = [
+        {
+          title:
+            "executed code should share the same world as the registered script",
+          worldId: "", // default world
+        },
+        {
+          title:
+            "executed code should share the same world as the registered script",
+          worldId: "CUSTOM_WORLD",
+        },
+      ];
+
+      // wait for the injection of all registered scripts using the messaging API
+      const registeredScriptsExecuted = new Promise(resolve => {
+        let i = 0;
+        browser.runtime.onUserScriptMessage.addListener(msg => {
+          if (msg === `done` && ++i === testData.length) {
+            resolve();
+          }
+        });
+      });
+
+      for (const [index, { worldId }] of testData.entries()) {
+        await browser.userScripts.configureWorld({
+          worldId,
+          messaging: true,
+        });
+        await browser.userScripts.register([
+          {
+            id: index.toString(),
+            js: [
+              {
+                code: `
+            var globalVar${index} = true;
+            browser.runtime.sendMessage("done");
+          `,
+              },
+            ],
+            matches: [
+              "*://test1.example.com/tests/toolkit/components/extensions/test/mochitest/file_sample.html",
+            ],
+            worldId,
+          },
+        ]);
+      }
+
+      const { id: tabId } = await browser.tabs.create({
+        url: "https://test1.example.com/tests/toolkit/components/extensions/test/mochitest/file_sample.html",
+        active: true,
+      });
+      await registeredScriptsExecuted;
+
+      for (const [index, { title, worldId }] of testData.entries()) {
+        const results = await browser.userScripts.execute({
+          target: { tabId },
+          js: [{ code: `globalVar${index};` }],
+          worldId,
+        });
+        browser.test.assertTrue(results[0].result, title);
+      }
+
+      await browser.tabs.remove(tabId);
+      browser.test.notifyPass("background-done");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitFinish("background-done");
+  await extension.unload();
+});
+
+</script>
+
+</body>
+</html>

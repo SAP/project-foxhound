@@ -56,18 +56,18 @@ class DTDParser(Parser):
     # | [#x200C-#x200D] | [#x2070-#x218F] | [#x2C00-#x2FEF] |
     # [#x3001-#xD7FF] | [#xF900-#xFDCF] | [#xFDF0-#xFFFD] |
     # [#x10000-#xEFFFF]
-    CharMinusDash = "\x09\x0A\x0D\u0020-\u002C\u002E-\uD7FF\uE000-\uFFFD"
+    CharMinusDash = "\x09\x0a\x0d\u0020-\u002c\u002e-\ud7ff\ue000-\ufffd"
     XmlComment = "<!--(?:-?[%s])*?-->" % CharMinusDash
     NameStartChar = (
-        ":A-Z_a-z\xC0-\xD6\xD8-\xF6\xF8-\u02FF"
-        + "\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F"
-        + "\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD"
+        ":A-Z_a-z\xc0-\xd6\xd8-\xf6\xf8-\u02ff"
+        + "\u0370-\u037d\u037f-\u1fff\u200c-\u200d\u2070-\u218f"
+        + "\u2c00-\u2fef\u3001-\ud7ff\uf900-\ufdcf\ufdf0-\ufffd"
     )
     # + \U00010000-\U000EFFFF seems to be unsupported in python
 
     # NameChar ::= NameStartChar | "-" | "." | [0-9] | #xB7 |
     #     [#x0300-#x036F] | [#x203F-#x2040]
-    NameChar = NameStartChar + r"\-\.0-9" + "\xB7\u0300-\u036F\u203F-\u2040"
+    NameChar = NameStartChar + r"\-\.0-9" + "\xb7\u0300-\u036f\u203f-\u2040"
     Name = "[" + NameStartChar + "][" + NameChar + "]*"
     reKey = re.compile(
         "<!ENTITY[ \t\r\n]+(?P<key>" + Name + ")[ \t\r\n]+"

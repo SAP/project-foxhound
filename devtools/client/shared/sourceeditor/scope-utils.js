@@ -7,9 +7,9 @@
 /**
  * Check if the position is within this function location
  *
- * @param {Object} functionLocation
- * @param {Object} position
- * @returns {Boolean}
+ * @param {object} functionLocation
+ * @param {object} position
+ * @returns {boolean}
  */
 function containsPosition(functionLocation, position) {
   // Start

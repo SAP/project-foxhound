@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +5,6 @@
 #include "mozilla/ProcInfo.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/Logging.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "nsMemoryReporterManager.h"
 #include "nsWhitespaceTokenizer.h"
@@ -28,6 +25,10 @@
 #define FNMAX_PROCFS "/proc/999999/lwp/999999/lwpsinfo"
 
 namespace mozilla {
+
+nsresult GetCurrentProcessMemoryUsage(uint64_t* aResult) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
 
 int GetCycleTimeFrequencyMHz() { return 0; }
 

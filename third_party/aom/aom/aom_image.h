@@ -43,8 +43,17 @@ typedef enum aom_img_fmt {
   AOM_IMG_FMT_YV12 =
       AOM_IMG_FMT_PLANAR | AOM_IMG_FMT_UV_FLIP | 1, /**< planar YVU */
   AOM_IMG_FMT_I420 = AOM_IMG_FMT_PLANAR | 2,
-  AOM_IMG_FMT_AOMYV12 = AOM_IMG_FMT_PLANAR | AOM_IMG_FMT_UV_FLIP |
-                        3, /** < planar 4:2:0 format with aom color space */
+  /** Planar 4:2:0 format with aom color space
+   *
+   * \deprecated This value is unsupported and will be removed in a future
+   * release.
+   */
+  AOM_IMG_FMT_AOMYV12 = AOM_IMG_FMT_PLANAR | AOM_IMG_FMT_UV_FLIP | 3,
+  /** Planar 4:2:0 format with aom color space
+   *
+   * \deprecated This value is unsupported and will be removed in a future
+   * release.
+   */
   AOM_IMG_FMT_AOMI420 = AOM_IMG_FMT_PLANAR | 4,
   AOM_IMG_FMT_I422 = AOM_IMG_FMT_PLANAR | 5,
   AOM_IMG_FMT_I444 = AOM_IMG_FMT_PLANAR | 6,
@@ -123,10 +132,14 @@ typedef enum aom_matrix_coefficients {
   AOM_CICP_MC_SMPTE_2085 = 11, /**< SMPTE ST 2085 YDzDx */
   AOM_CICP_MC_CHROMAT_NCL =
       12, /**< Chromaticity-derived non-constant luminance */
-  AOM_CICP_MC_CHROMAT_CL = 13, /**< Chromaticity-derived constant luminance */
-  AOM_CICP_MC_ICTCP = 14,      /**< BT.2100 ICtCp */
-  AOM_CICP_MC_RESERVED_15 = 15 /**< For future use (values 15-255)  */
-} aom_matrix_coefficients_t;   /**< alias for enum aom_matrix_coefficients */
+  AOM_CICP_MC_CHROMAT_CL = 13,  /**< Chromaticity-derived constant luminance */
+  AOM_CICP_MC_ICTCP = 14,       /**< BT.2100 ICtCp */
+  AOM_CICP_MC_RESERVED_15 = 15, /**< For backward compatibility */
+  AOM_CICP_MC_IPT_C2 = 15,      /**< IPT-C2 */
+  AOM_CICP_MC_YCGCO_RE = 16,    /**< YCgCo-Re */
+  AOM_CICP_MC_YCGCO_RO = 17,    /**< YCgCo-Ro */
+  /**< For future use (values 18-255) */
+} aom_matrix_coefficients_t; /**< alias for enum aom_matrix_coefficients */
 
 /*!\brief List of supported color range */
 typedef enum aom_color_range {
@@ -169,7 +182,7 @@ typedef enum aom_chroma_sample_position {
  * with the next output aom_image. Its insert_flag is set to either
  * AOM_MIF_ANY_FRAME, or AOM_MIF_ANY_FRAME_LAYER_SPECIFIC if the OBU contains an
  * OBU header extension (i.e. the video contains multiple layers AND the
- * metadata was added using *_LAYER_SPECIFC insert flag if using libaom).
+ * metadata was added using *_LAYER_SPECIFIC insert flag if using libaom).
  */
 typedef enum aom_metadata_insert_flags {
   AOM_MIF_NON_KEY_FRAME = 0, /**< Adds metadata if it's not a keyframe */
@@ -229,8 +242,13 @@ typedef struct aom_image {
   /* planes[AOM_PLANE_V] = NULL and stride[AOM_PLANE_V] = 0 when fmt ==
    * AOM_IMG_FMT_NV12 */
   unsigned char *planes[3]; /**< pointer to the top left pixel for each plane */
-  int stride[3];            /**< stride between rows for each plane */
-  size_t sz;                /**< data size */
+  /*!Stride between rows for each plane
+   *
+   * \note With planar formats, \c stride[AOM_PLANE_U] must be the same as \c
+   * stride[AOM_PLANE_V].
+   */
+  int stride[3];
+  size_t sz; /**< data size */
 
   int bps; /**< bits per sample (for packed formats) */
 
@@ -284,26 +302,55 @@ aom_image_t *aom_img_alloc(aom_image_t *img, aom_img_fmt_t fmt,
  * storage for the image has been allocated elsewhere, and a descriptor is
  * desired to "wrap" that storage.
  *
- * \param[in]    img       Pointer to storage for descriptor. If this parameter
- *                         is NULL, the storage for the descriptor will be
- *                         allocated on the heap.
- * \param[in]    fmt       Format for the image
- * \param[in]    d_w       Width of the image. Must not exceed 0x08000000
- *                         (2^27).
- * \param[in]    d_h       Height of the image. Must not exceed 0x08000000
- *                         (2^27).
- * \param[in]    align     Alignment, in bytes, of each row in the image
- *                         (stride). Must not exceed 65536.
- * \param[in]    img_data  Storage to use for the image. The storage must
- *                         outlive the returned image descriptor; it can be
- *                         disposed of after calling aom_img_free().
+ * \param[in]    img           Pointer to storage for descriptor. If this
+ *                             parameter is NULL, the storage for the descriptor
+ *                             will be allocated on the heap.
+ * \param[in]    fmt           Format for the image
+ * \param[in]    d_w           Width of the image. Must not exceed 0x08000000
+ *                             (2^27).
+ * \param[in]    d_h           Height of the image. Must not exceed 0x08000000
+ *                             (2^27).
+ * \param[in]    stride_align  Alignment, in bytes, of each row in the image
+ *                             (stride). Must not exceed 65536.
+ * \param[in]    img_data      Storage to use for the image. The storage must
+ *                             outlive the returned image descriptor; it can be
+ *                             disposed of after calling aom_img_free().
  *
  * \return Returns a pointer to the initialized image descriptor. If the img
  *         parameter is non-null, the value of the img parameter will be
  *         returned.
+ *
+ * \note \a img_data is required to have a minimum allocation size that
+ *       satisfies the requirements of the \a fmt, \a d_w, \a d_h and \a
+ *       stride_align parameters. This size can be calculated as follows (see
+ *       \c img_alloc_helper in the aom_image.c file in the libaom source tree
+ *       for more detail):
+ * \code
+ * align = (1 << x_chroma_shift) - 1;
+ * w = (d_w + align) & ~align;
+ * align = (1 << y_chroma_shift) - 1;
+ * h = (d_h + align) & ~align;
+ *
+ * s = (fmt & AOM_IMG_FMT_PLANAR) ? w : (uint64_t)bps * w / 8;
+ * s = (fmt & AOM_IMG_FMT_HIGHBITDEPTH) ? s * 2 : s;
+ * s = (s + stride_align - 1) & ~((uint64_t)stride_align - 1);
+ * s = (fmt & AOM_IMG_FMT_HIGHBITDEPTH) ? s / 2 : s;
+ * alloc_size = (fmt & AOM_IMG_FMT_PLANAR) ? (uint64_t)h * s * bps / 8
+ *                                         : (uint64_t)h * s;
+ * \endcode
+ * \a x_chroma_shift, \a y_chroma_shift and \a bps can be obtained by calling
+ * \ref aom_img_wrap with a non-\c NULL \a img_data parameter. The \c
+ * aom_image_t pointer should \em not be used in other API calls until \em after
+ * a successful call to \ref aom_img_wrap with a valid image buffer. For
+ * example:
+ * \code
+ * aom_img_wrap(img, fmt, d_w, d_h, stride_align, (unsigned char *)1);
+ * ... calculate buffer size and allocate buffer as described earlier
+ * aom_img_wrap(img, fmt, d_w, d_h, stride_align, img_data);
+ * \endcode
  */
 aom_image_t *aom_img_wrap(aom_image_t *img, aom_img_fmt_t fmt, unsigned int d_w,
-                          unsigned int d_h, unsigned int align,
+                          unsigned int d_h, unsigned int stride_align,
                           unsigned char *img_data);
 
 /*!\brief Open a descriptor, allocating storage for the underlying image with a

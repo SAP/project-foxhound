@@ -6,7 +6,8 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
-  DownloadsCommon: "resource:///modules/DownloadsCommon.sys.mjs",
+  DownloadsCommon:
+    "moz-src:///browser/components/downloads/DownloadsCommon.sys.mjs",
 });
 
 const L10MessageSelectorMap = {
@@ -30,7 +31,9 @@ export const FilePickerCrashed = {
       // extension window or the History window or the like), just grab the
       // topmost browser window.
       if (!window?.gBrowser) {
-        window = lazy.BrowserWindowTracker.getTopWindow();
+        window = lazy.BrowserWindowTracker.getTopWindow({
+          allowFromInactiveWorkspace: true,
+        });
       }
 
       // If there _is_ no topmost browser window... throw an error and hope it

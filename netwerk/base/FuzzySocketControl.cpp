@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -91,6 +89,12 @@ FuzzySocketControl::GetEarlyDataAccepted(bool* aAccepted) {
 }
 
 NS_IMETHODIMP
+FuzzySocketControl::GetResumptionTokenPresent(bool* aPresent) {
+  *aPresent = false;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 FuzzySocketControl::DriveHandshake() { return NS_OK; }
 
 NS_IMETHODIMP
@@ -157,7 +161,7 @@ FuzzySocketControl::GetRetryEchConfig(nsACString& aEchConfig) { return NS_OK; }
 
 NS_IMETHODIMP
 FuzzySocketControl::GetPeerId(nsACString& aResult) {
-  aResult.Assign(""_ns);
+  aResult.Truncate();
   return NS_OK;
 }
 

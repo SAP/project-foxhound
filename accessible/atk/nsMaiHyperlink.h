@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __MAI_HYPERLINK_H__
-#define __MAI_HYPERLINK_H__
+#ifndef MAI_HYPERLINK_H_
+#define MAI_HYPERLINK_H_
 
 #include "nsMai.h"
 #include "mozilla/a11y/Accessible.h"
@@ -46,4 +44,4 @@ class MaiHyperlink {
 }  // namespace a11y
 }  // namespace mozilla
 
-#endif /* __MAI_HYPERLINK_H__ */
+#endif /* MAI_HYPERLINK_H_ */

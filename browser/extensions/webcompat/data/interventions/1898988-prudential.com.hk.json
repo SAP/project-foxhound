@@ -1,0 +1,19 @@
+{
+  "label": "prudential.com.hk",
+  "bugs": {
+    "1898988": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.prudential.com.hk/*"]
+    }
+  },
+  "interventions": [
+    {
+      "not_platforms": ["linux"],
+      "ua_string": ["add_Chrome"]
+    },
+    {
+      "platforms": ["linux"],
+      "ua_string": ["add_Chrome", "change_OS_to_MacOSX"]
+    }
+  ]
+}

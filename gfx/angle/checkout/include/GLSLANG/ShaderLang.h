@@ -26,7 +26,7 @@
 
 // Version number for shader translation API.
 // It is incremented every time the API changes.
-#define ANGLE_SH_VERSION 308
+#define ANGLE_SH_VERSION 309
 
 enum ShShaderSpec
 {
@@ -414,6 +414,10 @@ struct ShCompileOptions
     // We may want to apply it generally.
     uint64_t passHighpToPackUnormSnormBuiltins : 1;
 
+    // Validate that the count of uniform blocks is within the GL_MAX_*_UNIFORM_BLOCKS limits. These
+    // limits must be supplied in the BuiltinResources.
+    uint64_t validatePerStageMaxUniformBlocks : 1;
+
     ShCompileOptionsMetal metal;
     ShCompileOptionsPLS pls;
 };
@@ -511,6 +515,12 @@ struct ShBuiltInResources
     int MaxFragmentInputVectors;
     int MinProgramTexelOffset;
     int MaxProgramTexelOffset;
+
+    // GL_MAX_FRAGMENT_UNIFORM_BLOCKS
+    int MaxFragmentUniformBlocks;
+
+    // GL_MAX_VERTEX_UNIFORM_BLOCKS
+    int MaxVertexUniformBlocks;
 
     // Extension constants.
 
@@ -618,6 +628,9 @@ struct ShBuiltInResources
     // maximum point size (higher limit from ALIASED_POINT_SIZE_RANGE)
     float MaxPointSize;
 
+    // GL_MAX_COMPUTE_UNIFORM_BLOCKS
+    int MaxComputeUniformBlocks;
+
     // EXT_geometry_shader constants
     int MaxGeometryUniformComponents;
     int MaxGeometryUniformBlocks;
@@ -641,6 +654,7 @@ struct ShBuiltInResources
     int MaxTessControlImageUniforms;
     int MaxTessControlAtomicCounters;
     int MaxTessControlAtomicCounterBuffers;
+    int MaxTessControlUniformBlocks;
 
     int MaxTessPatchComponents;
     int MaxPatchVertices;
@@ -653,6 +667,7 @@ struct ShBuiltInResources
     int MaxTessEvaluationImageUniforms;
     int MaxTessEvaluationAtomicCounters;
     int MaxTessEvaluationAtomicCounterBuffers;
+    int MaxTessEvaluationUniformBlocks;
 
     // Subpixel bits used in rasterization.
     int SubPixelBits;

@@ -7,6 +7,7 @@ license = "MPL-2.0"
 
 [dependencies]
 crash_helper_client = { path = "../crash_helper_client" }
+crash_helper_common = { path = "../crash_helper_common" }
 libc = "0.2.0"
 mozilla-central-workspace-hack = { version = "0.1", features = [
     "mozwer_s",
@@ -17,7 +18,7 @@ serde_json = { version = "1.0" }
 uuid = { version = "1.0", features = ["v4"] }
 
 [dependencies.windows-sys]
-version = "0.52"
+version = "0.61"
 features = [
     "Wdk_System_Threading",
     "Win32_Foundation",

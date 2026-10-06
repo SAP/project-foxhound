@@ -1,0 +1,27 @@
+From 679d036f3d901007de8e83f7c9753b6c39e21141 Mon Sep 17 00:00:00 2001
+From: Daniel Holbert <dholbert@cs.stanford.edu>
+Date: Fri, 19 Jun 2026 16:12:04 -0700
+Subject: [PATCH 1/1] Bug 2048799: Flip polarity of a bounds check in cairo
+ code. r?emilio
+
+Differential Revision: https://phabricator.services.mozilla.com/D307892
+---
+ gfx/cairo/cairo/src/cairoint.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/gfx/cairo/cairo/src/cairoint.h b/gfx/cairo/cairo/src/cairoint.h
+index 2be5c0e9f101..94aaddffa709 100644
+--- a/gfx/cairo/cairo/src/cairoint.h
++++ b/gfx/cairo/cairo/src/cairoint.h
+@@ -753,7 +753,7 @@ typedef struct _cairo_stroke_face {
+ static inline double cairo_const
+ _cairo_restrict_value (double value, double min, double max)
+ {
+-    if (value < min)
++    if (!(value >= min))
+ 	return min;
+     else if (value > max)
+ 	return max;
+-- 
+2.53.0
+

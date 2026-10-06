@@ -21,7 +21,7 @@ pub const DEFAULT_TILE_SIZE: TileSize = 512;
 /// This is used as a handle to reference images, and is used as the
 /// hash map key for the actual image storage in the `ResourceCache`.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize, PeekPoke)]
+#[derive(Clone, Copy, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize, PeekPoke)]
 pub struct ImageKey(pub IdNamespace, pub u32);
 
 impl Default for ImageKey {
@@ -39,6 +39,17 @@ impl ImageKey {
         ImageKey(namespace, key)
     }
 }
+
+impl std::fmt::Debug for ImageKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if *self == Self::DUMMY {
+            write!(f, "<none>")
+        } else {
+            write!(f, "#{}:{}", self.0.0, self.1)
+        }
+    }
+}
+
 
 /// An opaque identifier describing a blob image registered with WebRender.
 /// This is used as a handle to reference blob images, and can be used as an
@@ -114,7 +125,7 @@ pub trait ExternalImageHandler {
     /// Lock the external image. Then, WR could start to read the image content.
     /// The WR client should not change the image content until the unlock()
     /// call.
-    fn lock(&mut self, key: ExternalImageId, channel_index: u8) -> ExternalImage;
+    fn lock(&mut self, key: ExternalImageId, channel_index: u8, is_composited: bool) -> ExternalImage;
     /// Unlock the external image. WR should not read the image content
     /// after this call.
     fn unlock(&mut self, key: ExternalImageId, channel_index: u8);

@@ -1,0 +1,39 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:root {
+  --ai-window-sidebar-width-default: 412px;
+}
+
+/* Hide AI window sidebar on about:newtab, about:home, firstrun, and AI Window URL */
+:root[hide-ai-sidebar] {
+  #ai-window-box,
+  #ai-window-splitter {
+    display: none;
+  }
+}
+
+.ai-window-right-sidebar {
+  width: var(--ai-window-sidebar-width-default);
+}
+
+/* Splitter styling to match the left sidebar */
+#ai-window-splitter {
+  background-clip: padding-box;
+  background-color: transparent;
+  border-inline: calc((var(--space-medium) - var(--splitter-width)) / 2) solid transparent;
+  margin-inline: 0 calc(-1 * var(--space-medium));
+  /* Matching sidebar "revamp" splitter width */
+  width: var(--space-medium);
+  z-index: var(--browser-area-z-index-sidebar-splitter);
+}
+
+#ai-window-splitter:hover {
+  background-color: var(--focus-outline-color);
+}
+
+/* adjust splitter negative margin when the smartwindow sidebar is on the left */
+#sidebar-container[sidebar-positionend] ~ #ai-window-splitter {
+  margin-inline: calc(-1 * var(--space-medium)) 0;
+}

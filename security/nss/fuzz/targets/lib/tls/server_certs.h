@@ -2,15 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef TLS_SERVER_CERT_H_
-#define TLS_SERVER_CERT_H_
+#ifndef TLS_SERVER_CERTS_H_
+#define TLS_SERVER_CERTS_H_
 
 #include "prio.h"
 
-namespace TlsServer {
+namespace TlsServerCerts {
 
-void InstallServerCertificates(PRFileDesc* fd);
+void InstallCertificates(PRFileDesc* fd);
 
-}  // namespace TlsServer
+}  // namespace TlsServerCerts
 
-#endif  // TLS_SERVER_CERT_H_
+#endif  // TLS_SERVER_CERTS_H_

@@ -1,4 +1,3 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -34,6 +33,11 @@ function log(...args) {
 
 class _RFPHelper {
   _resizeObservers = new WeakMap();
+
+  // Track the observer status. It looks like pref changes can be notified
+  // also if the pref is actually unchanged. This might be a tests-only issue
+  // where we repeatedly push the prefs. See bug 1992137.
+  _letterboxingPrefObserversAdded = false;
 
   // ============================================================================
   // Shared Setup
@@ -111,7 +115,7 @@ class _RFPHelper {
       case "TabOpen": {
         let browser = aMessage.target.linkedBrowser;
         this._roundOrResetContentSize(browser, /* isNewTab = */ true);
-        let resizeObserver = this._resizeObservers.get(browser.ownerGlobal);
+        let resizeObserver = this._resizeObservers.get(browser.documentGlobal);
         resizeObserver.observe(browser.parentElement);
         break;
       }
@@ -289,11 +293,17 @@ class _RFPHelper {
 
   _handleLetterboxingPrefChanged() {
     if (Services.prefs.getBoolPref(kPrefLetterboxing, false)) {
-      Services.ww.registerNotification(this);
+      if (!this._letterboxingPrefObserversAdded) {
+        Services.ww.registerNotification(this);
+        this._letterboxingPrefObserversAdded = true;
+      }
       this._attachAllWindows();
     } else {
       this._detachAllWindows();
-      Services.ww.unregisterNotification(this);
+      if (this._letterboxingPrefObserversAdded) {
+        Services.ww.unregisterNotification(this);
+        this._letterboxingPrefObserversAdded = false;
+      }
     }
   }
 
@@ -399,7 +409,7 @@ class _RFPHelper {
   async _roundContentSize(aBrowser, isNewTab = false) {
     let logPrefix = `_roundContentSize[${Math.random()}]`;
     log(logPrefix);
-    let win = aBrowser.ownerGlobal;
+    let win = aBrowser.documentGlobal;
     let browserContainer = aBrowser
       .getTabBrowser()
       .getBrowserContainer(aBrowser);

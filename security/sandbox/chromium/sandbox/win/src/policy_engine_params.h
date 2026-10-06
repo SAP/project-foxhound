@@ -1,12 +1,13 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright 2006-2008 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SANDBOX_SRC_POLICY_ENGINE_PARAMS_H__
-#define SANDBOX_SRC_POLICY_ENGINE_PARAMS_H__
+#ifndef SANDBOX_WIN_SRC_POLICY_ENGINE_PARAMS_H_
+#define SANDBOX_WIN_SRC_POLICY_ENGINE_PARAMS_H_
 
 #include <stdint.h>
 
+#include "base/memory/raw_ptr.h"
 #include "sandbox/win/src/internal_types.h"
 #include "sandbox/win/src/nt_internals.h"
 #include "sandbox/win/src/sandbox_nt_util.h"
@@ -102,11 +103,13 @@ class ParameterSet {
   // it works with pointer while the former works only with references.
   template <typename T>
   T Void2TypePointerCopy() const {
-    return *(reinterpret_cast<const T*>(address_));
+    return *(reinterpret_cast<const T*>(address_.get()));
   }
 
+  // Note - we fuzz this via a fake type in sandbox_policy_rule_fuzzer.cc which
+  // should reflect the layout of these members.
   ArgType real_type_;
-  const void* address_;
+  raw_ptr<const void> address_;
 };
 
 // To safely infer the type, we use a set of template specializations
@@ -118,43 +121,49 @@ class ParameterSet {
 template <typename T>
 class ParameterSetEx : public ParameterSet {
  public:
-  ParameterSetEx(const void* address);
+  explicit ParameterSetEx(const void* address);
 };
 
 template <>
 class ParameterSetEx<void const*> : public ParameterSet {
  public:
-  ParameterSetEx(const void* address) : ParameterSet(VOIDPTR_TYPE, address) {}
+  explicit ParameterSetEx(const void* address)
+      : ParameterSet(VOIDPTR_TYPE, address) {}
 };
 
 template <>
 class ParameterSetEx<void*> : public ParameterSet {
  public:
-  ParameterSetEx(const void* address) : ParameterSet(VOIDPTR_TYPE, address) {}
+  explicit ParameterSetEx(const void* address)
+      : ParameterSet(VOIDPTR_TYPE, address) {}
 };
 
 template <>
 class ParameterSetEx<wchar_t*> : public ParameterSet {
  public:
-  ParameterSetEx(const void* address) : ParameterSet(WCHAR_TYPE, address) {}
+  explicit ParameterSetEx(const void* address)
+      : ParameterSet(WCHAR_TYPE, address) {}
 };
 
 template <>
 class ParameterSetEx<wchar_t const*> : public ParameterSet {
  public:
-  ParameterSetEx(const void* address) : ParameterSet(WCHAR_TYPE, address) {}
+  explicit ParameterSetEx(const void* address)
+      : ParameterSet(WCHAR_TYPE, address) {}
 };
 
 template <>
 class ParameterSetEx<uint32_t> : public ParameterSet {
  public:
-  ParameterSetEx(const void* address) : ParameterSet(UINT32_TYPE, address) {}
+  explicit ParameterSetEx(const void* address)
+      : ParameterSet(UINT32_TYPE, address) {}
 };
 
 template <>
 class ParameterSetEx<UNICODE_STRING> : public ParameterSet {
  public:
-  ParameterSetEx(const void* address) : ParameterSet(UNISTR_TYPE, address) {}
+  explicit ParameterSetEx(const void* address)
+      : ParameterSet(UNISTR_TYPE, address) {}
 };
 
 template <typename T>
@@ -187,4 +196,4 @@ struct CountedParameterSet {
 
 }  // namespace sandbox
 
-#endif  // SANDBOX_SRC_POLICY_ENGINE_PARAMS_H__
+#endif  // SANDBOX_WIN_SRC_POLICY_ENGINE_PARAMS_H_

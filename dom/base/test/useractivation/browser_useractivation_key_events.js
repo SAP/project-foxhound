@@ -67,13 +67,14 @@ add_task(async function TestPrintableKey() {
 
 add_task(async function TestNonPrintableKey() {
   let tests = [
-    ["KEY_Backspace", false],
     ["KEY_Control", false],
     ["KEY_Shift", false],
     ["KEY_Escape", false],
     // Treat as user input
-    ["KEY_Tab", true],
+    ["KEY_Backspace", true],
     ["KEY_Enter", true],
+    ["KEY_F5", true],
+    ["KEY_Tab", true],
     [" ", true],
   ];
 
@@ -84,9 +85,9 @@ add_task(async function TestNonPrintableKey() {
 
 add_task(async function TestModifier() {
   let tests = [
-    ["a", { accelKey: true }, false],
-    ["z", { accelKey: true }, false],
-    ["a", { metaKey: true }, !navigator.platform.includes("Mac")],
+    ["a", { accelKey: true }, true],
+    ["z", { accelKey: true }, true],
+    ["a", { metaKey: true }, true],
     // Treat as user input
     ["a", { altGraphKey: true }, true],
     ["a", { fnKey: true }, true],
@@ -98,6 +99,8 @@ add_task(async function TestModifier() {
     ["v", { accelKey: true }, true],
     ["x", { altKey: true }, true],
     ["x", { accelKey: true }, true],
+    // Bug 2001938: ctrl+f5 is allowed because web apps use it.
+    ["KEY_F5", { accelKey: true }, true],
   ];
 
   for (let [key, event, expectedResult] of tests) {

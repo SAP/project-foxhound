@@ -95,13 +95,12 @@ WeaveCrypto.prototype = {
   /**
    * _commonCrypt
    *
-   * @args
-   * data: data to encrypt/decrypt (ArrayBuffer)
-   * symKeyStr: symmetric key (Base64 String)
-   * ivStr: initialization vector (Base64 String)
-   * operation: operation to apply (either OPERATIONS.ENCRYPT or OPERATIONS.DECRYPT)
-   * @returns
-   * the encrypted/decrypted data (ArrayBuffer)
+   * @param {ArrayBuffer} data - data to encrypt/decrypt.
+   * @param {string} symKeyStr - symmetric key (Base64 String).
+   * @param {string} ivStr - initialization vector (Base64 String).
+   * @param {number} operation - operation to apply (either OPERATIONS.ENCRYPT or OPERATIONS.DECRYPT)
+   * @returns {ArrayBuffer}
+   *   The encrypted/decrypted data.
    */
   async _commonCrypt(data, symKeyStr, ivStr, operation) {
     this.log("_commonCrypt() called");

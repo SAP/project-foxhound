@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this file,
+  You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!-- Title shown in the protection dashboard indicating the user is protected -->
+  <string name="mozac_protections_dashboard_youre_protected">Bạn đã được bảo vệ</string>
+  <plurals name="mozac_protections_dashboard_trackers_blocked_this_week">
+    <!--
+      Label shown below the tracker count in the dashboard. The count is displayed separately
+      above this string and is used to select the correct plural form. Do not include the number in
+      the translation.
+    -->
+    <item quantity="other">Trình theo dõi bị chặn tuần này</item>
+  </plurals>
+  <plurals name="mozac_protections_dashboard_data_saved">
+    <!-- Label showing data saved in megabytes. %1$d is the number of MB saved -->
+    <item quantity="other">%1$d MB đã tiết kiệm</item>
+  </plurals>
+  <!-- Section header for tracker category breakdown -->
+  <string name="protections_dashboard_where_they_came_from">Chúng đến từ đâu</string>
+  <!-- Tracker category: Advertising trackers -->
+  <string name="protections_dashboard_category_ads">Quảng cáo</string>
+  <!-- Tracker category: Analytics trackers -->
+  <string name="protections_dashboard_category_analytics">Phân tích</string>
+  <!-- Tracker category: Social media trackers -->
+  <string name="protections_dashboard_category_social">Xã hội</string>
+  <!-- Tracker category: Other trackers -->
+  <string name="protections_dashboard_category_others">Khác</string>
+  <!-- Title shown in the protection dashboard header next to the shield icon -->
+  <string name="mozac_protections_dashboard_trackers_blocked_this_week_title">Trình theo dõi bị chặn trong tuần này</string>
+  <!--
+    Title shown when no trackers have been blocked yet
+    %1$s will be replaced by the app name (e.g. Firefox Focus)
+  -->
+  <string name="mozac_protections_dashboard_empty_title">%1$s chặn các trình theo dõi trong khi bạn duyệt.</string>
+  <!-- Subtitle shown when no trackers have been blocked yet -->
+  <string name="mozac_protections_dashboard_empty_subtitle">Bạn sẽ thấy chúng tại đây.</string>
+  <plurals name="mozac_protections_dashboard_total_blocked_since_2">
+    <!--
+      Footer line shown in the dashboard summarizing total trackers blocked
+      since a specific date. %1$d is the trackers count number (e.g. 123).
+      %2$s is the formatted date (e.g. "February 23, 2026").
+    -->
+    <item quantity="other">%1$d trình theo dõi bị chặn kể từ %2$s</item>
+  </plurals>
+</resources>

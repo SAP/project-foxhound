@@ -5,9 +5,13 @@
 package org.mozilla.fenix.components.appstate
 
 import androidx.annotation.VisibleForTesting
+import mozilla.components.lib.crash.store.CrashAction
 import mozilla.components.lib.crash.store.crashReducer
 import org.mozilla.fenix.components.AppStore
+import org.mozilla.fenix.components.appstate.blockedtrackers.BlockedTrackersStateReducer
+import org.mozilla.fenix.components.appstate.lens.LensReducer
 import org.mozilla.fenix.components.appstate.privatebrowsinglock.PrivateBrowsingLockReducer
+import org.mozilla.fenix.components.appstate.qrScanner.QrScannerReducer
 import org.mozilla.fenix.components.appstate.readerview.ReaderViewStateReducer
 import org.mozilla.fenix.components.appstate.recommendations.ContentRecommendationsReducer
 import org.mozilla.fenix.components.appstate.reducer.FindInPageStateReducer
@@ -15,6 +19,7 @@ import org.mozilla.fenix.components.appstate.search.SearchStateReducer
 import org.mozilla.fenix.components.appstate.setup.checklist.SetupChecklistReducer
 import org.mozilla.fenix.components.appstate.snackbar.SnackbarState
 import org.mozilla.fenix.components.appstate.snackbar.SnackbarStateReducer
+import org.mozilla.fenix.components.appstate.sports.SportsWidgetReducer
 import org.mozilla.fenix.components.appstate.webcompat.WebCompatReducer
 import org.mozilla.fenix.ext.filterOutTab
 import org.mozilla.fenix.home.recentsyncedtabs.RecentSyncedTabState
@@ -22,18 +27,22 @@ import org.mozilla.fenix.home.recentvisits.RecentlyVisitedItem
 import org.mozilla.fenix.home.recentvisits.RecentlyVisitedItem.RecentHistoryGroup
 import org.mozilla.fenix.messaging.state.MessagingReducer
 import org.mozilla.fenix.reviewprompt.ReviewPromptReducer
+import org.mozilla.fenix.search.VoiceSearchReducer
 import org.mozilla.fenix.share.ShareActionReducer
 
 /**
  * Reducer for [AppStore].
  */
 internal object AppStoreReducer {
-    @Suppress("LongMethod")
+    @Suppress("LongMethod", "CognitiveComplexMethod")
     fun reduce(state: AppState, action: AppAction): AppState = when (action) {
         is AppAction.UpdateInactiveExpanded ->
             state.copy(inactiveTabsExpanded = action.expanded)
         is AppAction.UpdateFirstFrameDrawn -> {
             state.copy(firstFrameDrawn = action.drawn)
+        }
+        is AppAction.UpdateShowFoxPeekAnimation -> {
+            state.copy(longfoxEntryPointReady = action.ready)
         }
         is AppAction.AddNonFatalCrash ->
             state.copy(nonFatalCrashes = state.nonFatalCrashes + action.crash)
@@ -68,9 +77,6 @@ internal object AppStoreReducer {
         is AppAction.BrowsingModeManagerModeChanged -> state.copy(mode = action.mode)
         is AppAction.OrientationChange -> state.copy(orientation = action.orientation)
         is AppAction.TopSitesChange -> state.copy(topSites = action.topSites)
-        is AppAction.RemoveCollectionsPlaceholder -> {
-            state.copy(showCollectionPlaceholder = false)
-        }
         is AppAction.RecentTabsChange -> {
             state.copy(
                 recentTabs = action.recentTabs,
@@ -137,6 +143,7 @@ internal object AppStoreReducer {
             val wallpaperState = state.wallpaperState.copy(availableWallpapers = wallpapers)
             state.copy(wallpaperState = wallpaperState)
         }
+        is AppAction.AppLifecycleAction.StartAction -> { state } // noop
         is AppAction.AppLifecycleAction.ResumeAction -> {
             state.copy(isForeground = true)
         }
@@ -169,13 +176,13 @@ internal object AppStoreReducer {
             snackbarState = SnackbarState.BookmarkDeleted(title = action.title),
         )
 
+        is AppAction.BookmarkAction.BookmarkOperationResultReported -> state.copy(
+            snackbarState = SnackbarState.BookmarkOperationResultReported(action.globalResultReport),
+        )
+
         is AppAction.DeleteAndQuitStarted -> {
             state.copy(snackbarState = SnackbarState.DeletingBrowserDataInProgress)
         }
-
-        is AppAction.SiteDataCleared -> state.copy(
-            snackbarState = SnackbarState.SiteDataCleared,
-        )
 
         is AppAction.CurrentTabClosed -> state.copy(
             snackbarState = SnackbarState.CurrentTabClosed(action.isPrivate),
@@ -193,18 +200,33 @@ internal object AppStoreReducer {
             state.copy(openInFirefoxRequested = false)
         }
 
+        is AppAction.UpdateDefaultBrowserStatus -> state.copy(
+            isDefaultBrowser = action.isDefault,
+        )
+
         is AppAction.UserAccountAuthenticated -> state.copy(
             snackbarState = SnackbarState.UserAccountAuthenticated,
+        )
+
+        is VoiceSearchAction -> state.copy(
+            voiceSearchState = VoiceSearchReducer.reduce(state.voiceSearchState, action),
         )
 
         is AppAction.ShareAction -> ShareActionReducer.reduce(state, action)
         is AppAction.FindInPageAction -> FindInPageStateReducer.reduce(state, action)
         is AppAction.ReaderViewAction -> ReaderViewStateReducer.reduce(state, action)
         is AppAction.ShortcutAction -> ShortcutStateReducer.reduce(state, action)
-        is AppAction.CrashActionWrapper -> state.copy(
-            crashState = crashReducer(state.crashState, action.inner),
-        )
-
+        is AppAction.CrashActionWrapper -> {
+            val newSnackbarState = if (action.inner is CrashAction.ReportTapped) {
+                SnackbarState.ReportSent
+            } else {
+                state.snackbarState
+            }
+            state.copy(
+                crashState = crashReducer(state.crashState, action.inner),
+                snackbarState = newSnackbarState,
+            )
+        }
         is AppAction.SnackbarAction -> SnackbarStateReducer.reduce(state, action)
         is AppAction.UpdateWasNativeDefaultBrowserPromptShown -> {
             state.copy(wasNativeDefaultBrowserPromptShown = action.wasShown)
@@ -222,7 +244,7 @@ internal object AppStoreReducer {
         )
 
         is AppAction.DownloadAction.DownloadInProgress -> state.copy(
-            snackbarState = SnackbarState.DownloadInProgress(action.sessionId),
+            snackbarState = SnackbarState.DownloadInProgress(action.downloadId),
         )
 
         is AppAction.DownloadAction.DownloadFailed -> state.copy(
@@ -235,6 +257,7 @@ internal object AppStoreReducer {
             snackbarState = SnackbarState.DownloadCompleted(
                 action.downloadState,
             ),
+            supportedMenuNotifications = state.supportedMenuNotifications + SupportedMenuNotifications.Downloads,
         )
 
         is AppAction.DownloadAction.CannotOpenFile -> state.copy(
@@ -245,9 +268,25 @@ internal object AppStoreReducer {
 
         is AppAction.PrivateBrowsingLockAction -> PrivateBrowsingLockReducer.reduce(state, action)
 
+        is AppAction.LensAction -> LensReducer.reduce(state, action)
+
+        is AppAction.QrScannerAction -> QrScannerReducer.reduce(state, action)
+
         is AppAction.ReviewPromptAction -> ReviewPromptReducer.reduce(state, action)
 
         is AppAction.SearchAction -> SearchStateReducer.reduce(state, action)
+
+        is AppAction.MenuNotification.AddMenuNotification -> state.copy(
+            supportedMenuNotifications = state.supportedMenuNotifications + action.notification,
+        )
+
+        is AppAction.MenuNotification.RemoveMenuNotification -> state.copy(
+            supportedMenuNotifications = state.supportedMenuNotifications - action.notification,
+        )
+
+        is AppAction.BlockedTrackersAction -> BlockedTrackersStateReducer.reduce(state, action)
+
+        is AppAction.SportsWidgetAction -> SportsWidgetReducer.reduce(state, action)
     }
 }
 

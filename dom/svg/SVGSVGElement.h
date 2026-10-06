@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,19 +8,19 @@
 #include "SVGAnimatedEnumeration.h"
 #include "SVGViewportElement.h"
 #include "mozilla/SVGImageContext.h"
+#include "nsString.h"
 
-nsresult NS_NewSVGSVGElement(
-    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
-    mozilla::dom::FromParser aFromParser);
+nsresult NS_NewSVGSVGElement(nsIContent** aResult,
+                             already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
+                             mozilla::dom::FromParser aFromParser);
 
 // {4b83982c-e5e9-4ca1-abd4-14d27e8b3531}
 #define MOZILLA_SVGSVGELEMENT_IID \
   {0x4b83982c, 0xe5e9, 0x4ca1, {0xab, 0xd4, 0x14, 0xd2, 0x7e, 0x8b, 0x35, 0x31}}
 
 namespace mozilla {
-class AutoSVGViewHandler;
+class AutoFragmentHandler;
 class SMILTimeContainer;
-class SVGFragmentIdentifier;
 class EventChainPreVisitor;
 
 namespace dom {
@@ -40,30 +38,28 @@ class SVGView {
  public:
   SVGView();
 
-  SVGAnimatedEnumeration mZoomAndPan;
   SVGAnimatedViewBox mViewBox;
+  std::unique_ptr<SVGAnimatedTransformList> mTransforms;
   SVGAnimatedPreserveAspectRatio mPreserveAspectRatio;
-  UniquePtr<SVGAnimatedTransformList> mTransforms;
+  SVGAnimatedEnumeration mZoomAndPan;
 };
 
 using SVGSVGElementBase = SVGViewportElement;
 
 class SVGSVGElement final : public SVGSVGElementBase {
-  friend class mozilla::SVGFragmentIdentifier;
   friend class mozilla::SVGOuterSVGFrame;
-  friend class mozilla::AutoSVGViewHandler;
   friend class mozilla::AutoPreserveAspectRatioOverride;
+  friend class mozilla::AutoFragmentHandler;
   friend class mozilla::dom::SVGView;
 
  protected:
-  SVGSVGElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+  SVGSVGElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
                 FromParser aFromParser);
   JSObject* WrapNode(JSContext* aCx,
                      JS::Handle<JSObject*> aGivenProto) override;
 
   friend nsresult(::NS_NewSVGSVGElement(
-      nsIContent** aResult,
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+      nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
       mozilla::dom::FromParser aFromParser));
 
   ~SVGSVGElement() = default;
@@ -104,6 +100,7 @@ class SVGSVGElement final : public SVGSVGElementBase {
   void UnsuspendRedrawAll();
   void ForceRedraw();
   void PauseAnimations();
+  void PauseAnimationsAt(float seconds);
   void UnpauseAnimations();
   bool AnimationsPaused();
   float GetCurrentTimeAsFloat();
@@ -126,33 +123,38 @@ class SVGSVGElement final : public SVGSVGElementBase {
 
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
   void UnbindFromTree(UnbindContext&) override;
-  SVGAnimatedTransformList* GetAnimatedTransformList(
-      uint32_t aFlags = 0) override;
 
   // SVGSVGElement methods:
 
   // Returns true IFF our attributes are currently overridden by a <view>
   // element and that element's ID matches the passed-in string.
   bool IsOverriddenBy(const nsAString& aViewID) const {
-    return mCurrentViewID && mCurrentViewID->Equals(aViewID);
+    return !mCurrentViewID.IsVoid() && mCurrentViewID.Equals(aViewID);
   }
+
+  SVGAnimatedTransformList* GetViewTransformList() const;
 
   SMILTimeContainer* GetTimedDocumentRoot();
 
   // public helpers:
 
-  const SVGPoint& GetCurrentTranslate() const { return mCurrentTranslate; }
+  const gfx::Point& GetCurrentTranslate() const { return mCurrentTranslate; }
   bool IsScaledOrTranslated() const {
-    return mCurrentTranslate != SVGPoint() || mCurrentScale != 1.0f;
+    return mCurrentTranslate != gfx::Point() || mCurrentScale != 1.0f;
   }
 
   LengthPercentage GetIntrinsicWidth();
   LengthPercentage GetIntrinsicHeight();
+  AspectRatio GetIntrinsicRatio();
+  gfx::Size GetIntrinsicSizeWithFallback();
 
   // This services any pending notifications for the transform on on this root
   // <svg> node needing to be recalculated.  (Only applicable in
   // SVG-as-an-image documents.)
   virtual void FlushImageTransformInvalidation();
+
+  void SetCurrentView(const nsAString& aCurrentViewID);
+  void SetViewSpec(std::unique_ptr<SVGView> aSVGView);
 
  private:
   // SVGViewportElement methods:
@@ -180,7 +182,6 @@ class SVGSVGElement final : public SVGSVGElementBase {
 
   // invalidate viewbox -> viewport xform & inform frames
   void InvalidateTransformNotifyFrame();
-  void DidChangeSVGView();
 
   // Methods for <image> elements to override my "PreserveAspectRatio" value.
   // These are private so that only our friends
@@ -198,30 +199,29 @@ class SVGSVGElement final : public SVGSVGElementBase {
 
   EnumAttributesInfo GetEnumInfo() override;
 
+  // The time container for animations within this SVG document fragment. Set
+  // for all outermost <svg> elements (not nested <svg> elements).
+  std::unique_ptr<SMILTimeContainer> mTimedDocumentRoot;
+
+  // mCurrentViewID and mSVGView are mutually exclusive.
+  nsString mCurrentViewID = VoidString();
+  std::unique_ptr<SVGView> mSVGView;
+
+  gfx::Point mCurrentTranslate;
+  float mCurrentScale = 1.0f;
+
   enum { ZOOMANDPAN };
   SVGAnimatedEnumeration mEnumAttributes[1];
   static SVGEnumMapping sZoomAndPanMap[];
   static EnumInfo sEnumInfo[1];
 
-  // The time container for animations within this SVG document fragment. Set
-  // for all outermost <svg> elements (not nested <svg> elements).
-  UniquePtr<SMILTimeContainer> mTimedDocumentRoot;
-
-  SVGPoint mCurrentTranslate;
-  float mCurrentScale;
-
   // For outermost <svg> elements created from parsing, animation is started by
   // the onload event in accordance with the SVG spec, but for <svg> elements
   // created by script or promoted from inner <svg> to outermost <svg> we need
   // to manually kick off animation when they are bound to the tree.
-  bool mStartAnimationOnBindToTree;
+  bool mStartAnimationOnBindToTree : 1;
 
-  bool mImageNeedsTransformInvalidation;
-
-  // mCurrentViewID and mSVGView are mutually exclusive; we can have
-  // at most one non-null.
-  UniquePtr<nsString> mCurrentViewID;
-  UniquePtr<SVGView> mSVGView;
+  bool mImageNeedsTransformInvalidation : 1 = false;
 };
 
 }  // namespace dom

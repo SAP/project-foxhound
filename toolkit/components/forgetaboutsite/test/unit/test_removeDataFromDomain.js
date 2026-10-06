@@ -1,6 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * vim: sw=2 ts=2 sts=2
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -331,7 +329,7 @@ async function test_login_manager_logins_not_cleared_with_uri_contains_domain() 
   await ForgetAboutSite.removeDataFromBaseDomain("mozilla.org");
   await check_login_exists(TEST_HOST, true);
 
-  Services.logins.removeAllUserFacingLogins();
+  await Services.logins.removeAllUserFacingLoginsAsync();
   await check_login_exists(TEST_HOST, false);
 }
 

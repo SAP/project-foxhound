@@ -11,12 +11,13 @@
 
 [package]
 edition = "2021"
-rust-version = "1.76.0"
+rust-version = "1.81.0"
 name = "wasm-smith"
-version = "0.219.1"
+version = "0.244.0"
 authors = ["Nick Fitzgerald <fitzgen@gmail.com>"]
 build = false
 exclude = ["/benches/corpus"]
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -35,6 +36,25 @@ repository = "https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wa
 
 [package.metadata.docs.rs]
 all-features = true
+
+[features]
+_internal_cli = [
+    "clap",
+    "serde",
+    "dep:wasmparser",
+    "dep:wat",
+]
+component-model = ["wasm-encoder/component-model"]
+serde = [
+    "dep:serde",
+    "dep:serde_derive",
+    "flagset/serde",
+    "dep:wat",
+]
+wasmparser = [
+    "dep:wasmparser",
+    "wasm-encoder/wasmparser",
+]
 
 [lib]
 name = "wasm_smith"
@@ -56,6 +76,10 @@ path = "tests/core.rs"
 name = "exports"
 path = "tests/exports.rs"
 
+[[test]]
+name = "module_shape"
+path = "tests/module_shape.rs"
+
 [[bench]]
 name = "corpus"
 path = "benches/corpus.rs"
@@ -76,13 +100,6 @@ optional = true
 [dependencies.flagset]
 version = "0.4"
 
-[dependencies.indexmap]
-version = "2.0.0"
-default-features = false
-
-[dependencies.leb128]
-version = "0.2.4"
-
 [dependencies.serde]
 version = "1.0.166"
 features = ["alloc"]
@@ -94,20 +111,24 @@ version = "1.0.166"
 optional = true
 
 [dependencies.wasm-encoder]
-version = "0.219.1"
+version = "0.244.0"
+features = ["std"]
 default-features = false
 
 [dependencies.wasmparser]
-version = "0.219.1"
+version = "0.244.0"
 features = [
+    "simd",
     "std",
     "validate",
+    "features",
+    "simd",
 ]
 optional = true
 default-features = false
 
 [dependencies.wat]
-version = "1.219.1"
+version = "1.244.0"
 optional = true
 default-features = false
 
@@ -116,40 +137,27 @@ version = "0.5.1"
 default-features = false
 
 [dev-dependencies.rand]
-version = "0.8.4"
+version = "0.9.1"
 features = ["small_rng"]
 
 [dev-dependencies.wasmparser]
-version = "0.219.1"
+version = "0.244.0"
 features = [
+    "simd",
     "std",
     "validate",
     "features",
+    "simd",
 ]
 default-features = false
 
 [dev-dependencies.wasmprinter]
-version = "0.219.1"
+version = "0.244.0"
 default-features = false
 
 [dev-dependencies.wat]
-version = "1.219.1"
+version = "1.244.0"
 default-features = false
-
-[features]
-_internal_cli = [
-    "clap",
-    "flagset/serde",
-    "serde",
-    "serde_derive",
-    "wasmparser",
-    "wat",
-]
-component-model = ["wasm-encoder/component-model"]
-wasmparser = [
-    "dep:wasmparser",
-    "wasm-encoder/wasmparser",
-]
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies.libfuzzer-sys]
 version = "0.4.0"
@@ -158,6 +166,10 @@ version = "0.4.0"
 clone_on_copy = "warn"
 manual_strip = "warn"
 map_clone = "warn"
+uninlined_format_args = "warn"
+unnecessary_cast = "warn"
+unnecessary_fallible_conversions = "warn"
+unnecessary_mut_passed = "warn"
 unnecessary_to_owned = "warn"
 
 [lints.clippy.all]
@@ -165,4 +177,22 @@ level = "allow"
 priority = -1
 
 [lints.rust]
+deprecated-safe-2024 = "warn"
+keyword_idents_2024 = "warn"
+missing-unsafe-on-extern = "warn"
+rust-2024-guarded-string-incompatible-syntax = "warn"
+rust-2024-incompatible-pat = "warn"
+rust-2024-prelude-collisions = "warn"
+unsafe-attr-outside-unsafe = "warn"
+unsafe-op-in-unsafe-fn = "warn"
 unsafe_code = "deny"
+unstable_features = "warn"
+unused-lifetimes = "warn"
+unused-macro-rules = "warn"
+unused_extern_crates = "warn"
+unused_import_braces = "warn"
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+priority = 0
+check-cfg = ["cfg(fuzzing)"]

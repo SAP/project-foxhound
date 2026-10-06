@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<script src="/tests/SimpleTest/paint_listener.js"></script>
+<script src="/browser/gfx/layers/apz/test/mochitest/apz_test_utils.js"></script>
+<style>
+body {
+  margin: 0;
+}
+
+#container {
+  position: absolute;
+  width: 100vh;
+  height: 100vw;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  transform: rotate(270deg) translateX(-100%);
+  transform-origin: top left;
+}
+
+#container > div {
+  height: 400vw;
+}
+</style>
+<div id="container">
+  <div></div>
+</div>
+</html>

@@ -67,7 +67,6 @@ object WebCompatReporterMiddlewareProvider {
         val webCompatReporterRetrievalService = DefaultWebCompatReporterRetrievalService(
             browserStore = browserStore,
             webCompatInfoDeserializer = webCompatInfoDeserializer,
-            nimbusExperimentsProvider = DefaultNimbusExperimentsProvider(nimbusApi),
         )
 
         return WebCompatReporterSubmissionMiddleware(
@@ -78,6 +77,7 @@ object WebCompatReporterMiddlewareProvider {
                 webCompatReporterRetrievalService = webCompatReporterRetrievalService,
             ),
             scope = scope,
+            nimbusExperimentsProvider = DefaultNimbusExperimentsProvider(nimbusApi),
         )
     }
 

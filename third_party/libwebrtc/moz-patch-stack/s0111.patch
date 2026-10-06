@@ -1,0 +1,51 @@
+From: Michael Froman <mfroman@mozilla.com>
+Date: Fri, 18 Jul 2025 16:07:00 -0500
+Subject: Bug 1971201 - (fix-70fb834e8c) most all of libwebrtc has converted
+ from rtc:: to webrtc::
+
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/d51a82971b9e755d5514572fcd8ddc557153c8ef
+---
+ modules/video_capture/video_capture.h       | 2 +-
+ modules/video_capture/video_capture_impl.cc | 2 +-
+ modules/video_capture/video_capture_impl.h  | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/modules/video_capture/video_capture.h b/modules/video_capture/video_capture.h
+index a7c1764c51..8a91ca2f83 100644
+--- a/modules/video_capture/video_capture.h
++++ b/modules/video_capture/video_capture.h
+@@ -123,7 +123,7 @@ class VideoCaptureModule : public RefCountInterface {
+ 
+   //  Remove capture data callback
+   virtual void DeRegisterCaptureDataCallback(
+-      rtc::VideoSinkInterface<VideoFrame> *dataCallback) = 0;
++      webrtc::VideoSinkInterface<VideoFrame> *dataCallback) = 0;
+ 
+   // Start capture device
+   virtual int32_t StartCapture(const VideoCaptureCapability& capability) = 0;
+diff --git a/modules/video_capture/video_capture_impl.cc b/modules/video_capture/video_capture_impl.cc
+index 9663c818e7..6fd29f36db 100644
+--- a/modules/video_capture/video_capture_impl.cc
++++ b/modules/video_capture/video_capture_impl.cc
+@@ -122,7 +122,7 @@ void VideoCaptureImpl::RegisterCaptureDataCallback(
+ }
+ 
+ void VideoCaptureImpl::DeRegisterCaptureDataCallback(
+-    rtc::VideoSinkInterface<VideoFrame>* dataCallBack) {
++    webrtc::VideoSinkInterface<VideoFrame>* dataCallBack) {
+   MutexLock lock(&api_lock_);
+   auto it = _dataCallBacks.find(dataCallBack);
+   if (it != _dataCallBacks.end()) {
+diff --git a/modules/video_capture/video_capture_impl.h b/modules/video_capture/video_capture_impl.h
+index 3e77b262c7..f42fc4296a 100644
+--- a/modules/video_capture/video_capture_impl.h
++++ b/modules/video_capture/video_capture_impl.h
+@@ -66,7 +66,7 @@ class RTC_EXPORT VideoCaptureImpl : public VideoCaptureModule {
+   void RegisterCaptureDataCallback(
+       RawVideoSinkInterface* dataCallback) override;
+   void DeRegisterCaptureDataCallback(
+-      rtc::VideoSinkInterface<VideoFrame>* dataCallback) override;
++      webrtc::VideoSinkInterface<VideoFrame>* dataCallback) override;
+ 
+   int32_t StopCaptureIfAllClientsClose() override;
+   int32_t SetCaptureRotation(VideoRotation rotation) override;

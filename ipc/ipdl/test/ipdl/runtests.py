@@ -1,3 +1,4 @@
+import glob
 import os
 import unittest
 
@@ -16,27 +17,20 @@ class IPDLTestCase(unittest.TestCase):
         self.checkPassed()
 
     def mkCustomMsg(self, msg):
-        return """
-### Command: %s
-### %s
+        return f"""
+### Command: {" ".join(self.compile.argv)}
+### {msg}
 ### stderr:
-%s""" % (
-            " ".join(self.compile.argv),
-            msg,
-            self.compile.stderr,
-        )
+{self.compile.stderr}"""
 
     def mkFailMsg(self):
-        return """
-### Command: %s
+        return f"""
+### Command: {" ".join(self.compile.argv)}
 ### stderr:
-%s""" % (
-            " ".join(self.compile.argv),
-            self.compile.stderr,
-        )
+{self.compile.stderr}"""
 
     def shortDescription(self):
-        return '%s test of "%s"' % (self.__class__.__name__, self.filename)
+        return f'{self.__class__.__name__} test of "{self.filename}"'
 
 
 class OkTestCase(IPDLTestCase):
@@ -101,14 +95,16 @@ if __name__ == "__main__":
             # The extra subdirectory is used for non-failing files we want
             # to include from failing files.
             errorIncludes = ["-I", os.path.join(errordir, "extra"), "-I", errordir]
-            errorsuite.addTest(ErrorTestCase(ipdlargv + errorIncludes, arg))
+            for test in glob.glob(arg):
+                errorsuite.addTest(ErrorTestCase(ipdlargv + errorIncludes, test))
         elif oktests:
-            if "ERRORTESTS" == arg:
+            if "--error-tests" == arg:
                 errortests = True
                 continue
-            oksuite.addTest(OkTestCase(ipdlargv + ["-I", okdir], arg))
+            for test in glob.glob(arg):
+                oksuite.addTest(OkTestCase(ipdlargv + ["-I", okdir], test))
         else:
-            if "OKTESTS" == arg:
+            if "--ok-tests" == arg:
                 oktests = True
                 continue
             ipdlargv.append(arg)

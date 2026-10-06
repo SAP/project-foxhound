@@ -67,19 +67,18 @@ web_notification:
     notification_emails:
       - krosylight@mozilla.com
     expires: never
-  icon_url_encoding:
-    type: labeled_counter
+  show_safe_browsing_block:
+    type: rate
     description: >
-      The encoding of the notification icon URL
-    labels:
-      - utf8
-      - document_charset
-      - either_way
-      - neither_way
+      The rate of notification show attempts that are blocked because the
+      origin is on the Safe Browsing blocklist (phishing, malware, etc.).
+      The numerator is the number of blocked attempts, and the denominator
+      is the total number of show attempts that passed the initial
+      permission check.
     bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1914203
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1986300
     data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1914203
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1986300
     notification_emails:
-      - krosylight@mozilla.com
-    expires: 156
+      - emz@mozilla.com
+    expires: 155

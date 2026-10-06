@@ -5,6 +5,7 @@
 package mozilla.components.feature.findinpage
 
 import mozilla.components.browser.state.state.SessionState
+import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.feature.findinpage.internal.FindInPageInteractor
 import mozilla.components.feature.findinpage.internal.FindInPagePresenter
 import mozilla.components.support.test.mock
@@ -22,7 +23,7 @@ class FindInPageFeatureTest {
         val presenter: FindInPagePresenter = mock()
         val interactor: FindInPageInteractor = mock()
 
-        val feature = FindInPageFeature(mock(), mock(), mock())
+        val feature = FindInPageFeature(BrowserStore(), mock(), mock())
         feature.presenter = presenter
         feature.interactor = interactor
 
@@ -37,7 +38,7 @@ class FindInPageFeatureTest {
         val presenter: FindInPagePresenter = mock()
         val interactor: FindInPageInteractor = mock()
 
-        val feature = FindInPageFeature(mock(), mock(), mock())
+        val feature = FindInPageFeature(BrowserStore(), mock(), mock())
         feature.presenter = presenter
         feature.interactor = interactor
 
@@ -52,7 +53,7 @@ class FindInPageFeatureTest {
         val presenter: FindInPagePresenter = mock()
         val interactor: FindInPageInteractor = mock()
 
-        val feature = FindInPageFeature(mock(), mock(), mock())
+        val feature = FindInPageFeature(BrowserStore(), mock(), mock())
         feature.presenter = presenter
         feature.interactor = interactor
 
@@ -68,7 +69,7 @@ class FindInPageFeatureTest {
         val presenter: FindInPagePresenter = mock()
         val interactor: FindInPageInteractor = mock()
 
-        val feature = spy(FindInPageFeature(mock(), mock(), mock()))
+        val feature = spy(FindInPageFeature(BrowserStore(), mock(), mock()))
         feature.presenter = presenter
         feature.interactor = interactor
 
@@ -85,7 +86,7 @@ class FindInPageFeatureTest {
         val presenter: FindInPagePresenter = mock()
         val interactor: FindInPageInteractor = mock()
 
-        val feature = spy(FindInPageFeature(mock(), mock(), mock()))
+        val feature = spy(FindInPageFeature(BrowserStore(), mock(), mock()))
         feature.presenter = presenter
         feature.interactor = interactor
 
@@ -99,7 +100,7 @@ class FindInPageFeatureTest {
         val presenter: FindInPagePresenter = mock()
         val interactor: FindInPageInteractor = mock()
 
-        val feature = FindInPageFeature(mock(), mock(), mock())
+        val feature = FindInPageFeature(BrowserStore(), mock(), mock())
         feature.presenter = presenter
         feature.interactor = interactor
 
@@ -116,7 +117,7 @@ class FindInPageFeatureTest {
 
         var lambdaInvoked = false
 
-        val feature = FindInPageFeature(mock(), mock(), mock()) {
+        val feature = FindInPageFeature(BrowserStore(), mock(), mock()) {
             lambdaInvoked = true
         }
 

@@ -18,7 +18,7 @@ Services.scriptloader.loadSubScript(
  *
  * @param  {Document} panelDoc
  *         Host document of the Changes panel.
- * @param  {String} selector
+ * @param  {string} selector
  *         Optional selector to filter rendered declaration DOM elements.
  *         One of ".diff-remove" or ".diff-add".
  *         If omitted, all declarations will be returned.
@@ -57,7 +57,7 @@ function getRemovedDeclarations(panelDoc, containerNode) {
  *
  * @param  {Document} panelDoc
  *         Host document of the Changes panel.
- * @param  {String} selector
+ * @param  {string} selector
  *         Optional selector to filter rendered selector DOM elements.
  *         One of ".diff-remove" or ".diff-add".
  *         If omitted, all selectors will be returned.

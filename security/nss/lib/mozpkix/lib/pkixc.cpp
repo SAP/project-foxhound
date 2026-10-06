@@ -79,8 +79,7 @@ class CodeSigningTrustDomain final : public TrustDomain {
       EndEntityOrCA endEntityOrCA, const CertID& certID, Time time,
       Duration validityDuration,
       /*optional*/ const Input* stapledOCSPresponse,
-      /*optional*/ const Input* aiaExtension,
-      /*optional*/ const Input* sctExtension) override {
+      /*optional*/ const Input* aiaExtension) override {
     return Success;
   }
 
@@ -149,12 +148,6 @@ class CodeSigningTrustDomain final : public TrustDomain {
     return Success;
   }
 
-  virtual Result NetscapeStepUpMatchesServerAuth(
-      Time notBefore, /*out*/ bool& matches) override {
-    matches = false;
-    return Success;
-  }
-
   virtual void NoteAuxiliaryExtension(AuxiliaryExtension extension,
                                       Input extensionData) override {}
 
@@ -194,7 +187,8 @@ bool VerifyCodeSigningCertificateChain(
   if (!error) {
     return false;
   }
-  if (!certificates || !certificateLengths || !rootSHA256Digest) {
+  if (!certificates || !certificateLengths || numCertificates < 1 ||
+      !rootSHA256Digest) {
     *error = SEC_ERROR_INVALID_ARGS;
     return false;
   }

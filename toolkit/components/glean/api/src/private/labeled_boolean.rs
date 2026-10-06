@@ -25,14 +25,14 @@ pub enum LabeledBooleanMetric {
     UnorderedChild { id: BaseMetricId, label: String },
 }
 
-crate::define_metric_metadata_getter!(
+define_metric_metadata_getter!(
     BooleanMetric,
     LabeledBooleanMetric,
     BOOLEAN_MAP,
     LABELED_BOOLEAN_MAP
 );
 
-crate::define_metric_namer!(LabeledBooleanMetric, LABELED);
+define_metric_namer!(LabeledBooleanMetric, LABELED);
 
 impl LabeledBooleanMetric {
     #[cfg(test)]
@@ -86,21 +86,26 @@ impl Boolean for LabeledBooleanMetric {
         }
     }
 
-    pub fn test_get_value<'a, S: Into<Option<&'a str>>>(&self, ping_name: S) -> Option<bool> {
-        match self {
-            LabeledBooleanMetric::Parent(p) => p.test_get_value(ping_name),
-            _ => {
-                panic!("Cannot get test value for a labeled_boolean in non-parent process!")
-            }
-        }
-    }
-
     pub fn test_get_num_recorded_errors(&self, error: glean::ErrorType) -> i32 {
         match self {
             LabeledBooleanMetric::Parent(p) => p.test_get_num_recorded_errors(error),
             _ => panic!(
                 "Cannot get the number of recorded errors for a labeled_boolean in non-parent process!"
             ),
+        }
+    }
+}
+
+#[inherent]
+impl glean::TestGetValue for LabeledBooleanMetric {
+    type Output = bool;
+
+    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<bool> {
+        match self {
+            LabeledBooleanMetric::Parent(p) => p.test_get_value(ping_name),
+            _ => {
+                panic!("Cannot get test value for a labeled_boolean in non-parent process!")
+            }
         }
     }
 }
@@ -131,7 +136,10 @@ mod test {
         let metric = &metrics::test_only_ipc::an_unordered_labeled_boolean;
         metric.get("a_label").set(true);
 
-        assert!(metric.get("a_label").test_get_value("test-ping").unwrap());
+        assert!(metric
+            .get("a_label")
+            .test_get_value(Some("test-ping".to_string()))
+            .unwrap());
     }
 
     #[test]
@@ -203,7 +211,7 @@ mod test {
         assert!(
             !parent_metric
                 .get(label)
-                .test_get_value("test-ping")
+                .test_get_value(Some("test-ping".to_string()))
                 .unwrap(),
             "Later value takes precedence."
         );

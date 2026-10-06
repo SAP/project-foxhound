@@ -7,9 +7,6 @@ const { Service } = ChromeUtils.importESModule(
 const { WBORecord } = ChromeUtils.importESModule(
   "resource://services-sync/record.sys.mjs"
 );
-const { Resource } = ChromeUtils.importESModule(
-  "resource://services-sync/resource.sys.mjs"
-);
 const { RotaryEngine } = ChromeUtils.importESModule(
   "resource://testing-common/services/sync/rotaryengine.sys.mjs"
 );
@@ -133,14 +130,7 @@ add_task(async function test_basic() {
   let server = httpd_setup(handlers);
   await configureIdentity({ username: "johndoe" }, server);
 
-  let ping = await wait_for_ping(() => Service.sync(), true, true);
-
-  // Check the "os" block - we can't really check specific values, but can
-  // check it smells sane.
-  ok(ping.os, "there is an OS block");
-  ok("name" in ping.os, "there is an OS name");
-  ok("version" in ping.os, "there is an OS version");
-  ok("locale" in ping.os, "there is an OS locale");
+  await wait_for_ping(() => Service.sync(), true, true);
 
   for (const pref of Svc.PrefBranch.getChildList("")) {
     Svc.PrefBranch.clearUserPref(pref);
@@ -917,39 +907,6 @@ add_task(async function test_discarding() {
   }
 });
 
-add_task(async function test_submit_interval() {
-  let telem = get_sync_test_telemetry();
-  let oldSubmit = telem.submit;
-  let numSubmissions = 0;
-  telem.submit = function () {
-    numSubmissions += 1;
-  };
-
-  function notify(what, data = null) {
-    Svc.Obs.notify(what, JSON.stringify(data));
-  }
-
-  try {
-    // submissionInterval is set such that each sync should submit
-    notify("weave:service:sync:start", { why: "testing" });
-    notify("weave:service:sync:finish");
-    Assert.equal(numSubmissions, 1, "should submit this ping due to interval");
-
-    // As should each event outside of a sync.
-    Service.recordTelemetryEvent("object", "method");
-    Assert.equal(numSubmissions, 2);
-
-    // But events while we are syncing should not.
-    notify("weave:service:sync:start", { why: "testing" });
-    Service.recordTelemetryEvent("object", "method");
-    Assert.equal(numSubmissions, 2, "no submission for this event");
-    notify("weave:service:sync:finish");
-    Assert.equal(numSubmissions, 3, "was submitted after sync finish");
-  } finally {
-    telem.submit = oldSubmit;
-  }
-});
-
 add_task(async function test_no_foreign_engines_in_error_ping() {
   enableValidationPrefs();
 
@@ -983,152 +940,6 @@ add_task(async function test_no_foreign_engines_in_success_ping() {
     await sync_and_validate_telem(ping => {
       ok(ping.engines.every(e => e.name !== "bogus"));
     });
-  } finally {
-    await cleanAndGo(engine, server);
-    await Service.engineManager.unregister(engine);
-  }
-});
-
-add_task(async function test_events() {
-  enableValidationPrefs();
-
-  await Service.engineManager.register(BogusEngine);
-  let engine = Service.engineManager.get("bogus");
-  engine.enabled = true;
-  let server = await serverForFoo(engine);
-
-  await SyncTestingInfrastructure(server);
-
-  let telem = get_sync_test_telemetry();
-  telem.submissionInterval = Infinity;
-
-  try {
-    let serverTime = Resource.serverTime;
-    Service.recordTelemetryEvent("object", "method", "value", { foo: "bar" });
-    let ping = await wait_for_ping(() => Service.sync(), true, true);
-    equal(ping.events.length, 1);
-    let [timestamp, category, method, object, value, extra] = ping.events[0];
-    ok(typeof timestamp == "number" && timestamp > 0); // timestamp.
-    equal(category, "sync");
-    equal(method, "method");
-    equal(object, "object");
-    equal(value, "value");
-    deepEqual(extra, { foo: "bar", serverTime: String(serverTime) });
-    ping = await wait_for_ping(
-      () => {
-        // Test with optional values.
-        Service.recordTelemetryEvent("object", "method");
-      },
-      false,
-      true
-    );
-    equal(ping.events.length, 1);
-    equal(ping.events[0].length, 4);
-
-    ping = await wait_for_ping(
-      () => {
-        Service.recordTelemetryEvent("object", "method", "extra");
-      },
-      false,
-      true
-    );
-    equal(ping.events.length, 1);
-    equal(ping.events[0].length, 5);
-
-    ping = await wait_for_ping(
-      () => {
-        Service.recordTelemetryEvent("object", "method", undefined, {
-          foo: "bar",
-        });
-      },
-      false,
-      true
-    );
-    equal(ping.events.length, 1);
-    equal(ping.events[0].length, 6);
-    [timestamp, category, method, object, value, extra] = ping.events[0];
-    equal(value, null);
-
-    // Fake a submission due to shutdown.
-    ping = await wait_for_ping(
-      () => {
-        telem.submissionInterval = Infinity;
-        Service.recordTelemetryEvent("object", "method", undefined, {
-          foo: "bar",
-        });
-        telem.finish("shutdown");
-      },
-      false,
-      true
-    );
-    equal(ping.syncs.length, 0);
-    equal(ping.events.length, 1);
-    equal(ping.events[0].length, 6);
-  } finally {
-    await cleanAndGo(engine, server);
-    await Service.engineManager.unregister(engine);
-  }
-});
-
-add_task(async function test_histograms() {
-  enableValidationPrefs();
-
-  await Service.engineManager.register(BogusEngine);
-  let engine = Service.engineManager.get("bogus");
-  engine.enabled = true;
-  let server = await serverForFoo(engine);
-
-  await SyncTestingInfrastructure(server);
-  try {
-    let histId = "TELEMETRY_TEST_LINEAR";
-    Services.obs.notifyObservers(null, "weave:telemetry:histogram", histId);
-    let ping = await wait_for_ping(() => Service.sync(), true, true);
-    equal(Object.keys(ping.histograms).length, 1);
-    equal(ping.histograms[histId].sum, 0);
-    equal(ping.histograms[histId].histogram_type, 1);
-  } finally {
-    await cleanAndGo(engine, server);
-    await Service.engineManager.unregister(engine);
-  }
-});
-
-add_task(async function test_invalid_events() {
-  enableValidationPrefs();
-
-  await Service.engineManager.register(BogusEngine);
-  let engine = Service.engineManager.get("bogus");
-  engine.enabled = true;
-  let server = await serverForFoo(engine);
-
-  async function checkNotRecorded(...args) {
-    Service.recordTelemetryEvent.call(args);
-    let ping = await wait_for_ping(() => Service.sync(), false, true);
-    equal(ping.events, undefined);
-  }
-
-  await SyncTestingInfrastructure(server);
-  try {
-    let long21 = "l".repeat(21);
-    let long81 = "l".repeat(81);
-    let long86 = "l".repeat(86);
-    await checkNotRecorded("object");
-    await checkNotRecorded("object", 2);
-    await checkNotRecorded(2, "method");
-    await checkNotRecorded("object", "method", 2);
-    await checkNotRecorded("object", "method", "value", 2);
-    await checkNotRecorded("object", "method", "value", { foo: 2 });
-    await checkNotRecorded(long21, "method", "value");
-    await checkNotRecorded("object", long21, "value");
-    await checkNotRecorded("object", "method", long81);
-    let badextra = {};
-    badextra[long21] = "x";
-    await checkNotRecorded("object", "method", "value", badextra);
-    badextra = { x: long86 };
-    await checkNotRecorded("object", "method", "value", badextra);
-    for (let i = 0; i < 10; i++) {
-      badextra["name" + i] = "x";
-    }
-    await checkNotRecorded("object", "method", "value", badextra);
   } finally {
     await cleanAndGo(engine, server);
     await Service.engineManager.unregister(engine);

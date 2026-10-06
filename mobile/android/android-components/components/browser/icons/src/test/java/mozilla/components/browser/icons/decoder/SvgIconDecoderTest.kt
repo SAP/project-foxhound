@@ -8,13 +8,13 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.caverock.androidsvg.SVGParseException
 import mozilla.components.support.images.DesiredSize
 import mozilla.components.support.test.any
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.spy
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class SvgIconDecoderTest {
@@ -48,7 +48,7 @@ class SvgIconDecoderTest {
             desiredSize,
         )
 
-        assertNotNull(bitmap!!)
+        assertNotNull(bitmap)
     }
 
     @Test

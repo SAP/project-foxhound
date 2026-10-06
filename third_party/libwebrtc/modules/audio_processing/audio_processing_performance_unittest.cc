@@ -7,24 +7,26 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-#include <math.h>
 
-#include <algorithm>
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
+#include "api/audio/audio_processing.h"
 #include "api/audio/builtin_audio_processing_builder.h"
 #include "api/environment/environment_factory.h"
 #include "api/numerics/samples_stats_counter.h"
+#include "api/scoped_refptr.h"
 #include "api/test/metrics/global_metrics_logger_and_exporter.h"
 #include "api/test/metrics/metric.h"
-#include "modules/audio_processing/audio_processing_impl.h"
-#include "modules/audio_processing/test/test_utils.h"
+#include "api/units/time_delta.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/event.h"
-#include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/platform_thread.h"
 #include "rtc_base/random.h"
 #include "system_wrappers/include/clock.h"
@@ -33,10 +35,10 @@
 namespace webrtc {
 namespace {
 
-using ::webrtc::test::GetGlobalMetricsLogger;
-using ::webrtc::test::ImprovementDirection;
-using ::webrtc::test::Metric;
-using ::webrtc::test::Unit;
+using test::GetGlobalMetricsLogger;
+using test::ImprovementDirection;
+using test::Metric;
+using test::Unit;
 
 class CallSimulator;
 
@@ -46,7 +48,6 @@ enum class ProcessorType { kRender, kCapture };
 // Variant of APM processing settings to use in the test.
 enum class SettingsType {
   kDefaultApmDesktop,
-  kDefaultApmMobile,
   kAllSubmodulesTurnedOff,
   kDefaultApmDesktopWithoutDelayAgnostic,
   kDefaultApmDesktopWithoutExtendedFilter
@@ -97,26 +98,12 @@ struct SimulationConfig {
       }
     }
 #endif
-
-    const SettingsType mobile_settings[] = {SettingsType::kDefaultApmMobile};
-
-    const int mobile_sample_rates[] = {8000, 16000};
-
-    for (auto sample_rate : mobile_sample_rates) {
-      for (auto settings : mobile_settings) {
-        simulation_configs.push_back(SimulationConfig(sample_rate, settings));
-      }
-    }
-
     return simulation_configs;
   }
 
   std::string SettingsDescription() const {
     std::string description;
     switch (simulation_settings) {
-      case SettingsType::kDefaultApmMobile:
-        description = "DefaultApmMobile";
-        break;
       case SettingsType::kDefaultApmDesktop:
         description = "DefaultApmDesktop";
         break;
@@ -206,7 +193,7 @@ class TimedThreadApiProcessor {
         simulation_config_(simulation_config),
         apm_(apm),
         frame_data_(kMaxFrameSize),
-        clock_(webrtc::Clock::GetRealTimeClock()),
+        clock_(Clock::GetRealTimeClock()),
         num_durations_to_store_(num_durations_to_store),
         api_call_durations_(num_durations_to_store_ - kNumInitializationFrames),
         samples_count_(0),
@@ -232,7 +219,8 @@ class TimedThreadApiProcessor {
   void AddDuration(int64_t duration) {
     if (samples_count_ >= kNumInitializationFrames &&
         samples_count_ < num_durations_to_store_) {
-      api_call_durations_.AddSample(duration);
+      api_call_durations_.AddSample({.value = static_cast<double>(duration),
+                                     .time = clock_->CurrentTime()});
     }
     samples_count_++;
   }
@@ -355,7 +343,7 @@ class TimedThreadApiProcessor {
   const SimulationConfig* const simulation_config_ = nullptr;
   AudioProcessing* apm_ = nullptr;
   AudioFrameData frame_data_;
-  webrtc::Clock* clock_;
+  Clock* clock_;
   const size_t num_durations_to_store_;
   SamplesStatsCounter api_call_durations_;
   size_t samples_count_ = 0;
@@ -417,20 +405,8 @@ class CallSimulator : public ::testing::TestWithParam<SimulationConfig> {
     auto set_default_desktop_apm_runtime_settings = [](AudioProcessing* apm) {
       AudioProcessing::Config apm_config = apm->GetConfig();
       apm_config.echo_canceller.enabled = true;
-      apm_config.echo_canceller.mobile_mode = false;
       apm_config.noise_suppression.enabled = true;
       apm_config.gain_controller1.enabled = true;
-      apm_config.gain_controller1.mode =
-          AudioProcessing::Config::GainController1::kAdaptiveDigital;
-      apm->ApplyConfig(apm_config);
-    };
-
-    // Lambda function for setting the default APM runtime settings for mobile.
-    auto set_default_mobile_apm_runtime_settings = [](AudioProcessing* apm) {
-      AudioProcessing::Config apm_config = apm->GetConfig();
-      apm_config.echo_canceller.enabled = true;
-      apm_config.echo_canceller.mobile_mode = true;
-      apm_config.noise_suppression.enabled = true;
       apm_config.gain_controller1.mode =
           AudioProcessing::Config::GainController1::kAdaptiveDigital;
       apm->ApplyConfig(apm_config);
@@ -448,12 +424,6 @@ class CallSimulator : public ::testing::TestWithParam<SimulationConfig> {
 
     int num_capture_channels = 1;
     switch (simulation_config_.simulation_settings) {
-      case SettingsType::kDefaultApmMobile: {
-        apm_ = BuiltinAudioProcessingBuilder().Build(CreateEnvironment());
-        ASSERT_TRUE(!!apm_);
-        set_default_mobile_apm_runtime_settings(apm_.get());
-        break;
-      }
       case SettingsType::kDefaultApmDesktop: {
         apm_ = BuiltinAudioProcessingBuilder().Build(CreateEnvironment());
         ASSERT_TRUE(!!apm_);
@@ -514,7 +484,7 @@ class CallSimulator : public ::testing::TestWithParam<SimulationConfig> {
   // Thread related variables.
   Random rand_gen_;
 
-  rtc::scoped_refptr<AudioProcessing> apm_;
+  scoped_refptr<AudioProcessing> apm_;
   const SimulationConfig simulation_config_;
   FrameCounters frame_counters_;
   LockedFlag capture_call_checker_;
@@ -555,6 +525,8 @@ const float CallSimulator::kRenderInputFloatLevel = 0.5f;
 const float CallSimulator::kCaptureInputFloatLevel = 0.03125f;
 }  // anonymous namespace
 
+#ifndef WEBRTC_ANDROID
+
 TEST_P(CallSimulator, ApiCallDurationTest) {
   // Run test and verify that it did not time out.
   EXPECT_TRUE(Run());
@@ -564,5 +536,6 @@ INSTANTIATE_TEST_SUITE_P(
     AudioProcessingPerformanceTest,
     CallSimulator,
     ::testing::ValuesIn(SimulationConfig::GenerateSimulationConfigs()));
+#endif
 
 }  // namespace webrtc

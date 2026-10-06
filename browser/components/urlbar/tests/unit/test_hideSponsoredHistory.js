@@ -11,7 +11,7 @@ add_task(async function test() {
   UrlbarPrefs.set("suggest.searches", false);
   UrlbarPrefs.set("suggest.quickactions", false);
 
-  let engine = await Services.search.getDefault();
+  let engine = await SearchService.getDefault();
   let pref = "browser.newtabpage.activity-stream.hideTopSitesWithSearchParam";
 
   // This maps URL search params to objects describing whether a URL with those

@@ -15,7 +15,11 @@ import {
   raceWith,
 } from '../../third_party/rxjs/rxjs.js';
 import type {ProtocolType} from '../common/ConnectOptions.js';
-import type {Cookie, CookieData} from '../common/Cookie.js';
+import type {
+  Cookie,
+  CookieData,
+  DeleteCookiesRequest,
+} from '../common/Cookie.js';
 import type {DownloadBehavior} from '../common/DownloadBehavior.js';
 import {EventEmitter, type EventType} from '../common/EventEmitter.js';
 import {
@@ -207,6 +211,103 @@ export interface DebugInfo {
 }
 
 /**
+ * @public
+ */
+export type WindowState = 'normal' | 'minimized' | 'maximized' | 'fullscreen';
+
+/**
+ * @public
+ */
+export interface WindowBounds {
+  left?: number;
+  top?: number;
+  width?: number;
+  height?: number;
+  windowState?: WindowState;
+}
+
+/**
+ * @public
+ */
+export type WindowId = string;
+
+/**
+ * @public
+ */
+export type CreatePageOptions = (
+  | {
+      type?: 'tab';
+    }
+  | {
+      type: 'window';
+      windowBounds?: WindowBounds;
+    }
+) & {
+  /**
+   * Whether to create the page in the background.
+   *
+   * @defaultValue `false`
+   */
+  background?: boolean;
+};
+
+/**
+ * @public
+ */
+export interface ScreenOrientation {
+  angle: number;
+  type: string;
+}
+
+/**
+ * @public
+ */
+export interface ScreenInfo {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  availLeft: number;
+  availTop: number;
+  availWidth: number;
+  availHeight: number;
+  devicePixelRatio: number;
+  colorDepth: number;
+  orientation: ScreenOrientation;
+  isExtended: boolean;
+  isInternal: boolean;
+  isPrimary: boolean;
+  label: string;
+  id: string;
+}
+
+/**
+ * @public
+ */
+export interface WorkAreaInsets {
+  top?: number;
+  left?: number;
+  bottom?: number;
+  right?: number;
+}
+
+/**
+ * @public
+ */
+export interface AddScreenParams {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  workAreaInsets?: WorkAreaInsets;
+  devicePixelRatio?: number;
+  rotation?: number;
+  colorDepth?: number;
+  label?: string;
+  isInternal?: boolean;
+}
+
+/**
  * {@link Browser} represents a browser instance that is either:
  *
  * - connected to via {@link Puppeteer.connect} or
@@ -320,7 +421,20 @@ export abstract class Browser extends EventEmitter<BrowserEvents> {
    * Creates a new {@link Page | page} in the
    * {@link Browser.defaultBrowserContext | default browser context}.
    */
-  abstract newPage(): Promise<Page>;
+  abstract newPage(options?: CreatePageOptions): Promise<Page>;
+
+  /**
+   * Gets the specified window {@link WindowBounds | bounds}.
+   */
+  abstract getWindowBounds(windowId: WindowId): Promise<WindowBounds>;
+
+  /**
+   * Sets the specified window {@link WindowBounds | bounds}.
+   */
+  abstract setWindowBounds(
+    windowId: WindowId,
+    windowBounds: WindowBounds,
+  ): Promise<void>;
 
   /**
    * Gets all active {@link Target | targets}.
@@ -376,13 +490,15 @@ export abstract class Browser extends EventEmitter<BrowserEvents> {
    * returns all {@link Page | pages} in all
    * {@link BrowserContext | browser contexts}.
    *
+   * @param includeAll - experimental, setting to true includes all kinds of pages.
+   *
    * @remarks Non-visible {@link Page | pages}, such as `"background_page"`,
    * will not be listed here. You can find them using {@link Target.page}.
    */
-  async pages(): Promise<Page[]> {
+  async pages(includeAll = false): Promise<Page[]> {
     const contextPages = await Promise.all(
       this.browserContexts().map(context => {
-        return context.pages();
+        return context.pages(includeAll);
       }),
     );
     // Flatten array.
@@ -408,7 +524,7 @@ export abstract class Browser extends EventEmitter<BrowserEvents> {
    * Gets this {@link Browser | browser's} original user agent.
    *
    * {@link Page | Pages} can override the user agent with
-   * {@link Page.setUserAgent}.
+   * {@link Page.(setUserAgent:2) }.
    *
    */
   abstract userAgent(): Promise<string>;
@@ -462,6 +578,22 @@ export abstract class Browser extends EventEmitter<BrowserEvents> {
   }
 
   /**
+   * Deletes cookies matching the provided filters from the default
+   * {@link BrowserContext}.
+   *
+   * @remarks
+   *
+   * Shortcut for
+   * {@link BrowserContext.deleteMatchingCookies |
+   * browser.defaultBrowserContext().deleteMatchingCookies()}.
+   */
+  async deleteMatchingCookies(
+    ...filters: DeleteCookiesRequest[]
+  ): Promise<void> {
+    return await this.defaultBrowserContext().deleteMatchingCookies(...filters);
+  }
+
+  /**
    * Installs an extension and returns the ID. In Chrome, this is only
    * available if the browser was created using `pipe: true` and the
    * `--enable-unsafe-extension-debugging` flag is set.
@@ -474,6 +606,29 @@ export abstract class Browser extends EventEmitter<BrowserEvents> {
    * `--enable-unsafe-extension-debugging` flag is set.
    */
   abstract uninstallExtension(id: string): Promise<void>;
+
+  /**
+   * Gets a list of {@link ScreenInfo | screen information objects}.
+   */
+  abstract screens(): Promise<ScreenInfo[]>;
+
+  /**
+   * Adds a new screen, returns the added {@link ScreenInfo | screen information object}.
+   *
+   * @remarks
+   *
+   * Only supported in headless mode.
+   */
+  abstract addScreen(params: AddScreenParams): Promise<ScreenInfo>;
+
+  /**
+   * Removes a screen.
+   *
+   * @remarks
+   *
+   * Only supported in headless mode. Fails if the primary screen id is specified.
+   */
+  abstract removeScreen(screenId: string): Promise<void>;
 
   /**
    * Whether Puppeteer is connected to this {@link Browser | browser}.
@@ -521,4 +676,9 @@ export abstract class Browser extends EventEmitter<BrowserEvents> {
    * @experimental
    */
   abstract get debugInfo(): DebugInfo;
+
+  /**
+   * @internal
+   */
+  abstract isNetworkEnabled(): boolean;
 }

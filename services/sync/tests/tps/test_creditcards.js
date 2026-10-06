@@ -20,6 +20,9 @@ const cc1 = [
     "cc-exp-year": 2050,
     "unknown-1": "an unknown field from another client",
     changes: {
+      "cc-name": "John Doe",
+      "cc-number": "4716179744040592",
+      "cc-exp-month": 4,
       "cc-exp-year": 2051,
     },
   },

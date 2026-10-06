@@ -28,7 +28,7 @@ add_task(async function test_PIN_FIREFOX_TO_START_MENU() {
     SMATestUtils.executeAndValidateAction(
       { type: "PIN_FIREFOX_TO_START_MENU" },
       {
-        ownerGlobal: {
+        documentGlobal: {
           getShellService: () => shell,
         },
       }

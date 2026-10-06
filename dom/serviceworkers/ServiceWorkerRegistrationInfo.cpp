@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +7,6 @@
 #include "ServiceWorkerManager.h"
 #include "ServiceWorkerPrivate.h"
 #include "ServiceWorkerRegistrationListener.h"
-
 #include "mozilla/Preferences.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -71,11 +68,11 @@ void ServiceWorkerRegistrationInfo::ClearAsCorrupt() {
 bool ServiceWorkerRegistrationInfo::IsCorrupt() const { return mCorrupt; }
 
 ServiceWorkerRegistrationInfo::ServiceWorkerRegistrationInfo(
-    const nsACString& aScope, nsIPrincipal* aPrincipal,
+    const nsACString& aScope, WorkerType aType, nsIPrincipal* aPrincipal,
     ServiceWorkerUpdateViaCache aUpdateViaCache,
     IPCNavigationPreloadState&& aNavigationPreloadState)
     : mPrincipal(aPrincipal),
-      mDescriptor(GetNextId(), GetNextVersion(), aPrincipal, aScope,
+      mDescriptor(GetNextId(), GetNextVersion(), aPrincipal, aScope, aType,
                   aUpdateViaCache),
       mControlledClientsCounter(0),
       mDelayMultiplier(0),
@@ -129,6 +126,10 @@ void ServiceWorkerRegistrationInfo::RemoveInstance(
 
 const nsCString& ServiceWorkerRegistrationInfo::Scope() const {
   return mDescriptor.Scope();
+}
+
+WorkerType ServiceWorkerRegistrationInfo::Type() const {
+  return mDescriptor.Type();
 }
 
 nsIPrincipal* ServiceWorkerRegistrationInfo::Principal() const {
@@ -339,6 +340,7 @@ void ServiceWorkerRegistrationInfo::TryToActivate(
     ServiceWorkerLifetimeExtension&& aLifetimeExtension,
     TryToActivateCallback&& aCallback) {
   MOZ_ASSERT(NS_IsMainThread());
+  ++mNumberOfAttemptedActivations;
   bool controlling = IsControllingClients();
   bool skipWaiting = mWaitingWorker && mWaitingWorker->SkipWaitingFlag();
   bool idle = IsIdle();
@@ -448,11 +450,11 @@ bool ServiceWorkerRegistrationInfo::IsLastUpdateCheckTimeOverOneDay() const {
 }
 
 void ServiceWorkerRegistrationInfo::UpdateRegistrationState() {
-  UpdateRegistrationState(mDescriptor.UpdateViaCache());
+  UpdateRegistrationState(mDescriptor.UpdateViaCache(), mDescriptor.Type());
 }
 
 void ServiceWorkerRegistrationInfo::UpdateRegistrationState(
-    ServiceWorkerUpdateViaCache aUpdateViaCache) {
+    ServiceWorkerUpdateViaCache aUpdateViaCache, WorkerType aType) {
   MOZ_ASSERT(NS_IsMainThread());
 
   TimeStamp oldest = TimeStamp::Now() - TimeDuration::FromSeconds(30);
@@ -474,6 +476,7 @@ void ServiceWorkerRegistrationInfo::UpdateRegistrationState(
   mDescriptor.SetWorkers(mInstallingWorker, mWaitingWorker, mActiveWorker);
 
   mDescriptor.SetUpdateViaCache(aUpdateViaCache);
+  mDescriptor.SetWorkerType(aType);
 
   for (RefPtr<ServiceWorkerRegistrationListener> pinnedTarget :
        mInstanceList.ForwardRange()) {
@@ -764,9 +767,9 @@ ServiceWorkerUpdateViaCache ServiceWorkerRegistrationInfo::GetUpdateViaCache()
   return mDescriptor.UpdateViaCache();
 }
 
-void ServiceWorkerRegistrationInfo::SetUpdateViaCache(
-    ServiceWorkerUpdateViaCache aUpdateViaCache) {
-  UpdateRegistrationState(aUpdateViaCache);
+void ServiceWorkerRegistrationInfo::SetOptions(
+    ServiceWorkerUpdateViaCache aUpdateViaCache, WorkerType aType) {
+  UpdateRegistrationState(aUpdateViaCache, aType);
 }
 
 int64_t ServiceWorkerRegistrationInfo::GetLastUpdateTime() const {

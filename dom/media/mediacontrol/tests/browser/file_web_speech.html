@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Web Speech audibility page</title>
+</head>
+<body>
+<button id="start">start</button>
+<script>
+let utt;
+
+document.getElementById("start").addEventListener("click", () => {
+  utt = new SpeechSynthesisUtterance("audio focus competition test");
+  // Pick the test fake-synth voice that fires "start" but never auto-fires
+  // "end", so the utterance stays audible across audio-focus competition
+  // until the test explicitly cancels it. See dom/media/webspeech/synth/test/
+  // nsFakeSynthServices.cpp (the "it-IT-noend" / "teresa" voice carries
+  // eSuppressEnd).
+  utt.lang = "it-IT-noend";
+  speechSynthesis.speak(utt);
+});
+
+window.waitForSpeechStart = () =>
+  new Promise(resolve => {
+    if (!utt) {
+      resolve(false);
+      return;
+    }
+    utt.addEventListener("start", () => resolve(true), { once: true });
+  });
+
+window.waitForSpeechPause = () =>
+  new Promise(resolve => {
+    if (!utt) {
+      resolve(false);
+      return;
+    }
+    if (speechSynthesis.paused) {
+      resolve(true);
+      return;
+    }
+    utt.addEventListener("pause", () => resolve(true), { once: true });
+  });
+
+window.cancelSpeech = () => {
+  if (utt) {
+    speechSynthesis.cancel();
+    utt = null;
+  }
+};
+</script>
+</body>
+</html>

@@ -49,7 +49,7 @@ add_task(async function () {
   );
 
   info("Add another error so we have a different count");
-  ContentTask.spawn(tab.linkedBrowser, null, function () {
+  SpecialPowers.spawn(tab.linkedBrowser, [], function () {
     content.console.error("Live Error1");
   });
 
@@ -59,7 +59,7 @@ add_task(async function () {
   info(
     "Reload the page and check that the error icon has the expected content"
   );
-  await reloadBrowser();
+  await reloadSelectedTab();
 
   await waitFor(
     () => getErrorIconCount(toolbox) === expectedErrorCount,

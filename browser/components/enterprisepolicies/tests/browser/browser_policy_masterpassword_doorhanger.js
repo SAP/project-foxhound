@@ -26,7 +26,7 @@ add_task(async function test_policy_masterpassword_doorhanger() {
         "passwordmgr/test/browser/form_basic.html",
     },
     async function (browser) {
-      await SimpleTest.promiseFocus(browser.ownerGlobal);
+      await SimpleTest.promiseFocus(browser.documentGlobal);
 
       // Update the form with credentials from the test case.
       info(`update form with username: ${username}, password: ${password}`);
@@ -37,7 +37,10 @@ add_task(async function test_policy_masterpassword_doorhanger() {
 
       // Submit the form with the new credentials. This will cause the doorhanger
       // notification to be displayed.
-      let formSubmittedPromise = listenForTestNotification("ShowDoorhanger");
+      let formSubmittedPromise = listenForTestNotification([
+        "FormProcessed",
+        "ShowDoorhanger",
+      ]);
       await SpecialPowers.spawn(browser, [], async function () {
         let doc = this.content.document;
         doc.getElementById("form-basic").submit();

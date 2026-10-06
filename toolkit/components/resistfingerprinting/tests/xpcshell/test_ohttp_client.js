@@ -68,6 +68,7 @@ server.registerPathHandler(
       content: new TextEncoder().encode(decodedRequest.content),
       QueryInterface: ChromeUtils.generateQI(["nsIBinaryHttpResponse"]),
     };
+
     const encResponse = ohttpRequest.encapsulate(
       bhttp.encodeResponse(BinaryHttpResponse)
     );
@@ -110,7 +111,7 @@ async function test_success() {
 
   const expectedResponse = {
     url: `${request.scheme}://${request.authority}${request.path}`,
-    statusCode: 42,
+    statusCode: 200,
     error: "",
   };
 
@@ -288,5 +289,6 @@ async function test_ohttp_failure() {
 add_task(async function run_tests() {
   await test_success();
   await test_invalid_config();
+
   await test_ohttp_failure();
 });

@@ -9,33 +9,26 @@
   <browser id="inprocess_disabled" src="about:blank" type="content" disableglobalhistory="true" />
   <browser id="inprocess_enabled" src="about:blank" type="content" />
 
-  <browser id="remote_disabled" src="about:blank" type="content" disableglobalhistory="true" />
-  <browser id="remote_enabled" src="about:blank" type="content" />
+  <browser id="remote_disabled" src="about:blank" type="content" remote="true" disableglobalhistory="true" />
+  <browser id="remote_enabled" src="about:blank" type="content" remote="true" />
 
   <script type="text/javascript">
 
-  const { ContentTask } = ChromeUtils.importESModule(
-    "resource://testing-common/ContentTask.sys.mjs"
-  );
-  ContentTask.setTestScope(window.arguments[0].wrappedJSObject);
-
-  function expectUseGlobalHistory(id, expected) {
-    let browser = document.getElementById(id);
-    /* eslint-disable-next-line no-shadow */
-    return ContentTask.spawn(browser, {id, expected}, function({id, expected}) {
-      Assert.equal(docShell.browsingContext.useGlobalHistory, expected,
-                   "Got the right useGlobalHistory state in the docShell of " + id);
-    });
-  }
-
   async function run_test() {
-    await expectUseGlobalHistory("inprocess_disabled", false);
-    await expectUseGlobalHistory("inprocess_enabled", true);
-
-    await expectUseGlobalHistory("remote_disabled", false);
-    await expectUseGlobalHistory("remote_enabled", true);
-    window.arguments[0].done();
-    ok(true);
+    let results = [];
+    for (let [id, expected] of [
+      ["inprocess_disabled", false],
+      ["inprocess_enabled", true],
+      ["remote_disabled", false],
+      ["remote_enabled", true],
+    ]) {
+      let browser = document.getElementById(id);
+      let actual = await SpecialPowers.spawn(browser, [], () => {
+        return content.docShell.browsingContext.useGlobalHistory;
+      });
+      results.push([id, actual, expected]);
+    }
+    window.arguments[0].done(results);
   }
 
   </script>

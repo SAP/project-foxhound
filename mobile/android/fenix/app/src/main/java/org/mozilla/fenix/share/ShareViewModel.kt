@@ -4,187 +4,191 @@
 
 package org.mozilla.fenix.share
 
-import android.app.Application
-import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkRequest
 import androidx.annotation.VisibleForTesting
-import androidx.annotation.WorkerThread
-import androidx.appcompat.content.res.AppCompatResources
-import androidx.core.content.getSystemService
-import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import mozilla.components.concept.sync.DeviceCapability
 import mozilla.components.feature.share.RecentAppsStorage
 import mozilla.components.service.fxa.manager.FxaAccountManager
-import mozilla.components.support.utils.ext.queryIntentActivitiesCompat
-import org.mozilla.fenix.R
-import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.isOnline
-import org.mozilla.fenix.share.DefaultShareController.Companion.ACTION_COPY_LINK_TO_CLIPBOARD
 import org.mozilla.fenix.share.listadapters.AppShareOption
 import org.mozilla.fenix.share.listadapters.SyncShareOption
 
-class ShareViewModel(application: Application) : AndroidViewModel(application) {
-
+/**
+ * [androidx.lifecycle.ViewModel] responsible for managing the data required for the Share functionality.
+ *
+ * This class handles the logic for:
+ * - Fetching and filtering the list of installed applications that can handle share intents.
+ * - Retrieving synchronized devices from the Firefox Account (Fxa) to enable "Send to Device".
+ * - Managing "recent apps" storage to provide quick-access share targets.
+ * - Monitoring network connectivity to update the availability of sync-related share options.
+ *
+ * @param fxaAccountManager Manager for Firefox Account operations and device constellation data.
+ * @param recentAppsStorage Storage for keeping track of frequently used share targets.
+ * @param connectivityManager System service for monitoring network state changes.
+ * @param ioDispatcher The [CoroutineDispatcher] used for background operations.
+ * @param packageManager The Android [PackageManager] used to load application labels and icons.
+ * @param packageName The package name of the current application to filter it out from share targets.
+ * @param getCopyApp A lambda that provides the "Copy" action as an [AppShareOption].
+ * @param queryIntentActivitiesCompat A lambda that handles querying for activities that can resolve a given intent.
+ */
+class ShareViewModel(
+    private val fxaAccountManager: FxaAccountManager,
+    private val recentAppsStorage: RecentAppsStorage,
+    private val connectivityManager: ConnectivityManager?,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val packageManager: PackageManager,
+    private val packageName: String,
+    private val getCopyApp: () -> AppShareOption? = { null },
+    private val queryIntentActivitiesCompat: (Intent) -> List<ResolveInfo> = { emptyList() },
+) : ViewModel() {
     companion object {
         internal const val RECENT_APPS_LIMIT = 6
     }
 
-    private val connectivityManager by lazy { application.getSystemService<ConnectivityManager>() }
-    private val fxaAccountManager = application.components.backgroundServices.accountManager
+    /**
+     * Represents the state of the Share UI, containing the data to be displayed in the share sheet.
+     *
+     * @property devices The list of synchronized devices or account-related actions (e.g., Sign In).
+     * @property recentApps The list of frequently used applications for sharing.
+     * @property otherApps The list of all other available applications and system actions (e.g., Copy Link).
+     * @property isLoading Whether the initial data load for the share sheet is in progress.
+     */
+    data class ShareUiState(
+        val devices: List<SyncShareOption> = emptyList(),
+        val recentApps: List<AppShareOption> = emptyList(),
+        val otherApps: List<AppShareOption> = emptyList(),
+        val isLoading: Boolean = false,
+    )
 
-    @VisibleForTesting
-    internal var recentAppsStorage = RecentAppsStorage(application.applicationContext)
+    private val _uiState = MutableStateFlow(ShareUiState(isLoading = true))
+    val uiState: StateFlow<ShareUiState> = _uiState.asStateFlow()
 
-    @VisibleForTesting
-    internal var ioDispatcher = Dispatchers.IO
+    private var isNetworkCallbackRegistered = false
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onLost(network: Network) = refreshDevices(network)
+        override fun onAvailable(network: Network) = refreshDevices(network)
+    }
 
-    private val devicesListLiveData = MutableLiveData<List<SyncShareOption>>(emptyList())
-    private val appsListLiveData = MutableLiveData<List<AppShareOption>>(emptyList())
-    private val recentAppsListLiveData = MutableLiveData<List<AppShareOption>>(emptyList())
+    /**
+     * Initializes the data loading process for the share sheet.
+     *
+     * Once the data is retrieved, it updates the [_uiState] with the recent apps, other available
+     * apps, and synchronized devices, and sets the loading state to false.
+     *
+     */
+    internal fun initDataLoad() {
+        if (!isNetworkCallbackRegistered) {
+            val networkRequest = NetworkRequest.Builder().build()
+            connectivityManager?.registerNetworkCallback(networkRequest, networkCallback)
+            isNetworkCallbackRegistered = true
+        }
 
-    @VisibleForTesting
-    internal val networkCallback = object : ConnectivityManager.NetworkCallback() {
-        override fun onLost(network: Network) = reloadDevices(network)
-        override fun onAvailable(network: Network) = reloadDevices(network)
+        viewModelScope.launch {
+            // Run apps loading and device loading in parallel
+            val appsDeferred = async { loadAppsWorkflow() }
+            val devicesDeferred = async { buildDeviceList() }
 
-        private fun reloadDevices(network: Network?) {
-            viewModelScope.launch(ioDispatcher) {
-                fxaAccountManager.authenticatedAccount()
-                    ?.deviceConstellation()
-                    ?.refreshDevices()
-
-                val devicesShareOptions = buildDeviceList(fxaAccountManager, network)
-                devicesListLiveData.postValue(devicesShareOptions)
+            val (recent, apps) = appsDeferred.await()
+            _uiState.update {
+                it.copy(
+                    recentApps = recent,
+                    otherApps = apps,
+                    devices = devicesDeferred.await(),
+                    isLoading = false,
+                )
             }
         }
     }
 
-    /**
-     * List of devices and sync-related share options.
-     */
-    val devicesList: LiveData<List<SyncShareOption>> get() = devicesListLiveData
-
-    /**
-     * List of applications that can be shared to.
-     */
-    val appsList: LiveData<List<AppShareOption>> get() = appsListLiveData
-
-    /**
-     * List of recent applications that can be shared to.
-     */
-    val recentAppsList: LiveData<List<AppShareOption>> get() = recentAppsListLiveData
-
-    /**
-     * Load a list of devices and apps into [devicesList] and [appsList].
-     * Should be called when the fragment is attached so the data can be fetched early.
-     */
-    fun loadDevicesAndApps(context: Context) {
-        val networkRequest = NetworkRequest.Builder().build()
-        connectivityManager?.registerNetworkCallback(networkRequest, networkCallback)
-
-        // Start preparing the data as soon as we have a valid Context
-        viewModelScope.launch(ioDispatcher) {
-            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            val shareAppsActivities = getIntentActivities(shareIntent, context)
-
-            var apps = buildAppsList(shareAppsActivities, context)
-            recentAppsStorage.updateDatabaseWithNewApps(apps.map { app -> app.activityName })
-            val recentApps = buildRecentAppsList(apps)
-            apps = filterOutRecentApps(apps, recentApps)
-
-            // if copy app is available, prepend to the list of actions
-            getCopyApp(context)?.let {
-                apps = listOf(it) + apps
-            }
-
-            recentAppsListLiveData.postValue(recentApps)
-            appsListLiveData.postValue(apps)
+    private suspend fun loadAppsWorkflow(): Pair<List<AppShareOption>, List<AppShareOption>> {
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
         }
 
-        viewModelScope.launch(ioDispatcher) {
-            val devices = buildDeviceList(fxaAccountManager)
-            devicesListLiveData.postValue(devices)
+        val resolveInfos = getIntentActivities(shareIntent)
+        val allApps = buildAppsList(resolveInfos)
+
+        updateRecentAppsStorage(allApps)
+
+        val recentApps = fetchRecentApps(allApps)
+        val recentNames = recentApps.map { it.activityName }.toSet()
+
+        // Filter out recents and prepend Copy action
+        val otherApps = mutableListOf<AppShareOption>().apply {
+            getCopyApp()?.let { add(it) }
+            addAll(allApps.filterNot { it.activityName in recentNames })
+        }
+
+        return Pair(recentApps, otherApps)
+    }
+
+    private fun refreshDevices(network: Network?) {
+        viewModelScope.launch {
+            // Trigger FxA refresh
+            fxaAccountManager.authenticatedAccount()
+                ?.deviceConstellation()
+                ?.refreshDevices()
+
+            val devices = buildDeviceList(network)
+            _uiState.update { it.copy(devices = devices) }
         }
     }
 
-    private fun getCopyApp(context: Context): AppShareOption? {
-        val copyIcon = AppCompatResources.getDrawable(context, R.drawable.ic_share_clipboard)
+    private suspend fun updateRecentAppsStorage(apps: List<AppShareOption>) = withContext(ioDispatcher) {
+        recentAppsStorage.updateDatabaseWithNewApps(apps.map { it.activityName })
+    }
 
-        return copyIcon?.let {
-            AppShareOption(
-                context.getString(R.string.share_copy_link_to_clipboard),
-                copyIcon,
-                ACTION_COPY_LINK_TO_CLIPBOARD,
-                "",
-            )
+    private suspend fun fetchRecentApps(allApps: List<AppShareOption>): List<AppShareOption> =
+        withContext(ioDispatcher) {
+            val recentActivityNames = recentAppsStorage.getRecentAppsUpTo(RECENT_APPS_LIMIT)
+                .map { it.activityName }
+
+            allApps.filter { it.activityName in recentActivityNames }
         }
-    }
 
-    private fun filterOutRecentApps(
-        apps: List<AppShareOption>,
-        recentApps: List<AppShareOption>,
-    ): List<AppShareOption> {
-        return apps.filter { app -> !recentApps.contains(app) }
-    }
-
-    @WorkerThread
-    internal fun buildRecentAppsList(apps: List<AppShareOption>): List<AppShareOption> {
-        val recentAppsDatabase = recentAppsStorage.getRecentAppsUpTo(RECENT_APPS_LIMIT)
-        val result: MutableList<AppShareOption> = ArrayList()
-        for (recentApp in recentAppsDatabase) {
-            for (app in apps) {
-                if (recentApp.activityName == app.activityName) {
-                    result.add(app)
-                }
-            }
-        }
-        return result
-    }
-
-    /**
-     * Unregisters the network callback and cleans up.
-     */
     override fun onCleared() {
-        connectivityManager?.unregisterNetworkCallback(networkCallback)
+        if (isNetworkCallbackRegistered) {
+            connectivityManager?.unregisterNetworkCallback(networkCallback)
+        }
     }
 
-    @VisibleForTesting
-    @WorkerThread
-    fun getIntentActivities(shareIntent: Intent, context: Context): List<ResolveInfo>? {
-        return context.packageManager.queryIntentActivitiesCompat(shareIntent, 0)
+    internal suspend fun getIntentActivities(
+        shareIntent: Intent,
+    ): List<ResolveInfo> = withContext(ioDispatcher) {
+        queryIntentActivitiesCompat(shareIntent)
     }
 
     /**
      * Returns a list of apps that can be shared to.
      *
      * @param intentActivities List of activities from [getIntentActivities].
-     * @param context Android context.
      */
     @VisibleForTesting
-    @WorkerThread
-    internal fun buildAppsList(
-        intentActivities: List<ResolveInfo>?,
-        context: Context,
-    ): List<AppShareOption> {
-        return intentActivities
-            .orEmpty()
-            .filter { it.activityInfo.packageName != context.packageName }
+    internal suspend fun buildAppsList(
+        intentActivities: List<ResolveInfo>,
+    ): List<AppShareOption> = withContext(ioDispatcher) {
+        intentActivities
+            .filter { it.activityInfo.packageName != packageName }
             .map { resolveInfo ->
                 AppShareOption(
-                    resolveInfo.loadLabel(context.packageManager).toString(),
-                    resolveInfo.loadIcon(context.packageManager),
+                    resolveInfo.loadLabel(packageManager).toString(),
+                    resolveInfo.loadIcon(packageManager),
                     resolveInfo.activityInfo.packageName,
                     resolveInfo.activityInfo.name,
                 )
@@ -197,41 +201,40 @@ class ShareViewModel(application: Application) : AndroidViewModel(application) {
      * for reconnecting the account or sending to all devices.
      */
     @VisibleForTesting
-    @WorkerThread
-    internal fun buildDeviceList(accountManager: FxaAccountManager, network: Network? = null): List<SyncShareOption> {
-        val account = accountManager.authenticatedAccount()
+    internal suspend fun buildDeviceList(network: Network? = null): List<SyncShareOption> =
+        withContext(ioDispatcher) {
+            val account = fxaAccountManager.authenticatedAccount()
+            when {
+                // No network
+                isOffline(network) -> listOf(SyncShareOption.Offline)
+                // No account signed in
+                account == null -> listOf(SyncShareOption.SignIn)
+                // Account needs to be re-authenticated
+                fxaAccountManager.accountNeedsReauth() -> listOf(SyncShareOption.Reconnect)
+                // Signed in
+                else -> {
+                    val shareableDevices = account.deviceConstellation().state()
+                        ?.otherDevices
+                        .orEmpty()
+                        .filter { it.capabilities.contains(DeviceCapability.SEND_TAB) }
+                        .sortedByDescending { it.lastAccessTime }
 
-        return when {
-            // No network
-            isOffline(network) -> listOf(SyncShareOption.Offline)
-            // No account signed in
-            account == null -> listOf(SyncShareOption.SignIn)
-            // Account needs to be re-authenticated
-            accountManager.accountNeedsReauth() -> listOf(SyncShareOption.Reconnect)
-            // Signed in
-            else -> {
-                val shareableDevices = account.deviceConstellation().state()
-                    ?.otherDevices
-                    .orEmpty()
-                    .filter { it.capabilities.contains(DeviceCapability.SEND_TAB) }
-                    .sortedByDescending { it.lastAccessTime }
+                    val list = mutableListOf<SyncShareOption>()
+                    if (shareableDevices.isEmpty()) {
+                        // Show add device button if there are no devices
+                        list.add(SyncShareOption.AddNewDevice)
+                    }
 
-                val list = mutableListOf<SyncShareOption>()
-                if (shareableDevices.isEmpty()) {
-                    // Show add device button if there are no devices
-                    list.add(SyncShareOption.AddNewDevice)
+                    shareableDevices.mapTo(list) { SyncShareOption.SingleDevice(it) }
+
+                    if (shareableDevices.size > 1) {
+                        // Show send all button if there are multiple devices
+                        list.add(SyncShareOption.SendAll(shareableDevices))
+                    }
+                    list
                 }
-
-                shareableDevices.mapTo(list) { SyncShareOption.SingleDevice(it) }
-
-                if (shareableDevices.size > 1) {
-                    // Show send all button if there are multiple devices
-                    list.add(SyncShareOption.SendAll(shareableDevices))
-                }
-                list
             }
         }
-    }
 
     /**
      * Checks if the network is offline.

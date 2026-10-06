@@ -1,0 +1,28 @@
+{
+  "name": "Project Foxhound",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "remoteUser": "vscode",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/project-foxhound,type=bind,consistency=cached",
+  "workspaceFolder": "/workspaces/project-foxhound",
+  "mounts": [
+    "source=foxhound-ccache,target=/home/vscode/.ccache,type=volume"
+  ],
+  "onCreateCommand": "sudo apt-get update && sudo apt-get install -y python3 python3-pip autoconf2.13 ccache libnspr4-dev zip locales && sudo locale-gen en_US.UTF-8",
+  "postCreateCommand": "./mach --no-interactive bootstrap --no-system-changes --application-choice=browser && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "rust-lang.rust-analyzer",
+        "ms-python.python"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "editor.formatOnSave": false
+      }
+    }
+  },
+  "capAdd": ["SYS_PTRACE"],
+  "securityOpt": ["seccomp=unconfined"],
+  "runArgs": ["--init"]
+}

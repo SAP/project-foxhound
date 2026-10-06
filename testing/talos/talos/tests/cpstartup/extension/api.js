@@ -58,7 +58,7 @@ this.cpstartup = class extends ExtensionAPI {
 
   receiveMessage(msg) {
     let browser = msg.target;
-    let gBrowser = browser.ownerGlobal.gBrowser;
+    let gBrowser = browser.documentGlobal.gBrowser;
 
     switch (msg.name) {
       case "CPStartup:Go": {
@@ -92,7 +92,7 @@ this.cpstartup = class extends ExtensionAPI {
   async openTab(gBrowser, url) {
     // Start the timer and the profiler right before the tab open on the parent side.
     TalosParentProfiler.subtestStart("cpstartup: Begin Tab Open");
-    let startTime = Cu.now();
+    let startTime = ChromeUtils.now();
 
     this.startStamp = Services.telemetry.msSystemNow();
     let newDomainURL = url.replace(
@@ -123,7 +123,7 @@ this.cpstartup = class extends ExtensionAPI {
         }
       };
       Services.obs.addObserver(observer, BROWSER_FLUSH_TOPIC);
-      tab.ownerGlobal.gBrowser.removeTab(tab);
+      tab.documentGlobal.gBrowser.removeTab(tab);
     });
   }
 

@@ -44,6 +44,7 @@ git clone $REPO_URL $REPO_PATH
 ./mach python dom/media/webrtc/third_party_build/vendor-libwebrtc.py \
     --from-local $REPO_PATH \
     --commit mozpatches build \
+&& rm -rf $DEST_PATH/sanitizers \
 && (hg revert --include "**/moz.build" &> /dev/null) \
 && ( cd $REPO_PATH \
      && echo "# base of lastest vendoring" >> $BASE_COMMIT_FILE \
@@ -65,6 +66,7 @@ hg status -nu | xargs hg add
   --branch mozpatches \
   --target-branch-head `tail -1 $BASE_COMMIT_FILE` \
   --patch-path $DEST_PATH/moz-patch-stack \
+  --no-pre-stack \
   --skip-startup-sanity \
   --separate-commit-bug-number $BUG_NUMBER
 
@@ -76,6 +78,7 @@ hg status -nu | xargs hg add
   --branch mozpatches \
   --target-branch-head `tail -1 $BASE_COMMIT_FILE` \
   --patch-path $DEST_PATH/moz-patch-stack \
+  --no-pre-stack \
   --skip-startup-sanity
 
 

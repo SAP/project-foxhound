@@ -51,6 +51,9 @@ tags = "capturestream"
 tags = "capturestream"
 
 ["test_mediaElementAudioSourceNodeVideo.html"]
+skip-if = [
+  "isolated_process", # Bug 1709948
+]
 tags = "capturestream"
 
 ["test_mediaStreamAudioDestinationNode.html"]
@@ -61,7 +64,11 @@ tags = "capturestream"
 tags = "capturestream"
 
 ["test_mediaStreamAudioSourceNodeNoGC.html"]
-skip-if = ["os == 'mac' && debug"] # Bug 1756880 - lower frequency shutdown hangs
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1756880 - lower frequency shutdown hangs
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1756880 - lower frequency shutdown hangs
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug", # Bug 1756880 - lower frequency shutdown hangs
+]
 scheme = "https"
 
 ["test_mediaStreamAudioSourceNodePassThrough.html"]

@@ -4,6 +4,7 @@
 
 /**
  * Redux actions for the pause state
+ *
  * @module actions/pause
  */
 

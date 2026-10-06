@@ -132,6 +132,14 @@ const TESTCASES = [
     },
     expectations: [false, false],
   },
+  {
+    description: "Form with a sign-in button",
+    document: `<form>
+      <input id="un1" type="text">
+      <button type="submit">Sign In</button>
+      </form>`,
+    expectations: [true, true],
+  },
 ];
 
 function _setPrefs() {

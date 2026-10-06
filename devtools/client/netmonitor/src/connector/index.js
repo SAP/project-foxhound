@@ -38,6 +38,9 @@ const DEVTOOLS_ENABLE_PERSISTENT_LOG_PREF = "devtools.netmonitor.persistlog";
  * Connector to Firefox backend.
  */
 class Connector {
+  #destroyed;
+  #harMetadataCollector;
+
   constructor() {
     // Public methods
     this.connect = this.connect.bind(this);
@@ -61,10 +64,21 @@ class Connector {
 
   static NETWORK_RESOURCES = [
     TYPES.NETWORK_EVENT,
+    TYPES.NETWORK_EVENT_DECODED_BODY_SIZE,
     TYPES.NETWORK_EVENT_STACKTRACE,
     TYPES.WEBSOCKET,
     TYPES.SERVER_SENT_EVENT,
   ];
+
+  get networkResources() {
+    const networkResources = Array.from(Connector.NETWORK_RESOURCES);
+    if (
+      Services.prefs.getBoolPref("devtools.netmonitor.features.webtransport")
+    ) {
+      networkResources.push(TYPES.WEBTRANSPORT);
+    }
+    return networkResources;
+  }
 
   get currentTarget() {
     return this.commands.targetCommand.targetFront;
@@ -73,9 +87,9 @@ class Connector {
   /**
    * Connect to the backend.
    *
-   * @param {Object} connection object with e.g. reference to the Toolbox.
-   * @param {Object} actions (optional) is used to fire Redux actions to update store.
-   * @param {Object} getState (optional) is used to get access to the state.
+   * @param {object} connection object with e.g. reference to the Toolbox.
+   * @param {object} actions (optional) is used to fire Redux actions to update store.
+   * @param {object} getState (optional) is used to get access to the state.
    */
   async connect(connection, actions, getState) {
     this.actions = actions;
@@ -96,8 +110,8 @@ class Connector {
       owner: this.owner,
     });
 
-    this._harMetadataCollector = new HarMetadataCollector(this.commands);
-    await this._harMetadataCollector.connect();
+    this.#harMetadataCollector = new HarMetadataCollector(this.commands);
+    await this.#harMetadataCollector.connect();
 
     await this.commands.resourceCommand.watchResources([TYPES.DOCUMENT_EVENT], {
       onAvailable: this.onResourceAvailable,
@@ -118,11 +132,11 @@ class Connector {
 
   disconnect() {
     // As this function might be called twice, we need to guard if already called.
-    if (this._destroyed) {
+    if (this.#destroyed) {
       return;
     }
 
-    this._destroyed = true;
+    this.#destroyed = true;
 
     this.commands.resourceCommand.unwatchResources([TYPES.DOCUMENT_EVENT], {
       onAvailable: this.onResourceAvailable,
@@ -141,7 +155,7 @@ class Connector {
 
     this.dataProvider.destroy();
     this.dataProvider = null;
-    this._harMetadataCollector.destroy();
+    this.#harMetadataCollector.destroy();
   }
 
   /**
@@ -151,18 +165,17 @@ class Connector {
    * @param {boolean} options.isExplicitClear
    *     Set to true if the call to clear requests is explicitly requested by
    *     the user, to false if this is an automated clear, eg on navigation.
-   *
    */
   clear({ isExplicitClear }) {
     // Clear all the caches in the data provider
     this.dataProvider.clear();
 
-    this._harMetadataCollector.clear();
+    this.#harMetadataCollector.clear();
 
     if (isExplicitClear) {
       // Only clear the resources if the clear was initiated explicitly by the
       // UI, in other cases (eg navigation) the server handles the cleanup.
-      this.commands.resourceCommand.clearResources(Connector.NETWORK_RESOURCES);
+      this.commands.resourceCommand.clearResources(this.networkResources);
       this.emitForTests("clear-network-resources");
     }
 
@@ -172,7 +185,7 @@ class Connector {
 
   pause() {
     return this.commands.resourceCommand.unwatchResources(
-      Connector.NETWORK_RESOURCES,
+      this.networkResources,
       {
         onAvailable: this.onResourceAvailable,
         onUpdated: this.onResourceUpdated,
@@ -181,14 +194,11 @@ class Connector {
   }
 
   resume(ignoreExistingResources = true) {
-    return this.commands.resourceCommand.watchResources(
-      Connector.NETWORK_RESOURCES,
-      {
-        onAvailable: this.onResourceAvailable,
-        onUpdated: this.onResourceUpdated,
-        ignoreExistingResources,
-      }
-    );
+    return this.commands.resourceCommand.watchResources(this.networkResources, {
+      onAvailable: this.onResourceAvailable,
+      onUpdated: this.onResourceUpdated,
+      ignoreExistingResources,
+    });
   }
 
   async onResourceAvailable(resources, { areExistingResources }) {
@@ -205,6 +215,11 @@ class Connector {
 
       if (resource.resourceType === TYPES.NETWORK_EVENT_STACKTRACE) {
         this.dataProvider.onStackTraceAvailable(resource);
+        continue;
+      }
+
+      if (resource.resourceType === TYPES.NETWORK_EVENT_DECODED_BODY_SIZE) {
+        this.dataProvider.onDecodedBodySizeAvailable(resource);
         continue;
       }
 
@@ -481,11 +496,12 @@ class Connector {
    * Used for HAR generation.
    */
   getHarData() {
-    return this._harMetadataCollector.getHarData();
+    return this.#harMetadataCollector.getHarData();
   }
 
   /**
    * Getter that returns the current toolbox instance.
+   *
    * @return {Toolbox} toolbox instance
    */
   getToolbox() {
@@ -494,6 +510,7 @@ class Connector {
 
   /**
    * Open a given source in Debugger
+   *
    * @param {string} sourceURL source url
    * @param {number} sourceLine source line number
    */
@@ -506,6 +523,7 @@ class Connector {
   /**
    * Fetch networkEventUpdate websocket message from back-end when
    * data provider is connected.
+   *
    * @param {object} request network request instance
    * @param {string} type NetworkEventUpdate type
    */

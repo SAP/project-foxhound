@@ -1,0 +1,42 @@
+diff --git a/intl/icu/source/data/locales/ug.txt b/intl/icu/source/data/locales/ug.txt
+--- a/intl/icu/source/data/locales/ug.txt
++++ b/intl/icu/source/data/locales/ug.txt
+@@ -420,16 +420,17 @@ ug{
+                         "پ",
+                         "ج",
+                         "ش",
+                     }
+                 }
+             }
+             eras{
+                 abbreviated{
++                    0{"BCE"}
+                     1{"مىلادىيە"}
+                 }
+                 wide{
+                     0{"مىلادىيەدىن بۇرۇن"}
+                 }
+             }
+             intervalFormats{
+                 H{
+diff --git a/intl/icu/source/data/locales/yo.txt b/intl/icu/source/data/locales/yo.txt
+--- a/intl/icu/source/data/locales/yo.txt
++++ b/intl/icu/source/data/locales/yo.txt
+@@ -313,16 +313,17 @@ yo{
+                         "Ọjọ́bọ",
+                         "Ẹtì",
+                         "Àbámẹ́ta",
+                     }
+                 }
+             }
+             eras{
+                 abbreviated{
++                    0{"BCE"}
+                     1{"AD"}
+                 }
+                 abbreviated%variant{
+                     1{"CE"}
+                 }
+                 wide{
+                     0{"Saju Kristi"}
+                     1{"Lehin Kristi"}

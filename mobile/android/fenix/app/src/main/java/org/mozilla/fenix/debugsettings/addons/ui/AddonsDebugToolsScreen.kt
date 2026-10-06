@@ -12,7 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.button.PrimaryButton
+import mozilla.components.compose.base.button.FilledButton
 import mozilla.components.feature.addons.update.AddonUpdater
 import mozilla.components.support.webextensions.WebExtensionSupport.installedExtensions
 import org.mozilla.fenix.R
@@ -28,7 +28,7 @@ import org.mozilla.fenix.theme.FirefoxTheme
 @Composable
 fun AddonsDebugToolsScreen(addonUpdater: AddonUpdater = components.addonUpdater) {
     Column(modifier = Modifier.padding(16.dp)) {
-        PrimaryButton(
+        FilledButton(
             text = stringResource(R.string.addons_debug_tools_check_for_updates_button),
             modifier = Modifier.fillMaxWidth(),
             onClick = {

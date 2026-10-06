@@ -26,15 +26,15 @@
 using libvpx_test::ACMRandom;
 using libvpx_test::Buffer;
 
-typedef void (*VpxPostProcDownAndAcrossMbRowFunc)(
+using VpxPostProcDownAndAcrossMbRowFunc = void (*)(
     unsigned char *src_ptr, unsigned char *dst_ptr, int src_pixels_per_line,
     int dst_pixels_per_line, int cols, unsigned char *flimit, int size);
 
-typedef void (*VpxMbPostProcAcrossIpFunc)(unsigned char *src, int pitch,
-                                          int rows, int cols, int flimit);
+using VpxMbPostProcAcrossIpFunc = void (*)(unsigned char *src, int pitch,
+                                           int rows, int cols, int flimit);
 
-typedef void (*VpxMbPostProcDownFunc)(unsigned char *dst, int pitch, int rows,
-                                      int cols, int flimit);
+using VpxMbPostProcDownFunc = void (*)(unsigned char *dst, int pitch, int rows,
+                                       int cols, int flimit);
 
 namespace {
 // Compute the filter level used in post proc from the loop filter strength
@@ -524,7 +524,7 @@ INSTANTIATE_TEST_SUITE_P(C, VpxMbPostProcAcrossIpTest,
 INSTANTIATE_TEST_SUITE_P(C, VpxMbPostProcDownTest,
                          ::testing::Values(vpx_mbpost_proc_down_c));
 
-#if HAVE_SSE2
+#if HAVE_SSE2 && HAVE_X86_ASM
 INSTANTIATE_TEST_SUITE_P(
     SSE2, VpxPostProcDownAndAcrossMbRowTest,
     ::testing::Values(vpx_post_proc_down_and_across_mb_row_sse2));
@@ -534,7 +534,7 @@ INSTANTIATE_TEST_SUITE_P(SSE2, VpxMbPostProcAcrossIpTest,
 
 INSTANTIATE_TEST_SUITE_P(SSE2, VpxMbPostProcDownTest,
                          ::testing::Values(vpx_mbpost_proc_down_sse2));
-#endif  // HAVE_SSE2
+#endif  // HAVE_SSE2 && HAVE_X86_ASM
 
 #if HAVE_NEON
 INSTANTIATE_TEST_SUITE_P(

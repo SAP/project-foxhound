@@ -1,0 +1,141 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:host {
+  --ai-action-connector-background-color: color-mix(in srgb, var(--color-violet-20) 50%, transparent);
+  --ai-action-connector-width: var(--dimension-2);
+  --ai-action-icon-fill-color: var(--color-violet-20);
+}
+
+.action-result-wrapper {
+  color: var(--text-color);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-small);
+  padding: var(--space-small);
+}
+
+.action-result-header {
+  align-items: center;
+  align-self: flex-start;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: var(--space-small);
+  padding: var(--space-medium) 0;
+  text-align: start;
+}
+
+.action-result-header::after {
+  background-image: url("chrome://global/skin/icons/arrow-right.svg");
+  background-size: var(--icon-size);
+  background-repeat: no-repeat;
+  background-position: center;
+  content: "";
+  display: block;
+  fill: currentColor;
+  flex-shrink: 0;
+  height: var(--icon-size);
+  width: var(--icon-size);
+  -moz-context-properties: fill;
+}
+
+:host([is-expanded]) .action-result-header::after {
+  transform: rotate(90deg);
+}
+
+:host(:dir(rtl)) .action-result-header::after {
+  background-image: url("chrome://global/skin/icons/arrow-left.svg");
+}
+
+:host(:dir(rtl)[is-expanded]) .action-result-header::after {
+  transform: rotate(-90deg);
+}
+
+.action-result-indicator,
+.action-result-dot {
+  background-position: center;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+  height: var(--icon-size);
+  width: var(--icon-size);
+}
+
+.action-result-indicator {
+  background-image: url("chrome://browser/skin/smart-window-filled.svg");
+  background-size: contain;
+}
+
+.action-result-dot {
+  background-image: url("chrome://browser/skin/smart-window-dot.svg");
+  background-size: var(--space-small) var(--space-small);
+  fill: var(--ai-action-icon-fill-color);
+  -moz-context-properties: fill;
+}
+
+.action-result-expanded {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-small);
+}
+
+.action-result-expanded-row {
+  position: relative;
+
+  &:first-child::before,
+  &:not(:last-child)::after {
+    background: var(--ai-action-connector-background-color);
+    content: "";
+    inset-inline-start: calc(var(--icon-size) / 2 - var(--ai-action-connector-width) / 2);
+    position: absolute;
+    width: var(--ai-action-connector-width);
+  }
+
+  /* Line from sparkle down to dot */
+  &:first-child::before {
+    bottom: 100%;
+    height: var(--icon-size);
+  }
+
+  /* Line from dot down through chips and across the gap */
+  &:not(:last-child)::after {
+    bottom: calc(-1 * var(--space-small));
+    top: calc(var(--icon-size) + var(--space-xxsmall));
+  }
+}
+
+.action-result-expanded-row-header {
+  align-items: center;
+  display: flex;
+  gap: var(--space-small);
+}
+
+.action-result-chips {
+  padding-block: var(--space-small);
+  padding-inline-start: calc(var(--icon-size) + var(--space-small));
+}
+
+.action-result-summary {
+  margin: 0;
+}
+
+.action-result-undo {
+  align-self: flex-start;
+  --button-border-radius: var(--border-radius-circle);
+  --button-font-weight: var(--font-weight);
+
+  @media not (forced-colors) {
+    --button-background-color-ghost: var(--smartwindow-prompt-button-background-color);
+    --button-text-color-ghost: var(--smartwindow-text-color-accent-deemphasized);
+  }
+}
+
+@media (forced-colors: active) {
+  :host {
+    --ai-action-connector-background-color: CanvasText;
+  }
+}

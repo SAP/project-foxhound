@@ -3,11 +3,14 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 
 package org.mozilla.geckoview.test.util;
 
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.os.MessageQueue;
+import android.os.TestLooperManager;
 import androidx.annotation.NonNull;
+import androidx.test.InstrumentationRegistry;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -15,13 +18,16 @@ import org.mozilla.geckoview.GeckoResult;
 
 public class UiThreadUtils {
   private static Method sGetNextMessage = null;
+  private static TestLooperManager sTestLooperManager = null;
 
   static {
-    try {
-      sGetNextMessage = MessageQueue.class.getDeclaredMethod("next");
-      sGetNextMessage.setAccessible(true);
-    } catch (final NoSuchMethodException e) {
-      throw new IllegalStateException(e);
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA) {
+      try {
+        sGetNextMessage = MessageQueue.class.getDeclaredMethod("next");
+        sGetNextMessage.setAccessible(true);
+      } catch (final NoSuchMethodException e) {
+        throw new IllegalStateException(e);
+      }
     }
   }
 
@@ -129,7 +135,62 @@ public class UiThreadUtils {
     }
   }
 
+  /**
+   * This waits until the given condition becomes true, pumping the message loop while waiting.
+   *
+   * @param condition The condition until it returns true
+   * @param timeout Maximum time to wait in milliseconds
+   */
   public static void waitForCondition(final Condition condition, final long timeout) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA) {
+      // Use legacy way to avoid a deadlock of TestLooperManager.
+      // Old Android will cause a deadlock by TestLooperManager.next when Looper is on current
+      // thread
+      legacyWaitForCondition(condition, timeout);
+      return;
+    }
+
+    // waitForCondition may be called into MessageQueue.next. We shouldn't acquire LooperManager on
+    // nested loop.
+    final MessageQueue.IdleHandler handler; // null if nested loop
+    if (sTestLooperManager == null) {
+      sTestLooperManager =
+          InstrumentationRegistry.getInstrumentation().acquireLooperManager(HANDLER.getLooper());
+      handler =
+          () -> {
+            HANDLER.postDelayed(() -> {}, 100);
+            return true;
+          };
+      sTestLooperManager.getMessageQueue().addIdleHandler(handler);
+    } else {
+      handler = null;
+    }
+
+    TIMEOUT_RUNNABLE.set(timeout);
+
+    try {
+      while (!condition.test()) {
+        final Message msg = sTestLooperManager.next();
+        if (msg.getTarget() == null) {
+          HANDLER.getLooper().quit();
+          return;
+        }
+        sTestLooperManager.execute(msg);
+        sTestLooperManager.recycle(msg);
+      }
+    } finally {
+      TIMEOUT_RUNNABLE.cancel();
+
+      if (handler != null) {
+        // No nested loop, so we can release TestLooperManager
+        sTestLooperManager.getMessageQueue().removeIdleHandler(handler);
+        sTestLooperManager.release();
+        sTestLooperManager = null;
+      }
+    }
+  }
+
+  private static void legacyWaitForCondition(final Condition condition, final long timeout) {
     // Adapted from GeckoThread.pumpMessageLoop.
     final MessageQueue queue = HANDLER.getLooper().getQueue();
 

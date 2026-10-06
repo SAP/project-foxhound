@@ -12,35 +12,34 @@ var { types } = require("resource://devtools/shared/protocol/types.js");
 
 /**
  * Manages a response template.
- *
- * @param object template
- *    The response template.
- * @construcor
  */
-var Response = function (template = {}) {
-  this.template = template;
-  if (this.template instanceof RetVal && this.template.isArrayType()) {
-    throw Error("Arrays should be wrapped in objects");
-  }
+class Response {
+  /**
+   * @param {object} template
+   *    The response template.
+   */
+  constructor(template = {}) {
+    this.template = template;
+    if (this.template instanceof RetVal && this.template.isArrayType()) {
+      throw Error("Arrays should be wrapped in objects");
+    }
 
-  const placeholders = findPlaceholders(template, RetVal);
-  if (placeholders.length > 1) {
-    throw Error("More than one RetVal specified in response");
+    const placeholders = findPlaceholders(template, RetVal);
+    if (placeholders.length > 1) {
+      throw Error("More than one RetVal specified in response");
+    }
+    const placeholder = placeholders.shift();
+    if (placeholder) {
+      this.retVal = placeholder.placeholder;
+      this.path = placeholder.path;
+    }
   }
-  const placeholder = placeholders.shift();
-  if (placeholder) {
-    this.retVal = placeholder.placeholder;
-    this.path = placeholder.path;
-  }
-};
-
-Response.prototype = {
   /**
    * Write a response for the given return value.
    *
    * @param val ret
    *    The return value.
-   * @param object ctx
+   * @param {object} ctx
    *    The object writing the response.
    */
   write(ret, ctx) {
@@ -62,14 +61,14 @@ Response.prototype = {
       }
     }
     return result;
-  },
+  }
 
   /**
    * Read a return value from the given response.
    *
-   * @param object packet
+   * @param {object} packet
    *    The response packet.
-   * @param object ctx
+   * @param {object} ctx
    *    The object reading the response.
    */
   read(packet, ctx) {
@@ -78,40 +77,40 @@ Response.prototype = {
     }
     const v = getPath(packet, this.path);
     return this.retVal.read(v, ctx);
-  },
-};
+  }
+}
 
 exports.Response = Response;
 
 /**
  * Placeholder for return values in a response template.
- *
- * @param type type
- *    The return value should be marshalled as this type.
  */
-var RetVal = function (type) {
-  this._type = type;
-  // Prevent force loading all RetVal types by accessing it only when needed
-  loader.lazyGetter(this, "type", function () {
-    return types.getType(type);
-  });
-};
-
-RetVal.prototype = {
+class RetVal {
+  /**
+   * @param type type
+   *    The return value should be marshalled as this type.
+   */
+  constructor(type) {
+    this._type = type;
+    // Prevent force loading all RetVal types by accessing it only when needed
+    loader.lazyGetter(this, "type", function () {
+      return types.getType(type);
+    });
+  }
   write(v, ctx) {
     return this.type.write(v, ctx);
-  },
+  }
 
   read(v, ctx) {
     return this.type.read(v, ctx);
-  },
+  }
 
   isArrayType() {
     // `_type` should always be a string, but a few incorrect RetVal calls
     // pass `0`. See Bug 1677703.
     return typeof this._type === "string" && this._type.startsWith("array:");
-  },
-};
+  }
+}
 
 // Outside of protocol.js, RetVal is called as factory method, without the new keyword.
 exports.RetVal = function (type) {

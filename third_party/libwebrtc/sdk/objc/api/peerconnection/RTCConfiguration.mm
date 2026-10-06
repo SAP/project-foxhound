@@ -20,6 +20,7 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/rtc_certificate_generator.h"
 #include "rtc_base/ssl_identity.h"
+#include "rtc_base/system/plan_b_only.h"
 
 @implementation RTC_OBJC_TYPE (RTCConfiguration)
 
@@ -86,9 +87,9 @@
     }
     _iceServers = iceServers;
     if (!config.certificates.empty()) {
-      rtc::scoped_refptr<rtc::RTCCertificate> native_cert;
+      webrtc::scoped_refptr<webrtc::RTCCertificate> native_cert;
       native_cert = config.certificates[0];
-      rtc::RTCCertificatePEM native_pem = native_cert->ToPEM();
+      webrtc::RTCCertificatePEM native_pem = native_cert->ToPEM();
       _certificate = [[RTC_OBJC_TYPE(RTCCertificate) alloc]
           initWithPrivateKey:@(native_pem.private_key().c_str())
                  certificate:@(native_pem.certificate().c_str())];
@@ -130,18 +131,17 @@
     _sdpSemantics =
         [[self class] sdpSemanticsForNativeSdpSemantics:config.sdp_semantics];
     _turnCustomizer = config.turn_customizer;
-    _activeResetSrtpParams = config.active_reset_srtp_params;
-    if (config.crypto_options) {
-      _cryptoOptions = [[RTC_OBJC_TYPE(RTCCryptoOptions) alloc]
-               initWithSrtpEnableGcmCryptoSuites:config.crypto_options->srtp
-                                                     .enable_gcm_crypto_suites
-             srtpEnableAes128Sha1_32CryptoCipher:
-                 config.crypto_options->srtp.enable_aes128_sha1_32_crypto_cipher
-          srtpEnableEncryptedRtpHeaderExtensions:
-              config.crypto_options->srtp.enable_encrypted_rtp_header_extensions
-                    sframeRequireFrameEncryption:config.crypto_options->sframe
-                                                     .require_frame_encryption];
-    }
+
+    _cryptoOptions = [[RTC_OBJC_TYPE(RTCCryptoOptions) alloc]
+             initWithSrtpEnableGcmCryptoSuites:config.crypto_options.srtp
+                                                   .enable_gcm_crypto_suites
+           srtpEnableAes128Sha1_32CryptoCipher:
+               config.crypto_options.srtp.enable_aes128_sha1_32_crypto_cipher
+        srtpEnableEncryptedRtpHeaderExtensions:
+            config.crypto_options.srtp.enable_encrypted_rtp_header_extensions
+                  sframeRequireFrameEncryption:config.crypto_options.sframe
+                                                   .require_frame_encryption];
+
     _turnLoggingId =
         [NSString stringWithUTF8String:config.turn_logging_id.c_str()];
     _rtcpAudioReportIntervalMs = config.audio_rtcp_report_interval_ms();
@@ -240,17 +240,17 @@
       _iceConnectionReceivingTimeout;
   nativeConfig->ice_backup_candidate_pair_ping_interval =
       _iceBackupCandidatePairPingInterval;
-  rtc::KeyType keyType =
+  webrtc::KeyType keyType =
       [[self class] nativeEncryptionKeyTypeForKeyType:_keyType];
   if (_certificate != nullptr) {
     // if offered a pemcert use it...
     RTC_LOG(LS_INFO) << "Have configured cert - using it.";
     std::string pem_private_key = [[_certificate private_key] UTF8String];
     std::string pem_certificate = [[_certificate certificate] UTF8String];
-    rtc::RTCCertificatePEM pem =
-        rtc::RTCCertificatePEM(pem_private_key, pem_certificate);
-    rtc::scoped_refptr<rtc::RTCCertificate> certificate =
-        rtc::RTCCertificate::FromPEM(pem);
+    webrtc::RTCCertificatePEM pem =
+        webrtc::RTCCertificatePEM(pem_private_key, pem_certificate);
+    webrtc::scoped_refptr<webrtc::RTCCertificate> certificate =
+        webrtc::RTCCertificate::FromPEM(pem);
     RTC_LOG(LS_INFO) << "Created cert from PEM strings.";
     if (!certificate) {
       RTC_LOG(LS_ERROR) << "Failed to generate certificate from PEM.";
@@ -260,10 +260,10 @@
   } else {
     RTC_LOG(LS_INFO) << "Don't have configured cert.";
     // Generate non-default certificate.
-    if (keyType != rtc::KT_DEFAULT) {
-      rtc::scoped_refptr<rtc::RTCCertificate> certificate =
-          rtc::RTCCertificateGenerator::GenerateCertificate(
-              rtc::KeyParams(keyType), std::optional<uint64_t>());
+    if (keyType != webrtc::KT_DEFAULT) {
+      webrtc::scoped_refptr<webrtc::RTCCertificate> certificate =
+          webrtc::RTCCertificateGenerator::GenerateCertificate(
+              webrtc::KeyParams(keyType), std::optional<uint64_t>());
       if (!certificate) {
         RTCLogError(@"Failed to generate certificate.");
         return nullptr;
@@ -286,8 +286,6 @@
   if (_turnCustomizer) {
     nativeConfig->turn_customizer = _turnCustomizer;
   }
-  nativeConfig->active_reset_srtp_params =
-      _activeResetSrtpParams ? true : false;
   if (_cryptoOptions) {
     webrtc::CryptoOptions nativeCryptoOptions;
     nativeCryptoOptions.srtp.enable_gcm_crypto_suites =
@@ -298,8 +296,7 @@
         _cryptoOptions.srtpEnableEncryptedRtpHeaderExtensions ? true : false;
     nativeCryptoOptions.sframe.require_frame_encryption =
         _cryptoOptions.sframeRequireFrameEncryption ? true : false;
-    nativeConfig->crypto_options =
-        std::optional<webrtc::CryptoOptions>(nativeCryptoOptions);
+    nativeConfig->crypto_options = nativeCryptoOptions;
   }
   nativeConfig->turn_logging_id = [_turnLoggingId UTF8String];
   nativeConfig->set_audio_rtcp_report_interval_ms(_rtcpAudioReportIntervalMs);
@@ -524,13 +521,13 @@
   }
 }
 
-+ (rtc::KeyType)nativeEncryptionKeyTypeForKeyType:
++ (webrtc::KeyType)nativeEncryptionKeyTypeForKeyType:
     (RTCEncryptionKeyType)keyType {
   switch (keyType) {
     case RTCEncryptionKeyTypeRSA:
-      return rtc::KT_RSA;
+      return webrtc::KT_RSA;
     case RTCEncryptionKeyTypeECDSA:
-      return rtc::KT_ECDSA;
+      return webrtc::KT_ECDSA;
   }
 }
 
@@ -538,7 +535,9 @@
     (RTCSdpSemantics)sdpSemantics {
   switch (sdpSemantics) {
     case RTCSdpSemanticsPlanB:
+      RTC_ALLOW_PLAN_B_DEPRECATION_BEGIN();
       return webrtc::SdpSemantics::kPlanB_DEPRECATED;
+      RTC_ALLOW_PLAN_B_DEPRECATION_END();
     case RTCSdpSemanticsUnifiedPlan:
       return webrtc::SdpSemantics::kUnifiedPlan;
   }
@@ -548,7 +547,9 @@
     (webrtc::SdpSemantics)sdpSemantics {
   switch (sdpSemantics) {
     case webrtc::SdpSemantics::kPlanB_DEPRECATED:
+      RTC_ALLOW_PLAN_B_DEPRECATION_BEGIN();
       return RTCSdpSemanticsPlanB;
+      RTC_ALLOW_PLAN_B_DEPRECATION_END();
     case webrtc::SdpSemantics::kUnifiedPlan:
       return RTCSdpSemanticsUnifiedPlan;
   }

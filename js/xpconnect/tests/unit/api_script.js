@@ -1,7 +1,7 @@
 "use strict";
 
 // This is a test script similar to those used by ExtensionAPIs.
-// https://searchfox.org/mozilla-central/source/toolkit/components/extensions/parent
+// https://searchfox.org/firefox-main/source/toolkit/components/extensions/parent
 
 let module3 = ChromeUtils.importESModule("resource://test/esmified-3.sys.mjs");
 let module4 = ChromeUtils.importESModule("resource://test/esmified-4.sys.mjs");

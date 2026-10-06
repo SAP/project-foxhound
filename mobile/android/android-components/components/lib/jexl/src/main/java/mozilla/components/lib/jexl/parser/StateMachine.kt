@@ -197,7 +197,10 @@ internal val stateMachine: Map<State, StateMap> = mapOf(
     ),
 )
 
-private fun objectStart(parser: Parser, @Suppress("UNUSED_PARAMETER") token: Token) {
+private fun objectStart(
+    parser: Parser,
+    @Suppress("UNUSED_PARAMETER") token: Token,
+) {
     val node = ObjectLiteral(
         properties = mutableMapOf(),
     )
@@ -208,7 +211,10 @@ private fun objectKey(parser: Parser, token: Token) {
     parser.currentObjectKey = token.value.toString()
 }
 
-private fun arrayStart(parser: Parser, @Suppress("UNUSED_PARAMETER") token: Token) {
+private fun arrayStart(
+    parser: Parser,
+    @Suppress("UNUSED_PARAMETER") token: Token,
+) {
     val node = ArrayLiteral()
     parser.placeAtCursor(node)
 }
@@ -221,7 +227,10 @@ private fun transform(parser: Parser, token: Token) {
     parser.placeBeforeCursor(node)
 }
 
-private fun ternaryStart(parser: Parser, @Suppress("UNUSED_PARAMETER") token: Token) {
+private fun ternaryStart(
+    parser: Parser,
+    @Suppress("UNUSED_PARAMETER") token: Token,
+) {
     val node = ConditionalExpression(
         test = parser.tree,
     )

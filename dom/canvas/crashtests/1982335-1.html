@@ -1,0 +1,21 @@
+<html>
+  <head>
+    <script>
+      document.addEventListener("DOMContentLoaded", async () => {
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+        const filter = document.createElementNS("http://www.w3.org/2000/svg", "filter")
+        filter.setAttribute("id", "id_43")
+        const feTile = document.createElementNS("http://www.w3.org/2000/svg", "feTile")
+        feTile.setAttribute("in", "FillPaint")
+        filter.appendChild(feTile)
+        svg.appendChild(filter)
+        document.documentElement.appendChild(svg)
+        const canvas = document.createElement("canvas")
+        document.documentElement.appendChild(canvas)
+        const context = canvas.getContext("2d")
+        context.filter = "drop-shadow(96rem 140.50798074650797mm) url(#id_43)"
+        context.strokeText("🡅𝑄\r‑𓨟𥞮￹\n\r+6\r\n\0⍐+=|=\r𖖕𖍫߬𯬜𖔩ᾂ᩿0󠅋𯏐٫󠻻𛿠%᭰\t뗀፟󠼣", -1, 32767, 255)
+      })
+    </script>
+  </head>
+</html>

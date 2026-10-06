@@ -4,7 +4,6 @@
 package mozilla.components.feature.prompts.dialog
 
 import android.content.Context
-import android.os.Build
 import android.util.AttributeSet
 import android.view.ViewStructure
 import androidx.appcompat.widget.AppCompatEditText
@@ -23,7 +22,7 @@ internal class AutofillEditText : AppCompatEditText {
     constructor (context: Context, attrs: AttributeSet?, defStyleAttr: Int) : super(context, attrs, defStyleAttr)
 
     override fun onProvideAutofillStructure(structure: ViewStructure?, flags: Int) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && url != null) {
+        if (url != null) {
             structure?.setWebDomain(url)
         }
         super.onProvideAutofillStructure(structure, flags)

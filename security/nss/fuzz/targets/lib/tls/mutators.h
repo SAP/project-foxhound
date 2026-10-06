@@ -18,20 +18,11 @@
 
 namespace TlsMutators {
 
-size_t DropRecord(uint8_t *data, size_t size, size_t maxSize,
-                  unsigned int seed);
-size_t ShuffleRecords(uint8_t *data, size_t size, size_t maxSize,
-                      unsigned int seed);
-size_t DuplicateRecord(uint8_t *data, size_t size, size_t maxSize,
+size_t CustomMutator(uint8_t* data, size_t size, size_t maxSize,
+                     unsigned int seed);
+size_t CustomCrossOver(const uint8_t* data1, size_t size1, const uint8_t* data2,
+                       size_t size2, uint8_t* out, size_t maxOutSize,
                        unsigned int seed);
-size_t TruncateRecord(uint8_t *data, size_t size, size_t maxSize,
-                      unsigned int seed);
-size_t FragmentRecord(uint8_t *data, size_t size, size_t maxSize,
-                      unsigned int seed);
-
-size_t CrossOver(const uint8_t *data1, size_t size1, const uint8_t *data2,
-                 size_t size2, uint8_t *out, size_t maxOutSize,
-                 unsigned int seed);
 
 }  // namespace TlsMutators
 

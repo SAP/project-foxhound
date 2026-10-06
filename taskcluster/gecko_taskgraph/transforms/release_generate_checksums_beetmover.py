@@ -5,13 +5,14 @@
 Transform the `release-generate-checksums-beetmover` task to also append `build` as dependency
 """
 
+from typing import Optional
+
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
 from taskgraph.util.schema import Schema
-from voluptuous import Optional
 
 from gecko_taskgraph.transforms.beetmover import craft_release_properties
-from gecko_taskgraph.transforms.task import task_description_schema
+from gecko_taskgraph.transforms.task import TaskDescriptionSchema
 from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 from gecko_taskgraph.util.scriptworker import (
     generate_beetmover_artifact_map,
@@ -23,21 +24,20 @@ from gecko_taskgraph.util.scriptworker import (
 transforms = TransformSequence()
 
 
-release_generate_checksums_beetmover_schema = Schema(
-    {
-        # unique label to describe this beetmover task, defaults to {dep.label}-beetmover
-        Optional("label"): str,
-        # treeherder is allowed here to override any defaults we use for beetmover.  See
-        # taskcluster/gecko_taskgraph/transforms/task.py for the schema details, and the
-        # below transforms for defaults of various values.
-        Optional("treeherder"): task_description_schema["treeherder"],
-        Optional("shipping-phase"): task_description_schema["shipping-phase"],
-        Optional("shipping-product"): task_description_schema["shipping-product"],
-        Optional("attributes"): task_description_schema["attributes"],
-        Optional("task-from"): task_description_schema["task-from"],
-        Optional("dependencies"): task_description_schema["dependencies"],
-    }
-)
+class ReleaseGenerateChecksumsBeetmoverSchema(Schema, kw_only=True):
+    # unique label to describe this beetmover task, defaults to {dep.label}-beetmover
+    label: Optional[str] = None
+    # treeherder is allowed here to override any defaults we use for beetmover.  See
+    # taskcluster/gecko_taskgraph/transforms/task.py for the schema details, and the
+    # below transforms for defaults of various values.
+    treeherder: TaskDescriptionSchema.__annotations__["treeherder"] = None
+    shipping_phase: TaskDescriptionSchema.__annotations__["shipping_phase"] = None
+    shipping_product: TaskDescriptionSchema.__annotations__["shipping_product"] = None
+    attributes: TaskDescriptionSchema.__annotations__["attributes"] = None
+    task_from: TaskDescriptionSchema.__annotations__["task_from"] = None
+    dependencies: TaskDescriptionSchema.__annotations__["dependencies"] = None
+    run_on_repo_type: TaskDescriptionSchema.__annotations__["run_on_repo_type"] = None
+
 
 transforms = TransformSequence()
 
@@ -50,7 +50,7 @@ def remove_name(config, jobs):
         yield job
 
 
-transforms.add_validate(release_generate_checksums_beetmover_schema)
+transforms.add_validate(ReleaseGenerateChecksumsBeetmoverSchema)
 
 
 @transforms.add
@@ -65,7 +65,8 @@ def make_task_description(config, jobs):
         treeherder = job.get("treeherder", {})
         treeherder.setdefault("symbol", "BM-SGenChcks")
         dep_th_platform = (
-            dep_job.task.get("extra", {})
+            dep_job.task
+            .get("extra", {})
             .get("treeherder", {})
             .get("machine", {})
             .get("platform", "")
@@ -100,6 +101,7 @@ def make_task_description(config, jobs):
             "dependencies": dependencies,
             "attributes": attributes,
             "run-on-projects": dep_job.attributes.get("run_on_projects"),
+            "run-on-repo-type": job.get("run-on-repo-type", ["git", "hg"]),
             "treeherder": treeherder,
             "shipping-phase": "promote",
         }
@@ -110,9 +112,9 @@ def make_task_description(config, jobs):
 @transforms.add
 def make_task_worker(config, jobs):
     for job in jobs:
-        valid_beetmover_job = len(job["dependencies"]) == 2 and any(
-            ["signing" in j for j in job["dependencies"]]
-        )
+        valid_beetmover_job = len(job["dependencies"]) == 2 and any([
+            "signing" in j for j in job["dependencies"]
+        ])
         if not valid_beetmover_job:
             raise NotImplementedError("Beetmover must have two dependencies.")
 

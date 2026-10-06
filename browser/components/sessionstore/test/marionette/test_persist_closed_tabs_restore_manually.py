@@ -29,19 +29,17 @@ class TestSessionRestoreClosedTabs(SessionStoreTestCase):
     """
 
     def setUp(self):
-        super(TestSessionRestoreClosedTabs, self).setUp(
+        super().setUp(
             startup_page=1,
             include_private=False,
             restore_on_demand=True,
-            test_windows=set(
-                [
-                    # Window 1
-                    (
-                        inline("lorem ipsom"),
-                        inline("dolor"),
-                    ),
-                ]
-            ),
+            test_windows=set([
+                # Window 1
+                (
+                    inline("lorem ipsom"),
+                    inline("dolor"),
+                ),
+            ]),
         )
 
     def test_restore(self):

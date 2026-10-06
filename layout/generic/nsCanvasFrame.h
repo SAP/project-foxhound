@@ -1,21 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* rendering object that goes directly inside the document's scrollbars */
 
-#ifndef nsCanvasFrame_h___
-#define nsCanvasFrame_h___
+#ifndef nsCanvasFrame_h_
+#define nsCanvasFrame_h_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
 #include "nsContainerFrame.h"
 #include "nsDisplayList.h"
 #include "nsIAnonymousContentCreator.h"
 #include "nsIPopupContainer.h"
-#include "nsIScrollPositionListener.h"
 
 class nsPresContext;
 class gfxContext;
@@ -30,16 +26,13 @@ class gfxContext;
  * frame in the main child list.
  */
 class nsCanvasFrame final : public nsContainerFrame,
-                            public nsIScrollPositionListener,
                             public nsIAnonymousContentCreator,
                             public nsIPopupContainer {
   using Element = mozilla::dom::Element;
 
  public:
   explicit nsCanvasFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
-      : nsContainerFrame(aStyle, aPresContext, kClassID),
-        mDoPaintFocus(false),
-        mAddedScrollPositionListener(false) {}
+      : nsContainerFrame(aStyle, aPresContext, kClassID) {}
 
   NS_DECL_QUERYFRAME
   NS_DECL_FRAMEARENA_HELPERS(nsCanvasFrame)
@@ -70,31 +63,18 @@ class nsCanvasFrame final : public nsContainerFrame,
   void AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements,
                                 uint32_t aFilter) override;
 
-  /** SetHasFocus tells the CanvasFrame to draw with focus ring
-   *  @param aHasFocus true to show focus ring, false to hide it
-   */
-  NS_IMETHOD SetHasFocus(bool aHasFocus);
-
   void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                         const nsDisplayListSet& aLists) override;
-
-  void PaintFocus(mozilla::gfx::DrawTarget* aRenderingContext, nsPoint aPt);
-
-  // nsIScrollPositionListener
-  void ScrollPositionWillChange(nscoord aX, nscoord aY) override;
-  void ScrollPositionDidChange(nscoord aX, nscoord aY) override {}
-
 #ifdef DEBUG_FRAME_DUMP
   nsresult GetFrameName(nsAString& aResult) const override;
 #endif
-  nsIContent* GetContentForEvent(const mozilla::WidgetEvent*) const override;
+  nsIContent* GetExplicitEventTargetContent(
+      const mozilla::WidgetEvent* = nullptr) const final;
+  using nsIFrame::GetExplicitEventTargetContent;
+
   nsRect CanvasArea() const;
 
  protected:
-  // Data members
-  bool mDoPaintFocus;
-  bool mAddedScrollPositionListener;
-
   nsCOMPtr<Element> mTooltipContent;
 };
 
@@ -121,4 +101,4 @@ class nsDisplayCanvasBackgroundImage final : public nsDisplayBackgroundImage {
 
 }  // namespace mozilla
 
-#endif /* nsCanvasFrame_h___ */
+#endif /* nsCanvasFrame_h_ */

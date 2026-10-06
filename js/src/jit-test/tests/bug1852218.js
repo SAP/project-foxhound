@@ -1,5 +1,6 @@
-// |jit-test| skip-if: getBuildConfiguration("arm64-simulator") === true
+// |jit-test| skip-if: getBuildConfiguration("simulator") === true
 // This test times out in ARM64 simulator builds.
+// And it's also slow in all other simulators, so we skip it for all simulators.
 
 // The test is also very slow with GenerationalGC zeal mode, especially if
 // CheckHeapBeforeMinorGC is also enabled. GenerationalGC makes the number of

@@ -5,10 +5,16 @@
 // except according to those terms.
 
 use clap::Parser as _;
+use neqo_bin::server::Res;
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<(), neqo_bin::server::Error> {
+#[allow(
+    clippy::allow_attributes,
+    clippy::unwrap_in_result,
+    reason = "FIXME: Fixed in newer tokio versions."
+)]
+async fn main() -> Res<()> {
     let args = neqo_bin::server::Args::parse();
 
-    neqo_bin::server::server(args)?.run().await
+    neqo_bin::server::run(args)?.0.await
 }

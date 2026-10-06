@@ -11,7 +11,7 @@ add_task(async function () {
   // We should not enforce https for tests using this page.
   await pushPref("dom.security.https_first", false);
 
-  await openTabAndSetupStorage(MAIN_DOMAIN + "storage-listings.html");
+  await openTabAndSetupStorage(MAIN_URL + "storage-listings.html");
 
   const contextMenu =
     gPanelWindow.document.getElementById("storage-tree-popup");
@@ -22,44 +22,41 @@ add_task(async function () {
   info("test state before delete");
   await checkState([
     [
-      ["cookies", "http://test1.example.org"],
+      ["cookies", MAIN_ORIGIN],
       [
-        getCookieId("c1", "test1.example.org", "/browser"),
-        getCookieId("cs2", ".example.org", "/"),
-        getCookieId("c3", "test1.example.org", "/"),
-        getCookieId("c4", ".example.org", "/"),
-        getCookieId("uc1", ".example.org", "/"),
-        getCookieId("uc2", ".example.org", "/"),
+        getCookieId("c1", MAIN_HOST, "/browser"),
+        getCookieId("cs2", "." + MAIN_DOMAIN, "/"),
+        getCookieId("c3", MAIN_HOST, "/"),
+        getCookieId("c4", "." + MAIN_DOMAIN, "/"),
+        getCookieId("uc1", "." + MAIN_DOMAIN, "/"),
+        getCookieId("uc2", "." + MAIN_DOMAIN, "/"),
       ],
     ],
     [
-      ["localStorage", "http://test1.example.org"],
+      ["localStorage", MAIN_ORIGIN],
       ["key", "ls1", "ls2"],
     ],
     [
-      ["sessionStorage", "http://test1.example.org"],
+      ["sessionStorage", MAIN_ORIGIN],
       ["key", "ss1"],
     ],
     [
-      ["indexedDB", "http://test1.example.org", "idb1 (default)", "obj1"],
+      ["indexedDB", MAIN_ORIGIN, "idb1 (default)", "obj1"],
       [1, 2, 3],
     ],
     [
-      ["Cache", "http://test1.example.org", "plop"],
-      [
-        MAIN_DOMAIN + "404_cached_file.js",
-        MAIN_DOMAIN + "browser_storage_basic.js",
-      ],
+      ["Cache", MAIN_ORIGIN, "plop"],
+      [MAIN_URL + "404_cached_file.js", MAIN_URL + "browser_storage_basic.js"],
     ],
   ]);
 
   info("do the delete");
   const deleteHosts = [
-    ["cookies", "http://test1.example.org"],
-    ["localStorage", "http://test1.example.org"],
-    ["sessionStorage", "http://test1.example.org"],
-    ["indexedDB", "http://test1.example.org", "idb1 (default)", "obj1"],
-    ["Cache", "http://test1.example.org", "plop"],
+    ["cookies", MAIN_ORIGIN],
+    ["localStorage", MAIN_ORIGIN],
+    ["sessionStorage", MAIN_ORIGIN],
+    ["indexedDB", MAIN_ORIGIN, "idb1 (default)", "obj1"],
+    ["Cache", MAIN_ORIGIN, "plop"],
   ];
 
   for (const store of deleteHosts) {
@@ -84,10 +81,10 @@ add_task(async function () {
 
   info("test state after delete");
   await checkState([
-    [["cookies", "http://test1.example.org"], []],
-    [["localStorage", "http://test1.example.org"], []],
-    [["sessionStorage", "http://test1.example.org"], []],
-    [["indexedDB", "http://test1.example.org", "idb1 (default)", "obj1"], []],
-    [["Cache", "http://test1.example.org", "plop"], []],
+    [["cookies", MAIN_ORIGIN], []],
+    [["localStorage", MAIN_ORIGIN], []],
+    [["sessionStorage", MAIN_ORIGIN], []],
+    [["indexedDB", MAIN_ORIGIN, "idb1 (default)", "obj1"], []],
+    [["Cache", MAIN_ORIGIN, "plop"], []],
   ]);
 });

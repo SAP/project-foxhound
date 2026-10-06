@@ -47,6 +47,9 @@
  *
  */
 
+#ifndef HAL_COCOA_SMSLIB_H_
+#define HAL_COCOA_SMSLIB_H_
+
 #import <Foundation/Foundation.h>
 
 #define SMSLIB_VERSION "1.8"
@@ -156,3 +159,5 @@ NSString* smsGetCalibrationDescription(void);
 
 // Shuts down the accelerometer.
 void smsShutdown(void);
+
+#endif  // HAL_COCOA_SMSLIB_H_

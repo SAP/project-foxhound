@@ -11,9 +11,9 @@ add_task(async function test_RestoreMultipleGroups() {
   BrowserTestUtils.addTab(win.gBrowser, "about:about");
 
   let aboutMozillaTab = BrowserTestUtils.addTab(win.gBrowser, "about:mozilla");
-  let aboutLogoTab = BrowserTestUtils.addTab(win.gBrowser, "about:logo");
+  let aboutBlankTab = BrowserTestUtils.addTab(win.gBrowser, "about:blank");
   let mozillaTabGroup = win.gBrowser.addTabGroup(
-    [aboutMozillaTab, aboutLogoTab],
+    [aboutMozillaTab, aboutBlankTab],
     { color: "red", label: "mozilla stuff" }
   );
   const mozillaTabGroupId = mozillaTabGroup.id;
@@ -68,7 +68,7 @@ add_task(async function test_RestoreMultipleGroups() {
   Assert.equal(
     win.gBrowser.tabs[3].group.id,
     mozillaTabGroupId,
-    "about:logo tab should be in the mozilla stuff group"
+    "about:blank tab should be in the mozilla stuff group"
   );
   Assert.ok(
     !win.gBrowser.tabs[4].group,

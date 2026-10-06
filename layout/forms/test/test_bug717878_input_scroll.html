@@ -49,15 +49,15 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=717878
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 717878 **/
+/** Test for Bug 717878 */
 
 /**
  * Test an element's scroll properties for correctness
  *
  * @param element Element to test
- * @param prop Specify the property to test,
+ * @param scroll Specify the property to test,
  *             i.e. "scrollLeft" or "scrollTop"
- * @param propMax Specify the scrollMax property to test,
+ * @param scrollMax Specify the scrollMax property to test,
  *                i.e. "scrollLeftMax" or "scrollTopMax"
  * @param is_overflow Specify whether the element is
  *                    scrollable in the above direction
@@ -95,11 +95,11 @@ test_scroll(no_overflow2, "scrollTop", "scrollTopMax", /* is_overflow */ false);
 
 var overflow = document.getElementById("overflow");
 test_scroll(overflow, "scrollLeft", "scrollLeftMax", /* is_overflow */ true);
-test_scroll(overflow, "scrollTop", "scrollTopMax", /* is_overflow */ true);
+test_scroll(overflow, "scrollTop", "scrollTopMax", /* is_overflow */ false);
 
 var overflow2 = document.getElementById("overflow2");
 test_scroll(overflow2, "scrollLeft", "scrollLeftMax", /* is_overflow */ true);
-test_scroll(overflow2, "scrollTop", "scrollTopMax", /* is_overflow */ true);
+test_scroll(overflow2, "scrollTop", "scrollTopMax", /* is_overflow */ false);
 
 </script>
 </pre>

@@ -12,7 +12,7 @@ add_task(async function () {
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
-      url: "about:logo",
+      url: getRootDirectory(gTestPath) + "large.png",
     },
     () => {
       var brandName = Services.strings
@@ -40,13 +40,13 @@ add_task(async function () {
         wpFile.copyTo(null, wpFileBackup.leafName);
       }
 
-      var shell = Cc["@mozilla.org/browser/shell-service;1"].getService(
-        Ci.nsIShellService
-      );
+      var shell = Cc["@mozilla.org/browser/shell-service;1"]
+        .getService(Ci.nsIShellService)
+        .QueryInterface(Ci.nsIGNOMEShellService);
 
       // For simplicity, we're going to reach in and access the image on the
       // page directly, which means the page shouldn't be running in a remote
-      // browser. Thankfully, about:logo runs in the parent process for now.
+      // browser. Thankfully, chrome:// runs in the parent process for now.
       Assert.ok(
         !gBrowser.selectedBrowser.isRemoteBrowser,
         "image can be accessed synchronously from the parent process"
@@ -56,32 +56,30 @@ add_task(async function () {
 
       let checkWallpaper, restoreSettings;
       try {
-        // Try via GSettings first
-        const gsettings = Cc["@mozilla.org/gsettings-service;1"]
-          .getService(Ci.nsIGSettingsService)
-          .getCollectionForSchema(GS_BG_SCHEMA);
-
-        const prevImage = gsettings.getString(GS_IMAGE_KEY);
-        const prevOption = gsettings.getString(GS_OPTION_KEY);
+        const prevImage = shell.getGSettingsString(GS_BG_SCHEMA, GS_IMAGE_KEY);
+        const prevOption = shell.getGSettingsString(
+          GS_BG_SCHEMA,
+          GS_OPTION_KEY
+        );
 
         checkWallpaper = function (position, expectedGSettingsPosition) {
           shell.setDesktopBackground(image, position, "");
           ok(wpFile.exists(), "Wallpaper was written to disk");
           is(
-            gsettings.getString(GS_IMAGE_KEY),
+            shell.getGSettingsString(GS_BG_SCHEMA, GS_IMAGE_KEY),
             encodeURI("file://" + wpFile.path),
             "Wallpaper file GSettings key is correct"
           );
           is(
-            gsettings.getString(GS_OPTION_KEY),
+            shell.getGSettingsString(GS_BG_SCHEMA, GS_OPTION_KEY),
             expectedGSettingsPosition,
             "Wallpaper position GSettings key is correct"
           );
         };
 
         restoreSettings = function () {
-          gsettings.setString(GS_IMAGE_KEY, prevImage);
-          gsettings.setString(GS_OPTION_KEY, prevOption);
+          shell.setGSettingsString(GS_BG_SCHEMA, GS_IMAGE_KEY, prevImage);
+          shell.setGSettingsString(GS_BG_SCHEMA, GS_OPTION_KEY, prevOption);
         };
       } catch (e) {}
 

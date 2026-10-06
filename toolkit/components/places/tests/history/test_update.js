@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -430,9 +428,9 @@ add_task(async function test_change_description_and_preview_saved() {
  * Gets annotation information from the database for the specified URL and
  * annotation name.
  *
- * @param {String} pageUrl The URL to search for.
- * @param {String} annoName The name of the annotation to search for.
- * @return {Array} An array of objects containing the annotations found.
+ * @param {string} pageUrl The URL to search for.
+ * @param {string} annoName The name of the annotation to search for.
+ * @returns {Array} An array of objects containing the annotations found.
  */
 async function getAnnotationInfoFromDB(pageUrl, annoName) {
   let db = await PlacesUtils.promiseDBConnection();

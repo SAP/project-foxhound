@@ -117,7 +117,7 @@ assertOffsetColumns(
   "function f(n) { obj.base.a().b(...args); }",
   "                ^        ^   ^ ^  ^      ^",
   //               0        1   2 3  4      5
-  "0 1 4 2 5"
+  "0 1 4 3 2 5"
 );
 
 // getColumnOffsets correctly places the part of normal ::Dot node with "this" root.
@@ -127,7 +127,7 @@ assertOffsetColumns(
   "var f = function() { this.base.a().b(...args);  }.bind(obj);",
   "                     ^         ^   ^ ^  ^       ^",
   //                    0         1   2 3  4       5
-  "0 1 4 2 5"
+  "0 1 4 3 2 5"
 );
 
 // getColumnOffsets correctly places the part of normal ::Dot node with "super" base.
@@ -137,7 +137,7 @@ assertOffsetColumns(
   "var f = { __proto__: obj, f(n) { super.base.a().b(...args); } }.f;",
   "                                 ^          ^   ^ ^  ^      ^",
   //                                0          1   2 3  4      5
-  "0 1 4 2 5"
+  "0 1 4 3 2 5"
 );
 
 // getColumnOffsets correctly places the part of normal ::Dot node with other base.
@@ -147,7 +147,7 @@ assertOffsetColumns(
   "function f(n) { (0, obj).base.a().b(...args); }",
   "                 ^  ^         ^   ^ ^  ^      ^",
   //                0  1         2   3 4  5      6
-  "0 1 2 5 3 6"
+  "0 1 2 5 4 3 6"
 );
 
 // getColumnOffsets correctly places the part of folded ::Elem node.
@@ -158,7 +158,7 @@ assertOffsetColumns(
   "function f(n) { obj.base['a']()['b'](...args); }",
   "                ^        ^      ^    ^  ^      ^",
   //               0        1      2    3  4      5
-  "0 1 4 2 5"
+  "0 1 4 3 2 5"
 );
 
 // getColumnOffsets correctly places the part of computed ::Elem node.
@@ -168,7 +168,7 @@ assertOffsetColumns(
   "function f(n) { obj.base[a]()[b](...args); }",
   "                ^          ^    ^^  ^      ^",
   //               0          1    23  4      5
-  "0 1 4 2 5"
+  "0 1 4 3 2 5"
 );
 
 // getColumnOffsets correctly places the evaluation of ...args when

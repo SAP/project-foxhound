@@ -1,4 +1,6 @@
 [DEFAULT]
 
 ["browser_ua_nonsnap.js"]
-run-if = ["os == 'linux'"]
+run-if = [
+  "os == 'linux'",
+]

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +6,6 @@
 #include "nsCOMPtr.h"
 #include "nsISupports.h"
 #include "nsQueryObject.h"
-#include "mozilla/Unused.h"
 
 #include "gtest/gtest.h"
 
@@ -70,7 +68,7 @@ MozExternalRefCountType Foo::Release() {
 nsresult Foo::QueryInterface(const nsIID& aIID, void** aResult) {
   ++total_queries_;
 
-  nsISupports* rawPtr = 0;
+  nsISupports* rawPtr = nullptr;
   nsresult status = NS_OK;
 
   if (aIID.Equals(NS_GET_IID(Foo)))
@@ -151,7 +149,7 @@ Bar::~Bar() { ++total_destructions_; }
 nsresult Bar::QueryInterface(const nsID& aIID, void** aResult) {
   ++total_queries_;
 
-  nsISupports* rawPtr = 0;
+  nsISupports* rawPtr = nullptr;
   nsresult status = NS_OK;
 
   if (aIID.Equals(NS_GET_IID(Bar)))
@@ -224,7 +222,7 @@ TEST(nsRefPtr, AddRefAndRelease)
 
     Foo::total_addrefs_ = 0;
     RefPtr<Foo> fooP2 = std::move(fooP);
-    mozilla::Unused << fooP2;
+    (void)fooP2;
     ASSERT_EQ(Foo::total_addrefs_, 0);
   }
 }
@@ -235,7 +233,7 @@ TEST(nsRefPtr, VirtualDestructor)
 
   {
     RefPtr<Foo> foop(do_QueryObject(new Bar));
-    mozilla::Unused << foop;
+    (void)foop;
   }
 
   ASSERT_EQ(Bar::total_destructions_, 1);

@@ -52,14 +52,7 @@ add_task(
       "the other permission has not been removed"
     );
 
-    // reset permission manager
-    await new Promise(aResolve => {
-      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, () =>
-        aResolve()
-      );
-    });
-
-    Assert.equal(Services.perms.all.length, 0, "check all removed");
+    Services.perms.removeAll();
   }
 );
 
@@ -108,14 +101,7 @@ add_task(
       "the other permission has been removed"
     );
 
-    // reset permission manager
-    await new Promise(aResolve => {
-      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, () =>
-        aResolve()
-      );
-    });
-
-    Assert.equal(Services.perms.all.length, 0, "check all removed");
+    Services.perms.removeAll();
   }
 );
 
@@ -163,14 +149,7 @@ add_task(async function test_removing_all_permissions() {
     "the other permission has been removed"
   );
 
-  // reset permission manager
-  await new Promise(aResolve => {
-    Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, () =>
-      aResolve()
-    );
-  });
-
-  Assert.equal(Services.perms.all.length, 0, "check all removed");
+  Services.perms.removeAll();
 });
 
 // We can't test the pattern clearing here here since "cookie" permissions are
@@ -233,12 +212,5 @@ add_task(async function test_removeBySiteAndOAPattern() {
     );
   });
 
-  // reset permission manager
-  await new Promise(aResolve => {
-    Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, () =>
-      aResolve()
-    );
-  });
-
-  Assert.equal(Services.perms.all.length, 0, "check all removed");
+  Services.perms.removeAll();
 });

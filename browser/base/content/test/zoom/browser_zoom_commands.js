@@ -10,7 +10,7 @@ const TEST_PAGE_URL =
  * Waits for the zoom commands in the window to have the expected enabled
  * state.
  *
- * @param {Object} expectedState
+ * @param {object} expectedState
  *   An object where each key represents one of the zoom commands,
  *   and the value is a boolean that is true if the command should
  *   be enabled, and false if it should be disabled.
@@ -18,8 +18,7 @@ const TEST_PAGE_URL =
  *   The keys are "enlarge", "reduce" and "reset" for readability,
  *   and internally this function maps those keys to the appropriate
  *   commands.
- * @returns Promise
- * @resolves undefined
+ * @returns {Promise<void>}
  */
 async function waitForCommandEnabledState(expectedState) {
   const COMMAND_MAP = {
@@ -54,8 +53,8 @@ async function waitForCommandEnabledState(expectedState) {
 function assertTextZoomCommandCheckedState(isChecked) {
   let command = document.getElementById("cmd_fullZoomToggle");
   Assert.equal(
-    command.getAttribute("checked"),
-    "" + isChecked,
+    command.hasAttribute("checked"),
+    isChecked,
     "Text zoom command has expected checked attribute"
   );
 }

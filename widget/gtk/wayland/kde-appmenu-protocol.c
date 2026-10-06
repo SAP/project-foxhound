@@ -3,12 +3,10 @@
 /*
  * SPDX-FileCopyrightText: 2017 David Edmundson
  *
- * SPDX-License-Identifier: LGPL-2.1-or-later
+ * SPDX-License-Identifier: MIT
  */
 
 #include <stdbool.h>
-#include <stdlib.h>
-#include <stdint.h>
 #include "wayland-util.h"
 
 #ifndef __has_attribute

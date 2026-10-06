@@ -20,31 +20,33 @@ appmenuitem-banner-update-restart =
     .label = Update available — restart now
 
 appmenuitem-new-tab =
-    .label = New tab
+    .label = New Tab
 appmenuitem-new-window =
-    .label = New window
+    .label = New Window
 appmenuitem-new-private-window =
-    .label = New private window
+    .label = New Private Window
 appmenuitem-history =
   .label = History
+appmenuitem-tab-groups =
+  .label = Tab groups
 appmenuitem-downloads =
   .label = Downloads
 appmenuitem-passwords =
     .label = Passwords
 appmenuitem-extensions-and-themes =
-    .label = Extensions and themes
+    .label = Extensions and Themes
 appmenuitem-extensions =
     .label = Extensions
 appmenuitem-print =
   .label = Print…
 appmenuitem-find-in-page =
-    .label = Find in page…
+    .label = Find in Page…
 appmenuitem-translate =
-    .label = Translate page…
+    .label = Translate Page…
 appmenuitem-zoom =
     .value = Zoom
 appmenuitem-more-tools =
-    .label = More tools
+    .label = More Tools
 appmenuitem-help =
     .label = Help
 appmenuitem-exit2 =
@@ -68,11 +70,11 @@ appmenuitem-settings =
 ## Zoom and Fullscreen Controls
 
 appmenuitem-zoom-enlarge =
-  .label = Zoom in
+  .label = Zoom In
 appmenuitem-zoom-reduce =
-  .label = Zoom out
+  .label = Zoom Out
 appmenuitem-fullscreen =
-  .label = Full screen
+  .label = Full Screen
 
 ## Firefox Account toolbar button and Sync panel in App menu.
 
@@ -124,7 +126,7 @@ appmenu-fxa-setup-sync =
     .label = Turn On Syncing…
 appmenu-fxa-setup-sync-new = Turn On
 appmenuitem-save-page =
-    .label = Save page as…
+    .label = Save Page As…
 
 appmenuitem-fxa-sync-off-title = Sync is off
 appmenuitem-fxa-sync-off-description = Protect and access your bookmarks, passwords, and more anywhere.
@@ -233,6 +235,10 @@ profiler-popup-presets-debug-description = Preset for debugging in { -brand-shor
 profiler-popup-presets-debug-label =
   .label = Debug
 
+profiler-popup-presets-web-compat-description = Recommended preset for debugging web compatibility issues in websites, rather than tracking performance.
+profiler-popup-presets-web-compat-label =
+  .label = Web Compat
+
 profiler-popup-presets-custom-label =
   .label = Custom
 
@@ -296,12 +302,14 @@ appmenu-help-not-deceptive =
 
 appmenu-customizetoolbar =
     .label = Customize toolbar…
+appmenu-abouttranslations =
+    .label = Translate…
 
 appmenu-developer-tools-subheader = Browser tools
 appmenu-developer-tools-extensions =
     .label = Extensions for developers
 appmenuitem-report-broken-site =
-  .label = Report broken site
+  .label = Report Broken Site
 
 ## Panel for privacy and security products
 
@@ -313,10 +321,13 @@ appmenuitem-relay-title = { -relay-brand-short-name }
 appmenuitem-relay-description = Mask your real email and phone
 appmenuitem-services-relay-description = Launch email masks dashboard
 appmenuitem-vpn-title = { -mozilla-vpn-brand-name }
-appmenuitem-vpn-description = Protect your online activity
+appmenuitem-vpn-description-2 = Get whole-device protection
 
 appmenu-services-header = My services
-appmenu-other-protection-header = Try other protection tools from { -vendor-short-name }:
+# "Mozilla" is intentionally hardcoded to prevent forks from replacing it
+# with their own vendor name, since these tools are created and maintained by
+# Mozilla.
+appmenu-other-protection-header2 = Try other protection tools from Mozilla:
 
 ## Profiles panel
 
@@ -325,6 +336,8 @@ appmenu-profiles-2 =
 appmenu-other-profiles = Other profiles
 appmenu-manage-profiles =
     .label = Manage profiles
+appmenu-copy-profile =
+    .label = Copy this profile
 appmenu-create-profile =
     .label = New profile
 appmenu-edit-profile =

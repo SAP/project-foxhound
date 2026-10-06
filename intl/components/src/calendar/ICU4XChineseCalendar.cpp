@@ -17,8 +17,8 @@ ICU4XChineseCalendar::ICU4XChineseCalendar(const icu::TimeZone& timeZone,
     : ICU4XChineseBasedCalendar(icu4x::capi::CalendarKind_Chinese, timeZone,
                                 locale, success) {}
 
-ICU4XChineseCalendar::ICU4XChineseCalendar(const ICU4XChineseCalendar& other)
-    : ICU4XChineseBasedCalendar(other) {}
+ICU4XChineseCalendar::ICU4XChineseCalendar(const ICU4XChineseCalendar& other) =
+    default;
 
 ICU4XChineseCalendar::~ICU4XChineseCalendar() = default;
 

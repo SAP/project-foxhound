@@ -2,7 +2,7 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 /* eslint-disable mozilla/no-arbitrary-setTimeout */
 
-var tabState = {
+const tabState = {
   entries: [
     {
       url: "about:robots",
@@ -12,72 +12,59 @@ var tabState = {
   ],
 };
 
-function test() {
-  waitForExplicitFinish();
-  requestLongerTimeout(2);
+const blankState = {
+  windows: [
+    {
+      tabs: [
+        {
+          entries: [{ url: "about:blank", triggeringPrincipal_base64 }],
+        },
+      ],
+    },
+  ],
+};
 
+add_task(async function test() {
   Services.prefs.setIntPref("browser.sessionstore.interval", 4000);
   registerCleanupFunction(function () {
     Services.prefs.clearUserPref("browser.sessionstore.interval");
   });
 
   let tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
-
   let browser = tab.linkedBrowser;
+  await BrowserTestUtils.browserLoaded(browser, false, "about:blank");
 
-  promiseTabState(tab, tabState).then(() => {
-    let sessionHistory = browser.browsingContext.sessionHistory;
-    let entry = sessionHistory.getEntryAtIndex(0);
+  await promiseTabState(tab, tabState);
+  let sessionHistory = browser.browsingContext.sessionHistory;
+  let entry = sessionHistory.getEntryAtIndex(0);
 
-    whenChildCount(entry, 1, function () {
-      whenChildCount(entry, 2, function () {
-        promiseBrowserLoaded(browser).then(() => {
-          let newSessionHistory = browser.browsingContext.sessionHistory;
-          let newEntry = newSessionHistory.getEntryAtIndex(0);
+  await whenChildCount(entry, 1);
 
-          whenChildCount(newEntry, 0, function () {
-            // Make sure that we reset the state.
-            let blankState = {
-              windows: [
-                {
-                  tabs: [
-                    {
-                      entries: [
-                        { url: "about:blank", triggeringPrincipal_base64 },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            };
-            waitForBrowserState(blankState, finish);
-          });
-        });
+  // Create a dynamic subframe.
+  let doc = browser.contentDocument;
+  let iframe = doc.createElement("iframe");
+  iframe.setAttribute("src", "about:mozilla");
+  doc.body.appendChild(iframe);
 
-        // Force reload the browser to deprecate the subframes.
-        browser.reloadWithFlags(Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CACHE);
-      });
+  await whenChildCount(entry, 2);
 
-      // Create a dynamic subframe.
-      let doc = browser.contentDocument;
-      let iframe = doc.createElement("iframe");
-      doc.body.appendChild(iframe);
-      iframe.setAttribute("src", "about:mozilla");
-    });
-  });
+  // Force reload the browser to deprecate the subframes.
+  browser.reloadWithFlags(Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CACHE);
 
-  // This test relies on the test timing out in order to indicate failure so
-  // let's add a dummy pass.
-  ok(
-    true,
-    "Each test requires at least one pass, fail or todo so here is a pass."
+  await BrowserTestUtils.browserLoaded(browser, false, "about:robots");
+  let newSessionHistory = browser.browsingContext.sessionHistory;
+  let newEntry = newSessionHistory.getEntryAtIndex(0);
+
+  await whenChildCount(newEntry, 0);
+  // Make sure that we reset the state.
+  waitForBrowserState(blankState, finish);
+
+  ok(true, "test passed");
+});
+
+function whenChildCount(aEntry, aChildCount) {
+  return TestUtils.waitForCondition(
+    () => aEntry.childCount == aChildCount,
+    "wait for child count"
   );
-}
-
-function whenChildCount(aEntry, aChildCount, aCallback) {
-  if (aEntry.childCount == aChildCount) {
-    aCallback();
-  } else {
-    setTimeout(() => whenChildCount(aEntry, aChildCount, aCallback), 100);
-  }
 }

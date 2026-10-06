@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>AudioSession iframe fixture</title>
+</head>
+<body>
+<video id="iframe_video" src="gizmo.mp4" loop></video>
+<script>
+window.setIframeAudioSessionType = type => {
+  navigator.audioSession.type = type;
+};
+</script>
+</body>
+</html>

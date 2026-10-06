@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Bug 1949476 - Crash when TypeAheadFind searches shadow DOM outside document</title>
+</head>
+<body>
+  <script>
+    // Set up shadow DOM outside of document body (as sibling to body)
+    document.documentElement.append(document.createElement("div"));
+    const shadowHost = document.querySelector("div");
+    const shadowRoot = shadowHost.attachShadow({ mode: "closed" });
+    shadowRoot.textContent = "foo";
+
+    // Set selection into shadow DOM
+    const sel = window.getSelection();
+    const r = document.createRange();
+    r.selectNodeContents(shadowRoot);
+    sel.addRange(r);
+
+    const finder = SpecialPowers.Cc["@mozilla.org/typeaheadfind;1"]
+                                .getService(SpecialPowers.Ci.nsITypeAheadFind);
+    finder.init(SpecialPowers.wrap(window).docShell);
+    finder.find("f", false, SpecialPowers.Ci.nsITypeAheadFind.FIND_FIRST, true);
+    finder.find("fo", false, SpecialPowers.Ci.nsITypeAheadFind.FIND_NEXT, true);
+  </script>
+</body>
+</html>

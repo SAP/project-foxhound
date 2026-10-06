@@ -31,7 +31,7 @@ add_task(async function () {
   const requestsListStatus = requestItem.querySelector(".status-code");
   EventUtils.sendMouseEvent({ type: "mouseover" }, requestsListStatus);
   await waitUntil(() => requestsListStatus.title);
-  await waitForDOMIfNeeded(requestItem, ".requests-list-timings-total");
+  await waitForDOM(requestItem, ".requests-list-timings-total");
 
   await verifyRequestItemTarget(
     document,
@@ -47,7 +47,7 @@ add_task(async function () {
     }
   );
 
-  const wait = waitForDOM(document, "#response-panel .CodeMirror-code");
+  const wait = waitForDOM(document, "#response-panel .cm-content");
   store.dispatch(Actions.toggleNetworkDetails());
   clickOnSidebarTab(document, "response");
   await wait;
@@ -77,7 +77,7 @@ add_task(async function () {
     "The response json view doesn't have the intended visibility."
   );
   is(
-    tabpanel.querySelector(".CodeMirror-code") === null,
+    tabpanel.querySelector(".cm-content") === null,
     false,
     "The response editor has the intended visibility."
   );

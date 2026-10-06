@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -11,6 +9,8 @@
 
 #include "base/logging.h"
 #include "base/time.h"
+
+#include "mozilla/ProfilerThreadSleep.h"
 
 namespace base {
 
@@ -32,6 +32,8 @@ bool WaitableEvent::IsSignaled() {
 }
 
 bool WaitableEvent::Wait() {
+  AUTO_PROFILER_THREAD_SLEEP;
+
   DWORD result = WaitForSingleObject(handle_, INFINITE);
   // It is most unexpected that this should ever fail.  Help consumers learn
   // about it if it should ever fail.
@@ -40,6 +42,8 @@ bool WaitableEvent::Wait() {
 }
 
 bool WaitableEvent::TimedWait(const TimeDelta& max_time) {
+  AUTO_PROFILER_THREAD_SLEEP;
+
   DCHECK(max_time >= TimeDelta::FromMicroseconds(0));
   // Be careful here.  TimeDelta has a precision of microseconds, but this API
   // is in milliseconds.  If there are 5.5ms left, should the delay be 5 or 6?
@@ -60,6 +64,8 @@ bool WaitableEvent::TimedWait(const TimeDelta& max_time) {
 
 // static
 size_t WaitableEvent::WaitMany(WaitableEvent** events, size_t count) {
+  AUTO_PROFILER_THREAD_SLEEP;
+
   HANDLE handles[MAXIMUM_WAIT_OBJECTS];
   CHECK(count <= MAXIMUM_WAIT_OBJECTS)
   << "Can only wait on " << MAXIMUM_WAIT_OBJECTS << " with WaitMany";

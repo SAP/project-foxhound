@@ -28,18 +28,18 @@ diff --git a/sandbox/win/src/sandbox_nt_util.cc b/sandbox/win/src/sandbox_nt_uti
  void operator delete(void* memory, sandbox::AllocationType type) {
    if (type == sandbox::NT_ALLOC) {
      // Use default flags.
-     VERIFY(sandbox::g_nt.RtlFreeHeap(sandbox::g_heap, 0, memory));
+     VERIFY(sandbox::GetNtExports()->RtlFreeHeap(sandbox::g_heap, 0, memory));
    } else if (type == sandbox::NT_PAGE) {
      void* base = memory;
      SIZE_T size = 0;
-     VERIFY_SUCCESS(sandbox::g_nt.FreeVirtualMemory(NtCurrentProcess, &base,
+     VERIFY_SUCCESS(sandbox::GetNtExports()->FreeVirtualMemory(
 diff --git a/sandbox/win/src/sandbox_nt_util.h b/sandbox/win/src/sandbox_nt_util.h
 --- a/sandbox/win/src/sandbox_nt_util.h
 +++ b/sandbox/win/src/sandbox_nt_util.h
 @@ -13,16 +13,19 @@
- #include "base/macros.h"
  #include "sandbox/win/src/nt_internals.h"
  #include "sandbox/win/src/sandbox_nt_types.h"
+ #include "third_party/abseil-cpp/absl/types/optional.h"
  
  // Placement new and delete to be used from ntdll interception code.
  void* __cdecl operator new(size_t size,

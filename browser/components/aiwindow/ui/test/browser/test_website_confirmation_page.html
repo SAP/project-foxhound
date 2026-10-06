@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>AI Window website confirmation test</title>
+    <script type="module" src="test_website_confirmation.mjs">
+    </script>
+    <link rel="localization" href="preview/aiWindow.ftl">
+  </head>
+  <body>
+    <ai-website-confirmation id="test-confirmation-empty">
+    </ai-website-confirmation>
+
+    <ai-website-confirmation id="test-confirmation-mixed">
+    </ai-website-confirmation>
+
+    <ai-website-confirmation id="test-confirmation-all-checked">
+    </ai-website-confirmation>
+
+    <script type="module">
+      // Setup test data after components are defined
+      customElements.whenDefined("ai-website-confirmation").then(() => {
+        const mixedConfirmation = document.getElementById("test-confirmation-mixed");
+        mixedConfirmation.tabs = [
+          {
+            token: "tab-1",
+            linkedPanel: "tab-1",
+            title: "Mozilla Developer Network",
+            iconSrc: "chrome://branding/content/icon16.png",
+            url: "https://developer.mozilla.org",
+            checked: true,
+          },
+          {
+            token: "tab-2",
+            linkedPanel: "tab-2",
+            title: "Stack Overflow",
+            iconSrc: "chrome://global/skin/icons/defaultFavicon.svg",
+            url: "https://stackoverflow.com",
+            checked: false,
+          },
+          {
+            token: "tab-3",
+            linkedPanel: "tab-3",
+            title: "GitHub",
+            iconSrc: "chrome://branding/content/about-logo.svg",
+            url: "https://github.com",
+            checked: true,
+          },
+          {
+            token: "tab-4",
+            linkedPanel: "tab-4",
+            title: "Example Site",
+            iconSrc: "chrome://global/skin/icons/defaultFavicon.svg",
+            url: "https://example.com",
+            checked: false,
+          },
+        ];
+
+        const allCheckedConfirmation = document.getElementById("test-confirmation-all-checked");
+        allCheckedConfirmation.tabs = [
+          {
+            token: "checked-1",
+            linkedPanel: "checked-1",
+            title: "Site One",
+            iconSrc: "chrome://branding/content/icon16.png",
+            url: "https://site1.example",
+            checked: true,
+          },
+          {
+            token: "checked-2",
+            linkedPanel: "checked-2",
+            title: "Site Two",
+            iconSrc: "chrome://branding/content/icon16.png",
+            url: "https://site2.example",
+            checked: true,
+          },
+        ];
+      });
+    </script>
+  </body>
+</html>

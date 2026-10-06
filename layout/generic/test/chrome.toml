@@ -7,7 +7,9 @@ support-files = [
 ]
 
 ["test_backspace_delete.xhtml"]
-skip-if = ["true"] # Bug 1163311
+skip-if = [
+  "true", # Bug 1163311
+]
 
 ["test_bug469613.xhtml"]
 
@@ -18,5 +20,12 @@ skip-if = ["true"] # Bug 1163311
 ["test_bug514732-2.xhtml"]
 
 ["test_bug632379.xhtml"]
+skip-if = [
+  "standalone", # Bug 2026600
+]
+
+["test_paragraph_movement_scroll.html"]
+
+["test_paragraph_movement_shadow_dom.html"]
 
 ["test_selection_underline.html"]

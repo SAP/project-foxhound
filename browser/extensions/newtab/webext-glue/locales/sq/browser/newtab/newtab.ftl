@@ -8,6 +8,13 @@
 newtab-page-title = Skedë e Re
 newtab-settings-button =
     .title = Personalizoni faqen tuaj Skedë e Re
+#  (developer note): @nova-cleanup(remove-string): Remove newtab-customize-panel-icon-button once Nova lands, will be using newtab-customize-panel-label instead
+newtab-customize-panel-icon-button =
+    .title = Përshtateni këtë faqe
+#  (developer note): @nova-cleanup(remove-string): Remove newtab-customize-panel-icon-button-label once Nova lands, will be using newtab-customize-panel-label instead
+newtab-customize-panel-icon-button-label = Përshtateni
+newtab-customize-panel-label =
+    .label = Përshtateni
 newtab-personalize-settings-icon-label =
     .title = Personalizoni Skedën e Re
     .aria-label = Rregullime
@@ -20,6 +27,119 @@ newtab-personalize-dialog-label =
     .aria-label = Personalizojeni
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
+newtab-card-dismiss-button =
+    .title = Hidhe tej
+    .aria-label = Hidhe tej
+
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-title =
+    .label = Faqe hyrëse
+home-homepage-new-windows =
+    .label = Dritare të reja
+home-homepage-new-tabs =
+    .label = Skeda të reja
+# This option leads to the "Custom Homepage" subpage
+home-homepage-custom-homepage-button =
+    .label = Zgjidhni një sajt specifik
+
+## Custom URLs subpage
+
+# Subheader on the Custom Homepage subpage. Followed by a form to enter URLs and a list of URLs already saved, if any.
+home-custom-homepage-card-header =
+    .label = Adresë(a) sajti
+home-custom-homepage-address =
+    .placeholder = Jepni adresë
+home-custom-homepage-address-button =
+    .label = Shtoni adresë
+# Shown when no custom websites/URLs to use as a homepage have been added yet
+home-custom-homepage-no-results =
+    .label = Ende pa sajte të shtuar.
+home-custom-homepage-delete-address-button =
+    .aria-label = Fshije adresën
+    .title = Fshije adresën
+# Further options to use when setting the home page. Two action buttons are placed in line with this prompt
+# to replace the current home page with a currently open page or bookmark.
+home-custom-homepage-replace-with-prompt =
+    .label = Zëvendësoje me
+# Button that appears in-line after text "Replace with" (home-custom-homepage-replace-with-prompt)
+home-custom-homepage-current-pages-button =
+    .label = Faqe aktualisht të hapura
+# Button that appears in-line after text "Replace with" (home-custom-homepage-replace-with-prompt)
+home-custom-homepage-bookmarks-button =
+    .label = Faqerojtës…
+
+## Firefox Home content
+
+home-prefs-content-header =
+    .label = { -firefox-home-brand-name }
+home-prefs-search-header2 =
+    .label = Kërko
+home-prefs-stories-header2 =
+    .label = Histori
+    .description = Lëndë e veçantë, nën kujdesin e familjes { -brand-product-name }
+home-prefs-widgets-header =
+    .label = Widget-e
+# Lists is a widget on New Tab, similar to a to-do widget
+home-prefs-lists-header =
+    .label = Lista
+# Timer is a widget on New Tab, similar to the Pomodoro timer.
+home-prefs-timer-header =
+    .label = Kohëmatës
+home-prefs-mission-message2 =
+    .message = Sponsorët tanë përkrahin misionin tonë për ndërtimin e një interneti më të mirë.
+home-prefs-manage-topics-link2 =
+    .label = Administroni subjekte
+home-prefs-choose-wallpaper-link2 =
+    .label = Zgjidhni një sfond
+home-prefs-firefox-logo-header =
+    .label = Stemë e { -brand-short-name }-it
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } rresht
+           *[other] { $num } rreshta
+        }
+# Dropdown option shown when an extension replaces the contents of new windows or tabs.
+# Variables:
+#   $extension (string) - Name of the extension
+home-prefs-homepage-extension-option =
+    .label = Zgjerim ({ $extension })
+home-restore-defaults-srd =
+    .label = Rikthe Parazgjedhjet
+    .accesskey = R
+home-mode-choice-default-fx-srd =
+    .label = { -firefox-home-brand-name } (Parazgjedhje)
+home-mode-choice-custom-srd =
+    .label = URL Vetjake…
+home-mode-choice-blank-srd =
+    .label = Faqe të Zbrazët
+home-prefs-shortcuts-header-srd =
+    .label = Shkurtore
+home-prefs-shortcuts-select =
+    .aria-label = Shkurtore
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = Shkurtore të sponsorizuara
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Histori të Sponsorizuara
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Faqe të Vizituara
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Faqerojtës
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Shkarkimet Më të Reja
+home-prefs-recent-activity-header-srd =
+    .label = Veprimtari së fundi
+home-prefs-recent-activity-select =
+    .aria-label = Veprimtari së fundi
+home-prefs-weather-header-srd =
+    .label = Moti
+home-prefs-support-firefox-header-srd =
+    .label = Përkrahni { -brand-product-name }
+home-prefs-mission-message-learn-more-link-srd = Mësoni se si
 
 ## Search box component.
 
@@ -46,13 +166,16 @@ newtab-search-box-input =
     .placeholder = Kërkoni në Web
     .aria-label = Kërkoni në Web
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Shtoni Motor Kërkimesh
 newtab-topsites-add-shortcut-header = Shkurtore e Re
 newtab-topsites-edit-topsites-header = Përpunoni Sajtin Kryesues
 newtab-topsites-edit-shortcut-header = Përpunoni Shkurtore
 newtab-topsites-add-shortcut-label = Shtoni Shkurtore
+newtab-topsites-add-shortcut-title =
+    .title = Shtoni Shkurtore
+    .aria-label = Shtoni Shkurtore
 newtab-topsites-title-label = Titull
 newtab-topsites-title-input =
     .placeholder = Jepni një titull
@@ -63,6 +186,11 @@ newtab-topsites-url-validation = Lypset URL e vlefshme
 newtab-topsites-image-url-label = URL Figure Vetjake
 newtab-topsites-use-image-link = Përdorni një figurë vetjake…
 newtab-topsites-image-validation = Dështoi ngarkimi i figurës. Provoni një URL tjetër.
+
+## Clear text button for the URL and image URL input fields in the Top Sites form.
+
+newtab-topsites-clear-input =
+    .aria-label = Spastroje tekstin
 
 ## Top Sites - General form dialog buttons. These are verbs/actions.
 
@@ -81,6 +209,14 @@ newtab-confirm-delete-history-p2 = Ky veprim s’mund të zhbëhet.
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = E sponsorizuar
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title } (i fiksuar)
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -117,9 +253,13 @@ newtab-menu-delete-pocket = Fshije nga { -pocket-brand-name }
 newtab-menu-archive-pocket = Arkivoje në { -pocket-brand-name }
 newtab-menu-show-privacy-info = Sponsorët tanë & privatësia jonë
 newtab-menu-about-fakespot = Mvi { -fakespot-brand-name }
+# Report is a verb (i.e. report issue with the content).
+newtab-menu-report = Raportojeni
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = Bllokoje
+# Context menu option to open a support page explaining the New Tab personalization features and privacy controls.
+newtab-menu-section-learn-more = Mësoni më tepër
 # "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
 # e.g. Following the travel section of stories.
 newtab-menu-section-unfollow = Hiqe Ndjekjen e Subjektit
@@ -186,6 +326,8 @@ newtab-label-sponsored-by = Sponsorizuar nga { $sponsor }
 #   $source (string) - The name of a company or their domain
 #   $timeToRead (number) - The estimated number of minutes to read this story
 newtab-label-source-read-time = { $source } · { $timeToRead } minuta
+# This string is used under fixed size ads to indicate sponsored content
+newtab-label-sponsored-fixed = E sponsorizuar
 
 ## Section Menu: These strings are displayed in the section context menu and are
 ## meant as a call to action for the given section.
@@ -281,9 +423,21 @@ newtab-error-fallback-refresh-link = Rifreskoni faqen që të riprovohet.
 
 newtab-custom-shortcuts-title = Shkurtore
 newtab-custom-shortcuts-subtitle = Sajte që ruani ose vizitoni
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = Shkurtore
     .description = Sajte që ruani ose vizitoni
+newtab-custom-shortcuts-nova =
+    .label = Shkurtore
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } rresht
+           *[other] { $num } rreshta
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =
@@ -294,19 +448,38 @@ newtab-custom-row-selector =
 newtab-custom-sponsored-sites = Shkurtore të sponsorizuara
 newtab-custom-pocket-title = Rekomanduar nga { -pocket-brand-name }
 newtab-custom-pocket-subtitle = Lëndë e jashtëzakonshme, në kujdesin e { -pocket-brand-name }, pjesë e familjes { -brand-product-name }
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be having a description under "Recommended stories" anymore
 newtab-custom-stories-toggle =
     .label = Histori të rekomanduara
     .description = Lëndë e veçantë, nën kujdesin e familjes { -brand-product-name }
+newtab-recommended-stories-toggle =
+    .label = Histori të rekomanduara
+newtab-custom-stories-personalized-toggle =
+    .label = Histori
+newtab-custom-stories-personalized-checkbox-label = Histori të personalizuara, bazuar në veprimtarinë tuaj
 newtab-custom-pocket-sponsored = Histori të sponsorizuara
 newtab-custom-pocket-show-recent-saves = Shfaq të ruajturat së fundi
 newtab-custom-recent-title = Veprimtari së fundi
 newtab-custom-recent-subtitle = Një përzgjedhje sajtesh dhe lënde së fundi
-newtab-custom-recent-toggle =
-    .label = Veprimtari së fundi
-    .description = Një përzgjedhje sajtesh dhe lënde së fundi
 newtab-custom-weather-toggle =
     .label = Moti
     .description = Parashikimi i motit për sot me një vështrim
+newtab-custom-widget-weather-toggle =
+    .label = Moti
+newtab-custom-widget-lists-toggle =
+    .label = Lista
+newtab-custom-widget-timer-toggle =
+    .label = Kohëmatës
+newtab-custom-widget-section-title = Widget-e
+newtab-custom-widget-section-toggle =
+    .label = Widget-e
+newtab-widget-manage-title = Widget-e
+newtab-widget-manage-widget-button =
+    .label = Administroni widget-e
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = Mbylle
+    .aria-label = Mbylleni menunë
 newtab-custom-close-button = Mbylle
 newtab-custom-settings = Administroni më tepër rregullime
 
@@ -314,11 +487,15 @@ newtab-custom-settings = Administroni më tepër rregullime
 
 newtab-wallpaper-title = Sfonde
 newtab-wallpaper-reset = Riktheje te parazgjedhjet
+#  (developer note): @nova-cleanup(remove-string): Remove old "Upload an image" string once Nova lands. The new "Add an image"  string will take over
 newtab-wallpaper-upload-image = Ngarkoni një figurë
 newtab-wallpaper-custom-color = Zgjidhni një ngjyrë
+newtab-wallpaper-toggle-title =
+    .label = Sfonde
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = Figura tejkalonte kufirin { $file_size }MB e madhësive të kartelave. Ju lutemi, provoni të ngarkoni një kartelë më të vogël.
+newtab-wallpaper-error-upload-file-type = S’e ngarkuam dot kartelën tuaj. Ju lutemi, riprovoni me një kartelë figurë.
 newtab-wallpaper-error-file-type = S’e ngarkuam dot kartelën tuaj. Ju lutemi, riprovoni me një lloj tjetër kartele.
 newtab-wallpaper-light-red-panda = Panda e kuqe
 newtab-wallpaper-light-mountain = Mal i bardhë
@@ -337,6 +514,7 @@ newtab-wallpaper-light-fox-anniversary = Një dhelpër në një lëndinë, në n
 
 ## Solid Colors
 
+#  (developer note): @nova-cleanup(remove-string): Remove old "Solid colors" string once Nova lands. The simplified "Colors" string will take over
 newtab-wallpaper-category-title-colors = Ngjyra të plota
 newtab-wallpaper-blue = Blu
 newtab-wallpaper-light-blue = Blu e çelët
@@ -368,7 +546,7 @@ newtab-wallpaper-abstract-purple-green = Gradient ndriçimi të purpur dhe të g
 newtab-wallpaper-abstract-blue-purple-waves = Forma të valëzuara blu dhe të purpurta
 newtab-wallpaper-abstract-black-waves = Forma të valëzuara të zeza
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotografi
 newtab-wallpaper-beach-at-sunrise = Plazh në agim
@@ -398,6 +576,10 @@ feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
 
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
+
 ## Celestial
 
 # “Celestial” referring to astronomy; positioned in or relating to the sky,
@@ -424,8 +606,9 @@ newtab-weather-menu-change-location = Ndryshoni vendndodhje
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Kërkoni për vendndodhje
     .aria-label = Kërkoni për vendndodhje
-newtab-weather-change-location-search-input = Kërkoni për vendndodhje
 newtab-weather-menu-weather-display = Shfaqje moti
+newtab-weather-todays-forecast = Moti për sot
+newtab-weather-see-full-forecast = Shihni parashikimin e plotë të motit
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
 # - Detailed: Include simple information plus a short text summary: e.g. "Mostly cloudy"
@@ -440,8 +623,21 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Kalo në Farenajt
 newtab-weather-menu-change-temperature-units-celsius = Kalo në Celsius
 newtab-weather-menu-hide-weather = Fshihe motin në Skedë të Re
 newtab-weather-menu-learn-more = Mësoni më tepër
+newtab-weather-menu-detect-my-location = Pikas vendndodhjen time
 # This message is shown if user is working offline
 newtab-weather-error-not-available = S’ka të dhëna moti tani për tani.
+newtab-weather-opt-in-see-weather = Doni të shihni motin për vendndodhjen tuaj?
+newtab-weather-opt-in-not-now =
+    .label = Jo tani
+newtab-weather-opt-in-yes =
+    .label = Po
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = Nju Jork Siti
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = Shihni parashikimin në { $provider }
+    .aria-description = { $provider } ∙ E sponsorizuar
 
 ## Topic Labels
 
@@ -489,6 +685,9 @@ newtab-topic-selection-button-pick-interests = Zgjidhni interesat tuaja
 newtab-section-follow-button = Ndiqe
 newtab-section-following-button = Po e Ndiqni
 newtab-section-unfollow-button = Hiqi Ndjekjen
+# A modal may appear next to the Follow button, directing users to try out the feature
+newtab-section-follow-highlight-title = Përimtoni prurjen tuaj
+newtab-section-follow-highlight-subtitle = Ndiqni interesat tuaja, që të shihni më tepër gjëra nga ato që pëlqeni.
 
 ## Button to block/unblock listed topics
 ## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
@@ -521,6 +720,12 @@ newtab-custom-wallpaper-title = Mbërritën sfonde vetjake
 newtab-custom-wallpaper-subtitle = Ngarkoni sfondin tuaj vetjak, ose zgjidhni një ngjyrë vetjake, për ta bërë { -brand-product-name }-in si e doni.
 newtab-custom-wallpaper-cta = Provojeni
 
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title = Zgjidhni një sfond, për ta bërë { -brand-product-name }-in si e doni
+newtab-new-user-custom-wallpaper-subtitle = Bëjeni çdo skedë të re t’ju duket si shtëpia juaj, me sfonde dhe ngjyra tuajat.
+newtab-new-user-custom-wallpaper-cta = Provojeni tani
+
 ## Strings for download mobile highlight
 
 newtab-download-mobile-highlight-title = Shkarkoni { -brand-product-name } për celular
@@ -533,8 +738,10 @@ newtab-download-mobile-highlight-image =
 
 ## Strings for shortcuts highlight
 
+newtab-shortcuts-highlight-title = Të parapëlqyerat tuaja në majë të gishtave
+newtab-shortcuts-highlight-subtitle = Shtoni një shkurtore, për t’i mbajtur sajtet e parapëlqyer vetëm një klikim larg.
 
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
     .label = Pse po njoftoni për këtë?
@@ -552,10 +759,126 @@ newtab-report-content-inappropriate-offensive =
     .label = E papërshtatshme ose fyese
 newtab-report-content-spam-misleading =
     .label = Mesazh i padëshiruar, ose ngatërrues
+newtab-report-content-requires-payment-subscription =
+    .label = Lyp pagesë ose pajtim
+newtab-report-content-requires-payment-subscription-learn-more = Mësoni më tepër
 newtab-report-cancel = Anuloje
 newtab-report-submit = Parashtroje
 newtab-toast-thanks-for-reporting =
     .message = Faleminderit për njoftimin rreth kësaj.
+newtab-toast-widgets-hidden =
+    .message = Përzgjidhni ikonën laps për të rishtuar kurdo widget-e.
 
-## Strings for trending searches
+## Strings for task / to-do list productivity widget
 
+# "Add one" means adding a new task to the list (e.g., "Walk the dog")
+newtab-widget-lists-empty-cta = Mundësitë janë të pafundme. Shtoni një të tillë.
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = E re
+newtab-widget-lists-label-beta =
+    .label = Beta
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = Të plotësuara ({ $number })
+newtab-widget-task-list-menu-copy = Kopjoje
+newtab-widget-lists-menu-edit = Përpunoni emër liste
+newtab-widget-lists-menu-edit2 =
+    .aria-label = Përpunoni emër liste
+newtab-widget-lists-menu-create = Krijoni një listë të re
+newtab-widget-lists-menu-delete = Fshije këtë listë
+newtab-widget-lists-menu-copy = Kopjoje listën në të papastër
+newtab-widget-lists-menu-learn-more = Mësoni më tepër
+newtab-widget-lists-button-add-item = Shtoni një objekt
+newtab-widget-lists-input-add-an-item2 =
+    .placeholder = Shtoni një objekt
+    .aria-label = Shtoni një objekt
+newtab-widget-lists-input-error = Ju lutemi, që të shtohet një objekt, përfshini tekst.
+newtab-widget-lists-input-menu-open-link = Hape lidhjen
+newtab-widget-lists-input-menu-move-up = Ngjite sipër
+newtab-widget-lists-input-menu-move-down = Zbrite poshtë
+newtab-widget-lists-input-menu-delete = Fshije
+newtab-widget-lists-input-menu-edit = Përpunoni
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Krijoni një listë të re
+newtab-widget-lists-name-label-default =
+    .label = Listë punësh
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = Listë punësh
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new2 =
+    .placeholder = Listë e re
+    .aria-label = Përpunoni emër liste
+newtab-widget-section-title = Widget-e
+newtab-widget-menu-hide = Fshihe widget-in
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = Fshihni widget-et
+    .aria-label = Fshihni krejt widget-et
+newtab-widget-section-maximize =
+    .title = Zgjeroji widget-et
+    .aria-label = Zgjeroji krejt widget-et sa madhësia e plotë
+newtab-widget-section-minimize =
+    .title = Minimizoji widget-et
+    .aria-label = Tkurri krejt widget-et sa madhësia kompakte
+newtab-widget-section-menu-manage = Administroni widget-e
+newtab-widget-section-feedback = Tregonani si ju duket
+
+## Strings introduced by the Nova redesign of the Timer widget
+
+newtab-widget-timer-notification-title = Kohëmatës
+newtab-widget-timer-notification-focus = Koha për i përqendruar mbaroi. Punë e paqme. Ju duhet një pushim?
+newtab-widget-timer-notification-break = Pushimi juaj përfundoi. Gati për t’u përqendruar?
+newtab-widget-timer-notification-warning = Njoftimet janë të çaktivizuara
+newtab-widget-timer-mode-focus =
+    .label = Vëmendje
+newtab-widget-timer-mode-break =
+    .label = Pushim
+newtab-widget-timer-label-play =
+    .label = Luaje
+newtab-widget-timer-label-pause =
+    .label = Ndalesë
+newtab-widget-timer-reset =
+    .title = Riktheje te parazgjedhjet
+newtab-widget-timer-menu-notifications = Çaktivizoni njoftimet
+newtab-widget-timer-menu-notifications-on = Aktivizoni njoftimet
+newtab-widget-timer-menu-learn-more = Mësoni më tepër
+# The title displays above a set of top news headlines.
+newtab-daily-briefing-card-title = Tituj Kryesues
+newtab-daily-briefing-card-menu-dismiss = Hidhe tej
+# Variables:
+#   $minutes (number) - Time since the feed has been refreshed
+newtab-daily-briefing-card-timestamp = Përditësuar { $minutes }m më parë
+newtab-widget-message-title = Mbani përqendrimin, me lista dhe kohëmatës të brendshëm
+# to-dos stands for "things to do".
+newtab-widget-message-copy = Nga kujtues të shpejtë e deri te për-t’u-bërë të përditshme, nga sesione përqendrimi e deri te pushime — merruni me punë dhe ndiqni kohën.
+newtab-promo-card-title = Përkrahni { -brand-product-name }
+newtab-promo-card-body = Sponsorët tanë përkrahin misionin tonë për ndërtimin e një interneti më të mirë
+newtab-promo-card-cta = Mësoni më tepër
+newtab-promo-card-dismiss-button =
+    .title = Hidhe tej
+    .aria-label = Hidheni tej
+
+## Strings for activation window message variants. In certain experiment configurations,
+## the strings from these variants may be displayed in a message below the search input
+## for the first 48 hours of a new profile's lifetime. Some messages include buttons with
+## labels, but not all.
+
+newtab-activation-window-message-dismiss-button =
+    .title = Hidhe tej
+    .aria-label = Hidhe tej
+# "This space" refers to about:newtab. The call to action here ("make it your own")
+# is to customize newtab with a background image or colour, or by tweaking the
+# existing widgetry that appears on it.
+newtab-activation-window-message-customization-focus-header = Bëjeni tuajën këtë hapësirë
+newtab-activation-window-message-customization-focus-message = Zgjidhni një sfond të ri, shtoni shkurtore për te sajtet tuaj të parapëlqyer, dhe qëndroni i përditësuar me histori që ju interesojnë.
+newtab-activation-window-message-customization-focus-primary-button =
+    .label = Filloni ta përshtatni
+# "This space" refers to about:newtab. The sentiment of "plays by your rules" is
+# meant to evoke the idea that newtab is malleable and customizable. The call to
+# action is to customize newtab with a background image or colour, or by tweaking
+# the existing widgetry that appears on it.
+newtab-activation-window-message-values-focus-header = Kjo hapësirë u bindet rregullave tuaja
+newtab-activation-window-message-values-focus-message = { -brand-product-name }-i ju lejon të shfletoni si doni, me një mënyrë më personale për t’ia filluar ditës suaj në internet. Bëjeni { -brand-product-name }-in tuajin.

@@ -31,6 +31,7 @@ import nu.validator.htmlparser.common.Interner;
 
 public final class Portability {
 
+    // [NOCPP[
     public static int checkedAdd(int a, int b) throws SAXException {
         // This can't be translated code, because in C++ signed integer overflow is UB, so the below code would be wrong.
         assert a >= 0;
@@ -41,6 +42,7 @@ public final class Portability {
         }
         return sum;
     }
+    // ]NOCPP]
 
     // Allocating methods
 
@@ -53,7 +55,7 @@ public final class Portability {
     }
 
     public static String newStringFromBuffer(@NoLength char[] buf, int offset, int length
-        // CPPONLY: , TreeBuilder treeBuilder, boolean maybeAtomize
+        // CPPONLY: , TreeBuilder treeBuilder, Interner interner
     ) {
         return new String(buf, offset, length);
     }
@@ -148,6 +150,26 @@ public final class Portability {
     public static boolean stringEqualsString(String one, String other) {
         return one.equals(other);
     }
+
+    // [NOCPP[
+    public static boolean bufferStartsWithLiteralAssumeSufficientLength(char[] buf, String literal) {
+        for (int i = 0; i < literal.length(); i++) {
+            if (buf[i] != literal.charAt(i)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static boolean bufferStartsWithLiteralAtOffsetAssumeSufficientLength(char[] buf, String literal, int offset) {
+        for (int i = 0; i < literal.length(); i++) {
+            if (buf[offset + i] != literal.charAt(i)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    // ]NOCPP]
 
     public static void delete(Object o) {
 

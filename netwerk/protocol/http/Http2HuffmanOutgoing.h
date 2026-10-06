@@ -1,8 +1,8 @@
 /*
  * THIS FILE IS AUTO-GENERATED. DO NOT EDIT!
  */
-#ifndef mozilla__net__Http2HuffmanOutgoing_h
-#define mozilla__net__Http2HuffmanOutgoing_h
+#ifndef mozilla_net_Http2HuffmanOutgoing_h
+#define mozilla_net_Http2HuffmanOutgoing_h
 
 namespace mozilla {
 namespace net {
@@ -82,4 +82,4 @@ static const HuffmanOutgoingEntry HuffmanOutgoing[] = {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // mozilla__net__Http2HuffmanOutgoing_h
+#endif  // mozilla_net_Http2HuffmanOutgoing_h

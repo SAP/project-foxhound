@@ -1,7 +1,9 @@
 [DEFAULT]
 head = "head_satchel.js"
 tags = "condprof"
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 support-files = [
   "asyncformhistory_expire.sqlite",
   "formhistory_1000.sqlite",
@@ -17,7 +19,9 @@ support-files = [
 ["test_async_expire.js"]
 
 ["test_db_access_denied.js"]
-skip-if = ["os != 'linux'"] # simulates insufficiant file permissions
+skip-if = [
+  "os != 'linux'", # simulates insufficiant file permissions
+]
 
 ["test_db_corrupt.js"]
 
@@ -26,7 +30,9 @@ skip-if = ["os != 'linux'"] # simulates insufficiant file permissions
 ["test_db_update_v4b.js"]
 
 ["test_db_update_v5.js"]
-skip-if = ["condprof"]  # Bug 1769154 - not supported
+run-if = [
+  "!condprof", # Bug 1769154 - not supported
+]
 
 ["test_db_update_v999a.js"]
 
@@ -35,5 +41,7 @@ skip-if = ["condprof"]  # Bug 1769154 - not supported
 ["test_history_api.js"]
 
 ["test_history_sources.js"]
+
+["test_isOriginInList.js"]
 
 ["test_notify.js"]

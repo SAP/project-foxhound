@@ -129,7 +129,7 @@ add_task(async function test_changeChromeHiddenAutoClose() {
   );
 
   login1.password = "pass2";
-  Services.logins.removeLogin(login1);
+  await Services.logins.removeLoginAsync(login1);
   login1.password = "notifyp1";
 });
 
@@ -198,6 +198,6 @@ add_task(async function test_changeChromeVisibleSameWindow() {
 
   // cleanup
   login2.password = "pass2";
-  Services.logins.removeLogin(login2);
+  await Services.logins.removeLoginAsync(login2);
   login2.password = "notifyp2";
 });

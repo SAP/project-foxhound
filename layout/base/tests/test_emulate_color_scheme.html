@@ -12,6 +12,8 @@
 }
 </style>
 <div id="test"></div>
+<iframe id="light-iframe" style="color-scheme: light"></iframe>
+<iframe id="dark-iframe" style="color-scheme: dark"></iframe>
 <script>
 function colorId() {
   // Gets the middle number of the rgb(0, x, 0) color.
@@ -21,20 +23,51 @@ function colorId() {
   return id;
 }
 
-{
+function iframeIsDark(id) {
+  return document.getElementById(id).contentWindow.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+// Color-scheme switches should happen synchronously if we're the top window,
+// but if we're not (e.g., in the xorigin tests) we need IPC to go through
+// the embedder color-scheme mechanism, so we gotta wait.
+function maybeWaitForColorScheme(scheme) {
+  if (window.top == window) {
+    return;
+  }
+  let media = matchMedia(`(prefers-color-scheme: ${scheme})`);
+  if (media.matches) {
+    return;
+  }
+  return new Promise(r => {
+    media.addEventListener("change", r, { once: true });
+  });
+}
+
+add_task(async function() {
   let bc = SpecialPowers.wrap(window).browsingContext.top;
   ok('prefersColorSchemeOverride' in bc, "API should exist");
   is(bc.prefersColorSchemeOverride, "none", "Override shouldn't be active.");
+  ok(iframeIsDark("dark-iframe"), "Dark iframe is dark");
+  ok(!iframeIsDark("light-iframe"), "Light iframe is light");
 
   let originalColor = colorId();
 
   bc.prefersColorSchemeOverride = "light";
+  await maybeWaitForColorScheme("light");
   is(colorId(), 1, "Light emulation works");
 
+  ok(iframeIsDark("dark-iframe"), "Dark iframe still dark");
+  ok(!iframeIsDark("light-iframe"), "Light iframe still light");
+
   bc.prefersColorSchemeOverride = "dark";
-  is(colorId(), 2, "Dark emulation works");
+  await maybeWaitForColorScheme("dark");
+  is(colorId(), 2, "Dark emulation works as expected");
+
+  ok(iframeIsDark("dark-iframe"), "Dark iframe still dark");
+  ok(!iframeIsDark("light-iframe"), "Light iframe still light");
 
   bc.prefersColorSchemeOverride = "none";
+  await maybeWaitForColorScheme(originalColor == 1 ? "light" : "dark");
   is(colorId(), originalColor, "Clearing the override works");
-}
+});
 </script>

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<!--
+https://bugzilla.mozilla.org/show_bug.cgi?id=1894251
+-->
+<title>Test for CSSStyleProperties::hasLonghandProperty</title>
+<script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
+
+<div id="target"></div>
+
+<style>
+  #target {
+      --in-rule: hotpink;
+      --in-rule-empty: ;
+      background-color: peachpuff;
+      text-decoration-color: var(--in-rule);
+      padding: 1em;
+  }
+
+  @property --my-color {
+    syntax: "<color>";
+    inherits: false;
+    initial-value: #c0ffee;
+  }
+</style>
+
+<script>
+add_task(async () => {
+  const el = document.querySelector("#target");
+  const computed = getComputedStyle(el);
+
+  ok(
+    !computed.hasLonghandProperty("my-amazing-property"),
+    `hasLonghandProperty returns false for invalid property`
+  );
+  ok(
+    !computed.hasLonghandProperty("--unknown"),
+    `hasLonghandProperty returns false for "--unknown" property`
+  );
+  ok(
+    !computed.hasLonghandProperty("padding"),
+    `hasLonghandProperty returns false for shorthand property (padding)`
+  );
+  ok(
+    computed.hasLonghandProperty("padding-top"),
+    `hasLonghandProperty returns true for longhand property (padding-top)`
+  );
+  ok(
+    computed.hasLonghandProperty("background-color"),
+    `hasLonghandProperty returns true for "background-color" property`
+  );
+  ok(
+    computed.hasLonghandProperty("text-decoration-color"),
+    `hasLonghandProperty returns true for property with a CSS variable value`
+  );
+  ok(
+    computed.hasLonghandProperty("clear"),
+    `hasLonghandProperty returns true for unset "clear" property`
+  );
+  ok(
+    computed.hasLonghandProperty("--in-rule"),
+    `hasLonghandProperty returns true for "--in-rule" property`
+  );
+  ok(
+    computed.hasLonghandProperty("--in-rule-empty"),
+    `hasLonghandProperty returns true for "--in-rule-empty" property`
+  );
+  ok(
+    computed.hasLonghandProperty("--my-color"),
+    `hasLonghandProperty returns true for registered but unset "--my-color" property`
+  );
+});
+</script>

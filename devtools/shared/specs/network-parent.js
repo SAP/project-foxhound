@@ -76,6 +76,11 @@ const networkParentSpec = generateActorSpec({
         url: Arg(0, "string"),
       },
     },
+    setLocalModeMappings: {
+      request: {
+        mappings: Arg(0, "json"),
+      },
+    },
   },
 });
 

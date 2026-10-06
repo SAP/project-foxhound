@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -147,6 +146,8 @@ class imgRequest final : public nsIThreadRetargetableStreamListener,
   /// Returns a non-owning pointer to this imgRequest's MIME type.
   const char* GetMimeType() const { return mContentType.get(); }
 
+  int64_t GetContentLength() const { return mContentLength; }
+
   void GetFileName(nsACString& aFileName);
 
   /// @return the priority of the underlying network request, or
@@ -163,6 +164,10 @@ class imgRequest final : public nsIThreadRetargetableStreamListener,
   nsIRequest* GetRequest() const { return mRequest; }
 
   nsITimedChannel* GetTimedChannel() const { return mTimedChannel; }
+
+  /// Returns true if any redirect in the chain that loaded this image was
+  /// cross-origin.
+  bool HadCrossOriginRedirects() const;
 
   imgCacheValidator* GetValidator() const { return mValidator; }
   void SetValidator(imgCacheValidator* aValidator) { mValidator = aValidator; }
@@ -248,6 +253,7 @@ class imgRequest final : public nsIThreadRetargetableStreamListener,
   nsCOMPtr<nsITimedChannel> mTimedChannel;
 
   nsCString mContentType;
+  int64_t mContentLength = 0;
 
   /* we hold on to this to this so long as we have observers */
   RefPtr<imgCacheEntry> mCacheEntry;
@@ -265,10 +271,6 @@ class imgRequest final : public nsIThreadRetargetableStreamListener,
   nsCOMPtr<nsIAsyncVerifyRedirectCallback> mRedirectCallback;
   nsCOMPtr<nsIChannel> mNewRedirectChannel;
 
-  // The CORS mode (defined in imgIRequest) this image was loaded with. By
-  // default, CORS_NONE.
-  mozilla::CORSMode mCORSMode;
-
   // The ReferrerInfo used for this image.
   nsCOMPtr<nsIReferrerInfo> mReferrerInfo;
 
@@ -277,12 +279,18 @@ class imgRequest final : public nsIThreadRetargetableStreamListener,
   // The categories of prioritization strategy that have been requested.
   uint32_t mBoostCategoriesRequested = 0;
 
+  // The CORS mode (defined in imgIRequest) this image was loaded with. By
+  // default, CORS_NONE.
+  mozilla::CORSMode mCORSMode;
+
   // If we've called OnImageAvailable.
   bool mImageAvailable;
   bool mIsDeniedCrossSiteCORSRequest;
   bool mIsCrossSiteNoCORSRequest;
 
   bool mShouldReportRenderTimeForLCP;
+  // True if any redirect in the chain that loaded this image was cross-origin.
+  bool mHadCrossOriginRedirects = false;
   // SVGs can't be OffMainThread for example
   bool mOffMainThreadData = false;
 

@@ -265,15 +265,20 @@ class NotificationBox extends Component {
           },
           notification.label
         ),
-        notification.buttons.map(props =>
-          this.renderButton(props, notification)
-        ),
-        this.props.displayCloseButton
-          ? button({
-              className: "messageCloseButton",
-              title: this.props.closeButtonTooltip,
-              onClick: this.close.bind(this, notification),
-            })
+        notification.buttons.length || this.props.displayCloseButton
+          ? div(
+              { className: "notification-buttons-container" },
+              ...notification.buttons.map(props =>
+                this.renderButton(props, notification)
+              ),
+              this.props.displayCloseButton
+                ? button({
+                    className: "messageCloseButton",
+                    title: this.props.closeButtonTooltip,
+                    onClick: this.close.bind(this, notification),
+                  })
+                : null
+            )
           : null
       )
     );

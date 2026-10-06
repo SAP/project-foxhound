@@ -12,9 +12,9 @@ const { SearchTestUtils } = ChromeUtils.importESModule(
 
 SearchTestUtils.init(this);
 
-const kSearchEngineID = "browser_urifixup_search_engine";
+const kSearchEngineName = "browser_urifixup_search_engine";
 const kSearchEngineURL = "https://example.com/?search={searchTerms}";
-const kPrivateSearchEngineID = "browser_urifixup_search_engine_private";
+const kPrivateSearchEngineName = "browser_urifixup_search_engine_private";
 const kPrivateSearchEngineURL = "https://example.com/?private={searchTerms}";
 
 add_setup(async function () {
@@ -28,7 +28,7 @@ add_setup(async function () {
   // Add new fake search engines.
   await SearchTestUtils.installSearchExtension(
     {
-      name: kSearchEngineID,
+      name: kSearchEngineName,
       search_url: "https://example.com/",
       search_url_get_params: "search={searchTerms}",
     },
@@ -37,7 +37,7 @@ add_setup(async function () {
 
   await SearchTestUtils.installSearchExtension(
     {
-      name: kPrivateSearchEngineID,
+      name: kPrivateSearchEngineName,
       search_url: "https://example.com/",
       search_url_get_params: "private={searchTerms}",
     },

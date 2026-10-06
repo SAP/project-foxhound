@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -9,7 +9,7 @@ includes: [compareArray.js, temporalHelpers.js]
 features: [Temporal]
 ---*/
 
-const expected = [
+const expectedOpsForPrimitiveOptions = [
   // RejectObjectWithCalendarOrTimeZone
   "get fields.calendar",
   "get fields.timeZone",
@@ -47,6 +47,8 @@ const expected = [
   "get fields.year",
   "get fields.year.valueOf",
   "call fields.year.valueOf",
+];
+const expected = expectedOpsForPrimitiveOptions.concat([
   // GetTemporalDisambiguationOption
   "get options.disambiguation",
   "get options.disambiguation.toString",
@@ -59,7 +61,7 @@ const expected = [
   "get options.overflow",
   "get options.overflow.toString",
   "call options.overflow.toString",
-];
+]);
 const actual = [];
 
 const instance = new Temporal.ZonedDateTime(0n, "UTC");
@@ -87,6 +89,12 @@ const options = TemporalHelpers.propertyBagObserver(actual, {
 
 instance.with(fields, options);
 assert.compareArray(actual, expected, "order of operations");
+actual.splice(0); // clear
+
+assert.throws(TypeError, () => instance.with(fields, null));
+assert.compareArray(actual, expectedOpsForPrimitiveOptions,
+  "argument fields are read before TypeError is thrown for primitive options");
+
 actual.splice(0); // clear
 
 reportCompare(0, 0);

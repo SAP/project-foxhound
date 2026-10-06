@@ -1,7 +1,7 @@
 use alloc::string::String;
 
 use super::Capabilities;
-use crate::{arena::Handle, proc::Alignment};
+use crate::{arena::Handle, ir, proc::Alignment};
 
 bitflags::bitflags! {
     /// Flags associated with [`Type`]s by [`Validator`].
@@ -44,13 +44,18 @@ bitflags::bitflags! {
         /// The data can be copied around.
         const COPY = 0x4;
 
-        /// Can be be used for user-defined IO between pipeline stages.
+        /// Can be be used in pipeline stage I/O.
         ///
-        /// This covers anything that can be in [`Location`] binding:
-        /// non-bool scalars and vectors, matrices, and structs and
-        /// arrays containing only interface types.
+        /// Applies to the following:
+        ///   - Types that may be used in a [`Location`] binding (numeric scalars and vectors)
+        ///   - `@blend_src` structs
+        ///
+        /// See [location-attr] and [input-output].
         ///
         /// [`Location`]: crate::Binding::Location
+        /// [location-attr]: https://gpuweb.github.io/gpuweb/wgsl/#location-attr
+        /// [input-output]: https://gpuweb.github.io/gpuweb/wgsl/#input-output-locations
+        /// https://gpuweb.github.io/gpuweb/wgsl/#location-attr
         const IO_SHAREABLE = 0x8;
 
         /// Can be used for host-shareable structures.
@@ -133,6 +138,8 @@ pub enum TypeError {
     InvalidDynamicArray(String, Handle<crate::Type>),
     #[error("The base handle {0:?} has to be a struct")]
     BindingArrayBaseTypeNotStruct(Handle<crate::Type>),
+    #[error("Binding arrays of external textures are not yet supported")]
+    BindingArrayBaseExternalTextures,
     #[error("Structure member[{index}] at {offset} overlaps the previous member")]
     MemberOverlap { index: u32, offset: u32 },
     #[error(
@@ -146,12 +153,16 @@ pub enum TypeError {
     },
     #[error("Structure types must have at least one member")]
     EmptyStruct,
+    #[error("Invalid `@blend_src` structure: {0}")]
+    InvalidBlendSrc(super::VaryingError),
     #[error(transparent)]
     WidthError(#[from] WidthError),
     #[error(
         "The base handle {0:?} has an override-expression that didn't get resolved to a constant"
     )]
     UnresolvedOverride(Handle<crate::Type>),
+    #[error("Override-sized array type {0:?} does not have a positive size")]
+    InvalidArraySize(Handle<crate::Type>),
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -171,14 +182,14 @@ pub enum WidthError {
 
 #[derive(Clone, Debug, thiserror::Error)]
 #[cfg_attr(test, derive(PartialEq))]
-pub enum PushConstantError {
-    #[error("The scalar type {0:?} is not supported in push constants")]
+pub enum ImmediateError {
+    #[error("The scalar type {0:?} is not supported in immediates")]
     InvalidScalar(crate::Scalar),
 }
 
 // Only makes sense if `flags.contains(HOST_SHAREABLE)`
 type LayoutCompatibility = Result<Alignment, (Handle<crate::Type>, Disalignment)>;
-type PushConstantCompatibility = Result<(), PushConstantError>;
+type ImmediateCompatibility = Result<(), ImmediateError>;
 
 fn check_member_layout(
     accum: &mut LayoutCompatibility,
@@ -217,10 +228,13 @@ fn check_member_layout(
 const fn ptr_space_argument_flag(space: crate::AddressSpace) -> TypeFlags {
     use crate::AddressSpace as As;
     match space {
-        As::Function | As::Private => TypeFlags::ARGUMENT,
-        As::Uniform | As::Storage { .. } | As::Handle | As::PushConstant | As::WorkGroup => {
-            TypeFlags::empty()
-        }
+        As::Function | As::Private | As::RayPayload | As::IncomingRayPayload => TypeFlags::ARGUMENT,
+        As::Uniform
+        | As::Storage { .. }
+        | As::Handle
+        | As::Immediate
+        | As::WorkGroup
+        | As::TaskPayload => TypeFlags::empty(),
     }
 }
 
@@ -229,7 +243,7 @@ pub(super) struct TypeInfo {
     pub flags: TypeFlags,
     pub uniform_layout: LayoutCompatibility,
     pub storage_layout: LayoutCompatibility,
-    pub push_constant_compatibility: PushConstantCompatibility,
+    pub immediates_compatibility: ImmediateCompatibility,
 }
 
 impl TypeInfo {
@@ -238,7 +252,7 @@ impl TypeInfo {
             flags: TypeFlags::empty(),
             uniform_layout: Ok(Alignment::ONE),
             storage_layout: Ok(Alignment::ONE),
-            push_constant_compatibility: Ok(()),
+            immediates_compatibility: Ok(()),
         }
     }
 
@@ -247,7 +261,7 @@ impl TypeInfo {
             flags,
             uniform_layout: Ok(alignment),
             storage_layout: Ok(alignment),
-            push_constant_compatibility: Ok(()),
+            immediates_compatibility: Ok(()),
         }
     }
 }
@@ -261,11 +275,20 @@ impl super::Validator {
         }
     }
 
+    /// Check whether `scalar` is a permitted scalar width.
+    ///
+    /// If `scalar` is not a width allowed by the selected [`Capabilities`],
+    /// return an error explaining why.
+    ///
+    /// If `scalar` is allowed, return a [`ImmediateCompatibility`] result
+    /// that says whether `scalar` is allowed specifically in immediates.
+    ///
+    /// [`Capabilities`]: crate::valid::Capabilities
     pub(super) const fn check_width(
         &self,
         scalar: crate::Scalar,
-    ) -> Result<PushConstantCompatibility, WidthError> {
-        let mut push_constant_compatibility = Ok(());
+    ) -> Result<ImmediateCompatibility, WidthError> {
+        let mut immediates_compatibility = Ok(());
         let good = match scalar.kind {
             crate::ScalarKind::Bool => scalar.width == crate::BOOL_WIDTH,
             crate::ScalarKind::Float => match scalar.width {
@@ -286,14 +309,25 @@ impl super::Validator {
                         });
                     }
 
-                    push_constant_compatibility = Err(PushConstantError::InvalidScalar(scalar));
+                    immediates_compatibility = Err(ImmediateError::InvalidScalar(scalar));
 
                     true
                 }
                 _ => scalar.width == 4,
             },
             crate::ScalarKind::Sint => {
-                if scalar.width == 8 {
+                if scalar.width == 2 {
+                    if !self.capabilities.contains(Capabilities::SHADER_INT16) {
+                        return Err(WidthError::MissingCapability {
+                            name: "i16",
+                            flag: "SHADER_INT16",
+                        });
+                    }
+
+                    immediates_compatibility = Err(ImmediateError::InvalidScalar(scalar));
+
+                    true
+                } else if scalar.width == 8 {
                     if !self.capabilities.contains(Capabilities::SHADER_INT64) {
                         return Err(WidthError::MissingCapability {
                             name: "i64",
@@ -306,7 +340,18 @@ impl super::Validator {
                 }
             }
             crate::ScalarKind::Uint => {
-                if scalar.width == 8 {
+                if scalar.width == 2 {
+                    if !self.capabilities.contains(Capabilities::SHADER_INT16) {
+                        return Err(WidthError::MissingCapability {
+                            name: "u16",
+                            flag: "SHADER_INT16",
+                        });
+                    }
+
+                    immediates_compatibility = Err(ImmediateError::InvalidScalar(scalar));
+
+                    true
+                } else if scalar.width == 8 {
                     if !self.capabilities.contains(Capabilities::SHADER_INT64) {
                         return Err(WidthError::MissingCapability {
                             name: "u64",
@@ -323,7 +368,7 @@ impl super::Validator {
             }
         };
         if good {
-            Ok(push_constant_compatibility)
+            Ok(immediates_compatibility)
         } else {
             Err(WidthError::Invalid(scalar.kind, scalar.width))
         }
@@ -343,7 +388,7 @@ impl super::Validator {
         use crate::TypeInner as Ti;
         Ok(match gctx.types[handle].inner {
             Ti::Scalar(scalar) => {
-                let push_constant_compatibility = self.check_width(scalar)?;
+                let immediates_compatibility = self.check_width(scalar)?;
                 let shareable = if scalar.kind.is_numeric() {
                     TypeFlags::IO_SHAREABLE | TypeFlags::HOST_SHAREABLE
                 } else {
@@ -359,11 +404,11 @@ impl super::Validator {
                         | shareable,
                     Alignment::from_width(scalar.width),
                 );
-                type_info.push_constant_compatibility = push_constant_compatibility;
+                type_info.immediates_compatibility = immediates_compatibility;
                 type_info
             }
             Ti::Vector { size, scalar } => {
-                let push_constant_compatibility = self.check_width(scalar)?;
+                let immediates_compatibility = self.check_width(scalar)?;
                 let shareable = if scalar.kind.is_numeric() {
                     TypeFlags::IO_SHAREABLE | TypeFlags::HOST_SHAREABLE
                 } else {
@@ -379,7 +424,7 @@ impl super::Validator {
                         | shareable,
                     Alignment::from(size) * Alignment::from_width(scalar.width),
                 );
-                type_info.push_constant_compatibility = push_constant_compatibility;
+                type_info.immediates_compatibility = immediates_compatibility;
                 type_info
             }
             Ti::Matrix {
@@ -390,7 +435,7 @@ impl super::Validator {
                 if scalar.kind != crate::ScalarKind::Float {
                     return Err(TypeError::MatrixElementNotFloat);
                 }
-                let push_constant_compatibility = self.check_width(scalar)?;
+                let immediates_compatibility = self.check_width(scalar)?;
                 let mut type_info = TypeInfo::new(
                     TypeFlags::DATA
                         | TypeFlags::SIZED
@@ -401,21 +446,47 @@ impl super::Validator {
                         | TypeFlags::CREATION_RESOLVED,
                     Alignment::from(rows) * Alignment::from_width(scalar.width),
                 );
-                type_info.push_constant_compatibility = push_constant_compatibility;
+                type_info.immediates_compatibility = immediates_compatibility;
                 type_info
+            }
+            Ti::CooperativeMatrix {
+                columns: _,
+                rows: _,
+                scalar,
+                role: _,
+            } => {
+                self.require_type_capability(Capabilities::COOPERATIVE_MATRIX)?;
+                // Allow f16 (width 2) and f32 (width 4) for cooperative matrices
+                if scalar.kind != crate::ScalarKind::Float
+                    || (scalar.width != 2 && scalar.width != 4)
+                {
+                    return Err(TypeError::MatrixElementNotFloat);
+                }
+                TypeInfo::new(
+                    TypeFlags::DATA
+                        | TypeFlags::SIZED
+                        | TypeFlags::COPY
+                        | TypeFlags::HOST_SHAREABLE
+                        | TypeFlags::ARGUMENT
+                        | TypeFlags::CONSTRUCTIBLE
+                        | TypeFlags::CREATION_RESOLVED,
+                    Alignment::from_width(scalar.width),
+                )
             }
             Ti::Atomic(scalar) => {
                 match scalar {
                     crate::Scalar {
                         kind: crate::ScalarKind::Sint | crate::ScalarKind::Uint,
-                        width: _,
+                        width: 4,
+                    } => {}
+                    crate::Scalar {
+                        kind: crate::ScalarKind::Sint | crate::ScalarKind::Uint,
+                        width: 8,
                     } => {
-                        if scalar.width == 8
-                            && !self.capabilities.intersects(
-                                Capabilities::SHADER_INT64_ATOMIC_ALL_OPS
-                                    | Capabilities::SHADER_INT64_ATOMIC_MIN_MAX,
-                            )
-                        {
+                        if !self.capabilities.intersects(
+                            Capabilities::SHADER_INT64_ATOMIC_ALL_OPS
+                                | Capabilities::SHADER_INT64_ATOMIC_MIN_MAX,
+                        ) {
                             return Err(TypeError::MissingCapability(
                                 Capabilities::SHADER_INT64_ATOMIC_ALL_OPS,
                             ));
@@ -524,6 +595,15 @@ impl super::Validator {
                     return Err(TypeError::InvalidArrayBaseType(base));
                 }
 
+                if self.overrides_resolved {
+                    // This check only makes sense for override-sized arrays.
+                    // `ArraySize::Constant` holds a `NonZeroU32`.
+                    if let crate::ArraySize::Pending(_) = size {
+                        size.resolve(gctx)
+                            .map_err(|_| TypeError::InvalidArraySize(handle))?;
+                    }
+                }
+
                 let base_layout = self.layouter[base];
                 let general_alignment = base_layout.alignment;
                 let uniform_layout = match base_info.uniform_layout {
@@ -583,7 +663,7 @@ impl super::Validator {
                     flags: base_info.flags & type_info_mask,
                     uniform_layout,
                     storage_layout,
-                    push_constant_compatibility: base_info.push_constant_compatibility.clone(),
+                    immediates_compatibility: base_info.immediates_compatibility.clone(),
                 }
             }
             Ti::Struct { ref members, span } => {
@@ -591,12 +671,14 @@ impl super::Validator {
                     return Err(TypeError::EmptyStruct);
                 }
 
+                let mut blend_src_types = [None, None];
+                let mut non_blend_src_location = None;
+
                 let mut ti = TypeInfo::new(
                     TypeFlags::DATA
                         | TypeFlags::SIZED
                         | TypeFlags::COPY
                         | TypeFlags::HOST_SHAREABLE
-                        | TypeFlags::IO_SHAREABLE
                         | TypeFlags::ARGUMENT
                         | TypeFlags::CONSTRUCTIBLE
                         | TypeFlags::CREATION_RESOLVED,
@@ -624,6 +706,48 @@ impl super::Validator {
                         }
                     }
                     ti.flags &= base_info.flags;
+
+                    match member.binding {
+                        Some(ir::Binding::Location {
+                            location,
+                            blend_src: Some(blend_src),
+                            ..
+                        }) => {
+                            // `blend_src` is only valid if dual source blending was explicitly enabled,
+                            // see https://www.w3.org/TR/WGSL/#extension-dual_source_blending
+                            if !self
+                                .capabilities
+                                .contains(Capabilities::DUAL_SOURCE_BLENDING)
+                            {
+                                return Err(TypeError::MissingCapability(
+                                    Capabilities::DUAL_SOURCE_BLENDING,
+                                ));
+                            }
+                            if !(location == 0 && (blend_src == 0 || blend_src == 1)) {
+                                return Err(TypeError::InvalidBlendSrc(
+                                    super::VaryingError::InvalidBlendSrcIndex {
+                                        location,
+                                        blend_src,
+                                    },
+                                ));
+                            }
+                            if blend_src_types[blend_src as usize]
+                                .replace(member.ty)
+                                .is_some()
+                            {
+                                // @blend_src(i) appeared multiple times
+                                return Err(TypeError::InvalidBlendSrc(
+                                    super::VaryingError::BindingCollisionBlendSrc { blend_src },
+                                ));
+                            }
+                        }
+                        Some(ir::Binding::Location {
+                            location,
+                            blend_src: None,
+                            ..
+                        }) => non_blend_src_location = Some(location),
+                        _ => {}
+                    }
 
                     if member.offset < min_offset {
                         // HACK: this could be nicer. We want to allow some structures
@@ -664,9 +788,8 @@ impl super::Validator {
                         base_info.storage_layout,
                         handle,
                     );
-                    if base_info.push_constant_compatibility.is_err() {
-                        ti.push_constant_compatibility =
-                            base_info.push_constant_compatibility.clone();
+                    if base_info.immediates_compatibility.is_err() {
+                        ti.immediates_compatibility = base_info.immediates_compatibility.clone();
                     }
 
                     // Validate rule: If a structure member itself has a structure type S,
@@ -709,6 +832,57 @@ impl super::Validator {
                     }
                 }
 
+                match blend_src_types {
+                    [None, None] => {}
+                    [Some(ty0), Some(ty1)] => {
+                        if let Some(location) = non_blend_src_location {
+                            // If `@blend_src` members are present, then `@location`
+                            // may only be used for those members.
+                            return Err(TypeError::InvalidBlendSrc(
+                                super::VaryingError::InvalidBlendSrcWithOtherBindings { location },
+                            ));
+                        }
+                        let ty0_inner = &gctx.types[ty0].inner;
+                        let ty1_inner = &gctx.types[ty1].inner;
+                        // The two blend sources must have the same type...
+                        if !ty0_inner.non_struct_equivalent(ty1_inner, gctx.types) {
+                            return Err(TypeError::InvalidBlendSrc(
+                                super::VaryingError::BlendSrcOutputTypeMismatch {
+                                    blend_src_0_type: ty0,
+                                    blend_src_1_type: ty1,
+                                },
+                            ));
+                        }
+                        // ... and that type must be I/O-shareable.
+                        if !self.types[ty0.index()]
+                            .flags
+                            .contains(TypeFlags::IO_SHAREABLE)
+                        {
+                            return Err(TypeError::InvalidBlendSrc(
+                                super::VaryingError::NotIOShareableType(ty0),
+                            ));
+                        }
+
+                        // `@blend_src` is the only case where we classify a struct as
+                        // I/O-shareable. (In the case of a struct with `@location` bindings, we
+                        // process the members individually in interface validation, and do not
+                        // classify the struct as I/O-shareable.)
+                        ti.flags |= TypeFlags::IO_SHAREABLE;
+                    }
+                    [None, Some(_)] | [Some(_), None] => {
+                        // Only one of the blend sources was specified.
+                        return Err(TypeError::InvalidBlendSrc(
+                            super::VaryingError::IncompleteBlendSrcUsage {
+                                present_blend_src: blend_src_types
+                                    .iter()
+                                    .position(|src| src.is_some())
+                                    .unwrap()
+                                    as u32,
+                            },
+                        ));
+                    }
+                }
+
                 let alignment = self.layouter[handle].alignment;
                 if !alignment.is_aligned(span) {
                     ti.uniform_layout = Err((handle, Disalignment::StructSpan { span, alignment }));
@@ -732,6 +906,16 @@ impl super::Validator {
                 if arrayed && matches!(dim, crate::ImageDimension::Cube) {
                     self.require_type_capability(Capabilities::CUBE_ARRAY_TEXTURES)?;
                 }
+                if matches!(class, crate::ImageClass::External) {
+                    if dim != crate::ImageDimension::D2 || arrayed {
+                        return Err(TypeError::UnsupportedImageType {
+                            dim,
+                            arrayed,
+                            class,
+                        });
+                    }
+                    self.require_type_capability(Capabilities::TEXTURE_EXTERNAL)?;
+                }
                 TypeInfo::new(
                     TypeFlags::ARGUMENT | TypeFlags::CREATION_RESOLVED,
                     Alignment::ONE,
@@ -742,7 +926,8 @@ impl super::Validator {
                 Alignment::ONE,
             ),
             Ti::AccelerationStructure { vertex_return } => {
-                self.require_type_capability(Capabilities::RAY_QUERY)?;
+                self.require_type_capability(Capabilities::RAY_TRACING_PIPELINE)
+                    .or_else(|_| self.require_type_capability(Capabilities::RAY_QUERY))?;
                 if vertex_return {
                     self.require_type_capability(Capabilities::RAY_HIT_VERTEX_POSITION)?;
                 }
@@ -779,10 +964,23 @@ impl super::Validator {
 
                 if base_info.flags.contains(TypeFlags::DATA) {
                     // Currently Naga only supports binding arrays of structs for non-handle types.
+                    // `validate_global_var` relies on ray queries (which are `DATA`) being rejected here
                     match gctx.types[base].inner {
                         crate::TypeInner::Struct { .. } => {}
                         _ => return Err(TypeError::BindingArrayBaseTypeNotStruct(base)),
                     };
+                }
+                if matches!(
+                    gctx.types[base].inner,
+                    crate::TypeInner::Image {
+                        class: crate::ImageClass::External,
+                        ..
+                    }
+                ) {
+                    // Binding arrays of external textures are not yet supported.
+                    // See <https://github.com/gfx-rs/wgpu/issues/8027>. Note that
+                    // `validate_global_var` relies on this error being raised here.
+                    return Err(TypeError::BindingArrayBaseExternalTextures);
                 }
 
                 if !base_info.flags.contains(TypeFlags::CREATION_RESOLVED) {

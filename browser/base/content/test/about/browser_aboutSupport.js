@@ -154,6 +154,38 @@ add_task(async function test_remote_configuration() {
   doCleanup();
 });
 
+add_task(async function test_sanitize_paths() {
+  await BrowserTestUtils.withNewTab(
+    { gBrowser, url: "about:support" },
+    async function (browser) {
+      let snapshot = {
+        secretPath: "/home/user",
+        "bool.pref.ending.with.path": true,
+        nullValue: null,
+        emptyString: "",
+        object: {
+          SOME_DIR: "/home/kit",
+        },
+        array: [{ myDirectory: "/home/kit" }],
+      };
+      snapshot = await SpecialPowers.spawn(
+        browser,
+        [snapshot],
+        async function (aSnapshot) {
+          content.sanitizeSnapshot(aSnapshot);
+          return aSnapshot;
+        }
+      );
+      Assert.strictEqual(snapshot["bool.pref.ending.with.path"], true);
+      Assert.strictEqual(snapshot.nullValue, null);
+      Assert.equal(snapshot.secretPath, "<non-empty string>");
+      Assert.equal(snapshot.object.SOME_DIR, "<non-empty string>");
+      Assert.equal(snapshot.array[0].myDirectory, "<non-empty string>");
+      Assert.equal(snapshot.emptyString, "");
+    }
+  );
+});
+
 add_task(async function test_remote_settings() {
   const sandbox = sinon.createSandbox();
   sandbox.stub(RemoteSettings, "inspect").resolves({

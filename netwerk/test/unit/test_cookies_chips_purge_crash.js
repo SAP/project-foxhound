@@ -4,7 +4,7 @@
 add_setup(function test_setup() {
   Services.prefs.setIntPref(
     "network.cookie.cookieBehavior",
-    Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN
+    Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN
   );
   Services.prefs.setBoolPref(
     "network.cookieJarSettings.unblocked_for_testing",

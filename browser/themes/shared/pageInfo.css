@@ -9,19 +9,20 @@
   #topBar {
     position: relative;
     -moz-window-dragging: drag;
-    padding-top: env(-moz-mac-titlebar-height);
     border-bottom: 1px solid ThreeDShadow;
 
     align-items: center;
     justify-content: center;
 
-    &::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      appearance: auto;
-      -moz-default-appearance: -moz-window-titlebar;
-      z-index: -1;
+    @media not (-moz-mac-tahoe-theme) {
+      &::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        appearance: auto;
+        -moz-default-appearance: -moz-window-titlebar;
+        z-index: -1;
+      }
     }
   }
 }
@@ -84,7 +85,7 @@
     color: FieldText;
   }
 
-  #viewGroup > radio[selected="true"] {
+  #viewGroup > radio[selected] {
     background-color: SelectedItem;
     color: SelectedItemText;
   }
@@ -96,16 +97,16 @@
   }
 
   #viewGroup > radio:hover {
-    background-color: #e0e8f6;
-    color: black;
+    background-color: light-dark(#e0e8f6, var(--button-background-color-hover));
+    color: light-dark(black, var(--button-text-color-hover));
   }
 
-  #viewGroup > radio[selected="true"] {
-    background-color: #c1d2ee;
-    color: black;
+  #viewGroup > radio[selected] {
+    background-color: light-dark(#c1d2ee, var(--button-background-color-active));
+    color: light-dark(black, var(--button-text-color-active));
   }
 
-  #viewGroup > radio:is(:hover, [selected="true"]) .radio-icon {
+  #viewGroup > radio:is(:hover, [selected]) .radio-icon {
     background-position-y: -32px;
   }
 }
@@ -121,7 +122,7 @@
       font: menu;
       margin: 0 2px;
       padding: 3px 6px;
-      border-radius: 3px;
+      border-radius: var(--border-radius-xsmall);
 
       &:hover,
       &[selected] {
@@ -145,7 +146,8 @@ tree {
 html|input {
   background: transparent;
   border: none;
-  padding: 0;
+  padding: 0 var(--space-small);
+  outline-offset: var(--focus-outline-offset);
 }
 
 html|input.header {
@@ -154,7 +156,7 @@ html|input.header {
 
 #imagecontainerbox {
   margin: 0.5em;
-  background: white;
+  background: Field;
   overflow: auto;
   border: 1px solid ThreeDLightShadow;
 }
@@ -167,6 +169,10 @@ html|input:disabled {
   .help-button {
     appearance: auto;
     -moz-default-appearance: -moz-mac-help-button;
+
+    .button-text {
+      visibility: hidden;
+    }
   }
 }
 
@@ -236,7 +242,7 @@ treechildren::-moz-tree-cell-text(broken) {
 }
 
 .permissionLabel {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .permission:hover {

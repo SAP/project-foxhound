@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,7 +5,6 @@
 #include "mozilla/chrome/RegistryMessageUtils.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/Unused.h"
 
 #include "nsResProtocolHandler.h"
 #include "nsNetCID.h"
@@ -17,7 +15,6 @@
 #include "mozilla/Omnijar.h"
 
 using mozilla::LogLevel;
-using mozilla::Unused;
 using mozilla::dom::ContentParent;
 
 #define kAPP "app"
@@ -27,6 +24,7 @@ using mozilla::dom::ContentParent;
 mozilla::StaticRefPtr<nsResProtocolHandler> nsResProtocolHandler::sSingleton;
 
 already_AddRefed<nsResProtocolHandler> nsResProtocolHandler::GetSingleton() {
+  MOZ_ASSERT(NS_IsMainThread() || sSingleton);
   if (!sSingleton) {
     RefPtr<nsResProtocolHandler> handler = new nsResProtocolHandler();
     if (NS_WARN_IF(NS_FAILED(handler->Init()))) {

@@ -29,7 +29,7 @@ button-group-four = Four
 export const Tabs = () => html`
   <style>
     button[selected] {
-      outline: 2px dashed var(--in-content-primary-button-background);
+      outline: 2px dashed var(--focus-outline-color);
     }
   </style>
   <button-group>

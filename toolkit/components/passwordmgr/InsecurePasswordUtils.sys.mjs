@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* ownerGlobal doesn't exist in content privileged windows. */
-/* eslint-disable mozilla/use-ownerGlobal */
+/* documentGlobal doesn't exist in content privileged windows. */
+/* eslint-disable mozilla/use-documentGlobal */
 
 const STRINGS_URI = "chrome://global/locale/security/security.properties";
 
@@ -65,7 +65,7 @@ export const InsecurePasswordUtils = {
    *
    * @param {FormLike} aForm A form-like object. @See {FormLikeFactory}
    *
-   * @returns {Object} An object with the following boolean values:
+   * @returns {object} An object with the following boolean values:
    *  isFormSubmitHTTP: if the submit action is an http:// URL
    *  isFormSubmitSecure: if the submit action URL is secure,
    *    either because it is HTTPS or because its origin is considered trustworthy

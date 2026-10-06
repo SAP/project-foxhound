@@ -11,9 +11,10 @@
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 
 #include <cstdint>
+#include <iterator>
+#include <span>
 
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/rtp_parameters.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/corruption_detection_extension.h"
@@ -21,7 +22,6 @@
 #include "modules/rtp_rtcp/source/rtp_generic_frame_descriptor_extension.h"
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "modules/rtp_rtcp/source/rtp_video_layers_allocation_extension.h"
-#include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 
@@ -64,7 +64,7 @@ constexpr ExtensionInfo kExtensions[] = {
 
 // Because of kRtpExtensionNone, NumberOfExtension is 1 bigger than the actual
 // number of known extensions.
-static_assert(arraysize(kExtensions) ==
+static_assert(std::ssize(kExtensions) ==
                   static_cast<int>(kRtpExtensionNumberOfExtensions) - 1,
               "kExtensions expect to list all known extensions");
 
@@ -79,14 +79,13 @@ RtpHeaderExtensionMap::RtpHeaderExtensionMap(bool extmap_allow_mixed)
 }
 
 RtpHeaderExtensionMap::RtpHeaderExtensionMap(
-    rtc::ArrayView<const RtpExtension> extensions)
+    std::span<const RtpExtension> extensions)
     : RtpHeaderExtensionMap(false) {
   for (const RtpExtension& extension : extensions)
     RegisterByUri(extension.id, extension.uri);
 }
 
-void RtpHeaderExtensionMap::Reset(
-    rtc::ArrayView<const RtpExtension> extensions) {
+void RtpHeaderExtensionMap::Reset(std::span<const RtpExtension> extensions) {
   for (auto& id : ids_)
     id = kInvalidId;
   for (const RtpExtension& extension : extensions)
@@ -106,7 +105,7 @@ bool RtpHeaderExtensionMap::RegisterByUri(int id, absl::string_view uri) {
     if (uri == extension.uri)
       return Register(id, extension.type, extension.uri);
   RTC_LOG(LS_WARNING) << "Unknown extension uri:'" << uri << "', id: " << id
-                      << '.';
+                      << ".";
   return false;
 }
 

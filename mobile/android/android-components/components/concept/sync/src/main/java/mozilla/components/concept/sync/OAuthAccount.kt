@@ -15,31 +15,6 @@ import kotlinx.coroutines.Deferred
 data class AuthFlowUrl(val state: String, val url: String)
 
 /**
- * Represents a specific type of an "in-flight" migration state that could result from intermittent
- * issues during [OAuthAccount.migrateFromAccount].
- */
-enum class InFlightMigrationState(val reuseSessionToken: Boolean) {
-    /**
-     * "Copy" in-flight migration present. Can retry migration via [OAuthAccount.retryMigrateFromSessionToken].
-     */
-    COPY_SESSION_TOKEN(false),
-
-    /**
-     * "Reuse" in-flight migration present. Can retry migration via [OAuthAccount.retryMigrateFromSessionToken].
-     */
-    REUSE_SESSION_TOKEN(true),
-}
-
-/**
- * Data structure describing FxA and Sync credentials necessary to sign-in into an FxA account.
- */
-data class MigratingAccountInfo(
-    val sessionToken: String,
-    val kSync: String,
-    val kXCS: String,
-)
-
-/**
  * User data provided by the web content as a means of delivering the session token to the
  * application
  */
@@ -106,11 +81,18 @@ interface OAuthAccount : AutoCloseable {
     fun getCurrentDeviceId(): String?
 
     /**
-     * Returns session token for an authenticated account.
-     *
-     * @return Current account's session token, if available. `null` otherwise.
+     * Stores whatever is necessary given the JSON payload from a webchannel login.
+     * browser layer. The [jsonPayload] is the `data` object from the `fxaccounts:login`
+     * WebChannel command.
      */
-    fun getSessionToken(): String?
+    suspend fun handleWebChannelLogin(jsonPayload: String)
+
+    /**
+     * Returns a complete `signedInUser` JSON object for a WebChannel `fxaccounts:fxa_status`
+     * response, embedding the session token privately. Email and uid come from the cached profile
+     * in internal state. Returns `null` if no session token is available.
+     */
+    fun getSignedInUserForWebChannel(): String?
 
     /**
      * Fetches the profile object for the current client either from the existing cached state
@@ -120,14 +102,6 @@ interface OAuthAccount : AutoCloseable {
      * @return Profile (optional, if successfully retrieved) representing the user's basic profile info
      */
     suspend fun getProfile(ignoreCache: Boolean = false): Profile?
-
-    /**
-     * Sets the user data given by the web content finishing the OAuth flow.
-     * This should only be used by user agents that need the session token
-     *
-     * @param userData: The user data provided by the web content, including the session token
-     */
-    suspend fun setUserData(userData: UserData)
 
     /**
      * Authenticates the current account using the [code] and [state] parameters obtained via the
@@ -148,6 +122,15 @@ interface OAuthAccount : AutoCloseable {
      *                           expiration timestamp (in seconds) since epoch when complete
      */
     suspend fun getAccessToken(singleScope: String): AccessTokenInfo?
+
+    /**
+     * Get the list of all client applications attached to the user's account.
+     *
+     * This method returns a list of AttachedClient structs representing all the applications
+     * connected to the user's account. This includes applications that are registered as a
+     * device as well as server-side services that the user has connected.
+     */
+    suspend fun getAttachedClient(): List<AttachedClient>
 
     /**
      * Call this whenever an authentication error was encountered while using an access token
@@ -374,4 +357,18 @@ data class AccessTokenInfo(
     val token: String,
     val key: OAuthScopedKey?,
     val expiresAt: Long,
+)
+
+/**
+ * The result of a request to get attached clients.
+ */
+data class AttachedClient(
+    val clientId: String?,
+    val deviceId: String?,
+    val deviceType: DeviceType,
+    val isCurrentSession: Boolean,
+    val name: String?,
+    val createdTime: Long?,
+    val lastAccessTime: Long?,
+    val scope: List<String>?,
 )

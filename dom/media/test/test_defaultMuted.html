@@ -36,16 +36,19 @@
     is(v2.muted, true, "v2.muted should be true by default");
     is(a2.muted, true, "a2.muted should be true by default");
 
-    // Changing defaultMuted value should not change current muted state.
+    // While the muted setter has not been called, the muted state is "default"
+    // and the muted content attribute acts as a fallback, so changing
+    // defaultMuted (which reflects the content attribute) changes muted.
+    // https://html.spec.whatwg.org/multipage/media.html#concept-media-muted
     v1.defaultMuted = true;
     a1.defaultMuted = true;
     v2.defaultMuted = false;
     a2.defaultMuted = false;
 
-    is(v1.muted, false, "v1.muted should not have changed");
-    is(a1.muted, false, "a1.muted should not have changed");
-    is(v2.muted, true, "v2.muted should not have changed");
-    is(a2.muted, true, "a2.muted should not have changed");
+    is(v1.muted, true, "v1.muted reflects the added muted content attribute");
+    is(a1.muted, true, "a1.muted reflects the added muted content attribute");
+    is(v2.muted, false, "v2.muted reflects the removed muted content attribute");
+    is(a2.muted, false, "a2.muted reflects the removed muted content attribute");
 
     mediaTestCleanup();
 </script>

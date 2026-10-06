@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +9,6 @@
 
 #include "2D.h"
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/Vector.h"
 
 namespace mozilla {
 namespace gfx {
@@ -28,8 +25,8 @@ class NativeFontResourceGDI final : public NativeFontResource {
    * @param aDataLength length of data.
    * @return Referenced NativeFontResourceGDI or nullptr if invalid.
    */
-  static already_AddRefed<NativeFontResourceGDI> Create(uint8_t* aFontData,
-                                                        uint32_t aDataLength);
+  static already_AddRefed<NativeFontResourceGDI> Create(
+      const uint8_t* aFontData, uint32_t aDataLength);
 
   virtual ~NativeFontResourceGDI();
 

@@ -13,6 +13,7 @@ import mozilla.components.browser.icons.BrowserIcons
 import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.awesomebar.AwesomeBar
+import mozilla.components.concept.awesomebar.AwesomeBar.GroupedSuggestion
 import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.engine.EngineView
 import mozilla.components.concept.fetch.Client
@@ -214,6 +215,15 @@ class AwesomeBarFeature(
     ): AwesomeBarFeature {
         awesomeBar.addProviders(ClipboardSuggestionProvider(context, loadUrlUseCase, engine = engine))
         return this
+    }
+
+    /**
+     * Add a listener for when the remove button of a search suggestion is clicked.
+     *
+     * @param listener The callback for handling removing the search suggestion.
+     */
+    fun addRemoveButtonListener(listener: (GroupedSuggestion) -> Unit) = apply {
+        awesomeBar.setOnRemoveSuggestionButtonClicked(listener)
     }
 
     private fun showAwesomeBar() {

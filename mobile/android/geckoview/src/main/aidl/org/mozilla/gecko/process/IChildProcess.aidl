@@ -9,6 +9,7 @@ import org.mozilla.gecko.gfx.ISurfaceAllocator;
 import org.mozilla.gecko.process.IProcessManager;
 
 import android.os.Bundle;
+import android.os.IBinder;
 import android.os.ParcelFileDescriptor;
 
 interface IChildProcess {
@@ -39,6 +40,9 @@ interface IChildProcess {
      * consumed by the GPU process. Must only be called for a GPU child process type.
      * @param allocatorId A unique ID used to identify the GPU process instance the allocator
      *     belongs to.
+     * @param client An IBinder identifying the process connecting to the surface allocator. For
+     *     content processes this will have been passed from the content process through the parent,
+     *     and finally to the GPU process here.
      */
-    ISurfaceAllocator getSurfaceAllocator(int allocatorId);
+    ISurfaceAllocator getSurfaceAllocator(int allocatorId, in IBinder client);
 }

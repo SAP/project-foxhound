@@ -7,6 +7,7 @@
 #define _wayland_proxy_h_
 
 #include <poll.h>
+#include <time.h>
 #include <vector>
 #include <fcntl.h>
 #include <atomic>
@@ -14,7 +15,13 @@
 
 class ProxiedConnection;
 
-typedef void (*CompositorCrashHandler)();
+typedef void (*ThreadCallback)();
+typedef void (*CompositorUnavailableHandler)();
+// Called from the proxy thread when the compositor closes a connection without
+// a Wayland protocol error while the compositor process is still alive.
+// aFailureTime is the clock() value when the connection failure was first
+// detected, for correlating with silently-ignored WlLogHandler messages.
+typedef void (*CompositorSilentDisconnectHandler)(clock_t aFailureTime);
 
 #define WAYLAND_PROXY_ENABLED                       (1 << 0)
 #define WAYLAND_PROXY_DISABLED                      (1 << 1)
@@ -44,8 +51,15 @@ class WaylandProxy {
   void RestoreWaylandDisplay();
 
   static void SetVerbose(bool aVerbose);
-  static void SetCompositorCrashHandler(CompositorCrashHandler aCrashHandler);
-  static void CompositorCrashed();
+  static void SetThreadStartCallback(ThreadCallback aCallback);
+  static void SetThreadStopCallback(ThreadCallback aCallback);
+  static void SetCompositorUnavailableHandler(
+      CompositorUnavailableHandler aHandler);
+  static void CompositorUnavailable();
+  static void SetCompositorSilentDisconnectHandler(
+      CompositorSilentDisconnectHandler aHandler);
+  static void CompositorSilentDisconnect(clock_t aFailureTime);
+  static bool IsCompositorGone() { return sCompositorGone; }
   static void AddState(unsigned aState);
   static const char* GetState();
 
@@ -88,7 +102,15 @@ class WaylandProxy {
   // Name of Wayland display provided by us
   char mWaylandProxy[sMaxDisplayNameLen];
 
-  static CompositorCrashHandler sCompositorCrashHandler;
+  static ThreadCallback sThreadStartCallback;
+  static ThreadCallback sThreadStopCallback;
+  static CompositorUnavailableHandler sCompositorUnavailableHandler;
+  static CompositorSilentDisconnectHandler sCompositorSilentDisconnectHandler;
+  // Set when the compositor display socket has disappeared (compositor crashed
+  // or session ended). Once set, draining application sockets is the only
+  // thing WaylandProxy does, keeping them open so GTK never sees a broken pipe
+  // while graceful shutdown proceeds on the main thread.
+  static std::atomic<bool> sCompositorGone;
   static std::atomic<unsigned> sProxyStateFlags;
 };
 

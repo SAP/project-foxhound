@@ -5,11 +5,8 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  LayoutUtils: "resource://gre/modules/LayoutUtils.sys.mjs",
-
   accessibility:
     "chrome://remote/content/shared/webdriver/Accessibility.sys.mjs",
-  AnimationFramePromise: "chrome://remote/content/shared/Sync.sys.mjs",
   assertTargetInViewPort:
     "chrome://remote/content/shared/webdriver/Actions.sys.mjs",
   atom: "chrome://remote/content/marionette/atom.sys.mjs",
@@ -87,7 +84,7 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
           lazy.event.sendKeyUp(details.eventData, win);
           break;
         case "synthesizeMouseAtPoint":
-          lazy.event.synthesizeMouseAtPoint(
+          await lazy.event.synthesizeMouseAtPoint(
             details.x,
             details.y,
             details.eventData,
@@ -127,13 +124,17 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
   }
 
   async #finalizeAction() {
+    if (!this.contentWindow) {
+      return;
+    }
+
     // Terminate the current wheel transaction if there is one. Wheel
     // transactions should not live longer than a single action chain.
     await ChromeUtils.endWheelTransaction(this.contentWindow);
 
-    // Wait for the next animation frame to make sure the page's content
-    // was updated.
-    await lazy.AnimationFramePromise(this.contentWindow);
+    // Wait until the main thread has processed all already queued-up
+    // runnables to ensure that dispatched input events have been handled.
+    await new Promise(resolve => lazy.executeSoon(resolve));
   }
 
   #getClientRects(options, _context) {
@@ -151,17 +152,12 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
   #toBrowserWindowCoordinates(options, _context) {
     const { position } = options;
 
-    const [x, y] = position;
-    const dpr = this.contentWindow.devicePixelRatio;
-
-    const val = lazy.LayoutUtils.rectToTopLevelWidgetRect(this.contentWindow, {
-      left: x,
-      top: y,
-      height: 0,
-      width: 0,
-    });
-
-    return [val.x / dpr, val.y / dpr];
+    return this.contentWindow.windowUtils.toTopLevelWidgetRect(
+      position[0],
+      position[1],
+      0,
+      0
+    );
   }
 
   // eslint-disable-next-line complexity
@@ -197,7 +193,7 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
           result = this.#getInViewCentrePoint(data);
           break;
         case "MarionetteCommandsParent:_finalizeAction":
-          this.#finalizeAction();
+          await this.#finalizeAction();
           break;
         case "MarionetteCommandsParent:_toBrowserWindowCoordinates":
           result = this.#toBrowserWindowCoordinates(data);
@@ -219,6 +215,16 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
           break;
         case "MarionetteCommandsParent:findElements":
           result = await this.findElements(data);
+          break;
+        case "MarionetteCommandsParent:generateTestReport":
+          result = await this.generateTestReport(data);
+          break;
+        case "MarionetteCommandsParent:getAccessibilityPropertiesForAccessibilityNode":
+          result =
+            await this.getAccessibilityPropertiesForAccessibilityNode(data);
+          break;
+        case "MarionetteCommandsParent:getAccessibilityPropertiesForElement":
+          result = await this.getAccessibilityPropertiesForElement(data);
           break;
         case "MarionetteCommandsParent:getActiveElement":
           result = await this.getActiveElement();
@@ -307,7 +313,8 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
 
   // Implementation of WebDriver commands
 
-  /** Clear the text of an element.
+  /**
+   * Clear the text of an element.
    *
    * @param {object} options
    * @param {Element} options.elem
@@ -386,6 +393,37 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
   }
 
   /**
+   * Generates and sends a test report to be observed by any registered reporting observers
+   */
+  async generateTestReport(options = {}) {
+    const { message, group } = options;
+    return this.browsingContext.window.TestReportGenerator.generateReport({
+      message,
+      group,
+    });
+  }
+
+  /**
+   * Return the properties for the accessibility node with the given id.
+   */
+  async getAccessibilityPropertiesForAccessibilityNode(options = {}) {
+    const { id } = options;
+
+    return lazy.accessibility.getAccessibilityPropertiesForAccessibilityNode(
+      id
+    );
+  }
+
+  /**
+   * Return the accessibility properties for a given element.
+   */
+  async getAccessibilityPropertiesForElement(options = {}) {
+    const { elem } = options;
+
+    return lazy.accessibility.getAccessibilityPropertiesForElement(elem);
+  }
+
+  /**
    * Return the active element in the document.
    */
   async getActiveElement() {
@@ -446,14 +484,7 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
    */
   async getElementRect(options = {}) {
     const { elem } = options;
-
-    const rect = elem.getBoundingClientRect();
-    return {
-      x: rect.x + this.document.defaultView.pageXOffset,
-      y: rect.y + this.document.defaultView.pageYOffset,
-      width: rect.width,
-      height: rect.height,
-    };
+    return lazy.dom.getElementRect(elem);
   }
 
   /**
@@ -529,10 +560,40 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
     let rect;
 
     if (elem) {
+      // Throw an error if 'full' is passed with an element, as this is an invalid state.
+      if (full) {
+        throw new Error(
+          "Full screenshot is not supported when an element is provided."
+        );
+      }
+
       if (scroll) {
         lazy.dom.scrollIntoView(elem);
       }
-      rect = this.getElementRect({ elem });
+
+      rect = lazy.dom.getElementRect(elem);
+
+      // Calculate the intersection between the element's bounding client rect
+      // and the visual viewport to draw a bounding box from the framebuffer.
+      // Spec: https://w3c.github.io/webdriver/#dfn-draw-a-bounding-box-from-the-framebuffer
+      const viewport = win.visualViewport;
+
+      const viewportX = viewport.pageLeft;
+      const viewportY = viewport.pageTop;
+
+      const viewportWidth = win.innerWidth;
+      const viewportHeight = win.innerHeight;
+
+      const left = Math.max(rect.x, viewportX);
+      const top = Math.max(rect.y, viewportY);
+
+      const right = Math.min(rect.x + rect.width, viewportX + viewportWidth);
+      const bottom = Math.min(rect.y + rect.height, viewportY + viewportHeight);
+
+      const width = Math.max(right - left, 0);
+      const height = Math.max(bottom - top, 0);
+
+      rect = new DOMRect(left, top, width, height);
     } else if (full) {
       const docEl = win.document.documentElement;
       rect = new DOMRect(0, 0, docEl.scrollWidth, docEl.scrollHeight);

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,9 +5,8 @@
 #ifndef mozilla_dom_CookieStoreNotifier_h
 #define mozilla_dom_CookieStoreNotifier_h
 
-#include "nsIObserver.h"
 #include "mozilla/OriginAttributes.h"
-#include "mozilla/MoveOnlyFunction.h"
+#include "nsIObserver.h"
 
 class nsISerialEventTarget;
 
@@ -33,6 +30,7 @@ class CookieStoreNotifier final : public nsIObserver {
 
  private:
   CookieStoreNotifier(CookieStore* aCookieStore, const nsACString& aBaseDomain,
+                      const nsACString& aHost,
                       const OriginAttributes& aOriginAttributes);
   ~CookieStoreNotifier();
 
@@ -42,6 +40,7 @@ class CookieStoreNotifier final : public nsIObserver {
   CookieStore* mCookieStore;
 
   nsCString mBaseDomain;
+  nsCString mHost;
   OriginAttributes mOriginAttributes;
 
   nsTArray<RefPtr<Event>> mDelayedDOMEvents;

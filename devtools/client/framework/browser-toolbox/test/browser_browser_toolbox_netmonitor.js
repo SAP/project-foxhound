@@ -29,7 +29,6 @@ add_task(async function () {
 
   await ToolboxTask.importFunctions({
     waitUntil,
-    waitForDOM,
   });
 
   await ToolboxTask.spawn(null, async () => {
@@ -118,7 +117,9 @@ add_task(async function () {
       "https://example.org/document-builder.sjs?html=fromParent";
     is(requests[0].textContent, requestUrl, "Expected request is displayed");
 
-    const waitForHeaders = waitForDOM(document, ".headers-overview");
+    const waitForHeaders = waitUntil(
+      () => document.querySelectorAll(".headers-overview").length == 1
+    );
     store.dispatch(Actions.toggleNetworkDetails());
     await waitForHeaders;
 

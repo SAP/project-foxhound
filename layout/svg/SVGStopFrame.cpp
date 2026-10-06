@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -45,7 +43,7 @@ class SVGStopFrame : public nsIFrame {
                         const nsDisplayListSet& aLists) override {}
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
 #ifdef DEBUG_FRAME_DUMP
   nsresult GetFrameName(nsAString& aResult) const override {
@@ -73,7 +71,8 @@ void SVGStopFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 #endif /* DEBUG */
 
 nsresult SVGStopFrame::AttributeChanged(int32_t aNameSpaceID,
-                                        nsAtom* aAttribute, int32_t aModType) {
+                                        nsAtom* aAttribute,
+                                        AttrModType aModType) {
   if (aNameSpaceID == kNameSpaceID_None && aAttribute == nsGkAtoms::offset) {
     MOZ_ASSERT(
         static_cast<SVGGradientFrame*>(do_QueryFrame(GetParent())),

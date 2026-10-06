@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,13 +5,14 @@
 #ifndef GPU_BUFFER_H_
 #define GPU_BUFFER_H_
 
+#include <memory>
+
+#include "ObjectModel.h"
 #include "js/RootingAPI.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/ipc/SharedMemoryMapping.h"
 #include "mozilla/webgpu/WebGPUTypes.h"
 #include "nsTArray.h"
-#include "ObjectModel.h"
-#include <memory>
 
 namespace mozilla {
 namespace webgpu {
@@ -85,7 +85,9 @@ struct MappedInfo {
   MappedInfo(const MappedInfo&) = delete;
 };
 
-class Buffer final : public ObjectBase, public ChildOf<Device> {
+class Buffer final : public nsWrapperCache,
+                     public ObjectBase,
+                     public ChildOf<Device> {
  public:
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(Buffer)
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(Buffer)
@@ -104,8 +106,6 @@ class Buffer final : public ObjectBase, public ChildOf<Device> {
   void Unmap(JSContext* aCx, ErrorResult& aRv);
   void Destroy(JSContext* aCx, ErrorResult& aRv);
 
-  const RawId mId;
-
   uint64_t Size() const { return mSize; }
   uint32_t Usage() const { return mUsage; }
   dom::GPUBufferMapState MapState() const;
@@ -117,14 +117,14 @@ class Buffer final : public ObjectBase, public ChildOf<Device> {
 
  private:
   Buffer(Device* const aParent, RawId aId, BufferAddress aSize, uint32_t aUsage,
-         ipc::SharedMemoryMapping&& aShmem);
+         mozilla::ipc::SharedMemoryMapping&& aShmem);
   virtual ~Buffer();
-  Device& GetDevice() { return *mParent; }
   void Cleanup();
   void UnmapArrayBuffers(JSContext* aCx, ErrorResult& aRv);
   void AbortMapRequest();
   void SetMapped(BufferAddress aOffset, BufferAddress aSize, bool aWritable);
 
+  bool mValid = true;
   // Note: we can't map a buffer with the size that don't fit into `size_t`
   // (which may be smaller than `BufferAddress`), but general not all buffers
   // are mapped.
@@ -150,7 +150,7 @@ class Buffer final : public ObjectBase, public ChildOf<Device> {
   // Otherwise, this points to `SharedMemoryMapping()` (the default
   // constructor), a zero-length mapping that doesn't point to any shared
   // memory.
-  std::shared_ptr<ipc::SharedMemoryMapping> mShmem;
+  std::shared_ptr<mozilla::ipc::SharedMemoryMapping> mShmem;
 };
 
 }  // namespace webgpu

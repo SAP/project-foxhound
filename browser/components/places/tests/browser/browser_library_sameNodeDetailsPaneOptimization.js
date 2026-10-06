@@ -22,24 +22,29 @@ add_task(async function () {
     parentGuid: PlacesUtils.bookmarks.unfiledGuid,
   });
 
-  let library = await promiseLibrary("UnfiledBookmarks");
   registerCleanupFunction(async () => {
     sandbox.restore();
-    await promiseLibraryClosed(library);
     await PlacesUtils.bookmarks.remove(bm1);
   });
 
-  let nameField = library.document.getElementById("editBMPanel_namePicker");
-  let tree = library.ContentTree.view;
-  tree.selectItems([bm1.guid]);
-  Assert.equal(tree.selectedNode.title, "Bookmark 1");
-  await synthesizeClickOnSelectedTreeCell(tree);
-  Assert.equal(nameField.value, "Bookmark 1");
+  await withLibraryWindow("UnfiledBookmarks", async ({ right }) => {
+    let libraryWin = right.documentGlobal;
+    let nameField = right.ownerDocument.getElementById(
+      "editBMPanel_namePicker"
+    );
+    right.selectItems([bm1.guid]);
+    Assert.equal(right.selectedNode.title, "Bookmark 1");
+    await synthesizeClickOnSelectedTreeCell(right);
+    Assert.equal(nameField.value, "Bookmark 1");
 
-  let updateSpy = sandbox.spy(library.PlacesOrganizer, "updateDetailsPane");
-  let uninitSpy = sandbox.spy(library.gEditItemOverlay, "uninitPanel");
-  nameField.focus();
-  await synthesizeClickOnSelectedTreeCell(tree);
-  Assert.ok(updateSpy.calledOnce, "should try to update the details pane");
-  Assert.ok(uninitSpy.notCalled, "should skip the update cause same node");
+    let updateSpy = sandbox.spy(
+      libraryWin.PlacesOrganizer,
+      "updateDetailsPane"
+    );
+    let uninitSpy = sandbox.spy(libraryWin.gEditItemOverlay, "uninitPanel");
+    nameField.focus();
+    await synthesizeClickOnSelectedTreeCell(right);
+    Assert.ok(updateSpy.calledOnce, "should try to update the details pane");
+    Assert.ok(uninitSpy.notCalled, "should skip the update cause same node");
+  });
 });

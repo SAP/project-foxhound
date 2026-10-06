@@ -4,7 +4,6 @@
 #include "storage_test_harness.h"
 #include "prthread.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "mozilla/Attributes.h"
 
 #include "sqlite3.h"
 

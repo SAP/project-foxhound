@@ -103,7 +103,7 @@ class TabbingOrderHighlighter {
     let currentFocusedElement = this.moveFocus(startElm);
     while (
       currentFocusedElement &&
-      isWindowIncluded(this.win, currentFocusedElement.ownerGlobal)
+      isWindowIncluded(this.win, currentFocusedElement.documentGlobal)
     ) {
       focusableElements.push(currentFocusedElement);
       currentFocusedElement = this.moveFocus(currentFocusedElement);
@@ -115,7 +115,7 @@ class TabbingOrderHighlighter {
     let endElm = this.focusedElement;
     if (
       currentFocusedElement &&
-      !isWindowIncluded(this.win, currentFocusedElement.ownerGlobal)
+      !isWindowIncluded(this.win, currentFocusedElement.documentGlobal)
     ) {
       endElm = null;
     }
@@ -203,7 +203,8 @@ class TabbingOrderHighlighter {
   /**
    * Update NodeTabbingOrderHighlighter focus styling for a node that,
    * potentially, belongs to the tabbing order.
-   * @param {Object} options
+   *
+   * @param {object} options
    *        Options specifying the node and its focused state.
    */
   updateFocus({ node, focused }) {

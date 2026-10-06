@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,17 +6,14 @@
 
 #include <cstddef>
 #include <cstring>
-#include <memory>
 #include <new>
-#include <utility>
+
 #include "blapit.h"
 #include "certt.h"
 #include "js/StructuredClone.h"
 #include "js/TypeDecls.h"
 #include "keyhi.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/MacroForEach.h"
 #include "mozilla/dom/KeyAlgorithmBinding.h"
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/SubtleCryptoBinding.h"
@@ -76,16 +71,6 @@ nsresult StringToUsage(const nsString& aUsage, CryptoKey::KeyUsage& aUsageOut) {
   return NS_OK;
 }
 
-// This helper function will release the memory backing a SECKEYPrivateKey and
-// any resources acquired in its creation. It will leave the backing PKCS#11
-// object untouched, however. This should only be called from
-// PrivateKeyFromPrivateKeyTemplate.
-static void DestroyPrivateKeyWithoutDestroyingPKCS11Object(
-    SECKEYPrivateKey* key) {
-  PK11_FreeSlot(key->pkcs11Slot);
-  PORT_FreeArena(key->arena, PR_TRUE);
-}
-
 // To protect against key ID collisions, PrivateKeyFromPrivateKeyTemplate
 // generates a random ID for each key. The given template must contain an
 // attribute slot for a key ID, but it must consist of a null pointer and have a
@@ -108,12 +93,9 @@ UniqueSECKEYPrivateKey PrivateKeyFromPrivateKeyTemplate(
   SECKEYPrivateKey* preexistingKey =
       PK11_FindKeyByKeyID(slot.get(), objID.get(), nullptr);
   if (preexistingKey) {
-    // Note that we can't just call SECKEY_DestroyPrivateKey here because that
-    // will destroy the PKCS#11 object that is backing a preexisting key (that
-    // we still have a handle on somewhere else in memory). If that object were
-    // destroyed, cryptographic operations performed by that other key would
-    // fail.
-    DestroyPrivateKeyWithoutDestroyingPKCS11Object(preexistingKey);
+    // PK11_FindKeyByKeyID returns a non-owning reference, so destroying it
+    // here does not touch the PKCS#11 object backing the preexisting key.
+    SECKEY_DestroyPrivateKey(preexistingKey);
     // Try again with a new ID (but only once - collisions are very unlikely).
     rv = PK11_GenerateRandomOnSlot(slot.get(), objID->data, objID->len);
     if (rv != SECSuccess) {
@@ -121,7 +103,7 @@ UniqueSECKEYPrivateKey PrivateKeyFromPrivateKeyTemplate(
     }
     preexistingKey = PK11_FindKeyByKeyID(slot.get(), objID.get(), nullptr);
     if (preexistingKey) {
-      DestroyPrivateKeyWithoutDestroyingPKCS11Object(preexistingKey);
+      SECKEY_DestroyPrivateKey(preexistingKey);
       return nullptr;
     }
   }
@@ -152,9 +134,16 @@ UniqueSECKEYPrivateKey PrivateKeyFromPrivateKeyTemplate(
     return nullptr;
   }
 
-  // Have NSS translate the object to a private key.
-  return UniqueSECKEYPrivateKey(
+  // Have NSS translate the object to a private key. Since NSS 3.122 (bug
+  // 2017945) PK11_FindKeyByKeyID returns a wrapper that does not own the
+  // underlying PKCS#11 object. We created this session object above, so we own
+  // it and must mark it owned so it is destroyed along with the key.
+  UniqueSECKEYPrivateKey privKey(
       PK11_FindKeyByKeyID(slot.get(), objID.get(), nullptr));
+  if (privKey) {
+    SECKEYPRIVATEKEY_SET_OWNED(privKey.get(), PR_TRUE);
+  }
+  return privKey;
 }
 
 CryptoKey::CryptoKey(nsIGlobalObject* aGlobal)
@@ -186,38 +175,39 @@ void CryptoKey::GetType(nsString& aRetVal) const {
 
 bool CryptoKey::Extractable() const { return (mAttributes & EXTRACTABLE); }
 
-void CryptoKey::GetAlgorithm(JSContext* cx,
+void CryptoKey::GetAlgorithm(JSContext* aCx,
                              JS::MutableHandle<JSObject*> aRetVal,
                              ErrorResult& aRv) const {
   bool converted = false;
-  JS::Rooted<JS::Value> val(cx);
+  JS::Rooted<JS::Value> val(aCx);
   switch (mAlgorithm.mType) {
     case KeyAlgorithmProxy::AES:
-      converted = ToJSValue(cx, mAlgorithm.mAes, &val);
+      converted = ToJSValue(aCx, mAlgorithm.mAes, &val);
       break;
     case KeyAlgorithmProxy::KDF:
-      converted = ToJSValue(cx, mAlgorithm.mKDF, &val);
+      converted = ToJSValue(aCx, mAlgorithm.mKDF, &val);
       break;
     case KeyAlgorithmProxy::HMAC:
-      converted = ToJSValue(cx, mAlgorithm.mHmac, &val);
+      converted = ToJSValue(aCx, mAlgorithm.mHmac, &val);
       break;
     case KeyAlgorithmProxy::RSA: {
-      RootedDictionary<RsaHashedKeyAlgorithm> rsa(cx);
-      converted = mAlgorithm.mRsa.ToKeyAlgorithm(cx, rsa, aRv);
-      if (converted) {
-        converted = ToJSValue(cx, rsa, &val);
+      RootedDictionary<RsaHashedKeyAlgorithm> rsa(aCx);
+      mAlgorithm.mRsa.ToKeyAlgorithm(aCx, rsa, aRv);
+      if (aRv.Failed()) {
+        return;
       }
+      converted = ToJSValue(aCx, rsa, &val);
       break;
     }
     case KeyAlgorithmProxy::EC:
-      converted = ToJSValue(cx, mAlgorithm.mEc, &val);
+      converted = ToJSValue(aCx, mAlgorithm.mEc, &val);
       break;
     case KeyAlgorithmProxy::OKP:
-      converted = ToJSValue(cx, mAlgorithm.mEd, &val);
+      converted = ToJSValue(aCx, mAlgorithm.mEd, &val);
       break;
   }
   if (!converted) {
-    aRv.Throw(NS_ERROR_DOM_OPERATION_ERR);
+    aRv.NoteJSContextException(aCx);
     return;
   }
 
@@ -998,7 +988,15 @@ nsresult CryptoKey::PrivateKeyToJwk(SECKEYPrivateKey* aPrivKey,
                                  &ecPoint);
 
       if (rv != SECSuccess) {
-        return NS_ERROR_DOM_OPERATION_ERR;
+        // SECKEY_ConvertToPublicKey will try to derive public key
+        UniqueSECKEYPublicKey pubKey =
+            UniqueSECKEYPublicKey(SECKEY_ConvertToPublicKey(aPrivKey));
+        rv = PK11_ReadRawAttribute(PK11_TypePubKey, pubKey.get(), CKA_EC_POINT,
+                                   &ecPoint);
+
+        if (rv != SECSuccess) {
+          return NS_ERROR_DOM_OPERATION_ERR;
+        }
       }
 
       if (!OKPKeyToJwk(&params, &ecPoint, aRetVal)) {
@@ -1259,6 +1257,34 @@ nsresult CryptoKey::PublicKeyToJwk(SECKEYPublicKey* aPubKey,
   }
 }
 
+bool PublicKeyHasCorrectLengthAndEncoding(const nsString& aNamedCurve,
+                                          const SECItem* key) {
+  uint32_t flen;
+  if (aNamedCurve.EqualsLiteral(WEBCRYPTO_NAMED_CURVE_P256)) {
+    flen = 32;  // bytes
+  } else if (aNamedCurve.EqualsLiteral(WEBCRYPTO_NAMED_CURVE_P384)) {
+    flen = 48;  // bytes
+  } else if (aNamedCurve.EqualsLiteral(WEBCRYPTO_NAMED_CURVE_P521)) {
+    flen = 66;  // bytes
+  } else {
+    return false;
+  }
+
+  // Here we have 2 possible inputs, either we've received an uncompressed point
+  // then the length is 1 + flen (x) + flen (y) and the 0th byte is
+  // EC_POINT_FORM_UNCOMPRESSED or we work with the compressed point then the
+  // length is 1 + flen (x) and the 0th byte is either
+  // EC_POINT_FORM_COMPRESSED_Y0 or EC_POINT_FORM_COMPRESSED_Y1
+
+  bool correctUncompressed = (key->len == 2 * flen + 1) &&
+                             (key->data[0] == EC_POINT_FORM_UNCOMPRESSED);
+  bool correctCompressed = (key->len == flen + 1) &&
+                           ((key->data[0] == EC_POINT_FORM_COMPRESSED_Y0) ||
+                            (key->data[0] == EC_POINT_FORM_COMPRESSED_Y1));
+
+  return correctCompressed || correctUncompressed;
+}
+
 UniqueSECKEYPublicKey CryptoKey::PublicECKeyFromRaw(
     CryptoBuffer& aKeyData, const nsString& aNamedCurve) {
   UniquePLArenaPool arena(PORT_NewArena(DER_DEFAULT_CHUNKSIZE));
@@ -1271,25 +1297,7 @@ UniqueSECKEYPublicKey CryptoKey::PublicECKeyFromRaw(
     return nullptr;
   }
 
-  uint32_t flen;
-  if (aNamedCurve.EqualsLiteral(WEBCRYPTO_NAMED_CURVE_P256)) {
-    flen = 32;  // bytes
-  } else if (aNamedCurve.EqualsLiteral(WEBCRYPTO_NAMED_CURVE_P384)) {
-    flen = 48;  // bytes
-  } else if (aNamedCurve.EqualsLiteral(WEBCRYPTO_NAMED_CURVE_P521)) {
-    flen = 66;  // bytes
-  } else {
-    return nullptr;
-  }
-
-  // Check length of uncompressed point coordinates. There are 2 field elements
-  // and a leading point form octet (which must EC_POINT_FORM_UNCOMPRESSED).
-  if (rawItem.len != (2 * flen + 1)) {
-    return nullptr;
-  }
-
-  // No support for compressed points.
-  if (rawItem.data[0] != EC_POINT_FORM_UNCOMPRESSED) {
+  if (!PublicKeyHasCorrectLengthAndEncoding(aNamedCurve, &rawItem)) {
     return nullptr;
   }
 
@@ -1332,6 +1340,24 @@ UniqueSECKEYPublicKey CryptoKey::PublicOKPKeyFromRaw(
   return CreateECPublicKey(&rawItem, aNamedCurve);
 }
 
+bool PublicECKeyEncoded(SECKEYPublicKey* aPubKey) {
+  if (!aPubKey) {
+    return false;
+  }
+
+  SECItem* publicValue = &aPubKey->u.ec.publicValue;
+  if (!publicValue || !publicValue->data || publicValue->len == 0) {
+    return false;
+  }
+
+  if (publicValue->data[0] == EC_POINT_FORM_COMPRESSED_Y0 ||
+      publicValue->data[0] == EC_POINT_FORM_COMPRESSED_Y1) {
+    return true;
+  }
+
+  return false;
+}
+
 bool CryptoKey::PublicKeyValid(SECKEYPublicKey* aPubKey) {
   UniquePK11SlotInfo slot(PK11_GetInternalSlot());
   if (!slot.get()) {
@@ -1342,7 +1368,38 @@ bool CryptoKey::PublicKeyValid(SECKEYPublicKey* aPubKey) {
   // it is imported into a PKCS#11 module, and returns CK_INVALID_HANDLE
   // if it is invalid.
   CK_OBJECT_HANDLE id = PK11_ImportPublicKey(slot.get(), aPubKey, PR_FALSE);
-  return id != CK_INVALID_HANDLE;
+  if (id == CK_INVALID_HANDLE) {
+    return false;
+  }
+
+  // It is possible that the public key was in the decompressed form
+  // Thus we need to read the attribute to retrieve the key
+  if (aPubKey->keyType == ecKey && PublicECKeyEncoded(aPubKey)) {
+    ScopedAutoSECItem encodedPublicKey;
+    // Independently from whether the key was decompressed or not,
+    // the raw attribute is stored encoded.
+    SECStatus rv = PK11_ReadRawAttribute(PK11_TypePubKey, aPubKey, CKA_EC_POINT,
+                                         &encodedPublicKey);
+    if (NS_WARN_IF(rv != SECSuccess)) {
+      return false;
+    }
+
+    SECItem decoded;
+    rv = SEC_QuickDERDecodeItem(aPubKey->arena, &decoded,
+                                SEC_ASN1_GET(SEC_OctetStringTemplate),
+                                &encodedPublicKey);
+    if (NS_WARN_IF(rv != SECSuccess)) {
+      return false;
+    }
+
+    // Updating the public key
+    rv = SECITEM_CopyItem(aPubKey->arena, &aPubKey->u.ec.publicValue, &decoded);
+    if (NS_WARN_IF(rv != SECSuccess)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 bool CryptoKey::WriteStructuredClone(JSContext* aCX,

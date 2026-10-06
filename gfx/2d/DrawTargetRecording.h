@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -50,6 +48,8 @@ class DrawTargetRecording final : public DrawTarget {
                     const Rect& aRect) override;
   virtual void Destination(const char* aDestination,
                            const Point& aPoint) override;
+
+  virtual void AccessibleId(uint64_t aBrowsingContextId, uint64_t aAccId) final;
 
   virtual already_AddRefed<SourceSurface> Snapshot() override;
   virtual already_AddRefed<SourceSurface> IntoLuminanceSource(

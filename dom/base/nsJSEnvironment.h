@@ -1,20 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #ifndef nsJSEnvironment_h
 #define nsJSEnvironment_h
 
-#include "nsIScriptContext.h"
-#include "nsIScriptGlobalObject.h"
+#include "mozilla/TimeStamp.h"
 #include "nsCOMPtr.h"
-#include "prtime.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIArray.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/TimeStamp.h"
+#include "nsIScriptContext.h"
+#include "nsIScriptGlobalObject.h"
 #include "nsThreadUtils.h"
+#include "prtime.h"
 #include "xpcpublic.h"
 
 class nsICycleCollectorListener;

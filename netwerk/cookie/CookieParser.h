@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -70,10 +69,10 @@ class CookieParser final {
   void ParseAttributes(nsCString& aCookieHeader, nsACString& aExpires,
                        nsACString& aMaxage, bool& aAcceptedByParser);
 
-  // aCurrentTime is in milliseconds, and expiry will be stored in milliseconds.
+  // expiry will be stored in milliseconds.
   bool GetExpiry(CookieStruct& aCookieData, const nsACString& aExpires,
-                 const nsACString& aMaxage, int64_t aCurrentTime,
-                 const nsACString& aDateHeader, bool aFromHttp);
+                 const nsACString& aMaxage, const nsACString& aDateHeader,
+                 bool aFromHttp);
 
   static bool CheckAttributeSize(const nsACString& currentValue,
                                  const char* aAttribute,

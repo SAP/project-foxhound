@@ -5,12 +5,14 @@
 package org.mozilla.fenix.settings.trustpanel.middleware
 
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.TrackingProtection
+import org.mozilla.fenix.GleanMetrics.TrustPanel
 import org.mozilla.fenix.settings.trustpanel.store.TrustPanelAction
 import org.mozilla.fenix.settings.trustpanel.store.TrustPanelState
 import org.mozilla.fenix.settings.trustpanel.store.TrustPanelStore
+import org.mozilla.fenix.trackingprotection.ProtectionsDashboardFragment
 
 /**
  * A [Middleware] for recording telemetry based on [TrustPanelAction]s that are dispatched to the
@@ -19,17 +21,31 @@ import org.mozilla.fenix.settings.trustpanel.store.TrustPanelStore
 class TrustPanelTelemetryMiddleware : Middleware<TrustPanelState, TrustPanelAction> {
 
     override fun invoke(
-        context: MiddlewareContext<TrustPanelState, TrustPanelAction>,
+        store: Store<TrustPanelState, TrustPanelAction>,
         next: (TrustPanelAction) -> Unit,
         action: TrustPanelAction,
     ) {
-        val currentState = context.state
+        val currentState = store.state
 
         next(action)
 
         when (action) {
             TrustPanelAction.ToggleTrackingProtection -> if (currentState.isTrackingProtectionEnabled) {
                 TrackingProtection.exceptionAdded.record(NoExtras())
+            }
+
+            is TrustPanelAction.Navigate.SecurityCertificate -> {
+                TrustPanel.securityCertificate.record(NoExtras())
+            }
+            is TrustPanelAction.Navigate.QWAC -> {
+                TrustPanel.qwac.record(NoExtras())
+            }
+            is TrustPanelAction.Navigate.TrackersProtectionDashboard -> {
+                TrackingProtection.privacyReportTapped.record(
+                    TrackingProtection.PrivacyReportTappedExtra(
+                        source = ProtectionsDashboardFragment.SOURCE_TRUST_PANEL,
+                    ),
+                )
             }
 
             is TrustPanelAction.ClearSiteData,
@@ -41,9 +57,13 @@ class TrustPanelTelemetryMiddleware : Middleware<TrustPanelState, TrustPanelActi
             is TrustPanelAction.TogglePermission,
             is TrustPanelAction.UpdateAutoplayValue,
             is TrustPanelAction.UpdateSitePermissions,
+            is TrustPanelAction.UpdateIPProtectionMenuState,
             is TrustPanelAction.WebsitePermissionAction,
+            is TrustPanelAction.RequestQWAC,
+            is TrustPanelAction.UpdateQWAC,
             TrustPanelAction.Navigate.PrivacySecuritySettings,
             is TrustPanelAction.Navigate.ManagePhoneFeature,
+            is TrustPanelAction.Navigate.IPProtectionSettings,
             -> Unit
         }
     }

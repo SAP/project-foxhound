@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 const tzMapper = [
     x => x,
     x => x.toUpperCase(),

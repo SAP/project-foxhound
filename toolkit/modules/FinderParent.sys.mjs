@@ -1,5 +1,3 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
-// vim: set ts=2 sw=2 sts=2 et tw=80: */
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -38,7 +36,8 @@ FinderParent.prototype = {
   },
 
   get useRemoteSubframes() {
-    return this._browser.ownerGlobal.docShell.nsILoadContext.useRemoteSubframes;
+    return this._browser.documentGlobal.docShell.nsILoadContext
+      .useRemoteSubframes;
   },
 
   swapBrowser(aBrowser) {
@@ -445,9 +444,13 @@ FinderParent.prototype = {
     });
   },
 
-  requestMatchesCount(aSearchString, aLinksOnly) {
+  requestMatchesCount(aSearchString, optionalArgs) {
     let list = this.gatherBrowsingContexts(this.browsingContext);
-    let args = { searchString: aSearchString, linksOnly: aLinksOnly };
+    let args = {
+      searchString: aSearchString,
+      linksOnly: optionalArgs.linksOnly,
+      contextRange: optionalArgs.contextRange || 0,
+    };
 
     args.useSubFrames = this.needSubFrameSearch(list);
 
@@ -509,6 +512,7 @@ FinderParent.prototype = {
         let current = 0;
         let total = 0;
         let limit = 0;
+        let allSnippets = [];
         for (let response of responses) {
           // A null response can happen if another search was started
           // and this one became invalid.
@@ -527,11 +531,22 @@ FinderParent.prototype = {
           }
           total += response.total;
           limit = response.limit;
+
+          // Collect snippets from each response
+          if (response.snippets && Array.isArray(response.snippets)) {
+            allSnippets.push(...response.snippets);
+          }
         }
 
         if (sendNotification) {
           this.callListeners("onMatchesCountResult", [
-            { searchString: options.args.searchString, current, total, limit },
+            {
+              searchString: options.args.searchString,
+              current,
+              total,
+              limit,
+              snippets: allSnippets,
+            },
           ]);
         }
       }

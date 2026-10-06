@@ -119,6 +119,6 @@ addRDMTask(TEST_URL, async function ({ ui, manager }) {
     }
 
     info("Reload and wait for document to be loaded to prepare for next test.");
-    await reloadBrowser();
+    await reloadSelectedTab();
   }
 });

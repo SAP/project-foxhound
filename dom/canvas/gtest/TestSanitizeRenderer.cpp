@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -197,6 +196,26 @@ TEST(SanitizeRenderer, TestAngleSamsungVulkan)
   EXPECT_EQ(sanitized, expectation);
 }
 
+TEST(SanitizeRenderer, TestAngleSamsungVulkanAlt)
+{
+  const std::string renderer("ANGLE ((Samsung Xclipse 940) on Vulkan 1.3.279)");
+  const std::string expectation(
+      "ANGLE (Samsung Xclipse 920) on Vulkan, or similar");
+  const auto sanitized = mozilla::webgl::SanitizeRenderer(renderer);
+  EXPECT_EQ(sanitized, expectation);
+}
+
+TEST(SanitizeRenderer, TestAngleMetalApple)
+{
+  const std::string renderer(
+      "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Max, Version 26.5 (Build "
+      "25F71))");
+  const std::string expectation(
+      "ANGLE (Apple, ANGLE Metal Renderer: Apple M1), or similar");
+  const auto sanitized = mozilla::webgl::SanitizeRenderer(renderer);
+  EXPECT_EQ(sanitized, expectation);
+}
+
 TEST(SanitizeRenderer, TestLinuxK600)
 {
   const std::string renderer("NVE7");
@@ -217,6 +236,22 @@ TEST(SanitizeRenderer, TestAdreno512)
 {
   const std::string renderer("Adreno (TM) 512");
   const std::string expectation("Adreno (TM) 540, or similar");
+  const auto sanitized = mozilla::webgl::SanitizeRenderer(renderer);
+  EXPECT_EQ(sanitized, expectation);
+}
+
+TEST(SanitizeRenderer, TestAdrenoA33)
+{
+  const std::string renderer("Adreno(TM) A33");
+  const std::string expectation("Adreno (TM) A11, or similar");
+  const auto sanitized = mozilla::webgl::SanitizeRenderer(renderer);
+  EXPECT_EQ(sanitized, expectation);
+}
+
+TEST(SanitizeRenderer, TestAdrenoX1_85)
+{
+  const std::string renderer("Adreno(TM) X1-85 GPU");
+  const std::string expectation("Adreno (TM) X1-45, or similar");
   const auto sanitized = mozilla::webgl::SanitizeRenderer(renderer);
   EXPECT_EQ(sanitized, expectation);
 }

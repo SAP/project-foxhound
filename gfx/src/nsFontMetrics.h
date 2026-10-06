@@ -1,22 +1,17 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef NSFONTMETRICS__H__
-#define NSFONTMETRICS__H__
+#ifndef NSFONTMETRICS_H_
+#define NSFONTMETRICS_H_
 
-#include <stdint.h>              // for uint32_t
-#include <sys/types.h>           // for int32_t
-#include "mozilla/Assertions.h"  // for MOZ_ASSERT_HELPER2
-#include "mozilla/RefPtr.h"      // for RefPtr
-#include "nsCOMPtr.h"            // for nsCOMPtr
-#include "nsCoord.h"             // for nscoord
-#include "nsError.h"             // for nsresult
-#include "nsFont.h"              // for nsFont
-#include "nsISupports.h"         // for NS_INLINE_DECL_REFCOUNTING
-#include "nsStyleConsts.h"
-#include "nscore.h"  // for char16_t
+#include <stdint.h>          // for uint32_t
+#include <sys/types.h>       // for int32_t
+#include "mozilla/RefPtr.h"  // for RefPtr
+#include "nsCoord.h"         // for nscoord
+#include "nsFont.h"          // for nsFont
+#include "nsISupports.h"     // for NS_INLINE_DECL_REFCOUNTING
+#include "nscore.h"          // for char16_t
 
 class gfxContext;
 class gfxFontGroup;
@@ -27,6 +22,7 @@ class nsAtom;
 struct nsBoundingMetrics;
 
 namespace mozilla {
+enum class StyleTextOrientation : uint8_t;
 namespace gfx {
 class DrawTarget;
 }  // namespace gfx
@@ -79,6 +75,51 @@ class nsFontMetrics final {
    * the font metrics and the pres context.
    */
   void Destroy();
+
+  /**
+   * Return the font's alphabetic baseline.
+   */
+  nscoord AlphabeticBaseline() const;
+
+  /**
+   * Return the font's central baseline.
+   */
+  nscoord CentralBaseline() const;
+
+  /**
+   * Return the font's x-middle baseline.
+   */
+  nscoord XMiddleBaseline() const;
+
+  /**
+   * Return the font's ideographic-under baseline.
+   */
+  nscoord IdeographicUnderBaseline() const;
+
+  /**
+   * Return the font's ideographic-over baseline.
+   */
+  nscoord IdeographicOverBaseline() const;
+
+  /**
+   * Return the font's ideographic-ink-under baseline.
+   */
+  nscoord IdeographicInkUnderBaseline() const;
+
+  /**
+   * Return the font's ideographic-ink-over baseline.
+   */
+  nscoord IdeographicInkOverBaseline() const;
+
+  /**
+   * Return the font's hanging baseline.
+   */
+  nscoord HangingBaseline() const;
+
+  /**
+   * Return the font's math baseline.
+   */
+  nscoord MathBaseline() const;
 
   /**
    * Return the font's x-height.
@@ -139,14 +180,14 @@ class nsFontMetrics final {
   nscoord EmHeight() const;
 
   /**
-   * Returns the ascent part of the em square.
+   * Returns the ascent with half the internal leading trimmed.
    */
-  nscoord EmAscent() const;
+  nscoord TrimmedAscent() const;
 
   /**
-   * Returns the descent part of the em square.
+   * Returns the descent with half the internal leading trimmed.
    */
-  nscoord EmDescent() const;
+  nscoord TrimmedDescent() const;
 
   /**
    * Returns the height of the bounding box.
@@ -185,6 +226,11 @@ class nsFontMetrics final {
    * Returns the often needed width of the space character
    */
   nscoord SpaceWidth() const;
+
+  /**
+   * Returns the inter-script spacing width for this font, in app units.
+   */
+  nscoord InterScriptSpacingWidth() const;
 
   /**
    * Returns the font associated with these metrics. The return value
@@ -287,4 +333,4 @@ class nsFontMetrics final {
   mozilla::StyleTextOrientation mTextOrientation;
 };
 
-#endif /* NSFONTMETRICS__H__ */
+#endif /* NSFONTMETRICS_H_ */

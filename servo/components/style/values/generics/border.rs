@@ -4,6 +4,7 @@
 
 //! Generic types for CSS values related to borders.
 
+use crate::derives::*;
 use crate::values::generics::rect::Rect;
 use crate::values::generics::size::Size2D;
 use crate::Zero;
@@ -27,6 +28,7 @@ use style_traits::{CssWriter, ToCss};
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C, u8)]
 pub enum GenericBorderImageSideWidth<LP, N> {
@@ -91,8 +93,10 @@ pub use self::GenericBorderImageSlice as BorderImageSlice;
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C)]
+#[typed(todo_derive_fields)]
 pub struct GenericBorderCornerRadius<L>(
     #[css(field_bound)]
     #[shmem(field_bound)]
@@ -134,8 +138,10 @@ impl<L: Zero> Zero for BorderCornerRadius<L> {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(transparent)]
+#[typed(todo_derive_fields)]
 pub struct GenericBorderSpacing<L>(
     #[css(field_bound)]
     #[shmem(field_bound)]
@@ -232,10 +238,10 @@ impl<L: Zero> Zero for BorderRadius<L> {
     }
 
     fn is_zero(&self) -> bool {
-        self.top_left.is_zero() &&
-            self.top_right.is_zero() &&
-            self.bottom_right.is_zero() &&
-            self.bottom_left.is_zero()
+        self.top_left.is_zero()
+            && self.top_right.is_zero()
+            && self.bottom_right.is_zero()
+            && self.bottom_left.is_zero()
     }
 }
 
@@ -258,5 +264,40 @@ where
         let heights = Rect::new(&tl.height, &tr.height, &br.height, &bl.height);
 
         Self::serialize_rects(widths, heights, dest)
+    }
+}
+
+/// A generic value for the four corners of `corner-shape`.
+///
+/// This mirrors the per-corner layout of `BorderRadius` so it can be used as
+/// the underlying storage for the four `corner-*-*-shape` longhands and their
+/// shorthand `corner-shape`.
+///
+/// <https://drafts.csswg.org/css-borders-4/#corner-shaping>
+#[derive(Clone)]
+#[repr(C)]
+pub struct GenericCornerShapeRect<S> {
+    /// The top-left corner shape.
+    pub top_left: S,
+    /// The top-right corner shape.
+    pub top_right: S,
+    /// The bottom-right corner shape.
+    pub bottom_right: S,
+    /// The bottom-left corner shape.
+    pub bottom_left: S,
+}
+
+pub use self::GenericCornerShapeRect as CornerShapeRect;
+
+impl<S: Clone> CornerShapeRect<S> {
+    /// Construct from a single value applied to all four corners.
+    #[inline]
+    pub fn all(s: S) -> Self {
+        Self {
+            top_left: s.clone(),
+            top_right: s.clone(),
+            bottom_right: s.clone(),
+            bottom_left: s,
+        }
     }
 }

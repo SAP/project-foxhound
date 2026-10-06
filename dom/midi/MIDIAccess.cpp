@@ -1,31 +1,30 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/MIDIAccess.h"
-#include "mozilla/dom/MIDIAccessManager.h"
-#include "mozilla/dom/MIDIPort.h"
-#include "mozilla/dom/MIDIAccessBinding.h"
-#include "mozilla/dom/MIDIConnectionEvent.h"
-#include "mozilla/dom/MIDIOptionsBinding.h"
-#include "mozilla/dom/MIDIOutputMapBinding.h"
-#include "mozilla/dom/MIDIInputMapBinding.h"
-#include "mozilla/dom/MIDIOutputMap.h"
-#include "mozilla/dom/MIDIInputMap.h"
-#include "mozilla/dom/MIDIOutput.h"
-#include "mozilla/dom/MIDIInput.h"
-#include "mozilla/dom/MIDITypes.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/dom/PContent.h"
-#include "mozilla/dom/Document.h"
-#include "nsPIDOMWindow.h"
-#include "nsGlobalWindowInner.h"
-#include "nsContentPermissionHelper.h"
-#include "nsISupportsImpl.h"  // for MOZ_COUNT_CTOR, MOZ_COUNT_DTOR
-#include "ipc/IPCMessageUtils.h"
+
 #include "MIDILog.h"
+#include "ipc/IPCMessageUtils.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/MIDIAccessBinding.h"
+#include "mozilla/dom/MIDIAccessManager.h"
+#include "mozilla/dom/MIDIConnectionEvent.h"
+#include "mozilla/dom/MIDIInput.h"
+#include "mozilla/dom/MIDIInputMap.h"
+#include "mozilla/dom/MIDIInputMapBinding.h"
+#include "mozilla/dom/MIDIOptionsBinding.h"
+#include "mozilla/dom/MIDIOutput.h"
+#include "mozilla/dom/MIDIOutputMap.h"
+#include "mozilla/dom/MIDIOutputMapBinding.h"
+#include "mozilla/dom/MIDIPort.h"
+#include "mozilla/dom/MIDITypes.h"
+#include "mozilla/dom/PContent.h"
+#include "mozilla/dom/Promise.h"
+#include "nsContentPermissionHelper.h"
+#include "nsGlobalWindowInner.h"
+#include "nsISupportsImpl.h"  // for MOZ_COUNT_CTOR, MOZ_COUNT_DTOR
+#include "nsPIDOMWindow.h"
 
 namespace mozilla::dom {
 
@@ -143,7 +142,7 @@ void MIDIAccess::FireConnectionEvent(MIDIPort* aPort) {
 void MIDIAccess::MaybeCreateMIDIPort(const MIDIPortInfo& aInfo,
                                      ErrorResult& aRv) {
   nsAutoString id(aInfo.id());
-  MIDIPortType type = static_cast<MIDIPortType>(aInfo.type());
+  MIDIPortType type = aInfo.type();
   RefPtr<MIDIPort> port;
   if (type == MIDIPortType::Input) {
     if (mInputMap->Has(id) || NS_WARN_IF(aRv.Failed())) {
@@ -227,6 +226,11 @@ void MIDIAccess::Notify(const MIDIPortList& aEvent) {
   }
   mAccessPromise->MaybeResolve(this);
   mAccessPromise = nullptr;
+  if (nsPIDOMWindowInner* window = GetOwnerWindow()) {
+    if (Document* doc = window->GetExtantDoc()) {
+      doc->SetUseCounter(eUseCounter_custom_MIDIAccessGranted);
+    }
+  }
 }
 
 JSObject* MIDIAccess::WrapObject(JSContext* aCx,

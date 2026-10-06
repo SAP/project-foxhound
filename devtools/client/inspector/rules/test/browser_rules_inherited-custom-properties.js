@@ -49,40 +49,34 @@ add_task(async function () {
   const { inspector, view } = await openRuleView();
   await selectNode("h1", inspector);
 
-  const inheritedHeaders = view.element.querySelectorAll(
-    ".ruleview-header-inherited"
-  );
-  is(inheritedHeaders.length, 1, "There's one inherited section header");
-  is(
-    inheritedHeaders[0].textContent,
-    "Inherited from main",
-    "The header is the expected inherited one"
-  );
-
-  const inheritedRules = view.element.querySelectorAll(
-    ".ruleview-header ~ .ruleview-rule"
-  );
-  is(inheritedRules.length, 2, "There are 2 inherited rules displayed");
-
-  info("Check that registered inherits property is visible");
-  is(
-    getRuleViewPropertyValue(view, `main, [test="inherit"]`, "--inherit"),
-    "red",
-    "--inherit definition on main is visible"
-  );
-
-  info("Check that unregistered property is visible");
-  is(
-    getRuleViewPropertyValue(view, `main, [test="unregistered"]`, "--myvar"),
-    "brown",
-    "--myvar definition on main is displayed"
-  );
-
-  info("Check that registered non-inherits property is not visible");
-  // The no-inherit rule only has 1 definition that should be hidden, which means
-  // that the whole rule should be hidden
-  ok(
-    !getRuleViewRule(view, `main, [test="no-inherit"]`),
-    "The rule with the not inherited registered property is not displayed"
-  );
+  // The `main, [test="no-inherit"]` only has 1 definition that should be hidden,
+  // which means that the whole rule should be hidden
+  await checkRuleViewContent(view, [
+    {
+      selector: `element`,
+      ancestorRulesData: null,
+      selectorEditable: false,
+      declarations: [],
+    },
+    {
+      selector: `h1`,
+      declarations: [
+        { name: "background-color", value: "var(--no-inherit)" },
+        { name: "color", value: "var(--inherit)" },
+        { name: "outline-color", value: "var(--myvar)" },
+      ],
+    },
+    { header: "Inherited from main" },
+    {
+      selector: `main, ~~[test="unregistered"]~~`,
+      inherited: true,
+      declarations: [{ name: "--myvar", value: "brown" }],
+    },
+    {
+      selector: `main, ~~[test="inherit"]~~`,
+      inherited: true,
+      declarations: [{ name: "--inherit", value: "red" }],
+    },
+    { header: "@property" },
+  ]);
 });

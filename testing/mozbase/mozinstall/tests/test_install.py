@@ -1,4 +1,5 @@
 import subprocess
+from unittest import mock
 
 import mozinfo
 import mozinstall
@@ -81,8 +82,41 @@ def test_install(tmpdir, get_installer):
         installdir = mozinstall.install(get_installer("dmg"), tmpdir.strpath)
         assert installdir == tmpdir.realpath().join("Firefox Stub.app").strpath
 
-        mounted_images = subprocess.check_output(["hdiutil", "info"]).decode("ascii")
+        mounted_images = subprocess.check_output(["hdiutil", "info"]).decode("utf-8")
         assert get_installer("dmg") not in mounted_images
+
+
+def test_install_existing_target_folder(tmpdir, get_installer):
+    """Test that InstallError is raised when target folder already exists."""
+    if mozinfo.isMac:
+        installdir = mozinstall.install(get_installer("dmg"), tmpdir.strpath)
+        assert installdir == tmpdir.realpath().join("Firefox Stub.app").strpath
+
+        with pytest.raises(mozinstall.InstallError, match="App bundle already exists"):
+            mozinstall.install(get_installer("dmg"), tmpdir.strpath)
+
+
+@pytest.mark.skipif(not mozinfo.isMac, reason="DMG installer only on macOS")
+def test_install_dmg_detach_retry(tmpdir, get_installer):
+    """Test that DMG detach retries on EBUSY errors."""
+    original_check_call = subprocess.check_call
+    detach_call_count = 0
+
+    def mock_check_call(cmd, shell=False, **kwargs):
+        nonlocal detach_call_count
+
+        if shell and "hdiutil detach" in cmd:
+            detach_call_count += 1
+            if detach_call_count <= 2:
+                raise subprocess.CalledProcessError(16, cmd)
+
+        return original_check_call(cmd, shell=shell, **kwargs)
+
+    with mock.patch("subprocess.check_call", side_effect=mock_check_call):
+        installdir = mozinstall.install(get_installer("dmg"), tmpdir.strpath)
+        assert installdir == tmpdir.realpath().join("Firefox Stub.app").strpath
+
+        assert detach_call_count == 3
 
 
 if __name__ == "__main__":

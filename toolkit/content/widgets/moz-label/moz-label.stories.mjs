@@ -5,7 +5,11 @@
 import { html, ifDefined } from "../vendor/lit.all.mjs";
 import "./moz-label.mjs";
 
-MozXULElement.insertFTLIfNeeded("locales-preview/moz-label.storybook.ftl");
+const fluentStrings = [
+  "moz-label-default-label",
+  "moz-label-label-with-colon",
+  "moz-label-label-disabled",
+];
 
 export default {
   title: "UI Widgets/Label",
@@ -14,6 +18,20 @@ export default {
     inputType: {
       options: ["checkbox", "radio"],
       control: { type: "select" },
+    },
+    l10nId: {
+      options: fluentStrings,
+      control: { type: "select" },
+    },
+    textContent: {
+      table: {
+        disable: true,
+      },
+    },
+    "data-l10n-id": {
+      table: {
+        disable: true,
+      },
     },
   },
   parameters: {
@@ -26,15 +44,15 @@ export default {
         },
       ],
     },
+    fluent: `
+moz-label-default-label = I love cheese 🧀
+moz-label-label-with-colon = I love cheese 🧀:
+moz-label-label-disabled = I love cheese 🧀
+    `,
   },
 };
 
-const Template = ({
-  accesskey,
-  inputType,
-  disabled,
-  "data-l10n-id": dataL10nId,
-}) => html`
+const Template = ({ accesskey, inputType, disabled, l10nId }) => html`
   <style>
     div {
       display: flex;
@@ -49,7 +67,7 @@ const Template = ({
     <label
       is="moz-label"
       accesskey=${ifDefined(accesskey)}
-      data-l10n-id=${ifDefined(dataL10nId)}
+      data-l10n-id=${ifDefined(l10nId)}
       for="cheese"
     >
     </label>
@@ -68,18 +86,19 @@ AccessKey.args = {
   accesskey: "c",
   inputType: "checkbox",
   disabled: false,
-  "data-l10n-id": "default-label",
+  l10nId: "moz-label-default-label",
 };
 
 export const AccessKeyNotInLabel = Template.bind({});
 AccessKeyNotInLabel.args = {
   ...AccessKey.args,
   accesskey: "x",
-  "data-l10n-id": "label-with-colon",
+  l10nId: "moz-label-label-with-colon",
 };
 
 export const DisabledCheckbox = Template.bind({});
 DisabledCheckbox.args = {
   ...AccessKey.args,
   disabled: true,
+  l10nId: "moz-label-label-disabled",
 };

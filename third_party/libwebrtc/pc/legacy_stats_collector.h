@@ -16,31 +16,30 @@
 
 #include <stdint.h>
 
-#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
+#include "absl/functional/any_invocable.h"
+#include "absl/strings/string_view.h"
 #include "api/candidate.h"
-#include "api/field_trials_view.h"
 #include "api/legacy_stats_types.h"
 #include "api/media_stream_interface.h"
 #include "api/peer_connection_interface.h"
-#include "api/scoped_refptr.h"
 #include "p2p/base/connection_info.h"
 #include "p2p/base/port.h"
 #include "pc/legacy_stats_collector_interface.h"
 #include "pc/peer_connection_internal.h"
-#include "pc/rtp_transceiver.h"
 #include "pc/transport_stats.h"
 #include "rtc_base/network_constants.h"
 #include "rtc_base/ssl_certificate.h"
 #include "rtc_base/thread_annotations.h"
+#include "rtc_base/time_utils.h"
+#include "system_wrappers/include/clock.h"
 
 namespace webrtc {
 
@@ -60,8 +59,11 @@ class LegacyStatsCollector : public LegacyStatsCollectorInterface {
  public:
   // The caller is responsible for ensuring that the pc outlives the
   // LegacyStatsCollector instance.
-  explicit LegacyStatsCollector(PeerConnectionInternal* pc);
-  virtual ~LegacyStatsCollector();
+  LegacyStatsCollector(
+      PeerConnectionInternal* pc,
+      Clock& clock,
+      absl::AnyInvocable<int64_t()> utc_time_now = TimeUTCMillis);
+  ~LegacyStatsCollector() override;
 
   // Adds a MediaStream with tracks that can be used as a `selector` in a call
   // to GetStats.
@@ -112,23 +114,26 @@ class LegacyStatsCollector : public LegacyStatsCollectorInterface {
 
   bool UseStandardBytesStats() const { return use_standard_bytes_stats_; }
 
- private:
-  friend class LegacyStatsCollectorTest;
+  StatsReport* AddCertificateReportsForTest(
+      std::unique_ptr<SSLCertificateStats> cert_stats) {
+    return AddCertificateReports(std::move(cert_stats));
+  }
 
+ private:
   // Struct that's populated on the network thread and carries the values to
   // the signaling thread where the stats are added to the stats reports.
   struct TransportStats {
     TransportStats() = default;
     TransportStats(std::string transport_name,
-                   cricket::TransportStats transport_stats)
+                   ::webrtc::TransportStats transport_stats)
         : name(std::move(transport_name)), stats(std::move(transport_stats)) {}
     TransportStats(TransportStats&&) = default;
     TransportStats(const TransportStats&) = delete;
 
     std::string name;
-    cricket::TransportStats stats;
-    std::unique_ptr<rtc::SSLCertificateStats> local_cert_stats;
-    std::unique_ptr<rtc::SSLCertificateStats> remote_cert_stats;
+    ::webrtc::TransportStats stats;
+    std::unique_ptr<SSLCertificateStats> local_cert_stats;
+    std::unique_ptr<SSLCertificateStats> remote_cert_stats;
   };
 
   struct SessionStats {
@@ -139,32 +144,30 @@ class LegacyStatsCollector : public LegacyStatsCollectorInterface {
     SessionStats& operator=(SessionStats&&) = default;
     SessionStats& operator=(SessionStats&) = delete;
 
-    cricket::CandidateStatsList candidate_stats;
+    CandidateStatsList candidate_stats;
     std::vector<TransportStats> transport_stats;
     std::map<std::string, std::string> transport_names_by_mid;
   };
 
-  // Overridden in unit tests to fake timing.
-  virtual double GetTimeNow();
+  std::optional<std::string> GetTransportName(absl::string_view mid);
 
   bool CopySelectedReports(const std::string& selector, StatsReports* reports);
 
   // Helper method for creating IceCandidate report. `is_local` indicates
   // whether this candidate is local or remote.
-  StatsReport* AddCandidateReport(
-      const cricket::CandidateStats& candidate_stats,
-      bool local);
+  StatsReport* AddCandidateReport(const CandidateStats& candidate_stats,
+                                  bool local);
 
   // Adds a report for this certificate and every certificate in its chain, and
   // returns the leaf certificate's report (`cert_stats`'s report).
   StatsReport* AddCertificateReports(
-      std::unique_ptr<rtc::SSLCertificateStats> cert_stats);
+      std::unique_ptr<SSLCertificateStats> cert_stats);
 
   StatsReport* AddConnectionInfoReport(const std::string& content_name,
                                        int component,
                                        int connection_id,
                                        const StatsReport::Id& channel_report_id,
-                                       const cricket::ConnectionInfo& info);
+                                       const ConnectionInfo& info);
 
   void ExtractDataInfo_n(StatsCollection* reports);
 
@@ -192,8 +195,7 @@ class LegacyStatsCollector : public LegacyStatsCollectorInterface {
   void UpdateTrackReports();
 
   SessionStats ExtractSessionInfo_n(
-      const std::vector<rtc::scoped_refptr<
-          RtpTransceiverProxyWithInternal<RtpTransceiver>>>& transceivers,
+      const std::vector<std::string>& mids,
       std::optional<std::string> sctp_transport_name,
       std::optional<std::string> sctp_mid);
   void ExtractSessionInfo_s(SessionStats& session_stats);
@@ -203,6 +205,7 @@ class LegacyStatsCollector : public LegacyStatsCollectorInterface {
   TrackIdMap track_ids_;
   // Raw pointer to the peer connection the statistics are gathered from.
   PeerConnectionInternal* const pc_;
+  Clock& clock_;
   int64_t cache_timestamp_ms_ RTC_GUARDED_BY(pc_->signaling_thread()) = 0;
   double stats_gathering_started_;
   const bool use_standard_bytes_stats_;
@@ -212,6 +215,7 @@ class LegacyStatsCollector : public LegacyStatsCollectorInterface {
   typedef std::vector<std::pair<AudioTrackInterface*, uint32_t>>
       LocalAudioTrackVector;
   LocalAudioTrackVector local_audio_tracks_;
+  absl::AnyInvocable<int64_t()> utc_time_now_;
 };
 
 }  // namespace webrtc

@@ -13,7 +13,7 @@ const searchPopup = document.getElementById("PopupSearchAutoComplete");
 add_setup(async function () {
   await gCUITestUtils.addSearchBar();
 
-  await Services.search.init();
+  await SearchService.init();
   registerCleanupFunction(() => {
     gCUITestUtils.removeSearchBar();
   });
@@ -67,7 +67,7 @@ add_task(async function test() {
   }
 
   promise = promiseEvent(searchPopup, "popuphidden");
-  EventUtils.synthesizeKey("KEY_Escape", {}, searchPopup.ownerGlobal);
+  EventUtils.synthesizeKey("KEY_Escape", {}, searchPopup.documentGlobal);
   await promise;
 
   gBrowser.removeCurrentTab();

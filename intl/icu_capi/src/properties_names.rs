@@ -4,7 +4,6 @@
 
 #[diplomat::bridge]
 #[diplomat::abi_rename = "icu4x_{0}_mv1"]
-#[diplomat::attr(auto, namespace = "icu4x")]
 pub mod ffi {
     use crate::unstable::properties_enums::ffi::GeneralCategoryGroup;
     use alloc::boxed::Box;
@@ -23,6 +22,7 @@ pub mod ffi {
         FnInTrait,
         hidden
     )]
+    #[diplomat::attr(demo_gen, disable)] // TODO needs custom page
     pub struct PropertyValueNameToEnumMapper(icu_properties::PropertyParser<u16>);
 
     impl PropertyValueNameToEnumMapper {
@@ -348,6 +348,7 @@ pub mod ffi {
     #[diplomat::opaque]
     #[diplomat::rust_link(icu::properties::PropertyParser, Struct)]
     #[diplomat::rust_link(icu::properties::props::GeneralCategory, Enum)]
+    #[diplomat::attr(demo_gen, disable)] // TODO needs custom page
     pub struct GeneralCategoryNameToGroupMapper(
         icu_properties::PropertyParser<icu_properties::props::GeneralCategoryGroup>,
     );

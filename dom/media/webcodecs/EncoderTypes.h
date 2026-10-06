@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,16 +5,16 @@
 #ifndef mozilla_dom_EncoderTypes_h
 #define mozilla_dom_EncoderTypes_h
 
+#include "VideoDecoder.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/dom/AudioEncoderBinding.h"
 #include "mozilla/dom/EncodedVideoChunk.h"
 #include "mozilla/dom/MediaRecorderBinding.h"
 #include "mozilla/dom/VideoEncoderBinding.h"
-#include "mozilla/dom/AudioEncoderBinding.h"
 #include "mozilla/dom/VideoFrame.h"
 #include "mozilla/dom/VideoFrameBinding.h"
 #include "nsStringFwd.h"
 #include "nsTLiteralString.h"
-#include "VideoDecoder.h"
 
 namespace mozilla {
 

@@ -7,13 +7,13 @@ package org.mozilla.fenix.settings
 import android.content.Context
 import android.util.AttributeSet
 import androidx.preference.CheckBoxPreference
-import androidx.preference.SwitchPreference
+import androidx.preference.SwitchPreferenceCompat
 import org.mozilla.fenix.R
 
 /**
  * Switch Preference that adheres to Fenix styling.
  *
- * **Note:** The [SwitchPreference] layout internal id "switch_widget" has a min API of 24, so we use
+ * **Note:** The [SwitchPreferenceCompat] layout internal id "switch_widget" has a min API of 24, so we use
  * [CheckBoxPreference] instead and use the layout internal id "checkbox".
  */
 class FenixSwitchPreference @JvmOverloads constructor(

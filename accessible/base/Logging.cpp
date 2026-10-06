@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,6 +17,7 @@
 #include "nsIWebProgress.h"
 #include "prenv.h"
 #include "nsIDocShellTreeItem.h"
+#include "nsPIDOMWindowInlines.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ScrollContainerFrame.h"
@@ -74,14 +73,14 @@ static void EnableLogging(const char* aModulesStr) {
   const char* token = aModulesStr;
   while (*token != '\0') {
     size_t tokenLen = strcspn(token, ",");
-    for (unsigned int idx = 0; idx < std::size(sModuleMap); idx++) {
-      if (strncmp(token, sModuleMap[idx].mStr, tokenLen) == 0) {
+    for (auto entry : sModuleMap) {
+      if (strncmp(token, entry.mStr, tokenLen) == 0) {
 #if !defined(MOZ_PROFILING) && (!defined(DEBUG) || defined(MOZ_OPTIMIZE))
         // Stack tracing on profiling enabled or debug not optimized builds.
         if (strncmp(token, "stack", tokenLen) == 0) break;
 #endif
-        sModules |= sModuleMap[idx].mModule;
-        printf("\n\nmodule enabled: %s\n", sModuleMap[idx].mStr);
+        sModules |= entry.mModule;
+        printf("\n\nmodule enabled: %s\n", entry.mStr);
         break;
       }
     }
@@ -977,9 +976,9 @@ bool logging::IsEnabledAll(uint32_t aModules) {
 }
 
 bool logging::IsEnabled(const nsAString& aModuleStr) {
-  for (unsigned int idx = 0; idx < std::size(sModuleMap); idx++) {
-    if (aModuleStr.EqualsASCII(sModuleMap[idx].mStr)) {
-      return sModules & sModuleMap[idx].mModule;
+  for (auto entry : sModuleMap) {
+    if (aModuleStr.EqualsASCII(entry.mStr)) {
+      return sModules & entry.mModule;
     }
   }
 

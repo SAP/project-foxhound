@@ -27,6 +27,16 @@ from reposadolib import reposadocommon
 
 reposadocommon.get_main_dir = lambda: "/usr/local/bin/"
 
+
+def package_id_sort_key(package_id):
+    try:
+        prefix, suffix = package_id.split("-", 1)
+        suffix, _, extra = suffix.partition("::")
+        return int(prefix), int(suffix), int(extra or 0)
+    except ValueError:
+        return -1, -1, -1
+
+
 products = reposadocommon.get_product_info()
 args = []
 for product_id, product in products.items():
@@ -49,10 +59,13 @@ for product_id, product in products.items():
         title.startswith("OS X")
         or title.startswith("Mac OS X")
         or title.startswith("macOS")
-    ) and major_version <= 10:
+    ):
         args.append(product_id)
     else:
-        print("Skipping %r for repo_sync" % title, file=sys.stderr)
+        print(f"Skipping {title!r} for repo_sync", file=sys.stderr)
+
+args.sort(key=package_id_sort_key, reverse=True)
+
 if "JUST_ONE_PACKAGE" in os.environ:
     args = args[:1]
 

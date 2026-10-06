@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -39,9 +37,7 @@ def convert_yaml_path_to_header_name(filepath):
         path_components = ["geckoview", "metrics"]
 
     path_components = "_".join(path_components).split("_")
-    return "".join(
-        [
-            path_component[0].upper() + path_component[1:]
-            for path_component in path_components
-        ]
-    )
+    return "".join([
+        path_component[0].upper() + path_component[1:]
+        for path_component in path_components
+    ])

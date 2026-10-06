@@ -119,7 +119,7 @@ static bool BuildLogFilePath(NS_tchar* aLogFilePath, size_t aBufferSize,
 }
 
 int NS_main(int argc, NS_tchar** argv) {
-  if (argc == 2) {
+  if (argc >= 2) {
     if (!NS_tstrcmp(argv[1], NS_T("post-update-async")) ||
         !NS_tstrcmp(argv[1], NS_T("post-update-sync")) ||
         !NS_tstrcmp(argv[1], NS_T("post-update-environment"))) {

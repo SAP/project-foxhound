@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  ~ This Source Code Form is subject to the terms of the Mozilla Public
+  ~  License, v. 2.0. If a copy of the MPL was not distributed with this
+  ~  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- Name for one of the font options available to use -->
   <string name="mozac_feature_readerview_sans_serif_font">غير مذيّل</string>
@@ -9,19 +16,19 @@
   <!-- Accessible description for the font option -->
   <string name="mozac_feature_readerview_serif_font_desc">خط مذيّل</string>
   <!-- Accessible description for decreasing the font size -->
-  <string name="mozac_feature_readerview_font_size_decrease_desc">إنقاص حجم الخط</string>
+  <string name="mozac_feature_readerview_font_size_decrease_desc">تصغير حجم الخط</string>
   <!-- Accessible description for increasing the font size -->
-  <string name="mozac_feature_readerview_font_size_increase_desc">زيادة حجم الخط</string>
+  <string name="mozac_feature_readerview_font_size_increase_desc">تكبير حجم الخط</string>
   <!-- Color option for the background -->
-  <string name="mozac_feature_readerview_dark">داكنة</string>
+  <string name="mozac_feature_readerview_dark">داكن</string>
   <!-- Accessible description for the color option -->
-  <string name="mozac_feature_readerview_dark_color_scheme_desc">مخطّط ألوان داكن</string>
+  <string name="mozac_feature_readerview_dark_color_scheme_desc">نظام ألوان داكن</string>
   <!-- Color option for the background -->
   <string name="mozac_feature_readerview_sephia">بني داكن</string>
   <!-- Accessible description for the color option -->
-  <string name="mozac_feature_readerview_sepia_color_scheme_desc">مخطّط ألوان بني داكن</string>
+  <string name="mozac_feature_readerview_sepia_color_scheme_desc">نظام ألوان بني داكن</string>
   <!-- Color option for the background -->
   <string name="mozac_feature_readerview_light">فاتح</string>
   <!-- Accessible description for the color option -->
-  <string name="mozac_feature_readerview_light_color_scheme_desc">مخطّط ألوان فاتح</string>
+  <string name="mozac_feature_readerview_light_color_scheme_desc">نظام ألوان فاتح</string>
 </resources>

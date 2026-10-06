@@ -19,7 +19,7 @@ add_task(async function run_test() {
       extra = await IOUtils.readJSON(extraFile.path);
 
       Assert.ok(
-        extra.StackTraces.crash_info.type.startsWith(
+        JSON.parse(extra.StackTraces).crash_type.startsWith(
           "EXC_GUARD / GUARD_TYPE_FD / GUARD_EXC_CLOSE"
         )
       );

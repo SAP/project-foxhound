@@ -1,0 +1,188 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+/* stylelint-disable max-nesting-depth */
+
+#background-image {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background: light-dark(
+      url("chrome://browser/content/contentsharing/background-light.svg"),
+      url("chrome://browser/content/contentsharing/background-dark.svg")
+    )
+    center / cover no-repeat;
+
+  background-position: bottom 0 left 0;
+  background-size: initial;
+}
+
+#plain-background {
+  position: absolute;
+  z-index: -2;
+  left: 50%;
+  width: 50%;
+  height: 100%;
+  background-color: var(--background-color-canvas);
+}
+
+.policy {
+  position: absolute;
+  inset-inline-end: 0;
+  inset-block-end: 0;
+  width: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  span {
+    padding: var(--space-xlarge);
+    color: var(--text-color-deemphasized);
+    border-top: 1px solid var(--border-color-deemphasized);
+  }
+}
+
+.container {
+  --modal-size: var(--dimension-400);
+  display: flex;
+  width: calc(2 * var(--modal-size));
+  height: var(--modal-size);
+  padding: var(--space-large);
+
+  .preview {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 50%;
+    height: 100%;
+
+    moz-card {
+      --card-padding: var(--space-xlarge);
+      width: 100%;
+      /* To center the card, the right margin needs to include the .container padding */
+      margin: calc(2 * var(--space-xxlarge));
+      margin-inline-end: calc(2 * var(--space-xxlarge) + var(--space-large));
+      background-color: color-mix(in srgb, var(--card-background-color), transparent 30%);
+      backdrop-filter: blur(15px);
+    }
+
+    .share-header {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--card-border-color);
+      margin-bottom: var(--space-large);
+      padding: 0 var(--space-small) var(--space-large);
+
+      .share-icon {
+        -moz-context-properties: fill, stroke;
+        /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+        fill: var(--text-color-deemphasized);
+        width: var(--icon-size-xsmall);
+        height: var(--icon-size-xsmall);
+      }
+
+      .share-title {
+        font-size: var(--font-size-heading-medium);
+        font-weight: var(--font-weight-heading);
+      }
+
+      .share-count {
+        display: inline-flex;
+        gap: var(--space-xsmall);
+        align-items: center;
+        white-space: nowrap;
+        color: var(--text-color-deemphasized);
+      }
+    }
+
+    .link-preview-list {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-large);
+
+      .link {
+        display: inline-flex;
+        gap: var(--space-medium);
+
+        .link-icon {
+          /* Needed if the icon is bookmark folder */
+          -moz-context-properties: fill, stroke;
+          /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+          fill: var(--text-color-deemphasized);
+
+          width: var(--icon-size-small);
+          height: var(--icon-size-small);
+        }
+
+        .link-title {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: calc(8 * var(--size-item-large));
+          text-wrap: nowrap;
+        }
+      }
+
+      .too-many-links {
+        display: flex;
+        align-items: center;
+        gap: var(--space-small);
+        -moz-context-properties: fill, stroke;
+        fill: currentColor;
+        stroke: currentColor;
+        color: var(--text-color-error);
+      }
+    }
+  }
+
+  .description {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    width: 50%;
+
+    #close-button {
+      align-self: flex-end;
+    }
+
+    .description-content {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-xxlarge);
+      /* To center the content, the left padding needs to include the .container padding */
+      padding: calc(2 * var(--space-xxlarge));
+      padding-inline-start: calc(2 * var(--space-xxlarge) + var(--space-large));
+
+      moz-button-group {
+        justify-content: flex-start;
+      }
+    }
+
+    /* Match the #close-button height so the .description-content is centered */
+    .empty {
+      height: var(--button-min-height);
+    }
+  }
+}
+
+:host([size="small"]) {
+  #background-image,
+  #plain-background {
+    display: none;
+  }
+
+  .policy {
+    width: 100%;
+  }
+
+  .container {
+    width: var(--modal-size);
+
+    .preview {
+      display: none;
+    }
+
+    .description {
+      width: 100%;
+    }
+  }
+}

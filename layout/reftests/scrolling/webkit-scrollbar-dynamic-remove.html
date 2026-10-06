@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<style>
+.scrollable {
+  overflow: scroll;
+  height: 100px;
+  width: 100px;
+  border: 2px solid black;
+}
+.scrollable::before {
+  display: block;
+  content: "overflowing content";
+  height: 300px;
+  width: 300px;
+}
+.pseudo8::-webkit-scrollbar-thumb {
+  background: cyan;
+}
+</style>
+<div class="scrollable pseudo8"></div>
+<script>
+document.addEventListener('MozReftestInvalidate', async () => {
+  const extraStyle = document.createElement("style");
+  document.head.appendChild(extraStyle);
+  const sheet = extraStyle.sheet;
+  sheet.insertRule(".pseudo8::-webkit-scrollbar { width: 8px; }");
+
+  // Flush the style rule change.
+  document.documentElement.getBoundingClientRect();
+
+  // Await a frame and remove the style.
+  await new Promise(resolve => requestAnimationFrame(resolve));
+  extraStyle.remove();
+
+  document.documentElement.classList.remove("reftest-wait");
+});
+</script>
+</html>

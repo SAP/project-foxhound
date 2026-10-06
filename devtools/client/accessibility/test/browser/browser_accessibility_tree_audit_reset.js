@@ -75,7 +75,7 @@ const tests = [
           name: `"Accessibility Panel Test"`,
         },
         {
-          role: "heading",
+          role: "heading (level 1)",
           name: `"Top level header"`,
           selected: true,
         },
@@ -85,7 +85,7 @@ const tests = [
           badges: ["contrast"],
         },
         {
-          role: "heading",
+          role: "heading (level 2)",
           name: `"Second level header"`,
         },
         {

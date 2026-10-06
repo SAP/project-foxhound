@@ -5,7 +5,7 @@ const kOverflowPanel = document.getElementById("widget-overflow");
 var gOriginalWidth;
 async function stopOverflowing() {
   kOverflowPanel.removeAttribute("animate");
-  window.resizeTo(gOriginalWidth, window.outerHeight);
+  unensureToolbarOverflow(window, gOriginalWidth);
   await TestUtils.waitForCondition(
     () => !document.getElementById("nav-bar").hasAttribute("overflowing")
   );
@@ -30,8 +30,7 @@ add_task(async function check_library_subview_in_overflow() {
     !navbar.hasAttribute("overflowing"),
     "Should start with a non-overflowing toolbar."
   );
-  window.resizeTo(kForceOverflowWidthPx, window.outerHeight);
-
+  ensureToolbarOverflow(window, false);
   await TestUtils.waitForCondition(() => navbar.hasAttribute("overflowing"));
 
   let chevron = document.getElementById("nav-bar-overflow-button");

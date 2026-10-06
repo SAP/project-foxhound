@@ -2,16 +2,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef mozilla_dom_CCGCScheduler_h
+#define mozilla_dom_CCGCScheduler_h
+
 #include "js/SliceBudget.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/IdleTaskRunner.h"
 #include "mozilla/MainThreadIdlePeriod.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/ipc/IdleSchedulerChild.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsCycleCollector.h"
 #include "nsJSEnvironment.h"
-#include "nsCycleCollectionParticipant.h"
 
 namespace mozilla {
 
@@ -542,3 +544,5 @@ class CCGCScheduler {
 };
 
 }  // namespace mozilla
+
+#endif  // mozilla_dom_CCGCScheduler_h

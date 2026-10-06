@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +8,9 @@
 #include "mozilla/EventQueue.h"
 #include "mozilla/CondVar.h"
 #include "mozilla/SynchronizedEventQueue.h"
+#include "mozilla/TargetShutdownTaskSet.h"
 #include "nsCOMPtr.h"
+#include "nsITargetShutdownTask.h"
 #include "nsTArray.h"
 
 class nsIEventTarget;
@@ -32,7 +32,7 @@ class ThreadEventQueue final : public SynchronizedEventQueue {
   explicit ThreadEventQueue(UniquePtr<EventQueue> aQueue,
                             bool aIsMainThread = false);
 
-  bool PutEvent(already_AddRefed<nsIRunnable>&& aEvent,
+  bool PutEvent(RefPtr<nsIRunnable>& aEvent,
                 EventQueuePriority aPriority) final;
 
   already_AddRefed<nsIRunnable> GetEvent(
@@ -63,7 +63,7 @@ class ThreadEventQueue final : public SynchronizedEventQueue {
 
   virtual ~ThreadEventQueue();
 
-  bool PutEventInternal(already_AddRefed<nsIRunnable>&& aEvent,
+  bool PutEventInternal(RefPtr<nsIRunnable>& aEvent,
                         EventQueuePriority aPriority, NestedSink* aQueue);
 
   const UniquePtr<EventQueue> mBaseQueue MOZ_GUARDED_BY(mLock);
@@ -83,8 +83,7 @@ class ThreadEventQueue final : public SynchronizedEventQueue {
 
   bool mEventsAreDoomed MOZ_GUARDED_BY(mLock) = false;
   nsCOMPtr<nsIThreadObserver> mObserver MOZ_GUARDED_BY(mLock);
-  nsTArray<nsCOMPtr<nsITargetShutdownTask>> mShutdownTasks
-      MOZ_GUARDED_BY(mLock);
+  TargetShutdownTaskSet mShutdownTasks MOZ_GUARDED_BY(mLock);
   bool mShutdownTasksRun MOZ_GUARDED_BY(mLock) = false;
 
   const bool mIsMainThread;

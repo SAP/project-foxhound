@@ -10,8 +10,11 @@
 
 #include "modules/audio_coding/neteq/tools/audio_loop.h"
 
-#include <stdio.h>
-#include <string.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <span>
+#include <string>
 
 #include "absl/strings/string_view.h"
 
@@ -47,14 +50,14 @@ bool AudioLoop::Init(absl::string_view file_name,
   return true;
 }
 
-rtc::ArrayView<const int16_t> AudioLoop::GetNextBlock() {
+std::span<const int16_t> AudioLoop::GetNextBlock() {
   // Check that the AudioLoop is initialized.
   if (block_length_samples_ == 0)
-    return rtc::ArrayView<const int16_t>();
+    return std::span<const int16_t>();
 
   const int16_t* output_ptr = &audio_array_[next_index_];
   next_index_ = (next_index_ + block_length_samples_) % loop_length_samples_;
-  return rtc::ArrayView<const int16_t>(output_ptr, block_length_samples_);
+  return std::span<const int16_t>(output_ptr, block_length_samples_);
 }
 
 }  // namespace test

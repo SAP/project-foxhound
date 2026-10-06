@@ -82,11 +82,19 @@ RemoteCanvas.prototype.handleEvent = function() {
     this.cb();
 };
 
+// The .sjs that serves the iframe-1 image runs in a host xpcshell on Android
+// and can't see the up-to-date prefs, so we pass image.jxl.enabled through to
+// it via the iframe's query string.
+function jxlQueryString()
+{
+  return SpecialPowers.getBoolPref("image.jxl.enabled", false) ? "?jxl=1" : "";
+}
+
 function loadFirst()
 {
   ref = canvas.toDataURL();
 
-  var remoteCanvas = new RemoteCanvas("bug496292-iframe-1.html");
+  var remoteCanvas = new RemoteCanvas("bug496292-iframe-1.html" + jxlQueryString());
   remoteCanvas.load(checkFirst);
 }
 
@@ -108,7 +116,7 @@ function checkSecond()
   is(second, ref, "The modified Accept header used by image loader is correct");
 
   SpecialPowers.pushPrefEnv({"clear": [["image.http.accept"]]}, function() {
-    var remoteCanvas = new RemoteCanvas("bug496292-iframe-1.html");
+    var remoteCanvas = new RemoteCanvas("bug496292-iframe-1.html" + jxlQueryString());
     remoteCanvas.load(checkThird);
   });
 }

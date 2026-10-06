@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -90,7 +88,7 @@ add_task(async function test_removePagesByTimeframe() {
 
   // Check that we have removed the correct pages.
   for (let i = 0; i < 10; i++) {
-    Assert.equal(page_in_database(TEST_URI + i) == 0, i > 0 && i < 9);
+    Assert.equal((await page_in_database(TEST_URI + i)) == 0, i > 0 && i < 9);
   }
 
   // Clear remaining items and check that all pages have been removed.

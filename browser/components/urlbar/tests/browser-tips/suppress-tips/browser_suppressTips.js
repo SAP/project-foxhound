@@ -10,7 +10,7 @@
 ChromeUtils.defineESModuleGetters(this, {
   LaterRun: "resource:///modules/LaterRun.sys.mjs",
   UrlbarProviderSearchTips:
-    "resource:///modules/UrlbarProviderSearchTips.sys.mjs",
+    "moz-src:///browser/components/urlbar/UrlbarProviderSearchTips.sys.mjs",
 });
 
 const LAST_UPDATE_THRESHOLD_HOURS = 24;

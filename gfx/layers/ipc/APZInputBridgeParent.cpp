@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,16 +14,15 @@ namespace mozilla {
 namespace layers {
 
 /* static */
-APZInputBridgeParent* APZInputBridgeParent::Create(
-    const LayersId& aLayersId, Endpoint<PAPZInputBridgeParent>&& aEndpoint) {
-  APZInputBridgeParent* parent = new APZInputBridgeParent(aLayersId);
+void APZInputBridgeParent::Create(const LayersId& aLayersId,
+                                  Endpoint<PAPZInputBridgeParent>&& aEndpoint) {
+  auto parent = MakeRefPtr<APZInputBridgeParent>(aLayersId);
   if (!aEndpoint.Bind(parent)) {
     // We can't recover from this.
     MOZ_CRASH("Failed to bind APZInputBridgeParent to endpoint");
   }
 
-  CompositorBridgeParent::SetAPZInputBridgeParent(aLayersId, parent);
-  return parent;
+  CompositorBridgeParent::SetAPZInputBridgeParent(aLayersId, std::move(parent));
 }
 
 APZInputBridgeParent::APZInputBridgeParent(const LayersId& aLayersId) {
@@ -49,13 +46,13 @@ mozilla::ipc::IPCResult APZInputBridgeParent::RecvReceiveMultiTouchInputEvent(
     callback = [self = RefPtr<APZInputBridgeParent>(this)](
                    uint64_t aInputBlockId,
                    const APZHandledResult& aHandledResult) {
-      Unused << self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
+      (void)self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
     };
   }
 
   *aOutResult = mTreeManager->InputBridge()->ReceiveInputEvent(
       event, std::move(callback));
-  *aOutEvent = event;
+  *aOutEvent = std::move(event);
 
   return IPC_OK();
 }
@@ -70,13 +67,13 @@ mozilla::ipc::IPCResult APZInputBridgeParent::RecvReceiveMouseInputEvent(
     callback = [self = RefPtr<APZInputBridgeParent>(this)](
                    uint64_t aInputBlockId,
                    const APZHandledResult& aHandledResult) {
-      Unused << self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
+      (void)self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
     };
   }
 
   *aOutResult = mTreeManager->InputBridge()->ReceiveInputEvent(
       event, std::move(callback));
-  *aOutEvent = event;
+  *aOutEvent = std::move(event);
 
   return IPC_OK();
 }
@@ -91,13 +88,13 @@ mozilla::ipc::IPCResult APZInputBridgeParent::RecvReceivePanGestureInputEvent(
     callback = [self = RefPtr<APZInputBridgeParent>(this)](
                    uint64_t aInputBlockId,
                    const APZHandledResult& aHandledResult) {
-      Unused << self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
+      (void)self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
     };
   }
 
   *aOutResult = mTreeManager->InputBridge()->ReceiveInputEvent(
       event, std::move(callback));
-  *aOutEvent = event;
+  *aOutEvent = std::move(event);
 
   return IPC_OK();
 }
@@ -112,13 +109,13 @@ mozilla::ipc::IPCResult APZInputBridgeParent::RecvReceivePinchGestureInputEvent(
     callback = [self = RefPtr<APZInputBridgeParent>(this)](
                    uint64_t aInputBlockId,
                    const APZHandledResult& aHandledResult) {
-      Unused << self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
+      (void)self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
     };
   }
 
   *aOutResult = mTreeManager->InputBridge()->ReceiveInputEvent(
       event, std::move(callback));
-  *aOutEvent = event;
+  *aOutEvent = std::move(event);
 
   return IPC_OK();
 }
@@ -133,13 +130,13 @@ mozilla::ipc::IPCResult APZInputBridgeParent::RecvReceiveTapGestureInputEvent(
     callback = [self = RefPtr<APZInputBridgeParent>(this)](
                    uint64_t aInputBlockId,
                    const APZHandledResult& aHandledResult) {
-      Unused << self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
+      (void)self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
     };
   }
 
   *aOutResult = mTreeManager->InputBridge()->ReceiveInputEvent(
       event, std::move(callback));
-  *aOutEvent = event;
+  *aOutEvent = std::move(event);
 
   return IPC_OK();
 }
@@ -154,13 +151,13 @@ mozilla::ipc::IPCResult APZInputBridgeParent::RecvReceiveScrollWheelInputEvent(
     callback = [self = RefPtr<APZInputBridgeParent>(this)](
                    uint64_t aInputBlockId,
                    const APZHandledResult& aHandledResult) {
-      Unused << self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
+      (void)self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
     };
   }
 
   *aOutResult = mTreeManager->InputBridge()->ReceiveInputEvent(
       event, std::move(callback));
-  *aOutEvent = event;
+  *aOutEvent = std::move(event);
 
   return IPC_OK();
 }
@@ -175,13 +172,13 @@ mozilla::ipc::IPCResult APZInputBridgeParent::RecvReceiveKeyboardInputEvent(
     callback = [self = RefPtr<APZInputBridgeParent>(this)](
                    uint64_t aInputBlockId,
                    const APZHandledResult& aHandledResult) {
-      Unused << self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
+      (void)self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
     };
   }
 
   *aOutResult = mTreeManager->InputBridge()->ReceiveInputEvent(
       event, std::move(callback));
-  *aOutEvent = event;
+  *aOutEvent = std::move(event);
 
   return IPC_OK();
 }
@@ -207,10 +204,14 @@ mozilla::ipc::IPCResult APZInputBridgeParent::RecvProcessUnhandledEvent(
 }
 
 void APZInputBridgeParent::ActorDestroy(ActorDestroyReason aWhy) {
-  StaticMonitorAutoLock lock(CompositorBridgeParent::sIndirectLayerTreesLock);
-  CompositorBridgeParent::LayerTreeState& state =
-      CompositorBridgeParent::sIndirectLayerTrees[mLayersId];
-  state.mApzInputBridgeParent = nullptr;
+  // EnsureLayerTreeStateUnderLock mirrors the previous sIndirectLayerTrees[]
+  // access (insert-or-get), so this stays a behavior-preserving translation.
+  CompositorBridgeParent::WithIndirectLayerTreesLock(
+      [&](const StaticMonitorAutoLock& aProofOfLock) {
+        CompositorBridgeParent::EnsureLayerTreeStateUnderLock(mLayersId,
+                                                              aProofOfLock)
+            .mApzInputBridgeParent = nullptr;
+      });
   // We shouldn't need it after this
   mTreeManager = nullptr;
 }

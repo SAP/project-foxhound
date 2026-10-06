@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _MOZILLA_GFX_2D_H
-#define _MOZILLA_GFX_2D_H
+#ifndef MOZILLA_GFX_2D_H
+#define MOZILLA_GFX_2D_H
 
 #include "Types.h"
 #include "Point.h"
@@ -34,8 +32,6 @@
 #include "mozilla/ThreadSafeWeakPtr.h"
 #include "mozilla/Atomics.h"
 
-#include "mozilla/DebugOnly.h"
-
 #include "nsRegionFwd.h"
 
 #if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_GTK)
@@ -63,9 +59,6 @@ typedef _FcPattern FcPattern;
 
 struct ID3D11Texture2D;
 struct ID3D11Device;
-struct ID2D1Device;
-struct ID2D1DeviceContext;
-struct ID2D1Multithread;
 struct IDWriteFactory;
 struct IDWriteRenderingParams;
 struct IDWriteFontFace;
@@ -104,7 +97,7 @@ class ScaledFont;
 
 namespace gfx {
 
-class AlphaBoxBlur;
+class GaussianBlur;
 class ScaledFont;
 class SourceSurface;
 class DataSourceSurface;
@@ -888,6 +881,11 @@ class DataSourceSurface : public SourceSurface {
    */
   virtual void Invalidate(const IntRect& aDirtyRect) {}
 
+  /**
+   * Attempt to cache internal data into the supplied memory buffer.
+   */
+  virtual bool ReadDataInto(uint8_t* aData, int32_t aStride) { return false; }
+
  protected:
   Atomic<int32_t> mMapCount;
 };
@@ -1195,6 +1193,7 @@ class FTUserFontData final
   explicit FTUserFontData(const char* aFilename) : mFilename(aFilename) {}
 
   const uint8_t* FontData() const { return mFontData; }
+  uint32_t FontDataLength() const { return mLength; }
 
   already_AddRefed<mozilla::gfx::SharedFTFace> CloneFace(
       int aFaceIndex = 0) override;
@@ -1453,6 +1452,13 @@ class DrawTarget : public external::AtomicRefCounted<DrawTarget> {
   virtual void Destination(const char* aDestination, const Point& aPoint) {}
 
   /**
+   * Associate subsequent calls to other methods with a specific accessibility
+   * node. This is used to generate tagged PDF output. Specifying an id of (0,
+   * 0) disassociates subsequent calls from any accessibility node.
+   */
+  virtual void AccessibleId(uint64_t aBrowsingContextId, uint64_t aAccId) {}
+
+  /**
    * Returns a SourceSurface which is a snapshot of the current contents of the
    * DrawTarget. Multiple calls to Snapshot() without any drawing operations in
    * between will normally return the same SourceSurface object.
@@ -1518,6 +1524,12 @@ class DrawTarget : public external::AtomicRefCounted<DrawTarget> {
       const DrawSurfaceOptions& aSurfOptions = DrawSurfaceOptions(),
       const DrawOptions& aOptions = DrawOptions()) {
     MOZ_CRASH("GFX: DrawSurfaceDescriptor");
+  }
+
+  virtual already_AddRefed<SourceSurface> ImportSurfaceDescriptor(
+      const layers::SurfaceDescriptor& aDesc, const gfx::IntSize& aSize,
+      SurfaceFormat aFormat) {
+    return nullptr;
   }
 
   /**
@@ -1838,7 +1850,7 @@ class DrawTarget : public external::AtomicRefCounted<DrawTarget> {
    * Perform an in-place blur operation. This is only supported on data draw
    * targets.
    */
-  virtual void Blur(const AlphaBoxBlur& aBlur);
+  virtual void Blur(const GaussianBlur& aBlur);
 
   /**
    * Performs an in-place edge padding operation.
@@ -2152,9 +2164,6 @@ class GFX2D_API Factory {
   static void Init(const Config& aConfig);
   static void ShutDown();
 
-  static bool HasSSE2();
-  static bool HasSSE4();
-
   /**
    * Returns false if any of the following are true:
    *
@@ -2205,7 +2214,8 @@ class GFX2D_API Factory {
 
   static already_AddRefed<DrawTarget> CreateDrawTargetForData(
       BackendType aBackend, unsigned char* aData, const IntSize& aSize,
-      int32_t aStride, SurfaceFormat aFormat, bool aUninitialized = false);
+      int32_t aStride, SurfaceFormat aFormat, bool aUninitialized = false,
+      bool aIsClear = false);
 
 #ifdef XP_DARWIN
   static already_AddRefed<ScaledFont> CreateScaledFontForMacFont(
@@ -2237,7 +2247,7 @@ class GFX2D_API Factory {
    * @return a NativeFontResource of nullptr if failed.
    */
   static already_AddRefed<NativeFontResource> CreateNativeFontResource(
-      uint8_t* aData, uint32_t aSize, FontType aFontType,
+      const uint8_t* aData, uint32_t aSize, FontType aFontType,
       void* aFontContext = nullptr);
 
   /**
@@ -2294,7 +2304,8 @@ class GFX2D_API Factory {
   static void CopyDataSourceSurface(DataSourceSurface* aSource,
                                     DataSourceSurface* aDest);
 
-  static uint32_t GetMaxSurfaceSize(BackendType aType);
+  static size_t GetMaxSurfaceSize(BackendType aType);
+  static size_t GetMaxSurfaceArea(BackendType aType);
 
   static LogForwarder* GetLogForwarder() {
     return sConfig ? sConfig->mLogForwarder : nullptr;
@@ -2311,11 +2322,11 @@ class GFX2D_API Factory {
 
   static bool DoesBackendSupportDataDrawtarget(BackendType aType);
 
-  static void SetBGRSubpixelOrder(bool aBGR);
-  static bool GetBGRSubpixelOrder();
+  static void SetSubpixelOrder(SubpixelOrder aOrder);
+  static SubpixelOrder GetSubpixelOrder();
 
  private:
-  static bool mBGRSubpixelOrder;
+  static SubpixelOrder mSubpixelOrder;
 
  public:
   static already_AddRefed<DrawTarget> CreateDrawTargetWithSkCanvas(
@@ -2352,28 +2363,12 @@ class GFX2D_API Factory {
 #endif
 
 #ifdef WIN32
-  static already_AddRefed<DrawTarget> CreateDrawTargetForD3D11Texture(
-      ID3D11Texture2D* aTexture, SurfaceFormat aFormat);
-
-  /*
-   * Attempts to create and install a D2D1 device from the supplied Direct3D11
-   * device. Returns true on success, or false on failure and leaves the
-   * D2D1/Direct3D11 devices unset.
-   */
   static bool SetDirect3D11Device(ID3D11Device* aDevice);
   static RefPtr<ID3D11Device> GetDirect3D11Device();
-  static RefPtr<ID2D1Device> GetD2D1Device(uint32_t* aOutSeqNo = nullptr);
-  static bool HasD2D1Device();
   static RefPtr<IDWriteFactory> GetDWriteFactory();
   static RefPtr<IDWriteFactory> EnsureDWriteFactory();
-  static bool SupportsD2D1();
   static RefPtr<IDWriteFontCollection> GetDWriteSystemFonts(
       bool aUpdate = false);
-  static RefPtr<ID2D1DeviceContext> GetD2DDeviceContext();
-
-  static uint64_t GetD2DVRAMUsageDrawTarget();
-  static uint64_t GetD2DVRAMUsageSourceSurface();
-  static void D2DCleanup();
 
   static already_AddRefed<ScaledFont> CreateScaledFontForDWriteFont(
       IDWriteFontFace* aFontFace, const gfxFontStyle* aStyle,
@@ -2387,10 +2382,10 @@ class GFX2D_API Factory {
   static void SetSystemTextQuality(uint8_t aQuality);
 
   static already_AddRefed<DataSourceSurface>
-  CreateBGRA8DataSourceSurfaceForD3D11Texture(ID3D11Texture2D* aSrcTexture,
-                                              uint32_t aArrayIndex,
-                                              gfx::ColorSpace2 aColorSpace,
-                                              gfx::ColorRange aColorRange);
+  CreateBGRA8DataSourceSurfaceForD3D11Texture(
+      ID3D11Texture2D* aSrcTexture, uint32_t aArrayIndex,
+      gfx::ColorSpace2 aColorSpace, gfx::ColorRange aColorRange,
+      gfx::TransferFunction aTransferFunction);
 
   static nsresult CreateSdbForD3D11Texture(
       ID3D11Texture2D* aSrcTexture, const IntSize& aSrcSize,
@@ -2401,51 +2396,32 @@ class GFX2D_API Factory {
                               ID3D11Texture2D* aSrcTexture,
                               uint32_t aArrayIndex,
                               gfx::ColorSpace2 aColorSpace,
-                              gfx::ColorRange aColorRange);
+                              gfx::ColorRange aColorRange,
+                              gfx::TransferFunction aTransferFunction);
 
  private:
-  static StaticRefPtr<ID2D1Device> mD2D1Device;
   static StaticRefPtr<ID3D11Device> mD3D11Device;
   static StaticRefPtr<IDWriteFactory> mDWriteFactory;
   static bool mDWriteFactoryInitialized;
   static StaticRefPtr<IDWriteFontCollection> mDWriteSystemFonts;
-  static StaticRefPtr<ID2D1DeviceContext> mMTDC;
-  static StaticRefPtr<ID2D1DeviceContext> mOffMTDC;
 
   static bool ReadbackTexture(uint8_t* aDestData, int32_t aDestStride,
                               ID3D11Texture2D* aSrcTexture);
 
   // DestTextureT can be TextureData or DataSourceSurface.
-  static bool ConvertSourceAndRetryReadback(DataSourceSurface* aDestCpuTexture,
-                                            ID3D11Texture2D* aSrcTexture,
-                                            uint32_t aArrayIndex,
-                                            gfx::ColorSpace2 aColorSpace,
-                                            gfx::ColorRange aColorRange);
+  static bool ConvertSourceAndRetryReadback(
+      DataSourceSurface* aDestCpuTexture, ID3D11Texture2D* aSrcTexture,
+      uint32_t aArrayIndex, gfx::ColorSpace2 aColorSpace,
+      gfx::ColorRange aColorRange, gfx::TransferFunction aTransferFunction);
 
  protected:
   // This guards access to the singleton devices above, as well as the
   // singleton devices in DrawTargetD2D1.
   static StaticMutex mDeviceLock;
-  // This synchronizes access between different D2D drawtargets and their
-  // implied dependency graph.
-  static StaticMutex mDTDependencyLock;
-
-  friend class DrawTargetD2D1;
 #endif  // WIN32
-};
-
-class MOZ_RAII AutoSerializeWithMoz2D final {
- public:
-  explicit AutoSerializeWithMoz2D(BackendType aBackendType);
-  ~AutoSerializeWithMoz2D();
-
- private:
-#if defined(WIN32)
-  RefPtr<ID2D1Multithread> mMT;
-#endif
 };
 
 }  // namespace gfx
 }  // namespace mozilla
 
-#endif  // _MOZILLA_GFX_2D_H
+#endif  // MOZILLA_GFX_2D_H

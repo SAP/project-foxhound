@@ -91,65 +91,50 @@ add_task(async function test_remove_bookmark_from_library() {
     children,
   });
 
-  // Open the Library and select the "UnfiledBookmarks".
-  let library = await promiseLibrary("UnfiledBookmarks");
+  await withLibraryWindow("UnfiledBookmarks", async ({ left, right }) => {
+    Assert.equal(
+      PlacesUtils.getConcreteItemGuid(left.selectedNode),
+      PlacesUtils.bookmarks.unfiledGuid,
+      "Should have selected unfiled bookmarks."
+    );
 
-  registerCleanupFunction(async function () {
-    await promiseLibraryClosed(library);
+    let doc = right.ownerDocument;
+    let contextMenu = doc.getElementById("placesContext");
+    let contextMenuDeleteBookmark = doc.getElementById(
+      "placesContext_deleteBookmark"
+    );
+
+    let popupShownPromise = BrowserTestUtils.waitForEvent(
+      contextMenu,
+      "popupshown"
+    );
+
+    right.view.selection.select(0);
+    await synthesizeClickOnSelectedTreeCell(right, {
+      type: "contextmenu",
+      button: 2,
+    });
+
+    await popupShownPromise;
+
+    Assert.equal(
+      right.result.root.childCount,
+      3,
+      "Number of bookmarks before removal is right"
+    );
+
+    let removePromise = PlacesTestUtils.waitForNotification(
+      "bookmark-removed",
+      events => events.some(event => event.url == uris[0])
+    );
+    contextMenu.activateItem(contextMenuDeleteBookmark, {});
+
+    await removePromise;
+
+    Assert.equal(
+      right.result.root.childCount,
+      2,
+      "Should have removed the bookmark from the display"
+    );
   });
-
-  let PO = library.PlacesOrganizer;
-
-  Assert.equal(
-    PlacesUtils.getConcreteItemGuid(PO._places.selectedNode),
-    PlacesUtils.bookmarks.unfiledGuid,
-    "Should have selected unfiled bookmarks."
-  );
-
-  let contextMenu = library.document.getElementById("placesContext");
-  let contextMenuDeleteBookmark = library.document.getElementById(
-    "placesContext_deleteBookmark"
-  );
-
-  let popupShownPromise = BrowserTestUtils.waitForEvent(
-    contextMenu,
-    "popupshown"
-  );
-
-  let firstColumn = library.ContentTree.view.columns[0];
-  let firstBookmarkRect = library.ContentTree.view.getCoordsForCellItem(
-    0,
-    firstColumn,
-    "bm0"
-  );
-
-  EventUtils.synthesizeMouse(
-    library.ContentTree.view.body,
-    firstBookmarkRect.x,
-    firstBookmarkRect.y,
-    { type: "contextmenu", button: 2 },
-    library
-  );
-
-  await popupShownPromise;
-
-  Assert.equal(
-    library.ContentTree.view.result.root.childCount,
-    3,
-    "Number of bookmarks before removal is right"
-  );
-
-  let removePromise = PlacesTestUtils.waitForNotification(
-    "bookmark-removed",
-    events => events.some(event => event.url == uris[0])
-  );
-  contextMenu.activateItem(contextMenuDeleteBookmark, {});
-
-  await removePromise;
-
-  Assert.equal(
-    library.ContentTree.view.result.root.childCount,
-    2,
-    "Should have removed the bookmark from the display"
-  );
 });

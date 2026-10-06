@@ -1,5 +1,3 @@
-setExpectedFailuresForSelfTest(2);
-
 function test() {
   Promise.reject(new Error("Promise rejection."));
   (async () => {

@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,9 +9,6 @@ const TEST_DATA_DIR = "test_content_signing/";
 
 const ONECRL_NAME = "oneCRL-signer.mozilla.org";
 const ABOUT_NEWTAB_NAME = "remotenewtab.content-signature.mozilla.org";
-var VERIFICATION_HISTOGRAM = Services.telemetry.getHistogramById(
-  "CONTENT_SIGNATURE_VERIFICATION_STATUS"
-);
 
 // Enable the collection (during test) for all products so even products
 // that don't collect the data will be able to run the test without failure.
@@ -68,18 +64,19 @@ function check_telemetry(expected_index, expected, expectedId) {
         );
       }
     }
+    let verificationHistogram =
+      Glean.security.contentSignatureVerificationStatus.testGetValue();
     equal(
-      VERIFICATION_HISTOGRAM.snapshot().values[i] || 0,
+      verificationHistogram.values[i] || 0,
       expected_value,
       "count " +
         i +
         ": " +
-        VERIFICATION_HISTOGRAM.snapshot().values[i] +
+        verificationHistogram.values[i] +
         " expected " +
         expected_value
     );
   }
-  VERIFICATION_HISTOGRAM.clear();
   Services.fog.testResetFOG();
 }
 
@@ -133,7 +130,7 @@ add_task(async function run_test() {
 
   // Check signature verification works without throwing when using the wrong
   // root
-  VERIFICATION_HISTOGRAM.clear();
+  Services.fog.testResetFOG();
   let chain1 = oneCRLChain.join("\n");
   let verifier = getSignatureVerifier();
   ok(

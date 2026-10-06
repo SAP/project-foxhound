@@ -32,11 +32,11 @@ This job is configured as `tier 2 <https://wiki.mozilla.org/Sheriffing/Job_Visib
 Autofix
 -------
 
-This linter provides a ``--fix`` option. The python script is doing the change itself.
+This linter provides a ``--fix`` option.
 
 
 Sources
 -------
 
-* `Configuration (YAML) <https://searchfox.org/mozilla-central/source/tools/lint/file-perm.yml>`_
-* `Source <https://searchfox.org/mozilla-central/source/tools/lint/file-perm/__init__.py>`_
+* :searchfox:`Configuration (YAML) <tools/lint/file-perm.yml>`
+* :searchfox:`Source (Rust) <tools/lint/mozcheck/src/file_perm.rs>`

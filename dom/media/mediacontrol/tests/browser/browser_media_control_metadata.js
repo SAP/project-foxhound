@@ -376,6 +376,66 @@ add_task(async function testUpdateDefaultMetadataWhenPageTitleChanges() {
   await tab.close();
 });
 
+add_task(async function testMetadataMutation() {
+  info(`open media page`);
+  const tab = await createLoadedTabWrapper(PAGE_NON_AUTOPLAY);
+
+  info(`start media`);
+  await playMedia(tab, testVideoId);
+
+  info(`set initial metadata`);
+  const initialMetadata = {
+    title: "initial title",
+    artist: "initial artist",
+    album: "initial album",
+    artwork: [{ src: "initial.jpg", sizes: "128x128", type: "image/jpeg" }],
+  };
+  await setMediaMetadata(tab, initialMetadata);
+
+  info(`verify initial metadata`);
+  await isCurrentMetadataEqualTo(initialMetadata);
+
+  info(`mutate existing MediaMetadata object`);
+  const controller = tab.linkedBrowser.browsingContext.mediaController;
+  // Each MediaMetadata setter triggers an artwork reload whose async
+  // completion fires an extra metadatachange carrying a stale pre-resolution
+  // snapshot; wait for a metadatachange that actually reflects the mutated
+  // values in the parent (bug 2023406).
+  const mutatedMetadataReflected = BrowserTestUtils.waitForEvent(
+    controller,
+    "metadatachange",
+    false,
+    () => {
+      const current = MediaControlService.getCurrentActiveMediaMetadata();
+      return (
+        current.title === "mutated title" &&
+        current.artist === "mutated artist" &&
+        current.album === "mutated album"
+      );
+    }
+  );
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
+    const metadata = content.navigator.mediaSession.metadata;
+    metadata.title = "mutated title";
+    metadata.artist = "mutated artist";
+    metadata.album = "mutated album";
+  });
+
+  await mutatedMetadataReflected;
+
+  info(`verify mutated metadata is reflected`);
+  await isCurrentMetadataEqualTo({
+    title: "mutated title",
+    artist: "mutated artist",
+    album: "mutated album",
+    artwork: [{ src: "initial.jpg", sizes: "128x128", type: "image/jpeg" }],
+  });
+
+  info(`remove tab`);
+  await tab.close();
+});
+
 /**
  * The following are helper functions.
  */

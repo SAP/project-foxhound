@@ -79,8 +79,8 @@ async function openPage(shouldClick) {
         [],
         function () {
           return [
-            content.document.userHasInteracted,
-            content.document.userHasInteracted,
+            content.document.hasBeenUserGestureActivated,
+            content.document.hasBeenUserGestureActivated,
           ];
         }
       );

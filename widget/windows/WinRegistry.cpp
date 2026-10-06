@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sts=2 sw=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,9 +34,9 @@ bool Key::GetChildName(uint32_t aIndex, nsAString& aResult) const {
   wchar_t nameBuf[kMaxKeyNameLen + 1];
   DWORD nameLen = std::size(nameBuf);
 
-  LONG rv = RegEnumKeyExW(mKey, aIndex, nameBuf, &nameLen, nullptr, nullptr,
-                          nullptr, &lastWritten);
-  if (rv != ERROR_SUCCESS) {
+  LSTATUS rv = RegEnumKeyExW(mKey, aIndex, nameBuf, &nameLen, nullptr, nullptr,
+                             nullptr, &lastWritten);
+  if (LSTATUS_FAILED(rv)) {
     return false;
   }
   aResult.Assign(nameBuf, nameLen);
@@ -47,7 +45,7 @@ bool Key::GetChildName(uint32_t aIndex, nsAString& aResult) const {
 
 bool Key::RemoveChildKey(const nsString& aName) const {
   MOZ_ASSERT(mKey);
-  return SUCCEEDED(RegDeleteKeyW(mKey, aName.get()));
+  return LSTATUS_SUCCEEDED(RegDeleteKeyW(mKey, aName.get()));
 }
 
 uint32_t Key::GetValueCount() const {
@@ -63,9 +61,9 @@ bool Key::GetValueName(uint32_t aIndex, nsAString& aResult) const {
   wchar_t nameBuf[kMaxValueNameLen + 1];
   DWORD nameLen = std::size(nameBuf);
 
-  LONG rv = RegEnumValueW(mKey, aIndex, nameBuf, &nameLen, nullptr, nullptr,
-                          nullptr, nullptr);
-  if (rv != ERROR_SUCCESS) {
+  LSTATUS rv = RegEnumValueW(mKey, aIndex, nameBuf, &nameLen, nullptr, nullptr,
+                             nullptr, nullptr);
+  if (LSTATUS_FAILED(rv)) {
     return false;
   }
   aResult.Assign(nameBuf, nameLen);
@@ -75,14 +73,16 @@ bool Key::GetValueName(uint32_t aIndex, nsAString& aResult) const {
 ValueType Key::GetValueType(const nsString& aName) const {
   MOZ_ASSERT(mKey);
   DWORD result;
-  LONG rv =
+  LSTATUS rv =
       RegQueryValueExW(mKey, aName.get(), nullptr, &result, nullptr, nullptr);
-  return SUCCEEDED(rv) ? ValueType(result) : ValueType::None;
+  return LSTATUS_SUCCEEDED(rv) ? ValueType(result) : ValueType::None;
 }
 
 bool Key::RemoveValue(const nsString& aName) const {
   MOZ_ASSERT(mKey);
-  return SUCCEEDED(RegDeleteValueW(mKey, aName.get()));
+  // NOTE: Intentionally not propagating errors from RegDeleteValueW().
+  RegDeleteValueW(mKey, aName.get());
+  return true;
 }
 
 Maybe<uint32_t> Key::GetValueAsDword(const nsString& aName) const {
@@ -90,9 +90,9 @@ Maybe<uint32_t> Key::GetValueAsDword(const nsString& aName) const {
   DWORD type;
   DWORD value = 0;
   DWORD size = sizeof(DWORD);
-  HRESULT rv = RegQueryValueExW(mKey, aName.get(), nullptr, &type,
+  LSTATUS rv = RegQueryValueExW(mKey, aName.get(), nullptr, &type,
                                 (LPBYTE)&value, &size);
-  if (FAILED(rv) || type != REG_DWORD) {
+  if (LSTATUS_FAILED(rv) || type != REG_DWORD) {
     return Nothing();
   }
   return Some(value);
@@ -100,8 +100,8 @@ Maybe<uint32_t> Key::GetValueAsDword(const nsString& aName) const {
 
 bool Key::WriteValueAsDword(const nsString& aName, uint32_t aValue) {
   MOZ_ASSERT(mKey);
-  return SUCCEEDED(RegSetValueExW(mKey, aName.get(), 0, REG_DWORD,
-                                  (const BYTE*)&aValue, sizeof(aValue)));
+  return LSTATUS_SUCCEEDED(RegSetValueExW(
+      mKey, aName.get(), 0, REG_DWORD, (const BYTE*)&aValue, sizeof(aValue)));
 }
 
 Maybe<uint64_t> Key::GetValueAsQword(const nsString& aName) const {
@@ -109,9 +109,9 @@ Maybe<uint64_t> Key::GetValueAsQword(const nsString& aName) const {
   DWORD type;
   uint64_t value = 0;
   DWORD size = sizeof(uint64_t);
-  HRESULT rv = RegQueryValueExW(mKey, aName.get(), nullptr, &type,
+  LSTATUS rv = RegQueryValueExW(mKey, aName.get(), nullptr, &type,
                                 (LPBYTE)&value, &size);
-  if (FAILED(rv) || type != REG_QWORD) {
+  if (LSTATUS_FAILED(rv) || type != REG_QWORD) {
     return Nothing();
   }
   return Some(value);
@@ -119,8 +119,8 @@ Maybe<uint64_t> Key::GetValueAsQword(const nsString& aName) const {
 
 bool Key::WriteValueAsQword(const nsString& aName, uint64_t aValue) {
   MOZ_ASSERT(mKey);
-  return SUCCEEDED(RegSetValueExW(mKey, aName.get(), 0, REG_QWORD,
-                                  (const BYTE*)&aValue, sizeof(aValue)));
+  return LSTATUS_SUCCEEDED(RegSetValueExW(
+      mKey, aName.get(), 0, REG_QWORD, (const BYTE*)&aValue, sizeof(aValue)));
 }
 
 bool Key::GetValueAsBinary(const nsString& aName,
@@ -128,8 +128,9 @@ bool Key::GetValueAsBinary(const nsString& aName,
   MOZ_ASSERT(mKey);
   DWORD type;
   DWORD size;
-  LONG rv = RegQueryValueExW(mKey, aName.get(), nullptr, &type, nullptr, &size);
-  if (FAILED(rv) || type != REG_BINARY) {
+  LSTATUS rv =
+      RegQueryValueExW(mKey, aName.get(), nullptr, &type, nullptr, &size);
+  if (LSTATUS_FAILED(rv) || type != REG_BINARY) {
     return false;
   }
   if (!aResult.SetLength(size, fallible)) {
@@ -137,7 +138,7 @@ bool Key::GetValueAsBinary(const nsString& aName,
   }
   rv = RegQueryValueExW(mKey, aName.get(), nullptr, nullptr, aResult.Elements(),
                         &size);
-  return SUCCEEDED(rv);
+  return LSTATUS_SUCCEEDED(rv);
 }
 
 Maybe<nsTArray<uint8_t>> Key::GetValueAsBinary(const nsString& aName) const {
@@ -152,8 +153,9 @@ Maybe<nsTArray<uint8_t>> Key::GetValueAsBinary(const nsString& aName) const {
 bool Key::WriteValueAsBinary(const nsString& aName,
                              Span<const uint8_t> aValue) {
   MOZ_ASSERT(mKey);
-  return SUCCEEDED(RegSetValueExW(mKey, aName.get(), 0, REG_BINARY,
-                                  (const BYTE*)aValue.data(), aValue.size()));
+  return LSTATUS_SUCCEEDED(RegSetValueExW(mKey, aName.get(), 0, REG_BINARY,
+                                          (const BYTE*)aValue.data(),
+                                          aValue.size()));
 }
 
 static bool IsStringType(DWORD aType, StringFlags aFlags) {
@@ -174,8 +176,9 @@ bool Key::GetValueAsString(const nsString& aName, nsString& aResult,
   MOZ_ASSERT(mKey);
   DWORD type;
   DWORD size;
-  LONG rv = RegQueryValueExW(mKey, aName.get(), nullptr, &type, nullptr, &size);
-  if (FAILED(rv) || !IsStringType(type, aFlags)) {
+  LSTATUS rv =
+      RegQueryValueExW(mKey, aName.get(), nullptr, &type, nullptr, &size);
+  if (LSTATUS_FAILED(rv) || !IsStringType(type, aFlags)) {
     return false;
   }
   if (!size) {
@@ -250,9 +253,9 @@ Maybe<uint32_t> Key::GetValueAsString(const nsString& aName,
 
   DWORD size = aBuffer.LengthBytes();
   DWORD type;
-  HRESULT rv = RegQueryValueExW(mKey, aName.get(), nullptr, &type,
+  LSTATUS rv = RegQueryValueExW(mKey, aName.get(), nullptr, &type,
                                 (LPBYTE)aBuffer.data(), &size);
-  if (FAILED(rv)) {
+  if (LSTATUS_FAILED(rv)) {
     return Nothing();
   }
   if (!IsStringType(type, aFlags)) {
@@ -306,16 +309,15 @@ bool KeyWatcher::Register() {
   DWORD flags = REG_NOTIFY_CHANGE_NAME | REG_NOTIFY_CHANGE_ATTRIBUTES |
                 REG_NOTIFY_CHANGE_LAST_SET | REG_NOTIFY_CHANGE_SECURITY |
                 REG_NOTIFY_THREAD_AGNOSTIC;
-  HRESULT rv =
+  LSTATUS rv =
       RegNotifyChangeKeyValue(mKey.RawKey(), /* bWatchSubtree = */ TRUE, flags,
                               mEvent, /* fAsynchronous = */ TRUE);
-  return !NS_WARN_IF(FAILED(rv));
+  return !NS_WARN_IF(LSTATUS_FAILED(rv));
 }
 
 KeyWatcher::~KeyWatcher() {
   if (mWaitObject) {
-    UnregisterWait(mWaitObject);
-    CloseHandle(mWaitObject);
+    UnregisterWaitEx(mWaitObject, INVALID_HANDLE_VALUE);
   }
   if (mEvent) {
     CloseHandle(mEvent);

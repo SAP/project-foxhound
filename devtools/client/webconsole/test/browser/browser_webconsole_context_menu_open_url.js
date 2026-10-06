@@ -37,7 +37,7 @@ add_task(async function () {
   await hideContextMenu(hud);
 
   info("Test Open URL menu item for a text message containing a link");
-  await ContentTask.spawn(gBrowser.selectedBrowser, TEST_URI2, url => {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [TEST_URI2], url => {
     content.wrappedJSObject.console.log("Visit", url);
   });
 

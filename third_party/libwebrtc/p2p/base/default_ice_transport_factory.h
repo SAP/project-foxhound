@@ -28,9 +28,8 @@ namespace webrtc {
 // which the internal P2PTransportChannel lives.
 class DefaultIceTransport : public IceTransportInterface {
  public:
-  explicit DefaultIceTransport(
-      std::unique_ptr<cricket::P2PTransportChannel> internal);
-  ~DefaultIceTransport();
+  explicit DefaultIceTransport(std::unique_ptr<P2PTransportChannel> internal);
+  ~DefaultIceTransport() override;
 
   IceTransportInternal* internal() override {
     RTC_DCHECK_RUN_ON(&thread_checker_);
@@ -39,17 +38,17 @@ class DefaultIceTransport : public IceTransportInterface {
 
  private:
   const SequenceChecker thread_checker_{};
-  std::unique_ptr<cricket::P2PTransportChannel> internal_
+  std::unique_ptr<P2PTransportChannel> internal_
       RTC_GUARDED_BY(thread_checker_);
 };
 
 class DefaultIceTransportFactory : public IceTransportFactory {
  public:
   DefaultIceTransportFactory() = default;
-  ~DefaultIceTransportFactory() = default;
+  ~DefaultIceTransportFactory() override = default;
 
   // Must be called on the network thread and returns a DefaultIceTransport.
-  rtc::scoped_refptr<IceTransportInterface> CreateIceTransport(
+  scoped_refptr<IceTransportInterface> CreateIceTransport(
       const std::string& transport_name,
       int component,
       IceTransportInit init) override;

@@ -8,6 +8,7 @@ import type {Protocol} from 'devtools-protocol';
 
 import type {ElementHandle} from '../api/ElementHandle.js';
 import type {Realm} from '../api/Realm.js';
+import {debugError} from '../common/util.js';
 
 /**
  * Represents a Node and the properties of it that are relevant to Accessibility.
@@ -76,10 +77,22 @@ export interface SerializedAXNode {
    */
   invalid?: string;
   orientation?: string;
+
+  /**
+   * Url for link elements.
+   */
+  url?: string;
   /**
    * Children of this node, if there are any.
    */
   children?: SerializedAXNode[];
+
+  /**
+   * CDP-specifc ID to reference the DOM node.
+   *
+   * @internal
+   */
+  backendNodeId?: number;
 
   /**
    * Get an ElementHandle for this AXNode if available.
@@ -226,8 +239,13 @@ export class Accessibility {
         if (!frame) {
           return;
         }
-        const iframeSnapshot = await frame.accessibility.snapshot(options);
-        root.iframeSnapshot = iframeSnapshot ?? undefined;
+        try {
+          const iframeSnapshot = await frame.accessibility.snapshot(options);
+          root.iframeSnapshot = iframeSnapshot ?? undefined;
+        } catch (error) {
+          // Frames can get detached at any time resulting in errors.
+          debugError(error);
+        }
       }
       for (const child of root.children) {
         await populateIframes(child);
@@ -259,9 +277,7 @@ export class Accessibility {
 
     const interestingNodes = new Set<AXNode>();
     this.collectInterestingNodes(interestingNodes, defaultRoot, false);
-    if (!interestingNodes.has(needle)) {
-      return null;
-    }
+
     return this.serializeTree(needle, interestingNodes)[0] ?? null;
   }
 
@@ -422,16 +438,14 @@ class AXNode {
         break;
     }
 
-    // Here and below: Android heuristics
     if (this.#hasFocusableChild()) {
       return false;
     }
-    if (this.#focusable && this.#name) {
-      return true;
-    }
+
     if (this.#role === 'heading' && this.#name) {
       return true;
     }
+
     return false;
   }
 
@@ -464,10 +478,30 @@ class AXNode {
     }
   }
 
+  public isLandmark(): boolean {
+    switch (this.#role) {
+      case 'banner':
+      case 'complementary':
+      case 'contentinfo':
+      case 'form':
+      case 'main':
+      case 'navigation':
+      case 'region':
+      case 'search':
+        return true;
+      default:
+        return false;
+    }
+  }
+
   public isInteresting(insideControl: boolean): boolean {
     const role = this.#role;
     if (role === 'Ignored' || this.#hidden || this.#ignored) {
       return false;
+    }
+
+    if (this.isLandmark()) {
+      return true;
     }
 
     if (this.#focusable || this.#richlyEditable) {
@@ -508,10 +542,17 @@ class AXNode {
         if (!this.payload.backendDOMNodeId) {
           return null;
         }
-        return (await this.#realm.adoptBackendNode(
+        using handle = await this.#realm.adoptBackendNode(
           this.payload.backendDOMNodeId,
-        )) as ElementHandle<Element>;
+        );
+
+        // Since Text nodes are not elements, we want to
+        // return a handle to the parent element for them.
+        return (await handle.evaluateHandle(node => {
+          return node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+        })) as ElementHandle<Element>;
       },
+      backendNodeId: this.payload.backendDOMNodeId,
     };
 
     type UserStringProperty =
@@ -520,7 +561,8 @@ class AXNode {
       | 'description'
       | 'keyshortcuts'
       | 'roledescription'
-      | 'valuetext';
+      | 'valuetext'
+      | 'url';
 
     const userStringProperties: UserStringProperty[] = [
       'name',
@@ -529,6 +571,7 @@ class AXNode {
       'keyshortcuts',
       'roledescription',
       'valuetext',
+      'url',
     ];
     const getUserStringPropertyValue = (key: UserStringProperty): string => {
       return properties.get(key) as string;
@@ -569,13 +612,13 @@ class AXNode {
 
     for (const booleanProperty of booleanProperties) {
       // RootWebArea's treat focus differently than other nodes. They report whether
-      // their frame  has focus, not whether focus is specifically on the root
+      // their frame has focus, not whether focus is specifically on the root
       // node.
       if (booleanProperty === 'focused' && this.#role === 'RootWebArea') {
         continue;
       }
       const value = getBooleanPropertyValue(booleanProperty);
-      if (!value) {
+      if (value === undefined) {
         continue;
       }
       node[booleanProperty] = getBooleanPropertyValue(booleanProperty);

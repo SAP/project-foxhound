@@ -2,15 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const initialSchema =
-#include policies-schema.json
+import initialSchema from "./policies-schema.json" with { type: "json" };
 
 export let schema = initialSchema;
 
 export function modifySchemaForTests(customSchema) {
-    if (customSchema) {
-        schema = customSchema;
-    } else {
-        schema = initialSchema;
-    }
- }
+  if (customSchema) {
+    schema = customSchema;
+  } else {
+    schema = initialSchema;
+  }
+}

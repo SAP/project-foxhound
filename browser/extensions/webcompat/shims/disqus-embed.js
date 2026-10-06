@@ -8,11 +8,33 @@ if (!window.smartblockDisqusShimInitialized) {
   // Guard against this script running multiple times
   window.smartblockDisqusShimInitialized = true;
 
+  /**
+   * Finds a Disqus embed script URL in the document. Validates that
+   * the URL matches https://*.disqus.com/embed.js format.
+   *
+   * @returns {string|undefined} The script URL if found, undefined otherwise.
+   */
+  function getDisqusEmbedScriptURL() {
+    for (const script of document.querySelectorAll("script[src]")) {
+      try {
+        const url = new URL(script.src);
+        if (
+          url.protocol === "https:" &&
+          url.hostname.endsWith(".disqus.com") &&
+          url.pathname === "/embed.js"
+        ) {
+          return url.href;
+        }
+      } catch {
+        // Invalid URL, skip
+      }
+    }
+    return undefined;
+  }
+
   // Get the script URL from the page. We can't hardcode it because the
   // subdomain is site specific.
-  let scriptURL = document.querySelector(
-    'script[src*=".disqus.com/embed.js"]'
-  )?.src;
+  const scriptURL = getDisqusEmbedScriptURL();
   if (scriptURL) {
     embedHelperLib.initEmbedShim({
       shimId: "DisqusEmbed",

@@ -2,22 +2,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _RTCRtpSender_h_
-#define _RTCRtpSender_h_
+#ifndef RTCRtpSender_h_
+#define RTCRtpSender_h_
 
-#include "nsISupports.h"
-#include "nsWrapperCache.h"
+#include "RTCStatsReport.h"
+#include "js/RootingAPI.h"
+#include "jsep/JsepTrack.h"
+#include "libwebrtcglue/RtpRtcpConfig.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/StateMirroring.h"
-#include "mozilla/Maybe.h"
-#include "js/RootingAPI.h"
-#include "libwebrtcglue/RtpRtcpConfig.h"
-#include "nsTArray.h"
-#include "mozilla/dom/RTCStatsReportBinding.h"
 #include "mozilla/dom/RTCRtpCapabilitiesBinding.h"
 #include "mozilla/dom/RTCRtpParametersBinding.h"
-#include "RTCStatsReport.h"
-#include "jsep/JsepTrack.h"
+#include "mozilla/dom/RTCStatsReportBinding.h"
+#include "nsISupports.h"
+#include "nsTArray.h"
+#include "nsWrapperCache.h"
 #include "transportbridge/MediaPipeline.h"
 
 class nsPIDOMWindowInner;
@@ -295,4 +295,4 @@ class RTCRtpSender : public nsISupports,
 
 }  // namespace dom
 }  // namespace mozilla
-#endif  // _RTCRtpSender_h_
+#endif  // RTCRtpSender_h_

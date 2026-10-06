@@ -32,7 +32,7 @@ add_task(async () => {
   await setup();
 
   let originalVideo = document.getElementById("original");
-  let stream = originalVideo.mozCaptureStream();
+  let stream = originalVideo.captureStream?.() || originalVideo.mozCaptureStream();
   let streamTarget = document.getElementById("streamTarget");
   originalVideo.setAttribute("loop", true);
   let playingPromise = waitForEventOnce(originalVideo, "playing");

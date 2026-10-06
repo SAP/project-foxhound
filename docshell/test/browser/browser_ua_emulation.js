@@ -3,7 +3,11 @@
 
 "use strict";
 
-const URL = "data:text/html;charset=utf-8,<iframe id='test-iframe'></iframe>";
+const HTML = `
+  <h1>Test browser user agent emulation</h1>
+  <iframe id='test-iframe'></iframe>
+`;
+const URL = `https://example.com/document-builder.sjs?html=${encodeURI(HTML)}`;
 
 // Test that the docShell UA emulation works
 async function contentTaskNoOverride() {
@@ -13,6 +17,8 @@ async function contentTaskNoOverride() {
     "",
     "There should initially be no customUserAgent"
   );
+
+  return content.navigator.userAgent;
 }
 
 async function contentTaskOverride() {
@@ -56,16 +62,48 @@ async function contentTaskOverride() {
   );
 }
 
+async function contentTaskCleared(initialUA) {
+  is(
+    docShell.browsingContext.customUserAgent,
+    "",
+    "customUserAgent was cleared"
+  );
+
+  is(content.navigator.userAgent, initialUA, "document has the initial UA");
+}
+
 add_task(async function () {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: URL },
     async function (browser) {
-      await SpecialPowers.spawn(browser, [], contentTaskNoOverride);
+      const initialUA = await SpecialPowers.spawn(
+        browser,
+        [],
+        contentTaskNoOverride
+      );
 
       let browsingContext = BrowserTestUtils.getBrowsingContextFrom(browser);
       browsingContext.customUserAgent = "foo";
 
       await SpecialPowers.spawn(browser, [], contentTaskOverride);
+
+      info(
+        "Check that clearing customUserAgent resets userAgent to its initial value"
+      );
+
+      // First we need to reload the page, as the user agent can be retrieved from the User-Agent header.
+      browser.reload();
+      await BrowserTestUtils.browserLoaded(browser);
+
+      browsingContext.customUserAgent = "";
+      await SpecialPowers.spawn(browser, [initialUA], contentTaskCleared);
+
+      // A second reload should reset the User-Agent header, and make navigate.userAgent correct again.
+      browser.reload();
+      await BrowserTestUtils.browserLoaded(browser);
+
+      browsingContext.customUserAgent = "";
+      await SpecialPowers.spawn(browser, [initialUA], contentTaskCleared);
     }
   );
 });

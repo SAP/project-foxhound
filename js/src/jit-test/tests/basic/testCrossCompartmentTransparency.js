@@ -76,7 +76,6 @@ if (String.prototype.toSource) {
 test("new String('one')", s => String.prototype.toString.call(s));
 test("new RegExp('1')", r => RegExp.prototype.exec.call(r, '1').toString());
 test("new RegExp('1')", r => RegExp.prototype.test.call(r, '1'));
-test("new RegExp('1')", r => RegExp.prototype.compile.call(r, '1').toString());
 test("new RegExp('1')", r => assertEq("a1".search(r), 1));
 test("new RegExp('1')", r => assertEq("a1".match(r)[0], '1'));
 test("new RegExp('1')", r => assertEq("a1".replace(r, 'A'), 'aA'));

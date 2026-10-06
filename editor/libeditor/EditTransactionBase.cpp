@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -88,6 +87,8 @@ NS_IMPL_EDITTRANSACTIONBASE_GETASMETHODS(InsertNodeTransaction)
 NS_IMPL_EDITTRANSACTIONBASE_GETASMETHODS(InsertTextTransaction)
 NS_IMPL_EDITTRANSACTIONBASE_GETASMETHODS(JoinNodesTransaction)
 NS_IMPL_EDITTRANSACTIONBASE_GETASMETHODS(MoveNodeTransaction)
+NS_IMPL_EDITTRANSACTIONBASE_GETASMETHODS(MoveNodeTransactionBase)
+NS_IMPL_EDITTRANSACTIONBASE_GETASMETHODS(MoveSiblingsTransaction)
 NS_IMPL_EDITTRANSACTIONBASE_GETASMETHODS(PlaceholderTransaction)
 NS_IMPL_EDITTRANSACTIONBASE_GETASMETHODS(ReplaceTextTransaction)
 NS_IMPL_EDITTRANSACTIONBASE_GETASMETHODS(SplitNodeTransaction)

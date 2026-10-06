@@ -5,7 +5,6 @@
 use nsstring::{nsCString, nsString};
 use thin_vec::ThinVec;
 pub mod fragment_directive_impl;
-mod test;
 
 /// This struct contains the percent-decoded parts of a text directive.
 /// All parts besides `start` are optional (which is indicated by an empty string).

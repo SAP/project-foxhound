@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -144,8 +143,7 @@ bool D3D11Checks::DoesDeviceWork() {
   if (checked) return result;
   checked = true;
 
-  if (StaticPrefs::gfx_direct2d_force_enabled_AtStartup() ||
-      gfxConfig::IsForcedOnByUser(Feature::HW_COMPOSITING)) {
+  if (gfxConfig::IsForcedOnByUser(Feature::HW_COMPOSITING)) {
     result = true;
     return true;
   }
@@ -205,8 +203,7 @@ static bool DoesTextureSharingWorkInternal(ID3D11Device* device,
     return false;
   }
 
-  if (StaticPrefs::gfx_direct2d_force_enabled_AtStartup() ||
-      gfxConfig::IsForcedOnByUser(Feature::HW_COMPOSITING)) {
+  if (gfxConfig::IsForcedOnByUser(Feature::HW_COMPOSITING)) {
     return true;
   }
 

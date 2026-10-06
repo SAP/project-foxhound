@@ -16,9 +16,10 @@
 namespace mozilla::dom {
 
 #undef LOG
-#define LOG(msg, ...)                        \
-  MOZ_LOG(gMediaControlLog, LogLevel::Debug, \
-          ("ContentMediaController=%p, " msg, this, ##__VA_ARGS__))
+#define LOG(msg, ...)                                            \
+  MOZ_LOG_FMT(gMediaControlLog, LogLevel::Debug,                 \
+              "ContentMediaController={}, " msg, fmt::ptr(this), \
+              ##__VA_ARGS__)
 
 static Maybe<bool> sXPCOMShutdown;
 
@@ -78,10 +79,10 @@ void ContentMediaAgent::NotifyMediaPlaybackChanged(uint64_t aBrowsingContextId,
     return;
   }
 
-  LOG("Notify media %s in BC %" PRId64, ToString(aState).c_str(), bc->Id());
+  LOG("Notify media {} in BC {}", ToString(aState).c_str(), bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyMediaPlaybackChanged(bc, aState);
+    (void)contentChild->SendNotifyMediaPlaybackChanged(bc, aState);
   } else {
     // Currently this only happen when we disable e10s, otherwise all controlled
     // media would be run in the content process.
@@ -92,26 +93,28 @@ void ContentMediaAgent::NotifyMediaPlaybackChanged(uint64_t aBrowsingContextId,
   }
 }
 
-void ContentMediaAgent::NotifyMediaAudibleChanged(uint64_t aBrowsingContextId,
-                                                  MediaAudibleState aState) {
+void ContentMediaAgent::NotifyMediaAudibleChanged(
+    uint64_t aBrowsingContextId, MediaAudibleState aState, ControlType aType,
+    AudioSessionType aSessionType) {
   MOZ_ASSERT(NS_IsMainThread());
   RefPtr<BrowsingContext> bc = GetBrowsingContextForAgent(aBrowsingContextId);
   if (!bc || bc->IsDiscarded()) {
     return;
   }
 
-  LOG("Notify media became %s in BC %" PRId64,
+  LOG("Notify media became {} in BC {}",
       aState == MediaAudibleState::eAudible ? "audible" : "inaudible",
       bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyMediaAudibleChanged(bc, aState);
+    (void)contentChild->SendNotifyMediaAudibleChanged(bc, aState, aType,
+                                                      aSessionType);
   } else {
     // Currently this only happen when we disable e10s, otherwise all controlled
     // media would be run in the content process.
     if (RefPtr<IMediaInfoUpdater> updater =
             bc->Canonical()->GetMediaController()) {
-      updater->NotifyMediaAudibleChanged(bc->Id(), aState);
+      updater->NotifyMediaAudibleChanged(bc->Id(), aState, aType, aSessionType);
     }
   }
 }
@@ -124,11 +127,11 @@ void ContentMediaAgent::SetIsInPictureInPictureMode(
     return;
   }
 
-  LOG("Notify media Picture-in-Picture mode '%s' in BC %" PRId64,
+  LOG("Notify media Picture-in-Picture mode '{}' in BC {}",
       aIsInPictureInPictureMode ? "enabled" : "disabled", bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyPictureInPictureModeChanged(
+    (void)contentChild->SendNotifyPictureInPictureModeChanged(
         bc, aIsInPictureInPictureMode);
   } else {
     // Currently this only happen when we disable e10s, otherwise all controlled
@@ -147,12 +150,11 @@ void ContentMediaAgent::SetDeclaredPlaybackState(
     return;
   }
 
-  LOG("Notify declared playback state  '%s' in BC %" PRId64,
+  LOG("Notify declared playback state  '{}' in BC {}",
       ToMediaSessionPlaybackStateStr(aState), bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyMediaSessionPlaybackStateChanged(bc,
-                                                                       aState);
+    (void)contentChild->SendNotifyMediaSessionPlaybackStateChanged(bc, aState);
     return;
   }
   // This would only happen when we disable e10s.
@@ -168,10 +170,10 @@ void ContentMediaAgent::NotifySessionCreated(uint64_t aBrowsingContextId) {
     return;
   }
 
-  LOG("Notify media session being created in BC %" PRId64, bc->Id());
+  LOG("Notify media session being created in BC {}", bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyMediaSessionUpdated(bc, true);
+    (void)contentChild->SendNotifyMediaSessionUpdated(bc, true);
     return;
   }
   // This would only happen when we disable e10s.
@@ -187,10 +189,10 @@ void ContentMediaAgent::NotifySessionDestroyed(uint64_t aBrowsingContextId) {
     return;
   }
 
-  LOG("Notify media session being destroyed in BC %" PRId64, bc->Id());
+  LOG("Notify media session being destroyed in BC {}", bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyMediaSessionUpdated(bc, false);
+    (void)contentChild->SendNotifyMediaSessionUpdated(bc, false);
     return;
   }
   // This would only happen when we disable e10s.
@@ -207,10 +209,10 @@ void ContentMediaAgent::UpdateMetadata(
     return;
   }
 
-  LOG("Notify media session metadata change in BC %" PRId64, bc->Id());
+  LOG("Notify media session metadata change in BC {}", bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyUpdateMediaMetadata(bc, aMetadata);
+    (void)contentChild->SendNotifyUpdateMediaMetadata(bc, aMetadata);
     return;
   }
   // This would only happen when we disable e10s.
@@ -227,11 +229,11 @@ void ContentMediaAgent::EnableAction(uint64_t aBrowsingContextId,
     return;
   }
 
-  LOG("Notify to enable action '%s' in BC %" PRId64,
-      GetEnumString(aAction).get(), bc->Id());
+  LOG("Notify to enable action '{}' in BC {}", GetEnumString(aAction).get(),
+      bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyMediaSessionSupportedActionChanged(
+    (void)contentChild->SendNotifyMediaSessionSupportedActionChanged(
         bc, aAction, true);
     return;
   }
@@ -249,11 +251,11 @@ void ContentMediaAgent::DisableAction(uint64_t aBrowsingContextId,
     return;
   }
 
-  LOG("Notify to disable action '%s' in BC %" PRId64,
-      GetEnumString(aAction).get(), bc->Id());
+  LOG("Notify to disable action '{}' in BC {}", GetEnumString(aAction).get(),
+      bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyMediaSessionSupportedActionChanged(
+    (void)contentChild->SendNotifyMediaSessionSupportedActionChanged(
         bc, aAction, false);
     return;
   }
@@ -271,11 +273,11 @@ void ContentMediaAgent::NotifyMediaFullScreenState(uint64_t aBrowsingContextId,
     return;
   }
 
-  LOG("Notify %s fullscreen in BC %" PRId64,
-      aIsInFullScreen ? "entered" : "left", bc->Id());
+  LOG("Notify {} fullscreen in BC {}", aIsInFullScreen ? "entered" : "left",
+      bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyMediaFullScreenState(bc, aIsInFullScreen);
+    (void)contentChild->SendNotifyMediaFullScreenState(bc, aIsInFullScreen);
     return;
   }
   // This would only happen when we disable e10s.
@@ -293,7 +295,7 @@ void ContentMediaAgent::UpdatePositionState(
   }
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyPositionStateChanged(bc, aState);
+    (void)contentChild->SendNotifyPositionStateChanged(bc, aState);
     return;
   }
   // This would only happen when we disable e10s.
@@ -312,19 +314,19 @@ void ContentMediaAgent::UpdateGuessedPositionState(
   }
 
   if (aState) {
-    LOG("Update guessed position state for BC %" PRId64
-        " media id %s (duration=%f, playbackRate=%f, position=%f)",
+    LOG("Update guessed position state for BC {} media id {} (duration={}, "
+        "playbackRate={}, position={})",
         bc->Id(), aMediaId.ToString().get(), aState->mDuration,
         aState->mPlaybackRate, aState->mLastReportedPlaybackPosition);
   } else {
-    LOG("Clear guessed position state for BC %" PRId64 " media id %s", bc->Id(),
+    LOG("Clear guessed position state for BC {} media id {}", bc->Id(),
         aMediaId.ToString().get());
   }
 
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyGuessedPositionStateChanged(bc, aMediaId,
-                                                                  aState);
+    (void)contentChild->SendNotifyGuessedPositionStateChanged(bc, aMediaId,
+                                                              aState);
     return;
   }
   // This would only happen when we disable e10s.
@@ -335,29 +337,38 @@ void ContentMediaAgent::UpdateGuessedPositionState(
 }
 
 ContentMediaController::ContentMediaController(uint64_t aId) {
-  LOG("Create content media controller for BC %" PRId64, aId);
+  LOG("Create content media controller for BC {}", aId);
 }
 
 void ContentMediaController::AddReceiver(
-    ContentMediaControlKeyReceiver* aListener) {
+    ContentMediaControlKeyReceiver* aListener, ControlType aType) {
   MOZ_ASSERT(NS_IsMainThread());
-  mReceivers.AppendElement(aListener);
+  if (aType == ControlType::eControllable) {
+    mControllableReceivers.AppendElement(aListener);
+  } else {
+    mUncontrollableReceivers.AppendElement(aListener);
+  }
 }
 
 void ContentMediaController::RemoveReceiver(
-    ContentMediaControlKeyReceiver* aListener) {
+    ContentMediaControlKeyReceiver* aListener, ControlType aType) {
   MOZ_ASSERT(NS_IsMainThread());
-  mReceivers.RemoveElement(aListener);
+  if (aType == ControlType::eControllable) {
+    mControllableReceivers.RemoveElement(aListener);
+  } else {
+    mUncontrollableReceivers.RemoveElement(aListener);
+  }
 }
 
-void ContentMediaController::HandleMediaKey(MediaControlKey aKey,
-                                            Maybe<SeekDetails> aDetails) {
+void ContentMediaController::HandleMediaKey(
+    MediaControlKey aKey, const MediaControlActionParams& aParams) {
   MOZ_ASSERT(NS_IsMainThread());
-  if (mReceivers.IsEmpty()) {
+  if (mControllableReceivers.IsEmpty() && mUncontrollableReceivers.IsEmpty()) {
     return;
   }
-  LOG("Handle '%s' event, receiver num=%zu", GetEnumString(aKey).get(),
-      mReceivers.Length());
+  LOG("Handle '{}' event, controllable num={}, uncontrollable num={}",
+      GetEnumString(aKey).get(), mControllableReceivers.Length(),
+      mUncontrollableReceivers.Length());
   // We have default handlers for these actions
   // https://w3c.github.io/mediasession/#ref-for-dom-mediasessionaction-play%E2%91%A3
   switch (aKey) {
@@ -365,15 +376,25 @@ void ContentMediaController::HandleMediaKey(MediaControlKey aKey,
       PauseOrStopMedia();
       return;
     case MediaControlKey::Play:
-    case MediaControlKey::Stop:
     case MediaControlKey::Seekto:
     case MediaControlKey::Seekforward:
     case MediaControlKey::Seekbackward:
-      // When receiving `Stop`, the amount of receiver would vary during the
-      // iteration, so we use the backward iteration to avoid accessing the
-      // index which is over the array length.
-      for (auto& receiver : Reversed(mReceivers)) {
-        receiver->HandleMediaKey(aKey, aDetails);
+      for (auto& receiver : Reversed(mControllableReceivers)) {
+        receiver->HandleMediaKey(aKey, aParams);
+      }
+      return;
+    case MediaControlKey::Stop:
+    case MediaControlKey::Setvolume:
+    case MediaControlKey::Mute:
+    case MediaControlKey::Unmute:
+      // Audio focus loss arrives as Stop and must silence uncontrollable
+      // sources too; volume/mute always target both lists. Iterate backward
+      // because Stop can shrink the controllable list during iteration.
+      for (auto& receiver : Reversed(mControllableReceivers)) {
+        receiver->HandleMediaKey(aKey, aParams);
+      }
+      for (auto& receiver : Reversed(mUncontrollableReceivers)) {
+        receiver->HandleMediaKey(aKey, aParams);
       }
       return;
     default:
@@ -385,19 +406,19 @@ void ContentMediaController::PauseOrStopMedia() {
   // When receiving `pause`, if a page contains playing media and paused media
   // at that moment, that means a user intends to pause those playing
   // media, not the already paused ones. Then, we're going to stop those already
-  // paused media and keep those latest paused media in `mReceivers`.
-  // The reason for doing that is, when resuming paused media, we only want to
-  // resume latest paused media, not all media, in order to get a better user
-  // experience, which matches Chrome's behavior.
+  // paused media and keep those latest paused media in
+  // `mControllableReceivers`. The reason for doing that is, when resuming
+  // paused media, we only want to resume latest paused media, not all media, in
+  // order to get a better user experience, which matches Chrome's behavior.
   bool isAnyMediaPlaying = false;
-  for (const auto& receiver : mReceivers) {
+  for (const auto& receiver : mControllableReceivers) {
     if (receiver->IsPlaying()) {
       isAnyMediaPlaying = true;
       break;
     }
   }
 
-  for (auto& receiver : Reversed(mReceivers)) {
+  for (auto& receiver : Reversed(mControllableReceivers)) {
     if (isAnyMediaPlaying && !receiver->IsPlaying()) {
       receiver->HandleMediaKey(MediaControlKey::Stop);
     } else {

@@ -1,0 +1,4 @@
+category browser-first-window-ready moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs AIWindow.onFirstWindowReady
+category browser-quit-application-granted moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs AIWindow.uninit
+category browser-window-delayed-startup moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs AIWindow.init
+category browser-window-unload moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs AIWindow.unloadWindow

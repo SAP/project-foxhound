@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,7 +34,7 @@ NS_IMPL_FRAMEARENA_HELPERS(SVGMarkerFrame)
 
 nsresult SVGMarkerFrame::AttributeChanged(int32_t aNameSpaceID,
                                           nsAtom* aAttribute,
-                                          int32_t aModType) {
+                                          AttrModType aModType) {
   if (aNameSpaceID == kNameSpaceID_None &&
       (aAttribute == nsGkAtoms::markerUnits || aAttribute == nsGkAtoms::refX ||
        aAttribute == nsGkAtoms::refY || aAttribute == nsGkAtoms::markerWidth ||
@@ -111,7 +109,7 @@ void SVGMarkerFrame::PaintMark(gfxContext& aContext,
 
   const SVGViewBox viewBox = marker->GetViewBox();
 
-  if (viewBox.width <= 0.0f || viewBox.height <= 0.0f) {
+  if (!viewBox.IsValid()) {
     // We must disable rendering if the viewBox width or height are zero.
     return;
   }
@@ -133,7 +131,8 @@ void SVGMarkerFrame::PaintMark(gfxContext& aContext,
   nsIFrame* kid = GetAnonymousChildFrame(this);
   ISVGDisplayableFrame* SVGFrame = do_QueryFrame(kid);
   // The CTM of each frame referencing us may be different.
-  SVGFrame->NotifySVGChanged(ISVGDisplayableFrame::TRANSFORM_CHANGED);
+  SVGFrame->NotifySVGChanged(
+      ISVGDisplayableFrame::ChangeFlag::TransformChanged);
   auto contextPaint = MakeRefPtr<SVGContextPaintImpl>();
   contextPaint->Init(aContext.GetDrawTarget(),
                      aToMarkedFrameUserSpace * aContext.CurrentMatrixDouble(),
@@ -145,7 +144,7 @@ void SVGMarkerFrame::PaintMark(gfxContext& aContext,
 }
 
 SVGBBox SVGMarkerFrame::GetMarkBBoxContribution(const Matrix& aToBBoxUserspace,
-                                                uint32_t aFlags,
+                                                SVGBBoxFlags aFlags,
                                                 SVGGeometryFrame* aMarkedFrame,
                                                 const SVGMark& aMark,
                                                 float aStrokeWidth) {
@@ -167,7 +166,7 @@ SVGBBox SVGMarkerFrame::GetMarkBBoxContribution(const Matrix& aToBBoxUserspace,
 
   const SVGViewBox viewBox = content->GetViewBox();
 
-  if (viewBox.width <= 0.0f || viewBox.height <= 0.0f) {
+  if (!viewBox.IsValid()) {
     return bbox;
   }
 

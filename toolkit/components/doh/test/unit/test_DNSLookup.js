@@ -48,7 +48,7 @@ add_task(async function test_FailedDNSLookup() {
   let deferred = Promise.withResolvers();
   let lookup = new DNSLookup(
     null,
-    `https://foo.example.com:${h2Port}/doh?responseIP=none`,
+    `https://foo.example.com:${trrServer.port()}/doh?responseIP=none`,
     (request, record, status, usedDomain, retryCount) => {
       deferred.resolve({ request, record, status, usedDomain, retryCount });
     }

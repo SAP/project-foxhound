@@ -10,15 +10,25 @@
 
 #include "modules/audio_coding/codecs/red/audio_encoder_copy_red.h"
 
-#include <string.h>
-
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <iterator>
+#include <memory>
+#include <optional>
+#include <span>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/strings/string_view.h"
+#include "api/audio_codecs/audio_encoder.h"
+#include "api/call/bitrate_allocation.h"
+#include "api/field_trials_view.h"
+#include "api/units/time_delta.h"
+#include "rtc_base/buffer.h"
 #include "rtc_base/byte_order.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/logging.h"
 
 namespace webrtc {
 static constexpr const int kRedMaxPacketSize =
@@ -54,7 +64,7 @@ size_t GetMaxRedundancyFromFieldTrial(const FieldTrialsView& field_trials) {
 AudioEncoderCopyRed::AudioEncoderCopyRed(Config&& config,
                                          const FieldTrialsView& field_trials)
     : speech_encoder_(std::move(config.speech_encoder)),
-      primary_encoded_(0, kAudioMaxRtpPacketLen),
+      primary_encoded_(Buffer::CreateWithCapacity(kAudioMaxRtpPacketLen)),
       max_packet_length_(kAudioMaxRtpPacketLen),
       red_payload_type_(config.payload_type) {
   RTC_CHECK(speech_encoder_) << "Speech encoder not provided.";
@@ -62,7 +72,7 @@ AudioEncoderCopyRed::AudioEncoderCopyRed(Config&& config,
   auto number_of_redundant_encodings =
       GetMaxRedundancyFromFieldTrial(field_trials);
   for (size_t i = 0; i < number_of_redundant_encodings; i++) {
-    std::pair<EncodedInfo, rtc::Buffer> redundant;
+    std::pair<EncodedInfo, Buffer> redundant;
     redundant.second.EnsureCapacity(kAudioMaxRtpPacketLen);
     redundant_encodings_.push_front(std::move(redundant));
   }
@@ -96,8 +106,8 @@ int AudioEncoderCopyRed::GetTargetBitrate() const {
 
 AudioEncoder::EncodedInfo AudioEncoderCopyRed::EncodeImpl(
     uint32_t rtp_timestamp,
-    rtc::ArrayView<const int16_t> audio,
-    rtc::Buffer* encoded) {
+    std::span<const int16_t> audio,
+    Buffer* encoded) {
   primary_encoded_.Clear();
   EncodedInfo info =
       speech_encoder_->Encode(rtp_timestamp, audio, &primary_encoded_);
@@ -143,13 +153,14 @@ AudioEncoder::EncodedInfo AudioEncoderCopyRed::EncodeImpl(
 
   // Iterate backwards and append the data.
   size_t header_offset = 0;
-  while (it-- != redundant_encodings_.begin()) {
+  while (it != redundant_encodings_.begin()) {
+    --it;
     encoded->AppendData(it->second);
 
     const uint32_t timestamp_delta =
         info.encoded_timestamp - it->first.encoded_timestamp;
     encoded->data()[header_offset] = it->first.payload_type | 0x80;
-    SetBE16(static_cast<uint8_t*>(encoded->data()) + header_offset + 1,
+    SetBE16(std::span<uint8_t>(*encoded).subspan(header_offset + 1, 2),
             (timestamp_delta << 2) | (it->first.encoded_bytes >> 8));
     encoded->data()[header_offset + 3] = it->first.encoded_bytes & 0xff;
     header_offset += kRedHeaderLength;
@@ -169,17 +180,19 @@ AudioEncoder::EncodedInfo AudioEncoderCopyRed::EncodeImpl(
   RTC_DCHECK_EQ(header_offset, header_length_bytes - 1);
   encoded->data()[header_offset] = info.payload_type;
 
-  // Shift the redundant encodings.
-  auto rit = redundant_encodings_.rbegin();
-  for (auto next = std::next(rit); next != redundant_encodings_.rend();
-       rit++, next = std::next(rit)) {
-    rit->first = next->first;
-    rit->second.SetData(next->second);
-  }
-  it = redundant_encodings_.begin();
-  if (it != redundant_encodings_.end()) {
-    it->first = info;
-    it->second.SetData(primary_encoded_);
+  // Shift the redundant encodings if speech.
+  if (info.speech) {
+    auto rit = redundant_encodings_.rbegin();
+    for (auto next = std::next(rit); next != redundant_encodings_.rend();
+         rit++, next = std::next(rit)) {
+      rit->first = next->first;
+      rit->second.SetData(next->second);
+    }
+    it = redundant_encodings_.begin();
+    if (it != redundant_encodings_.end()) {
+      it->first = info;
+      it->second.SetData(primary_encoded_);
+    }
   }
 
   // Update main EncodedInfo.
@@ -193,7 +206,7 @@ void AudioEncoderCopyRed::Reset() {
   auto number_of_redundant_encodings = redundant_encodings_.size();
   redundant_encodings_.clear();
   for (size_t i = 0; i < number_of_redundant_encodings; i++) {
-    std::pair<EncodedInfo, rtc::Buffer> redundant;
+    std::pair<EncodedInfo, Buffer> redundant;
     redundant.second.EnsureCapacity(kAudioMaxRtpPacketLen);
     redundant_encodings_.push_front(std::move(redundant));
   }
@@ -219,10 +232,8 @@ void AudioEncoderCopyRed::SetMaxPlaybackRate(int frequency_hz) {
   speech_encoder_->SetMaxPlaybackRate(frequency_hz);
 }
 
-bool AudioEncoderCopyRed::EnableAudioNetworkAdaptor(
-    const std::string& config_string,
-    RtcEventLog* event_log) {
-  return speech_encoder_->EnableAudioNetworkAdaptor(config_string, event_log);
+bool AudioEncoderCopyRed::EnableAudioNetworkAdaptor(absl::string_view config) {
+  return speech_encoder_->EnableAudioNetworkAdaptor(config);
 }
 
 void AudioEncoderCopyRed::DisableAudioNetworkAdaptor() {
@@ -271,9 +282,9 @@ ANAStats AudioEncoderCopyRed::GetANAStats() const {
   return speech_encoder_->GetANAStats();
 }
 
-rtc::ArrayView<std::unique_ptr<AudioEncoder>>
+std::span<std::unique_ptr<AudioEncoder>>
 AudioEncoderCopyRed::ReclaimContainedEncoders() {
-  return rtc::ArrayView<std::unique_ptr<AudioEncoder>>(&speech_encoder_, 1);
+  return std::span<std::unique_ptr<AudioEncoder>>(&speech_encoder_, 1);
 }
 
 }  // namespace webrtc

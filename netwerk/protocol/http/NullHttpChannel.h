@@ -55,6 +55,7 @@ class NullHttpChannel final : public nsINullChannel,
   nsCOMPtr<nsIPrincipal> mResourcePrincipal;
   nsCString mTimingAllowOriginHeader;
   bool mAllRedirectsSameOrigin{false};
+  bool mAllRedirectsSameOriginIgnoringInternal{false};
   bool mAllRedirectsPassTimingAllowCheck{false};
 };
 

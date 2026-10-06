@@ -4,7 +4,7 @@ DOM Property Viewer
 
 .. container:: block_quote
 
-  The DOM Property Viewer is new in Firefox 48. It is disabled by default. Enable it in the :ref:`Developer Tools Settings <tool-toolbox-settings>`
+  The DOM Property Viewer is disabled by default. Enable it in the :ref:`Developer Tools Settings <tool-toolbox-settings>`
 
 The DOM Property Viewer lets you inspect the properties of the `DOM <https://developer.mozilla.org/en-US/docs/Glossary/DOM>`_ as an expandable tree structure, starting from the `window <https://developer.mozilla.org/en-US/docs/Web/API/Window>`_ object of the current page or the :doc:`selected iframe <../working_with_iframes/index>`.
 

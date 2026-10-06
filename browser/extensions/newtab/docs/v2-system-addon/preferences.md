@@ -105,16 +105,13 @@ Not intended for user configuration, but is programmatically updated. Used for t
 - Default:
   ```json
   {
-    "api_key_pref": "extensions.pocket.oAuthConsumerKey",
     "collapsible": true,
     "enabled": true,
-    "personalized": true,
   }
   ```
   - `api_key_pref` (string): The name of a variable containing the key for the Pocket API.
   - `collapsible` (boolean): Controls whether the sections in new tab can be collapsed.
   - `enabled` (boolean): Controls whether DS is turned on and is programmatically set based on a user's locale. DS enablement is a logical `AND` of this and the value of `browser.newtabpage.activity-stream.discoverystream.enabled`.
-  - `personalized` (boolean): When this is `true` personalized content based on browsing history will be displayed.
   - `unused_key` (string): This is not set by default and is unused by this codebase. It's a standardized way to differentiate configurations to prevent experiment participants from being unenrolled.
 
 ### `browser.newtabpage.activity-stream.discoverystream.enabled`
@@ -212,46 +209,6 @@ If this is `true` newtabs with stories enabled see 1 row. It is set programmatic
 - Pref Type: Firefox
 
 Override to specify endpoint for SPOCs. Will take precedence over remote and hardcoded layout SPOC endpoints.
-
-### `browser.newtabpage.activity-stream.discoverystream.personalization.version`
-
-- Type: `integer`
-- Default: `1`
-- Pref Type: Firefox
-
-This controls what version of personalization we should use to score newtab stories.
-
-### `browser.newtabpage.activity-stream.discoverystream.personalization.modelKeys`
-
-- Type: `string (CSV)`
-- Default: `nb_model_arts_and_entertainment, nb_model_autos_and_vehicles, nb_model_beauty_and_fitness, nb_model_blogging_resources_and_services, nb_model_books_and_literature, nb_model_business_and_industrial, nb_model_computers_and_electronics, nb_model_finance, nb_model_food_and_drink, nb_model_games, nb_model_health, nb_model_hobbies_and_leisure, nb_model_home_and_garden, nb_model_internet_and_telecom, nb_model_jobs_and_education, nb_model_law_and_government, nb_model_online_communities, nb_model_people_and_society, nb_model_pets_and_animals, nb_model_real_estate, nb_model_reference, nb_model_science, nb_model_shopping, nb_model_sports, nb_model_travel`
-- Pref Type: Firefox
-
-This is a configuration for personalization version 2. It is a list of topics the algorithm uses to score stories by.
-
-### `browser.newtabpage.activity-stream.discoverystream.recs.personalized`
-
-- Type: `boolean`
-- Default: false
-- Pref Type: Firefox
-
-This controls if newtab story personalization includes regular stories or not. See spocs.personalized for sponsored content.
-
-### `browser.newtabpage.activity-stream.discoverystream.spocs.personalized`
-
-- Type: `boolean`
-- Default: true
-- Pref Type: Firefox
-
-This controls if newtab story personalization includes sponsored content or not. See recs.personalized for regular stories.
-
-### `browser.newtabpage.activity-stream.discoverystream.isCollectionDismissible`
-
-- Type: `boolean`
-- Default: true
-- Pref Type: Firefox
-
-This controls if newtab story collections are dismissible or not.
 
 ### `browser.newtabpage.activity-stream.feeds.section.topstories`
 

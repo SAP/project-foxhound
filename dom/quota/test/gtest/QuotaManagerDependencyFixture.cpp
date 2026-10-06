@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,7 @@
 #include "QuotaManagerDependencyFixture.h"
 
 #include "DirectoryMetadata.h"
+#include "QuotaManagerTestHelpers.h"
 #include "mozIStorageService.h"
 #include "mozStorageCID.h"
 #include "mozilla/BasePrincipal.h"
@@ -23,7 +22,6 @@
 #include "nsIQuotaRequests.h"
 #include "nsIVariant.h"
 #include "nsScriptSecurityManager.h"
-#include "QuotaManagerTestHelpers.h"
 
 namespace mozilla::dom::quota::test {
 
@@ -594,7 +592,7 @@ void QuotaManagerDependencyFixture::EnsureQuotaManager() {
                      [&resolver]() { return resolver->IsDone(); });
 }
 
-MOZ_RUNINIT nsCOMPtr<nsISerialEventTarget>
+constinit nsCOMPtr<nsISerialEventTarget>
     QuotaManagerDependencyFixture::sBackgroundTarget;
 
 }  // namespace mozilla::dom::quota::test

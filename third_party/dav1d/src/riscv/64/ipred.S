@@ -27,6 +27,136 @@
 
 #include "src/riscv/asm.S"
 
+// void ipred_v_8bpc_rvv(pixel *dst, const ptrdiff_t stride,
+//                       const pixel *const topleft,
+//                       const int width, const int height, const int a,
+//                       const int max_width, const int max_height)
+function ipred_v_8bpc_rvv, export=1, ext="v,zba"
+    addi a2, a2, 1
+    vsetvli t0, a3, e8, m1, ta, ma
+    bne t0, a3, 3f  // Go to slow path - whole row doesn't fit in regsiter
+1:
+    // Fast path - row fits in register
+    add t1, a0, a1
+    vle8.v v4, (a2)
+2:
+    vse8.v v4, (a0)
+    sh1add a0, a1, a0
+    vse8.v v4, (t1)
+    sh1add t1, a1, t1
+    addi a4, a4, -2
+    bnez a4, 2b
+    ret
+
+    // Row doesn't fit in register.
+3:
+    vsetvli t0, a3, e8, m2, ta, ma  // Try using 2 registers at once (LMUL=2)
+    beq t0, a3, 1b  // Back to fast path - now it fits
+
+4:
+    // No need for more vsetli, since both width and VLEN are power of 2, so there is no tail.
+    vle8.v v4, (a2)
+    mv t2, a0
+    mv t1, a4
+5:
+    vse8.v v4, (t2)
+    add t2, t2, a1
+    addi t1, t1, -1
+    bnez t1, 5b  // Loop over rows.
+
+    sub a3, a3, t0
+    add a2, a2, t0
+    add a0, a0, t0
+    bnez a3, 4b  // Loop over columns
+
+    ret
+endfunc
+
+function ipred_h_8bpc_rvv, export=1, ext="v,zba"
+
+    lw a7, -4(a2)
+    vsetvli a6, a3, e8, m1, ta, ma
+    li a5, 4
+    beq a5, a4, 4f
+    bgt a3, a6, 2f
+1:
+    srli a6, a7, 8
+    vmv.v.x v4, a7
+    lw a7, -8(a2)
+    sub a4, a2, a4
+    vmv.v.x v8, a6
+    srli a5, a6, 8
+    add t1, a1, a0
+    srli a6, a7, 8
+    vmv.v.x v12, a5
+    srli a3, a5, 8
+    sh1add t2, a1, a0
+    srli a5, a7, 16
+    vmv.v.x v16, a3
+    sh1add t3, a1, t1
+    addi a4, a4, 8
+    srli a3, a7, 24
+
+3:
+    vse8.v v4, (t3)
+    vmv.v.x v4, a7
+
+    lw a7, -12(a2)
+    addi a2, a2, -4
+    sh2add t3, a1, t3
+
+    vse8.v v8, (t2)
+    vmv.v.x v8, a6
+    srli a6, a7, 8
+    sh2add t2, a1, t2
+
+    vse8.v v12, (t1)
+    vmv.v.x v12, a5
+    srli a5, a7, 16
+    sh2add t1, a1, t1
+
+    vse8.v v16, (a0)
+    vmv.v.x v16, a3
+    srli a3, a7, 24
+    sh2add a0, a1, a0
+
+    bge a2, a4, 3b
+
+    vse8.v v4, (t3)
+    vse8.v v8, (t2)
+    vse8.v v12, (t1)
+    vse8.v v16, (a0)
+
+    ret
+
+4:
+    srli a6, a7, 8
+
+    vmv.v.x v4, a7
+    add t1, a1, a0
+    srli a5, a7, 16
+    sh1add t3, a1, t1
+    vmv.v.x v8, a6
+    srli a3, a7, 24
+    sh1add t2, a1, a0
+    vse8.v v4, (t3)
+    vmv.v.x v12, a5
+    vse8.v v8, (t2)
+    vmv.v.x v16, a3
+
+    vse8.v v12, (t1)
+    vse8.v v16, (a0)
+
+    ret
+2:
+    vsetvli a6, a3, e8, m2, ta, ma
+    ble a3, a6, 1b
+
+    vsetvli a6, a3, e8, m4, ta, ma
+    j 1b
+
+endfunc
+
 function dc_gen_8bpc_rvv, export=1, ext="v,zbb"
     .variant_cc dav1d_dc_gen_8bpc_rvv
     add t1, a1, a2

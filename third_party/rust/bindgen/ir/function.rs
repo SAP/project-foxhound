@@ -9,7 +9,7 @@ use super::ty::TypeKind;
 use crate::callbacks::{ItemInfo, ItemKind};
 use crate::clang::{self, ABIKind, Attribute};
 use crate::parse::{ClangSubItemParser, ParseError, ParseResult};
-use clang_sys::{self, CXCallingConv};
+use clang_sys::CXCallingConv;
 
 use quote::TokenStreamExt;
 use std::io;
@@ -17,7 +17,7 @@ use std::str::FromStr;
 
 const RUST_DERIVE_FUNPTR_LIMIT: usize = 12;
 
-/// What kind of a function are we looking at?
+/// What kind of function are we looking at?
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum FunctionKind {
     /// A plain, free function.
@@ -82,7 +82,7 @@ pub(crate) struct Function {
     /// The mangled name, that is, the symbol.
     mangled_name: Option<String>,
 
-    /// The link name. If specified, overwrite mangled_name.
+    /// The link name. If specified, overwrite `mangled_name`.
     link_name: Option<String>,
 
     /// The ID pointing to the current function signature.
@@ -158,11 +158,7 @@ impl DotAttributes for Function {
         if let Some(ref mangled) = self.mangled_name {
             let mangled: String =
                 mangled.chars().flat_map(|c| c.escape_default()).collect();
-            writeln!(
-                out,
-                "<tr><td>mangled name</td><td>{}</td></tr>",
-                mangled
-            )?;
+            writeln!(out, "<tr><td>mangled name</td><td>{mangled}</td></tr>")?;
         }
 
         Ok(())
@@ -209,7 +205,7 @@ impl FromStr for Abi {
             "win64" => Ok(Self::Win64),
             "C-unwind" => Ok(Self::CUnwind),
             "system" => Ok(Self::System),
-            _ => Err(format!("Invalid or unknown ABI {:?}", s)),
+            _ => Err(format!("Invalid or unknown ABI {s:?}")),
         }
     }
 }
@@ -251,8 +247,8 @@ pub(crate) enum ClangAbi {
 
 impl ClangAbi {
     /// Returns whether this Abi is known or not.
-    fn is_unknown(&self) -> bool {
-        matches!(*self, ClangAbi::Unknown(..))
+    fn is_unknown(self) -> bool {
+        matches!(self, ClangAbi::Unknown(..))
     }
 }
 
@@ -261,8 +257,7 @@ impl quote::ToTokens for ClangAbi {
         match *self {
             Self::Known(abi) => abi.to_tokens(tokens),
             Self::Unknown(cc) => panic!(
-                "Cannot turn unknown calling convention to tokens: {:?}",
-                cc
+                "Cannot turn unknown calling convention to tokens: {cc:?}"
             ),
         }
     }
@@ -295,15 +290,15 @@ pub(crate) struct FunctionSig {
 fn get_abi(cc: CXCallingConv) -> ClangAbi {
     use clang_sys::*;
     match cc {
-        CXCallingConv_Default => ClangAbi::Known(Abi::C),
-        CXCallingConv_C => ClangAbi::Known(Abi::C),
+        CXCallingConv_Default | CXCallingConv_C => ClangAbi::Known(Abi::C),
         CXCallingConv_X86StdCall => ClangAbi::Known(Abi::Stdcall),
         CXCallingConv_X86FastCall => ClangAbi::Known(Abi::Fastcall),
         CXCallingConv_X86ThisCall => ClangAbi::Known(Abi::ThisCall),
-        CXCallingConv_X86VectorCall => ClangAbi::Known(Abi::Vectorcall),
+        CXCallingConv_X86VectorCall | CXCallingConv_AArch64VectorCall => {
+            ClangAbi::Known(Abi::Vectorcall)
+        }
         CXCallingConv_AAPCS => ClangAbi::Known(Abi::Aapcs),
         CXCallingConv_X86_64Win64 => ClangAbi::Known(Abi::Win64),
-        CXCallingConv_AArch64VectorCall => ClangAbi::Known(Abi::Vectorcall),
         other => ClangAbi::Unknown(other),
     }
 }
@@ -423,7 +418,7 @@ impl FunctionSig {
         ctx: &mut BindgenContext,
     ) -> Result<Self, ParseError> {
         use clang_sys::*;
-        debug!("FunctionSig::from_ty {:?} {:?}", ty, cursor);
+        debug!("FunctionSig::from_ty {ty:?} {cursor:?}");
 
         // Skip function templates
         let kind = cursor.kind();
@@ -438,7 +433,7 @@ impl FunctionSig {
             spelling.starts_with("operator") &&
                 !clang::is_valid_identifier(spelling)
         };
-        if is_operator(&spelling) {
+        if is_operator(&spelling) && !ctx.options().represent_cxx_operators {
             return Err(ParseError::Continue);
         }
 
@@ -538,7 +533,10 @@ impl FunctionSig {
             let is_const = is_method && cursor.method_is_const();
             let is_virtual = is_method && cursor.method_is_virtual();
             let is_static = is_method && cursor.method_is_static();
-            if !is_static && !is_virtual {
+            if !is_static &&
+                (!is_virtual ||
+                    ctx.options().use_specific_virtual_function_receiver)
+            {
                 let parent = cursor.semantic_parent();
                 let class = Item::parse(parent, None, ctx)
                     .expect("Expected to parse the class");
@@ -601,7 +599,7 @@ impl FunctionSig {
         let abi = get_abi(call_conv);
 
         if abi.is_unknown() {
-            warn!("Unknown calling convention: {:?}", call_conv);
+            warn!("Unknown calling convention: {call_conv:?}");
         }
 
         Ok(Self {
@@ -726,18 +724,18 @@ impl ClangSubItemParser for Function {
     ) -> Result<ParseResult<Self>, ParseError> {
         use clang_sys::*;
 
-        let kind = match FunctionKind::from_cursor(&cursor) {
-            None => return Err(ParseError::Continue),
-            Some(k) => k,
+        let Some(kind) = FunctionKind::from_cursor(&cursor) else {
+            return Err(ParseError::Continue);
         };
 
-        debug!("Function::parse({:?}, {:?})", cursor, cursor.cur_type());
+        debug!("Function::parse({cursor:?}, {:?})", cursor.cur_type());
         let visibility = cursor.visibility();
         if visibility != CXVisibility_Default {
             return Err(ParseError::Continue);
         }
-
-        if cursor.access_specifier() == CX_CXXPrivate {
+        if cursor.access_specifier() == CX_CXXPrivate &&
+            !context.options().generate_private_functions
+        {
             return Err(ParseError::Continue);
         }
 
@@ -749,9 +747,7 @@ impl ClangSubItemParser for Function {
         };
 
         if cursor.is_inlined_function() ||
-            cursor
-                .definition()
-                .map_or(false, |x| x.is_inlined_function())
+            cursor.definition().is_some_and(|x| x.is_inlined_function())
         {
             if !context.options().generate_inline_functions &&
                 !context.options().wrap_static_fns
@@ -759,7 +755,9 @@ impl ClangSubItemParser for Function {
                 return Err(ParseError::Continue);
             }
 
-            if cursor.is_deleted_function() {
+            if cursor.is_deleted_function() &&
+                !context.options().generate_deleted_functions
+            {
                 return Err(ParseError::Continue);
             }
 

@@ -58,6 +58,32 @@
             />
             <span data-l10n-id="options-show-user-agent-styles-label"></span>
           </label>
+          <label data-l10n-id="options-show-user-agent-shadow-dom-tooltip">
+            <input
+              type="checkbox"
+              data-pref="devtools.inspector.showAllAnonymousContent"
+              data-force-reload
+            />
+            <span
+              data-l10n-id="options-show-user-agent-shadow-dom-label"
+            ></span>
+            <span
+              class="option-secondary-label"
+              data-l10n-id="options-context-triggers-page-refresh-persists"
+            ></span>
+          </label>
+          <label data-l10n-id="options-show-comments-tooltip">
+            <input
+              type="checkbox"
+              data-pref="devtools.markup.showComments"
+              data-force-reload
+            />
+            <span data-l10n-id="options-show-comments-label"></span>
+            <span
+              class="option-secondary-label"
+              data-l10n-id="options-context-triggers-page-refresh-persists"
+            ></span>
+          </label>
           <label data-l10n-id="options-collapse-attrs-tooltip">
             <input
               type="checkbox"
@@ -172,6 +198,23 @@
             <span data-l10n-id="options-screenshot-audio-label"></span>
           </label>
         </fieldset>
+
+        <fieldset id="local-mode-options" class="options-groupbox">
+          <div
+            data-l10n-id="options-local-mode-only-work-locally"
+            class="hidden local-mode-only-work-locally"
+          ></div>
+          <label
+            data-l10n-id="options-local-mode-behavior"
+            class="local-mode-behavior"
+          ></label>
+          <legend data-l10n-id="options-local-mode-label"></legend>
+          <ul id="local-mode-mappings"></ul>
+          <button
+            data-l10n-id="options-local-mode-new-mapping"
+            class="devtools-button devtools-button-standalone local-mode-new-mapping"
+          ></button>
+        </fieldset>
       </div>
 
       <div class="options-vertical-pane">
@@ -252,7 +295,11 @@
           </label>
           <label data-l10n-id="options-disable-javascript-tooltip">
             <input type="checkbox" id="devtools-disable-javascript" />
-            <span data-l10n-id="options-disable-javascript-label"></span>
+            <span data-l10n-id="options-disable-javascript-label-2"></span>
+            <span
+              class="option-secondary-label"
+              data-l10n-id="options-context-triggers-page-refresh-temporary"
+            ></span>
           </label>
           <label data-l10n-id="options-enable-service-workers-http-tooltip">
             <input
@@ -279,11 +326,6 @@
             <input type="checkbox" data-pref="devtools.f12_enabled" />
             <span data-l10n-id="options-enable-f12-label"></span>
           </label>
-          <span
-            class="options-citation-label theme-comment"
-            id="triggers-page-refresh-label"
-            data-l10n-id="options-context-triggers-page-refresh"
-          ></span>
         </fieldset>
       </div>
     </form>

@@ -15,6 +15,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import android.os.Build.VERSION.SDK_INT
+import android.os.Environment
 import android.util.LongSparseArray
 import androidx.annotation.VisibleForTesting
 import androidx.core.content.ContextCompat
@@ -30,9 +31,10 @@ import mozilla.components.concept.fetch.Headers.Names.REFERRER
 import mozilla.components.concept.fetch.Headers.Names.USER_AGENT
 import mozilla.components.feature.downloads.AbstractFetchDownloadService
 import mozilla.components.feature.downloads.ext.isScheme
-import mozilla.components.support.utils.DownloadUtils
+import mozilla.components.support.utils.DownloadFileUtils
 import mozilla.components.support.utils.ext.getSerializableExtraCompat
 import mozilla.components.support.utils.ext.registerReceiverCompat
+import java.io.File
 
 typealias SystemDownloadManager = android.app.DownloadManager
 typealias SystemRequest = android.app.DownloadManager.Request
@@ -45,6 +47,7 @@ typealias SystemRequest = android.app.DownloadManager.Request
 class AndroidDownloadManager(
     private val applicationContext: Context,
     private val store: BrowserStore,
+    private val downloadFileUtils: DownloadFileUtils,
     override var onDownloadStopped: onDownloadStopped = noop,
 ) : BroadcastReceiver(), DownloadManager {
 
@@ -80,7 +83,10 @@ class AndroidDownloadManager(
 
         validatePermissionGranted(applicationContext)
 
-        val request = download.toAndroidRequest(cookie)
+        val request = download.toAndroidRequest(
+            downloadFileUtils = downloadFileUtils,
+            cookie = cookie,
+        )
         val downloadID = androidDownloadManager.enqueue(request)
         store.dispatch(DownloadAction.AddDownloadAction(download.copy(id = downloadID.toString())))
         downloadRequests[downloadID] = request
@@ -135,7 +141,10 @@ class AndroidDownloadManager(
     }
 }
 
-private fun DownloadState.toAndroidRequest(cookie: String): SystemRequest {
+private fun DownloadState.toAndroidRequest(
+    downloadFileUtils: DownloadFileUtils,
+    cookie: String,
+): SystemRequest {
     val request = SystemRequest(url.toUri())
         .setNotificationVisibility(VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
 
@@ -149,12 +158,23 @@ private fun DownloadState.toAndroidRequest(cookie: String): SystemRequest {
         addRequestHeaderSafely(REFERRER, referrerUrl)
     }
 
-    val fileName = if (fileName.isNullOrBlank()) {
-        DownloadUtils.guessFileName(null, destinationDirectory, url, contentType)
+    val destinationDir = if (directoryPath.isBlank()) {
+        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
     } else {
-        fileName
+        File(directoryPath)
     }
-    request.setDestinationInExternalPublicDir(destinationDirectory, fileName)
+
+    val finalFileName = fileName?.takeUnless { it.isBlank() }
+        ?: downloadFileUtils.guessFileName(
+            contentDisposition = null,
+            url = url,
+            mimeType = contentType,
+        )
+
+    destinationDir.mkdirs()
+
+    val destinationFile = File(destinationDir, finalFileName)
+    request.setDestinationUri(destinationFile.toUri())
 
     return request
 }

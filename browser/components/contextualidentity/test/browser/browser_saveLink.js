@@ -6,7 +6,7 @@ const URI =
   "/browser/browser/components/contextualidentity/test/browser/saveLink.sjs";
 
 let MockFilePicker = SpecialPowers.MockFilePicker;
-MockFilePicker.init(window.browsingContext);
+MockFilePicker.init();
 
 add_setup(async function () {
   info("Setting the prefs.");
@@ -37,7 +37,7 @@ add_task(async function test() {
 
   // select tab and make sure its browser is focused
   win.gBrowser.selectedTab = tab;
-  tab.ownerGlobal.focus();
+  tab.documentGlobal.focus();
 
   info("Waiting to load content");
   let browser = gBrowser.getBrowserForTab(tab);

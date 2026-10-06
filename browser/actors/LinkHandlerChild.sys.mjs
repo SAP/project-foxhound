@@ -82,7 +82,7 @@ export class LinkHandlerChild extends JSWindowActorChild {
   onLinkEvent(event) {
     let link = event.target;
     // Ignore sub-frames (bugs 305472, 479408).
-    if (link.ownerGlobal != this.contentWindow) {
+    if (link.documentGlobal != this.contentWindow) {
       return;
     }
 

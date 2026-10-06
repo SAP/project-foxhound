@@ -36,15 +36,15 @@ const {
  *
  * @param {Inspector} inspector
  *        The inspector where the sidebar should be hooked to.
- * @param {Object} options
- * @param {String} options.id
+ * @param {object} options
+ * @param {string} options.id
  *        The unique id of the sidebar.
- * @param {String} options.title
+ * @param {string} options.title
  *        The title of the sidebar.
  */
-class ExtensionSidebar {
+class ExtensionSidebar extends EventEmitter {
   constructor(inspector, { id, title }) {
-    EventEmitter.decorate(this);
+    super();
     this.inspector = inspector;
     this.store = inspector.store;
     this.id = id;
@@ -128,16 +128,21 @@ class ExtensionSidebar {
    *
    * This method is called by the inspector when the ExtensionSidebar is being removed
    * (or when the inspector is being destroyed).
+   *
+   * @param {object} options
+   * @param {boolean} options.fromInspectorDestroy
    */
-  destroy() {
+  destroy({ fromInspectorDestroy } = {}) {
     if (this.destroyed) {
       throw new Error(
         `ExtensionSidebar instances cannot be destroyed more than once`
       );
     }
 
-    // Remove the data related to this extension from the inspector store.
-    this.store.dispatch(removeExtensionSidebar(this.id));
+    if (fromInspectorDestroy !== true) {
+      // Remove the data related to this extension from the inspector store
+      this.store.dispatch(removeExtensionSidebar(this.id));
+    }
 
     this.inspector = null;
     this.store = null;

@@ -36,6 +36,6 @@ testWithTypedArrayConstructors(function(TA) {
   assert.sameValue(result, sample, "returns the same object (empty instance)");
   assert.sameValue(sample.buffer, buffer, "keeps the same buffer (empty instance)");
   assert.sameValue(sample.length, 0, "length is preserved (empty instance)");
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

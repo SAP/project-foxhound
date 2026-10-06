@@ -10,16 +10,21 @@
 
 #include "modules/video_coding/include/video_codec_initializer.h"
 
-#include <stdint.h>
-#include <string.h>
-
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
 #include <optional>
+#include <vector>
 
-#include "api/array_view.h"
 #include "api/field_trials_view.h"
 #include "api/scoped_refptr.h"
 #include "api/units/data_rate.h"
+#include "api/video/video_codec_constants.h"
+#include "api/video/video_codec_type.h"
+#include "api/video_codecs/scalability_mode.h"
+#include "api/video_codecs/simulcast_stream.h"
+#include "api/video_codecs/spatial_layer.h"
+#include "api/video_codecs/video_codec.h"
 #include "api/video_codecs/video_encoder.h"
 #include "modules/video_coding/codecs/av1/av1_svc_config.h"
 #include "modules/video_coding/codecs/vp8/vp8_scalability.h"
@@ -30,6 +35,7 @@
 #include "rtc_base/experiments/min_video_bitrate_experiment.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
+#include "video/config/video_encoder_config.h"
 
 namespace webrtc {
 namespace {
@@ -74,8 +80,8 @@ VideoCodec VideoCodecInitializer::SetupCodec(
       config.legacy_conference_mode;
 
   video_codec.SetFrameDropEnabled(config.frame_drop_enabled);
-  video_codec.numberOfSimulcastStreams =
-      static_cast<unsigned char>(streams.size());
+  video_codec.numberOfSimulcastStreams = static_cast<unsigned char>(
+      std::min(streams.size(), static_cast<size_t>(kMaxSimulcastStreams)));
   video_codec.minBitrate = streams[0].min_bitrate_bps / 1000;
   bool codec_active = false;
   // Active configuration might not be fully copied to `streams` for SVC yet.
@@ -90,14 +96,17 @@ VideoCodec VideoCodecInitializer::SetupCodec(
   video_codec.active = codec_active;
   if (video_codec.minBitrate < kEncoderMinBitrateKbps)
     video_codec.minBitrate = kEncoderMinBitrateKbps;
-  video_codec.timing_frame_thresholds = {kDefaultTimingFramesDelayMs,
-                                         kDefaultOutlierFrameSizePercent};
+  video_codec.timing_frame_thresholds = {
+      .delay_ms = kDefaultTimingFramesDelayMs,
+      .outlier_ratio_percent = kDefaultOutlierFrameSizePercent};
   RTC_DCHECK_LE(streams.size(), kMaxSimulcastStreams);
 
   int max_framerate = 0;
 
   std::optional<ScalabilityMode> scalability_mode = streams[0].scalability_mode;
-  for (size_t i = 0; i < streams.size(); ++i) {
+  const size_t num_streams =
+      std::min(streams.size(), static_cast<size_t>(kMaxSimulcastStreams));
+  for (size_t i = 0; i < num_streams; ++i) {
     SimulcastStream* sim_stream = &video_codec.simulcastStream[i];
     RTC_DCHECK_GT(streams[i].width, 0);
     RTC_DCHECK_GT(streams[i].height, 0);
@@ -114,6 +123,7 @@ VideoCodec VideoCodecInitializer::SetupCodec(
     sim_stream->targetBitrate = streams[i].target_bitrate_bps / 1000;
     sim_stream->maxBitrate = streams[i].max_bitrate_bps / 1000;
     sim_stream->qpMax = streams[i].max_qp;
+    sim_stream->format = config.GetSimulcastVideoFormat(i);
 
     int num_temporal_layers =
         streams[i].scalability_mode.has_value()
@@ -164,7 +174,7 @@ VideoCodec VideoCodecInitializer::SetupCodec(
     video_codec.maxBitrate = kEncoderMinBitrateKbps;
 
   video_codec.maxFramerate = max_framerate;
-  video_codec.spatialLayers[0] = {0};
+  video_codec.spatialLayers[0] = {};
   video_codec.spatialLayers[0].width = video_codec.width;
   video_codec.spatialLayers[0].height = video_codec.height;
   video_codec.spatialLayers[0].maxFramerate = max_framerate;

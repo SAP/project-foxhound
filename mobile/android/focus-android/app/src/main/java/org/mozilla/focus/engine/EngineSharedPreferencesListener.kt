@@ -21,7 +21,7 @@ class EngineSharedPreferencesListener(
     override fun onPreferenceChange(preference: Preference, newValue: Any?): Boolean {
         when (preference.key) {
             context.getString(R.string.pref_key_performance_enable_cookies) ->
-                updateTrackingProtectionPolicy(newValue as String)
+                updateTrackingProtectionPolicy(newCookieValue = newValue as String)
 
             context.getString(R.string.pref_key_safe_browsing) ->
                 updateSafeBrowsingPolicy(newValue as Boolean)
@@ -40,8 +40,9 @@ class EngineSharedPreferencesListener(
         source: String? = null,
         tracker: String? = null,
         isEnabled: Boolean = false,
+        newCookieValue: String? = null,
     ) {
-        val policy = EngineProvider.createTrackingProtectionPolicy(context)
+        val policy = EngineProvider.createTrackingProtectionPolicy(context, newCookieValue = newCookieValue)
         val components = context.components
 
         components.engineDefaultSettings.trackingProtectionPolicy = policy
@@ -80,11 +81,17 @@ class EngineSharedPreferencesListener(
         components.sessionUseCases.reload()
     }
 
+    /**
+     * Source of the setting change.
+     */
     enum class ChangeSource(val source: String) {
         SETTINGS("Settings"),
         PANEL("Panel"),
     }
 
+    /**
+     * The type of tracker being changed.
+     */
     enum class TrackerChanged(val tracker: String) {
         ADVERTISING("Advertising"),
         ANALYTICS("Analytics"),

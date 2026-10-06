@@ -1,0 +1,126 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width; initial-scale=1.0">
+  <title>Scrolling with a click and hold gesture on a scrollbar scrollend after snap</title>
+  <script type="application/javascript" src="apz_test_native_event_utils.js"></script>
+  <script type="application/javascript" src="apz_test_utils.js"></script>
+  <script src="/tests/SimpleTest/paint_listener.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0
+    }
+
+    html {
+      scroll-snap-type: y mandatory;
+      overflow-y: scroll;
+    }
+
+    #first {
+      width: 100px;
+      height: 40vh;
+      scroll-snap-align: start;
+      background: yellow;
+    }
+
+    #spacer {
+      height: 200vh;
+      background: green;
+    }
+
+    #second {
+      width: 100px;
+      height: 80vh;
+      scroll-snap-align: end;
+      background: blue;
+    }
+  </style>
+</head>
+<body>
+    <div id="first">Some content to ensure the root scrollframe is scrollable</div>
+    <div id="spacer">A tall element</div>
+    <div id="second">Some content to ensure the root scrollframe is scrollable</div>
+    <script type="text/javascript">
+
+      async function test() {
+        let targetElement = elementForTarget(window);
+        let w = {},
+          h = {};
+        let utils = utilsForTarget(window);
+        utils.getScrollbarSizes(targetElement, w, h);
+        let verticalScrollbarWidth = w.value;
+        let mouseX = targetElement.clientWidth + verticalScrollbarWidth / 2;
+        let mouseY = targetElement.clientHeight - 100; // 100 pixels above the bottom of the scrollbar track
+
+        let scrollEndCount = 0;
+        window.addEventListener("scrollend", () => {
+          scrollEndCount += 1;
+        });
+
+        let scrollThresholdExceeded = new Promise(resolve => {
+          window.addEventListener("scroll", (_) => {
+            if (window.scrollY > window.scrollMaxY / 2) {
+              resolve();
+            }
+          });
+        });
+
+        let scrollEndPromise = promiseScrollend();
+
+        // Click and hold the mouse. Thumb should start scrolling towards the click location.
+        info("mouse move");
+        await promiseNativeMouseEventWithAPZ({
+          target: window,
+          offsetX: mouseX,
+          offsetY: mouseY,
+          type: "mousemove",
+        });
+
+        // mouse down
+        info("mouse down");
+        await promiseNativeMouseEventWithAPZ({
+          target: window,
+          offsetX: mouseX,
+          offsetY: mouseY,
+          type: "mousedown",
+        });
+
+        info("waiting to exceed scroll threshold");
+        await scrollThresholdExceeded;
+
+        // Flush everything just to be safe
+        await promiseOnlyApzControllerFlushed();
+
+        info("mouse up");
+        await promiseNativeMouseEventWithAPZ({
+          target: window,
+          offsetX: mouseX,
+          offsetY: mouseY,
+          type: "mouseup",
+        });
+
+        info("waiting for scrollend");
+        await scrollEndPromise;
+
+        is(scrollEndCount, 1, "One scrollend event should be fired");
+        is(window.scrollY, window.scrollMaxY, "We should snap to the end of the document")
+      }
+
+      // Note: on Linux, if the gtk-primary-button-warps-slider setting
+      // is enabled, this test will not exercise the codepath it intends
+      // to test (the thumb will jump immediately under the cursor, causing
+      // the test to pass trivially). However, the test should still not fail.
+      if (getPlatform() == "mac") {
+        ok(true, "Skipping test on Mac (bug 1851423)");
+        subtestDone();
+      } else {
+      waitUntilApzStable()
+       .then(test)
+       .then(subtestDone, subtestFailed);
+      }
+
+    </script>
+  </body>
+</html>

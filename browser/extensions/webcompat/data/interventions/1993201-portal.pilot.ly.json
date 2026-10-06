@@ -1,0 +1,15 @@
+{
+  "label": "portal.pilot.ly",
+  "bugs": {
+    "1993201": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://portal.pilot.ly/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

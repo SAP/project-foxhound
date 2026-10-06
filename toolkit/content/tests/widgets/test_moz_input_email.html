@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>MozInputEmail Tests</title>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
+    <link
+      rel="stylesheet"
+      href="chrome://mochikit/content/tests/SimpleTest/test.css"
+    />
+    <script
+      type="module"
+      src="chrome://global/content/elements/moz-input-email.mjs"
+    ></script>
+    <script src="lit-test-helpers.js"></script>
+    <script class="testbody" type="application/javascript">
+      let testHelpers = new InputTestHelpers();
+      let html;
+
+      add_setup(async function setup() {
+        ({ html } = await testHelpers.setupLit());
+        testHelpers.setupTests({
+          templateFn: (attrs, children) =>
+            html`<moz-input-email ${attrs}>${children}</moz-input-email>`,
+        });
+      });
+
+      add_task(async function testMozInputEmailProperties() {
+        await testHelpers.testCommonInputProperties("moz-input-email", {
+          type: "email",
+        });
+      });
+
+      add_task(async function testMozInputEmailEvents() {
+        await testHelpers.testTextBasedInputEvents("moz-input-email");
+      });
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+</html>

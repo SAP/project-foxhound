@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _MOZILLA_WIDGET_GTK_WINDOW_SURFACE_PROVIDER_H
-#define _MOZILLA_WIDGET_GTK_WINDOW_SURFACE_PROVIDER_H
+#ifndef MOZILLA_WIDGET_GTK_WINDOW_SURFACE_PROVIDER_H
+#define MOZILLA_WIDGET_GTK_WINDOW_SURFACE_PROVIDER_H
 
 #include <gdk/gdk.h>
 
@@ -14,7 +13,6 @@
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/widget/WindowSurface.h"
 #include "Units.h"
-#include "mozilla/ScopeExit.h"
 
 #ifdef MOZ_X11
 #  include <X11/Xlib.h>  // for Window, Display, Visual, etc.
@@ -102,4 +100,4 @@ class WindowSurfaceProvider final {
 }  // namespace widget
 }  // namespace mozilla
 
-#endif  // _MOZILLA_WIDGET_GTK_WINDOW_SURFACE_PROVIDER_H
+#endif  // MOZILLA_WIDGET_GTK_WINDOW_SURFACE_PROVIDER_H

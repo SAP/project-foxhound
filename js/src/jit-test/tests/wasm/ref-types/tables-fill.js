@@ -125,6 +125,10 @@ function testTableFill(tbl_type, val_type, obj) {
   assertErrorMessage(() => ins.exports.fill1(11, null, 2),
                      WebAssembly.RuntimeError, /index out of bounds/);
 
+  // Offset = 2^32 - 4 wraps around when added to n, must trap.
+  assertErrorMessage(() => ins.exports.fill1(-4, null, 4),
+                     WebAssembly.RuntimeError, /index out of bounds/);
+
   // Following all the above tests on table 1, check table 0 hasn't changed.
   check_table0();
 }

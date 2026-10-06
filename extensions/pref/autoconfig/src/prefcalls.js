@@ -1,6 +1,5 @@
 /* global processLDAPValues */
-/* -*- tab-width: 4; indent-tabs-mode: nil; js-indent-level: 4 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -38,6 +37,16 @@ function defaultPref(prefName, value) {
   try {
     var prefBranch = Services.prefs.getDefaultBranch(null);
     if (typeof value == "string") {
+      // Unwrap the legacy homepage form that the localizable-pref reader used
+      // to handle (bug 1490339). Match it exactly so we don't touch deliberate
+      // data: URLs.
+      var legacyPrefix = "data:text/plain,browser.startup.homepage=";
+      if (
+        prefName == "browser.startup.homepage" &&
+        value.startsWith(legacyPrefix)
+      ) {
+        value = value.substring(legacyPrefix.length);
+      }
       if (gIsUTF8) {
         prefBranch.setStringPref(prefName, value);
         return;

@@ -1,19 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef DMD_h___
-#define DMD_h___
+#ifndef DMD_h_
+#define DMD_h_
 
 #include <stdarg.h>
 #include <string.h>
 
 #include <utility>
 
-#include "mozilla/DebugOnly.h"
-#include "mozilla/Types.h"
 #include "mozilla/UniquePtr.h"
 #include "replace_malloc_bridge.h"
 
@@ -288,4 +284,4 @@ inline void ResetEverything(const char* aOptions) {
 }  // namespace dmd
 }  // namespace mozilla
 
-#endif /* DMD_h___ */
+#endif /* DMD_h_ */

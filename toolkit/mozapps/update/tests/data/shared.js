@@ -152,14 +152,14 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "gUpdateManager",
   "@mozilla.org/updates/update-manager;1",
-  "nsIUpdateManager"
+  Ci.nsIUpdateManager
 );
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "gUpdateChecker",
   "@mozilla.org/updates/update-checker;1",
-  "nsIUpdateChecker"
+  Ci.nsIUpdateChecker
 );
 
 ChromeUtils.defineLazyGetter(this, "gDefaultPrefBranch", function test_gDPB() {
@@ -361,6 +361,7 @@ function writeFile(aFile, aText) {
 
 /**
  * Attempts to remove a file. Does not fail if the file does not exist.
+ *
  * @param  file
  *         The `nsIFile` to remove.
  */

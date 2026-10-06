@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -7,10 +5,9 @@
 #ifndef AudioWorkletProcessor_h_
 #define AudioWorkletProcessor_h_
 
+#include "mozilla/dom/AudioWorkletGlobalScope.h"
 #include "nsCOMPtr.h"
 #include "nsWrapperCache.h"
-
-class nsIGlobalObject;
 
 namespace mozilla {
 
@@ -38,9 +35,10 @@ class AudioWorkletProcessor final : public nsWrapperCache {
   MessagePort* Port() const { return mPort; };
 
  private:
-  explicit AudioWorkletProcessor(nsIGlobalObject* aParent, MessagePort* aPort);
+  explicit AudioWorkletProcessor(RefPtr<AudioWorkletGlobalScope>&& aParent,
+                                 RefPtr<MessagePort>&& aPort);
   ~AudioWorkletProcessor();
-  nsCOMPtr<nsIGlobalObject> mParent;
+  RefPtr<AudioWorkletGlobalScope> mParent;
   RefPtr<MessagePort> mPort;
 };
 

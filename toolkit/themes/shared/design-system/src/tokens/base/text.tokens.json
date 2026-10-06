@@ -1,0 +1,61 @@
+{
+  "color": {
+    "@base": {
+      "value": {
+        "prefersContrast": "CanvasText",
+        "brand": {
+          "light": "{color.gray.100}",
+          "dark": "{color.gray.0}"
+        },
+        "platform": {
+          "default": "currentColor"
+        }
+      }
+    },
+    "deemphasized": {
+      "value": {
+        "default": "color-mix(in srgb, currentColor 69%, transparent)",
+        "prefersContrast": "inherit"
+      }
+    },
+    "disabled": {
+      "value": {
+        "default": "color-mix(in srgb, currentColor 40%, transparent)",
+        "forcedColors": "GrayText"
+      }
+    },
+    "error": {
+      "value": {
+        "light": "{color.red.70}",
+        "dark": "{color.red.20}",
+        "prefersContrast": "inherit"
+      }
+    },
+    "accent": {
+      "primary": {
+        "selected": {
+          "value": {
+            "forcedColors": "SelectedItemText",
+            "brand": {
+              "light": "{color.white.@base}",
+              "dark": "{color.gray.100}"
+            },
+            "platform": {
+              "default": "SelectedItemText"
+            }
+          }
+        }
+      }
+    },
+    "list": {
+      "item": {
+        "hover": {
+          "value": {
+            "default": "{text.color.@base}",
+            "prefersContrast": "SelectedItemText"
+          }
+        }
+      }
+    }
+  }
+}

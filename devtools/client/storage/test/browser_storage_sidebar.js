@@ -16,31 +16,31 @@
 
 const testCases = [
   {
-    location: ["cookies", "https://sectest1.example.org"],
+    location: ["cookies", ALT_ORIGIN_SECURED],
     sidebarHidden: true,
   },
   {
-    location: getCookieId("cs2", ".example.org", "/"),
+    location: getCookieId("cs2", "." + MAIN_DOMAIN, "/"),
     sidebarHidden: false,
   },
   {
     sendEscape: true,
   },
   {
-    location: getCookieId("cs2", ".example.org", "/"),
+    location: getCookieId("cs2", "." + MAIN_DOMAIN, "/"),
     sidebarHidden: true,
   },
   {
-    location: getCookieId("uc1", ".example.org", "/"),
+    location: getCookieId("uc1", "." + MAIN_DOMAIN, "/"),
     sidebarHidden: true,
   },
   {
-    location: getCookieId("uc1", ".example.org", "/"),
+    location: getCookieId("uc1", "." + MAIN_DOMAIN, "/"),
     sidebarHidden: true,
   },
 
   {
-    location: ["localStorage", "http://sectest1.example.org"],
+    location: ["localStorage", ALT_ORIGIN],
     sidebarHidden: true,
   },
   {
@@ -56,7 +56,7 @@ const testCases = [
   },
 
   {
-    location: ["sessionStorage", "http://test1.example.org"],
+    location: ["sessionStorage", MAIN_ORIGIN],
     sidebarHidden: true,
   },
   {
@@ -68,7 +68,7 @@ const testCases = [
   },
 
   {
-    location: ["indexedDB", "http://test1.example.org"],
+    location: ["indexedDB", MAIN_ORIGIN],
     sidebarHidden: true,
   },
   {
@@ -77,17 +77,12 @@ const testCases = [
   },
 
   {
-    location: [
-      "indexedDB",
-      "http://test1.example.org",
-      "idb2 (default)",
-      "obj3",
-    ],
+    location: ["indexedDB", MAIN_ORIGIN, "idb2 (default)", "obj3"],
     sidebarHidden: true,
   },
 
   {
-    location: ["indexedDB", "https://sectest1.example.org", "idb-s2 (default)"],
+    location: ["indexedDB", ALT_ORIGIN_SECURED, "idb-s2 (default)"],
     sidebarHidden: true,
   },
   {
@@ -108,7 +103,7 @@ add_task(async function () {
   // We should not enforce https for tests using this page.
   await pushPref("dom.security.https_first", false);
 
-  await openTabAndSetupStorage(MAIN_DOMAIN + "storage-listings.html");
+  await openTabAndSetupStorage(MAIN_URL + "storage-listings.html");
 
   for (const test of testCases) {
     const { location, sidebarHidden, sendEscape } = test;

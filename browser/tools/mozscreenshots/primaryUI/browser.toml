@@ -3,4 +3,8 @@ subsuite = "screenshots"
 support-files = ["../head.js"]
 
 ["browser_primaryUI.js"]
-skip-if = ["os == 'mac'"] # macosx1014 times out, see bug 1570102
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # macosx1014 times out, see bug 1570102
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # macosx1014 times out, see bug 1570102
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # macosx1014 times out, see bug 1570102
+]

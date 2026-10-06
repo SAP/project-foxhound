@@ -1,0 +1,21 @@
+<html class="reftest-wait">
+<head>
+<script>
+    document.addEventListener("DOMContentLoaded", async () => {
+      SpecialPowers.wrap(document).notifyUserGestureActivation();
+      const stream = await navigator.mediaDevices.getDisplayMedia({ "video": true });
+      const [track] = stream.getTracks();
+      try {
+      await track.applyConstraints({
+          frameRate: {
+            min: 100,
+            max: -1,
+          },
+        });
+      } finally {
+        document.documentElement.removeAttribute("class");
+      }
+    })
+  </script>
+</head>
+</html>

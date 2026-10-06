@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -58,10 +57,15 @@ function run_test() {
   ps.setBoolPref("network.notify.changed", false);
   // Localhost is hardcoded to loopback and isn't cached, disable that with this pref
   ps.setBoolPref("network.proxy.allow_hijacking_localhost", true);
+  ps.setBoolPref(
+    "network.proxy.testing_localhost_is_secure_when_hijacked",
+    false
+  );
 
   registerCleanupFunction(function () {
     ps.clearUserPref("network.notify.changed");
     ps.clearUserPref("network.proxy.allow_hijacking_localhost");
+    ps.clearUserPref("network.proxy.testing_localhost_is_secure_when_hijacked");
   });
 
   let serverSocket = Cc["@mozilla.org/network/server-socket;1"].createInstance(

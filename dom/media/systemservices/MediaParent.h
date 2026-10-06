@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +6,6 @@
 #define mozilla_MediaParent_h
 
 #include "MediaChild.h"
-
 #include "mozilla/media/PMediaParent.h"
 
 namespace mozilla::media {
@@ -39,7 +36,8 @@ class NonE10s {
  */
 class RefCountedParent {
  public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RefCountedParent)
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING_WITH_DELETE_ON_MAIN_THREAD(
+      RefCountedParent)
 
  protected:
   virtual ~RefCountedParent() = default;

@@ -13,7 +13,7 @@
   margin-inline-start: 0;
   padding-inline-start: var(--space-xxlarge);
   background-repeat: no-repeat;
-  background-size: var(--icon-size-default);
+  background-size: var(--icon-size);
   background-position: var(--space-small) 50%;
 
   /* For the placeholder icon */

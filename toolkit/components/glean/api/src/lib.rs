@@ -76,6 +76,7 @@ unsafe extern "C" fn fog_collect_reports(
     let metric_size = metrics::metric_memory_usage();
     let total_metric_size = map_size + metric_size;
     let ping_size = pings::fog_ping_alloc_size(&mut ops);
+    let glean_size = glean::alloc_size(&mut ops);
 
     moz_collect_report!(
         callback,
@@ -89,6 +90,13 @@ unsafe extern "C" fn fog_collect_reports(
         "explicit/fog/pings",
         ping_size,
         "Memory used by all FOG pings",
+        data
+    );
+    moz_collect_report!(
+        callback,
+        "explicit/fog/glean",
+        glean_size,
+        "Memory used by the Glean object",
         data
     );
 

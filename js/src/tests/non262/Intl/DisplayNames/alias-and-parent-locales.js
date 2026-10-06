@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl'))
-
 // Ensure alias and parent locales are correctly picked up when calling into ICU.
 
 // "zh-HK" is an alias to "zh-Hant-HK", so display names should default to

@@ -143,9 +143,9 @@ add_task(async function dontTemporarilyShowAboutHome() {
   let loadPromise = BrowserTestUtils.browserLoaded(
     currentBrowser,
     false,
-    "about:logo"
+    "about:mozilla"
   );
-  BrowserTestUtils.startLoadingURIString(currentBrowser, "about:logo");
+  BrowserTestUtils.startLoadingURIString(currentBrowser, "about:mozilla");
   await loadPromise;
 
   let homeButton = win.document.getElementById("home-button");

@@ -11,7 +11,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ActorManagerParent: "resource://gre/modules/ActorManagerParent.sys.mjs",
   DoHController: "moz-src:///toolkit/components/doh/DoHController.sys.mjs",
   EventDispatcher: "resource://gre/modules/Messaging.sys.mjs",
+  NimbusGeckoViewQATelemetry:
+    "resource://gre/modules/NimbusGeckoViewQATelemetry.sys.mjs",
   PdfJs: "resource://pdf.js/PdfJs.sys.mjs",
+  GeckoViewPreferences: "resource://gre/modules/GeckoViewPreferences.sys.mjs",
 });
 
 const { debug, warn } = GeckoViewUtils.initLogging("Startup");
@@ -36,6 +39,12 @@ const JSPROCESSACTORS = {
       ],
     },
   },
+  GeckoViewPush: {
+    parent: {
+      esModuleURI: "resource:///actors/GeckoViewPushParent.sys.mjs",
+    },
+    includeParent: true,
+  },
 };
 
 const JSWINDOWACTORS = {
@@ -59,15 +68,18 @@ const JSWINDOWACTORS = {
     includeChrome: true,
   },
   GeckoViewPrompt: {
+    parent: {
+      esModuleURI: "resource:///actors/GeckoViewPromptParent.sys.mjs",
+    },
     child: {
       esModuleURI: "resource:///actors/GeckoViewPromptChild.sys.mjs",
       events: {
         click: { capture: false, mozSystemGroup: true },
-        contextmenu: { capture: false, mozSystemGroup: true },
         mozshowdropdown: {},
         "mozshowdropdown-sourcetouch": {},
         MozOpenDateTimePicker: {},
         DOMPopupBlocked: { capture: false, mozSystemGroup: true },
+        DOMRedirectBlocked: { capture: false, mozSystemGroup: true },
       },
     },
     allFrames: true,
@@ -122,6 +134,16 @@ export class GeckoViewStartup {
           ],
         });
 
+        GeckoViewUtils.addLazyGetter(this, "GeckoViewTrackingDB", {
+          module: "resource://gre/modules/GeckoViewTrackingDB.sys.mjs",
+          ged: [
+            "GeckoView:TrackingDB:GetEventsByDateRange",
+            "GeckoView:TrackingDB:SumAllEvents",
+            "GeckoView:TrackingDB:GetEarliestRecordedDate",
+            "GeckoView:TrackingDB:ClearAll",
+          ],
+        });
+
         GeckoViewUtils.addLazyGetter(this, "GeckoViewPushController", {
           module: "resource://gre/modules/GeckoViewPushController.sys.mjs",
           ged: ["GeckoView:PushEvent", "GeckoView:PushSubscriptionChanged"],
@@ -144,15 +166,13 @@ export class GeckoViewStartup {
           lazy.ActorManagerParent.addJSWindowActors(JSWINDOWACTORS);
           lazy.ActorManagerParent.addJSProcessActors(JSPROCESSACTORS);
 
-          if (Services.appinfo.sessionHistoryInParent) {
-            GeckoViewUtils.addLazyGetter(this, "GeckoViewSessionStore", {
-              module: "resource://gre/modules/GeckoViewSessionStore.sys.mjs",
-              observers: [
-                "browsing-context-did-set-embedder",
-                "browsing-context-discarded",
-              ],
-            });
-          }
+          GeckoViewUtils.addLazyGetter(this, "GeckoViewSessionStore", {
+            module: "resource://gre/modules/GeckoViewSessionStore.sys.mjs",
+            observers: [
+              "browsing-context-did-set-embedder",
+              "browsing-context-discarded",
+            ],
+          });
 
           GeckoViewUtils.addLazyGetter(this, "GeckoViewWebExtension", {
             module: "resource://gre/modules/GeckoViewWebExtension.sys.mjs",
@@ -187,6 +207,19 @@ export class GeckoViewStartup {
             ],
           });
 
+          GeckoViewUtils.addLazyGetter(this, "GeckoViewIPProtection", {
+            module: "resource://gre/modules/GeckoViewIPProtection.sys.mjs",
+            ged: [
+              "GeckoView:IPProtection:Init",
+              "GeckoView:IPProtection:Uninit",
+              "GeckoView:IPProtection:IPProtectionService:GetState",
+              "GeckoView:IPProtection:IPPProxyManager:GetState",
+              "GeckoView:IPProtection:Activate",
+              "GeckoView:IPProtection:Deactivate",
+              "GeckoView:IPProtection:Enroll",
+            ],
+          });
+
           GeckoViewUtils.addLazyGetter(this, "ChildCrashHandler", {
             module: "resource://gre/modules/ChildCrashHandler.sys.mjs",
             observers: [
@@ -202,6 +235,15 @@ export class GeckoViewStartup {
             "GeckoView:CrashPullController.Delegate:Attached",
           ]);
         }
+
+        GeckoViewUtils.addLazyGetter(this, "GeckoViewAIFeatures", {
+          module: "resource://gre/modules/GeckoViewAIFeatures.sys.mjs",
+          ged: [
+            "GeckoView:AIFeature:ListFeatures",
+            "GeckoView:AIFeature:SetEnabled",
+            "GeckoView:AIFeature:MakeAvailable",
+          ],
+        });
 
         GeckoViewUtils.addLazyGetter(this, "GeckoViewTranslationsSettings", {
           module: "resource://gre/modules/GeckoViewTranslations.sys.mjs",
@@ -220,16 +262,28 @@ export class GeckoViewStartup {
           ],
         });
 
-        GeckoViewUtils.addLazyGetter(this, "GeckoViewPreferences", {
-          module: "resource://gre/modules/GeckoViewPreferences.sys.mjs",
-          ged: [
+        GeckoViewUtils.addLazyGetter(this, "GeckoViewPageExtractor", {
+          module: "resource://gre/modules/GeckoViewPageExtractor.sys.mjs",
+          ged: ["GeckoView:PageExtractor:GetTextContent"],
+        });
+
+        GeckoViewUtils.addLazyGetter(this, "GeckoViewAutofillRuntime", {
+          module: "resource://gre/modules/GeckoViewAutofill.sys.mjs",
+          ged: ["GeckoView:Autofill:GetAddressStructure"],
+        });
+
+        // We don't register this using the LazyGetter because it needs to be ready before
+        // the first call to the listener is received.
+        lazy.EventDispatcher.instance.registerListener(
+          lazy.GeckoViewPreferences,
+          [
             "GeckoView:Preferences:GetPref",
             "GeckoView:Preferences:SetPref",
             "GeckoView:Preferences:ClearPref",
             "GeckoView:Preferences:RegisterObserver",
             "GeckoView:Preferences:UnregisterObserver",
-          ],
-        });
+          ]
+        );
 
         break;
       }
@@ -250,23 +304,13 @@ export class GeckoViewStartup {
           }
         );
 
-        GeckoViewUtils.addLazyPrefObserver(
-          {
-            name: "network.android_doh.autoselect_enabled",
-            default: false,
-          },
-          {
-            handler: _ => {
-              if (
-                Services.prefs.getBoolPref(
-                  "network.android_doh.autoselect_enabled"
-                )
-              ) {
-                lazy.DoHController.init();
-              }
-            },
-          }
-        );
+        // Initialize the cookie service early so the DB is loaded by
+        // the time we make the first HTTP request. Skip in xpcshell tests,
+        // which expect to control when (and against which DB file) the
+        // cookie service first opens the database.
+        if (!Services.env.exists("XPCSHELL_TEST_PROFILE_DIR")) {
+          Services.cookies;
+        }
 
         GeckoViewUtils.addLazyGetter(this, "DownloadTracker", {
           module: "resource://gre/modules/GeckoViewWebExtension.sys.mjs",
@@ -283,6 +327,8 @@ export class GeckoViewStartup {
 
         Services.obs.addObserver(this, "browser-idle-startup-tasks-finished");
         Services.obs.addObserver(this, "handlersvc-store-initialized");
+
+        lazy.NimbusGeckoViewQATelemetry.init();
 
         Services.obs.notifyObservers(null, "geckoview-startup-complete");
         break;
@@ -325,6 +371,24 @@ export class GeckoViewStartup {
         // moved into the foreground later. That is because "application-foreground"
         // is only going to be notified when the application was first paused.
         Services.obs.notifyObservers(null, "geckoview-initial-foreground");
+
+        // This pref is set when during GeckoEngine initialization
+        // and holds the value of FxNimbus.doh.autoselect-enabled (see nimbus.fml.yaml)
+        // We check it here insead of using GeckoViewUtils.addLazyPrefObserver
+        // because GeckoView:ResetUserPrefs also clears it during startup.
+        if (
+          Services.prefs.getBoolPref("network.android_doh.autoselect_enabled")
+        ) {
+          debug`init DoH controller`;
+          lazy.DoHController.init();
+        } else {
+          // When the autoselect isn't enabled, these prefs should be
+          // cleared. Otherwise doh-rollout.mode will override
+          // network.trr.mode forever as DoHController isn't running.
+          debug`cleanup DoH prefs`;
+          lazy.DoHController.cleanupPrefs();
+        }
+
         break;
       }
       case "GeckoView:ResetUserPrefs": {
@@ -358,7 +422,7 @@ export class GeckoViewStartup {
         }
         break;
       }
-      case "GeckoView:SetLocale":
+      case "GeckoView:SetLocale": {
         if (aData.requestedLocales) {
           Services.locale.requestedLocales = aData.requestedLocales;
         }
@@ -372,6 +436,7 @@ export class GeckoViewStartup {
           pls
         );
         break;
+      }
 
       case "GeckoView:StorageDelegate:Attached":
         InitLater(() => {

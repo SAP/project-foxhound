@@ -12,6 +12,7 @@ add_task(
   async function test_lazy_full_page_translate_end_to_end_with_lexical_shortlist() {
     const { cleanup, runInPage } = await loadTestPage({
       endToEndTest: true,
+      architecture: "tiny",
       page: SPANISH_PAGE_URL,
       languagePairs: LANGUAGE_PAIRS,
       prefs: [["browser.translations.useLexicalShortlist", false]],
@@ -53,6 +54,7 @@ add_task(
   async function test_content_eager_full_page_translate_end_to_end_with_lexical_shortlist() {
     const { cleanup, runInPage } = await loadTestPage({
       endToEndTest: true,
+      architecture: "tiny",
       page: SPANISH_PAGE_URL,
       languagePairs: LANGUAGE_PAIRS,
       contentEagerMode: true,

@@ -24,5 +24,5 @@ config = {
         "install",
         "run-tests",
     ],
-    "tooltool_cache": os.path.join("Y:\\", "tooltool-cache"),
+    "tooltool_cache": os.environ["TOOLTOOL_CACHE"],
 }

@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,16 +10,14 @@
 
 #include <windows.h>
 
-#ifndef __MINGW32__  // WinRT headers not yet supported by MinGW
-#  include <roapi.h>
-#  include <wrl.h>
-#  include <Windows.System.UserProfile.h>
+#include <roapi.h>
+#include <wrl.h>
+#include <windows.system.userprofile.h>
 
 using namespace Microsoft::WRL;
 using namespace Microsoft::WRL::Wrappers;
 using namespace ABI::Windows::Foundation::Collections;
 using namespace ABI::Windows::System::UserProfile;
-#endif
 
 using namespace mozilla::intl;
 
@@ -29,7 +26,6 @@ OSPreferences::OSPreferences() {}
 bool OSPreferences::ReadSystemLocales(nsTArray<nsCString>& aLocaleList) {
   MOZ_ASSERT(aLocaleList.IsEmpty());
 
-#ifndef __MINGW32__
   // Try to get language list from GlobalizationPreferences; if this fails,
   // we'll fall back to GetUserPreferredUILanguages.
   // Per MSDN, these APIs are not available prior to Win8.
@@ -70,7 +66,6 @@ bool OSPreferences::ReadSystemLocales(nsTArray<nsCString>& aLocaleList) {
       }
     }
   }
-#endif
 
   // Per MSDN, GetUserPreferredUILanguages is available from Vista onwards,
   // so we can use it unconditionally (although it may not work well!)

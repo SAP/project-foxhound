@@ -123,11 +123,11 @@ function toParsedScopes(children, sourceId) {
 /**
  * Create a new scope object and link the scope to it parent.
  *
- * @param {String} type - scope type
- * @param {String} displayName - The scope display name
- * @param {Object} parent - The parent object scope
- * @param {Object} loc - The start and end postions (line/columns) of the scope
- * @returns {Object} The newly created scope
+ * @param {string} type - scope type
+ * @param {string} displayName - The scope display name
+ * @param {object} parent - The parent object scope
+ * @param {object} loc - The start and end postions (line/columns) of the scope
+ * @returns {object} The newly created scope
  */
 function createTempScope(type, displayName, parent, loc) {
   const scope = {

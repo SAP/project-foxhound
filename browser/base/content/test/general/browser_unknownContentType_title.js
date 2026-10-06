@@ -44,7 +44,7 @@ add_task(async function unknownContentType_title_with_pref_enabled() {
 
   let tab = (gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, url));
   let browser = tab.linkedBrowser;
-  await promiseTabLoaded(gBrowser.selectedTab);
+  await BrowserTestUtils.browserLoaded(browser);
 
   is(gBrowser.contentTitle, "Test Page", "Should have the right title.");
 
@@ -69,7 +69,7 @@ add_task(async function unknownContentType_title_with_pref_disabled() {
 
   let tab = (gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, url));
   let browser = tab.linkedBrowser;
-  await promiseTabLoaded(gBrowser.selectedTab);
+  await BrowserTestUtils.browserLoaded(browser);
 
   is(gBrowser.contentTitle, "Test Page", "Should have the right title.");
 

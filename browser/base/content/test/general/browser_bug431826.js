@@ -39,7 +39,7 @@ add_task(async function () {
         // Confirm that the expert section is collapsed
         Assert.ok(div, "Advanced content div should exist");
         Assert.equal(
-          div.ownerGlobal.getComputedStyle(div).display,
+          div.documentGlobal.getComputedStyle(div).display,
           "none",
           "Advanced content should not be visible by default"
         );
@@ -63,13 +63,30 @@ add_task(async function () {
           "Advanced showing attribute should be true"
         );
         Assert.ok(ContentTaskUtils.isVisible(netErrorCard.advancedContainer));
+        Assert.equal(
+          netErrorCard.advancedButton,
+          null,
+          "Advanced toggle button should not be rendered in expert mode"
+        );
+        Assert.equal(
+          netErrorCard.advancedContainer.querySelector("h2"),
+          null,
+          "Advanced heading should not be rendered in expert mode"
+        );
+        if (netErrorCard.errorCode) {
+          Assert.equal(
+            netErrorCard.advancedContainer.firstElementChild,
+            netErrorCard.errorCode.closest("p"),
+            "Error code should be the first element in the advanced container in expert mode"
+          );
+        }
       });
     } else {
       await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async () => {
         let div = content.document.getElementById("badCertAdvancedPanel");
         Assert.ok(div, "Advanced content div should exist");
         Assert.equal(
-          div.ownerGlobal.getComputedStyle(div).display,
+          div.documentGlobal.getComputedStyle(div).display,
           "block",
           "Advanced content should be visible by default"
         );

@@ -1,0 +1,18 @@
+{
+  "label": "votermaps.org",
+  "bugs": {
+    "1928605": {
+      "issue": "broken-map",
+      "matches": ["*://votermaps.org/*"]
+    }
+  },
+  "css": {
+    "center-map-icons": "svg { white-space: initial; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": ["center-map-icons"]
+    }
+  ]
+}

@@ -76,6 +76,7 @@ class AutoParser(BaseTryParser):
 
 
 def run(
+    metrics,
     message="{msg}",
     stage_changes=False,
     dry_run=False,
@@ -87,6 +88,7 @@ def run(
     push_to_vcs=False,
     **ignored,
 ):
+    metrics.mach_try.task_config_generation_duration.start()
     msg = message.format(msg="Tasks automatically selected.")
 
     params = TRY_AUTO_PARAMETERS.copy()
@@ -105,9 +107,11 @@ def run(
         "version": 2,
         "parameters": params,
     }
+    metrics.mach_try.task_config_generation_duration.stop()
     return push_to_try(
         "auto",
         msg,
+        metrics,
         try_task_config=task_config,
         stage_changes=stage_changes,
         dry_run=dry_run,

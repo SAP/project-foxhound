@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -19,7 +17,6 @@
 #include "nsIFrameInlines.h"
 #include "nsPlaceholderFrame.h"
 #include "nsSubDocumentFrame.h"
-#include "nsViewManager.h"
 
 /**
  * Code for doing display list building for a modified subset of the window,
@@ -271,7 +268,7 @@ bool RetainedDisplayListBuilder::PreProcessDisplayList(
       const ActiveScrolledRoot* asyncAncestorASR = aAsyncAncestorASR;
       if (item->CanMoveAsync()) {
         asyncAncestor = item->Frame();
-        asyncAncestorASR = item->GetActiveScrolledRoot();
+        asyncAncestorASR = item->GetNearestScrollASR();
       }
 
       if (!PreProcessDisplayList(
@@ -301,12 +298,17 @@ bool RetainedDisplayListBuilder::PreProcessDisplayList(
     // so we have to work around it. Bug 1730749 and bug 1730826 should resolve
     // this.
     nsIFrame* agrFrame = nullptr;
-    if (aAsyncAncestorASR == item->GetActiveScrolledRoot() ||
-        !item->GetActiveScrolledRoot()) {
+    const ActiveScrolledRoot* asr = item->GetNearestScrollASR();
+    if (aAsyncAncestorASR == asr || !asr) {
       agrFrame = aAsyncAncestor;
     } else {
-      agrFrame = item->GetActiveScrolledRoot()
-                     ->mScrollContainerFrame->GetScrolledFrame();
+      auto* scrollContainerFrame = asr->ScrollFrame();
+      if (MOZ_UNLIKELY(!scrollContainerFrame)) {
+        MOZ_DIAGNOSTIC_ASSERT(false);
+        gfxCriticalNoteOnce << "Found null mScrollContainerFrame in asr";
+        return false;
+      }
+      agrFrame = scrollContainerFrame->GetScrolledFrame();
     }
 
     if (aAGR && agrFrame != aAGR) {
@@ -316,7 +318,6 @@ bool RetainedDisplayListBuilder::PreProcessDisplayList(
     // If we're going to keep this linked list and not merge it, then mark the
     // item as used and put it back into the list.
     if (aKeepLinked) {
-      item->SetReused(true);
       if (item->GetChildren()) {
         item->UpdateBounds(Builder());
       }
@@ -363,7 +364,7 @@ static Maybe<const ActiveScrolledRoot*> SelectContainerASR(
       aClipChain ? aClipChain->mASR : nullptr;
 
   MOZ_DIAGNOSTIC_ASSERT(!aClipChain || aClipChain->mOnStack || !itemClipASR ||
-                        itemClipASR->mScrollContainerFrame);
+                        itemClipASR->mFrame);
 
   const ActiveScrolledRoot* finiteBoundsASR =
       ActiveScrolledRoot::PickDescendant(itemClipASR, aItemASR);
@@ -378,18 +379,19 @@ static Maybe<const ActiveScrolledRoot*> SelectContainerASR(
 
 static void UpdateASR(nsDisplayItem* aItem,
                       Maybe<const ActiveScrolledRoot*>& aContainerASR) {
+  const Maybe<const ActiveScrolledRoot*> frameASR =
+      aItem->GetBaseASRForAncestorOfContainedASR();
+  if (!frameASR) {
+    return;
+  }
+
   if (!aContainerASR) {
+    aItem->SetActiveScrolledRoot(*frameASR);
     return;
   }
 
-  nsDisplayWrapList* wrapList = aItem->AsDisplayWrapList();
-  if (!wrapList) {
-    aItem->SetActiveScrolledRoot(*aContainerASR);
-    return;
-  }
-
-  wrapList->SetActiveScrolledRoot(ActiveScrolledRoot::PickAncestor(
-      wrapList->GetFrameActiveScrolledRoot(), *aContainerASR));
+  aItem->SetActiveScrolledRoot(
+      ActiveScrolledRoot::PickAncestor(*frameASR, *aContainerASR));
 }
 
 static void CopyASR(nsDisplayItem* aOld, nsDisplayItem* aNew) {
@@ -690,7 +692,6 @@ class MergeState {
       if (item->GetType() == DisplayItemType::TYPE_SUBDOCUMENT) {
         mBuilder->IncrementSubDocPresShellPaintCount(item);
       }
-      item->SetReused(true);
       mBuilder->Metrics()->mReusedItems++;
       mOldItems[aNode.val].AddedToMergedList(
           AddNewNode(item, Some(aNode), aDirectPredecessors, Nothing()));
@@ -855,10 +856,6 @@ void RetainedDisplayListBuilder::GetModifiedAndFramesWithProps(
 
     if (flags.contains(RetainedDisplayListData::FrameFlag::HasProps)) {
       aOutFramesWithProps->AppendElement(frame);
-    }
-
-    if (flags.contains(RetainedDisplayListData::FrameFlag::HadWillChange)) {
-      Builder()->RemoveFromWillChangeBudgets(frame);
     }
   }
 
@@ -1173,7 +1170,7 @@ static void FindContainingBlocks(nsIFrame* aFrame,
 
     AddFramesForContainingBlock(f, f->GetChildList(FrameChildListID::Float),
                                 aExtraFrames);
-    AddFramesForContainingBlock(f, f->GetChildList(f->GetAbsoluteListID()),
+    AddFramesForContainingBlock(f, f->GetChildList(FrameChildListID::Absolute),
                                 aExtraFrames);
 
     // This condition must match the condition in
@@ -1260,6 +1257,15 @@ bool RetainedDisplayListBuilder::ComputeRebuildRegion(
 
 bool RetainedDisplayListBuilder::ShouldBuildPartial(
     nsTArray<nsIFrame*>& aModifiedFrames) {
+  // We don't support retaining with overlay scrollbars, since they require
+  // us to look at the display list and pick the highest z-index, which
+  // we can't do during partial building.
+  if (mBuilder.DisablePartialUpdates()) {
+    mBuilder.SetDisablePartialUpdates(false);
+    Metrics()->mPartialUpdateFailReason = PartialUpdateFailReason::Disabled;
+    return false;
+  }
+
   if (mList.IsEmpty()) {
     // Partial builds without a previous display list do not make sense.
     Metrics()->mPartialUpdateFailReason = PartialUpdateFailReason::EmptyList;
@@ -1270,15 +1276,6 @@ bool RetainedDisplayListBuilder::ShouldBuildPartial(
       StaticPrefs::layout_display_list_rebuild_frame_limit()) {
     // Computing a dirty rect with too many modified frames can be slow.
     Metrics()->mPartialUpdateFailReason = PartialUpdateFailReason::RebuildLimit;
-    return false;
-  }
-
-  // We don't support retaining with overlay scrollbars, since they require
-  // us to look at the display list and pick the highest z-index, which
-  // we can't do during partial building.
-  if (mBuilder.DisablePartialUpdates()) {
-    mBuilder.SetDisablePartialUpdates(false);
-    Metrics()->mPartialUpdateFailReason = PartialUpdateFailReason::Disabled;
     return false;
   }
 
@@ -1510,8 +1507,6 @@ void CollectStackingContextItems(nsDisplayListBuilder* aBuilder,
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
     item->SetMergedPreProcessed(false, true);
 #endif
-    item->SetReused(true);
-
     const bool isStackingContextItem = IsReuseableStackingContextItem(item);
 
     if (item->GetChildren()) {

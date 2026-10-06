@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -32,6 +30,8 @@ DIRS += [
     "clearsitedata",
     "cookiebanners",
     "commandlines",
+    "content-classifier",
+    "content-classifier/content_classifier_engine",
     "contentanalysis",
     "contentprefs",
     "contentrelevancy",
@@ -39,6 +39,7 @@ DIRS += [
     "crashes",
     "crashmonitor",
     "credentialmanagement",
+    "dap",
     "doh",
     "downloads",
     "enterprisepolicies",
@@ -50,6 +51,7 @@ DIRS += [
     "gecko-trace",
     "glean",
     "httpsonlyerror",
+    "jsoncpp",
     "jsoncpp/src/lib_json",
     "kvstore",
     "media",
@@ -57,6 +59,7 @@ DIRS += [
     "ml",
     "mozintl",
     "mozprotocol",
+    "pageextractor",
     "parentalcontrols",
     "passwordmgr",
     "pdfjs",
@@ -66,6 +69,8 @@ DIRS += [
     "promiseworker",
     "prompts",
     "protobuf",
+    "qrcode",
+    "reader",
     "remotebrowserutils",
     "reflect",
     "reputationservice",
@@ -98,10 +103,9 @@ if CONFIG["NS_PRINTING"]:
 if CONFIG["MOZ_BUILD_APP"] != "mobile/android":
     DIRS += [
         "aboutconfig",
+        "aboutpdf",
         "narrate",
         "pictureinpicture",
-        "reader",
-        "viaduct",
         "uniffi-js",
         "uniffi-bindgen-gecko-js/components",
     ]
@@ -136,6 +140,9 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] not in ("android", "windows"):
 
 if CONFIG["MOZ_BUILD_APP"] == "browser":
     DIRS += ["messaging-system", "normandy"]
+
+if CONFIG["MOZ_BUILD_APP"] != "comm/mail":
+    DIRS += ["ipprotection"]
 
 DIRS += ["nimbus"]
 

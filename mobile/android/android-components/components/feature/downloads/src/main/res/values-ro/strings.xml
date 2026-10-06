@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!-- Name of the "notification channel" used for displaying download notification. See https://developer.android.com/training/notify-user/channels -->
   <string name="mozac_feature_downloads_notification_channel">Descărcări</string>
@@ -19,7 +26,7 @@
     Alert dialog confirmation before downloading a previously downloaded file, this is the title.
     %1$s will be replaced with the size of the file.
   -->
-  <string name="mozac_feature_downloads_again_dialog_title" tools:ignore="UnusedResources">Descarci din nou fișierul? (%1$s)</string>
+  <string name="mozac_feature_downloads_again_dialog_title">Descarci din nou fișierul? (%1$s)</string>
   <!--
     Alert dialog confirmation before downloading a file, this is the title.
     %1$s will be replaced with the size of the file.
@@ -27,17 +34,21 @@
   <string name="mozac_feature_downloads_dialog_title_3">Descarci fișierul? (%1$s)</string>
   <!-- This string is used as the title for the download confirmation dialog when the size of the file is not known. -->
   <string name="mozac_feature_downloads_dialog_title_with_unknown_size">Descarci fișierul?</string>
+  <!-- Alert dialog confirmation before downloading a previously downloaded file, this is the title when the size of the file is not known. -->
+  <string name="mozac_feature_downloads_again_dialog_title_with_unknown_size">Descarci iar fișierul?</string>
   <!-- Alert dialog confirmation before download a file, this is the positive action. -->
   <string name="mozac_feature_downloads_dialog_download">Descarcă</string>
   <!-- Alert dialog confirmation before downloading a file again, this is the positive action. -->
-  <string name="mozac_feature_downloads_dialog_download_again" tools:ignore="UnusedResources">Descarcă din nou</string>
+  <string name="mozac_feature_downloads_dialog_download_again">Descarcă din nou</string>
   <!-- Alert dialog confirmation before download a file, this is the negative action. -->
   <string name="mozac_feature_downloads_dialog_cancel">Anulează</string>
   <!--
     Alert dialog confirmation before downloading a previously downloaded file, this is the description.
     %1$s will be replaced with the name of the file.
   -->
-  <string name="mozac_feature_downloads_already_exists_dialog_title" tools:ignore="UnusedResources">%1$s există deja.</string>
+  <string name="mozac_feature_downloads_already_exists_dialog_title">%1$s există deja.</string>
+  <!-- Alert dialog confirmation before downloading a previously downloaded file, this is the neutral action that proposes to open the file instead. -->
+  <string name="mozac_feature_downloads_open_existing_file">Deschide fișier existent</string>
   <!--
     Alert dialog confirmation before downloading a file without network connection, this is the description.
     %1$s will be replaced with the name of the file.
@@ -68,11 +79,11 @@
   <!-- Message that appears when trying to download with an external app fails. %1$s will be replaced with the name the external app. -->
   <string name="mozac_feature_downloads_unable_to_open_third_party_app">%1$s nu poate fi deschis</string>
   <!-- Text for the info dialog when write to storage permissions have been denied but user tries to download a file. -->
-  <string name="mozac_feature_downloads_write_external_storage_permissions_needed_message">Pentru a descărca fișiere, este necesar accesul la permisiune pentru fișiere și media. Accesează setările Android, atinge permisiuni și atinge permite.</string>
+  <string name="mozac_feature_downloads_write_external_storage_permissions_needed_message">Ai nevoie de acces la permisiuni pentru fișiere și media ca să descarci fișiere. Mergi în setările Android, atinge „permisiuni” și apoi „permite”.</string>
   <!-- Alert dialog confirmation before cancelling downloads, this is the title -->
   <string name="mozac_feature_downloads_cancel_active_downloads_warning_content_title">Anulezi descărcările private?</string>
   <!-- Alert dialog confirmation before cancelling private downloads, this is the body. %1$s will be replaced with the name of the file. -->
-  <string name="mozac_feature_downloads_cancel_active_private_downloads_warning_content_body">Dacă închizi toate filele private acum, descărcarea %1$s va fi anulată. Sigur dorești să părăsești navigarea privată?</string>
+  <string name="mozac_feature_downloads_cancel_active_private_downloads_warning_content_body">Dacă închizi toate filele private acum, descărcarea %1$s va fi anulată. Sigur vrei să ieși din navigarea privată?</string>
   <!-- Alert dialog confirmation before cancelling downloads, this is the positive action. -->
   <string name="mozac_feature_downloads_cancel_active_downloads_accept">Anulează descărcările</string>
   <!-- Alert dialog confirmation before cancelling downloads, this is the negative action. Leaves user in Private browsing -->

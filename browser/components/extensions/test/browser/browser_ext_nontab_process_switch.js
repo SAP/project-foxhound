@@ -1,5 +1,52 @@
 "use strict";
 
+const gSeenWindowGlobals = [];
+
+add_setup(function setup_window_global_parent_observer() {
+  const observer = wgp => {
+    const browser = wgp.rootFrameLoader?.ownerElement;
+    if (!browser?.hasAttribute("webextension-view-type")) {
+      // We don't care about non-extension browsers.
+      return;
+    }
+
+    let desc = {
+      url: wgp.documentURI?.spec,
+      osPid: wgp.osPid,
+      // Summarize identifying attributes instead of dumping browser.outerHTML:
+      id: browser.id,
+      className: browser.className,
+      viewType: browser.getAttribute("webextension-view-type"),
+      currentRemoteType: wgp.browsingContext.currentRemoteType,
+      initialBCGId: +browser.getAttribute("initialBrowsingContextGroupId"),
+      // ^ The initial browsingContextGroupId ID is set to the extension's for
+      // which the `<browser>` was created. It may change upon navigation to
+      // non-extension content. We don't care about the current BCG ID, but if
+      // we do, wgp.browsingContext.group.id would have to be checked.
+    };
+
+    info(`Observed WindowGlobalParent: ${uneval(desc)}}`);
+    gSeenWindowGlobals.push(desc);
+  };
+  Services.obs.addObserver(observer, "window-global-created");
+  registerCleanupFunction(() => {
+    Services.obs.removeObserver(observer, "window-global-created");
+  });
+});
+
+// Every extension <browser> for a given extension is associated with the
+// same initialBrowsingContextGroupId. To avoid intermittent failures due to
+// loads from other random extensions in the test, filter by their BCG ID.
+function filterSeenWindowGlobals(seenWindowGlobals, extBcgId) {
+  const res = seenWindowGlobals.filter(desc => desc.initialBCGId === extBcgId);
+  info(`Found ${res.length} window globals for BCG ID ${extBcgId}`);
+  return res;
+}
+
+function getExtBcgId(extension) {
+  return WebExtensionPolicy.getByID(extension.id).browsingContextGroupId;
+}
+
 add_task(async function process_switch_in_sidebars_popups() {
   await SpecialPowers.pushPrefEnv({
     set: [["extensions.content_web_accessible.enabled", true]],
@@ -53,14 +100,68 @@ add_task(async function process_switch_in_sidebars_popups() {
     },
   });
 
+  // Make sure the mouse isn't hovering over the browserAction widget, to
+  // ensure that we don't unexpectedly observe preloaded popups.
+  EventUtils.synthesizeMouseAtCenter(gURLBar, { type: "mouseover" }, window);
+
+  // Through this test task, we actively monitor window globals and processes
+  // associated with extension <browser>s. The observations (available in
+  // gSeenWindowGlobals) may contain entries from unrelated extensions, which
+  // is why we use filterSeenWindowGlobals through the test to extract
+  // observations for the specific extension that we are going to start now.
+
   await extension.startup();
+
+  const extBcgId = getExtBcgId(extension);
 
   let sidebar = await extension.awaitMessage("extension_page");
   is(sidebar.place, "?sidebar", "Message from the extension sidebar");
+  const extPid = sidebar.pid;
 
   let cs1 = await extension.awaitMessage("content_script");
   is(cs1.url, "http://example.com/?sidebar", "CS on example.com in sidebar");
   isnot(sidebar.pid, cs1.pid, "Navigating to example.com changed process");
+
+  const commonDescriptionSidebar = {
+    id: "webext-panels-browser",
+    className: "",
+    viewType: "sidebar",
+    initialBCGId: extBcgId,
+  };
+  SimpleTest.isDeeply(
+    filterSeenWindowGlobals(gSeenWindowGlobals, extBcgId),
+    [
+      {
+        url: "about:blank",
+        osPid: extPid,
+        currentRemoteType: "extension",
+        ...commonDescriptionSidebar,
+      },
+      {
+        url: `moz-extension://${extension.uuid}/page.html?sidebar`,
+        osPid: extPid,
+        currentRemoteType: "extension",
+        ...commonDescriptionSidebar,
+      },
+      {
+        url: "about:blank",
+        osPid: cs1.pid,
+        currentRemoteType: "webIsolated=http://example.com",
+        ...commonDescriptionSidebar,
+      },
+      {
+        url: "http://example.com/?sidebar",
+        osPid: cs1.pid,
+        currentRemoteType: "webIsolated=http://example.com",
+        ...commonDescriptionSidebar,
+      },
+    ],
+    "Seen expected window globals for sidebar"
+  );
+
+  gSeenWindowGlobals.length = 0;
+  // ^ cleared after verifying expectations so far. Now we are going to monitor
+  // globals and processes for the popup, as a regression test for bug 1987679.
 
   await clickBrowserAction(extension);
   let popup = await extension.awaitMessage("extension_page");
@@ -81,6 +182,113 @@ add_task(async function process_switch_in_sidebars_popups() {
 
   await closeBrowserAction(extension);
   await extension.unload();
+
+  // This is a regression test for bug 1987679: We used to spawn an unexpected
+  // process because we forced the initialization of <browser> where we did not
+  // have to. Verify that we only see two window globals for each load, the
+  // initial about:blank followed by the requested URL (no more, no less!).
+  // In particular, we should NOT observe loads in unexpected processes.
+  const commonDescriptionPopup = {
+    id: "",
+    className: "webextension-popup-browser",
+    viewType: "popup",
+    initialBCGId: extBcgId,
+  };
+  let expectedInitialClassName =
+    "webextension-popup-browser webextension-preload-browser";
+  const seenForPopup = filterSeenWindowGlobals(gSeenWindowGlobals, extBcgId);
+  if (
+    seenForPopup[1].url === "about:blank" &&
+    seenForPopup[2].url.endsWith("/page.html?popup")
+  ) {
+    // The preloaded browser and the real browser are loaded in parallel. The
+    // very first browser is always about:blank of the preloaded browser, from
+    // the BasePopup constructor:
+    // https://searchfox.org/firefox-main/rev/08a5a0de94770126c13dceb661fee2edbdff0329/browser/components/extensions/ExtensionPopups.sys.mjs#78
+    //
+    // The moz-extension popup page is expected to be loaded in that browser,
+    // but it is also possible for the load to happen in the second browser, if
+    // the initialization of the first browser did not complete before the
+    // second one is created at:
+    // https://searchfox.org/firefox-main/rev/08a5a0de94770126c13dceb661fee2edbdff0329/browser/components/extensions/ExtensionPopups.sys.mjs#647
+    //
+    // In that case, the observation is as follows:
+    // - expectation: [about:blank, page.html, about:blank, ...]
+    // - alternative: [about:blank, about:blank, page.html, ...]
+    //   with page.html in the second browser instead of the preloaded one.
+    // Swap the order in the alternative observation to match the expected
+    // order for the isDeeply check below.
+    const seenPreloadedAboutBlank = seenForPopup[1];
+    const seenExtensionPopupPage = seenForPopup[2];
+    seenForPopup[1] = seenExtensionPopupPage;
+    seenForPopup[2] = seenPreloadedAboutBlank;
+    if (seenExtensionPopupPage.className === commonDescriptionPopup.className) {
+      expectedInitialClassName = commonDescriptionPopup.className;
+      info("Changed expectation: popup loads in non-preloaded browser");
+    } else {
+      info("Changed expectation: popup loads after non-preloaded browser");
+    }
+  }
+  SimpleTest.isDeeply(
+    seenForPopup,
+    [
+      {
+        url: "about:blank",
+        osPid: extPid,
+        currentRemoteType: "extension",
+        ...commonDescriptionPopup,
+        // Although the very first browser is considered to be preloaded, the
+        // "webextension-preload-browser" class name is only added after full
+        // load, so when we see the initial about:blank, the class name is
+        // still at the default instead of `expectedInitialClassName`.
+      },
+      {
+        url: `moz-extension://${extension.uuid}/page.html?popup`,
+        osPid: extPid,
+        currentRemoteType: "extension",
+        ...commonDescriptionPopup,
+        // The very first popup browser is considered to be preloaded.
+        className: expectedInitialClassName,
+      },
+      {
+        // When the extension popup is shown (attached), we start loading the
+        // actual content in the preloaded popup (above), then insert a new
+        // <browser> and swap their docshells:
+        // https://searchfox.org/firefox-main/rev/bfd4da6a49ff07f278d197ff67f3c3be36876c1c/browser/components/extensions/ExtensionPopups.sys.mjs#645-649.
+        // This temporary <browser> includes an about:blank load.
+        url: "about:blank",
+        osPid: extPid,
+        currentRemoteType: "extension",
+        ...commonDescriptionPopup,
+      },
+      {
+        url: "about:blank",
+        osPid: cs2.pid,
+        currentRemoteType: "webIsolated=http://example.com",
+        ...commonDescriptionPopup,
+      },
+      {
+        url: "http://example.com/?popup",
+        osPid: cs2.pid,
+        currentRemoteType: "webIsolated=http://example.com",
+        ...commonDescriptionPopup,
+      },
+      {
+        url: "about:blank",
+        osPid: extPid,
+        currentRemoteType: "extension",
+        ...commonDescriptionPopup,
+      },
+      {
+        url: `moz-extension://${extension.uuid}/page.html?popup_back`,
+        osPid: extPid,
+        currentRemoteType: "extension",
+        ...commonDescriptionPopup,
+      },
+    ],
+    "Seen expected window globals for popup"
+  );
+  gSeenWindowGlobals.length = 0;
 });
 
 // Test that navigating the browserAction popup between extension pages doesn't keep the
@@ -116,11 +324,7 @@ add_task(
     });
 
     // Make sure the mouse isn't hovering over the browserAction widget.
-    EventUtils.synthesizeMouseAtCenter(
-      gURLBar.textbox,
-      { type: "mouseover" },
-      window
-    );
+    EventUtils.synthesizeMouseAtCenter(gURLBar, { type: "mouseover" }, window);
 
     await extension.startup();
 

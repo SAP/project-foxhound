@@ -14,7 +14,7 @@
      *
      * @param insertElementFn Called with the "notification-stack" element as an
      *        argument when the first notification has to be displayed.
-     * @param {Number} securityDelayMS - Delay in milliseconds until buttons are enabled to
+     * @param {number} securityDelayMS - Delay in milliseconds until buttons are enabled to
      * protect against click- and tapjacking.
      */
     constructor(insertElementFn, securityDelayMS = 0) {
@@ -140,7 +140,7 @@
      *        Optional boolean arg to disable clickjacking protections. By
      *        default the security delay is enabled.
      *
-     * @returns {Promise<Object>} The <notification-message> element that is shown.
+     * @returns {Promise<object>} The <notification-message> element that is shown.
      */
     async appendNotification(
       aType,
@@ -273,6 +273,12 @@
       // Ensure the DOM has been created for the Lit-based notification-message
       // element so that we add the .animated class + it animates as expected.
       await newitem.updateComplete;
+
+      if (aNotification.label?.["l10n-id"] && newitem.shadowRoot) {
+        await document.l10n.translateFragment(newitem.shadowRoot);
+        newitem.setAlertRole();
+      }
+
       this._showNotification(newitem, true);
 
       // Fire event for accessibility APIs
@@ -559,8 +565,8 @@
           this.messageL10nArgs = value["l10n-args"];
         } else {
           this.message = value;
+          this.setAlertRole();
         }
-        this.setAlertRole();
       }
 
       setButtons(buttons) {
@@ -632,7 +638,7 @@
        * restarts on window focus or if the user attempts to click during the
        * disabled period.
        *
-       * @param {Number} securityDelayMS - ClickJacking delay to apply
+       * @param {number} securityDelayMS - ClickJacking delay to apply
        * (milliseconds).
        */
       _initClickJackingProtection(securityDelayMS) {

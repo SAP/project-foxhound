@@ -30,7 +30,9 @@ async function testCompletion(view, target, isExpectedOpenPopup) {
     "Check the suggest completion popup visibility after clearing the field"
   );
 
-  const onChanged = view.once("ruleview-changed");
+  const onChanged = isExpectedOpenPopup
+    ? view.once("ruleview-changed")
+    : Promise.resolve();
   const popupEvent = isExpectedOpenPopup ? "popup-opened" : "popup-closed";
   const onPopupEvent =
     editor.popup.isOpen === isExpectedOpenPopup

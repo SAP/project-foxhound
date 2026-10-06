@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,7 +32,7 @@ class DecoderTraits {
   // as an <object> or as a toplevel page. If, in practice, our support
   // for the type is more limited than appears in the wild, we should return
   // false here even if CanHandleMediaType would return true.
-  static bool ShouldHandleMediaType(const char* aMIMEType,
+  static bool ShouldHandleMediaType(const nsACString& aMIMEType,
                                     DecoderDoctorDiagnostics* aDiagnostics);
 
   // Create a demuxer for the given MIME type aType.  Returns null if we

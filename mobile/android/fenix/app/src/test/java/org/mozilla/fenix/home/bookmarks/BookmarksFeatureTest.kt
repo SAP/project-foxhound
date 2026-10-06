@@ -7,23 +7,17 @@ package org.mozilla.fenix.home.bookmarks
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.advanceUntilIdle
-import mozilla.components.concept.storage.BookmarkNode
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import mozilla.components.support.test.middleware.CaptureActionsMiddleware
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.Assert.assertEquals
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.components.bookmarks.BookmarksUseCase
 
-@OptIn(ExperimentalCoroutinesApi::class)
 class BookmarksFeatureTest {
 
     private val middleware = CaptureActionsMiddleware<AppState, AppAction>()
@@ -35,10 +29,7 @@ class BookmarksFeatureTest {
         previewImageUrl = null,
     )
 
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-    private val testDispatcher = coroutinesTestRule.testDispatcher
-    private val scope = coroutinesTestRule.scope
+    private val testDispatcher = StandardTestDispatcher()
 
     @Before
     fun setup() {
@@ -47,20 +38,19 @@ class BookmarksFeatureTest {
 
     @Test
     fun `GIVEN no bookmarks WHEN feature starts THEN fetch bookmarks and notify store`() =
-        runTestOnMain {
+        runTest(testDispatcher) {
             val feature = BookmarksFeature(
                 appStore,
                 bookmarksUseCases,
-                scope,
+                this,
                 testDispatcher,
             )
 
-            assertEquals(emptyList<BookmarkNode>(), appStore.state.bookmarks)
+            assertEquals(emptyList<Bookmark>(), appStore.state.bookmarks)
 
             feature.start()
 
-            advanceUntilIdle()
-            appStore.waitUntilIdle()
+            testScheduler.advanceUntilIdle()
 
             coVerify {
                 bookmarksUseCases.retrieveRecentBookmarks()

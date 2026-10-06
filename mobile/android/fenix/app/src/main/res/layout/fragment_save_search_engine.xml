@@ -14,7 +14,7 @@
         android:id="@+id/search_engine_wrapper"
         android:orientation="vertical"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="wrap_content"
         android:paddingStart="12dp"
         android:paddingEnd="12dp"
         android:paddingTop="16dp"
@@ -26,7 +26,7 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="4dp"
             android:text="@string/search_add_custom_engine_name_label"
-            android:textColor="?attr/textSecondary"
+            android:textColor="?attr/colorOnSurfaceVariant"
             android:textFontWeight="@integer/font_weight_light"
             android:textSize="12sp"
             tools:targetApi="p" />
@@ -43,7 +43,8 @@
                 android:layout_height="wrap_content"
                 android:minHeight="@dimen/accessibility_min_height"
                 android:hint="@string/search_add_custom_engine_name_hint_2"
-                android:inputType="text" />
+                android:inputType="text"
+                android:textColorHint="?attr/colorOnSurfaceVariant"/>
         </com.google.android.material.textfield.TextInputLayout>
 
         <TextView
@@ -51,7 +52,7 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="4dp"
             android:text="@string/search_add_custom_engine_url_label"
-            android:textColor="?attr/textSecondary"
+            android:textColor="?attr/colorOnSurfaceVariant"
             android:textFontWeight="@integer/font_weight_light"
             android:textSize="12sp"
             tools:targetApi="p" />
@@ -59,8 +60,8 @@
             android:id="@+id/custom_search_engine_search_string_field"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:hintTextColor="?attr/textSecondary"
-            android:textColorHint="?attr/textSecondary"
+            app:hintTextColor="?attr/colorOnSurfaceVariant"
+            android:textColorHint="?attr/colorOnSurfaceVariant"
             app:hintTextAppearance="@style/EngineTextField"
             app:hintEnabled="false"
             android:paddingBottom="8dp"
@@ -71,7 +72,8 @@
                 android:layout_height="wrap_content"
                 android:minHeight="@dimen/accessibility_min_height"
                 android:hint="@string/search_add_custom_engine_search_string_hint_2"
-                android:inputType="text"/>
+                android:inputType="text"
+                android:textColorHint="?attr/colorOnSurfaceVariant" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <LinearLayout
@@ -94,7 +96,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/exceptions_empty_message_learn_more_link"
-                android:textColor="?textAccent"
+                android:textColor="?attr/colorTertiary"
                 android:visibility="visible"
                 app:layout_constraintTop_toBottomOf="@id/exceptions_empty_message" />
         </LinearLayout>
@@ -104,7 +106,7 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="4dp"
             android:text="@string/search_add_custom_engine_suggest_url_label"
-            android:textColor="?attr/textSecondary"
+            android:textColor="?attr/colorOnSurfaceVariant"
             android:textFontWeight="@integer/font_weight_light"
             android:textSize="12sp"
             tools:targetApi="p" />
@@ -112,8 +114,8 @@
             android:id="@+id/custom_search_engine_suggest_string_field"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:hintTextColor="?attr/textSecondary"
-            android:textColorHint="?attr/textSecondary"
+            app:hintTextColor="?attr/colorOnSurfaceVariant"
+            android:textColorHint="?attr/colorOnSurfaceVariant"
             app:hintTextAppearance="@style/EngineTextField"
             app:hintEnabled="false"
             app:errorEnabled="true">
@@ -123,7 +125,8 @@
                 android:layout_height="wrap_content"
                 android:minHeight="@dimen/accessibility_min_height"
                 android:hint="@string/search_add_custom_engine_suggest_string_hint"
-                android:inputType="text"/>
+                android:inputType="text"
+                android:textColorHint="?attr/colorOnSurfaceVariant"/>
         </com.google.android.material.textfield.TextInputLayout>
 
         <LinearLayout
@@ -146,7 +149,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/exceptions_empty_message_learn_more_link"
-                android:textColor="?textAccent"
+                android:textColor="?attr/colorTertiary"
                 android:visibility="visible"
                 app:layout_constraintTop_toBottomOf="@id/exceptions_empty_message"
                 android:paddingBottom="16dp"/>
@@ -155,9 +158,7 @@
         <com.google.android.material.button.MaterialButton
             android:id="@+id/save_button"
             style="@style/PositiveButton"
-            android:backgroundTint="@color/button_state_list"
-            android:text="@string/search_custom_engine_save_button"
-            android:textColor="@color/text_on_color_state_list_text_color"/>
+            android:text="@string/search_custom_engine_save_button" />
 
         <ProgressBar
             android:id="@+id/progress"

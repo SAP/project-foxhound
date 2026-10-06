@@ -19,13 +19,10 @@ internal data class ContainerEntity(
     @PrimaryKey
     @ColumnInfo(name = "context_id")
     var contextId: String,
-
     @ColumnInfo(name = "name")
     var name: String,
-
     @ColumnInfo(name = "color")
     var color: Color,
-
     @ColumnInfo(name = "icon")
     var icon: Icon,
 ) {

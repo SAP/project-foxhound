@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>GeckoView asynchronous autoplay permission grant test (GVAutoplayObserver)</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="manifest.js"></script>
+  <script type="text/javascript" src="AutoplayTestUtils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+<script>
+
+const TIMEOUT_IN_MS = 1000;
+SimpleTest.requestFlakyTimeout(`Need a ${TIMEOUT_IN_MS}ms timer to check whether autoplay begins.`);
+SimpleTest.requestCompleteLog();
+
+add_task(async function testGVDelayedAutoplayStart() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      // Below must be true to hit async permission code path
+      // https://searchfox.org/mozilla-central/rev/6e2b186c296474e032d9ae2e000b7c870396775c/dom/media/autoplay/AutoplayPolicy.cpp#229-232
+      ["media.geckoview.autoplay.request", true],
+      // 8 = Generate asynchronous eALLOWED permission grants.
+      ["media.geckoview.autoplay.request.testing", 8],
+    ],
+  });
+
+  // Replicate setup for Bug 1913709
+  const video = document.createElement("video");
+  const playingPromise = once(video, "playing");
+  video.muted = true;
+  video.preload = "none";
+  video.src = "short.mp4"
+  video.setAttribute("autoplay", "");
+
+  document.body.appendChild(video);
+
+  await playingPromise;
+  ok(true, "Video should autoplay.");
+});
+</script>
+</body>
+</html>

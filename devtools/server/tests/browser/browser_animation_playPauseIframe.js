@@ -59,7 +59,7 @@ async function toggleAndCheckStates(nodeFront, playState) {
     await animations.playSome([player]);
   }
 
-  info("Getting the AnimationPlayerFront for the test node");
+  info("Getting the AnimationFront for the test node");
   await player.ready;
   const state = await player.getCurrentState();
   is(

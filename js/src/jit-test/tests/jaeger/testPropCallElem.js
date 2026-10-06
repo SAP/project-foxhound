@@ -1,5 +1,3 @@
-// vim: set ts=8 sts=4 et sw=4 tw=99:
-
 function testUKeyUObject(a, key1, key2, key3) {
     a.a = function () { return this.d; }
     a.b = function () { return this.e; }

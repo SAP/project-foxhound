@@ -32,7 +32,21 @@ class WorkerTargetFront extends TargetMixin(
   // If the worker doesn't have a custom name,
   // display file name instead of absolute URL in the context selector/threads panel
   get name() {
-    return this._name || this._url.split("/").pop();
+    if (this._name) {
+      return this._name;
+    }
+
+    if (this._url) {
+      if (URL.canParse(this._url)) {
+        return this._url.split("/").pop();
+      }
+
+      // If url can't be parsed (e.g. it's only a filename), return the whole thing
+      return this._url;
+    }
+
+    // If url doesn't exist, fallback to a generic label
+    return "(worker)";
   }
 
   form(json) {

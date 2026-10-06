@@ -4,7 +4,6 @@
 
 #[diplomat::bridge]
 #[diplomat::abi_rename = "icu4x_{0}_mv1"]
-#[diplomat::attr(auto, namespace = "icu4x")]
 pub mod ffi {
     use alloc::boxed::Box;
 
@@ -75,6 +74,15 @@ pub mod ffi {
                 .map(|v| {
                     let _infallible = v.write_to(write);
                 })
+        }
+
+        /// Set a Unicode extension.
+        #[diplomat::rust_link(icu::locale::Locale::extensions, StructField)]
+        pub fn set_unicode_extension(&mut self, k: &DiplomatStr, v: &DiplomatStr) -> Option<()> {
+            let k = icu_locale_core::extensions::unicode::Key::try_from_utf8(k).ok()?;
+            let v = icu_locale_core::extensions::unicode::Value::try_from_utf8(v).ok()?;
+            self.0.extensions.unicode.keywords.set(k, v);
+            Some(())
         }
 
         /// Returns a string representation of [`Locale`] language.

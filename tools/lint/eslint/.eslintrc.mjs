@@ -7,7 +7,7 @@ import eslintPlugin from "eslint-plugin-eslint-plugin";
 
 export default [
   {
-    ...eslintPlugin.configs["flat/recommended"],
+    ...eslintPlugin.configs.recommended,
     languageOptions: {
       globals: globals.node,
       parserOptions: {

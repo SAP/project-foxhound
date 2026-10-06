@@ -10,7 +10,8 @@
 
 #include "modules/audio_processing/agc2/rnn_vad/rnn.h"
 
-#include "api/array_view.h"
+#include <array>
+
 #include "modules/audio_processing/agc2/cpu_features.h"
 #include "modules/audio_processing/agc2/rnn_vad/common.h"
 #include "test/gtest.h"

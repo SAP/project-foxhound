@@ -1,0 +1,239 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>PreferencesBindings AsyncSetting Tests</title>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <link
+      rel="stylesheet"
+      href="chrome://mochikit/content/tests/SimpleTest/test.css"
+    />
+    <script
+      type="application/javascript"
+      src="chrome://global/content/preferencesBindings.js"
+    ></script>
+    <script>
+      /* import-globals-from /toolkit/content/preferencesBindings.js */
+      function waitForSettingChange(setting) {
+        return new Promise(resolve => {
+          setting.on("change", function handler() {
+            setting.off("change", handler);
+            resolve();
+          });
+        });
+      }
+
+      add_task(async function testAsyncSetting() {
+        const SETTING_ID = "testAsyncSetting";
+
+        let delayPromise;
+        let resolve;
+        let triggerUpdate;
+
+        function prepareDelay() {
+          delayPromise = new Promise(r => (resolve = r));
+        }
+
+        let callCounts = {
+          get: 0,
+          set: 0,
+          disabled: 0,
+          visible: 0,
+          getControlConfig: 0,
+        };
+
+        let nextValue;
+        let nextDisabled;
+        let nextVisible;
+        let nextGetControlConfig;
+
+        Preferences.addSetting(
+          class extends Preferences.AsyncSetting {
+            static id = SETTING_ID;
+
+            async get() {
+              callCounts.get++;
+              await delayPromise;
+              return nextValue;
+            }
+
+            async set(val) {
+              callCounts.set++;
+              await delayPromise;
+              nextValue = val.value;
+              nextDisabled = val.disabled;
+              nextVisible = val.visible;
+              nextGetControlConfig = val.getControlConfig;
+              this.emitChange();
+            }
+
+            async disabled() {
+              callCounts.disabled++;
+              await delayPromise;
+              return nextDisabled;
+            }
+
+            async visible() {
+              callCounts.visible++;
+              await delayPromise;
+              return nextVisible;
+            }
+
+            async getControlConfig() {
+              callCounts.getControlConfig++;
+              await delayPromise;
+              return nextGetControlConfig;
+            }
+
+            setup() {
+              triggerUpdate = () => this.emitChange();
+            }
+          }
+        );
+
+        let setting = Preferences.getSetting(SETTING_ID);
+        ok(setting, "Got a setting object");
+
+        prepareDelay();
+
+        function assertCallCounts(gettersCount, setterCount) {
+          for (let prop of ["get", "disabled", "visible", "getControlConfig"]) {
+            // Getters have been called but haven't resolved yet.
+            is(
+              callCounts[prop],
+              gettersCount,
+              `Getter count is expected (${prop})`
+            );
+          }
+          is(callCounts.set, setterCount, "Set count is expected");
+        }
+
+        function assertInitialSettingValues(message) {
+          info(`assertInitialSettingValues ${message}`);
+          is(setting.value, "", "Setting value is empty string");
+          ok(!setting.disabled, "Setting is not disabled");
+          ok(setting.visible, "Setting is visible");
+          ok(
+            setting.getControlConfig({ l10nId: "mystring" }),
+            "Setting getControlConfig is empty object"
+          );
+        }
+
+        assertInitialSettingValues("First check");
+
+        nextValue = 5;
+        nextDisabled = true;
+        nextVisible = false;
+        nextGetControlConfig = { l10nId: "whatever" };
+
+        // Nothing should have changed yet, cached values returned.
+        assertInitialSettingValues("Second get");
+        assertCallCounts(1, 0);
+
+        // Verify that the values are cached.
+        assertInitialSettingValues("Ensure cached");
+        assertCallCounts(1, 0);
+
+        // Verify that starting the update doesn't change the settings.
+        triggerUpdate();
+
+        // Verify that the values are cached, but an update has started.
+        assertCallCounts(2, 0);
+        assertInitialSettingValues("After AsyncSetting change");
+        assertCallCounts(2, 0);
+
+        let settingChanged = waitForSettingChange(setting);
+        resolve();
+        await settingChanged;
+
+        function assertSecondValues(message) {
+          info(`assertSecondValues ${message}`);
+          is(setting.value, 5, "Setting value changed");
+          ok(setting.disabled, "Setting disabled changed");
+          ok(!setting.visible, "Setting visible changed");
+          is(
+            setting.getControlConfig({ l10nId: "mystring" }).l10nId,
+            "whatever",
+            "Setting getControlConfig changed"
+          );
+        }
+        assertSecondValues("After Setting change");
+        assertCallCounts(2, 0);
+
+        let testValues = {
+          value: Symbol("value"),
+          disabled: Symbol("disabled"),
+          visible: Symbol("visible"),
+          getControlConfig: {
+            l10nId: Symbol("getControlConfig"),
+            newThing: true,
+          },
+        };
+
+        prepareDelay();
+
+        settingChanged = waitForSettingChange(setting);
+        setting.value = testValues;
+        assertCallCounts(2, 1);
+
+        // Grab the current resolver, but create a new one to delay the getters.
+        let setResolve = resolve;
+        prepareDelay();
+        setResolve();
+
+        // Still getting the second set of values, but they're being refreshed.
+        assertSecondValues("After setting a value");
+
+        assertCallCounts(2, 1);
+        resolve();
+        info("Waiting for set to emit change");
+        await settingChanged;
+        assertCallCounts(3, 1);
+
+        info("Setting has changed");
+        is(setting.value, testValues.value, "Setting value changed");
+        is(setting.disabled, testValues.disabled, "Setting disabled changed");
+        is(setting.visible, testValues.visible, "Setting visible changed");
+        let controlConfig = setting.getControlConfig({ l10nId: "otherstring" });
+        is(
+          controlConfig.l10nId,
+          testValues.getControlConfig.l10nId,
+          "Setting getControlConfig changed"
+        );
+        is(controlConfig.newThing, true, "Setting getControlConfig changed");
+      });
+
+      add_task(async function testAsyncSettingDefaults() {
+        const SETTING_ID = "testAsyncSettingDefaults";
+
+        Preferences.addSetting(
+          class extends Preferences.AsyncSetting {
+            static id = SETTING_ID;
+
+            defaultValue = 10;
+            defaultDisabled = true;
+            defaultVisible = false;
+            defaultGetControlConfig = { l10nId: "overridden" };
+          }
+        );
+
+        let setting = Preferences.getSetting(SETTING_ID);
+        ok(setting, "Got a setting object");
+
+        is(setting.value, 10, "Default value was set");
+        ok(setting.disabled, "Default disabled was set");
+        ok(!setting.visible, "Default visible was set");
+        is(
+          setting.getControlConfig({ l10nId: "mystring" }).l10nId,
+          "overridden",
+          "Default getControlConfig was set"
+        );
+      });
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+</html>

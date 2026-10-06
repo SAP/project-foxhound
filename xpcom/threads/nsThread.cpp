@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -37,11 +35,13 @@
 #include "mozilla/StaticLocalPtr.h"
 #include "mozilla/StaticPrefs_threads.h"
 #include "mozilla/TaskController.h"
+#include "nsExceptionHandler.h"
+#include "nsFmtString.h"
 #include "nsXPCOMPrivate.h"
 #include "mozilla/ChaosMode.h"
+#include "prerror.h"
 #include "mozilla/glean/XpcomMetrics.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "nsThreadSyncDispatch.h"
@@ -50,8 +50,6 @@
 #include "ThreadEventQueue.h"
 #include "ThreadEventTarget.h"
 #include "ThreadDelay.h"
-
-#include <limits>
 
 #ifdef XP_LINUX
 #  ifdef __GLIBC__
@@ -86,6 +84,8 @@ using GetCurrentThreadStackLimitsFn = void(WINAPI*)(PULONG_PTR LowLimit,
 #  include <mach/mach.h>
 #  include <mach/thread_policy.h>
 #  include <sys/qos.h>
+
+#  include "nsCocoaFeatures.h"
 #endif
 
 #ifdef MOZ_CANARY
@@ -333,10 +333,18 @@ void nsThread::ThreadFunc(void* aArg) {
   SetupCurrentThreadForChaosMode();
 
   if (!initData->name.IsEmpty()) {
-    NS_SetCurrentThreadName(initData->name.BeginReading());
+    NS_SetCurrentThreadName(initData->name.get());
   }
 
   self->InitCommon();
+
+#ifdef XP_MACOSX
+  if (nsCocoaFeatures::OnTahoeOrLater()) {
+    // On macOS 26+, use "User Initiated" as the default quality of service.
+    // It may make sense to do this on all versions of macOS.
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INITIATED, 0);
+  }
+#endif
 
   // Inform the ThreadManager
   nsThreadManager::get().RegisterCurrentThread(*self);
@@ -348,7 +356,7 @@ void nsThread::ThreadFunc(void* aArg) {
   // which profiler_register_thread() requires. See bug 1347007.
   const bool registerWithProfiler = !initData->name.IsEmpty();
   if (registerWithProfiler) {
-    PROFILER_REGISTER_THREAD(initData->name.BeginReading());
+    PROFILER_REGISTER_THREAD(initData->name.get());
   }
 
   {
@@ -546,7 +554,7 @@ nsThread::nsThread(NotNull<SynchronizedEventQueue*> aQueue,
       mIsMainThread(aMainThread == MAIN_THREAD),
       mUseHangMonitor(aMainThread == MAIN_THREAD),
       mIsUiThread(aOptions.isUiThread),
-      mIsAPoolThreadFree(nullptr),
+      mIsAPoolThreadFreePtr(nullptr),
       mCanInvokeJS(false),
       mPerformanceCounterState(mNestedEventLoopDepth, mIsMainThread,
                                aOptions.longTaskLength) {
@@ -615,11 +623,20 @@ nsresult nsThread::Init(const nsACString& aName) {
     if (!(thread = PR_CreateThread(PR_USER_THREAD, ThreadFunc, initData.get(),
                                    PR_PRIORITY_NORMAL, PR_GLOBAL_THREAD,
                                    PR_JOINABLE_THREAD, mStackSize))) {
+      // Until bug 2017883 is fixed, these values may not be useful on
+      // Windows as NSPR does not propagate the OS error from thread
+      // creation.
+      PRErrorCode prError = PR_GetError();
+      PRInt32 osError = PR_GetOSError();
+      CrashReporter::RecordAnnotationNSCString(
+          CrashReporter::Annotation::ThreadLastCreateError,
+          nsFmtCString("{}: prError={:#x} osError={:#x}", aName, prError,
+                       osError));
       return NS_ERROR_OUT_OF_MEMORY;
     }
 
     // The created thread now owns initData, so release our ownership of it.
-    Unused << initData.release();
+    (void)initData.release();
 
     // The thread has successfully started, so we can mark it as requiring
     // shutdown & add it to the thread list.
@@ -671,22 +688,20 @@ void nsThread::SetThreadNameInternal(const nsACString& aName) {
 // nsIEventTarget
 
 NS_IMETHODIMP
-nsThread::DispatchFromScript(nsIRunnable* aEvent, uint32_t aFlags) {
-  MOZ_ASSERT(mEventTarget);
-  NS_ENSURE_TRUE(mEventTarget, NS_ERROR_NOT_IMPLEMENTED);
-
-  nsCOMPtr<nsIRunnable> event(aEvent);
-  return mEventTarget->Dispatch(event.forget(), aFlags);
+nsThread::DispatchFromScript(nsIRunnable* aEvent, DispatchFlags aFlags) {
+  return Dispatch(do_AddRef(aEvent), aFlags);
 }
 
 NS_IMETHODIMP
-nsThread::Dispatch(already_AddRefed<nsIRunnable> aEvent, uint32_t aFlags) {
+nsThread::Dispatch(already_AddRefed<nsIRunnable> aEvent, DispatchFlags aFlags) {
+  MaybeLeakRefPtr<nsIRunnable> event(std::move(aEvent),
+                                     aFlags & NS_DISPATCH_FALLIBLE);
   MOZ_ASSERT(mEventTarget);
   NS_ENSURE_TRUE(mEventTarget, NS_ERROR_NOT_IMPLEMENTED);
 
-  LOG(("THRD(%p) Dispatch [%p %x]\n", this, /* XXX aEvent */ nullptr, aFlags));
+  LOG(("THRD(%p) Dispatch [%p %x]\n", this, event.get(), aFlags));
 
-  return mEventTarget->Dispatch(std::move(aEvent), aFlags);
+  return mEventTarget->Dispatch(event.forget(), aFlags);
 }
 
 NS_IMETHODIMP
@@ -714,11 +729,16 @@ nsThread::UnregisterShutdownTask(nsITargetShutdownTask* aTask) {
   return mEventTarget->UnregisterShutdownTask(aTask);
 }
 
+nsIEventTarget::FeatureFlags nsThread::GetFeatures() {
+  return (mIsMainThread ? SUPPORTS_PRIORITIZATION : SUPPORTS_BASE) |
+         (SUPPORTS_SHUTDOWN_TASKS | SUPPORTS_SHUTDOWN_TASK_DISPATCH);
+}
+
 NS_IMETHODIMP
 nsThread::GetRunningEventDelay(TimeDuration* aDelay, TimeStamp* aStart) {
-  if (mIsAPoolThreadFree && *mIsAPoolThreadFree) {
-    // if there are unstarted threads in the pool, a new event to the
-    // pool would not be delayed at all (beyond thread start time)
+  if (mIsAPoolThreadFreePtr && *mIsAPoolThreadFreePtr) {
+    // If there are idle or unstarted threads in the pool, a new event to the
+    // pool would not be delayed at all (beyond thread wake / start time).
     *aDelay = TimeDuration();
     *aStart = TimeStamp();
   } else {
@@ -829,9 +849,9 @@ nsThread::BeginShutdown(nsIThreadShutdown** aShutdown) {
 
   // Set mShutdownContext and wake up the thread in case it is waiting for
   // events to process.
-  nsCOMPtr<nsIRunnable> event =
-      new nsThreadShutdownEvent(WrapNotNull(this), WrapNotNull(context));
-  if (!mEvents->PutEvent(event.forget(), EventQueuePriority::Normal)) {
+  RefPtr<nsIRunnable> event = MakeRefPtr<nsThreadShutdownEvent>(
+      WrapNotNull(this), WrapNotNull(context));
+  if (!mEvents->PutEvent(event, EventQueuePriority::Normal)) {
     // We do not expect this to happen. Let's collect some diagnostics.
     nsAutoCString threadName;
     GetThreadName(threadName);
@@ -934,13 +954,13 @@ nsThread::HasPendingHighPriorityEvents(bool* aResult) {
 NS_IMETHODIMP
 nsThread::DispatchToQueue(already_AddRefed<nsIRunnable> aEvent,
                           EventQueuePriority aQueue) {
-  nsCOMPtr<nsIRunnable> event = aEvent;
+  RefPtr<nsIRunnable> event = aEvent;
 
   if (NS_WARN_IF(!event)) {
     return NS_ERROR_INVALID_ARG;
   }
 
-  if (!mEvents->PutEvent(event.forget(), aQueue)) {
+  if (!mEvents->PutEvent(event, aQueue)) {
     NS_WARNING(
         "An idle event was posted to a thread that will never run it "
         "(rejected)");
@@ -1518,9 +1538,7 @@ void PerformanceCounterState::MaybeReportAccumulatedTime(const nsCString& aName,
         static MarkerSchema MarkerTypeDisplay() {
           using MS = MarkerSchema;
           MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-          schema.AddKeyLabelFormatSearchable("category", "Type",
-                                             MS::Format::String,
-                                             MS::Searchable::Searchable);
+          schema.AddKeyLabelFormat("category", "Type", MS::Format::String);
           return schema;
         }
       };

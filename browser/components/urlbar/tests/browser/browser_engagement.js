@@ -33,7 +33,9 @@ add_task(async function engagement() {
         selType: "history",
         provider: "",
         searchSource: "urlbar",
+        windowMode: "classic",
         isSessionOngoing: false,
+        pickedActionKey: null,
       },
     });
   });
@@ -73,7 +75,9 @@ add_task(async function privateWindow_engagement() {
       selType: "history",
       provider: "",
       searchSource: "urlbar",
+      windowMode: "private",
       isSessionOngoing: false,
+      pickedActionKey: null,
     },
   });
   await BrowserTestUtils.closeWindow(win);
@@ -108,7 +112,8 @@ async function doTest({
   expectedEndDetails = {},
 }) {
   let provider = new TestProvider();
-  UrlbarProvidersManager.registerProvider(provider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(provider);
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window: win,
@@ -157,6 +162,8 @@ async function doTest({
     expectedEndDetails.result = result;
     expectedEndDetails.element = element;
 
+    // The event object that is passed to providers varies between calls.
+    delete details.event;
     Assert.deepEqual(
       details,
       Object.assign(detailsDefaults, expectedEndDetails),
@@ -164,7 +171,7 @@ async function doTest({
     );
   }
 
-  UrlbarProvidersManager.unregisterProvider(provider);
+  providersManager.unregisterProvider(provider);
 }
 
 /**
@@ -177,11 +184,11 @@ class TestProvider extends UrlbarTestUtils.TestProvider {
     super({
       priority: Infinity,
       results: [
-        new UrlbarResult(
-          UrlbarUtils.RESULT_TYPE.URL,
-          UrlbarUtils.RESULT_SOURCE.HISTORY,
-          { url: "http://example.com/" }
-        ),
+        new UrlbarResult({
+          type: UrlbarUtils.RESULT_TYPE.URL,
+          source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+          payload: { url: "http://example.com/" },
+        }),
       ],
     });
   }

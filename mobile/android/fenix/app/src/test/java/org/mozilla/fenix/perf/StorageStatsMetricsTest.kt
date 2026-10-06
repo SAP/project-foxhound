@@ -13,13 +13,13 @@ import io.mockk.every
 import io.mockk.impl.annotations.RelaxedMockK
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 import org.mozilla.fenix.GleanMetrics.StorageStats as Metrics
 
 @RunWith(RobolectricTestRunner::class) // gleanTestRule

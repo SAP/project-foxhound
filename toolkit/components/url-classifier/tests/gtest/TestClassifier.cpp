@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +6,8 @@
 #include "LookupCacheV4.h"
 
 #include "Common.h"
+
+#define GTEST_SAFEBROWSING_DIR "safebrowsing"_ns
 
 static void TestReadNoiseEntries(RefPtr<Classifier> classifier,
                                  const nsCString& aTable, const nsCString& aURL,
@@ -80,4 +81,23 @@ TEST(UrlClassifierClassifier, ReadNoiseEntriesV2)
   << "Fail to build LookupCache";
 
   TestReadNoiseEntries(classifier, GTEST_TABLE_V2, "helloworld.com/"_ns, array);
+}
+
+TEST(Classifier, GetPrivateStoreDirectory)
+{
+  nsCOMPtr<nsIFile> file;
+  NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR, getter_AddRefs(file));
+  file->AppendNative(GTEST_SAFEBROWSING_DIR);
+
+  nsCOMPtr<nsIFile> privateStoreDirectory;
+  nsresult rv = Classifier::GetPrivateStoreDirectory(
+      file, "goog-phish-proto"_ns, "google5"_ns,
+      getter_AddRefs(privateStoreDirectory));
+  ASSERT_TRUE(rv == NS_OK)
+  << "Fail to get private store directory";
+
+  nsAutoString leafName;
+  privateStoreDirectory->GetLeafName(leafName);
+  EXPECT_TRUE(leafName.Equals(u"google4"_ns))
+      << "The directory name is not google4 for google5 provider";
 }

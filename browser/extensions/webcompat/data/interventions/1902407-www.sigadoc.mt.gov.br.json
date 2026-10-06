@@ -1,0 +1,17 @@
+{
+  "label": "www.sigadoc.mt.gov.br",
+  "bugs": {
+    "1902407": {
+      "issue": "unsupported-warning",
+      "matches": ["*://www.sigadoc.mt.gov.br/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "content_scripts": {
+        "js": ["use_chrome_useragent.js", "define_minimal_window_chrome.js"]
+      }
+    }
+  ]
+}

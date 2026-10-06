@@ -9,9 +9,11 @@ add_task(async function () {
   //  in: 48x48 ico, 56646 bytes.
   // (howstuffworks.com icon, contains 13 icons with sizes from 16x16 to
   // 48x48 in varying depths)
-  let pageURI = NetUtil.newURI("http://places.test/page/");
+  let pageURI = Services.io.newURI("http://places.test/page/");
   await PlacesTestUtils.addVisits(pageURI);
-  let faviconURI = NetUtil.newURI("http://places.test/icon/favicon-multi.ico");
+  let faviconURI = Services.io.newURI(
+    "http://places.test/icon/favicon-multi.ico"
+  );
   // Fake window.
   let win = { devicePixelRatio: 1.0 };
   let icoDataURL = await readFileDataAsDataURL(

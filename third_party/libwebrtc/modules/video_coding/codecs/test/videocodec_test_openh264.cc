@@ -12,7 +12,9 @@
 #include <vector>
 
 #include "api/test/create_videocodec_test_fixture.h"
+#include "api/test/videocodec_test_fixture.h"
 #include "media/base/media_constants.h"
+#include "modules/video_coding/codecs/h264/include/h264_globals.h"
 #include "modules/video_coding/codecs/test/videocodec_test_fixture_impl.h"
 #include "test/gtest.h"
 #include "test/testsupport/file_utils.h"
@@ -41,17 +43,28 @@ TEST(VideoCodecTestOpenH264, ConstantHighBitrate) {
   auto frame_checker =
       std::make_unique<VideoCodecTestFixtureImpl::H264KeyframeChecker>();
   auto config = CreateConfig();
-  config.SetCodecSettings(cricket::kH264CodecName, 1, 1, 1, false, true, false,
+  config.SetCodecSettings(webrtc::kH264CodecName, 1, 1, 1, false, true, false,
                           kCifWidth, kCifHeight);
   config.encoded_frame_checker = frame_checker.get();
   auto fixture = CreateVideoCodecTestFixture(config);
 
-  std::vector<RateProfile> rate_profiles = {{500, 30, 0}};
+  std::vector<RateProfile> rate_profiles = {
+      {.target_kbps = 500, .input_fps = 30, .frame_num = 0}};
 
   std::vector<RateControlThresholds> rc_thresholds = {
-      {5, 1, 0, 0.1, 0.2, 0.1, 0, 1}};
+      {.max_avg_bitrate_mismatch_percent = 5,
+       .max_time_to_reach_target_bitrate_sec = 1,
+       .max_avg_framerate_mismatch_percent = 0,
+       .max_avg_buffer_level_sec = 0.1,
+       .max_max_key_frame_delay_sec = 0.2,
+       .max_max_delta_frame_delay_sec = 0.1,
+       .max_num_spatial_resizes = 0,
+       .max_num_key_frames = 1}};
 
-  std::vector<QualityThresholds> quality_thresholds = {{37, 35, 0.93, 0.91}};
+  std::vector<QualityThresholds> quality_thresholds = {{.min_avg_psnr = 37,
+                                                        .min_min_psnr = 35,
+                                                        .min_avg_ssim = 0.93,
+                                                        .min_min_ssim = 0.91}};
 
   fixture->RunTest(rate_profiles, &rc_thresholds, &quality_thresholds, nullptr);
 }
@@ -65,17 +78,28 @@ TEST(VideoCodecTestOpenH264, SingleNalUnit) {
   config.h264_codec_settings.packetization_mode =
       H264PacketizationMode::SingleNalUnit;
   config.max_payload_size_bytes = 500;
-  config.SetCodecSettings(cricket::kH264CodecName, 1, 1, 1, false, true, false,
+  config.SetCodecSettings(webrtc::kH264CodecName, 1, 1, 1, false, true, false,
                           kCifWidth, kCifHeight);
   config.encoded_frame_checker = frame_checker.get();
   auto fixture = CreateVideoCodecTestFixture(config);
 
-  std::vector<RateProfile> rate_profiles = {{500, 30, 0}};
+  std::vector<RateProfile> rate_profiles = {
+      {.target_kbps = 500, .input_fps = 30, .frame_num = 0}};
 
   std::vector<RateControlThresholds> rc_thresholds = {
-      {5, 1, 0, 0.1, 0.2, 0.1, 0, 1}};
+      {.max_avg_bitrate_mismatch_percent = 5,
+       .max_time_to_reach_target_bitrate_sec = 1,
+       .max_avg_framerate_mismatch_percent = 0,
+       .max_avg_buffer_level_sec = 0.1,
+       .max_max_key_frame_delay_sec = 0.2,
+       .max_max_delta_frame_delay_sec = 0.1,
+       .max_num_spatial_resizes = 0,
+       .max_num_key_frames = 1}};
 
-  std::vector<QualityThresholds> quality_thresholds = {{37, 35, 0.93, 0.91}};
+  std::vector<QualityThresholds> quality_thresholds = {{.min_avg_psnr = 37,
+                                                        .min_min_psnr = 35,
+                                                        .min_avg_ssim = 0.93,
+                                                        .min_min_ssim = 0.91}};
 
   BitstreamThresholds bs_thresholds = {config.max_payload_size_bytes};
 

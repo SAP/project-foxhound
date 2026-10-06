@@ -1,0 +1,18 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="16dp"
+    android:height="16dp"
+    android:viewportWidth="16"
+    android:viewportHeight="16">
+    <group>
+        <clip-path android:pathData="M0,0h16v16h-16z" />
+        <path
+            android:fillColor="#B833E1"
+            android:pathData="M8,16C12.418,16 16,12.418 16,8C16,3.582 12.418,0 8,0C3.582,0 0,3.582 0,8C0,12.418 3.582,16 8,16Z" />
+        <path
+            android:fillColor="#ffffff"
+            android:pathData="M11.87,8.51C11.55,8.9 11.05,9.15 10.5,9.15C9.95,9.15 9.45,8.9 9.13,8.51C8.96,8.31 8.96,7.99 9.13,7.78C9.45,7.39 9.95,7.14 10.5,7.14C11.05,7.14 11.55,7.39 11.87,7.78C12.04,7.98 12.04,8.3 11.87,8.51ZM6.87,8.51C6.55,8.9 6.05,9.15 5.5,9.15C4.95,9.15 4.45,8.9 4.13,8.51C3.96,8.31 3.96,7.99 4.13,7.78C4.45,7.39 4.95,7.14 5.5,7.14C6.05,7.14 6.55,7.39 6.87,7.78C7.04,7.98 7.04,8.3 6.87,8.51ZM12.95,6.51C12.97,6.02 12.64,5.57 12.16,5.46C10.96,5.19 9.71,5.53 8.81,6.36L8.66,6.5C8.48,6.67 8.24,6.76 8,6.76C7.76,6.76 7.52,6.67 7.34,6.5L7.19,6.36C6.29,5.52 5.04,5.18 3.84,5.45C3.36,5.56 3.02,6 3.05,6.49C2.93,6.98 3.12,8.78 3.22,9.06C3.44,10.2 4.37,11.06 5.49,11.06C6.05,11.06 6.56,10.84 6.96,10.48L7.2,10.27C7.65,9.88 8.31,9.88 8.77,10.26L9.14,10.56C9.53,10.87 10,11.06 10.52,11.06C11.64,11.06 12.58,10.2 12.79,9.06C12.9,8.78 13.09,6.99 12.96,6.49L12.95,6.51Z" />
+    </group>
+</vector>

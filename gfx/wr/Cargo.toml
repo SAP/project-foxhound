@@ -10,7 +10,7 @@ resolver = "2"
 
 [workspace.dependencies]
 gleam = "0.15.1"
-glean = "=64.5.1"
+glean = "=67.3.2"
 
 [profile.release]
 debug = true
@@ -28,6 +28,4 @@ opt-level = 2
 
 [patch.crates-io]
 firefox-on-glean = { path = "fog" }
-# use a patched version of glutin that works on android
-glutin = { version = "0.28", git = "https://github.com/jamienicol/glutin", branch="wr" }
 wr_malloc_size_of = { path = "wr_malloc_size_of" }

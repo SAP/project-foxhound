@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!-- Name of the "notification channel" used for displaying download notification. See https://developer.android.com/training/notify-user/channels -->
   <string name="mozac_feature_downloads_notification_channel">Жүктемелер</string>
@@ -19,7 +26,7 @@
     Alert dialog confirmation before downloading a previously downloaded file, this is the title.
     %1$s will be replaced with the size of the file.
   -->
-  <string name="mozac_feature_downloads_again_dialog_title" tools:ignore="UnusedResources">Файлды қайта жүктеп алу керек пе? (%1$s)</string>
+  <string name="mozac_feature_downloads_again_dialog_title">Файлды қайта жүктеп алу керек пе? (%1$s)</string>
   <!--
     Alert dialog confirmation before downloading a file, this is the title.
     %1$s will be replaced with the size of the file.
@@ -27,17 +34,21 @@
   <string name="mozac_feature_downloads_dialog_title_3">Файлды жүктеп алу керек пе? (%1$s)</string>
   <!-- This string is used as the title for the download confirmation dialog when the size of the file is not known. -->
   <string name="mozac_feature_downloads_dialog_title_with_unknown_size">Файлды жүктеп алу керек пе?</string>
+  <!-- Alert dialog confirmation before downloading a previously downloaded file, this is the title when the size of the file is not known. -->
+  <string name="mozac_feature_downloads_again_dialog_title_with_unknown_size">Файлды қайта жүктеп алу керек пе?</string>
   <!-- Alert dialog confirmation before download a file, this is the positive action. -->
   <string name="mozac_feature_downloads_dialog_download">Жүктеп алу</string>
   <!-- Alert dialog confirmation before downloading a file again, this is the positive action. -->
-  <string name="mozac_feature_downloads_dialog_download_again" tools:ignore="UnusedResources">Қайта жүктеп алу</string>
+  <string name="mozac_feature_downloads_dialog_download_again">Қайта жүктеп алу</string>
   <!-- Alert dialog confirmation before download a file, this is the negative action. -->
   <string name="mozac_feature_downloads_dialog_cancel">Бас тарту</string>
   <!--
     Alert dialog confirmation before downloading a previously downloaded file, this is the description.
     %1$s will be replaced with the name of the file.
   -->
-  <string name="mozac_feature_downloads_already_exists_dialog_title" tools:ignore="UnusedResources">%1$s бар болып тұр.</string>
+  <string name="mozac_feature_downloads_already_exists_dialog_title">%1$s бар болып тұр.</string>
+  <!-- Alert dialog confirmation before downloading a previously downloaded file, this is the neutral action that proposes to open the file instead. -->
+  <string name="mozac_feature_downloads_open_existing_file">Бар болып тұрған файлды ашу</string>
   <!--
     Alert dialog confirmation before downloading a file without network connection, this is the description.
     %1$s will be replaced with the name of the file.

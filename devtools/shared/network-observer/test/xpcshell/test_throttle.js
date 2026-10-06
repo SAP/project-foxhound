@@ -10,17 +10,17 @@ const { NetworkThrottleManager } = ChromeUtils.importESModule(
 );
 const nsIScriptableInputStream = Ci.nsIScriptableInputStream;
 
-function TestStreamListener() {
-  this.state = "initial";
-}
-TestStreamListener.prototype = {
+class TestStreamListener {
+  constructor() {
+    this.state = "initial";
+  }
   onStartRequest() {
     this.setState("start");
-  },
+  }
 
   onStopRequest() {
     this.setState("stop");
-  },
+  }
 
   onDataAvailable(request, inputStream, offset, count) {
     const sin = Cc["@mozilla.org/scriptableinputstream;1"].createInstance(
@@ -29,7 +29,7 @@ TestStreamListener.prototype = {
     sin.init(inputStream);
     this.data = sin.read(count);
     this.setState("data");
-  },
+  }
 
   setState(state) {
     this.state = state;
@@ -37,7 +37,7 @@ TestStreamListener.prototype = {
       this._deferred.resolve(state);
       this._deferred = null;
     }
-  },
+  }
 
   onStateChanged() {
     if (!this._deferred) {
@@ -49,34 +49,34 @@ TestStreamListener.prototype = {
       this._deferred = { resolve, reject, promise };
     }
     return this._deferred.promise;
-  },
-};
-
-function TestChannel() {
-  this.state = "initial";
-  this.testListener = new TestStreamListener();
-  this._throttleQueue = null;
+  }
 }
-TestChannel.prototype = {
+
+class TestChannel {
+  constructor() {
+    this.state = "initial";
+    this.testListener = new TestStreamListener();
+    this._throttleQueue = null;
+  }
   QueryInterface() {
     return this;
-  },
+  }
 
   get throttleQueue() {
     return this._throttleQueue;
-  },
+  }
 
   set throttleQueue(q) {
     this._throttleQueue = q;
     this.state = "throttled";
-  },
+  }
 
   setNewListener(listener) {
     this.listener = listener;
     this.state = "listener";
     return this.testListener;
-  },
-};
+  }
+}
 
 add_task(async function () {
   const throttler = new NetworkThrottleManager({

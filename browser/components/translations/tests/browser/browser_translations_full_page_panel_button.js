@@ -75,3 +75,58 @@ add_task(async function test_button_visible() {
   await removeTab();
   await cleanup();
 });
+
+/**
+ * Test that the Translations URL-bar button is hidden and shown as expected
+ * when navigating to and from translatable pages vs. internal "about:*" pages.
+ */
+add_task(async function test_button_hidden_on_about_pages() {
+  const { cleanup, tab: spanishPageTab } = await loadTestPage({
+    page: SPANISH_PAGE_URL,
+    languagePairs: LANGUAGE_PAIRS,
+  });
+
+  const ABOUT_PAGE_URLS = [
+    "about:about",
+    "about:memory",
+    "about:mozilla",
+    "about:settings",
+    "about:support",
+    "about:translations",
+  ];
+
+  for (const url of ABOUT_PAGE_URLS) {
+    await FullPageTranslationsTestUtils.assertTranslationsButton(
+      { button: true },
+      "The button should be visible on the Spanish page."
+    );
+
+    const { tab: aboutPageTab } = await addTab(
+      url,
+      `Creating a new ${url} tab.`
+    );
+
+    await FullPageTranslationsTestUtils.assertTranslationsButton(
+      { button: false },
+      `The button should be hidden on ${url}.`
+    );
+
+    await switchTab(spanishPageTab, "Switching to Spanish-page tab.");
+
+    await FullPageTranslationsTestUtils.assertTranslationsButton(
+      { button: true },
+      "The button should be visible again on the Spanish page."
+    );
+
+    await switchTab(aboutPageTab, `Switching to ${url} tab`);
+
+    await FullPageTranslationsTestUtils.assertTranslationsButton(
+      { button: false },
+      `The button should remain hidden on ${url}.`
+    );
+
+    await BrowserTestUtils.removeTab(aboutPageTab);
+  }
+
+  await cleanup();
+});

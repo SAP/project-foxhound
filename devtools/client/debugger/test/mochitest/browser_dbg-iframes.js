@@ -48,17 +48,15 @@ add_task(async function () {
   await waitFor(() => dbg.toolbox.isHighlighted("jsdebugger"));
   ok(true, "Debugger is highlighted when paused");
 
-  if (isFissionEnabled() || isEveryFrameTargetEnabled()) {
-    info("Remove the iframe and wait for resume");
-    await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
-      const iframe = content.document.querySelector("iframe");
-      iframe.remove();
-    });
-    await waitForResumed(dbg);
-    await waitFor(() => !dbg.toolbox.isHighlighted("jsdebugger"));
-    ok(true, "Debugger is no longer highlighted when resumed");
+  info("Remove the iframe and wait for resume");
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+    const iframe = content.document.querySelector("iframe");
+    iframe.remove();
+  });
+  await waitForResumed(dbg);
+  await waitFor(() => !dbg.toolbox.isHighlighted("jsdebugger"));
+  ok(true, "Debugger is no longer highlighted when resumed");
 
-    info("Wait for reload to complete after resume");
-    await onReloaded;
-  }
+  info("Wait for reload to complete after resume");
+  await onReloaded;
 });

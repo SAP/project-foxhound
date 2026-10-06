@@ -12,7 +12,7 @@ add_task(async function () {
   const shadowRoot = SpecialPowers.wrap(input).openOrClosedShadowRoot;
 
   EventUtils.synthesizeMouseAtCenter(
-    shadowRoot.getElementById("calendar-button"),
+    shadowRoot.getElementById("picker-button"),
     {}
   );
 

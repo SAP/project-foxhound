@@ -6,7 +6,7 @@ package org.mozilla.fenix.settings.quicksettings
 
 import io.mockk.MockKAnnotations
 import io.mockk.every
-import io.mockk.impl.annotations.MockK
+import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.mockk
 import mozilla.components.concept.engine.permission.SitePermissions
 import mozilla.components.concept.engine.permission.SitePermissions.AutoplayStatus
@@ -25,7 +25,7 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class AutoplayValueTest {
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var settings: Settings
 
     @Before
@@ -306,6 +306,8 @@ class AutoplayValueTest {
         assertEquals(sitePermissions.notification, result.notification)
         assertEquals(sitePermissions.localStorage, result.localStorage)
         assertEquals(sitePermissions.mediaKeySystemAccess, result.mediaKeySystemAccess)
+        assertEquals(sitePermissions.localDeviceAccess, result.localDeviceAccess)
+        assertEquals(sitePermissions.localNetworkAccess, result.localNetworkAccess)
     }
 
     @Test
@@ -333,6 +335,8 @@ class AutoplayValueTest {
         assertEquals(sitePermissions.notification, result.notification)
         assertEquals(sitePermissions.localStorage, result.localStorage)
         assertEquals(sitePermissions.mediaKeySystemAccess, result.mediaKeySystemAccess)
+        assertEquals(sitePermissions.localDeviceAccess, result.localDeviceAccess)
+        assertEquals(sitePermissions.localNetworkAccess, result.localNetworkAccess)
     }
 
     @Test
@@ -360,6 +364,8 @@ class AutoplayValueTest {
         assertEquals(sitePermissions.notification, result.notification)
         assertEquals(sitePermissions.localStorage, result.localStorage)
         assertEquals(sitePermissions.mediaKeySystemAccess, result.mediaKeySystemAccess)
+        assertEquals(sitePermissions.localDeviceAccess, result.localDeviceAccess)
+        assertEquals(sitePermissions.localNetworkAccess, result.localNetworkAccess)
     }
 
     @Test
@@ -381,5 +387,7 @@ class AutoplayValueTest {
         persistentStorage = Action.ASK_TO_ALLOW,
         mediaKeySystemAccess = Action.ASK_TO_ALLOW,
         crossOriginStorageAccess = Action.ASK_TO_ALLOW,
+        localDeviceAccess = Action.ASK_TO_ALLOW,
+        localNetworkAccess = Action.ASK_TO_ALLOW,
     )
 }

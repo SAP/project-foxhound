@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -13,7 +13,7 @@ const instance = new Temporal.PlainYearMonth(2000, 5);
 ["constrain", "reject"].forEach((overflow) => {
   assert.throws(
     RangeError,
-    () => instance.subtract({ hours: 1, minutes: -30 }, { overflow }),
+    () => instance.subtract({ years: 1, months: -3 }, { overflow }),
     `mixed positive and negative values always throw (overflow = "${overflow}")`
   );
 });

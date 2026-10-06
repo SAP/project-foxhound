@@ -8,7 +8,9 @@ include PerformanceTimingTypes;
 include NeckoChannelParams;
 
 include "mozilla/dom/FetchIPCTypes.h";
+include "mozilla/dom/IPCBlobUtils.h";
 include "mozilla/ipc/TransportSecurityInfoUtils.h";
+include "mozilla/ipc/URIUtils.h";
 
 using mozilla::dom::HeadersGuardEnum from "mozilla/dom/HeadersBinding.h";
 using mozilla::dom::ReferrerPolicy from "mozilla/dom/ReferrerPolicyBinding.h";
@@ -23,6 +25,8 @@ using nsContentPolicyType from "nsIContentPolicy.h";
 using nsILoadInfo::CrossOriginEmbedderPolicy from "nsILoadInfo.h";
 [RefCounted] using class mozilla::RemoteLazyInputStream from "mozilla/RemoteLazyInputStream.h";
 [RefCounted] using class nsITransportSecurityInfo from "nsITransportSecurityInfo.h";
+[RefCounted] using class nsIURI from "nsIURI.h";
+[RefCounted] using class mozilla::dom::BlobImpl from "mozilla/dom/BlobImpl.h";
 
 namespace mozilla {
 namespace dom {
@@ -54,7 +58,7 @@ union BodyStreamVariant {
 
 struct IPCInternalRequest {
   nsCString method;
-  nsCString[] urlList;
+  nsIURI[] urlList;
   HeadersGuardEnum headersGuard;
   HeadersEntry[] headers;
   BodyStreamVariant? body;
@@ -83,7 +87,7 @@ struct IPCInternalRequest {
 
 struct InternalResponseMetadata {
   ResponseType type;
-  nsCString[] urlList;
+  nsIURI[] urlList;
   uint16_t status;
   nsCString statusText;
   HeadersGuardEnum headersGuard;
@@ -92,7 +96,7 @@ struct InternalResponseMetadata {
   nsCString alternativeDataType;
   nullable nsITransportSecurityInfo securityInfo;
   PrincipalInfo? principalInfo;
-  nsCString bodyBlobURISpec;
+  nullable BlobImpl bodyBlobImpl;
   nsString bodyLocalPath;
   RequestCredentials credentialsMode;
 };

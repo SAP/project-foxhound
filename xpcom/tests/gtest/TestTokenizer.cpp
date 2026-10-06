@@ -1,12 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/HelperMacros.h"
 #include "mozilla/Tokenizer.h"
 #include "mozilla/IncrementalTokenizer.h"
-#include "mozilla/Unused.h"
 #include "gtest/gtest.h"
 
 using namespace mozilla;
@@ -1267,7 +1265,7 @@ TEST(Tokenizer, IncrementalBuffering1)
   custom = i.AddCustomToken("aaa", Tokenizer::CASE_SENSITIVE);
   // This externally unused token is added only to check the internal algorithm
   // does work correctly as expected when there are two different length tokens.
-  Unused << i.AddCustomToken("bb", Tokenizer::CASE_SENSITIVE);
+  (void)i.AddCustomToken("bb", Tokenizer::CASE_SENSITIVE);
   i.SetTokenizingMode(Tokenizer::Mode::CUSTOM_ONLY);
 
   i.FeedInput("01234"_ns);
@@ -1323,7 +1321,7 @@ TEST(Tokenizer, IncrementalBuffering2)
   custom = i.AddCustomToken("aaa", Tokenizer::CASE_SENSITIVE);
   // This externally unused token is added only to check the internal algorithm
   // does work correctly as expected when there are two different length tokens.
-  Unused << i.AddCustomToken("bbbbb", Tokenizer::CASE_SENSITIVE);
+  (void)i.AddCustomToken("bbbbb", Tokenizer::CASE_SENSITIVE);
   i.SetTokenizingMode(Tokenizer::Mode::CUSTOM_ONLY);
 
   i.FeedInput("01234"_ns);

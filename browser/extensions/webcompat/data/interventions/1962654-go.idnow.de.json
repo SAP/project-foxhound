@@ -1,0 +1,15 @@
+{
+  "label": "go.idnow.de",
+  "bugs": {
+    "1962654": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://go.idnow.de/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["linux"],
+      "ua_string": ["change_OS_to_Windows"]
+    }
+  ]
+}

@@ -1,10 +1,8 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsIReflowCallback_h___
-#define nsIReflowCallback_h___
+#ifndef nsIReflowCallback_h_
+#define nsIReflowCallback_h_
 
 /**
  * Reflow callback interface.
@@ -31,4 +29,4 @@ class nsIReflowCallback {
   virtual void ReflowCallbackCanceled() = 0;
 };
 
-#endif /* nsIReflowCallback_h___ */
+#endif /* nsIReflowCallback_h_ */

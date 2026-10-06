@@ -2,7 +2,7 @@
 Inspecting web sockets
 ======================
 
-Since Firefox 71, the :doc:`Network Monitor <../index>` has had the ability to inspect `web socket <https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API>`_ connections. This article explores what functionality the Web Socket Inspector makes available.
+The :doc:`Network Monitor <../index>` has the ability to inspect `web socket <https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API>`_ connections. This article explores what functionality the Web Socket Inspector makes available.
 
 Accessing the inspector
 ***********************
@@ -60,7 +60,7 @@ The following filters are available:
      - Displays only messages received from the server (by default, except control messages).
 
    * - **Control**
-     - (Available starting in Firefox 76). Displays messages for control frames (Ping, Pong, or Close). This filter can be combined with the others, to display, for example, only messages for control frames sent by the browser.
+     - Displays messages for control frames (Ping, Pong, or Close). This filter can be combined with the others, to display, for example, only messages for control frames sent by the browser.
 
 Columns in the Response pane
 ****************************

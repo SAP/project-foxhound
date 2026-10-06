@@ -13,33 +13,57 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/functional/any_invocable.h"
+#include "absl/memory/memory.h"
+#include "absl/strings/string_view.h"
 #include "api/audio/builtin_audio_processing_builder.h"
+#include "api/create_modular_peer_connection_factory.h"
 #include "api/enable_media_with_defaults.h"
-#include "api/field_trials_view.h"
+#include "api/environment/environment.h"
 #include "api/jsep.h"
+#include "api/make_ref_counted.h"
+#include "api/media_stream_interface.h"
 #include "api/peer_connection_interface.h"
+#include "api/rtc_error.h"
 #include "api/rtc_event_log/rtc_event_log_factory.h"
+#include "api/scoped_refptr.h"
 #include "api/sequence_checker.h"
+#include "api/stats/rtc_stats_report.h"
 #include "api/stats/rtcstats_objects.h"
-#include "api/task_queue/default_task_queue_factory.h"
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/task_queue/task_queue_base.h"
+#include "api/test/rtc_error_matchers.h"
+#include "api/test/time_controller.h"
 #include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
 #include "logging/rtc_event_log/fake_rtc_event_log_factory.h"
+#include "media/base/stream_params.h"
 #include "pc/peer_connection_factory.h"
+#include "pc/session_description.h"
 #include "pc/test/fake_audio_capture_module.h"
+#include "pc/test/mock_peer_connection_observers.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/fake_network.h"
+#include "rtc_base/firewall_socket_server.h"
+#include "rtc_base/logging.h"
 #include "rtc_base/socket_server.h"
 #include "rtc_base/thread.h"
+#include "rtc_base/virtual_socket_server.h"
+#include "system_wrappers/include/metrics.h"
+#include "test/create_test_environment.h"
+#include "test/gmock.h"
 #include "test/gtest.h"
+#include "test/time_controller/simulated_time_controller.h"
+#include "test/wait_until.h"
 
 namespace webrtc {
+
+using testing::NotNull;
 
 PeerConnectionInterface::RTCOfferAnswerOptions IceRestartOfferAnswerOptions() {
   PeerConnectionInterface::RTCOfferAnswerOptions options;
@@ -78,6 +102,120 @@ void SetSdpType(std::unique_ptr<SessionDescriptionInterface>& sdp,
   std::string str;
   sdp->ToString(&str);
   sdp = CreateSessionDescription(sdpType, str);
+}
+
+scoped_refptr<MockStatsObserver>
+PeerConnectionIntegrationWrapper::OldGetStatsForTrack(
+    MediaStreamTrackInterface* track) {
+  auto observer = make_ref_counted<MockStatsObserver>();
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+  EXPECT_TRUE(peer_connection_->GetStats(
+      observer.get(), nullptr,
+      PeerConnectionInterface::kStatsOutputLevelStandard));
+#pragma clang diagnostic pop
+  EXPECT_THAT(test_->GetWaiter().Until([&] { return observer->called(); },
+                                       ::testing::IsTrue()),
+              IsRtcOk());
+  return observer;
+}
+
+scoped_refptr<const RTCStatsReport>
+PeerConnectionIntegrationWrapper::NewGetStats(WaitUntilSettings settings) {
+  auto callback = make_ref_counted<MockRTCStatsCollectorCallback>();
+  peer_connection_->GetStats(callback.get());
+  EXPECT_THAT(test_->GetWaiter(settings).Until(
+                  [&] { return callback->called(); }, ::testing::IsTrue()),
+              IsRtcOk());
+  return callback->report();
+}
+
+std::unique_ptr<SessionDescriptionInterface>
+PeerConnectionIntegrationWrapper::CreateOfferAndWait() {
+  auto observer = make_ref_counted<MockCreateSessionDescriptionObserver>();
+  pc()->CreateOffer(observer.get(), offer_answer_options_);
+  EXPECT_TRUE(test_->GetWaiter().Until([&] { return observer->called(); }));
+  if (!observer->result()) {
+    return nullptr;
+  }
+  auto description = observer->MoveDescription();
+  if (generated_sdp_munger_) {
+    generated_sdp_munger_(description);
+  }
+  return description;
+}
+
+bool PeerConnectionIntegrationWrapper::SetRemoteDescription(
+    std::unique_ptr<SessionDescriptionInterface> desc) {
+  auto observer = make_ref_counted<FakeSetRemoteDescriptionObserver>();
+  std::string sdp;
+  EXPECT_TRUE(desc->ToString(&sdp));
+  RTC_LOG(LS_INFO) << debug_name_
+                   << ": SetRemoteDescription SDP: type=" << desc->GetType()
+                   << " contents=\n"
+                   << sdp;
+  pc()->SetRemoteDescription(std::move(desc), observer);
+  RemoveUnusedVideoRenderers();
+  EXPECT_THAT(test_->GetWaiter().Until([&] { return observer->called(); },
+                                       ::testing::IsTrue()),
+              IsRtcOk());
+  auto err = observer->error();
+  if (!err.ok()) {
+    RTC_LOG(LS_WARNING) << debug_name_
+                        << ": SetRemoteDescription error: " << err.message();
+  }
+  return observer->error().ok();
+}
+
+bool PeerConnectionIntegrationWrapper::SetLocalDescriptionAndSendSdpMessage(
+    std::unique_ptr<SessionDescriptionInterface> desc) {
+  auto observer = make_ref_counted<MockSetSessionDescriptionObserver>();
+  RTC_LOG(LS_INFO) << debug_name_ << ": SetLocalDescriptionAndSendSdpMessage";
+  SdpType type = desc->GetType();
+  std::string sdp;
+  EXPECT_TRUE(desc->ToString(&sdp));
+  RTC_LOG(LS_INFO) << debug_name_ << ": local SDP type=" << desc->GetType()
+                   << " contents=\n"
+                   << sdp;
+  pc()->SetLocalDescription(observer.get(), desc.release());
+  RemoveUnusedVideoRenderers();
+  SendSdpMessage(type, sdp);
+  EXPECT_THAT(test_->GetWaiter().Until([&] { return observer->called(); },
+                                       ::testing::IsTrue()),
+              IsRtcOk());
+  return true;
+}
+
+std::unique_ptr<SessionDescriptionInterface>
+PeerConnectionIntegrationWrapper::CreateAnswer() {
+  auto observer = make_ref_counted<MockCreateSessionDescriptionObserver>();
+  pc()->CreateAnswer(observer.get(), offer_answer_options_);
+  EXPECT_THAT(test_->GetWaiter().Until([&] { return observer->called(); },
+                                       ::testing::IsTrue()),
+              IsRtcOk());
+  if (!observer->result()) {
+    return nullptr;
+  }
+  auto description = observer->MoveDescription();
+  if (generated_sdp_munger_) {
+    generated_sdp_munger_(description);
+  }
+  return description;
+}
+
+void PeerConnectionIntegrationWrapper::ReceiveIceMessage(
+    const std::string& sdp_mid,
+    int sdp_mline_index,
+    const std::string& msg) {
+  RTC_LOG(LS_INFO) << debug_name_ << ": ReceiveIceMessage";
+  std::optional<RTCError> result;
+  pc()->AddIceCandidate(absl::WrapUnique(CreateIceCandidate(
+                            sdp_mid, sdp_mline_index, msg, nullptr)),
+                        [&result](RTCError r) { result = r; });
+  EXPECT_THAT(test_->GetWaiter().Until([&] { return result.has_value(); },
+                                       ::testing::IsTrue()),
+              IsRtcOk());
+  EXPECT_TRUE(result.value().ok());
 }
 
 int FindFirstMediaStatsIndexByKind(
@@ -134,8 +272,11 @@ TimeDelta TaskQueueMetronome::TickPeriod() const {
 void PeerConnectionIntegrationWrapper::StartWatchingDelayStats() {
   // Get the baseline numbers for audio_packets and audio_delay.
   auto received_stats = NewGetStats();
-  auto rtp_stats =
-      received_stats->GetStatsOfType<RTCInboundRtpStreamStats>()[0];
+  ASSERT_THAT(received_stats, NotNull());
+  auto inbound_stats =
+      received_stats->GetStatsOfType<RTCInboundRtpStreamStats>();
+  ASSERT_FALSE(inbound_stats.empty());
+  auto rtp_stats = inbound_stats[0];
   ASSERT_TRUE(rtp_stats->relative_packet_arrival_delay.has_value());
   ASSERT_TRUE(rtp_stats->packets_received.has_value());
   rtp_stats_id_ = rtp_stats->id();
@@ -195,7 +336,9 @@ void PeerConnectionIntegrationWrapper::UpdateDelayStats(std::string tag,
   // TODO(https://crbug.com/webrtc/15393): Improve audio quality during
   // renegotiation so that we can reduce these thresholds, 99% is not even
   // close to the 20% deemed unacceptable above or the 0% that would be ideal.
-  if (delta_samples > 0) {
+  // Require at least 2000 samples (roughly 2x 20ms packets).
+  if (delta_samples >= 2000) {
+    audio_delay_stats_percentage_checked_ = true;
 #if !defined(NDEBUG)
     EXPECT_LT(1.0 * delta_concealed / delta_samples, 0.99)
         << "Concealed " << delta_concealed << " of " << delta_samples
@@ -220,7 +363,6 @@ bool PeerConnectionIntegrationWrapper::Init(
     SocketServer* socket_server,
     Thread* network_thread,
     Thread* worker_thread,
-    std::unique_ptr<FieldTrialsView> field_trials,
     std::unique_ptr<FakeRtcEventLogFactory> event_log_factory,
     bool reset_encoder_factory,
     bool reset_decoder_factory,
@@ -229,13 +371,15 @@ bool PeerConnectionIntegrationWrapper::Init(
   RTC_DCHECK(!peer_connection_);
   RTC_DCHECK(!peer_connection_factory_);
 
-  auto network_manager = std::make_unique<FakeNetworkManager>();
+  auto network_manager = std::make_unique<FakeNetworkManager>(network_thread);
   fake_network_manager_ = network_manager.get();
   fake_network_manager_->AddInterface(kDefaultLocalAddress);
 
   network_thread_ = network_thread;
 
-  fake_audio_capture_module_ = FakeAudioCaptureModule::Create();
+  fake_audio_capture_module_ =
+      FakeAudioCaptureModule::Create(test_->CreateThread("AudioCaptureThread"));
+
   if (!fake_audio_capture_module_) {
     return false;
   }
@@ -247,8 +391,7 @@ bool PeerConnectionIntegrationWrapper::Init(
   pc_factory_dependencies.signaling_thread = signaling_thread;
   pc_factory_dependencies.socket_factory = socket_server;
   pc_factory_dependencies.network_manager = std::move(network_manager);
-  pc_factory_dependencies.task_queue_factory = CreateDefaultTaskQueueFactory();
-  pc_factory_dependencies.trials = std::move(field_trials);
+  pc_factory_dependencies.env = env_;
   pc_factory_dependencies.decode_metronome =
       std::make_unique<TaskQueueMetronome>(TimeDelta::Millis(8));
 
@@ -293,5 +436,131 @@ bool PeerConnectionIntegrationWrapper::Init(
   peer_connection_ = CreatePeerConnection(config, std::move(dependencies));
   return peer_connection_.get() != nullptr;
 }
+
+namespace internal {
+
+// Utility class for tests that run multiple operations that cause excessive
+// logging at the INFO level or below. Use to raise the logging level to e.g.
+// LS_WARNING or above. Once an instance of ScopedSetLoggingLevel goes out of
+// scope, the logging level is restored to what it was previously set to.
+class PeerConnectionIntegrationTestBase::ScopedSetLoggingLevel {
+ public:
+  explicit ScopedSetLoggingLevel(LoggingSeverity new_severity) {
+    LogMessage::LogToDebug(new_severity);
+  }
+  ~ScopedSetLoggingLevel() { LogMessage::LogToDebug(previous_severity_); }
+
+ private:
+  const LoggingSeverity previous_severity_ = LogMessage::GetLogToDebug();
+};
+
+PeerConnectionIntegrationTestBase::PeerConnectionIntegrationTestBase(
+    Environment env,
+    SdpSemantics sdp_semantics)
+    : sdp_semantics_(sdp_semantics),
+      env_(std::move(env)),
+      ss_(new VirtualSocketServer()),
+      fss_(new FirewallSocketServer(ss_.get(), nullptr, false)),
+      network_thread_(new Thread(fss_.get())),
+      worker_thread_(Thread::Create()) {
+  network_thread_->SetName("PCNetworkThread", this);
+  worker_thread_->SetName("PCWorkerThread", this);
+  RTC_CHECK(network_thread_->Start());
+  RTC_CHECK(worker_thread_->Start());
+  metrics::Reset();
+}
+
+PeerConnectionIntegrationTestBase::PeerConnectionIntegrationTestBase(
+    Environment env,
+    SdpSemantics sdp_semantics,
+    TimeController* time_controller)
+    : sdp_semantics_(sdp_semantics), env_(std::move(env)) {
+  ss_ = std::make_unique<VirtualSocketServer>();
+  fss_ = std::make_unique<FirewallSocketServer>(ss_.get(), nullptr, false);
+  network_thread_ = time_controller->CreateThreadWithSocketServer(
+      "PCNetworkThread", fss_.get());
+  worker_thread_ = time_controller->CreateThread("PCWorkerThread");
+  network_thread_->SetName("PCNetworkThread", this);
+  worker_thread_->SetName("PCWorkerThread", this);
+  metrics::Reset();
+}
+
+PeerConnectionIntegrationTestBase::~PeerConnectionIntegrationTestBase() {
+  // The PeerConnections should be deleted before the TurnCustomizers.
+  // A TurnPort is created with a raw pointer to a TurnCustomizer. The
+  // TurnPort has the same lifetime as the PeerConnection, so it's expected
+  // that the TurnCustomizer outlives the life of the PeerConnection or else
+  // when Send() is called it will hit a seg fault.
+  DestroyPeerConnections();
+}
+
+void PeerConnectionIntegrationTestBase::DestroyTurnServers() {
+  ExecuteTask(*network_thread(), [this] {
+    turn_servers_.clear();
+    turn_customizers_.clear();
+  });
+}
+
+void PeerConnectionIntegrationTestBase::DestroyThreads() {
+  worker_thread_.reset();
+  network_thread_.reset();
+}
+
+void PeerConnectionIntegrationTestBase::OverrideLoggingLevelForTest(
+    LoggingSeverity new_severity) {
+  RTC_DCHECK(!overridden_logging_level_);
+  overridden_logging_level_ =
+      std::make_unique<ScopedSetLoggingLevel>(new_severity);
+}
+
+std::unique_ptr<PeerConnectionIntegrationWrapper>
+PeerConnectionIntegrationTestBase::CreatePeerConnectionWrapperInternal(
+    const std::string& debug_name,
+    Environment env) {
+  return std::unique_ptr<PeerConnectionIntegrationWrapper>(
+      new PeerConnectionIntegrationWrapper(debug_name, env, this));
+}
+
+}  // namespace internal
+
+PeerConnectionIntegrationBaseTest::PeerConnectionIntegrationBaseTest(
+    SdpSemantics sdp_semantics)
+    : internal::PeerConnectionIntegrationTestBase(CreateTestEnvironment(),
+                                                  sdp_semantics) {}
+
+PeerConnectionIntegrationTestWithSimulatedTime::
+
+    PeerConnectionIntegrationTestWithSimulatedTime(SdpSemantics sdp_semantics)
+    : PeerConnectionIntegrationTestWithSimulatedTime(
+          sdp_semantics,
+          std::make_unique<GlobalSimulatedTimeController>(
+              Timestamp::Seconds(1000))) {}
+
+PeerConnectionIntegrationTestWithSimulatedTime::
+    ~PeerConnectionIntegrationTestWithSimulatedTime() {
+  DestroyPeerConnections();
+  DestroyTurnServers();
+  time_controller_->AdvanceTime(TimeDelta::Zero());
+  // Explicitly destroy threads before time_controller_ is destroyed.
+  // Simulated threads hold a pointer to the time controller and will
+  // attempt to unregister from it in their destructor. Since time_controller_
+  // is owned by this derived class, it will be destroyed BEFORE the base
+  // class destroys the threads, causing a crash if we don't do this here.
+  DestroyThreads();
+}
+
+PeerConnectionIntegrationTestWithSimulatedTime::
+    PeerConnectionIntegrationTestWithSimulatedTime(
+        SdpSemantics sdp_semantics,
+        std::unique_ptr<GlobalSimulatedTimeController> time_controller)
+    : internal::PeerConnectionIntegrationTestBase(
+          [](TimeController* tc) {
+            CreateTestEnvironmentOptions options;
+            options.time = tc;
+            return CreateTestEnvironment(std::move(options));
+          }(time_controller.get()),
+          sdp_semantics,
+          time_controller.get()),
+      time_controller_(std::move(time_controller)) {}
 
 }  // namespace webrtc

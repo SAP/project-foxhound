@@ -12,8 +12,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.withContext
 import mozilla.appservices.fxaclient.FxaClient
 import mozilla.appservices.fxaclient.FxaException
-import mozilla.appservices.fxaclient.FxaStateCheckerEvent
-import mozilla.appservices.fxaclient.FxaStateCheckerState
 import mozilla.appservices.syncmanager.SyncTelemetry
 import mozilla.components.concept.base.crash.CrashReporting
 import mozilla.components.concept.sync.AccountEvent
@@ -27,7 +25,7 @@ import mozilla.components.concept.sync.DeviceConstellation
 import mozilla.components.concept.sync.DeviceConstellationObserver
 import mozilla.components.concept.sync.DevicePushSubscription
 import mozilla.components.concept.sync.ServiceResult
-import mozilla.components.service.fxa.manager.AppServicesStateMachineChecker
+import mozilla.components.concept.sync.TabPrivacy
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.base.observer.Observable
 import mozilla.components.support.base.observer.ObserverRegistry
@@ -66,8 +64,8 @@ class FxaDeviceConstellation(
         None,
     }
 
-    @Suppress("ComplexMethod")
     @Throws(FxaPanicException::class)
+    @Suppress("CognitiveComplexMethod")
     override suspend fun finalizeDevice(
         authType: AuthType,
         config: DeviceConfig,
@@ -89,38 +87,24 @@ class FxaDeviceConstellation(
             ServiceResult.Ok
         } else {
             val capabilities = config.capabilities.map { it.into() }.toSet()
-            // Note: sending the event for the result to the the state machine checker is split
-            //       between here and `FxaAccountManager`
-            //    - This function reports successes and auth failures, since it's the only one that
-            //      knows if `initializeDevice()` or `EnsureDeviceCapabilities()` was called.
-            //    - `FxaAccountManager` reports other failures, since it runs this code inside
-            //      `withServiceRetries` so it's the only one that knows if the call will be retried
             if (finalizeAction == DeviceFinalizeAction.Initialize) {
                 try {
-                    AppServicesStateMachineChecker.checkInternalState(FxaStateCheckerState.InitializeDevice)
                     account.initializeDevice(config.name, config.type.into(), capabilities)
-                    AppServicesStateMachineChecker.handleInternalEvent(FxaStateCheckerEvent.InitializeDeviceSuccess)
                     ServiceResult.Ok
                 } catch (e: FxaPanicException) {
                     throw e
                 } catch (e: FxaUnauthorizedException) {
-                    AppServicesStateMachineChecker.handleInternalEvent(FxaStateCheckerEvent.CallError)
                     ServiceResult.AuthError
                 } catch (e: FxaException) {
                     ServiceResult.OtherError
                 }
             } else {
                 try {
-                    AppServicesStateMachineChecker.checkInternalState(FxaStateCheckerState.EnsureDeviceCapabilities)
                     account.ensureCapabilities(capabilities)
-                    AppServicesStateMachineChecker.handleInternalEvent(
-                        FxaStateCheckerEvent.EnsureDeviceCapabilitiesSuccess,
-                    )
                     ServiceResult.Ok
                 } catch (e: FxaPanicException) {
                     throw e
                 } catch (e: FxaUnauthorizedException) {
-                    AppServicesStateMachineChecker.handleInternalEvent(FxaStateCheckerEvent.EnsureCapabilitiesAuthError)
                     // Unless we've added a new capability, in practice 'ensureCapabilities' isn't
                     // actually expected to do any work: everything should have been done by initializeDevice.
                     // So if it did, and failed, let's report this so that we're aware of this!
@@ -187,7 +171,8 @@ class FxaDeviceConstellation(
         val result = handleFxaExceptions(logger, "sending device command", { Result.failure(it) }) {
             val result = when (outgoingCommand) {
                 is DeviceCommandOutgoing.SendTab -> {
-                    account.sendSingleTab(targetDeviceId, outgoingCommand.title, outgoingCommand.url)
+                    val isPrivate = outgoingCommand.privacy == TabPrivacy.Private
+                    account.sendSingleTab(targetDeviceId, outgoingCommand.title, outgoingCommand.url, isPrivate)
                     Result.success(true)
                 }
                 is DeviceCommandOutgoing.CloseTab -> {

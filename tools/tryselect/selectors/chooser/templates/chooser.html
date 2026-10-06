@@ -55,9 +55,9 @@
           <label class="multiselect filter-label" for={{ label }}>
             <span>
               {{ label }}
-              <input class="filter" type="checkbox" id={{ label }} name="{{ section.kind }}" value='{{ meta.attrs|tojson|safe }}' onchange="console.log('checkbox onchange triggered');apply();">
+              <input class="filter" type="checkbox" id={{ label }} name="{{ section.kind }}" value='{{ meta.attrs|tojson|safe }}' onchange="apply();">
               {% if meta.max_chunk > 1 %}
-              <input class="filter" type="text" pattern="[0-9][0-9,\-]*" placeholder="1-{{ meta.max_chunk }}" name='{{ meta.attrs|tojson|safe }}' oninput="applyChunks();">
+              <input class="filter" type="text" pattern="[0-9][0-9,\-]*" placeholder="1-{{ meta.max_chunk }}" name='{{ meta.attrs|tojson|safe }}' oninput="scheduleApplyFilters();">
               {% endif %}
             </span>
           </label>
@@ -67,9 +67,28 @@
       </div>
     </div>
     <div class="col-4" id="preview">
+      <input id="exclude-filter" type="text" placeholder="Exclude jobs containing... (space-separated)"
+             autocomplete="off"
+             aria-label="Exclude jobs containing"
+             oninput="scheduleApplyFilters();">
       <form id="submit-tasks" action="" method="POST">
-        <textarea id="selection" name="selected-tasks" wrap="off"></textarea>
-        <span id="selection-count">0 tasks selected</span><br>
+        <ul id="selection"></ul>
+        <input id="selected-tasks" type="hidden" name="selected-tasks">
+        <div id="selection-info">
+          <span id="selection-count">0 tasks selected</span>
+          {% if not pernosco_active %}
+          <span class="form-check form-check-inline" id="artifact-option">
+            <input id="artifact" class="form-check-input" type="checkbox" name="artifact" {% if use_artifact %}checked{% endif %}>
+            <label for="artifact" class="form-check-label">Use artifact builds</label>
+          </span>
+          {% endif %}
+        </div>
+        <p id="large-push-warning" class="alert alert-danger" role="status" aria-live="polite" hidden>
+          Warning: this push would schedule <span id="large-push-count">0</span>
+          tasks. Pushes over {{ large_push_threshold }} tasks are scheduled at
+          lowest priority and may not run before their deadline. Consider
+          narrowing your selection to get results faster.
+        </p>
         <span id="buttons">
           <input id="cancel" class="btn btn-default" type="submit" name="action" value="Cancel">
           <input id="push" class="btn btn-default" type="submit" name="action" value="Push">
@@ -83,6 +102,9 @@
 {% block scripts %}
 <script>
   const tasks = {{ tasks|tojson|safe }};
+  const largePushThreshold = {{ large_push_threshold|tojson|safe }};
+  const largePushMultiplier = {{ large_push_multiplier|tojson|safe }};
+  const largePushSuppressed = {{ large_push_suppressed|tojson|safe }};
 </script>
 <script src="{{ url_for('static', filename='filter.js') }}"></script>
 <script src="{{ url_for('static', filename='select.js') }}"></script>

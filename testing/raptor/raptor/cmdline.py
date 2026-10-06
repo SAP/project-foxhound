@@ -22,6 +22,8 @@ from mozlog.commandline import add_logging_group
     "chrome-m",
     "cstm-car-m",
 ]
+ANDROID_APPS = FIREFOX_ANDROID_APPS + CHROME_ANDROID_APPS
+
 FIREFOX_APPS = FIREFOX_ANDROID_APPS + [FIREFOX]
 
 CHROMIUM_DISTROS = [CHROME, CHROMIUM_RELEASE]
@@ -63,6 +65,8 @@ GECKO_PROFILER_APPS = (FIREFOX, GECKOVIEW, REFBROW, FENIX)
 
 TRACE_APPS = (CHROME, CHROMIUM_RELEASE)
 
+SIMPLEPERF_APPS = (FENIX, GECKOVIEW)
+
 APP_BINARIES = {
     "fenix": "org.mozilla.fenix",
     "focus": "org.mozilla.focus",
@@ -99,7 +103,7 @@ def create_parser(mach_interface=False):
         required=True,
         dest="test",
         help="Name of Raptor test to run (can be a top-level suite name i.e. "
-        "'--test raptor-speedometer','--test raptor-tp6-1', or for page-load "
+        "'--test speedometer3','--test raptor-tp6-1', or for page-load "
         "tests a suite sub-test i.e. '--test raptor-tp6-google-firefox')",
     )
     add_arg(
@@ -230,6 +234,12 @@ def create_parser(mach_interface=False):
         help="Run the tests again with profiler enabled after the main run.",
     )
     add_arg(
+        "--simpleperf",
+        action="store_true",
+        dest="simpleperf",
+        help="Enable Simpleperf profiling (Android only).",
+    )
+    add_arg(
         "--symbolsPath",
         dest="symbols_path",
         help="Path to the symbols for the build we are testing",
@@ -254,20 +264,24 @@ def create_parser(mach_interface=False):
         default=None,
         help="How long to wait (ms) after browser start-up before starting the tests",
     )
-    add_arg(
-        "--browser-cycles",
-        dest="browser_cycles",
-        type=int,
-        help="The number of times a cold load test is repeated (for cold load tests only, "
-        "where the browser is shutdown and restarted between test iterations)",
-    ),
-    add_arg(
-        "--project",
-        dest="project",
-        type=str,
-        default="mozilla-central",
-        help="Project name (try, mozilla-central, etc.)",
-    ),
+    (
+        add_arg(
+            "--browser-cycles",
+            dest="browser_cycles",
+            type=int,
+            help="The number of times a cold load test is repeated (for cold load tests only, "
+            "where the browser is shutdown and restarted between test iterations)",
+        ),
+    )
+    (
+        add_arg(
+            "--project",
+            dest="project",
+            type=str,
+            default="mozilla-central",
+            help="Project name (try, mozilla-central, etc.)",
+        ),
+    )
     add_arg(
         "--test-url-params",
         dest="test_url_params",
@@ -633,6 +647,12 @@ def verify_options(parser, args):
         if args.post_startup_delay < 0:
             parser.error("--post-startup-delay must be a positive integer (in ms).")
 
+    if args.simpleperf and args.app not in SIMPLEPERF_APPS:
+        parser.error(f"--simpleperf is only available in: {', '.join(SIMPLEPERF_APPS)}")
+
+    if args.simpleperf and args.gecko_profile:
+        parser.error("--simpleperf cannot be used with --gecko-profile.")
+
 
 def parse_args(argv=None):
     parser = create_parser()
@@ -651,7 +671,7 @@ class _StopAction(argparse.Action):
         default=argparse.SUPPRESS,
         help=None,
     ):
-        super(_StopAction, self).__init__(
+        super().__init__(
             option_strings=option_strings,
             dest=dest,
             default=default,
@@ -662,7 +682,7 @@ class _StopAction(argparse.Action):
 
 class _PrintTests(_StopAction):
     def __init__(self, integrated_apps=INTEGRATED_APPS, *args, **kwargs):
-        super(_PrintTests, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.integrated_apps = integrated_apps
 
     def __call__(self, parser, namespace, values, option_string=None):
@@ -715,7 +735,7 @@ class _PrintTests(_StopAction):
                         subtest = next_test["name"]
                         measure = next_test.get("measure")
                         if measure is not None:
-                            subtest = "{0} ({1})".format(
+                            subtest = "{} ({})".format(
                                 subtest, measure.replace("\n", ", ")
                             )
                         test_list[suite]["subtests"].append(subtest)

@@ -67,7 +67,7 @@ async function isPageInInputHistory(url) {
 async function isInputHistoryUrlInResults(url) {
   for (let i = 0; i < UrlbarTestUtils.getResultCount(window); ++i) {
     const result = await UrlbarTestUtils.getRowAt(window, i).result;
-    if (result.providerName == "InputHistory") {
+    if (result.providerName == "UrlbarProviderInputHistory") {
       if (result.payload.url == url) {
         return true;
       }
@@ -323,7 +323,7 @@ add_task(async function test_adaptive_behaviors() {
   Assert.equal(result.payload.url, bookmarkURL, "Check bookmarked result");
   Assert.notEqual(
     result.providerName,
-    "InputHistory",
+    "UrlbarProviderInputHistory",
     "The bookmarked result is not from InputHistory."
   );
   Assert.equal(
@@ -349,7 +349,7 @@ add_task(async function test_adaptive_behaviors() {
   Assert.equal(result.payload.url, historyUrl, "Check bookmarked result");
   Assert.equal(
     result.providerName,
-    "InputHistory",
+    "UrlbarProviderInputHistory",
     "The bookmarked result is from InputHistory."
   );
   Assert.equal(
@@ -407,7 +407,7 @@ add_task(async function test_adaptive_behaviors() {
   Assert.equal(result.payload.url, historyUrl, "Check bookmarked result");
   Assert.equal(
     result.providerName,
-    "InputHistory",
+    "UrlbarProviderInputHistory",
     "The bookmarked result is from InputHistory."
   );
   Assert.equal(
@@ -487,7 +487,7 @@ add_task(async function test_adaptive_searchmode() {
     engineName: suggestionsEngine.name,
   });
 
-  await Services.search.removeEngine(suggestionsEngine);
+  await SearchService.removeEngine(suggestionsEngine);
 });
 
 add_task(async function test_ignore_case() {
@@ -588,10 +588,18 @@ add_task(async function test_adaptive_dismiss() {
   });
   let result = UrlbarTestUtils.getRowAt(window, 1).result;
   Assert.equal(result.payload.url, url1, "Check result #1 URL");
-  Assert.equal(result.providerName, "InputHistory", "Check result #1 provider");
+  Assert.equal(
+    result.providerName,
+    "UrlbarProviderInputHistory",
+    "Check result #1 provider"
+  );
   result = UrlbarTestUtils.getRowAt(window, 2).result;
   Assert.equal(result.payload.url, url2, "Check result #2 URL");
-  Assert.equal(result.providerName, "InputHistory", "Check result #2 provider");
+  Assert.equal(
+    result.providerName,
+    "UrlbarProviderInputHistory",
+    "Check result #2 provider"
+  );
   let waitForHistoryRemoval =
     PlacesTestUtils.waitForNotification("page-removed");
   await UrlbarTestUtils.openResultMenuAndClickItem(window, "dismiss", {
@@ -650,7 +658,11 @@ add_task(async function test_bookmarked_adaptive_dismiss() {
   });
   let result = UrlbarTestUtils.getRowAt(window, 1).result;
   Assert.equal(result.payload.url, url, "Check result #1 URL");
-  Assert.equal(result.providerName, "InputHistory", "Check result #1 provider");
+  Assert.equal(
+    result.providerName,
+    "UrlbarProviderInputHistory",
+    "Check result #1 provider"
+  );
 
   let waitForHistoryRemoval =
     PlacesTestUtils.waitForNotification("page-removed");

@@ -6,10 +6,10 @@
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
 <item
     android:id="@+id/enabled"
-    android:drawable="@drawable/ic_autoplay_enabled"
+    android:drawable="@drawable/mozac_ic_autoplay_24"
     android:state_enabled="true" />
 <item
     android:id="@+id/disabled"
-    android:drawable="@drawable/ic_autoplay_disabled" />
+    android:drawable="@drawable/mozac_ic_autoplay_slash_24" />
 
 </selector>

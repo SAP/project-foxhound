@@ -20,7 +20,8 @@ const TEST_URI = `
 
 add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  startTelemetry();
+  Services.fog.testResetFOG();
+
   const { gridInspector, inspector } = await openLayoutView();
   const { document: doc } = gridInspector;
   const { highlighters, store } = inspector;
@@ -53,11 +54,9 @@ add_task(async function () {
 });
 
 function checkResults() {
-  checkTelemetry("devtools.grid.gridinspector.opened", "", 1, "scalar");
-  checkTelemetry(
-    "DEVTOOLS_GRID_HIGHLIGHTER_TIME_ACTIVE_SECONDS",
-    "",
-    null,
-    "hasentries"
+  Assert.equal(1, Glean.devtoolsGridGridinspector.opened.testGetValue());
+  Assert.greater(
+    Glean.devtools.gridHighlighterTimeActive.testGetValue().sum,
+    0
   );
 }

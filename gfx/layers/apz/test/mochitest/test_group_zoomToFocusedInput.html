@@ -38,6 +38,9 @@ var subtests = [
   },
   {"file": "helper_zoomToFocusedInput_content_visibility_auto.html", prefs},
   {"file": "helper_zoomToFocusedInput_to_cursor.html", prefs},
+  {"file": "helper_zoomToFocusedInput_for_position_fixed.html",
+   "prefs": [...prefs,
+     ["layout.scroll_fixed_content_into_view_visually", true]]},
 ];
 
 // These tests rely on mobile viewport sizing, so only run them on

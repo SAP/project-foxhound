@@ -9,6 +9,21 @@ import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.State
 import mozilla.components.lib.state.Store
 
+/**
+ * A store for managing the state of the language selection screen.
+ *
+ * This store is responsible for handling the state ([LanguageScreenState]) and actions
+ * ([LanguageScreenAction]) related to the language selection UI. It manages the list
+ * of available languages and the currently selected language.
+ *
+ * On initialization, it automatically dispatches [LanguageScreenAction.InitLanguages]. This
+ * action is intended to be intercepted by a [Middleware] to trigger the loading of language
+ * data from a repository.
+ *
+ * @param initialState The initial state for the language screen.
+ * @param middlewares A list of [Middleware]s to intercept actions and perform side effects,
+ * such as fetching the language list.
+ */
 class LanguageScreenStore(
     initialState: LanguageScreenState,
     middlewares: List<Middleware<LanguageScreenState, LanguageScreenAction>> = emptyList(),
@@ -37,8 +52,25 @@ data class LanguageScreenState(
  * Action to dispatch through the `LanguageScreenStore` to modify `LanguageScreenState` through the reducer.
  */
 sealed class LanguageScreenAction : Action {
+    /**
+     * An action that signals the store to initialize the list of available languages.
+     */
     object InitLanguages : LanguageScreenAction()
+
+    /**
+     * An action that represents the user selecting a new language from the list.
+     *
+     * @property selectedLanguage The language that the user has selected.
+     */
     data class Select(val selectedLanguage: Language) : LanguageScreenAction()
+
+    /**
+     * An action to update the entire list of available languages and the currently
+     * selected language.
+     *
+     * @property languageList The new, complete list of available languages.
+     * @property selectedLanguage The language that should be marked as currently selected.
+     */
     data class UpdateLanguages(
         val languageList: List<Language>,
         val selectedLanguage: Language,

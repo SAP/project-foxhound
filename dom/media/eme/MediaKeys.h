@@ -1,14 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_mediakeys_h__
-#define mozilla_dom_mediakeys_h__
+#ifndef mozilla_dom_mediakeys_h_
+#define mozilla_dom_mediakeys_h_
 
 #include "DecoderDoctorLogger.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/DetailedPromise.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/WeakPtr.h"
@@ -55,7 +52,7 @@ class MediaKeys final : public nsIObserver,
   ~MediaKeys();
 
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(MediaKeys)
 
   NS_DECL_NSIOBSERVER
@@ -113,6 +110,8 @@ class MediaKeys final : public nsIObserver,
   void OnSessionClosed(MediaKeySession* aSession);
 
   CDMProxy* GetCDMProxy() { return mProxy; }
+
+  nsIPrincipal* GetPrincipal() const { return mPrincipal; }
 
   // Makes a new promise, or nullptr on failure.
   already_AddRefed<DetailedPromise> MakePromise(ErrorResult& aRv,
@@ -235,4 +234,4 @@ class MediaKeys final : public nsIObserver,
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_mediakeys_h__
+#endif  // mozilla_dom_mediakeys_h_

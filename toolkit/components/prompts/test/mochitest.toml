@@ -8,18 +8,27 @@ support-files = [
 ]
 
 ["test_bug619644.html"]
-skip-if = ["os == 'android'"] # No tab prompts on android
+run-if = [
+  "os != 'android'", # No tab prompts on android
+]
 
 ["test_bug620145.html"]
-skip-if = ["os == 'android'"] #TIMED_OUT
+skip-if = [
+  "os == 'android'", # TIMED_OUT
+]
 
 ["test_dom_prompts.html"]
-skip-if = ["os == 'android'"] #android: bug 1267092
+skip-if = [
+  "os == 'android'", # android: bug 1267092
+]
 
 ["test_subresources_prompts.html"]
-skip-if = [
-  "os == 'android'",
-  "http3",
-  "http2",
+fail-if = [
+  "xorigin",
 ]
-fail-if = ["xorigin"]
+skip-if = [
+  "http2",
+  "http3",
+  "os == 'android'",
+  "verify-standalone",
+]

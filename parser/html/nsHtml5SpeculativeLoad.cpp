@@ -45,7 +45,8 @@ void nsHtml5SpeculativeLoad::Perform(nsHtml5TreeOpExecutor* aExecutor) {
       aExecutor->PreloadImage(
           mUrlOrSizes, mCrossOrigin, mMedia, mCharsetOrSrcset,
           mTypeOrCharsetSourceOrDocumentModeOrMetaCSPOrSizesOrIntegrity,
-          mReferrerPolicyOrIntegrity, mIsLinkPreload, mFetchPriority);
+          mReferrerPolicyOrIntegrity, mIsLinkPreload, mFetchPriority,
+          mNonceOrType);
       break;
     case eSpeculativeLoadOpenPicture:
       aExecutor->PreloadOpenPicture();
@@ -63,7 +64,7 @@ void nsHtml5SpeculativeLoad::Perform(nsHtml5TreeOpExecutor* aExecutor) {
       aExecutor->PreloadScript(
           mUrlOrSizes, mCharsetOrSrcset,
           mTypeOrCharsetSourceOrDocumentModeOrMetaCSPOrSizesOrIntegrity,
-          mCrossOrigin, mMedia, mNonce, mFetchPriority,
+          mCrossOrigin, mMedia, mNonceOrType, mFetchPriority,
           mReferrerPolicyOrIntegrity, mScriptReferrerPolicy, false, mIsAsync,
           mIsDefer, mIsLinkPreload);
       break;
@@ -71,14 +72,14 @@ void nsHtml5SpeculativeLoad::Perform(nsHtml5TreeOpExecutor* aExecutor) {
       aExecutor->PreloadScript(
           mUrlOrSizes, mCharsetOrSrcset,
           mTypeOrCharsetSourceOrDocumentModeOrMetaCSPOrSizesOrIntegrity,
-          mCrossOrigin, mMedia, mNonce, mFetchPriority,
+          mCrossOrigin, mMedia, mNonceOrType, mFetchPriority,
           mReferrerPolicyOrIntegrity, mScriptReferrerPolicy, true, mIsAsync,
           mIsDefer, mIsLinkPreload);
       break;
     case eSpeculativeLoadStyle:
       aExecutor->PreloadStyle(
           mUrlOrSizes, mCharsetOrSrcset, mCrossOrigin, mMedia,
-          mReferrerPolicyOrIntegrity, mNonce,
+          mReferrerPolicyOrIntegrity, mNonceOrType,
           mTypeOrCharsetSourceOrDocumentModeOrMetaCSPOrSizesOrIntegrity,
           mIsLinkPreload, mFetchPriority);
       break;

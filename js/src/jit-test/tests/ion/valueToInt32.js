@@ -1,5 +1,3 @@
-// vim: set ts=8 sts=4 et sw=4 tw=99:
-
 function f(x, y) {
     // Confuse the type analysis to not know the type of x.
     var u;

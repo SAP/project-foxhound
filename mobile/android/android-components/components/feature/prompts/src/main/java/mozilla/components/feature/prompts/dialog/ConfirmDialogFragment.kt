@@ -8,7 +8,7 @@ import android.app.Dialog
 import android.content.DialogInterface
 import android.os.Bundle
 import androidx.annotation.VisibleForTesting
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 
 internal const val KEY_POSITIVE_BUTTON = "KEY_POSITIVE_BUTTON"
@@ -29,7 +29,7 @@ internal class ConfirmDialogFragment : AbstractPromptTextDialogFragment() {
     internal val negativeButtonText: String by lazy { safeArguments.getString(KEY_NEGATIVE_BUTTON)!! }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
-        val builder = AlertDialog.Builder(requireContext())
+        val builder = MaterialAlertDialogBuilder(requireContext())
             .setCancelable(false)
             .setTitle(title)
             .setNegativeButton(negativeButtonText) { _, _ ->

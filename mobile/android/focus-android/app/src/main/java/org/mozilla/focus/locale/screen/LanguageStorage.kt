@@ -11,6 +11,13 @@ import androidx.preference.PreferenceManager
 import org.mozilla.focus.R
 import org.mozilla.focus.generated.LocalesList
 
+/**
+ * A storage class responsible for managing the application's language settings.
+ * It provides access to the list of available languages, the currently selected language,
+ * and methods for persisting the user's language choice in SharedPreferences.
+ *
+ * @param context The application context, used to access resources and SharedPreferences.
+ */
 class LanguageStorage(private val context: Context) {
     private val sharedPref: SharedPreferences =
         PreferenceManager.getDefaultSharedPreferences(context)
@@ -19,8 +26,35 @@ class LanguageStorage(private val context: Context) {
         context.resources.getString(R.string.pref_key_locale)
     }
 
+    /**
+     * A map of available languages, keyed by their language tag.
+     *
+     * This map is lazily initialized and includes:
+     * 1. The "System default" language.
+     * 2. All bundled locales from [LocalesList.BUNDLED_LOCALES], sorted alphabetically
+     *    by their native display names.
+     *
+     * This provides efficient look-up of a [Language] object by its tag.
+     */
+    private val languagesByTag: Map<String, Language> by lazy {
+        buildMap {
+            put(systemDefaultLanguage.tag, systemDefaultLanguage)
+            LocalesList.BUNDLED_LOCALES
+                .map { LocaleDescriptor(it) }
+                .sorted()
+                .forEach { descriptor ->
+                    val language = Language(
+                        displayName = descriptor.getNativeName(),
+                        tag = descriptor.getTag(),
+                        index = size,
+                    )
+                    put(language.tag, language)
+                }
+        }
+    }
+
     internal val languages: List<Language> by lazy {
-        getLanguageList()
+        languagesByTag.values.toList()
     }
 
     private val systemDefaultLanguage: Language by lazy {
@@ -32,54 +66,30 @@ class LanguageStorage(private val context: Context) {
     }
 
     /**
-     * The current selected Language or System default Language if nothing is selected
+     * The language currently selected by the user. If no language has been explicitly
+     * selected, this will default to the "System default" language.
+     *
+     * The value is retrieved from SharedPreferences using the `pref_key_locale`.
+     * If the stored language tag doesn't match any available language, it also
+     * falls back to the system default.
      */
     internal val selectedLanguage: Language
         get() {
             val savedLanguageTag =
                 sharedPref.getString(localePrefKey, LOCALE_SYSTEM_DEFAULT) ?: LOCALE_SYSTEM_DEFAULT
 
-            val matchingLanguage = languages.firstOrNull { it.tag == savedLanguageTag }
-
-            return matchingLanguage ?: systemDefaultLanguage
+            return languagesByTag[savedLanguageTag] ?: systemDefaultLanguage
         }
-
-    /**
-     * The full list of available languages.
-     * System default Language will be the first item in the list.
-     */
-    private fun getLanguageList(): List<Language> {
-        return listOf(
-            systemDefaultLanguage,
-        ) + getUsableLocales().mapIndexedNotNull { i, descriptor ->
-            descriptor?.let {
-                Language(
-                    displayName = descriptor.getNativeName(),
-                    tag = it.getTag(),
-                    index = i + 1,
-                )
-            }
-        }
-    }
 
     /**
      * Saves the current selected language tag
      *
-     * @property languageTag the tag of the language
+     * @param languageTag the tag of the language
      */
     fun saveCurrentLanguageInSharePref(languageTag: String) {
         sharedPref.edit {
             putString(localePrefKey, languageTag)
         }
-    }
-
-    /**
-     * This method generates the descriptor array.
-     */
-    private fun getUsableLocales(): Array<LocaleDescriptor?> {
-        return LocalesList.BUNDLED_LOCALES.map {
-            LocaleDescriptor(it)
-        }.sorted().toTypedArray()
     }
 
     companion object {

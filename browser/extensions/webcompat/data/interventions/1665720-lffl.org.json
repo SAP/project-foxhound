@@ -1,0 +1,15 @@
+{
+  "label": "lffl.org",
+  "bugs": {
+    "1665720": {
+      "issue": "slow-performance",
+      "matches": ["*://*.lffl.org/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

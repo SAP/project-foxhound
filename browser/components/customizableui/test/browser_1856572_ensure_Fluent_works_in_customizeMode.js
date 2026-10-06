@@ -13,7 +13,7 @@ const {
 /**
  * Bug 1856572 - This test is to ensure that fluent strings in Firefox View
  * can be updated after opening Customize Mode
- * **/
+ */
 add_task(async function test_data_l10n_customize_mode() {
   FirefoxViewTestUtilsInit(this);
   await withFirefoxView({ win: window }, async function (browser) {

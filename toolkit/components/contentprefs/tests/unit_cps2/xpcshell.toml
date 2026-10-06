@@ -1,6 +1,8 @@
 [DEFAULT]
 head = "head.js"
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 support-files = ["AsyncRunner.sys.mjs"]
 
 ["test_extractDomain.js"]

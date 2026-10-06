@@ -1,4 +1,3 @@
-/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -90,15 +89,17 @@ typedef struct ZipEnd_ {
 #define EXTENDED_TIMESTAMP_MODTIME 0x01
 
 /* compression methods */
-#define STORED 0
-#define SHRUNK 1
-#define REDUCED1 2
-#define REDUCED2 3
-#define REDUCED3 4
-#define REDUCED4 5
-#define IMPLODED 6
-#define TOKENIZED 7
-#define DEFLATED 8
-#define UNSUPPORTED 0xFF
+enum ZipCompressionMethod {
+  STORED = 0,
+  SHRUNK = 1,
+  REDUCED1 = 2,
+  REDUCED2 = 3,
+  REDUCED3 = 4,
+  REDUCED4 = 5,
+  IMPLODED = 6,
+  TOKENIZED = 7,
+  DEFLATED = 8,
+  UNSUPPORTED = 0xFF
+};
 
 #endif /* _zipstruct_h */

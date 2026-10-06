@@ -23,12 +23,15 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=574596
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 574596 **/
+/** Test for Bug 574596 */
 
 function ignoreFunc(actualData, expectedData) {
   return true;
 }
 
+const includeCommonAncestor = SpecialPowers.getBoolPref(
+  "dom.serializer.includeCommonAncestor.enabled"
+);
 var dragLinkText = [[
   { type:"text/x-moz-url",          data:"", eqTest:ignoreFunc },
   { type:"text/x-moz-url-data",     data:"http://www.mozilla.org/" },
@@ -36,7 +39,9 @@ var dragLinkText = [[
   { type:"text/uri-list",           data:"http://www.mozilla.org/" },
   { type:"text/_moz_htmlcontext",   data:"", eqTest:ignoreFunc },
   { type:"text/_moz_htmlinfo",      data:"", eqTest:ignoreFunc },
-  { type:"text/html",               data:'<div id="link1"><a href="http://www.mozilla.org/">link1</a></div>' },
+  { type:"text/html",               data:`${includeCommonAncestor ? '<div id="link1">' : ''}` +
+                                         `<a href="http://www.mozilla.org/">link1</a>` +
+                                         `${includeCommonAncestor ? '</div>' : ''}` },
   { type:"text/plain",              data:"http://www.mozilla.org/" }
 ]];
 
@@ -71,7 +76,9 @@ async function runTest() {
   // if (result) dumpTransfer(result,dragLinkText);
 
   dragLinkText[0][2].data = "link2";
-  dragLinkText[0][6].data = '<div id="link2"><a href="http://www.mozilla.org/">link2</a></div>'
+  dragLinkText[0][6].data = `${includeCommonAncestor ? '<div id="link2">' : ''}` +
+                            `<a href="http://www.mozilla.org/">link2</a>` +
+                            `${includeCommonAncestor ? '</div>' : ''}`;
   var result = await synthesizePlainDragAndCancel(
     {
       srcElement: $('link2').firstChild,

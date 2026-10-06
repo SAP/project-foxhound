@@ -1,0 +1,181 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Web Serial API - Signals</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="serial_test_utils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script>
+
+"use strict";
+
+SimpleTest.waitForExplicitFinish();
+
+SimpleTest.registerCleanupFunction(cleanupSerialPorts);
+
+add_task(async function testSetSignals() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  await port.setSignals({
+    dataTerminalReady: true,
+    requestToSend: true
+  });
+
+  ok(true, "Should set signals successfully");
+
+  await port.close();
+});
+
+add_task(async function testGetSignals() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  await port.setSignals({
+    dataTerminalReady: true,
+    requestToSend: true
+  });
+
+  const signals = await port.getSignals();
+  ok(signals, "Should get signals successfully");
+  ok("clearToSend" in signals, "signals should have clearToSend");
+  ok("dataCarrierDetect" in signals, "signals should have dataCarrierDetect");
+  ok("dataSetReady" in signals, "signals should have dataSetReady");
+  ok("ringIndicator" in signals, "signals should have ringIndicator");
+
+  await port.close();
+});
+
+add_task(async function testSignalReflection() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  await port.setSignals({
+    dataTerminalReady: true,
+    requestToSend: false
+  });
+
+  let signals = await port.getSignals();
+  is(signals.dataSetReady, true, "DSR should reflect DTR=true");
+  is(signals.clearToSend, false, "CTS should reflect RTS=false");
+
+  await port.setSignals({
+    dataTerminalReady: false,
+    requestToSend: true
+  });
+
+  signals = await port.getSignals();
+  is(signals.dataSetReady, false, "DSR should reflect DTR=false");
+  is(signals.clearToSend, true, "CTS should reflect RTS=true");
+
+  await port.close();
+});
+
+add_task(async function testSetSignalsOnClosedPort() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  await Assert.rejects(
+    port.setSignals({ dataTerminalReady: true }),
+    /InvalidStateError/,
+    "Should throw InvalidStateError for setSignals on closed port"
+  );
+});
+
+add_task(async function testGetSignalsOnClosedPort() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  await Assert.rejects(
+    port.getSignals(),
+    /InvalidStateError/,
+    "Should throw InvalidStateError for getSignals on closed port"
+  );
+});
+
+add_task(async function testSetBreak() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  await port.setSignals({ break: true });
+  ok(true, "Should set break signal");
+
+  await port.setSignals({ break: false });
+  ok(true, "Should clear break signal");
+
+  await port.close();
+});
+
+add_task(async function testPartialSignalUpdate() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  await port.setSignals({
+    dataTerminalReady: true,
+    requestToSend: true
+  });
+
+  let signals = await port.getSignals();
+  is(signals.dataSetReady, true, "DTR should be true");
+  is(signals.clearToSend, true, "RTS should be true");
+
+  await port.setSignals({ dataTerminalReady: false });
+
+  signals = await port.getSignals();
+  is(signals.dataSetReady, false, "DTR should be updated to false");
+  is(signals.clearToSend, true, "RTS should remain true (unchanged)");
+
+  await port.close();
+});
+
+add_task(async function testEmptyDictionaryRejection() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  await Assert.rejects(
+    port.setSignals({}),
+    e => e.name === "TypeError" && e.message.includes("At least one signal"),
+    "Should throw TypeError mentioning at least one signal for empty dictionary"
+  );
+
+  await port.close();
+});
+
+add_task(async function testSetSignalsOnForgottenPort() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+  await port.forget();
+
+  await Assert.rejects(
+    port.setSignals({ dataTerminalReady: true }),
+    e => e.name === "InvalidStateError" && e.message.includes("forgotten"),
+    "Should throw InvalidStateError mentioning forgotten for setSignals"
+  );
+});
+
+add_task(async function testGetSignalsOnForgottenPort() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+  await port.forget();
+
+  await Assert.rejects(
+    port.getSignals(),
+    e => e.name === "InvalidStateError" && e.message.includes("forgotten"),
+    "Should throw InvalidStateError mentioning forgotten for getSignals"
+  );
+});
+
+</script>
+</body>
+</html>

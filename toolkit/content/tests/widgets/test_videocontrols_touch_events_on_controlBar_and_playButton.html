@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+  <head>
+    <title>
+      Video controls test - Touch events stop propagation when controlBar or the
+      clickToPlay button is the target
+    </title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="/tests/SimpleTest/EventUtils.js"></script>
+    <script type="text/javascript" src="head.js"></script>
+    <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+  </head>
+  <body onload="start()">
+    <div id="parent">
+      <video controls="" preload="auto" width="480" height="320"></video>
+    </div>
+
+    <pre id="test">
+<script clas="testbody" type="application/javascript">
+  SimpleTest.waitForExplicitFinish();
+
+  async function start() {
+    const video = document.querySelector("video");
+
+    document.getElementById("parent").addEventListener("touchstart", function() {
+      // Unexpectedly received a touchstart event at bubbling phase.
+      ok(false, "Parent shouldn't receive the 'touchstart' event when the controlBar is the target");
+    });
+
+    document.getElementById("parent").addEventListener("touchstart", function() {
+      // Unexpectedly received a touchstart event at capturing phase.
+      ok(false, "Parent shouldn't receive the 'touchstart' event when the controlBar is the target");
+    }, {capture: true});
+
+    // We use the scrubber (which is a descendant of controlBar) as the target.
+    const scrubber = getElementWithinVideo(video, "scrubber");
+
+    // Dispatch touchstart events
+    synthesizeTouchAtCenter(scrubber, { type: "touchstart" });
+
+    // Give the above touchstart handler a chance to run, although it shouldn't....
+    SimpleTest.requestFlakyTimeout("Given event handlers a chance to run");
+
+    await new Promise(r => {
+      setTimeout(r, 500);
+    });
+
+    const playButton = getElementWithinVideo(video, "clickToPlay");
+    // Dispatch touchstart events
+    synthesizeTouchAtCenter(playButton, { type: "touchstart" });
+
+    // Give the above touchstart handler a chance to run, although it shouldn't....
+    await new Promise(r => {
+      setTimeout(r, 500);
+    });
+
+    SimpleTest.finish();
+  }
+</script>
+</pre>
+  </body>
+</html>

@@ -248,6 +248,7 @@ add_task(async function test_update_frecencies() {
   await buf.finalize();
   await PlacesUtils.bookmarks.eraseEverything();
   await PlacesSyncUtils.bookmarks.reset();
+  await PlacesUtils.history.clear();
 });
 
 async function setupLocalTree(localTimeSeconds) {
@@ -488,7 +489,7 @@ add_task(async function test_apply_then_revert() {
         isTagging: false,
         title: "E",
         tags: "",
-        frecency: 0,
+        frecency: 1,
         hidden: false,
         visitCount: 0,
         dateAdded: dateAdded.getTime(),
@@ -667,4 +668,5 @@ add_task(async function test_apply_then_revert() {
   await buf.finalize();
   await PlacesUtils.bookmarks.eraseEverything();
   await PlacesSyncUtils.bookmarks.reset();
+  await PlacesUtils.history.clear();
 });

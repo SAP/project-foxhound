@@ -11,7 +11,7 @@ const ID_THUNDERBIRD = "{3550f703-e582-4d05-9a08-453d09bdfdc6}";
  * Extends Services.appinfo with further properties that are
  * used by different protocols as handled by the Remote Agent.
  *
- * @typedef {object} RemoteAgent.AppInfo
+ * @typedef {object} AppInfo
  * @property {boolean} isAndroid - Whether the application runs on Android.
  * @property {boolean} isLinux - Whether the application runs on Linux.
  * @property {boolean} isMac - Whether the application runs on Mac OS.
@@ -50,6 +50,12 @@ ChromeUtils.defineLazyGetter(AppInfo, "isMac", () => {
 
 ChromeUtils.defineLazyGetter(AppInfo, "isWindows", () => {
   return Services.appinfo.OS === "WINNT";
+});
+
+// Display
+
+ChromeUtils.defineLazyGetter(AppInfo, "isHeadless", () => {
+  return Cc["@mozilla.org/gfx/info;1"].getService(Ci.nsIGfxInfo).isHeadless;
 });
 
 // Application type

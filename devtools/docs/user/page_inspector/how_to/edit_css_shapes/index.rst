@@ -2,7 +2,7 @@
 Edit Shape Paths in CSS
 =======================
 
-The Shape Path Editor is a tool that helps you see and edit shapes created using `clip-path <https://developer.mozilla.org/en-US/docs/Web/CSS/clip-path>`_ and also the CSS `shape-outside <https://developer.mozilla.org/en-US/docs/Web/CSS/shape-outside>`_ property and `<basic-shape> <https://developer.mozilla.org/en-US/docs/Web/CSS/basic-shape>`_ values. This guide walks you through all of the available options.
+The Shape Path Editor is a tool that helps you see and edit shapes created using `clip-path <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/clip-path>`_ and also the CSS `shape-outside <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/shape-outside>`_ property and `<basic-shape> <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/basic-shape>`_ values. This guide walks you through all of the available options.
 
 
 Activate / deactivate the Shape Path Editor
@@ -30,7 +30,7 @@ Once you have selected a shape on your page, the Shape Path Editor will draw lin
 
 
 - **A solid line** shows the outline of the shape that is wrapping the text. This is your shape. If the shape is clipped by the margin box then the margin box will make up part of this line.
-- **A dashed line** demonstrates the outline of the shape which extends past the margin box reference; this is the area that will be clipped by the margin box. To understand the margin box, and other boxes used by CSS Shapes see our guide to `Shapes from box values <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Shapes/From_box_values>`_.
+- **A dashed line** demonstrates the outline of the shape which extends past the margin box reference; this is the area that will be clipped by the margin box. To understand the margin box, and other boxes used by CSS Shapes see our guide to `Shapes from box values <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Shapes/From_box_values>`_.
 
 .. image:: clipped-margin-box.png
   :class: center
@@ -44,7 +44,7 @@ The options given to you by the tool will differ depending on the type of basic 
 circle()
 --------
 
-If the value of ``shape-outside`` is ``circle()``, you are creating a `circle basic shape <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Shapes/Basic_Shapes#circle()>`_. Clicking on the shapes icon next to the value of ``circle()`` will highlight the shape, and also give you the option to resize the circle or move its center. If you move or resize the circle past the margin box, the edges become clipped by it.
+If the value of ``shape-outside`` is ``circle()``, you are creating a `circle basic shape <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Shapes/Using_shape-outside#circle>`_. Clicking on the shapes icon next to the value of ``circle()`` will highlight the shape, and also give you the option to resize the circle or move its center. If you move or resize the circle past the margin box, the edges become clipped by it.
 
 .. image:: clipped-margin-box.png
   :class: center
@@ -56,7 +56,7 @@ In the Rules Panel you can see the values for ``circle()`` change as you edit th
 ellipse()
 ---------
 
-If the value of ``shape-outside`` is ``ellipse()`` then you are using the `ellipse basic shape <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Shapes/Basic_Shapes#ellipse()>`_. The ``ellipse()`` value works in much the same way as ``circle()`` in the Shape Path Editor. An ellipse is a squashed circle and therefore has the option to resize horizontally and vertically when you click on the shapes icon.
+If the value of ``shape-outside`` is ``ellipse()`` then you are using the `ellipse basic shape <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Shapes/Using_shape-outside#ellipse>`_. The ``ellipse()`` value works in much the same way as ``circle()`` in the Shape Path Editor. An ellipse is a squashed circle and therefore has the option to resize horizontally and vertically when you click on the shapes icon.
 
 .. image:: ellipse.png
   :class: center
@@ -65,7 +65,7 @@ If the value of ``shape-outside`` is ``ellipse()`` then you are using the `ellip
 inset()
 -------
 
-If the value of ``shape-outside`` is ``inset()`` then you are using the `inset basic shape <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Shapes/Basic_Shapes#inset()>`_, which enables the creation of offset values pulling the content in from the margin box.
+If the value of ``shape-outside`` is ``inset()`` then you are using the `inset basic shape <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Shapes/Using_shape-outside#inset>`_, which enables the creation of offset values pulling the content in from the margin box.
 
 Each side of the rectangle can be targeted after clicking on the shapes icon to activate the Shape Path Editor, and dragging each side will update the values for the top, right, bottom, and left offset values.
 
@@ -76,7 +76,7 @@ Each side of the rectangle can be targeted after clicking on the shapes icon to 
 polygon()
 ---------
 
-If the value of ``shape-outside`` is ``polygon()`` then you are using the `polygon basic shape <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Shapes/Basic_Shapes#polygon()>`_. This is the most complex of the basic shape values, therefore the tool gives you more options when editing these:
+If the value of ``shape-outside`` is ``polygon()`` then you are using the `polygon basic shape <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Shapes/Using_shape-outside#polygon>`_. This is the most complex of the basic shape values, therefore the tool gives you more options when editing these:
 
 
 - Clicking on the shapes icon will activate the Shapes Path Editor and give you the option to move any of the points of your polygon shape.
@@ -101,4 +101,4 @@ If your shape is a polygon, you also get the ability to rotate it around an axis
 Browser support
 ***************
 
-The Shape Path Editor currently works for shapes generated via `clip-path <https://developer.mozilla.org/en-US/docs/Web/CSS/clip-path>`_; it will also work for shapes generated via `shape-outside <https://developer.mozilla.org/en-US/docs/Web/CSS/shape-outside>`_ as of Firefox 62.
+The Shape Path Editor currently works for shapes generated via `clip-path <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/clip-path>`_ and `shape-outside <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/shape-outside>`_.

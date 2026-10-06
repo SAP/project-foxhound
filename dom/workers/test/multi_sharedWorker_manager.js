@@ -1,5 +1,7 @@
 var query = window.location.search;
-var bc = new BroadcastChannel("bugSharedWorkerLiftetime" + query);
+var bc = SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel(
+  "bugSharedWorkerLiftetime" + query
+);
 bc.onmessage = msgEvent => {
   var msg = msgEvent.data;
   var command = msg.command;

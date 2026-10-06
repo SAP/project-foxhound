@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2; js-indent-level: 2 -*- */
 // The main offset of a script should be hit before it performs any actions.
 
 var g = newGlobal({newCompartment: true});

@@ -69,7 +69,6 @@
       'dependencies': [
         '<(DEPTH)/exports.gyp:nss_exports',
         '<(DEPTH)/fuzz/targets/lib/asn1/asn1.gyp:asn1',
-        '<(DEPTH)/fuzz/targets/lib/base/base.gyp:base',
         'nssfuzz_base',
       ],
     },
@@ -86,6 +85,19 @@
       ],
     },
     {
+      'target_name': 'nssfuzz-dsau',
+      'type': 'executable',
+      'sources': [
+        'dsau.cc',
+      ],
+      'dependencies': [
+        '<(DEPTH)/cpputil/cpputil.gyp:cpputil',
+        '<(DEPTH)/exports.gyp:nss_exports',
+        '<(DEPTH)/fuzz/targets/lib/asn1/asn1.gyp:asn1',
+        'nssfuzz_base',
+      ],
+    },
+    {
       'target_name': 'nssfuzz-dtls-client',
       'type': 'executable',
       'sources': [
@@ -95,7 +107,6 @@
       'dependencies': [
         '<(DEPTH)/cpputil/cpputil.gyp:cpputil',
         '<(DEPTH)/exports.gyp:nss_exports',
-        '<(DEPTH)/fuzz/targets/lib/base/base.gyp:base',
         '<(DEPTH)/fuzz/targets/lib/tls/tls.gyp:tls_client',
         'nssfuzz_base',
       ],
@@ -110,8 +121,20 @@
       'dependencies': [
         '<(DEPTH)/cpputil/cpputil.gyp:cpputil',
         '<(DEPTH)/exports.gyp:nss_exports',
-        '<(DEPTH)/fuzz/targets/lib/base/base.gyp:base',
         '<(DEPTH)/fuzz/targets/lib/tls/tls.gyp:tls_server',
+        'nssfuzz_base',
+      ],
+    },
+    {
+      'target_name': 'nssfuzz-ech',
+      'type': 'executable',
+      'sources': [
+        'ech.cc',
+      ],
+      'dependencies': [
+        '<(DEPTH)/exports.gyp:nss_exports',
+        '<(DEPTH)/cpputil/cpputil.gyp:cpputil',
+        '<(DEPTH)/fuzz/targets/lib/tls/tls.gyp:base',
         'nssfuzz_base',
       ],
     },
@@ -125,7 +148,6 @@
         '<(DEPTH)/cpputil/cpputil.gyp:cpputil',
         '<(DEPTH)/exports.gyp:nss_exports',
         '<(DEPTH)/fuzz/targets/lib/asn1/asn1.gyp:asn1',
-        '<(DEPTH)/fuzz/targets/lib/base/base.gyp:base',
         'nssfuzz_base',
       ],
     },
@@ -139,7 +161,6 @@
         '<(DEPTH)/cpputil/cpputil.gyp:cpputil',
         '<(DEPTH)/exports.gyp:nss_exports',
         '<(DEPTH)/fuzz/targets/lib/asn1/asn1.gyp:asn1',
-        '<(DEPTH)/fuzz/targets/lib/base/base.gyp:base',
         'nssfuzz_base',
       ],
     },
@@ -153,7 +174,6 @@
         '<(DEPTH)/cpputil/cpputil.gyp:cpputil',
         '<(DEPTH)/exports.gyp:nss_exports',
         '<(DEPTH)/fuzz/targets/lib/asn1/asn1.gyp:asn1',
-        '<(DEPTH)/fuzz/targets/lib/base/base.gyp:base',
         'nssfuzz_base',
       ],
     },
@@ -166,7 +186,18 @@
       'dependencies': [
         '<(DEPTH)/exports.gyp:nss_exports',
         '<(DEPTH)/fuzz/targets/lib/asn1/asn1.gyp:asn1',
-        '<(DEPTH)/fuzz/targets/lib/base/base.gyp:base',
+        'nssfuzz_base',
+      ],
+    },
+    {
+      'target_name': 'nssfuzz-ec-derive',
+      'type': 'executable',
+      'sources': [
+        'ec_derive.cc',
+      ],
+      'dependencies': [
+        '<(DEPTH)/cpputil/cpputil.gyp:cpputil',
+        '<(DEPTH)/exports.gyp:nss_exports',
         'nssfuzz_base',
       ],
     },
@@ -180,7 +211,6 @@
         '<(DEPTH)/cpputil/cpputil.gyp:cpputil',
         '<(DEPTH)/exports.gyp:nss_exports',
         '<(DEPTH)/fuzz/targets/lib/asn1/asn1.gyp:asn1',
-        '<(DEPTH)/fuzz/targets/lib/base/base.gyp:base',
         'nssfuzz_base',
       ],
     },
@@ -193,7 +223,6 @@
       'dependencies': [
         '<(DEPTH)/cpputil/cpputil.gyp:cpputil',
         '<(DEPTH)/exports.gyp:nss_exports',
-        '<(DEPTH)/fuzz/targets/lib/base/base.gyp:base',
         '<(DEPTH)/fuzz/targets/lib/tls/tls.gyp:tls_client',
         'nssfuzz_base',
       ],
@@ -207,7 +236,6 @@
       'dependencies': [
         '<(DEPTH)/cpputil/cpputil.gyp:cpputil',
         '<(DEPTH)/exports.gyp:nss_exports',
-        '<(DEPTH)/fuzz/targets/lib/base/base.gyp:base',
         '<(DEPTH)/fuzz/targets/lib/tls/tls.gyp:tls_server',
         'nssfuzz_base',
       ],
@@ -218,8 +246,11 @@
       'dependencies': [
         'nssfuzz-asn1',
         'nssfuzz-certDN',
+        'nssfuzz-dsau',
         'nssfuzz-dtls-client',
         'nssfuzz-dtls-server',
+        'nssfuzz-ec-derive',
+        'nssfuzz-ech',
         'nssfuzz-pkcs7',
         'nssfuzz-pkcs8',
         'nssfuzz-pkcs12',

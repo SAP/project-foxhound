@@ -28,7 +28,7 @@ info: |
   ...
   3. Let proto be ? Get(constructor, "prototype").
   ...
-includes: [testBigIntTypedArray.js]
+includes: [testTypedArray.js]
 features: [BigInt, Reflect, TypedArray]
 ---*/
 
@@ -45,6 +45,6 @@ testWithBigIntTypedArrayConstructors(function(TA) {
   assert.throws(Test262Error, function() {
     Reflect.construct(TA, [o], newTarget);
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

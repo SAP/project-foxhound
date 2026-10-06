@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -199,7 +198,7 @@ void ProgressTracker::Notify(IProgressObserver* aObserver) {
     mRunnable->AddObserver(aObserver);
   } else if (!AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMShutdownThreads)) {
     // Avoid dispatch if we are late in shutdown.
-    RefPtr<AsyncNotifyRunnable> ev = new AsyncNotifyRunnable(this, aObserver);
+    auto ev = MakeRefPtr<AsyncNotifyRunnable>(this, aObserver);
     mRunnable = ProgressTracker::RenderBlockingRunnable::Create(ev.forget());
     SchedulerGroup::Dispatch(do_AddRef(mRunnable));
   }

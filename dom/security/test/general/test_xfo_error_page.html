@@ -12,13 +12,34 @@
 
 SimpleTest.waitForExplicitFinish();
 
-const XFO_ERROR_PAGE_MSG = "This page has an X-Frame-Options policy that prevents it from being loaded in this context";
+const { ContentTaskUtils } = SpecialPowers.ChromeUtils.importESModule(
+  "resource://testing-common/ContentTaskUtils.sys.mjs"
+);
+
+const XFO_ERROR_PAGE_MSG = "csp-xfo-error-title";
 
 let xfo_testframe = document.getElementById("xfo_testframe");
 
-xfo_testframe.onload = function() {
+xfo_testframe.onload = async function() {
   let wrappedXFOFrame = SpecialPowers.wrap(xfo_testframe.contentWindow);
-  let frameContentXFO = wrappedXFOFrame.document.body.innerHTML;
+
+  const getErrorPage = () => {
+    const netErrorCard = wrappedXFOFrame.document.querySelector("net-error-card");
+    if (netErrorCard?.shadowRoot) {
+      return netErrorCard.shadowRoot.innerHTML;
+    }
+    return wrappedXFOFrame.document.body?.innerHTML;
+  };
+
+  await ContentTaskUtils.waitForCondition(
+    () => {
+      const content = getErrorPage();
+      return content && content.includes(XFO_ERROR_PAGE_MSG);
+    },
+    "Waiting for XFO error page to load"
+  );
+
+  const frameContentXFO = getErrorPage();
   ok(frameContentXFO.includes(XFO_ERROR_PAGE_MSG), "xfo error page correct");
   SimpleTest.finish();
 }

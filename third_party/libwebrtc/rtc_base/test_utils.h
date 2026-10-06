@@ -17,7 +17,6 @@
 #include <utility>
 
 #include "rtc_base/socket.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
 
 namespace webrtc {
 namespace testing {
@@ -37,24 +36,30 @@ enum StreamSinkEvent {
   SSE_ERROR = 16
 };
 
-class StreamSink : public sigslot::has_slots<> {
+class StreamSink {
  public:
   StreamSink();
-  ~StreamSink() override;
+  virtual ~StreamSink();
 
   void Monitor(Socket* socket) {
-    socket->SignalConnectEvent.connect(this, &StreamSink::OnConnectEvent);
-    socket->SignalReadEvent.connect(this, &StreamSink::OnReadEvent);
-    socket->SignalWriteEvent.connect(this, &StreamSink::OnWriteEvent);
-    socket->SignalCloseEvent.connect(this, &StreamSink::OnCloseEvent);
+    socket->SubscribeConnectEvent(
+        this, [this](Socket* socket) { OnConnectEvent(socket); });
+    socket->SubscribeReadEvent(this,
+                               [this](Socket* socket) { OnReadEvent(socket); });
+    socket->SubscribeWriteEvent(
+        this, [this](Socket* socket) { OnWriteEvent(socket); });
+    socket->SubscribeCloseEvent(this, [this](Socket* socket, int error) {
+      OnCloseEvent(socket, error);
+    });
     // In case you forgot to unmonitor a previous object with this address
     events_.erase(socket);
   }
   void Unmonitor(Socket* socket) {
-    socket->SignalConnectEvent.disconnect(this);
-    socket->SignalReadEvent.disconnect(this);
-    socket->SignalWriteEvent.disconnect(this);
-    socket->SignalCloseEvent.disconnect(this);
+    socket->UnsubscribeConnectEvent(this);
+    socket->UnsubscribeReadEvent(this);
+    socket->UnsubscribeWriteEvent(this);
+    socket->UnsubscribeCloseEvent(this);
+
     events_.erase(socket);
   }
   bool Check(Socket* socket, StreamSinkEvent event, bool reset = true) {

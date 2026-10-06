@@ -1,0 +1,45 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>Bug 2035059 - ADTS duration via data: URL</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+<audio id="a"></audio>
+<script>
+// ADTS has no per-stream duration in the header, so the demuxer estimates
+// it from the resource length and falls into the same Infinity-latching
+// path as plain CBR mp3 when the resource length isn't reported up front.
+const SRC = "adts-cbr.aac";
+const EXPECTED = 14.789872;
+
+add_task(async function test_adts_dataurl_duration() {
+  const blob = await fetch(SRC).then(r => r.blob());
+  const dataUrl = await new Promise(resolve => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.readAsDataURL(blob);
+  });
+
+  const audio = document.getElementById("a");
+  audio.src = dataUrl;
+
+  await new Promise((resolve, reject) => {
+    audio.addEventListener("canplaythrough", resolve, { once: true });
+    audio.addEventListener("error", () => reject(audio.error), { once: true });
+  });
+
+  // The ADTS demuxer extrapolates duration from a small sample of frame
+  // sizes, so the result for variable-rate AAC drifts ~8%. Allow a wide
+  // tolerance: this test's job is to catch the Infinity-latching regression,
+  // not the unrelated estimation accuracy.
+  ok(Number.isFinite(audio.duration),
+     "data: URL ADTS duration should be finite, got " + audio.duration);
+  ok(Math.abs(audio.duration - EXPECTED) / EXPECTED < 0.15,
+     "data: URL ADTS duration should be within 15% of " + EXPECTED + "s, got " +
+     audio.duration);
+});
+</script>
+</body>
+</html>

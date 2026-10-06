@@ -1,0 +1,28 @@
+// @backward-compat { version 153 }
+// The .football-bounce block can be removed after Firefox 153 hits
+// Release (2026 World Cup logo variation sunset).
+.logo-and-wordmark {
+  // The variation is a 64x64 container (sized by the shared
+  // .logo-variation-small class) holding a sprite-windowed SVG at the
+  // sprite's natural 480x270 cell size. The container keeps page layout
+  // stable; the SVG overflows so the football's bounce can render past
+  // the standard logo bounds. The SVG is absolutely positioned so its
+  // "rest" cell content aligns with the container — the offsets below
+  // are a centered placeholder and likely need a visual-review tweak
+  // depending on where the football comes to rest within each cell.
+  .football-bounce {
+    overflow: visible;
+    position: relative;
+
+    .football-bounce__sprite {
+      position: absolute;
+      // Pointer events go through the visually-overflowed sprite so only
+      // the 64x64 container catches clicks. Without this, the SVG's full
+      // 480x270 bounding box would be a click target.
+      pointer-events: none;
+      // Centers the 480x270 SVG on the 64x64 container.
+      // (480 - 64) / 2 = 208; (270 - 64) / 2 = 103.
+      transform: translate(-208px, -103px);
+    }
+  }
+}

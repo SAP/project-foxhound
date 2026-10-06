@@ -9,16 +9,17 @@ const PREF_MITM_CANARY_ISSUER = "security.pki.mitm_canary_issuer";
 const PREF_MITM_AUTO_ENABLE_ENTERPRISE_ROOTS =
   "security.certerrors.mitm.auto_enable_enterprise_roots";
 const PREF_ENTERPRISE_ROOTS = "security.enterprise_roots.enabled";
+const PREF_FELT_PRIV_V1 = "security.certerrors.felt-privacy-v1";
 
 const UNKNOWN_ISSUER = "https://untrusted.example.com";
 
-// Check that basic MitM priming works and the MitM error page is displayed successfully.
-add_task(async function checkMitmPriming() {
+async function checkMitmPriming(useFelt) {
   await SpecialPowers.pushPrefEnv({
     set: [
       [PREF_MITM_PRIMING, true],
       [PREF_MITM_PRIMING_ENDPOINT, UNKNOWN_ISSUER],
       [PREF_ENTERPRISE_ROOTS, false],
+      [PREF_FELT_PRIV_V1, useFelt],
     ],
   });
 
@@ -51,14 +52,6 @@ add_task(async function checkMitmPriming() {
 
   await certErrorLoaded;
 
-  await SpecialPowers.spawn(browser, [], () => {
-    is(
-      content.document.body.getAttribute("code"),
-      "MOZILLA_PKIX_ERROR_MITM_DETECTED",
-      "MitM error page has loaded."
-    );
-  });
-
   ok(true, "Successfully loaded the MitM error page.");
 
   is(
@@ -67,39 +60,64 @@ add_task(async function checkMitmPriming() {
     "Stored the correct issuer"
   );
 
-  await SpecialPowers.spawn(browser, [], async () => {
-    const shortDesc = content.document.querySelector("#errorShortDesc");
-    const whatToDo = content.document.querySelector("#errorWhatToDoText");
+  if (useFelt) {
+    await SpecialPowers.spawn(browser, [], async () => {
+      const doc = content.document;
+      const netErrorCard = await ContentTaskUtils.waitForCondition(
+        () => doc.querySelector("net-error-card")?.wrappedJSObject,
+        "net-error-card should be present for MitM error"
+      );
+      await netErrorCard.getUpdateComplete();
 
-    await ContentTaskUtils.waitForCondition(
-      () => shortDesc.textContent != "" && whatToDo.textContent != "",
-      "DOM localization has been updated"
-    );
+      is(
+        netErrorCard.errorTitle.dataset.l10nId,
+        "certerror-mitm-title",
+        "MitM error page uses the correct title."
+      );
+    });
+  } else {
+    await SpecialPowers.spawn(browser, [], () => {
+      is(
+        content.document.body.getAttribute("code"),
+        "MOZILLA_PKIX_ERROR_MITM_DETECTED",
+        "MitM error page has loaded."
+      );
+    });
 
-    ok(
-      shortDesc.textContent.includes("Unknown CA"),
-      "Shows the name of the issuer."
-    );
+    await SpecialPowers.spawn(browser, [], async () => {
+      const shortDesc = content.document.querySelector("#errorShortDesc");
+      const whatToDo = content.document.querySelector("#errorWhatToDoText");
 
-    ok(
-      whatToDo.textContent.includes("Unknown CA"),
-      "Shows the name of the issuer."
-    );
-  });
+      await ContentTaskUtils.waitForCondition(
+        () => shortDesc.textContent != "" && whatToDo.textContent != "",
+        "DOM localization has been updated"
+      );
+
+      ok(
+        shortDesc.textContent.includes("Unknown CA"),
+        "Shows the name of the issuer."
+      );
+
+      ok(
+        whatToDo.textContent.includes("Unknown CA"),
+        "Shows the name of the issuer."
+      );
+    });
+  }
 
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  await SpecialPowers.clearUserPref(PREF_MITM_CANARY_ISSUER);
+  await SpecialPowers.flushPrefEnv();
+}
 
-  Services.prefs.clearUserPref(PREF_MITM_CANARY_ISSUER);
-});
-
-// Check that we set the enterprise roots pref correctly on MitM
-add_task(async function checkMitmAutoEnableEnterpriseRoots() {
+async function checkMitmAutoEnableEnterpriseRoots(useFelt) {
   await SpecialPowers.pushPrefEnv({
     set: [
       [PREF_MITM_PRIMING, true],
       [PREF_MITM_PRIMING_ENDPOINT, UNKNOWN_ISSUER],
       [PREF_MITM_AUTO_ENABLE_ENTERPRISE_ROOTS, true],
       [PREF_ENTERPRISE_ROOTS, false],
+      [PREF_FELT_PRIV_V1, !!useFelt],
     ],
   });
 
@@ -138,13 +156,29 @@ add_task(async function checkMitmAutoEnableEnterpriseRoots() {
   await certErrorLoaded;
   await prefChanged;
 
-  await SpecialPowers.spawn(browser, [], () => {
-    is(
-      content.document.body.getAttribute("code"),
-      "MOZILLA_PKIX_ERROR_MITM_DETECTED",
-      "MitM error page has loaded."
-    );
-  });
+  if (useFelt) {
+    await SpecialPowers.spawn(browser, [], async () => {
+      const doc = content.document;
+      const netErrorCard = await ContentTaskUtils.waitForCondition(
+        () => doc.querySelector("net-error-card")?.wrappedJSObject,
+        "net-error-card should be present for MitM error"
+      );
+      await netErrorCard.getUpdateComplete();
+      is(
+        netErrorCard.errorTitle.dataset.l10nId,
+        "certerror-mitm-title",
+        "MitM error page has loaded."
+      );
+    });
+  } else {
+    await SpecialPowers.spawn(browser, [], () => {
+      is(
+        content.document.body.getAttribute("code"),
+        "MOZILLA_PKIX_ERROR_MITM_DETECTED",
+        "MitM error page has loaded."
+      );
+    });
+  }
 
   ok(true, "Successfully loaded the MitM error page.");
 
@@ -154,6 +188,19 @@ add_task(async function checkMitmAutoEnableEnterpriseRoots() {
   );
 
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  await SpecialPowers.clearUserPref(PREF_MITM_CANARY_ISSUER);
+  await SpecialPowers.flushPrefEnv();
+}
+// Check that basic MitM priming works and the MitM error page is displayed successfully.
+add_task(async function runCheckMitmPriming() {
+  for (const useFelt of [true, false]) {
+    await checkMitmPriming(useFelt);
+  }
+});
 
-  Services.prefs.clearUserPref(PREF_MITM_CANARY_ISSUER);
+// Check that we set the enterprise roots pref correctly on MitM
+add_task(async function runCheckMitmAutoEnableEnterpriseRoots() {
+  for (const useFelt of [true, false]) {
+    await checkMitmAutoEnableEnterpriseRoots(useFelt);
+  }
 });

@@ -12,7 +12,6 @@ import android.service.autofill.FillRequest
 import android.service.autofill.SaveCallback
 import android.service.autofill.SaveRequest
 import android.widget.inline.InlinePresentationSpec
-import androidx.annotation.RequiresApi
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -24,7 +23,6 @@ import mozilla.components.feature.autofill.structure.toRawStructure
 /**
  * Service responsible for implementing Android's Autofill framework.
  */
-@RequiresApi(Build.VERSION_CODES.O)
 abstract class AbstractAutofillService : AutofillService() {
     abstract val configuration: AutofillConfiguration
 

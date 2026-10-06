@@ -1,21 +1,20 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AudioNodeTrack.h"
 
+#include "AlignmentUtils.h"
+#include "AudioChannelFormat.h"
+#include "AudioContext.h"
+#include "AudioNodeEngine.h"
+#include "AudioParamTimeline.h"
 #include "MediaTrackGraph.h"
 #include "MediaTrackListener.h"
-#include "AudioNodeEngine.h"
 #include "ThreeDPoint.h"
 #include "Tracing.h"
-#include "AudioChannelFormat.h"
-#include "AudioParamTimeline.h"
-#include "AudioContext.h"
-#include "nsMathUtils.h"
-#include "AlignmentUtils.h"
 #include "blink/Reverb.h"
+#include "nsMathUtils.h"
 
 using namespace mozilla::dom;
 
@@ -395,6 +394,7 @@ void AudioNodeTrack::UpMixDownMixChunk(const AudioBlock* aChunk,
 // AudioNodeTracks.
 void AudioNodeTrack::ProcessInput(GraphTime aFrom, GraphTime aTo,
                                   uint32_t aFlags) {
+  MOZ_ASSERT(aTo - aFrom == WEBAUDIO_BLOCK_SIZE);
   uint16_t outputCount = mLastChunks.Length();
   MOZ_ASSERT(outputCount == std::max(uint16_t(1), mEngine->OutputCount()));
 
@@ -436,7 +436,7 @@ void AudioNodeTrack::ProcessInput(GraphTime aFrom, GraphTime aTo,
       NS_ASSERTION(mLastChunks[i].GetDuration() == WEBAUDIO_BLOCK_SIZE,
                    "Invalid WebAudio chunk size");
     }
-    if (finished) {
+    if (finished && !mMarkAsEndedAfterThisBlock) {
       mMarkAsEndedAfterThisBlock = true;
       if (mIsActive) {
         ScheduleCheckForInactive();

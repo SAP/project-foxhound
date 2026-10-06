@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,13 +8,13 @@
 #include "js/TypeDecls.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/LinkedList.h"
 #include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/ReadableStreamGenericReader.h"
 #include "mozilla/dom/ReadRequest.h"
+#include "mozilla/dom/ReadableStreamGenericReader.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupports.h"
 #include "nsWrapperCache.h"
-#include "mozilla/LinkedList.h"
 
 namespace mozilla::dom {
 
@@ -100,22 +98,6 @@ class ReadableStreamDefaultReader final : public ReadableStreamGenericReader,
  private:
   LinkedList<RefPtr<ReadRequest>> mReadRequests = {};
 };
-
-namespace streams_abstract {
-
-void SetUpReadableStreamDefaultReader(ReadableStreamDefaultReader* aReader,
-                                      ReadableStream* aStream,
-                                      ErrorResult& aRv);
-
-void ReadableStreamDefaultReaderErrorReadRequests(
-    JSContext* aCx, ReadableStreamDefaultReader* aReader,
-    JS::Handle<JS::Value> aError, ErrorResult& aRv);
-
-void ReadableStreamDefaultReaderRelease(JSContext* aCx,
-                                        ReadableStreamDefaultReader* aReader,
-                                        ErrorResult& aRv);
-
-}  // namespace streams_abstract
 
 }  // namespace mozilla::dom
 

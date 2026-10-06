@@ -42,11 +42,20 @@ add_task(async function test_autocompleteFromUsername() {
 
   const URL = `https://example.com${DIRECTORY_PATH}file_focus_before_DOMContentLoaded.sjs`;
 
+  const formFilledPromise = listenForTestNotification("FormProcessed");
   let newTab = await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
     opening: URL,
     forceNewProcess: true,
   });
+
+  // In some cases `MozAfterPaint` is fired before `DOMContentLoaded`, since we expect
+  // `MozAfterPaint` after receving `DOMContentLoaded`, force a repaint here.
+  await SpecialPowers.spawn(newTab.linkedBrowser, [], async () => {
+    content.document.body.style.backgroundColor = "green";
+  });
+
+  await formFilledPromise;
 
   await SpecialPowers.spawn(
     newTab.linkedBrowser,

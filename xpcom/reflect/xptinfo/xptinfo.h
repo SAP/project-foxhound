@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -569,8 +567,7 @@ namespace detail {
 
 // The UntypedTArray type allows low-level access from XPConnect to nsTArray
 // internals without static knowledge of the array element type in question.
-class UntypedTArray : public nsTArray_base<nsTArrayFallibleAllocator,
-                                           nsTArray_RelocateUsingMemutils> {
+class UntypedTArray : public nsTArray_base<nsTArray_RelocateUsingMemutils> {
  public:
   void* Elements() const { return static_cast<void*>(Hdr() + 1); }
 

@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,7 +11,6 @@
 #include "nsPIDOMWindow.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/Unused.h"
 
 using mozilla::dom::Promise;
 
@@ -61,7 +59,7 @@ nsSharePicker::Share(const nsACString& aTitle, const nsACString& aText,
   if (aUrl) {
     nsresult rv = aUrl->GetSpec(urlString);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
-    mozilla::Unused << rv;
+    (void)rv;
   } else {
     urlString.SetIsVoid(true);
   }

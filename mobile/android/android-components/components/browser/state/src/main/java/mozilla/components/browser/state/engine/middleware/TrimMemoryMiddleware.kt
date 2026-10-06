@@ -13,7 +13,7 @@ import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import mozilla.components.support.base.log.logger.Logger
 
 // The number of tabs we keep active and do not suspend (in addition to the selected tab)
@@ -26,33 +26,33 @@ internal class TrimMemoryMiddleware : Middleware<BrowserState, BrowserAction> {
     private val logger = Logger("TrimMemoryMiddleware")
 
     override fun invoke(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         next: (BrowserAction) -> Unit,
         action: BrowserAction,
     ) {
         next(action)
 
         if (action is SystemAction.LowMemoryAction) {
-            trimMemory(context, action)
+            trimMemory(store, action)
         }
     }
 
     private fun trimMemory(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         action: SystemAction.LowMemoryAction,
     ) {
         if (!shouldCloseEngineSessions(action.level)) {
             return
         }
 
-        val suspendTabs = determineTabsToSuspend(context.state)
+        val suspendTabs = determineTabsToSuspend(store.state)
 
-        logger.info("Trim memory (tabs=${context.state.allTabs.size}, suspending=${suspendTabs.size})")
+        logger.info("Trim memory (tabs=${store.state.allTabs.size}, suspending=${suspendTabs.size})")
 
         // This is not the most efficient way of doing this. We are looping over all tabs and then
         // dispatching a SuspendEngineSessionAction for each tab that is no longer needed.
         suspendTabs.forEach { tab ->
-            context.dispatch(EngineAction.SuspendEngineSessionAction(tab.id))
+            store.dispatch(EngineAction.SuspendEngineSessionAction(tab.id))
         }
     }
 

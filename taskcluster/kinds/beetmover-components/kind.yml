@@ -16,6 +16,9 @@ kind-dependencies:
     - build-components
     - post-signing-dummy
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 tasks:
     push-to-maven:
         description: Publish component

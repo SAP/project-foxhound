@@ -28,9 +28,8 @@ class MissingUVError(Exception):
 
 
 class GeneratePythonLockfiles(MozbuildObject):
-
     def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, virtualenv_name="vendor", **kwargs)
+        super().__init__(*args, virtualenv_name="uv", **kwargs)
 
         self.keep_lockfiles = False
         self.output_dir = None

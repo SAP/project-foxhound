@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -38,8 +37,6 @@ class CTFontEntry final : public gfxFontEntry {
               WeightRange aWeight, StretchRange aStretch,
               SlantStyleRange aStyle, bool aIsDataUserFont, bool aIsLocal);
 
-  virtual ~CTFontEntry() { ::CGFontRelease(mFontRef); }
-
   gfxFontEntry* Clone() const override;
 
   // Return a non-owning reference to our CGFont; caller must not release it.
@@ -77,12 +74,23 @@ class CTFontEntry final : public gfxFontEntry {
 
   bool SupportsOpenTypeFeature(Script aScript, uint32_t aFeatureTag) override;
 
+  size_t ComputedSizeOfExcludingThis(
+      mozilla::MallocSizeOf aMallocSizeOf) override {
+    return gfxFontEntry::ComputedSizeOfExcludingThis(aMallocSizeOf) +
+           mComputedSizeOfUserFont;
+  }
+
  protected:
+  // Protected destructor, to discourage deletion outside of Release():
+  virtual ~CTFontEntry() { ::CGFontRelease(mFontRef); }
+
   gfxFont* CreateFontInstance(const gfxFontStyle* aFontStyle) override;
 
   bool HasFontTable(uint32_t aTableTag) override;
 
   static void DestroyBlobFunc(void* aUserData);
+
+  FontTableCache* GetFontTableCache(bool aCreate) override { return nullptr; }
 
   CGFontRef mFontRef MOZ_GUARDED_BY(mLock);  // owning reference
 
@@ -111,6 +119,8 @@ class CTFontEntry final : public gfxFontEntry {
   nsTHashtable<nsUint32HashKey> mAvailableTables MOZ_GUARDED_BY(mLock);
 
   mozilla::ThreadSafeWeakPtr<mozilla::gfx::UnscaledFontMac> mUnscaledFont;
+
+  size_t mComputedSizeOfUserFont = 0;
 };
 
 class CTFontFamily : public gfxFontFamily {
@@ -151,30 +161,27 @@ class CoreTextFontList : public gfxPlatformFontList {
   using FontFamilyListEntry = mozilla::dom::SystemFontListEntry;
 
  public:
-  gfxFontFamily* CreateFontFamily(const nsACString& aName,
-                                  FontVisibility aVisibility) const override;
+  already_AddRefed<gfxFontFamily> CreateFontFamily(
+      const nsACString& aName, FontVisibility aVisibility) const override;
 
   static int32_t AppleWeightToCSSWeight(int32_t aAppleWeight);
 
-  gfxFontEntry* LookupLocalFont(nsPresContext* aPresContext,
-                                const nsACString& aFontName,
-                                WeightRange aWeightForEntry,
-                                StretchRange aStretchForEntry,
-                                SlantStyleRange aStyleForEntry) override;
+  already_AddRefed<gfxFontEntry> LookupLocalFont(
+      FontVisibilityProvider* aFontVisibilityProvider,
+      const nsACString& aFontName, WeightRange aWeightForEntry,
+      StretchRange aStretchForEntry, SlantStyleRange aStyleForEntry) override;
 
-  gfxFontEntry* MakePlatformFont(const nsACString& aFontName,
-                                 WeightRange aWeightForEntry,
-                                 StretchRange aStretchForEntry,
-                                 SlantStyleRange aStyleForEntry,
-                                 const uint8_t* aFontData,
-                                 uint32_t aLength) override;
+  already_AddRefed<gfxFontEntry> MakePlatformFont(
+      const nsACString& aFontName, WeightRange aWeightForEntry,
+      StretchRange aStretchForEntry, SlantStyleRange aStyleForEntry,
+      const uint8_t* aFontData, uint32_t aLength) override;
 
   bool FindAndAddFamiliesLocked(
-      nsPresContext* aPresContext, mozilla::StyleGenericFontFamily aGeneric,
-      const nsACString& aFamily, nsTArray<FamilyAndGeneric>* aOutput,
-      FindFamiliesFlags aFlags, gfxFontStyle* aStyle = nullptr,
-      nsAtom* aLanguage = nullptr, gfxFloat aDevToCssSize = 1.0)
-      MOZ_REQUIRES(mLock) override;
+      FontVisibilityProvider* aFontVisibilityProvider,
+      mozilla::StyleGenericFontFamily aGeneric, const nsACString& aFamily,
+      nsTArray<FamilyAndGeneric>* aOutput, FindFamiliesFlags aFlags,
+      gfxFontStyle* aStyle = nullptr, nsAtom* aLanguage = nullptr,
+      gfxFloat aDevToCssSize = 1.0) MOZ_REQUIRES(mLock) override;
 
   // Values for the entryType field in FontFamilyListEntry records passed
   // from chrome to content process.
@@ -200,9 +207,9 @@ class CoreTextFontList : public gfxPlatformFontList {
   void InitSystemFontNames() MOZ_REQUIRES(mLock);
 
   // look up a default font to use as fallback
-  FontFamily GetDefaultFontForPlatform(nsPresContext* aPresContext,
-                                       const gfxFontStyle* aStyle,
-                                       nsAtom* aLanguage = nullptr)
+  FontFamily GetDefaultFontForPlatform(
+      FontVisibilityProvider* aFontVisibilityProvider,
+      const gfxFontStyle* aStyle, nsAtom* aLanguage = nullptr)
       MOZ_REQUIRES(mLock) override;
 
   // Hooks for the macOS-specific "single face family" hack (Osaka-mono).
@@ -227,12 +234,10 @@ class CoreTextFontList : public gfxPlatformFontList {
 
   // attempt to use platform-specific fallback for the given character
   // return null if no usable result found
-  gfxFontEntry* PlatformGlobalFontFallback(nsPresContext* aPresContext,
-                                           const uint32_t aCh,
-                                           Script aRunScript,
-                                           const gfxFontStyle* aMatchStyle,
-                                           FontFamily& aMatchedFamily)
-      MOZ_REQUIRES(mLock) override;
+  gfxFontEntry* PlatformGlobalFontFallback(
+      FontVisibilityProvider* aFontVisibilityProvider, const uint32_t aCh,
+      Script aRunScript, const gfxFontStyle* aMatchStyle,
+      FontFamily& aMatchedFamily) MOZ_REQUIRES(mLock) override;
 
   bool UsesSystemFallback() override { return true; }
 
@@ -248,7 +253,7 @@ class CoreTextFontList : public gfxPlatformFontList {
       const nsACString& aDir,
       nsTHashSet<nsCStringHashKey>* aLoadedFamilies = nullptr);
 
-  gfxFontEntry* CreateFontEntry(
+  already_AddRefed<gfxFontEntry> CreateFontEntry(
       mozilla::fontlist::Face* aFace,
       const mozilla::fontlist::Family* aFamily) override;
 

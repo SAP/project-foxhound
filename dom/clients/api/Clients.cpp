@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,8 @@
 
 #include "Client.h"
 #include "ClientDOMUtil.h"
+#include "mozilla/SchedulerGroup.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/ClientManager.h"
 #include "mozilla/dom/ClientsBinding.h"
@@ -17,11 +17,9 @@
 #include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/ipc/BackgroundUtils.h"
-#include "mozilla/SchedulerGroup.h"
-#include "mozilla/StaticPrefs_privacy.h"
 #include "nsIGlobalObject.h"
-#include "nsString.h"
 #include "nsReadableUtils.h"
+#include "nsString.h"
 
 namespace mozilla::dom {
 

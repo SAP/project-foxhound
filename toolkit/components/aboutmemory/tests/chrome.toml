@@ -21,15 +21,24 @@ support-files = [
 ["test_aboutmemory4.xhtml"]
 
 ["test_aboutmemory5.xhtml"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug", # Bug 2034604
+]
 
 ["test_aboutmemory6.xhtml"]
 
 ["test_aboutmemory7.xhtml"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug", # Bug 2034604
+]
 
 ["test_dumpGCAndCCLogsToFile.xhtml"]
 
 ["test_memoryReporters.xhtml"]
 
 ["test_memoryReporters2.xhtml"]
+skip-if = [
+  "standalone", # Bug 2026600
+]
 
 ["test_sqliteMultiReporter.xhtml"]

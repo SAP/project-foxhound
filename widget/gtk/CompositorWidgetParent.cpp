@@ -1,10 +1,8 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CompositorWidgetParent.h"
-#include "mozilla/Unused.h"
 #include "mozilla/widget/PlatformWidgetTypes.h"
 #include "nsWindow.h"
 
@@ -22,9 +20,9 @@ CompositorWidgetParent::~CompositorWidgetParent() = default;
 
 void CompositorWidgetParent::ObserveVsync(VsyncObserver* aObserver) {
   if (aObserver) {
-    Unused << SendObserveVsync();
+    (void)SendObserveVsync();
   } else {
-    Unused << SendUnobserveVsync();
+    (void)SendUnobserveVsync();
   }
   mVsyncObserver = aObserver;
 }
@@ -42,12 +40,6 @@ mozilla::ipc::IPCResult CompositorWidgetParent::RecvNotifyClientSizeChanged(
 
 mozilla::ipc::IPCResult CompositorWidgetParent::RecvCleanupResources() {
   CleanupResources();
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult CompositorWidgetParent::RecvSetRenderingSurface(
-    const uintptr_t& aXWindow) {
-  SetRenderingSurface(aXWindow);
   return IPC_OK();
 }
 

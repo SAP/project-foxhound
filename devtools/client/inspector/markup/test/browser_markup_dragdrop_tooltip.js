@@ -3,8 +3,9 @@
 "use strict";
 
 // Test that tooltips don't appear when dragging over tooltip targets.
-
-const TEST_URL = 'data:text/html;charset=utf8,<img src="about:logo" /><div>';
+const imgUrl =
+  "https://example.com/browser/devtools/client/inspector/markup/test/doc_markup_tooltip.png";
+const TEST_URL = `data:text/html;charset=utf8,<img src="${imgUrl}" /><div>`;
 
 add_task(async function () {
   const { inspector } = await openInspectorForURL(TEST_URL);

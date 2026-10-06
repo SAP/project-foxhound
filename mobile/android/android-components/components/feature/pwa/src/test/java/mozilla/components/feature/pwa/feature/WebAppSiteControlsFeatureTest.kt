@@ -38,7 +38,7 @@ class WebAppSiteControlsFeatureTest {
         val feature = spy(
             WebAppSiteControlsFeature(
                 testContext,
-                mock(),
+                BrowserStore(),
                 "session-id",
                 controlsBuilder = controlsBuilder,
                 notificationsDelegate = mock(),
@@ -56,7 +56,7 @@ class WebAppSiteControlsFeatureTest {
 
         doNothing().`when`(context).unregisterReceiver(any())
 
-        val feature = WebAppSiteControlsFeature(context, mock(), "session-id", mock(), notificationsDelegate = mock())
+        val feature = WebAppSiteControlsFeature(context, BrowserStore(), "session-id", mock(), notificationsDelegate = mock())
         feature.onPause(mock())
 
         verify(context).unregisterReceiver(feature)

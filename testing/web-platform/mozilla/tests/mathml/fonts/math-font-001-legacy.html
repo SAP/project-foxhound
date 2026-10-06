@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<meta charset="utf-8"/>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script src="./support/monospace.js"></script>
+<style>
+  math, #span_font_family_math { font-size: 40px; }
+</style>
+<div id="log"></div>
+<math id="math_default_style"><mtext>SHOULD_BE_MONOSPACE.</mtext></math>
+<span id="span_font_family_math" style="font-family: math">SHOULD_BE_MONOSPACE.</span>
+<math id="math_font_family_math_serif" style="font-family: math, sans-serif"><mtext>SHOULD_BE_MONOSPACE.</mtext></math>
+<math id="math_font_family_serif" style="font-family: serif"><mtext>SHOULD_NOT_BE_MONOSPACE.</mtext></math>
+<script>
+  const epsilon = 2;
+  test(function() {
+    assert_is_monospace(document.getElementById("math_default_style"), epsilon);
+  }, `<math> uses monospace fonts from font.name-list.serif.x-math.`);
+
+  test(function() {
+    assert_is_not_monospace(document.getElementById("span_font_family_math"), epsilon);
+  }, `<span style="font-family: math"> does not use monospace fonts from font.name-list.serif.x-math.`);
+
+  test(function() {
+    assert_is_not_monospace(document.getElementById("math_font_family_math_serif"), epsilon);
+  }, `<math style="font-family: math, sans-serif"> does not use use monospace fonts from font.name-list.serif.x-math.`);
+
+  test(function() {
+    assert_is_monospace(document.getElementById("math_font_family_serif"), epsilon);
+  }, `<math style="font-family: serif"> uses monospace fonts from font.name-list.serif.x-math.`);
+</script>

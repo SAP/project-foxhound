@@ -1,0 +1,15 @@
+[package]
+name = "viaduct-necko"
+version = "0.1.0"
+edition = "2021"
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1"
+error-support = "0.1"
+futures-channel = "0.3"
+url = "2"
+viaduct = "0.1"
+
+[lib]
+path = "src/lib.rs"

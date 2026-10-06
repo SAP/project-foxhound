@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this file,
+  You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- Title of the crash reporter dialog. %1$s will be replaced with the name of the app (e.g. Firefox Focus). -->
   <string name="mozac_lib_crash_dialog_title">很抱歉，%1$s 遇到問題，發生錯誤。</string>
@@ -21,7 +28,7 @@
   <!-- Label of notification showing that the telemetry service is gathering the crash data. -->
   <string name="mozac_lib_gathering_crash_telemetry_in_progress">正在取得發生錯誤的 telemetry 資料</string>
   <!-- Title of the activity that shows the list of past crashes (similar to about:crashes) -->
-  <string name="mozac_lib_crash_activity_title">錯誤資訊報表</string>
+  <string name="mozac_lib_crash_activity_title">錯誤報告</string>
   <!-- Text shown instead of crash list if no crashes have been submitted yet -->
   <string name="mozac_lib_crash_no_crashes">未送出任何錯誤資訊報表。</string>
   <!-- Text link that will show an app chooser to share a crash report with a third-party app (e.g. gmail) -->

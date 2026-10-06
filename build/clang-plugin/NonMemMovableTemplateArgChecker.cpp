@@ -10,8 +10,8 @@ void NonMemMovableTemplateArgChecker::registerMatchers(
   // Handle non-mem-movable template specializations
   AstMatcher->addMatcher(
       classTemplateSpecializationDecl(
-          allOf(needsMemMovableTemplateArg(),
-                hasAnyTemplateArgument(refersToType(isNonMemMovable()))))
+          needsMemMovableTemplateArg(),
+                hasAnyTemplateArgument(refersToType(isNonMemMovable())))
           .bind("specialization"),
       this);
 }

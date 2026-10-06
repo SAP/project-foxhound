@@ -1,0 +1,15 @@
+{
+  "label": "hrmis2.eghrmis.gov.my",
+  "bugs": {
+    "1898930": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://hrmis2.eghrmis.gov.my/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["change_Firefox_to_FireFox"]
+    }
+  ]
+}

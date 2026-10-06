@@ -1,0 +1,18 @@
+{
+  "label": "pexels.com",
+  "bugs": {
+    "1947105": {
+      "issue": "broken-layout",
+      "matches": ["*://*.pexels.com/photo/*"]
+    }
+  },
+  "css": {
+    "nudge_thanks_popup_onscreen": "[class*=Modal_overlay][class*=Modal_positionContentCenter]:has([class*=after-open]) { justify-content: unset; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": ["nudge_thanks_popup_onscreen"]
+    }
+  ]
+}

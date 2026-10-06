@@ -57,4 +57,6 @@ support-files = [
 ["test_richtext.html"]
 
 ["test_richtext2.html"]
-skip-if = ["os == 'android'"] # Bug 1202045
+skip-if = [
+  "os == 'android'", # Bug 1202045
+]

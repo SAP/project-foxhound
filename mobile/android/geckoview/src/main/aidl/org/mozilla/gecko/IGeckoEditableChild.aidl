@@ -17,7 +17,7 @@ interface IGeckoEditableChild {
     void onKeyEvent(int action, int keyCode, int scanCode, int metaState,
                     int keyPressMetaState, long time, int domPrintableKeyValue,
                     int repeatCount, int flags, boolean isSynthesizedImeKey,
-                    in KeyEvent event);
+                    boolean waitingReply, in KeyEvent event);
 
     // Request a callback to parent after performing any pending operations.
     void onImeSynchronize();

@@ -20,9 +20,11 @@
 #include "api/units/data_size.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
+#include "modules/congestion_controller/rtp/congestion_controller_feedback_stats.h"
 #include "modules/remote_bitrate_estimator/congestion_control_feedback_tracker.h"
 #include "modules/remote_bitrate_estimator/rtp_transport_feedback_generator.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
+#include "rtc_base/containers/flat_map.h"
 #include "rtc_base/experiments/field_trial_parser.h"
 
 namespace webrtc {
@@ -54,13 +56,16 @@ class CongestionControlFeedbackGenerator
   CongestionControlFeedbackGenerator(
       const Environment& env,
       RtpTransportFeedbackGenerator::RtcpSender feedback_sender);
-  ~CongestionControlFeedbackGenerator() = default;
+  ~CongestionControlFeedbackGenerator() override = default;
 
   void OnReceivedPacket(const RtpPacketReceived& packet) override;
 
   void OnSendBandwidthEstimateChanged(DataRate estimate) override {}
 
   TimeDelta Process(Timestamp now) override;
+
+  flat_map<uint32_t, SentCongestionControllerFeedbackStats> GetStatsPerSsrc()
+      const;
 
  private:
   Timestamp NextFeedbackTime() const RTC_RUN_ON(sequence_checker_);
@@ -84,8 +89,7 @@ class CongestionControlFeedbackGenerator
   std::map</*ssrc=*/uint32_t, CongestionControlFeedbackTracker>
       feedback_trackers_;
 
-  // std::vector<PacketInfo> packets_;
-  Timestamp last_feedback_sent_time_ = Timestamp::Zero();
+  Timestamp last_feedback_sent_time_ = Timestamp::MinusInfinity();
   std::optional<Timestamp> first_arrival_time_since_feedback_;
   bool marker_bit_seen_ = false;
   Timestamp next_possible_feedback_send_time_ = Timestamp::Zero();

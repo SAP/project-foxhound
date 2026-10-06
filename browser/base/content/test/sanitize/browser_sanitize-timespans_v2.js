@@ -56,10 +56,6 @@ async function onHistoryReady() {
   // Should test cookies here, but nsICookieManager/nsICookieService
   // doesn't let us fake creation times.  bug 463127
 
-  await SpecialPowers.pushPrefEnv({
-    set: [["privacy.sanitize.useOldClearHistoryDialog", false]],
-  });
-
   let itemsToClear = ["historyAndFormData", "downloads"];
 
   let publicList = await Downloads.getList(Downloads.PUBLIC);

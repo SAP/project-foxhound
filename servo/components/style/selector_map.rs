@@ -7,6 +7,7 @@
 
 use crate::applicable_declarations::{ApplicableDeclarationList, ScopeProximity};
 use crate::context::QuirksMode;
+use crate::derives::*;
 use crate::dom::TElement;
 use crate::rule_tree::CascadeLevel;
 use crate::selector_parser::SelectorImpl;
@@ -44,15 +45,17 @@ pub type RelevantAttributes = thin_vec::ThinVec<LocalName>;
 /// We can avoid selector-matching those global rules for all elements without
 /// these pseudo-class states.
 const RARE_PSEUDO_CLASS_STATES: ElementState = ElementState::from_bits_retain(
-    ElementState::FULLSCREEN.bits() |
-        ElementState::VISITED_OR_UNVISITED.bits() |
-        ElementState::URLTARGET.bits() |
-        ElementState::INERT.bits() |
-        ElementState::FOCUS.bits() |
-        ElementState::FOCUSRING.bits() |
-        ElementState::TOPMOST_MODAL.bits() |
-        ElementState::SUPPRESS_FOR_PRINT_SELECTION.bits() |
-        ElementState::HEADING_LEVEL_BITS.bits(),
+    ElementState::FULLSCREEN.bits()
+        | ElementState::PICTURE_IN_PICTURE.bits()
+        | ElementState::VISITED_OR_UNVISITED.bits()
+        | ElementState::URLTARGET.bits()
+        | ElementState::INERT.bits()
+        | ElementState::FOCUS.bits()
+        | ElementState::FOCUSRING.bits()
+        | ElementState::TOPMOST_MODAL.bits()
+        | ElementState::SUPPRESS_FOR_PRINT_SELECTION.bits()
+        | ElementState::ACTIVE_VIEW_TRANSITION.bits()
+        | ElementState::HEADING_LEVEL_BITS.bits(),
 );
 
 /// A simple alias for a hashmap using PrecomputedHasher.
@@ -85,7 +88,7 @@ impl Hasher for PrecomputedHasher {
 /// A trait to abstract over a given selector map entry.
 pub trait SelectorMapEntry: Sized + Clone {
     /// Gets the selector we should use to index in the selector map.
-    fn selector(&self) -> SelectorIter<SelectorImpl>;
+    fn selector(&self) -> SelectorIter<'_, SelectorImpl>;
 }
 
 /// Map element data to selector-providing objects for which the last simple
@@ -332,10 +335,6 @@ impl SelectorMap<Rule> {
     ) where
         E: TElement,
     {
-        use selectors::matching::IncludeStartingStyle;
-
-        let include_starting_style =
-            matches!(matching_context.include_starting_style, IncludeStartingStyle::Yes);
         for rule in rules {
             let scope_proximity = if rule.scope_condition_id == ScopeConditionId::none() {
                 if !matches_selector(
@@ -349,7 +348,8 @@ impl SelectorMap<Rule> {
                 }
                 ScopeProximity::infinity()
             } else {
-                let result = cascade_data.find_scope_proximity_if_matching(rule, stylist, element, matching_context);
+                let result =
+                    cascade_data.find_scope_proximity_if_matching(rule, element, matching_context);
                 if result == ScopeProximity::infinity() {
                     continue;
                 }
@@ -366,18 +366,6 @@ impl SelectorMap<Rule> {
                     continue;
                 }
             }
-
-            if rule.is_starting_style {
-                // Set this flag if there are any rules inside @starting-style. This flag is for
-                // optimization to avoid any redundant resolution of starting style if the author
-                // doesn't specify for this element.
-                matching_context.has_starting_style = true;
-
-                if !include_starting_style {
-                    continue;
-                }
-            }
-
             matching_rules.push(rule.to_applicable_declaration_block(
                 cascade_level,
                 cascade_data,
@@ -408,8 +396,8 @@ impl<T: SelectorMapEntry> SelectorMap<T> {
                         .class_hash
                         .try_entry(class.clone(), quirks_mode)?
                         .or_default(),
-                    Bucket::Attribute { name, lower_name } |
-                    Bucket::LocalName { name, lower_name } => {
+                    Bucket::Attribute { name, lower_name }
+                    | Bucket::LocalName { name, lower_name } => {
                         // If the local name in the selector isn't lowercase,
                         // insert it into the rule hash twice. This means that,
                         // during lookup, we can always find the rules based on
@@ -469,8 +457,8 @@ impl<T: SelectorMapEntry> SelectorMap<T> {
             // This is specially true if there's any universal selector in the
             // `disjoint_selectors` set, at which point we'd just be doing
             // wasted work.
-            if !disjoint_buckets.is_empty() &&
-                disjoint_buckets
+            if !disjoint_buckets.is_empty()
+                && disjoint_buckets
                     .iter()
                     .all(|b| b.more_specific_than(&bucket))
             {
@@ -679,6 +667,7 @@ impl<T: SelectorMapEntry> SelectorMap<T> {
     }
 }
 
+#[derive(PartialEq)]
 enum Bucket<'a> {
     Universal,
     Namespace(&'a Namespace),
@@ -781,6 +770,12 @@ fn specific_bucket_for<'a>(
             } else {
                 for selector in list.slice() {
                     let bucket = find_bucket(selector.iter(), disjoint_buckets);
+                    if disjoint_buckets.last() == Some(&bucket) {
+                        // It's pretty common to have selectors like:
+                        //   input:is([type=foo], [type=bar], ...)
+                        // Try to prevent trivial duplicate entries for the same bucket.
+                        continue;
+                    }
                     disjoint_buckets.push(bucket);
                 }
                 Bucket::Universal
@@ -856,7 +851,7 @@ impl<V> MaybeCaseInsensitiveHashMap<Atom, V> {
         &mut self,
         mut key: Atom,
         quirks_mode: QuirksMode,
-    ) -> Result<hash_map::Entry<Atom, V>, AllocErr> {
+    ) -> Result<hash_map::Entry<'_, Atom, V>, AllocErr> {
         if quirks_mode == QuirksMode::Quirks {
             key = key.to_ascii_lowercase()
         }
@@ -871,7 +866,7 @@ impl<V> MaybeCaseInsensitiveHashMap<Atom, V> {
     }
 
     /// HashMap::iter
-    pub fn iter(&self) -> hash_map::Iter<Atom, V> {
+    pub fn iter(&self) -> hash_map::Iter<'_, Atom, V> {
         self.0.iter()
     }
 

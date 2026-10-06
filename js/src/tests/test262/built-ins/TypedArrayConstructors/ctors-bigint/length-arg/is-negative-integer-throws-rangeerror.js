@@ -22,7 +22,7 @@ info: |
     a. Let integerIndex be ? ToInteger(value).
     b. If integerIndex < 0, throw a RangeError exception.
     ...
-includes: [testBigIntTypedArray.js]
+includes: [testTypedArray.js]
 features: [BigInt, TypedArray]
 ---*/
 
@@ -34,6 +34,6 @@ testWithBigIntTypedArrayConstructors(function(TA) {
   assert.throws(RangeError, function() {
     new TA(-Infinity);
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

@@ -17,13 +17,7 @@ function shouldLazyLoad(value) {
     !value.includes("codemirror/") &&
     !value.endsWith(".properties") &&
     !value.startsWith("devtools/") &&
-    !value.startsWith("resource://devtools/") &&
-    // XXX: the lazyRequire rewriter (in transformMC) fails for this module, it
-    // evaluates `t.thisExpression()` as `void 0` instead of `this`. But the
-    // rewriter still works for other call sites and seems mandatory for the
-    // debugger to start successfully (lazy requires help to break circular
-    // dependencies).
-    value !== "resource://gre/modules/AppConstants.jsm"
+    !value.startsWith("resource://devtools/")
   );
 }
 
@@ -63,7 +57,7 @@ function transformMC({ types: t }) {
             // Select the devtools portion of the path
             // e.g. devtools\client\debugger\src\utils\source-queue
             if (!newValue.startsWith("devtools")) {
-              newValue = newValue.match(/^(.*?)(devtools.*)/)[2];
+              newValue = newValue.match(/.*(devtools.*)/)[1];
             }
 
             // Replace forward slashes with back slashes

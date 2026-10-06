@@ -1,0 +1,499 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>test_moz_input_elems_in_form</title>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+    <link
+      rel="stylesheet"
+      href="chrome://mochikit/content/tests/SimpleTest/test.css"
+    />
+    <script src="lit-test-helpers.js"></script>
+    <script class="testbody" type="application/javascript">
+      /* Bug 1996125: There's a lot of duplicated logic that should be refactored
+         For example:
+          * The template functions
+          * The `assert*` event handlers
+          * The `*with_form_attribute` tasks, since they're copies of the
+            submission and reset tests respectively
+        Most of the `is` asserts can probably be pulled into a function
+        so that we can reduce the number of lines.
+        Additionally, we should have some dynamic way of determining valid
+        moz-* input elements as this test will be out of date as soon as
+        a new moz input element is created.
+      **/
+      let testHelpers = new InputTestHelpers();
+      let formAttributeTemplateFn;
+
+      add_setup(async function setup() {
+        let { html } = await testHelpers.setupLit();
+        let templateFn = () =>
+          html` <form id="main-form">
+            <moz-fieldset>
+              <moz-checkbox
+                name="moz-checkbox"
+                value="checkbox_val"
+                checked=""
+              ></moz-checkbox>
+              <moz-radio-group name="moz-radio-group" value="radio_val_1">
+                <moz-radio value="radio_val_1"></moz-radio>
+                <moz-radio value="radio_val_2"></moz-radio>
+              </moz-radio-group>
+              <moz-select name="moz-select" value="select_val_1">
+                <moz-option value="select_val_1"></moz-option>
+                <moz-option value="select_val_2"></moz-option>
+              </moz-select>
+              <moz-toggle
+                name="moz-toggle"
+                value="toggle_val"
+                pressed="true"
+              ></moz-toggle>
+              <moz-input-search
+                name="moz-input-search"
+                value="input_search_val"
+              ></moz-input-search>
+              <moz-input-text
+                name="moz-input-text"
+                value="input_text_val"
+              ></moz-input-text>
+            </moz-fieldset>
+            <button id="submit" type="submit"></button>
+          </form>`;
+        testHelpers.setupTests({ templateFn });
+        formAttributeTemplateFn = html`<form id="form-attribute-id"></form>
+          <moz-fieldset>
+            <moz-checkbox
+              name="moz-checkbox"
+              value="checkbox_val"
+              checked=""
+              form="form-attribute-id"
+            ></moz-checkbox>
+            <moz-radio-group
+              name="moz-radio-group"
+              value="radio_val_1"
+              form="form-attribute-id"
+            >
+              <moz-radio value="radio_val_1"></moz-radio>
+              <moz-radio value="radio_val_2"></moz-radio>
+            </moz-radio-group>
+            <moz-select
+              name="moz-select"
+              value="select_val_1"
+              form="form-attribute-id"
+            >
+              <moz-option value="select_val_1"></moz-option>
+              <moz-option value="select_val_2"></moz-option>
+            </moz-select>
+            <moz-toggle
+              name="moz-toggle"
+              value="toggle_val"
+              pressed="true"
+              form="form-attribute-id"
+            ></moz-toggle>
+            <moz-input-search
+              name="moz-input-search"
+              value="input_search_val"
+              form="form-attribute-id"
+            ></moz-input-search>
+            <moz-input-text
+              name="moz-input-text"
+              value="input_text_val"
+              form="form-attribute-id"
+            ></moz-input-text>
+          </moz-fieldset>
+          <button id="submit" type="submit" form="form-attribute-id"></button>`;
+      });
+      add_task(async function test_form_submission() {
+        let renderTarget = await testHelpers.renderTemplate();
+        let form = renderTarget.firstElementChild;
+
+        let assertDefaultValue = (event, form) => {
+          event.preventDefault();
+          const formData = new FormData(form);
+          is(
+            formData.get("moz-checkbox"),
+            "checkbox_val",
+            "moz-checkbox, when checked, should have a submitted value"
+          );
+          is(
+            formData.get("moz-radio-group"),
+            "radio_val_1",
+            "moz-radio-group should have a submitted value"
+          );
+          is(
+            formData.get("moz-select"),
+            "select_val_1",
+            "moz-select should have a submitted value"
+          );
+          is(
+            formData.get("moz-toggle"),
+            "toggle_val",
+            "moz-toggle should have a submitted value"
+          );
+          is(
+            formData.get("moz-input-search"),
+            "input_search_val",
+            "moz-input-search should have a submitted value"
+          );
+          is(
+            formData.get("moz-input-text"),
+            "input_text_val",
+            "moz-input-text should have a submitted value"
+          );
+        };
+        form.addEventListener(
+          "submit",
+          event => assertDefaultValue(event, form),
+          { once: true }
+        );
+
+        let submit = document.getElementById("submit");
+        await synthesizeMouseAtCenter(submit, {});
+
+        let assertChangedValue = (event, form) => {
+          event.preventDefault();
+          const formData = new FormData(form);
+          for (let [key, value] of formData) {
+            if (key === "moz-radio-group") {
+              is(
+                value,
+                "radio_val_2",
+                `${key} should have a non-default value`
+              );
+            } else {
+              is(
+                value,
+                "non-default value",
+                `${key} should have a non-default submitted value`
+              );
+            }
+          }
+        };
+        form.addEventListener(
+          "submit",
+          event => assertChangedValue(event, form),
+          { once: true }
+        );
+        let fieldset = form.querySelector("moz-fieldset");
+        for (let c of fieldset.children) {
+          if (c.name === "moz-radio-group") {
+            c.value = "radio_val_2";
+          } else {
+            c.value = "non-default value";
+          }
+        }
+
+        // Wait for the input elements to update before clicking the
+        // submit button. Otherwise, the value property may not have
+        // updated which will cause a test failure when submitting the
+        // form.
+        let childArray = Array.from(fieldset.children);
+        await Promise.all(childArray.map(item => item.updateComplete));
+        await synthesizeMouseAtCenter(submit, {});
+
+        await synthesizeMouseAtCenter(
+          document.querySelector("moz-checkbox"),
+          {}
+        );
+        let assertCheckboxValue = (event, form) => {
+          event.preventDefault();
+          const formData = new FormData(form);
+          ok(
+            !formData.get("moz-checkbox"),
+            "moz-checkbox that is not checked should not submit a value"
+          );
+        };
+        form.addEventListener(
+          "submit",
+          event => assertCheckboxValue(event, form),
+          { once: true }
+        );
+
+        await synthesizeMouseAtCenter(submit, {});
+      });
+
+      add_task(async function test_form_reset() {
+        let renderTarget = await testHelpers.renderTemplate();
+        let form = renderTarget.firstElementChild;
+        let fieldset = document.querySelector("moz-fieldset");
+        for (let c of fieldset.children) {
+          c.value = "non-default value";
+        }
+        let checkbox = document.querySelector("moz-checkbox");
+        // Change the checked state so that we can assert later that
+        // it is restored to the defaultChecked value.
+        checkbox.checked = !checkbox.defaultChecked;
+        // Assert that the value property of the input elements has
+        // changed before we reset the form
+        for (let c of fieldset.children) {
+          is(
+            c.value,
+            "non-default value",
+            `${c.name} should have a non-default value`
+          );
+        }
+        form.reset();
+
+        let formData = new FormData(form);
+        // Each tested element's value property should reset to its
+        // value attribute.
+        is(
+          formData.get("moz-checkbox"),
+          document.querySelector("moz-checkbox").getAttribute("value"),
+          "moz-checkbox should reset to default value"
+        );
+        is(
+          formData.get("moz-radio-group"),
+          document.querySelector("moz-radio-group").getAttribute("value"),
+          "moz-radio-group should reset to default value"
+        );
+        is(
+          formData.get("moz-select"),
+          document.querySelector("moz-select").getAttribute("value"),
+          "moz-select should reset to default value"
+        );
+        is(
+          formData.get("moz-toggle"),
+          document.querySelector("moz-toggle").getAttribute("value"),
+          "moz-toggle should reset to default value"
+        );
+        is(
+          formData.get("moz-input-search"),
+          document.querySelector("moz-input-search").getAttribute("value"),
+          "moz-input-search should reset to default value"
+        );
+        is(
+          formData.get("moz-input-text"),
+          document.querySelector("moz-input-text").getAttribute("value"),
+          "moz-input-text should reset to default value"
+        );
+
+        // Assert that the checkbox checked is restored to the
+        // defaultChecked property
+        is(
+          checkbox.checked,
+          checkbox.defaultChecked,
+          "moz-checkbox should reset its checked state to the defaultChecked value"
+        );
+      });
+
+      // Assert that moz-checkbox contributes its value to the form
+      // when it is checked, does not contribute its value when unchecked,
+      // and contributes its value when switching from unchecked to
+      // checked.
+      add_task(async function test_moz_checkbox() {
+        let renderTarget = await testHelpers.renderTemplate();
+        let form = renderTarget.firstElementChild;
+        let formData = new FormData(form);
+        is(
+          formData.get("moz-checkbox"),
+          "checkbox_val",
+          "There should be a value for a checked moz-checkbox in the form data"
+        );
+        let checkbox = document.querySelector("moz-checkbox");
+        await synthesizeMouseAtCenter(checkbox, {});
+        formData = new FormData(form);
+        ok(
+          !formData.get("moz-checkbox"),
+          "There should be no value for an unchecked moz-checkbox in the form data"
+        );
+        await synthesizeMouseAtCenter(checkbox, {});
+        formData = new FormData(form);
+        is(
+          formData.get("moz-checkbox"),
+          "checkbox_val",
+          "There should be a value for a checked moz-checkbox in the form data"
+        );
+      });
+
+      // Assert that the input elements submit their values as expected
+      // when using the `form` attribute
+      add_task(async function test_form_submission_with_form_attribute() {
+        let renderTarget = await testHelpers.renderTemplate(
+          formAttributeTemplateFn
+        );
+        let form = renderTarget.firstElementChild;
+
+        let assertDefaultValue = (event, form) => {
+          event.preventDefault();
+          const formData = new FormData(form);
+          is(
+            formData.get("moz-checkbox"),
+            "checkbox_val",
+            "moz-checkbox, when checked, should have a submitted value"
+          );
+          is(
+            formData.get("moz-radio-group"),
+            "radio_val_1",
+            "moz-radio-group should have a submitted value"
+          );
+          is(
+            formData.get("moz-select"),
+            "select_val_1",
+            "moz-select should have a submitted value"
+          );
+          is(
+            formData.get("moz-toggle"),
+            "toggle_val",
+            "moz-toggle should have a submitted value"
+          );
+          is(
+            formData.get("moz-input-search"),
+            "input_search_val",
+            "moz-input-search should have a submitted value"
+          );
+          is(
+            formData.get("moz-input-text"),
+            "input_text_val",
+            "moz-input-text should have a submitted value"
+          );
+        };
+        form.addEventListener(
+          "submit",
+          event => assertDefaultValue(event, form),
+          { once: true }
+        );
+
+        let submit = document.getElementById("submit");
+        await synthesizeMouseAtCenter(submit, {});
+
+        let assertChangedValue = (event, form) => {
+          event.preventDefault();
+          const formData = new FormData(form);
+          for (let [key, value] of formData) {
+            if (key === "moz-radio-group") {
+              is(
+                value,
+                "radio_val_2",
+                `${key} should have a non-default value`
+              );
+            } else {
+              is(
+                value,
+                "non-default value",
+                `${key} should have a non-default submitted value`
+              );
+            }
+          }
+        };
+        form.addEventListener(
+          "submit",
+          event => assertChangedValue(event, form),
+          { once: true }
+        );
+        let fieldset = document.querySelector("div moz-fieldset");
+        for (let c of fieldset.children) {
+          if (c.name === "moz-radio-group") {
+            c.value = "radio_val_2";
+          } else {
+            c.value = "non-default value";
+          }
+        }
+
+        // Wait for the input elements to update before clicking the
+        // submit button. Otherwise, the value property may not have
+        // updated which will cause a test failure when submitting the
+        // form.
+        let childArray = Array.from(fieldset.children);
+        await Promise.all(childArray.map(item => item.updateComplete));
+        await synthesizeMouseAtCenter(submit, {});
+
+        // Assert that an unchecked moz-checkbox does not submit a value
+        // when a form is submitted.
+        await synthesizeMouseAtCenter(
+          document.querySelector("moz-checkbox"),
+          {}
+        );
+        let assertCheckboxValue = (event, form) => {
+          event.preventDefault();
+          const formData = new FormData(form);
+          ok(
+            !formData.get("moz-checkbox"),
+            "moz-checkbox that is not checked should not submit a value"
+          );
+        };
+        form.addEventListener(
+          "submit",
+          event => assertCheckboxValue(event, form),
+          { once: true }
+        );
+
+        await synthesizeMouseAtCenter(submit, {});
+      });
+
+      // Assert that the input elements reset their values as expected
+      // when using the `form` attribute
+      add_task(async function test_form_reset_with_form_attribute() {
+        let renderTarget = await testHelpers.renderTemplate(
+          formAttributeTemplateFn
+        );
+        let form = renderTarget.firstElementChild;
+        let fieldset = document.querySelector("moz-fieldset");
+        for (let c of fieldset.children) {
+          c.value = "non-default value";
+        }
+        let checkbox = document.querySelector("moz-checkbox");
+        // Change the checked state so that we can assert later that
+        // it is restored to the defaultChecked value.
+        checkbox.checked = !checkbox.defaultChecked;
+
+        // Assert that the value property of the input elements has
+        // changed before we reset the form
+        for (let c of fieldset.children) {
+          is(
+            c.value,
+            "non-default value",
+            `${c.name} should have a non-default value`
+          );
+        }
+        form.reset();
+
+        let formData = new FormData(form);
+        // Each tested element's value property should reset to its
+        // value attribute.
+        is(
+          formData.get("moz-checkbox"),
+          document.querySelector("moz-checkbox").getAttribute("value"),
+          "moz-checkbox should reset to default value"
+        );
+        is(
+          formData.get("moz-radio-group"),
+          document.querySelector("moz-radio-group").getAttribute("value"),
+          "moz-radio-group should reset to default value"
+        );
+        is(
+          formData.get("moz-select"),
+          document.querySelector("moz-select").getAttribute("value"),
+          "moz-select should reset to default value"
+        );
+        is(
+          formData.get("moz-toggle"),
+          document.querySelector("moz-toggle").getAttribute("value"),
+          "moz-toggle should reset to default value"
+        );
+        is(
+          formData.get("moz-input-search"),
+          document.querySelector("moz-input-search").getAttribute("value"),
+          "moz-input-search should reset to default value"
+        );
+        is(
+          formData.get("moz-input-text"),
+          document.querySelector("moz-input-text").getAttribute("value"),
+          "moz-input-text should reset to default value"
+        );
+        // Assert that the checkbox checked is restored to the
+        // defaultChecked property
+        is(
+          checkbox.checked,
+          checkbox.defaultChecked,
+          "moz-checkbox should reset its checked state to the defaultChecked value"
+        );
+      });
+    </script>
+  </head>
+  <body>
+    <div id="render"></div>
+    <pre id="test"></pre>
+  </body>
+</html>

@@ -4,7 +4,9 @@
 
 package mozilla.components.feature.findinpage.internal
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.mapNotNull
@@ -21,6 +23,7 @@ import mozilla.components.lib.state.ext.flowScoped
 internal class FindInPagePresenter(
     private val store: BrowserStore,
     private val view: FindInPageView,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) {
     @Volatile
     internal var session: SessionState? = null
@@ -28,7 +31,7 @@ internal class FindInPagePresenter(
     private var scope: CoroutineScope? = null
 
     fun start() {
-        scope = store.flowScoped { flow ->
+        scope = store.flowScoped(dispatcher = mainDispatcher) { flow ->
             flow.mapNotNull { state -> session?.let { state.findTabOrCustomTab(it.id) } }
                 .distinctUntilChangedBy { it.content.findResults }
                 .collect {

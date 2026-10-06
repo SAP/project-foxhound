@@ -11,20 +11,24 @@ function changeToOption(helper, index) {
 
     let popupOpen = BrowserTestUtils.waitForSelectPopupShown(window);
     EventUtils.sendKey("space", helper.win);
-    await popupOpen;
+    const selectPopup = await popupOpen;
 
-    let selectedIndex = select.selectedIndex;
-    info(`Looking for ${index} from ${selectedIndex}`);
-    while (selectedIndex != index) {
-      if (index > selectedIndex) {
-        EventUtils.sendKey("down", window);
-        selectedIndex++;
-      } else {
-        EventUtils.sendKey("up", window);
-        selectedIndex--;
+    if (selectPopup.isNativeMenu) {
+      selectPopup.activateItem(selectPopup.childNodes[index]);
+    } else {
+      let selectedIndex = select.selectedIndex;
+      info(`Looking for ${index} from ${selectedIndex}`);
+      while (selectedIndex != index) {
+        if (index > selectedIndex) {
+          EventUtils.sendKey("down", window);
+          selectedIndex++;
+        } else {
+          EventUtils.sendKey("up", window);
+          selectedIndex--;
+        }
       }
+      EventUtils.sendKey("return", window);
     }
-    EventUtils.sendKey("return", window);
   });
 }
 

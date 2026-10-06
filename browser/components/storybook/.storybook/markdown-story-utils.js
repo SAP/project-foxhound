@@ -1,7 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* eslint-env node */
 
 const path = require("path");
 const fs = require("fs");
@@ -41,6 +40,7 @@ function getTitleFromPath(filePath) {
 /**
  * Splits a string into multiple capitalized words e.g. hello-world, helloWorld,
  * and hello.world all become "Hello World."
+ *
  * @param {string} str - String in any case.
  * @returns {string} The string split into multiple words.
  */
@@ -56,6 +56,7 @@ function separateWords(str) {
 /**
  * Enables rendering code in our markdown docs by parsing the source for
  * annotated code blocks and replacing them with Storybook's Canvas component.
+ *
  * @param {string} source - Stringified markdown source code.
  * @returns {string} Source with code blocks replaced by Canvas components.
  */
@@ -71,6 +72,7 @@ function parseStoriesFromMarkdown(source) {
 
 /**
  * Finds the name of the component for files in toolkit widgets.
+ *
  * @param {string} resourcePath - Path to the file being processed.
  * @returns The component name e.g. "moz-toggle"
  */
@@ -87,6 +89,7 @@ function getComponentName(resourcePath) {
  * Figures out where a markdown based story should live in Storybook i.e.
  * whether it belongs under "Docs" or "UI Widgets" as well as what name to
  * display in the sidebar.
+ *
  * @param {string} resourcePath - Path to the file being processed.
  * @returns {string} The title of the story.
  */
@@ -117,6 +120,7 @@ function getStoryTitle(resourcePath) {
  * interactive examples in the docs that require the component to have been
  * loaded. This wasn't necessary prior to Storybook V7 since everything was
  * loaded up front; now stories are loaded on demand.
+ *
  * @param {string} resourcePath - Path to the file being processed.
  * @returns Path used to import a component into a story.
  */
@@ -154,6 +158,7 @@ function getImportPath(resourcePath) {
 /**
  * Takes markdown and re-writes it to MDX. Conditionally includes a table of
  * arguments when we're documenting a component.
+ *
  * @param {string} source - The markdown source to rewrite to MDX.
  * @param {string} title - The title of the story.
  * @param {string} resourcePath - Path to the file being processed.

@@ -34,6 +34,9 @@ for artifact in json.loads(os.environ["MOZ_FETCHES"]):
     *.tar.gz)
         find $MOZ_FETCHES_DIR/$dir -not -type d -printf '%P\0' | tar -C $MOZ_FETCHES_DIR/$dir --owner=0:0 --group=0:0 -zcf $artifact --no-recursion --null -T -
         ;;
+    *.tar.zst)
+        find $MOZ_FETCHES_DIR/$dir -not -type d -printf '%P\0' | tar -C $MOZ_FETCHES_DIR/$dir --owner=0:0 --group=0:0 --zstd -cf $artifact --no-recursion --null -T -
+        ;;
     *.zip)
         $GECKO_PATH/mach python $GECKO_PATH/python/mozbuild/mozbuild/action/zip.py -C $MOZ_FETCHES_DIR/$dir $PWD/$artifact '*'
         ;;

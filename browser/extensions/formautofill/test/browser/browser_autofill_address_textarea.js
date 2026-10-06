@@ -3,6 +3,17 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
 
+const FormAutofillSharedUtils = ChromeUtils.importESModule(
+  "resource://gre/modules/shared/FormAutofillUtils.sys.mjs"
+);
+
+function getFullSubregionName(abbreviated, country) {
+  return FormAutofillSharedUtils.FormAutofillUtils.getFullSubregionName(
+    abbreviated,
+    country
+  );
+}
+
 const TEST_PROFILE_ADDRESS = {
   "given-name": "John",
   "additional-name": "R.",
@@ -105,7 +116,10 @@ add_autofill_heuristic_tests([
           },
           {
             fieldName: "address-level1",
-            autofill: TEST_PROFILE_ADDRESS["address-level1"],
+            autofill: getFullSubregionName(
+              TEST_PROFILE_ADDRESS["address-level1"],
+              TEST_PROFILE_ADDRESS.country
+            ),
           },
           {
             fieldName: "postal-code",
@@ -251,6 +265,39 @@ add_autofill_heuristic_tests([
           {
             fieldName: "cc-number",
             autofill: TEST_PROFILE_CREDIT_CARD["cc-number"],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    description:
+      "(address)maxLength Guard should prevent conversion if full subregion name exceeds element's maxLength.",
+    // Fixture must contain 3 fields to meet the minimum section threshold.
+    fixtureData: `<form>
+        <label>address-level1: <input id="address-level1" autocomplete="address-level1" maxlength="2" autofocus></label>
+        <label>address-level2: <input id="address-level2" autocomplete="address-level2"></label>
+        <label>postal-code: <input id="postal-code" autocomplete="postal-code"></label>
+    </form>`,
+    profile: TEST_PROFILE_ADDRESS,
+    expectedResult: [
+      {
+        default: {
+          reason: "autocomplete",
+        },
+        fields: [
+          {
+            fieldName: "address-level1",
+            // Expecting transformer to bail out, using original abbreviated value.
+            autofill: TEST_PROFILE_ADDRESS["address-level1"],
+          },
+          {
+            fieldName: "address-level2",
+            autofill: TEST_PROFILE_ADDRESS["address-level2"],
+          },
+          {
+            fieldName: "postal-code",
+            autofill: TEST_PROFILE_ADDRESS["postal-code"],
           },
         ],
       },

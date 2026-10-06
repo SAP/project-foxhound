@@ -4,7 +4,9 @@
 
 package mozilla.components.support.webextensions
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
@@ -25,11 +27,12 @@ import mozilla.components.support.base.feature.LifecycleAwareFeature
 class WebExtensionPopupObserver(
     private val store: BrowserStore,
     private val onOpenPopup: (WebExtensionState) -> Unit = { },
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) : LifecycleAwareFeature {
     private var popupScope: CoroutineScope? = null
 
     override fun start() {
-        popupScope = store.flowScoped { flow ->
+        popupScope = store.flowScoped(dispatcher = mainDispatcher) { flow ->
             flow.distinctUntilChangedBy { it.extensions }
                 .map { it.extensions.filterValues { extension -> extension.popupSession != null } }
                 .distinctUntilChanged()

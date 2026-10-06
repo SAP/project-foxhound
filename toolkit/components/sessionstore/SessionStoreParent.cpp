@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,10 +5,8 @@
 #include "mozilla/dom/SessionStoreParent.h"
 
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/BrowserSessionStore.h"
 #include "mozilla/dom/BrowserSessionStoreBinding.h"
@@ -96,7 +92,7 @@ static void DoSessionStoreUpdate(CanonicalBrowsingContext* aBrowsingContext,
   JS::Rooted<JS::Value> key(jsapi.cx(),
                             aBrowsingContext->Top()->PermanentKey());
 
-  Unused << sessionStoreFuncs->UpdateSessionStore(
+  (void)sessionStoreFuncs->UpdateSessionStore(
       nullptr, aBrowsingContext, key, aEpoch, aNeedCollectSHistory, update);
 }
 
@@ -164,7 +160,7 @@ void SessionStoreParent::FinalFlushAllSessionStoreChildren(
 
   SessionStoreChild* sessionStoreChild =
       static_cast<SessionStoreChild*>(InProcessParent::ChildActorFor(this));
-  if (!sessionStoreChild || mozilla::SessionHistoryInParent()) {
+  if (!sessionStoreChild) {
     return FlushAllSessionStoreChildren(aDone);
   }
 
@@ -248,21 +244,21 @@ void SessionStoreParent::SessionStoreUpdate(
     const Maybe<nsCString>& aDocShellCaps, const Maybe<bool>& aPrivatedMode,
     const MaybeSessionStoreZoom& aZoom, const bool aNeedCollectSHistory,
     const uint32_t& aEpoch) {
-  Unused << RecvSessionStoreUpdate(aDocShellCaps, aPrivatedMode, aZoom,
-                                   aNeedCollectSHistory, aEpoch);
+  (void)RecvSessionStoreUpdate(aDocShellCaps, aPrivatedMode, aZoom,
+                               aNeedCollectSHistory, aEpoch);
 }
 
 void SessionStoreParent::IncrementalSessionStoreUpdate(
     const MaybeDiscarded<BrowsingContext>& aBrowsingContext,
     const Maybe<FormData>& aFormData, const Maybe<nsPoint>& aScrollPosition,
     uint32_t aEpoch) {
-  Unused << RecvIncrementalSessionStoreUpdate(aBrowsingContext, aFormData,
-                                              aScrollPosition, aEpoch);
+  (void)RecvIncrementalSessionStoreUpdate(aBrowsingContext, aFormData,
+                                          aScrollPosition, aEpoch);
 }
 
 void SessionStoreParent::ResetSessionStore(
     const MaybeDiscarded<BrowsingContext>& aBrowsingContext, uint32_t aEpoch) {
-  Unused << RecvResetSessionStore(aBrowsingContext, aEpoch);
+  (void)RecvResetSessionStore(aBrowsingContext, aEpoch);
 }
 
 NS_IMPL_CYCLE_COLLECTION(SessionStoreParent, mBrowsingContext, mSessionStore)

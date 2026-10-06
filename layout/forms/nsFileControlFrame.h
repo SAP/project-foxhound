@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsFileControlFrame_h___
-#define nsFileControlFrame_h___
+#ifndef nsFileControlFrame_h_
+#define nsFileControlFrame_h_
 
 #include "mozilla/Attributes.h"
 #include "nsBlockFrame.h"
@@ -133,4 +131,4 @@ class nsFileControlFrame final : public nsBlockFrame,
   void SyncDisabledState();
 };
 
-#endif  // nsFileControlFrame_h___
+#endif  // nsFileControlFrame_h_

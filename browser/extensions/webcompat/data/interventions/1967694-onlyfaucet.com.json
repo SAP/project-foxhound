@@ -1,0 +1,15 @@
+{
+  "label": "onlyfaucet.com",
+  "bugs": {
+    "1967694": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.onlyfaucet.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

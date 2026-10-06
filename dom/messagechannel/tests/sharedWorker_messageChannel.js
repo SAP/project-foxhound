@@ -1,5 +1,3 @@
-/* eslint-env worker */
-
 onconnect = function (evt) {
   var mc = new MessageChannel();
 

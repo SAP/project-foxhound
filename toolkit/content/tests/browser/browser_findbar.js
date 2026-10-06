@@ -347,7 +347,7 @@ add_task(async function test_input_keypress() {
   await EventUtils.synthesizeKey("KEY_ArrowDown");
   await scrollPromise;
 
-  await ContentTask.spawn(tab.linkedBrowser, null, async function () {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
     await ContentTaskUtils.waitForCondition(
       () =>
         content.document.defaultView.innerHeight +
@@ -364,7 +364,7 @@ add_task(async function test_input_keypress() {
   await EventUtils.synthesizeKey("KEY_ArrowDown", { accelKey: true });
   await completeScrollPromise;
 
-  await ContentTask.spawn(tab.linkedBrowser, null, async function () {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
     await ContentTaskUtils.waitForCondition(
       () =>
         content.document.defaultView.innerHeight +

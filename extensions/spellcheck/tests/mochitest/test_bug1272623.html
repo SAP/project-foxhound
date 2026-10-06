@@ -34,7 +34,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1272623
 
     // Perform the spelling correction
     let mm = SpecialPowers.loadChromeScript(function() {
-      /* eslint-env mozilla/chrome-script */
       const {BrowserTestUtils} = ChromeUtils.importESModule(
         "resource://testing-common/BrowserTestUtils.sys.mjs"
       );

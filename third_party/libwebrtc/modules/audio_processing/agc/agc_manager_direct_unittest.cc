@@ -10,19 +10,30 @@
 
 #include "modules/audio_processing/agc/agc_manager_direct.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <fstream>
+#include <ios>
 #include <limits>
+#include <memory>
+#include <optional>
+#include <string>
 #include <tuple>
 #include <vector>
 
+#include "api/audio/audio_processing.h"
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
-#include "api/field_trials.h"
+#include "modules/audio_processing/agc/agc.h"
 #include "modules/audio_processing/agc/gain_control.h"
 #include "modules/audio_processing/agc/mock_agc.h"
-#include "modules/audio_processing/include/mock_audio_processing.h"
+#include "modules/audio_processing/audio_buffer.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/numerics/safe_minmax.h"
 #include "rtc_base/strings/string_builder.h"
+#include "test/create_test_field_trials.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/testsupport/file_utils.h"
@@ -60,7 +71,7 @@ constexpr AnalogAgcConfig kDefaultAnalogConfig{};
 
 class MockGainControl : public GainControl {
  public:
-  virtual ~MockGainControl() {}
+  ~MockGainControl() override {}
   MOCK_METHOD(int, set_stream_analog_level, (int level), (override));
   MOCK_METHOD(int, stream_analog_level, (), (const, override));
   MOCK_METHOD(int, set_mode, (Mode mode), (override));
@@ -94,8 +105,7 @@ struct AgcManagerDirectTestParams {
 std::unique_ptr<AgcManagerDirect> CreateAgcManagerDirect(
     AgcManagerDirectTestParams p = {}) {
   auto manager = std::make_unique<AgcManagerDirect>(
-      CreateEnvironment(FieldTrials::CreateNoGlobal(p.field_trials)),
-      kNumChannels,
+      CreateEnvironment(CreateTestFieldTrialsPtr(p.field_trials)), kNumChannels,
       AnalogAgcConfig{.startup_min_volume = kInitialInputVolume,
                       .clipped_level_min = p.clipped_level_min,
                       .enable_digital_adaptive = p.enable_digital_adaptive,
@@ -151,8 +161,7 @@ constexpr char kMinMicLevelFieldTrial[] =
     "WebRTC-Audio-2ndAgcMinMicLevelExperiment";
 
 std::string GetAgcMinMicLevelExperimentFieldTrial(const std::string& value) {
-  char field_trial_buffer[64];
-  SimpleStringBuilder builder(field_trial_buffer);
+  StringBuilder builder;
   builder << kMinMicLevelFieldTrial << "/" << value << "/";
   return builder.str();
 }
@@ -162,8 +171,7 @@ std::string GetAgcMinMicLevelExperimentFieldTrialEnabled(
     const std::string& suffix = "") {
   RTC_DCHECK_GE(enabled_value, 0);
   RTC_DCHECK_LE(enabled_value, 255);
-  char field_trial_buffer[64];
-  SimpleStringBuilder builder(field_trial_buffer);
+  StringBuilder builder;
   builder << kMinMicLevelFieldTrial << "/Enabled-" << enabled_value << suffix
           << "/";
   return builder.str();
@@ -246,7 +254,8 @@ class SpeechSamplesReader {
   // in the PCM file if `num_frames` is too large - i.e., does not loop.
   void Feed(int num_frames, int gain_db, AgcManagerDirect& agc) {
     float gain = std::pow(10.0f, gain_db / 20.0f);  // From dB to linear gain.
-    is_.seekg(0, is_.beg);  // Start from the beginning of the PCM file.
+    is_.seekg(0,
+              std::ifstream::beg);  // Start from the beginning of the PCM file.
 
     // Read and feed frames.
     for (int i = 0; i < num_frames; ++i) {
@@ -280,7 +289,8 @@ class SpeechSamplesReader {
             std::optional<float> speech_level_override,
             AgcManagerDirect& agc) {
     float gain = std::pow(10.0f, gain_db / 20.0f);  // From dB to linear gain.
-    is_.seekg(0, is_.beg);  // Start from the beginning of the PCM file.
+    is_.seekg(0,
+              std::ifstream::beg);  // Start from the beginning of the PCM file.
 
     // Read and feed frames.
     for (int i = 0; i < num_frames; ++i) {
@@ -369,7 +379,7 @@ class AgcManagerDirectTestHelper {
     manager.AnalyzePreProcess(audio_buffer);
     manager.Process(audio_buffer, speech_probability_override,
                     speech_level_override);
-    std::optional<int> digital_gain = manager.GetDigitalComressionGain();
+    std::optional<int> digital_gain = manager.GetDigitalCompressionGain();
     if (digital_gain) {
       mock_gain_control.set_compression_gain_db(*digital_gain);
     }
@@ -388,7 +398,7 @@ class AgcManagerDirectTestHelper {
       EXPECT_CALL(*mock_agc, Process(_)).WillOnce(Return());
       manager.Process(audio_buffer, speech_probability_override,
                       speech_level_override);
-      std::optional<int> new_digital_gain = manager.GetDigitalComressionGain();
+      std::optional<int> new_digital_gain = manager.GetDigitalCompressionGain();
       if (new_digital_gain) {
         mock_gain_control.set_compression_gain_db(*new_digital_gain);
       }
@@ -448,7 +458,7 @@ class AgcManagerDirectParametrizedTest
     : public ::testing::TestWithParam<std::tuple<std::optional<int>, bool>> {
  protected:
   AgcManagerDirectParametrizedTest()
-      : env_(CreateEnvironment(FieldTrials::CreateNoGlobal(
+      : env_(CreateEnvironment(CreateTestFieldTrialsPtr(
             GetAgcMinMicLevelExperimentFieldTrial(std::get<0>(GetParam()))))) {}
 
   bool IsMinMicLevelOverridden() const {
@@ -497,7 +507,7 @@ TEST_P(AgcManagerDirectParametrizedTest,
   // controller read the input volume. That is needed because clipping input
   // causes the controller to stay in idle state for
   // `AnalogAgcConfig::clipped_wait_frames` frames.
-  WriteAudioBufferSamples(/*samples_value=*/0.0f, /*clipping_ratio=*/0.0f,
+  WriteAudioBufferSamples(/*samples_value=*/0.0f, /*clipped_ratio=*/0.0f,
                           audio_buffer);
   manager_no_analog_agc.AnalyzePreProcess(audio_buffer);
   manager_with_analog_agc.AnalyzePreProcess(audio_buffer);
@@ -509,7 +519,7 @@ TEST_P(AgcManagerDirectParametrizedTest,
                                   GetOverrideOrEmpty(-18.0f));
 
   // Feed clipping input to trigger a downward adapation of the analog level.
-  WriteAudioBufferSamples(/*samples_value=*/0.0f, /*clipping_ratio=*/0.2f,
+  WriteAudioBufferSamples(/*samples_value=*/0.0f, /*clipped_ratio=*/0.2f,
                           audio_buffer);
   manager_no_analog_agc.AnalyzePreProcess(audio_buffer);
   manager_with_analog_agc.AnalyzePreProcess(audio_buffer);
@@ -915,7 +925,7 @@ TEST_P(AgcManagerDirectParametrizedTest, NoActionWhileMuted) {
                          GetOverrideOrEmpty(kSpeechLevelDbfs));
 
   std::optional<int> new_digital_gain =
-      helper.manager.GetDigitalComressionGain();
+      helper.manager.GetDigitalCompressionGain();
   if (new_digital_gain) {
     helper.mock_gain_control.set_compression_gain_db(*new_digital_gain);
   }

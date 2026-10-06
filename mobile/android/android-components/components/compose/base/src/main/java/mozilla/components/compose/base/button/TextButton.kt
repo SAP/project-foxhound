@@ -4,15 +4,21 @@
 
 package mozilla.components.compose.base.button
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.ButtonColors
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import mozilla.components.compose.base.theme.AcornTheme
-import java.util.Locale
+import mozilla.components.compose.base.theme.acornPrivateColorScheme
+import mozilla.components.compose.base.theme.privateColorPalette
+import androidx.compose.material3.TextButton as M3TextButton
 
 /**
  * Text-only button.
@@ -22,8 +28,8 @@ import java.util.Locale
  * @param modifier [Modifier] Used to shape and position the underlying [androidx.compose.material3.TextButton].
  * @param enabled Controls the enabled state of the button. When `false`, this button will not
  * be clickable.
- * @param textColor [Color] to apply to the button text.
- * @param upperCaseText If the button text should be in uppercase letters.
+ * @param colors The [ButtonColors] used to color the [TextButton].
+ * @param border Optional [BorderStroke] to apply to the [TextButton].
  */
 @Composable
 fun TextButton(
@@ -31,21 +37,18 @@ fun TextButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    textColor: Color = AcornTheme.colors.textAccent,
-    upperCaseText: Boolean = true,
+    colors: ButtonColors = ButtonDefaults.textButtonColors(),
+    border: BorderStroke? = null,
 ) {
-    androidx.compose.material3.TextButton(
+    M3TextButton(
         onClick = onClick,
         modifier = modifier,
         enabled = enabled,
+        colors = colors,
+        border = border,
     ) {
         Text(
-            text = if (upperCaseText) {
-                text.uppercase(Locale.getDefault())
-            } else {
-                text
-            },
-            color = if (enabled) textColor else AcornTheme.colors.textDisabled,
+            text = text,
             style = AcornTheme.typography.button,
             maxLines = 1,
         )
@@ -56,7 +59,29 @@ fun TextButton(
 @PreviewLightDark
 private fun TextButtonPreview() {
     AcornTheme {
-        Column(Modifier.background(AcornTheme.colors.layer1)) {
+        Column(Modifier.background(MaterialTheme.colorScheme.surface)) {
+            TextButton(
+                text = "label",
+                onClick = {},
+            )
+
+            TextButton(
+                text = "disabled",
+                onClick = {},
+                enabled = false,
+            )
+        }
+    }
+}
+
+@Composable
+@Preview
+private fun PrivateTextButtonPreview() {
+    AcornTheme(
+        colors = privateColorPalette,
+        colorScheme = acornPrivateColorScheme(),
+    ) {
+        Column(Modifier.background(MaterialTheme.colorScheme.surface)) {
             TextButton(
                 text = "label",
                 onClick = {},

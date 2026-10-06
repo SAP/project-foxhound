@@ -79,13 +79,14 @@ async function test() {
       case "key":
         synthesizeKey("KEY_ArrowDown");
         break;
-      case "native-key":
+      case "native-key": {
         const DownArrowKeyCode = nativeArrowDownKey();
         ok(synthesizeNativeKey(KEYBOARD_LAYOUT_EN_US,
                                DownArrowKeyCode, {}  /* no modifier */,
                                "", ""),
           "Dispatched an down arrow key event");
         break;
+      }
       case "wheel":
         await synthesizeNativeWheel(window, 50, 50, 0, -50);
         break;

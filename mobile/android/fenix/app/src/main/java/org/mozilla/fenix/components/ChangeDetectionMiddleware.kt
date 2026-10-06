@@ -6,8 +6,8 @@ package org.mozilla.fenix.components
 
 import mozilla.components.lib.state.Action
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.lib.state.State
+import mozilla.components.lib.state.Store
 
 /**
  * A Middleware for detecting changes to a state property, and offering a callback that captures the action that changed
@@ -29,10 +29,10 @@ class ChangeDetectionMiddleware<S : State, A : Action, T>(
     private val selector: (S) -> T,
     private val onChange: (A, pre: T, post: T) -> Unit,
 ) : Middleware<S, A> {
-    override fun invoke(context: MiddlewareContext<S, A>, next: (A) -> Unit, action: A) {
-        val pre = selector(context.store.state)
+    override fun invoke(store: Store<S, A>, next: (A) -> Unit, action: A) {
+        val pre = selector(store.state)
         next(action)
-        val post = selector(context.store.state)
+        val post = selector(store.state)
         if (pre != post) {
             onChange(action, pre, post)
         }

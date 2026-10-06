@@ -17,7 +17,7 @@ function waitForOnBeforeUnloadDialog(browser, callback) {
     promptType: "confirmEx",
   }).then(dialog => {
     SimpleTest.waitForCondition(
-      () => Services.focus.activeWindow == browser.ownerGlobal,
+      () => Services.focus.activeWindow == browser.documentGlobal,
       function () {
         let { button0, button1 } = dialog.ui;
         callback(button0, button1);

@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -40,7 +39,6 @@
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/UniquePtrExtensions.h"
-#include "mozilla/Unused.h"
 #include "mozilla/webrender/webrender_ffi.h"
 #include "nsAppRunner.h"
 #include "nsComponentManagerUtils.h"
@@ -230,8 +228,7 @@ already_AddRefed<DataSourceSurface> gfxUtils::CreatePremultipliedDataSurface(
   DataSourceSurface::MappedSurface destMap;
   if (!MapSrcAndCreateMappedDest(srcSurf, &destSurf, &srcMap, &destMap)) {
     MOZ_ASSERT(false, "MapSrcAndCreateMappedDest failed.");
-    RefPtr<DataSourceSurface> surface(srcSurf);
-    return surface.forget();
+    return nullptr;
   }
 
   PremultiplyData(srcMap.mData, srcMap.mStride, srcSurf->GetFormat(),
@@ -249,8 +246,7 @@ already_AddRefed<DataSourceSurface> gfxUtils::CreateUnpremultipliedDataSurface(
   DataSourceSurface::MappedSurface destMap;
   if (!MapSrcAndCreateMappedDest(srcSurf, &destSurf, &srcMap, &destMap)) {
     MOZ_ASSERT(false, "MapSrcAndCreateMappedDest failed.");
-    RefPtr<DataSourceSurface> surface(srcSurf);
-    return surface.forget();
+    return nullptr;
   }
 
   UnpremultiplyData(srcMap.mData, srcMap.mStride, srcSurf->GetFormat(),
@@ -266,77 +262,6 @@ void gfxUtils::ConvertBGRAtoRGBA(uint8_t* aData, uint32_t aLength) {
   SwizzleData(aData, aLength, SurfaceFormat::B8G8R8A8, aData, aLength,
               SurfaceFormat::R8G8B8A8, IntSize(aLength / 4, 1));
 }
-
-#if !defined(MOZ_GFX_OPTIMIZE_MOBILE)
-/**
- * This returns the fastest operator to use for solid surfaces which have no
- * alpha channel or their alpha channel is uniformly opaque.
- * This differs per render mode.
- */
-static CompositionOp OptimalFillOp() {
-#  ifdef XP_WIN
-  if (gfxWindowsPlatform::GetPlatform()->IsDirect2DBackend()) {
-    // D2D -really- hates operator source.
-    return CompositionOp::OP_OVER;
-  }
-#  endif
-  return CompositionOp::OP_SOURCE;
-}
-
-// EXTEND_PAD won't help us here; we have to create a temporary surface to hold
-// the subimage of pixels we're allowed to sample.
-static already_AddRefed<gfxDrawable> CreateSamplingRestrictedDrawable(
-    gfxDrawable* aDrawable, gfxContext* aContext, const ImageRegion& aRegion,
-    const SurfaceFormat aFormat, bool aUseOptimalFillOp) {
-  AUTO_PROFILER_LABEL("CreateSamplingRestrictedDrawable", GRAPHICS);
-
-  DrawTarget* destDrawTarget = aContext->GetDrawTarget();
-  // We've been not using CreateSamplingRestrictedDrawable in a bunch of places
-  // for a while. Let's disable it everywhere and confirm that it's ok to get
-  // rid of.
-  if (destDrawTarget->GetBackendType() == BackendType::DIRECT2D1_1 || (true)) {
-    return nullptr;
-  }
-
-  gfxRect clipExtents = aContext->GetClipExtents();
-
-  // Inflate by one pixel because bilinear filtering will sample at most
-  // one pixel beyond the computed image pixel coordinate.
-  clipExtents.Inflate(1.0);
-
-  gfxRect needed = aRegion.IntersectAndRestrict(clipExtents);
-  needed.RoundOut();
-
-  // if 'needed' is empty, nothing will be drawn since aFill
-  // must be entirely outside the clip region, so it doesn't
-  // matter what we do here, but we should avoid trying to
-  // create a zero-size surface.
-  if (needed.IsEmpty()) return nullptr;
-
-  IntSize size(int32_t(needed.Width()), int32_t(needed.Height()));
-
-  RefPtr<DrawTarget> target =
-      gfxPlatform::GetPlatform()->CreateOffscreenContentDrawTarget(size,
-                                                                   aFormat);
-  if (!target || !target->IsValid()) {
-    return nullptr;
-  }
-
-  gfxContext tmpCtx(target);
-
-  if (aUseOptimalFillOp) {
-    tmpCtx.SetOp(OptimalFillOp());
-  }
-  aDrawable->Draw(&tmpCtx, needed - needed.TopLeft(), ExtendMode::REPEAT,
-                  SamplingFilter::LINEAR, 1.0,
-                  gfxMatrix::Translation(needed.TopLeft()));
-  RefPtr<SourceSurface> surface = target->Snapshot();
-
-  RefPtr<gfxDrawable> drawable = new gfxSurfaceDrawable(
-      surface, size, gfxMatrix::Translation(-needed.TopLeft()));
-  return drawable.forget();
-}
-#endif  // !MOZ_GFX_OPTIMIZE_MOBILE
 
 /* These heuristics are based on
  * Source/WebCore/platform/graphics/skia/ImageSkia.cpp:computeResamplingMode()
@@ -512,8 +437,7 @@ void gfxUtils::DrawPixelSnapped(gfxContext* aContext, gfxDrawable* aDrawable,
                                 const ImageRegion& aRegion,
                                 const SurfaceFormat aFormat,
                                 SamplingFilter aSamplingFilter,
-                                uint32_t aImageFlags, gfxFloat aOpacity,
-                                bool aUseOptimalFillOp) {
+                                uint32_t aImageFlags, gfxFloat aOpacity) {
   AUTO_PROFILER_LABEL("gfxUtils::DrawPixelSnapped", GRAPHICS);
 
   gfxRect imageRect(gfxPoint(0, 0), aImageSize);
@@ -547,22 +471,6 @@ void gfxUtils::DrawPixelSnapped(gfxContext* aContext, gfxDrawable* aDrawable,
                                   ToRect(imageRect), aSamplingFilter, aFormat,
                                   aOpacity, extendMode)) {
         return;
-      }
-#endif
-
-      // On Mobile, we don't ever want to do this; it has the potential for
-      // allocating very large temporary surfaces, especially since we'll
-      // do full-page snapshots often (see bug 749426).
-#if !defined(MOZ_GFX_OPTIMIZE_MOBILE)
-      RefPtr<gfxDrawable> restrictedDrawable = CreateSamplingRestrictedDrawable(
-          aDrawable, aContext, aRegion, aFormat, aUseOptimalFillOp);
-      if (restrictedDrawable) {
-        drawable.swap(restrictedDrawable);
-
-        // We no longer need to tile: Either we never needed to, or we already
-        // filled a surface with the tiled pattern; this surface can now be
-        // drawn without tiling.
-        extendMode = ExtendMode::CLAMP;
       }
 #endif
     }
@@ -1045,6 +953,27 @@ gfxUtils::CopySurfaceToDataSourceSurfaceWithFormat(SourceSurface* aSurface,
   return dataSurface.forget();
 }
 
+/* static */
+already_AddRefed<SourceSurface> gfxUtils::ScaleSourceSurface(
+    SourceSurface& aSurface, const IntSize& aTargetSize) {
+  const IntSize surfaceSize = aSurface.GetSize();
+
+  MOZ_ASSERT(surfaceSize != aTargetSize);
+  MOZ_ASSERT(!surfaceSize.IsEmpty());
+  MOZ_ASSERT(!aTargetSize.IsEmpty());
+
+  RefPtr<DrawTarget> dt = Factory::CreateDrawTarget(
+      gfxVars::ContentBackend(), aTargetSize, aSurface.GetFormat());
+
+  if (!dt || !dt->IsValid()) {
+    return nullptr;
+  }
+
+  dt->DrawSurface(&aSurface, Rect(Point(), Size(aTargetSize)),
+                  Rect(Point(), Size(surfaceSize)));
+  return dt->GetBackingSurface();
+}
+
 const uint32_t gfxUtils::sNumFrameColors = 8;
 
 /* static */
@@ -1126,7 +1055,7 @@ nsresult gfxUtils::EncodeSourceSurfaceAsStream(SourceSurface* aSurface,
   nsresult rv = encoder->InitFromData(
       map.mData, BufferSizeFromStrideAndHeight(map.mStride, size.height),
       size.width, size.height, map.mStride, imgIEncoder::INPUT_FORMAT_HOSTARGB,
-      aOutputOptions);
+      aOutputOptions, VoidCString());
   dataSurface->Unmap();
   if (NS_FAILED(rv)) {
     return NS_ERROR_FAILURE;
@@ -1212,7 +1141,7 @@ nsresult gfxUtils::EncodeSourceSurface(SourceSurface* aSurface,
 
   if (aBinaryOrData == gfxUtils::eBinaryEncode) {
     if (aFile) {
-      Unused << fwrite(imgData.Elements(), 1, imgData.Length(), aFile);
+      (void)fwrite(imgData.Elements(), 1, imgData.Length(), aFile);
     }
     return NS_OK;
   }
@@ -1247,10 +1176,11 @@ nsresult gfxUtils::EncodeSourceSurface(SourceSurface* aSurface,
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (aFile) {
+    nsPromiseFlatCString flatURI(dataURI);
 #ifdef ANDROID
     if (aFile == stdout || aFile == stderr) {
       // ADB logcat cuts off long strings so we will break it down
-      const char* cStr = dataURI.BeginReading();
+      const char* cStr = flatURI.get();
       size_t len = strlen(cStr);
       while (true) {
         printf_stderr("IMG: %.140s\n", cStr);
@@ -1260,7 +1190,7 @@ nsresult gfxUtils::EncodeSourceSurface(SourceSurface* aSurface,
       }
     }
 #endif
-    fprintf(aFile, "%s", dataURI.BeginReading());
+    fprintf(aFile, "%s", flatURI.get());
   } else if (!aStrOut) {
     nsCOMPtr<nsIClipboardHelper> clipboard(
         do_GetService("@mozilla.org/widget/clipboardhelper;1", &rv));
@@ -1324,7 +1254,10 @@ const float kIdentityNarrowYCbCrToRGB_RowMajor[16] = {
 
 /* static */ const float* gfxUtils::YuvToRgbMatrix3x3ColumnMajor(
     gfx::YUVColorSpace aYUVColorSpace) {
-#define X(x) {x[0], x[4], x[8], x[1], x[5], x[9], x[2], x[6], x[10]}
+#define X(x)                                              \
+  {                                                       \
+    x[0], x[4], x[8], x[1], x[5], x[9], x[2], x[6], x[10] \
+  }
 
   static const float rec601[9] = X(kBT601NarrowYCbCrToRGB_RowMajor);
   static const float rec709[9] = X(kBT709NarrowYCbCrToRGB_RowMajor);
@@ -1349,9 +1282,11 @@ const float kIdentityNarrowYCbCrToRGB_RowMajor[16] = {
 
 /* static */ const float* gfxUtils::YuvToRgbMatrix4x4ColumnMajor(
     YUVColorSpace aYUVColorSpace) {
-#define X(x)                                           \
-  {x[0], x[4], x[8],  x[12], x[1], x[5], x[9],  x[13], \
-   x[2], x[6], x[10], x[14], x[3], x[7], x[11], x[15]}
+#define X(x)                                                             \
+  {                                                                      \
+    x[0], x[4], x[8], x[12], x[1], x[5], x[9], x[13], x[2], x[6], x[10], \
+        x[14], x[3], x[7], x[11], x[15]                                  \
+  }
 
   static const float rec601[16] = X(kBT601NarrowYCbCrToRGB_RowMajor);
   static const float rec709[16] = X(kBT709NarrowYCbCrToRGB_RowMajor);
@@ -1581,17 +1516,28 @@ UniquePtr<uint8_t[]> gfxUtils::GetImageBuffer(gfx::DataSourceSurface* aSurface,
                                               int32_t* outFormat) {
   *outFormat = 0;
 
+  auto surfaceFormat = aSurface->GetFormat();
+  switch (surfaceFormat) {
+    case gfx::SurfaceFormat::B8G8R8A8:
+    case gfx::SurfaceFormat::B8G8R8X8:
+      break;
+    default:
+      MOZ_CRASH("Unexpected SurfaceFormat");
+  }
+  auto bpp = 4;
+
   DataSourceSurface::MappedSurface map;
   if (!aSurface->Map(DataSourceSurface::MapType::READ, &map)) return nullptr;
 
   uint32_t bufferSize =
-      aSurface->GetSize().width * aSurface->GetSize().height * 4;
+      aSurface->GetSize().width * aSurface->GetSize().height * bpp;
   auto imageBuffer = MakeUniqueFallible<uint8_t[]>(bufferSize);
   if (!imageBuffer) {
     aSurface->Unmap();
     return nullptr;
   }
-  memcpy(imageBuffer.get(), map.mData, bufferSize);
+  CopySurfaceDataToPackedArray(map.mData, imageBuffer.get(),
+                               aSurface->GetSize(), map.mStride, bpp);
 
   aSurface->Unmap();
 
@@ -1632,6 +1578,7 @@ nsresult gfxUtils::GetInputStream(gfx::DataSourceSurface* aSurface,
                                   bool aIsAlphaPremultiplied,
                                   const char* aMimeType,
                                   const nsAString& aEncoderOptions,
+                                  const nsACString& aRandomizationKey,
                                   nsIInputStream** outStream) {
   nsCString enccid("@mozilla.org/image/encoder;2?type=");
   enccid += aMimeType;
@@ -1645,7 +1592,7 @@ nsresult gfxUtils::GetInputStream(gfx::DataSourceSurface* aSurface,
 
   return dom::ImageEncoder::GetInputStream(
       aSurface->GetSize().width, aSurface->GetSize().height, imageBuffer.get(),
-      format, encoder, aEncoderOptions, outStream);
+      format, encoder, aEncoderOptions, aRandomizationKey, outStream);
 }
 
 /* static */
@@ -1676,7 +1623,7 @@ nsresult gfxUtils::GetInputStreamWithRandomNoise(
 
   return dom::ImageEncoder::GetInputStream(
       aSurface->GetSize().width, aSurface->GetSize().height, imageBuffer.get(),
-      format, encoder, aEncoderOptions, outStream);
+      format, encoder, aEncoderOptions, VoidCString(), outStream);
 }
 
 class GetFeatureStatusWorkerRunnable final

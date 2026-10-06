@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +8,6 @@
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
-#include "mozilla/Unused.h"
 #include "nsASCIIMask.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsContentSecurityManager.h"
@@ -23,8 +20,14 @@
 #include "nsIScriptError.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsNetUtil.h"
+#include "mozilla/Logging.h"
 
 using namespace mozilla;
+
+LazyLogModule gClearSiteDataLog("ClearSiteData");
+
+#define LOG(args) MOZ_LOG(gClearSiteDataLog, mozilla::LogLevel::Debug, args)
+#define CLEAR_SITE_DATA_TOPIC "clear-site-data"
 
 namespace {
 
@@ -105,7 +108,7 @@ void ClearSiteData::Initialize() {
     return;
   }
 
-  obs->AddObserver(service, NS_HTTP_ON_AFTER_EXAMINE_RESPONSE_TOPIC, false);
+  obs->AddObserver(service, CLEAR_SITE_DATA_TOPIC, false);
   obs->AddObserver(service, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false);
   gClearSiteData = service;
 }
@@ -126,12 +129,11 @@ void ClearSiteData::Shutdown() {
     return;
   }
 
-  obs->RemoveObserver(service, NS_HTTP_ON_AFTER_EXAMINE_RESPONSE_TOPIC);
+  obs->RemoveObserver(service, CLEAR_SITE_DATA_TOPIC);
   obs->RemoveObserver(service, NS_XPCOM_SHUTDOWN_OBSERVER_ID);
 }
 
 ClearSiteData::ClearSiteData() = default;
-ClearSiteData::~ClearSiteData() = default;
 
 NS_IMETHODIMP
 ClearSiteData::Observe(nsISupports* aSubject, const char* aTopic,
@@ -141,7 +143,7 @@ ClearSiteData::Observe(nsISupports* aSubject, const char* aTopic,
     return NS_OK;
   }
 
-  MOZ_ASSERT(!strcmp(aTopic, NS_HTTP_ON_AFTER_EXAMINE_RESPONSE_TOPIC));
+  MOZ_ASSERT(!strcmp(aTopic, CLEAR_SITE_DATA_TOPIC));
 
   nsCOMPtr<nsIHttpChannel> channel = do_QueryInterface(aSubject);
   if (NS_WARN_IF(!channel)) {
@@ -174,7 +176,7 @@ void ClearSiteData::ClearDataFromChannel(nsIHttpChannel* aChannel) {
   nsCOMPtr<nsIPrincipal> partitionedPrincipal;
   rv = ssm->GetChannelResultPrincipals(aChannel, getter_AddRefs(nodePrincipal),
                                        getter_AddRefs(partitionedPrincipal));
-  Unused << nodePrincipal;
+  (void)nodePrincipal;
   if (NS_WARN_IF(NS_FAILED(rv) || !partitionedPrincipal)) {
     return;
   }
@@ -204,6 +206,8 @@ void ClearSiteData::ClearDataFromChannel(nsIHttpChannel* aChannel) {
   // in a different principal.
   int32_t cleanNetworkFlags = 0;
 
+  LOG(("ClearSiteData: %s, %x", uri->GetSpecOrDefault().get(), flags));
+
   if (StaticPrefs::privacy_clearSiteDataHeader_cache_enabled() &&
       (flags & eCache)) {
     LogOpToConsole(aChannel, uri, eCache);
@@ -224,6 +228,8 @@ void ClearSiteData::ClearDataFromChannel(nsIHttpChannel* aChannel) {
                   nsIClearDataService::CLEAR_FINGERPRINTING_PROTECTION_STATE;
   }
 
+  LOG(("ClearSiteData: cleanFlags=%x, cleanNetworkFlags=%x", cleanFlags,
+       cleanNetworkFlags));
   // for each `DeleteDataFromPrincipal` we need to wait for one callback.
   // cleanFlags elicits once callback.
   uint32_t numClearCalls = (cleanFlags != 0) + (cleanNetworkFlags != 0);
@@ -346,7 +352,7 @@ void ClearSiteData::LogToConsoleInternal(
   }
 
   httpChannel->AddConsoleReport(nsIScriptError::infoFlag, "Clear-Site-Data"_ns,
-                                nsContentUtils::eSECURITY_PROPERTIES, uri, 0, 0,
+                                PropertiesFile::SECURITY_PROPERTIES, uri, 0, 0,
                                 nsDependentCString(aMsg), aParams);
 }
 

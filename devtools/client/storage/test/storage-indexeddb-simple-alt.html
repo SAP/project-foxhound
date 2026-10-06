@@ -13,12 +13,13 @@
 
 const DB_NAME = "db-alt";
 
+let db;
 async function setup() { // eslint-disable-line no-unused-vars
   await new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);
     request.onerror = () => reject(Error("Error opening DB"));
     request.onupgradeneeded = event => {
-      const db = event.target.result;
+      db = event.target.result;
       const store = db.createObjectStore("store", { keyPath: "key" });
       store.add({key: "foo", value: "bar"});
       store.transaction.oncomplete = () => resolve(db);
@@ -28,6 +29,9 @@ async function setup() { // eslint-disable-line no-unused-vars
 
 async function clear() { // eslint-disable-line no-unused-vars
   await new Promise((resolve, reject) => {
+    if (db) {
+      db.close();
+    }
     const request = indexedDB.deleteDatabase(DB_NAME);
     request.onsuccess = resolve;
     request.onerror = () => reject(Error("Error deleting DB"));

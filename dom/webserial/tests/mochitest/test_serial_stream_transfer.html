@@ -1,0 +1,122 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Web Serial API - Stream Transfer to Worker</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="serial_test_utils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script>
+
+"use strict";
+
+SimpleTest.waitForExplicitFinish();
+
+SimpleTest.registerCleanupFunction(cleanupSerialPorts);
+
+function runWorkerTest(testName, setup) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker("serial_worker_stream_transfer.js");
+
+    worker.onmessage = (e) => {
+      if (e.data.type === "test") {
+        const { result, message } = e.data;
+        ok(!!result, message);
+      } else if (e.data.type === "done") {
+        worker.terminate();
+        resolve();
+      } else if (e.data.type === "error") {
+        worker.terminate();
+        reject(new Error(e.data.message));
+      }
+    };
+
+    worker.onerror = (e) => {
+      worker.terminate();
+      reject(new Error(`Worker error: ${e.message}`));
+    };
+
+    setup(worker);
+  });
+}
+
+add_task(async function testTransferReadableToWorker() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer = port.writable.getWriter();
+  const encoder = new TextEncoder();
+  await writer.write(encoder.encode("TransferRead"));
+  writer.releaseLock();
+
+  const readable = port.readable;
+  ok(readable, "Should have a readable stream before transfer");
+
+  await runWorkerTest("readableTransfer", (worker) => {
+    worker.postMessage(
+      { testName: "readableTransfer", readable },
+      { transfer: [readable] }
+    );
+  });
+
+  ok(true, "Readable transfer test passed");
+
+  await port.close();
+});
+
+add_task(async function testTransferWritableToWorker() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writable = port.writable;
+  ok(writable, "Should have a writable stream before transfer");
+
+  await runWorkerTest("writableTransfer", (worker) => {
+    worker.postMessage(
+      { testName: "writableTransfer", writable },
+      { transfer: [writable] }
+    );
+  });
+
+  ok(true, "Writable transfer test passed");
+
+  // Read back the echoed data to verify the write worked
+  const reader = port.readable.getReader();
+  const { value } = await reader.read();
+  const decoder = new TextDecoder();
+  const text = decoder.decode(value);
+  is(text, "WorkerWrite", "Should receive data written by worker");
+
+  reader.releaseLock();
+  await port.close();
+});
+
+add_task(async function testTransferBothToWorker() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const readable = port.readable;
+  const writable = port.writable;
+  ok(readable, "Should have a readable stream before transfer");
+  ok(writable, "Should have a writable stream before transfer");
+
+  await runWorkerTest("bothTransfer", (worker) => {
+    worker.postMessage(
+      { testName: "bothTransfer", readable, writable },
+      { transfer: [readable, writable] }
+    );
+  });
+
+  ok(true, "Both streams transfer round-trip test passed");
+
+  await port.close();
+});
+
+</script>
+</body>
+</html>

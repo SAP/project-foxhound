@@ -6,6 +6,9 @@
 // but instead sends a notification to a platform alerts API
 // if available. Using a separate CID allows us to overwrite the XUL
 // alerts service at runtime.
+#ifndef TOOLKIT_COMPONENTS_BUILD_NSTOOLKITCOMPSCID_H_
+#define TOOLKIT_COMPONENTS_BUILD_NSTOOLKITCOMPSCID_H_
+
 #define NS_SYSTEMALERTSERVICE_CONTRACTID "@mozilla.org/system-alerts-service;1"
 
 #define NS_AUTOCOMPLETECONTROLLER_CONTRACTID \
@@ -67,3 +70,5 @@
 
 #define NS_FAVICONSERVICE_CID \
   {0x984e3259, 0x9266, 0x49cf, {0xb6, 0x05, 0x60, 0xb0, 0x22, 0xa0, 0x07, 0x56}}
+
+#endif  // TOOLKIT_COMPONENTS_BUILD_NSTOOLKITCOMPSCID_H_

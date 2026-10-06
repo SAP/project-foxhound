@@ -1,11 +1,11 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef FFTBlock_h_
 #define FFTBlock_h_
+
+#include <bit>
 
 #include "AlignedTArray.h"
 #include "AudioNodeEngine.h"
@@ -110,7 +110,7 @@ class FFTBlock final {
 
   // aSize must be a power of 2
   void SetFFTSize(uint32_t aSize) {
-    MOZ_ASSERT(CountPopulation32(aSize) == 1);
+    MOZ_ASSERT(std::has_single_bit(aSize));
     mFFTSize = aSize;
     mOutputBuffer.SetLength(aSize / 2 + 1);
     PodZero(mOutputBuffer.Elements(), aSize / 2 + 1);

@@ -59,7 +59,7 @@ impl Enum {
         ctx: &mut BindgenContext,
     ) -> Result<Self, ParseError> {
         use clang_sys::*;
-        debug!("Enum::from_ty {:?}", ty);
+        debug!("Enum::from_ty {ty:?}");
 
         if ty.kind() != CXType_Enum {
             return Err(ParseError::Continue);
@@ -73,13 +73,13 @@ impl Enum {
 
         let variant_ty =
             repr.and_then(|r| ctx.resolve_type(r).safe_canonical_type(ctx));
-        let is_bool = variant_ty.map_or(false, Type::is_bool);
+        let is_bool = variant_ty.is_some_and(Type::is_bool);
 
         // Assume signedness since the default type by the C standard is an int.
         let is_signed = variant_ty.map_or(true, |ty| match *ty.kind() {
             TypeKind::Int(ref int_kind) => int_kind.is_signed(),
             ref other => {
-                panic!("Since when enums can be non-integers? {:?}", other)
+                panic!("Since when enums can be non-integers? {other:?}")
             }
         });
 
@@ -310,14 +310,12 @@ impl EnumVariant {
     /// Returns whether this variant should be enforced to be a constant by code
     /// generation.
     pub(crate) fn force_constification(&self) -> bool {
-        self.custom_behavior
-            .map_or(false, |b| b == EnumVariantCustomBehavior::Constify)
+        self.custom_behavior == Some(EnumVariantCustomBehavior::Constify)
     }
 
     /// Returns whether the current variant should be hidden completely from the
     /// resulting rust enum.
     pub(crate) fn hidden(&self) -> bool {
-        self.custom_behavior
-            .map_or(false, |b| b == EnumVariantCustomBehavior::Hide)
+        self.custom_behavior == Some(EnumVariantCustomBehavior::Hide)
     }
 }

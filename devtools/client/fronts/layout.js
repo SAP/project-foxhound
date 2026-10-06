@@ -174,11 +174,7 @@ class LayoutFront extends FrontClassWithSpec(layoutSpec) {
   }
 }
 
-exports.FlexboxFront = FlexboxFront;
 registerFront(FlexboxFront);
-exports.FlexItemFront = FlexItemFront;
 registerFront(FlexItemFront);
-exports.GridFront = GridFront;
 registerFront(GridFront);
-exports.LayoutFront = LayoutFront;
 registerFront(LayoutFront);

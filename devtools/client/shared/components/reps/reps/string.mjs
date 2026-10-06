@@ -21,7 +21,7 @@ import {
   ELLIPSIS,
   uneatLastUrlCharsRegex,
   urlRegex,
-} from "resource://devtools/client/shared/components/reps/reps/rep-utils.mjs";
+} from "./rep-utils.mjs";
 
 /**
  * Renders a string. String value is enclosed within quotes.
@@ -198,7 +198,7 @@ function maybeCropString(opts, text) {
  * Get an array of the elements representing the string, cropped if needed,
  * with actual links.
  *
- * @param {Object} An options object of the following shape:
+ * @param {object} An options object of the following shape:
  *                 - text {String}: The actual string to linkify.
  *                 - cropLimit {Integer}: The limit to apply on the whole text.
  *                 - urlCropLimit {Integer}: The limit to apply on each URL.
@@ -207,7 +207,7 @@ function maybeCropString(opts, text) {
  *                 - isInContentPage {Boolean}: pass true if the reps is
  *                                              rendered in the content page
  *                                              (e.g. in JSONViewer).
- * @returns {Array<String|ReactElement>}
+ * @returns {Array<string | ReactElement>}
  */
 function getLinkifiedElements({
   text,
@@ -325,14 +325,14 @@ function getLinkifiedElements({
  * Returns a cropped substring given an offset, start and end crop indices in a
  * parent string.
  *
- * @param {String} text: The substring to crop.
+ * @param {string} text: The substring to crop.
  * @param {Integer} offset: The offset corresponding to the index at which
  *                          the substring is in the parent string.
  * @param {Integer|null} startCropIndex: the index where the start of the crop
  *                                       should happen in the parent string.
  * @param {Integer|null} endCropIndex: the index where the end of the crop
  *                                     should happen in the parent string
- * @returns {String|null} The cropped substring, or null if the text is
+ * @returns {string | null} The cropped substring, or null if the text is
  *                        completly cropped.
  */
 function getCroppedString(text, offset = 0, startCropIndex, endCropIndex) {

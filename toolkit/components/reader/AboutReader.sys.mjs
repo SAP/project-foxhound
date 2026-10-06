@@ -17,16 +17,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 ChromeUtils.defineLazyGetter(
   lazy,
-  "numberFormat",
-  () => new Services.intl.NumberFormat(undefined)
-);
-ChromeUtils.defineLazyGetter(
-  lazy,
-  "pluralRules",
-  () => new Services.intl.PluralRules(undefined)
-);
-ChromeUtils.defineLazyGetter(
-  lazy,
   "l10n",
   () => new Localization(["toolkit/about/aboutReader.ftl"], true)
 );
@@ -1462,19 +1452,28 @@ AboutReader.prototype = {
 
     const slow = article.readingTimeMinsSlow;
     const fast = article.readingTimeMinsFast;
-    const fastStr = lazy.numberFormat.format(fast);
-    const readTimeRange = lazy.numberFormat.formatRange(fast, slow);
-    this._doc.l10n.setAttributes(
-      this._readTimeElement,
-      "about-reader-estimated-read-time",
-      {
-        range: fast === slow ? `~${fastStr}` : `${readTimeRange}`,
-        rangePlural:
-          fast === slow
-            ? lazy.pluralRules.select(fast)
-            : lazy.pluralRules.selectRange(fast, slow),
-      }
-    );
+
+    // Display times in hours if either is at least 120 minutes.
+    if (slow < 120) {
+      const readingTimeRange = new Intl.NumberFormat(undefined, {
+        style: "unit",
+        unit: "minute",
+        unitDisplay: "long",
+      }).formatRange(fast, slow);
+
+      this._readTimeElement.textContent = readingTimeRange;
+    } else {
+      const fastHours = Math.round(fast / 60);
+      const slowHours = Math.round(slow / 60);
+
+      const readingTimeRange = new Intl.NumberFormat(undefined, {
+        style: "unit",
+        unit: "hour",
+        unitDisplay: "long",
+      }).formatRange(fastHours, slowHours);
+
+      this._readTimeElement.textContent = readingTimeRange;
+    }
 
     // If a document title was not provided in the constructor, we'll fall back
     // to using the article title.
@@ -1505,6 +1504,9 @@ AboutReader.prototype = {
     this._maybeSetTextDirection(article);
     this._languageDeferred.resolve(article.detectedLanguage);
 
+    if (article.textPlainDoc) {
+      this._contentElement.classList.add("plain-text-doc");
+    }
     this._contentElement.classList.add("reader-show-element");
     this._updateImageMargins();
     this._updateWideTables();

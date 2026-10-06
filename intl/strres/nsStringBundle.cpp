@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,7 +27,6 @@
 #include "mozilla/ipc/SharedMemoryHandle.h"
 #include "mozilla/BinarySearch.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/ResultExtensions.h"
 #include "mozilla/URLPreloader.h"
 #include "mozilla/Try.h"
 #include "mozilla/dom/ContentParent.h"
@@ -755,6 +753,7 @@ nsStringBundleService::Observe(nsISupports* aSubject, const char* aTopic,
       strcmp("chrome-flush-caches", aTopic) == 0 ||
       strcmp("intl:app-locales-changed", aTopic) == 0) {
     flushBundleCache(/* ignoreShared = */ false);
+    mBundleMap.Clear();
   } else if (strcmp("memory-pressure", aTopic) == 0) {
     flushBundleCache(/* ignoreShared = */ true);
   }
@@ -796,7 +795,7 @@ void nsStringBundleService::SendContentBundles(ContentParent* aContentParent) {
     }
   }
 
-  Unused << aContentParent->SendRegisterStringBundles(std::move(bundles));
+  (void)aContentParent->SendRegisterStringBundles(std::move(bundles));
 }
 
 void nsStringBundleService::RegisterContentBundle(

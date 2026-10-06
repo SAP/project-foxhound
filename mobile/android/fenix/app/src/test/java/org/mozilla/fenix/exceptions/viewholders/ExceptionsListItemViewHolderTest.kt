@@ -9,22 +9,23 @@ import io.mockk.MockKAnnotations
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.impl.annotations.MockK
+import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.verify
 import mozilla.components.browser.icons.BrowserIcons
 import mozilla.components.browser.icons.IconRequest
 import mozilla.components.ui.widgets.WidgetSiteItemView
-import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.exceptions.ExceptionsInteractor
 import org.mozilla.fenix.helpers.MockkRetryTestRule
+import kotlin.test.assertNotNull
 
 class ExceptionsListItemViewHolderTest {
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var view: WidgetSiteItemView
 
     @MockK private lateinit var icons: BrowserIcons

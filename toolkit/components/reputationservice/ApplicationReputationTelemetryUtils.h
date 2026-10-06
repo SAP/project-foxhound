@@ -1,10 +1,9 @@
-//* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef ApplicationReputationTelemetryUtils_h__
-#define ApplicationReputationTelemetryUtils_h__
+#ifndef ApplicationReputationTelemetryUtils_h_
+#define ApplicationReputationTelemetryUtils_h_
 
 #include "mozilla/glean/ReputationserviceMetrics.h"
 #include "mozilla/Telemetry.h"
@@ -42,4 +41,4 @@ mozilla::glean::application_reputation::Server2Label HTTPStatusToLabel(
  */
 nsLiteralCString VerdictToLabel(uint32_t aVerdict);
 
-#endif  // ApplicationReputationTelemetryUtils_h__
+#endif  // ApplicationReputationTelemetryUtils_h_

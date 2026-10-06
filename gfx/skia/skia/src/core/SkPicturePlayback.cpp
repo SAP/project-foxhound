@@ -64,6 +64,8 @@ void SkPicturePlayback::draw(SkCanvas* canvas,
     AutoResetOpID aroi(this);
     SkASSERT(0 == fCurOffset);
 
+    // We do not need to set SkDeserialProcs because we are just reading ints.
+    // e.g. images and typefaces are stored in an array and referred to by index.
     SkReadBuffer reader(fPictureData->opData()->bytes(),
                         fPictureData->opData()->size());
     reader.setVersion(fPictureData->info().getVersion());
@@ -268,7 +270,7 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             const SkPaint* paint = fPictureData->optionalPaint(reader);
             const SkImage* atlas = fPictureData->getImage(reader);
             const uint32_t flags = reader->readUInt();
-            const int count = reader->readUInt();
+            const size_t count = reader->readUInt();
             const SkRSXform* xform = (const SkRSXform*)reader->skip(count, sizeof(SkRSXform));
             const SkRect* tex = (const SkRect*)reader->skip(count, sizeof(SkRect));
             const SkColor* colors = nullptr;
@@ -289,7 +291,11 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
                 sampling = reader->readSampling();
                 BREAK_ON_READ_ERROR(reader);
             }
-            canvas->drawAtlas(atlas, xform, tex, colors, count, mode, sampling, cull, paint);
+            canvas->drawAtlas(atlas,
+                              {xform, count},
+                              {tex, count},
+                              {colors, colors ? count : 0},
+                              mode, sampling, cull, paint);
         } break;
         case DRAW_CLEAR: {
             auto c = reader->readInt();
@@ -447,7 +453,7 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             const SkPaint* paint = fPictureData->optionalPaint(reader);
             const SkImage* image = fPictureData->getImage(reader);
             SkCanvas::Lattice lattice;
-            (void)SkCanvasPriv::ReadLattice(*reader, &lattice);
+            reader->validate(SkCanvasPriv::ReadLattice(*reader, &lattice));
             const SkRect* dst = reader->skipT<SkRect>();
             BREAK_ON_READ_ERROR(reader);
 
@@ -457,7 +463,7 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             const SkPaint* paint = fPictureData->optionalPaint(reader);
             const SkImage* image = fPictureData->getImage(reader);
             SkCanvas::Lattice lattice;
-            (void)SkCanvasPriv::ReadLattice(*reader, &lattice);
+            reader->validate(SkCanvasPriv::ReadLattice(*reader, &lattice));
             const SkRect* dst = reader->skipT<SkRect>();
             SkFilterMode filter = reader->read32LE(SkFilterMode::kLinear);
             BREAK_ON_READ_ERROR(reader);
@@ -585,7 +591,7 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             const SkPoint* pts = (const SkPoint*)reader->skip(count, sizeof(SkPoint));
             BREAK_ON_READ_ERROR(reader);
 
-            canvas->drawPoints(mode, count, pts, paint);
+            canvas->drawPoints(mode, {pts, count}, paint);
         } break;
         case DRAW_RECT: {
             const SkPaint& paint = fPictureData->requiredPaint(reader);

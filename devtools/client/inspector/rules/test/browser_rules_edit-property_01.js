@@ -8,8 +8,6 @@
 // FIXME: some of the inplace-editor focus/blur/commit/revert stuff
 // should be factored out in head.js
 
-const ALL_CHANNELS = Ci.nsITelemetry.DATASET_ALL_CHANNELS;
-
 const TEST_URI = `
   <style type="text/css">
   #testid {
@@ -32,52 +30,15 @@ var TEST_DATA = [
   { name: "border", value: "solid 1px foo", isValid: false },
 ];
 
-const DATA = [
-  {
-    timestamp: null,
-    category: "devtools.main",
-    method: "edit_rule",
-    object: "ruleview",
-  },
-  {
-    timestamp: null,
-    category: "devtools.main",
-    method: "edit_rule",
-    object: "ruleview",
-  },
-  {
-    timestamp: null,
-    category: "devtools.main",
-    method: "edit_rule",
-    object: "ruleview",
-  },
-  {
-    timestamp: null,
-    category: "devtools.main",
-    method: "edit_rule",
-    object: "ruleview",
-  },
-  {
-    timestamp: null,
-    category: "devtools.main",
-    method: "edit_rule",
-    object: "ruleview",
-  },
-];
-
 add_task(async function () {
   // Let's reset the counts.
-  Services.telemetry.clearEvents();
-
-  // Ensure no events have been logged
-  const snapshot = Services.telemetry.snapshotEvents(ALL_CHANNELS, true);
-  ok(!snapshot.parent, "No events have been logged for the main process");
+  Services.fog.testResetFOG();
 
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openRuleView();
   await selectNode("#testid", inspector);
 
-  const rule = getRuleViewRuleEditor(view, 1).rule;
+  const rule = getRuleViewRuleEditorAt(view, 1).rule;
   for (const { name, value, isValid } of TEST_DATA) {
     await testEditProperty(view, rule, name, value, isValid);
   }
@@ -122,7 +83,10 @@ async function testEditProperty(view, rule, name, value, isValid) {
   is(inplaceEditor(prop.editor.valueSpan), editor, "Focus moved to the value.");
 
   info("Entering a new value, including ; to commit and blur the value");
-  const onValueDone = view.once("ruleview-changed");
+  // Depending on the existing value, we may trigger a full ruleview update or only a light property one.
+  const onValueDone = view.once(
+    prop.value == value ? "property-value-updated" : "ruleview-changed"
+  );
   const onBlur = once(input, "blur");
   EventUtils.sendString(value + ";", doc.defaultView);
   await onBlur;
@@ -144,22 +108,5 @@ async function testEditProperty(view, rule, name, value, isValid) {
 }
 
 function checkResults() {
-  const snapshot = Services.telemetry.snapshotEvents(ALL_CHANNELS, true);
-  const events = snapshot.parent.filter(
-    event =>
-      event[1] === "devtools.main" &&
-      event[2] === "edit_rule" &&
-      event[3] === "ruleview"
-  );
-
-  for (const i in DATA) {
-    const [timestamp, category, method, object] = events[i];
-    const expected = DATA[i];
-
-    // ignore timestamp
-    Assert.greater(timestamp, 0, "timestamp is greater than 0");
-    is(category, expected.category, "category is correct");
-    is(method, expected.method, "method is correct");
-    is(object, expected.object, "object is correct");
-  }
+  is(5, Glean.devtoolsMain.editRuleRuleview.testGetValue().length);
 }

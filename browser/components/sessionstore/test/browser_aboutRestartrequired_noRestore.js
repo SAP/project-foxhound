@@ -38,7 +38,7 @@ async function getBrowserTab() {
   // Create a background tab.
   let tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
   let browser = tab.linkedBrowser;
-  await promiseBrowserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
   return [tab, browser];
 }
 

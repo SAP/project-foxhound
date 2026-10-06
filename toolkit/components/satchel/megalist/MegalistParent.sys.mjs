@@ -4,6 +4,19 @@
 
 import { MegalistViewModel } from "resource://gre/modules/megalist/MegalistViewModel.sys.mjs";
 
+const lazy = {};
+ChromeUtils.defineLazyGetter(lazy, "logConsole", function () {
+  return console.createInstance({
+    prefix: "MegalistParent",
+    maxLogLevel: Services.prefs.getBoolPref(
+      "browser.contextual-password-manager.log",
+      false
+    )
+      ? "Debug"
+      : "Warn",
+  });
+});
+
 /**
  * MegalistParent integrates MegalistViewModel into Parent/Child model.
  */
@@ -22,6 +35,17 @@ export class MegalistParent extends JSWindowActorParent {
   }
 
   receiveMessage(message) {
+    if (
+      !this.manager.isInProcess ||
+      this.manager.documentURI?.spec !==
+        "chrome://global/content/megalist/megalist.html"
+    ) {
+      lazy.logConsole.debug(
+        "MegalistParent: received message from the wrong content process type."
+      );
+      return null;
+    }
+
     return this.#viewModel?.handleViewMessage(message);
   }
 

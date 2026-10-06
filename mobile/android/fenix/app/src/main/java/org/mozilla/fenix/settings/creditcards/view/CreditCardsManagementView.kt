@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.settings.creditcards.view
 
+import androidx.annotation.LayoutRes
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.LinearLayoutManager
 import org.mozilla.fenix.R
@@ -41,6 +42,7 @@ class CreditCardsManagementView(
     }
 
     companion object {
-        const val LAYOUT_ID = R.layout.component_credit_cards
+        @LayoutRes
+        val LAYOUT_ID = R.layout.component_credit_cards
     }
 }

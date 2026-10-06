@@ -12,12 +12,12 @@ const MenuItem = require("resource://devtools/client/framework/menu-item.js");
  *
  * @param {Array} items
  *        List of menu items.
- * @param {Object} options:
+ * @param {object} options:
  * @property {Element} button
  *           Button element used to open the menu.
- * @property {Number} screenX
+ * @property {number} screenX
  *           Screen x coordinate of the menu on the screen.
- * @property {Number} screenY
+ * @property {number} screenY
  *           Screen y coordinate of the menu on the screen.
  */
 function showMenu(items, options) {

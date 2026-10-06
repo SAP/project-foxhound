@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,13 +5,11 @@
 #ifndef mozilla_dom_BodyUtil_h
 #define mozilla_dom_BodyUtil_h
 
-#include "nsString.h"
-#include "nsError.h"
-
+#include "js/Utility.h"  // JS::FreePolicy
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FormData.h"
-
-#include "js/Utility.h"  // JS::FreePolicy
+#include "nsError.h"
+#include "nsString.h"
 
 namespace mozilla {
 class ErrorResult;
@@ -21,10 +17,9 @@ class ErrorResult;
 namespace dom {
 
 class BodyUtil final {
- private:
+ public:
   BodyUtil() = delete;
 
- public:
   /**
    * Creates an array buffer from an array, assigning the result to |aValue|.
    * The array buffer takes ownership of |aInput|, which must be allocated

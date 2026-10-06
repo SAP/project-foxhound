@@ -1,0 +1,18 @@
+{
+  "label": "cnn.com",
+  "bugs": {
+    "1830307": {
+      "issue": "broken-printing",
+      "matches": ["*://*.cnn.com/*"]
+    }
+  },
+  "css": {
+    "fix_blank_pages_when_printing": "@media print { .header__wrapper-outer { height: initial !important; top: initial !important; margin-bottom: initial !important; } }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": ["fix_blank_pages_when_printing"]
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2023 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -17,7 +17,7 @@ TemporalHelpers.assertPlainYearMonth(
   result4,
   5782, 4, "M04",
   "reference day is the first of the calendar month even if day is given",
-  /* era = */ undefined, /* era year = */ undefined, /* reference day = */ 5
+  "am", /* era year = */ 5782, /* reference day = */ 5
 );
 const isoYearMonth = result4.toString().slice(0, 7);
 assert.sameValue(isoYearMonth, "2021-12", "Tevet 5782 begins in ISO 2021-12");
@@ -27,7 +27,7 @@ TemporalHelpers.assertPlainYearMonth(
   result5,
   5783, 6, "M06",
   "month code M05L does not exist in year 5783 (overflow constrain); Hebrew calendar constrains Adar I to Adar",
-  /* era = */ undefined, /* era year = */ undefined, /* reference day = */ 22
+  "am", /* era year = */ 5783, /* reference day = */ 22
 );
 
 assert.throws(
@@ -41,7 +41,7 @@ TemporalHelpers.assertPlainYearMonth(
   result6,
   5783, 12, "M12",
   "month 13 does not exist in year 5783 (overflow constrain)",
-  /* era = */ undefined, /* era year = */ undefined, /* reference day = */ 18
+  "am", /* era year = */ 5783, /* reference day = */ 18
 );
 
 assert.throws(
@@ -55,7 +55,7 @@ TemporalHelpers.assertPlainYearMonth(
   result7,
   5782, 4, "M04",
   "reference day is set correctly even if day is out of range (overflow constrain)",
-  /* era = */ undefined, /* era year = */ undefined, /* reference day = */ 5
+  "am", /* era year = */ 5782, /* reference day = */ 5
 );
 
 const result8 = Temporal.PlainYearMonth.from({ year: 5782, monthCode: "M04", day: 50, calendar: "hebrew" }, { overflow: "reject" });
@@ -63,7 +63,7 @@ TemporalHelpers.assertPlainYearMonth(
   result8,
   5782, 4, "M04",
   "reference day is set correctly even if day is out of range (overflow reject)",
-  /* era = */ undefined, /* era year = */ undefined, /* reference day = */ 5
+  "am", /* era year = */ 5782, /* reference day = */ 5
 );
 
 reportCompare(0, 0);

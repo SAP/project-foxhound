@@ -86,9 +86,9 @@ add_task(async function parsing() {
 /**
  * Asserts that the moz_origins table is correct.
  *
- * @param expectedOrigins
- *        An array of expected origins.  Each origin in the array is itself an
- *        array that looks like this: [prefix, host]
+ * @param {[string, string][]} expectedOrigins
+ *   An array of expected origins. Each origin in the array is itself an array
+ *   that looks like this: [prefix, host]
  */
 async function checkDB(expectedOrigins) {
   let db = await PlacesUtils.promiseDBConnection();

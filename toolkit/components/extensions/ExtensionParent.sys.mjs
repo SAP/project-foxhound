@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,6 +20,7 @@ const lazy = XPCOMUtils.declareLazy({
   DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.sys.mjs",
   ExtensionActivityLog: "resource://gre/modules/ExtensionActivityLog.sys.mjs",
   ExtensionData: "resource://gre/modules/Extension.sys.mjs",
+  ExtensionDocumentId: "resource://gre/modules/ExtensionDocumentId.sys.mjs",
   GeckoViewConnection: "resource://gre/modules/GeckoViewWebExtension.sys.mjs",
   MessageManagerProxy: "resource://gre/modules/MessageManagerProxy.sys.mjs",
   NativeApp: "resource://gre/modules/NativeMessaging.sys.mjs",
@@ -308,6 +307,12 @@ const ProxyMessenger = {
         sender.frameId = source.frameId;
       }
 
+      if (currentWindowContext?.innerWindowId) {
+        sender.documentId = lazy.ExtensionDocumentId.getDocumentId(
+          currentWindowContext.innerWindowId
+        );
+      }
+
       let principal = currentWindowContext.documentPrincipal;
       // We intend the serialization of null principals *and* file scheme to be
       // "null".
@@ -342,6 +347,17 @@ const ProxyMessenger = {
 
     arg.sender = this.getSender(extension, sender);
     arg.topBC = arg.tabId && this.getTopBrowsingContextId(arg.tabId);
+
+    if (arg.documentId) {
+      let innerWindowId =
+        lazy.ExtensionDocumentId.getInnerWindowIdForDocumentId(arg.documentId);
+      if (!innerWindowId) {
+        throw new ExtensionError(ERROR_NO_RECEIVERS);
+      }
+      arg.innerWindowId = innerWindowId;
+      return "frame";
+    }
+
     return arg.tabId ? "tab" : "messenger";
   },
 
@@ -469,7 +485,7 @@ GlobalManager = {
   extensionMap: new Map(),
   initialized: false,
 
-  /** @type {WeakMap<XULBrowserElement, object>} Extension Context init data. */
+  /** @type {WeakMap<MozBrowser, object>} Extension Context init data. */
   frameData: new WeakMap(),
 
   init(extension) {
@@ -763,7 +779,7 @@ class ExtensionPageContextParent extends ProxyContextParent {
 
   // The window that contains this context. This may change due to moving tabs.
   get appWindow() {
-    let win = this.xulBrowser.ownerGlobal;
+    let win = this.xulBrowser.documentGlobal;
     return win.browsingContext.topChromeWindow;
   }
 
@@ -776,16 +792,18 @@ class ExtensionPageContextParent extends ProxyContextParent {
 
   get tabId() {
     let { tabTracker } = apiManager.global;
-    let data = tabTracker.getBrowserData(this.xulBrowser);
-    if (data.tabId >= 0) {
-      return data.tabId;
+    const xulBrowser = this.xulBrowser;
+    const tab = xulBrowser && tabTracker.getTabForBrowser(xulBrowser);
+    if (tab) {
+      return tabTracker.getId(tab);
     }
     return undefined;
   }
 
   toExtensionContext() {
     const { tabTracker } = apiManager.global;
-    const { tabId, windowId } = tabTracker.getBrowserDataForContext(this);
+    const xulBrowser = this.xulBrowser;
+    const browserData = xulBrowser && tabTracker.getBrowserData(xulBrowser);
     const windowContext = this.browsingContext?.currentWindowContext;
     return {
       // NOTE: the contextId property in the final set of properties returned to
@@ -797,7 +815,9 @@ class ExtensionPageContextParent extends ProxyContextParent {
       // contextType property (which should be one of the values part of the
       // runtime.ContextType enum).
       contextType: this.contextType,
-      // TODO(Bug 1891478): add documentId.
+      documentId: windowContext?.innerWindowId
+        ? lazy.ExtensionDocumentId.getDocumentId(windowContext.innerWindowId)
+        : undefined,
       // TODO(Bug 1890739): consider switching this to use webExposedOriginSerialization when available
       // Using nsIPrincipal.originNoSuffix to avoid including the
       // private browsing (or contextual identity ones)
@@ -805,8 +825,8 @@ class ExtensionPageContextParent extends ProxyContextParent {
       documentUrl: windowContext?.documentURI.spec,
       incognito: this.incognito,
       frameId: this.frameId,
-      tabId,
-      windowId,
+      tabId: browserData ? browserData.tabId : -1,
+      windowId: browserData ? browserData.windowId : -1,
       // TODO: File followup to also add a Firefox-only userContextId?
     };
   }
@@ -862,8 +882,8 @@ class DevToolsExtensionPageContextParent extends ExtensionPageContextParent {
     if (!this._onNavigatedListeners) {
       this._onNavigatedListeners = new Set();
 
-      await this.devToolsToolbox.resourceCommand.watchResources(
-        [this.devToolsToolbox.resourceCommand.TYPES.DOCUMENT_EVENT],
+      await this.devToolsToolbox.commands.resourceCommand.watchResources(
+        [this.devToolsToolbox.commands.resourceCommand.TYPES.DOCUMENT_EVENT],
         {
           onAvailable: this._onResourceAvailable,
           ignoreExistingResources: true,
@@ -916,8 +936,8 @@ class DevToolsExtensionPageContextParent extends ExtensionPageContextParent {
     }
 
     if (this._onNavigatedListeners) {
-      this.devToolsToolbox.resourceCommand.unwatchResources(
-        [this.devToolsToolbox.resourceCommand.TYPES.DOCUMENT_EVENT],
+      this.devToolsToolbox.commands.resourceCommand.unwatchResources(
+        [this.devToolsToolbox.commands.resourceCommand.TYPES.DOCUMENT_EVENT],
         { onAvailable: this._onResourceAvailable }
       );
     }
@@ -1167,7 +1187,7 @@ ParentAPIManager = {
       );
     }
 
-    let start = Cu.now();
+    let start = ChromeUtils.now();
     try {
       return callable();
     } finally {
@@ -1267,7 +1287,7 @@ ParentAPIManager = {
     let handlingUserInput = false;
 
     let listener = async (...listenerArgs) => {
-      let startTime = Cu.now();
+      let startTime = ChromeUtils.now();
       // Extract urgentSend flag to avoid deserializing args holder later.
       let urgentSend = false;
       if (listenerArgs[0] && data.path.startsWith("webRequest.")) {
@@ -1460,7 +1480,7 @@ class HiddenXULWindow {
    *        An object that contains the xul attributes to set of the newly
    *        created browser XUL element.
    *
-   * @returns {Promise<XULBrowserElement>}
+   * @returns {Promise<MozBrowser>}
    *          A Promise which resolves to the newly created browser XUL element.
    */
   async createBrowserElement(xulAttributes) {
@@ -1486,9 +1506,12 @@ class HiddenXULWindow {
 
     let awaitFrameLoader;
 
-    if (browser.getAttribute("remote") === "true") {
+    if (browser.hasAttribute("remote")) {
       awaitFrameLoader = promiseEvent(browser, "XULFrameLoaderCreated");
     }
+
+    // Prevent initial about:blank load before navigating to extension URI
+    browser.setAttribute("nodefaultsrc", "true");
 
     chromeDoc.documentElement.appendChild(browser);
 
@@ -1620,8 +1643,10 @@ class HiddenExtensionPage {
   }
 }
 
-/** @typedef {import("resource://devtools/server/actors/descriptors/webextension.js")
-              .WebExtensionDescriptorActor} WebExtensionDescriptorActor */
+/**
+ * @typedef {import("resource://devtools/server/actors/descriptors/webextension.js")
+ *         .WebExtensionDescriptorActor} WebExtensionDescriptorActor
+ */
 
 /**
  * This object provides utility functions needed by the devtools actors to
@@ -1633,9 +1658,9 @@ const DebugUtils = {
   // which are used to connect the webextension patent actor to the extension process.
   hiddenXULWindow: null,
 
-  /** @type {Map<string, Promise<XULBrowserElement> & { browser: XULBrowserElement }>} */
+  /** @type {Map<string, Promise<MozBrowser> & { browser: MozBrowser }>} */
   debugBrowserPromises: new Map(),
-  /** @type {WeakMap<Promise<XULBrowserElement>, Set<WebExtensionDescriptorActor>>} */
+  /** @type {WeakMap<Promise<MozBrowser>, Set<WebExtensionDescriptorActor>>} */
   debugActors: new DefaultWeakMap(() => new Set()),
 
   _extensionUpdatedWatcher: null,
@@ -1787,7 +1812,7 @@ const DebugUtils = {
    * @param {WebExtensionDescriptorActor} webExtensionParentActor
    *        The devtools actor that is retrieving the browser element.
    *
-   * @returns {Promise<XULBrowserElement>}
+   * @returns {Promise<MozBrowser>}
    *          A promise which resolves to the configured browser XUL element.
    */
   async getExtensionProcessBrowser(webExtensionParentActor) {
@@ -1871,14 +1896,17 @@ const DebugUtils = {
  * was received by the message manager. The promise is rejected if the message
  * manager was closed before a message was received.
  *
+ * Accepts an AbortSignal to allow early unregistration of the listeners.
+ *
  * @param {MessageListenerManager} messageManager
  *        The message manager on which to listen for messages.
  * @param {string} messageName
  *        The message to listen for.
+ * @param {AbortSignal} abortSignal
  * @returns {Promise<*>}
  */
-function promiseMessageFromChild(messageManager, messageName) {
-  return new Promise((resolve, reject) => {
+function promiseMessageFromChild(messageManager, messageName, abortSignal) {
+  const promise = new Promise((resolve, reject) => {
     let unregister;
     function listener(message) {
       unregister();
@@ -1896,19 +1924,88 @@ function promiseMessageFromChild(messageManager, messageName) {
     }
     unregister = () => {
       Services.obs.removeObserver(observer, "message-manager-close");
+      abortSignal.removeEventListener("abort", unregister);
       messageManager.removeMessageListener(messageName, listener);
+      messageManager = null;
     };
     messageManager.addMessageListener(messageName, listener);
     Services.obs.addObserver(observer, "message-manager-close");
+    abortSignal.addEventListener("abort", unregister);
   });
+  return promise;
+}
+
+/**
+ * Returns a Promise which rejects if the load in the browser is aborted.
+ * Accepts an AbortSignal to allow early unregistration of the listeners.
+ *
+ * @param {MozBrowser} browser
+ * @param {AbortSignal} abortSignal
+ * @returns {Promise<void>} A promise that never resolves, but only rejects.
+ */
+function promiseBrowserStopped(browser, abortSignal) {
+  const { promise, reject } = Promise.withResolvers();
+  let unregister;
+  let listener = {
+    QueryInterface: ChromeUtils.generateQI([
+      "nsIWebProgressListener",
+      "nsISupportsWeakReference",
+    ]),
+
+    onStateChange(webProgress, request, stateFlags, status) {
+      if (
+        webProgress.isTopLevel &&
+        stateFlags & Ci.nsIWebProgressListener.STATE_STOP &&
+        !Components.isSuccessCode(status) &&
+        // Ignore state change triggered by navigating away from about:blank.
+        status !== Cr.NS_BINDING_ABORTED
+      ) {
+        unregister();
+        // Known failures (and test coverage):
+        // - NS_ERROR_ILLEGAL_DURING_SHUTDOWN (test_ext_background_early_quit.js)
+        // - NS_ERROR_FILE_NOT_FOUND (test_ext_background_file_invalid.js)
+        reject(
+          new Error(
+            `Browser load failed: ${ChromeUtils.getXPCOMErrorName(status)}`
+          )
+        );
+      }
+    },
+  };
+
+  unregister = () => {
+    // browser.removeProgressListener throws if browser.webProgress is null.
+    if (browser?.webProgress) {
+      browser.removeProgressListener(listener);
+    }
+    abortSignal.removeEventListener("abort", unregister);
+    listener = null;
+    browser = null;
+  };
+  browser.addProgressListener(listener, Ci.nsIWebProgress.NOTIFY_STATE_WINDOW);
+  abortSignal.addEventListener("abort", unregister);
+  return promise;
 }
 
 // This should be called before browser.loadURI is invoked.
 async function promiseBackgroundViewLoaded(browser) {
-  let { childId } = await promiseMessageFromChild(
+  const abortController = new AbortController();
+  const messagePromise = promiseMessageFromChild(
     browser.messageManager,
-    "Extension:BackgroundViewLoaded"
+    "Extension:BackgroundViewLoaded",
+    abortController.signal
   );
+  const stopPromise = promiseBrowserStopped(browser, abortController.signal);
+
+  let childId;
+  try {
+    // stopPromise only rejects, so a non-rejection is from messagePromise.
+    let message = await Promise.race([messagePromise, stopPromise]);
+    childId = message.childId;
+  } finally {
+    abortController.abort();
+  }
+
   if (childId) {
     return ParentAPIManager.getContextById(childId);
   }
@@ -2074,15 +2171,16 @@ let IconDetails = {
 
       if (themeIcons) {
         themeIcons.forEach(({ size, light, dark }) => {
-          let lightURL = baseURI.resolve(light);
-          let darkURL = baseURI.resolve(dark);
+          // light and dark are reversed. theme_icons specifies
+          // the color of the icon instead of the toolbar color
+          const lightURL = baseURI.resolve(dark);
+          const darkURL = baseURI.resolve(light);
 
           this._checkURL(lightURL, extension);
           this._checkURL(darkURL, extension);
 
-          let defaultURL = result[size] || result[19]; // always fallback to default first
           result[size] = {
-            default: defaultURL || darkURL, // Fallback to the dark url if no default is specified.
+            default: lightURL, // TODO bug 2008737: Remove default property.
             light: lightURL,
             dark: darkURL,
           };
@@ -2389,9 +2487,9 @@ ChromeUtils.defineLazyGetter(ExtensionParent, "PlatformInfo", () => {
 });
 
 // Register WPTMessages actor when running under WPT.
-if (ExtensionCommon.isInWPT && AppConstants.NIGHTLY_BUILD) {
-  const { WPTMessagesParent } = ChromeUtils.importESModule(
-    "resource://gre/modules/WPTMessagesParent.sys.mjs"
+if (ExtensionCommon.isInWPT) {
+  const { WPTEventsParent } = ChromeUtils.importESModule(
+    "resource://gre/modules/WPTEventsParent.sys.mjs"
   );
-  WPTMessagesParent.init(apiManager);
+  WPTEventsParent.init(apiManager);
 }

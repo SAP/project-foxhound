@@ -106,15 +106,13 @@ def test_try_task_duplicates(make_taskgraph, graph_config, params, expected):
     taskb = Task(kind="test", label="b", attributes={}, task={})
     task1 = Task(kind="test", label="a-1", attributes={}, task={})
     task2 = Task(kind="test", label="a-2", attributes={}, task={})
-    taskgraph, label_to_taskid = make_taskgraph(
-        {
-            taskb.label: taskb,
-            task1.label: task1,
-            task2.label: task2,
-        }
-    )
+    taskgraph, label_to_taskid = make_taskgraph({
+        taskb.label: taskb,
+        task1.label: task1,
+        task2.label: task2,
+    })
 
-    taskgraph, label_to_taskid = morph._add_try_task_duplicates(
+    taskgraph, label_to_taskid = morph.add_try_task_duplicates(
         taskgraph, label_to_taskid, params, graph_config
     )
     for label in expected:
@@ -170,12 +168,10 @@ def test_make_index_tasks(make_taskgraph, graph_config):
     docker_task = Task(
         kind="docker-image", label="docker-image-index-task", attributes={}, task={}
     )
-    taskgraph, label_to_taskid = make_taskgraph(
-        {
-            task.label: task,
-            docker_task.label: docker_task,
-        }
-    )
+    taskgraph, label_to_taskid = make_taskgraph({
+        task.label: task,
+        docker_task.label: docker_task,
+    })
 
     index_paths = [
         r.split(".", 1)[1] for r in task_def["routes"] if r.startswith("index.")
@@ -194,10 +190,60 @@ def test_make_index_tasks(make_taskgraph, graph_config):
 
     assert index_task.task["payload"]["command"][0] == "insert-indexes.js"
     assert index_task.task["payload"]["env"]["TARGET_TASKID"] == "a-tid"
-    assert index_task.task["payload"]["env"]["INDEX_RANK"] == 1540722354
+    assert index_task.task["payload"]["env"]["INDEX_RANK"] == "1540722354"
 
     # check the scope summary
     assert index_task.task["scopes"] == ["index:insert-task:gecko.v2.mozilla-central.*"]
+
+
+@pytest.mark.parametrize(
+    "has_ccov,expected_task_added",
+    (
+        pytest.param(True, True, id="with ccov tasks"),
+        pytest.param(False, False, id="without ccov tasks"),
+    ),
+)
+def test_add_code_coverage_task(
+    make_taskgraph, graph_config, has_ccov, expected_task_added
+):
+    tasks = {}
+    if has_ccov:
+        tasks["ccov-test-1"] = Task(
+            kind="test",
+            label="ccov-test-1",
+            attributes={"ccov": True},
+            task={},
+        )
+        tasks["ccov-test-2"] = Task(
+            kind="test",
+            label="ccov-test-2",
+            attributes={"ccov": True},
+            task={},
+        )
+    tasks["non-ccov"] = Task(
+        kind="test",
+        label="non-ccov",
+        attributes={},
+        task={},
+    )
+
+    taskgraph, label_to_taskid = make_taskgraph(tasks)
+    params = Parameters(
+        strict=False,
+        owner="test@example.com",
+        head_repository="https://hg.mozilla.org/mozilla-central",
+    )
+
+    taskgraph, label_to_taskid = morph.add_code_coverage_task(
+        taskgraph, label_to_taskid, params, graph_config
+    )
+
+    assert ("code-coverage-artifacts" in label_to_taskid) == expected_task_added
+    if expected_task_added:
+        task = taskgraph.tasks[label_to_taskid["code-coverage-artifacts"]]
+        assert task.task["routes"] == ["project.codecoverage.v1.tasks_done"]
+        assert task.task["requires"] == "all-resolved"
+        assert set(task.dependencies.keys()) == {"ccov-test-1", "ccov-test-2"}
 
 
 if __name__ == "__main__":

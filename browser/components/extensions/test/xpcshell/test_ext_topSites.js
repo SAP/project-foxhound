@@ -20,8 +20,35 @@ const IMAGE_1x1 =
 add_task(async function test_topSites() {
   Services.prefs.setBoolPref(SEARCH_SHORTCUTS_EXPERIMENT_PREF, false);
   let visits = [];
-  const numVisits = 15; // To make sure we get frecency.
-  let visitDate = new Date(1999, 9, 9, 9, 9).getTime();
+  // `getTopFrecentSites` uses a threshold to filter low frecency results.
+  // The minimum visit threshold is meant to mimic meaningful user engagement.
+  // The date cutoff is to ensure visits in the recent past are still visible.
+  // Both values are meant to accomodate variations in the frecency scoring
+  // algorithm.
+  const numVisits = 5;
+  let visitDate = new Date();
+  visitDate.setMonth(visitDate.getMonth() - 1);
+  visitDate = visitDate.getTime();
+
+  // Add a visit that is outside the default threshold. It'll be visible
+  // when the threshold is the bare minimum but not when using the default
+  // higher threshold used by the extension is applied.
+  const OLD_URL = "https://www.oldexample.com";
+  let olderVisitDate = new Date();
+  olderVisitDate.setMonth(olderVisitDate.getMonth() - 6);
+  olderVisitDate = olderVisitDate.getTime();
+  // We do two older visits because a likely default threshold could filter out
+  // one visit.
+  PlacesTestUtils.addVisits([
+    {
+      url: OLD_URL,
+      visitDate: olderVisitDate * 1000,
+    },
+    {
+      url: OLD_URL,
+      visitDate: olderVisitDate * 1000,
+    },
+  ]);
 
   async function setVisit(visit) {
     for (let j = 0; j < numVisits; ++j) {
@@ -57,9 +84,20 @@ add_task(async function test_topSites() {
     topsiteFrecency: 1,
   });
 
+  // Sanity checks.
+  Assert.ok(
+    !visits.some(visit => visit.url && visit.url.includes(OLD_URL)),
+    "Recent visits don't include the oldest visit."
+  );
+  Assert.ok(
+    links.some(link => link.url && link.url.includes(OLD_URL)),
+    "The returned links do include the oldest visit."
+  );
+
   equal(
     links.length,
-    visits.length,
+    // The recent visits plus the one older visit.
+    visits.length + 1,
     "Top sites has been successfully initialized"
   );
 

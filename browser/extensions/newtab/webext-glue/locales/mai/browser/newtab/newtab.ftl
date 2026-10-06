@@ -9,6 +9,25 @@ newtab-page-title = नव टैब
 newtab-settings-button =
     .title = अपन नव टैब पृष्ठ पसंदीदा बनाउ
 
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } पंक्ति
+           *[other] { $num } पंक्ति सभ
+        }
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = स्पोंसर कएल स्टोरी
+home-prefs-highlights-option-visited-pages-srd =
+    .label = विजिट कएल पेज
+home-prefs-highlights-options-bookmarks-srd =
+    .label = पुस्तकचिह्न
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = हालुक डाउनलोड
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +35,7 @@ newtab-search-box-search-button =
     .title = खोज
     .aria-label = खोज
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-edit-topsites-header = टॉप साइट संपादित करू
 newtab-topsites-title-label = शीर्षक
@@ -44,9 +63,6 @@ newtab-confirm-delete-history-p1 = की अहाँ वाकई ई पृ�
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = ई क्रिया केँ पहिले जहिना नहि कएल जाए सकैत अछि.
 
-## Top Sites - Sponsored label
-
-
 ## Context Menu - Action Tooltips.
 
 # Tooltip on an empty topsite box to open the New Top Site dialog.
@@ -64,12 +80,6 @@ newtab-menu-pin = पिन करू
 newtab-menu-unpin = पिन हटाबू
 newtab-menu-delete-history = इतिहास सँ मेटाबू
 newtab-menu-save-to-pocket = { -pocket-brand-name } मे सहेजू
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
-
-## Message displayed in a modal window to explain privacy and provide context for sponsored content.
-
 
 ##
 
@@ -118,9 +128,6 @@ newtab-section-menu-move-up = उप्पर जाउ
 newtab-section-menu-move-down = नीच्चाँ जाउ
 newtab-section-menu-privacy-notice = गोपनीयता सूचना
 
-## Section aria-labels
-
-
 ## Section Headers.
 
 newtab-section-header-topsites = टॉप साइट
@@ -136,77 +143,13 @@ newtab-empty-section-highlights = ब्राउजिंग आरंभ क�
 #   $provider (string) - Name of the content provider for this section, e.g "Pocket".
 newtab-empty-section-topstories = अहाँ आखिर धरि पहुँचि गेलहु, { $provider } सँ बाद में फिनु टॉप स्टोरी देखू. इंतजार नहि कए सकब? अधिक बढिया स्टोरी वेब सँ पाबै लेल एकटा लेकप्रिय टॉपिक चुनू.
 
-## Empty Section (Content Discovery Experience). These show when there are no more stories or when some stories fail to load.
-
-
 ## Pocket Content Section.
 
 # This is shown at the bottom of the trending stories section and precedes a list of links to popular topics.
 newtab-pocket-read-more = लोकप्रिय विषय:
-
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
 
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
 newtab-error-fallback-info = ओह, बुझाय अछि जे कंटेंट लोड हए मे किछु गलत भ गेल.
 newtab-error-fallback-refresh-link = फेनु प्रयास करए लेल पेज रीफ्रेश करू.
-
-## Customization Menu
-
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

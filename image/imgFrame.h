@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -196,7 +195,8 @@ class imgFrame {
     RefPtr<gfxDrawable> mDrawable;
     SurfaceFormat mFormat;
     SurfaceWithFormat() : mFormat(SurfaceFormat::UNKNOWN) {}
-    SurfaceWithFormat(gfxDrawable* aDrawable, SurfaceFormat aFormat)
+    SurfaceWithFormat(already_AddRefed<gfxDrawable> aDrawable,
+                      SurfaceFormat aFormat)
         : mDrawable(aDrawable), mFormat(aFormat) {}
     SurfaceWithFormat(SurfaceWithFormat&& aOther)
         : mDrawable(std::move(aOther.mDrawable)), mFormat(aOther.mFormat) {}
@@ -311,6 +311,9 @@ class DrawableFrameRef final {
     return *this;
   }
 
+  DrawableFrameRef(const DrawableFrameRef& aOther) = delete;
+  DrawableFrameRef& operator=(const DrawableFrameRef& aOther) = delete;
+
   explicit operator bool() const { return bool(mFrame); }
 
   imgFrame* operator->() {
@@ -332,9 +335,6 @@ class DrawableFrameRef final {
   }
 
  private:
-  DrawableFrameRef(const DrawableFrameRef& aOther) = delete;
-  DrawableFrameRef& operator=(const DrawableFrameRef& aOther) = delete;
-
   RefPtr<imgFrame> mFrame;
   Maybe<DataSourceSurface::ScopedMap> mRef;
 };
@@ -401,6 +401,9 @@ class RawAccessFrameRef final {
     return *this;
   }
 
+  RawAccessFrameRef(const RawAccessFrameRef& aOther) = delete;
+  RawAccessFrameRef& operator=(const RawAccessFrameRef& aOther) = delete;
+
   explicit operator bool() const { return bool(mFrame); }
 
   imgFrame* operator->() {
@@ -428,9 +431,6 @@ class RawAccessFrameRef final {
   uint8_t* Data() const { return mData; }
 
  private:
-  RawAccessFrameRef(const RawAccessFrameRef& aOther) = delete;
-  RawAccessFrameRef& operator=(const RawAccessFrameRef& aOther) = delete;
-
   RefPtr<imgFrame> mFrame;
   uint8_t* mData = nullptr;
 };

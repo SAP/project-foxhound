@@ -49,9 +49,11 @@ createToolbars();
 A simple pseudocode representation of how this code operates looks like
 this:
 
-    createToolbars()
-        -> createToolbar() // called 200 times, creates 1 DIV element each time
-           -> createToolbarButton() // called 20 times per toolbar, creates 1 SPAN element each time
+```
+createToolbars()
+    -> createToolbar() // called 200 times, creates 1 DIV element each time
+       -> createToolbarButton() // called 20 times per toolbar, creates 1 SPAN element each time
+```
 
 In total, then, it creates 200 `HTMLDivElement` objects, and 4000
 `HTMLSpanElement` objects.

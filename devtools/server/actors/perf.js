@@ -32,6 +32,7 @@ exports.PerfActor = class PerfActor extends Actor {
   /**
    * This counter is incremented at each new capture. This makes sure that the
    * profile data and the additionalInformation are in sync.
+   *
    * @type {number}
    */
   #captureHandleCounter = 0;
@@ -39,6 +40,7 @@ exports.PerfActor = class PerfActor extends Actor {
   /**
    * This stores the profile data retrieved from the last call to
    * startCaptureAndStopProfiler.
+   *
    * @type {Promise<ArrayBuffer> |null}
    */
   #previouslyRetrievedProfileDataPromise = null;
@@ -47,6 +49,7 @@ exports.PerfActor = class PerfActor extends Actor {
    * This stores the additionalInformation returned by
    * getProfileDataAsGzippedArrayBufferThenStop so that it can be sent to the
    * front using getPreviouslyRetrievedAdditionalInformation.
+   *
    * @type {Promise<MockedExports.ProfileGenerationAdditionalInformation>| null}
    */
   #previouslyRetrievedAdditionalInformationPromise = null;
@@ -146,17 +149,6 @@ exports.PerfActor = class PerfActor extends Actor {
     return [Array.from(addr), Array.from(index), Array.from(buffer)];
   }
 
-  /* @backward-compat { version 140 }
-   * Version 140 introduced getProfileAndStopProfilerBulk below, a more
-   * efficient version of getProfileAndStopProfiler. getProfileAndStopProfiler
-   * needs to stay in the spec to support older versions of Firefox, so it's
-   * also present here. */
-  async getProfileAndStopProfiler() {
-    throw new Error(
-      "Unexpected getProfileAndStopProfiler function called in Firefox v140+. Most likely you're using an older version of Firefox to debug this application. Please use at least Firefox v140."
-    );
-  }
-
   async startCaptureAndStopProfiler() {
     if (!IS_SUPPORTED_PLATFORM) {
       throw new Error("Profiling is not supported on this platform.");
@@ -184,6 +176,7 @@ exports.PerfActor = class PerfActor extends Actor {
 
   /**
    * This actor function returns the profile data using the bulk protocol.
+   *
    * @param {number} handle returned by startCaptureAndStopProfiler
    * @returns {Promise<void>}
    */
@@ -280,6 +273,7 @@ exports.PerfActor = class PerfActor extends Actor {
 
   /**
    * Lists the supported features of the profiler for the current browser.
+   *
    * @returns {string[]}
    */
   getSupportedFeatures() {

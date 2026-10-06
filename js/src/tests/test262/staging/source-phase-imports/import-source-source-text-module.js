@@ -1,4 +1,4 @@
-// |reftest| skip async -- source-phase-imports is not supported
+// |reftest| shell-option(--enable-source-phase-imports) skip-if(!(this.hasOwnProperty('getBuildConfiguration')&&getBuildConfiguration('source-phase-imports'))||!xulRuntime.shell) async -- source-phase-imports is not enabled unconditionally, requires shell-options
 // Copyright 2024 the V8 project authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.

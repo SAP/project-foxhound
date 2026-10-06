@@ -5,16 +5,17 @@
 package mozilla.components.compose.base.button
 
 import android.view.SoundEffectConstants
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.Interaction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonColors
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.ripple
@@ -64,7 +65,6 @@ private val RippleRadius = 24.dp
  * still happen internally.
  * @param content The content to be shown inside this button.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LongPressIconButton(
     onClick: () -> Unit,
@@ -72,8 +72,8 @@ fun LongPressIconButton(
     contentDescription: String,
     modifier: Modifier = Modifier,
     colors: IconButtonColors = IconButtonDefaults.iconButtonColors(
-        contentColor = AcornTheme.colors.iconPrimary,
-        disabledContentColor = AcornTheme.colors.iconDisabled,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
     ),
     onClickLabel: String? = null,
     onLongClickLabel: String? = null,
@@ -81,40 +81,44 @@ fun LongPressIconButton(
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
     content: @Composable () -> Unit,
 ) {
-    val haptic = LocalHapticFeedback.current
-    val view = LocalView.current
-    Box(
-        modifier = modifier
-            .semantics { this.contentDescription = contentDescription }
-            .minimumInteractiveComponentSize()
-            .combinedClickable(
-                interactionSource = interactionSource,
-                indication = ripple(bounded = false, radius = RippleRadius, color = AcornTheme.colors.ripple),
-                enabled = enabled,
-                onClickLabel = onClickLabel,
-                role = Role.Button,
-                onLongClickLabel = onLongClickLabel,
-                onLongClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onLongClick()
-                },
-                onClick = {
-                    view.playSoundEffect(SoundEffectConstants.CLICK)
-                    onClick()
-                },
-            )
-            .rightClickable(
-                interactionSource = interactionSource,
-                indication = ripple(bounded = false, radius = RippleRadius, color = AcornTheme.colors.ripple),
-                onRightClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onLongClick()
-                },
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        val contentColor = if (enabled) colors.contentColor else colors.disabledContentColor
-        CompositionLocalProvider(LocalContentColor provides contentColor, content = content)
+    val contentColor = if (enabled) colors.contentColor else colors.disabledContentColor
+
+    CompositionLocalProvider(LocalContentColor provides contentColor) {
+        val haptic = LocalHapticFeedback.current
+        val view = LocalView.current
+
+        Box(
+            modifier = modifier
+                .semantics { this.contentDescription = contentDescription }
+                .minimumInteractiveComponentSize()
+                .combinedClickable(
+                    interactionSource = interactionSource,
+                    indication = ripple(bounded = false, radius = RippleRadius),
+                    enabled = enabled,
+                    onClickLabel = onClickLabel,
+                    role = Role.Button,
+                    onLongClickLabel = onLongClickLabel,
+                    onLongClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onLongClick()
+                    },
+                    onClick = {
+                        view.playSoundEffect(SoundEffectConstants.CLICK)
+                        onClick()
+                    },
+                )
+                .rightClickable(
+                    interactionSource = interactionSource,
+                    indication = ripple(bounded = false, radius = RippleRadius),
+                    onRightClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onLongClick()
+                    },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            content()
+        }
     }
 }
 
@@ -122,17 +126,31 @@ fun LongPressIconButton(
 @Composable
 private fun LongPressIconButtonPreview() {
     AcornTheme {
-        LongPressIconButton(
-            onClick = {},
-            onLongClick = {},
-            contentDescription = "test",
-            modifier = Modifier.background(AcornTheme.colors.layer1),
-            colors = IconButtonDefaults.iconButtonColors(contentColor = AcornTheme.colors.iconButton),
-        ) {
-            Icon(
-                painter = painterResource(iconsR.drawable.mozac_ic_bookmark_fill_24),
-                contentDescription = null,
-            )
+        Surface {
+            Column {
+                LongPressIconButton(
+                    onClick = {},
+                    onLongClick = {},
+                    contentDescription = "test",
+                ) {
+                    Icon(
+                        painter = painterResource(iconsR.drawable.mozac_ic_bookmark_fill_24),
+                        contentDescription = null,
+                    )
+                }
+
+                LongPressIconButton(
+                    onClick = {},
+                    onLongClick = {},
+                    contentDescription = "test",
+                    colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) {
+                    Icon(
+                        painter = painterResource(iconsR.drawable.mozac_ic_bookmark_fill_24),
+                        contentDescription = null,
+                    )
+                }
+            }
         }
     }
 }
@@ -141,14 +159,25 @@ private fun LongPressIconButtonPreview() {
 @Composable
 private fun LongPressTextButtonPreview() {
     AcornTheme {
-        LongPressIconButton(
-            onClick = {},
-            onLongClick = {},
-            contentDescription = "test",
-            modifier = Modifier.background(AcornTheme.colors.layer1),
-            colors = IconButtonDefaults.iconButtonColors(contentColor = AcornTheme.colors.textPrimary),
-        ) {
-            Text(text = "button")
+        Surface {
+            Column {
+                LongPressIconButton(
+                    onClick = {},
+                    onLongClick = {},
+                    contentDescription = "test",
+                ) {
+                    Text(text = "button")
+                }
+
+                LongPressIconButton(
+                    onClick = {},
+                    onLongClick = {},
+                    contentDescription = "test",
+                    colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) {
+                    Text(text = "button")
+                }
+            }
         }
     }
 }

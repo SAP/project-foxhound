@@ -6,7 +6,7 @@ task-defaults:
     description: "sccache-dist toolchain archive build"
     attributes:
         local-toolchain: true
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     run:
         using: toolchain-script
         script: build-dist-toolchains.sh

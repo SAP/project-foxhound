@@ -6,6 +6,9 @@
 const { AddonTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/AddonTestUtils.sys.mjs"
 );
+const { SearchService } = ChromeUtils.importESModule(
+  "moz-src:///toolkit/components/search/SearchService.sys.mjs"
+);
 const { SearchTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/SearchTestUtils.sys.mjs"
 );
@@ -108,6 +111,7 @@ async function testClientSideRedirect({
     Assert.equal(1, ssr.length);
     Assert.equal(addonId, ssr[0].extra.addonId);
     Assert.equal(addonVersion, ssr[0].extra.addonVersion);
+    Assert.equal("example.org", ssr[0].extra.origin);
     Assert.equal(String(sameSiteParamChanged), ssr[0].extra.paramChanged);
   }
 }
@@ -138,7 +142,7 @@ add_setup(async function () {
   });
 
   Assert.ok(
-    !!Services.search.getEngineByName(searchEngineName),
+    !!SearchService.getEngineByName(searchEngineName),
     "test search engine registered"
   );
 });

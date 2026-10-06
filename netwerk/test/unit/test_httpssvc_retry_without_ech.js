@@ -66,8 +66,11 @@ function channelOpenPromise(chan, flags) {
 }
 
 add_task(async function testRetryWithoutECH() {
+  // Public Name = delegated-enabled.example.com, which the test server is
+  // authoritative for, so the handshake reaches the ECH-not-accepted signal
+  // (SSL_ERROR_ECH_RETRY_WITHOUT_ECH) instead of an unrecognized_name alert.
   const ECH_CONFIG_FIXED =
-    "AEn+DQBFTQAgACCKB1Y5SfrGIyk27W82xPpzWTDs3q72c04xSurDWlb9CgAEAAEAA2QWZWNoLXB1YmxpYy5leGFtcGxlLmNvbQAA";
+    "AFD+DQBMTQAgACCKB1Y5SfrGIyk27W82xPpzWTDs3q72c04xSurDWlb9CgAEAAEAA2QdZGVsZWdhdGVkLWVuYWJsZWQuZXhhbXBsZS5jb20AAA==";
   trrServer = new TRRServer();
   await trrServer.start();
 
@@ -94,8 +97,9 @@ add_task(async function testRetryWithoutECH() {
           flush: false,
           data: {
             priority: 1,
-            name: "delegated-disabled.example.com",
+            name: ".",
             values: [
+              { key: "port", value: 8443 },
               {
                 key: "echconfig",
                 value: ECH_CONFIG_FIXED,
@@ -124,7 +128,7 @@ add_task(async function testRetryWithoutECH() {
     type: Ci.nsIDNSService.RESOLVE_TYPE_HTTPSSVC,
   });
 
-  let chan = makeChan(`https://delegated-disabled.example.com:8443`);
+  let chan = makeChan(`https://delegated-disabled.example.com`);
   await channelOpenPromise(chan, CL_ALLOW_UNKNOWN_CL);
   let securityInfo = chan.securityInfo;
 

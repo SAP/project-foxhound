@@ -9,6 +9,14 @@ const {
   webExtensionInspectedWindowSpec,
 } = require("resource://devtools/shared/specs/addon/webextension-inspected-window.js");
 
+ChromeUtils.defineESModuleGetters(
+  this,
+  {
+    ExtensionUtils: "resource://gre/modules/ExtensionUtils.sys.mjs",
+  },
+  { global: "contextual" }
+);
+
 const {
   DevToolsServer,
 } = require("resource://devtools/server/devtools-server.js");
@@ -115,6 +123,11 @@ function extensionAllowedToInspectPrincipal(
   principal,
   location
 ) {
+  // Access to devtools.inspectedWindow.eval is gated on the "devtools" permission,
+  // having the "Extend developer tools to access your data in open tabs" warning.
+  // This supersedes the need for host permissions, so `extensionPolicy.canAccessURI`
+  // cannot be used here. Instead, we perform checks to verify what an extension with
+  // maximal permissions is allowed to access.
   if (principal.isNullPrincipal) {
     if (location.protocol === "view-source:") {
       // Don't fall back to the precursor, we never want extensions to be able
@@ -147,7 +160,7 @@ function extensionAllowedToInspectPrincipal(
     return true;
   }
 
-  if (principalURI.schemeIs("moz-extension")) {
+  if (ExtensionUtils.isExtensionUrl(principalURI)) {
     // Ordinarily, we don't allow extensions to execute arbitrary code in
     // their own context. The devtools.inspectedWindow.eval API is a special
     // case - this can only be used through the devtools_page feature, which
@@ -157,7 +170,7 @@ function extensionAllowedToInspectPrincipal(
   }
 
   if (principalURI.schemeIs("file")) {
-    return true;
+    return extensionPolicy.fileSchemeAllowed;
   }
 
   return false;

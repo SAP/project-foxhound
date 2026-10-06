@@ -1,0 +1,15 @@
+{
+  "label": "mp3cut.net",
+  "bugs": {
+    "1902506": {
+      "issue": "blocked-content",
+      "matches": ["*://mp3cut.net/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

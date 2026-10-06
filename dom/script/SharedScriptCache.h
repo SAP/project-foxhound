@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,22 +5,27 @@
 #ifndef mozilla_dom_SharedScriptCache_h
 #define mozilla_dom_SharedScriptCache_h
 
-#include "PLDHashTable.h"                    // PLDHashEntryHdr
-#include "js/loader/LoadedScript.h"          // JS::loader::LoadedScript
+#include "PLDHashTable.h"            // PLDHashEntryHdr
+#include "js/TypeDecls.h"            // JSContext, JS::MutableHandle, JS::Value
+#include "js/loader/LoadedScript.h"  // JS::loader::LoadedScript
+#include "js/loader/ScriptFetchOptions.h"    // JS::loader::ScriptFetchOptions
 #include "js/loader/ScriptKind.h"            // JS::loader::ScriptKind
 #include "js/loader/ScriptLoadRequest.h"     // JS::loader::ScriptLoadRequest
-#include "mozilla/RefPtr.h"                  // RefPtr
-#include "mozilla/WeakPtr.h"                 // SupportsWeakPtr
 #include "mozilla/CORSMode.h"                // mozilla::CORSMode
+#include "mozilla/HashTable.h"               // mozilla::HashMap
 #include "mozilla/MemoryReporting.h"         // MallocSizeOf
+#include "mozilla/Mutex.h"                   // Mutex, GUARDED_BY, MutexAutoLock
+#include "mozilla/RefPtr.h"                  // RefPtr
 #include "mozilla/SharedSubResourceCache.h"  // SharedSubResourceCache, SharedSubResourceCacheLoadingValueBase, SubResourceNetworkMetadataHolder
+#include "mozilla/ThreadSafety.h"            // MOZ_GUARDED_BY
+#include "mozilla/UniquePtr.h"               // mozilla::UniquePtr
+#include "mozilla/WeakPtr.h"                 // SupportsWeakPtr
 #include "mozilla/dom/CacheExpirationTime.h"  // CacheExpirationTime
 #include "nsIMemoryReporter.h"  // nsIMemoryReporter, NS_DECL_NSIMEMORYREPORTER
-#include "nsIObserver.h"        // nsIObserver, NS_DECL_NSIOBSERVER
+#include "nsIObserver.h"        // nsIObserver
 #include "nsIPrincipal.h"       // nsIPrincipal
 #include "nsISupports.h"        // nsISupports, NS_DECL_ISUPPORTS
 #include "nsStringFwd.h"        // nsACString
-#include "mozilla/dom/SRIMetadata.h"  // mozilla::dom::SRIMetadata
 
 namespace mozilla {
 namespace dom {
@@ -38,14 +41,12 @@ class ScriptHashKey : public PLDHashEntryHdr {
   explicit ScriptHashKey(const ScriptHashKey& aKey)
       : PLDHashEntryHdr(),
         mURI(aKey.mURI),
-        mLoaderPrincipal(aKey.mLoaderPrincipal),
         mPartitionPrincipal(aKey.mPartitionPrincipal),
-        mCORSMode(aKey.mCORSMode),
-        mSRIMetadata(aKey.mSRIMetadata),
+        mLoaderPrincipal(aKey.mLoaderPrincipal),
         mKind(aKey.mKind),
-        mNonce(aKey.mNonce),
-        mHintCharset(aKey.mHintCharset),
-        mIsLinkRelPreload(aKey.mIsLinkRelPreload) {
+        mCORSMode(aKey.mCORSMode),
+        mReferrerPolicy(aKey.mReferrerPolicy),
+        mHintCharset(aKey.mHintCharset) {
     MOZ_COUNT_CTOR(ScriptHashKey);
   }
 
@@ -54,21 +55,45 @@ class ScriptHashKey : public PLDHashEntryHdr {
   ScriptHashKey(ScriptHashKey&& aKey)
       : PLDHashEntryHdr(),
         mURI(std::move(aKey.mURI)),
-        mLoaderPrincipal(std::move(aKey.mLoaderPrincipal)),
         mPartitionPrincipal(std::move(aKey.mPartitionPrincipal)),
-        mCORSMode(std::move(aKey.mCORSMode)),
-        mSRIMetadata(std::move(aKey.mSRIMetadata)),
+        mLoaderPrincipal(std::move(aKey.mLoaderPrincipal)),
         mKind(std::move(aKey.mKind)),
-        mNonce(std::move(aKey.mNonce)),
-        mHintCharset(std::move(aKey.mHintCharset)),
-        mIsLinkRelPreload(std::move(aKey.mIsLinkRelPreload)) {
+        mCORSMode(std::move(aKey.mCORSMode)),
+        mReferrerPolicy(std::move(aKey.mReferrerPolicy)),
+        mHintCharset(std::move(aKey.mHintCharset)) {
     MOZ_COUNT_CTOR(ScriptHashKey);
   }
 
   ScriptHashKey(ScriptLoader* aLoader,
-                const JS::loader::ScriptLoadRequest* aRequest);
+                const JS::loader::ScriptLoadRequest* aRequest,
+                mozilla::dom::ReferrerPolicy aReferrerPolicy,
+                const JS::loader::ScriptFetchOptions* aFetchOptions,
+                const nsCOMPtr<nsIURI> aURI);
   explicit ScriptHashKey(const ScriptLoadData& aLoadData);
 
+  // Create a key which can be used only for lookup.
+  // aKey is the result of ToStringForLookup.
+  static Maybe<ScriptHashKey> FromStringsForLookup(
+      const nsACString& aKey, const nsACString& aURI,
+      const nsACString& aHintCharset);
+
+ private:
+  ScriptHashKey(nsIURI* aURI, nsIPrincipal* aPartitionPrincipal,
+                JS::loader::ScriptKind aKind, CORSMode aCORSMode,
+                mozilla::dom::ReferrerPolicy aReferrerPolicy,
+                const nsString& aHintCharset)
+      : PLDHashEntryHdr(),
+        mURI(aURI),
+        mPartitionPrincipal(aPartitionPrincipal),
+        mLoaderPrincipal(nullptr),
+        mKind(aKind),
+        mCORSMode(aCORSMode),
+        mReferrerPolicy(aReferrerPolicy),
+        mHintCharset(aHintCharset) {
+    MOZ_COUNT_CTOR(ScriptHashKey);
+  }
+
+ public:
   MOZ_COUNTED_DTOR(ScriptHashKey)
 
   const ScriptHashKey& GetKey() const { return *this; }
@@ -92,27 +117,36 @@ class ScriptHashKey : public PLDHashEntryHdr {
 
   enum { ALLOW_MEMMOVE = true };
 
+  // Stringifies this key's information for the aKey parameter for the
+  // FromStringsForLookup.
+  // This stringifies a subset of the fields, which cannot be directly
+  // extracted from the channel.
+  void ToStringForLookup(nsACString& aResult);
+
  protected:
+  // Order the fields from the most important one as much as possible, while
+  // packing them, in order to use the same order between the definition and
+  // the KeyEquals implementation.
+
+  // The script's URI.  This should distinguish the cache entry in most case.
   const nsCOMPtr<nsIURI> mURI;
-  const nsCOMPtr<nsIPrincipal> mLoaderPrincipal;
+
+  // If single content process has multiple principals, mPartitionPrincipal
+  // should distinguish them.
   const nsCOMPtr<nsIPrincipal> mPartitionPrincipal;
-  const CORSMode mCORSMode;
-  const SRIMetadata mSRIMetadata;
+
+  // NOTE: mLoaderPrincipal is only for SharedSubResourceCache logic,
+  //       and not part of KeyEquals.
+  const nsCOMPtr<nsIPrincipal> mLoaderPrincipal;
+
+  // Other fields should be unique per each script in general.
   const JS::loader::ScriptKind mKind;
-  const nsString mNonce;
+  const CORSMode mCORSMode;
+  const mozilla::dom::ReferrerPolicy mReferrerPolicy;
 
   // charset attribute for classic script.
   // module always use UTF-8.
   nsString mHintCharset;
-
-  // TODO: Reflect URL classifier data source.
-  // mozilla::dom::ContentType
-  //   maybe implicit
-  // top-level document's host
-  //   maybe part of principal?
-  //   what if it's inside frame in different host?
-
-  const bool mIsLinkRelPreload;
 };
 
 class ScriptLoadData final
@@ -120,11 +154,12 @@ class ScriptLoadData final
       public nsISupports,
       public SharedSubResourceCacheLoadingValueBase<ScriptLoadData> {
  protected:
-  ~ScriptLoadData() {}
+  ~ScriptLoadData() = default;
 
  public:
-  ScriptLoadData(ScriptLoader* aLoader,
-                 JS::loader::ScriptLoadRequest* aRequest);
+  ScriptLoadData(ScriptLoader* aLoader, JS::loader::ScriptLoadRequest* aRequest,
+                 CacheExpirationTime aExpirationTime,
+                 JS::loader::LoadedScript* aLoadedScript);
 
   NS_DECL_ISUPPORTS
 
@@ -185,10 +220,37 @@ class SharedScriptCache final
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIMEMORYREPORTER
-  NS_DECL_NSIOBSERVER
 
   SharedScriptCache();
   void Init();
+
+  NS_IMETHOD Observe(nsISupports* aSubject, const char* aTopic,
+                     const char16_t* aData) override {
+    if (strcmp(aTopic, "ipc:content-shutdown") == 0) {
+      OnContentShutdown(aSubject);
+      return NS_OK;
+    }
+    if (strcmp(aTopic, "profile-before-change") == 0) {
+      OnProfileBeforeChange();
+      return NS_OK;
+    }
+    return Base::DoObserve(aSubject, aTopic, aData);
+  }
+
+  bool MaybeScheduleUpdateDiskCache();
+  void UpdateDiskCache();
+
+  void EncodeAndCompress();
+  void SaveToDiskCache();
+
+  void InvalidateInProcess();
+
+  void OnEntryInserted();
+  void OnEntryEverHit();
+
+  void UpdateEverHitTelemetry();
+  static void RecvUpdateEverHitTelemetry(const uint64_t& aChildId,
+                                         const uint32_t& aRate);
 
   // This has to be static because it's also called for loaders that don't have
   // a sheet cache (loaders that are not owned by a document).
@@ -200,10 +262,97 @@ class SharedScriptCache final
                     const Maybe<OriginAttributesPattern>& aPattern = Nothing(),
                     const Maybe<nsCString>& aURL = Nothing());
 
+  static void Invalidate();
+
+  static bool GetCachedScriptSource(JSContext* aCx, const nsACString& aKey,
+                                    const nsACString& aURI,
+                                    const nsACString& aHintCharset,
+                                    JS::MutableHandle<JS::Value> aRetval);
+
   static void PrepareForLastCC();
 
  protected:
   ~SharedScriptCache();
+
+  bool ShouldIgnoreMemoryPressure() override;
+
+  void ClearInProcessForMemoryPressure() override;
+
+ private:
+  bool EnsureEverHitMap();
+  void OnContentShutdown(nsISupports* aSubject);
+  void OnProfileBeforeChange();
+  void AccumulateEverHitTelemetry(uint32_t aRate);
+
+  void SetDiskCacheTimer();
+  void ClearDiskCacheTimer();
+  void OnDiskCacheTimer();
+
+  class EncodeItem {
+   public:
+    EncodeItem(JS::Stencil* aStencil, JS::TranscodeBuffer&& aSRI,
+               JS::loader::LoadedScript* aLoadedScript)
+        : mStencil(aStencil),
+          mSRI(std::move(aSRI)),
+          mLoadedScript(aLoadedScript) {}
+
+    // These fields can be touched from multiple threads.
+    RefPtr<JS::Stencil> mStencil;
+    JS::TranscodeBuffer mSRI;
+    Vector<uint8_t> mCompressed;
+
+    // This can be dereferenced only from the main thread.
+    // Reading the pointer itself is allowed also off main thread.
+    RefPtr<JS::loader::LoadedScript> mLoadedScript;
+  };
+
+  // Set to true if the telemetry data is sent from the content process and
+  // the preparation for the telemetry accumulation/submission is done.
+  // This is set to true even if the preparation fails (mEverHitMap == nullptr),
+  // to avoid retrying the preparation again and again.
+  //
+  // This field is used only on the parent process.
+  bool mPreparedEverHitMap = false;
+
+  // True if the disk cache timer should be rescheduled.
+  // This is set to true if another activity happens during the timer
+  // is set.
+  bool mRetryDiskCacheTimer = false;
+
+  // The initial value for mLastEverHitRatio, which is outside of the
+  // valid range.
+  static constexpr uint32_t NOT_YET_REPORTED = 101;
+
+  // The cache-hit ratio value that's sent to the parent process.
+  // Used to avoid performing unnecessary IPC when UpdateEverHitTelemetry is
+  // successively called without the cache-hit ratio changed.
+  uint32_t mLastEverHitRatio = NOT_YET_REPORTED;
+
+  // The number of times each cache entry is ever hit.
+  // Used with mEntryInserted to calculate the cache-hit ratio, for the
+  // dom.script_memory_cache_ever_hit telemetry.
+  size_t mEntryEverHit = 0;
+
+  // The number of times a new cache entry is inserted.
+  size_t mEntryInserted = 0;
+
+  // A map from content process ID to the cache-hit ratio, in [0,100] range.
+  // The parent process uses CONTENT_PROCESS_ID_MAIN as the ID.
+  //
+  // This is the telemetry data which is eventually be reflected to the
+  // dom.script_memory_cache_ever_hit telemetry probe.
+  //
+  // This field is used only on the parent process.
+  //
+  // Content processes periodically send the data to the parent process,
+  // and the parent process keeps the latest value, until the process shutdown.
+  using EverHitMapType = HashMap<uint64_t, uint32_t>;
+  UniquePtr<EverHitMapType> mEverHitMap;
+
+  Mutex mEncodeMutex{"SharedScriptCache::mEncodeMutex"};
+  Vector<EncodeItem> mEncodeItems MOZ_GUARDED_BY(mEncodeMutex);
+
+  nsCOMPtr<nsITimer> mDiskCacheTimer;
 };
 
 }  // namespace dom

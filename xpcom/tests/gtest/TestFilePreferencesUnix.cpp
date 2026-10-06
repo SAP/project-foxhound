@@ -237,3 +237,10 @@ TEST(TestFilePreferencesUnix, Simple)
   rv = forbiddenDir->GetDirectoryEntries(getter_AddRefs(dirEnumerator));
   ASSERT_EQ(rv, NS_ERROR_FILE_ACCESS_DENIED);
 }
+#undef kForbidden
+#undef kForbiddenDir
+#undef kForbiddenFile
+#undef kOther
+#undef kOtherDir
+#undef kOtherFile
+#undef kAllowed

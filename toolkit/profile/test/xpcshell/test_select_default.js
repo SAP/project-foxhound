@@ -56,6 +56,7 @@ add_task(async () => {
 
   let service = getProfileService();
   checkProfileService(profileData);
+  Assert.equal(Glean.startup.profilesIniStatus.testGetValue("metrics"), "ok");
 
   Assert.ok(!didCreate, "Should not have created a new profile.");
   Assert.equal(

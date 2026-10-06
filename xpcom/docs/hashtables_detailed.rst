@@ -34,8 +34,7 @@ and tuned, and hide the inner complexities of hashtable implementations:
 PLHashTable
 ~~~~~~~~~~~
 
-``PLHashTable`` is a part of NSPR. The header file can be found at `plhash.h
-<https://searchfox.org/mozilla-central/source/nsprpub/lib/ds/plhash.h>`_.
+``PLHashTable`` is a part of NSPR. The header file can be found at :searchfox:`plhash.h <nsprpub/lib/ds/plhash.h>`.
 
 There are two situations where ``PLHashTable`` may be preferable:
 
@@ -52,8 +51,7 @@ To use ``nsTHashtable``, you must declare an entry-class. This
 entry class contains the key and the data that you are hashing. It also
 declares functions that manipulate the key. In most cases, the functions
 of this entry class can be entirely inline. For examples of entry classes,
-see the declarations at `nsHashKeys.h
-<https://searchfox.org/mozilla-central/source/xpcom/ds/nsHashKeys.h>`_.
+see the declarations at :searchfox:`nsHashKeys.h <xpcom/ds/nsHashKeys.h>`.
 
 The template parameter is the entry class. After construction, use the
 functions ``PutEntry/GetEntry/RemoveEntry`` to alter the hashtable. The
@@ -93,8 +91,7 @@ provide the following features:
 
 ``nsBaseHashtable`` is not used directly; choose one of the three
 derivative classes based on the data type you want to store. The
-``KeyClass`` is taken from `nsHashKeys.h
-<https://searchfox.org/mozilla-central/source/xpcom/ds/nsHashKeys.h>`_ and is the same for all
+``KeyClass`` is taken from :searchfox:`nsHashKeys.h <xpcom/ds/nsHashKeys.h>` and is the same for all
 three classes:
 
 -  ``nsTHashMap<KeyClass, DataType>`` - ``DataType`` is a simple
@@ -106,9 +103,9 @@ three classes:
    when the entry is removed.
 
 The important files to read are
-`nsBaseHashtable.h <https://searchfox.org/mozilla-central/source/xpcom/ds/nsBaseHashtable.h>`_
+:searchfox:`nsBaseHashtable.h <xpcom/ds/nsBaseHashtable.h>`
 and
-`nsHashKeys.h <https://searchfox.org/mozilla-central/source/xpcom/ds/nsHashKeys.h>`_.
+:searchfox:`nsHashKeys.h <xpcom/ds/nsHashKeys.h>`.
 These classes can be used on the stack, as a class member, or on the heap.
 
 .. _Using_nsTHashtable_as_a_hash-set:

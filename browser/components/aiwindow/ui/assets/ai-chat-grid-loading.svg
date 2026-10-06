@@ -1,0 +1,31 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
+<svg viewBox="0 0 220 150" height="350" fill="none" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    @keyframes skeleton-pulse {
+      0%, 100% { opacity: 0.35; }
+      50% { opacity: 1; }
+    }
+    g {
+      animation: skeleton-pulse 1.6s ease-in-out infinite;
+    }
+    g:nth-of-type(2) { animation-delay: 0.2s; }
+    g:nth-of-type(3) { animation-delay: 0.4s; }
+  </style>
+  <g>
+    <rect x="4" y="4" width="42" height="42" rx="4" fill="#584a7d" fill-opacity="0.30"/>
+    <rect x="54" y="8" width="162" height="12" rx="4" fill="#584a7d" fill-opacity="0.30"/>
+    <rect x="54" y="28" width="96" height="12" rx="4" fill="#584a7d" fill-opacity="0.30"/>
+  </g>
+  <g>
+    <rect x="4" y="54" width="42" height="42" rx="4" fill="#584a7d" fill-opacity="0.30"/>
+    <rect x="54" y="58" width="140" height="12" rx="4" fill="#584a7d" fill-opacity="0.30"/>
+    <rect x="54" y="78" width="112" height="12" rx="4" fill="#584a7d" fill-opacity="0.30"/>
+  </g>
+  <g>
+    <rect x="4" y="104" width="42" height="42" rx="4" fill="#584a7d" fill-opacity="0.30"/>
+    <rect x="54" y="108" width="154" height="12" rx="4" fill="#584a7d" fill-opacity="0.30"/>
+    <rect x="54" y="128" width="82" height="12" rx="4" fill="#584a7d" fill-opacity="0.30"/>
+  </g>
+</svg>

@@ -1,8 +1,8 @@
 "use strict";
 
 add_task(async function test_doorhanger_shown_with_lowercase_postalcode() {
-  const initialHomeRegion = Region._home;
-  const initialCurrentRegion = Region._current;
+  const initialHomeRegion = Region.home;
+  const initialCurrentRegion = Region.current;
 
   const region = "CA";
   Region._setCurrentRegion(region);

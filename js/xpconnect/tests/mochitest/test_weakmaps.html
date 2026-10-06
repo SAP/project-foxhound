@@ -42,24 +42,41 @@ function go() {
   must know the proper structure of the heap.
 
   */
-  let make_gray_loop = function () {
+  let make_gray_loop_through = function (key) {
     let map = new WeakMap;
     let div = document.createElement("div");
-    let key = {};
     let obj = {m:map, k:key};
     div.addEventListener("foo", function() {
-      // The code below doesn't matter (it won't run). Just pull a
+      // Entrain |obj| by referencing it from a closure attached to the
+      // element. The code below doesn't matter (it won't run). Just pull a
       // reference to obj.
       obj.k = 1;
       obj.m = "bar";
     });
-    //div.entrain = {m:map, k:key};  This is not sufficient to cause a leak in Fx9
     map.set(key, div);
     return make_weak_ref(map);
   };
 
-  let weakref = make_gray_loop();
+  let make_gray_loop_through_shape = function () {
+    let key = Symbol();
+    let map = new WeakMap;
+    let div = document.createElement("div");
+    let obj = {m:map};
+    obj[key] = 1;
+    div.addEventListener("foo", function() {
+      // Entrain |obj| by referencing it from a closure attached to the
+      // element. The code below doesn't matter (it won't run). Just pull a
+      // reference to obj.
+      obj.k = 1;
+      obj.m = "bar";
+    });
+    map.set(key, div);
+    return make_weak_ref(map);
+  };
 
+  let weakref_through_object = make_gray_loop_through({});
+  let weakref_through_symbol = make_gray_loop_through(Symbol());
+  let weakref_through_shape = make_gray_loop_through_shape();
 
   /* Combinations of live and dead gray maps/keys. */
   let basic_weak_ref = null;
@@ -224,34 +241,44 @@ function go() {
   // We're out of ideas for unpreservable natives, now that just about
   // everything is on webidl, so just don't test those.
 
-  /* set up for running precise GC/CC then checking the results */
+  SpecialPowers.forceGC();
 
-  SpecialPowers.exactGC(function () {
-    SpecialPowers.forceCC();
-    SpecialPowers.forceGC();
-    SpecialPowers.forceGC();
+  // GC on its own can't collect these cycles.
+  ok(!weak_ref_dead(weakref_through_object),
+     "Garbage gray cycle through object should be alive.");
+  ok(!weak_ref_dead(weakref_through_symbol),
+  "Garbage gray cycle through symbol should be alive.");
+  ok(!weak_ref_dead(weakref_through_shape),
+     "Garbage gray cycle through shape should be alive.");
 
-    ok(weak_ref_dead(weakref), "Garbage gray cycle should be collected.");
+  SpecialPowers.forceCC();
+  SpecialPowers.forceGC();
 
-    check_nested_cc_maps();
+  ok(weak_ref_dead(weakref_through_object),
+     "Garbage gray cycle through object should be collected.");
+  ok(weak_ref_dead(weakref_through_symbol),
+  "Garbage gray cycle through symbol should be collected.");
+  ok(weak_ref_dead(weakref_through_shape),
+     "Garbage gray cycle through shape should be collected.");
 
-    is(SpecialPowers.nondeterministicGetWeakMapKeys(garbage_map).length, 0, "Chained garbage weak map entries should not leak.");
+  check_nested_cc_maps();
 
-    check_basic_unit();
+  is(SpecialPowers.nondeterministicGetWeakMapKeys(garbage_map).length, 0,
+     "Chained garbage weak map entries should not leak.");
 
-    // fixed by Bug 680937
-    is(SpecialPowers.nondeterministicGetWeakMapKeys(wn_garbage_map).length, 0,
-       "Chained garbage WN weak map entries should not leak.");
+  check_basic_unit();
 
-    // fixed by Bug 680937
-    is(SpecialPowers.nondeterministicGetWeakMapKeys(wn_live_map).length, 1,
-       "Live weak map wrapped native key should not be removed.");
+  // fixed by Bug 680937
+  is(SpecialPowers.nondeterministicGetWeakMapKeys(wn_garbage_map).length, 0,
+     "Chained garbage WN weak map entries should not leak.");
 
-    ok(wn_live_map.has(get_live_dom()), "Live map should have live dom.");
+  // fixed by Bug 680937
+  is(SpecialPowers.nondeterministicGetWeakMapKeys(wn_live_map).length, 1,
+     "Live weak map wrapped native key should not be removed.");
 
-    SimpleTest.finish();
-  });
+  ok(wn_live_map.has(get_live_dom()), "Live map should have live dom.");
 
+  SimpleTest.finish();
 }
   </script>
 </head>

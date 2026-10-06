@@ -1,0 +1,10 @@
+import android.annotation.test.MainThread;
+import android.annotation.test.NonNull;
+
+package test {
+  public class TestParent {
+    method public @MainThread void testMethod();
+    field public @NonNull java.lang.String nonNullField;
+  }
+}
+

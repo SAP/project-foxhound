@@ -5,17 +5,17 @@
 "use strict";
 
 {
-  const HEADER_TAG = "ipprotection-header";
   const CONTENT_TAG = "ipprotection-content";
+  const LOCATIONS_TAG = "ipprotection-locations";
 
   for (let [tag, script] of [
     [
-      HEADER_TAG,
-      "chrome://browser/content/ipprotection/ipprotection-header.mjs",
-    ],
-    [
       CONTENT_TAG,
       "chrome://browser/content/ipprotection/ipprotection-content.mjs",
+    ],
+    [
+      LOCATIONS_TAG,
+      "chrome://browser/content/ipprotection/ipprotection-locations.mjs",
     ],
   ]) {
     if (!customElements.get(tag)) {

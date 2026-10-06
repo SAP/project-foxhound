@@ -17,13 +17,21 @@ using std::is_constant_evaluated;
 
 #else
 
+#if defined(MOZ_ZUCCHINI)
+#include "base/compiler_specific.h"
+#endif  // defined(MOZ_ZUCCHINI)
+
 // Implementation of C++20's std::is_constant_evaluated.
 //
 // References:
 // - https://en.cppreference.com/w/cpp/types/is_constant_evaluated
 // - https://wg21.link/meta.const.eval
 constexpr bool is_constant_evaluated() noexcept {
+#if !defined(MOZ_ZUCCHINI) || HAS_BUILTIN(__builtin_is_constant_evaluated)
   return __builtin_is_constant_evaluated();
+#else
+  return false;
+#endif  // !defined(MOZ_ZUCCHINI) || HAS_BUILTIN(__builtin_is_constant_evaluated)
 }
 
 #endif

@@ -10,7 +10,11 @@
 #include <windows.media.protection.h>
 #include <wrl.h>
 
+#include <functional>
+
 #include "MFCDMProxy.h"
+#include "nsISerialEventTarget.h"
+#include "nsITimer.h"
 
 namespace mozilla {
 
@@ -64,13 +68,25 @@ class MFContentProtectionManager
 
   HRESULT SetCDMProxy(MFCDMProxy* aCDMProxy);
 
+  // Set a callback that fires on aManagerThread after a delay if
+  // BeginEnableContent has not been answered by EndEnableContent, signalling a
+  // key wait.
+  void SetNotifyWaitingForKeyCallback(std::function<void()>&& aCallback,
+                                      nsISerialEventTarget* aManagerThread);
+
   MFCDMProxy* GetCDMProxy() const { return mCDMProxy; }
 
  private:
   HRESULT SetPMPServer(
       ABI::Windows::Media::Protection::IMediaProtectionPMPServer* aPMPServer);
 
+  void NotifyWaitingForKey();
+  static void WaitingForKeyTimerCallback(nsITimer* aTimer, void* aClosure);
+
   RefPtr<MFCDMProxy> mCDMProxy;
+  std::function<void()> mNotifyWaitingForKeyCb;
+  nsCOMPtr<nsISerialEventTarget> mManagerThread;
+  nsCOMPtr<nsITimer> mWaitingForKeyTimer;
 
   Microsoft::WRL::ComPtr<ABI::Windows::Foundation::Collections::IPropertySet>
       mPMPServerSet;

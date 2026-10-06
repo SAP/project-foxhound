@@ -27,19 +27,11 @@ const STORAGE_BLOCKED_GROUP_LABEL =
   "was blocked because we are blocking all third-party storage access requests and " +
   "Enhanced Tracking Protection is enabled.";
 
-const { UrlClassifierTestUtils } = ChromeUtils.importESModule(
-  "resource://testing-common/UrlClassifierTestUtils.sys.mjs"
-);
-UrlClassifierTestUtils.addTestTrackers();
-registerCleanupFunction(function () {
-  UrlClassifierTestUtils.cleanupTestTrackers();
-});
-
-pushPref("privacy.trackingprotection.enabled", true);
-pushPref("devtools.webconsole.groupWarningMessages", true);
-
 add_task(async function testEnhancedTrackingProtectionMessage() {
+  await setupUrlClassifierTest();
+
   await pushPref(COOKIE_BEHAVIOR_PREF, COOKIE_BEHAVIORS_REJECT_FOREIGN);
+  await pushPref("devtools.webconsole.groupSimilarMessages", true);
   await pushPref("devtools.webconsole.persistlog", true);
 
   const hud = await openNewTabAndConsole(TEST_URI);
@@ -307,7 +299,7 @@ function emitStorageAccessBlockedMessage() {
  * Log a string from the content page.
  *
  * @param {WebConsole} hud
- * @param {String} str
+ * @param {string} str
  */
 function logString(hud, str) {
   const onMessage = waitForMessageByType(hud, str, ".console-api");

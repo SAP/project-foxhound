@@ -35,7 +35,6 @@ const FEATURES = {
 
 const SIMPLE_COMMANDS = [
   "dumpTextRuns",
-  "dumpViews",
   "dumpCounterManager",
   "dumpRetainedDisplayList",
   "dumpStyleSheets",
@@ -126,7 +125,7 @@ class Debugger {
   }
 
   sendDumpContent() {
-    this._sendMessage("dumpContent", this.anonymousSubtreeDumping);
+    return this._sendMessage("dumpContent", this.anonymousSubtreeDumping);
   }
 
   sendDumpFrames(css_pixels) {
@@ -137,7 +136,7 @@ class Debugger {
     if (this.deterministicFrameDumping) {
       flags |= Ci.nsILayoutDebuggingTools.DUMP_FRAME_FLAGS_DETERMINISTIC;
     }
-    this._sendMessage("dumpFrames", flags);
+    return this._sendMessage("dumpFrames", flags);
   }
 
   async _sendMessage(name, arg) {
@@ -178,21 +177,36 @@ for (let [name, pref] of Object.entries(FEATURES)) {
 
 for (let name of SIMPLE_COMMANDS) {
   Debugger.prototype[name] = function () {
-    this._sendMessage(name);
+    return this._sendMessage(name);
   };
 }
 
 Debugger.prototype.dumpContent = function () {
-  this.sendDumpContent();
+  return this.sendDumpContent();
 };
 
 Debugger.prototype.dumpFrames = function () {
-  this.sendDumpFrames(false);
+  return this.sendDumpFrames(false);
 };
 
 Debugger.prototype.dumpFramesInCSSPixels = function () {
-  this.sendDumpFrames(true);
+  return this.sendDumpFrames(true);
 };
+
+async function dumpRequestedInfo() {
+  if (gArgs.dumpContent) {
+    await gDebugger.dumpContent();
+  }
+  if (gArgs.dumpFrames) {
+    await gDebugger.dumpFrames();
+  }
+  if (gArgs.dumpFramesCSSPixels) {
+    await gDebugger.dumpFramesInCSSPixels();
+  }
+  if (gArgs.dumpRetainedDisplayList) {
+    await gDebugger.dumpRetainedDisplayList();
+  }
+}
 
 function autoCloseIfNeeded(aCrash) {
   if (!gArgs.autoclose) {
@@ -264,7 +278,9 @@ nsLDBBrowserContentListener.prototype = {
         // This does mean that --autoclose doesn't work when the URL on
         // the command line is about:blank (or not specified), but that's
         // not a big deal.
-        autoCloseIfNeeded(false);
+        //
+        // Waiting for any dump output completes before closing layout debugger.
+        dumpRequestedInfo().finally(() => autoCloseIfNeeded(false));
       }
     }
   },
@@ -294,11 +310,7 @@ nsLDBBrowserContentListener.prototype = {
 
   // non-interface methods
   setButtonEnabled: function (aButtonElement, aEnabled) {
-    if (aEnabled) {
-      aButtonElement.removeAttribute("disabled");
-    } else {
-      aButtonElement.setAttribute("disabled", "true");
-    }
+    aButtonElement.toggleAttribute("disabled", !aEnabled);
   },
 
   mStatusText: null,
@@ -317,6 +329,10 @@ function parseArguments() {
     paged: false,
     anonymousSubtreeDumping: false,
     deterministicFrameDumping: false,
+    dumpContent: false,
+    dumpFrames: false,
+    dumpFramesCSSPixels: false,
+    dumpRetainedDisplayList: false,
   };
   if (window.arguments) {
     args.url = window.arguments[0];
@@ -334,6 +350,14 @@ function parseArguments() {
         args.anonymousSubtreeDumping = true;
       } else if (/^deterministic-frame-dumping$/.test(arg)) {
         args.deterministicFrameDumping = true;
+      } else if (arg === "dump-content") {
+        args.dumpContent = true;
+      } else if (arg === "dump-frames") {
+        args.dumpFrames = true;
+      } else if (arg === "dump-frames-css-pixels") {
+        args.dumpFramesCSSPixels = true;
+      } else if (arg === "dump-retained-display-list") {
+        args.dumpRetainedDisplayList = true;
       } else {
         throw `Unknown option ${arg}`;
       }
@@ -424,9 +448,6 @@ function OnLDBLoad() {
           break;
         case "menu_dumpTextRuns":
           gDebugger.dumpTextRuns();
-          break;
-        case "menu_dumpViews":
-          gDebugger.dumpViews();
           break;
         case "menu_dumpCounterManager":
           gDebugger.dumpCounterManager();
@@ -545,7 +566,7 @@ function OnLDBLoad() {
 
 function checkPersistentMenu(item) {
   var menuitem = document.getElementById("menu_" + item);
-  menuitem.setAttribute("checked", gDebugger[item]);
+  menuitem.toggleAttribute("checked", gDebugger[item]);
 }
 
 function checkPersistentMenus() {
@@ -607,7 +628,7 @@ function OnLDBUnload() {
 function toggle(menuitem) {
   // trim the initial "menu_"
   var feature = menuitem.id.substring(5);
-  gDebugger[feature] = menuitem.getAttribute("checked") == "true";
+  gDebugger[feature] = menuitem.hasAttribute("checked");
 }
 
 function openFile() {
@@ -627,13 +648,10 @@ function openFile() {
 
 // A simplified version of the function with the same name in tabbrowser.js.
 function updateBrowserRemotenessByURL(aURL) {
-  let oa = E10SUtils.predictOriginAttributes({ browser: gBrowser });
-  let remoteType = E10SUtils.getRemoteTypeForURIObject(aURL, {
-    multiProcess: gMultiProcessBrowser,
-    remoteSubFrames: gFissionBrowser,
+  let remoteType = ChromeUtils.predictRemoteTypeForURI(aURL, {
+    window,
+    // NOTE: userContextId is always 0
     preferredRemoteType: gBrowser.remoteType,
-    currentURI: gBrowser.currentURI,
-    originAttributes: oa,
   });
   if (gBrowser.remoteType != remoteType) {
     gDebugger.detachBrowser();

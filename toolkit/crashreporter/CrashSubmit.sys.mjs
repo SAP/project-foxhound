@@ -303,6 +303,7 @@ Submitter.prototype = {
         break;
       case FAILED:
         this.rejectSubmitStatusPromise(`${FAILED}: ${ret}`);
+        Glean.crashSubmission.failureEvent.record({ id: this.id, reason: ret });
         Glean.crashSubmission.failure.add(1);
         break;
       default:
@@ -487,6 +488,7 @@ export var CrashSubmit = {
 
   /**
    * Get the list of pending crash IDs, excluding those marked to be ignored
+   *
    * @param minFileDate
    *     A Date object. Any files last modified before that date will be ignored
    *
@@ -561,88 +563,6 @@ export var CrashSubmit = {
     }
 
     return ids;
-  },
-
-  /**
-   * Prune the saved dumps.
-   *
-   * @return a Promise that is fulfilled when the daved dumps are deleted and
-   *         rejected otherwise
-   */
-  pruneSavedDumps: async function CrashSubmit_pruneSavedDumps() {
-    const KEEP = 10;
-
-    let dirEntries = [];
-    let pendingDir = getDir("pending");
-
-    let children;
-    try {
-      children = await IOUtils.getChildren(pendingDir);
-    } catch (ex) {
-      if (DOMException.isInstance(ex) && ex.name === "NotFoundError") {
-        return [];
-      }
-
-      throw ex;
-    }
-
-    for (const path of children) {
-      let infoPromise;
-      try {
-        infoPromise = IOUtils.stat(path);
-      } catch (ex) {
-        console.error(ex);
-        throw ex;
-      }
-
-      const name = PathUtils.filename(path);
-
-      if (name.match(/(.+)\.extra$/)) {
-        dirEntries.push({
-          name,
-          path,
-          infoPromise,
-        });
-      }
-    }
-
-    dirEntries.sort(async (a, b) => {
-      let dateA = (await a.infoPromise).lastModified;
-      let dateB = (await b.infoPromise).lastModified;
-
-      if (dateA < dateB) {
-        return -1;
-      }
-
-      if (dateB < dateA) {
-        return 1;
-      }
-
-      return 0;
-    });
-
-    if (dirEntries.length > KEEP) {
-      let toDelete = [];
-
-      for (let i = 0; i < dirEntries.length - KEEP; ++i) {
-        let extra = dirEntries[i];
-        let matches = extra.leafName.match(/(.+)\.extra$/);
-
-        if (matches) {
-          let pathComponents = PathUtils.split(extra.path);
-          pathComponents[pathComponents.length - 1] = matches[1];
-          let path = PathUtils.join(...pathComponents);
-
-          toDelete.push(extra.path, `${path}.dmp`, `${path}.memory.json.gz`);
-        }
-      }
-
-      await Promise.all(
-        toDelete.map(path => {
-          return IOUtils.remove(path, { ignoreAbsent: true });
-        })
-      );
-    }
   },
 
   // List of currently active submit objects

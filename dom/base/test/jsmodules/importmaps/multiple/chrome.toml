@@ -1,0 +1,20 @@
+[DEFAULT]
+support-files = [
+  "import_circular.mjs",
+  "import_circular_1.mjs",
+  "module_simpleExport.mjs",
+  "module_simpleExport_2.mjs",
+  "module_simpleImport.mjs",
+]
+
+prefs = ["dom.multiple_import_maps.enabled=true"]
+
+["test_importMap_after_module_load.html"]
+
+["test_importMap_between_dynamic_imports.html"]
+
+["test_importMap_between_inline_modules.html"]
+
+["test_importMap_circular.html"]
+
+["test_multiple_importMaps.html"]

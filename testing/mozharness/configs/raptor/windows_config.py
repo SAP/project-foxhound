@@ -83,7 +83,7 @@ config = {
             ],
             "architectures": ["32bit", "64bit"],
             "halt_on_failure": True,
-            "enabled": True if (platform.uname().version == "10.0.22621") else False,
+            "enabled": True if (platform.uname().version == "10.0.26100") else False,
             "fatal_exit_code": 4,
         },
     ],

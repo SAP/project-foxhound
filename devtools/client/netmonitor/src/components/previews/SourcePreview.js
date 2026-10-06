@@ -22,8 +22,8 @@ const { div } = dom;
 class SourcePreview extends Component {
   static get propTypes() {
     return {
-      // Source editor syntax highlight mode, which is a mime type defined in CodeMirror
-      mode: PropTypes.string,
+      // Source editor syntax highlight mimeType, which is a mime type defined in CodeMirror
+      mimeType: PropTypes.string,
       // Source editor content
       text: PropTypes.string,
       // Search result text to select
@@ -31,28 +31,28 @@ class SourcePreview extends Component {
       // Reset target search result that has been used for navigation in this panel.
       // This is done to avoid second navigation the next time.
       resetTargetSearchResult: PropTypes.func,
+      url: PropTypes.string,
     };
   }
 
   componentDidMount() {
-    const { mode, text } = this.props;
-    this.loadEditor(mode, text);
+    this.loadEditor();
+    this.updateEditor();
   }
 
   shouldComponentUpdate(nextProps) {
     return (
-      nextProps.mode !== this.props.mode ||
+      nextProps.mimeType !== this.props.mimeType ||
       nextProps.text !== this.props.text ||
       nextProps.targetSearchResult !== this.props.targetSearchResult
     );
   }
 
   componentDidUpdate(prevProps) {
-    const { mode, targetSearchResult, text } = this.props;
-
+    const { targetSearchResult, text } = this.props;
     if (prevProps.text !== text) {
       // When updating from editor to editor
-      this.updateEditor(mode, text);
+      this.updateEditor();
     } else if (prevProps.targetSearchResult !== targetSearchResult) {
       this.findSearchResult();
     }
@@ -62,100 +62,94 @@ class SourcePreview extends Component {
     this.unloadEditor();
   }
 
-  loadEditor(mode, text) {
-    this.editor = new Editor({
-      lineNumbers: true,
-      lineWrapping: false,
-      mode: null, // Disable auto syntax detection, but then we set mode asynchronously
-      readOnly: true,
-      theme: "mozilla",
-      value: text,
-    });
-
-    // Delay to CodeMirror initialization content to prevent UI freezing
-    this.editorTimeout = setTimeout(() => {
-      this.editorTimeout = null;
-      this.editor.appendToLocalElement(this.refs.editorElement);
-
-      // CodeMirror's setMode() (syntax highlight) is the performance bottleneck when
-      // processing large content, so we enable it asynchronously within the setTimeout
-      // to avoid UI blocking. (rendering source code -> drawing syntax highlight)
-      this.editorSetModeTimeout = setTimeout(() => {
-        this.editorSetModeTimeout = null;
-        this.editor.setMode(mode);
-        this.findSearchResult();
-      });
-    });
+  getSourceEditorModeForMimetype(mimeType) {
+    const lang = mimeType.split("/")[1];
+    return Editor.modes[lang];
   }
 
-  updateEditor(mode, text) {
-    // Reset the existed 'mode' attribute in order to make setText() process faster
-    // to prevent drawing unnecessary syntax highlight.
-    if (this?.editor?.hasCodeMirror) {
-      this.editor.setMode(null);
-      this.editor.setText(text);
-    }
-
-    if (this.editorSetModeTimeout) {
-      clearTimeout(this.editorSetModeTimeout);
-    }
-
-    // CodeMirror's setMode() (syntax highlight) is the performance bottleneck when
-    // processing large content, so we enable it asynchronously within the setTimeout
-    // to avoid UI blocking. (rendering source code -> drawing syntax highlight)
-    this.editorSetModeTimeout = setTimeout(() => {
-      this.editorSetModeTimeout = null;
-      this.editor.setMode(mode);
-      this.findSearchResult();
+  loadEditor() {
+    this.editor = new Editor({
+      cm6: true,
+      lineNumbers: true,
+      lineWrapping: false,
+      disableSearchAddon: false,
+      useSearchAddonPanel: true,
+      mode: null, // Disable auto syntax detection, but then we set the mode later
+      readOnly: true,
+      theme: "mozilla",
+      value: "",
     });
+
+    this.editor.appendToLocalElement(this.refs.editorElement);
+    // Used for netmonitor tests
+    window.codeMirrorSourceEditorTestInstance = this.editor;
+  }
+
+  async updateEditor() {
+    const { mimeType, text, url } = this.props;
+    if (this?.editor?.hasCodeMirror) {
+      const mode = this.getSourceEditorModeForMimetype(mimeType);
+      await this.editor.setMode(mode);
+      await this.editor.setText(text, { documentId: url });
+      // When navigating from the netmonitor search, find and highlight the
+      // the current search result.
+      await this.findSearchResult();
+    }
   }
 
   unloadEditor() {
-    clearTimeout(this.editorTimeout);
-    clearTimeout(this.editorSetModeTimeout);
     if (this.editor) {
       this.editor.destroy();
       this.editor = null;
     }
   }
 
-  findSearchResult() {
+  async findSearchResult() {
     const { targetSearchResult, resetTargetSearchResult } = this.props;
-
     if (targetSearchResult?.line) {
       const { line } = targetSearchResult;
       // scroll the editor to center the line
       // with the target search result
       if (this.editor) {
-        this.editor.setCursor({ line: line - 1 }, "center");
+        await this.editor.setCursorAt(line, 0);
+
+        // Highlight line
+        this.editor.setLineContentMarker({
+          id: this.editor.markerTypes.HIGHLIGHT_LINE_MARKER,
+          lineClassName: "highlight-line",
+          lines: [{ line }],
+        });
+        this.clearHighlightLineAfterDuration();
       }
     }
 
     resetTargetSearchResult();
   }
 
-  // Scroll to specified line if the user clicks on search results.
-  scrollToLine(element) {
-    const { targetSearchResult, resetTargetSearchResult } = this.props;
+  clearHighlightLineAfterDuration() {
+    const editorContainer = document.querySelector(".editor-row-container");
 
-    // The following code is responsible for scrolling given line
-    // to visible view-port.
-    // It gets the <div> child element representing the target
-    // line (by index) and uses `scrollIntoView` API to make sure
-    // it's visible to the user.
-    if (element && targetSearchResult && targetSearchResult.line) {
-      const child = element.children[targetSearchResult.line - 1];
-      if (child) {
-        const range = document.createRange();
-        range.selectNode(child);
-        document.getSelection().addRange(range);
-        child.scrollIntoView({ block: "center" });
-      }
-      resetTargetSearchResult();
+    if (editorContainer === null) {
+      return;
     }
+
+    const duration = parseInt(
+      getComputedStyle(editorContainer).getPropertyValue(
+        "--highlight-line-duration"
+      ),
+      10
+    );
+
+    const highlightTimeout = setTimeout(() => {
+      if (!this.editor) {
+        return;
+      }
+      clearTimeout(highlightTimeout);
+      this.editor.removeLineContentMarker("highlight-line-marker");
+    }, duration);
   }
 
-  renderEditor() {
+  render() {
     return div(
       { className: "editor-row-container" },
       div({
@@ -164,15 +158,18 @@ class SourcePreview extends Component {
       })
     );
   }
-
-  render() {
-    return div(
-      { key: "EDITOR_CONFIG", className: "editor-row-container" },
-      this.renderEditor()
-    );
-  }
 }
 
-module.exports = connect(null, dispatch => ({
-  resetTargetSearchResult: () => dispatch(setTargetSearchResult(null)),
-}))(SourcePreview);
+module.exports = connect(
+  state => {
+    if (!state.search) {
+      return null;
+    }
+    return {
+      targetSearchResult: state.search.targetSearchResult,
+    };
+  },
+  dispatch => ({
+    resetTargetSearchResult: () => dispatch(setTargetSearchResult(null)),
+  })
+)(SourcePreview);

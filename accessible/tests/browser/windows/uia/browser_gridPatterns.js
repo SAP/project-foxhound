@@ -68,7 +68,7 @@ async function testTableItemProps(id, rowHeaders, colHeaders) {
 /**
  * Test the Grid pattern.
  */
-addUiaTask(SNIPPET, async function testGrid() {
+addAccessibleTask(SNIPPET, async function testGrid() {
   await definePyVar("doc", `getDocUia()`);
   await assignPyVarToUiaWithId("table");
   await definePyVar("pattern", `getUiaPattern(table, "Grid")`);
@@ -99,7 +99,7 @@ addUiaTask(SNIPPET, async function testGrid() {
 /**
  * Test the GridItem pattern.
  */
-addUiaTask(SNIPPET, async function testGridItem() {
+addAccessibleTask(SNIPPET, async function testGridItem() {
   await definePyVar("doc", `getDocUia()`);
   await testGridItemProps("a", 0, 0, 1, 1, "table");
   await testGridItemProps("b", 0, 1, 1, 1, "table");
@@ -114,39 +114,34 @@ addUiaTask(SNIPPET, async function testGridItem() {
 /**
  * Test the Table pattern.
  */
-addUiaTask(
-  SNIPPET,
-  async function testTable() {
-    await definePyVar("doc", `getDocUia()`);
-    await assignPyVarToUiaWithId("table");
-    await definePyVar("pattern", `getUiaPattern(table, "Table")`);
-    ok(await runPython(`bool(pattern)`), "table has Table pattern");
-    await isUiaElementArray(
-      `pattern.GetCurrentRowHeaders()`,
-      ["dg", "h"],
-      "table has correct RowHeaders"
-    );
-    await isUiaElementArray(
-      `pattern.GetCurrentColumnHeaders()`,
-      ["a", "b", "c"],
-      "table has correct ColumnHeaders"
-    );
-    is(
-      await runPython(`pattern.CurrentRowOrColumnMajor`),
-      RowOrColumnMajor_RowMajor,
-      "table has correct RowOrColumnMajor"
-    );
+addAccessibleTask(SNIPPET, async function testTable() {
+  await definePyVar("doc", `getDocUia()`);
+  await assignPyVarToUiaWithId("table");
+  await definePyVar("pattern", `getUiaPattern(table, "Table")`);
+  ok(await runPython(`bool(pattern)`), "table has Table pattern");
+  await isUiaElementArray(
+    `pattern.GetCurrentRowHeaders()`,
+    ["dg", "h"],
+    "table has correct RowHeaders"
+  );
+  await isUiaElementArray(
+    `pattern.GetCurrentColumnHeaders()`,
+    ["a", "b", "c"],
+    "table has correct ColumnHeaders"
+  );
+  is(
+    await runPython(`pattern.CurrentRowOrColumnMajor`),
+    RowOrColumnMajor_RowMajor,
+    "table has correct RowOrColumnMajor"
+  );
 
-    await testPatternAbsent("button", "Table");
-  },
-  // The IA2 -> UIA proxy doesn't support the Row/ColumnHeaders properties.
-  { uiaEnabled: true, uiaDisabled: false }
-);
+  await testPatternAbsent("button", "Table");
+});
 
 /**
  * Test the TableItem pattern.
  */
-addUiaTask(SNIPPET, async function testTableItem() {
+addAccessibleTask(SNIPPET, async function testTableItem() {
   await definePyVar("doc", `getDocUia()`);
   await testTableItemProps("a", [], []);
   await testTableItemProps("b", [], []);

@@ -18,8 +18,8 @@ includes: [testTypedArray.js]
 features: [TypedArray]
 ---*/
 
-testWithTypedArrayConstructors(function(TA) {
-  var sample = new TA([42, 43]);
+testWithTypedArrayConstructors(function(TA, makeCtorArg) {
+  var sample = new TA(makeCtorArg([42, 43]));
 
   assert.sameValue(
     Object.getOwnPropertyDescriptor(sample, "undef"),
@@ -35,6 +35,6 @@ testWithTypedArrayConstructors(function(TA) {
     "bar",
     "return value from a String key"
   );
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

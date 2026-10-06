@@ -16,6 +16,7 @@
 #include "absl/strings/string_view.h"
 #include "api/video_codecs/scalability_mode.h"
 #include "api/video_codecs/video_codec.h"
+#include "rtc_base/system/rtc_export.h"
 
 namespace webrtc {
 
@@ -54,6 +55,12 @@ bool ScalabilityModeIsShiftMode(ScalabilityMode scalability_mode);
 
 ScalabilityMode LimitNumSpatialLayers(ScalabilityMode scalability_mode,
                                       int max_spatial_layers);
+
+// Returns the explicit scalability mode, if present. Otherwise, attempts to
+// construct an equivalent scalability mode based on codec specific info such
+// as spatial and/or temporal layer counts. If no scalability mode can be
+// inferred, returns L1T1.
+ScalabilityMode GetScalabilityModeFromVideoCodec(const VideoCodec& codec);
 
 }  // namespace webrtc
 

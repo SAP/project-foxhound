@@ -3,186 +3,91 @@
 
 "use strict";
 
-// See bug 1831731. This test should not actually try to create a connection to
-// the real DoH endpoint. But that may happen when clearing the proxy type, and
-// sometimes even in the next test.
-// To prevent that we override the IP to a local address.
-Cc["@mozilla.org/network/native-dns-override;1"]
-  .getService(Ci.nsINativeDNSResolverOverride)
-  .addIPOverride("mozilla.cloudflare-dns.com", "127.0.0.1");
-
-let oldProxyType = Services.prefs.getIntPref("network.proxy.type");
-function resetPrefs() {
-  Services.prefs.clearUserPref("network.trr.mode");
-  Services.prefs.clearUserPref("network.dns.native-is-localhost");
-  Services.prefs.setIntPref("network.proxy.type", oldProxyType);
-}
-
-async function loadErrorPage() {
-  Services.prefs.setBoolPref("network.dns.native-is-localhost", true);
-  Services.prefs.setIntPref("network.trr.mode", Ci.nsIDNSService.MODE_TRRONLY);
-  // We need to disable proxy, otherwise TRR isn't used for name resolution.
-  Services.prefs.setIntPref("network.proxy.type", 0);
-  registerCleanupFunction(resetPrefs);
-
-  let browser;
-  let pageLoaded;
-  await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    () => {
-      gBrowser.selectedTab = BrowserTestUtils.addTab(
-        gBrowser,
-        "https://does-not-exist.test"
-      );
-      browser = gBrowser.selectedBrowser;
-      pageLoaded = BrowserTestUtils.waitForErrorPage(browser);
-    },
-    false
-  );
-
-  info("Loading and waiting for the net error");
-  await pageLoaded;
-  return browser;
-}
-
 // This test makes sure that the Add exception button only shows up
 // when the skipReason indicates that the domain could not be resolved.
 // If instead there is a problem with the TRR connection, then we don't
 // show the exception button.
 add_task(async function exceptionButtonTRROnly() {
-  let browser = await loadErrorPage();
+  let browser = await loadTRRErrorPage();
 
-  await SpecialPowers.spawn(browser, [], function () {
+  await SpecialPowers.spawn(browser, [], async function () {
     const doc = content.document;
     ok(
       doc.documentURI.startsWith("about:neterror"),
       "Should be showing error page"
     );
 
-    const titleEl = doc.querySelector(".title-text");
-    const actualDataL10nID = titleEl.getAttribute("data-l10n-id");
+    // Bug 2038887: TRR-only DNS failures always use the legacy page now,
+    // even with felt-privacy enabled.
     is(
-      actualDataL10nID,
-      "dnsNotFound-title",
-      "Correct error page title is set"
+      doc.querySelector("net-error-card"),
+      null,
+      "net-error-card must NOT be used for TRR-only DNS failures"
     );
 
-    let trrExceptionButton = doc.getElementById("trrExceptionButton");
+    const trrExceptionButton = await ContentTaskUtils.waitForCondition(
+      () => doc.getElementById("trrExceptionButton"),
+      "Waiting for trrExceptionButton"
+    );
     Assert.equal(
       trrExceptionButton.hidden,
       true,
       "Exception button should be hidden for TRR service failures"
     );
+
+    const titleEl = doc.querySelector(".title-text");
+    is(
+      titleEl.getAttribute("data-l10n-id"),
+      "dnsNotFound-title",
+      "Correct error page title is set"
+    );
   });
 
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
-  resetPrefs();
+  resetTRRPrefs();
 });
 
-add_task(async function TRROnlyExceptionButtonTelemetry() {
-  // Clear everything.
-  Services.telemetry.clearEvents();
-  await TestUtils.waitForCondition(() => {
-    let events = Services.telemetry.snapshotEvents(
-      Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
-      true
-    ).content;
-    return !events || !events.length;
+// Bug 2038887: even when the felt-privacy error page is enabled, a TRR-only
+// DNS failure must fall back to the legacy about:neterror page so that the
+// DoH-specific affordances (DoH domain, learn-more link, exclude-domain and
+// settings buttons) are still surfaced to the user.
+add_task(async function feltPrivacyFallsBackToLegacyForTRRMode3() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["security.certerrors.felt-privacy-v1", true]],
   });
 
-  let browser = await loadErrorPage();
+  let browser = await loadTRRErrorPage();
 
-  await SpecialPowers.spawn(browser, [], function () {
+  await SpecialPowers.spawn(browser, [], async function () {
     const doc = content.document;
     ok(
       doc.documentURI.startsWith("about:neterror"),
       "Should be showing error page"
     );
+
+    const trrSettingsButton = await ContentTaskUtils.waitForCondition(
+      () => doc.getElementById("trrSettingsButton"),
+      "Waiting for legacy trrSettingsButton"
+    );
+    Assert.equal(
+      trrSettingsButton.hidden,
+      false,
+      "Legacy trrSettingsButton should be visible for TRR-only failure"
+    );
+
+    // The legacy DoH-specific exception button is rendered on the page. It's
+    // hidden in this test scenario because the failure is a TRR service
+    // failure (see exceptionButtonTRROnly above); the important thing for
+    // bug 2038887 is that this element exists, proving the legacy page is
+    // being used rather than the felt-privacy net-error-card (which doesn't
+    // include it).
+    ok(
+      doc.getElementById("trrExceptionButton"),
+      "Legacy trrExceptionButton element should exist on the page"
+    );
   });
 
-  let loadEvent = await TestUtils.waitForCondition(() => {
-    let events = Services.telemetry.snapshotEvents(
-      Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
-      true
-    ).content;
-    return events?.find(e => e[1] == "security.doh.neterror" && e[2] == "load");
-  }, "recorded telemetry for the load");
-
-  loadEvent.shift();
-  Assert.deepEqual(loadEvent, [
-    "security.doh.neterror",
-    "load",
-    "dohwarning",
-    "TRROnlyFailure",
-    {
-      mode: "3",
-      provider_key: "mozilla.cloudflare-dns.com",
-      skip_reason: "TRR_UNKNOWN_CHANNEL_FAILURE",
-    },
-  ]);
-
-  await SpecialPowers.spawn(browser, [], function () {
-    const doc = content.document;
-    let buttons = ["neterrorTryAgainButton", "trrSettingsButton"];
-    for (let buttonId of buttons) {
-      let button = doc.getElementById(buttonId);
-      button.click();
-    }
-  });
-
-  // Since we click TryAgain, make sure the error page is loaded again.
-  await BrowserTestUtils.waitForErrorPage(browser);
-
-  is(
-    gBrowser.tabs.length,
-    3,
-    "Should open about:preferences#privacy-doh in another tab"
-  );
-
-  let clickEvents = await TestUtils.waitForCondition(
-    () => {
-      let events = Services.telemetry.snapshotEvents(
-        Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
-        true
-      ).content;
-      return events?.filter(
-        e => e[1] == "security.doh.neterror" && e[2] == "click"
-      );
-    },
-    "recorded telemetry for clicking buttons",
-    500,
-    100
-  );
-
-  let firstEvent = clickEvents[0];
-  firstEvent.shift(); // remove timestamp
-  Assert.deepEqual(firstEvent, [
-    "security.doh.neterror",
-    "click",
-    "try_again_button",
-    "TRROnlyFailure",
-    {
-      mode: "3",
-      provider_key: "mozilla.cloudflare-dns.com",
-      skip_reason: "TRR_UNKNOWN_CHANNEL_FAILURE",
-    },
-  ]);
-
-  let secondEvent = clickEvents[1];
-  secondEvent.shift(); // remove timestamp
-  Assert.deepEqual(secondEvent, [
-    "security.doh.neterror",
-    "click",
-    "settings_button",
-    "TRROnlyFailure",
-    {
-      mode: "3",
-      provider_key: "mozilla.cloudflare-dns.com",
-      skip_reason: "TRR_UNKNOWN_CHANNEL_FAILURE",
-    },
-  ]);
-
-  BrowserTestUtils.removeTab(gBrowser.tabs[2]);
-  BrowserTestUtils.removeTab(gBrowser.tabs[1]);
-  resetPrefs();
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  resetTRRPrefs();
+  await SpecialPowers.popPrefEnv();
 });

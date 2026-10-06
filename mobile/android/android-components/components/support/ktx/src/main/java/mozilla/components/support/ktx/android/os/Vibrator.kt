@@ -5,8 +5,6 @@
 package mozilla.components.support.ktx.android.os
 
 import android.Manifest.permission.VIBRATE
-import android.os.Build
-import android.os.Build.VERSION.SDK_INT
 import android.os.VibrationEffect
 import android.os.VibrationEffect.DEFAULT_AMPLITUDE
 import android.os.Vibrator
@@ -19,10 +17,5 @@ import androidx.annotation.RequiresPermission
  */
 @RequiresPermission(VIBRATE)
 fun Vibrator.vibrateOneShot(milliseconds: Long) {
-    if (SDK_INT >= Build.VERSION_CODES.O) {
-        vibrate(VibrationEffect.createOneShot(milliseconds, DEFAULT_AMPLITUDE))
-    } else {
-        @Suppress("Deprecation")
-        vibrate(milliseconds)
-    }
+    vibrate(VibrationEffect.createOneShot(milliseconds, DEFAULT_AMPLITUDE))
 }

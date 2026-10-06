@@ -10,21 +10,37 @@
 
 #include "test/fake_encoder.h"
 
-#include <string.h>
-
 #include <algorithm>
+#include <array>
 #include <cstdint>
+#include <cstring>
 #include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
+#include "absl/strings/string_view.h"
 #include "api/environment/environment.h"
+#include "api/fec_controller_override.h"
+#include "api/scoped_refptr.h"
+#include "api/sequence_checker.h"
+#include "api/task_queue/task_queue_base.h"
 #include "api/task_queue/task_queue_factory.h"
-#include "api/video/video_content_type.h"
+#include "api/video/encoded_image.h"
+#include "api/video/video_bitrate_allocation.h"
+#include "api/video/video_codec_constants.h"
+#include "api/video/video_codec_type.h"
+#include "api/video/video_frame.h"
+#include "api/video/video_frame_type.h"
+#include "api/video_codecs/simulcast_stream.h"
+#include "api/video_codecs/video_codec.h"
+#include "api/video_codecs/video_encoder.h"
 #include "modules/video_coding/codecs/h264/include/h264_globals.h"
 #include "modules/video_coding/include/video_codec_interface.h"
 #include "modules/video_coding/include/video_error_codes.h"
 #include "rtc_base/checks.h"
-#include "system_wrappers/include/sleep.h"
+#include "rtc_base/synchronization/mutex.h"
+#include "rtc_base/thread.h"
 
 namespace webrtc {
 namespace test {
@@ -144,8 +160,9 @@ int32_t FakeEncoder::Encode(const VideoFrame& input_image,
     encoded.SetEncodedData(buffer);
 
     encoded.SetRtpTimestamp(input_image.rtp_timestamp());
-    encoded._frameType = frame_info.keyframe ? VideoFrameType::kVideoFrameKey
-                                             : VideoFrameType::kVideoFrameDelta;
+    encoded.set_frame_type(frame_info.keyframe
+                               ? VideoFrameType::kVideoFrameKey
+                               : VideoFrameType::kVideoFrameDelta);
     encoded._encodedWidth = simulcast_streams[i].width;
     encoded._encodedHeight = simulcast_streams[i].height;
     if (qp)
@@ -164,7 +181,7 @@ int32_t FakeEncoder::Encode(const VideoFrame& input_image,
 
 CodecSpecificInfo FakeEncoder::EncodeHook(
     EncodedImage& encoded_image,
-    rtc::scoped_refptr<EncodedImageBuffer> buffer) {
+    scoped_refptr<EncodedImageBuffer> buffer) {
   CodecSpecificInfo codec_specific;
   codec_specific.codecType = kVideoCodecGeneric;
   return codec_specific;
@@ -317,7 +334,7 @@ FakeH264Encoder::FakeH264Encoder(const Environment& env)
 
 CodecSpecificInfo FakeH264Encoder::EncodeHook(
     EncodedImage& encoded_image,
-    rtc::scoped_refptr<EncodedImageBuffer> buffer) {
+    scoped_refptr<EncodedImageBuffer> buffer) {
   static constexpr std::array<uint8_t, 3> kStartCode = {0, 0, 1};
   const size_t kSpsSize = 8;
   const size_t kPpsSize = 11;
@@ -380,7 +397,7 @@ int32_t DelayedEncoder::Encode(const VideoFrame& input_image,
                                const std::vector<VideoFrameType>* frame_types) {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
 
-  SleepMs(delay_ms_);
+  Thread::SleepMs(delay_ms_);
 
   return FakeEncoder::Encode(input_image, frame_types);
 }
@@ -401,9 +418,9 @@ int32_t MultithreadedFakeH264Encoder::InitEncode(const VideoCodec* config,
   RTC_DCHECK_RUN_ON(&sequence_checker_);
 
   queue1_ = env_.task_queue_factory().CreateTaskQueue(
-      "Queue 1", TaskQueueFactory::Priority::NORMAL);
+      "Queue 1", TaskQueueFactory::Priority::kNormal);
   queue2_ = env_.task_queue_factory().CreateTaskQueue(
-      "Queue 2", TaskQueueFactory::Priority::NORMAL);
+      "Queue 2", TaskQueueFactory::Priority::kNormal);
 
   return FakeH264Encoder::InitEncode(config, settings);
 }

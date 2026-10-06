@@ -37,6 +37,14 @@ var state = {
 
 add_task(async function test() {
   let tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
+
+  // addTab sends a message to the child to load about:blank, which sends a
+  // message to the parent to add the SH entry.
+  // promiseTabState modifies the SH syncronously, so ensure it is settled.
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser, {
+    wantLoad: "about:blank",
+  });
+
   await promiseTabState(tab, state);
 
   function compareEntries(i, j, history) {

@@ -6,7 +6,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=515116
   <title>Generic tests for SVG animated length lists</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="matrixUtils.js"></script>
-  <script type="text/javascript" src="MutationEventChecker.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -395,7 +394,6 @@ function get_array_of_list_items(list) {
  */
 function run_baseVal_API_tests() {
   var res, threw;
-  var eventChecker = new MutationEventChecker;
 
   for (var t of tests) {
     // Test .clear():
@@ -405,8 +403,6 @@ function run_baseVal_API_tests() {
     is(t.baseVal.numberOfItems, 4,
        "The " + t.list_type + " object should contain four list items.");
 
-    eventChecker.watchAttr(t.element, t.attr_name);
-    eventChecker.expect("modify");
     res = t.baseVal.clear();
 
     is(t.baseVal.numberOfItems, 0,
@@ -420,9 +416,7 @@ function run_baseVal_API_tests() {
        "Cleared " + t.attr_name + " (" + t.list_type + ") but did not get an " +
        "empty string back.");
 
-    eventChecker.expect("");
     t.baseVal.clear();
-    eventChecker.ignoreEvents();
 
     // Test empty strings
 
@@ -450,11 +444,7 @@ function run_baseVal_API_tests() {
     // a 'clear' followed by an 'insertItemBefore'. This results in two
     // modification events being dispatched. SVGStringList however avoids the
     // additional clear.
-    var expectedModEvents =
-      t.item_type == "DOMString" ? "modify" : "modify modify";
-    eventChecker.expect(expectedModEvents);
     res = t.baseVal.initialize(item);
-    eventChecker.ignoreEvents();
 
 
     is(t.baseVal.numberOfItems, 1,
@@ -495,7 +485,6 @@ function run_baseVal_API_tests() {
          "is passed in, even if that object is the only item in that list.");
       // [SVGWG issue] not what the spec currently says
 
-      eventChecker.expect("");
       threw = false;
       try {
         t.baseVal.initialize({});
@@ -505,7 +494,6 @@ function run_baseVal_API_tests() {
       ok(threw,
          "The method " + t.list_type + ".initialize() should throw if passed an " +
          "object of the wrong type.");
-      eventChecker.ignoreEvents();
     }
 
     // Test .insertItemBefore():
@@ -514,9 +502,7 @@ function run_baseVal_API_tests() {
 
     old_items = get_array_of_list_items(t.baseVal);
     item = t.item_constructor();
-    eventChecker.expect("modify");
     res = t.baseVal.insertItemBefore(item, 2);
-    eventChecker.ignoreEvents();
 
     is(t.baseVal.numberOfItems, 5,
        "The " + t.list_type + " object should contain five list items.");
@@ -571,7 +557,6 @@ function run_baseVal_API_tests() {
          "the list at the index specified.");
       // [SVGWG issue] not what the spec currently says
 
-      eventChecker.expect("");
       threw = false;
       try {
         t.baseVal.insertItemBefore({}, 2);
@@ -581,7 +566,6 @@ function run_baseVal_API_tests() {
       ok(threw,
          "The method " + t.list_type + ".insertItemBefore() should throw if passed " +
          "an object of the wrong type.");
-      eventChecker.ignoreEvents();
     }
 
     // Test .replaceItem():
@@ -590,9 +574,7 @@ function run_baseVal_API_tests() {
 
     old_items = get_array_of_list_items(t.baseVal);
     item = t.item_constructor();
-    eventChecker.expect("modify");
     res = t.baseVal.replaceItem(item, 2);
-    eventChecker.ignoreEvents();
 
     is(t.baseVal.numberOfItems, 4,
        "The " + t.list_type + " object should contain four list items.");
@@ -615,7 +597,6 @@ function run_baseVal_API_tests() {
 
     item = t.item_constructor();
 
-    eventChecker.expect("");
     threw = false;
     try {
       t.baseVal.replaceItem(item, 100);
@@ -625,7 +606,6 @@ function run_baseVal_API_tests() {
     ok(threw,
        "The method " + t.list_type + ".replaceItem() should throw if passed " +
        "an index that is out of bounds.");
-    eventChecker.ignoreEvents();
 
     old_items = get_array_of_list_items(t.baseVal);
     item = t.baseVal.getItem(3);
@@ -673,9 +653,7 @@ function run_baseVal_API_tests() {
 
     old_items = get_array_of_list_items(t.baseVal);
     item = t.baseVal.getItem(2);
-    eventChecker.expect("modify");
     res = t.baseVal.removeItem(2);
-    eventChecker.ignoreEvents();
 
     is(t.baseVal.numberOfItems, 3,
        "The " + t.list_type + " object should contain three list items.");
@@ -693,7 +671,6 @@ function run_baseVal_API_tests() {
        "the item at index 2 was removed using the " + t.list_type +
        ".replaceItem() method.");
 
-    eventChecker.expect("");
     threw = false;
     try {
       t.baseVal.removeItem(100);
@@ -703,7 +680,6 @@ function run_baseVal_API_tests() {
     ok(threw,
        "The method " + t.list_type + ".removeItem() should throw if passed " +
        "an index that is out of bounds.");
-    eventChecker.ignoreEvents();
 
     // Test .appendItem():
 
@@ -711,9 +687,7 @@ function run_baseVal_API_tests() {
 
     old_items = get_array_of_list_items(t.baseVal);
     item = t.item_constructor();
-    eventChecker.expect("modify");
     res = t.baseVal.appendItem(item);
-    eventChecker.ignoreEvents();
 
     is(t.baseVal.numberOfItems, 5,
        "The " + t.list_type + " object should contain five list items.");
@@ -759,7 +733,6 @@ function run_baseVal_API_tests() {
          "that list.");
       // [SVGWG issue] not what the spec currently says
 
-      eventChecker.expect("");
       threw = false;
       try {
         t.baseVal.appendItem({});
@@ -769,16 +742,13 @@ function run_baseVal_API_tests() {
       ok(threw,
          "The method " + t.list_type + ".appendItem() should throw if passed " +
          "an object of the wrong type.");
-      eventChecker.ignoreEvents();
     }
 
     // Test removal and addition events
 
-    eventChecker.expect("remove add");
     t.element.removeAttribute(t.attr_name);
     t.element.removeAttributeNS(null, t.attr_name);
     res = t.baseVal.appendItem(item);
-    eventChecker.finish();
   }
 }
 
@@ -1094,7 +1064,7 @@ function run_animation_timeline_tests() {
     t.old_animVal_items = get_array_of_list_items(t.animVal);
 
 
-    /** ******************    t = 1s    ********************/
+    /********************    t = 1s    ********************/
 
     svg.setCurrentTime(1); // begin first animation
 
@@ -1137,7 +1107,7 @@ function run_animation_timeline_tests() {
     t.old_animVal_items = get_array_of_list_items(t.animVal);
 
 
-    /** ******************    t = 2s    ********************/
+    /********************    t = 2s    ********************/
 
     svg.setCurrentTime(2); // begin override animation
 
@@ -1160,7 +1130,7 @@ function run_animation_timeline_tests() {
     t.old_animVal_items = get_array_of_list_items(t.animVal);
 
 
-    /** ******************    t = 3s    ********************/
+    /********************    t = 3s    ********************/
 
     svg.setCurrentTime(3); // end of override animation
 
@@ -1183,7 +1153,7 @@ function run_animation_timeline_tests() {
     t.old_animVal_items = get_array_of_list_items(t.animVal);
 
 
-    /** ******************    t = 5s    ********************/
+    /********************    t = 5s    ********************/
 
     svg.setCurrentTime(5); // animation repeat point
 
@@ -1199,7 +1169,7 @@ function run_animation_timeline_tests() {
        "same objects as were at that index before the repeat occurred.");
 
 
-    /** ******************    t = 6s    ********************/
+    /********************    t = 6s    ********************/
 
     svg.setCurrentTime(6); // inside animation repeat
 
@@ -1215,7 +1185,7 @@ function run_animation_timeline_tests() {
        "same objects as were at that index before the repeat occurred.");
 
 
-    /** ******************    t = 7s    ********************/
+    /********************    t = 7s    ********************/
 
     svg.setCurrentTime(7); // start of additive="sum" animation
 
@@ -1259,7 +1229,7 @@ function run_animation_timeline_tests() {
     // SVGLengthListSMILAttr::Add().
 
 
-    /** ******************    t = 13s    ********************/
+    /********************    t = 13s    ********************/
 
     svg.setCurrentTime(13); // all animations have finished, but one is frozen
 
@@ -1364,7 +1334,8 @@ function run_tests() {
 }
 
 window.addEventListener("load",
-  () => SpecialPowers.pushPrefEnv({"set": [["dom.mutation_events.enabled", true]]}, run_tests));
+  () => SimpleTest.executeSoon(run_tests)
+);
 
 ]]>
 </script>

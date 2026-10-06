@@ -16,7 +16,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=851780
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
-  /** Test for input event. This is highly based on test_change_event.html **/
+  /** Test for input event. This is highly based on test_change_event.html */
 
   const isDesktop = !/Mobile|Tablet/.test(navigator.userAgent);
 
@@ -149,7 +149,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=851780
   }
 
   var MockFilePicker = SpecialPowers.MockFilePicker;
-  MockFilePicker.init(SpecialPowers.wrap(window).browsingContext);
+  MockFilePicker.init();
 
   function testUserInput() {
     // Simulating an OK click and with a file name return.

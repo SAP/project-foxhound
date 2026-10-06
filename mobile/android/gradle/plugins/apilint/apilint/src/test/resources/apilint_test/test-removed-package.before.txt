@@ -1,0 +1,8 @@
+package test {
+  public class TestClass {
+  }
+}
+package willremove {
+  public class TestClass {
+  }
+}

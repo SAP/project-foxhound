@@ -1,0 +1,15 @@
+{
+  "label": "iwebv2.thebankersbank.com",
+  "bugs": {
+    "1926501": {
+      "issue": "unsupported-warning",
+      "matches": ["*://iwebv2.thebankersbank.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

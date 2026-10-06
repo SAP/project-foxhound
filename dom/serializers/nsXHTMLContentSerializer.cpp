@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,24 +10,24 @@
 
 #include "nsXHTMLContentSerializer.h"
 
-#include "mozilla/dom/Element.h"
-#include "nsIContent.h"
 #include "mozilla/dom/Document.h"
-#include "nsElementTable.h"
-#include "nsNameSpaceManager.h"
-#include "nsString.h"
-#include "nsUnicharUtils.h"
-#include "nsIDocumentEncoder.h"
-#include "nsGkAtoms.h"
-#include "nsIURI.h"
-#include "nsNetUtil.h"
-#include "nsEscape.h"
-#include "nsCRT.h"
-#include "nsContentUtils.h"
-#include "nsIScriptElement.h"
-#include "nsStubMutationObserver.h"
+#include "mozilla/dom/Element.h"
 #include "nsAttrName.h"
+#include "nsCRT.h"
 #include "nsComputedDOMStyle.h"
+#include "nsContentUtils.h"
+#include "nsElementTable.h"
+#include "nsEscape.h"
+#include "nsGkAtoms.h"
+#include "nsIContent.h"
+#include "nsIDocumentEncoder.h"
+#include "nsIScriptElement.h"
+#include "nsIURI.h"
+#include "nsNameSpaceManager.h"
+#include "nsNetUtil.h"
+#include "nsString.h"
+#include "nsStubMutationObserver.h"
+#include "nsUnicharUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -108,7 +106,7 @@ bool nsXHTMLContentSerializer::HasLongLines(const nsString& text,
 }
 
 NS_IMETHODIMP
-nsXHTMLContentSerializer::AppendText(nsIContent* aText, int32_t aStartOffset,
+nsXHTMLContentSerializer::AppendText(Text* aText, int32_t aStartOffset,
                                      int32_t aEndOffset) {
   NS_ENSURE_ARG(aText);
   NS_ENSURE_STATE(mOutput);
@@ -543,6 +541,7 @@ bool nsXHTMLContentSerializer::LineBreakBeforeOpen(int32_t aNamespaceID,
     return true;
   }
 
+  // FIXME: If all callers can use NodeInfo, we can use NodeInfo::HTMLTag().
   return nsHTMLElement::IsBlock(nsHTMLTags::CaseSensitiveAtomTagToId(aName));
 }
 
@@ -598,6 +597,7 @@ bool nsXHTMLContentSerializer::LineBreakAfterClose(int32_t aNamespaceID,
     return true;
   }
 
+  // FIXME: If all callers can use NodeInfo, we can use NodeInfo::HTMLTag().
   return nsHTMLElement::IsBlock(nsHTMLTags::CaseSensitiveAtomTagToId(aName));
 }
 

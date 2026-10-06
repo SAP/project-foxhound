@@ -16,6 +16,7 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.settings.PhoneFeature
 import org.mozilla.fenix.trackingprotection.ProtectionsState
 import org.mozilla.fenix.utils.Settings
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * [State] containing all data displayed to the user by this Fragment.
@@ -83,15 +84,15 @@ enum class WebsiteInfoUiValues(
 ) {
     SECURE(
         R.string.quick_settings_sheet_secure_connection_2,
-        R.drawable.ic_lock,
+        iconsR.drawable.mozac_ic_lock_24,
     ),
     INSECURE(
         R.string.quick_settings_sheet_insecure_connection_2,
-        R.drawable.mozac_ic_broken_lock,
+        iconsR.drawable.mozac_ic_lock_slash_critical_24,
     ),
     Document(
         R.string.quick_settings_sheet_local_page,
-        R.drawable.mozac_ic_page_portrait_24,
+        iconsR.drawable.mozac_ic_page_portrait_24,
     ),
 }
 

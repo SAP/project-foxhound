@@ -1,0 +1,58 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Default splitViewId</title>
+  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
+  <script type="text/javascript" src="head.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css">
+</head>
+<body>
+
+<script type="text/javascript">
+"use strict";
+
+// Full coverage for the tabs.Tab.splitViewId field is provided by
+// browser/components/extensions/test/browser/browser_ext_tabs_splitViewId.js,
+// but that test only runs on desktop Firefox.
+// This test runs on both desktop and mobile Firefox. Although split views are
+// unsupported on mobile, tab.splitViewId should still have a value (-1).
+add_task(async function default_splitViewId_value() {
+  const extension = ExtensionTestUtils.loadExtension({
+    async background() {
+      const tab = await browser.tabs.create({});
+      browser.test.assertEq(
+        -1,
+        browser.tabs.SPLIT_VIEW_ID_NONE,
+        "Expected value of SPLIT_VIEW_ID_NONE constant"
+      );
+      browser.test.assertEq(
+        -1,
+        tab.splitViewId,
+        "tab.splitViewId defaults to -1 (SPLIT_VIEW_ID_NONE)"
+      );
+      let tabs = await browser.tabs.query({ splitViewId: -1 });
+      browser.test.assertTrue(
+        tabs.some(t => t.id === tab.id),
+        "Found tab without split view, with tabs.query({ splitViewId: -1})"
+      );
+      browser.test.assertDeepEq(
+        [],
+        await browser.tabs.query({ splitViewId: Number.MAX_SAFE_INTEGER }),
+        "tabs.query() for non-existing splitViewId should return empty list"
+      );
+      await browser.tabs.remove(tab.id);
+      browser.test.sendMessage("done");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
+</script>
+
+</body>
+</html>

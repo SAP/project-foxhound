@@ -1,0 +1,61 @@
+{
+  "manifest_version": 2,
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "firefox-privatewindow@mozilla.org"
+    }
+  },
+
+  "name": "Firefox Nova Private Window",
+  "description": "Nova theme for Private Window",
+  "author": "Mozilla",
+  "version": "1.0.0",
+
+  "theme": {
+    "colors": {}
+  },
+
+  "dark_theme": {
+    "colors": {
+      "frame": ".violet-desaturated.90.value",
+      "frame_inactive": ".violet-desaturated.80.value",
+      "tab_background_text": "#ffffff",
+      "tab_line": "transparent",
+      "popup": ".violet-desaturated.60.value",
+      "popup_text": "#ffffff",
+      "button_background_active": ".violet-desaturated.40.value",
+      "button_background_hover": ".violet-desaturated.50.value",
+      "icons_attention": ".violet.20.value",
+      "icons": "#ffffff",
+      "ntp_background": "rgba(54,53,57,0.9)",
+      "ntp_text": "#ffffff",
+      "popup_border": ".violet-desaturated.60.value",
+      "popup_highlight_text": ".violet-desaturated.10.value",
+      "popup_highlight": "rgba(182,170,217,0.4)",
+      "sidebar_border": ".violet-desaturated.60.value",
+      "sidebar_highlight_text": "#ffffff",
+      "sidebar_highlight": ".gray.75.value",
+      "sidebar_text": "#ffffff",
+      "sidebar": ".violet-desaturated.70.value",
+      "tab_background_separator": ".violet-desaturated.60.value",
+      "tab_loading": ".violet.20.value",
+      "tab_selected": ".gray.75.value",
+      "tab_text": "#ffffff",
+      "toolbar": ".violet-desaturated.70.value",
+      "toolbar_text": "#ffffff",
+      "toolbar_bottom_separator": ".violet-desaturated.60.value",
+      "toolbar_field_border_focus": "#ffffff",
+      "toolbar_field": ".gray.75.value",
+      "toolbar_field_focus": ".gray.85.value",
+      "toolbar_field_text": ".violet-desaturated.10.value",
+      "toolbar_field_border": ".violet-desaturated.50.value",
+      "toolbar_field_highlight_text": ".violet-desaturated.10.value",
+      "toolbar_field_highlight": "rgba(182, 170, 217, 0.4)",
+      "toolbar_field_separator": ".gray.20.value",
+      "toolbar_field_text_focus": ".violet-desaturated.10.value",
+      "toolbar_top_separator": ".violet-desaturated.60.value",
+      "toolbar_vertical_separator": "rgba(251, 251, 254, 0.7)"
+    }
+  }
+}

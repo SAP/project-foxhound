@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const f1 = new VideoFrame(new Uint8Array(320 * 240 * 4), {
+    format: "RGBA",
+    codedWidth: 320,
+    codedHeight: 240,
+    timestamp: 10000000
+  });
+  const f2 = new VideoFrame(f1, {
+    visibleRect: {
+      width: 73,
+      height: 190
+    }
+  });
+  const f3 = new VideoFrame(f2, {
+    displayWidth: 2147483647,
+    displayHeight: 144
+  });
+  const f4 = new VideoFrame(f3, {
+    visibleRect: {
+      width: 217,
+      height: 85
+    }
+  });
+  new VideoFrame(f4, {});
+});
+</script>

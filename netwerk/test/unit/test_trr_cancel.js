@@ -56,6 +56,7 @@ add_task(
           data: "2.3.4.5",
         },
       ],
+      delay: 500, // Add delay so cancel happens before response arrives
     });
     let r1 = new TRRDNSListener("example.org", { expectedSuccess: false });
     let r2 = new TRRDNSListener("example.org", { expectedAnswer: "2.3.4.5" });

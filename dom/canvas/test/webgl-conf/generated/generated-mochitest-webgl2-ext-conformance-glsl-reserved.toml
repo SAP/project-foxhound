@@ -1,0 +1,37 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-ext"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/conformance/glsl/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_conformance__glsl__reserved___webgl_field.vert.html"]
+
+["test_2_conformance__glsl__reserved___webgl_function.vert.html"]
+
+["test_2_conformance__glsl__reserved___webgl_struct.vert.html"]
+
+["test_2_conformance__glsl__reserved___webgl_variable.vert.html"]
+
+["test_2_conformance__glsl__reserved__webgl_field.vert.html"]
+
+["test_2_conformance__glsl__reserved__webgl_function.vert.html"]
+
+["test_2_conformance__glsl__reserved__webgl_struct.vert.html"]
+
+["test_2_conformance__glsl__reserved__webgl_variable.vert.html"]

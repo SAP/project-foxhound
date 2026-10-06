@@ -27,10 +27,7 @@ const makeExtension = ({ manifest: manifestProps, ...otherProps }) => {
 
 add_task(async function setup() {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["extensions.manifestV3.enabled", true],
-      ["extensions.originControls.grantByDefault", false],
-    ],
+    set: [["extensions.originControls.grantByDefault", false]],
   });
 });
 
@@ -68,7 +65,7 @@ async function verifyExecuteScriptActiveTab(permissions, host_permissions) {
 
       browser.test.onMessage.addListener(async msg => {
         switch (msg) {
-          case "reload-and-execute":
+          case "reload-and-execute": {
             const tabs = await browser.tabs.query({ active: true });
             const tabId = tabs[0].id;
 
@@ -100,6 +97,7 @@ async function verifyExecuteScriptActiveTab(permissions, host_permissions) {
             browser.test.sendMessage("execute-script-after-reload");
 
             break;
+          }
           default:
             browser.test.fail(`invalid message received: ${msg}`);
         }

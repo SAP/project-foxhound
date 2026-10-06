@@ -14,7 +14,7 @@ fuzzy(0-1,0-150) == webkit-gradient-linear-2.html webkit-gradient-linear-2-ref.h
 
 # Tests for -webkit-gradient(radial, ...)
 == webkit-gradient-radial-1a.html webkit-gradient-radial-1-ref.html
-== webkit-gradient-radial-1b.html webkit-gradient-radial-1-ref.html
+fuzzy(0-1,0-5780) == webkit-gradient-radial-1b.html webkit-gradient-radial-1-ref.html
 == webkit-gradient-radial-2.html webkit-gradient-radial-2-ref.html
 
 # Tests for -webkit-linear-gradient

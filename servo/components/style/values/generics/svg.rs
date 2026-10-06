@@ -4,6 +4,7 @@
 
 //! Generic types for CSS values in SVG
 
+use crate::derives::*;
 use crate::parser::{Parse, ParserContext};
 use cssparser::Parser;
 use style_traits::ParseError;
@@ -56,9 +57,11 @@ pub use self::GenericSVGPaintFallback as SVGPaintFallback;
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[animation(no_bound(Url))]
 #[repr(C)]
+#[typed(todo_derive_fields)]
 pub struct GenericSVGPaint<Color, Url> {
     /// The paint source.
     pub kind: GenericSVGPaintKind<Color, Url>,
@@ -151,6 +154,7 @@ impl<C: Parse, U: Parse> Parse for SVGPaint<C, U> {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C, u8)]
 pub enum GenericSVGLength<L> {
@@ -176,11 +180,13 @@ pub use self::GenericSVGLength as SVGLength;
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C, u8)]
 pub enum GenericSVGStrokeDashArray<L> {
     /// `[ <length> | <percentage> | <number> ]#`
     #[css(comma)]
+    #[typed(no_multiple_values)]
     Values(#[css(if_empty = "none", iterable)] crate::OwnedSlice<L>),
     /// `context-value`
     ContextValue,
@@ -206,6 +212,7 @@ pub use self::GenericSVGStrokeDashArray as SVGStrokeDashArray;
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C, u8)]
 pub enum GenericSVGOpacity<OpacityType> {

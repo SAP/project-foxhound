@@ -1,14 +1,15 @@
-/* -*- Mode: c++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+mod permission_monitor;
 
 use nserror::{nsresult, NS_OK};
 use nsstring::{nsAString, nsString};
 use thin_vec::ThinVec;
 use windows::core::HSTRING;
-use windows::Foundation::Collections::IVectorView;
 use windows::UI::Notifications::{ToastNotification, ToastNotificationManager};
+use windows_collections::IVectorView;
 use xpcom::{xpcom, xpcom_method};
 
 #[xpcom(implement(nsIAlertsServiceRust), nonatomic)]
@@ -30,7 +31,7 @@ impl AlertsServiceRust {
         || -> windows::core::Result<()> {
             let history = ToastNotificationManager::History()?;
             let notifications: IVectorView<ToastNotification> =
-                history.GetHistoryWithId(&HSTRING::from_wide(&aumid[..])?)?;
+                history.GetHistoryWithId(&HSTRING::from_wide(&aumid[..]))?;
 
             for n in notifications {
                 let tag = n.Tag()?;

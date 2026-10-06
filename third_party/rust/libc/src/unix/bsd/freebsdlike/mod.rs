@@ -59,13 +59,8 @@ cfg_if! {
 
 // link.h
 
-#[cfg_attr(feature = "extra_traits", derive(Debug))]
-pub enum timezone {}
-impl Copy for timezone {}
-impl Clone for timezone {
-    fn clone(&self) -> timezone {
-        *self
-    }
+extern_ty! {
+    pub enum timezone {}
 }
 
 impl siginfo_t {
@@ -118,12 +113,26 @@ s! {
         pub gl_offs: size_t,
         pub gl_flags: c_int,
         pub gl_pathv: *mut *mut c_char,
-        __unused3: *mut c_void,
-        __unused4: *mut c_void,
-        __unused5: *mut c_void,
-        __unused6: *mut c_void,
-        __unused7: *mut c_void,
-        __unused8: *mut c_void,
+        __unused3: Padding<*mut c_void>,
+        __unused4: Padding<*mut c_void>,
+        __unused5: Padding<*mut c_void>,
+        __unused6: Padding<*mut c_void>,
+        __unused7: Padding<*mut c_void>,
+        __unused8: Padding<*mut c_void>,
+    }
+
+    pub struct tm {
+        pub tm_sec: c_int,
+        pub tm_min: c_int,
+        pub tm_hour: c_int,
+        pub tm_mday: c_int,
+        pub tm_mon: c_int,
+        pub tm_year: c_int,
+        pub tm_wday: c_int,
+        pub tm_yday: c_int,
+        pub tm_isdst: c_int,
+        pub tm_gmtoff: c_long,
+        pub tm_zone: *mut c_char,
     }
 
     pub struct addrinfo {
@@ -150,8 +159,8 @@ s! {
         pub si_status: c_int,
         pub si_addr: *mut c_void,
         pub si_value: crate::sigval,
-        _pad1: c_long,
-        _pad2: [c_int; 7],
+        _pad1: Padding<c_long>,
+        _pad2: Padding<[c_int; 7]>,
     }
 
     pub struct sigaction {
@@ -378,7 +387,7 @@ s! {
         pub cgid: crate::gid_t,
         pub uid: crate::uid_t,
         pub gid: crate::gid_t,
-        pub mode: crate::mode_t,
+        pub mode: mode_t,
         pub seq: c_ushort,
         pub key: crate::key_t,
     }
@@ -386,59 +395,18 @@ s! {
     pub struct eui64 {
         pub octet: [u8; EUI64_LEN],
     }
-}
 
-s_no_extra_traits! {
     pub struct sockaddr_storage {
         pub ss_len: u8,
         pub ss_family: crate::sa_family_t,
-        __ss_pad1: [u8; 6],
+        __ss_pad1: Padding<[u8; 6]>,
         __ss_align: i64,
-        __ss_pad2: [u8; 112],
-    }
-}
-
-cfg_if! {
-    if #[cfg(feature = "extra_traits")] {
-        impl PartialEq for sockaddr_storage {
-            fn eq(&self, other: &sockaddr_storage) -> bool {
-                self.ss_len == other.ss_len
-                    && self.ss_family == other.ss_family
-                    && self.__ss_pad1 == other.__ss_pad1
-                    && self.__ss_align == other.__ss_align
-                    && self
-                        .__ss_pad2
-                        .iter()
-                        .zip(other.__ss_pad2.iter())
-                        .all(|(a, b)| a == b)
-            }
-        }
-        impl Eq for sockaddr_storage {}
-        impl fmt::Debug for sockaddr_storage {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.debug_struct("sockaddr_storage")
-                    .field("ss_len", &self.ss_len)
-                    .field("ss_family", &self.ss_family)
-                    .field("__ss_pad1", &self.__ss_pad1)
-                    .field("__ss_align", &self.__ss_align)
-                    // FIXME(debug): .field("__ss_pad2", &self.__ss_pad2)
-                    .finish()
-            }
-        }
-        impl hash::Hash for sockaddr_storage {
-            fn hash<H: hash::Hasher>(&self, state: &mut H) {
-                self.ss_len.hash(state);
-                self.ss_family.hash(state);
-                self.__ss_pad1.hash(state);
-                self.__ss_align.hash(state);
-                self.__ss_pad2.hash(state);
-            }
-        }
+        __ss_pad2: Padding<[u8; 112]>,
     }
 }
 
 // Non-public helper constant
-const SIZEOF_LONG: usize = mem::size_of::<c_long>();
+const SIZEOF_LONG: usize = size_of::<c_long>();
 
 #[deprecated(
     since = "0.2.64",
@@ -588,9 +556,6 @@ pub const F_OK: c_int = 0;
 pub const R_OK: c_int = 4;
 pub const W_OK: c_int = 2;
 pub const X_OK: c_int = 1;
-pub const STDIN_FILENO: c_int = 0;
-pub const STDOUT_FILENO: c_int = 1;
-pub const STDERR_FILENO: c_int = 2;
 pub const F_LOCK: c_int = 1;
 pub const F_TEST: c_int = 3;
 pub const F_TLOCK: c_int = 2;
@@ -1208,9 +1173,11 @@ pub const _SC_RAW_SOCKETS: c_int = 119;
 pub const _SC_SYMLOOP_MAX: c_int = 120;
 pub const _SC_PHYS_PAGES: c_int = 121;
 
-pub const PTHREAD_MUTEX_INITIALIZER: pthread_mutex_t = 0 as *mut _;
-pub const PTHREAD_COND_INITIALIZER: pthread_cond_t = 0 as *mut _;
-pub const PTHREAD_RWLOCK_INITIALIZER: pthread_rwlock_t = 0 as *mut _;
+pub const _CS_PATH: c_int = 1;
+
+pub const PTHREAD_MUTEX_INITIALIZER: pthread_mutex_t = ptr::null_mut();
+pub const PTHREAD_COND_INITIALIZER: pthread_cond_t = ptr::null_mut();
+pub const PTHREAD_RWLOCK_INITIALIZER: pthread_rwlock_t = ptr::null_mut();
 pub const PTHREAD_MUTEX_ERRORCHECK: c_int = 1;
 pub const PTHREAD_MUTEX_RECURSIVE: c_int = 2;
 pub const PTHREAD_MUTEX_NORMAL: c_int = 3;
@@ -1249,7 +1216,15 @@ pub const TIOCGETD: c_ulong = 0x4004741a;
 pub const TIOCSETD: c_ulong = 0x8004741b;
 pub const TIOCGDRAINWAIT: c_ulong = 0x40047456;
 pub const TIOCSDRAINWAIT: c_ulong = 0x80047457;
+#[cfg_attr(
+    not(target_os = "dragonfly"),
+    deprecated = "unused since FreeBSD 8, removed in FreeBSD 15"
+)]
 pub const TIOCMGDTRWAIT: c_ulong = 0x4004745a;
+#[cfg_attr(
+    not(target_os = "dragonfly"),
+    deprecated = "unused since FreeBSD 8, removed in FreeBSD 15"
+)]
 pub const TIOCMSDTRWAIT: c_ulong = 0x8004745b;
 pub const TIOCDRAIN: c_ulong = 0x2000745e;
 pub const TIOCEXT: c_ulong = 0x80047460;
@@ -1342,7 +1317,7 @@ pub const B230400: speed_t = 230400;
 pub const EXTA: speed_t = 19200;
 pub const EXTB: speed_t = 38400;
 
-pub const SEM_FAILED: *mut sem_t = 0 as *mut sem_t;
+pub const SEM_FAILED: *mut sem_t = ptr::null_mut();
 
 pub const CRTSCTS: crate::tcflag_t = 0x00030000;
 pub const CCTS_OFLOW: crate::tcflag_t = 0x00010000;
@@ -1493,15 +1468,15 @@ pub const POSIX_SPAWN_SETSIGDEF: c_int = 0x10;
 pub const POSIX_SPAWN_SETSIGMASK: c_int = 0x20;
 
 safe_f! {
-    pub {const} fn WIFCONTINUED(status: c_int) -> bool {
+    pub const fn WIFCONTINUED(status: c_int) -> bool {
         status == 0x13
     }
 
-    pub {const} fn WSTOPSIG(status: c_int) -> c_int {
+    pub const fn WSTOPSIG(status: c_int) -> c_int {
         status >> 8
     }
 
-    pub {const} fn WIFSTOPPED(status: c_int) -> bool {
+    pub const fn WIFSTOPPED(status: c_int) -> bool {
         (status & 0o177) == 0o177
     }
 }
@@ -1602,13 +1577,12 @@ extern "C" {
     pub fn lchflags(path: *const c_char, flags: c_ulong) -> c_int;
     pub fn lutimes(file: *const c_char, times: *const crate::timeval) -> c_int;
     pub fn memrchr(cx: *const c_void, c: c_int, n: size_t) -> *mut c_void;
-    pub fn mkfifoat(dirfd: c_int, pathname: *const c_char, mode: crate::mode_t) -> c_int;
+    pub fn mkfifoat(dirfd: c_int, pathname: *const c_char, mode: mode_t) -> c_int;
     #[cfg_attr(
         all(target_os = "freebsd", any(freebsd11, freebsd10)),
         link_name = "mknodat@FBSD_1.1"
     )]
-    pub fn mknodat(dirfd: c_int, pathname: *const c_char, mode: crate::mode_t, dev: dev_t)
-        -> c_int;
+    pub fn mknodat(dirfd: c_int, pathname: *const c_char, mode: mode_t, dev: dev_t) -> c_int;
     pub fn malloc_usable_size(ptr: *const c_void) -> size_t;
     pub fn mincore(addr: *const c_void, len: size_t, vec: *mut c_char) -> c_int;
     pub fn newlocale(mask: c_int, locale: *const c_char, base: crate::locale_t) -> crate::locale_t;
@@ -1730,7 +1704,7 @@ extern "C" {
     pub fn setresuid(ruid: crate::uid_t, euid: crate::uid_t, suid: crate::uid_t) -> c_int;
     pub fn settimeofday(tv: *const crate::timeval, tz: *const crate::timezone) -> c_int;
     pub fn setutxent();
-    pub fn shm_open(name: *const c_char, oflag: c_int, mode: crate::mode_t) -> c_int;
+    pub fn shm_open(name: *const c_char, oflag: c_int, mode: mode_t) -> c_int;
     pub fn sigtimedwait(
         set: *const sigset_t,
         info: *mut siginfo_t,
@@ -1872,7 +1846,7 @@ extern "C" {
         fd: c_int,
         path: *const c_char,
         oflag: c_int,
-        mode: crate::mode_t,
+        mode: mode_t,
     ) -> c_int;
     pub fn posix_spawn_file_actions_addclose(
         actions: *mut posix_spawn_file_actions_t,

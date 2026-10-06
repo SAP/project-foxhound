@@ -115,7 +115,7 @@ add_task(async function () {
       await onRefresh;
     }
 
-    const selectorContainer = getRuleViewRuleEditor(view, 1).selectorText
+    const selectorContainer = getRuleViewRuleEditorAt(view, 1).selectorText
       .firstChild;
 
     if (selectorContainer.children.length === expected.length) {

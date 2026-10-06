@@ -1,13 +1,13 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "StorageAccessPermissionRequest.h"
-#include "nsGlobalWindowInner.h"
-#include "mozilla/StaticPrefs_dom.h"
+
 #include <cstdlib>
+
+#include "mozilla/StaticPrefs_dom.h"
+#include "nsGlobalWindowInner.h"
 
 namespace mozilla::dom {
 
@@ -18,8 +18,7 @@ NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(StorageAccessPermissionRequest,
                                                ContentPermissionRequestBase)
 
 StorageAccessPermissionRequest::StorageAccessPermissionRequest(
-    nsPIDOMWindowInner* aWindow, nsIPrincipal* aNodePrincipal,
-    const Maybe<nsCString>& aTopLevelBaseDomain, bool aFrameOnly,
+    nsPIDOMWindowInner* aWindow, nsIPrincipal* aNodePrincipal, bool aFrameOnly,
     AllowCallback&& aAllowCallback, CancelCallback&& aCancelCallback)
     : ContentPermissionRequestBase(aNodePrincipal, aWindow,
                                    "dom.storage_access"_ns,
@@ -28,10 +27,7 @@ StorageAccessPermissionRequest::StorageAccessPermissionRequest(
       mCancelCallback(std::move(aCancelCallback)),
       mCallbackCalled(false) {
   mOptions.SetLength(2);
-  if (aTopLevelBaseDomain.isSome()) {
-    nsCString option = aTopLevelBaseDomain.value();
-    mOptions.ElementAt(0) = NS_ConvertUTF8toUTF16(option);
-  }
+  // Location 0 is no longer sent
   if (aFrameOnly) {
     mOptions.ElementAt(1) = u"1"_ns;
   }
@@ -92,13 +88,13 @@ StorageAccessPermissionRequest::MaybeDelayAutomaticGrants() {
           NS_RELEASE(promise);
         },
         promise, simulatedDelay, nsITimer::TYPE_ONE_SHOT,
-        "DelayedAllowAutoGrantCallback");
+        "DelayedAllowAutoGrantCallback"_ns);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       p->Reject(false, __func__);
     } else {
       // Leak the references here! We'll release them inside the callback.
-      Unused << timer.forget();
-      Unused << promise.forget();
+      timer.forget().leak();
+      promise.forget().leak();
     }
   } else {
     p->Resolve(false, __func__);
@@ -124,15 +120,16 @@ StorageAccessPermissionRequest::Create(nsPIDOMWindowInner* aWindow,
                                        nsIPrincipal* aPrincipal,
                                        AllowCallback&& aAllowCallback,
                                        CancelCallback&& aCancelCallback) {
-  return Create(aWindow, aPrincipal, Nothing(), true, std::move(aAllowCallback),
+  return Create(aWindow, aPrincipal, true, std::move(aAllowCallback),
                 std::move(aCancelCallback));
 }
 
 already_AddRefed<StorageAccessPermissionRequest>
-StorageAccessPermissionRequest::Create(
-    nsPIDOMWindowInner* aWindow, nsIPrincipal* aPrincipal,
-    const Maybe<nsCString>& aTopLevelBaseDomain, bool aFrameOnly,
-    AllowCallback&& aAllowCallback, CancelCallback&& aCancelCallback) {
+StorageAccessPermissionRequest::Create(nsPIDOMWindowInner* aWindow,
+                                       nsIPrincipal* aPrincipal,
+                                       bool aFrameOnly,
+                                       AllowCallback&& aAllowCallback,
+                                       CancelCallback&& aCancelCallback) {
   if (!aWindow) {
     return nullptr;
   }
@@ -142,9 +139,9 @@ StorageAccessPermissionRequest::Create(
   }
 
   RefPtr<StorageAccessPermissionRequest> request =
-      new StorageAccessPermissionRequest(
-          aWindow, aPrincipal, aTopLevelBaseDomain, aFrameOnly,
-          std::move(aAllowCallback), std::move(aCancelCallback));
+      new StorageAccessPermissionRequest(aWindow, aPrincipal, aFrameOnly,
+                                         std::move(aAllowCallback),
+                                         std::move(aCancelCallback));
   return request.forget();
 }
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +7,6 @@
  * stream.
  */
 
-#include "mozilla/Attributes.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Mutex.h"
@@ -34,7 +31,7 @@
 using namespace mozilla;
 using namespace mozilla::ipc;
 
-using mozilla::DeprecatedAbs;
+using mozilla::Abs;
 
 NS_IMPL_ADDREF(nsMultiplexInputStream)
 NS_IMPL_RELEASE(nsMultiplexInputStream)
@@ -528,7 +525,7 @@ nsMultiplexInputStream::Seek(int32_t aWhence, int64_t aOffset) {
 
       mStreams[i].mCurrentPos -= seek;
       mCurrentStream = i;
-      mStartedReadingCurrent = seek != -pos;
+      mStartedReadingCurrent = seek != pos;
 
       remaining -= seek;
     }
@@ -558,10 +555,10 @@ nsMultiplexInputStream::Seek(int32_t aWhence, int64_t aOffset) {
         return rv;
       }
 
-      int64_t streamLength = avail + mStreams[i].mCurrentPos;
+      uint64_t streamLength = avail + mStreams[i].mCurrentPos;
 
       // The seek(END) can be completed in the current stream.
-      if (streamLength >= DeprecatedAbs(remaining)) {
+      if (streamLength >= Abs(remaining)) {
         rv = stream->Seek(NS_SEEK_END, remaining);
         if (NS_WARN_IF(NS_FAILED(rv))) {
           return rv;
@@ -579,6 +576,7 @@ nsMultiplexInputStream::Seek(int32_t aWhence, int64_t aOffset) {
         return rv;
       }
 
+      MOZ_ASSERT(remaining <= 0 && (remaining + (int64_t)streamLength) < 0);
       remaining += streamLength;
       mStreams[i].mCurrentPos = 0;
     }
@@ -833,7 +831,7 @@ void nsMultiplexInputStream::AsyncWaitCompleted() {
 nsresult nsMultiplexInputStreamConstructor(REFNSIID aIID, void** aResult) {
   *aResult = nullptr;
 
-  RefPtr<nsMultiplexInputStream> inst = new nsMultiplexInputStream();
+  RefPtr inst = MakeRefPtr<nsMultiplexInputStream>();
 
   return inst->QueryInterface(aIID, aResult);
 }
@@ -1034,7 +1032,7 @@ nsMultiplexInputStream::Clone(nsIInputStream** aClone) {
     return NS_ERROR_FAILURE;
   }
 
-  RefPtr<nsMultiplexInputStream> clone = new nsMultiplexInputStream();
+  RefPtr clone = MakeRefPtr<nsMultiplexInputStream>();
 
   nsresult rv;
   uint32_t len = mStreams.Length();

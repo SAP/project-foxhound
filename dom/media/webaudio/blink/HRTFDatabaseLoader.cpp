@@ -27,8 +27,9 @@
  */
 
 #include "HRTFDatabaseLoader.h"
-#include "HRTFDatabase.h"
+
 #include "GeckoProfiler.h"
+#include "HRTFDatabase.h"
 #include "nsThreadUtils.h"
 
 using namespace mozilla;

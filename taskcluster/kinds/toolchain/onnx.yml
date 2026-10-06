@@ -3,7 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 task-defaults:
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     worker:
         max-run-time: 1800
     use-python: "3.11"
@@ -46,9 +46,9 @@ onnxruntime-x86_64-windows-msvc:
         toolchain-artifact: public/build/onnxruntime-x86_64-windows-msvc.tar.zst
     fetches:
         toolchain:
+            - vs-toolchain
             - win64-cmake
             - win64-clang
-            - vs-toolchain
         fetch:
             - win64-ninja
 
@@ -67,9 +67,9 @@ onnxruntime-i686-windows-msvc:
         toolchain-artifact: public/build/onnxruntime-i686-windows-msvc.tar.zst
     fetches:
         toolchain:
+            - vs-toolchain
             - win64-cmake
             - win64-clang
-            - vs-toolchain
         fetch:
             - win64-ninja
 
@@ -128,6 +128,8 @@ onnxruntime-arm-linux-androideabi:
             - linux64-clang-toolchain
             - android-ndk-linux
             - android-sdk-linux
+            - linux64-embedded-uniffi-bindgen
+            - linux64-nimbus-fml
 
 onnxruntime-aarch64-linux-android:
     description: "ONNX Runtime (android aarch64)"
@@ -143,6 +145,8 @@ onnxruntime-aarch64-linux-android:
             - linux64-clang-toolchain
             - android-ndk-linux
             - android-sdk-linux
+            - linux64-embedded-uniffi-bindgen
+            - linux64-nimbus-fml
 
 onnxruntime-x86_64-linux-android:
     description: "ONNX Runtime (android x64)"
@@ -158,18 +162,5 @@ onnxruntime-x86_64-linux-android:
             - linux64-clang-toolchain
             - android-ndk-linux
             - android-sdk-linux
-
-onnxruntime-i686-linux-android:
-    description: "ONNX Runtime (android x86)"
-    treeherder:
-        symbol: TL(onnx-android-x86)
-    run:
-        arguments:
-            - "Android"
-            - "x86"
-        toolchain-artifact: public/build/onnxruntime-i686-linux-android.tar.zst
-    fetches:
-        toolchain:
-            - linux64-clang-toolchain
-            - android-ndk-linux
-            - android-sdk-linux
+            - linux64-embedded-uniffi-bindgen
+            - linux64-nimbus-fml

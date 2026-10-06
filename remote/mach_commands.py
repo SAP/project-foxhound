@@ -71,8 +71,8 @@ def vendor_puppeteer(command_context, repository, commitish, install):
 
     # Preserve our custom mocha reporter
     shutil.move(
-        os.path.join(puppeteer_dir, "json-mocha-reporter.js"),
-        os.path.join(remotedir(command_context), "json-mocha-reporter.js"),
+        os.path.join(puppeteer_dir, "json-mocha-reporter.cjs"),
+        os.path.join(remotedir(command_context), "json-mocha-reporter.cjs"),
     )
 
     print("Removing folders for current Puppeteer version…")
@@ -106,7 +106,7 @@ def vendor_puppeteer(command_context, repository, commitish, install):
             shutil.rmtree(dir_path)
 
     shutil.move(
-        os.path.join(remotedir(command_context), "json-mocha-reporter.js"),
+        os.path.join(remotedir(command_context), "json-mocha-reporter.cjs"),
         puppeteer_dir,
     )
 
@@ -385,7 +385,7 @@ class TemporaryDirectory:
 
 class PuppeteerRunner(MozbuildObject):
     def __init__(self, *args, **kwargs):
-        super(PuppeteerRunner, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.remotedir = os.path.join(self.topsrcdir, "remote")
         self.puppeteer_dir = os.path.join(self.remotedir, "test", "puppeteer")
@@ -422,7 +422,7 @@ class PuppeteerRunner(MozbuildObject):
         # Override upstream defaults: no retries, shorter timeout
         mocha_options = [
             "--reporter",
-            "./json-mocha-reporter.js",
+            "./json-mocha-reporter.cjs",
             "--retries",
             "0",
             "--fullTrace",
@@ -435,7 +435,7 @@ class PuppeteerRunner(MozbuildObject):
         env = {
             # Checked by Puppeteer's custom mocha config
             "CI": "1",
-            # Print browser process ouptut
+            # Print browser process output
             "DUMPIO": "1",
             # Run in headless mode if trueish, otherwise use headful
             "HEADLESS": str(headless),
@@ -623,6 +623,7 @@ def is_relevant_expectation(
     else:
         is_expected_product = "firefox" not in parameters
 
+    is_expected_connection = "pipe" not in parameters
     is_expected_protocol = "cdp" not in parameters
 
     if is_headless == "True":
@@ -634,9 +635,10 @@ def is_relevant_expectation(
 
     return (
         is_expected_product
-        and is_expected_protocol
+        and is_expected_connection
         and is_expected_mode
         and is_expected_platform
+        and is_expected_protocol
     )
 
 

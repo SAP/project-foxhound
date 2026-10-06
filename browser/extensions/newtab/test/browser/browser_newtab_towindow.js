@@ -29,6 +29,18 @@ add_task(async function test_newtab_to_window() {
     "about:newtab moved to window"
   );
 
+  // Wait for top sites to render in the new window before clicking.
+  await SpecialPowers.spawn(
+    newWindow.gBrowser.selectedBrowser,
+    [],
+    async () => {
+      await ContentTaskUtils.waitForCondition(
+        () => content.document.querySelector(".top-sites a"),
+        "Top site link should appear"
+      );
+    }
+  );
+
   let tabPromise = BrowserTestUtils.waitForNewTab(
     newWindow.gBrowser,
     "https://example.com/",

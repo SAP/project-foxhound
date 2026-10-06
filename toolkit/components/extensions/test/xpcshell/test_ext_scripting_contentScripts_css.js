@@ -9,8 +9,6 @@ const BASE_URL = `http://localhost:${server.identity.primaryPort}/data`;
 // the right timeout for content scripts executed at document_idle.
 ExtensionTestUtils.mockAppInfo();
 
-Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
-
 const makeExtension = ({ manifest: manifestProps, ...otherProps }) => {
   return ExtensionTestUtils.loadExtension({
     manifest: {
@@ -39,6 +37,7 @@ add_task(async function test_registerContentScripts_css() {
         runAt: "document_idle",
         world: "ISOLATED",
         persistAcrossSessions: false,
+        cssOrigin: "author",
         js: ["check-applied-styles.js"],
       };
 
@@ -46,7 +45,7 @@ add_task(async function test_registerContentScripts_css() {
       // content scripts.
       browser.test.onMessage.addListener(async (msg, data) => {
         switch (msg) {
-          case "load-test-case":
+          case "load-test-case": {
             const { title, params, skipCheckScriptRegistration } = data;
             const expectedScripts = [];
 
@@ -75,6 +74,7 @@ add_task(async function test_registerContentScripts_css() {
               scripts.length,
               `${title} - expected ${expectedScripts.length} registered scripts`
             );
+
             browser.test.assertEq(
               JSON.stringify(expectedScripts),
               JSON.stringify(scripts),
@@ -83,6 +83,7 @@ add_task(async function test_registerContentScripts_css() {
 
             browser.test.sendMessage(`${msg}-done`);
             break;
+          }
           default:
             browser.test.fail(`received unexpected message: ${msg}`);
         }
@@ -100,6 +101,10 @@ add_task(async function test_registerContentScripts_css() {
       "style-1.css": "#test { background-color: rgb(255, 0, 0); }",
       "style-2.css": "#test { background-color: rgb(0, 0, 255); }",
       "style-3.css": "html  { background-color: rgb(0, 255, 0); }",
+      "style-4.css":
+        "#test  { background-color: rgb(255, 255, 0) !important; }",
+      "style-5.css":
+        "#test  { background-color: rgb(0, 255, 255) !important; }",
       "script-document-start.js": async () => {
         const testElement = document.querySelector("html");
 
@@ -144,6 +149,7 @@ add_task(async function test_registerContentScripts_css() {
           runAt: "document_start",
           world: "ISOLATED",
           persistAcrossSessions: false,
+          cssOrigin: "author",
           css: ["style-1.css"],
         },
       ],
@@ -161,6 +167,7 @@ add_task(async function test_registerContentScripts_css() {
           runAt: "document_start",
           world: "ISOLATED",
           persistAcrossSessions: false,
+          cssOrigin: "author",
           css: ["style-1.css"],
         },
       ],
@@ -178,6 +185,7 @@ add_task(async function test_registerContentScripts_css() {
           runAt: "document_start",
           world: "ISOLATED",
           persistAcrossSessions: false,
+          cssOrigin: "author",
           css: ["style-1.css"],
         },
       ],
@@ -195,6 +203,7 @@ add_task(async function test_registerContentScripts_css() {
           runAt: "document_start",
           world: "ISOLATED",
           persistAcrossSessions: false,
+          cssOrigin: "author",
           css: ["style-1.css"],
           excludeMatches: ["http://*/*/file_with_iframe.html"],
         },
@@ -213,6 +222,7 @@ add_task(async function test_registerContentScripts_css() {
           runAt: "document_start",
           world: "ISOLATED",
           persistAcrossSessions: false,
+          cssOrigin: "author",
           css: ["style-1.css", "style-2.css"],
         },
       ],
@@ -229,6 +239,7 @@ add_task(async function test_registerContentScripts_css() {
           runAt: "document_end",
           world: "ISOLATED",
           persistAcrossSessions: false,
+          cssOrigin: "author",
           css: ["style-1.css"],
         },
         {
@@ -239,6 +250,7 @@ add_task(async function test_registerContentScripts_css() {
           runAt: "document_start",
           world: "ISOLATED",
           persistAcrossSessions: false,
+          cssOrigin: "author",
           css: ["style-2.css"],
         },
       ],
@@ -258,6 +270,7 @@ add_task(async function test_registerContentScripts_css() {
           runAt: "document_start",
           world: "ISOLATED",
           persistAcrossSessions: false,
+          cssOrigin: "author",
           css: ["style-3.css"],
           // Inject the check script last to be able to send a message back to
           // the test case. This works with `skipCheckScriptRegistration: true`
@@ -282,6 +295,7 @@ add_task(async function test_registerContentScripts_css() {
           runAt: "document_end",
           world: "ISOLATED",
           persistAcrossSessions: false,
+          cssOrigin: "author",
           css: ["style-1.css"],
           // Inject the check script last to be able to send a message back to
           // the test case. This works with `skipCheckScriptRegistration: true`
@@ -303,6 +317,7 @@ add_task(async function test_registerContentScripts_css() {
           runAt: "document_idle",
           world: "ISOLATED",
           persistAcrossSessions: false,
+          cssOrigin: "author",
           css: ["style-1.css"],
           // Inject the check script last to be able to send a message back to
           // the test case. This works with `skipCheckScriptRegistration: true`
@@ -312,6 +327,102 @@ add_task(async function test_registerContentScripts_css() {
       ],
       expected: ["rgb(5, 5, 5)", "rgb(5, 5, 5)"],
       skipCheckScriptRegistration: true,
+    },
+    {
+      title: "cssOrigin is set and author takes precedence over user",
+      params: [
+        {
+          id: "style-1",
+          allFrames: true,
+          matches: ["http://*/*/*.html"],
+          matchOriginAsFallback: false,
+          runAt: "document_start",
+          world: "ISOLATED",
+          persistAcrossSessions: false,
+          cssOrigin: "author",
+          css: ["style-1.css"],
+        },
+        {
+          id: "style-2",
+          allFrames: true,
+          matches: ["http://*/*/*.html"],
+          matchOriginAsFallback: false,
+          runAt: "document_start",
+          world: "ISOLATED",
+          persistAcrossSessions: false,
+          cssOrigin: "user",
+          css: ["style-2.css"],
+        },
+      ],
+      expected: ["rgb(255, 0, 0)", "rgb(255, 0, 0)"],
+    },
+    {
+      title:
+        "cssOrigin is set and !important user takes precedence over author and regular user",
+      params: [
+        {
+          id: "style-1",
+          allFrames: true,
+          matches: ["http://*/*/*.html"],
+          matchOriginAsFallback: false,
+          runAt: "document_start",
+          world: "ISOLATED",
+          persistAcrossSessions: false,
+          cssOrigin: "user",
+          css: ["style-1.css"],
+        },
+        {
+          id: "style-4",
+          allFrames: true,
+          matches: ["http://*/*/*.html"],
+          matchOriginAsFallback: false,
+          runAt: "document_start",
+          world: "ISOLATED",
+          persistAcrossSessions: false,
+          cssOrigin: "author",
+          css: ["style-4.css"],
+        },
+        {
+          id: "style-2",
+          allFrames: true,
+          matches: ["http://*/*/*.html"],
+          matchOriginAsFallback: false,
+          runAt: "document_start",
+          world: "ISOLATED",
+          persistAcrossSessions: false,
+          cssOrigin: "author",
+          css: ["style-2.css"],
+        },
+      ],
+      expected: ["rgb(255, 255, 0)", "rgb(255, 255, 0)"],
+    },
+    {
+      title: "important user takes precedence over important author",
+      params: [
+        {
+          id: "style-1",
+          allFrames: true,
+          matches: ["http://*/*/*.html"],
+          matchOriginAsFallback: false,
+          runAt: "document_start",
+          world: "ISOLATED",
+          persistAcrossSessions: false,
+          cssOrigin: "author",
+          css: ["style-4.css"],
+        },
+        {
+          id: "style-2",
+          allFrames: true,
+          matches: ["http://*/*/*.html"],
+          matchOriginAsFallback: false,
+          runAt: "document_start",
+          world: "ISOLATED",
+          persistAcrossSessions: false,
+          cssOrigin: "user",
+          css: ["style-5.css"],
+        },
+      ],
+      expected: ["rgb(0, 255, 255)", "rgb(0, 255, 255)"],
     },
   ];
 
@@ -330,6 +441,175 @@ add_task(async function test_registerContentScripts_css() {
       skipCheckScriptRegistration,
     });
     await extension.awaitMessage("load-test-case-done");
+
+    let contentPage = await ExtensionTestUtils.loadContentPage(
+      `${BASE_URL}/file_with_iframe.html`
+    );
+
+    const backgroundColors = [
+      await extension.awaitMessage("background-color-file_with_iframe.html"),
+      await extension.awaitMessage("background-color-file_sample.html"),
+    ];
+
+    Assert.deepEqual(
+      expected,
+      backgroundColors,
+      `${title} - got expected colors`
+    );
+
+    await contentPage.close();
+  }
+
+  await extension.unload();
+});
+
+add_task(async function test_css_origin() {
+  let extension = makeExtension({
+    async background() {
+      // This script is injected in all frames after the styles so that we can
+      // verify the registered styles.
+      const checkAppliedStyleScript = {
+        id: "check-applied-styles",
+        allFrames: true,
+        matches: ["http://*/*/*.html"],
+        matchOriginAsFallback: false,
+        runAt: "document_idle",
+        world: "ISOLATED",
+        persistAcrossSessions: false,
+        cssOrigin: "author",
+        js: ["check-applied-styles.js"],
+      };
+
+      // Listen to the `load-test-case` message and unregister/register new
+      // content scripts.
+      browser.test.onMessage.addListener(async (msg, data) => {
+        switch (msg) {
+          case "test-css-origin": {
+            const { title, params } = data;
+            const expectedScripts = [];
+
+            await browser.scripting.unregisterContentScripts();
+            await browser.scripting.registerContentScripts([
+              checkAppliedStyleScript,
+            ]);
+
+            expectedScripts.push(checkAppliedStyleScript);
+            expectedScripts.push(...params);
+
+            const res = await browser.scripting.registerContentScripts(params);
+            browser.test.assertEq(
+              res,
+              undefined,
+              `${title} - expected no result`
+            );
+            const scripts =
+              await browser.scripting.getRegisteredContentScripts();
+
+            scripts.forEach(script => {
+              const [expectedScript] = expectedScripts.filter(
+                eScript =>
+                  eScript.id === script.id &&
+                  eScript.cssOrigin.toLowerCase() === script.cssOrigin
+              );
+              browser.test.assertTrue(
+                expectedScript,
+                "cssOrigin is registered but is lowercase."
+              );
+            });
+
+            browser.test.sendMessage(`${msg}-done`);
+            break;
+          }
+          default:
+            browser.test.fail(`received unexpected message: ${msg}`);
+        }
+      });
+      browser.test.sendMessage("background-ready");
+    },
+    files: {
+      "check-applied-styles.js": () => {
+        browser.test.sendMessage(
+          `background-color-${location.pathname.split("/").pop()}`,
+          getComputedStyle(document.querySelector("#test")).backgroundColor
+        );
+      },
+      "style-1.css": "#test { background-color: rgb(255, 0, 0); }",
+      "style-2.css": "#test { background-color: rgb(0, 0, 255); }",
+      "style-4.css":
+        "#test  { background-color: rgb(255, 255, 0) !important; }",
+      "style-5.css":
+        "#test  { background-color: rgb(0, 255, 255) !important; }",
+    },
+  });
+
+  const TEST_CASES = [
+    {
+      title: "cssOrigin is set and author takes precedence over user",
+      params: [
+        {
+          id: "style-1",
+          allFrames: true,
+          matches: ["http://*/*/*.html"],
+          matchOriginAsFallback: false,
+          runAt: "document_start",
+          world: "ISOLATED",
+          persistAcrossSessions: false,
+          cssOrigin: "AuthOR",
+          css: ["style-1.css"],
+        },
+        {
+          id: "style-2",
+          allFrames: true,
+          matches: ["http://*/*/*.html"],
+          matchOriginAsFallback: false,
+          runAt: "document_start",
+          world: "ISOLATED",
+          persistAcrossSessions: false,
+          cssOrigin: "UseR",
+          css: ["style-2.css"],
+        },
+      ],
+      expected: ["rgb(255, 0, 0)", "rgb(255, 0, 0)"],
+    },
+    {
+      title: "important user takes precedence over important author",
+      params: [
+        {
+          id: "style-1",
+          allFrames: true,
+          matches: ["http://*/*/*.html"],
+          matchOriginAsFallback: false,
+          runAt: "document_start",
+          world: "ISOLATED",
+          persistAcrossSessions: false,
+          cssOrigin: "AUTHOR",
+          css: ["style-4.css"],
+        },
+        {
+          id: "style-2",
+          allFrames: true,
+          matches: ["http://*/*/*.html"],
+          matchOriginAsFallback: false,
+          runAt: "document_start",
+          world: "ISOLATED",
+          persistAcrossSessions: false,
+          cssOrigin: "USER",
+          css: ["style-5.css"],
+        },
+      ],
+      expected: ["rgb(0, 255, 255)", "rgb(0, 255, 255)"],
+    },
+  ];
+
+  await extension.startup();
+  await extension.awaitMessage("background-ready");
+
+  for (const { title, params, expected } of TEST_CASES) {
+    extension.sendMessage("test-css-origin", {
+      title,
+      params,
+    });
+    await extension.awaitMessage("test-css-origin-done");
 
     let contentPage = await ExtensionTestUtils.loadContentPage(
       `${BASE_URL}/file_with_iframe.html`

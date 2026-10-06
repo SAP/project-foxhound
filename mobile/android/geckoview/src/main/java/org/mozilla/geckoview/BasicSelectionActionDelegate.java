@@ -1,12 +1,9 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * vim: ts=4 sw=4 expandtab:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.geckoview;
 
-import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
@@ -17,7 +14,6 @@ import android.graphics.Matrix;
 import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.RectF;
-import android.os.Build;
 import android.os.TransactionTooLargeException;
 import android.text.TextUtils;
 import android.util.Log;
@@ -53,6 +49,7 @@ public class BasicSelectionActionDelegate
     implements ActionMode.Callback, GeckoSession.SelectionActionDelegate {
   private static final String LOGTAG = "BasicSelectionAction";
 
+  /** Intent action for processing text. */
   protected static final String ACTION_PROCESS_TEXT = Intent.ACTION_PROCESS_TEXT;
 
   private static final String[] FLOATING_TOOLBAR_ACTIONS =
@@ -70,19 +67,28 @@ public class BasicSelectionActionDelegate
   // This is limitation of intent text.
   private static final int MAX_INTENT_TEXT_LENGTH = 100000;
 
+  /** The activity associated with this delegate. */
   protected final @NonNull Activity mActivity;
+
+  /** Whether to use floating toolbar for selection actions. */
   protected final boolean mUseFloatingToolbar;
 
   private boolean mExternalActionsEnabled;
 
+  /** The current action mode, if any. */
   protected @Nullable ActionMode mActionMode;
+
+  /** The current GeckoSession associated with selection. */
   protected @Nullable GeckoSession mSession;
+
+  /** The current text selection. */
   protected @Nullable Selection mSelection;
+
+  /** Whether the menu has been repopulated. */
   protected boolean mRepopulatedMenu;
 
   private @Nullable ActionMode mActionModeForClipboardPermission;
 
-  @TargetApi(Build.VERSION_CODES.M)
   private class Callback2Wrapper extends ActionMode.Callback2 {
     @Override
     public boolean onCreateActionMode(final ActionMode actionMode, final Menu menu) {
@@ -111,12 +117,21 @@ public class BasicSelectionActionDelegate
     }
   }
 
-  @SuppressWarnings("checkstyle:javadocmethod")
+  /**
+   * Construct a BasicSelectionActionDelegate.
+   *
+   * @param activity The activity to associate with this delegate
+   */
   public BasicSelectionActionDelegate(final @NonNull Activity activity) {
-    this(activity, Build.VERSION.SDK_INT >= 23);
+    this(activity, true);
   }
 
-  @SuppressWarnings("checkstyle:javadocmethod")
+  /**
+   * Construct a BasicSelectionActionDelegate.
+   *
+   * @param activity The activity to associate with this delegate
+   * @param useFloatingToolbar Whether to use floating toolbar for selection
+   */
   public BasicSelectionActionDelegate(
       final @NonNull Activity activity, final boolean useFloatingToolbar) {
     mActivity = activity;
@@ -166,10 +181,6 @@ public class BasicSelectionActionDelegate
    */
   protected boolean isActionAvailable(final @NonNull String id) {
     if (mSelection == null) {
-      return false;
-    }
-
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O && ACTION_PASTE_AS_PLAIN_TEXT.equals(id)) {
       return false;
     }
 
@@ -234,9 +245,6 @@ public class BasicSelectionActionDelegate
         item.setTitle(android.R.string.paste);
         break;
       case ACTION_PASTE_AS_PLAIN_TEXT:
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-          throw new IllegalStateException("Unexpected version for action");
-        }
         item.setTitle(android.R.string.paste_as_plain_text);
         break;
       case ACTION_SELECT_ALL:
@@ -340,7 +348,7 @@ public class BasicSelectionActionDelegate
     final String[] allActions = getAllActions();
     for (final String actionId : allActions) {
       if (isActionAvailable(actionId)) {
-        if (!mUseFloatingToolbar && (Build.VERSION.SDK_INT == 22 || Build.VERSION.SDK_INT == 23)) {
+        if (!mUseFloatingToolbar) {
           // Android bug where onPrepareActionMode is not called initially.
           onPrepareActionMode(actionMode, menu);
         }
@@ -456,7 +464,13 @@ public class BasicSelectionActionDelegate
     mActionMode = null;
   }
 
-  @SuppressWarnings("checkstyle:javadocmethod")
+  /**
+   * Called to get the content rectangle for the selection.
+   *
+   * @param mode The action mode
+   * @param view The view
+   * @param outRect The rectangle to be filled with content bounds
+   */
   public void onGetContentRect(
       final @Nullable ActionMode mode, final @Nullable View view, final @NonNull Rect outRect) {
     ThreadUtils.assertOnUiThread();
@@ -466,13 +480,12 @@ public class BasicSelectionActionDelegate
 
     // outRect has to convert to current window coordinate.
     final Matrix matrix = new Matrix();
-    mSession.getScreenToWindowManagerOffsetMatrix(matrix);
+    mSession.getScreenToWindowManagerOffsetMatrix(mActivity, matrix);
     final RectF transformedRect = new RectF();
     matrix.mapRect(transformedRect, mSelection.screenRect);
     transformedRect.roundOut(outRect);
   }
 
-  @TargetApi(Build.VERSION_CODES.M)
   @Override
   public void onShowActionRequest(final GeckoSession session, final Selection selection) {
     ThreadUtils.assertOnUiThread();
@@ -560,7 +573,6 @@ public class BasicSelectionActionDelegate
   }
 
   /** Callback class of clipboard permission for Android M+ */
-  @TargetApi(Build.VERSION_CODES.M)
   private class ClipboardPermissionCallbackM extends ActionMode.Callback2 {
     private @Nullable GeckoResult<AllowOrDeny> mResult;
     private final @NonNull GeckoSession mSession;
@@ -622,7 +634,6 @@ public class BasicSelectionActionDelegate
    * @return A {@link GeckoResult} with {@link AllowOrDeny}, determining the response to the
    *     permission request for this site.
    */
-  @TargetApi(Build.VERSION_CODES.M)
   @Override
   public GeckoResult<AllowOrDeny> onShowClipboardPermissionRequest(
       final GeckoSession session, final ClipboardPermission permission) {

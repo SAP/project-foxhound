@@ -68,7 +68,8 @@ impl ExternalImageHandler for ImageGenerator {
         &mut self,
         _key: ExternalImageId,
         channel_index: u8,
-    ) -> ExternalImage {
+        _is_composited: bool,
+    ) -> ExternalImage<'_> {
         self.generate_image(channel_index as i32);
         ExternalImage {
             uv: TexelRect::new(0.0, 0.0, 1.0, 1.0),
@@ -100,7 +101,6 @@ impl Example for App {
         let space_and_clip = SpaceAndClipInfo::root_scroll(pipeline_id);
 
         builder.push_simple_stacking_context(
-            bounds.min,
             space_and_clip.spatial_id,
             PrimitiveFlags::IS_BACKFACE_VISIBLE,
         );
@@ -198,17 +198,18 @@ impl Example for App {
     ) -> bool {
         match event {
             winit::event::WindowEvent::KeyboardInput {
-                input: winit::event::KeyboardInput {
+                event: winit::event::KeyEvent {
                     state: winit::event::ElementState::Pressed,
-                    virtual_keycode: Some(key),
+                    ref logical_key,
                     ..
                 },
                 ..
             } => {
+                use winit::keyboard::Key;
                 let mut txn = Transaction::new();
 
-                match key {
-                    winit::event::VirtualKeyCode::S => {
+                match logical_key.as_ref() {
+                    Key::Character("s") | Key::Character("S") => {
                         self.stress_keys.clear();
 
                         for _ in 0 .. 16 {
@@ -235,10 +236,10 @@ impl Example for App {
                             }
                         }
                     }
-                    winit::event::VirtualKeyCode::D => if let Some(image_key) = self.image_key.take() {
+                    Key::Character("d") | Key::Character("D") => if let Some(image_key) = self.image_key.take() {
                         txn.delete_image(image_key);
                     },
-                    winit::event::VirtualKeyCode::U => if let Some(image_key) = self.image_key {
+                    Key::Character("u") | Key::Character("U") => if let Some(image_key) = self.image_key {
                         let size = 128;
                         self.image_generator.generate_image(size);
 
@@ -249,7 +250,7 @@ impl Example for App {
                             &DirtyRect::All,
                         );
                     },
-                    winit::event::VirtualKeyCode::E => {
+                    Key::Character("e") | Key::Character("E") => {
                         if let Some(image_key) = self.image_key.take() {
                             txn.delete_image(image_key);
                         }
@@ -273,7 +274,7 @@ impl Example for App {
 
                         self.image_key = Some(image_key);
                     }
-                    winit::event::VirtualKeyCode::R => {
+                    Key::Character("r") | Key::Character("R") => {
                         if let Some(image_key) = self.image_key.take() {
                             txn.delete_image(image_key);
                         }

@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -9,6 +9,8 @@ description: >
   or property bag for PlainDateTime
 features: [BigInt, Symbol, Temporal]
 ---*/
+
+assert.throws(TypeError, () => Temporal.PlainDateTime.from(), "no argument");
 
 const primitiveTests = [
   [undefined, "undefined"],
@@ -25,6 +27,14 @@ for (const [arg, description] of primitiveTests) {
     () => Temporal.PlainDateTime.from(arg),
     `${description} does not convert to a valid ISO string`
   );
+
+  for (const options of [undefined, { overflow: 'constrain' }, { overflow: 'reject' }]) {
+    assert.throws(
+      typeof arg === 'string' ? RangeError : TypeError,
+      () => Temporal.PlainDateTime.from(arg, options),
+      `${description} does not convert to a valid ISO string with options ${options}`
+    );
+  }
 }
 
 const typeErrorTests = [
@@ -36,6 +46,10 @@ const typeErrorTests = [
 
 for (const [arg, description] of typeErrorTests) {
   assert.throws(TypeError, () => Temporal.PlainDateTime.from(arg), `${description} is not a valid property bag and does not convert to a string`);
+
+  for (const options of [undefined, { overflow: 'constrain' }, { overflow: 'reject' }]) {
+    assert.throws(TypeError, () => Temporal.PlainDateTime.from(arg, options), `${description} is not a valid property bag and does not convert to a string with options ${options}`);
+  }
 }
 
 reportCompare(0, 0);

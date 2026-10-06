@@ -4,27 +4,16 @@
 
 package org.mozilla.fenix.ui
 
-import android.app.Activity
 import android.content.Context
 import android.text.format.DateUtils
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasTextExactly
-import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.mockkStatic
-import io.mockk.unmockkStatic
-import io.mockk.verify
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import mozilla.components.lib.crash.store.CrashAction
-import mozilla.components.support.ktx.android.content.getColorFromAttr
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -33,38 +22,36 @@ import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.appstate.AppAction
+import org.mozilla.fenix.crashes.CrashActionDispatcher
 import org.mozilla.fenix.crashes.UnsubmittedCrashDialog
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityTestRule
 import org.mozilla.fenix.helpers.MatcherHelper
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
 import org.mozilla.fenix.helpers.TestHelper
-import org.mozilla.fenix.helpers.TestSetup
+import kotlin.test.assertIs
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
-class UnsubmittedCrashDialogTest : TestSetup() {
+class UnsubmittedCrashDialogTest {
     private lateinit var fakeContext: Context
+
+    @get:Rule(order = 0)
+    val fenixTestRule: FenixTestRule = FenixTestRule()
 
     @Before
     fun setup() {
-        mockkStatic("mozilla.components.support.ktx.android.content.ContextKt")
         fakeContext = mockk<Context>()
         every { fakeContext.getTheme() } returns mockk()
         every { fakeContext.packageName } returns "org.mozilla.fenix.debug"
-        every { any<Activity>().getColorFromAttr(any()) } returns 0
         every { fakeContext.startActivity(any()) } returns mockk()
     }
 
-    @After
-    fun teardown() {
-        unmockkStatic("org.mozilla.fenix.ext.ContextKt")
-    }
-
-    @get:Rule(order = 0)
+    @get:Rule(order = 1)
     val composeTestRule =
-        AndroidComposeTestRule(
-            HomeActivityTestRule.withDefaultSettingsOverrides(useNewCrashReporterDialog = true),
+        AndroidComposeTestRuleV2(
+            HomeActivityTestRule.withDefaultSettingsOverrides(useNewCrashReporterFlow = true),
         ) { it.activity }
 
     private fun addCrashToStore(action: CrashAction) {
@@ -77,12 +64,16 @@ class UnsubmittedCrashDialogTest : TestSetup() {
         MatcherHelper.assertUIObjectIsGone(itemContainingText(text))
 
     private fun getUnsubmittedCrashNormal(): String =
-        TestHelper.appContext.resources.getString(R.string.unsubmitted_crash_dialog_title, getStringResource(R.string.app_name))
+        TestHelper.appContext.resources.getString(R.string.unsubmitted_crash_dialog_title_2, getStringResource(R.string.app_name))
     private fun submitUnsubmittedCrashNormal(): String =
-        TestHelper.appContext.resources.getString(R.string.unsubmitted_crash_dialog_positive_button)
+        TestHelper.appContext.resources.getString(R.string.unsubmitted_crash_dialog_positive_button_2)
     private fun cancelUnsubmittedCrashNormal(): String =
-        TestHelper.appContext.resources.getString(R.string.unsubmitted_crash_dialog_negative_button)
+        TestHelper.appContext.resources.getString(R.string.unsubmitted_crash_dialog_negative_button_2)
 
+    private fun submitUnsubmittedCrashPull(): String =
+        TestHelper.appContext.resources.getString(R.string.unsubmitted_crash_dialog_positive_button)
+    private fun cancelUnsubmittedCrashPull(): String =
+        TestHelper.appContext.resources.getString(R.string.unsubmitted_crash_dialog_negative_button)
     private fun getUnsubmittedCrashPullOne(): String =
         TestHelper.appContext.resources.getString(R.string.unsubmitted_crash_requested_by_devs_dialog_title, getStringResource(R.string.app_name))
     private fun getUnsubmittedCrashPullTwo(): String =
@@ -97,7 +88,7 @@ class UnsubmittedCrashDialogTest : TestSetup() {
     @OptIn(ExperimentalTestApi::class)
     private fun clickButton(text: String) {
         composeTestRule.waitUntilAtLeastOneExists(hasTextExactly(text))
-        val node = composeTestRule.onNodeWithText(text, false, true)
+        val node = composeTestRule.onNodeWithText(text, false, ignoreCase = true)
         node.assertTextEquals(text)
         node.performClick()
     }
@@ -114,22 +105,23 @@ class UnsubmittedCrashDialogTest : TestSetup() {
     fun unsubmittedCrashDialog_ClickOnCancelDispatches_CrashActionCancelTapped_andDismissesDialog() {
         addCrashToStore(CrashAction.ShowPrompt())
         verifyDialogText(getUnsubmittedCrashNormal())
-        clickButton(cancelUnsubmittedCrashNormal().uppercase())
+        clickButton(cancelUnsubmittedCrashNormal())
         verifyDialogTextGone(getUnsubmittedCrashNormal())
     }
 
     @Test
     fun unsubmittedCrashDialog_ClickOnCancelDispatches_CrashActionCancelTapped() {
         var dispatchedAction: CrashAction? = null
-        UnsubmittedCrashDialog(
-            dispatcher = { action -> dispatchedAction = action },
-            crashIDs = null,
-            TestHelper.appContext,
-        ).show(composeTestRule.activityRule.activity.supportFragmentManager, UnsubmittedCrashDialog.TAG)
+        val dialog = UnsubmittedCrashDialog.create(crashIDs = null)
+        dialog.dispatcher = CrashActionDispatcher {
+            dispatchedAction = it
+        }
+        dialog.show(composeTestRule.activityRule.activity.supportFragmentManager, UnsubmittedCrashDialog.TAG)
+
         verifyDialogText(getUnsubmittedCrashNormal())
-        clickButton(cancelUnsubmittedCrashNormal().uppercase())
+        clickButton(cancelUnsubmittedCrashNormal())
         verifyDialogTextGone(getUnsubmittedCrashNormal())
-        assertTrue(dispatchedAction is CrashAction.CancelTapped)
+        assertIs<CrashAction.CancelTapped>(dispatchedAction)
     }
 
     @Test
@@ -137,25 +129,25 @@ class UnsubmittedCrashDialogTest : TestSetup() {
         addCrashToStore(CrashAction.ShowPrompt())
         verifyDialogText(getUnsubmittedCrashNormal())
         verifyDialogText(submitUnsubmittedCrashNormal())
-        clickButton(submitUnsubmittedCrashNormal().uppercase())
+        clickButton(submitUnsubmittedCrashNormal())
         verifyDialogTextGone(getUnsubmittedCrashNormal())
     }
 
     @Test
     fun unsubmittedCrashDialog_ClickOnSubmitDispatches_CrashActionReportTapped() {
         var dispatchedAction: CrashAction? = null
-        UnsubmittedCrashDialog(
-            dispatcher = { action -> dispatchedAction = action },
-            crashIDs = null,
-            TestHelper.appContext,
-        ).show(composeTestRule.activityRule.activity.supportFragmentManager, UnsubmittedCrashDialog.TAG)
+        val dialog = UnsubmittedCrashDialog.create(crashIDs = null)
+        dialog.dispatcher = CrashActionDispatcher {
+            dispatchedAction = it
+        }
+        dialog.show(composeTestRule.activityRule.activity.supportFragmentManager, UnsubmittedCrashDialog.TAG)
         verifyDialogText(getUnsubmittedCrashNormal())
-        clickButton(submitUnsubmittedCrashNormal().uppercase())
+        clickButton(submitUnsubmittedCrashNormal())
         verifyDialogTextGone(getUnsubmittedCrashNormal())
-        assertTrue(dispatchedAction is CrashAction.ReportTapped)
-        val report = (dispatchedAction as? CrashAction.ReportTapped)
-        assertFalse(report?.automaticallySendChecked == true)
-        assertTrue(report?.crashIDs?.isEmpty() == true)
+        val report = dispatchedAction
+        assertIs<CrashAction.ReportTapped>(report)
+        assertFalse(report.automaticallySendChecked)
+        assertTrue(report.crashIDs.isEmpty())
     }
 
     @Test
@@ -177,22 +169,24 @@ class UnsubmittedCrashDialogTest : TestSetup() {
     fun unsubmittedCrashDialog_PullingOneCrash_ClickOnCancelDispatches_andDismissesDialog() {
         addCrashToStore(CrashAction.CheckForCrashes(listOf("1")))
         verifyDialogText(getUnsubmittedCrashPullOne())
-        clickButton(cancelUnsubmittedCrashNormal().uppercase())
+        clickButton(cancelUnsubmittedCrashPull().uppercase())
         verifyDialogTextGone(getUnsubmittedCrashPullOne())
     }
 
     @Test
     fun unsubmittedCrashDialog_PullingOneCrash_ClickOnCancelDispatches_CrashActionCancelTapped() {
         var dispatchedAction: CrashAction? = null
-        UnsubmittedCrashDialog(
-            dispatcher = { action -> dispatchedAction = action },
+        val dialog = UnsubmittedCrashDialog.create(
             crashIDs = listOf("1"),
-            TestHelper.appContext,
-        ).show(composeTestRule.activityRule.activity.supportFragmentManager, UnsubmittedCrashDialog.TAG)
+        )
+        dialog.dispatcher = CrashActionDispatcher {
+            dispatchedAction = it
+        }
+        dialog.show(composeTestRule.activityRule.activity.supportFragmentManager, UnsubmittedCrashDialog.TAG)
         verifyDialogText(getUnsubmittedCrashPullOne())
-        clickButton(cancelUnsubmittedCrashNormal().uppercase())
+        clickButton(cancelUnsubmittedCrashPull().uppercase())
         verifyDialogTextGone(getUnsubmittedCrashPullOne())
-        assertTrue(dispatchedAction is CrashAction.CancelTapped)
+        assertIs<CrashAction.CancelTapped>(dispatchedAction)
     }
 
     @Test
@@ -206,45 +200,50 @@ class UnsubmittedCrashDialogTest : TestSetup() {
     @Test
     fun unsubmittedCrashDialog_PullingOneCrash_ClickOnCancelForEverDispatches_CrashActionCancelForEverTapped() {
         var dispatchedAction: CrashAction? = null
-        UnsubmittedCrashDialog(
-            dispatcher = { action -> dispatchedAction = action },
+        val dialog = UnsubmittedCrashDialog.create(
             crashIDs = listOf("1"),
-            TestHelper.appContext,
-        ).show(composeTestRule.activityRule.activity.supportFragmentManager, UnsubmittedCrashDialog.TAG)
+        )
+        dialog.dispatcher = CrashActionDispatcher {
+            dispatchedAction = it
+        }
+        dialog.show(composeTestRule.activityRule.activity.supportFragmentManager, UnsubmittedCrashDialog.TAG)
+
         verifyDialogText(getUnsubmittedCrashPullOne())
         clickButton(cancelForEverUnsubmittedCrashPull().uppercase())
         verifyDialogTextGone(getUnsubmittedCrashPullOne())
-        assertTrue(dispatchedAction is CrashAction.CancelForEverTapped)
+        assertIs<CrashAction.CancelForEverTapped>(dispatchedAction)
     }
 
     @Test
     fun unsubmittedCrashDialog_PullingOneCrash_ClickOnSubmitDispatches_CrashActionReportTapped() {
         var dispatchedAction: CrashAction? = null
-        UnsubmittedCrashDialog(
-            dispatcher = { action -> dispatchedAction = action },
+        val dialog = UnsubmittedCrashDialog.create(
             crashIDs = listOf("1"),
-            TestHelper.appContext,
-        ).show(composeTestRule.activityRule.activity.supportFragmentManager, UnsubmittedCrashDialog.TAG)
+        )
+        dialog.dispatcher = CrashActionDispatcher {
+            dispatchedAction = it
+        }
+        dialog.show(composeTestRule.activityRule.activity.supportFragmentManager, UnsubmittedCrashDialog.TAG)
         verifyDialogText(getUnsubmittedCrashPullOne())
-        clickButton(submitUnsubmittedCrashNormal().uppercase())
+        clickButton(submitUnsubmittedCrashPull().uppercase())
         verifyDialogTextGone(getUnsubmittedCrashPullOne())
-        assertTrue(dispatchedAction is CrashAction.ReportTapped)
-        val report = (dispatchedAction as? CrashAction.ReportTapped)
-        assertFalse(report?.automaticallySendChecked == true)
-        assertEquals(report?.crashIDs, listOf("1"))
+        val report = dispatchedAction
+        assertIs<CrashAction.ReportTapped>(report)
+        assertFalse(report.automaticallySendChecked)
+        assertEquals(report.crashIDs, listOf("1"))
     }
 
     @Test
     fun unsubmittedCrashDialog_PullingOneCrash_ClickOnSubmit_UpdateDontShowBefore() {
-        var dontShowBeforeValue = TestHelper.appContext.settings().crashPullDontShowBefore
+        var dontShowBeforeValue = TestHelper.appContext.components.settings.crashPullDontShowBefore
 
         addCrashToStore(CrashAction.CheckDeferred(listOf("1")))
         verifyDialogText(getUnsubmittedCrashPullOne())
-        clickButton(submitUnsubmittedCrashNormal().uppercase())
+        clickButton(submitUnsubmittedCrashPull().uppercase())
         verifyDialogTextGone(getUnsubmittedCrashPullOne())
 
         var newDate = System.currentTimeMillis()
-        var dontShowBeforeValueSubmit = TestHelper.appContext.settings().crashPullDontShowBefore
+        var dontShowBeforeValueSubmit = TestHelper.appContext.components.settings.crashPullDontShowBefore
         var expectedDontShowBeforeValueSubmitUp = newDate + 6 * DateUtils.DAY_IN_MILLIS
         var expectedDontShowBeforeValueSubmitDown = newDate + 8 * DateUtils.DAY_IN_MILLIS
         assertTrue("$dontShowBeforeValueSubmit >= $expectedDontShowBeforeValueSubmitUp && $dontShowBeforeValueSubmit <= $expectedDontShowBeforeValueSubmitDown", dontShowBeforeValueSubmit >= expectedDontShowBeforeValueSubmitUp && dontShowBeforeValueSubmit <= expectedDontShowBeforeValueSubmitDown)
@@ -252,61 +251,28 @@ class UnsubmittedCrashDialogTest : TestSetup() {
 
     @Test
     fun unsubmittedCrashDialog_PullingOneCrash_DontShowBefore_PreviousWeek_NotBlocked() {
-        var dontShowBeforeValue = TestHelper.appContext.settings().crashReportDeferredUntil
+        var dontShowBeforeValue = TestHelper.appContext.components.settings.crashReportDeferredUntil
         var oneWeekBefore = System.currentTimeMillis() - 7 * DateUtils.DAY_IN_MILLIS
-        TestHelper.appContext.settings().crashReportDeferredUntil = oneWeekBefore
+        TestHelper.appContext.components.settings.crashReportDeferredUntil = oneWeekBefore
 
         addCrashToStore(CrashAction.CheckDeferred(listOf("1")))
         verifyDialogText(getUnsubmittedCrashPullOne())
-        clickButton(submitUnsubmittedCrashNormal().uppercase())
+        clickButton(submitUnsubmittedCrashPull().uppercase())
         verifyDialogTextGone(getUnsubmittedCrashPullOne())
 
-        TestHelper.appContext.settings().crashReportDeferredUntil = dontShowBeforeValue
+        TestHelper.appContext.components.settings.crashReportDeferredUntil = dontShowBeforeValue
     }
 
     @OptIn(ExperimentalTestApi::class)
     @Test
     fun unsubmittedCrashDialog_PullingOneCrash_DontShowBefore_NextWeek_Blocked() {
-        var dontShowBeforeValue = TestHelper.appContext.settings().crashPullDontShowBefore
+        var dontShowBeforeValue = TestHelper.appContext.components.settings.crashPullDontShowBefore
         var oneWeekAfter = System.currentTimeMillis() + 7 * DateUtils.DAY_IN_MILLIS
-        TestHelper.appContext.settings().crashPullDontShowBefore = oneWeekAfter
+        TestHelper.appContext.components.settings.crashPullDontShowBefore = oneWeekAfter
 
         addCrashToStore(CrashAction.CheckDeferred(listOf("1")))
         composeTestRule.waitUntilDoesNotExist(hasTextExactly(getUnsubmittedCrashPullOne()))
 
-        TestHelper.appContext.settings().crashPullDontShowBefore = dontShowBeforeValue
-    }
-
-    @Test
-    fun unsubmittedCrashDialog_PullingOneCrash_ClickOnLearnMoreTriggersIntent_andDontDismissesDialog() {
-        val scope: CoroutineScope = CoroutineScope(Dispatchers.Main)
-
-        runBlocking {
-            scope.launch {
-                UnsubmittedCrashDialog(
-                    dispatcher = { },
-                    crashIDs = listOf("1"),
-                    fakeContext,
-                ).show(composeTestRule.activityRule.activity.supportFragmentManager, UnsubmittedCrashDialog.TAG)
-            }.join()
-        }
-
-        verifyDialogText(getUnsubmittedCrashPullOne())
-        clickButton(learnMoreUnsubmittedCrashPull().uppercase())
-
-        runBlocking {
-            scope.launch {
-                verify(exactly = 1) {
-                    fakeContext.startActivity(
-                        withArg { intent ->
-                            val uri = intent.getData().toString()
-                            assertEquals("https://support.mozilla.org/en-US/kb/unsent-crash-reports-in-firefox-android", uri)
-                        },
-                    )
-                }
-            }.join()
-        }
-
-        verifyDialogText(getUnsubmittedCrashPullOne())
+        TestHelper.appContext.components.settings.crashPullDontShowBefore = dontShowBeforeValue
     }
 }

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +10,6 @@ include protocol PRemoteMediaManager;
 
 using mozilla::EncoderConfig from "EncoderConfig.h";
 using mozilla::MediaResult from "MediaResult.h";
-using mozilla::TrackInfo::TrackType from "MediaInfo.h";
 [RefCounted] using class mozilla::ArrayOfRemoteMediaRawData from "mozilla/RemoteMediaData.h";
 [RefCounted] using class mozilla::ArrayOfRemoteAudioData from "mozilla/RemoteMediaData.h";
 [RefCounted] using class mozilla::ArrayOfRemoteVideoData from "mozilla/RemoteMediaData.h";
@@ -61,8 +59,10 @@ async protocol PRemoteEncoder
 {
   manager PRemoteMediaManager;
 parent:
+  // Construct must be the first message sent.
   async Construct() returns (MediaResult result);
 
+  // Init must only be called after Construct has returned successfully.
   async Init() returns (EncodeInitResultIPDL result);
 
   async Encode(EncodedInputIPDL data) returns (EncodeResultIPDL result);

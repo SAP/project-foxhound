@@ -320,13 +320,33 @@ pub enum ConservativeDepth {
 #[cfg_attr(feature = "serialize", derive(Serialize))]
 #[cfg_attr(feature = "deserialize", derive(Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
-#[allow(missing_docs)] // The names are self evident
 pub enum ShaderStage {
+    /// A vertex shader, in a render pipeline.
     Vertex,
-    Fragment,
-    Compute,
+
+    /// A task shader, in a mesh render pipeline.
     Task,
+
+    /// A mesh shader, in a mesh render pipeline.
     Mesh,
+
+    /// A fragment shader, in a render pipeline.
+    Fragment,
+
+    /// Compute pipeline shader.
+    Compute,
+
+    /// A ray generation shader, in a ray tracing pipeline.
+    RayGeneration,
+
+    /// A miss shader, in a ray tracing pipeline.
+    Miss,
+
+    /// A any hit shader, in a ray tracing pipeline.
+    AnyHit,
+
+    /// A closest hit shader, in a ray tracing pipeline.
+    ClosestHit,
 }
 
 /// Addressing space of variables.
@@ -347,8 +367,32 @@ pub enum AddressSpace {
     Storage { access: StorageAccess },
     /// Opaque handles, such as samplers and images.
     Handle,
-    /// Push constants.
-    PushConstant,
+
+    /// Immediate data.
+    ///
+    /// A [`Module`] may contain at most one [`GlobalVariable`] in
+    /// this address space. Its contents are provided not by a buffer
+    /// but by `SetImmediates` pass commands, allowing the CPU to
+    /// establish different values for each draw/dispatch.
+    ///
+    /// `Immediate` variables may not contain `f16` values, even if
+    /// the [`SHADER_FLOAT16`] capability is enabled.
+    ///
+    /// Backends generally place tight limits on the size of
+    /// `Immediate` variables.
+    ///
+    /// [`SHADER_FLOAT16`]: crate::valid::Capabilities::SHADER_FLOAT16
+    Immediate,
+    /// Task shader to mesh shader payload
+    TaskPayload,
+
+    /// Ray tracing payload, for inputting in TraceRays
+    RayPayload,
+    /// Ray tracing payload, for entrypoints invoked by a TraceRays call
+    ///
+    /// Each entrypoint may reference only one variable in this scope, as
+    /// only one may be passed as a payload.
+    IncomingRayPayload,
 }
 
 /// Built-in inputs and outputs.
@@ -357,36 +401,127 @@ pub enum AddressSpace {
 #[cfg_attr(feature = "deserialize", derive(Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub enum BuiltIn {
-    Position { invariant: bool },
-    ViewIndex,
-    // vertex
-    BaseInstance,
-    BaseVertex,
-    ClipDistance,
-    CullDistance,
-    InstanceIndex,
-    PointSize,
-    VertexIndex,
-    DrawID,
-    // fragment
-    FragDepth,
-    PointCoord,
-    FrontFacing,
+    // This must be at the top so that it gets sorted to the top. PrimitiveIndex is considered a non SV
+    // by FXC so it must appear before any other SVs.
+    /// Read in fragment shaders, written in mesh shaders, read in any and closest hit shaders.
     PrimitiveIndex,
+
+    /// Written in vertex/mesh shaders, read in fragment shaders
+    Position { invariant: bool },
+    /// Read in task, mesh, vertex, and fragment shaders
+    ViewIndex,
+
+    /// Read in vertex shaders
+    BaseInstance,
+    /// Read in vertex shaders
+    BaseVertex,
+    /// Written in vertex & mesh shaders
+    ClipDistances,
+    /// Written in vertex & mesh shaders
+    CullDistance,
+    /// Read in vertex, any- and closest-hit shaders
+    InstanceIndex,
+    /// Written in vertex & mesh shaders
+    PointSize,
+    /// Read in vertex shaders
+    VertexIndex,
+    /// Read in vertex & task shaders, or mesh shaders in pipelines without task shaders
+    DrawIndex,
+
+    /// Written in fragment shaders
+    FragDepth,
+    /// Read in fragment shaders
+    PointCoord,
+    /// Read in fragment shaders
+    FrontFacing,
+    /// Read in fragment shaders
+    Barycentric { perspective: bool },
+    /// Read in fragment shaders
     SampleIndex,
+    /// Read or written in fragment shaders
     SampleMask,
-    // compute
+
+    /// Read in compute, task, and mesh shaders
     GlobalInvocationId,
+    /// Read in compute, task, and mesh shaders
     LocalInvocationId,
+    /// Read in compute, task, and mesh shaders
     LocalInvocationIndex,
+    /// Read in compute, task, and mesh shaders
     WorkGroupId,
+    /// Read in compute, task, and mesh shaders
     WorkGroupSize,
+    /// Read in compute, task, and mesh shaders
     NumWorkGroups,
-    // subgroup
+
+    /// Read in compute, task, and mesh shaders
     NumSubgroups,
+    /// Read in compute, task, and mesh shaders
     SubgroupId,
+    /// Read in compute, fragment, task, and mesh shaders
     SubgroupSize,
+    /// Read in compute, fragment, task, and mesh shaders
     SubgroupInvocationId,
+
+    /// Written in task shaders
+    MeshTaskSize,
+    /// Written in mesh shaders
+    CullPrimitive,
+    /// Written in mesh shaders
+    PointIndex,
+    /// Written in mesh shaders
+    LineIndices,
+    /// Written in mesh shaders
+    TriangleIndices,
+
+    /// Written to a workgroup variable in mesh shaders
+    VertexCount,
+    /// Written to a workgroup variable in mesh shaders
+    Vertices,
+    /// Written to a workgroup variable in mesh shaders
+    PrimitiveCount,
+    /// Written to a workgroup variable in mesh shaders
+    Primitives,
+
+    /// Read in all ray tracing pipeline shaders, the id within the number of
+    /// rays that this current ray is.
+    RayInvocationId,
+    /// Read in all ray tracing pipeline shaders, the number of rays created.
+    NumRayInvocations,
+    /// Read in closest hit and any hit shaders, the custom data in the tlas
+    /// instance
+    InstanceCustomData,
+    /// Read in closest hit and any hit shaders, the index of the geometry in
+    /// the blas.
+    GeometryIndex,
+    /// Read in closest hit, any hit, and miss shaders, the origin of the ray.
+    WorldRayOrigin,
+    /// Read in closest hit, any hit, and miss shaders, the direction of the
+    /// ray.
+    WorldRayDirection,
+    /// Read in closest hit and any hit shaders, the direction of the ray in
+    /// object space.
+    ObjectRayOrigin,
+    /// Read in closest hit and any hit shaders, the direction of the ray in
+    /// object space.
+    ObjectRayDirection,
+    /// Read in closest hit, any hit, and miss shaders, the t min provided by
+    /// in the ray desc.
+    RayTmin,
+    /// Read in closest hit, any hit, and miss shaders, the final bounds at which
+    /// a hit is accepted (the closest committed hit if there is one otherwise, t
+    /// max provided in the ray desc).
+    RayTCurrentMax,
+    /// Read in closest hit and any hit shaders, the matrix for converting from
+    /// object space to world space
+    ObjectToWorld,
+    /// Read in closest hit and any hit shaders, the matrix for converting from
+    /// world space to object space
+    WorldToObject,
+    /// Read in closest hit and any hit shaders, the type of hit as provided by
+    /// the intersection function if any, otherwise this is 254 (0xFE) for a
+    /// front facing triangle and 255 (0xFF) for a back facing triangle
+    HitKind,
 }
 
 /// Number of bytes per scalar.
@@ -409,6 +544,29 @@ pub enum VectorSize {
 
 impl VectorSize {
     pub const MAX: usize = Self::Quad as usize;
+}
+
+impl From<VectorSize> for u8 {
+    fn from(size: VectorSize) -> u8 {
+        size as u8
+    }
+}
+
+impl From<VectorSize> for u32 {
+    fn from(size: VectorSize) -> u32 {
+        size as u32
+    }
+}
+
+/// Number of components in a cooperative vector.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[cfg_attr(feature = "deserialize", derive(Deserialize))]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+pub enum CooperativeSize {
+    Eight = 8,
+    Sixteen = 16,
 }
 
 /// Primitive type for a scalar.
@@ -436,6 +594,18 @@ pub enum ScalarKind {
     ///
     /// These are forbidden by validation, and should never reach backends.
     AbstractFloat,
+}
+
+/// Role of a cooperative variable in the equation "A * B + C"
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[cfg_attr(feature = "deserialize", derive(Deserialize))]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+pub enum CooperativeRole {
+    A,
+    B,
+    C,
 }
 
 /// Characteristics of a scalar type.
@@ -481,6 +651,9 @@ pub enum Interpolation {
     Linear,
     /// Indicates that no interpolation will be performed.
     Flat,
+    /// Indicates the fragment input binding holds an array of per-vertex values.
+    /// This is typically used with barycentrics.
+    PerVertex,
 }
 
 /// The sampling qualifiers of a binding or struct field.
@@ -554,6 +727,22 @@ bitflags::bitflags! {
         const STORE = 0x2;
         /// Storage can be used as a target for atomic ops.
         const ATOMIC = 0x4;
+    }
+}
+
+bitflags::bitflags! {
+    /// Memory decorations for global variables.
+    #[cfg_attr(feature = "serialize", derive(Serialize))]
+    #[cfg_attr(feature = "deserialize", derive(Deserialize))]
+    #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct MemoryDecorations: u8 {
+        /// Reads and writes are automatically visible to other invocations
+        /// without explicit barriers.
+        const COHERENT = 0x1;
+        /// The variable may be modified by something external to the shader,
+        /// preventing certain compiler optimizations.
+        const VOLATILE = 0x2;
     }
 }
 
@@ -640,6 +829,8 @@ pub enum ImageClass {
         /// Multi-sampled depth image.
         multi: bool,
     },
+    /// External texture.
+    External,
     /// Storage image.
     Storage {
         format: StorageFormat,
@@ -683,6 +874,14 @@ pub enum TypeInner {
         columns: VectorSize,
         rows: VectorSize,
         scalar: Scalar,
+    },
+    /// Matrix that is cooperatively processed by all the threads
+    /// in an opaque mapping.
+    CooperativeMatrix {
+        columns: CooperativeSize,
+        rows: CooperativeSize,
+        scalar: Scalar,
+        role: CooperativeRole,
     },
     /// Atomic scalar.
     Atomic(Scalar),
@@ -863,6 +1062,8 @@ pub enum Literal {
     F32(f32),
     /// May not be NaN or infinity.
     F16(f16),
+    U16(u16),
+    I16(i16),
     U32(u32),
     I32(i32),
     U64(u64),
@@ -917,6 +1118,9 @@ pub enum Binding {
 
     /// Indexed location.
     ///
+    /// This is a value passed to a [`Fragment`] shader from a [`Vertex`] or
+    /// [`Mesh`] shader.
+    ///
     /// Values passed from the [`Vertex`] stage to the [`Fragment`] stage must
     /// have their `interpolation` defaulted (i.e. not `None`) by the front end
     /// as appropriate for that language.
@@ -930,14 +1134,30 @@ pub enum Binding {
     /// interpolation must be `Flat`.
     ///
     /// [`Vertex`]: crate::ShaderStage::Vertex
+    /// [`Mesh`]: crate::ShaderStage::Mesh
     /// [`Fragment`]: crate::ShaderStage::Fragment
     Location {
         location: u32,
         interpolation: Option<Interpolation>,
         sampling: Option<Sampling>,
+
         /// Optional `blend_src` index used for dual source blending.
         /// See <https://www.w3.org/TR/WGSL/#attribute-blend_src>
         blend_src: Option<u32>,
+
+        /// Whether the binding is a per-primitive binding for use with mesh shaders.
+        ///
+        /// This must be `true` if this binding is a mesh shader primitive output, or such
+        /// an output's corresponding fragment shader input. It must be `false` otherwise.
+        ///
+        /// A stage's outputs must all have unique `location` numbers, regardless of
+        /// whether they are per-primitive; a mesh shader's per-vertex and per-primitive
+        /// outputs share the same location numbering space.
+        ///
+        /// Per-primitive values are not interpolated at all and are not dependent on the
+        /// vertices or pixel location. For example, it may be used to store a
+        /// non-interpolated normal vector.
+        per_primitive: bool,
     },
 }
 
@@ -971,6 +1191,13 @@ pub struct GlobalVariable {
     ///
     /// This refers to an [`Expression`] in [`Module::global_expressions`].
     pub init: Option<Handle<Expression>>,
+    /// Memory decorations for this variable.
+    ///
+    /// These are meaningful for storage address space variables in SPIR-V,
+    /// where they map to SPIR-V memory decorations on the variable.
+    ///
+    /// In WGSL, these can be set with attributes like `@coherent` or `@volatile`.
+    pub memory_decorations: MemoryDecorations,
 }
 
 /// Variable defined at function level.
@@ -1354,13 +1581,23 @@ bitflags::bitflags! {
     pub struct Barrier: u32 {
         /// Barrier affects all [`AddressSpace::Storage`] accesses.
         const STORAGE = 1 << 0;
-        /// Barrier affects all [`AddressSpace::WorkGroup`] accesses.
+        /// Barrier affects all [`AddressSpace::WorkGroup`] and [`AddressSpace::TaskPayload`] accesses.
         const WORK_GROUP = 1 << 1;
         /// Barrier synchronizes execution across all invocations within a subgroup that execute this instruction.
         const SUB_GROUP = 1 << 2;
         /// Barrier synchronizes texture memory accesses in a workgroup.
         const TEXTURE = 1 << 3;
     }
+}
+
+#[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[cfg_attr(feature = "deserialize", derive(Deserialize))]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+pub struct CooperativeData {
+    pub pointer: Handle<Expression>,
+    pub stride: Handle<Expression>,
+    pub row_major: bool,
 }
 
 /// An expression that can be evaluated to obtain a value.
@@ -1696,15 +1933,31 @@ pub enum Expression {
         query: Handle<Expression>,
         committed: bool,
     },
+
     /// Result of a [`SubgroupBallot`] statement.
     ///
     /// [`SubgroupBallot`]: Statement::SubgroupBallot
     SubgroupBallotResult,
+
     /// Result of a [`SubgroupCollectiveOperation`] or [`SubgroupGather`] statement.
     ///
     /// [`SubgroupCollectiveOperation`]: Statement::SubgroupCollectiveOperation
     /// [`SubgroupGather`]: Statement::SubgroupGather
     SubgroupOperationResult { ty: Handle<Type> },
+
+    /// Load a cooperative primitive from memory.
+    CooperativeLoad {
+        columns: CooperativeSize,
+        rows: CooperativeSize,
+        role: CooperativeRole,
+        data: CooperativeData,
+    },
+    /// Compute `a * b + c`
+    CooperativeMultiplyAdd {
+        a: Handle<Expression>,
+        b: Handle<Expression>,
+        c: Handle<Expression>,
+    },
 }
 
 /// The value of the switch case.
@@ -2113,6 +2366,8 @@ pub enum Statement {
         /// The specific operation we're performing on `query`.
         fun: RayQueryFunction,
     },
+    /// A ray tracing pipeline shader intrinsic.
+    RayPipelineFunction(RayPipelineFunction),
     /// Calculate a bitmask using a boolean from each active thread in the subgroup
     SubgroupBallot {
         /// The [`SubgroupBallotResult`] expression representing this load's result.
@@ -2145,6 +2400,11 @@ pub enum Statement {
         ///
         /// [`SubgroupOperationResult`]: Expression::SubgroupOperationResult
         result: Handle<Expression>,
+    },
+    /// Store a cooperative primitive into memory.
+    CooperativeStore {
+        target: Handle<Expression>,
+        data: CooperativeData,
     },
 }
 
@@ -2286,6 +2546,15 @@ pub struct EntryPoint {
     pub workgroup_size_overrides: Option<[Option<Handle<Expression>>; 3]>,
     /// The entrance function.
     pub function: Function,
+    /// Information for [`Mesh`] shaders.
+    ///
+    /// [`Mesh`]: ShaderStage::Mesh
+    pub mesh_info: Option<MeshStageInfo>,
+    /// The unique global variable used as a task payload from task shader to mesh shader
+    pub task_payload: Option<Handle<GlobalVariable>>,
+    /// The unique global variable used as an incoming ray payload going into any hit, closest hit and miss shaders.
+    /// Unlike the outgoing ray payload, an incoming ray payload must be unique
+    pub incoming_ray_payload: Option<Handle<GlobalVariable>>,
 }
 
 /// Return types predeclared for the frexp, modf, and atomicCompareExchangeWeak built-in functions.
@@ -2331,6 +2600,51 @@ pub struct SpecialTypes {
     ///
     /// Call [`Module::generate_vertex_return_type`]
     pub ray_vertex_return: Option<Handle<Type>>,
+
+    /// Struct containing parameters required by some backends to emit code for
+    /// [`ImageClass::External`] textures.
+    ///
+    /// See `wgpu_core::device::resource::ExternalTextureParams` for the
+    /// documentation of each field.
+    ///
+    /// In WGSL, this type would be:
+    ///
+    /// ```ignore
+    /// struct NagaExternalTextureParams {         // align size offset
+    ///     yuv_conversion_matrix: mat4x4<f32>,    //    16   64      0
+    ///     gamut_conversion_matrix: mat3x3<f32>,  //    16   48     64
+    ///     src_tf: NagaExternalTextureTransferFn, //     4   16    112
+    ///     dst_tf: NagaExternalTextureTransferFn, //     4   16    128
+    ///     sample_transform: mat3x2<f32>,         //     8   24    144
+    ///     load_transform: mat3x2<f32>,           //     8   24    168
+    ///     size: vec2<u32>,                       //     8    8    192
+    ///     num_planes: u32,                       //     4    4    200
+    /// }                            // whole struct:    16  208
+    /// ```
+    ///
+    /// Call [`Module::generate_external_texture_types`] to populate this if
+    /// needed.
+    pub external_texture_params: Option<Handle<Type>>,
+
+    /// Struct describing a gamma encoding transfer function. Member of
+    /// `NagaExternalTextureParams`, describing how the backend should perform
+    /// color space conversion when sampling from [`ImageClass::External`]
+    /// textures.
+    ///
+    /// In WGSL, this type would be:
+    ///
+    /// ```ignore
+    /// struct NagaExternalTextureTransferFn { // align size offset
+    ///     a: f32,                            //     4    4      0
+    ///     b: f32,                            //     4    4      4
+    ///     g: f32,                            //     4    4      8
+    ///     k: f32,                            //     4    4     12
+    /// }                         // whole struct:    4   16
+    /// ```
+    ///
+    /// Call [`Module::generate_external_texture_types`] to populate this if
+    /// needed.
+    pub external_texture_transfer_function: Option<Handle<Type>>,
 
     /// Types for predeclared wgsl types instantiated on demand.
     ///
@@ -2415,6 +2729,75 @@ pub struct DocComments {
     pub global_variables: FastIndexMap<Handle<GlobalVariable>, Vec<String>>,
     // Top level comments, appearing before any space.
     pub module: Vec<String>,
+}
+
+/// The output topology for a mesh shader. Note that mesh shaders don't allow things like triangle-strips.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[cfg_attr(feature = "deserialize", derive(Deserialize))]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+pub enum MeshOutputTopology {
+    /// Outputs individual vertices to be rendered as points.
+    Points,
+    /// Outputs groups of 2 vertices to be renderedas lines .
+    Lines,
+    /// Outputs groups of 3 vertices to be rendered as triangles.
+    Triangles,
+}
+
+/// Information specific to mesh shader entry points.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[cfg_attr(feature = "deserialize", derive(Deserialize))]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[allow(dead_code)]
+pub struct MeshStageInfo {
+    /// The type of primitive outputted.
+    pub topology: MeshOutputTopology,
+    /// The maximum number of vertices a mesh shader may output.
+    pub max_vertices: u32,
+    /// If pipeline constants are used, the expressions that override `max_vertices`
+    pub max_vertices_override: Option<Handle<Expression>>,
+    /// The maximum number of primitives a mesh shader may output.
+    pub max_primitives: u32,
+    /// If pipeline constants are used, the expressions that override `max_primitives`
+    pub max_primitives_override: Option<Handle<Expression>>,
+    /// The type used by vertex outputs, i.e. what is passed to `setVertex`.
+    pub vertex_output_type: Handle<Type>,
+    /// The type used by primitive outputs, i.e. what is passed to `setPrimitive`.
+    pub primitive_output_type: Handle<Type>,
+    /// The global variable holding the outputted vertices, primitives, and counts
+    pub output_variable: Handle<GlobalVariable>,
+}
+
+/// Ray tracing pipeline intrinsics
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[cfg_attr(feature = "deserialize", derive(Deserialize))]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+pub enum RayPipelineFunction {
+    /// Traces a ray through the given acceleration structure
+    TraceRay {
+        /// The acceleration structure within which this ray should search for hits.
+        ///
+        /// The expression must be an [`AccelerationStructure`].
+        ///
+        /// [`AccelerationStructure`]: TypeInner::AccelerationStructure
+        acceleration_structure: Handle<Expression>,
+
+        #[allow(rustdoc::private_intra_doc_links)]
+        /// A struct of detailed parameters for the ray query.
+        ///
+        /// This expression should have the struct type given in
+        /// [`SpecialTypes::ray_desc`]. This is available in the WGSL
+        /// front end as the `RayDesc` type.
+        descriptor: Handle<Expression>,
+
+        /// A pointer in the ray_payload or incoming_ray_payload address spaces
+        payload: Handle<Expression>,
+        // Do we want miss index? What about sbt offset and sbt stride (could be hard to validate)?
+        // https://github.com/gfx-rs/wgpu/issues/8894
+    },
 }
 
 /// Shader module.

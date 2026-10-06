@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.fenix.ui.efficiency.pageObjects
 
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
@@ -7,7 +11,6 @@ import org.mozilla.fenix.ui.efficiency.helpers.Selector
 import org.mozilla.fenix.ui.efficiency.navigation.NavigationRegistry
 import org.mozilla.fenix.ui.efficiency.navigation.NavigationStep
 import org.mozilla.fenix.ui.efficiency.selectors.HomeSelectors
-import org.mozilla.fenix.ui.efficiency.selectors.MainMenuSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.SettingsAboutSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.SettingsSelectors
 
@@ -15,16 +18,16 @@ class SettingsAboutPage(composeRule: AndroidComposeTestRule<HomeActivityIntentTe
     override val pageName = "SettingsAboutPage"
 
     init {
-        NavigationRegistry.register(
-            from = "HomePage",
-            to = pageName,
-            steps = listOf(
-                NavigationStep.Click(HomeSelectors.MAIN_MENU_BUTTON),
-                NavigationStep.Click(MainMenuSelectors.SETTINGS_BUTTON),
-                NavigationStep.Swipe(SettingsSelectors.DATA_COLLECTION_BUTTON),
-                NavigationStep.Click(SettingsSelectors.DATA_COLLECTION_BUTTON),
-            ),
-        )
+//        NavigationRegistry.register(
+//            from = "HomePage",
+//            to = pageName,
+//            steps = listOf(
+//                NavigationStep.Click(HomeSelectors.MAIN_MENU_BUTTON),
+//                NavigationStep.Click(MainMenuSelectors.SETTINGS_BUTTON),
+//                NavigationStep.Swipe(SettingsSelectors.DATA_COLLECTION_BUTTON),
+//                NavigationStep.Click(SettingsSelectors.DATA_COLLECTION_BUTTON),
+//            ),
+//        )
     }
 
     override fun mozGetSelectorsByGroup(group: String): List<Selector> {

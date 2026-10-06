@@ -15,11 +15,11 @@ import mozilla.components.support.test.any
 import mozilla.components.support.test.eq
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.verify
 import org.mozilla.geckoview.GeckoRuntime
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class ServiceWorkerSupportTest {

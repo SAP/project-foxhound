@@ -28,8 +28,6 @@ user_pref("browser.pagethumbnails.capturing_disabled", true);
 user_pref("browser.search.region", "US");
 // disable infobar for tests
 user_pref("browser.search.removeEngineInfobar.enabled", false);
-// Disable webapp updates.  Yes, it is supposed to be an integer.
-user_pref("browser.webapps.checkForUpdates", 0);
 // We do not wish to display datareporting policy notifications as it might
 // cause other tests to fail. Tests that wish to test the notification functionality
 // should explicitly disable this pref.
@@ -49,7 +47,6 @@ user_pref("extensions.getAddons.discovery.api_url", "data:;base64,eyJyZXN1bHRzIj
 user_pref("extensions.webextensions.warnings-as-errors", true);
 // Disable useragent updates.
 user_pref("general.useragent.updates.enabled", false);
-user_pref("hangmonitor.timeout", 0); // no hang monitor
 user_pref("media.gmp-manager.updateEnabled", false);
 // Don't do network connections for mitm priming
 user_pref("security.certerrors.mitm.priming.enabled", false);
@@ -61,11 +58,9 @@ user_pref("services.settings.server", "data:,#remote-settings-dummy/v1");
 // Ensure autoplay is enabled for all platforms.
 user_pref("media.autoplay.default", 0); // 0=Allowed, 1=Blocked, 2=Prompt
 user_pref("media.autoplay.blocking_policy", 0);
-user_pref("media.autoplay.ask-permission", false);
 user_pref("media.allowed-to-play.enabled", true);
 // Ensure media can always play without delay
 user_pref("media.block-autoplay-until-in-foreground", false);
-user_pref("toolkit.telemetry.coverage.endpoint.base", "http://localhost");
 // Don't ask for a request in testing unless explicitly set this as true.
 user_pref("media.geckoview.autoplay.request", false);
 // No need to delay wakelock releasing for testing
@@ -73,14 +68,13 @@ user_pref("media.wakelock.audio.delay-releasing.ms", 0);
 // Don't use SCContentSharingPicker in tests as it will block on user
 // interaction.
 user_pref("media.getdisplaymedia.screencapturekit.picker.enabled", false);
-user_pref("geo.provider.network.compare.url", "");
 user_pref("browser.region.network.url", "");
 // Do not unload tabs on low memory when testing
 user_pref("browser.tabs.unloadOnLowMemory", false);
 // Don't pull Top Sites content from the network
 user_pref("browser.topsites.contile.enabled", false);
 // Don't pull weather data from the network
-user_pref("browser.newtabpage.activity-stream.discoverystream.region-weather-config", "");
+user_pref("browser.newtabpage.activity-stream.system.showWeather", false);
 // Don't pull wallpaper content from the network
 user_pref("browser.newtabpage.activity-stream.newtabWallpapers.enabled", false);
 // Don't pull sponsored Top Sites content from the network

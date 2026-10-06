@@ -80,7 +80,7 @@ add_task(async function check_menu_when_both_with_autocomplete_off() {
   checkMenuEntriesComment(MOCK_STORAGE.map(patchRecordCCNumber).map(({ cc, expected }) => JSON.stringify({
     primary: replaceStars(cc.ccNumberFmt),
     secondary: cc["cc-name"],
-    ariaLabel: `${getCCTypeName(cc)} ${cc.ccNumberFmt.replaceAll("*", "")} ${cc["cc-name"]}`,
+    ariaLabel: `${getCCTypeName(cc)} ${cc.ccNumberFmt.replaceAll("•", "")} ${cc["cc-name"]}`,
     image: expected.image,
   })));
 

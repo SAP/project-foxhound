@@ -6,7 +6,9 @@ package mozilla.components.feature.privatemode.feature
 
 import android.view.Window
 import android.view.WindowManager.LayoutParams.FLAG_SECURE
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -30,12 +32,13 @@ class SecureWindowFeature(
     private val customTabId: String? = null,
     private val isSecure: (SessionState) -> Boolean = { it.content.private },
     private val clearFlagOnStop: Boolean = true,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) : LifecycleAwareFeature {
 
     private var scope: CoroutineScope? = null
 
     override fun start() {
-        scope = store.flowScoped { flow ->
+        scope = store.flowScoped(dispatcher = mainDispatcher) { flow ->
             flow.mapNotNull { state -> state.findCustomTabOrSelectedTab(customTabId) }
                 .map { isSecure(it) }
                 .distinctUntilChanged()

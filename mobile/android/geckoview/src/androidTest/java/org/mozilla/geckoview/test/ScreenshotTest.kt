@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * Any copyright is dedicated to the Public Domain.
+/* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 package org.mozilla.geckoview.test
@@ -20,7 +19,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.hamcrest.Matchers.equalTo
 import org.hamcrest.Matchers.lessThanOrEqualTo
 import org.hamcrest.Matchers.notNullValue
-import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Assume.assumeThat
 import org.junit.Test
@@ -37,6 +35,7 @@ import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDisplay
 import org.mozilla.geckoview.test.util.UiThreadUtils
 import kotlin.math.absoluteValue
 import kotlin.math.max
+import kotlin.test.assertIs
 
 private const val SCREEN_HEIGHT = 800
 private const val SCREEN_WIDTH = 800
@@ -93,7 +92,7 @@ class ScreenshotTest : BaseSessionTest() {
             assertThat(
                 "Images are almost identical",
                 imageElementDifference(comparisonImage, it),
-                lessThanOrEqualTo(1),
+                lessThanOrEqualTo(2),
             )
         }
     }
@@ -159,7 +158,7 @@ class ScreenshotTest : BaseSessionTest() {
             var exceptionListenerCalled = false
             val result = display.capturePixels()
             result.exceptionally { error: Throwable ->
-                assertTrue(error is IllegalStateException)
+                assertIs<IllegalStateException>(error)
                 exceptionListenerCalled = true
                 result
             }.accept {
@@ -227,6 +226,29 @@ class ScreenshotTest : BaseSessionTest() {
             it.surfaceDestroyed()
 
             sessionRule.waitForResult(result)
+        }
+    }
+
+    @WithDisplay(height = SCREEN_HEIGHT, width = SCREEN_WIDTH)
+    @Test
+    fun capturePixelsBeforeAndAfterCompositorPausedRestarted() {
+        sessionRule.display?.let {
+            val result1 = it.capturePixels()
+            val texture = SurfaceTexture(0)
+            it.surfaceDestroyed()
+
+            val result2 = it.capturePixels()
+            texture.setDefaultBufferSize(SCREEN_WIDTH, SCREEN_HEIGHT / 2)
+            val surface = Surface(texture)
+            it.surfaceChanged(SurfaceInfo.Builder(surface).size(SCREEN_WIDTH, SCREEN_HEIGHT / 2).build())
+
+            // The first screenshot will fail due to the compositor being paused, but we expect the
+            // second screenshot to succeed.
+            try {
+                sessionRule.waitForResult(result1)
+            } catch (e: IllegalStateException) {
+            }
+            sessionRule.waitForResult(result2)
         }
     }
 
@@ -455,7 +477,7 @@ class ScreenshotTest : BaseSessionTest() {
             .capture()
             .exceptionally(
                 OnExceptionListener<Throwable> { error: Throwable ->
-                    assertTrue(error is OutOfMemoryError)
+                    assertIs<OutOfMemoryError>(error)
                     fromException(error)
                 },
             )

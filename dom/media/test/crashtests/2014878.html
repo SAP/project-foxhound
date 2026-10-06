@@ -1,0 +1,12 @@
+<html class="reftest-wait">
+<script>
+var video = document.createElement("video");
+video.addEventListener("error", function() {
+  if (video.error) {
+    var msg = video.error.message;
+  }
+  document.documentElement.removeAttribute("class");
+});
+video.src = "non_ascii_status.sjs";
+</script>
+</html>

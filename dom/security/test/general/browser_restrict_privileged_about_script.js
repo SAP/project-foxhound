@@ -16,55 +16,59 @@ const kAboutPagesRegistered = BrowserTestUtils.registerAboutPage(
 add_task(async function test_principal_click() {
   await kAboutPagesRegistered;
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.security.skip_about_page_has_csp_assert", true]],
+    set: [
+      ["dom.security.skip_about_page_has_csp_assert", true],
+      ["security.disallow_privilegedabout_remote_script_loads", true],
+    ],
   });
   await BrowserTestUtils.withNewTab(
-    "about:test-about-privileged-with-scripts",
-    async function () {
+    {
+      gBrowser,
+      url: "about:test-about-privileged-with-scripts",
+      waitForLoad: true,
+    },
+    async function (browser) {
       // Wait for page to fully load
       info("Waiting for tab to be loaded..");
       // let's look into the fully loaded about page
-      await SpecialPowers.spawn(
-        gBrowser.selectedBrowser,
-        [],
-        async function () {
-          let channel = content.docShell.currentDocumentChannel;
-          is(
-            channel.originalURI.asciiSpec,
-            "about:test-about-privileged-with-scripts",
-            "sanity check - make sure we test the principal for the correct URI"
-          );
+      await SpecialPowers.spawn(browser, [], async function () {
+        let channel = content.docShell.currentDocumentChannel;
+        is(
+          channel.originalURI.asciiSpec,
+          "about:test-about-privileged-with-scripts",
+          "sanity check - make sure we test the principal for the correct URI"
+        );
 
-          let triggeringPrincipal = channel.loadInfo.triggeringPrincipal;
-          ok(
-            triggeringPrincipal.isSystemPrincipal,
-            "loading about: from privileged page must have a triggering of System"
-          );
+        let triggeringPrincipal = channel.loadInfo.triggeringPrincipal;
+        ok(
+          triggeringPrincipal.isSystemPrincipal,
+          "loading about: from privileged page must have a triggering of System"
+        );
 
-          let contentPolicyType = channel.loadInfo.externalContentPolicyType;
-          is(
-            contentPolicyType,
-            Ci.nsIContentPolicy.TYPE_DOCUMENT,
-            "sanity check - loading a top level document"
-          );
+        let contentPolicyType = channel.loadInfo.externalContentPolicyType;
+        is(
+          contentPolicyType,
+          Ci.nsIContentPolicy.TYPE_DOCUMENT,
+          "sanity check - loading a top level document"
+        );
 
-          let loadingPrincipal = channel.loadInfo.loadingPrincipal;
-          is(
-            loadingPrincipal,
-            null,
-            "sanity check - load of TYPE_DOCUMENT must have a null loadingPrincipal"
-          );
-          ok(
-            !content.document.nodePrincipal.isSystemPrincipal,
-            "sanity check - loaded about page does not have the system principal"
-          );
-          isnot(
-            content.testResult,
-            "fail-script-was-loaded",
-            "The script from https://example.com shouldn't work in an about: page."
-          );
-        }
-      );
+        let loadingPrincipal = channel.loadInfo.loadingPrincipal;
+        is(
+          loadingPrincipal,
+          null,
+          "sanity check - load of TYPE_DOCUMENT must have a null loadingPrincipal"
+        );
+        ok(
+          !content.document.nodePrincipal.isSystemPrincipal,
+          "sanity check - loaded about page does not have the system principal"
+        );
+
+        is(
+          content.wrappedJSObject.ran,
+          "inline1inline2",
+          "The script from https://example.com shouldn't work in an about: page."
+        );
+      });
     }
   );
 });

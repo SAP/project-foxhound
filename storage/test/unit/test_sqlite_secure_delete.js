@@ -1,6 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- *vim: sw=2 ts=2 et lcs=trail\:.,tab\:>~ :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -52,8 +50,20 @@ add_test(function test_delete_removes_data() {
   // Make sure this test is actually testing what it thinks by making sure the
   // string shows up in the database.  Because the previous statement was
   // automatically wrapped in a transaction, the contents are already on disk.
+  // When at-rest encryption is enabled, obfsvfs encrypts the page contents, so
+  // the plaintext never appears on disk in the first place (a stronger
+  // guarantee than SECURE_DELETE); the post-delete check below then holds
+  // trivially.
+  let encrypted = Services.prefs.getBoolPref(
+    "security.storage.encryption.sqlite.enabled",
+    false
+  );
   let contents = getFileContents(file);
-  Assert.notEqual(-1, contents.indexOf(TEST_STRING));
+  if (encrypted) {
+    Assert.equal(-1, contents.indexOf(TEST_STRING));
+  } else {
+    Assert.notEqual(-1, contents.indexOf(TEST_STRING));
+  }
 
   // Delete the data, and then close the database.
   stmt = db.createStatement("DELETE FROM test WHERE data = :data");

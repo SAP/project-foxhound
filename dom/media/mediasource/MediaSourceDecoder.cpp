@@ -1,12 +1,10 @@
-/* -*- mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "MediaSourceDecoder.h"
 
-#include "base/process_util.h"
-#include "mozilla/Logging.h"
+#include <algorithm>
+
 #include "ExternalEngineStateMachine.h"
 #include "MediaDecoder.h"
 #include "MediaDecoderStateMachine.h"
@@ -17,7 +15,8 @@
 #include "SourceBuffer.h"
 #include "SourceBufferList.h"
 #include "VideoUtils.h"
-#include <algorithm>
+#include "base/process_util.h"
+#include "mozilla/Logging.h"
 
 extern mozilla::LogModule* GetMediaSourceLog();
 
@@ -37,8 +36,8 @@ MediaSourceDecoder::MediaSourceDecoder(MediaDecoderInit& aInit)
   mExplicitDuration.emplace(UnspecifiedNaN<double>());
 }
 
-MediaDecoderStateMachineBase* MediaSourceDecoder::CreateStateMachine(
-    bool aDisableExternalEngine) {
+already_AddRefed<MediaDecoderStateMachineBase>
+MediaSourceDecoder::CreateStateMachine(bool aDisableExternalEngine) {
   MOZ_ASSERT(NS_IsMainThread());
   // if `mDemuxer` already exists, that means we're in the process of recreating
   // the state machine. The track buffers are tied to the demuxer so we would
@@ -84,10 +83,10 @@ MediaDecoderStateMachineBase* MediaSourceDecoder::CreateStateMachine(
       !!mOwner->GetCDMProxy() && !mOwner->GetCDMProxy()->AsWMFCDMProxy();
   if (StaticPrefs::media_wmf_media_engine_enabled() && !isCDMNotSupported &&
       !aDisableExternalEngine) {
-    return new ExternalEngineStateMachine(this, mReader);
+    return MakeAndAddRef<ExternalEngineStateMachine>(this, mReader);
   }
 #endif
-  return new MediaDecoderStateMachine(this, mReader);
+  return MakeAndAddRef<MediaDecoderStateMachine>(this, mReader);
 }
 
 nsresult MediaSourceDecoder::Load(nsIPrincipal* aPrincipal) {
@@ -151,7 +150,7 @@ IntervalType MediaSourceDecoder::GetSeekableImpl() {
     }
   }
   MSE_DEBUG("ranges=%s", DumpTimeRanges(seekable).get());
-  return IntervalType(seekable);
+  return IntervalType(std::move(seekable));
 }
 
 media::TimeIntervals MediaSourceDecoder::GetSeekable() {

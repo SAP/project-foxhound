@@ -27,14 +27,5 @@ add_task(async function () {
   await addNewRuleAndDismissEditor(inspector, view, "#testid", 1);
 
   info("Adding a new property for this rule");
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
-
-  const onRuleViewChanged = view.once("ruleview-changed");
-  ruleEditor.addProperty("color", "red", "", true);
-  await onRuleViewChanged;
-
-  const textProps = ruleEditor.rule.textProps;
-  const prop = textProps[textProps.length - 1];
-  is(prop.name, "color", "The last property name is color");
-  is(prop.value, "red", "The last property value is red");
+  await addProperty(view, 1, "color", "red");
 });

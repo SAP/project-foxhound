@@ -13,9 +13,7 @@ if (AppConstants.isPlatformAndVersionAtLeast("macosx", 23.0)) {
 
 const kDesktopCheckerScriptPath =
   "browser/browser/components/shell/test/mac_desktop_image.py";
-const kDefaultBackgroundImage_10_14 =
-  "/Library/Desktop Pictures/Solid Colors/Teal.png";
-const kDefaultBackgroundImage_10_15 =
+const kDefaultBackgroundImage =
   "/System/Library/Desktop Pictures/Solid Colors/Teal.png";
 
 ChromeUtils.defineESModuleGetters(this, {
@@ -81,11 +79,7 @@ function setAndCheckDesktopBackgroundCLI(imagePath) {
 // in the automated test environment, not the OS default.
 function restoreDefaultBackground() {
   let defaultBackgroundPath;
-  if (AppConstants.isPlatformAndVersionAtLeast("macosx", 19)) {
-    defaultBackgroundPath = kDefaultBackgroundImage_10_15;
-  } else {
-    defaultBackgroundPath = kDefaultBackgroundImage_10_14;
-  }
+  defaultBackgroundPath = kDefaultBackgroundImage;
   setAndCheckDesktopBackgroundCLI(defaultBackgroundPath);
 }
 
@@ -98,20 +92,19 @@ add_setup(async function () {
 /**
  * Tests "Set As Desktop Background" platform implementation on macOS.
  *
- * Sets the desktop background image to the browser logo from the about:logo
- * page and verifies it was set successfully. Setting the desktop background
- * (which uses the nsIShellService::setDesktopBackground() interface method)
- * downloads the image to ~/Pictures using a unique file name and sets the
- * desktop background to the downloaded file leaving the download in place.
- * After setDesktopBackground() is called, the test uses a python script to
- * validate that the current desktop background is in fact set to the
- * downloaded logo.
+ * Sets the desktop background image to the large.png image and verifies it was
+ * set successfully. Setting the desktop background (which uses the
+ * nsIShellService::setDesktopBackground() interface method) downloads the
+ * image to ~/Pictures using a unique file name and sets the desktop background
+ * to the downloaded file leaving the download in place. After
+ * setDesktopBackground() is called, the test uses a python script to validate
+ * that the current desktop background is in fact set to the downloaded image.
  */
 add_task(async function () {
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
-      url: "about:logo",
+      url: getRootDirectory(gTestPath) + "large.png",
     },
     async () => {
       let dirSvc = Cc["@mozilla.org/file/directory_service;1"].getService(
@@ -146,7 +139,7 @@ add_task(async function () {
 
       // For simplicity, we're going to reach in and access the image on the
       // page directly, which means the page shouldn't be running in a remote
-      // browser. Thankfully, about:logo runs in the parent process for now.
+      // browser. Thankfully, chrome:// runs in the parent process for now.
       Assert.ok(
         !gBrowser.selectedBrowser.isRemoteBrowser,
         "image can be accessed synchronously from the parent process"

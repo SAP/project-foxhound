@@ -80,7 +80,21 @@ add_task(async function test_button_ignore_attention_pref() {
   gBrowser.selectedTab = TAB_WITHOUT_ATTENTION;
   assertExtensionsButtonHidden();
   assertExtensionsButtonTelemetry({ attention_permission_denied: 0 });
+
+  info("Switch to tab demanding attention again; button should stay hidden");
+  gBrowser.selectedTab = TAB_WITH_ATTENTION;
+  assertExtensionsButtonHidden();
+
+  info("Revert button.ignore_attention pref; button should be shown now");
   await SpecialPowers.popPrefEnv();
+  assertExtensionsButtonVisible();
+
+  info("Switch to tab without attention again; button should hide");
+  gBrowser.selectedTab = TAB_WITHOUT_ATTENTION;
+  assertExtensionsButtonHidden();
+
+  // Pref flip does not trigger telemetry; we record on attention change only.
+  assertExtensionsButtonTelemetry({ attention_permission_denied: 0 });
 });
 
 // This test verifies that the Extensions Button stays visible with the shown

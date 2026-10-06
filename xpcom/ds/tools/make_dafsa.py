@@ -170,6 +170,7 @@ The bytes in the generated array has the following meaning:
  9: 0x62 <char>         label character 0x62 -> match "b"
 10: 0x82 <return_value> 0x82 & 0x0F -> return 2
 """
+
 import struct
 import sys
 
@@ -357,8 +358,8 @@ def parse_gperf(infile):
 
 
 def main(outfile, infile):
-    with open(infile) as infile:
-        preamble, words = parse_gperf(infile)
+    with open(infile) as input_file:
+        preamble, words = parse_gperf(input_file)
         outfile.write(words_to_cxx(words, preamble))
     return 0
 

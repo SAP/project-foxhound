@@ -1,12 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsScriptSecurityManager.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/SourceLocation.h"
 #include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/StaticPrefs_security.h"
@@ -41,6 +38,7 @@
 #include "nsDirectoryServiceDefs.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsPIDOMWindow.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsIDocShell.h"
 #include "nsIConsoleService.h"
 #include "nsIOService.h"
@@ -66,7 +64,6 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ExtensionPolicyService.h"
-#include "mozilla/ResultExtensions.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/dom/TrustedTypeUtils.h"
 #include "mozilla/dom/WorkerCommon.h"
@@ -221,13 +218,6 @@ bool nsScriptSecurityManager::SecurityCompareURIs(nsIURI* aSourceURI,
                                                   nsIURI* aTargetURI) {
   return NS_SecurityCompareURIs(aSourceURI, aTargetURI,
                                 sStrictFileOriginPolicy);
-}
-
-// SecurityHashURI is consistent with SecurityCompareURIs because
-// NS_SecurityHashURI is consistent with NS_SecurityCompareURIs.  See
-// nsNetUtil.h.
-uint32_t nsScriptSecurityManager::SecurityHashURI(nsIURI* aURI) {
-  return NS_SecurityHashURI(aURI);
 }
 
 bool nsScriptSecurityManager::IsHttpOrHttpsAndCrossOrigin(nsIURI* aUriA,
@@ -481,7 +471,7 @@ bool nsScriptSecurityManager::ContentSecurityPolicyPermitsJSAction(
     bool areArgumentsTrusted = TrustedTypeUtils::
         AreArgumentsTrustedForEnsureCSPDoesNotBlockStringCompilation(
             cx, aCodeString, aCompilationType, aParameterStrings, aBodyString,
-            aParameterArgs, aBodyArg, error);
+            aParameterArgs, aBodyArg, subjectPrincipal, error);
     if (error.MaybeSetPendingException(cx)) {
       return false;
     }
@@ -494,10 +484,6 @@ bool nsScriptSecurityManager::ContentSecurityPolicyPermitsJSAction(
   // Check if Eval is allowed per firefox hardening policy
   bool contextForbidsEval =
       (subjectPrincipal->IsSystemPrincipal() || XRE_IsE10sParentProcess());
-#if defined(ANDROID)
-  contextForbidsEval = false;
-#endif
-
   if (contextForbidsEval) {
     nsAutoJSString scriptSample;
     if (aKind == JS::RuntimeCode::JS &&
@@ -1079,7 +1065,9 @@ nsresult nsScriptSecurityManager::CheckLoadURIFlags(
           }
         }
       } else if (targetScheme.EqualsLiteral("moz-page-thumb") ||
-                 targetScheme.EqualsLiteral("page-icon")) {
+                 targetScheme.EqualsLiteral("page-icon") ||
+                 targetScheme.EqualsLiteral("moz-newtab-wallpaper") ||
+                 targetScheme.EqualsLiteral("moz-newtab-remote-renderer")) {
         if (XRE_IsParentProcess()) {
           return NS_OK;
         }
@@ -1239,8 +1227,7 @@ nsScriptSecurityManager::CheckLoadURIStrWithPrincipal(
   // available.
   uint32_t flags[] = {nsIURIFixup::FIXUP_FLAG_NONE,
                       nsIURIFixup::FIXUP_FLAG_FIX_SCHEME_TYPOS};
-  for (uint32_t i = 0; i < std::size(flags); ++i) {
-    uint32_t fixupFlags = flags[i];
+  for (unsigned int fixupFlags : flags) {
     if (aPrincipal->OriginAttributesRef().IsPrivateBrowsing()) {
       fixupFlags |= nsIURIFixup::FIXUP_FLAG_PRIVATE_CONTEXT;
     }
@@ -1276,13 +1263,13 @@ nsScriptSecurityManager::CheckLoadURIWithPrincipalFromJS(
       CheckLoadURIWithPrincipal(aPrincipal, aTargetURI, aFlags, aInnerWindowID);
   if (NS_FAILED(rv)) {
     nsAutoCString uriStr;
-    Unused << aTargetURI->GetSpec(uriStr);
+    (void)aTargetURI->GetSpec(uriStr);
 
     nsAutoCString message("Load of ");
     message.Append(uriStr);
 
     nsAutoCString principalStr;
-    Unused << aPrincipal->GetSpec(principalStr);
+    (void)aPrincipal->GetSpec(principalStr);
     if (!principalStr.IsEmpty()) {
       message.AppendPrintf(" from %s", principalStr.get());
     }
@@ -1497,11 +1484,12 @@ nsScriptSecurityManager::CanCreateWrapper(JSContext* cx, const nsIID& aIID,
   nsresult rv;
   nsAutoString errorMsg;
   if (originUTF16.IsEmpty()) {
-    AutoTArray<nsString, 1> formatStrings = {classInfoUTF16};
+    AutoTArray<nsString, 1> formatStrings = {std::move(classInfoUTF16)};
     rv = bundle->FormatStringFromName("CreateWrapperDenied", formatStrings,
                                       errorMsg);
   } else {
-    AutoTArray<nsString, 2> formatStrings = {classInfoUTF16, originUTF16};
+    AutoTArray<nsString, 2> formatStrings = {std::move(classInfoUTF16),
+                                             std::move(originUTF16)};
     rv = bundle->FormatStringFromName("CreateWrapperDeniedForOrigin",
                                       formatStrings, errorMsg);
   }

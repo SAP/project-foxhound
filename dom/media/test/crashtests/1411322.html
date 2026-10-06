@@ -9,7 +9,7 @@
 <audio id="audio"></audio>
 <pre id="test">
 <script class="testbody" type="text/javascript">
-let recorder = new MediaRecorder(audio.mozCaptureStream());
+let recorder = new MediaRecorder(audio.captureStream?.() || audio.mozCaptureStream());
 recorder.start();
 SpecialPowers.getMemoryReports();
 </script>

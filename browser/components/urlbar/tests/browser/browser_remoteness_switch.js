@@ -32,23 +32,19 @@ add_task(async function () {
       };
       gBrowser.addProgressListener(wpl);
 
-      let didLoad = BrowserTestUtils.browserLoaded(
-        browser,
-        null,
-        function (loadedURL) {
-          return loadedURL == "about:config";
-        }
-      );
+      let didLoad = BrowserTestUtils.browserLoaded(browser, {
+        wantLoad: loadedURL => loadedURL == "about:config",
+      });
       BrowserTestUtils.startLoadingURIString(browser, "about:config");
       await didLoad;
 
       gBrowser.goBack();
-      await BrowserTestUtils.browserLoaded(browser, null, function (loadedURL) {
-        return url == loadedURL;
+      await BrowserTestUtils.browserLoaded(browser, {
+        wantLoad: loadedURL => loadedURL == url,
       });
       gBrowser.goForward();
-      await BrowserTestUtils.browserLoaded(browser, null, function (loadedURL) {
-        return loadedURL == "about:config";
+      await BrowserTestUtils.browserLoaded(browser, {
+        wantLoad: loadedURL => loadedURL == "about:config",
       });
       gBrowser.removeProgressListener(wpl);
     }

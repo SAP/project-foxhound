@@ -29,9 +29,16 @@ add_task(async function setOverrideInDebugger_removeOverrideInNetmonitor() {
 
   info("Switch to debugger and setup an override for a script");
   await toolbox.selectTool("jsdebugger");
-  const dbg = createDebuggerContext(toolbox);
 
-  await waitForSourcesInSourceTree(dbg, ["script.js"], {
+  const dbg = createDebuggerContext(toolbox);
+  const isStylesheetsInDebuggerEnabled = Services.prefs.getBoolPref(
+    "devtools.debugger.features.stylesheets-in-debugger"
+  );
+  const treeSources = ["script.js"];
+  if (isStylesheetsInDebuggerEnabled) {
+    treeSources.push("style.css");
+  }
+  await waitForSourcesInSourceTree(dbg, treeSources, {
     noExpand: false,
   });
 
@@ -43,12 +50,20 @@ add_task(async function setOverrideInDebugger_removeOverrideInNetmonitor() {
   info("Select script.js tree node, and add override");
   await selectSourceFromSourceTree(dbg, "script.js");
 
-  const path = prepareFilePicker("script-override.js", window);
+  const waitForSetOverride = waitForDispatch(
+    dbg.toolbox.store,
+    "SET_NETWORK_OVERRIDE"
+  );
+  const path = prepareFilePicker("script-override.js");
   await triggerSourceTreeContextMenu(
     dbg,
     findSourceNodeWithText(dbg, "script.js"),
     "#node-menu-overrides"
   );
+  await waitForSetOverride;
+
+  // The setOverride action can conflict with writeTextContentToPath for
+  // accessing the file. Make sure to call one after the other.
   await writeTextContentToPath(OVERRIDDEN_SCRIPT, path);
 
   overrides = [...findAllElementsWithSelector(dbg, ".has-network-override")];
@@ -113,8 +128,14 @@ add_task(async function setOverrideInNetmonitor_removeOverrideInDebugger() {
   info("Switch to debugger and check the override for a script");
   await toolbox.selectTool("jsdebugger");
   const dbg = createDebuggerContext(toolbox);
-
-  await waitForSourcesInSourceTree(dbg, ["script.js"], {
+  const isStylesheetsInDebuggerEnabled = Services.prefs.getBoolPref(
+    "devtools.debugger.features.stylesheets-in-debugger"
+  );
+  const treeSources = ["script.js"];
+  if (isStylesheetsInDebuggerEnabled) {
+    treeSources.push("style.css");
+  }
+  await waitForSourcesInSourceTree(dbg, treeSources, {
     noExpand: false,
   });
 

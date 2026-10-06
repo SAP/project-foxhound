@@ -1,3 +1,52 @@
+Release 1.18.4 (2025-03-08 Emmanuele Bassi <ebassi@gnome.org>)
+==============================================================
+
+A new stable release.
+
+The dependency on LZO has been made optional through a build time
+configuration toggle. [!580]
+
+You can build Cairo against a Freetype installation that does not have the
+FT_Color type. [#792]
+
+Cairo tests now build on Solaris 11.4 with GCC 14. [!599]
+
+The DirectWrite backend now builds on MINGW 11. [!600]
+
+Thanks to Luca Bacci, the DirectWrite backend now supports font
+variations and proper glyph coverage. [#877, !602]
+
+Support for Windows 98 has been removed. The minimum requirement for
+Windows is now Vista.
+
+Release 1.18.2 (2024-09-01 Emmanuele Bassi <ebassi@gnome.org>)
+==============================================================
+
+A new stable release.
+
+The malloc-stats code has been removed from the tests directory [#640]; the
+canonical location for it is: https://github.com/behdad/malloc-stats
+
+Cairo now requires a version of pixman equal to, or newer than, 0.40. [!522]
+
+There have been multiple build fixes for newer versions of GCC [!525, !542];
+for MSVC [#808]; for Solaris [!540]; and on macOS 10.7 [#810].
+
+PNG errors caused by loading malformed data are correctly propagated to
+callers, so they can handle the case. [!524]
+
+Both stroke and fill colors are now set when showing glyphs on a PDF
+surface. [#813]
+
+All the font options are copied when creating a fallback font object. [#819]
+
+When drawing text on macOS, Cairo now tries harder to select the appropriate
+font name. [#811]
+
+Cairo now prefers the COLRv1 table inside a font, if one is available. [!537]
+
+Cairo requires a C11 toolchain when building. [!479]
+
 Release 1.18.0 (2023-09-20 Emmanuele Bassi <ebassi@gnome.org>)
 ==============================================================
 

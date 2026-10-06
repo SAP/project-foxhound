@@ -2,13 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _RTCDTMFSender_h_
-#define _RTCDTMFSender_h_
+#ifndef RTCDTMFSender_h_
+#define RTCDTMFSender_h_
 
 #include "MediaEventSource.h"
+#include "js/RootingAPI.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/RefPtr.h"
-#include "js/RootingAPI.h"
 #include "nsITimer.h"
 
 class nsPIDOMWindowInner;
@@ -76,4 +76,4 @@ class RTCDTMFSender : public DOMEventTargetHelper,
 
 }  // namespace dom
 }  // namespace mozilla
-#endif  // _RTCDTMFSender_h_
+#endif  // RTCDTMFSender_h_

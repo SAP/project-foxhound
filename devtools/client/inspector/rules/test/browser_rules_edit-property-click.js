@@ -23,7 +23,7 @@ add_task(async function () {
 });
 
 async function testEditPropertyAndCancel(inspector, view) {
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
   const propEditor = getTextProperty(view, 1, { margin: "0" }).editor;
 
   info("Test editor is created when clicking on property name");
@@ -38,23 +38,17 @@ async function testEditPropertyAndCancel(inspector, view) {
   await sendKeysAndWaitForFocus(view, ruleEditor.element, ["ESCAPE"]);
 
   info("Test editor is created when clicking on property value");
+  let anchorNamesUpdated = inspector.once("anchor-names-updated");
   await focusEditableField(view, propEditor.valueSpan);
+  await anchorNamesUpdated;
   ok(propEditor.valueSpan.inplaceEditor, "Editor created for property value");
-  // When cancelling a value edition, the text-property-editor will trigger
-  // a modification to make sure the property is back to its original value
-  // => need to wait on "ruleview-changed" to avoid unhandled promises
-  let onRuleviewChanged = view.once("ruleview-changed");
   await sendKeysAndWaitForFocus(view, ruleEditor.element, ["ESCAPE"]);
-  await onRuleviewChanged;
 
   info("Test editor is created when clicking on ';' next to property value");
   const valueRect = propEditor.valueSpan.getBoundingClientRect();
+  anchorNamesUpdated = inspector.once("anchor-names-updated");
   await focusEditableField(view, propEditor.valueSpan, valueRect.width + 1);
+  await anchorNamesUpdated;
   ok(propEditor.valueSpan.inplaceEditor, "Editor created for property value");
-  // When cancelling a value edition, the text-property-editor will trigger
-  // a modification to make sure the property is back to its original value
-  // => need to wait on "ruleview-changed" to avoid unhandled promises
-  onRuleviewChanged = view.once("ruleview-changed");
   await sendKeysAndWaitForFocus(view, ruleEditor.element, ["ESCAPE"]);
-  await onRuleviewChanged;
 }

@@ -1,19 +1,17 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaSourceDemuxer.h"
 
+#include <stdint.h>
+
+#include <algorithm>
+
 #include "MediaSourceUtils.h"
 #include "SourceBufferList.h"
 #include "VideoUtils.h"
 #include "nsPrintfCString.h"
-
-#include <algorithm>
-#include <limits>
-#include <stdint.h>
 
 extern mozilla::LogModule* GetMediaSourceLog();
 
@@ -68,7 +66,7 @@ void MediaSourceDemuxer::AddSizeOfResources(
 
   nsresult rv = GetTaskQueue()->Dispatch(task.forget());
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 }
 
 void MediaSourceDemuxer::NotifyInitDataArrived() {
@@ -84,7 +82,7 @@ void MediaSourceDemuxer::NotifyInitDataArrived() {
       });
   nsresult rv = GetTaskQueue()->Dispatch(task.forget());
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 }
 
 bool MediaSourceDemuxer::ScanSourceBuffersForContent() {
@@ -164,7 +162,7 @@ void MediaSourceDemuxer::AttachSourceBuffer(
       &MediaSourceDemuxer::DoAttachSourceBuffer, aSourceBuffer);
   nsresult rv = GetTaskQueue()->Dispatch(task.forget());
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 }
 
 void MediaSourceDemuxer::DoAttachSourceBuffer(
@@ -183,7 +181,7 @@ void MediaSourceDemuxer::DetachSourceBuffer(
                              });
   nsresult rv = GetTaskQueue()->Dispatch(task.forget());
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 }
 
 void MediaSourceDemuxer::DoDetachSourceBuffer(
@@ -335,7 +333,7 @@ void MediaSourceTrackDemuxer::Reset() {
       });
   nsresult rv = mParent->GetTaskQueue()->Dispatch(task.forget());
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 }
 
 nsresult MediaSourceTrackDemuxer::GetNextRandomAccessPoint(TimeUnit* aTime) {
@@ -371,7 +369,7 @@ void MediaSourceTrackDemuxer::BreakCycles() {
       });
   nsresult rv = mParent->GetTaskQueue()->Dispatch(task.forget());
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 }
 
 RefPtr<MediaSourceTrackDemuxer::SeekPromise> MediaSourceTrackDemuxer::DoSeek(

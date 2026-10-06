@@ -17,7 +17,7 @@ add_task(async () => {
   Assert.ok(!target.exists(), "installs.ini should not exist yet.");
 
   // Create a new profile to use.
-  let newProfile = service.createProfile(null, "dedicated");
+  let newProfile = service.createProfile(null, "dedicated", "tests");
   service.flush();
 
   let profileData = readProfilesIni();
@@ -80,7 +80,7 @@ add_task(async () => {
 
   checkProfileService(profileData);
 
-  let otherProfile = service.createProfile(null, "another");
+  let otherProfile = service.createProfile(null, "another", "tests");
   service.defaultProfile = otherProfile;
 
   service.flush();

@@ -3,13 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 :host {
-  /* in-content/common.css variables */
-  --blue-50: #0a84ff;
-  --grey-90-a10: rgba(12, 12, 13, 0.1);
-  --border-active-shadow: var(--blue-50);
-}
-
-:host {
   display: block;
   position: absolute;
   bottom: 24px;
@@ -25,9 +18,9 @@
   align-items: center;
   display: flex;
   justify-content: center;
-  box-shadow: var(--box-shadow-card);
-  color: var(--toolbar-color);
-  background-color: var(--toolbar-bgcolor);
+  box-shadow: var(--card-box-shadow);
+  color: var(--toolbar-text-color);
+  background-color: var(--toolbar-background-color);
   border-radius: 6px;
   border-style: none;
 }
@@ -45,14 +38,14 @@
 .toolbarCenter {
   align-self: stretch;
   flex: 0 0 auto;
-  padding: var(--toolbarbutton-outer-padding);
+  padding: var(--toolbarbutton-padding-outer);
   border: none;
   border-inline-end: 1px solid ThreeDShadow;
   border-block: 1px solid ThreeDShadow;
   color: inherit;
   background-color: transparent;
-  min-width: calc(2 * var(--toolbarbutton-inner-padding) + 16px);
-  min-height: calc(2 * var(--toolbarbutton-inner-padding) + 16px);
+  min-width: calc(2 * var(--toolbarbutton-padding-inner) + 16px);
+  min-height: calc(2 * var(--toolbarbutton-padding-inner) + 16px);
 }
 .startItem {
   border-inline-start: 1px solid ThreeDShadow;
@@ -79,17 +72,17 @@
 }
 
 .toolbarButton:hover {
-  background-color: var(--toolbarbutton-hover-background);
+  background-color: var(--toolbarbutton-background-color-hover);
 }
 .toolbarButton:hover:active {
-  background-color: var(--toolbarbutton-active-background);
+  background-color: var(--toolbarbutton-background-color-active);
 }
 .toolbarButton:focus {
   z-index: 1;
 }
 
 .toolbarButton:-moz-focusring {
-  outline: 2px solid var(--border-active-shadow);
+  outline: 2px solid var(--focus-outline-color);
 }
 
 .toolbarCenter {

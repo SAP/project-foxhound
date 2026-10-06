@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +10,8 @@
 #include "mozilla/intl/LocaleService.h"
 #include "OSPreferences.h"
 #include "mozIOSPreferences.h"
+#include "nsContentUtils.h"
+#include "nsRFPService.h"
 #ifdef DEBUG
 #  include "nsThreadManager.h"
 #endif
@@ -65,6 +66,14 @@ nsresult AppDateTimeFormat::Format(const DateTimeFormat::StyleBag& aStyle,
 nsresult AppDateTimeFormat::Format(const DateTimeFormat::ComponentsBag& aBag,
                                    const PRExplodedTime* aExplodedTime,
                                    nsAString& aStringOut) {
+  return FormatForDocument(aBag, aExplodedTime, nullptr, aStringOut);
+}
+
+/*static*/
+nsresult AppDateTimeFormat::FormatForDocument(
+    const DateTimeFormat::ComponentsBag& aBag,
+    const PRExplodedTime* aExplodedTime, const dom::Document* aForDocument,
+    nsAString& aStringOut) {
   // set up locale data
   nsresult rv = Initialize();
   if (NS_FAILED(rv)) {
@@ -76,18 +85,23 @@ nsresult AppDateTimeFormat::Format(const DateTimeFormat::ComponentsBag& aBag,
   nsAutoString timeZoneID;
   BuildTimeZoneString(aExplodedTime->tm_params, timeZoneID);
 
-  auto genResult = DateTimePatternGenerator::TryCreate(sLocale->get());
+  const bool spoofEnglish =
+      aForDocument && nsContentUtils::ShouldResistFingerprinting(
+                          aForDocument, mozilla::RFPTarget::JSLocale);
+  const nsCString& locale =
+      spoofEnglish ? nsRFPService::GetSpoofedJSLocale() : *sLocale;
+  auto genResult = DateTimePatternGenerator::TryCreate(locale.get());
   NS_ENSURE_TRUE(genResult.isOk(), NS_ERROR_FAILURE);
   auto dateTimePatternGenerator = genResult.unwrap();
 
   auto result = DateTimeFormat::TryCreateFromComponents(
-      *sLocale, aBag, dateTimePatternGenerator.get(),
+      locale, aBag, dateTimePatternGenerator.get(),
       Some(Span<const char16_t>(timeZoneID.Data(), timeZoneID.Length())));
   NS_ENSURE_TRUE(result.isOk(), NS_ERROR_FAILURE);
   auto dateTimeFormat = result.unwrap();
 
   double unixEpoch =
-      static_cast<float>((PR_ImplodeTime(aExplodedTime) / PR_USEC_PER_MSEC));
+      static_cast<double>(PR_ImplodeTime(aExplodedTime) / PR_USEC_PER_MSEC);
 
   aStringOut.SetLength(DATETIME_FORMAT_INITIAL_LEN);
   nsTStringToBufferAdapter buffer(aStringOut);

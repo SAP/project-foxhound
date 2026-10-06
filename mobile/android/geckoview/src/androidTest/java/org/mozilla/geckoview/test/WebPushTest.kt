@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * Any copyright is dedicated to the Public Domain.
+/* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 package org.mozilla.geckoview.test
@@ -180,6 +179,7 @@ class WebPushTest : BaseSessionTest() {
                 assertThat("Title should match", notification.title, equalTo(expectedTitle))
                 assertThat("Body should match", notification.text, equalTo(expectedBody))
                 assertThat("Source should match", notification.source, endsWith("sw.js"))
+                notification.show()
                 notificationResult.complete(null)
             }
         })

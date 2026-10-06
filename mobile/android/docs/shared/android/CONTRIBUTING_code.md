@@ -1,4 +1,5 @@
 # Contributing code to Mozilla's Android projects
+
 Thank you for taking the time to contribute to one of Mozilla's Android
 projects! 🔥 🦊 ❤️ 🤖! 🎉 👍 For a full list of projects, see
 [the README](../../../README.md).
@@ -9,6 +10,7 @@ If you run into trouble at any point, ask for help! Check out our
 [preferred communication channels.](./CONTRIBUTING.md#communication)
 
 Contents:
+
 - [Beginner's guides](#beginners-guides)
 - [Configuring Android Studio](#configuring-android-studio)
 - [Finding issues to work on](#finding-issues-to-work-on)
@@ -17,8 +19,10 @@ Contents:
 - [Writing tests](#writing-tests)
 
 ## Beginner's guides
+
 Unfamiliar with the technology we use? No problem! We were once new to this
 too! Here are few guides we've compiled to help you get started:
+
 - [Git guide](../git_guide.md#android)
 - [Android guide](android_guide.md)
   - [Accessibility guide](accessibility_guide.md)
@@ -30,9 +34,11 @@ too! Here are few guides we've compiled to help you get started:
 If these are confusing or if you have questions, please let us know!
 
 ## Configuring Android Studio
+
 We don't allow wildcard imports (ex: `import kotlinx.coroutines.*`) so we recommend preventing Android Studio from auto-importing or optimizing with them. This can be done via the `Preferences > Editor > Kotlin > Code Style > Use single name import` option.
 
 ## Finding issues to work on
+
 **New to Mozilla's mobile projects?** See issues labeled `good first issue` in your project's
 issues tracker (example: [focus-android][fa good first]). These are designed to be
 easier to implement so you can focus on learning our pull request workflow. *Please only
@@ -51,6 +57,7 @@ have an opportunity to provide feedback. **Pull requests for unsolicited feature
 are unlikely to get merged.**
 
 ## Creating a Pull Request
+
 Our team follows [the GitHub pull request workflow][gh workflow]: fork, branch, commit,
 pull request, automated tests, review, merge. If you're new to GitHub, check out [the official
 guides][gh guides] for more information.
@@ -93,22 +100,27 @@ If your code is not approved, address the suggested comments, push your changes,
 review from your reviewer again.
 
 ## Merging
+
 After your code has been approved and the tests pass, your code will be merged into master
 by the core team. When merging, we use GitHub's "Rebase and merge":
+
 - We keep a linear git history for readability
 - We prefer incremental commits to remain in the history
   - It's easier to read, helps with bisection, and matches repo state during review.
 
 ## Writing tests
+
 To learn more about how our tests are structured, see [testing.md](testing.md).
 
 ## Stale PRs
+
 If changes are requested in your patch and there is no indication of further activity within 2 weeks,
 we may close your PR in order to keep our repo in a manageable state. This does not mean we are not
 interested in your patch! Once the requested changes are made, feel free to re-open the PR.
 
 Conversely, if your PR is not receiving attention from the organization, here are a few strategies
 for escalating it:
+
 - Make sure your PR has the `needs-review` label.
 - Tag specific reviewers. Look for people that recently touched the file, that are active in other patches, or the component triage owner for the associated bug in Bugzilla.
 - Reach out to us on [Matrix](https://matrix.to/#/#fenix:mozilla.org).

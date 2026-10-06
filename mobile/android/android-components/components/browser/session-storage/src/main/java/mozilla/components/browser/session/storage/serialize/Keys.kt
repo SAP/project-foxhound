@@ -25,6 +25,7 @@ internal object Keys {
     const val SESSION_SEARCH_TERM = "searchTerm"
     const val SESSION_LAST_ACCESS = "lastAccess"
     const val SESSION_CREATED_AT = "createdAt"
+    const val SESSION_LAST_VISIBLE_AT = "lastVisibleAt"
     const val SESSION_LAST_MEDIA_URL = "lastMediaUrl"
     const val SESSION_LAST_MEDIA_ACCESS = "lastMediaAccess"
     const val SESSION_LAST_MEDIA_SESSION_ACTIVE = "mediaSessionActive"
@@ -45,4 +46,11 @@ internal object Keys {
     const val ENGINE_SESSION_KEY = "engineSession"
 
     const val VERSION_KEY = "version"
+
+    const val TAB_PARTITIONS_KEY = "tabPartitions"
+    const val TAB_PARTITION_ID_KEY = "id"
+    const val TAB_PARTITION_GROUPS_KEY = "tabGroups"
+    const val TAB_GROUP_ID_KEY = "id"
+    const val TAB_GROUP_NAME_KEY = "name"
+    const val TAB_GROUP_TAB_IDS_KEY = "tabIds"
 }

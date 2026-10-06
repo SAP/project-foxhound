@@ -1,6 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * vim:set ts=2 sw=2 sts=2 et:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -99,89 +97,9 @@ add_task(async function test_tab_matches() {
     ],
   });
 
-  // This covers the following 3 tests. Container tests are in a dedicated
-  // test file anyway, so these are left to cover the disabled pref case.
-  UrlbarPrefs.set("switchTabs.searchAllContainers", false);
-
-  info("a container tab is not visible in 'switch to tab'");
-  await addOpenPages(uri5, 1, /* userContextId: */ 3);
-  context = createContext("abc", { isPrivate: false });
-  await check_results({
-    context,
-    matches: [
-      makeSearchResult(context, {
-        engineName: SUGGESTIONS_ENGINE_NAME,
-        heuristic: true,
-      }),
-      makeTabSwitchResult(context, {
-        uri: "http://abc.com/",
-        title: "ABC rocks",
-      }),
-      makeTabSwitchResult(context, {
-        uri: "http://xyz.net/",
-        title: "xyz.net - we're better than ABC",
-      }),
-      makeVisitResult(context, {
-        uri: uri5.spec,
-        title: "foobar.org - much better than ABC, definitely better than XYZ",
-      }),
-    ],
-  });
-
-  info(
-    "a container tab should not see 'switch to tab' for other container tabs"
-  );
-  context = createContext("abc", { isPrivate: false, userContextId: 3 });
-  await check_results({
-    context,
-    matches: [
-      makeSearchResult(context, {
-        engineName: SUGGESTIONS_ENGINE_NAME,
-        heuristic: true,
-      }),
-      makeVisitResult(context, {
-        uri: uri1.spec,
-        title: "ABC rocks",
-      }),
-      makeVisitResult(context, {
-        uri: uri2.spec,
-        title: "xyz.net - we're better than ABC",
-      }),
-      makeTabSwitchResult(context, {
-        uri: "http://foobar.org/",
-        title: "foobar.org - much better than ABC, definitely better than XYZ",
-        userContextId: 3,
-      }),
-    ],
-  });
-
-  info("a different container tab should not see any 'switch to tab'");
-  context = createContext("abc", { isPrivate: false, userContextId: 2 });
-  await check_results({
-    context,
-    matches: [
-      makeSearchResult(context, {
-        engineName: SUGGESTIONS_ENGINE_NAME,
-        heuristic: true,
-      }),
-      makeVisitResult(context, { uri: uri1.spec, title: "ABC rocks" }),
-      makeVisitResult(context, {
-        uri: uri2.spec,
-        title: "xyz.net - we're better than ABC",
-      }),
-      makeVisitResult(context, {
-        uri: uri5.spec,
-        title: "foobar.org - much better than ABC, definitely better than XYZ",
-      }),
-    ],
-  });
-
-  UrlbarPrefs.clear("switchTabs.searchAllContainers");
-  if (UrlbarPrefs.get("switchTabs.searchAllContainers")) {
-    // This would confuse the next tests, so remove it, containers are tested
-    // in a separate test file.
-    await removeOpenPages(uri5, 1, /* userContextId: */ 3);
-  }
+  // This would confuse the next tests, so remove it, containers are tested
+  // in a separate test file.
+  await removeOpenPages(uri5, 1, /* userContextId: */ 3);
 
   info(
     "three results, both normal results are tab matches, one has multiple tabs"
@@ -238,7 +156,7 @@ add_task(async function test_tab_matches() {
 
   info("tab match search with restriction character");
   await addOpenPages(uri1, 1);
-  context = createContext(UrlbarTokenizer.RESTRICT.OPENPAGE + " abc", {
+  context = createContext(UrlbarShared.RESTRICT_TOKENS.OPENPAGE + " abc", {
     isPrivate: false,
   });
   await check_results({
@@ -246,7 +164,7 @@ add_task(async function test_tab_matches() {
     matches: [
       makeSearchResult(context, {
         query: "abc",
-        alias: UrlbarTokenizer.RESTRICT.OPENPAGE,
+        alias: UrlbarShared.RESTRICT_TOKENS.OPENPAGE,
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         heuristic: true,
       }),
@@ -290,7 +208,7 @@ add_task(async function test_tab_matches() {
   });
 
   info("tab match with not-addable pages and restriction character");
-  context = createContext(UrlbarTokenizer.RESTRICT.OPENPAGE + " mozilla", {
+  context = createContext(UrlbarShared.RESTRICT_TOKENS.OPENPAGE + " mozilla", {
     isPrivate: false,
   });
   await check_results({
@@ -298,7 +216,7 @@ add_task(async function test_tab_matches() {
     matches: [
       makeSearchResult(context, {
         query: "mozilla",
-        alias: UrlbarTokenizer.RESTRICT.OPENPAGE,
+        alias: UrlbarShared.RESTRICT_TOKENS.OPENPAGE,
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         heuristic: true,
       }),
@@ -310,7 +228,7 @@ add_task(async function test_tab_matches() {
   });
 
   info("tab match with not-addable pages and only restriction character");
-  context = createContext(UrlbarTokenizer.RESTRICT.OPENPAGE, {
+  context = createContext(UrlbarShared.RESTRICT_TOKENS.OPENPAGE, {
     isPrivate: false,
   });
   await check_results({
@@ -321,6 +239,10 @@ add_task(async function test_tab_matches() {
         heuristic: true,
       }),
       makeTabSwitchResult(context, {
+        uri: "http://abc.com/",
+        title: "ABC rocks",
+      }),
+      makeTabSwitchResult(context, {
         uri: "data:text/html,test",
         title: "data:text/html,test",
         iconUri: UrlbarUtils.ICON.DEFAULT,
@@ -328,10 +250,6 @@ add_task(async function test_tab_matches() {
       makeTabSwitchResult(context, {
         uri: "about:mozilla",
         title: "about:mozilla",
-      }),
-      makeTabSwitchResult(context, {
-        uri: "http://abc.com/",
-        title: "ABC rocks",
       }),
     ],
   });

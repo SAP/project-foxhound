@@ -15,13 +15,13 @@ add_task(async function test_SaveTabGroups() {
     "savedGroups starts in initial state"
   );
 
-  let tab1 = BrowserTestUtils.addTab(win.gBrowser, "about:mozilla");
+  let tab1 = BrowserTestUtils.addTab(win.gBrowser, "about:mozilla?foo");
   await BrowserTestUtils.browserLoaded(tab1.linkedBrowser);
   await TabStateFlusher.flush(tab1.linkedBrowser);
   let group1 = win.gBrowser.addTabGroup([tab1]);
   ss.addSavedTabGroup(group1);
 
-  let tab2 = BrowserTestUtils.addTab(win.gBrowser, "about:logo");
+  let tab2 = BrowserTestUtils.addTab(win.gBrowser, "about:mozilla?bar");
   await BrowserTestUtils.browserLoaded(tab2.linkedBrowser);
   await TabStateFlusher.flush(tab2.linkedBrowser);
   let group2 = win.gBrowser.addTabGroup([tab2]);

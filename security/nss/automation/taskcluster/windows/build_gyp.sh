@@ -18,9 +18,9 @@ git clone https://chromium.googlesource.com/external/gyp
 
 # Install GYP.
 pushd gyp
-python -m venv ./test-env
-test-env/Scripts/python setup.py install
-test-env/Scripts/python -m pip install --upgrade pip
+python3 -m venv ./test-env
+test-env/Scripts/python3 setup.py install
+test-env/Scripts/python3 -m pip install --upgrade pip
 test-env/Scripts/pip install --upgrade 'setuptools<45.0.0' six
 # Fool GYP.
 touch "${VSPATH}/VC/vcvarsall.bat"
@@ -34,10 +34,11 @@ test -v VCS_PATH
 
 # builds write to the source dir (and its parent), so move the source trees to
 # our workspace from the (cached) checkout dir
-cp -a "${VCS_PATH}/nspr" "${VCS_PATH}/nss" .
+cp -a "${VCS_PATH}/nss" .
+[ -d nspr ] || git clone https://github.com/mozilla/nspr nspr
 
 pushd nspr
-hg revert --all
+git checkout -- .
 if [[ -f ../nss/nspr.patch && "$ALLOW_NSPR_PATCH" == "1" ]]; then
   cat ../nss/nspr.patch | patch -p1
 fi
@@ -50,6 +51,9 @@ export -f make
 
 # Build with gyp.
 ./nss/build.sh -g -v --enable-libpkix -Denable_draft_hpke=1 "$@"
+
+# Build sqlite3 CLI tool for use by dbtests.
+bash "$(dirname "$0")/build_sqlite3.sh" dist nss/lib/sqlite
 
 # Package.
 7z a public/build/dist.7z dist

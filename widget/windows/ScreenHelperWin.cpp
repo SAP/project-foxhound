@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,7 @@
 #include "ScreenHelperWin.h"
 
 #include "mozilla/Logging.h"
+#include "mozilla/ToString.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
 #include "nsTArray.h"
 #include "WinUtils.h"
@@ -94,12 +93,7 @@ BOOL CALLBACK CollectMonitors(HMONITOR aMon, HDC, LPRECT, LPARAM ioParam) {
   }
 
   double scale = WinUtils::LogToPhysFactor(aMon);
-  DesktopToLayoutDeviceScale contentsScaleFactor;
-  if (WinUtils::IsPerMonitorDPIAware()) {
-    contentsScaleFactor.scale = 1.0;
-  } else {
-    contentsScaleFactor.scale = scale;
-  }
+  DesktopToLayoutDeviceScale contentsScaleFactor(1.0);
   CSSToLayoutDeviceScale defaultCssScaleFactor(scale);
   LayoutDeviceIntRect rect(info.rcMonitor.left, info.rcMonitor.top,
                            info.rcMonitor.right - info.rcMonitor.left,

@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsIDeviceContextSpec_h___
-#define nsIDeviceContextSpec_h___
+#ifndef nsIDeviceContextSpec_h_
+#define nsIDeviceContextSpec_h_
 
 #include "gfxPoint.h"
 #include "nsISupports.h"
@@ -74,7 +73,8 @@ class nsIDeviceContextSpec : public nsISupports {
 
   NS_IMETHOD BeginDocument(const nsAString& aTitle,
                            const nsAString& aPrintToFileName,
-                           int32_t aStartPage, int32_t aEndPage) = 0;
+                           uint64_t aBrowsingContextId, int32_t aStartPage,
+                           int32_t aEndPage) = 0;
 
   virtual RefPtr<mozilla::gfx::PrintEndDocumentPromise> EndDocument() = 0;
   /**
@@ -96,7 +96,7 @@ class nsIDeviceContextSpec : public nsISupports {
   nsCOMPtr<nsIPrintSettings> mPrintSettings;
 
 #ifdef MOZ_ENABLE_SKIA_PDF
-  // This variable is independant of nsIPrintSettings::kOutputFormatPDF (i.e.
+  // This variable is independent of nsIPrintSettings::kOutputFormatPDF (i.e.
   // save-to-PDF). If set to true, then even when we print to a printer we
   // output and send it PDF.
   bool mPrintViaSkPDF = false;

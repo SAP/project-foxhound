@@ -1,3 +1,5 @@
+// |jit-test| skip-if: !getBuildConfiguration("jitspew")
+
 var it = 100;
 function f() {
   if (--it < 0) {

@@ -6,7 +6,6 @@ package org.mozilla.focus.searchwidget
 import android.app.PendingIntent
 import android.content.Intent
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.utils.PendingIntentUtils
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
@@ -51,7 +50,7 @@ class SearchWidgetProviderTest {
             testContext,
             SearchWidgetProvider.REQUEST_CODE_NEW_TAB,
             textSearchIntent,
-            PendingIntentUtils.defaultFlags or
+            PendingIntent.FLAG_IMMUTABLE or
                 PendingIntent.FLAG_UPDATE_CURRENT,
         )
 

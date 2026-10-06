@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "gtest/gtest.h"
 
+#include <string>
 #include <windows.h>
 #include "common.h"
 #include "nsCOMPtr.h"
@@ -97,8 +96,9 @@ TEST_F(DefaultAgentTest, SendDefaultAgentPing) {
                                        NotificationShown::NotShown,
                                        NotificationAction::NoAction};
   uint32_t daysSinceAppLaunch = 12;
+  std::string isTaskbarPinned = "NotPinned";
   HRESULT result = SendDefaultAgentPing(browserInfo, pdfInfo, activities,
-                                        daysSinceAppLaunch);
+                                        daysSinceAppLaunch, isTaskbarPinned);
   ASSERT_EQ(S_OK, result);
 }
 
@@ -113,8 +113,9 @@ TEST_F(DefaultAgentTest, SendPing) {
   auto notificationAction = u"no-action"_ns;
   uint32_t daysSinceLaunch = 12;
 
-  nsresult result = defaultAgent->SendPing(currentBrowser, previousBrowser,
-                                           pdfHandler, notificationShown,
-                                           notificationAction, daysSinceLaunch);
+  auto isTaskbarPinned = u"NotPinned"_ns;
+  nsresult result = defaultAgent->SendPing(
+      currentBrowser, previousBrowser, pdfHandler, notificationShown,
+      notificationAction, daysSinceLaunch, isTaskbarPinned);
   ASSERT_EQ(result, NS_OK);
 }

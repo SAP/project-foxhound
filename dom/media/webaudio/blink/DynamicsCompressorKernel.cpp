@@ -28,12 +28,12 @@
 
 #include "DynamicsCompressorKernel.h"
 
-#include "DenormalDisabler.h"
 #include <algorithm>
 #include <cmath>
 
-#include "mozilla/FloatingPoint.h"
+#include "DenormalDisabler.h"
 #include "WebAudioUtils.h"
+#include "mozilla/FloatingPoint.h"
 
 using namespace mozilla::dom;  // for WebAudioUtils
 using mozilla::MakeUnique;
@@ -409,6 +409,12 @@ void DynamicsCompressorKernel::process(
         float shapedInput = saturate(absInput, k);
 
         float attenuation = absInput <= 0.0001f ? 1 : shapedInput / absInput;
+
+        if (std::isnan(attenuation)) {
+          // When absInput is inf, shapedInput is also inf, so attenuation is
+          // NaN. Use maximum attenuation.
+          attenuation = 0;
+        }
 
         float attenuationDb =
             -WebAudioUtils::ConvertLinearToDecibels(attenuation, -1000.0f);

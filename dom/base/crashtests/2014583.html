@@ -1,0 +1,51 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><script>
+// Wait for the DOM to be fully constructed
+window.addEventListener('DOMContentLoaded', () => {
+    // Clear ALL children from body - including parser-added whitespace text nodes
+    while (document.body.firstChild) {
+        document.body.removeChild(document.body.firstChild);
+    }
+
+    // Build DOM: <p>myprefix</p><div></div> with NO text nodes after
+    let p = document.createElement('p');
+    p.textContent = 'myprefix';
+    document.body.appendChild(p);
+
+    let div = document.createElement('div');
+    document.body.appendChild(div);
+
+    // Remove any text nodes that might have been added by the parser
+    // between our elements (should be none since we built programmatically)
+    let walker = document.createTreeWalker(
+        document.body,
+        NodeFilter.SHOW_TEXT,
+        null
+    );
+    let textsToRemove = [];
+    let node;
+    while (node = walker.nextNode()) {
+        // Keep the "myprefix" text but remove everything else at body level
+        if (node.parentNode === document.body) {
+            textsToRemove.push(node);
+        }
+    }
+    textsToRemove.forEach(n => n.remove());
+
+    // Also ensure html element has no trailing text nodes
+    while (document.documentElement.lastChild !== document.body) {
+        if (document.documentElement.lastChild) {
+            document.documentElement.lastChild.remove();
+        } else {
+            break;
+        }
+    }
+
+    // Force layout so the PresShell is ready
+    document.body.offsetHeight;
+
+    // Now trigger text directive finding
+    setTimeout(() => {
+        location.hash = '#:~:text=myprefix-,anything';
+    }, 0);
+});
+</script></body></html>

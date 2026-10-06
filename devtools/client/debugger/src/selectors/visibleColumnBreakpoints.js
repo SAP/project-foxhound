@@ -26,10 +26,6 @@ function contains(location, range) {
   );
 }
 
-function convertToList(breakpointPositions) {
-  return [].concat(...Object.values(breakpointPositions));
-}
-
 /**
  * Retrieve the list of column breakpoints to be displayed.
  * This ignores lines without any breakpoint, but also lines with a single possible breakpoint.
@@ -148,8 +144,10 @@ export function getFirstBreakpointPosition(state, location) {
     return null;
   }
 
-  return sortSelectedLocations(convertToList(positions), location.source).find(
-    position =>
-      getSelectedLocation(position, location.source).line == location.line
-  );
+  const breakpointPositionsForLine = positions[location.line];
+  if (!breakpointPositionsForLine) {
+    return null;
+  }
+
+  return sortSelectedLocations(breakpointPositionsForLine, location.source)[0];
 }

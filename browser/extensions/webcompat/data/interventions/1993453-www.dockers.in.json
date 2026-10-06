@@ -1,0 +1,18 @@
+{
+  "label": "www.dockers.in",
+  "bugs": {
+    "1993453": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://www.dockers.in/*"]
+    }
+  },
+  "css": {
+    "fix_product_image_hover_zoom": ".pdpImgContainer * .zoomEffect { pointer-events: none; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "css": ["fix_product_image_hover_zoom"]
+    }
+  ]
+}

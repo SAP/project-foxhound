@@ -17,16 +17,31 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
+#include "api/adaptation/resource.h"
+#include "api/call/bitrate_allocation.h"
 #include "api/environment/environment.h"
+#include "api/fec_controller.h"
 #include "api/field_trials_view.h"
 #include "api/metronome/metronome.h"
+#include "api/rtp_parameters.h"
+#include "api/rtp_sender_interface.h"
+#include "api/scoped_refptr.h"
+#include "api/sequence_checker.h"
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/task_queue/task_queue_base.h"
+#include "api/units/data_rate.h"
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
 #include "api/video/encoded_image.h"
 #include "api/video/video_bitrate_allocation.h"
+#include "api/video/video_frame.h"
+#include "api/video/video_layers_allocation.h"
+#include "api/video/video_source_interface.h"
+#include "api/video/video_stream_encoder_settings.h"
 #include "api/video_codecs/video_encoder.h"
 #include "call/bitrate_allocator.h"
 #include "call/rtp_config.h"
@@ -74,33 +89,35 @@ class VideoSendStreamImpl : public webrtc::VideoSendStream,
   using RtpStateMap = std::map<uint32_t, RtpState>;
   using RtpPayloadStateMap = std::map<uint32_t, RtpPayloadState>;
 
-  VideoSendStreamImpl(const Environment& env,
-                      int num_cpu_cores,
-                      RtcpRttStats* call_stats,
-                      RtpTransportControllerSendInterface* transport,
-                      Metronome* metronome,
-                      BitrateAllocatorInterface* bitrate_allocator,
-                      SendDelayStats* send_delay_stats,
-                      VideoSendStream::Config config,
-                      VideoEncoderConfig encoder_config,
-                      const RtpStateMap& suspended_ssrcs,
-                      const RtpPayloadStateMap& suspended_payload_states,
-                      std::unique_ptr<FecController> fec_controller,
-                      std::unique_ptr<VideoStreamEncoderInterface>
-                          video_stream_encoder_for_test = nullptr);
+  VideoSendStreamImpl(
+      const Environment& env,
+      int num_cpu_cores,
+      RtcpRttStats* call_stats,
+      RtpTransportControllerSendInterface* transport,
+      Metronome* metronome,
+      BitrateAllocatorInterface* bitrate_allocator,
+      SendDelayStats* send_delay_stats,
+      VideoSendStream::Config config,
+      VideoEncoderConfig encoder_config,
+      const RtpStateMap& suspended_ssrcs,
+      const RtpPayloadStateMap& suspended_payload_states,
+      std::unique_ptr<FecController> fec_controller,
+      EncoderSwitchRequestCallback encoder_switch_request_callback = nullptr,
+      std::unique_ptr<VideoStreamEncoderInterface>
+          video_stream_encoder_for_test = nullptr);
   ~VideoSendStreamImpl() override;
 
-  void DeliverRtcp(const uint8_t* packet, size_t length);
+  void DeliverRtcp(std::span<const uint8_t> packet);
 
   // webrtc::VideoSendStream implementation.
   void Start() override;
   void Stop() override;
   bool started() override;
 
-  void AddAdaptationResource(rtc::scoped_refptr<Resource> resource) override;
-  std::vector<rtc::scoped_refptr<Resource>> GetAdaptationResources() override;
+  void AddAdaptationResource(scoped_refptr<Resource> resource) override;
+  std::vector<scoped_refptr<Resource>> GetAdaptationResources() override;
 
-  void SetSource(rtc::VideoSourceInterface<webrtc::VideoFrame>* source,
+  void SetSource(VideoSourceInterface<webrtc::VideoFrame>* source,
                  const DegradationPreference& degradation_preference) override;
 
   void ReconfigureVideoEncoder(VideoEncoderConfig config) override;
@@ -108,6 +125,8 @@ class VideoSendStreamImpl : public webrtc::VideoSendStream,
                                SetParametersCallback callback) override;
   Stats GetStats() override;
   void SetStats(const Stats& stats) override;
+
+  void SetCsrcs(std::span<const uint32_t> csrcs) override;
 
   void StopPermanentlyAndGetRtpStates(RtpStateMap* rtp_state_map,
                                       RtpPayloadStateMap* payload_state_map);
@@ -169,7 +188,9 @@ class VideoSendStreamImpl : public webrtc::VideoSendStream,
       const CodecSpecificInfo* codec_specific_info) override;
 
   // Implements EncodedImageCallback.
-  void OnDroppedFrame(EncodedImageCallback::DropReason reason) override;
+  void OnFrameDropped(uint32_t rtp_timestamp,
+                      int spatial_id,
+                      bool is_end_of_temporal_unit) override;
 
   // Starts monitoring and sends a keyframe.
   void StartupVideoSendStream();
@@ -217,9 +238,13 @@ class VideoSendStreamImpl : public webrtc::VideoSendStream,
   bool has_active_encodings_ RTC_GUARDED_BY(thread_checker_);
   bool disable_padding_ RTC_GUARDED_BY(thread_checker_);
   int max_padding_bitrate_ RTC_GUARDED_BY(thread_checker_);
-  int encoder_min_bitrate_bps_ RTC_GUARDED_BY(thread_checker_);
-  uint32_t encoder_max_bitrate_bps_ RTC_GUARDED_BY(thread_checker_);
-  uint32_t encoder_target_rate_bps_ RTC_GUARDED_BY(thread_checker_);
+  DataRate encoder_min_bitrate_ RTC_GUARDED_BY(thread_checker_);
+  // The current maximum total bitrate across all active layers, if any.
+  std::optional<DataRate> encoder_max_bitrate_ RTC_GUARDED_BY(thread_checker_);
+  // The currently configured global max bitrate (from
+  // VideoEncoderConfig::max_bitrate_bps).
+  DataRate configured_max_bitrate_ RTC_GUARDED_BY(thread_checker_);
+  DataRate encoder_target_rate_ RTC_GUARDED_BY(thread_checker_);
   double encoder_bitrate_priority_ RTC_GUARDED_BY(thread_checker_);
   const int encoder_av1_priority_bitrate_override_bps_
       RTC_GUARDED_BY(thread_checker_);

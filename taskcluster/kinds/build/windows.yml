@@ -3,11 +3,11 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 task-defaults:
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     run:
         using: mozharness
     fetches:
-        toolchain:
+        fetch:
             - windows-rs
 
 win32/debug:
@@ -41,23 +41,24 @@ win32/debug:
     use-sccache: true
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
             - linux64-node
             - linux64-cbindgen
-            - linux64-sccache
             - linux64-dump_syms
-            - linux64-wine
+            - linux64-sccache
+            - linux64-upx
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
             - onnxruntime-i686-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-x86-pc-windows-msvc
 
 win32/opt:
     description: "Win32 Opt"
@@ -88,25 +89,27 @@ win32/opt:
             mozconfig_platform: win32
     run-on-projects: ['integration']
     use-sccache: true
+    use-python: "3.11"
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
             - linux64-node
             - linux64-cbindgen
-            - linux64-sccache
             - linux64-dump_syms
-            - linux64-wine
+            - linux64-sccache
+            - linux64-upx
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
             - onnxruntime-i686-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-x86-pc-windows-msvc
 
 win32-fuzzing/debug:
     description: "Win32 Fuzzing Debug"
@@ -140,23 +143,24 @@ win32-fuzzing/debug:
     use-sccache: true
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
             - linux64-node
             - linux64-cbindgen
-            - linux64-sccache
             - linux64-dump_syms
-            - linux64-wine
+            - linux64-sccache
+            - linux64-upx
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
             - onnxruntime-i686-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-x86-pc-windows-msvc
     optimization:
         skip-unless-expanded: null
 
@@ -189,26 +193,28 @@ win64/debug:
         extra-config:
             mozconfig_platform: win64
     use-sccache: true
+    use-python: "3.11"
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
             - linux64-node
             - linux64-cbindgen
-            - linux64-sccache
             - linux64-dump_syms
-            - linux64-wine
+            - linux64-sccache
+            - linux64-upx
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-x86_64-pc-windows-msvc
 
 win64-non-unified/plain:
     description: "Win64 Hybrid Plain"
@@ -222,6 +228,7 @@ win64-non-unified/plain:
     worker:
         max-run-time: 7200
         env:
+            MOZ_AUTOMATION_BUILD_SYMBOLS: '0'
             PERFHERDER_EXTRA_OPTIONS: non-unified
     run:
         options: [append-env-variables-from-configs]
@@ -231,31 +238,34 @@ win64-non-unified/plain:
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
-        mozconfig-variant: non-unified
+        mozconfig-variant: nightly
         extra-config:
             mozconfig_platform: win64
+            extra_mozconfig_content:
+                - ac_add_options --disable-unified-build
     use-sccache: true
     run-on-projects: ['integration']
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
             - linux64-node
             - linux64-cbindgen
-            - linux64-sccache
             - linux64-dump_syms
-            - linux64-wine
+            - linux64-sccache
+            - linux64-upx
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-x86_64-pc-windows-msvc
 
 win64-fuzzing/debug:
     description: "Win64 Fuzzing Debug"
@@ -288,24 +298,25 @@ win64-fuzzing/debug:
     use-sccache: true
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
             - linux64-node
             - linux64-cbindgen
-            - linux64-sccache
             - linux64-dump_syms
-            - linux64-wine
+            - linux64-sccache
+            - linux64-upx
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-x86_64-pc-windows-msvc
     optimization:
         skip-unless-expanded: null
 
@@ -338,19 +349,20 @@ win64-plain/debug:
     run-on-projects: ['trunk']
     fetches:
         toolchain:
-            - win64-clang
-            - win64-rust
-            - win64-node
-            - win64-nasm
             - win64-cbindgen
-            - win64-winchecksec
-            - win64-mozmake
+            - win64-clang
             - win64-dump_syms
+            - win64-mozmake
+            - win64-nasm
+            - win64-node
+            - win64-rust
+            - win64-winchecksec
             - vs
             - nsis
             - sysroot-wasm32-wasi
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
     optimization:
         skip-unless-expanded: null
 
@@ -385,24 +397,25 @@ win64/opt:
     use-sccache: true
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
             - linux64-node
             - linux64-cbindgen
-            - linux64-sccache
             - linux64-dump_syms
-            - linux64-wine
+            - linux64-sccache
+            - linux64-upx
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-x86_64-pc-windows-msvc
 
 win64-plain/opt:
     description: "Win64 Opt Plain"
@@ -433,19 +446,20 @@ win64-plain/opt:
     run-on-projects: ['mozilla-central']
     fetches:
         toolchain:
+            - win64-cbindgen
             - win64-clang
-            - win64-rust
+            - win64-dump_syms
+            - win64-mozmake
             - win64-nasm
             - win64-node
-            - win64-cbindgen
+            - win64-rust
             - win64-winchecksec
-            - win64-mozmake
-            - win64-dump_syms
             - vs
             - nsis
             - sysroot-wasm32-wasi
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
     optimization:
         skip-unless-expanded: null
 
@@ -463,7 +477,7 @@ win32-shippable/opt:
         by-release-type:
             nightly: true
             beta: true
-            release.*: true
+            release: true
             esr.*: false
             default:
                 by-project:
@@ -495,6 +509,7 @@ win32-shippable/opt:
             mozconfig_platform: win32
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
@@ -502,15 +517,15 @@ win32-shippable/opt:
             - linux64-node
             - linux64-cbindgen
             - linux64-dump_syms
-            - linux64-wine
+            - linux64-upx
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
             - onnxruntime-i686-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-x86-pc-windows-msvc
 
 win64-shippable/opt:
     description: "Win64 Shippable"
@@ -529,7 +544,7 @@ win64-shippable/opt:
         symbol: Bpgo(B)
         tier: 1
     run-on-projects: ['release']
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         max-run-time: 10800
         env:
@@ -549,6 +564,7 @@ win64-shippable/opt:
             max_build_output_timeout: 3600
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
@@ -556,16 +572,16 @@ win64-shippable/opt:
             - linux64-node
             - linux64-cbindgen
             - linux64-dump_syms
-            - linux64-wine
+            - linux64-upx
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-x86_64-pc-windows-msvc
 
 win64-nightlyasrelease/opt:
     description: "Win64 Opt Nightly-As-Release"
@@ -578,7 +594,7 @@ win64-nightlyasrelease/opt:
     treeherder:
         platform: win64-nightlyasrelease/opt
         symbol: Bpgo(Bnar)
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         max-run-time: 10800
         env:
@@ -601,6 +617,7 @@ win64-nightlyasrelease/opt:
     run-on-projects: [trunk-only]
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
@@ -608,16 +625,16 @@ win64-nightlyasrelease/opt:
             - linux64-node
             - linux64-cbindgen
             - linux64-dump_syms
-            - linux64-wine
+            - linux64-upx
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-x86_64-pc-windows-msvc
 
 win32-add-on-devel/opt:
     description: "Windows32 add-on-devel"
@@ -646,23 +663,24 @@ win32-add-on-devel/opt:
     use-sccache: true
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
             - linux64-node
             - linux64-cbindgen
-            - linux64-sccache
             - linux64-dump_syms
-            - linux64-wine
+            - linux64-sccache
+            - linux64-upx
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
             - onnxruntime-i686-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-x86-pc-windows-msvc
 
 win64-add-on-devel/opt:
     description: "Windows64 add-on-devel"
@@ -691,24 +709,25 @@ win64-add-on-devel/opt:
     use-sccache: true
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
             - linux64-node
             - linux64-cbindgen
-            - linux64-sccache
             - linux64-dump_syms
-            - linux64-wine
+            - linux64-sccache
+            - linux64-upx
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-x86_64-pc-windows-msvc
 
 win64-noopt/debug:
     description: "Win64 No-optimize Debug"
@@ -737,24 +756,25 @@ win64-noopt/debug:
     use-sccache: true
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
             - linux64-node
             - linux64-cbindgen
-            - linux64-sccache
             - linux64-dump_syms
-            - linux64-wine
+            - linux64-sccache
+            - linux64-upx
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-x86_64-pc-windows-msvc
 
 win32-noopt/debug:
     description: "Win32 No-optimize Debug"
@@ -783,23 +803,24 @@ win32-noopt/debug:
     use-sccache: true
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
             - linux64-node
             - linux64-cbindgen
-            - linux64-sccache
             - linux64-dump_syms
-            - linux64-wine
+            - linux64-sccache
+            - linux64-upx
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
             - onnxruntime-i686-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-x86-pc-windows-msvc
 
 win32-rusttests/opt:
     description: "Win32 Rust Tests Opt"
@@ -832,15 +853,16 @@ win32-rusttests/opt:
     run-on-projects: ['mozilla-central']
     fetches:
         toolchain:
-            - win64-clang
-            - win64-rust
             - win64-cbindgen
+            - win64-clang
+            - win64-dump_syms
+            - win64-mozmake
             - win64-nasm
             - win64-node
+            - win64-rust
             - win64-winchecksec
-            - win64-mozmake
-            - win64-dump_syms
             - vs
+            - winappsdk-x86-pc-windows-msvc
     optimization:
         test-inclusive: [rusttests]
 
@@ -875,15 +897,16 @@ win32-rusttests/debug:
     run-on-projects: ['mozilla-central']
     fetches:
         toolchain:
-            - win64-clang
-            - win64-rust
             - win64-cbindgen
+            - win64-clang
+            - win64-dump_syms
+            - win64-mozmake
             - win64-nasm
             - win64-node
+            - win64-rust
             - win64-winchecksec
-            - win64-mozmake
-            - win64-dump_syms
             - vs
+            - winappsdk-x86-pc-windows-msvc
     optimization:
         test-inclusive: [rusttests]
 
@@ -915,16 +938,17 @@ win64-rusttests/opt:
     run-on-projects: ['mozilla-central']
     fetches:
         toolchain:
-            - win64-clang
-            - win64-rust
             - win64-cbindgen
+            - win64-clang
+            - win64-dump_syms
+            - win64-mozmake
             - win64-nasm
             - win64-node
+            - win64-rust
             - win64-winchecksec
-            - win64-mozmake
-            - win64-dump_syms
             - vs
             - dxc-x86_64-pc-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
     optimization:
         test-inclusive: [rusttests]
 
@@ -956,16 +980,17 @@ win64-rusttests/debug:
     run-on-projects: ['trunk']
     fetches:
         toolchain:
-            - win64-clang
-            - win64-rust
             - win64-cbindgen
+            - win64-clang
+            - win64-dump_syms
+            - win64-mozmake
             - win64-nasm
             - win64-node
+            - win64-rust
             - win64-winchecksec
-            - win64-mozmake
-            - win64-dump_syms
             - vs
             - dxc-x86_64-pc-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
     optimization:
         test-inclusive: [rusttests]
 
@@ -1004,22 +1029,25 @@ win64-ccov/opt:
     use-sccache: false
     fetches:
         toolchain:
-            - win64-clang
-            - win64-rust-1.83
-            - win64-rust-size
+            - win64-7zz
             - win64-cbindgen
+            - win64-clang
+            - win64-dump_syms
             - win64-grcov
-            - win64-sccache
+            - win64-mozmake
             - win64-nasm
             - win64-node
+            - win64-rust-dev
+            - win64-rust-size
+            - win64-sccache
+            - win64-upx
             - win64-winchecksec
-            - win64-mozmake
-            - win64-dump_syms
             - vs
             - nsis
             - sysroot-wasm32-wasi
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
 
 win64-fuzzing-ccov/opt:
     description: "Win64 Fuzzing Opt w/ Coverage"
@@ -1056,22 +1084,25 @@ win64-fuzzing-ccov/opt:
     use-sccache: false
     fetches:
         toolchain:
-            - win64-clang
-            - win64-rust-1.83
-            - win64-rust-size
+            - win64-7zz
             - win64-cbindgen
+            - win64-clang
+            - win64-dump_syms
             - win64-grcov
-            - win64-sccache
+            - win64-mozmake
             - win64-nasm
             - win64-node
+            - win64-rust-dev
+            - win64-rust-size
+            - win64-sccache
+            - win64-upx
             - win64-winchecksec
-            - win64-mozmake
-            - win64-dump_syms
             - vs
             - nsis
             - sysroot-wasm32-wasi
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
 
 win64-asan/debug:
     description: "Win64 Debug ASAN"
@@ -1101,16 +1132,18 @@ win64-asan/debug:
     use-sccache: true
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
             - linux64-node
             - linux64-cbindgen
-            - linux64-sccache
             - linux64-dump_syms
-            - linux64-wine
+            - linux64-sccache
+            - linux64-upx
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
@@ -1118,8 +1151,7 @@ win64-asan/debug:
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-x86_64-pc-windows-msvc
     optimization:
         skip-unless-expanded: null
 
@@ -1152,16 +1184,18 @@ win64-asan/opt:
     use-sccache: true
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
             - linux64-node
             - linux64-cbindgen
+            - linux64-dump_syms
             - linux64-sccache
-            - linux64-dump_syms
-            - linux64-wine
+            - linux64-upx
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
@@ -1169,70 +1203,7 @@ win64-asan/opt:
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
-        fetch:
-            - upx-3.95-win
-
-win64-asan-reporter-shippable/opt:
-    description: "Win64 Opt ASAN Reporter (Shippable)"
-    attributes:
-        shippable: true
-    shipping-product:
-        by-release-type:
-            nightly: firefox
-            default: null
-    index:
-        product: firefox
-        job-name: win64-asan-reporter-opt
-        type: shippable
-    treeherder:
-        platform: win64-asan-reporter/opt
-        symbol: BoR
-    worker-type: b-linux-xlarge-amd
-    worker:
-        max-run-time: 7200
-        env:
-            PERFHERDER_EXTRA_OPTIONS: "asan-reporter"
-            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
-    run:
-        actions: [get-secrets, build]
-        options: [append-env-variables-from-configs]
-        script: mozharness/scripts/fx_desktop_build.py
-        secrets: true
-        config:
-            - builds/releng_base_firefox.py
-            - builds/releng_base_linux_64_builds.py
-            - builds/taskcluster_sub_win64/asan_reporter_opt.py
-            - taskcluster_nightly.py
-        extra-config:
-            stage_platform: win64-asan-reporter
-            mozconfig_platform: win64
-            max_build_output_timeout: 3600
-        mozconfig-variant: nightly-asan-reporter
-        mar-channel-id:
-            firefox-mozilla-central-asan
-        accepted-mar-channel-ids:
-            firefox-mozilla-central-asan
-    run-on-projects: ['mozilla-central']
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-rust-cross
-            - linux64-rust-size
-            - linux64-nasm
-            - linux64-node
-            - linux64-cbindgen
-            - linux64-dump_syms
-            - linux64-wine
-            - linux64-winchecksec
-            - nsis
-            - sysroot-x86_64-linux-gnu
-            - sysroot-wasm32-wasi
-            - win64-llvm-symbolizer
-            - vs
-            - dxc-x86_64-pc-windows-msvc
-            - onnxruntime-x86_64-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-x86_64-pc-windows-msvc
 
 win64-asan-fuzzing/opt:
     description: "Win64 Fuzzing Opt ASAN"
@@ -1261,16 +1232,18 @@ win64-asan-fuzzing/opt:
     use-sccache: true
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
             - linux64-node
             - linux64-cbindgen
-            - linux64-sccache
             - linux64-dump_syms
-            - linux64-wine
+            - linux64-sccache
+            - linux64-upx
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
@@ -1278,8 +1251,7 @@ win64-asan-fuzzing/opt:
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-x86_64-pc-windows-msvc
     optimization:
         skip-unless-expanded: null
 
@@ -1297,7 +1269,7 @@ win32-devedition/opt:
         by-release-type:
             nightly: true
             beta: true
-            release.*: true
+            release: true
             default:
                 by-project:
                     # browser/confvars.sh looks for nightly-try
@@ -1329,6 +1301,7 @@ win32-devedition/opt:
     run-on-projects: ['mozilla-beta']
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
@@ -1336,15 +1309,15 @@ win32-devedition/opt:
             - linux64-node
             - linux64-cbindgen
             - linux64-dump_syms
-            - linux64-wine
+            - linux64-upx
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
             - onnxruntime-i686-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-x86-pc-windows-msvc
 
 win64-devedition/opt:
     description: "Win64 Dev Edition (shippable)"
@@ -1362,7 +1335,7 @@ win64-devedition/opt:
         platform: windows2012-64-devedition/opt
         symbol: B
         tier: 1
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         max-run-time: 10800
         env:
@@ -1384,6 +1357,7 @@ win64-devedition/opt:
     run-on-projects: ['mozilla-beta']
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
@@ -1391,16 +1365,16 @@ win64-devedition/opt:
             - linux64-node
             - linux64-cbindgen
             - linux64-dump_syms
-            - linux64-wine
+            - linux64-upx
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-x86_64-pc-windows-msvc
 
 win64-aarch64/debug:
     description: "AArch64 Win64 Debug"
@@ -1417,6 +1391,7 @@ win64-aarch64/debug:
         max-run-time: 7200
         env:
             PERFHERDER_EXTRA_OPTIONS: aarch64
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         actions: [get-secrets, build]
         options: [append-env-variables-from-configs]
@@ -1432,23 +1407,23 @@ win64-aarch64/debug:
     use-sccache: true
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
             - linux64-node
             - linux64-cbindgen
-            - linux64-sccache
             - linux64-dump_syms
-            - linux64-wine
+            - linux64-sccache
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
             - dxc-aarch64-pc-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-aarch64-pc-windows-msvc
     optimization:
         skip-unless-expanded: null
 
@@ -1468,6 +1443,7 @@ win64-aarch64/opt:
         max-run-time: 7200
         env:
             PERFHERDER_EXTRA_OPTIONS: aarch64
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         actions: [get-secrets, build]
         options: [append-env-variables-from-configs]
@@ -1483,23 +1459,23 @@ win64-aarch64/opt:
     use-sccache: true
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
             - linux64-node
             - linux64-cbindgen
-            - linux64-sccache
             - linux64-dump_syms
-            - linux64-wine
+            - linux64-sccache
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
             - dxc-aarch64-pc-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-aarch64-pc-windows-msvc
     optimization:
         skip-unless-expanded: null
 
@@ -1520,7 +1496,7 @@ win64-aarch64-shippable/opt:
         symbol: Bpgo(B)
         tier: 1
     run-on-projects: ['release']
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         max-run-time: 10800
         env:
@@ -1540,6 +1516,7 @@ win64-aarch64-shippable/opt:
             max_build_output_timeout: 3600
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
@@ -1547,15 +1524,14 @@ win64-aarch64-shippable/opt:
             - linux64-node
             - linux64-cbindgen
             - linux64-dump_syms
-            - linux64-wine
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
             - dxc-aarch64-pc-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-aarch64-pc-windows-msvc
 
 win64-aarch64-devedition/opt:
     description: "AArch64 Win64 Dev Edition (shippable)"
@@ -1573,7 +1549,7 @@ win64-aarch64-devedition/opt:
         platform: windows2012-aarch64-devedition/opt
         symbol: Bpgo(B)
         tier: 1
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         max-run-time: 10800
         env:
@@ -1595,6 +1571,7 @@ win64-aarch64-devedition/opt:
     run-on-projects: ['mozilla-beta']
     fetches:
         toolchain:
+            - linux64-7zz
             - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
@@ -1602,12 +1579,11 @@ win64-aarch64-devedition/opt:
             - linux64-node
             - linux64-cbindgen
             - linux64-dump_syms
-            - linux64-wine
             - linux64-winchecksec
+            - linux64-wine
             - nsis
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
             - dxc-aarch64-pc-windows-msvc
-        fetch:
-            - upx-3.95-win
+            - winappsdk-aarch64-pc-windows-msvc

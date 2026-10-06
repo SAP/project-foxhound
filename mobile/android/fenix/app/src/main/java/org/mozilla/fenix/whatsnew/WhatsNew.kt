@@ -71,7 +71,7 @@ class WhatsNew private constructor(private val storage: WhatsNewStorage) {
         fun shouldHighlightWhatsNew(context: Context): Boolean {
             return shouldHighlightWhatsNew(
                 ContextWhatsNewVersion(context),
-                context.components.strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
+                context.components.strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
                     SharedPreferenceWhatsNewStorage(context)
                 },
             )

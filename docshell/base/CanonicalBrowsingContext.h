@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,6 +34,7 @@ class nsBrowserStatusFilter;
 class nsSecureBrowserUI;
 class CallerWillNotifyHistoryIndexAndLengthChanges;
 class nsITimer;
+class nsIScopedPrefs;
 
 namespace mozilla {
 enum class CallState;
@@ -75,7 +74,7 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   static CanonicalBrowsingContext* Cast(BrowsingContext* aContext);
   static const CanonicalBrowsingContext* Cast(const BrowsingContext* aContext);
   static already_AddRefed<CanonicalBrowsingContext> Cast(
-      already_AddRefed<BrowsingContext>&& aContext);
+      already_AddRefed<BrowsingContext> aContext);
 
   bool IsOwnedByProcess(uint64_t aProcessId) const {
     return mProcessId == aProcessId;
@@ -128,7 +127,7 @@ class CanonicalBrowsingContext final : public BrowsingContext {
 
   nsISHistory* GetSessionHistory();
   SessionHistoryEntry* GetActiveSessionHistoryEntry();
-  void SetActiveSessionHistoryEntry(SessionHistoryEntry* aEntry);
+  void SetActiveSessionHistoryEntryFromBFCache(SessionHistoryEntry* aEntry);
 
   bool ManuallyManagesActiveness() const;
 
@@ -197,7 +196,14 @@ class CanonicalBrowsingContext final : public BrowsingContext {
 
   MOZ_CAN_RUN_SCRIPT Maybe<int32_t> HistoryGo(
       int32_t aOffset, uint64_t aHistoryEpoch, bool aRequireUserInteraction,
-      bool aUserActivation, Maybe<ContentParentId> aContentId);
+      bool aUserActivation, bool aCheckForCancelation,
+      Maybe<ContentParentId> aContentId,
+      std::function<void(nsresult)>&& aResolver = [](nsresult) {});
+
+  MOZ_CAN_RUN_SCRIPT void NavigationTraverse(
+      const nsID& aKey, uint64_t aHistoryEpoch, bool aUserActivation,
+      bool aCheckForCancelation, Maybe<ContentParentId> aContentId,
+      std::function<void(nsresult)>&& aResolver);
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
@@ -278,12 +284,6 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   bool HasCreatedMediaController() const;
 
   // Attempts to start loading the given load state in this BrowsingContext,
-  // without requiring any communication from a docshell. This will handle
-  // computing the right process to load in, and organising handoff to
-  // the right docshell when we get a response.
-  bool LoadInParent(nsDocShellLoadState* aLoadState, bool aSetNavigating);
-
-  // Attempts to start loading the given load state in this BrowsingContext,
   // in parallel with a DocumentChannelChild being created in the docshell.
   // Requires the DocumentChannel to connect with this load for it to
   // complete successfully.
@@ -308,8 +308,8 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   void ReplacedBy(CanonicalBrowsingContext* aNewContext,
                   const NavigationIsolationOptions& aRemotenessOptions);
 
-  bool HasHistoryEntry(nsISHEntry* aEntry);
-  bool HasLoadingHistoryEntry(nsISHEntry* aEntry) {
+  bool HasHistoryEntry(SessionHistoryEntry* aEntry);
+  bool HasLoadingHistoryEntry(SessionHistoryEntry* aEntry) {
     for (const LoadingSessionHistoryEntry& loading : mLoadingEntries) {
       if (loading.mEntry == aEntry) {
         return true;
@@ -318,7 +318,8 @@ class CanonicalBrowsingContext final : public BrowsingContext {
     return false;
   }
 
-  void SwapHistoryEntries(nsISHEntry* aOldEntry, nsISHEntry* aNewEntry);
+  void SwapHistoryEntries(SessionHistoryEntry* aOldEntry,
+                          SessionHistoryEntry* aNewEntry);
 
   void AddLoadingSessionHistoryEntry(uint64_t aLoadId,
                                      SessionHistoryEntry* aEntry);
@@ -326,11 +327,18 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   void GetLoadingSessionHistoryInfoFromParent(
       Maybe<LoadingSessionHistoryInfo>& aLoadingInfo);
 
-  mozilla::Span<const SessionHistoryInfo> GetContiguousSessionHistoryInfos();
-
+  MOZ_CAN_RUN_SCRIPT
   void HistoryCommitIndexAndLength();
 
+  void DeactivateDocuments();
+
+  MOZ_CAN_RUN_SCRIPT
+  void ReactivateDocuments(SessionHistoryEntry* aEntry,
+                           SessionHistoryEntry* aPreviousEntryForActivation);
+
   void SynchronizeLayoutHistoryState();
+
+  void SynchronizeNavigationAPIState(nsIStructuredCloneContainer* aState);
 
   void ResetScalingZoom();
 
@@ -365,7 +373,7 @@ class CanonicalBrowsingContext final : public BrowsingContext {
 
  private:
   static nsresult ContainsSameOriginBfcacheEntry(
-      nsISHEntry* aEntry, mozilla::dom::BrowsingContext* aBC,
+      SessionHistoryEntry* aEntry, mozilla::dom::BrowsingContext* aBC,
       int32_t aChildIndex, void* aData);
 
  public:
@@ -384,12 +392,27 @@ class CanonicalBrowsingContext final : public BrowsingContext {
     mPriorityActive = aIsActive;
   }
 
+  void GetDownloadFolderOverride(nsString& aOut) const {
+    if (IsTop()) {
+      aOut = mDownloadFolderOverride;
+    }
+  }
+  void SetDownloadFolderOverride(const nsAString& aValue, ErrorResult& aRv) {
+    if (!IsTop()) {
+      aRv.ThrowInvalidStateError(
+          "downloadFolderOverride can only be set on the top "
+          "BrowsingContext");
+      return;
+    }
+    mDownloadFolderOverride = aValue;
+  }
+
   void SetIsActive(bool aIsActive, ErrorResult& aRv);
 
   void SetIsActiveInternal(bool aIsActive, ErrorResult& aRv) {
-    SetExplicitActive(aIsActive ? ExplicitActiveStatus::Active
-                                : ExplicitActiveStatus::Inactive,
-                      aRv);
+    ExplicitActiveStatus newValue = aIsActive ? ExplicitActiveStatus::Active
+                                              : ExplicitActiveStatus::Inactive;
+    SetExplicitActive(newValue, aRv);
   }
 
   void SetTouchEventsOverride(dom::TouchEventsOverride, ErrorResult& aRv);
@@ -397,6 +420,15 @@ class CanonicalBrowsingContext final : public BrowsingContext {
                                           ErrorResult& aRv);
 
   bool IsReplaced() const { return mIsReplaced; }
+
+#ifdef ANDROID
+  uint32_t GetAndroidAppLinkLaunchType() const {
+    return mAndroidAppLinkLaunchType;
+  }
+  void SetAndroidAppLinkLaunchType(uint32_t aType) {
+    mAndroidAppLinkLaunchType = aType;
+  }
+#endif
 
   const JS::Heap<JS::Value>& PermanentKey() { return mPermanentKey; }
   void ClearPermanentKey() { mPermanentKey.setNull(); }
@@ -431,11 +463,39 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   void SetForceAppWindowActive(bool, ErrorResult&);
   void RecomputeAppWindowVisibility();
 
+  void IncrementDocumentPiPWindowCount();
+  void DecrementDocumentPiPWindowCount();
+
   already_AddRefed<nsISHEntry> GetMostRecentLoadingSessionHistoryEntry();
 
   already_AddRefed<BounceTrackingState> GetBounceTrackingState();
+  already_AddRefed<nsIScopedPrefs> GetScopedPrefs();
 
   bool CanOpenModalPicker();
+
+  static bool ShouldEnforceParentalControls();
+
+  // Get the load listener for the current load in this browsing context.
+  already_AddRefed<net::DocumentLoadListener> GetCurrentLoad();
+
+  // https://html.spec.whatwg.org/#concept-internal-location-ancestor-origin-objects-list
+  void CreateRedactedAncestorOriginsList(
+      nsIPrincipal* aThisDocumentPrincipal,
+      ReferrerPolicy aFrameReferrerPolicyAttribute);
+
+  Span<const nsCOMPtr<nsIPrincipal>> GetPossiblyRedactedAncestorOriginsList()
+      const;
+  void SetPossiblyRedactedAncestorOriginsList(
+      nsTArray<nsCOMPtr<nsIPrincipal>> aAncestorOriginsList);
+
+  void SetEmbedderFrameReferrerPolicy(ReferrerPolicy aPolicy);
+
+  // Called when we need to snap shot referrer policy for ancestorOrigins
+  // and also when building the internal ancestor origins list for about:blank
+  // because it needs special handling.
+  ReferrerPolicy GetEmbedderFrameReferrerPolicy() const {
+    return mEmbedderFrameReferrerPolicy;
+  }
 
  protected:
   // Called when the browsing context is being discarded.
@@ -564,7 +624,12 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   }
 
   already_AddRefed<nsDocShellLoadState> CreateLoadInfo(
-      SessionHistoryEntry* aEntry);
+      SessionHistoryEntry* aEntry, NavigationType aNavigationType);
+
+  void GetContiguousEntriesForLoad(LoadingSessionHistoryInfo& aLoadingInfo,
+                                   const RefPtr<SessionHistoryEntry>& aEntry);
+
+  void MaybeReuseNavigationKeyFromActiveEntry(SessionHistoryEntry* aEntry);
 
   // XXX(farre): Store a ContentParent pointer here rather than mProcessId?
   // Indicates which process owns the docshell.
@@ -606,11 +671,14 @@ class CanonicalBrowsingContext final : public BrowsingContext {
     RefPtr<SessionHistoryEntry> mEntry;
   };
   nsTArray<LoadingSessionHistoryEntry> mLoadingEntries;
-  AutoCleanLinkedList<RefPtr<SessionHistoryEntry>> mActiveEntryList;
   RefPtr<SessionHistoryEntry> mActiveEntry;
 
   RefPtr<nsSecureBrowserUI> mSecureBrowserUI;
   RefPtr<BrowsingContextWebProgress> mWebProgress;
+
+  // ScopedPrefs is set on all top-level browsing contexts and is shared
+  // across navigation, therefore lifetime of tab.
+  nsCOMPtr<nsIScopedPrefs> mScopedPrefs;
 
   nsCOMPtr<nsIWebProgressListener> mDocShellProgressBridge;
   RefPtr<nsBrowserStatusFilter> mStatusFilter;
@@ -636,10 +704,22 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   // active in the process priority manager.
   bool mPriorityActive = false;
 
+  // If this is a top level context, an override for the default downloads
+  // directory, set via WebDriver BiDi's.
+  nsString mDownloadFolderOverride;
+
   // See CanonicalBrowsingContext.forceAppWindowActive.
   bool mForceAppWindowActive = false;
 
+  uint32_t mDocumentPiPWindowCount = 0;
+
   bool mIsReplaced = false;
+
+#ifdef ANDROID
+  // App link launch type for the current load; 0 means not an app link.
+  // Stored here so it survives process switches and COOP-triggered BC swaps.
+  uint32_t mAndroidAppLinkLaunchType = 0;
+#endif
 
   // A Promise created when cloning documents for printing.
   RefPtr<GenericNonExclusivePromise> mClonePromise;
@@ -649,10 +729,14 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   uint32_t mPendingDiscards = 0;
 
   bool mFullyDiscarded = false;
+  // the referrerPolicy attribute of the iframe hosting this browsing context
+  // defaults to the empty string
+  ReferrerPolicy mEmbedderFrameReferrerPolicy = ReferrerPolicy::_empty;
 
   nsTArray<std::function<void(uint64_t)>> mFullyDiscardedListeners;
 
-  nsTArray<SessionHistoryInfo> mActiveContiguousEntries;
+  // https://html.spec.whatwg.org/#concept-internal-location-ancestor-origin-objects-list
+  nsTArray<nsCOMPtr<nsIPrincipal>> mPossiblyRedactedAncestorOriginsList;
 };
 
 }  // namespace dom

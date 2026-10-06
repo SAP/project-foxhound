@@ -11,16 +11,14 @@ export class GeckoViewPrompterChild extends GeckoViewActorChild {
   }
 
   dismissPrompt(prompt) {
-    this.eventDispatcher.sendRequest({
-      type: "GeckoView:Prompt:Dismiss",
+    this.sendAsyncMessage("GeckoView:Prompt:Dismiss", {
       id: prompt.id,
     });
     this.unregisterPrompt(prompt);
   }
 
   updatePrompt(message) {
-    this.eventDispatcher.sendRequest({
-      type: "GeckoView:Prompt:Update",
+    this.sendAsyncMessage("GeckoView:Prompt:Update", {
       prompt: message,
     });
   }
@@ -37,12 +35,12 @@ export class GeckoViewPrompterChild extends GeckoViewActorChild {
     this.sendAsyncMessage("RegisterPrompt", {
       id: prompt.id,
       promptType: prompt.getPromptType(),
+      owningBrowsingContext: prompt._domWin.browsingContext,
     });
     // We intentionally do not await here as we want to fire NotifyPromptShow
     // immediately rather than waiting until the user accepts/dismisses the
     // prompt.
-    const result = this.eventDispatcher.sendRequestForResult({
-      type: "GeckoView:Prompt",
+    const result = this.sendQuery("GeckoView:Prompt", {
       prompt: message,
     });
     this.sendAsyncMessage("NotifyPromptShow", {

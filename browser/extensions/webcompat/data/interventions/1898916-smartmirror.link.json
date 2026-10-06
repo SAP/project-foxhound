@@ -1,0 +1,15 @@
+{
+  "label": "smartmirror.link",
+  "bugs": {
+    "1898916": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://www.smartmirror.link/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

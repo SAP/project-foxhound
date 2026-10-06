@@ -227,81 +227,11 @@ function test() {
 
   checkHasIdNoGEBI("removed node");
 
-  // Check that removing an element during UnsetAttr works
-  is(div.id, "div_id", "div still has id set");
-  var mutateFired = false;
-  root.appendChild(div);
-  div.addEventListener("DOMAttrModified", function(e) {
-    is(e.target, div, "target is div");
-    is(div.id, "", "div no longer has id");
-    is(div.getAttribute("id"), null, "div no longer has id attr");
-    removeNode(div);
-    is(div.parentNode, null, "div was removed");
-    mutateFired = true;
-  }, {once: true});
-  div.removeAttribute("id");
-  ok(mutateFired, "mutation event fired");
-
-  // Check same for XML elements
-  is(nsx.getAttribute("id"), "ns_id", "nsx still has id set");
-  mutateFired = false;
-  root.appendChild(nsx);
-  nsx.addEventListener("DOMAttrModified", function(e) {
-    is(e.target, nsx, "target is nsx");
-    is(nsx.getAttribute("id"), null, "nsx no longer has id attr");
-    removeNode(nsx);
-    is(nsx.parentNode, null, "nsx was removed");
-    mutateFired = true;
-  }, {once: true});
-  nsx.removeAttribute("id");
-  ok(mutateFired, "mutation event fired");
-
-  // Re-add the id inside a mutation event on a XML element
-  is($("ns_id"), null, "no nsx");
-  is($("ns2_id"), null, "no nsx");
-  nsx = document.createElementNS("urn:namespace", "ns:x");
-  nsx.setAttribute("id", "ns_id");
-  root.appendChild(nsx);
-  is($("ns_id"), nsx, "new nsx is set up");
-  mutateFired = false;
-  nsx.addEventListener("DOMAttrModified", function(e) {
-    is(e.target, nsx, "target is nsx");
-    is(nsx.getAttribute("id"), null, "nsx no longer has id attr");
-    nsx.setAttribute("id", "other_id");
-    mutateFired = true;
-  }, {once: true});
-  nsx.removeAttribute("id");
-  ok(mutateFired, "mutation event fired");
-  is($("ns_id"), null, "ns_id was removed from table");
-  is($("other_id"), nsx, "other_id was added");
-  removeNode(nsx);
-  is($("other_id"), null, "other_id was removed");
-
-  // Re-add the id inside a mutation event on a HTML element
-  is($("div_id"), null, "no div");
-  div = document.createElement("div");
-  div.id = "div_id";
-  root.appendChild(div);
-  is($("div_id"), div, "new div is set up");
-  mutateFired = false;
-  div.addEventListener("DOMAttrModified", function(e) {
-    is(e.target, div, "target is div");
-    is(div.getAttribute("id"), null, "div no longer has id attr");
-    is(div.id, "", "div no longer has id");
-    div.id = "other_div_id";
-    mutateFired = true;
-  }, {once: true});
-  div.removeAttribute("id");
-  ok(mutateFired, "mutation event fired");
-  is($("div_id"), null, "div_id was removed from table");
-  is($("other_div_id"), div, "other_div_id was added");
-  removeNode(div);
-  is($("other_div_id"), null, "other_div_id was removed");
   SimpleTest.finish();
 }
 
 SimpleTest.waitForExplicitFinish();
-SpecialPowers.pushPrefEnv({"set": [["dom.mutation_events.enabled", true]]}, test);
+SimpleTest.executeSoon(test);
 
 ]]>
 </script>

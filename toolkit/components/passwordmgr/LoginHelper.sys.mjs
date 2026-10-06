@@ -17,6 +17,7 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
+  NewPasswordModel: "resource://gre/modules/shared/NewPasswordModel.sys.mjs",
 });
 
 export class ParentAutocompleteOption {
@@ -47,6 +48,7 @@ class ImportRowProcessor {
   /**
    * Validates if the login data contains a GUID that was already found in a previous row in the current import.
    * If this is the case, the summary will be updated with an error.
+   *
    * @param {object} loginData
    *        An vanilla object for the login without any methods.
    * @returns {boolean} True if there is an error, false otherwise.
@@ -65,6 +67,7 @@ class ImportRowProcessor {
   /**
    * Validates if the login data contains invalid fields that are mandatory like origin and password.
    * If this is the case, the summary will be updated with an error.
+   *
    * @param {object} loginData
    *        An vanilla object for the login without any methods.
    * @returns {boolean} True if there is an error, false otherwise.
@@ -89,6 +92,7 @@ class ImportRowProcessor {
    * If there are similar values but not identical, a new "modified" entry will be added to the summary.
    * If there are identical values, a new "no_change" entry will be added to the summary
    * If either of these is the case, it will return true.
+   *
    * @param {object} loginData
    *        An vanilla object for the login without any methods.
    * @returns {boolean} True if the entry is similar or identical to another previously processed entry, false otherwise.
@@ -137,6 +141,7 @@ class ImportRowProcessor {
    * Validates if there is a conflict with previous rows based on the origin.
    * We need to check the logins that we've already decided to add, to see if this is a duplicate.
    * If this is the case, we mark this one as "no_change" in the summary and return true.
+   *
    * @param {object} login
    *        A login object.
    * @returns {boolean} True if the entry is similar or identical to another previously processed entry, false otherwise.
@@ -168,6 +173,7 @@ class ImportRowProcessor {
    * If this is the case and there are some changes, we mark it as "modified" in the summary.
    * If it matches an existing login without any extra modifications, we mark it as "no_change".
    * For both cases we return true.
+   *
    * @param {object} login
    *        A login object.
    * @returns {boolean} True if the entry is similar or identical to another previously processed entry, false otherwise.
@@ -223,6 +229,7 @@ class ImportRowProcessor {
   /**
    * Validates if there are any invalid values using LoginHelper.checkLoginValues.
    * If this is the case we mark it as "error" and return true.
+   *
    * @param {object} login
    *        A login object.
    * @param {object} loginData
@@ -244,6 +251,7 @@ class ImportRowProcessor {
 
   /**
    * Creates a new login from loginData.
+   *
    * @param {object} loginData
    *        An vanilla object for the login without any methods.
    * @returns {object} A login object.
@@ -268,12 +276,15 @@ class ImportRowProcessor {
     login.timePasswordChanged =
       loginData.timePasswordChanged || loginData.timeCreated;
     login.timesUsed = loginData.timesUsed || 1;
+    login.timeLastBreachAlertDismissed =
+      loginData.timeLastBreachAlertDismissed || null;
     login.guid = loginData.guid || null;
     return login;
   }
 
   /**
    * Cleans the action and realm field of the loginData.
+   *
    * @param {object} loginData
    *        An vanilla object for the login without any methods.
    */
@@ -290,6 +301,7 @@ class ImportRowProcessor {
 
   /**
    * Adds a login to the summary.
+   *
    * @param {object} login
    *        A login object.
    * @param {string} result
@@ -346,7 +358,8 @@ class ImportRowProcessor {
    * Iterates over all then rows where more than two match the same origin. It mutates the internal state of the processor.
    * It makes sure that if the `timePasswordChanged` field is present it will be used to decide if it's a "no_change" or "added".
    * The entry with the oldest `timePasswordChanged` will be "added", the rest will be "no_change".
-   * @returns {Object[]} An entry for each processed row containing how the row was processed and the login data.
+   *
+   * @returns {object[]} An entry for each processed row containing how the row was processed and the login data.
    */
   async processLoginsAndBuildSummary() {
     this.markLastTimePasswordChangedAsModified();
@@ -357,7 +370,10 @@ class ImportRowProcessor {
             summaryRow.login
           );
         } else if (summaryRow.result === "modified") {
-          Services.logins.modifyLogin(summaryRow.login, summaryRow.propBag);
+          await Services.logins.modifyLoginAsync(
+            summaryRow.login,
+            summaryRow.propBag
+          );
         }
       } catch (e) {
         console.error(e);
@@ -396,6 +412,7 @@ export const LoginHelper = {
   showAutoCompleteFooter: null,
   showAutoCompleteImport: null,
   testOnlyUserHasInteractedWithDocument: null,
+  testOnlyNotWaitForPaint: null,
   userInputRequiredToCapture: null,
   captureInputChanges: null,
   OS_AUTH_FOR_PASSWORDS_BOOL_PREF,
@@ -506,6 +523,12 @@ export const LoginHelper = {
     this.relatedRealmsEnabled = Services.prefs.getBoolPref(
       "signon.relatedRealms.enabled"
     );
+    // TODO: Remove this preference (Bug 1984225)
+    // Used by geckoview junit test because no paint event is fired in junit test.
+    this.testOnlyNotWaitForPaint = Services.prefs.getBoolPref(
+      "signon.testOnlyNotWaitForPaint",
+      false
+    );
   },
 
   createLogger(aLogPrefix) {
@@ -613,7 +636,7 @@ export const LoginHelper = {
   /**
    * Returns a new XPCOM property bag with the provided properties.
    *
-   * @param {Object} aProperties
+   * @param {object} aProperties
    *        Each property of this object is copied to the property bag.  This
    *        parameter can be omitted to return an empty property bag.
    *
@@ -633,18 +656,6 @@ export const LoginHelper = {
       .QueryInterface(Ci.nsIPropertyBag)
       .QueryInterface(Ci.nsIPropertyBag2)
       .QueryInterface(Ci.nsIWritablePropertyBag2);
-  },
-
-  /**
-   * Helper to avoid the property bags when calling
-   * Services.logins.searchLogins from JS.
-   * @deprecated Use Services.logins.searchLoginsAsync instead.
-   *
-   * @param {Object} aSearchOptions - A regular JS object to copy to a property bag before searching
-   * @return {nsILoginInfo[]} - The result of calling searchLogins.
-   */
-  searchLoginsWithObject(aSearchOptions) {
-    return Services.logins.searchLogins(this.newPropertyBag(aSearchOptions));
   },
 
   /**
@@ -675,9 +686,9 @@ export const LoginHelper = {
   },
 
   /**
-   * @param {String} aLoginOrigin - An origin value from a stored login's
+   * @param {string} aLoginOrigin - An origin value from a stored login's
    *                                origin or formActionOrigin properties.
-   * @param {String} aSearchOrigin - The origin that was are looking to match
+   * @param {string} aSearchOrigin - The origin that was are looking to match
    *                                 with aLoginOrigin. This would normally come
    *                                 from a form or page that we are considering.
    * @param {nsILoginFindOptions} aOptions - Options to affect whether the origin
@@ -889,6 +900,7 @@ export const LoginHelper = {
           case "timeLastUsed":
           case "timePasswordChanged":
           case "timesUsed":
+          case "timeLastBreachAlertDismissed":
             newLogin[prop.name] = prop.value;
             break;
 
@@ -985,6 +997,7 @@ export const LoginHelper = {
 
   /**
    * Generate a unique key string from a login.
+   *
    * @param {nsILoginInfo} login
    * @param {string[]} uniqueKeys containing nsILoginInfo attribute names or "hostPort"
    * @returns {string} to use as a key in a Map
@@ -1236,7 +1249,10 @@ export const LoginHelper = {
 
     const paramsPart = params.toString() ? `?${params}` : "";
 
-    let browserWindow = lazy.BrowserWindowTracker.getTopWindow();
+    // bug 1985105 - should this only look for windows on the current workspace?
+    let browserWindow = lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
     const browser = browserWindow.gBrowser ?? browserWindow.opener?.gBrowser;
 
     const tab = browser.addTrustedTab(`about:logins${paramsPart}`, {
@@ -1251,11 +1267,11 @@ export const LoginHelper = {
    *
    * @param {Element} element
    *                  the field we want to check.
-   * @param {Object} options
+   * @param {object} options
    * @param {bool} [options.ignoreConnect] - Whether to ignore checking isConnected
    *                                         of the element.
    *
-   * @returns {Boolean} true if the field can
+   * @returns {boolean} true if the field can
    *                    be treated as a password input
    */
   isPasswordFieldType(element, { ignoreConnect = false } = {}) {
@@ -1267,11 +1283,11 @@ export const LoginHelper = {
    *
    * @param {Element} element
    *                  the field we want to check.
-   * @param {Object} options
+   * @param {object} options
    * @param {bool} [options.ignoreConnect] - Whether to ignore checking isConnected
    *                                         of the element.
    *
-   * @returns {Boolean} true if the field type is one
+   * @returns {boolean} true if the field type is one
    *                    of the username types.
    */
   isUsernameFieldType(element, { ignoreConnect = false } = {}) {
@@ -1288,11 +1304,26 @@ export const LoginHelper = {
    * @returns {boolean} True if any of the rules matches
    */
   isInferredLoginForm(formElement) {
-    // This is copied from 'loginFormAttrRegex' in NewPasswordModel.sys.mjs
-    const loginExpr =
-      /login|log in|log on|log-on|sign in|sigin|sign\/in|sign-in|sign on|sign-on/i;
+    if (
+      Logic.elementAttrsMatchRegex(
+        formElement,
+        lazy.NewPasswordModel.LoginRegex
+      )
+    ) {
+      return true;
+    }
 
-    if (Logic.elementAttrsMatchRegex(formElement, loginExpr)) {
+    const buttons = Array.from(
+      formElement.querySelectorAll("button[type=submit]")
+    );
+    // Limit to form with only one submit button to avoid false positives.
+    if (
+      buttons.length == 1 &&
+      Logic.hasTextContentMatchingRegex(
+        buttons[0],
+        lazy.NewPasswordModel.LoginFormAttrRegex
+      )
+    ) {
       return true;
     }
 
@@ -1383,13 +1414,15 @@ export const LoginHelper = {
    * For each login, add the login to the password manager if a similar one
    * doesn't already exist. Merge it otherwise with the similar existing ones.
    *
-   * @param {Object[]} loginDatas - For each login, the data that needs to be added.
-   * @returns {Object[]} An entry for each processed row containing how the row was processed and the login data.
+   * @param {object[]} loginDatas - For each login, the data that needs to be added.
+   * @returns {object[]} An entry for each processed row containing how the row was processed and the login data.
    */
   async maybeImportLogins(loginDatas) {
+    // by setting this flag we ensure no events are submitted
     this.importing = true;
+    const processor = new ImportRowProcessor();
+
     try {
-      const processor = new ImportRowProcessor();
       for (let rawLoginData of loginDatas) {
         // Do some sanitization on a clone of the loginData.
         let loginData = ChromeUtils.shallowClone(rawLoginData);
@@ -1471,6 +1504,7 @@ export const LoginHelper = {
       "timeLastUsed",
       "timePasswordChanged",
       "timesUsed",
+      "timeLastBreachAlertDismissed",
     ]) {
       formLogin[prop] = login[prop];
     }
@@ -1492,10 +1526,9 @@ export const LoginHelper = {
    * Returns true if the user has a primary password set and false otherwise.
    */
   isPrimaryPasswordSet() {
-    let tokenDB = Cc["@mozilla.org/security/pk11tokendb;1"].getService(
-      Ci.nsIPK11TokenDB
+    let token = Cc["@mozilla.org/security/internalkeytoken;1"].createInstance(
+      Ci.nsIPKCS11Token
     );
-    let token = tokenDB.getInternalKeyToken();
     return token.hasPassword;
   },
 
@@ -1531,6 +1564,33 @@ export const LoginHelper = {
     Services.prefs.lockPref(prefName);
   },
 
+  async trySetOSAuthEnabled(win, checked, messageText, captionText) {
+    // Calling OSKeyStore.ensureLoggedIn() instead of LoginHelper.verifyOSAuth()
+    // since we want to authenticate user each time this setting is changed.
+
+    // Note on Glean collection: because OSKeyStore.ensureLoggedIn() is not wrapped in
+    // verifyOSAuth(), it will be documenting "success" for unsupported platforms
+    // and won't record "fail_error", only "fail_user_canceled"
+    let isAuthorized = (
+      await lazy.OSKeyStore.ensureLoggedIn(messageText, captionText, win, false)
+    ).authenticated;
+
+    Glean.pwmgr.promptShownOsReauth.record({
+      trigger: "toggle_pref_os_auth",
+      result: isAuthorized ? "success" : "fail_user_canceled",
+    });
+
+    if (!isAuthorized) {
+      return;
+    }
+
+    // If osReauthCheckbox is checked enable osauth.
+    LoginHelper.setOSAuthEnabled(checked);
+    Glean.pwmgr.requireOsReauthToggle.record({
+      toggle_state: checked,
+    });
+  },
+
   async verifyUserOSAuth(
     prefName,
     promptMessage,
@@ -1560,11 +1620,11 @@ export const LoginHelper = {
   },
 
   /**
-   * Shows the Primary Password prompt if enabled, or the
-   * OS auth dialog otherwise.
+   * Shows OS auth dialog if OS auth is enabled or the Primary Password dialog when
+   * the token is locked or OS auth is disabled.
+   *
    * @param {Element} browser
    *        The <browser> that the prompt should be shown on
-   * @param OSReauthEnabled Boolean indicating if OS reauth should be tried
    * @param expirationTime Optional timestamp indicating next required re-authentication
    * @param messageText Formatted and localized string to be displayed when the OS auth dialog is used.
    * @param captionText Formatted and localized string to be displayed when the OS auth dialog is used.
@@ -1572,7 +1632,6 @@ export const LoginHelper = {
    */
   async requestReauth(
     browser,
-    OSReauthEnabled,
     expirationTime,
     messageText,
     captionText,
@@ -1582,10 +1641,9 @@ export const LoginHelper = {
     let telemetryEvent;
 
     // This does no harm if primary password isn't set.
-    let tokendb = Cc["@mozilla.org/security/pk11tokendb;1"].createInstance(
-      Ci.nsIPK11TokenDB
+    let token = Cc["@mozilla.org/security/internalkeytoken;1"].createInstance(
+      Ci.nsIPKCS11Token
     );
-    let token = tokendb.getInternalKeyToken();
 
     // Do we have a recent authorization?
     if (expirationTime && Date.now() < expirationTime) {
@@ -1601,12 +1659,16 @@ export const LoginHelper = {
       };
     }
 
+    let isOSAuthEnabled = this.getOSAuthEnabled();
+
     // Default to true if there is no primary password and OS reauth is not available
-    if (!token.hasPassword && !OSReauthEnabled) {
+    if (!token.hasPassword && !isOSAuthEnabled) {
       isAuthorized = true;
       telemetryEvent = {
         name: "reauthenticateOsAuth",
-        value: "success_disabled",
+        value: lazy.OSKeyStore.canReauth()
+          ? "success_disabled"
+          : "success_unsupported_platform",
       };
       return {
         isAuthorized,
@@ -1614,14 +1676,15 @@ export const LoginHelper = {
       };
     }
     // Use the OS auth dialog if there is no primary password
-    if (!token.hasPassword && OSReauthEnabled) {
+    // or if primary password is already unlocked and os auth is enabled.
+    if (isOSAuthEnabled && (!token.hasPassword || token.isLoggedIn)) {
       let result;
       try {
         isAuthorized = await this.verifyUserOSAuth(
           OS_AUTH_FOR_PASSWORDS_BOOL_PREF,
           messageText,
           captionText,
-          browser.ownerGlobal,
+          browser.documentGlobal,
           false
         );
         result = isAuthorized ? "success" : "fail_user_canceled";
@@ -1647,8 +1710,8 @@ export const LoginHelper = {
         telemetryEvent,
       };
     }
-    // We'll attempt to re-auth via Primary Password, force a log-out
-    token.checkPassword("");
+    // We'll attempt to re-auth via Primary Password, so log out.
+    token.logout();
 
     // If a primary password prompt is already open, just exit early and return false.
     // The user can re-trigger it after responding to the already open dialog.
@@ -1660,16 +1723,15 @@ export const LoginHelper = {
       };
     }
 
-    // So there's a primary password. But since checkPassword didn't succeed, we're logged out (per nsIPK11Token.idl).
     try {
-      // Relogin and ask for the primary password.
-      token.login(true); // 'true' means always prompt for token password. User will be prompted until
-      // clicking 'Cancel' or entering the correct password.
+      // Log in again, which prompts for the primary password.
+      token.login();
     } catch (e) {
-      // An exception will be thrown if the user cancels the login prompt dialog.
-      // User is also logged out of Software Security Device.
+      // An exception will be thrown if the user cancels the login prompt
+      // dialog. The user will still be logged out of Software Security Device
+      // in this case.
     }
-    isAuthorized = token.isLoggedIn();
+    isAuthorized = token.isLoggedIn;
     telemetryEvent = {
       name: "reauthenticateMasterPassword",
       value: isAuthorized ? "success" : "fail",
@@ -1684,6 +1746,7 @@ export const LoginHelper = {
    * Send a notification when stored data is changed.
    */
   notifyStorageChanged(changeType, data) {
+    // do not emit individual events during csv import
     if (this.importing) {
       return;
     }
@@ -1752,7 +1815,7 @@ export const LoginHelper = {
    *                    which could be in a different window.
    */
   getBrowserForPrompt(browser) {
-    let chromeWindow = browser.ownerGlobal;
+    let chromeWindow = browser.documentGlobal;
     let openerBrowsingContext = browser.browsingContext.opener;
     let openerBrowser = openerBrowsingContext
       ? openerBrowsingContext.top.embedderElement

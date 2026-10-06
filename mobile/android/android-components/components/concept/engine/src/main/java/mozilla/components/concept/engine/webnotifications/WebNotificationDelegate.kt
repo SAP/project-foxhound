@@ -4,6 +4,8 @@
 
 package mozilla.components.concept.engine.webnotifications
 
+import kotlinx.coroutines.Deferred
+
 /**
  * Notifies applications or other components of engine events related to web
  * notifications e.g. an notification is to be shown or is to be closed
@@ -13,8 +15,11 @@ interface WebNotificationDelegate {
      * Invoked when a web notification is to be shown.
      *
      * @param webNotification The web notification intended to be shown.
+     * @return true if a notification is shown, or false
      */
-    fun onShowNotification(webNotification: WebNotification) = Unit
+    fun onShowNotification(
+        webNotification: WebNotification,
+    ): Deferred<Boolean>
 
     /**
      * Invoked when a web notification is to be closed.

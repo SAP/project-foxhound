@@ -1,4 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('WeakRef')) -- WeakRef is not enabled unconditionally
 // This file was procedurally generated from the following sources:
 // - src/subclass-builtins/WeakRef.case
 // - src/subclass-builtins/default/statement.template

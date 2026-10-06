@@ -5,9 +5,11 @@
 #ifndef INTERVAL_H_
 #define INTERVAL_H_
 
-#include "nsTArray.h"
-#include <algorithm>
 #include <nsString.h>
+
+#include <algorithm>
+
+#include "nsTArray.h"
 
 namespace mozilla {
 

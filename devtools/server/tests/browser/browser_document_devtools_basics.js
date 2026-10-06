@@ -11,9 +11,7 @@ const TEST_URL = "data:text/html,new-tab";
 
 add_task(async () => {
   // Allow logging all RDP packets
-  await pushPref("devtools.debugger.log", true);
-  // Really all of them
-  await pushPref("devtools.debugger.log.verbose", true);
+  await pushPref("logging.devtools_rdp", 3);
 
   // Instantiate a DevTools server
   DevToolsServer.init();
@@ -78,14 +76,14 @@ add_task(async () => {
 
   // If you want to observe anything, you have to use Watcher Actor's watchrResources API.
   // The list of all available resources is here:
-  // https://searchfox.org/mozilla-central/source/devtools/server/actors/resources/index.js#9
+  // https://searchfox.org/firefox-main/source/devtools/server/actors/resources/index.js#9
   // And you might have a look at each ResourceWatcher subclass to learn more about the fields exposed by each resource type:
-  // https://searchfox.org/mozilla-central/source/devtools/server/actors/resources
+  // https://searchfox.org/firefox-main/source/devtools/server/actors/resources
   await watcherActor.watchResources(["console-message"]);
 
   // You may use many useful actors on each target actor, like console, thread, ...
   // You can get the full list of available actors in:
-  // https://searchfox.org/mozilla-central/source/devtools/server/actors/utils/actor-registry.js#176
+  // https://searchfox.org/firefox-main/source/devtools/server/actors/utils/actor-registry.js#176
   // And then look into the mentioned path for implementation.
   const webConsoleActor = await topTarget.getFront("console");
 

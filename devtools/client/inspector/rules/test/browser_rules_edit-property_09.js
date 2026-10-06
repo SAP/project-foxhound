@@ -41,7 +41,7 @@ function synthesizeMouseOnEmptyArea(view) {
 async function testClickOnEmptyAreaToCloseEditor(inspector, view) {
   // Start at the beginning: start to add a rule to the element's style
   // declaration, add some text, then press escape.
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
   const prop = getTextProperty(view, 1, { "background-color": "blue" });
   const propEditor = prop.editor;
 
@@ -53,11 +53,11 @@ async function testClickOnEmptyAreaToCloseEditor(inspector, view) {
     "Close the property value editor by clicking on an empty area " +
       "in the rule editor"
   );
-  const onRuleViewChanged = view.once("ruleview-changed");
+  const onModifications = view.once("property-value-updated");
   let onBlur = once(editor.input, "blur");
   synthesizeMouseOnEmptyArea(view);
   await onBlur;
-  await onRuleViewChanged;
+  await onModifications;
   ok(!view.isEditing, "No inplace editor should be displayed in the ruleview");
 
   info("Create new newProperty editor by clicking again on the empty area");

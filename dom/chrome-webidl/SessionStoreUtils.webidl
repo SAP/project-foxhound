@@ -24,40 +24,6 @@ namespace SessionStoreUtils {
   undefined forEachNonDynamicChildFrame(WindowProxy window,
                                         SessionStoreUtilsFrameCallback callback);
 
-  /**
-   * Takes the given listener, wraps it in a filter that filters out events from
-   * dynamic docShells, and adds that filter as a listener for the given event
-   * type on the given event target.  The listener that was added is returned
-   * (as nsISupports) so that it can later be removed via
-   * removeDynamicFrameFilteredListener.
-   *
-   * This is implemented as a native filter, rather than a JS-based one, for
-   * performance reasons.
-   */
-  [Throws]
-  nsISupports? addDynamicFrameFilteredListener(EventTarget target,
-                                               DOMString type,
-                                               any listener,
-                                               boolean useCapture,
-                                               optional boolean mozSystemGroup = false);
-
-  /**
-   * Remove the passed-in filtered listener from the given event target, if it's
-   * currently a listener for the given event type there.  The 'listener'
-   * argument must be something that was returned by
-   * addDynamicFrameFilteredListener.
-   *
-   * This is needed, instead of the normal removeEventListener, because the
-   * caller doesn't actually have something that WebIDL considers an
-   * EventListener.
-   */
-  [Throws]
-  undefined removeDynamicFrameFilteredListener(EventTarget target,
-                                               DOMString type,
-                                               nsISupports listener,
-                                               boolean useCapture,
-                                               optional boolean mozSystemGroup = false);
-
   /*
    * Save the docShell.allow* properties
    */

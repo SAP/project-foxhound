@@ -8,7 +8,6 @@ import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertFalse
 import junit.framework.TestCase.assertNull
 import junit.framework.TestCase.assertTrue
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.engine.EngineSession.CookieBannerHandlingMode.DISABLED
 import mozilla.components.concept.engine.EngineSession.CookieBannerHandlingMode.REJECT_OR_ACCEPT_ALL
@@ -24,7 +23,6 @@ import org.mockito.Mockito.verify
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.StorageController
 
-@ExperimentalCoroutinesApi
 class GeckoCookieBannersStorageTest {
     private lateinit var runtime: GeckoRuntime
     private lateinit var geckoStorage: GeckoCookieBannersStorage

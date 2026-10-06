@@ -25,8 +25,8 @@ function promisePanelOpened() {
  * @param aDownload
  *        The Download object to wait upon.
  *
- * @return {Promise}
- * @resolves When the download has finished successfully.
+ * @returns {Promise<void>}
+ *   Resolves when the download has finished successfully.
  * @rejects JavaScript exception if the download failed.
  */
 function promiseDownloadStopped(aDownload) {

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -59,6 +57,8 @@ class RenderCompositorNative : public RenderCompositor {
   bool MaybeGrabScreenshot(const gfx::IntSize& aWindowSize) override;
   bool MaybeProcessScreenshotQueue() override;
 
+  void WaitUntilPresentationFlushed() override;
+
   // Interface for wr::Compositor
   void CompositorBeginFrame() override;
   void CompositorEndFrame() override;
@@ -112,9 +112,10 @@ class RenderCompositorNative : public RenderCompositor {
   };
 
   struct Surface {
-    explicit Surface(wr::DeviceIntSize aTileSize, bool aIsOpaque)
-        : mTileSize(aTileSize), mIsOpaque(aIsOpaque) {}
-    gfx::IntSize TileSize() {
+    Surface(wr::DeviceIntSize aTileSize, bool aIsOpaque);
+    ~Surface();
+
+    gfx::IntSize TileSize() const {
       return gfx::IntSize(mTileSize.width, mTileSize.height);
     }
 
@@ -171,6 +172,9 @@ class RenderCompositorNativeOGL : public RenderCompositorNative {
             wr::DeviceIntRect aDirtyRect,
             wr::DeviceIntRect aValidRect) override;
   void Unbind() override;
+
+  void AttachExternalImage(wr::NativeSurfaceId aId,
+                           wr::ExternalImageId aExternalImage) override;
 
  protected:
   void InsertFrameDoneSync();

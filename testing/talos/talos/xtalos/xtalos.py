@@ -43,7 +43,7 @@ class XtalosOptions(argparse.ArgumentParser):
             "-x",
             "--xperf",
             dest="xperf_path",
-            help="location of xperf tool, defaults to" " 'xperf.exe'",
+            help="location of xperf tool, defaults to 'xperf.exe'",
         )
         defaults["xperf_path"] = "xperf.exe"
 
@@ -51,7 +51,7 @@ class XtalosOptions(argparse.ArgumentParser):
             "-e",
             "--etl_filename",
             dest="etl_filename",
-            help="Name of the .etl file to work with." " Defaults to 'output.etl'",
+            help="Name of the .etl file to work with. Defaults to 'output.etl'",
         )
         defaults["etl_filename"] = "test.etl"
 
@@ -69,7 +69,7 @@ class XtalosOptions(argparse.ArgumentParser):
             "-o",
             "--output-file",
             dest="outputFile",
-            help="Filename to write all output to, default" " is stdout",
+            help="Filename to write all output to, default is stdout",
         )
         defaults["outputFile"] = "etl_output.csv"
 
@@ -86,7 +86,7 @@ class XtalosOptions(argparse.ArgumentParser):
             "--user-providers",
             dest="xperf_user_providers",
             action="append",
-            help="user mode xperf providers to collect data" " from",
+            help="user mode xperf providers to collect data from",
         )
         defaults["xperf_user_providers"] = []
 
@@ -103,8 +103,7 @@ class XtalosOptions(argparse.ArgumentParser):
             "-c",
             "--config-file",
             dest="configFile",
-            help="Name of the json config file with test run"
-            " and browser information",
+            help="Name of the json config file with test run and browser information",
         )
         defaults["configFile"] = None
 
@@ -121,7 +120,7 @@ class XtalosOptions(argparse.ArgumentParser):
             "--all-stages",
             dest="all_stages",
             action="store_true",
-            help="Include all stages in file I/O output," "not just startup",
+            help="Include all stages in file I/O output,not just startup",
         )
         defaults["all_stages"] = False
 
@@ -130,7 +129,7 @@ class XtalosOptions(argparse.ArgumentParser):
             "--all-threads",
             dest="all_threads",
             action="store_true",
-            help="Include all threads in file I/O output," " not just main",
+            help="Include all threads in file I/O output, not just main",
         )
         defaults["all_threads"] = False
 
@@ -147,7 +146,7 @@ class XtalosOptions(argparse.ArgumentParser):
         self.add_argument(
             "--error-filename",
             dest="error_filename",
-            help="Filename to store the failures detected" " while runnning the test",
+            help="Filename to store the failures detected while runnning the test",
         )
         defaults["error_filename"] = None
 

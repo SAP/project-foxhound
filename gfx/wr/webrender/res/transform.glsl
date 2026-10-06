@@ -9,6 +9,9 @@ flat varying highp vec4 vTransformBounds;
 #define VECS_PER_TRANSFORM   8U
 uniform HIGHP_SAMPLER_FLOAT sampler2D sTransformPalette;
 
+// See GpuTransformId.
+#define TRANSFORM_INDEX_MASK 0x003fffff
+
 void rectangle_aa_vertex(vec4 local_bounds) {
     vTransformBounds = local_bounds;
 }
@@ -23,7 +26,7 @@ Transform fetch_transform(int id) {
     Transform transform;
 
     transform.is_axis_aligned = (id >> 23) == 0;
-    int index = id & 0x007fffff;
+    int index = id & TRANSFORM_INDEX_MASK;
 
     // Create a UV base coord for each 8 texels.
     // This is required because trying to use an offset

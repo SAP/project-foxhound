@@ -13,7 +13,7 @@ const TOOL_DELAY = 200;
 
 add_task(async function () {
   await addTab(TEST_URI);
-  startTelemetry();
+  Services.fog.testResetFOG();
 
   await openAndCloseToolbox(2, TOOL_DELAY, "webconsole");
   checkResults();
@@ -22,18 +22,6 @@ add_task(async function () {
 });
 
 function checkResults() {
-  // For help generating these tests use generateTelemetryTests("DEVTOOLS_WEBCONSOLE_")
-  // here.
-  checkTelemetry(
-    "DEVTOOLS_WEBCONSOLE_OPENED_COUNT",
-    "",
-    { 0: 2, 1: 0 },
-    "array"
-  );
-  checkTelemetry(
-    "DEVTOOLS_WEBCONSOLE_TIME_ACTIVE_SECONDS",
-    "",
-    null,
-    "hasentries"
-  );
+  is(2, Glean.devtools.webconsoleOpenedCount.testGetValue());
+  Assert.greater(Glean.devtools.webconsoleTimeActive.testGetValue().sum, 0);
 }

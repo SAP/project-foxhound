@@ -69,11 +69,11 @@ export class LinkPreviewChild extends JSWindowActorChild {
     const { promise, resolve, reject } = Promise.withResolvers();
     const MAX_CONTENT_LENGTH = 5 * 1024 * 1024; // 5 MB limit
 
-    let charset = "utf-8";
+    let charset = null;
     const byteChunks = [];
     let totalLength = 0;
     channel.asyncOpen({
-      onDataAvailable(request, stream, offset, count) {
+      onDataAvailable: (request, stream, offset, count) => {
         totalLength += count;
         if (totalLength > MAX_CONTENT_LENGTH) {
           request.cancel(Cr.NS_ERROR_FILE_TOO_BIG);
@@ -81,7 +81,7 @@ export class LinkPreviewChild extends JSWindowActorChild {
           byteChunks.push(lazy.NetUtil.readInputStream(stream, count));
         }
       },
-      onStartRequest(request) {
+      onStartRequest: request => {
         const http = request.QueryInterface(Ci.nsIHttpChannel);
 
         // Enforce text/html if provided by server
@@ -106,7 +106,7 @@ export class LinkPreviewChild extends JSWindowActorChild {
           }
         } catch (ex) {}
       },
-      onStopRequest(_request, status) {
+      onStopRequest: (_request, status) => {
         if (Components.isSuccessCode(status)) {
           const bytes = new Uint8Array(totalLength);
           let offset = 0;
@@ -115,14 +115,112 @@ export class LinkPreviewChild extends JSWindowActorChild {
             offset += chunk.byteLength;
           }
 
-          const decoder = new TextDecoder(charset);
-          resolve(decoder.decode(bytes));
+          const effectiveCharset = this.sniffCharset(bytes, charset);
+          let decoded;
+          try {
+            // Use a non-fatal decode to be more robust to minor encoding errors.
+            decoded = new TextDecoder(effectiveCharset).decode(bytes);
+          } catch (e) {
+            // Fallback to UTF-8 on decode errors or if the label was unsupported.
+            decoded = new TextDecoder("utf-8").decode(bytes);
+          }
+          resolve(decoded);
         } else {
           reject(Components.Exception("Failed to fetch HTML", status));
         }
       },
     });
     return promise;
+  }
+
+  /**
+   * Sniff an effective charset for the given response bytes using the HTML standard's precedence:
+   *   1) Byte Order Mark (BOM)
+   *   2) <meta charset> or http-equiv in the first 8KB of the document
+   *   3) HTTP Content-Type header charset (if provided and valid)
+   *   4) Default to utf-8
+   *
+   * @param {Uint8Array} bytes - The raw response bytes.
+   * @param {string} headerCharset - The charset from the Content-Type header.
+   * @returns {string} A validated, effective charset label for TextDecoder.
+   */
+  sniffCharset(bytes, headerCharset = "") {
+    // 1. BOM detection (highest priority)
+    if (
+      bytes.length >= 3 &&
+      bytes[0] === 0xef &&
+      bytes[1] === 0xbb &&
+      bytes[2] === 0xbf
+    ) {
+      return "utf-8";
+    }
+    if (bytes.length >= 2) {
+      if (bytes[0] === 0xfe && bytes[1] === 0xff) {
+        return "utf-16be";
+      }
+      if (bytes[0] === 0xff && bytes[1] === 0xfe) {
+        return "utf-16le";
+      }
+    }
+
+    // 2. Scan the first 8KB for a meta-declared charset. This is checked before
+    // the HTTP header as a heuristic for misconfigured servers where the HTML
+    // is more likely to be correct.
+    try {
+      const headLen = Math.min(bytes.length, 8192);
+      const head = new TextDecoder("windows-1252").decode(
+        bytes.subarray(0, headLen)
+      );
+
+      const metaCharsetRegex = /<meta\s+charset\s*=\s*["']?([a-z0-9_-]+)/i;
+      let match = head.match(metaCharsetRegex);
+
+      if (!match) {
+        const httpEquivRegex =
+          /<meta\s+http-equiv\s*=\s*["']?content-type["']?[^>]*content\s*=\s*["'][^"']*charset\s*=\s*([a-z0-9_-]+)/i;
+        match = head.match(httpEquivRegex);
+      }
+
+      if (match && match[1]) {
+        const norm = this.normalizeAndValidateEncodingLabel(match[1]);
+        if (norm) {
+          return norm;
+        }
+      }
+    } catch (e) {
+      // Ignore errors during meta scan and fall through.
+    }
+
+    // 3. Use charset from HTTP header if it's valid.
+    if (headerCharset) {
+      const norm = this.normalizeAndValidateEncodingLabel(headerCharset);
+      if (norm) {
+        return norm;
+      }
+    }
+
+    // 4. Default to UTF-8 if no other charset is found.
+    return "utf-8";
+  }
+
+  /**
+   * Normalizes a charset label and validates it is supported by TextDecoder.
+   *
+   * @param {string} label - The raw encoding label from headers or meta tags.
+   * @returns {string|null} The normalized, validated label, or null if invalid.
+   */
+  normalizeAndValidateEncodingLabel(label) {
+    const l = (label || "").trim();
+    if (!l) {
+      return null;
+    }
+    try {
+      // TextDecoder constructor handles aliases and validation.
+      return new TextDecoder(l).encoding;
+    } catch (e) {
+      // The label was invalid or unsupported.
+    }
+    return null;
   }
 
   /**
@@ -257,11 +355,12 @@ export class LinkPreviewChild extends JSWindowActorChild {
     ];
 
     metaTags.forEach(tag => {
-      const name = tag.getAttribute("name") || tag.getAttribute("property");
+      const rawName = tag.getAttribute("name") || tag.getAttribute("property");
       const content = tag.getAttribute("content");
-      if (name && content) {
-        if (desiredMetaNames.includes(name.toLowerCase())) {
-          metaInfo[name] = content;
+      const key = rawName ? rawName.toLowerCase() : null;
+      if (key && content) {
+        if (desiredMetaNames.includes(key)) {
+          metaInfo[key] = content;
         }
       }
     });

@@ -6,7 +6,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   getBrowsingContextDetails:
-    "chrome://remote/content/shared/messagehandler/transports/BrowsingContextUtils.sys.mjs",
+    "chrome://remote/content/shared/BrowsingContextUtils.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
   truncate: "chrome://remote/content/shared/Log.sys.mjs",
 });
@@ -28,7 +28,7 @@ export class WebDriverDocumentInsertedChild extends JSProcessActorChild {
         return;
       }
       const context = window.browsingContext;
-      const url = window.location.href;
+      const url = window.document.URL;
       const payload = {
         contextDetails: lazy.getBrowsingContextDetails(context),
         url,

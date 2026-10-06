@@ -27,6 +27,6 @@ testWithTypedArrayConstructors(function(TA) {
     'Reflect.set(sample, "foo", "test262") must return true'
   );
   assert.sameValue(sample.foo, "test262", 'The value of sample.foo is "test262"');
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

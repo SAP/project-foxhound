@@ -1,26 +1,27 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FileBlockCache.h"
+
+#include <algorithm>
+
 #include "MediaCache.h"
 #include "VideoUtils.h"
-#include "prio.h"
-#include <algorithm>
+#include "mozilla/ScopeExit.h"
+#include "mozilla/dom/ContentChild.h"
 #include "nsAnonymousTemporaryFile.h"
 #include "nsIThreadManager.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/ScopeExit.h"
 #include "nsXULAppAPI.h"
+#include "prio.h"
 
 namespace mozilla {
 
 #undef LOG
 LazyLogModule gFileBlockCacheLog("FileBlockCache");
-#define LOG(x, ...) \
-  MOZ_LOG(gFileBlockCacheLog, LogLevel::Debug, ("%p " x, this, ##__VA_ARGS__))
+#define LOG(x, ...)                                                         \
+  MOZ_LOG_FMT(gFileBlockCacheLog, LogLevel::Debug, "{} " x, fmt::ptr(this), \
+              ##__VA_ARGS__)
 
 static void CloseFD(PRFileDesc* aFD) {
   PRStatus prrc;
@@ -31,7 +32,7 @@ static void CloseFD(PRFileDesc* aFD) {
 }
 
 void FileBlockCache::SetCacheFile(PRFileDesc* aFD) {
-  LOG("SetCacheFile aFD=%p", aFD);
+  LOG("SetCacheFile aFD={}", fmt::ptr(aFD));
   if (!aFD) {
     // Failed to get a temporary file. Shutdown.
     Close();
@@ -43,8 +44,8 @@ void FileBlockCache::SetCacheFile(PRFileDesc* aFD) {
   }
   {
     MutexAutoLock lock(mDataMutex);
-    LOG("SetFileCache mBackgroundET=%p, mIsWriteScheduled %d",
-        mBackgroundET.get(), mIsWriteScheduled);
+    LOG("SetFileCache mBackgroundET={}, mIsWriteScheduled {}",
+        fmt::ptr(mBackgroundET.get()), mIsWriteScheduled);
     if (mBackgroundET) {
       // Still open, complete the initialization.
       mInitialized = true;
@@ -176,18 +177,14 @@ void FileBlockCache::Close() {
     mFD = nullptr;
   }
 
-  // Let the thread close the FD, and then trigger its own shutdown.
-  // Note that mBackgroundET is now empty, so no other task will be posted
-  // there. Also mBackgroundET and mFD are empty and therefore can be reused
-  // immediately.
+  // Let the thread close the FD. Note that mBackgroundET is now empty, so no
+  // other task will be posted there. Also mBackgroundET and mFD are empty and
+  // therefore can be reused immediately.
   nsresult rv = thread->Dispatch(NS_NewRunnableFunction("FileBlockCache::Close",
-                                                        [thread, fd] {
+                                                        [fd] {
                                                           if (fd) {
                                                             CloseFD(fd);
                                                           }
-                                                          // No need to shutdown
-                                                          // background task
-                                                          // queues.
                                                         }),
                                  NS_DISPATCH_EVENT_MAY_BLOCK);
   NS_ENSURE_SUCCESS_VOID(rv);
@@ -268,7 +265,7 @@ nsresult FileBlockCache::Seek(int64_t aOffset) {
 nsresult FileBlockCache::ReadFromFile(int64_t aOffset, uint8_t* aDest,
                                       int32_t aBytesToRead,
                                       int32_t& aBytesRead) {
-  LOG("ReadFromFile(offset=%" PRIu64 ", len=%u)", aOffset, aBytesToRead);
+  LOG("ReadFromFile(offset={}, len={})", aOffset, aBytesToRead);
   mFileMutex.AssertCurrentThreadOwns();
   MOZ_ASSERT(mFD);
 
@@ -284,7 +281,7 @@ nsresult FileBlockCache::ReadFromFile(int64_t aOffset, uint8_t* aDest,
 
 nsresult FileBlockCache::WriteBlockToFile(int32_t aBlockIndex,
                                           const uint8_t* aBlockData) {
-  LOG("WriteBlockToFile(index=%u)", aBlockIndex);
+  LOG("WriteBlockToFile(index={})", aBlockIndex);
 
   mFileMutex.AssertCurrentThreadOwns();
   MOZ_ASSERT(mFD);
@@ -304,7 +301,7 @@ nsresult FileBlockCache::WriteBlockToFile(int32_t aBlockIndex,
 
 nsresult FileBlockCache::MoveBlockInFile(int32_t aSourceBlockIndex,
                                          int32_t aDestBlockIndex) {
-  LOG("MoveBlockInFile(src=%u, dest=%u)", aSourceBlockIndex, aDestBlockIndex);
+  LOG("MoveBlockInFile(src={}, dest={})", aSourceBlockIndex, aDestBlockIndex);
 
   mFileMutex.AssertCurrentThreadOwns();
 
@@ -322,7 +319,8 @@ void FileBlockCache::PerformBlockIOs() {
   MOZ_ASSERT(mBackgroundET->IsOnCurrentThread());
   NS_ASSERTION(mIsWriteScheduled, "Should report write running or scheduled.");
 
-  LOG("Run() mFD=%p mBackgroundET=%p", mFD, mBackgroundET.get());
+  LOG("Run() mFD={} mBackgroundET={}", fmt::ptr(mFD),
+      fmt::ptr(mBackgroundET.get()));
 
   while (!mChangeIndexList.empty()) {
     if (!mBackgroundET) {
@@ -379,8 +377,8 @@ void FileBlockCache::PerformBlockIOs() {
   mIsWriteScheduled = false;
 }
 
-nsresult FileBlockCache::Read(int64_t aOffset, uint8_t* aData, int32_t aLength,
-                              int32_t* aBytes) {
+nsresult FileBlockCache::Read(int64_t aOffset, uint8_t* aData,
+                              int32_t aLength) {
   MutexAutoLock mon(mDataMutex);
 
   if (!mBackgroundET || (aOffset / BLOCK_SIZE) > INT32_MAX) {
@@ -447,7 +445,6 @@ nsresult FileBlockCache::Read(int64_t aOffset, uint8_t* aData, int32_t aLength,
     offset += bytesRead;
     bytesToRead -= bytesRead;
   }
-  *aBytes = aLength - bytesToRead;
   return NS_OK;
 }
 

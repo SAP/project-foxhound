@@ -7,7 +7,9 @@ support-files = [
   "data/base_uri_module.mjs",
   "data/base_uri_module2.mjs",
 ]
-run-if = ["os != 'android'"]
+run-if = [
+  "os != 'android'",
+]
 
 ["test_ext_redirects_sw_scripts.js"]
 # The following firefox-appdir make sure that ExtensionTestUtils.loadExtension

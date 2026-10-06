@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<meta name="viewport" content="width=device-width; initial-scale=1.0">
+<title>Test that preventDefault() in a dynamically-added touchmove listener prevents scrolling</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/paint_listener.js"></script>
+<script src="apz_test_utils.js"></script>
+<script src="apz_test_native_event_utils.js"></script>
+<div style="height: 500vh;"></div>
+<script>
+async function test() {
+  // A passive touchstart listener dynamically adds an active touchmove
+  // listener that calls preventDefault(). APZ must re-hit-test on the first
+  // touchmove to discover the new listener and wait for a content response,
+  // so that the preventDefault() is respected and scrolling is suppressed.
+  const touchstartPromise = new Promise(resolve => {
+    window.addEventListener("touchstart", () => {
+      document.addEventListener("touchmove", e => {
+        e.preventDefault();
+      }, { passive: false, once: true });
+      resolve();
+    }, { passive: true, once: true });
+  });
+
+  await promiseApzFlushedRepaints();
+
+  await synthesizeNativeTouch(window, 100, 200,
+                              SpecialPowers.DOMWindowUtils.TOUCH_CONTACT);
+  await touchstartPromise;
+
+  // Though as of now fast-path notifiction explicitly schedules a paint,
+  // it will not in future, so wait two requestAnimationFrames rather than
+  // waiting for a paint.
+  await promiseFrame();
+  await promiseFrame();
+
+  await synthesizeNativeTouch(window, 100, 150,
+                              SpecialPowers.DOMWindowUtils.TOUCH_CONTACT);
+  await synthesizeNativeTouch(window, 100, 100,
+                              SpecialPowers.DOMWindowUtils.TOUCH_CONTACT);
+  await synthesizeNativeTouch(window, 100, 100,
+                              SpecialPowers.DOMWindowUtils.TOUCH_REMOVE);
+
+  await promiseApzFlushedRepaints();
+
+  is(window.scrollY, 0, "Should not have scrolled");
+}
+
+waitUntilApzStable()
+.then(test)
+.then(subtestDone, subtestFailed);
+</script>
+</html>

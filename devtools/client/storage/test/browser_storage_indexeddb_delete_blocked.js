@@ -8,28 +8,21 @@
 
 add_task(async function () {
   await openTabAndSetupStorage(
-    MAIN_DOMAIN_SECURED + "storage-idb-delete-blocked.html"
+    MAIN_URL_SECURED + "storage-idb-delete-blocked.html"
   );
 
   info("test state before delete");
-  await checkState([
-    [["indexedDB", "https://test1.example.org"], ["idb (default)"]],
-  ]);
+  await checkState([[["indexedDB", MAIN_ORIGIN_SECURED], ["idb (default)"]]]);
 
   info("do the delete");
-  await selectTreeItem(["indexedDB", "https://test1.example.org"]);
+  await selectTreeItem(["indexedDB", MAIN_ORIGIN_SECURED]);
   const front = gUI.getCurrentFront();
-  let result = await front.removeDatabase(
-    "https://test1.example.org",
-    "idb (default)"
-  );
+  let result = await front.removeDatabase(MAIN_ORIGIN_SECURED, "idb (default)");
 
   ok(result.blocked, "removeDatabase attempt is blocked");
 
   info("test state after blocked delete");
-  await checkState([
-    [["indexedDB", "https://test1.example.org"], ["idb (default)"]],
-  ]);
+  await checkState([[["indexedDB", MAIN_ORIGIN_SECURED], ["idb (default)"]]]);
 
   const eventWait = gUI.once("store-objects-edit");
 
@@ -43,7 +36,7 @@ add_task(async function () {
   await eventWait;
 
   info("test state after real delete");
-  await checkState([[["indexedDB", "https://test1.example.org"], []]]);
+  await checkState([[["indexedDB", MAIN_ORIGIN_SECURED], []]]);
 
   info("try to delete database from nonexistent host");
   let errorThrown = false;

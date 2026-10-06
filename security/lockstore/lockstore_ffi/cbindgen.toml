@@ -1,0 +1,26 @@
+header = """/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */"""
+autogen_warning = """/* DO NOT MODIFY THIS MANUALLY! This file was generated using cbindgen. See RunCbindgen.py */
+"""
+include_guard = "mozilla_security_LockstoreFFI_h"
+include_version = true
+braces = "SameLine"
+line_length = 100
+tab_width = 2
+language = "C++"
+includes = ["nsStringFwd.h", "nsTArrayForwardDeclare.h"]
+namespaces = ["mozilla", "security", "lockstore"]
+
+[enum]
+derive_const_casts = true
+derive_tagged_enum_destructor = true
+cast_assert_name = "MOZ_DIAGNOSTIC_ASSERT"
+
+[parse]
+parse_deps = true
+include = ["lockstore_rs"]
+
+# Export `ThinVec` references as `nsTArray`.
+[export.rename]
+"ThinVec" = "nsTArray"

@@ -1,67 +1,26 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "UDPSocketChild.h"
+
 #include "UDPSocket.h"
-#include "mozilla/Unused.h"
-#include "mozilla/ipc/IPCStreamUtils.h"
-#include "mozilla/net/NeckoChild.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/PermissionMessageUtils.h"
 #include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/BackgroundUtils.h"
+#include "mozilla/ipc/IPCStreamUtils.h"
+#include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
+#include "mozilla/net/NeckoChild.h"
 
 using mozilla::net::gNeckoChild;
 
 namespace mozilla::dom {
 
-NS_IMPL_ISUPPORTS(UDPSocketChildBase, nsISupports)
-
-UDPSocketChildBase::UDPSocketChildBase() : mIPCOpen(false) {}
-
-UDPSocketChildBase::~UDPSocketChildBase() = default;
-
-void UDPSocketChildBase::ReleaseIPDLReference() {
-  MOZ_ASSERT(mIPCOpen);
-  mIPCOpen = false;
-  mSocket = nullptr;
-  this->Release();
-}
-
-void UDPSocketChildBase::AddIPDLReference() {
-  MOZ_ASSERT(!mIPCOpen);
-  mIPCOpen = true;
-  this->AddRef();
-}
-
-NS_IMETHODIMP_(MozExternalRefCountType) UDPSocketChild::Release(void) {
-  nsrefcnt refcnt = UDPSocketChildBase::Release();
-  if (refcnt == 1 && mIPCOpen) {
-    PUDPSocketChild::SendRequestDelete();
-    return 1;
-  }
-  return refcnt;
-}
-
-UDPSocketChild::UDPSocketChild() : mBackgroundManager(nullptr), mLocalPort(0) {}
+UDPSocketChild::UDPSocketChild() : mLocalPort(0) {}
 
 UDPSocketChild::~UDPSocketChild() = default;
-
-nsresult UDPSocketChild::SetBackgroundSpinsEvents() {
-  using mozilla::ipc::BackgroundChild;
-
-  mBackgroundManager = BackgroundChild::GetOrCreateForCurrentThread();
-  if (NS_WARN_IF(!mBackgroundManager)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  return NS_OK;
-}
 
 nsresult UDPSocketChild::Bind(nsIUDPSocketInternal* aSocket,
                               nsIPrincipal* aPrincipal, const nsACString& aHost,
@@ -79,21 +38,21 @@ nsresult UDPSocketChild::Bind(nsIUDPSocketInternal* aSocket,
       return NS_ERROR_FAILURE;
     }
   } else {
-    if (!mBackgroundManager) {
+    using mozilla::ipc::BackgroundChild;
+    auto backgroundManager = BackgroundChild::GetOrCreateForCurrentThread();
+    if (!backgroundManager) {
       return NS_ERROR_NOT_AVAILABLE;
     }
-
     // If we want to support a passed-in principal here we'd need to
     // convert it to a PrincipalInfo
     MOZ_ASSERT(!aPrincipal);
-    if (!mBackgroundManager->SendPUDPSocketConstructor(this, Nothing(),
-                                                       mFilterName)) {
+    if (!backgroundManager->SendPUDPSocketConstructor(this, Nothing(),
+                                                      mFilterName)) {
       return NS_ERROR_FAILURE;
     }
   }
 
   mSocket = aSocket;
-  AddIPDLReference();
 
   SendBind(UDPAddressInfo(nsCString(aHost), aPort), aAddressReuse, aLoopback,
            recvBufferSize, sendBufferSize);
@@ -183,7 +142,7 @@ mozilla::ipc::IPCResult UDPSocketChild::RecvCallbackOpened(
 
   UDPSOCKET_LOG(("%s: %s:%u", __FUNCTION__, mLocalAddress.get(), mLocalPort));
   nsresult rv = mSocket->CallListenerOpened();
-  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   return IPC_OK();
 }
@@ -196,14 +155,14 @@ mozilla::ipc::IPCResult UDPSocketChild::RecvCallbackConnected(
 
   UDPSOCKET_LOG(("%s: %s:%u", __FUNCTION__, mLocalAddress.get(), mLocalPort));
   nsresult rv = mSocket->CallListenerConnected();
-  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult UDPSocketChild::RecvCallbackClosed() {
   nsresult rv = mSocket->CallListenerClosed();
-  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   return IPC_OK();
 }
@@ -215,18 +174,19 @@ mozilla::ipc::IPCResult UDPSocketChild::RecvCallbackReceivedData(
                  aData.Length()));
   nsresult rv = mSocket->CallListenerReceivedData(aAddressInfo.addr(),
                                                   aAddressInfo.port(), aData);
-  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult UDPSocketChild::RecvCallbackError(
-    const nsCString& aMessage, const nsCString& aFilename,
+    const nsACString& aMessage, const nsACString& aFilename,
     const uint32_t& aLineNumber) {
-  UDPSOCKET_LOG(("%s: %s:%s:%u", __FUNCTION__, aMessage.get(), aFilename.get(),
-                 aLineNumber));
+  UDPSOCKET_LOG(("%s: %s:%s:%u", __FUNCTION__,
+                 PromiseFlatCString(aMessage).get(),
+                 PromiseFlatCString(aFilename).get(), aLineNumber));
   nsresult rv = mSocket->CallListenerError(aMessage, aFilename, aLineNumber);
-  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   return IPC_OK();
 }

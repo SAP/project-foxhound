@@ -53,8 +53,8 @@ class CurrentTimeLabel extends PureComponent {
 /**
  * Format a timestamp (in ms) as a mm:ss.mmm string.
  *
- * @param {Number} time
- * @return {String}
+ * @param {number} time
+ * @return {string}
  */
 function formatStopwatchTime(time) {
   // Format falsy values as 0

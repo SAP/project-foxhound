@@ -4,7 +4,7 @@
 // Tests a zero frecency is correctly updated when inserting new valid visits.
 
 add_task(async function () {
-  const TEST_URI = NetUtil.newURI("http://example.com/");
+  const TEST_URI = Services.io.newURI("http://example.com/");
   let bookmark = await PlacesUtils.bookmarks.insert({
     parentGuid: PlacesUtils.bookmarks.unfiledGuid,
     url: TEST_URI,

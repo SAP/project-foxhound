@@ -56,6 +56,6 @@ testWithTypedArrayConstructors(TA => {
     array.reduceRight(() => {});
     throw new Test262Error('reduceRight completed successfully');
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

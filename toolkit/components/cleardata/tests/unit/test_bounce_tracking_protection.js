@@ -11,7 +11,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "bounceTrackingProtection",
   "@mozilla.org/bounce-tracking-protection;1",
-  "nsIBounceTrackingProtection"
+  Ci.nsIBounceTrackingProtection
 );
 
 const { CLEAR_BOUNCE_TRACKING_PROTECTION_STATE } = Ci.nsIClearDataService;
@@ -118,8 +118,6 @@ function addTestData() {
     1800
   );
 }
-
-do_get_profile();
 
 add_task(async function test_deleteAll() {
   addTestData();

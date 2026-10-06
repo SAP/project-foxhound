@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -42,13 +40,6 @@
 #ifdef MOZ_ENABLE_DBUS
 #  include <dbus/dbus.h>
 #endif
-
-#define MIN_GTK_MAJOR_VERSION 2
-#define MIN_GTK_MINOR_VERSION 10
-#define UNSUPPORTED_GTK_MSG \
-  "We're sorry, this application requires a version of the GTK+ library that is not installed on your computer.\n\n\
-You have GTK+ %d.%d.\nThis application requires GTK+ %d.%d or newer.\n\n\
-Please upgrade your GTK+ library if you wish to use this application."
 
 #if MOZ_X11
 #  undef IceSetIOErrorHandler

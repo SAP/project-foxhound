@@ -26,32 +26,44 @@ const EventEmitter = require("resource://devtools/shared/event-emitter.js");
  *     ...
  *   });
  *
- * @param string prefsRoot
- *        The root path to the required preferences branch.
- * @param object prefsBlueprint
- *        An object containing { accessorName: [prefType, prefName] } keys.
  */
-function PrefsHelper(prefsRoot = "", prefsBlueprint = {}) {
-  EventEmitter.decorate(this);
+class PrefsHelper extends EventEmitter {
+  /**
+   * @param string prefsRoot
+   *        The root path to the required preferences branch.
+   * @param object prefsBlueprint
+   *        An object containing { accessorName: [prefType, prefName] } keys.
+   */
+  constructor(prefsRoot = "", prefsBlueprint = {}) {
+    super();
 
-  const cache = new Map();
+    const cache = new Map();
 
-  for (const accessorName in prefsBlueprint) {
-    const [prefType, prefName, fallbackValue] = prefsBlueprint[accessorName];
-    map(
-      this,
-      cache,
-      accessorName,
-      prefType,
-      prefsRoot,
-      prefName,
-      fallbackValue
-    );
+    for (const accessorName in prefsBlueprint) {
+      const [prefType, prefName, fallbackValue] = prefsBlueprint[accessorName];
+      map(
+        this,
+        cache,
+        accessorName,
+        prefType,
+        prefsRoot,
+        prefName,
+        fallbackValue
+      );
+    }
+
+    this.#observer = makeObserver(this, cache, prefsRoot, prefsBlueprint);
   }
 
-  const observer = makeObserver(this, cache, prefsRoot, prefsBlueprint);
-  this.registerObserver = () => observer.register();
-  this.unregisterObserver = () => observer.unregister();
+  #observer;
+
+  registerObserver() {
+    this.#observer.register();
+  }
+
+  unregisterObserver() {
+    this.#observer.unregister();
+  }
 }
 
 /**
@@ -233,6 +245,8 @@ class PrefObserver extends EventEmitter {
 
   destroy() {
     this.#branch.removeObserver("", this);
+    // Unregister all EventEmitter listeners
+    super.off();
   }
 }
 

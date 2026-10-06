@@ -19,6 +19,15 @@ kind
 A task's ``kind`` attribute gives the name of the kind that generated it, e.g.,
 ``build`` or ``spidermonkey``.
 
+run_on_repo_type
+================
+
+The types of repositories where this task should be in the target task set. Typically
+"hg" (the default), "git" or both.
+
+This attribute is temporary and will be used during the transition from hg.mozilla.org
+to Github.
+
 run_on_projects
 ===============
 
@@ -46,6 +55,7 @@ Project names are the repositories.  They can be:
 * `mozilla-beta`
 * `mozilla-release`
 * `mozilla-esr140`
+* `mozilla-esr153`
 * ... A partial list can be found in taskcluster/gecko_taskgraph/util/attributes.py
 
 For try, this attribute applies only if ``-p all`` is specified.  All jobs can
@@ -81,6 +91,18 @@ or the following alias:
 
 Like ``run_on_projects``, the same behavior applies if it is set to an empty list.
 
+run_on_git_branches
+===================
+
+On a given project, the git branches where this task should be in the target
+task set.  This is how requirements like "only run on this branch" get implemented.
+These are either the regular expression of a branch (e.g.: ``GECKOVIEW_\d+_RELBRANCH``)
+or the following alias:
+
+ * `all` -- everywhere (the default)
+
+Like ``run_on_projects``, the same behavior applies if it is set to an empty list.
+
 task_duplicates
 ===============
 
@@ -109,6 +131,11 @@ used for different kinds of builds that target the same platform.  Values are
 
  * ``debug``
  * ``opt``
+
+ccov
+====
+
+Marks tasks related to code coverage collection.
 
 test_platform
 =============
@@ -215,6 +242,10 @@ For jobs that operate on only one locale, we set the attribute ``locale`` to the
 specific locale involved. Currently this is only in l10n versions of the
 ``beetmover`` and ``balrog`` kinds.
 
+build_target
+============
+The build_target used in update requests for the platform. A list of these can be found in ``python/mozrelease/mozrelease/platforms.py``.
+
 signed
 ======
 Signals that the output of this task contains signed artifacts.
@@ -242,6 +273,12 @@ stanzas for jobs.
 toolchain-artifact
 ==================
 For toolchain jobs, this is the path to the artifact for that toolchain.
+
+toolchain-resources
+===================
+For toolchain jobs, this is the list of paths that contribute to the toolchain's
+digest hash. These include the build script, any resources specified in the task
+definition, and the tooltool manifest (if present).
 
 toolchain-extract
 =================
@@ -364,14 +401,6 @@ want to exist in the index before they even run/complete. Our current use is to 
 unfinished cached task in future pushes. This avoids extra overhead from multiple tasks running, and
 can allow us to have our results in just a bit earlier.
 
-required_signoffs
-=================
-A list of release signoffs that this kind requires, should the release also
-require these signoffs. For example, ``mar-signing`` signoffs may be required
-by some releases in the future; for any releases that require ``mar-signing``
-signoffs, the kinds that also require that signoff are marked with this
-attribute.
-
 update-channel
 ==============
 The update channel the build is configured to use.
@@ -386,9 +415,9 @@ The mar-channel-ids this build will accept updates to. It should usually be the 
 the value mar_channel_id.  If more than one ID is needed, then you should use a
 comma separated list of values.
 
-openh264_rev
-============
-Only used for openh264 plugin builds, used to signify the revision (and thus inform artifact name) of the given build.
+openh264_version
+================
+Only used for openh264 plugin builds, used to signify the version (and thus inform artifact name) of the given build.
 
 code-review
 ===========
@@ -439,6 +468,11 @@ If true, the digest for this task will also depend on if the branch is a
 release branch.  This will cause tasks like toolchains to be rebuilt as they
 move from e.g. autoland to mozilla-central.
 
+local-fetch
+===============
+This fetch is used for local development, so should be built on trunk, even
+if it does not have any in-graph consumers.
+
 local-toolchain
 ===============
 This toolchain is used for local development, so should be built on trunk, even
@@ -469,6 +503,11 @@ For tasks that were derived from a group of dependencies, this attribute
 denotes which dependent kind is the `primary one`_.
 
 Typically this is set by the ``taskgraph.transforms.from_deps`` transforms.
+
+primary-dependency-label
+========================
+
+This attribute denotes which upstream task is the `primary one`_, and is typically used to indicate which upstream task other attributes should be derived from.
 
 snap_test_type
 ==============
@@ -553,3 +592,25 @@ Used by source tests to support chunking and specify a current chunk.
 total_chunks
 =============
 Used by source tests to support chunking and specify a total amount of chunks.
+
+matrix
+======
+Used to generate several tasks from a task, using the substitution given in the
+matrix.
+
+dxc-crash-symbols
+=================
+
+Indicates that the job produces crash symbols for `dxcompiler.dll`.
+
+flatpak_name
+============
+
+name of the built flatpak app (e.g. `org.mozilla.firefox`)
+
+msi_display_name
+================
+
+The human-readable product name for the MSI installer (e.g. ``Firefox Nightly``,
+``Firefox Beta``, ``Firefox``). Used by downstream signing tasks to construct
+the Authenticode comment embedded in the installer signature.

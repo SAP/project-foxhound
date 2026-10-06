@@ -8,13 +8,34 @@ import android.content.Intent
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.ActivityResultLauncher
 
+/**
+ * Interactor for the onboarding flow.
+ */
 interface OnboardingInteractor {
+    /**
+     * Finishes the onboarding flow.
+     */
     fun onFinishOnBoarding()
+
+    /**
+     * Handles clicking the "Get Started" button.
+     */
     fun onGetStartedButtonClicked()
+
+    /**
+     * Handles clicking the button to make Focus the default browser.
+     */
     fun onMakeFocusDefaultBrowserButtonClicked(activityResultLauncher: ActivityResultLauncher<Intent>)
+
+    /**
+     * Handles the [activityResult] from the default browser request.
+     */
     fun onActivityResultImplementation(activityResult: ActivityResult)
 }
 
+/**
+ * Default implementation of the [OnboardingInteractor].
+ */
 class DefaultOnboardingInteractor(private val controller: OnboardingController) : OnboardingInteractor {
     override fun onFinishOnBoarding() {
         controller.handleFinishOnBoarding()

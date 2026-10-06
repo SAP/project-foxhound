@@ -1,13 +1,15 @@
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ChannelMediaResource.h"
 
+#include <limits>
+
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/HTMLMediaElement.h"
 #include "mozilla/net/OpaqueResponseUtils.h"
+#include "nsHttp.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsICachingChannel.h"
 #include "nsIClassOfService.h"
@@ -15,7 +17,6 @@
 #include "nsIInputStream.h"
 #include "nsIThreadRetargetableRequest.h"
 #include "nsITimedChannel.h"
-#include "nsHttp.h"
 #include "nsNetUtil.h"
 
 static const uint32_t HTTP_PARTIAL_RESPONSE_CODE = 206;
@@ -28,6 +29,27 @@ mozilla::LazyLogModule gMediaResourceLog("MediaResource");
   DDMOZ_LOG(gMediaResourceLog, mozilla::LogLevel::Debug, msg, ##__VA_ARGS__)
 
 namespace mozilla {
+
+namespace {
+
+bool IsContentRangeWithinMediaCacheLimits(int64_t aRangeStart,
+                                          int64_t aRangeEnd,
+                                          int64_t aRangeTotal) {
+  if (!MediaCacheStream::IsOffsetAllowed(aRangeStart) ||
+      !MediaCacheStream::IsOffsetAllowed(aRangeEnd)) {
+    return false;
+  }
+
+  // MediaCache advances to the next write position after consuming a range.
+  if (aRangeEnd == std::numeric_limits<int64_t>::max() ||
+      !MediaCacheStream::IsOffsetAllowed(aRangeEnd + 1)) {
+    return false;
+  }
+
+  return aRangeTotal == -1 || MediaCacheStream::IsOffsetAllowed(aRangeTotal);
+}
+
+}  // namespace
 
 ChannelMediaResource::ChannelMediaResource(MediaResourceCallback* aCallback,
                                            nsIChannel* aChannel, nsIURI* aURI,
@@ -61,7 +83,8 @@ nsresult ChannelMediaResource::Listener::OnStartRequest(nsIRequest* aRequest) {
   AssertIsOnMainThread();
   mLock.NoteOnMainThread();
   if (!mResource) return NS_OK;
-  return mResource->OnStartRequest(aRequest, mOffset);
+  RefPtr<ChannelMediaResource> resource = mResource;
+  return resource->OnStartRequest(aRequest, mOffset);
 }
 
 nsresult ChannelMediaResource::Listener::OnStopRequest(nsIRequest* aRequest,
@@ -69,7 +92,8 @@ nsresult ChannelMediaResource::Listener::OnStopRequest(nsIRequest* aRequest,
   AssertIsOnMainThread();
   mLock.NoteOnMainThread();
   if (!mResource) return NS_OK;
-  return mResource->OnStopRequest(aRequest, aStatus);
+  RefPtr<ChannelMediaResource> resource = mResource;
+  return resource->OnStopRequest(aRequest, aStatus);
 }
 
 nsresult ChannelMediaResource::Listener::OnDataAvailable(
@@ -126,7 +150,7 @@ void ChannelMediaResource::Listener::Revoke() {
 
 static bool IsPayloadCompressed(nsIHttpChannel* aChannel) {
   nsAutoCString encoding;
-  Unused << aChannel->GetResponseHeader("Content-Encoding"_ns, encoding);
+  (void)aChannel->GetResponseHeader("Content-Encoding"_ns, encoding);
   return encoding.Length() > 0;
 }
 
@@ -170,9 +194,9 @@ nsresult ChannelMediaResource::OnStartRequest(nsIRequest* aRequest,
 
   if (hc) {
     uint32_t responseStatus = 0;
-    Unused << hc->GetResponseStatus(&responseStatus);
+    (void)hc->GetResponseStatus(&responseStatus);
     bool succeeded = false;
-    Unused << hc->GetRequestSucceeded(&succeeded);
+    (void)hc->GetRequestSucceeded(&succeeded);
 
     if (!succeeded && NS_SUCCEEDED(status)) {
       // HTTP-level error (e.g. 4xx); treat this as a fatal network-level error.
@@ -202,7 +226,7 @@ nsresult ChannelMediaResource::OnStartRequest(nsIRequest* aRequest,
     }
 
     nsAutoCString ranges;
-    Unused << hc->GetResponseHeader("Accept-Ranges"_ns, ranges);
+    (void)hc->GetResponseHeader("Accept-Ranges"_ns, ranges);
     bool acceptsRanges =
         net::nsHttp::FindToken(ranges.get(), "bytes", HTTP_HEADER_VALUE_SEPS);
 
@@ -221,6 +245,13 @@ nsresult ChannelMediaResource::OnStartRequest(nsIRequest* aRequest,
       int64_t rangeEnd = 0;
       int64_t rangeTotal = 0;
       rv = ParseContentRangeHeader(hc, rangeStart, rangeEnd, rangeTotal);
+
+      if (NS_FAILED(rv) && rv != NS_ERROR_NOT_AVAILABLE) {
+        mCallback->NotifyNetworkError(
+            MediaResult(NS_ERROR_FAILURE, "invalid Content-Range"));
+        CloseChannel();
+        return NS_OK;
+      }
 
       // We received 'Content-Range', so the server accepts range requests.
       bool gotRangeHeader = NS_SUCCEEDED(rv);
@@ -260,6 +291,17 @@ nsresult ChannelMediaResource::OnStartRequest(nsIRequest* aRequest,
   } else {
     // Not an HTTP channel. Assume data will be sent from position zero.
     startOffset = 0;
+
+    // Pick up the content length the channel reports up front (data:, jar:,
+    // resource:, ...). Without this, the resource is treated as a live
+    // stream of unknown size and demuxers that estimate duration from the
+    // stream length (e.g. CBR mp3 with no Xing/Info header) report
+    // Infinity.
+    int64_t channelLength = -1;
+    if (NS_SUCCEEDED(mChannel->GetContentLength(&channelLength)) &&
+        channelLength >= 0) {
+      length = channelLength;
+    }
   }
 
   // Update principals before OnDataAvailable() putting the data in the cache.
@@ -323,6 +365,14 @@ nsresult ChannelMediaResource::ParseContentRangeHeader(
   aRangeEnd = std::get<1>(rangeOrErr.inspect());
   aRangeTotal = std::get<2>(rangeOrErr.inspect());
 
+  if (!IsContentRangeWithinMediaCacheLimits(aRangeStart, aRangeEnd,
+                                            aRangeTotal)) {
+    LOG("Rejecting bytes [%" PRId64 "] to [%" PRId64 "] of [%" PRId64
+        "] for decoder[%p] due to media cache limits",
+        aRangeStart, aRangeEnd, aRangeTotal, mCallback.get());
+    return NS_ERROR_ILLEGAL_VALUE;
+  }
+
   LOG("Received bytes [%" PRId64 "] to [%" PRId64 "] of [%" PRId64
       "] for decoder[%p]",
       aRangeStart, aRangeEnd, aRangeTotal, mCallback.get());
@@ -345,7 +395,7 @@ nsresult ChannelMediaResource::OnStopRequest(nsIRequest* aRequest,
   NS_ASSERTION(NS_SUCCEEDED(rv), "GetLoadFlags() failed!");
 
   if (loadFlags & nsIRequest::LOAD_BACKGROUND) {
-    Unused << NS_WARN_IF(
+    (void)NS_WARN_IF(
         NS_FAILED(ModifyLoadFlags(loadFlags & ~nsIRequest::LOAD_BACKGROUND)));
   }
 
@@ -411,7 +461,16 @@ nsresult ChannelMediaResource::OnChannelRedirect(nsIChannel* aOld,
   // OnChannelRedirect() is followed by OnStartRequest() where we will
   // call mSuspendAgent.Delegate().
   mChannel = aNew;
-  return SetupChannelHeaders(aOffset);
+  nsresult rv = SetupChannelHeaders(aOffset);
+  if (NS_SUCCEEDED(rv)) {
+    mSuspendAgent.RevokeIfManaged(aOld);
+  } else {
+    nsCString err;
+    GetErrorName(rv, err);
+    LOG("Veto redirect: fail to set up new channel: %s", err.get());
+    mChannel = aOld;
+  }
+  return rv;
 }
 
 nsresult ChannelMediaResource::CopySegmentToCache(
@@ -469,7 +528,7 @@ int64_t ChannelMediaResource::CalculateStreamLength() const {
   }
 
   bool succeeded = false;
-  Unused << hc->GetRequestSucceeded(&succeeded);
+  (void)hc->GetRequestSucceeded(&succeeded);
   if (!succeeded) {
     return -1;
   }
@@ -486,7 +545,7 @@ int64_t ChannelMediaResource::CalculateStreamLength() const {
   }
 
   uint32_t responseStatus = 0;
-  Unused << hc->GetResponseStatus(&responseStatus);
+  (void)hc->GetResponseStatus(&responseStatus);
   if (responseStatus != HTTP_PARTIAL_RESPONSE_CODE) {
     return contentLength;
   }
@@ -764,11 +823,11 @@ nsresult ChannelMediaResource::RecreateChannel() {
   nsCOMPtr<nsILoadInfo> loadInfo = mChannel->LoadInfo();
   if (setAttrs) {
     // The function simply returns NS_OK, so we ignore the return value.
-    Unused << loadInfo->SetOriginAttributes(
+    (void)loadInfo->SetOriginAttributes(
         triggeringPrincipal->OriginAttributesRef());
   }
 
-  Unused << loadInfo->SetIsMediaRequest(true);
+  (void)loadInfo->SetIsMediaRequest(true);
 
   if (nsCOMPtr<nsITimedChannel> timedChannel = do_QueryInterface(mChannel)) {
     nsString initiatorType =
@@ -891,7 +950,7 @@ void ChannelMediaResource::UpdatePrincipal() {
     if (timedChannel) {
       bool allRedirectsSameOrigin = false;
       mSharedInfo->mHadCrossOriginRedirects =
-          NS_SUCCEEDED(timedChannel->GetAllRedirectsSameOrigin(
+          NS_SUCCEEDED(timedChannel->GetAllRedirectsSameOriginIgnoringInternal(
               &allRedirectsSameOrigin)) &&
           !allRedirectsSameOrigin;
     }
@@ -1063,6 +1122,15 @@ void ChannelSuspendAgent::Revoke() {
     mIsChannelSuspended = false;
   }
   mChannel = nullptr;
+}
+
+void ChannelSuspendAgent::RevokeIfManaged(nsIChannel* aChannel) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (mChannel != aChannel) {
+    NS_WARNING("Not a managed channel");
+    return;
+  }
+  Revoke();
 }
 
 bool ChannelSuspendAgent::IsSuspended() {

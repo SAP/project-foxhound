@@ -34,7 +34,7 @@ add_task(async function () {
   });
 
   await toolbox.selectTool("inspector");
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
 
   // Disable the "font-size" property.
   const propEditor = ruleEditor.rule.textProps[0].editor;

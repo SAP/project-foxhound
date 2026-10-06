@@ -64,12 +64,41 @@ add_task(async function testTraceMessages() {
   ]);
 });
 
+add_task(async function testTraceMessagesNoRepeat() {
+  await pushPref("devtools.webconsole.groupSimilarMessages", false);
+  const hud = await openNewTabAndConsole(TEST_URI);
+
+  const messages = await waitFor(() => {
+    const res = findConsoleAPIMessages(hud, "foo1");
+    if (res.length < 3) {
+      return false;
+    }
+    return res;
+  });
+
+  // Wait until all stacktraces are displayed.
+  await waitFor(() =>
+    [...messages].every(message => !!message.querySelector(".frames"))
+  );
+
+  is(
+    messages[2].querySelector(".message-body").textContent,
+    "console.trace()",
+    "last console.trace message body has expected text"
+  );
+  is(
+    messages[2].querySelector(".message-repeats"),
+    null,
+    "last console.trace doesn't have a repeat badge"
+  );
+});
+
 /**
  * Check stack info returned by getStackInfo().
  *
- * @param {Object} stackInfo
+ * @param {object} stackInfo
  *        A stackInfo object returned by getStackInfo().
- * @param {Object} expected
+ * @param {object} expected
  *        An object in the same format as the expected stackInfo object.
  */
 function checkStacktraceFrames(frames, expectedFrames) {

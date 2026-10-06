@@ -4,29 +4,31 @@
 
 // Parent config file for all mochitest files.
 
-export default {
-  env: {
-    browser: true,
-    "mozilla/browser-window": true,
-  },
+import globals from "globals";
+import browserWindow from "../environments/browser-window.mjs";
 
-  // All globals made available in the test environment.
-  globals: {
-    // SpecialPowers is injected into the window object via SimpleTest.js
-    SpecialPowers: "readonly",
-    afterEach: "readonly",
-    beforeEach: "readonly",
-    describe: "readonly",
-    extractJarToTmp: "readonly",
-    getChromeDir: "readonly",
-    getJar: "readonly",
-    getResolvedURI: "readonly",
-    getRootDirectory: "readonly",
-    it: "readonly",
+export default {
+  languageOptions: {
+    globals: {
+      // All globals made available in the test environment.
+      ...globals.browser,
+      ...browserWindow.globals,
+
+      // SpecialPowers is injected into the window object via SimpleTest.js
+      SpecialPowers: "readonly",
+      afterEach: "readonly",
+      beforeEach: "readonly",
+      describe: "readonly",
+      extractJarToTmp: "readonly",
+      getChromeDir: "readonly",
+      getJar: "readonly",
+      getResolvedURI: "readonly",
+      getRootDirectory: "readonly",
+      it: "readonly",
+    },
   },
 
   name: "mozilla/chrome-test",
-  plugins: ["mozilla"],
 
   rules: {
     // We mis-predict globals for HTML test files in directories shared

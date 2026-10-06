@@ -5,16 +5,26 @@
 const kInChildProcess =
   Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT;
 
-const kAllowedPrefs = new Set([
+const kPrivilegedAboutPrefs = new Set([
   // NB: please leave the testing prefs at the top, and sort the rest alphabetically if you add
   // anything.
   "testing.allowed-prefs.some-bool-pref",
   "testing.allowed-prefs.some-char-pref",
   "testing.allowed-prefs.some-int-pref",
 
+  "browser.aboutpdf.promo.dismissed",
   "browser.contentblocking.report.hide_vpn_banner",
   "browser.contentblocking.report.show_mobile_app",
+]);
 
+/**
+ * This set of prefs is exposed to web content processes. By default,
+ * AsyncPrefs is obviously only available to privileged code, but in the
+ * case of a compromised content process, we would still want to avoid it
+ * being able to set security-relevant prefs. If in doubt, talk to the
+ * security team before adding more prefs to this list.
+ */
+const kUnprivilegedExposedPrefs = new Set([
   "narrate.rate",
   "narrate.voice",
 
@@ -32,8 +42,6 @@ const kAllowedPrefs = new Set([
   "reader.custom_colors.unvisited-links",
   "reader.custom_colors.visited-links",
   "reader.custom_colors.selection-highlight",
-
-  "security.tls.version.enable-deprecated",
 ]);
 
 const kPrefTypeMap = new Map([
@@ -42,16 +50,37 @@ const kPrefTypeMap = new Map([
   ["string", Services.prefs.PREF_STRING],
 ]);
 
-function maybeReturnErrorForReset(pref) {
-  if (!kAllowedPrefs.has(pref)) {
-    return `Resetting pref ${pref} from content is not allowed.`;
+function maybeReturnErrorForOperation(operation, pref, remoteType) {
+  let isPrivilegedRemote =
+    remoteType == "privilegedabout" || remoteType == "parent";
+  let isUnprivilegedRemote =
+    remoteType == "file" ||
+    remoteType == "web" ||
+    remoteType.startsWith("webIsolated=");
+  if (!isPrivilegedRemote && !isUnprivilegedRemote) {
+    return `Unknown remote type ${remoteType} when trying to ${operation} pref ${pref}.`;
+  }
+  if (
+    isPrivilegedRemote &&
+    !kPrivilegedAboutPrefs.has(pref) &&
+    !kUnprivilegedExposedPrefs.has(pref)
+  ) {
+    return `Not allowed to ${operation} pref ${pref} from ${remoteType} process.`;
+  }
+  if (isUnprivilegedRemote && !kUnprivilegedExposedPrefs.has(pref)) {
+    return `Not allowed to ${operation} pref ${pref} from ${remoteType} process.`;
   }
   return false;
 }
 
-function maybeReturnErrorForSet(pref, value) {
-  if (!kAllowedPrefs.has(pref)) {
-    return `Setting pref ${pref} from content is not allowed.`;
+function maybeReturnErrorForReset(pref, remoteType = "web") {
+  return maybeReturnErrorForOperation("reset", pref, remoteType);
+}
+
+function maybeReturnErrorForSet(pref, value, remoteType = "web") {
+  let error = maybeReturnErrorForOperation("set", pref, remoteType);
+  if (error) {
+    return error;
   }
 
   let valueType = typeof value;
@@ -70,7 +99,11 @@ function maybeReturnErrorForSet(pref, value) {
 
 export class AsyncPrefsChild extends JSProcessActorChild {
   set(pref, value) {
-    let error = maybeReturnErrorForSet(pref, value);
+    let error = maybeReturnErrorForSet(
+      pref,
+      value,
+      Services.appinfo.remoteType
+    );
     if (error) {
       return Promise.reject(error);
     }
@@ -82,7 +115,7 @@ export class AsyncPrefsChild extends JSProcessActorChild {
   }
 
   reset(pref) {
-    let error = maybeReturnErrorForReset(pref);
+    let error = maybeReturnErrorForReset(pref, Services.appinfo.remoteType);
     if (error) {
       return Promise.reject(error);
     }
@@ -98,14 +131,14 @@ export var AsyncPrefs = {
         .getActor("AsyncPrefs")
         .set(pref, value);
     }
-    return AsyncPrefsParent.set(pref, value);
+    return AsyncPrefsParent.set(pref, value, "parent");
   },
 
   reset(pref) {
     if (kInChildProcess) {
       return ChromeUtils.domProcessChild.getActor("AsyncPrefs").reset(pref);
     }
-    return AsyncPrefsParent.reset(pref);
+    return AsyncPrefsParent.reset(pref, "parent");
   },
 };
 
@@ -116,8 +149,8 @@ const methodForType = {
 };
 
 export class AsyncPrefsParent extends JSProcessActorParent {
-  static set(pref, value) {
-    let error = maybeReturnErrorForSet(pref, value);
+  static set(pref, value, remoteType) {
+    let error = maybeReturnErrorForSet(pref, value, remoteType);
     if (error) {
       return Promise.reject(error);
     }
@@ -132,8 +165,8 @@ export class AsyncPrefsParent extends JSProcessActorParent {
     return Promise.resolve(value);
   }
 
-  static reset(pref) {
-    let error = maybeReturnErrorForReset(pref);
+  static reset(pref, remoteType) {
+    let error = maybeReturnErrorForReset(pref, remoteType);
     if (error) {
       return Promise.reject(error);
     }
@@ -150,8 +183,12 @@ export class AsyncPrefsParent extends JSProcessActorParent {
 
   receiveMessage(msg) {
     if (msg.name == "AsyncPrefs:SetPref") {
-      return AsyncPrefsParent.set(msg.data.pref, msg.data.value);
+      return AsyncPrefsParent.set(
+        msg.data.pref,
+        msg.data.value,
+        this.manager.remoteType
+      );
     }
-    return AsyncPrefsParent.reset(msg.data.pref);
+    return AsyncPrefsParent.reset(msg.data.pref, this.manager.remoteType);
   }
 }

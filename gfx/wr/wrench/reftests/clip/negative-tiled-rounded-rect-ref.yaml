@@ -1,0 +1,21 @@
+---
+root:
+  items:
+    - type: stacking-context
+      bounds: [0, 0, 500, 500]
+      items:
+        - type: rect
+          bounds: [0, 0, 500, 500]
+          color: white
+        - type: clip
+          id: 1
+          complex:
+            - rect: [10, 10, 300, 300]
+              radius: [0, 160, 160, 0]
+        - type: clip-chain
+          id: 2
+          clips: [1]
+        - type: rect
+          bounds: [10, 10, 300, 300]
+          color: blue
+          clip-chain: 2

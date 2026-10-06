@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<!-- Derived from https://github.com/androidx/androidx/blob/8cb282cc/preference/preference/res/layout/preference_widget_switch_compat.xml -->
+<!-- Layout used by SwitchPreference for the switch widget style. This is inflated inside android.R.layout.preference. -->
+<com.google.android.material.materialswitch.MaterialSwitch
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/switchWidget"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:background="@null"
+    android:clickable="false"
+    android:focusable="false"
+    app:trackTint="@color/material_switch_track_tint"
+    app:useMaterialThemeColors="false" />

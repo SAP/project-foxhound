@@ -16,8 +16,6 @@
 
 #include "ClearKeyBase64.h"
 
-#include <algorithm>
-
 using std::string;
 using std::vector;
 
@@ -63,6 +61,9 @@ bool DecodeBase64(const string& aEncoded, vector<uint8_t>& aOutDecoded) {
   }
   string encoded = aEncoded;
   if (!Decode6Bit(encoded)) {
+    return false;
+  }
+  if (encoded.size() < 2) {
     return false;
   }
 

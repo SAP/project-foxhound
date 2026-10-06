@@ -1,0 +1,16 @@
+{
+  "label": "zoom.us",
+  "bugs": {
+    "1944219": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.zoom.us/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "only_channels": ["nightly"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

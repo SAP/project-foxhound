@@ -5,7 +5,6 @@
 const IOS_DEFAULT_PREFERENCES = {
   "extensions.formautofill.creditCards.heuristics.mode": 1,
   "extensions.formautofill.creditCards.heuristics.fathom.confidenceThreshold": 0.5,
-  "extensions.formautofill.creditCards.heuristics.fathom.highConfidenceThreshold": 0.95,
   "extensions.formautofill.creditCards.heuristics.fathom.testConfidence": 0,
   "extensions.formautofill.creditCards.heuristics.fathom.types":
     "cc-number,cc-name",
@@ -37,11 +36,10 @@ const IOS_DEFAULT_PREFERENCES = {
   "extensions.formautofill.test.ignoreVisibilityCheck": false,
   "extensions.formautofill.heuristics.autofillSameOriginWithTop": false,
   "signon.generation.confidenceThreshold": 0.75,
-  "extensions.formautofill.ml.experiment.enabled": false,
 };
 
 // Used Mimic the behavior of .getAutocompleteInfo()
-// List from: https://searchfox.org/mozilla-central/source/dom/base/AutocompleteFieldList.h#89-149
+// List from: https://searchfox.org/firefox-main/source/dom/base/AutocompleteFieldList.h#89-149
 // Also found here: https://developer.mozilla.org/en-US/docs/Web/HTML/Attributes/autocomplete
 const VALID_AUTOCOMPLETE_FIELDS = [
   "off",

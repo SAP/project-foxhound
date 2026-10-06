@@ -7,16 +7,16 @@
 package org.mozilla.fenix.ui.robots
 
 import android.util.Log
-import android.view.View
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.filter
 import androidx.compose.ui.test.hasAnyChild
-import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasParent
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -28,39 +28,32 @@ import androidx.compose.ui.test.onChildren
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
-import androidx.test.espresso.Espresso
-import androidx.test.espresso.UiController
-import androidx.test.espresso.ViewAction
-import androidx.test.espresso.assertion.ViewAssertions
-import androidx.test.espresso.matcher.ViewMatchers
-import com.google.android.material.bottomsheet.BottomSheetBehavior
 import mozilla.components.ui.tabcounter.TabCounterTestTags
-import org.hamcrest.Matcher
 import org.mozilla.fenix.R
-import org.mozilla.fenix.helpers.AppAndSystemHelper.registerAndCleanupIdlingResources
 import org.mozilla.fenix.helpers.Constants
 import org.mozilla.fenix.helpers.Constants.RETRY_COUNT
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
-import org.mozilla.fenix.helpers.HomeActivityComposeTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectExists
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
+import org.mozilla.fenix.helpers.MatcherHelper.itemWithText
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
+import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeShort
 import org.mozilla.fenix.helpers.TestHelper.mDevice
-import org.mozilla.fenix.helpers.idlingresource.BottomSheetBehaviorStateIdlingResource
-import org.mozilla.fenix.helpers.matchers.BottomSheetBehaviorHalfExpandedMaxRatioMatcher
-import org.mozilla.fenix.helpers.matchers.BottomSheetBehaviorStateMatcher
+import org.mozilla.fenix.tabstray.DefaultTabManagementFeatureHelper
 import org.mozilla.fenix.tabstray.TabsTrayTestTag
 
 fun tabDrawer(
-    composeTestRule: HomeActivityComposeTestRule,
+    composeTestRule: ComposeTestRule,
     interact: TabDrawerRobot.() -> Unit,
 ): TabDrawerRobot.Transition {
     TabDrawerRobot(composeTestRule).interact()
@@ -96,6 +89,25 @@ class TabDrawerRobot(private val composeTestRule: ComposeTestRule) {
         }
     }
 
+    fun verifyTabGroupsButtonIsSelected(isSelected: Boolean = true) {
+        if (isSelected) {
+            Log.i(TAG, "verifyTabGroupsButtonIsSelected: Trying to verify that the tab groups button is selected")
+            composeTestRule.tabGroupsButton().assertIsSelected()
+            Log.i(TAG, "verifyTabGroupsButtonIsSelected: Verified that the tab groups button is selected")
+        } else {
+            Log.i(TAG, "verifyTabGroupsButtonIsSelected: Trying to verify that the tab groups button is not selected or hidden")
+            val tabGroupsButtons = composeTestRule.onAllNodesWithTag(TabsTrayTestTag.TAB_GROUPS_PAGE_BUTTON)
+
+            if (tabGroupsButtons.fetchSemanticsNodes().isEmpty()) {
+                tabGroupsButtons.assertCountEquals(0)
+            } else {
+                composeTestRule.tabGroupsButton().assertIsNotSelected()
+            }
+
+            Log.i(TAG, "verifyTabGroupsButtonIsSelected: Verified that the tab groups button is not selected or hidden")
+        }
+    }
+
     fun verifySyncedTabsButtonIsSelected(isSelected: Boolean = true) {
         if (isSelected) {
             Log.i(TAG, "verifySyncedTabsButtonIsSelected: Trying to verify that the synced tabs button is selected")
@@ -109,11 +121,11 @@ class TabDrawerRobot(private val composeTestRule: ComposeTestRule) {
     }
 
     fun verifySyncedTabsListWhenUserIsNotSignedIn() {
-        verifySyncedTabsList()
+        verifyUnauthenticatedSyncedTabsPage()
         assertUIObjectExists(
-            itemContainingText(getStringResource(R.string.synced_tabs_sign_in_message)),
-            itemContainingText(getStringResource(R.string.sync_sign_in)),
-            itemContainingText(getStringResource(R.string.tab_drawer_fab_sync)),
+            itemContainingText(getStringResource(R.string.tab_manager_empty_synced_tabs_page_header)),
+            itemContainingText(getStringResource(R.string.tab_manager_empty_synced_tabs_page_description)),
+            itemWithText(getStringResource(R.string.tab_manager_empty_synced_tabs_page_sign_in_cta)),
         )
     }
 
@@ -188,6 +200,12 @@ class TabDrawerRobot(private val composeTestRule: ComposeTestRule) {
         Log.i(TAG, "verifySyncedTabsList: Verified that the synced tabs list exists")
     }
 
+    fun verifyUnauthenticatedSyncedTabsPage() {
+        Log.i(TAG, "verifyUnauthenticatedSyncedTabsPage: Trying to verify that the unauthenticated synced tabs page exists")
+        composeTestRule.unauthenticatedSyncedTabsPage().assertExists()
+        Log.i(TAG, "verifyUnauthenticatedSyncedTabsPage: Verified that the the unauthenticated synced tabs page exists")
+    }
+
     fun verifyNoOpenTabsInNormalBrowsing() {
         Log.i(TAG, "verifyNoOpenTabsInNormalBrowsing: Trying to verify that the empty normal tabs list exists")
         composeTestRule.emptyNormalTabsList().assertExists()
@@ -218,10 +236,10 @@ class TabDrawerRobot(private val composeTestRule: ComposeTestRule) {
         Log.i(TAG, "verifySelectTabsButton: Verified that the \"Select tabs\" menu button exists")
     }
 
-    fun verifyShareAllTabsButton() {
-        Log.i(TAG, "verifyShareAllTabsButton: Trying to verify that the \"Share all tabs\" menu button exists")
-        composeTestRule.dropdownMenuItemShareAllTabs().assertExists()
-        Log.i(TAG, "verifyShareAllTabsButton: Verified that the \"Share all tabs\" menu button exists")
+    fun verifyShareTabsButton() {
+        Log.i(TAG, "verifyShareTabsButton: Trying to verify that the \"Share\" menu button exists")
+        composeTestRule.dropdownMenuItemShare().assertExists()
+        Log.i(TAG, "verifyShareTabsButton: Verified that the \"Share\" menu button exists")
     }
 
     fun verifyRecentlyClosedTabsButton() {
@@ -266,18 +284,6 @@ class TabDrawerRobot(private val composeTestRule: ComposeTestRule) {
         Log.i(TAG, "verifyTabCloseButton: Verified that the close tab button exists")
     }
 
-    fun verifyTabsTrayBehaviorState(expectedState: Int) {
-        Log.i(TAG, "verifyTabsTrayBehaviorState: Trying to verify that the tabs tray state matches: $expectedState")
-        tabsTrayView().check(ViewAssertions.matches(BottomSheetBehaviorStateMatcher(expectedState)))
-        Log.i(TAG, "verifyTabsTrayBehaviorState: Verified that the tabs tray state matches: $expectedState")
-    }
-
-    fun verifyMinusculeHalfExpandedRatio() {
-        Log.i(TAG, "verifyMinusculeHalfExpandedRatio: Trying to verify the tabs tray half expanded ratio")
-        tabsTrayView().check(ViewAssertions.matches(BottomSheetBehaviorHalfExpandedMaxRatioMatcher(0.001f)))
-        Log.i(TAG, "verifyMinusculeHalfExpandedRatio: Verified the tabs tray half expanded ratio")
-    }
-
     fun verifyTabTrayIsOpen() {
         Log.i(TAG, "verifyTabTrayIsOpen: Trying to verify that the tabs tray exists")
         composeTestRule.tabsTray().assertExists()
@@ -310,6 +316,7 @@ class TabDrawerRobot(private val composeTestRule: ComposeTestRule) {
      * Swipes a tab with [title] left.
      */
     fun swipeTabLeft(title: String, isListViewEnabled: Boolean = false) {
+        composeTestRule.waitForIdle()
         Log.i(TAG, "swipeTabLeft: Trying to perform swipe left action on tab: $title")
         when (isListViewEnabled) {
             false -> composeTestRule.tabItem(title).performTouchInput { swipeLeft() }
@@ -319,12 +326,15 @@ class TabDrawerRobot(private val composeTestRule: ComposeTestRule) {
         Log.i(TAG, "swipeTabLeft: Waiting for compose test rule to be idle")
         composeTestRule.waitForIdle()
         Log.i(TAG, "swipeTabLeft: Waited for compose test rule to be idle")
+        mDevice.waitForIdle()
+        Log.i(TAG, "swipeTabLeft: mDevice.waitForIdle() returned")
     }
 
     /**
      * Swipes a tab with [title] right.
      */
     fun swipeTabRight(title: String, isListViewEnabled: Boolean = false) {
+        composeTestRule.waitForIdle()
         Log.i(TAG, "swipeTabRight: Trying to perform swipe right action on tab: $title")
         when (isListViewEnabled) {
             false -> composeTestRule.tabItem(title).performTouchInput { swipeRight() }
@@ -334,6 +344,8 @@ class TabDrawerRobot(private val composeTestRule: ComposeTestRule) {
         Log.i(TAG, "swipeTabRight: Waiting for compose test rule to be idle")
         composeTestRule.waitForIdle()
         Log.i(TAG, "swipeTabRight: Waited for compose test rule to be idle")
+        mDevice.waitForIdle()
+        Log.i(TAG, "swipeTabRight: mDevice.waitForIdle() returned")
     }
 
     /**
@@ -354,6 +366,10 @@ class TabDrawerRobot(private val composeTestRule: ComposeTestRule) {
         for (tab in tabTitles) {
             selectTab(tab, numberOfSelectedTabs = tabTitles.indexOf(tab) + 1)
         }
+
+        Log.i(TAG, "createCollection: Trying to click the three dot button")
+        composeTestRule.threeDotButton().performClick()
+        Log.i(TAG, "createCollection: Clicked the three dot button")
 
         clickCollectionsButton(composeTestRule) {
             if (!firstCollection) {
@@ -421,34 +437,6 @@ class TabDrawerRobot(private val composeTestRule: ComposeTestRule) {
     }
 
     /**
-     * Verifies a tab's media button matches [action] when there is only one tab with media.
-     */
-    @OptIn(ExperimentalTestApi::class)
-    fun verifyTabMediaControlButtonState(action: String) {
-        Log.i(TAG, "verifyTabMediaControlButtonStateTab: Waiting for $waitingTime ms until the media tab control button: $action exists")
-        composeTestRule.waitUntilAtLeastOneExists(hasContentDescription(action), waitingTime)
-        Log.i(TAG, "verifyTabMediaControlButtonStateTab: Waited for $waitingTime ms until the media tab control button: $action exists")
-        Log.i(TAG, "verifyTabMediaControlButtonStateTab: Trying to verify that the tab media control button: $action exists")
-        composeTestRule.tabMediaControlButton(action)
-            .assertExists()
-        Log.i(TAG, "verifyTabMediaControlButtonStateTab: Verified tab media control button: $action exists")
-    }
-
-    /**
-     * Clicks a tab's media button when there is only one tab with media.
-     */
-    @OptIn(ExperimentalTestApi::class)
-    fun clickTabMediaControlButton(action: String) {
-        Log.i(TAG, "clickTabMediaControlButton: Waiting for $waitingTime ms until the media tab control button: $action exists")
-        composeTestRule.waitUntilAtLeastOneExists(hasContentDescription(action), waitingTime)
-        Log.i(TAG, "clickTabMediaControlButton: Waited for $waitingTime ms until the media tab control button: $action exists")
-        Log.i(TAG, "clickTabMediaControlButton: Trying to click the tab media control button: $action")
-        composeTestRule.tabMediaControlButton(action)
-            .performClick()
-        Log.i(TAG, "clickTabMediaControlButton: Clicked the tab media control button: $action")
-    }
-
-    /**
      * Closes a tab with a given [title].
      */
     fun closeTabWithTitle(title: String) {
@@ -460,6 +448,39 @@ class TabDrawerRobot(private val composeTestRule: ComposeTestRule) {
         Log.i(TAG, "closeTabWithTitle: Clicked the close button for tab with title: $title")
     }
 
+    fun clickSearchTabsButton() {
+        Log.i(TAG, "clickSearchTabsButton: Trying to click the search tabs button")
+        composeTestRule.onNodeWithContentDescription(getStringResource(R.string.tab_manager_open_tab_search)).performClick()
+        Log.i(TAG, "clickSearchTabsButton: Clicked the search tabs button")
+    }
+
+    fun searchTab(tabDetails: String) {
+        Log.i(TAG, "searchTab: Trying to set tab search toolbar text to: $tabDetails")
+        composeTestRule.onNodeWithContentDescription("Search").performTextInput(tabDetails)
+        Log.i(TAG, "searchTab: Tab search toolbar text was set to: $tabDetails")
+    }
+
+    fun verifyNoTabsFoundScreen() {
+        Log.i(TAG, "verifyNoTabsFoundScreen: Trying to verify that the \"No matches found\" message is displayed")
+        composeTestRule.onNodeWithText(getStringResource(R.string.tab_manager_no_search_results)).assertIsDisplayed()
+        Log.i(TAG, "verifyNoTabsFoundScreen: Verified that the \"No matches found\" message is displayed")
+        Log.i(TAG, "verifyNoTabsFoundScreen: Trying to verify that the \"Try another search!\" message is displayed")
+        composeTestRule.onNodeWithText(getStringResource(R.string.tab_manager_no_search_results_additional_text)).assertIsDisplayed()
+        Log.i(TAG, "verifyNoTabsFoundScreen: Verified that the \"Try another search!\" message is displayed")
+    }
+
+    fun clickClearTabSearchButton() {
+        Log.i(TAG, "clickClearTabSearchButton: Trying to click the clear search tabs button")
+        composeTestRule.onNodeWithContentDescription("Clear text").performClick()
+        Log.i(TAG, "clickClearTabSearchButton: Clicked the clear search tabs button")
+    }
+
+    fun verifySearchedTabIsDisplayed(tabDetails: String) {
+        Log.i(TAG, "verifySearchedTabIsDisplayed: Trying to verify that tab: $tabDetails is displayed in the tab search")
+        composeTestRule.onNodeWithText(tabDetails).assertIsDisplayed()
+        Log.i(TAG, "verifySearchedTabIsDisplayed: Verified that tab: $tabDetails is displayed in the tab search")
+    }
+
     class Transition(private val composeTestRule: ComposeTestRule) {
 
         fun openNewTab(interact: SearchRobot.() -> Unit): SearchRobot.Transition {
@@ -469,8 +490,8 @@ class TabDrawerRobot(private val composeTestRule: ComposeTestRule) {
             Log.i(TAG, "openNewTab: Trying to click the new tab FAB button")
             composeTestRule.tabsTrayFab().performClick()
             Log.i(TAG, "openNewTab: Clicked the new tab FAB button")
-            SearchRobot().interact()
-            return SearchRobot.Transition()
+            SearchRobot(composeTestRule).interact()
+            return SearchRobot.Transition(composeTestRule)
         }
 
         fun toggleToNormalTabs(interact: TabDrawerRobot.() -> Unit): Transition {
@@ -497,13 +518,13 @@ class TabDrawerRobot(private val composeTestRule: ComposeTestRule) {
             return Transition(composeTestRule)
         }
 
-        fun clickSignInToSyncButton(interact: SyncSignInRobot.() -> Unit): SyncSignInRobot.Transition {
+        fun clickSignInToSyncButton(interact: SettingsSignInToSyncRobot.() -> Unit): SettingsSignInToSyncRobot.Transition {
             Log.i(TAG, "clickSignInToSyncButton: Trying to click the sign in to sync button and wait for $waitingTimeShort ms for a new window")
-            itemContainingText(getStringResource(R.string.sync_sign_in))
+            itemWithText(getStringResource(R.string.tab_manager_empty_synced_tabs_page_sign_in_cta))
                 .clickAndWaitForNewWindow(waitingTimeShort)
             Log.i(TAG, "clickSignInToSyncButton: Clicked the sign in to sync button and waited for $waitingTimeShort ms for a new window")
-            SyncSignInRobot().interact()
-            return SyncSignInRobot.Transition()
+            SettingsSignInToSyncRobot().interact()
+            return SettingsSignInToSyncRobot.Transition(composeTestRule)
         }
 
         fun openThreeDotMenu(interact: TabDrawerRobot.() -> Unit): Transition {
@@ -518,8 +539,20 @@ class TabDrawerRobot(private val composeTestRule: ComposeTestRule) {
             Log.i(TAG, "closeAllTabs: Trying to click the \"Close all tabs\" menu button")
             composeTestRule.dropdownMenuItemCloseAllTabs().performClick()
             Log.i(TAG, "closeAllTabs: Clicked the \"Close all tabs\" menu button")
-            HomeScreenRobot().interact()
-            return HomeScreenRobot.Transition()
+            composeTestRule.waitForIdle()
+            mDevice.waitForIdle()
+
+            val confirmButtonText = getStringResource(R.string.tab_manager_close_all_tabs_dialog_confirm)
+
+            Log.i(TAG, "closeAllTabs: Waiting for the \"$confirmButtonText\" dialog button to be displayed")
+            composeTestRule
+                .onNodeWithText(confirmButtonText, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .performClick()
+            Log.i(TAG, "closeAllTabs: Clicked the \"$confirmButtonText\" dialog button")
+
+            HomeScreenRobot(composeTestRule).interact()
+            return HomeScreenRobot.Transition(composeTestRule)
         }
 
         fun openTab(title: String, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
@@ -530,8 +563,8 @@ class TabDrawerRobot(private val composeTestRule: ComposeTestRule) {
             composeTestRule.tabItem(title).performClick()
             Log.i(TAG, "openTab: Clicked tab with title: $title")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         fun openPrivateTab(position: Int, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
@@ -541,8 +574,8 @@ class TabDrawerRobot(private val composeTestRule: ComposeTestRule) {
                 .performClick()
             Log.i(TAG, "openPrivateTab: Clicked private tab at position: ${position + 1}")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         fun openNormalTab(position: Int, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
@@ -552,8 +585,8 @@ class TabDrawerRobot(private val composeTestRule: ComposeTestRule) {
                 .performClick()
             Log.i(TAG, "openNormalTab: Clicked tab at position: ${position + 1}")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         fun clickTopBar(interact: TabDrawerRobot.() -> Unit): Transition {
@@ -566,66 +599,15 @@ class TabDrawerRobot(private val composeTestRule: ComposeTestRule) {
             return Transition(composeTestRule)
         }
 
-        fun waitForTabTrayBehaviorToIdle(interact: TabDrawerRobot.() -> Unit): Transition {
-            // Need to get the behavior of tab_wrapper and wait for that to idle.
-            var behavior: BottomSheetBehavior<*>? = null
-
-            // Null check here since it's possible that the view is already animated away from the screen.
-            tabsTrayView()?.perform(
-                object : ViewAction {
-                    override fun getDescription(): String {
-                        return "Postpone actions to after the BottomSheetBehavior has settled"
-                    }
-
-                    override fun getConstraints(): Matcher<View> {
-                        return ViewMatchers.isAssignableFrom(View::class.java)
-                    }
-
-                    override fun perform(uiController: UiController?, view: View?) {
-                        behavior = BottomSheetBehavior.from(view!!)
-                    }
-                },
-            )
-
-            behavior?.let {
-                registerAndCleanupIdlingResources(
-                    BottomSheetBehaviorStateIdlingResource(it),
-                ) {
-                    TabDrawerRobot(composeTestRule).interact()
-                }
-            }
-
-            return Transition(composeTestRule)
-        }
-
-        fun advanceToHalfExpandedState(interact: TabDrawerRobot.() -> Unit): Transition {
-            tabsTrayView().perform(
-                object : ViewAction {
-                    override fun getDescription(): String {
-                        return "Advance a BottomSheetBehavior to STATE_HALF_EXPANDED"
-                    }
-
-                    override fun getConstraints(): Matcher<View> {
-                        return ViewMatchers.isAssignableFrom(View::class.java)
-                    }
-
-                    override fun perform(uiController: UiController?, view: View?) {
-                        val behavior = BottomSheetBehavior.from(view!!)
-                        behavior.state = BottomSheetBehavior.STATE_HALF_EXPANDED
-                    }
-                },
-            )
-            TabDrawerRobot(composeTestRule).interact()
-            return Transition(composeTestRule)
-        }
-
         fun closeTabDrawer(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
-            Log.i(TAG, "closeTabDrawer: Trying to close the tabs tray by clicking the handle")
-            composeTestRule.bannerHandle().performSemanticsAction(SemanticsActions.OnClick)
-            Log.i(TAG, "closeTabDrawer: Closed the tabs tray by clicking the handle")
+            Log.i(TAG, "closeTabDrawer: Trying to close the tabs tray by pressing the back button")
+            mDevice.pressBack()
+            Log.i(TAG, "closeTabDrawer: Closed the tabs tray by pressing the back button")
+            composeTestRule.waitForIdle()
+            mDevice.waitForIdle()
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         fun clickSaveCollection(interact: CollectionRobot.() -> Unit): CollectionRobot.Transition {
@@ -633,17 +615,35 @@ class TabDrawerRobot(private val composeTestRule: ComposeTestRule) {
             composeTestRule.collectionsButton().performClick()
             Log.i(TAG, "clickSaveCollection: Clicked collections button")
 
-            CollectionRobot().interact()
-            return CollectionRobot.Transition()
+            CollectionRobot(composeTestRule).interact()
+            return CollectionRobot.Transition(composeTestRule)
         }
 
-        fun clickShareAllTabsButton(interact: ShareOverlayRobot.() -> Unit): ShareOverlayRobot.Transition {
-            Log.i(TAG, "clickShareAllTabsButton: Trying to click the \"Share all tabs\" menu button button")
-            composeTestRule.dropdownMenuItemShareAllTabs().performClick()
-            Log.i(TAG, "clickShareAllTabsButton: Clicked the \"Share all tabs\" menu button button")
+        fun clickSelectTabsButton(interact: TabDrawerRobot.() -> Unit): Transition {
+            Log.i(TAG, "clickSelectTabsButton: Trying to click the \"Select tabs\" menu button")
+            composeTestRule.dropdownMenuItemSelectTabs().performClick()
+            Log.i(TAG, "clickSelectTabsButton: Clicked the \"Select tabs\" menu button")
+
+            TabDrawerRobot(composeTestRule).interact()
+            return Transition(composeTestRule)
+        }
+
+        fun clickShareTabsButton(interact: ShareOverlayRobot.() -> Unit): ShareOverlayRobot.Transition {
+            Log.i(TAG, "clickShareTabsButton: Trying to click the \"Share\" menu button")
+            composeTestRule.dropdownMenuItemShare().performClick()
+            Log.i(TAG, "clickShareTabsButton: Clicked the \"Share\" menu button button")
 
             ShareOverlayRobot().interact()
             return ShareOverlayRobot.Transition()
+        }
+
+        fun clickSearchedTab(tabDetails: String, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
+            Log.i(TAG, "clickSearchedTab: Trying to click tab: $tabDetails from the tab search")
+            composeTestRule.onNodeWithText(tabDetails).performClick()
+            Log.i(TAG, "clickSearchedTab: Clicked tab: $tabDetails from the tab search")
+
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
     }
 }
@@ -651,7 +651,7 @@ class TabDrawerRobot(private val composeTestRule: ComposeTestRule) {
 /**
  * Opens a transition in the [TabDrawerRobot].
  */
-fun composeTabDrawer(composeTestRule: HomeActivityComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
+fun composeTabDrawer(composeTestRule: ComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
     TabDrawerRobot(composeTestRule).interact()
     return TabDrawerRobot.Transition(composeTestRule)
 }
@@ -664,14 +664,9 @@ private fun clickCollectionsButton(composeTestRule: ComposeTestRule, interact: C
     composeTestRule.collectionsButton().performClick()
     Log.i(TAG, "clickCollectionsButton: Clicked the collections button")
 
-    CollectionRobot().interact()
-    return CollectionRobot.Transition()
+    CollectionRobot(composeTestRule).interact()
+    return CollectionRobot.Transition(composeTestRule)
 }
-
-/**
- * Obtains the root [View] that wraps the Tabs Tray.
- */
-private fun tabsTrayView() = Espresso.onView(ViewMatchers.withId(R.id.tabs_tray_root))
 
 /**
  * Obtains the root Tabs Tray.
@@ -692,6 +687,11 @@ private fun ComposeTestRule.normalBrowsingButton() = onNodeWithTag(TabsTrayTestT
  * Obtains the private browsing page button of the Tabs Tray banner.
  */
 private fun ComposeTestRule.privateBrowsingButton() = onNodeWithTag(TabsTrayTestTag.PRIVATE_TABS_PAGE_BUTTON)
+
+/**
+ * Obtains the tab groups page button of the Tabs Tray banner.
+ */
+private fun ComposeTestRule.tabGroupsButton() = onNodeWithTag(TabsTrayTestTag.TAB_GROUPS_PAGE_BUTTON)
 
 /**
  * Obtains the synced tabs page button of the Tabs Tray banner.
@@ -718,6 +718,11 @@ private fun ComposeTestRule.privateTabsList() = onNodeWithTag(TabsTrayTestTag.PR
  * Obtains the synced tabs list.
  */
 private fun ComposeTestRule.syncedTabsList() = onNodeWithTag(TabsTrayTestTag.SYNCED_TABS_LIST)
+
+/**
+ * Obtains the unauthenticated synced tabs page.
+ */
+private fun ComposeTestRule.unauthenticatedSyncedTabsPage() = onNodeWithTag(TabsTrayTestTag.UNAUTHENTICATED_SYNCED_TABS_PAGE)
 
 /**
  * Obtains the empty normal tabs list.
@@ -780,14 +785,14 @@ private fun ComposeTestRule.dropdownMenuItemRecentlyClosedTabs() = onNodeWithTag
 private fun ComposeTestRule.dropdownMenuItemSelectTabs() = onNodeWithTag(TabsTrayTestTag.SELECT_TABS)
 
 /**
- * Obtains the dropdown menu item to share all tabs.
- */
-private fun ComposeTestRule.dropdownMenuItemShareAllTabs() = onNodeWithTag(TabsTrayTestTag.SHARE_ALL_TABS)
-
-/**
  * Obtains the dropdown menu item to access tab settings.
  */
 private fun ComposeTestRule.dropdownMenuItemTabSettings() = onNodeWithTag(TabsTrayTestTag.TAB_SETTINGS)
+
+/**
+ * Obtains the dropdown menu item to share tabs.
+ */
+private fun ComposeTestRule.dropdownMenuItemShare() = onNodeWithTag(TabsTrayTestTag.SHARE_BUTTON)
 
 /**
  * Obtains the normal tabs counter.

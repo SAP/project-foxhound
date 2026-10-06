@@ -649,6 +649,10 @@ add_task(async function test_alternate_cached_data() {
         },
         ["blocking"]
       );
+
+      browser.webRequest.handlerBehaviorChanged().then(() => {
+        browser.test.sendMessage("cache_stabilized");
+      });
     },
 
     manifest: {
@@ -656,13 +660,29 @@ add_task(async function test_alternate_cached_data() {
     },
   });
 
-  // Prime the cache so we have the script byte-cached.
+  // Load the page once, so that the script used there is stored into the
+  // disk cache as a serialized stencil.
+  //
+  // The request for the serialized stencil also goes through necko, and the
+  // webRequest listeners will be called there in the second load.
   let contentPage = await ExtensionTestUtils.loadContentPage(
     "http://example.com/data/file_script.html"
   );
   await contentPage.close();
 
   await extension.startup();
+
+  // If the stencil navigation cache is enabled, the script is also stored
+  // into the content process's in-memory cache.
+  //
+  // If the second load uses the same process as the first load above, the
+  // second script request will use the in-memory cache, and in that case, the
+  // request doesn't go through necko, and webRequest listeners won't be called.
+  //
+  // In order to test the disk-cache-specific behavior, the extension should
+  // call handlerBehaviorChanged, which clears the in-memory cache.
+  // See also bug 2024192.
+  await extension.awaitMessage("cache_stabilized");
 
   let page_cached = await ExtensionTestUtils.loadContentPage(
     "http://example.com/data/file_script.html"

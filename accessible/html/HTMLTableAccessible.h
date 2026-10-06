@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_HTMLTableAccessible_h__
-#define mozilla_a11y_HTMLTableAccessible_h__
+#ifndef mozilla_a11y_HTMLTableAccessible_h_
+#define mozilla_a11y_HTMLTableAccessible_h_
 
 #include "HyperTextAccessible.h"
 
@@ -32,12 +31,11 @@ class HTMLTableCellAccessible : public HyperTextAccessible {
   // LocalAccessible
   virtual a11y::role NativeRole() const override;
   virtual uint64_t NativeState() const override;
-  virtual uint64_t NativeInteractiveState() const override;
   virtual already_AddRefed<AccAttributes> NativeAttributes() override;
 
  protected:
   virtual void DOMAttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                                   int32_t aModType,
+                                   AttrModType aModType,
                                    const nsAttrValue* aOldValue,
                                    uint64_t aOldState) override;
   // HTMLTableCellAccessible
@@ -54,7 +52,7 @@ class HTMLTableCellAccessible : public HyperTextAccessible {
   }
 
  protected:
-  virtual ~HTMLTableCellAccessible() {}
+  virtual ~HTMLTableCellAccessible() = default;
 };
 
 /**
@@ -83,10 +81,7 @@ class HTMLTableRowAccessible : public HyperTextAccessible {
                                        HyperTextAccessible)
 
  protected:
-  virtual ~HTMLTableRowAccessible() {}
-
-  // LocalAccessible
-  virtual ENameValueFlag NativeName(nsString& aName) const override;
+  virtual ~HTMLTableRowAccessible() = default;
 };
 
 /**
@@ -122,7 +117,8 @@ class HTMLTableAccessible : public HyperTextAccessible {
   }
 
   // LocalAccessible
-  virtual void Description(nsString& aDescription) const override;
+  virtual EDescriptionValueFlag Description(
+      nsString& aDescription) const override;
   virtual uint64_t NativeState() const override;
   virtual already_AddRefed<AccAttributes> NativeAttributes() override;
   virtual Relation RelationByType(RelationType aRelationType) const override;
@@ -130,13 +126,13 @@ class HTMLTableAccessible : public HyperTextAccessible {
   virtual bool InsertChildAt(uint32_t aIndex, LocalAccessible* aChild) override;
 
  protected:
-  virtual ~HTMLTableAccessible() {}
+  virtual ~HTMLTableAccessible() = default;
 
   // LocalAccessible
   virtual ENameValueFlag NativeName(nsString& aName) const override;
 
   virtual void DOMAttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                                   int32_t aModType,
+                                   AttrModType aModType,
                                    const nsAttrValue* aOldValue,
                                    uint64_t aOldState) override;
 
@@ -168,7 +164,7 @@ class HTMLCaptionAccessible : public HyperTextAccessible {
   virtual Relation RelationByType(RelationType aRelationType) const override;
 
  protected:
-  virtual ~HTMLCaptionAccessible() {}
+  virtual ~HTMLCaptionAccessible() = default;
 };
 
 }  // namespace a11y

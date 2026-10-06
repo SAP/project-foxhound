@@ -11,10 +11,8 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "IdentityCredentialStorageService",
   "@mozilla.org/browser/identity-credential-storage-service;1",
-  "nsIIdentityCredentialStorageService"
+  Ci.nsIIdentityCredentialStorageService
 );
-
-do_get_profile();
 
 add_task(async function test_deleteByRange() {
   Services.prefs.setBoolPref(

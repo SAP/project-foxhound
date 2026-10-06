@@ -1,0 +1,58 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+package org.mozilla.fenix.home.ui
+
+import android.graphics.Bitmap
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
+import org.mozilla.fenix.wallpapers.Wallpaper
+
+/**
+ * Renders the wallpaper bitmap as a full-screen background behind the homepage content.
+ *
+ * @param wallpaper The [Wallpaper] to render.
+ * @param loadBitmap Suspend function to load the wallpaper bitmap from disk.
+ * @param onLoadFailed Called when [loadBitmap] returns null for a non-local wallpaper.
+ */
+@Composable
+fun WallpaperBackground(
+    wallpaper: Wallpaper,
+    loadBitmap: suspend (Wallpaper, Int) -> Bitmap?,
+    onLoadFailed: () -> Unit = {},
+) {
+    val orientation = LocalConfiguration.current.orientation
+    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+
+    LaunchedEffect(wallpaper.name, orientation) {
+        bitmap = if (Wallpaper.isLocalWallpaper(wallpaper.name)) {
+            null
+        } else {
+            loadBitmap(wallpaper, orientation).also { result ->
+                if (result == null) onLoadFailed()
+            }
+        }
+    }
+
+    bitmap?.let {
+        Image(
+            bitmap = it.asImageBitmap(),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+            alignment = Alignment.BottomStart,
+        )
+    }
+}

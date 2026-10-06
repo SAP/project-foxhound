@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -10,8 +8,7 @@
 
 #include <memory>  // std::uninitialized_fill_n
 
-#include "jsnum.h"  // CharsToNumber
-
+#include "builtin/Number.h"  // CharsToNumber
 #include "frontend/CompilationStencil.h"
 #include "js/GCAPI.h"            // JS::AutoSuppressGCAnalysis
 #include "js/Printer.h"          // Sprinter, QuoteString
@@ -108,6 +105,12 @@ template <typename CharT, typename SeqCharT>
 /* static */ ParserAtom* ParserAtom::allocate(
     FrontendContext* fc, LifoAlloc& alloc, InflatedChar16Sequence<SeqCharT> seq,
     uint32_t length, HashNumber hash, const StringTaint& taint) {
+  if (length > JSString::MAX_LENGTH) {
+    ReportAllocationOverflow(fc);
+    return nullptr;
+  }
+
+
   constexpr size_t HeaderSize = sizeof(ParserAtom);
 
   std::string taintData = SerializeStringTaint(taint);
@@ -735,8 +738,7 @@ bool ParserAtomsTable::isIdentifier(TaggedParserAtomIndex index) const {
 #ifdef DEBUG
   char content[3];
   getLength3Content(index.toLength3StaticParserString(), content);
-  MOZ_ASSERT(!reinterpret_cast<const Latin1Char*>(
-      IsIdentifier(reinterpret_cast<const Latin1Char*>(content), 3)));
+  MOZ_ASSERT(!IsIdentifier(reinterpret_cast<const Latin1Char*>(content), 3));
 #endif
   return false;
 }
@@ -768,7 +770,8 @@ bool ParserAtomsTable::isExtendedUnclonedSelfHostedFunctionName(
       case WellKnownAtomId::dollar_ArrayValues_:
       case WellKnownAtomId::dollar_RegExpFlagsGetter_:
       case WellKnownAtomId::dollar_RegExpToString_:
-      case WellKnownAtomId::dollar_SharedArrayBufferSpecies_: {
+      case WellKnownAtomId::dollar_SharedArrayBufferSpecies_:
+      case WellKnownAtomId::dollar_TypedArraySpecies_: {
 #ifdef DEBUG
         const auto& info = GetWellKnownAtomInfo(index.toWellKnownAtomId());
         MOZ_ASSERT(info.content[0] ==
@@ -1245,7 +1248,7 @@ bool InstantiateMarkedAtomsAsPermanent(JSContext* cx, FrontendContext* fc,
 }
 
 /* static */
-MOZ_RUNINIT WellKnownParserAtoms WellKnownParserAtoms::singleton_;
+constinit WellKnownParserAtoms WellKnownParserAtoms::singleton_;
 
 template <typename CharT>
 TaggedParserAtomIndex WellKnownParserAtoms::lookupChar16Seq(

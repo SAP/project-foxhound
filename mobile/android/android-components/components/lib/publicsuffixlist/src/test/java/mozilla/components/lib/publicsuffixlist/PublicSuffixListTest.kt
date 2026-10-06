@@ -5,7 +5,6 @@
 package mozilla.components.lib.publicsuffixlist
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
@@ -15,7 +14,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
-@ExperimentalCoroutinesApi // for runTest
 @RunWith(AndroidJUnit4::class)
 class PublicSuffixListTest {
 
@@ -439,7 +437,7 @@ class PublicSuffixListTest {
         assertTrue(publicSuffixList.isPublicSuffix("chirurgiens-dentistes.fr").await())
         assertTrue(publicSuffixList.isPublicSuffix("trani-andria-barletta.it").await())
         assertTrue(publicSuffixList.isPublicSuffix("yabuki.fukushima.jp").await())
-        assertTrue(publicSuffixList.isPublicSuffix("research.museum").await())
+        assertTrue(publicSuffixList.isPublicSuffix("researched.cx").await())
         assertTrue(publicSuffixList.isPublicSuffix("lamborghini").await())
         assertTrue(publicSuffixList.isPublicSuffix("reisen").await())
         assertTrue(publicSuffixList.isPublicSuffix("github.io").await())

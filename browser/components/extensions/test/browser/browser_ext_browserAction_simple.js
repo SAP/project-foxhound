@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 async function testAction(manifest_version) {
@@ -92,12 +90,6 @@ async function testAction(manifest_version) {
   SimpleTest.endMonitorConsole();
   await waitForConsole;
 }
-
-add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.manifestV3.enabled", true]],
-  });
-});
 
 add_task(async function test_browserAction() {
   await testAction(2);

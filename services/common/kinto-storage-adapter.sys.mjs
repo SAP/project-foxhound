@@ -18,8 +18,8 @@ import { Kinto } from "resource://services-common/kinto-offline-client.sys.mjs";
 /**
  * Filter and sort list against provided filters and order.
  *
- * @param  {Object} filters  The filters to apply.
- * @param  {String} order    The order to apply.
+ * @param  {object} filters  The filters to apply.
+ * @param  {string} order    The order to apply.
  * @param  {Array}  list     The list to reduce.
  * @return {Array}
  */
@@ -32,8 +32,9 @@ function reduceRecords(filters, order, list) {
  * Checks if a value is undefined.
  *
  * This is a copy of `_isUndefined` from kinto.js/src/utils.js.
+ *
  * @param  {Any}  value
- * @return {Boolean}
+ * @return {boolean}
  */
 function _isUndefined(value) {
   return typeof value === "undefined";
@@ -44,7 +45,7 @@ function _isUndefined(value) {
  *
  * This is a copy of `sortObjects` from kinto.js/src/utils.js.
  *
- * @param  {String} order The ordering, eg. `-last_modified`.
+ * @param  {string} order The ordering, eg. `-last_modified`.
  * @param  {Array}  list  The collection to order.
  * @return {Array}
  */
@@ -71,8 +72,8 @@ function sortObjects(order, list) {
  *
  * This is a copy of `filterObject` from kinto.js/src/utils.js.
  *
- * @param  {Object} filters  The filters object.
- * @param  {Object} entry    The object to filter.
+ * @param  {object} filters  The filters object.
+ * @param  {object} entry    The object to filter.
  * @return {Function}
  */
 function filterObject(filters, entry) {
@@ -90,7 +91,7 @@ function filterObject(filters, entry) {
  *
  * This is a copy of `filterObjects` from kinto.js/src/utils.js.
  *
- * @param  {Object} filters  The filters object.
+ * @param  {object} filters  The filters object.
  * @param  {Array}  list     The collection to filter.
  * @return {Array}
  */

@@ -5,12 +5,12 @@
 #ifndef TOOLS_POWERCOUNTERS_H_
 #define TOOLS_POWERCOUNTERS_H_
 
-#include "PlatformMacros.h"
+#include "mozilla/ProfilerPlatformMacros.h"
 #include "mozilla/ProfilerCounts.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Vector.h"
 
-#if defined(_MSC_VER)
+#if defined(GP_OS_windows)
 class PowerMeterDevice;
 #endif
 #if defined(GP_PLAT_arm64_darwin)
@@ -50,19 +50,19 @@ bool GetRailEnergyData(RailEnergyData*, size_t* size_of_arr);
 
 class PowerCounters {
  public:
-#if defined(_MSC_VER) || defined(GP_OS_darwin) || \
+#if defined(GP_OS_windows) || defined(GP_OS_darwin) || \
     defined(GP_PLAT_amd64_linux) || defined(GP_PLAT_arm64_android)
   explicit PowerCounters();
 #else
   explicit PowerCounters() {};
 #endif
-#if defined(_MSC_VER) || defined(GP_PLAT_amd64_darwin) || \
+#if defined(GP_OS_windows) || defined(GP_PLAT_amd64_darwin) || \
     defined(GP_PLAT_arm64_android)
   ~PowerCounters();
 #else
   ~PowerCounters() = default;
 #endif
-#if defined(_MSC_VER) || defined(GP_PLAT_amd64_darwin) || \
+#if defined(GP_OS_windows) || defined(GP_PLAT_amd64_darwin) || \
     defined(GP_PLAT_arm64_android)
   void Sample();
 #else
@@ -75,7 +75,7 @@ class PowerCounters {
  private:
   CountVector mCounters;
 
-#if defined(_MSC_VER)
+#if defined(GP_OS_windows)
   mozilla::Vector<mozilla::UniquePtr<PowerMeterDevice>> mPowerMeterDevices;
 #endif
 #if defined(GP_PLAT_amd64_darwin)

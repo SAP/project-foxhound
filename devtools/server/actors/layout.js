@@ -36,18 +36,6 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "isCssPropertyKnown",
-  "resource://devtools/server/actors/css-properties.js",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "parseDeclarations",
-  "resource://devtools/shared/css/parsing-utils.js",
-  true
-);
-loader.lazyRequireGetter(
-  this,
   "nodeConstants",
   "resource://devtools/shared/dom-node-constants.js"
 );
@@ -163,7 +151,7 @@ class FlexItemActor extends Actor {
    *         The FlexboxActor instance.
    * @param  {DOMNode} element
    *         The flex item element.
-   * @param  {Object} flexItemSizing
+   * @param  {object} flexItemSizing
    *         The flex item sizing data.
    */
   constructor(flexboxActor, element, flexItemSizing) {
@@ -195,6 +183,8 @@ class FlexItemActor extends Actor {
       "flex-basis": "",
       "flex-grow": "",
       "flex-shrink": "",
+      // collect the shorthand as well to compute the longhands in an error case
+      flex: "",
       [`min-${dimension}`]: "",
       [`max-${dimension}`]: "",
       [dimension]: "",
@@ -203,26 +193,18 @@ class FlexItemActor extends Actor {
     const isElementNode = this.element.nodeType === this.element.ELEMENT_NODE;
 
     if (isElementNode) {
+      const cssRules = getMatchingCSSRules(this.element);
       for (const name in properties) {
         const values = [];
-        const cssRules = getMatchingCSSRules(this.element);
 
         for (const rule of cssRules) {
-          // For each rule, go through *all* properties, because there may be several of
-          // them in the same rule and some with !important flags (which would be more
-          // important even if placed before another property with the same name)
-          const declarations = parseDeclarations(
-            isCssPropertyKnown,
-            rule.style.cssText
-          );
-
-          for (const declaration of declarations) {
-            if (declaration.name === name && declaration.value !== "auto") {
-              values.push({
-                value: declaration.value,
-                priority: declaration.priority,
-              });
-            }
+          // For each rule, get the value and priority if available
+          const value = rule.style.getPropertyValue(name);
+          if (value !== "" && value !== "auto") {
+            values.push({
+              value,
+              priority: rule.style.getPropertyPriority(name),
+            });
           }
         }
 
@@ -265,6 +247,22 @@ class FlexItemActor extends Actor {
       : { flexGrow: null, flexShrink: null };
     const computedStyle = { flexGrow, flexShrink };
 
+    // if a CSS variable was used in the flex shorthand the longhands will be empty. Try a simple recover and use the 3 values from the shorthand
+    if (
+      properties["flex-grow"] === "" &&
+      properties["flex-shrink"] === "" &&
+      properties["flex-basis"] === "" &&
+      properties.flex !== ""
+    ) {
+      const parts = this.#parseFlexShorthand(properties.flex);
+      if (parts.length === 3) {
+        properties["flex-grow"] = parts[0];
+        properties["flex-shrink"] = parts[1];
+        properties["flex-basis"] = parts[2];
+      }
+    }
+    delete properties.flex;
+
     const form = {
       actor: this.actorID,
       // The flex item sizing data.
@@ -283,6 +281,49 @@ class FlexItemActor extends Actor {
     }
 
     return form;
+  }
+
+  /**
+   * Parse a `flex` shorthand value into its longhand (flex-grow, flex-shrink, flex-basis) values
+   *
+   * @param {string} flexShorthandValue
+   * @returns {string[]}
+   */
+  #parseFlexShorthand(flexShorthandValue) {
+    const lexer = new InspectorCSSParser(flexShorthandValue);
+    /**
+     * @param {InspectorCSSToken | null} current
+     * @returns {string}
+     */
+    function consume(current) {
+      if (!current) {
+        return "";
+      }
+      // If it's a function, collect everything until the closing parenthesis
+      if (current.tokenType === "Function") {
+        const contents = [];
+        let next;
+        while (
+          (next = lexer.nextToken()) &&
+          next.tokenType !== "CloseParenthesis"
+        ) {
+          contents.push(consume(next));
+        }
+        return `${current.value}(${contents.join("")})`;
+      }
+
+      return current.text;
+    }
+
+    const result = [];
+    let token;
+    while ((token = lexer.nextToken())) {
+      const value = consume(token).trim();
+      if (value) {
+        result.push(value);
+      }
+    }
+    return result;
   }
 }
 
@@ -318,8 +359,9 @@ class GridActor extends Actor {
     this.gridFragments = getStringifiableFragments(gridFragments);
 
     // Record writing mode and text direction for use by the grid outline.
-    const { direction, gridTemplateColumns, gridTemplateRows, writingMode } =
-      CssLogic.getComputedStyle(this.containerEl);
+    const { direction, writingMode } = CssLogic.getComputedStyle(
+      this.containerEl
+    );
 
     const form = {
       actor: this.actorID,
@@ -335,9 +377,12 @@ class GridActor extends Actor {
       form.containerNodeActorID = this.walker.getNode(this.containerEl).actorID;
     }
 
+    const gridContainerType = InspectorUtils.getGridContainerType(
+      this.containerEl
+    );
     form.isSubgrid =
-      gridTemplateRows.startsWith("subgrid") ||
-      gridTemplateColumns.startsWith("subgrid");
+      gridContainerType &
+      (InspectorUtils.GRID_SUBGRID_COL | InspectorUtils.GRID_SUBGRID_ROW);
 
     return form;
   }
@@ -370,9 +415,9 @@ class LayoutActor extends Actor {
    *
    * @param  {Node|NodeActor} node
    *         The node to start iterating at.
-   * @param  {String} type
+   * @param  {string} type
    *         Can be "grid" or "flex", the display type we are searching for.
-   * @param  {Boolean} onlyLookAtContainer
+   * @param  {boolean} onlyLookAtContainer
    *         If true, only look at given node's container and iterate from there.
    * @return {GridActor|FlexboxActor|null}
    *         The GridActor or FlexboxActor of the grid/flex container of the given node.
@@ -455,7 +500,7 @@ class LayoutActor extends Actor {
    *
    * @param  {Node|NodeActor} node
    *         The node to start iterating at.
-   * @param  {Boolean|null} onlyLookAtParents
+   * @param  {boolean | null} onlyLookAtParents
    *         If true, skip the passed node and only start looking at its parent and up.
    * @return {FlexboxActor|null}
    *         The FlexboxActor of the flex container of the given node. Otherwise, returns

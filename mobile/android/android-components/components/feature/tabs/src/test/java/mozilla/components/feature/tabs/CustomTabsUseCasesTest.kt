@@ -4,7 +4,6 @@
 
 package mozilla.components.feature.tabs
 
-import android.os.Looper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.browser.state.action.CustomTabListAction
 import mozilla.components.browser.state.engine.EngineMiddleware
@@ -13,19 +12,14 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.support.test.any
-import mozilla.components.support.test.ext.joinBlocking
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.mock
-import mozilla.components.support.test.rule.MainCoroutineRule
 import mozilla.components.support.test.whenever
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.ArgumentMatchers.anyBoolean
-import org.robolectric.Shadows
 
 @RunWith(AndroidJUnit4::class)
 class CustomTabsUseCasesTest {
@@ -35,13 +29,8 @@ class CustomTabsUseCasesTest {
     private lateinit var engine: Engine
     private lateinit var engineSession: EngineSession
 
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-
     @Before
     fun setup() {
-        Shadows.shadowOf(Looper.getMainLooper()).idle()
-
         engineSession = mock()
         engine = mock()
 
@@ -57,24 +46,22 @@ class CustomTabsUseCasesTest {
     @Test
     fun `MigrateCustomTabUseCase - turns custom tab into regular tab and selects it`() {
         val customTab = createCustomTab("https://mozilla.org")
-        store.dispatch(CustomTabListAction.AddCustomTabAction(customTab)).joinBlocking()
+        store.dispatch(CustomTabListAction.AddCustomTabAction(customTab))
         assertEquals(0, store.state.tabs.size)
         assertEquals(1, store.state.customTabs.size)
 
         tabsUseCases.migrate(customTab.id, select = false)
-        store.waitUntilIdle()
 
         assertEquals(1, store.state.tabs.size)
         assertEquals(0, store.state.customTabs.size)
         assertNull(store.state.selectedTabId)
 
         val otherCustomTab = createCustomTab("https://firefox.com")
-        store.dispatch(CustomTabListAction.AddCustomTabAction(otherCustomTab)).joinBlocking()
+        store.dispatch(CustomTabListAction.AddCustomTabAction(otherCustomTab))
         assertEquals(1, store.state.tabs.size)
         assertEquals(1, store.state.customTabs.size)
 
         tabsUseCases.migrate(otherCustomTab.id, select = true)
-        store.waitUntilIdle()
 
         assertEquals(2, store.state.tabs.size)
         assertEquals(0, store.state.customTabs.size)

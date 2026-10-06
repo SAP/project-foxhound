@@ -40,7 +40,7 @@ add_task(async function () {
   searchButton.click();
 
   // Wait till the panel opens.
-  await waitForDOMIfNeeded(document, ".search-panel");
+  await waitForDOM(document, ".search-panel");
 
   is(
     searchButton.getAttribute("aria-pressed"),
@@ -68,11 +68,7 @@ add_task(async function () {
   EventUtils.synthesizeKey("KEY_Enter");
 
   // Wait till there are two resources rendered in the results.
-  await waitForDOMIfNeeded(
-    document,
-    ".search-panel-content .treeRow.resourceRow",
-    2
-  );
+  await waitForDOM(document, ".search-panel-content .treeRow.resourceRow", 2);
 
   // Click on the first resource to expand it
   AccessibilityUtils.setEnv({

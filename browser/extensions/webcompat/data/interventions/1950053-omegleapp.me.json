@@ -1,0 +1,18 @@
+{
+  "label": "omegleapp.me",
+  "bugs": {
+    "1950053": {
+      "issue": "extra-scrollbars",
+      "matches": ["*://omegleapp.me/chat*"]
+    }
+  },
+  "css": {
+    "fix_scrollbars": ".chatAndVideo .chatSection .chatBox_messages { scrollbar-width: thin; } .chatAndVideo .chatSection .chatBox { scrollbar-width: none; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "css": ["fix_scrollbars"]
+    }
+  ]
+}

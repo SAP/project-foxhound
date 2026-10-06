@@ -8,9 +8,13 @@
 newtab-page-title = Ivinell nevez
 newtab-settings-button =
     .title = Personelait ho pajenn Ivinell Nevez
+#  (developer note): @nova-cleanup(remove-string): Remove newtab-customize-panel-icon-button once Nova lands, will be using newtab-customize-panel-label instead
 newtab-customize-panel-icon-button =
     .title = Personelaat ar bejenn-mañ
+#  (developer note): @nova-cleanup(remove-string): Remove newtab-customize-panel-icon-button-label once Nova lands, will be using newtab-customize-panel-label instead
 newtab-customize-panel-icon-button-label = Personelaat
+newtab-customize-panel-label =
+    .label = Personelaat
 newtab-personalize-settings-icon-label =
     .title = Personelaat an ivinell nevez
     .aria-label = Arventennoù
@@ -23,6 +27,64 @@ newtab-personalize-dialog-label =
     .aria-label = Personelaat
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
+
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Ivinelloù nevez
+
+## Firefox Home content
+
+home-prefs-firefox-logo-header =
+    .label = Logo { -brand-short-name }
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } renk
+            [two] { $num } renk
+            [few] { $num } renk
+            [many] { $num } a renkoù
+           *[other] { $num } renk
+        }
+# Dropdown option shown when an extension replaces the contents of new windows or tabs.
+# Variables:
+#   $extension (string) - Name of the extension
+home-prefs-homepage-extension-option =
+    .label = Askouezh ({ $extension })
+home-restore-defaults-srd =
+    .label = Assav an arventennoù dre ziouer
+    .accesskey = A
+home-mode-choice-default-fx-srd =
+    .label = { -firefox-home-brand-name } (Dre ziouer)
+home-mode-choice-custom-srd =
+    .label = URLoù personelaet…
+home-mode-choice-blank-srd =
+    .label = Pajenn wenn
+home-prefs-shortcuts-header-srd =
+    .label = Berradennoù
+home-prefs-shortcuts-select =
+    .aria-label = Berradennoù
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = Berradennoù paeroniet
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Istorioù paeroniet
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Pajennoù gweladennet
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Sinedoù
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Pellgargadurioù nevez
+home-prefs-recent-activity-header-srd =
+    .label = Oberiantiz a-nevez
+home-prefs-recent-activity-select =
+    .aria-label = Oberiantiz a-nevez
+home-prefs-weather-header-srd =
+    .label = Liv an amzer
+home-prefs-support-firefox-header-srd =
+    .label = Skoazellit { -brand-product-name }
 
 ## Search box component.
 
@@ -49,13 +111,16 @@ newtab-search-box-input =
     .placeholder = Klask er web
     .aria-label = Klask er web
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Ouzhpennañ ul lusker klask
 newtab-topsites-add-shortcut-header = Berradenn nevez
 newtab-topsites-edit-topsites-header = Kemmañ al lec'hienn wellañ
 newtab-topsites-edit-shortcut-header = Kemmañ ar verradenn
 newtab-topsites-add-shortcut-label = Ouzhpennañ ur verradenn
+newtab-topsites-add-shortcut-title =
+    .title = Ouzhpennañ ur verradenn
+    .aria-label = Ouzhpennañ ur verradenn
 newtab-topsites-title-label = Titl
 newtab-topsites-title-input =
     .placeholder = Enankañ un titl
@@ -123,6 +188,8 @@ newtab-menu-about-fakespot = A-zivout { -fakespot-brand-name }
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = Stankañ
+# Context menu option to open a support page explaining the New Tab personalization features and privacy controls.
+newtab-menu-section-learn-more = Gouzout hiroc’h
 
 ## Context menu options for sponsored stories and new ad formats on New Tab.
 
@@ -268,9 +335,24 @@ newtab-error-fallback-refresh-link = Adkargit ar bajenn evit klask en-dro.
 
 newtab-custom-shortcuts-title = Berradennoù
 newtab-custom-shortcuts-subtitle = Lec'hiennoù bet enrollet pe gweladennet ganeoc'h
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = Berradennoù
     .description = Lec'hiennoù bet enrollet pe gweladennet ganeoc'h
+newtab-custom-shortcuts-nova =
+    .label = Berradennoù
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } renk
+            [two] { $num } renk
+            [few] { $num } renk
+            [many] { $num } a renkoù
+           *[other] { $num } renk
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =
@@ -288,17 +370,17 @@ newtab-custom-pocket-sponsored = Istorioù paeroniet
 newtab-custom-pocket-show-recent-saves = Diskouez an enrolladennoù diwezhañ
 newtab-custom-recent-title = Oberiantiz nevesañ
 newtab-custom-recent-subtitle = Un dibab lec'hiennoù ha danvezioù nevez
-newtab-custom-recent-toggle =
-    .label = Oberiantiz nevesañ
-    .description = Un dibab lec'hiennoù ha danvezioù nevez
 newtab-custom-close-button = Serriñ
 newtab-custom-settings = Merañ muioc'h a arventennoù
 
 ## New Tab Wallpapers
 
 newtab-wallpaper-title = Drekleurioù
+#  (developer note): @nova-cleanup(remove-string): Remove old "Upload an image" string once Nova lands. The new "Add an image"  string will take over
 newtab-wallpaper-upload-image = Kas ur skeudenn
 newtab-wallpaper-custom-color = Dibab ul liv
+newtab-wallpaper-toggle-title =
+    .label = Drekleurioù
 newtab-wallpaper-light-red-panda = Panda ruz
 newtab-wallpaper-light-mountain = Menez gwenn
 newtab-wallpaper-light-sky = Oabl gant koumoul limestra ha roz
@@ -336,7 +418,7 @@ newtab-wallpaper-abstract-purple = Furmoù limestra
 newtab-wallpaper-abstract-orange = Furmoù orañjez
 newtab-wallpaper-abstract-blue-purple = Furmoù limestra hag orañjez
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotoioù
 newtab-wallpaper-beach-at-sunrise = Traezhenn e-pad ar sav-heol
@@ -375,7 +457,6 @@ newtab-weather-menu-change-location = Cheñch al lec’h
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Klask ul lec’h
     .aria-label = Klask ul lec’h
-newtab-weather-change-location-search-input = Klask ul lec’h
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
 # - Detailed: Include simple information plus a short text summary: e.g. "Mostly cloudy"
@@ -443,16 +524,15 @@ newtab-section-mangage-topics-followed-topics = O heuliañ
 newtab-section-mangage-topics-blocked-topics = Stanket
 newtab-custom-wallpaper-cta = Esaeañ
 
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-cancel = Nullañ
 newtab-report-submit = Kas
 
-## Strings for trending searches
+## Strings for task / to-do list productivity widget
 
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = Nevez
+newtab-widget-lists-menu-create = Krouiñ ur roll nevez
+newtab-widget-lists-input-menu-open-link = Digeriñ an ere

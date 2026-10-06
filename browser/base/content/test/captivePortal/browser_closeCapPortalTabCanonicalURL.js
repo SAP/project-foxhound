@@ -115,7 +115,7 @@ add_task(async function checkCaptivePortalTabCloseOnCanonicalURL_one() {
       "Login button on the captive portal tab is visible"
     );
     info("Clicking the login button on the captive portal tab page");
-    await EventUtils.synthesizeMouseAtCenter(loginButton, {}, content);
+    EventUtils.synthesizeMouseAtCenter(loginButton, {}, content);
   });
 
   await redirectedToCanonicalURL;
@@ -168,7 +168,7 @@ add_task(async function checkCaptivePortalTabCloseOnCanonicalURL_two() {
       "Login button on the captive portal tab is visible"
     );
     info("Clicking the login button on the captive portal tab page");
-    await EventUtils.synthesizeMouseAtCenter(loginButton, {}, content);
+    EventUtils.synthesizeMouseAtCenter(loginButton, {}, content);
   });
 
   await redirectedToCanonicalURL;
@@ -208,7 +208,7 @@ add_task(async function checkCaptivePortalTabCloseOnCanonicalURL_three() {
       "Login button on the captive portal tab is visible"
     );
     info("Clicking the login button on the captive portal tab page");
-    await EventUtils.synthesizeMouseAtCenter(loginButton, {}, content);
+    EventUtils.synthesizeMouseAtCenter(loginButton, {}, content);
   });
 
   Services.obs.notifyObservers(null, "captive-portal-login-success");

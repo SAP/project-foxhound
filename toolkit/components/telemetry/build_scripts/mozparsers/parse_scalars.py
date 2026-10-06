@@ -459,7 +459,7 @@ def load_scalars(filename, strict_type_checks=True):
         ParserError("Error opening " + filename + ": " + str(e)).handle_now()
     except ValueError as e:
         ParserError(
-            f"Error parsing scalars in {filename}: {e}" f".\nSee: {BASE_DOC_URL}"
+            f"Error parsing scalars in {filename}: {e}.\nSee: {BASE_DOC_URL}"
         ).handle_now()
 
     scalar_list = []

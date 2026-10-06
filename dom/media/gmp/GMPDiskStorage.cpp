@@ -1,26 +1,24 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "plhash.h"
-#include "nsDirectoryServiceUtils.h"
-#include "nsDirectoryServiceDefs.h"
-#include "nsAppDirectoryServiceDefs.h"
 #include "GMPLog.h"
 #include "GMPParent.h"
 #include "gmp-storage.h"
-#include "mozilla/Unused.h"
 #include "mozilla/EndianUtils.h"
+#include "nsAppDirectoryServiceDefs.h"
 #include "nsClassHashtable.h"
-#include "prio.h"
+#include "nsDirectoryServiceDefs.h"
+#include "nsDirectoryServiceUtils.h"
 #include "nsServiceManagerUtils.h"
+#include "plhash.h"
+#include "prio.h"
 
 namespace mozilla::gmp {
 
-#define LOG(msg, ...)                   \
-  MOZ_LOG(GetGMPLog(), LogLevel::Debug, \
-          ("GMPDiskStorage=%p, " msg, this, ##__VA_ARGS__))
+#define LOG(msg, ...)                                                  \
+  MOZ_LOG_FMT(GetGMPLog(), LogLevel::Debug, "GMPDiskStorage={}, " msg, \
+              fmt::ptr(this), ##__VA_ARGS__)
 
 // We store the records for a given GMP as files in the profile dir.
 // $profileDir/gmp/$platform/$gmpName/storage/$nodeId/
@@ -78,7 +76,7 @@ class GMPDiskStorage : public GMPStorage {
  public:
   explicit GMPDiskStorage(const nsACString& aNodeId, const nsAString& aGMPName)
       : mNodeId(aNodeId), mGMPName(aGMPName) {
-    LOG("Created GMPDiskStorage, nodeId=%s, gmpName=%s", mNodeId.BeginReading(),
+    LOG("Created GMPDiskStorage, nodeId={}, gmpName={}", mNodeId.get(),
         NS_ConvertUTF16toUTF8(mGMPName).get());
   }
 
@@ -326,7 +324,7 @@ class GMPDiskStorage : public GMPStorage {
       f->Exists(&exists);
       if (!exists) {
         // Filename not in use, we can write into this file.
-        aOutFilename = hashStr;
+        aOutFilename = std::move(hashStr);
         return NS_OK;
       } else {
         // Hash collision; just increment the hash name and try that again.

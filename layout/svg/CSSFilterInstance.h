@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -117,12 +115,6 @@ class CSSFilterInstance {
   const StyleFilter& mFilter;
 
   /**
-   * The color that should be used for drop-shadow() filters that don't
-   * specify a shadow color.
-   */
-  nscolor mShadowFallbackColor;
-
-  /**
    * The pre-filter overflow rect of the frame being filtered, in filter space.
    * Used for input bounds if this CSS filter is the first in the filter chain.
    */
@@ -133,6 +125,12 @@ class CSSFilterInstance {
    * filter space. Used to transform style values to filter space.
    */
   gfxMatrix mFrameSpaceInCSSPxToFilterSpaceTransform;
+
+  /**
+   * The color that should be used for drop-shadow() filters that don't
+   * specify a shadow color.
+   */
+  nscolor mShadowFallbackColor;
 };
 
 }  // namespace mozilla

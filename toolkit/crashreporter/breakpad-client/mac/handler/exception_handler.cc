@@ -41,6 +41,7 @@
 #include "common/mac/scoped_task_suspend-inl.h"
 #include "google_breakpad/common/minidump_exception_mac.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/Sprintf.h"
 
 #ifdef MOZ_PHC
 #include "PHC.h"
@@ -702,8 +703,18 @@ void* ExceptionHandler::WaitForMessage(void* exception_handler_class) {
 
         ExceptionReplyMessage reply;
         if (!mach_exc_server(&receive.header, &reply.header)) {
-          MOZ_CRASH_UNSAFE_PRINTF("Mach message id: %d crash reported = %d",
-                                  receive.header.msgh_id, crash_reported);
+          char buf[512];
+          SprintfLiteral(buf,
+                         "Mach message id: %d, crash reported %d, "
+                         "message size %d, current task 0x%x, "
+                         "message task 0x%x, exception 0x%x, "
+                         "code 0x%llx, subcode 0x%llx, code_count 0x%x",
+                         receive.header.msgh_id, crash_reported,
+                         receive.header.msgh_size, mach_task_self(),
+                         receive.task.name, receive.exception,
+                         receive.code[0], receive.code[1],
+                         receive.code_count);
+          MOZ_CRASH_UNSAFE_PRINTF("%s", buf);
         }
 
         // Send a reply and exit

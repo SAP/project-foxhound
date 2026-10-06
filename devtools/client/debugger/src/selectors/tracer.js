@@ -74,3 +74,6 @@ export function getTraceMatchingSearchValueOrGrip(state) {
 export function getIsTracingValues(state) {
   return state.tracerFrames?.traceValues || false;
 }
+export function getSelectedLocationTraces(state) {
+  return state.tracerFrames?.selectedLocationTraces || null;
+}

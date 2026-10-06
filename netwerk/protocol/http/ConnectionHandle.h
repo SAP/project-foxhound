@@ -1,10 +1,9 @@
-/* vim:set ts=4 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef ConnectionHandle_h__
-#define ConnectionHandle_h__
+#ifndef ConnectionHandle_h_
+#define ConnectionHandle_h_
 
 #include "nsAHttpConnection.h"
 #include "HttpConnectionBase.h"
@@ -29,6 +28,7 @@ class ConnectionHandle : public nsAHttpConnection {
 
   explicit ConnectionHandle(HttpConnectionBase* conn) : mConn(conn) {}
   void Reset() { mConn = nullptr; }
+  HttpConnectionBase* Conn() { return mConn.get(); }
 
  private:
   virtual ~ConnectionHandle();
@@ -38,4 +38,4 @@ class ConnectionHandle : public nsAHttpConnection {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // ConnectionHandle_h__
+#endif  // ConnectionHandle_h_

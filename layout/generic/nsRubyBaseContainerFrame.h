@@ -1,17 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* rendering object for CSS "display: ruby-base-container" */
 
-#ifndef nsRubyBaseContainerFrame_h___
-#define nsRubyBaseContainerFrame_h___
+#ifndef nsRubyBaseContainerFrame_h_
+#define nsRubyBaseContainerFrame_h_
 
 #include "RubyUtils.h"
 #include "nsContainerFrame.h"
 
+class nsLineLayout;
 namespace mozilla {
 class PresShell;
 }  // namespace mozilla
@@ -34,7 +33,7 @@ class nsRubyBaseContainerFrame final : public nsContainerFrame {
   void AddInlinePrefISize(const mozilla::IntrinsicSizeInput& aInput,
                           InlinePrefISizeData* aData) override;
   SizeComputationResult ComputeSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
+      const SizeComputationInput& aSizingInput, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
       const mozilla::LogicalSize& aMargin,
       const mozilla::LogicalSize& aBorderPadding,
@@ -57,6 +56,11 @@ class nsRubyBaseContainerFrame final : public nsContainerFrame {
   }
   mozilla::RubyBlockLeadings GetDescendantLeadings() const {
     return mDescendantLeadings;
+  }
+
+  mozilla::RubyMetrics RubyMetrics(float aRubyMetricsFactor) const override {
+    // provided by nsContainerFrame
+    return RubyMetricsIncludingChildren(aRubyMetricsFactor);
   }
 
  protected:
@@ -89,4 +93,4 @@ class nsRubyBaseContainerFrame final : public nsContainerFrame {
   mozilla::RubyBlockLeadings mDescendantLeadings;
 };
 
-#endif /* nsRubyBaseContainerFrame_h___ */
+#endif /* nsRubyBaseContainerFrame_h_ */

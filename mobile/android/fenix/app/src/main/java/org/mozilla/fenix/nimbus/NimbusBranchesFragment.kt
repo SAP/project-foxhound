@@ -15,23 +15,25 @@ import androidx.navigation.fragment.navArgs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import mozilla.components.lib.state.ext.consumeFrom
+import mozilla.components.lib.state.helpers.StoreProvider.Companion.fragmentStore
 import mozilla.components.support.base.log.logger.Logger
 import org.mozilla.fenix.R
-import org.mozilla.fenix.components.StoreProvider
 import org.mozilla.fenix.compose.core.Action
 import org.mozilla.fenix.compose.snackbar.Snackbar
 import org.mozilla.fenix.compose.snackbar.SnackbarState
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.navigateWithBreadcrumb
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.nimbus.controller.NimbusBranchesController
 import org.mozilla.fenix.nimbus.view.NimbusBranchesView
+import mozilla.components.service.nimbus.R as nimbusR
 
 /**
  * A fragment to show the branches of a Nimbus experiment.
  */
-class NimbusBranchesFragment : Fragment() {
+class NimbusBranchesFragment : Fragment(), SystemInsetsPaddedFragment {
 
     private lateinit var nimbusBranchesStore: NimbusBranchesStore
     private lateinit var nimbusBranchesView: NimbusBranchesView
@@ -44,17 +46,17 @@ class NimbusBranchesFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?,
     ): View? {
-        return inflater.inflate(R.layout.mozac_service_nimbus_experiment_details, container, false)
+        return inflater.inflate(nimbusR.layout.mozac_service_nimbus_experiment_details, container, false)
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        nimbusBranchesStore = StoreProvider.get(this) {
-            NimbusBranchesStore(NimbusBranchesState(branches = emptyList()))
-        }
+        nimbusBranchesStore = fragmentStore(NimbusBranchesState(branches = emptyList())) {
+            NimbusBranchesStore(it)
+        }.value
 
         controller = NimbusBranchesController(
-            isTelemetryEnabled = { requireContext().settings().isTelemetryEnabled },
-            isExperimentationEnabled = { requireContext().settings().isExperimentationEnabled },
+            isTelemetryEnabled = { requireComponents.settings.isTelemetryEnabled },
+            isExperimentationEnabled = { requireComponents.settings.isExperimentationEnabled },
             nimbusBranchesStore = nimbusBranchesStore,
             experiments = requireContext().components.nimbus.sdk,
             experimentId = args.experimentId,
@@ -62,7 +64,7 @@ class NimbusBranchesFragment : Fragment() {
         )
 
         nimbusBranchesView =
-            NimbusBranchesView(view.findViewById(R.id.nimbus_experiment_branches_list), controller)
+            NimbusBranchesView(view.findViewById(nimbusR.id.nimbus_experiment_branches_list), controller)
 
         loadExperimentBranches()
 

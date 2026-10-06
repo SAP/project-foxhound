@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -159,7 +157,7 @@ function openContextMenu(menuId, targetId) {
 }
 
 function waitForElementShown(element) {
-  let win = element.ownerGlobal;
+  let win = element.documentGlobal;
   let dwu = win.windowUtils;
   return BrowserTestUtils.waitForCondition(() => {
     info("Waiting for overflow button to have non-0 size");
@@ -714,11 +712,7 @@ add_task(async function test_unified_extensions_toolbar_pinning() {
   );
   let pinToToolbar = menu.querySelector(".customize-context-pinToToolbar");
   Assert.ok(!pinToToolbar.hidden, "Pin to Toolbar is visible.");
-  Assert.equal(
-    pinToToolbar.getAttribute("checked"),
-    "true",
-    "Pin to Toolbar is checked."
-  );
+  Assert.ok(pinToToolbar.hasAttribute("checked"), "Pin to Toolbar is checked.");
 
   info("Pinning addon to the addons panel.");
   await closeChromeContextMenu(TOOLBAR_CONTEXT_MENU, pinToToolbar);
@@ -743,9 +737,8 @@ add_task(async function test_unified_extensions_toolbar_pinning() {
   );
 
   Assert.ok(!pinToToolbar.hidden, "Pin to Toolbar is visible.");
-  Assert.equal(
-    pinToToolbar.getAttribute("checked"),
-    "false",
+  Assert.ok(
+    !pinToToolbar.hasAttribute("checked"),
     "Pin to Toolbar is not checked."
   );
   await closeChromeContextMenu(UNIFIED_CONTEXT_MENU, pinToToolbar);

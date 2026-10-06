@@ -31,7 +31,7 @@ async function testTrackingProtectionIconState(tabbrowser) {
     tabbrowser,
     BENIGN_PAGE
   );
-  let gProtectionsHandler = tabbrowser.ownerGlobal.gProtectionsHandler;
+  let gProtectionsHandler = tabbrowser.documentGlobal.gProtectionsHandler;
 
   ok(!gProtectionsHandler.iconBox.hasAttribute("active"), "iconBox not active");
 
@@ -52,31 +52,31 @@ async function testTrackingProtectionIconState(tabbrowser) {
   ok(gProtectionsHandler.iconBox.hasAttribute("active"), "iconBox active");
 
   info("Switch from tracking cookie -> benign tab");
-  let securityChanged = waitForSecurityChange(1, tabbrowser.ownerGlobal);
+  let securityChanged = waitForSecurityChange(1, tabbrowser.documentGlobal);
   tabbrowser.selectedTab = benignTab;
   await securityChanged;
 
   ok(!gProtectionsHandler.iconBox.hasAttribute("active"), "iconBox not active");
 
   info("Switch from benign -> tracking tab");
-  securityChanged = waitForSecurityChange(1, tabbrowser.ownerGlobal);
+  securityChanged = waitForSecurityChange(1, tabbrowser.documentGlobal);
   tabbrowser.selectedTab = trackingTab;
   await securityChanged;
 
   ok(gProtectionsHandler.iconBox.hasAttribute("active"), "iconBox active");
 
   info("Switch from tracking -> tracking cookies tab");
-  securityChanged = waitForSecurityChange(1, tabbrowser.ownerGlobal);
+  securityChanged = waitForSecurityChange(1, tabbrowser.documentGlobal);
   tabbrowser.selectedTab = trackingCookiesTab;
   await securityChanged;
 
   ok(gProtectionsHandler.iconBox.hasAttribute("active"), "iconBox active");
 
   info("Reload tracking cookies tab");
-  securityChanged = waitForSecurityChange(1, tabbrowser.ownerGlobal);
+  securityChanged = waitForSecurityChange(1, tabbrowser.documentGlobal);
   let contentBlockingEvent = waitForContentBlockingEvent(
     2,
-    tabbrowser.ownerGlobal
+    tabbrowser.documentGlobal
   );
   tabbrowser.reload();
   await Promise.all([securityChanged, contentBlockingEvent]);
@@ -84,8 +84,11 @@ async function testTrackingProtectionIconState(tabbrowser) {
   ok(gProtectionsHandler.iconBox.hasAttribute("active"), "iconBox active");
 
   info("Reload tracking tab");
-  securityChanged = waitForSecurityChange(2, tabbrowser.ownerGlobal);
-  contentBlockingEvent = waitForContentBlockingEvent(3, tabbrowser.ownerGlobal);
+  securityChanged = waitForSecurityChange(2, tabbrowser.documentGlobal);
+  contentBlockingEvent = waitForContentBlockingEvent(
+    3,
+    tabbrowser.documentGlobal
+  );
   tabbrowser.selectedTab = trackingTab;
   tabbrowser.reload();
   await Promise.all([securityChanged, contentBlockingEvent]);
@@ -93,7 +96,7 @@ async function testTrackingProtectionIconState(tabbrowser) {
   ok(gProtectionsHandler.iconBox.hasAttribute("active"), "iconBox active");
 
   info("Inject tracking cookie inside tracking tab");
-  securityChanged = waitForSecurityChange(1, tabbrowser.ownerGlobal);
+  securityChanged = waitForSecurityChange(1, tabbrowser.documentGlobal);
   let timeoutPromise = new Promise(resolve => setTimeout(resolve, 500));
   await SpecialPowers.spawn(tabbrowser.selectedBrowser, [], function () {
     content.postMessage("cookie", "*");
@@ -104,7 +107,7 @@ async function testTrackingProtectionIconState(tabbrowser) {
   ok(gProtectionsHandler.iconBox.hasAttribute("active"), "iconBox active");
 
   info("Inject tracking element inside tracking tab");
-  securityChanged = waitForSecurityChange(1, tabbrowser.ownerGlobal);
+  securityChanged = waitForSecurityChange(1, tabbrowser.documentGlobal);
   timeoutPromise = new Promise(resolve => setTimeout(resolve, 500));
   await SpecialPowers.spawn(tabbrowser.selectedBrowser, [], function () {
     content.postMessage("tracking", "*");
@@ -117,7 +120,7 @@ async function testTrackingProtectionIconState(tabbrowser) {
   tabbrowser.selectedTab = trackingCookiesTab;
 
   info("Inject tracking cookie inside tracking cookies tab");
-  securityChanged = waitForSecurityChange(1, tabbrowser.ownerGlobal);
+  securityChanged = waitForSecurityChange(1, tabbrowser.documentGlobal);
   timeoutPromise = new Promise(resolve => setTimeout(resolve, 500));
   await SpecialPowers.spawn(tabbrowser.selectedBrowser, [], function () {
     content.postMessage("cookie", "*");
@@ -128,7 +131,7 @@ async function testTrackingProtectionIconState(tabbrowser) {
   ok(gProtectionsHandler.iconBox.hasAttribute("active"), "iconBox active");
 
   info("Inject tracking element inside tracking cookies tab");
-  securityChanged = waitForSecurityChange(1, tabbrowser.ownerGlobal);
+  securityChanged = waitForSecurityChange(1, tabbrowser.documentGlobal);
   timeoutPromise = new Promise(resolve => setTimeout(resolve, 500));
   await SpecialPowers.spawn(tabbrowser.selectedBrowser, [], function () {
     content.postMessage("tracking", "*");
@@ -146,17 +149,18 @@ async function testTrackingProtectionIconState(tabbrowser) {
 add_task(async function testNormalBrowsing() {
   await UrlClassifierTestUtils.addTestTrackers();
 
-  let gProtectionsHandler = gBrowser.ownerGlobal.gProtectionsHandler;
+  let gProtectionsHandler = gBrowser.documentGlobal.gProtectionsHandler;
   ok(
     gProtectionsHandler,
     "gProtectionsHandler is attached to the browser window"
   );
 
   let { TrackingProtection } =
-    gBrowser.ownerGlobal.gProtectionsHandler.blockers;
+    gBrowser.documentGlobal.gProtectionsHandler.blockers;
   ok(TrackingProtection, "TP is attached to the browser window");
 
-  let { ThirdPartyCookies } = gBrowser.ownerGlobal.gProtectionsHandler.blockers;
+  let { ThirdPartyCookies } =
+    gBrowser.documentGlobal.gProtectionsHandler.blockers;
   ok(ThirdPartyCookies, "TPC is attached to the browser window");
 
   Services.prefs.setBoolPref(TP_PREF, true);
@@ -183,16 +187,16 @@ add_task(async function testPrivateBrowsing() {
   });
   let tabbrowser = privateWin.gBrowser;
 
-  let gProtectionsHandler = tabbrowser.ownerGlobal.gProtectionsHandler;
+  let gProtectionsHandler = tabbrowser.documentGlobal.gProtectionsHandler;
   ok(
     gProtectionsHandler,
     "gProtectionsHandler is attached to the private window"
   );
   let { TrackingProtection } =
-    tabbrowser.ownerGlobal.gProtectionsHandler.blockers;
+    tabbrowser.documentGlobal.gProtectionsHandler.blockers;
   ok(TrackingProtection, "TP is attached to the private window");
   let { ThirdPartyCookies } =
-    tabbrowser.ownerGlobal.gProtectionsHandler.blockers;
+    tabbrowser.documentGlobal.gProtectionsHandler.blockers;
   ok(ThirdPartyCookies, "TPC is attached to the browser window");
 
   Services.prefs.setBoolPref(TP_PB_PREF, true);

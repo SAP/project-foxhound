@@ -5,7 +5,7 @@
 "use strict";
 
 // NOTE: worker state values are defined in an enum in nsIServiceWorkerManager
-// https://searchfox.org/mozilla-central/source/dom/interfaces/base/nsIServiceWorkerManager.idl
+// https://searchfox.org/firefox-main/source/dom/interfaces/base/nsIServiceWorkerManager.idl
 
 const EMPTY_WORKER_LIST = [];
 

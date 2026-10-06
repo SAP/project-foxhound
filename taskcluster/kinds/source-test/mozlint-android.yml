@@ -14,7 +14,7 @@ task-defaults:
     treeherder:
         kind: test
         tier: 1
-    worker-type: t-linux-docker
+    worker-type: t-linux-docker-amd
     worker:
         docker-image: {in-tree: android-build}
         env:
@@ -29,13 +29,13 @@ task-defaults:
               name: public/code-review/mozlint.json
               path: /builds/worker/mozlint.json
             - name: public/android/geckoview/api.txt
-              path: /builds/worker/checkouts/gecko/obj-firefox/gradle/build/mobile/android/geckoview/intermediates/javac/debug/api.txt
+              path: /builds/worker/checkouts/gecko/obj-firefox/gradle/build/mobile/android/geckoview/apilint/debug/api.txt
               type: file
             - name: public/android/geckoview/api.txt.map
-              path: /builds/worker/checkouts/gecko/obj-firefox/gradle/build/mobile/android/geckoview/intermediates/javac/debug/api.txt.map
+              path: /builds/worker/checkouts/gecko/obj-firefox/gradle/build/mobile/android/geckoview/apilint/debug/api.txt.map
               type: file
             - name: public/android/geckoview/apilint-result.json
-              path: /builds/worker/checkouts/gecko/obj-firefox/gradle/build/mobile/android/geckoview/intermediates/javac/debug/apilint-result.json
+              path: /builds/worker/checkouts/gecko/obj-firefox/gradle/build/mobile/android/geckoview/apilint/debug/apilint-result.json
               type: file
             - name: public/android/geckoview/javadoc-results.json
               path: /builds/worker/checkouts/gecko/obj-firefox/gradle/build/mobile/android/geckoview/reports/javadoc-results-debug.json
@@ -55,6 +55,7 @@ task-defaults:
             - name: public/reports
               path: /builds/worker/checkouts/gecko/obj-firefox/gradle/build/reports
               type: directory
+    run-on-repo-type: [hg]
     run:
         using: run-task
         tooltool-downloads: internal  # For internal toolchains.
@@ -63,13 +64,15 @@ task-defaults:
             # Aliases aren't allowed for toolchains installed by fetch.
             - linux64-android-gradle-dependencies
             - linux64-android-sdk-linux-repack
+            - linux64-embedded-uniffi-bindgen
+            - linux64-nimbus-fml
             - linux64-jdk-repack
             - linux64-node
 
 
 lints:
     treeherder:
-        symbol: A(lints)
+        symbol: android(lints)
     run:
         command: >
             ln -s $MOZ_FETCHES_DIR/android-gradle-dependencies $GECKO_PATH &&
@@ -108,7 +111,7 @@ lints:
 
 fenix:
     treeherder:
-        symbol: A(fenix-lints)
+        symbol: android(fenix-lints)
     run:
         command: >
             ln -s $MOZ_FETCHES_DIR/android-gradle-dependencies $GECKO_PATH &&
@@ -135,7 +138,7 @@ fenix:
 
 focus:
     treeherder:
-        symbol: A(focus-lints)
+        symbol: android(focus-lints)
     run:
         command: >
             ln -s $MOZ_FETCHES_DIR/android-gradle-dependencies $GECKO_PATH &&
@@ -162,7 +165,7 @@ focus:
 
 android-components:
     treeherder:
-        symbol: A(ac-lints)
+        symbol: android(ac-lints)
     run:
         command: >
             ln -s $MOZ_FETCHES_DIR/android-gradle-dependencies $GECKO_PATH &&

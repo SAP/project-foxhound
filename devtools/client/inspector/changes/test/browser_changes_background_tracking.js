@@ -28,7 +28,7 @@ add_task(async function () {
   await togglePropStatus(ruleView, prop);
 
   info("Select the Changes panel");
-  const { document: doc, store } = selectChangesView(inspector);
+  const { document: doc, store } = await selectChangesView(inspector);
   const onTrackChange = waitForDispatch(store, "TRACK_CHANGE");
   const onResetChanges = waitForDispatch(store, "RESET_CHANGES");
 

@@ -200,7 +200,9 @@ function testReset() {
   streamUpdater.downloadUpdates(
     mozTables,
     "",
+    "",
     true,
+    "test",
     dataUpdate,
     () => {},
     updateError,

@@ -59,9 +59,9 @@ To use it locally, add the parameter `--profiler` to your test command:
 ./mach test <path to test> --profiler
 ```
 
-To do it in a try build it's possible to use the environment variables:
+To do it in a try build it's possible to use the `--profiler` flag:
 ```
-./mach try fuzzy --env MOZ_PROFILER_STARTUP=1 <test directory>
+./mach try fuzzy --profiler <test directory>
 ```
 
 This will automatically upload profiles of failing tests.
@@ -69,7 +69,7 @@ This will automatically upload profiles of failing tests.
 :::{hint}
 If you want to see a profile of a test that doesn’t fail (eg. to compare it with
 the profile of a failing run), an easy way to make it happen is to add a failure
-near the end of the test, eg. `ok(false, “force profile upload”);`.
+near the end of the test, eg. `ok(false, "force profile upload");`.
 :::
 
 Some test types do not support running the profiler with a parameter (such as
@@ -98,8 +98,51 @@ when using Linux with Intel processors, it's possible to set
 `/sys/devices/system/cpu/intel_pstate/max_perf_pct` to a small value. The
 program `cpufreq-set` can also help.
 
-Be careful to prepare the command to increase it to 100% again as this can make
-the computer very slow.
+Another useful approach is to load your machine. This has proven to be very effective in reproducing intermittent failures, but requires thinking about what seems to cause the failure. Using [`stress-ng`](https://github.com/ColinIanKing/stress-ng) (available on most Linux distributions and in `brew` on macOS), various parts of the system can be stressed:
+
+The CPU, loading all cores to 100% for 60 seconds:
+
+```bash
+stress-ng --cpu 0 --cpu-method all --timeout 60s
+```
+
+The scheduler, attempting to cause uncommon context switch ordering to reproduce races:
+
+```bash
+stress-ng --sched 0 --sched-policy all --timeout 60s
+```
+
+The memory quantity, allocating 80% of the available memory for 60 seconds:
+
+```bash
+stress-ng --vm 4 --vm-bytes 80%
+```
+
+The system allocator, spinning on malloc and free:
+
+```bash
+stress-ng --malloc 0 --malloc-bytes 50%
+```
+
+The syscall interface, randomly exercising all syscall types:
+
+```bash
+stress-ng --syscall 0 --syscall-method all
+```
+
+The filesystem, running continuous temp-file I/O:
+
+```bash
+stress-ng --hdd 1 --hdd-bytes 4G --timeout 60s
+```
+
+The network, creating local TCP socket churn:
+
+```bash
+stress-ng --sock 0 --sock-domain inet --sock-type stream --timeout 60s
+```
+
+This is readily available on Linux and macOS, and can be installed on Windows using [WSL](https://docs.microsoft.com/windows/wsl/install).
 
 ## That Didn't Work
 
@@ -108,6 +151,19 @@ If you couldn't reproduce locally, there are other options.
 One useful approach is to add additional logging to the test, then push again.  Sometimes log buffering makes the output weird; you can add a call to `SimpleTest.requestCompleteLog()` to fix this.
 
 You can run a single directory of tests on try using `mach try DIR`.  You can also use the `--rebuild` flag to retrigger test jobs multiple times; or you can also do this easily from treeherder.<!--TODO: how? and why is it easy?-->
+
+Another possibility is to run the test with video recording enabled, especially when the test is doing things related to focus, graphical widget or screen capture:
+
+```bash
+./mach try fuzzy --env MOZ_RECORD_TEST=1
+```
+
+This will record a video of the test run, and drop the video file in the Artifact directory, accessible on treeherder in the `Artifacts and debugging tools` tab.
+
+This is unfortunately only available on Linux and macOS for now
+([Android](https://bugzilla.mozilla.org/show_bug.cgi?id=1918620) and
+[Windows](https://bugzilla.mozilla.org/show_bug.cgi?id=2005175) are possible but
+not tested enough, landed or implemented, consider helping out).
 
 ## Solving
 
@@ -118,15 +174,12 @@ Sometimes the problem is a race at a specific spot in the test.  You can test th
 ```javascript
 yield new Promise(r => setTimeout(r, 100));
 ```
-
-
 You can use a similar trick to "pause" the test at a certain point. This is useful when debugging locally because it will leave Firefox open and responsive, at the specific spot you've chosen.  Do this
 using `yield new Promise(r => r);`.
 
 You can also binary search the test by either commenting out chunks of it, or hacking in early `return`s.  You can do a bunch of these experiments in parallel without waiting for the first to complete.
 
 For the tests in the devtools codebase, see the `waitForTick` and `waitForTime` functions in `DevToolsUtils`. `shared-head.js` also has some helpers, like `once`, to bind to events with additional logging.
-
 
 ## Verifying
 

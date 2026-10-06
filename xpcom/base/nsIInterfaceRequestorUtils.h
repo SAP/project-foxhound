@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __nsInterfaceRequestorUtils_h
-#define __nsInterfaceRequestorUtils_h
+#ifndef _nsInterfaceRequestorUtils_h
+#define _nsInterfaceRequestorUtils_h
 
 #include "nsCOMPtr.h"
 
@@ -33,8 +31,8 @@ class MOZ_STACK_CLASS nsGetInterface final : public nsCOMPtr_helper {
 };
 
 inline const nsGetInterface do_GetInterface(nsISupports* aSource,
-                                            nsresult* aError = 0) {
+                                            nsresult* aError = nullptr) {
   return nsGetInterface(aSource, aError);
 }
 
-#endif  // __nsInterfaceRequestorUtils_h
+#endif  // _nsInterfaceRequestorUtils_h

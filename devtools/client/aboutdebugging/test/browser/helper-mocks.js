@@ -132,9 +132,10 @@ class Mocks {
 
   /**
    * Creates a USB runtime for which a client conenction can be established.
-   * @param {String} id
+   *
+   * @param {string} id
    *        The id of the runtime.
-   * @param {Object} optional object used to create the fake runtime & device
+   * @param {object} optional object used to create the fake runtime & device
    *        - channel: {String} Release channel, for instance "release", "nightly"
    *        - clientWrapper: {ClientWrapper} optional ClientWrapper for this runtime
    *        - deviceId: {String} Device id
@@ -145,7 +146,7 @@ class Mocks {
    *        - socketPath: {String} (should only be used for connecting, so not here)
    *        - version: {String} Version, for instance "63.0a"
    *        - versionName: {String} Version return by ADB "63.0a"
-   * @return {Object} Returns the mock client created for this runtime so that methods
+   * @return {object} Returns the mock client created for this runtime so that methods
    * can be overridden on it.
    */
   createUSBRuntime(id, runtimeInfo = {}) {

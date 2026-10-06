@@ -1,6 +1,5 @@
 <?xml version="1.0"?>
 
-<!-- -*- Mode: Java; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- -->
 <!-- This Source Code Form is subject to the terms of the Mozilla Public
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
@@ -22,6 +21,10 @@
         rel="stylesheet"
         href="chrome://browser/skin/preferences/preferences.css"
       />
+      <html:link
+        rel="stylesheet"
+        href="chrome://browser/content/preferences/dialogs/colors.css"
+      />
 
       <html:link rel="localization" href="browser/preferences/colors.ftl" />
     </linkset>
@@ -33,63 +36,58 @@
       <key id="key_close" data-l10n-id="colors-close-key" modifiers="accel" />
     </keyset>
 
-    <hbox>
-      <groupbox flex="1">
+    <hbox id="custom-colors">
+      <groupbox flex="1" class="color-container">
         <label
           ><html:h2
             class="heading-medium"
             data-l10n-id="colors-text-and-background"
         /></label>
-        <hbox align="center">
-          <label
-            data-l10n-id="colors-text-header"
+        <hbox align="center" class="color-row">
+          <html:moz-input-color
+            value="CanvasText"
+            data-l10n-id="colors-text"
             control="foregroundtextmenu"
-          />
-          <spacer flex="1" />
-          <html:input
-            type="color"
             id="foregroundtextmenu"
+            class="color-picker"
             preference="browser.display.foreground_color"
-          />
+          ></html:moz-input-color>
         </hbox>
-        <hbox align="center" style="margin-top: 5px">
-          <label data-l10n-id="colors-background" control="backgroundmenu" />
-          <spacer flex="1" />
-          <html:input
-            type="color"
+        <hbox align="center" class="color-row">
+          <html:moz-input-color
+            value="Canvas"
+            data-l10n-id="colors-text-background"
+            control="backgroundmenu"
             id="backgroundmenu"
+            class="color-picker"
             preference="browser.display.background_color"
-          />
+          ></html:moz-input-color>
         </hbox>
       </groupbox>
 
-      <groupbox flex="1">
+      <groupbox flex="1" class="color-container">
         <label
           ><html:h2 class="heading-medium" data-l10n-id="colors-links-header"
         /></label>
-        <hbox align="center">
-          <label
-            data-l10n-id="colors-unvisited-links"
+        <hbox align="center" class="color-row">
+          <html:moz-input-color
+            value="LinkText"
+            data-l10n-id="colors-links-unvisited"
             control="unvisitedlinkmenu"
-          />
-          <spacer flex="1" />
-          <html:input
-            type="color"
             id="unvisitedlinkmenu"
+            class="color-picker"
             preference="browser.anchor_color"
-          />
+          ></html:moz-input-color>
         </hbox>
-        <hbox align="center" style="margin-top: 5px">
-          <label
-            data-l10n-id="colors-visited-links"
+        <hbox align="center" class="color-row">
+          <html:moz-input-color
+            value="VisitedText"
+            data-l10n-id="colors-links-visited"
             control="visitedlinkmenu"
-          />
-          <spacer flex="1" />
-          <html:input
-            type="color"
             id="visitedlinkmenu"
+            class="color-picker"
             preference="browser.visited_color"
-          />
+          ></html:moz-input-color>
         </hbox>
       </groupbox>
     </hbox>

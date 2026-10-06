@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,11 +5,8 @@
 #ifndef MOZILLA_GFX_COMPOSITORMANAGERCHILD_H
 #define MOZILLA_GFX_COMPOSITORMANAGERCHILD_H
 
-#include <stddef.h>  // for size_t
-#include <stdint.h>  // for uint32_t, uint64_t
-#include "mozilla/Atomics.h"
-#include "mozilla/Attributes.h"                    // for override
-#include "mozilla/RefPtr.h"                        // for already_AddRefed
+#include <stddef.h>                                // for size_t
+#include <stdint.h>                                // for uint32_t, uint64_t
 #include "mozilla/StaticPtr.h"                     // for StaticRefPtr
 #include "mozilla/layers/CompositableForwarder.h"  // for FwdTransactionCounter
 #include "mozilla/layers/PCompositorManagerChild.h"
@@ -37,14 +32,13 @@ class CompositorManagerChild : public PCompositorManagerChild {
   static bool CreateContentCompositorBridge(uint32_t aNamespace);
 
   static already_AddRefed<CompositorBridgeChild> CreateWidgetCompositorBridge(
-      uint64_t aProcessToken, WebRenderLayerManager* aLayerManager,
-      uint32_t aNamespace, CSSToLayoutDeviceScale aScale,
-      const CompositorOptions& aOptions, bool aUseExternalSurfaceSize,
-      const gfx::IntSize& aSurfaceSize, uint64_t aInnerWindowId);
+      uint64_t aProcessToken, uint32_t aNamespace,
+      CSSToLayoutDeviceScale aScale, const CompositorOptions& aOptions,
+      bool aUseExternalSurfaceSize, const gfx::IntSize& aSurfaceSize,
+      uint64_t aInnerWindowId);
 
   static already_AddRefed<CompositorBridgeChild>
-  CreateSameProcessWidgetCompositorBridge(WebRenderLayerManager* aLayerManager,
-                                          uint32_t aNamespace);
+  CreateSameProcessWidgetCompositorBridge(uint32_t aNamespace);
 
   static CompositorManagerChild* GetInstance() {
     MOZ_ASSERT(NS_IsMainThread());

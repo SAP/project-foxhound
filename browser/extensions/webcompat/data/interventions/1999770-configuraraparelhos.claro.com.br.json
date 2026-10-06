@@ -1,0 +1,18 @@
+{
+  "label": "configuraraparelhos.claro.com.br",
+  "bugs": {
+    "1999770": {
+      "issue": "broken-layout",
+      "matches": ["*://configuraraparelhos.claro.com.br/*"]
+    }
+  },
+  "css": {
+    "unhide_phone_description": ".qelp-step.usecase-step .step-card .text-content-wrapper { flex-grow: unset; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "css": ["unhide_phone_description"]
+    }
+  ]
+}

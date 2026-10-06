@@ -21,17 +21,16 @@ The opened window should not directly close when clicking on the Openwindow link
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 322588 **/
+/** Test for Bug 322588 */
 
 var result = "";
 
 var w;
 function pop350d(url) {
-  w = window.open();
+  w = window.open(url);
   w.addEventListener("unload", function () { result += " unload";});
   w.addEventListener("load", function () { result += " load"; setTimeout(done, 1000);});
   w.addEventListener("blur", function () { result += " blur";});
-  w.location = url;
 }
 
 function doTest() {

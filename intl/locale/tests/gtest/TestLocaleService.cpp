@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -70,6 +69,14 @@ TEST(Intl_Locale_LocaleService, GetAppLocaleAsLangTag)
   LocaleService::GetInstance()->GetAppLocaleAsLangTag(locale);
 
   ASSERT_TRUE(appLocales[0] == locale);
+}
+
+TEST(Intl_Locale_LocaleService, GetEllipsis)
+{
+  nsAutoString ellipsis;
+  LocaleService::GetInstance()->GetEllipsis(ellipsis);
+
+  ASSERT_TRUE(ellipsis == u"…");
 }
 
 TEST(Intl_Locale_LocaleService, GetRegionalPrefsLocales)
@@ -154,25 +161,12 @@ TEST(Intl_Locale_LocaleService, IsAppLocaleRTL)
   mozilla::Preferences::ClearUser("intl.l10n.pseudo");
 }
 
-TEST(Intl_Locale_LocaleService, TryCreateComponent)
+TEST(Intl_Locale_LocaleService, AlwaysAppendAccesskeys)
 {
-  {
-    // Create a Collator with the app locale.
-    auto result = LocaleService::GetInstance()->TryCreateComponent<Collator>();
-    ASSERT_TRUE(result.isOk());
-  }
-  {
-    // Create a Collator with the "en" locale.
-    auto result =
-        LocaleService::GetInstance()->TryCreateComponentWithLocale<Collator>(
-            "en");
-    ASSERT_TRUE(result.isOk());
-  }
-  {
-    // Fallback to the app locale when an invalid one is used.
-    auto result =
-        LocaleService::GetInstance()->TryCreateComponentWithLocale<Collator>(
-            "$invalidName");
-    ASSERT_TRUE(result.isOk());
-  }
+  ASSERT_FALSE(LocaleService::GetInstance()->AlwaysAppendAccesskeys());
+}
+
+TEST(Intl_Locale_LocaleService, InsertSeparatorBeforeAccesskeys)
+{
+  ASSERT_TRUE(LocaleService::GetInstance()->InsertSeparatorBeforeAccesskeys());
 }

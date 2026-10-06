@@ -8,15 +8,13 @@ import android.app.Dialog
 import android.app.assist.AssistStructure
 import android.content.DialogInterface
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import android.service.autofill.Dataset
 import android.view.autofill.AutofillManager
-import androidx.annotation.RequiresApi
-import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -35,7 +33,6 @@ import mozilla.components.ui.widgets.withCenterAlignedButtons
  * shown in situations where the authenticity of an application could not be confirmed automatically
  * with "Digital Asset Links".
  */
-@RequiresApi(Build.VERSION_CODES.O)
 abstract class AbstractAutofillConfirmActivity : FragmentActivity() {
     abstract val configuration: AutofillConfiguration
 
@@ -99,13 +96,12 @@ abstract class AbstractAutofillConfirmActivity : FragmentActivity() {
     }
 }
 
-@RequiresApi(Build.VERSION_CODES.O)
 internal class AutofillConfirmFragment : DialogFragment() {
     private val configuration: AutofillConfiguration
         get() = getConfirmActivity().configuration
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
-        return AlertDialog.Builder(requireContext())
+        return MaterialAlertDialogBuilder(requireContext())
             .setTitle(
                 getString(R.string.mozac_feature_autofill_confirmation_title),
             )

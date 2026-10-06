@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -51,11 +50,14 @@ mozilla::ipc::IPCResult WebBrowserPersistSerializeParent::RecvWriteData(
 
 mozilla::ipc::IPCResult WebBrowserPersistSerializeParent::Recv__delete__(
     const nsACString& aContentType, const nsresult& aStatus) {
+  nsCOMPtr<nsIWebBrowserPersistWriteCompletion> finish = std::move(mFinish);
+  if (!finish) {
+    return IPC_FAIL(this, "missing finish callback");
+  }
   if (NS_SUCCEEDED(mOutputError)) {
     mOutputError = aStatus;
   }
-  mFinish->OnFinish(mDocument, mStream, aContentType, mOutputError);
-  mFinish = nullptr;
+  finish->OnFinish(mDocument, mStream, aContentType, mOutputError);
   return IPC_OK();
 }
 

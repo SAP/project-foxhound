@@ -33,8 +33,6 @@ AddonTestUtils.overrideCertDB();
 AddonTestUtils.usePrivilegedSignatures = id => id.startsWith("privileged");
 createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "42");
 
-Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
-
 async function getManifestPermissions(extensionData) {
   let extension = ExtensionTestCommon.generate(extensionData);
   // Some tests contain invalid permissions; ignore the warnings about their invalidity.

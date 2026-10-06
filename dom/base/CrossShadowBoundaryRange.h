@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -46,6 +44,12 @@ class CrossShadowBoundaryRange final : public StaticRange,
 
   nsINode* GetCommonAncestor() const { return mCommonAncestor; }
 
+  // Recomputes mCommonAncestor from the current mStart/mEnd and moves the
+  // mutation-observer registration to it if it changed. Called from
+  // StaticRange::DoSetRange after the boundaries are updated, so it runs for
+  // every boundary change rather than only on initial creation.
+  void UpdateCommonAncestor();
+
   // CrossShadowBoundaryRange should have a very limited usage.
   nsresult SetStartAndEnd(nsINode* aStartContainer, uint32_t aStartOffset,
                           nsINode* aEndContainer, uint32_t aEndOffset) = delete;
@@ -62,26 +66,11 @@ class CrossShadowBoundaryRange final : public StaticRange,
 
  private:
   explicit CrossShadowBoundaryRange(nsINode* aNode, nsRange* aOwner)
-      : StaticRange(aNode, RangeBoundaryIsMutationObserved::Yes,
-                    TreeKind::Flat),
+      : StaticRange(aNode, StaticRange::MutationObserved::Yes, TreeKind::Flat),
         mOwner(aOwner) {}
   virtual ~CrossShadowBoundaryRange() = default;
 
-  /**
-   * DoSetRange() is called when `AbstractRange::SetStartAndEndInternal()` sets
-   * mStart and mEnd.
-   *
-   * @param aStartBoundary  Computed start point.  This must equals or be before
-   *                        aEndBoundary in the DOM tree order.
-   * @param aEndBoundary    Computed end point.
-   * @param aRootNode       The root node of aStartBoundary or aEndBoundary.
-   *                        It's useless to CrossShadowBoundaryRange.
-   * @param aOwner          The nsRange that owns this CrossShadowBoundaryRange.
-   */
-  template <typename SPT, typename SRT, typename EPT, typename ERT>
-  void DoSetRange(const RangeBoundaryBase<SPT, SRT>& aStartBoundary,
-                  const RangeBoundaryBase<EPT, ERT>& aEndBoundary,
-                  nsINode* aRootNode, nsRange* aOwner);
+  void ResetToReuse();
 
   // This is either NULL if this CrossShadowBoundaryRange has been
   // reset by Release() or the closest common shadow-including ancestor
@@ -96,6 +85,12 @@ class CrossShadowBoundaryRange final : public StaticRange,
   // CrossShadowBoundaryRange, so it's safe to use raw pointer here.
   nsRange* mOwner;
 };
+
+inline CrossShadowBoundaryRange* StaticRange::AsCrossShadowBoundaryRange() {
+  MOZ_ASSERT(IsCrossShadowBoundaryRange());
+  return static_cast<CrossShadowBoundaryRange*>(this);
+}
+
 }  // namespace dom
 }  // namespace mozilla
 

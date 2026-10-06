@@ -66,7 +66,7 @@ def main(header):
     header.write("/* !GENERATED DATA -- DO NOT EDIT! */\n")
     header.write("/* (see is_combining_diacritic.py) */\n")
     header.write("\n")
-    header.write('#include "gfxFontUtils.h"\n')
+    header.write('#include "gfxSparseBitSet.h"\n')
     header.write("\n")
 
     header.write("typedef struct {\n")
